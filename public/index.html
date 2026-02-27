@@ -2108,10 +2108,34 @@ function showDetail(n) {
     }
   }
 
-  // ── 파일 노드 → 자동 코드 분석 버튼 ──
+  // ── 내용 섹션: 타입별로 맨 위에 표시 ──
   const isFileNode = ['file','file.read','file.write','file.create'].includes(et);
-  // file 타입: fullContent에 경로, file.read/write: filePath 또는 data.filePath
   const filePath = n.filePath || n.data?.filePath || (et === 'file' ? n.fullContent : null) || null;
+
+  if (et === 'user.message') {
+    // 사용자 질문: 내용 바로 표시
+    if (n.fullContent && n.fullContent.length > 2)
+      h += `<div class="dsec"><h4>💬 질문 내용</h4><div class="dcont">${esc(n.fullContent).substring(0,3000).replace(/\n/g,'<br>')}</div></div>`;
+  } else if (et === 'assistant.message') {
+    // AI 답변: 내용 바로 표시
+    if (n.fullContent && n.fullContent.length > 2)
+      h += `<div class="dsec"><h4>🤖 AI 답변</h4><div class="dcont">${esc(n.fullContent).substring(0,3000).replace(/\n/g,'<br>')}</div></div>`;
+  } else if (et === 'tool.end' || et === 'tool.error') {
+    // 도구: 입력(지침) → 출력(결과) 순서
+    const inputText = n.data?.inputPreview || n.data?.input
+      ? esc(JSON.stringify(n.data?.input || n.data?.inputPreview || '').replace(/^"|"$/g,'')).substring(0,1000)
+      : null;
+    if (inputText) h += `<div class="dsec"><h4>📥 입력 (지침)</h4><div class="dcont">${inputText.replace(/\\n/g,'<br>')}</div></div>`;
+    if (n.fullContent && n.fullContent.length > 2)
+      h += `<div class="dsec"><h4>📤 결과</h4><div class="dcont">${esc(n.fullContent).substring(0,3000).replace(/\n/g,'<br>')}</div></div>`;
+  } else if (isFileNode && filePath) {
+    // 파일 노드: 경로 표시
+    h += `<div class="dsec"><h4>📄 파일 경로</h4><div class="dcont">${esc(filePath)}</div></div>`;
+  } else if (n.fullContent && n.fullContent.length > 2) {
+    h += `<div class="dsec"><h4>내용</h4><div class="dcont">${esc(n.fullContent).substring(0,3000).replace(/\n/g,'<br>')}</div></div>`;
+  }
+
+  // ── 파일 노드 → 자동 코드 분석 버튼 ──
   if (isFileNode && filePath && /\.(js|ts|jsx|tsx|py|rs|go|java|sh|css|html|json|md)$/i.test(filePath)) {
     const fp = filePath.replace(/'/g, "\\'");
     h += `<div class="dsec"><h4>📊 코드 분석</h4>
@@ -2123,7 +2147,6 @@ function showDetail(n) {
     </div>`;
   }
 
-  if (n.fullContent && n.fullContent.length > 2) h += `<div class="dsec"><h4>내용</h4><div class="dcont">${esc(n.fullContent).substring(0,3000).replace(/\n/g,'<br>')}</div></div>`;
   if (n.activityScore !== undefined) {
     const p = Math.round(n.activityScore*100);
     const col = p>50?'var(--green)':p>20?'var(--orange)':'var(--text3)';
