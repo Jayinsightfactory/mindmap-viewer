@@ -380,6 +380,7 @@
     <button id="btn-sb" onclick="toggleSidebar()">☰</button>
     <button onclick="fitNet()">⊞</button>
     <button id="btn-dt" onclick="toggleDetail()">◧</button>
+    <button id="btn-analyze" onclick="toggleAnalyzePanel()" title="코드 효율 분석">📊</button>
     <button id="btn-set" onclick="toggleSettings()">⚙</button>
     <button onclick="clearAll()" style="color:var(--red);border-color:transparent">✕</button>
   </div>
@@ -502,6 +503,45 @@
     <div id="d-body"><div class="empty-d"><span style="font-size:24px">👈</span><span>노드 클릭 → 상세</span></div></div>
   </div>
 </main>
+
+<!-- ════ 코드 효율 분석 패널 ════ -->
+<div id="analyze-panel" style="
+  display:none;position:fixed;right:0;top:48px;bottom:36px;width:360px;
+  background:var(--bg2);border-left:1px solid var(--border);z-index:200;
+  display:none;flex-direction:column;overflow:hidden;
+  box-shadow:-4px 0 20px rgba(0,0,0,0.3);
+">
+  <div style="display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--border);background:var(--bg3)">
+    <span style="font-size:16px">📊</span>
+    <span style="font-size:13px;font-weight:600;color:var(--text)">코드 효율 분석</span>
+    <div style="flex:1"></div>
+    <button onclick="toggleAnalyzePanel()" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:16px">✕</button>
+  </div>
+
+  <!-- 입력 영역 -->
+  <div style="padding:10px 14px;border-bottom:1px solid var(--border)">
+    <div style="font-size:10px;color:var(--text3);margin-bottom:4px">파일 경로 (서버 절대경로) 또는 직접 붙여넣기</div>
+    <div style="display:flex;gap:6px;margin-bottom:6px">
+      <input id="analyze-path" placeholder="/경로/to/file.js"
+        style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:5px 8px;color:var(--text);font-size:11px"
+        onkeydown="if(event.key==='Enter')runAnalyzeFile()">
+      <button onclick="runAnalyzeFile()" style="padding:5px 10px;background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:11px">파일</button>
+    </div>
+    <textarea id="analyze-code" rows="4" placeholder="소스코드 붙여넣기..."
+      style="width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:5px 8px;color:var(--text);font-size:10px;font-family:monospace;resize:vertical"></textarea>
+    <div style="display:flex;gap:6px;margin-top:6px">
+      <button onclick="runAnalyzeCode()" style="flex:1;padding:5px;background:var(--green);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:11px">🔍 분석</button>
+      <button onclick="runAnalyzeProject()" style="flex:1;padding:5px;background:var(--purple,#8b5cf6);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:11px">📁 프로젝트 전체</button>
+    </div>
+  </div>
+
+  <!-- 결과 영역 -->
+  <div id="analyze-result" style="flex:1;overflow-y:auto;padding:12px 14px">
+    <div style="text-align:center;color:var(--text3);padding:30px 0;font-size:12px">
+      📊 파일 경로를 입력하거나<br>코드를 붙여넣고 분석을 실행하세요
+    </div>
+  </div>
+</div>
 
 <div id="timeline"><span class="tl-label">타임라인 →</span></div>
 
@@ -1934,6 +1974,193 @@ function updateStats(s) {
   });
 }
 function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// ═══════════════════════════════════════════════════
+// 코드 효율 분석 패널
+// ═══════════════════════════════════════════════════
+let analyzePanelOpen = false;
+
+function toggleAnalyzePanel() {
+  analyzePanelOpen = !analyzePanelOpen;
+  const panel = document.getElementById('analyze-panel');
+  panel.style.display = analyzePanelOpen ? 'flex' : 'none';
+  document.getElementById('btn-analyze').classList.toggle('active', analyzePanelOpen);
+}
+
+async function runAnalyzeFile() {
+  const filePath = document.getElementById('analyze-path').value.trim();
+  if (!filePath) return;
+  showAnalyzeLoading();
+  try {
+    const r = await fetch(`/api/analyze?file=${encodeURIComponent(filePath)}`);
+    const report = await r.json();
+    if (report.error) throw new Error(report.error);
+    renderAnalyzeReport(report);
+  } catch (e) {
+    document.getElementById('analyze-result').innerHTML =
+      `<div style="color:var(--red);padding:10px;font-size:11px">❌ ${esc(e.message)}</div>`;
+  }
+}
+
+async function runAnalyzeCode() {
+  const code = document.getElementById('analyze-code').value.trim();
+  if (!code) return;
+  showAnalyzeLoading();
+  try {
+    const r = await fetch('/api/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code, filename: 'clipboard.js' }),
+    });
+    const report = await r.json();
+    if (report.error) throw new Error(report.error);
+    renderAnalyzeReport(report);
+  } catch (e) {
+    document.getElementById('analyze-result').innerHTML =
+      `<div style="color:var(--red);padding:10px;font-size:11px">❌ ${esc(e.message)}</div>`;
+  }
+}
+
+async function runAnalyzeProject() {
+  showAnalyzeLoading('프로젝트 전체 파일 분석 중...');
+  try {
+    const r = await fetch('/api/analyze-project');
+    const data = await r.json();
+    renderProjectReport(data);
+  } catch (e) {
+    document.getElementById('analyze-result').innerHTML =
+      `<div style="color:var(--red);padding:10px;font-size:11px">❌ ${esc(e.message)}</div>`;
+  }
+}
+
+function showAnalyzeLoading(msg = '분석 중...') {
+  document.getElementById('analyze-result').innerHTML =
+    `<div style="text-align:center;padding:30px;color:var(--text3);font-size:12px">⏳ ${esc(msg)}</div>`;
+}
+
+function gradeColor(g) {
+  return { A:'#3fb950', B:'#4285f4', C:'#d29922', D:'#f85149', F:'#8b949e' }[g] || '#8b949e';
+}
+
+function complexityColor(c) {
+  if (c <= 5)  return '#3fb950';
+  if (c <= 10) return '#4285f4';
+  if (c <= 20) return '#d29922';
+  return '#f85149';
+}
+
+function renderAnalyzeReport(r) {
+  const gc = gradeColor(r.grade);
+  const cc = complexityColor(r.complexity);
+
+  let h = `
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+      <div style="width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+                  font-size:22px;font-weight:700;color:${gc};background:${gc}22;border:2px solid ${gc}44">
+        ${esc(r.grade)}
+      </div>
+      <div>
+        <div style="font-size:13px;font-weight:600;color:var(--text)">${esc(r.file)}</div>
+        <div style="font-size:10px;color:var(--text3)">${r.lines.total}줄 · 코드 ${r.lines.code}줄 · 주석 ${r.lines.comment}줄</div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:12px">
+      <div style="background:${cc}18;border:1px solid ${cc}33;border-radius:8px;padding:8px;text-align:center">
+        <div style="font-size:20px;font-weight:700;color:${cc}">${r.complexity}</div>
+        <div style="font-size:9px;color:var(--text3)">복잡도</div>
+      </div>
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:8px;text-align:center">
+        <div style="font-size:20px;font-weight:700;color:var(--text)">${r.solid.score}</div>
+        <div style="font-size:9px;color:var(--text3)">SOLID 점수</div>
+      </div>
+    </div>
+  `;
+
+  // 긴 함수 목록
+  if (r.longFunctions && r.longFunctions.length > 0) {
+    h += `<div style="margin-bottom:10px"><div style="font-size:10px;font-weight:600;color:var(--orange);margin-bottom:4px">⚠️ 긴 함수 (${r.longFunctions.length}개)</div>`;
+    r.longFunctions.forEach(fn => {
+      const fc = complexityColor(fn.complexity);
+      h += `<div style="display:flex;justify-content:space-between;padding:4px 6px;background:var(--bg);border-radius:4px;margin-bottom:2px;font-size:10px">
+        <span style="color:var(--text)">${esc(fn.name)}</span>
+        <span style="color:var(--text3)">${fn.lines}줄 · 복잡도<span style="color:${fc};margin-left:3px">${fn.complexity}</span></span>
+      </div>`;
+    });
+    h += `</div>`;
+  }
+
+  // 중복 패턴
+  if (r.duplicates && r.duplicates.length > 0) {
+    h += `<div style="margin-bottom:10px"><div style="font-size:10px;font-weight:600;color:var(--purple,#8b5cf6);margin-bottom:4px">♻️ 중복 패턴 (${r.duplicates.length}개)</div>`;
+    r.duplicates.slice(0, 3).forEach(d => {
+      h += `<div style="padding:4px 6px;background:var(--bg);border-radius:4px;margin-bottom:2px;font-size:9px;color:var(--text2)">
+        <span style="color:var(--accent)">${d.count}회</span> · ${esc(String(d.pattern || '').substring(0, 50))}
+      </div>`;
+    });
+    h += `</div>`;
+  }
+
+  // SOLID 위반
+  if (r.solid.violations && r.solid.violations.length > 0) {
+    h += `<div style="margin-bottom:10px"><div style="font-size:10px;font-weight:600;color:var(--red);margin-bottom:4px">🔴 SOLID 위반 (${r.solid.violations.length}개)</div>`;
+    r.solid.violations.forEach(v => {
+      const vc = v.severity === 'warn' ? 'var(--orange)' : 'var(--blue)';
+      h += `<div style="padding:5px 8px;background:var(--bg);border-left:3px solid ${vc};border-radius:0 4px 4px 0;margin-bottom:4px;font-size:10px">
+        <span style="font-weight:600;color:${vc}">${esc(v.type)}</span>
+        <div style="color:var(--text2);margin-top:2px">${esc(v.message)}</div>
+      </div>`;
+    });
+    h += `</div>`;
+  } else {
+    h += `<div style="padding:6px 8px;background:var(--green)18;border:1px solid var(--green)33;border-radius:6px;font-size:10px;color:var(--green);margin-bottom:10px">✅ SOLID 위반 없음</div>`;
+  }
+
+  // 요약
+  h += `<div style="padding:8px;background:var(--bg3);border-radius:6px;font-size:10px;color:var(--text2);line-height:1.6">${esc(r.summary)}</div>`;
+
+  document.getElementById('analyze-result').innerHTML = h;
+}
+
+function renderProjectReport(data) {
+  const { reports, avgComplexity, gradeCount, fileCount } = data;
+  const cc = complexityColor(avgComplexity);
+
+  let h = `
+    <div style="margin-bottom:12px">
+      <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:8px">📁 프로젝트 분석 (${fileCount}개 파일)</div>
+      <div style="display:flex;gap:4px;margin-bottom:8px">
+        ${['A','B','C','D','F'].map(g => `
+          <div style="flex:1;text-align:center;padding:4px;background:${gradeColor(g)}18;border:1px solid ${gradeColor(g)}33;border-radius:6px">
+            <div style="font-size:14px;font-weight:700;color:${gradeColor(g)}">${gradeCount[g]||0}</div>
+            <div style="font-size:9px;color:var(--text3)">${g}</div>
+          </div>`).join('')}
+      </div>
+      <div style="text-align:center;font-size:11px;color:var(--text3)">
+        평균 복잡도: <span style="color:${cc};font-weight:600">${avgComplexity}</span>
+      </div>
+    </div>
+  `;
+
+  // 파일별 목록 (등급 나쁜 것부터)
+  const sorted = [...reports].sort((a, b) => {
+    const gradeOrder = { F:0, D:1, C:2, B:3, A:4 };
+    return (gradeOrder[a.grade]||0) - (gradeOrder[b.grade]||0);
+  });
+
+  h += `<div style="font-size:10px;font-weight:600;color:var(--text2);margin-bottom:4px">파일별 결과</div>`;
+  sorted.forEach(r => {
+    const gc = gradeColor(r.grade);
+    h += `<div style="display:flex;align-items:center;gap:8px;padding:5px 6px;background:var(--bg);border-radius:4px;margin-bottom:2px;cursor:pointer"
+              onclick="document.getElementById('analyze-path').value='${esc(r.file)}';runAnalyzeFile()">
+      <span style="font-weight:700;color:${gc};min-width:16px">${r.grade}</span>
+      <span style="flex:1;font-size:10px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.file)}</span>
+      <span style="font-size:9px;color:${complexityColor(r.complexity)}">${r.complexity}</span>
+    </div>`;
+  });
+
+  document.getElementById('analyze-result').innerHTML = h;
+}
 
 // ═══════════════════════════════════════════════════
 // COMMAND PALETTE

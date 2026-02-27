@@ -14,6 +14,7 @@ const { initDatabase, getAllEvents, getEventsBySession, searchEvents, getSession
 const { buildGraph, computeActivityScores, applyActivityVisualization, suggestLabel } = require('./graph-engine');
 const { createAnnotationEvent } = require('./event-normalizer');
 const { getAiStyle, AI_SOURCES } = require('./adapters/ai-adapter-base');
+const { generateReport } = require('./code-analyzer');
 
 const PORT = 4747;
 const CONV_FILE = path.join(__dirname, 'conversation.jsonl');
@@ -404,6 +405,77 @@ app.get('/api/snapshots', (req, res) => {
 // 하위 호환: 기존 turns API
 app.get('/api/turns', (req, res) => {
   res.json(getAllEvents());
+});
+
+// ─── 코드 효율 분석 API (/complexity, /refactor-suggest) ─
+// POST /api/analyze  body: { code, filename }
+// GET  /api/analyze?file=<절대경로>
+app.post('/api/analyze', (req, res) => {
+  const { code, filename = 'unknown' } = req.body || {};
+  if (!code) return res.status(400).json({ error: 'code 필드 필요' });
+  try {
+    const report = generateReport(code, filename);
+    console.log(`[ANALYZE] ${filename} → 복잡도 ${report.complexity}, 등급 ${report.grade}`);
+    res.json(report);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/analyze', (req, res) => {
+  const filePath = req.query.file;
+  if (!filePath) return res.status(400).json({ error: 'file 쿼리 파라미터 필요' });
+  try {
+    const code = fs.readFileSync(filePath, 'utf8');
+    const report = generateReport(code, path.basename(filePath));
+    console.log(`[ANALYZE] ${filePath} → 복잡도 ${report.complexity}, 등급 ${report.grade}`);
+    res.json(report);
+  } catch (e) {
+    res.status(404).json({ error: `파일 읽기 실패: ${e.message}` });
+  }
+});
+
+// 프로젝트 전체 파일 일괄 분석
+app.get('/api/analyze-project', (req, res) => {
+  const dir = req.query.dir || __dirname;
+  const exts = (req.query.ext || 'js').split(',');
+  const IGNORE = ['node_modules', '.git', 'dist', 'build', 'coverage', 'tests'];
+
+  function collectFiles(d) {
+    let results = [];
+    try {
+      for (const entry of fs.readdirSync(d)) {
+        if (IGNORE.some(ig => entry.startsWith(ig))) continue;
+        const full = path.join(d, entry);
+        const stat = fs.statSync(full);
+        if (stat.isDirectory()) results = results.concat(collectFiles(full));
+        else if (exts.some(e => entry.endsWith('.' + e))) results.push(full);
+      }
+    } catch {}
+    return results;
+  }
+
+  const files = collectFiles(dir).slice(0, 30); // 최대 30개
+  const reports = files.map(f => {
+    try {
+      const code = fs.readFileSync(f, 'utf8');
+      return generateReport(code, path.relative(dir, f));
+    } catch {
+      return null;
+    }
+  }).filter(Boolean);
+
+  // 전체 요약
+  const avgComplexity = reports.length
+    ? Math.round(reports.reduce((s, r) => s + r.complexity, 0) / reports.length)
+    : 0;
+  const grades = reports.map(r => r.grade);
+  const gradeCount = ['A', 'B', 'C', 'D', 'F'].reduce((acc, g) => {
+    acc[g] = grades.filter(x => x === g).length;
+    return acc;
+  }, {});
+
+  res.json({ reports, avgComplexity, gradeCount, fileCount: reports.length });
 });
 
 // ─── 서버 시작 ──────────────────────────────────────
