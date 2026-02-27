@@ -349,17 +349,28 @@ function drawEdge(from, to) {
 }
 
 // ── 공전 위치 업데이트 ──
+// center 노드는 고정이므로 먼저 처리, 그 다음 자식들 처리
 function updateOrbits(dt) {
   if (!orbitOn) return;
   t += dt * 0.0003;
-  for (const n of nodes) {
-    if (n.orbitRadius && n.orbitParent) {
-      const parent = nodes.find(p => p.id === n.orbitParent);
-      if (parent) {
+
+  // 레벨 순서대로 처리 (부모가 먼저 위치 확정돼야 자식이 정확)
+  const sorted = [...nodes].sort((a, b) => (b.level || 0) - (a.level || 0));
+  for (const n of sorted) {
+    if (!n.orbitRadius || !n.orbitParent || n.orbitParent === 'center') {
+      // center 기준 공전
+      if (n.orbitRadius && n.orbitParent === 'center') {
         const angle = n.orbitAngle + t * n.orbitSpeed;
-        n.x = parent.x + Math.cos(angle) * n.orbitRadius;
-        n.y = parent.y + Math.sin(angle) * n.orbitRadius;
+        n.x = Math.cos(angle) * n.orbitRadius;
+        n.y = Math.sin(angle) * n.orbitRadius;
       }
+      continue;
+    }
+    const parent = nodes.find(p => p.id === n.orbitParent);
+    if (parent) {
+      const angle = n.orbitAngle + t * n.orbitSpeed;
+      n.x = parent.x + Math.cos(angle) * n.orbitRadius;
+      n.y = parent.y + Math.sin(angle) * n.orbitRadius;
     }
   }
 }
@@ -394,15 +405,20 @@ function frame(time) {
   // 줌 레벨에 따른 성운 효과
   drawNebula();
 
-  // 궤도 링
+  // 궤도 링 — 부모별로 중복 방지 (같은 반경의 링 한 번만)
+  const drawnRings = new Set();
   for (const n of nodes) {
-    if (!isVisible(n)) continue;
-    if (n.orbitRadius && n.orbitParent) {
-      const parent = nodes.find(p => p.id === n.orbitParent);
-      if (parent) {
-        const pp = worldToScreen(parent.x, parent.y);
-        drawOrbitRing(pp.x, pp.y, n.orbitRadius * world.scale, nodeColor(n));
-      }
+    if (!isVisible(n) || !n.orbitRadius || !n.orbitParent) continue;
+    const ringKey = n.orbitParent + ':' + Math.round(n.orbitRadius);
+    if (drawnRings.has(ringKey)) continue;
+    drawnRings.add(ringKey);
+
+    const parentNode = n.orbitParent === 'center'
+      ? { x: 0, y: 0 }
+      : nodes.find(p => p.id === n.orbitParent);
+    if (parentNode) {
+      const pp = worldToScreen(parentNode.x, parentNode.y);
+      drawOrbitRing(pp.x, pp.y, n.orbitRadius * world.scale, nodeColor(n));
     }
   }
 

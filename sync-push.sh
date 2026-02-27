@@ -19,9 +19,9 @@ if git diff --quiet && git diff --cached --quiet && [ -z "$(git ls-files --other
 fi
 
 # 민감정보 정리 (sanitize-db.js 있으면 실행)
-if [ -f "sanitize-db.js" ]; then
+if [ -f "src/sanitize-db.js" ]; then
   echo "[1/3] 민감정보 정리 중..."
-  node sanitize-db.js
+  node src/sanitize-db.js
   if [ $? -ne 0 ]; then
     echo "❌ 민감정보 정리 실패. push 중단."
     exit 1

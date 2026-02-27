@@ -9,7 +9,7 @@ echo  ========================================
 echo.
 
 echo  [1/4] DB 민감정보 정리 중...
-node sanitize-db.js
+node src/sanitize-db.js
 if errorlevel 1 (
     echo.
     echo  ❌ 민감정보 정리 실패. push를 중단합니다.
