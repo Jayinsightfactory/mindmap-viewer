@@ -171,6 +171,34 @@ function normalizeHookEvent(hookData, sessionState) {
       break;
     }
 
+    case 'PreToolUse': {
+      // 도구 실행 직전 — 즉시 노드 생성 (BLAZING 게임 이펙트 발동)
+      const toolName = hookData.tool_name || 'Unknown';
+      const toolInput = hookData.tool_input || {};
+      const files = extractFiles(toolName, toolInput);
+      events.push({
+        id: ulid(),
+        type: EventType.TOOL_START,
+        source: 'claude-hook',
+        sessionId,
+        userId: 'local',
+        channelId: 'default',
+        parentEventId: sessionState.lastAssistantId || sessionState.lastUserId || null,
+        timestamp: ts,
+        data: {
+          toolName,
+          files,
+          inputPreview: summarizeToolInput(toolName, toolInput),
+          status: 'pending',
+        },
+        metadata: {
+          hookName: 'PreToolUse',
+          toolUseId: hookData.tool_use_id || null,
+        },
+      });
+      break;
+    }
+
     case 'PostToolUse': {
       const toolName = hookData.tool_name || 'Unknown';
       const toolInput = hookData.tool_input || {};
@@ -393,6 +421,8 @@ const STRATEGY_MAP = {
   SubagentStop:      (hook) => ({ type: EventType.SUBAGENT_STOP,  data: { agentType: hook.agent_type || null } }),
   Notification:      (hook) => ({ type: EventType.NOTIFICATION,   data: { message: hook.message || '' } }),
   TaskCompleted:     (hook) => ({ type: EventType.TASK_COMPLETE,  data: {} }),
+
+  // ── PostToolUse: 도구 완료 → tool.end / tool.error ──
   PostToolUse: (hook) => {
     const toolName = hook.tool_name || 'Unknown';
     const toolInput = hook.tool_input || {};
@@ -401,6 +431,26 @@ const STRATEGY_MAP = {
     return {
       type: isError ? EventType.TOOL_ERROR : EventType.TOOL_END,
       data: { toolName, files, inputPreview: summarizeToolInput(toolName, toolInput) },
+    };
+  },
+
+  // ── PreToolUse: 도구 시작 즉시 → tool.start (BLAZING 게임 이펙트 즉시 발동) ──
+  // settings.json의 PreToolUse 훅에 등록하면 도구 실행 전에 마인드맵에 노드 생성
+  PreToolUse: (hook) => {
+    const toolName = hook.tool_name || 'Unknown';
+    const toolInput = hook.tool_input || {};
+    const files = extractFiles(toolName, toolInput);
+    return {
+      type: EventType.TOOL_START,
+      data: {
+        toolName,
+        files,
+        inputPreview: summarizeToolInput(toolName, toolInput),
+        status: 'pending',   // PostToolUse 에서 tool.end 로 완료 표시
+      },
+      metadata: {
+        toolUseId: hook.tool_use_id || null,
+      },
     };
   },
 };
@@ -422,6 +472,7 @@ function normalize(hook) {
     parentEventId: null,
     timestamp: new Date().toISOString(),
     data: result.data,
+    metadata: result.metadata || {},
   };
 }
 

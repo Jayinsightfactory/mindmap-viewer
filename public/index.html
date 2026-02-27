@@ -603,6 +603,7 @@ const NC = {
   'session.end':       { header: '세션 종료',     color: '#6b7280', w: 150 },
   'user.message':      { header: '사용자 질문',   color: '#58a6ff', w: 300 },
   'assistant.message': { header: 'AI 답변',       color: '#3fb950', w: 300 },
+  'tool.start':        { header: '⚡ 작업 중',    color: '#ff9500', w: 200 },
   'tool.end':          { header: '작업 수행',     color: '#d29922', w: 200 },
   'tool.error':        { header: '작업 실패',     color: '#f85149', w: 200 },
   'file':              { header: '파일 참조',     color: '#bc8cff', w: 180 },
@@ -832,6 +833,7 @@ function getBodyText(data) {
     const content = data.fullContent || label;
     return content ? content.replace(/\n/g,' ').trim().substring(0, 200) : '(답변 내용)';
   }
+  if (t === 'tool.start') return `⚡ ${data.label || label} 시작 중...`;
   if (t === 'tool.end' || t === 'tool.error') {
     const content = data.fullContent ? data.fullContent.substring(0, 120).replace(/\n/g,' ').trim() : '';
     return content || label;
@@ -2693,6 +2695,12 @@ const FX = (() => {
     ensureLoop();
   }
 
+  // ── 글로우 맵 강제 주입 (tool.start 노드 → BLAZING 즉시 적용) ──
+  function forceGlow(nodeId, tier) {
+    glowMap[nodeId] = { tier, cfg: TIERS[tier], score: 1.0 };
+    ensureLoop();
+  }
+
   // ── 새 노드 생성 이벤트 처리 ──
   function onNewNodes(nodeIds, edges) {
     for (const id of nodeIds) {
@@ -2701,7 +2709,15 @@ const FX = (() => {
       const node = nMap[id];
       const type = node?.eventType || node?.type || '';
       const score = node?.activityScore || 0.9;
-      const tier = classifyTier(score);
+
+      // tool.start 노드: BLAZING 강제 → 작업 시작 즉시 게임 이펙트
+      let tier;
+      if (type === 'tool.start') {
+        tier = 'BLAZING';
+        glowMap[id] = { tier: 'BLAZING', cfg: TIERS['BLAZING'], score: 1.0 };
+      } else {
+        tier = classifyTier(score);
+      }
 
       // 파티클 버스트
       burst(pos.x, pos.y, tier);
@@ -2802,7 +2818,7 @@ const FX = (() => {
     if (!rafId) rafId = requestAnimationFrame(loop);
   }
 
-  return { burst, lightning, ripple, applyGlow, onNewNodes, syncSize };
+  return { burst, lightning, ripple, applyGlow, onNewNodes, syncSize, forceGlow };
 })();
 
 // fx-badge 엘리먼트 추가

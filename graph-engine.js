@@ -9,6 +9,8 @@ const NODE_STYLES = {
   'session.end':         { shape: 'hexagon', color: '#6b7280', icon: '⏹', label: 'End' },
   'user.message':        { shape: 'box',     color: '#388bfd', icon: '👤', label: 'User' },
   'assistant.message':   { shape: 'box',     color: '#3fb950', icon: '🤖', label: 'Assistant' },
+  // tool.start: PreToolUse — 깜박이는 주황 테두리로 "진행 중" 표시
+  'tool.start':          { shape: 'diamond', color: '#ff9500', icon: '⚡', label: 'Working' },
   'tool.end':            { shape: 'diamond', color: '#d29922', icon: '🔧', label: 'Tool' },
   'tool.error':          { shape: 'diamond', color: '#f85149', icon: '❌', label: 'Error' },
   'file.read':           { shape: 'ellipse', color: '#bc8cff', icon: '📄', label: 'File' },
@@ -204,6 +206,8 @@ function buildLabel(event) {
       return truncate(event.data.contentPreview || event.data.content || '질문', 28);
     case 'assistant.message':
       return truncate(event.data.contentPreview || event.data.content || '답변', 28);
+    case 'tool.start':
+      return `⚡ ${TOOL_LABELS[event.data.toolName] || event.data.toolName || '작업 중...'}`;
     case 'tool.end':
       return TOOL_LABELS[event.data.toolName] || event.data.toolName || '작업';
     case 'tool.error':
@@ -260,6 +264,7 @@ function getNodeSize(event) {
     case 'session.start': return 30;
     case 'user.message': return 22;
     case 'assistant.message': return 25;
+    case 'tool.start': return 18;  // 진행 중: 약간 크게
     case 'tool.end': return 16;
     case 'tool.error': return 16;
     case 'subagent.start': return 20;
