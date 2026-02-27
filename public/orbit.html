@@ -99,6 +99,10 @@
     #zoom-hint span { display: block; }
     #zoom-hint span.active { color: var(--accent); font-weight: 600; }
 
+    /* ── 커서 상태 ── */
+    #orbit-canvas.panning  { cursor: grabbing !important; }
+    #orbit-canvas.spacepan { cursor: grab !important; }
+
     /* ── BACK BTN ── */
     #back-btn {
       position: fixed; top: 60px; left: 16px;
@@ -108,6 +112,86 @@
       display: none; z-index: 100; transition: all 0.15s;
     }
     #back-btn:hover { border-color: var(--accent); color: var(--text); }
+
+    /* ── 줌 컨트롤 패널 (n8n 스타일) ── */
+    #zoom-controls {
+      position: fixed; bottom: 16px; left: 50%;
+      transform: translateX(-50%);
+      display: flex; align-items: center; gap: 2px;
+      background: rgba(13,17,23,0.92); border: 1px solid rgba(48,54,61,0.7);
+      border-radius: 10px; padding: 4px; z-index: 100;
+      backdrop-filter: blur(12px);
+    }
+    .zc-btn {
+      width: 30px; height: 30px; border-radius: 7px;
+      background: none; border: none; color: var(--text2);
+      font-size: 14px; cursor: pointer; display: flex;
+      align-items: center; justify-content: center;
+      transition: all 0.12s; font-family: inherit;
+    }
+    .zc-btn:hover { background: rgba(137,87,229,0.18); color: var(--text); }
+    .zc-btn:active { transform: scale(0.92); }
+    #zc-level {
+      font-size: 10px; color: var(--text3); min-width: 44px;
+      text-align: center; padding: 0 4px; font-variant-numeric: tabular-nums;
+    }
+    .zc-sep { width: 1px; height: 18px; background: rgba(48,54,61,0.8); margin: 0 2px; }
+
+    /* ── 단축키 힌트 오버레이 ── */
+    #shortcut-hint {
+      position: fixed; bottom: 60px; left: 50%;
+      transform: translateX(-50%);
+      background: rgba(13,17,23,0.92); border: 1px solid rgba(48,54,61,0.7);
+      border-radius: 10px; padding: 10px 16px;
+      font-size: 11px; color: var(--text3);
+      display: none; z-index: 200; backdrop-filter: blur(12px);
+      pointer-events: none; white-space: nowrap;
+    }
+    #shortcut-hint.show { display: block; }
+    #shortcut-hint b { color: var(--text2); }
+    .sh-row { display: flex; gap: 20px; flex-wrap: wrap; justify-content: center; }
+    .sh-item { display: flex; align-items: center; gap: 5px; }
+    .sh-key {
+      background: rgba(33,38,45,0.9); border: 1px solid rgba(48,54,61,0.8);
+      border-radius: 4px; padding: 1px 5px; font-size: 10px;
+      color: var(--text2); font-family: monospace;
+    }
+
+    /* ── 미니맵 클릭 가능 표시 ── */
+    #minimap { cursor: crosshair; }
+    #minimap:hover { border-color: rgba(137,87,229,0.5); }
+
+    /* ── 검색/포커스 바 (Cmd+K) ── */
+    #node-search {
+      position: fixed; top: 60px; left: 50%;
+      transform: translateX(-50%) translateY(-8px);
+      width: 320px; background: rgba(13,17,23,0.97);
+      border: 1px solid var(--accent); border-radius: 10px;
+      padding: 8px 12px; font-size: 13px; color: var(--text);
+      font-family: inherit; outline: none; z-index: 300;
+      backdrop-filter: blur(16px); opacity: 0;
+      pointer-events: none; transition: opacity 0.15s, transform 0.15s;
+    }
+    #node-search.show {
+      opacity: 1; pointer-events: auto;
+      transform: translateX(-50%) translateY(0);
+    }
+    #search-results {
+      position: fixed; top: 108px; left: 50%;
+      transform: translateX(-50%);
+      width: 320px; background: rgba(13,17,23,0.97);
+      border: 1px solid rgba(48,54,61,0.7); border-radius: 8px;
+      overflow: hidden; z-index: 300; display: none;
+    }
+    #search-results.show { display: block; }
+    .sr-item {
+      padding: 7px 12px; font-size: 12px; cursor: pointer;
+      color: var(--text2); border-bottom: 1px solid rgba(48,54,61,0.4);
+      display: flex; align-items: center; gap: 8px;
+    }
+    .sr-item:hover { background: rgba(137,87,229,0.12); color: var(--text); }
+    .sr-item:last-child { border-bottom: none; }
+    .sr-type { font-size: 10px; color: var(--text3); min-width: 60px; }
 
     /* ── CHANNEL SELECT ── */
     #channel-select {
@@ -228,6 +312,44 @@
   <span id="hint-1">💬 세션 (Session)</span>
   <span id="hint-0" class="active">🌍 개인 작업</span>
 </div>
+
+<!-- 줌 컨트롤 패널 (n8n 스타일) -->
+<div id="zoom-controls">
+  <button class="zc-btn" onclick="zcZoomOut()" title="축소 (-)">−</button>
+  <span id="zc-level">100%</span>
+  <button class="zc-btn" onclick="zcZoomIn()" title="확대 (+)">+</button>
+  <div class="zc-sep"></div>
+  <button class="zc-btn" onclick="autoFit()" title="전체 맞춤 (F / Shift+1)">⊡</button>
+  <button class="zc-btn" onclick="zcReset()" title="100% 리셋 (0)">⌖</button>
+  <div class="zc-sep"></div>
+  <button class="zc-btn" onclick="toggleShortcutHint()" title="단축키 보기 (?)">?</button>
+</div>
+
+<!-- 단축키 힌트 -->
+<div id="shortcut-hint">
+  <div class="sh-row">
+    <div class="sh-item"><span class="sh-key">Space</span>+드래그 패닝</div>
+    <div class="sh-item"><span class="sh-key">Ctrl</span>+스크롤 줌</div>
+    <div class="sh-item"><span class="sh-key">우클릭</span>드래그 패닝</div>
+    <div class="sh-item"><span class="sh-key">중클릭</span>드래그 패닝</div>
+  </div>
+  <div class="sh-row" style="margin-top:6px">
+    <div class="sh-item"><span class="sh-key">F</span>전체 맞춤</div>
+    <div class="sh-item"><span class="sh-key">0</span>100% 리셋</div>
+    <div class="sh-item"><span class="sh-key">+</span><span class="sh-key">−</span>줌</div>
+    <div class="sh-item"><span class="sh-key">Esc</span>패널 닫기</div>
+    <div class="sh-item"><span class="sh-key">Cmd+K</span>노드 검색</div>
+    <div class="sh-item"><span class="sh-key">↑↓←→</span>패닝</div>
+  </div>
+  <div class="sh-row" style="margin-top:6px">
+    <div class="sh-item"><span class="sh-key">더블클릭</span>노드 포커스</div>
+    <div class="sh-item"><span class="sh-key">미니맵 클릭</span>즉시 이동</div>
+  </div>
+</div>
+
+<!-- 노드 검색 (Cmd+K) -->
+<input id="node-search" type="text" placeholder="🔍 노드 검색... (Esc로 닫기)" autocomplete="off">
+<div id="search-results"></div>
 
 <script>
 // ═══════════════════════════════════════════════════
@@ -580,6 +702,7 @@ function frame(time) {
   }
 
   updateHUD();
+  updateZoomControls();
   drawMinimap();
   drawMemberOverlayLegend(ctx);
   drawPurposeLegend(ctx);
@@ -819,91 +942,301 @@ function loadDemoData() {
 }
 
 // ═══════════════════════════════════════════════════
-// 인터랙션
+// 인터랙션 — Figma/n8n/ComfyUI/Obsidian 패턴 통합
 // ═══════════════════════════════════════════════════
-let isDragging = false, dragStart = { x: 0, y: 0 }, camStart = { x: 0, y: 0 };
 
+// ─── 패닝 상태 ─────────────────────────────────────
+let isDragging    = false;
+let dragButton    = -1;   // 어떤 버튼으로 드래그 시작했는지
+let spacePressed  = false; // 스페이스바 누름 여부
+let dragStart     = { x: 0, y: 0 };
+let camStart      = { x: 0, y: 0 };
+
+// ─── 관성 패닝 ─────────────────────────────────────
+let velocity      = { x: 0, y: 0 };
+let lastMoveTime  = 0;
+let lastMovePos   = { x: 0, y: 0 };
+
+function startPan(clientX, clientY, button) {
+  isDragging   = true;
+  dragButton   = button;
+  dragStart    = { x: clientX, y: clientY };
+  camStart     = { x: world.targetX, y: world.targetY };
+  lastMoveTime = performance.now();
+  lastMovePos  = { x: clientX, y: clientY };
+  velocity     = { x: 0, y: 0 };
+  canvas.classList.add('panning');
+}
+
+function doPan(clientX, clientY) {
+  const dx = (clientX - dragStart.x) / world.scale;
+  const dy = (clientY - dragStart.y) / world.scale;
+  world.targetX = camStart.x - dx;
+  world.targetY = camStart.y - dy;
+
+  // 관성 계산용
+  const now = performance.now();
+  const dt  = now - lastMoveTime;
+  if (dt > 0 && dt < 50) {
+    velocity.x = (clientX - lastMovePos.x) / world.scale / (dt / 16);
+    velocity.y = (clientY - lastMovePos.y) / world.scale / (dt / 16);
+  }
+  lastMoveTime = now;
+  lastMovePos  = { x: clientX, y: clientY };
+}
+
+function endPan() {
+  isDragging = false;
+  canvas.classList.remove('panning');
+  if (spacePressed) canvas.classList.add('spacepan');
+
+  // 관성 적용 (속도가 충분할 때만)
+  const speed = Math.hypot(velocity.x, velocity.y);
+  if (speed > 1.5) {
+    let vx = velocity.x, vy = velocity.y;
+    const decay = () => {
+      if (!isDragging) {
+        world.targetX -= vx;
+        world.targetY -= vy;
+        vx *= 0.88;
+        vy *= 0.88;
+        if (Math.hypot(vx, vy) > 0.3) requestAnimationFrame(decay);
+      }
+    };
+    requestAnimationFrame(decay);
+  }
+}
+
+// ─── 마우스 버튼 ──────────────────────────────────
+// 좌클릭: 스페이스 누른 채로 or 빈 공간 → 패닝
+// 중클릭(버튼1): 항상 패닝
+// 우클릭(버튼2): 항상 패닝
 canvas.addEventListener('mousedown', e => {
-  isDragging = true;
-  dragStart = { x: e.clientX, y: e.clientY };
-  camStart  = { x: world.targetX, y: world.targetY };
+  const isPanButton = e.button === 1 || e.button === 2; // 중/우클릭 항상 패닝
+  const isSpacePan  = e.button === 0 && spacePressed;    // 좌클릭 + 스페이스
+
+  if (isPanButton || isSpacePan) {
+    e.preventDefault();
+    startPan(e.clientX, e.clientY, e.button);
+    return;
+  }
+
+  // 좌클릭: 노드 위면 패닝 아님, 빈 공간이면 패닝
+  if (e.button === 0) {
+    const wPos = screenToWorld(e.clientX, e.clientY);
+    const onNode = nodes.some(n => isVisible(n) && Math.hypot(n.x - wPos.x, n.y - wPos.y) < nodeRadius(n));
+    if (!onNode) startPan(e.clientX, e.clientY, 0);
+    else {
+      // 노드 위 클릭 → 드래그 감지용만 저장
+      dragStart = { x: e.clientX, y: e.clientY };
+    }
+  }
 });
 
 canvas.addEventListener('mousemove', e => {
   if (isDragging) {
-    const dx = (e.clientX - dragStart.x) / world.scale;
-    const dy = (e.clientY - dragStart.y) / world.scale;
-    world.targetX = camStart.x - dx;
-    world.targetY = camStart.y - dy;
+    doPan(e.clientX, e.clientY);
     return;
   }
 
-  // 호버
+  // 호버 처리
   const wPos = screenToWorld(e.clientX, e.clientY);
   let found = null;
   for (const n of nodes) {
     if (!isVisible(n)) continue;
-    const r = nodeRadius(n);
-    if (Math.hypot(n.x - wPos.x, n.y - wPos.y) < r) {
-      found = n; break;
-    }
+    if (Math.hypot(n.x - wPos.x, n.y - wPos.y) < nodeRadius(n)) { found = n; break; }
   }
-
   if (found && found.id !== hoverId) {
     hoverId = found.id;
     showTooltip(found, e.clientX, e.clientY);
+    canvas.style.cursor = 'pointer';
   } else if (!found) {
     hoverId = null;
     hideTooltip();
+    canvas.style.cursor = spacePressed ? 'grab' : 'grab';
   }
 });
 
-canvas.addEventListener('mouseup', () => { isDragging = false; });
-canvas.addEventListener('mouseleave', () => { isDragging = false; hideTooltip(); });
+canvas.addEventListener('mouseup', e => {
+  if (isDragging) { endPan(); return; }
+});
 
+canvas.addEventListener('mouseleave', () => {
+  if (isDragging) endPan();
+  hideTooltip();
+});
+
+// 우클릭 기본 컨텍스트 메뉴 막기
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+// ─── 클릭 (드래그 아닐 때만) ──────────────────────
 canvas.addEventListener('click', e => {
-  if (Math.abs(e.clientX - dragStart.x) > 3 || Math.abs(e.clientY - dragStart.y) > 3) return;
+  if (Math.abs(e.clientX - dragStart.x) > 4 || Math.abs(e.clientY - dragStart.y) > 4) return;
+  if (spacePressed) return;
   const wPos = screenToWorld(e.clientX, e.clientY);
   for (const n of nodes) {
     if (!isVisible(n)) continue;
     if (Math.hypot(n.x - wPos.x, n.y - wPos.y) < nodeRadius(n)) {
-      // 세션 노드 → 줌인, 이벤트 노드 → 사이드 패널
-      if (n.level >= 1) {
-        zoomIntoNode(n);
-      } else {
-        openSidePanel(n);
-      }
+      if (n.level >= 1) zoomIntoNode(n);
+      else openSidePanel(n);
       return;
     }
   }
-  // 빈 공간 클릭 → 패널 닫기
   closeSidePanel();
 });
 
+// ─── 더블클릭 → 노드 포커스 줌 ──────────────────
+canvas.addEventListener('dblclick', e => {
+  const wPos = screenToWorld(e.clientX, e.clientY);
+  for (const n of nodes) {
+    if (!isVisible(n)) continue;
+    if (Math.hypot(n.x - wPos.x, n.y - wPos.y) < nodeRadius(n)) {
+      zoomIntoNode(n);
+      return;
+    }
+  }
+  // 빈 공간 더블클릭 → 전체 맞춤
+  autoFit();
+});
+
+// ─── 스크롤 줌 ────────────────────────────────────
 canvas.addEventListener('wheel', e => {
   e.preventDefault();
-  const factor  = e.deltaY < 0 ? 1.12 : 0.89;
-  const wBefore = screenToWorld(e.clientX, e.clientY);
-  world.targetScale = Math.max(0.003, Math.min(6, world.targetScale * factor));
-  // 줌 포인트 유지
-  world.targetX = wBefore.x - (e.clientX - canvas.width / 2)  / world.targetScale;
-  world.targetY = wBefore.y - (e.clientY - canvas.height / 2) / world.targetScale;
+  // Ctrl/Cmd + 스크롤: 항상 줌
+  // 일반 스크롤: 패닝 (Shift=가로, 기본=세로)
+  if (e.ctrlKey || e.metaKey || e.deltaMode === 0 && !e.shiftKey && Math.abs(e.deltaX) < 2) {
+    // 줌
+    const factor  = e.deltaY < 0 ? 1.15 : 0.87;
+    const wBefore = screenToWorld(e.clientX, e.clientY);
+    world.targetScale = Math.max(0.005, Math.min(8, world.targetScale * factor));
+    world.targetX = wBefore.x - (e.clientX - canvas.width / 2)  / world.targetScale;
+    world.targetY = wBefore.y - (e.clientY - canvas.height / 2) / world.targetScale;
+  } else if (e.shiftKey) {
+    // Shift + 스크롤 → 가로 패닝 (Obsidian)
+    world.targetX += e.deltaY / world.scale * 0.8;
+  } else {
+    // 일반 스크롤 → 패닝
+    world.targetX += e.deltaX / world.scale * 0.8;
+    world.targetY += e.deltaY / world.scale * 0.8;
+  }
 }, { passive: false });
 
-// 터치 지원
+// ─── 키보드 ──────────────────────────────────────
+const PAN_STEP = 60;
+document.addEventListener('keydown', e => {
+  // 검색창 포커스 중이면 무시
+  if (document.activeElement === document.getElementById('node-search')) return;
+
+  switch (e.key) {
+    case ' ':
+      // 스페이스바 → 패닝 모드
+      if (!e.repeat) {
+        spacePressed = true;
+        canvas.classList.add('spacepan');
+        e.preventDefault();
+      }
+      break;
+    case 'f': case 'F':
+      if (!e.ctrlKey && !e.metaKey) { autoFit(); e.preventDefault(); }
+      break;
+    case '0':
+      zcReset(); e.preventDefault();
+      break;
+    case '+': case '=':
+      zcZoomIn(); e.preventDefault();
+      break;
+    case '-':
+      zcZoomOut(); e.preventDefault();
+      break;
+    case '?':
+      toggleShortcutHint(); e.preventDefault();
+      break;
+    case 'Escape':
+      closeNodeSearch();
+      closeSidePanel();
+      hideShortcutHint();
+      e.preventDefault();
+      break;
+    case 'ArrowUp':
+      world.targetY -= PAN_STEP / world.scale;
+      e.preventDefault(); break;
+    case 'ArrowDown':
+      world.targetY += PAN_STEP / world.scale;
+      e.preventDefault(); break;
+    case 'ArrowLeft':
+      world.targetX -= PAN_STEP / world.scale;
+      e.preventDefault(); break;
+    case 'ArrowRight':
+      world.targetX += PAN_STEP / world.scale;
+      e.preventDefault(); break;
+    case 'k':
+      if (e.ctrlKey || e.metaKey) { openNodeSearch(); e.preventDefault(); }
+      break;
+    case '1':
+      if (e.shiftKey) { autoFit(); e.preventDefault(); }
+      break;
+  }
+});
+
+document.addEventListener('keyup', e => {
+  if (e.key === ' ') {
+    spacePressed = false;
+    canvas.classList.remove('spacepan');
+    if (!isDragging) canvas.style.cursor = 'grab';
+  }
+});
+
+// ─── 미니맵 클릭 → 즉시 이동 (n8n 패턴) ──────────
+const minimap = document.getElementById('minimap');
+minimap.addEventListener('click', e => {
+  if (nodes.length === 0) return;
+  const rect  = minimap.getBoundingClientRect();
+  const mx    = (e.clientX - rect.left) / rect.width;
+  const my    = (e.clientY - rect.top)  / rect.height;
+  const xs    = nodes.map(n => n.x), ys = nodes.map(n => n.y);
+  const minX  = Math.min(...xs), maxX = Math.max(...xs);
+  const minY  = Math.min(...ys), maxY = Math.max(...ys);
+  const rangeX = maxX - minX || 1, rangeY = maxY - minY || 1;
+  world.targetX = minX + mx * rangeX;
+  world.targetY = minY + my * rangeY;
+});
+
+// 미니맵 드래그 이동도 지원
+let minimapDragging = false;
+minimap.addEventListener('mousedown', e => { minimapDragging = true; minimap.click.call(minimap, e); });
+minimap.addEventListener('mousemove', e => {
+  if (!minimapDragging) return;
+  if (nodes.length === 0) return;
+  const rect  = minimap.getBoundingClientRect();
+  const mx    = Math.max(0, Math.min(1, (e.clientX - rect.left)  / rect.width));
+  const my    = Math.max(0, Math.min(1, (e.clientY - rect.top)   / rect.height));
+  const xs    = nodes.map(n => n.x), ys = nodes.map(n => n.y);
+  const minX  = Math.min(...xs), maxX = Math.max(...xs);
+  const minY  = Math.min(...ys), maxY = Math.max(...ys);
+  const rangeX = maxX - minX || 1, rangeY = maxY - minY || 1;
+  world.targetX = minX + mx * rangeX;
+  world.targetY = minY + my * rangeY;
+});
+document.addEventListener('mouseup', () => { minimapDragging = false; });
+
+// ─── 터치 (핀치 줌 + 패닝) ────────────────────────
 let lastTouchDist = 0;
+let lastTouchMid  = { x: 0, y: 0 };
 canvas.addEventListener('touchstart', e => {
   if (e.touches.length === 2) {
     lastTouchDist = Math.hypot(
       e.touches[0].clientX - e.touches[1].clientX,
       e.touches[0].clientY - e.touches[1].clientY
     );
+    lastTouchMid = {
+      x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+      y: (e.touches[0].clientY + e.touches[1].clientY) / 2,
+    };
   } else if (e.touches.length === 1) {
-    isDragging = true;
-    dragStart  = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-    camStart   = { x: world.targetX, y: world.targetY };
+    startPan(e.touches[0].clientX, e.touches[0].clientY, 0);
   }
-});
+}, { passive: true });
+
 canvas.addEventListener('touchmove', e => {
   e.preventDefault();
   if (e.touches.length === 2) {
@@ -911,16 +1244,29 @@ canvas.addEventListener('touchmove', e => {
       e.touches[0].clientX - e.touches[1].clientX,
       e.touches[0].clientY - e.touches[1].clientY
     );
-    world.targetScale = Math.max(0.003, Math.min(6, world.targetScale * (d / lastTouchDist)));
+    const mid = {
+      x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+      y: (e.touches[0].clientY + e.touches[1].clientY) / 2,
+    };
+    if (lastTouchDist > 0) {
+      const factor = d / lastTouchDist;
+      const wBefore = screenToWorld(mid.x, mid.y);
+      world.targetScale = Math.max(0.005, Math.min(8, world.targetScale * factor));
+      world.targetX = wBefore.x - (mid.x - canvas.width  / 2) / world.targetScale;
+      world.targetY = wBefore.y - (mid.y - canvas.height / 2) / world.targetScale;
+    }
+    // 투 핑거 패닝
+    const dmx = (mid.x - lastTouchMid.x) / world.scale;
+    const dmy = (mid.y - lastTouchMid.y) / world.scale;
+    world.targetX -= dmx;
+    world.targetY -= dmy;
     lastTouchDist = d;
+    lastTouchMid  = mid;
   } else if (e.touches.length === 1 && isDragging) {
-    const dx = (e.touches[0].clientX - dragStart.x) / world.scale;
-    const dy = (e.touches[0].clientY - dragStart.y) / world.scale;
-    world.targetX = camStart.x - dx;
-    world.targetY = camStart.y - dy;
+    doPan(e.touches[0].clientX, e.touches[0].clientY);
   }
 }, { passive: false });
-canvas.addEventListener('touchend', () => { isDragging = false; });
+canvas.addEventListener('touchend', () => endPan());
 
 // ─── 노드 줌인 ────────────────────────────────────
 function zoomIntoNode(n) {
@@ -945,6 +1291,103 @@ function autoFit() {
     canvas.height / (maxY - minY + 200),
     1.5
   );
+}
+
+// ─── 줌 컨트롤 버튼 ────────────────────────────────
+function zcZoomIn() {
+  const wCenter = screenToWorld(canvas.width / 2, canvas.height / 2);
+  world.targetScale = Math.min(8, world.targetScale * 1.25);
+  world.targetX = wCenter.x;
+  world.targetY = wCenter.y;
+}
+function zcZoomOut() {
+  const wCenter = screenToWorld(canvas.width / 2, canvas.height / 2);
+  world.targetScale = Math.max(0.005, world.targetScale * 0.8);
+  world.targetX = wCenter.x;
+  world.targetY = wCenter.y;
+}
+function zcReset() {
+  world.targetScale = 1.0;
+  world.targetX     = 0;
+  world.targetY     = 0;
+}
+
+// HUD 줌 % 업데이트 (frame loop에서 호출)
+function updateZoomControls() {
+  const el = document.getElementById('zc-level');
+  if (el) el.textContent = Math.round(world.scale * 100) + '%';
+}
+
+// ─── 단축키 힌트 토글 ──────────────────────────────
+let shortcutHintVisible = false;
+let shortcutHintTimer   = null;
+function toggleShortcutHint() {
+  shortcutHintVisible = !shortcutHintVisible;
+  const el = document.getElementById('shortcut-hint');
+  if (shortcutHintVisible) {
+    el.classList.add('show');
+    clearTimeout(shortcutHintTimer);
+    shortcutHintTimer = setTimeout(() => {
+      shortcutHintVisible = false;
+      el.classList.remove('show');
+    }, 6000);
+  } else {
+    el.classList.remove('show');
+  }
+}
+function hideShortcutHint() {
+  shortcutHintVisible = false;
+  document.getElementById('shortcut-hint').classList.remove('show');
+}
+
+// ─── 노드 검색 (Cmd+K) ─────────────────────────────
+function openNodeSearch() {
+  const input = document.getElementById('node-search');
+  input.classList.add('show');
+  input.value = '';
+  input.focus();
+  document.getElementById('search-results').classList.remove('show');
+}
+function closeNodeSearch() {
+  document.getElementById('node-search').classList.remove('show');
+  document.getElementById('search-results').classList.remove('show');
+}
+
+document.getElementById('node-search').addEventListener('input', e => {
+  const q = e.target.value.trim().toLowerCase();
+  const container = document.getElementById('search-results');
+  if (!q) { container.classList.remove('show'); return; }
+
+  const matches = nodes.filter(n =>
+    (n.label || '').toLowerCase().includes(q) ||
+    (n.type  || '').toLowerCase().includes(q) ||
+    (n.purposeLabel || '').toLowerCase().includes(q)
+  ).slice(0, 8);
+
+  if (matches.length === 0) { container.classList.remove('show'); return; }
+
+  container.innerHTML = matches.map(n => `
+    <div class="sr-item" onclick="focusNode('${n.id}')">
+      <span class="sr-type">${n.purposeIcon || ''} ${n.type || ''}</span>
+      <span>${n.label || n.id}</span>
+    </div>
+  `).join('');
+  container.classList.add('show');
+});
+
+document.getElementById('node-search').addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeNodeSearch();
+});
+
+function focusNode(nodeId) {
+  const n = nodes.find(x => x.id === nodeId);
+  if (!n) return;
+  world.targetX     = n.x;
+  world.targetY     = n.y;
+  world.targetScale = Math.max(world.scale, 1.2);
+  closeNodeSearch();
+  // 사이드 패널도 열기
+  openSidePanel(n);
 }
 
 // ─── Orbit 토글 ────────────────────────────────────
