@@ -1,0 +1,104 @@
+/**
+ * event-normalizer.test.js
+ * TDD: 훅 데이터 → 표준 이벤트 변환 테스트
+ */
+
+const { normalize, STRATEGY_MAP } = require('../../event-normalizer.js');
+
+const makeHook = (type, data = {}) => ({
+  hook: type,
+  session_id: 'sess_test',
+  ...data,
+});
+
+describe('normalize', () => {
+  test('UserPromptSubmit → user.message 이벤트', () => {
+    const hook = makeHook('UserPromptSubmit', { prompt: '안녕하세요' });
+    const event = normalize(hook);
+    expect(event.type).toBe('user.message');
+    expect(event.data.contentPreview).toBeDefined();
+  });
+
+  test('Stop → assistant.message 이벤트', () => {
+    const hook = makeHook('Stop', { last_assistant_message: '완료했습니다.' });
+    const event = normalize(hook);
+    expect(event.type).toBe('assistant.message');
+  });
+
+  test('PostToolUse (Read) → tool.end 이벤트', () => {
+    const hook = makeHook('PostToolUse', {
+      tool_name: 'Read',
+      tool_input: { file_path: '/src/server.js' },
+      tool_response: 'file content...',
+    });
+    const event = normalize(hook);
+    expect(event.type).toBe('tool.end');
+    expect(event.data.toolName).toBe('Read');
+  });
+
+  test('PostToolUse (Read) → files 배열에 파일 경로 포함', () => {
+    const hook = makeHook('PostToolUse', {
+      tool_name: 'Read',
+      tool_input: { file_path: '/src/db.js' },
+      tool_response: '',
+    });
+    const event = normalize(hook);
+    expect(event.data.files).toContain('/src/db.js');
+  });
+
+  test('SessionStart → session.start 이벤트', () => {
+    const hook = makeHook('SessionStart');
+    const event = normalize(hook);
+    expect(event.type).toBe('session.start');
+  });
+
+  test('SessionEnd → session.end 이벤트', () => {
+    const hook = makeHook('SessionEnd');
+    const event = normalize(hook);
+    expect(event.type).toBe('session.end');
+  });
+
+  test('SubagentStart → subagent.start 이벤트', () => {
+    const hook = makeHook('SubagentStart', { agent_type: 'Bash' });
+    const event = normalize(hook);
+    expect(event.type).toBe('subagent.start');
+  });
+
+  test('이벤트에 항상 id(ULID), timestamp, sessionId 존재', () => {
+    const hook = makeHook('UserPromptSubmit', { prompt: '테스트' });
+    const event = normalize(hook);
+    expect(event.id).toBeDefined();
+    expect(event.timestamp).toBeDefined();
+    expect(event.sessionId).toBe('sess_test');
+  });
+
+  test('알 수 없는 훅 타입 → null 반환 (무시)', () => {
+    const hook = makeHook('UnknownHookType');
+    const result = normalize(hook);
+    expect(result).toBeNull();
+  });
+
+  test('PostToolUse 오류 시 → tool.error 이벤트', () => {
+    const hook = makeHook('PostToolUse', {
+      tool_name: 'Bash',
+      tool_input: { command: 'rm -rf /' },
+      tool_response: 'Error: permission denied',
+      is_error: true,
+    });
+    const event = normalize(hook);
+    expect(event.type).toBe('tool.error');
+  });
+});
+
+describe('STRATEGY_MAP', () => {
+  test('9개 이상의 훅 타입 전략 존재', () => {
+    const keys = Object.keys(STRATEGY_MAP);
+    expect(keys.length).toBeGreaterThanOrEqual(9);
+  });
+
+  test('각 전략은 함수', () => {
+    Object.values(STRATEGY_MAP).forEach(strategy => {
+      expect(typeof strategy).toBe('function');
+    });
+  });
+});

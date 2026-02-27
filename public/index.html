@@ -342,6 +342,31 @@
 
     /* ctx-sep */
     .ctx-sep { height: 1px; margin: 3px 6px; background: var(--border); }
+
+    /* ── 게임 이펙트 배지 (활성 노드 수 표시) ── */
+    #fx-badge {
+      position: absolute; top: 10px; right: 10px;
+      background: rgba(255,107,53,0.15); border: 1px solid rgba(255,107,53,0.4);
+      border-radius: 20px; padding: 3px 10px;
+      font-size: 10px; color: #ff6b35; display: none;
+      animation: fx-badge-pulse 1.5s ease-in-out infinite;
+      z-index: 6; pointer-events: none;
+    }
+    #fx-badge.visible { display: block; }
+    @keyframes fx-badge-pulse {
+      0%,100% { opacity: 1; box-shadow: 0 0 8px rgba(255,107,53,0.3); }
+      50%      { opacity: 0.7; box-shadow: 0 0 16px rgba(255,107,53,0.6); }
+    }
+
+    /* 세션 ripple 오버레이 */
+    #session-ripple {
+      position: absolute; inset: 0; border-radius: 50%;
+      pointer-events: none; z-index: 3; display: none;
+    }
+    @keyframes ripple-out {
+      0%   { transform: scale(0); opacity: 0.6; }
+      100% { transform: scale(4); opacity: 0; }
+    }
   </style>
 </head>
 <body>
@@ -368,6 +393,8 @@
 
   <div id="graph-wrap">
     <div id="network"></div>
+    <!-- 게임 이펙트 오버레이 캔버스 (vis.js 위에 올라감) -->
+    <canvas id="fx-canvas" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:4;"></canvas>
     <div id="empty"><div class="ico">🧠</div><p>Claude Code와 대화하면 노드가 생성됩니다</p></div>
 
     <div id="toolbar">
@@ -377,6 +404,15 @@
         <button class="tb on" data-t="tool" onclick="togF(this)">⚡ 작업</button>
         <button class="tb on" data-t="file" onclick="togF(this)">📄 파일</button>
         <button class="tb on" data-t="subagent" onclick="togF(this)">🔀 하위작업</button>
+      </div>
+      <!-- 멀티 AI 소스 필터 -->
+      <div class="tbar" id="ai-filters" style="gap:1px">
+        <span style="font-size:9px;color:var(--text3);padding:0 4px;align-self:center">AI</span>
+        <button class="tb on" data-ai="claude"     onclick="togAI(this)" title="Claude">🟢</button>
+        <button class="tb on" data-ai="gemini"     onclick="togAI(this)" title="Gemini">🔵</button>
+        <button class="tb on" data-ai="perplexity" onclick="togAI(this)" title="Perplexity">🟣</button>
+        <button class="tb on" data-ai="openai"     onclick="togAI(this)" title="GPT-4">⚪</button>
+        <button class="tb on" data-ai="vscode"     onclick="togAI(this)" title="VS Code">🔴</button>
       </div>
       <div class="spacer"></div>
       <div class="tbar" id="zoom-ctrl" style="gap:1px;align-items:center">
@@ -590,6 +626,7 @@ let curGraph = { nodes: [], edges: [] };
 let sessions = [];
 let activeSession = null;
 let hidden = new Set();
+let hiddenAI = new Set();   // 숨긴 AI 소스 (멀티 AI 필터)
 let layoutMode = 'tree';
 let ctxNode = null;
 let savedPositions = {};
@@ -926,6 +963,45 @@ function nodeRenderer({ctx, id, x, y, state: {selected, hover}, style, label}) {
         ctx.textBaseline = 'bottom';
         ctx.fillText(et === 'user.message' ? '💬' : '🤖', L + W - 6*sc, TOP + H - 4*sc);
         ctx.globalAlpha = 1;
+      }
+
+      // ── AI 소스 배지 (Claude 외 AI는 우상단에 표시) ──
+      const aiSrc = data.aiSource;
+      const aiIcon = data.aiIcon;
+      const AI_BADGE_COLORS = {
+        gemini:     '#4285f4', perplexity: '#bc8cff',
+        openai:     '#8b949e', vscode:     '#f85149',
+      };
+      if (aiSrc && aiSrc !== 'claude' && AI_BADGE_COLORS[aiSrc]) {
+        const badgeR = 9 * sc;
+        const bx = L + W - badgeR - 4*sc;
+        const by = TOP - badgeR;
+        // 원형 배지 배경
+        ctx.beginPath();
+        ctx.arc(bx, by, badgeR, 0, Math.PI*2);
+        ctx.fillStyle = AI_BADGE_COLORS[aiSrc];
+        ctx.globalAlpha = 0.95;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        // AI 아이콘 텍스트
+        if (aiIcon) {
+          ctx.font = `${10*sc}px sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(aiIcon, bx, by);
+        }
+        // citations 있으면 추가 배지 (보라 점)
+        if (data.citations && data.citations.length > 0) {
+          ctx.beginPath();
+          ctx.arc(L + badgeR + 4*sc, TOP - badgeR, 6*sc, 0, Math.PI*2);
+          ctx.fillStyle = '#bc8cff';
+          ctx.fill();
+          ctx.font = `${7*sc}px 'Inter',sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillStyle = '#fff';
+          ctx.fillText(data.citations.length, L + badgeR + 4*sc, TOP - badgeR);
+        }
       }
 
       // Ports
@@ -1551,6 +1627,8 @@ function render(graph) {
 
   for (const n of graph.nodes) nMap[n.id] = n;
 
+  // 새로 추가된 노드 ID 추적 (파티클 버스트용)
+  const prevIds = new Set(VN.getIds());
   VN.clear(); VE.clear();
 
   VN.add(fNodes.map(n => {
@@ -1563,6 +1641,12 @@ function render(graph) {
     }
     return o;
   }));
+
+  // 새 노드 → 파티클 버스트 + 라이트닝 (레이아웃 후 위치 확정 대기)
+  const newNodeIds = fNodes.filter(n => !prevIds.has(n.id)).map(n => n.id);
+  if (newNodeIds.length > 0) {
+    setTimeout(() => FX.onNewNodes(newNodeIds, graph.edges), 350);
+  }
 
   VE.add(fEdges.map(e => ({
     id: e.id, from: e.from, to: e.to, dashes: e.dashes,
@@ -1591,7 +1675,18 @@ function isHidden(n) {
   if (hidden.has('tool') && (t.startsWith('tool.') || t === 'tool')) return true;
   if (hidden.has('file') && (t.startsWith('file.') || t === 'file')) return true;
   if (hidden.has('subagent') && t.startsWith('subagent.')) return true;
+  // 멀티 AI 필터: hiddenAI에 있는 소스 숨김
+  const src = n.aiSource || 'claude';
+  if (hiddenAI.has(src)) return true;
   return false;
+}
+
+// AI 소스 토글 필터
+function togAI(b) {
+  const ai = b.dataset.ai;
+  b.classList.toggle('on');
+  b.classList.contains('on') ? hiddenAI.delete(ai) : hiddenAI.add(ai);
+  render(curGraph);
 }
 
 // ═══════════════════════════════════════════════════
@@ -1601,6 +1696,7 @@ function updateScores(scores) {
   for (const [id, d] of Object.entries(scores)) {
     if (nMap[id]) nMap[id].activityScore = d.activityScore !== undefined ? d.activityScore : nMap[id].activityScore;
   }
+  FX.applyGlow(scores);
   net.redraw();
 }
 
@@ -1688,6 +1784,47 @@ function showDetail(n) {
     h += `<div class="edit-hint" style="margin-top:6px">✎ 커스텀 라벨 적용됨 — <a href="#" onclick="fetch('/api/user-labels/${esc(nodeId)}',{method:'DELETE'});return false" style="color:var(--accent);text-decoration:underline;font-size:9px">초기화</a></div>`;
   }
   h += `</div>`;
+
+  // ── 멀티 AI 정보 섹션 ──
+  if (n.aiSource && n.aiSource !== 'claude') {
+    const AI_META = {
+      gemini:     { label: 'Google Gemini', color: '#4285f4', icon: '🔵' },
+      perplexity: { label: 'Perplexity',    color: '#bc8cff', icon: '🟣' },
+      openai:     { label: 'OpenAI GPT',    color: '#8b949e', icon: '⚪' },
+      vscode:     { label: 'VS Code',       color: '#f85149', icon: '🔴' },
+    };
+    const meta = AI_META[n.aiSource] || { label: n.aiSource, color: '#8b949e', icon: '❓' };
+    const aiData = n.fullContent ? JSON.parse(n.fullContent.startsWith('{') ? n.fullContent : '{}') : {};
+    h += `<div class="dsec"><h4>AI 소스</h4>
+      <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;background:${meta.color}18;border:1px solid ${meta.color}33">
+        <span style="font-size:16px">${meta.icon}</span>
+        <div>
+          <div style="font-size:12px;font-weight:600;color:${meta.color}">${meta.label}</div>
+          ${n.aiLabel ? `<div style="font-size:10px;color:var(--text3)">${esc(n.aiLabel)}</div>` : ''}
+        </div>
+      </div>`;
+    // 토큰 정보
+    if (n.data?.tokenCount || n.fullContent?.includes('tokenCount')) {
+      h += `<div style="font-size:10px;color:var(--text3);margin-top:4px">토큰: ${n.data?.tokenCount || '?'}개</div>`;
+    }
+    // 모델 정보
+    if (n.data?.model) {
+      h += `<div style="font-size:10px;color:var(--text3)">모델: ${esc(n.data.model)}</div>`;
+    }
+    h += `</div>`;
+    // Citations (Perplexity)
+    if (n.citations && n.citations.length > 0) {
+      h += `<div class="dsec"><h4>출처 (${n.citations.length})</h4>`;
+      n.citations.slice(0, 5).forEach((url, i) => {
+        const domain = (() => { try { return new URL(url).hostname; } catch { return url; } })();
+        h += `<div style="font-size:10px;padding:3px 0;border-bottom:1px solid var(--border)">
+          <span style="color:var(--text3)">${i+1}.</span>
+          <a href="${esc(url)}" target="_blank" style="color:var(--blue);text-decoration:none;margin-left:4px">${esc(domain)}</a>
+        </div>`;
+      });
+      h += `</div>`;
+    }
+  }
 
   if (n.fullContent && n.fullContent.length > 2) h += `<div class="dsec"><h4>내용</h4><div class="dcont">${esc(n.fullContent).substring(0,3000).replace(/\n/g,'<br>')}</div></div>`;
   if (n.activityScore !== undefined) {
@@ -2190,6 +2327,237 @@ document.getElementById('sinput').addEventListener('input',e=>{clearTimeout(sT);
 // ═══════════════════════════════════════════════════
 // WEBSOCKET
 // ═══════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════
+// 🎮 GAME EFFECTS ENGINE
+// vis.js 위 Canvas 오버레이로 파티클/글로우/라이트닝 렌더링
+// ═══════════════════════════════════════════════════
+const FX = (() => {
+  const canvas = document.getElementById('fx-canvas');
+  const ctx = canvas.getContext('2d');
+  let particles = [];      // 활성 파티클 목록
+  let lightnings = [];     // 라이트닝 경로 목록
+  let ripples = [];        // ripple 원 목록
+  let rafId = null;
+  let glowMap = {};        // nodeId → { tier, cfg }
+
+  // 티어별 설정 (game-effects.js와 동일 값, 브라우저 인라인)
+  const TIERS = {
+    BLAZING: { glowColor:'#ff6b35', glowSize:28, borderWidth:8, sizeM:1.6, pulse:0.8, particles:60, particleColor:'#ff6b35', lightning:true,  ripple:true  },
+    HOT:     { glowColor:'#f778ba', glowSize:18, borderWidth:5, sizeM:1.4, pulse:1.4, particles:25, particleColor:'#f778ba', lightning:false, ripple:true  },
+    WARM:    { glowColor:'#58a6ff', glowSize:10, borderWidth:3, sizeM:1.15,pulse:2.5, particles:0,  particleColor:'#58a6ff', lightning:false, ripple:false },
+    COOL:    { glowColor:'#30363d', glowSize:0,  borderWidth:2, sizeM:1.0, pulse:0,   particles:0,  particleColor:'#30363d', lightning:false, ripple:false },
+  };
+
+  function classifyTier(score) {
+    if (score >= 0.8) return 'BLAZING';
+    if (score >= 0.5) return 'HOT';
+    if (score >= 0.2) return 'WARM';
+    return 'COOL';
+  }
+
+  // 캔버스 크기 동기화
+  function syncSize() {
+    const wrap = document.getElementById('graph-wrap');
+    canvas.width  = wrap.clientWidth;
+    canvas.height = wrap.clientHeight;
+  }
+  new ResizeObserver(syncSize).observe(document.getElementById('graph-wrap'));
+  syncSize();
+
+  // 노드 캔버스 좌표 가져오기 (vis.js DOM 좌표 변환)
+  function getNodeCanvasPos(nodeId) {
+    try {
+      const domPos = net.canvasToDOM(net.getPositions([nodeId])[nodeId]);
+      return domPos;
+    } catch { return null; }
+  }
+
+  // ── 파티클 버스트 생성 ──
+  function burst(x, y, tier) {
+    const cfg = TIERS[tier] || TIERS.COOL;
+    if (cfg.particles <= 0) return;
+    for (let i = 0; i < cfg.particles; i++) {
+      const angle = (Math.PI * 2 * i) / cfg.particles + Math.random() * 0.6;
+      const speed = 1.5 + Math.random() * 3.5;
+      particles.push({
+        x, y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        life: 1.0,
+        decay: 0.016 + Math.random() * 0.014,
+        color: cfg.particleColor,
+        radius: 1.5 + Math.random() * 2.5,
+      });
+    }
+    ensureLoop();
+  }
+
+  // ── 라이트닝 경로 생성 ──
+  function lightning(fromPos, toPos) {
+    const pts = [{ x: fromPos.x, y: fromPos.y }];
+    const dx = toPos.x - fromPos.x, dy = toPos.y - fromPos.y;
+    const len = Math.sqrt(dx*dx + dy*dy);
+    const segs = 8;
+    const perp = len * 0.22;
+    for (let i = 1; i < segs; i++) {
+      const t = i / segs;
+      const mx = fromPos.x + dx*t, my = fromPos.y + dy*t;
+      const off = (Math.random() - 0.5) * perp;
+      const nx = -dy/len, ny = dx/len;
+      pts.push({ x: mx + nx*off, y: my + ny*off });
+    }
+    pts.push({ x: toPos.x, y: toPos.y });
+    lightnings.push({ pts, life: 1.0, decay: 0.08, color: '#79c0ff' });
+    ensureLoop();
+  }
+
+  // ── ripple 원 생성 (세션 시작 등) ──
+  function ripple(x, y, color) {
+    ripples.push({ x, y, r: 0, maxR: 120, life: 1.0, decay: 0.025, color: color||'#8957e5' });
+    ensureLoop();
+  }
+
+  // ── 글로우 맵 업데이트 (updateScores에서 호출) ──
+  function applyGlow(scores) {
+    for (const [id, d] of Object.entries(scores)) {
+      const score = d.activityScore || 0;
+      const tier = classifyTier(score);
+      glowMap[id] = { tier, cfg: TIERS[tier], score };
+    }
+
+    // 활성 노드 배지 표시
+    const activeCount = Object.values(glowMap).filter(g => g.tier !== 'COOL').length;
+    const badge = document.getElementById('fx-badge');
+    if (badge) {
+      if (activeCount > 0) {
+        badge.textContent = `⚡ ${activeCount}개 활성`;
+        badge.classList.add('visible');
+      } else {
+        badge.classList.remove('visible');
+      }
+    }
+    ensureLoop();
+  }
+
+  // ── 새 노드 생성 이벤트 처리 ──
+  function onNewNodes(nodeIds, edges) {
+    for (const id of nodeIds) {
+      const pos = getNodeCanvasPos(id);
+      if (!pos) continue;
+      const node = nMap[id];
+      const type = node?.eventType || node?.type || '';
+      const score = node?.activityScore || 0.9;
+      const tier = classifyTier(score);
+
+      // 파티클 버스트
+      burst(pos.x, pos.y, tier);
+
+      // 세션 시작 → ripple
+      if (type === 'session.start') {
+        ripple(pos.x, pos.y, '#8957e5');
+      }
+    }
+
+    // 새 엣지 → 라이트닝 (BLAZING/HOT 노드 사이만)
+    for (const edge of (edges || [])) {
+      const fromPos = getNodeCanvasPos(edge.from);
+      const toPos   = getNodeCanvasPos(edge.to);
+      const fromTier = glowMap[edge.from]?.tier;
+      if (fromPos && toPos && (fromTier === 'BLAZING' || fromTier === 'HOT')) {
+        lightning(fromPos, toPos);
+      }
+    }
+  }
+
+  // ── 메인 렌더 루프 ──
+  function loop() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    let hasActive = false;
+
+    // 1. ripple 그리기
+    ripples = ripples.filter(r => r.life > 0);
+    for (const r of ripples) {
+      ctx.beginPath();
+      ctx.arc(r.x, r.y, r.r, 0, Math.PI*2);
+      ctx.strokeStyle = r.color + Math.round(r.life * 180).toString(16).padStart(2,'0');
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      r.r += 4; r.life -= r.decay;
+      hasActive = true;
+    }
+
+    // 2. 글로우 오라 그리기 (BLAZING/HOT)
+    for (const [id, g] of Object.entries(glowMap)) {
+      if (g.tier === 'COOL' || g.tier === 'WARM') continue;
+      const pos = getNodeCanvasPos(id);
+      if (!pos) continue;
+      const t = Date.now() / 1000;
+      const pulse = g.cfg.pulse > 0 ? 0.5 + 0.5 * Math.sin(t * Math.PI * 2 / g.cfg.pulse) : 1;
+      const glowR = g.cfg.glowSize * (0.8 + pulse * 0.4);
+      const grad = ctx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, glowR);
+      grad.addColorStop(0,   g.cfg.glowColor + 'cc');
+      grad.addColorStop(0.5, g.cfg.glowColor + '55');
+      grad.addColorStop(1,   g.cfg.glowColor + '00');
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, glowR, 0, Math.PI*2);
+      ctx.fillStyle = grad;
+      ctx.fill();
+      hasActive = true;
+    }
+
+    // 3. 라이트닝 그리기
+    lightnings = lightnings.filter(l => l.life > 0);
+    for (const l of lightnings) {
+      ctx.beginPath();
+      ctx.moveTo(l.pts[0].x, l.pts[0].y);
+      for (let i = 1; i < l.pts.length; i++) ctx.lineTo(l.pts[i].x, l.pts[i].y);
+      ctx.strokeStyle = l.color + Math.round(l.life * 200).toString(16).padStart(2,'0');
+      ctx.lineWidth = 1.5 + l.life;
+      ctx.shadowColor = l.color;
+      ctx.shadowBlur = 8;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      l.life -= l.decay;
+      hasActive = true;
+    }
+
+    // 4. 파티클 그리기
+    particles = particles.filter(p => p.life > 0);
+    for (const p of particles) {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.radius * p.life, 0, Math.PI*2);
+      ctx.fillStyle = p.color + Math.round(p.life * 220).toString(16).padStart(2,'0');
+      ctx.fill();
+      p.x += p.vx; p.y += p.vy;
+      p.vy += 0.05; // 중력
+      p.vx *= 0.96; p.vy *= 0.96;
+      p.life -= p.decay;
+      hasActive = true;
+    }
+
+    // 글로우 WARM 이상이면 계속 루프
+    const hasGlow = Object.values(glowMap).some(g => g.tier !== 'COOL');
+    if (hasActive || hasGlow) {
+      rafId = requestAnimationFrame(loop);
+    } else {
+      rafId = null;
+    }
+  }
+
+  function ensureLoop() {
+    if (!rafId) rafId = requestAnimationFrame(loop);
+  }
+
+  return { burst, lightning, ripple, applyGlow, onNewNodes, syncSize };
+})();
+
+// fx-badge 엘리먼트 추가
+(() => {
+  const badge = document.createElement('div');
+  badge.id = 'fx-badge';
+  document.getElementById('graph-wrap').appendChild(badge);
+})();
+
 const dot=document.getElementById('dot'),stxt=document.getElementById('st');
 let ws=null;
 function connect(){

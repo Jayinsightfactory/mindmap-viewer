@@ -382,8 +382,53 @@ function truncateObj(obj, maxLen) {
   }
 }
 
+// ─── STRATEGY_MAP (OCP: 훅 타입별 전략 함수) ───────────
+// 새 훅 타입 추가 시 이 맵에만 추가하면 됨 (switch 수정 불필요)
+const STRATEGY_MAP = {
+  SessionStart:      (hook) => ({ type: EventType.SESSION_START, data: { source: hook.source || 'startup', projectDir: hook.cwd || null } }),
+  SessionEnd:        (hook) => ({ type: EventType.SESSION_END,   data: {} }),
+  UserPromptSubmit:  (hook) => ({ type: EventType.USER_MESSAGE,  data: { contentPreview: (hook.prompt || '').substring(0, 200), content: (hook.prompt || '').substring(0, 8000) } }),
+  Stop:              (hook) => ({ type: EventType.ASSISTANT_MESSAGE, data: { contentPreview: (hook.last_assistant_message || '').substring(0, 200) } }),
+  SubagentStart:     (hook) => ({ type: EventType.SUBAGENT_START, data: { agentType: hook.agent_type || null } }),
+  SubagentStop:      (hook) => ({ type: EventType.SUBAGENT_STOP,  data: { agentType: hook.agent_type || null } }),
+  Notification:      (hook) => ({ type: EventType.NOTIFICATION,   data: { message: hook.message || '' } }),
+  TaskCompleted:     (hook) => ({ type: EventType.TASK_COMPLETE,  data: {} }),
+  PostToolUse: (hook) => {
+    const toolName = hook.tool_name || 'Unknown';
+    const toolInput = hook.tool_input || {};
+    const files = extractFiles(toolName, toolInput);
+    const isError = hook.is_error || (hook.tool_response && hook.tool_response.error);
+    return {
+      type: isError ? EventType.TOOL_ERROR : EventType.TOOL_END,
+      data: { toolName, files, inputPreview: summarizeToolInput(toolName, toolInput) },
+    };
+  },
+};
+
+// ─── 단순화된 normalize() — 테스트/외부용 ───────────────
+// sessionState 없이 hook 하나를 단일 이벤트로 변환
+// 알 수 없는 훅 타입 → null 반환
+function normalize(hook) {
+  const hookType = hook.hook || hook.hook_event_name;
+  const strategy = STRATEGY_MAP[hookType];
+  if (!strategy) return null;
+
+  const { ulid: makeId } = require('ulid');
+  const result = strategy(hook);
+  return {
+    id: makeId(),
+    type: result.type,
+    sessionId: hook.session_id || 'unknown',
+    parentEventId: null,
+    timestamp: new Date().toISOString(),
+    data: result.data,
+  };
+}
+
 module.exports = {
   EventType,
+  STRATEGY_MAP,
+  normalize,
   normalizeHookEvent,
   createAnnotationEvent,
   extractFiles,

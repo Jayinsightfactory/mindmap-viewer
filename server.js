@@ -13,6 +13,7 @@ const path = require('path');
 const { initDatabase, getAllEvents, getEventsBySession, searchEvents, getSessions, getFiles, getAnnotations, insertAnnotation, deleteAnnotation, insertEvent, rollbackToEvent, clearAll, getStats, getUserLabels, setUserLabel, deleteUserLabel, getUserCategories, upsertUserCategory, deleteUserCategory, getToolLabelMappings, setToolLabelMapping, deleteToolLabelMapping, getUserConfig } = require('./db');
 const { buildGraph, computeActivityScores, applyActivityVisualization, suggestLabel } = require('./graph-engine');
 const { createAnnotationEvent } = require('./event-normalizer');
+const { getAiStyle, AI_SOURCES } = require('./adapters/ai-adapter-base');
 
 const PORT = 4747;
 const CONV_FILE = path.join(__dirname, 'conversation.jsonl');
@@ -226,6 +227,63 @@ app.post('/api/annotations', (req, res) => {
 app.delete('/api/annotations/:id', (req, res) => {
   deleteAnnotation(req.params.id);
   res.json({ success: true });
+});
+
+// ─── 멀티 AI 이벤트 수신 API ─────────────────────────
+// Gemini, Perplexity, OpenAI, VSCode 어댑터가 여기로 POST
+// Body: normalizeAiEvent() 가 반환한 표준 이벤트 객체
+app.post('/api/ai-event', (req, res) => {
+  const event = req.body;
+
+  // 필수 필드 검증
+  if (!event || !event.id || !event.type || !event.aiSource) {
+    return res.status(400).json({ error: 'id, type, aiSource 필드 필요' });
+  }
+
+  // aiSource 유효성 (알 수 없는 AI도 허용, 스타일만 기본값)
+  const style = getAiStyle(event.aiSource);
+
+  // _style 힌트가 없으면 서버에서 보완
+  if (!event._style) {
+    event._style = {
+      color:      { background: style.color, border: style.borderColor,
+                    highlight: { background: style.color, border: style.borderColor } },
+      shape:      style.shape,
+      badgeBg:    style.badgeBg,
+      badgeColor: style.badgeColor,
+    };
+  }
+
+  // DB 저장을 위한 필드 보완
+  if (!event.source)    event.source    = 'ai-adapter';
+  if (!event.userId)    event.userId    = 'local';
+  if (!event.channelId) event.channelId = 'default';
+  if (!event.metadata)  event.metadata  = {};
+  event.metadata.aiSource = event.aiSource;
+  event.metadata.aiLabel  = event.data?.aiLabel || null;
+  event.metadata.model    = event.data?.model    || null;
+
+  // DB에 저장
+  try {
+    insertEvent(event);
+  } catch (e) {
+    console.warn('[ai-event] insert 경고:', e.message);
+  }
+
+  // 실시간 브로드캐스트
+  const graph = getFullGraph(null);
+  broadcast({ type: 'update', graph, sessions: getSessions(), stats: getStats() });
+
+  res.json({ success: true, id: event.id, aiSource: event.aiSource, style });
+});
+
+// AI 소스 목록 + 스타일 조회 (프론트엔드 필터 UI용)
+app.get('/api/ai-sources', (req, res) => {
+  const sources = Object.values(AI_SOURCES).map(src => ({
+    id:    src,
+    style: getAiStyle(src),
+  }));
+  res.json(sources);
 });
 
 // ─── 사용자 커스터마이징 API ──────────────────────────

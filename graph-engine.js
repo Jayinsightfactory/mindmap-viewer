@@ -24,6 +24,16 @@ const NODE_STYLES = {
 
 const DEFAULT_STYLE = { shape: 'dot', color: '#8b949e', icon: '?', label: 'Event' };
 
+// ─── AI 소스별 스타일 오버라이드 (멀티 AI 지원) ────────
+// ai-adapter-base 와 동일 값 인라인 (서버 의존 없이 독립 동작)
+const AI_SOURCE_STYLES = {
+  claude:     { color: '#3fb950', shape: 'box',     borderColor: '#2ea043', icon: '🟢' },
+  gemini:     { color: '#4285f4', shape: 'diamond', borderColor: '#2b6bd6', icon: '🔵' },
+  perplexity: { color: '#bc8cff', shape: 'hexagon', borderColor: '#a070e0', icon: '🟣' },
+  openai:     { color: '#8b949e', shape: 'box',     borderColor: '#6e7681', icon: '⚪' },
+  vscode:     { color: '#f85149', shape: 'ellipse', borderColor: '#da3633', icon: '🔴' },
+};
+
 // ─── 이벤트 → 그래프 빌드 ──────────────────────────
 function buildGraph(events) {
   const nodes = [];
@@ -38,19 +48,37 @@ function buildGraph(events) {
     // 노드 라벨 생성
     const label = buildLabel(event);
 
+    // ── AI 소스별 스타일 오버라이드 ──
+    // event._style (어댑터 주입) > AI_SOURCE_STYLES > 기본 NODE_STYLES
+    const aiSrc = event.aiSource;
+    const aiOverride = event._style || (aiSrc && AI_SOURCE_STYLES[aiSrc]
+      ? {
+          color: {
+            background: AI_SOURCE_STYLES[aiSrc].color,
+            border:     AI_SOURCE_STYLES[aiSrc].borderColor,
+            highlight:  { background: lighten(AI_SOURCE_STYLES[aiSrc].color), border: AI_SOURCE_STYLES[aiSrc].borderColor },
+            hover:      { background: lighten(AI_SOURCE_STYLES[aiSrc].color), border: AI_SOURCE_STYLES[aiSrc].borderColor },
+          },
+          shape: AI_SOURCE_STYLES[aiSrc].shape,
+        }
+      : null);
+
+    const nodeColor = aiOverride?.color || {
+      background: style.color,
+      border: style.color,
+      highlight: { background: lighten(style.color), border: style.color },
+      hover: { background: lighten(style.color), border: style.color },
+    };
+    const nodeShape = aiOverride?.shape || style.shape;
+
     const node = {
       id: nodeId,
       eventId: event.id,
       type: event.type,
       label,
       fullContent: event.data.content || event.data.inputPreview || JSON.stringify(event.data),
-      shape: style.shape,
-      color: {
-        background: style.color,
-        border: style.color,
-        highlight: { background: lighten(style.color), border: style.color },
-        hover: { background: lighten(style.color), border: style.color },
-      },
+      shape: nodeShape,
+      color: nodeColor,
       font: { color: '#ffffff', size: 13, face: 'Inter, Pretendard, sans-serif', bold: { color: '#ffffff' } },
       size: getNodeSize(event),
       level: getNodeLevel(event),
@@ -65,6 +93,11 @@ function buildGraph(events) {
       sessionId: event.sessionId,
       eventType: event.type,
       timestamp: event.timestamp,
+      // 멀티 AI 메타
+      aiSource:   aiSrc || 'claude',
+      aiIcon:     (aiSrc && AI_SOURCE_STYLES[aiSrc]?.icon) || event.data?.aiIcon || null,
+      aiLabel:    event.data?.aiLabel || null,
+      citations:  event.data?.citations || null,
     };
 
     nodes.push(node);
