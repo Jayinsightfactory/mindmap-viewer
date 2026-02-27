@@ -10,7 +10,9 @@ const chokidar = require('chokidar');
 const fs = require('fs');
 const path = require('path');
 
-const { initDatabase, getAllEvents, getEventsBySession, searchEvents, getSessions, getFiles, getAnnotations, insertAnnotation, deleteAnnotation, insertEvent, rollbackToEvent, clearAll, getStats, getUserLabels, setUserLabel, deleteUserLabel, getUserCategories, upsertUserCategory, deleteUserCategory, getToolLabelMappings, setToolLabelMapping, deleteToolLabelMapping, getUserConfig } = require('./src/db');
+// DATABASE_URL 있으면 PostgreSQL, 없으면 SQLite 자동 선택
+const dbModule = process.env.DATABASE_URL ? require('./src/db-pg') : require('./src/db');
+const { initDatabase, getAllEvents, getEventsBySession, searchEvents, getSessions, getFiles, getAnnotations, insertAnnotation, deleteAnnotation, insertEvent, rollbackToEvent, clearAll, getStats, getUserLabels, setUserLabel, deleteUserLabel, getUserCategories, upsertUserCategory, deleteUserCategory, getToolLabelMappings, setToolLabelMapping, deleteToolLabelMapping, getUserConfig } = dbModule;
 const { buildGraph, computeActivityScores, applyActivityVisualization, suggestLabel } = require('./src/graph-engine');
 const { createAnnotationEvent } = require('./src/event-normalizer');
 const { getAiStyle, AI_SOURCES } = require('./adapters/ai-adapter-base');

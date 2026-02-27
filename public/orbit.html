@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Orbit — AI 행성계</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #060a10; --bg2: #0d1117; --bg3: #161b22;
+      --text: #f0f6fc; --text2: #c9d1d9; --text3: #8b949e;
+      --blue: #58a6ff; --green: #3fb950; --purple: #bc8cff;
+      --orange: #ffa657; --cyan: #39d2c0; --pink: #f778ba;
+      --accent: #8957e5;
+    }
+
+    body {
+      background: var(--bg); color: var(--text);
+      font-family: 'Inter', sans-serif;
+      overflow: hidden; width: 100vw; height: 100vh;
+    }
+
+    /* ── CANVAS ── */
+    #orbit-canvas {
+      position: fixed; inset: 0;
+      width: 100%; height: 100%;
+      cursor: grab;
+    }
+    #orbit-canvas:active { cursor: grabbing; }
+
+    /* ── HUD ── */
+    #hud {
+      position: fixed; top: 0; left: 0; right: 0;
+      display: flex; align-items: center; gap: 12px; padding: 0 16px; height: 48px;
+      background: rgba(13,17,23,0.85); backdrop-filter: blur(12px);
+      border-bottom: 1px solid rgba(48,54,61,0.5); z-index: 100;
+    }
+    .logo { font-size: 13px; font-weight: 700; color: var(--text); }
+    .logo span { color: var(--accent); }
+
+    .zoom-badge {
+      font-size: 11px; color: var(--text3); background: rgba(33,38,45,0.9);
+      padding: 3px 8px; border-radius: 12px; border: 1px solid rgba(48,54,61,0.6);
+      min-width: 80px; text-align: center;
+    }
+    .zoom-badge b { color: var(--text); }
+
+    .level-badge {
+      font-size: 10px; font-weight: 600; padding: 3px 8px; border-radius: 12px;
+      border: 1px solid; transition: all 0.3s;
+    }
+
+    .live-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--green); box-shadow: 0 0 6px rgba(63,185,80,0.7);
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+    .hud-right { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+    .hud-btn {
+      padding: 4px 10px; border-radius: 6px; border: 1px solid rgba(48,54,61,0.8);
+      background: rgba(33,38,45,0.9); color: var(--text2); font-size: 11px;
+      cursor: pointer; transition: all 0.15s; font-family: inherit;
+    }
+    .hud-btn:hover { border-color: var(--accent); color: var(--text); }
+    .hud-btn.active { border-color: var(--accent); color: var(--accent); background: rgba(137,87,229,0.12); }
+
+    /* ── NODE TOOLTIP ── */
+    #tooltip {
+      position: fixed; padding: 8px 12px; border-radius: 8px;
+      background: rgba(22,27,34,0.95); border: 1px solid rgba(48,54,61,0.8);
+      backdrop-filter: blur(8px); font-size: 12px; pointer-events: none;
+      opacity: 0; transition: opacity 0.15s; z-index: 200;
+      max-width: 240px;
+    }
+    #tooltip.show { opacity: 1; }
+    #tooltip .tt-type { font-size: 10px; color: var(--text3); margin-bottom: 4px; }
+    #tooltip .tt-label { font-weight: 600; color: var(--text); }
+    #tooltip .tt-meta { font-size: 10px; color: var(--text3); margin-top: 4px; }
+
+    /* ── MINIMAP ── */
+    #minimap {
+      position: fixed; bottom: 16px; right: 16px;
+      width: 140px; height: 90px; border-radius: 8px;
+      background: rgba(13,17,23,0.9); border: 1px solid rgba(48,54,61,0.6);
+      overflow: hidden;
+    }
+    #minimap canvas { width: 100%; height: 100%; }
+
+    /* ── ZOOM HINT ── */
+    #zoom-hint {
+      position: fixed; bottom: 120px; right: 16px;
+      font-size: 10px; color: var(--text3); text-align: right;
+      line-height: 1.8;
+    }
+    #zoom-hint span { display: block; }
+    #zoom-hint span.active { color: var(--accent); font-weight: 600; }
+
+    /* ── BACK BTN ── */
+    #back-btn {
+      position: fixed; top: 60px; left: 16px;
+      padding: 6px 12px; border-radius: 6px;
+      background: rgba(22,27,34,0.95); border: 1px solid rgba(48,54,61,0.8);
+      color: var(--text2); font-size: 12px; cursor: pointer; font-family: inherit;
+      display: none; z-index: 100; transition: all 0.15s;
+    }
+    #back-btn:hover { border-color: var(--accent); color: var(--text); }
+  </style>
+</head>
+<body>
+
+<!-- HUD -->
+<div id="hud">
+  <span class="logo">🌌 <span>Orbit</span></span>
+  <div class="live-dot" id="live-dot"></div>
+  <div class="zoom-badge">Scale: <b id="scale-val">1.0x</b></div>
+  <div class="level-badge" id="level-badge" style="color:var(--cyan);border-color:var(--cyan)">
+    🌍 개인 세션
+  </div>
+  <div class="hud-right">
+    <button class="hud-btn" onclick="autoFit()">자동 맞춤</button>
+    <button class="hud-btn" id="orbit-toggle" onclick="toggleOrbit()">🔄 Orbit 모드</button>
+    <a href="/" style="text-decoration:none"><button class="hud-btn">← 기존 맵</button></a>
+  </div>
+</div>
+
+<!-- CANVAS -->
+<canvas id="orbit-canvas"></canvas>
+
+<!-- TOOLTIP -->
+<div id="tooltip">
+  <div class="tt-type" id="tt-type"></div>
+  <div class="tt-label" id="tt-label"></div>
+  <div class="tt-meta" id="tt-meta"></div>
+</div>
+
+<!-- BACK -->
+<button id="back-btn" onclick="zoomOut()">← 뒤로</button>
+
+<!-- MINIMAP -->
+<div id="minimap"><canvas id="mini-canvas"></canvas></div>
+
+<!-- ZOOM HINT -->
+<div id="zoom-hint">
+  <span id="hint-6">🌌 연합 (Federation)</span>
+  <span id="hint-5">🏢 조직 (Org)</span>
+  <span id="hint-4">👥 팀 (Team)</span>
+  <span id="hint-3">🧑 멤버 (Member)</span>
+  <span id="hint-2">📁 프로젝트 (Project)</span>
+  <span id="hint-1">💬 세션 (Session)</span>
+  <span id="hint-0" class="active">🌍 개인 작업</span>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════
+// ORBIT CANVAS ENGINE
+// 행성계 메타포: 줌 레벨 0-6
+// 0: 개인 작업 (task/tool), 1: 세션, 2: 프로젝트
+// 3: 멤버, 4: 팀, 5: 조직, 6: 연합
+// ═══════════════════════════════════════════════════
+
+const canvas = document.getElementById('orbit-canvas');
+const ctx    = canvas.getContext('2d');
+
+// ── 월드 상태 ──
+let world = {
+  x: 0, y: 0,       // 카메라 위치 (월드 좌표)
+  scale: 1.0,        // 줌
+  targetX: 0, targetY: 0, targetScale: 1.0,  // 부드러운 애니메이션 타겟
+};
+
+let nodes   = [];   // 렌더링할 노드 목록
+let orbitOn = true; // 공전 애니메이션
+let raf     = null;
+let hoverId = null;
+let t       = 0;    // 시간 (공전용)
+
+// ── 레벨 정의 ──
+const LEVELS = [
+  { id: 0, name: '개인 작업', emoji: '🌍', color: '#39d2c0', scaleMin: 0.8 },
+  { id: 1, name: '세션',     emoji: '💬', color: '#58a6ff', scaleMin: 0.3 },
+  { id: 2, name: '프로젝트', emoji: '📁', color: '#3fb950', scaleMin: 0.1 },
+  { id: 3, name: '멤버',     emoji: '🧑', color: '#bc8cff', scaleMin: 0.04 },
+  { id: 4, name: '팀',       emoji: '👥', color: '#ffa657', scaleMin: 0.015 },
+  { id: 5, name: '조직',     emoji: '🏢', color: '#f778ba', scaleMin: 0.005 },
+  { id: 6, name: '연합',     emoji: '🌌', color: '#8957e5', scaleMin: 0 },
+];
+
+function getCurrentLevel() {
+  const s = world.scale;
+  for (let i = LEVELS.length - 1; i >= 0; i--) {
+    if (s >= LEVELS[i].scaleMin) return LEVELS[i];
+  }
+  return LEVELS[0];
+}
+
+// ── 노드 색상 ──
+const TYPE_COLORS = {
+  'user.message':      '#58a6ff',
+  'assistant.message': '#3fb950',
+  'tool.end':          '#bc8cff',
+  'tool.start':        '#8957e5',
+  'session.start':     '#39d2c0',
+  'session.end':       '#f85149',
+  'file.read':         '#ffa657',
+  'file.write':        '#e3b341',
+  'default':           '#8b949e',
+};
+
+function nodeColor(n) {
+  return TYPE_COLORS[n.type] || TYPE_COLORS.default;
+}
+
+// ── 노드 반지름 ──
+function nodeRadius(n) {
+  const base = n.level === 0 ? 18 :
+               n.level === 1 ? 30 :
+               n.level === 2 ? 50 : 70;
+  return base * (n.weight || 1);
+}
+
+// ── 캔버스 리사이즈 ──
+function resize() {
+  canvas.width  = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ── 월드 → 화면 변환 ──
+function worldToScreen(wx, wy) {
+  const cx = canvas.width  / 2;
+  const cy = canvas.height / 2;
+  return {
+    x: (wx - world.x) * world.scale + cx,
+    y: (wy - world.y) * world.scale + cy,
+  };
+}
+function screenToWorld(sx, sy) {
+  const cx = canvas.width  / 2;
+  const cy = canvas.height / 2;
+  return {
+    x: (sx - cx) / world.scale + world.x,
+    y: (sy - cy) / world.scale + world.y,
+  };
+}
+
+// ── 배경 별 ──
+const STARS = Array.from({length: 200}, () => ({
+  x: (Math.random() - 0.5) * 8000,
+  y: (Math.random() - 0.5) * 8000,
+  r: Math.random() * 1.2 + 0.3,
+  brightness: Math.random(),
+}));
+
+function drawStars() {
+  for (const s of STARS) {
+    const p = worldToScreen(s.x, s.y);
+    // 별은 느리게 이동 (시차 효과)
+    const px = p.x * 0.05 + canvas.width  * 0.475;
+    const py = p.y * 0.05 + canvas.height * 0.475;
+    const alpha = 0.3 + s.brightness * 0.5;
+    ctx.beginPath();
+    ctx.arc(px, py, s.r, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(200,220,255,${alpha})`;
+    ctx.fill();
+  }
+}
+
+// ── 궤도 링 그리기 ──
+function drawOrbitRing(cx, cy, r, color, alpha = 0.15) {
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.strokeStyle = `rgba(${hexToRgb(color)},${alpha})`;
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 8]);
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+// ── 노드 그리기 ──
+function drawNode(n, isHover) {
+  const p  = worldToScreen(n.x, n.y);
+  const r  = nodeRadius(n) * world.scale;
+  if (r < 1.5) return; // 너무 작으면 스킵
+
+  const color = nodeColor(n);
+  const glow  = isHover ? 0.8 : 0.4;
+
+  // 글로우
+  if (r > 4) {
+    const grad = ctx.createRadialGradient(p.x, p.y, r * 0.5, p.x, p.y, r * 2.5);
+    grad.addColorStop(0, `rgba(${hexToRgb(color)},${glow * 0.3})`);
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, r * 2.5, 0, Math.PI * 2);
+    ctx.fillStyle = grad;
+    ctx.fill();
+  }
+
+  // 본체
+  const body = ctx.createRadialGradient(p.x - r*0.3, p.y - r*0.3, r*0.1, p.x, p.y, r);
+  body.addColorStop(0, lighten(color, 40));
+  body.addColorStop(0.6, color);
+  body.addColorStop(1, darken(color, 30));
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+  ctx.fillStyle = body;
+  ctx.fill();
+
+  // 테두리
+  ctx.strokeStyle = isHover ? '#fff' : `rgba(${hexToRgb(color)},0.6)`;
+  ctx.lineWidth   = isHover ? 2 : 1;
+  ctx.stroke();
+
+  // 라벨 (일정 크기 이상일 때만)
+  if (r > 12) {
+    ctx.fillStyle   = 'rgba(255,255,255,0.9)';
+    ctx.font        = `${Math.min(r * 0.5, 13)}px Inter`;
+    ctx.textAlign   = 'center';
+    ctx.textBaseline = 'middle';
+    const label = n.label || n.type || '';
+    const maxLen = Math.floor(r / 4);
+    ctx.fillText(label.slice(0, maxLen + 3) + (label.length > maxLen + 3 ? '…' : ''), p.x, p.y);
+  }
+}
+
+// ── 엣지 그리기 ──
+function drawEdge(from, to) {
+  const fp = worldToScreen(from.x, from.y);
+  const tp = worldToScreen(to.x,   to.y);
+  const dist = Math.hypot(tp.x - fp.x, tp.y - fp.y);
+  if (dist < 3) return;
+
+  ctx.beginPath();
+  ctx.moveTo(fp.x, fp.y);
+
+  // 곡선
+  const mx = (fp.x + tp.x) / 2 + (tp.y - fp.y) * 0.15;
+  const my = (fp.y + tp.y) / 2 - (tp.x - fp.x) * 0.15;
+  ctx.quadraticCurveTo(mx, my, tp.x, tp.y);
+
+  ctx.strokeStyle = 'rgba(139,148,158,0.25)';
+  ctx.lineWidth   = Math.max(0.5, world.scale * 0.8);
+  ctx.stroke();
+}
+
+// ── 공전 위치 업데이트 ──
+function updateOrbits(dt) {
+  if (!orbitOn) return;
+  t += dt * 0.0003;
+  for (const n of nodes) {
+    if (n.orbitRadius && n.orbitParent) {
+      const parent = nodes.find(p => p.id === n.orbitParent);
+      if (parent) {
+        const angle = n.orbitAngle + t * n.orbitSpeed;
+        n.x = parent.x + Math.cos(angle) * n.orbitRadius;
+        n.y = parent.y + Math.sin(angle) * n.orbitRadius;
+      }
+    }
+  }
+}
+
+// ── 레벨 기반 가시성 ──
+function isVisible(n) {
+  const level = getCurrentLevel();
+  // 현재 레벨 이하의 노드만 표시
+  return (n.level === undefined || n.level <= level.id + 1);
+}
+
+// ── 메인 렌더 루프 ──
+let lastTime = 0;
+function frame(time) {
+  const dt = time - lastTime;
+  lastTime = time;
+
+  // 부드러운 카메라 이동
+  world.x     += (world.targetX     - world.x)     * 0.08;
+  world.y     += (world.targetY     - world.y)     * 0.08;
+  world.scale += (world.targetScale - world.scale) * 0.1;
+
+  updateOrbits(dt);
+
+  // 배경
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#060a10';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  drawStars();
+
+  // 줌 레벨에 따른 성운 효과
+  drawNebula();
+
+  // 궤도 링
+  for (const n of nodes) {
+    if (!isVisible(n)) continue;
+    if (n.orbitRadius && n.orbitParent) {
+      const parent = nodes.find(p => p.id === n.orbitParent);
+      if (parent) {
+        const pp = worldToScreen(parent.x, parent.y);
+        drawOrbitRing(pp.x, pp.y, n.orbitRadius * world.scale, nodeColor(n));
+      }
+    }
+  }
+
+  // 엣지
+  const edgeMap = buildEdgeMap();
+  for (const [fromId, toId] of edgeMap) {
+    const from = nodes.find(n => n.id === fromId);
+    const to   = nodes.find(n => n.id === toId);
+    if (from && to && isVisible(from) && isVisible(to)) {
+      drawEdge(from, to);
+    }
+  }
+
+  // 노드
+  for (const n of nodes) {
+    if (!isVisible(n)) continue;
+    drawNode(n, hoverId === n.id);
+  }
+
+  updateHUD();
+  drawMinimap();
+
+  raf = requestAnimationFrame(frame);
+}
+
+function drawNebula() {
+  const level = getCurrentLevel();
+  const alpha = Math.max(0, 0.04 - world.scale * 0.02);
+  if (alpha < 0.001) return;
+
+  const cx = canvas.width / 2, cy = canvas.height / 2;
+  const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(canvas.width, canvas.height) * 0.8);
+  grad.addColorStop(0, `rgba(${hexToRgb(level.color)},${alpha})`);
+  grad.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+}
+
+let edgeList = [];
+function buildEdgeMap() { return edgeList; }
+
+// ── HUD 업데이트 ──
+function updateHUD() {
+  document.getElementById('scale-val').textContent = world.scale.toFixed(2) + 'x';
+
+  const level = getCurrentLevel();
+  const badge = document.getElementById('level-badge');
+  badge.textContent = `${level.emoji} ${level.name}`;
+  badge.style.color = level.color;
+  badge.style.borderColor = level.color;
+
+  // 줌 힌트 하이라이트
+  for (const l of LEVELS) {
+    const el = document.getElementById(`hint-${l.id}`);
+    if (el) el.className = l.id === level.id ? 'active' : '';
+  }
+
+  // 뒤로가기 버튼
+  document.getElementById('back-btn').style.display = world.scale < 0.5 ? 'block' : 'none';
+}
+
+// ── 미니맵 ──
+function drawMinimap() {
+  const mc  = document.getElementById('mini-canvas');
+  const mctx = mc.getContext('2d');
+  mc.width  = 140; mc.height = 90;
+
+  mctx.fillStyle = '#060a10';
+  mctx.fillRect(0, 0, 140, 90);
+
+  // 모든 노드를 미니맵 좌표로
+  if (nodes.length === 0) return;
+  const xs = nodes.map(n => n.x), ys = nodes.map(n => n.y);
+  const minX = Math.min(...xs), maxX = Math.max(...xs);
+  const minY = Math.min(...ys), maxY = Math.max(...ys);
+  const rangeX = maxX - minX || 1, rangeY = maxY - minY || 1;
+
+  for (const n of nodes) {
+    const mx = ((n.x - minX) / rangeX) * 130 + 5;
+    const my = ((n.y - minY) / rangeY) * 80  + 5;
+    mctx.beginPath();
+    mctx.arc(mx, my, 1.5, 0, Math.PI * 2);
+    mctx.fillStyle = nodeColor(n);
+    mctx.fill();
+  }
+
+  // 뷰포트 사각형
+  const vpW = (canvas.width  / world.scale / rangeX) * 130;
+  const vpH = (canvas.height / world.scale / rangeY) * 80;
+  const vpX = ((world.x - canvas.width  / 2 / world.scale - minX) / rangeX) * 130 + 5;
+  const vpY = ((world.y - canvas.height / 2 / world.scale - minY) / rangeY) * 80  + 5;
+  mctx.strokeStyle = 'rgba(137,87,229,0.7)';
+  mctx.lineWidth = 1;
+  mctx.strokeRect(vpX, vpY, vpW, vpH);
+}
+
+// ═══════════════════════════════════════════════════
+// 데이터 로드 및 레이아웃
+// ═══════════════════════════════════════════════════
+function layoutPlanetSystem(graph) {
+  nodes = [];
+  edgeList = [];
+
+  const sessionMap = {};
+  // 세션별로 그룹화
+  for (const e of graph.nodes) {
+    const sid = e.sessionId || 'default';
+    if (!sessionMap[sid]) sessionMap[sid] = [];
+    sessionMap[sid].push(e);
+  }
+
+  const sessionIds = Object.keys(sessionMap);
+  const SESSION_ORBIT_R = 300;
+
+  sessionIds.forEach((sid, si) => {
+    const sessionAngle = (si / sessionIds.length) * Math.PI * 2;
+    // 세션 행성 (레벨 1)
+    const sx = Math.cos(sessionAngle) * SESSION_ORBIT_R;
+    const sy = Math.sin(sessionAngle) * SESSION_ORBIT_R;
+
+    const sessionNode = {
+      id: 'session_' + sid,
+      x: sx, y: sy,
+      type: 'session.start',
+      label: `세션 ${si + 1}`,
+      level: 1,
+      weight: 1.2,
+      orbitRadius: SESSION_ORBIT_R,
+      orbitAngle: sessionAngle,
+      orbitParent: 'center',
+      orbitSpeed: 0.05 + si * 0.01,
+    };
+    nodes.push(sessionNode);
+
+    // 세션 내 이벤트들을 위성으로
+    const evts = sessionMap[sid];
+    const CHILD_ORBIT_R = 80 + evts.length * 5;
+    evts.forEach((evt, ei) => {
+      const childAngle = (ei / evts.length) * Math.PI * 2;
+      nodes.push({
+        id: evt.id,
+        x: sx + Math.cos(childAngle) * CHILD_ORBIT_R,
+        y: sy + Math.sin(childAngle) * CHILD_ORBIT_R,
+        type: evt.type,
+        label: getLabel(evt),
+        level: 0,
+        weight: getWeight(evt),
+        orbitRadius: CHILD_ORBIT_R,
+        orbitAngle: childAngle,
+        orbitParent: sessionNode.id,
+        orbitSpeed: 0.1 + ei * 0.005,
+        raw: evt,
+      });
+      edgeList.push([sessionNode.id, evt.id]);
+    });
+  });
+
+  // 중심 노드
+  nodes.unshift({
+    id: 'center',
+    x: 0, y: 0,
+    type: 'system',
+    label: 'AI Orbit',
+    level: 2,
+    weight: 1.5,
+  });
+}
+
+function getLabel(evt) {
+  if (!evt.data) return evt.type;
+  if (evt.data.toolName) return evt.data.toolName;
+  if (evt.data.contentPreview) return evt.data.contentPreview.slice(0, 20);
+  return evt.type.split('.').pop();
+}
+
+function getWeight(evt) {
+  const weights = { 'tool.end': 1.0, 'user.message': 0.8, 'assistant.message': 0.9 };
+  return weights[evt.type] || 0.6;
+}
+
+async function loadData() {
+  try {
+    const res = await fetch('/api/graph');
+    const graph = await res.json();
+    layoutPlanetSystem(graph);
+    document.getElementById('live-dot').classList.add('on');
+  } catch (e) {
+    console.warn('API 연결 실패, 데모 데이터 사용:', e.message);
+    loadDemoData();
+  }
+}
+
+function loadDemoData() {
+  const demoGraph = { nodes: [], edges: [] };
+  const sessions  = ['s1', 's2', 's3'];
+  const types = ['user.message', 'assistant.message', 'tool.end', 'file.write', 'file.read'];
+  let id = 1;
+  for (const s of sessions) {
+    const count = 5 + Math.floor(Math.random() * 8);
+    for (let i = 0; i < count; i++) {
+      demoGraph.nodes.push({
+        id: `node-${id++}`,
+        sessionId: s,
+        type: types[Math.floor(Math.random() * types.length)],
+        data: { toolName: ['Read', 'Write', 'Bash', 'Edit'][Math.floor(Math.random() * 4)] },
+      });
+    }
+  }
+  layoutPlanetSystem(demoGraph);
+}
+
+// ═══════════════════════════════════════════════════
+// 인터랙션
+// ═══════════════════════════════════════════════════
+let isDragging = false, dragStart = { x: 0, y: 0 }, camStart = { x: 0, y: 0 };
+
+canvas.addEventListener('mousedown', e => {
+  isDragging = true;
+  dragStart = { x: e.clientX, y: e.clientY };
+  camStart  = { x: world.targetX, y: world.targetY };
+});
+
+canvas.addEventListener('mousemove', e => {
+  if (isDragging) {
+    const dx = (e.clientX - dragStart.x) / world.scale;
+    const dy = (e.clientY - dragStart.y) / world.scale;
+    world.targetX = camStart.x - dx;
+    world.targetY = camStart.y - dy;
+    return;
+  }
+
+  // 호버
+  const wPos = screenToWorld(e.clientX, e.clientY);
+  let found = null;
+  for (const n of nodes) {
+    if (!isVisible(n)) continue;
+    const r = nodeRadius(n);
+    if (Math.hypot(n.x - wPos.x, n.y - wPos.y) < r) {
+      found = n; break;
+    }
+  }
+
+  if (found && found.id !== hoverId) {
+    hoverId = found.id;
+    showTooltip(found, e.clientX, e.clientY);
+  } else if (!found) {
+    hoverId = null;
+    hideTooltip();
+  }
+});
+
+canvas.addEventListener('mouseup', () => { isDragging = false; });
+canvas.addEventListener('mouseleave', () => { isDragging = false; hideTooltip(); });
+
+canvas.addEventListener('click', e => {
+  if (Math.abs(e.clientX - dragStart.x) > 3 || Math.abs(e.clientY - dragStart.y) > 3) return;
+  const wPos = screenToWorld(e.clientX, e.clientY);
+  for (const n of nodes) {
+    if (!isVisible(n)) continue;
+    if (Math.hypot(n.x - wPos.x, n.y - wPos.y) < nodeRadius(n)) {
+      zoomIntoNode(n);
+      return;
+    }
+  }
+});
+
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const factor  = e.deltaY < 0 ? 1.12 : 0.89;
+  const wBefore = screenToWorld(e.clientX, e.clientY);
+  world.targetScale = Math.max(0.003, Math.min(6, world.targetScale * factor));
+  // 줌 포인트 유지
+  world.targetX = wBefore.x - (e.clientX - canvas.width / 2)  / world.targetScale;
+  world.targetY = wBefore.y - (e.clientY - canvas.height / 2) / world.targetScale;
+}, { passive: false });
+
+// 터치 지원
+let lastTouchDist = 0;
+canvas.addEventListener('touchstart', e => {
+  if (e.touches.length === 2) {
+    lastTouchDist = Math.hypot(
+      e.touches[0].clientX - e.touches[1].clientX,
+      e.touches[0].clientY - e.touches[1].clientY
+    );
+  } else if (e.touches.length === 1) {
+    isDragging = true;
+    dragStart  = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    camStart   = { x: world.targetX, y: world.targetY };
+  }
+});
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  if (e.touches.length === 2) {
+    const d = Math.hypot(
+      e.touches[0].clientX - e.touches[1].clientX,
+      e.touches[0].clientY - e.touches[1].clientY
+    );
+    world.targetScale = Math.max(0.003, Math.min(6, world.targetScale * (d / lastTouchDist)));
+    lastTouchDist = d;
+  } else if (e.touches.length === 1 && isDragging) {
+    const dx = (e.touches[0].clientX - dragStart.x) / world.scale;
+    const dy = (e.touches[0].clientY - dragStart.y) / world.scale;
+    world.targetX = camStart.x - dx;
+    world.targetY = camStart.y - dy;
+  }
+}, { passive: false });
+canvas.addEventListener('touchend', () => { isDragging = false; });
+
+// ─── 노드 줌인 ────────────────────────────────────
+function zoomIntoNode(n) {
+  world.targetX     = n.x;
+  world.targetY     = n.y;
+  world.targetScale = Math.min(world.scale * 3, 4);
+}
+
+function zoomOut() {
+  world.targetScale = Math.max(0.2, world.scale * 0.35);
+}
+
+function autoFit() {
+  if (nodes.length === 0) return;
+  const xs = nodes.map(n => n.x), ys = nodes.map(n => n.y);
+  const minX = Math.min(...xs), maxX = Math.max(...xs);
+  const minY = Math.min(...ys), maxY = Math.max(...ys);
+  world.targetX = (minX + maxX) / 2;
+  world.targetY = (minY + maxY) / 2;
+  world.targetScale = Math.min(
+    canvas.width  / (maxX - minX + 200),
+    canvas.height / (maxY - minY + 200),
+    1.5
+  );
+}
+
+// ─── Orbit 토글 ────────────────────────────────────
+function toggleOrbit() {
+  orbitOn = !orbitOn;
+  const btn = document.getElementById('orbit-toggle');
+  btn.textContent = orbitOn ? '⏸ 정지' : '▶ 공전';
+  btn.className   = orbitOn ? 'hud-btn active' : 'hud-btn';
+}
+
+// ─── 툴팁 ────────────────────────────────────────
+function showTooltip(n, mx, my) {
+  const tt = document.getElementById('tooltip');
+  document.getElementById('tt-type').textContent  = n.type || '';
+  document.getElementById('tt-label').textContent = n.label || n.id;
+  document.getElementById('tt-meta').textContent  = n.raw?.timestamp
+    ? new Date(n.raw.timestamp).toLocaleString('ko-KR')
+    : (n.orbitRadius ? `궤도 반경: ${Math.round(n.orbitRadius)}` : '');
+
+  tt.style.left = (mx + 14) + 'px';
+  tt.style.top  = (my - 10) + 'px';
+  tt.className  = 'show';
+}
+function hideTooltip() {
+  document.getElementById('tooltip').className = '';
+}
+
+// ── WebSocket 실시간 업데이트 ──
+let ws = null;
+function connectWS() {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(`${proto}//${location.host}`);
+  ws.onopen  = () => console.log('[Orbit] WS 연결');
+  ws.onmessage = async (e) => {
+    const msg = JSON.parse(e.data);
+    if (msg.type === 'graph_update' || msg.type === 'full_graph') {
+      await loadData();
+    }
+  };
+  ws.onclose = () => setTimeout(connectWS, 3000);
+}
+
+// ═══════════════════════════════════════════════════
+// 유틸리티
+// ═══════════════════════════════════════════════════
+function hexToRgb(hex) {
+  const r = parseInt(hex.slice(1,3),16);
+  const g = parseInt(hex.slice(3,5),16);
+  const b = parseInt(hex.slice(5,7),16);
+  return `${r},${g},${b}`;
+}
+function lighten(hex, amt) {
+  let r = parseInt(hex.slice(1,3),16) + amt;
+  let g = parseInt(hex.slice(3,5),16) + amt;
+  let b = parseInt(hex.slice(5,7),16) + amt;
+  return `rgb(${Math.min(255,r)},${Math.min(255,g)},${Math.min(255,b)})`;
+}
+function darken(hex, amt) {
+  let r = parseInt(hex.slice(1,3),16) - amt;
+  let g = parseInt(hex.slice(3,5),16) - amt;
+  let b = parseInt(hex.slice(5,7),16) - amt;
+  return `rgb(${Math.max(0,r)},${Math.max(0,g)},${Math.max(0,b)})`;
+}
+
+// ═══════════════════════════════════════════════════
+// 시작
+// ═══════════════════════════════════════════════════
+(async () => {
+  await loadData();
+  autoFit();
+  connectWS();
+  raf = requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
