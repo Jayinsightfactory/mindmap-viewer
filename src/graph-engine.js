@@ -96,12 +96,17 @@ function buildGraph(events) {
       eventType: event.type,
       timestamp: event.timestamp,
       // 멀티 AI 메타 (showDetail 에서 n.tokenCount, n.model 로 직접 접근)
-      aiSource:    aiSrc || null,
-      aiIcon:      (aiSrc && AI_SOURCE_STYLES[aiSrc]?.icon) || event.data?.aiIcon || null,
-      aiLabel:     event.data?.aiLabel || null,
-      citations:   event.data?.citations || null,
-      tokenCount:  event.data?.tokenCount  ?? null,
-      model:       event.data?.model       || null,
+      aiSource:     aiSrc || null,
+      aiIcon:       (aiSrc && AI_SOURCE_STYLES[aiSrc]?.icon) || event.data?.aiIcon || null,
+      aiLabel:      event.data?.aiLabel || null,
+      citations:    event.data?.citations || null,
+      tokenCount:   event.data?.tokenCount  ?? null,
+      model:        event.data?.model       || null,
+      // 목적 분류 (purpose-classifier.js 가 주입)
+      purposeId:    event.purposeId    || null,
+      purposeLabel: event.purposeLabel || null,
+      purposeColor: event.purposeColor || null,
+      purposeIcon:  event.purposeIcon  || null,
     };
 
     nodes.push(node);

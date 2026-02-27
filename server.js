@@ -14,6 +14,7 @@ const path = require('path');
 const dbModule = process.env.DATABASE_URL ? require('./src/db-pg') : require('./src/db');
 const { initDatabase, getAllEvents, getEventsBySession, getEventsByChannel, searchEvents, getSessions, getFiles, getAnnotations, insertAnnotation, deleteAnnotation, insertEvent, rollbackToEvent, clearAll, getStats, getUserLabels, setUserLabel, deleteUserLabel, getUserCategories, upsertUserCategory, deleteUserCategory, getToolLabelMappings, setToolLabelMapping, deleteToolLabelMapping, getUserConfig } = dbModule;
 const { buildGraph, computeActivityScores, applyActivityVisualization, suggestLabel } = require('./src/graph-engine');
+const { annotateEventsWithPurpose, classifyPurposes, summarizePurposes, PURPOSE_CATEGORIES } = require('./src/purpose-classifier');
 const { createAnnotationEvent } = require('./src/event-normalizer');
 const { getAiStyle, AI_SOURCES } = require('./adapters/ai-adapter-base');
 const { generateReport } = require('./src/code-analyzer');
@@ -57,11 +58,13 @@ const wss = new WebSocket.Server({ server });
 
 // ─── 그래프 빌드 헬퍼 ──────────────────────────────
 function getFullGraph(sessionFilter, channelFilter) {
-  const events = sessionFilter
+  const rawEvents = sessionFilter
     ? getEventsBySession(sessionFilter)
     : channelFilter
       ? (getEventsByChannel ? getEventsByChannel(channelFilter) : getAllEvents().filter(e => e.channelId === channelFilter))
       : getAllEvents();
+  // 목적 자동 분류 → 각 이벤트에 purposeId/purposeColor 주입
+  const events = annotateEventsWithPurpose(rawEvents);
   const graph = buildGraph(events);
   computeActivityScores(graph.nodes, Date.now());
   applyActivityVisualization(graph.nodes);
@@ -430,6 +433,30 @@ app.get('/api/graph', (req, res) => {
 // 세션 목록
 app.get('/api/sessions', (req, res) => {
   res.json(getSessions());
+});
+
+// ── 목적 자동 분류 ──────────────────────────────────
+// GET /api/purposes?channel=X  → 채널별 목적 윈도우 목록
+// GET /api/purposes/summary?channel=X → 목적별 집계 통계
+// GET /api/purposes/categories → 전체 목적 카테고리 정의
+app.get('/api/purposes/categories', (req, res) => {
+  res.json(Object.values(PURPOSE_CATEGORIES));
+});
+
+app.get('/api/purposes/summary', (req, res) => {
+  const events = req.query.channel
+    ? (getEventsByChannel ? getEventsByChannel(req.query.channel) : getAllEvents().filter(e => e.channelId === req.query.channel))
+    : getAllEvents();
+  res.json(summarizePurposes(events));
+});
+
+app.get('/api/purposes', (req, res) => {
+  const events = req.query.channel
+    ? (getEventsByChannel ? getEventsByChannel(req.query.channel) : getAllEvents().filter(e => e.channelId === req.query.channel))
+    : req.query.session
+      ? getEventsBySession(req.query.session)
+      : getAllEvents();
+  res.json(classifyPurposes(events));
 });
 
 // 이벤트 검색

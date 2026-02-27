@@ -177,6 +177,10 @@
     <select id="channel-select" onchange="changeChannel(this.value)">
       <option value="">전체</option>
     </select>
+    <select id="purpose-filter" onchange="filterByPurpose(this.value)" title="목적별 필터">
+      <option value="">🎯 모든 목적</option>
+    </select>
+    <button class="hud-btn" id="purpose-mode-btn" onclick="togglePurposeMode()">🎯 목적 뷰</button>
     <button class="hud-btn" onclick="autoFit()">자동 맞춤</button>
     <button class="hud-btn" id="orbit-toggle" onclick="toggleOrbit()">🔄 Orbit 모드</button>
     <a href="/dashboard.html" style="text-decoration:none"><button class="hud-btn">📊 대시보드</button></a>
@@ -293,7 +297,14 @@ const AI_COLORS = {
   gemini:     '#4285f4',
 };
 
+// 목적 분류 모드
+let purposeMode = false;
+let currentPurposeFilter = '';
+let purposeCategories = {};  // purposeId → { color, label, icon }
+
 function nodeColor(n) {
+  // 목적 뷰 모드: purposeColor 우선 사용
+  if (purposeMode && n.purposeColor) return n.purposeColor;
   // AI 소스 색상 우선 (서버에서 온 color 객체 처리)
   if (n.color && typeof n.color === 'object' && n.color.background) {
     return n.color.background;
@@ -520,14 +531,21 @@ function frame(time) {
     }
   }
 
-  // 노드
+  // 노드 (dim 처리 포함)
   for (const n of nodes) {
     if (!isVisible(n)) continue;
-    drawNode(n, hoverId === n.id);
+    if (n._dimmed) {
+      ctx.globalAlpha = 0.15;
+      drawNode(n, false);
+      ctx.globalAlpha = 1.0;
+    } else {
+      drawNode(n, hoverId === n.id);
+    }
   }
 
   updateHUD();
   drawMinimap();
+  drawPurposeLegend(ctx);
 
   raf = requestAnimationFrame(frame);
 }
@@ -900,6 +918,83 @@ function toggleOrbit() {
   btn.className   = orbitOn ? 'hud-btn active' : 'hud-btn';
 }
 
+// ─── 목적 분류 뷰 ──────────────────────────────────
+async function loadPurposeCategories() {
+  try {
+    const res = await fetch('/api/purposes/categories');
+    const cats = await res.json();
+    const sel = document.getElementById('purpose-filter');
+    // 기존 옵션 제거 (첫번째 "모든 목적" 옵션 제외)
+    while (sel.options.length > 1) sel.remove(1);
+    cats.forEach(cat => {
+      purposeCategories[cat.id] = cat;
+      const opt = document.createElement('option');
+      opt.value = cat.id;
+      opt.textContent = `${cat.icon} ${cat.label}`;
+      sel.appendChild(opt);
+    });
+  } catch {}
+}
+
+function togglePurposeMode() {
+  purposeMode = !purposeMode;
+  const btn = document.getElementById('purpose-mode-btn');
+  btn.textContent  = purposeMode ? '🎯 목적 뷰 ON' : '🎯 목적 뷰';
+  btn.className    = purposeMode ? 'hud-btn active' : 'hud-btn';
+  document.getElementById('purpose-filter').style.display = purposeMode ? '' : 'none';
+  // 노드 색상 재렌더링 (draw loop에서 nodeColor() 재호출)
+  if (!purposeMode) {
+    // 목적 뷰 해제 시 필터도 초기화
+    currentPurposeFilter = '';
+    document.getElementById('purpose-filter').value = '';
+  }
+}
+
+function filterByPurpose(purposeId) {
+  currentPurposeFilter = purposeId;
+  // 해당 목적이 아닌 노드 dim 처리
+  nodes.forEach(n => {
+    if (!purposeId || n.purposeId === purposeId) {
+      n._dimmed = false;
+    } else {
+      n._dimmed = true;
+    }
+  });
+}
+
+// 목적 범례 표시 (캔버스 우측 하단)
+function drawPurposeLegend(ctx) {
+  if (!purposeMode || Object.keys(purposeCategories).length === 0) return;
+  // 현재 화면에 있는 노드의 목적만 표시
+  const activePurposes = new Set(nodes.filter(n => n.purposeId).map(n => n.purposeId));
+  if (activePurposes.size === 0) return;
+
+  const items = [...activePurposes].map(id => purposeCategories[id]).filter(Boolean);
+  const pad = 12, lineH = 22, dotR = 6;
+  const w = 160, h = pad * 2 + items.length * lineH;
+  const x = canvas.width - w - 16, y = canvas.height - h - 60;
+
+  ctx.save();
+  ctx.fillStyle = 'rgba(13,17,23,0.85)';
+  ctx.strokeStyle = '#30363d';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, 8);
+  ctx.fill(); ctx.stroke();
+
+  ctx.font = '11px Inter, sans-serif';
+  items.forEach((cat, i) => {
+    const ly = y + pad + i * lineH + lineH / 2;
+    ctx.fillStyle = cat.color;
+    ctx.beginPath();
+    ctx.arc(x + pad + dotR, ly, dotR, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = currentPurposeFilter === cat.id ? '#ffffff' : '#c9d1d9';
+    ctx.fillText(`${cat.icon} ${cat.label}`, x + pad + dotR * 2 + 6, ly + 4);
+  });
+  ctx.restore();
+}
+
 // ─── 툴팁 ────────────────────────────────────────
 function showTooltip(n, mx, my) {
   const tt = document.getElementById('tooltip');
@@ -967,6 +1062,11 @@ function openSidePanel(n) {
   };
   if (raw.timestamp) addRow('시간', new Date(raw.timestamp).toLocaleString('ko-KR'));
   if (raw.aiSource)  addRow('AI 소스', raw.aiSource);
+  if (raw.purposeId) {
+    const pLabel = raw.purposeLabel || raw.purposeId;
+    const pIcon  = raw.purposeIcon  || '🎯';
+    addRow('목적', `${pIcon} ${pLabel}`);
+  }
   if (typeof data.success === 'boolean') addRow('결과', data.success ? '✅ 성공' : '❌ 실패');
   if (data.toolName) addRow('도구', data.toolName);
   if (data.filePath || data.fileName) addRow('파일', data.fileName || data.filePath?.split('/').pop());
@@ -1032,7 +1132,10 @@ function darken(hex, amt) {
 // 시작
 // ═══════════════════════════════════════════════════
 (async () => {
+  // purpose-filter 초기 숨김
+  document.getElementById('purpose-filter').style.display = 'none';
   await loadChannels();
+  await loadPurposeCategories();
   await loadData();
   autoFit();
   connectWS();
