@@ -321,6 +321,7 @@
     </button>
     <a href="/dashboard.html" style="text-decoration:none"><button class="hud-btn">📊 대시보드</button></a>
     <a href="/team-dashboard.html" style="text-decoration:none"><button class="hud-btn">👥 팀</button></a>
+    <a href="/theme-market.html" target="_blank" style="text-decoration:none"><button class="hud-btn">🎨 테마</button></a>
     <a href="/settings.html" style="text-decoration:none"><button class="hud-btn">⚙️ 설정</button></a>
   </div>
 </div>
@@ -424,6 +425,7 @@
     <div class="sh-item"><span class="sh-key">O</span>Orbit 모드</div>
     <div class="sh-item"><span class="sh-key">R</span>새로고침</div>
     <div class="sh-item"><span class="sh-key">G</span>팀 대시보드</div>
+    <div class="sh-item"><span class="sh-key">T</span>테마 마켓</div>
   </div>
 </div>
 
@@ -1299,8 +1301,10 @@ document.addEventListener('keydown', e => {
       if (!e.ctrlKey && !e.metaKey) { loadData(); e.preventDefault(); }
       break;
     case 'g': case 'G':
-      // G: 팀 대시보드로 이동
       if (!e.ctrlKey && !e.metaKey) { window.open('/team-dashboard.html', '_blank'); e.preventDefault(); }
+      break;
+    case 't': case 'T':
+      if (!e.ctrlKey && !e.metaKey) { window.open('/theme-market.html', '_blank'); e.preventDefault(); }
       break;
   }
 });
@@ -1922,7 +1926,31 @@ function darken(hex, amt) {
 // ═══════════════════════════════════════════════════
 // 시작
 // ═══════════════════════════════════════════════════
+// ── 테마 시스템 ─────────────────────────────────────
+function applyThemeVars(vars) {
+  if (!vars) return;
+  const root = document.documentElement;
+  Object.entries(vars).forEach(([k, v]) => root.style.setProperty(k, v));
+  // 캔버스 배경색도 반영
+  if (vars['--bg']) canvas.style.background = vars['--bg'];
+}
+
+function loadSavedTheme() {
+  try {
+    const saved = localStorage.getItem('orbit_theme_vars');
+    if (saved) applyThemeVars(JSON.parse(saved));
+  } catch {}
+}
+
+// 테마 마켓에서 postMessage로 테마 적용
+window.addEventListener('message', e => {
+  if (e.data?.type === 'orbit_theme') applyThemeVars(e.data.vars);
+});
+
 (async () => {
+  // 저장된 테마 먼저 복원
+  loadSavedTheme();
+
   // purpose-filter 초기 숨김
   document.getElementById('purpose-filter').style.display = 'none';
   await loadChannels();

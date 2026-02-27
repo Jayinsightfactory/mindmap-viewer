@@ -24,6 +24,7 @@ const { extractContext, renderContextMd, renderContextPrompt, saveContextFile } 
 const { detectConflicts, checkNewEvent } = require('./src/conflict-detector');
 const { appendAuditLog, auditFromEvents, queryAuditLog, verifyIntegrity, renderAuditHtml, AUDIT_TYPES } = require('./src/audit-log');
 const { detectShadowAI, checkEventForShadow, getApprovedSources, addApprovedSource, removeApprovedSource } = require('./src/shadow-ai-detector');
+const { getAllThemes, getThemeById, registerTheme, recordDownload, rateTheme, deleteUserTheme } = require('./src/theme-store');
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 4747;
 const CONV_FILE = path.join(__dirname, 'conversation.jsonl');
@@ -1019,6 +1020,43 @@ app.get('/api/conflicts', (req, res) => {
 
   const conflicts = detectConflicts(events);
   res.json({ conflicts, checkedEvents: events.length, windowHours: h });
+});
+
+// ─── 테마 마켓 API ────────────────────────────────────
+app.get('/api/themes', (req, res) => {
+  res.json(getAllThemes());
+});
+
+app.get('/api/themes/:id', (req, res) => {
+  const t = getThemeById(req.params.id);
+  if (!t) return res.status(404).json({ error: 'not found' });
+  res.json(t);
+});
+
+app.post('/api/themes', (req, res) => {
+  try {
+    const theme = registerTheme(req.body);
+    res.json(theme);
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+app.post('/api/themes/:id/download', (req, res) => {
+  recordDownload(req.params.id);
+  res.json({ ok: true });
+});
+
+app.post('/api/themes/:id/rate', (req, res) => {
+  const rating = parseFloat(req.body.rating);
+  if (!rating || rating < 1 || rating > 5) return res.status(400).json({ error: 'rating 1-5' });
+  const t = rateTheme(req.params.id, rating);
+  res.json(t || { error: 'not found' });
+});
+
+app.delete('/api/themes/:id', (req, res) => {
+  deleteUserTheme(req.params.id);
+  res.json({ ok: true });
 });
 
 // ─── 서버 시작 ──────────────────────────────────────
