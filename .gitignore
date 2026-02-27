@@ -1,11 +1,14 @@
 node_modules/
-data/
 snapshots/
 *.log
 hook.log
 nul
 .hook-state.json
 conversation.jsonl
-*.db
 .DS_Store
 Thumbs.db
+_*.ps1
+
+# DB WAL/SHM (임시 파일, 동기화 불필요)
+data/mindmap.db-wal
+data/mindmap.db-shm
