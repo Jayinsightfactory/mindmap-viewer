@@ -5,8 +5,8 @@
 
 // ─── 노드 색상/형태 정의 ────────────────────────────
 const NODE_STYLES = {
-  'session.start':       { shape: 'hexagon', color: '#8b5cf6', icon: '🔌', label: 'Session' },
-  'session.end':         { shape: 'hexagon', color: '#6b7280', icon: '⏹', label: 'End' },
+  'session.start':       { shape: 'hexagon', color: '#8b5cf6', icon: '🚀', label: '시작' },
+  'session.end':         { shape: 'hexagon', color: '#6b7280', icon: '⏹', label: '종료' },
   'user.message':        { shape: 'box',     color: '#388bfd', icon: '👤', label: 'User' },
   'assistant.message':   { shape: 'box',     color: '#3fb950', icon: '🤖', label: 'Assistant' },
   // tool.start: PreToolUse — 깜박이는 주황 테두리로 "진행 중" 표시
@@ -189,47 +189,94 @@ function buildGraph(events) {
 // ─── 도구명 → 자연어 매핑 ────────────────────────────
 const TOOL_LABELS = {
   'Read': '파일 읽기', 'Write': '파일 작성', 'Edit': '파일 수정',
-  'Bash': '명령어 실행', 'Glob': '파일 찾기', 'Grep': '내용 검색',
-  'WebSearch': '웹 검색', 'WebFetch': '웹 페이지 확인',
-  'Task': '하위 작업', 'TodoWrite': '할일 정리',
-  'AskUserQuestion': '사용자에게 질문', 'EnterPlanMode': '계획 수립',
+  'Bash': '명령 실행', 'Glob': '파일 탐색', 'Grep': '코드 검색',
+  'WebSearch': '웹 검색', 'WebFetch': '페이지 분석',
+  'Task': '하위 에이전트', 'TodoWrite': '할일 업데이트',
+  'AskUserQuestion': '사용자 질문', 'EnterPlanMode': '계획 수립 중',
   'ExitPlanMode': '계획 확정', 'NotebookEdit': '노트북 수정',
+  // n8n
+  'HTTP Request': 'HTTP 요청', 'Slack Message': 'Slack 전송',
+  'Railway Deploy': 'Railway 배포', 'GitHub Webhook': 'GitHub 알림',
+  'Database': 'DB 쿼리', 'Schedule': '스케줄 실행', 'Code': '코드 실행',
+  'Send Email': '이메일 전송', 'Google Sheets': '시트 업데이트',
+  // VS Code
+  'FileSave': '파일 저장', 'FileCreate': '파일 생성', 'FileOpen': '파일 열기',
+  'FileDelete': '파일 삭제', 'Terminal': '터미널', 'Git': 'Git 작업',
+  'Debug': '디버그', 'Extension': 'Extension',
 };
 
 // ─── 노드 라벨 생성 ────────────────────────────────
 function buildLabel(event) {
+  const d = event.data || {};
+  const who = d.aiLabel || event.aiSource || null;
+  const whoPrefix = who ? `[${who}] ` : '';
+
   switch (event.type) {
-    case 'session.start':
-      return `세션 시작 ${formatTime(event.timestamp)}`;
-    case 'session.end':
-      return '세션 종료';
-    case 'user.message':
-      return truncate(event.data.contentPreview || event.data.content || '질문', 28);
-    case 'assistant.message':
-      return truncate(event.data.contentPreview || event.data.content || '답변', 28);
-    case 'tool.start':
-      return `⚡ ${TOOL_LABELS[event.data.toolName] || event.data.toolName || '작업 중...'}`;
-    case 'tool.end':
-      return TOOL_LABELS[event.data.toolName] || event.data.toolName || '작업';
-    case 'tool.error':
-      return `실패: ${TOOL_LABELS[event.data.toolName] || event.data.toolName || '작업'}`;
+    case 'session.start': {
+      // "dlaww 작업 시작" 또는 "n8n 자동화 시작"
+      const name = d.memberName || event.userId || who || '세션';
+      const src  = d.source ? ` (${d.source})` : '';
+      return `${name} 시작${src}`;
+    }
+    case 'session.end': {
+      const name = event.userId || who || '세션';
+      return `${name} 종료`;
+    }
+    case 'user.message': {
+      // 메시지 앞부분이 가장 직관적
+      const preview = d.contentPreview || d.content || '';
+      return whoPrefix + truncate(preview || '질문', 30);
+    }
+    case 'assistant.message': {
+      const preview = d.contentPreview || d.content || '';
+      return whoPrefix + truncate(preview || '답변', 30);
+    }
+    case 'tool.start': {
+      const toolLabel = TOOL_LABELS[d.toolName] || d.toolName || '작업';
+      // 파일명이 있으면 포함
+      const fileName = _getFileName(d.inputPreview || d.filePath || '');
+      return `⚡ ${toolLabel}${fileName ? `: ${fileName}` : ''}`;
+    }
+    case 'tool.end': {
+      const toolLabel = TOOL_LABELS[d.toolName] || d.toolName || '작업';
+      const fileName  = _getFileName(d.filePath || '');
+      const success   = d.success === false ? ' ✗' : '';
+      return `${toolLabel}${fileName ? `: ${fileName}` : ''}${success}`;
+    }
+    case 'tool.error': {
+      const toolLabel = TOOL_LABELS[d.toolName] || d.toolName || '작업';
+      return `❌ ${toolLabel} 실패`;
+    }
     case 'file.read':
     case 'file.write':
-    case 'file.create':
-      return truncate(event.data.fileName || '파일', 20);
+    case 'file.create': {
+      const icon = event.type === 'file.read' ? '📄' : '✏️';
+      return `${icon} ${truncate(d.fileName || _getFileName(d.filePath || '') || '파일', 22)}`;
+    }
     case 'subagent.start':
-      return `하위작업: ${event.data.agentType || '진행 중'}`;
+      return `🤖 하위 에이전트${d.agentType ? `: ${d.agentType}` : ''}`;
     case 'subagent.stop':
-      return '하위작업 완료';
+      return '🤖 에이전트 완료';
     case 'notification':
-      return truncate(event.data.message || '알림', 20);
+      return `🔔 ${truncate(d.message || '알림', 22)}`;
     case 'task.complete':
-      return '작업 완료';
+      return `✅ ${truncate(d.taskName || '작업 완료', 22)}`;
     case 'annotation.add':
-      return truncate(event.data.label || '메모', 20);
+      return `📌 ${truncate(d.label || '메모', 22)}`;
     default:
-      return event.type;
+      // 알 수 없는 타입도 의미 있게
+      return whoPrefix + (d.toolName || d.contentPreview || event.type).slice(0, 28);
   }
+}
+
+// 경로에서 파일명만 추출
+function _getFileName(pathOrPreview) {
+  if (!pathOrPreview) return '';
+  // 경로처럼 생긴 경우만
+  if (pathOrPreview.includes('/') || pathOrPreview.includes('\\')) {
+    return pathOrPreview.replace(/\\/g, '/').split('/').pop();
+  }
+  return '';
 }
 
 // ─── 엣지 스타일 ────────────────────────────────────
