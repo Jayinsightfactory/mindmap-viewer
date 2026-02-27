@@ -7,7 +7,8 @@ const fs = require('fs');
 const path = require('path');
 const { normalizeHookEvent } = require('./event-normalizer');
 
-const BASE_DIR = path.join('C:', 'Users', 'cando', 'mindmap-viewer');
+// ── 경로: 스크립트 위치 기준 자동 해석 (macOS/Windows 공용) ──
+const BASE_DIR = path.resolve(__dirname);
 const CONV_FILE = path.join(BASE_DIR, 'conversation.jsonl');
 const STATE_FILE = path.join(BASE_DIR, '.hook-state.json');
 const SNAPSHOTS_DIR = path.join(BASE_DIR, 'snapshots');
