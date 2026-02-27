@@ -1,7 +1,10 @@
 {
-  "name": "mindmap-viewer",
+  "name": "orbit-ai",
   "version": "2.0.0",
-  "description": "AI 작업 흐름 실시간 마인드맵 — Claude Code, Cursor, Windsurf, VS Code, Gemini, GPT 지원",
+  "description": "AI 작업 흐름 실시간 시각화 + 하네스 시스템 — Claude Code, Cursor, Windsurf, VS Code 지원",
+  "bin": {
+    "orbit": "./bin/orbit.js"
+  },
   "keywords": [
     "claude-code", "ai", "mindmap", "visualization", "real-time",
     "hooks", "cursor", "windsurf", "llm", "developer-tools"

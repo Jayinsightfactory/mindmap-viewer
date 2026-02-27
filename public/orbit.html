@@ -193,7 +193,63 @@
     .sr-item:last-child { border-bottom: none; }
     .sr-type { font-size: 10px; color: var(--text3); min-width: 60px; }
 
-    /* ── 경보 토스트 (충돌/Shadow AI/보안유출) ── */
+    /* ── 행성 주위 떠다니는 UI (Orbital HUD) ── */
+    #orbital-hud {
+      position: fixed; inset: 0; pointer-events: none; z-index: 50;
+      transition: opacity .4s ease;
+    }
+    #orbital-hud.hidden { opacity: 0; }
+
+    /* 각 오비탈 칩 */
+    .orbital-chip {
+      position: absolute;
+      display: flex; align-items: center; gap: 5px;
+      background: rgba(13,17,23,0.88);
+      border: 1px solid rgba(137,87,229,0.4);
+      border-radius: 20px;
+      padding: 4px 10px 4px 7px;
+      font-size: 11px; color: var(--text2);
+      pointer-events: auto; cursor: pointer;
+      backdrop-filter: blur(8px);
+      white-space: nowrap;
+      transition: border-color .2s, color .2s, opacity .3s, transform .3s;
+      user-select: none;
+    }
+    .orbital-chip:hover {
+      border-color: var(--accent);
+      color: var(--text);
+      background: rgba(137,87,229,0.15);
+    }
+    .orbital-chip .chip-key {
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 4px;
+      padding: 0 4px;
+      font-size: 9px;
+      font-family: monospace;
+      color: var(--text3);
+      min-width: 16px;
+      text-align: center;
+    }
+    .orbital-chip .chip-dot {
+      width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
+    }
+
+    /* 닫기 버튼 */
+    #orbital-toggle {
+      position: fixed; bottom: 56px; right: 16px;
+      width: 28px; height: 28px; border-radius: 50%;
+      background: rgba(13,17,23,0.88);
+      border: 1px solid rgba(48,54,61,0.7);
+      color: var(--text3); font-size: 12px;
+      cursor: pointer; z-index: 101;
+      display: flex; align-items: center; justify-content: center;
+      transition: all .2s; backdrop-filter: blur(8px);
+    }
+    #orbital-toggle:hover { border-color: var(--accent); color: var(--text); }
+    #orbital-toggle.collapsed { background: rgba(137,87,229,0.2); border-color: var(--accent); color: var(--accent); }
+
+    /* 경보 토스트 (충돌/Shadow AI/보안유출) ── */
     #alert-container {
       position: fixed; top: 56px; right: 16px;
       display: flex; flex-direction: column; gap: 6px;
@@ -340,6 +396,10 @@
 <!-- 경보 토스트 컨테이너 -->
 <div id="alert-container"></div>
 
+<!-- 행성 주위 떠다니는 Orbital HUD -->
+<div id="orbital-hud"></div>
+<button id="orbital-toggle" onclick="toggleOrbitalHud()" title="단축키 HUD 토글 (H)">◎</button>
+
 <!-- 경보 패널 (A키 / 🔔 버튼) -->
 <div id="alert-panel" style="
   position:fixed; top:48px; right:0; bottom:0; width:300px;
@@ -426,6 +486,7 @@
     <div class="sh-item"><span class="sh-key">R</span>새로고침</div>
     <div class="sh-item"><span class="sh-key">G</span>팀 대시보드</div>
     <div class="sh-item"><span class="sh-key">T</span>테마 마켓</div>
+    <div class="sh-item"><span class="sh-key">H</span>HUD 토글</div>
   </div>
 </div>
 
@@ -1306,6 +1367,9 @@ document.addEventListener('keydown', e => {
     case 't': case 'T':
       if (!e.ctrlKey && !e.metaKey) { window.open('/theme-market.html', '_blank'); e.preventDefault(); }
       break;
+    case 'h': case 'H':
+      if (!e.ctrlKey && !e.metaKey) { toggleOrbitalHud(); e.preventDefault(); }
+      break;
   }
 });
 
@@ -1926,6 +1990,130 @@ function darken(hex, amt) {
 // ═══════════════════════════════════════════════════
 // 시작
 // ═══════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════
+// 행성 주위 Orbital HUD
+// 노드 호버 시 해당 노드 주위에 기능 칩이 궤도처럼 배치
+// H 키 / ◎ 버튼으로 전체 토글
+// ═══════════════════════════════════════════════════
+let orbitalHudVisible = localStorage.getItem('orbit_hud') !== 'false';
+let orbitalHudNode    = null;  // 현재 HUD를 보여주는 노드
+let orbitalAnimFrame  = 0;
+
+// 글로벌 기능 칩 정의 (화면 고정 위치)
+const GLOBAL_CHIPS = [
+  { id: 'search',   label: '노드 검색',    key: 'K',   icon: '🔍', color: '#58a6ff', action: () => openNodeSearch() },
+  { id: 'fit',      label: '전체 맞춤',    key: 'F',   icon: '⊡',  color: '#3fb950', action: () => autoFit() },
+  { id: 'purpose',  label: '목적 뷰',      key: 'P',   icon: '🎯', color: '#bc8cff', action: () => togglePurposeMode() },
+  { id: 'team',     label: '팀 오버레이',  key: 'M',   icon: '👥', color: '#ffa657', action: () => toggleMemberOverlay() },
+  { id: 'alert',    label: '경보',         key: 'A',   icon: '🔔', color: '#f85149', action: () => toggleAlertPanel() },
+  { id: 'theme',    label: '테마 마켓',    key: 'T',   icon: '🎨', color: '#39d2c0', action: () => window.open('/theme-market.html','_blank') },
+  { id: 'refresh',  label: '새로고침',     key: 'R',   icon: '↻',  color: '#8b949e', action: () => loadData() },
+  { id: 'orbit',    label: 'Orbit 모드',   key: 'O',   icon: '🌌', color: '#8957e5', action: () => toggleOrbit() },
+];
+
+// 노드 호버 시 나타나는 액션 칩
+const NODE_CHIPS = [
+  { id: 'focus',    label: '포커스',   key: 'Enter', icon: '⊙', color: '#58a6ff', action: (n) => zoomIntoNode(n) },
+  { id: 'panel',    label: '상세보기', key: 'I',     icon: '📋', color: '#bc8cff', action: (n) => showSidePanel(n) },
+  { id: 'copy',     label: 'ID 복사',  key: 'C',     icon: '⎘', color: '#3fb950', action: (n) => { navigator.clipboard?.writeText(n.id || n.label || ''); } },
+];
+
+function initOrbitalHud() {
+  const hud = document.getElementById('orbital-hud');
+  const btn = document.getElementById('orbital-toggle');
+
+  // 글로벌 칩들을 화면 왼쪽 세로로 배치 (떠다니는 사이드바 느낌)
+  GLOBAL_CHIPS.forEach((chip, i) => {
+    const el = document.createElement('div');
+    el.className  = 'orbital-chip';
+    el.id         = 'chip-' + chip.id;
+    el.innerHTML  = `<span class="chip-dot" style="background:${chip.color}"></span>${chip.icon} ${chip.label}<span class="chip-key">⌘${chip.key}</span>`;
+    el.onclick    = chip.action;
+    el.title      = `${chip.label} (${chip.key})`;
+    // 초기 위치: 화면 왼쪽, 수직 분산
+    el.style.cssText = `left: 12px; top: ${70 + i * 38}px;`;
+    hud.appendChild(el);
+  });
+
+  // 상태 반영
+  applyOrbitalHudState();
+
+  // 부드러운 float 애니메이션
+  startOrbitalFloat();
+
+  // 호버 노드 변경 감지 → 노드 칩 갱신
+  setInterval(updateNodeChips, 200);
+}
+
+function startOrbitalFloat() {
+  let t = 0;
+  function floatLoop() {
+    t += 0.012;
+    GLOBAL_CHIPS.forEach((chip, i) => {
+      const el = document.getElementById('chip-' + chip.id);
+      if (!el || !orbitalHudVisible) return;
+      // 미세하게 y 방향으로 떠다님
+      const offset = Math.sin(t + i * 0.7) * 3;
+      const baseY  = 70 + i * 38;
+      el.style.top = (baseY + offset) + 'px';
+    });
+    orbitalAnimFrame = requestAnimationFrame(floatLoop);
+  }
+  floatLoop();
+}
+
+// 노드 호버 시 해당 노드 주위 칩 표시
+function updateNodeChips() {
+  if (!orbitalHudVisible) return;
+  const hud = document.getElementById('orbital-hud');
+
+  // 기존 노드 칩 제거
+  hud.querySelectorAll('.node-chip').forEach(el => el.remove());
+
+  if (!hoverId) return;
+  const n = nodes.find(x => x.id === hoverId);
+  if (!n) return;
+
+  const sp = worldToScreen(n.x, n.y);
+  const r  = Math.max(20, nodeRadius(n) * world.scale);
+
+  // 노드 주위 원형 배치
+  NODE_CHIPS.forEach((chip, i) => {
+    const angle = -Math.PI / 2 + (i / NODE_CHIPS.length) * Math.PI * 2;
+    const dist  = r + 44;
+    const cx    = sp.x + Math.cos(angle) * dist;
+    const cy    = sp.y + Math.sin(angle) * dist;
+
+    const el = document.createElement('div');
+    el.className = 'orbital-chip node-chip';
+    el.innerHTML = `<span class="chip-dot" style="background:${chip.color}"></span>${chip.icon} ${chip.label}`;
+    el.style.cssText = `left:${cx - 40}px; top:${cy - 14}px; transform: scale(0.9);`;
+    el.onclick = (e) => { e.stopPropagation(); chip.action(n); };
+
+    // 진입 애니메이션
+    setTimeout(() => { el.style.transform = 'scale(1)'; el.style.opacity = '1'; }, i * 40);
+    el.style.opacity = '0';
+    el.style.transition = 'opacity .2s, transform .2s';
+
+    hud.appendChild(el);
+  });
+}
+
+function applyOrbitalHudState() {
+  const hud = document.getElementById('orbital-hud');
+  const btn = document.getElementById('orbital-toggle');
+  hud.classList.toggle('hidden', !orbitalHudVisible);
+  btn.classList.toggle('collapsed', !orbitalHudVisible);
+  btn.title = orbitalHudVisible ? 'HUD 숨기기 (H)' : 'HUD 보이기 (H)';
+  btn.textContent = orbitalHudVisible ? '◉' : '◎';
+  localStorage.setItem('orbit_hud', orbitalHudVisible);
+}
+
+function toggleOrbitalHud() {
+  orbitalHudVisible = !orbitalHudVisible;
+  applyOrbitalHudState();
+}
+
 // ── 테마 시스템 ─────────────────────────────────────
 function applyThemeVars(vars) {
   if (!vars) return;
@@ -1950,6 +2138,9 @@ window.addEventListener('message', e => {
 (async () => {
   // 저장된 테마 먼저 복원
   loadSavedTheme();
+
+  // Orbital HUD 초기화
+  initOrbitalHud();
 
   // purpose-filter 초기 숨김
   document.getElementById('purpose-filter').style.display = 'none';

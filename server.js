@@ -25,6 +25,8 @@ const { detectConflicts, checkNewEvent } = require('./src/conflict-detector');
 const { appendAuditLog, auditFromEvents, queryAuditLog, verifyIntegrity, renderAuditHtml, AUDIT_TYPES } = require('./src/audit-log');
 const { detectShadowAI, checkEventForShadow, getApprovedSources, addApprovedSource, removeApprovedSource } = require('./src/shadow-ai-detector');
 const { getAllThemes, getThemeById, registerTheme, recordDownload, rateTheme, deleteUserTheme } = require('./src/theme-store');
+const { register: authRegister, login: authLogin, verifyToken, optionalAuth } = require('./src/auth');
+const { PLANS, createPayment, confirmPayment, MOCK_MODE: paymentMockMode } = require('./src/payment');
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 4747;
 const CONV_FILE = path.join(__dirname, 'conversation.jsonl');
@@ -1057,6 +1059,50 @@ app.post('/api/themes/:id/rate', (req, res) => {
 app.delete('/api/themes/:id', (req, res) => {
   deleteUserTheme(req.params.id);
   res.json({ ok: true });
+});
+
+// ─── 계정 시스템 API ─────────────────────────────────
+app.post('/api/auth/register', (req, res) => {
+  const result = authRegister(req.body);
+  if (result.error) return res.status(400).json(result);
+  res.json(result);
+});
+
+app.post('/api/auth/login', (req, res) => {
+  const result = authLogin(req.body);
+  if (result.error) return res.status(401).json(result);
+  res.json(result);
+});
+
+app.get('/api/auth/me', (req, res) => {
+  const token = req.headers.authorization || req.query.token;
+  const user  = verifyToken(token);
+  if (!user) return res.status(401).json({ error: 'unauthorized' });
+  res.json({ user });
+});
+
+// ─── 결제/플랜 API ───────────────────────────────────
+app.get('/api/payment/plans', (req, res) => {
+  res.json({ plans: Object.values(PLANS), mockMode: paymentMockMode });
+});
+
+app.post('/api/payment/create', async (req, res) => {
+  try {
+    const result = await createPayment(req.body);
+    if (result.error) return res.status(400).json(result);
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/payment/confirm', async (req, res) => {
+  try {
+    const result = await confirmPayment(req.body);
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ─── 서버 시작 ──────────────────────────────────────
