@@ -378,6 +378,8 @@
     <a href="/dashboard.html" style="text-decoration:none"><button class="hud-btn">📊 대시보드</button></a>
     <a href="/team-dashboard.html" style="text-decoration:none"><button class="hud-btn">👥 팀</button></a>
     <a href="/theme-market.html" target="_blank" style="text-decoration:none"><button class="hud-btn">🎨 테마</button></a>
+    <a href="/solution-market.html" target="_blank" style="text-decoration:none"><button class="hud-btn">⚡ 솔루션</button></a>
+    <a href="/community.html" target="_blank" style="text-decoration:none"><button class="hud-btn">💬 커뮤니티</button></a>
     <a href="/settings.html" style="text-decoration:none"><button class="hud-btn">⚙️ 설정</button></a>
   </div>
 </div>
@@ -517,6 +519,177 @@ let orbitOn = true; // 공전 애니메이션
 let raf     = null;
 let hoverId = null;
 let t       = 0;    // 시간 (공전용)
+
+// ── 비주얼 모션 시스템 ──────────────────────────
+const VFX = {
+  // 파티클 풀
+  particles: [],
+
+  // 리플 이펙트 (설정 변경 시 퍼져나가는 원)
+  ripples: [],
+
+  // 노드 펄스 (신규 도착 이벤트)
+  pulses: {},   // nodeId → { time, color, intensity }
+
+  // 활성 노드 서포트 빔 (설정이 적용된 노드 지원)
+  supportBeams: {},  // nodeId → { angle, color, phase }
+
+  // 설정 전환 효과 (mode 변경 시)
+  modeTransition: null,  // { startTime, fromMode, toMode, progress }
+
+  // 데이터 흐름선 (노드 간 데이터 전송)
+  dataFlows: [],   // { fromId, toId, progress, color, speed }
+};
+
+// 파티클 생성
+function spawnParticle(x, y, color, count = 6) {
+  for (let i = 0; i < count; i++) {
+    const angle = (Math.PI * 2 * i) / count + Math.random() * 0.5;
+    const speed = 1.5 + Math.random() * 2.5;
+    VFX.particles.push({
+      x, y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      life: 1.0,
+      decay: 0.02 + Math.random() * 0.02,
+      r: 1.5 + Math.random() * 2,
+      color,
+    });
+  }
+}
+
+// 리플 생성 (설정 적용/모드 전환 시)
+function spawnRipple(x, y, color, maxR = 80) {
+  VFX.ripples.push({ x, y, r: 0, maxR, color, life: 1.0 });
+}
+
+// 노드 펄스 등록 (신규 이벤트 도착)
+function pulseNode(nodeId, color) {
+  VFX.pulses[nodeId] = { time: performance.now(), color: color || '#58a6ff', intensity: 1.0 };
+}
+
+// 데이터 흐름 스폰 (노드 연결 강조)
+function spawnDataFlow(fromId, toId, color) {
+  VFX.dataFlows.push({ fromId, toId, progress: 0, color: color || '#39d2c0', speed: 0.008 });
+}
+
+// 서포트 빔 (설정이 노드를 지원하는 모션)
+function attachSupportBeam(nodeId, color, phase) {
+  VFX.supportBeams[nodeId] = { color: color || '#8957e5', phase: phase || Math.random() * Math.PI * 2 };
+}
+
+// ── VFX 렌더 ─────────────────────────────────
+function renderVFX(time) {
+  // 파티클
+  VFX.particles = VFX.particles.filter(p => p.life > 0);
+  for (const p of VFX.particles) {
+    p.x    += p.vx;
+    p.y    += p.vy;
+    p.vx   *= 0.94;
+    p.vy   *= 0.94;
+    p.life -= p.decay;
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, p.life);
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+    ctx.fillStyle = p.color;
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // 리플
+  VFX.ripples = VFX.ripples.filter(r => r.life > 0);
+  for (const rp of VFX.ripples) {
+    rp.r    += (rp.maxR - rp.r) * 0.08;
+    rp.life -= 0.025;
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, rp.life * 0.5);
+    ctx.beginPath();
+    ctx.arc(rp.x, rp.y, rp.r, 0, Math.PI * 2);
+    ctx.strokeStyle = rp.color;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // 노드 펄스
+  const now = performance.now();
+  for (const [nodeId, pulse] of Object.entries(VFX.pulses)) {
+    const node = nodes.find(n => n.id === nodeId);
+    if (!node) { delete VFX.pulses[nodeId]; continue; }
+    const age = (now - pulse.time) / 1000;
+    if (age > 2) { delete VFX.pulses[nodeId]; continue; }
+
+    const sp = worldToScreen(node.x, node.y);
+    const r  = nodeRadius(node) * world.scale;
+    const expansion = age * 40 * world.scale;
+    const alpha = Math.max(0, 1 - age / 2);
+
+    ctx.save();
+    ctx.globalAlpha = alpha * 0.6;
+    ctx.beginPath();
+    ctx.arc(sp.x, sp.y, r + expansion, 0, Math.PI * 2);
+    ctx.strokeStyle = pulse.color;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // 데이터 흐름
+  VFX.dataFlows = VFX.dataFlows.filter(df => df.progress < 1.2);
+  for (const df of VFX.dataFlows) {
+    df.progress += df.speed;
+    const from = nodes.find(n => n.id === df.fromId);
+    const to   = nodes.find(n => n.id === df.toId);
+    if (!from || !to) continue;
+
+    const fp = worldToScreen(from.x, from.y);
+    const tp = worldToScreen(to.x,   to.y);
+    const t  = Math.min(df.progress, 1);
+
+    // 베지어 곡선 위의 점
+    const mx = (fp.x + tp.x) / 2 + (tp.y - fp.y) * 0.15;
+    const my = (fp.y + tp.y) / 2 - (tp.x - fp.x) * 0.15;
+    const bx = (1-t)*(1-t)*fp.x + 2*(1-t)*t*mx + t*t*tp.x;
+    const by = (1-t)*(1-t)*fp.y + 2*(1-t)*t*my + t*t*tp.y;
+
+    const alpha = df.progress < 0.8 ? 1 : 1 - (df.progress - 0.8) / 0.4;
+    ctx.save();
+    ctx.globalAlpha = alpha * 0.9;
+    ctx.beginPath();
+    ctx.arc(bx, by, 3 * world.scale, 0, Math.PI * 2);
+    ctx.fillStyle = df.color;
+    ctx.shadowBlur  = 8;
+    ctx.shadowColor = df.color;
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // 서포트 빔 (설정이 노드를 지원하는 모션)
+  for (const [nodeId, beam] of Object.entries(VFX.supportBeams)) {
+    const node = nodes.find(n => n.id === nodeId);
+    if (!node) { delete VFX.supportBeams[nodeId]; continue; }
+
+    const sp  = worldToScreen(node.x, node.y);
+    const r   = nodeRadius(node) * world.scale;
+    const ang = (time * 0.001 + beam.phase);
+
+    // 회전하는 아치 빔
+    ctx.save();
+    ctx.globalAlpha = 0.35;
+    ctx.beginPath();
+    ctx.arc(sp.x, sp.y, r + 6 * world.scale, ang, ang + Math.PI * 0.6);
+    ctx.strokeStyle = beam.color;
+    ctx.lineWidth   = 2;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(sp.x, sp.y, r + 10 * world.scale, ang + Math.PI, ang + Math.PI * 1.6);
+    ctx.strokeStyle = beam.color;
+    ctx.lineWidth   = 1.5;
+    ctx.stroke();
+    ctx.restore();
+  }
+}
 
 // ── 레벨 정의 ──
 const LEVELS = [
@@ -843,6 +1016,9 @@ function frame(time) {
       ctx.restore();
     }
   }
+
+  // VFX (파티클/리플/펄스/서포트 빔)
+  renderVFX(time);
 
   updateHUD();
   updateZoomControls();
@@ -1591,6 +1767,10 @@ function toggleOrbit() {
   const btn = document.getElementById('orbit-toggle');
   btn.textContent = orbitOn ? '⏸ 정지' : '▶ 공전';
   btn.className   = orbitOn ? 'hud-btn active' : 'hud-btn';
+  // VFX: 전체 리플 (캔버스 중앙)
+  const cx = canvas.width / 2, cy = canvas.height / 2;
+  spawnRipple(cx, cy, orbitOn ? '#3fb950' : '#f85149', 120);
+  spawnParticle(cx, cy, orbitOn ? '#3fb950' : '#8b949e', 8);
 }
 
 // ─── 목적 분류 뷰 ──────────────────────────────────
@@ -1617,11 +1797,16 @@ function togglePurposeMode() {
   btn.textContent  = purposeMode ? '🎯 목적 뷰 ON' : '🎯 목적 뷰';
   btn.className    = purposeMode ? 'hud-btn active' : 'hud-btn';
   document.getElementById('purpose-filter').style.display = purposeMode ? '' : 'none';
-  // 노드 색상 재렌더링 (draw loop에서 nodeColor() 재호출)
   if (!purposeMode) {
-    // 목적 뷰 해제 시 필터도 초기화
     currentPurposeFilter = '';
     document.getElementById('purpose-filter').value = '';
+  }
+  // VFX: 목적 뷰 ON 시 각 노드에서 리플
+  if (purposeMode) {
+    nodes.slice(0, 20).forEach((n, i) => {
+      const sp = worldToScreen(n.x, n.y);
+      setTimeout(() => spawnRipple(sp.x, sp.y, n.purposeColor || '#8957e5', 40), i * 30);
+    });
   }
 }
 
@@ -1868,10 +2053,40 @@ function connectWS() {
   ws.onmessage = async (e) => {
     const msg = JSON.parse(e.data);
     if (msg.type === 'graph_update' || msg.type === 'full_graph' || msg.type === 'update') {
+      const prevNodeIds = new Set(nodes.map(n => n.id));
       await loadData();
+
+      // ── VFX: 신규 노드 도착 펄스 ───────────────
+      for (const n of nodes) {
+        if (!prevNodeIds.has(n.id)) {
+          const color = n.purposeColor || '#58a6ff';
+          pulseNode(n.id, color);
+          // 서포트 빔 (활성 노드에 부착)
+          if (n.type === 'tool.end' || n.type === 'file.write') {
+            attachSupportBeam(n.id, color, Math.random() * Math.PI * 2);
+            // 2초 후 빔 제거
+            setTimeout(() => { delete VFX.supportBeams[n.id]; }, 3000);
+          }
+          // 파티클 (화면 내 노드만)
+          const sp = worldToScreen(n.x, n.y);
+          if (sp.x > 0 && sp.x < canvas.width && sp.y > 0 && sp.y < canvas.height) {
+            spawnParticle(sp.x, sp.y, color, 4);
+          }
+        }
+      }
+
+      // ── 데이터 흐름: 새 연결 ───────────────────
+      const newFlowNodes = nodes.filter(n => !prevNodeIds.has(n.id));
+      if (newFlowNodes.length && nodes.length > 1) {
+        newFlowNodes.slice(0, 3).forEach(n => {
+          const parent = nodes.find(p => p.id === n.orbitParent || p.id === n.parentEventId);
+          if (parent) spawnDataFlow(parent.id, n.id, n.purposeColor || '#39d2c0');
+        });
+      }
+
       // ── 경보 처리 ──────────────────────────────
-      if (msg.conflicts?.length)    msg.conflicts.forEach(c => pushAlert('conflict', c));
-      if (msg.shadowAI?.length)     msg.shadowAI.forEach(c => pushAlert('shadow', c));
+      if (msg.conflicts?.length)     msg.conflicts.forEach(c => pushAlert('conflict', c));
+      if (msg.shadowAI?.length)      msg.shadowAI.forEach(c => pushAlert('shadow', c));
       if (msg.securityLeaks?.length) msg.securityLeaks.forEach(c => pushAlert('security', c));
     }
   };

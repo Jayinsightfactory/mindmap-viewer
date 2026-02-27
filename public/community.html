@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>⬡ Orbit — 커뮤니티</title>
+<style>
+:root {
+  --bg: #060a10; --bg2: #0d1117; --bg3: #161b22;
+  --text: #f0f6fc; --text2: #c9d1d9; --text3: #8b949e;
+  --blue: #58a6ff; --green: #3fb950; --purple: #bc8cff;
+  --orange: #ffa657; --cyan: #39d2c0; --pink: #f778ba;
+  --accent: #8957e5; --red: #f85149; --yellow: #e3b341;
+  --border: #30363d;
+  --font: 'Inter', -apple-system, sans-serif;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; }
+a { color: var(--blue); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.app { display: flex; flex-direction: column; height: 100vh; }
+
+/* 탑바 */
+.topbar {
+  display: flex; align-items: center; gap: 16px;
+  padding: 0 20px; height: 52px;
+  background: var(--bg2); border-bottom: 1px solid var(--border);
+  position: sticky; top: 0; z-index: 100;
+}
+.logo { font-size: 17px; font-weight: 700; color: var(--accent); }
+.tabs { display: flex; gap: 2px; }
+.tab { padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 13px;
+  color: var(--text3); transition: all .15s; border: none; background: none; }
+.tab:hover { background: var(--bg3); color: var(--text2); }
+.tab.active { background: var(--bg3); color: var(--text); }
+.topbar-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+.btn { padding: 6px 14px; border-radius: 6px; font-size: 13px;
+  cursor: pointer; border: 1px solid var(--border); transition: all .15s; }
+.btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+.btn-primary:hover { filter: brightness(1.2); }
+.btn-ghost { background: transparent; color: var(--text2); }
+.btn-ghost:hover { background: var(--bg3); }
+.btn-sm { padding: 4px 10px; font-size: 12px; }
+
+/* 레이아웃 */
+.layout { display: flex; flex: 1; overflow: hidden; }
+.sidebar { width: 220px; padding: 16px; border-right: 1px solid var(--border);
+  overflow-y: auto; flex-shrink: 0; }
+.main { flex: 1; overflow-y: auto; padding: 20px; }
+
+/* 사이드바 */
+.sidebar-section { margin-bottom: 20px; }
+.sidebar-title { font-size: 11px; color: var(--text3); font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+.sidebar-item { display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 8px; border-radius: 6px; cursor: pointer; font-size: 13px;
+  color: var(--text2); transition: all .15s; }
+.sidebar-item:hover { background: var(--bg3); }
+.sidebar-item.active { background: var(--bg3); color: var(--text); }
+.sidebar-item .count { font-size: 11px; color: var(--text3); background: var(--bg3);
+  padding: 1px 6px; border-radius: 10px; }
+.sidebar-item.active .count { background: var(--accent); color: #fff; }
+
+/* 게시글 목록 */
+.post-list { display: flex; flex-direction: column; gap: 0; }
+
+.post-item {
+  display: flex; gap: 12px; padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer; transition: background .1s;
+  align-items: flex-start;
+}
+.post-item:hover { background: var(--bg2); }
+.post-item.pinned { background: rgba(137,87,229,0.04); }
+
+.post-votes { display: flex; flex-direction: column; align-items: center; gap: 2px;
+  min-width: 36px; padding-top: 2px; }
+.vote-count { font-size: 13px; font-weight: 600; color: var(--text2); }
+.vote-arrows { display: flex; flex-direction: column; gap: 1px; }
+.vote-arr { width: 20px; height: 20px; display: flex; align-items: center; justify-content: center;
+  border-radius: 4px; cursor: pointer; font-size: 12px; border: 1px solid transparent;
+  color: var(--text3); transition: all .15s; }
+.vote-arr:hover.up   { border-color: var(--green); color: var(--green); }
+.vote-arr:hover.down { border-color: var(--red);   color: var(--red); }
+.vote-arr.voted-up   { border-color: var(--green); color: var(--green); background: rgba(63,185,80,.1); }
+.vote-arr.voted-down { border-color: var(--red);   color: var(--red);   background: rgba(248,81,73,.1); }
+
+.post-content { flex: 1; min-width: 0; }
+.post-header { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; flex-wrap: wrap; }
+.post-title { font-size: 14px; font-weight: 500; color: var(--text); }
+.post-title:hover { color: var(--blue); }
+
+.post-badge { padding: 1px 7px; border-radius: 20px; font-size: 11px; font-weight: 500; }
+.badge-question  { background: rgba(88,166,255,0.15);  color: var(--blue); }
+.badge-insight   { background: rgba(63,185,80,0.15);   color: var(--green); }
+.badge-showcase  { background: rgba(137,87,229,0.15);  color: var(--purple); }
+.badge-feedback  { background: rgba(255,166,87,0.15);  color: var(--orange); }
+.badge-answered  { background: rgba(63,185,80,0.2);    color: var(--green); border: 1px solid rgba(63,185,80,.3); }
+.badge-pinned    { background: rgba(227,179,65,0.15);  color: var(--yellow); }
+.badge-duplicate { background: rgba(139,148,158,0.15); color: var(--text3); }
+
+.post-meta { font-size: 11px; color: var(--text3); margin-bottom: 4px; display: flex; gap: 8px; flex-wrap: wrap; }
+.post-meta .author { color: var(--blue); }
+.post-meta .tag { background: var(--bg3); padding: 1px 6px; border-radius: 4px; cursor: pointer; }
+.post-meta .tag:hover { color: var(--text2); }
+
+.post-preview { font-size: 12px; color: var(--text3); line-height: 1.5;
+  overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+
+.post-stats { display: flex; gap: 10px; font-size: 11px; color: var(--text3); margin-top: 6px; }
+.post-stat { display: flex; align-items: center; gap: 3px; }
+
+.post-item.has-answer { border-left: 3px solid var(--green); }
+
+/* 게시글 상세 */
+.post-detail { max-width: 760px; }
+.post-detail-header { margin-bottom: 20px; }
+.post-detail-title { font-size: 20px; font-weight: 700; margin-bottom: 8px; line-height: 1.4; }
+.post-detail-meta { font-size: 12px; color: var(--text3); display: flex; gap: 10px; flex-wrap: wrap; }
+.post-body { font-size: 14px; line-height: 1.8; color: var(--text2);
+  background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; padding: 20px;
+  margin-bottom: 20px; }
+.post-body code { background: var(--bg3); padding: 1px 5px; border-radius: 4px;
+  font-family: monospace; font-size: 12px; color: var(--cyan); }
+.post-body pre { background: var(--bg3); border: 1px solid var(--border); border-radius: 8px;
+  padding: 14px; overflow-x: auto; margin: 10px 0; }
+.post-body pre code { background: none; padding: 0; }
+
+/* 답변 */
+.answers-section { margin-bottom: 24px; }
+.answers-title { font-size: 14px; font-weight: 600; margin-bottom: 14px;
+  display: flex; align-items: center; gap: 8px; }
+.answer-item { display: flex; gap: 12px; margin-bottom: 14px; }
+.answer-votes { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 36px; }
+.answer-content { flex: 1; background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 10px; padding: 16px; }
+.answer-content.best-answer { border-color: var(--green); }
+.best-badge { display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11px; color: var(--green); background: rgba(63,185,80,.1);
+  padding: 2px 8px; border-radius: 4px; margin-bottom: 8px; }
+.answer-meta { font-size: 11px; color: var(--text3); margin-top: 8px; }
+
+/* 중복 답변 배너 */
+.duplicate-banner {
+  background: rgba(139,148,158,0.08); border: 1px solid var(--border);
+  border-radius: 8px; padding: 12px 16px; margin-bottom: 16px;
+  display: flex; align-items: center; gap: 10px; font-size: 13px;
+}
+.duplicate-banner a { font-weight: 500; }
+
+/* 답변 작성 */
+.answer-form { background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 10px; padding: 16px; }
+.answer-form textarea {
+  width: 100%; background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 8px; padding: 10px; color: var(--text); font-size: 13px;
+  resize: vertical; min-height: 100px; outline: none; font-family: var(--font);
+  margin-bottom: 10px; transition: border-color .15s;
+}
+.answer-form textarea:focus { border-color: var(--accent); }
+
+/* 검색 */
+.filter-bar { display: flex; gap: 10px; margin-bottom: 16px; align-items: center; flex-wrap: wrap; }
+.search-box { flex: 1; min-width: 200px; background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 12px; color: var(--text); font-size: 13px;
+  outline: none; transition: border-color .15s; }
+.search-box:focus { border-color: var(--accent); }
+select.search-box { min-width: 120px; flex: none; }
+
+/* 새 글 모달 */
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.7);
+  backdrop-filter: blur(4px); z-index: 200;
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0; pointer-events: none; transition: opacity .2s; }
+.modal-overlay.open { opacity: 1; pointer-events: all; }
+.modal { background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 14px; padding: 24px; width: 560px; max-width: 95vw;
+  transform: translateY(10px); transition: transform .2s; }
+.modal-overlay.open .modal { transform: translateY(0); }
+.modal-title { font-size: 16px; font-weight: 600; margin-bottom: 16px; }
+.field { margin-bottom: 14px; }
+.field label { display: block; font-size: 12px; color: var(--text3); margin-bottom: 5px; }
+.field input, .field textarea, .field select {
+  width: 100%; background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 8px; padding: 9px 12px; color: var(--text); font-size: 13px;
+  outline: none; transition: border-color .15s; font-family: var(--font);
+}
+.field input:focus, .field textarea:focus, .field select:focus { border-color: var(--accent); }
+.field textarea { resize: vertical; min-height: 100px; }
+.modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
+
+/* 빈 상태 */
+.empty { text-align: center; padding: 60px 20px; color: var(--text3); }
+.empty-icon { font-size: 48px; margin-bottom: 12px; }
+
+::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-track { background: var(--bg2); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+<div class="app">
+
+<div class="topbar">
+  <div class="logo">⬡ Orbit</div>
+  <div class="tabs">
+    <button class="tab active" onclick="switchView('list')">커뮤니티</button>
+    <button class="tab" id="detail-tab" style="display:none" onclick="switchView('list')">← 목록</button>
+  </div>
+  <div class="topbar-right">
+    <button class="btn btn-primary" onclick="openNewPost()">+ 글쓰기</button>
+    <a href="/orbit.html" style="color:var(--text3);font-size:12px">← Orbit</a>
+    <a href="/solution-market.html" style="color:var(--text3);font-size:12px">솔루션 마켓</a>
+  </div>
+</div>
+
+<div class="layout">
+  <!-- 사이드바 -->
+  <div class="sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-title">카테고리</div>
+      <div class="sidebar-item active" onclick="filterCategory('')" data-cat="">
+        <span>🌐 전체</span><span class="count" id="cnt-all">0</span>
+      </div>
+      <div class="sidebar-item" onclick="filterCategory('question')" data-cat="question">
+        <span>❓ 질문</span><span class="count" id="cnt-question">0</span>
+      </div>
+      <div class="sidebar-item" onclick="filterCategory('insight')" data-cat="insight">
+        <span>💡 인사이트</span><span class="count" id="cnt-insight">0</span>
+      </div>
+      <div class="sidebar-item" onclick="filterCategory('showcase')" data-cat="showcase">
+        <span>🚀 쇼케이스</span><span class="count" id="cnt-showcase">0</span>
+      </div>
+      <div class="sidebar-item" onclick="filterCategory('feedback')" data-cat="feedback">
+        <span>📝 피드백</span><span class="count" id="cnt-feedback">0</span>
+      </div>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-title">인기 태그</div>
+      <div id="tag-cloud" style="display:flex;flex-wrap:wrap;gap:5px"></div>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-title">통계</div>
+      <div style="font-size:12px;color:var(--text3);line-height:2">
+        <div>총 <b id="stat-posts" style="color:var(--text)">0</b>개 게시글</div>
+        <div>답변 완료 <b id="stat-answered" style="color:var(--green)">0</b>개</div>
+        <div>총 <b id="stat-votes" style="color:var(--text)">0</b>개 투표</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 메인 -->
+  <div class="main" id="main">
+
+    <!-- 목록 뷰 -->
+    <div id="view-list">
+      <div class="filter-bar">
+        <input class="search-box" id="search-input" placeholder="게시글 검색..."
+          oninput="renderList()">
+        <select class="search-box" id="sort-select" onchange="renderList()">
+          <option value="votes">인기순</option>
+          <option value="newest">최신순</option>
+          <option value="unanswered">미답변</option>
+        </select>
+      </div>
+      <div class="post-list" id="post-list"></div>
+    </div>
+
+    <!-- 상세 뷰 -->
+    <div id="view-detail" style="display:none">
+      <div class="post-detail" id="post-detail-content"></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- 글쓰기 모달 -->
+<div class="modal-overlay" id="new-post-modal">
+  <div class="modal">
+    <div class="modal-title">새 게시글</div>
+    <div class="field">
+      <label>카테고리</label>
+      <select id="new-cat">
+        <option value="question">❓ 질문</option>
+        <option value="insight">💡 인사이트</option>
+        <option value="showcase">🚀 쇼케이스</option>
+        <option value="feedback">📝 피드백</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>제목 *</label>
+      <input id="new-title" placeholder="명확하고 구체적인 제목을 작성하세요">
+    </div>
+    <div class="field">
+      <label>내용 *</label>
+      <textarea id="new-body" placeholder="상세한 내용을 작성하세요. 코드는 ```로 감싸면 됩니다."></textarea>
+    </div>
+    <div class="field">
+      <label>태그 (쉼표 구분)</label>
+      <input id="new-tags" placeholder="orbit, automation, claude-code">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeNewPost()">취소</button>
+      <button class="btn btn-primary" onclick="submitPost()">게시하기</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─── 상태 ─────────────────────────────────────
+let posts = [];
+let currentCategory = '';
+let currentPostId   = null;
+
+// ─── 샘플 데이터 (서버 없을 때) ──────────────
+const SAMPLE_POSTS = [
+  {
+    id: 'p1',
+    category: 'insight',
+    title: 'Orbit + Claude Code 하네스로 작업 속도 3배 높인 방법',
+    body: `CLAUDE.md에 울트라 워크 설정을 하고 나서 반복 작업이 현저히 줄었습니다.\n\n특히 \`ulw:\` 명령어로 복잡한 리팩토링을 한 번에 처리하는 게 핵심이에요.\n\n\`\`\`\nulw: 이 파일들의 중복 로직을 제거하고 공통 모듈로 추출해\n\`\`\`\n\n이렇게만 해도 Claude가 알아서 분석 → 계획 → 구현 → 검증까지 합니다.`,
+    author: 'orbit_user',
+    tags: ['claude-code', 'ulw', 'productivity', 'harness'],
+    votes: 47,
+    answers: [
+      {
+        id: 'a1', body: '저도 비슷한 경험이 있어요. plan: 명령어로 먼저 설계를 받고 나서 ulw로 구현하면 더 정확합니다.',
+        author: 'dev_kim', votes: 12, isBest: true, createdAt: '2026-02-25'
+      },
+      {
+        id: 'a2', body: 'CLAUDE.md를 프로젝트마다 커스텀해서 쓰면 효과가 배가됩니다. 특히 도메인 지식을 넣어두면 좋아요.',
+        author: 'dev_park', votes: 8, isBest: false, createdAt: '2026-02-26'
+      }
+    ],
+    createdAt: '2026-02-24',
+    pinned: true,
+    answered: true,
+  },
+  {
+    id: 'p2',
+    category: 'question',
+    title: 'Orbit daily-work-adapter에서 엑셀 파일이 감지가 안 됩니다',
+    body: `설정은 했는데 .xlsx 파일 수정해도 Orbit에 이벤트가 안 잡히네요.\n\nWATCH_DIRS 환경변수를 설정했고 daily-work-adapter.js도 실행 중입니다.\n\n혹시 같은 문제 겪으신 분 계신가요?`,
+    author: 'excel_user',
+    tags: ['daily-work', 'excel', 'troubleshooting'],
+    votes: 8,
+    answers: [
+      {
+        id: 'a3', body: `WATCH_EXTENSIONS 환경변수도 확인해보세요.\n\`\`\`\nexport WATCH_EXTENSIONS=".xlsx,.csv,.xls"\n\`\`\`\n이걸 명시적으로 설정해야 감지됩니다.`,
+        author: 'orbit_team', votes: 15, isBest: true, createdAt: '2026-02-26'
+      }
+    ],
+    createdAt: '2026-02-25',
+    answered: true,
+  },
+  {
+    id: 'p3',
+    category: 'showcase',
+    title: 'ERP 내보내기 자동 처리 워크플로우 공유합니다',
+    body: `더존 ERP에서 내보내는 파일을 Orbit으로 추적하고 자동 변환하는 워크플로우를 만들었습니다.\n\n\`\`\`bash\nexport ERP_WATCH_DIR="$HOME/더존/내보내기"\nexport ORBIT_CHANNEL=erp\nnode adapters/daily-work-adapter.js\n\`\`\`\n\n파일이 생성되면 Orbit이 자동으로 캡처하고 처리 스크립트가 실행됩니다.`,
+    author: 'erp_master',
+    tags: ['erp', 'automation', 'dozone', 'workflow'],
+    votes: 23,
+    answers: [],
+    createdAt: '2026-02-23',
+  },
+  {
+    id: 'p4',
+    category: 'question',
+    title: 'Shadow AI 감지에서 자꾸 false positive가 납니다',
+    body: `Copilot을 승인된 소스로 등록했는데도 계속 Shadow AI로 감지됩니다.\n승인 소스 등록이 제대로 된 건지 확인하는 방법이 있나요?`,
+    author: 'team_lead',
+    tags: ['shadow-ai', 'configuration', 'copilot'],
+    votes: 5,
+    answers: [],
+    createdAt: '2026-02-27',
+  },
+];
+
+// ─── 데이터 로드 ──────────────────────────────
+async function loadPosts() {
+  try {
+    const res = await fetch('/api/community/posts');
+    if (res.ok) {
+      const data = await res.json();
+      posts = [...SAMPLE_POSTS, ...data];
+    } else {
+      posts = SAMPLE_POSTS;
+    }
+  } catch {
+    posts = SAMPLE_POSTS;
+  }
+  renderList();
+  updateStats();
+  renderTagCloud();
+}
+
+// ─── 렌더링 ───────────────────────────────────
+function renderList() {
+  const q      = document.getElementById('search-input').value.toLowerCase();
+  const sort   = document.getElementById('sort-select').value;
+
+  let filtered = posts.filter(p => {
+    const matchCat  = !currentCategory || p.category === currentCategory;
+    const matchQ    = !q || p.title.toLowerCase().includes(q) ||
+                      p.body.toLowerCase().includes(q) ||
+                      (p.tags||[]).some(t => t.toLowerCase().includes(q));
+    return matchCat && matchQ;
+  });
+
+  if (sort === 'votes')      filtered.sort((a,b) => b.votes - a.votes);
+  if (sort === 'newest')     filtered.sort((a,b) => b.createdAt.localeCompare(a.createdAt));
+  if (sort === 'unanswered') filtered = filtered.filter(p => !p.answered || !p.answers?.length);
+
+  // 핀 글 상단
+  filtered.sort((a,b) => (b.pinned?1:0) - (a.pinned?1:0));
+
+  const list = document.getElementById('post-list');
+  if (!filtered.length) {
+    list.innerHTML = `<div class="empty"><div class="empty-icon">📭</div>
+      <div style="color:var(--text2);font-size:15px;margin-bottom:6px">게시글이 없습니다</div>
+      <div>첫 번째 글을 작성해보세요!</div></div>`;
+    return;
+  }
+
+  list.innerHTML = filtered.map(p => {
+    const catMap = { question:'badge-question', insight:'badge-insight',
+                     showcase:'badge-showcase', feedback:'badge-feedback' };
+    const catLabel = { question:'❓ 질문', insight:'💡 인사이트',
+                       showcase:'🚀 쇼케이스', feedback:'📝 피드백' };
+    const ansCount = p.answers?.length || 0;
+    const preview  = p.body.replace(/```[\s\S]*?```/g, '[코드]').slice(0, 120);
+
+    // 중복 질문 감지 (같은 태그 + 이미 best answer 있는 글)
+    const isDuplicate = p.category === 'question' && !p.answered &&
+      posts.some(other => other.id !== p.id && other.answered &&
+        other.tags?.some(t => p.tags?.includes(t)));
+
+    return `
+    <div class="post-item ${p.pinned?'pinned':''} ${p.answered?'has-answer':''}"
+      onclick="openPost('${p.id}')">
+      <div class="post-votes">
+        <div class="vote-count">${p.votes}</div>
+        <div class="vote-arrows">
+          <div class="vote-arr up" onclick="event.stopPropagation();votePost('${p.id}','up',this)">▲</div>
+          <div class="vote-arr down" onclick="event.stopPropagation();votePost('${p.id}','down',this)">▼</div>
+        </div>
+      </div>
+      <div class="post-content">
+        <div class="post-header">
+          <span class="post-title">${escHtml(p.title)}</span>
+          <span class="post-badge ${catMap[p.category]||'badge-question'}">${catLabel[p.category]||p.category}</span>
+          ${p.pinned ? '<span class="post-badge badge-pinned">📌 고정</span>' : ''}
+          ${p.answered ? '<span class="post-badge badge-answered">✓ 답변됨</span>' : ''}
+          ${isDuplicate ? '<span class="post-badge badge-duplicate">중복 가능</span>' : ''}
+        </div>
+        <div class="post-meta">
+          <span class="author">${p.author}</span>
+          <span>${p.createdAt}</span>
+          ${(p.tags||[]).map(t=>`<span class="tag" onclick="event.stopPropagation();filterTag('${t}')">#${t}</span>`).join('')}
+        </div>
+        <div class="post-preview">${escHtml(preview)}${p.body.length > 120 ? '...' : ''}</div>
+        <div class="post-stats">
+          <span class="post-stat">💬 ${ansCount}개 답변</span>
+          <span class="post-stat">👁 ${Math.floor(p.votes * 7 + ansCount * 12)}회 조회</span>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ─── 상세 뷰 ─────────────────────────────────
+function openPost(id) {
+  const post = posts.find(p => p.id === id);
+  if (!post) return;
+  currentPostId = id;
+  switchView('detail');
+
+  // 중복 질문 감지
+  let duplicateBanner = '';
+  if (post.category === 'question') {
+    const related = posts.filter(p => p.id !== id && p.answered &&
+      p.tags?.some(t => post.tags?.includes(t)));
+    if (related.length) {
+      duplicateBanner = `
+      <div class="duplicate-banner">
+        🔁 비슷한 질문에 이미 답변이 있습니다:
+        <a onclick="openPost('${related[0].id}')" style="cursor:pointer">${escHtml(related[0].title)}</a>
+        — 먼저 확인해보세요!
+      </div>`;
+    }
+  }
+
+  const catLabel = { question:'❓ 질문', insight:'💡 인사이트',
+                     showcase:'🚀 쇼케이스', feedback:'📝 피드백' };
+  const catClass = { question:'badge-question', insight:'badge-insight',
+                     showcase:'badge-showcase', feedback:'badge-feedback' };
+
+  const body = formatBody(post.body);
+  const bestAnswer = post.answers?.find(a => a.isBest);
+  const otherAnswers = post.answers?.filter(a => !a.isBest) || [];
+
+  document.getElementById('post-detail-content').innerHTML = `
+    ${duplicateBanner}
+    <div class="post-detail-header">
+      <div class="post-detail-title">${escHtml(post.title)}</div>
+      <div class="post-detail-meta">
+        <span class="post-badge ${catClass[post.category]||''}">${catLabel[post.category]||post.category}</span>
+        <span>by <a style="color:var(--blue)">${post.author}</a></span>
+        <span>${post.createdAt}</span>
+        ${(post.tags||[]).map(t=>`<span class="post-meta"><span class="tag" onclick="filterTag('${t}')">#${t}</span></span>`).join('')}
+      </div>
+    </div>
+
+    <div style="display:flex;gap:16px;align-items:flex-start">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:4px;padding-top:8px">
+        <div class="vote-arr up" style="font-size:16px"
+          onclick="votePost('${post.id}','up',this)">▲</div>
+        <div style="font-size:18px;font-weight:700;color:var(--text)">${post.votes}</div>
+        <div class="vote-arr down" style="font-size:16px"
+          onclick="votePost('${post.id}','down',this)">▼</div>
+      </div>
+      <div class="post-body" style="flex:1">${body}</div>
+    </div>
+
+    <div class="answers-section" style="margin-top:24px">
+      <div class="answers-title">
+        💬 ${post.answers?.length || 0}개 답변
+        ${post.answered ? '<span class="post-badge badge-answered" style="font-size:12px">✓ 채택된 답변 있음</span>' : ''}
+      </div>
+
+      ${bestAnswer ? `
+      <div class="answer-item">
+        <div class="answer-votes">
+          <div class="vote-arr up" onclick="voteAnswer('${post.id}','${bestAnswer.id}','up',this)">▲</div>
+          <div style="font-size:14px;font-weight:600;text-align:center">${bestAnswer.votes}</div>
+          <div class="vote-arr down" onclick="voteAnswer('${post.id}','${bestAnswer.id}','down',this)">▼</div>
+        </div>
+        <div class="answer-content best-answer">
+          <div class="best-badge">✓ 채택된 답변</div>
+          <div>${formatBody(bestAnswer.body)}</div>
+          <div class="answer-meta">by <span style="color:var(--blue)">${bestAnswer.author}</span> · ${bestAnswer.createdAt}</div>
+        </div>
+      </div>` : ''}
+
+      ${otherAnswers.map(a => `
+      <div class="answer-item">
+        <div class="answer-votes">
+          <div class="vote-arr up" onclick="voteAnswer('${post.id}','${a.id}','up',this)">▲</div>
+          <div style="font-size:14px;font-weight:600;text-align:center">${a.votes}</div>
+          <div class="vote-arr down" onclick="voteAnswer('${post.id}','${a.id}','down',this)">▼</div>
+        </div>
+        <div class="answer-content">
+          <div>${formatBody(a.body)}</div>
+          <div class="answer-meta">by <span style="color:var(--blue)">${a.author}</span> · ${a.createdAt}</div>
+        </div>
+      </div>`).join('')}
+
+      ${!post.answers?.length ? `
+      <div class="empty" style="padding:30px">
+        <div>아직 답변이 없습니다. 첫 번째 답변을 달아주세요!</div>
+      </div>` : ''}
+    </div>
+
+    <div class="answer-form">
+      <div style="font-size:13px;font-weight:600;margin-bottom:10px">답변 작성</div>
+      <textarea id="answer-body-${post.id}" placeholder="도움이 되는 답변을 작성해주세요..."></textarea>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-primary" onclick="submitAnswer('${post.id}')">답변 게시</button>
+      </div>
+    </div>
+  `;
+}
+
+// ─── 목록/상세 전환 ────────────────────────────
+function switchView(view) {
+  document.getElementById('view-list').style.display   = view === 'list'   ? '' : 'none';
+  document.getElementById('view-detail').style.display = view === 'detail' ? '' : 'none';
+  document.getElementById('detail-tab').style.display  = view === 'detail' ? '' : 'none';
+  document.querySelectorAll('.tab')[0].classList.toggle('active', view === 'list');
+}
+
+// ─── 투표 ─────────────────────────────────────
+function votePost(postId, dir, btn) {
+  const post = posts.find(p => p.id === postId);
+  if (!post) return;
+  post.votes += dir === 'up' ? 1 : -1;
+  fetch('/api/community/vote', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ postId, direction: dir }),
+  }).catch(() => {});
+  renderList();
+  if (currentPostId === postId) openPost(postId);
+}
+
+function voteAnswer(postId, answerId, dir, btn) {
+  const post = posts.find(p => p.id === postId);
+  if (!post) return;
+  const ans = post.answers?.find(a => a.id === answerId);
+  if (ans) { ans.votes += dir === 'up' ? 1 : -1; }
+  openPost(postId);
+}
+
+// ─── 답변 제출 ────────────────────────────────
+async function submitAnswer(postId) {
+  const ta = document.getElementById('answer-body-' + postId);
+  const body = ta.value.trim();
+  if (!body) return;
+
+  const post = posts.find(p => p.id === postId);
+  if (!post) return;
+
+  const newAnswer = {
+    id: 'ans-' + Date.now(),
+    body,
+    author: 'Me',
+    votes: 0,
+    isBest: false,
+    createdAt: new Date().toISOString().slice(0, 10),
+  };
+
+  if (!post.answers) post.answers = [];
+  post.answers.push(newAnswer);
+  ta.value = '';
+
+  try {
+    await fetch('/api/community/answers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ postId, body }),
+    });
+  } catch {}
+
+  openPost(postId);
+  updateStats();
+}
+
+// ─── 새 글 제출 ───────────────────────────────
+function openNewPost() {
+  document.getElementById('new-post-modal').classList.add('open');
+}
+function closeNewPost() {
+  document.getElementById('new-post-modal').classList.remove('open');
+}
+async function submitPost() {
+  const title = document.getElementById('new-title').value.trim();
+  const body  = document.getElementById('new-body').value.trim();
+  const cat   = document.getElementById('new-cat').value;
+  const tags  = document.getElementById('new-tags').value.split(',').map(t=>t.trim()).filter(Boolean);
+  if (!title || !body) { alert('제목과 내용은 필수입니다'); return; }
+
+  const post = {
+    id: 'p-' + Date.now(),
+    category: cat, title, body, tags,
+    author: 'Me', votes: 0, answers: [],
+    createdAt: new Date().toISOString().slice(0, 10),
+  };
+  posts.unshift(post);
+
+  try {
+    await fetch('/api/community/posts', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ category: cat, title, body, tags }),
+    });
+  } catch {}
+
+  closeNewPost();
+  document.getElementById('new-title').value = '';
+  document.getElementById('new-body').value  = '';
+  document.getElementById('new-tags').value  = '';
+  renderList(); updateStats(); renderTagCloud();
+}
+
+// ─── 필터 ─────────────────────────────────────
+function filterCategory(cat) {
+  currentCategory = cat;
+  document.querySelectorAll('.sidebar-item[data-cat]').forEach(el => {
+    el.classList.toggle('active', el.dataset.cat === cat);
+  });
+  renderList();
+}
+function filterTag(tag) {
+  document.getElementById('search-input').value = tag;
+  renderList();
+}
+
+// ─── 통계/태그 ────────────────────────────────
+function updateStats() {
+  document.getElementById('stat-posts').textContent    = posts.length;
+  document.getElementById('stat-answered').textContent = posts.filter(p=>p.answered||p.answers?.some(a=>a.isBest)).length;
+  document.getElementById('stat-votes').textContent    = posts.reduce((s,p)=>s+(p.votes||0),0);
+  ['question','insight','showcase','feedback'].forEach(cat => {
+    const el = document.getElementById('cnt-' + cat);
+    if (el) el.textContent = posts.filter(p=>p.category===cat).length;
+  });
+  document.getElementById('cnt-all').textContent = posts.length;
+}
+function renderTagCloud() {
+  const tagCount = {};
+  posts.forEach(p => (p.tags||[]).forEach(t => { tagCount[t] = (tagCount[t]||0)+1; }));
+  const sorted = Object.entries(tagCount).sort((a,b)=>b[1]-a[1]).slice(0,15);
+  document.getElementById('tag-cloud').innerHTML = sorted.map(([t,c]) =>
+    `<span onclick="filterTag('${t}')" style="cursor:pointer;font-size:11px;padding:2px 8px;background:var(--bg3);border-radius:4px;color:var(--text3)">#${t} <b style="color:var(--text2)">${c}</b></span>`
+  ).join('');
+}
+
+// ─── 유틸 ─────────────────────────────────────
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function formatBody(text) {
+  // 코드 블록 변환
+  let html = escHtml(text)
+    .replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\n/g, '<br>');
+  return html;
+}
+
+// 모달 외부 클릭
+document.getElementById('new-post-modal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeNewPost();
+});
+
+// 초기 로드
+loadPosts();
+</script>
+</body>
+</html>

@@ -27,6 +27,7 @@ const { detectShadowAI, checkEventForShadow, getApprovedSources, addApprovedSour
 const { getAllThemes, getThemeById, registerTheme, recordDownload, rateTheme, deleteUserTheme } = require('./src/theme-store');
 const { register: authRegister, login: authLogin, verifyToken, optionalAuth } = require('./src/auth');
 const { PLANS, createPayment, confirmPayment, MOCK_MODE: paymentMockMode } = require('./src/payment');
+const { analyzeAndSuggest, saveFeedback, getSuggestions, getPatterns, getMarketCandidates } = require('./src/growth-engine');
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 4747;
 const CONV_FILE = path.join(__dirname, 'conversation.jsonl');
@@ -1103,6 +1104,134 @@ app.post('/api/payment/confirm', async (req, res) => {
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
+});
+
+// ─── 성장 엔진 API ───────────────────────────────────
+app.get('/api/growth/suggestions', (req, res) => {
+  res.json(getSuggestions({ channelId: req.query.channel, limit: parseInt(req.query.limit)||20 }));
+});
+
+app.get('/api/growth/patterns', (req, res) => {
+  res.json(getPatterns({ channelId: req.query.channel }));
+});
+
+app.post('/api/growth/feedback', (req, res) => {
+  const result = saveFeedback({ ...req.body });
+  res.json(result);
+});
+
+app.get('/api/growth/candidates', (req, res) => {
+  res.json(getMarketCandidates());
+});
+
+// 수동 분석 트리거 (최근 이벤트 기반)
+app.post('/api/growth/analyze', (req, res) => {
+  try {
+    const channel = req.body.channel || 'default';
+    const recentEvents = dbModule.getEvents
+      ? dbModule.getEvents({ channelId: channel, limit: 500 })
+      : [];
+    const results = analyzeAndSuggest(recentEvents, channel);
+    res.json({ ok: true, patterns: results.length, results });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── 솔루션 마켓 API ─────────────────────────────────
+// 솔루션은 theme-store 구조를 재활용 (타입 필드 추가)
+const solutionStore = (() => {
+  const fs2   = require('fs');
+  const path2 = require('path');
+  const SOLUTIONS_FILE = path2.join(__dirname, 'data', 'solutions.json');
+  function load() {
+    try {
+      if (!fs2.existsSync(SOLUTIONS_FILE)) return [];
+      return JSON.parse(fs2.readFileSync(SOLUTIONS_FILE, 'utf8'));
+    } catch { return []; }
+  }
+  function save(data) {
+    const dir = path2.dirname(SOLUTIONS_FILE);
+    if (!fs2.existsSync(dir)) fs2.mkdirSync(dir, { recursive: true });
+    fs2.writeFileSync(SOLUTIONS_FILE, JSON.stringify(data, null, 2));
+  }
+  return {
+    getAll: () => load(),
+    add: (sol) => {
+      const data = load();
+      data.push({ ...sol, id: sol.id || 'sol-' + Date.now().toString(36),
+        createdAt: new Date().toISOString().slice(0,10) });
+      save(data); return data[data.length-1];
+    },
+  };
+})();
+
+app.get('/api/growth/solutions', (req, res) => {
+  res.json(solutionStore.getAll());
+});
+
+app.post('/api/growth/solutions', (req, res) => {
+  const sol = solutionStore.add(req.body);
+  res.json(sol);
+});
+
+// ─── 커뮤니티 API ─────────────────────────────────────
+const communityStore = (() => {
+  const fs2   = require('fs');
+  const path2 = require('path');
+  const COMM_FILE = path2.join(__dirname, 'data', 'community.json');
+  function load() {
+    try {
+      if (!fs2.existsSync(COMM_FILE)) return { posts: [] };
+      return JSON.parse(fs2.readFileSync(COMM_FILE, 'utf8'));
+    } catch { return { posts: [] }; }
+  }
+  function save(data) {
+    const dir = path2.dirname(COMM_FILE);
+    if (!fs2.existsSync(dir)) fs2.mkdirSync(dir, { recursive: true });
+    fs2.writeFileSync(COMM_FILE, JSON.stringify(data, null, 2));
+  }
+  return {
+    getPosts: () => load().posts,
+    addPost: (post) => {
+      const data = load();
+      const entry = { ...post, id: 'p-' + Date.now().toString(36),
+        votes: 0, answers: [], createdAt: new Date().toISOString().slice(0,10) };
+      data.posts.push(entry);
+      save(data); return entry;
+    },
+    addAnswer: (postId, answer) => {
+      const data = load();
+      const post = data.posts.find(p => p.id === postId);
+      if (!post) return null;
+      if (!post.answers) post.answers = [];
+      const entry = { ...answer, id: 'ans-' + Date.now().toString(36),
+        votes: 0, createdAt: new Date().toISOString().slice(0,10) };
+      post.answers.push(entry);
+      post.answered = true;
+      save(data); return entry;
+    },
+    vote: (postId, direction) => {
+      const data = load();
+      const post = data.posts.find(p => p.id === postId);
+      if (post) { post.votes = (post.votes||0) + (direction === 'up' ? 1 : -1); }
+      save(data);
+    },
+  };
+})();
+
+app.get('/api/community/posts', (req, res) => res.json(communityStore.getPosts()));
+app.post('/api/community/posts', (req, res) => res.json(communityStore.addPost(req.body)));
+app.post('/api/community/answers', (req, res) => {
+  const { postId, body } = req.body;
+  if (!postId || !body) return res.status(400).json({ error: 'postId and body required' });
+  const ans = communityStore.addAnswer(postId, req.body);
+  res.json(ans || { error: 'post not found' });
+});
+app.post('/api/community/vote', (req, res) => {
+  const { postId, direction } = req.body;
+  communityStore.vote(postId, direction);
+  res.json({ ok: true });
 });
 
 // ─── 서버 시작 ──────────────────────────────────────
