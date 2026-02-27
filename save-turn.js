@@ -1,11 +1,20 @@
 /**
  * save-turn.js
  * Claude Code 훅 스크립트 (10개 훅 이벤트 처리)
- * stdin → 이벤트 정규화 → SQLite + JSONL 이중 저장
+ * stdin → 이벤트 정규화 → SQLite + JSONL + HTTP POST 삼중 저장
+ * HTTP POST: 서버가 실행 중이면 즉시 WebSocket 브로드캐스트 (파일 감시 레이턴시 없음)
  */
 const fs = require('fs');
 const path = require('path');
+const http = require('http');
 const { normalizeHookEvent } = require('./event-normalizer');
+
+// 서버 포트 (환경변수 또는 기본값 4747)
+const SERVER_PORT = process.env.MINDMAP_PORT || 4747;
+// 채널 ID: 환경변수로 팀원별 구분 (예: export MINDMAP_CHANNEL=팀채널명)
+const CHANNEL_ID   = process.env.MINDMAP_CHANNEL || 'default';
+// 멤버 이름: 환경변수로 설정 (예: export MINDMAP_MEMBER=다린)
+const MEMBER_NAME  = process.env.MINDMAP_MEMBER  || require('os').hostname().split('.')[0];
 
 // ── 경로: 스크립트 위치 기준 자동 해석 (macOS/Windows 공용) ──
 const BASE_DIR = path.resolve(__dirname);
@@ -136,20 +145,36 @@ function insertToDb(event) {
 // ─── JSONL 저장 (하위 호환) ─────────────────────────
 function appendToJsonl(event) {
   try {
-    // 기존 형식과 호환되는 간결한 포맷
     const entry = {
-      id: event.id,
-      type: event.type,
-      source: event.source,
-      sessionId: event.sessionId,
-      parentEventId: event.parentEventId,
-      data: event.data,
-      ts: event.timestamp,
+      id: event.id, type: event.type, source: event.source,
+      sessionId: event.sessionId, parentEventId: event.parentEventId,
+      data: event.data, ts: event.timestamp,
     };
     fs.appendFileSync(CONV_FILE, JSON.stringify(entry) + '\n');
   } catch (e) {
     log(`JSONL append error: ${e.message}`);
   }
+}
+
+// ─── HTTP POST → 서버 직접 전송 (비동기, 실패해도 무시) ─
+function postToServer(events) {
+  try {
+    const body = JSON.stringify({ events, channelId: CHANNEL_ID, memberName: MEMBER_NAME });
+    const req = http.request({
+      hostname: '127.0.0.1',
+      port: SERVER_PORT,
+      path: '/api/hook',
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+    }, (res) => {
+      // 응답 소비 (소켓 leak 방지)
+      res.resume();
+    });
+    req.on('error', () => {}); // 서버 미실행 시 조용히 무시
+    req.setTimeout(2000, () => req.destroy()); // 2초 타임아웃
+    req.write(body);
+    req.end();
+  } catch {}
 }
 
 // ─── 메인 처리 ──────────────────────────────────────
@@ -182,10 +207,10 @@ process.stdin.on('end', () => {
 
     // 각 이벤트 저장 + 상태 업데이트
     for (const event of events) {
-      // SQLite 저장
+      // 1. SQLite 저장 (영구 보존)
       insertToDb(event);
 
-      // JSONL 저장
+      // 2. JSONL 저장 (하위 호환)
       appendToJsonl(event);
 
       // 세션 상태 추적 (부모-자식 관계를 위해)
@@ -226,6 +251,11 @@ process.stdin.on('end', () => {
         path.join(snapshotDir, 'marker.json'),
         JSON.stringify({ eventId: lastEventId, ts: new Date().toISOString(), session: sessionId }, null, 2)
       );
+    }
+
+    // 3. HTTP POST → 서버 실시간 브로드캐스트 (비동기, 파일 감시 레이턴시 제거)
+    if (events.length > 0) {
+      postToServer(events);
     }
 
     saveState(state);

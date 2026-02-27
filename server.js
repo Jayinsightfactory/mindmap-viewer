@@ -16,9 +16,27 @@ const { createAnnotationEvent } = require('./event-normalizer');
 const { getAiStyle, AI_SOURCES } = require('./adapters/ai-adapter-base');
 const { generateReport } = require('./code-analyzer');
 
-const PORT = 4747;
+const PORT = process.env.PORT ? parseInt(process.env.PORT) : 4747;
 const CONV_FILE = path.join(__dirname, 'conversation.jsonl');
 const SNAPSHOTS_DIR = path.join(__dirname, 'snapshots');
+
+// ─── 채널(Room) 시스템 ──────────────────────────────
+// 각 채널은 독립된 마인드맵 공간. 팀원이 같은 채널에 접속하면 실시간 공유.
+// channelId → Set<WebSocket>
+const channelClients = new Map();   // channelId → Set<ws>
+const wsChannelMap   = new WeakMap(); // ws → { channelId, memberId, memberName, memberColor }
+
+const MEMBER_COLORS = [
+  '#58a6ff','#3fb950','#bc8cff','#f778ba','#ffa657',
+  '#39d2c0','#ff9500','#79c0ff','#f85149','#8957e5',
+];
+let memberColorIdx = 0;
+
+function getMemberColor() {
+  const c = MEMBER_COLORS[memberColorIdx % MEMBER_COLORS.length];
+  memberColorIdx++;
+  return c;
+}
 
 // ─── 초기화 ─────────────────────────────────────────
 if (!fs.existsSync(CONV_FILE)) fs.writeFileSync(CONV_FILE, '');
@@ -45,22 +63,45 @@ function getFullGraph(sessionFilter) {
   return graph;
 }
 
+// ─── 채널별 브로드캐스트 ───────────────────────────
+function broadcastToChannel(channelId, msg) {
+  const clients = channelClients.get(channelId);
+  if (!clients) return;
+  const data = JSON.stringify(msg);
+  clients.forEach(client => {
+    if (client.readyState === WebSocket.OPEN) {
+      try { client.send(data); } catch {}
+    }
+  });
+}
+
+function broadcastAll(msg) {
+  // 채널 미지정 클라이언트(구버전 호환) + 모든 채널
+  const data = JSON.stringify(msg);
+  wss.clients.forEach(client => {
+    if (client.readyState === WebSocket.OPEN) {
+      try { client.send(data); } catch {}
+    }
+  });
+}
+
+function getChannelMembers(channelId) {
+  const clients = channelClients.get(channelId);
+  if (!clients) return [];
+  return Array.from(clients).map(ws => wsChannelMap.get(ws)).filter(Boolean);
+}
+
 // ─── WebSocket ──────────────────────────────────────
 wss.on('connection', (ws) => {
   console.log('[WS] 클라이언트 연결됨');
 
+  // 초기 init — 채널 미지정 상태로 기본 데이터 전송
   try {
     const graph = getFullGraph();
     const sessions = getSessions();
     const stats = getStats();
     const userConfig = getUserConfig();
-    ws.send(JSON.stringify({
-      type: 'init',
-      graph,
-      sessions,
-      stats,
-      userConfig,
-    }));
+    ws.send(JSON.stringify({ type: 'init', graph, sessions, stats, userConfig }));
   } catch (e) {
     console.error('[WS] init 오류:', e.message);
   }
@@ -70,40 +111,202 @@ wss.on('connection', (ws) => {
     try {
       const msg = JSON.parse(raw);
 
+      // ── 채널 입장 ──────────────────────────────────
+      if (msg.type === 'channel.join') {
+        const channelId  = (msg.channelId || 'default').trim();
+        const memberName = (msg.memberName || '익명').substring(0, 20);
+        const memberId   = msg.memberId || `m_${Date.now()}`;
+        const memberColor = getMemberColor();
+
+        // 기존 채널에서 퇴장
+        const prev = wsChannelMap.get(ws);
+        if (prev) {
+          const prevClients = channelClients.get(prev.channelId);
+          if (prevClients) {
+            prevClients.delete(ws);
+            if (prevClients.size === 0) channelClients.delete(prev.channelId);
+          }
+          broadcastToChannel(prev.channelId, {
+            type: 'channel.member_left',
+            memberId: prev.memberId,
+            memberName: prev.memberName,
+            members: getChannelMembers(prev.channelId),
+          });
+        }
+
+        // 새 채널 입장
+        if (!channelClients.has(channelId)) channelClients.set(channelId, new Set());
+        channelClients.get(channelId).add(ws);
+        wsChannelMap.set(ws, { channelId, memberId, memberName, memberColor });
+
+        // 이 클라이언트에 채널 정보 + 현재 그래프 전송
+        const graph    = getFullGraph();
+        const sessions = getSessions();
+        const stats    = getStats();
+        ws.send(JSON.stringify({
+          type: 'channel.joined',
+          channelId,
+          memberId,
+          memberName,
+          memberColor,
+          members: getChannelMembers(channelId),
+          graph,
+          sessions,
+          stats,
+        }));
+
+        // 같은 채널 다른 멤버들에게 입장 알림
+        broadcastToChannel(channelId, {
+          type: 'channel.member_joined',
+          memberId,
+          memberName,
+          memberColor,
+          members: getChannelMembers(channelId),
+        });
+
+        console.log(`[CHANNEL] "${memberName}" → #${channelId} (총 ${channelClients.get(channelId).size}명)`);
+        return;
+      }
+
+      // ── 채널 내 커서/활동 브로드캐스트 ─────────────
+      if (msg.type === 'channel.activity') {
+        const info = wsChannelMap.get(ws);
+        if (info) {
+          broadcastToChannel(info.channelId, {
+            type: 'channel.activity',
+            memberId: info.memberId,
+            memberName: info.memberName,
+            memberColor: info.memberColor,
+            action: msg.action,     // 'hover_node', 'select_node', 'typing' 등
+            nodeId: msg.nodeId,
+          });
+        }
+        return;
+      }
+
+      // ── 주석 생성 ──────────────────────────────────
       if (msg.type === 'annotation.create') {
         const event = createAnnotationEvent(msg.data);
         insertEvent(event);
         const entry = { id: event.id, type: event.type, source: event.source, sessionId: event.sessionId, parentEventId: event.parentEventId, data: event.data, ts: event.timestamp };
         fs.appendFileSync(CONV_FILE, JSON.stringify(entry) + '\n');
 
-        broadcast({
-          type: 'event',
-          event,
-          graph: getFullGraph(),
-        });
+        const info = wsChannelMap.get(ws);
+        const channelId = info?.channelId;
+        const payload = { type: 'event', event, graph: getFullGraph() };
+        if (channelId) {
+          broadcastToChannel(channelId, payload);
+        } else {
+          broadcastAll(payload);
+        }
       }
 
+      // ── 세션 필터 ──────────────────────────────────
       if (msg.type === 'filter') {
         const graph = getFullGraph(msg.sessionId);
         ws.send(JSON.stringify({ type: 'filtered', graph }));
       }
+
     } catch (e) {
       console.error('[WS] message 처리 오류:', e.message);
     }
   });
 
-  ws.on('close', () => console.log('[WS] 클라이언트 연결 종료'));
+  ws.on('close', () => {
+    const info = wsChannelMap.get(ws);
+    if (info) {
+      const { channelId, memberId, memberName } = info;
+      const clients = channelClients.get(channelId);
+      if (clients) {
+        clients.delete(ws);
+        if (clients.size === 0) channelClients.delete(channelId);
+      }
+      broadcastToChannel(channelId, {
+        type: 'channel.member_left',
+        memberId,
+        memberName,
+        members: getChannelMembers(channelId),
+      });
+      console.log(`[CHANNEL] "${memberName}" 퇴장 (#${channelId})`);
+    }
+    console.log('[WS] 클라이언트 연결 종료');
+  });
+
   ws.on('error', e => console.error('[WS] 에러:', e.message));
 });
 
 function broadcast(msg) {
-  const data = JSON.stringify(msg);
-  wss.clients.forEach(client => {
-    if (client.readyState === WebSocket.OPEN) {
-      try { client.send(data); } catch {}
-    }
-  });
+  // 기존 코드 호환 — 모든 채널에 브로드캐스트
+  broadcastAll(msg);
 }
+
+// ─── POST /api/hook — save-turn.js 직접 수신 ────────
+// 파일 감시 대신 HTTP POST로 직접 이벤트 수신 (레이턴시 제거, 신뢰성 향상)
+// Body: { events: MindmapEvent[], channelId?: string, memberName?: string }
+app.post('/api/hook', (req, res) => {
+  try {
+    const { events = [], channelId = 'default', memberName = 'Claude' } = req.body;
+    if (!Array.isArray(events) || events.length === 0) {
+      return res.status(400).json({ error: 'events 배열 필요' });
+    }
+
+    // DB + JSONL 저장 (이미 save-turn.js 에서 저장됨 — 중복 방지용 INSERT OR IGNORE)
+    for (const event of events) {
+      try { insertEvent(event); } catch {}
+      try {
+        const entry = { id: event.id, type: event.type, source: event.source,
+          sessionId: event.sessionId, parentEventId: event.parentEventId,
+          data: event.data, ts: event.timestamp };
+        fs.appendFileSync(CONV_FILE, JSON.stringify(entry) + '\n');
+      } catch {}
+    }
+
+    // 그래프 재계산 + 브로드캐스트
+    const graph    = getFullGraph();
+    const stats    = getStats();
+    const sessions = getSessions();
+
+    // tool.start → tool.end 완료 노드 추출
+    const completedToolStarts = [];
+    for (const ev of events) {
+      if (ev.type === 'tool.end' || ev.type === 'tool.error') {
+        const startNode = graph.nodes.find(n =>
+          (n.eventType || n.type) === 'tool.start' && n.sessionId === ev.sessionId
+        );
+        if (startNode) completedToolStarts.push(startNode.id);
+      }
+    }
+
+    const payload = { type: 'update', graph, stats, sessions, completedToolStarts,
+      hookSource: { channelId, memberName } };
+
+    // 채널이 있으면 해당 채널에만, 없으면 전체 브로드캐스트
+    if (channelClients.has(channelId)) {
+      broadcastToChannel(channelId, payload);
+    } else {
+      broadcastAll(payload);
+    }
+
+    console.log(`[HOOK] ${events.length}개 이벤트 수신 (채널: #${channelId}, ${memberName})`);
+    res.json({ success: true, received: events.length });
+  } catch (e) {
+    console.error('[HOOK] 오류:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// 채널 목록 조회
+app.get('/api/channels', (req, res) => {
+  const channels = [];
+  channelClients.forEach((clients, channelId) => {
+    channels.push({
+      id: channelId,
+      memberCount: clients.size,
+      members: getChannelMembers(channelId),
+    });
+  });
+  res.json(channels);
+});
 
 // ─── JSONL 파일 감시 (새 이벤트 실시간 감지) ────────
 let lastBytePos = 0;
