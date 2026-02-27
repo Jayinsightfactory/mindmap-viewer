@@ -131,6 +131,7 @@ function buildGraph(events) {
             eventId: null,
             type: 'file',
             label: `📄 ${fileName}`,
+            filePath,          // 파일 경로 — 코드 분석 자동 실행용
             fullContent: filePath,
             shape: 'ellipse',
             color: {

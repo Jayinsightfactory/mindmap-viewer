@@ -1867,6 +1867,21 @@ function showDetail(n) {
     }
   }
 
+  // ── 파일 노드 → 자동 코드 분석 버튼 ──
+  const isFileNode = ['file','file.read','file.write','file.create'].includes(et);
+  // file 타입: fullContent에 경로, file.read/write: filePath 또는 data.filePath
+  const filePath = n.filePath || n.data?.filePath || (et === 'file' ? n.fullContent : null) || null;
+  if (isFileNode && filePath && /\.(js|ts|jsx|tsx|py|rs|go|java|sh|css|html|json|md)$/i.test(filePath)) {
+    const fp = filePath.replace(/'/g, "\\'");
+    h += `<div class="dsec"><h4>📊 코드 분석</h4>
+      <div style="font-size:10px;color:var(--text3);margin-bottom:6px">${esc(filePath)}</div>
+      <button class="sp-btn" onclick="autoAnalyzeNode('${fp}')"
+        style="font-size:10px;padding:5px 10px;border-color:var(--blue);color:var(--blue);width:100%;text-align:center">
+        ⚡ 즉시 분석 실행
+      </button>
+    </div>`;
+  }
+
   if (n.fullContent && n.fullContent.length > 2) h += `<div class="dsec"><h4>내용</h4><div class="dcont">${esc(n.fullContent).substring(0,3000).replace(/\n/g,'<br>')}</div></div>`;
   if (n.activityScore !== undefined) {
     const p = Math.round(n.activityScore*100);
@@ -1987,6 +2002,16 @@ function toggleAnalyzePanel() {
   const panel = document.getElementById('analyze-panel');
   panel.style.display = analyzePanelOpen ? 'flex' : 'none';
   document.getElementById('btn-analyze').classList.toggle('active', analyzePanelOpen);
+}
+
+// 파일 노드 클릭 → 분석 패널 자동 열기 + 해당 파일 즉시 분석
+async function autoAnalyzeNode(filePath) {
+  // 패널 열기
+  if (!analyzePanelOpen) toggleAnalyzePanel();
+  // 파일 경로 자동 채우기
+  document.getElementById('analyze-path').value = filePath;
+  // 즉시 분석 실행
+  await runAnalyzeFile();
 }
 
 async function runAnalyzeFile() {

@@ -258,10 +258,12 @@ function normalizeHookEvent(hookData, sessionState) {
     }
 
     case 'Stop': {
-      const lastMsg = hookData.last_assistant_message || '';
+      // Claude 응답 완료 — last_assistant_message 또는 assistant_message 지원
+      const lastMsg = hookData.last_assistant_message || hookData.assistant_message || '';
       const preview = lastMsg.substring(0, 200);
+      const assistantId = ulid();
       events.push({
-        id: ulid(),
+        id: assistantId,
         type: EventType.ASSISTANT_MESSAGE,
         source: 'claude-hook',
         sessionId,
@@ -272,10 +274,18 @@ function normalizeHookEvent(hookData, sessionState) {
         data: {
           content: lastMsg.substring(0, 8000),
           contentPreview: preview,
+          wordCount: lastMsg.split(/\s+/).filter(Boolean).length,
           toolCalls: sessionState.pendingTools || [],
+          hookSource: hookData.hook_event_name || 'Stop',  // Stop vs PostAssistantTurn 구분용
         },
-        metadata: { hookName: 'Stop' },
+        metadata: {
+          hookName: hookData.hook_event_name || 'Stop',
+          stopReason: hookData.stop_reason || null,
+        },
       });
+      // sessionState 갱신
+      sessionState.lastAssistantId = assistantId;
+      sessionState.pendingTools = [];
       break;
     }
 
@@ -431,6 +441,21 @@ const STRATEGY_MAP = {
     return {
       type: isError ? EventType.TOOL_ERROR : EventType.TOOL_END,
       data: { toolName, files, inputPreview: summarizeToolInput(toolName, toolInput) },
+    };
+  },
+
+  // ── PostAssistantTurn: Claude 응답 완료 직후 → assistant.message ──
+  // Stop 훅보다 세분화된 응답 완료 신호 (멀티턴 대화에서 각 턴마다 발생)
+  PostAssistantTurn: (hook) => {
+    const msg = hook.assistant_message || '';
+    return {
+      type: EventType.ASSISTANT_MESSAGE,
+      data: {
+        content: msg.substring(0, 8000),
+        contentPreview: msg.substring(0, 200),
+        wordCount: msg.split(/\s+/).filter(Boolean).length,
+      },
+      metadata: { hookName: 'PostAssistantTurn' },
     };
   },
 

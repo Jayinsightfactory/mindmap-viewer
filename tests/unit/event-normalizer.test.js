@@ -167,3 +167,52 @@ describe('PreToolUse 훅 (작업 시작 즉시 노드 생성)', () => {
     expect(event.metadata?.toolUseId).toBe('tu_abc123');
   });
 });
+
+// ─── PostAssistantTurn 훅 ────────────────────────────
+describe('PostAssistantTurn 훅 (Claude 응답 완료 즉시)', () => {
+  test('PostAssistantTurn → assistant.message 이벤트 반환', () => {
+    const hook = makeHook('PostAssistantTurn', {
+      assistant_message: '작업을 완료했습니다.',
+    });
+    const event = normalize(hook);
+    expect(event).not.toBeNull();
+    expect(event.type).toBe('assistant.message');
+  });
+
+  test('assistant.message에 contentPreview 포함', () => {
+    const hook = makeHook('PostAssistantTurn', {
+      assistant_message: '안녕하세요, 저는 Claude입니다. 무엇을 도와드릴까요?',
+    });
+    const event = normalize(hook);
+    expect(event.data.contentPreview).toBeDefined();
+    expect(event.data.contentPreview.length).toBeLessThanOrEqual(200);
+  });
+
+  test('assistant_message 가 없으면 빈 문자열로 처리', () => {
+    const hook = makeHook('PostAssistantTurn', {});
+    const event = normalize(hook);
+    expect(event).not.toBeNull();
+    expect(event.type).toBe('assistant.message');
+    expect(event.data.contentPreview).toBe('');
+  });
+
+  test('metadata에 hookName: PostAssistantTurn 포함', () => {
+    const hook = makeHook('PostAssistantTurn', {
+      assistant_message: '완료',
+    });
+    const event = normalize(hook);
+    expect(event.metadata.hookName).toBe('PostAssistantTurn');
+  });
+
+  test('STRATEGY_MAP에 PostAssistantTurn 전략 존재', () => {
+    expect(STRATEGY_MAP['PostAssistantTurn']).toBeDefined();
+    expect(typeof STRATEGY_MAP['PostAssistantTurn']).toBe('function');
+  });
+
+  test('200자 초과 메시지는 contentPreview가 200자로 잘림', () => {
+    const longMsg = 'A'.repeat(500);
+    const hook = makeHook('PostAssistantTurn', { assistant_message: longMsg });
+    const event = normalize(hook);
+    expect(event.data.contentPreview.length).toBeLessThanOrEqual(200);
+  });
+});
