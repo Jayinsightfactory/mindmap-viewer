@@ -10,12 +10,12 @@ const chokidar = require('chokidar');
 const fs = require('fs');
 const path = require('path');
 
-const { initDatabase, getAllEvents, getEventsBySession, searchEvents, getSessions, getFiles, getAnnotations, insertAnnotation, deleteAnnotation, insertEvent, rollbackToEvent, clearAll, getStats, getUserLabels, setUserLabel, deleteUserLabel, getUserCategories, upsertUserCategory, deleteUserCategory, getToolLabelMappings, setToolLabelMapping, deleteToolLabelMapping, getUserConfig } = require('./db');
-const { buildGraph, computeActivityScores, applyActivityVisualization, suggestLabel } = require('./graph-engine');
-const { createAnnotationEvent } = require('./event-normalizer');
+const { initDatabase, getAllEvents, getEventsBySession, searchEvents, getSessions, getFiles, getAnnotations, insertAnnotation, deleteAnnotation, insertEvent, rollbackToEvent, clearAll, getStats, getUserLabels, setUserLabel, deleteUserLabel, getUserCategories, upsertUserCategory, deleteUserCategory, getToolLabelMappings, setToolLabelMapping, deleteToolLabelMapping, getUserConfig } = require('./src/db');
+const { buildGraph, computeActivityScores, applyActivityVisualization, suggestLabel } = require('./src/graph-engine');
+const { createAnnotationEvent } = require('./src/event-normalizer');
 const { getAiStyle, AI_SOURCES } = require('./adapters/ai-adapter-base');
-const { generateReport } = require('./code-analyzer');
-const { scanForLeaks } = require('./security-scanner');
+const { generateReport } = require('./src/code-analyzer');
+const { scanForLeaks } = require('./src/security-scanner');
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 4747;
 const CONV_FILE = path.join(__dirname, 'conversation.jsonl');

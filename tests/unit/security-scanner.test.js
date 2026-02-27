@@ -4,7 +4,7 @@
  * 보안 유출 감지 모듈 TDD
  * Red → Green → Refactor
  */
-const { scanForLeaks, LEAK_PATTERNS } = require('../../security-scanner');
+const { scanForLeaks, LEAK_PATTERNS } = require('../../src/security-scanner');
 
 // ── 헬퍼 ────────────────────────────────────────────
 function makeEvent(content, type = 'user.message') {

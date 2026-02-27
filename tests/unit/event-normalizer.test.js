@@ -3,7 +3,7 @@
  * TDD: 훅 데이터 → 표준 이벤트 변환 테스트
  */
 
-const { normalize, STRATEGY_MAP } = require('../../event-normalizer.js');
+const { normalize, STRATEGY_MAP } = require('../../src/event-normalizer.js');
 
 const makeHook = (type, data = {}) => ({
   hook: type,

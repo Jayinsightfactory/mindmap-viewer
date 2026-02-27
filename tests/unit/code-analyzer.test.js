@@ -19,7 +19,7 @@ const {
   analyzeSolidViolations,
   generateReport,
   COMPLEXITY_THRESHOLDS,
-} = require('../../code-analyzer');
+} = require('../../src/code-analyzer');
 
 // ─── 헬퍼 ──────────────────────────────────────────────
 const src = (str) => str.trim();

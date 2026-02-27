@@ -4,7 +4,7 @@
  * 구현 전 실패하는 테스트 먼저 작성
  */
 
-const { computeActivityScores, classifyGlowTier, getEffectConfig } = require('../../game-effects.js');
+const { computeActivityScores, classifyGlowTier, getEffectConfig } = require('../../src/game-effects.js');
 
 // ── 활동 점수 계산 ──────────────────────────────────────
 describe('computeActivityScores', () => {

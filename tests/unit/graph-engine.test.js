@@ -3,7 +3,7 @@
  * TDD: 마인드맵 그래프 빌드 + 노드 스타일 로직 테스트
  */
 
-const { buildGraph, applyActivityVisualization } = require('../../graph-engine.js');
+const { buildGraph, applyActivityVisualization } = require('../../src/graph-engine.js');
 
 const makeEvent = (overrides = {}) => ({
   id: `evt_${Math.random().toString(36).slice(2)}`,
