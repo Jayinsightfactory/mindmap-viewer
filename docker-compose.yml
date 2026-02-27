@@ -1,0 +1,53 @@
+version: '3.9'
+
+# ═══════════════════════════════════════════════════
+# MindMap Viewer — Docker Compose
+# ───────────────────────────────────────────────────
+# 사용:
+#   docker-compose up -d              # 기본 실행
+#   docker-compose up -d --build      # 이미지 재빌드
+#   PORT=8080 docker-compose up -d    # 포트 변경
+#
+# 팀 채널 설정:
+#   MINDMAP_CHANNEL=team-alpha docker-compose up -d
+# ═══════════════════════════════════════════════════
+
+services:
+  mindmap:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: mindmap-viewer:latest
+    container_name: mindmap-viewer
+    restart: unless-stopped
+
+    ports:
+      - "${PORT:-4747}:4747"
+
+    environment:
+      - NODE_ENV=production
+      - PORT=4747
+
+    volumes:
+      # SQLite DB + 로그 영구 보존
+      - mindmap_data:/app/data
+      - mindmap_snapshots:/app/snapshots
+      # JSONL 로그 (호스트와 공유 — save-turn.js 접근용)
+      - ./conversation.jsonl:/app/conversation.jsonl
+
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4747/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    labels:
+      - "com.mindmap.version=2.0.0"
+      - "com.mindmap.description=Claude Work MindMap Viewer"
+
+volumes:
+  mindmap_data:
+    driver: local
+  mindmap_snapshots:
+    driver: local

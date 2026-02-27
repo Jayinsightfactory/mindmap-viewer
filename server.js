@@ -318,6 +318,25 @@ app.get('/api/channels', (req, res) => {
   res.json(channels);
 });
 
+// ─── 헬스체크 (Docker / Railway / Render 등 배포 플랫폼용) ─
+app.get('/health', (req, res) => {
+  try {
+    const stats = getStats();
+    res.json({
+      status: 'ok',
+      version: '2.0.0',
+      uptime: Math.round(process.uptime()),
+      events: stats.eventCount,
+      sessions: stats.sessionCount,
+      channels: channelClients.size,
+      clients: wss.clients.size,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (e) {
+    res.status(500).json({ status: 'error', error: e.message });
+  }
+});
+
 // ─── JSONL 파일 감시 (새 이벤트 실시간 감지) ────────
 let lastBytePos = 0;
 try { lastBytePos = fs.statSync(CONV_FILE).size; } catch {}
