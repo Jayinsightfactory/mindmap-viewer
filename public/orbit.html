@@ -108,6 +108,59 @@
       display: none; z-index: 100; transition: all 0.15s;
     }
     #back-btn:hover { border-color: var(--accent); color: var(--text); }
+
+    /* ── CHANNEL SELECT ── */
+    #channel-select {
+      background: rgba(33,38,45,0.9); border: 1px solid rgba(48,54,61,0.8);
+      color: var(--text2); font-size: 11px; padding: 3px 8px;
+      border-radius: 6px; cursor: pointer; font-family: inherit;
+      outline: none;
+    }
+    #channel-select:hover { border-color: var(--accent); }
+
+    /* ── SIDE PANEL ── */
+    #side-panel {
+      position: fixed; top: 48px; right: 0; bottom: 0;
+      width: 280px; background: rgba(13,17,23,0.97);
+      border-left: 1px solid rgba(48,54,61,0.6);
+      backdrop-filter: blur(12px);
+      transform: translateX(100%); transition: transform 0.25s ease;
+      z-index: 150; overflow-y: auto; padding: 16px;
+    }
+    #side-panel.open { transform: translateX(0); }
+    .sp-close {
+      position: absolute; top: 12px; right: 12px;
+      background: none; border: none; color: var(--text3);
+      cursor: pointer; font-size: 16px; line-height: 1;
+    }
+    .sp-close:hover { color: var(--text); }
+    .sp-type {
+      font-size: 10px; color: var(--text3); text-transform: uppercase;
+      letter-spacing: 0.08em; margin-bottom: 6px;
+    }
+    .sp-label {
+      font-size: 15px; font-weight: 600; color: var(--text);
+      margin-bottom: 12px; line-height: 1.4;
+    }
+    .sp-badge {
+      display: inline-block; font-size: 10px; font-weight: 600;
+      padding: 2px 7px; border-radius: 10px; margin-right: 4px; margin-bottom: 8px;
+    }
+    .sp-row {
+      display: flex; justify-content: space-between;
+      font-size: 11px; color: var(--text3); margin-bottom: 4px;
+    }
+    .sp-row span:last-child { color: var(--text2); }
+    .sp-divider {
+      border: none; border-top: 1px solid rgba(48,54,61,0.5);
+      margin: 12px 0;
+    }
+    .sp-content {
+      font-size: 12px; color: var(--text2); line-height: 1.6;
+      background: rgba(22,27,34,0.6); padding: 10px; border-radius: 6px;
+      white-space: pre-wrap; word-break: break-word; max-height: 200px;
+      overflow-y: auto;
+    }
   </style>
 </head>
 <body>
@@ -121,10 +174,24 @@
     🌍 개인 세션
   </div>
   <div class="hud-right">
+    <select id="channel-select" onchange="changeChannel(this.value)">
+      <option value="">전체</option>
+    </select>
     <button class="hud-btn" onclick="autoFit()">자동 맞춤</button>
     <button class="hud-btn" id="orbit-toggle" onclick="toggleOrbit()">🔄 Orbit 모드</button>
     <a href="/" style="text-decoration:none"><button class="hud-btn">← 기존 맵</button></a>
   </div>
+</div>
+
+<!-- SIDE PANEL -->
+<div id="side-panel">
+  <button class="sp-close" onclick="closeSidePanel()">✕</button>
+  <div id="sp-type" class="sp-type"></div>
+  <div id="sp-label" class="sp-label"></div>
+  <div id="sp-badges"></div>
+  <div id="sp-rows"></div>
+  <hr class="sp-divider" id="sp-div" style="display:none">
+  <div id="sp-content" class="sp-content" style="display:none"></div>
 </div>
 
 <!-- CANVAS -->
@@ -204,13 +271,31 @@ const TYPE_COLORS = {
   'tool.end':          '#bc8cff',
   'tool.start':        '#8957e5',
   'session.start':     '#39d2c0',
-  'session.end':       '#f85149',
+  'session.end':       '#6b7280',
   'file.read':         '#ffa657',
-  'file.write':        '#e3b341',
+  'file.write':        '#f778ba',
+  'file.create':       '#f778ba',
+  'task.complete':     '#3fb950',
+  'annotation.add':    '#e3b341',
   'default':           '#8b949e',
 };
 
+// AI 소스별 색상
+const AI_COLORS = {
+  claude:     '#3fb950',
+  openai:     '#8b949e',
+  n8n:        '#ea4b71',
+  vscode:     '#f85149',
+  perplexity: '#bc8cff',
+  gemini:     '#4285f4',
+};
+
 function nodeColor(n) {
+  // AI 소스 색상 우선 (서버에서 온 color 객체 처리)
+  if (n.color && typeof n.color === 'object' && n.color.background) {
+    return n.color.background;
+  }
+  if (n.aiSource && AI_COLORS[n.aiSource]) return AI_COLORS[n.aiSource];
   return TYPE_COLORS[n.type] || TYPE_COLORS.default;
 }
 
@@ -535,15 +620,23 @@ function layoutPlanetSystem(graph) {
 
   sessionIds.forEach((sid, si) => {
     const sessionAngle = (si / sessionIds.length) * Math.PI * 2;
-    // 세션 행성 (레벨 1)
     const sx = Math.cos(sessionAngle) * SESSION_ORBIT_R;
     const sy = Math.sin(sessionAngle) * SESSION_ORBIT_R;
+
+    // 세션 시작 이벤트에서 멤버명 추출
+    const evts = sessionMap[sid];
+    const sessionStartEvt = evts.find(e => e.type === 'session.start') || evts[0];
+    const sessionLabel = sessionStartEvt
+      ? (sessionStartEvt.label || `세션 ${si + 1}`)
+      : `세션 ${si + 1}`;
+    const sessionAiSrc = sessionStartEvt?.aiSource || null;
 
     const sessionNode = {
       id: 'session_' + sid,
       x: sx, y: sy,
       type: 'session.start',
-      label: `세션 ${si + 1}`,
+      label: sessionLabel,
+      aiSource: sessionAiSrc,
       level: 1,
       weight: 1.2,
       orbitRadius: SESSION_ORBIT_R,
@@ -554,16 +647,18 @@ function layoutPlanetSystem(graph) {
     nodes.push(sessionNode);
 
     // 세션 내 이벤트들을 위성으로
-    const evts = sessionMap[sid];
     const CHILD_ORBIT_R = 80 + evts.length * 5;
     evts.forEach((evt, ei) => {
       const childAngle = (ei / evts.length) * Math.PI * 2;
       nodes.push({
-        id: evt.id,
+        id: evt.id || evt.eventId || `node-${si}-${ei}`,
         x: sx + Math.cos(childAngle) * CHILD_ORBIT_R,
         y: sy + Math.sin(childAngle) * CHILD_ORBIT_R,
         type: evt.type,
-        label: getLabel(evt),
+        // 서버 레이블 우선, 없으면 자체 생성
+        label: evt.label || getFallbackLabel(evt),
+        aiSource: evt.aiSource || sessionAiSrc,
+        color: evt.color || null,
         level: 0,
         weight: getWeight(evt),
         orbitRadius: CHILD_ORBIT_R,
@@ -572,39 +667,75 @@ function layoutPlanetSystem(graph) {
         orbitSpeed: 0.1 + ei * 0.005,
         raw: evt,
       });
-      edgeList.push([sessionNode.id, evt.id]);
+      edgeList.push([sessionNode.id, evt.id || `node-${si}-${ei}`]);
     });
   });
 
   // 중심 노드
+  const channelName = new URLSearchParams(location.search).get('channel') || '전체';
   nodes.unshift({
     id: 'center',
     x: 0, y: 0,
     type: 'system',
-    label: 'AI Orbit',
+    label: `🌌 ${channelName}`,
     level: 2,
     weight: 1.5,
   });
 }
 
-function getLabel(evt) {
+// 서버 레이블 없을 때 폴백
+function getFallbackLabel(evt) {
   if (!evt.data) return evt.type;
   if (evt.data.toolName) return evt.data.toolName;
-  if (evt.data.contentPreview) return evt.data.contentPreview.slice(0, 20);
+  if (evt.data.contentPreview) return evt.data.contentPreview.slice(0, 22);
   return evt.type.split('.').pop();
 }
 
 function getWeight(evt) {
-  const weights = { 'tool.end': 1.0, 'user.message': 0.8, 'assistant.message': 0.9 };
+  const weights = {
+    'tool.end': 1.0, 'user.message': 0.8, 'assistant.message': 0.9,
+    'session.start': 1.2, 'task.complete': 1.1, 'file.write': 0.85,
+  };
   return weights[evt.type] || 0.6;
+}
+
+// ── 채널 관리 ─────────────────────────────────────
+let currentChannel = new URLSearchParams(location.search).get('channel') || '';
+
+async function loadChannels() {
+  try {
+    const res = await fetch('/api/sessions');
+    const sessions = await res.json();
+    // 채널 목록 추출
+    const channels = [...new Set(sessions.map(s => s.channelId).filter(Boolean))];
+    const sel = document.getElementById('channel-select');
+    channels.forEach(ch => {
+      const opt = document.createElement('option');
+      opt.value = ch; opt.textContent = ch;
+      if (ch === currentChannel) opt.selected = true;
+      sel.appendChild(opt);
+    });
+  } catch {}
+}
+
+function changeChannel(ch) {
+  currentChannel = ch;
+  const url = new URL(location.href);
+  if (ch) url.searchParams.set('channel', ch);
+  else url.searchParams.delete('channel');
+  history.replaceState(null, '', url);
+  loadData();
 }
 
 async function loadData() {
   try {
-    const res = await fetch('/api/graph');
+    const url = currentChannel
+      ? `/api/graph?channel=${encodeURIComponent(currentChannel)}`
+      : '/api/graph';
+    const res = await fetch(url);
     const graph = await res.json();
     layoutPlanetSystem(graph);
-    document.getElementById('live-dot').classList.add('on');
+    document.getElementById('live-dot').style.background = 'var(--green)';
   } catch (e) {
     console.warn('API 연결 실패, 데모 데이터 사용:', e.message);
     loadDemoData();
@@ -612,7 +743,7 @@ async function loadData() {
 }
 
 function loadDemoData() {
-  const demoGraph = { nodes: [], edges: [] };
+  const demoGraph = { nodes: [] };
   const sessions  = ['s1', 's2', 's3'];
   const types = ['user.message', 'assistant.message', 'tool.end', 'file.write', 'file.read'];
   let id = 1;
@@ -620,10 +751,9 @@ function loadDemoData() {
     const count = 5 + Math.floor(Math.random() * 8);
     for (let i = 0; i < count; i++) {
       demoGraph.nodes.push({
-        id: `node-${id++}`,
-        sessionId: s,
+        id: `node-${id++}`, sessionId: s,
         type: types[Math.floor(Math.random() * types.length)],
-        data: { toolName: ['Read', 'Write', 'Bash', 'Edit'][Math.floor(Math.random() * 4)] },
+        label: ['파일 작성', '코드 검색', '답변 생성', 'API 호출'][Math.floor(Math.random() * 4)],
       });
     }
   }
@@ -679,10 +809,17 @@ canvas.addEventListener('click', e => {
   for (const n of nodes) {
     if (!isVisible(n)) continue;
     if (Math.hypot(n.x - wPos.x, n.y - wPos.y) < nodeRadius(n)) {
-      zoomIntoNode(n);
+      // 세션 노드 → 줌인, 이벤트 노드 → 사이드 패널
+      if (n.level >= 1) {
+        zoomIntoNode(n);
+      } else {
+        openSidePanel(n);
+      }
       return;
     }
   }
+  // 빈 공간 클릭 → 패널 닫기
+  closeSidePanel();
 });
 
 canvas.addEventListener('wheel', e => {
@@ -763,7 +900,8 @@ function toggleOrbit() {
 // ─── 툴팁 ────────────────────────────────────────
 function showTooltip(n, mx, my) {
   const tt = document.getElementById('tooltip');
-  document.getElementById('tt-type').textContent  = n.type || '';
+  const aiTag = n.aiSource ? ` · ${n.aiSource}` : '';
+  document.getElementById('tt-type').textContent  = (n.type || '') + aiTag;
   document.getElementById('tt-label').textContent = n.label || n.id;
   document.getElementById('tt-meta').textContent  = n.raw?.timestamp
     ? new Date(n.raw.timestamp).toLocaleString('ko-KR')
@@ -775,6 +913,79 @@ function showTooltip(n, mx, my) {
 }
 function hideTooltip() {
   document.getElementById('tooltip').className = '';
+}
+
+// ─── 사이드 패널 ────────────────────────────────
+const AI_SOURCE_LABELS = {
+  claude: { label: 'Claude', color: '#3fb950' },
+  openai: { label: 'GPT', color: '#8b949e' },
+  n8n:    { label: 'n8n', color: '#ea4b71' },
+  vscode: { label: 'VS Code', color: '#f85149' },
+  perplexity: { label: 'Perplexity', color: '#bc8cff' },
+  gemini: { label: 'Gemini', color: '#4285f4' },
+};
+
+function openSidePanel(n) {
+  const panel = document.getElementById('side-panel');
+  const raw   = n.raw || {};
+  const data  = raw.data || raw.fullContent || {};
+
+  document.getElementById('sp-type').textContent = n.type || '';
+  document.getElementById('sp-label').textContent = n.label || n.id;
+
+  // 배지 (AI 소스)
+  const badgesEl = document.getElementById('sp-badges');
+  badgesEl.innerHTML = '';
+  if (n.aiSource && AI_SOURCE_LABELS[n.aiSource]) {
+    const ai = AI_SOURCE_LABELS[n.aiSource];
+    const badge = document.createElement('span');
+    badge.className = 'sp-badge';
+    badge.style.cssText = `background:${ai.color}22;color:${ai.color};border:1px solid ${ai.color}55`;
+    badge.textContent = ai.label;
+    badgesEl.appendChild(badge);
+  }
+  if (raw.sessionId) {
+    const badge = document.createElement('span');
+    badge.className = 'sp-badge';
+    badge.style.cssText = 'background:rgba(88,166,255,0.1);color:#58a6ff;border:1px solid rgba(88,166,255,0.3)';
+    badge.textContent = '세션';
+    badgesEl.appendChild(badge);
+  }
+
+  // 메타 rows
+  const rowsEl = document.getElementById('sp-rows');
+  rowsEl.innerHTML = '';
+  const addRow = (key, val) => {
+    if (!val) return;
+    const row = document.createElement('div');
+    row.className = 'sp-row';
+    row.innerHTML = `<span>${key}</span><span>${val}</span>`;
+    rowsEl.appendChild(row);
+  };
+  if (raw.timestamp) addRow('시간', new Date(raw.timestamp).toLocaleString('ko-KR'));
+  if (raw.aiSource)  addRow('AI 소스', raw.aiSource);
+  if (typeof data.success === 'boolean') addRow('결과', data.success ? '✅ 성공' : '❌ 실패');
+  if (data.toolName) addRow('도구', data.toolName);
+  if (data.filePath || data.fileName) addRow('파일', data.fileName || data.filePath?.split('/').pop());
+
+  // 내용
+  const content = data.content || data.contentPreview || data.message || data.inputPreview || '';
+  const divEl = document.getElementById('sp-div');
+  const contEl = document.getElementById('sp-content');
+  if (content) {
+    divEl.style.display = '';
+    contEl.style.display = '';
+    contEl.textContent = content.slice(0, 500) + (content.length > 500 ? '…' : '');
+  } else {
+    divEl.style.display = 'none';
+    contEl.style.display = 'none';
+  }
+
+  panel.classList.add('open');
+}
+
+function closeSidePanel() {
+  document.getElementById('side-panel').classList.remove('open');
 }
 
 // ── WebSocket 실시간 업데이트 ──
@@ -818,6 +1029,7 @@ function darken(hex, amt) {
 // 시작
 // ═══════════════════════════════════════════════════
 (async () => {
+  await loadChannels();
   await loadData();
   autoFit();
   connectWS();

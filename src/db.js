@@ -308,6 +308,11 @@ function getEventsBySession(sessionId) {
     .map(deserializeEvent);
 }
 
+function getEventsByChannel(channelId) {
+  return db.prepare('SELECT * FROM events WHERE channel_id = ? ORDER BY timestamp ASC').all(channelId)
+    .map(deserializeEvent);
+}
+
 function getEventsByType(type) {
   return db.prepare('SELECT * FROM events WHERE type = ? ORDER BY timestamp ASC').all(type)
     .map(deserializeEvent);
@@ -498,6 +503,7 @@ module.exports = {
   insertEvent,
   getAllEvents,
   getEventsBySession,
+  getEventsByChannel,
   getEventsByType,
   searchEvents,
   getSessions,
