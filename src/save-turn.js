@@ -11,10 +11,34 @@ const { normalizeHookEvent } = require('./event-normalizer');
 
 // 서버 포트 (환경변수 또는 기본값 4747)
 const SERVER_PORT = process.env.MINDMAP_PORT || 4747;
-// 채널 ID: 환경변수로 팀원별 구분 (예: export MINDMAP_CHANNEL=팀채널명)
-const CHANNEL_ID   = process.env.MINDMAP_CHANNEL || 'default';
 // 멤버 이름: 환경변수로 설정 (예: export MINDMAP_MEMBER=다린)
 const MEMBER_NAME  = process.env.MINDMAP_MEMBER  || require('os').hostname().split('.')[0];
+
+// ── 채널 ID: 환경변수 > git remote > 현재 폴더명 ──────
+function detectChannelId() {
+  if (process.env.MINDMAP_CHANNEL) return process.env.MINDMAP_CHANNEL;
+  try {
+    const { execSync } = require('child_process');
+    // 작업 디렉토리: transcript_path 기준 또는 cwd
+    const cwd = process.env.MINDMAP_WORKDIR || process.cwd();
+    // git remote origin URL → 리포명 추출
+    const remote = execSync('git remote get-url origin 2>/dev/null', { cwd, timeout: 2000 })
+      .toString().trim();
+    if (remote) {
+      // https://github.com/user/repo.git → repo
+      // git@github.com:user/repo.git → repo
+      const match = remote.match(/\/([^/]+?)(?:\.git)?$/);
+      if (match) return match[1];
+    }
+  } catch {}
+  try {
+    // git remote 없으면 현재 폴더명
+    const cwd = process.env.MINDMAP_WORKDIR || process.cwd();
+    return require('path').basename(cwd);
+  } catch {}
+  return 'default';
+}
+const CHANNEL_ID = detectChannelId();
 
 // ── 경로: 스크립트 위치 기준 자동 해석 (macOS/Windows 공용) ──
 const BASE_DIR = path.resolve(__dirname);
