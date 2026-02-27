@@ -2838,7 +2838,18 @@ function connect(){
     try{
       const m=JSON.parse(e.data);
       if(m.type==='init'){if(m.userConfig)applyUserConfig(m.userConfig);render(m.graph||{nodes:[],edges:[]});updateSessions(m.sessions||[]);updateStats(m.stats||{});setTimeout(()=>net.fit({animation:true}),500)}
-      if(m.type==='update'){render(m.graph||curGraph);updateSessions(m.sessions||sessions);updateStats(m.stats||{})}
+      if(m.type==='update'){
+        render(m.graph||curGraph);
+        updateSessions(m.sessions||sessions);
+        updateStats(m.stats||{});
+        // tool.start → tool.end 완료 노드 글로우 해제
+        if(m.completedToolStarts && m.completedToolStarts.length > 0) {
+          m.completedToolStarts.forEach(id => {
+            // COOL 티어로 전환 (완료 표시)
+            if(FX && FX.forceGlow) FX.forceGlow(id, 'COOL');
+          });
+        }
+      }
       if(m.type==='activity')updateScores(m.scores||{});
       if(m.type==='filtered')render(m.graph||{nodes:[],edges:[]});
       if(m.type==='rollback'){render(m.graph||{nodes:[],edges:[]});setTimeout(()=>net.fit({animation:true}),300)}

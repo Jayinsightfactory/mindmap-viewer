@@ -130,11 +130,28 @@ chokidar.watch(CONV_FILE, {
 
     const lines = buf.toString('utf8').split('\n').filter(Boolean);
     if (lines.length > 0) {
-      // 새 이벤트가 추가되면 전체 그래프 재빌드해서 전송
       const graph = getFullGraph();
       const stats = getStats();
       const sessions = getSessions();
-      broadcast({ type: 'update', graph, stats, sessions });
+
+      // tool.start → tool.end 완료 노드 ID 추출 (FX 게임 이펙트 완료 신호)
+      // tool.end/tool.error 이벤트가 들어오면 같은 세션의 tool.start 노드를 "완료"로 표시
+      const completedToolStarts = [];
+      for (const line of lines) {
+        try {
+          const ev = JSON.parse(line);
+          if (ev.type === 'tool.end' || ev.type === 'tool.error') {
+            // 같은 세션에서 가장 최근 tool.start 노드를 찾아서 완료 표시
+            const startNode = graph.nodes.find(n =>
+              (n.eventType || n.type) === 'tool.start' &&
+              n.sessionId === ev.sessionId
+            );
+            if (startNode) completedToolStarts.push(startNode.id);
+          }
+        } catch {}
+      }
+
+      broadcast({ type: 'update', graph, stats, sessions, completedToolStarts });
       console.log(`[WATCH] ${lines.length}개 새 이벤트 감지 → 그래프 업데이트`);
     }
   } catch (e) {
