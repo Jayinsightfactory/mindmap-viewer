@@ -15,6 +15,7 @@ const { buildGraph, computeActivityScores, applyActivityVisualization, suggestLa
 const { createAnnotationEvent } = require('./event-normalizer');
 const { getAiStyle, AI_SOURCES } = require('./adapters/ai-adapter-base');
 const { generateReport } = require('./code-analyzer');
+const { scanForLeaks } = require('./security-scanner');
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 4747;
 const CONV_FILE = path.join(__dirname, 'conversation.jsonl');
@@ -277,8 +278,17 @@ app.post('/api/hook', (req, res) => {
       }
     }
 
+    // ── 보안 유출 스캔 ────────────────────────────────
+    const leaks = scanForLeaks(events);
+    if (leaks.length > 0) {
+      const criticals = leaks.filter(l => l.severity === 'critical');
+      console.warn(`[SECURITY] ⚠️ 유출 감지 ${leaks.length}건 (critical: ${criticals.length}건) — 채널: #${channelId}`);
+    }
+
     const payload = { type: 'update', graph, stats, sessions, completedToolStarts,
-      hookSource: { channelId, memberName } };
+      hookSource: { channelId, memberName },
+      securityLeaks: leaks,   // 클라이언트에 전달 (채널 내 경보)
+    };
 
     // 채널이 있으면 해당 채널에만, 없으면 전체 브로드캐스트
     if (channelClients.has(channelId)) {
@@ -288,7 +298,7 @@ app.post('/api/hook', (req, res) => {
     }
 
     console.log(`[HOOK] ${events.length}개 이벤트 수신 (채널: #${channelId}, ${memberName})`);
-    res.json({ success: true, received: events.length });
+    res.json({ success: true, received: events.length, leaksDetected: leaks.length });
   } catch (e) {
     console.error('[HOOK] 오류:', e.message);
     res.status(500).json({ error: e.message });
