@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "Orbit — 브라우저 활동 추적",
+  "version": "1.0.0",
+  "description": "Orbit에 브라우저 활동을 전송합니다. 기본값: 추적 활성화, 원할 때만 공개.",
+  "permissions": ["tabs", "storage", "alarms"],
+  "host_permissions": ["http://localhost/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Orbit 브라우저 추적"
+  }
+}

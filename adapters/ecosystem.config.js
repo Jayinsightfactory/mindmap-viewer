@@ -80,5 +80,22 @@ module.exports = {
         WEBHOOK_PORT:         '4749',
       },
     },
+
+    // ── 일상 업무 추적 어댑터 (문서/브라우저/ERP) ─
+    {
+      name:   'orbit-daily',
+      script: 'adapters/daily-work-adapter.js',
+      cwd:    require('path').resolve(__dirname, '..'),
+      env: {
+        MINDMAP_CHANNEL:    process.env.MINDMAP_CHANNEL   || 'daily',
+        MINDMAP_MEMBER:     process.env.MINDMAP_MEMBER    || require('os').userInfo().username,
+        MINDMAP_PORT:       '4747',
+        BROWSER_PORT:       '4750',
+        KAKAOTALK_TOKEN:    process.env.KAKAOTALK_TOKEN   || '',
+        WATCH_DIRS:         process.env.WATCH_DIRS        || '',
+        WATCH_EXTENSIONS:   process.env.WATCH_EXTENSIONS  || '',
+        ERP_WATCH_DIR:      process.env.ERP_WATCH_DIR     || '',
+      },
+    },
   ],
 };

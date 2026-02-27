@@ -19,6 +19,11 @@ const { createAnnotationEvent } = require('./src/event-normalizer');
 const { getAiStyle, AI_SOURCES } = require('./adapters/ai-adapter-base');
 const { generateReport } = require('./src/code-analyzer');
 const { scanForLeaks } = require('./src/security-scanner');
+const { buildReportData, renderMarkdown, renderSlackBlocks } = require('./src/report-generator');
+const { extractContext, renderContextMd, renderContextPrompt, saveContextFile } = require('./src/context-bridge');
+const { detectConflicts, checkNewEvent } = require('./src/conflict-detector');
+const { appendAuditLog, auditFromEvents, queryAuditLog, verifyIntegrity, renderAuditHtml, AUDIT_TYPES } = require('./src/audit-log');
+const { detectShadowAI, checkEventForShadow, getApprovedSources, addApprovedSource, removeApprovedSource } = require('./src/shadow-ai-detector');
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 4747;
 const CONV_FILE = path.join(__dirname, 'conversation.jsonl');
@@ -292,9 +297,36 @@ app.post('/api/hook', (req, res) => {
       console.warn(`[SECURITY] ⚠️ 유출 감지 ${leaks.length}건 (critical: ${criticals.length}건) — 채널: #${channelId}`);
     }
 
+    // ── 감사 로그 기록 (Phase 3-G) ────────────────
+    auditFromEvents(events);
+
+    // ── Shadow AI 실시간 감지 (Phase 3-H) ─────────
+    const shadowFindings = [];
+    for (const ev of events) {
+      const found = checkEventForShadow(ev);
+      shadowFindings.push(...found);
+    }
+    if (shadowFindings.length > 0) {
+      console.warn(`[SHADOW AI] ⚠️ 비승인 AI 감지 ${shadowFindings.length}건 — 채널: #${channelId}`);
+      shadowFindings.forEach(f => appendAuditLog('shadow.ai.detected', f, { channel: channelId }));
+    }
+
+    // ── 충돌 감지 (Phase 1-C) ──────────────────────
+    const recentEventsForConflict = getAllEvents().slice(-200);
+    const newConflicts = [];
+    for (const ev of events) {
+      const found = checkNewEvent(ev, recentEventsForConflict);
+      newConflicts.push(...found);
+    }
+    if (newConflicts.length > 0) {
+      console.warn(`[CONFLICT] ⚠️ 충돌 감지 ${newConflicts.length}건 — 채널: #${channelId}`);
+    }
+
     const payload = { type: 'update', graph, stats, sessions, completedToolStarts,
       hookSource: { channelId, memberName },
-      securityLeaks: leaks,   // 클라이언트에 전달 (채널 내 경보)
+      securityLeaks: leaks,       // 클라이언트에 전달 (채널 내 경보)
+      conflicts: newConflicts,    // 충돌 감지 결과
+      shadowAI: shadowFindings,   // Shadow AI 감지 결과
     };
 
     // 채널이 있으면 해당 채널에만, 없으면 전체 브로드캐스트
@@ -853,6 +885,140 @@ app.get('/api/analyze-project', (req, res) => {
   }, {});
 
   res.json({ reports, avgComplexity, gradeCount, fileCount: reports.length });
+});
+
+// ─── Phase 3-H: Shadow AI 감지 API ───────────────────
+app.get('/api/shadow-ai', (req, res) => {
+  const { channel, hours } = req.query;
+  let events = channel
+    ? (getEventsByChannel ? getEventsByChannel(channel) : getAllEvents().filter(e => e.channelId === channel))
+    : getAllEvents();
+  const h = parseInt(hours || '168'); // 기본 7일
+  const cutoff = Date.now() - h * 3600 * 1000;
+  events = events.filter(e => new Date(e.timestamp).getTime() >= cutoff);
+
+  const findings = detectShadowAI(events);
+  res.json({ findings, checkedEvents: events.length, windowHours: h });
+});
+
+app.get('/api/shadow-ai/approved', (req, res) => {
+  res.json({ approved: getApprovedSources() });
+});
+
+app.post('/api/shadow-ai/approved', (req, res) => {
+  const { source, action } = req.body;
+  if (!source) return res.status(400).json({ error: 'source required' });
+  if (action === 'remove') {
+    removeApprovedSource(source);
+    res.json({ ok: true, action: 'removed', source });
+  } else {
+    addApprovedSource(source);
+    res.json({ ok: true, action: 'added', source });
+  }
+});
+
+// ─── Phase 3-G: 감사 로그 API ────────────────────────
+app.get('/api/audit', (req, res) => {
+  const { from, to, type, channel, memberId, limit, format } = req.query;
+  const entries = queryAuditLog({ from, to, type, channel, memberId, limit: parseInt(limit || '1000') });
+
+  if (format === 'html') {
+    return res.type('text/html').send(renderAuditHtml(entries, { from, to }));
+  }
+  res.json({ entries, total: entries.length });
+});
+
+app.get('/api/audit/verify', (req, res) => {
+  const result = verifyIntegrity();
+  res.json(result);
+});
+
+app.get('/api/audit/report', (req, res) => {
+  const { from, to, channel } = req.query;
+  const entries = queryAuditLog({ from, to, channel, limit: 2000 });
+  const html = renderAuditHtml(entries, { from, to, title: 'Orbit AI 감사 리포트' });
+  res.type('text/html').send(html);
+});
+
+// ─── Phase 1-A: 일일 리포트 API ─────────────────────
+app.get('/api/report/daily', (req, res) => {
+  const { from, to, channel, format } = req.query;
+  let events = channel
+    ? (getEventsByChannel ? getEventsByChannel(channel) : getAllEvents().filter(e => e.channelId === channel))
+    : getAllEvents();
+
+  if (from || to) {
+    const fromTs = from ? new Date(from).getTime() : 0;
+    const toTs   = to   ? new Date(to).getTime()   : Infinity;
+    events = events.filter(e => {
+      const t = new Date(e.timestamp).getTime();
+      return t >= fromTs && t <= toTs;
+    });
+  }
+  if (!events.length) return res.json({ error: 'no events', events: 0 });
+
+  const data = buildReportData(events, { from, to });
+  if (format === 'markdown') return res.type('text/plain').send(renderMarkdown(data));
+  if (format === 'slack')    return res.json(renderSlackBlocks(data));
+  res.json(data);
+});
+
+app.get('/api/report/weekly', (req, res) => {
+  const { channel } = req.query;
+  const now  = Date.now();
+  const from = new Date(now - 7 * 24 * 3600 * 1000).toISOString();
+  let events = channel
+    ? (getEventsByChannel ? getEventsByChannel(channel) : getAllEvents().filter(e => e.channelId === channel))
+    : getAllEvents();
+  events = events.filter(e => new Date(e.timestamp).getTime() >= now - 7 * 24 * 3600 * 1000);
+  const data = buildReportData(events, { from, period: 'weekly' });
+  res.json(data);
+});
+
+// ─── Phase 1-B: Context Bridge API ──────────────────
+app.get('/api/context/bridge', (req, res) => {
+  const { session, channel, format, save } = req.query;
+  let events = session
+    ? getEventsBySession(session)
+    : channel
+      ? (getEventsByChannel ? getEventsByChannel(channel) : getAllEvents().filter(e => e.channelId === channel))
+      : getAllEvents();
+
+  // 최근 2시간으로 제한
+  const cutoff = Date.now() - 2 * 3600 * 1000;
+  events = events.filter(e => new Date(e.timestamp).getTime() >= cutoff);
+  if (!events.length) events = getAllEvents().slice(-100); // fallback: 최근 100개
+
+  const ctx = extractContext(events, { sessionId: session });
+
+  if (save) {
+    const targetDir = save === '1' ? process.cwd() : save;
+    try {
+      saveContextFile(ctx, targetDir);
+      return res.json({ ok: true, saved: path.join(targetDir, 'ORBIT_CONTEXT.md'), ctx });
+    } catch (e) {
+      return res.status(500).json({ error: e.message });
+    }
+  }
+
+  if (format === 'markdown') return res.type('text/plain').send(renderContextMd(ctx));
+  if (format === 'prompt')   return res.type('text/plain').send(renderContextPrompt(ctx));
+  res.json(ctx);
+});
+
+// ─── Phase 1-C: 충돌 감지 API ────────────────────────
+app.get('/api/conflicts', (req, res) => {
+  const { channel, session, hours } = req.query;
+  let events = channel
+    ? (getEventsByChannel ? getEventsByChannel(channel) : getAllEvents().filter(e => e.channelId === channel))
+    : getAllEvents();
+
+  const h = parseInt(hours || '24');
+  const cutoff = Date.now() - h * 3600 * 1000;
+  events = events.filter(e => new Date(e.timestamp).getTime() >= cutoff);
+
+  const conflicts = detectConflicts(events);
+  res.json({ conflicts, checkedEvents: events.length, windowHours: h });
 });
 
 // ─── 서버 시작 ──────────────────────────────────────

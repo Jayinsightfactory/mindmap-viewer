@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<style>
+  body { width: 260px; font-family: -apple-system, sans-serif; font-size: 13px; background: #0d1117; color: #e6edf3; margin: 0; }
+  .header { padding: 14px 16px 10px; border-bottom: 1px solid #30363d; display: flex; align-items: center; gap: 8px; }
+  .logo { font-size: 16px; font-weight: 700; color: #58a6ff; }
+  .subtitle { font-size: 11px; color: #8b949e; margin-top: 1px; }
+  .section { padding: 12px 16px; }
+  .toggle-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .toggle-label { font-size: 13px; }
+  .toggle-desc  { font-size: 11px; color: #8b949e; margin-top: 1px; }
+  .switch {
+    width: 36px; height: 20px; background: #30363d; border-radius: 10px;
+    position: relative; cursor: pointer; transition: background .2s; flex-shrink: 0;
+  }
+  .switch.on { background: #3fb950; }
+  .switch::after {
+    content: ''; position: absolute; top: 2px; left: 2px;
+    width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: left .2s;
+  }
+  .switch.on::after { left: 18px; }
+  .status-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; margin-right: 4px; }
+  .dot-green { background: #3fb950; box-shadow: 0 0 4px #3fb950; }
+  .dot-gray  { background: #6e7681; }
+  .footer { padding: 8px 16px 12px; border-top: 1px solid #30363d; font-size: 11px; color: #8b949e; }
+  a { color: #58a6ff; text-decoration: none; }
+</style>
+</head>
+<body>
+<div class="header">
+  <div>
+    <div class="logo">⬡ Orbit</div>
+    <div class="subtitle">브라우저 활동 추적</div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="toggle-row">
+    <div>
+      <div class="toggle-label">추적 활성화</div>
+      <div class="toggle-desc">기본값: 추적 중 (공개 여부는 별도 설정)</div>
+    </div>
+    <div class="switch" id="enabled-toggle"></div>
+  </div>
+
+  <div class="toggle-row">
+    <div>
+      <div class="toggle-label">프라이빗 모드</div>
+      <div class="toggle-desc">URL을 마스킹하여 전송</div>
+    </div>
+    <div class="switch" id="private-toggle"></div>
+  </div>
+</div>
+
+<div class="footer">
+  Orbit 서버: <span id="server-status"><span class="status-dot dot-gray"></span>연결 확인 중</span>
+  <br>
+  <a href="http://localhost:4747/team-dashboard.html" target="_blank">대시보드 열기 ↗</a>
+</div>
+
+<script>
+async function loadSettings() {
+  const s = await chrome.storage.local.get(['enabled', 'private_mode']);
+  const enabled = s.enabled !== false;
+  const priv    = s.private_mode === true;
+
+  document.getElementById('enabled-toggle').classList.toggle('on', enabled);
+  document.getElementById('private-toggle').classList.toggle('on', priv);
+}
+
+document.getElementById('enabled-toggle').onclick = async () => {
+  const s = await chrome.storage.local.get(['enabled']);
+  const newVal = s.enabled === false;
+  await chrome.storage.local.set({ enabled: newVal });
+  document.getElementById('enabled-toggle').classList.toggle('on', newVal);
+};
+
+document.getElementById('private-toggle').onclick = async () => {
+  const s = await chrome.storage.local.get(['private_mode']);
+  const newVal = !s.private_mode;
+  await chrome.storage.local.set({ private_mode: newVal });
+  document.getElementById('private-toggle').classList.toggle('on', newVal);
+};
+
+// 서버 상태 확인
+fetch('http://localhost:4750/browser-activity', { method: 'GET' })
+  .then(() => {
+    document.getElementById('server-status').innerHTML =
+      '<span class="status-dot dot-green"></span>연결됨 (localhost:4750)';
+  })
+  .catch(() => {
+    document.getElementById('server-status').innerHTML =
+      '<span class="status-dot dot-gray"></span>서버 미실행';
+  });
+
+loadSettings();
+</script>
+</body>
+</html>
