@@ -6,8 +6,16 @@
     "orbit": "./bin/orbit.js"
   },
   "keywords": [
-    "claude-code", "ai", "mindmap", "visualization", "real-time",
-    "hooks", "cursor", "windsurf", "llm", "developer-tools"
+    "claude-code",
+    "ai",
+    "mindmap",
+    "visualization",
+    "real-time",
+    "hooks",
+    "cursor",
+    "windsurf",
+    "llm",
+    "developer-tools"
   ],
   "homepage": "https://github.com/dlaww-wq/mindmap-viewer",
   "repository": {
@@ -31,6 +39,7 @@
     "docker:down": "docker-compose down"
   },
   "dependencies": {
+    "bcrypt": "^6.0.0",
     "better-sqlite3": "^12.6.2",
     "chokidar": "^3.6.0",
     "express": "^4.18.2",
@@ -42,6 +51,8 @@
   },
   "jest": {
     "testEnvironment": "node",
-    "testMatch": ["**/tests/**/*.test.js"]
+    "testMatch": [
+      "**/tests/**/*.test.js"
+    ]
   }
 }

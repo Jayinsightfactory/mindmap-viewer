@@ -1,14 +1,29 @@
 /**
- * auth.js
+ * src/auth.js
+ * ─────────────────────────────────────────────────────────────────────────────
  * 계정 시스템 — 사용자 DB (SQLite)
  *
- * 개인 계정: 자신의 Claude Code/Cursor 작업만 연결
- * 팀 계정:   채널 공유 + 팀 대시보드
- * Pro 계정:  테마 판매 + 감사 로그 + Shadow AI
+ * 플랜:
+ *   free  - 개인 작업 추적만 가능
+ *   pro   - 테마 판매 + 감사 로그 + Shadow AI 감지
+ *   team  - 채널 공유 + 팀 대시보드 + 모든 pro 기능
+ *
+ * 인증 방식:
+ *   - 비밀번호: bcrypt (cost factor 12) — SHA-256 대비 브루트포스 저항성 수십만 배 향상
+ *   - 토큰: crypto.randomBytes(24) 기반 hex 문자열 (JWT 불필요)
+ *   - 토큰 만료: 로그인 토큰 30일 / API 토큰 365일 / 영구 토큰 NULL
+ *
+ * 환경 변수:
+ *   AUTH_DISABLED=1 → 인증 비활성화 (로컬 개발용)
+ * ─────────────────────────────────────────────────────────────────────────────
  */
+const bcrypt = require('bcrypt');
 const crypto = require('crypto');
 const path   = require('path');
 const fs     = require('fs');
+
+/** bcrypt 비용 인자: 12는 현대 하드웨어에서 약 250ms — 보안과 UX 균형 */
+const BCRYPT_ROUNDS = parseInt(process.env.BCRYPT_ROUNDS || '12');
 
 let db;
 try {
@@ -55,27 +70,46 @@ if (db) {
   `);
 }
 
-// ─── 유틸 ────────────────────────────────────────
+// ─── 유틸 ────────────────────────────────────────────────────────────────────
+
+/**
+ * 고유 ID를 생성합니다 (타임스탬프 base36 + 랜덤 hex).
+ * @returns {string}
+ */
 function ulid() {
   return Date.now().toString(36).toUpperCase() + crypto.randomBytes(5).toString('hex').toUpperCase();
 }
-function hashPassword(pw) {
-  return crypto.createHash('sha256').update(pw + (process.env.AUTH_SECRET || 'orbit-secret')).digest('hex');
-}
+
+/**
+ * 랜덤 API 토큰을 생성합니다.
+ * @returns {string} 'orbit_' 접두사 + 48자 hex
+ */
 function generateToken() {
   return 'orbit_' + crypto.randomBytes(24).toString('hex');
 }
 
-// ─── 사용자 등록 ──────────────────────────────
+// ─── 사용자 등록 ──────────────────────────────────────────────────────────────
+
+/**
+ * 새 사용자를 등록하고 즉시 API 토큰을 발급합니다.
+ * 비밀번호는 bcrypt(rounds=12)로 해싱합니다.
+ *
+ * @param {object} params
+ * @param {string} params.email    - 이메일 주소 (고유)
+ * @param {string} params.password - 평문 비밀번호
+ * @param {string} [params.name]   - 표시 이름 (미지정 시 이메일 앞부분 사용)
+ * @returns {{ ok: boolean, user: User, token: string } | { error: string }}
+ */
 function register({ email, password, name }) {
   if (!db) return { error: 'DB not available' };
   if (!email || !password) return { error: 'email and password required' };
 
-  const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
+  const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email.toLowerCase().trim());
   if (existing) return { error: 'email already registered' };
 
   const id   = ulid();
-  const hash = hashPassword(password);
+  const hash = bcrypt.hashSync(password, BCRYPT_ROUNDS);
+
   db.prepare(`
     INSERT INTO users (id, email, name, passwordHash)
     VALUES (?, ?, ?, ?)
@@ -90,12 +124,29 @@ function register({ email, password, name }) {
   return { ok: true, user: getUserById(id), token };
 }
 
-// ─── 로그인 ───────────────────────────────────
+// ─── 로그인 ───────────────────────────────────────────────────────────────────
+
+/**
+ * 이메일/비밀번호로 로그인하고 세션 토큰을 발급합니다.
+ * bcrypt.compareSync 로 해시 일치 여부를 검증합니다.
+ *
+ * @param {object} params
+ * @param {string} params.email    - 이메일 주소
+ * @param {string} params.password - 평문 비밀번호
+ * @returns {{ ok: boolean, user: User, token: string } | { error: string }}
+ */
 function login({ email, password }) {
   if (!db) return { error: 'DB not available' };
+
   const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email?.toLowerCase()?.trim());
-  if (!user) return { error: 'invalid credentials' };
-  if (user.passwordHash !== hashPassword(password)) return { error: 'invalid credentials' };
+  // 이메일이 없어도 bcrypt 비교를 수행하여 타이밍 공격(timing attack) 방지
+  if (!user) {
+    bcrypt.hashSync('dummy', BCRYPT_ROUNDS); // 더미 연산으로 응답 시간 일정하게 유지
+    return { error: 'invalid credentials' };
+  }
+
+  const valid = bcrypt.compareSync(password, user.passwordHash);
+  if (!valid) return { error: 'invalid credentials' };
 
   db.prepare('UPDATE users SET lastLoginAt = datetime("now") WHERE id = ?').run(user.id);
 
