@@ -181,6 +181,7 @@
       <option value="">🎯 모든 목적</option>
     </select>
     <button class="hud-btn" id="purpose-mode-btn" onclick="togglePurposeMode()">🎯 목적 뷰</button>
+    <button class="hud-btn" id="member-overlay-btn" onclick="toggleMemberOverlay()">👥 팀 오버레이</button>
     <button class="hud-btn" onclick="autoFit()">자동 맞춤</button>
     <button class="hud-btn" id="orbit-toggle" onclick="toggleOrbit()">🔄 Orbit 모드</button>
     <a href="/dashboard.html" style="text-decoration:none"><button class="hud-btn">📊 대시보드</button></a>
@@ -295,6 +296,12 @@ const AI_COLORS = {
   vscode:     '#f85149',
   perplexity: '#bc8cff',
   gemini:     '#4285f4',
+  // 통합 어댑터
+  notion:     '#e8e8e8',
+  calendar:   '#4285f4',
+  slack:      '#e8a0ff',
+  discord:    '#5865f2',
+  zoom:       '#2d8cff',
 };
 
 // 목적 분류 모드
@@ -543,8 +550,38 @@ function frame(time) {
     }
   }
 
+  // 팀 오버레이 노드 렌더링
+  if (memberOverlayMode && memberOverlayNodes.length > 0) {
+    for (const n of memberOverlayNodes) {
+      const sp = worldToScreen(n.x || 0, n.y || 0);
+      if (sp.x < -100 || sp.x > canvas.width + 100) continue;
+      if (sp.y < -100 || sp.y > canvas.height + 100) continue;
+      ctx.save();
+      ctx.globalAlpha = 0.55;
+      // 멤버 색상 테두리 강조
+      ctx.strokeStyle = n._memberColor || '#ffa657';
+      ctx.lineWidth   = 3;
+      const r = Math.max(8, (n.size || 20) * world.scale * 0.5);
+      ctx.beginPath();
+      ctx.arc(sp.x, sp.y, r, 0, Math.PI * 2);
+      ctx.fillStyle = n._memberColor || '#ffa657';
+      ctx.fill();
+      ctx.stroke();
+      // 멤버 이름 라벨
+      if (world.scale > 0.4) {
+        ctx.globalAlpha = 0.8;
+        ctx.fillStyle = '#ffffff';
+        ctx.font = `${Math.max(9, 10 * world.scale)}px Inter, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.fillText(n._memberName || '', sp.x, sp.y - r - 4);
+      }
+      ctx.restore();
+    }
+  }
+
   updateHUD();
   drawMinimap();
+  drawMemberOverlayLegend(ctx);
   drawPurposeLegend(ctx);
 
   raf = requestAnimationFrame(frame);
@@ -960,6 +997,99 @@ function filterByPurpose(purposeId) {
       n._dimmed = true;
     }
   });
+}
+
+// ─── 팀 멤버 오버레이 ──────────────────────────────
+let memberOverlayMode = false;
+let memberList = [];         // [{ name, channels, sources }]
+let memberOverlayNodes = []; // 오버레이 노드 (별도 렌더링)
+const MEMBER_OVERLAY_COLORS = [
+  '#ff9500','#f778ba','#79c0ff','#ffa657',
+  '#39d2c0','#8957e5','#f85149','#3fb950',
+];
+
+async function toggleMemberOverlay() {
+  memberOverlayMode = !memberOverlayMode;
+  const btn = document.getElementById('member-overlay-btn');
+  btn.textContent = memberOverlayMode ? '👥 오버레이 ON' : '👥 팀 오버레이';
+  btn.className   = memberOverlayMode ? 'hud-btn active' : 'hud-btn';
+
+  if (memberOverlayMode) {
+    await loadMemberOverlay();
+  } else {
+    memberOverlayNodes = [];
+  }
+}
+
+async function loadMemberOverlay() {
+  try {
+    // 멤버 목록 로드
+    const res = await fetch('/api/members');
+    memberList = await res.json();
+
+    if (memberList.length === 0) {
+      alert('연결된 팀원 데이터가 없습니다.\nZoom/Slack 어댑터를 실행하면 팀원이 자동 감지됩니다.');
+      memberOverlayMode = false;
+      document.getElementById('member-overlay-btn').className = 'hud-btn';
+      document.getElementById('member-overlay-btn').textContent = '👥 팀 오버레이';
+      return;
+    }
+
+    // 각 멤버의 최근 이벤트를 오버레이로 추가
+    const memberNames = memberList.map(m => m.name).join(',');
+    const overlayRes = await fetch(`/api/overlay?members=${encodeURIComponent(memberNames)}`);
+    const overlayData = await overlayRes.json();
+
+    memberOverlayNodes = [];
+    let colorIdx = 0;
+    for (const [memberName, graph] of Object.entries(overlayData.overlay || {})) {
+      const color = MEMBER_OVERLAY_COLORS[colorIdx++ % MEMBER_OVERLAY_COLORS.length];
+      // 멤버별 노드를 오프셋 적용해 겹치지 않게
+      const offsetX = (colorIdx - 1) * 300 - (Object.keys(overlayData.overlay).length * 150);
+      for (const n of (graph.nodes || [])) {
+        memberOverlayNodes.push({
+          ...n,
+          x: (n.x || 0) + offsetX,
+          _memberName:  memberName,
+          _memberColor: color,
+          _isOverlay:   true,
+        });
+      }
+    }
+    console.log(`[Overlay] ${memberOverlayNodes.length}개 오버레이 노드 로드`);
+  } catch (e) {
+    console.warn('[Overlay] 로드 실패:', e.message);
+  }
+}
+
+// 오버레이 멤버 배지 (캔버스 좌측 하단)
+function drawMemberOverlayLegend(ctx) {
+  if (!memberOverlayMode || memberList.length === 0) return;
+  const pad = 12, lineH = 24, dotR = 7;
+  const w = 180, h = pad * 2 + memberList.length * lineH;
+  const x = 16, y = canvas.height - h - 60;
+
+  ctx.save();
+  ctx.fillStyle = 'rgba(13,17,23,0.85)';
+  ctx.strokeStyle = '#30363d';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, 8);
+  ctx.fill(); ctx.stroke();
+
+  ctx.font = '12px Inter, sans-serif';
+  memberList.slice(0, 8).forEach((m, i) => {
+    const color = MEMBER_OVERLAY_COLORS[i % MEMBER_OVERLAY_COLORS.length];
+    const ly = y + pad + i * lineH + lineH / 2;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(x + pad + dotR, ly, dotR, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#c9d1d9';
+    const srcLabel = m.sources?.join('/') || '';
+    ctx.fillText(`${m.name} ${srcLabel ? '(' + srcLabel + ')' : ''}`, x + pad + dotR * 2 + 6, ly + 4);
+  });
+  ctx.restore();
 }
 
 // 목적 범례 표시 (캔버스 우측 하단)

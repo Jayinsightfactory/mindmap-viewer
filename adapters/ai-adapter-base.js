@@ -21,6 +21,12 @@ const AI_SOURCES = {
   PERPLEXITY:  'perplexity',
   OPENAI:      'openai',
   VSCODE:      'vscode',
+  // 통합 어댑터
+  NOTION:      'notion',
+  CALENDAR:    'calendar',
+  SLACK:       'slack',
+  DISCORD:     'discord',
+  ZOOM:        'zoom',
 };
 
 // ─── AI별 시각 스타일 (마인드맵 노드 색/형태/아이콘) ───
@@ -62,13 +68,59 @@ const AI_STYLES = {
     badgeColor:  '#8b949e',
   },
   [AI_SOURCES.VSCODE]: {
-    color:       '#f85149',   // 빨강
+    color:       '#f85149',
     borderColor: '#da3633',
     shape:       'ellipse',
     icon:        '🔴',
     label:       'VSCode',
     badgeBg:     'rgba(248,81,73,0.15)',
     badgeColor:  '#f85149',
+  },
+  // ── 통합 어댑터 스타일 ──────────────────────────────
+  [AI_SOURCES.NOTION]: {
+    color:       '#e8e8e8',
+    borderColor: '#b0b0b0',
+    shape:       'box',
+    icon:        '📋',
+    label:       'Notion',
+    badgeBg:     'rgba(232,232,232,0.15)',
+    badgeColor:  '#e8e8e8',
+  },
+  [AI_SOURCES.CALENDAR]: {
+    color:       '#4285f4',
+    borderColor: '#2b6bd6',
+    shape:       'circle',
+    icon:        '📅',
+    label:       'Calendar',
+    badgeBg:     'rgba(66,133,244,0.15)',
+    badgeColor:  '#4285f4',
+  },
+  [AI_SOURCES.SLACK]: {
+    color:       '#4a154b',
+    borderColor: '#611f69',
+    shape:       'box',
+    icon:        '💬',
+    label:       'Slack',
+    badgeBg:     'rgba(74,21,75,0.25)',
+    badgeColor:  '#e8a0ff',
+  },
+  [AI_SOURCES.DISCORD]: {
+    color:       '#5865f2',
+    borderColor: '#3c47d0',
+    shape:       'box',
+    icon:        '🎮',
+    label:       'Discord',
+    badgeBg:     'rgba(88,101,242,0.15)',
+    badgeColor:  '#5865f2',
+  },
+  [AI_SOURCES.ZOOM]: {
+    color:       '#2d8cff',
+    borderColor: '#1a6fd6',
+    shape:       'hexagon',
+    icon:        '🎥',
+    label:       'Zoom',
+    badgeBg:     'rgba(45,140,255,0.15)',
+    badgeColor:  '#2d8cff',
   },
 };
 

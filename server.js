@@ -466,6 +466,103 @@ app.get('/api/search', (req, res) => {
   res.json(searchEvents(q));
 });
 
+// ── 멤버 오버레이 API ───────────────────────────────
+// GET /api/members
+// → 모든 채널에서 활동한 멤버 목록 + 각 멤버의 채널/통계
+app.get('/api/members', (req, res) => {
+  const allEvents  = getAllEvents();
+  const allSessions = getSessions();
+  const memberMap  = new Map(); // memberName → { channels, eventCount, sources, lastActive }
+
+  // 세션의 memberName 수집
+  for (const session of allSessions) {
+    const name = session.memberName || session.userId || 'unknown';
+    if (!memberMap.has(name)) {
+      memberMap.set(name, { name, channels: new Set(), eventCount: 0, sources: new Set(), lastActive: null });
+    }
+    const m = memberMap.get(name);
+    if (session.channelId) m.channels.add(session.channelId);
+  }
+
+  // Zoom 회의 참여자 이름도 수집
+  for (const event of allEvents) {
+    if (event.data?.participant) {
+      const name = event.data.participant;
+      if (!memberMap.has(name)) {
+        memberMap.set(name, { name, channels: new Set(), eventCount: 0, sources: new Set(), lastActive: null });
+      }
+      const m = memberMap.get(name);
+      if (event.channelId) m.channels.add(event.channelId);
+      m.sources.add(event.source || 'zoom');
+    }
+    if (event.data?.attendees) {
+      for (const a of event.data.attendees) {
+        const name = a.name || a.email;
+        if (!memberMap.has(name)) {
+          memberMap.set(name, { name, channels: new Set(), eventCount: 0, sources: new Set(), lastActive: null });
+        }
+        const m = memberMap.get(name);
+        if (event.channelId) m.channels.add(event.channelId);
+        m.sources.add('calendar');
+      }
+    }
+  }
+
+  const result = [...memberMap.values()].map(m => ({
+    name:       m.name,
+    channels:   [...m.channels],
+    eventCount: m.eventCount,
+    sources:    [...m.sources],
+    lastActive: m.lastActive,
+  })).filter(m => m.name !== 'unknown');
+
+  res.json(result);
+});
+
+// GET /api/overlay?members=A,B&from=ISO&to=ISO
+// → 여러 채널의 이벤트를 시간 범위로 병렬 조회 (멤버 오버레이용)
+app.get('/api/overlay', (req, res) => {
+  const memberNames = (req.query.members || '').split(',').filter(Boolean);
+  const from = req.query.from ? new Date(req.query.from) : null;
+  const to   = req.query.to   ? new Date(req.query.to)   : null;
+
+  const allEvents = getAllEvents();
+
+  // 시간 필터
+  const filtered = allEvents.filter(e => {
+    const ts = new Date(e.timestamp);
+    if (from && ts < from) return false;
+    if (to   && ts > to)   return false;
+    return true;
+  });
+
+  // 멤버별 그룹화
+  const byMember = {};
+  for (const event of filtered) {
+    // 채널 ID를 멤버 이름으로 간주하거나 Zoom 참여자 이름 매핑
+    const candidates = [event.channelId, event.userId, event.data?.participant].filter(Boolean);
+    for (const name of memberNames) {
+      if (candidates.some(c => c.toLowerCase().includes(name.toLowerCase()))) {
+        if (!byMember[name]) byMember[name] = [];
+        byMember[name].push(event);
+        break;
+      }
+    }
+  }
+
+  // 각 멤버별 그래프 생성
+  const result = {};
+  for (const [name, events] of Object.entries(byMember)) {
+    const annotated = annotateEventsWithPurpose(events);
+    const graph = buildGraph(annotated);
+    computeActivityScores(graph.nodes, Date.now());
+    applyActivityVisualization(graph.nodes);
+    result[name] = graph;
+  }
+
+  res.json({ overlay: result, timeRange: { from: from?.toISOString(), to: to?.toISOString() } });
+});
+
 // 파일 목록 (접근 통계)
 app.get('/api/files', (req, res) => {
   res.json(getFiles());
