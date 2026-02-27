@@ -193,6 +193,54 @@
     .sr-item:last-child { border-bottom: none; }
     .sr-type { font-size: 10px; color: var(--text3); min-width: 60px; }
 
+    /* ── 경보 토스트 (충돌/Shadow AI/보안유출) ── */
+    #alert-container {
+      position: fixed; top: 56px; right: 16px;
+      display: flex; flex-direction: column; gap: 6px;
+      z-index: 500; pointer-events: none;
+    }
+    .alert-toast {
+      display: flex; align-items: flex-start; gap: 10px;
+      background: rgba(13,17,23,0.97); border-radius: 10px;
+      padding: 10px 14px; font-size: 12px; line-height: 1.4;
+      border-left: 3px solid; max-width: 320px;
+      backdrop-filter: blur(12px);
+      animation: toastIn .25s ease forwards;
+      pointer-events: auto; cursor: pointer;
+      box-shadow: 0 4px 20px rgba(0,0,0,.5);
+    }
+    .alert-toast.removing { animation: toastOut .2s ease forwards; }
+    @keyframes toastIn  { from { opacity:0; transform: translateX(20px); } to { opacity:1; transform: translateX(0); } }
+    @keyframes toastOut { to   { opacity:0; transform: translateX(20px); } }
+    .toast-high   { border-color: #f85149; }
+    .toast-medium { border-color: #d29922; }
+    .toast-low    { border-color: #58a6ff; }
+    .toast-icon   { font-size: 14px; flex-shrink: 0; margin-top: 1px; }
+    .toast-body   { flex: 1; }
+    .toast-title  { font-weight: 600; color: #e6edf3; margin-bottom: 2px; }
+    .toast-msg    { color: #8b949e; font-size: 11px; }
+    .toast-close  {
+      background: none; border: none; color: #8b949e;
+      cursor: pointer; font-size: 13px; line-height: 1;
+      flex-shrink: 0; padding: 0; margin-top: -1px;
+    }
+    .toast-close:hover { color: #e6edf3; }
+
+    /* ── 경보 배지 (HUD) ── */
+    #alert-badge {
+      background: #f85149; color: #fff; font-size: 9px; font-weight: 700;
+      border-radius: 8px; padding: 1px 5px; margin-left: 2px;
+      display: none; vertical-align: middle;
+    }
+
+    /* ── 키보드 포커스 링 ── */
+    .hud-btn:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+    #channel-select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    #purpose-filter:focus-visible  { outline: 2px solid var(--accent); outline-offset: 2px; }
+
     /* ── CHANNEL SELECT ── */
     #channel-select {
       background: rgba(33,38,45,0.9); border: 1px solid rgba(48,54,61,0.8);
@@ -268,10 +316,12 @@
     <button class="hud-btn" id="member-overlay-btn" onclick="toggleMemberOverlay()">👥 팀 오버레이</button>
     <button class="hud-btn" onclick="autoFit()">자동 맞춤</button>
     <button class="hud-btn" id="orbit-toggle" onclick="toggleOrbit()">🔄 Orbit 모드</button>
+    <button class="hud-btn" id="alert-btn" onclick="toggleAlertPanel()" title="경보 패널 (A)">
+      🔔<span id="alert-badge">0</span>
+    </button>
     <a href="/dashboard.html" style="text-decoration:none"><button class="hud-btn">📊 대시보드</button></a>
-    <a href="/history.html" style="text-decoration:none"><button class="hud-btn">⏳ 히스토리</button></a>
+    <a href="/team-dashboard.html" style="text-decoration:none"><button class="hud-btn">👥 팀</button></a>
     <a href="/settings.html" style="text-decoration:none"><button class="hud-btn">⚙️ 설정</button></a>
-    <a href="/" style="text-decoration:none"><button class="hud-btn">← 기존 맵</button></a>
   </div>
 </div>
 
@@ -284,6 +334,25 @@
   <div id="sp-rows"></div>
   <hr class="sp-divider" id="sp-div" style="display:none">
   <div id="sp-content" class="sp-content" style="display:none"></div>
+</div>
+
+<!-- 경보 토스트 컨테이너 -->
+<div id="alert-container"></div>
+
+<!-- 경보 패널 (A키 / 🔔 버튼) -->
+<div id="alert-panel" style="
+  position:fixed; top:48px; right:0; bottom:0; width:300px;
+  background:rgba(13,17,23,0.97); border-left:1px solid rgba(48,54,61,0.6);
+  backdrop-filter:blur(12px); z-index:150; overflow-y:auto; padding:16px;
+  transform:translateX(100%); transition:transform .25s ease;
+">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+    <span style="font-size:13px;font-weight:600;color:#e6edf3">🔔 경보 센터</span>
+    <button onclick="toggleAlertPanel()" style="background:none;border:none;color:#8b949e;cursor:pointer;font-size:15px">✕</button>
+  </div>
+  <div id="alert-panel-list" style="display:flex;flex-direction:column;gap:8px">
+    <div style="text-align:center;color:#8b949e;font-size:12px;padding:24px 0">경보 없음 ✓</div>
+  </div>
 </div>
 
 <!-- CANVAS -->
@@ -342,8 +411,19 @@
     <div class="sh-item"><span class="sh-key">↑↓←→</span>패닝</div>
   </div>
   <div class="sh-row" style="margin-top:6px">
+    <div class="sh-item"><span class="sh-key">Tab</span>다음 노드</div>
+    <div class="sh-item"><span class="sh-key">Shift+Tab</span>이전 노드</div>
+    <div class="sh-item"><span class="sh-key">Enter</span>노드 확대</div>
     <div class="sh-item"><span class="sh-key">더블클릭</span>노드 포커스</div>
     <div class="sh-item"><span class="sh-key">미니맵 클릭</span>즉시 이동</div>
+  </div>
+  <div class="sh-row" style="margin-top:6px">
+    <div class="sh-item"><span class="sh-key">A</span>경보 패널</div>
+    <div class="sh-item"><span class="sh-key">P</span>목적 뷰</div>
+    <div class="sh-item"><span class="sh-key">M</span>팀 오버레이</div>
+    <div class="sh-item"><span class="sh-key">O</span>Orbit 모드</div>
+    <div class="sh-item"><span class="sh-key">R</span>새로고침</div>
+    <div class="sh-item"><span class="sh-key">G</span>팀 대시보드</div>
   </div>
 </div>
 
@@ -1175,6 +1255,53 @@ document.addEventListener('keydown', e => {
     case '1':
       if (e.shiftKey) { autoFit(); e.preventDefault(); }
       break;
+    // ── 추가 단축키 ──────────────────────────────
+    case 'a': case 'A':
+      if (!e.ctrlKey && !e.metaKey) { toggleAlertPanel(); e.preventDefault(); }
+      break;
+    case 'p': case 'P':
+      if (!e.ctrlKey && !e.metaKey) { togglePurposeMode(); e.preventDefault(); }
+      break;
+    case 'm': case 'M':
+      if (!e.ctrlKey && !e.metaKey) { toggleMemberOverlay(); e.preventDefault(); }
+      break;
+    case 'o': case 'O':
+      if (!e.ctrlKey && !e.metaKey) { toggleOrbit(); e.preventDefault(); }
+      break;
+    case 'Tab': {
+      // Tab: 다음 노드 포커스 / Shift+Tab: 이전 노드
+      if (nodes.length === 0) break;
+      e.preventDefault();
+      const visibleNodes = nodes.filter(n => !n._hidden && !n._dimmed);
+      if (!visibleNodes.length) break;
+      if (typeof window._focusedNodeIdx === 'undefined') window._focusedNodeIdx = -1;
+      window._focusedNodeIdx = e.shiftKey
+        ? (window._focusedNodeIdx - 1 + visibleNodes.length) % visibleNodes.length
+        : (window._focusedNodeIdx + 1) % visibleNodes.length;
+      const target = visibleNodes[window._focusedNodeIdx];
+      // 카메라 이동
+      world.targetX = target.x;
+      world.targetY = target.y;
+      // 사이드패널 표시
+      showSidePanel(target);
+      break;
+    }
+    case 'Enter': {
+      // Enter: 현재 포커스 노드 더블클릭 효과 (줌인)
+      if (typeof window._focusedNodeIdx !== 'undefined' && nodes.length > 0) {
+        const visibleNodes = nodes.filter(n => !n._hidden && !n._dimmed);
+        const target = visibleNodes[window._focusedNodeIdx];
+        if (target) { focusNode(target); e.preventDefault(); }
+      }
+      break;
+    }
+    case 'r': case 'R':
+      if (!e.ctrlKey && !e.metaKey) { loadData(); e.preventDefault(); }
+      break;
+    case 'g': case 'G':
+      // G: 팀 대시보드로 이동
+      if (!e.ctrlKey && !e.metaKey) { window.open('/team-dashboard.html', '_blank'); e.preventDefault(); }
+      break;
   }
 });
 
@@ -1672,11 +1799,102 @@ function connectWS() {
   ws.onopen  = () => console.log('[Orbit] WS 연결');
   ws.onmessage = async (e) => {
     const msg = JSON.parse(e.data);
-    if (msg.type === 'graph_update' || msg.type === 'full_graph') {
+    if (msg.type === 'graph_update' || msg.type === 'full_graph' || msg.type === 'update') {
       await loadData();
+      // ── 경보 처리 ──────────────────────────────
+      if (msg.conflicts?.length)    msg.conflicts.forEach(c => pushAlert('conflict', c));
+      if (msg.shadowAI?.length)     msg.shadowAI.forEach(c => pushAlert('shadow', c));
+      if (msg.securityLeaks?.length) msg.securityLeaks.forEach(c => pushAlert('security', c));
     }
   };
   ws.onclose = () => setTimeout(connectWS, 3000);
+}
+
+// ═══════════════════════════════════════════════════
+// 경보 시스템
+// ═══════════════════════════════════════════════════
+const alertHistory = [];
+let alertPanelOpen = false;
+
+function pushAlert(kind, data) {
+  const id = kind + '-' + Date.now() + '-' + Math.random().toString(36).slice(2,6);
+  const severity = data.severity || (kind === 'security' ? 'high' : 'medium');
+
+  const icons   = { conflict: '⚠️', shadow: '🚫', security: '🚨' };
+  const titles  = { conflict: '충돌 감지', shadow: 'Shadow AI', security: '보안 유출' };
+
+  const entry = { id, kind, severity, message: data.message || JSON.stringify(data).slice(0,80), ts: new Date() };
+  alertHistory.unshift(entry);
+
+  // 배지 업데이트
+  const badge = document.getElementById('alert-badge');
+  badge.style.display = 'inline';
+  badge.textContent = Math.min(alertHistory.length, 99);
+
+  // 패널 목록 업데이트
+  renderAlertPanel();
+
+  // 토스트 표시 (패널 닫혀 있을 때만)
+  if (!alertPanelOpen) showToast(entry, icons[kind] || '🔔', titles[kind] || '경보');
+}
+
+function showToast(entry, icon, title) {
+  const container = document.getElementById('alert-container');
+  const el = document.createElement('div');
+  el.className = `alert-toast toast-${entry.severity}`;
+  el.id = 'toast-' + entry.id;
+  el.innerHTML = `
+    <div class="toast-icon">${icon}</div>
+    <div class="toast-body">
+      <div class="toast-title">${title}</div>
+      <div class="toast-msg">${entry.message.slice(0, 80)}</div>
+    </div>
+    <button class="toast-close" onclick="dismissToast('${entry.id}')">✕</button>
+  `;
+  el.onclick = (e) => { if (!e.target.classList.contains('toast-close')) { openAlertPanel(); dismissToast(entry.id); } };
+  container.appendChild(el);
+
+  // 5초 후 자동 제거
+  setTimeout(() => dismissToast(entry.id), 5000);
+}
+
+function dismissToast(id) {
+  const el = document.getElementById('toast-' + id);
+  if (!el) return;
+  el.classList.add('removing');
+  setTimeout(() => el.remove(), 200);
+}
+
+function renderAlertPanel() {
+  const list = document.getElementById('alert-panel-list');
+  if (!alertHistory.length) {
+    list.innerHTML = '<div style="text-align:center;color:#8b949e;font-size:12px;padding:24px 0">경보 없음 ✓</div>';
+    return;
+  }
+  const kindIcons = { conflict: '⚠️', shadow: '🚫', security: '🚨' };
+  list.innerHTML = alertHistory.slice(0, 50).map(a => `
+    <div style="border-radius:8px;padding:10px 12px;font-size:12px;line-height:1.4;
+      border-left:3px solid ${a.severity==='high'?'#f85149':a.severity==='medium'?'#d29922':'#58a6ff'};
+      background:rgba(255,255,255,.03);margin-bottom:2px">
+      <div style="font-weight:600;color:#e6edf3;margin-bottom:2px">${kindIcons[a.kind]||'🔔'} ${a.message.slice(0,100)}</div>
+      <div style="color:#8b949e;font-size:10px">${a.ts.toLocaleTimeString('ko-KR')}</div>
+    </div>`).join('');
+}
+
+function toggleAlertPanel() {
+  alertPanelOpen = !alertPanelOpen;
+  const panel = document.getElementById('alert-panel');
+  panel.style.transform = alertPanelOpen ? 'translateX(0)' : 'translateX(100%)';
+  if (alertPanelOpen) {
+    document.getElementById('alert-badge').style.display = 'none';
+    document.getElementById('alert-badge').textContent = '0';
+    renderAlertPanel();
+  }
+}
+
+function openAlertPanel() {
+  alertPanelOpen = false;
+  toggleAlertPanel();
 }
 
 // ═══════════════════════════════════════════════════

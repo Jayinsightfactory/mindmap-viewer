@@ -834,6 +834,72 @@ function addFeedItem(msg) {
 // ─── 채널 변경 ───────────────────────────────────────
 document.getElementById('channel-selector').addEventListener('change', loadAll);
 
+// ─── 키보드 단축키 ───────────────────────────────────
+document.addEventListener('keydown', e => {
+  // 입력창 포커스 중 무시
+  if (['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)) return;
+
+  switch (e.key) {
+    case 'r': case 'R':
+      if (!e.ctrlKey && !e.metaKey) { loadAll(); e.preventDefault(); }
+      break;
+    case 'Escape':
+      document.getElementById('channel-selector').blur();
+      break;
+    case '?':
+      toggleShortcutOverlay(); e.preventDefault();
+      break;
+    case 'm': case 'M':
+      window.location.href = '/';
+      break;
+    case 'Tab': {
+      // Tab: 섹션 간 포커스 이동 (기본 브라우저 동작 유지)
+      break;
+    }
+  }
+});
+
+// ─── 단축키 오버레이 ─────────────────────────────────
+let shortcutOverlayVisible = false;
+function toggleShortcutOverlay() {
+  let overlay = document.getElementById('shortcut-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'shortcut-overlay';
+    overlay.style.cssText = `
+      position:fixed; inset:0; background:rgba(0,0,0,.7); z-index:999;
+      display:flex; align-items:center; justify-content:center;
+    `;
+    overlay.innerHTML = `
+      <div style="background:#161b22;border:1px solid #30363d;border-radius:12px;padding:24px 32px;font-size:13px;color:#e6edf3;min-width:360px">
+        <div style="font-size:15px;font-weight:700;margin-bottom:16px">⌨️ 키보드 단축키</div>
+        <table style="width:100%;border-collapse:collapse">
+          <tr><td style="padding:5px 0;color:#8b949e">R</td><td>새로고침</td></tr>
+          <tr><td style="padding:5px 0;color:#8b949e">M</td><td>마인드맵으로 이동</td></tr>
+          <tr><td style="padding:5px 0;color:#8b949e">?</td><td>단축키 보기/닫기</td></tr>
+          <tr><td style="padding:5px 0;color:#8b949e">Esc</td><td>포커스 해제 / 닫기</td></tr>
+          <tr><td style="padding:5px 0;color:#8b949e">Tab</td><td>다음 섹션으로 이동</td></tr>
+        </table>
+        <div style="margin-top:16px;text-align:center;color:#8b949e;font-size:11px">아무 곳이나 클릭하거나 Esc로 닫기</div>
+      </div>`;
+    overlay.onclick = () => { overlay.remove(); shortcutOverlayVisible = false; };
+    document.body.appendChild(overlay);
+    shortcutOverlayVisible = true;
+  } else {
+    overlay.remove();
+    shortcutOverlayVisible = false;
+  }
+}
+
+// Esc로 오버레이 닫기
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && shortcutOverlayVisible) {
+    document.getElementById('shortcut-overlay')?.remove();
+    shortcutOverlayVisible = false;
+    e.preventDefault();
+  }
+});
+
 // ─── 초기화 ─────────────────────────────────────────
 loadAll();
 connectWS();
