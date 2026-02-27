@@ -93,11 +93,13 @@ function buildGraph(events) {
       sessionId: event.sessionId,
       eventType: event.type,
       timestamp: event.timestamp,
-      // 멀티 AI 메타
-      aiSource:   aiSrc || 'claude',
-      aiIcon:     (aiSrc && AI_SOURCE_STYLES[aiSrc]?.icon) || event.data?.aiIcon || null,
-      aiLabel:    event.data?.aiLabel || null,
-      citations:  event.data?.citations || null,
+      // 멀티 AI 메타 (showDetail 에서 n.tokenCount, n.model 로 직접 접근)
+      aiSource:    aiSrc || null,
+      aiIcon:      (aiSrc && AI_SOURCE_STYLES[aiSrc]?.icon) || event.data?.aiIcon || null,
+      aiLabel:     event.data?.aiLabel || null,
+      citations:   event.data?.citations || null,
+      tokenCount:  event.data?.tokenCount  ?? null,
+      model:       event.data?.model       || null,
     };
 
     nodes.push(node);

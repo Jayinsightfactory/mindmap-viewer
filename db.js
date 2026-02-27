@@ -435,26 +435,58 @@ function clearAll() {
 
 // ─── 통계 ───────────────────────────────────────────
 function getStats() {
-  const eventCount = db.prepare('SELECT COUNT(*) as c FROM events').get().c;
+  const eventCount   = db.prepare('SELECT COUNT(*) as c FROM events').get().c;
   const sessionCount = db.prepare('SELECT COUNT(*) as c FROM sessions').get().c;
-  const fileCount = db.prepare('SELECT COUNT(*) as c FROM files').get().c;
-  const toolCount = db.prepare("SELECT COUNT(*) as c FROM events WHERE type LIKE 'tool.%'").get().c;
-  return { eventCount, sessionCount, fileCount, toolCount };
+  const fileCount    = db.prepare('SELECT COUNT(*) as c FROM files').get().c;
+  const toolCount    = db.prepare("SELECT COUNT(*) as c FROM events WHERE type LIKE 'tool.%'").get().c;
+
+  // ── AI 소스별 이벤트 통계 ──────────────────────────
+  // metadata_json 내 aiSource 값을 기반으로 집계
+  const aiSourceRows = db.prepare(`
+    SELECT
+      json_extract(metadata_json, '$.aiSource') AS aiSource,
+      COUNT(*) AS cnt
+    FROM events
+    WHERE json_extract(metadata_json, '$.aiSource') IS NOT NULL
+    GROUP BY aiSource
+    ORDER BY cnt DESC
+  `).all();
+
+  const aiSourceStats = {};
+  for (const row of aiSourceRows) {
+    if (row.aiSource) aiSourceStats[row.aiSource] = row.cnt;
+  }
+
+  // claude 이벤트 (aiSource 없는 기존 이벤트 포함)
+  const claudeWithMeta = aiSourceStats['claude'] || 0;
+  const noAiSource     = db.prepare("SELECT COUNT(*) as c FROM events WHERE json_extract(metadata_json, '$.aiSource') IS NULL").get().c;
+  if (noAiSource > 0) aiSourceStats['claude'] = claudeWithMeta + noAiSource;
+
+  return { eventCount, sessionCount, fileCount, toolCount, aiSourceStats };
 }
 
 // ─── 직렬화 헬퍼 ────────────────────────────────────
 function deserializeEvent(row) {
+  const data     = JSON.parse(row.data_json     || '{}');
+  const metadata = JSON.parse(row.metadata_json || '{}');
+
+  // ── 멀티 AI 필드 복원 ──────────────────────────
+  // aiSource 는 insertEvent 시 metadata_json 에 저장됨
+  // DB 라운드트립 후에도 graph-engine 이 올바른 스타일을 적용할 수 있도록 복원
+  const aiSource = metadata.aiSource || data.aiSource || null;
+
   return {
-    id: row.id,
-    type: row.type,
-    source: row.source,
-    sessionId: row.session_id,
-    userId: row.user_id,
-    channelId: row.channel_id,
+    id:            row.id,
+    type:          row.type,
+    source:        row.source,
+    sessionId:     row.session_id,
+    userId:        row.user_id,
+    channelId:     row.channel_id,
     parentEventId: row.parent_event_id,
-    timestamp: row.timestamp,
-    data: JSON.parse(row.data_json || '{}'),
-    metadata: JSON.parse(row.metadata_json || '{}'),
+    timestamp:     row.timestamp,
+    data,
+    metadata,
+    aiSource,   // graph-engine 에서 AI_SOURCE_STYLES 조회에 사용
   };
 }
 

@@ -1786,15 +1786,15 @@ function showDetail(n) {
   h += `</div>`;
 
   // ── 멀티 AI 정보 섹션 ──
-  if (n.aiSource && n.aiSource !== 'claude') {
+  if (n.aiSource) {
     const AI_META = {
+      claude:     { label: 'Claude',        color: '#3fb950', icon: '🟢' },
       gemini:     { label: 'Google Gemini', color: '#4285f4', icon: '🔵' },
       perplexity: { label: 'Perplexity',    color: '#bc8cff', icon: '🟣' },
       openai:     { label: 'OpenAI GPT',    color: '#8b949e', icon: '⚪' },
       vscode:     { label: 'VS Code',       color: '#f85149', icon: '🔴' },
     };
     const meta = AI_META[n.aiSource] || { label: n.aiSource, color: '#8b949e', icon: '❓' };
-    const aiData = n.fullContent ? JSON.parse(n.fullContent.startsWith('{') ? n.fullContent : '{}') : {};
     h += `<div class="dsec"><h4>AI 소스</h4>
       <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;background:${meta.color}18;border:1px solid ${meta.color}33">
         <span style="font-size:16px">${meta.icon}</span>
@@ -1803,18 +1803,17 @@ function showDetail(n) {
           ${n.aiLabel ? `<div style="font-size:10px;color:var(--text3)">${esc(n.aiLabel)}</div>` : ''}
         </div>
       </div>`;
-    // 토큰 정보
-    if (n.data?.tokenCount || n.fullContent?.includes('tokenCount')) {
-      h += `<div style="font-size:10px;color:var(--text3);margin-top:4px">토큰: ${n.data?.tokenCount || '?'}개</div>`;
+    // 토큰 / 모델 정보: graph-engine이 노드에 직접 복사 (tokenCount, model)
+    if (n.tokenCount != null) {
+      h += `<div style="font-size:10px;color:var(--text3);margin-top:4px">🔢 토큰: <b>${n.tokenCount}</b>개</div>`;
     }
-    // 모델 정보
-    if (n.data?.model) {
-      h += `<div style="font-size:10px;color:var(--text3)">모델: ${esc(n.data.model)}</div>`;
+    if (n.model) {
+      h += `<div style="font-size:10px;color:var(--text3)">🧠 모델: ${esc(n.model)}</div>`;
     }
     h += `</div>`;
-    // Citations (Perplexity)
+    // Citations (Perplexity 전용)
     if (n.citations && n.citations.length > 0) {
-      h += `<div class="dsec"><h4>출처 (${n.citations.length})</h4>`;
+      h += `<div class="dsec"><h4>📎 출처 (${n.citations.length})</h4>`;
       n.citations.slice(0, 5).forEach((url, i) => {
         const domain = (() => { try { return new URL(url).hostname; } catch { return url; } })();
         h += `<div style="font-size:10px;padding:3px 0;border-bottom:1px solid var(--border)">
@@ -1905,7 +1904,35 @@ function toggleDetail() { const d=document.getElementById('detail'); d.classList
 function toggleSettings() { const s=document.getElementById('settings'); s.classList.toggle('open'); document.getElementById('btn-set').classList.toggle('active',s.classList.contains('open')); event.stopPropagation(); }
 function fitNet() { net.fit({animation:{duration:400}}); }
 async function clearAll() { if(!confirm('전체 초기화?'))return; await fetch('/api/clear',{method:'DELETE'}); }
-function updateStats(s) { document.getElementById('se').textContent=s.eventCount||0; document.getElementById('ss').textContent=s.sessionCount||0; document.getElementById('sf').textContent=s.fileCount||0; }
+function updateStats(s) {
+  document.getElementById('se').textContent = s.eventCount  || 0;
+  document.getElementById('ss').textContent = s.sessionCount|| 0;
+  document.getElementById('sf').textContent = s.fileCount   || 0;
+
+  // AI 소스 통계 뱃지 업데이트
+  const AI_BADGE_META = {
+    claude:     { icon:'🟢', color:'#3fb950' },
+    gemini:     { icon:'🔵', color:'#4285f4' },
+    perplexity: { icon:'🟣', color:'#bc8cff' },
+    openai:     { icon:'⚪', color:'#8b949e' },
+    vscode:     { icon:'🔴', color:'#f85149' },
+  };
+  const aiStats = s.aiSourceStats || {};
+  document.querySelectorAll('#ai-filters .tb[data-ai]').forEach(btn => {
+    const ai  = btn.dataset.ai;
+    const cnt = aiStats[ai] || 0;
+    // 뱃지 숫자 표시 (0이면 숨김)
+    let badge = btn.querySelector('.ai-cnt');
+    if (!badge) {
+      badge = document.createElement('sup');
+      badge.className = 'ai-cnt';
+      badge.style.cssText = 'font-size:8px;margin-left:2px;opacity:0.75';
+      btn.appendChild(badge);
+    }
+    badge.textContent = cnt > 0 ? cnt : '';
+    btn.title = `${AI_BADGE_META[ai]?.icon || ai} ${ai} (${cnt}개 이벤트)`;
+  });
+}
 function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 // ═══════════════════════════════════════════════════
