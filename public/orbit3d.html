@@ -316,6 +316,44 @@
       transition: all .18s; font-family: inherit; font-weight: 600;
     }
     .tr-btn-team:hover { background: rgba(255,215,0,0.1); }
+
+    /* ── 거리 조절 패널 ──────────────────────────────────────────── */
+    #dist-panel {
+      position: fixed; right: 16px; bottom: 58px; z-index: 150;
+      background: rgba(13,17,23,0.96);
+      border: 1px solid #21262d; border-radius: 14px;
+      padding: 14px 16px; min-width: 240px;
+      backdrop-filter: blur(16px);
+      display: none; flex-direction: column; gap: 10px;
+      box-shadow: 0 16px 48px rgba(0,0,0,0.55);
+    }
+    #dist-panel.open { display: flex; }
+    .dp-title {
+      font-size: 13px; font-weight: 700; color: #cdd9e5;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .dp-close {
+      background: none; border: none; color: #6e7681;
+      cursor: pointer; font-size: 15px; padding: 1px 5px; border-radius: 4px;
+    }
+    .dp-close:hover { color: #e6edf3; background: #21262d; }
+    .dp-row { display: flex; flex-direction: column; gap: 4px; }
+    .dp-lbl {
+      font-size: 11px; color: #6e7681;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .dp-lbl b { color: #58a6ff; font-weight: 600; font-size: 12px; }
+    .dp-row input[type=range] {
+      width: 100%; accent-color: #58a6ff; cursor: pointer; height: 4px;
+    }
+    .dp-divider { border: none; border-top: 1px solid #21262d; margin: 2px 0; }
+    .dp-btn {
+      background: rgba(88,166,255,0.1); border: 1px solid #58a6ff40;
+      color: #58a6ff; border-radius: 8px; padding: 7px; cursor: pointer;
+      font-size: 12px; font-family: inherit; transition: all .15s; margin-top: 2px;
+    }
+    .dp-btn:hover { background: rgba(88,166,255,0.2); border-color: #58a6ff80; }
+    .dp-hint { font-size: 10px; color: #6e7681; text-align: center; opacity: 0.7; }
   </style>
 </head>
 <body>
@@ -418,6 +456,34 @@
 <div style="position:fixed;top:14px;right:14px;z-index:101;display:flex;gap:8px;">
   <button class="tr-btn-team" onclick="loadTeamDemo()">👥 팀 시뮬</button>
   <button class="tr-btn" id="orbit-toggle-btn" onclick="toggleOrbitAnim()">⏸ 공전 중지</button>
+  <button class="tr-btn" onclick="toggleDistPanel()" title="거리 조절 설정">⚙️</button>
+</div>
+
+<!-- 거리 조절 패널 -->
+<div id="dist-panel">
+  <div class="dp-title">
+    ⚙️ 노드 거리 조절
+    <button class="dp-close" onclick="closeDistPanel()">✕</button>
+  </div>
+  <hr class="dp-divider">
+  <div class="dp-row">
+    <div class="dp-lbl">🔵 팀원 ↔ 중심 거리 <b id="v-member-r">40</b></div>
+    <input type="range" id="sl-member-r" min="20" max="80" value="40"
+           oninput="updateDist('MEMBER_R',this)">
+  </div>
+  <div class="dp-row">
+    <div class="dp-lbl">🔹 작업 ↔ 팀원 거리 <b id="v-task-r">16</b></div>
+    <input type="range" id="sl-task-r" min="6" max="32" value="16"
+           oninput="updateDist('TASK_R',this)">
+  </div>
+  <div class="dp-row">
+    <div class="dp-lbl">🔸 툴 ↔ 팀원 거리 <b id="v-tool-r">9</b></div>
+    <input type="range" id="sl-tool-r" min="4" max="18" value="9"
+           oninput="updateDist('TOOL_R',this)">
+  </div>
+  <hr class="dp-divider">
+  <button class="dp-btn" onclick="applyTeamCfg()">↺ 재배치 적용</button>
+  <div class="dp-hint">팀 시뮬 모드에서만 동작합니다</div>
 </div>
 
 <!-- 기능 샘플링 버튼 -->
@@ -1165,7 +1231,31 @@ function buildPlanetSystem(nodeList) {
 //   🔹 툴 라벨 R=8    = 사용 툴 (행성 가까이 고정)
 
 let _teamMode  = false;
-let _teamNodes = [];  // { type, pos, label, sublabel, color, size, emoji, progress, obj }
+let _teamNodes = [];  // { type, pos, label, sublabel, color, size, emoji, progress, memberId, taskStatus, obj }
+let _focusedMember = null;  // 현재 포커스된 팀원 노드
+let _cameraLerp    = null;  // { startR, endR, startTx/y/z, endTx/y/z, startPhi, endPhi, duration, elapsed }
+
+// ─── 팀 거리 설정값 ──────────────────────────────────────────────────────────
+const TEAM_CFG = { MEMBER_R: 40, TASK_R: 16, TOOL_R: 9 };
+
+function updateDist(key, input) {
+  TEAM_CFG[key] = parseInt(input.value);
+  const valMap = { MEMBER_R: 'v-member-r', TASK_R: 'v-task-r', TOOL_R: 'v-tool-r' };
+  document.getElementById(valMap[key]).textContent = input.value;
+}
+function applyTeamCfg() {
+  if (_teamMode) buildTeamSystem(TEAM_DEMO);
+}
+function toggleDistPanel() {
+  document.getElementById('dist-panel').classList.toggle('open');
+}
+function closeDistPanel() {
+  document.getElementById('dist-panel').classList.remove('open');
+}
+window.updateDist = updateDist;
+window.applyTeamCfg = applyTeamCfg;
+window.toggleDistPanel = toggleDistPanel;
+window.closeDistPanel = closeDistPanel;
 
 const STATUS_CFG = {
   done:    { emoji: '✅', color: '#3fb950' },
@@ -1176,6 +1266,9 @@ const STATUS_CFG = {
 
 // ── 팀 데모 데이터 ──────────────────────────────────────────────────────────
 const TEAM_DEMO = {
+  // 계층 구조: Universe → Company → Team → Member → Task
+  universe: { name: '🌌 AI 스타트업 생태계', teamCount: 8, memberCount: 34, desc: '8개 팀 · 34명 · 120+ 프로젝트 동시 진행 중' },
+  company:  { name: '🏢 Orbit AI Inc.', teams: ['제품팀', 'DevOps팀', '마케팅팀'], desc: '3개 팀 · 12명 · Series-A 준비 중' },
   name: 'Orbit AI 제품팀',
   goal: '🚀 Q1 SaaS MVP 런칭',
   goalColor: '#ffd700',
@@ -1184,45 +1277,75 @@ const TEAM_DEMO = {
       id: 'm0', name: '김민준', role: '백엔드 개발', color: '#3fb950',
       tools: ['VS Code', 'Docker', 'PostgreSQL'],
       tasks: [
-        { name: '🔐 인증 시스템', status: 'active',  progress: 0.75 },
-        { name: '🌐 API 서버 구축', status: 'done',    progress: 1.0  },
-        { name: '🗄️ DB 스키마',   status: 'done',    progress: 1.0  },
+        { name: '🔐 인증 시스템', status: 'active', progress: 0.75,
+          subtasks: ['JWT 토큰 구현', 'OAuth Google/GitHub', 'bcrypt 해시 적용', '세션 관리 미들웨어'],
+          completedSubtasks: 3 },
+        { name: '🌐 API 서버 구축', status: 'done', progress: 1.0,
+          subtasks: ['Express 라우터 설계', 'WebSocket 연동', 'Rate Limiter 적용'],
+          completedSubtasks: 3 },
+        { name: '🗄️ DB 스키마', status: 'done', progress: 1.0,
+          subtasks: ['nodes 테이블', 'edges 테이블', 'events append-only'],
+          completedSubtasks: 3 },
       ],
     },
     {
       id: 'm1', name: '이서연', role: '프론트엔드', color: '#58a6ff',
       tools: ['Cursor', 'React', 'Figma'],
       tasks: [
-        { name: '🪐 3D 뷰 개발',    status: 'active',  progress: 0.6  },
-        { name: '🎨 UI 컴포넌트',    status: 'done',    progress: 1.0  },
-        { name: '📱 반응형 레이아웃', status: 'blocked', progress: 0.3  },
+        { name: '🪐 3D 뷰 개발', status: 'active', progress: 0.6,
+          subtasks: ['Three.js 렌더러', 'Canvas2D 오버레이', 'LOD 시스템', '팀 시뮬레이션'],
+          completedSubtasks: 2 },
+        { name: '🎨 UI 컴포넌트', status: 'done', progress: 1.0,
+          subtasks: ['디자인 시스템 정의', '공통 버튼/폼', '다크모드'],
+          completedSubtasks: 3 },
+        { name: '📱 반응형 레이아웃', status: 'blocked', progress: 0.3,
+          subtasks: ['모바일 뷰포트', '태블릿 레이아웃', '터치 인터랙션'],
+          completedSubtasks: 1 },
       ],
     },
     {
       id: 'm2', name: '박지훈', role: 'AI 엔지니어', color: '#bc8cff',
       tools: ['Claude Code', 'Ollama', 'Python'],
       tasks: [
-        { name: '⚡ signal-engine', status: 'done',    progress: 1.0  },
-        { name: '🤖 커스텀 모델 학습', status: 'active',  progress: 0.45 },
-        { name: '📈 성장 엔진 최적화', status: 'pending', progress: 0.0  },
+        { name: '⚡ signal-engine', status: 'done', progress: 1.0,
+          subtasks: ['6차원 벡터 설계', '상태 분류기 로직', 'API /api/signal 엔드포인트'],
+          completedSubtasks: 3 },
+        { name: '🤖 커스텀 모델 학습', status: 'active', progress: 0.45,
+          subtasks: ['데이터셋 전처리', 'Fine-tuning 실행', '평가 지표 설계', 'Ollama 배포'],
+          completedSubtasks: 1 },
+        { name: '📈 성장 엔진 최적화', status: 'pending', progress: 0.0,
+          subtasks: ['피드백 루프 설계', '스트릭 시스템', '레벨업 알고리즘'],
+          completedSubtasks: 0 },
       ],
     },
     {
       id: 'm3', name: '최유나', role: 'DevOps', color: '#f0883e',
       tools: ['Windsurf', 'Railway', 'GitHub Actions'],
       tasks: [
-        { name: '🚂 Railway 배포',   status: 'active',  progress: 0.5  },
-        { name: '⚙️ CI/CD 파이프라인', status: 'done',    progress: 1.0  },
-        { name: '🐘 PostgreSQL 전환', status: 'blocked', progress: 0.2  },
+        { name: '🚂 Railway 배포', status: 'active', progress: 0.5,
+          subtasks: ['환경변수 .env 설정', 'PostgreSQL 연결', '커스텀 도메인', '헬스체크 모니터링'],
+          completedSubtasks: 2 },
+        { name: '⚙️ CI/CD 파이프라인', status: 'done', progress: 1.0,
+          subtasks: ['GitHub Actions 워크플로우', '자동 테스트 실행', '자동 배포 트리거'],
+          completedSubtasks: 3 },
+        { name: '🐘 PostgreSQL 전환', status: 'blocked', progress: 0.2,
+          subtasks: ['SQLite → PG 마이그레이션', '데이터 무결성 검증', '롤백 플랜'],
+          completedSubtasks: 0 },
       ],
     },
     {
       id: 'm4', name: '장현우', role: '기획/PM', color: '#f85149',
       tools: ['Notion', 'n8n', 'ChatGPT'],
       tasks: [
-        { name: '🏢 기업별 특화 기획',  status: 'active',  progress: 0.65 },
-        { name: '🛒 솔루션 마켓 정책',  status: 'done',    progress: 1.0  },
-        { name: '🧠 팔란티어 모델 설계', status: 'pending', progress: 0.1  },
+        { name: '🏢 기업별 특화 기획', status: 'active', progress: 0.65,
+          subtasks: ['생산업 버전 설계', '금융업 버전 설계', '엔터프라이즈 로드맵', '고객 인터뷰'],
+          completedSubtasks: 2 },
+        { name: '🛒 솔루션 마켓 정책', status: 'done', progress: 1.0,
+          subtasks: ['수익 쉐어 모델 70/30', '판매자 온보딩 정책', '리뷰 시스템 설계'],
+          completedSubtasks: 3 },
+        { name: '🧠 팔란티어 모델 설계', status: 'pending', progress: 0.1,
+          subtasks: ['조직 두뇌 외부화', '가이드라인 생성 엔진', '데이터 파이프라인'],
+          completedSubtasks: 0 },
       ],
     },
   ],
@@ -1250,9 +1373,9 @@ function buildTeamSystem(teamData) {
   _teamNodes.push({ type: 'goal', pos: new THREE.Vector3(0, 0, 0),
     label: goal, sublabel: name, color: goalColor, size: 'xl' });
 
-  const MEMBER_R = 40;
-  const TASK_R   = 16;
-  const TOOL_R   = 9;
+  const MEMBER_R = TEAM_CFG.MEMBER_R;
+  const TASK_R   = TEAM_CFG.TASK_R;
+  const TOOL_R   = TEAM_CFG.TOOL_R;
 
   // 전체 궤도 링 (팀원 공전 궤도)
   {
@@ -1286,6 +1409,7 @@ function buildTeamSystem(teamData) {
     _teamNodes.push({
       type: 'member', pos: mPos.clone(), obj: mObj,
       label: member.name, sublabel: member.role, color: member.color, size: 'lg',
+      memberId: member.id,
     });
 
     // 중심 → 팀원 연결선 (컬러, 굵게)
@@ -1332,6 +1456,7 @@ function buildTeamSystem(teamData) {
         type: 'task', pos: tPos.clone(), obj: tObj,
         label: task.name, emoji: sc.emoji, color: sc.color,
         progress: task.progress, size: 'sm',
+        memberId: member.id, taskStatus: task.status,
       });
 
       // 팀원 → 작업 연결선
@@ -1379,10 +1504,95 @@ window.loadTeamDemo = loadTeamDemo;
 
 function exitTeamMode() {
   _teamMode = false; _teamNodes = [];
+  _focusedMember = null; _cameraLerp = null;
   document.getElementById('team-mode-badge').style.display = 'none';
   loadData();
 }
 window.exitTeamMode = exitTeamMode;
+
+// ─── 카메라 부드러운 이동 ─────────────────────────────────────────────────────
+function lerpCameraTo(r, tx, ty, tz, duration = 700) {
+  _cameraLerp = {
+    startR:   controls.sph.r,
+    startTx:  controls.tgt.x,
+    startTy:  controls.tgt.y,
+    startTz:  controls.tgt.z,
+    startPhi: controls.sph.φ,
+    endR:     r,
+    endTx:    tx,
+    endTy:    ty,
+    endTz:    tz,
+    endPhi:   1.05,
+    duration,
+    elapsed:  0,
+  };
+}
+
+function updateCameraLerp(dt) {
+  if (!_cameraLerp) return;
+  _cameraLerp.elapsed += dt;
+  const raw = Math.min(_cameraLerp.elapsed / _cameraLerp.duration, 1);
+  const t   = raw < 0.5 ? 2 * raw * raw : -1 + (4 - 2 * raw) * raw; // ease in-out
+  controls.sph.r = _cameraLerp.startR  + (_cameraLerp.endR  - _cameraLerp.startR)  * t;
+  controls.tgt.x = _cameraLerp.startTx + (_cameraLerp.endTx - _cameraLerp.startTx) * t;
+  controls.tgt.y = _cameraLerp.startTy + (_cameraLerp.endTy - _cameraLerp.startTy) * t;
+  controls.tgt.z = _cameraLerp.startTz + (_cameraLerp.endTz - _cameraLerp.startTz) * t;
+  controls.sph.φ = _cameraLerp.startPhi + (_cameraLerp.endPhi - _cameraLerp.startPhi) * t;
+  controls._apply();
+  if (raw >= 1) _cameraLerp = null;
+}
+
+// ─── 레이블 겹침 해소 (AABB 스프링 시뮬레이션) ───────────────────────────────
+// labels: [{ x, y, pw, ph, ax, ay, priority }]  x/y = 현재 top-left, ax/ay = 앵커 center
+function resolveOverlaps(labels, iters = 10, gap = 6) {
+  for (let it = 0; it < iters; it++) {
+    // 1단계: 겹치는 쌍 찾아 최소 관통 축으로 밀어냄
+    for (let i = 0; i < labels.length; i++) {
+      for (let j = i + 1; j < labels.length; j++) {
+        const a = labels[i], b = labels[j];
+        const acx = a.x + a.pw * 0.5, acy = a.y + a.ph * 0.5;
+        const bcx = b.x + b.pw * 0.5, bcy = b.y + b.ph * 0.5;
+        const ow = (a.pw + b.pw) * 0.5 + gap - Math.abs(acx - bcx);
+        const oh = (a.ph + b.ph) * 0.5 + gap - Math.abs(acy - bcy);
+        if (ow <= 0 || oh <= 0) continue; // 겹침 없음
+
+        const pa = a.priority, pb = b.priority, ps = pa + pb;
+        if (ow < oh) {
+          // X축으로 밀어냄
+          const push = ow * (acx < bcx ? 1 : -1);
+          a.x -= push * (pb / ps) * 0.75;
+          b.x += push * (pa / ps) * 0.75;
+        } else {
+          // Y축으로 밀어냄
+          const push = oh * (acy < bcy ? 1 : -1);
+          a.y -= push * (pb / ps) * 0.75;
+          b.y += push * (pa / ps) * 0.75;
+        }
+      }
+    }
+    // 2단계: 앵커 방향 스프링 복귀 (priority 높을수록 강하게 복귀)
+    for (const l of labels) {
+      const k = Math.min(0.14 + l.priority * 0.04, 0.38);
+      l.x += (l.ax - l.pw * 0.5 - l.x) * k;
+      l.y += (l.ay - l.ph * 0.5 - l.y) * k;
+      // 화면 경계 클램프
+      l.x = Math.max(4, Math.min(innerWidth  - l.pw - 4, l.x));
+      l.y = Math.max(54, Math.min(innerHeight - l.ph - 54, l.y));
+    }
+  }
+}
+
+// ─── 팀원 포커스 / 해제 ───────────────────────────────────────────────────────
+function focusMember(memberNode) {
+  _focusedMember = memberNode;
+  const pos = memberNode.pos;
+  lerpCameraTo(22, pos.x, pos.y, pos.z);
+}
+
+function unfocusMember() {
+  _focusedMember = null;
+  lerpCameraTo(75, 0, 0, 0);
+}
 
 // ── 팀 모드 공전 ─────────────────────────────────────────────────────────────
 function updateTeamOrbits(dt) {
@@ -1463,92 +1673,306 @@ function updateTeamOrbits(dt) {
   });
 }
 
-// ── 팀 모드 Canvas2D 라벨 ─────────────────────────────────────────────────────
+// ── 팀 모드 Canvas2D 라벨 (2-pass: 수집 → 겹침해소 → 드로우) ─────────────────
 function drawTeamLabels() {
   _lctx.clearRect(0, 0, innerWidth, innerHeight);
   _hitAreas = [];
 
   const lod = getLOD();
+  const now = Date.now() / 1000; // seconds
 
+  // ── LOD 2+ : 계층 오버레이 (Company / Universe) ──────────────────────────
+  if (lod >= 2 && _teamMode) {
+    // LOD 3: 유니버스 뷰
+    if (lod >= 3) {
+      const uv = TEAM_DEMO.universe;
+      _lctx.save();
+      _lctx.textAlign = 'center';
+      _lctx.textBaseline = 'middle';
+
+      // 우주 타이틀
+      _lctx.font = '700 26px -apple-system,sans-serif';
+      _lctx.fillStyle = '#ffd70088';
+      _lctx.fillText(uv.name, innerWidth / 2, innerHeight / 2 - 36);
+
+      _lctx.font = '400 14px -apple-system,sans-serif';
+      _lctx.fillStyle = '#8b949e';
+      _lctx.fillText(uv.desc, innerWidth / 2, innerHeight / 2 - 12);
+
+      // 회사 칩
+      const compName = TEAM_DEMO.company.name;
+      _lctx.font = '600 13px -apple-system,sans-serif';
+      const cw = _lctx.measureText(compName).width + 24;
+      const cx = innerWidth / 2, cy = innerHeight / 2 + 16;
+      roundRect(_lctx, cx - cw/2, cy - 12, cw, 24, 12);
+      _lctx.fillStyle = 'rgba(88,166,255,0.12)';
+      _lctx.fill();
+      _lctx.strokeStyle = '#58a6ff50';
+      _lctx.lineWidth = 1;
+      _lctx.stroke();
+      _lctx.fillStyle = '#79c0ff';
+      _lctx.fillText(compName, cx, cy + 1);
+
+      _lctx.font = '400 11px -apple-system,sans-serif';
+      _lctx.fillStyle = '#6e7681';
+      _lctx.fillText(TEAM_DEMO.company.desc, innerWidth / 2, innerHeight / 2 + 40);
+      _lctx.restore();
+    }
+    // LOD 2: 회사 뷰 — 상단 브레드크럼
+    else if (lod === 2) {
+      _lctx.save();
+      _lctx.textAlign = 'center';
+      _lctx.textBaseline = 'middle';
+      const breadcrumb = `${TEAM_DEMO.universe.name}  ›  ${TEAM_DEMO.company.name}  ›  ${TEAM_DEMO.name}`;
+      _lctx.font = '400 12px -apple-system,sans-serif';
+      const bw = _lctx.measureText(breadcrumb).width + 28;
+      const bx = innerWidth / 2, by = 54;
+      roundRect(_lctx, bx - bw/2, by - 12, bw, 24, 12);
+      _lctx.fillStyle = 'rgba(13,17,23,0.85)';
+      _lctx.fill();
+      _lctx.strokeStyle = '#21262d';
+      _lctx.lineWidth = 1;
+      _lctx.stroke();
+      _lctx.fillStyle = '#6e7681';
+      _lctx.fillText(breadcrumb, bx, by + 1);
+      _lctx.restore();
+    }
+  }
+
+  // ══ Pass 1: 모든 레이블 데이터 수집 (드로우 없음) ═══════════════════════
+  const labels = [];
   for (const node of _teamNodes) {
     const sc = toScreen(node.pos);
     if (sc.z > 1) continue;
-
-    const { type, label, sublabel, color, emoji, progress } = node;
-
-    // LOD에 따라 세부 노드 숨김
+    const { type, label, sublabel, color, emoji, progress, taskStatus, memberId } = node;
     if (lod >= 2 && type === 'tool') continue;
-    if (lod >= 3 && type === 'task') continue;
+    if (lod >= 3 && (type === 'task' || type === 'member')) continue;
 
-    // 타입별 크기
+    const isActive   = taskStatus === 'active';
+    const isSelected = _selectedHit?.data === node;
+    const isFocused  = _focusedMember === node;
+
     let pxSize, pad;
-    if      (type === 'goal')   { pxSize = 28; pad = 20; }
-    else if (type === 'member') { pxSize = 18; pad = 15; }
+    if      (type === 'goal')   { pxSize = lod >= 2 ? 22 : 28; pad = lod >= 2 ? 14 : 20; }
+    else if (type === 'member') { pxSize = lod >= 2 ? 14 : isFocused ? 22 : 18; pad = lod >= 2 ? 10 : isFocused ? 18 : 15; }
     else if (type === 'task')   { pxSize = lod >= 2 ? 9 : 12; pad = lod >= 2 ? 7 : 10; }
-    else                        { pxSize = 10; pad = 7; }   // tool
+    else                        { pxSize = 10; pad = 7; }
 
     const weight = (type === 'goal' || type === 'member') ? '700' : '500';
     _lctx.font = `${weight} ${pxSize}px -apple-system,'Segoe UI',sans-serif`;
+    const txt = emoji ? `${emoji} ${label}` : label;
+    const pw  = _lctx.measureText(txt).width + pad;
+    const ph  = pxSize + pad * 0.65;
+    // priority: goal=6, member=4, task=2, tool=1 (높을수록 이동 안 함)
+    const priority = type === 'goal' ? 6 : type === 'member' ? 4 : type === 'task' ? 2 : 1;
 
-    const txt  = emoji ? `${emoji} ${label}` : label;
-    const tw   = _lctx.measureText(txt).width;
-    const pw   = tw + pad;
-    const ph   = pxSize + pad * 0.65;
-    const bx   = sc.x - pw / 2;
-    const by   = sc.y - ph / 2;
+    labels.push({
+      node, sc, type, label, sublabel, color, emoji, progress,
+      taskStatus, memberId, isActive, isSelected, isFocused,
+      txt, pw, ph, pxSize, pad, weight,
+      x:  sc.x - pw * 0.5,   // top-left x (겹침 해소로 변경될 수 있음)
+      y:  sc.y - ph * 0.5,   // top-left y
+      ax: sc.x,              // 앵커 center x (불변)
+      ay: sc.y,              // 앵커 center y (불변)
+      priority,
+    });
+  }
 
-    // ── pill 배경 ──────────────────────────────────────────────────────────
-    roundRect(_lctx, bx, by, pw, ph, ph / 2);
-    const bgA = type === 'goal' ? 0.22 : type === 'member' ? 0.16 : 0.10;
-    _lctx.fillStyle   = color + Math.round(bgA * 255).toString(16).padStart(2, '0');
+  // ══ Pass 2: 겹침 해소 (LOD3 유니버스 뷰 제외) ════════════════════════════
+  if (lod < 3 && labels.length > 1) {
+    resolveOverlaps(labels);
+  }
+
+  // ══ Pass 3: 활성 이펙트 먼저 그리기 (앵커 위치 기준) ════════════════════
+  for (const lr of labels) {
+    if (!lr.isActive || lr.type !== 'task') continue;
+    const { ax, ay, color, pw, ph } = lr;
+    const hr = Math.max(pw, ph) * 0.5;
+
+    // 펄스 링 3개
+    for (let i = 0; i < 3; i++) {
+      const phase = (i / 3) * Math.PI * 2;
+      const pulse = (Math.sin(now * 2.5 + phase) + 1) * 0.5;
+      const ringR = hr + 6 + pulse * 16;
+      _lctx.save();
+      _lctx.globalAlpha = (1 - pulse) * 0.55;
+      _lctx.strokeStyle = color;
+      _lctx.lineWidth   = 1.5 - i * 0.3;
+      _lctx.beginPath();
+      _lctx.arc(ax, ay, ringR, 0, Math.PI * 2);
+      _lctx.stroke();
+      _lctx.restore();
+    }
+    // 회전 대시 테두리
+    _lctx.save();
+    _lctx.translate(ax, ay);
+    _lctx.rotate(now * 1.8);
+    _lctx.globalAlpha = 0.75;
+    _lctx.strokeStyle = color;
+    _lctx.lineWidth   = 2;
+    _lctx.setLineDash([5, 5]);
+    _lctx.lineDashOffset = -now * 20;
+    _lctx.beginPath();
+    _lctx.arc(0, 0, hr + 5, 0, Math.PI * 2);
+    _lctx.stroke();
+    _lctx.setLineDash([]);
+    _lctx.restore();
+    // 파티클 4개
+    for (let i = 0; i < 4; i++) {
+      const pa = now * 2.2 + (i * Math.PI * 0.5);
+      _lctx.save();
+      _lctx.globalAlpha = 0.9;
+      _lctx.fillStyle   = color;
+      _lctx.shadowColor = color;
+      _lctx.shadowBlur  = 6;
+      _lctx.beginPath();
+      _lctx.arc(ax + (hr + 14) * Math.cos(pa), ay + (hr + 14) * Math.sin(pa), 2.5, 0, Math.PI * 2);
+      _lctx.fill();
+      _lctx.restore();
+    }
+    // 외부 글로우
+    const gr = _lctx.createRadialGradient(ax, ay, hr, ax, ay, hr + 28);
+    gr.addColorStop(0, color + '44');
+    gr.addColorStop(1, 'rgba(0,0,0,0)');
+    _lctx.fillStyle = gr;
+    _lctx.beginPath();
+    _lctx.arc(ax, ay, hr + 28, 0, Math.PI * 2);
+    _lctx.fill();
+  }
+
+  // ══ Pass 4: 리더 라인 (레이블이 앵커에서 멀어진 경우) ════════════════════
+  for (const lr of labels) {
+    if (lr.type === 'tool') continue;
+    const cx = lr.x + lr.pw * 0.5;
+    const cy = lr.y + lr.ph * 0.5;
+    const dx = cx - lr.ax, dy = cy - lr.ay;
+    const disp = Math.sqrt(dx * dx + dy * dy);
+    if (disp > 14) {
+      _lctx.save();
+      _lctx.strokeStyle = lr.color + '55';
+      _lctx.lineWidth   = 0.8;
+      _lctx.setLineDash([3, 4]);
+      _lctx.globalAlpha = Math.min(disp / 40, 0.7);
+      _lctx.beginPath();
+      _lctx.moveTo(lr.ax, lr.ay);
+      _lctx.lineTo(cx, cy);
+      _lctx.stroke();
+      _lctx.setLineDash([]);
+      _lctx.restore();
+    }
+  }
+
+  // ══ Pass 5: 레이블 드로우 (해소된 위치 기준) ════════════════════════════
+  for (const lr of labels) {
+    const { x, y, pw, ph, type, color, txt, pxSize, pad, weight,
+            sublabel, progress, isActive, isSelected, isFocused,
+            node, memberId, ax, ay } = lr;
+    const cx = x + pw * 0.5;  // 해소된 center x
+    const cy = y + ph * 0.5;  // 해소된 center y
+    const hr = Math.max(pw, ph) * 0.5;
+
+    // 포커스 팀원 링
+    if (isFocused && type === 'member') {
+      const rp = (Math.sin(now * 3) + 1) * 0.5;
+      _lctx.save();
+      _lctx.globalAlpha = 0.35 + rp * 0.25;
+      _lctx.strokeStyle = color;
+      _lctx.lineWidth   = 3;
+      _lctx.shadowColor = color;
+      _lctx.shadowBlur  = 16;
+      _lctx.beginPath();
+      _lctx.arc(cx, cy, hr + 10, 0, Math.PI * 2);
+      _lctx.stroke();
+      _lctx.restore();
+    }
+
+    // pill 배경
+    roundRect(_lctx, x, y, pw, ph, ph * 0.5);
+    const bgA = type === 'goal' ? 0.22 : type === 'member' ? (isFocused ? 0.26 : 0.16) : 0.10;
+    _lctx.fillStyle = color + Math.round(bgA * 255).toString(16).padStart(2, '0');
     _lctx.fill();
 
-    const bdA = type === 'goal' ? 0.92 : type === 'member' ? 0.78 : 0.42;
+    // pill 테두리
+    const bdA = type === 'goal' ? 0.92 : type === 'member' ? (isFocused ? 1.0 : 0.78) : isActive ? 0.85 : 0.42;
     _lctx.strokeStyle = color + Math.round(bdA * 255).toString(16).padStart(2, '0');
-    _lctx.lineWidth   = type === 'goal' ? 2.5 : type === 'member' ? 1.8 : 1;
+    _lctx.lineWidth   = type === 'goal' ? 2.5 : type === 'member' ? (isFocused ? 2.5 : 1.8) : isActive ? 1.8 : 1;
+    roundRect(_lctx, x, y, pw, ph, ph * 0.5);
     _lctx.stroke();
 
-    // ── 목표 노드 특별 글로우 ─────────────────────────────────────────────
+    // 목표 노드 글로우
     if (type === 'goal') {
-      const gr = _lctx.createRadialGradient(sc.x, sc.y, pw * 0.3, sc.x, sc.y, pw * 1.4);
-      gr.addColorStop(0, color + '28');
+      const gp = (Math.sin(now * 1.2) + 1) * 0.5;
+      const gr = _lctx.createRadialGradient(cx, cy, pw * 0.3, cx, cy, pw * 1.6);
+      gr.addColorStop(0, color + Math.round((0.15 + gp * 0.1) * 255).toString(16).padStart(2, '0'));
       gr.addColorStop(1, 'rgba(0,0,0,0)');
       _lctx.fillStyle = gr;
       _lctx.beginPath();
-      _lctx.arc(sc.x, sc.y, pw * 1.4, 0, Math.PI * 2);
+      _lctx.arc(cx, cy, pw * 1.6, 0, Math.PI * 2);
       _lctx.fill();
     }
 
-    // ── 텍스트 ────────────────────────────────────────────────────────────
-    _lctx.fillStyle    = type === 'tool' ? color + 'bb' : color;
+    // 텍스트
+    _lctx.font         = `${weight} ${pxSize}px -apple-system,'Segoe UI',sans-serif`;
+    _lctx.fillStyle    = type === 'tool' ? color + 'bb' : (isSelected ? '#ffffff' : color);
     _lctx.textAlign    = 'center';
     _lctx.textBaseline = 'middle';
-    _lctx.fillText(txt, sc.x, sc.y);
+    if (isActive && type === 'task') { _lctx.shadowColor = color; _lctx.shadowBlur = 8; }
+    _lctx.fillText(txt, cx, cy);
+    _lctx.shadowBlur = 0;
 
-    // ── 서브라벨 (role / team name) ───────────────────────────────────────
+    // 서브라벨
     if (sublabel && lod <= 1 && (type === 'member' || type === 'goal')) {
       _lctx.font      = `400 ${Math.max(pxSize - 4, 9)}px -apple-system,sans-serif`;
       _lctx.fillStyle = color + '88';
-      _lctx.fillText(sublabel, sc.x, sc.y + ph / 2 + 10);
+      _lctx.fillText(sublabel, cx, y + ph + 10);
     }
 
-    // ── 진행률 바 (task, lod ≤ 1) ─────────────────────────────────────────
+    // 진행률 바 (task, lod ≤ 1)
     if (type === 'task' && typeof progress === 'number' && lod <= 1) {
       const barW = pw - 6;
-      const barY = sc.y + ph / 2 + 6;
+      const barY = y + ph + 6;
       _lctx.globalAlpha = 0.45;
-      roundRect(_lctx, sc.x - barW / 2, barY, barW, 3, 1.5);
+      roundRect(_lctx, cx - barW * 0.5, barY, barW, 3, 1.5);
       _lctx.fillStyle = '#21262d'; _lctx.fill();
       if (progress > 0) {
-        roundRect(_lctx, sc.x - barW / 2, barY, barW * progress, 3, 1.5);
+        roundRect(_lctx, cx - barW * 0.5, barY, barW * progress, 3, 1.5);
         _lctx.fillStyle = color; _lctx.fill();
+        if (isActive) {
+          _lctx.globalAlpha = 0.6;
+          _lctx.fillStyle   = '#ffffff';
+          _lctx.fillRect(cx - barW * 0.5 + barW * progress - 2, barY, 2, 3);
+        }
       }
       _lctx.globalAlpha = 1;
     }
 
-    // ── 히트 영역 ─────────────────────────────────────────────────────────
+    // 포커스 팀원 — 작업 미니 뱃지
+    if (type === 'member' && isFocused && lod === 0) {
+      const member = TEAM_DEMO.members.find(m => m.id === memberId);
+      if (member) {
+        let bOff = ph * 0.5 + 14;
+        member.tasks.slice(0, 3).forEach(t => {
+          const sc2 = STATUS_CFG[t.status] || STATUS_CFG.pending;
+          _lctx.font = `500 10px -apple-system,sans-serif`;
+          const tl2  = `${sc2.emoji} ${t.name.slice(0, 12)}${t.name.length > 12 ? '…' : ''}`;
+          const tw2  = _lctx.measureText(tl2).width + 12;
+          const tx2  = cx - tw2 * 0.5;
+          const ty2  = cy + bOff;
+          roundRect(_lctx, tx2, ty2, tw2, 16, 8);
+          _lctx.fillStyle = sc2.color + '18'; _lctx.fill();
+          _lctx.strokeStyle = sc2.color + '60'; _lctx.lineWidth = 0.8;
+          roundRect(_lctx, tx2, ty2, tw2, 16, 8); _lctx.stroke();
+          _lctx.fillStyle = sc2.color;
+          _lctx.textAlign = 'center'; _lctx.textBaseline = 'middle';
+          _lctx.fillText(tl2, cx, ty2 + 8);
+          bOff += 20;
+        });
+      }
+    }
+
+    // 히트 영역 (해소된 위치 기준)
     if (type !== 'tool') {
-      _hitAreas.push({ cx: sc.x, cy: sc.y, r: Math.max(pw, ph) / 2 + 4, data: node });
+      _hitAreas.push({ cx, cy, r: hr + 4, data: node });
     }
   }
 }
@@ -1615,10 +2039,21 @@ renderer.domElement.addEventListener('click', e => {
   const hit = hitTest(e.clientX, e.clientY);
   if (hit) {
     _selectedHit = hit;
+    if (_teamMode && hit.data.type === 'member') {
+      focusMember(hit.data);
+    } else if (_teamMode && _focusedMember && hit.data.type === 'goal') {
+      unfocusMember();
+    }
     showPanel(hit.data, hit.obj);
   } else {
     _selectedHit = null;
-    closePanel();
+    // 팀모드에서 빈 곳 클릭 → 포커스 해제
+    if (_teamMode && _focusedMember) {
+      unfocusMember();
+      closePanel();
+    } else {
+      closePanel();
+    }
   }
 });
 
@@ -1642,11 +2077,15 @@ function updateRaycast() {
     }
     const data = hit.data;
     if (data) {
-      document.getElementById('tt-intent').textContent = data.intent || '';
-      const isFile = data.type === 'file';
-      document.getElementById('tt-meta').textContent = isFile
-        ? `📄 ${data.filename || ''}  ×${data.count || 1}`
-        : (data.eventCount ? `세션 • ${data.eventCount}개 작업` : '세션');
+      let ttIntent = data.label || data.intent || '';
+      let ttMeta   = '';
+      if (data.type === 'member')  ttMeta = `👤 ${data.sublabel || ''} · 클릭하여 포커스`;
+      else if (data.type === 'task')  ttMeta = `${data.emoji || ''} ${Math.round((data.progress||0)*100)}% 완료`;
+      else if (data.type === 'goal')  ttMeta = '🎯 팀 목표';
+      else if (data.type === 'file')  ttMeta = `📄 ${data.filename || ''}  ×${data.count || 1}`;
+      else ttMeta = data.eventCount ? `세션 • ${data.eventCount}개 작업` : '세션';
+      document.getElementById('tt-intent').textContent = ttIntent;
+      document.getElementById('tt-meta').textContent   = ttMeta;
       tooltip.style.display = 'block';
       tooltip.style.left = (_lastMouseEvent.clientX + 14) + 'px';
       tooltip.style.top  = (_lastMouseEvent.clientY - 10) + 'px';
@@ -1807,6 +2246,166 @@ function showPanel(data, obj) {
     ].map(([k,v]) => `<div class="ip-kv"><span class="k">${k}</span><span class="v">${v}</span></div>`).join('');
 
     document.getElementById('ip-preview').style.display = 'none';
+
+  } else if (data.type === 'member') {
+    // ── 팀원 디테일 패널 ────────────────────────────────────────────────────
+    const member = TEAM_DEMO.members.find(m => m.id === data.memberId);
+    if (!member) return;
+
+    document.getElementById('ip-dot').style.background  = member.color;
+    document.getElementById('ip-type-text').textContent = '👤 팀원';
+    document.getElementById('ip-intent').textContent    = `${member.name}`;
+
+    const doneCount = member.tasks.filter(t => t.status === 'done').length;
+    const activeCount = member.tasks.filter(t => t.status === 'active').length;
+    document.getElementById('ip-kv-list').innerHTML = [
+      ['역할',   member.role],
+      ['진행 중', `${activeCount}개`],
+      ['완료',   `${doneCount} / ${member.tasks.length}`],
+      ['사용 툴', member.tools.join(', ')],
+    ].map(([k,v]) => `<div class="ip-kv"><span class="k">${k}</span><span class="v">${v}</span></div>`).join('');
+
+    // 작업 목록 (서브태스크 포함)
+    const taskListHtml = member.tasks.map(t => {
+      const sc = STATUS_CFG[t.status] || STATUS_CFG.pending;
+      const pct = Math.round(t.progress * 100);
+      const subsHtml = (t.subtasks || []).map((sub, si) => {
+        const done = si < (t.completedSubtasks || 0);
+        return `<span style="display:inline-flex;align-items:center;gap:3px;font-size:10px;padding:1px 6px;border-radius:10px;margin:2px 2px 0 0;background:rgba(255,255,255,0.04);color:${done ? '#3fb950' : '#6e7681'};border:1px solid ${done ? '#3fb95040' : '#21262d'}">${done ? '✓' : '○'} ${sub}</span>`;
+      }).join('');
+      return `
+        <div style="padding:9px 10px;border-radius:9px;border:1px solid ${sc.color}30;background:#0d1117;margin-bottom:7px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
+            <span style="font-size:12px;color:#e6edf3;font-weight:600">${t.name}</span>
+            <span style="font-size:10px;color:${sc.color};background:${sc.color}18;padding:1px 6px;border-radius:8px">${sc.emoji} ${pct}%</span>
+          </div>
+          <div style="height:3px;background:#21262d;border-radius:2px;margin-bottom:6px">
+            <div style="height:3px;background:${sc.color};border-radius:2px;width:${pct}%"></div>
+          </div>
+          ${subsHtml ? `<div style="margin-top:4px">${subsHtml}</div>` : ''}
+        </div>`;
+    }).join('');
+
+    const toolHtml = member.tools.map(t =>
+      `<span style="display:inline-block;padding:3px 10px;border-radius:12px;border:1px solid ${member.color}50;color:${member.color};font-size:11px;background:${member.color}12;margin:3px 3px 0 0">${t}</span>`
+    ).join('');
+
+    const pv = document.getElementById('ip-preview');
+    pv.innerHTML = `
+      <div style="margin-bottom:10px">
+        <div style="font-size:10px;color:#6e7681;margin-bottom:6px;text-transform:uppercase;letter-spacing:.6px">사용 툴</div>
+        ${toolHtml}
+      </div>
+      <div style="font-size:10px;color:#6e7681;margin-bottom:6px;text-transform:uppercase;letter-spacing:.6px">작업 목록</div>
+      ${taskListHtml}
+    `;
+    pv.style.display = 'block';
+
+  } else if (data.type === 'task') {
+    // ── 작업 디테일 패널 ────────────────────────────────────────────────────
+    const member = TEAM_DEMO.members.find(m => m.id === data.memberId);
+    const task   = member?.tasks.find(t => t.name === data.label);
+    if (!task || !member) return;
+
+    const sc  = STATUS_CFG[task.status] || STATUS_CFG.pending;
+    const pct = Math.round(task.progress * 100);
+    document.getElementById('ip-dot').style.background  = sc.color;
+    document.getElementById('ip-type-text').textContent = `${sc.emoji} 작업`;
+    document.getElementById('ip-intent').textContent    = task.name;
+
+    document.getElementById('ip-kv-list').innerHTML = [
+      ['담당자', `${member.name} · ${member.role}`],
+      ['상태',   `<span style="color:${sc.color}">${sc.emoji} ${task.status}</span>`],
+      ['진행률', `<span style="color:${sc.color};font-weight:700">${pct}%</span>`],
+    ].map(([k,v]) => `<div class="ip-kv"><span class="k">${k}</span><span class="v">${v}</span></div>`).join('');
+
+    // 서브태스크
+    const subsHtml = (task.subtasks || []).map((sub, si) => {
+      const done = si < (task.completedSubtasks || 0);
+      return `
+        <div class="ip-event-item" style="border-radius:7px;background:${done ? 'rgba(63,185,80,0.06)' : ''}">
+          <div class="ip-event-dot" style="background:${done ? '#3fb950' : '#3d444d'}"></div>
+          <div class="ip-event-text" style="${done ? 'color:#3fb950;opacity:0.7;text-decoration:line-through' : ''}">${sub}</div>
+          <div class="ip-event-time">${done ? '✓' : '○'}</div>
+        </div>`;
+    }).join('');
+
+    const pv = document.getElementById('ip-preview');
+    pv.innerHTML = `
+      <div style="margin-bottom:10px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
+          <span style="font-size:11px;color:#6e7681">진행률</span>
+          <span style="font-size:11px;color:${sc.color};font-weight:700">${pct}%</span>
+        </div>
+        <div style="height:5px;background:#21262d;border-radius:3px;overflow:hidden">
+          <div style="height:5px;background:${sc.color};border-radius:3px;width:${pct}%;box-shadow:0 0 6px ${sc.color}80;transition:width .3s"></div>
+        </div>
+      </div>
+      ${task.subtasks?.length ? `
+        <div style="font-size:10px;color:#6e7681;margin-bottom:6px;text-transform:uppercase;letter-spacing:.6px">
+          서브태스크 · ${task.completedSubtasks || 0} / ${task.subtasks.length} 완료
+        </div>
+        <div class="ip-event-list">${subsHtml}</div>
+      ` : ''}
+      <div style="margin-top:10px;font-size:11px;color:#6e7681">담당: <span style="color:${member.color}">${member.name}</span> (${member.role})</div>
+    `;
+    pv.style.display = 'block';
+
+  } else if (data.type === 'goal') {
+    // ── 팀 목표 패널 ────────────────────────────────────────────────────────
+    document.getElementById('ip-dot').style.background  = '#ffd700';
+    document.getElementById('ip-type-text').textContent = '🎯 팀 목표';
+    document.getElementById('ip-intent').textContent    = TEAM_DEMO.goal;
+
+    const totalTasks   = TEAM_DEMO.members.reduce((s, m) => s + m.tasks.length, 0);
+    const doneTasks    = TEAM_DEMO.members.reduce((s, m) => s + m.tasks.filter(t => t.status === 'done').length, 0);
+    const activeTasks  = TEAM_DEMO.members.reduce((s, m) => s + m.tasks.filter(t => t.status === 'active').length, 0);
+    const blockedTasks = TEAM_DEMO.members.reduce((s, m) => s + m.tasks.filter(t => t.status === 'blocked').length, 0);
+    const overallPct   = Math.round(doneTasks / totalTasks * 100);
+
+    document.getElementById('ip-kv-list').innerHTML = [
+      ['팀명',    TEAM_DEMO.name],
+      ['회사',    TEAM_DEMO.company.name],
+      ['전체 진행', `${overallPct}%`],
+      ['팀원 수',  `${TEAM_DEMO.members.length}명`],
+    ].map(([k,v]) => `<div class="ip-kv"><span class="k">${k}</span><span class="v">${v}</span></div>`).join('');
+
+    const memberHtml = TEAM_DEMO.members.map(m => {
+      const d  = m.tasks.filter(t => t.status === 'done').length;
+      const pct = Math.round(d / m.tasks.length * 100);
+      return `
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #161b22">
+          <div style="width:8px;height:8px;border-radius:50%;background:${m.color};flex-shrink:0"></div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:11px;color:#cdd9e5;font-weight:500">${m.name} <span style="color:#6e7681;font-weight:400">${m.role}</span></div>
+            <div style="height:3px;background:#21262d;border-radius:2px;margin-top:3px">
+              <div style="height:3px;background:${m.color};border-radius:2px;width:${pct}%"></div>
+            </div>
+          </div>
+          <div style="font-size:10px;color:${m.color}">${pct}%</div>
+        </div>`;
+    }).join('');
+
+    const pv = document.getElementById('ip-preview');
+    pv.innerHTML = `
+      <div style="margin-bottom:8px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
+          <span style="font-size:11px;color:#6e7681">전체 진행률</span>
+          <span style="font-size:11px;color:#ffd700;font-weight:700">${overallPct}%</span>
+        </div>
+        <div style="height:5px;background:#21262d;border-radius:3px;overflow:hidden">
+          <div style="height:5px;background:#ffd700;border-radius:3px;width:${overallPct}%;box-shadow:0 0 8px #ffd70060"></div>
+        </div>
+        <div style="display:flex;gap:12px;margin-top:6px;font-size:10px">
+          <span style="color:#3fb950">✅ 완료 ${doneTasks}</span>
+          <span style="color:#58a6ff">⚡ 진행중 ${activeTasks}</span>
+          <span style="color:#f0883e">🚧 차단 ${blockedTasks}</span>
+        </div>
+      </div>
+      <div style="font-size:10px;color:#6e7681;margin-bottom:6px;text-transform:uppercase;letter-spacing:.6px">팀원 현황</div>
+      ${memberHtml}
+    `;
+    pv.style.display = 'block';
   }
 
   panel.classList.add('open');
@@ -2270,6 +2869,8 @@ renderer.setAnimationLoop(now => {
   if (now % 600 < 20) {
     document.getElementById('h-fps').textContent = Math.round(_fpsBuf.reduce((a,b)=>a+b,0)/_fpsBuf.length);
   }
+
+  updateCameraLerp(dt);
 
   if (_teamMode) {
     updateTeamOrbits(dt);
