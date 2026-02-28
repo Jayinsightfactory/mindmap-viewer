@@ -189,6 +189,106 @@
     .ctrl-item { font-size: 12px; color: #6e7681; display: flex; align-items: center; gap: 4px; }
     .ctrl-item b { color: #8b949e; }
 
+    /* ── 줌 버튼 ────────────────────────────────────── */
+    #zoom-ctrl {
+      position: fixed; bottom: 160px; right: 16px; z-index: 200;
+      display: flex; flex-direction: column; gap: 4px;
+    }
+    .zoom-btn {
+      width: 36px; height: 36px;
+      background: rgba(13,17,23,0.92); border: 1px solid #30363d;
+      color: #c9d1d9; border-radius: 8px; cursor: pointer;
+      font-size: 18px; font-weight: 600; line-height: 1;
+      display: flex; align-items: center; justify-content: center;
+      backdrop-filter: blur(8px); transition: all .15s;
+    }
+    .zoom-btn:hover { border-color: #58a6ff; color: #58a6ff; }
+    #zoom-level {
+      width: 36px; height: 22px;
+      background: rgba(13,17,23,0.7); border: 1px solid #21262d;
+      border-radius: 6px; font-size: 9px; color: #6e7681;
+      display: flex; align-items: center; justify-content: center;
+      text-align: center;
+    }
+
+    /* ── 컨트롤 허브 (우하단 팝업) ──────────────────── */
+    #ctrl-hub-btn {
+      position: fixed; bottom: 60px; right: 16px; z-index: 200;
+      background: rgba(13,17,23,0.92); border: 1px solid #21262d;
+      color: #8b949e; border-radius: 10px; padding: 10px 14px;
+      cursor: pointer; font-size: 13px; font-family: inherit;
+      backdrop-filter: blur(8px); transition: all .2s;
+      display: flex; align-items: center; gap: 5px;
+    }
+    #ctrl-hub-btn:hover { border-color: #58a6ff; color: #58a6ff; }
+    #ctrl-hub-btn.open  { border-color: #58a6ff; color: #58a6ff; background: rgba(88,166,255,0.08); }
+
+    #ctrl-hub {
+      position: fixed; right: 16px; bottom: 110px; z-index: 199;
+      width: 178px;
+      background: rgba(10,13,20,0.97); border: 1px solid #21262d; border-radius: 14px;
+      backdrop-filter: blur(16px);
+      display: none; flex-direction: column;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5); overflow: hidden;
+    }
+    #ctrl-hub.open { display: flex; }
+    .ch-section { padding: 8px 10px; border-bottom: 1px solid #161b22; }
+    .ch-section:last-child { border-bottom: none; }
+    .ch-label { font-size: 9px; color: #6e7681; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 5px; }
+    .ch-zoom-row { display: flex; align-items: center; gap: 5px; }
+    .ch-zoom-btn {
+      flex: 1; height: 28px; background: rgba(30,38,50,0.8);
+      border: 1px solid #30363d; color: #c9d1d9; border-radius: 7px;
+      cursor: pointer; font-size: 15px; font-weight: 600;
+      display: flex; align-items: center; justify-content: center; transition: all .15s;
+    }
+    .ch-zoom-btn:hover { border-color: #58a6ff; color: #58a6ff; }
+    #ch-zoom-level { font-size: 10px; color: #6e7681; white-space: nowrap; min-width: 38px; text-align: center; }
+    #ch-minimap-canvas { width: 156px; height: 100px; display: block; cursor: crosshair; }
+
+    /* ── 내 작업 사이드바 (좌측 슬라이드) ──────────── */
+    #task-sidebar-btn {
+      position: fixed; left: 14px; top: 50%; transform: translateY(-50%);
+      z-index: 200; writing-mode: vertical-rl; text-orientation: mixed;
+      background: rgba(13,17,23,0.92); border: 1px solid #21262d;
+      color: #8b949e; border-radius: 10px; padding: 14px 10px;
+      cursor: pointer; font-size: 12px; font-family: inherit;
+      backdrop-filter: blur(8px); transition: all .3s;
+    }
+    #task-sidebar-btn:hover { border-color: #58a6ff; color: #58a6ff; }
+    #task-sidebar-btn.open { left: 278px; border-color: #3fb950; color: #3fb950; }
+
+    #my-task-sidebar {
+      position: fixed; left: -264px; top: 0; height: 100vh; width: 264px;
+      z-index: 190; background: rgba(8,11,17,0.97);
+      border-right: 1px solid #21262d; backdrop-filter: blur(20px);
+      display: flex; flex-direction: column;
+      transition: left .3s cubic-bezier(0.4,0,0.2,1);
+      box-shadow: 4px 0 24px rgba(0,0,0,0.45);
+    }
+    #my-task-sidebar.open { left: 0; }
+    .mts-header { padding: 14px 12px 10px; border-bottom: 1px solid #21262d; flex-shrink: 0; }
+    .mts-title { font-size: 12px; font-weight: 700; color: #3fb950; margin-bottom: 8px; display: flex; align-items: center; gap: 5px; }
+    .mts-member-sel {
+      width: 100%; background: #0d1117; border: 1px solid #30363d;
+      border-radius: 7px; color: #cdd9e5; font-size: 11px; padding: 5px 8px;
+      font-family: inherit; cursor: pointer;
+    }
+    .mts-body { flex: 1; overflow-y: auto; padding: 8px 10px 20px; }
+    .mts-body::-webkit-scrollbar { width: 3px; }
+    .mts-body::-webkit-scrollbar-thumb { background: #21262d; border-radius: 2px; }
+    .mts-section-lbl { font-size: 9px; color: #6e7681; text-transform: uppercase; letter-spacing: .5px; margin: 10px 0 5px; }
+    .mts-task { padding: 8px 10px; border: 1px solid #21262d; border-radius: 10px; background: #0d1117; margin-bottom: 5px; }
+    .mts-task.my-node { border-color: #3fb95050; background: #0a1f0e; }
+    .mts-task-name { font-size: 11px; color: #cdd9e5; font-weight: 600; margin-bottom: 5px; line-height: 1.3; }
+    .mts-task-bar { height: 3px; background: #21262d; border-radius: 2px; overflow: hidden; margin-bottom: 4px; }
+    .mts-task-fill { height: 3px; border-radius: 2px; }
+    .mts-task-meta { display: flex; gap: 5px; align-items: center; font-size: 10px; color: #6e7681; }
+    .mts-sub-list { margin-top: 6px; display: flex; flex-direction: column; gap: 2px; }
+    .mts-sub-item { font-size: 10px; color: #8b949e; display: flex; align-items: center; gap: 4px; }
+    .mts-empty { font-size: 12px; color: #6e7681; text-align: center; padding: 30px 10px; }
+    .mts-collab-hint { font-size: 10px; color: #39d2c080; padding: 6px 0; display: flex; align-items: center; gap: 4px; }
+
     /* ── 우상단 버튼 ───────────────────────────────── */
     #top-right {
       position: fixed; top: 14px; right: 14px; z-index: 101;
@@ -212,9 +312,53 @@
       display: none;
     }
 
-    /* ── 기능 샘플링 패널 ──────────────────────────────── */
+    /* ── 스킬/에이전트 제안 토스트 ─────────────────────────────── */
+    #skill-toast-stack {
+      position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+      z-index: 9999; display: flex; flex-direction: column-reverse; gap: 10px;
+      pointer-events: none; align-items: center;
+    }
+    .skill-toast {
+      pointer-events: all;
+      background: rgba(13,17,23,0.96); border: 1px solid #30363d;
+      border-radius: 14px; padding: 14px 18px; min-width: 320px; max-width: 480px;
+      backdrop-filter: blur(16px); box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+      animation: toastIn .35s cubic-bezier(.22,1,.36,1);
+      display: flex; flex-direction: column; gap: 8px;
+    }
+    .skill-toast.skill  { border-color: #3fb95060; }
+    .skill-toast.agent  { border-color: #bc8cff60; }
+    @keyframes toastIn {
+      from { opacity:0; transform: translateY(20px) scale(.95); }
+      to   { opacity:1; transform: translateY(0) scale(1); }
+    }
+    .st-header {
+      display: flex; align-items: center; gap: 10px;
+    }
+    .st-icon { font-size: 22px; }
+    .st-title-wrap { flex: 1; }
+    .st-type-chip {
+      font-size: 10px; font-weight: 700; letter-spacing: .5px;
+      padding: 2px 7px; border-radius: 20px; text-transform: uppercase;
+    }
+    .skill-toast.skill .st-type-chip  { background: #1a3a1a; color: #3fb950; }
+    .skill-toast.agent .st-type-chip  { background: #2a1a3a; color: #bc8cff; }
+    .st-alias { font-size: 14px; font-weight: 600; color: #e6edf3; margin-top: 2px; }
+    .st-trigger { font-size: 11px; color: #58a6ff; font-family: monospace; }
+    .st-evidence { font-size: 11px; color: #8b949e; }
+    .st-actions { display: flex; gap: 8px; }
+    .st-btn {
+      flex: 1; padding: 7px 0; border-radius: 8px; border: 1px solid #30363d;
+      background: transparent; color: #8b949e; font-size: 12px; cursor: pointer;
+      transition: all .2s; font-family: inherit;
+    }
+    .st-btn.accept { border-color: #3fb95060; color: #3fb950; }
+    .st-btn.accept:hover { background: #1a3a1a; }
+    .st-btn.dismiss:hover { background: #161b22; color: #e6edf3; }
+
+    /* ── 기능 샘플링 패널 (좌측 배치 — info-panel 겹침 방지) ─── */
     #feat-btn {
-      position: fixed; bottom: 60px; right: 16px; z-index: 200;
+      position: fixed; bottom: 60px; left: 16px; z-index: 200;
       background: rgba(13,17,23,0.92); border: 1px solid #21262d;
       color: #8b949e; border-radius: 10px; padding: 10px 16px;
       cursor: pointer; font-size: 13px; font-family: inherit;
@@ -225,7 +369,7 @@
     #feat-btn.open  { border-color: #58a6ff; color: #58a6ff; background: rgba(88,166,255,0.08); }
 
     #feat-panel {
-      position: fixed; right: 16px; bottom: 110px; z-index: 199;
+      position: fixed; left: 16px; bottom: 110px; z-index: 199;
       width: 340px; max-height: calc(100vh - 160px);
       background: rgba(13,17,23,0.96);
       border: 1px solid #21262d; border-radius: 16px;
@@ -316,6 +460,256 @@
       transition: all .18s; font-family: inherit; font-weight: 600;
     }
     .tr-btn-team:hover { background: rgba(255,215,0,0.1); }
+    .tr-btn-company {
+      background: rgba(13,17,23,0.88); border: 1px solid #39d2c0;
+      color: #39d2c0; border-radius: 10px; padding: 7px 14px;
+      font-size: 12px; cursor: pointer; backdrop-filter: blur(8px);
+      transition: all .18s; font-family: inherit; font-weight: 600;
+    }
+    .tr-btn-company:hover { background: rgba(57,210,192,0.1); }
+
+    /* ── 브레드크럼 내비게이션 (드릴다운 경로) ─────────────────────── */
+    #nav-breadcrumb {
+      position: fixed; top: 58px; left: 50%; transform: translateX(-50%);
+      z-index: 200; display: flex; align-items: center; gap: 6px;
+      background: rgba(13,17,23,0.88); border: 1px solid #21262d;
+      border-radius: 20px; padding: 6px 14px; backdrop-filter: blur(12px);
+      font-size: 12px; pointer-events: auto;
+      transition: opacity .3s; opacity: 0;
+    }
+    #nav-breadcrumb.visible { opacity: 1; }
+    .bc-crumb {
+      color: #6e7681; cursor: pointer; padding: 2px 6px; border-radius: 8px;
+      transition: all .15s; font-weight: 500;
+    }
+    .bc-crumb:hover { color: #e6edf3; background: rgba(255,255,255,0.06); }
+    .bc-crumb.active { color: #e6edf3; font-weight: 700; pointer-events: none; }
+    .bc-crumb.clickable { color: #58a6ff; }
+    .bc-crumb.clickable:hover { color: #79c0ff; }
+    .bc-sep { color: #30363d; font-size: 10px; }
+
+    /* ── 인라인 편집 오버레이 ────────────────────────────────────── */
+    #inline-edit-overlay {
+      position: fixed; z-index: 500; display: none;
+      flex-direction: column; align-items: stretch; gap: 4px;
+      background: rgba(13,17,23,0.98); border: 1px solid #388bfd;
+      border-radius: 10px; padding: 8px 10px; min-width: 180px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+    }
+    #inline-edit-overlay.open { display: flex; }
+    #inline-edit-label { font-size: 10px; color: #6e7681; margin-bottom: 2px; }
+    #inline-edit-input {
+      background: #0d1117; border: 1px solid #30363d; border-radius: 6px;
+      color: #e6edf3; font-size: 13px; padding: 5px 8px; outline: none;
+      font-family: inherit;
+    }
+    #inline-edit-input:focus { border-color: #388bfd; }
+    #inline-edit-actions { display: flex; gap: 6px; }
+    .ie-btn {
+      flex: 1; padding: 4px 0; font-size: 11px; border-radius: 6px;
+      border: 1px solid #30363d; background: #21262d; color: #cdd9e5;
+      cursor: pointer; font-family: inherit; transition: all .15s;
+    }
+    .ie-btn.save { background: #1f6feb; border-color: #388bfd; color: #fff; }
+    .ie-btn.save:hover { background: #388bfd; }
+    .ie-btn:hover { border-color: #6e7681; }
+
+    /* ── 인재 보드 (자발적 능력 공개) ───────────────────────────── */
+    #talent-board-btn {
+      position: fixed; bottom: 204px; left: 16px; z-index: 200;
+      background: rgba(13,17,23,0.92); border: 1px solid #3fb950;
+      color: #3fb950; border-radius: 10px; padding: 7px 12px; font-size: 12px;
+      cursor: pointer; backdrop-filter: blur(8px); transition: all .2s;
+      font-family: inherit; font-weight: 600; display: flex; align-items: center; gap: 5px;
+    }
+    #talent-board-btn:hover { border-color: #56d364; color: #56d364; }
+    #talent-board-btn.open  { border-color: #3fb950; background: rgba(63,185,80,0.1); }
+
+    /* 인재 보드 — 하단 ticker */
+    #talent-ticker {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 300;
+      height: 56px; background: rgba(13,17,23,0.97);
+      border-top: 1px solid #21262d; backdrop-filter: blur(12px);
+      display: none; align-items: center; overflow: hidden;
+    }
+    #talent-ticker.open { display: flex; }
+    .ticker-label {
+      flex-shrink: 0; padding: 0 14px; font-size: 11px; font-weight: 700;
+      color: #3fb950; letter-spacing: .5px; border-right: 1px solid #21262d;
+      white-space: nowrap; display: flex; flex-direction: column; gap: 1px;
+    }
+    .ticker-label span { font-size: 9px; color: #6e7681; font-weight: 400; letter-spacing: 0; }
+    .ticker-track {
+      flex: 1; overflow: hidden; position: relative; height: 100%;
+      display: flex; align-items: center;
+    }
+    .ticker-scroll {
+      display: flex; gap: 0; align-items: center;
+      animation: tickerMove 32s linear infinite;
+      white-space: nowrap;
+    }
+    @keyframes tickerMove { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+    .ticker-card {
+      display: inline-flex; align-items: center; gap: 10px;
+      padding: 7px 14px; margin-right: 16px;
+      background: rgba(255,255,255,0.03); border: 1px solid #21262d;
+      border-radius: 10px; cursor: pointer; transition: all .15s;
+      font-size: 12px; white-space: nowrap;
+    }
+    .ticker-card:hover { border-color: #3fb950; background: rgba(63,185,80,0.07); }
+    .tc-avatar {
+      width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 800;
+    }
+    .tc-info { display: flex; flex-direction: column; gap: 1px; }
+    .tc-name { color: #e6edf3; font-weight: 700; font-size: 12px; }
+    .tc-role { color: #6e7681; font-size: 10px; }
+    .tc-skills { display: flex; gap: 4px; align-items: center; flex-wrap: nowrap; }
+    .tc-skill-chip {
+      font-size: 9px; padding: 1px 6px; border-radius: 5px;
+      background: rgba(88,166,255,0.12); border: 1px solid #388bfd40;
+      color: #79c0ff; font-weight: 600; white-space: nowrap;
+    }
+    .tc-status {
+      font-size: 9px; padding: 2px 6px; border-radius: 5px; font-weight: 700;
+      white-space: nowrap;
+    }
+    .tc-status.open  { background: rgba(63,185,80,0.15); color: #3fb950; border: 1px solid #3fb95040; }
+    .tc-status.ask   { background: rgba(255,215,0,0.12); color: #ffd700; border: 1px solid #ffd70040; }
+    .tc-dm { background: #1f6feb; border: none; color: #fff; border-radius: 6px;
+             padding: 3px 8px; font-size: 10px; cursor: pointer; font-family: inherit;
+             font-weight: 600; white-space: nowrap; }
+    .tc-dm:hover { background: #388bfd; }
+
+    /* 내 능력 공개 패널 */
+    #my-talent-panel {
+      position: fixed; left: 16px; bottom: 260px; z-index: 400;
+      width: 300px; background: rgba(13,17,23,0.98);
+      border: 1px solid #3fb950; border-radius: 14px;
+      backdrop-filter: blur(16px); display: none; flex-direction: column;
+      box-shadow: 0 16px 48px rgba(0,0,0,0.6); overflow: hidden;
+    }
+    #my-talent-panel.open { display: flex; }
+    .mtp-header {
+      padding: 12px 14px 10px; border-bottom: 1px solid #21262d;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .mtp-title { font-size: 13px; font-weight: 700; color: #3fb950; }
+    .mtp-close { background: none; border: none; color: #6e7681; cursor: pointer; font-size: 15px; }
+    .mtp-body { padding: 12px 14px; display: flex; flex-direction: column; gap: 12px; }
+    .mtp-row { display: flex; flex-direction: column; gap: 5px; }
+    .mtp-lbl { font-size: 10px; color: #6e7681; font-weight: 600; letter-spacing: .4px; text-transform: uppercase; }
+    .mtp-analysis {
+      background: #161b22; border: 1px solid #21262d; border-radius: 8px;
+      padding: 8px 10px; font-size: 11px; color: #8b949e; line-height: 1.5;
+    }
+    .mtp-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+    .mtp-chip {
+      font-size: 11px; padding: 3px 8px; border-radius: 6px; cursor: pointer;
+      border: 1px solid #30363d; background: #21262d; color: #8b949e;
+      transition: all .15s; user-select: none;
+    }
+    .mtp-chip.selected { background: rgba(63,185,80,0.15); border-color: #3fb950; color: #3fb950; }
+    .mtp-tagline-input {
+      width: 100%; background: #0d1117; border: 1px solid #30363d;
+      border-radius: 7px; color: #e6edf3; font-size: 12px; padding: 6px 9px;
+      outline: none; font-family: inherit; box-sizing: border-box;
+    }
+    .mtp-tagline-input:focus { border-color: #3fb950; }
+    .mtp-status-btns { display: flex; gap: 6px; }
+    .mtp-status-btn {
+      flex: 1; padding: 6px; border-radius: 7px; font-size: 11px; font-weight: 600;
+      cursor: pointer; font-family: inherit; transition: all .15s;
+      border: 1px solid #30363d; background: #21262d; color: #6e7681;
+    }
+    .mtp-status-btn.active.green { background: rgba(63,185,80,0.15); border-color: #3fb950; color: #3fb950; }
+    .mtp-status-btn.active.yellow { background: rgba(255,215,0,0.12); border-color: #ffd700; color: #ffd700; }
+    .mtp-publish-btn {
+      width: 100%; padding: 9px; border: none; border-radius: 8px;
+      background: #238636; color: #fff; font-size: 13px; font-weight: 700;
+      cursor: pointer; font-family: inherit; transition: all .15s;
+    }
+    .mtp-publish-btn:hover { background: #2ea043; }
+    .mtp-publish-btn.published { background: #1f6feb; }
+    .mtp-hint { font-size: 10px; color: #6e7681; text-align: center; line-height: 1.4; }
+
+    /* ── DM 패널 ─────────────────────────────────────────────────── */
+    #dm-panel {
+      position: fixed; right: 14px; bottom: 60px; z-index: 400;
+      width: 300px; max-height: 420px; background: rgba(13,17,23,0.98);
+      border: 1px solid #21262d; border-radius: 14px;
+      backdrop-filter: blur(16px); display: none; flex-direction: column;
+      box-shadow: 0 16px 48px rgba(0,0,0,0.6);
+    }
+    #dm-panel.open { display: flex; }
+    .dm-header {
+      padding: 12px 14px 10px; border-bottom: 1px solid #21262d;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .dm-avatar { width: 28px; height: 28px; border-radius: 50%;
+                 display: flex; align-items: center; justify-content: center;
+                 font-size: 13px; font-weight: 700; flex-shrink: 0; }
+    .dm-name { flex: 1; font-size: 13px; font-weight: 700; color: #e6edf3; }
+    .dm-close { background: none; border: none; color: #6e7681; cursor: pointer;
+                font-size: 15px; padding: 2px 5px; border-radius: 4px; }
+    .dm-close:hover { color: #e6edf3; background: #21262d; }
+    .dm-messages {
+      flex: 1; overflow-y: auto; padding: 10px 12px; display: flex;
+      flex-direction: column; gap: 8px; min-height: 140px; max-height: 240px;
+      scrollbar-width: thin; scrollbar-color: #21262d transparent;
+    }
+    .dm-msg { display: flex; flex-direction: column; gap: 2px; }
+    .dm-msg.me { align-items: flex-end; }
+    .dm-bubble {
+      max-width: 75%; padding: 7px 10px; border-radius: 10px;
+      font-size: 12px; line-height: 1.4; color: #e6edf3;
+    }
+    .dm-msg.me .dm-bubble { background: #1f6feb; border-radius: 10px 10px 2px 10px; }
+    .dm-msg:not(.me) .dm-bubble { background: #21262d; border-radius: 10px 10px 10px 2px; }
+    .dm-time { font-size: 9px; color: #6e7681; }
+    .dm-input-row {
+      padding: 8px 10px; border-top: 1px solid #21262d;
+      display: flex; gap: 6px; align-items: center;
+    }
+    #dm-input {
+      flex: 1; background: #0d1117; border: 1px solid #30363d;
+      border-radius: 8px; color: #e6edf3; font-size: 12px; padding: 6px 9px;
+      outline: none; font-family: inherit;
+    }
+    #dm-input:focus { border-color: #388bfd; }
+    #dm-send-btn {
+      background: #1f6feb; border: none; color: #fff; border-radius: 8px;
+      padding: 6px 12px; font-size: 12px; cursor: pointer; font-family: inherit;
+    }
+    #dm-send-btn:hover { background: #388bfd; }
+    .dm-empty { text-align: center; color: #6e7681; font-size: 11px; padding: 20px 0; }
+
+    /* ── 마켓 이펙트 패널 ────────────────────────────────────────── */
+    #effects-panel {
+      position: fixed; right: 16px; bottom: 58px; z-index: 150;
+      background: rgba(13,17,23,0.96);
+      border: 1px solid #21262d; border-radius: 14px;
+      padding: 14px 16px; width: 260px;
+      backdrop-filter: blur(16px);
+      display: none; flex-direction: column; gap: 8px;
+      box-shadow: 0 16px 48px rgba(0,0,0,0.55);
+    }
+    #effects-panel.open { display: flex; }
+    #effects-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+    }
+    .effect-card {
+      background: #161b22; border: 1px solid #30363d; border-radius: 9px;
+      padding: 8px 10px; cursor: pointer; transition: all .15s;
+      display: flex; flex-direction: column; gap: 3px;
+    }
+    .effect-card:hover { border-color: var(--ec, #58a6ff); background: color-mix(in srgb, var(--ec, #58a6ff) 10%, #161b22); }
+    .effect-card.selected { border-color: var(--ec, #58a6ff); background: color-mix(in srgb, var(--ec, #58a6ff) 15%, #161b22); box-shadow: 0 0 10px color-mix(in srgb, var(--ec, #58a6ff) 30%, transparent); }
+    .effect-card .ec-icon { font-size: 18px; }
+    .effect-card .ec-name { font-size: 11px; color: #cdd9e5; font-weight: 600; }
+    .effect-card .ec-desc { font-size: 9px; color: #6e7681; line-height: 1.3; }
+    .effect-card canvas { border-radius: 6px; display: block; margin: 5px auto 2px; }
 
     /* ── 거리 조절 패널 ──────────────────────────────────────────── */
     #dist-panel {
@@ -354,6 +748,170 @@
     }
     .dp-btn:hover { background: rgba(88,166,255,0.2); border-color: #58a6ff80; }
     .dp-hint { font-size: 10px; color: #6e7681; text-align: center; opacity: 0.7; }
+
+    /* ── 노드 별명 편집 ──────────────────────────────────────────── */
+    #alias-edit-bar { display:none;align-items:center;gap:6px;padding:6px 10px;background:#1c2128;border-radius:8px;margin-top:6px;border:1px solid #30363d; }
+    #alias-edit-bar.visible { display:flex; }
+    #alias-input { flex:1;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#cdd9e5;padding:4px 8px;font-size:12px;font-family:inherit;outline:none; }
+    #alias-input:focus { border-color:#58a6ff; }
+    #alias-save-btn { background:rgba(88,166,255,0.15);border:1px solid #58a6ff40;color:#58a6ff;border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;font-family:inherit; }
+    #alias-save-btn:hover { background:rgba(88,166,255,0.25); }
+
+    /* ── 솔루션 제안 토스트 ──────────────────────────────────────── */
+    #suggestion-toast { position:fixed;bottom:70px;left:50%;transform:translateX(-50%);background:rgba(13,17,23,0.97);border:1px solid #3fb95060;border-radius:14px;padding:12px 16px;min-width:300px;max-width:420px;z-index:200;display:none;backdrop-filter:blur(16px);box-shadow:0 8px 32px rgba(63,185,80,0.15); }
+    #suggestion-toast.visible { display:block; }
+    .st-header { display:flex;align-items:center;gap:8px;margin-bottom:8px; }
+    .st-icon { font-size:18px; }
+    .st-title { font-size:12px;font-weight:700;color:#3fb950; }
+    .st-close { margin-left:auto;background:none;border:none;color:#6e7681;cursor:pointer;font-size:14px; }
+    .st-body { font-size:11px;color:#cdd9e5;line-height:1.5;margin-bottom:8px; }
+    .st-actions { display:flex;gap:6px; }
+    .st-btn { flex:1;padding:5px 0;border-radius:7px;font-size:11px;cursor:pointer;font-family:inherit;border:1px solid; }
+    .st-btn.accept { background:rgba(63,185,80,0.1);border-color:#3fb95040;color:#3fb950; }
+    .st-btn.dismiss { background:rgba(110,118,129,0.1);border-color:#30363d;color:#6e7681; }
+
+    /* ── 동의 모달 ────────────────────────────────────────────────── */
+    #consent-modal { position:fixed;inset:0;z-index:300;background:rgba(0,0,0,0.75);backdrop-filter:blur(8px);display:none;align-items:center;justify-content:center; }
+    #consent-modal.visible { display:flex; }
+    .cm-box { background:#0d1117;border:1px solid #30363d;border-radius:18px;padding:28px 28px 22px;max-width:420px;width:90%;box-shadow:0 24px 64px rgba(0,0,0,0.6); }
+    .cm-title { font-size:18px;font-weight:700;color:#cdd9e5;margin-bottom:6px; }
+    .cm-sub   { font-size:12px;color:#6e7681;margin-bottom:18px;line-height:1.6; }
+    .cm-items { display:flex;flex-direction:column;gap:8px;margin-bottom:20px; }
+    .cm-item  { display:flex;align-items:center;gap:10px;padding:9px 12px;background:#161b22;border-radius:9px;border:1px solid #21262d;font-size:12px;color:#cdd9e5; }
+    .cm-item-icon { font-size:18px; }
+    .cm-privacy { font-size:10px;color:#6e7681;text-align:center;margin-bottom:14px;line-height:1.5; }
+    .cm-actions { display:flex;gap:8px; }
+    .cm-btn { flex:1;padding:10px;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;border:none;transition:all .15s; }
+    .cm-btn.allow { background:#58a6ff;color:#0d1117; }
+    .cm-btn.allow:hover { background:#79c0ff; }
+    .cm-btn.deny  { background:#21262d;color:#6e7681; }
+    .cm-btn.deny:hover { background:#30363d;color:#cdd9e5; }
+
+    /* ── 내 뷰 버튼 + 뷰 설정 패널 (좌측 컬럼) ─────────────────── */
+    #view-btn {
+      position: fixed; bottom: 108px; left: 16px; z-index: 200;
+      background: rgba(13,17,23,0.92); border: 1px solid #21262d;
+      color: #8b949e; border-radius: 10px; padding: 10px 16px;
+      cursor: pointer; font-size: 13px; font-family: inherit;
+      backdrop-filter: blur(8px); transition: all .2s;
+    }
+    #view-btn:hover { border-color: #bc8cff; color: #bc8cff; }
+    #view-btn.open  { border-color: #bc8cff; color: #bc8cff; background: rgba(188,140,255,0.08); }
+
+    #view-panel {
+      position: fixed; left: 16px; bottom: 160px; z-index: 198;
+      width: 300px; max-height: calc(100vh - 220px);
+      background: rgba(13,17,23,0.97); border: 1px solid #21262d;
+      border-radius: 16px; backdrop-filter: blur(16px);
+      display: none; flex-direction: column; overflow-y: auto;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+      scrollbar-width: thin; scrollbar-color: #21262d transparent;
+    }
+    #view-panel.open { display: flex; }
+    .vp-header { padding: 14px 16px 10px; border-bottom: 1px solid #21262d; display:flex; align-items:center; justify-content:space-between; }
+    .vp-title  { font-size:13px; font-weight:700; color:#cdd9e5; }
+    .vp-close  { background:none; border:none; color:#6e7681; cursor:pointer; font-size:15px; padding:2px 5px; border-radius:4px; }
+    .vp-close:hover { color:#e6edf3; background:#21262d; }
+    .vp-body   { padding: 12px 14px; display:flex; flex-direction:column; gap:14px; }
+    .vp-section { font-size:10px; color:#6e7681; text-transform:uppercase; letter-spacing:.7px; margin-bottom:-6px; }
+    .vp-row    { display:flex; flex-direction:column; gap:5px; }
+    .vp-lbl    { font-size:11px; color:#8b949e; display:flex; justify-content:space-between; }
+    .vp-lbl b  { color:#bc8cff; font-weight:600; }
+    .vp-row input[type=range] { width:100%; accent-color:#bc8cff; cursor:pointer; height:4px; }
+    .vp-divider { border:none; border-top:1px solid #21262d; margin:0; }
+    .vp-presets { display:flex; flex-wrap:wrap; gap:5px; }
+    .vp-preset  { padding:5px 11px; border-radius:8px; border:1px solid #30363d; background:#161b22; color:#8b949e; font-size:11px; cursor:pointer; font-family:inherit; transition:all .15s; }
+    .vp-preset:hover { border-color:#58a6ff; color:#58a6ff; }
+    .vp-preset.active { border-color:#58a6ff; color:#58a6ff; background:rgba(88,166,255,0.1); font-weight:600; }
+    .vp-group-list { display:flex; flex-direction:column; gap:5px; }
+    .vp-group-item { display:flex; align-items:center; gap:7px; padding:6px 9px; border-radius:7px; border:1px solid #21262d; background:#161b22; font-size:11px; }
+    .vp-group-item button { margin-left:auto; background:none; border:none; color:#f85149; cursor:pointer; font-size:12px; padding:1px 4px; }
+    .vp-group-new { display:flex; gap:5px; }
+    .vp-group-input { flex:1; background:#0d1117; border:1px solid #30363d; border-radius:6px; color:#cdd9e5; padding:5px 8px; font-size:11px; font-family:inherit; outline:none; }
+    .vp-group-input:focus { border-color:#bc8cff; }
+    .vp-ai-bar { display:flex; gap:6px; align-items:center; }
+    .vp-ai-input { flex:1; background:#0d1117; border:1px solid #30363d; border-radius:8px; color:#cdd9e5; padding:7px 10px; font-size:11px; font-family:inherit; outline:none; }
+    .vp-ai-input:focus { border-color:#39d2c0; }
+    .vp-ai-btn { background:rgba(57,210,192,0.12); border:1px solid #39d2c040; color:#39d2c0; border-radius:8px; padding:7px 12px; cursor:pointer; font-size:11px; font-family:inherit; white-space:nowrap; }
+    .vp-ai-btn:hover { background:rgba(57,210,192,0.22); }
+    .vp-apply-btn { width:100%; padding:8px; background:rgba(188,140,255,0.12); border:1px solid #bc8cff40; color:#bc8cff; border-radius:8px; cursor:pointer; font-size:12px; font-family:inherit; transition:all .15s; }
+    .vp-apply-btn:hover { background:rgba(188,140,255,0.22); }
+    .vp-filter-tag { display:inline-flex; align-items:center; gap:4px; padding:3px 9px; border-radius:10px; background:rgba(88,166,255,0.12); border:1px solid #58a6ff40; color:#58a6ff; font-size:10px; }
+
+    /* ── 관리자 맞춤 뷰 패널 ─────────────────────────────────────── */
+    #mgr-btn {
+      position:fixed; left:16px; bottom:156px; z-index:200;
+      background:rgba(13,17,23,0.92); border:1px solid #21262d;
+      color:#8b949e; border-radius:10px; padding:9px 14px;
+      cursor:pointer; font-size:12px; font-family:inherit;
+      backdrop-filter:blur(8px); transition:all .2s;
+      display:flex; align-items:center; gap:6px;
+    }
+    #mgr-btn:hover { border-color:#f0883e; color:#f0883e; }
+    #mgr-btn.open  { border-color:#f0883e; color:#f0883e; background:rgba(240,136,62,0.08); }
+
+    #mgr-panel {
+      position:fixed; left:16px; bottom:200px; z-index:199;
+      width:268px; background:rgba(13,17,23,0.96);
+      border:1px solid #21262d; border-radius:14px;
+      backdrop-filter:blur(16px); box-shadow:0 8px 32px rgba(0,0,0,.5);
+      display:none; flex-direction:column; overflow:hidden;
+    }
+    #mgr-panel.open { display:flex; }
+
+    .mgr-header {
+      display:flex; align-items:center; justify-content:space-between;
+      padding:10px 14px; border-bottom:1px solid #161b22;
+    }
+    .mgr-title { font-size:12px; font-weight:600; color:#e6edf3; }
+    .mgr-close { background:none; border:none; color:#6e7681; cursor:pointer; font-size:14px; padding:0; }
+
+    .mgr-section {
+      font-size:10px; font-weight:700; letter-spacing:.6px;
+      color:#6e7681; text-transform:uppercase;
+      padding:8px 14px 4px;
+    }
+
+    /* 필드 토글 그리드 */
+    .mgr-fields { display:grid; grid-template-columns:1fr 1fr; gap:6px; padding:4px 14px 8px; }
+    .mgr-field-toggle {
+      display:flex; align-items:center; gap:6px;
+      background:#0d1117; border:1px solid #21262d; border-radius:8px;
+      padding:7px 10px; cursor:pointer; transition:all .15s; font-size:11px;
+    }
+    .mgr-field-toggle:hover { border-color:#30363d; }
+    .mgr-field-toggle.on { border-color:#f0883e60; background:rgba(240,136,62,0.08); color:#f0883e; }
+    .mgr-field-toggle.on .mgr-dot { background:#f0883e; }
+    .mgr-dot { width:7px; height:7px; border-radius:50%; background:#30363d; flex-shrink:0; transition:background .15s; }
+
+    /* 하이라이트 필터 칩 */
+    .mgr-filters { display:flex; flex-wrap:wrap; gap:5px; padding:4px 14px 8px; }
+    .mgr-filter-chip {
+      padding:4px 10px; border-radius:20px; font-size:10px; cursor:pointer;
+      border:1px solid #21262d; background:transparent; color:#6e7681;
+      font-family:inherit; transition:all .15s;
+    }
+    .mgr-filter-chip.on  { border-color:#f8514960; background:rgba(248,81,73,0.1); color:#f85149; }
+    .mgr-filter-chip:hover { border-color:#30363d; color:#cdd9e5; }
+
+    /* AI 봇 */
+    .mgr-bot-bar { display:flex; gap:6px; padding:6px 14px 10px; }
+    .mgr-bot-input {
+      flex:1; background:#0d1117; border:1px solid #30363d; border-radius:8px;
+      color:#cdd9e5; padding:7px 10px; font-size:11px; font-family:inherit; outline:none;
+    }
+    .mgr-bot-input:focus { border-color:#f0883e; }
+    .mgr-bot-btn {
+      background:rgba(240,136,62,0.12); border:1px solid #f0883e40;
+      color:#f0883e; border-radius:8px; padding:7px 11px;
+      cursor:pointer; font-size:11px; font-family:inherit; white-space:nowrap;
+    }
+    .mgr-bot-btn:hover { background:rgba(240,136,62,0.22); }
+    .mgr-bot-resp {
+      margin:0 14px 10px; padding:8px 10px; background:#0d1117;
+      border:1px solid #161b22; border-radius:8px;
+      font-size:10px; color:#8b949e; line-height:1.5; display:none;
+    }
   </style>
 </head>
 <body>
@@ -449,41 +1007,224 @@
   <div class="tt-meta"   id="tt-meta"></div>
 </div>
 
+<!-- 브레드크럼 내비게이션 -->
+<div id="nav-breadcrumb">
+  <span class="bc-crumb clickable" id="bc-personal" onclick="bcGoPersonal()">👤 개인</span>
+  <span class="bc-sep bc-arrow1">›</span>
+  <span class="bc-crumb" id="bc-team"></span>
+  <span class="bc-sep bc-arrow2" style="display:none">›</span>
+  <span class="bc-crumb" id="bc-dept" style="display:none"></span>
+  <span class="bc-sep bc-arrow3" style="display:none">›</span>
+  <span class="bc-crumb" id="bc-member" style="display:none"></span>
+</div>
+
+<!-- 인재 보드 버튼 -->
+<button id="talent-board-btn" onclick="toggleTalentBoard()">📡 인재 보드</button>
+
+<!-- 인재 보드 — 하단 ticker -->
+<div id="talent-ticker">
+  <div class="ticker-label">📡 인재 보드<span>자발적 공개만 표시</span></div>
+  <div class="ticker-track">
+    <div class="ticker-scroll" id="ticker-scroll"></div>
+  </div>
+  <button onclick="openMyTalentPanel()"
+    style="flex-shrink:0;margin:0 8px;padding:4px 10px;background:rgba(63,185,80,0.12);border:1px solid #3fb950;color:#3fb950;border-radius:7px;font-size:11px;cursor:pointer;font-family:inherit;font-weight:600;white-space:nowrap;">
+    + 내 능력 공개
+  </button>
+  <button style="flex-shrink:0;margin:0 8px 0 0;background:none;border:none;color:#6e7681;cursor:pointer;font-size:16px;" onclick="toggleTalentBoard()">✕</button>
+</div>
+
+<!-- 내 능력 공개 패널 -->
+<div id="my-talent-panel">
+  <div class="mtp-header">
+    <span class="mtp-title">📡 내 능력 공개 설정</span>
+    <button class="mtp-close" onclick="closeMyTalentPanel()">✕</button>
+  </div>
+  <div class="mtp-body">
+    <div class="mtp-row">
+      <div class="mtp-lbl">작업 분석 결과</div>
+      <div class="mtp-analysis" id="mtp-analysis">팀 시뮬 또는 회사 시뮬을 먼저 시작해주세요.</div>
+    </div>
+    <div class="mtp-row">
+      <div class="mtp-lbl">공개할 스킬 선택</div>
+      <div class="mtp-chips" id="mtp-skill-chips"></div>
+    </div>
+    <div class="mtp-row">
+      <div class="mtp-lbl">한 줄 어필 (선택)</div>
+      <input id="mtp-tagline" class="mtp-tagline-input" type="text" maxlength="40"
+        placeholder="예: AI 파인튜닝 경험 3년, 협업 환영">
+    </div>
+    <div class="mtp-row">
+      <div class="mtp-lbl">연결 상태</div>
+      <div class="mtp-status-btns">
+        <button class="mtp-status-btn active green" id="mtp-st-open"
+          onclick="setMtpStatus('open')">🟢 협업 가능</button>
+        <button class="mtp-status-btn" id="mtp-st-ask"
+          onclick="setMtpStatus('ask')">🟡 문의만</button>
+      </div>
+    </div>
+    <button class="mtp-publish-btn" id="mtp-publish-btn" onclick="toggleMyPublish()">
+      📡 인재 보드에 공개
+    </button>
+    <div class="mtp-hint">공개한 정보는 내가 원할 때 언제든 취소할 수 있습니다.<br>회사 내부 작업 내용은 표시되지 않습니다.</div>
+  </div>
+</div>
+
+<!-- DM 패널 -->
+<div id="dm-panel">
+  <div class="dm-header">
+    <div class="dm-avatar" id="dm-avatar" style="background:#1f6feb">?</div>
+    <span class="dm-name" id="dm-name">메시지</span>
+    <button class="dm-close" onclick="closeDmPanel()">✕</button>
+  </div>
+  <div class="dm-messages" id="dm-messages">
+    <div class="dm-empty">대화를 시작해보세요 👋</div>
+  </div>
+  <div class="dm-input-row">
+    <input id="dm-input" type="text" placeholder="메시지 입력…" maxlength="200"
+      onkeydown="if(event.key==='Enter')sendDm()">
+    <button id="dm-send-btn" onclick="sendDm()">전송</button>
+  </div>
+</div>
+
+<!-- 인라인 텍스트 편집 오버레이 -->
+<div id="inline-edit-overlay">
+  <div id="inline-edit-label">레이블 편집</div>
+  <input id="inline-edit-input" type="text" maxlength="40"
+    onkeydown="if(event.key==='Enter')saveInlineEdit(); if(event.key==='Escape')closeInlineEdit();">
+  <div id="inline-edit-actions">
+    <button class="ie-btn save" onclick="saveInlineEdit()">저장</button>
+    <button class="ie-btn" onclick="closeInlineEdit()">취소</button>
+  </div>
+</div>
+
 <!-- 상단 우측 -->
 <div id="top-right" style="display:none">
   <!-- info panel이 열리면 여기를 숨김 -->
 </div>
 <div style="position:fixed;top:14px;right:14px;z-index:101;display:flex;gap:8px;">
   <button class="tr-btn-team" onclick="loadTeamDemo()">👥 팀 시뮬</button>
+  <button class="tr-btn-company" onclick="loadCompanyDemo()">🏢 회사 시뮬</button>
   <button class="tr-btn" id="orbit-toggle-btn" onclick="toggleOrbitAnim()">⏸ 공전 중지</button>
+  <button class="tr-btn" onclick="toggleEffectsPanel()" title="마켓 이펙트">✨</button>
   <button class="tr-btn" onclick="toggleDistPanel()" title="거리 조절 설정">⚙️</button>
+</div>
+
+<!-- 마켓 이펙트 패널 -->
+<div id="effects-panel">
+  <div class="dp-title">
+    ✨ 마켓 이펙트
+    <button class="dp-close" onclick="closeEffectsPanel()">✕</button>
+  </div>
+  <div style="font-size:10px;color:#6e7681;margin-bottom:8px;padding:0 2px">노드를 먼저 클릭한 후 이펙트를 선택하세요</div>
+  <div id="effects-selected-node" style="font-size:11px;color:#58a6ff;margin-bottom:10px;padding:4px 8px;background:#1c2128;border-radius:6px;min-height:22px"></div>
+  <div id="effects-grid"></div>
+  <div style="margin-top:10px;display:flex;gap:6px">
+    <button class="dp-btn" onclick="clearNodeEffect()" style="flex:1;background:#21262d;color:#f85149">이펙트 제거</button>
+    <button class="dp-btn" onclick="applySelectedEffect()" style="flex:1">적용</button>
+  </div>
 </div>
 
 <!-- 거리 조절 패널 -->
 <div id="dist-panel">
   <div class="dp-title">
-    ⚙️ 노드 거리 조절
+    ⚙️ 노드 조절
     <button class="dp-close" onclick="closeDistPanel()">✕</button>
   </div>
   <hr class="dp-divider">
+
+  <!-- 노드 표시 레벨 -->
   <div class="dp-row">
-    <div class="dp-lbl">🔵 팀원 ↔ 중심 거리 <b id="v-member-r">40</b></div>
+    <div class="dp-lbl">👁 표시 노드 <b id="v-node-level">멤버만</b></div>
+    <input type="range" id="sl-node-level" min="1" max="4" value="1"
+           oninput="updateNodeLevel(this)">
+    <div class="dp-hint" id="node-level-hint" style="text-align:left;opacity:1;color:#58a6ff;font-size:10px">
+      팀원 + 목표만 표시
+    </div>
+  </div>
+  <hr class="dp-divider">
+
+  <!-- 거리 조절 (실시간 적용) -->
+  <div class="dp-row">
+    <div class="dp-lbl">🔵 팀원 ↔ 중심 <b id="v-member-r">40</b></div>
     <input type="range" id="sl-member-r" min="20" max="80" value="40"
            oninput="updateDist('MEMBER_R',this)">
   </div>
   <div class="dp-row">
-    <div class="dp-lbl">🔹 작업 ↔ 팀원 거리 <b id="v-task-r">16</b></div>
+    <div class="dp-lbl">🔹 작업 ↔ 팀원 <b id="v-task-r">16</b></div>
     <input type="range" id="sl-task-r" min="6" max="32" value="16"
            oninput="updateDist('TASK_R',this)">
   </div>
   <div class="dp-row">
-    <div class="dp-lbl">🔸 툴 ↔ 팀원 거리 <b id="v-tool-r">9</b></div>
+    <div class="dp-lbl">🔸 스킬 ↔ 팀원 <b id="v-tool-r">9</b></div>
     <input type="range" id="sl-tool-r" min="4" max="18" value="9"
            oninput="updateDist('TOOL_R',this)">
   </div>
-  <hr class="dp-divider">
-  <button class="dp-btn" onclick="applyTeamCfg()">↺ 재배치 적용</button>
-  <div class="dp-hint">팀 시뮬 모드에서만 동작합니다</div>
+  <div class="dp-hint" style="margin-top:2px">슬라이더 조작 시 즉시 반영됩니다</div>
+</div>
+
+<!-- 뷰 설정 버튼 -->
+<button id="view-btn" onclick="toggleViewPanel()">👤 내 뷰</button>
+
+<!-- 뷰 설정 패널 -->
+<div id="view-panel">
+  <div class="vp-header">
+    <span class="vp-title">👤 내 뷰 설정</span>
+    <button class="vp-close" onclick="toggleViewPanel()">✕</button>
+  </div>
+  <div class="vp-body">
+
+    <!-- 섹션 A: 배율 설정 -->
+    <div class="vp-section">📐 배율 설정</div>
+    <div class="vp-row">
+      <span class="vp-lbl">개인</span>
+      <input type="range" min="10" max="60" value="22" id="zoom-personal"
+        oninput="document.getElementById('zoom-personal-val').textContent=this.value"
+        onchange="saveZoomPref('personal',this.value)">
+      <span id="zoom-personal-val" class="vp-lbl">22</span>
+    </div>
+    <div class="vp-row">
+      <span class="vp-lbl">팀</span>
+      <input type="range" min="40" max="130" value="70" id="zoom-team"
+        oninput="document.getElementById('zoom-team-val').textContent=this.value"
+        onchange="saveZoomPref('team',this.value)">
+      <span id="zoom-team-val" class="vp-lbl">70</span>
+    </div>
+    <div class="vp-row">
+      <span class="vp-lbl">회사</span>
+      <input type="range" min="60" max="200" value="100" id="zoom-company"
+        oninput="document.getElementById('zoom-company-val').textContent=this.value"
+        onchange="saveZoomPref('company',this.value)">
+      <span id="zoom-company-val" class="vp-lbl">100</span>
+    </div>
+    <button class="vp-apply-btn" onclick="applyCurrentModeZoom()">배율 지금 적용</button>
+
+    <!-- 섹션 B: 보기 범위 -->
+    <div class="vp-section">🔭 보기 범위</div>
+    <div class="vp-presets" id="vp-presets">
+      <button class="vp-preset active" onclick="setNodeFilter('all',this)">전체</button>
+      <button class="vp-preset" onclick="setNodeFilter('mine',this)">내 작업</button>
+      <button class="vp-preset" onclick="setNodeFilter('team',this)">팀만</button>
+      <button class="vp-preset" onclick="setNodeFilter('company',this)">회사만</button>
+    </div>
+    <div class="vp-section" style="margin-top:8px;font-size:10px;opacity:.7">커스텀 그룹</div>
+    <div class="vp-group-list" id="vp-group-list"><!-- JS 동적 생성 --></div>
+    <div style="display:flex;gap:6px;margin-top:4px;">
+      <input class="vp-group-input" id="vp-new-group-name" placeholder="그룹 이름" />
+      <button class="vp-group-new" onclick="openGroupCreator()">＋</button>
+    </div>
+
+    <!-- 섹션 C: AI 필터 채팅 -->
+    <div class="vp-section">🤖 AI 필터</div>
+    <div class="vp-ai-bar">
+      <input class="vp-ai-input" id="ai-filter-input"
+        placeholder="예: 마케팅팀이랑 영업팀만 보여줘"
+        onkeydown="if(event.key==='Enter')applyAIFilter()">
+      <button class="vp-ai-btn" onclick="applyAIFilter()">적용</button>
+    </div>
+    <div id="vp-active-filter" style="margin-top:6px;"></div>
+
+  </div>
 </div>
 
 <!-- 기능 샘플링 버튼 -->
@@ -509,6 +1250,93 @@
   <div class="ctrl-item"><b>더블클릭</b> 행성 포커스</div>
 </div>
 
+<!-- 내 작업 사이드바 -->
+<button id="task-sidebar-btn" onclick="toggleTaskSidebar()">📋 내 작업</button>
+<div id="my-task-sidebar">
+  <div class="mts-header">
+    <div class="mts-title">📋 내 작업 목록</div>
+    <select class="mts-member-sel" id="mts-member-sel" onchange="setMyMember(this.value)">
+      <option value="">-- 나는 누구? 선택 --</option>
+    </select>
+  </div>
+  <div class="mts-body" id="mts-body">
+    <div class="mts-empty">팀 시뮬 또는 회사 시뮬을<br>시작하면 작업이 표시됩니다</div>
+  </div>
+</div>
+
+<!-- 컨트롤 허브 버튼 -->
+<!-- 스킬/에이전트 제안 토스트 스택 -->
+<div id="skill-toast-stack"></div>
+
+<!-- 관리자 맞춤 뷰 버튼 + 패널 -->
+<button id="mgr-btn" onclick="toggleMgrPanel()">👔 관리자 뷰</button>
+<div id="mgr-panel">
+  <div class="mgr-header">
+    <span class="mgr-title">👔 관리자 맞춤 뷰</span>
+    <button class="mgr-close" onclick="toggleMgrPanel()">✕</button>
+  </div>
+
+  <!-- 표시 필드 설정 -->
+  <div class="mgr-section">표시 필드</div>
+  <div class="mgr-fields">
+    <button class="mgr-field-toggle on" id="mgrf-progress" onclick="toggleMgrField('progress')">
+      <span class="mgr-dot"></span>진행률
+    </button>
+    <button class="mgr-field-toggle on" id="mgrf-deadline" onclick="toggleMgrField('deadline')">
+      <span class="mgr-dot"></span>마감 D-Day
+    </button>
+    <button class="mgr-field-toggle on" id="mgrf-blocker" onclick="toggleMgrField('blocker')">
+      <span class="mgr-dot"></span>블로커
+    </button>
+    <button class="mgr-field-toggle" id="mgrf-taskCount" onclick="toggleMgrField('taskCount')">
+      <span class="mgr-dot"></span>작업 수
+    </button>
+  </div>
+
+  <!-- 빠른 필터 -->
+  <div class="mgr-section">강조 필터</div>
+  <div class="mgr-filters">
+    <button class="mgr-filter-chip" id="mgrf-chip-all"      onclick="setMgrHighlight(null,this)">전체</button>
+    <button class="mgr-filter-chip" id="mgrf-chip-blocker"  onclick="setMgrHighlight('blocker',this)">⚠️ 블로커만</button>
+    <button class="mgr-filter-chip" id="mgrf-chip-deadline" onclick="setMgrHighlight('deadline',this)">🗓 마감 임박</button>
+    <button class="mgr-filter-chip" id="mgrf-chip-low"      onclick="setMgrHighlight('low_progress',this)">📉 진행 저조</button>
+  </div>
+
+  <!-- AI 봇 -->
+  <div class="mgr-section">AI 봇에게 물어보기</div>
+  <div class="mgr-bot-bar">
+    <input class="mgr-bot-input" id="mgr-bot-input"
+      placeholder="예: 이번주 마감 임박한 사람 보여줘"
+      onkeydown="if(event.key==='Enter')submitMgrBot()">
+    <button class="mgr-bot-btn" onclick="submitMgrBot()">전송</button>
+  </div>
+  <div class="mgr-bot-resp" id="mgr-bot-resp"></div>
+</div>
+
+<button id="ctrl-hub-btn" onclick="toggleCtrlHub()">🎮 조작</button>
+
+<!-- 컨트롤 허브 팝업 -->
+<div id="ctrl-hub">
+  <div class="ch-section">
+    <div class="ch-label">미니맵</div>
+    <canvas id="ch-minimap-canvas" width="156" height="100"></canvas>
+  </div>
+  <div class="ch-section">
+    <div class="ch-label">줌 조절</div>
+    <div class="ch-zoom-row">
+      <button class="ch-zoom-btn" onclick="zoomStep(-1)" title="줌인">＋</button>
+      <span id="ch-zoom-level">r:—</span>
+      <button class="ch-zoom-btn" onclick="zoomStep(1)" title="줌아웃">－</button>
+    </div>
+  </div>
+  <div class="ch-section">
+    <button style="width:100%;background:none;border:none;color:#8b949e;font-size:11px;font-family:inherit;cursor:pointer;padding:2px;text-align:left"
+      onclick="closeCtrlHub();toggleDistPanel()">⚙️ 노드 거리 조절</button>
+    <button style="width:100%;background:none;border:none;color:#8b949e;font-size:11px;font-family:inherit;cursor:pointer;padding:2px;text-align:left;margin-top:4px"
+      onclick="closeCtrlHub();autoFitView()">🔭 전체 뷰 맞춤</button>
+  </div>
+</div>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
 <!-- WebXR VR 버튼 폴리필 -->
@@ -517,7 +1345,7 @@ window.OrbitVRButton = {
   createButton(renderer) {
     const btn = document.createElement('button');
     Object.assign(btn.style, {
-      position:'fixed', bottom:'60px', right:'16px', zIndex:'200',
+      position:'fixed', bottom:'14px', right:'14px', zIndex:'200',
       background:'rgba(13,17,23,0.92)', border:'1px solid #21262d',
       color:'#8b949e', borderRadius:'10px', padding:'10px 18px',
       cursor:'pointer', fontSize:'13px', backdropFilter:'blur(8px)',
@@ -746,12 +1574,19 @@ function buildFileSatellites(events) {
   return Object.entries(fileCounts)
     .sort((a,b) => b[1].count - a[1].count)
     .slice(0, 12)
-    .map(([fname, info]) => ({
-      label:    inferFileRole(fname) || fname,
-      filename: fname,
-      count:    info.count,
-      isWrite:  info.types.has('file.write') || info.types.has('tool.end'),
-    }));
+    .map(([fname, info]) => {
+      const role = inferFileRole(fname);
+      // 실제 파일명(확장자 포함) 우선 표시, 역할 아이콘은 앞에 prefix
+      const shortName = fname.split('/').pop(); // 경로 제거, 파일명만
+      const roleIcon  = role ? role.split(' ')[0] : '📄'; // 이모지만 추출
+      return {
+        label:    `${roleIcon} ${shortName}`,  // "📋 server.js" 형식
+        roleDesc: role || '파일',              // 역할 설명 (툴팁용)
+        filename: fname,
+        count:    info.count,
+        isWrite:  info.types.has('file.write') || info.types.has('tool.end'),
+      };
+    });
 }
 
 // ─── 목적 기반 클러스터링 ─────────────────────────────────────────────────────
@@ -1025,6 +1860,10 @@ window.toggleOrbitAnim = toggleOrbitAnim;
 // ─── 씬 빌드 ──────────────────────────────────────────────────────────────────
 function clearScene() {
   [...planetMeshes, ...satelliteMeshes, ...orbitRings, ...connections].forEach(o => scene.remove(o));
+  if (typeof _collabLines !== 'undefined') {
+    _collabLines.forEach(cl => { scene.remove(cl.line); if (cl.outerLine) scene.remove(cl.outerLine); });
+    _collabLines = [];
+  }
   planetMeshes=[]; satelliteMeshes=[]; orbitRings=[]; connections=[]; labelSprites=[];
   _nodeDataMap = {}; _hitAreas = [];
 }
@@ -1234,28 +2073,263 @@ let _teamMode  = false;
 let _teamNodes = [];  // { type, pos, label, sublabel, color, size, emoji, progress, memberId, taskStatus, obj }
 let _focusedMember = null;  // 현재 포커스된 팀원 노드
 let _cameraLerp    = null;  // { startR, endR, startTx/y/z, endTx/y/z, startPhi, endPhi, duration, elapsed }
+let _companyMode   = false;  // 회사 시뮬레이션 모드
+let _activeSimData = null;   // 현재 활성 시뮬 데이터 (TEAM_DEMO or COMPANY_DEMO)
+let _collabLines   = [];     // [{ line, mat, phase, fromNode, toNode }] — 협업 연결선
+let _myMemberId    = localStorage.getItem('orbitMyMemberId') || null;  // 내 멤버 ID
 
 // ─── 팀 거리 설정값 ──────────────────────────────────────────────────────────
 const TEAM_CFG = { MEMBER_R: 40, TASK_R: 16, TOOL_R: 9 };
+
+// ─── 마켓 이펙트 프리셋 ──────────────────────────────────────────────────────
+const MARKET_EFFECTS = [
+  { id: 'neon',   name: '네온 글로우',   icon: '💡', color: '#58a6ff', desc: '밝게 빛나는 네온 다중 테두리' },
+  { id: 'matrix', name: '매트릭스',      icon: '🟩', color: '#3fb950', desc: '초록 코드 문자가 떨어지는 효과' },
+  { id: 'dna',    name: 'DNA 헬릭스',    icon: '🧬', color: '#bc8cff', desc: '이중 나선이 회전하며 감싸는 효과' },
+  { id: 'beam',   name: '에너지 빔',     icon: '⚡', color: '#ffd700', desc: '중심을 향한 빛의 줄기 효과' },
+  { id: 'holo',   name: '홀로그램',      icon: '🔷', color: '#39d2c0', desc: '스캔 라인이 훑어 내리는 효과' },
+  { id: 'burst',  name: '파티클 버스트', icon: '✨', color: '#f0883e', desc: '방사형 입자 폭발 효과' },
+];
+const _nodeEffects = {};  // nodeLabel → effectId (노드별 선택 이펙트)
+
+// 마켓 이펙트 드로잉 함수
+function drawEffect_neon(ctx, cx, cy, r, color, now) {
+  for (let i = 3; i >= 0; i--) {
+    const pulse = (Math.sin(now * 2.8 + i * 0.7) + 1) * 0.5;
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth   = 3 - i * 0.5;
+    ctx.shadowColor = color;
+    ctx.shadowBlur  = 12 + i * 8 + pulse * 10;
+    ctx.globalAlpha = 0.55 + pulse * 0.35;
+    ctx.beginPath(); ctx.arc(cx, cy, r + 6 + i * 7, 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
+  }
+}
+function drawEffect_matrix(ctx, cx, cy, r, color, now) {
+  const chars = '01ABアイウエオ#$%';
+  ctx.save();
+  ctx.font = '600 10px monospace';
+  ctx.textAlign = 'center';
+  for (let i = 0; i < 8; i++) {
+    const angle = (i / 8) * Math.PI * 2;
+    const fall  = ((now * 40 + i * 30) % (r * 2.5));
+    const bx    = cx + Math.cos(angle) * (r + 8);
+    const by    = cy + Math.sin(angle) * (r + 8) + fall * 0.5 - r * 0.3;
+    ctx.globalAlpha = Math.max(0, 1 - fall / (r * 2.5));
+    ctx.fillStyle   = color;
+    ctx.shadowColor = color; ctx.shadowBlur = 4;
+    ctx.fillText(chars[Math.floor(now * 8 + i) % chars.length], bx, by);
+  }
+  ctx.restore();
+}
+function drawEffect_dna(ctx, cx, cy, r, color, now) {
+  ctx.save();
+  for (let strand = 0; strand < 2; strand++) {
+    ctx.beginPath();
+    for (let i = 0; i <= 24; i++) {
+      const t  = (i / 24) * Math.PI * 2;
+      const rr = r + 8;
+      const ox = cx + Math.cos(t + now * 1.2 + strand * Math.PI) * rr;
+      const oy = cy + Math.sin(t * 2) * (rr * 0.4) + Math.sin(t + now * 1.2) * (rr * 0.35);
+      i === 0 ? ctx.moveTo(ox, oy) : ctx.lineTo(ox, oy);
+    }
+    ctx.strokeStyle = strand === 0 ? color : color + 'aa';
+    ctx.lineWidth = 2; ctx.shadowColor = color; ctx.shadowBlur = 6; ctx.stroke();
+  }
+  for (let i = 0; i < 6; i++) {
+    const t  = (i / 6) * Math.PI * 2 + now * 1.2;
+    const x1 = cx + Math.cos(t) * (r + 8);
+    const x2 = cx + Math.cos(t + Math.PI) * (r + 8);
+    const y  = cy + Math.sin(t * 2) * (r * 0.35);
+    ctx.globalAlpha = 0.5; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x1, y); ctx.lineTo(x2, y); ctx.stroke();
+  }
+  ctx.restore();
+}
+function drawEffect_beam(ctx, cx, cy, r, color, now) {
+  ctx.save();
+  for (let i = 0; i < 4; i++) {
+    const angle = (i / 4) * Math.PI * 2 + now * 0.8;
+    const blen  = r + 30 + Math.sin(now * 3 + i) * 12;
+    const ex    = cx + Math.cos(angle) * blen;
+    const ey    = cy + Math.sin(angle) * blen;
+    const g     = ctx.createLinearGradient(cx, cy, ex, ey);
+    g.addColorStop(0, color + 'cc'); g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.strokeStyle = g; ctx.lineWidth = 2.5;
+    ctx.globalAlpha = 0.7 + Math.sin(now * 2.5 + i) * 0.2;
+    ctx.shadowColor = color; ctx.shadowBlur = 10;
+    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(ex, ey); ctx.stroke();
+  }
+  ctx.restore();
+}
+function drawEffect_holo(ctx, cx, cy, r, color, now) {
+  ctx.save();
+  ctx.strokeStyle = color + '50'; ctx.lineWidth = 1;
+  for (let i = 0; i < 3; i++) {
+    ctx.globalAlpha = 0.35 - i * 0.08;
+    ctx.beginPath(); ctx.arc(cx, cy, r + 10 + i * 10, 0, Math.PI * 2); ctx.stroke();
+  }
+  const scanY = cy - r - 10 + ((now * 45) % ((r + 20) * 2));
+  const g = ctx.createLinearGradient(cx, scanY - 12, cx, scanY + 4);
+  g.addColorStop(0, 'rgba(0,0,0,0)');
+  g.addColorStop(0.6, color + '40');
+  g.addColorStop(1, color + 'aa');
+  ctx.fillStyle = g; ctx.globalAlpha = 0.7;
+  ctx.fillRect(cx - r - 10, scanY - 12, (r + 10) * 2, 16);
+  ctx.restore();
+}
+function drawEffect_burst(ctx, cx, cy, r, color, now) {
+  ctx.save();
+  for (let i = 0; i < 12; i++) {
+    const baseAngle = (i / 12) * Math.PI * 2;
+    const phase     = (now * 1.8 + i * 0.5) % 1;
+    const dist      = r + 10 + phase * 36;
+    const alpha     = (1 - phase) * 0.85;
+    const sz        = 3 - phase * 2;
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle   = color; ctx.shadowColor = color; ctx.shadowBlur = 8;
+    ctx.beginPath();
+    ctx.arc(cx + Math.cos(baseAngle) * dist, cy + Math.sin(baseAngle) * dist, sz, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+const EFFECT_FNS = { neon: drawEffect_neon, matrix: drawEffect_matrix, dna: drawEffect_dna, beam: drawEffect_beam, holo: drawEffect_holo, burst: drawEffect_burst };
+
+let _nodeDensity  = 1;  // 1=멤버만 2=+태스크 3=+스킬/에이전트 4=모두
+let _distDebounce = null;
 
 function updateDist(key, input) {
   TEAM_CFG[key] = parseInt(input.value);
   const valMap = { MEMBER_R: 'v-member-r', TASK_R: 'v-task-r', TOOL_R: 'v-tool-r' };
   document.getElementById(valMap[key]).textContent = input.value;
+  // 실시간 적용 (250ms 디바운스)
+  clearTimeout(_distDebounce);
+  _distDebounce = setTimeout(applyTeamCfg, 250);
 }
+
+function updateNodeLevel(input) {
+  _nodeDensity = parseInt(input.value);
+  const labels = ['멤버만', '멤버 + 태스크', '+ 스킬 / 에이전트', '모두 표시'];
+  const hints  = [
+    '팀원 + 목표만 표시',
+    '태스크(작업) 추가 표시',
+    '스킬 · 에이전트까지 표시',
+    '툴 포함 모든 노드 표시',
+  ];
+  document.getElementById('v-node-level').textContent   = labels[_nodeDensity - 1];
+  document.getElementById('node-level-hint').textContent = hints[_nodeDensity - 1];
+}
+
 function applyTeamCfg() {
-  if (_teamMode) buildTeamSystem(TEAM_DEMO);
+  if (_companyMode && _activeSimData) buildCompanySystem(_activeSimData);
+  else if (_teamMode && _activeSimData) buildTeamSystem(_activeSimData);
 }
 function toggleDistPanel() {
   document.getElementById('dist-panel').classList.toggle('open');
+  document.getElementById('effects-panel').classList.remove('open');
 }
 function closeDistPanel() {
   document.getElementById('dist-panel').classList.remove('open');
 }
+
+// ── 마켓 이펙트 패널 ─────────────────────────────────────────────────────────
+let _selectedEffectId = null;
+
+// 미니 프리뷰 캔버스 애니메이션 루프
+let _previewRAF = null;
+const _previewCtxMap = {};  // effectId → CanvasRenderingContext2D
+
+function tickPreviewCanvases() {
+  const now = performance.now() * 0.001;
+  for (const [id, ctx] of Object.entries(_previewCtxMap)) {
+    const fn = EFFECT_FNS[id];
+    if (!fn) continue;
+    const ef = MARKET_EFFECTS.find(e => e.id === id);
+    ctx.clearRect(0, 0, 64, 64);
+    ctx.fillStyle = '#0d1117';
+    ctx.fillRect(0, 0, 64, 64);
+    fn(ctx, 32, 32, 16, ef?.color || '#58a6ff', now);
+  }
+  _previewRAF = requestAnimationFrame(tickPreviewCanvases);
+}
+
+function initEffectsPanel() {
+  const grid = document.getElementById('effects-grid');
+  if (!grid) return;
+
+  // 기존 프리뷰 루프 정리
+  if (_previewRAF) { cancelAnimationFrame(_previewRAF); _previewRAF = null; }
+  for (const k of Object.keys(_previewCtxMap)) delete _previewCtxMap[k];
+
+  grid.innerHTML = MARKET_EFFECTS.map(e => `
+    <div class="effect-card" id="ec-${e.id}" style="--ec:${e.color}" onclick="selectEffect('${e.id}')">
+      <canvas id="ecv-${e.id}" width="64" height="64"></canvas>
+      <div class="ec-name">${e.icon} ${e.name}</div>
+      <div class="ec-desc">${e.desc}</div>
+    </div>`).join('');
+
+  // 각 카드에 캔버스 컨텍스트 등록
+  MARKET_EFFECTS.forEach(e => {
+    const cvs = document.getElementById('ecv-' + e.id);
+    if (cvs) _previewCtxMap[e.id] = cvs.getContext('2d');
+  });
+
+  // 프리뷰 루프 시작
+  tickPreviewCanvases();
+}
+
+function selectEffect(id) {
+  _selectedEffectId = id;
+  document.querySelectorAll('.effect-card').forEach(el => el.classList.remove('selected'));
+  document.getElementById('ec-' + id)?.classList.add('selected');
+}
+
+function applySelectedEffect() {
+  if (!_selectedEffectId) return;
+  const node = _selectedHit?.data || _currentPanelData;
+  if (!node) { alert('먼저 노드를 클릭하세요'); return; }
+  _nodeEffects[node.label] = _selectedEffectId;
+}
+
+function clearNodeEffect() {
+  const node = _selectedHit?.data || _currentPanelData;
+  if (!node) return;
+  delete _nodeEffects[node.label];
+}
+
+function toggleEffectsPanel() {
+  const panel = document.getElementById('effects-panel');
+  panel.classList.toggle('open');
+  document.getElementById('dist-panel').classList.remove('open');
+  if (panel.classList.contains('open')) {
+    initEffectsPanel();
+    // 현재 선택된 노드 표시 업데이트는 updateEffectsPanelNode에서
+    updateEffectsPanelNode();
+  }
+}
+
+function closeEffectsPanel() {
+  document.getElementById('effects-panel').classList.remove('open');
+}
+
+function updateEffectsPanelNode() {
+  const el = document.getElementById('effects-selected-node');
+  if (!el) return;
+  const node = _selectedHit?.data || _currentPanelData;
+  el.textContent = node ? `선택: ${node.label}` : '(노드 미선택)';
+}
+
 window.updateDist = updateDist;
 window.applyTeamCfg = applyTeamCfg;
 window.toggleDistPanel = toggleDistPanel;
 window.closeDistPanel = closeDistPanel;
+window.toggleEffectsPanel = toggleEffectsPanel;
+window.closeEffectsPanel = closeEffectsPanel;
+window.selectEffect = selectEffect;
+window.applySelectedEffect = applySelectedEffect;
+window.clearNodeEffect = clearNodeEffect;
 
 const STATUS_CFG = {
   done:    { emoji: '✅', color: '#3fb950' },
@@ -1275,77 +2349,338 @@ const TEAM_DEMO = {
   members: [
     {
       id: 'm0', name: '김민준', role: '백엔드 개발', color: '#3fb950',
+      collab: ['m1', 'm2'],   // 협업 관계
       tools: ['VS Code', 'Docker', 'PostgreSQL'],
       tasks: [
-        { name: '🔐 인증 시스템', status: 'active', progress: 0.75,
+        { name: '🔐 인증 시스템', status: 'active', progress: 0.75, dueDate: '03-18', blocker: false,
           subtasks: ['JWT 토큰 구현', 'OAuth Google/GitHub', 'bcrypt 해시 적용', '세션 관리 미들웨어'],
           completedSubtasks: 3 },
-        { name: '🌐 API 서버 구축', status: 'done', progress: 1.0,
+        { name: '🌐 API 서버 구축', status: 'done', progress: 1.0, dueDate: '02-28', blocker: false,
           subtasks: ['Express 라우터 설계', 'WebSocket 연동', 'Rate Limiter 적용'],
           completedSubtasks: 3 },
-        { name: '🗄️ DB 스키마', status: 'done', progress: 1.0,
-          subtasks: ['nodes 테이블', 'edges 테이블', 'events append-only'],
-          completedSubtasks: 3 },
+        { name: '🚀 MVP 런칭 준비', status: 'active', progress: 0.4, dueDate: '03-10', blocker: true,
+          subtasks: ['스테이징 환경 구축', '성능 테스트', '버그 수정'],
+          completedSubtasks: 1, collab: true },
       ],
     },
     {
       id: 'm1', name: '이서연', role: '프론트엔드', color: '#58a6ff',
+      collab: ['m0', 'm4'],   // 협업 관계
       tools: ['Cursor', 'React', 'Figma'],
       tasks: [
-        { name: '🪐 3D 뷰 개발', status: 'active', progress: 0.6,
+        { name: '🪐 3D 뷰 개발', status: 'active', progress: 0.6, dueDate: '03-20', blocker: false,
           subtasks: ['Three.js 렌더러', 'Canvas2D 오버레이', 'LOD 시스템', '팀 시뮬레이션'],
           completedSubtasks: 2 },
-        { name: '🎨 UI 컴포넌트', status: 'done', progress: 1.0,
+        { name: '🎨 UI 컴포넌트', status: 'done', progress: 1.0, dueDate: '02-25', blocker: false,
           subtasks: ['디자인 시스템 정의', '공통 버튼/폼', '다크모드'],
           completedSubtasks: 3 },
-        { name: '📱 반응형 레이아웃', status: 'blocked', progress: 0.3,
-          subtasks: ['모바일 뷰포트', '태블릿 레이아웃', '터치 인터랙션'],
-          completedSubtasks: 1 },
+        { name: '🚀 MVP 런칭 준비', status: 'active', progress: 0.55, dueDate: '03-10', blocker: false,
+          subtasks: ['랜딩페이지 완성', '온보딩 플로우', 'A/B 테스트'],
+          completedSubtasks: 2, collab: true },
       ],
     },
     {
       id: 'm2', name: '박지훈', role: 'AI 엔지니어', color: '#bc8cff',
+      collab: ['m0', 'm3'],   // 협업 관계
       tools: ['Claude Code', 'Ollama', 'Python'],
       tasks: [
-        { name: '⚡ signal-engine', status: 'done', progress: 1.0,
+        { name: '⚡ signal-engine', status: 'done', progress: 1.0, dueDate: '02-28', blocker: false,
           subtasks: ['6차원 벡터 설계', '상태 분류기 로직', 'API /api/signal 엔드포인트'],
           completedSubtasks: 3 },
-        { name: '🤖 커스텀 모델 학습', status: 'active', progress: 0.45,
+        { name: '🤖 커스텀 모델 학습', status: 'active', progress: 0.45, dueDate: '03-25', blocker: true,
           subtasks: ['데이터셋 전처리', 'Fine-tuning 실행', '평가 지표 설계', 'Ollama 배포'],
           completedSubtasks: 1 },
-        { name: '📈 성장 엔진 최적화', status: 'pending', progress: 0.0,
-          subtasks: ['피드백 루프 설계', '스트릭 시스템', '레벨업 알고리즘'],
-          completedSubtasks: 0 },
+        { name: '🔐 인증 시스템', status: 'pending', progress: 0.1, dueDate: '03-10', blocker: false,
+          subtasks: ['AI 사용자 행동 분석', '이상 탐지 모델'],
+          completedSubtasks: 0, collab: true },
       ],
     },
     {
       id: 'm3', name: '최유나', role: 'DevOps', color: '#f0883e',
+      collab: ['m2', 'm4'],   // 협업 관계
       tools: ['Windsurf', 'Railway', 'GitHub Actions'],
       tasks: [
-        { name: '🚂 Railway 배포', status: 'active', progress: 0.5,
+        { name: '🚂 Railway 배포', status: 'active', progress: 0.5, dueDate: '03-08', blocker: true,
           subtasks: ['환경변수 .env 설정', 'PostgreSQL 연결', '커스텀 도메인', '헬스체크 모니터링'],
           completedSubtasks: 2 },
-        { name: '⚙️ CI/CD 파이프라인', status: 'done', progress: 1.0,
+        { name: '⚙️ CI/CD 파이프라인', status: 'done', progress: 1.0, dueDate: '02-20', blocker: false,
           subtasks: ['GitHub Actions 워크플로우', '자동 테스트 실행', '자동 배포 트리거'],
           completedSubtasks: 3 },
-        { name: '🐘 PostgreSQL 전환', status: 'blocked', progress: 0.2,
-          subtasks: ['SQLite → PG 마이그레이션', '데이터 무결성 검증', '롤백 플랜'],
-          completedSubtasks: 0 },
+        { name: '🚀 MVP 런칭 준비', status: 'active', progress: 0.7, dueDate: '03-10', blocker: false,
+          subtasks: ['프로덕션 배포', '모니터링 설정', 'On-call 플랜'],
+          completedSubtasks: 2, collab: true },
       ],
     },
     {
       id: 'm4', name: '장현우', role: '기획/PM', color: '#f85149',
+      collab: ['m1', 'm3'],   // 협업 관계
       tools: ['Notion', 'n8n', 'ChatGPT'],
       tasks: [
-        { name: '🏢 기업별 특화 기획', status: 'active', progress: 0.65,
+        { name: '🏢 기업별 특화 기획', status: 'active', progress: 0.65, dueDate: '03-22', blocker: false,
           subtasks: ['생산업 버전 설계', '금융업 버전 설계', '엔터프라이즈 로드맵', '고객 인터뷰'],
           completedSubtasks: 2 },
-        { name: '🛒 솔루션 마켓 정책', status: 'done', progress: 1.0,
+        { name: '🛒 솔루션 마켓 정책', status: 'done', progress: 1.0, dueDate: '02-22', blocker: false,
           subtasks: ['수익 쉐어 모델 70/30', '판매자 온보딩 정책', '리뷰 시스템 설계'],
           completedSubtasks: 3 },
-        { name: '🧠 팔란티어 모델 설계', status: 'pending', progress: 0.1,
-          subtasks: ['조직 두뇌 외부화', '가이드라인 생성 엔진', '데이터 파이프라인'],
-          completedSubtasks: 0 },
+        { name: '🚀 MVP 런칭 준비', status: 'active', progress: 0.8, dueDate: '03-10', blocker: false,
+          subtasks: ['고객 인터뷰 5건', 'GTM 전략 확정', '프레스킷 작성'],
+          completedSubtasks: 3, collab: true },
+      ],
+      skills: [{ alias: '회의요약', type: 'skill', config: { trigger: '/meeting', model: 'claude-sonnet-4-6' } }],
+      agents: [{ alias: '기획도우미', type: 'agent', config: { model: 'claude-sonnet-4-6', task: '제품 기획 및 요구사항 정리', autoRun: false } }],
+    },
+  ],
+};
+
+// TEAM_DEMO 각 멤버에 skills/agents 보강
+TEAM_DEMO.members[0].skills = [{ alias: 'SQL최적화', type: 'skill', config: { trigger: '/sql', model: 'claude-haiku-4-5' } }];
+TEAM_DEMO.members[0].agents = [{ alias: '코드리뷰어', type: 'agent', config: { model: 'claude-sonnet-4-6', task: 'PR 코드 자동 리뷰 및 버그 감지', autoRun: true } }];
+TEAM_DEMO.members[1].skills = [{ alias: 'CSS마법사', type: 'skill', config: { trigger: '/style', model: 'claude-haiku-4-5' } }];
+TEAM_DEMO.members[1].agents = [{ alias: 'UI피드백봇', type: 'agent', config: { model: 'claude-haiku-4-5', task: 'UI/UX 접근성 & 반응형 자동 점검', autoRun: false } }];
+TEAM_DEMO.members[2].skills = [{ alias: '데이터분석', type: 'skill', config: { trigger: '/analyze', model: 'claude-opus-4-6' } }];
+TEAM_DEMO.members[2].agents = [{ alias: '학습자동화', type: 'agent', config: { model: 'claude-opus-4-6', task: 'Ollama 모델 파인튜닝 파이프라인 실행', autoRun: true } }];
+TEAM_DEMO.members[3].skills = [{ alias: '배포체크', type: 'skill', config: { trigger: '/deploy', model: 'claude-haiku-4-5' } }];
+TEAM_DEMO.members[3].agents = [{ alias: 'CI모니터', type: 'agent', config: { model: 'claude-haiku-4-5', task: 'GitHub Actions 실패 감지 및 Slack 알림', autoRun: true } }];
+
+// ── 회사 시뮬 데이터 (중소/중견기업) ─────────────────────────────────────────
+const COMPANY_DEMO = {
+  name: '(주)한국중견 코퍼레이션',
+  goal: '📈 2026년 매출 20% 성장',
+  goalColor: '#ffd700',
+  universe: { name: '🌏 대한민국 기업 생태계', desc: '중견기업 1,200개사 · 임직원 85만명 · GDP 15% 기여' },
+  company:  { name: '🏢 (주)한국중견 코퍼레이션', desc: '8개 팀 · 47명 · 창립 15년 종합 제조·서비스 기업' },
+  departments: [
+    {
+      id: 'd0', name: '경영진', icon: '👔', color: '#ffd700',
+      members: [
+        { id: 'c00', name: '이철수', role: 'CEO', color: '#ffd700',
+          tools: ['Word', 'PowerPoint', 'Excel'],
+          tasks: [
+            { name: '📊 분기 이사회 보고서', status: 'active', progress: 0.7,
+              subtasks: ['재무현황 취합', 'KPI 달성률 분석', '차기 전략 초안 작성', '경영진 사전 검토'],
+              completedSubtasks: 2 },
+            { name: '📋 임원 주간회의', status: 'done', progress: 1.0,
+              subtasks: ['안건 준비', '회의록 작성'], completedSubtasks: 2 },
+          ],
+          skills: [{ alias: '보고서요약', type: 'skill', config: { trigger: '/summarize', model: 'claude-opus-4-6' } }],
+          agents: [{ alias: 'KPI모니터', type: 'agent', config: { model: 'claude-sonnet-4-6', task: '월간 KPI 자동 집계 및 경영진 이메일 발송', autoRun: true } }],
+        },
+        { id: 'c01', name: '박재무', role: 'CFO', color: '#e6b800',
+          tools: ['Excel', 'SAP ERP', 'Word'],
+          tasks: [
+            { name: '💰 월간 재무제표 작성', status: 'active', progress: 0.85,
+              subtasks: ['손익계산서', '대차대조표', '현금흐름표', '감사법인 제출'],
+              completedSubtasks: 3 },
+            { name: '📑 세금계산서 처리', status: 'done', progress: 1.0,
+              subtasks: ['매출 세금계산서', '매입 세금계산서', '부가세 신고'], completedSubtasks: 3 },
+          ],
+          skills: [{ alias: '재무분석', type: 'skill', config: { trigger: '/finance', model: 'claude-sonnet-4-6' } }],
+          agents: [],
+        },
+      ],
+    },
+    {
+      id: 'd1', name: '기획/PM팀', icon: '📐', color: '#58a6ff',
+      members: [
+        { id: 'c10', name: '김기획', role: 'PM팀장', color: '#58a6ff',
+          collab: ['c20', 'c40'],  // 마케팅팀장·디자인팀장과 크로스-부서 협업
+          tools: ['Notion', 'Figma', 'Excel'],
+          tasks: [
+            { name: '📋 신제품 로드맵 수립', status: 'active', progress: 0.6,
+              subtasks: ['시장조사 분석', '경쟁사 벤치마킹', '개발일정 조율', '경영진 승인'],
+              completedSubtasks: 2 },
+            { name: '📄 기능 요구사항 문서', status: 'active', progress: 0.75,
+              subtasks: ['사용자 스토리 작성', 'Figma 와이어프레임', '개발팀 리뷰'], completedSubtasks: 2 },
+          ],
+          skills: [{ alias: '요구사항정리', type: 'skill', config: { trigger: '/prd', model: 'claude-sonnet-4-6' } }],
+          agents: [{ alias: '일정봇', type: 'agent', config: { model: 'claude-haiku-4-5', task: '프로젝트 일정 자동 리마인더 및 지연 감지', autoRun: true } }],
+        },
+        { id: 'c11', name: '정어시', role: 'PA', color: '#4d9fd6',
+          tools: ['Word', 'Excel', 'Google Meet'],
+          tasks: [
+            { name: '📝 회의록 작성', status: 'done', progress: 1.0,
+              subtasks: ['회의 녹취 요약', '액션 아이템 정리', '팀 배포'], completedSubtasks: 3 },
+            { name: '📊 업무현황 보고서', status: 'active', progress: 0.5,
+              subtasks: ['팀별 현황 취합', 'Excel 정리', '주간 리포트 발송'], completedSubtasks: 1 },
+          ],
+          skills: [],
+          agents: [{ alias: '회의록봇', type: 'agent', config: { model: 'claude-haiku-4-5', task: '회의 녹취 자동 요약 및 액션 아이템 추출', autoRun: false } }],
+        },
+      ],
+    },
+    {
+      id: 'd2', name: '마케팅팀', icon: '📣', color: '#bc8cff',
+      members: [
+        { id: 'c20', name: '이마케터', role: '마케팅팀장', color: '#bc8cff',
+          collab: ['c10', 'c30'],  // 기획팀장·영업팀장과 크로스-부서 협업
+          tools: ['Canva', 'Meta Ads', 'Google Analytics'],
+          tasks: [
+            { name: '📱 SNS 카드뉴스 제작', status: 'active', progress: 0.8,
+              subtasks: ['콘텐츠 기획', 'Canva 디자인', '카피라이팅', '스케줄 예약'],
+              completedSubtasks: 3 },
+            { name: '📈 Meta 광고 캠페인', status: 'active', progress: 0.55,
+              subtasks: ['타겟 오디언스 설정', '소재 A/B 테스트', '예산 최적화'], completedSubtasks: 1 },
+          ],
+          skills: [{ alias: '카피라이터', type: 'skill', config: { trigger: '/copy', model: 'claude-sonnet-4-6' } }],
+          agents: [{ alias: '광고최적화봇', type: 'agent', config: { model: 'claude-sonnet-4-6', task: 'Meta Ads ROAS 분석 및 예산 재배분 제안', autoRun: true } }],
+        },
+        { id: 'c21', name: '최콘텐츠', role: '콘텐츠 크리에이터', color: '#9d6fe8',
+          tools: ['Premiere Pro', 'Photoshop', 'CapCut'],
+          tasks: [
+            { name: '🎬 유튜브 홍보영상 편집', status: 'active', progress: 0.65,
+              subtasks: ['Premiere Pro 컷편집', '자막 삽입', '색보정', '유튜브 업로드'],
+              completedSubtasks: 2 },
+            { name: '🖼️ 제품 썸네일 디자인', status: 'done', progress: 1.0,
+              subtasks: ['Photoshop 작업', 'A/B 테스트 2종', 'SNS 포맷 최적화'], completedSubtasks: 3 },
+          ],
+          skills: [],
+          agents: [{ alias: '영상분석봇', type: 'agent', config: { model: 'claude-haiku-4-5', task: '유튜브 조회수 패턴 분석 및 최적 업로드 시간 추천', autoRun: false } }],
+        },
+      ],
+    },
+    {
+      id: 'd3', name: '영업팀', icon: '💼', color: '#f0883e',
+      members: [
+        { id: 'c30', name: '한영업', role: '영업팀장', color: '#f0883e',
+          collab: ['c20'],  // 마케팅팀장과 크로스-부서 협업
+          tools: ['Excel', 'CRM', 'Zoom'],
+          tasks: [
+            { name: '📊 고객 파이프라인 관리', status: 'active', progress: 0.7,
+              subtasks: ['CRM 데이터 업데이트', '리드 스코어링', '우선순위 정렬', '팀 배분'],
+              completedSubtasks: 2 },
+            { name: '🤝 B2B 영업 제안', status: 'active', progress: 0.4,
+              subtasks: ['고객사 니즈 파악', 'Word 제안서 작성', '가격 협상 준비'], completedSubtasks: 1 },
+          ],
+          skills: [{ alias: '제안서작성', type: 'skill', config: { trigger: '/proposal', model: 'claude-sonnet-4-6' } }],
+          agents: [{ alias: 'CRM봇', type: 'agent', config: { model: 'claude-haiku-4-5', task: '영업 파이프라인 이상 감지 및 팔로업 리마인더', autoRun: true } }],
+        },
+        { id: 'c31', name: '조영업', role: '영업사원', color: '#d4733a',
+          tools: ['Word', 'Excel', 'KakaoWork'],
+          tasks: [
+            { name: '📋 월간 영업 실적 보고', status: 'done', progress: 1.0,
+              subtasks: ['Excel 실적 집계', '목표 달성률 계산', '팀장 보고'], completedSubtasks: 3 },
+            { name: '📞 고객사 미팅 준비', status: 'pending', progress: 0.2,
+              subtasks: ['미팅 자료 PPT', '샘플 준비', '방문 일정 확정'], completedSubtasks: 0 },
+          ],
+          skills: [],
+          agents: [],
+        },
+      ],
+    },
+    {
+      id: 'd4', name: '디자인팀', icon: '🎨', color: '#79c0ff',
+      members: [
+        { id: 'c40', name: '윤디자인', role: '디자인팀장', color: '#79c0ff',
+          collab: ['c10', 'c20'],  // 기획팀장·마케팅팀장과 크로스-부서 협업
+          tools: ['Figma', 'Illustrator', 'Adobe XD'],
+          tasks: [
+            { name: '🖌️ 브랜드 BI 리뉴얼', status: 'active', progress: 0.5,
+              subtasks: ['로고 시안 3종', '컬러 시스템 정의', '서체 가이드라인', '브랜드북 제작'],
+              completedSubtasks: 2 },
+            { name: '📱 앱 UI/UX 개선', status: 'blocked', progress: 0.35,
+              subtasks: ['사용자 인터뷰 분석', 'Figma 프로토타입', '개발팀 핸드오프'], completedSubtasks: 1 },
+          ],
+          skills: [{ alias: 'UI평가', type: 'skill', config: { trigger: '/ux-review', model: 'claude-sonnet-4-6' } }],
+          agents: [{ alias: '디자인피드백봇', type: 'agent', config: { model: 'claude-sonnet-4-6', task: 'Figma 프로토타입 접근성 자동 평가', autoRun: false } }],
+        },
+        { id: 'c41', name: '강포토', role: '그래픽 디자이너', color: '#5da8d8',
+          tools: ['Photoshop', 'Premiere Pro', 'After Effects'],
+          tasks: [
+            { name: '🖼️ 제품 상세페이지 이미지', status: 'active', progress: 0.9,
+              subtasks: ['Photoshop 보정', '배경 제거', '텍스트 합성', '최종 저장'], completedSubtasks: 3 },
+            { name: '🎞️ 사내 홍보영상 편집', status: 'active', progress: 0.6,
+              subtasks: ['After Effects 인트로', 'Premiere 본편집', '음악 삽입', '색보정'], completedSubtasks: 2 },
+          ],
+          skills: [],
+          agents: [{ alias: '이미지분석봇', type: 'agent', config: { model: 'claude-haiku-4-5', task: '이미지 품질 자동 검수 및 최적화 제안', autoRun: false } }],
+        },
+      ],
+    },
+    {
+      id: 'd5', name: 'IT/개발팀', icon: '💻', color: '#3fb950',
+      members: [
+        { id: 'c50', name: '박개발', role: '개발팀장', color: '#3fb950',
+          tools: ['VS Code', 'Git', 'Jira'],
+          tasks: [
+            { name: '⚙️ 사내 ERP 연동 API', status: 'active', progress: 0.55,
+              subtasks: ['SAP REST API 분석', 'Node.js 미들웨어 작성', '테스트 코드', '운영 배포'],
+              completedSubtasks: 2 },
+            { name: '🔒 보안 취약점 패치', status: 'done', progress: 1.0,
+              subtasks: ['OWASP 점검', 'SQL Injection 수정', '보안 리포트 제출'], completedSubtasks: 3 },
+          ],
+          skills: [{ alias: '코드리뷰', type: 'skill', config: { trigger: '/review', model: 'claude-sonnet-4-6' } }],
+          agents: [{ alias: '배포자동화봇', type: 'agent', config: { model: 'claude-haiku-4-5', task: 'Git push 감지 → 자동 빌드/테스트/슬랙 알림', autoRun: true } }],
+        },
+        { id: 'c51', name: '류주니어', role: '개발사원', color: '#2ea043',
+          tools: ['VS Code', 'Docker', 'Postman'],
+          tasks: [
+            { name: '🌐 관리자 웹 페이지', status: 'active', progress: 0.45,
+              subtasks: ['로그인 화면 개발', '대시보드 UI', 'API 연동', '크로스브라우저 테스트'],
+              completedSubtasks: 2 },
+            { name: '🐛 버그 수정 이슈 처리', status: 'active', progress: 0.8,
+              subtasks: ['Jira 이슈 분류', '재현 및 원인 파악', '코드 수정', 'PR 제출'], completedSubtasks: 3 },
+          ],
+          skills: [],
+          agents: [{ alias: '이슈분류봇', type: 'agent', config: { model: 'claude-haiku-4-5', task: 'Jira 이슈 자동 분류 및 담당자 배정', autoRun: false } }],
+        },
+      ],
+    },
+    {
+      id: 'd6', name: '총무/인사팀', icon: '🗂️', color: '#39d2c0',
+      members: [
+        { id: 'c60', name: '서총무', role: '총무팀장', color: '#39d2c0',
+          tools: ['Word', 'Excel', 'SAP ERP'],
+          tasks: [
+            { name: '📄 근로계약서 갱신', status: 'active', progress: 0.6,
+              subtasks: ['계약서 양식 업데이트', '법무팀 검토', '전자서명 발송', '파일 보관'],
+              completedSubtasks: 2 },
+            { name: '💳 월간 급여 정산', status: 'done', progress: 1.0,
+              subtasks: ['근태 데이터 취합', 'Excel 급여대장 작성', '세금 공제 계산', '이체 완료'],
+              completedSubtasks: 4 },
+          ],
+          skills: [{ alias: '법무검토', type: 'skill', config: { trigger: '/legal', model: 'claude-sonnet-4-6' } }],
+          agents: [],
+        },
+        { id: 'c61', name: '임인사', role: '인사담당자', color: '#2db8a8',
+          tools: ['Word', 'Excel', 'LinkedIn'],
+          tasks: [
+            { name: '👥 신규 채용 공고', status: 'active', progress: 0.7,
+              subtasks: ['채용 요건 정의', 'JD 작성', '채용 플랫폼 등록', '서류 검토'],
+              completedSubtasks: 3 },
+            { name: '📚 신입사원 교육자료', status: 'pending', progress: 0.15,
+              subtasks: ['온보딩 PPT 제작', '사내 규정 문서화', '멘토 배정'], completedSubtasks: 0 },
+          ],
+          skills: [],
+          agents: [{ alias: 'JD작성봇', type: 'agent', config: { model: 'claude-sonnet-4-6', task: '채용 공고(JD) 자동 초안 생성 및 맞춤 최적화', autoRun: false } }],
+        },
+      ],
+    },
+    {
+      id: 'd7', name: '생산/QA팀', icon: '🏭', color: '#f85149',
+      members: [
+        { id: 'c70', name: '고생산', role: '생산팀장', color: '#f85149',
+          tools: ['Excel', 'MES', 'SAP ERP'],
+          tasks: [
+            { name: '📋 주간 생산계획 수립', status: 'done', progress: 1.0,
+              subtasks: ['수주량 확인', 'MES 투입 계획', '자재 발주 확인', '라인 배치'], completedSubtasks: 4 },
+            { name: '📦 재고 현황 관리', status: 'active', progress: 0.75,
+              subtasks: ['ERP 재고 조회', '부족 자재 발주', '창고 실사', 'Excel 보고'], completedSubtasks: 2 },
+          ],
+          skills: [{ alias: '재고분석', type: 'skill', config: { trigger: '/inventory', model: 'claude-haiku-4-5' } }],
+          agents: [{ alias: '생산모니터', type: 'agent', config: { model: 'claude-haiku-4-5', task: 'MES 생산 지연 감지 및 긴급 알림 발송', autoRun: true } }],
+        },
+        { id: 'c71', name: '문QA', role: 'QA 담당자', color: '#d4403d',
+          tools: ['Excel', 'Word', 'ERP'],
+          tasks: [
+            { name: '🔍 불량품 보고서 작성', status: 'active', progress: 0.8,
+              subtasks: ['불량 원인 분석', 'Excel 데이터 정리', '8D 리포트 작성', '공정 개선안'],
+              completedSubtasks: 3 },
+            { name: '📖 품질 매뉴얼 업데이트', status: 'pending', progress: 0.0,
+              subtasks: ['ISO 9001 기준 검토', 'Word 문서 작성', '경영진 승인'], completedSubtasks: 0 },
+          ],
+          skills: [],
+          agents: [{ alias: '불량분석봇', type: 'agent', config: { model: 'claude-sonnet-4-6', task: '불량 패턴 통계 분석 및 예방 조치 제안', autoRun: false } }],
+        },
       ],
     },
   ],
@@ -1356,6 +2691,8 @@ function buildTeamSystem(teamData) {
   clearScene();
   _teamNodes = [];
   _teamMode  = true;
+  _companyMode = false;
+  _activeSimData = teamData;
 
   const { name, goal, goalColor, members } = teamData;
 
@@ -1490,6 +2827,64 @@ function buildTeamSystem(teamData) {
         label: tool, color: member.color, size: 'xs',
       });
     });
+
+    // ── 스킬 노드 ───────────────────────────────────────────────────────────
+    const SKILL_R = TOOL_R * 0.65;
+    (member.skills || []).forEach((sk, ski) => {
+      const skAngle = angle - Math.PI * 0.6 + ski * 0.8;
+      const skPos   = new THREE.Vector3(
+        mPos.x + SKILL_R * Math.cos(skAngle),
+        mPos.y - 4 - ski * 2.5,
+        mPos.z + SKILL_R * Math.sin(skAngle),
+      );
+      const skObj = new THREE.Object3D();
+      skObj.position.copy(skPos);
+      skObj.userData = { isTeamSkill: true, memberId: member.id, alias: sk.alias, skillType: sk.type, config: sk.config, color: '#d2a8ff', relAngle: skAngle, relY: -4 - ski * 2.5, relR: SKILL_R };
+      scene.add(skObj); satelliteMeshes.push(skObj);
+      _teamNodes.push({ type: 'skill', pos: skPos.clone(), obj: skObj, label: sk.alias, color: '#d2a8ff', size: 'xs', memberId: member.id, config: sk.config, skillType: sk.type });
+    });
+
+    // ── 에이전트 노드 ────────────────────────────────────────────────────────
+    const AGENT_R = TOOL_R * 0.8;
+    (member.agents || []).forEach((ag, agi) => {
+      const agAngle = angle + Math.PI * 0.6 + agi * 0.9;
+      const agPos   = new THREE.Vector3(
+        mPos.x + AGENT_R * Math.cos(agAngle),
+        mPos.y - 5 - agi * 2.8,
+        mPos.z + AGENT_R * Math.sin(agAngle),
+      );
+      const agObj = new THREE.Object3D();
+      agObj.position.copy(agPos);
+      agObj.userData = { isTeamAgent: true, memberId: member.id, alias: ag.alias, agentType: ag.type, config: ag.config, color: '#39d2c0', relAngle: agAngle, relY: -5 - agi * 2.8, relR: AGENT_R };
+      scene.add(agObj); satelliteMeshes.push(agObj);
+      _teamNodes.push({ type: 'agent', pos: agPos.clone(), obj: agObj, label: ag.alias, color: '#39d2c0', size: 'xs', memberId: member.id, config: ag.config, agentType: ag.type, autoRun: ag.config?.autoRun });
+    });
+  });
+
+  // ── 협업 라인 생성 ─────────────────────────────────────────────────────────
+  // collab 필드에 명시된 멤버 쌍 사이에 애니메이션 선 그리기 (중복 방지)
+  _collabLines.forEach(l => { scene.remove(l.line); });
+  _collabLines = [];
+  const drawnPairs = new Set();
+
+  members.forEach((member, mi) => {
+    const mNode = _teamNodes.find(n => n.type === 'member' && n.memberId === member.id);
+    if (!mNode) return;
+    (member.collab || []).forEach(targetId => {
+      const pairKey = [member.id, targetId].sort().join('-');
+      if (drawnPairs.has(pairKey)) return;
+      drawnPairs.add(pairKey);
+
+      const targetNode = _teamNodes.find(n => n.type === 'member' && n.memberId === targetId);
+      if (!targetNode) return;
+
+      // 협업 라인 (청록색, 반짝임 애니메이션)
+      const lg = new THREE.BufferGeometry().setFromPoints([mNode.pos.clone(), targetNode.pos.clone()]);
+      const lm = new THREE.LineBasicMaterial({ color: 0x39d2c0, transparent: true, opacity: 0.55 });
+      const ln = new THREE.Line(lg, lm);
+      scene.add(ln);
+      _collabLines.push({ line: ln, mat: lm, phase: Math.random() * Math.PI * 2, fromNode: mNode, toNode: targetNode });
+    });
   });
 
   // HUD 업데이트
@@ -1497,18 +2892,286 @@ function buildTeamSystem(teamData) {
   document.getElementById('h-tasks').textContent    = members.reduce((s, m) => s + m.tasks.length, 0);
   document.getElementById('h-hours').textContent    = '팀';
   document.getElementById('team-mode-badge').style.display = 'flex';
+
+  // 뷰 자동 맞춤
+  autoFitView(_teamNodes);
+
+  // 사이드바 업데이트
+  updateMyTaskSidebar();
 }
 
-function loadTeamDemo() { buildTeamSystem(TEAM_DEMO); }
+// ── buildCompanySystem ───────────────────────────────────────────────────────
+function buildCompanySystem(companyData) {
+  clearScene();
+  _teamNodes = [];
+  _teamMode  = true;
+  _companyMode = true;
+  _activeSimData = companyData;
+
+  const { name, goal, goalColor, departments } = companyData;
+  const DEPT_R   = 72;
+  const MBR_R    = 20;
+  const CTASK_R  = 9;
+  const SKILL_R  = 5;
+  const AGENT_R  = 6;
+
+  // 코어 (회사 목표)
+  const coreMat = new THREE.MeshPhongMaterial({ color: 0xffd700, emissive: 0x7a5800, shininess: 200 });
+  const core    = new THREE.Mesh(new THREE.SphereGeometry(4, 32, 32), coreMat);
+  core.userData.isCore = true; scene.add(core);
+  scene.add(new THREE.Mesh(new THREE.SphereGeometry(8, 32, 32), new THREE.MeshBasicMaterial({ color: 0xffd700, transparent: true, opacity: 0.06, side: THREE.BackSide })));
+
+  _teamNodes.push({ type: 'goal', pos: new THREE.Vector3(0, 0, 0), label: goal, sublabel: name, color: goalColor || '#ffd700', size: 'xl' });
+
+  // 부서 궤도 링
+  { const r = new THREE.Mesh(new THREE.RingGeometry(DEPT_R - 0.15, DEPT_R + 0.15, 128), new THREE.MeshBasicMaterial({ color: 0xffd700, transparent: true, opacity: 0.04, side: THREE.DoubleSide })); r.rotation.x = Math.PI / 2; orbitRings.push(r); scene.add(r); }
+
+  departments.forEach((dept, di) => {
+    const dAngle = (di / departments.length) * Math.PI * 2 - Math.PI / 2;
+    const dy     = (di % 2 === 0 ? 1 : -1) * 4;
+    const dPos   = new THREE.Vector3(DEPT_R * Math.cos(dAngle), dy, DEPT_R * Math.sin(dAngle));
+
+    // 부서 Object3D
+    const dObj = new THREE.Object3D();
+    dObj.position.copy(dPos);
+    dObj.userData = { isDept: true, deptId: dept.id, deptName: dept.name, color: dept.color, icon: dept.icon, orbitR: DEPT_R, orbitAngle: dAngle, orbitSpeed: 0.010 + di * 0.002, orbitCenter: new THREE.Vector3(0,0,0) };
+    scene.add(dObj); planetMeshes.push(dObj);
+
+    _teamNodes.push({ type: 'department', pos: dPos.clone(), obj: dObj, label: `${dept.icon} ${dept.name}`, sublabel: `${dept.members.length}명`, color: dept.color, size: 'lg', deptId: dept.id, deptData: dept });
+
+    // 중심→부서 연결선
+    { const lg = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), dPos.clone()]); const lm = new THREE.LineBasicMaterial({ color: new THREE.Color(dept.color), transparent: true, opacity: 0.35 }); connections.push(new THREE.Line(lg, lm)); scene.add(connections[connections.length-1]); }
+
+    // 부서 궤도 링 (팀원)
+    { const r = new THREE.Mesh(new THREE.RingGeometry(MBR_R - 0.06, MBR_R + 0.06, 64), new THREE.MeshBasicMaterial({ color: new THREE.Color(dept.color), transparent: true, opacity: 0.08, side: THREE.DoubleSide })); r.position.copy(dPos); r.rotation.x = Math.PI / 2; orbitRings.push(r); scene.add(r); }
+
+    dept.members.forEach((member, mi) => {
+      const mAng = (mi / dept.members.length) * Math.PI * 2 + (di * 1.1);
+      const my   = (mi % 2 === 0 ? 1 : -1) * 1.2;
+      const mPos = new THREE.Vector3(dPos.x + MBR_R * Math.cos(mAng), dPos.y + my, dPos.z + MBR_R * Math.sin(mAng));
+
+      const mObj = new THREE.Object3D();
+      mObj.position.copy(mPos);
+      mObj.userData = { isTeamMember: true, isDeptMember: true, memberId: member.id, deptId: dept.id, name: member.name, role: member.role, color: member.color, orbitR: MBR_R, orbitAngle: mAng, orbitSpeed: 0.022 + mi * 0.005, orbitCenter: dPos.clone() };
+      scene.add(mObj); satelliteMeshes.push(mObj);
+
+      _teamNodes.push({ type: 'member', pos: mPos.clone(), obj: mObj, label: member.name, sublabel: member.role, color: member.color, size: 'md', memberId: member.id, deptId: dept.id });
+
+      // 부서→팀원 연결선
+      { const lg = new THREE.BufferGeometry().setFromPoints([dPos.clone(), mPos.clone()]); const lm = new THREE.LineBasicMaterial({ color: new THREE.Color(member.color), transparent: true, opacity: 0.3 }); connections.push(new THREE.Line(lg, lm)); scene.add(connections[connections.length-1]); }
+
+      // 작업 위성
+      member.tasks.forEach((task, ti) => {
+        const tAng = (ti / member.tasks.length) * Math.PI * 2 + (mi * 1.3 + di * 0.8);
+        const tPos = new THREE.Vector3(mPos.x + CTASK_R * Math.cos(tAng), mPos.y + CTASK_R * 0.3 * Math.sin(tAng + 0.8), mPos.z + CTASK_R * Math.sin(tAng));
+        const tObj = new THREE.Object3D(); tObj.position.copy(tPos);
+        tObj.userData = { isTeamTask: true, memberId: member.id, deptId: dept.id, taskName: task.name, taskStatus: task.status, taskProgress: task.progress, color: STATUS_CFG[task.status]?.color || '#6e7681', orbitR: CTASK_R, orbitAngle: tAng, orbitSpeed: 0.05 + ti * 0.01, orbitCenter: mPos.clone() };
+        scene.add(tObj); satelliteMeshes.push(tObj);
+        const sc = STATUS_CFG[task.status] || STATUS_CFG.pending;
+        _teamNodes.push({ type: 'task', pos: tPos.clone(), obj: tObj, label: task.name, emoji: sc.emoji, color: sc.color, progress: task.progress, size: 'xs', memberId: member.id, deptId: dept.id, taskStatus: task.status });
+        { const lg = new THREE.BufferGeometry().setFromPoints([mPos.clone(), tPos.clone()]); const lm = new THREE.LineBasicMaterial({ color: new THREE.Color(member.color), transparent: true, opacity: 0.14 }); connections.push(new THREE.Line(lg, lm)); scene.add(connections[connections.length-1]); }
+      });
+
+      // 스킬 위성
+      (member.skills || []).forEach((sk, ski) => {
+        const skAng = mAng - 0.6 + ski * 0.7;
+        const skPos = new THREE.Vector3(mPos.x + SKILL_R * Math.cos(skAng), mPos.y - 2.5 - ski * 2, mPos.z + SKILL_R * Math.sin(skAng));
+        const skObj = new THREE.Object3D(); skObj.position.copy(skPos);
+        skObj.userData = { isTeamSkill: true, memberId: member.id, alias: sk.alias, config: sk.config, color: '#d2a8ff', relAngle: skAng, relY: -2.5 - ski * 2, relR: SKILL_R };
+        scene.add(skObj); satelliteMeshes.push(skObj);
+        _teamNodes.push({ type: 'skill', pos: skPos.clone(), obj: skObj, label: sk.alias, color: '#d2a8ff', size: 'xs', memberId: member.id, config: sk.config });
+      });
+
+      // 에이전트 위성
+      (member.agents || []).forEach((ag, agi) => {
+        const agAng = mAng + 0.6 + agi * 0.7;
+        const agPos = new THREE.Vector3(mPos.x + AGENT_R * Math.cos(agAng), mPos.y - 3 - agi * 2.2, mPos.z + AGENT_R * Math.sin(agAng));
+        const agObj = new THREE.Object3D(); agObj.position.copy(agPos);
+        agObj.userData = { isTeamAgent: true, memberId: member.id, alias: ag.alias, config: ag.config, color: '#39d2c0', relAngle: agAng, relY: -3 - agi * 2.2, relR: AGENT_R };
+        scene.add(agObj); satelliteMeshes.push(agObj);
+        _teamNodes.push({ type: 'agent', pos: agPos.clone(), obj: agObj, label: ag.alias, color: '#39d2c0', size: 'xs', memberId: member.id, config: ag.config, autoRun: ag.config?.autoRun });
+      });
+    });
+  });
+
+  // ── 크로스-부서 협업 라인 (불타오르는 이펙트) ───────────────────────────────
+  _collabLines.forEach(l => { scene.remove(l.line); if(l.outerLine) scene.remove(l.outerLine); });
+  _collabLines = [];
+  const crossDrawn = new Set();
+  departments.forEach(dept => {
+    (dept.members || []).forEach(member => {
+      const mNode = _teamNodes.find(n => n.type === 'member' && n.memberId === member.id);
+      if (!mNode) return;
+      (member.collab || []).forEach(targetId => {
+        const pairKey = [member.id, targetId].sort().join('-');
+        if (crossDrawn.has(pairKey)) return;
+        crossDrawn.add(pairKey);
+        const targetNode = _teamNodes.find(n => n.type === 'member' && n.memberId === targetId);
+        if (!targetNode) return;
+        const isCrossDept = mNode.deptId !== targetNode.deptId;
+
+        // 외곽 글로우 (굵음, 낮은 투명도, 덧셈 블렌딩)
+        const outerGeo = new THREE.BufferGeometry().setFromPoints([mNode.pos.clone(), targetNode.pos.clone()]);
+        const outerMat = new THREE.LineBasicMaterial({
+          color: isCrossDept ? 0xff6e00 : 0x39d2c0,
+          transparent: true, opacity: isCrossDept ? 0.35 : 0.25,
+          blending: isCrossDept ? THREE.AdditiveBlending : THREE.NormalBlending,
+        });
+        const outerLine = new THREE.Line(outerGeo, outerMat);
+        scene.add(outerLine);
+
+        // 내부 코어 라인
+        const lg = new THREE.BufferGeometry().setFromPoints([mNode.pos.clone(), targetNode.pos.clone()]);
+        const lm = new THREE.LineBasicMaterial({
+          color: isCrossDept ? 0xffcc44 : 0x39d2c0,
+          transparent: true, opacity: isCrossDept ? 0.75 : 0.55,
+          blending: isCrossDept ? THREE.AdditiveBlending : THREE.NormalBlending,
+        });
+        const ln = new THREE.Line(lg, lm);
+        scene.add(ln);
+        _collabLines.push({
+          line: ln, mat: lm, outerLine, outerMat,
+          phase: Math.random() * Math.PI * 2,
+          fromNode: mNode, toNode: targetNode, crossDept: isCrossDept,
+        });
+      });
+    });
+  });
+
+  const totalMembers = departments.reduce((s, d) => s + d.members.length, 0);
+  const totalTasks   = departments.reduce((s, d) => s + d.members.reduce((ss, m) => ss + m.tasks.length, 0), 0);
+  document.getElementById('h-sessions').textContent = departments.length;
+  document.getElementById('h-tasks').textContent    = totalTasks;
+  document.getElementById('h-hours').textContent    = '회사';
+  document.getElementById('team-mode-badge').style.display = 'flex';
+  document.querySelector('.tm-label').textContent = '🏢 회사 시뮬레이션';
+
+  // 뷰 자동 맞춤 + 사이드바
+  autoFitView(_teamNodes);
+  updateMyTaskSidebar();
+}
+
+function loadTeamDemo() {
+  buildTeamSystem(TEAM_DEMO);
+  updateBreadcrumb('team');
+  seedDemoTalentBoard('team');
+  setTimeout(checkHelperSuggestions, 2500);
+}
 window.loadTeamDemo = loadTeamDemo;
 
+function loadCompanyDemo() {
+  buildCompanySystem(COMPANY_DEMO);
+  updateBreadcrumb('company');
+  seedDemoTalentBoard('company');
+}
+window.loadCompanyDemo = loadCompanyDemo;
+
+// 데모용 인재 보드 초기 시드 (실제 환경에서는 서버 API 호출)
+function seedDemoTalentBoard(mode) {
+  // 이미 시드된 경우 스킵
+  if (localStorage.getItem(_TALENT_KEY + '_seeded_' + mode)) return;
+  const demoEntries = mode === 'team' ? [
+    { memberId:'m2', name:'박지훈', role:'AI 엔지니어', color:'#bc8cff',
+      skills:['Python', 'Ollama', 'Fine-tuning', 'Claude Code'],
+      tagline:'커스텀 모델 학습·배포 경험 공유 가능', status:'open', published:true, publishedAt:Date.now()-3600000 },
+    { memberId:'m4', name:'장현우', role:'기획/PM', color:'#f0883e',
+      skills:['Notion', 'Figma', '로드맵', '요구사항'],
+      tagline:'스타트업 PM 경험, 협업 구조 설계 도움 가능', status:'ask', published:true, publishedAt:Date.now()-7200000 },
+  ] : [
+    { memberId:'c10', name:'김기획', role:'PM팀장', color:'#58a6ff',
+      skills:['Notion', 'Figma', '로드맵', 'PRD'],
+      tagline:'신제품 기획 프로세스 경험 공유', status:'open', published:true, publishedAt:Date.now()-3600000 },
+    { memberId:'c40', name:'윤디자인', role:'디자인팀장', color:'#79c0ff',
+      skills:['Figma', 'Illustrator', 'UX리뷰', 'Adobe XD'],
+      tagline:'브랜드 디자인·UX 피드백 가능', status:'ask', published:true, publishedAt:Date.now()-5400000 },
+  ];
+  localStorage.setItem(_TALENT_KEY + '_demo', JSON.stringify(demoEntries));
+  localStorage.setItem(_TALENT_KEY + '_seeded_' + mode, '1');
+}
+
 function exitTeamMode() {
-  _teamMode = false; _teamNodes = [];
-  _focusedMember = null; _cameraLerp = null;
+  _teamMode = false; _companyMode = false; _teamNodes = [];
+  _focusedMember = null; _cameraLerp = null; _activeSimData = null;
   document.getElementById('team-mode-badge').style.display = 'none';
+  document.querySelector('.tm-label').textContent = '👥 팀 시뮬레이션';
+  updateBreadcrumb('personal');
   loadData();
 }
 window.exitTeamMode = exitTeamMode;
+
+// ── 브레드크럼 내비게이션 ─────────────────────────────────────────────────────
+function updateBreadcrumb(level, deptName, memberName) {
+  const bc = document.getElementById('nav-breadcrumb');
+  const elTeam   = document.getElementById('bc-team');
+  const elDept   = document.getElementById('bc-dept');
+  const elMember = document.getElementById('bc-member');
+  const arrow2   = document.querySelector('.bc-arrow2');
+  const arrow3   = document.querySelector('.bc-arrow3');
+
+  if (level === 'personal') {
+    bc.classList.remove('visible');
+    return;
+  }
+
+  bc.classList.add('visible');
+
+  // 팀 레벨
+  if (level === 'team') {
+    elTeam.textContent = '👥 팀';
+    elTeam.className = 'bc-crumb active';
+    elTeam.style.display = '';
+    if (arrow2) arrow2.style.display = 'none';
+    elDept.style.display = 'none';
+    if (arrow3) arrow3.style.display = 'none';
+    elMember.style.display = 'none';
+  } else if (level === 'company') {
+    elTeam.textContent = '🏢 회사';
+    elTeam.className = 'bc-crumb active';
+    elTeam.style.display = '';
+    if (arrow2) arrow2.style.display = 'none';
+    elDept.style.display = 'none';
+    if (arrow3) arrow3.style.display = 'none';
+    elMember.style.display = 'none';
+  } else if (level === 'dept') {
+    const compMode = _companyMode;
+    elTeam.textContent = compMode ? '🏢 회사' : '👥 팀';
+    elTeam.className = 'bc-crumb clickable';
+    elTeam.onclick = () => { unfocusDept(); updateBreadcrumb(compMode ? 'company' : 'team'); };
+    elTeam.style.display = '';
+    if (arrow2) arrow2.style.display = '';
+    elDept.textContent = deptName || '부서';
+    elDept.className = 'bc-crumb active';
+    elDept.style.display = '';
+    if (arrow3) arrow3.style.display = 'none';
+    elMember.style.display = 'none';
+  } else if (level === 'member') {
+    const compMode = _companyMode;
+    elTeam.textContent = compMode ? '🏢 회사' : '👥 팀';
+    elTeam.className = 'bc-crumb clickable';
+    elTeam.onclick = () => { unfocusMember(); if (_focusedDept) unfocusDept(); updateBreadcrumb(compMode ? 'company' : 'team'); };
+    elTeam.style.display = '';
+    if (_focusedDept) {
+      if (arrow2) arrow2.style.display = '';
+      elDept.textContent = deptName || '부서';
+      elDept.className = 'bc-crumb clickable';
+      elDept.onclick = () => { unfocusMember(); updateBreadcrumb('dept', deptName); };
+      elDept.style.display = '';
+      if (arrow3) arrow3.style.display = '';
+    } else {
+      if (arrow2) arrow2.style.display = 'none';
+      elDept.style.display = 'none';
+      if (arrow3) arrow3.style.display = '';
+    }
+    elMember.textContent = memberName || '팀원';
+    elMember.className = 'bc-crumb active';
+    elMember.style.display = '';
+  }
+}
+
+function bcGoPersonal() {
+  if (_teamMode) exitTeamMode();
+  else updateBreadcrumb('personal');
+}
 
 // ─── 카메라 부드러운 이동 ─────────────────────────────────────────────────────
 function lerpCameraTo(r, tx, ty, tz, duration = 700) {
@@ -1544,7 +3207,7 @@ function updateCameraLerp(dt) {
 
 // ─── 레이블 겹침 해소 (AABB 스프링 시뮬레이션) ───────────────────────────────
 // labels: [{ x, y, pw, ph, ax, ay, priority }]  x/y = 현재 top-left, ax/ay = 앵커 center
-function resolveOverlaps(labels, iters = 10, gap = 6) {
+function resolveOverlaps(labels, iters = 30, gap = 8) {
   for (let it = 0; it < iters; it++) {
     // 1단계: 겹치는 쌍 찾아 최소 관통 축으로 밀어냄
     for (let i = 0; i < labels.length; i++) {
@@ -1558,21 +3221,21 @@ function resolveOverlaps(labels, iters = 10, gap = 6) {
 
         const pa = a.priority, pb = b.priority, ps = pa + pb;
         if (ow < oh) {
-          // X축으로 밀어냄
+          // X축으로 밀어냄 (완전히 분리될 때까지)
           const push = ow * (acx < bcx ? 1 : -1);
-          a.x -= push * (pb / ps) * 0.75;
-          b.x += push * (pa / ps) * 0.75;
+          a.x -= push * (pb / ps);
+          b.x += push * (pa / ps);
         } else {
           // Y축으로 밀어냄
           const push = oh * (acy < bcy ? 1 : -1);
-          a.y -= push * (pb / ps) * 0.75;
-          b.y += push * (pa / ps) * 0.75;
+          a.y -= push * (pb / ps);
+          b.y += push * (pa / ps);
         }
       }
     }
-    // 2단계: 앵커 방향 스프링 복귀 (priority 높을수록 강하게 복귀)
+    // 2단계: 앵커 방향 약한 스프링 복귀 (낮은 priority 노드만 적당히 복귀)
     for (const l of labels) {
-      const k = Math.min(0.14 + l.priority * 0.04, 0.38);
+      const k = Math.min(0.05 + l.priority * 0.02, 0.15); // 복귀력 약하게
       l.x += (l.ax - l.pw * 0.5 - l.x) * k;
       l.y += (l.ay - l.ph * 0.5 - l.y) * k;
       // 화면 경계 클램프
@@ -1587,11 +3250,41 @@ function focusMember(memberNode) {
   _focusedMember = memberNode;
   const pos = memberNode.pos;
   lerpCameraTo(22, pos.x, pos.y, pos.z);
+  const deptName = _focusedDept?.label || memberNode.deptId;
+  updateBreadcrumb('member', deptName, memberNode.label);
 }
 
 function unfocusMember() {
   _focusedMember = null;
-  lerpCameraTo(75, 0, 0, 0);
+  if (_companyMode) {
+    // 회사 모드: 포커스 해제 시 부서가 선택되어 있으면 부서 뷰로 복귀
+    if (_focusedDept) {
+      const dPos = _focusedDept.pos;
+      lerpCameraTo(45, dPos.x, dPos.y, dPos.z);
+    } else {
+      lerpCameraTo(100, 0, 0, 0);
+    }
+  } else {
+    lerpCameraTo(75, 0, 0, 0);
+  }
+}
+
+// ── 부서 드릴다운 (회사 모드) ─────────────────────────────────────────────
+let _focusedDept = null;
+
+function focusDept(deptNode) {
+  _focusedDept = deptNode;
+  _focusedMember = null;
+  const pos = deptNode.pos;
+  lerpCameraTo(45, pos.x, pos.y, pos.z, 800);
+  updateBreadcrumb('dept', deptNode.label);
+}
+
+function unfocusDept() {
+  _focusedDept = null;
+  _focusedMember = null;
+  lerpCameraTo(100, 0, 0, 0, 800);
+  updateBreadcrumb(_companyMode ? 'company' : 'team');
 }
 
 // ── 팀 모드 공전 ─────────────────────────────────────────────────────────────
@@ -1599,7 +3292,60 @@ function updateTeamOrbits(dt) {
   if (!orbitAnimOn) return;
   _clock += dt * 0.00025;
 
-  // 팀원 행성 공전
+  if (_companyMode) {
+    // ── 회사 모드: 부서 공전 ────────────────────────────────────────────────
+    planetMeshes.forEach(p => {
+      if (!p.userData.isDept) return;
+      const { orbitR, orbitAngle, orbitSpeed } = p.userData;
+      const a  = orbitAngle + _clock * orbitSpeed;
+      const dy = (parseInt(p.userData.deptId.replace('d','')) % 2 === 0) ? 4 : -4;
+      p.position.set(orbitR * Math.cos(a), dy, orbitR * Math.sin(a));
+      const tn = _teamNodes.find(n => n.obj === p);
+      if (tn) tn.pos.copy(p.position);
+    });
+    // 부서 내 팀원/작업 공전 (부서 위치 따라 이동)
+    satelliteMeshes.forEach(s => {
+      const deptP = planetMeshes.find(p => p.userData.isDept && p.userData.deptId === s.userData.deptId);
+      const memberP = satelliteMeshes.find(m => m.userData.isDeptMember && m.userData.memberId === s.userData.memberId && m !== s);
+      if (s.userData.isDeptMember && deptP) {
+        const { orbitR, orbitAngle, orbitSpeed } = s.userData;
+        const a = orbitAngle + _clock * orbitSpeed;
+        const mi = parseInt((s.userData.memberId || 'c00').replace(/[^0-9]/g,'')) % 2;
+        s.position.set(deptP.position.x + orbitR * Math.cos(a), deptP.position.y + (mi ? 1.2 : -1.2), deptP.position.z + orbitR * Math.sin(a));
+      } else if ((s.userData.isTeamTask || s.userData.isTeamTool || s.userData.isTeamSkill || s.userData.isTeamAgent) && memberP) {
+        const center = memberP.position;
+        if (s.userData.isTeamTask) {
+          const { orbitR, orbitAngle, orbitSpeed } = s.userData;
+          const a = orbitAngle + _clock * orbitSpeed;
+          s.position.set(center.x + orbitR * Math.cos(a), center.y + orbitR * 0.3 * Math.sin(a + 0.8), center.z + orbitR * Math.sin(a));
+        } else {
+          const { relAngle, relY, relR } = s.userData;
+          s.position.set(center.x + relR * Math.cos(relAngle), center.y + relY, center.z + relR * Math.sin(relAngle));
+        }
+      }
+      const tn = _teamNodes.find(n => n.obj === s);
+      if (tn) tn.pos.copy(s.position);
+    });
+    // 연결선 업데이트 (userData 태그 방식)
+    connections.forEach(ln => {
+      if (!ln.userData) return;
+      const src = ln.userData.srcObj, dst = ln.userData.dstObj;
+      if (src && dst) {
+        ln.geometry.setFromPoints([src.position.clone(), dst.position.clone()]);
+        ln.geometry.attributes.position.needsUpdate = true;
+      }
+    });
+    // 궤도 링: 부서 위치 따라 이동
+    let ri = 1;
+    planetMeshes.forEach(p => {
+      if (!p.userData.isDept) return;
+      if (orbitRings[ri]) orbitRings[ri].position.copy(p.position);
+      ri++;
+    });
+    return;
+  }
+
+  // ── 팀 모드 공전 ─────────────────────────────────────────────────────────
   planetMeshes.forEach(p => {
     if (!p.userData.isTeamMember) return;
     const { orbitR, orbitAngle, orbitSpeed } = p.userData;
@@ -1607,13 +3353,11 @@ function updateTeamOrbits(dt) {
     const mi = parseInt(p.userData.memberId.replace('m', '') || 0);
     const ny = (mi % 2 === 0) ? 1.5 : -1.5;
     p.position.set(orbitR * Math.cos(a), ny, orbitR * Math.sin(a));
-
-    // _teamNodes 위치 동기화
     const tn = _teamNodes.find(n => n.obj === p);
     if (tn) tn.pos.copy(p.position);
   });
 
-  // 작업/툴 위성 공전 (팀원 위치 따라 이동)
+  // 작업/툴/스킬/에이전트 위성 공전
   satelliteMeshes.forEach(s => {
     const parent = planetMeshes.find(p => p.userData.memberId === s.userData.memberId);
     if (!parent) return;
@@ -1622,53 +3366,37 @@ function updateTeamOrbits(dt) {
     if (s.userData.isTeamTask) {
       const { orbitR, orbitAngle, orbitSpeed } = s.userData;
       const a = orbitAngle + _clock * orbitSpeed;
-      s.position.set(
-        center.x + orbitR * Math.cos(a),
-        center.y + orbitR * 0.25 * Math.sin(a + 1.0),
-        center.z + orbitR * Math.sin(a),
-      );
-    } else if (s.userData.isTeamTool) {
+      s.position.set(center.x + orbitR * Math.cos(a), center.y + orbitR * 0.25 * Math.sin(a + 1.0), center.z + orbitR * Math.sin(a));
+    } else if (s.userData.isTeamTool || s.userData.isTeamSkill || s.userData.isTeamAgent) {
       const { relAngle, relY, relR } = s.userData;
-      s.position.set(
-        center.x + relR * Math.cos(relAngle),
-        center.y + relY,
-        center.z + relR * Math.sin(relAngle),
-      );
+      s.position.set(center.x + relR * Math.cos(relAngle), center.y + relY, center.z + relR * Math.sin(relAngle));
     }
     const tn = _teamNodes.find(n => n.obj === s);
     if (tn) tn.pos.copy(s.position);
   });
 
-  // 연결선 실시간 업데이트 (팀원→중심, 팀원→작업)
+  // 연결선 업데이트 (index 방식 — 팀 시뮬)
   let connIdx = 0;
   planetMeshes.forEach(p => {
     if (!p.userData.isTeamMember) return;
-    // 중심→팀원 연결선
     if (connections[connIdx]) {
-      const pts = [new THREE.Vector3(0, 0, 0), p.position.clone()];
-      connections[connIdx].geometry.setFromPoints(pts);
+      connections[connIdx].geometry.setFromPoints([new THREE.Vector3(0, 0, 0), p.position.clone()]);
       connections[connIdx].geometry.attributes.position.needsUpdate = true;
     }
     connIdx++;
-    // 팀원→작업 연결선
-    satelliteMeshes.filter(s => s.userData.isTeamTask && s.userData.memberId === p.userData.memberId)
-      .forEach(s => {
-        if (connections[connIdx]) {
-          const pts = [p.position.clone(), s.position.clone()];
-          connections[connIdx].geometry.setFromPoints(pts);
-          connections[connIdx].geometry.attributes.position.needsUpdate = true;
-        }
-        connIdx++;
-      });
+    satelliteMeshes.filter(s => s.userData.isTeamTask && s.userData.memberId === p.userData.memberId).forEach(s => {
+      if (connections[connIdx]) {
+        connections[connIdx].geometry.setFromPoints([p.position.clone(), s.position.clone()]);
+        connections[connIdx].geometry.attributes.position.needsUpdate = true;
+      }
+      connIdx++;
+    });
   });
 
-  // 궤도 링 위치 동기화 (팀원 궤도 링)
-  let ringIdx = 1; // index 0 = 전체 궤도
+  let ringIdx = 1;
   planetMeshes.forEach(p => {
     if (!p.userData.isTeamMember) return;
-    if (orbitRings[ringIdx]) {
-      orbitRings[ringIdx].position.copy(p.position);
-    }
+    if (orbitRings[ringIdx]) orbitRings[ringIdx].position.copy(p.position);
     ringIdx++;
   });
 }
@@ -1745,35 +3473,50 @@ function drawTeamLabels() {
     const sc = toScreen(node.pos);
     if (sc.z > 1) continue;
     const { type, label, sublabel, color, emoji, progress, taskStatus, memberId } = node;
-    if (lod >= 2 && type === 'tool') continue;
-    if (lod >= 3 && (type === 'task' || type === 'member')) continue;
+    // 사용자 노드 밀도 설정 (_nodeDensity 슬라이더)
+    if (type === 'tool'                          && _nodeDensity < 4) continue;
+    if ((type === 'skill' || type === 'agent')   && _nodeDensity < 3) continue;
+    if (type === 'task'                          && _nodeDensity < 2) continue;
+    // LOD 기반 — 줌 레벨로 계층 구분 (밀도 설정과 무관)
+    if (lod >= 2 && type === 'member')           continue;
+    if (lod >= 3 && type === 'department')       continue;
+    // 노드 필터 적용
+    if (typeof nodeMatchesFilter === 'function' && !nodeMatchesFilter(node)) continue;
 
     const isActive   = taskStatus === 'active';
     const isSelected = _selectedHit?.data === node;
     const isFocused  = _focusedMember === node;
 
     let pxSize, pad;
-    if      (type === 'goal')   { pxSize = lod >= 2 ? 22 : 28; pad = lod >= 2 ? 14 : 20; }
-    else if (type === 'member') { pxSize = lod >= 2 ? 14 : isFocused ? 22 : 18; pad = lod >= 2 ? 10 : isFocused ? 18 : 15; }
-    else if (type === 'task')   { pxSize = lod >= 2 ? 9 : 12; pad = lod >= 2 ? 7 : 10; }
-    else                        { pxSize = 10; pad = 7; }
+    if      (type === 'goal')       { pxSize = lod >= 2 ? 22 : 28; pad = lod >= 2 ? 14 : 20; }
+    else if (type === 'department') { pxSize = lod >= 2 ? 14 : 16; pad = lod >= 2 ? 10 : 13; }
+    else if (type === 'member')     { pxSize = lod >= 2 ? 14 : isFocused ? 22 : 18; pad = lod >= 2 ? 10 : isFocused ? 18 : 15; }
+    else if (type === 'task')       { pxSize = lod >= 2 ? 9 : 12; pad = lod >= 2 ? 7 : 10; }
+    else if (type === 'skill')      { pxSize = 9; pad = 7; }
+    else if (type === 'agent')      { pxSize = 9; pad = 7; }
+    else                            { pxSize = 10; pad = 7; }
 
-    const weight = (type === 'goal' || type === 'member') ? '700' : '500';
+    const weight = (type === 'goal' || type === 'member' || type === 'department') ? '700' : '500';
     _lctx.font = `${weight} ${pxSize}px -apple-system,'Segoe UI',sans-serif`;
-    const txt = emoji ? `${emoji} ${label}` : label;
+    // skill: ⚡ 아이콘, agent: 🤖 아이콘 prefix
+    const prefix = type === 'skill' ? '⚡ ' : type === 'agent' ? '🤖 ' : '';
+    // 별명 우선 적용 (사용자 지정 표시명 — 3D 뷰 pill에 반영)
+    const _alias = typeof _nodeAliases !== 'undefined' ? _nodeAliases[label] : null;
+    const displayLabel = node.displayLabel || _alias || label;
+    const txt = emoji ? `${emoji} ${displayLabel}` : `${prefix}${displayLabel}`;
     const pw  = _lctx.measureText(txt).width + pad;
     const ph  = pxSize + pad * 0.65;
-    // priority: goal=6, member=4, task=2, tool=1 (높을수록 이동 안 함)
-    const priority = type === 'goal' ? 6 : type === 'member' ? 4 : type === 'task' ? 2 : 1;
+    // priority: goal=6, department=5, member=4, task=2, skill=3, agent=3, tool=1
+    const priority = type === 'goal' ? 6 : type === 'department' ? 5 : type === 'member' ? 4 : (type === 'skill' || type === 'agent') ? 3 : type === 'task' ? 2 : 1;
 
     labels.push({
       node, sc, type, label, sublabel, color, emoji, progress,
-      taskStatus, memberId, isActive, isSelected, isFocused,
+      taskStatus, memberId, isActive, isSelected, isFocused, prefix,
       txt, pw, ph, pxSize, pad, weight,
-      x:  sc.x - pw * 0.5,   // top-left x (겹침 해소로 변경될 수 있음)
-      y:  sc.y - ph * 0.5,   // top-left y
-      ax: sc.x,              // 앵커 center x (불변)
-      ay: sc.y,              // 앵커 center y (불변)
+      x:  sc.x - pw * 0.5,
+      y:  sc.y - ph * 0.5,
+      ax: sc.x,
+      ay: sc.y,
       priority,
     });
   }
@@ -1785,9 +3528,49 @@ function drawTeamLabels() {
 
   // ══ Pass 3: 활성 이펙트 먼저 그리기 (앵커 위치 기준) ════════════════════
   for (const lr of labels) {
-    if (!lr.isActive || lr.type !== 'task') continue;
-    const { ax, ay, color, pw, ph } = lr;
+    const { ax, ay, color, pw, ph, type, node } = lr;
     const hr = Math.max(pw, ph) * 0.5;
+
+    // 마켓 이펙트 (모든 노드 타입 — _nodeEffects 기반)
+    const nodeEffectId = _nodeEffects[node.label];
+    if (nodeEffectId && EFFECT_FNS[nodeEffectId]) {
+      EFFECT_FNS[nodeEffectId](_lctx, ax, ay, hr, color, now);
+    }
+
+    // skill 노드 이펙트: 보라색 회전 대시 링
+    if (type === 'skill') {
+      _lctx.save();
+      _lctx.translate(ax, ay);
+      _lctx.rotate(now * 1.2);
+      _lctx.globalAlpha = 0.7;
+      _lctx.strokeStyle = '#d2a8ff';
+      _lctx.lineWidth   = 1.5;
+      _lctx.setLineDash([4, 4]);
+      _lctx.lineDashOffset = -now * 15;
+      _lctx.beginPath();
+      _lctx.arc(0, 0, hr + 4, 0, Math.PI * 2);
+      _lctx.stroke();
+      _lctx.setLineDash([]);
+      _lctx.restore();
+    }
+
+    // agent 노드 이펙트: 청록 펄스 링 + autoRun 빛
+    if (type === 'agent') {
+      const pulse = (Math.sin(now * 3) + 1) * 0.5;
+      _lctx.save();
+      _lctx.globalAlpha = 0.15 + pulse * 0.35;
+      _lctx.strokeStyle = '#39d2c0';
+      _lctx.lineWidth   = 2;
+      _lctx.shadowColor = '#39d2c0';
+      _lctx.shadowBlur  = 8 + pulse * 6;
+      _lctx.beginPath();
+      _lctx.arc(ax, ay, hr + 4 + pulse * 3, 0, Math.PI * 2);
+      _lctx.stroke();
+      _lctx.shadowBlur = 0;
+      _lctx.restore();
+    }
+
+    if (!lr.isActive || type !== 'task') continue;
 
     // 펄스 링 3개
     for (let i = 0; i < 3; i++) {
@@ -1871,6 +3654,23 @@ function drawTeamLabels() {
     const cy = y + ph * 0.5;  // 해소된 center y
     const hr = Math.max(pw, ph) * 0.5;
 
+    // ── 포커스 페이드: 포커스된 팀원과 관계없는 노드는 흐리게 ──────────────
+    let nodeFade = 1.0;
+    if (_focusedMember) {
+      const focusId = _focusedMember.memberId;
+      const isRelated =
+        type === 'goal' ||                          // 목표 노드는 항상 표시
+        memberId === focusId ||                     // 포커스된 팀원 본인
+        (_collabLines || []).some(cl =>             // 협업 연결된 팀원
+          (cl.fromNode?.memberId === focusId && cl.toNode?.memberId === memberId) ||
+          (cl.toNode?.memberId   === focusId && cl.fromNode?.memberId === memberId)
+        );
+      nodeFade = isRelated ? 1.0 : 0.10;
+    }
+    if (nodeFade < 1.0) {
+      _lctx.globalAlpha = nodeFade;
+    }
+
     // 포커스 팀원 링
     if (isFocused && type === 'member') {
       const rp = (Math.sin(now * 3) + 1) * 0.5;
@@ -1886,18 +3686,79 @@ function drawTeamLabels() {
       _lctx.restore();
     }
 
+    // "나" 배지 — 내 멤버 노드 강조
+    const isMe = type === 'member' && _myMemberId && memberId === _myMemberId;
+    if (isMe) {
+      // 초록 글로우 링
+      const mePulse = (Math.sin(now * 2.5) + 1) * 0.5;
+      _lctx.save();
+      _lctx.globalAlpha = 0.4 + mePulse * 0.3;
+      _lctx.strokeStyle = '#3fb950';
+      _lctx.lineWidth   = 2.5;
+      _lctx.shadowColor = '#3fb950';
+      _lctx.shadowBlur  = 14 + mePulse * 8;
+      _lctx.setLineDash([5, 4]);
+      _lctx.lineDashOffset = -now * 14;
+      _lctx.beginPath();
+      _lctx.arc(cx, cy, hr + 13, 0, Math.PI * 2);
+      _lctx.stroke();
+      _lctx.setLineDash([]);
+      _lctx.restore();
+      // "나" 칩
+      _lctx.save();
+      _lctx.font = '700 9px -apple-system,sans-serif';
+      _lctx.fillStyle = '#3fb950';
+      _lctx.textAlign = 'center'; _lctx.textBaseline = 'middle';
+      const chipW = 22, chipH = 14;
+      roundRect(_lctx, cx - chipW/2, y - chipH - 2, chipW, chipH, 7);
+      _lctx.fillStyle = 'rgba(63,185,80,0.2)'; _lctx.fill();
+      _lctx.strokeStyle = '#3fb95080'; _lctx.lineWidth = 1;
+      roundRect(_lctx, cx - chipW/2, y - chipH - 2, chipW, chipH, 7); _lctx.stroke();
+      _lctx.fillStyle = '#3fb950';
+      _lctx.fillText('나', cx, y - chipH/2 - 2);
+      _lctx.restore();
+    }
+
+    // 포커스 부서 링 (회사 모드)
+    if (_focusedDept && type === 'department' && node.deptId === _focusedDept.deptId) {
+      const rp2 = (Math.sin(now * 2) + 1) * 0.5;
+      _lctx.save();
+      _lctx.globalAlpha = 0.30 + rp2 * 0.20;
+      _lctx.strokeStyle = color;
+      _lctx.lineWidth   = 2.5;
+      _lctx.shadowColor = color;
+      _lctx.shadowBlur  = 18;
+      _lctx.setLineDash([6, 4]);
+      _lctx.beginPath();
+      _lctx.arc(cx, cy, hr + 12, 0, Math.PI * 2);
+      _lctx.stroke();
+      _lctx.setLineDash([]);
+      _lctx.restore();
+    }
+
     // pill 배경
     roundRect(_lctx, x, y, pw, ph, ph * 0.5);
-    const bgA = type === 'goal' ? 0.22 : type === 'member' ? (isFocused ? 0.26 : 0.16) : 0.10;
+    const bgA = type === 'goal' ? 0.22 : type === 'department' ? 0.20 : type === 'member' ? (isFocused ? 0.26 : 0.16) : type === 'skill' ? 0.18 : type === 'agent' ? 0.18 : 0.10;
     _lctx.fillStyle = color + Math.round(bgA * 255).toString(16).padStart(2, '0');
     _lctx.fill();
 
     // pill 테두리
-    const bdA = type === 'goal' ? 0.92 : type === 'member' ? (isFocused ? 1.0 : 0.78) : isActive ? 0.85 : 0.42;
+    const bdA = type === 'goal' ? 0.92 : type === 'department' ? 0.88 : type === 'member' ? (isFocused ? 1.0 : 0.78) : type === 'skill' ? 0.80 : type === 'agent' ? 0.80 : isActive ? 0.85 : 0.42;
     _lctx.strokeStyle = color + Math.round(bdA * 255).toString(16).padStart(2, '0');
-    _lctx.lineWidth   = type === 'goal' ? 2.5 : type === 'member' ? (isFocused ? 2.5 : 1.8) : isActive ? 1.8 : 1;
+    _lctx.lineWidth   = type === 'goal' ? 2.5 : type === 'department' ? 2.0 : type === 'member' ? (isFocused ? 2.5 : 1.8) : type === 'skill' ? 1.4 : type === 'agent' ? 1.4 : isActive ? 1.8 : 1;
+    // skill: 대시 테두리
+    if (type === 'skill') { _lctx.setLineDash([3, 3]); _lctx.lineDashOffset = -now * 10; }
     roundRect(_lctx, x, y, pw, ph, ph * 0.5);
     _lctx.stroke();
+    if (type === 'skill') { _lctx.setLineDash([]); }
+    // agent: 이중 테두리
+    if (type === 'agent') {
+      _lctx.globalAlpha = 0.4;
+      _lctx.lineWidth = 0.8;
+      roundRect(_lctx, x - 2, y - 2, pw + 4, ph + 4, (ph + 4) * 0.5);
+      _lctx.stroke();
+      _lctx.globalAlpha = 1;
+    }
 
     // 목표 노드 글로우
     if (type === 'goal') {
@@ -1913,18 +3774,25 @@ function drawTeamLabels() {
 
     // 텍스트
     _lctx.font         = `${weight} ${pxSize}px -apple-system,'Segoe UI',sans-serif`;
-    _lctx.fillStyle    = type === 'tool' ? color + 'bb' : (isSelected ? '#ffffff' : color);
+    _lctx.fillStyle    = type === 'tool' ? color + 'bb' : type === 'skill' ? '#e2c9ff' : type === 'agent' ? '#8ff0ea' : (isSelected ? '#ffffff' : color);
     _lctx.textAlign    = 'center';
     _lctx.textBaseline = 'middle';
     if (isActive && type === 'task') { _lctx.shadowColor = color; _lctx.shadowBlur = 8; }
+    if (type === 'skill') { _lctx.shadowColor = '#d2a8ff'; _lctx.shadowBlur = 4; }
+    if (type === 'agent') { _lctx.shadowColor = '#39d2c0'; _lctx.shadowBlur = 4; }
     _lctx.fillText(txt, cx, cy);
     _lctx.shadowBlur = 0;
 
     // 서브라벨
-    if (sublabel && lod <= 1 && (type === 'member' || type === 'goal')) {
+    if (sublabel && lod <= 1 && (type === 'member' || type === 'goal' || type === 'department')) {
       _lctx.font      = `400 ${Math.max(pxSize - 4, 9)}px -apple-system,sans-serif`;
       _lctx.fillStyle = color + '88';
       _lctx.fillText(sublabel, cx, y + ph + 10);
+    }
+
+    // 관리자 뱃지 (member 노드, LOD1 이하)
+    if (type === 'member' && lod <= 1 && memberId) {
+      renderMgrBadges(memberId, cx, y + ph);
     }
 
     // 진행률 바 (task, lod ≤ 1)
@@ -1948,7 +3816,10 @@ function drawTeamLabels() {
 
     // 포커스 팀원 — 작업 미니 뱃지
     if (type === 'member' && isFocused && lod === 0) {
-      const member = TEAM_DEMO.members.find(m => m.id === memberId);
+      const srcMembers = _companyMode
+        ? (_activeSimData?.departments || []).flatMap(d => d.members || [])
+        : (_activeSimData?.members || []);
+      const member = srcMembers.find(m => m.id === memberId);
       if (member) {
         let bOff = ph * 0.5 + 14;
         member.tasks.slice(0, 3).forEach(t => {
@@ -1973,6 +3844,11 @@ function drawTeamLabels() {
     // 히트 영역 (해소된 위치 기준)
     if (type !== 'tool') {
       _hitAreas.push({ cx, cy, r: hr + 4, data: node });
+    }
+
+    // globalAlpha 복원
+    if (nodeFade < 1.0) {
+      _lctx.globalAlpha = 1.0;
     }
   }
 }
@@ -2030,6 +3906,23 @@ function pulseSun() {
 let _lastMouseEvent = { clientX:0, clientY:0 };
 let _hoveredHit     = null;  // { cx, cy, r, data, obj }
 let _selectedHit    = null;
+let _editingNode    = null;  // 현재 인라인 편집 중인 노드
+
+// 편집 아이콘 요소 (동적으로 위치 변경)
+const _editIconEl = document.createElement('div');
+_editIconEl.id = 'hover-edit-icon';
+_editIconEl.title = '레이블 편집';
+_editIconEl.textContent = '✎';
+Object.assign(_editIconEl.style, {
+  position: 'fixed', zIndex: '600', display: 'none',
+  width: '22px', height: '22px', lineHeight: '20px', textAlign: 'center',
+  background: 'rgba(31,111,235,0.85)', color: '#fff', borderRadius: '6px',
+  fontSize: '13px', cursor: 'pointer', border: '1px solid #388bfd',
+  boxShadow: '0 2px 8px rgba(0,0,0,0.5)', userSelect: 'none',
+  transition: 'opacity .15s',
+});
+_editIconEl.addEventListener('click', e => { e.stopPropagation(); openInlineEdit(_hoveredHit); });
+document.body.appendChild(_editIconEl);
 
 renderer.domElement.addEventListener('mousemove', e => {
   _lastMouseEvent = e;
@@ -2039,17 +3932,35 @@ renderer.domElement.addEventListener('click', e => {
   const hit = hitTest(e.clientX, e.clientY);
   if (hit) {
     _selectedHit = hit;
-    if (_teamMode && hit.data.type === 'member') {
-      focusMember(hit.data);
-    } else if (_teamMode && _focusedMember && hit.data.type === 'goal') {
-      unfocusMember();
+    const type = hit.data.type;
+
+    if (_companyMode) {
+      // 회사 모드 클릭 처리
+      if (type === 'department') {
+        if (_focusedDept?.deptId === hit.data.deptId) {
+          unfocusDept();  // 같은 부서 재클릭 → 줌아웃
+        } else {
+          focusDept(hit.data);
+        }
+      } else if (type === 'member') {
+        focusMember(hit.data);
+      } else if (type === 'goal' && (_focusedMember || _focusedDept)) {
+        unfocusDept();
+      }
+    } else if (_teamMode) {
+      // 팀 모드 클릭 처리
+      if (type === 'member') {
+        focusMember(hit.data);
+      } else if (_focusedMember && type === 'goal') {
+        unfocusMember();
+      }
     }
+
     showPanel(hit.data, hit.obj);
   } else {
     _selectedHit = null;
-    // 팀모드에서 빈 곳 클릭 → 포커스 해제
-    if (_teamMode && _focusedMember) {
-      unfocusMember();
+    if ((_teamMode || _companyMode) && (_focusedMember || _focusedDept)) {
+      if (_companyMode) unfocusDept(); else unfocusMember();
       closePanel();
     } else {
       closePanel();
@@ -2089,11 +4000,23 @@ function updateRaycast() {
       tooltip.style.display = 'block';
       tooltip.style.left = (_lastMouseEvent.clientX + 14) + 'px';
       tooltip.style.top  = (_lastMouseEvent.clientY - 10) + 'px';
+      // 편집 아이콘: 레이블 우측에 표시 (편집 중이 아닐 때)
+      if (!_editingNode && (data.label || data.intent)) {
+        _editIconEl.style.display = 'block';
+        _editIconEl.style.left = (hit.cx + hit.r - 2) + 'px';
+        _editIconEl.style.top  = (hit.cy - 11) + 'px';
+      }
     }
   } else {
     _hoveredHit = null;
     tooltip.style.display = 'none';
     renderer.domElement.style.cursor = 'default';
+    // 편집 아이콘 숨김 (마우스가 편집 아이콘 위에 있으면 유지)
+    setTimeout(() => {
+      if (!_editingNode && document.querySelector('#hover-edit-icon:hover') === null) {
+        _editIconEl.style.display = 'none';
+      }
+    }, 80);
   }
 }
 
@@ -2248,8 +4171,11 @@ function showPanel(data, obj) {
     document.getElementById('ip-preview').style.display = 'none';
 
   } else if (data.type === 'member') {
-    // ── 팀원 디테일 패널 ────────────────────────────────────────────────────
-    const member = TEAM_DEMO.members.find(m => m.id === data.memberId);
+    // ── 팀원/직원 디테일 패널 ───────────────────────────────────────────────
+    const srcMembers = _companyMode
+      ? (_activeSimData?.departments || []).flatMap(d => d.members || [])
+      : (_activeSimData?.members || []);
+    const member = srcMembers.find(m => m.id === data.memberId);
     if (!member) return;
 
     document.getElementById('ip-dot').style.background  = member.color;
@@ -2303,7 +4229,10 @@ function showPanel(data, obj) {
 
   } else if (data.type === 'task') {
     // ── 작업 디테일 패널 ────────────────────────────────────────────────────
-    const member = TEAM_DEMO.members.find(m => m.id === data.memberId);
+    const srcMembers2 = _companyMode
+      ? (_activeSimData?.departments || []).flatMap(d => d.members || [])
+      : (_activeSimData?.members || []);
+    const member = srcMembers2.find(m => m.id === data.memberId);
     const task   = member?.tasks.find(t => t.name === data.label);
     if (!task || !member) return;
 
@@ -2352,25 +4281,30 @@ function showPanel(data, obj) {
     pv.style.display = 'block';
 
   } else if (data.type === 'goal') {
-    // ── 팀 목표 패널 ────────────────────────────────────────────────────────
-    document.getElementById('ip-dot').style.background  = '#ffd700';
-    document.getElementById('ip-type-text').textContent = '🎯 팀 목표';
-    document.getElementById('ip-intent').textContent    = TEAM_DEMO.goal;
+    // ── 팀/회사 목표 패널 ───────────────────────────────────────────────────
+    const sim = _activeSimData || TEAM_DEMO;
+    const goalColor = sim.goalColor || '#ffd700';
+    const simMembers = _companyMode
+      ? (sim.departments || []).flatMap(d => d.members || [])
+      : (sim.members || []);
+    document.getElementById('ip-dot').style.background  = goalColor;
+    document.getElementById('ip-type-text').textContent = _companyMode ? '🏢 회사 목표' : '🎯 팀 목표';
+    document.getElementById('ip-intent').textContent    = sim.goal;
 
-    const totalTasks   = TEAM_DEMO.members.reduce((s, m) => s + m.tasks.length, 0);
-    const doneTasks    = TEAM_DEMO.members.reduce((s, m) => s + m.tasks.filter(t => t.status === 'done').length, 0);
-    const activeTasks  = TEAM_DEMO.members.reduce((s, m) => s + m.tasks.filter(t => t.status === 'active').length, 0);
-    const blockedTasks = TEAM_DEMO.members.reduce((s, m) => s + m.tasks.filter(t => t.status === 'blocked').length, 0);
-    const overallPct   = Math.round(doneTasks / totalTasks * 100);
+    const totalTasks   = simMembers.reduce((s, m) => s + m.tasks.length, 0);
+    const doneTasks    = simMembers.reduce((s, m) => s + m.tasks.filter(t => t.status === 'done').length, 0);
+    const activeTasks  = simMembers.reduce((s, m) => s + m.tasks.filter(t => t.status === 'active').length, 0);
+    const blockedTasks = simMembers.reduce((s, m) => s + m.tasks.filter(t => t.status === 'blocked').length, 0);
+    const overallPct   = totalTasks > 0 ? Math.round(doneTasks / totalTasks * 100) : 0;
 
     document.getElementById('ip-kv-list').innerHTML = [
-      ['팀명',    TEAM_DEMO.name],
-      ['회사',    TEAM_DEMO.company.name],
+      _companyMode ? ['회사명', sim.name] : ['팀명', sim.name || TEAM_DEMO.name],
+      ['조직', _companyMode ? `${(sim.departments||[]).length}개 부서` : (sim.company?.name || '')],
       ['전체 진행', `${overallPct}%`],
-      ['팀원 수',  `${TEAM_DEMO.members.length}명`],
+      [_companyMode ? '직원 수' : '팀원 수',  `${simMembers.length}명`],
     ].map(([k,v]) => `<div class="ip-kv"><span class="k">${k}</span><span class="v">${v}</span></div>`).join('');
 
-    const memberHtml = TEAM_DEMO.members.map(m => {
+    const memberHtml = simMembers.map(m => {
       const d  = m.tasks.filter(t => t.status === 'done').length;
       const pct = Math.round(d / m.tasks.length * 100);
       return `
@@ -2402,13 +4336,124 @@ function showPanel(data, obj) {
           <span style="color:#f0883e">🚧 차단 ${blockedTasks}</span>
         </div>
       </div>
-      <div style="font-size:10px;color:#6e7681;margin-bottom:6px;text-transform:uppercase;letter-spacing:.6px">팀원 현황</div>
+      <div style="font-size:10px;color:#6e7681;margin-bottom:6px;text-transform:uppercase;letter-spacing:.6px">${_companyMode ? '직원 현황' : '팀원 현황'}</div>
       ${memberHtml}
+    `;
+    pv.style.display = 'block';
+
+  } else if (data.type === 'department') {
+    // ── 부서 패널 ────────────────────────────────────────────────────────────
+    const dept = (_activeSimData?.departments || []).find(d => d.id === data.deptId);
+    if (!dept) return;
+    const deptMembers = dept.members || [];
+    document.getElementById('ip-dot').style.background  = dept.color || '#58a6ff';
+    document.getElementById('ip-type-text').textContent = `${dept.icon || '🏢'} 부서`;
+    document.getElementById('ip-intent').textContent    = dept.name;
+
+    const dtotal = deptMembers.reduce((s,m)=>s+m.tasks.length,0);
+    const ddone  = deptMembers.reduce((s,m)=>s+m.tasks.filter(t=>t.status==='done').length,0);
+    const dactive= deptMembers.reduce((s,m)=>s+m.tasks.filter(t=>t.status==='active').length,0);
+    const dpct   = dtotal > 0 ? Math.round(ddone/dtotal*100) : 0;
+
+    document.getElementById('ip-kv-list').innerHTML = [
+      ['부서명',  dept.name],
+      ['인원',    `${deptMembers.length}명`],
+      ['진행 중', `${dactive}개`],
+      ['완료율',  `${dpct}%`],
+    ].map(([k,v])=>`<div class="ip-kv"><span class="k">${k}</span><span class="v">${v}</span></div>`).join('');
+
+    const dmemberHtml = deptMembers.map(m => {
+      const md = m.tasks.filter(t=>t.status==='done').length;
+      const mpct = m.tasks.length > 0 ? Math.round(md/m.tasks.length*100) : 0;
+      const toolBadges = (m.tools||[]).slice(0,3).map(t=>`<span style="font-size:9px;padding:1px 6px;border-radius:8px;border:1px solid ${dept.color}40;color:${dept.color};background:${dept.color}14">${t}</span>`).join(' ');
+      return `
+        <div style="padding:7px 8px;border-radius:8px;border:1px solid ${m.color||dept.color}25;background:#0d1117;margin-bottom:6px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+            <span style="font-size:11px;color:#cdd9e5;font-weight:600">${m.name}</span>
+            <span style="font-size:10px;color:${m.color||dept.color}">${mpct}%</span>
+          </div>
+          <div style="font-size:10px;color:#6e7681;margin-bottom:4px">${m.role}</div>
+          <div style="height:2px;background:#21262d;border-radius:2px;margin-bottom:5px">
+            <div style="height:2px;background:${m.color||dept.color};border-radius:2px;width:${mpct}%"></div>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:3px">${toolBadges}</div>
+        </div>`;
+    }).join('');
+
+    const pv = document.getElementById('ip-preview');
+    pv.innerHTML = `
+      <div style="margin-bottom:10px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+          <span style="font-size:11px;color:#6e7681">부서 진행률</span>
+          <span style="font-size:11px;color:${dept.color};font-weight:700">${dpct}%</span>
+        </div>
+        <div style="height:4px;background:#21262d;border-radius:3px;overflow:hidden">
+          <div style="height:4px;background:${dept.color};border-radius:3px;width:${dpct}%;box-shadow:0 0 6px ${dept.color}60"></div>
+        </div>
+      </div>
+      <div style="font-size:10px;color:#6e7681;margin-bottom:6px;text-transform:uppercase;letter-spacing:.6px">구성원</div>
+      ${dmemberHtml}
+    `;
+    pv.style.display = 'block';
+
+  } else if (data.type === 'skill') {
+    // ── 스킬 패널 ────────────────────────────────────────────────────────────
+    const cfg = data.config || {};
+    document.getElementById('ip-dot').style.background  = '#d2a8ff';
+    document.getElementById('ip-type-text').textContent = '⚡ AI 스킬';
+    document.getElementById('ip-intent').textContent    = data.label;
+
+    document.getElementById('ip-kv-list').innerHTML = [
+      ['별명(alias)', data.label],
+      ['모델',        cfg.model || '-'],
+      ['트리거',      cfg.trigger || '-'],
+      ['타입',        'skill'],
+    ].map(([k,v])=>`<div class="ip-kv"><span class="k">${k}</span><span class="v" style="color:#d2a8ff">${v}</span></div>`).join('');
+
+    const pv = document.getElementById('ip-preview');
+    pv.innerHTML = `
+      <div style="background:#1a0e2e;border:1px solid #d2a8ff30;border-radius:10px;padding:12px;font-family:monospace;font-size:11px">
+        <div style="color:#6e7681;margin-bottom:6px;font-family:-apple-system,sans-serif;font-size:10px;letter-spacing:.6px;text-transform:uppercase">스킬 설정</div>
+        ${cfg.trigger ? `<div style="color:#79c0ff;margin-bottom:3px">trigger: <span style="color:#d2a8ff">${cfg.trigger}</span></div>` : ''}
+        ${cfg.model   ? `<div style="color:#79c0ff;margin-bottom:3px">model:   <span style="color:#3fb950">"${cfg.model}"</span></div>` : ''}
+        ${cfg.systemPrompt ? `<div style="color:#79c0ff;margin-bottom:3px">prompt:  <span style="color:#e6edf3;font-size:10px">${cfg.systemPrompt.slice(0,60)}…</span></div>` : ''}
+      </div>
+      <div style="margin-top:8px;font-size:10px;color:#6e7681">⚡ 슬래시 커맨드로 즉시 실행 가능한 저장 스킬</div>
+    `;
+    pv.style.display = 'block';
+
+  } else if (data.type === 'agent') {
+    // ── 에이전트 패널 ─────────────────────────────────────────────────────────
+    const cfg = data.config || {};
+    document.getElementById('ip-dot').style.background  = '#39d2c0';
+    document.getElementById('ip-type-text').textContent = '🤖 AI 에이전트';
+    document.getElementById('ip-intent').textContent    = data.label;
+
+    document.getElementById('ip-kv-list').innerHTML = [
+      ['별명(alias)', data.label],
+      ['모델',        cfg.model || '-'],
+      ['역할',        cfg.task  || '-'],
+      ['자동 실행',   cfg.autoRun ? '✅ ON' : '❌ OFF'],
+    ].map(([k,v])=>`<div class="ip-kv"><span class="k">${k}</span><span class="v" style="color:#39d2c0">${v}</span></div>`).join('');
+
+    const pv = document.getElementById('ip-preview');
+    pv.innerHTML = `
+      <div style="background:#0b1e1d;border:1px solid #39d2c030;border-radius:10px;padding:12px;font-family:monospace;font-size:11px">
+        <div style="color:#6e7681;margin-bottom:6px;font-family:-apple-system,sans-serif;font-size:10px;letter-spacing:.6px;text-transform:uppercase">에이전트 설정</div>
+        ${cfg.model   ? `<div style="color:#79c0ff;margin-bottom:3px">model:   <span style="color:#3fb950">"${cfg.model}"</span></div>` : ''}
+        ${cfg.task    ? `<div style="color:#79c0ff;margin-bottom:3px">task:    <span style="color:#e6edf3">${cfg.task}</span></div>` : ''}
+        ${cfg.autoRun !== undefined ? `<div style="color:#79c0ff;margin-bottom:3px">autoRun: <span style="color:${cfg.autoRun?'#3fb950':'#f85149'}">${cfg.autoRun}</span></div>` : ''}
+      </div>
+      <div style="margin-top:8px;font-size:10px;color:#6e7681">🤖 ${cfg.autoRun ? '자동으로 백그라운드 실행되는 에이전트' : '수동 트리거 방식 에이전트'}</div>
     `;
     pv.style.display = 'block';
   }
 
   panel.classList.add('open');
+  // 이펙트 패널이 열려있으면 선택 노드 업데이트
+  if (document.getElementById('effects-panel')?.classList.contains('open')) {
+    updateEffectsPanelNode();
+  }
 }
 
 function closePanel() {
@@ -2437,10 +4482,10 @@ resizeLabelCanvas();
 // LOD 3: 최대줌아웃 (>180) — 요약 오버레이 (updateZoomSummary 처리)
 function getLOD() {
   const r = controls.sph.r;
-  if (r < 55)  return 0;
-  if (r < 120) return 1;
-  if (r < 180) return 2;
-  return 3;
+  if (r < 45)  return 0;   // 매우 가까이: 모든 디테일 표시
+  if (r < 100) return 1;   // 팀 기본 뷰: 멤버+목표 (task/skill 숨김)
+  if (r < 170) return 2;   // 회사 뷰: 부서+목표만
+  return 3;                 // 유니버스 뷰
 }
 
 // 거리 → 화면 픽셀 스케일
@@ -2833,6 +4878,197 @@ async function loadData() {
   }
 }
 
+// ─── 관리자 맞춤 뷰 ───────────────────────────────────────────────────────────
+
+// 상태: localStorage 영속
+const _mgrCfg = (() => {
+  const saved = localStorage.getItem('orbitMgrCfg');
+  const def = {
+    fields:    { progress: true, deadline: true, blocker: true, taskCount: false },
+    highlight: null,  // null | 'blocker' | 'deadline' | 'low_progress'
+  };
+  return saved ? { ...def, ...JSON.parse(saved) } : def;
+})();
+function _saveMgrCfg() { localStorage.setItem('orbitMgrCfg', JSON.stringify(_mgrCfg)); }
+
+function toggleMgrPanel() {
+  const btn   = document.getElementById('mgr-btn');
+  const panel = document.getElementById('mgr-panel');
+  const open  = panel.classList.toggle('open');
+  btn.classList.toggle('open', open);
+  if (open) updateMgrFieldUI();
+}
+
+function updateMgrFieldUI() {
+  ['progress','deadline','blocker','taskCount'].forEach(f => {
+    const el = document.getElementById(`mgrf-${f}`);
+    if (el) el.classList.toggle('on', !!_mgrCfg.fields[f]);
+  });
+  // highlight chips
+  ['all','blocker','deadline','low_progress'].forEach(k => {
+    const el = document.getElementById(`mgrf-chip-${k === null ? 'all' : k}`);
+    if (el) el.classList.toggle('on',
+      k === null ? _mgrCfg.highlight === null
+                : _mgrCfg.highlight === k
+    );
+  });
+  document.getElementById('mgrf-chip-all')?.classList.toggle('on', _mgrCfg.highlight === null);
+}
+
+function toggleMgrField(field) {
+  _mgrCfg.fields[field] = !_mgrCfg.fields[field];
+  _saveMgrCfg();
+  updateMgrFieldUI();
+}
+
+function setMgrHighlight(val, btn) {
+  _mgrCfg.highlight = val;
+  _saveMgrCfg();
+  document.querySelectorAll('.mgr-filter-chip').forEach(c => c.classList.remove('on'));
+  btn?.classList.add('on');
+}
+
+// ── AI 봇 쿼리 처리 ─────────────────────────────────────────────────────────
+function submitMgrBot() {
+  const input = document.getElementById('mgr-bot-input');
+  const resp  = document.getElementById('mgr-bot-resp');
+  const text  = (input?.value || '').trim();
+  if (!text) return;
+
+  const result = parseMgrQuery(text);
+
+  // 필드 적용
+  Object.entries(result.fields).forEach(([k, v]) => { if (v) _mgrCfg.fields[k] = true; });
+  if (result.highlight !== undefined) _mgrCfg.highlight = result.highlight;
+  _saveMgrCfg();
+  updateMgrFieldUI();
+
+  // 응답 표시
+  if (resp) {
+    resp.style.display = 'block';
+    resp.innerHTML = `🤖 ${result.response}`;
+  }
+  if (input) input.value = '';
+}
+
+function parseMgrQuery(text) {
+  const t  = text;
+  const result = { fields: {}, highlight: undefined, response: '' };
+  const applied = [];
+
+  if (/진행률|진행|progress/i.test(t))   { result.fields.progress = true;  applied.push('진행률'); }
+  if (/마감|deadline|d-?day|디데이/i.test(t)) { result.fields.deadline = true; applied.push('마감 D-Day'); }
+  if (/블로커|블록|막힌|blocker/i.test(t)) { result.fields.blocker = true; result.highlight = 'blocker'; applied.push('블로커'); }
+  if (/개수|건수|작업수/i.test(t))        { result.fields.taskCount = true; applied.push('작업 수'); }
+
+  if (/이번주|7일|임박/i.test(t))         { result.highlight = 'deadline'; applied.push('마감 임박 강조'); }
+  if (/낮은|저조|부진|slow/i.test(t))     { result.highlight = 'low_progress'; applied.push('저조 강조'); }
+  if (/전체|모두|all/i.test(t))           { result.highlight = null; applied.push('전체 표시'); }
+
+  // 멤버 이름 매칭 → 포커스
+  const members = (_activeSimData?.members) ||
+    (_activeSimData?.departments || []).flatMap(d => d.members || []) ||
+    TEAM_DEMO.members;
+  members.forEach(m => {
+    if (t.includes(m.name)) {
+      const node = _teamNodes?.find(n => n.type === 'member' && n.memberId === m.id);
+      if (node) { focusMember(node); applied.push(`${m.name} 포커스`); }
+    }
+  });
+
+  result.response = applied.length > 0
+    ? `${applied.join(' · ')} 적용했습니다.`
+    : '조건을 인식하지 못했습니다. "블로커 있는 사람", "이번주 마감 임박" 등으로 물어보세요.';
+  return result;
+}
+
+// ── 멤버 노드 관리자 뱃지 렌더링 ────────────────────────────────────────────
+function renderMgrBadges(memberId, cx, baseY) {
+  const fields = _mgrCfg.fields;
+  if (!Object.values(fields).some(v => v)) return;
+
+  const allMembers = (_activeSimData?.members) ||
+    (_activeSimData?.departments || []).flatMap(d => d.members || []) ||
+    TEAM_DEMO.members;
+  const mData = allMembers.find(m => m.id === memberId);
+  if (!mData) return;
+
+  const tasks       = mData.tasks || [];
+  const activeTasks = tasks.filter(t => t.status === 'active');
+  const doneTasks   = tasks.filter(t => t.status === 'done');
+  const today       = new Date();
+
+  // 뱃지 목록 구성
+  const badges = [];
+
+  if (fields.progress && activeTasks.length > 0) {
+    const avg = activeTasks.reduce((s, t) => s + (t.progress || 0), 0) / activeTasks.length;
+    const pct = Math.round(avg * 100);
+    const col = pct >= 70 ? '#3fb950' : pct >= 40 ? '#f0883e' : '#f85149';
+    // 저조 강조 시 깜빡임
+    const dim = _mgrCfg.highlight === 'low_progress' && pct < 40;
+    badges.push({ text: `${pct}%`, color: col, flash: dim });
+  }
+
+  if (fields.blocker) {
+    const hasBlocker = tasks.some(t => t.blocker && t.status !== 'done');
+    if (hasBlocker) badges.push({ text: '⚠️ 블로커', color: '#f85149', flash: _mgrCfg.highlight === 'blocker' });
+  }
+
+  if (fields.taskCount) {
+    badges.push({ text: `${doneTasks.length}/${tasks.length}`, color: '#58a6ff', flash: false });
+  }
+
+  if (fields.deadline) {
+    let minDays = Infinity;
+    activeTasks.forEach(t => {
+      if (!t.dueDate) return;
+      const [mo, dy] = t.dueDate.split('-').map(Number);
+      const due  = new Date(today.getFullYear(), mo - 1, dy);
+      const diff = Math.ceil((due - today) / 86400000);
+      if (diff < minDays) minDays = diff;
+    });
+    if (minDays < Infinity) {
+      const col = minDays <= 3 ? '#f85149' : minDays <= 7 ? '#f0883e' : '#6e7681';
+      const lbl = minDays <= 0 ? 'D-Day' : `D-${minDays}`;
+      badges.push({ text: lbl, color: col, flash: _mgrCfg.highlight === 'deadline' && minDays <= 7 });
+    }
+  }
+
+  if (!badges.length) return;
+
+  _lctx.save();
+  _lctx.font = '500 9px -apple-system,sans-serif';
+  _lctx.textBaseline = 'middle';
+  _lctx.textAlign = 'left';
+
+  const badgeH = 15;
+  const gap = 4;
+  const now = Date.now() / 1000;
+
+  // 전체 너비 계산 후 가운데 정렬
+  badges.forEach(b => { b.w = _lctx.measureText(b.text).width + 10; });
+  const totalW = badges.reduce((s, b) => s + b.w, 0) + gap * (badges.length - 1);
+  let bx = cx - totalW / 2;
+  const by = baseY + 20;
+
+  badges.forEach(b => {
+    const alpha = b.flash ? (0.5 + 0.5 * Math.sin(now * 4)) : 1.0;
+    _lctx.globalAlpha = alpha;
+    roundRect(_lctx, bx, by, b.w, badgeH, badgeH / 2);
+    _lctx.fillStyle = b.color + '22'; _lctx.fill();
+    _lctx.strokeStyle = b.color + '70'; _lctx.lineWidth = 0.8;
+    roundRect(_lctx, bx, by, b.w, badgeH, badgeH / 2); _lctx.stroke();
+    _lctx.fillStyle = b.color;
+    _lctx.fillText(b.text, bx + 5, by + badgeH / 2);
+    bx += b.w + gap;
+  });
+
+  _lctx.globalAlpha = 1;
+  _lctx.restore();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 function connectWS() {
   const ws = new WebSocket(`ws://${location.host}`);
   ws.onmessage = ev => {
@@ -2843,7 +5079,6 @@ function connectWS() {
         if (m.type === 'new_event') {
           const sid = m.event?.sessionId || m.sessionId;
           if (sid) {
-            // 해당 세션의 모든 클러스터 행성에 마킹
             planetMeshes.forEach(p => {
               if (p.userData.sessionId === sid) {
                 markClusterActive(p.userData.clusterId);
@@ -2853,9 +5088,96 @@ function connectWS() {
         }
         loadData();
       }
+      // 듀얼 Ollama 스킬/에이전트 제안 알림
+      if (m.type === 'skill_suggestion' && m.data) {
+        showSkillToast(m.data);
+      }
     } catch{}
   };
   ws.onclose = () => setTimeout(connectWS, 3000);
+}
+
+// ─── 스킬/에이전트 제안 토스트 ───────────────────────────────────────────────
+const _toastTimers = new Map();
+
+function showSkillToast(suggestion) {
+  const stack = document.getElementById('skill-toast-stack');
+  if (!stack) return;
+
+  // 동일 트리거 중복 방지
+  if (_toastTimers.has(suggestion.id)) return;
+
+  const isAgent = suggestion.type === 'agent';
+  const conf    = suggestion.evidence?.avgConfidence ?? 0;
+  const count   = suggestion.evidence?.patternCount  ?? 0;
+  const cat     = suggestion.evidence?.category      ?? '';
+
+  const toast = document.createElement('div');
+  toast.className = `skill-toast ${suggestion.type}`;
+  toast.innerHTML = `
+    <div class="st-header">
+      <div class="st-icon">${suggestion.icon || (isAgent ? '🤖' : '📌')}</div>
+      <div class="st-title-wrap">
+        <span class="st-type-chip">${isAgent ? 'agent' : 'skill'}</span>
+        <div class="st-alias">${suggestion.alias || suggestion.trigger}</div>
+        <div class="st-trigger">${suggestion.trigger}</div>
+      </div>
+    </div>
+    <div class="st-evidence">
+      패턴 <strong>${count}회</strong> 감지 · 신뢰도 <strong>${Math.round(conf * 100)}%</strong> · 카테고리: ${cat}
+    </div>
+    <div class="st-actions">
+      <button class="st-btn accept" onclick="acceptSkillToast('${suggestion.id}', this)">✅ 적용</button>
+      <button class="st-btn dismiss" onclick="dismissSkillToast('${suggestion.id}', this)">✕ 닫기</button>
+    </div>
+  `;
+
+  stack.appendChild(toast);
+
+  // 12초 후 자동 닫기
+  const timer = setTimeout(() => dismissSkillToast(suggestion.id, toast), 12000);
+  _toastTimers.set(suggestion.id, { el: toast, timer, suggestion });
+}
+
+function dismissSkillToast(id, el) {
+  const entry = _toastTimers.get(id);
+  const node  = el?.closest?.('.skill-toast') || entry?.el;
+  if (node) {
+    node.style.opacity  = '0';
+    node.style.transform = 'translateY(10px) scale(.97)';
+    node.style.transition = 'all .25s';
+    setTimeout(() => node.remove(), 260);
+  }
+  if (entry?.timer) clearTimeout(entry.timer);
+  _toastTimers.delete(id);
+}
+
+async function acceptSkillToast(id, el) {
+  const entry = _toastTimers.get(id);
+  if (!entry) return;
+  try {
+    await fetch('/api/insights/feedback/apply', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ clientId: entry.suggestion.clientId, suggestionId: id }),
+    });
+    // 수락 노드를 현재 팀 멤버에 추가 (파티클 이펙트)
+    if (_myMemberId && typeof _teamNodes !== 'undefined') {
+      const mNode = _teamNodes.find(n => n.type === 'member' && n.memberId === _myMemberId);
+      if (mNode) {
+        const s = entry.suggestion;
+        _teamNodes.push({
+          type: 'skill', memberId: _myMemberId,
+          label: `${s.icon || '📌'} ${s.alias}`,
+          pos: mNode.pos.clone().add(new THREE.Vector3(
+            (Math.random()-0.5)*4, (Math.random()-0.5)*4, (Math.random()-0.5)*4
+          )),
+        });
+        updateMyTaskSidebar();
+      }
+    }
+  } catch(e) { console.warn('[Toast] 수락 실패:', e); }
+  dismissSkillToast(id, el);
 }
 
 // ─── 애니메이션 루프 ──────────────────────────────────────────────────────────
@@ -2887,6 +5209,44 @@ renderer.setAnimationLoop(now => {
     drawLabels();
   }
   renderer.render(scene, camera);
+  if (typeof updateZoomDisplay === 'function') updateZoomDisplay();
+  if (typeof drawMinimap3d === 'function') drawMinimap3d();
+  // 협업 라인 애니메이션
+  if (typeof _collabLines !== 'undefined' && _collabLines.length > 0) {
+    const t = now / 1000;
+    _collabLines.forEach(cl => {
+      // 팀원 이동에 따라 라인 위치 업데이트
+      const pts = cl.fromNode?.obj && cl.toNode?.obj
+        ? [cl.fromNode.obj.position.clone(), cl.toNode.obj.position.clone()]
+        : null;
+      if (pts) {
+        cl.line.geometry.setFromPoints(pts);
+        cl.line.geometry.attributes.position.needsUpdate = true;
+        if (cl.outerLine) {
+          cl.outerLine.geometry.setFromPoints(pts);
+          cl.outerLine.geometry.attributes.position.needsUpdate = true;
+        }
+      }
+      // 포커스 페이드
+      const focusId = _focusedMember?.memberId;
+      const lineRelated = !focusId ||
+        cl.fromNode?.memberId === focusId ||
+        cl.toNode?.memberId   === focusId;
+
+      if (cl.crossDept) {
+        // 🔥 크로스-부서 불꽃 이펙트: 빠른 고진폭 파동 + 랜덤 플리커
+        const flicker = 0.7 + 0.3 * Math.sin(t * 9.5 + cl.phase * 1.7);
+        const wave    = 0.55 + 0.45 * Math.sin(t * 4.0 + cl.phase);
+        const fire    = flicker * wave;
+        cl.mat.opacity     = lineRelated ? 0.4 + 0.55 * fire : 0.05;
+        if (cl.outerMat) cl.outerMat.opacity = lineRelated ? 0.15 + 0.25 * fire : 0.02;
+      } else {
+        // 일반 협업: 느린 사인파 맥박
+        const basePulse = 0.3 + 0.45 * (0.5 + 0.5 * Math.sin(t * 1.8 + cl.phase));
+        cl.mat.opacity = lineRelated ? basePulse : 0.04;
+      }
+    });
+  }
 });
 
 // ─── 리사이즈 ─────────────────────────────────────────────────────────────────
@@ -2897,9 +5257,1098 @@ window.addEventListener('resize', () => {
   resizeLabelCanvas();
 });
 
+// ─── 인재 보드 (자발적 공개 기반) ────────────────────────────────────────────
+const _TALENT_KEY = 'orbitTalentBoard';
+
+// 내 공개 프로필 (localStorage)
+function getMyTalentProfile() {
+  return JSON.parse(localStorage.getItem(_TALENT_KEY + '_me') || 'null');
+}
+function saveMyTalentProfile(profile) {
+  localStorage.setItem(_TALENT_KEY + '_me', JSON.stringify(profile));
+}
+
+// 현재 작업 기반 스킬 자동 분석
+function analyzeMySkilsFromWork() {
+  const myId = _myMemberId;
+  const skills = new Set();
+  const tools  = new Set();
+  let analysis = '';
+
+  if (!_teamMode || !_activeSimData) {
+    return { skills: [], tools: [], analysis: '팀·회사 시뮬에서 분석 가능합니다.' };
+  }
+
+  // 팀 모드: 본인 노드에서 스킬/툴 수집
+  const myNode = _teamNodes.find(n => n.type === 'member' && n.memberId === myId);
+  const allMembers = _activeSimData?.members ||
+    (_activeSimData?.departments || []).flatMap(d => d.members || []);
+
+  const me = allMembers.find(m => m.id === myId) || allMembers[0];
+  if (me) {
+    (me.tools || []).forEach(t => tools.add(t));
+    (me.skills || []).forEach(s => skills.add(s.alias || s));
+    (me.tasks || []).forEach(t => {
+      // 진행 중 작업의 키워드를 스킬로 추출
+      if (t.status === 'active' && t.progress > 0.2) {
+        const kw = (t.name || '').replace(/[^\w가-힣\s]/g, '').split(' ')
+          .filter(w => w.length > 1).slice(0, 2);
+        kw.forEach(k => skills.add(k));
+      }
+    });
+    const activeCount = (me.tasks || []).filter(t => t.status === 'active').length;
+    const doneCount   = (me.tasks || []).filter(t => t.status === 'done').length;
+    analysis = `현재 ${activeCount}개 작업 진행 중 · ${doneCount}개 완료\n` +
+               `주요 툴: ${[...tools].slice(0,3).join(', ')}\n` +
+               `이 경험을 공개하면 비슷한 작업을 하는 팀원과 연결될 수 있습니다.`;
+  } else {
+    analysis = '현재 작업 중인 노드 정보를 분석하고 있습니다.';
+  }
+
+  return { skills: [...skills], tools: [...tools], analysis };
+}
+
+// 내 능력 공개 패널 열기
+let _mtpStatus = 'open';
+let _mtpSelectedSkills = new Set();
+
+function openMyTalentPanel() {
+  const panel = document.getElementById('my-talent-panel');
+  panel.classList.add('open');
+  const { skills, tools, analysis } = analyzeMySkilsFromWork();
+  document.getElementById('mtp-analysis').textContent = analysis;
+
+  // 스킬 칩 렌더
+  const allOptions = [...new Set([...skills, ...tools])];
+  const chips = document.getElementById('mtp-skill-chips');
+  chips.innerHTML = allOptions.map(s =>
+    `<span class="mtp-chip ${_mtpSelectedSkills.has(s) ? 'selected' : ''}"
+      onclick="toggleMtpSkill(this,'${s.replace(/'/g,"\\'")}')">${s}</span>`
+  ).join('');
+
+  // 기존 프로필 복원
+  const existing = getMyTalentProfile();
+  if (existing) {
+    document.getElementById('mtp-tagline').value = existing.tagline || '';
+    _mtpStatus = existing.status || 'open';
+    existing.skills?.forEach(s => _mtpSelectedSkills.add(s));
+    renderMtpChips();
+    updateMtpStatusBtns();
+    const btn = document.getElementById('mtp-publish-btn');
+    if (existing.published) { btn.textContent = '✅ 공개 중 — 취소하기'; btn.classList.add('published'); }
+  }
+}
+window.openMyTalentPanel = openMyTalentPanel;
+
+function closeMyTalentPanel() { document.getElementById('my-talent-panel').classList.remove('open'); }
+window.closeMyTalentPanel = closeMyTalentPanel;
+
+function toggleMtpSkill(el, skill) {
+  if (_mtpSelectedSkills.has(skill)) _mtpSelectedSkills.delete(skill);
+  else _mtpSelectedSkills.add(skill);
+  el.classList.toggle('selected', _mtpSelectedSkills.has(skill));
+}
+window.toggleMtpSkill = toggleMtpSkill;
+
+function renderMtpChips() {
+  document.querySelectorAll('#mtp-skill-chips .mtp-chip').forEach(el => {
+    el.classList.toggle('selected', _mtpSelectedSkills.has(el.textContent));
+  });
+}
+
+function setMtpStatus(s) {
+  _mtpStatus = s;
+  updateMtpStatusBtns();
+}
+window.setMtpStatus = setMtpStatus;
+
+function updateMtpStatusBtns() {
+  document.getElementById('mtp-st-open').classList.toggle('active', _mtpStatus === 'open');
+  document.getElementById('mtp-st-ask').classList.toggle('active',  _mtpStatus === 'ask');
+}
+
+function toggleMyPublish() {
+  const btn     = document.getElementById('mtp-publish-btn');
+  const existing = getMyTalentProfile();
+  if (existing?.published) {
+    // 공개 취소
+    saveMyTalentProfile({ ...existing, published: false });
+    btn.textContent = '📡 인재 보드에 공개';
+    btn.classList.remove('published');
+    renderTalentTicker();
+    showHelperToast('🔒 인재 보드 공개가 취소되었습니다.', '#6e7681');
+    return;
+  }
+  // 공개
+  const myId = _myMemberId;
+  const allMembers = _activeSimData?.members ||
+    (_activeSimData?.departments || []).flatMap(d => d.members || []);
+  const me = allMembers.find(m => m.id === myId) || allMembers[0];
+  if (!me) { showHelperToast('팀/회사 시뮬을 먼저 시작해주세요.', '#f85149'); return; }
+
+  const profile = {
+    memberId: me.id, name: me.name, role: me.role, color: me.color || '#58a6ff',
+    skills: [..._mtpSelectedSkills],
+    tagline: document.getElementById('mtp-tagline').value.trim(),
+    status: _mtpStatus,
+    published: true,
+    publishedAt: Date.now(),
+  };
+  saveMyTalentProfile(profile);
+  btn.textContent = '✅ 공개 중 — 취소하기';
+  btn.classList.add('published');
+  renderTalentTicker();
+  checkHelperSuggestions();  // 공개 후 매칭 제안 체크
+  showHelperToast('📡 인재 보드에 공개되었습니다! 관심있는 사람이 DM을 보낼 수 있어요.', '#3fb950');
+}
+window.toggleMyPublish = toggleMyPublish;
+
+// 인재 보드 ticker 렌더
+function buildTalentEntries() {
+  const entries = [];
+  // 1. 내 공개 프로필
+  const me = getMyTalentProfile();
+  if (me?.published) entries.push(me);
+  // 2. 시뮬 데이터 중 demo opt-in (데모용 — 실제 환경에서는 서버 기반)
+  const demoPublished = JSON.parse(localStorage.getItem(_TALENT_KEY + '_demo') || '[]');
+  entries.push(...demoPublished);
+  return entries;
+}
+
+function renderTalentTicker() {
+  const scroll = document.getElementById('ticker-scroll');
+  if (!scroll) return;
+  const entries = buildTalentEntries();
+  if (entries.length === 0) {
+    scroll.innerHTML = `<span style="padding:0 24px;color:#6e7681;font-size:12px">
+      아직 공개된 인재가 없습니다 — "+ 내 능력 공개" 버튼으로 먼저 등록해보세요 🌱
+    </span>`;
+    return;
+  }
+  const makeCard = (e) => {
+    const initial = (e.name || '?').slice(-1);
+    const stClass = e.status === 'open' ? 'open' : 'ask';
+    const stLabel = e.status === 'open' ? '🟢 협업 가능' : '🟡 문의만';
+    const skillHtml = (e.skills || []).slice(0, 4).map(s =>
+      `<span class="tc-skill-chip">${s}</span>`).join('');
+    const tagline = e.tagline ? `<span style="color:#8b949e;font-size:10px;max-width:160px;overflow:hidden;text-overflow:ellipsis">${e.tagline}</span>` : '';
+    return `<div class="ticker-card"
+      onclick="openDmPanel('${e.memberId}','${(e.name||'').replace(/'/g,"\\'")}','${e.color||'#58a6ff'}')"
+      title="${e.name}에게 DM 보내기">
+      <div class="tc-avatar" style="background:${e.color||'#1f6feb'};color:#fff">${initial}</div>
+      <div class="tc-info">
+        <div style="display:flex;align-items:center;gap:6px">
+          <span class="tc-name">${e.name}</span>
+          <span class="tc-role">${e.role || ''}</span>
+        </div>
+        <div class="tc-skills">${skillHtml}${tagline}</div>
+      </div>
+      <span class="tc-status ${stClass}">${stLabel}</span>
+      <button class="tc-dm" onclick="event.stopPropagation();openDmPanel('${e.memberId}','${(e.name||'').replace(/'/g,"\\'")}','${e.color||'#58a6ff'}')">DM</button>
+    </div>`;
+  };
+  const html = entries.map(makeCard).join('');
+  scroll.innerHTML = html + html; // 두 번 반복 → 무한 스크롤
+  const dur = Math.max(24, entries.length * 10);
+  scroll.style.animationDuration = dur + 's';
+}
+
+function toggleTalentBoard() {
+  const ticker = document.getElementById('talent-ticker');
+  const btn    = document.getElementById('talent-board-btn');
+  const isOpen = ticker.classList.toggle('open');
+  btn.classList.toggle('open', isOpen);
+  if (isOpen) renderTalentTicker();
+}
+window.toggleTalentBoard = toggleTalentBoard;
+
+// ── "이 분에게 도움될 수 있습니다" 매칭 제안 ──────────────────────────────────
+function checkHelperSuggestions() {
+  if (!_teamMode || !_activeSimData) return;
+  const me = getMyTalentProfile();
+  if (!me?.published || !me.skills?.length) return;
+
+  // 내 스킬 키워드와 매칭되는 다른 팀원의 진행 중 작업 탐색
+  const allMembers = _activeSimData?.members ||
+    (_activeSimData?.departments || []).flatMap(d => d.members || []);
+
+  const matches = [];
+  allMembers.forEach(m => {
+    if (m.id === me.memberId) return;  // 본인 제외
+    (m.tasks || []).forEach(task => {
+      if (task.status !== 'active') return;
+      const relevantSkill = me.skills.find(skill =>
+        (task.name + ' ' + (task.subtasks || []).join(' ')).includes(skill) ||
+        (m.tools || []).some(t => t.includes(skill) || skill.includes(t))
+      );
+      if (relevantSkill) {
+        matches.push({ member: m, task, skill: relevantSkill });
+      }
+    });
+  });
+
+  if (matches.length > 0) {
+    const best = matches[0];
+    setTimeout(() => {
+      showHelperToast(
+        `💡 <strong>${best.member.name}</strong>이 "${best.task.name}"을 진행 중입니다. 내 <strong>${best.skill}</strong> 경험이 도움될 수 있어요!`,
+        '#ffd700',
+        () => openDmPanel(best.member.id, best.member.name, best.member.color || '#58a6ff'),
+        'DM 보내기'
+      );
+    }, 1200);
+  }
+}
+
+// 헬퍼 토스트 (멀티 용도 알림)
+let _helperToastTimer = null;
+function showHelperToast(html, color = '#58a6ff', onAction = null, actionLabel = '확인') {
+  let toast = document.getElementById('helper-toast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'helper-toast';
+    Object.assign(toast.style, {
+      position: 'fixed', bottom: '64px', left: '50%', transform: 'translateX(-50%)',
+      zIndex: '9000', background: 'rgba(13,17,23,0.97)',
+      border: `1px solid ${color}`, borderRadius: '12px',
+      padding: '10px 16px', maxWidth: '460px', display: 'flex',
+      alignItems: 'center', gap: '10px', backdropFilter: 'blur(12px)',
+      boxShadow: '0 8px 32px rgba(0,0,0,0.6)', fontSize: '12px',
+      color: '#e6edf3', lineHeight: '1.4', transition: 'opacity .3s',
+    });
+    document.body.appendChild(toast);
+  }
+  toast.style.borderColor = color;
+  toast.style.opacity = '1';
+  toast.innerHTML = `<span style="flex:1">${html}</span>`;
+  if (onAction) {
+    const btn = document.createElement('button');
+    btn.textContent = actionLabel;
+    Object.assign(btn.style, {
+      background: color, border: 'none', color: '#000', borderRadius: '7px',
+      padding: '4px 10px', fontSize: '11px', cursor: 'pointer', fontFamily: 'inherit',
+      fontWeight: '700', whiteSpace: 'nowrap',
+    });
+    btn.onclick = () => { onAction(); closeHelperToast(); };
+    toast.appendChild(btn);
+  }
+  const closeBtn = document.createElement('button');
+  closeBtn.textContent = '✕';
+  Object.assign(closeBtn.style, { background:'none', border:'none', color:'#6e7681', cursor:'pointer', fontSize:'14px', flexShrink:'0' });
+  closeBtn.onclick = closeHelperToast;
+  toast.appendChild(closeBtn);
+  clearTimeout(_helperToastTimer);
+  _helperToastTimer = setTimeout(closeHelperToast, 8000);
+}
+
+function closeHelperToast() {
+  const t = document.getElementById('helper-toast');
+  if (t) { t.style.opacity = '0'; setTimeout(() => t?.remove(), 300); }
+}
+window.closeHelperToast = closeHelperToast;
+
+// ─── DM 패널 ──────────────────────────────────────────────────────────────────
+const _dmHistory = {};  // { memberId: [{ me, text, time }] }
+let   _dmTarget  = null;
+
+function openDmPanel(memberId, memberName, memberColor) {
+  _dmTarget = { memberId, memberName, memberColor: memberColor || '#58a6ff' };
+  const panel  = document.getElementById('dm-panel');
+  const avatar = document.getElementById('dm-avatar');
+  const name   = document.getElementById('dm-name');
+  avatar.textContent  = memberName?.slice(-1) || '?';
+  avatar.style.background = memberColor || '#1f6feb';
+  name.textContent    = memberName || '팀원';
+  renderDmMessages(memberId);
+  panel.classList.add('open');
+  document.getElementById('dm-input').focus();
+}
+
+function openDmFromIssue(memberId, issueName) {
+  // _teamNodes에서 해당 멤버 찾기
+  const node = _teamNodes.find(n => n.type === 'member' && n.memberId === memberId);
+  const name  = node?.label || memberId;
+  const color = node?.color || '#58a6ff';
+  // 이슈 선택시 자동 메시지 입력
+  openDmPanel(memberId, name, color);
+  const input = document.getElementById('dm-input');
+  if (input) input.value = `안녕하세요! "${issueName}" 이슈 관련해서 도움 드릴 수 있을 것 같아요 🙋`;
+}
+window.openDmFromIssue = openDmFromIssue;
+
+function renderDmMessages(memberId) {
+  const container = document.getElementById('dm-messages');
+  const msgs = _dmHistory[memberId] || [];
+  if (msgs.length === 0) {
+    container.innerHTML = '<div class="dm-empty">대화를 시작해보세요 👋</div>';
+    return;
+  }
+  container.innerHTML = msgs.map(m =>
+    `<div class="dm-msg ${m.me ? 'me' : ''}">
+      <div class="dm-bubble">${escHtml(m.text)}</div>
+      <span class="dm-time">${m.time}</span>
+    </div>`
+  ).join('');
+  container.scrollTop = container.scrollHeight;
+}
+
+function sendDm() {
+  const input = document.getElementById('dm-input');
+  const text  = input.value.trim();
+  if (!text || !_dmTarget) return;
+  const memberId = _dmTarget.memberId;
+  if (!_dmHistory[memberId]) _dmHistory[memberId] = [];
+  const now = new Date();
+  const time = `${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}`;
+  _dmHistory[memberId].push({ me: true, text, time });
+  input.value = '';
+  renderDmMessages(memberId);
+  // 자동 응답 (시뮬레이션)
+  setTimeout(() => {
+    if (!_dmHistory[memberId]) return;
+    const replies = [
+      '알겠습니다! 확인해볼게요 👍',
+      '감사합니다, 내일까지 처리할게요.',
+      '해당 부분 검토해보겠습니다.',
+      '도움 요청 감사해요! 바로 확인해볼게요 🙌',
+    ];
+    const reply = replies[Math.floor(Math.random() * replies.length)];
+    _dmHistory[memberId].push({ me: false, text: reply, time });
+    renderDmMessages(memberId);
+  }, 800 + Math.random() * 1200);
+}
+window.sendDm = sendDm;
+
+function closeDmPanel() {
+  document.getElementById('dm-panel').classList.remove('open');
+  _dmTarget = null;
+}
+window.closeDmPanel = closeDmPanel;
+
+function escHtml(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ─── 인라인 텍스트 편집 ────────────────────────────────────────────────────────
+const _labelAliasMap = JSON.parse(localStorage.getItem('orbitLabelAliases') || '{}');
+
+function openInlineEdit(hit) {
+  if (!hit?.data) return;
+  _editingNode = hit.data;
+  _editIconEl.style.display = 'none';
+
+  const overlay = document.getElementById('inline-edit-overlay');
+  const input   = document.getElementById('inline-edit-input');
+  const label   = document.getElementById('inline-edit-label');
+
+  const nodeKey = _editingNode.memberId || _editingNode.deptId || (_editingNode.label || '').slice(0, 20);
+  label.textContent = `✎ ${_editingNode.type || '노드'} 레이블 편집`;
+  input.value = _labelAliasMap[nodeKey] || _editingNode.label || '';
+
+  // 위치: 히트 박스 우측
+  overlay.style.left = Math.min(hit.cx + hit.r + 6, innerWidth - 220) + 'px';
+  overlay.style.top  = Math.max(hit.cy - 30, 10) + 'px';
+  overlay.classList.add('open');
+  overlay.dataset.nodeKey = nodeKey;
+  setTimeout(() => input.focus(), 50);
+}
+
+function saveInlineEdit() {
+  const overlay  = document.getElementById('inline-edit-overlay');
+  const input    = document.getElementById('inline-edit-input');
+  const nodeKey  = overlay.dataset.nodeKey;
+  const newLabel = input.value.trim();
+  if (newLabel && _editingNode) {
+    _labelAliasMap[nodeKey] = newLabel;
+    localStorage.setItem('orbitLabelAliases', JSON.stringify(_labelAliasMap));
+    // 노드 레이블 즉시 업데이트
+    _editingNode.label = newLabel;
+  }
+  closeInlineEdit();
+}
+
+function closeInlineEdit() {
+  document.getElementById('inline-edit-overlay').classList.remove('open');
+  _editingNode = null;
+  _editIconEl.style.display = 'none';
+}
+window.saveInlineEdit  = saveInlineEdit;
+window.closeInlineEdit = closeInlineEdit;
+
 // ─── 시작 ─────────────────────────────────────────────────────────────────────
 loadData();
 connectWS();
+</script>
+
+<!-- 노드 별명 편집 바 (info-panel 내부 동적 주입) -->
+<template id="alias-edit-tpl">
+  <div id="alias-edit-bar">
+    <span style="font-size:10px;color:#6e7681;white-space:nowrap">별명</span>
+    <input id="alias-input" type="text" placeholder="표시 이름 변경…" maxlength="30">
+    <button id="alias-save-btn" onclick="saveAlias()">저장</button>
+  </div>
+</template>
+
+<!-- 솔루션 제안 토스트 -->
+<div id="suggestion-toast">
+  <div class="st-header">
+    <span class="st-icon">🔮</span>
+    <span class="st-title">Orbit AI 제안</span>
+    <button class="st-close" onclick="dismissSuggestion()">✕</button>
+  </div>
+  <div class="st-body" id="st-body">반복 작업 패턴을 감지했습니다.</div>
+  <div class="st-actions">
+    <button class="st-btn accept" onclick="acceptSuggestion()">✅ 솔루션 적용</button>
+    <button class="st-btn dismiss" onclick="dismissSuggestion()">나중에</button>
+  </div>
+</div>
+
+<!-- Orbit AI 동의 모달 -->
+<div id="consent-modal">
+  <div class="cm-box">
+    <div class="cm-title">⚡ Orbit AI 자동 트래킹</div>
+    <div class="cm-sub">프로그램이 아래 정보를 감지하여 AI 작업 지도를 만들고 자동 제안을 제공합니다. 언제든 설정에서 끌 수 있습니다.</div>
+    <div class="cm-items">
+      <div class="cm-item"><span class="cm-item-icon">📁</span><div><b>파일 변경 감지</b><br><span style="font-size:10px;color:#6e7681">원본/변경 내용을 비교해 반복 패턴을 학습</span></div></div>
+      <div class="cm-item"><span class="cm-item-icon">🤖</span><div><b>AI 도구 사용 추적</b><br><span style="font-size:10px;color:#6e7681">ChatGPT·Claude 등 사용 목적 자동 분류</span></div></div>
+      <div class="cm-item"><span class="cm-item-icon">💡</span><div><b>자동화 솔루션 제안</b><br><span style="font-size:10px;color:#6e7681">Ollama 로컬 모델로 분석 (외부 전송 없음)</span></div></div>
+    </div>
+    <div class="cm-privacy">🔒 모든 데이터는 localhost에만 저장됩니다. 외부 서버 전송 없음.</div>
+    <div class="cm-actions">
+      <button class="cm-btn deny"  onclick="consentDecide(false)">나중에</button>
+      <button class="cm-btn allow" onclick="consentDecide(true)">허용하기</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── 노드 별명 (공개명 / 내 표시명) 시스템 ──────────────────────────────────
+// _nodeAliases: { originalLabel → displayAlias }  (사용자가 지정한 내 표시 이름)
+const _nodeAliases = JSON.parse(localStorage.getItem('orbitNodeAliases') || '{}');
+
+function saveAliases() {
+  localStorage.setItem('orbitNodeAliases', JSON.stringify(_nodeAliases));
+}
+
+function getDisplayLabel(node) {
+  return _nodeAliases[node.label] || node.label;
+}
+
+function showAliasEditBar(node) {
+  // info-panel 요약 탭 끝에 별명 편집 바 추가
+  let bar = document.getElementById('alias-edit-bar');
+  if (!bar) {
+    const tpl = document.getElementById('alias-edit-tpl');
+    const clone = tpl.content.cloneNode(true);
+    document.getElementById('ip-pane-summary').appendChild(clone);
+    bar = document.getElementById('alias-edit-bar');
+  }
+  bar.dataset.originalLabel = node.label;
+  const input = document.getElementById('alias-input');
+  input.value = _nodeAliases[node.label] || '';
+  input.placeholder = `기본: "${node.label}"`;
+  bar.classList.add('visible');
+}
+
+function saveAlias() {
+  const bar = document.getElementById('alias-edit-bar');
+  if (!bar) return;
+  const original = bar.dataset.originalLabel;
+  const val = document.getElementById('alias-input').value.trim();
+  if (val && val !== original) {
+    _nodeAliases[original] = val;
+  } else if (!val) {
+    delete _nodeAliases[original];
+  }
+  saveAliases();
+  // 3D 뷰의 pill 텍스트 즉시 반영 — _teamNodes의 label 변경
+  const node = _teamNodes.find(n => n.label === original);
+  if (node) node.displayLabel = _nodeAliases[original] || null;
+  bar.classList.remove('visible');
+}
+window.saveAlias = saveAlias;
+
+// ── 솔루션 제안 토스트 ──────────────────────────────────────────────────────
+let _currentSuggestionId = null;
+
+function showSuggestion(suggestion) {
+  _currentSuggestionId = suggestion.id;
+  document.getElementById('st-body').innerHTML = `
+    <b style="color:#cdd9e5">${suggestion.pattern}</b><br>
+    <span style="color:#58a6ff">💡 ${suggestion.suggestion}</span>
+    ${suggestion.automatable ? '<br><span style="color:#3fb950;font-size:10px">⚡ 자동화 가능</span>' : ''}
+  `;
+  document.getElementById('suggestion-toast').classList.add('visible');
+}
+
+function dismissSuggestion() {
+  document.getElementById('suggestion-toast').classList.remove('visible');
+  if (_currentSuggestionId) {
+    fetch(`/api/learn/seen/${_currentSuggestionId}`, { method: 'POST' }).catch(() => {});
+  }
+}
+
+function acceptSuggestion() {
+  dismissSuggestion();
+  // 기능 패널 열기 (솔루션 마켓으로 연결)
+  document.getElementById('feat-btn')?.click();
+}
+
+window.dismissSuggestion = dismissSuggestion;
+window.acceptSuggestion  = acceptSuggestion;
+
+// 주기적으로 새 제안 확인 (30초마다)
+setInterval(async () => {
+  try {
+    const res = await fetch('/api/learn/suggestions');
+    if (!res.ok) return;
+    const list = await res.json();
+    const unseen = list.find(s => !s.seen);
+    if (unseen && !document.getElementById('suggestion-toast').classList.contains('visible')) {
+      showSuggestion(unseen);
+    }
+  } catch {}
+}, 30000);
+
+// ── 동의 모달 ────────────────────────────────────────────────────────────────
+function consentDecide(allow) {
+  localStorage.setItem('orbitConsentDecided', '1');
+  localStorage.setItem('orbitTrackingAllowed', allow ? '1' : '0');
+  document.getElementById('consent-modal').classList.remove('visible');
+  if (allow) {
+    console.log('[Orbit] 자동 트래킹 허용됨');
+  }
+}
+window.consentDecide = consentDecide;
+
+// 첫 방문 시 동의 모달 표시 (3초 후)
+if (!localStorage.getItem('orbitConsentDecided')) {
+  setTimeout(() => {
+    document.getElementById('consent-modal').classList.add('visible');
+  }, 3000);
+}
+
+// ── 줌 버튼 ──────────────────────────────────────────────────────────────────
+function zoomStep(dir) {
+  // dir: -1 = 줌인(r 감소), +1 = 줌아웃(r 증가)
+  const cur  = controls.sph.r;
+  const step = cur < 40 ? 5 : cur < 100 ? 10 : 20;
+  const next = Math.max(8, Math.min(300, cur + dir * step));
+  // controls.tgt 가 실제 look-at 타겟 오브젝트
+  const tx = controls.tgt?.x || 0;
+  const ty = controls.tgt?.y || 0;
+  const tz = controls.tgt?.z || 0;
+  lerpCameraTo(next, tx, ty, tz, 300);
+}
+window.zoomStep = zoomStep;
+
+// 줌 레벨 표시 업데이트 (렌더 루프에서 호출) — ctrl-hub 내부 표시
+function updateZoomDisplay() {
+  const el = document.getElementById('ch-zoom-level');
+  if (el && controls?.sph) el.textContent = `r:${Math.round(controls.sph.r)}`;
+}
+
+// ── 미니맵 / 줌 (ctrl-hub 내에서 처리, 하단 별도 함수로 재정의됨) ──────────
+
+// ── 뷰 설정 패널 (view-panel) ────────────────────────────────────────────────
+const _VP_KEY = 'orbitViewPrefs';
+const _viewPrefs = JSON.parse(localStorage.getItem(_VP_KEY) || 'null') || {
+  zoom: { personal: 22, team: 70, company: 100 },
+  filter: { type: 'all' },
+  customGroups: [],
+  activeGroupId: null,
+};
+let _nodeFilter = _viewPrefs.filter || { type: 'all' };
+
+function saveViewPrefs() {
+  localStorage.setItem(_VP_KEY, JSON.stringify(_viewPrefs));
+}
+
+// 슬라이더 초기화
+(function initViewSliders() {
+  const pEl = document.getElementById('zoom-personal');
+  const tEl = document.getElementById('zoom-team');
+  const cEl = document.getElementById('zoom-company');
+  if (pEl) { pEl.value = _viewPrefs.zoom.personal; document.getElementById('zoom-personal-val').textContent = _viewPrefs.zoom.personal; }
+  if (tEl) { tEl.value = _viewPrefs.zoom.team;     document.getElementById('zoom-team-val').textContent = _viewPrefs.zoom.team; }
+  if (cEl) { cEl.value = _viewPrefs.zoom.company;  document.getElementById('zoom-company-val').textContent = _viewPrefs.zoom.company; }
+})();
+
+function saveZoomPref(mode, val) {
+  _viewPrefs.zoom[mode] = parseInt(val);
+  saveViewPrefs();
+}
+
+function applyModeZoom(mode) {
+  const r = _viewPrefs.zoom[mode] || { personal: 22, team: 70, company: 100 }[mode];
+  if (typeof lerpCameraTo === 'function') lerpCameraTo(r, 0, 0, 0, 800);
+}
+
+function applyCurrentModeZoom() {
+  if (_companyMode) applyModeZoom('company');
+  else if (_teamMode) applyModeZoom('team');
+  else applyModeZoom('personal');
+}
+
+function toggleViewPanel() {
+  const panel = document.getElementById('view-panel');
+  const btn   = document.getElementById('view-btn');
+  if (!panel) return;
+  const isOpen = panel.classList.toggle('open');
+  btn && btn.classList.toggle('open', isOpen);
+  if (isOpen) {
+    renderGroupList();
+    renderActiveFilter();
+  }
+}
+window.toggleViewPanel = toggleViewPanel;
+
+// ── 필터 ──────────────────────────────────────────────────────────────────
+function nodeMatchesFilter(node) {
+  const f = _nodeFilter;
+  if (!f || f.type === 'all') return true;
+  const t = node.type;
+  // 구조 노드는 항상 표시
+  if (t === 'goal' || t === 'department') return true;
+  if (f.type === 'mine') {
+    return node.memberId === _myMemberId || t === 'goal';
+  }
+  if (f.type === 'team') {
+    return !node.deptId || true; // 팀 모드: 전체
+  }
+  if (f.type === 'company') {
+    return true; // 회사 모드: 전체
+  }
+  if (f.type === 'depts' && f.deptIds) {
+    if (!node.deptId) return true;
+    return f.deptIds.includes(node.deptId);
+  }
+  if (f.type === 'members' && f.memberIds) {
+    if (!node.memberId) return true;
+    return f.memberIds.includes(node.memberId);
+  }
+  return true;
+}
+window.nodeMatchesFilter = nodeMatchesFilter;
+
+function setNodeFilter(type, btnEl) {
+  _nodeFilter = { type };
+  _viewPrefs.filter = _nodeFilter;
+  saveViewPrefs();
+  // 버튼 active 상태 갱신
+  document.querySelectorAll('#vp-presets .vp-preset').forEach(b => b.classList.remove('active'));
+  if (btnEl) btnEl.classList.add('active');
+  renderActiveFilter();
+  rebuildScene();
+}
+window.setNodeFilter = setNodeFilter;
+
+function rebuildScene() {
+  if (_companyMode) buildCompanySystem(_activeSimData);
+  else if (_teamMode) buildTeamSystem(_activeSimData);
+}
+
+function renderActiveFilter() {
+  const el = document.getElementById('vp-active-filter');
+  if (!el) return;
+  const f = _nodeFilter;
+  if (f.type === 'all') { el.innerHTML = ''; return; }
+  const labels = { mine: '내 작업만', team: '팀 전체', company: '회사 전체',
+    depts: `부서: ${(f.deptIds||[]).join(', ')}`, members: `멤버: ${(f.memberIds||[]).join(', ')}` };
+  el.innerHTML = `<span class="vp-filter-tag">${labels[f.type] || f.type} <button onclick="clearNodeFilter()" style="background:none;border:none;color:#ef4444;cursor:pointer;padding:0 2px;">✕</button></span>`;
+}
+
+function clearNodeFilter() {
+  _nodeFilter = { type: 'all' };
+  _viewPrefs.filter = _nodeFilter;
+  saveViewPrefs();
+  document.querySelectorAll('#vp-presets .vp-preset').forEach((b,i) => b.classList.toggle('active', i===0));
+  renderActiveFilter();
+  rebuildScene();
+}
+window.clearNodeFilter = clearNodeFilter;
+
+// ── AI 필터 ────────────────────────────────────────────────────────────────
+function parseFilterText(text) {
+  const t = text.trim();
+  if (!t) return { type: 'all' };
+  if (/전체|모두|all/i.test(t)) return { type: 'all' };
+  if (/내.?작업|내.?것|mine/i.test(t)) return { type: 'mine' };
+
+  const depts = (_activeSimData && _activeSimData.departments) ? _activeSimData.departments : [];
+  const matchedDeptIds = [];
+  depts.forEach(d => {
+    if (t.includes(d.name) || (d.icon && t.includes(d.icon))) matchedDeptIds.push(d.id);
+  });
+  if (matchedDeptIds.length > 0) return { type: 'depts', deptIds: matchedDeptIds };
+
+  const members = depts.flatMap(d => d.members || []).concat(
+    (_activeSimData && _activeSimData.members) ? _activeSimData.members : []
+  );
+  const matchedMemberIds = [];
+  members.forEach(m => {
+    if (m.name && t.includes(m.name)) matchedMemberIds.push(m.id);
+  });
+  if (matchedMemberIds.length > 0) return { type: 'members', memberIds: matchedMemberIds };
+
+  return { type: 'all' };
+}
+
+function applyAIFilter() {
+  const input = document.getElementById('ai-filter-input');
+  if (!input) return;
+  const text = input.value;
+  const filter = parseFilterText(text);
+  _nodeFilter = filter;
+  _viewPrefs.filter = filter;
+  saveViewPrefs();
+  // 프리셋 버튼 active 해제
+  document.querySelectorAll('#vp-presets .vp-preset').forEach(b => b.classList.remove('active'));
+  renderActiveFilter();
+  rebuildScene();
+  if (filter.type !== 'all') input.value = '';
+}
+window.applyAIFilter = applyAIFilter;
+
+// ── 커스텀 그룹 ────────────────────────────────────────────────────────────
+function openGroupCreator() {
+  const nameEl = document.getElementById('vp-new-group-name');
+  const name = nameEl ? nameEl.value.trim() : '';
+  if (!name) { if (nameEl) nameEl.focus(); return; }
+  // 현재 시뮬 데이터의 모든 부서 ID를 기본값으로
+  const depts = (_activeSimData && _activeSimData.departments) ? _activeSimData.departments : [];
+  const deptIds = depts.map(d => d.id);
+  saveCustomGroup(name, deptIds, []);
+  if (nameEl) nameEl.value = '';
+}
+window.openGroupCreator = openGroupCreator;
+
+function saveCustomGroup(name, deptIds, memberIds) {
+  const group = { id: `g${Date.now()}`, name, deptIds: deptIds||[], memberIds: memberIds||[] };
+  _viewPrefs.customGroups.push(group);
+  saveViewPrefs();
+  renderGroupList();
+}
+
+function loadCustomGroup(id) {
+  const g = _viewPrefs.customGroups.find(g => g.id === id);
+  if (!g) return;
+  _viewPrefs.activeGroupId = id;
+  _nodeFilter = { type: 'depts', deptIds: g.deptIds, memberIds: g.memberIds };
+  _viewPrefs.filter = _nodeFilter;
+  saveViewPrefs();
+  document.querySelectorAll('#vp-presets .vp-preset').forEach(b => b.classList.remove('active'));
+  renderActiveFilter();
+  rebuildScene();
+}
+window.loadCustomGroup = loadCustomGroup;
+
+function deleteCustomGroup(id, e) {
+  e && e.stopPropagation();
+  _viewPrefs.customGroups = _viewPrefs.customGroups.filter(g => g.id !== id);
+  if (_viewPrefs.activeGroupId === id) {
+    _viewPrefs.activeGroupId = null;
+    _nodeFilter = { type: 'all' };
+    _viewPrefs.filter = _nodeFilter;
+    rebuildScene();
+  }
+  saveViewPrefs();
+  renderGroupList();
+  renderActiveFilter();
+}
+window.deleteCustomGroup = deleteCustomGroup;
+
+function renderGroupList() {
+  const el = document.getElementById('vp-group-list');
+  if (!el) return;
+  const groups = _viewPrefs.customGroups || [];
+  if (groups.length === 0) { el.innerHTML = '<div style="font-size:10px;opacity:.4;padding:4px 0;">저장된 그룹 없음</div>'; return; }
+  el.innerHTML = groups.map(g => `
+    <div class="vp-group-item${_viewPrefs.activeGroupId===g.id?' active':''}" onclick="loadCustomGroup('${g.id}')">
+      <span style="flex:1;font-size:11px;">${g.name}</span>
+      <button onclick="deleteCustomGroup('${g.id}',event)" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:11px;padding:0 2px;">✕</button>
+    </div>`).join('');
+}
+
+// 앱 부팅 시 저장된 필터 복원
+(function restoreFilter() {
+  const f = _viewPrefs.filter;
+  if (!f || f.type === 'all') return;
+  // 프리셋 버튼 매핑
+  const presetMap = { all:0, mine:1, team:2, company:3 };
+  const idx = presetMap[f.type];
+  if (idx !== undefined) {
+    document.querySelectorAll('#vp-presets .vp-preset').forEach((b,i) => b.classList.toggle('active', i===idx));
+  }
+})();
+
+// ── 전체 뷰 자동 맞춤 ─────────────────────────────────────────────────────────
+function autoFitView(nodes, padding = 1.35) {
+  const positions = (nodes || _teamNodes).filter(n => n.pos).map(n => n.pos);
+  if (positions.length === 0) { lerpCameraTo(60, 0, 0, 0, 700); return; }
+  let maxDist = 0;
+  for (const p of positions) {
+    const d = Math.sqrt(p.x * p.x + p.z * p.z);
+    if (d > maxDist) maxDist = d;
+  }
+  const fitR = Math.max(30, maxDist * padding);
+  lerpCameraTo(fitR, 0, 0, 0, 800);
+}
+window.autoFitView = autoFitView;
+
+// ── 컨트롤 허브 팝업 ──────────────────────────────────────────────────────────
+function toggleCtrlHub() {
+  const hub = document.getElementById('ctrl-hub');
+  const btn = document.getElementById('ctrl-hub-btn');
+  const open = hub.classList.toggle('open');
+  btn.classList.toggle('open', open);
+}
+function closeCtrlHub() {
+  document.getElementById('ctrl-hub')?.classList.remove('open');
+  document.getElementById('ctrl-hub-btn')?.classList.remove('open');
+}
+window.toggleCtrlHub = toggleCtrlHub;
+window.closeCtrlHub  = closeCtrlHub;
+
+// ── 줌 표시 (ctrl-hub 캔버스용 — updateZoomDisplay는 위에서 재정의됨) ────────
+
+// ── 미니맵: ctrl-hub 내부 캔버스 사용 ────────────────────────────────────────
+function drawMinimap3d() {
+  // ctrl-hub 내부 캔버스
+  const mc = document.getElementById('ch-minimap-canvas');
+  if (!mc) return;
+  const mctx = mc.getContext('2d');
+  const W = 156, H = 100, PAD = 5;
+
+  mctx.fillStyle = '#060a10';
+  mctx.fillRect(0, 0, W, H);
+
+  const pts = [];
+  if (typeof planetMeshes !== 'undefined') {
+    planetMeshes.forEach(p => pts.push({ x: p.position.x, z: p.position.z, c: '#58a6ff', r: 3 }));
+  }
+  if (typeof satelliteMeshes !== 'undefined') {
+    satelliteMeshes.forEach(s => pts.push({ x: s.position.x, z: s.position.z, c: '#8b949e', r: 1.5 }));
+  }
+  if (typeof _teamNodes !== 'undefined' && _teamNodes.length > 0) {
+    const typeColor = { goal:'#ffd700', member:'#79c0ff', department:'#d2a8ff',
+                        task:'#8b949e', skill:'#bc8cff', agent:'#3fb950', tool:'#f0883e' };
+    _teamNodes.forEach(n => {
+      if (!n.pos) return;
+      const isMine = _myMemberId && n.memberId === _myMemberId;
+      pts.push({ x: n.pos.x, z: n.pos.z,
+        c: isMine ? '#3fb950' : (typeColor[n.type] || '#6e7681'),
+        r: n.type === 'goal' ? 4 : isMine ? 4 : n.type === 'member' ? 3 : 1.5 });
+    });
+  }
+
+  if (pts.length === 0) {
+    mctx.fillStyle = '#6e7681'; mctx.font = '9px sans-serif'; mctx.textAlign = 'center';
+    mctx.fillText('데이터 없음', W / 2, H / 2); return;
+  }
+
+  const xs = pts.map(p => p.x), zs = pts.map(p => p.z);
+  const minX = Math.min(...xs), maxX = Math.max(...xs);
+  const minZ = Math.min(...zs), maxZ = Math.max(...zs);
+  const rangeX = (maxX - minX) || 1, rangeZ = (maxZ - minZ) || 1;
+  const toMX = x => PAD + ((x - minX) / rangeX) * (W - PAD * 2);
+  const toMY = z => PAD + ((z - minZ) / rangeZ) * (H - PAD * 2);
+
+  // 협업 라인도 미니맵에 표시
+  if (typeof _collabLines !== 'undefined') {
+    mctx.strokeStyle = 'rgba(57,210,192,0.4)'; mctx.lineWidth = 1;
+    _collabLines.forEach(cl => {
+      if (!cl.fromNode?.pos || !cl.toNode?.pos) return;
+      mctx.beginPath();
+      mctx.moveTo(toMX(cl.fromNode.pos.x), toMY(cl.fromNode.pos.z));
+      mctx.lineTo(toMX(cl.toNode.pos.x), toMY(cl.toNode.pos.z));
+      mctx.stroke();
+    });
+  }
+
+  for (const p of pts) {
+    mctx.beginPath(); mctx.arc(toMX(p.x), toMY(p.z), p.r, 0, Math.PI * 2);
+    mctx.fillStyle = p.c; mctx.globalAlpha = 0.85; mctx.fill();
+  }
+  mctx.globalAlpha = 1;
+
+  if (controls?.tgt) {
+    const cx = toMX(controls.tgt.x), cy = toMY(controls.tgt.z);
+    mctx.strokeStyle = 'rgba(88,166,255,0.9)'; mctx.lineWidth = 1;
+    mctx.beginPath(); mctx.moveTo(cx-5,cy); mctx.lineTo(cx+5,cy); mctx.stroke();
+    mctx.beginPath(); mctx.moveTo(cx,cy-5); mctx.lineTo(cx,cy+5); mctx.stroke();
+    const rScale = Math.min((W-PAD*2)/rangeX, (H-PAD*2)/rangeZ);
+    const rPx = Math.min((controls.sph.r/Math.max(rangeX,rangeZ))*rScale*12, 40);
+    mctx.beginPath(); mctx.arc(cx,cy,Math.max(4,rPx),0,Math.PI*2);
+    mctx.strokeStyle = 'rgba(88,166,255,0.3)'; mctx.stroke();
+  }
+}
+
+// 미니맵 클릭 → 카메라 이동 (ctrl-hub 캔버스)
+(function initCtrlHubMinimap() {
+  let dragging = false;
+  function moveTo(e) {
+    const mc = document.getElementById('ch-minimap-canvas');
+    if (!mc) return;
+    const rect = mc.getBoundingClientRect();
+    const PAD = 5, W = 156, H = 100;
+    const rx = Math.max(0, Math.min(1, (e.clientX - rect.left  - PAD) / (W - PAD * 2)));
+    const ry = Math.max(0, Math.min(1, (e.clientY - rect.top   - PAD) / (H - PAD * 2)));
+    const pts = typeof _teamNodes !== 'undefined' ? _teamNodes.filter(n => n.pos).map(n => ({ x: n.pos.x, z: n.pos.z }))
+      : (typeof planetMeshes !== 'undefined' ? planetMeshes.map(p => ({ x: p.position.x, z: p.position.z })) : []);
+    if (pts.length === 0) return;
+    const xs = pts.map(p => p.x), zs = pts.map(p => p.z);
+    const minX = Math.min(...xs), maxX = Math.max(...xs);
+    const minZ = Math.min(...zs), maxZ = Math.max(...zs);
+    const tx = minX + rx * (maxX - minX);
+    const tz = minZ + ry * (maxZ - minZ);
+    lerpCameraTo(controls.sph.r, tx, controls.tgt?.y || 0, tz, 300);
+  }
+  document.addEventListener('mousedown', e => {
+    const mc = document.getElementById('ch-minimap-canvas');
+    if (mc && mc.contains(e.target)) { dragging = true; moveTo(e); }
+  });
+  document.addEventListener('mousemove', e => { if (dragging) moveTo(e); });
+  document.addEventListener('mouseup', () => { dragging = false; });
+})();
+
+// ── 내 작업 사이드바 ──────────────────────────────────────────────────────────
+function toggleTaskSidebar() {
+  const sidebar = document.getElementById('my-task-sidebar');
+  const btn     = document.getElementById('task-sidebar-btn');
+  const open = sidebar.classList.toggle('open');
+  btn.classList.toggle('open', open);
+  if (open) updateMyTaskSidebar();
+}
+window.toggleTaskSidebar = toggleTaskSidebar;
+
+function setMyMember(id) {
+  _myMemberId = id || null;
+  if (_myMemberId) localStorage.setItem('orbitMyMemberId', _myMemberId);
+  else localStorage.removeItem('orbitMyMemberId');
+  updateMyTaskSidebar();
+}
+window.setMyMember = setMyMember;
+
+function updateMyTaskSidebar() {
+  const sel   = document.getElementById('mts-member-sel');
+  const body  = document.getElementById('mts-body');
+  if (!sel || !body) return;
+
+  // 멤버 목록 빌드
+  let allMembers = [];
+  if (_activeSimData) {
+    if (_companyMode) {
+      allMembers = (_activeSimData.departments || []).flatMap(d => d.members || []);
+    } else {
+      allMembers = _activeSimData.members || [];
+    }
+  }
+
+  // select 옵션 업데이트
+  const currentVal = _myMemberId || '';
+  sel.innerHTML = '<option value="">-- 나는 누구? 선택 --</option>' +
+    allMembers.map(m => `<option value="${m.id}"${m.id === currentVal ? ' selected' : ''}>${m.name} (${m.role})</option>`).join('');
+
+  // 내용 렌더
+  if (!_myMemberId || allMembers.length === 0) {
+    body.innerHTML = '<div class="mts-empty">팀원을 선택하면<br>작업 목록이 표시됩니다</div>';
+    return;
+  }
+  const me = allMembers.find(m => m.id === _myMemberId);
+  if (!me) { body.innerHTML = '<div class="mts-empty">멤버를 찾을 수 없습니다</div>'; return; }
+
+  const STATUS_META = {
+    active:  { emoji: '🟢', label: '진행 중', color: '#3fb950' },
+    done:    { emoji: '✅', label: '완료',     color: '#58a6ff' },
+    blocked: { emoji: '🔴', label: '블록됨',   color: '#f85149' },
+    pending: { emoji: '⏳', label: '대기',     color: '#8b949e' },
+  };
+
+  const collabTaskNames = new Set(
+    (me.tasks || []).filter(t => t.collab).map(t => t.name)
+  );
+
+  // 내 협업 파트너
+  const myNode = _teamNodes.find(n => n.type === 'member' && n.memberId === _myMemberId);
+  const collabPartners = _collabLines
+    .filter(cl => cl.fromNode?.memberId === _myMemberId || cl.toNode?.memberId === _myMemberId)
+    .map(cl => cl.fromNode?.memberId === _myMemberId ? cl.toNode : cl.fromNode)
+    .filter(n => n)
+    .map(n => n.label)
+    .join(', ');
+
+  const tasksHtml = (me.tasks || []).map(task => {
+    const sm = STATUS_META[task.status] || STATUS_META.pending;
+    const pct = Math.round((task.progress || 0) * 100);
+    const isCollab = task.collab;
+    const subsHtml = (task.subtasks || []).slice(0, 4).map((s, i) => {
+      const done = i < (task.completedSubtasks || 0);
+      return `<div class="mts-sub-item">${done ? '✓' : '○'} <span style="color:${done?'#3fb950':'#6e7681'}">${s}</span></div>`;
+    }).join('');
+    return `
+      <div class="mts-task${isCollab ? ' my-node' : ''}">
+        <div class="mts-task-name">${task.name}${isCollab ? ' <span style="font-size:9px;color:#39d2c0;font-weight:400">🤝 협업</span>' : ''}</div>
+        <div class="mts-task-bar"><div class="mts-task-fill" style="width:${pct}%;background:${sm.color}"></div></div>
+        <div class="mts-task-meta">
+          <span>${sm.emoji} ${sm.label}</span>
+          <span style="margin-left:auto;color:${sm.color};font-weight:600">${pct}%</span>
+        </div>
+        ${subsHtml ? `<div class="mts-sub-list">${subsHtml}</div>` : ''}
+      </div>`;
+  }).join('');
+
+  body.innerHTML = `
+    <div style="font-size:11px;color:#cdd9e5;font-weight:700;margin-bottom:2px">${me.name}</div>
+    <div style="font-size:10px;color:#6e7681;margin-bottom:10px">${me.role}</div>
+    ${collabPartners ? `<div class="mts-collab-hint">🤝 협업 중: ${collabPartners}</div>` : ''}
+    <div class="mts-section-lbl">작업 목록</div>
+    ${tasksHtml || '<div class="mts-empty">작업 없음</div>'}
+  `;
+}
+window.updateMyTaskSidebar = updateMyTaskSidebar;
+
+// ── 자신(me) 노드 강조 (Canvas2D 레이블에서 "나" 배지 추가) ─────────────────
+// drawTeamLabels의 Draw pass에서 myMember 노드 감지 후 왕관 배지 렌더링은
+// drawTeamLabels 내부에서 직접 처리하여 위치 추적이 가능하게 함
+
+// ── showPanel에서 별명 편집 바 연동 ─────────────────────────────────────────
+const _origShowPanel = showPanel;
+window.showPanel = function(data, obj) {
+  _origShowPanel(data, obj);
+  // skill, agent, member, department 노드에만 별명 편집 바 표시
+  const editableTypes = ['skill', 'agent', 'member', 'department', 'goal', 'task'];
+  if (editableTypes.includes(data.type)) {
+    showAliasEditBar(data);
+  } else {
+    const bar = document.getElementById('alias-edit-bar');
+    if (bar) bar.classList.remove('visible');
+  }
+  // member 노드: DM 버튼 삽입
+  if (data.type === 'member' && data.memberId) {
+    const panel = document.getElementById('info-panel');
+    let dmRow = panel?.querySelector('.ip-dm-row');
+    if (!dmRow && panel) {
+      dmRow = document.createElement('div');
+      dmRow.className = 'ip-dm-row';
+      dmRow.style.cssText = 'padding:8px 14px;display:flex;gap:8px;border-top:1px solid #21262d;flex-shrink:0;';
+      panel.appendChild(dmRow);
+    }
+    if (dmRow) {
+      dmRow.innerHTML = `
+        <button onclick="openDmPanel('${data.memberId}','${(data.label||'').replace(/'/g,'\\\'').replace(/"/g,'&quot;')}','${data.color||'#58a6ff'}')"
+          style="flex:1;padding:7px;background:#1f6feb;border:none;color:#fff;border-radius:8px;font-size:12px;cursor:pointer;font-family:inherit;font-weight:600;">
+          💬 DM 보내기
+        </button>
+        <button onclick="openMyTalentPanel()"
+          style="padding:7px 12px;background:#21262d;border:1px solid #3fb95060;color:#3fb950;border-radius:8px;font-size:12px;cursor:pointer;font-family:inherit;"
+          title="내 능력을 인재 보드에 공개">
+          📡 공개
+        </button>
+      `;
+    }
+  }
+};
 </script>
 </body>
 </html>
