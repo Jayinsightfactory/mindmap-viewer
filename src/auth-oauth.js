@@ -230,7 +230,8 @@ function createOAuthRouter({ passport, enabledProviders, insertToken, CLIENT_ORI
   const express = require('express');
   const router  = express.Router();
 
-  const origin = CLIENT_ORIGIN || process.env.CLIENT_ORIGIN || 'http://localhost:4747';
+  const origin     = CLIENT_ORIGIN || process.env.CLIENT_ORIGIN || 'http://localhost:4747';
+  const clientPage = `${origin}/orbit3d.html`;
 
   // ── OAuth 설정 상태 확인 ────────────────────────────────────────────────────
   router.get('/oauth/status', (_req, res) => {
@@ -256,7 +257,7 @@ function createOAuthRouter({ passport, enabledProviders, insertToken, CLIENT_ORI
         const token = generateToken();
         await insertToken(req.user.id, token);
         // 토큰을 URL 프래그먼트로 전달 (서버 로그에 남지 않음)
-        res.redirect(`${origin}/?oauth_token=${token}&provider=google`);
+        res.redirect(`${clientPage}?oauth_token=${token}&provider=google`);
       }
     );
   } else {
@@ -276,7 +277,7 @@ function createOAuthRouter({ passport, enabledProviders, insertToken, CLIENT_ORI
       async (req, res) => {
         const token = generateToken();
         await insertToken(req.user.id, token);
-        res.redirect(`${origin}/?oauth_token=${token}&provider=github`);
+        res.redirect(`${clientPage}?oauth_token=${token}&provider=github`);
       }
     );
   } else {
@@ -293,7 +294,7 @@ function createOAuthRouter({ passport, enabledProviders, insertToken, CLIENT_ORI
       async (req, res) => {
         const token = generateToken();
         await insertToken(req.user.id, token);
-        res.redirect(`${origin}/?oauth_token=${token}&provider=kakao`);
+        res.redirect(`${clientPage}?oauth_token=${token}&provider=kakao`);
       }
     );
   } else {
@@ -310,7 +311,7 @@ function createOAuthRouter({ passport, enabledProviders, insertToken, CLIENT_ORI
       async (req, res) => {
         const token = generateToken();
         await insertToken(req.user.id, token);
-        res.redirect(`${origin}/?oauth_token=${token}&provider=naver`);
+        res.redirect(`${clientPage}?oauth_token=${token}&provider=naver`);
       }
     );
   } else {
@@ -328,7 +329,7 @@ function createOAuthRouter({ passport, enabledProviders, insertToken, CLIENT_ORI
       async (req, res) => {
         const token = generateToken();
         await insertToken(req.user.id, token);
-        res.redirect(`${origin}/?oauth_token=${token}&provider=apple`);
+        res.redirect(`${clientPage}?oauth_token=${token}&provider=apple`);
       }
     );
   } else {
