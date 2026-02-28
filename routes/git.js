@@ -42,6 +42,7 @@ function createRouter({ insertEvent, broadcastAll }) {
       type:      `git.${type.replace(/^git\./, '')}`,
       source:    'git-hook',
       sessionId: metadata.branch || 'git-default',
+      userId:    req.user?.id || 'local',
       channelId,
       timestamp: new Date().toISOString(),
       data: {
@@ -102,6 +103,7 @@ function createRouter({ insertEvent, broadcastAll }) {
           type:      'git.commit',
           source:    'github-webhook',
           sessionId: payload.repository?.name || 'github',
+          userId:    'local',
           channelId: 'github',
           timestamp: commit.timestamp || new Date().toISOString(),
           data: {
