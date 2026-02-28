@@ -1,0 +1,24 @@
+{
+  "_comment": "이 파일을 ~/.claude/claude_desktop_config.json 에 복사하거나 기존 파일에 mcpServers 섹션을 병합하세요.",
+  "_how_to_get_token": "Orbit이 실행 중일 때 MCP_AUTH_TOKEN 환경변수를 설정하거나, 로컬 전용으로 토큰 없이 사용할 수 있습니다.",
+
+  "mcpServers": {
+    "orbit": {
+      "type": "http",
+      "url": "http://localhost:4747/api/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_ORBIT_TOKEN"
+      }
+    }
+  },
+
+  "_token_optional": "MCP_AUTH_TOKEN 환경변수를 설정하지 않으면 토큰 없이도 localhost에서 접근 가능합니다.",
+  "_no_auth_example": {
+    "mcpServers": {
+      "orbit": {
+        "type": "http",
+        "url": "http://localhost:4747/api/mcp"
+      }
+    }
+  }
+}

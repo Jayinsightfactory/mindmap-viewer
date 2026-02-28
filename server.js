@@ -83,6 +83,8 @@ const createGrowthRouter     = require('./routes/growth');
 const createCommunityRouter  = require('./routes/community');
 const createGitRouter        = require('./routes/git');
 const createAvatarsRouter    = require('./routes/avatars');
+const createMcpRouter        = require('./src/mcp-server');
+const outcomeStore           = require('./src/outcome-store');
 
 // ─── 상수 ────────────────────────────────────────────────────────────────────
 const PORT         = process.env.PORT ? parseInt(process.env.PORT) : 4747;
@@ -597,6 +599,20 @@ app.use('/api', createGitRouter({
 const { authMiddleware, optionalAuth } = require('./src/auth');
 app.use('/api', createAvatarsRouter({ authMiddleware, optionalAuth }));
 
+// ─── MCP 서버 (Claude Desktop 연동) ─────────────────────────────────────────
+app.use('/api', createMcpRouter({
+  getAllEvents,
+  getStats,
+  getSessions,
+  getInsights:    () => require('./src/insight-engine').getInsights(50),
+  getPatterns,
+  getSuggestions,
+  getOutcomes:    outcomeStore.getOutcomes,
+  saveOutcome:    outcomeStore.saveOutcome,
+  analyzeEvents:  require('./src/insight-engine').analyzeEvents,
+  searchEvents,
+}));
+
 // ─── JSONL 파일 감시 (레거시 이벤트 소스 지원) ───────────────────────────────
 // /api/hook 를 사용하지 않는 구버전 save-turn.js 호환용
 let lastBytePos = 0;
@@ -695,7 +711,11 @@ server.listen(PORT, () => {
   console.log(`   이벤트: ${stats.eventCount}개 | 세션: ${stats.sessionCount}개 | 파일: ${stats.fileCount}개`);
   console.log(`   감시 파일: ${CONV_FILE}`);
   console.log(`   OAuth: [${enabledProviders.join(', ') || '미설정'}]`);
-  console.log(`   Git hooks 설치: curl http://localhost:${PORT}/api/git/install | bash\n`);
+  console.log(`   Git hooks 설치: curl http://localhost:${PORT}/api/git/install | bash`);
+  console.log(`   MCP 서버: http://localhost:${PORT}/api/mcp\n`);
+
+  // outcome 테이블 초기화 (기존 DB에 테이블 없으면 생성)
+  outcomeStore.initOutcomeTable();
 
   // 인사이트 엔진 자동 시작 (INSIGHT_DISABLED=1 이면 스킵)
   if (process.env.INSIGHT_DISABLED !== '1') {

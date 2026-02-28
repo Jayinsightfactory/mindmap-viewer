@@ -116,6 +116,20 @@ function createTables() {
       custom_header TEXT,
       updated_at TEXT DEFAULT (datetime('now'))
     );
+
+    -- 세션 목표 + 결과 (MCP save_outcome tool이 기록)
+    CREATE TABLE IF NOT EXISTS outcomes (
+      id           TEXT PRIMARY KEY,
+      session_id   TEXT,
+      user_id      TEXT DEFAULT 'local',
+      goal         TEXT,
+      result       TEXT,
+      summary      TEXT,
+      tools_used   TEXT,
+      duration_min INTEGER,
+      tags         TEXT,
+      created_at   TEXT NOT NULL
+    );
   `);
 }
 
