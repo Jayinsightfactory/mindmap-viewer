@@ -293,6 +293,29 @@
     }
     .fchip:hover { border-color: #30363d; color: #8b949e; }
     .fchip.active { border-color: #58a6ff; color: #58a6ff; background: rgba(88,166,255,0.08); }
+
+    /* ── 팀 시뮬레이션 ───────────────────────────────── */
+    #team-mode-badge {
+      display: none; align-items: center; gap: 8px;
+      background: rgba(13,17,23,0.92); border: 1px solid #ffd700;
+      border-radius: 12px; padding: 8px 14px; margin-top: 6px;
+      backdrop-filter: blur(12px);
+    }
+    .tm-label { font-size: 12px; color: #ffd700; font-weight: 600; }
+    .tm-exit  {
+      background: none; border: 1px solid #30363d; color: #6e7681;
+      border-radius: 8px; padding: 3px 8px; font-size: 11px;
+      cursor: pointer; font-family: inherit; transition: all .15s;
+    }
+    .tm-exit:hover { border-color: #f85149; color: #f85149; }
+
+    .tr-btn-team {
+      background: rgba(13,17,23,0.88); border: 1px solid #ffd700;
+      color: #ffd700; border-radius: 10px; padding: 7px 14px;
+      font-size: 12px; cursor: pointer; backdrop-filter: blur(8px);
+      transition: all .18s; font-family: inherit; font-weight: 600;
+    }
+    .tr-btn-team:hover { background: rgba(255,215,0,0.1); }
   </style>
 </head>
 <body>
@@ -312,6 +335,11 @@
       <div class="stat"><b id="h-hours">0h</b><span>절약</span></div>
       <div class="stat"><b id="h-fps">60</b><span>FPS</span></div>
     </div>
+  </div>
+  <!-- 팀 시뮬레이션 배지 -->
+  <div id="team-mode-badge">
+    <span class="tm-label">👥 팀 시뮬레이션</span>
+    <button class="tm-exit" onclick="exitTeamMode()">← 실제 데이터</button>
   </div>
 </div>
 
@@ -388,6 +416,7 @@
   <!-- info panel이 열리면 여기를 숨김 -->
 </div>
 <div style="position:fixed;top:14px;right:14px;z-index:101;display:flex;gap:8px;">
+  <button class="tr-btn-team" onclick="loadTeamDemo()">👥 팀 시뮬</button>
   <button class="tr-btn" id="orbit-toggle-btn" onclick="toggleOrbitAnim()">⏸ 공전 중지</button>
 </div>
 
@@ -1128,6 +1157,402 @@ function buildPlanetSystem(nodeList) {
   document.getElementById('h-hours').textContent    = totalHours.toFixed(0)+'h';
 }
 
+// ─── 팀 시뮬레이션 모드 ───────────────────────────────────────────────────────
+// 핵심 레이아웃 원칙:
+//   🌟 중심 (0,0,0)   = 팀 목표 (가장 크게)
+//   🪐 오각형 링 R=40 = 팀원 행성 (72° 균등 배치)
+//   🔵 내위성 R=16    = 개인 작업 (행성 주위 공전)
+//   🔹 툴 라벨 R=8    = 사용 툴 (행성 가까이 고정)
+
+let _teamMode  = false;
+let _teamNodes = [];  // { type, pos, label, sublabel, color, size, emoji, progress, obj }
+
+const STATUS_CFG = {
+  done:    { emoji: '✅', color: '#3fb950' },
+  active:  { emoji: '⚡', color: '#58a6ff' },
+  blocked: { emoji: '🚧', color: '#f0883e' },
+  pending: { emoji: '⏳', color: '#6e7681' },
+};
+
+// ── 팀 데모 데이터 ──────────────────────────────────────────────────────────
+const TEAM_DEMO = {
+  name: 'Orbit AI 제품팀',
+  goal: '🚀 Q1 SaaS MVP 런칭',
+  goalColor: '#ffd700',
+  members: [
+    {
+      id: 'm0', name: '김민준', role: '백엔드 개발', color: '#3fb950',
+      tools: ['VS Code', 'Docker', 'PostgreSQL'],
+      tasks: [
+        { name: '🔐 인증 시스템', status: 'active',  progress: 0.75 },
+        { name: '🌐 API 서버 구축', status: 'done',    progress: 1.0  },
+        { name: '🗄️ DB 스키마',   status: 'done',    progress: 1.0  },
+      ],
+    },
+    {
+      id: 'm1', name: '이서연', role: '프론트엔드', color: '#58a6ff',
+      tools: ['Cursor', 'React', 'Figma'],
+      tasks: [
+        { name: '🪐 3D 뷰 개발',    status: 'active',  progress: 0.6  },
+        { name: '🎨 UI 컴포넌트',    status: 'done',    progress: 1.0  },
+        { name: '📱 반응형 레이아웃', status: 'blocked', progress: 0.3  },
+      ],
+    },
+    {
+      id: 'm2', name: '박지훈', role: 'AI 엔지니어', color: '#bc8cff',
+      tools: ['Claude Code', 'Ollama', 'Python'],
+      tasks: [
+        { name: '⚡ signal-engine', status: 'done',    progress: 1.0  },
+        { name: '🤖 커스텀 모델 학습', status: 'active',  progress: 0.45 },
+        { name: '📈 성장 엔진 최적화', status: 'pending', progress: 0.0  },
+      ],
+    },
+    {
+      id: 'm3', name: '최유나', role: 'DevOps', color: '#f0883e',
+      tools: ['Windsurf', 'Railway', 'GitHub Actions'],
+      tasks: [
+        { name: '🚂 Railway 배포',   status: 'active',  progress: 0.5  },
+        { name: '⚙️ CI/CD 파이프라인', status: 'done',    progress: 1.0  },
+        { name: '🐘 PostgreSQL 전환', status: 'blocked', progress: 0.2  },
+      ],
+    },
+    {
+      id: 'm4', name: '장현우', role: '기획/PM', color: '#f85149',
+      tools: ['Notion', 'n8n', 'ChatGPT'],
+      tasks: [
+        { name: '🏢 기업별 특화 기획',  status: 'active',  progress: 0.65 },
+        { name: '🛒 솔루션 마켓 정책',  status: 'done',    progress: 1.0  },
+        { name: '🧠 팔란티어 모델 설계', status: 'pending', progress: 0.1  },
+      ],
+    },
+  ],
+};
+
+// ── buildTeamSystem ──────────────────────────────────────────────────────────
+function buildTeamSystem(teamData) {
+  clearScene();
+  _teamNodes = [];
+  _teamMode  = true;
+
+  const { name, goal, goalColor, members } = teamData;
+
+  // 중심 코어 (팀 목표 — 골드 구체)
+  const coreMat = new THREE.MeshPhongMaterial({ color: 0xffd700, emissive: 0x7a5800, shininess: 200 });
+  const core    = new THREE.Mesh(new THREE.SphereGeometry(3.5, 32, 32), coreMat);
+  core.userData.isCore = true;
+  scene.add(core);
+  scene.add(new THREE.Mesh(
+    new THREE.SphereGeometry(7, 32, 32),
+    new THREE.MeshBasicMaterial({ color: 0xffd700, transparent: true, opacity: 0.08, side: THREE.BackSide })
+  ));
+
+  // 팀 목표 노드 (Canvas2D 라벨)
+  _teamNodes.push({ type: 'goal', pos: new THREE.Vector3(0, 0, 0),
+    label: goal, sublabel: name, color: goalColor, size: 'xl' });
+
+  const MEMBER_R = 40;
+  const TASK_R   = 16;
+  const TOOL_R   = 9;
+
+  // 전체 궤도 링 (팀원 공전 궤도)
+  {
+    const ring  = new THREE.RingGeometry(MEMBER_R - 0.12, MEMBER_R + 0.12, 128);
+    const ringM = new THREE.MeshBasicMaterial({ color: 0xffd700, transparent: true, opacity: 0.06, side: THREE.DoubleSide });
+    const rm    = new THREE.Mesh(ring, ringM);
+    rm.rotation.x = Math.PI / 2;
+    orbitRings.push(rm); scene.add(rm);
+  }
+
+  members.forEach((member, mi) => {
+    // 오각형 배치: 72° 간격, 상단(-90°)부터 시작
+    const angle = (mi / members.length) * Math.PI * 2 - Math.PI / 2;
+    const mx    = MEMBER_R * Math.cos(angle);
+    const my    = (mi % 2 === 0) ? 1.5 : -1.5;
+    const mz    = MEMBER_R * Math.sin(angle);
+    const mPos  = new THREE.Vector3(mx, my, mz);
+
+    // 팀원 Object3D
+    const mObj = new THREE.Object3D();
+    mObj.position.copy(mPos);
+    mObj.userData = {
+      isTeamMember: true, memberId: member.id,
+      name: member.name, role: member.role, color: member.color,
+      orbitR: MEMBER_R, orbitAngle: angle, orbitSpeed: 0.016 + mi * 0.003,
+      orbitCenter: new THREE.Vector3(0, 0, 0),
+    };
+    scene.add(mObj);
+    planetMeshes.push(mObj);
+
+    _teamNodes.push({
+      type: 'member', pos: mPos.clone(), obj: mObj,
+      label: member.name, sublabel: member.role, color: member.color, size: 'lg',
+    });
+
+    // 중심 → 팀원 연결선 (컬러, 굵게)
+    {
+      const lg = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), mPos.clone()]);
+      const lm = new THREE.LineBasicMaterial({ color: new THREE.Color(member.color), transparent: true, opacity: 0.45 });
+      const ln = new THREE.Line(lg, lm);
+      connections.push(ln); scene.add(ln);
+    }
+
+    // 팀원 궤도 링 (개인 작업 공전 궤도, 얇게)
+    {
+      const ring  = new THREE.RingGeometry(TASK_R - 0.06, TASK_R + 0.06, 64);
+      const ringM = new THREE.MeshBasicMaterial({ color: new THREE.Color(member.color), transparent: true, opacity: 0.10, side: THREE.DoubleSide });
+      const rm    = new THREE.Mesh(ring, ringM);
+      // 궤도면을 팀원 위치를 향해 약간 기울임
+      rm.position.copy(mPos);
+      rm.rotation.x = Math.PI / 2;
+      orbitRings.push(rm); scene.add(rm);
+    }
+
+    // ── 작업 위성 ─────────────────────────────────────────────────────────
+    member.tasks.forEach((task, ti) => {
+      const tAngle = (ti / member.tasks.length) * Math.PI * 2 + (mi * 1.26);
+      const tx = mPos.x + TASK_R * Math.cos(tAngle);
+      const ty = mPos.y + TASK_R * 0.25 * Math.sin(tAngle + 1.0);
+      const tz = mPos.z + TASK_R * Math.sin(tAngle);
+      const tPos = new THREE.Vector3(tx, ty, tz);
+
+      const tObj = new THREE.Object3D();
+      tObj.position.copy(tPos);
+      tObj.userData = {
+        isTeamTask: true, memberId: member.id,
+        taskName: task.name, taskStatus: task.status, taskProgress: task.progress,
+        color: STATUS_CFG[task.status]?.color || '#6e7681',
+        orbitR: TASK_R, orbitAngle: tAngle, orbitSpeed: 0.038 + mi * 0.004 + ti * 0.003,
+        orbitCenter: mPos.clone(),
+      };
+      scene.add(tObj);
+      satelliteMeshes.push(tObj);
+
+      const sc = STATUS_CFG[task.status] || STATUS_CFG.pending;
+      _teamNodes.push({
+        type: 'task', pos: tPos.clone(), obj: tObj,
+        label: task.name, emoji: sc.emoji, color: sc.color,
+        progress: task.progress, size: 'sm',
+      });
+
+      // 팀원 → 작업 연결선
+      {
+        const lg = new THREE.BufferGeometry().setFromPoints([mPos.clone(), tPos.clone()]);
+        const lm = new THREE.LineBasicMaterial({ color: new THREE.Color(member.color), transparent: true, opacity: 0.18 });
+        const ln = new THREE.Line(lg, lm);
+        connections.push(ln); scene.add(ln);
+      }
+    });
+
+    // ── 툴 라벨 ───────────────────────────────────────────────────────────
+    member.tools.forEach((tool, tli) => {
+      const tlAngle = angle + Math.PI + (tli - 1) * 0.55;
+      const tx = mPos.x + TOOL_R * Math.cos(tlAngle);
+      const ty = mPos.y + 3.5 + tli * 2.2;
+      const tz = mPos.z + TOOL_R * Math.sin(tlAngle);
+      const tlPos = new THREE.Vector3(tx, ty, tz);
+
+      const tlObj = new THREE.Object3D();
+      tlObj.position.copy(tlPos);
+      tlObj.userData = {
+        isTeamTool: true, memberId: member.id, toolName: tool,
+        color: member.color, relAngle: tlAngle, relY: 3.5 + tli * 2.2, relR: TOOL_R,
+      };
+      scene.add(tlObj);
+      satelliteMeshes.push(tlObj);
+
+      _teamNodes.push({
+        type: 'tool', pos: tlPos.clone(), obj: tlObj,
+        label: tool, color: member.color, size: 'xs',
+      });
+    });
+  });
+
+  // HUD 업데이트
+  document.getElementById('h-sessions').textContent = members.length;
+  document.getElementById('h-tasks').textContent    = members.reduce((s, m) => s + m.tasks.length, 0);
+  document.getElementById('h-hours').textContent    = '팀';
+  document.getElementById('team-mode-badge').style.display = 'flex';
+}
+
+function loadTeamDemo() { buildTeamSystem(TEAM_DEMO); }
+window.loadTeamDemo = loadTeamDemo;
+
+function exitTeamMode() {
+  _teamMode = false; _teamNodes = [];
+  document.getElementById('team-mode-badge').style.display = 'none';
+  loadData();
+}
+window.exitTeamMode = exitTeamMode;
+
+// ── 팀 모드 공전 ─────────────────────────────────────────────────────────────
+function updateTeamOrbits(dt) {
+  if (!orbitAnimOn) return;
+  _clock += dt * 0.00025;
+
+  // 팀원 행성 공전
+  planetMeshes.forEach(p => {
+    if (!p.userData.isTeamMember) return;
+    const { orbitR, orbitAngle, orbitSpeed } = p.userData;
+    const a  = orbitAngle + _clock * orbitSpeed;
+    const mi = parseInt(p.userData.memberId.replace('m', '') || 0);
+    const ny = (mi % 2 === 0) ? 1.5 : -1.5;
+    p.position.set(orbitR * Math.cos(a), ny, orbitR * Math.sin(a));
+
+    // _teamNodes 위치 동기화
+    const tn = _teamNodes.find(n => n.obj === p);
+    if (tn) tn.pos.copy(p.position);
+  });
+
+  // 작업/툴 위성 공전 (팀원 위치 따라 이동)
+  satelliteMeshes.forEach(s => {
+    const parent = planetMeshes.find(p => p.userData.memberId === s.userData.memberId);
+    if (!parent) return;
+    const center = parent.position;
+
+    if (s.userData.isTeamTask) {
+      const { orbitR, orbitAngle, orbitSpeed } = s.userData;
+      const a = orbitAngle + _clock * orbitSpeed;
+      s.position.set(
+        center.x + orbitR * Math.cos(a),
+        center.y + orbitR * 0.25 * Math.sin(a + 1.0),
+        center.z + orbitR * Math.sin(a),
+      );
+    } else if (s.userData.isTeamTool) {
+      const { relAngle, relY, relR } = s.userData;
+      s.position.set(
+        center.x + relR * Math.cos(relAngle),
+        center.y + relY,
+        center.z + relR * Math.sin(relAngle),
+      );
+    }
+    const tn = _teamNodes.find(n => n.obj === s);
+    if (tn) tn.pos.copy(s.position);
+  });
+
+  // 연결선 실시간 업데이트 (팀원→중심, 팀원→작업)
+  let connIdx = 0;
+  planetMeshes.forEach(p => {
+    if (!p.userData.isTeamMember) return;
+    // 중심→팀원 연결선
+    if (connections[connIdx]) {
+      const pts = [new THREE.Vector3(0, 0, 0), p.position.clone()];
+      connections[connIdx].geometry.setFromPoints(pts);
+      connections[connIdx].geometry.attributes.position.needsUpdate = true;
+    }
+    connIdx++;
+    // 팀원→작업 연결선
+    satelliteMeshes.filter(s => s.userData.isTeamTask && s.userData.memberId === p.userData.memberId)
+      .forEach(s => {
+        if (connections[connIdx]) {
+          const pts = [p.position.clone(), s.position.clone()];
+          connections[connIdx].geometry.setFromPoints(pts);
+          connections[connIdx].geometry.attributes.position.needsUpdate = true;
+        }
+        connIdx++;
+      });
+  });
+
+  // 궤도 링 위치 동기화 (팀원 궤도 링)
+  let ringIdx = 1; // index 0 = 전체 궤도
+  planetMeshes.forEach(p => {
+    if (!p.userData.isTeamMember) return;
+    if (orbitRings[ringIdx]) {
+      orbitRings[ringIdx].position.copy(p.position);
+    }
+    ringIdx++;
+  });
+}
+
+// ── 팀 모드 Canvas2D 라벨 ─────────────────────────────────────────────────────
+function drawTeamLabels() {
+  _lctx.clearRect(0, 0, innerWidth, innerHeight);
+  _hitAreas = [];
+
+  const lod = getLOD();
+
+  for (const node of _teamNodes) {
+    const sc = toScreen(node.pos);
+    if (sc.z > 1) continue;
+
+    const { type, label, sublabel, color, emoji, progress } = node;
+
+    // LOD에 따라 세부 노드 숨김
+    if (lod >= 2 && type === 'tool') continue;
+    if (lod >= 3 && type === 'task') continue;
+
+    // 타입별 크기
+    let pxSize, pad;
+    if      (type === 'goal')   { pxSize = 28; pad = 20; }
+    else if (type === 'member') { pxSize = 18; pad = 15; }
+    else if (type === 'task')   { pxSize = lod >= 2 ? 9 : 12; pad = lod >= 2 ? 7 : 10; }
+    else                        { pxSize = 10; pad = 7; }   // tool
+
+    const weight = (type === 'goal' || type === 'member') ? '700' : '500';
+    _lctx.font = `${weight} ${pxSize}px -apple-system,'Segoe UI',sans-serif`;
+
+    const txt  = emoji ? `${emoji} ${label}` : label;
+    const tw   = _lctx.measureText(txt).width;
+    const pw   = tw + pad;
+    const ph   = pxSize + pad * 0.65;
+    const bx   = sc.x - pw / 2;
+    const by   = sc.y - ph / 2;
+
+    // ── pill 배경 ──────────────────────────────────────────────────────────
+    roundRect(_lctx, bx, by, pw, ph, ph / 2);
+    const bgA = type === 'goal' ? 0.22 : type === 'member' ? 0.16 : 0.10;
+    _lctx.fillStyle   = color + Math.round(bgA * 255).toString(16).padStart(2, '0');
+    _lctx.fill();
+
+    const bdA = type === 'goal' ? 0.92 : type === 'member' ? 0.78 : 0.42;
+    _lctx.strokeStyle = color + Math.round(bdA * 255).toString(16).padStart(2, '0');
+    _lctx.lineWidth   = type === 'goal' ? 2.5 : type === 'member' ? 1.8 : 1;
+    _lctx.stroke();
+
+    // ── 목표 노드 특별 글로우 ─────────────────────────────────────────────
+    if (type === 'goal') {
+      const gr = _lctx.createRadialGradient(sc.x, sc.y, pw * 0.3, sc.x, sc.y, pw * 1.4);
+      gr.addColorStop(0, color + '28');
+      gr.addColorStop(1, 'rgba(0,0,0,0)');
+      _lctx.fillStyle = gr;
+      _lctx.beginPath();
+      _lctx.arc(sc.x, sc.y, pw * 1.4, 0, Math.PI * 2);
+      _lctx.fill();
+    }
+
+    // ── 텍스트 ────────────────────────────────────────────────────────────
+    _lctx.fillStyle    = type === 'tool' ? color + 'bb' : color;
+    _lctx.textAlign    = 'center';
+    _lctx.textBaseline = 'middle';
+    _lctx.fillText(txt, sc.x, sc.y);
+
+    // ── 서브라벨 (role / team name) ───────────────────────────────────────
+    if (sublabel && lod <= 1 && (type === 'member' || type === 'goal')) {
+      _lctx.font      = `400 ${Math.max(pxSize - 4, 9)}px -apple-system,sans-serif`;
+      _lctx.fillStyle = color + '88';
+      _lctx.fillText(sublabel, sc.x, sc.y + ph / 2 + 10);
+    }
+
+    // ── 진행률 바 (task, lod ≤ 1) ─────────────────────────────────────────
+    if (type === 'task' && typeof progress === 'number' && lod <= 1) {
+      const barW = pw - 6;
+      const barY = sc.y + ph / 2 + 6;
+      _lctx.globalAlpha = 0.45;
+      roundRect(_lctx, sc.x - barW / 2, barY, barW, 3, 1.5);
+      _lctx.fillStyle = '#21262d'; _lctx.fill();
+      if (progress > 0) {
+        roundRect(_lctx, sc.x - barW / 2, barY, barW * progress, 3, 1.5);
+        _lctx.fillStyle = color; _lctx.fill();
+      }
+      _lctx.globalAlpha = 1;
+    }
+
+    // ── 히트 영역 ─────────────────────────────────────────────────────────
+    if (type !== 'tool') {
+      _hitAreas.push({ cx: sc.x, cy: sc.y, r: Math.max(pw, ph) / 2 + 4, data: node });
+    }
+  }
+}
+
 // ─── 애니메이션 — 행성 공전 + 파일위성 공전 ─────────────────────────────────
 function updateOrbits(dt) {
   if (!orbitAnimOn) return;
@@ -1846,13 +2271,20 @@ renderer.setAnimationLoop(now => {
     document.getElementById('h-fps').textContent = Math.round(_fpsBuf.reduce((a,b)=>a+b,0)/_fpsBuf.length);
   }
 
-  updateOrbits(dt);
-  pulseSun();
-  updateRaycast();
-  updateZoomSummary();
-  // 줌아웃 시 행성 라벨 숨김
-  _labelCanvas2d.style.opacity = _zoomSummaryVisible ? '0.15' : '1';
-  drawLabels();
+  if (_teamMode) {
+    updateTeamOrbits(dt);
+    pulseSun();
+    updateRaycast();
+    _labelCanvas2d.style.opacity = '1';
+    drawTeamLabels();
+  } else {
+    updateOrbits(dt);
+    pulseSun();
+    updateRaycast();
+    updateZoomSummary();
+    _labelCanvas2d.style.opacity = _zoomSummaryVisible ? '0.15' : '1';
+    drawLabels();
+  }
   renderer.render(scene, camera);
 });
 
