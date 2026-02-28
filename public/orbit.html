@@ -543,6 +543,7 @@
     <a href="/team-dashboard.html" style="text-decoration:none"><button class="hud-btn">👥 팀</button></a>
     <a href="/theme-market.html" target="_blank" style="text-decoration:none"><button class="hud-btn">🎨 테마</button></a>
     <a href="/solution-market.html" target="_blank" style="text-decoration:none"><button class="hud-btn">⚡ 솔루션</button></a>
+    <a href="/contributor-dashboard.html" target="_blank" style="text-decoration:none"><button class="hud-btn">💰 마켓 2.0</button></a>
     <a href="/community.html" target="_blank" style="text-decoration:none"><button class="hud-btn">💬 커뮤니티</button></a>
     <a href="/settings.html" style="text-decoration:none"><button class="hud-btn">⚙️ 설정</button></a>
   </div>
@@ -685,6 +686,7 @@
     <div class="sh-item"><span class="sh-key">R</span>새로고침</div>
     <div class="sh-item"><span class="sh-key">G</span>팀 대시보드</div>
     <div class="sh-item"><span class="sh-key">T</span>테마 마켓</div>
+    <div class="sh-item"><span class="sh-key">W</span>마켓 2.0</div>
     <div class="sh-item"><span class="sh-key">H</span>HUD 토글</div>
     <div class="sh-item"><span class="sh-key">L</span>타임라인</div>
   </div>
@@ -1937,6 +1939,9 @@ document.addEventListener('keydown', e => {
     case 't': case 'T':
       if (!e.ctrlKey && !e.metaKey) { window.open('/theme-market.html', '_blank'); e.preventDefault(); }
       break;
+    case 'w': case 'W':
+      if (!e.ctrlKey && !e.metaKey) { window.open('/contributor-dashboard.html', '_blank'); e.preventDefault(); }
+      break;
     case 'h': case 'H':
       if (!e.ctrlKey && !e.metaKey) { toggleOrbitalHud(); e.preventDefault(); }
       break;
@@ -2633,6 +2638,7 @@ const GLOBAL_CHIPS = [
   { id: 'team',     label: '팀 오버레이',  key: 'M',   icon: '👥', color: '#ffa657', action: () => toggleMemberOverlay() },
   { id: 'alert',    label: '경보',         key: 'A',   icon: '🔔', color: '#f85149', action: () => toggleAlertPanel() },
   { id: 'theme',    label: '테마 마켓',    key: 'T',   icon: '🎨', color: '#39d2c0', action: () => window.open('/theme-market.html','_blank') },
+  { id: 'market',   label: '마켓 2.0',    key: 'W',   icon: '💰', color: '#ffa657', action: () => window.open('/contributor-dashboard.html','_blank') },
   { id: 'refresh',  label: '새로고침',     key: 'R',   icon: '↻',  color: '#8b949e', action: () => loadData() },
   { id: 'orbit',    label: 'Orbit 모드',   key: 'O',   icon: '🌌', color: '#8957e5', action: () => toggleOrbit() },
 ];
