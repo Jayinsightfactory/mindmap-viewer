@@ -53,7 +53,7 @@ function createRouter(deps) {
 
   const {
     getAllEvents, getEventsBySession, getEventsByChannel,
-    getSessions, getFiles, getStats, rollbackToEvent, clearAll,
+    getSessions, updateSessionTitle, getFiles, getStats, rollbackToEvent, clearAll,
   } = db;
 
   const { classifyPurposes, summarizePurposes, PURPOSE_CATEGORIES } = purposeClassifier;
@@ -79,6 +79,73 @@ function createRouter(deps) {
    */
   router.get('/sessions', (req, res) => {
     res.json(getSessions());
+  });
+
+  /**
+   * PUT /api/sessions/:id/title
+   * 세션의 수동 타이틀을 설정합니다.
+   * @body { title: string }
+   */
+  router.put('/sessions/:id/title', (req, res) => {
+    const { id }    = req.params;
+    const { title } = req.body;
+    if (!title || typeof title !== 'string') {
+      return res.status(400).json({ error: 'title 필드가 필요합니다.' });
+    }
+    const result = updateSessionTitle(id, title.slice(0, 80));
+    if (result.changes === 0) {
+      return res.status(404).json({ error: '세션을 찾을 수 없습니다.' });
+    }
+    res.json({ success: true, sessionId: id, title });
+  });
+
+  /**
+   * GET /api/sessions/:id/context
+   * 세션의 첫 메시지 + projectDir 을 반환합니다. (orbit3d 자동 타이틀용)
+   */
+  router.get('/sessions/:id/context', (req, res) => {
+    const { id } = req.params;
+    const events  = getEventsBySession(id);
+
+    // projectDir — session.start 이벤트에서
+    const sessStart = events.find(e => e.type === 'session.start');
+    const projectDir = sessStart?.data?.projectDir || null;
+    const projectName = projectDir
+      ? projectDir.replace(/\\/g, '/').split('/').filter(Boolean).pop()
+      : null;
+
+    // 첫 user.message 내용
+    const firstMsg = events.find(e => e.type === 'user.message');
+    const firstMsgText = firstMsg?.data?.contentPreview || firstMsg?.data?.content || null;
+
+    // 가장 많이 편집된 파일
+    const fileCounts = {};
+    for (const e of events) {
+      const fp = e.data?.filePath || e.data?.fileName || '';
+      const f  = fp.replace(/\\/g, '/').split('/').pop();
+      if (f) fileCounts[f] = (fileCounts[f] || 0) + 1;
+    }
+    const topFile = Object.entries(fileCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+
+    // 자동 타이틀 조합
+    const autoTitle = (() => {
+      if (projectName && firstMsgText) return `[${projectName}] ${firstMsgText.slice(0, 30)}`;
+      if (projectName && topFile)      return `[${projectName}] ${topFile}`;
+      if (projectName)                 return projectName;
+      if (firstMsgText)                return firstMsgText.slice(0, 40);
+      if (topFile)                     return topFile;
+      return `세션 ${id.slice(-6)}`;
+    })();
+
+    res.json({
+      sessionId:   id,
+      projectDir,
+      projectName,
+      firstMsg:    firstMsgText,
+      topFile,
+      autoTitle,
+      eventCount:  events.length,
+    });
   });
 
   // ── 목적 분류 ──────────────────────────────────────────────────────────────

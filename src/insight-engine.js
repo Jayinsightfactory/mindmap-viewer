@@ -169,6 +169,99 @@ function analyzeEvents(events) {
   return insights;
 }
 
+// ─── Ollama 인사이트 (로컬 LLM) ──────────────────────────────────────────────
+
+/**
+ * Ollama 로컬 모델로 인사이트를 보강합니다.
+ * INSIGHT_ENGINE=ollama 또는 직접 호출 시 사용됩니다.
+ *
+ * 활성 모델 우선순위:
+ *   1. data/model-config.json activeModel (커스텀 학습 모델)
+ *   2. OLLAMA_MODEL 환경변수
+ *   3. 기본값 'llama3.2'
+ *
+ * @param {object[]} ruleInsights - 규칙 기반 인사이트 배열
+ * @param {object}   stats        - 통계 요약
+ * @returns {Promise<object[]>}
+ */
+async function enrichWithOllama(ruleInsights, stats) {
+  const baseUrl = process.env.OLLAMA_URL || 'http://localhost:11434';
+
+  // 활성 모델 조회 (model-config.json → env → 기본값)
+  let model;
+  try {
+    const configPath = path.join(DATA_DIR, 'model-config.json');
+    const cfg = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    model = cfg.activeModel;
+  } catch { /* 파일 없으면 폴백 */ }
+  model = model || process.env.OLLAMA_MODEL || 'llama3.2';
+
+  try {
+    const prompt = [
+      `개발 데이터 요약:`,
+      JSON.stringify(stats, null, 2),
+      ``,
+      `규칙 기반 분석 결과:`,
+      ruleInsights.map(i => `- ${i.title}: ${i.body}`).join('\n'),
+      ``,
+      `위 데이터를 바탕으로 추가 인사이트 2개를 JSON 배열로 반환하세요:`,
+      `[{"title":"...","body":"...","type":"ollama_insight","confidence":0.7}]`,
+      `한국어로 작성하고 구체적인 수치를 포함하세요.`,
+    ].join('\n');
+
+    const res = await fetch(`${baseUrl}/api/generate`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({
+        model,
+        stream: false,
+        prompt,
+      }),
+      signal: AbortSignal.timeout(15000),
+    });
+
+    if (!res.ok) throw new Error(`Ollama HTTP ${res.status}`);
+
+    const data  = await res.json();
+    const match = (data.response || '').match(/\[[\s\S]*?\]/);
+
+    if (match) {
+      const ollamaInsights = JSON.parse(match[0]);
+      if (Array.isArray(ollamaInsights) && ollamaInsights.length > 0) {
+        return [...ruleInsights, ...ollamaInsights];
+      }
+    }
+  } catch (err) {
+    console.warn('[insight-engine] Ollama 폴백:', err.message);
+  }
+
+  return ruleInsights;
+}
+
+// ─── LLM 선택 래퍼 ──────────────────────────────────────────────────────────
+
+/**
+ * INSIGHT_ENGINE 환경변수에 따라 적절한 LLM 인사이트 엔진을 선택합니다.
+ *
+ * 선택 우선순위:
+ *   1. INSIGHT_ENGINE=ollama  → enrichWithOllama
+ *   2. ANTHROPIC_API_KEY 있음 → enrichWithClaude
+ *   3. 없음                  → 규칙 기반 인사이트만 반환
+ *
+ * @param {object[]} ruleInsights
+ * @param {object}   stats
+ * @returns {Promise<object[]>}
+ */
+async function enrichWithLLM(ruleInsights, stats) {
+  if (process.env.INSIGHT_ENGINE === 'ollama') {
+    return enrichWithOllama(ruleInsights, stats);
+  }
+  if (process.env.ANTHROPIC_API_KEY) {
+    return enrichWithClaude(ruleInsights, stats);
+  }
+  return ruleInsights;
+}
+
 // ─── Claude API 인사이트 (옵셔널) ────────────────────────────────────────────
 
 /**
@@ -251,8 +344,8 @@ async function runOnce({ getAllEvents, saveSuggestion, broadcastAll }) {
     // 규칙 기반 분석
     const ruleInsights = analyzeEvents(events);
 
-    // Claude 보강 (선택적)
-    const insights = await enrichWithClaude(ruleInsights, stats);
+    // LLM 보강 (Ollama / Claude / 규칙 기반 자동 선택)
+    const insights = await enrichWithLLM(ruleInsights, stats);
 
     const timestamp = new Date().toISOString();
 

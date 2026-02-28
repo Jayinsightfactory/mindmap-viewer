@@ -59,6 +59,7 @@ function createTables() {
       source TEXT,
       model_id TEXT,
       project_dir TEXT,
+      title TEXT,
       event_count INTEGER DEFAULT 0,
       status TEXT DEFAULT 'active'
     );
@@ -131,6 +132,9 @@ function createTables() {
       created_at   TEXT NOT NULL
     );
   `);
+
+  // ─── 컬럼 마이그레이션 (기존 DB 호환) ───────────────
+  try { db.exec(`ALTER TABLE sessions ADD COLUMN title TEXT`); } catch {}
 }
 
 // ─── JSONL 마이그레이션 ─────────────────────────────
@@ -275,12 +279,13 @@ function insertEvent(event) {
 function upsertSession(event) {
   if (event.type === 'session.start') {
     db.prepare(`
-      INSERT OR REPLACE INTO sessions (id, user_id, channel_id, started_at, source, model_id, project_dir, event_count, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 1, 'active')
+      INSERT OR REPLACE INTO sessions (id, user_id, channel_id, started_at, source, model_id, project_dir, title, event_count, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 'active')
     `).run(
       event.sessionId, event.userId, event.channelId,
       event.timestamp, event.data.source || null,
-      event.data.modelId || null, event.data.projectDir || null
+      event.data.modelId || null, event.data.projectDir || null,
+      event.data.title || null
     );
   } else if (event.type === 'session.end') {
     db.prepare(`UPDATE sessions SET ended_at = ?, status = 'ended' WHERE id = ?`)
@@ -344,6 +349,10 @@ function searchEvents(query) {
 
 function getSessions() {
   return db.prepare('SELECT * FROM sessions ORDER BY started_at DESC').all();
+}
+
+function updateSessionTitle(sessionId, title) {
+  return db.prepare('UPDATE sessions SET title = ? WHERE id = ?').run(title, sessionId);
 }
 
 function getFiles() {
@@ -521,6 +530,7 @@ module.exports = {
   getEventsByType,
   searchEvents,
   getSessions,
+  updateSessionTitle,
   getFiles,
   getAnnotations,
   insertAnnotation,

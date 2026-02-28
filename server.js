@@ -43,7 +43,7 @@ const dbModule = process.env.DATABASE_URL
 
 const {
   initDatabase, getAllEvents, getEventsBySession, getEventsByChannel,
-  searchEvents, getSessions, getFiles, getAnnotations, insertAnnotation,
+  searchEvents, getSessions, updateSessionTitle, getFiles, getAnnotations, insertAnnotation,
   deleteAnnotation, insertEvent, rollbackToEvent, clearAll, getStats,
   getUserLabels, setUserLabel, deleteUserLabel,
   getUserCategories, upsertUserCategory, deleteUserCategory,
@@ -84,10 +84,27 @@ const createCommunityRouter  = require('./routes/community');
 const createGitRouter        = require('./routes/git');
 const createAvatarsRouter    = require('./routes/avatars');
 const createMcpRouter        = require('./src/mcp-server');
+const createModelRouter      = require('./routes/model');
+const createPortfolioRouter  = require('./routes/portfolio');
+const modelTrainer           = require('./src/model-trainer');
 const outcomeStore           = require('./src/outcome-store');
 const marketStore            = require('./src/market-store');
 const usageTracker           = require('./src/usage-tracker');
-const createMarketRouter     = require('./routes/market');
+const createMarketRouter          = require('./routes/market');
+const createPersonalInsightsRouter  = require('./routes/personal-insights');
+const createCostTrackerRouter       = require('./routes/cost-tracker');
+const createWebhooksRouter          = require('./routes/webhooks');
+const revenueScheduler              = require('./src/revenue-scheduler');
+const mcpWatcher                    = require('./src/mcp-watcher');
+const createBadgeRouter             = require('./routes/badge');
+const createShareRouter             = require('./routes/share');
+const createOntologyRouter          = require('./routes/ontology');
+const createLeaderboardRouter       = require('./routes/leaderboard');
+const createRoiRouter               = require('./routes/roi');
+const { createRegionalInsightRouter } = require('./src/regional-insight');
+const { createPointsRouter }          = require('./src/points-engine');
+const { createCertificateRouter }     = require('./src/certificate-engine');
+const signalEngine                    = require('./src/signal-engine');
 
 // ─── 상수 ────────────────────────────────────────────────────────────────────
 const PORT         = process.env.PORT ? parseInt(process.env.PORT) : 4747;
@@ -130,8 +147,10 @@ const wss    = new WebSocket.Server({ server });
 // ─── 보안 미들웨어 ────────────────────────────────────────────────────────────
 // Helmet: X-Frame-Options, X-Content-Type, CSP 등 보안 헤더 자동 설정
 app.use(helmet({
-  contentSecurityPolicy: false,  // orbit.html 인라인 스크립트 허용 (개발 편의)
-  crossOriginEmbedderPolicy: false,
+  contentSecurityPolicy: false,       // orbit.html 인라인 스크립트 허용 (개발 편의)
+  crossOriginEmbedderPolicy: false,   // Three.js CDN 허용
+  crossOriginOpenerPolicy: false,     // MCP 브라우저 확장 탭 접근 허용 (개발)
+  crossOriginResourcePolicy: false,   // 외부 리소스 로드 허용 (개발)
 }));
 
 // Rate Limiting: API 남용 방지 (15분 당 최대 200회)
@@ -515,7 +534,7 @@ app.get('/health', (req, res) => {
 /** 공용 db 의존성 객체 — DB 함수들을 한 곳에서 관리 */
 const dbDeps = {
   getAllEvents, getEventsBySession, getEventsByChannel: getEventsByChannel || null,
-  getSessions, getFiles, getAnnotations, insertAnnotation, deleteAnnotation,
+  getSessions, updateSessionTitle, getFiles, getAnnotations, insertAnnotation, deleteAnnotation,
   insertEvent, rollbackToEvent, clearAll, getStats,
   getUserLabels, setUserLabel, deleteUserLabel,
   getUserCategories, upsertUserCategory, deleteUserCategory,
@@ -580,6 +599,9 @@ const oauthRouter = createOAuthRouter({
 });
 app.use('/api/auth', oauthRouter);
 
+// Tesla FSD 방식 원시 신호 감지 엔진
+app.use('/api/signal', signalEngine.createRouter());
+
 app.use('/api', createPaymentRouter({
   payment: { PLANS, createPayment, confirmPayment, MOCK_MODE: paymentMockMode },
 }));
@@ -604,6 +626,55 @@ app.use('/api', createAvatarsRouter({ authMiddleware, optionalAuth }));
 
 // ─── 수익 공유 마켓 2.0 ──────────────────────────────────────────────────────
 app.use('/api', createMarketRouter({ marketStore, authMiddleware, optionalAuth }));
+
+// ─── Ollama 커스텀 모델 관리 ──────────────────────────────────────────────────
+app.use('/api', createModelRouter({ getAllEvents, modelTrainer, broadcastAll }));
+
+// ─── AI 역량 포트폴리오 PDF ──────────────────────────────────────────────────
+app.use('/api', createPortfolioRouter({ getAllEvents, getSessions, getStats, getFiles, optionalAuth }));
+
+// ─── 개인/팀 인사이트 분리 ───────────────────────────────────────────────────
+app.use('/api', createPersonalInsightsRouter({
+  getAllEvents,
+  getStats,
+  getSessions,
+  authMiddleware: require('./src/auth').authMiddleware,
+  optionalAuth:   require('./src/auth').optionalAuth,
+  getInsights:    () => require('./src/insight-engine').getInsights(100),
+}));
+
+// ─── AI 토큰 비용 추적 ────────────────────────────────────────────────────────
+app.use('/api', createCostTrackerRouter({ getAllEvents, getSessions, optionalAuth: require('./src/auth').optionalAuth }));
+
+// ─── 외부 도구 웹훅 수신 (n8n / Slack / Notion / GitHub) ─────────────────────
+app.use('/api', createWebhooksRouter({ insertEvent, broadcastAll }));
+
+// ─── MCP Market Watcher ───────────────────────────────────────────────────────
+app.use('/api', mcpWatcher.createMcpWatcherRouter({ getAllEvents }));
+
+// ─── Orbit Badge SVG ─────────────────────────────────────────────────────────
+app.use('/api', createBadgeRouter({ getAllEvents, getSessions, optionalAuth }));
+
+// ─── Share My Session ────────────────────────────────────────────────────────
+app.use('/api', createShareRouter({ getAllEvents, getSessions, getEventsBySession, insertEvent, broadcastAll, optionalAuth }));
+
+// ─── Team Ontology Graph ──────────────────────────────────────────────────────
+app.use('/api', createOntologyRouter({ getAllEvents, getFiles, optionalAuth }));
+
+// ─── AI Leaderboard ───────────────────────────────────────────────────────────
+app.use('/api', createLeaderboardRouter({ getAllEvents, getSessions, optionalAuth }));
+
+// ─── ROI Calculator ───────────────────────────────────────────────────────────
+app.use('/api', createRoiRouter({ getAllEvents, getSessions, optionalAuth }));
+
+// ─── Regional Insight ────────────────────────────────────────────────────────
+app.use('/api', createRegionalInsightRouter({ getAllEvents }));
+
+// ─── Orbit Points Economy ────────────────────────────────────────────────────
+app.use('/api', createPointsRouter({ getAllEvents, getSessions, optionalAuth }));
+
+// ─── Orbit Certificate & Score ───────────────────────────────────────────────
+app.use('/api', createCertificateRouter({ getAllEvents, getSessions, optionalAuth }));
 
 // ─── MCP 서버 (Claude Desktop 연동) ─────────────────────────────────────────
 app.use('/api', createMcpRouter({
@@ -719,7 +790,18 @@ server.listen(PORT, () => {
   console.log(`   OAuth: [${enabledProviders.join(', ') || '미설정'}]`);
   console.log(`   Git hooks 설치: curl http://localhost:${PORT}/api/git/install | bash`);
   console.log(`   MCP 서버: http://localhost:${PORT}/api/mcp`);
-  console.log(`   마켓 2.0: http://localhost:${PORT}/api/market/leaderboard\n`);
+  console.log(`   마켓 2.0: http://localhost:${PORT}/api/market/leaderboard`);
+  console.log(`   타임라인: http://localhost:${PORT}/orbit-timeline.html`);
+  console.log(`   개인 인사이트: http://localhost:${PORT}/api/me/insights`);
+  console.log(`   비용 추적: http://localhost:${PORT}/api/costs/dashboard`);
+  console.log(`   웹훅 설정: http://localhost:${PORT}/api/webhooks/config`);
+  console.log(`   MCP 마켓: http://localhost:${PORT}/api/mcp-market/trending`);
+  console.log(`   배지: http://localhost:${PORT}/api/badge/local/svg`);
+  console.log(`   리더보드: http://localhost:${PORT}/api/leaderboard`);
+  console.log(`   ROI: http://localhost:${PORT}/api/roi/dashboard`);
+  console.log(`   인증서: http://localhost:${PORT}/api/certificate/local/score`);
+  console.log(`   포인트: http://localhost:${PORT}/api/points/balance`);
+  console.log(`   온톨로지: http://localhost:${PORT}/api/ontology\n`);
 
   // outcome 테이블 초기화 (기존 DB에 테이블 없으면 생성)
   outcomeStore.initOutcomeTable();
@@ -733,4 +815,10 @@ server.listen(PORT, () => {
     const { analyzeAndSuggest: saveSuggestion } = require('./src/growth-engine');
     insightEngine.start({ getAllEvents, saveSuggestion, broadcastAll });
   }
+
+  // 수익 정산 스케줄러 시작 (매일 자정 집계 + 매월 1일 정산)
+  revenueScheduler.start({ broadcastAll });
+
+  // MCP Market Watcher 시작 (1시간 간격 폴링)
+  mcpWatcher.start({ broadcastAll });
 });

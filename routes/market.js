@@ -174,11 +174,41 @@ function createMarketRouter({ marketStore, authMiddleware, optionalAuth }) {
   });
 
   // ── 월말 정산 실행 ────────────────────────────────────────────────────────
-  router.post('/market/distribute', (req, res) => {
+  router.post('/market/distribute', async (req, res) => {
     const { period } = req.body;
     try {
-      const count = marketStore.runMonthlyDistribution(period || undefined);
-      res.json({ success: true, distributedCount: count, period: period || 'last-month' });
+      // revenue-scheduler의 고급 정산 함수 사용 (Toss Payments 연동 포함)
+      let result;
+      try {
+        const scheduler = require('../src/revenue-scheduler');
+        result = await scheduler.manualDistribution(period || undefined);
+      } catch {
+        // revenue-scheduler 없으면 market-store 레거시 함수 사용
+        const count = marketStore.runMonthlyDistribution(period || undefined);
+        result = { distributions: count, period: period || 'last-month' };
+      }
+      res.json({ success: true, ...result });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── 수익 정산 스케줄러 상태 ──────────────────────────────────────────────
+  router.get('/market/scheduler/status', (req, res) => {
+    try {
+      const scheduler = require('../src/revenue-scheduler');
+      res.json(scheduler.getSchedulerStatus());
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── 일별 집계 수동 실행 ──────────────────────────────────────────────────
+  router.post('/market/scheduler/aggregate-daily', async (req, res) => {
+    try {
+      const scheduler = require('../src/revenue-scheduler');
+      const result = await scheduler.runDailyAggregation();
+      res.json({ success: true, ...result });
     } catch (e) {
       res.status(500).json({ error: e.message });
     }

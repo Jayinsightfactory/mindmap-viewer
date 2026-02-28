@@ -2,575 +2,1871 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
-  <title>Orbit AI — 3D 뉴런 맵</title>
+  <title>Orbit AI — 작업 우주</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { background: #0d1117; overflow: hidden; font-family: -apple-system, 'Segoe UI', sans-serif; }
-    #canvas3d { display: block; width: 100vw; height: 100vh; }
+    body { background: #060a10; overflow: hidden; font-family: -apple-system, 'Segoe UI', sans-serif; }
+    canvas { display: block; }
 
-    /* ── HUD ─────────────────────────────────────────────── */
-    #hud {
-      position: fixed; top: 12px; left: 12px; z-index: 100;
-      display: flex; flex-direction: column; gap: 8px;
-    }
-    .hud-panel {
-      background: rgba(22,27,34,0.88);
-      border: 1px solid #30363d;
-      border-radius: 10px;
-      padding: 10px 14px;
-      backdrop-filter: blur(8px);
-      font-size: 13px;
-      color: #8b949e;
-    }
-    .hud-title { color: #58a6ff; font-weight: 700; font-size: 15px; margin-bottom: 4px; }
-    .stat-row  { display: flex; gap: 16px; margin-top: 4px; }
-    .stat      { text-align: center; }
-    .stat b    { display: block; color: #e6edf3; font-size: 18px; }
-
-    /* ── 컨트롤 힌트 ─────────────────────────────────────── */
-    #controls {
-      position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
-      background: rgba(22,27,34,0.8);
-      border: 1px solid #30363d; border-radius: 20px;
-      padding: 8px 20px; font-size: 12px; color: #8b949e;
-      display: flex; gap: 16px;
-    }
-
-    /* ── 노드 툴팁 ──────────────────────────────────────── */
-    #tooltip {
-      position: fixed; pointer-events: none;
-      background: rgba(22,27,34,0.95);
-      border: 1px solid #58a6ff;
-      border-radius: 8px; padding: 10px 14px;
-      font-size: 13px; color: #e6edf3;
-      max-width: 260px; display: none; z-index: 200;
-    }
-    #tooltip .tt-type { color: #8b949e; font-size: 11px; margin-bottom: 4px; }
-    #tooltip .tt-label { font-weight: 600; margin-bottom: 4px; }
-
-    /* ── 2D/3D 전환 버튼 ────────────────────────────────── */
-    #view-toggle {
-      position: fixed; top: 12px; right: 12px; z-index: 100;
-      display: flex; gap: 6px;
-    }
-    .vbtn {
-      background: rgba(22,27,34,0.9); border: 1px solid #30363d;
-      color: #8b949e; border-radius: 8px; padding: 7px 14px;
-      cursor: pointer; font-size: 13px; backdrop-filter: blur(8px);
-      transition: all .15s;
-    }
-    .vbtn:hover, .vbtn.active { border-color: #58a6ff; color: #58a6ff; }
-
-    /* ── 로딩 ───────────────────────────────────────────── */
+    /* ── 로딩 ──────────────────────────────────────── */
     #loading {
-      position: fixed; inset: 0; background: #0d1117;
+      position: fixed; inset: 0; background: #060a10;
       display: flex; flex-direction: column;
-      align-items: center; justify-content: center; z-index: 999;
-      gap: 16px; color: #8b949e; font-size: 14px;
+      align-items: center; justify-content: center;
+      z-index: 999; gap: 16px; color: #8b949e;
     }
     .spinner {
-      width: 40px; height: 40px; border: 3px solid #30363d;
-      border-top-color: #58a6ff; border-radius: 50%;
-      animation: spin .8s linear infinite;
+      width: 44px; height: 44px;
+      border: 3px solid #1c2333; border-top-color: #58a6ff;
+      border-radius: 50%; animation: spin .8s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── 좌상단 HUD ─────────────────────────────────── */
+    #hud {
+      position: fixed; top: 14px; left: 14px; z-index: 100;
+      display: flex; flex-direction: column; gap: 6px;
+    }
+    .hud-box {
+      background: rgba(13,17,23,0.88);
+      border: 1px solid #21262d;
+      border-radius: 12px; padding: 10px 16px;
+      backdrop-filter: blur(12px);
+    }
+    .hud-title {
+      font-size: 15px; font-weight: 700;
+      color: #58a6ff; margin-bottom: 6px;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .hud-stats { display: flex; gap: 18px; }
+    .stat { text-align: center; }
+    .stat b { display: block; color: #e6edf3; font-size: 20px; font-weight: 700; }
+    .stat span { font-size: 11px; color: #6e7681; }
+
+    /* ── 범례 ─────────────────────────────────────── */
+    #legend {
+      position: fixed; bottom: 60px; left: 14px; z-index: 100;
+      background: rgba(13,17,23,0.88);
+      border: 1px solid #21262d; border-radius: 12px;
+      padding: 10px 16px; backdrop-filter: blur(12px);
+      font-size: 12px; color: #8b949e;
+    }
+    #legend .leg-title { color: #6e7681; font-size: 11px; margin-bottom: 6px; letter-spacing: .5px; text-transform: uppercase; }
+    .leg-item { display: flex; align-items: center; gap: 6px; margin: 3px 0; }
+    .leg-dot  { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+
+    /* ── 드릴다운 패널 (클릭시) ─────────────────────── */
+    #info-panel {
+      position: fixed; right: 14px; top: 14px; z-index: 100;
+      width: 320px; max-height: calc(100vh - 28px);
+      background: rgba(13,17,23,0.96);
+      border: 1px solid #21262d; border-radius: 14px;
+      backdrop-filter: blur(16px);
+      display: none; flex-direction: column;
+      overflow: hidden;
+    }
+    #info-panel.open { display: flex; }
+
+    .ip-header {
+      padding: 14px 16px 12px; border-bottom: 1px solid #21262d;
+      display: flex; align-items: flex-start; gap: 10px; flex-shrink: 0;
+    }
+    .ip-dot-wrap { padding-top: 3px; }
+    .ip-type-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+    .ip-header-text { flex: 1; min-width: 0; }
+    .ip-type-label { font-size: 10px; color: #6e7681; text-transform: uppercase; letter-spacing: .6px; }
+    .ip-intent {
+      font-size: 15px; font-weight: 700; color: #e6edf3;
+      line-height: 1.3; margin-top: 3px; word-break: keep-all;
+    }
+    .ip-close {
+      background: none; border: none; color: #6e7681; flex-shrink: 0;
+      font-size: 16px; cursor: pointer; padding: 2px 5px; border-radius: 4px; margin-top: -2px;
+    }
+    .ip-close:hover { color: #e6edf3; background: #21262d; }
+
+    /* 탭 바 */
+    .ip-tabs {
+      display: flex; border-bottom: 1px solid #21262d; flex-shrink: 0;
+    }
+    .ip-tab {
+      flex: 1; padding: 9px 0; font-size: 12px; color: #6e7681;
+      background: none; border: none; cursor: pointer; font-family: inherit;
+      border-bottom: 2px solid transparent; transition: all .15s;
+    }
+    .ip-tab:hover { color: #cdd9e5; }
+    .ip-tab.active { color: #58a6ff; border-bottom-color: #58a6ff; }
+
+    /* 탭 콘텐츠 */
+    .ip-body { overflow-y: auto; flex: 1; }
+    .ip-body::-webkit-scrollbar { width: 4px; }
+    .ip-body::-webkit-scrollbar-thumb { background: #21262d; border-radius: 2px; }
+
+    .ip-tab-pane { display: none; padding: 10px 14px 14px; }
+    .ip-tab-pane.active { display: block; }
+
+    /* 요약 탭 */
+    .ip-kv { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #161b22; font-size: 13px; }
+    .ip-kv .k { color: #6e7681; }
+    .ip-kv .v { color: #cdd9e5; font-weight: 500; text-align: right; max-width: 180px; }
+    .ip-msg-box {
+      margin-top: 10px; background: #0d1117; border: 1px solid #21262d;
+      border-radius: 8px; padding: 10px; font-size: 12px; color: #8b949e; line-height: 1.6;
+    }
+
+    /* 히스토리 탭 */
+    .ip-event-list { display: flex; flex-direction: column; gap: 3px; }
+    .ip-event-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 7px 8px; border-radius: 7px; cursor: pointer;
+      transition: background .12s;
+    }
+    .ip-event-item:hover { background: #161b22; }
+    .ip-event-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .ip-event-text { font-size: 12px; color: #cdd9e5; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ip-event-time { font-size: 10px; color: #6e7681; flex-shrink: 0; }
+
+    /* 파일 탭 */
+    .ip-file-list { display: flex; flex-direction: column; gap: 4px; }
+    .ip-file-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 10px; border-radius: 8px; cursor: pointer;
+      border: 1px solid #21262d; background: #0d1117; transition: all .15s;
+    }
+    .ip-file-item:hover { border-color: #30363d; background: #161b22; }
+    .ip-file-role { font-size: 13px; }
+    .ip-file-info { flex: 1; min-width: 0; }
+    .ip-file-name { font-size: 12px; color: #cdd9e5; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ip-file-cnt  { font-size: 10px; color: #6e7681; margin-top: 1px; }
+    .ip-file-badge { font-size: 10px; padding: 1px 6px; border-radius: 10px; }
+    .ip-file-badge.write { background: rgba(255,166,87,.15); color: #ffa657; border: 1px solid #ffa65740; }
+    .ip-file-badge.read  { background: rgba(88,166,255,.12); color: #79c0ff; border: 1px solid #58a6ff40; }
+
+    /* ── 줌아웃 요약 오버레이 ─────────────────────── */
+    #zoom-summary {
+      position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      z-index: 80; pointer-events: none;
+      display: none; flex-direction: column; align-items: center; gap: 14px;
+    }
+    #zoom-summary.visible { display: flex; }
+    .zs-title {
+      font-size: 13px; color: #6e7681; letter-spacing: 1.5px;
+      text-transform: uppercase; font-weight: 600;
+    }
+    .zs-chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; max-width: 600px; }
+    .zs-chip {
+      padding: 6px 16px; border-radius: 20px;
+      font-size: 14px; font-weight: 600;
+      border: 1.5px solid; backdrop-filter: blur(8px);
+      background: rgba(6,10,16,0.7);
+      white-space: nowrap;
+    }
+    .zs-sub {
+      font-size: 12px; color: #6e7681; text-align: center; line-height: 1.6;
+      max-width: 420px;
+    }
+
+    /* ── 툴팁 (호버) ──────────────────────────────── */
+    #tooltip {
+      position: fixed; pointer-events: none; z-index: 200;
+      background: rgba(13,17,23,0.96);
+      border: 1px solid #30363d; border-radius: 10px;
+      padding: 10px 14px; font-size: 13px; color: #e6edf3;
+      max-width: 240px; display: none;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    }
+    #tooltip .tt-intent { font-weight: 600; font-size: 14px; margin-bottom: 4px; }
+    #tooltip .tt-meta   { color: #6e7681; font-size: 11px; }
+
+    /* ── 하단 컨트롤 바 ────────────────────────────── */
+    #ctrl-bar {
+      position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%);
+      background: rgba(13,17,23,0.88);
+      border: 1px solid #21262d; border-radius: 20px;
+      padding: 8px 20px; display: flex; gap: 20px;
+      backdrop-filter: blur(12px); z-index: 100;
+    }
+    .ctrl-item { font-size: 12px; color: #6e7681; display: flex; align-items: center; gap: 4px; }
+    .ctrl-item b { color: #8b949e; }
+
+    /* ── 우상단 버튼 ───────────────────────────────── */
+    #top-right {
+      position: fixed; top: 14px; right: 14px; z-index: 101;
+      display: flex; gap: 8px;
+    }
+    .tr-btn {
+      background: rgba(13,17,23,0.9); border: 1px solid #21262d;
+      color: #8b949e; border-radius: 8px; padding: 7px 14px;
+      cursor: pointer; font-size: 13px; backdrop-filter: blur(8px);
+      transition: all .15s; font-family: inherit;
+    }
+    .tr-btn:hover { border-color: #58a6ff; color: #58a6ff; }
+
+    /* ── 세션 레이블 (3D 공간 위 CSS2D처럼) ────────── */
+    .session-badge {
+      position: fixed; pointer-events: none;
+      background: rgba(13,17,23,0.9);
+      border: 1px solid #30363d; border-radius: 20px;
+      padding: 4px 12px; font-size: 11px; color: #8b949e;
+      white-space: nowrap; transform: translate(-50%, -50%);
+      display: none;
+    }
+
+    /* ── 기능 샘플링 패널 ──────────────────────────────── */
+    #feat-btn {
+      position: fixed; bottom: 60px; right: 16px; z-index: 200;
+      background: rgba(13,17,23,0.92); border: 1px solid #21262d;
+      color: #8b949e; border-radius: 10px; padding: 10px 16px;
+      cursor: pointer; font-size: 13px; font-family: inherit;
+      backdrop-filter: blur(8px); transition: all .2s;
+      display: flex; align-items: center; gap: 6px;
+    }
+    #feat-btn:hover { border-color: #58a6ff; color: #58a6ff; }
+    #feat-btn.open  { border-color: #58a6ff; color: #58a6ff; background: rgba(88,166,255,0.08); }
+
+    #feat-panel {
+      position: fixed; right: 16px; bottom: 110px; z-index: 199;
+      width: 340px; max-height: calc(100vh - 160px);
+      background: rgba(13,17,23,0.96);
+      border: 1px solid #21262d; border-radius: 16px;
+      backdrop-filter: blur(16px);
+      display: none; flex-direction: column;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+      overflow: hidden;
+    }
+    #feat-panel.open { display: flex; }
+
+    .fp-header {
+      padding: 16px 18px 12px;
+      border-bottom: 1px solid #21262d;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .fp-header h3 {
+      font-size: 14px; font-weight: 700; color: #e6edf3;
+      display: flex; align-items: center; gap: 7px;
+    }
+    .fp-header .fp-subtitle { font-size: 11px; color: #6e7681; font-weight: 400; }
+    .fp-close {
+      background: none; border: none; color: #6e7681; cursor: pointer;
+      font-size: 16px; padding: 2px 6px; border-radius: 4px;
+    }
+    .fp-close:hover { color: #e6edf3; background: #21262d; }
+
+    .fp-body {
+      overflow-y: auto; padding: 12px;
+      display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+    }
+    .fp-body::-webkit-scrollbar { width: 4px; }
+    .fp-body::-webkit-scrollbar-thumb { background: #21262d; border-radius: 2px; }
+
+    .feat-card {
+      background: #0d1117; border: 1px solid #21262d;
+      border-radius: 10px; padding: 12px;
+      cursor: pointer; transition: all .18s;
+      display: flex; flex-direction: column; gap: 5px;
+      text-decoration: none; color: inherit;
+    }
+    .feat-card:hover { border-color: var(--fc,#58a6ff); background: rgba(255,255,255,0.03); transform: translateY(-1px); }
+
+    .fc-icon { font-size: 22px; line-height: 1; }
+    .fc-name { font-size: 12px; font-weight: 600; color: #e6edf3; }
+    .fc-desc { font-size: 11px; color: #6e7681; line-height: 1.4; }
+    .fc-badge {
+      display: inline-flex; align-items: center;
+      font-size: 10px; padding: 2px 7px;
+      border-radius: 20px; border: 1px solid; margin-top: 2px;
+      border-color: var(--fc,#58a6ff); color: var(--fc,#58a6ff);
+      background: rgba(255,255,255,0.03);
+      width: fit-content;
+    }
+
+    /* ── 필터 칩 ────────────────────────────────────── */
+    #filter-bar {
+      position: fixed; top: 14px; left: 50%; transform: translateX(-50%);
+      z-index: 100; display: flex; gap: 6px;
+    }
+    .fchip {
+      background: rgba(13,17,23,0.88); border: 1px solid #21262d;
+      color: #6e7681; border-radius: 14px; padding: 5px 12px;
+      font-size: 12px; cursor: pointer; backdrop-filter: blur(8px);
+      transition: all .15s; font-family: inherit;
+    }
+    .fchip:hover { border-color: #30363d; color: #8b949e; }
+    .fchip.active { border-color: #58a6ff; color: #58a6ff; background: rgba(88,166,255,0.08); }
   </style>
 </head>
 <body>
 
 <div id="loading">
   <div class="spinner"></div>
-  <span>3D 뉴런 맵 초기화 중...</span>
+  <span id="loading-msg">작업 우주 초기화 중…</span>
 </div>
 
-<canvas id="canvas3d"></canvas>
-
+<!-- HUD -->
 <div id="hud">
-  <div class="hud-panel">
-    <div class="hud-title">⬡ Orbit AI 3D</div>
-    <div class="stat-row">
-      <div class="stat"><b id="h-nodes">0</b>노드</div>
-      <div class="stat"><b id="h-edges">0</b>엣지</div>
-      <div class="stat"><b id="h-fps">0</b>FPS</div>
+  <div class="hud-box">
+    <div class="hud-title">⬡ Orbit AI <span style="font-size:11px;font-weight:400;color:#6e7681">작업 우주</span></div>
+    <div class="hud-stats">
+      <div class="stat"><b id="h-sessions">0</b><span>세션</span></div>
+      <div class="stat"><b id="h-tasks">0</b><span>작업</span></div>
+      <div class="stat"><b id="h-hours">0h</b><span>절약</span></div>
+      <div class="stat"><b id="h-fps">60</b><span>FPS</span></div>
     </div>
   </div>
 </div>
 
-<div id="view-toggle">
-  <button class="vbtn" onclick="location.href='/'">2D 뉴런</button>
-  <button class="vbtn active">3D 뷰</button>
+<!-- 범례 -->
+<div id="legend">
+  <div class="leg-title">작업 유형</div>
+  <div class="leg-item"><div class="leg-dot" style="background:#58a6ff"></div>대화 / 질문</div>
+  <div class="leg-item"><div class="leg-dot" style="background:#3fb950"></div>코드 실행</div>
+  <div class="leg-item"><div class="leg-dot" style="background:#ffa657"></div>파일 편집</div>
+  <div class="leg-item"><div class="leg-dot" style="background:#bc8cff"></div>AI 응답</div>
+  <div class="leg-item"><div class="leg-dot" style="background:#39d2c0"></div>Git 커밋</div>
+  <div class="leg-item"><div class="leg-dot" style="background:#f85149"></div>오류 / 실패</div>
 </div>
 
+<!-- 필터 바 -->
+<div id="filter-bar">
+  <button class="fchip active" data-filter="all" onclick="setFilter('all',this)">🌌 전체</button>
+  <button class="fchip" data-filter="code" onclick="setFilter('code',this)">💻 코드</button>
+  <button class="fchip" data-filter="file" onclick="setFilter('file',this)">📄 파일</button>
+  <button class="fchip" data-filter="chat" onclick="setFilter('chat',this)">💬 대화</button>
+  <button class="fchip" data-filter="git"  onclick="setFilter('git',this)">🌿 Git</button>
+</div>
+
+<!-- 드릴다운 패널 (클릭) -->
+<div id="info-panel">
+  <!-- 헤더 -->
+  <div class="ip-header">
+    <div class="ip-dot-wrap"><div class="ip-type-dot" id="ip-dot"></div></div>
+    <div class="ip-header-text">
+      <div class="ip-type-label" id="ip-type-text"></div>
+      <div class="ip-intent" id="ip-intent"></div>
+    </div>
+    <button class="ip-close" onclick="closePanel()">✕</button>
+  </div>
+  <!-- 탭 바 -->
+  <div class="ip-tabs">
+    <button class="ip-tab active" onclick="switchTab('summary',this)">📋 요약</button>
+    <button class="ip-tab" onclick="switchTab('history',this)">🕐 히스토리</button>
+    <button class="ip-tab" onclick="switchTab('files',this)">📁 파일</button>
+  </div>
+  <!-- 탭 콘텐츠 -->
+  <div class="ip-body">
+    <!-- 요약 탭 -->
+    <div class="ip-tab-pane active" id="ip-pane-summary">
+      <div id="ip-kv-list"></div>
+      <div class="ip-msg-box" id="ip-preview" style="display:none"></div>
+    </div>
+    <!-- 히스토리 탭 -->
+    <div class="ip-tab-pane" id="ip-pane-history">
+      <div class="ip-event-list" id="ip-event-list"></div>
+    </div>
+    <!-- 파일 탭 -->
+    <div class="ip-tab-pane" id="ip-pane-files">
+      <div class="ip-file-list" id="ip-file-list"></div>
+    </div>
+  </div>
+</div>
+
+<!-- 줌아웃 요약 -->
+<div id="zoom-summary">
+  <div class="zs-title">지금 하고 있는 작업</div>
+  <div class="zs-chips" id="zs-chips"></div>
+  <div class="zs-sub" id="zs-sub"></div>
+</div>
+
+<!-- 툴팁 -->
 <div id="tooltip">
-  <div class="tt-type" id="tt-type"></div>
-  <div class="tt-label" id="tt-label"></div>
-  <div id="tt-extra" style="color:#8b949e;font-size:11px;margin-top:4px"></div>
+  <div class="tt-intent" id="tt-intent"></div>
+  <div class="tt-meta"   id="tt-meta"></div>
 </div>
 
-<div id="controls">
-  <span>🖱 드래그: 회전</span>
-  <span>🖱 우클릭: 패닝</span>
-  <span>🖱 휠: 줌</span>
-  <span>더블클릭: 노드 포커스</span>
+<!-- 상단 우측 -->
+<div id="top-right" style="display:none">
+  <!-- info panel이 열리면 여기를 숨김 -->
+</div>
+<div style="position:fixed;top:14px;right:14px;z-index:101;display:flex;gap:8px;">
+  <button class="tr-btn" id="orbit-toggle-btn" onclick="toggleOrbitAnim()">⏸ 공전 중지</button>
 </div>
 
-<!-- Three.js CDN -->
+<!-- 기능 샘플링 버튼 -->
+<button id="feat-btn" onclick="toggleFeatPanel()">⚡ 기능 목록</button>
+
+<!-- 기능 샘플링 패널 -->
+<div id="feat-panel">
+  <div class="fp-header">
+    <h3>⚡ Orbit AI 기능 목록 <span class="fp-subtitle">클릭하여 이동/수정</span></h3>
+    <button class="fp-close" onclick="toggleFeatPanel()">✕</button>
+  </div>
+  <div class="fp-body" id="feat-cards">
+    <!-- JS로 동적 생성 -->
+  </div>
+</div>
+
+<!-- 하단 컨트롤 -->
+<div id="ctrl-bar">
+  <div class="ctrl-item"><b>드래그</b> 회전</div>
+  <div class="ctrl-item"><b>우클릭</b> 이동</div>
+  <div class="ctrl-item"><b>휠</b> 줌인/아웃</div>
+  <div class="ctrl-item"><b>클릭</b> 작업 상세보기</div>
+  <div class="ctrl-item"><b>더블클릭</b> 행성 포커스</div>
+</div>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
+<!-- WebXR VR 버튼 폴리필 -->
 <script>
-// ─── 설정 ─────────────────────────────────────────────────────────────────────
-const API        = '';
-const NODE_TYPES = {
-  'user.message':       { color: 0x58a6ff, emissive: 0x1a4a8a },
-  'assistant.response': { color: 0x3fb950, emissive: 0x0d3a1a },
-  'tool.start':         { color: 0xbc8cff, emissive: 0x3a1a6a },
-  'tool.end':           { color: 0x8957e5, emissive: 0x2a0d5a },
-  'tool.error':         { color: 0xf85149, emissive: 0x5a1010 },
-  'file.write':         { color: 0xffa657, emissive: 0x5a3010 },
-  'git.commit':         { color: 0x39d2c0, emissive: 0x0d4a45 },
-  'git.push':           { color: 0x79c0ff, emissive: 0x1a3a5a },
-  'default':            { color: 0x444d56, emissive: 0x111418 },
+window.OrbitVRButton = {
+  createButton(renderer) {
+    const btn = document.createElement('button');
+    Object.assign(btn.style, {
+      position:'fixed', bottom:'60px', right:'16px', zIndex:'200',
+      background:'rgba(13,17,23,0.92)', border:'1px solid #21262d',
+      color:'#8b949e', borderRadius:'10px', padding:'10px 18px',
+      cursor:'pointer', fontSize:'13px', backdropFilter:'blur(8px)',
+      transition:'all .2s', fontFamily:'inherit',
+    });
+    if (!navigator.xr) {
+      btn.textContent = '🥽 VR 미지원'; btn.style.opacity='0.4'; btn.style.cursor='not-allowed';
+      return btn;
+    }
+    navigator.xr.isSessionSupported('immersive-vr').then(ok => {
+      if (!ok) { btn.textContent='🥽 VR 기기 없음'; btn.style.opacity='0.4'; return; }
+      btn.textContent='🥽 VR 입장'; btn.style.borderColor='#58a6ff'; btn.style.color='#58a6ff';
+      let sess = null;
+      btn.addEventListener('click', () => {
+        if (!sess) {
+          navigator.xr.requestSession('immersive-vr',{optionalFeatures:['local-floor','bounded-floor']})
+            .then(s => { s.addEventListener('end',()=>{ btn.textContent='🥽 VR 입장'; sess=null; }); renderer.xr.setSession(s); btn.textContent='🥽 VR 종료'; sess=s; });
+        } else { sess.end(); }
+      });
+    });
+    return btn;
+  }
 };
+</script>
 
-// ─── Three.js 초기화 ──────────────────────────────────────────────────────────
-const canvas   = document.getElementById('canvas3d');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.shadowMap.enabled = true;
+<script>
+'use strict';
+// ══════════════════════════════════════════════════════════════════════════════
+// Orbit AI — 작업 우주 (SoundPlot 스타일)
+//
+// 구조:
+//   🌟 중심별  (Orbit AI 코어)
+//   🪐 행성    = 세션  (작업 묶음, 이름: "auth 구현", "UI 리팩토링")
+//   🔵 위성    = 이벤트 (개별 작업, "auth.js 수정", "버그 수정")
+//
+// 라벨:
+//   행성: 세션의 주된 작업 의도 (가장 많이 수행된 파일 / 주요 메시지)
+//   위성: 이벤트 의도 (buildLabel 결과 — "auth.js 수정" 같은 구체적 행동)
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ─── Three.js 기본 세팅 ───────────────────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.xr.enabled = true;
+document.body.appendChild(renderer.domElement);
+document.body.appendChild(OrbitVRButton.createButton(renderer));
 
 const scene  = new THREE.Scene();
-scene.background = new THREE.Color(0x0d1117);
-scene.fog = new THREE.Fog(0x0d1117, 80, 300);
+scene.background = new THREE.Color(0x060a10);
+scene.fog = new THREE.FogExp2(0x060a10, 0.004);
 
-const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
-camera.position.set(0, 0, 80);
+const camera = new THREE.PerspectiveCamera(55, innerWidth/innerHeight, 0.1, 2000);
+camera.position.set(0, 30, 75);
+camera.lookAt(0,0,0);
 
-// ── 조명 ─────────────────────────────────────────────────────────────────────
-const ambientLight = new THREE.AmbientLight(0xffffff, 0.3);
-scene.add(ambientLight);
+// ─── 조명 ─────────────────────────────────────────────────────────────────────
+scene.add(new THREE.AmbientLight(0xffffff, 0.35));
+const sun = new THREE.PointLight(0xffd080, 3, 400);
+scene.add(sun);
+const rimLight = new THREE.PointLight(0x58a6ff, 1.2, 300);
+rimLight.position.set(-100,80,-80);
+scene.add(rimLight);
 
-const pointLight1 = new THREE.PointLight(0x58a6ff, 1.5, 200);
-pointLight1.position.set(50, 50, 50);
-scene.add(pointLight1);
-
-const pointLight2 = new THREE.PointLight(0x3fb950, 1.0, 150);
-pointLight2.position.set(-50, -30, -50);
-scene.add(pointLight2);
-
-// ── 배경 별 파티클 ────────────────────────────────────────────────────────────
-(function createStarField() {
+// ─── 별 배경 ──────────────────────────────────────────────────────────────────
+(function () {
   const geo = new THREE.BufferGeometry();
-  const count = 2000;
-  const positions = new Float32Array(count * 3);
-  for (let i = 0; i < count * 3; i++) {
-    positions[i] = (Math.random() - 0.5) * 600;
+  const N = 4000, pos = new Float32Array(N*3), col = new Float32Array(N*3);
+  for (let i=0; i<N; i++) {
+    const r = 600 + Math.random()*400;
+    const θ = Math.random()*Math.PI*2, φ = Math.acos(2*Math.random()-1);
+    pos[i*3]   = r*Math.sin(φ)*Math.cos(θ);
+    pos[i*3+1] = r*Math.sin(φ)*Math.sin(θ);
+    pos[i*3+2] = r*Math.cos(φ);
+    const c = new THREE.Color().setHSL(Math.random(), 0.2+Math.random()*0.3, 0.5+Math.random()*0.4);
+    col[i*3]=c.r; col[i*3+1]=c.g; col[i*3+2]=c.b;
   }
-  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  const mat = new THREE.PointsMaterial({ color: 0x8b949e, size: 0.3, transparent: true, opacity: 0.6 });
-  scene.add(new THREE.Points(geo, mat));
+  geo.setAttribute('position', new THREE.BufferAttribute(pos,3));
+  geo.setAttribute('color',    new THREE.BufferAttribute(col,3));
+  scene.add(new THREE.Points(geo, new THREE.PointsMaterial({size:0.6, vertexColors:true, transparent:true, opacity:0.7})));
 })();
 
-// ─── OrbitControls (인라인 구현 — CDN 없이) ──────────────────────────────────
-class SimpleOrbitControls {
-  constructor(cam, domEl) {
-    this.camera = cam;
-    this.el     = domEl;
-    this.target = new THREE.Vector3();
-    this._spherical = { theta: 0, phi: Math.PI / 2, radius: 80 };
-    this._dragging  = false;
-    this._rDragging = false;
-    this._last      = { x: 0, y: 0 };
-    this._bindEvents();
+// ─── 타입 → 색상 / 의미 매핑 ─────────────────────────────────────────────────
+const TYPE_CFG = {
+  'user.message':       { color:0x58a6ff, cat:'chat',  label:'질문',     icon:'💬' },
+  'assistant.message':  { color:0xbc8cff, cat:'chat',  label:'AI 답변',  icon:'🤖' },
+  'assistant.response': { color:0xbc8cff, cat:'chat',  label:'AI 답변',  icon:'🤖' },
+  'tool.start':         { color:0x3fb950, cat:'code',  label:'실행 시작', icon:'⚡' },
+  'tool.end':           { color:0x3fb950, cat:'code',  label:'실행 완료', icon:'✅' },
+  'tool.error':         { color:0xf85149, cat:'error', label:'실행 오류', icon:'❌' },
+  'file.read':          { color:0xffa657, cat:'file',  label:'파일 읽기', icon:'📄' },
+  'file.write':         { color:0xffa657, cat:'file',  label:'파일 수정', icon:'✏️' },
+  'file.create':        { color:0xffa657, cat:'file',  label:'파일 생성', icon:'🆕' },
+  'git.commit':         { color:0x39d2c0, cat:'git',   label:'Git 커밋',  icon:'🌿' },
+  'git.push':           { color:0x79c0ff, cat:'git',   label:'Git 푸시',  icon:'🚀' },
+  'session.start':      { color:0xffd700, cat:'chat',  label:'세션 시작', icon:'🌟' },
+  'task.complete':      { color:0x3fb950, cat:'code',  label:'작업 완료', icon:'🏁' },
+  'default':            { color:0x3d444d, cat:'chat',  label:'기타',      icon:'·'  },
+};
+function typeCfg(t) { return TYPE_CFG[t] || TYPE_CFG.default; }
+
+// ─── 파일 용도 추론 (파일명 → 역할 설명) ─────────────────────────────────────
+function inferFileRole(filename) {
+  if (!filename) return null;
+  const f = filename.toLowerCase();
+  const name = f.replace(/\.[^.]+$/, ''); // 확장자 제거
+
+  // 인프라 / 설정
+  if (/docker|compose/.test(name))          return '🐳 컨테이너';
+  if (/\.env|config|setting|conf/.test(f))  return '⚙️ 설정';
+  if (/package\.json/.test(f))              return '📦 의존성';
+  if (/tsconfig|jsconfig/.test(f))          return '🔧 TS 설정';
+  if (/eslint|prettier|lint/.test(f))       return '✨ 코드 품질';
+  if (/webpack|vite|rollup|babel/.test(f))  return '⚡ 빌드';
+
+  // 인증 / 보안
+  if (/auth|login|oauth|jwt|token|session|password/.test(name)) return '🔐 인증';
+  if (/security|cors|helmet|csrf/.test(name))                   return '🛡️ 보안';
+
+  // DB / 스토어
+  if (/db|database|schema|migration|model|store|entity/.test(name)) return '🗄️ 데이터';
+  if (/redis|mongo|postgres|sqlite|mysql/.test(name))               return '🗄️ DB';
+
+  // API / 라우터
+  if (/route|router|api|endpoint|controller/.test(name)) return '🌐 API';
+  if (/middleware|interceptor/.test(name))                return '🔀 미들웨어';
+  if (/server|app\.js|main|index/.test(f))               return '🚀 서버';
+
+  // UI
+  if (/component|widget|ui|view|page|screen/.test(name)) return '🎨 UI';
+  if (/style|css|scss|tailwind/.test(f))                 return '🎨 스타일';
+  if (/layout|template/.test(name))                      return '📐 레이아웃';
+
+  // 유틸 / 서비스
+  if (/util|helper|lib|tool|service/.test(name)) return '🔩 유틸';
+  if (/hook|context|store|state/.test(name))     return '🔄 상태';
+
+  // 테스트
+  if (/test|spec|e2e|jest|vitest/.test(f)) return '🧪 테스트';
+
+  // 문서
+  if (/readme|doc|md$/.test(f)) return '📝 문서';
+
+  // 확장자 기반 fallback
+  if (f.endsWith('.ts') || f.endsWith('.js')) return '📜 스크립트';
+  if (f.endsWith('.tsx') || f.endsWith('.jsx')) return '⚛️ 컴포넌트';
+  if (f.endsWith('.html')) return '🌐 페이지';
+  if (f.endsWith('.json')) return '📋 데이터';
+  if (f.endsWith('.sh'))   return '⚡ 스크립트';
+  if (f.endsWith('.sql'))  return '🗄️ SQL';
+
+  return null; // 추론 불가 → 파일명 그대로 사용
+}
+
+// ─── 의도(Intent) 추출 ────────────────────────────────────────────────────────
+function extractIntent(node) {
+  // 이미 label이 있으면 우선 사용 (API 반환 데이터)
+  if (node.label && node.label !== node.type) return node.label;
+  const t = node.type || '';
+
+  // fullContent에서 data 파싱
+  let d = node.data || {};
+  const fc = node.fullContent;
+  if (fc && typeof fc === 'string' && fc.startsWith('{')) {
+    try { d = { ...d, ...JSON.parse(fc) }; } catch {}
   }
-  _bindEvents() {
-    this.el.addEventListener('mousedown',   e => this._onDown(e));
-    this.el.addEventListener('mousemove',   e => this._onMove(e));
-    this.el.addEventListener('mouseup',     () => { this._dragging = false; this._rDragging = false; });
-    this.el.addEventListener('wheel',       e => this._onWheel(e), { passive: true });
-    this.el.addEventListener('dblclick',    e => this._onDblClick(e));
-    this.el.addEventListener('contextmenu', e => e.preventDefault());
+
+  if (t === 'user.message') {
+    const txt = d.contentPreview || d.content || '';
+    return txt ? txt.slice(0,38) : '질문';
   }
-  _onDown(e) {
-    this._last = { x: e.clientX, y: e.clientY };
-    if (e.button === 2) this._rDragging = true;
-    else                this._dragging  = true;
+  if (t === 'assistant.message' || t === 'assistant.response') {
+    const txt = d.contentPreview || d.content || '';
+    return txt ? txt.slice(0,38) : 'AI 답변';
   }
-  _onMove(e) {
-    const dx = e.clientX - this._last.x;
-    const dy = e.clientY - this._last.y;
-    this._last = { x: e.clientX, y: e.clientY };
-    if (this._dragging) {
-      this._spherical.theta -= dx * 0.005;
-      this._spherical.phi    = Math.max(0.1, Math.min(Math.PI - 0.1, this._spherical.phi + dy * 0.005));
-    } else if (this._rDragging) {
-      const right = new THREE.Vector3().crossVectors(
-        this.camera.getWorldDirection(new THREE.Vector3()),
-        this.camera.up
-      ).normalize();
-      this.target.addScaledVector(right,  -dx * 0.05);
-      this.target.addScaledVector(this.camera.up, dy * 0.05);
+  if (t === 'tool.end' || t === 'tool.start') {
+    const tool = d.toolName || '';
+    const file = (d.filePath||'').replace(/\\/g,'/').split('/').pop();
+    const role = file ? inferFileRole(file) : null;
+    const TOOLS = {
+      'Write':'작성', 'Edit':'수정', 'Read':'읽기',
+      'Bash':'실행', 'Grep':'검색', 'Glob':'탐색',
+      'Task':'에이전트', 'WebFetch':'웹 조회',
+    };
+    const tl = TOOLS[tool] || tool;
+    if (role && file) return `${role} ${tl}`;
+    return file ? `${tl}: ${file}` : (tl || t);
+  }
+  if (t === 'file.write' || t === 'file.create') {
+    const f = (d.filePath||d.fileName||'').replace(/\\/g,'/').split('/').pop();
+    const role = inferFileRole(f);
+    return role ? `${role} 수정` : (f ? `✏️ ${f}` : '파일 수정');
+  }
+  if (t === 'file.read') {
+    const f = (d.filePath||d.fileName||'').replace(/\\/g,'/').split('/').pop();
+    const role = inferFileRole(f);
+    return role ? `${role} 읽기` : (f ? `📄 ${f}` : '파일 읽기');
+  }
+  if (t === 'git.commit') return d.message ? d.message.slice(0,36) : 'Git 커밋';
+  if (t === 'task.complete') return d.taskName || '작업 완료';
+  if (t === 'session.start') return '세션 시작';
+  return d.toolName || d.contentPreview || t;
+}
+
+// ─── 파일 위성 집계 (세션별 편집 파일 → 용도 태그 목록) ─────────────────────
+function buildFileSatellites(events) {
+  const fileCounts = {};
+  for (const e of events) {
+    // data 또는 fullContent에서 filePath 추출
+    let d = e.data || {};
+    const fc = e.fullContent;
+    if (fc && typeof fc === 'string' && fc.startsWith('{')) {
+      try { d = { ...d, ...JSON.parse(fc) }; } catch {}
+    } else if (fc && typeof fc === 'string' && fc.includes('/')) {
+      d = { ...d, filePath: fc };
     }
-    this._update();
+    const rawPath = d.filePath || d.fileName || '';
+    if (!rawPath) continue;
+    const fname = rawPath.replace(/\\/g, '/').split('/').pop();
+    if (!fname || fname.length < 2) continue;
+    if (!fileCounts[fname]) fileCounts[fname] = { count:0, types: new Set() };
+    fileCounts[fname].count++;
+    fileCounts[fname].types.add(e.type);
   }
-  _onWheel(e) {
-    this._spherical.radius = Math.max(5, Math.min(400, this._spherical.radius + e.deltaY * 0.1));
-    this._update();
+  // 상위 12개, 용도 추론
+  return Object.entries(fileCounts)
+    .sort((a,b) => b[1].count - a[1].count)
+    .slice(0, 12)
+    .map(([fname, info]) => ({
+      label:    inferFileRole(fname) || fname,
+      filename: fname,
+      count:    info.count,
+      isWrite:  info.types.has('file.write') || info.types.has('tool.end'),
+    }));
+}
+
+// ─── 목적 기반 클러스터링 ─────────────────────────────────────────────────────
+// 세션이 1개여도 이벤트를 "목적/의도 도메인"으로 묶어 복수 행성으로 표시
+function clusterByIntent(sessionId, events) {
+  // ── 1. purposeLabel이 있으면 최우선 활용 ──────────────────────────────────
+  const hasPurpose = events.some(e => e.purposeLabel);
+
+  if (hasPurpose) {
+    const purposeMap = {};
+    for (const ev of events) {
+      const key = ev.purposeLabel || '⚙️ 기타';
+      if (!purposeMap[key]) {
+        purposeMap[key] = {
+          clusterId:  `${sessionId}__${key}`,
+          sessionId,
+          domain:     'purpose',
+          label:      key,
+          icon:       ev.purposeIcon || '⚙️',
+          color:      ev.purposeColor || '#8b949e',
+          msgPreview: '',
+          events:     [],
+        };
+      }
+      purposeMap[key].events.push(ev);
+    }
+
+    // 첫 user.message 프리뷰 보강
+    for (const cluster of Object.values(purposeMap)) {
+      const msg = cluster.events.find(e => e.type === 'user.message');
+      cluster.msgPreview = (msg?.label || '').slice(0, 26);
+    }
+
+    return Object.values(purposeMap).sort((a, b) => b.events.length - a.events.length);
   }
-  _onDblClick(e) {
-    // 더블클릭한 노드로 카메라 이동
-    const rect = this.el.getBoundingClientRect();
-    const mouse = new THREE.Vector2(
-      ((e.clientX - rect.left) / rect.width)  * 2 - 1,
-      -((e.clientY - rect.top) / rect.height) * 2 + 1
-    );
-    raycaster.setFromCamera(mouse, this.camera);
-    const hits = raycaster.intersectObjects(nodeMeshes);
-    if (hits.length > 0) {
-      const pos = hits[0].object.position;
-      this.target.copy(pos);
-      this._spherical.radius = 20;
-      this._update();
+
+  // ── 2. purposeLabel 없으면 파일경로/라벨/타입 기반 도메인 분류 ────────────
+  function getDomain(ev) {
+    const t = ev.type || '';
+
+    // fullContent JSON에서 filePath 추출
+    let fp = '';
+    const fc = ev.fullContent || ev.label || '';
+    if (typeof fc === 'string' && fc.startsWith('{')) {
+      try { fp = JSON.parse(fc).filePath || ''; } catch {}
+    } else if (typeof fc === 'string' && fc.includes('/')) {
+      fp = fc;
+    }
+    // label에서 파일명 추출 ("파일 작성: auth.js" 형태)
+    const labelFile = (ev.label || '').match(/[:\s]+([^\s:]+\.[a-z]+)/i)?.[1] || '';
+    const fname = (fp || labelFile).replace(/\\/g, '/').split('/').pop().toLowerCase();
+
+    if (/auth|login|oauth|jwt|token|session|password/.test(fname)) return 'auth';
+    if (/route|router|api|endpoint|controller/.test(fname))        return 'api';
+    if (/db|database|schema|migration|model|store|entity/.test(fname)) return 'data';
+    if (/component|widget|ui|view|page|screen|style|css/.test(fname))  return 'ui';
+    if (/test|spec|e2e|jest|vitest/.test(fname))                        return 'test';
+    if (/server|app\.js|main|index/.test(fname))                        return 'server';
+    if (/docker|compose|deploy|ci|cd|yml|yaml/.test(fname))            return 'infra';
+    if (/doc|readme|md$/.test(fname))                                   return 'docs';
+
+    // label/대화 기반
+    const txt = (ev.label || '').toLowerCase();
+    if (/버그|오류|에러|fix|bug|error/.test(txt))      return 'fix';
+    if (/설계|구조|아키텍|design|architect/.test(txt)) return 'design';
+    if (/배포|deploy|release|publish/.test(txt))        return 'infra';
+    if (/테스트|test|spec/.test(txt))                   return 'test';
+
+    if (t === 'user.message' || t === 'assistant.message' || t === 'assistant.response') return 'chat';
+    if (t === 'git.commit' || t === 'git.push') return 'git';
+    if (t === 'tool.error') return 'fix';
+
+    return 'general';
+  }
+
+  const DOMAIN_LABELS = {
+    auth:     '🔐 인증 구현',  api:   '🌐 API 개발',
+    data:     '🗄️ 데이터',    ui:    '🎨 UI 작업',
+    test:     '🧪 테스트',     server:'🚀 서버 개발',
+    infra:    '🐳 인프라',     docs:  '📝 문서화',
+    design:   '📐 설계 논의',  fix:   '🔧 버그 수정',
+    git:      '🌿 Git 관리',   chat:  '💬 대화',
+    general:  '⚙️ 일반 작업',
+  };
+
+  const domainMap = {};
+  for (const ev of events) {
+    const domain = getDomain(ev);
+    if (!domainMap[domain]) domainMap[domain] = [];
+    domainMap[domain].push(ev);
+  }
+
+  // 너무 작은 클러스터는 general로 병합
+  const minSize = Math.max(2, Math.floor(events.length * 0.04));
+  const merged = {};
+  for (const [domain, evs] of Object.entries(domainMap)) {
+    const target = (evs.length <= minSize && domain !== 'general') ? 'general' : domain;
+    if (!merged[target]) merged[target] = [];
+    merged[target].push(...evs);
+  }
+
+  const clusters = [];
+  for (const [domain, evs] of Object.entries(merged)) {
+    const msg = evs.find(e => e.type === 'user.message');
+    clusters.push({
+      clusterId:  `${sessionId}__${domain}`,
+      sessionId,
+      domain,
+      label:      DOMAIN_LABELS[domain] || '⚙️ 작업',
+      msgPreview: (msg?.label || '').slice(0, 26),
+      events:     evs,
+    });
+  }
+
+  clusters.sort((a, b) => b.events.length - a.events.length);
+  return clusters;
+}
+
+// ─── 세션 컨텍스트 캐시 (비동기 로드) ────────────────────────────────────────
+const _sessionContextCache = {};   // sessionId → { autoTitle, projectName, firstMsg, topFile }
+
+async function loadSessionContext(sessionId) {
+  if (_sessionContextCache[sessionId]) return _sessionContextCache[sessionId];
+  try {
+    const r = await fetch(`/api/sessions/${sessionId}/context`);
+    if (!r.ok) return null;
+    const ctx = await r.json();
+    _sessionContextCache[sessionId] = ctx;
+    // 행성 라벨 즉시 업데이트
+    const planet = _sessionMap[sessionId]?.planet;
+    if (planet) {
+      planet.userData.intent      = ctx.autoTitle;
+      planet.userData.projectName = ctx.projectName;
+    }
+    return ctx;
+  } catch { return null; }
+}
+
+// 세션의 대표 의도 (로컬 이벤트 기반 — 비동기 컨텍스트 로드 전 임시값)
+function sessionIntent(events) {
+  const sid = events[0]?.sessionId;
+
+  // 이미 캐시됐으면 사용
+  if (sid && _sessionContextCache[sid]) return _sessionContextCache[sid].autoTitle;
+
+  // session.start의 data.title (수동 설정 우선)
+  const sessStart = events.find(e => e.type === 'session.start');
+  if (sessStart?.data?.title) return sessStart.data.title;
+
+  // projectDir 폴더명
+  const pd = sessStart?.data?.projectDir;
+  const projectName = pd ? pd.replace(/\\/g,'/').split('/').filter(Boolean).pop() : null;
+
+  // 파일 편집 횟수 집계
+  const fileCounts = {};
+  for (const e of events) {
+    const d = e.data || {};
+    const f = (d.filePath||d.fileName||'').replace(/\\/g,'/').split('/').pop();
+    if (f) fileCounts[f] = (fileCounts[f]||0) + 1;
+  }
+  const topFile = Object.entries(fileCounts).sort((a,b)=>b[1]-a[1])[0]?.[0] || null;
+
+  // 첫 user.message
+  const msg = events.find(e => e.type === 'user.message');
+  const firstMsg = (msg?.data?.contentPreview || msg?.data?.content || '').slice(0,28) || null;
+
+  // 조합: [프로젝트] 첫메시지 or 최다편집파일
+  if (projectName && firstMsg) return `[${projectName}] ${firstMsg}`;
+  if (projectName && topFile)  return `[${projectName}] ${topFile}`;
+  if (projectName)             return projectName;
+  if (firstMsg)                return firstMsg;
+  if (topFile)                 return topFile;
+  return `세션 ${(sid||'').slice(-6)}`;
+}
+
+// ─── OrbitControls 인라인 ─────────────────────────────────────────────────────
+class OrbitCam {
+  constructor(cam, el) {
+    this.cam = cam; this.el = el;
+    this.tgt = new THREE.Vector3();
+    this.sph = { r:75, θ:0.3, φ:1.1 };
+    this._d = false; this._r = false; this._lx=0; this._ly=0;
+    el.addEventListener('mousedown',  e => { this._lx=e.clientX; this._ly=e.clientY; e.button===2?this._r=true:this._d=true; });
+    el.addEventListener('mousemove',  e => this._move(e));
+    el.addEventListener('mouseup',    () => { this._d=this._r=false; });
+    el.addEventListener('wheel',      e => { this.sph.r=Math.max(10,Math.min(300,this.sph.r+e.deltaY*.08)); this._apply(); }, {passive:true});
+    el.addEventListener('dblclick',   e => this._dbl(e));
+    el.addEventListener('contextmenu',e => e.preventDefault());
+    this._apply();
+  }
+  _move(e) {
+    const dx=e.clientX-this._lx, dy=e.clientY-this._ly;
+    this._lx=e.clientX; this._ly=e.clientY;
+    if (this._d) {
+      this.sph.θ -= dx*.004;
+      this.sph.φ = Math.max(.05, Math.min(Math.PI-.05, this.sph.φ+dy*.004));
+    } else if (this._r) {
+      const fwd = new THREE.Vector3(); this.cam.getWorldDirection(fwd);
+      const right = new THREE.Vector3().crossVectors(fwd, this.cam.up).normalize();
+      this.tgt.addScaledVector(right, -dx*.05).addScaledVector(this.cam.up, dy*.05);
+    }
+    this._apply();
+  }
+  _dbl(e) {
+    const rect=renderer.domElement.getBoundingClientRect();
+    const mx=((e.clientX-rect.left)/rect.width)*2-1;
+    const my=-((e.clientY-rect.top)/rect.height)*2+1;
+    _raycaster.setFromCamera({x:mx,y:my},this.cam);
+    const hits=_raycaster.intersectObjects([...planetMeshes,...satelliteMeshes]);
+    if (hits[0]) {
+      this.tgt.copy(hits[0].object.userData.orbitCenter||hits[0].object.position);
+      this.sph.r = 40; this._apply();
     }
   }
-  _update() {
-    const { theta, phi, radius } = this._spherical;
-    this.camera.position.set(
-      this.target.x + radius * Math.sin(phi) * Math.sin(theta),
-      this.target.y + radius * Math.cos(phi),
-      this.target.z + radius * Math.sin(phi) * Math.cos(theta)
+  _apply() {
+    const {r,θ,φ}=this.sph;
+    this.cam.position.set(
+      this.tgt.x + r*Math.sin(φ)*Math.sin(θ),
+      this.tgt.y + r*Math.cos(φ),
+      this.tgt.z + r*Math.sin(φ)*Math.cos(θ),
     );
-    this.camera.lookAt(this.target);
+    this.cam.lookAt(this.tgt);
   }
 }
 
-const controls = new SimpleOrbitControls(camera, canvas);
-const raycaster = new THREE.Raycaster();
+const _raycaster = new THREE.Raycaster();
+const controls   = new OrbitCam(camera, renderer.domElement);
 
-// ─── 그래프 데이터 ────────────────────────────────────────────────────────────
-let nodes     = [];
-let edges     = [];
-let nodeMeshes = [];
-let edgeLines  = [];
-let nodeMap    = {};    // id → mesh
+// ─── 씬 오브젝트 ──────────────────────────────────────────────────────────────
+// 행성/위성은 "보이지 않는 Three.js Object3D"로 위치만 관리
+// 실제 렌더링은 Canvas2D drawLabels()가 담당
+let planetMeshes    = [];   // Object3D (invisible) — 위치 추적용
+let satelliteMeshes = [];   // Object3D (invisible) — 위치 추적용
+let orbitRings      = [];   // Mesh — 궤도 링 (Three.js)
+let connections     = [];   // Line — 연결선 (Three.js, 희미하게)
+let labelSprites    = [];   // unused legacy
 
-// 3D Force Layout (간단한 반발/인력 시뮬레이션)
-let positions3d = {};  // id → {x,y,z,vx,vy,vz}
+let _allNodes   = [];
+let _sessionMap = {};   // sessionId → { planet:Object3D, fileSats:[], events:[] }
+let _nodeDataMap = {};  // uuid → data for interaction
 
-function initPositions(nodeList) {
-  nodeList.forEach(n => {
-    if (!positions3d[n.id]) {
-      positions3d[n.id] = {
-        x: (Math.random() - 0.5) * 60,
-        y: (Math.random() - 0.5) * 60,
-        z: (Math.random() - 0.5) * 60,
-        vx: 0, vy: 0, vz: 0,
+let orbitAnimOn = true;
+let _clock = 0;
+
+// 호버/클릭을 위한 2D 히트 영역 (Canvas 좌표)
+let _hitAreas = []; // { cx, cy, r, data }
+
+let _activeFilter = 'all';
+const FILTER_CATS = {
+  all:  null,
+  code: ['code'],
+  file: ['file'],
+  chat: ['chat'],
+  git:  ['git'],
+};
+
+function setFilter(f, btn) {
+  _activeFilter = f;
+  document.querySelectorAll('.fchip').forEach(c => c.classList.remove('active'));
+  btn.classList.add('active');
+  buildPlanetSystem(_allNodes);
+}
+window.setFilter = setFilter;
+
+function toggleOrbitAnim() {
+  orbitAnimOn = !orbitAnimOn;
+  document.getElementById('orbit-toggle-btn').textContent = orbitAnimOn ? '⏸ 공전 중지' : '▶ 공전 시작';
+}
+window.toggleOrbitAnim = toggleOrbitAnim;
+
+// ─── 씬 빌드 ──────────────────────────────────────────────────────────────────
+function clearScene() {
+  [...planetMeshes, ...satelliteMeshes, ...orbitRings, ...connections].forEach(o => scene.remove(o));
+  planetMeshes=[]; satelliteMeshes=[]; orbitRings=[]; connections=[]; labelSprites=[];
+  _nodeDataMap = {}; _hitAreas = [];
+}
+
+function buildPlanetSystem(nodeList) {
+  clearScene();
+  _allNodes = nodeList;
+
+  // ── 세션별 그룹화 ─────────────────────────────────────────────────────────
+  const sessions = {};
+  for (const n of nodeList) {
+    if (!n.type || n.type === 'session.start' || n.type === 'session.end') continue;
+    const sid = n.sessionId || 'default';
+    if (!sessions[sid]) sessions[sid] = [];
+    sessions[sid].push(n);
+  }
+
+  const filterCats = FILTER_CATS[_activeFilter];
+  const sessKeys   = Object.keys(sessions);
+
+  // ── 행성 단위 생성 (클러스터 기반) ────────────────────────────────────────
+  // 세션이 1개여도 목적 클러스터로 분해해 복수 행성 생성
+  const planets = []; // { clusterId, sessionId, domain, label, events }
+
+  for (const sid of sessKeys) {
+    const rawEvents = sessions[sid];
+    const filtered  = filterCats
+      ? rawEvents.filter(e => filterCats.includes(typeCfg(e.type).cat))
+      : rawEvents;
+    if (filtered.length === 0) continue;
+
+    const clusters = clusterByIntent(sid, filtered);
+    // 클러스터가 1개뿐이면 전체 세션을 1개 행성으로
+    if (clusters.length <= 1) {
+      planets.push({
+        clusterId: sid,
+        sessionId: sid,
+        domain: 'general',
+        label: sessionIntent(rawEvents),
+        events: filtered,
+        isFullSession: true,
+      });
+    } else {
+      for (const c of clusters) {
+        planets.push({ ...c, isFullSession: false });
+      }
+    }
+  }
+
+  const N = planets.length;
+
+  // ── 중심 코어 — Three.js 구체 (Orbit AI 심볼) ───────────────────────────
+  const coreMat = new THREE.MeshPhongMaterial({ color:0xffd700, emissive:0x7a5800, shininess:120 });
+  const core    = new THREE.Mesh(new THREE.SphereGeometry(2.5,32,32), coreMat);
+  core.userData.isCore = true;
+  scene.add(core);
+  const glowMat = new THREE.MeshBasicMaterial({ color:0xffd700, transparent:true, opacity:0.10, side:THREE.BackSide });
+  scene.add(new THREE.Mesh(new THREE.SphereGeometry(4.5,32,32), glowMat));
+
+  let totalTasks = 0, totalHours = 0;
+
+  // 같은 sessionId 내 클러스터끼리 색조를 가깝게 (sesIdx 기반 색조, domain으로 명도 조절)
+  const SESSION_HUES = {};
+  sessKeys.forEach((sid, si) => { SESSION_HUES[sid] = (si / Math.max(sessKeys.length,1)) * 0.72 + 0.55; });
+
+  // 클러스터별 색조 변화 (같은 세션 내 클러스터는 유사색)
+  const DOMAIN_HUE_OFFSET = {
+    auth:0.00, api:0.04, data:0.08, ui:0.12, test:0.16,
+    server:0.20, infra:0.24, docs:0.28, design:0.32, fix:0.36,
+    git:0.40, research:0.44, chat:0.48, general:0.52,
+  };
+
+  planets.forEach((pl, pi) => {
+    const { clusterId, sessionId: sid, domain, label, events } = pl;
+    const rawEvents = events;
+
+    // ── 행성 위치 (황금각 균등 배치, 압축) ─────────────────────────────────
+    const BASE_R   = N <= 3 ? 16 : N <= 6 ? 20 : N <= 10 ? 24 : N <= 16 ? 28 : 32;
+    const PLANET_R = BASE_R + (pi % 3) * 2.5;
+    const golden   = Math.PI * (3 - Math.sqrt(5));
+    const θ_planet = pi * golden;
+    const φ_planet = Math.acos(1 - 2*(pi+0.5)/Math.max(N,1));
+
+    const px = PLANET_R * Math.sin(φ_planet) * Math.cos(θ_planet);
+    const py = PLANET_R * Math.cos(φ_planet) * 0.32;
+    const pz = PLANET_R * Math.sin(φ_planet) * Math.sin(θ_planet);
+    const planetPos = new THREE.Vector3(px, py, pz);
+
+    // ── 행성 의도 & 색상 ─────────────────────────────────────────────────
+    let hueHex;
+    if (pl.color) {
+      // purposeColor 직접 사용
+      hueHex = pl.color;
+    } else {
+      const baseHue   = SESSION_HUES[sid] || 0.55;
+      const domOffset = DOMAIN_HUE_OFFSET[domain] || 0;
+      const hue2      = (baseHue + domOffset * 0.3) % 1;
+      hueHex = '#' + new THREE.Color(0).setHSL(hue2, 0.7, 0.55).getHexString();
+    }
+    const hue = new THREE.Color(hueHex).getHSL({}).h;
+
+    // intent: purposeIcon + 클러스터 라벨 + 첫 메시지 프리뷰 조합
+    const msgPreview = pl.msgPreview || '';
+    const iconPrefix = pl.icon ? `${pl.icon} ` : '';
+    const intent = msgPreview
+      ? `${iconPrefix}${label}  ${msgPreview}`
+      : (pl.isFullSession ? sessionIntent(rawEvents) : `${iconPrefix}${label}`);
+
+    // ── 행성 = 보이지 않는 Object3D ──────────────────────────────────────
+    const planet = new THREE.Object3D();
+    planet.position.copy(planetPos);
+    planet.userData.isPlanet    = true;
+    planet.userData.clusterId   = clusterId;
+    planet.userData.sessionId   = sid;
+    planet.userData.domain      = domain;
+    planet.userData.intent      = intent;
+    planet.userData.hue         = hue;
+    planet.userData.hueHex      = hueHex;
+    planet.userData.eventCount  = rawEvents.length;
+    planet.userData.orbitSpeed  = 0.04 + pi * 0.006;
+    planet.userData.orbitR      = PLANET_R;
+    planet.userData.orbitθ      = θ_planet;
+    planet.userData.orbitφ      = φ_planet;
+    planet.userData.orbitCenter = new THREE.Vector3(0,0,0);
+    scene.add(planet);
+    planetMeshes.push(planet);
+
+    // ── 중심→행성 연결선 ──────────────────────────────────────────────────
+    {
+      const lg = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), planetPos.clone()]);
+      const lm = new THREE.LineBasicMaterial({ color:0x1c2433, transparent:true, opacity:0.35 });
+      connections.push(new THREE.Line(lg, lm));
+      scene.add(connections[connections.length-1]);
+    }
+
+    // ── 궤도 링 ───────────────────────────────────────────────────────────
+    {
+      const ring = new THREE.RingGeometry(PLANET_R - 0.08, PLANET_R + 0.08, 96);
+      const rm   = new THREE.MeshBasicMaterial({ color:0x1c2733, transparent:true, opacity:0.18, side:THREE.DoubleSide });
+      const rm2  = new THREE.Mesh(ring, rm);
+      rm2.rotation.x = Math.PI/2 - φ_planet * 0.25;
+      orbitRings.push(rm2); scene.add(rm2);
+    }
+
+    // ── 파일 위성 집계 (텍스트 태그로 표시) ──────────────────────────────
+    const fileSats   = buildFileSatellites(rawEvents);
+    const satObjects = [];
+    const SAT_R_BASE = 9;
+
+    fileSats.forEach((fs, fi) => {
+      const satθ = (fi / Math.max(fileSats.length,1)) * Math.PI * 2;
+      const satφ = (fi % 3) * (Math.PI / 5) - Math.PI / 5;
+      const SAT_R = SAT_R_BASE + Math.floor(fi / 6) * 4;
+
+      const sx = planetPos.x + SAT_R * Math.cos(satθ) * Math.cos(satφ);
+      const sy = planetPos.y + SAT_R * Math.sin(satφ);
+      const sz = planetPos.z + SAT_R * Math.sin(satθ) * Math.cos(satφ);
+
+      const sat = new THREE.Object3D();
+      sat.position.set(sx, sy, sz);
+      sat.userData.isFileSat  = true;
+      sat.userData.clusterId  = clusterId;
+      sat.userData.sessionId  = sid;
+      sat.userData.fileLabel  = fs.label;
+      sat.userData.filename   = fs.filename;
+      sat.userData.count      = fs.count;
+      sat.userData.isWrite    = fs.isWrite;
+      sat.userData.orbitR     = SAT_R;
+      sat.userData.orbitθ0    = satθ;
+      sat.userData.orbitφ0    = satφ;
+      sat.userData.orbitSpeed = 0.12 + Math.random() * 0.08;
+      sat.userData.orbitCenter= planetPos;
+      scene.add(sat);
+      satelliteMeshes.push(sat);
+      satObjects.push(sat);
+
+      // 행성→위성 연결선
+      const lg = new THREE.BufferGeometry().setFromPoints([planetPos.clone(), new THREE.Vector3(sx,sy,sz)]);
+      const lm = new THREE.LineBasicMaterial({ color: new THREE.Color(0).setHSL(hue,0.5,0.4).getHex(), transparent:true, opacity:0.2 });
+      const conn = new THREE.Line(lg, lm);
+      conn.userData.satObj = sat;
+      connections.push(conn); scene.add(conn);
+    });
+
+    // 이벤트 ROI 누적
+    totalTasks += rawEvents.length;
+    const MINS = { 'tool.end':0.5,'file.write':2,'file.read':0.5,'git.commit':5,'task.complete':10,'assistant.message':1 };
+    for (const e of rawEvents) totalHours += (MINS[e.type]||0) / 60;
+
+    _sessionMap[clusterId] = { planet, fileSats: satObjects, events: rawEvents };
+    loadSessionContext(sid);
+  });
+
+  document.getElementById('h-sessions').textContent = sessKeys.length;
+  document.getElementById('h-tasks').textContent    = totalTasks;
+  document.getElementById('h-hours').textContent    = totalHours.toFixed(0)+'h';
+}
+
+// ─── 애니메이션 — 행성 공전 + 파일위성 공전 ─────────────────────────────────
+function updateOrbits(dt) {
+  if (!orbitAnimOn) return;
+  _clock += dt * 0.00025;
+
+  // 행성 공전 (중심별 주위)
+  planetMeshes.forEach(p => {
+    const { orbitR, orbitφ, orbitSpeed } = p.userData;
+    const θ = p.userData.orbitθ + _clock * orbitSpeed;
+    const px = orbitR * Math.sin(orbitφ) * Math.cos(θ);
+    const py = orbitR * Math.cos(orbitφ) * 0.32;
+    const pz = orbitR * Math.sin(orbitφ) * Math.sin(θ);
+    p.position.set(px, py, pz);
+    p.userData.orbitCenter.set(0,0,0);
+  });
+
+  // 파일 위성 공전 (각 행성 주위)
+  satelliteMeshes.forEach(s => {
+    const planet = (_sessionMap[s.userData.clusterId] || _sessionMap[s.userData.sessionId])?.planet;
+    if (!planet) return;
+    const { orbitR, orbitθ0, orbitφ0, orbitSpeed } = s.userData;
+    const θ = orbitθ0 + _clock * orbitSpeed * 3;
+    const sx = planet.position.x + orbitR * Math.cos(θ) * Math.cos(orbitφ0);
+    const sy = planet.position.y + orbitR * Math.sin(orbitφ0);
+    const sz = planet.position.z + orbitR * Math.sin(θ) * Math.cos(orbitφ0);
+    s.position.set(sx, sy, sz);
+    s.userData.orbitCenter = planet.position;
+  });
+
+  // 연결선 업데이트 (파일위성 → 행성)
+  connections.forEach(line => {
+    if (!line.userData.satObj) return;
+    const s = line.userData.satObj;
+    const planet = _sessionMap[s.userData.sessionId]?.planet;
+    if (!planet) return;
+    const pts = [planet.position.clone(), s.position.clone()];
+    line.geometry.setFromPoints(pts);
+    line.geometry.attributes.position.needsUpdate = true;
+  });
+}
+
+// ─── 중심별 펄스 ──────────────────────────────────────────────────────────────
+let _pulseT = 0;
+function pulseSun() {
+  _pulseT += 0.02;
+  sun.intensity = 2.5 + Math.sin(_pulseT)*0.5;
+  sun.position.set(Math.cos(_pulseT*0.1)*5, 3, Math.sin(_pulseT*0.1)*5);
+}
+
+// ─── 인터랙션 — Canvas2D 히트 영역 기반 ─────────────────────────────────────
+let _lastMouseEvent = { clientX:0, clientY:0 };
+let _hoveredHit     = null;  // { cx, cy, r, data, obj }
+let _selectedHit    = null;
+
+renderer.domElement.addEventListener('mousemove', e => {
+  _lastMouseEvent = e;
+});
+
+renderer.domElement.addEventListener('click', e => {
+  const hit = hitTest(e.clientX, e.clientY);
+  if (hit) {
+    _selectedHit = hit;
+    showPanel(hit.data, hit.obj);
+  } else {
+    _selectedHit = null;
+    closePanel();
+  }
+});
+
+function hitTest(mx, my) {
+  // _hitAreas는 drawLabels()에서 매 프레임 갱신됨
+  for (const h of _hitAreas) {
+    const dx = mx - h.cx, dy = my - h.cy;
+    if (dx*dx + dy*dy <= h.r*h.r) return h;
+  }
+  return null;
+}
+
+function updateRaycast() {
+  const tooltip = document.getElementById('tooltip');
+  const hit = hitTest(_lastMouseEvent.clientX, _lastMouseEvent.clientY);
+
+  if (hit) {
+    if (hit !== _hoveredHit) {
+      _hoveredHit = hit;
+      renderer.domElement.style.cursor = 'pointer';
+    }
+    const data = hit.data;
+    if (data) {
+      document.getElementById('tt-intent').textContent = data.intent || '';
+      const isFile = data.type === 'file';
+      document.getElementById('tt-meta').textContent = isFile
+        ? `📄 ${data.filename || ''}  ×${data.count || 1}`
+        : (data.eventCount ? `세션 • ${data.eventCount}개 작업` : '세션');
+      tooltip.style.display = 'block';
+      tooltip.style.left = (_lastMouseEvent.clientX + 14) + 'px';
+      tooltip.style.top  = (_lastMouseEvent.clientY - 10) + 'px';
+    }
+  } else {
+    _hoveredHit = null;
+    tooltip.style.display = 'none';
+    renderer.domElement.style.cursor = 'default';
+  }
+}
+
+// ─── 탭 전환 ──────────────────────────────────────────────────────────────────
+let _currentPanelData = null;
+
+function switchTab(name, btn) {
+  document.querySelectorAll('.ip-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.ip-tab-pane').forEach(p => p.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById(`ip-pane-${name}`).classList.add('active');
+  if (name === 'history' && _currentPanelData) renderHistory(_currentPanelData);
+  if (name === 'files'   && _currentPanelData) renderFiles(_currentPanelData);
+}
+window.switchTab = switchTab;
+
+// ─── 히스토리 탭 렌더 ─────────────────────────────────────────────────────────
+function renderHistory(data) {
+  const el = document.getElementById('ip-event-list');
+  const clusterId = data.clusterId || data.sessionId;
+  const entry = _sessionMap[clusterId];
+  const events = entry?.events || [];
+
+  if (events.length === 0) {
+    el.innerHTML = '<div style="color:#6e7681;font-size:12px;padding:12px 0;text-align:center">이벤트 없음</div>';
+    return;
+  }
+
+  // 최신 50개
+  const slice = [...events].reverse().slice(0, 50);
+  el.innerHTML = slice.map(e => {
+    const cfg   = typeCfg(e.type);
+    const hex   = '#' + new THREE.Color(cfg.color).getHexString();
+    const label = e.label || extractIntent(e) || e.type;
+    const ts    = e.timestamp ? new Date(e.timestamp).toLocaleTimeString('ko',{hour:'2-digit',minute:'2-digit'}) : '';
+    return `
+      <div class="ip-event-item" onclick="openEventDetail('${(e.id||e.eventId||'').replace(/'/g,'')}')" title="${label}">
+        <div class="ip-event-dot" style="background:${hex}"></div>
+        <div class="ip-event-text">${label}</div>
+        <div class="ip-event-time">${ts}</div>
+      </div>`;
+  }).join('');
+}
+
+function openEventDetail(id) {
+  // 타임라인으로 이동
+  if (id) window.open(`/orbit-timeline.html?event=${id}`, '_blank');
+}
+window.openEventDetail = openEventDetail;
+
+// ─── 파일 탭 렌더 ─────────────────────────────────────────────────────────────
+function renderFiles(data) {
+  const el = document.getElementById('ip-file-list');
+  const clusterId = data.clusterId || data.sessionId;
+  const entry = _sessionMap[clusterId];
+  const events = entry?.events || [];
+
+  // 파일 집계 (buildFileSatellites와 동일하지만 더 많이)
+  const fileCounts = {};
+  for (const e of events) {
+    let d = e.data || {};
+    const fc = e.fullContent;
+    if (fc && typeof fc === 'string' && fc.startsWith('{')) { try { d = {...d,...JSON.parse(fc)}; } catch{} }
+    else if (fc && typeof fc === 'string' && fc.includes('/')) d = {...d, filePath: fc};
+    const rawPath = d.filePath || d.fileName || '';
+    if (!rawPath) continue;
+    const fname = rawPath.replace(/\\/g,'/').split('/').pop();
+    if (!fname || fname.length < 2) continue;
+    if (!fileCounts[fname]) fileCounts[fname] = { count:0, writes:0, path: rawPath };
+    fileCounts[fname].count++;
+    if (e.type === 'file.write' || (e.type === 'tool.end' && d.toolName === 'Write')) fileCounts[fname].writes++;
+  }
+
+  const files = Object.entries(fileCounts).sort((a,b)=>b[1].count-a[1].count).slice(0,30);
+
+  if (files.length === 0) {
+    el.innerHTML = '<div style="color:#6e7681;font-size:12px;padding:12px 0;text-align:center">파일 기록 없음</div>';
+    return;
+  }
+
+  el.innerHTML = files.map(([fname, info]) => {
+    const role    = inferFileRole(fname) || '📄';
+    const isWrite = info.writes > 0;
+    const badge   = isWrite
+      ? `<span class="ip-file-badge write">수정 ${info.writes}회</span>`
+      : `<span class="ip-file-badge read">읽기</span>`;
+    return `
+      <div class="ip-file-item" onclick="openFileHistory('${fname.replace(/'/g,'')}')">
+        <div class="ip-file-role">${role.split(' ')[0]}</div>
+        <div class="ip-file-info">
+          <div class="ip-file-name">${fname}</div>
+          <div class="ip-file-cnt">접근 ${info.count}회</div>
+        </div>
+        ${badge}
+      </div>`;
+  }).join('');
+}
+
+function openFileHistory(fname) {
+  window.open(`/history.html?file=${encodeURIComponent(fname)}`, '_blank');
+}
+window.openFileHistory = openFileHistory;
+
+// ─── 드릴다운 패널 ────────────────────────────────────────────────────────────
+function showPanel(data, obj) {
+  _currentPanelData = data;
+  const panel = document.getElementById('info-panel');
+
+  // 탭 초기화 (요약으로)
+  document.querySelectorAll('.ip-tab').forEach((t,i) => t.classList.toggle('active', i===0));
+  document.querySelectorAll('.ip-tab-pane').forEach((p,i) => p.classList.toggle('active', i===0));
+
+  if (data.type === 'session') {
+    const hueHex = data.hueHex || '#58a6ff';
+    document.getElementById('ip-dot').style.background  = hueHex;
+    document.getElementById('ip-type-text').textContent = '작업 클러스터';
+    document.getElementById('ip-intent').textContent    = data.intent || '';
+
+    // KV 목록
+    const ctx = _sessionContextCache[data.sessionId];
+    const kvData = [
+      ['작업 수',   `${data.eventCount}개`],
+      ['프로젝트',  ctx?.projectName || data.sessionId?.slice(-8) || '-'],
+      ['경로',      ctx?.projectDir?.replace(/\\/g,'/').split('/').slice(-2).join('/') || '-'],
+    ];
+    document.getElementById('ip-kv-list').innerHTML = kvData.map(([k,v]) =>
+      `<div class="ip-kv"><span class="k">${k}</span><span class="v">${v}</span></div>`
+    ).join('');
+
+    const preview = ctx?.firstMsg || ctx?.autoTitle || '';
+    const pv = document.getElementById('ip-preview');
+    if (preview) { pv.textContent = preview; pv.style.display = 'block'; }
+    else { pv.style.display = 'none'; }
+
+    if (!ctx && data.sessionId) {
+      loadSessionContext(data.sessionId).then(c => {
+        if (c && _selectedHit?.data === data) showPanel(data, obj);
+      });
+    }
+
+  } else if (data.type === 'file') {
+    document.getElementById('ip-dot').style.background  = '#ffa657';
+    document.getElementById('ip-type-text').textContent = '파일 위성';
+    document.getElementById('ip-intent').textContent    = data.fileLabel || data.intent || '';
+
+    document.getElementById('ip-kv-list').innerHTML = [
+      ['파일명',   data.filename || '-'],
+      ['접근 횟수', `${data.count || 1}회`],
+      ['역할',     data.isWrite ? '✏️ 수정 대상' : '📄 읽기'],
+    ].map(([k,v]) => `<div class="ip-kv"><span class="k">${k}</span><span class="v">${v}</span></div>`).join('');
+
+    document.getElementById('ip-preview').style.display = 'none';
+  }
+
+  panel.classList.add('open');
+}
+
+function closePanel() {
+  document.getElementById('info-panel').classList.remove('open');
+  _selectedHit = null;
+  _currentPanelData = null;
+}
+window.closePanel = closePanel;
+
+// ─── Canvas2D 오버레이 — LOD 텍스트 행성 ────────────────────────────────────
+const _labelCanvas2d = document.createElement('canvas');
+_labelCanvas2d.style.cssText = 'position:fixed;top:0;left:0;pointer-events:none;z-index:50;';
+document.body.appendChild(_labelCanvas2d);
+const _lctx = _labelCanvas2d.getContext('2d');
+
+function resizeLabelCanvas() {
+  _labelCanvas2d.width  = innerWidth;
+  _labelCanvas2d.height = innerHeight;
+}
+resizeLabelCanvas();
+
+// ─── 줌 거리 → LOD 레벨 ─────────────────────────────────────────────────────
+// LOD 0: 줌인 (r < 60)   — 행성 크게 + 위성 상세
+// LOD 1: 중간 (r 60~130) — 행성 보통 + 위성 보통
+// LOD 2: 줌아웃 (r > 130) — 행성만 작게, 위성 숨김
+// LOD 3: 최대줌아웃 (>180) — 요약 오버레이 (updateZoomSummary 처리)
+function getLOD() {
+  const r = controls.sph.r;
+  if (r < 55)  return 0;
+  if (r < 120) return 1;
+  if (r < 180) return 2;
+  return 3;
+}
+
+// 거리 → 화면 픽셀 스케일
+function screenScale(worldPos) {
+  const dist = camera.position.distanceTo(worldPos);
+  const fovFactor = innerHeight / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)));
+  return fovFactor / Math.max(dist, 0.1);
+}
+
+// pill 경로
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x+r, y); ctx.lineTo(x+w-r, y);
+  ctx.arcTo(x+w, y, x+w, y+r, r); ctx.lineTo(x+w, y+h-r);
+  ctx.arcTo(x+w, y+h, x+w-r, y+h, r); ctx.lineTo(x+r, y+h);
+  ctx.arcTo(x, y+h, x, y+h-r, r); ctx.lineTo(x, y+r);
+  ctx.arcTo(x, y, x+r, y, r); ctx.closePath();
+}
+
+// 3D → 화면 좌표
+function toScreen(worldPos) {
+  const v = worldPos.clone().project(camera);
+  return { x:(v.x+1)/2*innerWidth, y:(-v.y+1)/2*innerHeight, z:v.z };
+}
+
+// ─── 실시간 작업 빛 상태 ─────────────────────────────────────────────────────
+// WS 이벤트로 최근 활성화된 clusterId → 타임스탬프
+const _activeGlow = {}; // clusterId → lastActiveMs
+const GLOW_FADE_MS = 4000; // 4초 후 서서히 소멸
+
+function markClusterActive(clusterId) {
+  _activeGlow[clusterId] = Date.now();
+}
+
+// glow 강도 (0~1)
+function glowIntensity(clusterId) {
+  const t = _activeGlow[clusterId];
+  if (!t) return 0;
+  const age = Date.now() - t;
+  if (age > GLOW_FADE_MS) return 0;
+  return 1 - age / GLOW_FADE_MS;
+}
+
+// ─── 글로우 pill 헬퍼 ────────────────────────────────────────────────────────
+function drawGlow(ctx, cx, cy, r, hex, intensity) {
+  if (intensity <= 0.02) return;
+  const grad = ctx.createRadialGradient(cx, cy, r * 0.5, cx, cy, r * 2.8);
+  const alpha = (intensity * 0.55).toFixed(3);
+  grad.addColorStop(0, hex + Math.round(intensity * 200).toString(16).padStart(2,'0'));
+  grad.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.save();
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r * 2.8, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+// ─── drawLabels ──────────────────────────────────────────────────────────────
+function drawLabels() {
+  _lctx.clearRect(0, 0, innerWidth, innerHeight);
+  _hitAreas = [];
+
+  const lod = getLOD();
+  // LOD 3: 요약 뷰, 라벨은 아주 희미하게만
+  const globalAlpha = lod === 3 ? 0.12 : 1;
+  _lctx.globalAlpha = globalAlpha;
+
+  // ── 1. 행성 ──────────────────────────────────────────────────────────────
+  planetMeshes.forEach(p => {
+    const sc = toScreen(p.position);
+    if (sc.z > 1) return;
+
+    const scale      = screenScale(p.position);
+    const hex        = p.userData.hueHex || '#58a6ff';
+    const evCnt      = p.userData.eventCount || 0;
+    const isHovered  = _hoveredHit?.obj === p;
+    const isSelected = _selectedHit?.obj === p;
+    const glow       = glowIntensity(p.userData.clusterId);
+
+    // ── LOD별 폰트 크기 ───────────────────────────────────────────────────
+    // LOD0: 크게(18~36) / LOD1: 보통(14~26) / LOD2: 작게(11~18) / LOD3: 아주작게(9~13)
+    const [minPx, maxPx, scaleMul] = lod === 0 ? [18,36,22] : lod === 1 ? [14,26,18] : lod === 2 ? [11,18,14] : [9,13,11];
+    const basePx = Math.max(minPx, Math.min(maxPx, scale * scaleMul));
+    const pxSize = isSelected ? basePx * 1.12 : basePx;
+
+    // ── 텍스트 — LOD별 축약 ───────────────────────────────────────────────
+    let fullText = p.userData.intent || '';
+    let text = fullText;
+    if (lod >= 2) {
+      // 줌아웃: 이모지+첫 단어만 (최대 10자)
+      text = fullText.length > 12 ? fullText.slice(0, 10) + '…' : fullText;
+    }
+    if (!text) return;
+
+    _lctx.font = `700 ${pxSize}px -apple-system,'Segoe UI',sans-serif`;
+    _lctx.textAlign = 'center';
+
+    const tw = _lctx.measureText(text).width;
+    const pw = tw + (lod <= 1 ? 28 : 18);
+    const ph = pxSize + (lod <= 1 ? 14 : 8);
+    const lx = sc.x - pw / 2;
+    const ly = sc.y - ph / 2;
+
+    // ── 글로우 효과 (실시간 작업 중) ─────────────────────────────────────
+    if (glow > 0) {
+      _lctx.globalAlpha = globalAlpha;
+      drawGlow(_lctx, sc.x, sc.y, Math.max(pw, ph) / 2, hex, glow);
+      // 테두리 펄스
+      _lctx.save();
+      _lctx.globalAlpha = globalAlpha * (0.4 + glow * 0.6);
+      _lctx.strokeStyle = hex;
+      _lctx.lineWidth   = 2 + glow * 3;
+      _lctx.shadowColor = hex;
+      _lctx.shadowBlur  = 12 * glow;
+      roundRect(_lctx, lx - 2, ly - 2, pw + 4, ph + 4, (ph + 4) / 2);
+      _lctx.stroke();
+      _lctx.restore();
+    }
+
+    _lctx.globalAlpha = globalAlpha;
+
+    // ── 배경 pill ────────────────────────────────────────────────────────
+    const bgAlpha = isSelected ? 0.97 : isHovered ? 0.93 : lod === 0 ? 0.88 : 0.78;
+    _lctx.fillStyle = `rgba(6,10,16,${bgAlpha})`;
+    roundRect(_lctx, lx, ly, pw, ph, ph / 2);
+    _lctx.fill();
+
+    // ── 테두리 ────────────────────────────────────────────────────────────
+    _lctx.strokeStyle = hex;
+    _lctx.lineWidth   = isSelected ? 2.5 : isHovered ? 2 : glow > 0.1 ? 1.8 : lod === 0 ? 1.5 : 1;
+    roundRect(_lctx, lx, ly, pw, ph, ph / 2);
+    _lctx.stroke();
+
+    // ── 텍스트 ────────────────────────────────────────────────────────────
+    _lctx.fillStyle = isSelected ? '#ffffff' : lod === 0 ? '#f0f6fc' : '#cdd9e5';
+    _lctx.fillText(text, sc.x, ly + ph * 0.68);
+
+    // ── 서브 레이블 (LOD0,1만) ────────────────────────────────────────────
+    if (lod <= 1 && evCnt > 0 && pxSize >= 13) {
+      const sub = Math.max(9, pxSize * 0.55);
+      _lctx.font      = `400 ${sub}px -apple-system,sans-serif`;
+      _lctx.fillStyle = hex + '99';
+      _lctx.fillText(`${evCnt}개 작업`, sc.x, ly + ph + sub + 2);
+    }
+
+    // 히트 영역
+    _hitAreas.push({
+      cx: sc.x, cy: sc.y,
+      r:  Math.max(pw, ph) / 2 + 4,
+      obj: p,
+      data: {
+        type: 'session', intent: fullText,
+        clusterId:  p.userData.clusterId,
+        sessionId:  p.userData.sessionId,
+        eventCount: evCnt, hueHex: hex,
+      },
+    });
+  });
+
+  // ── 2. 파일 위성 — LOD0,1에서만 표시 ────────────────────────────────────
+  if (lod >= 2) { _lctx.globalAlpha = 1; return; } // LOD2 이상: 위성 숨김
+
+  satelliteMeshes.forEach(s => {
+    const sc = toScreen(s.position);
+    if (sc.z > 1) return;
+
+    const scale      = screenScale(s.position);
+    const label      = s.userData.fileLabel || '';
+    if (!label) return;
+
+    const isHovered  = _hoveredHit?.obj === s;
+    const isWrite    = s.userData.isWrite;
+
+    // LOD0: 크게, LOD1: 작게
+    const pxSize = lod === 0
+      ? Math.max(11, Math.min(17, scale * 13))
+      : Math.max(9,  Math.min(13, scale * 9));
+
+    _lctx.font = `500 ${pxSize}px -apple-system,sans-serif`;
+    _lctx.textAlign = 'center';
+
+    const tw = _lctx.measureText(label).width;
+    const pw = tw + (lod === 0 ? 16 : 12);
+    const ph = pxSize + (lod === 0 ? 8 : 6);
+    const lx = sc.x - pw / 2;
+    const ly = sc.y - ph / 2;
+
+    const baseR = isWrite ? [255,166,87] : [88,166,255];
+    const bgA   = isHovered ? 0.28 : lod === 0 ? 0.14 : 0.08;
+    _lctx.fillStyle = `rgba(${baseR},${bgA})`;
+    roundRect(_lctx, lx, ly, pw, ph, ph / 2);
+    _lctx.fill();
+
+    _lctx.strokeStyle = isWrite ? '#ffa657' : '#58a6ff';
+    _lctx.lineWidth   = isHovered ? 1.4 : lod === 0 ? 0.9 : 0.6;
+    roundRect(_lctx, lx, ly, pw, ph, ph / 2);
+    _lctx.stroke();
+
+    _lctx.fillStyle = isWrite ? '#ffa657' : '#79c0ff';
+    _lctx.fillText(label, sc.x, ly + ph * 0.70);
+
+    // 히트 영역
+    _hitAreas.push({
+      cx: sc.x, cy: sc.y,
+      r:  Math.max(pw, ph) / 2 + 3,
+      obj: s,
+      data: {
+        type: 'file', intent: label,
+        fileLabel: label,
+        filename:  s.userData.filename,
+        count:     s.userData.count,
+        isWrite:   s.userData.isWrite,
+        sessionId: s.userData.sessionId,
+      },
+    });
+  });
+}
+
+// ─── 기능 목록 (실제 구현된 것만) ────────────────────────────────────────────
+const ORBIT_FEATURES = [
+  { icon:'🌌', name:'작업 우주',   color:'#58a6ff', desc:'3D 공간에 목적별 클러스터를 행성으로 시각화', badge:'지금 여기', url:null },
+  { icon:'📊', name:'대시보드',    color:'#3fb950', desc:'실시간 이벤트 스트림 및 통계',               badge:'실시간',  url:'/dashboard.html' },
+  { icon:'🕐', name:'타임라인',    color:'#ffa657', desc:'세션 이벤트를 시간 흐름으로 탐색',           badge:'뷰어',    url:'/orbit-timeline.html' },
+  { icon:'🛒', name:'MCP 마켓',   color:'#39d2c0', desc:'MCP 서버 검색·설치·관리',                  badge:'마켓',    url:'/mcp-market.html' },
+  { icon:'🔗', name:'세션 공유',   color:'#79c0ff', desc:'작업 세션을 read-only 링크로 공개 공유',     badge:'공유',    url:null },
+  { icon:'🏆', name:'포인트/인증서',color:'#ffd700', desc:'AI 작업량 기반 포인트 및 성취 인증서',       badge:'뱃지',    url:null },
+  { icon:'👥', name:'커뮤니티',    color:'#f78166', desc:'솔루션 공유·좋아요·댓글',                   badge:'소셜',    url:'/community.html' },
+  { icon:'🔍', name:'분석 엔진',   color:'#d2a8ff', desc:'작업 패턴 분석 및 인사이트 리포트',          badge:'인사이트', url:null },
+  { icon:'⚙️', name:'설정',       color:'#8b949e', desc:'테마·알림·API 키 개인화',                   badge:'설정',    url:'/settings.html' },
+  { icon:'🌿', name:'Git 연동',    color:'#3fb950', desc:'커밋 이벤트 자동 추적·시각화',              badge:'Git',     url:null },
+  { icon:'🔔', name:'Webhook',    color:'#58a6ff', desc:'외부 서비스로 이벤트 실시간 전송',            badge:'자동화',  url:null },
+  { icon:'🛡️', name:'보안/인증',  color:'#f85149', desc:'OAuth·bcrypt·Rate Limit',               badge:'보안',    url:null },
+  { icon:'📈', name:'성장 엔진',   color:'#79c0ff', desc:'작업 스트릭·레벨업·뱃지 시스템',            badge:'XP',      url:null },
+  { icon:'🔭', name:'히스토리',    color:'#6e7681', desc:'과거 세션·이벤트 전체 검색/조회',            badge:'아카이브', url:'/history.html' },
+];
+
+function buildFeatCards() {
+  const container = document.getElementById('feat-cards');
+  container.innerHTML = '';
+  ORBIT_FEATURES.forEach(f => {
+    const card = document.createElement(f.url ? 'a' : 'div');
+    card.className = 'feat-card';
+    card.style.setProperty('--fc', f.color);
+    if (f.url) {
+      card.href = f.url;
+    } else if (!f.url && f.name !== '작업 우주') {
+      card.onclick = () => {
+        // API 호출 또는 기능 미리보기
+        showFeaturePreview(f);
       };
     }
+    card.innerHTML = `
+      <div class="fc-icon">${f.icon}</div>
+      <div class="fc-name">${f.name}</div>
+      <div class="fc-desc">${f.desc}</div>
+      <div class="fc-badge">${f.badge}</div>
+    `;
+    container.appendChild(card);
   });
 }
 
-// Force simulation step
-function stepForce(nodeList, edgeList) {
-  const k    = 8;   // ideal edge length
-  const rep  = 400; // repulsion
-  const damp = 0.85;
-
-  // 반발력
-  for (let i = 0; i < nodeList.length; i++) {
-    for (let j = i + 1; j < nodeList.length; j++) {
-      const a = positions3d[nodeList[i].id];
-      const b = positions3d[nodeList[j].id];
-      if (!a || !b) continue;
-      const dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z;
-      const dist = Math.sqrt(dx*dx + dy*dy + dz*dz) || 0.01;
-      const force = rep / (dist * dist);
-      a.vx += dx / dist * force * 0.01;
-      a.vy += dy / dist * force * 0.01;
-      a.vz += dz / dist * force * 0.01;
-      b.vx -= dx / dist * force * 0.01;
-      b.vy -= dy / dist * force * 0.01;
-      b.vz -= dz / dist * force * 0.01;
-    }
-  }
-
-  // 인력 (엣지)
-  edgeList.forEach(e => {
-    const a = positions3d[e.from || e.source];
-    const b = positions3d[e.to   || e.target];
-    if (!a || !b) return;
-    const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
-    const dist = Math.sqrt(dx*dx + dy*dy + dz*dz) || 0.01;
-    const force = (dist - k) * 0.01;
-    a.vx += dx / dist * force;
-    a.vy += dy / dist * force;
-    a.vz += dz / dist * force;
-    b.vx -= dx / dist * force;
-    b.vy -= dy / dist * force;
-    b.vz -= dz / dist * force;
-  });
-
-  // 위치 업데이트 + 감쇠
-  nodeList.forEach(n => {
-    const p = positions3d[n.id];
-    if (!p) return;
-    p.vx *= damp; p.vy *= damp; p.vz *= damp;
-    p.x += p.vx;  p.y += p.vy;  p.z += p.vz;
-    // 경계 제한
-    const R = 60;
-    if (Math.abs(p.x) > R) { p.x = Math.sign(p.x) * R; p.vx *= -0.5; }
-    if (Math.abs(p.y) > R) { p.y = Math.sign(p.y) * R; p.vy *= -0.5; }
-    if (Math.abs(p.z) > R) { p.z = Math.sign(p.z) * R; p.vz *= -0.5; }
-  });
+function showFeaturePreview(f) {
+  // 인포 패널에 기능 상세 표시
+  const panel = document.getElementById('info-panel');
+  document.getElementById('ip-dot').style.background  = f.color;
+  document.getElementById('ip-type-text').textContent  = f.badge;
+  document.getElementById('ip-intent').textContent     = `${f.icon} ${f.name}`;
+  document.getElementById('ip-label-time').textContent    = '설명';
+  document.getElementById('ip-label-session').textContent = '상태';
+  document.getElementById('ip-label-ai').textContent      = '경로';
+  document.getElementById('ip-time').textContent    = f.desc;
+  document.getElementById('ip-session').textContent = '구현 완료';
+  document.getElementById('ip-ai').textContent      = f.url ? f.url : '/api/*';
+  document.getElementById('ip-preview-wrap').style.display = 'none';
+  panel.classList.add('open');
 }
 
-// ─── 씬 오브젝트 생성 ─────────────────────────────────────────────────────────
-function buildScene(nodeList, edgeList) {
-  // 기존 오브젝트 제거
-  nodeMeshes.forEach(m => scene.remove(m));
-  edgeLines.forEach(l => scene.remove(l));
-  nodeMeshes = []; edgeLines = []; nodeMap = {};
-
-  const MAX_NODES = 300;
-  const visible = nodeList
-    .sort((a, b) => (b.activityScore || 0) - (a.activityScore || 0))
-    .slice(0, MAX_NODES);
-
-  const visSet = new Set(visible.map(n => n.id));
-
-  // ── 노드 메쉬 (Instanced Mesh로 성능 최적화) ─────────────────────────────────
-  // 타입별로 그룹핑하여 Instanced 렌더링
-  const typeGroups = {};
-  visible.forEach(n => {
-    const t = n.type || 'default';
-    if (!typeGroups[t]) typeGroups[t] = [];
-    typeGroups[t].push(n);
-  });
-
-  const sphereGeo = new THREE.SphereGeometry(1, 16, 16);
-
-  Object.entries(typeGroups).forEach(([type, group]) => {
-    const cfg  = NODE_TYPES[type] || NODE_TYPES.default;
-    const mat  = new THREE.MeshPhongMaterial({
-      color:    cfg.color,
-      emissive: cfg.emissive,
-      shininess: 80,
-      transparent: true,
-      opacity: 0.95,
-    });
-    const mesh = new THREE.InstancedMesh(sphereGeo, mat, group.length);
-    mesh.castShadow    = true;
-    mesh.receiveShadow = true;
-
-    const dummy = new THREE.Object3D();
-    group.forEach((n, i) => {
-      const p = positions3d[n.id] || { x: 0, y: 0, z: 0 };
-      const r = 0.8 + Math.min((n.activityScore || 0) * 0.3, 2.0);
-      dummy.position.set(p.x, p.y, p.z);
-      dummy.scale.setScalar(r);
-      dummy.updateMatrix();
-      mesh.setMatrixAt(i, dummy.matrix);
-      // 메타데이터를 userData에 저장 (인덱스 → 노드 id)
-      mesh.userData[i] = n.id;
-    });
-    mesh.instanceMatrix.needsUpdate = true;
-    mesh.userData._type  = type;
-    mesh.userData._nodes = group;
-    scene.add(mesh);
-    group.forEach(n => { nodeMap[n.id] = { mesh, type }; });
-    nodeMeshes.push(mesh);
-  });
-
-  // ── 엣지 라인 ────────────────────────────────────────────────────────────────
-  const edgeMat = new THREE.LineBasicMaterial({ color: 0x30363d, transparent: true, opacity: 0.4 });
-  const visible10 = edgeList.filter(e => visSet.has(e.from || e.source) && visSet.has(e.to || e.target));
-
-  if (visible10.length > 0) {
-    const points = [];
-    visible10.forEach(e => {
-      const a = positions3d[e.from || e.source];
-      const b = positions3d[e.to   || e.target];
-      if (a && b) {
-        points.push(new THREE.Vector3(a.x, a.y, a.z));
-        points.push(new THREE.Vector3(b.x, b.y, b.z));
-      }
-    });
-    if (points.length > 0) {
-      const geo  = new THREE.BufferGeometry().setFromPoints(points);
-      const line = new THREE.LineSegments(geo, edgeMat);
-      scene.add(line);
-      edgeLines.push(line);
-    }
-  }
-
-  document.getElementById('h-nodes').textContent = visible.length;
-  document.getElementById('h-edges').textContent = visible10.length;
+function toggleFeatPanel() {
+  const panel = document.getElementById('feat-panel');
+  const btn   = document.getElementById('feat-btn');
+  const isOpen = panel.classList.toggle('open');
+  btn.classList.toggle('open', isOpen);
+  btn.textContent = isOpen ? '✕ 닫기' : '⚡ 기능 목록';
+  if (isOpen) buildFeatCards();
 }
+window.toggleFeatPanel = toggleFeatPanel;
 
-// ─── 그래프 데이터 로드 ───────────────────────────────────────────────────────
-async function loadGraph() {
+// ─── 줌아웃 요약 ─────────────────────────────────────────────────────────────
+// 카메라가 멀어지면 행성 대신 "지금 뭐하고 있냐" 요약 오버레이 표시
+let _zoomSummaryVisible = false;
+const ZOOM_OUT_THRESHOLD = 180; // 이 거리 이상이면 요약 뷰
+
+// signal-engine 상태 캐시 (주기적으로 fetch)
+let _signalStates = {};
+async function refreshSignalStates() {
   try {
-    const res  = await fetch(`${API}/api/graph`);
+    const res = await fetch('/api/signal');
+    if (res.ok) _signalStates = await res.json();
+  } catch {}
+}
+setInterval(refreshSignalStates, 5000);
+refreshSignalStates();
+
+// 상태 → 이모지 매핑
+const STATE_EMOJI = {
+  FOCUSED:    { emoji: '🎯', color: '#3fb950', label: '집중' },
+  BLOCKED:    { emoji: '🚧', color: '#f0883e', label: '막힘' },
+  CRISIS:     { emoji: '🔥', color: '#f85149', label: '위기' },
+  IDLE:       { emoji: '💤', color: '#6e7681', label: '대기' },
+  PRODUCTIVE: { emoji: '⚡', color: '#58a6ff', label: '생산적' },
+};
+
+function updateZoomSummary() {
+  const dist = controls.sph.r;
+  const el   = document.getElementById('zoom-summary');
+  const shouldShow = dist >= ZOOM_OUT_THRESHOLD;
+
+  // 줌아웃 중이면 매 프레임 업데이트 (칩 갱신)
+  if (!shouldShow) {
+    if (_zoomSummaryVisible) {
+      el.classList.remove('visible');
+      _zoomSummaryVisible = false;
+    }
+    return;
+  }
+  _zoomSummaryVisible = true;
+
+  // 활성 클러스터 집계
+  const activeClusters = planetMeshes
+    .map(p => p.userData)
+    .filter(u => u.isPlanet && u.intent)
+    .sort((a, b) => b.eventCount - a.eventCount);
+
+  if (activeClusters.length === 0) return;
+
+  // 칩 생성 (상위 10개) — signal-engine 상태 배지 포함
+  const chipsEl = document.getElementById('zs-chips');
+  chipsEl.innerHTML = activeClusters.slice(0, 10).map(u => {
+    const hex        = u.hueHex || '#58a6ff';
+    const shortLabel = u.intent.length > 28 ? u.intent.slice(0, 26) + '…' : u.intent;
+    const glow       = glowIntensity(u.clusterId);
+
+    // signal-engine 상태 (sessionId 기준으로 매핑)
+    const sigData   = _signalStates[u.sessionId || u.clusterId];
+    const sigState  = sigData?.state || 'IDLE';
+    const sigInfo   = STATE_EMOJI[sigState] || STATE_EMOJI.IDLE;
+    const stateBadge = `<span style="font-size:11px;opacity:0.85">${sigInfo.emoji}</span>`;
+
+    // 활성 글로우 강조
+    const boxShadow = glow > 0.1
+      ? `box-shadow:0 0 ${Math.round(8 + glow * 12)}px ${hex}${Math.round(glow * 160).toString(16).padStart(2,'0')}`
+      : '';
+
+    return `<div class="zs-chip" style="border-color:${hex};color:${hex};${boxShadow}" title="${sigInfo.label}">
+      ${stateBadge} ${shortLabel}
+      <span style="font-size:10px;color:#6e7681;margin-left:4px">${u.eventCount}</span>
+    </div>`;
+  }).join('');
+
+  // 서브 요약 — 상태별 집계
+  const totalEvents = activeClusters.reduce((s, u) => s + u.eventCount, 0);
+  const stateGroups = {};
+  for (const [, sig] of Object.entries(_signalStates)) {
+    const s = sig.state || 'IDLE';
+    stateGroups[s] = (stateGroups[s] || 0) + 1;
+  }
+  const stateSummary = Object.entries(stateGroups)
+    .filter(([,c]) => c > 0)
+    .map(([s,c]) => `${STATE_EMOJI[s]?.emoji || '●'} ${c}`)
+    .join('  ');
+
+  document.getElementById('zs-sub').textContent =
+    `${activeClusters.length}개 작업 • ${totalEvents}개 이벤트${stateSummary ? ' • ' + stateSummary : ''}`;
+
+  el.classList.add('visible');
+}
+
+// ─── 데이터 로드 ──────────────────────────────────────────────────────────────
+async function loadData() {
+  document.getElementById('loading-msg').textContent = '서버에서 작업 데이터 가져오는 중…';
+  try {
+    const res  = await fetch('/api/graph');
     const data = await res.json();
-    nodes = data.nodes || [];
-    edges = data.edges || [];
-    initPositions(nodes);
-    buildScene(nodes, edges);
+    buildPlanetSystem(data.nodes || []);
     document.getElementById('loading').style.display = 'none';
-  } catch (err) {
+  } catch(e) {
     document.getElementById('loading').innerHTML =
-      `<div style="color:#f85149">⚠ 서버 연결 실패<br><small>${err.message}</small></div>`;
+      `<div style="color:#f85149;text-align:center">⚠ 서버 연결 실패<br><small style="color:#6e7681">${e.message}</small><br><br><a href="/" style="color:#58a6ff;font-size:13px">← 대시보드</a></div>`;
   }
 }
 
-// ─── 실시간 WebSocket ─────────────────────────────────────────────────────────
 function connectWS() {
-  const wsUrl = `ws://${location.host}`;
-  const ws    = new WebSocket(wsUrl);
-  ws.onmessage = (ev) => {
+  const ws = new WebSocket(`ws://${location.host}`);
+  ws.onmessage = ev => {
     try {
-      const msg = JSON.parse(ev.data);
-      if (msg.type === 'new_event' || msg.type === 'graph_update') {
-        loadGraph();
+      const m = JSON.parse(ev.data);
+      if (m.type === 'new_event' || m.type === 'graph_update') {
+        // 실시간 glow: 이벤트가 속한 세션의 모든 행성 클러스터에 빛 효과
+        if (m.type === 'new_event') {
+          const sid = m.event?.sessionId || m.sessionId;
+          if (sid) {
+            // 해당 세션의 모든 클러스터 행성에 마킹
+            planetMeshes.forEach(p => {
+              if (p.userData.sessionId === sid) {
+                markClusterActive(p.userData.clusterId);
+              }
+            });
+          }
+        }
+        loadData();
       }
-    } catch {}
+    } catch{}
   };
   ws.onclose = () => setTimeout(connectWS, 3000);
 }
 
-// ─── 씬 업데이트 루프 (force simulation) ─────────────────────────────────────
-let _forceSteps = 0;
-let _lastTime   = 0;
-let _fps        = 0;
+// ─── 애니메이션 루프 ──────────────────────────────────────────────────────────
+let _lastNow = 0;
+let _fpsBuf  = [];
 
-function updateNodePositions() {
-  const dummy = new THREE.Object3D();
-  nodeMeshes.forEach(mesh => {
-    const group = mesh.userData._nodes || [];
-    group.forEach((n, i) => {
-      const p = positions3d[n.id];
-      if (!p) return;
-      const r = 0.8 + Math.min((n.activityScore || 0) * 0.3, 2.0);
-      dummy.position.set(p.x, p.y, p.z);
-      dummy.scale.setScalar(r);
-      dummy.updateMatrix();
-      mesh.setMatrixAt(i, dummy.matrix);
-    });
-    mesh.instanceMatrix.needsUpdate = true;
-  });
-
-  // 엣지 재구성 (위치가 바뀌므로)
-  if (edgeLines.length > 0) {
-    const line  = edgeLines[0];
-    const visSet = new Set(nodes.slice(0, 300).map(n => n.id));
-    const pts  = [];
-    edges.filter(e => visSet.has(e.from || e.source) && visSet.has(e.to || e.target)).forEach(e => {
-      const a = positions3d[e.from || e.source];
-      const b = positions3d[e.to   || e.target];
-      if (a && b) {
-        pts.push(a.x, a.y, a.z, b.x, b.y, b.z);
-      }
-    });
-    if (pts.length > 0) {
-      line.geometry.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
-      line.geometry.attributes.position.needsUpdate = true;
-    }
+renderer.setAnimationLoop(now => {
+  const dt = now - _lastNow; _lastNow = now;
+  _fpsBuf.push(1000/(dt||16));
+  if (_fpsBuf.length>30) _fpsBuf.shift();
+  if (now % 600 < 20) {
+    document.getElementById('h-fps').textContent = Math.round(_fpsBuf.reduce((a,b)=>a+b,0)/_fpsBuf.length);
   }
-}
 
-// ── 뉴럴 펄스 파티클 (엣지 위를 이동하는 빛 점) ─────────────────────────────
-const pulseGeo = new THREE.BufferGeometry();
-const MAX_PULSES = 50;
-const pulsePts  = new Float32Array(MAX_PULSES * 3);
-pulseGeo.setAttribute('position', new THREE.BufferAttribute(pulsePts, 3));
-const pulseMat  = new THREE.PointsMaterial({ color: 0x58a6ff, size: 1.2, transparent: true, opacity: 0.9 });
-const pulseObj  = new THREE.Points(pulseGeo, pulseMat);
-scene.add(pulseObj);
-
-let pulseT = 0;
-function updatePulses() {
-  pulseT += 0.008;
-  const visEdges = edges.slice(0, MAX_PULSES);
-  visEdges.forEach((e, i) => {
-    const a = positions3d[e.from || e.source];
-    const b = positions3d[e.to   || e.target];
-    if (!a || !b) { pulsePts[i*3]=0; pulsePts[i*3+1]=9999; pulsePts[i*3+2]=0; return; }
-    const t = (pulseT * 0.5 + i * 0.13) % 1;
-    pulsePts[i*3]   = a.x + (b.x - a.x) * t;
-    pulsePts[i*3+1] = a.y + (b.y - a.y) * t;
-    pulsePts[i*3+2] = a.z + (b.z - a.z) * t;
-  });
-  pulseGeo.attributes.position.needsUpdate = true;
-}
-
-// ─── 툴팁 (마우스 호버) ──────────────────────────────────────────────────────
-const tooltip  = document.getElementById('tooltip');
-const mouse2d  = new THREE.Vector2();
-
-canvas.addEventListener('mousemove', e => {
-  const rect = canvas.getBoundingClientRect();
-  mouse2d.set(
-    ((e.clientX - rect.left) / rect.width)  * 2 - 1,
-    -((e.clientY - rect.top) / rect.height) * 2 + 1
-  );
-  raycaster.setFromCamera(mouse2d, camera);
-  const hits = raycaster.intersectObjects(nodeMeshes);
-  if (hits.length > 0) {
-    const mesh  = hits[0].object;
-    const idx   = hits[0].instanceId;
-    const nid   = mesh.userData[idx];
-    const node  = nodes.find(n => n.id === nid);
-    if (node) {
-      document.getElementById('tt-type').textContent  = node.type;
-      document.getElementById('tt-label').textContent = node.label || node.id;
-      document.getElementById('tt-extra').textContent =
-        `활동점수: ${(node.activityScore || 0).toFixed(1)}  |  연결: ${node.edges || 0}`;
-      tooltip.style.display = 'block';
-      tooltip.style.left    = (e.clientX + 14) + 'px';
-      tooltip.style.top     = (e.clientY - 10) + 'px';
-    }
-  } else {
-    tooltip.style.display = 'none';
-  }
-});
-
-// ─── 메인 애니메이션 루프 ─────────────────────────────────────────────────────
-function animate(now) {
-  requestAnimationFrame(animate);
-
-  // FPS 계산
-  const dt  = now - _lastTime;
-  _lastTime = now;
-  _fps = Math.round(1000 / (dt || 16));
-  if (now % 500 < 16) document.getElementById('h-fps').textContent = _fps;
-
-  // Force simulation (처음 200프레임만 집중적으로, 이후 10프레임마다)
-  if (_forceSteps < 200 || _forceSteps % 10 === 0) {
-    stepForce(nodes, edges);
-    updateNodePositions();
-  }
-  _forceSteps++;
-
-  updatePulses();
-
-  // 조명 회전 (살아있는 느낌)
-  const t = now * 0.0003;
-  pointLight1.position.set(50 * Math.cos(t), 50, 50 * Math.sin(t));
-
+  updateOrbits(dt);
+  pulseSun();
+  updateRaycast();
+  updateZoomSummary();
+  // 줌아웃 시 행성 라벨 숨김
+  _labelCanvas2d.style.opacity = _zoomSummaryVisible ? '0.15' : '1';
+  drawLabels();
   renderer.render(scene, camera);
-}
+});
 
 // ─── 리사이즈 ─────────────────────────────────────────────────────────────────
 window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.aspect = innerWidth/innerHeight;
   camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setSize(innerWidth, innerHeight);
+  resizeLabelCanvas();
 });
 
 // ─── 시작 ─────────────────────────────────────────────────────────────────────
-loadGraph();
+loadData();
 connectWS();
-requestAnimationFrame(animate);
 </script>
 </body>
 </html>

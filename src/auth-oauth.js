@@ -25,11 +25,13 @@ const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const GitHubStrategy = require('passport-github2').Strategy;
 const crypto         = require('crypto');
 
-// Kakao/Naver는 패키지가 없을 수도 있으므로 동적 require
+// Kakao/Naver/Apple은 패키지가 없을 수도 있으므로 동적 require
 let KakaoStrategy = null;
 let NaverStrategy = null;
+let AppleStrategy = null;
 try { KakaoStrategy = require('passport-kakao').default || require('passport-kakao'); } catch {}
 try { NaverStrategy = require('passport-naver-v2').default || require('passport-naver-v2'); } catch {}
+try { AppleStrategy = require('passport-apple'); } catch {}
 
 // ─── 토큰 생성 (src/auth.js 방식과 동일) ─────────────────────────────────────
 function generateToken() {
@@ -162,6 +164,46 @@ function initOAuthStrategies(db) {
     enabledProviders.push('naver');
   }
 
+  // ── Apple ────────────────────────────────────────────────────────────────────
+  // 필요 환경변수: APPLE_CLIENT_ID, APPLE_TEAM_ID, APPLE_KEY_ID, APPLE_PRIVATE_KEY (p8 내용 또는 경로)
+  if (AppleStrategy && process.env.APPLE_CLIENT_ID && process.env.APPLE_TEAM_ID && process.env.APPLE_KEY_ID) {
+    const privateKeyString = process.env.APPLE_PRIVATE_KEY
+      ? process.env.APPLE_PRIVATE_KEY.replace(/\\n/g, '\n')
+      : null;
+
+    if (privateKeyString) {
+      passport.use(new AppleStrategy(
+        {
+          clientID:     process.env.APPLE_CLIENT_ID,
+          teamID:       process.env.APPLE_TEAM_ID,
+          keyID:        process.env.APPLE_KEY_ID,
+          privateKeyString,
+          callbackURL:  process.env.OAUTH_CALLBACK_BASE
+            ? `${process.env.OAUTH_CALLBACK_BASE}/api/auth/apple/callback`
+            : '/api/auth/apple/callback',
+          passReqToCallback: false,
+        },
+        async (_accessToken, _refreshToken, idToken, profile, done) => {
+          try {
+            // Apple은 첫 로그인 시에만 이메일 제공
+            const email = idToken?.email || profile?.email || `apple_${profile?.id}@oauth.local`;
+            const user  = await db.upsertOAuthUser({
+              provider:   'apple',
+              providerId: String(profile?.id || idToken?.sub),
+              email,
+              name:       profile?.name?.firstName
+                ? `${profile.name.firstName} ${profile.name.lastName || ''}`.trim()
+                : email.split('@')[0],
+              avatar:     null,
+            });
+            done(null, user);
+          } catch (err) { done(err); }
+        }
+      ));
+      enabledProviders.push('apple');
+    }
+  }
+
   // Passport 세션 직렬화 (userId만 저장)
   passport.serializeUser((user, done) => done(null, user.id));
   passport.deserializeUser(async (id, done) => {
@@ -198,6 +240,7 @@ function createOAuthRouter({ passport, enabledProviders, insertToken, CLIENT_ORI
       github:  enabledProviders.includes('github'),
       kakao:   enabledProviders.includes('kakao'),
       naver:   enabledProviders.includes('naver'),
+      apple:   enabledProviders.includes('apple'),
     });
   });
 
@@ -273,6 +316,24 @@ function createOAuthRouter({ passport, enabledProviders, insertToken, CLIENT_ORI
   } else {
     router.get('/naver', (_req, res) =>
       res.status(501).json({ error: 'Naver OAuth not configured. Set NAVER_CLIENT_ID and NAVER_CLIENT_SECRET.' })
+    );
+  }
+
+  // ── Apple 로그인 ──────────────────────────────────────────────────────────────
+  // Apple은 POST callback 사용 (Apple 정책)
+  if (enabledProviders.includes('apple')) {
+    router.get('/apple',  passport.authenticate('apple', { session: false }));
+    router.post('/apple/callback',
+      passport.authenticate('apple', { session: false, failureRedirect: `${origin}/?oauth_error=apple_failed` }),
+      async (req, res) => {
+        const token = generateToken();
+        await insertToken(req.user.id, token);
+        res.redirect(`${origin}/?oauth_token=${token}&provider=apple`);
+      }
+    );
+  } else {
+    router.get('/apple', (_req, res) =>
+      res.status(501).json({ error: 'Apple OAuth not configured. Set APPLE_CLIENT_ID, APPLE_TEAM_ID, APPLE_KEY_ID, APPLE_PRIVATE_KEY.' })
     );
   }
 
