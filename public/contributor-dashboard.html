@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>기여자 대시보드 — Orbit Market 2.0</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #0d1117;
+      --surface:  #161b22;
+      --border:   #30363d;
+      --text:     #e6edf3;
+      --muted:    #8b949e;
+      --accent:   #58a6ff;
+      --green:    #3fb950;
+      --yellow:   #d29922;
+      --red:      #f85149;
+      --purple:   #bc8cff;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      min-height: 100vh;
+      padding: 0;
+    }
+
+    /* ── 헤더 ── */
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    header .logo { font-size: 20px; font-weight: 700; color: var(--accent); }
+    header .subtitle { font-size: 13px; color: var(--muted); }
+    header .spacer { flex: 1; }
+    header a.back-btn {
+      font-size: 13px;
+      color: var(--muted);
+      text-decoration: none;
+      padding: 5px 12px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      transition: color 0.15s;
+    }
+    header a.back-btn:hover { color: var(--text); }
+
+    /* ── 레이아웃 ── */
+    .page { max-width: 1100px; margin: 0 auto; padding: 24px 20px; }
+
+    .tabs {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 24px;
+      border-bottom: 1px solid var(--border);
+    }
+    .tab {
+      padding: 8px 16px;
+      cursor: pointer;
+      font-size: 14px;
+      color: var(--muted);
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+      transition: color 0.15s;
+    }
+    .tab:hover { color: var(--text); }
+    .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+    .panel { display: none; }
+    .panel.active { display: block; }
+
+    /* ── 카드 그리드 ── */
+    .grid { display: grid; gap: 16px; }
+    .grid-3 { grid-template-columns: repeat(3, 1fr); }
+    .grid-2 { grid-template-columns: repeat(2, 1fr); }
+    @media (max-width: 700px) { .grid-3, .grid-2 { grid-template-columns: 1fr; } }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 18px;
+    }
+    .card-title {
+      font-size: 12px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      margin-bottom: 8px;
+    }
+    .card-value {
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .card-sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+    /* ── 테이블 ── */
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th {
+      text-align: left;
+      padding: 8px 12px;
+      color: var(--muted);
+      font-weight: 500;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+    td {
+      padding: 10px 12px;
+      border-bottom: 1px solid rgba(48,54,61,0.5);
+      vertical-align: middle;
+    }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(88,166,255,0.04); }
+
+    /* ── 배지 ── */
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .badge-green  { background: rgba(63,185,80,.15);  color: var(--green); }
+    .badge-blue   { background: rgba(88,166,255,.15); color: var(--accent); }
+    .badge-purple { background: rgba(188,140,255,.15);color: var(--purple); }
+    .badge-yellow { background: rgba(210,153,34,.15); color: var(--yellow); }
+    .badge-red    { background: rgba(248,81,73,.15);  color: var(--red); }
+
+    /* ── 폼 ── */
+    .form-group { margin-bottom: 16px; }
+    label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+    input, select, textarea {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 14px;
+      padding: 8px 12px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+    textarea { resize: vertical; min-height: 80px; }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 16px;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      transition: opacity 0.15s;
+    }
+    .btn:hover { opacity: .85; }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-outline { background: transparent; color: var(--text); border: 1px solid var(--border); }
+
+    /* ── 빈 상태 ── */
+    .empty {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--muted);
+    }
+    .empty-icon { font-size: 40px; margin-bottom: 12px; }
+    .empty-text { font-size: 14px; }
+
+    /* ── 수익 바 차트 ── */
+    .bar-chart { display: flex; flex-direction: column; gap: 10px; }
+    .bar-row { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+    .bar-label { width: 70px; color: var(--muted); text-align: right; white-space: nowrap; }
+    .bar-track { flex: 1; height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; }
+    .bar-fill  { height: 100%; border-radius: 4px; background: var(--accent); transition: width 0.5s; }
+    .bar-val   { width: 60px; text-align: right; color: var(--text); }
+
+    /* ── 알림 ── */
+    .toast {
+      position: fixed;
+      bottom: 24px; right: 24px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 20px;
+      font-size: 13px;
+      box-shadow: 0 8px 24px rgba(0,0,0,.4);
+      z-index: 9999;
+      opacity: 0;
+      transform: translateY(8px);
+      transition: opacity .2s, transform .2s;
+      pointer-events: none;
+    }
+    .toast.show { opacity: 1; transform: translateY(0); pointer-events: auto; }
+    .toast.ok   { border-color: var(--green); color: var(--green); }
+    .toast.err  { border-color: var(--red);   color: var(--red); }
+
+    /* ── 별점 ── */
+    .stars { color: var(--yellow); font-size: 13px; letter-spacing: 1px; }
+
+    /* ── 섹션 헤더 ── */
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+    .section-title { font-size: 16px; font-weight: 600; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">⬡ Orbit Market 2.0</div>
+  <div class="subtitle">수익 공유 마켓 기여자 대시보드</div>
+  <div class="spacer"></div>
+  <a href="/" class="back-btn">← 뉴런 맵으로</a>
+</header>
+
+<div class="page">
+
+  <!-- 탭 -->
+  <div class="tabs">
+    <div class="tab active" data-tab="overview">개요</div>
+    <div class="tab" data-tab="items">내 도구</div>
+    <div class="tab" data-tab="leaderboard">리더보드</div>
+    <div class="tab" data-tab="revenue">수익</div>
+    <div class="tab" data-tab="register">등록</div>
+  </div>
+
+  <!-- ───── 개요 ───── -->
+  <div class="panel active" id="panel-overview">
+    <div class="grid grid-3" style="margin-bottom:24px">
+      <div class="card">
+        <div class="card-title">총 사용량</div>
+        <div class="card-value" id="stat-total-usage">—</div>
+        <div class="card-sub">누적 도구 사용 횟수</div>
+      </div>
+      <div class="card">
+        <div class="card-title">총 수익</div>
+        <div class="card-value" id="stat-gross">—</div>
+        <div class="card-sub">이번 달 예상 수익 (세전)</div>
+      </div>
+      <div class="card">
+        <div class="card-title">정산 예정</div>
+        <div class="card-value" id="stat-net">—</div>
+        <div class="card-sub">기여자 지분 (70%)</div>
+      </div>
+    </div>
+
+    <div class="grid grid-2">
+      <div class="card">
+        <div class="section-header">
+          <div class="section-title">내 기여자 프로필</div>
+        </div>
+        <div id="contributor-profile">
+          <div class="empty">
+            <div class="empty-icon">👤</div>
+            <div class="empty-text">아직 기여자 등록이 없습니다.<br>등록 탭에서 기여자를 등록하세요.</div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="section-header">
+          <div class="section-title">월별 수익 추이</div>
+        </div>
+        <div class="bar-chart" id="revenue-chart">
+          <div class="empty"><div class="empty-text">데이터가 없습니다.</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ───── 내 도구 ───── -->
+  <div class="panel" id="panel-items">
+    <div class="section-header">
+      <div class="section-title">등록된 도구/컴포넌트</div>
+      <button class="btn btn-primary" onclick="switchTab('register')">+ 새 도구 등록</button>
+    </div>
+    <div class="card">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>이름</th>
+              <th>카테고리</th>
+              <th>가격</th>
+              <th>사용량</th>
+              <th>평점</th>
+              <th>상태</th>
+            </tr>
+          </thead>
+          <tbody id="items-tbody">
+            <tr><td colspan="6"><div class="empty"><div class="empty-icon">🔧</div><div class="empty-text">기여자를 먼저 선택하세요.</div></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ───── 리더보드 ───── -->
+  <div class="panel" id="panel-leaderboard">
+    <div class="section-header">
+      <div class="section-title">인기 도구 순위</div>
+      <select id="lb-period" onchange="loadLeaderboard()" style="width:auto">
+        <option value="7">최근 7일</option>
+        <option value="30">최근 30일</option>
+        <option value="90">최근 90일</option>
+      </select>
+    </div>
+    <div class="card">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>도구명</th>
+              <th>기여자</th>
+              <th>카테고리</th>
+              <th>기간 사용량</th>
+              <th>기간 수익</th>
+              <th>평점</th>
+              <th>누적 사용</th>
+            </tr>
+          </thead>
+          <tbody id="lb-tbody">
+            <tr><td colspan="8"><div class="empty"><div class="empty-icon">🏆</div><div class="empty-text">로딩 중...</div></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ───── 수익 ───── -->
+  <div class="panel" id="panel-revenue">
+    <div class="section-header">
+      <div class="section-title">수익 현황</div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input type="text" id="rev-contributor-id" placeholder="기여자 ID" style="width:200px">
+        <select id="rev-months" style="width:auto">
+          <option value="3">최근 3개월</option>
+          <option value="6">최근 6개월</option>
+          <option value="12">최근 12개월</option>
+        </select>
+        <button class="btn btn-primary" onclick="loadRevenue()">조회</button>
+      </div>
+    </div>
+    <div class="card" style="margin-bottom:16px">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>월</th>
+              <th>총 사용량</th>
+              <th>총 수익 (USD)</th>
+              <th>기여자 지분</th>
+              <th>정산 예정 (USD)</th>
+            </tr>
+          </thead>
+          <tbody id="revenue-tbody">
+            <tr><td colspan="5"><div class="empty"><div class="empty-text">기여자 ID를 입력하고 조회하세요.</div></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="section-header">
+      <div class="section-title">정산 기록</div>
+      <button class="btn btn-outline" onclick="loadDistributions()">새로고침</button>
+    </div>
+    <div class="card">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>기간</th>
+              <th>기여자</th>
+              <th>총 사용량</th>
+              <th>총 수익</th>
+              <th>정산액</th>
+              <th>상태</th>
+            </tr>
+          </thead>
+          <tbody id="dist-tbody">
+            <tr><td colspan="6"><div class="empty"><div class="empty-text">로딩 중...</div></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ───── 등록 ───── -->
+  <div class="panel" id="panel-register">
+    <div class="grid grid-2">
+      <!-- 기여자 등록 -->
+      <div class="card">
+        <div class="section-title" style="margin-bottom:16px">기여자 등록</div>
+        <form id="contributor-form" onsubmit="submitContributor(event)">
+          <div class="form-group">
+            <label>이름 *</label>
+            <input type="text" id="c-name" placeholder="홍길동 / 팀 이름 / 기업명" required maxlength="100">
+          </div>
+          <div class="form-group">
+            <label>유형</label>
+            <select id="c-type">
+              <option value="individual">개인</option>
+              <option value="team">팀</option>
+              <option value="enterprise">기업</option>
+              <option value="nation">공공/국가</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>이메일</label>
+            <input type="email" id="c-email" placeholder="수익 정산 알림 이메일">
+          </div>
+          <div class="form-group">
+            <label>수익 지분 (%)</label>
+            <input type="number" id="c-share" value="70" min="1" max="100" step="0.1">
+          </div>
+          <button type="submit" class="btn btn-primary" style="width:100%">기여자 등록</button>
+        </form>
+        <div id="contributor-result" style="margin-top:12px;font-size:13px;"></div>
+      </div>
+
+      <!-- 도구 등록 -->
+      <div class="card">
+        <div class="section-title" style="margin-bottom:16px">도구/컴포넌트 등록</div>
+        <form id="item-form" onsubmit="submitItem(event)">
+          <div class="form-group">
+            <label>기여자 ID *</label>
+            <input type="text" id="i-contributor" placeholder="기여자 등록 후 발급된 ID" required>
+          </div>
+          <div class="form-group">
+            <label>도구 이름 *</label>
+            <input type="text" id="i-name" placeholder="예: 코드 리뷰 AI 어시스턴트" required maxlength="200">
+          </div>
+          <div class="form-group">
+            <label>설명</label>
+            <textarea id="i-desc" placeholder="도구 기능 및 활용 방법 설명"></textarea>
+          </div>
+          <div class="form-group">
+            <label>카테고리</label>
+            <select id="i-category">
+              <option value="tool">도구 (tool)</option>
+              <option value="template">템플릿</option>
+              <option value="workflow">워크플로우</option>
+              <option value="ai-model">AI 모델</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>가격 유형</label>
+            <select id="i-price-type">
+              <option value="free">무료</option>
+              <option value="subscription">구독</option>
+              <option value="one-time">일회성</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>가격 (USD)</label>
+            <input type="number" id="i-price" value="0" min="0" step="0.01">
+          </div>
+          <div class="form-group">
+            <label>태그 (쉼표로 구분)</label>
+            <input type="text" id="i-tags" placeholder="예: AI, productivity, code-review">
+          </div>
+          <button type="submit" class="btn btn-primary" style="width:100%">도구 등록</button>
+        </form>
+        <div id="item-result" style="margin-top:12px;font-size:13px;"></div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- .page -->
+
+<!-- 토스트 -->
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+
+const BASE = '';
+
+// ── 탭 전환 ────────────────────────────────────────────────────────────────
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+  document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + name));
+  if (name === 'leaderboard') loadLeaderboard();
+  if (name === 'revenue')     loadDistributions();
+  if (name === 'overview')    loadOverview();
+  if (name === 'items')       loadMyItems();
+}
+
+document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => switchTab(t.dataset.tab)));
+
+// ── API 헬퍼 ───────────────────────────────────────────────────────────────
+async function apiFetch(path, opts = {}) {
+  const res = await fetch(BASE + path, {
+    headers: { 'Content-Type': 'application/json', ...opts.headers },
+    ...opts,
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error || res.statusText);
+  return json;
+}
+
+// ── 토스트 ─────────────────────────────────────────────────────────────────
+let toastTimer = null;
+function toast(msg, type = 'ok') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = `toast show ${type}`;
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+// ── 유틸 ───────────────────────────────────────────────────────────────────
+function usd(n)   { return '$' + (n || 0).toFixed(2); }
+function num(n)   { return (n || 0).toLocaleString(); }
+function stars(r) { if (!r) return '<span style="color:var(--muted)">—</span>'; const f = Math.round(r); return '<span class="stars">' + '★'.repeat(f) + '☆'.repeat(5-f) + `</span> <span style="color:var(--muted);font-size:11px">${r}</span>`; }
+
+function categoryBadge(cat) {
+  const map = { tool: 'badge-blue', template: 'badge-purple', workflow: 'badge-green', 'ai-model': 'badge-yellow' };
+  return `<span class="badge ${map[cat] || 'badge-blue'}">${cat}</span>`;
+}
+
+function typeBadge(type) {
+  const map = { individual: 'badge-green', team: 'badge-blue', enterprise: 'badge-purple', nation: 'badge-yellow' };
+  const label = { individual: '개인', team: '팀', enterprise: '기업', nation: '공공' };
+  return `<span class="badge ${map[type] || 'badge-blue'}">${label[type] || type}</span>`;
+}
+
+// ── 내 기여자 프로필 저장 ──────────────────────────────────────────────────
+let myContributors = [];
+
+// ── 개요 ───────────────────────────────────────────────────────────────────
+async function loadOverview() {
+  // 기여자 목록 불러오기
+  try {
+    myContributors = await apiFetch('/api/market/contributors/me');
+  } catch(e) { myContributors = []; }
+
+  const profileEl = document.getElementById('contributor-profile');
+  if (myContributors.length === 0) {
+    profileEl.innerHTML = `<div class="empty"><div class="empty-icon">👤</div><div class="empty-text">아직 기여자 등록이 없습니다.<br>등록 탭에서 기여자를 등록하세요.</div></div>`;
+  } else {
+    const c = myContributors[0];
+    profileEl.innerHTML = `
+      <div style="display:flex;flex-direction:column;gap:10px;font-size:13px">
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">이름</span><span>${c.name}</span></div>
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">유형</span>${typeBadge(c.type)}</div>
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">기여자 ID</span><code style="font-size:11px;color:var(--accent)">${c.id}</code></div>
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">지분</span><span>${c.share_pct}%</span></div>
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">가입일</span><span>${c.joined_at ? c.joined_at.slice(0,10) : '—'}</span></div>
+      </div>
+    `;
+  }
+
+  // 이번달 수익 집계 (기여자가 있을 경우)
+  if (myContributors.length > 0) {
+    try {
+      const data = await apiFetch(`/api/market/revenue/${myContributors[0].id}?months=1`);
+      const thisMonth = data.monthly && data.monthly[0];
+      document.getElementById('stat-total-usage').textContent = num(thisMonth?.total_usage);
+      document.getElementById('stat-gross').textContent = usd(thisMonth?.gross_usd);
+      document.getElementById('stat-net').textContent   = usd(thisMonth?.net_usd);
+
+      // 바 차트
+      if (data.monthly && data.monthly.length > 0) {
+        const max = Math.max(...data.monthly.map(m => m.gross_usd || 0), 0.01);
+        const chartEl = document.getElementById('revenue-chart');
+        chartEl.innerHTML = data.monthly.map(m => `
+          <div class="bar-row">
+            <div class="bar-label">${m.month}</div>
+            <div class="bar-track"><div class="bar-fill" style="width:${Math.round((m.gross_usd||0)/max*100)}%"></div></div>
+            <div class="bar-val">${usd(m.gross_usd)}</div>
+          </div>
+        `).join('');
+      }
+    } catch(e) {
+      document.getElementById('stat-total-usage').textContent = '0';
+      document.getElementById('stat-gross').textContent = '$0.00';
+      document.getElementById('stat-net').textContent   = '$0.00';
+    }
+  }
+}
+
+// ── 내 도구 목록 ────────────────────────────────────────────────────────────
+async function loadMyItems() {
+  const tbody = document.getElementById('items-tbody');
+  if (myContributors.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="6"><div class="empty"><div class="empty-icon">🔧</div><div class="empty-text">기여자를 먼저 등록하세요.</div></div></td></tr>`;
+    return;
+  }
+  try {
+    const items = await apiFetch(`/api/market/contributors/${myContributors[0].id}/items`);
+    if (items.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="6"><div class="empty"><div class="empty-icon">🔧</div><div class="empty-text">등록된 도구가 없습니다.</div></div></td></tr>`;
+      return;
+    }
+    tbody.innerHTML = items.map(item => `
+      <tr>
+        <td>${item.name}</td>
+        <td>${categoryBadge(item.category)}</td>
+        <td>${item.price_type === 'free' ? '<span style="color:var(--green)">무료</span>' : usd(item.price_usd)}</td>
+        <td>${num(item.use_count)}</td>
+        <td>${stars(item.avgRating)}</td>
+        <td><span class="badge ${item.status === 'active' ? 'badge-green' : 'badge-red'}">${item.status}</span></td>
+      </tr>
+    `).join('');
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="6" style="color:var(--red);padding:16px">${e.message}</td></tr>`;
+  }
+}
+
+// ── 리더보드 ────────────────────────────────────────────────────────────────
+async function loadLeaderboard() {
+  const period = document.getElementById('lb-period').value;
+  const tbody  = document.getElementById('lb-tbody');
+  tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:20px;color:var(--muted)">로딩 중...</td></tr>`;
+  try {
+    const list = await apiFetch(`/api/market/leaderboard?period=${period}&limit=30`);
+    if (list.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="8"><div class="empty"><div class="empty-icon">🏆</div><div class="empty-text">아직 데이터가 없습니다.</div></div></td></tr>`;
+      return;
+    }
+    tbody.innerHTML = list.map((item, i) => `
+      <tr>
+        <td style="color:var(--muted);font-weight:700">${i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1}</td>
+        <td style="font-weight:600">${item.name}</td>
+        <td><span style="color:var(--muted)">${item.contributor_name}</span> ${typeBadge(item.contributor_type)}</td>
+        <td>${categoryBadge(item.category)}</td>
+        <td>${num(item.period_usage)}</td>
+        <td>${usd(item.period_revenue)}</td>
+        <td>${stars(item.avg_rating)}</td>
+        <td style="color:var(--muted)">${num(item.total_usage)}</td>
+      </tr>
+    `).join('');
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="8" style="color:var(--red);padding:16px">${e.message}</td></tr>`;
+  }
+}
+
+// ── 수익 조회 ────────────────────────────────────────────────────────────────
+async function loadRevenue() {
+  const contributorId = document.getElementById('rev-contributor-id').value.trim();
+  const months        = document.getElementById('rev-months').value;
+  if (!contributorId) { toast('기여자 ID를 입력하세요.', 'err'); return; }
+
+  const tbody = document.getElementById('revenue-tbody');
+  try {
+    const data = await apiFetch(`/api/market/revenue/${contributorId}?months=${months}`);
+    if (!data.monthly || data.monthly.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="5"><div class="empty"><div class="empty-text">수익 데이터가 없습니다.</div></div></td></tr>`;
+      return;
+    }
+    tbody.innerHTML = data.monthly.map(m => `
+      <tr>
+        <td>${m.month}</td>
+        <td>${num(m.total_usage)}</td>
+        <td>${usd(m.gross_usd)}</td>
+        <td>${(data.contributor?.share_pct ?? 70)}%</td>
+        <td style="color:var(--green);font-weight:600">${usd(m.net_usd)}</td>
+      </tr>
+    `).join('');
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="5" style="color:var(--red);padding:16px">${e.message}</td></tr>`;
+  }
+}
+
+// ── 정산 기록 ────────────────────────────────────────────────────────────────
+async function loadDistributions() {
+  const tbody = document.getElementById('dist-tbody');
+  try {
+    const list = await apiFetch('/api/market/distributions');
+    if (list.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="6"><div class="empty"><div class="empty-text">정산 기록이 없습니다.</div></div></td></tr>`;
+      return;
+    }
+    tbody.innerHTML = list.map(d => `
+      <tr>
+        <td>${d.period}</td>
+        <td style="font-size:11px;color:var(--muted)">${d.contributor_id}</td>
+        <td>${num(d.total_usage)}</td>
+        <td>${usd(d.gross_usd)}</td>
+        <td style="color:var(--green);font-weight:600">${usd(d.net_usd)}</td>
+        <td><span class="badge ${d.status === 'paid' ? 'badge-green' : d.status === 'failed' ? 'badge-red' : 'badge-yellow'}">${d.status}</span></td>
+      </tr>
+    `).join('');
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="6" style="color:var(--red);padding:16px">${e.message}</td></tr>`;
+  }
+}
+
+// ── 기여자 등록 폼 ────────────────────────────────────────────────────────────
+async function submitContributor(e) {
+  e.preventDefault();
+  const body = {
+    name:     document.getElementById('c-name').value.trim(),
+    type:     document.getElementById('c-type').value,
+    email:    document.getElementById('c-email').value.trim() || undefined,
+    sharePct: parseFloat(document.getElementById('c-share').value) || 70,
+  };
+  try {
+    const res = await apiFetch('/api/market/contributors', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+    document.getElementById('contributor-result').innerHTML =
+      `<div style="color:var(--green)">등록 완료! 기여자 ID: <code style="color:var(--accent)">${res.contributorId}</code></div>`;
+    document.getElementById('i-contributor').value = res.contributorId;
+    toast('기여자 등록 완료', 'ok');
+    loadOverview();
+  } catch(err) {
+    document.getElementById('contributor-result').innerHTML = `<div style="color:var(--red)">${err.message}</div>`;
+    toast(err.message, 'err');
+  }
+}
+
+// ── 도구 등록 폼 ──────────────────────────────────────────────────────────────
+async function submitItem(e) {
+  e.preventDefault();
+  const tagsRaw = document.getElementById('i-tags').value.trim();
+  const tags    = tagsRaw ? tagsRaw.split(',').map(t => t.trim()).filter(Boolean) : [];
+  const body = {
+    contributorId: document.getElementById('i-contributor').value.trim(),
+    name:          document.getElementById('i-name').value.trim(),
+    description:   document.getElementById('i-desc').value.trim() || undefined,
+    category:      document.getElementById('i-category').value,
+    priceType:     document.getElementById('i-price-type').value,
+    priceUsd:      parseFloat(document.getElementById('i-price').value) || 0,
+    tags,
+  };
+  try {
+    const res = await apiFetch('/api/market/items', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+    document.getElementById('item-result').innerHTML =
+      `<div style="color:var(--green)">등록 완료! 아이템 ID: <code style="color:var(--accent)">${res.itemId}</code></div>`;
+    toast('도구 등록 완료', 'ok');
+    loadMyItems();
+  } catch(err) {
+    document.getElementById('item-result').innerHTML = `<div style="color:var(--red)">${err.message}</div>`;
+    toast(err.message, 'err');
+  }
+}
+
+// ── 초기 로드 ─────────────────────────────────────────────────────────────────
+loadOverview();
+</script>
+</body>
+</html>

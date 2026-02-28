@@ -85,6 +85,9 @@ const createGitRouter        = require('./routes/git');
 const createAvatarsRouter    = require('./routes/avatars');
 const createMcpRouter        = require('./src/mcp-server');
 const outcomeStore           = require('./src/outcome-store');
+const marketStore            = require('./src/market-store');
+const usageTracker           = require('./src/usage-tracker');
+const createMarketRouter     = require('./routes/market');
 
 // ─── 상수 ────────────────────────────────────────────────────────────────────
 const PORT         = process.env.PORT ? parseInt(process.env.PORT) : 4747;
@@ -599,6 +602,9 @@ app.use('/api', createGitRouter({
 const { authMiddleware, optionalAuth } = require('./src/auth');
 app.use('/api', createAvatarsRouter({ authMiddleware, optionalAuth }));
 
+// ─── 수익 공유 마켓 2.0 ──────────────────────────────────────────────────────
+app.use('/api', createMarketRouter({ marketStore, authMiddleware, optionalAuth }));
+
 // ─── MCP 서버 (Claude Desktop 연동) ─────────────────────────────────────────
 app.use('/api', createMcpRouter({
   getAllEvents,
@@ -712,10 +718,15 @@ server.listen(PORT, () => {
   console.log(`   감시 파일: ${CONV_FILE}`);
   console.log(`   OAuth: [${enabledProviders.join(', ') || '미설정'}]`);
   console.log(`   Git hooks 설치: curl http://localhost:${PORT}/api/git/install | bash`);
-  console.log(`   MCP 서버: http://localhost:${PORT}/api/mcp\n`);
+  console.log(`   MCP 서버: http://localhost:${PORT}/api/mcp`);
+  console.log(`   마켓 2.0: http://localhost:${PORT}/api/market/leaderboard\n`);
 
   // outcome 테이블 초기화 (기존 DB에 테이블 없으면 생성)
   outcomeStore.initOutcomeTable();
+
+  // 마켓 테이블 초기화 + 사용량 트래커 시작
+  marketStore.initMarketTables();
+  usageTracker.start({ broadcastAll });
 
   // 인사이트 엔진 자동 시작 (INSIGHT_DISABLED=1 이면 스킵)
   if (process.env.INSIGHT_DISABLED !== '1') {
