@@ -349,6 +349,159 @@
       white-space: pre-wrap; word-break: break-word; max-height: 200px;
       overflow-y: auto;
     }
+
+    /* ── TIMELINE PANEL ── */
+    #timeline-panel {
+      position: fixed; bottom: 0; left: 0; right: 0;
+      height: 220px;
+      background: rgba(13,17,23,0.96);
+      border-top: 1px solid rgba(48,54,61,0.7);
+      backdrop-filter: blur(14px);
+      z-index: 120;
+      transform: translateY(100%);
+      transition: transform 0.28s cubic-bezier(0.16,1,0.3,1);
+      display: flex; flex-direction: column;
+    }
+    #timeline-panel.open { transform: translateY(0); }
+
+    #timeline-header {
+      display: flex; align-items: center; gap: 10px;
+      padding: 0 14px; height: 36px;
+      border-bottom: 1px solid rgba(48,54,61,0.4);
+      flex-shrink: 0;
+    }
+    #timeline-header .tl-title {
+      font-size: 11px; font-weight: 600; color: var(--text2);
+      letter-spacing: 0.06em; text-transform: uppercase;
+    }
+    #timeline-header .tl-count {
+      font-size: 10px; color: var(--text3);
+      background: rgba(33,38,45,0.8); border: 1px solid rgba(48,54,61,0.5);
+      padding: 1px 7px; border-radius: 10px;
+    }
+    #tl-filter-bar {
+      display: flex; gap: 6px; align-items: center; margin-left: auto;
+    }
+    #tl-filter-bar select, #tl-filter-bar input[type="text"] {
+      background: rgba(33,38,45,0.8); border: 1px solid rgba(48,54,61,0.5);
+      color: var(--text2); font-size: 10px; padding: 2px 8px;
+      border-radius: 6px; outline: none; height: 22px;
+    }
+    #tl-filter-bar select:focus, #tl-filter-bar input:focus {
+      border-color: var(--accent);
+    }
+    .tl-close-btn {
+      background: none; border: none; color: var(--text3);
+      cursor: pointer; font-size: 14px; margin-left: 4px; line-height: 1;
+    }
+    .tl-close-btn:hover { color: var(--text); }
+
+    #timeline-scroll {
+      flex: 1; overflow-x: auto; overflow-y: hidden;
+      position: relative; padding: 0 20px;
+      scroll-behavior: smooth;
+    }
+    #timeline-scroll::-webkit-scrollbar { height: 4px; }
+    #timeline-scroll::-webkit-scrollbar-track { background: transparent; }
+    #timeline-scroll::-webkit-scrollbar-thumb { background: rgba(48,54,61,0.6); border-radius: 2px; }
+
+    #timeline-track {
+      position: relative; height: 100%;
+      min-width: 100%;
+      display: flex; align-items: center;
+    }
+
+    /* 중심선 */
+    #tl-axis {
+      position: absolute; left: 0; right: 0;
+      top: 50%; height: 1px;
+      background: linear-gradient(to right, transparent, rgba(48,54,61,0.6) 5%, rgba(48,54,61,0.6) 95%, transparent);
+    }
+
+    /* 시간 눈금 */
+    .tl-tick {
+      position: absolute; top: 50%;
+      display: flex; flex-direction: column; align-items: center;
+      transform: translateX(-50%);
+    }
+    .tl-tick-line {
+      width: 1px; height: 8px; background: rgba(48,54,61,0.5);
+      margin-bottom: 3px;
+    }
+    .tl-tick-label {
+      font-size: 9px; color: var(--text3); white-space: nowrap;
+    }
+
+    /* 이벤트 도트 */
+    .tl-event {
+      position: absolute;
+      top: 50%; transform: translateX(-50%) translateY(-50%);
+      cursor: pointer;
+      transition: transform 0.15s ease;
+    }
+    .tl-event:hover { z-index: 10; }
+    .tl-event:hover .tl-dot { transform: scale(1.5); }
+    .tl-event:hover .tl-event-label { opacity: 1; }
+
+    .tl-dot {
+      width: 10px; height: 10px; border-radius: 50%;
+      border: 1.5px solid rgba(255,255,255,0.15);
+      transition: transform 0.15s ease;
+      position: relative;
+    }
+    .tl-dot.tl-dot-active {
+      box-shadow: 0 0 0 3px rgba(137,87,229,0.4);
+      border-color: var(--accent);
+    }
+    .tl-dot.tl-dot-large { width: 14px; height: 14px; }
+
+    /* 글로우 링 (신규 이벤트) */
+    .tl-dot.tl-dot-new::after {
+      content: '';
+      position: absolute; inset: -4px;
+      border-radius: 50%;
+      border: 1px solid currentColor;
+      opacity: 0.5;
+      animation: tl-glow-ring 1.2s ease-out forwards;
+    }
+    @keyframes tl-glow-ring {
+      0%   { transform: scale(1); opacity: 0.5; }
+      100% { transform: scale(2.2); opacity: 0; }
+    }
+
+    .tl-event-label {
+      position: absolute; bottom: calc(100% + 6px); left: 50%;
+      transform: translateX(-50%);
+      background: rgba(22,27,34,0.95);
+      border: 1px solid rgba(48,54,61,0.6);
+      border-radius: 5px; padding: 3px 7px;
+      font-size: 9px; color: var(--text2);
+      white-space: nowrap; max-width: 160px;
+      overflow: hidden; text-overflow: ellipsis;
+      pointer-events: none;
+      opacity: 0; transition: opacity 0.12s ease;
+    }
+
+    /* 선택된 이벤트 커넥터 (타임라인 → 캔버스 상단 하이라이트) */
+    #tl-selected-bar {
+      position: fixed; top: 48px; left: 0; right: 0; height: 2px;
+      background: linear-gradient(to right, transparent, var(--accent), transparent);
+      opacity: 0; transition: opacity 0.3s ease; pointer-events: none; z-index: 119;
+    }
+    #tl-selected-bar.visible { opacity: 1; }
+
+    /* 타임라인 열릴 때 캔버스 크기는 JS resize()로 제어 */
+
+    /* 그룹 레인 (타입별) — 위/아래 분기 */
+    .tl-event.tl-lane-top    { top: calc(50% - 28px); }
+    .tl-event.tl-lane-mid    { top: 50%; }
+    .tl-event.tl-lane-bottom { top: calc(50% + 28px); }
+
+    /* 연결선 (같은 세션 이벤트 그룹) */
+    #tl-svg {
+      position: absolute; inset: 0; pointer-events: none;
+      overflow: visible;
+    }
   </style>
 </head>
 <body>
@@ -373,6 +526,7 @@
     <button class="hud-btn" id="member-overlay-btn" onclick="toggleMemberOverlay()">👥 팀 오버레이</button>
     <button class="hud-btn" onclick="autoFit()">자동 맞춤</button>
     <button class="hud-btn" id="orbit-toggle" onclick="toggleOrbit()">🔄 Orbit 모드</button>
+    <button class="hud-btn" id="timeline-toggle" onclick="toggleTimeline()" title="타임라인 뷰 (L)">⏱ 타임라인</button>
     <!-- 노드 밀도 슬라이더: 사용자가 표시 노드 수를 직접 제어 -->
     <label title="표시할 최대 노드 수 조절" style="font-size:10px;color:var(--text3);display:flex;align-items:center;gap:4px">
       <span>🧬</span>
@@ -427,6 +581,39 @@
     <div style="text-align:center;color:#8b949e;font-size:12px;padding:24px 0">경보 없음 ✓</div>
   </div>
 </div>
+
+<!-- TIMELINE PANEL -->
+<div id="timeline-panel">
+  <div id="timeline-header">
+    <span class="tl-title">⏱ 타임라인</span>
+    <span class="tl-count" id="tl-count">0 이벤트</span>
+    <div id="tl-filter-bar">
+      <select id="tl-type-filter" onchange="tlApplyFilter()">
+        <option value="">전체 타입</option>
+        <option value="tool">tool.*</option>
+        <option value="file">file.*</option>
+        <option value="user">user.*</option>
+        <option value="git">git.*</option>
+        <option value="error">error.*</option>
+      </select>
+      <select id="tl-range-filter" onchange="tlApplyFilter()">
+        <option value="60">최근 1시간</option>
+        <option value="360">최근 6시간</option>
+        <option value="1440">최근 24시간</option>
+        <option value="0">전체</option>
+      </select>
+      <input type="text" id="tl-search" placeholder="키워드..." oninput="tlApplyFilter()" style="width:90px">
+      <button class="tl-close-btn" onclick="closeTimeline()" title="타임라인 닫기 (L)">✕</button>
+    </div>
+  </div>
+  <div id="timeline-scroll">
+    <div id="timeline-track">
+      <div id="tl-axis"></div>
+      <svg id="tl-svg"></svg>
+    </div>
+  </div>
+</div>
+<div id="tl-selected-bar"></div>
 
 <!-- CANVAS -->
 <canvas id="orbit-canvas"></canvas>
@@ -499,6 +686,7 @@
     <div class="sh-item"><span class="sh-key">G</span>팀 대시보드</div>
     <div class="sh-item"><span class="sh-key">T</span>테마 마켓</div>
     <div class="sh-item"><span class="sh-key">H</span>HUD 토글</div>
+    <div class="sh-item"><span class="sh-key">L</span>타임라인</div>
   </div>
 </div>
 
@@ -779,8 +967,11 @@ function nodeRadius(n) {
 // ── 캔버스 리사이즈 ──
 function resize() {
   canvas.width  = window.innerWidth;
-  canvas.height = window.innerHeight;
+  canvas.height = tlOpen
+    ? window.innerHeight - 48 - 220   // 타임라인 열려있을 때
+    : window.innerHeight;
 }
+function resizeCanvas() { resize(); }  // 별칭 (closeTimeline에서 호출)
 window.addEventListener('resize', resize);
 resize();
 
@@ -2298,6 +2489,12 @@ function connectWS() {
         });
       }
 
+      // ── 타임라인 실시간 업데이트 ────────────────
+      if (newFlowNodes.length > 0) {
+        tlOnNewEvent();
+        newFlowNodes.forEach(n => tlFlashNewEvent(n.id));
+      }
+
       // ── 경보 처리 ──────────────────────────────
       if (msg.conflicts?.length)     msg.conflicts.forEach(c => pushAlert('conflict', c));
       if (msg.shadowAI?.length)      msg.shadowAI.forEach(c => pushAlert('shadow', c));
@@ -2563,6 +2760,318 @@ function loadSavedTheme() {
 window.addEventListener('message', e => {
   if (e.data?.type === 'orbit_theme') applyThemeVars(e.data.vars);
 });
+
+// ═══════════════════════════════════════════════════
+// TIMELINE ENGINE
+// 뉴런 맵과 양방향 동기화되는 시간축 이벤트 레일
+// ═══════════════════════════════════════════════════
+
+let tlOpen          = false;
+let tlAllEvents     = [];   // 원본 전체 이벤트 (raw 포함)
+let tlFilteredEvents = [];  // 필터 적용 후
+let tlSelectedId    = null; // 현재 선택된 이벤트 id
+const TL_PX_PER_MIN = 4;    // 1분 = 4px (기준 밀도)
+const TL_DOT_SPACING_MIN = 16; // 도트 최소 간격 px
+
+// ── 타입별 색상 매핑 (뉴런 맵과 동일 팔레트) ──────────
+const TL_TYPE_COLORS = {
+  'tool.start':   '#39d2c0',
+  'tool.end':     '#3fb950',
+  'file.write':   '#58a6ff',
+  'file.read':    '#79c0ff',
+  'user.message': '#bc8cff',
+  'assistant.message': '#e6edf3',
+  'error':        '#f85149',
+  'git.commit':   '#ffa657',
+  'git.push':     '#ff7b72',
+  'git.merge':    '#d2a8ff',
+};
+
+function tlTypeColor(type) {
+  if (!type) return '#8b949e';
+  const exact = TL_TYPE_COLORS[type];
+  if (exact) return exact;
+  const prefix = type.split('.')[0];
+  const prefixMap = { tool:'#39d2c0', file:'#58a6ff', user:'#bc8cff', git:'#ffa657', error:'#f85149' };
+  return prefixMap[prefix] || '#8b949e';
+}
+
+// ── 이벤트 로드 ───────────────────────────────────────
+async function tlLoadEvents() {
+  try {
+    const r = await fetch('/api/graph');
+    const d = await r.json();
+    // nodes 배열에서 timestamp 있는 것만 추출
+    const rawNodes = d.nodes || [];
+    tlAllEvents = rawNodes
+      .filter(n => n.raw?.timestamp || n.timestamp)
+      .map(n => ({
+        id:        n.id,
+        type:      n.type,
+        label:     n.label || n.type,
+        ts:        new Date(n.raw?.timestamp || n.timestamp),
+        color:     n.purposeColor || tlTypeColor(n.type),
+        size:      n.size || 20,
+        sessionId: n.raw?.sessionId || n.sessionId,
+        aiSource:  n.raw?.aiSource  || n.aiSource,
+        _node:     n,   // 원본 노드 참조 (사이드 패널 연결용)
+      }))
+      .sort((a, b) => a.ts - b.ts);
+    tlApplyFilter();
+  } catch (e) {
+    console.warn('[Timeline] 이벤트 로드 실패', e);
+  }
+}
+
+// ── 필터 적용 ─────────────────────────────────────────
+function tlApplyFilter() {
+  const typeF  = document.getElementById('tl-type-filter')?.value || '';
+  const rangeF = parseInt(document.getElementById('tl-range-filter')?.value || '60');
+  const searchF = (document.getElementById('tl-search')?.value || '').toLowerCase().trim();
+
+  const now    = Date.now();
+  const cutoff = rangeF > 0 ? now - rangeF * 60 * 1000 : 0;
+
+  tlFilteredEvents = tlAllEvents.filter(ev => {
+    if (rangeF > 0 && ev.ts.getTime() < cutoff) return false;
+    if (typeF && !ev.type.startsWith(typeF)) return false;
+    if (searchF && !ev.label.toLowerCase().includes(searchF) && !ev.type.toLowerCase().includes(searchF)) return false;
+    return true;
+  });
+
+  document.getElementById('tl-count').textContent = `${tlFilteredEvents.length} 이벤트`;
+  tlRender();
+}
+
+// ── 렌더 ─────────────────────────────────────────────
+function tlRender() {
+  const track = document.getElementById('timeline-track');
+  const scroll = document.getElementById('timeline-scroll');
+  if (!track) return;
+
+  // 기존 도트 + 눈금 제거 (axis, svg는 유지)
+  [...track.querySelectorAll('.tl-event, .tl-tick')].forEach(el => el.remove());
+
+  const events = tlFilteredEvents;
+  if (events.length === 0) return;
+
+  const minTs = events[0].ts.getTime();
+  const maxTs = events[events.length - 1].ts.getTime();
+  const spanMs = Math.max(maxTs - minTs, 60 * 1000); // 최소 1분
+
+  // 트랙 너비 계산
+  const scrollW = scroll.clientWidth;
+  const trackW  = Math.max(scrollW, (spanMs / 60000) * TL_PX_PER_MIN + 120);
+  track.style.width = trackW + 'px';
+
+  const msPerPx = spanMs / (trackW - 120); // 좌우 패딩 60px씩
+
+  // ── 시간 눈금 생성 ────────────────────────────────
+  const tickIntervalMs = tlPickTickInterval(spanMs, trackW);
+  const firstTick = Math.ceil(minTs / tickIntervalMs) * tickIntervalMs;
+  for (let t = firstTick; t <= maxTs; t += tickIntervalMs) {
+    const x = 60 + (t - minTs) / msPerPx;
+    const tick = document.createElement('div');
+    tick.className = 'tl-tick';
+    tick.style.left = x + 'px';
+    tick.innerHTML = `
+      <div class="tl-tick-line"></div>
+      <div class="tl-tick-label">${tlFormatTime(new Date(t), tickIntervalMs)}</div>
+    `;
+    track.appendChild(tick);
+  }
+
+  // ── 이벤트 도트 생성 ──────────────────────────────
+  // 세션별 레인 배정 (위/중/아래 3레인)
+  const sessionLanes = {};
+  let laneCounter = 0;
+
+  events.forEach((ev, i) => {
+    const x = 60 + (ev.ts.getTime() - minTs) / msPerPx;
+
+    // 레인 결정 (세션별 분기, 최대 3레인)
+    const sid = ev.sessionId || 'default';
+    if (!(sid in sessionLanes)) {
+      sessionLanes[sid] = laneCounter % 3;
+      laneCounter++;
+    }
+    const laneClass = ['tl-lane-top', 'tl-lane-mid', 'tl-lane-bottom'][sessionLanes[sid]];
+
+    const isSelected = ev.id === tlSelectedId;
+    const isLarge = ev.type === 'user.message' || ev.type === 'git.commit';
+
+    const el = document.createElement('div');
+    el.className = `tl-event ${laneClass}`;
+    el.style.left = x + 'px';
+    el.dataset.id = ev.id;
+
+    el.innerHTML = `
+      <div class="tl-dot ${isSelected ? 'tl-dot-active' : ''} ${isLarge ? 'tl-dot-large' : ''}"
+           style="background:${ev.color}; color:${ev.color}">
+      </div>
+      <div class="tl-event-label">${ev.label}</div>
+    `;
+
+    el.addEventListener('click', () => tlSelectEvent(ev.id));
+    track.appendChild(el);
+  });
+
+  // ── SVG 세션 연결선 ────────────────────────────────
+  tlDrawSessionLines(events, minTs, msPerPx, trackW);
+
+  // 선택된 이벤트가 있으면 스크롤 위치 맞춤
+  if (tlSelectedId) {
+    const selEv = events.find(e => e.id === tlSelectedId);
+    if (selEv) {
+      const x = 60 + (selEv.ts.getTime() - minTs) / msPerPx;
+      scroll.scrollLeft = Math.max(0, x - scrollW / 2);
+    }
+  } else {
+    // 기본: 가장 최근 이벤트로 스크롤
+    scroll.scrollLeft = Math.max(0, trackW - scrollW - 40);
+  }
+}
+
+// SVG 세션 연결선 (같은 세션 이벤트를 부드러운 베지어로 연결)
+function tlDrawSessionLines(events, minTs, msPerPx, trackW) {
+  const svg = document.getElementById('tl-svg');
+  if (!svg) return;
+  svg.innerHTML = '';
+  svg.setAttribute('width', trackW);
+  svg.setAttribute('height', '184');
+
+  const laneY = { 0: 92 - 28, 1: 92, 2: 92 + 28 };
+  const sessionLanes = {};
+  let laneCounter = 0;
+  const sessionGroups = {};
+
+  events.forEach(ev => {
+    const sid = ev.sessionId || 'default';
+    if (!(sid in sessionLanes)) { sessionLanes[sid] = laneCounter % 3; laneCounter++; }
+    if (!sessionGroups[sid]) sessionGroups[sid] = [];
+    sessionGroups[sid].push({ ev, x: 60 + (ev.ts.getTime() - minTs) / msPerPx, lane: sessionLanes[sid] });
+  });
+
+  Object.entries(sessionGroups).forEach(([sid, pts]) => {
+    if (pts.length < 2) return;
+    const y = laneY[pts[0].lane];
+    for (let i = 0; i < pts.length - 1; i++) {
+      const x1 = pts[i].x, x2 = pts[i + 1].x;
+      const color = pts[i].ev.color;
+      const mx = (x1 + x2) / 2;
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('d', `M${x1},${y} C${mx},${y} ${mx},${y} ${x2},${y}`);
+      path.setAttribute('stroke', color);
+      path.setAttribute('stroke-width', '1');
+      path.setAttribute('stroke-opacity', '0.25');
+      path.setAttribute('fill', 'none');
+      svg.appendChild(path);
+    }
+  });
+}
+
+// ── 이벤트 선택 (타임라인 → 뉴런 맵 동기화) ─────────
+function tlSelectEvent(id) {
+  tlSelectedId = id;
+
+  // 뉴런 맵 포커스
+  const ev = tlFilteredEvents.find(e => e.id === id);
+  if (ev?._node) {
+    focusNode(id);       // 기존 focusNode 함수 재사용
+    pulseNode(id, ev.color);
+  }
+
+  // 선택 바 표시
+  document.getElementById('tl-selected-bar').classList.add('visible');
+  setTimeout(() => document.getElementById('tl-selected-bar').classList.remove('visible'), 1500);
+
+  // 도트 active 상태 갱신
+  document.querySelectorAll('.tl-dot').forEach(d => d.classList.remove('tl-dot-active'));
+  const selDot = document.querySelector(`.tl-event[data-id="${id}"] .tl-dot`);
+  if (selDot) selDot.classList.add('tl-dot-active');
+}
+
+// 뉴런 맵에서 노드 선택 → 타임라인 동기화 (openSidePanel 후크)
+const _origOpenSidePanel = openSidePanel;
+function openSidePanel(n) {
+  _origOpenSidePanel(n);
+  if (tlOpen && n?.id) {
+    tlSelectedId = n.id;
+    tlRender();  // 선택 상태 반영
+  }
+}
+
+// ── 타임라인 토글 ─────────────────────────────────────
+function toggleTimeline() {
+  tlOpen = !tlOpen;
+  const panel  = document.getElementById('timeline-panel');
+  const cvs    = document.getElementById('orbit-canvas');
+  const btn    = document.getElementById('timeline-toggle');
+
+  if (tlOpen) {
+    panel.classList.add('open');
+    btn.classList.add('active');
+    btn.textContent = '⏱ 타임라인 ✓';
+    setTimeout(() => { resize(); tlLoadEvents(); }, 30); // 패널 트랜지션 후 리사이즈
+  } else {
+    closeTimeline();
+  }
+}
+
+function closeTimeline() {
+  tlOpen = false;
+  document.getElementById('timeline-panel').classList.remove('open');
+  const btn = document.getElementById('timeline-toggle');
+  if (btn) { btn.classList.remove('active'); btn.textContent = '⏱ 타임라인'; }
+  tlSelectedId = null;
+  // 캔버스 사이즈 리셋
+  setTimeout(resizeCanvas, 300);
+}
+
+// ── 타임라인 실시간 업데이트 (WebSocket 연동) ──────────
+function tlOnNewEvent() {
+  if (!tlOpen) return;
+  tlLoadEvents();
+}
+
+// ── 눈금 간격 계산 ───────────────────────────────────
+function tlPickTickInterval(spanMs, trackW) {
+  const candidates = [
+    60 * 1000, 5 * 60 * 1000, 15 * 60 * 1000, 30 * 60 * 1000,
+    60 * 60 * 1000, 6 * 60 * 60 * 1000, 24 * 60 * 60 * 1000
+  ];
+  const targetTicks = trackW / 80;
+  for (const c of candidates) {
+    if (spanMs / c <= targetTicks) return c;
+  }
+  return candidates[candidates.length - 1];
+}
+
+function tlFormatTime(d, intervalMs) {
+  if (intervalMs < 60 * 60 * 1000) {
+    return d.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+  } else if (intervalMs < 24 * 60 * 60 * 1000) {
+    return d.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+  } else {
+    return d.toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' });
+  }
+}
+
+// ── 새 이벤트 도착 시 타임라인 도트에 글로우 추가 ────
+function tlFlashNewEvent(nodeId) {
+  if (!tlOpen) return;
+  const el = document.querySelector(`.tl-event[data-id="${nodeId}"] .tl-dot`);
+  if (el) { el.classList.add('tl-dot-new'); setTimeout(() => el.classList.remove('tl-dot-new'), 1500); }
+}
+
+// ── 단축키 L 등록 ─────────────────────────────────────
+(function patchKeyboard() {
+  const origKeyDown = window.onkeydown;
+  document.addEventListener('keydown', e => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    if (e.key === 'l' || e.key === 'L') toggleTimeline();
+  });
+})();
 
 (async () => {
   // 저장된 테마 먼저 복원
