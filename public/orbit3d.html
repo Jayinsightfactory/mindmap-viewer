@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>Orbit AI — 3D 뉴런 맵</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #0d1117; overflow: hidden; font-family: -apple-system, 'Segoe UI', sans-serif; }
+    #canvas3d { display: block; width: 100vw; height: 100vh; }
+
+    /* ── HUD ─────────────────────────────────────────────── */
+    #hud {
+      position: fixed; top: 12px; left: 12px; z-index: 100;
+      display: flex; flex-direction: column; gap: 8px;
+    }
+    .hud-panel {
+      background: rgba(22,27,34,0.88);
+      border: 1px solid #30363d;
+      border-radius: 10px;
+      padding: 10px 14px;
+      backdrop-filter: blur(8px);
+      font-size: 13px;
+      color: #8b949e;
+    }
+    .hud-title { color: #58a6ff; font-weight: 700; font-size: 15px; margin-bottom: 4px; }
+    .stat-row  { display: flex; gap: 16px; margin-top: 4px; }
+    .stat      { text-align: center; }
+    .stat b    { display: block; color: #e6edf3; font-size: 18px; }
+
+    /* ── 컨트롤 힌트 ─────────────────────────────────────── */
+    #controls {
+      position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+      background: rgba(22,27,34,0.8);
+      border: 1px solid #30363d; border-radius: 20px;
+      padding: 8px 20px; font-size: 12px; color: #8b949e;
+      display: flex; gap: 16px;
+    }
+
+    /* ── 노드 툴팁 ──────────────────────────────────────── */
+    #tooltip {
+      position: fixed; pointer-events: none;
+      background: rgba(22,27,34,0.95);
+      border: 1px solid #58a6ff;
+      border-radius: 8px; padding: 10px 14px;
+      font-size: 13px; color: #e6edf3;
+      max-width: 260px; display: none; z-index: 200;
+    }
+    #tooltip .tt-type { color: #8b949e; font-size: 11px; margin-bottom: 4px; }
+    #tooltip .tt-label { font-weight: 600; margin-bottom: 4px; }
+
+    /* ── 2D/3D 전환 버튼 ────────────────────────────────── */
+    #view-toggle {
+      position: fixed; top: 12px; right: 12px; z-index: 100;
+      display: flex; gap: 6px;
+    }
+    .vbtn {
+      background: rgba(22,27,34,0.9); border: 1px solid #30363d;
+      color: #8b949e; border-radius: 8px; padding: 7px 14px;
+      cursor: pointer; font-size: 13px; backdrop-filter: blur(8px);
+      transition: all .15s;
+    }
+    .vbtn:hover, .vbtn.active { border-color: #58a6ff; color: #58a6ff; }
+
+    /* ── 로딩 ───────────────────────────────────────────── */
+    #loading {
+      position: fixed; inset: 0; background: #0d1117;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center; z-index: 999;
+      gap: 16px; color: #8b949e; font-size: 14px;
+    }
+    .spinner {
+      width: 40px; height: 40px; border: 3px solid #30363d;
+      border-top-color: #58a6ff; border-radius: 50%;
+      animation: spin .8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+<div id="loading">
+  <div class="spinner"></div>
+  <span>3D 뉴런 맵 초기화 중...</span>
+</div>
+
+<canvas id="canvas3d"></canvas>
+
+<div id="hud">
+  <div class="hud-panel">
+    <div class="hud-title">⬡ Orbit AI 3D</div>
+    <div class="stat-row">
+      <div class="stat"><b id="h-nodes">0</b>노드</div>
+      <div class="stat"><b id="h-edges">0</b>엣지</div>
+      <div class="stat"><b id="h-fps">0</b>FPS</div>
+    </div>
+  </div>
+</div>
+
+<div id="view-toggle">
+  <button class="vbtn" onclick="location.href='/'">2D 뉴런</button>
+  <button class="vbtn active">3D 뷰</button>
+</div>
+
+<div id="tooltip">
+  <div class="tt-type" id="tt-type"></div>
+  <div class="tt-label" id="tt-label"></div>
+  <div id="tt-extra" style="color:#8b949e;font-size:11px;margin-top:4px"></div>
+</div>
+
+<div id="controls">
+  <span>🖱 드래그: 회전</span>
+  <span>🖱 우클릭: 패닝</span>
+  <span>🖱 휠: 줌</span>
+  <span>더블클릭: 노드 포커스</span>
+</div>
+
+<!-- Three.js CDN -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+<script>
+// ─── 설정 ─────────────────────────────────────────────────────────────────────
+const API        = '';
+const NODE_TYPES = {
+  'user.message':       { color: 0x58a6ff, emissive: 0x1a4a8a },
+  'assistant.response': { color: 0x3fb950, emissive: 0x0d3a1a },
+  'tool.start':         { color: 0xbc8cff, emissive: 0x3a1a6a },
+  'tool.end':           { color: 0x8957e5, emissive: 0x2a0d5a },
+  'tool.error':         { color: 0xf85149, emissive: 0x5a1010 },
+  'file.write':         { color: 0xffa657, emissive: 0x5a3010 },
+  'git.commit':         { color: 0x39d2c0, emissive: 0x0d4a45 },
+  'git.push':           { color: 0x79c0ff, emissive: 0x1a3a5a },
+  'default':            { color: 0x444d56, emissive: 0x111418 },
+};
+
+// ─── Three.js 초기화 ──────────────────────────────────────────────────────────
+const canvas   = document.getElementById('canvas3d');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+
+const scene  = new THREE.Scene();
+scene.background = new THREE.Color(0x0d1117);
+scene.fog = new THREE.Fog(0x0d1117, 80, 300);
+
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+camera.position.set(0, 0, 80);
+
+// ── 조명 ─────────────────────────────────────────────────────────────────────
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.3);
+scene.add(ambientLight);
+
+const pointLight1 = new THREE.PointLight(0x58a6ff, 1.5, 200);
+pointLight1.position.set(50, 50, 50);
+scene.add(pointLight1);
+
+const pointLight2 = new THREE.PointLight(0x3fb950, 1.0, 150);
+pointLight2.position.set(-50, -30, -50);
+scene.add(pointLight2);
+
+// ── 배경 별 파티클 ────────────────────────────────────────────────────────────
+(function createStarField() {
+  const geo = new THREE.BufferGeometry();
+  const count = 2000;
+  const positions = new Float32Array(count * 3);
+  for (let i = 0; i < count * 3; i++) {
+    positions[i] = (Math.random() - 0.5) * 600;
+  }
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  const mat = new THREE.PointsMaterial({ color: 0x8b949e, size: 0.3, transparent: true, opacity: 0.6 });
+  scene.add(new THREE.Points(geo, mat));
+})();
+
+// ─── OrbitControls (인라인 구현 — CDN 없이) ──────────────────────────────────
+class SimpleOrbitControls {
+  constructor(cam, domEl) {
+    this.camera = cam;
+    this.el     = domEl;
+    this.target = new THREE.Vector3();
+    this._spherical = { theta: 0, phi: Math.PI / 2, radius: 80 };
+    this._dragging  = false;
+    this._rDragging = false;
+    this._last      = { x: 0, y: 0 };
+    this._bindEvents();
+  }
+  _bindEvents() {
+    this.el.addEventListener('mousedown',   e => this._onDown(e));
+    this.el.addEventListener('mousemove',   e => this._onMove(e));
+    this.el.addEventListener('mouseup',     () => { this._dragging = false; this._rDragging = false; });
+    this.el.addEventListener('wheel',       e => this._onWheel(e), { passive: true });
+    this.el.addEventListener('dblclick',    e => this._onDblClick(e));
+    this.el.addEventListener('contextmenu', e => e.preventDefault());
+  }
+  _onDown(e) {
+    this._last = { x: e.clientX, y: e.clientY };
+    if (e.button === 2) this._rDragging = true;
+    else                this._dragging  = true;
+  }
+  _onMove(e) {
+    const dx = e.clientX - this._last.x;
+    const dy = e.clientY - this._last.y;
+    this._last = { x: e.clientX, y: e.clientY };
+    if (this._dragging) {
+      this._spherical.theta -= dx * 0.005;
+      this._spherical.phi    = Math.max(0.1, Math.min(Math.PI - 0.1, this._spherical.phi + dy * 0.005));
+    } else if (this._rDragging) {
+      const right = new THREE.Vector3().crossVectors(
+        this.camera.getWorldDirection(new THREE.Vector3()),
+        this.camera.up
+      ).normalize();
+      this.target.addScaledVector(right,  -dx * 0.05);
+      this.target.addScaledVector(this.camera.up, dy * 0.05);
+    }
+    this._update();
+  }
+  _onWheel(e) {
+    this._spherical.radius = Math.max(5, Math.min(400, this._spherical.radius + e.deltaY * 0.1));
+    this._update();
+  }
+  _onDblClick(e) {
+    // 더블클릭한 노드로 카메라 이동
+    const rect = this.el.getBoundingClientRect();
+    const mouse = new THREE.Vector2(
+      ((e.clientX - rect.left) / rect.width)  * 2 - 1,
+      -((e.clientY - rect.top) / rect.height) * 2 + 1
+    );
+    raycaster.setFromCamera(mouse, this.camera);
+    const hits = raycaster.intersectObjects(nodeMeshes);
+    if (hits.length > 0) {
+      const pos = hits[0].object.position;
+      this.target.copy(pos);
+      this._spherical.radius = 20;
+      this._update();
+    }
+  }
+  _update() {
+    const { theta, phi, radius } = this._spherical;
+    this.camera.position.set(
+      this.target.x + radius * Math.sin(phi) * Math.sin(theta),
+      this.target.y + radius * Math.cos(phi),
+      this.target.z + radius * Math.sin(phi) * Math.cos(theta)
+    );
+    this.camera.lookAt(this.target);
+  }
+}
+
+const controls = new SimpleOrbitControls(camera, canvas);
+const raycaster = new THREE.Raycaster();
+
+// ─── 그래프 데이터 ────────────────────────────────────────────────────────────
+let nodes     = [];
+let edges     = [];
+let nodeMeshes = [];
+let edgeLines  = [];
+let nodeMap    = {};    // id → mesh
+
+// 3D Force Layout (간단한 반발/인력 시뮬레이션)
+let positions3d = {};  // id → {x,y,z,vx,vy,vz}
+
+function initPositions(nodeList) {
+  nodeList.forEach(n => {
+    if (!positions3d[n.id]) {
+      positions3d[n.id] = {
+        x: (Math.random() - 0.5) * 60,
+        y: (Math.random() - 0.5) * 60,
+        z: (Math.random() - 0.5) * 60,
+        vx: 0, vy: 0, vz: 0,
+      };
+    }
+  });
+}
+
+// Force simulation step
+function stepForce(nodeList, edgeList) {
+  const k    = 8;   // ideal edge length
+  const rep  = 400; // repulsion
+  const damp = 0.85;
+
+  // 반발력
+  for (let i = 0; i < nodeList.length; i++) {
+    for (let j = i + 1; j < nodeList.length; j++) {
+      const a = positions3d[nodeList[i].id];
+      const b = positions3d[nodeList[j].id];
+      if (!a || !b) continue;
+      const dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z;
+      const dist = Math.sqrt(dx*dx + dy*dy + dz*dz) || 0.01;
+      const force = rep / (dist * dist);
+      a.vx += dx / dist * force * 0.01;
+      a.vy += dy / dist * force * 0.01;
+      a.vz += dz / dist * force * 0.01;
+      b.vx -= dx / dist * force * 0.01;
+      b.vy -= dy / dist * force * 0.01;
+      b.vz -= dz / dist * force * 0.01;
+    }
+  }
+
+  // 인력 (엣지)
+  edgeList.forEach(e => {
+    const a = positions3d[e.from || e.source];
+    const b = positions3d[e.to   || e.target];
+    if (!a || !b) return;
+    const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
+    const dist = Math.sqrt(dx*dx + dy*dy + dz*dz) || 0.01;
+    const force = (dist - k) * 0.01;
+    a.vx += dx / dist * force;
+    a.vy += dy / dist * force;
+    a.vz += dz / dist * force;
+    b.vx -= dx / dist * force;
+    b.vy -= dy / dist * force;
+    b.vz -= dz / dist * force;
+  });
+
+  // 위치 업데이트 + 감쇠
+  nodeList.forEach(n => {
+    const p = positions3d[n.id];
+    if (!p) return;
+    p.vx *= damp; p.vy *= damp; p.vz *= damp;
+    p.x += p.vx;  p.y += p.vy;  p.z += p.vz;
+    // 경계 제한
+    const R = 60;
+    if (Math.abs(p.x) > R) { p.x = Math.sign(p.x) * R; p.vx *= -0.5; }
+    if (Math.abs(p.y) > R) { p.y = Math.sign(p.y) * R; p.vy *= -0.5; }
+    if (Math.abs(p.z) > R) { p.z = Math.sign(p.z) * R; p.vz *= -0.5; }
+  });
+}
+
+// ─── 씬 오브젝트 생성 ─────────────────────────────────────────────────────────
+function buildScene(nodeList, edgeList) {
+  // 기존 오브젝트 제거
+  nodeMeshes.forEach(m => scene.remove(m));
+  edgeLines.forEach(l => scene.remove(l));
+  nodeMeshes = []; edgeLines = []; nodeMap = {};
+
+  const MAX_NODES = 300;
+  const visible = nodeList
+    .sort((a, b) => (b.activityScore || 0) - (a.activityScore || 0))
+    .slice(0, MAX_NODES);
+
+  const visSet = new Set(visible.map(n => n.id));
+
+  // ── 노드 메쉬 (Instanced Mesh로 성능 최적화) ─────────────────────────────────
+  // 타입별로 그룹핑하여 Instanced 렌더링
+  const typeGroups = {};
+  visible.forEach(n => {
+    const t = n.type || 'default';
+    if (!typeGroups[t]) typeGroups[t] = [];
+    typeGroups[t].push(n);
+  });
+
+  const sphereGeo = new THREE.SphereGeometry(1, 16, 16);
+
+  Object.entries(typeGroups).forEach(([type, group]) => {
+    const cfg  = NODE_TYPES[type] || NODE_TYPES.default;
+    const mat  = new THREE.MeshPhongMaterial({
+      color:    cfg.color,
+      emissive: cfg.emissive,
+      shininess: 80,
+      transparent: true,
+      opacity: 0.95,
+    });
+    const mesh = new THREE.InstancedMesh(sphereGeo, mat, group.length);
+    mesh.castShadow    = true;
+    mesh.receiveShadow = true;
+
+    const dummy = new THREE.Object3D();
+    group.forEach((n, i) => {
+      const p = positions3d[n.id] || { x: 0, y: 0, z: 0 };
+      const r = 0.8 + Math.min((n.activityScore || 0) * 0.3, 2.0);
+      dummy.position.set(p.x, p.y, p.z);
+      dummy.scale.setScalar(r);
+      dummy.updateMatrix();
+      mesh.setMatrixAt(i, dummy.matrix);
+      // 메타데이터를 userData에 저장 (인덱스 → 노드 id)
+      mesh.userData[i] = n.id;
+    });
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.userData._type  = type;
+    mesh.userData._nodes = group;
+    scene.add(mesh);
+    group.forEach(n => { nodeMap[n.id] = { mesh, type }; });
+    nodeMeshes.push(mesh);
+  });
+
+  // ── 엣지 라인 ────────────────────────────────────────────────────────────────
+  const edgeMat = new THREE.LineBasicMaterial({ color: 0x30363d, transparent: true, opacity: 0.4 });
+  const visible10 = edgeList.filter(e => visSet.has(e.from || e.source) && visSet.has(e.to || e.target));
+
+  if (visible10.length > 0) {
+    const points = [];
+    visible10.forEach(e => {
+      const a = positions3d[e.from || e.source];
+      const b = positions3d[e.to   || e.target];
+      if (a && b) {
+        points.push(new THREE.Vector3(a.x, a.y, a.z));
+        points.push(new THREE.Vector3(b.x, b.y, b.z));
+      }
+    });
+    if (points.length > 0) {
+      const geo  = new THREE.BufferGeometry().setFromPoints(points);
+      const line = new THREE.LineSegments(geo, edgeMat);
+      scene.add(line);
+      edgeLines.push(line);
+    }
+  }
+
+  document.getElementById('h-nodes').textContent = visible.length;
+  document.getElementById('h-edges').textContent = visible10.length;
+}
+
+// ─── 그래프 데이터 로드 ───────────────────────────────────────────────────────
+async function loadGraph() {
+  try {
+    const res  = await fetch(`${API}/api/graph`);
+    const data = await res.json();
+    nodes = data.nodes || [];
+    edges = data.edges || [];
+    initPositions(nodes);
+    buildScene(nodes, edges);
+    document.getElementById('loading').style.display = 'none';
+  } catch (err) {
+    document.getElementById('loading').innerHTML =
+      `<div style="color:#f85149">⚠ 서버 연결 실패<br><small>${err.message}</small></div>`;
+  }
+}
+
+// ─── 실시간 WebSocket ─────────────────────────────────────────────────────────
+function connectWS() {
+  const wsUrl = `ws://${location.host}`;
+  const ws    = new WebSocket(wsUrl);
+  ws.onmessage = (ev) => {
+    try {
+      const msg = JSON.parse(ev.data);
+      if (msg.type === 'new_event' || msg.type === 'graph_update') {
+        loadGraph();
+      }
+    } catch {}
+  };
+  ws.onclose = () => setTimeout(connectWS, 3000);
+}
+
+// ─── 씬 업데이트 루프 (force simulation) ─────────────────────────────────────
+let _forceSteps = 0;
+let _lastTime   = 0;
+let _fps        = 0;
+
+function updateNodePositions() {
+  const dummy = new THREE.Object3D();
+  nodeMeshes.forEach(mesh => {
+    const group = mesh.userData._nodes || [];
+    group.forEach((n, i) => {
+      const p = positions3d[n.id];
+      if (!p) return;
+      const r = 0.8 + Math.min((n.activityScore || 0) * 0.3, 2.0);
+      dummy.position.set(p.x, p.y, p.z);
+      dummy.scale.setScalar(r);
+      dummy.updateMatrix();
+      mesh.setMatrixAt(i, dummy.matrix);
+    });
+    mesh.instanceMatrix.needsUpdate = true;
+  });
+
+  // 엣지 재구성 (위치가 바뀌므로)
+  if (edgeLines.length > 0) {
+    const line  = edgeLines[0];
+    const visSet = new Set(nodes.slice(0, 300).map(n => n.id));
+    const pts  = [];
+    edges.filter(e => visSet.has(e.from || e.source) && visSet.has(e.to || e.target)).forEach(e => {
+      const a = positions3d[e.from || e.source];
+      const b = positions3d[e.to   || e.target];
+      if (a && b) {
+        pts.push(a.x, a.y, a.z, b.x, b.y, b.z);
+      }
+    });
+    if (pts.length > 0) {
+      line.geometry.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+      line.geometry.attributes.position.needsUpdate = true;
+    }
+  }
+}
+
+// ── 뉴럴 펄스 파티클 (엣지 위를 이동하는 빛 점) ─────────────────────────────
+const pulseGeo = new THREE.BufferGeometry();
+const MAX_PULSES = 50;
+const pulsePts  = new Float32Array(MAX_PULSES * 3);
+pulseGeo.setAttribute('position', new THREE.BufferAttribute(pulsePts, 3));
+const pulseMat  = new THREE.PointsMaterial({ color: 0x58a6ff, size: 1.2, transparent: true, opacity: 0.9 });
+const pulseObj  = new THREE.Points(pulseGeo, pulseMat);
+scene.add(pulseObj);
+
+let pulseT = 0;
+function updatePulses() {
+  pulseT += 0.008;
+  const visEdges = edges.slice(0, MAX_PULSES);
+  visEdges.forEach((e, i) => {
+    const a = positions3d[e.from || e.source];
+    const b = positions3d[e.to   || e.target];
+    if (!a || !b) { pulsePts[i*3]=0; pulsePts[i*3+1]=9999; pulsePts[i*3+2]=0; return; }
+    const t = (pulseT * 0.5 + i * 0.13) % 1;
+    pulsePts[i*3]   = a.x + (b.x - a.x) * t;
+    pulsePts[i*3+1] = a.y + (b.y - a.y) * t;
+    pulsePts[i*3+2] = a.z + (b.z - a.z) * t;
+  });
+  pulseGeo.attributes.position.needsUpdate = true;
+}
+
+// ─── 툴팁 (마우스 호버) ──────────────────────────────────────────────────────
+const tooltip  = document.getElementById('tooltip');
+const mouse2d  = new THREE.Vector2();
+
+canvas.addEventListener('mousemove', e => {
+  const rect = canvas.getBoundingClientRect();
+  mouse2d.set(
+    ((e.clientX - rect.left) / rect.width)  * 2 - 1,
+    -((e.clientY - rect.top) / rect.height) * 2 + 1
+  );
+  raycaster.setFromCamera(mouse2d, camera);
+  const hits = raycaster.intersectObjects(nodeMeshes);
+  if (hits.length > 0) {
+    const mesh  = hits[0].object;
+    const idx   = hits[0].instanceId;
+    const nid   = mesh.userData[idx];
+    const node  = nodes.find(n => n.id === nid);
+    if (node) {
+      document.getElementById('tt-type').textContent  = node.type;
+      document.getElementById('tt-label').textContent = node.label || node.id;
+      document.getElementById('tt-extra').textContent =
+        `활동점수: ${(node.activityScore || 0).toFixed(1)}  |  연결: ${node.edges || 0}`;
+      tooltip.style.display = 'block';
+      tooltip.style.left    = (e.clientX + 14) + 'px';
+      tooltip.style.top     = (e.clientY - 10) + 'px';
+    }
+  } else {
+    tooltip.style.display = 'none';
+  }
+});
+
+// ─── 메인 애니메이션 루프 ─────────────────────────────────────────────────────
+function animate(now) {
+  requestAnimationFrame(animate);
+
+  // FPS 계산
+  const dt  = now - _lastTime;
+  _lastTime = now;
+  _fps = Math.round(1000 / (dt || 16));
+  if (now % 500 < 16) document.getElementById('h-fps').textContent = _fps;
+
+  // Force simulation (처음 200프레임만 집중적으로, 이후 10프레임마다)
+  if (_forceSteps < 200 || _forceSteps % 10 === 0) {
+    stepForce(nodes, edges);
+    updateNodePositions();
+  }
+  _forceSteps++;
+
+  updatePulses();
+
+  // 조명 회전 (살아있는 느낌)
+  const t = now * 0.0003;
+  pointLight1.position.set(50 * Math.cos(t), 50, 50 * Math.sin(t));
+
+  renderer.render(scene, camera);
+}
+
+// ─── 리사이즈 ─────────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ─── 시작 ─────────────────────────────────────────────────────────────────────
+loadGraph();
+connectWS();
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>
