@@ -25,6 +25,12 @@ const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const GitHubStrategy = require('passport-github2').Strategy;
 const crypto         = require('crypto');
 
+// Kakao/Naver는 패키지가 없을 수도 있으므로 동적 require
+let KakaoStrategy = null;
+let NaverStrategy = null;
+try { KakaoStrategy = require('passport-kakao').default || require('passport-kakao'); } catch {}
+try { NaverStrategy = require('passport-naver-v2').default || require('passport-naver-v2'); } catch {}
+
 // ─── 토큰 생성 (src/auth.js 방식과 동일) ─────────────────────────────────────
 function generateToken() {
   return crypto.randomBytes(24).toString('hex');
@@ -101,6 +107,61 @@ function initOAuthStrategies(db) {
     enabledProviders.push('github');
   }
 
+  // ── Kakao ───────────────────────────────────────────────────────────────────
+  if (KakaoStrategy && process.env.KAKAO_CLIENT_ID) {
+    passport.use(new KakaoStrategy(
+      {
+        clientID:     process.env.KAKAO_CLIENT_ID,
+        clientSecret: process.env.KAKAO_CLIENT_SECRET || '',
+        callbackURL:  process.env.OAUTH_CALLBACK_BASE
+          ? `${process.env.OAUTH_CALLBACK_BASE}/api/auth/kakao/callback`
+          : '/api/auth/kakao/callback',
+      },
+      async (_accessToken, _refreshToken, profile, done) => {
+        try {
+          const kakaoAccount = profile._json?.kakao_account;
+          const email = kakaoAccount?.email || `kakao_${profile.id}@oauth.local`;
+          const user  = await db.upsertOAuthUser({
+            provider:   'kakao',
+            providerId: String(profile.id),
+            email,
+            name:       profile.displayName || profile.username || email.split('@')[0],
+            avatar:     profile._json?.properties?.thumbnail_image || null,
+          });
+          done(null, user);
+        } catch (err) { done(err); }
+      }
+    ));
+    enabledProviders.push('kakao');
+  }
+
+  // ── Naver ───────────────────────────────────────────────────────────────────
+  if (NaverStrategy && process.env.NAVER_CLIENT_ID && process.env.NAVER_CLIENT_SECRET) {
+    passport.use(new NaverStrategy(
+      {
+        clientID:     process.env.NAVER_CLIENT_ID,
+        clientSecret: process.env.NAVER_CLIENT_SECRET,
+        callbackURL:  process.env.OAUTH_CALLBACK_BASE
+          ? `${process.env.OAUTH_CALLBACK_BASE}/api/auth/naver/callback`
+          : '/api/auth/naver/callback',
+      },
+      async (_accessToken, _refreshToken, profile, done) => {
+        try {
+          const email = profile.email || `naver_${profile.id}@oauth.local`;
+          const user  = await db.upsertOAuthUser({
+            provider:   'naver',
+            providerId: String(profile.id),
+            email,
+            name:       profile.name || profile.nickname || email.split('@')[0],
+            avatar:     profile.profileImage || null,
+          });
+          done(null, user);
+        } catch (err) { done(err); }
+      }
+    ));
+    enabledProviders.push('naver');
+  }
+
   // Passport 세션 직렬화 (userId만 저장)
   passport.serializeUser((user, done) => done(null, user.id));
   passport.deserializeUser(async (id, done) => {
@@ -133,8 +194,10 @@ function createOAuthRouter({ passport, enabledProviders, insertToken, CLIENT_ORI
   router.get('/oauth/status', (_req, res) => {
     res.json({
       enabledProviders,
-      google: enabledProviders.includes('google'),
-      github: enabledProviders.includes('github'),
+      google:  enabledProviders.includes('google'),
+      github:  enabledProviders.includes('github'),
+      kakao:   enabledProviders.includes('kakao'),
+      naver:   enabledProviders.includes('naver'),
     });
   });
 
@@ -176,6 +239,40 @@ function createOAuthRouter({ passport, enabledProviders, insertToken, CLIENT_ORI
   } else {
     router.get('/github', (_req, res) =>
       res.status(501).json({ error: 'GitHub OAuth not configured. Set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET.' })
+    );
+  }
+
+  // ── Kakao 로그인 ─────────────────────────────────────────────────────────────
+  if (enabledProviders.includes('kakao')) {
+    router.get('/kakao', passport.authenticate('kakao', { session: false }));
+    router.get('/kakao/callback',
+      passport.authenticate('kakao', { session: false, failureRedirect: `${origin}/?oauth_error=kakao_failed` }),
+      async (req, res) => {
+        const token = generateToken();
+        await insertToken(req.user.id, token);
+        res.redirect(`${origin}/?oauth_token=${token}&provider=kakao`);
+      }
+    );
+  } else {
+    router.get('/kakao', (_req, res) =>
+      res.status(501).json({ error: 'Kakao OAuth not configured. Set KAKAO_CLIENT_ID.' })
+    );
+  }
+
+  // ── Naver 로그인 ─────────────────────────────────────────────────────────────
+  if (enabledProviders.includes('naver')) {
+    router.get('/naver', passport.authenticate('naver', { session: false }));
+    router.get('/naver/callback',
+      passport.authenticate('naver', { session: false, failureRedirect: `${origin}/?oauth_error=naver_failed` }),
+      async (req, res) => {
+        const token = generateToken();
+        await insertToken(req.user.id, token);
+        res.redirect(`${origin}/?oauth_token=${token}&provider=naver`);
+      }
+    );
+  } else {
+    router.get('/naver', (_req, res) =>
+      res.status(501).json({ error: 'Naver OAuth not configured. Set NAVER_CLIENT_ID and NAVER_CLIENT_SECRET.' })
     );
   }
 

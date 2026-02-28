@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>개인정보 처리방침 — Orbit AI</title>
+  <style>
+    :root {
+      --bg:     #0d1117;
+      --surface:#161b22;
+      --border: #30363d;
+      --text:   #e6edf3;
+      --muted:  #8b949e;
+      --blue:   #58a6ff;
+      --green:  #3fb950;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, 'Segoe UI', sans-serif;
+      line-height: 1.7;
+      padding: 0 16px 80px;
+    }
+    header {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 40px 0 24px;
+      border-bottom: 1px solid var(--border);
+    }
+    header a {
+      color: var(--blue);
+      text-decoration: none;
+      font-size: 14px;
+    }
+    header h1 { margin-top: 16px; font-size: 28px; }
+    header p  { color: var(--muted); font-size: 14px; margin-top: 6px; }
+    main {
+      max-width: 800px;
+      margin: 0 auto;
+      padding-top: 32px;
+    }
+    h2 {
+      font-size: 18px;
+      color: var(--blue);
+      margin: 40px 0 12px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border);
+    }
+    h3 { font-size: 15px; margin: 20px 0 8px; color: var(--green); }
+    p  { margin-bottom: 12px; color: #cdd9e5; }
+    ul { padding-left: 20px; margin-bottom: 12px; }
+    li { margin-bottom: 6px; color: #cdd9e5; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 16px 0 24px;
+      font-size: 14px;
+    }
+    th, td {
+      padding: 10px 14px;
+      border: 1px solid var(--border);
+      text-align: left;
+    }
+    th { background: var(--surface); color: var(--muted); font-weight: 600; }
+    td { color: #cdd9e5; }
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .badge-green { background: #1a3a24; color: var(--green); }
+    .badge-blue  { background: #0d2a47; color: var(--blue); }
+    .badge-red   { background: #3a1a1a; color: #f85149; }
+    .callout {
+      background: var(--surface);
+      border-left: 3px solid var(--blue);
+      padding: 14px 18px;
+      border-radius: 0 8px 8px 0;
+      margin: 16px 0;
+      font-size: 14px;
+      color: #cdd9e5;
+    }
+    .updated {
+      color: var(--muted);
+      font-size: 13px;
+      margin-bottom: 4px;
+    }
+    footer {
+      max-width: 800px;
+      margin: 60px auto 0;
+      padding-top: 24px;
+      border-top: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 13px;
+      display: flex;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    footer a { color: var(--blue); text-decoration: none; }
+  </style>
+</head>
+<body>
+
+<header>
+  <a href="/">← Orbit AI로 돌아가기</a>
+  <h1>개인정보 처리방침</h1>
+  <p class="updated">시행일: 2026년 2월 28일 &nbsp;|&nbsp; 최종 수정: 2026년 2월 28일</p>
+  <p>Orbit AI(이하 "서비스")는 개인정보보호법, 정보통신망법 등 관련 법령을 준수하며 이용자의 개인정보를 보호합니다.</p>
+</header>
+
+<main>
+
+  <h2>1. 수집하는 개인정보 항목 및 수집 방법</h2>
+
+  <h3>가. 회원가입 시 수집 항목</h3>
+  <table>
+    <tr><th>항목</th><th>필수/선택</th><th>수집 목적</th></tr>
+    <tr><td>이메일 주소</td><td><span class="badge badge-red">필수</span></td><td>계정 식별, 로그인</td></tr>
+    <tr><td>비밀번호 (해시)</td><td><span class="badge badge-red">필수</span></td><td>인증 (bcrypt 해시 저장, 원문 미저장)</td></tr>
+    <tr><td>이름(닉네임)</td><td><span class="badge badge-blue">선택</span></td><td>프로필 표시</td></tr>
+  </table>
+
+  <h3>나. 소셜 로그인(OAuth) 시 수집 항목</h3>
+  <table>
+    <tr><th>제공자</th><th>수집 항목</th><th>비고</th></tr>
+    <tr><td>Google</td><td>이메일, 이름, 프로필 이미지</td><td>Google 정책 준수</td></tr>
+    <tr><td>GitHub</td><td>이메일, 사용자명, 프로필 이미지</td><td>GitHub 정책 준수</td></tr>
+    <tr><td>카카오</td><td>이메일(선택 동의), 닉네임, 프로필 이미지</td><td>카카오 정책 준수</td></tr>
+    <tr><td>네이버</td><td>이메일, 이름, 프로필 이미지</td><td>네이버 정책 준수</td></tr>
+  </table>
+
+  <h3>다. 서비스 이용 중 자동 수집</h3>
+  <ul>
+    <li>AI 도구 사용 이벤트 (Claude Code, Cursor 등이 로컬에서 전송한 이벤트 데이터)</li>
+    <li>서비스 접속 로그 (IP 주소, 접속 시간, 브라우저 정보)</li>
+    <li>쿠키 및 세션 정보</li>
+  </ul>
+
+  <div class="callout">
+    💡 <strong>중요:</strong> AI 작업 이벤트 데이터는 기본적으로 사용자의 로컬 서버에만 저장됩니다. 클라우드 버전을 사용하는 경우에만 당사 서버로 전송됩니다.
+  </div>
+
+  <h2>2. 개인정보의 수집 및 이용 목적</h2>
+  <ul>
+    <li><strong>서비스 제공:</strong> 회원 인증, AI 작업 추적 및 시각화, 리포트 생성</li>
+    <li><strong>서비스 개선:</strong> 이용 패턴 분석, 버그 수정, 새 기능 개발</li>
+    <li><strong>고객 지원:</strong> 문의 응대, 공지사항 전달</li>
+    <li><strong>법적 의무 이행:</strong> 관련 법령에 따른 기록 보존</li>
+  </ul>
+
+  <h2>3. 개인정보의 보유 및 이용 기간</h2>
+  <table>
+    <tr><th>정보 유형</th><th>보유 기간</th><th>근거</th></tr>
+    <tr><td>회원 계정 정보</td><td>탈퇴 후 즉시 삭제 (단, 법령 보존 기간 예외)</td><td>개인정보보호법</td></tr>
+    <tr><td>AI 이벤트 데이터</td><td>회원 탈퇴 시 또는 명시적 삭제 요청 시</td><td>서비스 이용 계약</td></tr>
+    <tr><td>접속 로그</td><td>3개월</td><td>정보통신망법 제22조</td></tr>
+    <tr><td>결제 기록</td><td>5년</td><td>전자상거래법 제6조</td></tr>
+    <tr><td>감사 로그</td><td>Enterprise 계약 기간 + 1년</td><td>서비스 계약</td></tr>
+  </table>
+
+  <h2>4. 개인정보의 제3자 제공</h2>
+  <p>Orbit AI는 원칙적으로 이용자의 개인정보를 외부에 제공하지 않습니다. 단, 다음의 경우는 예외입니다:</p>
+  <ul>
+    <li>이용자가 사전에 동의한 경우</li>
+    <li>법령에 의거하거나, 수사 목적으로 법령에 정해진 절차와 방법에 따라 수사기관의 요구가 있는 경우</li>
+  </ul>
+
+  <h3>결제 처리</h3>
+  <p>유료 서비스 결제 시 토스페이먼츠(주)에 최소한의 결제 정보가 전달됩니다. 카드 정보는 당사 서버에 저장되지 않습니다.</p>
+
+  <h2>5. 개인정보의 처리 위탁</h2>
+  <table>
+    <tr><th>수탁업체</th><th>위탁 업무</th><th>보유 기간</th></tr>
+    <tr><td>토스페이먼츠(주)</td><td>결제 처리</td><td>결제 완료 후 5년</td></tr>
+    <tr><td>클라우드 인프라 제공사</td><td>서버 호스팅, 데이터 보관</td><td>서비스 종료 시까지</td></tr>
+  </table>
+
+  <h2>6. 이용자의 권리와 행사 방법</h2>
+  <p>이용자는 언제든지 다음의 권리를 행사할 수 있습니다:</p>
+  <ul>
+    <li><strong>열람권:</strong> 자신의 개인정보 처리 현황 확인</li>
+    <li><strong>정정·삭제권:</strong> 부정확하거나 불필요한 개인정보 수정/삭제</li>
+    <li><strong>처리정지권:</strong> 개인정보 처리의 일시 정지 요청</li>
+    <li><strong>이동권:</strong> 자신의 데이터를 기계가 읽을 수 있는 형식으로 내보내기 요청</li>
+  </ul>
+  <p>권리 행사는 <code>GET /api/auth/me</code> 또는 고객센터를 통해 할 수 있습니다.</p>
+
+  <h2>7. 쿠키(Cookie) 정책</h2>
+  <p>Orbit AI는 세션 유지를 위한 필수 쿠키만 사용합니다. 마케팅, 추적 목적의 제3자 쿠키는 사용하지 않습니다.</p>
+  <table>
+    <tr><th>쿠키명</th><th>목적</th><th>만료</th></tr>
+    <tr><td>orbit_session</td><td>OAuth 로그인 임시 세션</td><td>10분 (OAuth 완료 후 삭제)</td></tr>
+    <tr><td>orbit_token</td><td>인증 토큰 (선택적 저장)</td><td>30일</td></tr>
+  </table>
+
+  <h2>8. 개인정보의 안전성 확보 조치</h2>
+  <ul>
+    <li><strong>암호화:</strong> 비밀번호는 bcrypt(cost factor 12) 해시로만 저장, 원문 미보관</li>
+    <li><strong>전송 암호화:</strong> HTTPS/TLS 1.2 이상 적용 (배포 환경)</li>
+    <li><strong>접근 통제:</strong> 인증된 사용자만 자신의 데이터 접근 가능</li>
+    <li><strong>감사 로그:</strong> HMAC 서명 기반 감사 로그로 무결성 검증</li>
+    <li><strong>최소 권한:</strong> 컨테이너 비루트 사용자(orbit) 실행</li>
+    <li><strong>Rate Limiting:</strong> API 요청 제한으로 무차별 대입 공격 방어</li>
+  </ul>
+
+  <h2>9. 만 14세 미만 아동의 개인정보</h2>
+  <p>Orbit AI는 만 14세 미만 아동을 대상으로 하지 않으며, 만 14세 미만 아동의 개인정보를 의도적으로 수집하지 않습니다. 만 14세 미만 아동이 서비스에 가입한 것을 인지하게 될 경우, 해당 계정과 정보를 즉시 삭제합니다.</p>
+
+  <h2>10. 개인정보 보호책임자</h2>
+  <table>
+    <tr><th>항목</th><th>내용</th></tr>
+    <tr><td>성명</td><td>Orbit AI 운영팀</td></tr>
+    <tr><td>이메일</td><td>privacy@orbit-ai.dev (예시)</td></tr>
+    <tr><td>처리 기간</td><td>접수 후 10영업일 이내</td></tr>
+  </table>
+
+  <h2>11. 개인정보 처리방침 변경</h2>
+  <p>본 방침은 법령 및 서비스 정책 변경에 따라 개정될 수 있습니다. 변경 시 서비스 내 공지사항 또는 이메일로 7일 전 사전 공지합니다.</p>
+
+  <div class="callout">
+    🇬🇧 <strong>GDPR (EU 이용자):</strong> EU 거주 이용자는 위의 권리에 더해 처리에 대한 이의 제기권, 자동화된 의사결정 거부권을 가집니다. DPA(데이터 처리 계약) 요청은 위 이메일로 문의하십시오.
+  </div>
+
+</main>
+
+<footer>
+  <span>© 2026 Orbit AI. All rights reserved.</span>
+  <span>
+    <a href="/">홈</a> &nbsp;·&nbsp;
+    <a href="/privacy.html">개인정보처리방침</a> &nbsp;·&nbsp;
+    <a href="/terms.html">이용약관</a>
+  </span>
+</footer>
+
+</body>
+</html>
