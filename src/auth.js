@@ -44,12 +44,19 @@ if (db) {
       id           TEXT PRIMARY KEY,
       email        TEXT UNIQUE NOT NULL,
       name         TEXT,
-      passwordHash TEXT NOT NULL,
+      passwordHash TEXT NOT NULL DEFAULT '',
       plan         TEXT DEFAULT 'free',
+      provider     TEXT DEFAULT 'local',
+      providerId   TEXT,
+      avatar       TEXT,
       createdAt    TEXT DEFAULT (datetime('now')),
       lastLoginAt  TEXT,
       settings     TEXT DEFAULT '{}'
     );
+
+    -- OAuth 계정 연동 시 컬럼이 없으면 추가 (기존 DB 마이그레이션)
+    -- better-sqlite3는 ALTER TABLE ADD COLUMN을 지원
+
 
     CREATE TABLE IF NOT EXISTS tokens (
       token      TEXT PRIMARY KEY,
@@ -207,6 +214,49 @@ function upgradePlan(userId, plan) {
   return true;
 }
 
+// ─── OAuth upsert ──────────────────────────────────────────────────────────
+
+/**
+ * OAuth 로그인 시 사용자를 생성하거나 업데이트합니다.
+ * email이 이미 존재하면 provider/providerId/avatar를 업데이트합니다.
+ *
+ * @param {{ provider, providerId, email, name, avatar }} profile
+ * @returns {User}
+ */
+function upsertOAuthUser({ provider, providerId, email, name, avatar }) {
+  if (!db) throw new Error('DB not available');
+
+  // 기존 컬럼 확인 후 마이그레이션
+  try {
+    db.exec(`ALTER TABLE users ADD COLUMN provider   TEXT DEFAULT 'local'`);
+  } catch {}
+  try {
+    db.exec(`ALTER TABLE users ADD COLUMN providerId TEXT`);
+  } catch {}
+  try {
+    db.exec(`ALTER TABLE users ADD COLUMN avatar     TEXT`);
+  } catch {}
+
+  const existing = db.prepare(
+    `SELECT * FROM users WHERE email = ? OR (provider = ? AND providerId = ?)`
+  ).get(email.toLowerCase(), provider, String(providerId));
+
+  if (existing) {
+    db.prepare(`
+      UPDATE users SET provider=?, providerId=?, avatar=?, lastLoginAt=datetime('now') WHERE id=?
+    `).run(provider, String(providerId), avatar || existing.avatar, existing.id);
+    return sanitizeUser(db.prepare('SELECT * FROM users WHERE id=?').get(existing.id));
+  }
+
+  const id = ulid();
+  db.prepare(`
+    INSERT INTO users (id, email, name, passwordHash, provider, providerId, avatar)
+    VALUES (?, ?, ?, '', ?, ?, ?)
+  `).run(id, email.toLowerCase(), name || email.split('@')[0], provider, String(providerId), avatar || null);
+
+  return sanitizeUser(db.prepare('SELECT * FROM users WHERE id=?').get(id));
+}
+
 // ─── Express 미들웨어 ────────────────────────────
 function authMiddleware(req, res, next) {
   if (!db || process.env.AUTH_DISABLED === '1') {
@@ -234,6 +284,6 @@ function optionalAuth(req, res, next) {
 
 module.exports = {
   register, login, verifyToken, issueApiToken,
-  getUserById, getUserByEmail, upgradePlan,
+  getUserById, getUserByEmail, upgradePlan, upsertOAuthUser,
   authMiddleware, optionalAuth,
 };

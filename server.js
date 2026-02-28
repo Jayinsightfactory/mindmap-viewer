@@ -62,7 +62,8 @@ const { detectConflicts, checkNewEvent } = require('./src/conflict-detector');
 const { appendAuditLog, auditFromEvents, queryAuditLog, verifyIntegrity, renderAuditHtml } = require('./src/audit-log');
 const { detectShadowAI, checkEventForShadow, getApprovedSources, addApprovedSource, removeApprovedSource } = require('./src/shadow-ai-detector');
 const { getAllThemes, getThemeById, registerTheme, recordDownload, rateTheme, deleteUserTheme } = require('./src/theme-store');
-const { register: authRegister, login: authLogin, verifyToken } = require('./src/auth');
+const { register: authRegister, login: authLogin, verifyToken, issueApiToken, getUserById, upsertOAuthUser } = require('./src/auth');
+const { initOAuthStrategies, createOAuthRouter } = require('./src/auth-oauth');
 const { PLANS, createPayment, confirmPayment, MOCK_MODE: paymentMockMode } = require('./src/payment');
 const { analyzeAndSuggest, saveFeedback, getSuggestions, getPatterns, getMarketCandidates } = require('./src/growth-engine');
 const solutionStore  = require('./src/solution-store');
@@ -80,6 +81,8 @@ const createAuthRouter       = require('./routes/auth');
 const createPaymentRouter    = require('./routes/payment');
 const createGrowthRouter     = require('./routes/growth');
 const createCommunityRouter  = require('./routes/community');
+const createGitRouter        = require('./routes/git');
+const createAvatarsRouter    = require('./routes/avatars');
 
 // ─── 상수 ────────────────────────────────────────────────────────────────────
 const PORT         = process.env.PORT ? parseInt(process.env.PORT) : 4747;
@@ -150,6 +153,23 @@ app.use('/api/', apiLimiter);
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
+
+// ─── OAuth 초기화 ─────────────────────────────────────────────────────────────
+const session = require('express-session');
+app.use(session({
+  secret:            process.env.SESSION_SECRET || 'orbit-session-' + Math.random(),
+  resave:            false,
+  saveUninitialized: false,
+  cookie: { secure: process.env.NODE_ENV === 'production', maxAge: 10 * 60 * 1000 },
+}));
+
+const { passport: oauthPassport, enabledProviders } = initOAuthStrategies({
+  upsertOAuthUser,
+  getUserById,
+  insertToken: issueApiToken,
+});
+app.use(oauthPassport.initialize());
+app.use(oauthPassport.session());
 
 // ─── 그래프 빌드 헬퍼 ────────────────────────────────────────────────────────
 
@@ -546,6 +566,15 @@ app.use('/api', createAuthRouter({
   auth: { register: authRegister, login: authLogin, verifyToken },
 }));
 
+// OAuth 소셜 로그인 (Google, GitHub)
+const oauthRouter = createOAuthRouter({
+  passport:  oauthPassport,
+  enabledProviders,
+  insertToken: issueApiToken,
+  CLIENT_ORIGIN: process.env.CLIENT_ORIGIN || `http://localhost:${PORT}`,
+});
+app.use('/api/auth', oauthRouter);
+
 app.use('/api', createPaymentRouter({
   payment: { PLANS, createPayment, confirmPayment, MOCK_MODE: paymentMockMode },
 }));
@@ -559,6 +588,14 @@ app.use('/api', createGrowthRouter({
 app.use('/api', createCommunityRouter({
   communityStore,
 }));
+
+app.use('/api', createGitRouter({
+  insertEvent,
+  broadcastAll,
+}));
+
+const { authMiddleware, optionalAuth } = require('./src/auth');
+app.use('/api', createAvatarsRouter({ authMiddleware, optionalAuth }));
 
 // ─── JSONL 파일 감시 (레거시 이벤트 소스 지원) ───────────────────────────────
 // /api/hook 를 사용하지 않는 구버전 save-turn.js 호환용
@@ -634,11 +671,35 @@ setInterval(() => {
   }
 }, 10000);
 
+// ─── 인사이트 엔진 ────────────────────────────────────────────────────────────
+const insightEngine = require('./src/insight-engine');
+
+// /api/insights — 최근 인사이트 조회
+app.get('/api/insights', (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+  res.json(insightEngine.getInsights(limit));
+});
+
+// /api/insights/run — 즉시 분석 실행 (POST)
+app.post('/api/insights/run', async (req, res) => {
+  const { analyzeAndSuggest: saveSuggestion } = require('./src/growth-engine');
+  const results = await insightEngine.runOnce({ getAllEvents, saveSuggestion, broadcastAll });
+  res.json({ ok: true, count: results.length, insights: results });
+});
+
 // ─── 서버 시작 ──────────────────────────────────────────────────────────────
 server.listen(PORT, () => {
   const stats = getStats();
   console.log(`\n⬡ Orbit AI v2.0.0`);
   console.log(`   http://localhost:${PORT}`);
   console.log(`   이벤트: ${stats.eventCount}개 | 세션: ${stats.sessionCount}개 | 파일: ${stats.fileCount}개`);
-  console.log(`   감시 파일: ${CONV_FILE}\n`);
+  console.log(`   감시 파일: ${CONV_FILE}`);
+  console.log(`   OAuth: [${enabledProviders.join(', ') || '미설정'}]`);
+  console.log(`   Git hooks 설치: curl http://localhost:${PORT}/api/git/install | bash\n`);
+
+  // 인사이트 엔진 자동 시작 (INSIGHT_DISABLED=1 이면 스킵)
+  if (process.env.INSIGHT_DISABLED !== '1') {
+    const { analyzeAndSuggest: saveSuggestion } = require('./src/growth-engine');
+    insightEngine.start({ getAllEvents, saveSuggestion, broadcastAll });
+  }
 });
