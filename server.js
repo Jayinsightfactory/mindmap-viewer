@@ -26,12 +26,14 @@
 
 'use strict';
 
-const express   = require('express');
-const http      = require('http');
-const WebSocket = require('ws');
-const chokidar  = require('chokidar');
-const fs        = require('fs');
-const path      = require('path');
+const express      = require('express');
+const http         = require('http');
+const WebSocket    = require('ws');
+const chokidar     = require('chokidar');
+const fs           = require('fs');
+const path         = require('path');
+const rateLimit    = require('express-rate-limit');
+const helmet       = require('helmet');
 
 // ─── 의존성 로드 ─────────────────────────────────────────────────────────────
 // DATABASE_URL 있으면 PostgreSQL, 없으면 SQLite 자동 선택
@@ -117,7 +119,36 @@ const app    = express();
 const server = http.createServer(app);
 const wss    = new WebSocket.Server({ server });
 
-app.use(express.json());
+// ─── 보안 미들웨어 ────────────────────────────────────────────────────────────
+// Helmet: X-Frame-Options, X-Content-Type, CSP 등 보안 헤더 자동 설정
+app.use(helmet({
+  contentSecurityPolicy: false,  // orbit.html 인라인 스크립트 허용 (개발 편의)
+  crossOriginEmbedderPolicy: false,
+}));
+
+// Rate Limiting: API 남용 방지 (15분 당 최대 200회)
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 200,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please try again later.' },
+  skip: req => req.path === '/health',  // 헬스체크 제외
+});
+
+// 훅 엔드포인트는 별도 제한 (CI 자동 호출 많음 — 5분 당 500회)
+const hookLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 500,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Hook rate limit exceeded.' },
+});
+
+app.use('/api/hook', hookLimiter);
+app.use('/api/', apiLimiter);
+
+app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ─── 그래프 빌드 헬퍼 ────────────────────────────────────────────────────────
