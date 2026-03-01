@@ -1541,6 +1541,72 @@
   .ep-done-msg  { font-size:13px; font-weight:700; color:#e6edf3; }
   .ep-done-sub  { font-size:11px; color:#6e7681; }
 
+  /* ── LLM 설정 패널 ──────────────────────────────────────────────────────── */
+  #llm-panel {
+    position:fixed; right:14px; top:14px;
+    width:320px; max-height:calc(100vh - 28px);
+    background:rgba(13,17,23,0.98); border:1px solid #21262d;
+    border-radius:14px; backdrop-filter:blur(18px);
+    z-index:9250; display:none; flex-direction:column;
+    overflow:hidden; box-shadow:0 8px 48px rgba(0,0,0,.8);
+    font-family:-apple-system,'Segoe UI',sans-serif;
+  }
+  #llm-panel.open { display:flex; }
+  .lp-hdr  { display:flex; justify-content:space-between; align-items:center;
+    padding:14px 16px 10px; border-bottom:1px solid #21262d; flex-shrink:0; }
+  .lp-title{ font-size:14px; font-weight:700; color:#e6edf3; }
+  .lp-close{ background:none; border:1px solid #30363d; color:#8b949e;
+    border-radius:6px; padding:3px 8px; cursor:pointer; font-size:12px; }
+  .lp-close:hover { border-color:#6e7681; color:#e6edf3; }
+  .lp-body { flex:1; overflow-y:auto; padding:8px 0 12px; }
+
+  /* 프로바이더 행 */
+  .lp-provider { border-bottom:1px solid #21262d; padding:12px 16px; }
+  .lp-prov-hdr { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+  .lp-prov-icon{ font-size:16px; flex-shrink:0; }
+  .lp-prov-name{ font-size:13px; font-weight:600; color:#e6edf3; flex:1; }
+  .lp-prov-desc{ font-size:10px; color:#6e7681; }
+  .lp-toggle   { position:relative; width:34px; height:18px; flex-shrink:0; }
+  .lp-toggle input { opacity:0; width:0; height:0; }
+  .lp-toggle-track { position:absolute; inset:0; background:#21262d; border-radius:9px;
+    cursor:pointer; transition:background .2s; }
+  .lp-toggle input:checked + .lp-toggle-track { background:#238636; }
+  .lp-toggle-track::after { content:''; position:absolute; left:2px; top:2px;
+    width:14px; height:14px; background:#fff; border-radius:50%; transition:transform .2s; }
+  .lp-toggle input:checked + .lp-toggle-track::after { transform:translateX(16px); }
+
+  /* API 키 입력 영역 */
+  .lp-key-row  { display:flex; gap:6px; margin-bottom:6px; }
+  .lp-key-input{ flex:1; background:#161b22; border:1px solid #30363d; color:#cdd9e5;
+    border-radius:6px; padding:6px 10px; font-size:11px; font-family:monospace; }
+  .lp-key-input::placeholder { color:#3d444d; }
+  .lp-key-input:focus { border-color:#58a6ff; outline:none; }
+  .lp-btn-save { background:#238636; color:#fff; border:none; border-radius:6px;
+    padding:6px 10px; font-size:11px; cursor:pointer; white-space:nowrap; }
+  .lp-btn-save:hover { background:#2ea043; }
+  .lp-btn-test { background:#21262d; color:#8b949e; border:1px solid #30363d;
+    border-radius:6px; padding:6px 10px; font-size:11px; cursor:pointer; white-space:nowrap; }
+  .lp-btn-test:hover { color:#e6edf3; border-color:#6e7681; }
+  .lp-btn-del  { background:none; color:#6e7681; border:1px solid #21262d;
+    border-radius:6px; padding:6px 8px; font-size:11px; cursor:pointer; }
+  .lp-btn-del:hover { color:#f85149; border-color:#f85149; }
+
+  /* 모델 선택 */
+  .lp-model-select { width:100%; background:#161b22; border:1px solid #30363d; color:#cdd9e5;
+    border-radius:6px; padding:5px 8px; font-size:11px; cursor:pointer; margin-top:4px; }
+  .lp-model-select:focus { border-color:#58a6ff; outline:none; }
+
+  /* 상태 메시지 */
+  .lp-status    { font-size:11px; padding:3px 0; }
+  .lp-status.ok { color:#3fb950; }
+  .lp-status.err{ color:#f85149; }
+  .lp-status.info{ color:#6e7681; }
+
+  /* Ollama 태그 */
+  .lp-ollama-models { display:flex; flex-wrap:wrap; gap:4px; margin-top:6px; }
+  .lp-model-tag { font-size:10px; background:#21262d; color:#8b949e;
+    border-radius:4px; padding:2px 7px; }
+
   /* ── 적용 토스트 피드백 ─────────────────────────────────────────────────── */
   #apply-toast {
     position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%) translateY(20px);
@@ -1618,6 +1684,7 @@
     <button class="ln-item" onclick="toggleFeatPanel()">📋 기능 목록</button>
     <button class="ln-item" onclick="toggleViewPanel()">👤 내 뷰 설정</button>
     <button class="ln-item" onclick="toggleInsightPanel()">📊 전체 인사이트</button>
+    <button class="ln-item" onclick="openLlmPanel()">🤖 LLM 모델 설정</button>
     <button class="ln-item" onclick="toggleMgrPanel()">👔 관리자 뷰</button>
     <button class="ln-item" onclick="toggleTaskSidebar()">📋 내 작업</button>
     <button class="ln-item" id="ln-orbit-btn" onclick="toggleOrbitAnim()">⏸ 공전 토글</button>
@@ -1746,6 +1813,17 @@
     <div id="ins-dist-list" class="ins-dist-list"></div>
     <div class="ins-section-title">🎯 인사이트</div>
     <div id="ins-kv-list"  class="ins-kv-list"></div>
+  </div>
+</div>
+
+<!-- 🤖 LLM 설정 패널 -->
+<div id="llm-panel">
+  <div class="lp-hdr">
+    <span class="lp-title">🤖 LLM 모델 설정</span>
+    <button class="lp-close" onclick="closeLlmPanel()">✕</button>
+  </div>
+  <div class="lp-body" id="lp-body">
+    <div style="padding:24px;text-align:center;color:#6e7681;font-size:12px;">로딩 중…</div>
   </div>
 </div>
 
@@ -6409,6 +6487,227 @@ function toggleInsightPanel() {
 window.toggleInsightPanel = toggleInsightPanel;
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// 🤖 LLM 설정 패널
+// ═══════════════════════════════════════════════════════════════════════════════
+
+async function openLlmPanel() {
+  const panel = document.getElementById('llm-panel');
+  document.getElementById('insight-panel')?.classList.remove('open');
+  document.getElementById('info-panel')?.classList.remove('open');
+  panel.classList.add('open');
+  await renderLlmPanel();
+}
+function closeLlmPanel() {
+  document.getElementById('llm-panel').classList.remove('open');
+}
+window.openLlmPanel  = openLlmPanel;
+window.closeLlmPanel = closeLlmPanel;
+
+async function renderLlmPanel() {
+  const body = document.getElementById('lp-body');
+  body.innerHTML = `<div style="padding:24px;text-align:center;color:#6e7681;font-size:12px;">로딩 중…</div>`;
+
+  try {
+    const [provResp, ollamaResp] = await Promise.all([
+      fetch('/api/llm-settings/providers').then(r => r.json()),
+      fetch('/api/llm-settings/ollama-models').then(r => r.json()),
+    ]);
+
+    const providers    = provResp.providers || [];
+    const ollamaModels = ollamaResp.models  || [];
+
+    body.innerHTML = providers.map(p => _renderProviderRow(p, ollamaModels)).join('');
+  } catch (e) {
+    body.innerHTML = `<div style="padding:16px;color:#f85149;font-size:12px;">❌ ${escHtml(e.message)}</div>`;
+  }
+}
+window.renderLlmPanel = renderLlmPanel;
+
+function _renderProviderRow(p, ollamaModels) {
+  const isOllama    = p.provider === 'ollama';
+  const modelList   = isOllama ? ollamaModels : (p.models || []);
+  const defaultMod  = p.defaultModel || '';
+
+  // 모델 선택 옵션
+  const modelOpts = isOllama
+    ? (ollamaModels.length
+        ? ollamaModels.map(m =>
+            `<option value="${escHtml(m.id)}" ${m.id===defaultMod?'selected':''}>${escHtml(m.label)}${m.size?' ('+m.size+')':''}</option>`
+          ).join('')
+        : '<option value="">Ollama 실행 안됨</option>')
+    : modelList.map(m =>
+        `<option value="${escHtml(m.id)}" ${m.id===defaultMod?'selected':''}>
+          ${escHtml(m.label)} — ${m.tier||''}
+        </option>`
+      ).join('');
+
+  const enabledAttr = (p.enabled && (isOllama || p.configured)) ? 'checked' : '';
+  const toggleHtml  = isOllama
+    ? `<span style="font-size:10px;color:#3fb950;padding:2px 7px;background:rgba(63,185,80,.1);border-radius:8px;">기본값</span>`
+    : `<label class="lp-toggle">
+         <input type="checkbox" ${enabledAttr} onchange="toggleLlmProvider('${p.provider}', this.checked)">
+         <span class="lp-toggle-track"></span>
+       </label>`;
+
+  const keySection = isOllama ? `
+    <div class="lp-ollama-models">
+      ${ollamaModels.length
+        ? ollamaModels.map(m => `<span class="lp-model-tag">${escHtml(m.label)}</span>`).join('')
+        : '<span style="font-size:10px;color:#6e7681;">Ollama가 실행 중이지 않습니다</span>'}
+    </div>` : `
+    <div class="lp-key-row">
+      <input class="lp-key-input" type="password" id="lp-key-${p.provider}"
+        placeholder="${escHtml(p.keyHint || 'API 키 입력...')}"
+        ${p.configured ? 'value="••••••••"' : ''}>
+      <button class="lp-btn-save" onclick="saveLlmKey('${p.provider}')">저장</button>
+      ${p.configured
+        ? `<button class="lp-btn-del" onclick="deleteLlmKey('${p.provider}')" title="삭제">🗑</button>`
+        : ''}
+    </div>
+    <div style="display:flex;gap:6px;align-items:center;">
+      ${p.configured
+        ? `<button class="lp-btn-test" onclick="testLlmProvider('${p.provider}')">🔌 연결 테스트</button>`
+        : ''}
+      <div class="lp-status info" id="lp-status-${p.provider}">
+        ${p.configured ? '✅ API 키 등록됨' : ''}
+      </div>
+    </div>`;
+
+  return `<div class="lp-provider" id="lp-prov-${p.provider}">
+    <div class="lp-prov-hdr">
+      <span class="lp-prov-icon">${p.icon}</span>
+      <div style="flex:1">
+        <div class="lp-prov-name">${escHtml(p.name)}</div>
+        <div class="lp-prov-desc">${escHtml(p.description || '')}</div>
+      </div>
+      ${toggleHtml}
+    </div>
+    ${keySection}
+    ${modelList.length
+      ? `<select class="lp-model-select" id="lp-model-${p.provider}"
+           onchange="setDefaultLlmModel('${p.provider}', this.value)">
+           ${modelOpts}
+         </select>`
+      : ''}
+  </div>`;
+}
+
+async function saveLlmKey(provider) {
+  const input = document.getElementById(`lp-key-${provider}`);
+  const key   = input?.value?.trim();
+  if (!key || key.startsWith('•')) { showToast('API 키를 입력하세요'); return; }
+
+  const statusEl = document.getElementById(`lp-status-${provider}`);
+  if (statusEl) { statusEl.className = 'lp-status info'; statusEl.textContent = '저장 중…'; }
+
+  try {
+    const model = document.getElementById(`lp-model-${provider}`)?.value;
+    const resp  = await fetch('/api/llm-settings/keys', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider, apiKey: key, defaultModel: model }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error);
+
+    if (statusEl) { statusEl.className = 'lp-status ok'; statusEl.textContent = '✅ 저장됨'; }
+    showToast(`${provider} API 키 저장 완료`);
+    await renderLlmPanel();          // 패널 갱신
+    await loadExecModelOptions();    // exec 선택기 갱신
+  } catch (e) {
+    if (statusEl) { statusEl.className = 'lp-status err'; statusEl.textContent = `❌ ${e.message}`; }
+  }
+}
+window.saveLlmKey = saveLlmKey;
+
+async function deleteLlmKey(provider) {
+  await fetch(`/api/llm-settings/keys/${provider}`, { method: 'DELETE' });
+  showToast(`${provider} API 키 삭제됨`);
+  await renderLlmPanel();
+  await loadExecModelOptions();
+}
+window.deleteLlmKey = deleteLlmKey;
+
+async function toggleLlmProvider(provider, enabled) {
+  await fetch(`/api/llm-settings/keys/${provider}/toggle`, { method: 'PATCH' });
+  await loadExecModelOptions();
+}
+window.toggleLlmProvider = toggleLlmProvider;
+
+async function testLlmProvider(provider) {
+  const statusEl = document.getElementById(`lp-status-${provider}`);
+  if (statusEl) { statusEl.className = 'lp-status info'; statusEl.textContent = '테스트 중…'; }
+  try {
+    const resp = await fetch('/api/llm-settings/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider }),
+    });
+    const data = await resp.json();
+    if (data.ok) {
+      if (statusEl) { statusEl.className = 'lp-status ok'; statusEl.textContent = `✅ 연결됨 — "${data.response?.slice(0,30)}"…`; }
+    } else {
+      throw new Error(data.error);
+    }
+  } catch (e) {
+    if (statusEl) { statusEl.className = 'lp-status err'; statusEl.textContent = `❌ ${e.message.slice(0,60)}`; }
+  }
+}
+window.testLlmProvider = testLlmProvider;
+
+function setDefaultLlmModel(provider, model) {
+  fetch('/api/llm-settings/keys', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ provider, apiKey: '(keep)', defaultModel: model }),
+  }).catch(() => {});
+}
+window.setDefaultLlmModel = setDefaultLlmModel;
+
+// ── exec 패널 모델 선택기 (프로바이더별 그룹) ──────────────────────────────────
+let _execProviders = []; // 캐시
+
+async function loadExecModelOptions() {
+  try {
+    const [provResp, ollamaResp] = await Promise.all([
+      fetch('/api/llm-settings/providers').then(r => r.json()),
+      fetch('/api/llm-settings/ollama-models').then(r => r.json()),
+    ]);
+    _execProviders = provResp.providers || [];
+    const ollamaModels = ollamaResp.models || [];
+
+    const sel = document.getElementById('ep-model-select');
+    if (!sel) return;
+    sel.innerHTML = '';
+
+    _execProviders.forEach(p => {
+      if (!p.enabled && !p.isDynamic && p.provider !== 'ollama') return;
+
+      const grp  = document.createElement('optgroup');
+      grp.label  = `${p.icon} ${p.name}`;
+
+      const mods = p.provider === 'ollama' ? ollamaModels : (p.models || []);
+      if (!mods.length) {
+        const opt  = document.createElement('option');
+        opt.disabled = true;
+        opt.textContent = `(모델 없음)`;
+        grp.appendChild(opt);
+      } else {
+        mods.forEach(m => {
+          const opt   = document.createElement('option');
+          opt.value   = `${p.provider}::${m.id}`;
+          opt.textContent = m.label || m.id;
+          if (m.id === p.defaultModel) opt.selected = true;
+          grp.appendChild(opt);
+        });
+      }
+      sel.appendChild(grp);
+    });
+  } catch {}
+}
+window.loadExecModelOptions = loadExecModelOptions;
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // 🖥️ 실행 패널 — diff 미리보기 → 승인 → 실행 로그
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -6423,9 +6722,15 @@ async function openExecPanel(request) {
   // 다른 패널 닫기
   document.getElementById('insight-panel')?.classList.remove('open');
   document.getElementById('info-panel')?.classList.remove('open');
+  document.getElementById('llm-panel')?.classList.remove('open');
 
   panel.classList.add('open');
   _showExecLoading(`${request.description || request.type} 미리보기 생성 중…`);
+
+  // 모델 선택기 로드 (첫 번째 열기 시)
+  if (!document.getElementById('ep-model-select')?.options.length) {
+    await loadExecModelOptions();
+  }
 
   // AI 연결 상태 확인
   let aiConnected = false;
@@ -6434,12 +6739,17 @@ async function openExecPanel(request) {
     aiConnected = (await r.json()).connected;
   } catch {}
 
-  // 모드 배지 업데이트
+  // 선택된 provider::model 파싱
+  const selVal   = document.getElementById('ep-model-select')?.value || 'ollama::orbit-insight:v1';
+  const [selProvider, selModel] = selVal.includes('::') ? selVal.split('::') : ['ollama', selVal];
+
+  // 모드 배지
   const badge = document.getElementById('ep-mode-badge');
-  if (aiConnected) {
+  if (aiConnected && selProvider === 'ollama') {
     badge.textContent = 'AI 연결됨'; badge.className = 'ep-mode-badge ep-mode-ai';
   } else {
-    badge.textContent = 'Ollama';    badge.className = 'ep-mode-badge ep-mode-ollama';
+    const pIcon = _execProviders.find(p => p.provider === selProvider)?.icon || '🟡';
+    badge.textContent = `${pIcon} ${selProvider}`; badge.className = 'ep-mode-badge ep-mode-ollama';
   }
 
   // generate 요청
@@ -6448,11 +6758,12 @@ async function openExecPanel(request) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        type:       request.type,
-        hash:       request.hash,
-        projectDir: request.projectDir,
-        instruction:request.instruction,
-        model:      document.getElementById('ep-model-select')?.value || 'orbit-insight:v1',
+        type:        request.type,
+        hash:        request.hash,
+        projectDir:  request.projectDir,
+        instruction: request.instruction,
+        provider:    selProvider,
+        model:       selModel,
       }),
     });
     const data = await resp.json();

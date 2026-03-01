@@ -9,11 +9,11 @@
 
 'use strict';
 
-const { Router }     = require('express');
+const { Router }          = require('express');
 const { execSync, spawn } = require('child_process');
-const http           = require('http');
-const crypto         = require('crypto');
-const path           = require('path');
+const crypto              = require('crypto');
+const path                = require('path');
+const { generate }        = require('../src/llm-gateway');
 
 // 승인 대기 중인 명령 임시 저장 (메모리)
 const pendingCmds = new Map(); // id → { type, hash, projectDir, cmds, createdAt }
@@ -49,32 +49,22 @@ function getGitDiff(projectDir, hash) {
   }
 }
 
-/** Ollama에 프롬프트 전송 → 응답 텍스트 반환 */
-function askOllama(prompt, model = 'orbit-insight:v1') {
-  return new Promise((resolve, reject) => {
-    const body = JSON.stringify({
-      model,
-      prompt,
-      stream: false,
-      options: { temperature: 0.2, num_predict: 400 },
-    });
-    const req = http.request(
-      { hostname: 'localhost', port: 11434, path: '/api/generate', method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) } },
-      (res) => {
-        let data = '';
-        res.on('data', c => (data += c));
-        res.on('end', () => {
-          try { resolve(JSON.parse(data).response || ''); }
-          catch { resolve(data); }
-        });
-      }
-    );
-    req.on('error', reject);
-    req.setTimeout(20000, () => { req.destroy(); reject(new Error('Ollama timeout')); });
-    req.write(body);
-    req.end();
-  });
+/** API 키 조회 헬퍼 (llm-settings DB에서) */
+function getApiKey(getDb, provider) {
+  if (provider === 'ollama') return '';
+  try {
+    const db  = getDb?.();
+    if (!db) return '';
+    const row = db.prepare(
+      `SELECT apiKeyEnc FROM user_api_configs WHERE userId='local' AND provider=? AND enabled=1`
+    ).get(provider);
+    if (!row) return '';
+    const RAW = (process.env.ORBIT_ENCRYPTION_KEY || 'orbit-llm-encryption-key-32chars!').slice(0,32).padEnd(32,'0');
+    const crypto2 = require('crypto');
+    const [ivHex, dataHex] = row.apiKeyEnc.split(':');
+    const decipher = crypto2.createDecipheriv('aes-256-cbc', Buffer.from(RAW,'utf8'), Buffer.from(ivHex,'hex'));
+    return Buffer.concat([decipher.update(Buffer.from(dataHex,'hex')), decipher.final()]).toString('utf8');
+  } catch { return ''; }
 }
 
 /** 화이트리스트 검증 — git / npm / node 계열만 허용 */
@@ -88,7 +78,7 @@ function isSafeCmd(cmd) {
 
 // ── 라우터 ────────────────────────────────────────────────────────────────────
 
-module.exports = function createExecRouter({ getAllEvents, broadcastAll }) {
+module.exports = function createExecRouter({ getAllEvents, broadcastAll, getDb }) {
   const router = Router();
 
   // ── AI 연결 상태 ────────────────────────────────────────────────────────────
@@ -99,7 +89,8 @@ module.exports = function createExecRouter({ getAllEvents, broadcastAll }) {
 
   // ── 명령 생성 (실행 X) ──────────────────────────────────────────────────────
   router.post('/orbit-cmd/generate', async (req, res) => {
-    const { type, hash, projectDir, instruction, model = 'orbit-insight:v1' } = req.body;
+    const { type, hash, projectDir, instruction,
+            provider = 'ollama', model } = req.body;
 
     if (!type) return res.status(400).json({ error: 'type 필드 필수' });
 
@@ -134,14 +125,17 @@ module.exports = function createExecRouter({ getAllEvents, broadcastAll }) {
             cmds: [] });
         }
 
-        // Ollama 모드 (Mode 2)
+        // LLM 모드 (gateway 통합)
+        const { PROVIDERS } = require('../src/llm-providers');
+        const resolvedModel = model || PROVIDERS[provider]?.defaultModel || 'orbit-insight:v1';
+        const apiKey = getApiKey(getDb, provider);
         const prompt =
           `다음 파일 수정 요청에 대해 실행 가능한 bash 명령어만 출력하세요.\n` +
           `요청: "${instruction}"\n프로젝트: ${safeDir}\n` +
           `규칙: git, npm, node 명령만 사용. 한 줄씩 출력. 설명 없이 명령만.`;
-        const ollamaResp = await askOllama(prompt, model);
-        cmds    = ollamaResp.split('\n').map(l => l.trim()).filter(Boolean);
-        preview = `[Ollama ${model}]\n\n${ollamaResp}`;
+        const llmResp = await generate({ provider, model: resolvedModel, prompt, apiKey });
+        cmds    = llmResp.split('\n').map(l => l.trim()).filter(Boolean);
+        preview = `[${provider} / ${resolvedModel}]\n\n${llmResp}`;
       }
 
       // ── 기타 타입 ─────────────────────────────────────────────────────────
@@ -155,7 +149,7 @@ module.exports = function createExecRouter({ getAllEvents, broadcastAll }) {
       // 5분 후 만료
       setTimeout(() => pendingCmds.delete(id), 5 * 60 * 1000);
 
-      return res.json({ id, mode: 'ollama', status: 'preview', preview, cmds });
+      return res.json({ id, mode: provider, status: 'preview', preview, cmds });
 
     } catch (err) {
       console.error('[exec/generate]', err.message);

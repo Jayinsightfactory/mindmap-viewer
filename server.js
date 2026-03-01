@@ -758,9 +758,13 @@ app.use('/api', createMcpRouter({
   searchEvents,
 }));
 
+// ─── LLM 프로바이더 설정 (API 키 CRUD + 테스트 + generate) ──────────────────
+const createLlmSettingsRouter = require('./routes/llm-settings');
+app.use('/api', createLlmSettingsRouter({ getDb: dbModule.getDb }));
+
 // ─── 실행 패널 (generate / execute / ai-status) ──────────────────────────────
 const createExecRouter = require('./routes/exec');
-app.use('/api', createExecRouter({ getAllEvents, broadcastAll }));
+app.use('/api', createExecRouter({ getAllEvents, broadcastAll, getDb: dbModule.getDb }));
 
 // ─── JSONL 파일 감시 (레거시 이벤트 소스 지원) ───────────────────────────────
 // /api/hook 를 사용하지 않는 구버전 save-turn.js 호환용
