@@ -980,9 +980,157 @@
       border:1px solid #161b22; border-radius:8px;
       font-size:10px; color:#8b949e; line-height:1.5; display:none;
     }
+
+  /* ══ LEFT NAV SIDEBAR ══════════════════════════════════════════════ */
+  #left-nav {
+    position:fixed; left:0; top:0; bottom:0; width:200px;
+    background:rgba(13,17,23,0.97); border-right:1px solid #30363d;
+    z-index:200; display:flex; flex-direction:column;
+    backdrop-filter:blur(16px); transition:width .2s ease; overflow:hidden;
+  }
+  #left-nav.collapsed { width:44px; }
+  #left-nav.collapsed #ln-content { opacity:0; pointer-events:none; }
+  #ln-toggle {
+    width:44px; height:44px; background:none; border:none;
+    color:#8b949e; font-size:17px; cursor:pointer; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center;
+    border-bottom:1px solid #21262d; transition:color .15s;
+  }
+  #ln-toggle:hover { color:#e6edf3; }
+  #ln-content {
+    flex:1; overflow-y:auto; padding:0 8px 16px;
+    transition:opacity .15s; scrollbar-width:thin;
+    scrollbar-color:#30363d transparent;
+  }
+  #ln-profile-area {
+    display:flex; align-items:center; gap:8px;
+    padding:10px 4px 8px; border-bottom:1px solid #30363d; margin-bottom:6px;
+  }
+  #ln-avatar-box {
+    width:34px; height:34px; border-radius:50%;
+    background:#21262d; border:1px solid #30363d;
+    display:flex; align-items:center; justify-content:center;
+    font-size:14px; font-weight:700; color:#58a6ff; flex-shrink:0;
+  }
+  #ln-avatar-box img { width:100%; height:100%; border-radius:50%; object-fit:cover; }
+  #ln-username { font-size:13px; font-weight:600; color:#e6edf3; line-height:1.3; }
+  #ln-useremail { font-size:10px; color:#8b949e; line-height:1.3; }
+  #ln-auth-btn {
+    width:100%; text-align:left;
+    background:rgba(88,166,255,.08); border:1px solid rgba(88,166,255,.4);
+    color:#58a6ff; border-radius:6px; padding:7px 10px;
+    font-size:12px; cursor:pointer; margin-bottom:6px;
+    transition:background .15s; font-family:inherit;
+  }
+  #ln-auth-btn:hover { background:rgba(88,166,255,.18); }
+  .ln-sep {
+    font-size:10px; text-transform:uppercase; letter-spacing:0.8px;
+    color:#6e7681; padding:10px 6px 4px;
+  }
+  .ln-item {
+    display:flex; align-items:center; gap:8px; width:100%;
+    text-align:left; background:none; border:none;
+    color:#c9d1d9; font-size:13px; padding:7px 10px;
+    border-radius:6px; cursor:pointer;
+    transition:background .12s, color .12s;
+    text-decoration:none; font-family:inherit; white-space:nowrap; line-height:1.4;
+  }
+  .ln-item:hover { background:rgba(177,186,196,.08); color:#e6edf3; }
+  .ln-item.active { background:rgba(88,166,255,.12); color:#58a6ff; font-weight:600; }
+  .ln-item.ln-logout { color:#f85149; }
+  .ln-item.ln-logout:hover { background:rgba(248,81,73,.1); }
+  #ln-zoom-row {
+    padding:8px 8px 6px; font-size:11px;
+    border-top:1px solid #21262d; border-bottom:1px solid #21262d; margin:4px 0;
+  }
+  #ln-zoom-text { color:#e6edf3; font-size:12px; display:block; margin-bottom:3px; }
+  #ln-zoom-hint { color:#3fb950; font-size:11px; cursor:pointer; display:block; }
+  #ln-zoom-hint:hover { text-decoration:underline; }
+
+  /* ══ MEMBER DETAIL PANEL ═══════════════════════════════════════════ */
+  #member-detail-panel {
+    position:fixed; left:210px; bottom:80px; width:280px;
+    background:rgba(13,17,23,0.97); border:1px solid #30363d;
+    border-radius:12px; padding:16px; z-index:300;
+    backdrop-filter:blur(16px); display:none;
+    box-shadow:0 8px 32px rgba(0,0,0,.5);
+  }
+  #member-detail-panel.open { display:block; }
+  .mdp-header { display:flex; align-items:center; gap:10px; margin-bottom:12px; }
+  .mdp-avatar {
+    width:38px; height:38px; border-radius:50%; display:flex;
+    align-items:center; justify-content:center; font-size:22px; flex-shrink:0;
+  }
+  .mdp-name { font-size:14px; font-weight:700; color:#e6edf3; }
+  .mdp-role { font-size:11px; color:#8b949e; }
+  .mdp-close {
+    margin-left:auto; background:none; border:none;
+    color:#8b949e; cursor:pointer; font-size:16px; line-height:1;
+  }
+  .mdp-close:hover { color:#e6edf3; }
+  .mdp-task { padding:7px 0; border-bottom:1px solid #21262d; }
+  .mdp-task:last-of-type { border-bottom:none; }
+  .mdp-task-label {
+    font-size:12px; color:#c9d1d9; margin-bottom:5px;
+    display:flex; justify-content:space-between; align-items:center;
+  }
+  .mdp-task-pct { font-size:11px; color:#8b949e; }
+  .mdp-bar { height:4px; background:#21262d; border-radius:2px; }
+  .mdp-bar-fill { height:100%; border-radius:2px; transition:width .4s; }
+  .mdp-hint { font-size:11px; color:#6e7681; text-align:center; margin-top:10px; }
+
   </style>
 </head>
 <body>
+
+<!-- ══ LEFT NAV SIDEBAR ══════════════════════════════════════════════ -->
+<nav id="left-nav">
+  <button id="ln-toggle" onclick="toggleLeftNav()" title="메뉴">☰</button>
+  <div id="ln-content">
+
+    <!-- 프로필 -->
+    <div id="ln-profile-area">
+      <div id="ln-avatar-box">?</div>
+      <div>
+        <div id="ln-username">게스트</div>
+        <div id="ln-useremail"></div>
+      </div>
+    </div>
+    <button id="ln-auth-btn" onclick="openLoginModal()">🔑 로그인 / 가입</button>
+
+    <!-- 뷰 모드 -->
+    <div class="ln-sep">뷰 모드</div>
+    <button class="ln-item active" id="lni-personal" onclick="setViewPersonal()">👤 개인 뷰</button>
+    <button class="ln-item" id="lni-team" onclick="loadTeamDemo()">👥 팀 뷰</button>
+    <button class="ln-item" id="lni-company" onclick="loadCompanyDemo()">🏢 회사 뷰</button>
+    <button class="ln-item" id="lni-parallel" onclick="loadParallelDemo()">⚡ AI 병렬</button>
+
+    <!-- 줌 깊이 표시 -->
+    <div id="ln-zoom-row">
+      <span id="ln-zoom-text">👤 개인 뷰</span>
+      <span id="ln-zoom-hint"></span>
+    </div>
+
+    <!-- 도구 -->
+    <div class="ln-sep">도구</div>
+    <button class="ln-item" onclick="toggleEffectsPanel()">✨ 마켓 이펙트</button>
+    <button class="ln-item" onclick="toggleFeatPanel()">📋 기능 목록</button>
+    <button class="ln-item" onclick="toggleMgrPanel()">👔 관리자 뷰</button>
+    <button class="ln-item" onclick="toggleTalentBoard()">📡 인재 보드</button>
+    <button class="ln-item" id="ln-orbit-btn" onclick="toggleOrbitAnim()">⏸ 공전 토글</button>
+
+    <!-- 관리 -->
+    <div class="ln-sep">관리</div>
+    <a class="ln-item" href="/admin-analytics.html" target="_blank">📊 애널리틱스</a>
+    <a class="ln-item" href="/settings.html" target="_blank">⚙️ 설정</a>
+
+    <!-- 로그아웃 (로그인 시만 표시) -->
+    <button class="ln-item ln-logout" id="ln-logout-btn" onclick="doLogoutMain()" style="display:none">🚪 로그아웃</button>
+  </div>
+</nav>
+
+<!-- 멤버 작업 상세 패널 (줌인 시 자동 표시) -->
+<div id="member-detail-panel"></div>
 
 <div id="loading">
   <div class="spinner"></div>
@@ -1174,13 +1322,10 @@
 <div id="top-right" style="display:none">
   <!-- info panel이 열리면 여기를 숨김 -->
 </div>
+<!-- 상단 우측: 뷰 모드 버튼은 사이드바로 이동, 거리 조절만 유지 -->
 <div style="position:fixed;top:14px;right:14px;z-index:101;display:flex;gap:8px;">
-  <button class="tr-btn-team" onclick="loadTeamDemo()">👥 팀 시뮬</button>
-  <button class="tr-btn-company" onclick="loadCompanyDemo()">🏢 회사 시뮬</button>
-  <button class="tr-btn-parallel" onclick="loadParallelDemo()">⚡ AI 병렬</button>
-  <button class="tr-btn" id="orbit-toggle-btn" onclick="toggleOrbitAnim()">⏸ 공전 중지</button>
-  <button class="tr-btn" onclick="toggleEffectsPanel()" title="마켓 이펙트">✨</button>
-  <button class="tr-btn" onclick="toggleDistPanel()" title="거리 조절 설정">⚙️</button>
+  <button class="tr-btn" id="orbit-toggle-btn" onclick="toggleOrbitAnim()">⏸ 공전</button>
+  <button class="tr-btn" onclick="toggleDistPanel()" title="거리 조절">⚙️ 거리</button>
 </div>
 
 <!-- 마켓 이펙트 패널 -->
@@ -1236,8 +1381,8 @@
   <div class="dp-hint" style="margin-top:2px">슬라이더 조작 시 즉시 반영됩니다</div>
 </div>
 
-<!-- 로그인 버튼 -->
-<button id="login-btn" onclick="openLoginModal()">🔑 로그인</button>
+<!-- 로그인 버튼 (사이드바에서 처리, 숨김) -->
+<button id="login-btn" onclick="openLoginModal()" style="display:none">🔑 로그인</button>
 
 <!-- 로그인 모달 -->
 <div id="login-modal-overlay" onclick="handleOverlayClick(event)">
@@ -1906,7 +2051,7 @@ class OrbitCam {
     el.addEventListener('mousedown',  e => { this._lx=e.clientX; this._ly=e.clientY; e.button===2?this._r=true:this._d=true; });
     el.addEventListener('mousemove',  e => this._move(e));
     el.addEventListener('mouseup',    () => { this._d=this._r=false; });
-    el.addEventListener('wheel',      e => { this.sph.r=Math.max(10,Math.min(300,this.sph.r+e.deltaY*.08)); this._apply(); }, {passive:true});
+    el.addEventListener('wheel',      e => { this.sph.r=Math.max(4,Math.min(300,this.sph.r+e.deltaY*.08)); this._apply(); }, {passive:true});
     el.addEventListener('dblclick',   e => this._dbl(e));
     el.addEventListener('contextmenu',e => e.preventDefault());
     this._apply();
@@ -3689,7 +3834,7 @@ function resolveOverlaps(labels, iters = 30, gap = 8) {
 function focusMember(memberNode) {
   _focusedMember = memberNode;
   const pos = memberNode.pos;
-  lerpCameraTo(22, pos.x, pos.y, pos.z);
+  lerpCameraTo(16, pos.x, pos.y, pos.z);
   const deptName = _focusedDept?.label || memberNode.deptId;
   updateBreadcrumb('member', deptName, memberNode.label);
 }
@@ -5740,6 +5885,7 @@ renderer.setAnimationLoop(now => {
   }
   renderer.render(scene, camera);
   if (typeof updateZoomDisplay === 'function') updateZoomDisplay();
+  if (typeof updateZoomLOD === 'function') updateZoomLOD();
   if (typeof drawMinimap3d === 'function') drawMinimap3d();
   // 협업 라인 애니메이션
   if (typeof _collabLines !== 'undefined' && _collabLines.length > 0) {
@@ -6925,6 +7071,20 @@ function renderLoginState() {
     }
     btn.textContent = `👤 ${_orbitUser.name || '내 계정'}`;
     btn.classList.add('logged-in');
+    // 사이드바 프로필 업데이트
+    const lnAv = document.getElementById('ln-avatar-box');
+    const lnName = document.getElementById('ln-username');
+    const lnEmail = document.getElementById('ln-useremail');
+    const lnAuthBtn = document.getElementById('ln-auth-btn');
+    const lnLogout = document.getElementById('ln-logout-btn');
+    if (lnAv) {
+      if (_orbitUser.avatar) lnAv.innerHTML = `<img src="${_orbitUser.avatar}" alt="">`;
+      else lnAv.textContent = (_orbitUser.name || '?')[0].toUpperCase();
+    }
+    if (lnName) lnName.textContent = _orbitUser.name || '사용자';
+    if (lnEmail) lnEmail.textContent = _orbitUser.email || '';
+    if (lnAuthBtn) lnAuthBtn.style.display = 'none';
+    if (lnLogout) lnLogout.style.display = 'flex';
   } else {
     authView.style.display = 'flex';
     authView.style.flexDirection = 'column';
@@ -6932,6 +7092,17 @@ function renderLoginState() {
     profileView.style.display = 'none';
     btn.textContent = '🔑 로그인';
     btn.classList.remove('logged-in');
+    // 사이드바 프로필 초기화
+    const lnAv2 = document.getElementById('ln-avatar-box');
+    const lnName2 = document.getElementById('ln-username');
+    const lnEmail2 = document.getElementById('ln-useremail');
+    const lnAuthBtn2 = document.getElementById('ln-auth-btn');
+    const lnLogout2 = document.getElementById('ln-logout-btn');
+    if (lnAv2) lnAv2.textContent = '?';
+    if (lnName2) lnName2.textContent = '게스트';
+    if (lnEmail2) lnEmail2.textContent = '';
+    if (lnAuthBtn2) lnAuthBtn2.style.display = 'block';
+    if (lnLogout2) lnLogout2.style.display = 'none';
   }
   // Google OAuth 버튼 활성/비활성
   fetch('/api/auth/oauth/status').then(r => r.json()).then(data => {
@@ -7055,6 +7226,158 @@ window.doLogoutMain = doLogoutMain;
     }, 1200);
   }
 })();
+
+/* ── LEFT NAV + ZOOM LOD + MEMBER DETAIL ────────────────────────────────────
+ * 사이드바 토글, 줌 기반 뷰 자동전환, 멤버 작업 상세
+ * ─────────────────────────────────────────────────────────────────────────── */
+let _lnCollapsed = false;
+let _lastLodR = 75;
+let _zoomLodTimer = null;
+let _memberDetailOpen = false;
+
+function toggleLeftNav() {
+  _lnCollapsed = !_lnCollapsed;
+  document.getElementById('left-nav').classList.toggle('collapsed', _lnCollapsed);
+}
+window.toggleLeftNav = toggleLeftNav;
+
+function setViewPersonal() {
+  if (typeof _teamMode !== 'undefined' && (_teamMode || _companyMode)) exitTeamMode();
+  if (typeof _parallelMode !== 'undefined' && _parallelMode) exitParallelMode();
+}
+window.setViewPersonal = setViewPersonal;
+
+function updateNavActiveState() {
+  ['lni-personal','lni-team','lni-company','lni-parallel'].forEach(id => {
+    document.getElementById(id)?.classList.remove('active');
+  });
+  if (typeof _parallelMode !== 'undefined' && _parallelMode)
+    document.getElementById('lni-parallel')?.classList.add('active');
+  else if (typeof _companyMode !== 'undefined' && _companyMode)
+    document.getElementById('lni-company')?.classList.add('active');
+  else if (typeof _teamMode !== 'undefined' && _teamMode)
+    document.getElementById('lni-team')?.classList.add('active');
+  else
+    document.getElementById('lni-personal')?.classList.add('active');
+}
+
+function updateZoomLOD() {
+  const r = controls?.sph?.r;
+  if (!r) return;
+
+  // 뷰 모드 라벨
+  const modeLabel = (typeof _parallelMode !== 'undefined' && _parallelMode) ? '⚡ AI 병렬' :
+                    (typeof _companyMode  !== 'undefined' && _companyMode)  ? '🏢 회사 뷰' :
+                    (typeof _teamMode     !== 'undefined' && _teamMode)     ? '👥 팀 뷰'   : '👤 개인 뷰';
+
+  const ztEl = document.getElementById('ln-zoom-text');
+  const zhEl = document.getElementById('ln-zoom-hint');
+  if (ztEl) ztEl.textContent = `${modeLabel}  ·  r:${Math.round(r)}`;
+
+  // 줌 힌트 & 자동전환
+  if (zhEl) {
+    const inTeam    = typeof _teamMode    !== 'undefined' && _teamMode    && !(typeof _companyMode !== 'undefined' && _companyMode);
+    const inCompany = typeof _companyMode !== 'undefined' && _companyMode;
+    const inPersonal= !(typeof _teamMode !== 'undefined' && _teamMode) &&
+                      !(typeof _companyMode !== 'undefined' && _companyMode) &&
+                      !(typeof _parallelMode !== 'undefined' && _parallelMode);
+
+    if (inPersonal && r > 120) {
+      zhEl.textContent = '🔍 줌아웃 → 팀 뷰 전환';
+      zhEl.onclick = () => loadTeamDemo();
+    } else if (inTeam && r > 90) {
+      zhEl.textContent = '🔍 줌아웃 → 회사 뷰 전환';
+      zhEl.onclick = () => loadCompanyDemo();
+    } else if (inTeam && (typeof _focusedMember !== 'undefined') && _focusedMember && r < 8) {
+      zhEl.textContent = '🔎 작업 상세 표시 중';
+      zhEl.onclick = null;
+    } else {
+      zhEl.textContent = '';
+      zhEl.onclick = null;
+    }
+
+    // ── 자동 뷰 전환 (줌아웃 1.5초 유지 시) ──
+    const prevR = _lastLodR;
+    _lastLodR = r;
+
+    if (inPersonal && r > 155 && prevR <= 155) {
+      clearTimeout(_zoomLodTimer);
+      _zoomLodTimer = setTimeout(() => {
+        if (controls.sph.r > 145 && !(typeof _teamMode !== 'undefined' && _teamMode)) loadTeamDemo();
+      }, 1500);
+    }
+    if (inTeam && r > 100 && prevR <= 100) {
+      clearTimeout(_zoomLodTimer);
+      _zoomLodTimer = setTimeout(() => {
+        if (controls.sph.r > 95 && (typeof _teamMode !== 'undefined' && _teamMode)) loadCompanyDemo();
+      }, 1500);
+    }
+    if (inCompany && r < 75 && prevR >= 75) {
+      clearTimeout(_zoomLodTimer);
+      _zoomLodTimer = setTimeout(() => {
+        if (controls.sph.r < 80 && (typeof _companyMode !== 'undefined' && _companyMode)) {
+          exitTeamMode(); setTimeout(loadTeamDemo, 100);
+        }
+      }, 1500);
+    }
+  }
+
+  // ── 멤버 상세 패널 (팀 뷰 + 멤버 포커스 + 아주 가까이 줌인) ──
+  const fm = typeof _focusedMember !== 'undefined' ? _focusedMember : null;
+  if (fm && (typeof _teamMode !== 'undefined' && _teamMode) && r < 9) {
+    showMemberDetail(fm);
+  } else if (r >= 11) {
+    hideMemberDetail();
+  }
+
+  updateNavActiveState();
+}
+window.updateZoomLOD = updateZoomLOD;
+
+function showMemberDetail(member) {
+  const panel = document.getElementById('member-detail-panel');
+  if (!panel || !member) return;
+  if (_memberDetailOpen && panel.dataset.memberId === (member.memberId || '')) return;
+  _memberDetailOpen = true;
+  panel.dataset.memberId = member.memberId || '';
+
+  const tasks = member.tasks ||
+    ((typeof _teamNodes !== 'undefined' ? _teamNodes : [])
+      .filter(n => n.type === 'task' && n.memberId === member.memberId));
+
+  const taskHtml = tasks.length ? tasks.map(t => {
+    const pct = t.progress != null ? Math.round(t.progress) : 0;
+    const col = pct >= 75 ? '#3fb950' : pct >= 40 ? '#58a6ff' : '#f0883e';
+    return `<div class="mdp-task">
+      <div class="mdp-task-label">
+        <span>${t.label || t.sublabel || '작업'}</span>
+        <span class="mdp-task-pct">${pct}%</span>
+      </div>
+      <div class="mdp-bar"><div class="mdp-bar-fill" style="width:${pct}%;background:${col}"></div></div>
+    </div>`;
+  }).join('') : '<div style="color:#8b949e;font-size:12px;text-align:center;padding:8px">등록된 작업 없음</div>';
+
+  panel.innerHTML = `
+    <div class="mdp-header">
+      <div class="mdp-avatar" style="background:${member.color || '#58a6ff'}22">${member.emoji || (member.label||'👤')[0]}</div>
+      <div>
+        <div class="mdp-name">${member.label || '팀원'}</div>
+        <div class="mdp-role">${member.role || ''} · ${tasks.length}개 작업</div>
+      </div>
+      <button class="mdp-close" onclick="hideMemberDetail()">✕</button>
+    </div>
+    ${taskHtml}
+    <div class="mdp-hint">줌아웃하면 팀 뷰로 돌아갑니다</div>
+  `;
+  panel.classList.add('open');
+}
+window.showMemberDetail = showMemberDetail;
+
+function hideMemberDetail() {
+  _memberDetailOpen = false;
+  document.getElementById('member-detail-panel')?.classList.remove('open');
+}
+window.hideMemberDetail = hideMemberDetail;
 
 /* ── ORBIT ANALYTICS ─────────────────────────────────────────────────────────
  * 사용자 행동 데이터 수집 모듈
