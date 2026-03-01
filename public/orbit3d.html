@@ -6983,18 +6983,28 @@ async function loadSuggestions() {
     const TYPE_LABEL = {
       automation:'⚙️ 자동화', template:'📝 템플릿',
       shortcut:'⌨️ 단축키', review:'🔍 검토', consolidation:'🔗 통합',
+      prompt_template:'🧠 프롬프트 최적화',
     };
     const PRI_LABEL = { 5:'🔴 긴급', 4:'🟠 높음', 3:'🟡 보통', 2:'🔵 낮음', 1:'⚪ 참고' };
     list.innerHTML = sugs.map(s => {
       const evidence = Array.isArray(s.evidence) ? s.evidence : [];
       const evText   = evidence.map(ev => {
-        if (ev.type === 'file_access')   return `📁 ${(ev.path||'').split('/').pop()} · ${ev.count}회`;
-        if (ev.type === 'repeat_typing') return `⌨️ 반복 입력 ${ev.count}회`;
-        if (ev.type === 'app_switch')    return `🔄 ${ev.pair} · ${ev.count}회`;
-        if (ev.type === 'long_session')  return `⏱ ${Math.round((ev.durationMin||0)/60*10)/10}시간`;
+        if (ev.type === 'file_access')      return `📁 ${(ev.path||'').split('/').pop()} · ${ev.count}회`;
+        if (ev.type === 'repeat_typing')    return `⌨️ 반복 입력 ${ev.count}회`;
+        if (ev.type === 'app_switch')       return `🔄 ${ev.pair} · ${ev.count}회`;
+        if (ev.type === 'long_session')     return `⏱ ${Math.round((ev.durationMin||0)/60*10)/10}시간`;
+        if (ev.type === 'prompt_refinement')
+          return `🔁 ${ev.app||'AI'} 수정 ${ev.revisionCount}회 · 최초:"${(ev.firstPrompt||'').slice(0,30)}…"`;
         return '';
       }).filter(Boolean).join(' · ');
 
+      const sug    = (typeof s.suggestion === 'object' && s.suggestion) ? s.suggestion : {};
+      const isPrompt = s.type === 'prompt_template';
+      const extraBtn = isPrompt && sug.fixedSkill
+        ? `<button class="sg-accept-btn" style="background:rgba(138,87,222,.25);border-color:#8957e5"
+             onclick="savePromptSkill('${escHtml(s.id)}',${escHtml(JSON.stringify(sug.fixedSkill))})">
+             🧠 스킬로 저장</button>`
+        : '';
       return `<div class="sg-card" id="sg-card-${escHtml(s.id)}">
         <div class="sg-card-top">
           <span class="sg-card-pri p${s.priority||3}">${PRI_LABEL[s.priority||3]||'보통'}</span>
@@ -7004,6 +7014,7 @@ async function loadSuggestions() {
         <div class="sg-card-desc">${escHtml(s.description||'')}</div>
         ${evText ? `<div class="sg-card-evidence">${escHtml(evText)}</div>` : ''}
         <div class="sg-card-actions">
+          ${extraBtn}
           <button class="sg-accept-btn"  onclick="respondSuggestion('${escHtml(s.id)}','accept')">✓ 수락</button>
           <button class="sg-dismiss-btn" onclick="respondSuggestion('${escHtml(s.id)}','dismiss')">✕ 무시</button>
         </div>
@@ -7028,6 +7039,32 @@ async function respondSuggestion(id, action) {
   } catch (e) { showToast(`❌ ${e.message}`); }
 }
 window.respondSuggestion = respondSuggestion;
+
+// ── 프롬프트 최적화 → Orbit 스킬 저장 ────────────────────────────────────────
+async function savePromptSkill(suggestionId, fixedSkill) {
+  try {
+    // 스킬 저장 (POST /api/skills 또는 로컬 스킬 목록에 추가)
+    const r = await fetch('/api/skills', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name:        fixedSkill.name        || '최적화 프롬프트',
+        description: fixedSkill.description || 'AI 수정 패턴에서 학습된 최적 프롬프트',
+        trigger:     fixedSkill.name        || '최적화 프롬프트',
+        prompt:      fixedSkill.prompt      || '',
+        type:        'prompt_template',
+        source:      'suggestion_engine',
+      }),
+    });
+    if (r.ok) {
+      showToast('🧠 스킬로 저장됨! /skills 에서 확인하세요.');
+      respondSuggestion(suggestionId, 'accept');
+    } else {
+      showToast('❌ 스킬 저장 실패: ' + (await r.text()));
+    }
+  } catch (e) { showToast(`❌ ${e.message}`); }
+}
+window.savePromptSkill = savePromptSkill;
 
 // ── 개인 학습 토글 ────────────────────────────────────────────────────────────
 const _plState = { keyboard: true, file: true, app: true };
@@ -7070,29 +7107,40 @@ async function _loadPersonalStats() {
       <div>💡 대기 제안: <strong style="color:#f0c040">${data.pendingSuggestions||0}개</strong></div>
     `;
 
-    // 동기화 상태
+    // 동기화 상태 (level 0/1/2)
     const syncEl = document.getElementById('sp-sync-status');
     if (syncEl) {
-      if (data.syncConsented) {
-        syncEl.textContent = data.lastSync
-          ? `✅ 동기화 중 · 마지막: ${relTime(data.lastSync)}`
-          : '✅ 동의됨 · 아직 동기화 없음';
-        syncEl.style.color = '#3fb950';
-      } else {
-        syncEl.textContent = '로컬 전용 모드 (동기화 꺼짐)';
-        syncEl.style.color = '#8b949e';
-      }
+      const lvl = data.syncLevel ?? (data.syncConsented ? 1 : 0);
+      const lvlLabels = {
+        0: { text:'🔒 로컬 전용 모드', color:'#8b949e' },
+        1: { text:'📊 제안만 동기화 중', color:'#3fb950' },
+        2: { text:'🔬 피드백 참여 중 (원본 포함)', color:'#bc78de' },
+      };
+      const lbl = lvlLabels[lvl] || lvlLabels[0];
+      const lastTxt = data.lastSync ? ` · 마지막: ${relTime(data.lastSync)}` : '';
+      syncEl.textContent = lbl.text + lastTxt;
+      syncEl.style.color = lbl.color;
+
+      // 현재 선택된 버튼 강조
+      [0,1,2].forEach(n => {
+        const btn = document.getElementById(`sp-sync-btn-${n}`);
+        if (btn) btn.style.outline = n === lvl ? '2px solid currentColor' : '';
+      });
     }
     _updatePersonalToggles();
   } catch {}
 }
 
-async function setSyncConsent(consented) {
+async function setSyncConsent(level) {
+  // level: 0 = 로컬만, 1 = 제안만 전송, 2 = 원본 이벤트 포함
   try {
-    await fetch('/api/sync/consent', { method:'POST',
-      headers:{'Content-Type':'application/json'}, body: JSON.stringify({ consented }) });
-    showToast(consented ? '☁️ 클라우드 동기화 시작' : '로컬 전용으로 변경');
+    const r    = await fetch('/api/sync/consent', { method:'POST',
+      headers:{'Content-Type':'application/json'}, body: JSON.stringify({ level }) });
+    const data = await r.json();
+    const msgs = { 0:'🔒 로컬 전용으로 변경', 1:'☁️ 제안 데이터 동기화 시작', 2:'🔬 피드백 참여 완료 (원본 포함)' };
+    showToast(msgs[data.level ?? level] || '✅ 설정 저장');
     _loadPersonalStats();
+    renderSetupPanel(); // sync 버튼 상태 갱신
   } catch (e) { showToast(`❌ ${e.message}`); }
 }
 window.setSyncConsent = setSyncConsent;
@@ -7498,15 +7546,26 @@ async function renderSetupPanel() {
     <div class="sp-section" style="margin-top:12px">☁️ 클라우드 동기화</div>
     <div id="sp-sync-section">
       <div style="font-size:11px;color:#6e7681;margin-bottom:8px;line-height:1.6">
-        로그인 후 동의 시 수집 데이터가 내 Orbit 서버에도 전송됩니다.<br>
-        제안 품질이 향상되고 기기 간 공유됩니다.
+        로그인 후 동의 수준을 선택하면 내 Orbit 서버에 데이터가 전송됩니다.
       </div>
       <div id="sp-sync-status" style="font-size:11px;color:#8b949e;margin-bottom:8px">확인 중…</div>
-      <div style="display:flex;gap:6px">
-        <button class="sp-btn" style="flex:1;background:rgba(56,139,253,.15);border-color:#1f6feb;font-size:11px"
-          onclick="setSyncConsent(true)">동의하고 동기화 켜기</button>
-        <button class="sp-btn sp-btn-outline" style="flex:1;font-size:11px"
-          onclick="setSyncConsent(false)">로컬만 사용</button>
+
+      <div style="display:flex;flex-direction:column;gap:5px">
+        <button class="sp-btn" id="sp-sync-btn-1"
+          style="font-size:11px;text-align:left;padding:7px 10px;background:rgba(56,139,253,.12);border-color:#1f6feb"
+          onclick="setSyncConsent(1)">
+          📊 <b>제안만 동기화</b> (권장)<br>
+          <span style="font-size:10px;color:#8b949e;font-weight:normal">Ollama 분석 제안 데이터만 전송 · 원문 미포함</span>
+        </button>
+        <button class="sp-btn" id="sp-sync-btn-2"
+          style="font-size:11px;text-align:left;padding:7px 10px;background:rgba(188,120,222,.10);border-color:#8957e5"
+          onclick="setSyncConsent(2)">
+          🔬 <b>피드백 참여</b> (원본 포함)<br>
+          <span style="font-size:10px;color:#8b949e;font-weight:normal">타이핑·파일 원본까지 전송 → 제안 품질 향상</span>
+        </button>
+        <button class="sp-btn sp-btn-outline" id="sp-sync-btn-0"
+          style="font-size:11px"
+          onclick="setSyncConsent(0)">🔒 로컬만 사용</button>
       </div>
       <button class="sp-btn sp-btn-outline" style="margin-top:6px;font-size:11px;width:100%"
         onclick="triggerSyncPush()">↑ 지금 동기화</button>

@@ -85,6 +85,29 @@ module.exports = function createPersonalLearningRouter({ getDb, insertEvent, bro
     }
   });
 
+  // ── POST /api/personal/ai-prompt ──────────────────────────────────────────
+  // AI 툴에서 프롬프트 입력 이벤트 (keyboard-watcher가 AI 앱 감지 시 자동 호출)
+  // body: { app, prompt, revision?: bool, sessionId?, ts }
+  router.post('/personal/ai-prompt', (req, res) => {
+    try {
+      const { app, prompt, revision = false, sessionId, ts } = req.body;
+      if (!prompt) return res.status(400).json({ error: 'prompt required' });
+
+      saveEvent('keyboard.chunk', {
+        text:     prompt,
+        app,
+        wordCount: prompt.split(/\s+/).length,
+        isAiApp:  true,
+        revision, // true이면 수정 요청 신호
+        sessionId,
+      }, sessionId || 'personal');
+
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // ── GET /api/personal/status ──────────────────────────────────────────────
   router.get('/personal/status', (req, res) => {
     try {
@@ -111,12 +134,12 @@ module.exports = function createPersonalLearningRouter({ getDb, insertEvent, bro
         `SELECT COUNT(*) as cnt FROM suggestions WHERE status='pending'`
       ).get()?.cnt || 0;
 
-      // 동기화 동의 상태
-      let syncConsented = false;
-      let lastSync = null;
+      // 동기화 동의 상태 (sync_level: 0=로컬, 1=제안만, 2=원본포함)
+      let syncLevel = 0;
+      let lastSync  = null;
       try {
-        const row = db.prepare(`SELECT value FROM kv_store WHERE key='sync_consented'`).get();
-        syncConsented = row?.value === '1';
+        const row = db.prepare(`SELECT value FROM kv_store WHERE key='sync_level'`).get();
+        syncLevel = parseInt(row?.value || '0', 10);
         const logRow = db.prepare(`SELECT synced_at FROM sync_log ORDER BY synced_at DESC LIMIT 1`).get();
         lastSync = logRow?.synced_at || null;
       } catch {}
@@ -124,7 +147,8 @@ module.exports = function createPersonalLearningRouter({ getDb, insertEvent, bro
       res.json({
         today: { keyboardChunks, keywordChars, fileContents, appActivities },
         pendingSuggestions,
-        syncConsented,
+        syncLevel,
+        syncConsented: syncLevel >= 1,   // 하위 호환
         lastSync,
       });
     } catch (e) {

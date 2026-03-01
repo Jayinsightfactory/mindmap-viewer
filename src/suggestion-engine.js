@@ -10,6 +10,7 @@
  *   C. 앱 전환 빈도: Word↔Excel 하루 10회+ → 통합 제안
  *   D. 장시간 단일 파일: 3시간+ → 요약/구조화 제안
  *   E. 오류 반복 패턴: 같은 검색어 반복 → 해결책 제안
+ *   F. AI 프롬프트 수정 패턴: 원하는 결과가 안 나와 수정/변경 반복 → 최적 프롬프트 템플릿 제안
  */
 
 const { ulid } = require('ulid');
@@ -168,6 +169,82 @@ function detectLongSession(events, since = Date.now() - 86400_000) {
     }));
 }
 
+// ── 패턴 F: AI 프롬프트 수정 패턴 ────────────────────────────────────────────
+// AI 앱(Claude, ChatGPT 등)에서 타이핑 후 수정/변경 키워드가 반복 등장하면
+// 최초 프롬프트가 의도를 제대로 담지 못한 것으로 판단, 최적 프롬프트 제안
+const AI_APPS = ['claude', 'chatgpt', 'gemini', 'copilot', 'gpt', 'cursor', 'windsurf'];
+const REVISION_KEYWORDS = [
+  '다시', '아니', '아니야', '그게 아니라', '수정', '변경해', '바꿔',
+  '원하는건', '내가 원한건', '그냥', '다시 해줘', '틀렸어', '아니고',
+  'no', 'wrong', 'redo', 'again', 'not what', 'incorrect', 'change',
+  'that\'s not', 'actually', 'wait', 'nevermind',
+];
+
+function isAiApp(app = '') {
+  const a = app.toLowerCase();
+  return AI_APPS.some(ai => a.includes(ai));
+}
+
+function hasRevisionSignal(text = '') {
+  const t = text.toLowerCase();
+  return REVISION_KEYWORDS.some(kw => t.includes(kw));
+}
+
+function detectPromptRefinements(events, since = Date.now() - 3 * 86400_000) {
+  // keyboard.chunk 이벤트 중 AI 앱에서 발생한 것만 필터링
+  const aiChunks = events
+    .filter(e =>
+      e.type === 'keyboard.chunk' &&
+      new Date(e.timestamp || e.ts || 0) > since &&
+      isAiApp(e.data?.app)
+    )
+    .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+  if (aiChunks.length < 3) return [];
+
+  // 세션 단위로 그룹화 (5분 이내 연속 = 같은 세션)
+  const sessions = [];
+  let cur = [aiChunks[0]];
+  for (let i = 1; i < aiChunks.length; i++) {
+    const gap = new Date(aiChunks[i].timestamp) - new Date(aiChunks[i - 1].timestamp);
+    if (gap < 5 * 60 * 1000) {
+      cur.push(aiChunks[i]);
+    } else {
+      if (cur.length >= 2) sessions.push(cur);
+      cur = [aiChunks[i]];
+    }
+  }
+  if (cur.length >= 2) sessions.push(cur);
+
+  const results = [];
+
+  for (const session of sessions) {
+    const app   = session[0].data?.app || 'AI';
+    const texts = session.map(e => (e.data?.text || '').trim()).filter(Boolean);
+
+    // 수정 키워드가 포함된 청크 수 카운트
+    const revisions = texts.filter(t => hasRevisionSignal(t));
+    if (revisions.length < 2) continue;
+
+    // 첫 번째 청크 (원래 요청) vs 마지막 청크 (최종 의도)
+    const firstPrompt = texts[0].slice(0, 120);
+    const finalPrompt = texts[texts.length - 1].slice(0, 120);
+
+    results.push({
+      pattern:       'prompt_refinement',
+      app,
+      revisionCount: revisions.length,
+      totalChunks:   texts.length,
+      firstPrompt,
+      finalPrompt,
+      revisionSamples: revisions.slice(0, 3),
+      sessionStart: session[0].timestamp,
+    });
+  }
+
+  return results;
+}
+
 // ── 제안 생성 ─────────────────────────────────────────────────────────────────
 async function buildSuggestion(pattern, ollamaModel) {
   let type, priority, title, description, evidence, action;
@@ -207,6 +284,42 @@ async function buildSuggestion(pattern, ollamaModel) {
     evidence = [{ type: 'long_session', path: pattern.filePath, durationMin: pattern.durationMin }];
     action = { action: '문서 섹션 요약 및 구조화' };
 
+  } else if (pattern.pattern === 'prompt_refinement') {
+    // AI 프롬프트 수정 패턴 감지
+    const appName = pattern.app || 'AI';
+    const prompt = [
+      `사용자가 ${appName}에서 AI에게 명령을 내렸으나 원하는 결과가 나오지 않아`,
+      `${pattern.revisionCount}번 수정 요청을 반복했습니다.`,
+      `최초 요청: "${pattern.firstPrompt}"`,
+      `최종 의도: "${pattern.finalPrompt}"`,
+      `위 대화 흐름을 분석하여 한 번에 원하는 결과를 얻을 수 있는 최적 프롬프트 구조를 한국어로 제안하세요.`,
+      `응답 형식: "최적 프롬프트: [구체적 프롬프트 템플릿]" 형식으로 2-3문장.`,
+    ].join(' ');
+    const desc = await askOllama(prompt, ollamaModel);
+    type = 'prompt_template'; priority = 5;
+    title = `${appName} 프롬프트 최적화 (${pattern.revisionCount}회 수정 감지)`;
+    description = desc ||
+      `처음부터 원하는 결과를 얻을 수 있는 프롬프트 구조를 미리 스킬로 등록하세요. ` +
+      `최초 요청: "${pattern.firstPrompt.slice(0, 50)}..."`;
+    evidence = [{
+      type:          'prompt_refinement',
+      app:           pattern.app,
+      revisionCount: pattern.revisionCount,
+      firstPrompt:   pattern.firstPrompt,
+      finalPrompt:   pattern.finalPrompt,
+      revisions:     pattern.revisionSamples,
+      sessionStart:  pattern.sessionStart,
+    }];
+    action = {
+      action:     '최적 프롬프트를 Orbit 스킬로 저장',
+      template:   pattern.finalPrompt,
+      fixedSkill: {
+        name:        `${appName} 최적 프롬프트`,
+        description: `수정 없이 바로 원하는 결과를 얻는 프롬프트`,
+        prompt:      pattern.finalPrompt,
+      },
+    };
+
   } else {
     return null;
   }
@@ -219,7 +332,7 @@ async function buildSuggestion(pattern, ollamaModel) {
     description,
     evidence:    JSON.stringify(evidence),
     suggestion:  JSON.stringify(action),
-    confidence:  Math.min(0.5 + (pattern.count || 1) * 0.05, 0.95),
+    confidence:  Math.min(0.5 + (pattern.count || pattern.revisionCount || 1) * 0.05, 0.95),
     status:      'pending',
     created_at:  new Date().toISOString(),
     responded_at: null,
@@ -247,6 +360,7 @@ async function run(events, db, ollamaModel = 'llama3.2') {
     ...detectRepeatTyping(parsed),
     ...detectAppSwitching(parsed),
     ...detectLongSession(parsed),
+    ...detectPromptRefinements(parsed),   // F. AI 프롬프트 수정 패턴
   ];
 
   if (!patterns.length) return [];
