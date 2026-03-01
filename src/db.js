@@ -157,6 +157,31 @@ function createTables() {
       key   TEXT PRIMARY KEY,
       value TEXT
     );
+
+    -- ─── 워크스페이스 (팀/회사 단위) ─────────────────────
+    CREATE TABLE IF NOT EXISTS workspaces (
+      id           TEXT PRIMARY KEY,
+      name         TEXT NOT NULL,
+      company_name TEXT NOT NULL DEFAULT '',
+      owner_id     TEXT NOT NULL,
+      invite_code  TEXT UNIQUE NOT NULL,
+      created_at   TEXT DEFAULT (datetime('now'))
+    );
+
+    -- 워크스페이스 멤버십
+    CREATE TABLE IF NOT EXISTS workspace_members (
+      workspace_id TEXT NOT NULL,
+      user_id      TEXT NOT NULL,
+      role         TEXT NOT NULL DEFAULT 'member',
+      team_name    TEXT NOT NULL DEFAULT '팀 1',
+      joined_at    TEXT DEFAULT (datetime('now')),
+      PRIMARY KEY (workspace_id, user_id),
+      FOREIGN KEY (workspace_id) REFERENCES workspaces(id),
+      FOREIGN KEY (user_id)      REFERENCES users(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_wm_user ON workspace_members(user_id);
+    CREATE INDEX IF NOT EXISTS idx_wm_ws   ON workspace_members(workspace_id);
   `);
 
   // ─── 컬럼 마이그레이션 (기존 DB 호환) ───────────────

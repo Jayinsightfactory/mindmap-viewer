@@ -2479,7 +2479,7 @@
   <!-- info panel이 열리면 여기를 숨김 -->
 </div>
 <!-- 상단 우측: 뷰 모드 버튼은 사이드바로 이동, 거리 조절만 유지 -->
-<div style="position:fixed;top:14px;right:14px;z-index:101;display:flex;gap:8px;">
+<div style="position:fixed;top:14px;right:178px;z-index:101;display:flex;gap:8px;">
   <button class="tr-btn" id="orbit-toggle-btn" onclick="toggleOrbitAnim()">⏸ 공전</button>
   <button class="tr-btn" onclick="toggleDistPanel()" title="거리 조절">⚙️ 거리</button>
 </div>
@@ -3262,7 +3262,12 @@ class OrbitCam {
     el.addEventListener('mousedown',  e => { this._lx=e.clientX; this._ly=e.clientY; e.button===2?this._r=true:this._d=true; });
     el.addEventListener('mousemove',  e => this._move(e));
     el.addEventListener('mouseup',    () => { this._d=this._r=false; });
-    el.addEventListener('wheel',      e => { this.sph.r=Math.max(4,Math.min(300,this.sph.r+e.deltaY*.08)); this._apply(); }, {passive:true});
+    el.addEventListener('wheel', e => {
+      this.sph.r = Math.max(4, Math.min(300, this.sph.r + e.deltaY * 0.08));
+      this._apply();
+      clearTimeout(window._zoomViewTimer);
+      window._zoomViewTimer = setTimeout(_autoSwitchViewByZoom, 180);
+    }, {passive:true});
     el.addEventListener('dblclick',   e => this._dbl(e));
     el.addEventListener('contextmenu',e => e.preventDefault());
     this._apply();
@@ -3351,6 +3356,32 @@ function toggleOrbitAnim() {
   document.getElementById('orbit-toggle-btn').textContent = orbitAnimOn ? '⏸ 공전 중지' : '▶ 공전 시작';
 }
 window.toggleOrbitAnim = toggleOrbitAnim;
+
+// ─── 휠 줌 기반 뷰 자동 전환 ─────────────────────────────────────────────────
+function _autoSwitchViewByZoom() {
+  const r = controls.sph.r;
+  if (!_teamMode && !_companyMode && !_parallelMode) {
+    // 개인 모드: 멀리 줌아웃 → 팀뷰로
+    if (r > 90) {
+      buildTeamSystem(TEAM_DEMO);
+      controls.sph.r = r; controls._apply();
+    }
+  } else if (_teamMode && !_companyMode) {
+    // 팀 모드: 더 멀리 → 전사뷰, 가까이 + 포커스 → 드릴다운
+    if (r > 160) {
+      buildCompanySystem(COMPANY_DEMO);
+      controls.sph.r = r; controls._apply();
+    } else if (r < 20 && _focusedMember) {
+      drillDownToMember(_focusedMember);
+    }
+  } else if (_companyMode) {
+    // 전사 모드: 줌인 → 팀뷰로
+    if (r < 110) {
+      buildTeamSystem(TEAM_DEMO);
+      controls.sph.r = r; controls._apply();
+    }
+  }
+}
 
 // ─── 씬 빌드 ──────────────────────────────────────────────────────────────────
 function clearScene() {
@@ -4297,7 +4328,7 @@ function buildTeamSystem(teamData) {
     // 오각형 배치: 72° 간격, 상단(-90°)부터 시작
     const angle = (mi / members.length) * Math.PI * 2 - Math.PI / 2;
     const mx    = MEMBER_R * Math.cos(angle);
-    const my    = (mi % 2 === 0) ? 1.5 : -1.5;
+    const my    = 0;
     const mz    = MEMBER_R * Math.sin(angle);
     const mPos  = new THREE.Vector3(mx, my, mz);
 
@@ -4621,8 +4652,29 @@ function buildCompanySystem(companyData) {
   updateMyTaskSidebar();
 }
 
-function loadTeamDemo() {
+async function loadTeamDemo() {
   if (typeof track === 'function') track('view.mode_switch', { from: 'personal', to: 'team' });
+
+  // 실제 워크스페이스 데이터 우선 시도
+  const token = localStorage.getItem('orbit_token');
+  if (token) {
+    try {
+      const res = await fetch('/api/workspace/team-view', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.members && data.members.length > 0) {
+          buildTeamSystem(data);
+          updateBreadcrumb('team');
+          document.querySelector('.tm-label').textContent = '👥 실제 팀 데이터';
+          return;
+        }
+      }
+    } catch {}
+  }
+
+  // 폴백: 데모 데이터
   buildTeamSystem(TEAM_DEMO);
   updateBreadcrumb('team');
   seedDemoTalentBoard('team');
@@ -4630,8 +4682,28 @@ function loadTeamDemo() {
 }
 window.loadTeamDemo = loadTeamDemo;
 
-function loadCompanyDemo() {
+async function loadCompanyDemo() {
   if (typeof track === 'function') track('view.mode_switch', { from: 'team', to: 'company' });
+
+  const token = localStorage.getItem('orbit_token');
+  if (token) {
+    try {
+      const res = await fetch('/api/workspace/company-view', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.departments && data.departments.length > 0) {
+          buildCompanySystem(data);
+          updateBreadcrumb('company');
+          document.querySelector('.tm-label').textContent = '🏢 실제 회사 데이터';
+          return;
+        }
+      }
+    } catch {}
+  }
+
+  // 폴백: 데모 데이터
   buildCompanySystem(COMPANY_DEMO);
   updateBreadcrumb('company');
   seedDemoTalentBoard('company');
@@ -5102,6 +5174,50 @@ function focusMember(memberNode) {
   updateBreadcrumb('member', deptName, memberNode.label);
 }
 
+// ─── 팀원 드릴다운: 개인 orbit 화면으로 전환 ────────────────────────────────
+function memberTasksToFakeSessions(member) {
+  const nodes = [];
+  const now = Date.now();
+  member.tasks.forEach((task, i) => {
+    const sid = `${member.id}-task-${i}`;
+    nodes.push({
+      type: 'user.message',
+      sessionId: sid,
+      data: { contentPreview: task.name, content: task.name },
+      ts: now - i * 120000,
+    });
+    (task.subtasks || []).forEach((sub, si) => {
+      nodes.push({
+        type: 'tool.end',
+        sessionId: sid,
+        data: { toolName: 'Write', filePath: sub, fileName: sub },
+        ts: now - i * 120000 + (si + 1) * 8000,
+      });
+    });
+  });
+  return nodes;
+}
+
+function drillDownToMember(memberNode) {
+  const memberData = TEAM_DEMO.members.find(m => m.id === memberNode.memberId);
+  if (!memberData) return;
+  const fakeNodes = memberTasksToFakeSessions(memberData);
+  _teamMode = false;
+  _companyMode = false;
+  _teamNodes = [];
+  _focusedMember = null;
+  _focusedDept = null;
+  document.getElementById('team-mode-badge').style.display = 'none';
+  document.querySelector('.tm-label').textContent = '👥 팀 시뮬레이션';
+  buildPlanetSystem(fakeNodes);
+  updateBreadcrumb('personal');
+  document.getElementById('h-hours').textContent = memberData.name;
+  window._drillDownSource = 'team';
+  window._drillDownMemberId = memberNode.memberId;
+  window._drillDownMemberName = memberNode.label;
+  lerpCameraTo(40, 0, 0, 0);
+}
+
 function unfocusMember() {
   _focusedMember = null;
   if (_companyMode) {
@@ -5199,7 +5315,7 @@ function updateTeamOrbits(dt) {
     const { orbitR, orbitAngle, orbitSpeed } = p.userData;
     const a  = orbitAngle + _clock * orbitSpeed;
     const mi = parseInt(p.userData.memberId.replace('m', '') || 0);
-    const ny = (mi % 2 === 0) ? 1.5 : -1.5;
+    const ny = 0;
     p.position.set(orbitR * Math.cos(a), ny, orbitR * Math.sin(a));
     const tn = _teamNodes.find(n => n.obj === p);
     if (tn) tn.pos.copy(p.position);
@@ -5831,7 +5947,11 @@ renderer.domElement.addEventListener('click', e => {
     } else if (_teamMode) {
       // 팀 모드 클릭 처리
       if (type === 'member') {
-        focusMember(hit.data);
+        if (_focusedMember === hit.data) {
+          drillDownToMember(hit.data);   // 2번째 클릭 → 개인 화면
+        } else {
+          focusMember(hit.data);          // 1번째 클릭 → 포커스
+        }
       } else if (_focusedMember && type === 'goal') {
         unfocusMember();
       }
@@ -6432,6 +6552,18 @@ window.addEventListener('DOMContentLoaded', () => {
   initClaudeStatusBadge();     // Claude 트래킹 배지 초기화
   _loadPersonalStats();        // 개인 학습 통계 초기화
 }, { once: true });
+
+// ─── Escape: 드릴다운 복귀 ────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  if (window._drillDownSource === 'team') {
+    window._drillDownSource = null;
+    window._drillDownMemberId = null;
+    window._drillDownMemberName = null;
+    buildTeamSystem(TEAM_DEMO);
+    updateBreadcrumb('team');
+  }
+});
 setTimeout(resizeRendererToSidebar, 100); // fallback
 
 // ─── 줌 거리 → LOD 레벨 ─────────────────────────────────────────────────────

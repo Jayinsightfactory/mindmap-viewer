@@ -111,6 +111,7 @@ const { createCertificateRouter }     = require('./src/certificate-engine');
 const signalEngine                    = require('./src/signal-engine');
 const diffLearner                     = require('./src/diff-learner');
 const dualSkillEngine                 = require('./src/dual-skill-engine');
+const createWorkspaceRouter           = require('./routes/workspace');
 
 // ─── 상수 ────────────────────────────────────────────────────────────────────
 const PORT         = process.env.PORT ? parseInt(process.env.PORT) : 4747;
@@ -734,6 +735,9 @@ app.use('/api', createAnalyticsRouter({ getDb: dbModule.getDb }));
 app.use('/api', createProfileRouter({ getDb: dbModule.getDb, verifyToken }));
 app.use('/api', createFollowRouter({ getDb: dbModule.getDb, verifyToken }));
 app.use('/api', createChatRouter({ getDb: dbModule.getDb, verifyToken, broadcastToRoom }));
+
+// ─── Workspace (팀/회사 관리) ─────────────────────────────────────────────────
+app.use('/api', createWorkspaceRouter({ db: dbModule.getDb ? dbModule.getDb() : null, verifyToken }));
 
 // ─── Regional Insight ────────────────────────────────────────────────────────
 app.use('/api', createRegionalInsightRouter({ getAllEvents }));

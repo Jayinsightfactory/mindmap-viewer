@@ -11,6 +11,11 @@ const { normalizeHookEvent } = require('./event-normalizer');
 
 // 서버 포트 (환경변수 또는 기본값 4747)
 const SERVER_PORT = process.env.MINDMAP_PORT || 4747;
+// 외부 서버 URL — Railway 등 원격 배포 시 설정
+// 예: export ORBIT_SERVER_URL=https://mindmap-viewer-production.up.railway.app
+const ORBIT_SERVER_URL = process.env.ORBIT_SERVER_URL || null;
+// 사용자 인증 토큰 (원격 서버 전송 시 필요)
+const ORBIT_TOKEN = process.env.ORBIT_TOKEN || '';
 // 멤버 이름: 환경변수로 설정 (예: export MINDMAP_MEMBER=다린)
 const MEMBER_NAME  = process.env.MINDMAP_MEMBER  || require('os').hostname().split('.')[0];
 
@@ -184,6 +189,32 @@ function appendToJsonl(event) {
 function postToServer(events) {
   try {
     const body = JSON.stringify({ events, channelId: CHANNEL_ID, memberName: MEMBER_NAME });
+
+    // 외부 서버(Railway 등)로 전송
+    if (ORBIT_SERVER_URL) {
+      const https = require('https');
+      const url = new URL('/api/hook', ORBIT_SERVER_URL);
+      const isHttps = url.protocol === 'https:';
+      const mod = isHttps ? https : http;
+      const headers = {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(body),
+      };
+      if (ORBIT_TOKEN) headers['Authorization'] = `Bearer ${ORBIT_TOKEN}`;
+      const req2 = mod.request({
+        hostname: url.hostname,
+        port: url.port || (isHttps ? 443 : 80),
+        path: url.pathname,
+        method: 'POST',
+        headers,
+      }, res => res.resume());
+      req2.on('error', () => {});
+      req2.setTimeout(5000, () => req2.destroy());
+      req2.write(body);
+      req2.end();
+    }
+
+    // 로컬 서버에도 항상 전송 (개인 뷰용)
     const req = http.request({
       hostname: '127.0.0.1',
       port: SERVER_PORT,
@@ -191,7 +222,6 @@ function postToServer(events) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
     }, (res) => {
-      // 응답 소비 (소켓 leak 방지)
       res.resume();
     });
     req.on('error', () => {}); // 서버 미실행 시 조용히 무시

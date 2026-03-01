@@ -100,6 +100,27 @@ async function createTables() {
       custom_header TEXT,
       updated_at TIMESTAMPTZ DEFAULT NOW()
     );
+
+    CREATE TABLE IF NOT EXISTS workspaces (
+      id           TEXT PRIMARY KEY,
+      name         TEXT NOT NULL,
+      company_name TEXT NOT NULL DEFAULT '',
+      owner_id     TEXT NOT NULL,
+      invite_code  TEXT UNIQUE NOT NULL,
+      created_at   TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS workspace_members (
+      workspace_id TEXT NOT NULL,
+      user_id      TEXT NOT NULL,
+      role         TEXT NOT NULL DEFAULT 'member',
+      team_name    TEXT NOT NULL DEFAULT '팀 1',
+      joined_at    TIMESTAMPTZ DEFAULT NOW(),
+      PRIMARY KEY (workspace_id, user_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_wm_user ON workspace_members(user_id);
+    CREATE INDEX IF NOT EXISTS idx_wm_ws   ON workspace_members(workspace_id);
   `);
 }
 
