@@ -246,6 +246,11 @@
     #ch-zoom-level { font-size: 10px; color: #6e7681; white-space: nowrap; min-width: 38px; text-align: center; }
     #ch-minimap-canvas { width: 156px; height: 100px; display: block; cursor: crosshair; }
 
+    /* ── 좌측 사이드바로 이전된 플로팅 버튼 숨김 ──────── */
+    #task-sidebar-btn, #feat-btn, #talent-board-btn, #view-btn, #mgr-btn {
+      display: none !important;
+    }
+
     /* ── 내 작업 사이드바 (좌측 슬라이드) ──────────── */
     #task-sidebar-btn {
       position: fixed; left: 14px; top: 50%; transform: translateY(-50%);
@@ -266,7 +271,7 @@
       transition: left .3s cubic-bezier(0.4,0,0.2,1);
       box-shadow: 4px 0 24px rgba(0,0,0,0.45);
     }
-    #my-task-sidebar.open { left: 0; }
+    #my-task-sidebar.open { left: 200px; }
     .mts-header { padding: 14px 12px 10px; border-bottom: 1px solid #21262d; flex-shrink: 0; }
     .mts-title { font-size: 12px; font-weight: 700; color: #3fb950; margin-bottom: 8px; display: flex; align-items: center; gap: 5px; }
     .mts-member-sel {
@@ -369,7 +374,7 @@
     #feat-btn.open  { border-color: #58a6ff; color: #58a6ff; background: rgba(88,166,255,0.08); }
 
     #feat-panel {
-      position: fixed; left: 16px; bottom: 110px; z-index: 199;
+      position: fixed; left: 210px; bottom: 60px; z-index: 199;
       width: 340px; max-height: calc(100vh - 160px);
       background: rgba(13,17,23,0.96);
       border: 1px solid #21262d; border-radius: 16px;
@@ -867,7 +872,7 @@
     #view-btn.open  { border-color: #bc8cff; color: #bc8cff; background: rgba(188,140,255,0.08); }
 
     #view-panel {
-      position: fixed; left: 16px; bottom: 160px; z-index: 198;
+      position: fixed; left: 210px; bottom: 60px; z-index: 198;
       width: 300px; max-height: calc(100vh - 220px);
       background: rgba(13,17,23,0.97); border: 1px solid #21262d;
       border-radius: 16px; backdrop-filter: blur(16px);
@@ -919,7 +924,7 @@
     #mgr-btn.open  { border-color:#f0883e; color:#f0883e; background:rgba(240,136,62,0.08); }
 
     #mgr-panel {
-      position:fixed; left:16px; bottom:200px; z-index:199;
+      position:fixed; left:210px; bottom:60px; z-index:199;
       width:268px; background:rgba(13,17,23,0.96);
       border:1px solid #21262d; border-radius:14px;
       backdrop-filter:blur(16px); box-shadow:0 8px 32px rgba(0,0,0,.5);
@@ -1115,8 +1120,10 @@
     <div class="ln-sep">도구</div>
     <button class="ln-item" onclick="toggleEffectsPanel()">✨ 마켓 이펙트</button>
     <button class="ln-item" onclick="toggleFeatPanel()">📋 기능 목록</button>
+    <button class="ln-item" onclick="toggleViewPanel()">👤 내 뷰 설정</button>
     <button class="ln-item" onclick="toggleMgrPanel()">👔 관리자 뷰</button>
     <button class="ln-item" onclick="toggleTalentBoard()">📡 인재 보드</button>
+    <button class="ln-item" onclick="toggleTaskSidebar()">📋 내 작업</button>
     <button class="ln-item" id="ln-orbit-btn" onclick="toggleOrbitAnim()">⏸ 공전 토글</button>
 
     <!-- 관리 -->
