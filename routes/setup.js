@@ -89,19 +89,25 @@ function getNodeVersion() {
 }
 
 // ── 원키 설치 스크립트 생성 ───────────────────────────────────────────────────
-function buildInstallScript(osType, port = 4747) {
-  const hookCmd = `node -e "
-const fs=require('fs'),path=require('path'),os=require('os');
-const p=path.join(os.homedir(),'.claude','settings.json');
-const s=fs.existsSync(p)?JSON.parse(fs.readFileSync(p,'utf8')):{};
-if(!s.hooks) s.hooks={};
-if(!s.hooks.PostToolUse) s.hooks.PostToolUse=[];
-const hook='curl -s -X POST http://localhost:${port}/api/hook -H \\'Content-Type:application/json\\' -d @-';
-if(!s.hooks.PostToolUse.includes(hook)) s.hooks.PostToolUse.push(hook);
-fs.mkdirSync(path.dirname(p),{recursive:true});
-fs.writeFileSync(p,JSON.stringify(s,null,2));
-console.log('✅ Orbit 훅 등록 완료');
-"`;
+function buildInstallScript(osType, port = 4747, opts = {}) {
+  const { token = '', serverUrl = '', memberName = '' } = opts;
+  const REPO_URL = 'https://github.com/dlaww-wq/mindmap-viewer.git';
+  const ORBIT_DIR = '~/orbit';
+
+  // 환경변수 블록 (Railway 연결 시)
+  const envBlock = serverUrl ? `
+# ── Orbit 서버 연결 설정 ──
+SHELL_RC=~/.zshrc
+[ -f ~/.bashrc ] && SHELL_RC=~/.bashrc
+add_env() {
+  grep -qF "$1" "$SHELL_RC" || echo "export $1" >> "$SHELL_RC"
+}
+add_env 'ORBIT_SERVER_URL=${serverUrl}'
+${token ? `add_env 'ORBIT_TOKEN=${token}'` : ''}
+${memberName ? `add_env 'MINDMAP_MEMBER=${memberName}'` : ''}
+source "$SHELL_RC" 2>/dev/null || true
+echo "✅ 환경변수 등록 완료"
+` : '';
 
   if (osType === 'mac') {
     return {
@@ -110,6 +116,16 @@ console.log('✅ Orbit 훅 등록 완료');
       script: `#!/bin/bash
 echo "🚀 Orbit AI 설치 시작..."
 
+# Orbit 저장소 클론 (없으면)
+if [ ! -d "${ORBIT_DIR}" ]; then
+  echo "📂 Orbit 다운로드 중..."
+  git clone ${REPO_URL} ${ORBIT_DIR}
+  cd ${ORBIT_DIR} && npm install --silent
+else
+  echo "✅ Orbit 이미 설치됨"
+  cd ${ORBIT_DIR} && git pull --quiet
+fi
+${envBlock}
 # Ollama 설치 확인
 if ! command -v ollama &>/dev/null; then
   echo "📦 Ollama 설치 중..."
@@ -125,17 +141,13 @@ if ! curl -s http://localhost:11434 &>/dev/null; then
   sleep 2
 fi
 
-# 기본 모델 다운로드
-echo "🤖 orbit-insight 모델 준비 중..."
-ollama pull llama3.2:latest 2>/dev/null || true
-
 # Claude Code 훅 등록
 echo "🔗 Claude Code 훅 등록 중..."
-${hookCmd}
+node ${ORBIT_DIR}/bin/orbit.js hook
 
 echo ""
 echo "✅ Orbit AI 설정 완료!"
-echo "   브라우저에서 http://localhost:${port} 를 새로고침하세요."`,
+${serverUrl ? `echo "   팀 서버: ${serverUrl}"` : `echo "   브라우저에서 http://localhost:${port} 를 새로고침하세요."`}`,
     };
   }
 
@@ -246,7 +258,12 @@ module.exports = function createSetupRouter({ getAllEvents, getDb, port = 4747 }
   // ── 원키 설치 스크립트 ────────────────────────────────────────────────────
   router.get('/setup/install-script', (req, res) => {
     const osType = req.query.os || detectOS();
-    const script = buildInstallScript(osType, port);
+    const opts   = {
+      token:      req.query.token      || '',
+      serverUrl:  req.query.serverUrl  || '',
+      memberName: req.query.memberName || '',
+    };
+    const script = buildInstallScript(osType, port, opts);
     res.json({ ...script, os: osType });
   });
 

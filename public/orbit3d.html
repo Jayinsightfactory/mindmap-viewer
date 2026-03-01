@@ -8047,7 +8047,19 @@ window.renderSetupPanel = renderSetupPanel;
 
 async function _loadInstallScript(osType) {
   try {
-    const r    = await fetch(`/api/setup/install-script?os=${osType}`);
+    // 로그인 상태면 토큰 + 서버URL 자동 삽입 → 팀원이 붙여넣기만 하면 됨
+    const user      = typeof _orbitUser !== 'undefined' ? _orbitUser : null;
+    const token     = user?.token || localStorage.getItem('orbitUser') && JSON.parse(localStorage.getItem('orbitUser'))?.token || '';
+    const serverUrl = (location.hostname !== '127.0.0.1' && location.hostname !== 'localhost')
+      ? location.origin : '';
+    const memberName = user?.name || '';
+
+    const params = new URLSearchParams({ os: osType });
+    if (token)      params.set('token',      token);
+    if (serverUrl)  params.set('serverUrl',  serverUrl);
+    if (memberName) params.set('memberName', memberName);
+
+    const r    = await fetch(`/api/setup/install-script?${params}`);
     const data = await r.json();
     const el   = document.getElementById('sp-script-box');
     if (el) el.textContent = data.script || '';
