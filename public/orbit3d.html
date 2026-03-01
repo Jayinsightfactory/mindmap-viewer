@@ -2040,9 +2040,52 @@
       <button class="sg-btn-icon" onclick="toggleSuggestionPanel()">✕</button>
     </div>
   </div>
-  <div class="sg-list" id="sg-list">
-    <div class="sg-empty">로딩 중…</div>
+  <!-- 탭 선택 -->
+  <div style="display:flex;gap:4px;padding:6px 10px 0;border-bottom:1px solid #21262d">
+    <button id="sg-tab-suggest" onclick="switchSgTab('suggest')"
+      style="flex:1;background:#21262d;border:none;color:#cdd9e5;font-size:10px;padding:4px;border-radius:4px;cursor:pointer">
+      💡 제안·솔루션
+    </button>
+    <button id="sg-tab-trigger" onclick="switchSgTab('trigger')"
+      style="flex:1;background:transparent;border:none;color:#6e7681;font-size:10px;padding:4px;border-radius:4px;cursor:pointer">
+      🔍 이슈 트리거
+    </button>
   </div>
+
+  <!-- 제안·솔루션 탭 -->
+  <div id="sg-panel-suggest">
+    <div class="sg-list" id="sg-list">
+      <div class="sg-empty">로딩 중…</div>
+    </div>
+  </div>
+
+  <!-- 이슈 트리거 탭 -->
+  <div id="sg-panel-trigger" style="display:none">
+    <!-- 이슈 마킹 버튼 -->
+    <div style="padding:8px 10px;border-bottom:1px solid #21262d">
+      <div style="font-size:10px;color:#6e7681;margin-bottom:5px">
+        지금 이슈가 발생했나요? 직전 대화 패턴을 역추적합니다.
+      </div>
+      <div style="display:flex;gap:5px">
+        <button onclick="markIssue({severity:'high',issue_type:'업무이슈'})"
+          style="flex:1;background:rgba(248,81,73,.12);border:1px solid #f85149;color:#f85149;
+                 font-size:10px;padding:5px;border-radius:5px;cursor:pointer">🚨 업무 이슈</button>
+        <button onclick="markIssue({severity:'medium',issue_type:'인간관계'})"
+          style="flex:1;background:rgba(255,149,0,.12);border:1px solid #ff9500;color:#ff9500;
+                 font-size:10px;padding:5px;border-radius:5px;cursor:pointer">😤 인간관계</button>
+        <button onclick="markIssue({severity:'low',issue_type:'기타'})"
+          style="flex:1;background:rgba(139,148,158,.12);border:1px solid #6e7681;color:#8b949e;
+                 font-size:10px;padding:5px;border-radius:5px;cursor:pointer">📌 기타</button>
+      </div>
+    </div>
+    <!-- 학습된 트리거 목록 -->
+    <div style="padding:8px 10px;overflow-y:auto;flex:1" id="sg-trigger-list">
+      <div style="font-size:11px;color:#6e7681;text-align:center;padding:16px 0">
+        로딩 중…
+      </div>
+    </div>
+  </div>
+
   <div class="sg-footer" id="sg-footer"></div>
 </div>
 
@@ -6962,6 +7005,20 @@ function toggleSuggestionPanel() {
 }
 window.toggleSuggestionPanel = toggleSuggestionPanel;
 
+// ── 제안 패널 탭 전환 ────────────────────────────────────────────────────────
+function switchSgTab(tab) {
+  const isSuggest = tab === 'suggest';
+  document.getElementById('sg-panel-suggest').style.display = isSuggest ? '' : 'none';
+  document.getElementById('sg-panel-trigger').style.display = isSuggest ? 'none' : '';
+  const t1 = document.getElementById('sg-tab-suggest');
+  const t2 = document.getElementById('sg-tab-trigger');
+  if (t1) { t1.style.background = isSuggest ? '#21262d' : 'transparent'; t1.style.color = isSuggest ? '#cdd9e5' : '#6e7681'; }
+  if (t2) { t2.style.background = isSuggest ? 'transparent' : '#21262d'; t2.style.color = isSuggest ? '#6e7681' : '#cdd9e5'; }
+  if (!isSuggest) loadTriggers();
+}
+window.switchSgTab = switchSgTab;
+
+
 // ── 행동 이상 신호 카드 렌더 ─────────────────────────────────────────────────
 const SIGNAL_META = {
   wpm_spike:       { icon:'⚡', label:'타이핑 속도 급등',   color:'#f85149', bg:'rgba(248,81,73,.08)'  },
@@ -7167,6 +7224,99 @@ async function ackSignal(id, btn) {
   } catch (e) { showToast(`❌ ${e.message}`); }
 }
 window.ackSignal = ackSignal;
+
+// ── 이슈 마킹 ────────────────────────────────────────────────────────────────
+async function markIssue(opts = {}) {
+  try {
+    const r = await fetch('/api/personal/issue', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        severity:   opts.severity   || 'medium',
+        issue_type: opts.issue_type || '불명확',
+        note:       opts.note       || '',
+        source:     opts.source     || 'user_marked',
+      }),
+    });
+    const d = await r.json();
+    if (d.ok) {
+      showToast('🚨 이슈 마킹 완료 — 직전 대화 패턴 역추적 중…');
+      setTimeout(loadTriggers, 2000);
+    }
+  } catch (e) { showToast(`❌ ${e.message}`); }
+}
+window.markIssue = markIssue;
+
+// ── 트리거 패턴 로드 ──────────────────────────────────────────────────────────
+const TOPIC_KR = {
+  work_pressure:'업무 압박', interpersonal:'인간관계 갈등',
+  deadline:'일정 압박', blame_shift:'책임 전가',
+  technical:'기술 문제', praise:'칭찬', other:'기타',
+};
+const SENTIMENT_KR = {
+  positive:'긍정', negative:'부정', neutral:'중립',
+  frustrated:'좌절', anxious:'불안', angry:'분노',
+};
+const URGENCY_KR = { none:'없음', low:'낮음', medium:'보통', high:'높음', critical:'위급' };
+
+async function loadTriggers() {
+  const el = document.getElementById('sg-trigger-list');
+  if (!el) return;
+  try {
+    const [trigRes, riskRes] = await Promise.allSettled([
+      fetch('/api/personal/triggers?limit=10'),
+      fetch('/api/personal/risk'),
+    ]);
+    const triggers = trigRes.status==='fulfilled' ? ((await trigRes.value.json()).triggers||[]) : [];
+    const riskData = riskRes.status==='fulfilled' ? (await riskRes.value.json()) : {};
+    const riskLevel = riskData.riskLevel || 'unknown';
+    const riskScore = riskData.score || 0;
+    const matched   = riskData.matchedPattern;
+    const riskColors = { high:'#f85149', medium:'#ff9500', low:'#3fb950', unknown:'#8b949e', none:'#3fb950' };
+    const riskLabels = { high:'🔴 높음', medium:'🟠 보통', low:'🟢 낮음', unknown:'⚪ 미측정', none:'🟢 없음' };
+
+    let html = `<div style="background:#0d1117;border-radius:8px;padding:8px 10px;margin-bottom:8px">
+      <div style="font-size:10px;color:#6e7681;margin-bottom:4px">현재 대화 위험도</div>
+      <div style="font-size:13px;font-weight:600;color:${riskColors[riskLevel]||'#8b949e'}">
+        ${riskLabels[riskLevel]||riskLevel}
+        <span style="font-size:10px;font-weight:normal;color:#6e7681"> (${(riskScore*100).toFixed(0)}%)</span>
+      </div>
+      ${matched ? `<div style="font-size:10px;color:#8b949e;margin-top:3px">
+        유사 패턴: ${escHtml(TOPIC_KR[matched.dominant_topic]||'')} + ${escHtml(SENTIMENT_KR[matched.dominant_sentiment]||'')} → 평균 ${matched.hours_before_issue?.toFixed(0)||'?'}h 후 이슈
+      </div>` : ''}
+    </div>`;
+
+    if (!triggers.length) {
+      html += `<div style="font-size:11px;color:#6e7681;text-align:center;padding:12px 0">
+        이슈 마킹 시 직전 대화 패턴을<br>역추적해 트리거를 학습합니다
+      </div>`;
+    } else {
+      html += triggers.map(t => {
+        const pct   = Math.round((t.correlation||0.5)*100);
+        const color = pct>70?'#f85149':pct>50?'#ff9500':'#3fb950';
+        return `<div style="margin-bottom:7px;padding:7px 9px;background:#0d1117;border-radius:6px;border-left:2px solid ${color}">
+          <div style="display:flex;justify-content:space-between;margin-bottom:2px">
+            <span style="font-size:11px;color:#cdd9e5;font-weight:600">
+              ${escHtml(TOPIC_KR[t.dominant_topic]||t.dominant_topic)} + ${escHtml(SENTIMENT_KR[t.dominant_sentiment]||'')}
+            </span>
+            <span style="font-size:10px;color:#6e7681">${t.frequency}회</span>
+          </div>
+          <div style="font-size:10px;color:#6e7681;margin-bottom:4px">
+            ${URGENCY_KR[t.dominant_urgency]||''} · 평균 ${t.hours_before_issue?.toFixed(0)||'?'}h 전 시작
+          </div>
+          <div style="height:3px;background:#21262d;border-radius:2px">
+            <div style="width:${pct}%;height:100%;background:${color};border-radius:2px"></div>
+          </div>
+          <div style="font-size:9px;color:#6e7681;margin-top:2px">예측 정확도 ${pct}%</div>
+        </div>`;
+      }).join('');
+    }
+    el.innerHTML = html;
+  } catch(e) {
+    el.innerHTML = `<div style="color:#f85149;font-size:11px">❌ ${escHtml(e.message)}</div>`;
+  }
+}
+window.loadTriggers = loadTriggers;
 
 async function respondSuggestion(id, action) {
   try {

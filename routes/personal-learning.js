@@ -4,18 +4,25 @@
  * routes/personal-learning.js
  * 개인 학습 데이터 수신 + 작업 제안 관리 API
  *
- * POST /api/personal/keyboard       ← keyboard-watcher
- * POST /api/personal/file-content   ← file-learner
- * POST /api/personal/app-activity   ← system-monitor
- * GET  /api/personal/status         ← 오늘 통계
- * POST /api/personal/toggle         ← 기능 on/off
- * GET  /api/personal/suggestions    ← pending 제안 목록
+ * POST /api/personal/keyboard           ← keyboard-watcher
+ * POST /api/personal/file-content       ← file-learner
+ * POST /api/personal/app-activity       ← system-monitor
+ * GET  /api/personal/status             ← 오늘 통계
+ * POST /api/personal/toggle             ← 기능 on/off
+ * GET  /api/personal/suggestions        ← pending 제안 목록
  * POST /api/personal/suggestions/:id/accept
  * POST /api/personal/suggestions/:id/dismiss
+ *
+ * POST /api/personal/issue              ← 이슈 발생 마킹 (수동 or 자동)
+ * GET  /api/personal/triggers           ← 학습된 트리거 패턴 목록
+ * GET  /api/personal/risk               ← 현재 대화 위험도 평가
+ * GET  /api/personal/signals            ← 행동 이상 신호
+ * POST /api/personal/signals/:id/ack   ← 신호 확인
  */
 
 const { Router } = require('express');
 const { ulid }   = require('ulid');
+const path       = require('path');
 
 module.exports = function createPersonalLearningRouter({ getDb, insertEvent, broadcastAll }) {
   const router = Router();
@@ -249,21 +256,84 @@ module.exports = function createPersonalLearningRouter({ getDb, insertEvent, bro
   });
 
   // ── POST /api/personal/signals/:id/ack ────────────────────────────────────
-  // 신호 확인(acknowledge) 처리
   router.post('/personal/signals/:id/ack', (req, res) => {
     try {
       const db = getDb();
-      try {
-        db.prepare(`UPDATE signals SET acknowledged=1 WHERE id=?`).run(req.params.id);
-      } catch {}
+      try { db.prepare(`UPDATE signals SET acknowledged=1 WHERE id=?`).run(req.params.id); } catch {}
       res.json({ ok: true });
-    } catch (e) {
-      res.status(500).json({ error: e.message });
-    }
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── POST /api/personal/issue ───────────────────────────────────────────────
+  // 이슈 발생 마킹: 수동("지금 이슈 발생") or 자동(stress-detector 트리거)
+  // body: { severity?, issue_type?, note?, source? }
+  router.post('/personal/issue', (req, res) => {
+    try {
+      const db = getDb();
+      const triggerEngine = requireSafe(path.join(__dirname, '../src/trigger-engine'));
+      if (triggerEngine) triggerEngine.ensureTables(db);
+
+      const { severity = 'medium', issue_type = '불명확', note = '', source = 'user_marked' } = req.body;
+      const id = ulid();
+      try {
+        db.prepare(`
+          INSERT INTO issue_events (id, source, severity, issue_type, note)
+          VALUES (?, ?, ?, ?, ?)
+        `).run(id, source, severity, issue_type, note);
+      } catch (e2) {
+        // issue_events 테이블 없으면 생성 후 재시도
+        if (triggerEngine) triggerEngine.ensureTables(db);
+        db.prepare(`
+          INSERT INTO issue_events (id, source, severity, issue_type, note)
+          VALUES (?, ?, ?, ?, ?)
+        `).run(id, source, severity, issue_type, note);
+      }
+
+      // 즉시 트리거 학습 시도 (백그라운드)
+      if (triggerEngine) {
+        setImmediate(() => {
+          try { triggerEngine.processUnanalyzedIssues(db); } catch {}
+        });
+      }
+
+      res.json({ ok: true, id });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── GET /api/personal/triggers ─────────────────────────────────────────────
+  // 학습된 이슈 트리거 패턴 목록 (텍스트 없음 — 태그+통계만)
+  router.get('/personal/triggers', (req, res) => {
+    try {
+      const db          = getDb();
+      const triggerEngine = requireSafe(path.join(__dirname, '../src/trigger-engine'));
+      const limit       = Math.min(parseInt(req.query.limit) || 20, 50);
+      const triggers    = triggerEngine ? triggerEngine.getTopTriggers(db, limit) : [];
+      res.json({ triggers, total: triggers.length });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── GET /api/personal/risk ─────────────────────────────────────────────────
+  // 현재 대화 패턴이 알려진 트리거와 얼마나 유사한지 위험도 평가
+  router.get('/personal/risk', (req, res) => {
+    try {
+      const db            = getDb();
+      const contentAnalyzer = requireSafe(path.join(__dirname, '../src/content-analyzer'));
+      const triggerEngine   = requireSafe(path.join(__dirname, '../src/trigger-engine'));
+
+      const summary  = contentAnalyzer ? contentAnalyzer.recentTagSummary(db, 4) : null;
+      const riskInfo = triggerEngine   ? triggerEngine.assessCurrentRisk(db, summary) : { riskLevel: 'unknown' };
+
+      res.json({ summary, ...riskInfo });
+    } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
   return router;
 };
+
+// safe require (모듈 없으면 null)
+function requireSafe(p) {
+  try { return require(p); } catch { return null; }
+}
 
 function tryParse(s) {
   if (!s || typeof s !== 'string') return s;

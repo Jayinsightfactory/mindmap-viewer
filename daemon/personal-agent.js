@@ -60,6 +60,43 @@ function waitForServer(retries = 10) {
   });
 }
 
+// ── content-analyzer: 로컬 Ollama로 키보드 내용 태깅 ────────────────────────
+async function runContentAnalysis() {
+  try {
+    const contentAnalyzer = require(path.join(ROOT, 'src/content-analyzer'));
+    const dbModule        = require(path.join(ROOT, 'src/db'));
+    const db              = dbModule.getDb ? dbModule.getDb() : null;
+    if (!db) return;
+
+    // 최근 4시간 미분석 이벤트
+    const since  = new Date(Date.now() - 4 * 3600_000).toISOString();
+    const events = db.prepare(
+      `SELECT * FROM events WHERE type='keyboard.chunk' AND timestamp > ? ORDER BY timestamp ASC`
+    ).all(since);
+
+    await contentAnalyzer.analyzeAndStore(events, db);
+  } catch (err) {
+    console.error('[personal-agent] content-analyzer 오류:', err.message);
+  }
+}
+
+// ── trigger-engine: 이슈 역추적 + 트리거 패턴 학습 ──────────────────────────
+async function runTriggerLearning() {
+  try {
+    const triggerEngine = require(path.join(ROOT, 'src/trigger-engine'));
+    const dbModule      = require(path.join(ROOT, 'src/db'));
+    const db            = dbModule.getDb ? dbModule.getDb() : null;
+    if (!db) return;
+
+    const learned = triggerEngine.processUnanalyzedIssues(db);
+    if (learned.length) {
+      console.log(`[personal-agent] 트리거 패턴 학습 완료: ${learned.length}개`);
+    }
+  } catch (err) {
+    console.error('[personal-agent] trigger-engine 오류:', err.message);
+  }
+}
+
 // ── suggestion-engine 실행 ────────────────────────────────────────────────────
 async function runSuggestions() {
   try {
@@ -106,9 +143,17 @@ async function main() {
     console.error('[personal-agent] 파일 와처 시작 실패:', err.message);
   }
 
-  // ③ 30분마다 suggestion-engine 실행
-  await runSuggestions(); // 최초 즉시 실행
-  const suggestionTimer = setInterval(runSuggestions, 30 * 60 * 1000);
+  // ③ 10분마다 content-analyzer 실행 (Ollama 로컬 태깅)
+  await runContentAnalysis();
+  const contentTimer = setInterval(runContentAnalysis, 10 * 60 * 1000);
+
+  // ④ 30분마다 suggestion-engine + trigger-engine 실행
+  await runSuggestions();
+  await runTriggerLearning();
+  const suggestionTimer = setInterval(async () => {
+    await runSuggestions();
+    await runTriggerLearning();
+  }, 30 * 60 * 1000);
 
   // ── 상태 출력 ──────────────────────────────────────────────────────────────
   console.log(`[personal-agent] 실행 중`);
@@ -120,6 +165,7 @@ async function main() {
   // ── 종료 핸들러 ────────────────────────────────────────────────────────────
   function shutdown(sig) {
     console.log(`\n[personal-agent] 종료 신호(${sig}) 수신`);
+    clearInterval(contentTimer);
     clearInterval(suggestionTimer);
     try { keyboardWatcher?.stop(); } catch {}
     try { fileLearner?.stop(); } catch {}
