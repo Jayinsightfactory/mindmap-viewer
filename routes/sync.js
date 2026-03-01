@@ -118,6 +118,48 @@ module.exports = function createSyncRouter({ getDb, getAllEvents }) {
     }
   });
 
+  // ── GET /api/sync/free-solutions ──────────────────────────────────────────
+  // 클라우드 서버에서 검증 완료된 무료 솔루션을 가져와 로컬 캐시에 저장
+  router.get('/sync/free-solutions', async (req, res) => {
+    const db = getDb();
+    ensureKv(db);
+
+    // 1) 로컬 캐시 우선 반환
+    let cached = [];
+    try {
+      db.prepare(`
+        CREATE TABLE IF NOT EXISTS free_solutions (
+          id TEXT PRIMARY KEY, type TEXT, title TEXT, description TEXT,
+          template TEXT, accuracy REAL, usageCount INTEGER DEFAULT 0,
+          fetchedAt DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+      `).run();
+      cached = db.prepare(`SELECT * FROM free_solutions ORDER BY accuracy DESC, usageCount DESC LIMIT 50`).all();
+    } catch {}
+
+    // 2) 클라우드에서 최신 목록 pull (백그라운드)
+    const cloudUrl = process.env.ORBIT_CLOUD_URL;
+    if (cloudUrl) {
+      pullFreeSolutions(db, cloudUrl).catch(() => {});
+    }
+
+    res.json({ solutions: cached, fromCache: true });
+  });
+
+  // ── POST /api/sync/free-solutions/use ─────────────────────────────────────
+  // 무료 솔루션 사용 카운트 증가 + 클라우드에 사용 통계 보고
+  router.post('/sync/free-solutions/use', (req, res) => {
+    try {
+      const db = getDb();
+      const { id } = req.body;
+      if (!id) return res.status(400).json({ error: 'id required' });
+      try {
+        db.prepare(`UPDATE free_solutions SET usageCount = usageCount + 1 WHERE id = ?`).run(id);
+      } catch {}
+      res.json({ ok: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
   // ── 자동 동기화 루프 (30분) ───────────────────────────────────────────────
   setInterval(async () => {
     try {
@@ -243,6 +285,60 @@ function httpPost(url, body, token) {
       req.on('error', reject);
       req.setTimeout(30000, () => { req.destroy(); reject(new Error('timeout')); });
       req.write(body);
+      req.end();
+    } catch (e) { reject(e); }
+  });
+}
+
+// ── 클라우드 → 무료 솔루션 Pull ──────────────────────────────────────────────
+// 오퍼레이터가 여러 사용자의 프롬프트 학습 데이터를 검증해 퍼블리시한
+// 무료 솔루션 목록을 가져와 로컬 DB에 캐시
+async function pullFreeSolutions(db, cloudUrl) {
+  const token = process.env.ORBIT_TOKEN;
+  try {
+    const data = await httpGet(cloudUrl + '/api/solutions/public?type=prompt_template&limit=50', token);
+    const list = JSON.parse(data).solutions || [];
+
+    const upsert = db.prepare(`
+      INSERT OR REPLACE INTO free_solutions
+        (id, type, title, description, template, accuracy, usageCount, fetchedAt)
+      VALUES (?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
+    `);
+    for (const s of list) {
+      upsert.run(s.id, s.type || 'prompt_template', s.title, s.description,
+                 s.template, s.accuracy || 0, s.usageCount || 0);
+    }
+    console.log(`[sync] 무료 솔루션 ${list.length}개 갱신`);
+  } catch (err) {
+    // 클라우드 미연결 시 무시
+  }
+}
+
+// ── HTTP GET 헬퍼 ────────────────────────────────────────────────────────────
+function httpGet(url, token) {
+  return new Promise((resolve, reject) => {
+    try {
+      const parsed  = new URL(url);
+      const mod     = parsed.protocol === 'https:' ? https : http;
+      const headers = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const req = mod.request({
+        hostname: parsed.hostname,
+        port:     parsed.port || (parsed.protocol === 'https:' ? 443 : 80),
+        path:     parsed.pathname + (parsed.search || ''),
+        method:   'GET',
+        headers,
+      }, res => {
+        let data = '';
+        res.on('data', c => data += c);
+        res.on('end', () => {
+          if (res.statusCode >= 400) reject(new Error(`HTTP ${res.statusCode}`));
+          else resolve(data);
+        });
+      });
+      req.on('error', reject);
+      req.setTimeout(15000, () => { req.destroy(); reject(new Error('timeout')); });
       req.end();
     } catch (e) { reject(e); }
   });

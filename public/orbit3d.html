@@ -6962,69 +6962,147 @@ function toggleSuggestionPanel() {
 }
 window.toggleSuggestionPanel = toggleSuggestionPanel;
 
+// ── 제안 패널: 무료 솔루션 카드 렌더 ─────────────────────────────────────────
+function _renderFreeSolCard(s) {
+  const acc = s.accuracy ? `${Math.round(s.accuracy * 100)}%` : '–';
+  return `<div class="sg-card" style="border-color:rgba(138,87,222,.35);background:rgba(138,87,222,.06)">
+    <div class="sg-card-top">
+      <span class="sg-card-pri" style="background:rgba(138,87,222,.2);color:#bc78de">✅ 검증됨</span>
+      <span class="sg-card-type">🎁 무료 솔루션</span>
+    </div>
+    <div class="sg-card-title">${escHtml(s.title||'')}</div>
+    <div class="sg-card-desc">${escHtml(s.description||'')}</div>
+    <div class="sg-card-evidence">정확도 ${acc} · 사용 ${s.usageCount||0}회</div>
+    <div class="sg-card-actions">
+      <button class="sg-accept-btn" style="background:rgba(138,87,222,.25);border-color:#8957e5"
+        onclick="applyFreeSolution(${escHtml(JSON.stringify(s))})">⚡ 적용</button>
+    </div>
+  </div>`;
+}
+
+// ── 제안 패널: 로컬 학습 카드 렌더 ──────────────────────────────────────────
+function _renderLocalSugCard(s) {
+  const TYPE_LABEL = {
+    automation:'⚙️ 자동화', template:'📝 템플릿',
+    shortcut:'⌨️ 단축키', review:'🔍 검토', consolidation:'🔗 통합',
+    prompt_template:'🧠 프롬프트 학습',
+  };
+  const PRI_LABEL = { 5:'🔴', 4:'🟠', 3:'🟡', 2:'🔵', 1:'⚪' };
+  const evidence  = Array.isArray(s.evidence) ? s.evidence : [];
+  const evText    = evidence.map(ev => {
+    if (ev.type === 'file_access')       return `📁 ${(ev.path||'').split('/').pop()} · ${ev.count}회`;
+    if (ev.type === 'repeat_typing')     return `⌨️ 반복 입력 ${ev.count}회`;
+    if (ev.type === 'app_switch')        return `🔄 ${ev.pair} · ${ev.count}회`;
+    if (ev.type === 'long_session')      return `⏱ ${Math.round((ev.durationMin||0)/60*10)/10}시간`;
+    if (ev.type === 'prompt_refinement')
+      return `🔁 ${ev.app||'AI'} 수정 ${ev.revisionCount}회 · "${(ev.firstPrompt||'').slice(0,25)}…"`;
+    return '';
+  }).filter(Boolean).join(' · ');
+
+  const sug      = (typeof s.suggestion === 'object' && s.suggestion) ? s.suggestion : {};
+  const isPrompt = s.type === 'prompt_template';
+  // prompt_template은 "학습 중" 배지만 — 무료솔루션으로 승격 후 사용 가능
+  const learningNote = isPrompt
+    ? `<div style="font-size:10px;color:#8957e5;margin:4px 0">
+         📡 오퍼레이터 검증 후 무료 솔루션으로 제공됩니다
+       </div>`
+    : '';
+
+  return `<div class="sg-card" id="sg-card-${escHtml(s.id)}">
+    <div class="sg-card-top">
+      <span class="sg-card-pri p${s.priority||3}">${PRI_LABEL[s.priority||3]||'🟡'}</span>
+      <span class="sg-card-type">${TYPE_LABEL[s.type]||s.type}</span>
+      ${isPrompt ? '<span style="font-size:9px;color:#8b949e;margin-left:auto">학습 중 ●</span>' : ''}
+    </div>
+    <div class="sg-card-title">${escHtml(s.title)}</div>
+    <div class="sg-card-desc">${escHtml(s.description||'')}</div>
+    ${evText ? `<div class="sg-card-evidence">${escHtml(evText)}</div>` : ''}
+    ${learningNote}
+    <div class="sg-card-actions">
+      ${!isPrompt ? `<button class="sg-accept-btn" onclick="respondSuggestion('${escHtml(s.id)}','accept')">✓ 수락</button>` : ''}
+      <button class="sg-dismiss-btn" onclick="respondSuggestion('${escHtml(s.id)}','dismiss')">✕ 무시</button>
+    </div>
+  </div>`;
+}
+
 async function loadSuggestions() {
   const list   = document.getElementById('sg-list');
   const footer = document.getElementById('sg-footer');
   if (!list) return;
   list.innerHTML = '<div class="sg-empty">로딩 중…</div>';
+
   try {
-    const r    = await fetch('/api/personal/suggestions?limit=30');
-    const data = await r.json();
-    const sugs = data.suggestions || [];
-    if (footer) footer.textContent = `총 ${sugs.length}개 제안`;
-    if (!sugs.length) {
+    // 병렬 fetch: 클라우드 무료솔루션 + 로컬 학습 데이터
+    const [solRes, sugRes] = await Promise.allSettled([
+      fetch('/api/sync/free-solutions'),
+      fetch('/api/personal/suggestions?limit=50'),
+    ]);
+
+    const freeSols = solRes.status === 'fulfilled'
+      ? ((await solRes.value.json()).solutions || [])
+      : [];
+    const localSugs = sugRes.status === 'fulfilled'
+      ? ((await sugRes.value.json()).suggestions || [])
+      : [];
+
+    const totalCount = freeSols.length + localSugs.length;
+    if (footer) footer.textContent = `솔루션 ${freeSols.length}개 · 학습 중 ${localSugs.length}개`;
+
+    if (!totalCount) {
       list.innerHTML = `<div class="sg-empty">
-        아직 제안이 없습니다.<br><br>
+        아직 데이터가 없습니다.<br><br>
         <span style="font-size:10px">orbit learn start 실행 후<br>
-        데이터가 쌓이면 자동으로 분석됩니다</span>
+        AI 작업을 하면 자동으로 학습됩니다</span>
       </div>`;
       return;
     }
-    const TYPE_LABEL = {
-      automation:'⚙️ 자동화', template:'📝 템플릿',
-      shortcut:'⌨️ 단축키', review:'🔍 검토', consolidation:'🔗 통합',
-      prompt_template:'🧠 프롬프트 최적화',
-    };
-    const PRI_LABEL = { 5:'🔴 긴급', 4:'🟠 높음', 3:'🟡 보통', 2:'🔵 낮음', 1:'⚪ 참고' };
-    list.innerHTML = sugs.map(s => {
-      const evidence = Array.isArray(s.evidence) ? s.evidence : [];
-      const evText   = evidence.map(ev => {
-        if (ev.type === 'file_access')      return `📁 ${(ev.path||'').split('/').pop()} · ${ev.count}회`;
-        if (ev.type === 'repeat_typing')    return `⌨️ 반복 입력 ${ev.count}회`;
-        if (ev.type === 'app_switch')       return `🔄 ${ev.pair} · ${ev.count}회`;
-        if (ev.type === 'long_session')     return `⏱ ${Math.round((ev.durationMin||0)/60*10)/10}시간`;
-        if (ev.type === 'prompt_refinement')
-          return `🔁 ${ev.app||'AI'} 수정 ${ev.revisionCount}회 · 최초:"${(ev.firstPrompt||'').slice(0,30)}…"`;
-        return '';
-      }).filter(Boolean).join(' · ');
 
-      const sug    = (typeof s.suggestion === 'object' && s.suggestion) ? s.suggestion : {};
-      const isPrompt = s.type === 'prompt_template';
-      const extraBtn = isPrompt && sug.fixedSkill
-        ? `<button class="sg-accept-btn" style="background:rgba(138,87,222,.25);border-color:#8957e5"
-             onclick="savePromptSkill('${escHtml(s.id)}',${escHtml(JSON.stringify(sug.fixedSkill))})">
-             🧠 스킬로 저장</button>`
-        : '';
-      return `<div class="sg-card" id="sg-card-${escHtml(s.id)}">
-        <div class="sg-card-top">
-          <span class="sg-card-pri p${s.priority||3}">${PRI_LABEL[s.priority||3]||'보통'}</span>
-          <span class="sg-card-type">${TYPE_LABEL[s.type]||s.type}</span>
-        </div>
-        <div class="sg-card-title">${escHtml(s.title)}</div>
-        <div class="sg-card-desc">${escHtml(s.description||'')}</div>
-        ${evText ? `<div class="sg-card-evidence">${escHtml(evText)}</div>` : ''}
-        <div class="sg-card-actions">
-          ${extraBtn}
-          <button class="sg-accept-btn"  onclick="respondSuggestion('${escHtml(s.id)}','accept')">✓ 수락</button>
-          <button class="sg-dismiss-btn" onclick="respondSuggestion('${escHtml(s.id)}','dismiss')">✕ 무시</button>
-        </div>
-      </div>`;
-    }).join('');
+    let html = '';
+
+    // ── 섹션 1: 검증된 무료 솔루션 ────────────────────────────────────────
+    if (freeSols.length) {
+      html += `<div style="font-size:10px;color:#bc78de;font-weight:600;
+                  padding:6px 0 4px;border-bottom:1px solid rgba(138,87,222,.2);
+                  margin-bottom:6px">
+                 🎁 무료 솔루션 (${freeSols.length})</div>`;
+      html += freeSols.map(_renderFreeSolCard).join('');
+    }
+
+    // ── 섹션 2: 로컬 학습 중 데이터 ───────────────────────────────────────
+    if (localSugs.length) {
+      html += `<div style="font-size:10px;color:#8b949e;font-weight:600;
+                  padding:8px 0 4px;border-bottom:1px solid #30363d;
+                  margin-bottom:6px;margin-top:${freeSols.length?'10px':'0'}">
+                 📡 학습 중 (${localSugs.length}) — 검증 후 솔루션으로 등록됩니다</div>`;
+      html += localSugs.map(_renderLocalSugCard).join('');
+    }
+
+    list.innerHTML = html;
   } catch (e) {
     list.innerHTML = `<div class="sg-empty">❌ ${escHtml(e.message)}</div>`;
   }
 }
 window.loadSuggestions = loadSuggestions;
+
+// ── 무료 솔루션 적용 ─────────────────────────────────────────────────────────
+async function applyFreeSolution(sol) {
+  try {
+    if (sol.template) {
+      // 클립보드에 복사
+      await navigator.clipboard.writeText(sol.template);
+      showToast(`✅ "${sol.title}" 복사됨 — AI에 붙여넣기하세요`);
+    } else {
+      showToast(`✅ "${sol.title}" 적용됨`);
+    }
+    // 사용 카운트 서버 전송
+    fetch('/api/sync/free-solutions/use', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: sol.id }),
+    }).catch(() => {});
+  } catch (e) { showToast(`❌ ${e.message}`); }
+}
+window.applyFreeSolution = applyFreeSolution;
 
 async function respondSuggestion(id, action) {
   try {

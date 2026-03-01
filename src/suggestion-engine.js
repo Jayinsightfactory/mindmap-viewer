@@ -200,7 +200,7 @@ function detectPromptRefinements(events, since = Date.now() - 3 * 86400_000) {
     )
     .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
 
-  if (aiChunks.length < 3) return [];
+  if (aiChunks.length < 2) return [];
 
   // 세션 단위로 그룹화 (5분 이내 연속 = 같은 세션)
   const sessions = [];
@@ -222,9 +222,9 @@ function detectPromptRefinements(events, since = Date.now() - 3 * 86400_000) {
     const app   = session[0].data?.app || 'AI';
     const texts = session.map(e => (e.data?.text || '').trim()).filter(Boolean);
 
-    // 수정 키워드가 포함된 청크 수 카운트
+    // 수정 키워드가 포함된 청크 수 카운트 (1회 이상 = 학습 대상)
     const revisions = texts.filter(t => hasRevisionSignal(t));
-    if (revisions.length < 2) continue;
+    if (revisions.length < 1) continue;
 
     // 첫 번째 청크 (원래 요청) vs 마지막 청크 (최종 의도)
     const firstPrompt = texts[0].slice(0, 120);
@@ -389,12 +389,74 @@ async function run(events, db, ollamaModel = 'llama3.2') {
       `).run(sug);
       newSuggestions.push(sug);
       console.log(`[suggestion-engine] 새 제안: ${sug.title}`);
+
+      // prompt_template은 학습 데이터 → Level 1 이상이면 즉시 자동 동기화
+      if (sug.type === 'prompt_template') {
+        immediatePromptSync(db, sug).catch(() => {});
+      }
     } catch (err) {
       console.error('[suggestion-engine] DB 저장 실패:', err.message);
     }
   }
 
   return newSuggestions;
+}
+
+// ── prompt_template 즉시 자동 동기화 ─────────────────────────────────────────
+// AI 수정 패턴에서 학습된 최적 프롬프트는 로컬에서 생성 즉시 클라우드로 전송
+// (Level 1+ 동의 시 — 원문이 아닌 구조화된 학습 데이터만 전송)
+async function immediatePromptSync(db, suggestion) {
+  const cloudUrl = process.env.ORBIT_CLOUD_URL;
+  const token    = process.env.ORBIT_TOKEN;
+  if (!cloudUrl) return;
+
+  // 동기화 레벨 확인
+  let level = 0;
+  try {
+    const row = db.prepare(`SELECT value FROM kv_store WHERE key='sync_level'`).get();
+    level = parseInt(row?.value || '0', 10);
+  } catch {}
+  if (level < 1) return;
+
+  const payload = JSON.stringify({
+    source:    'orbit-local',
+    syncLevel: level,
+    syncedAt:  new Date().toISOString(),
+    // 학습된 프롬프트 최적화 데이터만 전송 (원본 키보드 데이터 아님)
+    promptLearnings: [{
+      id:          suggestion.id,
+      type:        'prompt_template',
+      app:         JSON.parse(suggestion.evidence||'[{}]')[0]?.app,
+      revisionCount: JSON.parse(suggestion.evidence||'[{}]')[0]?.revisionCount,
+      confidence:  suggestion.confidence,
+      createdAt:   suggestion.created_at,
+      // level 2만 원문 포함; level 1은 구조 메타만
+      template:    level >= 2 ? JSON.parse(suggestion.suggestion||'{}')?.template : undefined,
+    }],
+    suggestions: [],
+    events:      [],
+  });
+
+  try {
+    const mod     = cloudUrl.startsWith('https') ? https : http;
+    const parsed  = new URL(cloudUrl + '/api/sync/prompt-learning');
+    const headers = { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    await new Promise((resolve, reject) => {
+      const req = mod.request({
+        hostname: parsed.hostname, port: parsed.port || (cloudUrl.startsWith('https') ? 443 : 80),
+        path: parsed.pathname, method: 'POST', headers,
+      }, res => { res.resume(); res.on('end', resolve); });
+      req.on('error', reject);
+      req.setTimeout(10000, () => { req.destroy(); reject(new Error('timeout')); });
+      req.write(payload);
+      req.end();
+    });
+    console.log(`[suggestion-engine] 프롬프트 학습 데이터 즉시 전송 (level ${level}): ${suggestion.title}`);
+  } catch (err) {
+    console.warn('[suggestion-engine] 즉시 동기화 실패 (무시):', err.message);
+  }
 }
 
 function tryParse(s) {
