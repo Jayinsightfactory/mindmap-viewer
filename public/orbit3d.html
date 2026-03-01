@@ -1978,6 +1978,7 @@ const FILTER_CATS = {
 };
 
 function setFilter(f, btn) {
+  if (typeof track === 'function') track('view.filter_change', { filter_type: 'node', value: f });
   _activeFilter = f;
   document.querySelectorAll('.fchip').forEach(c => c.classList.remove('active'));
   btn.classList.add('active');
@@ -2450,6 +2451,7 @@ function applySelectedEffect() {
   const node = _selectedHit?.data || _currentPanelData;
   if (!node) { alert('먼저 노드를 클릭하세요'); return; }
   _nodeEffects[node.label] = _selectedEffectId;
+  if (typeof track === 'function') track('node.effect_apply', { effect: _selectedEffectId });
 }
 
 function clearNodeEffect() {
@@ -2463,6 +2465,7 @@ function toggleEffectsPanel() {
   panel.classList.toggle('open');
   document.getElementById('dist-panel').classList.remove('open');
   if (panel.classList.contains('open')) {
+    if (typeof track === 'function') track('view.panel_open', { panel: 'effects' });
     initEffectsPanel();
     // 현재 선택된 노드 표시 업데이트는 updateEffectsPanelNode에서
     updateEffectsPanelNode();
@@ -3211,6 +3214,7 @@ function buildCompanySystem(companyData) {
 }
 
 function loadTeamDemo() {
+  if (typeof track === 'function') track('view.mode_switch', { from: 'personal', to: 'team' });
   buildTeamSystem(TEAM_DEMO);
   updateBreadcrumb('team');
   seedDemoTalentBoard('team');
@@ -3219,6 +3223,7 @@ function loadTeamDemo() {
 window.loadTeamDemo = loadTeamDemo;
 
 function loadCompanyDemo() {
+  if (typeof track === 'function') track('view.mode_switch', { from: 'team', to: 'company' });
   buildCompanySystem(COMPANY_DEMO);
   updateBreadcrumb('company');
   seedDemoTalentBoard('company');
@@ -3226,6 +3231,7 @@ function loadCompanyDemo() {
 window.loadCompanyDemo = loadCompanyDemo;
 
 function loadParallelDemo() {
+  if (typeof track === 'function') track('view.mode_switch', { from: 'personal', to: 'parallel' });
   buildParallelView(PARALLEL_DEMO);
   document.getElementById('parallel-mode-badge').style.display = 'flex';
   runParallelDemo();
@@ -3502,6 +3508,7 @@ function seedDemoTalentBoard(mode) {
 }
 
 function exitTeamMode() {
+  if (typeof track === 'function') track('view.mode_switch', { from: _companyMode ? 'company' : 'team', to: 'personal' });
   _teamMode = false; _companyMode = false; _teamNodes = [];
   _focusedMember = null; _cameraLerp = null; _activeSimData = null;
   document.getElementById('team-mode-badge').style.display = 'none';
@@ -3512,6 +3519,7 @@ function exitTeamMode() {
 window.exitTeamMode = exitTeamMode;
 
 function exitParallelMode() {
+  if (typeof track === 'function') track('view.mode_switch', { from: 'parallel', to: 'personal' });
   _parallelDemoTimers.forEach(t => clearTimeout(t));
   _parallelDemoTimers = [];
   _parallelMode = false;
@@ -4578,6 +4586,12 @@ window.openFileHistory = openFileHistory;
 // ─── 드릴다운 패널 ────────────────────────────────────────────────────────────
 function showPanel(data, obj) {
   _currentPanelData = data;
+  if (typeof track === 'function') {
+    const mode = typeof _parallelMode !== 'undefined' && _parallelMode ? 'parallel'
+               : typeof _companyMode  !== 'undefined' && _companyMode  ? 'company'
+               : typeof _teamMode     !== 'undefined' && _teamMode     ? 'team' : 'personal';
+    track('node.click', { node_type: data.type || 'unknown', mode });
+  }
   const panel = document.getElementById('info-panel');
 
   // 탭 초기화 (요약으로)
@@ -5255,6 +5269,7 @@ function toggleFeatPanel() {
   const isOpen = panel.classList.toggle('open');
   btn.classList.toggle('open', isOpen);
   btn.textContent = isOpen ? '✕ 닫기' : '⚡ 기능 목록';
+  if (isOpen && typeof track === 'function') track('view.panel_open', { panel: 'feat' });
   if (isOpen) buildFeatCards();
 }
 window.toggleFeatPanel = toggleFeatPanel;
@@ -5381,7 +5396,10 @@ function toggleMgrPanel() {
   const panel = document.getElementById('mgr-panel');
   const open  = panel.classList.toggle('open');
   btn.classList.toggle('open', open);
-  if (open) updateMgrFieldUI();
+  if (open) {
+    if (typeof track === 'function') track('view.panel_open', { panel: 'mgr' });
+    updateMgrFieldUI();
+  }
 }
 
 function updateMgrFieldUI() {
@@ -5625,6 +5643,7 @@ function showSkillToast(suggestion) {
 }
 
 function dismissSkillToast(id, el) {
+  if (typeof track === 'function') track('ai.suggestion_dismiss', { id });
   const entry = _toastTimers.get(id);
   const node  = el?.closest?.('.skill-toast') || entry?.el;
   if (node) {
@@ -5638,6 +5657,7 @@ function dismissSkillToast(id, el) {
 }
 
 async function acceptSkillToast(id, el) {
+  if (typeof track === 'function') track('ai.suggestion_accept', { id });
   const entry = _toastTimers.get(id);
   if (!entry) return;
   try {
@@ -5949,7 +5969,10 @@ function toggleTalentBoard() {
   const btn    = document.getElementById('talent-board-btn');
   const isOpen = ticker.classList.toggle('open');
   btn.classList.toggle('open', isOpen);
-  if (isOpen) renderTalentTicker();
+  if (isOpen) {
+    if (typeof track === 'function') track('view.panel_open', { panel: 'talent' });
+    renderTalentTicker();
+  }
 }
 window.toggleTalentBoard = toggleTalentBoard;
 
@@ -6043,6 +6066,7 @@ const _dmHistory = {};  // { memberId: [{ me, text, time }] }
 let   _dmTarget  = null;
 
 function openDmPanel(memberId, memberName, memberColor) {
+  if (typeof track === 'function') track('view.panel_open', { panel: 'dm' });
   _dmTarget = { memberId, memberName, memberColor: memberColor || '#58a6ff' };
   const panel  = document.getElementById('dm-panel');
   const avatar = document.getElementById('dm-avatar');
@@ -6154,6 +6178,7 @@ function saveInlineEdit() {
     localStorage.setItem('orbitLabelAliases', JSON.stringify(_labelAliasMap));
     // 노드 레이블 즉시 업데이트
     _editingNode.label = newLabel;
+    if (typeof track === 'function') track('node.edit', { node_type: _editingNode.type || 'unknown' });
   }
   closeInlineEdit();
 }
@@ -6423,6 +6448,7 @@ function nodeMatchesFilter(node) {
 window.nodeMatchesFilter = nodeMatchesFilter;
 
 function setNodeFilter(type, btnEl) {
+  if (typeof track === 'function') track('view.filter_change', { filter_type: 'view', value: type });
   _nodeFilter = { type };
   _viewPrefs.filter = _nodeFilter;
   saveViewPrefs();
@@ -6489,6 +6515,7 @@ function applyAIFilter() {
   const input = document.getElementById('ai-filter-input');
   if (!input) return;
   const text = input.value;
+  if (typeof track === 'function') track('ai.filter_query', { query: text.slice(0, 100) });
   const filter = parseFilterText(text);
   _nodeFilter = filter;
   _viewPrefs.filter = filter;
@@ -6899,6 +6926,7 @@ function renderLoginState() {
 }
 
 function oauthLogin(provider) {
+  if (typeof track === 'function') track('auth.login', { provider });
   window.location.href = `/api/auth/${provider}`;
 }
 window.oauthLogin = oauthLogin;
@@ -6922,6 +6950,7 @@ async function doEmailLogin() {
     if (!r.ok) { showLoginError(d.error || '로그인 실패'); return; }
     _orbitUser = { name: d.name, email: d.email, avatar: d.avatar || null, token: d.token };
     localStorage.setItem('orbitUser', JSON.stringify(_orbitUser));
+    if (typeof track === 'function') track('auth.login', { provider: 'email' });
     renderLoginState();
     setTimeout(closeLoginModal, 800);
   } catch { showLoginError('서버 연결 오류'); }
@@ -6942,6 +6971,7 @@ async function doRegister() {
     if (!r.ok) { showLoginError(d.error || '회원가입 실패'); return; }
     _orbitUser = { name: d.name || name, email, avatar: null, token: d.token };
     localStorage.setItem('orbitUser', JSON.stringify(_orbitUser));
+    if (typeof track === 'function') track('auth.register', { provider: 'email' });
     renderLoginState();
     setTimeout(closeLoginModal, 800);
   } catch { showLoginError('서버 연결 오류'); }
@@ -6959,6 +6989,7 @@ function toggleRegister() {
 window.toggleRegister = toggleRegister;
 
 function doLogoutMain() {
+  if (typeof track === 'function') track('auth.logout');
   _orbitUser = null;
   localStorage.removeItem('orbitUser');
   renderLoginState();
@@ -6998,6 +7029,59 @@ window.doLogoutMain = doLogoutMain;
     return;
   }
   renderLoginState();
+})();
+
+/* ── ORBIT ANALYTICS ─────────────────────────────────────────────────────────
+ * 사용자 행동 데이터 수집 모듈
+ * 수집 이벤트: auth / view / node / ai / session
+ * 서버: POST /api/analytics/batch (2초 디바운스 배치 전송)
+ * ─────────────────────────────────────────────────────────────────────────── */
+(function setupOrbitAnalytics() {
+  'use strict';
+  const SESSION_ID = Math.random().toString(36).slice(2) + Date.now().toString(36);
+  const _queue = [];
+  let _flushTimer = null;
+
+  function track(event, meta) {
+    // 트래킹 거부 시 스킵
+    if (localStorage.getItem('orbitTrackingAllowed') === '0') return;
+    const user = (() => { try { return JSON.parse(localStorage.getItem('orbitUser') || 'null'); } catch(_) { return null; } })();
+    _queue.push({
+      event:      String(event).slice(0, 100),
+      meta:       meta || null,
+      user_id:    user ? (user.email || null) : null,
+      session_id: SESSION_ID,
+    });
+    if (!_flushTimer) _flushTimer = setTimeout(flush, 2000);
+  }
+  window.track = track;
+
+  function flush() {
+    _flushTimer = null;
+    if (!_queue.length) return;
+    const batch = _queue.splice(0, 50);
+    fetch('/api/analytics/batch', {
+      method:    'POST',
+      headers:   { 'Content-Type': 'application/json' },
+      body:      JSON.stringify({ events: batch }),
+      keepalive: true,
+    }).catch(() => {});
+  }
+
+  // 페이지 언로드 시 잔여 이벤트 즉시 전송
+  window.addEventListener('beforeunload', flush);
+
+  // ── SESSION START ────────────────────────────────────────────────────────
+  track('session.start', { referrer: document.referrer.slice(0, 100) });
+
+  // ── SESSION HEARTBEAT (60초마다) ─────────────────────────────────────────
+  setInterval(() => {
+    const mode = typeof _parallelMode !== 'undefined' && _parallelMode ? 'parallel'
+               : typeof _companyMode  !== 'undefined' && _companyMode  ? 'company'
+               : typeof _teamMode     !== 'undefined' && _teamMode     ? 'team'
+               : 'personal';
+    track('session.heartbeat', { mode });
+  }, 60000);
 })();
 </script>
 </body>

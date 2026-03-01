@@ -101,6 +101,7 @@ const createShareRouter             = require('./routes/share');
 const createOntologyRouter          = require('./routes/ontology');
 const createLeaderboardRouter       = require('./routes/leaderboard');
 const createRoiRouter               = require('./routes/roi');
+const createAnalyticsRouter          = require('./routes/analytics');
 const { createRegionalInsightRouter } = require('./src/regional-insight');
 const { createPointsRouter }          = require('./src/points-engine');
 const { createCertificateRouter }     = require('./src/certificate-engine');
@@ -674,6 +675,9 @@ app.use('/api', createLeaderboardRouter({ getAllEvents, getSessions, optionalAut
 
 // ─── ROI Calculator ───────────────────────────────────────────────────────────
 app.use('/api', createRoiRouter({ getAllEvents, getSessions, optionalAuth }));
+
+// ─── Analytics (사용자 행동 분석) ────────────────────────────────────────────
+app.use('/api', createAnalyticsRouter({ getDb: dbModule.getDb }));
 
 // ─── Regional Insight ────────────────────────────────────────────────────────
 app.use('/api', createRegionalInsightRouter({ getAllEvents }));

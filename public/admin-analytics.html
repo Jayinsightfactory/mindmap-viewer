@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Orbit AI — Analytics Admin</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg:     #0d1117;
+    --bg2:    #161b22;
+    --bg3:    #21262d;
+    --border: #30363d;
+    --text:   #e6edf3;
+    --muted:  #8b949e;
+    --green:  #3fb950;
+    --blue:   #58a6ff;
+    --purple: #bc8cff;
+    --orange: #f0883e;
+    --red:    #f85149;
+    --gold:   #ffd700;
+  }
+  body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; min-height: 100vh; }
+
+  /* ── 헤더 ── */
+  header {
+    background: var(--bg2); border-bottom: 1px solid var(--border);
+    padding: 16px 32px; display: flex; align-items: center; justify-content: space-between;
+    position: sticky; top: 0; z-index: 100;
+  }
+  .logo { font-size: 18px; font-weight: 700; color: var(--green); letter-spacing: 0.5px; }
+  .logo span { color: var(--blue); }
+  .header-right { display: flex; align-items: center; gap: 16px; }
+  .last-update { font-size: 12px; color: var(--muted); }
+  .refresh-btn {
+    background: var(--bg3); border: 1px solid var(--border); color: var(--blue);
+    padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 13px;
+    transition: background .15s;
+  }
+  .refresh-btn:hover { background: rgba(88,166,255,.1); }
+
+  /* ── 레이아웃 ── */
+  main { max-width: 1400px; margin: 0 auto; padding: 32px 24px; }
+  section { margin-bottom: 40px; }
+  .section-title { font-size: 14px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 16px; }
+
+  /* ── KPI 카드 ── */
+  .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; }
+  .kpi-card {
+    background: var(--bg2); border: 1px solid var(--border); border-radius: 12px;
+    padding: 20px 24px; position: relative; overflow: hidden;
+  }
+  .kpi-card::before {
+    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+    background: var(--accent, var(--blue));
+  }
+  .kpi-label { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+  .kpi-value { font-size: 36px; font-weight: 700; color: var(--accent, var(--text)); line-height: 1; }
+  .kpi-sub { font-size: 12px; color: var(--muted); margin-top: 6px; }
+
+  /* ── 차트 그리드 ── */
+  .chart-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 20px; }
+  .chart-card {
+    background: var(--bg2); border: 1px solid var(--border); border-radius: 12px;
+    padding: 20px 24px;
+  }
+  .chart-title { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 16px; }
+  .chart-wrap { position: relative; height: 220px; }
+  .chart-wrap.bar-tall { height: 280px; }
+
+  /* ── 이벤트 테이블 ── */
+  .events-table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th {
+    background: var(--bg3); color: var(--muted); font-weight: 500; font-size: 11px;
+    text-transform: uppercase; letter-spacing: 0.5px;
+    padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border);
+  }
+  td { padding: 10px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(88,166,255,.04); }
+  .event-badge {
+    display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 600;
+    white-space: nowrap;
+  }
+  .ev-auth    { background: rgba(63,185,80,.15);   color: var(--green); }
+  .ev-view    { background: rgba(88,166,255,.15);  color: var(--blue); }
+  .ev-node    { background: rgba(188,140,255,.15); color: var(--purple); }
+  .ev-ai      { background: rgba(255,215,0,.15);   color: var(--gold); }
+  .ev-session { background: rgba(140,140,140,.15); color: var(--muted); }
+  .ev-other   { background: rgba(240,136,62,.15);  color: var(--orange); }
+  .meta-text { font-size: 11px; color: var(--muted); max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .time-text { font-size: 11px; color: var(--muted); white-space: nowrap; }
+
+  /* ── 로딩 상태 ── */
+  .loading { display: flex; align-items: center; justify-content: center; height: 180px; color: var(--muted); font-size: 14px; }
+  .spinner { width: 24px; height: 24px; border: 2px solid var(--border); border-top-color: var(--blue); border-radius: 50%; animation: spin .6s linear infinite; margin-right: 10px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── 반응형 ── */
+  @media (max-width: 640px) {
+    main { padding: 16px 12px; }
+    .kpi-value { font-size: 28px; }
+    header { padding: 12px 16px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">🪐 Orbit AI <span>Analytics</span></div>
+  <div class="header-right">
+    <span class="last-update" id="last-update">로딩 중...</span>
+    <button class="refresh-btn" onclick="loadAll()">🔄 새로고침</button>
+    <a href="/orbit3d.html" style="color:var(--muted);font-size:13px;text-decoration:none;">← 앱으로</a>
+  </div>
+</header>
+
+<main>
+
+  <!-- KPI 카드 -->
+  <section>
+    <div class="section-title">📊 핵심 지표</div>
+    <div class="kpi-grid">
+      <div class="kpi-card" style="--accent: var(--green)">
+        <div class="kpi-label">오늘 활성 유저 (DAU)</div>
+        <div class="kpi-value" id="kpi-dau">—</div>
+        <div class="kpi-sub">오늘 로그인한 고유 유저</div>
+      </div>
+      <div class="kpi-card" style="--accent: var(--blue)">
+        <div class="kpi-label">이번달 활성 유저 (MAU)</div>
+        <div class="kpi-value" id="kpi-mau">—</div>
+        <div class="kpi-sub">이달 고유 유저 수</div>
+      </div>
+      <div class="kpi-card" style="--accent: var(--purple)">
+        <div class="kpi-label">총 유저 수</div>
+        <div class="kpi-value" id="kpi-users">—</div>
+        <div class="kpi-sub">전체 기간 누적</div>
+      </div>
+      <div class="kpi-card" style="--accent: var(--orange)">
+        <div class="kpi-label">오늘 이벤트</div>
+        <div class="kpi-value" id="kpi-today">—</div>
+        <div class="kpi-sub">오늘 수집된 행동 수</div>
+      </div>
+      <div class="kpi-card" style="--accent: var(--muted)">
+        <div class="kpi-label">총 이벤트</div>
+        <div class="kpi-value" id="kpi-total">—</div>
+        <div class="kpi-sub">전체 수집 이벤트</div>
+      </div>
+      <div class="kpi-card" style="--accent: var(--gold)">
+        <div class="kpi-label">AI 제안 수락률</div>
+        <div class="kpi-value" id="kpi-ai-rate">—</div>
+        <div class="kpi-sub">수락 / (수락+거절)</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 차트 그리드 1행 -->
+  <section>
+    <div class="section-title">📈 행동 분석</div>
+    <div class="chart-grid">
+
+      <div class="chart-card">
+        <div class="chart-title">🔑 로그인 방법</div>
+        <div class="chart-wrap">
+          <canvas id="chart-login"></canvas>
+        </div>
+      </div>
+
+      <div class="chart-card">
+        <div class="chart-title">🌌 뷰 모드 전환</div>
+        <div class="chart-wrap">
+          <canvas id="chart-mode"></canvas>
+        </div>
+      </div>
+
+      <div class="chart-card">
+        <div class="chart-title">🖱️ 노드 클릭 분포</div>
+        <div class="chart-wrap">
+          <canvas id="chart-node"></canvas>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- 차트 그리드 2행 -->
+  <section>
+    <div class="chart-grid">
+
+      <div class="chart-card" style="grid-column: span 2;">
+        <div class="chart-title">⚡ 기능별 사용 빈도 (Top 10)</div>
+        <div class="chart-wrap bar-tall">
+          <canvas id="chart-features"></canvas>
+        </div>
+      </div>
+
+      <div class="chart-card">
+        <div class="chart-title">✨ 마켓 이펙트 사용</div>
+        <div class="chart-wrap">
+          <canvas id="chart-effects"></canvas>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- 패널 + 일별 이벤트 -->
+  <section>
+    <div class="chart-grid">
+
+      <div class="chart-card">
+        <div class="chart-title">📂 패널 오픈 현황</div>
+        <div class="chart-wrap">
+          <canvas id="chart-panels"></canvas>
+        </div>
+      </div>
+
+      <div class="chart-card">
+        <div class="chart-title">📅 일별 이벤트 (최근 7일)</div>
+        <div class="chart-wrap">
+          <canvas id="chart-daily"></canvas>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- 최근 이벤트 로그 -->
+  <section>
+    <div class="section-title">🕐 최근 이벤트 로그</div>
+    <div class="chart-card">
+      <div class="events-table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>시간</th>
+              <th>이벤트</th>
+              <th>유저</th>
+              <th>세션</th>
+              <th>Meta</th>
+            </tr>
+          </thead>
+          <tbody id="events-tbody">
+            <tr><td colspan="5"><div class="loading"><div class="spinner"></div>불러오는 중...</div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<script>
+'use strict';
+
+// Chart.js 기본 설정
+Chart.defaults.color = '#8b949e';
+Chart.defaults.borderColor = '#30363d';
+Chart.defaults.font.family = "'Segoe UI', system-ui, sans-serif";
+
+const PALETTE = ['#3fb950','#58a6ff','#bc8cff','#f0883e','#ffd700','#39d2c0','#f85149','#d2a8ff','#79c0ff','#a5d6ff'];
+
+let _charts = {};
+
+function mkChart(id, config) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  if (_charts[id]) _charts[id].destroy();
+  _charts[id] = new Chart(el, config);
+}
+
+// ── 이벤트 배지 클래스 ────────────────────────────────────────────────────
+function eventClass(evt) {
+  if (evt.startsWith('auth'))    return 'ev-auth';
+  if (evt.startsWith('view'))    return 'ev-view';
+  if (evt.startsWith('node'))    return 'ev-node';
+  if (evt.startsWith('ai'))      return 'ev-ai';
+  if (evt.startsWith('session')) return 'ev-session';
+  return 'ev-other';
+}
+
+function fmtTime(iso) {
+  try {
+    const d = new Date(iso + (iso.endsWith('Z') ? '' : 'Z'));
+    return d.toLocaleString('ko-KR', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit', hour12: false });
+  } catch(_) { return iso; }
+}
+
+// ── 데이터 로드 & 렌더 ────────────────────────────────────────────────────
+async function loadAll() {
+  try {
+    const res = await fetch('/api/analytics/summary');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const d = await res.json();
+    renderKpi(d);
+    renderCharts(d);
+    renderTable(d.recentEvents || []);
+    document.getElementById('last-update').textContent = '업데이트: ' + fmtTime(d.generatedAt);
+  } catch (e) {
+    document.getElementById('last-update').textContent = '오류: ' + e.message;
+  }
+}
+
+function renderKpi(d) {
+  document.getElementById('kpi-dau').textContent    = d.dau?.toLocaleString()   ?? '0';
+  document.getElementById('kpi-mau').textContent    = d.mau?.toLocaleString()   ?? '0';
+  document.getElementById('kpi-users').textContent  = d.totalUsers?.toLocaleString() ?? '0';
+  document.getElementById('kpi-today').textContent  = d.todayEvents?.toLocaleString() ?? '0';
+  document.getElementById('kpi-total').textContent  = d.totalEvents?.toLocaleString() ?? '0';
+
+  const ai = d.ai || {};
+  const total = (ai.accept || 0) + (ai.dismiss || 0);
+  const rate  = total > 0 ? Math.round((ai.accept / total) * 100) + '%' : '—';
+  document.getElementById('kpi-ai-rate').textContent = rate;
+}
+
+function renderCharts(d) {
+  // 로그인 방법 도넛
+  const lm = d.loginMethods || {};
+  mkChart('chart-login', {
+    type: 'doughnut',
+    data: {
+      labels: ['Google', 'GitHub', 'Email'],
+      datasets: [{ data: [lm.google||0, lm.github||0, lm.email||0], backgroundColor: ['#ea4335','#6e7681','#58a6ff'], borderWidth: 0 }]
+    },
+    options: { plugins: { legend: { position: 'bottom', labels: { padding: 16 } } }, cutout: '68%' }
+  });
+
+  // 뷰 모드 전환 도넛
+  const ms = d.modeSwitches || {};
+  mkChart('chart-mode', {
+    type: 'doughnut',
+    data: {
+      labels: ['개인', '팀', '회사', '병렬'],
+      datasets: [{ data: [ms.personal||0, ms.team||0, ms.company||0, ms.parallel||0], backgroundColor: ['#3fb950','#58a6ff','#bc8cff','#ffd700'], borderWidth: 0 }]
+    },
+    options: { plugins: { legend: { position: 'bottom', labels: { padding: 16 } } }, cutout: '68%' }
+  });
+
+  // 노드 클릭 도넛
+  const nc = d.nodeClicks || {};
+  const ncLabels = Object.keys(nc).filter(k => nc[k] > 0);
+  const ncData   = ncLabels.map(k => nc[k]);
+  mkChart('chart-node', {
+    type: 'doughnut',
+    data: {
+      labels: ncLabels,
+      datasets: [{ data: ncData, backgroundColor: PALETTE.slice(0, ncLabels.length), borderWidth: 0 }]
+    },
+    options: { plugins: { legend: { position: 'bottom', labels: { padding: 12, font: { size: 11 } } } }, cutout: '68%' }
+  });
+
+  // Top 10 기능 수평 바
+  const tf = d.topFeatures || [];
+  mkChart('chart-features', {
+    type: 'bar',
+    data: {
+      labels: tf.map(([k]) => k),
+      datasets: [{ data: tf.map(([,v]) => v), backgroundColor: PALETTE[1], borderRadius: 4, borderSkipped: false }]
+    },
+    options: {
+      indexAxis: 'y',
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { color: '#21262d' }, ticks: { font: { size: 11 } } },
+        y: { grid: { display: false }, ticks: { font: { size: 11 } } }
+      }
+    }
+  });
+
+  // 마켓 이펙트 바
+  const eu = d.effectUsage || {};
+  const euLabels = ['neon','matrix','dna','beam','holo','burst'];
+  const euNames  = ['💡 네온','🟩 매트릭스','🧬 DNA','⚡ 빔','🔷 홀로','✨ 버스트'];
+  mkChart('chart-effects', {
+    type: 'bar',
+    data: {
+      labels: euNames,
+      datasets: [{ data: euLabels.map(k => eu[k]||0), backgroundColor: ['#58a6ff','#3fb950','#bc8cff','#ffd700','#39d2c0','#f0883e'], borderRadius: 4, borderSkipped: false }]
+    },
+    options: {
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { display: false }, ticks: { font: { size: 11 } } },
+        y: { grid: { color: '#21262d' }, ticks: { font: { size: 11 } } }
+      }
+    }
+  });
+
+  // 패널 오픈 수평 바
+  const po = d.panelOpens || {};
+  const poKeys = Object.keys(po).sort((a,b) => po[b]-po[a]);
+  const PANEL_LABELS = { feat:'⚡ 기능목록', effects:'✨ 이펙트', mgr:'👔 관리자', talent:'📡 인재보드', dm:'💬 DM', view:'👤 뷰설정' };
+  mkChart('chart-panels', {
+    type: 'bar',
+    data: {
+      labels: poKeys.map(k => PANEL_LABELS[k] || k),
+      datasets: [{ data: poKeys.map(k => po[k]), backgroundColor: PALETTE[2], borderRadius: 4, borderSkipped: false }]
+    },
+    options: {
+      indexAxis: 'y',
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { color: '#21262d' }, ticks: { font: { size: 11 } } },
+        y: { grid: { display: false }, ticks: { font: { size: 11 } } }
+      }
+    }
+  });
+
+  // 일별 이벤트 라인 차트
+  const daily = d.dailyEvents || [];
+  mkChart('chart-daily', {
+    type: 'line',
+    data: {
+      labels: daily.map(r => r.day?.slice(5) || r.day),
+      datasets: [{
+        data: daily.map(r => r.cnt),
+        borderColor: '#3fb950', backgroundColor: 'rgba(63,185,80,.1)',
+        fill: true, tension: 0.4, pointRadius: 4, pointBackgroundColor: '#3fb950'
+      }]
+    },
+    options: {
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { display: false }, ticks: { font: { size: 11 } } },
+        y: { grid: { color: '#21262d' }, min: 0, ticks: { font: { size: 11 }, precision: 0 } }
+      }
+    }
+  });
+}
+
+function renderTable(events) {
+  const tbody = document.getElementById('events-tbody');
+  if (!events.length) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#8b949e;padding:24px">아직 이벤트가 없습니다</td></tr>';
+    return;
+  }
+  tbody.innerHTML = events.map(e => {
+    const cls  = eventClass(e.event || '');
+    let metaStr = '';
+    try { metaStr = e.meta ? JSON.stringify(JSON.parse(e.meta)) : ''; } catch(_) { metaStr = e.meta || ''; }
+    const user = e.user_id ? e.user_id.split('@')[0] : '익명';
+    const sid  = (e.session_id || '').slice(0, 8);
+    return `<tr>
+      <td class="time-text">${fmtTime(e.created_at)}</td>
+      <td><span class="event-badge ${cls}">${e.event || ''}</span></td>
+      <td style="font-size:12px;color:#8b949e">${user}</td>
+      <td style="font-size:11px;color:#8b949e">${sid}</td>
+      <td class="meta-text" title="${metaStr}">${metaStr}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── 초기 로드 + 30초마다 자동 갱신 ─────────────────────────────────────────
+loadAll();
+setInterval(loadAll, 30000);
+</script>
+</body>
+</html>
