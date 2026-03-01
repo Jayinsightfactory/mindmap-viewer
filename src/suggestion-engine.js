@@ -11,11 +11,15 @@
  *   D. 장시간 단일 파일: 3시간+ → 요약/구조화 제안
  *   E. 오류 반복 패턴: 같은 검색어 반복 → 해결책 제안
  *   F. AI 프롬프트 수정 패턴: 원하는 결과가 안 나와 수정/변경 반복 → 최적 프롬프트 템플릿 제안
+ *   G. 행동 이상 신호: 타이핑 속도·메시징 빈도·야간 활동 급변 → 급박/위기 상황 감지
+ *      (내용 無읽음 — 오직 행동 패턴만)
  */
 
 const { ulid } = require('ulid');
 const http     = require('http');
 const https    = require('https');
+
+const stressDetector = require('./stress-detector');
 
 // ── Ollama 호출 ───────────────────────────────────────────────────────────────
 async function askOllama(prompt, model = 'llama3.2') {
@@ -363,17 +367,38 @@ async function run(events, db, ollamaModel = 'llama3.2') {
     ...detectPromptRefinements(parsed),   // F. AI 프롬프트 수정 패턴
   ];
 
+  // ── 패턴 G: 행동 이상 신호 (wellbeing) ───────────────────────────────────
+  // 내용 無읽음 — 타이핑 속도·빈도·시간대 행동만 분석
+  const stressSignals = stressDetector.detect(parsed);
+  for (const sig of stressSignals) {
+    patterns.push({ pattern: 'wellbeing_signal', ...sig });
+  }
+
   if (!patterns.length) return [];
 
-  // DB에 이미 있는 pending 제안과 중복 방지
+  // DB에 이미 있는 pending 제안과 중복 방지 (wellbeing은 1시간 내 중복 방지)
   let existing = [];
+  let recentWellbeing = [];
   try {
     existing = db.prepare(`SELECT title FROM suggestions WHERE status = 'pending'`).all().map(r => r.title);
+    const oneHourAgo = new Date(Date.now() - 3600_000).toISOString();
+    recentWellbeing = db.prepare(
+      `SELECT signal FROM signals WHERE detected_at > ? ORDER BY detected_at DESC`
+    ).all(oneHourAgo).map(r => r.signal);
   } catch {}
 
   const newSuggestions = [];
 
   for (const pattern of patterns) {
+    // wellbeing 신호는 signals 테이블에 별도 저장 (제안 패널과 구분)
+    if (pattern.pattern === 'wellbeing_signal') {
+      if (recentWellbeing.includes(pattern.signal)) continue; // 1시간 내 중복 스킵
+      await saveWellbeingSignal(db, pattern);
+      console.log(`[suggestion-engine] ⚠️ 행동 이상 신호: ${pattern.signal} (${pattern.severity})`);
+      newSuggestions.push({ type: 'wellbeing_signal', ...pattern });
+      continue;
+    }
+
     let sug;
     try { sug = await buildSuggestion(pattern, ollamaModel); }
     catch { continue; }
@@ -400,6 +425,45 @@ async function run(events, db, ollamaModel = 'llama3.2') {
   }
 
   return newSuggestions;
+}
+
+// ── wellbeing 신호 DB 저장 ────────────────────────────────────────────────────
+async function saveWellbeingSignal(db, sig) {
+  try {
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS signals (
+        id TEXT PRIMARY KEY,
+        signal TEXT NOT NULL,
+        severity TEXT DEFAULT 'medium',
+        desc TEXT,
+        detail TEXT,        -- JSON
+        detected_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        acknowledged INTEGER DEFAULT 0
+      )
+    `).run();
+    db.prepare(`
+      INSERT OR IGNORE INTO signals (id, signal, severity, desc, detail)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(
+      ulid(),
+      sig.signal,
+      sig.severity || 'medium',
+      sig.desc || '',
+      JSON.stringify({
+        ratio:      sig.ratio,
+        curWpm:     sig.curWpm,
+        baseWpm:    sig.baseWpm,
+        curRate:    sig.curRate,
+        baseRate:   sig.baseRate,
+        hour:       sig.hour,
+        chunkCount: sig.chunkCount,
+        switchRate: sig.switchRate,
+        avgLen:     sig.avgLen,
+      })
+    );
+  } catch (err) {
+    console.error('[suggestion-engine] wellbeing 신호 저장 실패:', err.message);
+  }
 }
 
 // ── prompt_template 즉시 자동 동기화 ─────────────────────────────────────────

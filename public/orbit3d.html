@@ -6962,6 +6962,35 @@ function toggleSuggestionPanel() {
 }
 window.toggleSuggestionPanel = toggleSuggestionPanel;
 
+// ── 행동 이상 신호 카드 렌더 ─────────────────────────────────────────────────
+const SIGNAL_META = {
+  wpm_spike:       { icon:'⚡', label:'타이핑 속도 급등',   color:'#f85149', bg:'rgba(248,81,73,.08)'  },
+  messaging_burst: { icon:'💬', label:'메시징 집중 급증',   color:'#ff9500', bg:'rgba(255,149,0,.08)'  },
+  night_anomaly:   { icon:'🌙', label:'야간 이상 활동',     color:'#bc78de', bg:'rgba(188,120,222,.08)' },
+  short_burst_chat:{ icon:'🔥', label:'급박한 단답 대화',   color:'#f85149', bg:'rgba(248,81,73,.08)'  },
+  app_storm:       { icon:'🌀', label:'앱 전환 폭풍',       color:'#ff9500', bg:'rgba(255,149,0,.08)'  },
+};
+const SEV_LABEL = { high:'🔴 긴급', medium:'🟠 주의', low:'🟡 참고' };
+
+function _renderSignalCard(s) {
+  const meta = SIGNAL_META[s.signal] || { icon:'⚠️', label:s.signal, color:'#ff9500', bg:'rgba(255,149,0,.08)' };
+  const sevLabel = SEV_LABEL[s.severity] || '🟠 주의';
+  const timeAgo  = s.detected_at ? relTime(s.detected_at) : '';
+  return `<div class="sg-card" style="border-color:${meta.color}55;background:${meta.bg};border-left:3px solid ${meta.color}">
+    <div class="sg-card-top" style="justify-content:space-between">
+      <span style="font-size:18px">${meta.icon}</span>
+      <span class="sg-card-pri" style="background:${meta.color}22;color:${meta.color}">${sevLabel}</span>
+    </div>
+    <div class="sg-card-title" style="color:${meta.color}">${escHtml(meta.label)}</div>
+    <div class="sg-card-desc" style="font-size:10px">${escHtml(s.desc||'')}</div>
+    <div class="sg-card-evidence" style="color:#6e7681">${timeAgo} · 내용 無읽음 — 행동 패턴만</div>
+    <div class="sg-card-actions">
+      <button class="sg-accept-btn" style="background:${meta.color}22;border-color:${meta.color}"
+        onclick="ackSignal('${escHtml(s.id)}', this)">✓ 확인함</button>
+    </div>
+  </div>`;
+}
+
 // ── 제안 패널: 무료 솔루션 카드 렌더 ─────────────────────────────────────────
 function _renderFreeSolCard(s) {
   const acc = s.accuracy ? `${Math.round(s.accuracy * 100)}%` : '–';
@@ -7032,12 +7061,16 @@ async function loadSuggestions() {
   list.innerHTML = '<div class="sg-empty">로딩 중…</div>';
 
   try {
-    // 병렬 fetch: 클라우드 무료솔루션 + 로컬 학습 데이터
-    const [solRes, sugRes] = await Promise.allSettled([
+    // 병렬 fetch: 행동신호 + 클라우드 무료솔루션 + 로컬 학습 데이터
+    const [sigRes, solRes, sugRes] = await Promise.allSettled([
+      fetch('/api/personal/signals?limit=10'),
       fetch('/api/sync/free-solutions'),
       fetch('/api/personal/suggestions?limit=50'),
     ]);
 
+    const signals = sigRes.status === 'fulfilled'
+      ? ((await sigRes.value.json()).signals || []).filter(s => !s.acknowledged)
+      : [];
     const freeSols = solRes.status === 'fulfilled'
       ? ((await solRes.value.json()).solutions || [])
       : [];
@@ -7045,8 +7078,12 @@ async function loadSuggestions() {
       ? ((await sugRes.value.json()).suggestions || [])
       : [];
 
-    const totalCount = freeSols.length + localSugs.length;
-    if (footer) footer.textContent = `솔루션 ${freeSols.length}개 · 학습 중 ${localSugs.length}개`;
+    const totalCount = signals.length + freeSols.length + localSugs.length;
+    if (footer) footer.textContent = [
+      signals.length   ? `⚠️ 신호 ${signals.length}개`   : '',
+      freeSols.length  ? `🎁 솔루션 ${freeSols.length}개` : '',
+      localSugs.length ? `📡 학습 ${localSugs.length}개`  : '',
+    ].filter(Boolean).join(' · ') || '데이터 없음';
 
     if (!totalCount) {
       list.innerHTML = `<div class="sg-empty">
@@ -7059,11 +7096,24 @@ async function loadSuggestions() {
 
     let html = '';
 
+    // ── 섹션 0: 행동 이상 신호 (최우선 표시) ───────────────────────────────
+    if (signals.length) {
+      const highCount = signals.filter(s => s.severity === 'high').length;
+      html += `<div style="font-size:10px;color:#f85149;font-weight:600;
+                  padding:6px 0 4px;border-bottom:1px solid rgba(248,81,73,.25);
+                  margin-bottom:6px;display:flex;align-items:center;gap:6px">
+                 ⚠️ 행동 이상 신호 (${signals.length})
+                 ${highCount ? `<span style="background:#f85149;color:#fff;border-radius:8px;padding:1px 6px;font-size:9px">긴급 ${highCount}</span>` : ''}
+                 <span style="color:#6e7681;font-weight:normal;font-size:9px">내용 없이 타이핑 행동만 감지</span>
+               </div>`;
+      html += signals.map(_renderSignalCard).join('');
+    }
+
     // ── 섹션 1: 검증된 무료 솔루션 ────────────────────────────────────────
     if (freeSols.length) {
       html += `<div style="font-size:10px;color:#bc78de;font-weight:600;
                   padding:6px 0 4px;border-bottom:1px solid rgba(138,87,222,.2);
-                  margin-bottom:6px">
+                  margin-bottom:6px;margin-top:${signals.length?'10px':'0'}">
                  🎁 무료 솔루션 (${freeSols.length})</div>`;
       html += freeSols.map(_renderFreeSolCard).join('');
     }
@@ -7103,6 +7153,20 @@ async function applyFreeSolution(sol) {
   } catch (e) { showToast(`❌ ${e.message}`); }
 }
 window.applyFreeSolution = applyFreeSolution;
+
+// ── 행동 이상 신호 확인 처리 ──────────────────────────────────────────────────
+async function ackSignal(id, btn) {
+  try {
+    await fetch(`/api/personal/signals/${encodeURIComponent(id)}/ack`, { method: 'POST' });
+    const card = btn?.closest('.sg-card');
+    if (card) {
+      card.style.opacity = '0.35';
+      card.style.pointerEvents = 'none';
+      setTimeout(() => card.remove(), 500);
+    }
+  } catch (e) { showToast(`❌ ${e.message}`); }
+}
+window.ackSignal = ackSignal;
 
 async function respondSuggestion(id, action) {
   try {

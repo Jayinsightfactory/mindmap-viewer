@@ -227,6 +227,41 @@ module.exports = function createPersonalLearningRouter({ getDb, insertEvent, bro
     }
   });
 
+  // ── GET /api/personal/signals ─────────────────────────────────────────────
+  // 행동 이상 신호 목록 (미확인 우선)
+  router.get('/personal/signals', (req, res) => {
+    try {
+      const db    = getDb();
+      const limit = Math.min(parseInt(req.query.limit) || 20, 50);
+      let rows = [];
+      try {
+        rows = db.prepare(
+          `SELECT * FROM signals ORDER BY acknowledged ASC, detected_at DESC LIMIT ?`
+        ).all(limit);
+      } catch {
+        // signals 테이블 없으면 빈 배열
+      }
+      const parsed = rows.map(r => ({ ...r, detail: tryParse(r.detail) }));
+      res.json({ signals: parsed, total: parsed.length });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── POST /api/personal/signals/:id/ack ────────────────────────────────────
+  // 신호 확인(acknowledge) 처리
+  router.post('/personal/signals/:id/ack', (req, res) => {
+    try {
+      const db = getDb();
+      try {
+        db.prepare(`UPDATE signals SET acknowledged=1 WHERE id=?`).run(req.params.id);
+      } catch {}
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   return router;
 };
 
