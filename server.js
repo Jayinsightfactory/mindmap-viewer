@@ -758,6 +758,10 @@ app.use('/api', createMcpRouter({
   searchEvents,
 }));
 
+// ─── 실행 패널 (generate / execute / ai-status) ──────────────────────────────
+const createExecRouter = require('./routes/exec');
+app.use('/api', createExecRouter({ getAllEvents, broadcastAll }));
+
 // ─── JSONL 파일 감시 (레거시 이벤트 소스 지원) ───────────────────────────────
 // /api/hook 를 사용하지 않는 구버전 save-turn.js 호환용
 let lastBytePos = 0;

@@ -1468,6 +1468,79 @@
   .ins-pc-rollback-btn:hover  { background:rgba(248,81,73,.15); }
   .ins-purpose-empty { padding:28px 16px; text-align:center; color:#6e7681; font-size:12px; line-height:1.6; }
 
+  /* ── 실행 패널 (#exec-panel) ────────────────────────────────────────────── */
+  #exec-panel {
+    position:fixed; right:14px; top:14px;
+    width:340px; max-height:calc(100vh - 28px);
+    background:rgba(13,17,23,0.98); border:1px solid #21262d;
+    border-radius:14px; backdrop-filter:blur(18px);
+    z-index:9300; display:none; flex-direction:column;
+    overflow:hidden; box-shadow:0 8px 48px rgba(0,0,0,.8);
+    font-family:-apple-system,'Segoe UI',sans-serif;
+  }
+  #exec-panel.open { display:flex; }
+  .ep-hdr   { display:flex; justify-content:space-between; align-items:center;
+    padding:14px 16px 10px; border-bottom:1px solid #21262d; flex-shrink:0; }
+  .ep-title { font-size:13px; font-weight:700; color:#e6edf3; display:flex; align-items:center; gap:6px; }
+  .ep-mode-badge  { font-size:10px; padding:2px 7px; border-radius:10px; }
+  .ep-mode-ai     { background:rgba(88,166,255,.15); color:#58a6ff; border:1px solid rgba(88,166,255,.3); }
+  .ep-mode-ollama { background:rgba(63,185,80,.12);  color:#3fb950; border:1px solid rgba(63,185,80,.25); }
+  .ep-close { background:none; border:1px solid #30363d; color:#8b949e;
+    border-radius:6px; padding:3px 8px; cursor:pointer; font-size:12px; }
+  .ep-close:hover { border-color:#6e7681; color:#e6edf3; }
+  .ep-body  { flex:1; min-height:0; overflow-y:auto; padding:14px 16px; }
+
+  /* 로딩 */
+  .ep-loading     { display:flex; flex-direction:column; align-items:center; gap:12px; padding:36px 0; }
+  .ep-spinner     { width:28px; height:28px; border:3px solid #21262d;
+    border-top-color:#58a6ff; border-radius:50%; animation:ep-spin .8s linear infinite; }
+  @keyframes ep-spin { to{ transform:rotate(360deg); } }
+  .ep-loading-msg { font-size:12px; color:#6e7681; text-align:center; }
+
+  /* 미리보기 */
+  .ep-preview-label { font-size:11px; font-weight:600; color:#6e7681;
+    text-transform:uppercase; letter-spacing:.05em; margin-bottom:8px; }
+  .ep-diff { background:#0d1117; border:1px solid #21262d; border-radius:8px;
+    padding:10px 12px; font-size:11px; font-family:'SF Mono',Menlo,monospace;
+    color:#cdd9e5; white-space:pre-wrap; max-height:36vh; overflow-y:auto;
+    line-height:1.5; margin-bottom:12px; }
+  .ep-model-row   { display:flex; align-items:center; gap:8px; margin-bottom:10px; }
+  .ep-model-label { font-size:11px; color:#6e7681; flex-shrink:0; }
+  .ep-model-select{ flex:1; background:#161b22; border:1px solid #30363d; color:#cdd9e5;
+    border-radius:6px; padding:5px 8px; font-size:11px; cursor:pointer; }
+  .ep-model-select:focus { border-color:#58a6ff; outline:none; }
+  .ep-instr-row   { margin-bottom:12px; }
+  .ep-instr-input { width:100%; background:#161b22; border:1px solid #30363d; color:#cdd9e5;
+    border-radius:6px; padding:7px 10px; font-size:11px; resize:none; box-sizing:border-box; }
+  .ep-instr-input::placeholder { color:#3d444d; }
+  .ep-instr-input:focus { border-color:#58a6ff; outline:none; }
+
+  /* 버튼 */
+  .ep-actions { display:flex; gap:8px; flex-shrink:0; padding:10px 16px 14px; border-top:1px solid #21262d; }
+  .ep-btn        { flex:1; padding:8px; border-radius:7px; font-size:12px; font-weight:600;
+    cursor:pointer; border:none; transition:opacity .15s; }
+  .ep-btn:hover  { opacity:.82; }
+  .ep-btn-apply  { background:#238636; color:#fff; }
+  .ep-btn-regen  { background:#21262d; color:#8b949e; border:1px solid #30363d; }
+  .ep-btn-cancel { background:transparent; color:#6e7681; border:1px solid #21262d; }
+
+  /* 실행 로그 */
+  .ep-log { background:#0d1117; border:1px solid #21262d; border-radius:8px;
+    padding:10px 12px; font-size:11px; font-family:'SF Mono',Menlo,monospace;
+    color:#cdd9e5; white-space:pre-wrap; max-height:52vh; overflow-y:auto; line-height:1.6; }
+  .ep-log .log-cmd    { color:#58a6ff; font-weight:700; margin-top:4px; display:block; }
+  .ep-log .log-stdout { color:#cdd9e5; display:block; }
+  .ep-log .log-stderr { color:#ffa657; display:block; }
+  .ep-log .log-ok     { color:#3fb950; font-weight:700; display:block; margin-top:4px; }
+  .ep-log .log-err    { color:#f85149; font-weight:700; display:block; margin-top:4px; }
+
+  /* 완료 */
+  .ep-done-banner { display:flex; flex-direction:column; align-items:center;
+    gap:8px; padding:20px 0 6px; text-align:center; }
+  .ep-done-icon { font-size:32px; }
+  .ep-done-msg  { font-size:13px; font-weight:700; color:#e6edf3; }
+  .ep-done-sub  { font-size:11px; color:#6e7681; }
+
   /* ── 적용 토스트 피드백 ─────────────────────────────────────────────────── */
   #apply-toast {
     position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%) translateY(20px);
@@ -1673,6 +1746,23 @@
     <div id="ins-dist-list" class="ins-dist-list"></div>
     <div class="ins-section-title">🎯 인사이트</div>
     <div id="ins-kv-list"  class="ins-kv-list"></div>
+  </div>
+</div>
+
+<!-- 🖥️ 실행 패널 (diff 미리보기 → 승인 → 실행 로그) -->
+<div id="exec-panel">
+  <div class="ep-hdr">
+    <span class="ep-title">
+      🖥️ 실행 패널
+      <span id="ep-mode-badge" class="ep-mode-badge ep-mode-ollama">Ollama</span>
+    </span>
+    <button class="ep-close" onclick="closeExecPanel()">✕</button>
+  </div>
+  <div class="ep-body" id="ep-body">
+    <!-- JS로 동적 렌더링 -->
+  </div>
+  <div class="ep-actions" id="ep-actions" style="display:none">
+    <!-- JS로 동적 렌더링 -->
   </div>
 </div>
 
@@ -6227,15 +6317,19 @@ function renderPurposeTab() {
            </span>`).join('')
       : '';
 
-    // 액션 버튼 HTML
+    // 액션 버튼 HTML — 롤백 버튼을 실행 패널로 연결
+    const rollbackPayload = c.commitHash ? JSON.stringify({
+      type: 'rollback', hash: c.commitHash,
+      projectDir: '', description: `${c.purposeLabel} 롤백 (${c.commitHash.slice(0,7)})`,
+    }).replace(/"/g, '&quot;') : '';
     const actionsHtml = c.commitHash
       ? `<div class="ins-pc-actions">
            <div class="ins-pc-commit-btn" title="커밋 해시: ${escHtml(c.commitHash)}">
              🌿 ${escHtml(c.commitHash.slice(0,7))}
            </div>
            <div class="ins-pc-rollback-btn"
-                onclick="navigator.clipboard?.writeText('git reset --hard ${escHtml(c.commitHash)}').then(()=>showToast('클립보드에 복사됨'))">
-             ↩ 롤백 명령 복사
+                onclick="openExecPanel(${rollbackPayload})">
+             ↩ 롤백 미리보기
            </div>
          </div>`
       : '';
@@ -6313,6 +6407,216 @@ function toggleInsightPanel() {
   }
 }
 window.toggleInsightPanel = toggleInsightPanel;
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 🖥️ 실행 패널 — diff 미리보기 → 승인 → 실행 로그
+// ═══════════════════════════════════════════════════════════════════════════════
+
+let _execCmdId   = null;   // 현재 대기 중인 명령 ID
+let _execRequest = null;   // { type, hash, projectDir, description }
+
+/** 실행 패널 열기 — 진입점 */
+async function openExecPanel(request) {
+  _execRequest = request;
+  const panel = document.getElementById('exec-panel');
+
+  // 다른 패널 닫기
+  document.getElementById('insight-panel')?.classList.remove('open');
+  document.getElementById('info-panel')?.classList.remove('open');
+
+  panel.classList.add('open');
+  _showExecLoading(`${request.description || request.type} 미리보기 생성 중…`);
+
+  // AI 연결 상태 확인
+  let aiConnected = false;
+  try {
+    const r = await fetch('/api/orbit-cmd/ai-status');
+    aiConnected = (await r.json()).connected;
+  } catch {}
+
+  // 모드 배지 업데이트
+  const badge = document.getElementById('ep-mode-badge');
+  if (aiConnected) {
+    badge.textContent = 'AI 연결됨'; badge.className = 'ep-mode-badge ep-mode-ai';
+  } else {
+    badge.textContent = 'Ollama';    badge.className = 'ep-mode-badge ep-mode-ollama';
+  }
+
+  // generate 요청
+  try {
+    const resp = await fetch('/api/orbit-cmd/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type:       request.type,
+        hash:       request.hash,
+        projectDir: request.projectDir,
+        instruction:request.instruction,
+        model:      document.getElementById('ep-model-select')?.value || 'orbit-insight:v1',
+      }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || resp.statusText);
+    _execCmdId = data.id;
+    _showExecPreview(data.preview, data.cmds, data.mode);
+  } catch (err) {
+    _showExecError(err.message);
+  }
+}
+window.openExecPanel = openExecPanel;
+
+function closeExecPanel() {
+  document.getElementById('exec-panel').classList.remove('open');
+  _execCmdId = null; _execRequest = null;
+}
+window.closeExecPanel = closeExecPanel;
+
+// ── 내부 렌더 헬퍼 ────────────────────────────────────────────────────────────
+
+function _showExecLoading(msg) {
+  document.getElementById('ep-body').innerHTML = `
+    <div class="ep-loading">
+      <div class="ep-spinner"></div>
+      <div class="ep-loading-msg">${escHtml(msg)}</div>
+    </div>`;
+  document.getElementById('ep-actions').style.display = 'none';
+}
+
+function _showExecPreview(preview, cmds, mode) {
+  const isAi = mode === 'ai';
+  document.getElementById('ep-body').innerHTML = `
+    <div class="ep-preview-label">변경 미리보기</div>
+    <div class="ep-diff">${_colorDiff(escHtml(preview))}</div>
+    ${!isAi ? `
+    <div class="ep-model-row">
+      <span class="ep-model-label">모델</span>
+      <select class="ep-model-select" id="ep-model-select">
+        <option value="orbit-insight:v1">orbit-insight:v1 (기본)</option>
+        <option value="codellama:13b">codellama:13b (정밀)</option>
+        <option value="llama3:8b">llama3:8b (빠름)</option>
+      </select>
+    </div>
+    <div class="ep-instr-row">
+      <textarea class="ep-instr-input" id="ep-instr-input" rows="2"
+        placeholder="추가 지시 (선택) — &quot;이 부분은 유지하고 저것만 수정해&quot;"></textarea>
+    </div>` : ''}
+  `;
+  const acts = document.getElementById('ep-actions');
+  acts.style.display = 'flex';
+  acts.innerHTML = `
+    ${!isAi
+      ? `<button class="ep-btn ep-btn-regen" onclick="_regenExec()">↺ 재생성</button>`
+      : ''}
+    <button class="ep-btn ep-btn-apply"  onclick="_applyExec()">
+      ${isAi ? '✅ AI에 전달됨 (닫기)' : '✅ 적용'}
+    </button>
+    <button class="ep-btn ep-btn-cancel" onclick="closeExecPanel()">✕</button>
+  `;
+  if (isAi) {
+    // AI 모드면 적용 버튼이 닫기 역할
+    document.querySelector('.ep-btn-apply').onclick = closeExecPanel;
+  }
+}
+
+function _showExecRunning() {
+  document.getElementById('ep-body').innerHTML =
+    `<div class="ep-preview-label">실행 중…</div><div class="ep-log" id="ep-log-box"></div>`;
+  document.getElementById('ep-actions').style.display = 'none';
+}
+
+function _showExecDone(success, msg) {
+  document.getElementById('ep-body').innerHTML += `
+    <div class="ep-done-banner">
+      <div class="ep-done-icon">${success ? '✅' : '❌'}</div>
+      <div class="ep-done-msg">${success ? '완료' : '실패'}</div>
+      <div class="ep-done-sub">${escHtml(msg || '')}</div>
+    </div>`;
+  const acts = document.getElementById('ep-actions');
+  acts.style.display = 'flex';
+  acts.innerHTML = `<button class="ep-btn ep-btn-apply" onclick="closeExecPanel()">닫기</button>`;
+}
+
+function _showExecError(msg) {
+  document.getElementById('ep-body').innerHTML = `
+    <div style="color:#f85149;font-size:12px;padding:16px 0;">
+      ❌ 오류: ${escHtml(msg)}
+    </div>`;
+  const acts = document.getElementById('ep-actions');
+  acts.style.display = 'flex';
+  acts.innerHTML = `<button class="ep-btn ep-btn-cancel" onclick="closeExecPanel()">닫기</button>`;
+}
+
+/** diff 텍스트에 색상 span 적용 */
+function _colorDiff(html) {
+  return html.split('\n').map(line => {
+    if (line.startsWith('+'))  return `<span style="color:#3fb950">${line}</span>`;
+    if (line.startsWith('-'))  return `<span style="color:#f85149">${line}</span>`;
+    if (line.startsWith('@@')) return `<span style="color:#6e7681">${line}</span>`;
+    return line;
+  }).join('\n');
+}
+
+/** 재생성 — 추가 지시 반영 */
+async function _regenExec() {
+  const extra = document.getElementById('ep-instr-input')?.value || '';
+  await openExecPanel({ ..._execRequest, instruction: extra || _execRequest?.instruction });
+}
+
+/** 실행 승인 — SSE 스트리밍 */
+async function _applyExec() {
+  if (!_execCmdId) return;
+  _showExecRunning();
+
+  const logBox = document.getElementById('ep-log-box');
+  const append = (cls, text) => {
+    const span = document.createElement('span');
+    span.className = cls;
+    span.textContent = text;
+    logBox.appendChild(span);
+    logBox.scrollTop = logBox.scrollHeight;
+  };
+
+  try {
+    const resp = await fetch('/api/orbit-cmd/execute', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: _execCmdId }),
+    });
+
+    if (!resp.ok) {
+      const err = await resp.json();
+      return _showExecError(err.error || resp.statusText);
+    }
+
+    const reader = resp.body.getReader();
+    const dec    = new TextDecoder();
+    let   buf    = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop();
+      for (const line of lines) {
+        if (!line.startsWith('data:')) continue;
+        try {
+          const ev = JSON.parse(line.slice(5).trim());
+          if (ev.type === 'cmd')      append('log-cmd',    `$ ${ev.cmd}\n`);
+          if (ev.type === 'stdout')   append('log-stdout', ev.text);
+          if (ev.type === 'stderr')   append('log-stderr', ev.text);
+          if (ev.type === 'cmd_done' && ev.exitCode === 0) append('log-ok', `✓ 완료\n`);
+          if (ev.type === 'error')    append('log-err',    `✗ ${ev.msg}\n`);
+          if (ev.type === 'done')     _showExecDone(ev.exitCode === 0, '모든 명령 완료');
+        } catch {}
+      }
+    }
+  } catch (err) {
+    _showExecError(err.message);
+  }
+}
+window._regenExec  = _regenExec;
+window._applyExec  = _applyExec;
 
 // ─── 프로젝트 별자리 포커스 ───────────────────────────────────────────────────
 function focusProject(projName) {
