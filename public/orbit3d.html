@@ -1292,6 +1292,33 @@
   .fp-sub    { font-size:11px; color:#6e7681; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .fp-empty  { font-size:12px; color:#6e7681; text-align:center; padding:16px; }
 
+  /* ── 적용 토스트 피드백 ─────────────────────────────────────────────────── */
+  #apply-toast {
+    position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%) translateY(20px);
+    background: rgba(31,111,235,0.95); color: #fff;
+    padding: 8px 18px; border-radius: 20px; font-size: 13px; font-weight: 600;
+    pointer-events: none; z-index: 9999;
+    opacity: 0; transition: opacity .25s, transform .25s;
+    display: flex; align-items: center; gap: 8px;
+    box-shadow: 0 4px 20px rgba(31,111,235,0.5);
+    white-space: nowrap;
+  }
+  #apply-toast.show {
+    opacity: 1; transform: translateX(-50%) translateY(0);
+  }
+
+  /* 캔버스 적용 플래시 */
+  #apply-flash {
+    position: fixed; inset: 0; pointer-events: none; z-index: 200;
+    background: transparent;
+    animation: none;
+  }
+  @keyframes applyFlash {
+    0%   { background: rgba(31,111,235,0.18); }
+    100% { background: transparent; }
+  }
+  #apply-flash.flash { animation: applyFlash 0.5s ease-out forwards; }
+
   </style>
 </head>
 <body>
@@ -1331,14 +1358,17 @@
       <button class="lnpc-edit-btn" onclick="openProfileEditModal()">✏️ 프로필 편집</button>
     </div>
 
+    <!-- 마켓 -->
+    <div class="ln-sep">마켓</div>
+    <button class="ln-item" onclick="toggleEffectsPanel()">✨ 이펙트 마켓</button>
+    <button class="ln-item" onclick="toggleCoreSkinPanel()">🌍 행성 스킨 마켓</button>
+    <button class="ln-item" onclick="toggleTalentBoard()">📡 인재 마켓</button>
+
     <!-- 도구 -->
     <div class="ln-sep">도구</div>
-    <button class="ln-item" onclick="toggleEffectsPanel()">✨ 마켓 이펙트</button>
-    <button class="ln-item" onclick="toggleCoreSkinPanel()">🌍 행성 스킨</button>
     <button class="ln-item" onclick="toggleFeatPanel()">📋 기능 목록</button>
     <button class="ln-item" onclick="toggleViewPanel()">👤 내 뷰 설정</button>
     <button class="ln-item" onclick="toggleMgrPanel()">👔 관리자 뷰</button>
-    <button class="ln-item" onclick="toggleTalentBoard()">📡 인재 보드</button>
     <button class="ln-item" onclick="toggleTaskSidebar()">📋 내 작업</button>
     <button class="ln-item" id="ln-orbit-btn" onclick="toggleOrbitAnim()">⏸ 공전 토글</button>
 
@@ -1356,6 +1386,10 @@
     <button class="ln-item ln-logout" id="ln-logout-btn" onclick="doLogoutMain()" style="display:none">🚪 로그아웃</button>
   </div>
 </nav>
+
+<!-- 적용 피드백 레이어 -->
+<div id="apply-flash"></div>
+<div id="apply-toast">✅ <span id="apply-toast-msg"></span></div>
 
 <!-- 팔로우 패널 -->
 <div id="follow-panel">
@@ -2036,8 +2070,35 @@ const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
 renderer.xr.enabled = true;
+// 사이드바 오프셋: 캔버스를 left-nav 오른쪽에서 시작
+renderer.domElement.style.position = 'fixed';
+renderer.domElement.style.top = '0';
 document.body.appendChild(renderer.domElement);
 document.body.appendChild(OrbitVRButton.createButton(renderer));
+
+// ── 사이드바 너비 반영 렌더 영역 계산 ─────────────────────────────────────
+function getNavWidth() {
+  const nav = document.getElementById('left-nav');
+  if (!nav) return 0;
+  return nav.classList.contains('collapsed') ? (nav.offsetWidth || 36) : (nav.offsetWidth || 200);
+}
+
+function resizeRendererToSidebar() {
+  const sw = getNavWidth();
+  const w  = window.innerWidth - sw;
+  const h  = window.innerHeight;
+  renderer.setSize(w, h);
+  renderer.domElement.style.left = sw + 'px';
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  // Label canvas 동기화
+  if (typeof _labelCanvas2d !== 'undefined') {
+    _labelCanvas2d.width  = w;
+    _labelCanvas2d.height = h;
+    _labelCanvas2d.style.left = sw + 'px';
+  }
+}
+window.resizeRendererToSidebar = resizeRendererToSidebar;
 
 const scene  = new THREE.Scene();
 scene.background = new THREE.Color(0x060a10);
@@ -2958,6 +3019,7 @@ function applySelectedEffect() {
   if (!node) { alert('먼저 노드를 클릭하세요'); return; }
   _nodeEffects[node.label] = _selectedEffectId;
   if (typeof track === 'function') track('node.effect_apply', { effect: _selectedEffectId });
+  showApplyEffect(`이펙트 적용: ✨ ${_selectedEffectId} → ${node.label || node.intent || '노드'}`);
 }
 
 function clearNodeEffect() {
@@ -5505,10 +5567,15 @@ document.body.appendChild(_labelCanvas2d);
 const _lctx = _labelCanvas2d.getContext('2d');
 
 function resizeLabelCanvas() {
-  _labelCanvas2d.width  = innerWidth;
+  const sw = getNavWidth();
+  _labelCanvas2d.width  = innerWidth - sw;
   _labelCanvas2d.height = innerHeight;
+  _labelCanvas2d.style.left = sw + 'px';
 }
 resizeLabelCanvas();
+// DOM 준비 후 초기 렌더 영역 적용
+window.addEventListener('DOMContentLoaded', () => resizeRendererToSidebar(), { once: true });
+setTimeout(resizeRendererToSidebar, 100); // fallback
 
 // ─── 줌 거리 → LOD 레벨 ─────────────────────────────────────────────────────
 // LOD 0: 줌인 (r < 60)   — 행성 크게 + 위성 상세
@@ -6299,9 +6366,7 @@ renderer.setAnimationLoop(now => {
 
 // ─── 리사이즈 ─────────────────────────────────────────────────────────────────
 window.addEventListener('resize', () => {
-  camera.aspect = innerWidth/innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth, innerHeight);
+  resizeRendererToSidebar();
   resizeLabelCanvas();
 });
 
@@ -6935,6 +7000,8 @@ function saveZoomPref(mode, val) {
 function applyModeZoom(mode) {
   const r = _viewPrefs.zoom[mode] || { personal: 22, team: 70, company: 100 }[mode];
   if (typeof lerpCameraTo === 'function') lerpCameraTo(r, 0, 0, 0, 800);
+  const labels = { personal: '개인 뷰', team: '팀 뷰', company: '회사 뷰' };
+  showApplyEffect(`배율 적용: ${labels[mode] || mode} r=${r}`);
 }
 
 function applyCurrentModeZoom() {
@@ -7061,6 +7128,12 @@ function applyAIFilter() {
   document.querySelectorAll('#vp-presets .vp-preset').forEach(b => b.classList.remove('active'));
   renderActiveFilter();
   rebuildScene();
+  const filterDesc = filter.type === 'all' ? '전체 보기'
+    : filter.type === 'mine' ? '내 작업만'
+    : filter.type === 'depts' ? `부서 필터 (${filter.deptIds?.length || 0}개)`
+    : filter.type === 'members' ? `멤버 필터 (${filter.memberIds?.length || 0}명)`
+    : filter.type;
+  showApplyEffect(`🤖 AI 필터 적용: ${filterDesc}`);
   if (filter.type !== 'all') input.value = '';
 }
 window.applyAIFilter = applyAIFilter;
@@ -7632,6 +7705,11 @@ let _memberDetailOpen = false;
 function toggleLeftNav() {
   _lnCollapsed = !_lnCollapsed;
   document.getElementById('left-nav').classList.toggle('collapsed', _lnCollapsed);
+  // 사이드바 너비 변경 → 렌더 영역 재계산
+  requestAnimationFrame(() => {
+    resizeRendererToSidebar();
+    resizeLabelCanvas();
+  });
 }
 window.toggleLeftNav = toggleLeftNav;
 
@@ -7848,6 +7926,8 @@ function applyCoreSkin(skinId) {
   buildCoreMesh();
   renderCoreSkinGrid();
   if (typeof track === 'function') track('node.effect_apply', { effect: 'skin_' + skinId });
+  const skin = CORE_SKINS.find(s => s.id === skinId);
+  showApplyEffect(`행성 스킨 적용: ${skin?.icon || ''} ${skin?.name || skinId}`);
 }
 window.applyCoreSkin = applyCoreSkin;
 
@@ -8135,6 +8215,36 @@ async function saveProfile() {
   }
 }
 window.saveProfile = saveProfile;
+
+/* ── 적용 시각 피드백 ────────────────────────────────────────────────────────
+ * showApplyEffect(msg, color?)
+ *   - 캔버스 플래시 (파란 rimlight)
+ *   - 하단 토스트 메시지 (무엇이 적용됐는지)
+ * ─────────────────────────────────────────────────────────────────────────── */
+let _applyToastTimer = null;
+
+function showApplyEffect(msg, color) {
+  // 1. 캔버스 플래시
+  const flash = document.getElementById('apply-flash');
+  if (flash) {
+    flash.classList.remove('flash');
+    void flash.offsetWidth; // reflow
+    if (color) flash.style.setProperty('--flash-color', color);
+    flash.classList.add('flash');
+    setTimeout(() => flash.classList.remove('flash'), 600);
+  }
+
+  // 2. 토스트
+  const toast   = document.getElementById('apply-toast');
+  const toastMsg = document.getElementById('apply-toast-msg');
+  if (toast && toastMsg) {
+    toastMsg.textContent = msg;
+    toast.classList.add('show');
+    clearTimeout(_applyToastTimer);
+    _applyToastTimer = setTimeout(() => toast.classList.remove('show'), 2200);
+  }
+}
+window.showApplyEffect = showApplyEffect;
 
 /* ── FOLLOW SYSTEM ───────────────────────────────────────────────────────────
  * 팔로우 / 언팔로우, 팔로잉 목록, 팔로워 목록
