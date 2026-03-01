@@ -104,6 +104,7 @@ const createRoiRouter               = require('./routes/roi');
 const createAnalyticsRouter          = require('./routes/analytics');
 const createProfileRouter            = require('./routes/profile');
 const createFollowRouter             = require('./routes/follow');
+const createChatRouter               = require('./routes/chat');
 const { createRegionalInsightRouter } = require('./src/regional-insight');
 const { createPointsRouter }          = require('./src/points-engine');
 const { createCertificateRouter }     = require('./src/certificate-engine');
@@ -120,6 +121,38 @@ const SNAPSHOTS_DIR = path.join(__dirname, 'snapshots');
 // 각 채널은 독립된 마인드맵 공간. 팀원이 같은 채널에 접속하면 실시간 공유.
 const channelClients = new Map();    // channelId → Set<WebSocket>
 const wsChannelMap   = new WeakMap(); // ws → { channelId, memberId, memberName, memberColor }
+
+// ── 메신저 채팅 방 구독 ─────────────────────────────────────────────────────
+const chatRoomClients = new Map();   // chatRoomId → Set<WebSocket>
+const wsChatRoomMap   = new WeakMap(); // ws → Set<chatRoomId>
+
+function broadcastToRoom(roomId, msg) {
+  const clients = chatRoomClients.get(roomId);
+  if (!clients) return;
+  const data = JSON.stringify(msg);
+  clients.forEach(ws => {
+    if (ws.readyState === WebSocket.OPEN) {
+      try { ws.send(data); } catch {}
+    }
+  });
+}
+
+function subscribeChatRoom(ws, roomId) {
+  if (!chatRoomClients.has(roomId)) chatRoomClients.set(roomId, new Set());
+  chatRoomClients.get(roomId).add(ws);
+  if (!wsChatRoomMap.has(ws)) wsChatRoomMap.set(ws, new Set());
+  wsChatRoomMap.get(ws).add(roomId);
+}
+
+function unsubscribeChatRooms(ws) {
+  const rooms = wsChatRoomMap.get(ws);
+  if (!rooms) return;
+  rooms.forEach(roomId => {
+    const clients = chatRoomClients.get(roomId);
+    if (clients) { clients.delete(ws); if (clients.size === 0) chatRoomClients.delete(roomId); }
+  });
+  wsChatRoomMap.delete(ws);
+}
 
 /** 멤버별 색상 팔레트 (순환 할당) */
 const MEMBER_COLORS = [
@@ -294,6 +327,23 @@ wss.on('connection', (ws) => {
     try {
       const msg = JSON.parse(raw);
 
+      // ── 메신저 채팅 방 구독 ───────────────────────────────────────────────
+      if (msg.type === 'chat.subscribe') {
+        const roomId = msg.roomId;
+        if (roomId) subscribeChatRoom(ws, roomId);
+        return;
+      }
+      if (msg.type === 'chat.unsubscribe') {
+        const roomId = msg.roomId;
+        if (roomId) {
+          const clients = chatRoomClients.get(roomId);
+          if (clients) clients.delete(ws);
+          const myRooms = wsChatRoomMap.get(ws);
+          if (myRooms) myRooms.delete(roomId);
+        }
+        return;
+      }
+
       // ── 채널 입장 ────────────────────────────────────────────────────────
       if (msg.type === 'channel.join') {
         const channelId   = (msg.channelId  || 'default').trim();
@@ -405,6 +455,7 @@ wss.on('connection', (ws) => {
       });
       console.log(`[CHANNEL] "${memberName}" 퇴장 (#${channelId})`);
     }
+    unsubscribeChatRooms(ws); // 채팅 방 구독 정리
     console.log('[WS] 클라이언트 연결 종료');
   });
 
@@ -682,6 +733,7 @@ app.use('/api', createRoiRouter({ getAllEvents, getSessions, optionalAuth }));
 app.use('/api', createAnalyticsRouter({ getDb: dbModule.getDb }));
 app.use('/api', createProfileRouter({ getDb: dbModule.getDb, verifyToken }));
 app.use('/api', createFollowRouter({ getDb: dbModule.getDb, verifyToken }));
+app.use('/api', createChatRouter({ getDb: dbModule.getDb, verifyToken, broadcastToRoom }));
 
 // ─── Regional Insight ────────────────────────────────────────────────────────
 app.use('/api', createRegionalInsightRouter({ getAllEvents }));

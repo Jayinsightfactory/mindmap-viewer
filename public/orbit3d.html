@@ -1292,6 +1292,86 @@
   .fp-sub    { font-size:11px; color:#6e7681; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .fp-empty  { font-size:12px; color:#6e7681; text-align:center; padding:16px; }
 
+  /* ══ 메신저 패널 ══════════════════════════════════════════════════════════ */
+  #messenger-panel {
+    position: fixed; right: 0; top: 0; bottom: 0; width: 380px;
+    background: rgba(13,17,23,0.98); border-left: 1px solid #30363d;
+    z-index: 410; display: flex; flex-direction: column;
+    transform: translateX(100%); transition: transform .3s ease;
+    backdrop-filter: blur(20px); box-shadow: -8px 0 32px rgba(0,0,0,.5);
+  }
+  #messenger-panel.open { transform: translateX(0); }
+  .msg-hdr { display:flex; align-items:center; padding:12px 14px; border-bottom:1px solid #21262d; gap:8px; flex-shrink:0; }
+  .msg-hdr-title { font-size:14px; font-weight:700; color:#e6edf3; flex:1; }
+  .msg-close-btn { background:none; border:none; color:#6e7681; cursor:pointer; font-size:18px; padding:4px; }
+  .msg-close-btn:hover { color:#e6edf3; }
+  .msg-tabs-row { display:flex; border-bottom:1px solid #21262d; flex-shrink:0; }
+  .msg-tab { flex:1; padding:8px 4px; text-align:center; font-size:12px; color:#6e7681; cursor:pointer; border:none; border-bottom:2px solid transparent; background:none; transition:.2s; }
+  .msg-tab.active { color:#58a6ff; border-bottom-color:#58a6ff; }
+  .msg-body { display:flex; flex:1; overflow:hidden; }
+  /* 방 목록 */
+  .msg-rooms { width:130px; border-right:1px solid #21262d; overflow-y:auto; flex-shrink:0; display:flex; flex-direction:column; }
+  .msg-new-room-btn { margin:8px; padding:6px 4px; background:rgba(255,255,255,0.04); border:1px dashed #30363d; border-radius:6px; color:#6e7681; font-size:11px; cursor:pointer; transition:.2s; }
+  .msg-new-room-btn:hover { border-color:#58a6ff; color:#58a6ff; }
+  .msg-room-item { padding:9px 8px; cursor:pointer; border-bottom:1px solid #21262d40; transition:.2s; position:relative; }
+  .msg-room-item:hover { background:rgba(255,255,255,0.04); }
+  .msg-room-item.active { background:rgba(31,111,235,0.15); }
+  .msg-room-name { font-size:11px; color:#e6edf3; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .msg-room-preview { font-size:10px; color:#6e7681; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:2px; }
+  .msg-unread { display:inline-flex; align-items:center; justify-content:center; background:#f85149; color:#fff; border-radius:10px; font-size:9px; padding:1px 5px; position:absolute; top:8px; right:6px; }
+  /* 채팅 영역 */
+  .msg-chat { flex:1; display:flex; flex-direction:column; overflow:hidden; }
+  .msg-chat-hdr { padding:8px 12px; border-bottom:1px solid #21262d; font-size:12px; color:#e6edf3; font-weight:700; flex-shrink:0; display:flex; align-items:center; gap:8px; }
+  .msg-messages { flex:1; overflow-y:auto; padding:10px 12px; display:flex; flex-direction:column; gap:6px; }
+  .msg-messages::-webkit-scrollbar { width:3px; }
+  .msg-messages::-webkit-scrollbar-thumb { background:#21262d; border-radius:2px; }
+  .msg-meta { font-size:10px; color:#6e7681; margin-bottom:2px; }
+  .msg-bubble { max-width:85%; padding:8px 12px; border-radius:12px; font-size:12px; line-height:1.6; word-break:break-word; }
+  .msg-bubble.mine   { align-self:flex-end; background:#1f6feb; color:#fff; border-bottom-right-radius:3px; }
+  .msg-bubble.theirs { align-self:flex-start; background:#21262d; color:#e6edf3; border-bottom-left-radius:3px; }
+  .msg-bubble.ai-bot { align-self:flex-start; background:rgba(88,166,255,0.12); border:1px solid #58a6ff30; color:#e6edf3; border-bottom-left-radius:3px; }
+  .msg-bubble .msg-time { font-size:10px; opacity:.6; margin-top:4px; text-align:right; }
+  .msg-empty-chat { display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; color:#6e7681; font-size:12px; gap:8px; text-align:center; padding:20px; }
+  /* 쿼터 바 */
+  .msg-quota-wrap { padding:4px 12px; flex-shrink:0; }
+  .msg-quota-info { display:flex; justify-content:space-between; font-size:10px; color:#6e7681; margin-bottom:3px; }
+  .msg-quota-track { height:3px; background:#21262d; border-radius:2px; }
+  .msg-quota-fill  { height:3px; border-radius:2px; background:#1f6feb; transition:width .3s; }
+  .msg-quota-fill.warn { background:#f85149; }
+  /* 입력창 */
+  .msg-input-wrap { padding:8px 10px; border-top:1px solid #21262d; display:flex; align-items:center; gap:6px; flex-shrink:0; }
+  .msg-input-wrap input { flex:1; background:#0d1117; border:1px solid #30363d; border-radius:20px; padding:7px 14px; color:#e6edf3; font-size:12px; outline:none; font-family:inherit; }
+  .msg-input-wrap input:focus { border-color:#58a6ff; }
+  .msg-input-wrap input::placeholder { color:#6e7681; }
+  .msg-send-btn { width:32px; height:32px; border-radius:50%; background:#1f6feb; border:none; color:#fff; cursor:pointer; font-size:16px; display:flex; align-items:center; justify-content:center; transition:.2s; flex-shrink:0; }
+  .msg-send-btn:hover { background:#388bfd; }
+  /* 채널 생성 모달 (인라인) */
+  #msg-create-modal { padding:12px; border-top:1px solid #21262d; display:none; }
+  #msg-create-modal.open { display:block; }
+  .msg-create-title { font-size:12px; color:#e6edf3; font-weight:700; margin-bottom:8px; }
+  .msg-create-input { width:100%; background:#0d1117; border:1px solid #30363d; border-radius:8px; padding:7px 10px; color:#e6edf3; font-size:12px; margin-bottom:6px; outline:none; font-family:inherit; box-sizing:border-box; }
+  .msg-create-input:focus { border-color:#58a6ff; }
+  .msg-create-row { display:flex; gap:6px; }
+  .msg-create-ok  { flex:1; padding:6px; background:#1f6feb; border:none; border-radius:6px; color:#fff; font-size:12px; cursor:pointer; }
+  .msg-create-cancel { padding:6px 10px; background:none; border:1px solid #30363d; border-radius:6px; color:#6e7681; font-size:12px; cursor:pointer; }
+
+  /* ── 뷰 전환 확인 토스트 ─────────────────────────────────────────────── */
+  #switch-toast {
+    position: fixed; bottom: 70px; left: 50%; transform: translateX(-50%) translateY(20px);
+    background: rgba(22,27,34,0.97); border: 1px solid #30363d;
+    padding: 10px 16px; border-radius: 12px; font-size: 13px; color: #e6edf3;
+    pointer-events: auto; z-index: 9999;
+    opacity: 0; transition: opacity .25s, transform .25s;
+    display: flex; align-items: center; gap: 12px;
+    box-shadow: 0 4px 24px rgba(0,0,0,.6);
+    white-space: nowrap; backdrop-filter: blur(12px);
+  }
+  #switch-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .sw-toast-confirm { padding: 5px 14px; border-radius: 8px; border: none; background: #1f6feb; color: #fff; font-size: 12px; cursor: pointer; }
+  .sw-toast-confirm:hover { background: #388bfd; }
+  .sw-toast-cancel  { padding: 5px 10px; border-radius: 8px; border: 1px solid #30363d; background: none; color: #8b949e; font-size: 12px; cursor: pointer; }
+  .sw-toast-cancel:hover  { border-color: #6e7681; color: #e6edf3; }
+
   /* ── 적용 토스트 피드백 ─────────────────────────────────────────────────── */
   #apply-toast {
     position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%) translateY(20px);
@@ -1374,6 +1454,7 @@
 
     <!-- 커뮤니티 -->
     <div class="ln-sep">커뮤니티</div>
+    <button class="ln-item" id="ln-messenger-btn" onclick="toggleMessenger()">💬 메신저</button>
     <a class="ln-item" href="/guide.html" target="_blank">📖 사용법 가이드</a>
     <button class="ln-item" id="ln-following-btn" onclick="toggleFollowPanel()" style="display:none">👥 팔로잉</button>
 
@@ -1390,6 +1471,71 @@
 <!-- 적용 피드백 레이어 -->
 <div id="apply-flash"></div>
 <div id="apply-toast">✅ <span id="apply-toast-msg"></span></div>
+
+<!-- ══ 메신저 패널 ══════════════════════════════════════════════════════════ -->
+<div id="messenger-panel">
+  <div class="msg-hdr">
+    <span class="msg-hdr-title">💬 메신저</span>
+    <button class="msg-close-btn" onclick="toggleMessenger()">✕</button>
+  </div>
+  <!-- 탭: DM / 팀 / 회사 -->
+  <div class="msg-tabs-row">
+    <button class="msg-tab active" id="mt-dm"      onclick="switchMsgTab('dm')">📬 DM</button>
+    <button class="msg-tab"        id="mt-team"    onclick="switchMsgTab('team')">👥 팀</button>
+    <button class="msg-tab"        id="mt-company" onclick="switchMsgTab('company')">🏢 회사</button>
+  </div>
+  <!-- 바디: 방 목록 + 채팅 영역 -->
+  <div class="msg-body">
+    <!-- 왼쪽: 방 목록 -->
+    <div class="msg-rooms" id="msg-rooms-list">
+      <div class="msg-empty-chat" style="font-size:11px;padding:12px">로딩중…</div>
+    </div>
+    <!-- 오른쪽: 채팅 뷰 -->
+    <div class="msg-chat">
+      <div class="msg-chat-hdr" id="msg-chat-hdr">
+        <span id="msg-chat-name">채팅방 선택</span>
+      </div>
+      <div class="msg-messages" id="msg-messages-area">
+        <div class="msg-empty-chat">
+          <span style="font-size:28px">💬</span>
+          <span>왼쪽에서 채팅방을 선택하세요</span>
+          <span style="font-size:10px;color:#484f58">@orbit — AI에게 질문 가능</span>
+        </div>
+      </div>
+      <!-- 쿼터 바 (숨김 → 한도 근접 시 표시) -->
+      <div class="msg-quota-wrap" id="msg-quota-wrap" style="display:none">
+        <div class="msg-quota-info">
+          <span id="msg-quota-text"></span>
+          <button onclick="openUpgradeModal()" style="background:none;border:none;color:#58a6ff;font-size:10px;cursor:pointer">업그레이드 →</button>
+        </div>
+        <div class="msg-quota-track"><div class="msg-quota-fill" id="msg-quota-fill" style="width:0%"></div></div>
+      </div>
+      <!-- 입력창 (방 선택 전엔 숨김) -->
+      <div class="msg-input-wrap" id="msg-input-wrap" style="display:none">
+        <input type="text" id="msg-input"
+          placeholder="메시지 입력… (@orbit AI에게 질문)"
+          onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChatMsg();}">
+        <button class="msg-send-btn" onclick="sendChatMsg()">↑</button>
+      </div>
+    </div>
+  </div>
+  <!-- 채널 생성 폼 (인라인) -->
+  <div id="msg-create-modal">
+    <div class="msg-create-title">✚ 새 채널 만들기</div>
+    <input class="msg-create-input" id="msg-create-name" placeholder="채널명 (예: #마케팅)">
+    <div class="msg-create-row">
+      <button class="msg-create-ok"     onclick="createChatChannel()">만들기</button>
+      <button class="msg-create-cancel" onclick="toggleCreateModal(false)">취소</button>
+    </div>
+  </div>
+</div>
+
+<!-- 뷰 전환 확인 토스트 -->
+<div id="switch-toast">
+  <span id="sw-toast-msg"></span>
+  <button class="sw-toast-confirm" id="sw-toast-yes">전환</button>
+  <button class="sw-toast-cancel"  onclick="dismissSwitchToast()">취소</button>
+</div>
 
 <!-- 팔로우 패널 -->
 <div id="follow-panel">
@@ -5018,8 +5164,11 @@ renderer.domElement.addEventListener('click', e => {
   }
 });
 
-function hitTest(mx, my) {
-  // _hitAreas는 drawLabels()에서 매 프레임 갱신됨
+function hitTest(clientX, clientY) {
+  // _labelCanvas2d 기준 로컬 좌표로 변환 (사이드바 오프셋 보정)
+  const rect = _labelCanvas2d.getBoundingClientRect();
+  const mx   = clientX - rect.left;
+  const my   = clientY - rect.top;
   for (const h of _hitAreas) {
     const dx = mx - h.cx, dy = my - h.cy;
     if (dx*dx + dy*dy <= h.r*h.r) return h;
@@ -7768,29 +7917,42 @@ function updateZoomLOD() {
       zhEl.onclick = null;
     }
 
-    // ── 자동 뷰 전환 (줌아웃 1.5초 유지 시) ──
+    // ── 자동 뷰 전환 → 취소 가능 확인 토스트로 교체 ──
     const prevR = _lastLodR;
     _lastLodR = r;
 
     if (inPersonal && r > 155 && prevR <= 155) {
       clearTimeout(_zoomLodTimer);
       _zoomLodTimer = setTimeout(() => {
-        if (controls.sph.r > 145 && !(typeof _teamMode !== 'undefined' && _teamMode)) loadTeamDemo();
-      }, 1500);
+        if (controls.sph.r > 145 && !(typeof _teamMode !== 'undefined' && _teamMode)) {
+          showSwitchToast('👥 팀 뷰로 전환할까요?', () => loadTeamDemo());
+        }
+      }, 1800);
+    } else if (inPersonal && r <= 145) {
+      clearTimeout(_zoomLodTimer);
+      dismissSwitchToast();
     }
     if (inTeam && r > 100 && prevR <= 100) {
       clearTimeout(_zoomLodTimer);
       _zoomLodTimer = setTimeout(() => {
-        if (controls.sph.r > 95 && (typeof _teamMode !== 'undefined' && _teamMode)) loadCompanyDemo();
-      }, 1500);
+        if (controls.sph.r > 95 && (typeof _teamMode !== 'undefined' && _teamMode)) {
+          showSwitchToast('🏢 회사 뷰로 전환할까요?', () => loadCompanyDemo());
+        }
+      }, 1800);
+    } else if (inTeam && r <= 90) {
+      clearTimeout(_zoomLodTimer);
+      dismissSwitchToast();
     }
     if (inCompany && r < 75 && prevR >= 75) {
       clearTimeout(_zoomLodTimer);
       _zoomLodTimer = setTimeout(() => {
         if (controls.sph.r < 80 && (typeof _companyMode !== 'undefined' && _companyMode)) {
-          exitTeamMode(); setTimeout(loadTeamDemo, 100);
+          showSwitchToast('👥 팀 뷰로 돌아갈까요?', () => { exitTeamMode(); setTimeout(loadTeamDemo, 100); });
         }
-      }, 1500);
+      }, 1800);
+    } else if (inCompany && r >= 80) {
+      clearTimeout(_zoomLodTimer);
+      dismissSwitchToast();
     }
   }
 
@@ -8215,6 +8377,375 @@ async function saveProfile() {
   }
 }
 window.saveProfile = saveProfile;
+
+/* ── 뷰 전환 확인 토스트 ────────────────────────────────────────────────────
+ * showSwitchToast(msg, onConfirm) — 줌 LOD 임계값 도달 시 자동 전환 대신 사용자에게 물어봄
+ * ─────────────────────────────────────────────────────────────────────────── */
+let _switchToastCb = null;
+let _switchToastTimer = null;
+
+function showSwitchToast(msg, onConfirm) {
+  _switchToastCb = onConfirm;
+  const toast = document.getElementById('switch-toast');
+  const msgEl = document.getElementById('sw-toast-msg');
+  const yesBtn = document.getElementById('sw-toast-yes');
+  if (!toast || !msgEl) return;
+  msgEl.textContent = msg;
+  yesBtn.onclick = () => { dismissSwitchToast(); if (_switchToastCb) _switchToastCb(); };
+  toast.classList.add('show');
+  // 8초 후 자동 닫기 (무시하면 사라짐)
+  clearTimeout(_switchToastTimer);
+  _switchToastTimer = setTimeout(dismissSwitchToast, 8000);
+}
+window.showSwitchToast = showSwitchToast;
+
+function dismissSwitchToast() {
+  clearTimeout(_switchToastTimer);
+  _switchToastCb = null;
+  document.getElementById('switch-toast')?.classList.remove('show');
+}
+window.dismissSwitchToast = dismissSwitchToast;
+
+/* ══ MESSENGER ════════════════════════════════════════════════════════════════
+ * 개인(DM) / 팀 / 회사 채팅 + @orbit AI 봇
+ * ─────────────────────────────────────────────────────────────────────────── */
+let _msgTab        = 'dm';       // 현재 탭
+let _msgRoomId     = null;       // 현재 열린 방 ID
+let _msgRoomName   = '';         // 현재 방 이름
+let _msgWs         = null;       // WebSocket 참조 (전역 ws 재사용)
+let _msgQuota      = null;       // 쿼터 캐시
+
+function _msgToken() {
+  return _orbitUser?.token || localStorage.getItem('orbitToken') || '';
+}
+
+// ── 패널 열기/닫기 ───────────────────────────────────────────────────────────
+function toggleMessenger() {
+  const panel = document.getElementById('messenger-panel');
+  const isOpen = panel.classList.toggle('open');
+  if (isOpen) {
+    if (!_orbitUser) {
+      document.getElementById('msg-rooms-list').innerHTML =
+        '<div class="msg-empty-chat" style="font-size:11px;padding:16px">로그인이 필요합니다</div>';
+      return;
+    }
+    loadMsgRooms(_msgTab);
+    loadMsgQuota();
+  }
+}
+window.toggleMessenger = toggleMessenger;
+
+// ── 탭 전환 ──────────────────────────────────────────────────────────────────
+function switchMsgTab(tab) {
+  _msgTab = tab;
+  _msgRoomId = null;
+  ['dm','team','company'].forEach(t => {
+    document.getElementById('mt-' + t)?.classList.toggle('active', t === tab);
+  });
+  resetChatView();
+  loadMsgRooms(tab);
+  toggleCreateModal(false);
+}
+window.switchMsgTab = switchMsgTab;
+
+function resetChatView() {
+  document.getElementById('msg-chat-name').textContent = '채팅방 선택';
+  document.getElementById('msg-messages-area').innerHTML =
+    '<div class="msg-empty-chat"><span style="font-size:28px">💬</span><span>채팅방을 선택하세요</span><span style="font-size:10px;color:#484f58">@orbit — AI에게 질문 가능</span></div>';
+  document.getElementById('msg-input-wrap').style.display = 'none';
+}
+
+// ── 방 목록 로드 ─────────────────────────────────────────────────────────────
+async function loadMsgRooms(tab) {
+  const listEl = document.getElementById('msg-rooms-list');
+  if (!listEl) return;
+  listEl.innerHTML = '<div class="msg-empty-chat" style="font-size:11px">로딩 중…</div>';
+  const token = _msgToken();
+  if (!token) return;
+  try {
+    const res   = await fetch('/api/chat/rooms', { headers: { Authorization: `Bearer ${token}` } });
+    const rooms = await res.json();
+    if (!Array.isArray(rooms)) { listEl.innerHTML = '<div class="msg-empty-chat" style="font-size:11px">오류</div>'; return; }
+
+    const filtered = rooms.filter(r => r.type === tab || (tab === 'dm' && r.type === 'dm'));
+
+    let html = '';
+    if (tab !== 'dm') {
+      html += `<button class="msg-new-room-btn" onclick="toggleCreateModal(true)">+ 채널 만들기</button>`;
+    }
+    if (filtered.length === 0) {
+      html += `<div class="msg-empty-chat" style="font-size:10px;padding:10px">${tab === 'dm' ? '팔로잉한 사람에게<br>DM을 보내보세요' : '채널이 없습니다'}</div>`;
+    } else {
+      html += filtered.map(room => {
+        const name    = room.type === 'dm' ? (room.peerName || room.id) : (room.name || room.id);
+        const preview = room.last_msg ? room.last_msg.slice(0, 22) + (room.last_msg.length > 22 ? '…' : '') : '';
+        const unread  = room.unread > 0 ? `<span class="msg-unread">${room.unread}</span>` : '';
+        return `<div class="msg-room-item${room.id === _msgRoomId ? ' active' : ''}" onclick="openMsgRoom('${room.id}','${name.replace(/'/g,"\\'")}')">
+          ${unread}
+          <div class="msg-room-name">${name}</div>
+          ${preview ? `<div class="msg-room-preview">${preview}</div>` : ''}
+        </div>`;
+      }).join('');
+    }
+    listEl.innerHTML = html;
+
+    // DM 탭에서 팔로잉 목록도 표시 (방이 없는 사람들)
+    if (tab === 'dm') appendFollowingDmList(listEl, filtered);
+  } catch (e) {
+    listEl.innerHTML = `<div class="msg-empty-chat" style="font-size:10px">불러오기 실패</div>`;
+  }
+}
+window.loadMsgRooms = loadMsgRooms;
+
+// ── 팔로잉 목록 → DM 시작 버튼 ──────────────────────────────────────────────
+async function appendFollowingDmList(listEl, existingRooms) {
+  const token = _msgToken();
+  if (!token) return;
+  try {
+    const res  = await fetch('/api/follow/list', { headers: { Authorization: `Bearer ${token}` } });
+    const list = await res.json();
+    if (!Array.isArray(list) || list.length === 0) return;
+    const existingPeers = new Set(existingRooms.map(r => r.peerName));
+    const newOnes = list.filter(u => !existingPeers.has(u.name));
+    if (newOnes.length === 0) return;
+    const sep = document.createElement('div');
+    sep.style.cssText = 'font-size:10px;color:#6e7681;padding:6px 8px 2px;text-transform:uppercase;letter-spacing:.4px';
+    sep.textContent = '팔로잉';
+    listEl.appendChild(sep);
+    newOnes.forEach(u => {
+      const btn = document.createElement('div');
+      btn.className = 'msg-room-item';
+      btn.innerHTML = `<div class="msg-room-name">${u.name || '?'}</div><div class="msg-room-preview">${u.headline || ''}</div>`;
+      btn.onclick = () => startDmWithUser(u.user_id, u.name);
+      listEl.appendChild(btn);
+    });
+  } catch (_) {}
+}
+
+async function startDmWithUser(userId, name) {
+  const token = _msgToken();
+  if (!token) return;
+  try {
+    const res  = await fetch(`/api/chat/dm/${userId}`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+    const data = await res.json();
+    if (data.roomId) {
+      loadMsgRooms('dm');
+      openMsgRoom(data.roomId, data.peerName || name);
+    }
+  } catch (_) {}
+}
+window.startDmWithUser = startDmWithUser;
+
+// ── 방 열기 + 메시지 로드 ────────────────────────────────────────────────────
+async function openMsgRoom(roomId, name) {
+  _msgRoomId   = roomId;
+  _msgRoomName = name;
+
+  document.querySelectorAll('.msg-room-item').forEach(el => el.classList.remove('active'));
+  event?.currentTarget?.classList.add('active');
+
+  document.getElementById('msg-chat-name').textContent = name;
+  document.getElementById('msg-input-wrap').style.display = 'flex';
+  document.getElementById('msg-messages-area').innerHTML =
+    '<div class="msg-empty-chat" style="font-size:11px">로딩 중…</div>';
+
+  // WS 채팅 방 구독
+  _subscribeWsChatRoom(roomId);
+
+  // 메시지 로드
+  const token = _msgToken();
+  try {
+    const res  = await fetch(`/api/chat/${roomId}/messages`, { headers: { Authorization: `Bearer ${token}` } });
+    const msgs = await res.json();
+    renderMsgBubbles(Array.isArray(msgs) ? msgs : []);
+    // 읽음 처리
+    fetch(`/api/chat/${roomId}/read`, { method: 'PUT', headers: { Authorization: `Bearer ${token}` } }).catch(() => {});
+    // 방 목록 unread 배지 업데이트
+    loadMsgRooms(_msgTab);
+  } catch (_) {
+    document.getElementById('msg-messages-area').innerHTML =
+      '<div class="msg-empty-chat" style="font-size:11px">메시지를 불러올 수 없습니다</div>';
+  }
+
+  document.getElementById('msg-input')?.focus();
+}
+window.openMsgRoom = openMsgRoom;
+
+// ── 버블 렌더링 ───────────────────────────────────────────────────────────────
+function renderMsgBubbles(msgs) {
+  const area = document.getElementById('msg-messages-area');
+  if (!area) return;
+  if (!msgs.length) {
+    area.innerHTML = '<div class="msg-empty-chat"><span>대화를 시작해보세요</span><span style="font-size:10px;color:#484f58">@orbit 으로 AI에게 질문할 수 있어요</span></div>';
+    return;
+  }
+  const myId = _orbitUser?.id || '';
+  area.innerHTML = msgs.map(m => {
+    const isMine = m.sender_id === myId;
+    const isBot  = m.sender_id === 'orbit-bot' || m.type === 'ai';
+    const cls    = isBot ? 'ai-bot' : isMine ? 'mine' : 'theirs';
+    const time   = m.created_at ? new Date(m.created_at).toLocaleTimeString('ko', { hour:'2-digit', minute:'2-digit' }) : '';
+    const metaHtml = !isMine ? `<div class="msg-meta">${m.sender_name || '?'}</div>` : '';
+    return `${metaHtml}<div class="msg-bubble ${cls}">${escapeHtml(m.content)}<div class="msg-time">${time}</div></div>`;
+  }).join('');
+  area.scrollTop = area.scrollHeight;
+}
+
+function escapeHtml(s) {
+  return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+}
+
+// ── 메시지 전송 ───────────────────────────────────────────────────────────────
+async function sendChatMsg() {
+  if (!_msgRoomId) return;
+  const input   = document.getElementById('msg-input');
+  const content = (input?.value || '').trim();
+  if (!content) return;
+  input.value = '';
+
+  const token = _msgToken();
+  if (!token) { openLoginModal(); return; }
+
+  // 낙관적 UI: 즉시 버블 추가
+  const area = document.getElementById('msg-messages-area');
+  const tmpId = 'tmp_' + Date.now();
+  const time  = new Date().toLocaleTimeString('ko', { hour:'2-digit', minute:'2-digit' });
+  const tmpEl = document.createElement('div');
+  tmpEl.id = tmpId;
+  tmpEl.innerHTML = `<div class="msg-bubble mine" style="opacity:.6">${escapeHtml(content)}<div class="msg-time">${time}</div></div>`;
+  // AI 로딩 표시
+  let aiLoadingEl = null;
+  if (content.includes('@orbit') || content.startsWith('/ai ')) {
+    aiLoadingEl = document.createElement('div');
+    aiLoadingEl.id = 'ai-loading-msg';
+    aiLoadingEl.innerHTML = `<div class="msg-bubble ai-bot" style="opacity:.7">🤖 Orbit AI 응답 중…</div>`;
+  }
+
+  // 빈 상태 제거
+  const empty = area.querySelector('.msg-empty-chat');
+  if (empty) empty.remove();
+  area.appendChild(tmpEl);
+  if (aiLoadingEl) area.appendChild(aiLoadingEl);
+  area.scrollTop = area.scrollHeight;
+
+  try {
+    const res  = await fetch(`/api/chat/${_msgRoomId}/messages`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content }),
+    });
+    const data = await res.json();
+
+    if (res.status === 402) {
+      // 한도 초과
+      tmpEl.remove();
+      if (aiLoadingEl) aiLoadingEl.remove();
+      showApplyEffect('⚠️ ' + (data.message || '메시지 한도 초과'));
+      document.getElementById('msg-quota-wrap').style.display = 'block';
+      return;
+    }
+
+    // 낙관적 버블 실제 버블로 교체
+    if (tmpEl && data.id) {
+      tmpEl.querySelector('.msg-bubble')?.style.removeProperty('opacity');
+    }
+    loadMsgQuota();
+  } catch (e) {
+    tmpEl.querySelector('.msg-bubble')?.setAttribute('style', 'opacity:.4;text-decoration:line-through');
+  }
+}
+window.sendChatMsg = sendChatMsg;
+
+// ── 쿼터 로드 ─────────────────────────────────────────────────────────────────
+async function loadMsgQuota() {
+  const token = _msgToken();
+  if (!token) return;
+  try {
+    const res   = await fetch('/api/chat/quota', { headers: { Authorization: `Bearer ${token}` } });
+    const quota = await res.json();
+    _msgQuota = quota;
+    const wrapEl = document.getElementById('msg-quota-wrap');
+    if (!wrapEl || quota.limit === null) return; // unlimited plan
+
+    if (quota.percent >= 70) { // 70% 이상이면 표시
+      wrapEl.style.display = 'block';
+      document.getElementById('msg-quota-text').textContent = `${quota.count} / ${quota.limit}개 (${quota.percent}%)`;
+      const fillEl = document.getElementById('msg-quota-fill');
+      fillEl.style.width = quota.percent + '%';
+      fillEl.classList.toggle('warn', quota.percent >= 90);
+    }
+  } catch (_) {}
+}
+
+// ── 채널 생성 모달 토글 ───────────────────────────────────────────────────────
+function toggleCreateModal(show) {
+  document.getElementById('msg-create-modal')?.classList.toggle('open', show);
+  if (show) document.getElementById('msg-create-name')?.focus();
+}
+window.toggleCreateModal = toggleCreateModal;
+
+async function createChatChannel() {
+  const name  = document.getElementById('msg-create-name')?.value.trim();
+  if (!name) return;
+  const token = _msgToken();
+  if (!token) return;
+  try {
+    const res  = await fetch('/api/chat/channel', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, type: _msgTab }),
+    });
+    const data = await res.json();
+    if (data.roomId) {
+      toggleCreateModal(false);
+      document.getElementById('msg-create-name').value = '';
+      loadMsgRooms(_msgTab);
+      showApplyEffect(`채널 생성: #${name}`);
+    }
+  } catch (_) {}
+}
+window.createChatChannel = createChatChannel;
+
+// ── WebSocket 채팅 방 구독 (실시간 수신) ─────────────────────────────────────
+function _subscribeWsChatRoom(roomId) {
+  // 전역 WebSocket이 있으면 재사용
+  if (typeof ws !== 'undefined' && ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: 'chat.subscribe', roomId }));
+    // 원래 onmessage 핸들러를 래핑
+    const origOnMsg = ws.onmessage;
+    ws.onmessage = function(e) {
+      try {
+        const msg = JSON.parse(e.data);
+        if (msg.type === 'chat_message' && msg.message?.room_id === _msgRoomId) {
+          _appendIncomingMsg(msg.message);
+        } else if (msg.type === 'chat_delete' && msg.room_id === _msgRoomId) {
+          // 삭제 처리
+        } else if (origOnMsg) origOnMsg.call(this, e);
+      } catch (_) { if (origOnMsg) origOnMsg.call(this, e); }
+    };
+  }
+}
+
+function _appendIncomingMsg(msg) {
+  const area = document.getElementById('msg-messages-area');
+  if (!area) return;
+  const myId  = _orbitUser?.id || '';
+  const isMine = msg.sender_id === myId;
+  const isBot  = msg.sender_id === 'orbit-bot' || msg.type === 'ai';
+  const cls    = isBot ? 'ai-bot' : isMine ? 'mine' : 'theirs';
+  const time   = new Date(msg.created_at || Date.now()).toLocaleTimeString('ko', { hour:'2-digit', minute:'2-digit' });
+  const metaHtml = !isMine ? `<div class="msg-meta">${msg.sender_name || '?'}</div>` : '';
+
+  // AI 로딩 제거
+  document.getElementById('ai-loading-msg')?.remove();
+  // 빈 상태 제거
+  area.querySelector('.msg-empty-chat')?.remove();
+
+  const el = document.createElement('div');
+  el.innerHTML = `${metaHtml}<div class="msg-bubble ${cls}">${escapeHtml(msg.content)}<div class="msg-time">${time}</div></div>`;
+  area.appendChild(el);
+  area.scrollTop = area.scrollHeight;
+}
 
 /* ── 적용 시각 피드백 ────────────────────────────────────────────────────────
  * showApplyEffect(msg, color?)
