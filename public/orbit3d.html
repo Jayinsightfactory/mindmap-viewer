@@ -1426,6 +1426,48 @@
   .ins-kv-key     { color:#6e7681; flex-shrink:0; min-width:80px; }
   .ins-kv-val     { color:#cdd9e5; word-break:break-all; }
 
+  /* ── 인사이트 탭 바 ──────────────────────────────────────────────────────── */
+  .ins-tabs { display:flex; padding:0 12px; border-bottom:1px solid #21262d; flex-shrink:0; }
+  .ins-tab  { flex:1; text-align:center; padding:8px 0; font-size:11px; font-weight:600;
+    color:#6e7681; cursor:pointer; border-bottom:2px solid transparent; transition:all .15s; }
+  .ins-tab.active            { color:#58a6ff; border-bottom-color:#58a6ff; }
+  .ins-tab:hover:not(.active){ color:#cdd9e5; }
+
+  /* ── 목적 카드 ───────────────────────────────────────────────────────────── */
+  .ins-purpose-list   { padding:8px 10px 10px; overflow-y:auto; flex:1; min-height:0; }
+  .ins-purpose-card   { background:#161b22; border:1px solid #21262d; border-radius:10px;
+    padding:11px 12px; margin-bottom:9px; }
+  .ins-purpose-card:last-child { margin-bottom:0; }
+  .ins-pc-hdr    { display:flex; align-items:center; gap:6px; margin-bottom:7px; }
+  .ins-pc-status { font-size:13px; flex-shrink:0; }
+  .ins-pc-label  { font-size:12px; font-weight:700; color:#e6edf3; flex:1; min-width:0;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .ins-pc-time   { font-size:10px; color:#6e7681; flex-shrink:0; }
+  .ins-pc-trigger{ font-size:11px; color:#8b949e; background:#0d1117;
+    border-left:2px solid #30363d; padding:4px 8px; border-radius:3px; margin-bottom:7px;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .ins-pc-steps  { display:flex; align-items:center; gap:3px; flex-wrap:wrap; margin-bottom:7px; }
+  .ins-pc-step   { font-size:10px; background:#21262d; color:#8b949e; border-radius:4px;
+    padding:2px 6px; display:flex; align-items:center; gap:2px; }
+  .ins-pc-step.ok  { color:#3fb950; background:rgba(63,185,80,.12); }
+  .ins-pc-step.err { color:#f85149; background:rgba(248,81,73,.12); }
+  .ins-pc-step-arrow { color:#3d444d; font-size:9px; margin:0 1px; }
+  .ins-pc-files  { display:flex; flex-wrap:wrap; gap:4px; margin-bottom:7px; }
+  .ins-pc-file   { font-size:10px; background:#0d1117; color:#ffa657; border:1px solid #21262d;
+    border-radius:4px; padding:2px 6px; max-width:128px; overflow:hidden;
+    text-overflow:ellipsis; white-space:nowrap; }
+  .ins-pc-file .ins-pc-diff { color:#3fb950; margin-left:2px; }
+  .ins-pc-actions { display:flex; gap:6px; }
+  .ins-pc-commit-btn { flex:1; font-size:10px; background:rgba(63,185,80,.1);
+    border:1px solid rgba(63,185,80,.3); color:#3fb950; border-radius:5px;
+    padding:4px 6px; cursor:pointer; text-align:center; font-family:monospace; }
+  .ins-pc-rollback-btn { flex:1; font-size:10px; background:rgba(248,81,73,.08);
+    border:1px solid rgba(248,81,73,.25); color:#f85149; border-radius:5px;
+    padding:4px 6px; cursor:pointer; text-align:center; }
+  .ins-pc-commit-btn:hover    { background:rgba(63,185,80,.2); }
+  .ins-pc-rollback-btn:hover  { background:rgba(248,81,73,.15); }
+  .ins-purpose-empty { padding:28px 16px; text-align:center; color:#6e7681; font-size:12px; line-height:1.6; }
+
   /* ── 적용 토스트 피드백 ─────────────────────────────────────────────────── */
   #apply-toast {
     position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%) translateY(20px);
@@ -1607,15 +1649,31 @@
     </div>
   </div>
 
-  <div class="ins-section-title">실시간 피드</div>
-  <div id="ins-feed-list" class="ins-feed-list"></div>
-  <div id="ins-feed-meta" class="ins-feed-meta">로딩 중…</div>
+  <!-- 탭 바 -->
+  <div class="ins-tabs">
+    <div class="ins-tab active" id="ins-tab-feed"    onclick="switchInsightTab('feed')">⚡ 실시간</div>
+    <div class="ins-tab"       id="ins-tab-purpose"  onclick="switchInsightTab('purpose')">🎯 목적</div>
+    <div class="ins-tab"       id="ins-tab-stats"    onclick="switchInsightTab('stats')">📊 통계</div>
+  </div>
 
-  <div class="ins-section-title">📊 작업 분포</div>
-  <div id="ins-dist-list" class="ins-dist-list"></div>
+  <!-- 탭 패널: 실시간 피드 -->
+  <div id="ins-pane-feed" style="display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden;">
+    <div id="ins-feed-list" class="ins-feed-list"></div>
+    <div id="ins-feed-meta" class="ins-feed-meta">로딩 중…</div>
+  </div>
 
-  <div class="ins-section-title">🎯 인사이트</div>
-  <div id="ins-kv-list"  class="ins-kv-list"></div>
+  <!-- 탭 패널: 목적 카드 -->
+  <div id="ins-pane-purpose" style="display:none;flex-direction:column;flex:1;min-height:0;overflow:hidden;">
+    <div id="ins-purpose-list" class="ins-purpose-list"></div>
+  </div>
+
+  <!-- 탭 패널: 통계 -->
+  <div id="ins-pane-stats" style="display:none;flex-direction:column;overflow-y:auto;">
+    <div class="ins-section-title">📊 작업 분포</div>
+    <div id="ins-dist-list" class="ins-dist-list"></div>
+    <div class="ins-section-title">🎯 인사이트</div>
+    <div id="ins-kv-list"  class="ins-kv-list"></div>
+  </div>
 </div>
 
 <!-- 팔로우 패널 -->
@@ -6028,10 +6086,26 @@ const _INS_TYPE_ICON = {
   'file.read':'📄', 'file.write':'✏️', 'git.commit':'🌿', 'git.push':'🚀',
 };
 
-function renderInsightPanel() {
-  const ins = computeInsights();
+// ─── 탭 전환 ─────────────────────────────────────────────────────────────────
+let _insightTab = 'feed'; // 'feed' | 'purpose' | 'stats'
 
-  // 피드
+function switchInsightTab(tab) {
+  _insightTab = tab;
+  ['feed','purpose','stats'].forEach(t => {
+    document.getElementById(`ins-tab-${t}`).classList.toggle('active', t === tab);
+    const pane = document.getElementById(`ins-pane-${t}`);
+    if (t === tab) pane.style.display = 'flex';
+    else           pane.style.display = 'none';
+  });
+  if      (tab === 'feed')    renderFeedTab();
+  else if (tab === 'purpose') renderPurposeTab();
+  else if (tab === 'stats')   renderStatsTab();
+}
+window.switchInsightTab = switchInsightTab;
+
+// ─── 실시간 피드 탭 ──────────────────────────────────────────────────────────
+function renderFeedTab() {
+  const ins = computeInsights();
   document.getElementById('ins-feed-list').innerHTML = ins.recentEvents.length
     ? ins.recentEvents.map(n => `
         <div class="ins-feed-item">
@@ -6041,15 +6115,151 @@ function renderInsightPanel() {
             <div class="ins-feed-time">${relTime(n.timestamp||n.created_at)}</div>
           </div>
         </div>`).join('')
-    : `<div style="padding:12px 4px;color:#6e7681;font-size:12px;">
+    : `<div style="padding:14px 4px;color:#6e7681;font-size:12px;">
          최근 1시간 이벤트 없음<br>
-         <span style="font-size:10px;color:#3d444d">전체 이벤트 ${ins.total.toLocaleString()}개 보유</span>
+         <span style="font-size:10px;color:#3d444d">전체 ${ins.total.toLocaleString()}개 보유</span>
        </div>`;
-
   document.getElementById('ins-feed-meta').textContent =
     `총 ${ins.recentEvents.length}개 · 최근 1시간`;
+}
 
-  // 분포 바
+// ─── 목적 카드 탭 ─────────────────────────────────────────────────────────────
+function buildPurposeCards() {
+  const groups = {};
+  _allNodes.forEach(n => {
+    const key = n.purposeLabel || n.data?.purposeLabel;
+    if (!key) return;
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(n);
+  });
+
+  return Object.entries(groups).map(([purposeLabel, events]) => {
+    // 시간순 정렬
+    events.sort((a,b) =>
+      new Date(a.timestamp||a.created_at||0) - new Date(b.timestamp||b.created_at||0));
+    const firstTs = events[0]?.timestamp || events[0]?.created_at;
+    const lastTs  = events[events.length-1]?.timestamp || events[events.length-1]?.created_at;
+
+    // ① 트리거 질문
+    const triggerEv = events.find(e => e.type === 'user.message');
+    const trigger   = (triggerEv?.label || triggerEv?.data?.text || '').trim();
+
+    // ② 에이전트 스텝 감지 (순서 보존, 중복 제거)
+    const agentSteps = [];
+    const seenStep   = new Set();
+    events.forEach(e => {
+      if (e.type !== 'tool.start') return;
+      const tname = e.data?.toolName || e.label || '';
+      const fpath = (e.data?.filePath || e.data?.fileName || '');
+      let step = null;
+      if      (/Glob|Grep/.test(tname) && !/Edit|Write/.test(tname)) step = { label:'Explore', icon:'🔍' };
+      else if (/^Read$/i.test(tname)   && !/Edit|Write/.test(tname)) step = { label:'탐색', icon:'📂' };
+      else if (/plan\.md/i.test(fpath) && /Write|Edit/.test(tname))  step = { label:'Plan', icon:'📋' };
+      else if (/Write|Edit/.test(tname))                              step = { label:'구현', icon:'⚡' };
+      else if (/Bash/i.test(tname)) {
+        const cmd = e.data?.command || '';
+        if      (/git\s+commit/i.test(cmd)) step = { label:'커밋', icon:'🌿' };
+        else if (/git\s+push/i.test(cmd))   step = { label:'푸시', icon:'🚀' };
+        else                                step = { label:'Bash', icon:'💻' };
+      }
+      if (step && !seenStep.has(step.label)) {
+        seenStep.add(step.label);
+        agentSteps.push(step);
+      }
+    });
+
+    // ③ 변경 파일 목록
+    const fileDist = {};
+    events.forEach(e => {
+      const fp = (e.data?.filePath || e.data?.fileName || '').replace(/\\/g, '/');
+      const fn = fp.split('/').pop();
+      if (!fn || !fn.includes('.')) return;
+      if (!fileDist[fn]) fileDist[fn] = { name: fn, write: 0 };
+      if (['file.write','tool.start'].includes(e.type) &&
+          /Write|Edit/.test(e.data?.toolName || '')) fileDist[fn].write++;
+    });
+
+    // ④ Git 커밋 해시 (마지막)
+    const commitEv  = [...events].reverse().find(e => e.type === 'git.commit');
+    const commitHash = commitEv?.data?.hash || commitEv?.data?.commitHash || '';
+
+    // ⑤ 상태 판정
+    const hasError = events.some(e => e.type === 'tool.error');
+    let statusIcon;
+    if      (hasError)        statusIcon = '❌';
+    else if (commitHash)      statusIcon = '✅';
+    else if (agentSteps.length) statusIcon = '⚡';
+    else                      statusIcon = '⏳';
+
+    return { purposeLabel, trigger, agentSteps,
+             files: Object.values(fileDist),
+             commitHash, hasError, statusIcon, firstTs, lastTs };
+  }).sort((a,b) => new Date(b.lastTs||0) - new Date(a.lastTs||0));
+}
+
+function renderPurposeTab() {
+  const cards = buildPurposeCards();
+  const el    = document.getElementById('ins-purpose-list');
+  if (!cards.length) {
+    el.innerHTML = `<div class="ins-purpose-empty">
+      📭 목적(purposeLabel) 데이터 없음<br>
+      <span style="font-size:10px;color:#3d444d;margin-top:6px;display:block;">
+        이벤트에 purposeLabel 필드가 있어야 합니다
+      </span>
+    </div>`;
+    return;
+  }
+
+  el.innerHTML = cards.map(c => {
+    // 스텝 HTML
+    const stepsHtml = c.agentSteps.length
+      ? c.agentSteps.map((s, i) =>
+          `${i > 0 ? '<span class="ins-pc-step-arrow">›</span>' : ''}
+           <span class="ins-pc-step ok">${s.icon} ${escHtml(s.label)}</span>`).join('')
+      : `<span style="font-size:10px;color:#3d444d">스텝 정보 없음</span>`;
+
+    // 파일 HTML
+    const filesHtml = c.files.length
+      ? c.files.slice(0, 4).map(f =>
+          `<span class="ins-pc-file" title="${escHtml(f.name)}">
+            ${escHtml(f.name.slice(0, 20))}
+            ${f.write ? '<span class="ins-pc-diff">✏️</span>' : ''}
+           </span>`).join('')
+      : '';
+
+    // 액션 버튼 HTML
+    const actionsHtml = c.commitHash
+      ? `<div class="ins-pc-actions">
+           <div class="ins-pc-commit-btn" title="커밋 해시: ${escHtml(c.commitHash)}">
+             🌿 ${escHtml(c.commitHash.slice(0,7))}
+           </div>
+           <div class="ins-pc-rollback-btn"
+                onclick="navigator.clipboard?.writeText('git reset --hard ${escHtml(c.commitHash)}').then(()=>showToast('클립보드에 복사됨'))">
+             ↩ 롤백 명령 복사
+           </div>
+         </div>`
+      : '';
+
+    return `<div class="ins-purpose-card">
+      <div class="ins-pc-hdr">
+        <span class="ins-pc-status">${c.statusIcon}</span>
+        <span class="ins-pc-label" title="${escHtml(c.purposeLabel)}">
+          ${escHtml(c.purposeLabel.slice(0, 34))}${c.purposeLabel.length>34?'…':''}
+        </span>
+        <span class="ins-pc-time">${relTime(c.lastTs)}</span>
+      </div>
+      ${c.trigger ? `<div class="ins-pc-trigger">💬 "${escHtml(c.trigger.slice(0,60))}${c.trigger.length>60?'…':''}"</div>` : ''}
+      <div class="ins-pc-steps">${stepsHtml}</div>
+      ${filesHtml ? `<div class="ins-pc-files">${filesHtml}</div>` : ''}
+      ${actionsHtml}
+    </div>`;
+  }).join('');
+}
+window.renderPurposeTab = renderPurposeTab;
+
+// ─── 통계 탭 ─────────────────────────────────────────────────────────────────
+function renderStatsTab() {
+  const ins = computeInsights();
   document.getElementById('ins-dist-list').innerHTML = ins.distRows
     .filter(r => r.pct > 0)
     .map(r => `
@@ -6061,7 +6271,6 @@ function renderInsightPanel() {
         <span class="ins-dist-pct">${r.pct}%</span>
       </div>`).join('');
 
-  // 인사이트 KV
   const health = parseFloat(ins.errRate) < 5
     ? '✅ 건강함' : parseFloat(ins.errRate) < 15 ? '⚠️ 주의' : '🔴 불안정';
   document.getElementById('ins-kv-list').innerHTML = [
@@ -6076,21 +6285,30 @@ function renderInsightPanel() {
       <span class="ins-kv-val">${escHtml(String(v))}</span>
     </div>`).join('');
 }
+
+// ─── renderInsightPanel: 현재 활성 탭 렌더 ──────────────────────────────────
+function renderInsightPanel() {
+  if      (_insightTab === 'feed')    renderFeedTab();
+  else if (_insightTab === 'purpose') renderPurposeTab();
+  else if (_insightTab === 'stats')   renderStatsTab();
+}
 window.renderInsightPanel = renderInsightPanel;
 
+// ─── 패널 열기/닫기 ──────────────────────────────────────────────────────────
 let _insightRefreshTimer = null;
 
 function toggleInsightPanel() {
-  const panel = document.getElementById('insight-panel');
+  const panel  = document.getElementById('insight-panel');
   const isOpen = panel.classList.contains('open');
-  // info-panel이 열려있으면 닫기
   document.getElementById('info-panel')?.classList.remove('open');
   if (isOpen) {
     panel.classList.remove('open');
     clearInterval(_insightRefreshTimer); _insightRefreshTimer = null;
   } else {
     panel.classList.add('open');
-    renderInsightPanel();
+    // 첫 열기 시 피드 탭으로 초기화
+    if (_insightTab !== 'feed') switchInsightTab('feed');
+    else renderFeedTab();
     _insightRefreshTimer = setInterval(renderInsightPanel, 30000);
   }
 }
