@@ -766,6 +766,10 @@ app.use('/api', createLlmSettingsRouter({ getDb: dbModule.getDb }));
 const createExecRouter = require('./routes/exec');
 app.use('/api', createExecRouter({ getAllEvents, broadcastAll, getDb: dbModule.getDb }));
 
+// ─── 환경 감지 + 원키 설치 + Claude 트래킹 ───────────────────────────────────
+const createSetupRouter = require('./routes/setup');
+app.use('/api', createSetupRouter({ getAllEvents, getDb: dbModule.getDb, port: PORT }));
+
 // ─── JSONL 파일 감시 (레거시 이벤트 소스 지원) ───────────────────────────────
 // /api/hook 를 사용하지 않는 구버전 save-turn.js 호환용
 let lastBytePos = 0;

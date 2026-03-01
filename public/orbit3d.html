@@ -1634,6 +1634,87 @@
   }
   #apply-flash.flash { animation: applyFlash 0.5s ease-out forwards; }
 
+  /* ── 온보딩 / 환경설정 패널 ──────────────────────────────────────────────── */
+  #setup-panel {
+    position: fixed; right: 14px; top: 14px;
+    width: 340px; max-height: calc(100vh - 28px);
+    background: rgba(13,17,23,0.97); border: 1px solid #21262d;
+    border-radius: 14px; backdrop-filter: blur(16px);
+    z-index: 9300; display: none; flex-direction: column;
+    overflow: hidden; box-shadow: 0 8px 40px rgba(0,0,0,.7);
+    font-family: -apple-system,'Segoe UI',sans-serif;
+  }
+  #setup-panel.open { display: flex; }
+  .sp-hdr { display:flex; justify-content:space-between; align-items:center;
+    padding:14px 16px 10px; border-bottom:1px solid #21262d; flex-shrink:0; }
+  .sp-title { font-size:14px; font-weight:700; color:#e6edf3; }
+  .sp-close { background:none; border:1px solid #30363d; color:#8b949e;
+    border-radius:6px; padding:3px 8px; cursor:pointer; font-size:12px; }
+  .sp-close:hover { border-color:#6e7681; color:#e6edf3; }
+  .sp-body { overflow-y:auto; flex:1; padding:12px 16px; }
+
+  /* 상태 카드 */
+  .sp-check-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:14px; }
+  .sp-check-card { background:#161b22; border:1px solid #21262d; border-radius:10px;
+    padding:10px 12px; display:flex; flex-direction:column; gap:4px; }
+  .sp-check-label { font-size:10px; color:#6e7681; font-weight:600; text-transform:uppercase; letter-spacing:.06em; }
+  .sp-check-val { font-size:13px; font-weight:600; }
+  .sp-check-ok { color:#3fb950; }
+  .sp-check-warn { color:#f85149; }
+  .sp-check-neutral { color:#8b949e; }
+
+  /* 스텝 헤더 */
+  .sp-section { font-size:11px; font-weight:700; color:#6e7681; text-transform:uppercase;
+    letter-spacing:.06em; margin:14px 0 6px; }
+
+  /* 스크립트 박스 */
+  .sp-script-box { background:#0d1117; border:1px solid #30363d; border-radius:8px;
+    padding:10px 12px; font-size:11px; font-family:'SF Mono','Fira Mono',monospace;
+    color:#7ee787; max-height:140px; overflow-y:auto; white-space:pre-wrap; word-break:break-all;
+    margin-bottom:8px; }
+
+  /* 버튼들 */
+  .sp-btn { display:block; width:100%; padding:9px 14px; border-radius:8px; border:none;
+    font-size:12px; font-weight:600; cursor:pointer; margin-bottom:6px; text-align:center;
+    transition: opacity .15s; }
+  .sp-btn:hover { opacity:.85; }
+  .sp-btn-primary { background:#1f6feb; color:#fff; }
+  .sp-btn-success { background:#238636; color:#fff; }
+  .sp-btn-outline { background:none; border:1px solid #30363d; color:#8b949e; }
+  .sp-btn-outline:hover { color:#e6edf3; border-color:#6e7681; }
+
+  /* Claude 트래킹 토글 */
+  .sp-toggle-row { display:flex; align-items:center; gap:10px; padding:10px 0;
+    border-top:1px solid #21262d; margin-top:8px; }
+  .sp-toggle-label { flex:1; font-size:13px; color:#cdd9e5; }
+  .sp-toggle-sub { font-size:10px; color:#6e7681; margin-top:2px; }
+  .sp-switch { position:relative; width:40px; height:22px; flex-shrink:0; }
+  .sp-switch input { opacity:0; width:0; height:0; }
+  .sp-switch-track { position:absolute; inset:0; background:#21262d; border-radius:11px;
+    cursor:pointer; transition:background .2s; border:1px solid #30363d; }
+  .sp-switch input:checked + .sp-switch-track { background:#238636; }
+  .sp-switch-track:before { content:''; position:absolute; left:3px; top:3px;
+    width:14px; height:14px; border-radius:50%; background:#fff; transition:transform .2s; }
+  .sp-switch input:checked + .sp-switch-track:before { transform:translateX(18px); }
+
+  /* Ollama 풀 로그 */
+  .sp-pull-log { background:#0d1117; border:1px solid #21262d; border-radius:8px;
+    padding:8px 10px; font-size:10px; font-family:'SF Mono',monospace; color:#3fb950;
+    max-height:100px; overflow-y:auto; white-space:pre-wrap; display:none; margin-top:6px; }
+  .sp-pull-log.active { display:block; }
+
+  /* Claude 헤더 상태 배지 */
+  #claude-tracking-badge {
+    position:fixed; top:10px; right:14px; z-index:8900;
+    background:rgba(13,17,23,0.85); border:1px solid #21262d; border-radius:20px;
+    padding:4px 10px; font-size:11px; font-weight:600; cursor:pointer;
+    display:flex; align-items:center; gap:5px; backdrop-filter:blur(8px);
+    transition:border-color .2s;
+  }
+  #claude-tracking-badge:hover { border-color:#6e7681; }
+  #claude-tracking-badge.on  { color:#3fb950; border-color:#238636; }
+  #claude-tracking-badge.off { color:#8b949e; }
+
   </style>
 </head>
 <body>
@@ -1685,6 +1766,7 @@
     <button class="ln-item" onclick="toggleViewPanel()">👤 내 뷰 설정</button>
     <button class="ln-item" onclick="toggleInsightPanel()">📊 전체 인사이트</button>
     <button class="ln-item" onclick="openLlmPanel()">🤖 LLM 모델 설정</button>
+    <button class="ln-item" onclick="openSetupPanel()">⚙️ 환경 설정</button>
     <button class="ln-item" onclick="toggleMgrPanel()">👔 관리자 뷰</button>
     <button class="ln-item" onclick="toggleTaskSidebar()">📋 내 작업</button>
     <button class="ln-item" id="ln-orbit-btn" onclick="toggleOrbitAnim()">⏸ 공전 토글</button>
@@ -1842,6 +1924,23 @@
   <div class="ep-actions" id="ep-actions" style="display:none">
     <!-- JS로 동적 렌더링 -->
   </div>
+</div>
+
+<!-- ⚙️ 환경설정 / 온보딩 패널 -->
+<div id="setup-panel">
+  <div class="sp-hdr">
+    <span class="sp-title">⚙️ 환경 설정</span>
+    <button class="sp-close" onclick="closeSetupPanel()">✕</button>
+  </div>
+  <div class="sp-body" id="sp-body">
+    <div style="padding:24px;text-align:center;color:#6e7681;font-size:12px;">환경 감지 중…</div>
+  </div>
+</div>
+
+<!-- Claude 트래킹 상태 배지 (우상단 고정) -->
+<div id="claude-tracking-badge" class="off" onclick="openSetupPanel()" title="Claude 트래킹 설정">
+  <span id="ctb-dot">⬤</span>
+  <span id="ctb-label">Claude 오프라인</span>
 </div>
 
 <!-- 팔로우 패널 -->
@@ -6097,7 +6196,10 @@ function resizeLabelCanvas() {
 }
 resizeLabelCanvas();
 // DOM 준비 후 초기 렌더 영역 적용
-window.addEventListener('DOMContentLoaded', () => resizeRendererToSidebar(), { once: true });
+window.addEventListener('DOMContentLoaded', () => {
+  resizeRendererToSidebar();
+  initClaudeStatusBadge(); // Claude 트래킹 배지 초기화
+}, { once: true });
 setTimeout(resizeRendererToSidebar, 100); // fallback
 
 // ─── 줌 거리 → LOD 레벨 ─────────────────────────────────────────────────────
@@ -6706,6 +6808,257 @@ async function loadExecModelOptions() {
   } catch {}
 }
 window.loadExecModelOptions = loadExecModelOptions;
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ⚙️ 환경설정 / 온보딩 패널
+// ═══════════════════════════════════════════════════════════════════════════════
+
+let _setupStatus = null;  // GET /api/setup/check 캐시
+
+async function openSetupPanel() {
+  // 다른 패널 닫기
+  document.getElementById('llm-panel')?.classList.remove('open');
+  document.getElementById('insight-panel')?.classList.remove('open');
+  document.getElementById('info-panel')?.classList.remove('open');
+
+  document.getElementById('setup-panel').classList.add('open');
+  await renderSetupPanel();
+}
+function closeSetupPanel() {
+  document.getElementById('setup-panel').classList.remove('open');
+}
+window.openSetupPanel  = openSetupPanel;
+window.closeSetupPanel = closeSetupPanel;
+
+async function renderSetupPanel() {
+  const body = document.getElementById('sp-body');
+  body.innerHTML = `<div style="padding:24px;text-align:center;color:#6e7681;font-size:12px;">환경 감지 중…</div>`;
+
+  let status;
+  try {
+    const r = await fetch('/api/setup/check');
+    status  = await r.json();
+    _setupStatus = status;
+  } catch (e) {
+    body.innerHTML = `<div style="padding:16px;color:#f85149;font-size:12px;">❌ ${escHtml(e.message)}</div>`;
+    return;
+  }
+
+  const { os, nodeVersion, ollama, hook, claude, ready } = status;
+
+  // ── 상태 카드 ─────────────────────────────────────────────────────────────
+  const osIcon   = os === 'mac' ? '🍎' : os === 'windows' ? '🪟' : '🐧';
+  const ollamaOk = ollama.running;
+  const hookOk   = hook.registered;
+  const claudeOk = claude.running;
+
+  const cards = [
+    { label:'OS', val: `${osIcon} ${os}`,  cls:'sp-check-neutral' },
+    { label:'Node.js', val: nodeVersion,     cls:'sp-check-neutral' },
+    { label:'Ollama',  val: ollamaOk ? `✅ 실행 중 (${ollama.models?.length||0}개)` : (ollama.installed ? '⚠️ 중지됨' : '❌ 미설치'),
+      cls: ollamaOk ? 'sp-check-ok' : 'sp-check-warn' },
+    { label:'Claude 훅', val: hookOk ? '✅ 등록됨' : '❌ 미등록',
+      cls: hookOk ? 'sp-check-ok' : 'sp-check-warn' },
+  ].map(c => `
+    <div class="sp-check-card">
+      <div class="sp-check-label">${c.label}</div>
+      <div class="sp-check-val ${c.cls}">${escHtml(c.val)}</div>
+    </div>`).join('');
+
+  // ── 설치 스크립트 섹션 ────────────────────────────────────────────────────
+  const needsInstall = !ollamaOk || !hookOk;
+  const installSection = needsInstall ? `
+    <div class="sp-section">📦 원키 설치</div>
+    <p style="font-size:11px;color:#8b949e;margin-bottom:8px;">
+      아래 스크립트를 터미널에 붙여넣으면 Ollama 설치 + Claude 훅 등록이 한 번에 완료됩니다.
+    </p>
+    <div id="sp-script-box" class="sp-script-box">로딩 중…</div>
+    <button class="sp-btn sp-btn-outline" onclick="copySetupScript()">📋 스크립트 복사</button>
+    <button class="sp-btn sp-btn-primary" onclick="registerHookOnly()" style="margin-top:2px">
+      🔗 Claude 훅만 등록 (Ollama 이미 설치됨)
+    </button>
+  ` : `
+    <div style="background:rgba(35,134,54,.1);border:1px solid #238636;border-radius:10px;
+      padding:12px;margin-bottom:12px;font-size:12px;color:#3fb950;text-align:center;">
+      ✅ 환경 준비 완료 — Orbit AI가 정상 작동 중입니다
+    </div>
+  `;
+
+  // ── Ollama 모델 풀 ────────────────────────────────────────────────────────
+  const pullSection = !ollamaOk ? '' : `
+    <div class="sp-section">🤖 AI 모델</div>
+    <select id="sp-model-select" style="width:100%;background:#161b22;border:1px solid #30363d;
+      color:#cdd9e5;border-radius:8px;padding:6px 10px;font-size:12px;margin-bottom:6px;">
+      <option value="llama3.2:latest">llama3.2:latest (기본 추천)</option>
+      <option value="llama3.1:latest">llama3.1:latest</option>
+      <option value="mistral:latest">mistral:latest</option>
+      <option value="gemma2:latest">gemma2:latest</option>
+      <option value="qwen2.5:latest">qwen2.5:latest</option>
+    </select>
+    <button class="sp-btn sp-btn-outline" onclick="pullOllamaModel()">⬇️ 모델 다운로드</button>
+    <div id="sp-pull-log" class="sp-pull-log"></div>
+  `;
+
+  // ── Claude 트래킹 토글 ────────────────────────────────────────────────────
+  const trackChecked = claude.tracking ? 'checked' : '';
+  const trackSection = `
+    <div class="sp-toggle-row">
+      <div>
+        <div class="sp-toggle-label">Claude 작업 트래킹</div>
+        <div class="sp-toggle-sub">${claudeOk ? '🟢 Claude 실행 중' : '⚫ Claude 감지 안됨'} ${claude.connected ? '· 연결됨' : ''}</div>
+      </div>
+      <label class="sp-switch">
+        <input type="checkbox" id="sp-track-toggle" ${trackChecked}
+          onchange="toggleClaudeTracking(this.checked)">
+        <span class="sp-switch-track"></span>
+      </label>
+    </div>
+  `;
+
+  body.innerHTML = `
+    <div class="sp-check-grid">${cards}</div>
+    ${installSection}
+    ${pullSection}
+    <div class="sp-section">🔌 Claude 연동</div>
+    ${trackSection}
+    <button class="sp-btn sp-btn-outline" onclick="renderSetupPanel()" style="margin-top:8px">
+      ↺ 상태 새로고침
+    </button>
+  `;
+
+  // 설치 스크립트 비동기 로드
+  if (needsInstall) _loadInstallScript(os);
+}
+window.renderSetupPanel = renderSetupPanel;
+
+async function _loadInstallScript(osType) {
+  try {
+    const r    = await fetch(`/api/setup/install-script?os=${osType}`);
+    const data = await r.json();
+    const el   = document.getElementById('sp-script-box');
+    if (el) el.textContent = data.script || '';
+  } catch {}
+}
+
+async function copySetupScript() {
+  const el = document.getElementById('sp-script-box');
+  if (!el) return;
+  try {
+    await navigator.clipboard.writeText(el.textContent);
+    showToast('✅ 스크립트 복사 완료 — 터미널에 붙여넣기 하세요');
+  } catch { showToast('복사 실패 — 직접 선택 후 복사하세요'); }
+}
+window.copySetupScript = copySetupScript;
+
+async function registerHookOnly() {
+  try {
+    const r    = await fetch('/api/setup/hook-register', { method: 'POST' });
+    const data = await r.json();
+    if (data.ok) {
+      showToast('✅ Claude 훅 등록 완료');
+      await renderSetupPanel();
+    } else {
+      showToast(`❌ 실패: ${data.error}`);
+    }
+  } catch (e) { showToast(`❌ ${e.message}`); }
+}
+window.registerHookOnly = registerHookOnly;
+
+async function pullOllamaModel() {
+  const model = document.getElementById('sp-model-select')?.value || 'llama3.2:latest';
+  const log   = document.getElementById('sp-pull-log');
+  if (!log) return;
+  log.classList.add('active');
+  log.textContent = `⬇️ ${model} 다운로드 시작...\n`;
+
+  try {
+    const resp = await fetch('/api/setup/ollama-pull', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model }),
+    });
+    const reader = resp.body.getReader();
+    const dec    = new TextDecoder();
+    let buf = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const lines = buf.split('\n\n');
+      buf = lines.pop();
+      lines.forEach(line => {
+        const m = line.match(/^data: (.+)$/m);
+        if (!m) return;
+        try {
+          const d = JSON.parse(m[1]);
+          if (d.type === 'stdout' || d.type === 'stderr') {
+            log.textContent += d.text;
+            log.scrollTop = log.scrollHeight;
+          } else if (d.type === 'done') {
+            log.textContent += d.exitCode === 0 ? '\n✅ 완료!' : `\n❌ 실패 (code ${d.exitCode})`;
+            showToast(d.exitCode === 0 ? `✅ ${model} 다운로드 완료` : `❌ 다운로드 실패`);
+          }
+        } catch {}
+      });
+    }
+  } catch (e) {
+    log.textContent += `\n❌ ${e.message}`;
+  }
+}
+window.pullOllamaModel = pullOllamaModel;
+
+async function toggleClaudeTracking(enabled) {
+  try {
+    const r    = await fetch('/api/setup/claude-toggle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    });
+    const data = await r.json();
+    showToast(data.tracking ? '✅ Claude 트래킹 ON' : '⏸ Claude 트래킹 OFF');
+    _updateTrackingBadge(data.tracking, _setupStatus?.claude?.running);
+  } catch (e) { showToast(`❌ ${e.message}`); }
+}
+window.toggleClaudeTracking = toggleClaudeTracking;
+
+function _updateTrackingBadge(tracking, running) {
+  const badge = document.getElementById('claude-tracking-badge');
+  const dot   = document.getElementById('ctb-dot');
+  const label = document.getElementById('ctb-label');
+  if (!badge) return;
+  if (running && tracking) {
+    badge.className = 'on';
+    if (dot)   dot.textContent   = '⬤';
+    if (label) label.textContent = 'Claude 트래킹 중';
+  } else if (running && !tracking) {
+    badge.className = 'off';
+    if (dot)   dot.textContent   = '⬤';
+    if (label) label.textContent = 'Claude 일시정지';
+  } else {
+    badge.className = 'off';
+    if (dot)   dot.textContent   = '⬤';
+    if (label) label.textContent = 'Claude 오프라인';
+  }
+}
+
+/** 페이지 로드 시 Claude 상태 배지 초기화 */
+async function initClaudeStatusBadge() {
+  try {
+    const r    = await fetch('/api/setup/claude-status');
+    const data = await r.json();
+    _updateTrackingBadge(data.tracking, data.running);
+
+    // 신규 사용자 감지 (훅 미등록 + Ollama 미실행) → 자동 온보딩 표시
+    if (!data.hookRegistered) {
+      const checkR = await fetch('/api/setup/check');
+      const chk    = await checkR.json();
+      if (!chk.ready) {
+        // 약간의 지연 후 온보딩 패널 자동 표시
+        setTimeout(() => openSetupPanel(), 1500);
+      }
+    }
+  } catch {}
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // 🖥️ 실행 패널 — diff 미리보기 → 승인 → 실행 로그
