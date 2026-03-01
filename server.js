@@ -770,6 +770,10 @@ app.use('/api', createExecRouter({ getAllEvents, broadcastAll, getDb: dbModule.g
 const createSetupRouter = require('./routes/setup');
 app.use('/api', createSetupRouter({ getAllEvents, getDb: dbModule.getDb, port: PORT }));
 
+// ─── 목적(Purpose) 타임라인 ──────────────────────────────────────────────────
+const createPurposesRouter = require('./routes/purposes');
+app.use('/api', createPurposesRouter({ getAllEvents, getEventsBySession, getSessions }));
+
 // ─── JSONL 파일 감시 (레거시 이벤트 소스 지원) ───────────────────────────────
 // /api/hook 를 사용하지 않는 구버전 save-turn.js 호환용
 let lastBytePos = 0;

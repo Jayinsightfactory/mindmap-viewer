@@ -1715,6 +1715,90 @@
   #claude-tracking-badge.on  { color:#3fb950; border-color:#238636; }
   #claude-tracking-badge.off { color:#8b949e; }
 
+  /* ── 목적 타임라인 패널 (하단 슬라이딩) ─────────────────────────────────── */
+  #purpose-timeline {
+    position:fixed; bottom:-260px; left:120px; right:0;
+    height:260px; z-index:180;
+    background:rgba(8,11,17,0.97); border-top:1px solid #21262d;
+    backdrop-filter:blur(20px);
+    transition:bottom .35s cubic-bezier(0.4,0,0.2,1);
+    display:flex; flex-direction:column; overflow:hidden;
+    box-shadow:0 -8px 40px rgba(0,0,0,.6);
+  }
+  #purpose-timeline.open { bottom:0; }
+  .pt-hdr {
+    display:flex; align-items:center; gap:8px;
+    padding:8px 14px 6px; border-bottom:1px solid #21262d; flex-shrink:0;
+  }
+  .pt-title { font-size:12px; font-weight:700; color:#e6edf3; white-space:nowrap; }
+  .pt-meta  { font-size:10px; color:#6e7681; }
+  .pt-sess-sel {
+    background:#0d1117; border:1px solid #30363d; color:#cdd9e5;
+    border-radius:6px; font-size:10px; padding:3px 7px; font-family:inherit;
+    cursor:pointer; margin-left:auto;
+  }
+  .pt-close-btn { background:none; border:none; color:#6e7681;
+    cursor:pointer; font-size:15px; padding:0 2px; }
+  .pt-close-btn:hover { color:#e6edf3; }
+  .pt-cards {
+    display:flex; flex-direction:row; gap:8px;
+    padding:8px 14px 12px; overflow-x:auto; flex:1; align-items:stretch;
+  }
+  .pt-cards::-webkit-scrollbar { height:4px; }
+  .pt-cards::-webkit-scrollbar-thumb { background:#30363d; border-radius:2px; }
+  .pt-connector { flex-shrink:0; display:flex; align-items:center; }
+  .pt-connector-line { width:16px; height:1px; background:#30363d; }
+  .pt-card {
+    flex-shrink:0; width:185px;
+    background:#0d1117; border:1px solid #21262d; border-radius:10px;
+    padding:9px 11px; cursor:pointer;
+    transition:border-color .15s, box-shadow .15s;
+    display:flex; flex-direction:column; gap:3px; position:relative;
+  }
+  .pt-card:hover  { border-color:#58a6ff; box-shadow:0 0 10px rgba(88,166,255,.12); }
+  .pt-card.active { border-color:#58a6ff; background:rgba(88,166,255,.05); }
+  .pt-card-top { display:flex; align-items:center; gap:5px; }
+  .pt-card-icon  { font-size:14px; flex-shrink:0; }
+  .pt-card-label { font-size:11px; font-weight:700; color:#e6edf3;
+    flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .pt-git-badge {
+    font-size:8px; padding:1px 5px; border-radius:4px; flex-shrink:0;
+    background:rgba(63,185,80,.12); color:#3fb950;
+    border:1px solid rgba(63,185,80,.25); font-family:'SF Mono',monospace;
+  }
+  .pt-nocommit-badge {
+    font-size:8px; padding:1px 5px; border-radius:4px; flex-shrink:0;
+    background:rgba(139,148,158,.08); color:#6e7681; border:1px solid #21262d;
+  }
+  .pt-card-trigger {
+    font-size:9px; color:#8b949e; line-height:1.4;
+    overflow:hidden; display:-webkit-box;
+    -webkit-line-clamp:2; -webkit-box-orient:vertical;
+  }
+  .pt-card-files { display:flex; flex-wrap:wrap; gap:2px; }
+  .pt-file-chip {
+    font-size:8px; color:#58a6ff; background:rgba(88,166,255,.08);
+    padding:1px 4px; border-radius:3px; border:1px solid rgba(88,166,255,.18);
+    max-width:80px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .pt-file-more { font-size:8px; color:#6e7681; padding:1px 3px; }
+  .pt-card-foot {
+    display:flex; justify-content:space-between; align-items:center;
+  }
+  .pt-card-time { font-size:8px; color:#3d444d; }
+  .pt-card-cnt  { font-size:8px; color:#3d444d; }
+  .pt-rollback-btn {
+    display:none; position:absolute; bottom:7px; right:8px;
+    background:none; border:1px solid #30363d; color:#8b949e;
+    border-radius:5px; font-size:9px; padding:2px 6px; cursor:pointer;
+    transition:all .15s; font-family:inherit;
+  }
+  .pt-card:hover .pt-rollback-btn { display:block; }
+  .pt-rollback-btn:hover { border-color:#f85149; color:#f85149; }
+  .pt-empty-msg { color:#6e7681; font-size:12px; text-align:center;
+    padding:40px; align-self:center; }
+  #ln-purpose-btn.active { color:#58a6ff; }
+
   </style>
 </head>
 <body>
@@ -1765,6 +1849,7 @@
     <button class="ln-item" onclick="toggleFeatPanel()">📋 기능 목록</button>
     <button class="ln-item" onclick="toggleViewPanel()">👤 내 뷰 설정</button>
     <button class="ln-item" onclick="toggleInsightPanel()">📊 전체 인사이트</button>
+    <button class="ln-item" id="ln-purpose-btn" onclick="togglePurposeTimeline()">⚡ 목적 뷰</button>
     <button class="ln-item" onclick="openLlmPanel()">🤖 LLM 모델 설정</button>
     <button class="ln-item" onclick="openSetupPanel()">⚙️ 환경 설정</button>
     <button class="ln-item" onclick="toggleMgrPanel()">👔 관리자 뷰</button>
@@ -1935,6 +2020,19 @@
   <div class="sp-body" id="sp-body">
     <div style="padding:24px;text-align:center;color:#6e7681;font-size:12px;">환경 감지 중…</div>
   </div>
+</div>
+
+<!-- ⚡ 목적(Purpose) 타임라인 패널 (하단 슬라이딩) -->
+<div id="purpose-timeline">
+  <div class="pt-hdr">
+    <span class="pt-title">⚡ 목적 타임라인</span>
+    <span class="pt-meta" id="pt-meta-label"></span>
+    <select class="pt-sess-sel" id="pt-sess-sel" onchange="loadPurposeTimeline()">
+      <option value="">전체 세션</option>
+    </select>
+    <button class="pt-close-btn" onclick="togglePurposeTimeline()" title="닫기">✕</button>
+  </div>
+  <div class="pt-cards" id="pt-cards"></div>
 </div>
 
 <!-- Claude 트래킹 상태 배지 (우상단 고정) -->
@@ -6587,6 +6685,200 @@ function toggleInsightPanel() {
   }
 }
 window.toggleInsightPanel = toggleInsightPanel;
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ⚡ 목적(Purpose) 타임라인 패널
+// ═══════════════════════════════════════════════════════════════════════════════
+
+let _ptOpen     = false;
+let _ptPurposes = [];
+let _ptActive   = -1;
+
+async function togglePurposeTimeline() {
+  const panel  = document.getElementById('purpose-timeline');
+  const btn    = document.getElementById('ln-purpose-btn');
+  _ptOpen = !_ptOpen;
+  panel.classList.toggle('open', _ptOpen);
+  btn?.classList.toggle('active', _ptOpen);
+  if (_ptOpen) {
+    await _ptLoadSessions();
+    await loadPurposeTimeline();
+  }
+}
+window.togglePurposeTimeline = togglePurposeTimeline;
+
+async function _ptLoadSessions() {
+  try {
+    const r    = await fetch('/api/purposes/sessions');
+    const data = await r.json();
+    const sel  = document.getElementById('pt-sess-sel');
+    if (!sel) return;
+    const opts = (data.sessions || []).map(s =>
+      `<option value="${escHtml(s.sessionId)}">${escHtml(s.sessionTitle)} · ${s.purposeCount}목적</option>`
+    ).join('');
+    sel.innerHTML = `<option value="">전체 세션</option>${opts}`;
+  } catch {}
+}
+
+async function loadPurposeTimeline() {
+  const container = document.getElementById('pt-cards');
+  const metaEl    = document.getElementById('pt-meta-label');
+  const sessId    = document.getElementById('pt-sess-sel')?.value || '';
+
+  container.innerHTML = '<div class="pt-empty-msg">로딩 중…</div>';
+  try {
+    const qs  = sessId ? `&session_id=${encodeURIComponent(sessId)}` : '';
+    const r   = await fetch(`/api/purposes/timeline?limit=60${qs}`);
+    const data= await r.json();
+    _ptPurposes = data.purposes || [];
+    if (metaEl) metaEl.textContent = `총 ${_ptPurposes.length}개 목적`;
+    _ptRenderCards(_ptPurposes);
+  } catch (e) {
+    container.innerHTML = `<div class="pt-empty-msg">❌ ${escHtml(e.message)}</div>`;
+  }
+}
+window.loadPurposeTimeline = loadPurposeTimeline;
+
+function _ptRenderCards(purposes) {
+  const container = document.getElementById('pt-cards');
+  if (!purposes.length) {
+    container.innerHTML = '<div class="pt-empty-msg">목적 데이터가 없습니다 — 이벤트가 쌓이면 자동으로 분류됩니다</div>';
+    return;
+  }
+
+  // 최신순 → 오래된순으로 표시 (타임라인 흐름)
+  const ordered = [...purposes].reverse();
+
+  container.innerHTML = ordered.map((p, i) => {
+    const realIdx = purposes.length - 1 - i; // _ptPurposes 에서의 실제 인덱스
+
+    const gitBadge = p.gitHash
+      ? `<span class="pt-git-badge">🌿 ${escHtml(p.gitHash.slice(0,7))}</span>`
+      : `<span class="pt-nocommit-badge">미커밋</span>`;
+
+    const filesHtml = (p.files || []).slice(0, 4).map(f => {
+      const name = f.replace(/\\/g, '/').split('/').pop();
+      return `<span class="pt-file-chip" title="${escHtml(f)}">${escHtml(name.slice(0,15))}</span>`;
+    }).join('');
+    const moreFiles = (p.files || []).length > 4
+      ? `<span class="pt-file-more">+${p.files.length - 4}</span>` : '';
+
+    const triggerHtml = p.triggerText
+      ? `<div class="pt-card-trigger">"${escHtml(p.triggerText.slice(0,100))}"</div>` : '';
+
+    const rollbackBtn = p.gitHash
+      ? `<button class="pt-rollback-btn" onclick="ptRollback(${realIdx},event)">↩ 롤백</button>` : '';
+
+    const connector = i > 0
+      ? `<div class="pt-connector"><div class="pt-connector-line"></div></div>` : '';
+
+    return `${connector}<div class="pt-card" id="pt-card-${realIdx}" onclick="ptSelectCard(${realIdx})">
+      <div class="pt-card-top">
+        <span class="pt-card-icon" style="color:${p.color||'#8b949e'}">${p.icon||'📌'}</span>
+        <span class="pt-card-label">${escHtml(p.label||'')}</span>
+        ${gitBadge}
+      </div>
+      ${triggerHtml}
+      <div class="pt-card-files">${filesHtml}${moreFiles}</div>
+      <div class="pt-card-foot">
+        <span class="pt-card-time">${relTime(p.startTs)}</span>
+        <span class="pt-card-cnt">${p.eventsCount}이벤트</span>
+      </div>
+      ${rollbackBtn}
+    </div>`;
+  }).join('');
+}
+
+function ptSelectCard(idx) {
+  // 활성 표시
+  document.querySelectorAll('.pt-card').forEach(el => el.classList.remove('active'));
+  document.getElementById(`pt-card-${idx}`)?.classList.add('active');
+  _ptActive = idx;
+
+  const p = _ptPurposes[idx];
+  if (!p) return;
+
+  // info-panel에 목적 상세 주입
+  _ptShowDetail(p);
+}
+window.ptSelectCard = ptSelectCard;
+
+function _ptShowDetail(p) {
+  const panel = document.getElementById('info-panel');
+  if (!panel) return;
+
+  // 헤더
+  const dotEl = document.getElementById('ip-dot');
+  if (dotEl) dotEl.style.background = p.color || '#8b949e';
+  const typeEl = document.getElementById('ip-type-text');
+  if (typeEl) typeEl.textContent = `${p.icon} ${p.label}`;
+  const intentEl = document.getElementById('ip-intent');
+  if (intentEl) intentEl.textContent = p.triggerText ? `"${p.triggerText.slice(0,80)}"` : p.label;
+
+  // KV 목록
+  const kvList = document.getElementById('ip-kv-list');
+  if (kvList) {
+    const kvRows = [
+      ['목적',      `${p.icon} ${p.label}`],
+      ['신뢰도',    `${Math.round((p.confidence||0)*100)}%`],
+      ['이벤트',    `${p.eventsCount}개`],
+      ['시작',      p.startTs ? new Date(p.startTs).toLocaleString('ko-KR') : '-'],
+      ['소요시간',  p.startTs && p.endTs
+                      ? `${Math.round((new Date(p.endTs)-new Date(p.startTs))/60000)}분` : '-'],
+      ['Git 커밋',  p.gitHash ? p.gitHash.slice(0,12) : '없음'],
+    ];
+    kvList.innerHTML = kvRows.map(([k,v]) =>
+      `<div class="ip-kv"><span class="k">${k}</span><span class="v">${escHtml(String(v))}</span></div>`
+    ).join('');
+  }
+
+  // 미리보기: 파일 목록 + 롤백 버튼
+  const previewEl = document.getElementById('ip-preview');
+  if (previewEl) {
+    const filesHtml = p.files?.length
+      ? `<div style="margin-bottom:8px">
+          <div style="font-size:9px;color:#6e7681;margin-bottom:4px">📁 변경된 파일 (${p.files.length}개)</div>
+          ${p.files.map(f => `<div style="font-size:10px;color:#58a6ff;padding:2px 0">${escHtml(f.split('/').pop())}</div>`).join('')}
+         </div>` : '';
+
+    const commitHtml = p.gitHash
+      ? `<div style="background:rgba(63,185,80,.08);border:1px solid rgba(63,185,80,.2);
+            border-radius:7px;padding:8px 10px;margin-bottom:8px">
+          <div style="font-size:9px;color:#3fb950;font-weight:700;margin-bottom:3px">🌿 Git 커밋</div>
+          <div style="font-size:10px;color:#7ee787;font-family:'SF Mono',monospace">${escHtml(p.gitHash.slice(0,12))}</div>
+          ${p.gitMessage ? `<div style="font-size:9px;color:#8b949e;margin-top:3px">${escHtml(p.gitMessage)}</div>` : ''}
+         </div>` : '';
+
+    const rollbackHtml = p.gitHash
+      ? `<button onclick="ptRollback(${_ptActive},null)"
+           style="width:100%;background:none;border:1px solid #f85149;color:#f85149;
+             border-radius:7px;padding:7px;font-size:11px;cursor:pointer;font-family:inherit;
+             transition:background .15s"
+           onmouseover="this.style.background='rgba(248,81,73,.08)'"
+           onmouseout="this.style.background='none'">
+           ↩ 이 목적 전으로 롤백 (${escHtml(p.gitHash.slice(0,7))})
+         </button>` : '';
+
+    previewEl.innerHTML = filesHtml + commitHtml + rollbackHtml;
+    previewEl.style.display = 'block';
+  }
+
+  panel.classList.add('open');
+}
+
+function ptRollback(idx, ev) {
+  if (ev) ev.stopPropagation();
+  const p = _ptPurposes[idx];
+  if (!p?.gitHash) { showToast('이 목적에 연결된 커밋이 없습니다'); return; }
+  if (typeof openExecPanel === 'function') {
+    openExecPanel({
+      type:        'rollback',
+      hash:        p.gitHash,
+      description: `↩ 롤백: ${p.label} (${p.gitHash.slice(0,7)})`,
+    });
+  }
+}
+window.ptRollback = ptRollback;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // 🤖 LLM 설정 패널
