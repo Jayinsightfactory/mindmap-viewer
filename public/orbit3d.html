@@ -1372,6 +1372,17 @@
   .sw-toast-cancel  { padding: 5px 10px; border-radius: 8px; border: 1px solid #30363d; background: none; color: #8b949e; font-size: 12px; cursor: pointer; }
   .sw-toast-cancel:hover  { border-color: #6e7681; color: #e6edf3; }
 
+  /* ── 별자리 뒤로가기 버튼 ─────────────────────────────────────────────────── */
+  #constellation-back-btn {
+    position: fixed; top: 14px; left: 50%; transform: translateX(-50%);
+    background: rgba(13,17,23,0.92); border: 1px solid #30363d;
+    color: #e6edf3; padding: 7px 18px; border-radius: 20px;
+    font-size: 13px; font-weight: 600; cursor: pointer; z-index: 9998;
+    backdrop-filter: blur(12px); transition: background .2s, border-color .2s;
+    white-space: nowrap;
+  }
+  #constellation-back-btn:hover { background: rgba(31,111,235,0.25); border-color: #1f6feb; color: #79c0ff; }
+
   /* ── 적용 토스트 피드백 ─────────────────────────────────────────────────── */
   #apply-toast {
     position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%) translateY(20px);
@@ -1536,6 +1547,11 @@
   <button class="sw-toast-confirm" id="sw-toast-yes">전환</button>
   <button class="sw-toast-cancel"  onclick="dismissSwitchToast()">취소</button>
 </div>
+
+<!-- 별자리 포커스 뒤로가기 버튼 -->
+<button id="constellation-back-btn" onclick="exitConstellationFocus()" style="display:none">
+  ← 전체 보기
+</button>
 
 <!-- 팔로우 패널 -->
 <div id="follow-panel">
@@ -2570,8 +2586,21 @@ async function loadSessionContext(sessionId) {
     // 행성 라벨 즉시 업데이트
     const planet = _sessionMap[sessionId]?.planet;
     if (planet) {
-      planet.userData.intent      = ctx.autoTitle;
-      planet.userData.projectName = ctx.projectName;
+      planet.userData.intent = ctx.autoTitle;
+      if (ctx.projectName) {
+        const oldProj = planet.userData.projectName;
+        const newProj = ctx.projectName;
+        if (oldProj !== newProj) {
+          // _projectGroups 재구성
+          planet.userData.projectName = newProj;
+          _projectGroups = {};
+          planetMeshes.forEach(p => {
+            const proj = p.userData.projectName || '기타';
+            if (!_projectGroups[proj]) _projectGroups[proj] = { planetMeshes: [], color: p.userData.hueHex || '#58a6ff' };
+            _projectGroups[proj].planetMeshes.push(p);
+          });
+        }
+      }
     }
     return ctx;
   } catch { return null; }
@@ -2686,6 +2715,10 @@ let _clock = 0;
 // 호버/클릭을 위한 2D 히트 영역 (Canvas 좌표)
 let _hitAreas = []; // { cx, cy, r, data }
 
+// ── 프로젝트별 별자리 클러스터링 ─────────────────────────────────────────────
+let _projectGroups  = {};   // projectName → { planetMeshes:[], color:string }
+let _focusedProject = null; // null=별자리 전체 뷰, 'name'=특정 프로젝트 집중
+
 let _activeFilter = 'all';
 const FILTER_CATS = {
   all:  null,
@@ -2718,7 +2751,7 @@ function clearScene() {
     _collabLines = [];
   }
   planetMeshes=[]; satelliteMeshes=[]; orbitRings=[]; connections=[]; labelSprites=[];
-  _nodeDataMap = {}; _hitAreas = [];
+  _nodeDataMap = {}; _hitAreas = []; _projectGroups = {};
 }
 
 function buildPlanetSystem(nodeList) {
@@ -2748,6 +2781,34 @@ function buildPlanetSystem(nodeList) {
       : rawEvents;
     if (filtered.length === 0) continue;
 
+    // ── 프로젝트명 추출 ─────────────────────────────────────────────────
+    const startEv = rawEvents.find(e => e.type === 'session.start');
+    const pd      = startEv?.data?.projectDir || startEv?.data?.cwd || '';
+    let projName;
+    if (pd) {
+      // projectDir 있으면 마지막 폴더명
+      projName = pd.replace(/\\/g,'/').split('/').filter(Boolean).pop();
+    } else if (/^[0-9a-f]{8}-[0-9a-f]{4}/.test(sid)) {
+      // UUID 세션 → 가장 많이 등장한 파일의 디렉터리명으로 추론
+      const fileCounts = {};
+      rawEvents.forEach(e => {
+        const fp = (e.data?.filePath||e.data?.fileName||'').replace(/\\/g,'/');
+        const dir = fp.split('/').filter(Boolean).slice(-2,-1)[0];
+        if (dir && dir !== '.') fileCounts[dir] = (fileCounts[dir]||0) + 1;
+      });
+      const topDir = Object.entries(fileCounts).sort((a,b)=>b[1]-a[1])[0]?.[0];
+      projName = topDir || `세션-${sid.slice(0,6)}`;
+    } else {
+      // session-{name}-{timestamp} → {name}
+      const mSession = sid.match(/^session-([a-zA-Z][a-zA-Z0-9_-]*?)(?:-\d{10,})?$/);
+      if (mSession) { projName = mSession[1]; }
+      // wf{N}-{timestamp} → 워크플로우
+      else if (/^wf\d+-\d/.test(sid)) { projName = '워크플로우'; }
+      // 짧고 숫자 없는 이름은 그대로
+      else if (sid.length <= 24 && !/\d{8,}/.test(sid)) { projName = sid; }
+      else { projName = sid.slice(0,12) + '…'; }
+    }
+
     const clusters = clusterByIntent(sid, filtered);
     // 클러스터가 1개뿐이면 전체 세션을 1개 행성으로
     if (clusters.length <= 1) {
@@ -2758,10 +2819,11 @@ function buildPlanetSystem(nodeList) {
         label: sessionIntent(rawEvents),
         events: filtered,
         isFullSession: true,
+        projectName: projName,
       });
     } else {
       for (const c of clusters) {
-        planets.push({ ...c, isFullSession: false });
+        planets.push({ ...c, isFullSession: false, projectName: projName });
       }
     }
   }
@@ -2835,7 +2897,8 @@ function buildPlanetSystem(nodeList) {
     planet.userData.orbitR      = PLANET_R;
     planet.userData.orbitθ      = θ_planet;
     planet.userData.orbitφ      = φ_planet;
-    planet.userData.orbitCenter = new THREE.Vector3(0,0,0);
+    planet.userData.orbitCenter  = new THREE.Vector3(0,0,0);
+    planet.userData.projectName  = pl.projectName || '기타';
     scene.add(planet);
     planetMeshes.push(planet);
 
@@ -2908,6 +2971,16 @@ function buildPlanetSystem(nodeList) {
   document.getElementById('h-sessions').textContent = sessKeys.length;
   document.getElementById('h-tasks').textContent    = totalTasks;
   document.getElementById('h-hours').textContent    = totalHours.toFixed(0)+'h';
+
+  // ── 프로젝트별 그룹화 빌드 ──────────────────────────────────────────────
+  _projectGroups = {};
+  planetMeshes.forEach(p => {
+    const proj = p.userData.projectName || '기타';
+    if (!_projectGroups[proj]) {
+      _projectGroups[proj] = { planetMeshes: [], color: p.userData.hueHex || '#58a6ff' };
+    }
+    _projectGroups[proj].planetMeshes.push(p);
+  });
 }
 
 // ─── 팀 시뮬레이션 모드 ───────────────────────────────────────────────────────
@@ -5111,6 +5184,16 @@ renderer.domElement.addEventListener('click', e => {
     _selectedHit = hit;
     const type = hit.data.type;
 
+    // ── 별자리 오브 클릭 → 해당 프로젝트 포커스 ────────────────────────────
+    if (type === 'constellation') {
+      if (_focusedProject === hit.data.projName) {
+        exitConstellationFocus();
+      } else {
+        focusProject(hit.data.projName);
+      }
+      return;
+    }
+
     if (_companyMode) {
       // 회사 모드 클릭 처리
       if (type === 'department') {
@@ -5795,18 +5878,168 @@ function drawGlow(ctx, cx, cy, r, hex, intensity) {
   ctx.restore();
 }
 
+// ─── 프로젝트 별자리 포커스 ───────────────────────────────────────────────────
+function focusProject(projName) {
+  _focusedProject = projName;
+  const grp = _projectGroups[projName];
+  if (!grp || !grp.planetMeshes.length) return;
+
+  // 해당 프로젝트 행성들의 평균 위치로 카메라 이동
+  let cx = 0, cy = 0, cz = 0;
+  grp.planetMeshes.forEach(p => { cx += p.position.x; cy += p.position.y; cz += p.position.z; });
+  cx /= grp.planetMeshes.length; cy /= grp.planetMeshes.length; cz /= grp.planetMeshes.length;
+  lerpCameraTo(28, cx, cy, cz, 900);
+
+  // 뒤로가기 버튼 표시
+  const btn = document.getElementById('constellation-back-btn');
+  if (btn) { btn.textContent = `← ${projName} / 전체 보기`; btn.style.display = 'block'; }
+}
+window.focusProject = focusProject;
+
+function exitConstellationFocus() {
+  _focusedProject = null;
+  lerpCameraTo(controls.sph.r < 60 ? 75 : controls.sph.r, 0, 0, 0, 700);
+  const btn = document.getElementById('constellation-back-btn');
+  if (btn) btn.style.display = 'none';
+}
+window.exitConstellationFocus = exitConstellationFocus;
+
+// ─── 별자리 그리기 ────────────────────────────────────────────────────────────
+function drawConstellations() {
+  const projEntries = Object.entries(_projectGroups);
+  if (!projEntries.length) return;
+
+  const now = performance.now() / 1000;
+
+  projEntries.forEach(([projName, grp]) => {
+    const pts = grp.planetMeshes
+      .map(p => toScreen(p.position))
+      .filter(s => s.z <= 1);
+    if (!pts.length) return;
+
+    // 별자리 중심 (스크린 좌표 평균)
+    let cx = 0, cy = 0;
+    pts.forEach(s => { cx += s.x; cy += s.y; });
+    cx /= pts.length; cy /= pts.length;
+
+    const color    = grp.color || '#58a6ff';
+    const cnt      = grp.planetMeshes.length;
+    const isHover  = _hoveredHit?.data?.type === 'constellation' && _hoveredHit?.data?.projName === projName;
+
+    // ── 개별 별 점 (희미하게) ────────────────────────────────────────────
+    pts.forEach((s, i) => {
+      const pulse = 0.5 + 0.5 * Math.sin(now * 1.4 + i * 1.2);
+      _lctx.save();
+      _lctx.globalAlpha = 0.35 + pulse * 0.25;
+      _lctx.fillStyle   = color;
+      _lctx.shadowColor = color; _lctx.shadowBlur = 6;
+      _lctx.beginPath(); _lctx.arc(s.x, s.y, 3 + pulse, 0, Math.PI*2); _lctx.fill();
+      _lctx.restore();
+    });
+
+    // ── 별 연결선 (콘스텔레이션 라인) ────────────────────────────────────
+    if (pts.length >= 2) {
+      _lctx.save();
+      _lctx.strokeStyle = color;
+      _lctx.globalAlpha = 0.15;
+      _lctx.lineWidth   = 1;
+      _lctx.setLineDash([4, 6]);
+      _lctx.beginPath();
+      // 중심 → 각 별 (허브-앤-스포크)
+      pts.forEach(s => {
+        _lctx.moveTo(cx, cy);
+        _lctx.lineTo(s.x, s.y);
+      });
+      _lctx.stroke();
+      _lctx.setLineDash([]);
+      _lctx.restore();
+    }
+
+    // ── 중심 오브 (프로젝트 이름 pill) ───────────────────────────────────
+    const pulse = 0.5 + 0.5 * Math.sin(now * 0.9);
+    const label = `🗂 ${projName}`;
+    const sub   = `${cnt}개 세션`;
+    const pxMain = isHover ? 17 : 15;
+    const pxSub  = 11;
+
+    _lctx.font = `700 ${pxMain}px -apple-system,'Segoe UI',sans-serif`;
+    _lctx.textAlign = 'center';
+    const tw   = _lctx.measureText(label).width;
+    const pw   = tw + 28;
+    const ph   = pxMain + 16;
+    const lx   = cx - pw / 2;
+    const ly   = cy - ph / 2;
+
+    // 글로우
+    _lctx.save();
+    _lctx.globalAlpha = 0.18 + pulse * 0.12;
+    _lctx.shadowColor = color; _lctx.shadowBlur = 22 + pulse * 8;
+    _lctx.fillStyle = color;
+    _lctx.beginPath(); _lctx.arc(cx, cy, (pw + ph) / 4 + 6, 0, Math.PI * 2); _lctx.fill();
+    _lctx.restore();
+
+    // 배경 pill
+    _lctx.globalAlpha = isHover ? 0.97 : 0.88;
+    _lctx.fillStyle   = 'rgba(6,10,16,0.93)';
+    roundRect(_lctx, lx, ly, pw, ph, ph / 2); _lctx.fill();
+
+    // 테두리
+    _lctx.strokeStyle = color;
+    _lctx.lineWidth   = isHover ? 2.5 : 1.8;
+    _lctx.shadowColor = color; _lctx.shadowBlur = isHover ? 14 : 6;
+    roundRect(_lctx, lx, ly, pw, ph, ph / 2); _lctx.stroke();
+    _lctx.shadowBlur  = 0;
+
+    // 텍스트
+    _lctx.fillStyle = isHover ? '#ffffff' : '#e6edf3';
+    _lctx.fillText(label, cx, ly + ph * 0.67);
+
+    // 서브 레이블
+    _lctx.font = `400 ${pxSub}px -apple-system,sans-serif`;
+    _lctx.fillStyle = color + '99';
+    _lctx.globalAlpha = 0.85;
+    _lctx.fillText(sub, cx, ly + ph + pxSub + 2);
+
+    _lctx.globalAlpha = 1;
+
+    // 히트 영역
+    _hitAreas.push({
+      cx, cy,
+      r: (Math.max(pw, ph) / 2) + 6,
+      obj: null,
+      data: { type: 'constellation', projName, planetCount: cnt, color },
+    });
+  });
+}
+
 // ─── drawLabels ──────────────────────────────────────────────────────────────
 function drawLabels() {
   _lctx.clearRect(0, 0, innerWidth, innerHeight);
   _hitAreas = [];
 
   const lod = getLOD();
+
+  // ── 별자리 모드: 개인뷰에서 LOD>=1이고 여러 프로젝트 있으면 → 프로젝트 오브만 표시 ──
+  const projKeys = Object.keys(_projectGroups);
+  const inConstellationMode = !_teamMode && !_companyMode && !_parallelMode
+                              && _focusedProject === null
+                              && lod >= 1
+                              && projKeys.length > 1;
+
+  if (inConstellationMode) {
+    drawConstellations();
+    _lctx.globalAlpha = 1;
+    return;
+  }
+
   // LOD 3: 요약 뷰, 라벨은 아주 희미하게만
   const globalAlpha = lod === 3 ? 0.12 : 1;
   _lctx.globalAlpha = globalAlpha;
 
   // ── 1. 행성 ──────────────────────────────────────────────────────────────
   planetMeshes.forEach(p => {
+    // 특정 프로젝트 포커스 중이면 해당 프로젝트만 렌더
+    if (_focusedProject && p.userData.projectName !== _focusedProject) return;
     const sc = toScreen(p.position);
     if (sc.z > 1) return;
 
