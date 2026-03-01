@@ -3361,7 +3361,7 @@ function clearScene() {
   }
   planetMeshes=[]; satelliteMeshes=[]; orbitRings=[]; connections=[]; labelSprites=[];
   _nodeDataMap = {}; _hitAreas = []; _projectGroups = {};
-  _topicLinksBuilt = false; _topicLinks.length = 0;
+  _topicLinksBuilt = false; _topicLinks.length = 0; _topicLinksLastBuilt = 0;
 }
 
 function buildPlanetSystem(nodeList) {
@@ -8294,6 +8294,7 @@ window.exitConstellationFocus = exitConstellationFocus;
 // 로컬 키워드 분석: Ollama 없이도 의미 있는 연결 추론
 const _topicLinks = [];         // { a, b, score, color } — 행성 쌍
 let _topicLinksBuilt = false;
+let _topicLinksLastBuilt = 0;   // 마지막 빌드 시각 (ms) — 5초마다 재빌드
 
 function _tokenize(text) {
   return (text || '').toLowerCase()
@@ -8321,8 +8322,13 @@ function _topicSimilarity(intentA, intentB, domainA, domainB) {
 }
 
 function buildTopicLinks() {
-  if (_topicLinksBuilt || planetMeshes.length < 2) return;
+  if (planetMeshes.length < 2) return;
+  const now = Date.now();
+  // loadSessionContext() 비동기 완료 대기: 씬 초기화 후 3초 뒤부터 빌드
+  // 이후 인텐트가 업데이트될 수 있으므로 5초마다 재빌드
+  if (_topicLinksBuilt && now - _topicLinksLastBuilt < 5000) return;
   _topicLinksBuilt = true;
+  _topicLinksLastBuilt = now;
   _topicLinks.length = 0;
 
   for (let i = 0; i < planetMeshes.length; i++) {
