@@ -4420,6 +4420,25 @@ renderer.domElement.addEventListener('click', e => {
     }
 
     showPanel(hit.data, hit.obj);
+
+    // ── 클릭한 노드를 카메라 중심으로 이동 ─────────────────────────────────
+    // focusMember/focusDept가 처리하지 않은 나머지 노드: 개인 모드 행성, 태스크, 병렬 노드
+    const _alreadyFocused = (_teamMode && type === 'member') ||
+                            (_companyMode && (type === 'member' || type === 'department'));
+    if (!_alreadyFocused) {
+      const p3 = hit.data?.pos;              // _teamNodes 의 THREE.Vector3 pos
+      const m3 = hit.obj?.position;          // 개인 모드 planet mesh position
+      const tp = (p3 instanceof THREE.Vector3) ? p3 : (m3 instanceof THREE.Vector3 ? m3 : null);
+      if (tp) {
+        const curR = controls.sph.r;
+        // 개인모드는 현재 거리 유지, 팀/병렬 태스크는 적당히 당겨줌
+        const targetR = (!_teamMode && !_companyMode && !_parallelMode)
+          ? curR
+          : Math.min(curR, 40);
+        lerpCameraTo(targetR, tp.x, tp.y, tp.z, 450);
+      }
+    }
+
   } else {
     _selectedHit = null;
     if ((_teamMode || _companyMode) && (_focusedMember || _focusedDept)) {
@@ -7029,6 +7048,12 @@ window.doLogoutMain = doLogoutMain;
     return;
   }
   renderLoginState();
+  // 로그인 안 된 상태로 진입 시 모달 자동 오픈 (1.2초 후 — 3D 씬 로드 이후)
+  if (!_orbitUser) {
+    setTimeout(() => {
+      if (!_orbitUser) openLoginModal();
+    }, 1200);
+  }
 })();
 
 /* ── ORBIT ANALYTICS ─────────────────────────────────────────────────────────
