@@ -1383,6 +1383,49 @@
   }
   #constellation-back-btn:hover { background: rgba(31,111,235,0.25); border-color: #1f6feb; color: #79c0ff; }
 
+  /* ── 인사이트 패널 ────────────────────────────────────────────────────── */
+  #insight-panel {
+    position: fixed; right: 14px; top: 14px;
+    width: 300px; max-height: calc(100vh - 28px);
+    background: rgba(13,17,23,0.97); border: 1px solid #21262d;
+    border-radius: 14px; backdrop-filter: blur(16px);
+    z-index: 9200; display: none; flex-direction: column;
+    overflow: hidden; box-shadow: 0 8px 40px rgba(0,0,0,.7);
+    font-family: -apple-system,'Segoe UI',sans-serif;
+  }
+  #insight-panel.open { display: flex; }
+  .ins-hdr { display:flex; justify-content:space-between; align-items:center;
+    padding:14px 16px 10px; border-bottom:1px solid #21262d; flex-shrink:0; }
+  .ins-title { font-size:14px; font-weight:700; color:#e6edf3; }
+  .ins-refresh-btn, .ins-close-btn {
+    background:none; border:1px solid #30363d; color:#8b949e;
+    border-radius:6px; padding:3px 7px; cursor:pointer; font-size:12px; }
+  .ins-refresh-btn:hover, .ins-close-btn:hover { border-color:#6e7681; color:#e6edf3; }
+  .ins-section-title {
+    font-size:11px; font-weight:600; color:#6e7681;
+    text-transform:uppercase; letter-spacing:.06em;
+    padding:10px 16px 4px; flex-shrink:0; }
+  .ins-feed-list  { padding:0 12px; overflow-y:auto; max-height:50vh; flex-shrink:0; }
+  .ins-feed-item  { display:flex; align-items:flex-start; gap:8px; padding:7px 4px;
+    border-bottom:1px solid rgba(33,38,45,.35); }
+  .ins-feed-icon  { font-size:14px; flex-shrink:0; width:20px; text-align:center; margin-top:1px; }
+  .ins-feed-body  { flex:1; min-width:0; }
+  .ins-feed-label { font-size:12px; color:#cdd9e5; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .ins-feed-time  { font-size:10px; color:#6e7681; margin-top:1px; }
+  .ins-feed-meta  { font-size:11px; color:#6e7681; padding:6px 16px 8px;
+    border-bottom:1px solid #21262d; flex-shrink:0; }
+  .ins-dist-list  { padding:6px 16px 10px; flex-shrink:0; }
+  .ins-dist-row   { display:flex; align-items:center; gap:8px; margin:4px 0; }
+  .ins-dist-label { font-size:11px; color:#8b949e; width:56px; flex-shrink:0; }
+  .ins-dist-bg    { flex:1; height:5px; background:#21262d; border-radius:3px; overflow:hidden; }
+  .ins-dist-fill  { height:100%; border-radius:3px; }
+  .ins-dist-pct   { font-size:10px; color:#6e7681; width:30px; text-align:right; flex-shrink:0; }
+  .ins-kv-list    { padding:4px 16px 14px; flex-shrink:0; overflow-y:auto; }
+  .ins-kv-row     { display:flex; gap:8px; align-items:baseline; padding:5px 0;
+    border-bottom:1px solid rgba(33,38,45,.35); font-size:12px; }
+  .ins-kv-key     { color:#6e7681; flex-shrink:0; min-width:80px; }
+  .ins-kv-val     { color:#cdd9e5; word-break:break-all; }
+
   /* ── 적용 토스트 피드백 ─────────────────────────────────────────────────── */
   #apply-toast {
     position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%) translateY(20px);
@@ -1459,6 +1502,7 @@
     <div class="ln-sep">도구</div>
     <button class="ln-item" onclick="toggleFeatPanel()">📋 기능 목록</button>
     <button class="ln-item" onclick="toggleViewPanel()">👤 내 뷰 설정</button>
+    <button class="ln-item" onclick="toggleInsightPanel()">📊 전체 인사이트</button>
     <button class="ln-item" onclick="toggleMgrPanel()">👔 관리자 뷰</button>
     <button class="ln-item" onclick="toggleTaskSidebar()">📋 내 작업</button>
     <button class="ln-item" id="ln-orbit-btn" onclick="toggleOrbitAnim()">⏸ 공전 토글</button>
@@ -1552,6 +1596,27 @@
 <button id="constellation-back-btn" onclick="exitConstellationFocus()" style="display:none">
   ← 전체 보기
 </button>
+
+<!-- ⚡ AI 인사이트 패널 -->
+<div id="insight-panel">
+  <div class="ins-hdr">
+    <span class="ins-title">⚡ 현재 AI 작업</span>
+    <div style="display:flex;gap:6px">
+      <button class="ins-refresh-btn" onclick="renderInsightPanel()" title="새로고침">↺</button>
+      <button class="ins-close-btn"   onclick="toggleInsightPanel()">✕</button>
+    </div>
+  </div>
+
+  <div class="ins-section-title">실시간 피드</div>
+  <div id="ins-feed-list" class="ins-feed-list"></div>
+  <div id="ins-feed-meta" class="ins-feed-meta">로딩 중…</div>
+
+  <div class="ins-section-title">📊 작업 분포</div>
+  <div id="ins-dist-list" class="ins-dist-list"></div>
+
+  <div class="ins-section-title">🎯 인사이트</div>
+  <div id="ins-kv-list"  class="ins-kv-list"></div>
+</div>
 
 <!-- 팔로우 패널 -->
 <div id="follow-panel">
@@ -5877,6 +5942,159 @@ function drawGlow(ctx, cx, cy, r, hex, intensity) {
   ctx.fill();
   ctx.restore();
 }
+
+// ─── AI 인사이트 패널 ─────────────────────────────────────────────────────────
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function relTime(ts) {
+  const diff = Date.now() - new Date(ts || 0).getTime();
+  if (diff < 60000)    return '방금';
+  if (diff < 3600000)  return `${Math.floor(diff/60000)}분 전`;
+  if (diff < 86400000) return `${Math.floor(diff/3600000)}시간 전`;
+  return `${Math.floor(diff/86400000)}일 전`;
+}
+
+function computeInsights() {
+  const cutoff = Date.now() - 3_600_000;
+
+  // ① 최근 1시간 이벤트 피드 (최신순, 최대 20개)
+  const recentEvents = [..._allNodes]
+    .filter(n => new Date(n.timestamp || n.created_at || 0) > cutoff)
+    .sort((a,b) => new Date(b.timestamp || b.created_at || 0) - new Date(a.timestamp || a.created_at || 0))
+    .slice(0, 20);
+
+  // ② 타입 카테고리 분포
+  const CAT_META = {
+    chat:  { label:'💬 대화', color:'#58a6ff' },
+    code:  { label:'⚡ 코드', color:'#3fb950' },
+    file:  { label:'📄 파일', color:'#ffa657' },
+    git:   { label:'🌿 Git',  color:'#39d2c0' },
+    error: { label:'❌ 오류', color:'#f85149' },
+  };
+  const catDist = {};
+  _allNodes.forEach(n => {
+    const cat = typeCfg(n.type).cat || 'chat';
+    catDist[cat] = (catDist[cat]||0) + 1;
+  });
+  const total = Math.max(_allNodes.length, 1);
+  const distRows = Object.entries(catDist)
+    .sort((a,b) => b[1]-a[1])
+    .map(([cat, cnt]) => ({
+      ...(CAT_META[cat] || { label:cat, color:'#8b949e' }),
+      pct: Math.round(cnt/total*100),
+    }));
+
+  // ③ 도메인 분포 → 주요 도메인
+  const DOMAIN_LABELS = {
+    auth:'🔐 인증', api:'🌐 API', data:'🗄️ 데이터', ui:'🎨 UI',
+    test:'🧪 테스트', server:'🚀 서버', infra:'🐳 인프라', fix:'🔧 버그수정',
+    git:'🌿 Git', chat:'💬 대화', general:'⚙️ 일반',
+  };
+  const domainDist = {};
+  planetMeshes.forEach(p => {
+    const d = p.userData.domain || 'general';
+    domainDist[d] = (domainDist[d]||0) + 1;
+  });
+  const topDE = Object.entries(domainDist).sort((a,b)=>b[1]-a[1])[0];
+  const topDomainLabel = topDE && planetMeshes.length
+    ? `${DOMAIN_LABELS[topDE[0]]||topDE[0]} ${Math.round(topDE[1]/planetMeshes.length*100)}%`
+    : '—';
+
+  // ④ 오류율
+  const errCount = _allNodes.filter(n => n.type === 'tool.error').length;
+  const errRate  = (errCount / total * 100).toFixed(1);
+
+  // ⑤ Git 활동
+  const gitCount = _allNodes.filter(n => n.type === 'git.commit' || n.type === 'git.push').length;
+
+  // ⑥ 최다 파일
+  const fileDist = {};
+  _allNodes.forEach(n => {
+    const fp = ((n.data?.filePath || n.data?.fileName || '')).replace(/\\/g,'/');
+    const fn = fp.split('/').pop();
+    if (fn && fn.includes('.')) fileDist[fn] = (fileDist[fn]||0) + 1;
+  });
+  const topFile = Object.entries(fileDist).sort((a,b)=>b[1]-a[1])[0]?.[0] || '—';
+
+  return { recentEvents, distRows, topDomainLabel, errRate, gitCount, topFile, total };
+}
+
+const _INS_TYPE_ICON = {
+  'user.message':'💬', 'assistant.message':'🤖', 'assistant.response':'🤖',
+  'tool.start':'⚡', 'tool.end':'✅', 'tool.error':'❌',
+  'file.read':'📄', 'file.write':'✏️', 'git.commit':'🌿', 'git.push':'🚀',
+};
+
+function renderInsightPanel() {
+  const ins = computeInsights();
+
+  // 피드
+  document.getElementById('ins-feed-list').innerHTML = ins.recentEvents.length
+    ? ins.recentEvents.map(n => `
+        <div class="ins-feed-item">
+          <span class="ins-feed-icon">${_INS_TYPE_ICON[n.type]||'·'}</span>
+          <div class="ins-feed-body">
+            <div class="ins-feed-label" title="${escHtml(n.label||n.type)}">${escHtml((n.label||n.type).slice(0,42))}</div>
+            <div class="ins-feed-time">${relTime(n.timestamp||n.created_at)}</div>
+          </div>
+        </div>`).join('')
+    : `<div style="padding:12px 4px;color:#6e7681;font-size:12px;">
+         최근 1시간 이벤트 없음<br>
+         <span style="font-size:10px;color:#3d444d">전체 이벤트 ${ins.total.toLocaleString()}개 보유</span>
+       </div>`;
+
+  document.getElementById('ins-feed-meta').textContent =
+    `총 ${ins.recentEvents.length}개 · 최근 1시간`;
+
+  // 분포 바
+  document.getElementById('ins-dist-list').innerHTML = ins.distRows
+    .filter(r => r.pct > 0)
+    .map(r => `
+      <div class="ins-dist-row">
+        <span class="ins-dist-label">${r.label}</span>
+        <div class="ins-dist-bg">
+          <div class="ins-dist-fill" style="width:${r.pct}%;background:${r.color}"></div>
+        </div>
+        <span class="ins-dist-pct">${r.pct}%</span>
+      </div>`).join('');
+
+  // 인사이트 KV
+  const health = parseFloat(ins.errRate) < 5
+    ? '✅ 건강함' : parseFloat(ins.errRate) < 15 ? '⚠️ 주의' : '🔴 불안정';
+  document.getElementById('ins-kv-list').innerHTML = [
+    ['🔧 주요 도메인', ins.topDomainLabel],
+    ['⚠️ 오류율',     `${ins.errRate}% ${health}`],
+    ['🌿 Git 활동',   `${ins.gitCount}회`],
+    ['🏆 최다 파일',   ins.topFile],
+    ['📦 전체 이벤트', `${ins.total.toLocaleString()}개`],
+  ].map(([k,v]) => `
+    <div class="ins-kv-row">
+      <span class="ins-kv-key">${k}</span>
+      <span class="ins-kv-val">${escHtml(String(v))}</span>
+    </div>`).join('');
+}
+window.renderInsightPanel = renderInsightPanel;
+
+let _insightRefreshTimer = null;
+
+function toggleInsightPanel() {
+  const panel = document.getElementById('insight-panel');
+  const isOpen = panel.classList.contains('open');
+  // info-panel이 열려있으면 닫기
+  document.getElementById('info-panel')?.classList.remove('open');
+  if (isOpen) {
+    panel.classList.remove('open');
+    clearInterval(_insightRefreshTimer); _insightRefreshTimer = null;
+  } else {
+    panel.classList.add('open');
+    renderInsightPanel();
+    _insightRefreshTimer = setInterval(renderInsightPanel, 30000);
+  }
+}
+window.toggleInsightPanel = toggleInsightPanel;
 
 // ─── 프로젝트 별자리 포커스 ───────────────────────────────────────────────────
 function focusProject(projName) {
