@@ -127,6 +127,27 @@ function createRouter(deps) {
     }
     const topFile = Object.entries(fileCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
 
+    // 이벤트 도메인 분류 (파일명 기반)
+    const domainCounts = {};
+    const DOMAIN_RULES = [
+      [/auth|login|oauth|jwt|token|password/, '🔐 인증 구현'],
+      [/route|router|api|endpoint|controller/, '🌐 API 개발'],
+      [/db|database|schema|migration|model|store/, '🗄️ 데이터'],
+      [/component|widget|ui|view|page|style|css/, '🎨 UI 작업'],
+      [/test|spec|e2e|jest|vitest/, '🧪 테스트'],
+      [/server|app\.js|main|index/, '🚀 서버 개발'],
+      [/docker|deploy|ci|cd|yml|yaml/, '🐳 인프라'],
+      [/doc|readme|\.md/, '📝 문서화'],
+      [/bug|fix|error|issue/, '🔧 버그 수정'],
+    ];
+    for (const e of events) {
+      const fp = (e.data?.filePath || e.data?.fileName || '').toLowerCase();
+      for (const [re, label] of DOMAIN_RULES) {
+        if (re.test(fp)) { domainCounts[label] = (domainCounts[label]||0) + 1; break; }
+      }
+    }
+    const topDomain = Object.entries(domainCounts).sort((a,b)=>b[1]-a[1])[0]?.[0] || null;
+
     // 자동 타이틀 조합
     const autoTitle = (() => {
       if (projectName && firstMsgText) return `[${projectName}] ${firstMsgText.slice(0, 30)}`;
@@ -134,7 +155,13 @@ function createRouter(deps) {
       if (projectName)                 return projectName;
       if (firstMsgText)                return firstMsgText.slice(0, 40);
       if (topFile)                     return topFile;
-      return `세션 ${id.slice(-6)}`;
+      if (topDomain)                   return topDomain;
+      // 세션명 readable 변환 (UUID가 아닌 경우, 'session'/'wf' prefix 제거)
+      if (!/^[0-9a-f]{8}-/.test(id) && id.length <= 30) {
+        const parts = id.split(/[-_]/).filter(s => s && s !== 'session' && s !== 'wf');
+        if (parts.length > 0) return parts.map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(' ');
+      }
+      return '⚙️ 작업 중';
     })();
 
     res.json({

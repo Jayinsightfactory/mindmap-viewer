@@ -3177,10 +3177,11 @@ async function loadSessionContext(sessionId) {
     if (!r.ok) return null;
     const ctx = await r.json();
     _sessionContextCache[sessionId] = ctx;
-    // 행성 라벨 즉시 업데이트
+    // 행성 라벨 즉시 업데이트 (의미있는 autoTitle인 경우만)
+    const _isMeaningful = t => t && !/^(세션\s|⚙️\s?작업\s?중|작업\s?중)/.test(t);
     const planet = _sessionMap[sessionId]?.planet;
     if (planet) {
-      planet.userData.intent = ctx.autoTitle;
+      if (_isMeaningful(ctx.autoTitle)) planet.userData.intent = ctx.autoTitle;
       if (ctx.projectName) {
         const oldProj = planet.userData.projectName;
         const newProj = ctx.projectName;
@@ -3224,9 +3225,9 @@ function sessionIntent(events) {
   }
   const topFile = Object.entries(fileCounts).sort((a,b)=>b[1]-a[1])[0]?.[0] || null;
 
-  // 첫 user.message
+  // 첫 user.message (label 필드도 확인)
   const msg = events.find(e => e.type === 'user.message');
-  const firstMsg = (msg?.data?.contentPreview || msg?.data?.content || '').slice(0,28) || null;
+  const firstMsg = (msg?.data?.contentPreview || msg?.data?.content || msg?.label || '').slice(0,30) || null;
 
   // 조합: [프로젝트] 첫메시지 or 최다편집파일
   if (projectName && firstMsg) return `[${projectName}] ${firstMsg}`;
@@ -3234,7 +3235,21 @@ function sessionIntent(events) {
   if (projectName)             return projectName;
   if (firstMsg)                return firstMsg;
   if (topFile)                 return topFile;
-  return `세션 ${(sid||'').slice(-6)}`;
+
+  // 도메인 클러스터 라벨 폴백 (세션 ID 대신 작업 유형 표시)
+  if (sid) {
+    const cls = clusterByIntent(sid, events);
+    const best = cls.find(c => c.domain !== 'general') || cls[0];
+    if (best?.label) return best.label;
+    // 세션명 readable 변환 (UUID가 아닌 경우, 'session' prefix 제거)
+    if (!/^[0-9a-f]{8}-/.test(sid) && sid.length <= 30) {
+      const parts = sid.split(/[-_]/).filter(s => s && s !== 'session' && s !== 'wf');
+      if (parts.length > 0) {
+        return parts.map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(' ').slice(0, 30);
+      }
+    }
+  }
+  return '⚙️ 작업 중';
 }
 
 // ─── OrbitControls 인라인 ─────────────────────────────────────────────────────
@@ -3406,12 +3421,17 @@ function buildPlanetSystem(nodeList) {
     const clusters = clusterByIntent(sid, filtered);
     // 클러스터가 1개뿐이면 전체 세션을 1개 행성으로
     if (clusters.length <= 1) {
+      const cl = clusters[0];
+      // 도메인 라벨 + 메시지 프리뷰 조합 (세션 ID 대신 의미있는 라벨)
+      const domainLabel = cl?.label || sessionIntent(rawEvents);
       planets.push({
-        clusterId: sid,
-        sessionId: sid,
-        domain: 'general',
-        label: sessionIntent(rawEvents),
-        events: filtered,
+        clusterId:   sid,
+        sessionId:   sid,
+        domain:      cl?.domain || 'general',
+        label:       domainLabel,
+        icon:        cl?.icon || '',
+        msgPreview:  cl?.msgPreview || '',
+        events:      filtered,
         isFullSession: true,
         projectName: projName,
       });
@@ -3469,12 +3489,13 @@ function buildPlanetSystem(nodeList) {
     }
     const hue = new THREE.Color(hueHex).getHSL({}).h;
 
-    // intent: purposeIcon + 클러스터 라벨 + 첫 메시지 프리뷰 조합
+    // intent: 아이콘 + 도메인 라벨 + 첫 메시지 프리뷰 조합 (label에 이미 최적화된 의도 포함)
     const msgPreview = pl.msgPreview || '';
-    const iconPrefix = pl.icon ? `${pl.icon} ` : '';
+    // label이 이미 아이콘으로 시작하면 iconPrefix 생략 (⚙️ ⚙️ 기타 중복 방지)
+    const iconPrefix = (pl.icon && !label.startsWith(pl.icon)) ? `${pl.icon} ` : '';
     const intent = msgPreview
       ? `${iconPrefix}${label}  ${msgPreview}`
-      : (pl.isFullSession ? sessionIntent(rawEvents) : `${iconPrefix}${label}`);
+      : `${iconPrefix}${label}`;
 
     // ── 행성 = 보이지 않는 Object3D ──────────────────────────────────────
     const planet = new THREE.Object3D();
@@ -3493,6 +3514,10 @@ function buildPlanetSystem(nodeList) {
     planet.userData.orbitφ      = φ_planet;
     planet.userData.orbitCenter  = new THREE.Vector3(0,0,0);
     planet.userData.projectName  = pl.projectName || '기타';
+    // LOD0 줌인 세부 정보용
+    const _fmsg = rawEvents.find(e => e.type === 'user.message');
+    planet.userData.firstMsg = (_fmsg?.data?.contentPreview || _fmsg?.data?.content || _fmsg?.label || '').slice(0, 40);
+    planet.userData.msgPreview = pl.msgPreview || '';
     scene.add(planet);
     planetMeshes.push(planet);
 
@@ -5112,7 +5137,7 @@ function unfocusDept() {
 // ── 팀 모드 공전 ─────────────────────────────────────────────────────────────
 function updateTeamOrbits(dt) {
   if (!orbitAnimOn) return;
-  _clock += dt * 0.002;
+  _clock += dt * 0.00025;
 
   if (_companyMode) {
     // ── 회사 모드: 부서 공전 ────────────────────────────────────────────────
@@ -5226,7 +5251,7 @@ function updateTeamOrbits(dt) {
 // ── 병렬 태스크 궤도 업데이트 ─────────────────────────────────────────────────
 function updateParallelOrbits(dt) {
   if (!orbitAnimOn) return;
-  _clock += dt * 0.002;
+  _clock += dt * 0.00025;
 
   planetMeshes.forEach(p => {
     if (!p.userData.isParallelTask) return;
@@ -5701,7 +5726,7 @@ function drawTeamLabels() {
 // ─── 애니메이션 — 행성 공전 + 파일위성 공전 ─────────────────────────────────
 function updateOrbits(dt) {
   if (!orbitAnimOn) return;
-  _clock += dt * 0.002;
+  _clock += dt * 0.00025;
 
   // 행성 공전 (중심별 주위)
   planetMeshes.forEach(p => {
@@ -8317,7 +8342,15 @@ function drawConstellations() {
 
     // ── 중심 오브 (프로젝트 이름 pill) ───────────────────────────────────
     const pulse = 0.5 + 0.5 * Math.sin(now * 0.9);
-    const label = `🗂 ${projName}`;
+    // projName 정제: 세션-XXXX → 대표 의도로 대체, hyphen-name → Readable Name
+    let _dispName = projName;
+    if (/^세션-/.test(projName)) {
+      const best = grp.planetMeshes.map(p => p.userData.intent).find(t => t && !/^(⚙️\s?기타|⚙️\s?작업)/.test(t));
+      _dispName = best ? best.split(/\s{2,}/)[0].trim() : projName;
+    } else if (/[-_]/.test(projName) && !/\s/.test(projName)) {
+      _dispName = projName.split(/[-_]/).filter(s => s !== 'session' && s !== 'wf').map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(' ').slice(0, 28);
+    }
+    const label = `🗂 ${_dispName}`;
     const sub   = `${cnt}개 세션`;
     const pxMain = isHover ? 17 : 15;
     const pxSub  = 11;
@@ -8473,7 +8506,18 @@ function drawLabels() {
       const sub = Math.max(9, pxSize * 0.55);
       _lctx.font      = `400 ${sub}px -apple-system,sans-serif`;
       _lctx.fillStyle = hex + '99';
-      _lctx.fillText(`${evCnt}개 작업`, sc.x, ly + ph + sub + 2);
+      // 1줄: 이벤트 수 + 프로젝트명
+      const proj = p.userData.projectName && p.userData.projectName !== '기타' ? ` · ${p.userData.projectName}` : '';
+      _lctx.fillText(`${evCnt}개 작업${proj}`, sc.x, ly + ph + sub + 2);
+      // LOD0: 2줄 — 첫 메시지 내용 표시
+      if (lod === 0) {
+        const detail = p.userData.firstMsg || p.userData.msgPreview || '';
+        if (detail) {
+          _lctx.font      = `400 ${Math.max(8, sub * 0.9)}px -apple-system,sans-serif`;
+          _lctx.fillStyle = '#8b949e';
+          _lctx.fillText(detail.slice(0,32), sc.x, ly + ph + sub * 2 + 5);
+        }
+      }
     }
 
     // 히트 영역
