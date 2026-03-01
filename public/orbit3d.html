@@ -1867,14 +1867,14 @@
 
     <!-- 뷰 모드 -->
     <div class="ln-sep">뷰 모드</div>
-    <button class="ln-item active" id="lni-personal" onclick="setViewPersonal()">👤 개인 뷰</button>
-    <button class="ln-item" id="lni-team" onclick="loadTeamDemo()">👥 팀 뷰</button>
-    <button class="ln-item" id="lni-company" onclick="loadCompanyDemo()">🏢 회사 뷰</button>
-    <button class="ln-item" id="lni-parallel" onclick="loadParallelDemo()">⚡ AI 병렬</button>
+    <button class="ln-item active" id="lni-personal" onclick="setViewPersonal()">👤 내 화면</button>
+    <button class="ln-item" id="lni-team" onclick="loadTeamDemo()">👥 팀</button>
+    <button class="ln-item" id="lni-company" onclick="loadCompanyDemo()">🏢 전사</button>
+    <button class="ln-item" id="lni-parallel" onclick="loadParallelDemo()">⚡ AI 멀티뷰</button>
 
     <!-- 줌 깊이 표시 -->
     <div id="ln-zoom-row">
-      <span id="ln-zoom-text">👤 개인 뷰</span>
+      <span id="ln-zoom-text">👤 내 화면</span>
       <span id="ln-zoom-hint"></span>
     </div>
 
@@ -1888,7 +1888,7 @@
     <!-- 마켓 -->
     <div class="ln-sep">마켓</div>
     <button class="ln-item" onclick="toggleEffectsPanel()">✨ 이펙트 마켓</button>
-    <button class="ln-item" onclick="toggleCoreSkinPanel()">🌍 행성 스킨 마켓</button>
+    <button class="ln-item" onclick="toggleCoreSkinPanel()">🌍 스킨 마켓</button>
     <button class="ln-item" onclick="toggleTalentBoard()">📡 인재 마켓</button>
 
     <!-- 도구 -->
@@ -1896,23 +1896,23 @@
     <button class="ln-item" onclick="toggleFeatPanel()">📋 기능 목록</button>
     <button class="ln-item" onclick="toggleViewPanel()">👤 내 뷰 설정</button>
     <button class="ln-item" onclick="toggleInsightPanel()">📊 전체 인사이트</button>
-    <button class="ln-item" id="ln-purpose-btn" onclick="togglePurposeTimeline()">⚡ 목적 뷰</button>
-    <button class="ln-item" onclick="openLlmPanel()">🤖 LLM 모델 설정</button>
-    <button class="ln-item" onclick="openSetupPanel()">⚙️ 환경 설정</button>
-    <button class="ln-item" id="ln-suggest-btn" onclick="toggleSuggestionPanel()">💡 작업 제안</button>
-    <button class="ln-item" onclick="toggleMgrPanel()">👔 관리자 뷰</button>
-    <button class="ln-item" onclick="toggleTaskSidebar()">📋 내 작업</button>
-    <button class="ln-item" id="ln-orbit-btn" onclick="toggleOrbitAnim()">⏸ 공전 토글</button>
+    <button class="ln-item" id="ln-purpose-btn" onclick="togglePurposeTimeline()">⚡ 목적 타임라인</button>
+    <button class="ln-item" onclick="openLlmPanel()">🤖 AI 설정</button>
+    <button class="ln-item" onclick="openSetupPanel()">⚙️ 설정</button>
+    <button class="ln-item" id="ln-suggest-btn" onclick="toggleSuggestionPanel()">💡 AI 추천</button>
+    <button class="ln-item" onclick="toggleMgrPanel()">👔 관리자</button>
+    <button class="ln-item" onclick="toggleTaskSidebar()">📋 할 일</button>
+    <button class="ln-item" id="ln-orbit-btn" onclick="toggleOrbitAnim()">⏸ 궤도 멈춤</button>
 
     <!-- 커뮤니티 -->
     <div class="ln-sep">커뮤니티</div>
-    <button class="ln-item" id="ln-messenger-btn" onclick="toggleMessenger()">💬 메신저</button>
-    <a class="ln-item" href="/guide.html" target="_blank">📖 사용법 가이드</a>
-    <button class="ln-item" id="ln-following-btn" onclick="toggleFollowPanel()" style="display:none">👥 팔로잉</button>
+    <button class="ln-item" id="ln-messenger-btn" onclick="toggleMessenger()">💬 채팅</button>
+    <a class="ln-item" href="/guide.html" target="_blank">📖 가이드</a>
+    <button class="ln-item" id="ln-following-btn" onclick="toggleFollowPanel()" style="display:none">👥 팔로우</button>
 
     <!-- 관리 -->
     <div class="ln-sep">관리</div>
-    <a class="ln-item" href="/admin-analytics.html" target="_blank">📊 애널리틱스</a>
+    <a class="ln-item" href="/admin-analytics.html" target="_blank">📊 통계</a>
     <a class="ln-item" href="/settings.html" target="_blank">⚙️ 설정</a>
 
     <!-- 로그아웃 (로그인 시만 표시) -->
@@ -1927,7 +1927,7 @@
 <!-- ══ 메신저 패널 ══════════════════════════════════════════════════════════ -->
 <div id="messenger-panel">
   <div class="msg-hdr">
-    <span class="msg-hdr-title">💬 메신저</span>
+    <span class="msg-hdr-title">💬 채팅</span>
     <button class="msg-close-btn" onclick="toggleMessenger()">✕</button>
   </div>
   <!-- 탭: DM / 팀 / 회사 -->
@@ -1940,7 +1940,7 @@
   <div class="msg-body">
     <!-- 왼쪽: 방 목록 -->
     <div class="msg-rooms" id="msg-rooms-list">
-      <div class="msg-empty-chat" style="font-size:11px;padding:12px">로딩중…</div>
+      <div class="msg-empty-chat" style="font-size:11px;padding:12px">불러오는 중…</div>
     </div>
     <!-- 오른쪽: 채팅 뷰 -->
     <div class="msg-chat">
@@ -1997,7 +1997,7 @@
 <!-- ⚡ AI 인사이트 패널 -->
 <div id="insight-panel">
   <div class="ins-hdr">
-    <span class="ins-title">⚡ 현재 AI 작업</span>
+    <span class="ins-title">⚡ AI 현황</span>
     <div style="display:flex;gap:6px">
       <button class="ins-refresh-btn" onclick="renderInsightPanel()" title="새로고침">↺</button>
       <button class="ins-close-btn"   onclick="toggleInsightPanel()">✕</button>
@@ -2014,7 +2014,7 @@
   <!-- 탭 패널: 실시간 피드 -->
   <div id="ins-pane-feed" style="display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden;">
     <div id="ins-feed-list" class="ins-feed-list"></div>
-    <div id="ins-feed-meta" class="ins-feed-meta">로딩 중…</div>
+    <div id="ins-feed-meta" class="ins-feed-meta">불러오는 중…</div>
   </div>
 
   <!-- 탭 패널: 목적 카드 -->
@@ -2031,10 +2031,10 @@
   </div>
 </div>
 
-<!-- 💡 작업 제안 패널 -->
+<!-- 💡 AI 추천 패널 -->
 <div id="suggestion-panel">
   <div class="sg-hdr">
-    <span class="sg-title">💡 작업 제안</span>
+    <span class="sg-title">💡 AI 추천</span>
     <div class="sg-hdr-btns">
       <button class="sg-btn-icon" onclick="loadSuggestions()" title="새로고침">↺</button>
       <button class="sg-btn-icon" onclick="toggleSuggestionPanel()">✕</button>
@@ -2044,18 +2044,18 @@
   <div style="display:flex;gap:4px;padding:6px 10px 0;border-bottom:1px solid #21262d">
     <button id="sg-tab-suggest" onclick="switchSgTab('suggest')"
       style="flex:1;background:#21262d;border:none;color:#cdd9e5;font-size:10px;padding:4px;border-radius:4px;cursor:pointer">
-      💡 제안·솔루션
+      💡 추천·솔루션
     </button>
     <button id="sg-tab-trigger" onclick="switchSgTab('trigger')"
       style="flex:1;background:transparent;border:none;color:#6e7681;font-size:10px;padding:4px;border-radius:4px;cursor:pointer">
-      🔍 이슈 트리거
+      🔍 이슈 패턴
     </button>
   </div>
 
   <!-- 제안·솔루션 탭 -->
   <div id="sg-panel-suggest">
     <div class="sg-list" id="sg-list">
-      <div class="sg-empty">로딩 중…</div>
+      <div class="sg-empty">불러오는 중…</div>
     </div>
   </div>
 
@@ -2081,7 +2081,7 @@
     <!-- 학습된 트리거 목록 -->
     <div style="padding:8px 10px;overflow-y:auto;flex:1" id="sg-trigger-list">
       <div style="font-size:11px;color:#6e7681;text-align:center;padding:16px 0">
-        로딩 중…
+        불러오는 중…
       </div>
     </div>
   </div>
@@ -2092,11 +2092,11 @@
 <!-- 🤖 LLM 설정 패널 -->
 <div id="llm-panel">
   <div class="lp-hdr">
-    <span class="lp-title">🤖 LLM 모델 설정</span>
+    <span class="lp-title">🤖 AI 설정</span>
     <button class="lp-close" onclick="closeLlmPanel()">✕</button>
   </div>
   <div class="lp-body" id="lp-body">
-    <div style="padding:24px;text-align:center;color:#6e7681;font-size:12px;">로딩 중…</div>
+    <div style="padding:24px;text-align:center;color:#6e7681;font-size:12px;">불러오는 중…</div>
   </div>
 </div>
 
@@ -2120,11 +2120,11 @@
 <!-- ⚙️ 환경설정 / 온보딩 패널 -->
 <div id="setup-panel">
   <div class="sp-hdr">
-    <span class="sp-title">⚙️ 환경 설정</span>
+    <span class="sp-title">⚙️ 설정</span>
     <button class="sp-close" onclick="closeSetupPanel()">✕</button>
   </div>
   <div class="sp-body" id="sp-body">
-    <div style="padding:24px;text-align:center;color:#6e7681;font-size:12px;">환경 감지 중…</div>
+    <div style="padding:24px;text-align:center;color:#6e7681;font-size:12px;">설정 불러오는 중…</div>
   </div>
 </div>
 
@@ -2158,7 +2158,7 @@
     <div class="fp-tab"       id="fp-tab-ers"   onclick="switchFollowTab('followers')">팔로워</div>
   </div>
   <div class="fp-list" id="fp-list-area">
-    <div class="fp-empty">로딩 중...</div>
+    <div class="fp-empty">불러오는 중…</div>
   </div>
 </div>
 
@@ -2185,10 +2185,10 @@
 <div id="profile-prompt-modal">
   <div class="ppm-box">
     <div class="ppm-emoji">👤</div>
-    <div class="ppm-title">내 프로필을 등록해볼까요?</div>
-    <div class="ppm-sub">직함, 스킬, 경력을 등록하면<br>팀원들이 나를 더 잘 알 수 있어요.</div>
+    <div class="ppm-title">프로필을 완성해보세요</div>
+    <div class="ppm-sub">직함, 스킬, 경력을 입력하면<br>팀원들이 나를 더 잘 알 수 있어요.</div>
     <div class="ppm-btns">
-      <button class="ppm-btn-setup" onclick="openProfileEditModal()">✏️ 지금 등록하기</button>
+      <button class="ppm-btn-setup" onclick="openProfileEditModal()">✏️ 프로필 작성</button>
       <button class="ppm-btn-skip" onclick="skipProfilePrompt()">나중에</button>
     </div>
   </div>
@@ -2310,8 +2310,8 @@
     <button class="tm-exit" onclick="exitTeamMode()">← 실제 데이터</button>
   </div>
   <div id="parallel-mode-badge" style="display:none;align-items:center;gap:10px;background:rgba(13,17,23,0.92);border:1px solid #bc8cff;border-radius:12px;padding:8px 14px;backdrop-filter:blur(12px);">
-    <span class="tm-label" style="color:#bc8cff">⚡ AI 병렬 작업</span>
-    <button class="tm-exit" onclick="exitParallelMode()">← 개인 뷰</button>
+    <span class="tm-label" style="color:#bc8cff">⚡ AI 멀티뷰</span>
+    <button class="tm-exit" onclick="exitParallelMode()">← 내 화면</button>
   </div>
 </div>
 
@@ -2546,19 +2546,19 @@
     <button class="lm-close" onclick="closeLoginModal()">✕</button>
     <!-- 비로그인 상태 -->
     <div id="lm-auth-view">
-      <div class="lm-title">⬡ Orbit AI 로그인</div>
-      <div class="lm-sub">계정으로 작업 데이터를 동기화하세요</div>
+      <div class="lm-title">⬡ Orbit 로그인</div>
+      <div class="lm-sub">로그인하면 작업 데이터가 자동으로 저장됩니다</div>
 
       <!-- 소셜 로그인 -->
       <div id="lm-google-btn-wrap">
         <button class="lm-oauth-btn" id="lm-google-btn" onclick="oauthLogin('google')">
           <svg width="16" height="16" viewBox="0 0 24 24"><path fill="#EA4335" d="M5.26 9.77A7.51 7.51 0 0 1 12 4.5c1.86 0 3.55.68 4.85 1.79l3.61-3.61A12 12 0 0 0 0 12c0 1.99.49 3.87 1.35 5.52l3.91-3.75Z"/><path fill="#34A853" d="M12 19.5c2.58 0 4.75-.85 6.33-2.31l-3.73-3.13c-1 .67-2.26 1.06-3.6 1.06a7.51 7.51 0 0 1-7.1-5.12L1.35 13.48A12 12 0 0 0 12 19.5Z"/><path fill="#4A90D9" d="M22.65 12.27c0-.88-.08-1.54-.21-2.21H12v4.19h5.97c-.26 1.32-1.03 2.44-2.21 3.19l3.73 3.13c2.18-2 3.16-4.98 3.16-8.3Z"/><path fill="#FBBC05" d="M4.9 14.5A7.5 7.5 0 0 1 4.5 12c0-.87.15-1.72.4-2.51L1.35 5.48A12 12 0 0 0 0 12c0 1.99.49 3.87 1.35 5.52l3.55-3.02Z"/></svg>
-          Google로 로그인
+          Google로 계속하기
         </button>
       </div>
       <button class="lm-oauth-btn" onclick="oauthLogin('github')">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.44 9.8 8.2 11.38.6.11.82-.26.82-.58v-2.03c-3.34.73-4.04-1.6-4.04-1.6-.54-1.38-1.33-1.75-1.33-1.75-1.08-.74.08-.73.08-.73 1.2.09 1.83 1.23 1.83 1.23 1.07 1.83 2.8 1.3 3.48 1 .11-.78.42-1.3.76-1.6-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.13-.3-.54-1.52.12-3.18 0 0 1.01-.32 3.3 1.23a11.5 11.5 0 0 1 6 0c2.28-1.55 3.29-1.23 3.29-1.23.66 1.66.25 2.88.12 3.18.77.84 1.24 1.91 1.24 3.22 0 4.61-2.81 5.63-5.48 5.92.43.37.81 1.1.81 2.22v3.29c0 .32.21.7.82.58C20.56 21.8 24 17.3 24 12c0-6.63-5.37-12-12-12z"/></svg>
-        GitHub로 로그인
+        GitHub로 계속하기
       </button>
 
       <div class="lm-divider">또는 이메일</div>
@@ -2638,9 +2638,9 @@
     <div class="vp-section">🔭 보기 범위</div>
     <div class="vp-presets" id="vp-presets">
       <button class="vp-preset active" onclick="setNodeFilter('all',this)">전체</button>
-      <button class="vp-preset" onclick="setNodeFilter('mine',this)">내 작업</button>
-      <button class="vp-preset" onclick="setNodeFilter('team',this)">팀만</button>
-      <button class="vp-preset" onclick="setNodeFilter('company',this)">회사만</button>
+      <button class="vp-preset" onclick="setNodeFilter('mine',this)">내 할 일</button>
+      <button class="vp-preset" onclick="setNodeFilter('team',this)">팀</button>
+      <button class="vp-preset" onclick="setNodeFilter('company',this)">전사</button>
     </div>
     <div class="vp-section" style="margin-top:8px;font-size:10px;opacity:.7">커스텀 그룹</div>
     <div class="vp-group-list" id="vp-group-list"><!-- JS 동적 생성 --></div>
@@ -2686,10 +2686,10 @@
 </div>
 
 <!-- 내 작업 사이드바 -->
-<button id="task-sidebar-btn" onclick="toggleTaskSidebar()">📋 내 작업</button>
+<button id="task-sidebar-btn" onclick="toggleTaskSidebar()">📋 할 일</button>
 <div id="my-task-sidebar">
   <div class="mts-header">
-    <div class="mts-title">📋 내 작업 목록</div>
+    <div class="mts-title">📋 할 일 목록</div>
     <select class="mts-member-sel" id="mts-member-sel" onchange="setMyMember(this.value)">
       <option value="">-- 나는 누구? 선택 --</option>
     </select>
@@ -2704,10 +2704,10 @@
 <div id="skill-toast-stack"></div>
 
 <!-- 관리자 맞춤 뷰 버튼 + 패널 -->
-<button id="mgr-btn" onclick="toggleMgrPanel()">👔 관리자 뷰</button>
+<button id="mgr-btn" onclick="toggleMgrPanel()">👔 관리자</button>
 <div id="mgr-panel">
   <div class="mgr-header">
-    <span class="mgr-title">👔 관리자 맞춤 뷰</span>
+    <span class="mgr-title">👔 관리자 뷰</span>
     <button class="mgr-close" onclick="toggleMgrPanel()">✕</button>
   </div>
 
@@ -2738,7 +2738,7 @@
   </div>
 
   <!-- AI 봇 -->
-  <div class="mgr-section">AI 봇에게 물어보기</div>
+  <div class="mgr-section">AI에게 물어보기</div>
   <div class="mgr-bot-bar">
     <input class="mgr-bot-input" id="mgr-bot-input"
       placeholder="예: 이번주 마감 임박한 사람 보여줘"
@@ -6832,7 +6832,7 @@ async function loadPurposeTimeline() {
   const metaEl    = document.getElementById('pt-meta-label');
   const sessId    = document.getElementById('pt-sess-sel')?.value || '';
 
-  container.innerHTML = '<div class="pt-empty-msg">로딩 중…</div>';
+  container.innerHTML = '<div class="pt-empty-msg">불러오는 중…</div>';
   try {
     const qs  = sessId ? `&session_id=${encodeURIComponent(sessId)}` : '';
     const r   = await fetch(`/api/purposes/timeline?limit=60${qs}`);
@@ -6988,7 +6988,7 @@ function ptRollback(idx, ev) {
 window.ptRollback = ptRollback;
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 💡 작업 제안 패널
+// 💡 AI 추천 패널
 // ═══════════════════════════════════════════════════════════════════════════════
 
 let _sgOpen = false;
@@ -7021,11 +7021,11 @@ window.switchSgTab = switchSgTab;
 
 // ── 행동 이상 신호 카드 렌더 ─────────────────────────────────────────────────
 const SIGNAL_META = {
-  wpm_spike:       { icon:'⚡', label:'타이핑 속도 급등',   color:'#f85149', bg:'rgba(248,81,73,.08)'  },
-  messaging_burst: { icon:'💬', label:'메시징 집중 급증',   color:'#ff9500', bg:'rgba(255,149,0,.08)'  },
-  night_anomaly:   { icon:'🌙', label:'야간 이상 활동',     color:'#bc78de', bg:'rgba(188,120,222,.08)' },
-  short_burst_chat:{ icon:'🔥', label:'급박한 단답 대화',   color:'#f85149', bg:'rgba(248,81,73,.08)'  },
-  app_storm:       { icon:'🌀', label:'앱 전환 폭풍',       color:'#ff9500', bg:'rgba(255,149,0,.08)'  },
+  wpm_spike:       { icon:'⚡', label:'타이핑 속도 이상',   color:'#f85149', bg:'rgba(248,81,73,.08)'  },
+  messaging_burst: { icon:'💬', label:'메시지 집중 급증',   color:'#ff9500', bg:'rgba(255,149,0,.08)'  },
+  night_anomaly:   { icon:'🌙', label:'야간 활동 감지',     color:'#bc78de', bg:'rgba(188,120,222,.08)' },
+  short_burst_chat:{ icon:'🔥', label:'급박 메시지 감지',   color:'#f85149', bg:'rgba(248,81,73,.08)'  },
+  app_storm:       { icon:'🌀', label:'앱 전환 급증',       color:'#ff9500', bg:'rgba(255,149,0,.08)'  },
 };
 const SEV_LABEL = { high:'🔴 긴급', medium:'🟠 주의', low:'🟡 참고' };
 
@@ -7115,7 +7115,7 @@ async function loadSuggestions() {
   const list   = document.getElementById('sg-list');
   const footer = document.getElementById('sg-footer');
   if (!list) return;
-  list.innerHTML = '<div class="sg-empty">로딩 중…</div>';
+  list.innerHTML = '<div class="sg-empty">불러오는 중…</div>';
 
   try {
     // 병렬 fetch: 행동신호 + 클라우드 무료솔루션 + 로컬 학습 데이터
@@ -7482,7 +7482,7 @@ window.closeLlmPanel = closeLlmPanel;
 
 async function renderLlmPanel() {
   const body = document.getElementById('lp-body');
-  body.innerHTML = `<div style="padding:24px;text-align:center;color:#6e7681;font-size:12px;">로딩 중…</div>`;
+  body.innerHTML = `<div style="padding:24px;text-align:center;color:#6e7681;font-size:12px;">불러오는 중…</div>`;
 
   try {
     const [provResp, ollamaResp] = await Promise.all([
@@ -7708,7 +7708,7 @@ window.closeSetupPanel = closeSetupPanel;
 
 async function renderSetupPanel() {
   const body = document.getElementById('sp-body');
-  body.innerHTML = `<div style="padding:24px;text-align:center;color:#6e7681;font-size:12px;">환경 감지 중…</div>`;
+  body.innerHTML = `<div style="padding:24px;text-align:center;color:#6e7681;font-size:12px;">설정 불러오는 중…</div>`;
 
   let status;
   try {
@@ -7748,7 +7748,7 @@ async function renderSetupPanel() {
     <p style="font-size:11px;color:#8b949e;margin-bottom:8px;">
       아래 스크립트를 터미널에 붙여넣으면 Ollama 설치 + Claude 훅 등록이 한 번에 완료됩니다.
     </p>
-    <div id="sp-script-box" class="sp-script-box">로딩 중…</div>
+    <div id="sp-script-box" class="sp-script-box">불러오는 중…</div>
     <button class="sp-btn sp-btn-outline" onclick="copySetupScript()">📋 스크립트 복사</button>
     <button class="sp-btn sp-btn-primary" onclick="registerHookOnly()" style="margin-top:2px">
       🔗 Claude 훅만 등록 (Ollama 이미 설치됨)
@@ -7798,7 +7798,7 @@ async function renderSetupPanel() {
     <div class="sp-section">🔌 Claude 연동</div>
     ${trackSection}
 
-    <div class="sp-section" style="margin-top:12px">🧠 나를 돕는 AI 학습</div>
+    <div class="sp-section" style="margin-top:12px">🧠 AI 개인 학습</div>
     <div id="sp-personal-section">
       <div style="color:#6e7681;font-size:11px;margin-bottom:8px;line-height:1.7">
         내 업무 <b style="color:#cdd9e5">패턴</b>을 로컬 AI가 학습해 <b style="color:#3fb950">나만을 위한 제안</b>을 만듭니다.<br>
@@ -7836,20 +7836,20 @@ async function renderSetupPanel() {
         </div>
       </div>
       <div id="sp-personal-stats" style="margin-top:10px;background:#0d1117;border-radius:8px;padding:8px 10px;font-size:11px;color:#8b949e;line-height:1.7">
-        통계 로딩 중…
+        통계 불러오는 중…
       </div>
       <button class="sp-btn" style="margin-top:8px;background:#1f6feb;border-color:#1f6feb;font-size:11px"
         onclick="startPersonalAgent()">▶ 데몬 시작 (orbit learn start)</button>
     </div>
 
-    <div class="sp-section" style="margin-top:12px">🧠 AI 학습 공유</div>
+    <div class="sp-section" style="margin-top:12px">🧠 학습 공유 설정</div>
     <div id="sp-sync-section">
       <div style="font-size:11px;color:#6e7681;margin-bottom:8px;line-height:1.8">
         내 업무 원본은 <b style="color:#cdd9e5">절대 전송되지 않습니다.</b><br>
         <span style="color:#3fb950">✓ 로컬에서 학습한 패턴 인사이트만 공유</span><br>
         <span style="color:#3fb950">✓ 공유된 인사이트로 모든 사용자에게 무료 솔루션 제공</span>
       </div>
-      <div id="sp-sync-status" style="font-size:11px;color:#8b949e;margin-bottom:8px">확인 중…</div>
+      <div id="sp-sync-status" style="font-size:11px;color:#8b949e;margin-bottom:8px">불러오는 중…</div>
 
       <div style="display:flex;flex-direction:column;gap:5px">
         <button class="sp-btn" id="sp-sync-btn-1"
@@ -9741,7 +9741,7 @@ function saveZoomPref(mode, val) {
 function applyModeZoom(mode) {
   const r = _viewPrefs.zoom[mode] || { personal: 22, team: 70, company: 100 }[mode];
   if (typeof lerpCameraTo === 'function') lerpCameraTo(r, 0, 0, 0, 800);
-  const labels = { personal: '개인 뷰', team: '팀 뷰', company: '회사 뷰' };
+  const labels = { personal: '내 화면', team: '팀', company: '전사' };
   showApplyEffect(`배율 적용: ${labels[mode] || mode} r=${r}`);
 }
 
@@ -9815,7 +9815,7 @@ function renderActiveFilter() {
   if (!el) return;
   const f = _nodeFilter;
   if (f.type === 'all') { el.innerHTML = ''; return; }
-  const labels = { mine: '내 작업만', team: '팀 전체', company: '회사 전체',
+  const labels = { mine: '내 할 일만', team: '팀 전체', company: '회사 전체',
     depts: `부서: ${(f.deptIds||[]).join(', ')}`, members: `멤버: ${(f.memberIds||[]).join(', ')}` };
   el.innerHTML = `<span class="vp-filter-tag">${labels[f.type] || f.type} <button onclick="clearNodeFilter()" style="background:none;border:none;color:#ef4444;cursor:pointer;padding:0 2px;">✕</button></span>`;
 }
@@ -9870,7 +9870,7 @@ function applyAIFilter() {
   renderActiveFilter();
   rebuildScene();
   const filterDesc = filter.type === 'all' ? '전체 보기'
-    : filter.type === 'mine' ? '내 작업만'
+    : filter.type === 'mine' ? '내 할 일만'
     : filter.type === 'depts' ? `부서 필터 (${filter.deptIds?.length || 0}개)`
     : filter.type === 'members' ? `멤버 필터 (${filter.memberIds?.length || 0}명)`
     : filter.type;
@@ -10479,9 +10479,9 @@ function updateZoomLOD() {
   if (!r) return;
 
   // 뷰 모드 라벨
-  const modeLabel = (typeof _parallelMode !== 'undefined' && _parallelMode) ? '⚡ AI 병렬' :
-                    (typeof _companyMode  !== 'undefined' && _companyMode)  ? '🏢 회사 뷰' :
-                    (typeof _teamMode     !== 'undefined' && _teamMode)     ? '👥 팀 뷰'   : '👤 개인 뷰';
+  const modeLabel = (typeof _parallelMode !== 'undefined' && _parallelMode) ? '⚡ AI 멀티뷰' :
+                    (typeof _companyMode  !== 'undefined' && _companyMode)  ? '🏢 전사' :
+                    (typeof _teamMode     !== 'undefined' && _teamMode)     ? '👥 팀'   : '👤 내 화면';
 
   const ztEl = document.getElementById('ln-zoom-text');
   const zhEl = document.getElementById('ln-zoom-hint');
@@ -10496,10 +10496,10 @@ function updateZoomLOD() {
                       !(typeof _parallelMode !== 'undefined' && _parallelMode);
 
     if (inPersonal && r > 120) {
-      zhEl.textContent = '🔍 줌아웃 → 팀 뷰 전환';
+      zhEl.textContent = '🔍 줌아웃 → 팀 전환';
       zhEl.onclick = () => loadTeamDemo();
     } else if (inTeam && r > 90) {
-      zhEl.textContent = '🔍 줌아웃 → 회사 뷰 전환';
+      zhEl.textContent = '🔍 줌아웃 → 전사 전환';
       zhEl.onclick = () => loadCompanyDemo();
     } else if (inTeam && (typeof _focusedMember !== 'undefined') && _focusedMember && r < 8) {
       zhEl.textContent = '🔎 작업 상세 표시 중';
@@ -10517,7 +10517,7 @@ function updateZoomLOD() {
       clearTimeout(_zoomLodTimer);
       _zoomLodTimer = setTimeout(() => {
         if (controls.sph.r > 145 && !(typeof _teamMode !== 'undefined' && _teamMode)) {
-          showSwitchToast('👥 팀 뷰로 전환할까요?', () => loadTeamDemo());
+          showSwitchToast('👥 팀 화면으로 전환할까요?', () => loadTeamDemo());
         }
       }, 1800);
     } else if (inPersonal && r <= 145) {
@@ -10528,7 +10528,7 @@ function updateZoomLOD() {
       clearTimeout(_zoomLodTimer);
       _zoomLodTimer = setTimeout(() => {
         if (controls.sph.r > 95 && (typeof _teamMode !== 'undefined' && _teamMode)) {
-          showSwitchToast('🏢 회사 뷰로 전환할까요?', () => loadCompanyDemo());
+          showSwitchToast('🏢 전사 화면으로 전환할까요?', () => loadCompanyDemo());
         }
       }, 1800);
     } else if (inTeam && r <= 90) {
@@ -10539,7 +10539,7 @@ function updateZoomLOD() {
       clearTimeout(_zoomLodTimer);
       _zoomLodTimer = setTimeout(() => {
         if (controls.sph.r < 80 && (typeof _companyMode !== 'undefined' && _companyMode)) {
-          showSwitchToast('👥 팀 뷰로 돌아갈까요?', () => { exitTeamMode(); setTimeout(loadTeamDemo, 100); });
+          showSwitchToast('👥 팀 화면으로 돌아갈까요?', () => { exitTeamMode(); setTimeout(loadTeamDemo, 100); });
         }
       }, 1800);
     } else if (inCompany && r >= 80) {
@@ -10593,7 +10593,7 @@ function showMemberDetail(member) {
       <button class="mdp-close" onclick="hideMemberDetail()">✕</button>
     </div>
     ${taskHtml}
-    <div class="mdp-hint">줌아웃하면 팀 뷰로 돌아갑니다</div>
+    <div class="mdp-hint">줌아웃하면 팀 화면으로 돌아갑니다</div>
   `;
   panel.classList.add('open');
 }
@@ -11051,7 +11051,7 @@ function resetChatView() {
 async function loadMsgRooms(tab) {
   const listEl = document.getElementById('msg-rooms-list');
   if (!listEl) return;
-  listEl.innerHTML = '<div class="msg-empty-chat" style="font-size:11px">로딩 중…</div>';
+  listEl.innerHTML = '<div class="msg-empty-chat" style="font-size:11px">불러오는 중…</div>';
   const token = _msgToken();
   if (!token) return;
   try {
@@ -11139,7 +11139,7 @@ async function openMsgRoom(roomId, name) {
   document.getElementById('msg-chat-name').textContent = name;
   document.getElementById('msg-input-wrap').style.display = 'flex';
   document.getElementById('msg-messages-area').innerHTML =
-    '<div class="msg-empty-chat" style="font-size:11px">로딩 중…</div>';
+    '<div class="msg-empty-chat" style="font-size:11px">불러오는 중…</div>';
 
   // WS 채팅 방 구독
   _subscribeWsChatRoom(roomId);
@@ -11429,7 +11429,7 @@ window.switchFollowTab = switchFollowTab;
 async function loadFollowList(tab) {
   const listEl = document.getElementById('fp-list-area');
   if (!listEl) return;
-  listEl.innerHTML = '<div class="fp-empty">로딩 중...</div>';
+  listEl.innerHTML = '<div class="fp-empty">불러오는 중…</div>';
   if (!_orbitUser) { listEl.innerHTML = '<div class="fp-empty">로그인 후 이용하세요</div>'; return; }
   const token = _orbitUser.token || localStorage.getItem('orbitToken');
   const url   = tab === 'followers' ? '/api/follow/followers' : '/api/follow/list';
