@@ -309,6 +309,91 @@ ${BOLD}하네스 단축 명령 (CLAUDE.md 설정 후):${RESET}
 `);
 }
 
+// ─── orbit learn ───────────────────────────────────
+const PID_DIR  = ORBIT_DIR;
+const PID_FILE = path.join(PID_DIR, 'personal-agent.pid');
+const DAEMON   = path.resolve(__dirname, '../daemon/personal-agent.js');
+
+function cmdLearn(subArgs) {
+  const sub  = subArgs[0];
+  const port = loadConfig().port || DEFAULT_PORT;
+
+  if (sub === 'start') {
+    // 이미 실행 중인지 확인
+    if (fs.existsSync(PID_FILE)) {
+      const pid = fs.readFileSync(PID_FILE, 'utf-8').trim();
+      try {
+        process.kill(parseInt(pid), 0); // 존재하면 예외 없음
+        warn(`개인 학습 에이전트 이미 실행 중 (PID: ${pid})`);
+        return;
+      } catch { /* 종료됨 — PID 파일 오래된 것 */ }
+    }
+
+    if (!fs.existsSync(DAEMON)) {
+      err(`daemon/personal-agent.js 를 찾을 수 없습니다: ${DAEMON}`);
+      return;
+    }
+
+    const child = spawn('node', [DAEMON, '--port', String(port)], {
+      detached: true,
+      stdio:    'ignore',
+    });
+    child.unref();
+    ok(`개인 학습 에이전트 시작 (PID: ${child.pid})`);
+    log('  ⌨️  키보드 캡처 · 📁 파일 학습 · 💡 30분마다 제안 생성');
+    log(`  Accessibility 권한이 필요합니다`);
+
+  } else if (sub === 'stop') {
+    if (!fs.existsSync(PID_FILE)) {
+      warn('실행 중인 에이전트가 없습니다');
+      return;
+    }
+    const pid = fs.readFileSync(PID_FILE, 'utf-8').trim();
+    try {
+      process.kill(parseInt(pid), 'SIGTERM');
+      ok(`개인 학습 에이전트 종료 (PID: ${pid})`);
+      try { fs.unlinkSync(PID_FILE); } catch {}
+    } catch {
+      warn('프로세스를 찾을 수 없습니다. PID 파일을 삭제합니다.');
+      try { fs.unlinkSync(PID_FILE); } catch {}
+    }
+
+  } else if (sub === 'status') {
+    const http = require('http');
+    const req  = http.request(
+      { hostname: '127.0.0.1', port, path: '/api/personal/status', method: 'GET' },
+      res => {
+        let d = '';
+        res.on('data', c => d += c);
+        res.on('end', () => {
+          try {
+            const s = JSON.parse(d);
+            const t = s.today || {};
+            log(`개인 학습 에이전트 상태`);
+            console.log(`  ⌨️  키보드 청크: ${t.keyboardChunks || 0}개 · ${(t.keywordChars || 0).toLocaleString()}자`);
+            console.log(`  📁 파일 처리:   ${t.fileContents || 0}개`);
+            console.log(`  🖥️  앱 활동:     ${t.appActivities || 0}회`);
+            console.log(`  💡 대기 제안:   ${s.pendingSuggestions || 0}개`);
+            console.log(`  ☁️  동기화:      ${s.syncConsented ? '켜짐' : '꺼짐 (로컬 전용)'}`);
+          } catch { err('상태 파싱 실패'); }
+        });
+      }
+    );
+    req.on('error', () => err('Orbit 서버에 연결할 수 없습니다. orbit start 먼저 실행하세요.'));
+    req.setTimeout(3000, () => { req.destroy(); err('연결 시간 초과'); });
+    req.end();
+
+  } else {
+    console.log(`
+${BOLD}orbit learn${RESET} — 개인 학습 에이전트
+
+  ${CYAN}orbit learn start${RESET}    에이전트 시작 (백그라운드)
+  ${CYAN}orbit learn stop${RESET}     에이전트 종료
+  ${CYAN}orbit learn status${RESET}   오늘 학습 통계 확인
+    `);
+  }
+}
+
 // ─── 라우팅 ────────────────────────────────────────
 const [,, cmd, ...args] = process.argv;
 switch (cmd) {
@@ -320,5 +405,6 @@ switch (cmd) {
   case 'hook':    cmdHook(args);    break;
   case 'login':   cmdLogin(args);   break;
   case 'whoami':  cmdWhoami();      break;
+  case 'learn':   cmdLearn(args);   break;
   case 'help': default: cmdHelp();  break;
 }

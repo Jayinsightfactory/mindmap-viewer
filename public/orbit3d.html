@@ -1798,6 +1798,53 @@
   .pt-empty-msg { color:#6e7681; font-size:12px; text-align:center;
     padding:40px; align-self:center; }
   #ln-purpose-btn.active { color:#58a6ff; }
+  #ln-suggest-btn.active { color:#f0c040; }
+
+  /* ── 작업 제안 패널 (#suggestion-panel) ───────────────────────────────── */
+  #suggestion-panel {
+    position:fixed; right:14px; top:14px;
+    width:320px; max-height:calc(100vh - 28px);
+    background:rgba(13,17,23,0.97); border:1px solid #21262d;
+    border-radius:14px; backdrop-filter:blur(16px);
+    z-index:9250; display:none; flex-direction:column;
+    overflow:hidden; box-shadow:0 8px 40px rgba(0,0,0,.7);
+    font-family:-apple-system,'Segoe UI',sans-serif;
+  }
+  #suggestion-panel.open { display:flex; }
+  .sg-hdr { display:flex;justify-content:space-between;align-items:center;
+    padding:14px 16px 10px; border-bottom:1px solid #21262d; flex-shrink:0; }
+  .sg-title { font-size:14px;font-weight:700;color:#e6edf3; }
+  .sg-hdr-btns { display:flex;gap:6px; }
+  .sg-btn-icon { background:none;border:1px solid #30363d;color:#8b949e;
+    border-radius:6px;padding:3px 7px;cursor:pointer;font-size:12px; }
+  .sg-btn-icon:hover { border-color:#6e7681;color:#e6edf3; }
+  .sg-empty { padding:32px 20px;text-align:center;color:#6e7681;font-size:12px;line-height:1.7; }
+  .sg-list { overflow-y:auto;flex:1;padding:10px 12px; }
+  .sg-card { background:#161b22;border:1px solid #21262d;border-radius:10px;
+    padding:12px;margin-bottom:8px; }
+  .sg-card:last-child { margin-bottom:0; }
+  .sg-card-top { display:flex;align-items:center;gap:8px;margin-bottom:6px; }
+  .sg-card-pri { font-size:11px;font-weight:700;padding:2px 7px;border-radius:4px; }
+  .sg-card-pri.p5,.sg-card-pri.p4 { background:rgba(248,81,73,.15);color:#f85149; }
+  .sg-card-pri.p3 { background:rgba(255,166,87,.12);color:#ffa657; }
+  .sg-card-pri.p2,.sg-card-pri.p1 { background:rgba(88,166,255,.1);color:#58a6ff; }
+  .sg-card-type { font-size:10px;color:#6e7681;background:#21262d;
+    border-radius:4px;padding:2px 6px; }
+  .sg-card-title { font-size:12px;font-weight:700;color:#e6edf3;margin-bottom:5px; }
+  .sg-card-desc  { font-size:11px;color:#8b949e;line-height:1.5;margin-bottom:8px; }
+  .sg-card-evidence { font-size:10px;color:#6e7681;background:#0d1117;
+    border-radius:5px;padding:5px 8px;margin-bottom:8px; }
+  .sg-card-actions { display:flex;gap:6px; }
+  .sg-accept-btn { flex:1;font-size:11px;background:rgba(63,185,80,.1);
+    border:1px solid rgba(63,185,80,.3);color:#3fb950;border-radius:6px;
+    padding:5px;cursor:pointer;text-align:center;transition:background .15s; }
+  .sg-accept-btn:hover { background:rgba(63,185,80,.2); }
+  .sg-dismiss-btn { flex:1;font-size:11px;background:rgba(110,118,129,.08);
+    border:1px solid rgba(110,118,129,.25);color:#6e7681;border-radius:6px;
+    padding:5px;cursor:pointer;text-align:center;transition:background .15s; }
+  .sg-dismiss-btn:hover { background:rgba(110,118,129,.15);color:#cdd9e5; }
+  .sg-footer { padding:8px 12px;border-top:1px solid #21262d;flex-shrink:0;
+    font-size:10px;color:#6e7681;text-align:center; }
 
   </style>
 </head>
@@ -1852,6 +1899,7 @@
     <button class="ln-item" id="ln-purpose-btn" onclick="togglePurposeTimeline()">⚡ 목적 뷰</button>
     <button class="ln-item" onclick="openLlmPanel()">🤖 LLM 모델 설정</button>
     <button class="ln-item" onclick="openSetupPanel()">⚙️ 환경 설정</button>
+    <button class="ln-item" id="ln-suggest-btn" onclick="toggleSuggestionPanel()">💡 작업 제안</button>
     <button class="ln-item" onclick="toggleMgrPanel()">👔 관리자 뷰</button>
     <button class="ln-item" onclick="toggleTaskSidebar()">📋 내 작업</button>
     <button class="ln-item" id="ln-orbit-btn" onclick="toggleOrbitAnim()">⏸ 공전 토글</button>
@@ -1981,6 +2029,21 @@
     <div class="ins-section-title">🎯 인사이트</div>
     <div id="ins-kv-list"  class="ins-kv-list"></div>
   </div>
+</div>
+
+<!-- 💡 작업 제안 패널 -->
+<div id="suggestion-panel">
+  <div class="sg-hdr">
+    <span class="sg-title">💡 작업 제안</span>
+    <div class="sg-hdr-btns">
+      <button class="sg-btn-icon" onclick="loadSuggestions()" title="새로고침">↺</button>
+      <button class="sg-btn-icon" onclick="toggleSuggestionPanel()">✕</button>
+    </div>
+  </div>
+  <div class="sg-list" id="sg-list">
+    <div class="sg-empty">로딩 중…</div>
+  </div>
+  <div class="sg-footer" id="sg-footer"></div>
 </div>
 
 <!-- 🤖 LLM 설정 패널 -->
@@ -6296,7 +6359,8 @@ resizeLabelCanvas();
 // DOM 준비 후 초기 렌더 영역 적용
 window.addEventListener('DOMContentLoaded', () => {
   resizeRendererToSidebar();
-  initClaudeStatusBadge(); // Claude 트래킹 배지 초기화
+  initClaudeStatusBadge();     // Claude 트래킹 배지 초기화
+  _loadPersonalStats();        // 개인 학습 통계 초기화
 }, { once: true });
 setTimeout(resizeRendererToSidebar, 100); // fallback
 
@@ -6881,6 +6945,181 @@ function ptRollback(idx, ev) {
 window.ptRollback = ptRollback;
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// 💡 작업 제안 패널
+// ═══════════════════════════════════════════════════════════════════════════════
+
+let _sgOpen = false;
+
+function toggleSuggestionPanel() {
+  const panel = document.getElementById('suggestion-panel');
+  const btn   = document.getElementById('ln-suggest-btn');
+  _sgOpen = !_sgOpen;
+  panel.classList.toggle('open', _sgOpen);
+  btn?.classList.toggle('active', _sgOpen);
+  document.getElementById('insight-panel')?.classList.remove('open');
+  document.getElementById('info-panel')?.classList.remove('open');
+  if (_sgOpen) loadSuggestions();
+}
+window.toggleSuggestionPanel = toggleSuggestionPanel;
+
+async function loadSuggestions() {
+  const list   = document.getElementById('sg-list');
+  const footer = document.getElementById('sg-footer');
+  if (!list) return;
+  list.innerHTML = '<div class="sg-empty">로딩 중…</div>';
+  try {
+    const r    = await fetch('/api/personal/suggestions?limit=30');
+    const data = await r.json();
+    const sugs = data.suggestions || [];
+    if (footer) footer.textContent = `총 ${sugs.length}개 제안`;
+    if (!sugs.length) {
+      list.innerHTML = `<div class="sg-empty">
+        아직 제안이 없습니다.<br><br>
+        <span style="font-size:10px">orbit learn start 실행 후<br>
+        데이터가 쌓이면 자동으로 분석됩니다</span>
+      </div>`;
+      return;
+    }
+    const TYPE_LABEL = {
+      automation:'⚙️ 자동화', template:'📝 템플릿',
+      shortcut:'⌨️ 단축키', review:'🔍 검토', consolidation:'🔗 통합',
+    };
+    const PRI_LABEL = { 5:'🔴 긴급', 4:'🟠 높음', 3:'🟡 보통', 2:'🔵 낮음', 1:'⚪ 참고' };
+    list.innerHTML = sugs.map(s => {
+      const evidence = Array.isArray(s.evidence) ? s.evidence : [];
+      const evText   = evidence.map(ev => {
+        if (ev.type === 'file_access')   return `📁 ${(ev.path||'').split('/').pop()} · ${ev.count}회`;
+        if (ev.type === 'repeat_typing') return `⌨️ 반복 입력 ${ev.count}회`;
+        if (ev.type === 'app_switch')    return `🔄 ${ev.pair} · ${ev.count}회`;
+        if (ev.type === 'long_session')  return `⏱ ${Math.round((ev.durationMin||0)/60*10)/10}시간`;
+        return '';
+      }).filter(Boolean).join(' · ');
+
+      return `<div class="sg-card" id="sg-card-${escHtml(s.id)}">
+        <div class="sg-card-top">
+          <span class="sg-card-pri p${s.priority||3}">${PRI_LABEL[s.priority||3]||'보통'}</span>
+          <span class="sg-card-type">${TYPE_LABEL[s.type]||s.type}</span>
+        </div>
+        <div class="sg-card-title">${escHtml(s.title)}</div>
+        <div class="sg-card-desc">${escHtml(s.description||'')}</div>
+        ${evText ? `<div class="sg-card-evidence">${escHtml(evText)}</div>` : ''}
+        <div class="sg-card-actions">
+          <button class="sg-accept-btn"  onclick="respondSuggestion('${escHtml(s.id)}','accept')">✓ 수락</button>
+          <button class="sg-dismiss-btn" onclick="respondSuggestion('${escHtml(s.id)}','dismiss')">✕ 무시</button>
+        </div>
+      </div>`;
+    }).join('');
+  } catch (e) {
+    list.innerHTML = `<div class="sg-empty">❌ ${escHtml(e.message)}</div>`;
+  }
+}
+window.loadSuggestions = loadSuggestions;
+
+async function respondSuggestion(id, action) {
+  try {
+    await fetch(`/api/personal/suggestions/${encodeURIComponent(id)}/${action}`, { method: 'POST' });
+    const card = document.getElementById(`sg-card-${id}`);
+    if (card) {
+      card.style.opacity = '0.4';
+      card.style.pointerEvents = 'none';
+      setTimeout(() => { card.remove(); }, 600);
+    }
+    showToast(action === 'accept' ? '✅ 제안 수락됨' : '제안 무시됨');
+  } catch (e) { showToast(`❌ ${e.message}`); }
+}
+window.respondSuggestion = respondSuggestion;
+
+// ── 개인 학습 토글 ────────────────────────────────────────────────────────────
+const _plState = { keyboard: true, file: true, app: true };
+
+async function togglePersonalLearning(type) {
+  _plState[type] = !_plState[type];
+  try {
+    const body = {};
+    if (type === 'keyboard') body.keyboard    = _plState.keyboard;
+    if (type === 'file')     body.fileWatcher = _plState.file;
+    if (type === 'app')      body.appMonitor  = _plState.app;
+    await fetch('/api/personal/toggle', { method:'POST',
+      headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    _updatePersonalToggles();
+  } catch {}
+}
+window.togglePersonalLearning = togglePersonalLearning;
+
+function _updatePersonalToggles() {
+  const labels = { keyboard: 'sp-toggle-keyboard', file: 'sp-toggle-file', app: 'sp-toggle-app' };
+  for (const [key, btnId] of Object.entries(labels)) {
+    const btn = document.getElementById(btnId);
+    if (!btn) continue;
+    btn.textContent = _plState[key] ? 'ON ●' : 'OFF ○';
+    btn.style.color = _plState[key] ? '#3fb950' : '#8b949e';
+  }
+}
+
+async function _loadPersonalStats() {
+  try {
+    const r    = await fetch('/api/personal/status');
+    const data = await r.json();
+    const el   = document.getElementById('sp-personal-stats');
+    if (!el) return;
+    const t = data.today || {};
+    el.innerHTML = `
+      <div>⌨️ 키보드: <strong style="color:#cdd9e5">${(t.keywordChars||0).toLocaleString()}자</strong></div>
+      <div>📁 파일: <strong style="color:#cdd9e5">${t.fileContents||0}개 처리</strong></div>
+      <div>🖥️ 앱 전환: <strong style="color:#cdd9e5">${t.appActivities||0}회</strong></div>
+      <div>💡 대기 제안: <strong style="color:#f0c040">${data.pendingSuggestions||0}개</strong></div>
+    `;
+
+    // 동기화 상태
+    const syncEl = document.getElementById('sp-sync-status');
+    if (syncEl) {
+      if (data.syncConsented) {
+        syncEl.textContent = data.lastSync
+          ? `✅ 동기화 중 · 마지막: ${relTime(data.lastSync)}`
+          : '✅ 동의됨 · 아직 동기화 없음';
+        syncEl.style.color = '#3fb950';
+      } else {
+        syncEl.textContent = '로컬 전용 모드 (동기화 꺼짐)';
+        syncEl.style.color = '#8b949e';
+      }
+    }
+    _updatePersonalToggles();
+  } catch {}
+}
+
+async function setSyncConsent(consented) {
+  try {
+    await fetch('/api/sync/consent', { method:'POST',
+      headers:{'Content-Type':'application/json'}, body: JSON.stringify({ consented }) });
+    showToast(consented ? '☁️ 클라우드 동기화 시작' : '로컬 전용으로 변경');
+    _loadPersonalStats();
+  } catch (e) { showToast(`❌ ${e.message}`); }
+}
+window.setSyncConsent = setSyncConsent;
+
+async function triggerSyncPush() {
+  try {
+    showToast('↑ 동기화 중…');
+    const r    = await fetch('/api/sync/push', { method:'POST' });
+    const data = await r.json();
+    if (data.ok) showToast(`✅ 동기화 완료: 이벤트 ${data.eventCount||0}개`);
+    else         showToast(`❌ ${data.error}`);
+    _loadPersonalStats();
+  } catch (e) { showToast(`❌ ${e.message}`); }
+}
+window.triggerSyncPush = triggerSyncPush;
+
+async function startPersonalAgent() {
+  try {
+    const r    = await fetch('/api/exec/run', { method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ command: 'node daemon/personal-agent.js &', cwd: '.', label: 'personal-agent' }) });
+    showToast('▶ 개인 학습 에이전트 시작');
+  } catch (e) { showToast(`❌ ${e.message}`); }
+}
+window.startPersonalAgent = startPersonalAgent;
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // 🤖 LLM 설정 패널
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -7115,6 +7354,7 @@ async function openSetupPanel() {
 
   document.getElementById('setup-panel').classList.add('open');
   await renderSetupPanel();
+  _loadPersonalStats(); // 개인 학습 통계 갱신
 }
 function closeSetupPanel() {
   document.getElementById('setup-panel').classList.remove('open');
@@ -7213,7 +7453,66 @@ async function renderSetupPanel() {
     ${pullSection}
     <div class="sp-section">🔌 Claude 연동</div>
     ${trackSection}
-    <button class="sp-btn sp-btn-outline" onclick="renderSetupPanel()" style="margin-top:8px">
+
+    <div class="sp-section" style="margin-top:12px">🧠 개인 학습 에이전트</div>
+    <div id="sp-personal-section">
+      <div style="color:#6e7681;font-size:11px;margin-bottom:8px">
+        타이핑·앱·파일 내용을 로컬 Ollama가 학습합니다.<br>
+        모든 데이터는 로컬에만 저장됩니다.
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px" id="sp-personal-toggles">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="font-size:12px;color:#cdd9e5">⌨️ 키보드 캡처</span>
+          <button class="sp-btn sp-btn-outline" style="padding:2px 10px;font-size:11px"
+            id="sp-toggle-keyboard" onclick="togglePersonalLearning('keyboard')">로딩중</button>
+        </div>
+        <div style="font-size:10px;color:#6e7681;padding-left:4px">
+          ⚠️ 비밀번호 앱(1Password 등) 활성 시 자동 제외<br>
+          Accessibility 권한 필요 →
+          <span style="color:#58a6ff;cursor:pointer"
+            onclick="open('x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility')">
+            설정 열기</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="font-size:12px;color:#cdd9e5">📁 파일 내용 학습</span>
+          <button class="sp-btn sp-btn-outline" style="padding:2px 10px;font-size:11px"
+            id="sp-toggle-file" onclick="togglePersonalLearning('file')">로딩중</button>
+        </div>
+        <div style="font-size:10px;color:#6e7681;padding-left:4px">
+          ~/Documents, ~/Desktop, ~/Downloads 감시<br>
+          docx · xlsx · pdf · txt · md 지원 / 청크 분할 처리
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="font-size:12px;color:#cdd9e5">🖥️ 앱 활동 추적</span>
+          <button class="sp-btn sp-btn-outline" style="padding:2px 10px;font-size:11px"
+            id="sp-toggle-app" onclick="togglePersonalLearning('app')">로딩중</button>
+        </div>
+      </div>
+      <div id="sp-personal-stats" style="margin-top:10px;background:#0d1117;border-radius:8px;padding:8px 10px;font-size:11px;color:#8b949e;line-height:1.7">
+        통계 로딩 중…
+      </div>
+      <button class="sp-btn" style="margin-top:8px;background:#1f6feb;border-color:#1f6feb;font-size:11px"
+        onclick="startPersonalAgent()">▶ 데몬 시작 (orbit learn start)</button>
+    </div>
+
+    <div class="sp-section" style="margin-top:12px">☁️ 클라우드 동기화</div>
+    <div id="sp-sync-section">
+      <div style="font-size:11px;color:#6e7681;margin-bottom:8px;line-height:1.6">
+        로그인 후 동의 시 수집 데이터가 내 Orbit 서버에도 전송됩니다.<br>
+        제안 품질이 향상되고 기기 간 공유됩니다.
+      </div>
+      <div id="sp-sync-status" style="font-size:11px;color:#8b949e;margin-bottom:8px">확인 중…</div>
+      <div style="display:flex;gap:6px">
+        <button class="sp-btn" style="flex:1;background:rgba(56,139,253,.15);border-color:#1f6feb;font-size:11px"
+          onclick="setSyncConsent(true)">동의하고 동기화 켜기</button>
+        <button class="sp-btn sp-btn-outline" style="flex:1;font-size:11px"
+          onclick="setSyncConsent(false)">로컬만 사용</button>
+      </div>
+      <button class="sp-btn sp-btn-outline" style="margin-top:6px;font-size:11px;width:100%"
+        onclick="triggerSyncPush()">↑ 지금 동기화</button>
+    </div>
+
+    <button class="sp-btn sp-btn-outline" onclick="renderSetupPanel()" style="margin-top:12px">
       ↺ 상태 새로고침
     </button>
   `;

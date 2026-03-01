@@ -131,6 +131,32 @@ function createTables() {
       tags         TEXT,
       created_at   TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS suggestions (
+      id           TEXT PRIMARY KEY,
+      type         TEXT NOT NULL,
+      priority     INTEGER DEFAULT 3,
+      title        TEXT NOT NULL,
+      description  TEXT,
+      evidence     TEXT,
+      suggestion   TEXT,
+      confidence   REAL DEFAULT 0.5,
+      status       TEXT DEFAULT 'pending',
+      created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+      responded_at DATETIME
+    );
+
+    CREATE TABLE IF NOT EXISTS sync_log (
+      id          TEXT PRIMARY KEY,
+      synced_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+      event_count INTEGER,
+      status      TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS kv_store (
+      key   TEXT PRIMARY KEY,
+      value TEXT
+    );
   `);
 
   // ─── 컬럼 마이그레이션 (기존 DB 호환) ───────────────

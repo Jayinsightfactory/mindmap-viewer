@@ -774,6 +774,14 @@ app.use('/api', createSetupRouter({ getAllEvents, getDb: dbModule.getDb, port: P
 const createPurposesRouter = require('./routes/purposes');
 app.use('/api', createPurposesRouter({ getAllEvents, getEventsBySession, getSessions }));
 
+// ─── 개인 학습 에이전트 ───────────────────────────────────────────────────────
+const createPersonalLearningRouter = require('./routes/personal-learning');
+app.use('/api', createPersonalLearningRouter({ getDb: dbModule.getDb, insertEvent, broadcastAll }));
+
+// ─── 클라우드 동기화 ──────────────────────────────────────────────────────────
+const createSyncRouter = require('./routes/sync');
+app.use('/api', createSyncRouter({ getDb: dbModule.getDb, getAllEvents }));
+
 // ─── JSONL 파일 감시 (레거시 이벤트 소스 지원) ───────────────────────────────
 // /api/hook 를 사용하지 않는 구버전 save-turn.js 호환용
 let lastBytePos = 0;
