@@ -3361,6 +3361,7 @@ function clearScene() {
   }
   planetMeshes=[]; satelliteMeshes=[]; orbitRings=[]; connections=[]; labelSprites=[];
   _nodeDataMap = {}; _hitAreas = []; _projectGroups = {};
+  _topicLinksBuilt = false; _topicLinks.length = 0;
 }
 
 function buildPlanetSystem(nodeList) {
@@ -8289,6 +8290,123 @@ function exitConstellationFocus() {
 }
 window.exitConstellationFocus = exitConstellationFocus;
 
+// ─── 토픽 유사도 기반 글로잉 연결선 ──────────────────────────────────────────
+// 로컬 키워드 분석: Ollama 없이도 의미 있는 연결 추론
+const _topicLinks = [];         // { a, b, score, color } — 행성 쌍
+let _topicLinksBuilt = false;
+
+function _tokenize(text) {
+  return (text || '').toLowerCase()
+    .replace(/[🛠🔧⚙️📝🌐🔐🗄️🎨🧪🚀🐳💬🌿📐]/gu, '')
+    .split(/[\s\-_/.,!?·]+/)
+    .filter(t => t.length >= 2 && !/^(및|의|을|를|이|가|은|는|로|에|와|과|그|이|저|것|들|수|않|없|있|하|했|됩|될|게|도|만|좀|더|잘|안|못|제|제가|저는)$/.test(t));
+}
+
+function _topicSimilarity(intentA, intentB, domainA, domainB) {
+  // 1. 같은 도메인 → 기본 점수
+  let score = (domainA === domainB && domainA !== 'general' && domainA !== 'purpose') ? 0.35 : 0;
+  // 2. 공통 키워드 비율
+  const ta = new Set(_tokenize(intentA));
+  const tb = new Set(_tokenize(intentB));
+  if (ta.size && tb.size) {
+    let common = 0;
+    ta.forEach(w => { if (tb.has(w)) common++; });
+    score += common / Math.sqrt(ta.size * tb.size) * 1.5;
+  }
+  // 3. 핵심 주제어 일치 보너스 (SaaS, auth, deploy, 결제 등)
+  const keywords = ['saas','auth','deploy','결제','랜딩','pipeline','automation','api','test','bug','fix','버그'];
+  const sharedKw = keywords.filter(k => (intentA||'').toLowerCase().includes(k) && (intentB||'').toLowerCase().includes(k));
+  score += sharedKw.length * 0.25;
+  return Math.min(score, 1.0);
+}
+
+function buildTopicLinks() {
+  if (_topicLinksBuilt || planetMeshes.length < 2) return;
+  _topicLinksBuilt = true;
+  _topicLinks.length = 0;
+
+  for (let i = 0; i < planetMeshes.length; i++) {
+    for (let j = i + 1; j < planetMeshes.length; j++) {
+      const a = planetMeshes[i], b = planetMeshes[j];
+      // 같은 세션 내 클러스터끼리는 이미 별자리로 연결됨 → 스킵
+      if (a.userData.sessionId === b.userData.sessionId) continue;
+      // 둘 다 제네릭(기타/general) 이면 스킵 (노이즈 방지)
+      const iA = a.userData.intent || '', iB = b.userData.intent || '';
+      if (/^⚙️\s?기타|^⚙️\s?작업/.test(iA) && /^⚙️\s?기타|^⚙️\s?작업/.test(iB)) continue;
+      // 둘 다 짧은 도메인 레이블(구체적 내용 없음)이면 스킵
+      const isGenericLabel = t => t.replace(/[^\s\w가-힣]/gu, '').trim().length < 6;
+      if (isGenericLabel(iA) && isGenericLabel(iB)) continue;
+      const score = _topicSimilarity(iA, iB, a.userData.domain, b.userData.domain);
+      if (score >= 0.45) {
+        _topicLinks.push({ a, b, score });
+      }
+    }
+  }
+}
+
+function drawTopicLinks() {
+  if (!planetMeshes.length) return;
+  buildTopicLinks();
+  if (!_topicLinks.length) return;
+
+  const now = performance.now() / 1000;
+  const lod = getLOD();
+  if (lod >= 3) return;   // 너무 줌아웃 시 표시 안 함
+
+  _topicLinks.forEach(({ a, b, score }) => {
+    const sa = toScreen(a.position);
+    const sb = toScreen(b.position);
+    if (sa.z > 1 || sb.z > 1) return;
+
+    const hexA = a.userData.hueHex || '#58a6ff';
+    const hexB = b.userData.hueHex || '#3fb950';
+
+    // 애니메이션: pulse + 흐름 효과
+    const pulse = 0.5 + 0.5 * Math.sin(now * 1.8 + score * 5);
+    const baseAlpha = 0.12 + score * 0.28;
+    const alpha = baseAlpha * (0.7 + pulse * 0.3);
+
+    // 그래디언트 선
+    const grad = _lctx.createLinearGradient(sa.x, sa.y, sb.x, sb.y);
+    grad.addColorStop(0, hexA + Math.round(alpha * 255).toString(16).padStart(2,'0'));
+    grad.addColorStop(1, hexB + Math.round(alpha * 255).toString(16).padStart(2,'0'));
+
+    _lctx.save();
+    _lctx.globalAlpha = 1;
+    _lctx.strokeStyle = grad;
+    _lctx.lineWidth   = score >= 0.7 ? 2.2 : score >= 0.5 ? 1.6 : 1.0;
+
+    // 높은 유사도: 실선 + glow / 낮은 유사도: 점선
+    if (score >= 0.55) {
+      _lctx.shadowColor = hexA;
+      _lctx.shadowBlur  = 8 + pulse * 6;
+    } else {
+      _lctx.setLineDash([6, 10]);
+    }
+
+    _lctx.beginPath();
+    _lctx.moveTo(sa.x, sa.y);
+    _lctx.lineTo(sb.x, sb.y);
+    _lctx.stroke();
+    _lctx.setLineDash([]);
+    _lctx.shadowBlur = 0;
+    _lctx.restore();
+
+    // 유사도 뱃지 (중간 지점, score가 높을 때만)
+    if (score >= 0.6 && lod <= 1) {
+      const mx = (sa.x + sb.x) / 2, my = (sa.y + sb.y) / 2;
+      const label = `${Math.round(score * 100)}%`;
+      _lctx.save();
+      _lctx.globalAlpha = alpha * 1.2;
+      _lctx.font = '600 9px -apple-system,sans-serif';
+      _lctx.textAlign = 'center';
+      _lctx.fillStyle = hexA;
+      _lctx.fillText(label, mx, my - 4);
+      _lctx.restore();
+    }
+  });
+}
+
 // ─── 별자리 그리기 ────────────────────────────────────────────────────────────
 function drawConstellations() {
   const projEntries = Object.entries(_projectGroups);
@@ -8424,6 +8542,9 @@ function drawLabels() {
     _lctx.globalAlpha = 1;
     return;
   }
+
+  // 토픽 유사도 글로잉 연결선 (행성 레이블 아래 레이어로 먼저 그림)
+  drawTopicLinks();
 
   // LOD 3: 요약 뷰, 라벨은 아주 희미하게만
   const globalAlpha = lod === 3 ? 0.12 : 1;
