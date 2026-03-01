@@ -47,7 +47,9 @@ function createWorkspaceRouter({ db, verifyToken }) {
                    req.cookies?.orbit_token || '';
     if (!token) return res.status(401).json({ error: 'unauthorized' });
     try {
-      req.user = verifyToken(token);
+      const user = verifyToken(token);
+      if (!user) return res.status(401).json({ error: 'invalid token' });
+      req.user = user;
       next();
     } catch {
       res.status(401).json({ error: 'invalid token' });
