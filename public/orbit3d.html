@@ -1084,6 +1084,181 @@
   .mdp-bar-fill { height:100%; border-radius:2px; transition:width .4s; }
   .mdp-hint { font-size:11px; color:#6e7681; text-align:center; margin-top:10px; }
 
+  /* ── 코어 스킨 패널 ──────────────────────────────────────────────────── */
+  #core-skin-panel {
+    position:fixed; left:210px; bottom:60px; z-index:199;
+    width:320px; background:rgba(13,17,23,0.97);
+    border:1px solid #21262d; border-radius:14px;
+    backdrop-filter:blur(16px); box-shadow:0 16px 48px rgba(0,0,0,.6);
+    display:none; flex-direction:column; overflow:hidden;
+  }
+  #core-skin-panel.open { display:flex; }
+  .csp-header {
+    display:flex; align-items:center; justify-content:space-between;
+    padding:12px 16px; border-bottom:1px solid #21262d;
+  }
+  .csp-title { font-size:13px; font-weight:700; color:#e6edf3; }
+  .csp-close { background:none; border:none; color:#6e7681; cursor:pointer; font-size:15px; }
+  .csp-body  { padding:14px 16px; display:flex; flex-direction:column; gap:14px; }
+  .csp-section { font-size:10px; color:#6e7681; text-transform:uppercase; letter-spacing:.7px; }
+  .csp-grid {
+    display:grid; grid-template-columns:repeat(4,1fr); gap:8px;
+  }
+  .csp-item {
+    display:flex; flex-direction:column; align-items:center; gap:4px;
+    padding:10px 6px; border-radius:8px; cursor:pointer;
+    border:1.5px solid #21262d; background:rgba(22,27,34,.6);
+    transition:all .15s;
+  }
+  .csp-item:hover  { border-color:#58a6ff; background:rgba(88,166,255,.08); }
+  .csp-item.active { border-color:#ffd700; background:rgba(255,215,0,.1); }
+  .csp-icon  { font-size:22px; line-height:1; }
+  .csp-name  { font-size:10px; color:#8b949e; }
+  .csp-item.active .csp-name { color:#ffd700; font-weight:700; }
+  .csp-toggle-row { display:flex; align-items:center; justify-content:space-between; padding:8px 0; border-top:1px solid #21262d; }
+  .csp-toggle-label { font-size:12px; color:#c9d1d9; }
+  .csp-toggle-btn {
+    padding:5px 14px; border-radius:6px; font-size:12px; cursor:pointer;
+    border:1px solid #30363d; background:rgba(22,27,34,.8); color:#8b949e;
+    font-family:inherit; transition:all .15s;
+  }
+  .csp-toggle-btn:hover { border-color:#58a6ff; color:#58a6ff; }
+  .csp-toggle-btn.hide  { border-color:#f85149; color:#f85149; }
+
+  /* ── 프로필 등록 모달 ────────────────────────────────────────────────── */
+  #profile-prompt-modal {
+    position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:1200;
+    display:none; align-items:center; justify-content:center;
+  }
+  #profile-prompt-modal.open { display:flex; }
+  .ppm-box {
+    background:rgba(13,17,23,.98); border:1px solid #30363d; border-radius:16px;
+    padding:28px 32px; max-width:400px; width:92%;
+    box-shadow:0 24px 64px rgba(0,0,0,.7); backdrop-filter:blur(20px);
+    text-align:center; display:flex; flex-direction:column; gap:16px;
+  }
+  .ppm-emoji  { font-size:48px; }
+  .ppm-title  { font-size:18px; font-weight:700; color:#e6edf3; }
+  .ppm-sub    { font-size:13px; color:#8b949e; line-height:1.5; }
+  .ppm-btns   { display:flex; gap:10px; margin-top:4px; }
+  .ppm-btn-setup {
+    flex:1; padding:11px; border-radius:8px; font-size:14px; font-weight:600;
+    cursor:pointer; background:linear-gradient(135deg,#1f6feb,#388bfd);
+    border:none; color:#fff; font-family:inherit; transition:opacity .15s;
+  }
+  .ppm-btn-setup:hover { opacity:.88; }
+  .ppm-btn-skip {
+    padding:11px 18px; border-radius:8px; font-size:13px; cursor:pointer;
+    background:none; border:1px solid #30363d; color:#6e7681; font-family:inherit;
+  }
+  .ppm-btn-skip:hover { border-color:#58a6ff; color:#58a6ff; }
+
+  /* ── 프로필 편집 모달 ────────────────────────────────────────────────── */
+  #profile-edit-modal {
+    position:fixed; inset:0; background:rgba(0,0,0,.65); z-index:1300;
+    display:none; align-items:flex-start; justify-content:center;
+    padding:40px 16px; overflow-y:auto;
+  }
+  #profile-edit-modal.open { display:flex; }
+  .pem-box {
+    background:#0d1117; border:1px solid #30363d; border-radius:16px;
+    width:100%; max-width:620px; box-shadow:0 24px 64px rgba(0,0,0,.8);
+    overflow:hidden; margin:auto;
+  }
+  .pem-header {
+    display:flex; align-items:center; justify-content:space-between;
+    padding:18px 24px; background:linear-gradient(135deg,#0d1117,#161b22);
+    border-bottom:1px solid #21262d;
+  }
+  .pem-title { font-size:16px; font-weight:700; color:#e6edf3; }
+  .pem-close { background:none; border:none; color:#6e7681; cursor:pointer; font-size:18px; padding:2px 6px; border-radius:4px; }
+  .pem-close:hover { color:#e6edf3; background:#21262d; }
+  .pem-body  { padding:24px; display:flex; flex-direction:column; gap:20px; }
+
+  /* 아바타 + 이름 행 */
+  .pem-avatar-row { display:flex; align-items:center; gap:16px; }
+  #pem-avatar {
+    width:80px; height:80px; border-radius:50%; background:#21262d;
+    display:flex; align-items:center; justify-content:center;
+    font-size:32px; color:#58a6ff; border:3px solid #30363d; flex-shrink:0;
+    overflow:hidden;
+  }
+  #pem-avatar img { width:100%; height:100%; object-fit:cover; }
+  .pem-name-col { flex:1; display:flex; flex-direction:column; gap:8px; }
+
+  /* 입력 공통 */
+  .pem-input, .pem-textarea, .pem-select {
+    width:100%; padding:9px 12px; border-radius:8px;
+    background:rgba(22,27,34,.8); border:1px solid #30363d;
+    color:#e6edf3; font-size:13px; font-family:inherit;
+    transition:border-color .15s; box-sizing:border-box;
+  }
+  .pem-input:focus, .pem-textarea:focus { outline:none; border-color:#58a6ff; }
+  .pem-textarea { min-height:80px; resize:vertical; }
+  .pem-row-2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .pem-section { font-size:11px; font-weight:700; color:#58a6ff; text-transform:uppercase; letter-spacing:.7px; margin-top:4px; }
+
+  /* 스킬 태그 */
+  .pem-tags { display:flex; flex-wrap:wrap; gap:6px; min-height:28px; }
+  .pem-tag {
+    display:flex; align-items:center; gap:4px;
+    padding:3px 10px; border-radius:20px;
+    background:rgba(88,166,255,.12); border:1px solid rgba(88,166,255,.3);
+    color:#58a6ff; font-size:12px; font-weight:500;
+  }
+  .pem-tag-x { cursor:pointer; color:#6e7681; font-size:13px; }
+  .pem-tag-x:hover { color:#f85149; }
+  .pem-tag-input-row { display:flex; gap:8px; margin-top:4px; }
+  .pem-tag-input-row .pem-input { flex:1; }
+  .pem-add-btn {
+    padding:7px 14px; border-radius:7px; background:#1c2128; border:1px solid #30363d;
+    color:#8b949e; cursor:pointer; font-size:12px; font-family:inherit; white-space:nowrap;
+  }
+  .pem-add-btn:hover { border-color:#58a6ff; color:#58a6ff; }
+
+  /* 경력/학력 카드 */
+  .pem-card {
+    background:#161b22; border:1px solid #21262d; border-radius:10px;
+    padding:12px 14px; display:flex; flex-direction:column; gap:8px;
+  }
+  .pem-card-header { display:flex; align-items:center; justify-content:space-between; }
+  .pem-card-del { background:none; border:none; color:#6e7681; cursor:pointer; font-size:13px; padding:0; }
+  .pem-card-del:hover { color:#f85149; }
+  .pem-card .pem-row-2 { margin:0; }
+
+  /* 링크 그리드 */
+  .pem-links-grid { display:flex; flex-direction:column; gap:8px; }
+  .pem-link-row { display:flex; align-items:center; gap:8px; }
+  .pem-link-icon { font-size:18px; width:24px; text-align:center; flex-shrink:0; }
+
+  /* 하단 버튼 */
+  .pem-footer { display:flex; justify-content:flex-end; gap:10px; padding-top:8px; border-top:1px solid #21262d; }
+  .pem-btn-cancel {
+    padding:9px 20px; border-radius:8px; background:none; border:1px solid #30363d;
+    color:#6e7681; cursor:pointer; font-size:13px; font-family:inherit;
+  }
+  .pem-btn-save {
+    padding:9px 24px; border-radius:8px; font-size:14px; font-weight:600;
+    background:linear-gradient(135deg,#1f6feb,#388bfd); border:none;
+    color:#fff; cursor:pointer; font-family:inherit; transition:opacity .15s;
+  }
+  .pem-btn-save:hover { opacity:.88; }
+
+  /* 프로필 뷰 카드 (사이드바 로그인 후) */
+  #ln-profile-card {
+    margin:6px 8px; padding:12px; border-radius:10px; border:1px solid #21262d;
+    background:rgba(22,27,34,.5); display:none; flex-direction:column; gap:6px;
+  }
+  #ln-profile-card.show { display:flex; }
+  .lnpc-headline { font-size:11px; color:#58a6ff; line-height:1.3; }
+  .lnpc-company  { font-size:10px; color:#6e7681; }
+  .lnpc-edit-btn {
+    margin-top:4px; padding:5px 10px; border-radius:6px; font-size:11px;
+    background:#1c2128; border:1px solid #30363d; color:#8b949e;
+    cursor:pointer; font-family:inherit; text-align:center;
+  }
+  .lnpc-edit-btn:hover { border-color:#58a6ff; color:#58a6ff; }
+
   </style>
 </head>
 <body>
@@ -1116,9 +1291,17 @@
       <span id="ln-zoom-hint"></span>
     </div>
 
+    <!-- 프로필 카드 (로그인 시 표시) -->
+    <div id="ln-profile-card">
+      <div class="lnpc-headline" id="ln-pc-headline"></div>
+      <div class="lnpc-company"  id="ln-pc-company"></div>
+      <button class="lnpc-edit-btn" onclick="openProfileEditModal()">✏️ 프로필 편집</button>
+    </div>
+
     <!-- 도구 -->
     <div class="ln-sep">도구</div>
     <button class="ln-item" onclick="toggleEffectsPanel()">✨ 마켓 이펙트</button>
+    <button class="ln-item" onclick="toggleCoreSkinPanel()">🌍 행성 스킨</button>
     <button class="ln-item" onclick="toggleFeatPanel()">📋 기능 목록</button>
     <button class="ln-item" onclick="toggleViewPanel()">👤 내 뷰 설정</button>
     <button class="ln-item" onclick="toggleMgrPanel()">👔 관리자 뷰</button>
@@ -1138,6 +1321,129 @@
 
 <!-- 멤버 작업 상세 패널 (줌인 시 자동 표시) -->
 <div id="member-detail-panel"></div>
+
+<!-- ══ 코어 행성 스킨 패널 ═════════════════════════════════════════════════ -->
+<div id="core-skin-panel">
+  <div class="csp-header">
+    <span class="csp-title">🌍 행성 스킨</span>
+    <button class="csp-close" onclick="toggleCoreSkinPanel()">✕</button>
+  </div>
+  <div class="csp-body">
+    <div class="csp-section">모양 선택</div>
+    <div class="csp-grid" id="csp-grid"><!-- JS 동적 생성 --></div>
+    <div class="csp-toggle-row">
+      <span class="csp-toggle-label">중앙 행성 표시</span>
+      <button id="csp-visibility-btn" class="csp-toggle-btn" onclick="toggleCoreVisibility()">숨기기</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ 프로필 등록 유도 모달 ═══════════════════════════════════════════════ -->
+<div id="profile-prompt-modal">
+  <div class="ppm-box">
+    <div class="ppm-emoji">👤</div>
+    <div class="ppm-title">내 프로필을 등록해볼까요?</div>
+    <div class="ppm-sub">직함, 스킬, 경력을 등록하면<br>팀원들이 나를 더 잘 알 수 있어요.</div>
+    <div class="ppm-btns">
+      <button class="ppm-btn-setup" onclick="openProfileEditModal()">✏️ 지금 등록하기</button>
+      <button class="ppm-btn-skip" onclick="skipProfilePrompt()">나중에</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ 프로필 편집 모달 (LinkedIn 수준) ════════════════════════════════════ -->
+<div id="profile-edit-modal">
+  <div class="pem-box">
+    <div class="pem-header">
+      <span class="pem-title">👤 내 프로필 편집</span>
+      <button class="pem-close" onclick="closeProfileEditModal()">✕</button>
+    </div>
+    <div class="pem-body">
+
+      <!-- 아바타 + 이름/직함 -->
+      <div class="pem-avatar-row">
+        <div id="pem-avatar">?</div>
+        <div class="pem-name-col">
+          <input class="pem-input" id="pem-name"     placeholder="이름 *" />
+          <input class="pem-input" id="pem-headline" placeholder="직함  예: 풀스택 개발자 @ Kakao" />
+        </div>
+      </div>
+
+      <!-- 회사 + 위치 -->
+      <div class="pem-row-2">
+        <input class="pem-input" id="pem-company"  placeholder="회사 / 조직" />
+        <input class="pem-input" id="pem-location" placeholder="위치  예: 서울, 대한민국" />
+      </div>
+
+      <!-- 한줄 소개 -->
+      <div>
+        <div class="pem-section">소개</div>
+        <textarea class="pem-textarea" id="pem-bio" placeholder="나를 소개해주세요. 어떤 일을 하고, 무엇에 관심이 있는지 적어주세요. (최대 500자)"></textarea>
+      </div>
+
+      <!-- 스킬 -->
+      <div>
+        <div class="pem-section">스킬</div>
+        <div class="pem-tags" id="pem-skills-tags"></div>
+        <div class="pem-tag-input-row" style="margin-top:8px;">
+          <input class="pem-input" id="pem-skill-input" placeholder="스킬 입력 후 Enter  예: React, TypeScript"
+            onkeydown="if(event.key==='Enter'){event.preventDefault();addSkillTag()}" />
+          <button class="pem-add-btn" onclick="addSkillTag()">+ 추가</button>
+        </div>
+      </div>
+
+      <!-- 경력 -->
+      <div>
+        <div class="pem-section">💼 경력</div>
+        <div id="pem-exp-list" style="display:flex;flex-direction:column;gap:10px;margin-top:8px;"></div>
+        <button class="pem-add-btn" style="margin-top:8px;" onclick="addExpCard()">+ 경력 추가</button>
+      </div>
+
+      <!-- 학력 -->
+      <div>
+        <div class="pem-section">🎓 학력</div>
+        <div id="pem-edu-list" style="display:flex;flex-direction:column;gap:10px;margin-top:8px;"></div>
+        <button class="pem-add-btn" style="margin-top:8px;" onclick="addEduCard()">+ 학력 추가</button>
+      </div>
+
+      <!-- 링크 -->
+      <div>
+        <div class="pem-section">🔗 링크</div>
+        <div class="pem-links-grid" style="margin-top:8px;">
+          <div class="pem-link-row">
+            <span class="pem-link-icon">🐙</span>
+            <input class="pem-input" id="pem-github"   placeholder="GitHub  https://github.com/username" />
+          </div>
+          <div class="pem-link-row">
+            <span class="pem-link-icon">💼</span>
+            <input class="pem-input" id="pem-linkedin" placeholder="LinkedIn  https://linkedin.com/in/..." />
+          </div>
+          <div class="pem-link-row">
+            <span class="pem-link-icon">🌐</span>
+            <input class="pem-input" id="pem-website"  placeholder="개인 웹사이트  https://..." />
+          </div>
+          <div class="pem-link-row">
+            <span class="pem-link-icon">🐦</span>
+            <input class="pem-input" id="pem-twitter"  placeholder="Twitter/X  https://x.com/..." />
+          </div>
+        </div>
+      </div>
+
+      <!-- 공개 여부 -->
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid #21262d;">
+        <input type="checkbox" id="pem-public" checked style="cursor:pointer;width:14px;height:14px;" />
+        <label for="pem-public" style="font-size:12px;color:#8b949e;cursor:pointer;">프로필 공개 (다른 팀원에게 보임)</label>
+      </div>
+
+      <!-- 저장 버튼 -->
+      <div class="pem-footer">
+        <button class="pem-btn-cancel" onclick="closeProfileEditModal()">취소</button>
+        <button class="pem-btn-save"   onclick="saveProfile()">💾 프로필 저장</button>
+      </div>
+
+    </div>
+  </div>
+</div>
 
 <div id="loading">
   <div class="spinner"></div>
@@ -2202,13 +2508,8 @@ function buildPlanetSystem(nodeList) {
 
   const N = planets.length;
 
-  // ── 중심 코어 — Three.js 구체 (Orbit AI 심볼) ───────────────────────────
-  const coreMat = new THREE.MeshPhongMaterial({ color:0xffd700, emissive:0x7a5800, shininess:120 });
-  const core    = new THREE.Mesh(new THREE.SphereGeometry(2.5,32,32), coreMat);
-  core.userData.isCore = true;
-  scene.add(core);
-  const glowMat = new THREE.MeshBasicMaterial({ color:0xffd700, transparent:true, opacity:0.10, side:THREE.BackSide });
-  scene.add(new THREE.Mesh(new THREE.SphereGeometry(4.5,32,32), glowMat));
+  // ── 중심 코어 — 스킨 시스템으로 위임 ──────────────────────────────────
+  buildCoreMesh();
 
   let totalTasks = 0, totalHours = 0;
 
@@ -7092,7 +7393,12 @@ function renderLoginState() {
     if (lnEmail) lnEmail.textContent = _orbitUser.email || '';
     if (lnAuthBtn) lnAuthBtn.style.display = 'none';
     if (lnLogout) lnLogout.style.display = 'flex';
+    // 프로필 체크 (비동기)
+    setTimeout(checkAndPromptProfile, 800);
   } else {
+    // 로그아웃 시 프로필 카드 숨기기
+    const pCard = document.getElementById('ln-profile-card');
+    if (pCard) pCard.classList.remove('show');
     authView.style.display = 'flex';
     authView.style.flexDirection = 'column';
     authView.style.gap = '10px';
@@ -7385,6 +7691,369 @@ function hideMemberDetail() {
   document.getElementById('member-detail-panel')?.classList.remove('open');
 }
 window.hideMemberDetail = hideMemberDetail;
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * CORE SKIN SYSTEM — 중앙 행성 모양 선택
+ * ══════════════════════════════════════════════════════════════════════════ */
+const CORE_SKINS = [
+  { id: 'sphere',       name: '구체',      icon: '🌕', geo: () => new THREE.SphereGeometry(2.5, 32, 32) },
+  { id: 'icosahedron',  name: '크리스탈',  icon: '💎', geo: () => new THREE.IcosahedronGeometry(2.8, 1) },
+  { id: 'dodecahedron', name: '다각형',    icon: '⬡',  geo: () => new THREE.DodecahedronGeometry(2.6, 0) },
+  { id: 'octahedron',   name: '팔면체',    icon: '🔷', geo: () => new THREE.OctahedronGeometry(2.8, 0) },
+  { id: 'torus',        name: '링',        icon: '⭕', geo: () => new THREE.TorusGeometry(2.0, 0.75, 16, 50) },
+  { id: 'cone',         name: '피라미드',  icon: '🔺', geo: () => new THREE.ConeGeometry(2.2, 4, 5) },
+  { id: 'box',          name: '큐브',      icon: '🔲', geo: () => new THREE.BoxGeometry(3.5, 3.5, 3.5) },
+  { id: 'text',         name: '텍스트',    icon: '✨', geo: null },
+];
+
+let _selectedCoreSkin = localStorage.getItem('orbitCoreSkin') || 'sphere';
+let _coreVisible       = localStorage.getItem('orbitCoreVisible') !== '0';
+let _coreMeshRef       = null;
+let _coreGlowRef       = null;
+
+function buildCoreMesh() {
+  // 씬에서 isCore 플래그가 있는 모든 기존 코어 제거 (타 뷰 잔존 포함)
+  const stalesCores = scene.children.filter(c => c.userData && c.userData.isCore);
+  stalesCores.forEach(c => scene.remove(c));
+  if (_coreMeshRef) { _coreMeshRef = null; }
+  if (_coreGlowRef) { _coreGlowRef = null; }
+
+  // 팀/회사/병렬 뷰에서는 해당 뷰 자체 코어를 사용하므로 스킨 추가 안 함
+  if (typeof _teamMode !== 'undefined' && (_teamMode || _companyMode || _parallelMode)) return;
+
+  if (!_coreVisible || _selectedCoreSkin === 'text') return;
+
+  const skin = CORE_SKINS.find(s => s.id === _selectedCoreSkin) || CORE_SKINS[0];
+  if (!skin.geo) return;
+
+  const coreMat = new THREE.MeshPhongMaterial({ color: 0xffd700, emissive: 0x7a5800, shininess: 120 });
+  _coreMeshRef  = new THREE.Mesh(skin.geo(), coreMat);
+  _coreMeshRef.userData.isCore = true;
+  scene.add(_coreMeshRef);
+
+  const glowMat = new THREE.MeshBasicMaterial({ color: 0xffd700, transparent: true, opacity: 0.10, side: THREE.BackSide });
+  _coreGlowRef  = new THREE.Mesh(new THREE.SphereGeometry(4.5, 32, 32), glowMat);
+  scene.add(_coreGlowRef);
+}
+window.buildCoreMesh = buildCoreMesh;
+
+function toggleCoreSkinPanel() {
+  const panel = document.getElementById('core-skin-panel');
+  const isOpen = panel.classList.toggle('open');
+  if (isOpen) renderCoreSkinGrid();
+}
+window.toggleCoreSkinPanel = toggleCoreSkinPanel;
+
+function renderCoreSkinGrid() {
+  const grid = document.getElementById('csp-grid');
+  if (!grid) return;
+  grid.innerHTML = CORE_SKINS.map(s => `
+    <div class="csp-item ${s.id === _selectedCoreSkin ? 'active' : ''}" onclick="applyCoreSkin('${s.id}')">
+      <div class="csp-icon">${s.icon}</div>
+      <div class="csp-name">${s.name}</div>
+    </div>
+  `).join('');
+
+  const btn = document.getElementById('csp-visibility-btn');
+  if (btn) {
+    btn.textContent = _coreVisible ? '숨기기' : '표시하기';
+    btn.classList.toggle('hide', _coreVisible);
+  }
+}
+
+function applyCoreSkin(skinId) {
+  _selectedCoreSkin = skinId;
+  localStorage.setItem('orbitCoreSkin', skinId);
+  buildCoreMesh();
+  renderCoreSkinGrid();
+  if (typeof track === 'function') track('node.effect_apply', { effect: 'skin_' + skinId });
+}
+window.applyCoreSkin = applyCoreSkin;
+
+function toggleCoreVisibility() {
+  _coreVisible = !_coreVisible;
+  localStorage.setItem('orbitCoreVisible', _coreVisible ? '1' : '0');
+  buildCoreMesh();
+  renderCoreSkinGrid();
+}
+window.toggleCoreVisibility = toggleCoreVisibility;
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * PROFILE SYSTEM — LinkedIn 수준 프로필 등록/편집
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+let _profileData     = null;   // 현재 로드된 프로필
+let _profileSkills   = [];
+let _profileExps     = [];
+let _profileEdus     = [];
+
+// ── 로그인 후 프로필 체크 ────────────────────────────────────────────────
+async function checkAndPromptProfile() {
+  if (!_orbitUser) return;
+  const token = _orbitUser.token || localStorage.getItem('orbitToken');
+  if (!token) return;
+
+  // 7일 내 이미 스킵했으면 표시 안 함
+  const skipped = parseInt(localStorage.getItem('profileSkippedAt') || '0');
+  if (Date.now() - skipped < 7 * 24 * 3600 * 1000) return;
+
+  try {
+    const res  = await fetch('/api/profile/check', { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (!data.exists) {
+      setTimeout(() => {
+        document.getElementById('profile-prompt-modal').classList.add('open');
+      }, 1500);
+    } else {
+      // 프로필 있으면 사이드바 카드 업데이트
+      loadProfileForSidebar(token);
+    }
+  } catch (_) {}
+}
+window.checkAndPromptProfile = checkAndPromptProfile;
+
+async function loadProfileForSidebar(token) {
+  try {
+    const res  = await fetch('/api/profile', { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (!data) return;
+    _profileData = data;
+    const card    = document.getElementById('ln-profile-card');
+    const hl      = document.getElementById('ln-pc-headline');
+    const company = document.getElementById('ln-pc-company');
+    if (card) {
+      if (hl) hl.textContent     = data.headline || '';
+      if (company) company.textContent = data.company ? `🏢 ${data.company}` : '';
+      if (data.headline || data.company) card.classList.add('show');
+    }
+  } catch (_) {}
+}
+
+function skipProfilePrompt() {
+  localStorage.setItem('profileSkippedAt', Date.now().toString());
+  document.getElementById('profile-prompt-modal').classList.remove('open');
+}
+window.skipProfilePrompt = skipProfilePrompt;
+
+// ── 프로필 편집 모달 열기/닫기 ──────────────────────────────────────────
+async function openProfileEditModal() {
+  // 먼저 유도 모달 닫기
+  document.getElementById('profile-prompt-modal').classList.remove('open');
+  document.getElementById('profile-edit-modal').classList.add('open');
+
+  // 기존 프로필 로드
+  const token = _orbitUser?.token || localStorage.getItem('orbitToken');
+  if (token) {
+    try {
+      const res = await fetch('/api/profile', { headers: { Authorization: `Bearer ${token}` } });
+      if (res.ok) {
+        const data = await res.json();
+        if (data) populateProfileForm(data);
+      }
+    } catch (_) {}
+  }
+
+  // 아바타 표시
+  const av = document.getElementById('pem-avatar');
+  if (av && _orbitUser) {
+    if (_orbitUser.avatar) av.innerHTML = `<img src="${_orbitUser.avatar}" alt="">`;
+    else av.textContent = (_orbitUser.name || '?')[0].toUpperCase();
+  }
+  // 이름 기본값
+  const nameInput = document.getElementById('pem-name');
+  if (nameInput && !nameInput.value && _orbitUser?.name) nameInput.value = _orbitUser.name;
+}
+window.openProfileEditModal = openProfileEditModal;
+
+function closeProfileEditModal() {
+  document.getElementById('profile-edit-modal').classList.remove('open');
+}
+window.closeProfileEditModal = closeProfileEditModal;
+
+function populateProfileForm(data) {
+  const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val || ''; };
+  set('pem-name',     data.name);
+  set('pem-headline', data.headline);
+  set('pem-company',  data.company);
+  set('pem-location', data.location);
+  set('pem-bio',      data.bio);
+  const links = typeof data.links === 'object' ? data.links : {};
+  set('pem-github',   links.github);
+  set('pem-linkedin', links.linkedin);
+  set('pem-website',  links.website);
+  set('pem-twitter',  links.twitter);
+  const pub = document.getElementById('pem-public');
+  if (pub) pub.checked = data.is_public !== 0;
+
+  // 스킬
+  _profileSkills = Array.isArray(data.skills) ? [...data.skills] : [];
+  renderSkillTags();
+
+  // 경력
+  _profileExps = Array.isArray(data.experiences) ? [...data.experiences] : [];
+  renderExpCards();
+
+  // 학력
+  _profileEdus = Array.isArray(data.education) ? [...data.education] : [];
+  renderEduCards();
+}
+
+// ── 스킬 태그 ────────────────────────────────────────────────────────────
+function renderSkillTags() {
+  const box = document.getElementById('pem-skills-tags');
+  if (!box) return;
+  box.innerHTML = _profileSkills.map((s, i) => `
+    <span class="pem-tag">${s}<span class="pem-tag-x" onclick="removeSkillTag(${i})">✕</span></span>
+  `).join('');
+}
+
+function addSkillTag() {
+  const inp = document.getElementById('pem-skill-input');
+  if (!inp) return;
+  const val = inp.value.trim();
+  if (val && !_profileSkills.includes(val) && _profileSkills.length < 50) {
+    _profileSkills.push(val);
+    renderSkillTags();
+    inp.value = '';
+  }
+  inp.focus();
+}
+window.addSkillTag = addSkillTag;
+
+function removeSkillTag(idx) {
+  _profileSkills.splice(idx, 1);
+  renderSkillTags();
+}
+window.removeSkillTag = removeSkillTag;
+
+// ── 경력 카드 ────────────────────────────────────────────────────────────
+function renderExpCards() {
+  const list = document.getElementById('pem-exp-list');
+  if (!list) return;
+  list.innerHTML = _profileExps.map((e, i) => `
+    <div class="pem-card">
+      <div class="pem-card-header">
+        <span style="font-size:12px;color:#58a6ff;font-weight:600">💼 경력 ${i + 1}</span>
+        <button class="pem-card-del" onclick="removeExpCard(${i})">🗑</button>
+      </div>
+      <div class="pem-row-2">
+        <input class="pem-input" placeholder="회사명" value="${e.company||''}"
+          oninput="_profileExps[${i}].company=this.value" />
+        <input class="pem-input" placeholder="직책/역할" value="${e.role||''}"
+          oninput="_profileExps[${i}].role=this.value" />
+      </div>
+      <input class="pem-input" placeholder="기간  예: 2022.03 – 현재" value="${e.period||''}"
+        oninput="_profileExps[${i}].period=this.value" />
+      <textarea class="pem-textarea" placeholder="주요 업무/성과" style="min-height:60px"
+        oninput="_profileExps[${i}].desc=this.value">${e.desc||''}</textarea>
+    </div>
+  `).join('');
+}
+
+function addExpCard() {
+  _profileExps.push({ company: '', role: '', period: '', desc: '' });
+  renderExpCards();
+}
+window.addExpCard = addExpCard;
+
+function removeExpCard(idx) {
+  _profileExps.splice(idx, 1);
+  renderExpCards();
+}
+window.removeExpCard = removeExpCard;
+
+// ── 학력 카드 ────────────────────────────────────────────────────────────
+function renderEduCards() {
+  const list = document.getElementById('pem-edu-list');
+  if (!list) return;
+  list.innerHTML = _profileEdus.map((e, i) => `
+    <div class="pem-card">
+      <div class="pem-card-header">
+        <span style="font-size:12px;color:#3fb950;font-weight:600">🎓 학력 ${i + 1}</span>
+        <button class="pem-card-del" onclick="removeEduCard(${i})">🗑</button>
+      </div>
+      <div class="pem-row-2">
+        <input class="pem-input" placeholder="학교명" value="${e.school||''}"
+          oninput="_profileEdus[${i}].school=this.value" />
+        <input class="pem-input" placeholder="학위/전공" value="${e.degree||''}"
+          oninput="_profileEdus[${i}].degree=this.value" />
+      </div>
+      <input class="pem-input" placeholder="기간  예: 2018 – 2022" value="${e.period||''}"
+        oninput="_profileEdus[${i}].period=this.value" />
+    </div>
+  `).join('');
+}
+
+function addEduCard() {
+  _profileEdus.push({ school: '', degree: '', period: '' });
+  renderEduCards();
+}
+window.addEduCard = addEduCard;
+
+function removeEduCard(idx) {
+  _profileEdus.splice(idx, 1);
+  renderEduCards();
+}
+window.removeEduCard = removeEduCard;
+
+// ── 프로필 저장 ──────────────────────────────────────────────────────────
+async function saveProfile() {
+  const token = _orbitUser?.token || localStorage.getItem('orbitToken');
+  if (!token) { alert('로그인이 필요합니다.'); return; }
+
+  const get  = id => document.getElementById(id)?.value?.trim() || '';
+  const name = get('pem-name');
+  if (!name) { document.getElementById('pem-name').focus(); alert('이름을 입력해주세요.'); return; }
+
+  const btn = document.querySelector('.pem-btn-save');
+  if (btn) { btn.disabled = true; btn.textContent = '저장 중...'; }
+
+  try {
+    const res = await fetch('/api/profile', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        name,
+        headline:    get('pem-headline'),
+        company:     get('pem-company'),
+        location:    get('pem-location'),
+        bio:         get('pem-bio'),
+        skills:      _profileSkills,
+        experiences: _profileExps,
+        education:   _profileEdus,
+        links: {
+          github:   get('pem-github'),
+          linkedin: get('pem-linkedin'),
+          website:  get('pem-website'),
+          twitter:  get('pem-twitter'),
+        },
+        is_public: document.getElementById('pem-public')?.checked !== false,
+      }),
+    });
+
+    if (res.ok) {
+      closeProfileEditModal();
+      // 사이드바 프로필 카드 업데이트
+      const card    = document.getElementById('ln-profile-card');
+      const hl      = document.getElementById('ln-pc-headline');
+      const company = document.getElementById('ln-pc-company');
+      if (hl)      hl.textContent      = get('pem-headline') || name;
+      if (company) company.textContent = get('pem-company') ? `🏢 ${get('pem-company')}` : '';
+      if (card && (get('pem-headline') || get('pem-company'))) card.classList.add('show');
+      if (typeof track === 'function') track('node.edit', { type: 'profile' });
+    } else {
+      const err = await res.json().catch(() => ({}));
+      alert('저장 실패: ' + (err.error || res.status));
+    }
+  } catch (e) {
+    alert('저장 중 오류: ' + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '💾 프로필 저장'; }
+  }
+}
+window.saveProfile = saveProfile;
 
 /* ── ORBIT ANALYTICS ─────────────────────────────────────────────────────────
  * 사용자 행동 데이터 수집 모듈
