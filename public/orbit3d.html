@@ -1259,6 +1259,39 @@
   }
   .lnpc-edit-btn:hover { border-color:#58a6ff; color:#58a6ff; }
 
+  /* ── 팔로우 버튼 (info-panel 멤버 섹션) ─────────────────────────────── */
+  .ip-follow-btn {
+    display:inline-flex; align-items:center; gap:6px;
+    margin-top:10px; padding:6px 16px;
+    border-radius:20px; border:1px solid #30363d;
+    background:rgba(255,255,255,0.05); color:#e6edf3;
+    font-size:12px; cursor:pointer; transition:all .2s;
+  }
+  .ip-follow-btn:hover { background:rgba(88,166,255,0.12); border-color:#58a6ff; color:#58a6ff; }
+  .ip-follow-btn.following { background:#1f6feb25; border-color:#1f6feb; color:#58a6ff; }
+
+  /* ── 팔로우 패널 (사이드바 오른쪽) ─────────────────────────────────── */
+  #follow-panel {
+    position:fixed; left:210px; top:60px; width:280px; max-height:80vh;
+    overflow-y:auto; background:rgba(13,17,23,0.97); border:1px solid #30363d;
+    border-radius:12px; padding:14px; z-index:299; display:none;
+    backdrop-filter:blur(16px); box-shadow:0 8px 32px rgba(0,0,0,.5);
+  }
+  #follow-panel.open { display:block; }
+  .fp-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
+  .fp-title  { font-size:13px; font-weight:700; color:#e6edf3; }
+  .fp-close  { background:none; border:none; color:#6e7681; cursor:pointer; font-size:16px; }
+  .fp-tabs   { display:flex; gap:0; margin-bottom:12px; border-bottom:1px solid #21262d; }
+  .fp-tab    { flex:1; padding:6px; text-align:center; font-size:12px; color:#6e7681; cursor:pointer; border-bottom:2px solid transparent; transition:.2s; }
+  .fp-tab.active { color:#58a6ff; border-bottom-color:#58a6ff; }
+  .fp-list   { display:flex; flex-direction:column; gap:8px; }
+  .fp-user   { display:flex; align-items:center; gap:10px; padding:8px; border-radius:8px; background:rgba(255,255,255,0.03); border:1px solid #21262d; }
+  .fp-avatar { width:32px; height:32px; border-radius:50%; background:#1f6feb; display:flex; align-items:center; justify-content:center; font-size:14px; flex-shrink:0; }
+  .fp-info   { flex:1; min-width:0; }
+  .fp-name   { font-size:12px; color:#e6edf3; font-weight:600; }
+  .fp-sub    { font-size:11px; color:#6e7681; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .fp-empty  { font-size:12px; color:#6e7681; text-align:center; padding:16px; }
+
   </style>
 </head>
 <body>
@@ -1309,6 +1342,11 @@
     <button class="ln-item" onclick="toggleTaskSidebar()">📋 내 작업</button>
     <button class="ln-item" id="ln-orbit-btn" onclick="toggleOrbitAnim()">⏸ 공전 토글</button>
 
+    <!-- 커뮤니티 -->
+    <div class="ln-sep">커뮤니티</div>
+    <a class="ln-item" href="/guide.html" target="_blank">📖 사용법 가이드</a>
+    <button class="ln-item" id="ln-following-btn" onclick="toggleFollowPanel()" style="display:none">👥 팔로잉</button>
+
     <!-- 관리 -->
     <div class="ln-sep">관리</div>
     <a class="ln-item" href="/admin-analytics.html" target="_blank">📊 애널리틱스</a>
@@ -1318,6 +1356,21 @@
     <button class="ln-item ln-logout" id="ln-logout-btn" onclick="doLogoutMain()" style="display:none">🚪 로그아웃</button>
   </div>
 </nav>
+
+<!-- 팔로우 패널 -->
+<div id="follow-panel">
+  <div class="fp-header">
+    <span class="fp-title">👥 팔로우</span>
+    <button class="fp-close" onclick="toggleFollowPanel()">✕</button>
+  </div>
+  <div class="fp-tabs">
+    <div class="fp-tab active" id="fp-tab-ing"  onclick="switchFollowTab('following')">팔로잉</div>
+    <div class="fp-tab"       id="fp-tab-ers"   onclick="switchFollowTab('followers')">팔로워</div>
+  </div>
+  <div class="fp-list" id="fp-list-area">
+    <div class="fp-empty">로딩 중...</div>
+  </div>
+</div>
 
 <!-- 멤버 작업 상세 패널 (줌인 시 자동 표시) -->
 <div id="member-detail-panel"></div>
@@ -5168,6 +5221,17 @@ function showPanel(data, obj) {
     `;
     pv.style.display = 'block';
 
+    // ── 팔로우 버튼 (userId가 있는 실제 유저인 경우) ───────────────────────
+    if (member.userId && _orbitUser && member.userId !== (_orbitUser.id || '')) {
+      const followBtn = document.createElement('button');
+      followBtn.className = 'ip-follow-btn';
+      followBtn.id        = `follow-btn-${member.userId}`;
+      followBtn.textContent = '+ 팔로우';
+      followBtn.onclick   = () => toggleFollow(member.userId, followBtn);
+      pv.appendChild(followBtn);
+      checkFollowStatus(member.userId, followBtn);
+    }
+
   } else if (data.type === 'task') {
     // ── 작업 디테일 패널 ────────────────────────────────────────────────────
     const srcMembers2 = _companyMode
@@ -7393,12 +7457,17 @@ function renderLoginState() {
     if (lnEmail) lnEmail.textContent = _orbitUser.email || '';
     if (lnAuthBtn) lnAuthBtn.style.display = 'none';
     if (lnLogout) lnLogout.style.display = 'flex';
+    // 팔로잉 버튼 표시
+    const lnFollowingBtn = document.getElementById('ln-following-btn');
+    if (lnFollowingBtn) lnFollowingBtn.style.display = 'flex';
     // 프로필 체크 (비동기)
     setTimeout(checkAndPromptProfile, 800);
   } else {
-    // 로그아웃 시 프로필 카드 숨기기
+    // 로그아웃 시 프로필 카드 + 팔로잉 버튼 숨기기
     const pCard = document.getElementById('ln-profile-card');
     if (pCard) pCard.classList.remove('show');
+    const lnFollowingBtn = document.getElementById('ln-following-btn');
+    if (lnFollowingBtn) lnFollowingBtn.style.display = 'none';
     authView.style.display = 'flex';
     authView.style.flexDirection = 'column';
     authView.style.gap = '10px';
@@ -7538,6 +7607,18 @@ window.doLogoutMain = doLogoutMain;
       if (!_orbitUser) openLoginModal();
     }, 1200);
   }
+})();
+
+// ── URL ?demo=team|company|parallel 자동 로드 ─────────────────────────────
+(function handleDemoParam() {
+  const demo = new URLSearchParams(window.location.search).get('demo');
+  if (!demo) return;
+  // URL에서 파라미터 제거 (히스토리 오염 방지)
+  window.history.replaceState({}, '', window.location.pathname);
+  const delay = 1800; // 3D 씬 초기화 이후 실행
+  if (demo === 'team')     setTimeout(() => { if (typeof loadTeamDemo    === 'function') loadTeamDemo(); },    delay);
+  if (demo === 'company')  setTimeout(() => { if (typeof loadCompanyDemo  === 'function') loadCompanyDemo(); },  delay);
+  if (demo === 'parallel') setTimeout(() => { if (typeof loadParallelDemo === 'function') loadParallelDemo(); }, delay);
 })();
 
 /* ── LEFT NAV + ZOOM LOD + MEMBER DETAIL ────────────────────────────────────
@@ -8054,6 +8135,92 @@ async function saveProfile() {
   }
 }
 window.saveProfile = saveProfile;
+
+/* ── FOLLOW SYSTEM ───────────────────────────────────────────────────────────
+ * 팔로우 / 언팔로우, 팔로잉 목록, 팔로워 목록
+ * ─────────────────────────────────────────────────────────────────────────── */
+let _followPanelTab = 'following'; // 'following' | 'followers'
+
+async function toggleFollow(userId, btn) {
+  if (!_orbitUser) { openLoginModal(); return; }
+  const token = _orbitUser.token || localStorage.getItem('orbitToken');
+  const isFollowing = btn.classList.contains('following');
+  btn.disabled = true;
+  try {
+    const res  = await fetch(`/api/follow/${userId}`, {
+      method: isFollowing ? 'DELETE' : 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await res.json();
+    if (data.ok !== undefined) {
+      btn.classList.toggle('following', data.following);
+      btn.textContent = data.following ? '✓ 팔로잉' : '+ 팔로우';
+    }
+  } catch (e) {
+    console.warn('[follow] error:', e.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+window.toggleFollow = toggleFollow;
+
+async function checkFollowStatus(userId, btn) {
+  if (!_orbitUser) return;
+  const token = _orbitUser.token || localStorage.getItem('orbitToken');
+  try {
+    const res  = await fetch(`/api/follow/check/${userId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await res.json();
+    btn.classList.toggle('following', data.following);
+    btn.textContent = data.following ? '✓ 팔로잉' : '+ 팔로우';
+  } catch (_) {}
+}
+window.checkFollowStatus = checkFollowStatus;
+
+function toggleFollowPanel() {
+  const panel = document.getElementById('follow-panel');
+  const isOpen = panel.classList.toggle('open');
+  if (isOpen) loadFollowList(_followPanelTab);
+}
+window.toggleFollowPanel = toggleFollowPanel;
+
+function switchFollowTab(tab) {
+  _followPanelTab = tab;
+  document.getElementById('fp-tab-ing').classList.toggle('active', tab === 'following');
+  document.getElementById('fp-tab-ers').classList.toggle('active', tab === 'followers');
+  loadFollowList(tab);
+}
+window.switchFollowTab = switchFollowTab;
+
+async function loadFollowList(tab) {
+  const listEl = document.getElementById('fp-list-area');
+  if (!listEl) return;
+  listEl.innerHTML = '<div class="fp-empty">로딩 중...</div>';
+  if (!_orbitUser) { listEl.innerHTML = '<div class="fp-empty">로그인 후 이용하세요</div>'; return; }
+  const token = _orbitUser.token || localStorage.getItem('orbitToken');
+  const url   = tab === 'followers' ? '/api/follow/followers' : '/api/follow/list';
+  try {
+    const res  = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    const list = await res.json();
+    if (!Array.isArray(list) || list.length === 0) {
+      listEl.innerHTML = '<div class="fp-empty">' + (tab === 'followers' ? '팔로워가 없습니다' : '팔로잉하는 사람이 없습니다') + '</div>';
+      return;
+    }
+    listEl.innerHTML = list.map(u => `
+      <div class="fp-user">
+        <div class="fp-avatar">${u.avatar_url ? `<img src="${u.avatar_url}" style="width:100%;height:100%;border-radius:50%;object-fit:cover">` : (u.name || '?').charAt(0)}</div>
+        <div class="fp-info">
+          <div class="fp-name">${u.name || '익명'}</div>
+          <div class="fp-sub">${u.headline || u.company || ''}</div>
+        </div>
+      </div>
+    `).join('');
+  } catch (e) {
+    listEl.innerHTML = '<div class="fp-empty">불러오기 실패</div>';
+  }
+}
+window.loadFollowList = loadFollowList;
 
 /* ── ORBIT ANALYTICS ─────────────────────────────────────────────────────────
  * 사용자 행동 데이터 수집 모듈

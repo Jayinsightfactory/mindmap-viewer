@@ -103,6 +103,7 @@ const createLeaderboardRouter       = require('./routes/leaderboard');
 const createRoiRouter               = require('./routes/roi');
 const createAnalyticsRouter          = require('./routes/analytics');
 const createProfileRouter            = require('./routes/profile');
+const createFollowRouter             = require('./routes/follow');
 const { createRegionalInsightRouter } = require('./src/regional-insight');
 const { createPointsRouter }          = require('./src/points-engine');
 const { createCertificateRouter }     = require('./src/certificate-engine');
@@ -680,6 +681,7 @@ app.use('/api', createRoiRouter({ getAllEvents, getSessions, optionalAuth }));
 // ─── Analytics (사용자 행동 분석) ────────────────────────────────────────────
 app.use('/api', createAnalyticsRouter({ getDb: dbModule.getDb }));
 app.use('/api', createProfileRouter({ getDb: dbModule.getDb, verifyToken }));
+app.use('/api', createFollowRouter({ getDb: dbModule.getDb, verifyToken }));
 
 // ─── Regional Insight ────────────────────────────────────────────────────────
 app.use('/api', createRegionalInsightRouter({ getAllEvents }));
