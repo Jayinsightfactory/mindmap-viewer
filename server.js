@@ -1064,7 +1064,11 @@ app.get('/orbit-setup.ps1', (req, res) => {
     : `http://localhost:${port}`;
 
   const script = `# ⬡ Orbit AI 원키 설치 스크립트
-# 실행 방법 (CMD 또는 PowerShell):
+#
+# ★ PowerShell 창(PS >) 에서 실행:
+#   irm ${serverUrl}/orbit-setup.ps1 | iex
+#
+# ★ CMD 창(C:\\>) 에서 실행:
 #   powershell -ExecutionPolicy Bypass -Command "irm ${serverUrl}/orbit-setup.ps1 | iex"
 
 $ORBIT = "$env:USERPROFILE\\orbit"
