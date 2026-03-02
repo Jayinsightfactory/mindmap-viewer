@@ -1227,11 +1227,37 @@ app.post('/api/ai-events', (req, res) => {
   res.json({ ok: true });
 });
 
+// ── Railway AI 대화 포워딩 헬퍼 (메타데이터만, 원문 제외) ────────────────────
+function forwardConvToRailway(convMeta) {
+  const railwayUrl = process.env.RAILWAY_PUBLIC_DOMAIN
+    ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+    : null;
+  // Railway 서버 자신이거나 URL 없으면 스킵 (무한루프 방지)
+  if (!railwayUrl || process.env.RAILWAY_ENVIRONMENT) return;
+
+  try {
+    const https = require('https');
+    const body  = JSON.stringify({ ...convMeta, fromRemote: true });
+    const url   = new URL('/api/ai-conversation', railwayUrl);
+    const req   = https.request({
+      hostname: url.hostname,
+      port: 443,
+      path: url.pathname,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+    }, res => res.resume());
+    req.on('error', () => {}); // 실패 시 조용히 무시
+    req.setTimeout(8000, () => req.destroy());
+    req.write(body);
+    req.end();
+  } catch {}
+}
+
 // ── AI 대화 수신 (Chrome Extension content-ai.js → background.js → 여기) ─────
-// 원문은 로컬에만 저장 — Railway에는 전송하지 않음
 app.post('/api/ai-conversation', (req, res) => {
   const conv = req.body;
-  if (!conv || !conv.messages || !Array.isArray(conv.messages)) {
+  // messages 없는 메타데이터 전용 요청(Railway 포워딩)도 허용
+  if (!conv || (!conv.messages && !conv.fromRemote)) {
     return res.status(400).json({ error: 'messages array required' });
   }
 
@@ -1255,8 +1281,9 @@ app.post('/api/ai-conversation', (req, res) => {
       )
     `);
 
-    const id  = conv.id || `conv-${Date.now()}`;
-    const now = new Date().toISOString();
+    const id       = conv.id || `conv-${Date.now()}`;
+    const now      = new Date().toISOString();
+    const messages = conv.messages || [];
 
     // INSERT OR REPLACE (같은 id = 업데이트)
     db.prepare(`
@@ -1268,8 +1295,8 @@ app.post('/api/ai-conversation', (req, res) => {
       conv.site  || 'Unknown',
       conv.url   || '',
       conv.title || conv.site || '',
-      conv.messages.length,
-      JSON.stringify(conv.messages),  // 원문 저장
+      conv.msgCount || messages.length,
+      messages.length ? JSON.stringify(messages) : null,  // 원문 저장 (로컬만)
       conv.shared ? 1 : 0,
       conv.capturedAt || now,
       now,
@@ -1278,15 +1305,30 @@ app.post('/api/ai-conversation', (req, res) => {
     // 브로드캐스트 (대시보드 실시간 업데이트)
     if (typeof broadcastAll === 'function') {
       broadcastAll({
-        type:   'ai_conversation_saved',
-        site:   conv.site,
-        title:  conv.title,
-        msgs:   conv.messages.length,
+        type:  'ai_conversation_saved',
+        site:  conv.site,
+        title: conv.title,
+        msgs:  conv.msgCount || messages.length,
         id,
       });
     }
 
-    console.log(`[AI대화] ${conv.site} — ${conv.messages.length}메시지 저장 (${id})`);
+    console.log(`[AI대화] ${conv.site} — ${conv.msgCount || messages.length}메시지 저장 (${id})`);
+
+    // Railway 실시간 포워딩 (원문 제외, 메타데이터만) — 로컬 요청일 때만
+    if (!conv.fromRemote && messages.length > 0) {
+      forwardConvToRailway({
+        id,
+        site:       conv.site,
+        url:        conv.url,
+        title:      conv.title,
+        msgCount:   messages.length,
+        capturedAt: conv.capturedAt || now,
+        shared:     conv.shared || false,
+        // messages 필드 미포함 (원문 프라이버시 보호)
+      });
+    }
+
     res.json({ ok: true, id, stored: true });
   } catch (err) {
     console.error('[AI대화] 저장 오류:', err.message);
@@ -1341,9 +1383,30 @@ app.get('/api/ai-conversations/:id/messages', (req, res) => {
 
 // ── 브라우저 활동 수신 ────────────────────────────────────────────────────────
 app.post('/api/browser-activity', (req, res) => {
-  const { url, title, stayMs } = req.body;
+  const { url, title, stayMs, fromRemote } = req.body;
   if (typeof broadcastAll === 'function') {
     broadcastAll({ type: 'browser_activity', url, title, stayMs });
+  }
+  // Railway 포워딩 (로컬 요청일 때만, 무한루프 방지)
+  if (!fromRemote) {
+    const railwayUrl = process.env.RAILWAY_PUBLIC_DOMAIN
+      ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+      : null;
+    if (railwayUrl && !process.env.RAILWAY_ENVIRONMENT) {
+      try {
+        const https = require('https');
+        const body  = JSON.stringify({ url, title, stayMs, fromRemote: true, timestamp: new Date().toISOString() });
+        const reqFwd = https.request({
+          hostname: new URL(railwayUrl).hostname,
+          port: 443, path: '/api/browser-activity', method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+        }, r => r.resume());
+        reqFwd.on('error', () => {});
+        reqFwd.setTimeout(5000, () => reqFwd.destroy());
+        reqFwd.write(body);
+        reqFwd.end();
+      } catch {}
+    }
   }
   res.json({ ok: true });
 });
