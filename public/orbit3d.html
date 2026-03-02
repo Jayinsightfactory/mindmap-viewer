@@ -8060,50 +8060,59 @@ window.loadExecModelOptions = loadExecModelOptions;
 let _setupStatus = null;  // GET /api/setup/check 캐시
 
 // ── 로그인 후 자동 환경 체크 ────────────────────────────────────────────────
-async function _autoCheckEnvAfterLogin() {
-  // 2초 후 감지 시작 (씬 로드 안정화 대기)
-  await new Promise(r => setTimeout(r, 2000));
+function _autoCheckEnvAfterLogin() {
+  const ollamaOk = localStorage.getItem('orbit_ollama_ok') === '1';
+  const hookOk   = localStorage.getItem('orbit_hook_ok')   === '1';
 
-  let env;
-  try { env = await detectClientEnv(); } catch { return; }
+  if (ollamaOk && hookOk) return; // 이미 모두 확인됨
 
-  const issues = [];
-  if (!env.ollama.running)    issues.push({ icon:'🤖', msg:'Ollama가 설치되지 않았습니다.', action:'설치 안내 보기', fn:'openSetupPanel()' });
-  if (!env.hook.registered)   issues.push({ icon:'🔗', msg:'Claude Code 훅이 미등록 상태입니다.', action:'원키 설치', fn:'openSetupPanel()' });
+  setTimeout(() => {
+    if (document.getElementById('env-check-banner')) return;
 
-  if (issues.length === 0) {
-    // 모두 정상 — 조용히 통과
-    return;
-  }
+    const items = [];
+    if (!ollamaOk) items.push({
+      icon: '🤖', label: 'Ollama',
+      desc: 'AI 분석을 위해 Ollama가 필요합니다',
+      btn1: `<button onclick="testOllamaConnection()" style="padding:4px 10px;background:#1f6feb;border:none;border-radius:6px;color:#fff;font-size:11px;cursor:pointer;margin-right:4px">연결 테스트</button>`,
+      btn2: `<button onclick="confirmOllama()" style="padding:4px 10px;background:#238636;border:none;border-radius:6px;color:#fff;font-size:11px;cursor:pointer">설치됨 ✓</button>`,
+    });
+    if (!hookOk) items.push({
+      icon: '🔗', label: 'Claude 훅',
+      desc: 'Claude Code 작업 자동 추적을 위해 훅 등록이 필요합니다',
+      btn1: `<button onclick="openSetupPanel()" style="padding:4px 10px;background:#1f6feb;border:none;border-radius:6px;color:#fff;font-size:11px;cursor:pointer;margin-right:4px">설치 안내</button>`,
+      btn2: `<button onclick="confirmHook()" style="padding:4px 10px;background:#238636;border:none;border-radius:6px;color:#fff;font-size:11px;cursor:pointer">등록됨 ✓</button>`,
+    });
 
-  // 설정 배너 표시
-  const banner = document.createElement('div');
-  banner.id = 'env-check-banner';
-  banner.style.cssText = `
-    position:fixed;bottom:80px;left:50%;transform:translateX(-50%);
-    background:#161b22;border:1px solid #30363d;border-radius:12px;
-    padding:14px 20px;z-index:9000;max-width:420px;width:90%;
-    box-shadow:0 8px 32px rgba(0,0,0,0.5);font-family:inherit;
-  `;
-  banner.innerHTML = `
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-      <span style="font-size:16px">⚙️</span>
-      <span style="font-size:13px;font-weight:600;color:#f0f6fc">앱 100% 활용을 위한 설정이 필요합니다</span>
-      <span onclick="document.getElementById('env-check-banner').remove()"
-        style="margin-left:auto;cursor:pointer;color:#6e7681;font-size:16px;line-height:1">✕</span>
-    </div>
-    ${issues.map(i => `
-      <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid #21262d">
-        <span>${i.icon}</span>
-        <span style="flex:1;font-size:12px;color:#8b949e">${i.msg}</span>
-        <button onclick="${i.fn};document.getElementById('env-check-banner').remove()"
-          style="padding:4px 10px;background:#238636;border:none;border-radius:6px;color:#fff;font-size:11px;cursor:pointer">${i.action}</button>
+    const banner = document.createElement('div');
+    banner.id = 'env-check-banner';
+    banner.style.cssText = `
+      position:fixed;bottom:80px;left:50%;transform:translateX(-50%);
+      background:#161b22;border:1px solid #30363d;border-radius:12px;
+      padding:14px 20px;z-index:9000;max-width:460px;width:92%;
+      box-shadow:0 8px 32px rgba(0,0,0,0.5);font-family:inherit;
+    `;
+    banner.innerHTML = `
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+        <span style="font-size:15px">⚙️</span>
+        <span style="font-size:13px;font-weight:600;color:#f0f6fc">앱 100% 활용을 위한 설정</span>
+        <span onclick="document.getElementById('env-check-banner').remove()"
+          style="margin-left:auto;cursor:pointer;color:#6e7681;font-size:18px;line-height:1">✕</span>
       </div>
-    `).join('')}
-  `;
-  document.body.appendChild(banner);
-  // 15초 후 자동 제거
-  setTimeout(() => banner.remove(), 15000);
+      ${items.map(i => `
+        <div style="padding:8px 0;border-top:1px solid #21262d">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+            <span>${i.icon}</span>
+            <span style="font-size:12px;font-weight:600;color:#e6edf3">${i.label}</span>
+            <span style="font-size:11px;color:#6e7681;flex:1">${i.desc}</span>
+          </div>
+          <div style="display:flex;gap:4px;padding-left:20px">
+            ${i.btn1}${i.btn2}
+          </div>
+        </div>
+      `).join('')}
+    `;
+    document.body.appendChild(banner);
+  }, 2000);
 }
 
 async function openSetupPanel() {
@@ -8122,50 +8131,53 @@ function closeSetupPanel() {
 window.openSetupPanel  = openSetupPanel;
 window.closeSetupPanel = closeSetupPanel;
 
-// ── 클라이언트 사이드 환경 감지 ─────────────────────────────────────────────
-// Railway 서버는 Linux이므로 OS/Ollama는 반드시 브라우저에서 직접 감지해야 함
-async function detectClientEnv() {
-  // OS: navigator.userAgent로 감지
+// ── 클라이언트 환경 감지 ─────────────────────────────────────────────────────
+// HTTPS→HTTP localhost는 브라우저 Mixed Content 정책으로 차단됨
+// → OS: navigator.userAgent / Ollama·훅: localStorage 확인 상태 사용
+function detectClientEnv() {
   const ua = navigator.userAgent || '';
   let os = 'linux';
-  if (/Windows/i.test(ua))      os = 'windows';
+  if (/Windows/i.test(ua))       os = 'windows';
   else if (/Mac OS X/i.test(ua)) os = 'mac';
 
-  // Ollama: localhost:11434 직접 접속 시도 (브라우저 → 사용자 로컬)
-  let ollama = { installed: false, running: false, models: [] };
-  try {
-    const r = await fetch('http://localhost:11434/api/tags', { signal: AbortSignal.timeout(2000) });
-    if (r.ok) {
-      const d = await r.json().catch(() => ({}));
-      const models = (d.models || []).map(m => m.name);
-      ollama = { installed: true, running: true, models };
-    }
-  } catch {}
+  // 사용자가 직접 확인한 상태를 localStorage에 저장
+  const ollamaOk = localStorage.getItem('orbit_ollama_ok') === '1';
+  const hookOk   = localStorage.getItem('orbit_hook_ok')   === '1';
 
-  // 로컬 서버(4747) 경유로 Claude 훅 상태 감지
-  let hook  = { registered: false };
-  let claude = { running: false };
-  try {
-    const r = await fetch('http://localhost:4747/api/setup/check', { signal: AbortSignal.timeout(2000) });
-    if (r.ok) {
-      const d = await r.json();
-      hook   = d.hook   || hook;
-      claude = d.claude || claude;
-    }
-  } catch {}
-
-  // 서버에서 Node.js 버전만 가져오기
-  let nodeVersion = 'N/A';
-  try {
-    const r = await fetch('/api/setup/check', { signal: AbortSignal.timeout(3000) });
-    if (r.ok) {
-      const d = await r.json();
-      nodeVersion = d.nodeVersion || nodeVersion;
-    }
-  } catch {}
-
-  return { os, nodeVersion, ollama, hook, claude, ready: ollama.running && hook.registered };
+  return {
+    os,
+    nodeVersion: 'N/A',
+    ollama: { installed: ollamaOk, running: ollamaOk, models: [] },
+    hook:   { registered: hookOk },
+    claude: { running: false },
+    ready:  ollamaOk && hookOk,
+  };
 }
+
+// Ollama 설치 여부 수동 확인 (새 탭에서 localhost:11434 열기)
+function testOllamaConnection() {
+  window.open('http://localhost:11434', '_blank');
+}
+// 사용자가 직접 "완료" 클릭 시 localStorage 저장 후 패널 새로고침
+function confirmOllama() {
+  localStorage.setItem('orbit_ollama_ok', '1');
+  renderSetupPanel();
+  document.getElementById('env-check-banner')?.remove();
+}
+function confirmHook() {
+  localStorage.setItem('orbit_hook_ok', '1');
+  renderSetupPanel();
+  document.getElementById('env-check-banner')?.remove();
+}
+function resetEnvConfirm() {
+  localStorage.removeItem('orbit_ollama_ok');
+  localStorage.removeItem('orbit_hook_ok');
+  renderSetupPanel();
+}
+window.testOllamaConnection = testOllamaConnection;
+window.confirmOllama = confirmOllama;
+window.confirmHook   = confirmHook;
+window.resetEnvConfirm = resetEnvConfirm;
 
 async function renderSetupPanel() {
   const body = document.getElementById('sp-body');
@@ -8188,18 +8200,53 @@ async function renderSetupPanel() {
   const hookOk   = hook.registered;
   const claudeOk = claude.running;
 
+  const ollamaCard = ollamaOk
+    ? `<div class="sp-check-card" style="flex-direction:column;align-items:flex-start;gap:4px">
+        <div style="display:flex;width:100%;align-items:center">
+          <div class="sp-check-label">Ollama</div>
+          <div class="sp-check-val sp-check-ok">✅ 확인됨</div>
+        </div>
+        <button onclick="resetEnvConfirm()" style="font-size:10px;color:#6e7681;background:none;border:none;cursor:pointer;padding:0">↩ 확인 초기화</button>
+      </div>`
+    : `<div class="sp-check-card" style="flex-direction:column;align-items:flex-start;gap:6px">
+        <div style="display:flex;width:100%;align-items:center">
+          <div class="sp-check-label">Ollama</div>
+          <div class="sp-check-val sp-check-warn">❌ 미확인</div>
+        </div>
+        <div style="display:flex;gap:6px">
+          <button onclick="testOllamaConnection()" style="padding:3px 8px;background:#1f6feb;border:none;border-radius:5px;color:#fff;font-size:11px;cursor:pointer">🔗 localhost:11434 열기</button>
+          <button onclick="confirmOllama()" style="padding:3px 8px;background:#238636;border:none;border-radius:5px;color:#fff;font-size:11px;cursor:pointer">설치됨 ✓</button>
+        </div>
+        <div style="font-size:10px;color:#6e7681">Ollama가 실행 중이면 위 버튼을 눌러 확인 후 "설치됨 ✓" 클릭</div>
+      </div>`;
+
+  const hookCard = hookOk
+    ? `<div class="sp-check-card" style="flex-direction:column;align-items:flex-start;gap:4px">
+        <div style="display:flex;width:100%;align-items:center">
+          <div class="sp-check-label">Claude 훅</div>
+          <div class="sp-check-val sp-check-ok">✅ 등록됨</div>
+        </div>
+        <button onclick="resetEnvConfirm()" style="font-size:10px;color:#6e7681;background:none;border:none;cursor:pointer;padding:0">↩ 확인 초기화</button>
+      </div>`
+    : `<div class="sp-check-card" style="flex-direction:column;align-items:flex-start;gap:6px">
+        <div style="display:flex;width:100%;align-items:center">
+          <div class="sp-check-label">Claude 훅</div>
+          <div class="sp-check-val sp-check-warn">❌ 미등록</div>
+        </div>
+        <div style="display:flex;gap:6px">
+          <button onclick="confirmHook()" style="padding:3px 8px;background:#238636;border:none;border-radius:5px;color:#fff;font-size:11px;cursor:pointer">훅 등록됨 ✓</button>
+        </div>
+        <div style="font-size:10px;color:#6e7681">아래 원키 설치 스크립트 실행 후 "훅 등록됨 ✓" 클릭</div>
+      </div>`;
+
   const cards = [
     { label:'OS', val: `${osIcon} ${os}`,  cls:'sp-check-neutral' },
     { label:'Node.js', val: nodeVersion,     cls:'sp-check-neutral' },
-    { label:'Ollama',  val: ollamaOk ? `✅ 실행 중 (${ollama.models?.length||0}개)` : (ollama.installed ? '⚠️ 중지됨' : '❌ 미설치'),
-      cls: ollamaOk ? 'sp-check-ok' : 'sp-check-warn' },
-    { label:'Claude 훅', val: hookOk ? '✅ 등록됨' : '❌ 미등록',
-      cls: hookOk ? 'sp-check-ok' : 'sp-check-warn' },
   ].map(c => `
     <div class="sp-check-card">
       <div class="sp-check-label">${c.label}</div>
       <div class="sp-check-val ${c.cls}">${escHtml(c.val)}</div>
-    </div>`).join('');
+    </div>`).join('') + ollamaCard + hookCard;
 
   // ── 설치 스크립트 섹션 ────────────────────────────────────────────────────
   const needsInstall = !ollamaOk || !hookOk;
