@@ -20,6 +20,22 @@ const fs      = require('fs');
 const path    = require('path');
 const http    = require('http');
 const https   = require('https');
+const os      = require('os');
+
+// ── ~/.orbit-config.json 읽기 (Railway URL + 토큰) ──────────
+// 로컬 서버가 꺼져도 Railway로 직접 전송하기 위해 필요
+function readOrbitConfig() {
+  try {
+    const p = path.join(os.homedir(), '.orbit-config.json');
+    if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, 'utf8'));
+  } catch {}
+  return {};
+}
+const _orbitCfg    = readOrbitConfig();
+// Railway 서버 URL: 환경변수 > config 파일
+const RAILWAY_URL   = process.env.ORBIT_SERVER_URL || _orbitCfg.serverUrl || null;
+// 인증 토큰
+const RAILWAY_TOKEN = process.env.ORBIT_TOKEN      || _orbitCfg.token     || '';
 
 // ── 설정 ────────────────────────────────────────────────────
 const ENABLED         = process.env.ORBIT_KEYLOG !== 'false';
@@ -319,16 +335,18 @@ function callOllama(prompt) {
   });
 }
 
-// ── 로컬 서버로 인사이트 전송 (원문 절대 포함 안 함) ─────────
+// ── 인사이트 전송 (로컬 서버 → Railway 폴백) ─────────────────
+// 로컬 서버(4747)가 꺼져 있어도 Railway로 직접 전송해 학습 지속
 function sendInsightToServer(insight, insightId) {
-  try {
-    const payload = JSON.stringify({
-      type:      'keylog_insight',
-      insightId,
-      insight,                    // 분석 결과만 (원문 없음)
-      timestamp: new Date().toISOString(),
-    });
+  const payload = JSON.stringify({
+    type:      'keylog_insight',
+    insightId,
+    insight,                    // 분석 결과만 (원문 없음)
+    timestamp: new Date().toISOString(),
+  });
 
+  // 1차: 로컬 서버로 전송 시도
+  try {
     const req = http.request({
       hostname: '127.0.0.1',
       port:     LOCAL_PORT,
@@ -336,12 +354,65 @@ function sendInsightToServer(insight, insightId) {
       method:   'POST',
       headers:  { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) },
     }, r => r.resume());
-
-    req.on('error', () => {});
-    req.setTimeout(3000, () => req.destroy());
+    req.on('error', () => {
+      // 로컬 서버 꺼진 경우 → Railway로 폴백
+      sendInsightToRailway(insight, insightId);
+    });
+    req.setTimeout(2000, () => {
+      req.destroy();
+      sendInsightToRailway(insight, insightId); // 타임아웃 시 Railway 폴백
+    });
     req.write(payload);
     req.end();
-  } catch {}
+  } catch {
+    sendInsightToRailway(insight, insightId);
+  }
+}
+
+// ── Railway로 인사이트 직접 전송 (로컬 서버 없이 동작) ────────
+// 이벤트 형식으로 포장해서 /api/hook 엔드포인트로 전송
+function sendInsightToRailway(insight, insightId) {
+  if (!RAILWAY_URL) return; // Railway URL 없으면 스킵
+
+  try {
+    // Orbit 이벤트 형식으로 변환 (서버가 인식할 수 있는 구조)
+    const event = {
+      id:        insightId,
+      type:      'keylog.insight',      // 이벤트 타입
+      source:    'keylogger',
+      sessionId: `kl-${Date.now()}`,
+      userId:    'local',
+      channelId: 'keylog',
+      timestamp: new Date().toISOString(),
+      data:      { insight },           // 원문 없이 인사이트만
+      metadata:  { model: OLLAMA_MODEL },
+    };
+
+    const body    = JSON.stringify({ events: [event] });
+    const url     = new URL('/api/hook', RAILWAY_URL);
+    const isHttps = url.protocol === 'https:';
+    const mod     = isHttps ? https : http;
+    const headers = {
+      'Content-Type':   'application/json',
+      'Content-Length': Buffer.byteLength(body),
+    };
+    if (RAILWAY_TOKEN) headers['Authorization'] = `Bearer ${RAILWAY_TOKEN}`;
+
+    const req = mod.request({
+      hostname: url.hostname,
+      port:     url.port || (isHttps ? 443 : 80),
+      path:     url.pathname,
+      method:   'POST',
+      headers,
+    }, r => { r.resume(); log(`Railway 전송 완료: ${insight.topic}`); });
+
+    req.on('error', e => log(`Railway 전송 실패: ${e.message}`));
+    req.setTimeout(8000, () => req.destroy());
+    req.write(body);
+    req.end();
+  } catch (e) {
+    log(`Railway 전송 예외: ${e.message}`);
+  }
 }
 
 // ── 메인 ────────────────────────────────────────────────────

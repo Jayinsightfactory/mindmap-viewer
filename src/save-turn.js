@@ -311,6 +311,106 @@ async function realtimeUpload(events) {
   }
 }
 
+// ─── Ollama 분석 (로컬 서버 없이 직접 호출) ────────────────────
+// Stop 이벤트마다 작업 요약을 Ollama로 분석 → Railway 직접 전송
+// 로컬 서버 종료 시에도 학습이 계속됨
+
+const OLLAMA_PORT  = parseInt(process.env.OLLAMA_PORT  || '11434');
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'qwen2.5-coder:1.5b';
+
+// Ollama /api/generate 직접 호출
+function callOllama(prompt) {
+  return new Promise((resolve) => {
+    const body = JSON.stringify({
+      model:   OLLAMA_MODEL,
+      prompt,
+      stream:  false,
+      options: { temperature: 0.2, num_predict: 300 },
+    });
+    const req = http.request({
+      hostname: '127.0.0.1',
+      port:     OLLAMA_PORT,
+      path:     '/api/generate',
+      method:   'POST',
+      headers:  { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+    }, res => {
+      let data = '';
+      res.on('data', c => (data += c));
+      res.on('end', () => {
+        try {
+          const resp  = JSON.parse(data);
+          const text  = resp.response || '';
+          const match = text.match(/\{[\s\S]*\}/); // JSON 부분만 추출
+          resolve(match ? JSON.parse(match[0]) : null);
+        } catch { resolve(null); }
+      });
+    });
+    req.on('error', () => resolve(null));   // Ollama 꺼진 경우 조용히 무시
+    req.setTimeout(20000, () => { req.destroy(); resolve(null); });
+    req.write(body);
+    req.end();
+  });
+}
+
+// Stop 이벤트에서 최근 대화를 Ollama로 분석 → Railway 직접 전송
+// 플랫폼(로컬 서버) 꺼져도 학습 계속
+async function analyzeAndUpload(hookData, events) {
+  try {
+    // 사용자 요청 텍스트 추출
+    const userMsg = (hookData.transcript || [])
+      .filter(m => m.role === 'user')
+      .map(m => Array.isArray(m.content)
+        ? m.content.filter(c => c.type === 'text').map(c => c.text).join(' ')
+        : String(m.content || ''))
+      .pop() || '';
+
+    const toolNames = events
+      .filter(e => e.type === 'tool.end')
+      .map(e => e.data?.toolName)
+      .filter(Boolean);
+
+    if (!userMsg && toolNames.length === 0) return; // 분석할 내용 없으면 스킵
+
+    const prompt = `다음 Claude Code 작업을 분석해서 JSON으로만 응답하세요.
+
+사용자 요청: "${userMsg.slice(0, 300)}"
+사용된 도구: ${toolNames.slice(0, 5).join(', ') || '없음'}
+
+아래 JSON 형식으로만 응답 (추가 설명 없이):
+{
+  "topic": "작업 주제 (20자 이내)",
+  "category": "버그수정|기능추가|리팩토링|문서|분석|기타",
+  "tools": ["사용된도구들"],
+  "summary": "작업 요약 (50자 이내)",
+  "complexity": "low|medium|high"
+}`;
+
+    const insight = await callOllama(prompt);
+    if (!insight) return; // Ollama 응답 없으면 조용히 스킵
+
+    log(`[Ollama] 분석 완료: ${insight.topic} (${insight.category})`);
+
+    // Railway로 직접 전송 (로컬 서버 불필요)
+    if (ORBIT_SERVER_URL) {
+      const insightEvent = {
+        id:        `oi-${Date.now()}-${Math.random().toString(36).slice(2,6)}`,
+        type:      'ollama.insight',
+        source:    'save-turn',
+        sessionId: hookData.session_id || 'unknown',
+        userId:    'local',
+        channelId: CHANNEL_ID,
+        timestamp: new Date().toISOString(),
+        data:      { insight, model: OLLAMA_MODEL },
+        metadata:  { hookEvent: hookData.hook_event_name },
+      };
+      await uploadToRailway([insightEvent]); // 기존 Railway 전송 함수 재사용
+      log(`[Ollama] Railway 전송 완료`);
+    }
+  } catch (e) {
+    log(`[Ollama] 분석 오류: ${e.message}`);
+  }
+}
+
 // ─── 메인 처리 ──────────────────────────────────────
 let inputData = '';
 process.stdin.setEncoding('utf8');
@@ -370,7 +470,7 @@ process.stdin.on('end', async () => {
       log(`saved event id=${event.id} type=${event.type}`);
     }
 
-    // Stop일 때 스냅샷 마커 저장
+    // Stop일 때 스냅샷 마커 저장 + Ollama 분석
     if (hookData.hook_event_name === 'Stop') {
       const lastEventId = events.length > 0 ? events[events.length - 1].id : 'unknown';
       const snapshotDir = path.join(SNAPSHOTS_DIR, `event-${lastEventId}`);
@@ -379,6 +479,10 @@ process.stdin.on('end', async () => {
         path.join(snapshotDir, 'marker.json'),
         JSON.stringify({ eventId: lastEventId, ts: new Date().toISOString(), session: sessionId }, null, 2)
       );
+
+      // ★ Ollama 분석: 작업 완료 시 자동으로 요약 생성 → Railway 전송
+      // 로컬 서버가 꺼져 있어도 Ollama(11434)가 실행 중이면 분석 계속
+      analyzeAndUpload(hookData, events).catch(() => {}); // 비동기, 실패해도 무시
     }
 
     // 3. 로컬 서버에 실시간 전송 (localhost만, 개인 뷰용)

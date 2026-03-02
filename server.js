@@ -1156,20 +1156,74 @@ if (-not (Get-Command ollama -ErrorAction SilentlyContinue)) {
 }
 Write-Host "✓ Ollama OK" -ForegroundColor Green
 
-# 5. Ollama 서버 + 기본 모델
-Start-Process "ollama" -ArgumentList "serve" -WindowStyle Hidden -ErrorAction SilentlyContinue
-Start-Sleep -Seconds 3
-ollama pull qwen2.5-coder:1.5b 2>$null
-Write-Host "✓ 모델 OK" -ForegroundColor Green
+# 5. Ollama 영구 실행 설정 (PC 켤 때마다 자동 시작)
+# ─ Windows Task Scheduler에 "OrbitOllama" 작업 등록
+# ─ 로그인 시 자동 실행, 플랫폼 꺼져도 Ollama는 계속 동작
+Write-Host "Ollama 자동 실행 설정 중..." -ForegroundColor Yellow
+
+$ollamaExe = (Get-Command ollama -ErrorAction SilentlyContinue)?.Source
+if (-not $ollamaExe) {
+    $ollamaExe = "$env:LOCALAPPDATA\\Programs\\Ollama\\ollama.exe"
+}
+if (Test-Path $ollamaExe) {
+    # Task Scheduler에 Ollama 등록 (로그인 시 자동 실행, 종료해도 재시작)
+    $action  = New-ScheduledTaskAction  -Execute $ollamaExe -Argument "serve"
+    $trigger = New-ScheduledTaskTrigger -AtLogOn
+    $settings= New-ScheduledTaskSettingsSet -ExecutionTimeLimit 0 -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -MultipleInstances IgnoreNew
+    Register-ScheduledTask -TaskName "OrbitOllama" -Action $action -Trigger $trigger -Settings $settings -RunLevel Highest -Force 2>$null | Out-Null
+    # 지금 즉시 시작
+    Start-ScheduledTask -TaskName "OrbitOllama" -ErrorAction SilentlyContinue
+    Write-Host "✓ Ollama 자동 실행 등록됨 (PC 켤 때마다 자동 시작)" -ForegroundColor Green
+} else {
+    # exe 못 찾으면 기존 방식으로 시작
+    Start-Process "ollama" -ArgumentList "serve" -WindowStyle Hidden -ErrorAction SilentlyContinue
+    Write-Host "✓ Ollama 실행됨 (수동 시작 모드)" -ForegroundColor Green
+}
+
+# Ollama 준비될 때까지 대기 (최대 30초, 1초 간격 폴링)
+Write-Host "Ollama 초기화 대기 중..." -ForegroundColor Yellow
+$ollamaReady = $false
+for ($i = 0; $i -lt 30; $i++) {
+    try {
+        $resp = Invoke-WebRequest -Uri "http://localhost:11434/api/tags" -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop
+        if ($resp.StatusCode -eq 200) { $ollamaReady = $true; break }
+    } catch {}
+    Start-Sleep -Seconds 1
+}
+if ($ollamaReady) {
+    Write-Host "✓ Ollama 준비 완료" -ForegroundColor Green
+    # 기본 모델 자동 설치 (없는 경우만)
+    Write-Host "AI 모델 설치 중... (처음 한 번만, 몇 분 소요)" -ForegroundColor Yellow
+    $modelsJson = Invoke-WebRequest -Uri "http://localhost:11434/api/tags" -UseBasicParsing | Select-Object -ExpandProperty Content | ConvertFrom-Json
+    $hasModel = $modelsJson.models | Where-Object { $_.name -like "qwen2.5-coder*" }
+    if (-not $hasModel) {
+        ollama pull qwen2.5-coder:1.5b
+        Write-Host "✓ 모델 설치 완료 (qwen2.5-coder:1.5b)" -ForegroundColor Green
+    } else {
+        Write-Host "✓ 모델 이미 설치됨" -ForegroundColor Green
+    }
+} else {
+    Write-Host "⚠ Ollama 초기화 대기 타임아웃 — 모델은 백그라운드에서 계속 설치됩니다" -ForegroundColor Yellow
+    Start-Job -ScriptBlock { Start-Sleep 10; ollama pull qwen2.5-coder:1.5b } | Out-Null
+}
 
 # 6. Claude Code 훅 등록
 # node로 훅 등록
 node -e "const fs=require('fs'),path=require('path'),os=require('os');const p=path.join(os.homedir(),'.claude','settings.json');const s=fs.existsSync(p)?JSON.parse(fs.readFileSync(p,'utf8')):{};if(!s.hooks)s.hooks={};const cmd='node '+process.argv[1];const t=['UserPromptSubmit','Stop','SessionStart','SessionEnd','SubagentStart','SubagentStop','Notification','TaskCompleted'];t.forEach(k=>{if(!s.hooks[k])s.hooks[k]=[];const ok=s.hooks[k].some(h=>(h.hooks||[]).some(x=>x.command===cmd));if(!ok)s.hooks[k].push({hooks:[{type:'command',command:cmd}]});});if(!s.hooks.PostToolUse)s.hooks.PostToolUse=[];const ok2=s.hooks.PostToolUse.some(h=>(h.hooks||[]).some(x=>x.command===cmd));if(!ok2)s.hooks.PostToolUse.push({matcher:'*',hooks:[{type:'command',command:cmd}]});fs.mkdirSync(path.dirname(p),{recursive:true});fs.writeFileSync(p,JSON.stringify(s,null,2));console.log('훅 등록 완료');" "$ORBIT\\src\\save-turn.js"
 Write-Host "✓ Claude 훅 OK" -ForegroundColor Green
 
-# 7. Orbit 서버 시작 (백그라운드)
+# 7. Orbit 서버 시작 (백그라운드) + Task Scheduler 등록
 Start-Process "node" -ArgumentList "$ORBIT\\server.js" -WorkingDirectory $ORBIT -WindowStyle Hidden
 Start-Sleep -Seconds 2
+# Orbit 로컬 서버도 로그인 시 자동 시작 등록
+$nodeExe = (Get-Command node -ErrorAction SilentlyContinue)?.Source
+if ($nodeExe) {
+    $action2   = New-ScheduledTaskAction  -Execute $nodeExe -Argument "$ORBIT\\server.js" -WorkingDirectory $ORBIT
+    $trigger2  = New-ScheduledTaskTrigger -AtLogOn
+    $settings2 = New-ScheduledTaskSettingsSet -ExecutionTimeLimit 0 -RestartCount 5 -RestartInterval (New-TimeSpan -Minutes 2) -MultipleInstances IgnoreNew
+    Register-ScheduledTask -TaskName "OrbitServer" -Action $action2 -Trigger $trigger2 -Settings $settings2 -RunLevel Highest -Force 2>$null | Out-Null
+    Write-Host "✓ Orbit 서버 자동 실행 등록됨" -ForegroundColor Green
+}
 
 # 8. 팀 서버 URL 환경변수 + 설정 파일 저장 (팀원 → Railway 업로드용)
 # 환경변수: 새 터미널/프로세스에서 사용
@@ -1220,16 +1274,28 @@ if (-not (Test-Path $extDir)) { New-Item -ItemType Directory -Path $extDir -Forc
 Copy-Item "$ORBIT\\vscode-extension\\*" -Destination $extDir -Force -ErrorAction SilentlyContinue
 Write-Host "✓ VS Code 확장 설치됨 (재시작 후 활성화)" -ForegroundColor Green
 
-# 11. 키로거 의존성 설치 + 백그라운드 시작
+# 11. 키로거 의존성 설치 + Task Scheduler 등록 (자동 실행)
 Write-Host "키 입력 분석 모듈 설치 중..." -ForegroundColor Yellow
 Push-Location $ORBIT
 cmd /c npm install uiohook-napi better-sqlite3 --silent 2>&1 | Out-Null
 New-Item -ItemType Directory -Path "$ORBIT\\src\\data" -Force | Out-Null 2>$null
-if (-not (Get-Process -Name "node" -ErrorAction SilentlyContinue | Where-Object {$_.CommandLine -like "*keylogger*"})) {
-    Start-Process "node" -ArgumentList "$ORBIT\\src\\keylogger.js" -WorkingDirectory "$ORBIT\\src" -WindowStyle Hidden
-    Write-Host "✓ 키 입력 로컬 분석 시작 (원문 로컬 저장, 결과만 Ollama 분석)" -ForegroundColor Green
-}
 Pop-Location
+
+# 키로거를 Task Scheduler에 등록 (로그인 시 자동 실행)
+# 플랫폼이 꺼져도 키입력 수집 + Ollama 분석이 계속 동작
+if ($nodeExe) {
+    $action3   = New-ScheduledTaskAction  -Execute $nodeExe -Argument "$ORBIT\\src\\keylogger.js" -WorkingDirectory "$ORBIT\\src"
+    $trigger3  = New-ScheduledTaskTrigger -AtLogOn
+    $settings3 = New-ScheduledTaskSettingsSet -ExecutionTimeLimit 0 -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -MultipleInstances IgnoreNew
+    Register-ScheduledTask -TaskName "OrbitKeylogger" -Action $action3 -Trigger $trigger3 -Settings $settings3 -RunLevel Highest -Force 2>$null | Out-Null
+    # 지금 즉시 시작
+    Start-ScheduledTask -TaskName "OrbitKeylogger" -ErrorAction SilentlyContinue
+    Write-Host "✓ 키 입력 분석 자동 실행 등록됨 (플랫폼 종료 후에도 Ollama 학습 지속)" -ForegroundColor Green
+} else {
+    # node.exe 경로 못 찾으면 기존 방식
+    Start-Process "node" -ArgumentList "$ORBIT\\src\\keylogger.js" -WorkingDirectory "$ORBIT\\src" -WindowStyle Hidden -ErrorAction SilentlyContinue
+    Write-Host "✓ 키 입력 분석 시작 (수동 시작 모드)" -ForegroundColor Green
+}
 
 # 12. 기존 로컬 이벤트 Railway로 동기화 (설치 직후 1회)
 Write-Host "기존 작업 데이터 동기화 중..." -ForegroundColor Yellow
@@ -1242,7 +1308,13 @@ Write-Host ""
 Write-Host "✅ Orbit AI 설치 완료!" -ForegroundColor Green
 Write-Host "   로컬: http://localhost:${port}" -ForegroundColor Cyan
 Write-Host "   팀 대시보드: ${serverUrl}" -ForegroundColor Cyan
-Write-Host "수집 항목: Claude Code · VS Code · 터미널 · 브라우저 · AI 대화 · 키 입력 패턴" -ForegroundColor White
+Write-Host ""
+Write-Host "🔄 자동 실행 서비스 등록 완료:" -ForegroundColor Cyan
+Write-Host "   • OrbitOllama   — Ollama AI 서버 (PC 켤 때마다 자동 시작, 종료 시 재시작)" -ForegroundColor White
+Write-Host "   • OrbitServer   — Orbit 로컬 서버 (PC 켤 때마다 자동 시작)" -ForegroundColor White
+Write-Host "   • OrbitKeylogger — AI 키입력 분석 (플랫폼 종료 후에도 Ollama 학습 지속)" -ForegroundColor White
+Write-Host ""
+Write-Host "수집 항목: Claude Code · VS Code · 터미널 · AI 대화 · 키 입력 패턴" -ForegroundColor DarkGray
 `;
 
   res.setHeader('Content-Type', 'text/plain; charset=utf-8');
