@@ -2278,8 +2278,8 @@
       </div>
     </div>
     <hr class="popup-divider">
-    <!-- 샘플 데이터 체험 섹션 -->
-    <div style="background:#161b22;border:1px solid #30363d;border-radius:10px;padding:12px 14px;margin-bottom:12px;">
+    <!-- 샘플 데이터 체험 섹션 — 비로그인 시에만 표시 -->
+    <div id="guide-sample-section" style="background:#161b22;border:1px solid #30363d;border-radius:10px;padding:12px 14px;margin-bottom:12px;">
       <div style="font-size:12px;color:#8b949e;margin-bottom:8px;">📊 샘플 데이터로 미리 체험하기 (로그인 전)</div>
       <div style="display:flex;gap:8px;">
         <button class="popup-btn outline" style="flex:1;font-size:11px;padding:6px 10px;"
@@ -2289,7 +2289,7 @@
       </div>
     </div>
     <button class="popup-btn" onclick="closePopup('guide-popup');openSetupPanel()">⚙️ 지금 설정 시작하기</button>
-    <button class="popup-btn outline" onclick="closePopup('guide-popup');openLoginModal()">🔑 로그인하기</button>
+    <button id="guide-login-btn" class="popup-btn outline" onclick="closePopup('guide-popup');openLoginModal()">🔑 로그인하기</button>
   </div>
 </div>
 
@@ -4881,34 +4881,33 @@ function buildCompanySystem(companyData) {
 async function loadTeamDemo() {
   if (typeof track === 'function') track('view.mode_switch', { from: 'personal', to: 'team' });
 
-  // 실제 워크스페이스 데이터 우선 시도
   const token = localStorage.getItem('orbit_token');
-  if (token) {
-    try {
-      const res = await fetch('/api/workspace/team-view', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data && data.members && data.members.length > 0) {
-          buildTeamSystem(data);
-          updateBreadcrumb('team');
-          document.querySelector('.tm-label').textContent = '👥 실제 팀 데이터';
-          return;
-        }
-      }
-    } catch {}
-    // 로그인 상태인데 팀 데이터 없음 → 팀 초대 안내
-    _showNoTeamDataToast('team');
+
+  // ── 비로그인 → 로그인 요청 (샘플 표시 안 함) ──────────────────────────
+  if (!token) {
+    showToast('👥 팀 화면은 로그인 후 이용 가능합니다');
+    setTimeout(() => openLoginModal(), 400);
     return;
   }
 
-  // 비로그인 → 샘플 데이터 (가이드용)
-  buildTeamSystem(TEAM_DEMO);
-  updateBreadcrumb('team');
-  seedDemoTalentBoard('team');
-  document.querySelector('.tm-label').textContent = '👥 샘플 (가이드용)';
-  setTimeout(checkHelperSuggestions, 2500);
+  // ── 로그인 → 실제 워크스페이스 데이터 시도 ───────────────────────────
+  try {
+    const res = await fetch('/api/workspace/team-view', {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.members && data.members.length > 0) {
+        buildTeamSystem(data);
+        updateBreadcrumb('team');
+        document.querySelector('.tm-label').textContent = '👥 실제 팀 데이터';
+        return;
+      }
+    }
+  } catch {}
+
+  // 로그인 상태인데 팀 데이터 없음 → 팀 초대 안내
+  _showNoTeamDataToast('team');
 }
 window.loadTeamDemo = loadTeamDemo;
 
@@ -4916,31 +4915,32 @@ async function loadCompanyDemo() {
   if (typeof track === 'function') track('view.mode_switch', { from: 'team', to: 'company' });
 
   const token = localStorage.getItem('orbit_token');
-  if (token) {
-    try {
-      const res = await fetch('/api/workspace/company-view', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data && data.departments && data.departments.length > 0) {
-          buildCompanySystem(data);
-          updateBreadcrumb('company');
-          document.querySelector('.tm-label').textContent = '🏢 실제 회사 데이터';
-          return;
-        }
-      }
-    } catch {}
-    // 로그인 상태인데 회사 데이터 없음 → 팀 초대 안내
-    _showNoTeamDataToast('company');
+
+  // ── 비로그인 → 로그인 요청 (샘플 표시 안 함) ──────────────────────────
+  if (!token) {
+    showToast('🏢 전사 화면은 로그인 후 이용 가능합니다');
+    setTimeout(() => openLoginModal(), 400);
     return;
   }
 
-  // 비로그인 → 샘플 데이터 (가이드용)
-  buildCompanySystem(COMPANY_DEMO);
-  updateBreadcrumb('company');
-  seedDemoTalentBoard('company');
-  document.querySelector('.tm-label').textContent = '🏢 샘플 (가이드용)';
+  // ── 로그인 → 실제 워크스페이스 데이터 시도 ───────────────────────────
+  try {
+    const res = await fetch('/api/workspace/company-view', {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.departments && data.departments.length > 0) {
+        buildCompanySystem(data);
+        updateBreadcrumb('company');
+        document.querySelector('.tm-label').textContent = '🏢 실제 회사 데이터';
+        return;
+      }
+    }
+  } catch {}
+
+  // 로그인 상태인데 회사 데이터 없음 → 안내
+  _showNoTeamDataToast('company');
 }
 window.loadCompanyDemo = loadCompanyDemo;
 
@@ -12132,6 +12132,13 @@ window.closePopup = closePopup;
 // ══ 가이드 팝업 ══════════════════════════════════════════════════════════════
 function openGuidePopup() {
   document.getElementById('guide-popup').style.display = 'flex';
+
+  // 로그인 상태에 따라 샘플 섹션 / 로그인 버튼 표시 제어
+  const isLoggedIn = !!localStorage.getItem('orbit_token');
+  const sampleSec = document.getElementById('guide-sample-section');
+  const loginBtn  = document.getElementById('guide-login-btn');
+  if (sampleSec) sampleSec.style.display = isLoggedIn ? 'none' : '';
+  if (loginBtn)  loginBtn.style.display  = isLoggedIn ? 'none' : '';
 }
 window.openGuidePopup = openGuidePopup;
 
