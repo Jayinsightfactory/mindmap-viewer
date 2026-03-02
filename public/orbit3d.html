@@ -8478,15 +8478,33 @@ async function renderSetupPanel() {
 
   // ── 설치 섹션 ─────────────────────────────────────────────────────────────
   const needsInstall = !ollamaOk || !hookOk;
+  const _installCmd = os === 'windows'
+    ? `powershell -ExecutionPolicy Bypass -Command "irm ${location.origin}/orbit-setup.ps1 | iex"`
+    : `curl -fsSL ${location.origin}/orbit-setup.sh | bash`;
+
   const installSection = needsInstall ? `
     <div class="sp-section">📦 원키 설치</div>
-    <p style="font-size:12px;color:#8b949e;margin-bottom:10px;line-height:1.7">
-      아래 버튼을 클릭하면 <b style="color:#cdd9e5">PowerShell/터미널 명령어</b>가 표시됩니다.<br>
-      명령어를 복사해 실행하면 내 PC에 <span style="color:#3fb950">자동으로 설치</span>됩니다.
-    </p>
-    <button class="sp-btn sp-btn-primary" onclick="showInstallModal()" style="margin-bottom:6px">
-      🚀 원키 설치 명령어 보기
-    </button>
+    <div style="background:#010409;border:1px solid #21262d;border-radius:8px;
+      padding:10px 12px;margin-bottom:8px;position:relative">
+      <div style="font-size:10px;color:#6e7681;margin-bottom:5px">
+        ${os === 'windows' ? '🪟 CMD 또는 PowerShell' : '🖥️ 터미널'}
+      </div>
+      <code id="sp-install-inline-cmd"
+        style="font-family:'Consolas','Courier New',monospace;font-size:11px;
+        color:#3fb950;word-break:break-all;line-height:1.6;display:block;
+        padding-right:52px">${escHtml(_installCmd)}</code>
+      <button onclick="(function(){
+        const el=document.getElementById('sp-install-inline-cmd');
+        navigator.clipboard.writeText(el.textContent.trim()).then(()=>{
+          const b=document.getElementById('sp-inline-copy-btn');
+          b.textContent='✅';b.style.background='#238636';
+          setTimeout(()=>{b.textContent='복사';b.style.background='#1f6feb';},2000);
+        }).catch(()=>prompt('복사:',el.textContent.trim()));
+      })()" id="sp-inline-copy-btn"
+        style="position:absolute;top:8px;right:8px;background:#1f6feb;border:none;
+        border-radius:5px;color:#fff;font-size:10px;font-weight:600;
+        padding:3px 8px;cursor:pointer">복사</button>
+    </div>
     <button class="sp-btn sp-btn-outline" onclick="markSetupDone()">
       ✅ 이미 설치됨 — 완료 처리
     </button>
@@ -9746,12 +9764,33 @@ function _showEmptyStateGuide() {
     ` : ''}
     <div style="font-size:12px;color:#6e7681;background:rgba(88,166,255,.08);
       border:1px solid #1f6feb30;border-radius:10px;padding:12px 14px;
-      text-align:left;line-height:1.8;margin-bottom:16px">
+      text-align:left;line-height:1.6;margin-bottom:16px">
       <b style="color:#79c0ff">체크리스트:</b><br>
       ① Claude Code가 실행 중인가요?<br>
-      ② 설치 스크립트를 실행했나요?<br>
-      &nbsp;&nbsp;<code style="color:#7ee787;font-size:11px">irm [서버URL]/orbit-setup.ps1 | iex</code><br>
-      ③ 설치 후 Claude Code로 파일을 편집해보세요
+      ② 아래 설치 명령어를 <b>CMD</b>에서 실행했나요?
+    </div>
+    <div style="background:#010409;border:1px solid #21262d;border-radius:10px;
+      padding:12px 14px;margin-bottom:8px;position:relative">
+      <div style="font-size:10px;color:#6e7681;margin-bottom:6px">🪟 CMD / PowerShell 설치 명령어</div>
+      <code id="esg-install-cmd" style="font-family:'Consolas','Courier New',monospace;
+        font-size:11px;color:#3fb950;word-break:break-all;line-height:1.6;display:block">
+        powershell -ExecutionPolicy Bypass -Command "irm ${location.origin}/orbit-setup.ps1 | iex"
+      </code>
+    </div>
+    <button onclick="(function(){
+      const cmd = document.getElementById('esg-install-cmd').textContent.trim();
+      navigator.clipboard.writeText(cmd).then(()=>{
+        const b=document.getElementById('esg-copy-btn');
+        b.textContent='✅ 복사됨'; b.style.background='#238636';
+        setTimeout(()=>{b.textContent='📋 명령어 복사';b.style.background='';},2000);
+      }).catch(()=>prompt('복사하세요:',cmd));
+    })()" id="esg-copy-btn"
+      style="width:100%;background:#1f6feb;border:none;color:#fff;
+      padding:9px 0;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;margin-bottom:8px">
+      📋 명령어 복사
+    </button>
+    <div style="font-size:11px;color:#6e7681;margin-bottom:14px;line-height:1.5">
+      ③ 설치 완료 후 Claude Code로 파일을 편집하면 노드가 나타납니다
     </div>
     <button onclick="document.getElementById('empty-state-guide').remove()"
       style="background:#21262d;border:1px solid #30363d;color:#e6edf3;
