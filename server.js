@@ -1130,6 +1130,11 @@ Write-Host "✓ Claude 훅 OK" -ForegroundColor Green
 Start-Process "node" -ArgumentList "$ORBIT\\server.js" -WorkingDirectory $ORBIT -WindowStyle Hidden
 Start-Sleep -Seconds 2
 
+# 8. 팀 서버 URL 환경변수 설정 (팀원 → Railway 업로드용)
+[System.Environment]::SetEnvironmentVariable("ORBIT_SERVER_URL", "${serverUrl}", "User")
+$env:ORBIT_SERVER_URL = "${serverUrl}"
+Write-Host "✓ 팀 서버 URL 설정 완료: ${serverUrl}" -ForegroundColor Green
+
 Write-Host ""
 Write-Host "✅ Orbit AI 설치 완료!" -ForegroundColor Green
 Write-Host "   로컬: http://localhost:${port}" -ForegroundColor Cyan
@@ -1197,6 +1202,12 @@ console.log('훅 등록 완료');
 " "$ORBIT/src/save-turn.js"
 
 nohup node $ORBIT/server.js > $ORBIT/server.log 2>&1 &
+
+# 8. 팀 서버 URL 환경변수 설정
+echo "export ORBIT_SERVER_URL=${serverUrl}" >> ~/.zshrc 2>/dev/null || true
+echo "export ORBIT_SERVER_URL=${serverUrl}" >> ~/.bashrc 2>/dev/null || true
+export ORBIT_SERVER_URL=${serverUrl}
+echo "✓ 팀 서버 URL 설정: ${serverUrl}"
 
 echo ""
 echo "✅ Orbit AI 설치 완료!"

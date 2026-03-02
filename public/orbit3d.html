@@ -24,9 +24,12 @@
 
     /* ── 좌상단 HUD ─────────────────────────────────── */
     #hud {
-      position: fixed; top: 14px; left: 14px; z-index: 100;
+      position: fixed; top: 14px; left: 214px; z-index: 100;
       display: flex; flex-direction: column; gap: 6px;
+      transition: left .2s ease;
     }
+    /* left-nav 접혔을 때 HUD 위치 조정 (44px + 14px = 58px) */
+    #left-nav.collapsed ~ #hud { left: 58px; }
     .hud-box {
       background: rgba(13,17,23,0.88);
       border: 1px solid #21262d;
@@ -45,12 +48,15 @@
 
     /* ── 범례 ─────────────────────────────────────── */
     #legend {
-      position: fixed; bottom: 60px; left: 14px; z-index: 100;
+      position: fixed; bottom: 60px; left: 214px; z-index: 100;
       background: rgba(13,17,23,0.88);
       border: 1px solid #21262d; border-radius: 12px;
       padding: 10px 16px; backdrop-filter: blur(12px);
       font-size: 12px; color: #8b949e;
+      transition: left .2s ease;
     }
+    /* left-nav 접혔을 때 범례 위치 조정 */
+    #left-nav.collapsed ~ #legend { left: 58px; }
     #legend .leg-title { color: #6e7681; font-size: 11px; margin-bottom: 6px; letter-spacing: .5px; text-transform: uppercase; }
     .leg-item { display: flex; align-items: center; gap: 6px; margin: 3px 0; }
     .leg-dot  { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
@@ -2272,6 +2278,16 @@
       </div>
     </div>
     <hr class="popup-divider">
+    <!-- 샘플 데이터 체험 섹션 -->
+    <div style="background:#161b22;border:1px solid #30363d;border-radius:10px;padding:12px 14px;margin-bottom:12px;">
+      <div style="font-size:12px;color:#8b949e;margin-bottom:8px;">📊 샘플 데이터로 미리 체험하기 (로그인 전)</div>
+      <div style="display:flex;gap:8px;">
+        <button class="popup-btn outline" style="flex:1;font-size:11px;padding:6px 10px;"
+          onclick="closePopup('guide-popup');_loadSampleTeam()">👥 팀 샘플 보기</button>
+        <button class="popup-btn outline" style="flex:1;font-size:11px;padding:6px 10px;"
+          onclick="closePopup('guide-popup');_loadSampleCompany()">🏢 전사 샘플 보기</button>
+      </div>
+    </div>
     <button class="popup-btn" onclick="closePopup('guide-popup');openSetupPanel()">⚙️ 지금 설정 시작하기</button>
     <button class="popup-btn outline" onclick="closePopup('guide-popup');openLoginModal()">🔑 로그인하기</button>
   </div>
@@ -4882,12 +4898,16 @@ async function loadTeamDemo() {
         }
       }
     } catch {}
+    // 로그인 상태인데 팀 데이터 없음 → 팀 초대 안내
+    _showNoTeamDataToast('team');
+    return;
   }
 
-  // 폴백: 데모 데이터
+  // 비로그인 → 샘플 데이터 (가이드용)
   buildTeamSystem(TEAM_DEMO);
   updateBreadcrumb('team');
   seedDemoTalentBoard('team');
+  document.querySelector('.tm-label').textContent = '👥 샘플 (가이드용)';
   setTimeout(checkHelperSuggestions, 2500);
 }
 window.loadTeamDemo = loadTeamDemo;
@@ -4911,14 +4931,47 @@ async function loadCompanyDemo() {
         }
       }
     } catch {}
+    // 로그인 상태인데 회사 데이터 없음 → 팀 초대 안내
+    _showNoTeamDataToast('company');
+    return;
   }
 
-  // 폴백: 데모 데이터
+  // 비로그인 → 샘플 데이터 (가이드용)
   buildCompanySystem(COMPANY_DEMO);
   updateBreadcrumb('company');
   seedDemoTalentBoard('company');
+  document.querySelector('.tm-label').textContent = '🏢 샘플 (가이드용)';
 }
 window.loadCompanyDemo = loadCompanyDemo;
+
+// 로그인 상태에서 팀/회사 데이터 없을 때 안내
+function _showNoTeamDataToast(type) {
+  const msg = type === 'team'
+    ? '👥 팀 데이터 없음 — 팀원을 초대하거나 팀에 합류하세요'
+    : '🏢 회사 데이터 없음 — 팀장에게 초대를 요청하세요';
+  // showToast 함수로 안내
+  if (typeof showToast === 'function') showToast(msg, 4000);
+  // 가이드 팝업 열기 유도 (샘플 체험 버튼 포함)
+  setTimeout(() => openGuidePopup(), 500);
+}
+
+// 가이드에서만 사용하는 샘플 강제 로드 함수 (로그인 무관)
+function _loadSampleTeam() {
+  buildTeamSystem(TEAM_DEMO);
+  updateBreadcrumb('team');
+  seedDemoTalentBoard('team');
+  document.querySelector('.tm-label').textContent = '👥 팀 샘플 (가이드)';
+  setTimeout(checkHelperSuggestions, 2500);
+}
+window._loadSampleTeam = _loadSampleTeam;
+
+function _loadSampleCompany() {
+  buildCompanySystem(COMPANY_DEMO);
+  updateBreadcrumb('company');
+  seedDemoTalentBoard('company');
+  document.querySelector('.tm-label').textContent = '🏢 전사 샘플 (가이드)';
+}
+window._loadSampleCompany = _loadSampleCompany;
 
 function loadParallelDemo() {
   if (typeof track === 'function') track('view.mode_switch', { from: 'personal', to: 'parallel' });
@@ -8309,6 +8362,27 @@ window.showInstallModal   = showInstallModal;
 window.copyInstallScript  = copyInstallScript;
 window.markSetupDone      = markSetupDone;
 
+// Ollama 서버 시작 (설치됐지만 미실행 상태)
+async function startOllamaServer() {
+  const btn = document.querySelector('button[onclick="startOllamaServer()"]');
+  if (btn) { btn.textContent = '⏳ 시작 중…'; btn.disabled = true; }
+  try {
+    const port = localStorage.getItem('orbit_port') || '4747';
+    const res  = await fetch(`http://localhost:${port}/api/setup/start-ollama`, { method: 'POST' });
+    if (res.ok) {
+      if (typeof showToast === 'function') showToast('✅ Ollama 서버 시작 완료', 3000);
+      setTimeout(() => renderSetupPanel(), 2500); // 상태 새로고침
+    } else {
+      if (typeof showToast === 'function') showToast('❌ 시작 실패 — 터미널에서 ollama serve 실행', 4000);
+      if (btn) { btn.textContent = '▶ Ollama 서버 시작'; btn.disabled = false; }
+    }
+  } catch {
+    if (typeof showToast === 'function') showToast('❌ 서버 연결 실패 — 로컬 서버가 실행 중인지 확인', 4000);
+    if (btn) { btn.textContent = '▶ Ollama 서버 시작'; btn.disabled = false; }
+  }
+}
+window.startOllamaServer = startOllamaServer;
+
 async function renderSetupPanel() {
   const body = document.getElementById('sp-body');
   body.innerHTML = `<div style="padding:24px;text-align:center;color:#6e7681;font-size:12px;">환경 감지 중…</div>`;
@@ -8330,14 +8404,26 @@ async function renderSetupPanel() {
   const hookOk   = hook.registered;
   const claudeOk = claude.running;
 
-  // Ollama 카드: 확인됨 or 설치 버튼
+  // Ollama 카드: 실행중 / 미실행(설치됨) / 미설치 세 가지 상태 구분
+  const ollamaInstalled = ollama.installed;
   const ollamaCard = ollamaOk
     ? `<div class="sp-check-card" style="flex-direction:column;align-items:flex-start;gap:4px">
         <div style="display:flex;width:100%;align-items:center">
           <div class="sp-check-label">Ollama</div>
-          <div class="sp-check-val sp-check-ok">✅ 확인됨</div>
+          <div class="sp-check-val sp-check-ok">✅ 실행 중</div>
         </div>
         <button onclick="resetEnvConfirm()" style="font-size:10px;color:#6e7681;background:none;border:none;cursor:pointer;padding:0">↩ 초기화</button>
+      </div>`
+    : ollamaInstalled
+    ? `<div class="sp-check-card" style="flex-direction:column;align-items:flex-start;gap:6px">
+        <div style="display:flex;width:100%;align-items:center">
+          <div class="sp-check-label">Ollama</div>
+          <div class="sp-check-val sp-check-warn">⚠️ 미실행</div>
+        </div>
+        <div style="font-size:10px;color:#8b949e">설치됨 — 서버가 실행 중이지 않습니다</div>
+        <button onclick="startOllamaServer()" style="padding:5px 12px;background:#238636;border:none;border-radius:6px;color:#fff;font-size:11px;font-weight:600;cursor:pointer;margin-top:2px">
+          ▶ Ollama 서버 시작
+        </button>
       </div>`
     : `<div class="sp-check-card" style="flex-direction:column;align-items:flex-start;gap:6px">
         <div style="display:flex;width:100%;align-items:center">
@@ -11261,6 +11347,12 @@ let _memberDetailOpen = false;
 function toggleLeftNav() {
   _lnCollapsed = !_lnCollapsed;
   document.getElementById('left-nav').classList.toggle('collapsed', _lnCollapsed);
+  // HUD / 범례 위치 조정 (nav 너비에 맞게 이동)
+  const offset = _lnCollapsed ? '58px' : '214px';
+  const hudEl    = document.getElementById('hud');
+  const legendEl = document.getElementById('legend');
+  if (hudEl)    hudEl.style.left    = offset;
+  if (legendEl) legendEl.style.left = offset;
   // 사이드바 너비 변경 → 렌더 영역 재계산
   requestAnimationFrame(() => {
     resizeRendererToSidebar();

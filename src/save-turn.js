@@ -6,10 +6,10 @@
  *   - SQLite + JSONL 저장 (영구 보존)
  *   - 로컬 서버(localhost:4747)에 실시간 전송 (개인 뷰용)
  *
- * [Railway 업로드] 하루 1번만:
- *   - 마지막 업로드 이후 쌓인 이벤트를 일괄 전송
- *   - ORBIT_SERVER_URL + ORBIT_TOKEN 환경변수 필요
- *   - ORBIT_UPLOAD_INTERVAL_MS로 주기 조정 (기본 24시간)
+ * [Railway 업로드] 실시간 (훅 발생 즉시):
+ *   - ORBIT_SERVER_URL 설정 시 매 훅마다 즉시 전송
+ *   - 실패 시 로컬 미전송 큐에 저장 → 다음 훅 실행 시 재시도
+ *   - ORBIT_TOKEN 없어도 동작 (단, 서버에서 인증 필요 시 설정)
  */
 const fs = require('fs');
 const path = require('path');
@@ -19,13 +19,13 @@ const { normalizeHookEvent } = require('./event-normalizer');
 
 // 로컬 서버 포트 (환경변수 또는 기본값 4747)
 const SERVER_PORT = process.env.MINDMAP_PORT || 4747;
-// Railway 서버 URL — 설정 시 하루 1번 일괄 업로드
+// Railway 서버 URL — 설정 시 훅 발생마다 즉시 전송 (실시간)
 // 예: export ORBIT_SERVER_URL=https://mindmap-viewer-production.up.railway.app
 const ORBIT_SERVER_URL = process.env.ORBIT_SERVER_URL || null;
 // 사용자 인증 토큰 (원격 서버 전송 시 필요)
 const ORBIT_TOKEN = process.env.ORBIT_TOKEN || '';
-// 업로드 간격: 기본 24시간 (ms 단위)
-const UPLOAD_INTERVAL_MS = parseInt(process.env.ORBIT_UPLOAD_INTERVAL_MS || String(24 * 60 * 60 * 1000));
+// 미전송 큐 파일 (Railway 전송 실패 시 임시 저장)
+const PENDING_FILE = path.join(__dirname, '.pending-upload.jsonl');
 // 멤버 이름: 환경변수로 설정 (예: export MINDMAP_MEMBER=다린)
 const MEMBER_NAME  = process.env.MINDMAP_MEMBER  || require('os').hostname().split('.')[0];
 
@@ -214,29 +214,12 @@ function postToLocalServer(events) {
   } catch {}
 }
 
-// ─── 하루 1번 Railway 일괄 업로드 ────────────────────
+// ─── Railway 실시간 전송 ──────────────────────────────
 
-/** 마지막 업로드 이후 쌓인 이벤트를 로컬 DB에서 읽기 */
-function readEventsSince(sinceTs) {
-  try {
-    const Database = require('better-sqlite3');
-    const db = new Database(DB_PATH, { readonly: true });
-    // created_at > 마지막 업로드 시각 인 이벤트만 조회
-    const since = sinceTs ? new Date(sinceTs).toISOString() : '2000-01-01';
-    const rows = db.prepare(
-      'SELECT * FROM events WHERE created_at > ? ORDER BY created_at ASC'
-    ).all(since);
-    db.close();
-    return rows;
-  } catch (e) {
-    log(`readEventsSince error: ${e.message}`);
-    return [];
-  }
-}
-
-/** Railway 서버에 이벤트 배열 일괄 POST */
+/** Railway 서버에 이벤트 배열 즉시 POST */
 function uploadToRailway(events) {
   return new Promise((resolve) => {
+    if (!ORBIT_SERVER_URL) return resolve(null);
     try {
       const body = JSON.stringify({ events, channelId: CHANNEL_ID, memberName: MEMBER_NAME });
       const url  = new URL('/api/hook', ORBIT_SERVER_URL);
@@ -256,84 +239,59 @@ function uploadToRailway(events) {
         headers,
       }, res => { res.resume(); resolve(res.statusCode); });
 
-      req.on('error', (e) => { log(`Railway 업로드 오류: ${e.message}`); resolve(null); });
-      req.setTimeout(30000, () => { req.destroy(); log('Railway 업로드 타임아웃'); resolve(null); });
+      req.on('error', (e) => { log(`Railway 전송 오류: ${e.message}`); resolve(null); });
+      req.setTimeout(10000, () => { req.destroy(); log('Railway 전송 타임아웃'); resolve(null); });
       req.write(body);
       req.end();
     } catch (e) {
-      log(`Railway 업로드 예외: ${e.message}`);
+      log(`Railway 전송 예외: ${e.message}`);
       resolve(null);
     }
   });
 }
 
-/**
- * 업로드 슬롯 결정: 하루 2번 (12시, 18시)
- * - 12:00~17:59 → "noon"   슬롯
- * - 18:00~23:59 → "evening" 슬롯
- * - 해당 슬롯을 오늘 아직 안 올렸으면 슬롯 문자열 반환, 아니면 null
- * 예) "2026-03-02-noon", "2026-03-02-evening"
- */
-function currentUploadSlot(state) {
-  const now   = new Date();
-  const hour  = now.getHours();
-  const today = now.toISOString().slice(0, 10); // YYYY-MM-DD
-
-  let slot = null;
-  if (hour >= 18) slot = `${today}-evening`; // 오후 6시 이후
-  else if (hour >= 12) slot = `${today}-noon`; // 정오 이후
-
-  if (!slot) return null;                          // 아직 업로드 시간 아님
-  if ((state.uploadedSlots || []).includes(slot)) return null; // 이미 이 슬롯 완료
-
-  return slot;
+/** 미전송 큐에 저장 (Railway 오프라인 시 백업) */
+function saveToPending(events) {
+  try {
+    const lines = events.map(e => JSON.stringify(e)).join('\n') + '\n';
+    fs.appendFileSync(PENDING_FILE, lines);
+  } catch {}
 }
 
-/** 하루 2번(12시·18시) 이후 첫 훅 실행 시 일괄 업로드 */
-async function dailyUploadIfDue(state) {
-  if (!ORBIT_SERVER_URL || !ORBIT_TOKEN) return; // 설정 없으면 스킵
-
-  const slot = currentUploadSlot(state);
-  if (!slot) return; // 업로드 시간 아님 또는 이미 완료
-
-  if (!state.uploadedSlots) state.uploadedSlots = [];
-
-  // 마지막 업로드 이후 쌓인 이벤트 조회
-  const pending = readEventsSince(state.lastUploadTs || 0);
-  if (pending.length === 0) {
-    // 새 이벤트 없어도 슬롯 기록 (중복 방지)
-    state.uploadedSlots.push(slot);
-    // 슬롯 기록은 최근 10개만 유지 (파일 비대화 방지)
-    if (state.uploadedSlots.length > 10) state.uploadedSlots = state.uploadedSlots.slice(-10);
-    return;
+/** 미전송 큐 재시도 후 비우기 */
+async function flushPending() {
+  if (!fs.existsSync(PENDING_FILE)) return;
+  try {
+    const lines = fs.readFileSync(PENDING_FILE, 'utf8').trim().split('\n').filter(Boolean);
+    if (!lines.length) return;
+    const events = lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+    if (!events.length) return;
+    log(`[PENDING] 미전송 ${events.length}개 재시도`);
+    const status = await uploadToRailway(events);
+    if (status === 200 || status === 201) {
+      fs.writeFileSync(PENDING_FILE, ''); // 성공 시 큐 비우기
+      log(`[PENDING] 재전송 완료: ${events.length}개`);
+    }
+  } catch (e) {
+    log(`[PENDING] 재시도 오류: ${e.message}`);
   }
+}
 
-  log(`[UPLOAD] Railway 일괄 업로드 시작: ${pending.length}개 이벤트`);
+/** 훅 실행마다 Railway에 즉시 전송 (실시간) */
+async function realtimeUpload(events) {
+  if (!ORBIT_SERVER_URL) return; // 설정 없으면 스킵
 
-  // SQLite row → 이벤트 객체 변환
-  const events = pending.map(row => ({
-    id:            row.id,
-    type:          row.type,
-    source:        row.source,
-    sessionId:     row.session_id,
-    userId:        row.user_id,
-    channelId:     row.channel_id || CHANNEL_ID,
-    parentEventId: row.parent_event_id,
-    timestamp:     row.timestamp,
-    data:          JSON.parse(row.data_json || '{}'),
-    metadata:      JSON.parse(row.metadata_json || '{}'),
-  }));
+  // 먼저 미전송 큐 재시도
+  await flushPending();
 
-  const now    = Date.now();
+  // 현재 이벤트 즉시 전송
   const status = await uploadToRailway(events);
   if (status === 200 || status === 201) {
-    state.lastUploadTs = now;       // 다음 업로드 기준 시각
-    state.uploadedSlots.push(slot); // 이 슬롯 완료 표시
-    if (state.uploadedSlots.length > 10) state.uploadedSlots = state.uploadedSlots.slice(-10);
-    log(`[UPLOAD] 완료 [${slot}]: ${events.length}개 → status ${status}`);
+    log(`[REALTIME] Railway 전송 완료: ${events.length}개`);
   } else {
-    // 실패 시 슬롯 기록 안 함 → 다음 훅 실행 시 재시도
-    log(`[UPLOAD] 실패 [${slot}]: status ${status} — 재시도 예정`);
+    // 실패 시 큐에 저장 → 다음 훅 실행 시 재시도
+    saveToPending(events);
+    log(`[REALTIME] Railway 전송 실패 (status=${status}) → 큐 저장`);
   }
 }
 
@@ -350,8 +308,7 @@ process.stdin.on('end', async () => {
 
     // 세션 상태 로드
     const state = loadState();
-    if (!state.sessions)     state.sessions = {};
-    if (!state.lastUploadTs) state.lastUploadTs = 0; // 마지막 Railway 업로드 시각 (ms)
+    if (!state.sessions) state.sessions = {};
     if (!state.sessions[sessionId]) {
       state.sessions[sessionId] = {
         lastUserId:      null,
@@ -413,8 +370,10 @@ process.stdin.on('end', async () => {
       postToLocalServer(events);
     }
 
-    // 4. Railway 일괄 업로드 (하루 1번) — 24시간 경과 시에만 실행
-    await dailyUploadIfDue(state);
+    // 4. Railway 실시간 전송 (ORBIT_SERVER_URL 설정 시 즉시 전송)
+    if (events.length > 0) {
+      await realtimeUpload(events);
+    }
 
     saveState(state);
   } catch (e) {

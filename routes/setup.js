@@ -403,6 +403,30 @@ module.exports = function createSetupRouter({ getAllEvents, getDb, port = 4747 }
     }
   });
 
+  // ── Ollama 서버 시작 (설치됐지만 미실행 상태) ────────────────────────────
+  router.post('/setup/start-ollama', (req, res) => {
+    try {
+      const { spawn } = require('child_process');
+      // 백그라운드로 ollama serve 실행
+      const proc = spawn('ollama', ['serve'], {
+        detached: true,      // 부모 프로세스와 분리
+        stdio:    'ignore',  // 출력 무시
+      });
+      proc.unref(); // 부모 종료 시에도 계속 실행
+      // 2초 후 실제로 떴는지 확인
+      setTimeout(async () => {
+        try {
+          const status = await checkOllama();
+          res.json({ ok: status.running, installed: status.installed });
+        } catch {
+          res.json({ ok: false });
+        }
+      }, 2000);
+    } catch (e) {
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
   // ── Ollama 모델 풀 (SSE) ──────────────────────────────────────────────────
   router.post('/setup/ollama-pull', (req, res) => {
     const { model = 'llama3.2:latest' } = req.body;
