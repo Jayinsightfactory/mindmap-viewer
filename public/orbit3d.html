@@ -8059,6 +8059,53 @@ window.loadExecModelOptions = loadExecModelOptions;
 
 let _setupStatus = null;  // GET /api/setup/check 캐시
 
+// ── 로그인 후 자동 환경 체크 ────────────────────────────────────────────────
+async function _autoCheckEnvAfterLogin() {
+  // 2초 후 감지 시작 (씬 로드 안정화 대기)
+  await new Promise(r => setTimeout(r, 2000));
+
+  let env;
+  try { env = await detectClientEnv(); } catch { return; }
+
+  const issues = [];
+  if (!env.ollama.running)    issues.push({ icon:'🤖', msg:'Ollama가 설치되지 않았습니다.', action:'설치 안내 보기', fn:'openSetupPanel()' });
+  if (!env.hook.registered)   issues.push({ icon:'🔗', msg:'Claude Code 훅이 미등록 상태입니다.', action:'원키 설치', fn:'openSetupPanel()' });
+
+  if (issues.length === 0) {
+    // 모두 정상 — 조용히 통과
+    return;
+  }
+
+  // 설정 배너 표시
+  const banner = document.createElement('div');
+  banner.id = 'env-check-banner';
+  banner.style.cssText = `
+    position:fixed;bottom:80px;left:50%;transform:translateX(-50%);
+    background:#161b22;border:1px solid #30363d;border-radius:12px;
+    padding:14px 20px;z-index:9000;max-width:420px;width:90%;
+    box-shadow:0 8px 32px rgba(0,0,0,0.5);font-family:inherit;
+  `;
+  banner.innerHTML = `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+      <span style="font-size:16px">⚙️</span>
+      <span style="font-size:13px;font-weight:600;color:#f0f6fc">앱 100% 활용을 위한 설정이 필요합니다</span>
+      <span onclick="document.getElementById('env-check-banner').remove()"
+        style="margin-left:auto;cursor:pointer;color:#6e7681;font-size:16px;line-height:1">✕</span>
+    </div>
+    ${issues.map(i => `
+      <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid #21262d">
+        <span>${i.icon}</span>
+        <span style="flex:1;font-size:12px;color:#8b949e">${i.msg}</span>
+        <button onclick="${i.fn};document.getElementById('env-check-banner').remove()"
+          style="padding:4px 10px;background:#238636;border:none;border-radius:6px;color:#fff;font-size:11px;cursor:pointer">${i.action}</button>
+      </div>
+    `).join('')}
+  `;
+  document.body.appendChild(banner);
+  // 15초 후 자동 제거
+  setTimeout(() => banner.remove(), 15000);
+}
+
 async function openSetupPanel() {
   // 다른 패널 닫기
   document.getElementById('llm-panel')?.classList.remove('open');
@@ -8075,14 +8122,58 @@ function closeSetupPanel() {
 window.openSetupPanel  = openSetupPanel;
 window.closeSetupPanel = closeSetupPanel;
 
+// ── 클라이언트 사이드 환경 감지 ─────────────────────────────────────────────
+// Railway 서버는 Linux이므로 OS/Ollama는 반드시 브라우저에서 직접 감지해야 함
+async function detectClientEnv() {
+  // OS: navigator.userAgent로 감지
+  const ua = navigator.userAgent || '';
+  let os = 'linux';
+  if (/Windows/i.test(ua))      os = 'windows';
+  else if (/Mac OS X/i.test(ua)) os = 'mac';
+
+  // Ollama: localhost:11434 직접 접속 시도 (브라우저 → 사용자 로컬)
+  let ollama = { installed: false, running: false, models: [] };
+  try {
+    const r = await fetch('http://localhost:11434/api/tags', { signal: AbortSignal.timeout(2000) });
+    if (r.ok) {
+      const d = await r.json().catch(() => ({}));
+      const models = (d.models || []).map(m => m.name);
+      ollama = { installed: true, running: true, models };
+    }
+  } catch {}
+
+  // 로컬 서버(4747) 경유로 Claude 훅 상태 감지
+  let hook  = { registered: false };
+  let claude = { running: false };
+  try {
+    const r = await fetch('http://localhost:4747/api/setup/check', { signal: AbortSignal.timeout(2000) });
+    if (r.ok) {
+      const d = await r.json();
+      hook   = d.hook   || hook;
+      claude = d.claude || claude;
+    }
+  } catch {}
+
+  // 서버에서 Node.js 버전만 가져오기
+  let nodeVersion = 'N/A';
+  try {
+    const r = await fetch('/api/setup/check', { signal: AbortSignal.timeout(3000) });
+    if (r.ok) {
+      const d = await r.json();
+      nodeVersion = d.nodeVersion || nodeVersion;
+    }
+  } catch {}
+
+  return { os, nodeVersion, ollama, hook, claude, ready: ollama.running && hook.registered };
+}
+
 async function renderSetupPanel() {
   const body = document.getElementById('sp-body');
-  body.innerHTML = `<div style="padding:24px;text-align:center;color:#6e7681;font-size:12px;">설정 불러오는 중…</div>`;
+  body.innerHTML = `<div style="padding:24px;text-align:center;color:#6e7681;font-size:12px;">환경 감지 중…</div>`;
 
   let status;
   try {
-    const r = await fetch('/api/setup/check');
-    status  = await r.json();
+    status = await detectClientEnv(); // 서버 대신 클라이언트에서 직접 감지
     _setupStatus = status;
   } catch (e) {
     body.innerHTML = `<div style="padding:16px;color:#f85149;font-size:12px;">❌ ${escHtml(e.message)}</div>`;
@@ -10956,12 +11047,14 @@ window.doLogoutMain = doLogoutMain;
         localStorage.setItem('orbitUser', JSON.stringify(_orbitUser));
         window.history.replaceState({}, '', window.location.pathname);
         renderLoginState();
+        _autoCheckEnvAfterLogin(); // 로그인 후 자동 환경 체크
       })
       .catch(() => {
         _orbitUser = { name: provider || '사용자', email: '', avatar: null, token: oauthToken };
         localStorage.setItem('orbitUser', JSON.stringify(_orbitUser));
         window.history.replaceState({}, '', window.location.pathname);
         renderLoginState();
+        _autoCheckEnvAfterLogin(); // 로그인 후 자동 환경 체크
       });
     return;
   }
