@@ -25,7 +25,7 @@ const path = require('path');
 
 // ─── 크론 타이머 ──────────────────────────────────────────────────────────────
 let _cronInterval = null;
-const CRON_INTERVAL_MS = parseInt(process.env.INSIGHT_INTERVAL_MS || String(60 * 60 * 1000)); // 기본 1시간
+const CRON_INTERVAL_MS = parseInt(process.env.INSIGHT_INTERVAL_MS || String(24 * 60 * 60 * 1000)); // 기본 24시간 (하루 1번)
 
 // ─── 인사이트 데이터 저장 경로 ────────────────────────────────────────────────
 const DATA_DIR    = path.join(__dirname, '..', 'data');

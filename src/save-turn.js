@@ -1,21 +1,31 @@
 /**
  * save-turn.js
  * Claude Code 훅 스크립트 (10개 훅 이벤트 처리)
- * stdin → 이벤트 정규화 → SQLite + JSONL + HTTP POST 삼중 저장
- * HTTP POST: 서버가 실행 중이면 즉시 WebSocket 브로드캐스트 (파일 감시 레이턴시 없음)
+ *
+ * [로컬] 이벤트 발생 시마다:
+ *   - SQLite + JSONL 저장 (영구 보존)
+ *   - 로컬 서버(localhost:4747)에 실시간 전송 (개인 뷰용)
+ *
+ * [Railway 업로드] 하루 1번만:
+ *   - 마지막 업로드 이후 쌓인 이벤트를 일괄 전송
+ *   - ORBIT_SERVER_URL + ORBIT_TOKEN 환경변수 필요
+ *   - ORBIT_UPLOAD_INTERVAL_MS로 주기 조정 (기본 24시간)
  */
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
+const https = require('https');
 const { normalizeHookEvent } = require('./event-normalizer');
 
-// 서버 포트 (환경변수 또는 기본값 4747)
+// 로컬 서버 포트 (환경변수 또는 기본값 4747)
 const SERVER_PORT = process.env.MINDMAP_PORT || 4747;
-// 외부 서버 URL — Railway 등 원격 배포 시 설정
+// Railway 서버 URL — 설정 시 하루 1번 일괄 업로드
 // 예: export ORBIT_SERVER_URL=https://mindmap-viewer-production.up.railway.app
 const ORBIT_SERVER_URL = process.env.ORBIT_SERVER_URL || null;
 // 사용자 인증 토큰 (원격 서버 전송 시 필요)
 const ORBIT_TOKEN = process.env.ORBIT_TOKEN || '';
+// 업로드 간격: 기본 24시간 (ms 단위)
+const UPLOAD_INTERVAL_MS = parseInt(process.env.ORBIT_UPLOAD_INTERVAL_MS || String(24 * 60 * 60 * 1000));
 // 멤버 이름: 환경변수로 설정 (예: export MINDMAP_MEMBER=다린)
 const MEMBER_NAME  = process.env.MINDMAP_MEMBER  || require('os').hostname().split('.')[0];
 
@@ -185,57 +195,129 @@ function appendToJsonl(event) {
   }
 }
 
-// ─── HTTP POST → 서버 직접 전송 (비동기, 실패해도 무시) ─
-function postToServer(events) {
+// ─── 로컬 서버 실시간 전송 (localhost 전용) ──────────
+function postToLocalServer(events) {
+  // 로컬 서버(4747)에만 전송 — 개인 실시간 뷰용
   try {
     const body = JSON.stringify({ events, channelId: CHANNEL_ID, memberName: MEMBER_NAME });
-
-    // 외부 서버(Railway 등)로 전송
-    if (ORBIT_SERVER_URL) {
-      const https = require('https');
-      const url = new URL('/api/hook', ORBIT_SERVER_URL);
-      const isHttps = url.protocol === 'https:';
-      const mod = isHttps ? https : http;
-      const headers = {
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(body),
-      };
-      if (ORBIT_TOKEN) headers['Authorization'] = `Bearer ${ORBIT_TOKEN}`;
-      const req2 = mod.request({
-        hostname: url.hostname,
-        port: url.port || (isHttps ? 443 : 80),
-        path: url.pathname,
-        method: 'POST',
-        headers,
-      }, res => res.resume());
-      req2.on('error', () => {});
-      req2.setTimeout(5000, () => req2.destroy());
-      req2.write(body);
-      req2.end();
-    }
-
-    // 로컬 서버에도 항상 전송 (개인 뷰용)
     const req = http.request({
       hostname: '127.0.0.1',
       port: SERVER_PORT,
       path: '/api/hook',
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
-    }, (res) => {
-      res.resume();
-    });
-    req.on('error', () => {}); // 서버 미실행 시 조용히 무시
-    req.setTimeout(2000, () => req.destroy()); // 2초 타임아웃
+    }, res => res.resume());
+    req.on('error', () => {}); // 서버 꺼져있으면 조용히 무시
+    req.setTimeout(2000, () => req.destroy());
     req.write(body);
     req.end();
   } catch {}
+}
+
+// ─── 하루 1번 Railway 일괄 업로드 ────────────────────
+
+/** 마지막 업로드 이후 쌓인 이벤트를 로컬 DB에서 읽기 */
+function readEventsSince(sinceTs) {
+  try {
+    const Database = require('better-sqlite3');
+    const db = new Database(DB_PATH, { readonly: true });
+    // created_at > 마지막 업로드 시각 인 이벤트만 조회
+    const since = sinceTs ? new Date(sinceTs).toISOString() : '2000-01-01';
+    const rows = db.prepare(
+      'SELECT * FROM events WHERE created_at > ? ORDER BY created_at ASC'
+    ).all(since);
+    db.close();
+    return rows;
+  } catch (e) {
+    log(`readEventsSince error: ${e.message}`);
+    return [];
+  }
+}
+
+/** Railway 서버에 이벤트 배열 일괄 POST */
+function uploadToRailway(events) {
+  return new Promise((resolve) => {
+    try {
+      const body = JSON.stringify({ events, channelId: CHANNEL_ID, memberName: MEMBER_NAME });
+      const url  = new URL('/api/hook', ORBIT_SERVER_URL);
+      const isHttps = url.protocol === 'https:';
+      const mod  = isHttps ? https : http;
+      const headers = {
+        'Content-Type':   'application/json',
+        'Content-Length': Buffer.byteLength(body),
+      };
+      if (ORBIT_TOKEN) headers['Authorization'] = `Bearer ${ORBIT_TOKEN}`;
+
+      const req = mod.request({
+        hostname: url.hostname,
+        port:     url.port || (isHttps ? 443 : 80),
+        path:     url.pathname,
+        method:   'POST',
+        headers,
+      }, res => { res.resume(); resolve(res.statusCode); });
+
+      req.on('error', (e) => { log(`Railway 업로드 오류: ${e.message}`); resolve(null); });
+      req.setTimeout(30000, () => { req.destroy(); log('Railway 업로드 타임아웃'); resolve(null); });
+      req.write(body);
+      req.end();
+    } catch (e) {
+      log(`Railway 업로드 예외: ${e.message}`);
+      resolve(null);
+    }
+  });
+}
+
+/** 24시간 경과 여부 확인 후 일괄 업로드 실행 */
+async function dailyUploadIfDue(state) {
+  if (!ORBIT_SERVER_URL || !ORBIT_TOKEN) return; // 설정 없으면 스킵
+
+  const now = Date.now();
+  const lastUpload = state.lastUploadTs || 0;
+
+  if (now - lastUpload < UPLOAD_INTERVAL_MS) {
+    // 아직 업로드 주기 안 됨 — 다음 훅 때 다시 체크
+    return;
+  }
+
+  // 마지막 업로드 이후 쌓인 이벤트 조회
+  const pending = readEventsSince(lastUpload);
+  if (pending.length === 0) {
+    // 새 이벤트 없어도 타임스탬프는 갱신
+    state.lastUploadTs = now;
+    return;
+  }
+
+  log(`[UPLOAD] Railway 일괄 업로드 시작: ${pending.length}개 이벤트`);
+
+  // SQLite row → 이벤트 객체 변환
+  const events = pending.map(row => ({
+    id:            row.id,
+    type:          row.type,
+    source:        row.source,
+    sessionId:     row.session_id,
+    userId:        row.user_id,
+    channelId:     row.channel_id || CHANNEL_ID,
+    parentEventId: row.parent_event_id,
+    timestamp:     row.timestamp,
+    data:          JSON.parse(row.data_json || '{}'),
+    metadata:      JSON.parse(row.metadata_json || '{}'),
+  }));
+
+  const status = await uploadToRailway(events);
+  if (status === 200 || status === 201) {
+    state.lastUploadTs = now;
+    log(`[UPLOAD] 완료: ${events.length}개 → status ${status}`);
+  } else {
+    // 실패 시 lastUploadTs 갱신 안 함 → 다음 번에 재시도
+    log(`[UPLOAD] 실패: status ${status} — 다음 번에 재시도`);
+  }
 }
 
 // ─── 메인 처리 ──────────────────────────────────────
 let inputData = '';
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', chunk => { inputData += chunk; });
-process.stdin.on('end', () => {
+process.stdin.on('end', async () => {
   try {
     const hookData = JSON.parse(inputData);
     const sessionId = hookData.session_id || 'unknown';
@@ -244,13 +326,14 @@ process.stdin.on('end', () => {
 
     // 세션 상태 로드
     const state = loadState();
-    if (!state.sessions) state.sessions = {};
+    if (!state.sessions)     state.sessions = {};
+    if (!state.lastUploadTs) state.lastUploadTs = 0; // 마지막 Railway 업로드 시각 (ms)
     if (!state.sessions[sessionId]) {
       state.sessions[sessionId] = {
-        lastUserId: null,
+        lastUserId:      null,
         lastAssistantId: null,
-        sessionStartId: null,
-        pendingTools: [],
+        sessionStartId:  null,
+        pendingTools:    [],
         subagentStartIds: {},
       };
     }
@@ -259,13 +342,10 @@ process.stdin.on('end', () => {
     // 이벤트 정규화
     const events = normalizeHookEvent(hookData, sessionState);
 
-    // 각 이벤트 저장 + 상태 업데이트
+    // 각 이벤트 로컬 저장 + 상태 업데이트
     for (const event of events) {
-      // 1. SQLite 저장 (영구 보존)
-      insertToDb(event);
-
-      // 2. JSONL 저장 (하위 호환)
-      appendToJsonl(event);
+      insertToDb(event);     // 1. SQLite 저장 (영구 보존)
+      appendToJsonl(event);  // 2. JSONL 저장 (하위 호환)
 
       // 세션 상태 추적 (부모-자식 관계를 위해)
       switch (event.type) {
@@ -281,10 +361,7 @@ process.stdin.on('end', () => {
           break;
         case 'tool.end':
         case 'tool.error':
-          sessionState.pendingTools.push({
-            name: event.data.toolName,
-            id: event.id,
-          });
+          sessionState.pendingTools.push({ name: event.data.toolName, id: event.id });
           break;
         case 'subagent.start':
           if (event.data.agentId) {
@@ -307,10 +384,13 @@ process.stdin.on('end', () => {
       );
     }
 
-    // 3. HTTP POST → 서버 실시간 브로드캐스트 (비동기, 파일 감시 레이턴시 제거)
+    // 3. 로컬 서버에 실시간 전송 (localhost만, 개인 뷰용)
     if (events.length > 0) {
-      postToServer(events);
+      postToLocalServer(events);
     }
+
+    // 4. Railway 일괄 업로드 (하루 1번) — 24시간 경과 시에만 실행
+    await dailyUploadIfDue(state);
 
     saveState(state);
   } catch (e) {
