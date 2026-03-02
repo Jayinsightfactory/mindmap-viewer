@@ -8060,99 +8060,112 @@ window.loadExecModelOptions = loadExecModelOptions;
 let _setupStatus = null;  // GET /api/setup/check 캐시
 
 // ── 원키 설치 모달 ─────────────────────────────────────────────────────────
-// 각 사용자의 로컬 PC에 Orbit + Ollama + 훅을 설치하는 PowerShell/bash 명령어를 보여줌
-async function showInstallModal() {
+// 원키 설치: CMD/PowerShell 모두 동작하는 한 줄 명령어 모달
+function showInstallModal() {
   document.getElementById('install-modal')?.remove();
 
-  // OS 감지 (브라우저)
   const ua = navigator.userAgent || '';
-  let osType = 'linux';
-  if (/Windows/i.test(ua))       osType = 'windows';
-  else if (/Mac OS X/i.test(ua)) osType = 'mac';
+  const isWin = /Windows/i.test(ua);
+  const isMac = /Mac OS X/i.test(ua);
 
-  // 서버에서 설치 스크립트 가져오기
-  let script = '', title = '', shell = '';
-  try {
-    const r = await fetch(`/api/setup/install-script?os=${osType}`);
-    const d = await r.json();
-    script = d.script || '';
-    title  = d.title  || '';
-    shell  = d.shell  || 'bash';
-  } catch {
-    script = '# 스크립트를 불러오지 못했습니다. 네트워크 연결을 확인하세요.';
-  }
+  // 서버 URL (현재 페이지의 origin)
+  const serverUrl = location.origin;
 
-  const shellLabel = shell === 'powershell' ? '🪟 PowerShell' : '🖥️ 터미널';
+  // CMD에도 붙여넣기 가능한 한 줄 명령어
+  const winCmd  = `powershell -ExecutionPolicy Bypass -Command "irm ${serverUrl}/orbit-setup.ps1 | iex"`;
+  const macCmd  = `curl -fsSL ${serverUrl}/orbit-setup.sh | bash`;
+  const linuxCmd = macCmd;
+
+  const cmd   = isWin ? winCmd : isMac ? macCmd : linuxCmd;
+  const label = isWin ? '🪟 CMD 또는 PowerShell' : '🖥️ 터미널';
+
   const modal = document.createElement('div');
   modal.id = 'install-modal';
   modal.style.cssText = `
-    position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:10000;
+    position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:10000;
     display:flex;align-items:center;justify-content:center;padding:16px;
   `;
   modal.innerHTML = `
     <div style="background:#161b22;border:1px solid #30363d;border-radius:14px;
-      max-width:680px;width:100%;max-height:90vh;overflow-y:auto;
+      max-width:640px;width:100%;
       box-shadow:0 16px 48px rgba(0,0,0,.6);font-family:inherit;">
       <div style="padding:18px 20px;border-bottom:1px solid #21262d;display:flex;align-items:center;gap:8px">
         <span style="font-size:17px">⬡</span>
         <span style="font-size:14px;font-weight:700;color:#f0f6fc">Orbit AI 원키 설치</span>
-        <span style="font-size:11px;color:#6e7681;margin-left:4px">${title}</span>
         <span onclick="document.getElementById('install-modal').remove()"
           style="margin-left:auto;cursor:pointer;color:#6e7681;font-size:20px;line-height:1">✕</span>
       </div>
-      <div style="padding:16px 20px">
-        <div style="font-size:12px;color:#8b949e;margin-bottom:10px;line-height:1.7">
-          아래 명령어를 <b style="color:#f0f6fc">${shellLabel}</b>에 붙여넣고 실행하세요.<br>
-          <span style="color:#3fb950">Orbit 설치 → Ollama 설치 → AI 모델 다운로드 → Claude 훅 등록</span>이 자동 완료됩니다.
+      <div style="padding:20px">
+
+        <!-- 단계 1 -->
+        <div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:18px">
+          <div style="width:24px;height:24px;background:#1f6feb;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0">1</div>
+          <div style="flex:1">
+            <div style="font-size:13px;font-weight:600;color:#f0f6fc;margin-bottom:4px">${label} 열기</div>
+            <div style="font-size:11px;color:#8b949e;line-height:1.6">
+              ${isWin
+                ? 'Windows 키 → <b style="color:#cdd9e5">cmd</b> 검색 → Enter<br>또는 Windows 키 → <b style="color:#cdd9e5">PowerShell</b> → Enter'
+                : '터미널 앱을 여세요 (Spotlight → Terminal)'}
+            </div>
+          </div>
         </div>
-        <div style="position:relative">
-          <pre id="install-script-box" style="background:#010409;border:1px solid #21262d;border-radius:8px;
-            padding:14px;font-family:'Consolas','Courier New',monospace;font-size:11.5px;
-            color:#adbac7;overflow-x:auto;max-height:300px;overflow-y:auto;line-height:1.6;
-            white-space:pre;margin:0">${escHtml(script)}</pre>
-          <button onclick="copyInstallScript()" style="position:absolute;top:8px;right:8px;
-            background:#1f6feb;border:none;border-radius:6px;color:#fff;
-            font-size:11px;font-weight:600;padding:4px 10px;cursor:pointer" id="copy-script-btn">
-            📋 복사
-          </button>
+
+        <!-- 단계 2 -->
+        <div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:18px">
+          <div style="width:24px;height:24px;background:#1f6feb;border-radius:50%;display:flex;align-items:center;justify-content:normal;font-size:12px;font-weight:700;color:#fff;flex-shrink:0;justify-content:center">2</div>
+          <div style="flex:1">
+            <div style="font-size:13px;font-weight:600;color:#f0f6fc;margin-bottom:6px">아래 명령어 복사 → 붙여넣기 → Enter</div>
+            <div style="position:relative;background:#010409;border:1px solid #21262d;border-radius:8px;padding:12px 44px 12px 14px">
+              <code id="install-cmd" style="font-family:'Consolas','Courier New',monospace;font-size:11.5px;color:#3fb950;word-break:break-all;line-height:1.6">${escHtml(cmd)}</code>
+              <button onclick="copyInstallScript()" id="copy-script-btn"
+                style="position:absolute;top:8px;right:8px;background:#1f6feb;border:none;border-radius:5px;
+                color:#fff;font-size:10px;font-weight:600;padding:3px 8px;cursor:pointer">복사</button>
+            </div>
+            <div style="font-size:10px;color:#6e7681;margin-top:6px;line-height:1.6">
+              ✓ Orbit 다운로드 &nbsp;→&nbsp; ✓ Ollama 설치 &nbsp;→&nbsp; ✓ AI 모델 &nbsp;→&nbsp; ✓ Claude 훅 등록 &nbsp;→&nbsp; ✓ 서버 시작
+            </div>
+          </div>
         </div>
-        <div style="margin-top:14px;padding:12px;background:rgba(31,111,235,.08);border:1px solid #1f6feb;
-          border-radius:8px;font-size:11px;color:#58a6ff;line-height:1.7">
-          <b>실행 방법:</b><br>
-          ${shell === 'powershell'
-            ? '1. Windows 키 → "PowerShell" 검색 → 우클릭 → 관리자 권한으로 실행<br>2. 위 명령어 전체를 복사 후 붙여넣기 → Enter'
-            : '1. 터미널(Terminal)을 열어주세요<br>2. 위 명령어 전체를 복사 후 붙여넣기 → Enter'}
+
+        <!-- 단계 3 -->
+        <div style="display:flex;gap:10px;align-items:flex-start">
+          <div style="width:24px;height:24px;background:#238636;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0">3</div>
+          <div style="flex:1">
+            <div style="font-size:13px;font-weight:600;color:#f0f6fc;margin-bottom:4px">설치 완료 후 → 아래 버튼 클릭</div>
+            <button onclick="markSetupDone()" style="padding:8px 18px;background:#238636;border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:600;cursor:pointer">
+              ✅ 설치 완료됨
+            </button>
+            <span style="font-size:11px;color:#6e7681;margin-left:8px">이미 설치되어 있어도 클릭하세요</span>
+          </div>
         </div>
-        <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
-          <button onclick="copyInstallScript()" style="padding:8px 18px;background:#1f6feb;
-            border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:600;cursor:pointer">
-            📋 명령어 복사
-          </button>
-          <button onclick="markSetupDone()" style="padding:8px 18px;background:#238636;
-            border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:600;cursor:pointer">
-            ✅ 실행 완료됨
-          </button>
-          <button onclick="document.getElementById('install-modal').remove()"
-            style="padding:8px 18px;background:transparent;border:1px solid #30363d;
-            border-radius:8px;color:#8b949e;font-size:13px;cursor:pointer">
-            나중에
-          </button>
-        </div>
+
       </div>
     </div>
   `;
   document.body.appendChild(modal);
+
+  // 바깥 클릭 시 닫기
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) modal.remove();
+  });
 }
 
-// 스크립트 복사
+// 스크립트 복사 (install-cmd 또는 install-script-box)
 function copyInstallScript() {
-  const box = document.getElementById('install-script-box');
-  if (!box) return;
-  navigator.clipboard.writeText(box.textContent || '').then(() => {
+  const el = document.getElementById('install-cmd') || document.getElementById('install-script-box');
+  if (!el) return;
+  navigator.clipboard.writeText(el.textContent || '').then(() => {
     const btn = document.getElementById('copy-script-btn');
-    if (btn) { btn.textContent = '✅ 복사됨'; setTimeout(() => btn.textContent = '📋 복사', 2000); }
-  }).catch(() => alert('복사 실패 — 직접 선택 후 Ctrl+C 하세요.'));
+    if (btn) { btn.textContent = '✅ 복사됨'; setTimeout(() => btn.textContent = '복사', 2000); }
+  }).catch(() => {
+    const t = el.textContent;
+    const ta = document.createElement('textarea');
+    ta.value = t; document.body.appendChild(ta); ta.select();
+    document.execCommand('copy'); document.body.removeChild(ta);
+    alert('복사됨!');
+  });
 }
+
 
 // 설치 완료 처리
 function markSetupDone() {

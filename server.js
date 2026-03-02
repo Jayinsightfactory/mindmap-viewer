@@ -1047,6 +1047,167 @@ app.get('/api/insights/dashboard', (req, res) => {
   });
 });
 
+// ── 원키 설치 스크립트 파일 서빙 (.ps1 / .sh) ────────────────────────────────
+// CMD에서도 동작하는 한 줄: powershell -ExecutionPolicy Bypass -Command "irm [URL]/orbit-setup.ps1 | iex"
+app.get('/orbit-setup.ps1', (req, res) => {
+  const port = PORT;
+  const REPO = 'https://github.com/dlaww-wq/mindmap-viewer.git';
+  const serverUrl = process.env.RAILWAY_PUBLIC_DOMAIN
+    ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+    : `http://localhost:${port}`;
+
+  const script = `# ⬡ Orbit AI 원키 설치 스크립트
+# 실행 방법 (CMD 또는 PowerShell):
+#   powershell -ExecutionPolicy Bypass -Command "irm ${serverUrl}/orbit-setup.ps1 | iex"
+
+$ORBIT = "$env:USERPROFILE\\orbit"
+$REPO  = "${REPO}"
+
+Write-Host "⬡ Orbit AI 설치 시작..." -ForegroundColor Cyan
+
+# 1. Node.js 확인
+if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+    Write-Host "Node.js 설치 중..." -ForegroundColor Yellow
+    winget install OpenJS.NodeJS --accept-package-agreements --accept-source-agreements
+    $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH","User")
+}
+Write-Host "✓ Node.js OK" -ForegroundColor Green
+
+# 2. Git 확인
+if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+    Write-Host "Git 설치 중..." -ForegroundColor Yellow
+    winget install Git.Git --accept-package-agreements --accept-source-agreements
+    $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH","User")
+}
+
+# 3. Orbit 저장소 클론
+if (-not (Test-Path "$ORBIT\\package.json")) {
+    Write-Host "Orbit 다운로드 중..." -ForegroundColor Yellow
+    if (Test-Path $ORBIT) { Remove-Item -Recurse -Force $ORBIT }
+    git clone $REPO $ORBIT
+    Push-Location $ORBIT
+    npm install --silent
+    Pop-Location
+} else {
+    Write-Host "Orbit 업데이트 중..." -ForegroundColor Yellow
+    Push-Location $ORBIT
+    git pull --quiet
+    npm install --silent
+    Pop-Location
+}
+Write-Host "✓ Orbit OK" -ForegroundColor Green
+
+# 4. Ollama 설치
+if (-not (Get-Command ollama -ErrorAction SilentlyContinue)) {
+    Write-Host "Ollama 설치 중..." -ForegroundColor Yellow
+    $t = "$env:TEMP\\OllamaSetup.exe"
+    Invoke-WebRequest -Uri "https://ollama.com/download/OllamaSetup.exe" -OutFile $t -UseBasicParsing
+    Start-Process $t -ArgumentList "/S" -Wait
+    $env:PATH += ";$env:LOCALAPPDATA\\Programs\\Ollama"
+}
+Write-Host "✓ Ollama OK" -ForegroundColor Green
+
+# 5. Ollama 서버 + 기본 모델
+Start-Process "ollama" -ArgumentList "serve" -WindowStyle Hidden -ErrorAction SilentlyContinue
+Start-Sleep -Seconds 3
+ollama pull qwen2.5-coder:1.5b 2>$null
+Write-Host "✓ 모델 OK" -ForegroundColor Green
+
+# 6. Claude Code 훅 등록 (9가지 전체)
+$saveTurn = "$ORBIT\\src\\save-turn.js" -replace "\\\\", "/"
+$hookScript = @"
+const fs=require('fs'),path=require('path'),os=require('os');
+const p=path.join(os.homedir(),'.claude','settings.json');
+const s=fs.existsSync(p)?JSON.parse(fs.readFileSync(p,'utf8')):{};
+if(!s.hooks)s.hooks={};
+const cmd='node ${saveTurn}'.replace(/SAVEPATH/,'$saveTurn');
+"@
+# node로 훅 등록
+node -e "const fs=require('fs'),path=require('path'),os=require('os');const p=path.join(os.homedir(),'.claude','settings.json');const s=fs.existsSync(p)?JSON.parse(fs.readFileSync(p,'utf8')):{};if(!s.hooks)s.hooks={};const cmd='node '+process.argv[1];const t=['UserPromptSubmit','Stop','SessionStart','SessionEnd','SubagentStart','SubagentStop','Notification','TaskCompleted'];t.forEach(k=>{if(!s.hooks[k])s.hooks[k]=[];const ok=s.hooks[k].some(h=>(h.hooks||[]).some(x=>x.command===cmd));if(!ok)s.hooks[k].push({hooks:[{type:'command',command:cmd}]});});if(!s.hooks.PostToolUse)s.hooks.PostToolUse=[];const ok2=s.hooks.PostToolUse.some(h=>(h.hooks||[]).some(x=>x.command===cmd));if(!ok2)s.hooks.PostToolUse.push({matcher:'*',hooks:[{type:'command',command:cmd}]});fs.mkdirSync(path.dirname(p),{recursive:true});fs.writeFileSync(p,JSON.stringify(s,null,2));console.log('훅 등록 완료');" "$ORBIT\\src\\save-turn.js"
+Write-Host "✓ Claude 훅 OK" -ForegroundColor Green
+
+# 7. Orbit 서버 시작 (백그라운드)
+Start-Process "node" -ArgumentList "$ORBIT\\server.js" -WorkingDirectory $ORBIT -WindowStyle Hidden
+Start-Sleep -Seconds 2
+
+Write-Host ""
+Write-Host "✅ Orbit AI 설치 완료!" -ForegroundColor Green
+Write-Host "   로컬: http://localhost:${port}" -ForegroundColor Cyan
+Write-Host "   팀 대시보드: ${serverUrl}" -ForegroundColor Cyan
+Write-Host "이제 Claude Code를 사용하면 데이터가 자동 수집됩니다." -ForegroundColor White
+`;
+
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.setHeader('Content-Disposition', 'inline; filename="orbit-setup.ps1"');
+  res.send(script);
+});
+
+// macOS/Linux용
+app.get('/orbit-setup.sh', (req, res) => {
+  const port = PORT;
+  const REPO = 'https://github.com/dlaww-wq/mindmap-viewer.git';
+  const serverUrl = process.env.RAILWAY_PUBLIC_DOMAIN
+    ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+    : `http://localhost:${port}`;
+
+  const script = `#!/bin/bash
+# ⬡ Orbit AI 원키 설치 스크립트 (macOS/Linux)
+# 실행: curl -fsSL ${serverUrl}/orbit-setup.sh | bash
+
+set -e
+ORBIT="$HOME/orbit"
+echo "⬡ Orbit AI 설치 시작..."
+
+command -v node &>/dev/null || {
+  echo "Node.js 설치 중..."
+  curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - 2>/dev/null || brew install node 2>/dev/null || true
+}
+
+command -v git &>/dev/null || { brew install git 2>/dev/null || sudo apt-get install -y git; }
+
+if [ ! -f "$ORBIT/package.json" ]; then
+  echo "Orbit 다운로드 중..."
+  git clone ${REPO} $ORBIT
+  cd $ORBIT && npm install --silent
+else
+  echo "Orbit 업데이트 중..."
+  cd $ORBIT && git pull --quiet && npm install --silent
+fi
+
+command -v ollama &>/dev/null || {
+  echo "Ollama 설치 중..."
+  curl -fsSL https://ollama.com/install.sh | sh
+}
+ollama serve &>/dev/null & sleep 3
+ollama pull qwen2.5-coder:1.5b 2>/dev/null || true
+
+node -e "
+const fs=require('fs'),path=require('path'),os=require('os');
+const p=path.join(os.homedir(),'.claude','settings.json');
+const s=fs.existsSync(p)?JSON.parse(fs.readFileSync(p,'utf8')):{};
+if(!s.hooks)s.hooks={};
+const cmd='node '+process.argv[1];
+const t=['UserPromptSubmit','Stop','SessionStart','SessionEnd','SubagentStart','SubagentStop','Notification','TaskCompleted'];
+t.forEach(k=>{if(!s.hooks[k])s.hooks[k]=[];const ok=s.hooks[k].some(h=>(h.hooks||[]).some(x=>x.command===cmd));if(!ok)s.hooks[k].push({hooks:[{type:'command',command:cmd}]});});
+if(!s.hooks.PostToolUse)s.hooks.PostToolUse=[];
+const ok2=s.hooks.PostToolUse.some(h=>(h.hooks||[]).some(x=>x.command===cmd));
+if(!ok2)s.hooks.PostToolUse.push({matcher:'*',hooks:[{type:'command',command:cmd}]});
+fs.mkdirSync(path.dirname(p),{recursive:true});fs.writeFileSync(p,JSON.stringify(s,null,2));
+console.log('훅 등록 완료');
+" "$ORBIT/src/save-turn.js"
+
+nohup node $ORBIT/server.js > $ORBIT/server.log 2>&1 &
+
+echo ""
+echo "✅ Orbit AI 설치 완료!"
+echo "   로컬: http://localhost:${port}"
+echo "   팀 대시보드: ${serverUrl}"
+`;
+
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.send(script);
+});
+
 // ── Chrome Extension AI 이벤트 수신 ─────────────────────────────────────────
 app.post('/api/ai-events', (req, res) => {
   const event = req.body;
