@@ -267,23 +267,39 @@ function uploadToRailway(events) {
   });
 }
 
-/** 24시간 경과 여부 확인 후 일괄 업로드 실행 */
+/**
+ * 오후 6시 고정 업로드 여부 판단
+ * - 현재 시각이 18:00 이후이고
+ * - 오늘 날짜(YYYY-MM-DD)에 아직 업로드를 안 했으면 true
+ */
+function isUploadTime(state) {
+  const now  = new Date();
+  const hour = now.getHours(); // 로컬 시간 기준
+
+  // 18시 이전이면 아직 업로드 시간 아님
+  if (hour < 18) return false;
+
+  // 오늘 날짜 (YYYY-MM-DD)
+  const today = now.toISOString().slice(0, 10);
+
+  // 오늘 이미 업로드했으면 스킵
+  if (state.lastUploadDate === today) return false;
+
+  return true;
+}
+
+/** 매일 오후 6시 이후 첫 훅 실행 시 일괄 업로드 */
 async function dailyUploadIfDue(state) {
   if (!ORBIT_SERVER_URL || !ORBIT_TOKEN) return; // 설정 없으면 스킵
+  if (!isUploadTime(state)) return;              // 아직 업로드 시간 아님
 
-  const now = Date.now();
-  const lastUpload = state.lastUploadTs || 0;
-
-  if (now - lastUpload < UPLOAD_INTERVAL_MS) {
-    // 아직 업로드 주기 안 됨 — 다음 훅 때 다시 체크
-    return;
-  }
+  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
 
   // 마지막 업로드 이후 쌓인 이벤트 조회
-  const pending = readEventsSince(lastUpload);
+  const pending = readEventsSince(state.lastUploadTs || 0);
   if (pending.length === 0) {
-    // 새 이벤트 없어도 타임스탬프는 갱신
-    state.lastUploadTs = now;
+    // 새 이벤트 없어도 오늘 날짜는 기록 (중복 실행 방지)
+    state.lastUploadDate = today;
     return;
   }
 
@@ -303,13 +319,15 @@ async function dailyUploadIfDue(state) {
     metadata:      JSON.parse(row.metadata_json || '{}'),
   }));
 
+  const now    = Date.now();
   const status = await uploadToRailway(events);
   if (status === 200 || status === 201) {
-    state.lastUploadTs = now;
+    state.lastUploadTs   = now;   // 다음 업로드 기준 시각
+    state.lastUploadDate = today; // 오늘 날짜 기록 → 오늘 중복 업로드 방지
     log(`[UPLOAD] 완료: ${events.length}개 → status ${status}`);
   } else {
-    // 실패 시 lastUploadTs 갱신 안 함 → 다음 번에 재시도
-    log(`[UPLOAD] 실패: status ${status} — 다음 번에 재시도`);
+    // 실패 시 날짜 갱신 안 함 → 6시 이후 다음 훅 실행 시 재시도
+    log(`[UPLOAD] 실패: status ${status} — 재시도 예정`);
   }
 }
 
