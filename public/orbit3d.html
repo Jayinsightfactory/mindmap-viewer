@@ -1736,8 +1736,8 @@
 
   /* ── 온보딩 / 환경설정 패널 ──────────────────────────────────────────────── */
   #setup-panel {
-    position: fixed; right: 14px; top: 14px;
-    width: 340px; max-height: calc(100vh - 28px);
+    position: fixed; right: 14px; top: 50px;
+    width: 340px; max-height: calc(100vh - 64px);
     background: rgba(13,17,23,0.97); border: 1px solid #21262d;
     border-radius: 14px; backdrop-filter: blur(16px);
     z-index: 9300; display: none; flex-direction: column;
@@ -1807,13 +1807,20 @@
   #claude-tracking-badge {
     position:fixed; top:10px; right:14px; z-index:8900;
     background:rgba(13,17,23,0.85); border:1px solid #21262d; border-radius:20px;
-    padding:4px 10px; font-size:11px; font-weight:600; cursor:pointer;
+    padding:4px 8px 4px 10px; font-size:11px; font-weight:600; cursor:default;
     display:flex; align-items:center; gap:5px; backdrop-filter:blur(8px);
     transition:border-color .2s;
   }
-  #claude-tracking-badge:hover { border-color:#6e7681; }
   #claude-tracking-badge.on  { color:#3fb950; border-color:#238636; }
   #claude-tracking-badge.off { color:#8b949e; }
+  /* 배지 안의 설정 버튼 */
+  #ctb-settings-btn {
+    background:rgba(255,255,255,0.06); border:1px solid #30363d;
+    color:#8b949e; border-radius:6px; padding:1px 6px;
+    cursor:pointer; font-size:11px; margin-left:2px; line-height:1.4;
+    transition: border-color .15s, color .15s;
+  }
+  #ctb-settings-btn:hover { border-color:#6e7681; color:#e6edf3; }
 
   /* ── 목적 타임라인 패널 (하단 슬라이딩) ─────────────────────────────────── */
   #purpose-timeline {
@@ -2368,9 +2375,10 @@
 </div>
 
 <!-- Claude 트래킹 상태 배지 (우상단 고정) -->
-<div id="claude-tracking-badge" class="off" onclick="openSetupPanel()" title="Claude 트래킹 설정">
+<div id="claude-tracking-badge" class="off" title="Claude 트래킹 상태">
   <span id="ctb-dot">⬤</span>
   <span id="ctb-label">Claude 오프라인</span>
+  <button id="ctb-settings-btn" onclick="event.stopPropagation();openSetupPanel()" title="설정 열기">⚙️</button>
 </div>
 
 <!-- 팔로우 패널 -->
@@ -2379,6 +2387,15 @@
     <span class="fp-title">👥 팔로우</span>
     <button class="fp-close" onclick="toggleFollowPanel()">✕</button>
   </div>
+  <!-- 사용자 검색 — 이름·이메일로 팔로우할 사람 찾기 -->
+  <div style="padding:8px 10px 0">
+    <input id="fp-search-input" type="text"
+      placeholder="🔍 사용자 이름·이메일 검색…"
+      oninput="fpSearchDebounce(this.value)"
+      style="width:100%;padding:6px 10px;font-size:12px;background:#161b22;
+             border:1px solid #30363d;border-radius:8px;color:#e6edf3;outline:none;">
+  </div>
+  <div id="fp-search-results" style="display:none;padding:0 10px 4px"></div>
   <div class="fp-tabs">
     <div class="fp-tab active" id="fp-tab-ing"  onclick="switchFollowTab('following')">팔로잉</div>
     <div class="fp-tab"       id="fp-tab-ers"   onclick="switchFollowTab('followers')">팔로워</div>
@@ -12736,22 +12753,31 @@ async function loadFollowList(tab) {
   if (!listEl) return;
   listEl.innerHTML = '<div class="fp-empty">불러오는 중…</div>';
   if (!_orbitUser) { listEl.innerHTML = '<div class="fp-empty">로그인 후 이용하세요</div>'; return; }
-  const token = _orbitUser.token || localStorage.getItem('orbitToken');
+  const token = _orbitUser.token || localStorage.getItem('orbit_token') || localStorage.getItem('orbitToken');
   const url   = tab === 'followers' ? '/api/follow/followers' : '/api/follow/list';
   try {
     const res  = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
     const list = await res.json();
     if (!Array.isArray(list) || list.length === 0) {
-      listEl.innerHTML = '<div class="fp-empty">' + (tab === 'followers' ? '팔로워가 없습니다' : '팔로잉하는 사람이 없습니다') + '</div>';
+      const emptyMsg = tab === 'followers'
+        ? '팔로워가 없습니다<br><span style="font-size:10px;color:#484f58">위 검색창에서 사람을 찾아 팔로우하면<br>상대방도 팔로우할 수 있습니다</span>'
+        : '팔로잉하는 사람이 없습니다<br><span style="font-size:10px;color:#484f58">위 검색창에서 이름·이메일로 검색하세요</span>';
+      listEl.innerHTML = `<div class="fp-empty" style="line-height:1.7">${emptyMsg}</div>`;
       return;
     }
     listEl.innerHTML = list.map(u => `
       <div class="fp-user">
-        <div class="fp-avatar">${u.avatar_url ? `<img src="${u.avatar_url}" style="width:100%;height:100%;border-radius:50%;object-fit:cover">` : (u.name || '?').charAt(0)}</div>
+        <div class="fp-avatar">${u.avatar_url
+          ? `<img src="${u.avatar_url}" style="width:100%;height:100%;border-radius:50%;object-fit:cover">`
+          : (u.name || '?').charAt(0)}</div>
         <div class="fp-info">
           <div class="fp-name">${u.name || '익명'}</div>
           <div class="fp-sub">${u.headline || u.company || ''}</div>
         </div>
+        <button onclick="fpStartDm('${u.user_id}','${(u.name||'').replace(/'/g,"\\'")}',event)"
+          style="background:rgba(88,166,255,0.1);border:1px solid #1f6feb;color:#58a6ff;
+                 border-radius:6px;padding:3px 8px;font-size:11px;cursor:pointer;flex-shrink:0"
+          title="DM 보내기">💬</button>
       </div>
     `).join('');
   } catch (e) {
@@ -12759,6 +12785,100 @@ async function loadFollowList(tab) {
   }
 }
 window.loadFollowList = loadFollowList;
+
+// ── 팔로우 패널에서 DM 시작 ────────────────────────────────────────────────
+async function fpStartDm(userId, name, e) {
+  if (e) e.stopPropagation();
+  if (!_orbitUser) { showToast('로그인이 필요합니다'); return; }
+  // 메신저 열기 + DM 탭으로 이동
+  const panel = document.getElementById('messenger-panel');
+  if (!panel.classList.contains('open')) toggleMessenger();
+  switchMsgTab('dm');
+  // DM 방 생성 또는 기존 방 열기
+  await startDmWithUser(userId, name);
+  showToast(`💬 ${name}님과 DM 시작`);
+}
+window.fpStartDm = fpStartDm;
+
+// ── 사용자 검색 (팔로우 패널) ─────────────────────────────────────────────
+let _fpSearchTimer = null;
+function fpSearchDebounce(q) {
+  clearTimeout(_fpSearchTimer);
+  const resultEl = document.getElementById('fp-search-results');
+  if (!q.trim()) { resultEl.style.display = 'none'; return; }
+  _fpSearchTimer = setTimeout(() => fpSearchUsers(q.trim()), 400);
+}
+window.fpSearchDebounce = fpSearchDebounce;
+
+async function fpSearchUsers(q) {
+  const resultEl = document.getElementById('fp-search-results');
+  if (!_orbitUser) { resultEl.style.display = 'none'; return; }
+  const token = _orbitUser.token || localStorage.getItem('orbit_token') || localStorage.getItem('orbitToken');
+  resultEl.style.display = 'block';
+  resultEl.innerHTML = '<div style="font-size:11px;color:#6e7681;padding:6px 0">검색 중…</div>';
+  try {
+    const res  = await fetch(`/api/follow/search?q=${encodeURIComponent(q)}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const list = await res.json();
+    if (!Array.isArray(list) || list.length === 0) {
+      resultEl.innerHTML = '<div style="font-size:11px;color:#6e7681;padding:6px 0">검색 결과 없음</div>';
+      return;
+    }
+    resultEl.innerHTML = list.map(u => `
+      <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #21262d">
+        <div style="width:28px;height:28px;border-radius:50%;background:#1f6feb;display:flex;align-items:center;
+                    justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0">
+          ${u.avatar_url ? `<img src="${u.avatar_url}" style="width:100%;height:100%;border-radius:50%;object-fit:cover">` : (u.name||'?').charAt(0)}
+        </div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:12px;font-weight:600;color:#e6edf3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${u.name||'익명'}</div>
+          <div style="font-size:10px;color:#6e7681">${u.email||u.headline||''}</div>
+        </div>
+        <button onclick="fpFollowUser('${u.id}','${(u.name||'').replace(/'/g,"\\'")}',this)"
+          style="background:${u.is_following?'rgba(63,185,80,0.1)':'rgba(31,111,235,0.1)'};
+                 border:1px solid ${u.is_following?'#238636':'#1f6feb'};
+                 color:${u.is_following?'#3fb950':'#58a6ff'};
+                 border-radius:6px;padding:2px 8px;font-size:10px;cursor:pointer;flex-shrink:0">
+          ${u.is_following?'✓ 팔로잉':'+ 팔로우'}
+        </button>
+      </div>
+    `).join('');
+  } catch(e) {
+    resultEl.innerHTML = '<div style="font-size:11px;color:#f85149;padding:6px 0">검색 실패</div>';
+  }
+}
+window.fpSearchUsers = fpSearchUsers;
+
+// ── 팔로우/언팔로우 (검색 결과에서) ──────────────────────────────────────
+async function fpFollowUser(userId, name, btn) {
+  if (!_orbitUser) { showToast('로그인이 필요합니다'); return; }
+  const token = _orbitUser.token || localStorage.getItem('orbit_token') || localStorage.getItem('orbitToken');
+  const isFollowing = btn.textContent.includes('팔로잉');
+  btn.disabled = true;
+  try {
+    const res = await fetch(`/api/follow/${userId}`, {
+      method: isFollowing ? 'DELETE' : 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (res.ok) {
+      if (isFollowing) {
+        btn.textContent = '+ 팔로우';
+        btn.style.borderColor = '#1f6feb'; btn.style.color = '#58a6ff';
+        btn.style.background = 'rgba(31,111,235,0.1)';
+        showToast(`${name}님 언팔로우`);
+      } else {
+        btn.textContent = '✓ 팔로잉';
+        btn.style.borderColor = '#238636'; btn.style.color = '#3fb950';
+        btn.style.background = 'rgba(63,185,80,0.1)';
+        showToast(`✓ ${name}님 팔로우 완료!`);
+        loadFollowList(_followPanelTab); // 목록 새로고침
+      }
+    }
+  } catch(e) { showToast('오류 발생'); }
+  btn.disabled = false;
+}
+window.fpFollowUser = fpFollowUser;
 
 /* ── ORBIT ANALYTICS ─────────────────────────────────────────────────────────
  * 사용자 행동 데이터 수집 모듈

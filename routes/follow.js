@@ -136,6 +136,44 @@ function createRouter({ getDb, verifyToken }) {
     }
   });
 
+  // ── GET /api/follow/search — 사용자 검색 (이름·이메일) ───────────────────
+  router.get('/follow/search', auth, (req, res) => {
+    const q = (req.query.q || '').trim();
+    if (!q || q.length < 1) return res.json([]);
+    try {
+      const db = getDb();
+      const like = `%${q}%`;
+      // user_profiles 테이블에서 이름·이메일로 검색 (자신 제외, 최대 20명)
+      let rows = [];
+      try {
+        rows = db.prepare(`
+          SELECT up.user_id AS id, up.name, up.headline, up.avatar_url, u.email,
+                 CASE WHEN uf.follower_id IS NOT NULL THEN 1 ELSE 0 END AS is_following
+          FROM user_profiles up
+          LEFT JOIN users u ON u.id = up.user_id
+          LEFT JOIN user_follows uf ON uf.follower_id = ? AND uf.following_id = up.user_id
+          WHERE up.user_id != ?
+            AND (up.name LIKE ? OR u.email LIKE ?)
+          LIMIT 20
+        `).all(req.user.id, req.user.id, like, like);
+      } catch (_) {
+        // users 테이블 없으면 user_profiles만 검색
+        rows = db.prepare(`
+          SELECT up.user_id AS id, up.name, up.headline, up.avatar_url, NULL AS email,
+                 CASE WHEN uf.follower_id IS NOT NULL THEN 1 ELSE 0 END AS is_following
+          FROM user_profiles up
+          LEFT JOIN user_follows uf ON uf.follower_id = ? AND uf.following_id = up.user_id
+          WHERE up.user_id != ? AND up.name LIKE ?
+          LIMIT 20
+        `).all(req.user.id, req.user.id, like);
+      }
+      res.json(rows);
+    } catch (e) {
+      console.error('[follow/search]', e.message);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // ── GET /api/follow/nodes — 팔로잉한 유저들의 공개 노드 ──────────────────
   // 각 팔로잉 유저의 프로필 + 노드 정보를 집계해서 반환
   // (실제 노드 데이터는 각 유저가 저장한 그래프 DB에서 가져옴)
