@@ -8242,16 +8242,21 @@ function copyInstallScript() {
 
 // 설치 완료 처리
 function markSetupDone() {
+  // 설치가 실제로 완료됐는지 확인하는 다이얼로그
+  // (설치 중 멈춘 상태에서 실수로 완료 처리하는 것 방지)
+  const confirmed = confirm(
+    '✅ 이 컴퓨터에서 설치 명령어를 실행하고\n' +
+    'Orbit 서버가 정상 시작됐나요?\n\n' +
+    '(설치 중 오류가 있었다면 "취소"를 눌러주세요)'
+  );
+  if (!confirmed) return;
+
   localStorage.setItem('orbit_ollama_ok', '1');
   localStorage.setItem('orbit_hook_ok',   '1');
   document.getElementById('install-modal')?.remove();
   document.getElementById('env-check-banner')?.remove();
   renderSetupPanel();
-  const t = document.createElement('div');
-  t.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#238636;color:#fff;padding:10px 22px;border-radius:8px;font-size:13px;font-weight:600;z-index:99999;box-shadow:0 4px 16px rgba(0,0,0,.4)';
-  t.textContent = '✅ 설정 완료! Orbit AI가 데이터를 수집합니다.';
-  document.body.appendChild(t);
-  setTimeout(() => t.remove(), 4000);
+  showToast('✅ 이 컴퓨터에서 설치 완료 확인됨! Orbit AI가 데이터를 수집합니다.');
 }
 
 // ── 로그인 후 자동 환경 체크 ────────────────────────────────────────────────
@@ -8424,48 +8429,41 @@ async function renderSetupPanel() {
   const hookOk   = hook.registered;
   const claudeOk = claude.running;
 
-  // Ollama 카드: 실행중 / 미실행(설치됨) / 미설치 세 가지 상태 구분
-  const ollamaInstalled = ollama.installed;
+  // Ollama 카드: 이 기기에서 설치 확인 여부 (localStorage 기반, 기기별 독립)
+  // 주의: 실제 실행 상태를 서버로 확인 불가(HTTPS↔HTTP Mixed Content)
+  //       → 사용자가 수동으로 "✅ 설치 완료됨" 클릭 후 표시
   const ollamaCard = ollamaOk
     ? `<div class="sp-check-card" style="flex-direction:column;align-items:flex-start;gap:4px">
         <div style="display:flex;width:100%;align-items:center">
           <div class="sp-check-label">Ollama</div>
-          <div class="sp-check-val sp-check-ok">✅ 실행 중</div>
+          <div class="sp-check-val sp-check-ok">✅ 확인됨</div>
         </div>
-        <button onclick="resetEnvConfirm()" style="font-size:10px;color:#6e7681;background:none;border:none;cursor:pointer;padding:0">↩ 초기화</button>
+        <div style="font-size:10px;color:#6e7681">이 기기에서 설치 완료 확인</div>
       </div>`
-    : ollamaInstalled
-    ? `<div class="sp-check-card" style="flex-direction:column;align-items:flex-start;gap:6px">
+    : `<div class="sp-check-card" style="flex-direction:column;align-items:flex-start;gap:4px">
         <div style="display:flex;width:100%;align-items:center">
           <div class="sp-check-label">Ollama</div>
-          <div class="sp-check-val sp-check-warn">⚠️ 미실행</div>
+          <div class="sp-check-val sp-check-warn">❓ 미확인</div>
         </div>
-        <div style="font-size:10px;color:#8b949e">설치됨 — 서버가 실행 중이지 않습니다</div>
-        <button onclick="startOllamaServer()" style="padding:5px 12px;background:#238636;border:none;border-radius:6px;color:#fff;font-size:11px;font-weight:600;cursor:pointer;margin-top:2px">
-          ▶ Ollama 서버 시작
-        </button>
-      </div>`
-    : `<div class="sp-check-card" style="flex-direction:column;align-items:flex-start;gap:6px">
-        <div style="display:flex;width:100%;align-items:center">
-          <div class="sp-check-label">Ollama + 훅</div>
-          <div class="sp-check-val sp-check-warn">❌ 미설치</div>
-        </div>
-        <button onclick="showInstallModal()" style="padding:5px 12px;background:#1f6feb;border:none;border-radius:6px;color:#fff;font-size:11px;font-weight:600;cursor:pointer;margin-top:2px">
-          🚀 원키 설치 명령어 보기
-        </button>
-        <div style="font-size:10px;color:#6e7681">PowerShell 명령어를 복사해 실행하면 자동 설치됩니다</div>
+        <div style="font-size:10px;color:#6e7681">설치 후 아래에서 완료 확인 필요</div>
       </div>`;
 
-  // hookCard: 이미 ollamaCard에 통합 (미설치 시 같은 버튼으로 처리)
+  // hookCard: Claude 훅 등록 여부 (이 기기별 독립)
   const hookCard = hookOk
     ? `<div class="sp-check-card" style="flex-direction:column;align-items:flex-start;gap:4px">
         <div style="display:flex;width:100%;align-items:center">
           <div class="sp-check-label">Claude 훅</div>
           <div class="sp-check-val sp-check-ok">✅ 등록됨</div>
         </div>
-        <button onclick="resetEnvConfirm()" style="font-size:10px;color:#6e7681;background:none;border:none;cursor:pointer;padding:0">↩ 초기화</button>
+        <div style="font-size:10px;color:#6e7681">이 기기에서 훅 등록 확인</div>
       </div>`
-    : ``; // 미설치 시 ollamaCard에 통합 표시
+    : `<div class="sp-check-card" style="flex-direction:column;align-items:flex-start;gap:4px">
+        <div style="display:flex;width:100%;align-items:center">
+          <div class="sp-check-label">Claude 훅</div>
+          <div class="sp-check-val sp-check-warn">❓ 미확인</div>
+        </div>
+        <div style="font-size:10px;color:#6e7681">설치 후 아래에서 완료 확인 필요</div>
+      </div>`;
 
   const cards = [
     { label:'OS', val: `${osIcon} ${os}`,  cls:'sp-check-neutral' },
@@ -8477,13 +8475,18 @@ async function renderSetupPanel() {
     </div>`).join('') + ollamaCard + hookCard;
 
   // ── 설치 섹션 ─────────────────────────────────────────────────────────────
-  const needsInstall = !ollamaOk || !hookOk;
+  // ★ 설치 명령어는 항상 표시 (새 컴퓨터마다 재설치 필요)
+  // ★ 상태(✅/❓)는 이 기기의 localStorage에만 저장 (기기별 독립)
   const _installCmd = os === 'windows'
     ? `powershell -ExecutionPolicy Bypass -Command "irm ${location.origin}/orbit-setup.ps1 | iex"`
     : `curl -fsSL ${location.origin}/orbit-setup.sh | bash`;
 
-  const installSection = needsInstall ? `
-    <div class="sp-section">📦 원키 설치</div>
+  const _deviceConfirmed = ollamaOk && hookOk; // 이 기기에서 수동 확인 여부
+
+  const installSection = `
+    <div class="sp-section">📦 설치 명령어 <span style="font-size:9px;color:#6e7681;text-transform:none;font-weight:400">— 컴퓨터마다 실행 필요</span></div>
+
+    <!-- 설치 명령어 코드박스 (항상 표시) -->
     <div style="background:#010409;border:1px solid #21262d;border-radius:8px;
       padding:10px 12px;margin-bottom:8px;position:relative">
       <div style="font-size:10px;color:#6e7681;margin-bottom:5px">
@@ -8505,13 +8508,26 @@ async function renderSetupPanel() {
         border-radius:5px;color:#fff;font-size:10px;font-weight:600;
         padding:3px 8px;cursor:pointer">복사</button>
     </div>
-    <button class="sp-btn sp-btn-outline" onclick="markSetupDone()">
-      ✅ 이미 설치됨 — 완료 처리
-    </button>
-  ` : `
-    <div style="background:rgba(35,134,54,.1);border:1px solid #238636;border-radius:10px;
-      padding:12px;margin-bottom:12px;font-size:12px;color:#3fb950;text-align:center;">
-      ✅ 환경 준비 완료 — Orbit AI가 정상 작동 중입니다
+
+    <!-- 이 기기 상태 표시 -->
+    <div style="display:flex;align-items:center;gap:8px;font-size:12px;margin-bottom:8px">
+      <span style="color:#6e7681">이 컴퓨터 상태:</span>
+      ${_deviceConfirmed
+        ? `<span style="color:#3fb950;font-weight:600">✅ 설치 완료 확인됨</span>
+           <button onclick="resetEnvConfirm()" style="margin-left:auto;font-size:10px;
+             color:#6e7681;background:none;border:1px solid #30363d;border-radius:4px;
+             cursor:pointer;padding:2px 8px">초기화</button>`
+        : `<span style="color:#f0a82e;font-weight:600">❓ 아직 미확인</span>
+           <button onclick="markSetupDone()" style="margin-left:auto;font-size:10px;
+             background:#238636;border:none;border-radius:4px;color:#fff;
+             cursor:pointer;padding:3px 10px;font-weight:600">
+             ✅ 설치 완료됨
+           </button>`
+      }
+    </div>
+    <div style="font-size:11px;color:#6e7681;line-height:1.5;margin-bottom:4px">
+      💡 명령어를 실행하면 Ollama + Claude 훅이 자동 설치됩니다.<br>
+      다른 컴퓨터에서도 동일한 명령어를 실행하면 연동됩니다.
     </div>
   `;
 
