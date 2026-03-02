@@ -8613,6 +8613,19 @@ async function renderSetupPanel() {
         onclick="triggerSyncPush()">↑ 지금 공유</button>
     </div>
 
+    ${_getAuthToken() ? `
+    <div class="sp-section" style="margin-top:12px">🔑 CLI 연동 토큰</div>
+    <div style="font-size:12px;color:#8b949e;margin-bottom:6px;line-height:1.5">
+      설치 스크립트 실행 후 <code style="color:#7ee787">~/.orbit-config.json</code>에<br>
+      아래 토큰을 넣으면 내 계정으로 이벤트가 저장됩니다.
+    </div>
+    <div style="background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:10px 12px;font-size:11px;font-family:monospace;color:#e6edf3;word-break:break-all;margin-bottom:6px">
+      ${JSON.stringify({ serverUrl: location.origin, token: _getAuthToken() }, null, 2).replace(/</g,'&lt;')}
+    </div>
+    <button class="sp-btn sp-btn-outline" style="font-size:11px;width:100%"
+      onclick="_copyCliConfig()">📋 ~/.orbit-config.json 내용 복사</button>
+    ` : ''}
+
     <button class="sp-btn sp-btn-outline" onclick="renderSetupPanel()" style="margin-top:12px">
       ↺ 상태 새로고침
     </button>
@@ -8622,6 +8635,20 @@ async function renderSetupPanel() {
   if (needsInstall) _loadInstallScript(os);
 }
 window.renderSetupPanel = renderSetupPanel;
+
+// CLI 연동 설정 클립보드 복사
+function _copyCliConfig() {
+  const token = _getAuthToken();
+  if (!token) { showToast('로그인 필요', 'warn'); return; }
+  const config = JSON.stringify({ serverUrl: location.origin, token }, null, 2);
+  navigator.clipboard.writeText(config).then(() => {
+    showToast('✅ 클립보드에 복사됨 — ~/.orbit-config.json 파일에 붙여넣기 하세요', 'success');
+  }).catch(() => {
+    // 클립보드 API 실패 시 프롬프트로 표시
+    prompt('내용을 복사하세요 (Ctrl+A → Ctrl+C):', config);
+  });
+}
+window._copyCliConfig = _copyCliConfig;
 
 async function _loadInstallScript(osType) {
   try {
@@ -9626,10 +9653,25 @@ function updateZoomSummary() {
 }
 
 // ─── 데이터 로드 ──────────────────────────────────────────────────────────────
+// 현재 로그인 토큰 반환 헬퍼 (fetch 인증 헤더용)
+function _getAuthToken() {
+  if (typeof _orbitUser !== 'undefined' && _orbitUser?.token) return _orbitUser.token;
+  try { return JSON.parse(localStorage.getItem('orbitUser') || 'null')?.token || ''; } catch { return ''; }
+}
+
+// 인증 헤더 포함 fetch 래퍼
+function _authFetch(url, opts = {}) {
+  const token = _getAuthToken();
+  if (token) {
+    opts.headers = { ...(opts.headers || {}), 'Authorization': `Bearer ${token}` };
+  }
+  return fetch(url, opts);
+}
+
 async function loadData() {
   document.getElementById('loading-msg').textContent = '서버에서 작업 데이터 가져오는 중…';
   try {
-    const res  = await fetch('/api/graph');
+    const res  = await _authFetch('/api/graph');  // 토큰 포함 → 내 데이터만 수신
     const data = await res.json();
     const nodes = data.nodes || [];
     buildPlanetSystem(nodes);
@@ -9647,15 +9689,34 @@ async function loadData() {
   }
 }
 
+// ── 로컬 이벤트 귀속 (claim) ──────────────────────────────────────────────────
+async function _claimLocalEvents() {
+  const token = _getAuthToken();
+  if (!token) { showToast('로그인 후 사용 가능합니다', 'warn'); return; }
+  try {
+    const r = await _authFetch('/api/claim-local-events', { method: 'POST' });
+    const d = await r.json();
+    if (d.ok) {
+      showToast(`✅ ${d.claimed}개 이벤트를 내 계정으로 귀속했습니다`, 'success');
+      setTimeout(() => loadData(), 800);
+    } else {
+      showToast('귀속 실패: ' + (d.error || '알 수 없는 오류'), 'error');
+    }
+  } catch (e) {
+    showToast('귀속 오류: ' + e.message, 'error');
+  }
+}
+
 // ── 빈 화면 안내 ──────────────────────────────────────────────────────────────
 function _showEmptyStateGuide() {
   if (document.getElementById('empty-state-guide')) return; // 이미 있으면 스킵
+  const isLoggedIn = !!_getAuthToken();
   const el = document.createElement('div');
   el.id = 'empty-state-guide';
   el.style.cssText = `
     position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
     background:rgba(13,17,23,0.95); border:1px solid #30363d;
-    border-radius:18px; padding:28px 32px; max-width:420px; text-align:center;
+    border-radius:18px; padding:28px 32px; max-width:440px; text-align:center;
     z-index:500; backdrop-filter:blur(20px);
     box-shadow:0 16px 64px rgba(0,0,0,0.5);
     font-family:-apple-system,'Segoe UI',sans-serif;
@@ -9664,12 +9725,25 @@ function _showEmptyStateGuide() {
   el.innerHTML = `
     <div style="font-size:42px;margin-bottom:12px">⬡</div>
     <div style="font-size:17px;font-weight:700;color:#e6edf3;margin-bottom:8px">
-      아직 작업 데이터가 없습니다
+      아직 내 작업 데이터가 없습니다
     </div>
     <div style="font-size:13px;color:#8b949e;line-height:1.6;margin-bottom:18px">
       Claude Code에서 파일을 편집하거나 대화를 나누면<br>
       자동으로 3D 우주에 작업 노드가 생성됩니다.
     </div>
+    ${isLoggedIn ? `
+    <div style="margin-bottom:14px">
+      <button onclick="_claimLocalEvents();document.getElementById('empty-state-guide').remove()"
+        style="background:linear-gradient(135deg,#1f6feb,#388bfd);border:none;color:#fff;
+        padding:10px 22px;border-radius:10px;cursor:pointer;font-size:13px;font-weight:600;
+        width:100%;margin-bottom:8px">
+        🔗 기존 이벤트를 내 계정으로 가져오기
+      </button>
+      <div style="font-size:11px;color:#6e7681">
+        서버에 'local'로 저장된 이벤트를 내 계정에 귀속시킵니다
+      </div>
+    </div>
+    ` : ''}
     <div style="font-size:12px;color:#6e7681;background:rgba(88,166,255,.08);
       border:1px solid #1f6feb30;border-radius:10px;padding:12px 14px;
       text-align:left;line-height:1.8;margin-bottom:16px">

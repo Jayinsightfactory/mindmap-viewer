@@ -48,6 +48,7 @@ const {
   getUserLabels, setUserLabel, deleteUserLabel,
   getUserCategories, upsertUserCategory, deleteUserCategory,
   getToolLabelMappings, setToolLabelMapping, deleteToolLabelMapping, getUserConfig,
+  getEventsByUser, getSessionsByUser, getStatsByUser, claimLocalEvents,
 } = dbModule;
 
 const { buildGraph, computeActivityScores, applyActivityVisualization, suggestLabel } = require('./src/graph-engine');
@@ -259,6 +260,18 @@ function getFullGraph(sessionFilter, channelFilter) {
           : getAllEvents().filter(e => e.channelId === channelFilter))
       : getAllEvents();
 
+  const events = annotateEventsWithPurpose(rawEvents);
+  const graph  = buildGraph(events);
+  computeActivityScores(graph.nodes, Date.now());
+  applyActivityVisualization(graph.nodes);
+  return graph;
+}
+
+// 특정 user_id의 이벤트만 그래프로 변환 (프라이버시 격리)
+function getFullGraphForUser(userId, sessionFilter) {
+  const rawEvents = sessionFilter
+    ? getEventsBySession(sessionFilter).filter(e => e.userId === userId)
+    : (getEventsByUser ? getEventsByUser(userId) : getAllEvents().filter(e => e.userId === userId));
   const events = annotateEventsWithPurpose(rawEvents);
   const graph  = buildGraph(events);
   computeActivityScores(graph.nodes, Date.now());
@@ -482,8 +495,16 @@ app.post('/api/hook', (req, res) => {
       return res.status(400).json({ error: 'events 배열 필요' });
     }
 
+    // Authorization 헤더로 user_id 결정 (토큰 있으면 해당 유저, 없으면 'local')
+    const hookToken = (req.headers.authorization || '').replace('Bearer ', '').trim()
+                    || req.headers['x-api-token'] || '';
+    const hookUser  = hookToken ? verifyToken(hookToken) : null;
+    const hookUserId = hookUser ? hookUser.id : 'local';
+
     // DB + JSONL 저장 (save-turn.js 에서 이미 저장한 경우 중복 방지)
     for (const event of events) {
+      // user_id를 토큰에서 추출한 값으로 덮어쓰기 (프라이버시 격리)
+      if (hookUserId !== 'local') event.userId = hookUserId;
       try { insertEvent(event); } catch {}
       try {
         const entry = {
@@ -613,11 +634,12 @@ const dbDeps = {
 };
 
 app.use('/api', createGraphRouter({
-  getFullGraph, broadcastAll, broadcastToChannel,
-  db: dbDeps,
+  getFullGraph, getFullGraphForUser, broadcastAll, broadcastToChannel,
+  db: { ...dbDeps, getEventsByUser, getSessionsByUser, getStatsByUser, claimLocalEvents },
   purposeClassifier: { classifyPurposes, summarizePurposes, PURPOSE_CATEGORIES, annotateEventsWithPurpose },
   graphEngine: { buildGraph, computeActivityScores, applyActivityVisualization },
   CONV_FILE, SNAPSHOTS_DIR,
+  verifyToken,  // 그래프 라우터에서 사용자 인증에 사용
 }));
 
 app.use('/api', createAnnotationsRouter({
@@ -693,6 +715,16 @@ app.use('/api', createGitRouter({
 
 const { authMiddleware, optionalAuth } = require('./src/auth');
 app.use('/api', createAvatarsRouter({ authMiddleware, optionalAuth }));
+
+// ─── 현재 유저 정보 + API 토큰 발급 ─────────────────────────────────────────
+// GET /api/me — 내 정보 반환 (이미 session 토큰 보유 전제)
+app.get('/api/me', (req, res) => {
+  const token = (req.headers.authorization || '').replace('Bearer ', '').trim()
+              || req.query.token || req.cookies?.orbit_token;
+  const user  = verifyToken(token);
+  if (!user) return res.status(401).json({ error: 'unauthorized' });
+  res.json({ id: user.id, email: user.email, name: user.name, plan: user.plan });
+});
 
 // ─── 수익 공유 마켓 2.0 ──────────────────────────────────────────────────────
 app.use('/api', createMarketRouter({ marketStore, authMiddleware, optionalAuth }));

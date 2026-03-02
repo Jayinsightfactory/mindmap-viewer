@@ -47,38 +47,72 @@ const router   = express.Router();
  */
 function createRouter(deps) {
   const {
-    getFullGraph, broadcastAll, broadcastToChannel,
-    db, purposeClassifier, CONV_FILE, SNAPSHOTS_DIR,
+    getFullGraph, getFullGraphForUser, broadcastAll, broadcastToChannel,
+    db, purposeClassifier, CONV_FILE, SNAPSHOTS_DIR, verifyToken,
   } = deps;
 
   const {
     getAllEvents, getEventsBySession, getEventsByChannel,
     getSessions, updateSessionTitle, getFiles, getStats, rollbackToEvent, clearAll,
+    getEventsByUser, getSessionsByUser, getStatsByUser, claimLocalEvents,
   } = db;
 
   const { classifyPurposes, summarizePurposes, PURPOSE_CATEGORIES } = purposeClassifier;
+
+  // ── 인증 헬퍼 ─────────────────────────────────────────────────────────────
+  // 토큰에서 사용자 추출. AUTH_DISABLED=1이면 'local' 반환 (로컬 개발용)
+  function getUserFromReq(req) {
+    if (process.env.AUTH_DISABLED === '1') return { id: 'local' };
+    const token = (req.headers.authorization || '').replace('Bearer ', '').trim()
+                || req.query.token || req.cookies?.orbit_token;
+    return verifyToken ? verifyToken(token) : null;
+  }
 
   // ── 그래프 ────────────────────────────────────────────────────────────────
 
   /**
    * GET /api/graph
-   * @query {string} [session] - 세션 ID로 필터
-   * @query {string} [channel] - 채널 ID로 필터
-   * @returns {object} { nodes: Node[], edges: Edge[] }
+   * 로그인 시: 해당 user_id의 이벤트만 반환 (프라이버시 격리)
+   * 비로그인 시: AUTH_DISABLED=1이면 전체, 아니면 빈 그래프
    */
   router.get('/graph', (req, res) => {
-    const graph = getFullGraph(req.query.session, req.query.channel);
+    const user = getUserFromReq(req);
+    if (!user) {
+      // 미인증 → 빈 그래프 반환 (401 대신 빈 데이터로 로그인 유도)
+      return res.json({ nodes: [], edges: [] });
+    }
+    const graph = user.id === 'local'
+      ? getFullGraph(req.query.session, req.query.channel)      // 로컬 개발: 전체
+      : (getFullGraphForUser
+          ? getFullGraphForUser(user.id, req.query.session)     // 프로덕션: 내 이벤트만
+          : getFullGraph(req.query.session, req.query.channel));
     res.json(graph);
+  });
+
+  /**
+   * POST /api/claim-local-events
+   * 'local' user_id로 저장된 기존 이벤트를 로그인 유저의 것으로 귀속
+   */
+  router.post('/claim-local-events', (req, res) => {
+    const user = getUserFromReq(req);
+    if (!user || user.id === 'local') return res.status(401).json({ error: 'login required' });
+    const changed = claimLocalEvents ? claimLocalEvents(user.id) : 0;
+    res.json({ ok: true, claimed: changed });
   });
 
   // ── 세션 ─────────────────────────────────────────────────────────────────
 
   /**
    * GET /api/sessions
-   * @returns {Session[]} 전체 세션 목록 (최신순)
+   * 로그인 시: 해당 유저의 세션만 반환
    */
   router.get('/sessions', (req, res) => {
-    res.json(getSessions());
+    const user = getUserFromReq(req);
+    if (!user) return res.json([]);
+    const sessions = (user.id !== 'local' && getSessionsByUser)
+      ? getSessionsByUser(user.id)
+      : getSessions();
+    res.json(sessions);
   });
 
   /**

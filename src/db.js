@@ -383,6 +383,41 @@ function getEventsByChannel(channelId) {
     .map(deserializeEvent);
 }
 
+// 특정 사용자의 이벤트만 조회 (user_id 필터 — 프라이버시 격리)
+// 'local'로 저장된 이벤트는 계정 주장(claim) 후 해당 user_id로 업데이트됨
+function getEventsByUser(userId) {
+  return db.prepare(`
+    SELECT * FROM events WHERE user_id = ? ORDER BY timestamp ASC
+  `).all(userId).map(deserializeEvent);
+}
+
+// 특정 사용자의 세션만 조회
+function getSessionsByUser(userId) {
+  return db.prepare(`
+    SELECT * FROM sessions WHERE user_id = ? ORDER BY started_at DESC
+  `).all(userId);
+}
+
+// 특정 사용자의 통계
+function getStatsByUser(userId) {
+  const eventCount   = db.prepare('SELECT COUNT(*) as c FROM events WHERE user_id = ?').get(userId).c;
+  const sessionCount = db.prepare('SELECT COUNT(*) as c FROM sessions WHERE user_id = ?').get(userId).c;
+  const fileCount    = db.prepare('SELECT COUNT(*) as c FROM files').get().c; // 파일은 공용
+  const toolCount    = db.prepare("SELECT COUNT(*) as c FROM events WHERE user_id = ? AND type LIKE 'tool.%'").get(userId).c;
+  return { eventCount, sessionCount, fileCount, toolCount, aiSourceStats: {} };
+}
+
+// 'local' 이벤트를 특정 user_id로 귀속 (최초 로그인 시 기존 데이터 주장)
+function claimLocalEvents(userId) {
+  const result = db.prepare(`
+    UPDATE events SET user_id = ? WHERE user_id = 'local' OR user_id = 'anonymous'
+  `).run(userId);
+  db.prepare(`
+    UPDATE sessions SET user_id = ? WHERE user_id = 'local' OR user_id = 'anonymous'
+  `).run(userId);
+  return result.changes;
+}
+
 function getEventsByType(type) {
   return db.prepare('SELECT * FROM events WHERE type = ? ORDER BY timestamp ASC').all(type)
     .map(deserializeEvent);
@@ -601,4 +636,9 @@ module.exports = {
   setToolLabelMapping,
   deleteToolLabelMapping,
   getUserConfig,
+  // 사용자 격리
+  getEventsByUser,
+  getSessionsByUser,
+  getStatsByUser,
+  claimLocalEvents,
 };
