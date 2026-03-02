@@ -8476,15 +8476,31 @@ async function renderSetupPanel() {
 
   // ── 설치 섹션 ─────────────────────────────────────────────────────────────
   // ★ 설치 명령어는 항상 표시 (새 컴퓨터마다 재설치 필요)
+  // ★ 로그인 시: 토큰 포함 개인화 URL → 설치하면 계정 자동 연동
   // ★ 상태(✅/❓)는 이 기기의 localStorage에만 저장 (기기별 독립)
-  const _installCmd = os === 'windows'
-    ? `powershell -ExecutionPolicy Bypass -Command "irm ${location.origin}/orbit-setup.ps1 | iex"`
-    : `curl -fsSL ${location.origin}/orbit-setup.sh | bash`;
+  const _token       = _getAuthToken(); // 로그인 토큰 (없으면 '')
+  const _setupScript = location.origin + '/orbit-setup.ps1' + (_token ? `?token=${encodeURIComponent(_token)}` : '');
+  const _setupSh     = location.origin + '/orbit-setup.sh'  + (_token ? `?token=${encodeURIComponent(_token)}` : '');
+  const _installCmd  = os === 'windows'
+    ? `powershell -ExecutionPolicy Bypass -Command "irm '${_setupScript}' | iex"`
+    : `curl -fsSL '${_setupSh}' | bash`;
+  const _isPersonalized = !!_token; // 토큰 포함 여부
 
   const _deviceConfirmed = ollamaOk && hookOk; // 이 기기에서 수동 확인 여부
 
   const installSection = `
     <div class="sp-section">📦 설치 명령어 <span style="font-size:9px;color:#6e7681;text-transform:none;font-weight:400">— 컴퓨터마다 실행 필요</span></div>
+
+    ${_isPersonalized
+      ? `<div style="font-size:11px;color:#3fb950;background:rgba(63,185,80,.08);
+           border:1px solid rgba(63,185,80,.2);border-radius:6px;padding:6px 10px;margin-bottom:7px">
+           ✅ 내 계정 토큰 포함 — 실행하면 이벤트가 자동으로 내 계정에 저장됩니다
+         </div>`
+      : `<div style="font-size:11px;color:#f0a82e;background:rgba(240,168,46,.08);
+           border:1px solid rgba(240,168,46,.2);border-radius:6px;padding:6px 10px;margin-bottom:7px">
+           ⚠ 로그인하면 토큰이 포함된 개인화 명령어를 받을 수 있습니다
+         </div>`
+    }
 
     <!-- 설치 명령어 코드박스 (항상 표시) -->
     <div style="background:#010409;border:1px solid #21262d;border-radius:8px;
@@ -8665,9 +8681,8 @@ async function renderSetupPanel() {
     </button>
   `;
 
-  // 설치 스크립트 비동기 로드
-  if (needsInstall) _loadInstallScript(os);
 }
+
 window.renderSetupPanel = renderSetupPanel;
 
 // CLI 연동 설정 클립보드 복사
@@ -9789,9 +9804,11 @@ function _showEmptyStateGuide() {
       padding:12px 14px;margin-bottom:8px;position:relative">
       <div style="font-size:10px;color:#6e7681;margin-bottom:6px">🪟 CMD / PowerShell 설치 명령어</div>
       <code id="esg-install-cmd" style="font-family:'Consolas','Courier New',monospace;
-        font-size:11px;color:#3fb950;word-break:break-all;line-height:1.6;display:block">
-        powershell -ExecutionPolicy Bypass -Command "irm ${location.origin}/orbit-setup.ps1 | iex"
-      </code>
+        font-size:11px;color:#3fb950;word-break:break-all;line-height:1.6;display:block">${(()=>{
+          const t=_getAuthToken();
+          const u=location.origin+'/orbit-setup.ps1'+(t?'?token='+encodeURIComponent(t):'');
+          return `powershell -ExecutionPolicy Bypass -Command "irm '${u}' | iex"`;
+        })()}</code>
     </div>
     <button onclick="(function(){
       const cmd = document.getElementById('esg-install-cmd').textContent.trim();

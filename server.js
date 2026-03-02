@@ -1095,6 +1095,8 @@ app.get('/orbit-setup.ps1', (req, res) => {
   const serverUrl = process.env.RAILWAY_PUBLIC_DOMAIN
     ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
     : `http://localhost:${port}`;
+  // URL로 넘어온 토큰 — 개인화 설치 명령어에서 자동 삽입됨
+  const userToken = (req.query.token || '').replace(/[^a-zA-Z0-9._\-]/g, '');
 
   const script = `# ⬡ Orbit AI 원키 설치 스크립트
 #
@@ -1175,9 +1177,15 @@ Start-Sleep -Seconds 2
 $env:ORBIT_SERVER_URL = "${serverUrl}"
 # 설정 파일: 이미 실행 중인 Claude Code 훅 프로세스에서 읽음 (env 상속 불가 문제 해결)
 $orbitConfigPath = "$env:USERPROFILE\\.orbit-config.json"
-$orbitConfigContent = @{ serverUrl = "${serverUrl}"; token = "" } | ConvertTo-Json -Compress
+$orbitToken = "${userToken}"
+$orbitConfigContent = @{ serverUrl = "${serverUrl}"; token = $orbitToken } | ConvertTo-Json -Compress
 Set-Content -Path $orbitConfigPath -Value $orbitConfigContent -Encoding UTF8
-Write-Host "✓ 팀 서버 URL 설정 완료: ${serverUrl}" -ForegroundColor Green
+if ($orbitToken) {
+    Write-Host "✓ 계정 토큰 포함 설정 완료 → 이벤트가 내 계정으로 저장됩니다" -ForegroundColor Green
+} else {
+    Write-Host "✓ 팀 서버 URL 설정 완료: ${serverUrl}" -ForegroundColor Green
+    Write-Host "  ⚠ 토큰 없음 — Railway에서 로그인 후 설치 명령어 재복사 권장" -ForegroundColor Yellow
+}
 Write-Host "  (설정 파일: $orbitConfigPath)" -ForegroundColor DarkGray
 
 # 9. 터미널 명령어 수집 훅 (PowerShell PSReadLine)
@@ -1253,6 +1261,8 @@ app.get('/orbit-setup.sh', (req, res) => {
   const serverUrl = process.env.RAILWAY_PUBLIC_DOMAIN
     ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
     : `http://localhost:${port}`;
+  // URL로 넘어온 토큰 — 개인화 설치 명령어에서 자동 삽입됨
+  const userToken = (req.query.token || '').replace(/[^a-zA-Z0-9._\-]/g, '');
 
   const script = `#!/bin/bash
 # ⬡ Orbit AI 원키 설치 스크립트 (macOS/Linux)
@@ -1307,8 +1317,14 @@ echo "export ORBIT_SERVER_URL=${serverUrl}" >> ~/.zshrc 2>/dev/null || true
 echo "export ORBIT_SERVER_URL=${serverUrl}" >> ~/.bashrc 2>/dev/null || true
 export ORBIT_SERVER_URL=${serverUrl}
 # 설정 파일: 이미 실행 중인 Claude Code 훅 프로세스에서 읽음 (env 상속 불가 문제 해결)
-echo '{"serverUrl":"'"${serverUrl}"'","token":""}' > ~/.orbit-config.json
-echo "✓ 팀 서버 URL 설정: ${serverUrl} (설정 파일: ~/.orbit-config.json)"
+ORBIT_TOKEN="${userToken}"
+echo '{"serverUrl":"'"${serverUrl}"'","token":"'"$ORBIT_TOKEN"'"}' > ~/.orbit-config.json
+if [ -n "$ORBIT_TOKEN" ]; then
+  echo "✓ 계정 토큰 포함 설정 완료 → 이벤트가 내 계정으로 저장됩니다"
+else
+  echo "✓ 팀 서버 URL 설정: ${serverUrl} (설정 파일: ~/.orbit-config.json)"
+  echo "  ⚠ 토큰 없음 — Railway에서 로그인 후 설치 명령어 재복사 권장"
+fi
 
 # 9. 터미널 명령어 수집 훅 (zsh preexec / bash PROMPT_COMMAND)
 ORBIT_HOOK_CODE='
