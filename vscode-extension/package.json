@@ -1,0 +1,28 @@
+{
+  "name": "orbit-ai-tracker",
+  "displayName": "⬡ Orbit AI Tracker",
+  "description": "VS Code 작업 내역을 로컬 Orbit AI 서버로 실시간 전송합니다",
+  "version": "1.0.0",
+  "publisher": "orbit",
+  "engines": { "vscode": "^1.74.0" },
+  "categories": ["Other"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "Orbit AI",
+      "properties": {
+        "orbit.serverPort": {
+          "type": "number",
+          "default": 4747,
+          "description": "Orbit 로컬 서버 포트 (기본값: 4747)"
+        },
+        "orbit.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Orbit 추적 활성화"
+        }
+      }
+    }
+  }
+}

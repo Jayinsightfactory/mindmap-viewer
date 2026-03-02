@@ -112,6 +112,7 @@ const signalEngine                    = require('./src/signal-engine');
 const diffLearner                     = require('./src/diff-learner');
 const dualSkillEngine                 = require('./src/dual-skill-engine');
 const createWorkspaceRouter           = require('./routes/workspace');
+const ollamaAnalyzer                  = require('./src/ollama-analyzer'); // Ollama 실시간 분석
 
 // ─── 상수 ────────────────────────────────────────────────────────────────────
 const PORT         = process.env.PORT ? parseInt(process.env.PORT) : 4747;
@@ -295,6 +296,9 @@ function broadcastAll(msg) {
     }
   });
 }
+
+// Ollama 분석기 초기화 (broadcastAll 정의 직후)
+ollamaAnalyzer.init(broadcastAll);
 
 /**
  * 채널의 현재 접속 멤버 정보 배열을 반환합니다.
@@ -549,6 +553,9 @@ app.post('/api/hook', (req, res) => {
 
     if (channelClients.has(channelId)) broadcastToChannel(channelId, payload);
     else                               broadcastAll(payload);
+
+    // Ollama 실시간 분석 (이벤트 큐에 추가)
+    for (const ev of events) ollamaAnalyzer.addEvent(ev);
 
     console.log(`[HOOK] ${events.length}개 이벤트 수신 (채널: #${channelId}, ${memberName})`);
     res.json({ success: true, received: events.length, leaksDetected: leaks.length });
@@ -1135,11 +1142,43 @@ Start-Sleep -Seconds 2
 $env:ORBIT_SERVER_URL = "${serverUrl}"
 Write-Host "✓ 팀 서버 URL 설정 완료: ${serverUrl}" -ForegroundColor Green
 
+# 9. 터미널 명령어 수집 훅 (PowerShell PSReadLine)
+$psProfile = $PROFILE.CurrentUserAllHosts
+if (-not (Test-Path $psProfile)) { New-Item -ItemType File -Path $psProfile -Force | Out-Null }
+$hookBlock = @'
+
+# ⬡ Orbit AI 터미널 훅 — 명령어 실행 후 localhost로 전송
+$Global:OrbitLastCmd = $null
+Set-PSReadLineOption -AddToHistoryHandler {
+    param([string]$cmd)
+    if ($cmd -and $cmd.Trim() -ne '') {
+        $Global:OrbitLastCmd = $cmd
+        try {
+            $body = @{ command=$cmd; cwd=(Get-Location).Path } | ConvertTo-Json -Compress
+            Invoke-RestMethod -Uri "http://localhost:4747/api/terminal-command" -Method POST -Body $body -ContentType "application/json" -TimeoutSec 2 -ErrorAction SilentlyContinue | Out-Null
+        } catch {}
+    }
+    return $true
+}
+'@
+if (-not (Get-Content $psProfile -Raw -ErrorAction SilentlyContinue | Select-String "Orbit AI 터미널 훅")) {
+    Add-Content -Path $psProfile -Value $hookBlock
+    Write-Host "✓ PowerShell 터미널 훅 등록됨" -ForegroundColor Green
+} else {
+    Write-Host "✓ PowerShell 터미널 훅 이미 등록됨" -ForegroundColor Green
+}
+
+# 10. VS Code 확장 설치 (직접 복사 방식)
+$extDir = "$env:USERPROFILE\\.vscode\\extensions\\orbit-ai-tracker-1.0.0"
+if (-not (Test-Path $extDir)) { New-Item -ItemType Directory -Path $extDir -Force | Out-Null }
+Copy-Item "$ORBIT\\vscode-extension\\*" -Destination $extDir -Force -ErrorAction SilentlyContinue
+Write-Host "✓ VS Code 확장 설치됨 (재시작 후 활성화)" -ForegroundColor Green
+
 Write-Host ""
 Write-Host "✅ Orbit AI 설치 완료!" -ForegroundColor Green
 Write-Host "   로컬: http://localhost:${port}" -ForegroundColor Cyan
 Write-Host "   팀 대시보드: ${serverUrl}" -ForegroundColor Cyan
-Write-Host "이제 Claude Code를 사용하면 데이터가 자동 수집됩니다." -ForegroundColor White
+Write-Host "수집 항목: Claude Code · VS Code · 터미널 · 브라우저 · AI 대화" -ForegroundColor White
 `;
 
   res.setHeader('Content-Type', 'text/plain; charset=utf-8');
@@ -1209,10 +1248,44 @@ echo "export ORBIT_SERVER_URL=${serverUrl}" >> ~/.bashrc 2>/dev/null || true
 export ORBIT_SERVER_URL=${serverUrl}
 echo "✓ 팀 서버 URL 설정: ${serverUrl}"
 
+# 9. 터미널 명령어 수집 훅 (zsh preexec / bash PROMPT_COMMAND)
+ORBIT_HOOK_CODE='
+# ⬡ Orbit AI 터미널 훅
+_orbit_send_cmd() {
+  local cmd="$1"
+  [ -z "$cmd" ] && return
+  curl -sf -X POST http://localhost:4747/api/terminal-command \
+    -H "Content-Type: application/json" \
+    -d "{\"command\":\"$(echo $cmd | sed s/\"/\\\\\"/g)\",\"cwd\":\"$PWD\"}" \
+    --max-time 1 &>/dev/null &
+}
+# zsh
+if [ -n "$ZSH_VERSION" ]; then
+  preexec_functions+=(_orbit_send_cmd)
+fi
+# bash
+if [ -n "$BASH_VERSION" ]; then
+  _orbit_bash_hook() { _orbit_send_cmd "$BASH_COMMAND"; }
+  trap _orbit_bash_hook DEBUG
+fi'
+for RC in ~/.zshrc ~/.bashrc; do
+  if [ -f "$RC" ] && ! grep -q "Orbit AI 터미널 훅" "$RC" 2>/dev/null; then
+    echo "$ORBIT_HOOK_CODE" >> "$RC"
+  fi
+done
+echo "✓ 터미널 훅 등록 (zsh/bash)"
+
+# 10. VS Code 확장 설치
+EXT_DIR="$HOME/.vscode/extensions/orbit-ai-tracker-1.0.0"
+mkdir -p "$EXT_DIR"
+cp -r "$ORBIT/vscode-extension/"* "$EXT_DIR/" 2>/dev/null || true
+echo "✓ VS Code 확장 설치됨 (재시작 후 활성화)"
+
 echo ""
 echo "✅ Orbit AI 설치 완료!"
 echo "   로컬: http://localhost:${port}"
 echo "   팀 대시보드: ${serverUrl}"
+echo "수집 항목: Claude Code · VS Code · 터미널 · 브라우저 · AI 대화"
 `;
 
   res.setHeader('Content-Type', 'text/plain; charset=utf-8');
@@ -1379,6 +1452,92 @@ app.get('/api/ai-conversations/:id/messages', (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// ── 터미널 명령어 수신 (쉘 훅 → 여기) ───────────────────────────────────────
+app.post('/api/terminal-command', (req, res) => {
+  const { command, cwd, exitCode, duration, fromRemote } = req.body;
+  if (!command) return res.status(400).json({ error: 'command required' });
+
+  const event = {
+    id:        `term-${Date.now()}-${Math.random().toString(36).slice(2,6)}`,
+    type:      'terminal.command',
+    source:    'terminal-hook',
+    sessionId: 'terminal',
+    timestamp: new Date().toISOString(),
+    data:      { command: command.slice(0, 200), cwd, exitCode, duration },
+  };
+
+  // Ollama 분석기에 전달
+  ollamaAnalyzer.addEvent(event);
+
+  // WebSocket 브로드캐스트
+  broadcastAll({ type: 'new_event', event });
+
+  // Railway 포워딩
+  if (!fromRemote) {
+    const railwayUrl = process.env.RAILWAY_PUBLIC_DOMAIN
+      ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : null;
+    if (railwayUrl && !process.env.RAILWAY_ENVIRONMENT) {
+      try {
+        const https = require('https');
+        const body  = JSON.stringify({ command, cwd, exitCode, fromRemote: true });
+        const reqFwd = https.request({
+          hostname: new URL(railwayUrl).hostname, port: 443,
+          path: '/api/terminal-command', method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+        }, r => r.resume());
+        reqFwd.on('error', () => {});
+        reqFwd.setTimeout(5000, () => reqFwd.destroy());
+        reqFwd.write(body); reqFwd.end();
+      } catch {}
+    }
+  }
+
+  res.json({ ok: true });
+});
+
+// ── VS Code 활동 수신 ─────────────────────────────────────────────────────────
+app.post('/api/vscode-activity', (req, res) => {
+  const { type, data, timestamp, fromRemote } = req.body;
+  if (!type) return res.status(400).json({ error: 'type required' });
+
+  const event = {
+    id:        `vsc-${Date.now()}-${Math.random().toString(36).slice(2,6)}`,
+    type:      `vscode.${type}`,
+    source:    'vscode-extension',
+    sessionId: 'vscode',
+    timestamp: timestamp || new Date().toISOString(),
+    data:      data || {},
+  };
+
+  // Ollama 분석기에 전달
+  ollamaAnalyzer.addEvent(event);
+
+  // WebSocket 브로드캐스트
+  broadcastAll({ type: 'new_event', event });
+
+  // Railway 포워딩
+  if (!fromRemote) {
+    const railwayUrl = process.env.RAILWAY_PUBLIC_DOMAIN
+      ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : null;
+    if (railwayUrl && !process.env.RAILWAY_ENVIRONMENT) {
+      try {
+        const https = require('https');
+        const body  = JSON.stringify({ type, data, timestamp, fromRemote: true });
+        const reqFwd = https.request({
+          hostname: new URL(railwayUrl).hostname, port: 443,
+          path: '/api/vscode-activity', method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+        }, r => r.resume());
+        reqFwd.on('error', () => {});
+        reqFwd.setTimeout(5000, () => reqFwd.destroy());
+        reqFwd.write(body); reqFwd.end();
+      } catch {}
+    }
+  }
+
+  res.json({ ok: true });
 });
 
 // ── 브라우저 활동 수신 ────────────────────────────────────────────────────────

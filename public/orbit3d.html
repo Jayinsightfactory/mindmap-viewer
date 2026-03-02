@@ -9836,9 +9836,91 @@ function connectWS() {
       if (m.type === 'skill_suggestion' && m.data) {
         showSkillToast(m.data);
       }
+      // Ollama 실시간 분석 결과
+      if (m.type === 'ollama_analysis' && m.data) {
+        updateOllamaPanel(m.data, m.eventCount);
+      }
+      // 터미널·VS Code·AI대화 이벤트 → 그래프 업데이트 + 토스트
+      if (m.type === 'new_event' && m.event) {
+        const et = m.event.type || '';
+        if (et.startsWith('terminal.') || et.startsWith('vscode.') || et === 'ai_conversation_saved') {
+          loadData();
+          showActivityPulse(et, m.event.data);
+        }
+      }
+      // AI 대화 저장 알림
+      if (m.type === 'ai_conversation_saved') {
+        showActivityPulse('ai.conversation', { site: m.site, title: m.title });
+      }
     } catch{}
   };
   ws.onclose = () => setTimeout(connectWS, 3000);
+}
+
+// ── Ollama 분석 패널 업데이트 ─────────────────────────────────────────────────
+function updateOllamaPanel(data, eventCount) {
+  let panel = document.getElementById('ollama-live-panel');
+  if (!panel) {
+    panel = document.createElement('div');
+    panel.id = 'ollama-live-panel';
+    panel.style.cssText = `
+      position:fixed; bottom:70px; right:14px; z-index:300;
+      background:rgba(13,17,23,0.97); border:1px solid #bc8cff40;
+      border-radius:14px; padding:12px 14px; width:260px;
+      backdrop-filter:blur(16px); box-shadow:0 8px 32px rgba(188,140,255,0.15);
+      font-family:-apple-system,'Segoe UI',sans-serif; font-size:12px;
+      animation: fadeIn .3s ease;
+    `;
+    document.body.appendChild(panel);
+  }
+  const typeIcon = { code:'💻', debug:'🐛', research:'🔍', review:'👁️', meeting:'💬' };
+  const icon = typeIcon[data.type] || '⬡';
+  const skillsHtml = (data.skills || []).map(s =>
+    `<span style="background:rgba(88,166,255,.12);border:1px solid #388bfd40;color:#79c0ff;
+     font-size:10px;padding:2px 7px;border-radius:5px;font-weight:600;">${s}</span>`
+  ).join(' ');
+
+  panel.innerHTML = `
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">
+      <div style="width:6px;height:6px;border-radius:50%;background:#bc8cff;
+        box-shadow:0 0 6px #bc8cff;animation:blink-badge 1.5s infinite;"></div>
+      <span style="font-size:10px;color:#6e7681;letter-spacing:.5px;text-transform:uppercase;">
+        Ollama 분석 중 · ${eventCount}개 이벤트</span>
+      <button onclick="document.getElementById('ollama-live-panel').remove()"
+        style="margin-left:auto;background:none;border:none;color:#6e7681;cursor:pointer;font-size:13px;">✕</button>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+      <span style="font-size:18px;">${icon}</span>
+      <div>
+        <div style="font-weight:700;color:#e6edf3;font-size:13px;">${data.focus || '작업 중'}</div>
+        <div style="color:#8b949e;font-size:11px;margin-top:2px;">${data.summary || ''}</div>
+      </div>
+    </div>
+    ${skillsHtml ? `<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:7px;">${skillsHtml}</div>` : ''}
+    ${data.suggestion ? `
+      <div style="background:#161b22;border-left:2px solid #bc8cff;border-radius:4px;
+        padding:6px 8px;color:#cdd9e5;font-size:11px;line-height:1.5;">
+        💡 ${data.suggestion}
+      </div>` : ''}
+  `;
+
+  // 30초 후 자동 닫힘
+  clearTimeout(panel._closeTimer);
+  panel._closeTimer = setTimeout(() => panel?.remove(), 30000);
+}
+
+// ── 활동 펄스 토스트 (터미널·VS Code 이벤트용 미니 알림) ────────────────────
+function showActivityPulse(type, data) {
+  const icons = {
+    'terminal.command':  '⌨️',
+    'vscode.file_save':  '💾',
+    'vscode.file_open':  '📂',
+    'vscode.debug_start':'🐛',
+    'ai.conversation':   '💬',
+  };
+  const icon  = icons[type] || '⚡';
+  const label = data?.fileName || data?.command?.slice(0, 30) || data?.title?.slice(0, 30) || type;
+  if (typeof showToast === 'function') showToast(`${icon} ${label}`, 2000);
 }
 
 // ─── 스킬/에이전트 제안 토스트 ───────────────────────────────────────────────
