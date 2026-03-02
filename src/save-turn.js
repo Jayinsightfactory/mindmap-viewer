@@ -19,11 +19,27 @@ const { normalizeHookEvent } = require('./event-normalizer');
 
 // 로컬 서버 포트 (환경변수 또는 기본값 4747)
 const SERVER_PORT = process.env.MINDMAP_PORT || 4747;
+
+// ── ~/.orbit-config.json 에서 설정 읽기 (환경변수보다 우선순위 낮음) ──────
+// 이유: Claude Code가 이미 실행 중일 때 설치 스크립트가 설정한 환경변수가
+//       자식 프로세스에 전달되지 않는 문제를 파일 기반 설정으로 해결
+function readOrbitConfig() {
+  try {
+    const os = require('os');
+    const configPath = path.join(os.homedir(), '.orbit-config.json');
+    if (fs.existsSync(configPath)) {
+      return JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    }
+  } catch {}
+  return {};
+}
+const _orbitConfig = readOrbitConfig();
+
 // Railway 서버 URL — 설정 시 훅 발생마다 즉시 전송 (실시간)
-// 예: export ORBIT_SERVER_URL=https://mindmap-viewer-production.up.railway.app
-const ORBIT_SERVER_URL = process.env.ORBIT_SERVER_URL || null;
+// 우선순위: 환경변수 > ~/.orbit-config.json
+const ORBIT_SERVER_URL = process.env.ORBIT_SERVER_URL || _orbitConfig.serverUrl || null;
 // 사용자 인증 토큰 (원격 서버 전송 시 필요)
-const ORBIT_TOKEN = process.env.ORBIT_TOKEN || '';
+const ORBIT_TOKEN = process.env.ORBIT_TOKEN || _orbitConfig.token || '';
 // 미전송 큐 파일 (Railway 전송 실패 시 임시 저장)
 const PENDING_FILE = path.join(__dirname, '.pending-upload.jsonl');
 // 멤버 이름: 환경변수로 설정 (예: export MINDMAP_MEMBER=다린)

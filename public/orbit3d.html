@@ -3601,27 +3601,28 @@ function toggleOrbitAnim() {
 window.toggleOrbitAnim = toggleOrbitAnim;
 
 // ─── 휠 줌 기반 뷰 자동 전환 ─────────────────────────────────────────────────
+// 주의: 샘플 데이터 직접 호출 금지 → 반드시 loadTeamDemo/loadCompanyDemo 경유
 function _autoSwitchViewByZoom() {
   const r = controls.sph.r;
   if (!_teamMode && !_companyMode && !_parallelMode) {
-    // 개인 모드: 멀리 줌아웃 → 팀뷰로
+    // 개인 모드: 멀리 줌아웃 → 팀뷰로 (로그인 필요)
     if (r > 90) {
-      buildTeamSystem(TEAM_DEMO);
-      controls.sph.r = r; controls._apply();
+      const savedR = r;
+      loadTeamDemo().then(() => { controls.sph.r = savedR; controls._apply(); }).catch(() => {});
     }
   } else if (_teamMode && !_companyMode) {
-    // 팀 모드: 더 멀리 → 전사뷰, 가까이 + 포커스 → 드릴다운
+    // 팀 모드: 더 멀리 → 전사뷰 (로그인 필요)
     if (r > 160) {
-      buildCompanySystem(COMPANY_DEMO);
-      controls.sph.r = r; controls._apply();
+      const savedR = r;
+      loadCompanyDemo().then(() => { controls.sph.r = savedR; controls._apply(); }).catch(() => {});
     } else if (r < 20 && _focusedMember) {
       drillDownToMember(_focusedMember);
     }
   } else if (_companyMode) {
-    // 전사 모드: 줌인 → 팀뷰로
+    // 전사 모드: 줌인 → 팀뷰로 (로그인 필요)
     if (r < 110) {
-      buildTeamSystem(TEAM_DEMO);
-      controls.sph.r = r; controls._apply();
+      const savedR = r;
+      loadTeamDemo().then(() => { controls.sph.r = savedR; controls._apply(); }).catch(() => {});
     }
   }
 }
@@ -4898,7 +4899,9 @@ function buildCompanySystem(companyData) {
 async function loadTeamDemo() {
   if (typeof track === 'function') track('view.mode_switch', { from: 'personal', to: 'team' });
 
-  const token = localStorage.getItem('orbit_token');
+  // orbitUser JSON에서 토큰 추출 (로그인 시 저장되는 형식에 맞게)
+  const _u = typeof _orbitUser !== 'undefined' ? _orbitUser : JSON.parse(localStorage.getItem('orbitUser') || 'null');
+  const token = _u?.token;
 
   // ── 비로그인 → 로그인 요청 (샘플 표시 안 함) ──────────────────────────
   if (!token) {
@@ -4931,7 +4934,8 @@ window.loadTeamDemo = loadTeamDemo;
 async function loadCompanyDemo() {
   if (typeof track === 'function') track('view.mode_switch', { from: 'team', to: 'company' });
 
-  const token = localStorage.getItem('orbit_token');
+  const _u = typeof _orbitUser !== 'undefined' ? _orbitUser : JSON.parse(localStorage.getItem('orbitUser') || 'null');
+  const token = _u?.token;
 
   // ── 비로그인 → 로그인 요청 (샘플 표시 안 함) ──────────────────────────
   if (!token) {
@@ -6840,8 +6844,7 @@ document.addEventListener('keydown', e => {
     window._drillDownSource = null;
     window._drillDownMemberId = null;
     window._drillDownMemberName = null;
-    buildTeamSystem(TEAM_DEMO);
-    updateBreadcrumb('team');
+    loadTeamDemo(); // 샘플 직접 호출 금지 → 로그인 검증 경유
   }
 });
 setTimeout(resizeRendererToSidebar, 100); // fallback
@@ -9628,12 +9631,66 @@ async function loadData() {
   try {
     const res  = await fetch('/api/graph');
     const data = await res.json();
-    buildPlanetSystem(data.nodes || []);
+    const nodes = data.nodes || [];
+    buildPlanetSystem(nodes);
     document.getElementById('loading').style.display = 'none';
+
+    // 이벤트 없음 → 안내 메시지 표시
+    if (nodes.length === 0) {
+      _showEmptyStateGuide();
+    } else {
+      _hideEmptyStateGuide();
+    }
   } catch(e) {
     document.getElementById('loading').innerHTML =
       `<div style="color:#f85149;text-align:center">⚠ 서버 연결 실패<br><small style="color:#6e7681">${e.message}</small><br><br><a href="/" style="color:#58a6ff;font-size:13px">← 대시보드</a></div>`;
   }
+}
+
+// ── 빈 화면 안내 ──────────────────────────────────────────────────────────────
+function _showEmptyStateGuide() {
+  if (document.getElementById('empty-state-guide')) return; // 이미 있으면 스킵
+  const el = document.createElement('div');
+  el.id = 'empty-state-guide';
+  el.style.cssText = `
+    position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
+    background:rgba(13,17,23,0.95); border:1px solid #30363d;
+    border-radius:18px; padding:28px 32px; max-width:420px; text-align:center;
+    z-index:500; backdrop-filter:blur(20px);
+    box-shadow:0 16px 64px rgba(0,0,0,0.5);
+    font-family:-apple-system,'Segoe UI',sans-serif;
+    animation:fadeIn .4s ease;
+  `;
+  el.innerHTML = `
+    <div style="font-size:42px;margin-bottom:12px">⬡</div>
+    <div style="font-size:17px;font-weight:700;color:#e6edf3;margin-bottom:8px">
+      아직 작업 데이터가 없습니다
+    </div>
+    <div style="font-size:13px;color:#8b949e;line-height:1.6;margin-bottom:18px">
+      Claude Code에서 파일을 편집하거나 대화를 나누면<br>
+      자동으로 3D 우주에 작업 노드가 생성됩니다.
+    </div>
+    <div style="font-size:12px;color:#6e7681;background:rgba(88,166,255,.08);
+      border:1px solid #1f6feb30;border-radius:10px;padding:12px 14px;
+      text-align:left;line-height:1.8;margin-bottom:16px">
+      <b style="color:#79c0ff">체크리스트:</b><br>
+      ① Claude Code가 실행 중인가요?<br>
+      ② 설치 스크립트를 실행했나요?<br>
+      &nbsp;&nbsp;<code style="color:#7ee787;font-size:11px">irm [서버URL]/orbit-setup.ps1 | iex</code><br>
+      ③ 설치 후 Claude Code로 파일을 편집해보세요
+    </div>
+    <button onclick="document.getElementById('empty-state-guide').remove()"
+      style="background:#21262d;border:1px solid #30363d;color:#e6edf3;
+      padding:8px 20px;border-radius:8px;cursor:pointer;font-size:13px">
+      닫기
+    </button>
+  `;
+  document.body.appendChild(el);
+}
+
+function _hideEmptyStateGuide() {
+  const el = document.getElementById('empty-state-guide');
+  if (el) el.remove();
 }
 
 // ─── 관리자 맞춤 뷰 ───────────────────────────────────────────────────────────
