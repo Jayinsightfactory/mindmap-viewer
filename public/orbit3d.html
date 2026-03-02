@@ -8059,6 +8059,115 @@ window.loadExecModelOptions = loadExecModelOptions;
 
 let _setupStatus = null;  // GET /api/setup/check 캐시
 
+// ── 원키 설치 모달 ─────────────────────────────────────────────────────────
+// 각 사용자의 로컬 PC에 Orbit + Ollama + 훅을 설치하는 PowerShell/bash 명령어를 보여줌
+async function showInstallModal() {
+  document.getElementById('install-modal')?.remove();
+
+  // OS 감지 (브라우저)
+  const ua = navigator.userAgent || '';
+  let osType = 'linux';
+  if (/Windows/i.test(ua))       osType = 'windows';
+  else if (/Mac OS X/i.test(ua)) osType = 'mac';
+
+  // 서버에서 설치 스크립트 가져오기
+  let script = '', title = '', shell = '';
+  try {
+    const r = await fetch(`/api/setup/install-script?os=${osType}`);
+    const d = await r.json();
+    script = d.script || '';
+    title  = d.title  || '';
+    shell  = d.shell  || 'bash';
+  } catch {
+    script = '# 스크립트를 불러오지 못했습니다. 네트워크 연결을 확인하세요.';
+  }
+
+  const shellLabel = shell === 'powershell' ? '🪟 PowerShell' : '🖥️ 터미널';
+  const modal = document.createElement('div');
+  modal.id = 'install-modal';
+  modal.style.cssText = `
+    position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:10000;
+    display:flex;align-items:center;justify-content:center;padding:16px;
+  `;
+  modal.innerHTML = `
+    <div style="background:#161b22;border:1px solid #30363d;border-radius:14px;
+      max-width:680px;width:100%;max-height:90vh;overflow-y:auto;
+      box-shadow:0 16px 48px rgba(0,0,0,.6);font-family:inherit;">
+      <div style="padding:18px 20px;border-bottom:1px solid #21262d;display:flex;align-items:center;gap:8px">
+        <span style="font-size:17px">⬡</span>
+        <span style="font-size:14px;font-weight:700;color:#f0f6fc">Orbit AI 원키 설치</span>
+        <span style="font-size:11px;color:#6e7681;margin-left:4px">${title}</span>
+        <span onclick="document.getElementById('install-modal').remove()"
+          style="margin-left:auto;cursor:pointer;color:#6e7681;font-size:20px;line-height:1">✕</span>
+      </div>
+      <div style="padding:16px 20px">
+        <div style="font-size:12px;color:#8b949e;margin-bottom:10px;line-height:1.7">
+          아래 명령어를 <b style="color:#f0f6fc">${shellLabel}</b>에 붙여넣고 실행하세요.<br>
+          <span style="color:#3fb950">Orbit 설치 → Ollama 설치 → AI 모델 다운로드 → Claude 훅 등록</span>이 자동 완료됩니다.
+        </div>
+        <div style="position:relative">
+          <pre id="install-script-box" style="background:#010409;border:1px solid #21262d;border-radius:8px;
+            padding:14px;font-family:'Consolas','Courier New',monospace;font-size:11.5px;
+            color:#adbac7;overflow-x:auto;max-height:300px;overflow-y:auto;line-height:1.6;
+            white-space:pre;margin:0">${escHtml(script)}</pre>
+          <button onclick="copyInstallScript()" style="position:absolute;top:8px;right:8px;
+            background:#1f6feb;border:none;border-radius:6px;color:#fff;
+            font-size:11px;font-weight:600;padding:4px 10px;cursor:pointer" id="copy-script-btn">
+            📋 복사
+          </button>
+        </div>
+        <div style="margin-top:14px;padding:12px;background:rgba(31,111,235,.08);border:1px solid #1f6feb;
+          border-radius:8px;font-size:11px;color:#58a6ff;line-height:1.7">
+          <b>실행 방법:</b><br>
+          ${shell === 'powershell'
+            ? '1. Windows 키 → "PowerShell" 검색 → 우클릭 → 관리자 권한으로 실행<br>2. 위 명령어 전체를 복사 후 붙여넣기 → Enter'
+            : '1. 터미널(Terminal)을 열어주세요<br>2. 위 명령어 전체를 복사 후 붙여넣기 → Enter'}
+        </div>
+        <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
+          <button onclick="copyInstallScript()" style="padding:8px 18px;background:#1f6feb;
+            border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:600;cursor:pointer">
+            📋 명령어 복사
+          </button>
+          <button onclick="markSetupDone()" style="padding:8px 18px;background:#238636;
+            border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:600;cursor:pointer">
+            ✅ 실행 완료됨
+          </button>
+          <button onclick="document.getElementById('install-modal').remove()"
+            style="padding:8px 18px;background:transparent;border:1px solid #30363d;
+            border-radius:8px;color:#8b949e;font-size:13px;cursor:pointer">
+            나중에
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+}
+
+// 스크립트 복사
+function copyInstallScript() {
+  const box = document.getElementById('install-script-box');
+  if (!box) return;
+  navigator.clipboard.writeText(box.textContent || '').then(() => {
+    const btn = document.getElementById('copy-script-btn');
+    if (btn) { btn.textContent = '✅ 복사됨'; setTimeout(() => btn.textContent = '📋 복사', 2000); }
+  }).catch(() => alert('복사 실패 — 직접 선택 후 Ctrl+C 하세요.'));
+}
+
+// 설치 완료 처리
+function markSetupDone() {
+  localStorage.setItem('orbit_ollama_ok', '1');
+  localStorage.setItem('orbit_hook_ok',   '1');
+  document.getElementById('install-modal')?.remove();
+  document.getElementById('env-check-banner')?.remove();
+  renderSetupPanel();
+  const t = document.createElement('div');
+  t.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#238636;color:#fff;padding:10px 22px;border-radius:8px;font-size:13px;font-weight:600;z-index:99999;box-shadow:0 4px 16px rgba(0,0,0,.4)';
+  t.textContent = '✅ 설정 완료! Orbit AI가 데이터를 수집합니다.';
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 4000);
+}
+
 // ── 로그인 후 자동 환경 체크 ────────────────────────────────────────────────
 function _autoCheckEnvAfterLogin() {
   const ollamaOk = localStorage.getItem('orbit_ollama_ok') === '1';
@@ -8067,49 +8176,39 @@ function _autoCheckEnvAfterLogin() {
   if (ollamaOk && hookOk) return; // 이미 모두 확인됨
 
   setTimeout(() => {
-    if (document.getElementById('env-check-banner')) return;
-
-    const items = [];
-    if (!ollamaOk) items.push({
-      icon: '🤖', label: 'Ollama',
-      desc: 'AI 분석을 위해 Ollama가 필요합니다',
-      btn1: `<button onclick="testOllamaConnection()" style="padding:4px 10px;background:#1f6feb;border:none;border-radius:6px;color:#fff;font-size:11px;cursor:pointer;margin-right:4px">연결 테스트</button>`,
-      btn2: `<button onclick="confirmOllama()" style="padding:4px 10px;background:#238636;border:none;border-radius:6px;color:#fff;font-size:11px;cursor:pointer">설치됨 ✓</button>`,
-    });
-    if (!hookOk) items.push({
-      icon: '🔗', label: 'Claude 훅',
-      desc: 'Claude Code 작업 자동 추적을 위해 훅 등록이 필요합니다',
-      btn1: `<button onclick="openSetupPanel()" style="padding:4px 10px;background:#1f6feb;border:none;border-radius:6px;color:#fff;font-size:11px;cursor:pointer;margin-right:4px">설치 안내</button>`,
-      btn2: `<button onclick="confirmHook()" style="padding:4px 10px;background:#238636;border:none;border-radius:6px;color:#fff;font-size:11px;cursor:pointer">등록됨 ✓</button>`,
-    });
+    if (document.getElementById('env-check-banner') || document.getElementById('install-modal')) return;
 
     const banner = document.createElement('div');
     banner.id = 'env-check-banner';
     banner.style.cssText = `
       position:fixed;bottom:80px;left:50%;transform:translateX(-50%);
       background:#161b22;border:1px solid #30363d;border-radius:12px;
-      padding:14px 20px;z-index:9000;max-width:460px;width:92%;
+      padding:14px 20px;z-index:9000;max-width:420px;width:92%;
       box-shadow:0 8px 32px rgba(0,0,0,0.5);font-family:inherit;
     `;
     banner.innerHTML = `
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-        <span style="font-size:15px">⚙️</span>
-        <span style="font-size:13px;font-weight:600;color:#f0f6fc">앱 100% 활용을 위한 설정</span>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+        <span style="font-size:15px">⬡</span>
+        <span style="font-size:13px;font-weight:600;color:#f0f6fc">Orbit AI 설정 필요</span>
         <span onclick="document.getElementById('env-check-banner').remove()"
           style="margin-left:auto;cursor:pointer;color:#6e7681;font-size:18px;line-height:1">✕</span>
       </div>
-      ${items.map(i => `
-        <div style="padding:8px 0;border-top:1px solid #21262d">
-          <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
-            <span>${i.icon}</span>
-            <span style="font-size:12px;font-weight:600;color:#e6edf3">${i.label}</span>
-            <span style="font-size:11px;color:#6e7681;flex:1">${i.desc}</span>
-          </div>
-          <div style="display:flex;gap:4px;padding-left:20px">
-            ${i.btn1}${i.btn2}
-          </div>
-        </div>
-      `).join('')}
+      <div style="font-size:12px;color:#8b949e;margin-bottom:12px;line-height:1.6">
+        Claude Code 작업이 자동 수집되려면<br>
+        <b style="color:#cdd9e5">내 PC에 Orbit + Ollama + 훅</b> 설치가 필요합니다.
+      </div>
+      <div style="display:flex;gap:8px">
+        <button onclick="showInstallModal();document.getElementById('env-check-banner').remove()"
+          style="flex:1;padding:8px;background:#1f6feb;border:none;border-radius:8px;
+          color:#fff;font-size:12px;font-weight:600;cursor:pointer">
+          🚀 원키 설치 명령어 보기
+        </button>
+        <button onclick="markSetupDone()" title="이미 설치되어 있다면"
+          style="padding:8px 12px;background:transparent;border:1px solid #30363d;
+          border-radius:8px;color:#6e7681;font-size:11px;cursor:pointer">
+          이미 완료
+        </button>
+      </div>
     `;
     document.body.appendChild(banner);
   }, 2000);
@@ -8154,11 +8253,12 @@ function detectClientEnv() {
   };
 }
 
-// Ollama 설치 여부 수동 확인 (새 탭에서 localhost:11434 열기)
-function testOllamaConnection() {
-  window.open('http://localhost:11434', '_blank');
+// 원키 설치 페이지 열기 (localhost:4747 = HTTP → Mixed Content 없음)
+function openAutoSetup() {
+  window.open('http://localhost:4747/setup.html', 'orbit_setup',
+    'width=740,height=680,toolbar=0,menubar=0,scrollbars=1');
 }
-// 사용자가 직접 "완료" 클릭 시 localStorage 저장 후 패널 새로고침
+// 완료 후 수동 확인 버튼
 function confirmOllama() {
   localStorage.setItem('orbit_ollama_ok', '1');
   renderSetupPanel();
@@ -8174,10 +8274,27 @@ function resetEnvConfirm() {
   localStorage.removeItem('orbit_hook_ok');
   renderSetupPanel();
 }
-window.testOllamaConnection = testOllamaConnection;
-window.confirmOllama = confirmOllama;
-window.confirmHook   = confirmHook;
-window.resetEnvConfirm = resetEnvConfirm;
+// setup.html이 완료되면 postMessage로 신호를 보냄 → 자동 확인 처리
+window.addEventListener('message', (e) => {
+  if (e.data?.type === 'orbit_setup_done') {
+    localStorage.setItem('orbit_ollama_ok', '1');
+    localStorage.setItem('orbit_hook_ok',   '1');
+    renderSetupPanel();
+    document.getElementById('env-check-banner')?.remove();
+    const t = document.createElement('div');
+    t.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#238636;color:#fff;padding:10px 22px;border-radius:8px;font-size:13px;font-weight:600;z-index:99999;box-shadow:0 4px 16px rgba(0,0,0,.4)';
+    t.textContent = '✅ 설정 완료! Orbit AI가 데이터를 수집합니다.';
+    document.body.appendChild(t);
+    setTimeout(() => t.remove(), 4000);
+  }
+});
+window.openAutoSetup      = openAutoSetup;
+window.confirmOllama      = confirmOllama;
+window.confirmHook        = confirmHook;
+window.resetEnvConfirm    = resetEnvConfirm;
+window.showInstallModal   = showInstallModal;
+window.copyInstallScript  = copyInstallScript;
+window.markSetupDone      = markSetupDone;
 
 async function renderSetupPanel() {
   const body = document.getElementById('sp-body');
@@ -8200,44 +8317,36 @@ async function renderSetupPanel() {
   const hookOk   = hook.registered;
   const claudeOk = claude.running;
 
+  // Ollama 카드: 확인됨 or 설치 버튼
   const ollamaCard = ollamaOk
     ? `<div class="sp-check-card" style="flex-direction:column;align-items:flex-start;gap:4px">
         <div style="display:flex;width:100%;align-items:center">
           <div class="sp-check-label">Ollama</div>
           <div class="sp-check-val sp-check-ok">✅ 확인됨</div>
         </div>
-        <button onclick="resetEnvConfirm()" style="font-size:10px;color:#6e7681;background:none;border:none;cursor:pointer;padding:0">↩ 확인 초기화</button>
+        <button onclick="resetEnvConfirm()" style="font-size:10px;color:#6e7681;background:none;border:none;cursor:pointer;padding:0">↩ 초기화</button>
       </div>`
     : `<div class="sp-check-card" style="flex-direction:column;align-items:flex-start;gap:6px">
         <div style="display:flex;width:100%;align-items:center">
-          <div class="sp-check-label">Ollama</div>
-          <div class="sp-check-val sp-check-warn">❌ 미확인</div>
+          <div class="sp-check-label">Ollama + 훅</div>
+          <div class="sp-check-val sp-check-warn">❌ 미설치</div>
         </div>
-        <div style="display:flex;gap:6px">
-          <button onclick="testOllamaConnection()" style="padding:3px 8px;background:#1f6feb;border:none;border-radius:5px;color:#fff;font-size:11px;cursor:pointer">🔗 localhost:11434 열기</button>
-          <button onclick="confirmOllama()" style="padding:3px 8px;background:#238636;border:none;border-radius:5px;color:#fff;font-size:11px;cursor:pointer">설치됨 ✓</button>
-        </div>
-        <div style="font-size:10px;color:#6e7681">Ollama가 실행 중이면 위 버튼을 눌러 확인 후 "설치됨 ✓" 클릭</div>
+        <button onclick="showInstallModal()" style="padding:5px 12px;background:#1f6feb;border:none;border-radius:6px;color:#fff;font-size:11px;font-weight:600;cursor:pointer;margin-top:2px">
+          🚀 원키 설치 명령어 보기
+        </button>
+        <div style="font-size:10px;color:#6e7681">PowerShell 명령어를 복사해 실행하면 자동 설치됩니다</div>
       </div>`;
 
+  // hookCard: 이미 ollamaCard에 통합 (미설치 시 같은 버튼으로 처리)
   const hookCard = hookOk
     ? `<div class="sp-check-card" style="flex-direction:column;align-items:flex-start;gap:4px">
         <div style="display:flex;width:100%;align-items:center">
           <div class="sp-check-label">Claude 훅</div>
           <div class="sp-check-val sp-check-ok">✅ 등록됨</div>
         </div>
-        <button onclick="resetEnvConfirm()" style="font-size:10px;color:#6e7681;background:none;border:none;cursor:pointer;padding:0">↩ 확인 초기화</button>
+        <button onclick="resetEnvConfirm()" style="font-size:10px;color:#6e7681;background:none;border:none;cursor:pointer;padding:0">↩ 초기화</button>
       </div>`
-    : `<div class="sp-check-card" style="flex-direction:column;align-items:flex-start;gap:6px">
-        <div style="display:flex;width:100%;align-items:center">
-          <div class="sp-check-label">Claude 훅</div>
-          <div class="sp-check-val sp-check-warn">❌ 미등록</div>
-        </div>
-        <div style="display:flex;gap:6px">
-          <button onclick="confirmHook()" style="padding:3px 8px;background:#238636;border:none;border-radius:5px;color:#fff;font-size:11px;cursor:pointer">훅 등록됨 ✓</button>
-        </div>
-        <div style="font-size:10px;color:#6e7681">아래 원키 설치 스크립트 실행 후 "훅 등록됨 ✓" 클릭</div>
-      </div>`;
+    : ``; // 미설치 시 ollamaCard에 통합 표시
 
   const cards = [
     { label:'OS', val: `${osIcon} ${os}`,  cls:'sp-check-neutral' },
@@ -8248,17 +8357,19 @@ async function renderSetupPanel() {
       <div class="sp-check-val ${c.cls}">${escHtml(c.val)}</div>
     </div>`).join('') + ollamaCard + hookCard;
 
-  // ── 설치 스크립트 섹션 ────────────────────────────────────────────────────
+  // ── 설치 섹션 ─────────────────────────────────────────────────────────────
   const needsInstall = !ollamaOk || !hookOk;
   const installSection = needsInstall ? `
     <div class="sp-section">📦 원키 설치</div>
-    <p style="font-size:11px;color:#8b949e;margin-bottom:8px;">
-      아래 스크립트를 터미널에 붙여넣으면 Ollama 설치 + Claude 훅 등록이 한 번에 완료됩니다.
+    <p style="font-size:12px;color:#8b949e;margin-bottom:10px;line-height:1.7">
+      아래 버튼을 클릭하면 <b style="color:#cdd9e5">PowerShell/터미널 명령어</b>가 표시됩니다.<br>
+      명령어를 복사해 실행하면 내 PC에 <span style="color:#3fb950">자동으로 설치</span>됩니다.
     </p>
-    <div id="sp-script-box" class="sp-script-box">불러오는 중…</div>
-    <button class="sp-btn sp-btn-outline" onclick="copySetupScript()">📋 스크립트 복사</button>
-    <button class="sp-btn sp-btn-primary" onclick="registerHookOnly()" style="margin-top:2px">
-      🔗 Claude 훅만 등록 (Ollama 이미 설치됨)
+    <button class="sp-btn sp-btn-primary" onclick="showInstallModal()" style="margin-bottom:6px">
+      🚀 원키 설치 명령어 보기
+    </button>
+    <button class="sp-btn sp-btn-outline" onclick="markSetupDone()">
+      ✅ 이미 설치됨 — 완료 처리
     </button>
   ` : `
     <div style="background:rgba(35,134,54,.1);border:1px solid #238636;border-radius:10px;
