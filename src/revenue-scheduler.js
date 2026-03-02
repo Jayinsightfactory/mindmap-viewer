@@ -315,6 +315,10 @@ function getNextMonthlyRunTime(day, hour) {
   return next.toISOString();
 }
 
+// setTimeout 최대값: 32비트 정수 한계 (약 24.8일)
+// 이보다 큰 값을 넣으면 1ms로 처리되어 무한 루프 발생
+const MAX_TIMEOUT_MS = 2_147_483_647;
+
 /**
  * 매일 특정 시각에 콜백 실행 (setTimeout 기반 — node-cron 불필요)
  */
@@ -329,10 +333,13 @@ function _scheduleDaily(hour, minute, callback) {
 
   let handle;
   function schedule() {
+    const delay = Math.min(getDelayMs(), MAX_TIMEOUT_MS); // 한계 초과 방지
     handle = setTimeout(async () => {
+      // 실제 목표 시각에 도달했는지 재확인 (대형 delay 중간에 깨어난 경우 재대기)
+      if (getDelayMs() > 1000) { schedule(); return; }
       try { await callback(); } catch (e) { console.error('[DailyCron]', e.message); }
       schedule(); // 다음 실행 예약
-    }, getDelayMs());
+    }, delay);
     handle.unref?.(); // Node.js: 이벤트 루프 블로킹 방지
   }
   schedule();
@@ -354,10 +361,13 @@ function _scheduleMonthly(day, hour, minute, callback) {
 
   let handle;
   function schedule() {
+    const delay = Math.min(getDelayMs(), MAX_TIMEOUT_MS); // 한계 초과 방지
     handle = setTimeout(async () => {
+      // 실제 목표 시각에 도달했는지 재확인
+      if (getDelayMs() > 1000) { schedule(); return; }
       try { await callback(); } catch (e) { console.error('[MonthlyCron]', e.message); }
       schedule();
-    }, getDelayMs());
+    }, delay);
     handle.unref?.();
   }
   schedule();
