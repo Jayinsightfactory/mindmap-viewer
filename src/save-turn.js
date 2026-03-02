@@ -268,38 +268,43 @@ function uploadToRailway(events) {
 }
 
 /**
- * 오후 6시 고정 업로드 여부 판단
- * - 현재 시각이 18:00 이후이고
- * - 오늘 날짜(YYYY-MM-DD)에 아직 업로드를 안 했으면 true
+ * 업로드 슬롯 결정: 하루 2번 (12시, 18시)
+ * - 12:00~17:59 → "noon"   슬롯
+ * - 18:00~23:59 → "evening" 슬롯
+ * - 해당 슬롯을 오늘 아직 안 올렸으면 슬롯 문자열 반환, 아니면 null
+ * 예) "2026-03-02-noon", "2026-03-02-evening"
  */
-function isUploadTime(state) {
-  const now  = new Date();
-  const hour = now.getHours(); // 로컬 시간 기준
+function currentUploadSlot(state) {
+  const now   = new Date();
+  const hour  = now.getHours();
+  const today = now.toISOString().slice(0, 10); // YYYY-MM-DD
 
-  // 18시 이전이면 아직 업로드 시간 아님
-  if (hour < 18) return false;
+  let slot = null;
+  if (hour >= 18) slot = `${today}-evening`; // 오후 6시 이후
+  else if (hour >= 12) slot = `${today}-noon`; // 정오 이후
 
-  // 오늘 날짜 (YYYY-MM-DD)
-  const today = now.toISOString().slice(0, 10);
+  if (!slot) return null;                          // 아직 업로드 시간 아님
+  if ((state.uploadedSlots || []).includes(slot)) return null; // 이미 이 슬롯 완료
 
-  // 오늘 이미 업로드했으면 스킵
-  if (state.lastUploadDate === today) return false;
-
-  return true;
+  return slot;
 }
 
-/** 매일 오후 6시 이후 첫 훅 실행 시 일괄 업로드 */
+/** 하루 2번(12시·18시) 이후 첫 훅 실행 시 일괄 업로드 */
 async function dailyUploadIfDue(state) {
   if (!ORBIT_SERVER_URL || !ORBIT_TOKEN) return; // 설정 없으면 스킵
-  if (!isUploadTime(state)) return;              // 아직 업로드 시간 아님
 
-  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+  const slot = currentUploadSlot(state);
+  if (!slot) return; // 업로드 시간 아님 또는 이미 완료
+
+  if (!state.uploadedSlots) state.uploadedSlots = [];
 
   // 마지막 업로드 이후 쌓인 이벤트 조회
   const pending = readEventsSince(state.lastUploadTs || 0);
   if (pending.length === 0) {
-    // 새 이벤트 없어도 오늘 날짜는 기록 (중복 실행 방지)
-    state.lastUploadDate = today;
+    // 새 이벤트 없어도 슬롯 기록 (중복 방지)
+    state.uploadedSlots.push(slot);
+    // 슬롯 기록은 최근 10개만 유지 (파일 비대화 방지)
+    if (state.uploadedSlots.length > 10) state.uploadedSlots = state.uploadedSlots.slice(-10);
     return;
   }
 
@@ -322,12 +327,13 @@ async function dailyUploadIfDue(state) {
   const now    = Date.now();
   const status = await uploadToRailway(events);
   if (status === 200 || status === 201) {
-    state.lastUploadTs   = now;   // 다음 업로드 기준 시각
-    state.lastUploadDate = today; // 오늘 날짜 기록 → 오늘 중복 업로드 방지
-    log(`[UPLOAD] 완료: ${events.length}개 → status ${status}`);
+    state.lastUploadTs = now;       // 다음 업로드 기준 시각
+    state.uploadedSlots.push(slot); // 이 슬롯 완료 표시
+    if (state.uploadedSlots.length > 10) state.uploadedSlots = state.uploadedSlots.slice(-10);
+    log(`[UPLOAD] 완료 [${slot}]: ${events.length}개 → status ${status}`);
   } else {
-    // 실패 시 날짜 갱신 안 함 → 6시 이후 다음 훅 실행 시 재시도
-    log(`[UPLOAD] 실패: status ${status} — 재시도 예정`);
+    // 실패 시 슬롯 기록 안 함 → 다음 훅 실행 시 재시도
+    log(`[UPLOAD] 실패 [${slot}]: status ${status} — 재시도 예정`);
   }
 }
 
