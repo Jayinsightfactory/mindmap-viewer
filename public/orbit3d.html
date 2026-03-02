@@ -9840,6 +9840,10 @@ function connectWS() {
       if (m.type === 'ollama_analysis' && m.data) {
         updateOllamaPanel(m.data, m.eventCount);
       }
+      // 키로거 인사이트 (원문 없음 — 분석 결과만)
+      if (m.type === 'keylog_insight' && m.insight) {
+        showKeylogInsight(m.insight, m.timestamp);
+      }
       // 터미널·VS Code·AI대화 이벤트 → 그래프 업데이트 + 토스트
       if (m.type === 'new_event' && m.event) {
         const et = m.event.type || '';
@@ -9907,6 +9911,88 @@ function updateOllamaPanel(data, eventCount) {
   // 30초 후 자동 닫힘
   clearTimeout(panel._closeTimer);
   panel._closeTimer = setTimeout(() => panel?.remove(), 30000);
+}
+
+// ── 키로거 인사이트 토스트 ────────────────────────────────────────────────────
+// 원문 없이 Ollama 분석 결과(주제/활동/키워드)만 표시
+function showKeylogInsight(insight, timestamp) {
+  if (!insight) return;
+
+  // 활동 타입별 아이콘
+  const actIcons = {
+    '이메일': '📧', '채팅': '💬', '문서작성': '📝',
+    '코딩': '💻', '검색': '🔍', '기타': '⌨️',
+  };
+  const icon = actIcons[insight.activity] || '⌨️';
+
+  // 키워드 3개까지 표시
+  const kwText = (insight.keywords || []).slice(0, 3).join(' · ');
+
+  // 토스트 DOM 생성
+  const toast = document.createElement('div');
+  toast.className = 'keylog-toast';
+  toast.style.cssText = `
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    background: rgba(13,17,23,0.95); border: 1px solid #3fb950;
+    border-radius: 12px; padding: 10px 16px; z-index: 9999;
+    display: flex; align-items: center; gap: 10px;
+    font-size: 13px; color: #e6edf3; min-width: 260px; max-width: 420px;
+    box-shadow: 0 4px 20px rgba(63,185,80,0.2);
+    animation: slideUp .3s ease; backdrop-filter: blur(12px);
+    pointer-events: none;
+  `;
+  toast.innerHTML = `
+    <span style="font-size:18px">${icon}</span>
+    <div style="flex:1;min-width:0">
+      <div style="font-weight:700;color:#3fb950;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+        ${icon} ${insight.topic || insight.activity || '키입력'}
+      </div>
+      <div style="font-size:11px;color:#6e7681;margin-top:2px">
+        ${kwText || insight.context || insight.language || ''}
+      </div>
+    </div>
+    <span style="font-size:11px;color:#6e7681;flex-shrink:0">로컬 분석</span>
+  `;
+
+  document.body.appendChild(toast);
+  setTimeout(() => {
+    toast.style.opacity = '0'; toast.style.transition = 'opacity .3s';
+    setTimeout(() => toast.remove(), 300);
+  }, 4000);
+
+  // 상단 인사이트 스트림에도 추가 (최근 5개 유지)
+  _addToKeylogStream(insight, icon);
+}
+
+// 좌상단 스트림 패널에 키로그 인사이트 기록 유지
+let _keylogStreamEl = null;
+const _keylogStreamItems = [];
+function _addToKeylogStream(insight, icon) {
+  if (!_keylogStreamEl) {
+    _keylogStreamEl = document.createElement('div');
+    _keylogStreamEl.id = 'keylog-stream';
+    _keylogStreamEl.style.cssText = `
+      position: fixed; right: 14px; top: 14px; z-index: 200;
+      width: 220px; display: flex; flex-direction: column; gap: 4px;
+      pointer-events: none;
+    `;
+    document.body.appendChild(_keylogStreamEl);
+  }
+
+  _keylogStreamItems.unshift({ insight, icon, ts: Date.now() });
+  if (_keylogStreamItems.length > 5) _keylogStreamItems.pop();
+
+  _keylogStreamEl.innerHTML = _keylogStreamItems.map(item => `
+    <div style="
+      background: rgba(13,17,23,0.88); border: 1px solid #21262d;
+      border-left: 3px solid #3fb950; border-radius: 8px;
+      padding: 6px 10px; font-size: 11px; color: #8b949e;
+    ">
+      <span style="color:#3fb950">${item.icon}</span>
+      <span style="color:#e6edf3;font-weight:600"> ${item.insight.topic || item.insight.activity}</span>
+      <span style="float:right;color:#6e7681">${item.insight.language || ''}</span>
+    </div>
+  `).join('');
 }
 
 // ── 활동 펄스 토스트 (터미널·VS Code 이벤트용 미니 알림) ────────────────────

