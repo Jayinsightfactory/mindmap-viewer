@@ -1051,9 +1051,127 @@ app.get('/api/insights/dashboard', (req, res) => {
 app.post('/api/ai-events', (req, res) => {
   const event = req.body;
   console.log(`[Chrome Extension] ${event.tool} — ${event.action}: ${event.topic}`);
-  // WebSocket으로 연결된 클라이언트들에게 브로드캐스트
+  if (typeof broadcastAll === 'function') broadcastAll({ type: 'ai_tool_event', data: event });
+  res.json({ ok: true });
+});
+
+// ── AI 대화 수신 (Chrome Extension content-ai.js → background.js → 여기) ─────
+// 원문은 로컬에만 저장 — Railway에는 전송하지 않음
+app.post('/api/ai-conversation', (req, res) => {
+  const conv = req.body;
+  if (!conv || !conv.messages || !Array.isArray(conv.messages)) {
+    return res.status(400).json({ error: 'messages array required' });
+  }
+
+  try {
+    const db = dbModule.getDb();
+    if (!db) return res.json({ ok: true, stored: false, reason: 'no-db' });
+
+    // 테이블 초기화 (없으면 생성)
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS ai_conversations (
+        id          TEXT PRIMARY KEY,
+        site        TEXT NOT NULL,
+        url         TEXT,
+        title       TEXT,
+        msg_count   INTEGER DEFAULT 0,
+        messages    TEXT,           -- JSON 원문 (로컬 only)
+        shared      INTEGER DEFAULT 0,
+        captured_at TEXT,
+        updated_at  TEXT DEFAULT (datetime('now')),
+        user_id     TEXT            -- 나중에 계정 연결용
+      )
+    `);
+
+    const id  = conv.id || `conv-${Date.now()}`;
+    const now = new Date().toISOString();
+
+    // INSERT OR REPLACE (같은 id = 업데이트)
+    db.prepare(`
+      INSERT OR REPLACE INTO ai_conversations
+        (id, site, url, title, msg_count, messages, shared, captured_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      id,
+      conv.site  || 'Unknown',
+      conv.url   || '',
+      conv.title || conv.site || '',
+      conv.messages.length,
+      JSON.stringify(conv.messages),  // 원문 저장
+      conv.shared ? 1 : 0,
+      conv.capturedAt || now,
+      now,
+    );
+
+    // 브로드캐스트 (대시보드 실시간 업데이트)
+    if (typeof broadcastAll === 'function') {
+      broadcastAll({
+        type:   'ai_conversation_saved',
+        site:   conv.site,
+        title:  conv.title,
+        msgs:   conv.messages.length,
+        id,
+      });
+    }
+
+    console.log(`[AI대화] ${conv.site} — ${conv.messages.length}메시지 저장 (${id})`);
+    res.json({ ok: true, id, stored: true });
+  } catch (err) {
+    console.error('[AI대화] 저장 오류:', err.message);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// ── AI 대화 목록 조회 ─────────────────────────────────────────────────────────
+app.get('/api/ai-conversations', (req, res) => {
+  try {
+    const db = dbModule.getDb();
+    if (!db) return res.json({ conversations: [] });
+
+    db.exec(`CREATE TABLE IF NOT EXISTS ai_conversations (
+      id TEXT PRIMARY KEY, site TEXT, url TEXT, title TEXT,
+      msg_count INTEGER DEFAULT 0, messages TEXT, shared INTEGER DEFAULT 0,
+      captured_at TEXT, updated_at TEXT, user_id TEXT
+    )`);
+
+    const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+    const rows  = db.prepare(`
+      SELECT id, site, url, title, msg_count, shared, captured_at, updated_at
+      FROM ai_conversations ORDER BY updated_at DESC LIMIT ?
+    `).all(limit);
+
+    // 원문(messages)은 목록에서 제외 — 개별 조회 시에만 반환
+    res.json({ conversations: rows });
+  } catch (err) {
+    res.json({ conversations: [], error: err.message });
+  }
+});
+
+// ── AI 대화 원문 조회 (로컬에서만 접근 가능) ────────────────────────────────
+app.get('/api/ai-conversations/:id/messages', (req, res) => {
+  // 로컬 접근만 허용 (127.0.0.1 / ::1)
+  const ip = req.ip || req.connection.remoteAddress || '';
+  const isLocal = ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
+  if (!isLocal) return res.status(403).json({ error: '로컬 접근만 허용됩니다' });
+
+  try {
+    const db = dbModule.getDb();
+    if (!db) return res.json({ messages: [] });
+
+    const row = db.prepare(`SELECT messages FROM ai_conversations WHERE id = ?`).get(req.params.id);
+    if (!row) return res.status(404).json({ error: '대화를 찾을 수 없습니다' });
+
+    res.json({ messages: JSON.parse(row.messages || '[]') });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── 브라우저 활동 수신 ────────────────────────────────────────────────────────
+app.post('/api/browser-activity', (req, res) => {
+  const { url, title, stayMs } = req.body;
   if (typeof broadcastAll === 'function') {
-    broadcastAll({ type: 'ai_tool_event', data: event });
+    broadcastAll({ type: 'browser_activity', url, title, stayMs });
   }
   res.json({ ok: true });
 });
