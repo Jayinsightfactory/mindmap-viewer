@@ -8145,8 +8145,8 @@ function showInstallModal() {
   const serverUrl = location.origin;
 
   // CMD에도 붙여넣기 가능한 한 줄 명령어
-  const winCmd  = `powershell -ExecutionPolicy Bypass -Command "irm ${serverUrl}/orbit-setup.ps1 | iex"`;
-  const macCmd  = `curl -fsSL ${serverUrl}/orbit-setup.sh | bash`;
+  const winCmd  = `irm ${serverUrl}/orbit-setup.ps1 | iex`;
+  const macCmd  = `bash <(curl -sL ${serverUrl}/orbit-setup.sh)`;
   const linuxCmd = macCmd;
 
   const cmd   = isWin ? winCmd : isMac ? macCmd : linuxCmd;
@@ -8482,8 +8482,8 @@ async function renderSetupPanel() {
   const _setupScript = location.origin + '/orbit-setup.ps1' + (_token ? `?token=${encodeURIComponent(_token)}` : '');
   const _setupSh     = location.origin + '/orbit-setup.sh'  + (_token ? `?token=${encodeURIComponent(_token)}` : '');
   const _installCmd  = os === 'windows'
-    ? `powershell -ExecutionPolicy Bypass -Command "irm '${_setupScript}' | iex"`
-    : `curl -fsSL '${_setupSh}' | bash`;
+    ? `irm '${_setupScript}' | iex`
+    : `bash <(curl -sL '${_setupSh}')`;
   const _isPersonalized = !!_token; // 토큰 포함 여부
 
   const _deviceConfirmed = ollamaOk && hookOk; // 이 기기에서 수동 확인 여부
@@ -8578,8 +8578,38 @@ async function renderSetupPanel() {
     </div>
   `;
 
+  // ── 데이터 소스 설정 ──────────────────────────────────────────────────────
+  const _curSource = _getDataSource() || 'local';
+  const _curAccount = localStorage.getItem(DATA_SOURCE_ACCOUNT_KEY) || '';
+  const dataSourceSection = `
+    <div class="sp-section">📂 데이터 소스</div>
+    <div style="display:flex;gap:8px;margin-bottom:8px">
+      <button id="sp-ds-cloud" onclick="_setDataSourceFromSettings('cloud')"
+        style="flex:1;padding:10px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600;
+        border:1px solid ${_curSource==='cloud'?'#1f6feb':'#30363d'};
+        background:${_curSource==='cloud'?'rgba(31,111,235,.15)':'#161b22'};
+        color:${_curSource==='cloud'?'#58a6ff':'#8b949e'}">
+        &#9729; 클라우드 동기화
+      </button>
+      <button id="sp-ds-local" onclick="_setDataSourceFromSettings('local')"
+        style="flex:1;padding:10px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600;
+        border:1px solid ${_curSource==='local'?'#1f6feb':'#30363d'};
+        background:${_curSource==='local'?'rgba(31,111,235,.15)':'#161b22'};
+        color:${_curSource==='local'?'#58a6ff':'#8b949e'}">
+        &#128187; 로컬 데이터
+      </button>
+    </div>
+    <div style="font-size:11px;color:#6e7681;line-height:1.5;margin-bottom:4px">
+      ${_curSource==='cloud'
+        ? '같은 계정으로 로그인하면 어떤 PC에서든 동일한 데이터를 봅니다.'
+        : '이 PC의 로컬 데이터만 작업 화면에 표시됩니다.'}
+      ${_curAccount ? '<br>연결 계정: <b style="color:#cdd9e5">'+_curAccount+'</b>' : ''}
+    </div>
+  `;
+
   body.innerHTML = `
     <div class="sp-check-grid">${cards}</div>
+    ${dataSourceSection}
     ${installSection}
     ${pullSection}
     <div class="sp-section">🔌 Claude 연동</div>
@@ -9756,74 +9786,169 @@ async function _claimLocalEvents() {
   }
 }
 
+// ── 데이터 소스 설정 ─────────────────────────────────────────────────────────
+const DATA_SOURCE_KEY = 'orbit_data_source'; // 'cloud' | 'local' | null
+const DATA_SOURCE_ACCOUNT_KEY = 'orbit_data_source_account'; // 설정한 계정 이메일
+
+function _getDataSource() {
+  return localStorage.getItem(DATA_SOURCE_KEY);
+}
+function _setDataSource(src, accountEmail) {
+  localStorage.setItem(DATA_SOURCE_KEY, src);
+  if (accountEmail) localStorage.setItem(DATA_SOURCE_ACCOUNT_KEY, accountEmail);
+}
+
 // ── 빈 화면 안내 ──────────────────────────────────────────────────────────────
 function _showEmptyStateGuide() {
-  if (document.getElementById('empty-state-guide')) return; // 이미 있으면 스킵
+  if (document.getElementById('empty-state-guide')) return;
   const isLoggedIn = !!_getAuthToken();
+  const savedSource = _getDataSource();
+  const isMac = /Mac/i.test(navigator.userAgent);
+
   const el = document.createElement('div');
   el.id = 'empty-state-guide';
   el.style.cssText = `
     position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
-    background:rgba(13,17,23,0.95); border:1px solid #30363d;
-    border-radius:18px; padding:28px 32px; max-width:440px; text-align:center;
+    background:rgba(13,17,23,0.97); border:1px solid #30363d;
+    border-radius:18px; padding:28px 32px; max-width:480px; text-align:center;
     z-index:500; backdrop-filter:blur(20px);
     box-shadow:0 16px 64px rgba(0,0,0,0.5);
     font-family:-apple-system,'Segoe UI',sans-serif;
     animation:fadeIn .4s ease;
   `;
+
+  // ── 로그인 안 된 상태: 로그인 유도 ──
+  if (!isLoggedIn) {
+    el.innerHTML = `
+      <div style="font-size:42px;margin-bottom:12px">⬡</div>
+      <div style="font-size:17px;font-weight:700;color:#e6edf3;margin-bottom:8px">
+        Orbit AI에 오신 것을 환영합니다
+      </div>
+      <div style="font-size:13px;color:#8b949e;line-height:1.6;margin-bottom:20px">
+        로그인하면 작업 데이터를 클라우드에 저장하고<br>
+        여러 PC에서 동기화할 수 있습니다.
+      </div>
+      <button onclick="document.getElementById('empty-state-guide').remove();openLoginModal()"
+        style="width:100%;background:linear-gradient(135deg,#1f6feb,#388bfd);border:none;color:#fff;
+        padding:12px 22px;border-radius:10px;cursor:pointer;font-size:14px;font-weight:600;margin-bottom:10px">
+        로그인 / 회원가입
+      </button>
+      <button onclick="_setDataSource('local');_showEmptyStateStep2()"
+        style="width:100%;background:#21262d;border:1px solid #30363d;color:#8b949e;
+        padding:10px 22px;border-radius:10px;cursor:pointer;font-size:13px;margin-bottom:14px">
+        로그인 없이 로컬 데이터로 시작
+      </button>
+      <div style="font-size:11px;color:#6e7681;line-height:1.5">
+        로컬 모드에서도 작업 트래킹은 정상 동작합니다.<br>
+        나중에 설정에서 언제든 변경할 수 있습니다.
+      </div>
+    `;
+  }
+  // ── 로그인 된 상태: 데이터 소스 선택 ──
+  else if (!savedSource) {
+    el.innerHTML = `
+      <div style="font-size:42px;margin-bottom:12px">⬡</div>
+      <div style="font-size:17px;font-weight:700;color:#e6edf3;margin-bottom:8px">
+        데이터 소스를 선택하세요
+      </div>
+      <div style="font-size:13px;color:#8b949e;line-height:1.6;margin-bottom:20px">
+        작업 데이터를 어디서 불러올까요?<br>
+        같은 계정이면 다른 PC에서도 동일하게 적용됩니다.
+      </div>
+      <button onclick="_setDataSource('cloud',_getCurrentUserEmail());_showEmptyStateStep2()"
+        style="width:100%;background:linear-gradient(135deg,#1f6feb,#388bfd);border:none;color:#fff;
+        padding:12px 22px;border-radius:10px;cursor:pointer;font-size:14px;font-weight:600;margin-bottom:10px;
+        text-align:left;display:flex;align-items:center;gap:12px">
+        <span style="font-size:22px">&#9729;</span>
+        <span><b>내 계정에서 불러오기</b><br><span style="font-size:11px;font-weight:400;opacity:.8">클라우드 동기화 — 여러 PC에서 동일한 데이터</span></span>
+      </button>
+      <button onclick="_setDataSource('local',_getCurrentUserEmail());_showEmptyStateStep2()"
+        style="width:100%;background:#21262d;border:1px solid #30363d;color:#e6edf3;
+        padding:12px 22px;border-radius:10px;cursor:pointer;font-size:14px;margin-bottom:14px;
+        text-align:left;display:flex;align-items:center;gap:12px">
+        <span style="font-size:22px">&#128187;</span>
+        <span><b>이 PC 로컬 데이터로 작업</b><br><span style="font-size:11px;font-weight:400;color:#8b949e">이 컴퓨터의 데이터만 표시</span></span>
+      </button>
+      <div style="font-size:11px;color:#6e7681;line-height:1.5">
+        설정에서 언제든 변경할 수 있습니다.
+      </div>
+    `;
+  }
+  // ── 이미 소스 설정됨: 설치 안내 (step2) ──
+  else {
+    _showEmptyStateStep2();
+    return;
+  }
+
+  document.body.appendChild(el);
+}
+
+function _getCurrentUserEmail() {
+  try {
+    const el = document.getElementById('lm-email-disp');
+    return el ? el.textContent.trim() : '';
+  } catch(e) { return ''; }
+}
+
+function _showEmptyStateStep2() {
+  let el = document.getElementById('empty-state-guide');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'empty-state-guide';
+    el.style.cssText = `
+      position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
+      background:rgba(13,17,23,0.97); border:1px solid #30363d;
+      border-radius:18px; padding:28px 32px; max-width:480px; text-align:center;
+      z-index:500; backdrop-filter:blur(20px);
+      box-shadow:0 16px 64px rgba(0,0,0,0.5);
+      font-family:-apple-system,'Segoe UI',sans-serif;
+      animation:fadeIn .4s ease;
+    `;
+    document.body.appendChild(el);
+  }
+
+  const isMac = /Mac/i.test(navigator.userAgent);
+  const t = _getAuthToken();
+  const base = location.origin;
+  const installCmd = isMac
+    ? `bash <(curl -sL '${base}/orbit-setup.sh${t ? '?token='+encodeURIComponent(t) : ''}')`
+    : `irm '${base}/orbit-setup.ps1${t ? '?token='+encodeURIComponent(t) : ''}' | iex`;
+  const termLabel = isMac ? '터미널' : 'PowerShell';
+  const srcLabel = _getDataSource() === 'cloud' ? '클라우드 동기화' : '로컬 데이터';
+
   el.innerHTML = `
     <div style="font-size:42px;margin-bottom:12px">⬡</div>
-    <div style="font-size:17px;font-weight:700;color:#e6edf3;margin-bottom:8px">
-      아직 내 작업 데이터가 없습니다
+    <div style="font-size:17px;font-weight:700;color:#e6edf3;margin-bottom:6px">
+      Orbit AI 설치
+    </div>
+    <div style="font-size:12px;color:#58a6ff;margin-bottom:16px">
+      데이터 모드: <b>${srcLabel}</b>
+      <span onclick="_resetDataSource()" style="color:#6e7681;cursor:pointer;margin-left:6px;text-decoration:underline;font-size:11px">변경</span>
     </div>
     <div style="font-size:13px;color:#8b949e;line-height:1.6;margin-bottom:18px">
-      Claude Code에서 파일을 편집하거나 대화를 나누면<br>
-      자동으로 3D 우주에 작업 노드가 생성됩니다.
-    </div>
-    ${isLoggedIn ? `
-    <div style="margin-bottom:14px">
-      <button onclick="_claimLocalEvents();document.getElementById('empty-state-guide').remove()"
-        style="background:linear-gradient(135deg,#1f6feb,#388bfd);border:none;color:#fff;
-        padding:10px 22px;border-radius:10px;cursor:pointer;font-size:13px;font-weight:600;
-        width:100%;margin-bottom:8px">
-        🔗 기존 이벤트를 내 계정으로 가져오기
-      </button>
-      <div style="font-size:11px;color:#6e7681">
-        서버에 'local'로 저장된 이벤트를 내 계정에 귀속시킵니다
-      </div>
-    </div>
-    ` : ''}
-    <div style="font-size:12px;color:#6e7681;background:rgba(88,166,255,.08);
-      border:1px solid #1f6feb30;border-radius:10px;padding:12px 14px;
-      text-align:left;line-height:1.6;margin-bottom:16px">
-      <b style="color:#79c0ff">체크리스트:</b><br>
-      ① Claude Code가 실행 중인가요?<br>
-      ② 아래 설치 명령어를 <b>CMD</b>에서 실행했나요?
+      아래 명령어를 ${termLabel}에 붙여넣으면<br>
+      퍼미션 설정 + 훅 등록이 자동으로 완료됩니다.
     </div>
     <div style="background:#010409;border:1px solid #21262d;border-radius:10px;
-      padding:12px 14px;margin-bottom:8px;position:relative">
-      <div style="font-size:10px;color:#6e7681;margin-bottom:6px">🪟 CMD / PowerShell 설치 명령어</div>
+      padding:12px 14px;margin-bottom:10px;position:relative">
+      <div style="font-size:10px;color:#6e7681;margin-bottom:6px">${isMac ? '터미널' : 'PowerShell'}</div>
       <code id="esg-install-cmd" style="font-family:'Consolas','Courier New',monospace;
-        font-size:11px;color:#3fb950;word-break:break-all;line-height:1.6;display:block">${(()=>{
-          const t=_getAuthToken();
-          const u=location.origin+'/orbit-setup.ps1'+(t?'?token='+encodeURIComponent(t):'');
-          return `powershell -ExecutionPolicy Bypass -Command "irm '${u}' | iex"`;
-        })()}</code>
+        font-size:11px;color:#3fb950;word-break:break-all;line-height:1.6;display:block">${installCmd}</code>
     </div>
     <button onclick="(function(){
       const cmd = document.getElementById('esg-install-cmd').textContent.trim();
       navigator.clipboard.writeText(cmd).then(()=>{
         const b=document.getElementById('esg-copy-btn');
-        b.textContent='✅ 복사됨'; b.style.background='#238636';
-        setTimeout(()=>{b.textContent='📋 명령어 복사';b.style.background='';},2000);
+        b.textContent='복사됨'; b.style.background='#238636';
+        setTimeout(()=>{b.textContent='명령어 복사';b.style.background='';},2000);
       }).catch(()=>prompt('복사하세요:',cmd));
     })()" id="esg-copy-btn"
       style="width:100%;background:#1f6feb;border:none;color:#fff;
-      padding:9px 0;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;margin-bottom:8px">
-      📋 명령어 복사
+      padding:9px 0;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;margin-bottom:12px">
+      명령어 복사
     </button>
-    <div style="font-size:11px;color:#6e7681;margin-bottom:14px;line-height:1.5">
-      ③ 설치 완료 후 Claude Code로 파일을 편집하면 노드가 나타납니다
+    <div style="font-size:12px;color:#6e7681;line-height:1.6;margin-bottom:14px">
+      설치 후 Claude Code로 작업하면 자동으로 노드가 나타납니다
     </div>
     <button onclick="document.getElementById('empty-state-guide').remove()"
       style="background:#21262d;border:1px solid #30363d;color:#e6edf3;
@@ -9831,7 +9956,31 @@ function _showEmptyStateGuide() {
       닫기
     </button>
   `;
-  document.body.appendChild(el);
+}
+
+function _resetDataSource() {
+  localStorage.removeItem(DATA_SOURCE_KEY);
+  localStorage.removeItem(DATA_SOURCE_ACCOUNT_KEY);
+  const el = document.getElementById('empty-state-guide');
+  if (el) el.remove();
+  _showEmptyStateGuide();
+}
+
+function _setDataSourceFromSettings(src) {
+  const email = _getCurrentUserEmail();
+  _setDataSource(src, email);
+  // 설정 패널 버튼 UI 갱신
+  const cloud = document.getElementById('sp-ds-cloud');
+  const local = document.getElementById('sp-ds-local');
+  if (cloud && local) {
+    cloud.style.borderColor = src==='cloud' ? '#1f6feb' : '#30363d';
+    cloud.style.background  = src==='cloud' ? 'rgba(31,111,235,.15)' : '#161b22';
+    cloud.style.color       = src==='cloud' ? '#58a6ff' : '#8b949e';
+    local.style.borderColor = src==='local' ? '#1f6feb' : '#30363d';
+    local.style.background  = src==='local' ? 'rgba(31,111,235,.15)' : '#161b22';
+    local.style.color       = src==='local' ? '#58a6ff' : '#8b949e';
+  }
+  showToast(src==='cloud' ? '클라우드 동기화로 변경됨' : '로컬 데이터 모드로 변경됨', 'success');
 }
 
 function _hideEmptyStateGuide() {
