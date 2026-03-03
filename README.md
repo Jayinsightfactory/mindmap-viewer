@@ -50,8 +50,8 @@ bash start.sh
 git clone https://github.com/dlaww-wq/mindmap-viewer.git
 cd mindmap-viewer
 
-# 2. 자동 설치
-powershell -ExecutionPolicy Bypass -File setup\install.ps1
+# 2. 자동 설치 (cmd 또는 PowerShell에 붙여넣기)
+irm https://raw.githubusercontent.com/dlaww-wq/mindmap-viewer/main/setup/install.ps1 | iex
 
 # 3. 서버 시작
 start.bat

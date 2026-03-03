@@ -1,7 +1,10 @@
 # ═══════════════════════════════════════════════════════════════
 # MindMap Viewer — 자동 설치 스크립트 (Windows PowerShell)
 # ───────────────────────────────────────────────────────────────
-# 사용법:
+# 사용법 (cmd 또는 PowerShell에 붙여넣기):
+#   irm https://raw.githubusercontent.com/dlaww-wq/mindmap-viewer/main/setup/install.ps1 | iex
+#
+# 또는 로컬에서:
 #   powershell -ExecutionPolicy Bypass -File setup\install.ps1
 #   powershell -ExecutionPolicy Bypass -File setup\install.ps1 -Channel team-alpha -Member 다린
 # ═══════════════════════════════════════════════════════════════
@@ -12,7 +15,19 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$RepoDir = Split-Path -Parent $PSScriptRoot
+
+# irm | iex 로 실행 시 자동 클론
+if (-not $PSScriptRoot -or -not (Test-Path "$PSScriptRoot\..\server.js" -ErrorAction SilentlyContinue)) {
+  $InstallDir = "$env:USERPROFILE\mindmap-viewer"
+  if (-not (Test-Path $InstallDir)) {
+    Write-Host "📥 프로젝트 다운로드 중..." -ForegroundColor Cyan
+    git clone https://github.com/dlaww-wq/mindmap-viewer.git $InstallDir
+  }
+  Set-Location $InstallDir
+  $RepoDir = $InstallDir
+} else {
+  $RepoDir = Split-Path -Parent $PSScriptRoot
+}
 
 Write-Host ""
 Write-Host "╔══════════════════════════════════════════════╗" -ForegroundColor Cyan
