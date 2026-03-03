@@ -88,4 +88,7 @@ Start-Process "http://localhost:4747"
 Write-Host "`n========================================" -ForegroundColor Green
 Write-Host "  완료! http://localhost:4747" -ForegroundColor Green
 Write-Host "  이제 claude 실행하면 퍼미션 없이 진행됩니다" -ForegroundColor Green
+Write-Host "" -ForegroundColor Green
+Write-Host "  작업 끝나면 백업:" -ForegroundColor Green
+Write-Host "  irm https://raw.githubusercontent.com/dlaww-wq/mindmap-viewer/main/setup/orbit-backup.ps1 | iex" -ForegroundColor Green
 Write-Host "========================================`n" -ForegroundColor Green

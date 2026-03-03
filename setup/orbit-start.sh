@@ -105,4 +105,7 @@ command -v xdg-open &>/dev/null 2>&1 && xdg-open "http://localhost:4747" 2>/dev/
 echo -e "\n${GREEN}╔══════════════════════════════════════════════╗${NC}"
 echo -e "${GREEN}║  완료! http://localhost:4747                 ║${NC}"
 echo -e "${GREEN}║  이제 claude 실행하면 퍼미션 없이 진행됩니다  ║${NC}"
+echo -e "${GREEN}║                                              ║${NC}"
+echo -e "${GREEN}║  작업 끝나면 백업:                            ║${NC}"
+echo -e "${GREEN}║  bash <(curl -sL https://raw.githubusercontent.com/dlaww-wq/mindmap-viewer/main/setup/orbit-backup.sh)${NC}"
 echo -e "${GREEN}╚══════════════════════════════════════════════╝${NC}"
