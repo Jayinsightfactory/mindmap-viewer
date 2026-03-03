@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Orbit AI — 컨설턴트 대시보드</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    :root {
+      --bg: #0d1117; --bg2: #161b22; --bg3: #21262d; --border: #30363d;
+      --text: #c9d1d9; --text2: #8b949e; --blue: #58a6ff; --green: #3fb950;
+      --orange: #ffa657; --red: #f85149; --purple: #bc8cff; --gold: #ffd080;
+    }
+    body { background:var(--bg); color:var(--text); font-family:'Inter',sans-serif; }
+    .header { background:var(--bg2); border-bottom:1px solid var(--border); padding:12px 24px; display:flex; align-items:center; justify-content:space-between; }
+    .header h1 { font-size:18px; color:var(--gold); }
+    .header .stats { display:flex; gap:20px; font-size:13px; color:var(--text2); }
+    .header .stats span { color:var(--blue); font-weight:600; }
+    .main { display:grid; grid-template-columns:320px 1fr; height:calc(100vh - 50px); }
+    .sidebar { background:var(--bg2); border-right:1px solid var(--border); overflow-y:auto; }
+    .content { overflow-y:auto; padding:20px; }
+    .section { padding:16px; border-bottom:1px solid var(--border); }
+    .section h3 { font-size:13px; color:var(--text2); margin-bottom:8px; text-transform:uppercase; letter-spacing:0.5px; }
+    .company-card { padding:12px; margin:4px 0; border-radius:8px; cursor:pointer; transition:background 0.2s; border:1px solid transparent; }
+    .company-card:hover { background:var(--bg3); }
+    .company-card.active { background:var(--bg3); border-color:var(--blue); }
+    .company-card .name { font-weight:600; font-size:14px; }
+    .company-card .meta { font-size:12px; color:var(--text2); margin-top:4px; }
+    .company-card .grade { float:right; font-size:20px; font-weight:700; }
+    .grade-A { color:var(--blue); } .grade-B { color:var(--green); }
+    .grade-C { color:var(--orange); } .grade-D { color:var(--red); } .grade-F { color:var(--red); }
+    .status-badge { display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:500; }
+    .status-bootcamp { background:#1f3a29; color:var(--green); }
+    .status-diagnosis { background:#2a2016; color:var(--orange); }
+    .status-retainer { background:#152238; color:var(--blue); }
+    .grid { display:grid; gap:16px; }
+    .grid-2 { grid-template-columns:1fr 1fr; }
+    .grid-3 { grid-template-columns:1fr 1fr 1fr; }
+    .card { background:var(--bg2); border:1px solid var(--border); border-radius:12px; padding:20px; }
+    .card h4 { font-size:14px; color:var(--text2); margin-bottom:12px; }
+    .big-number { font-size:32px; font-weight:700; }
+    .blue { color:var(--blue); } .green { color:var(--green); }
+    .orange { color:var(--orange); } .red { color:var(--red); } .gold { color:var(--gold); }
+    .score-bar { display:flex; align-items:center; margin:6px 0; }
+    .score-bar .label { width:80px; font-size:12px; color:var(--text2); }
+    .score-bar .bar { flex:1; height:8px; background:var(--bg3); border-radius:4px; overflow:hidden; }
+    .score-bar .fill { height:100%; border-radius:4px; transition:width 0.5s; }
+    .score-bar .val { width:40px; text-align:right; font-size:12px; font-weight:600; }
+    table { width:100%; border-collapse:collapse; font-size:13px; }
+    th { text-align:left; padding:8px 12px; color:var(--text2); border-bottom:1px solid var(--border); font-weight:500; }
+    td { padding:8px 12px; border-bottom:1px solid var(--bg3); }
+    .btn { padding:8px 16px; border:1px solid var(--border); background:var(--bg3); color:var(--text); border-radius:6px; cursor:pointer; font-size:13px; }
+    .btn:hover { background:var(--border); }
+    .btn-primary { background:var(--blue); color:#fff; border-color:var(--blue); }
+    .btn-primary:hover { opacity:0.9; }
+    .empty { text-align:center; padding:40px; color:var(--text2); }
+    .tag { display:inline-block; padding:2px 6px; border-radius:4px; font-size:11px; background:var(--bg3); margin:1px; }
+    .finding { padding:8px 12px; margin:4px 0; border-radius:6px; border-left:3px solid; }
+    .finding-high { border-color:var(--red); background:rgba(248,81,73,0.1); }
+    .finding-medium { border-color:var(--orange); background:rgba(255,166,87,0.1); }
+    .finding-good { border-color:var(--green); background:rgba(63,185,80,0.1); }
+    .toolbar { display:flex; gap:8px; margin-bottom:16px; }
+    input[type="text"], select { background:var(--bg3); border:1px solid var(--border); color:var(--text); padding:6px 12px; border-radius:6px; font-size:13px; }
+    .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:1000; justify-content:center; align-items:center; }
+    .modal-overlay.show { display:flex; }
+    .modal { background:var(--bg2); border:1px solid var(--border); border-radius:12px; padding:24px; width:500px; max-height:80vh; overflow-y:auto; }
+    .modal h3 { margin-bottom:16px; }
+    .form-group { margin-bottom:12px; }
+    .form-group label { display:block; font-size:12px; color:var(--text2); margin-bottom:4px; }
+    .form-group input, .form-group select { width:100%; padding:8px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>⬡ Orbit AI — 컨설턴트 대시보드</h1>
+    <div class="stats">
+      고객사 <span id="h-total">0</span>개 |
+      활성 트래커 <span id="h-trackers">0</span>대 |
+      오늘 활동 <span id="h-activities">0</span>건
+    </div>
+    <button class="btn btn-primary" onclick="showAddCompanyModal()">+ 회사 추가</button>
+  </div>
+
+  <div class="main">
+    <!-- 좌측: 회사 목록 -->
+    <div class="sidebar">
+      <div class="section">
+        <h3>고객사 목록</h3>
+        <div class="toolbar">
+          <select id="filter-status" onchange="loadCompanies()">
+            <option value="">전체</option>
+            <option value="bootcamp">부트캠프</option>
+            <option value="diagnosis">정밀진단</option>
+            <option value="retainer">월정액</option>
+          </select>
+        </div>
+        <div id="company-list"></div>
+      </div>
+    </div>
+
+    <!-- 우측: 상세 내용 -->
+    <div class="content" id="content">
+      <div class="empty">
+        <h2 style="color:var(--gold)">⬡ Orbit AI for SMEs</h2>
+        <p style="margin-top:8px">좌측에서 고객사를 선택하거나 새로 추가하세요.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 회사 추가 모달 -->
+  <div class="modal-overlay" id="modal-add">
+    <div class="modal">
+      <h3>새 고객사 등록</h3>
+      <div class="form-group"><label>회사명 *</label><input type="text" id="f-name" placeholder="회사명"></div>
+      <div class="form-group"><label>업종</label><input type="text" id="f-industry" placeholder="제조업, IT, 유통 등"></div>
+      <div class="form-group"><label>직원 수</label><input type="text" id="f-empcount" placeholder="20"></div>
+      <div class="form-group"><label>대표자명</label><input type="text" id="f-ceo" placeholder=""></div>
+      <div class="form-group"><label>연락처</label><input type="text" id="f-phone" placeholder=""></div>
+      <div class="form-group"><label>이메일</label><input type="text" id="f-email" placeholder=""></div>
+      <div style="display:flex;gap:8px;margin-top:16px">
+        <button class="btn btn-primary" onclick="addCompany()">등록</button>
+        <button class="btn" onclick="closeModal('modal-add')">취소</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let companies = [];
+    let selectedCompanyId = null;
+
+    // ── 초기 로드 ──────────────────────────────────────────────────────
+    loadCompanies();
+
+    async function loadCompanies() {
+      const status = document.getElementById('filter-status').value;
+      const url = '/api/company' + (status ? `?status=${status}` : '');
+      try {
+        const res = await fetch(url);
+        const data = await res.json();
+        companies = data.companies || [];
+        renderCompanyList();
+        document.getElementById('h-total').textContent = companies.length;
+      } catch (e) { console.error(e); }
+    }
+
+    function renderCompanyList() {
+      const container = document.getElementById('company-list');
+      if (companies.length === 0) {
+        container.innerHTML = '<div class="empty">등록된 회사가 없습니다.</div>';
+        return;
+      }
+      container.innerHTML = companies.map(c => {
+        const scores = c.scores || {};
+        const grade = scores.grade || '-';
+        const statusLabel = { bootcamp:'부트캠프', diagnosis:'정밀진단', retainer:'월정액' }[c.status] || c.status;
+        return `
+          <div class="company-card ${c.id === selectedCompanyId ? 'active' : ''}"
+               onclick="selectCompany('${c.id}')">
+            <span class="grade grade-${grade}">${grade}</span>
+            <div class="name">${c.name}</div>
+            <div class="meta">
+              ${c.industry || ''} · ${c.employee_count || 0}명
+              <span class="status-badge status-${c.status}">${statusLabel}</span>
+            </div>
+          </div>`;
+      }).join('');
+    }
+
+    // ── 회사 선택 ──────────────────────────────────────────────────────
+    async function selectCompany(id) {
+      selectedCompanyId = id;
+      renderCompanyList();
+
+      const content = document.getElementById('content');
+      content.innerHTML = '<div class="empty">로딩 중...</div>';
+
+      try {
+        const [detailRes, diagRes, statsRes, learningRes] = await Promise.all([
+          fetch(`/api/company/${id}`),
+          fetch(`/api/diagnosis/${id}/latest`),
+          fetch(`/api/company/${id}/stats`),
+          fetch(`/api/company/${id}/learning/report`).catch(() => ({ json: () => null })),
+        ]);
+
+        const detail = await detailRes.json();
+        const diag = await diagRes.json();
+        const stats = await statsRes.json();
+        let learning = null;
+        try { learning = await learningRes.json(); } catch {}
+
+        renderCompanyDetail(detail, diag.diagnosis, stats, learning);
+      } catch (e) {
+        content.innerHTML = `<div class="empty">오류: ${e.message}</div>`;
+      }
+    }
+
+    function renderCompanyDetail(detail, diagnosis, stats, learning) {
+      const c = detail.company;
+      const scores = diagnosis?.scores_json ? JSON.parse(diagnosis.scores_json) : (diagnosis?.scores || {});
+
+      const areas = [
+        { key:'digitalization', name:'디지털화', icon:'💻' },
+        { key:'processEfficiency', name:'프로세스', icon:'⚙️' },
+        { key:'dataUtilization', name:'데이터', icon:'📊' },
+        { key:'humanCapability', name:'인력', icon:'👥' },
+        { key:'costStructure', name:'비용', icon:'💰' },
+        { key:'growthPotential', name:'성장', icon:'📈' },
+      ];
+
+      const findings = diagnosis?.findings_json ? JSON.parse(diagnosis.findings_json) : (diagnosis?.findings || []);
+      const recs = diagnosis?.recommendations_json ? JSON.parse(diagnosis.recommendations_json) : (diagnosis?.recommendations || []);
+
+      let html = `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+          <div>
+            <h2 style="color:var(--gold)">${c.name}</h2>
+            <p style="color:var(--text2)">${c.industry || ''} · ${c.employee_count}명 · ${c.company_type}타입</p>
+          </div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-primary" onclick="runDiagnosis('${c.id}')">진단 실행</button>
+            <button class="btn" onclick="showEmployeeModal('${c.id}')">직원 추가</button>
+            <button class="btn" onclick="addDepartment('${c.id}')">부서 추가</button>
+          </div>
+        </div>
+
+        <!-- 핵심 수치 -->
+        <div class="grid grid-3" style="margin-bottom:20px">
+          <div class="card">
+            <h4>종합 점수</h4>
+            <div class="big-number ${diagnosis ? (diagnosis.overall_score >= 60 ? 'green' : diagnosis.overall_score >= 40 ? 'orange' : 'red') : 'gold'}">
+              ${diagnosis ? diagnosis.overall_score : '-'}
+            </div>
+            <div style="color:var(--text2);font-size:13px">${diagnosis ? diagnosis.overall_grade + '등급' : '진단 필요'}</div>
+          </div>
+          <div class="card">
+            <h4>활성 트래커</h4>
+            <div class="big-number blue">${stats.activeEmployees || 0}</div>
+            <div style="color:var(--text2);font-size:13px">/ ${detail.employees?.length || 0}명</div>
+          </div>
+          <div class="card">
+            <h4>오늘 활동</h4>
+            <div class="big-number green">${stats.totalActivities || 0}</div>
+            <div style="color:var(--text2);font-size:13px">이벤트</div>
+          </div>
+        </div>
+
+        <!-- 진단 점수 -->
+        <div class="grid grid-2" style="margin-bottom:20px">
+          <div class="card">
+            <h4>6개 영역 진단</h4>
+            ${areas.map(a => {
+              const s = scores[a.key]?.score ?? scores[a.key] ?? 0;
+              const color = s >= 60 ? 'var(--green)' : s >= 40 ? 'var(--orange)' : 'var(--red)';
+              return `<div class="score-bar">
+                <div class="label">${a.icon} ${a.name}</div>
+                <div class="bar"><div class="fill" style="width:${s}%;background:${color}"></div></div>
+                <div class="val" style="color:${color}">${s}</div>
+              </div>`;
+            }).join('')}
+          </div>
+          <div class="card">
+            <h4>주요 발견사항</h4>
+            ${findings.length > 0 ? findings.slice(0, 6).map(f => `
+              <div class="finding finding-${f.severity}">
+                <strong>${f.area || ''}</strong> ${f.msg}
+              </div>
+            `).join('') : '<div style="color:var(--text2)">진단을 실행하세요.</div>'}
+          </div>
+        </div>
+
+        <!-- 부서 목록 -->
+        <div class="card" style="margin-bottom:20px">
+          <h4>부서 현황 (${detail.departments?.length || 0}개)</h4>
+          ${detail.departments?.length > 0 ? `<table>
+            <tr><th>부서</th><th>인원</th><th>자동화</th><th>효율성</th></tr>
+            ${detail.departments.map(d => `
+              <tr>
+                <td><strong>${d.name}</strong></td>
+                <td>${d.head_count}명</td>
+                <td>${Math.round(d.automation_score || 0)}%</td>
+                <td>${Math.round(d.efficiency_score || 0)}%</td>
+              </tr>
+            `).join('')}
+          </table>` : '<div style="color:var(--text2)">부서를 추가하세요.</div>'}
+        </div>
+
+        <!-- 직원 목록 -->
+        <div class="card" style="margin-bottom:20px">
+          <h4>직원 트래커 (${detail.employees?.length || 0}명)</h4>
+          ${detail.employees?.length > 0 ? `<table>
+            <tr><th>이름</th><th>직급</th><th>트래커</th><th>마지막 활동</th><th>설치 링크</th></tr>
+            ${detail.employees.map(e => `
+              <tr>
+                <td><strong>${e.name}</strong></td>
+                <td>${e.position || '-'}</td>
+                <td>${e.tracker_active ? '<span style="color:var(--green)">● 활성</span>' : '<span style="color:var(--text2)">○ 비활성</span>'}</td>
+                <td style="font-size:12px">${e.last_seen_at ? new Date(e.last_seen_at).toLocaleString('ko') : '-'}</td>
+                <td><button class="btn" style="font-size:11px;padding:2px 8px" onclick="copyInstallLink('${e.tracker_token}')">복사</button></td>
+              </tr>
+            `).join('')}
+          </table>` : '<div style="color:var(--text2)">직원을 추가하세요.</div>'}
+        </div>
+
+        <!-- 프로세스 -->
+        <div class="card" style="margin-bottom:20px">
+          <h4>프로세스 (${detail.processes?.length || 0}개)</h4>
+          ${detail.processes?.length > 0 ? `<table>
+            <tr><th>프로세스</th><th>빈도</th><th>소요시간</th><th>자동화 가능</th><th>월 절감액</th></tr>
+            ${detail.processes.map(p => `
+              <tr>
+                <td><strong>${p.name}</strong></td>
+                <td>${p.frequency}</td>
+                <td>${p.avg_duration_min}분</td>
+                <td>${Math.round((p.automation_potential || 0) * 100)}%</td>
+                <td style="color:var(--green)">${((p.estimated_savings_krw || 0) / 10000).toFixed(0)}만원</td>
+              </tr>
+            `).join('')}
+          </table>` : '<div style="color:var(--text2)">프로세스를 추가하세요.</div>'}
+        </div>
+
+        <!-- 추천 -->
+        ${recs.length > 0 ? `<div class="card">
+          <h4>추천 조치</h4>
+          ${recs.map((r, i) => `
+            <div style="padding:12px;margin:4px 0;background:var(--bg3);border-radius:8px">
+              <div style="font-weight:600">${i+1}. ${r.title}</div>
+              <div style="color:var(--text2);font-size:13px;margin-top:4px">${r.description}</div>
+              <div style="font-size:12px;margin-top:4px">
+                <span class="tag" style="color:var(--green)">효과: ${r.estimatedImpact}</span>
+                <span class="tag">난이도: ${r.difficulty}</span>
+              </div>
+            </div>
+          `).join('')}
+        </div>` : ''}
+      `;
+
+      document.getElementById('content').innerHTML = html;
+    }
+
+    // ── 액션 ───────────────────────────────────────────────────────────
+    function showAddCompanyModal() { document.getElementById('modal-add').classList.add('show'); }
+    function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+
+    async function addCompany() {
+      const body = {
+        name: document.getElementById('f-name').value,
+        industry: document.getElementById('f-industry').value,
+        employee_count: parseInt(document.getElementById('f-empcount').value) || 0,
+        ceo_name: document.getElementById('f-ceo').value,
+        phone: document.getElementById('f-phone').value,
+        email: document.getElementById('f-email').value,
+      };
+      if (!body.name) return alert('회사명을 입력하세요.');
+      await fetch('/api/company', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
+      closeModal('modal-add');
+      loadCompanies();
+    }
+
+    async function runDiagnosis(companyId) {
+      const res = await fetch(`/api/diagnosis/${companyId}/run`, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({ stage:'full' }),
+      });
+      const result = await res.json();
+      alert(`진단 완료: ${result.grade}등급 (${result.overall}점)`);
+      selectCompany(companyId);
+    }
+
+    async function showEmployeeModal(companyId) {
+      const name = prompt('직원 이름:');
+      if (!name) return;
+      const position = prompt('직급 (선택):') || '';
+      const res = await fetch(`/api/company/${companyId}/employee`, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({ name, position }),
+      });
+      const data = await res.json();
+      alert(`직원 등록 완료!\n\n트래커 토큰: ${data.tracker_token}\n설치 URL: ${data.installUrl}`);
+      selectCompany(companyId);
+    }
+
+    async function addDepartment(companyId) {
+      const name = prompt('부서명:');
+      if (!name) return;
+      const headCount = parseInt(prompt('인원 수:') || '0');
+      await fetch(`/api/company/${companyId}/department`, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({ name, head_count: headCount }),
+      });
+      selectCompany(companyId);
+    }
+
+    function copyInstallLink(token) {
+      const url = `${location.origin}/api/tracker/install-bat?token=${token}`;
+      navigator.clipboard.writeText(url);
+      alert('BAT 설치 링크가 복사되었습니다.\n직원에게 전달하면 더블클릭 한 번으로 설치됩니다.');
+    }
+
+    // ── WebSocket ──────────────────────────────────────────────────────
+    const ws = new WebSocket(`ws://${location.host}`);
+    ws.onmessage = (e) => {
+      try {
+        const msg = JSON.parse(e.data);
+        if (msg.type === 'employee_activity' && selectedCompanyId) {
+          // 실시간 활동 업데이트
+          const h = document.getElementById('h-activities');
+          h.textContent = parseInt(h.textContent || '0') + 1;
+        }
+        if (msg.type === 'diagnosis_complete') {
+          loadCompanies();
+          if (msg.company?.id === selectedCompanyId) selectCompany(selectedCompanyId);
+        }
+      } catch {}
+    };
+  </script>
+</body>
+</html>

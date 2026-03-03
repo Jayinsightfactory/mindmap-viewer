@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(powershell:*)",
+      "Bash(git rebase:*)",
+      "Bash(git reset:*)",
+      "Bash(npm start:*)",
+      "Bash(npm install:*)",
+      "Bash(ls:*)",
+      "WebFetch(domain:drive.google.com)"
+    ]
+  }
+}

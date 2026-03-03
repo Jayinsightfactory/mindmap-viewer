@@ -1,0 +1,2763 @@
+// ═══════════════════════════════════════════════════
+// NODE TYPE CONFIG
+// ═══════════════════════════════════════════════════
+const NC = {
+  'session.start':     { header: '세션 시작',     color: '#8b5cf6', w: 180 },
+  'session.end':       { header: '세션 종료',     color: '#6b7280', w: 150 },
+  'user.message':      { header: '사용자 질문',   color: '#58a6ff', w: 300 },
+  'assistant.message': { header: 'AI 답변',       color: '#3fb950', w: 300 },
+  'tool.start':        { header: '⚡ 작업 중',    color: '#ff9500', w: 200 },
+  'tool.end':          { header: '작업 수행',     color: '#d29922', w: 200 },
+  'tool.error':        { header: '작업 실패',     color: '#f85149', w: 200 },
+  'file':              { header: '파일 참조',     color: '#bc8cff', w: 180 },
+  'file.read':         { header: '파일 읽기',     color: '#bc8cff', w: 180 },
+  'file.write':        { header: '파일 수정',     color: '#f778ba', w: 180 },
+  'subagent.start':    { header: '하위작업 시작', color: '#39d2c0', w: 200 },
+  'subagent.stop':     { header: '하위작업 완료', color: '#6b7280', w: 170 },
+  'notification':      { header: '알림',          color: '#d29922', w: 170 },
+  'task.complete':     { header: '완료',          color: '#3fb950', w: 150 },
+  'annotation.add':    { header: '메모',          color: '#e3b341', w: 180 },
+  _default:            { header: '이벤트',        color: '#8b949e', w: 160 },
+};
+
+// 도구명 → 자연어 설명 매핑
+const TOOL_NAMES = {
+  'Read': '파일 읽는 중', 'Write': '파일 작성 중', 'Edit': '파일 수정 중',
+  'Bash': '명령어 실행 중', 'Glob': '파일 찾는 중', 'Grep': '내용 검색 중',
+  'WebSearch': '웹 검색 중', 'WebFetch': '웹 페이지 확인 중',
+  'Task': '하위 작업 진행 중', 'TodoWrite': '할일 정리 중',
+  'AskUserQuestion': '사용자에게 질문 중', 'EnterPlanMode': '계획 수립 중',
+  'ExitPlanMode': '계획 확정', 'NotebookEdit': '노트북 수정 중',
+};
+
+// ═══════════════════════════════════════════════════
+// THEMES
+// ═══════════════════════════════════════════════════
+const THEMES = {
+  n8n: {
+    headerH: 30, bodyH: 32, radius: 8,
+    bodyBg: '#1c2128', bodyBgHover: '#22272e', bodyBgSel: '#2d333b',
+    borderColor: '#30363d', headerFont: "bold 12px 'Inter',sans-serif",
+    bodyFont: "12px 'Inter',sans-serif", timeFont: "10px 'Inter',sans-serif",
+    headerText: '#ffffff', bodyText: '#c9d1d9',
+    showPorts: true, portSize: 4, showGlow: true, showTime: true,
+  },
+  comfyui: {
+    headerH: 26, bodyH: 30, radius: 4,
+    bodyBg: '#1a1a2e', bodyBgHover: '#20203a', bodyBgSel: '#2a2a4e',
+    borderColor: '#2a2a44', headerFont: "bold 11px 'Cascadia Code',monospace",
+    bodyFont: "11px 'Cascadia Code',monospace", timeFont: "9px monospace",
+    headerText: '#e0e0ff', bodyText: '#9999cc',
+    showPorts: true, portSize: 5, showGlow: true, showTime: true,
+  },
+  minimal: {
+    headerH: 0, bodyH: 46, radius: 6,
+    bodyBg: '#161b22', bodyBgHover: '#1c2128', bodyBgSel: '#22272e',
+    borderColor: '#30363d', headerFont: "bold 13px 'Inter',sans-serif",
+    bodyFont: "13px 'Inter',sans-serif", timeFont: "10px 'Inter',sans-serif",
+    headerText: '#ffffff', bodyText: '#e6edf3',
+    showPorts: false, portSize: 0, showGlow: false, showTime: false,
+  },
+};
+
+// ═══════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════
+const VN = new vis.DataSet([]);
+const VE = new vis.DataSet([]);
+const nMap = {};
+let curGraph = { nodes: [], edges: [] };
+let sessions = [];
+let activeSession = null;
+let hidden = new Set();
+let hiddenAI = new Set();   // 숨긴 AI 소스 (멀티 AI 필터)
+let layoutMode = 'tree';
+let ctxNode = null;
+let savedPositions = {};
+let themeName = 'n8n';
+let nodeScale = 1.5;
+let isClustered = false;
+let clusterGroups = [];
+let CLUSTER_IN = 0.55;
+let CLUSTER_OUT = 0.75;
+
+// ═══════════════════════════════════════════════════
+// USER CUSTOMIZATION STATE
+// ═══════════════════════════════════════════════════
+let userConfig = { labels: [], categories: [], toolMappings: [] };
+// 빠른 조회용 맵
+let userLabelMap = {};   // eventId → { custom_header, custom_body }
+let userToolMap = {};    // toolName → { custom_label, custom_header }
+let userCatMap = {};     // categoryId → { name, color, icon, mappedTypes }
+let typeToCat = {};      // eventType → category
+let editingNodeId = null; // 현재 라벨 편집 중인 노드
+
+function applyUserConfig(cfg) {
+  userConfig = cfg || { labels: [], categories: [], toolMappings: [] };
+  // 라벨 맵 빌드
+  userLabelMap = {};
+  for (const l of (cfg.labels || [])) {
+    userLabelMap[l.event_id] = { custom_header: l.custom_header, custom_body: l.custom_body };
+  }
+  // 도구 매핑 맵 빌드
+  userToolMap = {};
+  for (const t of (cfg.toolMappings || [])) {
+    userToolMap[t.tool_name] = { custom_label: t.custom_label, custom_header: t.custom_header };
+  }
+  // 카테고리 맵 빌드
+  userCatMap = {};
+  typeToCat = {};
+  for (const c of (cfg.categories || [])) {
+    userCatMap[c.id] = c;
+    for (const mt of (c.mappedTypes || [])) {
+      typeToCat[mt] = c;
+    }
+  }
+}
+
+// 사용자 정의 헤더를 반환 (오버라이드 → 도구매핑 → 카테고리 → 기본)
+function getNodeHeader(data) {
+  const id = data.id || data.eventId;
+  // 1. 노드별 직접 오버라이드
+  if (id && userLabelMap[id]?.custom_header) return userLabelMap[id].custom_header;
+  // 2. 도구 매핑
+  const et = data.eventType || data.type || '';
+  if ((et === 'tool.end' || et === 'tool.error') && data.label) {
+    const rawName = (data.label||'').replace(/^.\s/,'').split(':')[0].trim();
+    if (userToolMap[rawName]?.custom_header) return userToolMap[rawName].custom_header;
+    if (userToolMap[rawName]?.custom_label) return userToolMap[rawName].custom_label;
+  }
+  // 3. 카테고리 매핑
+  if (typeToCat[et]) return `${typeToCat[et].icon || ''} ${typeToCat[et].name}`.trim();
+  // 4. 기본
+  const cfg = NC[et] || NC._default;
+  if (et === 'tool.end' || et === 'tool.error') {
+    const rawName = (data.label||'').replace(/^.\s/,'').split(':')[0].trim();
+    return TOOL_NAMES[rawName] || rawName || cfg.header;
+  }
+  return cfg.header;
+}
+
+// 사용자 정의 본문 반환
+function getNodeBodyText(data) {
+  const id = data.id || data.eventId;
+  if (id && userLabelMap[id]?.custom_body) return userLabelMap[id].custom_body;
+  return getBodyText(data);
+}
+
+// 사용자 정의 색상 반환
+function getNodeColor(data) {
+  const et = data.eventType || data.type || '';
+  if (typeToCat[et]) return typeToCat[et].color;
+  return (NC[et] || NC._default).color;
+}
+
+function T() { return THEMES[themeName] || THEMES.n8n; }
+
+// Load saved prefs
+try {
+  const p = JSON.parse(localStorage.getItem('mm_prefs') || '{}');
+  if (p.theme) themeName = p.theme;
+  if (p.scale) nodeScale = p.scale;
+  if (p.clusterIn) CLUSTER_IN = p.clusterIn;
+  if (p.clusterOut) CLUSTER_OUT = p.clusterOut;
+  if (p.ports !== undefined) THEMES.n8n.showPorts = THEMES.comfyui.showPorts = p.ports;
+  if (p.glow !== undefined) THEMES.n8n.showGlow = THEMES.comfyui.showGlow = p.glow;
+  if (p.time !== undefined) { THEMES.n8n.showTime = THEMES.comfyui.showTime = p.time; }
+  savedPositions = JSON.parse(localStorage.getItem('mm_pos') || '{}');
+} catch {}
+
+function savePrefs() {
+  try { localStorage.setItem('mm_prefs', JSON.stringify({ theme: themeName, scale: nodeScale, clusterIn: CLUSTER_IN, clusterOut: CLUSTER_OUT, ports: T().showPorts, glow: T().showGlow, time: T().showTime })); } catch {}
+}
+function savePositions() { Object.assign(savedPositions, net.getPositions()); try { localStorage.setItem('mm_pos', JSON.stringify(savedPositions)); } catch {} }
+
+// ═══════════════════════════════════════════════════
+// CANVAS HELPERS
+// ═══════════════════════════════════════════════════
+function rrect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y);
+  ctx.quadraticCurveTo(x+w,y,x+w,y+r); ctx.lineTo(x+w,y+h-r);
+  ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h); ctx.lineTo(x+r,y+h);
+  ctx.quadraticCurveTo(x,y+h,x,y+h-r); ctx.lineTo(x,y+r);
+  ctx.quadraticCurveTo(x,y,x+r,y); ctx.closePath();
+}
+
+function rrectTop(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y);
+  ctx.quadraticCurveTo(x+w,y,x+w,y+r); ctx.lineTo(x+w,y+h);
+  ctx.lineTo(x,y+h); ctx.lineTo(x,y+r);
+  ctx.quadraticCurveTo(x,y,x+r,y); ctx.closePath();
+}
+
+function truncCtx(ctx, text, maxW) {
+  if (!text) return '';
+  if (ctx.measureText(text).width <= maxW) return text;
+  let t = text;
+  while (t.length > 0 && ctx.measureText(t + '…').width > maxW) t = t.slice(0,-1);
+  return t + '…';
+}
+
+// 멀티라인 텍스트 래핑 (캔버스용)
+function wrapLines(ctx, text, maxW, maxLines) {
+  if (!text) return [''];
+  const clean = text.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
+  const lines = [];
+  let cur = '';
+  for (const ch of clean) {
+    const test = cur + ch;
+    if (ctx.measureText(test).width > maxW && cur) {
+      lines.push(cur);
+      cur = ch;
+      if (lines.length >= maxLines) break;
+    } else { cur = test; }
+  }
+  if (cur && lines.length < maxLines) lines.push(cur);
+  // 마지막 줄이 잘렸으면 … 추가
+  if (lines.length >= maxLines && cur.length < clean.length - lines.join('').length + cur.length) {
+    let last = lines[lines.length-1];
+    while (last.length > 0 && ctx.measureText(last + '…').width > maxW) last = last.slice(0,-1);
+    lines[lines.length-1] = last + '…';
+  }
+  return lines.length ? lines : [''];
+}
+
+function getBodyText(data) {
+  const t = data.eventType || data.type || '';
+  const label = (data.label || '').replace(/^.\s/, '');
+  // user.message, assistant.message는 fullContent에서 실제 대화 내용 추출
+  if (t === 'user.message') {
+    const content = data.fullContent || label;
+    return content ? content.replace(/\n/g,' ').trim().substring(0, 200) : '(질문 내용)';
+  }
+  if (t === 'assistant.message') {
+    const content = data.fullContent || label;
+    return content ? content.replace(/\n/g,' ').trim().substring(0, 200) : '(답변 내용)';
+  }
+  if (t === 'tool.start') return `⚡ ${data.label || label} 시작 중...`;
+  if (t === 'tool.end' || t === 'tool.error') {
+    const content = data.fullContent ? data.fullContent.substring(0, 120).replace(/\n/g,' ').trim() : '';
+    return content || label;
+  }
+  if (t === 'file' || t.startsWith('file.')) {
+    const fp = data.fullContent || label;
+    return fp.replace(/\\/g,'/').split('/').pop() || fp;
+  }
+  if (t === 'session.start') return '새 대화 시작';
+  if (t === 'session.end') return '대화 종료';
+  if (t === 'subagent.start') return '별도 작업을 시작했습니다';
+  if (t === 'subagent.stop') return '하위 작업이 완료되었습니다';
+  if (t === 'task.complete') return '작업이 완료되었습니다';
+  return label;
+}
+
+function fmtTime(ts) {
+  if (!ts) return '';
+  try { const d = new Date(ts); return `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`; } catch { return ''; }
+}
+
+// ═══════════════════════════════════════════════════
+// NODE RENDERER (n8n / ComfyUI / Minimal style)
+// ═══════════════════════════════════════════════════
+function nodeRenderer({ctx, id, x, y, state: {selected, hover}, style, label}) {
+  const data = nMap[id];
+  if (!data) return { drawNode(){}, nodeDimensions: {width:10, height:10} };
+
+  const et = data.eventType || data.type || '';
+  const cfgDefault = NC[et] || NC._default;
+  const nodeColor = getNodeColor(data);
+  const t = T();
+  const sc = nodeScale;
+
+  // 메시지 노드는 더 넓고 멀티라인 표시
+  const isMsg = (et === 'user.message' || et === 'assistant.message');
+  const W = (cfgDefault.w || 180) * sc;
+  const hH = t.headerH * sc;
+
+  // 사용자 커스텀 사용
+  const headerLabel = getNodeHeader(data);
+  const bodyStr = getNodeBodyText(data);
+  const isCustomized = !!(userLabelMap[id]?.custom_header || userLabelMap[id]?.custom_body);
+
+  // 메시지: 멀티라인 계산 (3줄), 나머지: 1줄
+  const bodyFontSize = parseFloat(t.bodyFont.match(/\d+/)[0]) * sc;
+  const bodyLineH = bodyFontSize * 1.45;
+  const maxBodyLines = isMsg ? 3 : 1;
+  // 임시 폰트 설정으로 줄바꿈 계산
+  ctx.save();
+  ctx.font = t.bodyFont.replace(/\d+px/, m => (parseFloat(m) * sc) + 'px');
+  const bodyLines = isMsg ? wrapLines(ctx, bodyStr, W - 20*sc, maxBodyLines) : [truncCtx(ctx, bodyStr, W - 20*sc)];
+  ctx.restore();
+
+  const bH = isMsg ? Math.max(t.bodyH * sc, bodyLines.length * bodyLineH + 12 * sc) : t.bodyH * sc;
+  const H = hH + bH;
+  const R = t.radius * sc;
+  const L = x - W/2, TOP = y - H/2;
+
+  return {
+    drawNode() {
+      ctx.save();
+
+      // Shadow
+      if (selected || hover) {
+        ctx.shadowColor = nodeColor + '44';
+        ctx.shadowBlur = 14 * sc;
+        ctx.shadowOffsetY = 2;
+      }
+
+      // Body bg
+      rrect(ctx, L, TOP, W, H, R);
+      ctx.fillStyle = selected ? t.bodyBgSel : (hover ? t.bodyBgHover : t.bodyBg);
+      ctx.fill();
+
+      ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+
+      // Header bg (skip for minimal)
+      if (hH > 0) {
+        rrectTop(ctx, L, TOP, W, hH, R);
+        ctx.fillStyle = nodeColor;
+        ctx.globalAlpha = selected ? 1 : (hover ? 0.95 : 0.85);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+
+      // Minimal: colored left stripe
+      if (hH === 0) {
+        ctx.fillStyle = nodeColor;
+        rrect(ctx, L, TOP, 4 * sc, H, R);
+        ctx.fill();
+      }
+
+      // Border — 커스터마이즈된 노드는 점선 표시
+      rrect(ctx, L, TOP, W, H, R);
+      if (isCustomized) {
+        ctx.strokeStyle = selected ? nodeColor : (hover ? nodeColor + 'bb' : '#8957e5');
+        ctx.setLineDash([4*sc, 2*sc]);
+      } else {
+        ctx.strokeStyle = selected ? nodeColor : (hover ? nodeColor + '77' : t.borderColor);
+        ctx.setLineDash([]);
+      }
+      ctx.lineWidth = selected ? 2 : 1;
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Header text
+      if (hH > 0) {
+        ctx.fillStyle = t.headerText;
+        ctx.font = t.headerFont.replace(/\d+px/, m => (parseFloat(m) * sc) + 'px');
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(truncCtx(ctx, headerLabel, W - (t.showTime ? 50*sc : 16*sc)), L + 8*sc, TOP + hH/2);
+
+        // 커스터마이즈 표시
+        if (isCustomized) {
+          ctx.fillStyle = 'rgba(137,87,229,0.7)';
+          ctx.font = `${8*sc}px 'Inter',sans-serif`;
+          const cw = ctx.measureText('✎').width;
+          ctx.fillText('✎', L + W - (t.showTime ? 50*sc : 16*sc) - cw - 2*sc, TOP + hH/2);
+        }
+
+        // Time
+        if (t.showTime && data.timestamp) {
+          ctx.fillStyle = 'rgba(255,255,255,0.55)';
+          ctx.font = t.timeFont.replace(/\d+px/, m => (parseFloat(m) * sc) + 'px');
+          ctx.textAlign = 'right';
+          ctx.fillText(fmtTime(data.timestamp), L + W - 8*sc, TOP + hH/2);
+        }
+      }
+
+      // Body text — 멀티라인 지원
+      ctx.fillStyle = t.bodyText;
+      ctx.font = t.bodyFont.replace(/\d+px/, m => (parseFloat(m) * sc) + 'px');
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      const bodyStartY = hH > 0 ? TOP + hH + 6*sc : TOP + 6*sc;
+      const bodyX = hH === 0 ? L + 10*sc : L + 8*sc;
+
+      if (isMsg && bodyLines.length > 1) {
+        // 멀티라인 렌더링
+        for (let i = 0; i < bodyLines.length; i++) {
+          const lineAlpha = i === 0 ? 1 : (i === 1 ? 0.85 : 0.65);
+          ctx.globalAlpha = lineAlpha;
+          ctx.fillText(bodyLines[i], bodyX, bodyStartY + i * bodyLineH);
+        }
+        ctx.globalAlpha = 1;
+      } else {
+        // 단일 라인
+        ctx.textBaseline = 'middle';
+        const singleY = hH > 0 ? TOP + hH + bH/2 : TOP + H/2;
+        ctx.fillText(bodyLines[0] || '', bodyX, singleY);
+      }
+
+      // Minimal: show time inline
+      if (hH === 0 && t.showTime && data.timestamp) {
+        ctx.fillStyle = 'rgba(139,148,158,0.6)';
+        ctx.font = t.timeFont.replace(/\d+px/, m => (parseFloat(m) * sc) + 'px');
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(fmtTime(data.timestamp), L + W - 8*sc, TOP + H/2);
+      }
+
+      // 메시지 타입 표시 아이콘 (좌하단)
+      if (isMsg) {
+        ctx.globalAlpha = 0.3;
+        ctx.font = `${18*sc}px sans-serif`;
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText(et === 'user.message' ? '💬' : '🤖', L + W - 6*sc, TOP + H - 4*sc);
+        ctx.globalAlpha = 1;
+      }
+
+      // ── AI 소스 배지 (Claude 외 AI는 우상단에 표시) ──
+      const aiSrc = data.aiSource;
+      const aiIcon = data.aiIcon;
+      const AI_BADGE_COLORS = {
+        gemini:     '#4285f4', perplexity: '#bc8cff',
+        openai:     '#8b949e', vscode:     '#f85149',
+      };
+      if (aiSrc && aiSrc !== 'claude' && AI_BADGE_COLORS[aiSrc]) {
+        const badgeR = 9 * sc;
+        const bx = L + W - badgeR - 4*sc;
+        const by = TOP - badgeR;
+        // 원형 배지 배경
+        ctx.beginPath();
+        ctx.arc(bx, by, badgeR, 0, Math.PI*2);
+        ctx.fillStyle = AI_BADGE_COLORS[aiSrc];
+        ctx.globalAlpha = 0.95;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        // AI 아이콘 텍스트
+        if (aiIcon) {
+          ctx.font = `${10*sc}px sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(aiIcon, bx, by);
+        }
+        // citations 있으면 추가 배지 (보라 점)
+        if (data.citations && data.citations.length > 0) {
+          ctx.beginPath();
+          ctx.arc(L + badgeR + 4*sc, TOP - badgeR, 6*sc, 0, Math.PI*2);
+          ctx.fillStyle = '#bc8cff';
+          ctx.fill();
+          ctx.font = `${7*sc}px 'Inter',sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillStyle = '#fff';
+          ctx.fillText(data.citations.length, L + badgeR + 4*sc, TOP - badgeR);
+        }
+      }
+
+      // Ports
+      if (t.showPorts && t.portSize > 0) {
+        const ps = t.portSize * sc;
+        [L, L + W].forEach(px => {
+          ctx.beginPath(); ctx.arc(px, y, ps, 0, Math.PI * 2);
+          ctx.fillStyle = t.bodyBg; ctx.fill();
+          ctx.strokeStyle = selected ? nodeColor : (hover ? nodeColor + '88' : t.borderColor);
+          ctx.lineWidth = 1.5; ctx.stroke();
+        });
+      }
+
+      // Activity glow
+      const score = data.activityScore || 0;
+      if (score > 0.15 && t.showGlow) {
+        const alpha = Math.round(score * 180).toString(16).padStart(2,'0');
+        ctx.shadowColor = nodeColor + alpha;
+        ctx.shadowBlur = score * 24 * sc;
+        rrect(ctx, L, TOP, W, H, R);
+        ctx.strokeStyle = nodeColor + Math.round(score * 100).toString(16).padStart(2,'0');
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0;
+      }
+
+      ctx.restore();
+    },
+    nodeDimensions: { width: W, height: H },
+  };
+}
+
+// ═══════════════════════════════════════════════════
+// CLUSTER RENDERER (시맨틱 줌 - 축소 시 요약 카드)
+// ═══════════════════════════════════════════════════
+function clusterNodeRenderer({ctx, id, x, y, state: {selected, hover}}) {
+  const group = clusterGroups.find(g => g.clusterId === id);
+  if (!group) return { drawNode(){}, nodeDimensions: {width:10, height:10} };
+
+  const sc = nodeScale;
+  const W = 360 * sc;
+  const H = 120 * sc;
+  const R = 14 * sc;
+  const L = x - W/2, TOP = y - H/2;
+
+  const progress = group.totalSteps > 0 ? group.completedSteps / group.totalSteps : (group.hasAssistant ? 1 : 0);
+  const hasError = group.errorCount > 0;
+  const statusColor = hasError ? '#f85149' : (progress >= 1 ? '#3fb950' : '#58a6ff');
+
+  return {
+    drawNode() {
+      ctx.save();
+      // 페이드인 애니메이션 적용
+      const fadeAlpha = clusterOpacity[id] !== undefined ? clusterOpacity[id] : 1;
+      ctx.globalAlpha = fadeAlpha;
+
+      // 외곽 글로우
+      ctx.shadowColor = statusColor + '50';
+      ctx.shadowBlur = 28 * sc;
+
+      // 카드 배경
+      rrect(ctx, L, TOP, W, H, R);
+      ctx.fillStyle = selected ? '#2d333b' : hover ? '#22272e' : '#161b22';
+      ctx.fill();
+
+      ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0;
+
+      // 상태 표시 상단 바
+      ctx.fillStyle = statusColor;
+      rrectTop(ctx, L, TOP, W, 5*sc, R);
+      ctx.fill();
+
+      // 테두리
+      rrect(ctx, L, TOP, W, H, R);
+      ctx.strokeStyle = selected ? statusColor : hover ? statusColor + '88' : '#30363d';
+      ctx.lineWidth = selected ? 2.5 : 1.5;
+      ctx.stroke();
+
+      // 주제 텍스트
+      ctx.fillStyle = '#f0f6fc';
+      ctx.font = `600 ${16*sc}px 'Inter',sans-serif`;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(truncCtx(ctx, `💬 ${group.topic}`, W - 28*sc), L + 16*sc, TOP + 30*sc);
+
+      // 통계 행
+      ctx.font = `${13*sc}px 'Inter',sans-serif`;
+      let statsX = L + 16*sc;
+      const statsY = TOP + 55*sc;
+
+      if (group.toolCount > 0) {
+        ctx.fillStyle = '#d29922';
+        const tText = `⚡ ${group.completedSteps}/${group.toolCount}`;
+        ctx.fillText(tText, statsX, statsY);
+        statsX += ctx.measureText(tText).width + 14*sc;
+      }
+      if (group.fileCount > 0) {
+        ctx.fillStyle = '#bc8cff';
+        const fText = `📄 ${group.fileCount}`;
+        ctx.fillText(fText, statsX, statsY);
+        statsX += ctx.measureText(fText).width + 14*sc;
+      }
+      if (group.errorCount > 0) {
+        ctx.fillStyle = '#f85149';
+        const eText = `❌ ${group.errorCount}`;
+        ctx.fillText(eText, statsX, statsY);
+        statsX += ctx.measureText(eText).width + 14*sc;
+      }
+      ctx.fillStyle = '#6e7681';
+      ctx.fillText(`(${group.nodeCount}개 노드)`, statsX, statsY);
+
+      // 진행률 바
+      const pBarY = TOP + 76*sc;
+      const pBarW = W - 32*sc;
+      const pBarH = 9*sc;
+      const pBarR = 4*sc;
+
+      rrect(ctx, L+14*sc, pBarY, pBarW, pBarH, pBarR);
+      ctx.fillStyle = '#21262d';
+      ctx.fill();
+      ctx.strokeStyle = '#30363d';
+      ctx.lineWidth = 0.5;
+      ctx.stroke();
+
+      if (progress > 0) {
+        const fillW = Math.max(pBarH, pBarW * Math.min(1, progress));
+        rrect(ctx, L+14*sc, pBarY, fillW, pBarH, pBarR);
+        ctx.fillStyle = statusColor;
+        ctx.fill();
+      }
+
+      // 진행률 텍스트
+      ctx.textAlign = 'right';
+      ctx.fillStyle = '#c9d1d9';
+      ctx.font = `500 ${11*sc}px 'Inter',sans-serif`;
+      const pLabel = progress >= 1 ? '✅ 완료' : `${Math.round(progress*100)}% 진행 중`;
+      ctx.fillText(pLabel, L + W - 16*sc, TOP + 105*sc);
+
+      // 안내 텍스트
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#484f58';
+      ctx.font = `${10*sc}px 'Inter',sans-serif`;
+      ctx.fillText('더블클릭으로 펼치기', L + 16*sc, TOP + 105*sc);
+
+      ctx.restore();
+    },
+    nodeDimensions: { width: W, height: H },
+  };
+}
+
+// ═══════════════════════════════════════════════════
+// VIS-NETWORK
+// ═══════════════════════════════════════════════════
+function getOpts() {
+  const base = {
+    nodes: { font: { color: '#fff', size: 12, face: 'Inter' }, shadow: false },
+    edges: { width: 1.5, smooth: { type: 'cubicBezier', roundness: 0.4 }, color: { inherit: false } },
+    interaction: { hover: true, tooltipDelay: 150, dragNodes: true, dragView: true, zoomView: true, multiselect: true },
+  };
+
+  if (layoutMode === 'free') {
+    base.physics = { enabled: false };
+    base.layout = {};
+  } else if (layoutMode === 'tree') {
+    base.physics = { enabled: false };
+    base.layout = { hierarchical: { direction: 'LR', sortMethod: 'directed', levelSeparation: 300, nodeSpacing: 30, treeSpacing: 60, blockShifting: true, edgeMinimization: true, parentCentralization: true } };
+    base.edges.smooth = { type: 'cubicBezier', forceDirection: 'horizontal', roundness: 0.5 };
+  } else {
+    base.physics = { enabled: true, stabilization: { iterations: 150 }, barnesHut: { gravitationalConstant: -4000, centralGravity: 0.3, springLength: 160, springConstant: 0.04 } };
+    base.layout = { randomSeed: 42 };
+  }
+  return base;
+}
+
+const ctr = document.getElementById('network');
+const net = new vis.Network(ctr, { nodes: VN, edges: VE }, getOpts());
+
+net.on('click', p => {
+  if (p.nodes.length > 0) {
+    const nodeId = p.nodes[0];
+    // 클러스터 노드 클릭 시 클러스터 상세 표시
+    if (net.isCluster(nodeId)) {
+      const group = clusterGroups.find(g => g.clusterId === nodeId);
+      if (group) {
+        if (!document.getElementById('detail').classList.contains('open')) toggleDetail();
+        showClusterDetail(group);
+      }
+      return;
+    }
+    if (nMap[nodeId]) {
+      if (!document.getElementById('detail').classList.contains('open')) toggleDetail();
+      showDetail(nMap[nodeId]);
+      hlTimeline(nodeId);
+    }
+  }
+});
+net.on('doubleClick', p => {
+  if (p.nodes.length > 0) {
+    const nodeId = p.nodes[0];
+    if (net.isCluster(nodeId)) {
+      const group = clusterGroups.find(g => g.clusterId === nodeId);
+      try { net.openCluster(nodeId); } catch {}
+      clusterGroups = clusterGroups.filter(g => g.clusterId !== nodeId);
+      if (clusterGroups.length === 0) { isClustered = false; updateClusterIndicator(); }
+      if (group) {
+        setTimeout(() => {
+          try { net.focus(group.rootId, { scale: 0.6, animation: { duration: 400 } }); } catch {}
+        }, 80);
+      }
+    }
+  }
+});
+net.on('dragEnd', p => { if (p.nodes.length > 0 && layoutMode === 'free') savePositions(); });
+net.on('oncontext', p => {
+  p.event.preventDefault();
+  ctxNode = net.getNodeAt(p.pointer.DOM) || null;
+  const m = document.getElementById('ctx');
+  m.style.display = 'block'; m.style.left = p.event.clientX+'px'; m.style.top = p.event.clientY+'px';
+});
+document.addEventListener('click', (e) => {
+  document.getElementById('ctx').style.display='none';
+  document.getElementById('settings').classList.remove('open');
+  // label edit popup: 외부 클릭 시 닫기
+  const lep = document.getElementById('label-edit-popup');
+  if (lep.style.display !== 'none' && !lep.contains(e.target)) closeLabelEdit();
+});
+net.on('afterDrawing', updateMinimap);
+
+// ── 시맨틱 줌: 줌 아웃 시 자동 클러스터 + 줌 레벨 표시 ──
+let zoomDebounce = null;
+net.on('zoom', () => {
+  const scale = net.getScale();
+  // 줌 레벨 표시기 업데이트 (즉시)
+  const pct = Math.round(scale * 100);
+  const zlEl = document.getElementById('zoom-level');
+  if (zlEl) zlEl.textContent = pct + '%';
+  // 시맨틱 줌 클러스터 (debounce 200ms)
+  clearTimeout(zoomDebounce);
+  zoomDebounce = setTimeout(() => {
+    if (scale < CLUSTER_IN && !isClustered && curGraph.nodes.length > 3) {
+      applyClusters();
+    } else if (scale > CLUSTER_OUT && isClustered) {
+      removeClusters();
+    }
+  }, 200);
+});
+
+// ═══════════════════════════════════════════════════
+// SEMANTIC ZOOM — 클러스터 빌드/적용/해제
+// ═══════════════════════════════════════════════════
+function getDescendantIds(startId, childMap) {
+  const result = new Set();
+  const queue = [startId];
+  while (queue.length) {
+    const cur = queue.shift();
+    const children = childMap.get(cur) || [];
+    for (const cid of children) {
+      if (!result.has(cid)) { result.add(cid); queue.push(cid); }
+    }
+  }
+  return result;
+}
+
+function buildClusterGroups() {
+  // 부모 → 자식 매핑 생성
+  const childMap = new Map();
+  for (const e of curGraph.edges) {
+    if (!childMap.has(e.from)) childMap.set(e.from, []);
+    childMap.get(e.from).push(e.to);
+  }
+
+  const groups = [];
+  const assigned = new Set();
+
+  // 사용자 메시지를 대화 그룹의 루트로 사용
+  const userNodes = curGraph.nodes
+    .filter(n => (n.eventType || n.type) === 'user.message')
+    .sort((a,b) => (a.timestamp||'').localeCompare(b.timestamp||''));
+
+  for (const uNode of userNodes) {
+    if (assigned.has(uNode.id)) continue;
+
+    // BFS로 모든 하위 노드 탐색
+    const descendants = getDescendantIds(uNode.id, childMap);
+    const allIds = new Set([uNode.id, ...descendants]);
+
+    // 필터로 숨겨진 노드 제외
+    const visibleIds = new Set();
+    for (const nid of allIds) {
+      if (VN.get(nid)) visibleIds.add(nid);
+    }
+
+    // 3개 미만이면 클러스터링 의미 없음
+    if (visibleIds.size < 3) continue;
+
+    const allNodes = curGraph.nodes.filter(n => allIds.has(n.id));
+    const tools = allNodes.filter(n => (n.eventType||n.type||'').startsWith('tool.'));
+    const files = allNodes.filter(n => (n.eventType||n.type) === 'file' || (n.eventType||n.type||'').startsWith('file.'));
+    const errors = tools.filter(n => (n.eventType||n.type) === 'tool.error');
+    const completed = tools.filter(n => (n.eventType||n.type) === 'tool.end');
+    const assistants = allNodes.filter(n => (n.eventType||n.type) === 'assistant.message');
+
+    const topic = (uNode.label || '').replace(/^.\s/, '').substring(0, 40) || '대화';
+
+    groups.push({
+      clusterId: `cluster:${uNode.id}`,
+      rootId: uNode.id,
+      nodeIds: visibleIds,
+      topic,
+      totalSteps: tools.length,
+      completedSteps: completed.length,
+      errorCount: errors.length,
+      toolCount: tools.length,
+      fileCount: files.length,
+      nodeCount: visibleIds.size,
+      hasAssistant: assistants.length > 0,
+      isComplete: assistants.length > 0 && errors.length === 0,
+    });
+
+    allIds.forEach(id => assigned.add(id));
+  }
+
+  return groups;
+}
+
+let clusterOpacity = {};
+let clusterAnimFrame = null;
+
+function applyClusters() {
+  if (isClustered) return;
+  clusterGroups = buildClusterGroups();
+  if (clusterGroups.length === 0) return;
+
+  // 순차적으로 클러스터 적용 (부드러운 전환)
+  let delay = 0;
+  for (const group of clusterGroups) {
+    setTimeout(() => {
+      try {
+        clusterOpacity[group.clusterId] = 0;
+        net.cluster({
+          joinCondition: (childOptions) => group.nodeIds.has(childOptions.id),
+          clusterNodeProperties: {
+            id: group.clusterId,
+            shape: 'custom',
+            ctxRenderer: clusterNodeRenderer,
+            label: group.topic,
+          },
+        });
+      } catch (e) { console.warn('Cluster error:', e); }
+    }, delay);
+    delay += 80;
+  }
+  isClustered = true;
+  updateClusterIndicator();
+  // 페이드인 애니메이션
+  animateClusterFade();
+}
+
+function animateClusterFade() {
+  if (clusterAnimFrame) cancelAnimationFrame(clusterAnimFrame);
+  let done = true;
+  for (const id of Object.keys(clusterOpacity)) {
+    if (clusterOpacity[id] < 1) {
+      clusterOpacity[id] = Math.min(1, clusterOpacity[id] + 0.08);
+      done = false;
+    }
+  }
+  net.redraw();
+  if (!done) clusterAnimFrame = requestAnimationFrame(animateClusterFade);
+}
+
+function removeClusters() {
+  if (!isClustered) return;
+  // 순차적으로 언클러스터 (부드러운 전환)
+  let delay = 0;
+  for (const group of [...clusterGroups]) {
+    setTimeout(() => {
+      try {
+        if (net.isCluster(group.clusterId)) {
+          net.openCluster(group.clusterId, {
+            releaseFunction: (clusterPos, containedPos) => {
+              // 클러스터 위치 중심에서 퍼져나가도록
+              const result = {};
+              for (const id in containedPos) {
+                result[id] = {
+                  x: clusterPos.x + (containedPos[id].x - clusterPos.x) * 0.5,
+                  y: clusterPos.y + (containedPos[id].y - clusterPos.y) * 0.5,
+                };
+              }
+              return result;
+            }
+          });
+        }
+      } catch {}
+    }, delay);
+    delay += 60;
+  }
+  setTimeout(() => {
+    isClustered = false;
+    clusterGroups = [];
+    clusterOpacity = {};
+    updateClusterIndicator();
+  }, delay + 100);
+}
+
+function updateClusterIndicator() {
+  const ind = document.getElementById('cluster-ind');
+  if (ind) {
+    ind.style.display = isClustered ? 'flex' : 'none';
+    const cnt = clusterGroups.length;
+    ind.textContent = `📦 ${cnt}개 그룹`;
+  }
+}
+
+// ═══════════════════════════════════════════════════
+// AI INSIGHT PANEL — 작업 분석 & 제안
+// ═══════════════════════════════════════════════════
+let aiInsightVisible = false;
+function toggleAiInsight() {
+  aiInsightVisible = !aiInsightVisible;
+  document.getElementById('ai-insight').classList.toggle('hidden', !aiInsightVisible);
+  if (aiInsightVisible) updateAiInsight();
+}
+
+function analyzeWorkState(nodes) {
+  const userMsgs = nodes.filter(n => (n.eventType||n.type) === 'user.message');
+  const assistMsgs = nodes.filter(n => (n.eventType||n.type) === 'assistant.message');
+  const tools = nodes.filter(n => (n.eventType||n.type||'').startsWith('tool.'));
+  const toolEnds = nodes.filter(n => (n.eventType||n.type) === 'tool.end');
+  const toolErrors = nodes.filter(n => (n.eventType||n.type) === 'tool.error');
+  const files = nodes.filter(n => (n.eventType||n.type||'').startsWith('file'));
+  const subagents = nodes.filter(n => (n.eventType||n.type||'').startsWith('subagent'));
+
+  // 시간 분석
+  const timestamps = nodes.map(n => n.timestamp).filter(Boolean).sort();
+  const firstTs = timestamps[0] ? new Date(timestamps[0]) : null;
+  const lastTs = timestamps[timestamps.length-1] ? new Date(timestamps[timestamps.length-1]) : null;
+  const durationMin = firstTs && lastTs ? Math.round((lastTs - firstTs) / 60000) : 0;
+
+  // 최근 활동 (최근 5분)
+  const now = Date.now();
+  const recentNodes = nodes.filter(n => n.timestamp && (now - new Date(n.timestamp).getTime()) < 300000);
+  const isActive = recentNodes.length > 0;
+
+  // 작업 유형 분류
+  const toolNames = {};
+  toolEnds.forEach(n => {
+    const name = (n.label||'').replace(/^.\s/,'').split(':')[0].trim();
+    toolNames[name] = (toolNames[name]||0) + 1;
+  });
+  const topTools = Object.entries(toolNames).sort((a,b)=>b[1]-a[1]).slice(0,5);
+
+  // 에러율
+  const errorRate = tools.length > 0 ? toolErrors.length / tools.length : 0;
+
+  // 최근 대화 흐름 분석
+  const lastUserMsg = userMsgs[userMsgs.length-1];
+  const lastAssistMsg = assistMsgs[assistMsgs.length-1];
+
+  // 작업 단계 추정
+  let phase = 'idle';
+  let phaseLabel = '대기 중';
+  let phaseIdx = 0;
+  if (userMsgs.length === 0) { phase = 'idle'; phaseLabel = '대기 중'; phaseIdx = 0; }
+  else if (toolEnds.length === 0 && userMsgs.length > 0) { phase = 'planning'; phaseLabel = '계획/분석'; phaseIdx = 1; }
+  else if (errorRate > 0.3) { phase = 'debugging'; phaseLabel = '디버깅 중'; phaseIdx = 2; }
+  else if (toolEnds.length > 0 && isActive) { phase = 'implementing'; phaseLabel = '구현 중'; phaseIdx = 3; }
+  else if (!isActive && toolEnds.length > 3) { phase = 'review'; phaseLabel = '완료/검토'; phaseIdx = 4; }
+  else { phase = 'working'; phaseLabel = '작업 중'; phaseIdx = 3; }
+
+  return {
+    userMsgs, assistMsgs, tools, toolEnds, toolErrors, files, subagents,
+    durationMin, isActive, recentNodes, topTools, errorRate,
+    lastUserMsg, lastAssistMsg, phase, phaseLabel, phaseIdx
+  };
+}
+
+function generateSuggestions(analysis) {
+  const s = [];
+
+  // 에러율 높을 때
+  if (analysis.errorRate > 0.2 && analysis.toolErrors.length >= 2) {
+    s.push({ icon: '⚠️', text: `작업 실패율이 <b>${Math.round(analysis.errorRate*100)}%</b>입니다. 접근 방식을 재검토해보세요.`, type: 'warning' });
+  }
+
+  // 오래된 세션
+  if (analysis.durationMin > 60) {
+    s.push({ icon: '⏰', text: `${analysis.durationMin}분째 작업 중입니다. 중간 정리/커밋을 고려하세요.`, type: 'info' });
+  }
+
+  // 파일 집중도
+  if (analysis.files.length > 10) {
+    s.push({ icon: '📁', text: `<b>${analysis.files.length}개</b> 파일을 다루고 있습니다. 범위가 넓으니 나눠서 작업하세요.`, type: 'info' });
+  }
+
+  // 서브에이전트 사용
+  if (analysis.subagents.length > 0) {
+    s.push({ icon: '🔀', text: `하위 작업이 <b>${analysis.subagents.length}개</b> 실행되었습니다. 병렬 작업이 진행 중이에요.`, type: 'info' });
+  }
+
+  // 대화가 길 때
+  if (analysis.userMsgs.length > 15) {
+    s.push({ icon: '💡', text: `대화가 <b>${analysis.userMsgs.length}턴</b> 진행되었습니다. 새 세션으로 분리를 고려하세요.`, type: 'suggest' });
+  }
+
+  // 도구 사용 패턴
+  if (analysis.topTools.length > 0) {
+    const top = analysis.topTools[0];
+    if (top[1] > 5) {
+      s.push({ icon: '🔧', text: `<b>${top[0]}</b>을(를) ${top[1]}회 사용했습니다. 주요 작업 도구입니다.`, type: 'info' });
+    }
+  }
+
+  // 활동 없을 때
+  if (!analysis.isActive && analysis.userMsgs.length > 0) {
+    s.push({ icon: '😴', text: '최근 5분간 활동이 없습니다. 작업이 완료되었거나 중단 상태입니다.', type: 'info' });
+  }
+
+  // 최근 진행
+  if (analysis.lastUserMsg?.fullContent) {
+    const lastQ = (analysis.lastUserMsg.fullContent || '').substring(0, 60).replace(/\n/g,' ');
+    s.push({ icon: '💬', text: `최근 요청: "<b>${esc(lastQ)}${lastQ.length>=60?'...':''}</b>"`, type: 'context' });
+  }
+
+  if (s.length === 0) {
+    s.push({ icon: '✅', text: '작업이 원활하게 진행되고 있습니다.', type: 'success' });
+  }
+
+  return s;
+}
+
+function updateAiInsight() {
+  if (!aiInsightVisible || !curGraph?.nodes?.length) return;
+
+  const a = analyzeWorkState(curGraph.nodes);
+  const suggestions = generateSuggestions(a);
+
+  // 상단 뱃지
+  const badge = document.getElementById('ai-phase-badge');
+  const phaseColors = { idle: '#6b7280', planning: '#58a6ff', debugging: '#f85149', implementing: '#d29922', working: '#3fb950', review: '#3fb950' };
+  badge.textContent = a.phaseLabel;
+  badge.style.cssText = `background:${phaseColors[a.phase]||'#8957e5'}22;color:${phaseColors[a.phase]||'#8957e5'}`;
+
+  let h = '';
+
+  // 상태 요약
+  h += '<div class="ai-section"><div class="ai-section-title">현재 상태</div>';
+  h += `<div class="ai-status-row"><span class="ai-status-icon">${a.isActive?'🟢':'🔴'}</span> ${a.isActive?'활성':'비활성'} · ${a.durationMin}분 경과</div>`;
+  h += `<div class="ai-status-row"><span class="ai-status-icon">📊</span> 질문 ${a.userMsgs.length} · 답변 ${a.assistMsgs.length} · 작업 ${a.toolEnds.length} · 실패 <span style="color:${a.toolErrors.length?'var(--red)':'inherit'}">${a.toolErrors.length}</span></div>`;
+
+  // 작업 단계 바
+  const phases = ['대기','분석','디버그','구현','완료'];
+  h += '<div class="ai-phase-bar">';
+  for (let i = 0; i < 5; i++) {
+    const cls = i < a.phaseIdx ? 'done' : (i === a.phaseIdx ? 'active' : '');
+    h += `<div class="ai-phase-seg ${cls}"></div>`;
+  }
+  h += '</div>';
+  h += '<div class="ai-phase-labels">';
+  phases.forEach(p => h += `<span>${p}</span>`);
+  h += '</div></div>';
+
+  // 주요 도구
+  if (a.topTools.length > 0) {
+    h += '<div class="ai-section"><div class="ai-section-title">주요 도구 사용</div>';
+    h += '<div style="display:flex;gap:4px;flex-wrap:wrap">';
+    a.topTools.forEach(([name, cnt]) => {
+      h += `<span style="font-size:10px;padding:2px 6px;border-radius:4px;background:var(--bg3);color:var(--text2)">${name} <b>${cnt}</b></span>`;
+    });
+    h += '</div></div>';
+  }
+
+  // AI 제안
+  h += '<div class="ai-section"><div class="ai-section-title">AI 분석 & 제안</div>';
+  suggestions.forEach(s => {
+    h += `<div class="ai-suggest-item">${s.icon} ${s.text}</div>`;
+  });
+  h += '</div>';
+
+  document.getElementById('ai-body').innerHTML = h;
+}
+
+function showClusterDetail(group) {
+  const badge = document.getElementById('d-badge');
+  badge.textContent = '대화 그룹';
+  badge.style.cssText = 'background:#58a6ff22;color:#58a6ff;border:1px solid #58a6ff44;';
+  document.getElementById('d-ts').textContent = '';
+  document.getElementById('d-title').textContent = group.topic;
+
+  const progress = group.totalSteps > 0 ? group.completedSteps / group.totalSteps : (group.hasAssistant ? 1 : 0);
+  const pct = Math.round(progress * 100);
+  const col = group.errorCount > 0 ? 'var(--red)' : (progress >= 1 ? 'var(--green)' : 'var(--blue)');
+
+  let h = '';
+  h += `<div class="dsec"><h4>주제</h4><div class="dcont">💬 ${esc(group.topic)}</div></div>`;
+  h += `<div class="dsec"><h4>진행 상황</h4><div class="act-bar"><div class="act-track"><div class="act-fill" style="width:${pct}%;background:${col}"></div></div><span class="act-pct">${pct}%</span></div></div>`;
+  h += '<div class="dsec"><h4>구성</h4><div style="font-size:12px;color:var(--text2);line-height:2.2">';
+  h += `⚡ 작업: <b>${group.completedSteps}</b>/${group.toolCount} 완료<br>`;
+  h += `📄 파일: <b>${group.fileCount}</b>개<br>`;
+  if (group.errorCount > 0) h += `❌ 실패: <b style="color:var(--red)">${group.errorCount}</b>개<br>`;
+  h += `📊 총 노드: <b>${group.nodeCount}</b>개`;
+  h += '</div></div>';
+  h += '<div class="dsec" style="text-align:center;color:var(--text3);font-size:11px;padding-top:8px;border-top:1px solid var(--border)">더블클릭으로 그룹을 펼칠 수 있습니다</div>';
+
+  document.getElementById('d-body').innerHTML = h;
+}
+
+// ═══════════════════════════════════════════════════
+// RENDER
+// ═══════════════════════════════════════════════════
+function render(graph) {
+  curGraph = graph;
+  // 클러스터 상태 초기화 (VN.clear가 클러스터 노드도 제거)
+  const shouldReCluster = isClustered;
+  isClustered = false;
+  clusterGroups = [];
+
+  document.getElementById('empty').style.display = graph.nodes.length === 0 ? 'flex' : 'none';
+
+  const fNodes = graph.nodes.filter(n => !isHidden(n));
+  const vids = new Set(fNodes.map(n => n.id));
+  const fEdges = graph.edges.filter(e => vids.has(e.from) && vids.has(e.to));
+
+  for (const n of graph.nodes) nMap[n.id] = n;
+
+  // 새로 추가된 노드 ID 추적 (파티클 버스트용)
+  const prevIds = new Set(VN.getIds());
+  VN.clear(); VE.clear();
+
+  VN.add(fNodes.map(n => {
+    const o = {
+      id: n.id, shape: 'custom', ctxRenderer: nodeRenderer,
+      title: `${n.type||''}\n${n.timestamp ? new Date(n.timestamp).toLocaleString('ko-KR') : ''}`,
+    };
+    if (layoutMode === 'free' && savedPositions[n.id]) {
+      o.x = savedPositions[n.id].x; o.y = savedPositions[n.id].y;
+    }
+    return o;
+  }));
+
+  // 새 노드 → 파티클 버스트 + 라이트닝 (레이아웃 후 위치 확정 대기)
+  const newNodeIds = fNodes.filter(n => !prevIds.has(n.id)).map(n => n.id);
+  if (newNodeIds.length > 0) {
+    setTimeout(() => FX.onNewNodes(newNodeIds, graph.edges), 350);
+  }
+
+  VE.add(fEdges.map(e => ({
+    id: e.id, from: e.from, to: e.to, dashes: e.dashes,
+    width: e.width, color: e.color, arrows: e.arrows, smooth: e.smooth,
+  })));
+
+  updateTimeline(graph.nodes);
+  updateClusterIndicator();
+  updateAiInsight();
+
+  // 이전에 클러스터 상태였거나 현재 줌 레벨이 낮으면 다시 클러스터 적용
+  if (graph.nodes.length > 3) {
+    setTimeout(() => {
+      try {
+        const scale = net.getScale();
+        if (shouldReCluster || scale < CLUSTER_IN) applyClusters();
+      } catch {}
+    }, 200);
+  }
+}
+
+function isHidden(n) {
+  const t = n.eventType || n.type || '';
+  if (hidden.has('user.message') && t === 'user.message') return true;
+  if (hidden.has('assistant.message') && t === 'assistant.message') return true;
+  if (hidden.has('tool') && (t.startsWith('tool.') || t === 'tool')) return true;
+  if (hidden.has('file') && (t.startsWith('file.') || t === 'file')) return true;
+  if (hidden.has('subagent') && t.startsWith('subagent.')) return true;
+  // 멀티 AI 필터: hiddenAI에 있는 소스 숨김
+  const src = n.aiSource || 'claude';
+  if (hiddenAI.has(src)) return true;
+  return false;
+}
+
+// AI 소스 토글 필터
+function togAI(b) {
+  const ai = b.dataset.ai;
+  b.classList.toggle('on');
+  b.classList.contains('on') ? hiddenAI.delete(ai) : hiddenAI.add(ai);
+  render(curGraph);
+}
+
+// ═══════════════════════════════════════════════════
+// ACTIVITY
+// ═══════════════════════════════════════════════════
+function updateScores(scores) {
+  for (const [id, d] of Object.entries(scores)) {
+    if (nMap[id]) nMap[id].activityScore = d.activityScore !== undefined ? d.activityScore : nMap[id].activityScore;
+  }
+  FX.applyGlow(scores);
+  net.redraw();
+}
+
+// ═══════════════════════════════════════════════════
+// MINIMAP
+// ═══════════════════════════════════════════════════
+function updateMinimap() {
+  const mc = document.getElementById('minicanvas');
+  const mctx = mc.getContext('2d');
+  const w = mc.width = 160, h = mc.height = 110;
+  mctx.clearRect(0, 0, w, h);
+  const pos = net.getPositions(); const ids = Object.keys(pos);
+  if (!ids.length) return;
+  let mnX=Infinity, mxX=-Infinity, mnY=Infinity, mxY=-Infinity;
+  ids.forEach(id => { const p=pos[id]; if(p.x<mnX)mnX=p.x; if(p.x>mxX)mxX=p.x; if(p.y<mnY)mnY=p.y; if(p.y>mxY)mxY=p.y; });
+  const rX=mxX-mnX||1, rY=mxY-mnY||1, pad=10;
+  ids.forEach(id => {
+    const p=pos[id], x=pad+((p.x-mnX)/rX)*(w-pad*2), y=pad+((p.y-mnY)/rY)*(h-pad*2);
+    const c = (NC[nMap[id]?.eventType||nMap[id]?.type] || NC._default).color;
+    mctx.fillStyle = c; mctx.fillRect(x-2, y-1, 4, 3);
+  });
+  const vp=net.getViewPosition(), sc=net.getScale();
+  const cw=ctr.clientWidth/sc, ch=ctr.clientHeight/sc;
+  mctx.strokeStyle='rgba(137,87,229,0.6)'; mctx.lineWidth=1.5;
+  mctx.strokeRect(pad+((vp.x-cw/2-mnX)/rX)*(w-pad*2), pad+((vp.y-ch/2-mnY)/rY)*(h-pad*2), (cw/rX)*(w-pad*2), (ch/rY)*(h-pad*2));
+}
+
+// ═══════════════════════════════════════════════════
+// SESSIONS
+// ═══════════════════════════════════════════════════
+function updateSessions(list) {
+  sessions = list; document.getElementById('sc').textContent = list.length;
+  document.getElementById('slist').innerHTML = list.map(s => {
+    const t = s.started_at ? new Date(s.started_at) : null;
+    const time = t ? `${t.getMonth()+1}/${t.getDate()} ${t.getHours().toString().padStart(2,'0')}:${t.getMinutes().toString().padStart(2,'0')}` : '';
+    return `<div class="s-item ${activeSession===s.id?'active':''}" onclick="filterSess('${s.id}')">
+      <span class="s-dot ${s.status==='active'?'live':'off'}"></span>
+      <span class="s-meta"><span class="s-time">${time}</span></span>
+      <span style="font-size:10px;color:var(--text3)">${s.event_count||0}</span>
+    </div>`;
+  }).join('');
+}
+function filterSess(id) {
+  activeSession = activeSession===id ? null : id;
+  if (ws?.readyState===WebSocket.OPEN) ws.send(JSON.stringify({type:'filter',sessionId:activeSession}));
+  updateSessions(sessions);
+}
+
+// ═══════════════════════════════════════════════════
+// DETAIL
+// ═══════════════════════════════════════════════════
+const TCC = {
+  'session.start':{l:'세션 시작',c:'#8b5cf6'},'user.message':{l:'사용자 질문',c:'#58a6ff'},
+  'assistant.message':{l:'AI 답변',c:'#3fb950'},'tool.end':{l:'작업 수행',c:'#d29922'},
+  'tool.error':{l:'작업 실패',c:'#f85149'},'file':{l:'파일 참조',c:'#bc8cff'},
+  'file.read':{l:'파일 읽기',c:'#bc8cff'},'file.write':{l:'파일 수정',c:'#f778ba'},
+  'subagent.start':{l:'하위작업',c:'#39d2c0'},'subagent.stop':{l:'하위작업 완료',c:'#6b7280'},
+  'annotation.add':{l:'메모',c:'#e3b341'},'notification':{l:'알림',c:'#d29922'},
+  'task.complete':{l:'완료',c:'#3fb950'},
+};
+function showDetail(n) {
+  const et = n.eventType||n.type;
+  const c = TCC[et] || {l:et,c:'#8b949e'};
+  const catOverride = typeToCat[et];
+  const nodeId = n.id || n.eventId;
+  const customLabel = userLabelMap[nodeId];
+
+  const badge = document.getElementById('d-badge');
+  badge.textContent = catOverride ? `${catOverride.icon} ${catOverride.name}` : c.l;
+  const bc = catOverride?.color || c.c;
+  badge.style.cssText = `background:${bc}22;color:${bc};border:1px solid ${bc}44;`;
+  document.getElementById('d-ts').textContent = n.timestamp ? new Date(n.timestamp).toLocaleTimeString('ko-KR') : '';
+  document.getElementById('d-title').textContent = getNodeHeader(n);
+
+  let h = '';
+
+  // 커스터마이즈 섹션
+  h += `<div class="dsec"><h4>라벨 편집</h4>
+    <div style="display:flex;gap:4px;flex-wrap:wrap">
+      <button class="sp-btn" onclick="ctxNode='${esc(nodeId)}';editNodeLabel()" style="font-size:10px;padding:4px 8px">✏️ 라벨 변경</button>
+      <button class="sp-btn" onclick="ctxNode='${esc(nodeId)}';aiSuggestLabel()" style="font-size:10px;padding:4px 8px">🤖 AI 제안</button>
+      <button class="sp-btn" onclick="ctxNode='${esc(nodeId)}';changeNodeCategory()" style="font-size:10px;padding:4px 8px">🏷️ 분류 변경</button>
+    </div>`;
+  if (customLabel) {
+    h += `<div class="edit-hint" style="margin-top:6px">✎ 커스텀 라벨 적용됨 — <a href="#" onclick="fetch('/api/user-labels/${esc(nodeId)}',{method:'DELETE'});return false" style="color:var(--accent);text-decoration:underline;font-size:9px">초기화</a></div>`;
+  }
+  h += `</div>`;
+
+  // ── 멀티 AI 정보 섹션 ──
+  if (n.aiSource) {
+    const AI_META = {
+      claude:     { label: 'Claude',        color: '#3fb950', icon: '🟢' },
+      gemini:     { label: 'Google Gemini', color: '#4285f4', icon: '🔵' },
+      perplexity: { label: 'Perplexity',    color: '#bc8cff', icon: '🟣' },
+      openai:     { label: 'OpenAI GPT',    color: '#8b949e', icon: '⚪' },
+      vscode:     { label: 'VS Code',       color: '#f85149', icon: '🔴' },
+    };
+    const meta = AI_META[n.aiSource] || { label: n.aiSource, color: '#8b949e', icon: '❓' };
+    h += `<div class="dsec"><h4>AI 소스</h4>
+      <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;background:${meta.color}18;border:1px solid ${meta.color}33">
+        <span style="font-size:16px">${meta.icon}</span>
+        <div>
+          <div style="font-size:12px;font-weight:600;color:${meta.color}">${meta.label}</div>
+          ${n.aiLabel ? `<div style="font-size:10px;color:var(--text3)">${esc(n.aiLabel)}</div>` : ''}
+        </div>
+      </div>`;
+    // 토큰 / 모델 정보: graph-engine이 노드에 직접 복사 (tokenCount, model)
+    if (n.tokenCount != null) {
+      h += `<div style="font-size:10px;color:var(--text3);margin-top:4px">🔢 토큰: <b>${n.tokenCount}</b>개</div>`;
+    }
+    if (n.model) {
+      h += `<div style="font-size:10px;color:var(--text3)">🧠 모델: ${esc(n.model)}</div>`;
+    }
+    h += `</div>`;
+    // Citations (Perplexity 전용)
+    if (n.citations && n.citations.length > 0) {
+      h += `<div class="dsec"><h4>📎 출처 (${n.citations.length})</h4>`;
+      n.citations.slice(0, 5).forEach((url, i) => {
+        const domain = (() => { try { return new URL(url).hostname; } catch { return url; } })();
+        h += `<div style="font-size:10px;padding:3px 0;border-bottom:1px solid var(--border)">
+          <span style="color:var(--text3)">${i+1}.</span>
+          <a href="${esc(url)}" target="_blank" style="color:var(--blue);text-decoration:none;margin-left:4px">${esc(domain)}</a>
+        </div>`;
+      });
+      h += `</div>`;
+    }
+  }
+
+  // ── 내용 섹션: 타입별로 맨 위에 표시 ──
+  const isFileNode = ['file','file.read','file.write','file.create'].includes(et);
+  const filePath = n.filePath || n.data?.filePath || (et === 'file' ? n.fullContent : null) || null;
+
+  if (et === 'user.message') {
+    // 사용자 질문: 내용 바로 표시
+    if (n.fullContent && n.fullContent.length > 2)
+      h += `<div class="dsec"><h4>💬 질문 내용</h4><div class="dcont">${esc(n.fullContent).substring(0,3000).replace(/\n/g,'<br>')}</div></div>`;
+  } else if (et === 'assistant.message') {
+    // AI 답변: 내용 바로 표시
+    if (n.fullContent && n.fullContent.length > 2)
+      h += `<div class="dsec"><h4>🤖 AI 답변</h4><div class="dcont">${esc(n.fullContent).substring(0,3000).replace(/\n/g,'<br>')}</div></div>`;
+  } else if (et === 'tool.end' || et === 'tool.error') {
+    // 도구: 입력(지침) → 출력(결과) 순서
+    const inputText = n.data?.inputPreview || n.data?.input
+      ? esc(JSON.stringify(n.data?.input || n.data?.inputPreview || '').replace(/^"|"$/g,'')).substring(0,1000)
+      : null;
+    if (inputText) h += `<div class="dsec"><h4>📥 입력 (지침)</h4><div class="dcont">${inputText.replace(/\\n/g,'<br>')}</div></div>`;
+    if (n.fullContent && n.fullContent.length > 2)
+      h += `<div class="dsec"><h4>📤 결과</h4><div class="dcont">${esc(n.fullContent).substring(0,3000).replace(/\n/g,'<br>')}</div></div>`;
+  } else if (isFileNode && filePath) {
+    // 파일 노드: 경로 표시
+    h += `<div class="dsec"><h4>📄 파일 경로</h4><div class="dcont">${esc(filePath)}</div></div>`;
+  } else if (n.fullContent && n.fullContent.length > 2) {
+    h += `<div class="dsec"><h4>내용</h4><div class="dcont">${esc(n.fullContent).substring(0,3000).replace(/\n/g,'<br>')}</div></div>`;
+  }
+
+  // ── 파일 노드 → 자동 코드 분석 버튼 ──
+  if (isFileNode && filePath && /\.(js|ts|jsx|tsx|py|rs|go|java|sh|css|html|json|md)$/i.test(filePath)) {
+    const fp = filePath.replace(/'/g, "\\'");
+    h += `<div class="dsec"><h4>📊 코드 분석</h4>
+      <div style="font-size:10px;color:var(--text3);margin-bottom:6px">${esc(filePath)}</div>
+      <button class="sp-btn" onclick="autoAnalyzeNode('${fp}')"
+        style="font-size:10px;padding:5px 10px;border-color:var(--blue);color:var(--blue);width:100%;text-align:center">
+        ⚡ 즉시 분석 실행
+      </button>
+    </div>`;
+  }
+
+  if (n.activityScore !== undefined) {
+    const p = Math.round(n.activityScore*100);
+    const col = p>50?'var(--green)':p>20?'var(--orange)':'var(--text3)';
+    h += `<div class="dsec"><h4>활동</h4><div class="act-bar"><div class="act-track"><div class="act-fill" style="width:${p}%;background:${col}"></div></div><span class="act-pct">${p}%</span></div></div>`;
+  }
+  if (n.sessionId) h += `<div class="dsec"><h4>세션</h4><div class="fchip">${esc(n.sessionId.substring(0,20))}...</div></div>`;
+  if (n.timestamp) h += `<div class="dsec"><h4>시간</h4><div style="font-size:11px;color:var(--text2)">${new Date(n.timestamp).toLocaleString('ko-KR')}</div></div>`;
+  document.getElementById('d-body').innerHTML = h || '<div class="empty-d"><span>상세 정보 없음</span></div>';
+}
+
+// ═══════════════════════════════════════════════════
+// TIMELINE
+// ═══════════════════════════════════════════════════
+const tl = document.getElementById('timeline');
+function updateTimeline(nodes) {
+  tl.querySelectorAll('.ev-chip').forEach(e => e.remove());
+  const main = nodes.filter(n => ['user.message','assistant.message','session.start'].includes(n.eventType||n.type))
+    .sort((a,b) => (a.timestamp||'').localeCompare(b.timestamp||''));
+  for (const n of main) {
+    const ic = {'user.message':'💬','assistant.message':'💡','session.start':'🟢'}[n.eventType||n.type]||'•';
+    const lb = (n.label||'').replace(/^.\s/,'').substring(0,18);
+    const c = document.createElement('div');
+    c.className = 'ev-chip'; c.dataset.nid = n.id;
+    c.innerHTML = `<span>${ic}</span><span>${esc(lb)}</span>`;
+    c.onclick = () => { if(nMap[n.id])showDetail(nMap[n.id]); net.selectNodes([n.id]); net.focus(n.id,{scale:0.8,animation:{duration:400}}); hlTimeline(n.id); };
+    tl.appendChild(c);
+  }
+  tl.scrollLeft = tl.scrollWidth;
+}
+function hlTimeline(id) { tl.querySelectorAll('.ev-chip').forEach(e => e.classList.toggle('on', e.dataset.nid===id)); }
+
+// ═══════════════════════════════════════════════════
+// FILTERS, MODES, THEMES, SETTINGS
+// ═══════════════════════════════════════════════════
+function togF(b) { const t=b.dataset.t; b.classList.toggle('on'); b.classList.contains('on')?hidden.delete(t):hidden.add(t); render(curGraph); }
+function setMode(m) {
+  layoutMode = m;
+  document.querySelectorAll('#mode-free,#mode-tree,#mode-physics').forEach(b => b.classList.toggle('on', b.id==='mode-'+m));
+  net.setOptions(getOpts()); render(curGraph);
+  if (m !== 'free') setTimeout(() => net.fit({animation:true}), 300);
+}
+function setTheme(name) {
+  themeName = name;
+  document.querySelectorAll('#th-n8n,#th-comfy,#th-min').forEach(b => b.classList.toggle('on', b.id === 'th-' + {n8n:'n8n',comfyui:'comfy',minimal:'min'}[name]));
+  savePrefs(); net.redraw();
+}
+function setScale(v) {
+  nodeScale = parseFloat(v);
+  document.getElementById('scale-slider').value = v;
+  document.getElementById('scale-val').textContent = nodeScale.toFixed(1) + 'x';
+  savePrefs(); net.redraw();
+}
+function setClusterThreshold(v) {
+  const val = parseFloat(v);
+  CLUSTER_IN = val;
+  CLUSTER_OUT = Math.min(val + 0.20, 0.95);
+  document.getElementById('cluster-val').textContent = Math.round(val*100) + '%';
+  // 현재 줌 레벨에 따라 즉시 반영
+  const scale = net.getScale();
+  if (scale < CLUSTER_IN && !isClustered && curGraph.nodes.length > 3) applyClusters();
+  else if (scale > CLUSTER_OUT && isClustered) removeClusters();
+  savePrefs();
+}
+function getZoomCenter() {
+  const sel = net.getSelectedNodes();
+  if (sel.length > 0) { try { return net.getPosition(sel[0]); } catch {} }
+  return net.getViewPosition();
+}
+function zoomIn() { const cur = net.getScale(); const pos = getZoomCenter(); net.moveTo({position: pos, scale: Math.min(cur * 1.3, 5), animation: {duration:300}}); }
+function zoomOut() { const cur = net.getScale(); const pos = getZoomCenter(); net.moveTo({position: pos, scale: Math.max(cur * 0.7, 0.05), animation: {duration:300}}); }
+function resetZoom() { const sel = net.getSelectedNodes(); if(sel.length>0){try{net.focus(sel[0],{scale:1,animation:{duration:400}});return}catch{}} net.fit({animation: {duration:400}}); }
+function setOpt(key, val) {
+  if (key==='ports') { THEMES.n8n.showPorts=THEMES.comfyui.showPorts=val; }
+  if (key==='glow') { THEMES.n8n.showGlow=THEMES.comfyui.showGlow=val; }
+  if (key==='time') { THEMES.n8n.showTime=THEMES.comfyui.showTime=THEMES.minimal.showTime=val; }
+  savePrefs(); net.redraw();
+}
+
+function toggleSidebar() { const s=document.getElementById('sidebar'); s.classList.toggle('open'); document.getElementById('btn-sb').classList.toggle('active',s.classList.contains('open')); }
+function toggleDetail() { const d=document.getElementById('detail'); const opening=!d.classList.contains('open'); if(opening) closeAllPanels('detail'); d.classList.toggle('open'); document.getElementById('btn-dt').classList.toggle('active',d.classList.contains('open')); }
+function toggleSettings() { const s=document.getElementById('settings'); const opening=!s.classList.contains('open'); if(opening) closeAllPanels('settings'); s.classList.toggle('open'); document.getElementById('btn-set').classList.toggle('active',s.classList.contains('open')); event.stopPropagation(); }
+function fitNet() { net.fit({animation:{duration:400}}); }
+async function clearAll() { if(!confirm('전체 초기화?'))return; await fetch('/api/clear',{method:'DELETE'}); }
+function updateStats(s) {
+  document.getElementById('se').textContent = s.eventCount  || 0;
+  document.getElementById('ss').textContent = s.sessionCount|| 0;
+  document.getElementById('sf').textContent = s.fileCount   || 0;
+
+  // AI 소스 통계 뱃지 업데이트
+  const AI_BADGE_META = {
+    claude:     { icon:'🟢', color:'#3fb950' },
+    gemini:     { icon:'🔵', color:'#4285f4' },
+    perplexity: { icon:'🟣', color:'#bc8cff' },
+    openai:     { icon:'⚪', color:'#8b949e' },
+    vscode:     { icon:'🔴', color:'#f85149' },
+  };
+  const aiStats = s.aiSourceStats || {};
+  document.querySelectorAll('#ai-filters .tb[data-ai]').forEach(btn => {
+    const ai  = btn.dataset.ai;
+    const cnt = aiStats[ai] || 0;
+    // 뱃지 숫자 표시 (0이면 숨김)
+    let badge = btn.querySelector('.ai-cnt');
+    if (!badge) {
+      badge = document.createElement('sup');
+      badge.className = 'ai-cnt';
+      badge.style.cssText = 'font-size:8px;margin-left:2px;opacity:0.75';
+      btn.appendChild(badge);
+    }
+    badge.textContent = cnt > 0 ? cnt : '';
+    btn.title = `${AI_BADGE_META[ai]?.icon || ai} ${ai} (${cnt}개 이벤트)`;
+  });
+}
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// ═══════════════════════════════════════════════════
+// 코드 효율 분석 패널
+// ═══════════════════════════════════════════════════
+let analyzePanelOpen = false;
+
+function closeAllPanels(except) {
+  if (except !== 'analyze' && analyzePanelOpen) { analyzePanelOpen = false; document.getElementById('analyze-panel').style.display = 'none'; document.getElementById('btn-analyze').classList.remove('active'); }
+  if (except !== 'sec') { document.getElementById('sec-panel').classList.remove('open'); }
+  if (except !== 'detail') { document.getElementById('detail').classList.remove('open'); document.getElementById('btn-dt').classList.remove('active'); }
+  if (except !== 'settings') { document.getElementById('settings').classList.remove('open'); document.getElementById('btn-set').classList.remove('active'); }
+}
+function toggleAnalyzePanel() {
+  analyzePanelOpen = !analyzePanelOpen;
+  if (analyzePanelOpen) closeAllPanels('analyze');
+  const panel = document.getElementById('analyze-panel');
+  panel.style.display = analyzePanelOpen ? 'flex' : 'none';
+  document.getElementById('btn-analyze').classList.toggle('active', analyzePanelOpen);
+}
+
+// 파일 노드 클릭 → 분석 패널 자동 열기 + 해당 파일 즉시 분석
+async function autoAnalyzeNode(filePath) {
+  // 패널 열기
+  if (!analyzePanelOpen) toggleAnalyzePanel();
+  // 파일 경로 자동 채우기
+  document.getElementById('analyze-path').value = filePath;
+  // 즉시 분석 실행
+  await runAnalyzeFile();
+}
+
+async function runAnalyzeFile() {
+  const filePath = document.getElementById('analyze-path').value.trim();
+  if (!filePath) return;
+  showAnalyzeLoading();
+  try {
+    const r = await fetch(`/api/analyze?file=${encodeURIComponent(filePath)}`);
+    const report = await r.json();
+    if (report.error) throw new Error(report.error);
+    renderAnalyzeReport(report);
+  } catch (e) {
+    document.getElementById('analyze-result').innerHTML =
+      `<div style="color:var(--red);padding:10px;font-size:11px">❌ ${esc(e.message)}</div>`;
+  }
+}
+
+async function runAnalyzeCode() {
+  const code = document.getElementById('analyze-code').value.trim();
+  if (!code) return;
+  showAnalyzeLoading();
+  try {
+    const r = await fetch('/api/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code, filename: 'clipboard.js' }),
+    });
+    const report = await r.json();
+    if (report.error) throw new Error(report.error);
+    renderAnalyzeReport(report);
+  } catch (e) {
+    document.getElementById('analyze-result').innerHTML =
+      `<div style="color:var(--red);padding:10px;font-size:11px">❌ ${esc(e.message)}</div>`;
+  }
+}
+
+async function runAnalyzeProject() {
+  showAnalyzeLoading('프로젝트 전체 파일 분석 중...');
+  try {
+    const r = await fetch('/api/analyze-project');
+    const data = await r.json();
+    renderProjectReport(data);
+  } catch (e) {
+    document.getElementById('analyze-result').innerHTML =
+      `<div style="color:var(--red);padding:10px;font-size:11px">❌ ${esc(e.message)}</div>`;
+  }
+}
+
+function showAnalyzeLoading(msg = '분석 중...') {
+  document.getElementById('analyze-result').innerHTML =
+    `<div style="text-align:center;padding:30px;color:var(--text3);font-size:12px">⏳ ${esc(msg)}</div>`;
+}
+
+function gradeColor(g) {
+  return { A:'#3fb950', B:'#4285f4', C:'#d29922', D:'#f85149', F:'#8b949e' }[g] || '#8b949e';
+}
+
+function complexityColor(c) {
+  if (c <= 5)  return '#3fb950';
+  if (c <= 10) return '#4285f4';
+  if (c <= 20) return '#d29922';
+  return '#f85149';
+}
+
+function renderAnalyzeReport(r) {
+  const gc = gradeColor(r.grade);
+  const cc = complexityColor(r.complexity);
+
+  let h = `
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+      <div style="width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+                  font-size:22px;font-weight:700;color:${gc};background:${gc}22;border:2px solid ${gc}44">
+        ${esc(r.grade)}
+      </div>
+      <div>
+        <div style="font-size:13px;font-weight:600;color:var(--text)">${esc(r.file)}</div>
+        <div style="font-size:10px;color:var(--text3)">${r.lines.total}줄 · 코드 ${r.lines.code}줄 · 주석 ${r.lines.comment}줄</div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:12px">
+      <div style="background:${cc}18;border:1px solid ${cc}33;border-radius:8px;padding:8px;text-align:center">
+        <div style="font-size:20px;font-weight:700;color:${cc}">${r.complexity}</div>
+        <div style="font-size:9px;color:var(--text3)">복잡도</div>
+      </div>
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:8px;text-align:center">
+        <div style="font-size:20px;font-weight:700;color:var(--text)">${r.solid.score}</div>
+        <div style="font-size:9px;color:var(--text3)">SOLID 점수</div>
+      </div>
+    </div>
+  `;
+
+  // 긴 함수 목록
+  if (r.longFunctions && r.longFunctions.length > 0) {
+    h += `<div style="margin-bottom:10px"><div style="font-size:10px;font-weight:600;color:var(--orange);margin-bottom:4px">⚠️ 긴 함수 (${r.longFunctions.length}개)</div>`;
+    r.longFunctions.forEach(fn => {
+      const fc = complexityColor(fn.complexity);
+      h += `<div style="display:flex;justify-content:space-between;padding:4px 6px;background:var(--bg);border-radius:4px;margin-bottom:2px;font-size:10px">
+        <span style="color:var(--text)">${esc(fn.name)}</span>
+        <span style="color:var(--text3)">${fn.lines}줄 · 복잡도<span style="color:${fc};margin-left:3px">${fn.complexity}</span></span>
+      </div>`;
+    });
+    h += `</div>`;
+  }
+
+  // 중복 패턴
+  if (r.duplicates && r.duplicates.length > 0) {
+    h += `<div style="margin-bottom:10px"><div style="font-size:10px;font-weight:600;color:var(--purple,#8b5cf6);margin-bottom:4px">♻️ 중복 패턴 (${r.duplicates.length}개)</div>`;
+    r.duplicates.slice(0, 3).forEach(d => {
+      h += `<div style="padding:4px 6px;background:var(--bg);border-radius:4px;margin-bottom:2px;font-size:9px;color:var(--text2)">
+        <span style="color:var(--accent)">${d.count}회</span> · ${esc(String(d.pattern || '').substring(0, 50))}
+      </div>`;
+    });
+    h += `</div>`;
+  }
+
+  // SOLID 위반
+  if (r.solid.violations && r.solid.violations.length > 0) {
+    h += `<div style="margin-bottom:10px"><div style="font-size:10px;font-weight:600;color:var(--red);margin-bottom:4px">🔴 SOLID 위반 (${r.solid.violations.length}개)</div>`;
+    r.solid.violations.forEach(v => {
+      const vc = v.severity === 'warn' ? 'var(--orange)' : 'var(--blue)';
+      h += `<div style="padding:5px 8px;background:var(--bg);border-left:3px solid ${vc};border-radius:0 4px 4px 0;margin-bottom:4px;font-size:10px">
+        <span style="font-weight:600;color:${vc}">${esc(v.type)}</span>
+        <div style="color:var(--text2);margin-top:2px">${esc(v.message)}</div>
+      </div>`;
+    });
+    h += `</div>`;
+  } else {
+    h += `<div style="padding:6px 8px;background:var(--green)18;border:1px solid var(--green)33;border-radius:6px;font-size:10px;color:var(--green);margin-bottom:10px">✅ SOLID 위반 없음</div>`;
+  }
+
+  // 요약
+  h += `<div style="padding:8px;background:var(--bg3);border-radius:6px;font-size:10px;color:var(--text2);line-height:1.6">${esc(r.summary)}</div>`;
+
+  document.getElementById('analyze-result').innerHTML = h;
+}
+
+function renderProjectReport(data) {
+  const { reports, avgComplexity, gradeCount, fileCount } = data;
+  const cc = complexityColor(avgComplexity);
+
+  let h = `
+    <div style="margin-bottom:12px">
+      <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:8px">📁 프로젝트 분석 (${fileCount}개 파일)</div>
+      <div style="display:flex;gap:4px;margin-bottom:8px">
+        ${['A','B','C','D','F'].map(g => `
+          <div style="flex:1;text-align:center;padding:4px;background:${gradeColor(g)}18;border:1px solid ${gradeColor(g)}33;border-radius:6px">
+            <div style="font-size:14px;font-weight:700;color:${gradeColor(g)}">${gradeCount[g]||0}</div>
+            <div style="font-size:9px;color:var(--text3)">${g}</div>
+          </div>`).join('')}
+      </div>
+      <div style="text-align:center;font-size:11px;color:var(--text3)">
+        평균 복잡도: <span style="color:${cc};font-weight:600">${avgComplexity}</span>
+      </div>
+    </div>
+  `;
+
+  // 파일별 목록 (등급 나쁜 것부터)
+  const sorted = [...reports].sort((a, b) => {
+    const gradeOrder = { F:0, D:1, C:2, B:3, A:4 };
+    return (gradeOrder[a.grade]||0) - (gradeOrder[b.grade]||0);
+  });
+
+  h += `<div style="font-size:10px;font-weight:600;color:var(--text2);margin-bottom:4px">파일별 결과</div>`;
+  sorted.forEach(r => {
+    const gc = gradeColor(r.grade);
+    h += `<div style="display:flex;align-items:center;gap:8px;padding:5px 6px;background:var(--bg);border-radius:4px;margin-bottom:2px;cursor:pointer"
+              onclick="document.getElementById('analyze-path').value='${esc(r.file)}';runAnalyzeFile()">
+      <span style="font-weight:700;color:${gc};min-width:16px">${r.grade}</span>
+      <span style="flex:1;font-size:10px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.file)}</span>
+      <span style="font-size:9px;color:${complexityColor(r.complexity)}">${r.complexity}</span>
+    </div>`;
+  });
+
+  document.getElementById('analyze-result').innerHTML = h;
+}
+
+// ═══════════════════════════════════════════════════
+// COMMAND PALETTE
+// ═══════════════════════════════════════════════════
+const cmdEl=document.getElementById('cmd'), cmdIn=document.getElementById('cmd-input'), cmdRes=document.getElementById('cmd-results');
+const CMDS = [
+  {icon:'▣',label:'자유 배치',desc:'Free',fn:()=>setMode('free')},
+  {icon:'├',label:'트리 모드',desc:'Tree',fn:()=>setMode('tree')},
+  {icon:'~',label:'물리 모드',desc:'Physics',fn:()=>setMode('physics')},
+  {icon:'◎',label:'화면 맞춤',desc:'Fit',fn:()=>fitNet()},
+  {icon:'⚙',label:'설정',desc:'Settings',fn:()=>toggleSettings()},
+  {icon:'▪',label:'주석 추가',desc:'Note',fn:()=>addNote()},
+  {icon:'▸',label:'도구 라벨 편집',desc:'Tool Labels',fn:()=>openCustomizeModal('tools')},
+  {icon:'▸',label:'분류 관리',desc:'Categories',fn:()=>openCustomizeModal('categories')},
+  {icon:'▸',label:'노드 타입 설정',desc:'Node Types',fn:()=>openCustomizeModal('nodeTypes')},
+];
+function openCmd(){cmdEl.classList.add('open');cmdIn.value='';cmdIn.focus();renderCmd('')}
+function closeCmd(){cmdEl.classList.remove('open')}
+function renderCmd(q){
+  const f=q?CMDS.filter(c=>c.label.includes(q)||c.desc.toLowerCase().includes(q.toLowerCase())):CMDS;
+  cmdRes.innerHTML=f.map((c,i)=>`<div class="cmd-item ${i===0?'sel':''}" onclick="execCmd(${CMDS.indexOf(c)})"><span class="cmd-ico">${c.icon}</span><span>${c.label}</span><span class="cmd-desc">${c.desc}</span></div>`).join('');
+}
+function execCmd(i){closeCmd();CMDS[i]?.fn()}
+cmdIn.addEventListener('input',e=>renderCmd(e.target.value));
+cmdIn.addEventListener('keydown',e=>{
+  if(e.key==='Escape')closeCmd();
+  if(e.key==='Enter'){const s=cmdRes.querySelector('.cmd-item.sel');if(s)s.click();else{const q=cmdIn.value.trim();if(q)fetch(`/api/search?q=${encodeURIComponent(q)}`).then(r=>r.json()).then(res=>{closeCmd();const ids=new Set(res.map(r=>r.id));/* highlight */net.redraw()})}}
+});
+document.addEventListener('keydown',e=>{
+  if((e.ctrlKey||e.metaKey)&&e.key==='k'){e.preventDefault();cmdEl.classList.contains('open')?closeCmd():openCmd()}
+  if(e.key==='Escape'){
+    if(cmdEl.classList.contains('open'))closeCmd();
+    if(document.getElementById('label-edit-popup').style.display!=='none')closeLabelEdit();
+    if(document.getElementById('customize-modal').classList.contains('open'))closeCustomizeModal();
+  }
+});
+cmdEl.addEventListener('click',e=>{if(e.target===cmdEl)closeCmd()});
+
+// Context menu
+function addNote(){const l=prompt('주석 내용:');if(!l)return;fetch('/api/annotations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({label:l,linkedEventId:ctxNode,color:'#e3b341'})})}
+function pinNode(){if(!ctxNode)return;const n=VN.get(ctxNode);if(n){const f=n.fixed===true||(n.fixed?.x&&n.fixed?.y);VN.update({id:ctxNode,fixed:!f})}}
+async function doRollback(){if(!ctxNode||!confirm('이 노드 이후 데이터를 제거할까요?'))return;await fetch(`/api/rollback/${ctxNode}`,{method:'POST'})}
+function doFocus(){if(!ctxNode)return;net.focus(ctxNode,{scale:1.2,animation:{duration:400}});net.selectNodes([ctxNode])}
+
+// ═══════════════════════════════════════════════════
+// LABEL EDITING (인라인 라벨 편집)
+// ═══════════════════════════════════════════════════
+function editNodeLabel() {
+  if (!ctxNode || !nMap[ctxNode]) return;
+  editingNodeId = ctxNode;
+  const data = nMap[ctxNode];
+  const popup = document.getElementById('label-edit-popup');
+
+  // 현재 값 채우기
+  const existing = userLabelMap[ctxNode];
+  document.getElementById('lep-header').value = existing?.custom_header || '';
+  document.getElementById('lep-body').value = existing?.custom_body || '';
+  document.getElementById('lep-header').placeholder = getNodeHeader(data);
+  document.getElementById('lep-body').placeholder = getBodyText(data);
+
+  // AI 제안 영역 초기화
+  document.getElementById('lep-ai').innerHTML = '<span style="font-size:10px;color:var(--text3)">🤖 AI 제안 로딩 중...</span>';
+
+  // AI 제안 가져오기
+  fetch(`/api/suggest-label/${ctxNode}`).then(r => r.json()).then(sug => {
+    let h = '';
+    if (sug.header) {
+      h += `<div class="ai-suggest" onclick="document.getElementById('lep-header').value='${esc(sug.header).replace(/'/g,"\\'")}'" title="클릭하면 적용">🤖 헤더 제안: ${esc(sug.header)}</div> `;
+    }
+    if (sug.body) {
+      h += `<div class="ai-suggest" onclick="document.getElementById('lep-body').value='${esc(sug.body).replace(/'/g,"\\'")}'" title="클릭하면 적용">🤖 본문 제안: ${esc(sug.body.substring(0,40))}</div>`;
+    }
+    if (sug.intent) {
+      h += `<div style="font-size:10px;color:var(--text3);margin-top:4px">💡 감지된 의도: ${esc(sug.intent)}</div>`;
+    }
+    document.getElementById('lep-ai').innerHTML = h || '<span style="font-size:10px;color:var(--text3)">AI 제안 없음</span>';
+  }).catch(() => {
+    document.getElementById('lep-ai').innerHTML = '';
+  });
+
+  // 위치: 마우스 근처
+  const pos = net.getPositions([ctxNode])[ctxNode];
+  if (pos) {
+    const domPos = net.canvasToDOM(pos);
+    popup.style.left = Math.min(domPos.x + 20, window.innerWidth - 300) + 'px';
+    popup.style.top = Math.min(domPos.y, window.innerHeight - 260) + 'px';
+  } else {
+    popup.style.left = '100px'; popup.style.top = '100px';
+  }
+  popup.style.display = 'block';
+  document.getElementById('lep-header').focus();
+}
+
+function closeLabelEdit() {
+  document.getElementById('label-edit-popup').style.display = 'none';
+  editingNodeId = null;
+}
+
+async function saveLabelEdit() {
+  if (!editingNodeId) return;
+  const header = document.getElementById('lep-header').value.trim();
+  const body = document.getElementById('lep-body').value.trim();
+  if (!header && !body) { closeLabelEdit(); return; }
+
+  await fetch('/api/user-labels', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ eventId: editingNodeId, customHeader: header || null, customBody: body || null }),
+  });
+  closeLabelEdit();
+  net.redraw();
+}
+
+async function resetLabelEdit() {
+  if (!editingNodeId) return;
+  await fetch(`/api/user-labels/${editingNodeId}`, { method: 'DELETE' });
+  closeLabelEdit();
+  net.redraw();
+}
+
+async function aiSuggestLabel() {
+  if (!ctxNode) return;
+  const sug = await fetch(`/api/suggest-label/${ctxNode}`).then(r => r.json()).catch(() => null);
+  if (!sug || (!sug.header && !sug.body)) { alert('AI 제안을 생성할 수 없습니다.'); return; }
+
+  const msg = `AI 라벨 제안:\n\n헤더: ${sug.header || '(없음)'}\n본문: ${sug.body || '(없음)'}\n의도: ${sug.intent || '(없음)'}\n신뢰도: ${Math.round((sug.confidence||0)*100)}%\n\n적용하시겠습니까?`;
+  if (!confirm(msg)) return;
+
+  await fetch('/api/user-labels', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ eventId: ctxNode, customHeader: sug.header, customBody: sug.body }),
+  });
+  net.redraw();
+}
+
+function changeNodeCategory() {
+  if (!ctxNode || !nMap[ctxNode]) return;
+  openCustomizeModal('assignCategory', ctxNode);
+}
+
+// ═══════════════════════════════════════════════════
+// CUSTOMIZE MODAL
+// ═══════════════════════════════════════════════════
+const PALETTE = ['#58a6ff','#3fb950','#d29922','#bc8cff','#f85149','#39d2c0','#f778ba','#e3b341','#8957e5','#6b7280','#ffa657','#7ee787'];
+
+function openCustomizeModal(mode, extra) {
+  const modal = document.getElementById('customize-modal');
+  const title = document.getElementById('modal-title');
+  const body = document.getElementById('modal-body');
+  const footer = document.getElementById('modal-footer');
+
+  if (mode === 'tools') {
+    title.textContent = '🔧 도구 라벨 편집';
+    renderToolMappingsModal(body, footer);
+  } else if (mode === 'categories') {
+    title.textContent = '🏷️ 분류 관리';
+    renderCategoriesModal(body, footer);
+  } else if (mode === 'nodeTypes') {
+    title.textContent = '🎨 노드 타입 설정';
+    renderNodeTypesModal(body, footer);
+  } else if (mode === 'assignCategory') {
+    title.textContent = '🏷️ 분류 지정';
+    renderAssignCategoryModal(body, footer, extra);
+  }
+
+  modal.classList.add('open');
+  // 모달 외부 클릭 닫기
+  modal.onclick = e => { if (e.target === modal) closeCustomizeModal(); };
+}
+
+function closeCustomizeModal() {
+  document.getElementById('customize-modal').classList.remove('open');
+}
+
+// ── 도구 라벨 편집 ──
+function renderToolMappingsModal(body, footer) {
+  const defaultTools = Object.entries(TOOL_NAMES);
+  let h = '<div style="font-size:11px;color:var(--text2);margin-bottom:10px">각 도구가 노드에 표시될 이름을 자유롭게 변경할 수 있습니다.</div>';
+
+  for (const [toolName, defaultLabel] of defaultTools) {
+    const custom = userToolMap[toolName];
+    const currentLabel = custom?.custom_label || defaultLabel;
+    const isCustom = !!custom;
+    h += `<div class="map-item" data-tool="${esc(toolName)}">
+      <span style="font-size:13px;width:20px;text-align:center">${getToolIcon(toolName)}</span>
+      <span class="mi-name">
+        <input class="m-input tool-label-input" data-tool="${esc(toolName)}" value="${esc(currentLabel)}" style="padding:3px 6px;font-size:11px;background:${isCustom ? 'rgba(137,87,229,0.1)' : 'var(--bg3)'}" />
+      </span>
+      <span class="mi-meta">${esc(toolName)}</span>
+      ${isCustom ? `<button class="mi-btn del" onclick="resetToolMapping('${esc(toolName)}')">↩</button>` : ''}
+    </div>`;
+  }
+
+  body.innerHTML = h;
+  footer.innerHTML = `<button onclick="closeCustomizeModal()">취소</button>
+    <button onclick="saveAllToolMappings()" style="background:rgba(137,87,229,0.2);border-color:var(--accent);color:var(--text)">전체 저장</button>`;
+}
+
+function getToolIcon(name) {
+  const icons = { Read:'📖', Write:'✍️', Edit:'📝', Bash:'⚡', Glob:'🔎', Grep:'🔍', WebSearch:'🌐', WebFetch:'📖', Task:'🤖', TodoWrite:'📋', AskUserQuestion:'💬', EnterPlanMode:'📐', ExitPlanMode:'✅', NotebookEdit:'📓' };
+  return icons[name] || '🔧';
+}
+
+async function saveAllToolMappings() {
+  const inputs = document.querySelectorAll('.tool-label-input');
+  for (const inp of inputs) {
+    const toolName = inp.dataset.tool;
+    const newLabel = inp.value.trim();
+    const defaultLabel = TOOL_NAMES[toolName];
+    if (newLabel && newLabel !== defaultLabel) {
+      await fetch('/api/tool-mappings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ toolName, customLabel: newLabel }),
+      });
+    } else if (userToolMap[toolName]) {
+      await fetch(`/api/tool-mappings/${toolName}`, { method: 'DELETE' });
+    }
+  }
+  closeCustomizeModal();
+  net.redraw();
+}
+
+async function resetToolMapping(toolName) {
+  await fetch(`/api/tool-mappings/${toolName}`, { method: 'DELETE' });
+  openCustomizeModal('tools');
+  net.redraw();
+}
+
+// ── 카테고리 관리 ──
+function renderCategoriesModal(body, footer) {
+  let h = '<div style="font-size:11px;color:var(--text2);margin-bottom:10px">노드를 분류할 커스텀 카테고리를 만들고, 이벤트 타입을 매핑합니다.</div>';
+
+  // 기존 카테고리
+  const cats = userConfig.categories || [];
+  if (cats.length > 0) {
+    h += '<div style="margin-bottom:12px">';
+    for (const cat of cats) {
+      h += `<div class="map-item">
+        <div class="mi-color" style="background:${esc(cat.color)}" onclick="editCategoryColor('${esc(cat.id)}')"></div>
+        <span style="font-size:13px">${esc(cat.icon || '📁')}</span>
+        <span class="mi-name">${esc(cat.name)}</span>
+        <span class="mi-meta">${(cat.mappedTypes||[]).length}개 매핑</span>
+        <div class="mi-actions">
+          <button class="mi-btn" onclick="editCategory('${esc(cat.id)}')">편집</button>
+          <button class="mi-btn del" onclick="deleteCat('${esc(cat.id)}')">삭제</button>
+        </div>
+      </div>`;
+    }
+    h += '</div>';
+  }
+
+  // 새 카테고리 추가 폼
+  h += `<div style="border-top:1px solid var(--border);padding-top:12px">
+    <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:8px">+ 새 카테고리 추가</div>
+    <div class="m-field">
+      <label>이름</label>
+      <input class="m-input" id="new-cat-name" placeholder="예: 코드 리뷰, 배포 작업, 디버깅..." />
+    </div>
+    <div class="m-field">
+      <label>아이콘 (이모지)</label>
+      <input class="m-input" id="new-cat-icon" value="📁" style="width:60px" />
+    </div>
+    <div class="m-field">
+      <label>색상</label>
+      <div class="color-pick" id="new-cat-colors">${PALETTE.map(c => `<div class="color-swatch ${c==='#8957e5'?'sel':''}" style="background:${c}" onclick="pickColor(this,'new-cat')" data-color="${c}"></div>`).join('')}</div>
+      <input type="hidden" id="new-cat-color" value="#8957e5" />
+    </div>
+    <div class="m-field">
+      <label>매핑할 이벤트 타입 (Shift+클릭으로 복수 선택)</label>
+      <div id="new-cat-types" style="display:flex;flex-wrap:wrap;gap:3px;margin-top:4px">
+        ${getAllEventTypes().map(t => `<button class="sp-btn type-sel" data-type="${t}" onclick="this.classList.toggle('on')" style="font-size:10px;padding:3px 7px">${t}</button>`).join('')}
+      </div>
+    </div>
+  </div>`;
+
+  body.innerHTML = h;
+  footer.innerHTML = `<button onclick="closeCustomizeModal()">닫기</button>
+    <button onclick="addNewCategory()" style="background:rgba(137,87,229,0.2);border-color:var(--accent);color:var(--text)">카테고리 추가</button>`;
+}
+
+function getAllEventTypes() {
+  return ['session.start','user.message','assistant.message','tool.end','tool.error','file','file.read','file.write','subagent.start','subagent.stop','notification','task.complete','annotation.add'];
+}
+
+function pickColor(el, prefix) {
+  el.parentElement.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('sel'));
+  el.classList.add('sel');
+  document.getElementById(`${prefix}-color`).value = el.dataset.color;
+}
+
+async function addNewCategory() {
+  const name = document.getElementById('new-cat-name').value.trim();
+  if (!name) { alert('이름을 입력하세요'); return; }
+  const icon = document.getElementById('new-cat-icon').value.trim() || '📁';
+  const color = document.getElementById('new-cat-color').value;
+  const selectedTypes = [...document.querySelectorAll('#new-cat-types .type-sel.on')].map(b => b.dataset.type);
+  const id = 'cat_' + Date.now().toString(36);
+
+  await fetch('/api/user-categories', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, name, icon, color, mappedTypes: selectedTypes }),
+  });
+  openCustomizeModal('categories');
+  net.redraw();
+}
+
+async function deleteCat(id) {
+  if (!confirm('이 카테고리를 삭제할까요?')) return;
+  await fetch(`/api/user-categories/${id}`, { method: 'DELETE' });
+  openCustomizeModal('categories');
+  net.redraw();
+}
+
+function editCategory(id) {
+  const cat = userCatMap[id];
+  if (!cat) return;
+  openCustomizeModal('editCategory', id);
+}
+
+// ── 노드 타입 설정 ──
+function renderNodeTypesModal(body, footer) {
+  let h = '<div style="font-size:11px;color:var(--text2);margin-bottom:10px">기본 노드 타입의 표시 이름과 색상을 변경할 수 있습니다.</div>';
+
+  const types = Object.entries(NC).filter(([k]) => k !== '_default');
+  for (const [type, cfg] of types) {
+    const catOverride = typeToCat[type];
+    h += `<div class="map-item">
+      <div class="mi-color" style="background:${catOverride?.color || cfg.color}"></div>
+      <span class="mi-name" style="font-size:11px">${catOverride ? `<span style="color:var(--accent);font-weight:600">${esc(catOverride.icon)} ${esc(catOverride.name)}</span>` : esc(cfg.header)}</span>
+      <span class="mi-meta">${esc(type)}</span>
+    </div>`;
+  }
+
+  h += '<div class="edit-hint" style="margin-top:10px">💡 노드 타입을 변경하려면 "분류 관리"에서 커스텀 카테고리를 만들고 이벤트 타입을 매핑하세요.</div>';
+
+  body.innerHTML = h;
+  footer.innerHTML = `<button onclick="closeCustomizeModal()">닫기</button>
+    <button onclick="openCustomizeModal('categories')" style="background:rgba(137,87,229,0.2);border-color:var(--accent);color:var(--text)">분류 관리로 이동</button>`;
+}
+
+// ── 노드에 분류 지정 ──
+function renderAssignCategoryModal(body, footer, nodeId) {
+  const data = nMap[nodeId];
+  if (!data) { closeCustomizeModal(); return; }
+  const et = data.eventType || data.type || '';
+
+  let h = `<div style="font-size:11px;color:var(--text2);margin-bottom:10px">노드 "<b>${esc((data.label||'').substring(0,30))}</b>"의 분류를 변경합니다.</div>`;
+  h += `<div style="font-size:10px;color:var(--text3);margin-bottom:12px">현재 타입: <code style="background:var(--bg3);padding:2px 5px;border-radius:3px">${esc(et)}</code></div>`;
+
+  // 기본 카테고리
+  h += '<div style="font-size:10px;font-weight:600;color:var(--text3);margin-bottom:6px">기본 분류</div>';
+  const defaultCfg = NC[et] || NC._default;
+  h += `<div class="map-item" style="cursor:pointer;${!typeToCat[et]?'border-color:var(--accent);background:rgba(137,87,229,0.05)':''}" onclick="assignDefaultCategory('${esc(et)}')">
+    <div class="mi-color" style="background:${defaultCfg.color}"></div>
+    <span class="mi-name">${esc(defaultCfg.header)}</span>
+    <span class="mi-meta">기본</span>
+  </div>`;
+
+  // 사용자 카테고리
+  const cats = userConfig.categories || [];
+  if (cats.length > 0) {
+    h += '<div style="font-size:10px;font-weight:600;color:var(--text3);margin:12px 0 6px">커스텀 분류</div>';
+    for (const cat of cats) {
+      const isMapped = (cat.mappedTypes||[]).includes(et);
+      h += `<div class="map-item" style="cursor:pointer;${isMapped?'border-color:var(--accent);background:rgba(137,87,229,0.05)':''}" onclick="assignCategory('${esc(cat.id)}','${esc(et)}')">
+        <div class="mi-color" style="background:${cat.color}"></div>
+        <span style="font-size:13px">${esc(cat.icon)}</span>
+        <span class="mi-name">${esc(cat.name)}</span>
+        ${isMapped ? '<span class="mi-meta" style="color:var(--accent)">✓ 현재</span>' : ''}
+      </div>`;
+    }
+  }
+
+  h += '<div class="edit-hint" style="margin-top:12px">💡 새 분류를 만들려면 설정 → 분류 관리를 사용하세요.</div>';
+
+  body.innerHTML = h;
+  footer.innerHTML = `<button onclick="closeCustomizeModal()">닫기</button>`;
+}
+
+async function assignCategory(catId, eventType) {
+  const cat = userCatMap[catId];
+  if (!cat) return;
+  const mappedTypes = [...(cat.mappedTypes || [])];
+  if (!mappedTypes.includes(eventType)) mappedTypes.push(eventType);
+
+  await fetch('/api/user-categories', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...cat, mappedTypes }),
+  });
+  closeCustomizeModal();
+  net.redraw();
+}
+
+async function assignDefaultCategory(eventType) {
+  // 이 이벤트 타입을 모든 커스텀 카테고리에서 제거
+  for (const cat of (userConfig.categories || [])) {
+    if ((cat.mappedTypes||[]).includes(eventType)) {
+      const newTypes = cat.mappedTypes.filter(t => t !== eventType);
+      await fetch('/api/user-categories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...cat, mappedTypes: newTypes }),
+      });
+    }
+  }
+  closeCustomizeModal();
+  net.redraw();
+}
+
+// Search
+let sT;
+document.getElementById('sinput').addEventListener('input',e=>{clearTimeout(sT);sT=setTimeout(()=>{const q=e.target.value.trim();if(!q){render(curGraph);return}fetch(`/api/search?q=${encodeURIComponent(q)}`).then(r=>r.json()).then(res=>{const ids=new Set(res.map(r=>r.id));for(const[id,d]of Object.entries(nMap))d._hl=ids.has(d.eventId);net.redraw()})},300)});
+
+// ═══════════════════════════════════════════════════
+// WEBSOCKET
+// ═══════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════
+// 🎮 GAME EFFECTS ENGINE
+// vis.js 위 Canvas 오버레이로 파티클/글로우/라이트닝 렌더링
+// ═══════════════════════════════════════════════════
+const FX = (() => {
+  const canvas = document.getElementById('fx-canvas');
+  const ctx = canvas.getContext('2d');
+  let particles = [];      // 활성 파티클 목록
+  let lightnings = [];     // 라이트닝 경로 목록
+  let ripples = [];        // ripple 원 목록
+  let rafId = null;
+  let glowMap = {};        // nodeId → { tier, cfg }
+
+  // 티어별 설정 (game-effects.js와 동일 값, 브라우저 인라인)
+  const TIERS = {
+    BLAZING: { glowColor:'#ff6b35', glowSize:28, borderWidth:8, sizeM:1.6, pulse:0.8, particles:60, particleColor:'#ff6b35', lightning:true,  ripple:true  },
+    HOT:     { glowColor:'#f778ba', glowSize:18, borderWidth:5, sizeM:1.4, pulse:1.4, particles:25, particleColor:'#f778ba', lightning:false, ripple:true  },
+    WARM:    { glowColor:'#58a6ff', glowSize:10, borderWidth:3, sizeM:1.15,pulse:2.5, particles:0,  particleColor:'#58a6ff', lightning:false, ripple:false },
+    COOL:    { glowColor:'#30363d', glowSize:0,  borderWidth:2, sizeM:1.0, pulse:0,   particles:0,  particleColor:'#30363d', lightning:false, ripple:false },
+  };
+
+  function classifyTier(score) {
+    if (score >= 0.8) return 'BLAZING';
+    if (score >= 0.5) return 'HOT';
+    if (score >= 0.2) return 'WARM';
+    return 'COOL';
+  }
+
+  // 캔버스 크기 동기화
+  function syncSize() {
+    const wrap = document.getElementById('graph-wrap');
+    canvas.width  = wrap.clientWidth;
+    canvas.height = wrap.clientHeight;
+  }
+  new ResizeObserver(syncSize).observe(document.getElementById('graph-wrap'));
+  syncSize();
+
+  // 노드 캔버스 좌표 가져오기 (vis.js DOM 좌표 변환)
+  function getNodeCanvasPos(nodeId) {
+    try {
+      const domPos = net.canvasToDOM(net.getPositions([nodeId])[nodeId]);
+      return domPos;
+    } catch { return null; }
+  }
+
+  // ── 파티클 버스트 생성 ──
+  function burst(x, y, tier) {
+    const cfg = TIERS[tier] || TIERS.COOL;
+    if (cfg.particles <= 0) return;
+    for (let i = 0; i < cfg.particles; i++) {
+      const angle = (Math.PI * 2 * i) / cfg.particles + Math.random() * 0.6;
+      const speed = 1.5 + Math.random() * 3.5;
+      particles.push({
+        x, y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        life: 1.0,
+        decay: 0.016 + Math.random() * 0.014,
+        color: cfg.particleColor,
+        radius: 1.5 + Math.random() * 2.5,
+      });
+    }
+    ensureLoop();
+  }
+
+  // ── 라이트닝 경로 생성 ──
+  function lightning(fromPos, toPos) {
+    const pts = [{ x: fromPos.x, y: fromPos.y }];
+    const dx = toPos.x - fromPos.x, dy = toPos.y - fromPos.y;
+    const len = Math.sqrt(dx*dx + dy*dy);
+    const segs = 8;
+    const perp = len * 0.22;
+    for (let i = 1; i < segs; i++) {
+      const t = i / segs;
+      const mx = fromPos.x + dx*t, my = fromPos.y + dy*t;
+      const off = (Math.random() - 0.5) * perp;
+      const nx = -dy/len, ny = dx/len;
+      pts.push({ x: mx + nx*off, y: my + ny*off });
+    }
+    pts.push({ x: toPos.x, y: toPos.y });
+    lightnings.push({ pts, life: 1.0, decay: 0.08, color: '#79c0ff' });
+    ensureLoop();
+  }
+
+  // ── ripple 원 생성 (세션 시작 등) ──
+  function ripple(x, y, color) {
+    ripples.push({ x, y, r: 0, maxR: 120, life: 1.0, decay: 0.025, color: color||'#8957e5' });
+    ensureLoop();
+  }
+
+  // ── 글로우 맵 업데이트 (updateScores에서 호출) ──
+  function applyGlow(scores) {
+    for (const [id, d] of Object.entries(scores)) {
+      const score = d.activityScore || 0;
+      const tier = classifyTier(score);
+      glowMap[id] = { tier, cfg: TIERS[tier], score };
+    }
+
+    // 활성 노드 배지 표시
+    const activeCount = Object.values(glowMap).filter(g => g.tier !== 'COOL').length;
+    const badge = document.getElementById('fx-badge');
+    if (badge) {
+      if (activeCount > 0) {
+        badge.textContent = `⚡ ${activeCount}개 활성`;
+        badge.classList.add('visible');
+      } else {
+        badge.classList.remove('visible');
+      }
+    }
+    ensureLoop();
+  }
+
+  // ── 글로우 맵 강제 주입 (tool.start 노드 → BLAZING 즉시 적용) ──
+  function forceGlow(nodeId, tier) {
+    glowMap[nodeId] = { tier, cfg: TIERS[tier], score: 1.0 };
+    ensureLoop();
+  }
+
+  // ── 새 노드 생성 이벤트 처리 ──
+  function onNewNodes(nodeIds, edges) {
+    for (const id of nodeIds) {
+      const pos = getNodeCanvasPos(id);
+      if (!pos) continue;
+      const node = nMap[id];
+      const type = node?.eventType || node?.type || '';
+      const score = node?.activityScore || 0.9;
+
+      // tool.start 노드: BLAZING 강제 → 작업 시작 즉시 게임 이펙트
+      let tier;
+      if (type === 'tool.start') {
+        tier = 'BLAZING';
+        glowMap[id] = { tier: 'BLAZING', cfg: TIERS['BLAZING'], score: 1.0 };
+      } else {
+        tier = classifyTier(score);
+      }
+
+      // 파티클 버스트
+      burst(pos.x, pos.y, tier);
+
+      // 세션 시작 → ripple
+      if (type === 'session.start') {
+        ripple(pos.x, pos.y, '#8957e5');
+      }
+    }
+
+    // 새 엣지 → 라이트닝 (BLAZING/HOT 노드 사이만)
+    for (const edge of (edges || [])) {
+      const fromPos = getNodeCanvasPos(edge.from);
+      const toPos   = getNodeCanvasPos(edge.to);
+      const fromTier = glowMap[edge.from]?.tier;
+      if (fromPos && toPos && (fromTier === 'BLAZING' || fromTier === 'HOT')) {
+        lightning(fromPos, toPos);
+      }
+    }
+  }
+
+  // ── 메인 렌더 루프 ──
+  function loop() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    let hasActive = false;
+
+    // 1. ripple 그리기
+    ripples = ripples.filter(r => r.life > 0);
+    for (const r of ripples) {
+      ctx.beginPath();
+      ctx.arc(r.x, r.y, r.r, 0, Math.PI*2);
+      ctx.strokeStyle = r.color + Math.round(r.life * 180).toString(16).padStart(2,'0');
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      r.r += 4; r.life -= r.decay;
+      hasActive = true;
+    }
+
+    // 2. 글로우 오라 그리기 (BLAZING/HOT)
+    for (const [id, g] of Object.entries(glowMap)) {
+      if (g.tier === 'COOL' || g.tier === 'WARM') continue;
+      const pos = getNodeCanvasPos(id);
+      if (!pos) continue;
+      const t = Date.now() / 1000;
+      const pulse = g.cfg.pulse > 0 ? 0.5 + 0.5 * Math.sin(t * Math.PI * 2 / g.cfg.pulse) : 1;
+      const glowR = g.cfg.glowSize * (0.8 + pulse * 0.4);
+      const grad = ctx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, glowR);
+      grad.addColorStop(0,   g.cfg.glowColor + 'cc');
+      grad.addColorStop(0.5, g.cfg.glowColor + '55');
+      grad.addColorStop(1,   g.cfg.glowColor + '00');
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, glowR, 0, Math.PI*2);
+      ctx.fillStyle = grad;
+      ctx.fill();
+      hasActive = true;
+    }
+
+    // 3. 라이트닝 그리기
+    lightnings = lightnings.filter(l => l.life > 0);
+    for (const l of lightnings) {
+      ctx.beginPath();
+      ctx.moveTo(l.pts[0].x, l.pts[0].y);
+      for (let i = 1; i < l.pts.length; i++) ctx.lineTo(l.pts[i].x, l.pts[i].y);
+      ctx.strokeStyle = l.color + Math.round(l.life * 200).toString(16).padStart(2,'0');
+      ctx.lineWidth = 1.5 + l.life;
+      ctx.shadowColor = l.color;
+      ctx.shadowBlur = 8;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      l.life -= l.decay;
+      hasActive = true;
+    }
+
+    // 4. 파티클 그리기
+    particles = particles.filter(p => p.life > 0);
+    for (const p of particles) {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.radius * p.life, 0, Math.PI*2);
+      ctx.fillStyle = p.color + Math.round(p.life * 220).toString(16).padStart(2,'0');
+      ctx.fill();
+      p.x += p.vx; p.y += p.vy;
+      p.vy += 0.05; // 중력
+      p.vx *= 0.96; p.vy *= 0.96;
+      p.life -= p.decay;
+      hasActive = true;
+    }
+
+    // 글로우 WARM 이상이면 계속 루프
+    const hasGlow = Object.values(glowMap).some(g => g.tier !== 'COOL');
+    if (hasActive || hasGlow) {
+      rafId = requestAnimationFrame(loop);
+    } else {
+      rafId = null;
+    }
+  }
+
+  function ensureLoop() {
+    if (!rafId) rafId = requestAnimationFrame(loop);
+  }
+
+  return { burst, lightning, ripple, applyGlow, onNewNodes, syncSize, forceGlow };
+})();
+
+// fx-badge 엘리먼트 추가
+(() => {
+  const badge = document.createElement('div');
+  badge.id = 'fx-badge';
+  document.getElementById('graph-wrap').appendChild(badge);
+})();
+
+// ═══════════════════════════════════════════════════
+// 멀티터미널 뷰 (세션별 작업 한눈에 보기)
+// ═══════════════════════════════════════════════════
+let termViewOpen = false;
+
+function openTermView() {
+  termViewOpen = true;
+  document.getElementById('term-view').classList.add('open');
+  renderTermView();
+}
+function closeTermView() {
+  termViewOpen = false;
+  document.getElementById('term-view').classList.remove('open');
+}
+
+function renderTermView() {
+  const grid = document.getElementById('tv-grid');
+  const label = document.getElementById('tv-channel-label');
+  const countEl = document.getElementById('tv-session-count');
+  if (!grid) return;
+
+  if (myChannelId) {
+    label.textContent = `#${myChannelId}`;
+  }
+
+  const allSessions = sessions || [];
+  countEl.textContent = `세션 ${allSessions.length}개`;
+
+  if (allSessions.length === 0) {
+    grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;color:var(--text3);padding:40px;font-size:12px">
+      아직 세션이 없습니다.<br>Claude Code와 대화를 시작하면 터미널이 표시됩니다.
+    </div>`;
+    return;
+  }
+
+  grid.innerHTML = '';
+  const nodes = curGraph?.nodes || [];
+
+  allSessions.forEach(sess => {
+    const sessId = sess.id || sess.sessionId;
+    const sessNodes = nodes.filter(n => n.sessionId === sessId);
+
+    // 세션 통계
+    const userMsgs   = sessNodes.filter(n => n.eventType === 'user.message' || n.type === 'user.message');
+    const assistMsgs = sessNodes.filter(n => n.eventType === 'assistant.message' || n.type === 'assistant.message');
+    const toolNodes  = sessNodes.filter(n => (n.eventType||n.type||'').startsWith('tool'));
+    const fileNodes  = sessNodes.filter(n => (n.eventType||n.type||'').startsWith('file'));
+    const errorNodes = sessNodes.filter(n => (n.eventType||n.type) === 'tool.error');
+
+    // 활성 여부 (최근 5분)
+    const now = Date.now();
+    const recent = sessNodes.filter(n => n.timestamp && (now - new Date(n.timestamp).getTime()) < 300000);
+    const isLive = recent.length > 0;
+
+    // 프로젝트 디렉토리 (세션 메타)
+    const projDir = sess.projectDir || sess.project_dir || '';
+    const projName = projDir ? projDir.split('/').filter(Boolean).pop() : (sessId || '').substring(0, 8);
+
+    // 마지막 사용자 메시지
+    const lastUserNode = userMsgs[userMsgs.length - 1];
+    const lastMsg = lastUserNode?.fullContent || lastUserNode?.label || '';
+    const lastMsgClean = lastMsg.replace(/^💬\s*/,'').substring(0, 120);
+
+    // 미니 그래프 (이벤트 타입 분포)
+    const total = sessNodes.length || 1;
+    const segs = [
+      { pct: userMsgs.length / total,  color: 'var(--blue)'   },
+      { pct: assistMsgs.length / total, color: 'var(--green)'  },
+      { pct: toolNodes.length / total,  color: 'var(--orange)' },
+      { pct: fileNodes.length / total,  color: 'var(--purple)' },
+    ];
+
+    // 타임스탬프
+    const tsArr = sessNodes.map(n => n.timestamp).filter(Boolean).sort();
+    const startTs = tsArr[0] ? new Date(tsArr[0]).toLocaleTimeString('ko-KR', {hour:'2-digit',minute:'2-digit'}) : '-';
+    const lastTs  = tsArr[tsArr.length-1] ? new Date(tsArr[tsArr.length-1]).toLocaleTimeString('ko-KR', {hour:'2-digit',minute:'2-digit'}) : '-';
+
+    const isActive = (activeSession === sessId);
+
+    const card = document.createElement('div');
+    card.className = `tv-card${isActive ? ' active-session' : ''}`;
+    card.onclick = () => {
+      closeTermView();
+      // 해당 세션으로 필터
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'filter', sessionId: sessId }));
+      }
+      activeSession = sessId;
+      // 사이드바 세션 선택
+      document.querySelectorAll('.s-item').forEach(el => {
+        el.classList.toggle('active', el.dataset.sid === sessId);
+      });
+    };
+
+    card.innerHTML = `
+      <div class="tv-card-hdr">
+        <span class="tv-term-ico">🖥</span>
+        <span class="tv-sess-name" title="${esc(projDir || sessId)}">${esc(projName || sessId.substring(0,8))}</span>
+        <div class="tv-status-dot ${isLive ? 'live' : 'idle'}"></div>
+      </div>
+      <div class="tv-card-body">
+        ${projDir ? `<div class="tv-dir" title="${esc(projDir)}">📁 ${esc(projDir)}</div>` : ''}
+        <div class="tv-mini-graph">${segs.map(s => s.pct > 0.01 ? `<div class="tv-mg-seg" style="flex:${Math.max(0.02,s.pct).toFixed(2)};background:${s.color}"></div>` : '').join('')}</div>
+        <div class="tv-stats-row">
+          <div class="tv-stat">💬 <b>${userMsgs.length}</b></div>
+          <div class="tv-stat">💡 <b>${assistMsgs.length}</b></div>
+          <div class="tv-stat">⚡ <b>${toolNodes.length}</b></div>
+          <div class="tv-stat">📄 <b>${fileNodes.length}</b></div>
+          ${errorNodes.length > 0 ? `<div class="tv-stat" style="color:var(--red)">❌ <b>${errorNodes.length}</b></div>` : ''}
+        </div>
+        <div class="tv-last-msg">${lastMsgClean ? esc(lastMsgClean) : '<span style="color:var(--text3)">메시지 없음</span>'}</div>
+      </div>
+      <div class="tv-card-footer">
+        <span>시작: ${startTs}</span>
+        <span>${isLive ? '🟢 진행 중' : '⏸ 대기'}</span>
+        <span>마지막: ${lastTs}</span>
+      </div>
+    `;
+    grid.appendChild(card);
+  });
+}
+
+// ═══════════════════════════════════════════════════
+// 보안 유출 감지 (클라이언트 사이드)
+// ═══════════════════════════════════════════════════
+const LEAK_PATTERNS = [
+  { name: 'API Key',      regex: /(?:api[_-]?key|apikey|api_token)\s*[:=]\s*['"]?[\w\-]{16,}/gi,        severity: 'critical' },
+  { name: 'AWS Key',      regex: /AKIA[0-9A-Z]{16}/g,                                                    severity: 'critical' },
+  { name: 'Private Key',  regex: /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/g,                   severity: 'critical' },
+  { name: 'JWT Token',    regex: /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g,    severity: 'high'     },
+  { name: 'GitHub Token', regex: /gh[pousr]_[A-Za-z0-9]{36}/g,                                           severity: 'critical' },
+  { name: 'DB URL',       regex: /(?:mongodb|postgres|postgresql|mysql|redis):\/\/\S+/gi,                 severity: 'high'     },
+  { name: 'Password',     regex: /(?:password|passwd|pwd|secret)\s*[:=]\s*['"]?[^\s'"]{6,}/gi,           severity: 'high'     },
+  { name: 'Slack Token',  regex: /xox[baprs]-[A-Za-z0-9\-]{10,}/g,                                      severity: 'critical' },
+  { name: 'Private IP',   regex: /\b(?:192\.168|10\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01]))\.\d{1,3}\.\d{1,3}\b/g, severity: 'medium' },
+  { name: 'Email 무더기', regex: /(?:[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\s*[,;]\s*){2,}/g,  severity: 'medium'   },
+];
+
+let leakItems = [];  // { name, severity, ctx, ts, nodeId }
+
+function scanForLeaks(nodes) {
+  const newLeaks = [];
+
+  for (const node of nodes) {
+    const text = (node.fullContent || node.label || '') + ' ' + (node.data?.content || '');
+    if (!text.trim()) continue;
+
+    for (const pat of LEAK_PATTERNS) {
+      // regex reset (global flag)
+      pat.regex.lastIndex = 0;
+      let m;
+      while ((m = pat.regex.exec(text)) !== null) {
+        // 중복 체크 (같은 패턴+노드 이미 발견)
+        const already = leakItems.some(l => l.nodeId === node.id && l.name === pat.name);
+        if (!already) {
+          newLeaks.push({
+            name: pat.name,
+            severity: pat.severity,
+            ctx: m[0].substring(0, 60),   // 앞 60자만 (보안상 전체 노출 금지)
+            ts: node.timestamp || new Date().toISOString(),
+            nodeId: node.id,
+          });
+        }
+      }
+    }
+  }
+
+  if (newLeaks.length > 0) {
+    leakItems = [...leakItems, ...newLeaks];
+    showSecAlert(newLeaks);
+    renderSecPanel();
+  }
+}
+
+function showSecAlert(leaks) {
+  const el = document.getElementById('sec-alert');
+  const textEl = document.getElementById('sec-alert-text');
+  const btn = document.getElementById('btn-sec');
+  if (!el) return;
+
+  const criticals = leaks.filter(l => l.severity === 'critical');
+  textEl.textContent = criticals.length > 0
+    ? `🚨 심각 경고: ${criticals[0].name} 패턴 감지! (총 ${leakItems.length}건)`
+    : `⚠️ 보안 주의: ${leaks[0].name} 감지 (총 ${leakItems.length}건)`;
+
+  el.classList.remove('hidden');
+  if (btn) { btn.style.display = ''; btn.textContent = `🔒 ${leakItems.length}`; }
+}
+
+function dismissSecAlert() {
+  document.getElementById('sec-alert').classList.add('hidden');
+}
+
+function openSecPanel() {
+  closeAllPanels('sec');
+  document.getElementById('sec-panel').classList.add('open');
+  renderSecPanel();
+}
+function closeSecPanel() {
+  document.getElementById('sec-panel').classList.remove('open');
+}
+
+function renderSecPanel() {
+  const body = document.getElementById('sec-body');
+  const countEl = document.getElementById('sec-count');
+  if (!body) return;
+
+  countEl.textContent = leakItems.length;
+
+  if (leakItems.length === 0) {
+    body.innerHTML = `<div style="text-align:center;color:var(--text3);font-size:11px;padding:20px">감지된 항목 없음 ✅</div>`;
+    return;
+  }
+
+  // 심각도 순 정렬
+  const sorted = [...leakItems].sort((a,b) => {
+    const order = { critical:0, high:1, medium:2 };
+    return (order[a.severity]||9) - (order[b.severity]||9);
+  });
+
+  body.innerHTML = sorted.map(l => `
+    <div class="leak-item ${l.severity === 'critical' ? '' : l.severity}">
+      <div class="leak-name">${esc(l.name)} <span class="leak-sev ${l.severity}">${l.severity.toUpperCase()}</span></div>
+      <div class="leak-ctx">${esc(l.ctx)}…</div>
+      <div style="font-size:9px;color:var(--text3);margin-top:4px">${new Date(l.ts).toLocaleTimeString('ko-KR')}</div>
+    </div>
+  `).join('');
+}
+
+// ═══════════════════════════════════════════════════
+// 채널 시스템
+// ═══════════════════════════════════════════════════
+let myChannelId   = null;
+let myMemberId    = null;
+let myMemberName  = null;
+let myMemberColor = null;
+
+// 최근 채널 저장/로드
+function loadRecentChannels() {
+  try { return JSON.parse(localStorage.getItem('mmv_channels') || '[]'); } catch { return []; }
+}
+function saveRecentChannel(ch, name) {
+  const recent = loadRecentChannels().filter(r => r.ch !== ch);
+  recent.unshift({ ch, name, ts: Date.now() });
+  try { localStorage.setItem('mmv_channels', JSON.stringify(recent.slice(0, 5))); } catch {}
+}
+
+// 모달 초기화 — 저장된 이름/채널 불러오기
+function initChannelModal() {
+  const saved = loadRecentChannels();
+  const savedName = localStorage.getItem('mmv_member_name') || '';
+  if (savedName) document.getElementById('cm-name').value = savedName;
+
+  if (saved.length > 0) {
+    const wrap = document.getElementById('cm-recent-wrap');
+    wrap.style.display = 'block';
+    const sp = wrap.querySelector('span');
+    sp.innerHTML = '';
+    saved.slice(0, 4).forEach(r => {
+      const tag = document.createElement('span');
+      tag.textContent = `#${r.ch}`;
+      tag.title = `${r.name} / #${r.ch}`;
+      tag.onclick = () => {
+        document.getElementById('cm-channel').value = r.ch;
+        document.getElementById('cm-name').value = r.name || savedName;
+      };
+      sp.appendChild(tag);
+    });
+  }
+}
+
+function joinChannel() {
+  const nameEl = document.getElementById('cm-name');
+  const chEl   = document.getElementById('cm-channel');
+  const name   = nameEl.value.trim() || '익명';
+  const ch     = chEl.value.trim().replace(/\s+/g, '-') || 'default';
+
+  localStorage.setItem('mmv_member_name', name);
+  saveRecentChannel(ch, name);
+
+  // 모달 닫기
+  document.getElementById('channel-modal').classList.add('hidden');
+
+  // WebSocket으로 채널 입장 요청
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: 'channel.join', channelId: ch, memberName: name, memberId: `m_${Date.now()}` }));
+  } else {
+    // 연결 안됐으면 연결 후 재시도
+    pendingJoin = { ch, name };
+  }
+}
+
+function leaveChannel() {
+  // 모달 다시 열기
+  document.getElementById('channel-modal').classList.remove('hidden');
+  document.getElementById('channel-bar').classList.add('hidden');
+  initChannelModal();
+}
+
+// 멤버 목록 UI 업데이트
+function updateChannelMembers(members) {
+  const el = document.getElementById('ch-members');
+  el.innerHTML = '';
+  (members || []).forEach(m => {
+    const av = document.createElement('div');
+    av.className = 'ch-avatar';
+    av.style.background = m.memberColor || '#888';
+    av.textContent = (m.memberName || '?')[0].toUpperCase();
+    av.title = m.memberName + (m.memberId === myMemberId ? ' (나)' : '');
+    if (m.memberId === myMemberId) {
+      av.style.border = `2px solid ${m.memberColor || '#888'}`;
+      av.style.boxShadow = `0 0 0 2px var(--bg2)`;
+    }
+    el.appendChild(av);
+  });
+  // 총 인원 수
+  const cnt = members?.length || 0;
+  document.getElementById('ch-name-display').textContent = `#${myChannelId} · ${cnt}명`;
+}
+
+// 토스트 메시지
+function showLiveToast(msg, duration=2500) {
+  const t = document.getElementById('live-toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), duration);
+}
+
+let pendingJoin = null;
+
+// 자동 트래킹: 저장된 채널이 있거나 기본 채널로 자동 입장
+(function autoJoin() {
+  const savedName = localStorage.getItem('mmv_member_name') || '로컬';
+  const recent = loadRecentChannels();
+  const savedChannel = (recent.length > 0) ? recent[0].ch : 'default';
+  document.getElementById('cm-name').value = savedName;
+  document.getElementById('cm-channel').value = savedChannel;
+  // 채널 모달 숨기고 자동 입장
+  document.getElementById('channel-modal').classList.add('hidden');
+  pendingJoin = { ch: savedChannel, name: savedName };
+})();
+
+// ═══════════════════════════════════════════════════
+// WebSocket
+// ═══════════════════════════════════════════════════
+const dot=document.getElementById('dot'),stxt=document.getElementById('st');
+let ws=null;
+function connect(){
+  ws=new WebSocket(`ws://${location.host}`);
+  ws.onopen=()=>{
+    dot.className='live-dot on';
+    stxt.textContent='실시간';
+    // 연결 후 대기 중인 채널 입장 처리
+    if (pendingJoin) {
+      ws.send(JSON.stringify({ type: 'channel.join', channelId: pendingJoin.ch, memberName: pendingJoin.name, memberId: `m_${Date.now()}` }));
+      pendingJoin = null;
+    }
+  };
+  ws.onmessage=e=>{
+    dot.className='live-dot act';setTimeout(()=>dot.className='live-dot on',300);
+    try{
+      const m=JSON.parse(e.data);
+
+      // ── 채널 관련 메시지 ──────────────────────────
+      if (m.type === 'channel.joined') {
+        myChannelId   = m.channelId;
+        myMemberId    = m.memberId;
+        myMemberName  = m.memberName;
+        myMemberColor = m.memberColor;
+        document.getElementById('channel-bar').classList.remove('hidden');
+        document.getElementById('ch-name-display').textContent = `#${m.channelId}`;
+        updateChannelMembers(m.members);
+        // 채널 그래프로 업데이트
+        if(m.graph){render(m.graph);updateSessions(m.sessions||[]);updateStats(m.stats||{});}
+        showLiveToast(`✅ #${m.channelId} 채널 입장`);
+        // 보안 스캔 + 멀티터미널 뷰 갱신
+        setTimeout(() => { scanForLeaks(m.graph?.nodes || []); if(termViewOpen) renderTermView(); }, 800);
+        return;
+      }
+      if (m.type === 'channel.member_joined') {
+        updateChannelMembers(m.members);
+        showLiveToast(`👤 ${m.memberName}님이 입장했습니다`);
+        return;
+      }
+      if (m.type === 'channel.member_left') {
+        updateChannelMembers(m.members);
+        showLiveToast(`👋 ${m.memberName}님이 퇴장했습니다`);
+        return;
+      }
+      if (m.type === 'channel.activity') {
+        // 다른 멤버가 노드를 보고 있음 — 나중에 커서 표시 가능
+        return;
+      }
+
+      // ── 기존 메시지 ──────────────────────────────
+      if(m.type==='init'){
+        if(m.userConfig)applyUserConfig(m.userConfig);
+        render(m.graph||{nodes:[],edges:[]});
+        updateSessions(m.sessions||[]);
+        updateStats(m.stats||{});
+        setTimeout(()=>net.fit({animation:true}),500);
+        // 초기 보안 스캔
+        setTimeout(() => scanForLeaks(m.graph?.nodes || []), 800);
+        if(termViewOpen) renderTermView();
+      }
+      if(m.type==='update'){
+        render(m.graph||curGraph);
+        updateSessions(m.sessions||sessions);
+        updateStats(m.stats||{});
+        // tool.start → tool.end 완료 노드 글로우 해제
+        if(m.completedToolStarts && m.completedToolStarts.length > 0) {
+          m.completedToolStarts.forEach(id => {
+            if(FX && FX.forceGlow) FX.forceGlow(id, 'COOL');
+          });
+        }
+        // 다른 멤버의 AI 업데이트 알림
+        if(m.hookSource && m.hookSource.memberName && m.hookSource.memberName !== myMemberName) {
+          showLiveToast(`⚡ ${m.hookSource.memberName}의 AI 업데이트`);
+        }
+        // 보안 유출 스캔 (서버 결과 우선, 없으면 클라이언트 자체 스캔)
+        if (m.securityLeaks && m.securityLeaks.length > 0) {
+          const newServerLeaks = m.securityLeaks.filter(
+            l => !leakItems.some(e => e.eventId === l.eventId && e.name === l.name)
+          );
+          if (newServerLeaks.length > 0) {
+            leakItems = [...leakItems, ...newServerLeaks];
+            showSecAlert(newServerLeaks);
+            renderSecPanel();
+          }
+        } else {
+          const newNodes = (m.graph?.nodes || []).filter(n => !(curGraph?.nodes||[]).some(o => o.id === n.id));
+          if (newNodes.length > 0) scanForLeaks(newNodes);
+        }
+        // 멀티터미널 뷰 자동 갱신
+        if(termViewOpen) renderTermView();
+      }
+      if(m.type==='channel.joined'){
+        // 채널 진입 시에도 보안 스캔
+        setTimeout(() => scanForLeaks(m.graph?.nodes || []), 800);
+        if(termViewOpen) renderTermView();
+      }
+      if(m.type==='activity')updateScores(m.scores||{});
+      if(m.type==='filtered')render(m.graph||{nodes:[],edges:[]});
+      if(m.type==='rollback'){render(m.graph||{nodes:[],edges:[]});setTimeout(()=>net.fit({animation:true}),300)}
+      if(m.type==='userConfigUpdate'){applyUserConfig(m.userConfig);net.redraw()}
+      if(m.type==='clear'){
+        curGraph={nodes:[],edges:[]};VN.clear();VE.clear();
+        document.getElementById('empty').style.display='flex';
+        updateSessions([]);updateStats({eventCount:0,sessionCount:0,fileCount:0});updateTimeline([]);
+        leakItems=[];renderSecPanel();
+        document.getElementById('sec-alert').classList.add('hidden');
+        const btn=document.getElementById('btn-sec'); if(btn)btn.style.display='none';
+        if(termViewOpen) renderTermView();
+      }
+    }catch(err){console.error('WS:',err)}
+  };
+  ws.onclose=()=>{dot.className='live-dot';stxt.textContent='재연결...';setTimeout(connect,3000)};
+  ws.onerror=()=>{dot.className='live-dot';stxt.textContent='오류'};
+}
+connect();
+
+// Init theme UI
+document.getElementById('scale-slider').value = nodeScale;
+document.getElementById('scale-val').textContent = nodeScale.toFixed(1) + 'x';
+document.getElementById('cluster-slider').value = CLUSTER_IN;
+document.getElementById('cluster-val').textContent = Math.round(CLUSTER_IN*100) + '%';
+document.querySelectorAll('#th-n8n,#th-comfy,#th-min').forEach(b => b.classList.toggle('on', b.id === 'th-' + {n8n:'n8n',comfyui:'comfy',minimal:'min'}[themeName]));
+document.getElementById('chk-ports').checked = T().showPorts;
+document.getElementById('chk-glow').checked = T().showGlow;
+document.getElementById('chk-time').checked = T().showTime;

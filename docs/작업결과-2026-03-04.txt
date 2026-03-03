@@ -1,0 +1,103 @@
+=========================================================
+  Orbit AI 작업 결과 요약 — 2026-03-04
+=========================================================
+
+[1] BAT 파일 직원 설치기 → 완료 ✅
+────────────────────────────────────────
+질문: 직원 PC에 코드 대신 bat 파일 줘서 한 키에 설정되게 해줘
+결과:
+  - routes/company.js에 GET /api/tracker/install-bat 엔드포인트 추가
+  - .bat 파일이 자동으로: 설치 폴더 생성 → PS1 다운로드 →
+    실행 정책 설정 → 자동 시작 등록 (schtasks + Startup 폴더)
+  - consultant.html 링크도 install-bat으로 변경
+
+[2] 직원 PC 자동 업데이트 → 완료 ✅
+────────────────────────────────────────
+질문: 내가 지침 업데이트하면 직원 컴퓨터에서 자동 업데이트 되나?
+결과:
+  - TRACKER_VERSION 상수 + GET /api/tracker/version 엔드포인트 추가
+  - PS1 스크립트에 Check-Update 함수 (매 1시간 서버 버전 확인)
+  - 서버 버전 > 로컬 버전이면 자동 다운로드 + 재시작
+
+[3] 3D 마인드맵 회사 뷰 새로고침 유지 → 완료 ✅
+────────────────────────────────────────
+질문: 마인드맵 3D 회사 뷰가 새로고침하면 변경 안 됨
+결과:
+  - localStorage에 'orbitViewMode' 키로 뷰 모드 저장
+  - loadTeamDemo/loadCompanyDemo/loadParallelDemo 시 자동 저장
+  - exitTeamMode 시 'personal'로 리셋
+  - DOMContentLoaded에서 저장된 뷰 모드 자동 복원
+
+[4] 활동 라벨 표시 방식 변경 → 완료 ✅
+────────────────────────────────────────
+질문: "브라우저 ~~" 라벨을 다른 방식으로
+결과:
+  - orbit3d-render.js drawLabels()에서 키워드 태그 형식으로 변경
+  - 프로젝트 · 개수 · 도메인 형태 (예: "API · 15개 · 데이터")
+  - DOMAIN_KR 매핑으로 한국어 도메인 표시
+
+[5] 중심원 개체 선택 → 완료 ✅
+────────────────────────────────────────
+질문: 중심원(태양) 개체가 선택이 안 됨
+결과:
+  - orbit3d-render.js에 태양 메쉬 hitArea 추가
+  - toScreen()으로 2D 좌표 변환 후 반경 28px 클릭 영역
+
+[6] 수정 버튼 내용 변경 버그 → 완료 ✅
+────────────────────────────────────────
+질문: 수정 버튼 눌러도 내용이 변경 안 됨
+결과:
+  - orbit3d-social.js openInlineEdit(): clusterId/sessionId 기반 키로 변경
+  - saveInlineEdit(): planet.userData.intent도 함께 업데이트
+  - _nodeAliases에도 저장하여 영구 보존
+
+[7] 텍스트 겹침 방지 → 완료 ✅
+────────────────────────────────────────
+질문: 텍스트가 겹쳐서 안 보임
+결과:
+  - orbit3d-render.js에 rectOverlaps/reserveRect 충돌 감지 시스템
+  - 프레임마다 _usedRects 초기화 후 라벨 위치 충돌 체크
+  - 겹치면 해당 라벨 스킵
+
+[8] 태양 리얼 타오르는 효과 → 완료 ✅
+────────────────────────────────────────
+질문: 중심 태양을 진짜 리얼하게 타오르는 효과로
+결과:
+  - orbit3d-ui.js buildCoreMesh()를 GLSL 셰이더로 완전 교체
+  - 3D Simplex Noise FBM으로 불꽃 패턴 생성
+  - 색상 그라데이션: 진빨강 → 오렌지 → 노랑 → 흰색
+  - 코로나 림 라이팅 + 글로우 메쉬 (AdditiveBlending)
+  - pulseSun()에서 uTime 유니폼 업데이트로 실시간 애니메이션
+
+[9] FPS/세션 패널 최소화 → 완료 ✅
+────────────────────────────────────────
+질문: FPS 패널을 최소화 창으로 만들어서 보고 싶은 사람만 보게
+결과:
+  - orbit3d.html HUD에 접기/펼치기 토글 버튼 추가
+  - 기본 상태: 접힘 (제목만 표시)
+  - localStorage에 상태 저장 (새로고침 후에도 유지)
+
+[10] 설정 CMD 코드값 확인 → 완료 ✅
+────────────────────────────────────────
+질문: 설정에 있는 CMD 코드값 수정 안 된 것 확인
+결과:
+  - /orbit-setup.ps1, /orbit-setup.sh 엔드포인트 정상 존재 확인
+  - orbit3d-render.js의 irm/curl 명령어 동적 URL 사용 확인
+  - setup.html 하드코딩 경로 (C:/Users/cando → 동적, C:/Users/pc → 제거)
+
+=========================================================
+  수정 파일 목록
+=========================================================
+
+1. routes/company.js — BAT 설치기 + 자동 업데이트
+2. public/consultant.html — install-bat URL 변경
+3. public/js/orbit3d-team.js — 뷰 모드 localStorage 저장
+4. public/js/orbit3d-parallel.js — exitTeamMode 뷰 모드 저장
+5. public/js/orbit3d-render.js — 라벨/태양 hitArea/텍스트 겹침/뷰 복원
+6. public/js/orbit3d-ui.js — 태양 GLSL 셰이더
+7. public/js/orbit3d-animate.js — 셰이더 uTime 업데이트
+8. public/js/orbit3d-social.js — 인라인 에디트 수정
+9. public/orbit3d.html — HUD 최소화
+10. public/setup.html — 하드코딩 경로 제거
+
+=========================================================
