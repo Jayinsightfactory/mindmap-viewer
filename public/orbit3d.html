@@ -13281,6 +13281,84 @@ window.fpFollowUser = fpFollowUser;
   // ── SESSION START ────────────────────────────────────────────────────────
   track('session.start', { referrer: document.referrer.slice(0, 100) });
 
+  // ── GRAPH EVENT: 브라우저 활동을 마인드맵 노드로 기록 ─────────────────────
+  // Claude Code 훅 없이도 일반 사용자 활동이 3D 마인드맵에 표시됨
+  function pushGraphEvent(type, data) {
+    const uid = 'be-' + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+    const payload = {
+      id: uid, type: type, aiSource: 'browser',
+      sessionId: 'browser-' + SESSION_ID,
+      userId: (() => { try { return JSON.parse(localStorage.getItem('orbitUser')||'null')?.email||'visitor'; } catch(_){return 'visitor';} })(),
+      channelId: 'web', timestamp: new Date().toISOString(),
+      data: data || {}, metadata: { source: 'orbit-browser' }
+    };
+    fetch('/api/ai-event', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(payload), keepalive: true
+    }).catch(()=>{});
+  }
+
+  // 접속 이벤트
+  pushGraphEvent('session.start', {
+    message: '웹 접속', aiLabel: 'Browser',
+    userAgent: navigator.userAgent.slice(0,80),
+    referrer: document.referrer.slice(0,100)
+  });
+
+  // 페이지 이동 추적
+  let _lastPage = location.pathname;
+  const _origPush = history.pushState;
+  history.pushState = function() {
+    _origPush.apply(this, arguments);
+    if (location.pathname !== _lastPage) {
+      _lastPage = location.pathname;
+      pushGraphEvent('user.message', { message: '페이지 이동: ' + _lastPage, aiLabel: 'Navigation' });
+    }
+  };
+  window.addEventListener('popstate', () => {
+    if (location.pathname !== _lastPage) {
+      _lastPage = location.pathname;
+      pushGraphEvent('user.message', { message: '페이지 이동: ' + _lastPage, aiLabel: 'Navigation' });
+    }
+  });
+
+  // 클릭 추적 (버튼/링크)
+  let _clickThrottle = 0;
+  document.addEventListener('click', (e) => {
+    const now = Date.now();
+    if (now - _clickThrottle < 3000) return; // 3초 쓰로틀
+    const el = e.target.closest('button, a, [onclick]');
+    if (!el) return;
+    _clickThrottle = now;
+    const label = el.textContent.trim().slice(0,40) || el.title || el.id || 'button';
+    pushGraphEvent('tool.start', { message: 'UI 인터랙션: ' + label, aiLabel: 'Click', toolName: 'ui-click' });
+  });
+
+  // 테마 변경 추적
+  document.addEventListener('orbit-theme-change', (e) => {
+    pushGraphEvent('tool.end', {
+      message: '테마 변경: ' + e.detail.theme + (e.detail.saber ? ' / ' + e.detail.saber : ''),
+      aiLabel: 'Theme', toolName: 'theme-switch'
+    });
+  });
+
+  // 비활동 → 활동 복귀 추적 (3분 이상 비활동 후 복귀)
+  let _lastActivity = Date.now();
+  ['mousemove','keydown','scroll','touchstart'].forEach(ev => {
+    document.addEventListener(ev, () => {
+      const gap = Date.now() - _lastActivity;
+      if (gap > 180000) {
+        pushGraphEvent('user.message', { message: '활동 복귀 (' + Math.round(gap/60000) + '분 후)', aiLabel: 'Activity' });
+      }
+      _lastActivity = Date.now();
+    }, { passive: true });
+  });
+
+  // 페이지 종료
+  window.addEventListener('beforeunload', () => {
+    pushGraphEvent('session.end', { message: '세션 종료', aiLabel: 'Browser' });
+  });
+
   // ── SESSION HEARTBEAT (60초마다) ─────────────────────────────────────────
   setInterval(() => {
     const mode = typeof _parallelMode !== 'undefined' && _parallelMode ? 'parallel'
