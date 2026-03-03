@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Orbit — 테마 마켓</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #060a10; --bg2: #0d1117; --bg3: #161b22; --bg4: #21262d;
+    --border: #30363d; --text: #e6edf3; --text2: #8b949e; --text3: #6e7681;
+    --accent: #8957e5; --blue: #58a6ff; --green: #3fb950; --red: #f85149;
+    --orange: #ffa657; --yellow: #d29922;
+  }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 14px; min-height: 100vh; }
+
+  /* ── Header ── */
+  header {
+    background: var(--bg2); border-bottom: 1px solid var(--border);
+    padding: 0 24px; height: 52px; display: flex; align-items: center;
+    gap: 16px; position: sticky; top: 0; z-index: 100;
+  }
+  .logo { font-weight: 700; font-size: 16px; color: var(--accent); text-decoration: none; }
+  header nav { display: flex; gap: 4px; margin-left: 8px; }
+  header nav a { color: var(--text2); text-decoration: none; padding: 5px 11px; border-radius: 6px; font-size: 13px; transition: all .15s; }
+  header nav a:hover, header nav a.active { background: var(--bg3); color: var(--text); }
+  .header-right { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+  .btn { padding: 6px 14px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg3); color: var(--text2); font-size: 12px; cursor: pointer; transition: all .15s; font-family: inherit; }
+  .btn:hover { color: var(--text); border-color: var(--accent); }
+  .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn-primary:hover { background: #7946d0; border-color: #7946d0; color: #fff; }
+
+  /* ── Layout ── */
+  .container { max-width: 1300px; margin: 0 auto; padding: 28px 24px; }
+  .page-title { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+  .page-sub   { color: var(--text2); font-size: 13px; margin-bottom: 24px; }
+
+  /* ── Tabs ── */
+  .tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border); margin-bottom: 24px; }
+  .tab { padding: 8px 16px; cursor: pointer; font-size: 13px; color: var(--text2); border-bottom: 2px solid transparent; transition: all .15s; background: none; border-top: none; border-left: none; border-right: none; font-family: inherit; }
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--text); border-bottom-color: var(--accent); }
+
+  /* ── Filter bar ── */
+  .filter-bar { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; align-items: center; }
+  .filter-btn { padding: 4px 12px; border-radius: 20px; border: 1px solid var(--border); background: none; color: var(--text2); font-size: 12px; cursor: pointer; transition: all .15s; font-family: inherit; }
+  .filter-btn:hover, .filter-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .search-input {
+    margin-left: auto; background: var(--bg3); border: 1px solid var(--border);
+    color: var(--text); padding: 6px 12px; border-radius: 6px; font-size: 12px;
+    width: 200px; outline: none; font-family: inherit;
+  }
+  .search-input:focus { border-color: var(--accent); }
+
+  /* ── Theme Grid ── */
+  .theme-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+
+  /* ── Theme Card ── */
+  .theme-card {
+    background: var(--bg2); border: 1px solid var(--border); border-radius: 12px;
+    overflow: hidden; transition: border-color .2s, transform .15s;
+    cursor: pointer; position: relative;
+  }
+  .theme-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+  .theme-card.active-theme { border-color: var(--green); }
+  .theme-card.active-theme::after {
+    content: '✓ 적용중'; position: absolute; top: 10px; right: 10px;
+    background: var(--green); color: #000; font-size: 10px; font-weight: 700;
+    padding: 2px 7px; border-radius: 10px;
+  }
+
+  /* 미리보기 캔버스 */
+  .theme-preview {
+    height: 120px; position: relative; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .preview-canvas { width: 100%; height: 100%; }
+  .preview-overlay {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    opacity: 0; transition: opacity .2s; background: rgba(0,0,0,.5);
+  }
+  .theme-card:hover .preview-overlay { opacity: 1; }
+  .preview-apply-btn {
+    background: var(--accent); color: #fff; border: none; padding: 8px 18px;
+    border-radius: 6px; font-size: 13px; cursor: pointer; font-family: inherit; font-weight: 600;
+  }
+
+  .theme-body { padding: 14px; }
+  .theme-name { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+  .theme-desc { font-size: 12px; color: var(--text2); margin-bottom: 10px; line-height: 1.4; min-height: 32px; }
+  .theme-meta { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text2); }
+  .theme-author { color: var(--blue); }
+  .theme-price {
+    margin-left: auto; font-weight: 700; font-size: 12px;
+    padding: 2px 8px; border-radius: 10px;
+  }
+  .price-free { background: rgba(63,185,80,.15); color: var(--green); }
+  .price-paid { background: rgba(255,166,87,.15); color: var(--orange); }
+  .theme-tags { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 8px; }
+  .theme-tag { background: var(--bg3); border: 1px solid var(--border); border-radius: 10px; padding: 1px 7px; font-size: 10px; color: var(--text2); }
+  .theme-rating { color: var(--yellow); }
+  .theme-dl { color: var(--text3); }
+
+  /* ── Upload Form ── */
+  .upload-form {
+    background: var(--bg2); border: 1px solid var(--border); border-radius: 12px;
+    padding: 24px; max-width: 700px;
+  }
+  .form-group { margin-bottom: 16px; }
+  .form-label { font-size: 12px; color: var(--text2); margin-bottom: 6px; display: block; }
+  .form-input {
+    width: 100%; background: var(--bg3); border: 1px solid var(--border);
+    color: var(--text); padding: 8px 12px; border-radius: 6px; font-size: 13px;
+    outline: none; font-family: inherit;
+  }
+  .form-input:focus { border-color: var(--accent); }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .color-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+  .color-item { display: flex; align-items: center; gap: 8px; }
+  .color-item label { font-size: 11px; color: var(--text2); width: 80px; flex-shrink: 0; font-family: monospace; }
+  .color-input { width: 36px; height: 28px; border: 1px solid var(--border); border-radius: 4px; cursor: pointer; padding: 0; background: none; }
+  .color-hex { width: 80px; background: var(--bg3); border: 1px solid var(--border); color: var(--text); padding: 4px 6px; border-radius: 4px; font-size: 11px; font-family: monospace; outline: none; }
+  .color-hex:focus { border-color: var(--accent); }
+
+  /* 미리보기 라이브 */
+  #live-preview {
+    border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
+    margin-top: 12px; height: 160px; position: relative;
+  }
+
+  /* ── 내 테마 ── */
+  .my-theme-row {
+    display: flex; align-items: center; gap: 12px; padding: 12px 16px;
+    background: var(--bg2); border: 1px solid var(--border); border-radius: 8px;
+    margin-bottom: 8px;
+  }
+  .my-theme-color { width: 32px; height: 32px; border-radius: 6px; flex-shrink: 0; border: 1px solid var(--border); }
+  .my-theme-name { font-weight: 600; font-size: 13px; }
+  .my-theme-meta { font-size: 11px; color: var(--text2); margin-top: 2px; }
+  .my-theme-actions { margin-left: auto; display: flex; gap: 6px; }
+
+  /* ── Empty ── */
+  .empty-msg { text-align: center; color: var(--text2); padding: 48px; font-size: 13px; }
+
+  /* ── Toast ── */
+  #toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px);
+    background: var(--bg3); border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 18px; font-size: 13px; opacity: 0; transition: all .25s; z-index: 999;
+    pointer-events: none;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-track { background: var(--bg2); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<header>
+  <a href="/" class="logo">⬡ Orbit</a>
+  <nav>
+    <a href="/">마인드맵</a>
+    <a href="/team-dashboard.html">팀 대시보드</a>
+    <a href="/theme-market.html" class="active">🎨 테마 마켓</a>
+    <a href="/settings.html">설정</a>
+  </nav>
+  <div class="header-right">
+    <span id="current-theme-label" style="font-size:12px;color:var(--text2)">현재: Space Dark</span>
+    <button class="btn btn-primary" onclick="showTab('upload')">+ 테마 등록</button>
+  </div>
+</header>
+
+<div class="container">
+  <div class="page-title">🎨 테마 마켓</div>
+  <div class="page-sub">Orbit의 시각 스타일을 바꾸세요. 만든 테마를 공유하거나 다운받아 사용하세요.</div>
+
+  <div class="tabs">
+    <button class="tab active" onclick="showTab('browse')" id="tab-browse">탐색</button>
+    <button class="tab" onclick="showTab('upload')" id="tab-upload">+ 내 테마 등록</button>
+    <button class="tab" onclick="showTab('mine')" id="tab-mine">내 테마</button>
+  </div>
+
+  <!-- ── 탐색 탭 ── -->
+  <div id="pane-browse">
+    <div class="filter-bar">
+      <button class="filter-btn active" onclick="filterTag('', this)">전체</button>
+      <button class="filter-btn" onclick="filterTag('dark', this)">Dark</button>
+      <button class="filter-btn" onclick="filterTag('light', this)">Light</button>
+      <button class="filter-btn" onclick="filterTag('neon', this)">Neon</button>
+      <button class="filter-btn" onclick="filterTag('terminal', this)">Terminal</button>
+      <button class="filter-btn" onclick="filterTag('featured', this)">⭐ 추천</button>
+      <button class="filter-btn" onclick="filterTag('free', this)">무료</button>
+      <input class="search-input" type="text" placeholder="🔍 테마 검색..." oninput="searchThemes(this.value)" id="search-input">
+    </div>
+    <div class="theme-grid" id="theme-grid"></div>
+  </div>
+
+  <!-- ── 등록 탭 ── -->
+  <div id="pane-upload" style="display:none">
+    <div class="upload-form">
+      <h3 style="margin-bottom:18px;font-size:16px">✏️ 새 테마 만들기</h3>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">테마 이름 *</label>
+          <input class="form-input" id="f-name" placeholder="My Awesome Theme">
+        </div>
+        <div class="form-group">
+          <label class="form-label">작성자 이름</label>
+          <input class="form-input" id="f-author" placeholder="내 닉네임">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">설명</label>
+        <input class="form-input" id="f-desc" placeholder="이 테마의 분위기나 특징을 설명하세요">
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">태그 (쉼표 구분)</label>
+          <input class="form-input" id="f-tags" placeholder="dark, neon, cyberpunk">
+        </div>
+        <div class="form-group">
+          <label class="form-label">가격 (원, 0=무료)</label>
+          <input class="form-input" id="f-price" type="number" min="0" placeholder="0">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">색상 팔레트</label>
+        <div class="color-row" id="color-editor"></div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">실시간 미리보기</label>
+        <canvas id="live-preview" width="660" height="160"></canvas>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn btn-primary" onclick="submitTheme()">등록하기</button>
+        <button class="btn" onclick="applyPreviewTheme()">지금 적용해보기</button>
+        <button class="btn" onclick="resetForm()">초기화</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── 내 테마 탭 ── -->
+  <div id="pane-mine" style="display:none">
+    <div id="my-themes-list"></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ─── 상태 ─────────────────────────────────────────
+let allThemes  = [];
+let activeTag  = '';
+let activeSearch = '';
+let currentThemeId = localStorage.getItem('orbit_theme') || 'space-dark';
+
+// CSS 변수 키 목록
+const COLOR_VARS = [
+  ['--bg',     '배경'],      ['--bg2',    '배경2'],    ['--bg3',    '배경3'],
+  ['--text',   '텍스트'],    ['--text2',  '텍스트2'],  ['--text3',  '텍스트3'],
+  ['--accent', '강조색'],    ['--blue',   '파랑'],     ['--green',  '초록'],
+  ['--purple', '보라'],      ['--orange', '주황'],     ['--pink',   '분홍'],
+  ['--cyan',   '하늘'],
+];
+
+// ─── 테마 적용 ────────────────────────────────────
+function applyTheme(theme) {
+  const root = document.documentElement;
+  Object.entries(theme.vars || {}).forEach(([k, v]) => root.style.setProperty(k, v));
+  currentThemeId = theme.id;
+  localStorage.setItem('orbit_theme', theme.id);
+  localStorage.setItem('orbit_theme_vars', JSON.stringify(theme.vars || {}));
+  document.getElementById('current-theme-label').textContent = '현재: ' + theme.name;
+  // 마인드맵 페이지에도 postMessage로 전달
+  try { window.opener?.postMessage({ type: 'orbit_theme', vars: theme.vars }, '*'); } catch {}
+  renderBrowse();
+  toast('✅ ' + theme.name + ' 테마 적용됨');
+}
+
+// ─── 로드 ─────────────────────────────────────────
+async function loadThemes() {
+  try {
+    const res = await fetch('/api/themes');
+    allThemes = await res.json();
+  } catch {
+    allThemes = [];
+  }
+  // 현재 적용 테마 이름 표시
+  const cur = allThemes.find(t => t.id === currentThemeId);
+  if (cur) document.getElementById('current-theme-label').textContent = '현재: ' + cur.name;
+  renderBrowse();
+  renderMine();
+  buildColorEditor();
+  drawLivePreview();
+}
+
+// ─── 탐색 렌더링 ─────────────────────────────────
+function renderBrowse() {
+  const grid = document.getElementById('theme-grid');
+  let list = allThemes;
+
+  if (activeTag === 'free') list = list.filter(t => t.price === 0);
+  else if (activeTag)       list = list.filter(t => (t.tags || []).includes(activeTag));
+
+  if (activeSearch) {
+    const q = activeSearch.toLowerCase();
+    list = list.filter(t => t.name.toLowerCase().includes(q) || (t.description || '').toLowerCase().includes(q) || (t.tags || []).join(' ').includes(q));
+  }
+
+  if (!list.length) { grid.innerHTML = '<div class="empty-msg">검색 결과 없음</div>'; return; }
+
+  grid.innerHTML = list.map(t => {
+    const isCurrent = t.id === currentThemeId;
+    const stars = '★'.repeat(Math.round(t.rating || 0)) + '☆'.repeat(5 - Math.round(t.rating || 0));
+    const priceLabel = t.price === 0
+      ? '<span class="theme-price price-free">무료</span>'
+      : `<span class="theme-price price-paid">₩${t.price.toLocaleString()}</span>`;
+    const tags = (t.tags || []).map(tag => `<span class="theme-tag">${tag}</span>`).join('');
+
+    return `<div class="theme-card${isCurrent ? ' active-theme' : ''}" onclick="handleCardClick('${t.id}')">
+      <div class="theme-preview" style="background:${t.preview || t.vars?.['--bg'] || '#111'}">
+        <canvas class="preview-canvas" id="prev-${t.id}" width="260" height="120"></canvas>
+        <div class="preview-overlay">
+          <button class="preview-apply-btn" onclick="event.stopPropagation();applyById('${t.id}')">
+            ${isCurrent ? '✓ 적용중' : '적용하기'}
+          </button>
+        </div>
+      </div>
+      <div class="theme-body">
+        <div class="theme-name">${t.name}</div>
+        <div class="theme-desc">${t.description || ''}</div>
+        <div class="theme-meta">
+          <span class="theme-author">@${t.author || 'unknown'}</span>
+          <span class="theme-rating" title="${t.rating}">${stars}</span>
+          <span class="theme-dl">↓${(t.downloads || 0).toLocaleString()}</span>
+          ${priceLabel}
+        </div>
+        <div class="theme-tags">${tags}</div>
+      </div>
+    </div>`;
+  }).join('');
+
+  // 각 카드 미리보기 그리기
+  requestAnimationFrame(() => {
+    list.forEach(t => drawThemePreview(t, 'prev-' + t.id));
+  });
+}
+
+function drawThemePreview(theme, canvasId) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  const v = theme.vars || {};
+  const bg   = v['--bg']     || '#060a10';
+  const acc  = v['--accent'] || '#8957e5';
+  const blue = v['--blue']   || '#58a6ff';
+  const grn  = v['--green']  || '#3fb950';
+  const txt  = v['--text']   || '#e6edf3';
+
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+
+  // 그리드
+  ctx.strokeStyle = v['--grid'] || 'rgba(255,255,255,0.05)';
+  ctx.lineWidth = 0.5;
+  for (let x = 0; x < W; x += 20) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+  for (let y = 0; y < H; y += 20) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+
+  // 노드들 (미니 시뮬레이션)
+  const nodes = [
+    { x: W/2, y: H/2, r: 18, color: acc, label: 'session' },
+    { x: W/2-60, y: H/2-30, r: 12, color: blue, label: 'tool' },
+    { x: W/2+55, y: H/2-25, r: 12, color: grn, label: 'file' },
+    { x: W/2+40, y: H/2+35, r: 10, color: acc, label: 'msg' },
+    { x: W/2-50, y: H/2+30, r: 9, color: blue, label: 'fn' },
+  ];
+  const edges = [[0,1],[0,2],[0,3],[0,4],[1,4]];
+
+  // 엣지
+  ctx.strokeStyle = v['--edge'] || (blue + '55');
+  ctx.lineWidth = 1;
+  edges.forEach(([a, b]) => {
+    ctx.beginPath(); ctx.moveTo(nodes[a].x, nodes[a].y); ctx.lineTo(nodes[b].x, nodes[b].y); ctx.stroke();
+  });
+
+  // 노드 글로우
+  nodes.forEach(n => {
+    const grd = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, n.r * 2.5);
+    grd.addColorStop(0, n.color + '44'); grd.addColorStop(1, 'transparent');
+    ctx.fillStyle = grd; ctx.beginPath(); ctx.arc(n.x, n.y, n.r * 2.5, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = n.color; ctx.beginPath(); ctx.arc(n.x, n.y, n.r, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = txt + 'cc'; ctx.font = `${Math.max(7, n.r * 0.5)}px monospace`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(n.label, n.x, n.y);
+  });
+}
+
+function handleCardClick(id) {
+  const t = allThemes.find(x => x.id === id);
+  if (!t) return;
+  // 무료면 바로 적용, 유료면 확인
+  if (t.price === 0) {
+    applyById(id);
+  } else {
+    if (confirm(`"${t.name}" 테마는 ₩${t.price.toLocaleString()}입니다.\n현재 결제 시스템 미연동 — 무료로 미리보기만 가능합니다.\n적용하시겠습니까?`)) {
+      applyById(id);
+    }
+  }
+}
+
+async function applyById(id) {
+  const t = allThemes.find(x => x.id === id);
+  if (!t) return;
+  await fetch('/api/themes/' + id + '/download', { method: 'POST' }).catch(() => {});
+  applyTheme(t);
+  t.downloads = (t.downloads || 0) + 1;
+}
+
+// ─── 필터 / 검색 ─────────────────────────────────
+function filterTag(tag, btn) {
+  activeTag = tag;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderBrowse();
+}
+function searchThemes(q) { activeSearch = q; renderBrowse(); }
+
+// ─── 탭 전환 ─────────────────────────────────────
+function showTab(name) {
+  ['browse','upload','mine'].forEach(t => {
+    document.getElementById('pane-' + t).style.display = t === name ? '' : 'none';
+    document.getElementById('tab-' + t)?.classList.toggle('active', t === name);
+  });
+  if (name === 'mine') renderMine();
+  if (name === 'upload') { buildColorEditor(); drawLivePreview(); }
+}
+
+// ─── 색상 에디터 ─────────────────────────────────
+let formVars = {};
+function buildColorEditor() {
+  // 현재 적용 테마의 색상으로 초기값
+  const cur = allThemes.find(t => t.id === currentThemeId);
+  formVars = { ...(cur?.vars || {}) };
+
+  const container = document.getElementById('color-editor');
+  container.innerHTML = COLOR_VARS.map(([key, label]) => {
+    const val = formVars[key] || '#ffffff';
+    return `<div class="color-item">
+      <label>${label}<br><small style="font-size:9px">${key}</small></label>
+      <input class="color-input" type="color" value="${val}" oninput="updateColor('${key}', this.value)" onchange="updateColor('${key}', this.value)">
+      <input class="color-hex" type="text" value="${val}" oninput="updateColorHex('${key}', this)" id="hex-${key.replace('--','')}">
+    </div>`;
+  }).join('');
+}
+
+function updateColor(key, val) {
+  formVars[key] = val;
+  const hexEl = document.getElementById('hex-' + key.replace('--',''));
+  if (hexEl) hexEl.value = val;
+  drawLivePreview();
+}
+function updateColorHex(key, input) {
+  const val = input.value.trim();
+  if (/^#[0-9a-fA-F]{6}$/.test(val)) { formVars[key] = val; drawLivePreview(); }
+}
+
+// ─── 라이브 미리보기 ─────────────────────────────
+function drawLivePreview() {
+  const canvas = document.getElementById('live-preview');
+  if (!canvas) return;
+  drawThemePreview({ vars: formVars }, 'live-preview');
+}
+
+function applyPreviewTheme() {
+  const root = document.documentElement;
+  Object.entries(formVars).forEach(([k, v]) => root.style.setProperty(k, v));
+  localStorage.setItem('orbit_theme_vars', JSON.stringify(formVars));
+  toast('미리보기 테마 적용됨 (등록 전)');
+}
+
+// ─── 테마 등록 ────────────────────────────────────
+async function submitTheme() {
+  const name = document.getElementById('f-name').value.trim();
+  if (!name) { toast('❌ 테마 이름을 입력하세요'); return; }
+
+  const theme = {
+    id:          name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''),
+    name,
+    description: document.getElementById('f-desc').value.trim(),
+    author:      document.getElementById('f-author').value.trim() || '익명',
+    tags:        document.getElementById('f-tags').value.split(',').map(s => s.trim()).filter(Boolean),
+    price:       parseInt(document.getElementById('f-price').value || '0') || 0,
+    vars:        { ...formVars },
+    preview:     formVars['--bg'] || '#111',
+  };
+
+  try {
+    const res = await fetch('/api/themes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(theme),
+    });
+    const saved = await res.json();
+    toast('✅ 테마 "' + saved.name + '" 등록 완료!');
+    await loadThemes();
+    showTab('browse');
+    resetForm();
+  } catch (e) {
+    toast('❌ 등록 실패: ' + e.message);
+  }
+}
+
+function resetForm() {
+  document.getElementById('f-name').value = '';
+  document.getElementById('f-desc').value = '';
+  document.getElementById('f-author').value = '';
+  document.getElementById('f-tags').value = '';
+  document.getElementById('f-price').value = '0';
+  buildColorEditor();
+  drawLivePreview();
+}
+
+// ─── 내 테마 ─────────────────────────────────────
+function renderMine() {
+  const container = document.getElementById('my-themes-list');
+  const myThemes  = allThemes.filter(t => !t.builtin);
+
+  if (!myThemes.length) {
+    container.innerHTML = '<div class="empty-msg">등록한 테마 없음<br><br><button class="btn btn-primary" onclick="showTab(\'upload\')">+ 첫 번째 테마 만들기</button></div>';
+    return;
+  }
+
+  container.innerHTML = myThemes.map(t => `
+    <div class="my-theme-row">
+      <div class="my-theme-color" style="background:${t.preview || t.vars?.['--bg'] || '#111'}"></div>
+      <div>
+        <div class="my-theme-name">${t.name}</div>
+        <div class="my-theme-meta">@${t.author} · ↓${t.downloads || 0} · ${t.price === 0 ? '무료' : '₩' + t.price.toLocaleString()}</div>
+      </div>
+      <div class="my-theme-actions">
+        <button class="btn" onclick="applyById('${t.id}')">적용</button>
+        <button class="btn" style="color:var(--red)" onclick="deleteTheme('${t.id}')">삭제</button>
+      </div>
+    </div>`).join('');
+}
+
+async function deleteTheme(id) {
+  if (!confirm('이 테마를 삭제하시겠습니까?')) return;
+  await fetch('/api/themes/' + id, { method: 'DELETE' }).catch(() => {});
+  await loadThemes();
+  toast('테마 삭제됨');
+}
+
+// ─── 토스트 ───────────────────────────────────────
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.classList.add('show');
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.classList.remove('show'), 2800);
+}
+
+// ─── 시작 시 저장된 테마 복원 ────────────────────
+(function restoreTheme() {
+  const savedVars = localStorage.getItem('orbit_theme_vars');
+  if (savedVars) {
+    try {
+      const vars = JSON.parse(savedVars);
+      Object.entries(vars).forEach(([k, v]) => document.documentElement.style.setProperty(k, v));
+    } catch {}
+  }
+})();
+
+// ─── 키보드 단축키 ─────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (['INPUT','TEXTAREA'].includes(document.activeElement?.tagName)) return;
+  if (e.key === 'Escape') showTab('browse');
+  if ((e.key === 'u' || e.key === 'U') && !e.ctrlKey) showTab('upload');
+  if ((e.key === 'm' || e.key === 'M') && !e.ctrlKey) window.location.href = '/';
+});
+
+// ─── 초기화 ──────────────────────────────────────
+loadThemes();
+</script>
+</body>
+</html>

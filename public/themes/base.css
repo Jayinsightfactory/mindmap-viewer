@@ -1,0 +1,95 @@
+/* ═══════════════════════════════════════════════════════════════════
+   Orbit Theme System — Base Variables
+   All UI components reference these variables.
+   Override them per-theme to restyle the entire app.
+   ═══════════════════════════════════════════════════════════════════ */
+
+:root,
+[data-theme="default"] {
+  /* ── Backgrounds ─────────────────────────────────── */
+  --bg:            #060a10;
+  --bg2:           #0d1117;
+  --bg3:           #161b22;
+  --bg4:           #21262d;
+  --bg-glass:      rgba(13,17,23,0.88);
+  --bg-glass-heavy:rgba(13,17,23,0.96);
+  --bg-hover:      rgba(255,255,255,0.03);
+  --bg-input:      rgba(33,38,45,0.9);
+
+  /* ── Text ────────────────────────────────────────── */
+  --text:          #f0f6fc;
+  --text2:         #c9d1d9;
+  --text3:         #8b949e;
+  --text4:         #6e7681;
+
+  /* ── Borders ─────────────────────────────────────── */
+  --border:        #30363d;
+  --border-subtle: #21262d;
+  --border-accent: rgba(48,54,61,0.8);
+
+  /* ── Accents ─────────────────────────────────────── */
+  --accent:        #8957e5;
+  --accent-glow:   rgba(137,87,229,0.4);
+  --accent-bg:     rgba(137,87,229,0.12);
+  --blue:          #58a6ff;
+  --green:         #3fb950;
+  --purple:        #bc8cff;
+  --orange:        #ffa657;
+  --red:           #f85149;
+  --cyan:          #39d2c0;
+  --pink:          #f778ba;
+  --yellow:        #ffd700;
+
+  /* ── Buttons ─────────────────────────────────────── */
+  --btn-bg:        rgba(33,38,45,0.9);
+  --btn-border:    rgba(48,54,61,0.8);
+  --btn-text:      var(--text2);
+  --btn-hover-border: var(--accent);
+  --btn-hover-text:   var(--text);
+  --btn-active-bg:    var(--accent-bg);
+  --btn-active-border:var(--accent);
+  --btn-active-text:  var(--accent);
+  --btn-primary-bg:   var(--accent);
+  --btn-primary-text: #fff;
+
+  /* ── Panels / Cards ──────────────────────────────── */
+  --panel-bg:      var(--bg-glass-heavy);
+  --panel-border:  var(--border-subtle);
+  --panel-shadow:  0 8px 32px rgba(0,0,0,0.5);
+  --card-bg:       var(--bg2);
+  --card-border:   var(--border-subtle);
+
+  /* ── HUD / Header ────────────────────────────────── */
+  --hud-bg:        rgba(13,17,23,0.85);
+  --hud-border:    rgba(48,54,61,0.5);
+  --hud-blur:      12px;
+
+  /* ── Tooltip ─────────────────────────────────────── */
+  --tooltip-bg:    rgba(22,27,34,0.95);
+  --tooltip-border:rgba(48,54,61,0.8);
+
+  /* ── Scrollbar ───────────────────────────────────── */
+  --scrollbar-thumb:  var(--border-subtle);
+  --scrollbar-track:  transparent;
+
+  /* ── Live Indicator ──────────────────────────────── */
+  --live-color:    var(--green);
+  --live-glow:     rgba(63,185,80,0.7);
+
+  /* ── Blur values ─────────────────────────────────── */
+  --blur-sm:       8px;
+  --blur-md:       12px;
+  --blur-lg:       16px;
+
+  /* ── Radius ──────────────────────────────────────── */
+  --radius-sm:     6px;
+  --radius-md:     10px;
+  --radius-lg:     14px;
+  --radius-pill:   20px;
+
+  /* ── 3D Scene ────────────────────────────────────── */
+  --scene-bg:      #060a10;
+  --node-glow:     rgba(88,166,255,0.6);
+  --edge-color:    rgba(88,166,255,0.15);
+  --grid-color:    rgba(48,54,61,0.3);
+}

@@ -1,0 +1,361 @@
+/* ═══════════════════════════════════════════════════════════════════
+   ⚔ STAR WARS THEME — Orbit AI
+   Holographic command interface inspired by Imperial/Rebel displays.
+   Lightsaber glows, hyperspace particles, Death Star aesthetics.
+   ═══════════════════════════════════════════════════════════════════ */
+
+[data-theme="starwars"] {
+  /* ── Backgrounds — Deep space / Imperial bridge ──── */
+  --bg:             #020408;
+  --bg2:            #080c14;
+  --bg3:            #0e1420;
+  --bg4:            #16202e;
+  --bg-glass:       rgba(4,8,16,0.92);
+  --bg-glass-heavy: rgba(4,8,16,0.97);
+  --bg-hover:       rgba(0,180,255,0.04);
+  --bg-input:       rgba(8,14,24,0.95);
+
+  /* ── Text — Holographic blue-white ───────────────── */
+  --text:           #d4e8ff;
+  --text2:          #8cb4d8;
+  --text3:          #4a7498;
+  --text4:          #2e5070;
+
+  /* ── Borders — Cyan holographic lines ────────────── */
+  --border:         #1a3050;
+  --border-subtle:  #0f2238;
+  --border-accent:  rgba(0,180,255,0.25);
+
+  /* ── Accents — Lightsaber blue ───────────────────── */
+  --accent:         #00b4ff;
+  --accent-glow:    rgba(0,180,255,0.5);
+  --accent-bg:      rgba(0,180,255,0.1);
+  --blue:           #00b4ff;
+  --green:          #00ff41;
+  --purple:         #9d4edd;
+  --orange:         #ff6b2b;
+  --red:            #ff2d2d;
+  --cyan:           #00e5ff;
+  --pink:           #ff4da6;
+  --yellow:         #ffc800;
+
+  /* ── Buttons — Imperial control style ────────────── */
+  --btn-bg:         rgba(10,20,36,0.9);
+  --btn-border:     rgba(0,180,255,0.2);
+  --btn-text:       #6eaacc;
+  --btn-hover-border: #00b4ff;
+  --btn-hover-text:   #d4e8ff;
+  --btn-active-bg:    rgba(0,180,255,0.12);
+  --btn-active-border:#00b4ff;
+  --btn-active-text:  #00d4ff;
+  --btn-primary-bg:   linear-gradient(135deg, #0066aa 0%, #00b4ff 100%);
+  --btn-primary-text: #ffffff;
+
+  /* ── Panels — Holographic display ────────────────── */
+  --panel-bg:       rgba(4,10,20,0.96);
+  --panel-border:   rgba(0,180,255,0.15);
+  --panel-shadow:   0 0 40px rgba(0,80,160,0.15), 0 8px 32px rgba(0,0,0,0.6);
+  --card-bg:        rgba(8,16,28,0.9);
+  --card-border:    rgba(0,140,220,0.12);
+
+  /* ── HUD — Tactical display ──────────────────────── */
+  --hud-bg:         rgba(4,10,20,0.92);
+  --hud-border:     rgba(0,180,255,0.2);
+  --hud-blur:       16px;
+
+  /* ── Tooltip ─────────────────────────────────────── */
+  --tooltip-bg:     rgba(4,10,20,0.98);
+  --tooltip-border: rgba(0,180,255,0.3);
+
+  /* ── Scrollbar ───────────────────────────────────── */
+  --scrollbar-thumb:  #0a2a48;
+  --scrollbar-track:  transparent;
+
+  /* ── Live Indicator — Rebel green ────────────────── */
+  --live-color:     #00ff41;
+  --live-glow:      rgba(0,255,65,0.6);
+
+  /* ── 3D Scene ────────────────────────────────────── */
+  --scene-bg:       #020408;
+  --node-glow:      rgba(0,180,255,0.7);
+  --edge-color:     rgba(0,180,255,0.12);
+  --grid-color:     rgba(0,80,160,0.15);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Star Wars — Global Overrides & Enhancements
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── Holographic scanline effect on body ────────────── */
+[data-theme="starwars"] body::after {
+  content: '';
+  position: fixed; inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0,180,255,0.015) 2px,
+    rgba(0,180,255,0.015) 4px
+  );
+  pointer-events: none;
+  z-index: 9998;
+}
+
+/* ── Glowing border animation for key panels ───────── */
+[data-theme="starwars"] .hud-box,
+[data-theme="starwars"] .ip-header,
+[data-theme="starwars"] #ctrl-hub,
+[data-theme="starwars"] #feat-panel,
+[data-theme="starwars"] .fp-header {
+  border-image: linear-gradient(
+    135deg,
+    rgba(0,180,255,0.3) 0%,
+    rgba(0,180,255,0.05) 50%,
+    rgba(0,180,255,0.3) 100%
+  ) 1;
+}
+
+/* ── HUD header glow bar ───────────────────────────── */
+[data-theme="starwars"] #hud::after {
+  content: '';
+  position: absolute; bottom: -1px; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(0,180,255,0.6) 20%,
+    rgba(0,228,255,0.8) 50%,
+    rgba(0,180,255,0.6) 80%,
+    transparent 100%
+  );
+}
+
+/* ── Button hover glow ─────────────────────────────── */
+[data-theme="starwars"] .hud-btn:hover,
+[data-theme="starwars"] .tr-btn:hover,
+[data-theme="starwars"] .zoom-btn:hover,
+[data-theme="starwars"] .zc-btn:hover,
+[data-theme="starwars"] .fchip:hover,
+[data-theme="starwars"] .ctrl-item:hover,
+[data-theme="starwars"] .ch-zoom-btn:hover {
+  box-shadow: 0 0 12px rgba(0,180,255,0.25),
+              inset 0 0 12px rgba(0,180,255,0.05);
+}
+
+/* ── Active button lightsaber glow ─────────────────── */
+[data-theme="starwars"] .hud-btn.active,
+[data-theme="starwars"] .fchip.active {
+  box-shadow: 0 0 16px rgba(0,180,255,0.35),
+              inset 0 0 16px rgba(0,180,255,0.08);
+  text-shadow: 0 0 8px rgba(0,180,255,0.6);
+}
+
+/* ── Card hover: holographic highlight ─────────────── */
+[data-theme="starwars"] .feat-card:hover,
+[data-theme="starwars"] .ticker-card:hover,
+[data-theme="starwars"] .ip-event-item:hover,
+[data-theme="starwars"] .mts-task:hover,
+[data-theme="starwars"] .insight-card:hover {
+  border-color: rgba(0,180,255,0.4);
+  box-shadow: 0 0 20px rgba(0,120,200,0.12),
+              inset 0 0 20px rgba(0,180,255,0.03);
+}
+
+/* ── Tooltip glow ──────────────────────────────────── */
+[data-theme="starwars"] #tooltip,
+[data-theme="starwars"] .hud-tip {
+  box-shadow: 0 0 24px rgba(0,80,160,0.25),
+              0 8px 32px rgba(0,0,0,0.6);
+  border-color: rgba(0,180,255,0.3);
+}
+
+/* ── Panel floating glow ───────────────────────────── */
+[data-theme="starwars"] #info-panel,
+[data-theme="starwars"] #my-task-sidebar,
+[data-theme="starwars"] #feat-panel,
+[data-theme="starwars"] #ctrl-hub {
+  box-shadow: 0 0 60px rgba(0,80,160,0.15),
+              0 0 120px rgba(0,40,80,0.08),
+              0 8px 32px rgba(0,0,0,0.5);
+}
+
+/* ── Live indicator: rebel green pulse ─────────────── */
+[data-theme="starwars"] .live-dot {
+  background: var(--live-color);
+  box-shadow: 0 0 8px var(--live-glow), 0 0 20px rgba(0,255,65,0.3);
+}
+
+/* ── Stats / numbers: holographic glow ─────────────── */
+[data-theme="starwars"] .stat b,
+[data-theme="starwars"] .zoh-card .zoh-val {
+  text-shadow: 0 0 10px rgba(0,180,255,0.4);
+}
+
+/* ── Logo accent ───────────────────────────────────── */
+[data-theme="starwars"] .logo span {
+  color: #00b4ff;
+  text-shadow: 0 0 8px rgba(0,180,255,0.5);
+}
+
+/* ── Input focus: lightsaber border ────────────────── */
+[data-theme="starwars"] input:focus,
+[data-theme="starwars"] select:focus,
+[data-theme="starwars"] #inline-edit-input:focus,
+[data-theme="starwars"] #node-search.show {
+  border-color: #00b4ff;
+  box-shadow: 0 0 12px rgba(0,180,255,0.3);
+  outline: none;
+}
+
+/* ── Breadcrumb ────────────────────────────────────── */
+[data-theme="starwars"] .bc-crumb.clickable {
+  color: #00b4ff;
+}
+[data-theme="starwars"] .bc-crumb.clickable:hover {
+  color: #00d4ff;
+  text-shadow: 0 0 6px rgba(0,180,255,0.4);
+}
+
+/* ── Skill toast glow ──────────────────────────────── */
+[data-theme="starwars"] .skill-toast.skill {
+  border-color: rgba(0,255,65,0.4);
+  box-shadow: 0 0 30px rgba(0,255,65,0.08);
+}
+[data-theme="starwars"] .skill-toast.agent {
+  border-color: rgba(157,78,221,0.4);
+  box-shadow: 0 0 30px rgba(157,78,221,0.08);
+}
+
+/* ── Team mode: galactic gold ──────────────────────── */
+[data-theme="starwars"] .tr-btn-team {
+  border-color: #ffc800;
+  color: #ffc800;
+  text-shadow: 0 0 6px rgba(255,200,0,0.3);
+}
+[data-theme="starwars"] .tr-btn-company {
+  border-color: #00e5ff;
+  color: #00e5ff;
+}
+[data-theme="starwars"] .tr-btn-parallel {
+  border-color: #9d4edd;
+  color: #9d4edd;
+}
+
+/* ── Scrollbar: dark imperial ──────────────────────── */
+[data-theme="starwars"] ::-webkit-scrollbar {
+  width: 5px;
+}
+[data-theme="starwars"] ::-webkit-scrollbar-track {
+  background: transparent;
+}
+[data-theme="starwars"] ::-webkit-scrollbar-thumb {
+  background: #0a2a48;
+  border-radius: 3px;
+}
+[data-theme="starwars"] ::-webkit-scrollbar-thumb:hover {
+  background: #0e3a60;
+}
+
+/* ── Tab active: lightsaber underline ──────────────── */
+[data-theme="starwars"] .ip-tab.active {
+  color: #00b4ff;
+  border-bottom-color: #00b4ff;
+  text-shadow: 0 0 6px rgba(0,180,255,0.4);
+}
+
+/* ── Filter chip active ────────────────────────────── */
+[data-theme="starwars"] .fchip.active {
+  border-color: #00b4ff;
+  color: #00d4ff;
+  background: rgba(0,180,255,0.1);
+}
+
+/* ── Zoom controls ─────────────────────────────────── */
+[data-theme="starwars"] .zoom-btn:hover,
+[data-theme="starwars"] .zc-btn:hover {
+  border-color: #00b4ff;
+  color: #00d4ff;
+}
+
+/* ── Level badge colors ────────────────────────────── */
+[data-theme="starwars"] .level-badge {
+  text-shadow: 0 0 4px currentColor;
+}
+
+/* ── Minimap border ────────────────────────────────── */
+[data-theme="starwars"] #minimap:hover {
+  border-color: rgba(0,180,255,0.5);
+}
+
+/* ── Zoom summary chips: holographic ───────────────── */
+[data-theme="starwars"] .zs-chip {
+  text-shadow: 0 0 6px currentColor;
+}
+
+/* ── Spinner: lightsaber blue ──────────────────────── */
+[data-theme="starwars"] .spinner {
+  border-color: #0f2238;
+  border-top-color: #00b4ff;
+}
+
+/* ── Star Wars specific: corner brackets on panels ── */
+[data-theme="starwars"] #info-panel::before,
+[data-theme="starwars"] #my-task-sidebar::before,
+[data-theme="starwars"] #feat-panel::before {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    #00b4ff 0%, #00b4ff 8px,
+    transparent 8px, transparent calc(100% - 8px),
+    #00b4ff calc(100% - 8px), #00b4ff 100%
+  );
+  opacity: 0.6;
+}
+
+/* ── Hyperspace particle background (subtle) ───────── */
+[data-theme="starwars"] #three-container::before,
+[data-theme="starwars"] canvas + *::before {
+  /* handled in JS for performance */
+}
+
+/* ═══ SPECIAL: Lightsaber side color variants ═══════ */
+
+/* Jedi Blue (default) — already applied above */
+
+/* Sith Red variant */
+[data-theme="starwars"][data-saber="red"] {
+  --accent:        #ff2d2d;
+  --accent-glow:   rgba(255,45,45,0.5);
+  --accent-bg:     rgba(255,45,45,0.1);
+  --border-accent: rgba(255,45,45,0.25);
+  --node-glow:     rgba(255,45,45,0.7);
+}
+
+/* Yoda Green variant */
+[data-theme="starwars"][data-saber="green"] {
+  --accent:        #00ff41;
+  --accent-glow:   rgba(0,255,65,0.5);
+  --accent-bg:     rgba(0,255,65,0.1);
+  --border-accent: rgba(0,255,65,0.25);
+  --node-glow:     rgba(0,255,65,0.7);
+}
+
+/* Mace Windu Purple variant */
+[data-theme="starwars"][data-saber="purple"] {
+  --accent:        #9d4edd;
+  --accent-glow:   rgba(157,78,221,0.5);
+  --accent-bg:     rgba(157,78,221,0.1);
+  --border-accent: rgba(157,78,221,0.25);
+  --node-glow:     rgba(157,78,221,0.7);
+}
+
+/* Ahsoka White variant */
+[data-theme="starwars"][data-saber="white"] {
+  --accent:        #e8e8ff;
+  --accent-glow:   rgba(232,232,255,0.5);
+  --accent-bg:     rgba(232,232,255,0.08);
+  --border-accent: rgba(232,232,255,0.25);
+  --node-glow:     rgba(232,232,255,0.7);
+}

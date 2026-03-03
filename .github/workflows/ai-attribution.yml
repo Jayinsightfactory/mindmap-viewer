@@ -1,0 +1,231 @@
+name: AI Attribution — PR 라벨 & 요약
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  ai-attribution:
+    runs-on: ubuntu-latest
+    steps:
+
+      # ── 1. 소스 체크아웃 ───────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # ── 2. AI 기여도 분석 스크립트 실행 ───────────
+      - name: Analyze AI Contribution
+        id: analyze
+        run: |
+          node -e "
+          const { execSync } = require('child_process');
+          const diff = execSync('git diff origin/\${{ github.base_ref }}...HEAD').toString();
+
+          // 라인 수 분석
+          const added   = (diff.match(/^\+[^+]/gm) || []).length;
+          const removed = (diff.match(/^-[^-]/gm)  || []).length;
+          const total   = added + removed;
+
+          // commit 메시지에서 AI 공동 작성자 추출
+          const log = execSync('git log origin/\${{ github.base_ref }}..HEAD --format=%B').toString();
+          const coAuthors = [...new Set(
+            (log.match(/Co-Authored-By: (.+?) </gi) || [])
+              .map(m => m.replace(/Co-Authored-By: /i,'').replace(/<.*>/,'').trim())
+          )];
+
+          // 파일 확장자별 분류
+          const changedFiles = execSync('git diff origin/\${{ github.base_ref }}...HEAD --name-only').toString().trim().split('\n');
+          const extCounts = {};
+          changedFiles.forEach(f => {
+            const ext = f.split('.').pop();
+            extCounts[ext] = (extCounts[ext] || 0) + 1;
+          });
+
+          // 목적 감지 (커밋 메시지 키워드)
+          let purpose = 'unknown';
+          const logLower = log.toLowerCase();
+          if (/fix|bug|hotfix|patch/.test(logLower))               purpose = 'fix';
+          else if (/feat|feature|implement|add/.test(logLower))    purpose = 'implement';
+          else if (/refactor|cleanup|clean/.test(logLower))        purpose = 'refactor';
+          else if (/test|spec|coverage/.test(logLower))            purpose = 'test';
+          else if (/deploy|release|version|bump/.test(logLower))   purpose = 'deploy';
+          else if (/docs?|readme|comment/.test(logLower))          purpose = 'docs';
+          else if (/config|setting|env/.test(logLower))            purpose = 'config';
+
+          // AI 기여도 추정
+          const aiScore = coAuthors.length > 0 ? Math.min(95, 60 + coAuthors.length * 10) : 0;
+
+          const result = {
+            totalLines: total,
+            addedLines: added,
+            removedLines: removed,
+            fileCount: changedFiles.filter(Boolean).length,
+            coAuthors,
+            purpose,
+            aiScore,
+            extBreakdown: extCounts,
+          };
+
+          const fs = require('fs');
+          fs.writeFileSync('/tmp/ai-attribution.json', JSON.stringify(result, null, 2));
+          console.log(JSON.stringify(result));
+          " 2>&1
+
+          echo "result_file=/tmp/ai-attribution.json" >> \$GITHUB_OUTPUT
+
+      # ── 3. PR 코멘트 작성 ──────────────────────────
+      - name: Post Attribution Comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs  = require('fs');
+            const data = JSON.parse(fs.readFileSync('/tmp/ai-attribution.json', 'utf8'));
+
+            const PURPOSE_ICONS = {
+              implement: '🛠 기능 구현', fix: '🔧 버그 수정', refactor: '♻️ 리팩터링',
+              test: '🧪 테스트', deploy: '🚀 배포', docs: '📝 문서', config: '⚙️ 설정', unknown: '🔍 기타'
+            };
+
+            const aiAuthors = data.coAuthors.length
+              ? data.coAuthors.map(a => `\`${a}\``).join(', ')
+              : '없음 (사람 작성)';
+
+            const aiBar = data.aiScore > 0
+              ? '█'.repeat(Math.round(data.aiScore / 10)) + '░'.repeat(10 - Math.round(data.aiScore / 10))
+              : '░'.repeat(10);
+
+            const extTable = Object.entries(data.extBreakdown)
+              .sort((a,b) => b[1]-a[1])
+              .slice(0,6)
+              .map(([ext, cnt]) => `| .${ext} | ${cnt} |`)
+              .join('\n');
+
+            const body = [
+              '## 🤖 Orbit AI Attribution Report',
+              '',
+              `| 항목 | 값 |`,
+              `|------|-----|`,
+              `| 목적 | ${PURPOSE_ICONS[data.purpose] || data.purpose} |`,
+              `| 변경 라인 | +${data.addedLines} / -${data.removedLines} (${data.totalLines}줄) |`,
+              `| 파일 수 | ${data.fileCount}개 |`,
+              `| AI 공동 작성자 | ${aiAuthors} |`,
+              `| AI 기여도 추정 | ${aiBar} ${data.aiScore}% |`,
+              '',
+              '### 파일 타입 분포',
+              `| 확장자 | 파일 수 |`,
+              `|--------|--------|`,
+              extTable || '| — | — |',
+              '',
+              data.coAuthors.length > 0
+                ? `> 💡 이 PR은 AI와 협업하여 작성되었습니다. Co-authored-by 태그가 ${data.coAuthors.length}개 감지되었습니다.`
+                : '> 📝 이 PR은 사람이 작성했습니다.',
+              '',
+              `*[Orbit](https://github.com/) · ${new Date().toISOString().slice(0,16)} UTC*`,
+            ].join('\n');
+
+            // 기존 Orbit 코멘트 업데이트 또는 새로 작성
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo:  context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const existing = comments.find(c => c.body?.startsWith('## 🤖 Orbit AI Attribution Report'));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo:  context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo:  context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
+
+      # ── 4. PR 라벨 자동 적용 ──────────────────────
+      - name: Apply AI Labels
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs   = require('fs');
+            const data = JSON.parse(fs.readFileSync('/tmp/ai-attribution.json', 'utf8'));
+
+            const labelsToAdd = [];
+
+            // 목적 라벨
+            const purposeLabels = {
+              implement: 'type: feature',
+              fix:       'type: bugfix',
+              refactor:  'type: refactor',
+              test:      'type: test',
+              deploy:    'type: deploy',
+              docs:      'type: docs',
+            };
+            if (purposeLabels[data.purpose]) labelsToAdd.push(purposeLabels[data.purpose]);
+
+            // AI 기여도 라벨
+            if (data.aiScore >= 70)      labelsToAdd.push('ai: high');
+            else if (data.aiScore >= 30) labelsToAdd.push('ai: medium');
+            else if (data.aiScore > 0)   labelsToAdd.push('ai: assisted');
+
+            // 크기 라벨
+            if (data.totalLines > 500)      labelsToAdd.push('size: XL');
+            else if (data.totalLines > 200) labelsToAdd.push('size: L');
+            else if (data.totalLines > 50)  labelsToAdd.push('size: M');
+            else                            labelsToAdd.push('size: S');
+
+            // 라벨 생성 후 적용 (라벨 없으면 자동 생성)
+            const labelDefs = {
+              'type: feature':  { color: '0075ca', description: '새 기능' },
+              'type: bugfix':   { color: 'd73a4a', description: '버그 수정' },
+              'type: refactor': { color: 'e4e669', description: '리팩터링' },
+              'type: test':     { color: '0e8a16', description: '테스트' },
+              'type: deploy':   { color: 'ff9500', description: '배포' },
+              'type: docs':     { color: '0075ca', description: '문서' },
+              'ai: high':       { color: 'bc8cff', description: 'AI 기여 높음 (70%+)' },
+              'ai: medium':     { color: '8957e5', description: 'AI 기여 중간 (30-70%)' },
+              'ai: assisted':   { color: '6e40c9', description: 'AI 보조' },
+              'size: XL':       { color: 'ee0701', description: '500+ 라인' },
+              'size: L':        { color: 'e4e669', description: '200-500 라인' },
+              'size: M':        { color: '84b6eb', description: '50-200 라인' },
+              'size: S':        { color: '0e8a16', description: '~50 라인' },
+            };
+
+            const { data: existingLabels } = await github.rest.issues.listLabelsForRepo({
+              owner: context.repo.owner, repo: context.repo.repo
+            });
+            const existingNames = new Set(existingLabels.map(l => l.name));
+
+            for (const label of labelsToAdd) {
+              if (!existingNames.has(label) && labelDefs[label]) {
+                try {
+                  await github.rest.issues.createLabel({
+                    owner: context.repo.owner,
+                    repo:  context.repo.repo,
+                    name:  label,
+                    color: labelDefs[label].color,
+                    description: labelDefs[label].description,
+                  });
+                } catch {}
+              }
+            }
+
+            if (labelsToAdd.length > 0) {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo:  context.repo.repo,
+                issue_number: context.issue.number,
+                labels: labelsToAdd,
+              });
+            }

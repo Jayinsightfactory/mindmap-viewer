@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Orbit AI — 사용법 가이드</title>
+<script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js"></script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg:       #0d1117;
+  --bg2:      #161b22;
+  --bg3:      #1c2128;
+  --border:   #30363d;
+  --text:     #e6edf3;
+  --muted:    #8b949e;
+  --accent:   #58a6ff;
+  --gold:     #ffd700;
+  --green:    #3fb950;
+  --purple:   #bc8cff;
+  --orange:   #f0883e;
+}
+html { scroll-behavior: smooth; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans KR', sans-serif;
+  line-height: 1.6;
+}
+
+/* ── 상단 네비게이션 ─────────────────────────────────────────── */
+nav.top-nav {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 24px; height: 56px;
+  background: rgba(13,17,23,.92); border-bottom: 1px solid var(--border);
+  backdrop-filter: blur(12px);
+}
+.nav-logo {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 16px; font-weight: 700; color: var(--gold); text-decoration: none;
+}
+.nav-logo span { color: var(--text); font-weight: 400; }
+.nav-links { display: flex; align-items: center; gap: 8px; }
+.nav-link {
+  padding: 6px 14px; border-radius: 6px; font-size: 13px; color: var(--muted);
+  text-decoration: none; transition: all .15s;
+}
+.nav-link:hover { color: var(--text); background: var(--bg3); }
+.nav-cta {
+  padding: 7px 18px; border-radius: 8px; font-size: 13px; font-weight: 600;
+  background: linear-gradient(135deg, #1f6feb, #388bfd);
+  color: #fff; text-decoration: none; transition: opacity .15s;
+}
+.nav-cta:hover { opacity: .85; }
+
+/* ── 히어로 ─────────────────────────────────────────────────── */
+.hero {
+  padding: 140px 24px 80px;
+  text-align: center;
+  background: radial-gradient(ellipse 80% 50% at 50% 0%, rgba(88,166,255,.06), transparent);
+}
+.hero-badge {
+  display: inline-block; padding: 4px 14px; border-radius: 20px;
+  background: rgba(255,215,0,.1); border: 1px solid rgba(255,215,0,.3);
+  color: var(--gold); font-size: 12px; font-weight: 600; letter-spacing: .5px;
+  margin-bottom: 20px;
+}
+.hero h1 {
+  font-size: clamp(32px, 5vw, 56px); font-weight: 800;
+  line-height: 1.2; letter-spacing: -.02em; margin-bottom: 20px;
+}
+.hero h1 em { color: var(--gold); font-style: normal; }
+.hero p {
+  font-size: 18px; color: var(--muted); max-width: 560px; margin: 0 auto 36px;
+}
+.hero-btns { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+.btn-primary {
+  padding: 12px 28px; border-radius: 10px; font-size: 15px; font-weight: 600;
+  background: linear-gradient(135deg, #1f6feb, #388bfd);
+  color: #fff; text-decoration: none; border: none; cursor: pointer;
+  transition: transform .15s, opacity .15s;
+}
+.btn-primary:hover { opacity: .88; transform: translateY(-1px); }
+.btn-secondary {
+  padding: 12px 28px; border-radius: 10px; font-size: 15px; font-weight: 600;
+  background: none; color: var(--text); text-decoration: none;
+  border: 1px solid var(--border); cursor: pointer; transition: all .15s;
+}
+.btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ── 섹션 공통 ────────────────────────────────────────────────── */
+section { padding: 80px 24px; max-width: 1100px; margin: 0 auto; }
+.section-label {
+  font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;
+  color: var(--accent); margin-bottom: 12px;
+}
+.section-title { font-size: clamp(24px, 3vw, 36px); font-weight: 700; margin-bottom: 12px; }
+.section-sub   { font-size: 16px; color: var(--muted); margin-bottom: 48px; }
+hr.divider { border: none; border-top: 1px solid var(--border); margin: 0; }
+
+/* ── 뷰 모드 샘플 카드 ──────────────────────────────────────── */
+.view-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px;
+}
+.view-card {
+  background: var(--bg2); border: 1px solid var(--border); border-radius: 16px;
+  overflow: hidden; transition: transform .2s, border-color .2s;
+  cursor: pointer; text-decoration: none; display: block; color: inherit;
+}
+.view-card:hover { transform: translateY(-4px); border-color: var(--accent); }
+.view-card.team:hover { border-color: var(--green); }
+.view-card.company:hover { border-color: var(--purple); }
+.view-card.parallel:hover { border-color: var(--orange); }
+.vc-canvas-wrap {
+  height: 200px; background: #080b11; position: relative; overflow: hidden;
+}
+.vc-canvas-wrap canvas { width: 100% !important; height: 100% !important; }
+.vc-badge {
+  position: absolute; top: 10px; right: 10px;
+  padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700;
+  background: rgba(13,17,23,.8); border: 1px solid;
+}
+.vc-body { padding: 20px 22px; }
+.vc-icon  { font-size: 24px; margin-bottom: 10px; }
+.vc-title { font-size: 17px; font-weight: 700; margin-bottom: 6px; }
+.vc-desc  { font-size: 13px; color: var(--muted); line-height: 1.5; margin-bottom: 14px; }
+.vc-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+.vc-chip  {
+  padding: 3px 10px; border-radius: 20px; font-size: 11px;
+  background: rgba(88,166,255,.1); border: 1px solid rgba(88,166,255,.25); color: var(--accent);
+}
+.view-card.team  .vc-chip { background: rgba(63,185,80,.1); border-color: rgba(63,185,80,.25); color: var(--green); }
+.view-card.company .vc-chip { background: rgba(188,140,255,.1); border-color: rgba(188,140,255,.25); color: var(--purple); }
+.view-card.parallel .vc-chip { background: rgba(240,136,62,.1); border-color: rgba(240,136,62,.25); color: var(--orange); }
+.vc-try-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 7px 16px; border-radius: 7px; font-size: 13px; font-weight: 600;
+  background: rgba(88,166,255,.12); border: 1px solid rgba(88,166,255,.3); color: var(--accent);
+  text-decoration: none; transition: all .15s;
+}
+.view-card.team .vc-try-btn { background:rgba(63,185,80,.1); border-color:rgba(63,185,80,.3); color:var(--green); }
+.view-card.company .vc-try-btn { background:rgba(188,140,255,.1); border-color:rgba(188,140,255,.3); color:var(--purple); }
+.view-card.parallel .vc-try-btn { background:rgba(240,136,62,.1); border-color:rgba(240,136,62,.3); color:var(--orange); }
+.view-card:hover .vc-try-btn { filter: brightness(1.2); }
+
+/* ── 줌 네비게이션 가이드 ────────────────────────────────────── */
+.zoom-flow {
+  display: flex; align-items: center; justify-content: center;
+  gap: 0; flex-wrap: wrap; margin: 40px 0;
+}
+.zoom-node {
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  padding: 24px 28px; background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 16px; min-width: 140px; text-align: center;
+  transition: border-color .2s;
+}
+.zoom-node:hover { border-color: var(--gold); }
+.zn-icon  { font-size: 32px; }
+.zn-title { font-size: 14px; font-weight: 700; color: var(--text); }
+.zn-zoom  { font-size: 11px; color: var(--muted); }
+.zoom-arrow {
+  font-size: 20px; color: var(--muted); padding: 0 8px;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+}
+.zoom-arrow span { font-size: 10px; color: var(--muted); white-space: nowrap; }
+.zoom-tip {
+  margin-top: 24px; padding: 16px 20px; background: rgba(255,215,0,.06);
+  border: 1px solid rgba(255,215,0,.2); border-radius: 12px;
+  display: flex; align-items: flex-start; gap: 12px; font-size: 13px; color: var(--muted);
+}
+.zoom-tip strong { color: var(--gold); }
+
+/* ── 팔로우 시스템 ─────────────────────────────────────────── */
+.follow-demo {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 40px;
+}
+@media (max-width: 640px) { .follow-demo { grid-template-columns: 1fr; } }
+.follow-card {
+  background: var(--bg2); border: 1px solid var(--border); border-radius: 14px;
+  padding: 20px 22px;
+}
+.fc-header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.fc-avatar {
+  width: 44px; height: 44px; border-radius: 50%;
+  background: linear-gradient(135deg, #1f6feb, #bc8cff);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px; font-weight: 700; color: #fff; flex-shrink: 0;
+}
+.fc-name  { font-size: 14px; font-weight: 700; }
+.fc-title { font-size: 12px; color: var(--muted); }
+.fc-follow-btn {
+  margin-left: auto; padding: 6px 14px; border-radius: 7px;
+  font-size: 12px; font-weight: 600; cursor: pointer;
+  background: rgba(88,166,255,.12); border: 1px solid rgba(88,166,255,.3);
+  color: var(--accent); transition: all .15s; font-family: inherit;
+}
+.fc-follow-btn.following {
+  background: rgba(63,185,80,.1); border-color: rgba(63,185,80,.3); color: var(--green);
+}
+.fc-follow-btn:hover { filter: brightness(1.15); }
+.fc-skills { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 14px; }
+.fc-skill {
+  padding: 2px 8px; border-radius: 20px; font-size: 11px;
+  background: var(--bg3); border: 1px solid var(--border); color: var(--muted);
+}
+.fc-nodes {
+  display: flex; gap: 6px; align-items: center;
+  padding: 10px 12px; background: var(--bg3); border-radius: 8px;
+  font-size: 12px; color: var(--muted);
+}
+
+/* ── 조작법 테이블 ─────────────────────────────────────────── */
+.controls-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;
+}
+.ctrl-card {
+  background: var(--bg2); border: 1px solid var(--border); border-radius: 12px;
+  padding: 18px 20px; display: flex; flex-direction: column; gap: 8px;
+}
+.ctrl-key {
+  display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap;
+}
+kbd {
+  padding: 3px 8px; border-radius: 5px; font-size: 12px; font-weight: 700;
+  background: var(--bg3); border: 1px solid var(--border); color: var(--text);
+  font-family: 'Courier New', monospace;
+}
+.ctrl-desc { font-size: 13px; color: var(--muted); }
+
+/* ── FAQ ────────────────────────────────────────────────────── */
+.faq-list { display: flex; flex-direction: column; gap: 12px; }
+.faq-item {
+  background: var(--bg2); border: 1px solid var(--border); border-radius: 12px;
+  overflow: hidden;
+}
+.faq-q {
+  width: 100%; padding: 16px 20px; text-align: left; background: none; border: none;
+  color: var(--text); font-size: 14px; font-weight: 600; cursor: pointer;
+  display: flex; justify-content: space-between; align-items: center; font-family: inherit;
+}
+.faq-q:hover { background: rgba(88,166,255,.05); }
+.faq-a { padding: 0 20px 16px; font-size: 13px; color: var(--muted); line-height: 1.6; display: none; }
+.faq-item.open .faq-a { display: block; }
+.faq-item.open .faq-q { color: var(--accent); }
+
+/* ── CTA ─────────────────────────────────────────────────────── */
+.cta-section {
+  text-align: center; padding: 100px 24px;
+  background: radial-gradient(ellipse 80% 60% at 50% 100%, rgba(88,166,255,.06), transparent);
+}
+.cta-section h2 { font-size: 36px; font-weight: 800; margin-bottom: 14px; }
+.cta-section p  { font-size: 16px; color: var(--muted); margin-bottom: 32px; }
+
+/* ── 푸터 ──────────────────────────────────────────────────── */
+footer {
+  padding: 32px 24px; text-align: center; border-top: 1px solid var(--border);
+  font-size: 13px; color: var(--muted);
+}
+footer a { color: var(--accent); text-decoration: none; }
+footer a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<!-- ── 상단 네비 ────────────────────────────────────────────────── -->
+<nav class="top-nav">
+  <a class="nav-logo" href="/orbit3d.html">
+    ⬡ Orbit AI <span>/ 사용법</span>
+  </a>
+  <div class="nav-links">
+    <a class="nav-link" href="#samples">샘플 보기</a>
+    <a class="nav-link" href="#zoom">줌 가이드</a>
+    <a class="nav-link" href="#follow">팔로우</a>
+    <a class="nav-link" href="#controls">조작법</a>
+    <a class="nav-cta" href="/orbit3d.html">🚀 지금 시작</a>
+  </div>
+</nav>
+
+<!-- ── 히어로 ────────────────────────────────────────────────────── -->
+<div class="hero">
+  <div class="hero-badge">✦ 사용법 가이드</div>
+  <h1>작업을 <em>우주</em>처럼<br>한눈에 보세요</h1>
+  <p>Orbit AI는 개인 작업부터 팀·회사 전체 프로젝트까지<br>3D 공간에서 줌인/줌아웃으로 탐색하는 협업 도구입니다.</p>
+  <div class="hero-btns">
+    <a class="btn-primary" href="/orbit3d.html">🚀 바로 체험하기</a>
+    <a class="btn-secondary" href="#samples">샘플 먼저 보기</a>
+  </div>
+</div>
+
+<hr class="divider" />
+
+<!-- ── 뷰 모드 샘플 ──────────────────────────────────────────────── -->
+<section id="samples">
+  <div class="section-label">샘플 뷰</div>
+  <h2 class="section-title">세 가지 뷰 모드</h2>
+  <p class="section-sub">줌 레벨에 따라 개인 → 팀 → 회사 뷰로 자동 전환됩니다. 각 샘플을 직접 체험해보세요.</p>
+
+  <div class="view-grid">
+
+    <!-- 개인 뷰 -->
+    <a class="view-card personal" href="/orbit3d.html?demo=personal">
+      <div class="vc-canvas-wrap">
+        <canvas id="canvas-personal"></canvas>
+        <div class="vc-badge" style="border-color:var(--accent);color:var(--accent)">👤 개인</div>
+      </div>
+      <div class="vc-body">
+        <div class="vc-icon">👤</div>
+        <div class="vc-title">개인 뷰</div>
+        <div class="vc-desc">내 작업 세션들이 행성처럼 떠 있습니다. 파일·코드·대화·Git 커밋이 위성처럼 궤도를 돕니다.</div>
+        <div class="vc-chips">
+          <span class="vc-chip">세션 클러스터</span>
+          <span class="vc-chip">파일 위성</span>
+          <span class="vc-chip">AI 작업 추적</span>
+        </div>
+        <span class="vc-try-btn">🔭 개인 뷰 체험 →</span>
+      </div>
+    </a>
+
+    <!-- 팀 뷰 -->
+    <a class="view-card team" href="/orbit3d.html?demo=team">
+      <div class="vc-canvas-wrap">
+        <canvas id="canvas-team"></canvas>
+        <div class="vc-badge" style="border-color:var(--green);color:var(--green)">👥 팀</div>
+      </div>
+      <div class="vc-body">
+        <div class="vc-icon">👥</div>
+        <div class="vc-title">팀 뷰</div>
+        <div class="vc-desc">팀원들이 공전하며 각자의 작업 진행률이 보입니다. 목표 구체를 중심으로 연결됩니다.</div>
+        <div class="vc-chips">
+          <span class="vc-chip">팀원 공전 궤도</span>
+          <span class="vc-chip">작업 진행률</span>
+          <span class="vc-chip">DM 채팅</span>
+        </div>
+        <span class="vc-try-btn">🔭 팀 뷰 체험 →</span>
+      </div>
+    </a>
+
+    <!-- 회사 뷰 -->
+    <a class="view-card company" href="/orbit3d.html?demo=company">
+      <div class="vc-canvas-wrap">
+        <canvas id="canvas-company"></canvas>
+        <div class="vc-badge" style="border-color:var(--purple);color:var(--purple)">🏢 회사</div>
+      </div>
+      <div class="vc-body">
+        <div class="vc-icon">🏢</div>
+        <div class="vc-title">회사 뷰</div>
+        <div class="vc-desc">부서별 행성계가 펼쳐집니다. 전체 조직의 업무 흐름을 한눈에 파악할 수 있습니다.</div>
+        <div class="vc-chips">
+          <span class="vc-chip">부서 행성계</span>
+          <span class="vc-chip">KPI 추적</span>
+          <span class="vc-chip">조직도</span>
+        </div>
+        <span class="vc-try-btn">🔭 회사 뷰 체험 →</span>
+      </div>
+    </a>
+
+  </div>
+</section>
+
+<hr class="divider" />
+
+<!-- ── 줌 네비게이션 ──────────────────────────────────────────────── -->
+<section id="zoom">
+  <div class="section-label">줌 네비게이션</div>
+  <h2 class="section-title">줌인 · 줌아웃으로 세계 이동</h2>
+  <p class="section-sub">마우스 휠로 줌인하면 더 넓은 세계가 펼쳐집니다. 구글 맵처럼 자연스럽게 레벨이 전환됩니다.</p>
+
+  <div class="zoom-flow">
+    <div class="zoom-node">
+      <div class="zn-icon">🌟</div>
+      <div class="zn-title">작업 상세</div>
+      <div class="zn-zoom">줌 r &lt; 10</div>
+    </div>
+    <div class="zoom-arrow">→<span>줌아웃</span></div>
+    <div class="zoom-node">
+      <div class="zn-icon">👤</div>
+      <div class="zn-title">개인 뷰</div>
+      <div class="zn-zoom">줌 r 10–60</div>
+    </div>
+    <div class="zoom-arrow">→<span>줌아웃</span></div>
+    <div class="zoom-node">
+      <div class="zn-icon">👥</div>
+      <div class="zn-title">팀 뷰</div>
+      <div class="zn-zoom">줌 r 60–100</div>
+    </div>
+    <div class="zoom-arrow">→<span>줌아웃</span></div>
+    <div class="zoom-node">
+      <div class="zn-icon">🏢</div>
+      <div class="zn-title">회사 뷰</div>
+      <div class="zn-zoom">줌 r 100+</div>
+    </div>
+  </div>
+
+  <div class="zoom-tip">
+    <span style="font-size:20px">💡</span>
+    <div>
+      <strong>팁</strong>: 팀원을 클릭하면 그 사람을 중심으로 카메라가 이동합니다.
+      r &lt; 9 수준으로 줌인하면 <strong>작업 상세 패널</strong>이 자동으로 열려 진행 중인 작업과 완료율을 확인할 수 있습니다.
+    </div>
+  </div>
+</section>
+
+<hr class="divider" />
+
+<!-- ── 팔로우 시스템 ──────────────────────────────────────────────── -->
+<section id="follow">
+  <div class="section-label">팔로우 시스템</div>
+  <h2 class="section-title">개인 간 팔로우로 연결</h2>
+  <p class="section-sub">팀원을 팔로우하면 서로의 작업 노드가 내 뷰에 연결됩니다. 협업 관계를 시각적으로 표현합니다.</p>
+
+  <div class="follow-demo">
+    <div class="follow-card">
+      <div class="fc-header">
+        <div class="fc-avatar">K</div>
+        <div>
+          <div class="fc-name">김민준</div>
+          <div class="fc-title">백엔드 개발자 @ Orbit AI</div>
+        </div>
+        <button class="fc-follow-btn following" onclick="this.classList.toggle('following');this.textContent=this.classList.contains('following')?'✓ 팔로잉':'+ 팔로우'">✓ 팔로잉</button>
+      </div>
+      <div class="fc-skills">
+        <span class="fc-skill">Node.js</span><span class="fc-skill">PostgreSQL</span>
+        <span class="fc-skill">Docker</span><span class="fc-skill">Redis</span>
+      </div>
+      <div class="fc-nodes">
+        <span>🌐 연결된 노드:</span>
+        <span style="color:#58a6ff;font-weight:600">작업 12개</span>
+        <span>·</span>
+        <span style="color:#3fb950;font-weight:600">완료 8개</span>
+      </div>
+    </div>
+
+    <div class="follow-card">
+      <div class="fc-header">
+        <div class="fc-avatar" style="background:linear-gradient(135deg,#bc8cff,#f0883e)">L</div>
+        <div>
+          <div class="fc-name">이서연</div>
+          <div class="fc-title">프론트엔드 개발자 @ Orbit AI</div>
+        </div>
+        <button class="fc-follow-btn" onclick="this.classList.toggle('following');this.textContent=this.classList.contains('following')?'✓ 팔로잉':'+ 팔로우'">+ 팔로우</button>
+      </div>
+      <div class="fc-skills">
+        <span class="fc-skill">React</span><span class="fc-skill">TypeScript</span>
+        <span class="fc-skill">Three.js</span><span class="fc-skill">Figma</span>
+      </div>
+      <div class="fc-nodes">
+        <span>🌐 연결된 노드:</span>
+        <span style="color:#58a6ff;font-weight:600">작업 9개</span>
+        <span>·</span>
+        <span style="color:#3fb950;font-weight:600">완료 6개</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="zoom-tip" style="margin-top:24px;border-color:rgba(63,185,80,.2);background:rgba(63,185,80,.04)">
+    <span style="font-size:20px">🔗</span>
+    <div style="color:var(--muted)">
+      <strong style="color:var(--green)">어떻게 팔로우하나요?</strong><br>
+      orbit3d.html에서 팀원 노드를 클릭 → 우측 정보 패널에서 <strong style="color:var(--green)">팔로우 버튼</strong>을 누르면 됩니다.
+      팔로우한 사람의 작업 노드가 내 개인 뷰에 연결선으로 표시됩니다.
+    </div>
+  </div>
+</section>
+
+<hr class="divider" />
+
+<!-- ── 조작법 ────────────────────────────────────────────────────── -->
+<section id="controls">
+  <div class="section-label">조작법</div>
+  <h2 class="section-title">키보드 & 마우스 조작</h2>
+  <p class="section-sub">직관적인 조작으로 3D 우주를 탐색하세요.</p>
+
+  <div class="controls-grid">
+    <div class="ctrl-card">
+      <div class="ctrl-key"><kbd>마우스 드래그</kbd></div>
+      <div class="ctrl-desc">카메라 회전 — 3D 공간을 자유롭게 돌아봅니다</div>
+    </div>
+    <div class="ctrl-card">
+      <div class="ctrl-key"><kbd>우클릭 드래그</kbd></div>
+      <div class="ctrl-desc">카메라 이동 — 공전 중심점을 이동합니다</div>
+    </div>
+    <div class="ctrl-card">
+      <div class="ctrl-key"><kbd>휠 스크롤</kbd></div>
+      <div class="ctrl-desc">줌인/줌아웃 — 뷰 레벨이 자동으로 전환됩니다</div>
+    </div>
+    <div class="ctrl-card">
+      <div class="ctrl-key"><kbd>클릭</kbd></div>
+      <div class="ctrl-desc">노드 상세 보기 — 작업 내용·진행률을 확인합니다</div>
+    </div>
+    <div class="ctrl-card">
+      <div class="ctrl-key"><kbd>더블클릭</kbd></div>
+      <div class="ctrl-desc">행성 포커스 — 클릭한 노드로 카메라가 이동합니다</div>
+    </div>
+    <div class="ctrl-card">
+      <div class="ctrl-key"><kbd>Esc</kbd></div>
+      <div class="ctrl-desc">패널 닫기 — 열린 정보 패널을 닫습니다</div>
+    </div>
+  </div>
+</section>
+
+<hr class="divider" />
+
+<!-- ── FAQ ──────────────────────────────────────────────────────── -->
+<section id="faq">
+  <div class="section-label">자주 묻는 질문</div>
+  <h2 class="section-title">FAQ</h2>
+  <p class="section-sub">궁금한 점이 있으신가요?</p>
+
+  <div class="faq-list">
+    <div class="faq-item">
+      <button class="faq-q" onclick="toggleFaq(this)">
+        데이터는 어디에 저장되나요?<span>+</span>
+      </button>
+      <div class="faq-a">모든 데이터는 Railway 서버의 SQLite/PostgreSQL에 안전하게 저장됩니다. 사용자 인증은 JWT 토큰 방식이며, Google/GitHub OAuth를 지원합니다.</div>
+    </div>
+    <div class="faq-item">
+      <button class="faq-q" onclick="toggleFaq(this)">
+        팀/회사 뷰는 실제 데이터가 연동되나요?<span>+</span>
+      </button>
+      <div class="faq-a">현재 샘플 데이터로 시뮬레이션되며, 향후 실제 Jira·GitHub·Slack 데이터 연동이 지원될 예정입니다.</div>
+    </div>
+    <div class="faq-item">
+      <button class="faq-q" onclick="toggleFaq(this)">
+        행성 스킨은 어떻게 바꾸나요?<span>+</span>
+      </button>
+      <div class="faq-a">왼쪽 사이드바 → 도구 → 🌍 행성 스킨을 클릭하면 구체/크리스탈/링/피라미드 등 8가지 모양을 선택할 수 있습니다. 선택한 스킨은 자동 저장됩니다.</div>
+    </div>
+    <div class="faq-item">
+      <button class="faq-q" onclick="toggleFaq(this)">
+        프로필은 어떻게 등록하나요?<span>+</span>
+      </button>
+      <div class="faq-a">로그인 후 자동으로 프로필 등록 안내가 표시됩니다. 이름·직함·회사·스킬·경력을 LinkedIn 수준으로 등록할 수 있으며, 팔로워들에게 공개됩니다.</div>
+    </div>
+    <div class="faq-item">
+      <button class="faq-q" onclick="toggleFaq(this)">
+        모바일에서도 사용할 수 있나요?<span>+</span>
+      </button>
+      <div class="faq-a">현재는 데스크탑 브라우저에 최적화되어 있습니다. 터치 드래그로 기본 조작은 가능하지만, 정밀한 조작을 위해 데스크탑을 권장합니다.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ── CTA ───────────────────────────────────────────────────────── -->
+<div class="cta-section">
+  <h2>지금 Orbit AI를 시작하세요</h2>
+  <p>나의 작업 우주를 만들고, 팀과 함께 성장하세요.</p>
+  <div class="hero-btns">
+    <a class="btn-primary" href="/orbit3d.html">🚀 시작하기</a>
+    <a class="btn-secondary" href="/orbit3d.html?demo=team">👥 팀 뷰 샘플 보기</a>
+  </div>
+</div>
+
+<!-- ── 푸터 ────────────────────────────────────────────────────── -->
+<footer>
+  <p>⬡ Orbit AI &nbsp;·&nbsp;
+    <a href="/orbit3d.html">앱 열기</a> &nbsp;·&nbsp;
+    <a href="/admin-analytics.html">어드민</a> &nbsp;·&nbsp;
+    <a href="/privacy.html">개인정보처리방침</a> &nbsp;·&nbsp;
+    <a href="/terms.html">이용약관</a>
+  </p>
+  <p style="margin-top:8px;font-size:12px">© 2026 Orbit AI. All rights reserved.</p>
+</footer>
+
+<script>
+/* ── FAQ 토글 ───────────────────────────────────────────── */
+function toggleFaq(btn) {
+  const item = btn.closest('.faq-item');
+  const isOpen = item.classList.toggle('open');
+  btn.querySelector('span').textContent = isOpen ? '−' : '+';
+}
+
+/* ── 미니 Three.js 프리뷰 ───────────────────────────────── */
+function createMiniPreview(canvasId, config) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setClearColor(0x080b11, 1);
+
+  const w = canvas.parentElement.offsetWidth;
+  const h = canvas.parentElement.offsetHeight;
+  renderer.setSize(w, h);
+
+  const scene  = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(50, w / h, 0.1, 500);
+  camera.position.set(0, 0, config.camZ);
+
+  // 조명
+  scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+  const ptLight = new THREE.PointLight(0xffd700, 1.5, 100);
+  ptLight.position.set(0, 0, 0);
+  scene.add(ptLight);
+
+  // 중심 코어
+  const coreMat = new THREE.MeshPhongMaterial({ color: 0xffd700, emissive: 0x7a5800, shininess: 120 });
+  const core = new THREE.Mesh(new THREE.SphereGeometry(config.coreR, 24, 24), coreMat);
+  scene.add(core);
+
+  // 주변 노드들
+  const nodes = [];
+  for (let i = 0; i < config.nodeCount; i++) {
+    const angle = (i / config.nodeCount) * Math.PI * 2;
+    const r     = config.orbitR * (0.7 + Math.random() * 0.6);
+    const y     = (Math.random() - .5) * config.orbitR * .4;
+    const mat   = new THREE.MeshPhongMaterial({ color: config.colors[i % config.colors.length], shininess: 80 });
+    const mesh  = new THREE.Mesh(new THREE.SphereGeometry(config.nodeR, 12, 12), mat);
+    mesh.position.set(Math.cos(angle) * r, y, Math.sin(angle) * r);
+    mesh.userData.baseAngle = angle;
+    mesh.userData.orbitR    = r;
+    mesh.userData.speed     = 0.003 + Math.random() * 0.004;
+    mesh.userData.baseY     = y;
+    scene.add(mesh);
+    nodes.push(mesh);
+
+    // 연결선
+    if (config.showLines) {
+      const points = [new THREE.Vector3(0, 0, 0), mesh.position.clone()];
+      const geo    = new THREE.BufferGeometry().setFromPoints(points);
+      const line   = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: 0x21262d, opacity: .5, transparent: true }));
+      scene.add(line);
+    }
+  }
+
+  let t = 0;
+  function animate() {
+    requestAnimationFrame(animate);
+    t += 0.008;
+    // 노드 공전
+    nodes.forEach(n => {
+      const a = n.userData.baseAngle + t * n.userData.speed * 150;
+      n.position.x = Math.cos(a) * n.userData.orbitR;
+      n.position.z = Math.sin(a) * n.userData.orbitR;
+    });
+    // 코어 회전
+    core.rotation.y += 0.005;
+    // 카메라 천천히 공전
+    camera.position.x = Math.sin(t * 0.3) * config.camZ * 0.15;
+    camera.position.y = Math.cos(t * 0.2) * config.camZ * 0.08;
+    camera.lookAt(0, 0, 0);
+    renderer.render(scene, camera);
+  }
+  animate();
+}
+
+/* 개인 뷰: 작은 황금 코어 + 세션 행성들 */
+createMiniPreview('canvas-personal', {
+  camZ: 28, coreR: 1.5, nodeCount: 7, orbitR: 9, nodeR: 0.6, showLines: true,
+  colors: [0x58a6ff, 0x3fb950, 0xbc8cff, 0xffd700, 0xf0883e, 0x58a6ff, 0x3fb950],
+});
+
+/* 팀 뷰: 중간 코어 + 팀원 노드들 (초록) */
+createMiniPreview('canvas-team', {
+  camZ: 22, coreR: 2.0, nodeCount: 5, orbitR: 8, nodeR: 0.8, showLines: true,
+  colors: [0x3fb950, 0x56d364, 0x2ea043, 0x3fb950, 0x56d364],
+});
+
+/* 회사 뷰: 큰 코어 + 부서 행성들 (보라) */
+createMiniPreview('canvas-company', {
+  camZ: 30, coreR: 2.8, nodeCount: 6, orbitR: 12, nodeR: 1.0, showLines: false,
+  colors: [0xbc8cff, 0xd2a8ff, 0x9a62db, 0xbc8cff, 0xf0883e, 0x58a6ff],
+});
+</script>
+</body>
+</html>

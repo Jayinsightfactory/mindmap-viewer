@@ -1,0 +1,911 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Orbit — 팀 AI 대시보드</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:        #0d1117;
+    --bg2:       #161b22;
+    --bg3:       #21262d;
+    --border:    #30363d;
+    --text:      #e6edf3;
+    --text2:     #8b949e;
+    --accent:    #58a6ff;
+    --green:     #3fb950;
+    --red:       #f85149;
+    --yellow:    #d29922;
+    --purple:    #bc8cff;
+    --orange:    #ffa657;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 14px;
+    min-height: 100vh;
+  }
+
+  /* ── Header ── */
+  header {
+    background: var(--bg2);
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+    height: 52px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  header .logo { font-weight: 700; font-size: 16px; color: var(--accent); text-decoration: none; }
+  header nav { display: flex; gap: 4px; margin-left: 16px; }
+  header nav a {
+    color: var(--text2);
+    text-decoration: none;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    transition: background .15s, color .15s;
+  }
+  header nav a:hover, header nav a.active { background: var(--bg3); color: var(--text); }
+  .header-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+  #channel-selector {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 5px 10px;
+    border-radius: 6px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  #refresh-btn {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    color: var(--text2);
+    padding: 5px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: color .15s;
+  }
+  #refresh-btn:hover { color: var(--text); }
+
+  /* ── Layout ── */
+  .main { padding: 24px; display: flex; flex-direction: column; gap: 20px; max-width: 1400px; margin: 0 auto; }
+
+  /* ── Stats Row ── */
+  .stats-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
+  .stat-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+  }
+  .stat-card .label { font-size: 11px; color: var(--text2); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 8px; }
+  .stat-card .value { font-size: 28px; font-weight: 700; }
+  .stat-card .sub   { font-size: 12px; color: var(--text2); margin-top: 4px; }
+  .val-blue   { color: var(--accent); }
+  .val-green  { color: var(--green); }
+  .val-orange { color: var(--orange); }
+  .val-purple { color: var(--purple); }
+  .val-red    { color: var(--red); }
+
+  /* ── Section ── */
+  .section {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .section-header {
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .section-header .badge {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1px 7px;
+    font-size: 11px;
+    color: var(--text2);
+    font-weight: 500;
+    margin-left: auto;
+  }
+
+  /* ── Two-column grid ── */
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 900px) { .two-col { grid-template-columns: 1fr; } }
+
+  /* ── Member Table ── */
+  .member-table { width: 100%; border-collapse: collapse; }
+  .member-table th {
+    padding: 8px 16px;
+    text-align: left;
+    font-size: 11px;
+    color: var(--text2);
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg3);
+  }
+  .member-table td { padding: 10px 16px; border-bottom: 1px solid var(--border); }
+  .member-table tr:last-child td { border-bottom: none; }
+  .member-table tr:hover td { background: rgba(255,255,255,.03); }
+  .member-avatar {
+    width: 26px; height: 26px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 700;
+    margin-right: 8px;
+    vertical-align: middle;
+  }
+  .member-name { vertical-align: middle; font-weight: 500; }
+  .online-dot {
+    display: inline-block;
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--green);
+    margin-right: 6px;
+    box-shadow: 0 0 4px var(--green);
+  }
+  .offline-dot {
+    display: inline-block;
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--border);
+    margin-right: 6px;
+  }
+
+  /* ── Activity bar ── */
+  .bar-row { display: flex; flex-direction: column; gap: 10px; padding: 16px; }
+  .bar-item { display: flex; align-items: center; gap: 10px; }
+  .bar-label { width: 90px; font-size: 12px; color: var(--text2); text-align: right; flex-shrink: 0; }
+  .bar-track { flex: 1; height: 8px; background: var(--bg3); border-radius: 4px; overflow: hidden; }
+  .bar-fill  { height: 100%; border-radius: 4px; transition: width .5s ease; }
+  .bar-count { width: 40px; font-size: 12px; color: var(--text2); text-align: right; flex-shrink: 0; }
+
+  /* ── Purpose Legend ── */
+  .purpose-grid { display: flex; flex-wrap: wrap; gap: 8px; padding: 16px; }
+  .purpose-chip {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 4px 10px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: background .15s;
+  }
+  .purpose-chip:hover { background: #2d333b; }
+  .purpose-chip .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+  /* ── Conflict list ── */
+  .conflict-list { padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+  .conflict-item {
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 12px;
+    line-height: 1.5;
+    border-left: 3px solid;
+  }
+  .conflict-high   { background: rgba(248,81,73,.1); border-color: var(--red); }
+  .conflict-medium { background: rgba(210,153,34,.1); border-color: var(--yellow); }
+  .conflict-low    { background: rgba(88,166,255,.1); border-color: var(--accent); }
+  .conflict-item .conf-time { color: var(--text2); font-size: 11px; margin-top: 4px; }
+
+  /* ── Activity timeline ── */
+  .timeline { padding: 16px; }
+  .hour-bars { display: flex; align-items: flex-end; gap: 2px; height: 80px; }
+  .hour-bar  { flex: 1; background: var(--accent); border-radius: 2px 2px 0 0; opacity: 0.7; min-height: 2px; transition: opacity .2s; cursor: pointer; position: relative; }
+  .hour-bar:hover { opacity: 1; }
+  .hour-bar .tooltip {
+    position: absolute; bottom: 110%; left: 50%; transform: translateX(-50%);
+    background: var(--bg3); border: 1px solid var(--border);
+    padding: 3px 7px; border-radius: 5px; font-size: 11px;
+    white-space: nowrap; pointer-events: none;
+    opacity: 0; transition: opacity .15s; z-index: 10;
+  }
+  .hour-bar:hover .tooltip { opacity: 1; }
+  .hour-labels { display: flex; gap: 2px; margin-top: 4px; }
+  .hour-label  { flex: 1; text-align: center; font-size: 9px; color: var(--text2); }
+
+  /* ── Live feed ── */
+  .live-feed { display: flex; flex-direction: column; gap: 0; max-height: 280px; overflow-y: auto; }
+  .feed-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 9px 16px;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+  }
+  .feed-item:last-child { border-bottom: none; }
+  .feed-icon  { width: 20px; text-align: center; flex-shrink: 0; margin-top: 1px; }
+  .feed-body  { flex: 1; line-height: 1.4; }
+  .feed-time  { color: var(--text2); font-size: 11px; flex-shrink: 0; }
+  .feed-member { font-weight: 600; }
+  .feed-dim    { color: var(--text2); }
+
+  /* ── Top files ── */
+  .file-list { display: flex; flex-direction: column; gap: 0; }
+  .file-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 16px;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+  }
+  .file-item:last-child { border-bottom: none; }
+  .file-rank  { color: var(--text2); width: 20px; text-align: center; font-size: 11px; }
+  .file-name  { flex: 1; font-family: monospace; color: var(--accent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .file-count { color: var(--text2); font-size: 11px; }
+  .file-bar   { width: 80px; height: 4px; background: var(--bg3); border-radius: 2px; overflow: hidden; }
+  .file-bar-fill { height: 100%; background: var(--accent); border-radius: 2px; }
+
+  /* ── Report button ── */
+  .section-actions { margin-left: auto; display: flex; gap: 6px; }
+  .btn-sm {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    color: var(--text2);
+    padding: 4px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 11px;
+    transition: color .15s;
+  }
+  .btn-sm:hover { color: var(--text); }
+
+  /* ── Loading ── */
+  #loading {
+    position: fixed; inset: 0; background: var(--bg);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; color: var(--text2); z-index: 999;
+    transition: opacity .3s;
+  }
+  .spinner {
+    width: 20px; height: 20px; border: 2px solid var(--border);
+    border-top-color: var(--accent); border-radius: 50%;
+    animation: spin .7s linear infinite; margin-right: 10px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Privacy Area Controls ── */
+  .privacy-panel {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .privacy-row {
+    display: flex;
+    align-items: center;
+    padding: 10px 18px;
+    border-bottom: 1px solid var(--border);
+    gap: 12px;
+    font-size: 13px;
+  }
+  .privacy-row:last-child { border-bottom: none; }
+  .privacy-icon { width: 26px; text-align: center; }
+  .privacy-label { flex: 1; }
+  .privacy-desc  { color: var(--text2); font-size: 12px; margin-top: 1px; }
+  .toggle {
+    width: 36px; height: 20px;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    position: relative;
+    cursor: pointer;
+    transition: background .2s;
+    flex-shrink: 0;
+  }
+  .toggle.on { background: var(--green); border-color: var(--green); }
+  .toggle::after {
+    content: '';
+    position: absolute;
+    top: 2px; left: 2px;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: #fff;
+    transition: left .2s;
+  }
+  .toggle.on::after { left: 18px; }
+
+  /* scrollbar */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg2); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #484f58; }
+
+  .empty-msg { padding: 24px; text-align: center; color: var(--text2); font-size: 13px; }
+</style>
+</head>
+<body>
+
+<div id="loading">
+  <div class="spinner"></div>
+  로딩 중...
+</div>
+
+<header>
+  <a href="/" class="logo">⬡ Orbit</a>
+  <nav>
+    <a href="/">마인드맵</a>
+    <a href="/settings.html">설정</a>
+    <a href="/team-dashboard.html" class="active">팀 대시보드</a>
+  </nav>
+  <div class="header-right">
+    <select id="channel-selector">
+      <option value="">전체 채널</option>
+    </select>
+    <button id="refresh-btn" onclick="loadAll()">↻ 새로고침</button>
+  </div>
+</header>
+
+<div class="main">
+
+  <!-- Stats Row -->
+  <div class="stats-row" id="stats-row">
+    <div class="stat-card"><div class="label">총 이벤트</div><div class="value val-blue" id="s-events">—</div><div class="sub">오늘</div></div>
+    <div class="stat-card"><div class="label">활성 멤버</div><div class="value val-green" id="s-members">—</div><div class="sub">온라인</div></div>
+    <div class="stat-card"><div class="label">수정 파일</div><div class="value val-orange" id="s-files">—</div><div class="sub">고유 파일</div></div>
+    <div class="stat-card"><div class="label">AI 도구</div><div class="value val-purple" id="s-tools">—</div><div class="sub">종류</div></div>
+    <div class="stat-card"><div class="label">충돌 감지</div><div class="value val-red" id="s-conflicts">—</div><div class="sub">지난 24h</div></div>
+    <div class="stat-card"><div class="label">세션 수</div><div class="value val-blue" id="s-sessions">—</div><div class="sub">오늘</div></div>
+  </div>
+
+  <!-- Row 1: Member Table + Activity Timeline -->
+  <div class="two-col">
+
+    <div class="section">
+      <div class="section-header">
+        👥 팀 멤버 활동
+        <span class="badge" id="member-count-badge">0명</span>
+      </div>
+      <table class="member-table">
+        <thead>
+          <tr>
+            <th>멤버</th>
+            <th>이벤트</th>
+            <th>주요 도구</th>
+            <th>마지막 활동</th>
+          </tr>
+        </thead>
+        <tbody id="member-tbody">
+          <tr><td colspan="4" class="empty-msg">데이터 로딩 중...</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="section">
+      <div class="section-header">
+        ⏱ 시간별 활동량
+        <div class="section-actions">
+          <button class="btn-sm" onclick="downloadReport('markdown')">MD 다운</button>
+          <button class="btn-sm" onclick="downloadReport('json')">JSON</button>
+        </div>
+      </div>
+      <div class="timeline">
+        <div class="hour-bars" id="hour-bars"></div>
+        <div class="hour-labels" id="hour-labels"></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Row 2: Purpose breakdown + Top Files -->
+  <div class="two-col">
+
+    <div class="section">
+      <div class="section-header">🎯 작업 목적 분류</div>
+      <div class="purpose-grid" id="purpose-grid"></div>
+      <div class="bar-row" id="purpose-bars"></div>
+    </div>
+
+    <div class="section">
+      <div class="section-header">
+        📁 많이 수정된 파일
+        <span class="badge" id="files-badge">0개</span>
+      </div>
+      <div class="file-list" id="file-list"></div>
+    </div>
+
+  </div>
+
+  <!-- Row 3: Conflict Alerts + Live Feed -->
+  <div class="two-col">
+
+    <div class="section">
+      <div class="section-header">
+        ⚠️ 충돌 감지
+        <span class="badge" id="conflict-badge">0건</span>
+      </div>
+      <div class="conflict-list" id="conflict-list">
+        <div class="empty-msg">감지된 충돌 없음</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-header">
+        📡 실시간 피드
+        <span class="badge" id="feed-badge">0</span>
+      </div>
+      <div class="live-feed" id="live-feed">
+        <div class="empty-msg">이벤트 대기 중...</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Row 4: Privacy Controls -->
+  <div class="section privacy-panel">
+    <div class="section-header">🔒 공개 영역 제어 <span style="color:var(--text2);font-size:12px;font-weight:400;margin-left:8px;">— 기본값: 전체 추적, 공개 여부는 직접 선택</span></div>
+    <div id="privacy-rows"></div>
+  </div>
+
+</div><!-- /.main -->
+
+<script>
+// ─── 상태 ────────────────────────────────────────────
+let reportData = null;
+let conflictsData = [];
+let feedItems = [];
+const MAX_FEED = 50;
+
+const PRIVACY_AREAS = [
+  { id:'ai_tools',    icon:'🤖', label:'AI 도구 활동',     desc:'Claude, Cursor, Copilot 등 AI 작업 기록', default: true },
+  { id:'file_edits',  icon:'📝', label:'파일 수정 내역',   desc:'어떤 파일을 수정했는지', default: true },
+  { id:'meetings',    icon:'🎥', label:'회의/미팅',         desc:'Zoom, Meet 참여 및 발화 내용', default: false },
+  { id:'messages',    icon:'💬', label:'메시지/커뮤니케이션', desc:'Slack, Discord, KakaoTalk 메시지', default: false },
+  { id:'calendar',    icon:'📅', label:'일정',              desc:'Google Calendar 일정 정보', default: false },
+  { id:'browser',     icon:'🌐', label:'브라우저 활동',     desc:'방문 사이트, 검색어', default: false },
+  { id:'erp',         icon:'🏢', label:'전산/ERP 작업',     desc:'사내 시스템 DB 작업, 결재 등', default: false },
+  { id:'document',    icon:'📊', label:'문서/스프레드시트', desc:'Excel, Google Docs 작업', default: false },
+];
+
+let privacyState = {};
+PRIVACY_AREAS.forEach(a => {
+  privacyState[a.id] = JSON.parse(localStorage.getItem('orbit_privacy_' + a.id) ?? String(a.default));
+});
+
+function savePrivacy(id, val) {
+  privacyState[id] = val;
+  localStorage.setItem('orbit_privacy_' + id, String(val));
+}
+
+// ─── 색상 팔레트 ─────────────────────────────────────
+const COLORS = ['#58a6ff','#3fb950','#bc8cff','#f778ba','#ffa657','#39d2c0','#ff9500','#79c0ff','#f85149','#8957e5'];
+function memberColor(name) {
+  let h = 0; for (const c of name) h = (h * 31 + c.charCodeAt(0)) & 0xffffffff;
+  return COLORS[Math.abs(h) % COLORS.length];
+}
+function initials(name) { return name.split(/[\s_-]/)[0]?.charAt(0)?.toUpperCase() || '?'; }
+function relTime(iso) {
+  const d = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (d < 60)  return '방금';
+  if (d < 3600) return Math.floor(d/60) + '분 전';
+  if (d < 86400) return Math.floor(d/3600) + '시간 전';
+  return Math.floor(d/86400) + '일 전';
+}
+
+// ─── 데이터 로드 ─────────────────────────────────────
+async function loadAll() {
+  const channel = document.getElementById('channel-selector').value;
+  const params  = channel ? `?channel=${encodeURIComponent(channel)}` : '';
+
+  try {
+    const [report, conflicts, statsData] = await Promise.all([
+      fetch('/api/report/daily' + params).then(r => r.json()),
+      fetch('/api/conflicts' + params + (params ? '&hours=24' : '?hours=24')).then(r => r.json()),
+      fetch('/api/stats').then(r => r.json()).catch(() => ({})),
+    ]);
+
+    reportData = report;
+    conflictsData = conflicts.conflicts || [];
+
+    renderStats(report, statsData);
+    renderMembers(report);
+    renderTimeline(report);
+    renderPurposes(report);
+    renderTopFiles(report);
+    renderConflicts(conflictsData);
+    renderPrivacy();
+    loadChannels();
+  } catch (e) {
+    console.error('로드 실패:', e);
+  }
+
+  document.getElementById('loading').style.opacity = '0';
+  setTimeout(() => document.getElementById('loading').style.display = 'none', 300);
+}
+
+async function loadChannels() {
+  try {
+    const channels = await fetch('/api/channels').then(r => r.json());
+    const sel = document.getElementById('channel-selector');
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">전체 채널</option>';
+    (channels || []).forEach(ch => {
+      const opt = document.createElement('option');
+      opt.value = ch.id;
+      opt.textContent = `#${ch.id} (${ch.memberCount}명)`;
+      if (opt.value === cur) opt.selected = true;
+      sel.appendChild(opt);
+    });
+  } catch {}
+}
+
+// ─── 렌더링 ─────────────────────────────────────────
+function renderStats(report, stats) {
+  if (!report || report.error) return;
+  document.getElementById('s-events').textContent   = (report.totalEvents || 0).toLocaleString();
+  document.getElementById('s-files').textContent    = (report.topFiles?.length || 0).toLocaleString();
+  document.getElementById('s-sessions').textContent = (report.sessionCount || 0).toLocaleString();
+  document.getElementById('s-conflicts').textContent = conflictsData.length;
+
+  // members + tools from report
+  const sources = Object.keys(report.sourceCounts || {});
+  document.getElementById('s-tools').textContent = sources.length;
+
+  // members from memberBreakdown if present
+  const members = report.memberBreakdown || {};
+  const mCount = Object.keys(members).length || sources.length;
+  document.getElementById('s-members').textContent = mCount;
+}
+
+function renderMembers(report) {
+  if (!report || report.error) return;
+  const tbody = document.getElementById('member-tbody');
+  const members = report.memberBreakdown || {};
+
+  // fallback: build from sourceCounts
+  const data = Object.keys(members).length
+    ? Object.entries(members)
+    : Object.entries(report.sourceCounts || {}).map(([k, v]) => [k, { events: v }]);
+
+  if (!data.length) {
+    tbody.innerHTML = '<tr><td colspan="4" class="empty-msg">멤버 데이터 없음</td></tr>';
+    document.getElementById('member-count-badge').textContent = '0명';
+    return;
+  }
+
+  data.sort((a, b) => (b[1].events || b[1]) - (a[1].events || a[1]));
+  document.getElementById('member-count-badge').textContent = data.length + '명';
+
+  tbody.innerHTML = data.map(([name, info]) => {
+    const ev = typeof info === 'number' ? info : (info.events || 0);
+    const tool = typeof info === 'object' ? (info.topTool || '—') : '—';
+    const last = typeof info === 'object' && info.lastAt ? relTime(info.lastAt) : '—';
+    const col = memberColor(name);
+    return `<tr>
+      <td>
+        <span class="member-avatar" style="background:${col}22;color:${col}">${initials(name)}</span>
+        <span class="member-name">${name}</span>
+      </td>
+      <td style="color:var(--text2)">${ev.toLocaleString()}</td>
+      <td style="color:var(--text2);font-size:11px">${tool}</td>
+      <td style="color:var(--text2);font-size:11px">${last}</td>
+    </tr>`;
+  }).join('');
+}
+
+function renderTimeline(report) {
+  if (!report || report.error) return;
+  const buckets  = report.hourBuckets || new Array(24).fill(0);
+  const peakHour = report.peakHour ?? 0;
+  const maxVal   = Math.max(...buckets, 1);
+
+  const barsEl   = document.getElementById('hour-bars');
+  const labelsEl = document.getElementById('hour-labels');
+
+  barsEl.innerHTML = buckets.map((v, i) => {
+    const h = Math.round((v / maxVal) * 100);
+    const isPeak = i === peakHour;
+    return `<div class="hour-bar" style="height:${h}%;background:${isPeak ? 'var(--orange)' : 'var(--accent)'}">
+      <div class="tooltip">${i}시: ${v}건</div>
+    </div>`;
+  }).join('');
+
+  labelsEl.innerHTML = Array.from({length: 24}, (_, i) =>
+    `<div class="hour-label">${i % 3 === 0 ? i : ''}</div>`
+  ).join('');
+}
+
+function renderPurposes(report) {
+  if (!report || report.error) return;
+  const counts = report.purposeCounts || {};
+  const grid   = document.getElementById('purpose-grid');
+  const bars   = document.getElementById('purpose-bars');
+
+  const PURPOSE_COLORS = {
+    implement: '#3fb950', fix: '#f85149', refactor: '#bc8cff',
+    test: '#ffa657', deploy: '#ff9500', research: '#58a6ff',
+    config: '#39d2c0', review: '#f778ba', discuss: '#8957e5',
+    communication: '#39d2c0', document: '#58a6ff',
+    browsing: '#8b949e', meeting: '#bc8cff', erp: '#ffa657',
+  };
+  const PURPOSE_LABELS = {
+    implement: '기능 구현', fix: '버그 수정', refactor: '리팩터링',
+    test: '테스트', deploy: '배포', research: '리서치',
+    config: '설정', review: '코드 리뷰', discuss: '논의',
+    communication: '커뮤니케이션', document: '문서작업',
+    browsing: '웹 브라우징', meeting: '회의', erp: '전산작업',
+  };
+
+  const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  if (!entries.length) {
+    grid.innerHTML = '<div class="empty-msg">목적 분류 없음</div>';
+    bars.innerHTML = '';
+    return;
+  }
+  const maxV = entries[0][1];
+
+  grid.innerHTML = entries.map(([id, cnt]) => {
+    const color = PURPOSE_COLORS[id] || '#58a6ff';
+    const label = PURPOSE_LABELS[id] || id;
+    return `<div class="purpose-chip">
+      <div class="dot" style="background:${color}"></div>
+      ${label} <span style="color:var(--text2)">${cnt}</span>
+    </div>`;
+  }).join('');
+
+  bars.innerHTML = entries.slice(0, 8).map(([id, cnt]) => {
+    const color = PURPOSE_COLORS[id] || '#58a6ff';
+    const label = PURPOSE_LABELS[id] || id;
+    const pct   = Math.round((cnt / maxV) * 100);
+    return `<div class="bar-item">
+      <div class="bar-label">${label}</div>
+      <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${color}"></div></div>
+      <div class="bar-count">${cnt}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderTopFiles(report) {
+  if (!report || report.error) return;
+  const files = report.topFiles || [];
+  const list  = document.getElementById('file-list');
+  document.getElementById('files-badge').textContent = files.length + '개';
+
+  if (!files.length) {
+    list.innerHTML = '<div class="empty-msg">수정된 파일 없음</div>';
+    return;
+  }
+  const maxCount = files[0]?.editCount || 1;
+  list.innerHTML = files.slice(0, 15).map((f, i) => {
+    const pct = Math.round((f.editCount / maxCount) * 100);
+    return `<div class="file-item">
+      <div class="file-rank">${i+1}</div>
+      <div class="file-name" title="${f.filePath || f.fileName}">${f.fileName || f.filePath}</div>
+      <div class="file-bar"><div class="file-bar-fill" style="width:${pct}%"></div></div>
+      <div class="file-count">${f.editCount}회</div>
+    </div>`;
+  }).join('');
+}
+
+function renderConflicts(conflicts) {
+  const list  = document.getElementById('conflict-list');
+  const badge = document.getElementById('conflict-badge');
+  badge.textContent = conflicts.length + '건';
+
+  if (!conflicts.length) {
+    list.innerHTML = '<div class="empty-msg">감지된 충돌 없음 ✓</div>';
+    return;
+  }
+
+  list.innerHTML = conflicts.map(c => {
+    const cls = c.severity === 'high' ? 'conflict-high' : c.severity === 'medium' ? 'conflict-medium' : 'conflict-low';
+    return `<div class="conflict-item ${cls}">
+      <div>${c.message}</div>
+      <div class="conf-time">${relTime(c.detectedAt)}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderPrivacy() {
+  const container = document.getElementById('privacy-rows');
+  container.innerHTML = PRIVACY_AREAS.map(area => {
+    const on = privacyState[area.id];
+    return `<div class="privacy-row">
+      <div class="privacy-icon">${area.icon}</div>
+      <div style="flex:1">
+        <div class="privacy-label">${area.label}</div>
+        <div class="privacy-desc">${area.desc}</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="font-size:11px;color:var(--text2)">${on ? '공개' : '비공개'}</span>
+        <div class="toggle ${on ? 'on' : ''}" onclick="togglePrivacy('${area.id}', this)"></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function togglePrivacy(id, el) {
+  const newVal = !privacyState[id];
+  savePrivacy(id, newVal);
+  el.classList.toggle('on', newVal);
+  el.previousElementSibling.textContent = newVal ? '공개' : '비공개';
+}
+
+// ─── 리포트 다운로드 ─────────────────────────────────
+async function downloadReport(format) {
+  const channel = document.getElementById('channel-selector').value;
+  const params  = channel ? `?channel=${encodeURIComponent(channel)}&format=${format}` : `?format=${format}`;
+  try {
+    const res  = await fetch('/api/report/daily' + params);
+    const text = format === 'json' ? JSON.stringify(await res.json(), null, 2) : await res.text();
+    const blob = new Blob([text], { type: format === 'json' ? 'application/json' : 'text/plain' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url;
+    a.download = `orbit-report-${new Date().toISOString().slice(0,10)}.${format === 'json' ? 'json' : 'md'}`;
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    alert('다운로드 실패: ' + e.message);
+  }
+}
+
+// ─── WebSocket 실시간 피드 ────────────────────────────
+let ws = null;
+function connectWS() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}`);
+
+  ws.onmessage = (e) => {
+    try {
+      const msg = JSON.parse(e.data);
+      if (msg.type === 'update') {
+        // 실시간 충돌 업데이트
+        if (msg.conflicts?.length) {
+          conflictsData = [...msg.conflicts, ...conflictsData].slice(0, 20);
+          renderConflicts(conflictsData);
+          document.getElementById('s-conflicts').textContent = conflictsData.length;
+        }
+        // 실시간 피드 추가
+        if (msg.graph?.nodes?.length) {
+          addFeedItem(msg);
+        }
+      }
+    } catch {}
+  };
+
+  ws.onclose = () => setTimeout(connectWS, 3000);
+}
+
+function addFeedItem(msg) {
+  const nodes = msg.graph?.nodes || [];
+  if (!nodes.length) return;
+
+  const latest = [...nodes].sort((a,b) => new Date(b.ts || b.timestamp || 0) - new Date(a.ts || a.timestamp || 0))[0];
+  if (!latest) return;
+
+  const feedEl = document.getElementById('live-feed');
+  const badge  = document.getElementById('feed-badge');
+
+  const typeIcons = { 'tool.start':'🚀','tool.end':'✅','file.write':'📝','user.message':'💬','session.start':'🔵','session.end':'⚫','tool.error':'❌', 'notification':'🔔' };
+  const icon   = typeIcons[latest.eventType || latest.type] || '◦';
+  const member = msg.hookSource?.memberName || latest.source || 'unknown';
+  const col    = memberColor(member);
+  const ts     = relTime(latest.ts || latest.timestamp || new Date().toISOString());
+
+  const item = document.createElement('div');
+  item.className = 'feed-item';
+  item.innerHTML = `
+    <div class="feed-icon">${icon}</div>
+    <div class="feed-body">
+      <span class="feed-member" style="color:${col}">${member}</span>
+      <span class="feed-dim"> · ${latest.label || latest.id?.slice(0,12) || 'event'}</span>
+    </div>
+    <div class="feed-time">${ts}</div>
+  `;
+
+  // remove empty msg
+  const empty = feedEl.querySelector('.empty-msg');
+  if (empty) feedEl.innerHTML = '';
+
+  feedEl.insertBefore(item, feedEl.firstChild);
+  feedItems.unshift(latest);
+  if (feedItems.length > MAX_FEED) {
+    feedItems.pop();
+    feedEl.removeChild(feedEl.lastChild);
+  }
+
+  badge.textContent = feedItems.length;
+}
+
+// ─── 채널 변경 ───────────────────────────────────────
+document.getElementById('channel-selector').addEventListener('change', loadAll);
+
+// ─── 키보드 단축키 ───────────────────────────────────
+document.addEventListener('keydown', e => {
+  // 입력창 포커스 중 무시
+  if (['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)) return;
+
+  switch (e.key) {
+    case 'r': case 'R':
+      if (!e.ctrlKey && !e.metaKey) { loadAll(); e.preventDefault(); }
+      break;
+    case 'Escape':
+      document.getElementById('channel-selector').blur();
+      break;
+    case '?':
+      toggleShortcutOverlay(); e.preventDefault();
+      break;
+    case 'm': case 'M':
+      window.location.href = '/';
+      break;
+    case 'Tab': {
+      // Tab: 섹션 간 포커스 이동 (기본 브라우저 동작 유지)
+      break;
+    }
+  }
+});
+
+// ─── 단축키 오버레이 ─────────────────────────────────
+let shortcutOverlayVisible = false;
+function toggleShortcutOverlay() {
+  let overlay = document.getElementById('shortcut-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'shortcut-overlay';
+    overlay.style.cssText = `
+      position:fixed; inset:0; background:rgba(0,0,0,.7); z-index:999;
+      display:flex; align-items:center; justify-content:center;
+    `;
+    overlay.innerHTML = `
+      <div style="background:#161b22;border:1px solid #30363d;border-radius:12px;padding:24px 32px;font-size:13px;color:#e6edf3;min-width:360px">
+        <div style="font-size:15px;font-weight:700;margin-bottom:16px">⌨️ 키보드 단축키</div>
+        <table style="width:100%;border-collapse:collapse">
+          <tr><td style="padding:5px 0;color:#8b949e">R</td><td>새로고침</td></tr>
+          <tr><td style="padding:5px 0;color:#8b949e">M</td><td>마인드맵으로 이동</td></tr>
+          <tr><td style="padding:5px 0;color:#8b949e">?</td><td>단축키 보기/닫기</td></tr>
+          <tr><td style="padding:5px 0;color:#8b949e">Esc</td><td>포커스 해제 / 닫기</td></tr>
+          <tr><td style="padding:5px 0;color:#8b949e">Tab</td><td>다음 섹션으로 이동</td></tr>
+        </table>
+        <div style="margin-top:16px;text-align:center;color:#8b949e;font-size:11px">아무 곳이나 클릭하거나 Esc로 닫기</div>
+      </div>`;
+    overlay.onclick = () => { overlay.remove(); shortcutOverlayVisible = false; };
+    document.body.appendChild(overlay);
+    shortcutOverlayVisible = true;
+  } else {
+    overlay.remove();
+    shortcutOverlayVisible = false;
+  }
+}
+
+// Esc로 오버레이 닫기
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && shortcutOverlayVisible) {
+    document.getElementById('shortcut-overlay')?.remove();
+    shortcutOverlayVisible = false;
+    e.preventDefault();
+  }
+});
+
+// ─── 초기화 ─────────────────────────────────────────
+loadAll();
+connectWS();
+
+// 30초마다 자동 새로고침
+setInterval(() => { if (!document.hidden) loadAll(); }, 30000);
+</script>
+</body>
+</html>

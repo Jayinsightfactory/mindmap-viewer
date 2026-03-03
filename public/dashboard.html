@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Orbit Dashboard</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:     #060a10; --bg2: #0d1117; --bg3: #161b22;
+      --border: rgba(48,54,61,0.7);
+      --text:   #f0f6fc; --text2: #c9d1d9; --text3: #8b949e;
+      --blue:   #58a6ff; --green: #3fb950; --purple: #bc8cff;
+      --orange: #ffa657; --pink: #f778ba; --red: #f85149;
+      --accent: #8957e5; --cyan: #39d2c0;
+      --n8n:    #ea4b71; --vscode: #f85149;
+    }
+
+    body {
+      background: var(--bg); color: var(--text);
+      font-family: 'Inter', sans-serif;
+      min-height: 100vh;
+    }
+
+    /* ── TOPBAR ── */
+    #topbar {
+      display: flex; align-items: center; gap: 12px; padding: 0 20px;
+      height: 52px; background: var(--bg2);
+      border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 50;
+    }
+    .logo { font-size: 14px; font-weight: 700; }
+    .logo span { color: var(--accent); }
+    .live-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--green); box-shadow: 0 0 6px rgba(63,185,80,0.7);
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+    .topbar-right { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+    .tb-btn {
+      padding: 5px 12px; border-radius: 6px;
+      border: 1px solid var(--border); background: var(--bg3);
+      color: var(--text2); font-size: 12px; cursor: pointer;
+      font-family: inherit; text-decoration: none;
+      transition: border-color 0.15s;
+    }
+    .tb-btn:hover { border-color: var(--accent); color: var(--text); }
+    #last-update { font-size: 11px; color: var(--text3); }
+
+    /* ── MAIN GRID ── */
+    #main { padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+
+    /* ── STAT CARDS ── */
+    .stat-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+    @media (max-width: 900px) { .stat-row { grid-template-columns: repeat(2, 1fr); } }
+
+    .stat-card {
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: 10px; padding: 16px 20px;
+      display: flex; flex-direction: column; gap: 6px;
+    }
+    .stat-card .sc-label { font-size: 11px; color: var(--text3); font-weight: 500; text-transform: uppercase; letter-spacing: 0.06em; }
+    .stat-card .sc-value { font-size: 28px; font-weight: 700; line-height: 1; }
+    .stat-card .sc-sub { font-size: 11px; color: var(--text3); }
+    .stat-card.green .sc-value { color: var(--green); }
+    .stat-card.blue  .sc-value { color: var(--blue); }
+    .stat-card.purple .sc-value { color: var(--purple); }
+    .stat-card.orange .sc-value { color: var(--orange); }
+
+    /* ── CONTENT ROW ── */
+    .content-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (max-width: 900px) { .content-row { grid-template-columns: 1fr; } }
+
+    /* ── CARD ── */
+    .card {
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: 10px; overflow: hidden;
+    }
+    .card-header {
+      padding: 14px 16px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .card-title { font-size: 13px; font-weight: 600; color: var(--text); }
+    .card-sub { font-size: 11px; color: var(--text3); }
+    .card-body { padding: 16px; }
+
+    /* ── AI SOURCE BAR CHART ── */
+    .ai-bar { margin-bottom: 10px; }
+    .ai-bar-label {
+      display: flex; justify-content: space-between;
+      font-size: 12px; color: var(--text2); margin-bottom: 4px;
+    }
+    .ai-bar-track {
+      height: 8px; background: rgba(48,54,61,0.6); border-radius: 4px; overflow: hidden;
+    }
+    .ai-bar-fill { height: 100%; border-radius: 4px; transition: width 0.6s ease; }
+
+    /* ── TIMELINE ── */
+    .timeline-item {
+      display: flex; gap: 10px; padding: 8px 0;
+      border-bottom: 1px solid rgba(48,54,61,0.4); align-items: flex-start;
+    }
+    .timeline-item:last-child { border-bottom: none; }
+    .tl-dot {
+      width: 8px; height: 8px; border-radius: 50%; margin-top: 5px;
+      flex-shrink: 0;
+    }
+    .tl-content { flex: 1; min-width: 0; }
+    .tl-label { font-size: 12px; color: var(--text); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tl-meta  { font-size: 10px; color: var(--text3); margin-top: 2px; }
+    .tl-badge {
+      font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 8px;
+      margin-left: 6px;
+    }
+
+    /* ── SESSION LIST ── */
+    .session-item {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 9px 0; border-bottom: 1px solid rgba(48,54,61,0.4);
+    }
+    .session-item:last-child { border-bottom: none; }
+    .si-name { font-size: 12px; color: var(--text); font-weight: 500; }
+    .si-meta  { font-size: 10px; color: var(--text3); margin-top: 2px; }
+    .si-count {
+      font-size: 11px; font-weight: 700; color: var(--accent);
+      background: rgba(137,87,229,0.15); padding: 2px 8px; border-radius: 10px;
+    }
+
+    /* ── TOOL HEATMAP ── */
+    .tool-row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 6px 0; border-bottom: 1px solid rgba(48,54,61,0.3);
+    }
+    .tool-row:last-child { border-bottom: none; }
+    .tool-name { font-size: 12px; color: var(--text2); }
+    .tool-bar-wrap { display: flex; align-items: center; gap: 8px; }
+    .tool-mini-bar {
+      width: 80px; height: 6px; background: rgba(48,54,61,0.6);
+      border-radius: 3px; overflow: hidden;
+    }
+    .tool-mini-fill { height: 100%; border-radius: 3px; background: var(--purple); }
+    .tool-count { font-size: 11px; color: var(--text3); min-width: 24px; text-align: right; }
+
+    /* ── HOOK STATUS ── */
+    .hook-badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 600;
+    }
+    .hook-badge.active { background: rgba(63,185,80,0.15); color: var(--green); border: 1px solid rgba(63,185,80,0.3); }
+    .hook-badge.inactive { background: rgba(248,81,73,0.12); color: var(--red); border: 1px solid rgba(248,81,73,0.3); }
+    .hook-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+    /* ── EMPTY STATE ── */
+    .empty { text-align: center; color: var(--text3); font-size: 12px; padding: 24px 0; }
+  </style>
+</head>
+<body>
+
+<!-- TOPBAR -->
+<div id="topbar">
+  <span class="logo">🌌 <span>Orbit</span> Dashboard</span>
+  <div class="live-dot" id="live-dot"></div>
+  <span id="hook-status"></span>
+  <div class="topbar-right">
+    <span id="last-update"></span>
+    <a href="/orbit3d.html" class="tb-btn">🪐 행성계 뷰</a>
+    <a href="/history.html" class="tb-btn">⏳ 히스토리</a>
+    <a href="/settings.html" class="tb-btn">⚙️ 설정</a>
+    <a href="/" class="tb-btn">🗺 맵 뷰</a>
+  </div>
+</div>
+
+<div id="main">
+  <!-- STAT CARDS -->
+  <div class="stat-row">
+    <div class="stat-card green">
+      <div class="sc-label">총 이벤트</div>
+      <div class="sc-value" id="stat-events">—</div>
+      <div class="sc-sub" id="stat-events-sub">로딩 중...</div>
+    </div>
+    <div class="stat-card blue">
+      <div class="sc-label">세션</div>
+      <div class="sc-value" id="stat-sessions">—</div>
+      <div class="sc-sub" id="stat-sessions-sub"></div>
+    </div>
+    <div class="stat-card purple">
+      <div class="sc-label">도구 실행</div>
+      <div class="sc-value" id="stat-tools">—</div>
+      <div class="sc-sub" id="stat-tools-sub"></div>
+    </div>
+    <div class="stat-card orange">
+      <div class="sc-label">파일</div>
+      <div class="sc-value" id="stat-files">—</div>
+      <div class="sc-sub" id="stat-files-sub"></div>
+    </div>
+  </div>
+
+  <!-- AI SOURCES + RECENT TIMELINE -->
+  <div class="content-row">
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">AI 소스 분포</span>
+        <span class="card-sub" id="ai-total"></span>
+      </div>
+      <div class="card-body" id="ai-bars"></div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">최근 활동</span>
+        <span class="card-sub" id="timeline-count"></span>
+      </div>
+      <div class="card-body" id="timeline" style="max-height:280px;overflow-y:auto"></div>
+    </div>
+  </div>
+
+  <!-- SESSIONS + TOP TOOLS -->
+  <div class="content-row">
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">세션 목록</span>
+        <span class="card-sub" id="session-count"></span>
+      </div>
+      <div class="card-body" id="session-list" style="max-height:300px;overflow-y:auto"></div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">도구 사용 현황</span>
+        <span class="card-sub">Top 10</span>
+      </div>
+      <div class="card-body" id="tool-list"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── 색상 설정 ──
+const AI_COLORS = {
+  claude:     '#3fb950', openai:     '#8b949e', gpt:        '#8b949e',
+  n8n:        '#ea4b71', vscode:     '#f85149', perplexity: '#bc8cff',
+  gemini:     '#4285f4', cursor:     '#58a6ff', default:    '#6b7280',
+};
+
+const TYPE_COLORS = {
+  'user.message':      '#58a6ff', 'assistant.message': '#3fb950',
+  'tool.end':          '#bc8cff', 'tool.start':        '#8957e5',
+  'session.start':     '#39d2c0', 'task.complete':     '#3fb950',
+  'file.write':        '#f778ba', 'file.read':         '#ffa657',
+};
+
+function typeColor(type) { return TYPE_COLORS[type] || '#6b7280'; }
+function aiColor(src) { return AI_COLORS[src] || AI_COLORS.default; }
+
+// ── 데이터 로드 ──
+async function loadAll() {
+  try {
+    const [statsRes, graphRes, sessionsRes] = await Promise.all([
+      fetch('/api/stats'),
+      fetch('/api/graph'),
+      fetch('/api/sessions'),
+    ]);
+    const [stats, graph, sessions] = await Promise.all([
+      statsRes.json(), graphRes.json(), sessionsRes.json(),
+    ]);
+    renderStats(stats);
+    renderAIBars(stats.aiSourceStats || {});
+    renderTimeline(graph.nodes || []);
+    renderSessions(sessions || []);
+    renderToolList(graph.nodes || []);
+    updateLastUpdate();
+  } catch (e) {
+    console.error('데이터 로드 실패:', e);
+  }
+}
+
+// ── 통계 카드 ──
+function renderStats(stats) {
+  document.getElementById('stat-events').textContent   = stats.eventCount  ?? '—';
+  document.getElementById('stat-sessions').textContent = stats.sessionCount ?? '—';
+  document.getElementById('stat-tools').textContent    = stats.toolCount    ?? '—';
+  document.getElementById('stat-files').textContent    = stats.fileCount    ?? '—';
+
+  // 서브 텍스트
+  const aiSrcs = Object.keys(stats.aiSourceStats || {}).length;
+  document.getElementById('stat-events-sub').textContent   = `${aiSrcs}개 AI 소스`;
+  document.getElementById('stat-sessions-sub').textContent = '총 세션 수';
+  document.getElementById('stat-tools-sub').textContent    = '도구 실행 횟수';
+  document.getElementById('stat-files-sub').textContent    = '추적된 파일';
+}
+
+// ── AI 소스 바 차트 ──
+function renderAIBars(aiStats) {
+  const el = document.getElementById('ai-bars');
+  const entries = Object.entries(aiStats).sort((a, b) => b[1] - a[1]);
+  const total = entries.reduce((s, [, v]) => s + v, 0);
+  document.getElementById('ai-total').textContent = `총 ${total}건`;
+
+  if (entries.length === 0) {
+    el.innerHTML = '<div class="empty">데이터 없음</div>';
+    return;
+  }
+
+  el.innerHTML = entries.map(([src, count]) => {
+    const pct = total > 0 ? Math.round(count / total * 100) : 0;
+    const color = aiColor(src.toLowerCase());
+    return `
+      <div class="ai-bar">
+        <div class="ai-bar-label">
+          <span style="color:${color};font-weight:600">${src}</span>
+          <span style="color:var(--text3)">${count}건 (${pct}%)</span>
+        </div>
+        <div class="ai-bar-track">
+          <div class="ai-bar-fill" style="width:${pct}%;background:${color}"></div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+// ── 최근 활동 타임라인 ──
+function renderTimeline(nodes) {
+  const el = document.getElementById('timeline');
+  const recent = [...nodes]
+    .filter(n => n.timestamp)
+    .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
+    .slice(0, 20);
+
+  document.getElementById('timeline-count').textContent = `최근 ${recent.length}건`;
+
+  if (recent.length === 0) {
+    el.innerHTML = '<div class="empty">활동 없음</div>';
+    return;
+  }
+
+  el.innerHTML = recent.map(n => {
+    const color = n.aiSource ? aiColor(n.aiSource) : typeColor(n.type);
+    const time  = n.timestamp ? new Date(n.timestamp).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '';
+    const aiTag = n.aiSource ? `<span class="tl-badge" style="background:${color}22;color:${color}">${n.aiSource}</span>` : '';
+    return `
+      <div class="timeline-item">
+        <div class="tl-dot" style="background:${color}"></div>
+        <div class="tl-content">
+          <div class="tl-label">${escHtml(n.label || n.type)}${aiTag}</div>
+          <div class="tl-meta">${time}</div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+// ── 세션 목록 ──
+function renderSessions(sessions) {
+  const el = document.getElementById('session-list');
+  document.getElementById('session-count').textContent = `${sessions.length}개`;
+
+  if (sessions.length === 0) {
+    el.innerHTML = '<div class="empty">세션 없음</div>';
+    return;
+  }
+
+  // DB에서 오는 sessions 구조 처리
+  el.innerHTML = sessions.slice(0, 15).map(s => {
+    const name = s.memberName || s.userId || s.id?.slice(0, 16) || '알 수 없음';
+    const ch   = s.channelId || 'default';
+    const cnt  = s.eventCount || 0;
+    const time = s.startTime ? new Date(s.startTime).toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+    return `
+      <div class="session-item">
+        <div>
+          <div class="si-name">${escHtml(name)}</div>
+          <div class="si-meta">채널: ${ch}${time ? ' · ' + time : ''}</div>
+        </div>
+        <span class="si-count">${cnt}</span>
+      </div>`;
+  }).join('');
+}
+
+// ── 도구 사용 현황 ──
+function renderToolList(nodes) {
+  const el = document.getElementById('tool-list');
+  const toolCounts = {};
+  for (const n of nodes) {
+    if (!n.type?.startsWith('tool')) continue;
+    const name = (n.label || '').replace(/^⚡\s*/, '').replace(/:.*$/, '').trim();
+    if (name) toolCounts[name] = (toolCounts[name] || 0) + 1;
+  }
+
+  const entries = Object.entries(toolCounts).sort((a, b) => b[1] - a[1]).slice(0, 10);
+  if (entries.length === 0) {
+    el.innerHTML = '<div class="empty">도구 데이터 없음</div>';
+    return;
+  }
+
+  const max = entries[0][1];
+  el.innerHTML = entries.map(([name, cnt]) => {
+    const pct = Math.round(cnt / max * 100);
+    return `
+      <div class="tool-row">
+        <span class="tool-name">${escHtml(name)}</span>
+        <div class="tool-bar-wrap">
+          <div class="tool-mini-bar">
+            <div class="tool-mini-fill" style="width:${pct}%"></div>
+          </div>
+          <span class="tool-count">${cnt}</span>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+// ── Hook 상태 표시 ──
+async function checkHookStatus() {
+  try {
+    const res = await fetch('/health');
+    const d   = await res.json();
+    const el  = document.getElementById('hook-status');
+    // 이벤트가 최근에 추가됐으면 훅 활성 상태
+    const active = d.events > 0;
+    el.innerHTML = `<span class="hook-badge ${active ? 'active' : 'inactive'}"><span class="hook-dot"></span>${active ? '훅 활성' : '훅 비활성'}</span>`;
+    document.getElementById('live-dot').style.opacity = active ? '1' : '0.3';
+  } catch {}
+}
+
+function updateLastUpdate() {
+  document.getElementById('last-update').textContent =
+    '업데이트: ' + new Date().toLocaleTimeString('ko-KR');
+}
+
+function escHtml(str) {
+  return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── WebSocket 실시간 업데이트 ──
+function connectWS() {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const ws = new WebSocket(`${proto}//${location.host}`);
+  ws.onopen    = () => {};
+  ws.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    if (['graph_update', 'full_graph', 'event'].includes(msg.type)) {
+      loadAll();
+    }
+  };
+  ws.onclose = () => setTimeout(connectWS, 3000);
+}
+
+// ── 초기화 ──
+(async () => {
+  await loadAll();
+  await checkHookStatus();
+  connectWS();
+  // 30초마다 자동 갱신 (WS 놓쳤을 때 대비)
+  setInterval(loadAll, 30000);
+})();
+</script>
+</body>
+</html>

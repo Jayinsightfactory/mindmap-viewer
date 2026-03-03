@@ -1,0 +1,108 @@
+{
+  "_comment": "Claude Code 훅 설정 — Windows용. C:\\\\path\\\\to\\\\mindmap-viewer 를 실제 경로로 교체하세요.",
+  "_usage": "copy setup\\settings\\claude-windows.json %APPDATA%\\Claude\\settings.json",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node C:\\path\\to\\mindmap-viewer\\save-turn.js"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node C:\\path\\to\\mindmap-viewer\\save-turn.js"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node C:\\path\\to\\mindmap-viewer\\save-turn.js"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node C:\\path\\to\\mindmap-viewer\\save-turn.js"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node C:\\path\\to\\mindmap-viewer\\save-turn.js"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node C:\\path\\to\\mindmap-viewer\\save-turn.js"
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node C:\\path\\to\\mindmap-viewer\\save-turn.js"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node C:\\path\\to\\mindmap-viewer\\save-turn.js"
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node C:\\path\\to\\mindmap-viewer\\save-turn.js"
+          }
+        ]
+      }
+    ],
+    "TaskCompleted": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node C:\\path\\to\\mindmap-viewer\\save-turn.js"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,35 @@
+node_modules/
+snapshots/
+*.log
+hook.log
+nul
+.hook-state.json
+conversation.jsonl
+.DS_Store
+Thumbs.db
+_*.ps1
+
+# DB 파일 (로컬 데이터, 동기화 불필요)
+data/mindmap.db
+data/mindmap.db-wal
+data/mindmap.db-shm
+src/data/mindmap.db
+src/data/mindmap.db-wal
+src/data/mindmap.db-shm
+
+# 환경변수
+.env
+.env.local
+.env.production
+
+# 테스트 커버리지
+coverage/
+
+# Docker 빌드 캐시
+.dockerignore
+
+# 에디터
+.vscode/settings.json
+.idea/
+*.swp
+*.swo

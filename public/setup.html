@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>⬡ Orbit AI 원키 설정</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0d1117; color: #cdd9e5;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    min-height: 100vh; padding: 32px 16px;
+  }
+  .wrap { max-width: 680px; margin: 0 auto; }
+  .logo { font-size: 22px; font-weight: 700; color: #f0f6fc; margin-bottom: 6px; }
+  .sub  { font-size: 13px; color: #6e7681; margin-bottom: 28px; }
+
+  /* 상태 카드 */
+  .status-row { display: flex; gap: 10px; margin-bottom: 28px; flex-wrap: wrap; }
+  .scard {
+    flex: 1; min-width: 140px;
+    background: #161b22; border: 1px solid #30363d; border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .scard-label { font-size: 11px; color: #6e7681; margin-bottom: 4px; }
+  .scard-val   { font-size: 13px; font-weight: 600; }
+  .ok   { color: #3fb950; }
+  .warn { color: #f85149; }
+  .muted{ color: #8b949e; }
+
+  /* 단계 카드 */
+  .step {
+    background: #161b22; border: 1px solid #30363d; border-radius: 12px;
+    padding: 20px 22px; margin-bottom: 16px;
+  }
+  .step.done { border-color: #238636; background: rgba(35,134,54,.08); }
+  .step.active { border-color: #1f6feb; }
+  .step-header { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .step-num {
+    width: 26px; height: 26px; border-radius: 50%;
+    background: #1f6feb; color: #fff; font-size: 12px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  .step.done .step-num { background: #238636; }
+  .step-title { font-size: 14px; font-weight: 600; color: #f0f6fc; }
+  .step-desc  { font-size: 12px; color: #8b949e; margin-bottom: 12px; line-height: 1.6; }
+
+  /* 터미널 로그 */
+  .terminal {
+    background: #010409; border: 1px solid #21262d; border-radius: 8px;
+    padding: 12px 14px; font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 11.5px; line-height: 1.7; color: #adbac7;
+    max-height: 200px; overflow-y: auto; margin-bottom: 12px;
+    display: none;
+  }
+  .terminal.show { display: block; }
+  .terminal .ok-line   { color: #3fb950; }
+  .terminal .err-line  { color: #f85149; }
+  .terminal .info-line { color: #58a6ff; }
+
+  /* 버튼 */
+  .btn {
+    padding: 8px 18px; border: none; border-radius: 8px;
+    font-size: 13px; font-weight: 600; cursor: pointer;
+    transition: opacity .15s; display: inline-flex; align-items: center; gap: 6px;
+  }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn-primary  { background: #1f6feb; color: #fff; }
+  .btn-green    { background: #238636; color: #fff; }
+  .btn-outline  { background: transparent; border: 1px solid #30363d; color: #cdd9e5; }
+  .btn:not(:disabled):hover { opacity: .85; }
+
+  /* 완료 배너 */
+  .done-banner {
+    background: rgba(35,134,54,.12); border: 1px solid #238636;
+    border-radius: 12px; padding: 20px 22px; text-align: center;
+    display: none;
+  }
+  .done-banner.show { display: block; }
+  .done-title { font-size: 18px; font-weight: 700; color: #3fb950; margin-bottom: 8px; }
+  .done-desc  { font-size: 13px; color: #adbac7; margin-bottom: 16px; line-height: 1.6; }
+
+  /* 스피너 */
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spin { display: inline-block; animation: spin .8s linear infinite; }
+
+  /* 프로그레스 */
+  .progress-bar {
+    height: 3px; background: #21262d; border-radius: 3px; margin-bottom: 12px; overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%; background: linear-gradient(90deg, #1f6feb, #388bfd);
+    border-radius: 3px; transition: width .4s ease;
+    width: 0%;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="logo">⬡ Orbit AI 원키 설정</div>
+  <div class="sub">Claude Code 데이터를 자동 수집하기 위한 설정입니다. 아래 단계를 따라주세요.</div>
+
+  <!-- 상태 카드 -->
+  <div class="status-row">
+    <div class="scard">
+      <div class="scard-label">OS</div>
+      <div class="scard-val muted" id="st-os">감지 중…</div>
+    </div>
+    <div class="scard">
+      <div class="scard-label">Ollama</div>
+      <div class="scard-val muted" id="st-ollama">확인 중…</div>
+    </div>
+    <div class="scard">
+      <div class="scard-label">Claude 훅</div>
+      <div class="scard-val muted" id="st-hook">확인 중…</div>
+    </div>
+  </div>
+
+  <!-- Step 1: Ollama 설치 -->
+  <div class="step" id="step1">
+    <div class="step-header">
+      <div class="step-num" id="s1-num">1</div>
+      <div class="step-title">Ollama 설치</div>
+    </div>
+    <div class="step-desc" id="s1-desc">
+      로컬 AI 분석을 위해 Ollama가 필요합니다.<br>
+      아래 버튼을 클릭하면 자동으로 설치됩니다.
+    </div>
+    <div class="progress-bar" id="s1-progress"><div class="progress-fill" id="s1-fill"></div></div>
+    <div class="terminal" id="s1-log"></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-primary" id="btn-ollama" onclick="installOllama()">
+        📦 Ollama 설치 시작
+      </button>
+      <button class="btn btn-outline" onclick="skipOllama()">이미 설치됨 →</button>
+    </div>
+  </div>
+
+  <!-- Step 2: 훅 등록 -->
+  <div class="step" id="step2">
+    <div class="step-header">
+      <div class="step-num" id="s2-num">2</div>
+      <div class="step-title">Claude Code 훅 등록</div>
+    </div>
+    <div class="step-desc" id="s2-desc">
+      Claude Code를 사용할 때 자동으로 Orbit 서버에 기록합니다.<br>
+      <code style="background:#010409;padding:2px 6px;border-radius:4px;font-size:11px;color:#58a6ff">~/.claude/settings.json</code>에 훅이 추가됩니다.
+    </div>
+    <div class="terminal" id="s2-log"></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-primary" id="btn-hook" onclick="registerHook()">
+        🔗 훅 자동 등록
+      </button>
+      <button class="btn btn-outline" onclick="skipHook()">이미 등록됨 →</button>
+    </div>
+  </div>
+
+  <!-- 완료 -->
+  <div class="done-banner" id="done-banner">
+    <div class="done-title">✅ 설정 완료!</div>
+    <div class="done-desc">
+      이제 Claude Code를 사용하면 데이터가 자동 수집됩니다.<br>
+      Orbit 대시보드(<a href="https://mindmap-viewer-production.up.railway.app/orbit3d.html"
+        target="_blank" style="color:#58a6ff">orbit3d.html</a>)에서 데이터를 확인하세요.
+    </div>
+    <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+      <button class="btn btn-green" onclick="notifyParentAndClose()">
+        ✅ 완료 — 대시보드로 돌아가기
+      </button>
+      <button class="btn btn-outline" onclick="window.close()">창 닫기</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ── 상태 관리 ─────────────────────────────────────────────────────────────────
+let state = { ollamaDone: false, hookDone: false, osType: 'windows' };
+
+// ── 초기 상태 로드 ─────────────────────────────────────────────────────────────
+async function loadStatus() {
+  try {
+    const r = await fetch('/api/setup/check');  // 로컬 서버 → 로컬 감지
+    const d = await r.json();
+    state.osType = d.os || 'windows';
+
+    const osIcon = state.osType === 'mac' ? '🍎' : state.osType === 'windows' ? '🪟' : '🐧';
+    document.getElementById('st-os').textContent = `${osIcon} ${state.osType}`;
+    document.getElementById('st-os').className = 'scard-val muted';
+
+    // Ollama 상태
+    if (d.ollama?.running) {
+      setOllamaStatus('ok');
+      state.ollamaDone = true;
+      markStepDone('step1', 's1-num', `✅ Ollama 실행 중 (${d.ollama.models?.length || 0}개 모델)`);
+    } else if (d.ollama?.installed) {
+      setOllamaStatus('warn');
+      document.getElementById('s1-desc').innerHTML =
+        'Ollama는 설치되어 있지만 실행 중이 아닙니다.<br>아래 버튼으로 시작할 수 있습니다.';
+      document.getElementById('btn-ollama').textContent = '▶️ Ollama 서버 시작';
+    } else {
+      setOllamaStatus('warn');
+    }
+
+    // 훅 상태
+    if (d.hook?.registered) {
+      setHookStatus('ok');
+      state.hookDone = true;
+      markStepDone('step2', 's2-num', '✅ 훅 등록됨');
+    } else {
+      setHookStatus('warn');
+    }
+
+    checkAllDone();
+  } catch (e) {
+    // 로컬 서버가 없거나 접근 불가 — 수동 모드
+    document.getElementById('st-os').textContent = '⚠️ 로컬 서버 오프라인';
+    document.getElementById('st-os').className = 'scard-val warn';
+    showManualFallback();
+  }
+}
+
+function setOllamaStatus(cls) {
+  const el = document.getElementById('st-ollama');
+  const map = { ok: ['✅ 실행 중', 'ok'], warn: ['❌ 미설치', 'warn'] };
+  el.textContent = map[cls][0];
+  el.className = 'scard-val ' + map[cls][1];
+}
+function setHookStatus(cls) {
+  const el = document.getElementById('st-hook');
+  const map = { ok: ['✅ 등록됨', 'ok'], warn: ['❌ 미등록', 'warn'] };
+  el.textContent = map[cls][0];
+  el.className = 'scard-val ' + map[cls][1];
+}
+function markStepDone(stepId, numId, text) {
+  document.getElementById(stepId).classList.add('done');
+  document.getElementById(numId).textContent = '✓';
+}
+
+// ── Step 1: Ollama 설치 ────────────────────────────────────────────────────────
+async function installOllama() {
+  const btn = document.getElementById('btn-ollama');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin">⏳</span> 설치 중…';
+
+  const log = document.getElementById('s1-log');
+  const fill = document.getElementById('s1-fill');
+  log.classList.add('show');
+  log.innerHTML = '';
+
+  appendLog(log, 'info-line', `[Orbit] OS: ${state.osType} — Ollama 설치 시작…`);
+
+  try {
+    // SSE로 설치 진행 스트리밍
+    const es = new EventSource('/api/setup/install-ollama');
+    let progress = 0;
+
+    es.onmessage = (e) => {
+      const d = JSON.parse(e.data);
+
+      if (d.type === 'progress') {
+        progress = Math.min(progress + d.pct, 95);
+        fill.style.width = progress + '%';
+      }
+      if (d.type === 'stdout' || d.type === 'info') {
+        appendLog(log, 'ok-line', d.text.trim());
+      }
+      if (d.type === 'stderr') {
+        appendLog(log, 'err-line', d.text.trim());
+      }
+      if (d.type === 'done') {
+        es.close();
+        fill.style.width = '100%';
+        if (d.exitCode === 0 || d.ok) {
+          appendLog(log, 'ok-line', '✅ Ollama 설치 완료!');
+          state.ollamaDone = true;
+          setOllamaStatus('ok');
+          markStepDone('step1', 's1-num', '✅ 완료');
+          // 모델 다운로드도 자동 진행
+          pullModel(log);
+        } else {
+          appendLog(log, 'err-line', `❌ 오류 발생 (code ${d.exitCode}). 아래 수동 설치를 시도하세요.`);
+          showManualOllama();
+          btn.disabled = false;
+          btn.innerHTML = '🔁 다시 시도';
+        }
+      }
+      if (d.type === 'error') {
+        es.close();
+        appendLog(log, 'err-line', '❌ ' + d.msg);
+        showManualOllama();
+        btn.disabled = false;
+        btn.innerHTML = '🔁 다시 시도';
+      }
+    };
+    es.onerror = () => {
+      es.close();
+      appendLog(log, 'err-line', '❌ 연결 오류 — 아래 수동 방법을 시도하세요');
+      showManualOllama();
+      btn.disabled = false;
+      btn.innerHTML = '🔁 다시 시도';
+    };
+  } catch (e) {
+    appendLog(log, 'err-line', '❌ ' + e.message);
+    btn.disabled = false;
+    btn.innerHTML = '🔁 다시 시도';
+  }
+}
+
+// 설치 후 기본 모델 자동 다운로드
+async function pullModel(log) {
+  appendLog(log, 'info-line', '🤖 기본 모델 다운로드 중 (qwen2.5-coder:1.5b)…');
+  try {
+    const r = await fetch('/api/setup/ollama-pull', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: 'qwen2.5-coder:1.5b' })
+    });
+    const reader = r.body.getReader();
+    const dec = new TextDecoder();
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      const lines = dec.decode(value).split('\n').filter(l => l.startsWith('data:'));
+      for (const line of lines) {
+        try {
+          const d = JSON.parse(line.slice(5));
+          if (d.text) appendLog(log, 'ok-line', d.text.trim());
+          if (d.type === 'done') {
+            appendLog(log, 'ok-line', '✅ 모델 준비 완료! Step 2로 넘어가세요.');
+            checkAllDone();
+          }
+        } catch {}
+      }
+    }
+  } catch {
+    appendLog(log, 'err-line', '⚠️ 모델 다운로드 실패 — 나중에 설정 패널에서 다시 시도하세요');
+    checkAllDone();
+  }
+}
+
+function skipOllama() {
+  state.ollamaDone = true;
+  setOllamaStatus('ok');
+  markStepDone('step1', 's1-num', '✅ 건너뜀');
+  checkAllDone();
+}
+
+// ── Step 2: 훅 등록 ───────────────────────────────────────────────────────────
+async function registerHook() {
+  const btn = document.getElementById('btn-hook');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin">⏳</span> 등록 중…';
+
+  const log = document.getElementById('s2-log');
+  log.classList.add('show');
+  log.innerHTML = '';
+  appendLog(log, 'info-line', '[Orbit] ~/.claude/settings.json 업데이트 중…');
+
+  try {
+    const r = await fetch('/api/setup/hook-register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: 'full' })  // PostToolUse + Stop + SessionStart 등 전체 등록
+    });
+    const d = await r.json();
+    if (d.ok) {
+      appendLog(log, 'ok-line', `✅ 훅 등록 완료!`);
+      appendLog(log, 'ok-line', `경로: ${d.settingsPath}`);
+      appendLog(log, 'ok-line', `명령: ${d.hookCommand}`);
+      state.hookDone = true;
+      setHookStatus('ok');
+      markStepDone('step2', 's2-num', '✅ 완료');
+      checkAllDone();
+    } else {
+      appendLog(log, 'err-line', '❌ ' + d.error);
+      btn.disabled = false;
+      btn.innerHTML = '🔁 다시 시도';
+    }
+  } catch (e) {
+    appendLog(log, 'err-line', '❌ ' + e.message);
+    btn.disabled = false;
+    btn.innerHTML = '🔁 다시 시도';
+  }
+}
+
+function skipHook() {
+  state.hookDone = true;
+  setHookStatus('ok');
+  markStepDone('step2', 's2-num', '✅ 건너뜀');
+  checkAllDone();
+}
+
+// ── 완료 처리 ─────────────────────────────────────────────────────────────────
+function checkAllDone() {
+  if (state.ollamaDone && state.hookDone) {
+    document.getElementById('done-banner').classList.add('show');
+    // localStorage에 확인 완료 저장 (같은 브라우저라면 Railway 탭도 공유 안됨 — 수동으로)
+    try { localStorage.setItem('orbit_setup_done', Date.now()); } catch {}
+  }
+}
+
+function notifyParentAndClose() {
+  // opener(Railway 탭)가 있으면 자동 확인 시도
+  try {
+    if (window.opener && !window.opener.closed) {
+      window.opener.postMessage({ type: 'orbit_setup_done' }, '*');
+    }
+  } catch {}
+  window.close();
+}
+
+// ── 수동 폴백 표시 ────────────────────────────────────────────────────────────
+function showManualOllama() {
+  const desc = document.getElementById('s1-desc');
+  const osCmd = state.osType === 'windows'
+    ? `# PowerShell (관리자)\nwinget install Ollama.Ollama --accept-package-agreements`
+    : state.osType === 'mac'
+    ? `# 터미널\nbrew install ollama`
+    : `# 터미널\ncurl -fsSL https://ollama.com/install.sh | sh`;
+
+  desc.innerHTML = `수동 설치 명령어:<br>
+    <div style="background:#010409;border:1px solid #21262d;border-radius:6px;padding:10px;margin:8px 0;font-family:monospace;font-size:11px;color:#adbac7;white-space:pre">${osCmd}</div>
+    <button class="btn btn-outline" onclick="copyCmd(\`${osCmd}\`)" style="font-size:11px;padding:4px 10px;margin-top:4px">📋 복사</button>`;
+}
+
+function showManualFallback() {
+  // 로컬 서버가 꺼져 있을 때 — 터미널 명령 안내
+  document.getElementById('s1-desc').innerHTML = `
+    <div style="color:#f85149;margin-bottom:8px">⚠️ 로컬 Orbit 서버(localhost:4747)가 실행되지 않고 있습니다.</div>
+    먼저 Orbit 서버를 실행하세요:<br>
+    <div style="background:#010409;border:1px solid #21262d;border-radius:6px;padding:10px;margin:8px 0;font-family:monospace;font-size:11px;color:#3fb950">
+cd C:/Users/cando/mindmap-viewer &amp;&amp; npm run dev</div>
+    이후 이 페이지를 새로고침 하세요.
+    <br><br>
+    또는 <b>PowerShell에서 Ollama를 직접 설치</b>:<br>
+    <div style="background:#010409;border:1px solid #21262d;border-radius:6px;padding:10px;margin:8px 0;font-family:monospace;font-size:11px;color:#adbac7">winget install Ollama.Ollama --accept-package-agreements</div>
+    <button class="btn btn-outline" onclick="copyCmd('winget install Ollama.Ollama --accept-package-agreements')" style="font-size:11px;padding:4px 10px">📋 복사</button>`;
+  document.getElementById('btn-ollama').style.display = 'none';
+}
+
+// ── 유틸 ──────────────────────────────────────────────────────────────────────
+function appendLog(el, cls, text) {
+  if (!text) return;
+  const d = document.createElement('div');
+  d.className = cls;
+  d.textContent = text;
+  el.appendChild(d);
+  el.scrollTop = el.scrollHeight;
+}
+
+function copyCmd(text) {
+  navigator.clipboard.writeText(text).then(() => alert('복사됨!')).catch(() => prompt('복사하세요:', text));
+}
+
+// ── postMessage로 부모 탭에 알리기 (Railway 탭) ──────────────────────────────
+window.addEventListener('message', () => {});  // 리스너 placeholder
+
+// ── 시작 ──────────────────────────────────────────────────────────────────────
+loadStatus();
+</script>
+</body>
+</html>

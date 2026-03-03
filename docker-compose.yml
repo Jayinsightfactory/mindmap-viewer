@@ -1,0 +1,110 @@
+version: '3.9'
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Orbit AI — Docker Compose
+# ─────────────────────────────────────────────────────────────────────────────
+# 빠른 시작:
+#   docker-compose up -d              # 기본 실행 (localhost:4747)
+#   docker-compose up -d --build      # 이미지 재빌드 후 실행
+#   docker-compose --profile prod up -d  # Nginx 리버스프록시 포함
+#
+# 환경변수 설정:
+#   .env 파일 생성 후 아래 변수 입력 (docker-compose.env.example 참고)
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  # ── Orbit AI 서버 ───────────────────────────────────────────────────────────
+  orbit:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    image: orbit-ai:latest
+    container_name: orbit-ai
+    restart: unless-stopped
+
+    ports:
+      - "${PORT:-4747}:4747"
+
+    environment:
+      # 기본 설정
+      - NODE_ENV=production
+      - PORT=4747
+
+      # 인증
+      - AUTH_DISABLED=${AUTH_DISABLED:-0}
+      - SESSION_SECRET=${SESSION_SECRET:-change-me-in-production}
+
+      # OAuth (선택 — 없으면 소셜 로그인 비활성화)
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
+      - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID:-}
+      - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET:-}
+      - KAKAO_CLIENT_ID=${KAKAO_CLIENT_ID:-}
+      - NAVER_CLIENT_ID=${NAVER_CLIENT_ID:-}
+      - NAVER_CLIENT_SECRET=${NAVER_CLIENT_SECRET:-}
+
+      # 배포 URL (OAuth 콜백에 필요)
+      - OAUTH_CALLBACK_BASE=${OAUTH_CALLBACK_BASE:-http://localhost:4747}
+      - CLIENT_ORIGIN=${CLIENT_ORIGIN:-http://localhost:4747}
+
+      # 결제 (없으면 MOCK 모드)
+      - TOSS_SECRET_KEY=${TOSS_SECRET_KEY:-}
+
+      # 인사이트 엔진
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - INSIGHT_INTERVAL_MS=${INSIGHT_INTERVAL_MS:-3600000}
+      - INSIGHT_DISABLED=${INSIGHT_DISABLED:-0}
+
+      # Git Webhook 서명 검증 (GitHub Webhook secret)
+      - GITHUB_WEBHOOK_SECRET=${GITHUB_WEBHOOK_SECRET:-}
+
+    volumes:
+      # SQLite DB / 스냅샷 / 인사이트 영구 보존
+      - orbit_data:/app/data
+      - orbit_snapshots:/app/snapshots
+      # JSONL 이벤트 파일 (호스트의 Claude Code save-turn.js 접근용)
+      - ${CONV_FILE:-./conversation.jsonl}:/app/conversation.jsonl
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4747/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+    labels:
+      - "com.orbit.version=2.0.0"
+      - "com.orbit.description=Orbit AI — AI Work Tracker & Visualizer"
+
+  # ── Nginx 리버스프록시 (--profile prod 로 활성화) ──────────────────────────
+  nginx:
+    image: nginx:alpine
+    container_name: orbit-nginx
+    restart: unless-stopped
+    profiles: ["prod"]
+
+    ports:
+      - "80:80"
+      - "443:443"
+
+    volumes:
+      - ./nginx/orbit.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro         # SSL 인증서 (certbot)
+      - nginx_logs:/var/log/nginx
+
+    depends_on:
+      orbit:
+        condition: service_healthy
+
+    labels:
+      - "com.orbit.role=reverse-proxy"
+
+volumes:
+  orbit_data:
+    driver: local
+  orbit_snapshots:
+    driver: local
+  nginx_logs:
+    driver: local
