@@ -10188,7 +10188,8 @@ function renderMgrBadges(memberId, cx, baseY) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 function connectWS() {
-  const ws = new WebSocket(`ws://${location.host}`);
+  const _wsProt = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const ws = new WebSocket(`${_wsProt}//${location.host}`);
   ws.onmessage = ev => {
     try {
       const m = JSON.parse(ev.data);
