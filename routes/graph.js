@@ -78,8 +78,9 @@ function createRouter(deps) {
   router.get('/graph', (req, res) => {
     const user = getUserFromReq(req);
     if (!user) {
-      // 미인증 → 빈 그래프 반환 (401 대신 빈 데이터로 로그인 유도)
-      return res.json({ nodes: [], edges: [] });
+      // 미인증 → 'local' + 'visitor' 이벤트 포함 전체 그래프 반환
+      const graph = getFullGraph(req.query.session, req.query.channel);
+      return res.json(graph);
     }
     const graph = user.id === 'local'
       ? getFullGraph(req.query.session, req.query.channel)      // 로컬 개발: 전체
@@ -108,7 +109,7 @@ function createRouter(deps) {
    */
   router.get('/sessions', (req, res) => {
     const user = getUserFromReq(req);
-    if (!user) return res.json([]);
+    if (!user) return res.json(getSessions());
     const sessions = (user.id !== 'local' && getSessionsByUser)
       ? getSessionsByUser(user.id)
       : getSessions();
