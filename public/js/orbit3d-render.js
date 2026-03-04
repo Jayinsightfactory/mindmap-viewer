@@ -1369,17 +1369,17 @@ function showInstallModal() {
             <div style="font-size:13px;font-weight:600;color:#f0f6fc;margin-bottom:4px">${label} 열기</div>
             <div style="font-size:11px;color:#8b949e;line-height:1.6">
               ${isWin
-                ? 'Windows 키 → <b style="color:#cdd9e5">cmd</b> 검색 → Enter<br>또는 Windows 키 → <b style="color:#cdd9e5">PowerShell</b> → Enter'
-                : '터미널 앱을 여세요 (Spotlight → Terminal)'}
+                ? '<kbd style="background:#21262d;padding:2px 6px;border-radius:3px">Win + R</kbd> → <b style="color:#cdd9e5">powershell</b> 입력 → Enter'
+                : '<kbd style="background:#21262d;padding:2px 6px;border-radius:3px">Spotlight</kbd> → Terminal 검색 → Enter'}
             </div>
           </div>
         </div>
 
         <!-- 단계 2 -->
         <div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:18px">
-          <div style="width:24px;height:24px;background:#1f6feb;border-radius:50%;display:flex;align-items:center;justify-content:normal;font-size:12px;font-weight:700;color:#fff;flex-shrink:0;justify-content:center">2</div>
+          <div style="width:24px;height:24px;background:#1f6feb;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0">2</div>
           <div style="flex:1">
-            <div style="font-size:13px;font-weight:600;color:#f0f6fc;margin-bottom:6px">아래 명령어 복사 → 붙여넣기 → Enter</div>
+            <div style="font-size:13px;font-weight:600;color:#f0f6fc;margin-bottom:6px">아래 명령어 복사 → 붙여넣기 (<kbd style="background:#21262d;padding:1px 5px;border-radius:3px;font-size:10px">Ctrl+V</kbd>) → Enter</div>
             <div style="position:relative;background:#010409;border:1px solid #21262d;border-radius:8px;padding:12px 44px 12px 14px">
               <code id="install-cmd" style="font-family:'Consolas','Courier New',monospace;font-size:11.5px;color:#3fb950;word-break:break-all;line-height:1.6">${escHtml(cmd)}</code>
               <button onclick="copyInstallScript()" id="copy-script-btn"
@@ -1387,7 +1387,7 @@ function showInstallModal() {
                 color:#fff;font-size:10px;font-weight:600;padding:3px 8px;cursor:pointer">복사</button>
             </div>
             <div style="font-size:10px;color:#6e7681;margin-top:6px;line-height:1.6">
-              ✓ Orbit 다운로드 &nbsp;→&nbsp; ✓ Ollama 설치 &nbsp;→&nbsp; ✓ AI 모델 &nbsp;→&nbsp; ✓ Claude 훅 등록 &nbsp;→&nbsp; ✓ 서버 시작
+              ✓ Orbit 다운로드 → ✓ Claude 훅 등록 → ✓ 서버 시작 <span style="color:#58a6ff">(Ollama 불필요)</span>
             </div>
           </div>
         </div>
@@ -1734,7 +1734,7 @@ async function renderSetupPanel() {
       }
     </div>
     <div style="font-size:11px;color:#6e7681;line-height:1.5;margin-bottom:4px">
-      💡 명령어를 실행하면 Ollama + Claude 훅이 자동 설치됩니다.<br>
+      💡 Ollama 없이 바로 사용 가능 — AI 분석은 클라우드(Haiku)로 처리됩니다.<br>
       다른 컴퓨터에서도 동일한 명령어를 실행하면 연동됩니다.
     </div>
   `;

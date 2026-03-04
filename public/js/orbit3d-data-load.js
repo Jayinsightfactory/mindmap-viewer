@@ -215,6 +215,10 @@ function _showEmptyStateStep2() {
   const termLabel = isMac ? '터미널' : 'PowerShell';
   const srcLabel = _getDataSource() === 'cloud' ? '클라우드 동기화' : '로컬 데이터';
 
+  const termOpen = isMac
+    ? '<kbd style="background:#21262d;padding:2px 6px;border-radius:3px;font-size:11px">Spotlight</kbd> → Terminal 검색 → Enter'
+    : '<kbd style="background:#21262d;padding:2px 6px;border-radius:3px;font-size:11px">Win + R</kbd> → <b style="color:#cdd9e5">powershell</b> 입력 → Enter';
+
   el.innerHTML = `
     <div style="font-size:42px;margin-bottom:12px">⬡</div>
     <div style="font-size:17px;font-weight:700;color:#e6edf3;margin-bottom:6px">
@@ -224,13 +228,24 @@ function _showEmptyStateStep2() {
       데이터 모드: <b>${srcLabel}</b>
       <span onclick="_resetDataSource()" style="color:#6e7681;cursor:pointer;margin-left:6px;text-decoration:underline;font-size:11px">변경</span>
     </div>
-    <div style="font-size:13px;color:#8b949e;line-height:1.6;margin-bottom:18px">
-      아래 명령어를 ${termLabel}에 붙여넣으면<br>
-      퍼미션 설정 + 훅 등록이 자동으로 완료됩니다.
+
+    <div style="text-align:left;margin-bottom:16px">
+      <div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:12px">
+        <div style="width:22px;height:22px;background:#1f6feb;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0">1</div>
+        <div style="font-size:12px;color:#8b949e;line-height:1.6">
+          ${termOpen}
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:12px">
+        <div style="width:22px;height:22px;background:#1f6feb;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0">2</div>
+        <div style="font-size:12px;color:#8b949e;line-height:1.6">
+          아래 명령어 <b style="color:#cdd9e5">복사</b> → 붙여넣기(<kbd style="background:#21262d;padding:1px 5px;border-radius:3px;font-size:10px">Ctrl+V</kbd>) → <b style="color:#cdd9e5">Enter</b>
+        </div>
+      </div>
     </div>
+
     <div style="background:#010409;border:1px solid #21262d;border-radius:10px;
       padding:12px 14px;margin-bottom:10px;position:relative">
-      <div style="font-size:10px;color:#6e7681;margin-bottom:6px">${isMac ? '터미널' : 'PowerShell'}</div>
       <code id="esg-install-cmd" style="font-family:'Consolas','Courier New',monospace;
         font-size:11px;color:#3fb950;word-break:break-all;line-height:1.6;display:block">${installCmd}</code>
     </div>
@@ -238,16 +253,16 @@ function _showEmptyStateStep2() {
       const cmd = document.getElementById('esg-install-cmd').textContent.trim();
       navigator.clipboard.writeText(cmd).then(()=>{
         const b=document.getElementById('esg-copy-btn');
-        b.textContent='복사됨'; b.style.background='#238636';
-        setTimeout(()=>{b.textContent='명령어 복사';b.style.background='';},2000);
+        b.textContent='✅ 복사됨! 터미널에 붙여넣기 하세요'; b.style.background='#238636';
+        setTimeout(()=>{b.textContent='명령어 복사';b.style.background='';},3000);
       }).catch(()=>prompt('복사하세요:',cmd));
     })()" id="esg-copy-btn"
       style="width:100%;background:#1f6feb;border:none;color:#fff;
       padding:9px 0;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;margin-bottom:12px">
       명령어 복사
     </button>
-    <div style="font-size:12px;color:#6e7681;line-height:1.6;margin-bottom:14px">
-      설치 후 Claude Code로 작업하면 자동으로 노드가 나타납니다
+    <div style="font-size:11px;color:#6e7681;line-height:1.6;margin-bottom:14px">
+      Ollama 설치 없이 바로 사용 가능 — AI 분석은 클라우드(Haiku)로 처리됩니다
     </div>
     <button onclick="document.getElementById('empty-state-guide').remove()"
       style="background:#21262d;border:1px solid #30363d;color:#e6edf3;
