@@ -1452,49 +1452,9 @@ function markSetupDone() {
 }
 
 // ── 로그인 후 자동 환경 체크 ────────────────────────────────────────────────
+// 설치 안내는 설정 패널에서 제공 — 자동 팝업 제거
 function _autoCheckEnvAfterLogin() {
-  const ollamaOk = localStorage.getItem('orbit_ollama_ok') === '1';
-  const hookOk   = localStorage.getItem('orbit_hook_ok')   === '1';
-
-  if (ollamaOk && hookOk) return; // 이미 모두 확인됨
-
-  setTimeout(() => {
-    if (document.getElementById('env-check-banner') || document.getElementById('install-modal')) return;
-
-    const banner = document.createElement('div');
-    banner.id = 'env-check-banner';
-    banner.style.cssText = `
-      position:fixed;bottom:80px;left:50%;transform:translateX(-50%);
-      background:#161b22;border:1px solid #30363d;border-radius:12px;
-      padding:14px 20px;z-index:9000;max-width:420px;width:92%;
-      box-shadow:0 8px 32px rgba(0,0,0,0.5);font-family:inherit;
-    `;
-    banner.innerHTML = `
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
-        <span style="font-size:15px">⬡</span>
-        <span style="font-size:13px;font-weight:600;color:#f0f6fc">Orbit AI 설정 필요</span>
-        <span onclick="document.getElementById('env-check-banner').remove()"
-          style="margin-left:auto;cursor:pointer;color:#6e7681;font-size:18px;line-height:1">✕</span>
-      </div>
-      <div style="font-size:12px;color:#8b949e;margin-bottom:12px;line-height:1.6">
-        Claude Code 작업이 자동 수집되려면<br>
-        <b style="color:#cdd9e5">내 PC에 Orbit + Ollama + 훅</b> 설치가 필요합니다.
-      </div>
-      <div style="display:flex;gap:8px">
-        <button onclick="showInstallModal();document.getElementById('env-check-banner').remove()"
-          style="flex:1;padding:8px;background:#1f6feb;border:none;border-radius:8px;
-          color:#fff;font-size:12px;font-weight:600;cursor:pointer">
-          🚀 원키 설치 명령어 보기
-        </button>
-        <button onclick="markSetupDone()" title="이미 설치되어 있다면"
-          style="padding:8px 12px;background:transparent;border:1px solid #30363d;
-          border-radius:8px;color:#6e7681;font-size:11px;cursor:pointer">
-          이미 완료
-        </button>
-      </div>
-    `;
-    document.body.appendChild(banner);
-  }, 2000);
+  // 설정 패널에 설치 명령어가 있으므로 별도 배너/모달 표시하지 않음
 }
 
 async function openSetupPanel() {
