@@ -629,7 +629,7 @@ app.get('/health', (req, res) => {
 
 // ── 트래커 핑 (로컬 서버 → Railway로 주기적 보고) ─────────────────────────
 // 로컬 트래커가 살아있음을 Railway에 알림
-const _trackerPings = {}; // { userId: { lastSeen, hostname, events } }
+const _trackerPings = {}; // { key: { lastSeen, hostname, events } }
 app.post('/api/tracker/ping', (req, res) => {
   try {
     const { userId, hostname, eventCount } = req.body || {};
@@ -639,10 +639,33 @@ app.post('/api/tracker/ping', (req, res) => {
       hostname:   hostname || 'unknown',
       eventCount: eventCount || 0,
     };
+    // Authorization 헤더의 토큰으로도 등록 (대시보드 조회 매칭용)
+    const authToken = (req.headers.authorization || '').replace('Bearer ', '').trim();
+    if (authToken) {
+      try {
+        const user = verifyToken(authToken);
+        if (user) _trackerPings[user.id] = _trackerPings[key];
+      } catch {}
+      // 토큰 자체와 prefix로도 등록
+      _trackerPings[authToken.slice(0, 20)] = _trackerPings[key];
+    }
+    console.log('[tracker/ping] 수신 — key:', key, 'hostname:', hostname, 'pings:', Object.keys(_trackerPings));
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
   }
+});
+
+// 디버깅: 핑 상태 직접 확인용
+app.get('/api/tracker/debug', (req, res) => {
+  res.json({
+    pings: Object.entries(_trackerPings).map(([k, v]) => ({
+      key: k.slice(0, 10) + '...',
+      lastSeen: v.lastSeen,
+      ago: Math.round((Date.now() - v.lastSeen) / 1000) + 's',
+      hostname: v.hostname,
+    })),
+  });
 });
 
 // 트래커 상태 조회 (대시보드에서 연결 확인용)
@@ -650,12 +673,11 @@ app.get('/api/tracker/status', (req, res) => {
   try {
     const token = (req.headers.authorization || '').replace('Bearer ', '');
     let userId = req.query.userId || '';
-    // 토큰으로 사용자 식별
+    // verifyToken으로 사용자 식별 (SQLite/PostgreSQL 모두 호환)
     if (token && !userId) {
       try {
-        const db = dbModule.getDb();
-        const row = db.prepare('SELECT id FROM users WHERE token = ?').get(token);
-        if (row) userId = row.id;
+        const user = verifyToken(token);
+        if (user) userId = user.id;
       } catch {}
     }
     // 토큰 prefix(20자)로도 매칭 (로컬 서버가 token.slice(0,20)으로 핑 보냄)
@@ -664,6 +686,10 @@ app.get('/api/tracker/status', (req, res) => {
       || Object.values(_trackerPings).find(p => Date.now() - p.lastSeen < 6 * 60 * 1000)
       || null;
     const isOnline = ping && (Date.now() - ping.lastSeen < 6 * 60 * 1000); // 6분 이내
+    // 디버깅: 핑 상태 로그
+    if (!isOnline) {
+      console.log('[tracker/status] 미연결 — userId:', userId, 'tokenPrefix:', tokenPrefix, 'pings:', Object.keys(_trackerPings));
+    }
     res.json({
       online:     !!isOnline,
       lastSeen:   ping?.lastSeen || null,
