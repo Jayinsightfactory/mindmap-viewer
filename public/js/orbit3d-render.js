@@ -1387,7 +1387,7 @@ function showInstallModal() {
                 color:#fff;font-size:10px;font-weight:600;padding:3px 8px;cursor:pointer">복사</button>
             </div>
             <div style="font-size:10px;color:#6e7681;margin-top:6px;line-height:1.6">
-              ✓ Orbit 다운로드 → ✓ Claude 훅 등록 → ✓ 서버 시작 <span style="color:#58a6ff">(Ollama 불필요)</span>
+              ✓ Orbit 다운로드 → ✓ 훅 등록 → ✓ 서버 시작 → ✓ 앱·웹·키입력 트래킹 시작
             </div>
           </div>
         </div>
@@ -1734,8 +1734,8 @@ async function renderSetupPanel() {
       }
     </div>
     <div style="font-size:11px;color:#6e7681;line-height:1.5;margin-bottom:4px">
-      💡 Ollama 없이 바로 사용 가능 — AI 분석은 클라우드(Haiku)로 처리됩니다.<br>
-      다른 컴퓨터에서도 동일한 명령어를 실행하면 연동됩니다.
+      💡 설치 후 모든 앱 사용·웹 브라우징·키 입력이 로컬에 자동 저장됩니다.<br>
+      AI 학습 결과만 대시보드로 전송됩니다. 다른 PC에서도 동일 명령어로 연동 가능.
     </div>
   `;
 

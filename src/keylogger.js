@@ -1,17 +1,18 @@
 /**
  * keylogger.js
  * ─────────────────────────────────────────────────────────────
- * 로컬 키입력 수집 + Ollama 분석 에이전트
+ * 로컬 키입력 수집 + 규칙 기반 분석 에이전트
  *
  * 프라이버시 원칙:
  *   - 원문 키스트로크는 로컬 SQLite에만 저장
- *   - 30초마다 Ollama가 분석 → 결과(패턴/인사이트)만 서버 전송
+ *   - 30초마다 규칙 기반 분석 → 결과(패턴/인사이트)만 서버 전송
  *   - 비밀번호 필드 자동 감지 후 마스킹 (*** 처리)
  *   - 언제든 OFF 가능 (ORBIT_KEYLOG=false 환경변수)
  *
+ * AI 분석은 서버(Haiku)에서 처리 — Ollama 불필요
+ *
  * 실행:
  *   node src/keylogger.js
- *   (설치 스크립트가 백그라운드로 자동 실행)
  * ─────────────────────────────────────────────────────────────
  */
 'use strict';
@@ -22,8 +23,7 @@ const http    = require('http');
 const https   = require('https');
 const os      = require('os');
 
-// ── ~/.orbit-config.json 읽기 (Railway URL + 토큰) ──────────
-// 로컬 서버가 꺼져도 Railway로 직접 전송하기 위해 필요
+// ── ~/.orbit-config.json 읽기 ──────────────────────────────
 function readOrbitConfig() {
   try {
     const p = path.join(os.homedir(), '.orbit-config.json');
@@ -31,18 +31,14 @@ function readOrbitConfig() {
   } catch {}
   return {};
 }
-const _orbitCfg    = readOrbitConfig();
-// Railway 서버 URL: 환경변수 > config 파일
+const _orbitCfg     = readOrbitConfig();
 const RAILWAY_URL   = process.env.ORBIT_SERVER_URL || _orbitCfg.serverUrl || null;
-// 인증 토큰
 const RAILWAY_TOKEN = process.env.ORBIT_TOKEN      || _orbitCfg.token     || '';
 
 // ── 설정 ────────────────────────────────────────────────────
 const ENABLED         = process.env.ORBIT_KEYLOG !== 'false';
 const LOCAL_PORT      = parseInt(process.env.MINDMAP_PORT || '4747');
-const OLLAMA_PORT     = parseInt(process.env.OLLAMA_PORT  || '11434');
-const OLLAMA_MODEL    = process.env.OLLAMA_MODEL || 'qwen2.5-coder:1.5b';
-const FLUSH_INTERVAL  = 30000;   // 30초마다 Ollama 분석
+const FLUSH_INTERVAL  = 30000;   // 30초마다 분석
 const MIN_CHARS       = 20;      // 최소 20자 이상 쌓였을 때 분석
 const MAX_BUFFER      = 2000;    // 버퍼 최대 2000자
 
@@ -50,7 +46,6 @@ const BASE_DIR   = path.resolve(__dirname);
 const DB_PATH    = path.join(BASE_DIR, 'data', 'keylog.db');
 const LOG_FILE   = path.join(BASE_DIR, 'keylog.log');
 
-// data 폴더 자동 생성
 try { fs.mkdirSync(path.join(BASE_DIR, 'data'), { recursive: true }); } catch {}
 
 function log(msg) {
@@ -78,14 +73,14 @@ function initDb() {
       CREATE TABLE IF NOT EXISTS keylog_chunks (
         id          TEXT PRIMARY KEY,
         session_id  TEXT,
-        text        TEXT NOT NULL,      -- 원문 (로컬 only)
+        text        TEXT NOT NULL,
         captured_at TEXT,
-        analyzed    INTEGER DEFAULT 0   -- Ollama 분석 완료 여부
+        analyzed    INTEGER DEFAULT 0
       );
       CREATE TABLE IF NOT EXISTS keylog_insights (
         id          TEXT PRIMARY KEY,
-        chunk_ids   TEXT,               -- 분석에 사용된 chunk ids
-        insight     TEXT NOT NULL,      -- Ollama 분석 결과 JSON
+        chunk_ids   TEXT,
+        insight     TEXT NOT NULL,
         created_at  TEXT
       );
     `);
@@ -97,13 +92,14 @@ function initDb() {
 }
 
 // ── 키 버퍼 ─────────────────────────────────────────────────
-let _buffer        = '';          // 현재 입력 버퍼
-let _isPassword    = false;       // 비밀번호 필드 감지 여부
+let _buffer        = '';
+let _isPassword    = false;
 let _flushTimer    = null;
 let _sessionId     = `ks-${Date.now()}`;
 let _db            = null;
+let _activeApp     = '';
+let _activeTitle   = '';
 
-// 특수키 → 텍스트 변환 (의미있는 것만)
 const SPECIAL_KEYS = {
   'Return':    '\n',
   'space':     ' ',
@@ -113,8 +109,6 @@ const SPECIAL_KEYS = {
   'Escape':    '[ESC]',
 };
 
-// 비밀번호로 추정되는 필드에서 타이핑 중인지 감지
-// (실제로는 창 제목/앱으로 감지하지만 단순화: 앱 이름 기반)
 const PASSWORD_APPS = ['KeePass', '1Password', 'Bitwarden', 'LastPass', 'Samsung Pass'];
 function checkPasswordContext(windowTitle) {
   if (!windowTitle) return false;
@@ -123,34 +117,57 @@ function checkPasswordContext(windowTitle) {
     PASSWORD_APPS.some(app => lower.includes(app.toLowerCase()));
 }
 
-// ── uiohook-napi 로드 (없으면 대체 방법 시도) ────────────────
+// ── 활성 윈도우 폴링 (2초마다) ─────────────────────────────
+function pollActiveWindow() {
+  const { exec } = require('child_process');
+  const platform = process.platform;
+
+  setInterval(() => {
+    if (platform === 'win32') {
+      const ps = `Add-Type @"
+using System; using System.Runtime.InteropServices;
+public class WinAPI {
+  [DllImport("user32")] public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32")] public static extern int GetWindowText(IntPtr h,System.Text.StringBuilder s,int m);
+  [DllImport("user32")] public static extern uint GetWindowThreadProcessId(IntPtr h,out uint p);
+}
+"@
+$h=[WinAPI]::GetForegroundWindow(); $sb=New-Object System.Text.StringBuilder 256; [WinAPI]::GetWindowText($h,$sb,256)|Out-Null; $pid=0; [WinAPI]::GetWindowThreadProcessId($h,[ref]$pid)|Out-Null; $proc=Get-Process -Id $pid -ErrorAction SilentlyContinue; Write-Output ($proc.ProcessName+"|||"+$sb.ToString())`;
+      exec(`powershell -Command "${ps.replace(/"/g, '\\"')}"`, (err, stdout) => {
+        if (!err && stdout) {
+          const [app, title] = stdout.trim().split('|||');
+          _activeApp   = (app || '').trim();
+          _activeTitle = (title || '').trim();
+          _isPassword  = checkPasswordContext(_activeTitle);
+        }
+      });
+    } else if (platform === 'darwin') {
+      const script = 'tell application "System Events" to set fApp to name of first application process whose frontmost is true\nreturn fApp';
+      exec(`osascript -e '${script.replace(/\n/g, "' -e '")}'`, (err, stdout) => {
+        if (!err) _activeApp = (stdout || '').trim();
+      });
+    }
+  }, 2000);
+}
+
+// ── uiohook-napi 키 캡처 ────────────────────────────────────
 function startCapture() {
   try {
-    // uiohook-napi: 가장 안정적인 크로스플랫폼 키 후킹 라이브러리
-    const { uIOhook, UiohookKey } = require('uiohook-napi');
+    const { uIOhook } = require('uiohook-napi');
 
     uIOhook.on('keydown', (event) => {
-      if (_isPassword) return; // 비밀번호 필드는 무시
+      if (_isPassword) return;
 
       let char = '';
-
-      // 특수키 처리
       if (SPECIAL_KEYS[event.keycode]) {
         char = SPECIAL_KEYS[event.keycode];
-      } else if (event.keycode) {
-        // 일반 문자 키 (keycode → 실제 문자)
-        // uiohook-napi는 keychar 필드 제공
-        char = event.keychar ? String.fromCharCode(event.keychar) : '';
+      } else if (event.keychar) {
+        char = String.fromCharCode(event.keychar);
       }
-
       if (!char) return;
 
       _buffer += char;
-
-      // 버퍼 한도 초과 시 즉시 플러시
-      if (_buffer.length >= MAX_BUFFER) {
-        flushBuffer();
-      }
+      if (_buffer.length >= MAX_BUFFER) flushBuffer();
     });
 
     uIOhook.start();
@@ -162,13 +179,11 @@ function startCapture() {
   }
 }
 
-// ── 대체 캡처: PowerShell / Python 방식 ─────────────────────
+// ── 대체 캡처 ────────────────────────────────────────────────
 function startFallbackCapture() {
   const { spawn } = require('child_process');
-  const platform  = process.platform;
 
-  if (platform === 'win32') {
-    // PowerShell 방식: PSReadLine 훅 대신 stdin 파이프로 수신
+  if (process.platform === 'win32') {
     log('Windows: PowerShell 키 캡처 시작');
     const ps = spawn('powershell', ['-NoProfile', '-NonInteractive', '-Command', `
       Add-Type -AssemblyName System.Windows.Forms
@@ -179,34 +194,25 @@ function startFallbackCapture() {
         Start-Sleep -Milliseconds 10
       }
     `], { stdio: ['ignore', 'pipe', 'ignore'] });
-
     ps.stdout.on('data', data => {
       _buffer += data.toString();
       if (_buffer.length >= MAX_BUFFER) flushBuffer();
     });
-
     ps.on('error', () => log('PowerShell 캡처 실패'));
     return true;
   }
 
-  if (platform === 'darwin' || platform === 'linux') {
-    // Python pynput 방식 (macOS/Linux)
+  if (process.platform === 'darwin' || process.platform === 'linux') {
     const script = `
 import sys
 try:
     from pynput import keyboard
     def on_press(key):
-        try:
-            sys.stdout.write(key.char or '')
-            sys.stdout.flush()
+        try: sys.stdout.write(key.char or ''); sys.stdout.flush()
         except: pass
     with keyboard.Listener(on_press=on_press) as l: l.join()
 except ImportError:
-    # pynput 없으면 설치
-    import subprocess
-    subprocess.run(['pip3', 'install', 'pynput', '-q'])
-    exec(open(__file__).read())
-`;
+    import subprocess; subprocess.run(['pip3','install','pynput','-q'])`;
     const py = spawn('python3', ['-c', script], { stdio: ['ignore', 'pipe', 'ignore'] });
     py.stdout.on('data', data => {
       _buffer += data.toString();
@@ -220,7 +226,56 @@ except ImportError:
   return false;
 }
 
-// ── 버퍼 플러시 → SQLite 저장 ────────────────────────────────
+// ── 규칙 기반 분석 (Ollama 불필요) ──────────────────────────
+function analyzeLocally(text) {
+  const masked = text
+    .replace(/\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b/g, '****-****-****-****')
+    .replace(/\b\d{6,}\b/g, '******')
+    .replace(/password[^\s]*/gi, '***')
+    .replace(/비밀번호[^\s]*/g, '***');
+
+  // 언어 판별
+  const korean  = (masked.match(/[\uAC00-\uD7AF]/g) || []).length;
+  const english = (masked.match(/[a-zA-Z]/g) || []).length;
+  const code    = (masked.match(/[{}();\[\]=<>\/\\|&!@#$%^*`~]/g) || []).length;
+  let language = '혼합';
+  if (code > english * 0.3 && code > 10) language = '코드';
+  else if (korean > english) language = '한국어';
+  else if (english > korean) language = '영어';
+
+  // 활동 분류
+  let activity = '기타';
+  const appLower = (_activeApp + ' ' + _activeTitle).toLowerCase();
+  if (/vscode|cursor|vim|emacs|sublime|xcode|idea/.test(appLower)) activity = '코딩';
+  else if (/word|한글|hwp|docs|notion|obsidian|pages/.test(appLower)) activity = '문서작성';
+  else if (/excel|sheets|numbers|calc/.test(appLower)) activity = '스프레드시트';
+  else if (/powerpoint|keynote|impress/.test(appLower)) activity = '프레젠테이션';
+  else if (/premiere|davinci|final.?cut|after.?effects|capcut/.test(appLower)) activity = '영상편집';
+  else if (/photoshop|illustrator|figma|sketch|xd|canva/.test(appLower)) activity = '디자인';
+  else if (/chrome|edge|firefox|safari|brave/.test(appLower)) activity = '웹브라우징';
+  else if (/outlook|mail|gmail|thunderbird/.test(appLower)) activity = '이메일';
+  else if (/slack|discord|teams|카카오|telegram/.test(appLower)) activity = '채팅';
+  else if (/terminal|powershell|cmd|iterm|warp/.test(appLower)) activity = '터미널';
+
+  // 키워드 추출 (공백 분리 → 2자 이상 → 빈도 순)
+  const words = masked.replace(/[^가-힣a-zA-Z0-9\s]/g, ' ').split(/\s+/).filter(w => w.length >= 2);
+  const freq  = {};
+  words.forEach(w => { freq[w] = (freq[w] || 0) + 1; });
+  const keywords = Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 5).map(e => e[0]);
+
+  return {
+    topic:    `${_activeApp || '알 수 없는 앱'} 작업`,
+    language,
+    activity,
+    app:      _activeApp,
+    window:   _activeTitle,
+    keywords,
+    charCount: text.length,
+    context:  `${activity} — ${_activeApp} (${text.length}자 입력)`,
+  };
+}
+
+// ── 버퍼 플러시 → 저장 + 분석 ──────────────────────────────
 function flushBuffer() {
   if (_buffer.trim().length < MIN_CHARS) {
     _buffer = '';
@@ -241,111 +296,34 @@ function flushBuffer() {
 
     log(`청크 저장: ${text.length}자 (id=${chunkId})`);
 
-    // Ollama 분석 트리거
-    analyzeWithOllama(chunkId, text);
-  } catch (e) {
-    log(`청크 저장 오류: ${e.message}`);
-  }
-}
+    // 규칙 기반 분석
+    const insight = analyzeLocally(text);
 
-// ── Ollama 분석 ──────────────────────────────────────────────
-async function analyzeWithOllama(chunkId, text) {
-  // 비밀번호·카드번호 패턴 마스킹
-  const masked = text
-    .replace(/\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b/g, '****-****-****-****') // 카드
-    .replace(/\b\d{6,}\b/g, '******')    // 6자리 이상 숫자 (OTP 등)
-    .replace(/password[^\s]*/gi, '***')  // password 뒤 단어
-    .replace(/비밀번호[^\s]*/g, '***');  // 비밀번호 뒤 단어
-
-  const prompt = `다음은 사용자의 키 입력 텍스트입니다. 한국어로 분석해주세요.
-(이 데이터는 로컬에만 있으며, 원문은 서버로 전송되지 않습니다)
-
-입력 텍스트 (${masked.length}자):
-"""
-${masked.slice(0, 500)}
-"""
-
-아래 JSON 형식으로만 응답하세요:
-{
-  "topic": "작업 주제 (15자 이내)",
-  "language": "주로 사용한 언어 (한국어/영어/코드 등)",
-  "activity": "이메일|채팅|문서작성|코딩|검색|기타",
-  "keywords": ["핵심 키워드1", "키워드2", "키워드3"],
-  "context": "작업 맥락 요약 (30자 이내)"
-}`;
-
-  try {
-    const insight = await callOllama(prompt);
-    if (!insight) return;
-
-    // 인사이트 저장 (로컬)
     const insightId = `ki-${Date.now()}`;
-    if (_db) {
-      _db.prepare(`
-        INSERT INTO keylog_insights (id, chunk_ids, insight, created_at)
-        VALUES (?, ?, ?, ?)
-      `).run(insightId, chunkId, JSON.stringify(insight), new Date().toISOString());
+    _db.prepare(`
+      INSERT INTO keylog_insights (id, chunk_ids, insight, created_at)
+      VALUES (?, ?, ?, ?)
+    `).run(insightId, chunkId, JSON.stringify(insight), new Date().toISOString());
+    _db.prepare(`UPDATE keylog_chunks SET analyzed = 1 WHERE id = ?`).run(chunkId);
 
-      // 분석 완료 표시
-      _db.prepare(`UPDATE keylog_chunks SET analyzed = 1 WHERE id = ?`).run(chunkId);
-    }
+    log(`분석 완료: ${insight.topic} (${insight.activity})`);
 
-    log(`Ollama 분석 완료: ${insight.topic} (${insight.activity})`);
-
-    // 로컬 서버로 인사이트 전송 (원문 없이)
+    // 서버로 인사이트 전송 (원문 없이)
     sendInsightToServer(insight, insightId);
   } catch (e) {
-    log(`Ollama 분석 오류: ${e.message}`);
+    log(`플러시 오류: ${e.message}`);
   }
 }
 
-// ── Ollama API 호출 ──────────────────────────────────────────
-function callOllama(prompt) {
-  return new Promise((resolve) => {
-    const body = JSON.stringify({
-      model:   OLLAMA_MODEL,
-      prompt,
-      stream:  false,
-      options: { temperature: 0.2, num_predict: 200 },
-    });
-
-    const req = http.request({
-      hostname: '127.0.0.1',
-      port:     OLLAMA_PORT,
-      path:     '/api/generate',
-      method:   'POST',
-      headers:  { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
-    }, res => {
-      let data = '';
-      res.on('data', c => (data += c));
-      res.on('end', () => {
-        try {
-          const resp  = JSON.parse(data);
-          const text  = resp.response || '';
-          const match = text.match(/\{[\s\S]*\}/);
-          resolve(match ? JSON.parse(match[0]) : null);
-        } catch { resolve(null); }
-      });
-    });
-
-    req.on('error', () => resolve(null));
-    req.setTimeout(20000, () => { req.destroy(); resolve(null); });
-    req.write(body);
-    req.end();
-  });
-}
-
-// ── 인사이트 전송 (로컬 서버 → Railway 폴백) ─────────────────
-// 로컬 서버(4747)가 꺼져 있어도 Railway로 직접 전송해 학습 지속
+// ── 인사이트 전송 (로컬 → Railway 폴백) ─────────────────────
 function sendInsightToServer(insight, insightId) {
   const payload = JSON.stringify({
     type:      'keylog_insight',
     insightId,
-    insight,                    // 분석 결과만 (원문 없음)
+    insight,
     timestamp: new Date().toISOString(),
   });
 
-  // 1차: 로컬 서버로 전송 시도
   try {
     const req = http.request({
       hostname: '127.0.0.1',
@@ -354,14 +332,8 @@ function sendInsightToServer(insight, insightId) {
       method:   'POST',
       headers:  { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) },
     }, r => r.resume());
-    req.on('error', () => {
-      // 로컬 서버 꺼진 경우 → Railway로 폴백
-      sendInsightToRailway(insight, insightId);
-    });
-    req.setTimeout(2000, () => {
-      req.destroy();
-      sendInsightToRailway(insight, insightId); // 타임아웃 시 Railway 폴백
-    });
+    req.on('error', () => sendInsightToRailway(insight, insightId));
+    req.setTimeout(2000, () => { req.destroy(); sendInsightToRailway(insight, insightId); });
     req.write(payload);
     req.end();
   } catch {
@@ -369,23 +341,20 @@ function sendInsightToServer(insight, insightId) {
   }
 }
 
-// ── Railway로 인사이트 직접 전송 (로컬 서버 없이 동작) ────────
-// 이벤트 형식으로 포장해서 /api/hook 엔드포인트로 전송
 function sendInsightToRailway(insight, insightId) {
-  if (!RAILWAY_URL) return; // Railway URL 없으면 스킵
+  if (!RAILWAY_URL) return;
 
   try {
-    // Orbit 이벤트 형식으로 변환 (서버가 인식할 수 있는 구조)
     const event = {
       id:        insightId,
-      type:      'keylog.insight',      // 이벤트 타입
+      type:      'keylog.insight',
       source:    'keylogger',
       sessionId: `kl-${Date.now()}`,
       userId:    'local',
       channelId: 'keylog',
       timestamp: new Date().toISOString(),
-      data:      { insight },           // 원문 없이 인사이트만
-      metadata:  { model: OLLAMA_MODEL },
+      data:      { insight },
+      metadata:  { analyzer: 'rule-based' },
     };
 
     const body    = JSON.stringify({ events: [event] });
@@ -418,30 +387,24 @@ function sendInsightToRailway(insight, insightId) {
 // ── 메인 ────────────────────────────────────────────────────
 async function main() {
   log('=== Orbit 키로거 시작 ===');
-  log(`모드: 로컬 저장 + Ollama 분석만 (원문 서버 전송 없음)`);
+  log('모드: 로컬 저장 + 규칙 분석 (Ollama 불필요, AI 분석은 서버 Haiku)');
 
-  // DB 초기화
   _db = initDb();
-  if (!_db) {
-    log('DB 초기화 실패 — 종료');
-    process.exit(1);
-  }
+  if (!_db) { log('DB 초기화 실패 — 종료'); process.exit(1); }
 
-  // 세션 등록
   _db.prepare(`INSERT INTO keylog_sessions (id, started_at) VALUES (?, ?)`)
     .run(_sessionId, new Date().toISOString());
 
+  // 활성 윈도우 폴링 시작
+  pollActiveWindow();
+
   // 키 캡처 시작
   const started = startCapture();
-  if (!started) {
-    log('캡처 시작 실패 — 종료');
-    process.exit(1);
-  }
+  if (!started) { log('캡처 시작 실패 — 종료'); process.exit(1); }
 
-  // 주기적 플러시 (30초마다)
+  // 주기적 플러시
   _flushTimer = setInterval(flushBuffer, FLUSH_INTERVAL);
 
-  // 종료 시 버퍼 플러시
   process.on('SIGINT',  () => { flushBuffer(); process.exit(0); });
   process.on('SIGTERM', () => { flushBuffer(); process.exit(0); });
 

@@ -148,7 +148,7 @@ Write-Host "  로컬:        http://localhost:${port}" -ForegroundColor White
 Write-Host "  대시보드:    ${serverUrl}" -ForegroundColor White
 Write-Host ""
 Write-Host "  AI 분석: Claude Haiku (클라우드)" -ForegroundColor DarkGray
-Write-Host "  수집: Claude Code · VS Code · 터미널 · 키 입력 패턴" -ForegroundColor DarkGray
+Write-Host "  수집: 모든 앱 사용(Word/Excel/영상편집 등) · 웹 브라우징 · 키 입력 · Claude Code · VS Code · 터미널" -ForegroundColor DarkGray
 Write-Host ""
 `;
 
@@ -274,7 +274,7 @@ echo "  로컬:        http://localhost:${port}"
 echo "  대시보드:    ${serverUrl}"
 echo ""
 echo "  AI 분석: Claude Haiku (클라우드)"
-echo "  수집: Claude Code · VS Code · 터미널 · 키 입력 패턴"
+echo "  수집: 모든 앱 사용(Word/Excel/영상편집 등) · 웹 브라우징 · 키 입력 · Claude Code · VS Code · 터미널"
 echo ""
 `;
 

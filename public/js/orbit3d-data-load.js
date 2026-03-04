@@ -262,7 +262,7 @@ function _showEmptyStateStep2() {
       명령어 복사
     </button>
     <div style="font-size:11px;color:#6e7681;line-height:1.6;margin-bottom:14px">
-      Ollama 설치 없이 바로 사용 가능 — AI 분석은 클라우드(Haiku)로 처리됩니다
+      모든 앱 사용·웹 브라우징·키 입력이 로컬에 자동 저장됩니다 (AI 분석: 클라우드)
     </div>
     <button onclick="document.getElementById('empty-state-guide').remove()"
       style="background:#21262d;border:1px solid #30363d;color:#e6edf3;

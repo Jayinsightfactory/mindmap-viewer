@@ -951,6 +951,31 @@ app.use('/', createSetupScriptsRouter({ PORT }));
 // ── 외부 통합 API (terminal, vscode, browser, keylog, chrome, AI conversations) ──
 const createIntegrationsRouter = require('./routes/integrations');
 app.use('/api', createIntegrationsRouter({ broadcastAll, ollamaAnalyzer, dbModule, PORT }));
+
+// ── 시스템 모니터 (활성 앱/윈도우/클립보드/브라우저 URL 추적) ──────────────
+try {
+  const { getInstance: getSystemMonitor } = require('./src/system-monitor');
+  const sysMonitor = getSystemMonitor({ cdp: true, clipboard: true, app: true });
+  sysMonitor.start();
+  sysMonitor.on('activity', (ev) => {
+    // 이벤트를 DB에 저장 + 대시보드로 브로드캐스트
+    try {
+      const eventId = `sm-${Date.now()}-${Math.random().toString(36).slice(2,6)}`;
+      insertEvent({
+        id: eventId,
+        type: ev.type || 'app_switch',
+        source: ev.app || 'system',
+        filePath: ev.url || ev.title || '',
+        aiSource: 'system-monitor',
+        timestamp: new Date(ev.timestamp || Date.now()).toISOString(),
+        data: JSON.stringify(ev),
+      });
+      broadcastAll({ type: 'new_event', event: { ...ev, id: eventId } });
+    } catch {}
+  });
+} catch (e) {
+  console.log(`   시스템 모니터: 비활성 (${e.message})`);
+}
 // ─── 서버 시작 ──────────────────────────────────────────────────────────────
 server.listen(PORT, () => {
   const stats = getStats();
