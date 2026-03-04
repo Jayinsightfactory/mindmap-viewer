@@ -84,8 +84,16 @@ module.exports = function createPersonalLearningRouter({ getDb, insertEvent, bro
   // ── POST /api/personal/app-activity ───────────────────────────────────────
   router.post('/personal/app-activity', (req, res) => {
     try {
-      const { app, title, category, duration, ts } = req.body;
-      saveEvent('app.activity', { app, title, category, duration });
+      const { app, title, category, duration, url, ts } = req.body;
+      saveEvent('app.activity', { app, title, category, duration, url });
+      // 실시간 브로드캐스트 → 마인드맵 라이브 브랜치 확장
+      if (typeof broadcastAll === 'function') {
+        broadcastAll({
+          type: url ? 'browse' : 'app_switch',
+          app, title, url, category,
+          timestamp: ts || new Date().toISOString(),
+        });
+      }
       res.json({ ok: true });
     } catch (e) {
       res.status(500).json({ error: e.message });

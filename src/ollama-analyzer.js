@@ -58,29 +58,129 @@ function addEvent(event) {
   _debounceTimer = setTimeout(runAnalysis, DEBOUNCE_MS);
 }
 
-// ── 분석 실행 ───────────────────────────────────────────────
+// ── Haiku API 호출 ───────────────────────────────────────────
+async function queryHaiku(prompt) {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const model  = process.env.ANTHROPIC_MODEL || 'claude-haiku-4-5-20251001';
+  if (!apiKey) return null;
+
+  const body = JSON.stringify({
+    model,
+    max_tokens: 512,
+    messages: [{ role: 'user', content: prompt }],
+  });
+
+  return new Promise((resolve) => {
+    const https = require('https');
+    const req = https.request({
+      hostname: 'api.anthropic.com',
+      path:     '/v1/messages',
+      method:   'POST',
+      headers: {
+        'x-api-key':         apiKey,
+        'anthropic-version': '2023-06-01',
+        'content-type':      'application/json',
+        'content-length':    Buffer.byteLength(body),
+      },
+    }, res => {
+      let data = '';
+      res.on('data', c => (data += c));
+      res.on('end', () => {
+        try {
+          const parsed = JSON.parse(data);
+          if (res.statusCode >= 400) {
+            console.error(`[Haiku] API 오류 ${res.statusCode}:`, parsed.error?.message || data.slice(0, 100));
+            return resolve(null);
+          }
+          const text = parsed.content?.[0]?.text || '';
+          const match = text.match(/\{[\s\S]*\}/);
+          if (match) {
+            try { resolve(JSON.parse(match[0])); } catch { resolve(null); }
+          } else { resolve(null); }
+        } catch { resolve(null); }
+      });
+    });
+    req.on('error', () => resolve(null));
+    req.setTimeout(15000, () => { req.destroy(); resolve(null); });
+    req.write(body);
+    req.end();
+  });
+}
+
+// ── 분석 실행 (Haiku 우선 → Ollama 폴백) ───────────────────
 async function runAnalysis() {
   if (_eventQueue.length === 0) return;
-  if (!await checkOllamaAlive()) return; // Ollama 꺼져있으면 스킵
 
-  const events = _eventQueue.splice(0, MAX_EVENTS); // 최대 MAX_EVENTS개만 처리
-  try {
-    const prompt   = buildPrompt(events);
-    const analysis = await queryOllama(prompt);
-    if (analysis && _broadcastFn) {
-      _broadcastFn({
-        type:       'ollama_analysis',
-        data:       analysis,
-        eventCount: events.length,
-        model:      OLLAMA_MODEL,
-        timestamp:  new Date().toISOString(),
-      });
-      console.log(`[Ollama] 분석 완료: ${analysis.focus} — ${analysis.summary}`);
-    }
-  } catch (e) {
-    console.error('[Ollama] 분석 오류:', e.message);
-    // 실패한 이벤트는 큐 앞에 돌려놓지 않음 (무한 재시도 방지)
+  const events = _eventQueue.splice(0, MAX_EVENTS);
+  const prompt = buildPrompt(events);
+  let analysis = null;
+  let usedModel = '';
+
+  // 1차: Haiku API (빠르고 정확)
+  if (process.env.ANTHROPIC_API_KEY) {
+    analysis = await queryHaiku(prompt);
+    usedModel = process.env.ANTHROPIC_MODEL || 'claude-haiku-4-5';
   }
+
+  // 2차: Ollama 폴백 (로컬)
+  if (!analysis && await checkOllamaAlive()) {
+    try {
+      analysis = await queryOllama(prompt);
+      usedModel = OLLAMA_MODEL;
+    } catch (e) {
+      console.error('[Ollama] 분석 오류:', e.message);
+    }
+  }
+
+  if (analysis && _broadcastFn) {
+    // 학습 데이터 저장 (크롤링용)
+    _saveLearnedData(analysis, events.length);
+
+    _broadcastFn({
+      type:       'ollama_analysis',
+      data:       analysis,
+      eventCount: events.length,
+      model:      usedModel,
+      timestamp:  new Date().toISOString(),
+    });
+    console.log(`[AI분석] ${usedModel}: ${analysis.goal || analysis.focus} — ${analysis.summary}`);
+  }
+}
+
+// ── 학습 데이터 자동 저장 (크롤링용) ──────────────────────────
+const _learnedDataPath = require('path').join(__dirname, '..', 'data', 'learned-insights.jsonl');
+
+function _saveLearnedData(analysis, eventCount) {
+  try {
+    const fs = require('fs');
+    const dir = require('path').dirname(_learnedDataPath);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    const entry = {
+      ts:         new Date().toISOString(),
+      goal:       analysis.goal || null,
+      phase:      analysis.phase || null,
+      progress:   analysis.progress || null,
+      focus:      analysis.focus || null,
+      summary:    analysis.summary || null,
+      skills:     analysis.skills || [],
+      suggestion: analysis.suggestion || null,
+      type:       analysis.type || null,
+      events:     eventCount,
+    };
+    fs.appendFileSync(_learnedDataPath, JSON.stringify(entry) + '\n');
+  } catch (e) {
+    console.error('[학습저장] 오류:', e.message);
+  }
+}
+
+// ── 학습 데이터 조회 API용 ────────────────────────────────────
+function getLearnedInsights(limit = 50) {
+  try {
+    const fs = require('fs');
+    if (!fs.existsSync(_learnedDataPath)) return [];
+    const lines = fs.readFileSync(_learnedDataPath, 'utf8').trim().split('\n').filter(Boolean);
+    return lines.slice(-limit).reverse().map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+  } catch { return []; }
 }
 
 // ── Ollama 생존 확인 (60초 캐시) ───────────────────────────
@@ -142,6 +242,9 @@ ${lines}
 
 아래 JSON 형식으로만 응답하세요 (설명 텍스트 없이 JSON만):
 {
+  "goal": "최종 목표 (15자 이내, 예: 로그인 시스템 구축)",
+  "phase": "현재 단계 (15자 이내, 예: OAuth API 연동 중)",
+  "progress": "초기|진행중|마무리|완료",
   "focus": "현재 작업 주제 (10자 이내)",
   "summary": "작업 요약 (50자 이내)",
   "skills": ["기술1", "기술2"],
@@ -197,4 +300,4 @@ function queryOllama(prompt) {
   });
 }
 
-module.exports = { init, addEvent };
+module.exports = { init, addEvent, getLearnedInsights };
