@@ -1565,89 +1565,74 @@ async function renderSetupPanel() {
   const body = document.getElementById('sp-body');
   body.innerHTML = `<div style="padding:24px;text-align:center;color:#6e7681;font-size:12px;">환경 감지 중…</div>`;
 
-  let status;
-  try {
-    status = await detectClientEnv(); // 서버 대신 클라이언트에서 직접 감지
-    _setupStatus = status;
-  } catch (e) {
-    body.innerHTML = `<div style="padding:16px;color:#f85149;font-size:12px;">❌ ${escHtml(e.message)}</div>`;
-    return;
-  }
+  const status = detectClientEnv();
+  _setupStatus = status;
+  const { os } = status;
+  const osIcon = os === 'mac' ? '🍎' : os === 'windows' ? '🪟' : '🐧';
 
-  const { os, nodeVersion, ollama, hook, claude, ready } = status;
+  // ── 트래커 연결 상태 서버에서 확인 ──────────────────────────────────────
+  let trackerOnline = false;
+  let trackerHost = '';
+  let trackerEvents = 0;
+  try {
+    const token = _getAuthToken();
+    const r = await fetch('/api/tracker/status', {
+      headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+    });
+    const d = await r.json();
+    trackerOnline = d.online;
+    trackerHost = d.hostname || '';
+    trackerEvents = d.eventCount || 0;
+  } catch {}
 
   // ── 상태 카드 ─────────────────────────────────────────────────────────────
-  const osIcon   = os === 'mac' ? '🍎' : os === 'windows' ? '🪟' : '🐧';
-  const ollamaOk = ollama.running;
-  const hookOk   = hook.registered;
-  const claudeOk = claude.running;
-
-  // Ollama 카드: 이 기기에서 설치 확인 여부 (localStorage 기반, 기기별 독립)
-  // 주의: 실제 실행 상태를 서버로 확인 불가(HTTPS↔HTTP Mixed Content)
-  //       → 사용자가 수동으로 "✅ 설치 완료됨" 클릭 후 표시
-  const ollamaCard = ollamaOk
+  const trackerCard = trackerOnline
     ? `<div class="sp-check-card" style="flex-direction:column;align-items:flex-start;gap:4px">
         <div style="display:flex;width:100%;align-items:center">
-          <div class="sp-check-label">Ollama</div>
-          <div class="sp-check-val sp-check-ok">✅ 확인됨</div>
+          <div class="sp-check-label">트래커</div>
+          <div class="sp-check-val sp-check-ok">🟢 연결됨</div>
         </div>
-        <div style="font-size:10px;color:#6e7681">이 기기에서 설치 완료 확인</div>
+        <div style="font-size:10px;color:#6e7681">${trackerHost ? trackerHost + ' · ' : ''}${trackerEvents}개 이벤트</div>
       </div>`
     : `<div class="sp-check-card" style="flex-direction:column;align-items:flex-start;gap:4px">
         <div style="display:flex;width:100%;align-items:center">
-          <div class="sp-check-label">Ollama</div>
-          <div class="sp-check-val sp-check-warn">❓ 미확인</div>
+          <div class="sp-check-label">트래커</div>
+          <div class="sp-check-val sp-check-warn">🔴 미연결</div>
         </div>
-        <div style="font-size:10px;color:#6e7681">설치 후 아래에서 완료 확인 필요</div>
+        <div style="font-size:10px;color:#6e7681">아래 설치 명령어를 PC에서 실행하세요</div>
       </div>`;
 
-  // hookCard: Claude 훅 등록 여부 (이 기기별 독립)
-  const hookCard = hookOk
-    ? `<div class="sp-check-card" style="flex-direction:column;align-items:flex-start;gap:4px">
-        <div style="display:flex;width:100%;align-items:center">
-          <div class="sp-check-label">Claude 훅</div>
-          <div class="sp-check-val sp-check-ok">✅ 등록됨</div>
-        </div>
-        <div style="font-size:10px;color:#6e7681">이 기기에서 훅 등록 확인</div>
-      </div>`
-    : `<div class="sp-check-card" style="flex-direction:column;align-items:flex-start;gap:4px">
-        <div style="display:flex;width:100%;align-items:center">
-          <div class="sp-check-label">Claude 훅</div>
-          <div class="sp-check-val sp-check-warn">❓ 미확인</div>
-        </div>
-        <div style="font-size:10px;color:#6e7681">설치 후 아래에서 완료 확인 필요</div>
-      </div>`;
+  const aiCard = `<div class="sp-check-card" style="flex-direction:column;align-items:flex-start;gap:4px">
+      <div style="display:flex;width:100%;align-items:center">
+        <div class="sp-check-label">AI 분석</div>
+        <div class="sp-check-val sp-check-ok">☁️ Haiku</div>
+      </div>
+      <div style="font-size:10px;color:#6e7681">클라우드 AI — 로컬 설치 불필요</div>
+    </div>`;
 
   const cards = [
-    { label:'OS', val: `${osIcon} ${os}`,  cls:'sp-check-neutral' },
-    { label:'Node.js', val: nodeVersion,     cls:'sp-check-neutral' },
+    { label:'OS', val: `${osIcon} ${os}`, cls:'sp-check-neutral' },
   ].map(c => `
     <div class="sp-check-card">
       <div class="sp-check-label">${c.label}</div>
       <div class="sp-check-val ${c.cls}">${escHtml(c.val)}</div>
-    </div>`).join('') + ollamaCard + hookCard;
+    </div>`).join('') + trackerCard + aiCard;
 
   // ── 설치 섹션 ─────────────────────────────────────────────────────────────
-  // ★ 설치 명령어는 항상 표시 (새 컴퓨터마다 재설치 필요)
-  // ★ 로그인 시: 토큰 포함 개인화 URL → 설치하면 계정 자동 연동
-  // ★ 상태(✅/❓)는 이 기기의 localStorage에만 저장 (기기별 독립)
-  const _token       = _getAuthToken(); // 로그인 토큰 (없으면 '')
+  const _token       = _getAuthToken();
   const _setupScript = location.origin + '/orbit-setup.ps1' + (_token ? `?token=${encodeURIComponent(_token)}` : '');
   const _setupSh     = location.origin + '/orbit-setup.sh'  + (_token ? `?token=${encodeURIComponent(_token)}` : '');
   const _installCmd  = os === 'windows'
     ? `powershell -ExecutionPolicy Bypass -Command "irm '${_setupScript}' | iex"`
     : `bash <(curl -sL '${_setupSh}')`;
-  const _isPersonalized = !!_token; // 토큰 포함 여부
-
-  const _deviceConfirmed = ollamaOk && hookOk; // 이 기기에서 수동 확인 여부
 
   const installSection = `
-    <div class="sp-section">📦 설치 명령어 <span style="font-size:9px;color:#6e7681;text-transform:none;font-weight:400">— 컴퓨터마다 실행 필요</span></div>
+    <div class="sp-section">📦 설치 / 업데이트 <span style="font-size:9px;color:#6e7681;text-transform:none;font-weight:400">— 1~2분 소요</span></div>
 
-    ${_isPersonalized
+    ${_token
       ? `<div style="font-size:11px;color:#3fb950;background:rgba(63,185,80,.08);
            border:1px solid rgba(63,185,80,.2);border-radius:6px;padding:6px 10px;margin-bottom:7px">
-           ✅ 내 계정 토큰 포함 — 실행하면 이벤트가 자동으로 내 계정에 저장됩니다
+           ✅ 내 계정 토큰 포함 — 실행하면 자동으로 내 계정에 연동됩니다
          </div>`
       : `<div style="font-size:11px;color:#f0a82e;background:rgba(240,168,46,.08);
            border:1px solid rgba(240,168,46,.2);border-radius:6px;padding:6px 10px;margin-bottom:7px">
@@ -1655,11 +1640,10 @@ async function renderSetupPanel() {
          </div>`
     }
 
-    <!-- 설치 명령어 코드박스 (항상 표시) -->
     <div style="background:#010409;border:1px solid #21262d;border-radius:8px;
       padding:10px 12px;margin-bottom:8px;position:relative">
       <div style="font-size:10px;color:#6e7681;margin-bottom:5px">
-        ${os === 'windows' ? '🪟 CMD 또는 PowerShell' : '🖥️ 터미널'}
+        ${os === 'windows' ? '🪟 PowerShell (Win+R → powershell → Enter)' : '🖥️ 터미널'}
       </div>
       <code id="sp-install-inline-cmd"
         style="font-family:'Consolas','Courier New',monospace;font-size:11px;
@@ -1678,61 +1662,15 @@ async function renderSetupPanel() {
         padding:3px 8px;cursor:pointer">복사</button>
     </div>
 
-    <!-- 이 기기 상태 표시 -->
-    <div style="display:flex;align-items:center;gap:8px;font-size:12px;margin-bottom:8px">
-      <span style="color:#6e7681">이 컴퓨터 상태:</span>
-      ${_deviceConfirmed
-        ? `<span style="color:#3fb950;font-weight:600">✅ 설치 완료 확인됨</span>
-           <button onclick="resetEnvConfirm()" style="margin-left:auto;font-size:10px;
-             color:#6e7681;background:none;border:1px solid #30363d;border-radius:4px;
-             cursor:pointer;padding:2px 8px">초기화</button>`
-        : `<span style="color:#f0a82e;font-weight:600">❓ 아직 미확인</span>
-           <button onclick="markSetupDone()" style="margin-left:auto;font-size:10px;
-             background:#238636;border:none;border-radius:4px;color:#fff;
-             cursor:pointer;padding:3px 10px;font-weight:600">
-             ✅ 설치 완료됨
-           </button>`
-      }
-    </div>
-    <div style="font-size:11px;color:#6e7681;line-height:1.5;margin-bottom:4px">
-      💡 설치 후 모든 앱 사용·웹 브라우징·키 입력이 로컬에 자동 저장됩니다.<br>
-      AI 학습 결과만 대시보드로 전송됩니다. 다른 PC에서도 동일 명령어로 연동 가능.
-    </div>
-  `;
-
-  // ── Ollama 모델 풀 ────────────────────────────────────────────────────────
-  const pullSection = !ollamaOk ? '' : `
-    <div class="sp-section">🤖 AI 모델</div>
-    <select id="sp-model-select" style="width:100%;background:#161b22;border:1px solid #30363d;
-      color:#cdd9e5;border-radius:8px;padding:6px 10px;font-size:12px;margin-bottom:6px;">
-      <option value="llama3.2:latest">llama3.2:latest (기본 추천)</option>
-      <option value="llama3.1:latest">llama3.1:latest</option>
-      <option value="mistral:latest">mistral:latest</option>
-      <option value="gemma2:latest">gemma2:latest</option>
-      <option value="qwen2.5:latest">qwen2.5:latest</option>
-    </select>
-    <button class="sp-btn sp-btn-outline" onclick="pullOllamaModel()">⬇️ 모델 다운로드</button>
-    <div id="sp-pull-log" class="sp-pull-log"></div>
-  `;
-
-  // ── Claude 트래킹 토글 ────────────────────────────────────────────────────
-  const trackChecked = claude.tracking ? 'checked' : '';
-  const trackSection = `
-    <div class="sp-toggle-row">
-      <div>
-        <div class="sp-toggle-label">Claude 작업 트래킹</div>
-        <div class="sp-toggle-sub">${claudeOk ? '🟢 Claude 실행 중' : '⚫ Claude 감지 안됨'} ${claude.connected ? '· 연결됨' : ''}</div>
-      </div>
-      <label class="sp-switch">
-        <input type="checkbox" id="sp-track-toggle" ${trackChecked}
-          onchange="toggleClaudeTracking(this.checked)">
-        <span class="sp-switch-track"></span>
-      </label>
+    <div style="font-size:11px;color:#6e7681;line-height:1.6;margin-bottom:4px">
+      <b style="color:#cdd9e5">수집 항목:</b> 모든 앱 사용 · 웹 브라우징 · 키 입력 · Claude Code · VS Code · 터미널<br>
+      <b style="color:#cdd9e5">동기화:</b> 5분마다 자동 전송 · 원본 데이터는 로컬에만 저장<br>
+      <b style="color:#cdd9e5">업데이트:</b> 이미 설치된 PC에서 같은 명령어 재실행하면 최신 버전으로 업데이트
     </div>
   `;
 
   // ── 데이터 소스 설정 ──────────────────────────────────────────────────────
-  const _curSource = _getDataSource() || 'local';
+  const _curSource = _getDataSource() || 'cloud';
   const _curAccount = localStorage.getItem(DATA_SOURCE_ACCOUNT_KEY) || '';
   const dataSourceSection = `
     <div class="sp-section">📂 데이터 소스</div>
@@ -1762,11 +1700,8 @@ async function renderSetupPanel() {
 
   body.innerHTML = `
     <div class="sp-check-grid">${cards}</div>
-    ${dataSourceSection}
     ${installSection}
-    ${pullSection}
-    <div class="sp-section">🔌 Claude 연동</div>
-    ${trackSection}
+    ${dataSourceSection}
 
     <div class="sp-section" style="margin-top:12px">🧠 AI 개인 학습</div>
     <div id="sp-personal-section">

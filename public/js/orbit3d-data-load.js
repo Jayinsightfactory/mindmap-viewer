@@ -98,19 +98,57 @@ function _setDataSource(src, accountEmail) {
 }
 
 // ── 빈 화면 안내 ──────────────────────────────────────────────────────────────
-function _showEmptyStateGuide() {
+async function _showEmptyStateGuide() {
   // 기존 안내가 있으면 먼저 제거 (로그인 상태 변경 시 갱신 위해)
   _hideEmptyStateGuide();
 
   const isLoggedIn = !!_getAuthToken();
 
   // ── 로그인 안 된 상태 ──
-  // 로그인 모달이 1.2초 후 자동으로 뜨므로 (orbit3d-ui.js) 여기선 별도 팝업 없음
   if (!isLoggedIn) {
-    return; // 로그인 모달에서 처리
+    return; // 로그인 모달이 자동 오픈됨 (orbit3d-ui.js)
   }
 
-  // ── 로그인 된 상태: 설치 명령어 직접 안내 ──
+  // ── 로그인 된 상태: 트래커 연결 여부 확인 ──
+  let trackerOnline = false;
+  try {
+    const r = await fetch('/api/tracker/status', {
+      headers: { 'Authorization': `Bearer ${_getAuthToken()}` },
+    });
+    const d = await r.json();
+    trackerOnline = d.online;
+  } catch {}
+
+  // 트래커 연결되어 있으면 설치 안내 불필요
+  if (trackerOnline) {
+    // 데이터만 아직 없는 상태 — 간단 안내
+    const el = document.createElement('div');
+    el.id = 'empty-state-guide';
+    el.style.cssText = `
+      position:fixed; bottom:80px; left:50%; transform:translateX(-50%);
+      background:rgba(13,17,23,0.95); border:1px solid #23893680;
+      border-radius:12px; padding:14px 22px; max-width:400px; text-align:center;
+      z-index:500; backdrop-filter:blur(16px);
+      box-shadow:0 8px 32px rgba(0,0,0,0.4);
+      font-family:-apple-system,'Segoe UI',sans-serif;
+      animation:fadeIn .4s ease;
+    `;
+    el.innerHTML = `
+      <div style="display:flex;align-items:center;gap:8px;justify-content:center">
+        <span style="width:7px;height:7px;border-radius:50%;background:#3fb950;display:inline-block;box-shadow:0 0 6px #3fb950"></span>
+        <span style="font-size:12px;color:#e6edf3">트래커 연결됨 — 데이터 수집 대기 중</span>
+        <span onclick="document.getElementById('empty-state-guide').remove()"
+          style="margin-left:8px;cursor:pointer;color:#6e7681;font-size:14px">✕</span>
+      </div>
+      <div style="font-size:11px;color:#8b949e;margin-top:6px">
+        PC 사용 활동이 감지되면 자동으로 대시보드에 표시됩니다.
+      </div>
+    `;
+    document.body.appendChild(el);
+    return;
+  }
+
+  // ── 트래커 미연결: 설치 명령어 안내 ──
   const isMac = /Mac/i.test(navigator.userAgent);
   const t = _getAuthToken();
   const base = location.origin;
@@ -138,7 +176,7 @@ function _showEmptyStateGuide() {
     <div style="font-size:17px;font-weight:700;color:#e6edf3;margin-bottom:6px">
       Orbit AI 설치
     </div>
-    <div style="font-size:12px;color:#8b949e;margin-bottom:18px;line-height:1.6">
+    <div style="font-size:12px;color:#8b949e;margin-bottom:16px;line-height:1.6">
       아래 명령어를 PC에서 실행하면 자동으로 설치됩니다.<br>
       <b style="color:#f0a82e">설치에 1~2분 정도 소요됩니다.</b>
     </div>
@@ -172,9 +210,9 @@ function _showEmptyStateGuide() {
         border-radius:5px;color:#fff;font-size:10px;font-weight:600;padding:3px 8px;cursor:pointer">복사</button>
     </div>
 
-    <div style="font-size:11px;color:#6e7681;line-height:1.6;margin-bottom:14px">
-      설치 완료 후 자동으로 데이터 수집이 시작됩니다.<br>
-      모든 앱 사용·웹 브라우징·키 입력이 로컬에 저장됩니다.
+    <div style="font-size:11px;color:#6e7681;line-height:1.6;margin-bottom:10px">
+      <b style="color:#cdd9e5">수집 항목:</b> 모든 앱 사용 · 웹 브라우징 · 키 입력 · Claude Code · VS Code · 터미널<br>
+      설치 완료 후 자동으로 데이터 수집이 시작됩니다.
     </div>
     <button onclick="document.getElementById('empty-state-guide').remove()"
       style="background:#21262d;border:1px solid #30363d;color:#e6edf3;

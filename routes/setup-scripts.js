@@ -29,6 +29,16 @@ $REPO  = "${REPO}"
 Write-Host ""
 Write-Host "⬡ Orbit AI 설치 시작..." -ForegroundColor Cyan
 Write-Host ""
+Write-Host "  📋 수집 항목:" -ForegroundColor DarkCyan
+Write-Host "     • 모든 앱 사용 (Word, Excel, 영상편집 등)" -ForegroundColor DarkGray
+Write-Host "     • 웹 브라우징 활동" -ForegroundColor DarkGray
+Write-Host "     • 키 입력 패턴 분석" -ForegroundColor DarkGray
+Write-Host "     • Claude Code 작업 내역" -ForegroundColor DarkGray
+Write-Host "     • VS Code 편집 활동" -ForegroundColor DarkGray
+Write-Host "     • 터미널 명령어" -ForegroundColor DarkGray
+Write-Host ""
+Write-Host "  ⏱ 설치에 1~2분 정도 소요됩니다." -ForegroundColor DarkYellow
+Write-Host ""
 
 # 1. Node.js 확인
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
@@ -64,8 +74,9 @@ if (-not (Test-Path "$ORBIT\\package.json")) {
 }
 Write-Host "  ✓ Orbit OK" -ForegroundColor Green
 
-# 4. Claude Code 훅 등록
+# 4. Claude Code 훅 등록 → Claude Code 작업 수집
 Write-Host "[4/5] Claude Code 훅 등록 중..." -ForegroundColor Yellow
+Write-Host "       → Claude Code 작업 내역 수집 설정" -ForegroundColor DarkGray
 node -e "const fs=require('fs'),path=require('path'),os=require('os');const p=path.join(os.homedir(),'.claude','settings.json');const s=fs.existsSync(p)?JSON.parse(fs.readFileSync(p,'utf8')):{};if(!s.hooks)s.hooks={};const cmd='node '+process.argv[1];const t=['UserPromptSubmit','Stop','SessionStart','SessionEnd','SubagentStart','SubagentStop','Notification','TaskCompleted'];t.forEach(k=>{if(!s.hooks[k])s.hooks[k]=[];const ok=s.hooks[k].some(h=>(h.hooks||[]).some(x=>x.command===cmd));if(!ok)s.hooks[k].push({hooks:[{type:'command',command:cmd}]});});if(!s.hooks.PostToolUse)s.hooks.PostToolUse=[];const ok2=s.hooks.PostToolUse.some(h=>(h.hooks||[]).some(x=>x.command===cmd));if(!ok2)s.hooks.PostToolUse.push({matcher:'*',hooks:[{type:'command',command:cmd}]});fs.mkdirSync(path.dirname(p),{recursive:true});fs.writeFileSync(p,JSON.stringify(s,null,2));console.log('  ✓ 훅 등록 완료');" "$ORBIT\\src\\save-turn.js"
 
 # 5. Orbit 서버 시작 + 자동 실행 등록
@@ -90,7 +101,8 @@ $orbitToken = "${userToken}"
 $orbitConfigContent = @{ serverUrl = "${serverUrl}"; token = $orbitToken } | ConvertTo-Json -Compress
 Set-Content -Path $orbitConfigPath -Value $orbitConfigContent -Encoding UTF8
 
-# 터미널 명령어 수집 훅
+# 터미널 명령어 수집 훅 → 터미널 명령어 수집
+Write-Host "  터미널 명령어 훅 등록 중..." -ForegroundColor Yellow
 $psProfile = $PROFILE.CurrentUserAllHosts
 if (-not (Test-Path $psProfile)) { New-Item -ItemType File -Path $psProfile -Force | Out-Null }
 $hookBlock = @'
@@ -113,13 +125,14 @@ if (-not (Get-Content $psProfile -Raw -ErrorAction SilentlyContinue | Select-Str
     Add-Content -Path $psProfile -Value $hookBlock
 }
 
-# VS Code 확장 설치
+# VS Code 확장 설치 → VS Code 편집 활동 수집
+Write-Host "  VS Code 확장 설치 중..." -ForegroundColor Yellow
 $extDir = "$env:USERPROFILE\\.vscode\\extensions\\orbit-ai-tracker-1.0.0"
 if (-not (Test-Path $extDir)) { New-Item -ItemType Directory -Path $extDir -Force | Out-Null }
 Copy-Item "$ORBIT\\vscode-extension\\*" -Destination $extDir -Force -ErrorAction SilentlyContinue
 
-# 키 입력 패턴 수집 (로컬 분석 → Railway 전송)
-Write-Host "  키 입력 트래커 설치 중..." -ForegroundColor Yellow
+# 키 입력 패턴 수집 (로컬 분석 → Railway 전송) → 키 입력·앱 사용·웹 브라우징 수집
+Write-Host "  키 입력·앱 사용·웹 브라우징 트래커 설치 중..." -ForegroundColor Yellow
 Push-Location $ORBIT
 cmd /c npm install uiohook-napi better-sqlite3 --silent 2>&1 | Out-Null
 New-Item -ItemType Directory -Path "$ORBIT\\src\\data" -Force 2>$null | Out-Null
@@ -150,7 +163,16 @@ Write-Host "  로컬:        http://localhost:${port}" -ForegroundColor White
 Write-Host "  대시보드:    ${serverUrl}" -ForegroundColor White
 Write-Host ""
 Write-Host "  AI 분석: Claude Haiku (클라우드)" -ForegroundColor DarkGray
-Write-Host "  수집: 모든 앱 사용(Word/Excel/영상편집 등) · 웹 브라우징 · 키 입력 · Claude Code · VS Code · 터미널" -ForegroundColor DarkGray
+Write-Host ""
+Write-Host "  ✓ 수집 시작된 항목:" -ForegroundColor Green
+Write-Host "     ✓ 앱 사용 추적 (활성 윈도우 감지)" -ForegroundColor DarkGray
+Write-Host "     ✓ 웹 브라우징 기록" -ForegroundColor DarkGray
+Write-Host "     ✓ 키 입력 패턴 (빈도·속도 분석)" -ForegroundColor DarkGray
+Write-Host "     ✓ Claude Code 작업 (훅 연동)" -ForegroundColor DarkGray
+Write-Host "     ✓ VS Code 편집 활동 (확장 설치됨)" -ForegroundColor DarkGray
+Write-Host "     ✓ 터미널 명령어 (훅 등록됨)" -ForegroundColor DarkGray
+Write-Host ""
+Write-Host "  데이터는 5분마다 자동으로 대시보드에 동기화됩니다." -ForegroundColor DarkGray
 Write-Host ""
 `;
 
@@ -181,6 +203,16 @@ ORBIT="$HOME/orbit"
 echo ""
 echo "⬡ Orbit AI 설치 시작..."
 echo ""
+echo "  📋 수집 항목:"
+echo "     • 모든 앱 사용 (Word, Excel, 영상편집 등)"
+echo "     • 웹 브라우징 활동"
+echo "     • 키 입력 패턴 분석"
+echo "     • Claude Code 작업 내역"
+echo "     • VS Code 편집 활동"
+echo "     • 터미널 명령어"
+echo ""
+echo "  ⏱ 설치에 1~2분 정도 소요됩니다."
+echo ""
 
 # 1. Node.js
 command -v node &>/dev/null || {
@@ -203,8 +235,9 @@ else
 fi
 echo "  ✓ Orbit OK"
 
-# 4. Claude Code 훅 등록
+# 4. Claude Code 훅 등록 → Claude Code 작업 수집
 echo "[4/5] Claude Code 훅 등록 중..."
+echo "       → Claude Code 작업 내역 수집 설정"
 node -e "
 const fs=require('fs'),path=require('path'),os=require('os');
 const p=path.join(os.homedir(),'.claude','settings.json');
@@ -231,7 +264,8 @@ export ORBIT_SERVER_URL=${serverUrl}
 ORBIT_TOKEN="${userToken}"
 echo '{"serverUrl":"'"${serverUrl}"'","token":"'"$ORBIT_TOKEN"'"}' > ~/.orbit-config.json
 
-# 터미널 훅
+# 터미널 훅 → 터미널 명령어 수집
+echo "  터미널 명령어 훅 등록 중..."
 ORBIT_HOOK_CODE='
 # ⬡ Orbit AI 터미널 훅
 _orbit_send_cmd() {
@@ -250,13 +284,14 @@ for RC in ~/.zshrc ~/.bashrc; do
   fi
 done
 
-# VS Code 확장 설치
+# VS Code 확장 설치 → VS Code 편집 활동 수집
+echo "  VS Code 확장 설치 중..."
 EXT_DIR="$HOME/.vscode/extensions/orbit-ai-tracker-1.0.0"
 mkdir -p "$EXT_DIR"
 cp -r "$ORBIT/vscode-extension/"* "$EXT_DIR/" 2>/dev/null || true
 
-# 키 입력 패턴 수집 (로컬 분석 → Railway 전송)
-echo "  키 입력 트래커 설치 중..."
+# 키 입력 패턴 수집 (로컬 분석 → Railway 전송) → 키 입력·앱 사용·웹 브라우징 수집
+echo "  키 입력·앱 사용·웹 브라우징 트래커 설치 중..."
 cd $ORBIT && npm install uiohook-napi better-sqlite3 --silent 2>/dev/null || true
 mkdir -p "$ORBIT/src/data"
 pgrep -f "keylogger.js" &>/dev/null || {
@@ -276,7 +311,16 @@ echo "  로컬:        http://localhost:${port}"
 echo "  대시보드:    ${serverUrl}"
 echo ""
 echo "  AI 분석: Claude Haiku (클라우드)"
-echo "  수집: 모든 앱 사용(Word/Excel/영상편집 등) · 웹 브라우징 · 키 입력 · Claude Code · VS Code · 터미널"
+echo ""
+echo "  ✓ 수집 시작된 항목:"
+echo "     ✓ 앱 사용 추적 (활성 윈도우 감지)"
+echo "     ✓ 웹 브라우징 기록"
+echo "     ✓ 키 입력 패턴 (빈도·속도 분석)"
+echo "     ✓ Claude Code 작업 (훅 연동)"
+echo "     ✓ VS Code 편집 활동 (확장 설치됨)"
+echo "     ✓ 터미널 명령어 (훅 등록됨)"
+echo ""
+echo "  데이터는 5분마다 자동으로 대시보드에 동기화됩니다."
 echo ""
 `;
 
