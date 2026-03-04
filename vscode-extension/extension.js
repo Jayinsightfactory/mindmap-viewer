@@ -15,37 +15,48 @@
 
 const vscode = require('vscode');
 const http   = require('http');
+const https  = require('https');
 const path   = require('path');
 
-// ── 포트·활성 설정 읽기 ────────────────────────────────────
+// ── 설정 읽기 (URL, 토큰, 활성화) ────────────────────────────
 function cfg() {
   const c = vscode.workspace.getConfiguration('orbit');
+  const serverUrl = c.get('serverUrl', '');
+  const port      = c.get('serverPort', 4747);
   return {
-    port:    c.get('serverPort', 4747),
+    url:     serverUrl ? serverUrl.replace(/\/+$/, '') : `http://127.0.0.1:${port}`,
+    token:   c.get('token', ''),
     enabled: c.get('enabled', true),
   };
 }
 
-// ── 로컬 서버로 이벤트 전송 ────────────────────────────────
+// ── 서버로 이벤트 전송 (HTTP/HTTPS 자동 선택) ────────────────
 function send(type, data) {
-  const { port, enabled } = cfg();
+  const { url, token, enabled } = cfg();
   if (!enabled) return;
 
   try {
+    const parsed = new URL(url);
+    const isHttps = parsed.protocol === 'https:';
+    const isRemote = parsed.hostname !== '127.0.0.1' && parsed.hostname !== 'localhost';
     const payload = JSON.stringify({
       type,
       data: { ...data, source: 'vscode' },
       timestamp: new Date().toISOString(),
+      ...(isRemote ? { fromRemote: true } : {}),
     });
-    const req = http.request({
-      hostname: '127.0.0.1',
-      port,
+    const headers = { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const mod = isHttps ? https : http;
+    const req = mod.request({
+      hostname: parsed.hostname,
+      port:     parsed.port || (isHttps ? 443 : 80),
       path:     '/api/vscode-activity',
       method:   'POST',
-      headers:  { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) },
+      headers,
     }, r => r.resume());
     req.on('error', () => {});            // 서버 꺼져있으면 조용히 무시
-    req.setTimeout(2000, () => req.destroy());
+    req.setTimeout(3000, () => req.destroy());
     req.write(payload);
     req.end();
   } catch {}

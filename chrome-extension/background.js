@@ -14,10 +14,19 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-const ORBIT_PORT   = 4747;       // 로컬 Orbit 서버 포트 (popup에서 변경 가능)
+const DEFAULT_SERVER_URL = 'http://localhost:4747';
 const MAX_STORED   = 500;        // chrome.storage에 최대 보관 대화 수
 const RETRY_ALARM  = 'orbit-retry';
 const MIN_STAY_MS  = 5000;       // 탭 방문: 5초 이상 머문 페이지만
+
+// ── 서버 설정 (URL + 인증 토큰) ──────────────────────────────────────────────
+async function getServerConfig() {
+  const { orbit_server_url, orbit_token } = await chrome.storage.local.get(['orbit_server_url', 'orbit_token']);
+  return {
+    url:   (orbit_server_url || DEFAULT_SERVER_URL).replace(/\/+$/, ''),
+    token: orbit_token || '',
+  };
+}
 
 // ── 탭 방문 추적 (기존 기능) ──────────────────────────────────────────────────
 let lastTabId = null;
@@ -45,13 +54,16 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
 chrome.tabs.onRemoved.addListener((tabId) => { delete tabTimes[tabId]; });
 
 async function sendBrowserActivity(url, title, stayMs) {
-  const { enabled, private_mode, orbit_port } = await chrome.storage.local.get(['enabled', 'private_mode', 'orbit_port']);
+  const { enabled, private_mode } = await chrome.storage.local.get(['enabled', 'private_mode']);
   if (enabled === false) return;
-  const port = orbit_port || ORBIT_PORT;
+  const config = await getServerConfig();
+  const headers = { 'Content-Type': 'application/json' };
+  if (config.token) headers['Authorization'] = `Bearer ${config.token}`;
+  const isRemote = !config.url.includes('localhost') && !config.url.includes('127.0.0.1');
   try {
-    await fetch(`http://localhost:${port}/api/browser-activity`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: private_mode ? '(private)' : url, title, stayMs, timestamp: new Date().toISOString() }),
+    await fetch(`${config.url}/api/browser-activity`, {
+      method: 'POST', headers,
+      body: JSON.stringify({ url: private_mode ? '(private)' : url, title, stayMs, timestamp: new Date().toISOString(), ...(isRemote ? { fromRemote: true } : {}) }),
     });
   } catch {}
 }
@@ -82,15 +94,14 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
 // ── 대화 처리 메인 ────────────────────────────────────────────────────────────
 async function handleConversation(conv) {
-  const { enabled, orbit_port } = await chrome.storage.local.get(['enabled', 'orbit_port']);
+  const { enabled } = await chrome.storage.local.get(['enabled']);
   if (enabled === false) return;
-  const port = orbit_port || ORBIT_PORT;
 
   // 1. chrome.storage에 원문 저장 (항상 로컬)
   const id = await saveConversation(conv);
 
-  // 2. 로컬 서버로 전달 (원문 — localhost에만)
-  await sendToLocal(port, { ...conv, id });
+  // 2. 서버로 전달 (configurable URL)
+  await sendToServer({ ...conv, id });
 }
 
 // ── chrome.storage.local 저장 ─────────────────────────────────────────────────
@@ -127,18 +138,22 @@ async function saveConversation(conv) {
   return id;
 }
 
-// ── 로컬 Orbit 서버로 전송 ────────────────────────────────────────────────────
-async function sendToLocal(port, conv) {
+// ── Orbit 서버로 전송 (로컬 또는 클라우드) ────────────────────────────────────
+async function sendToServer(conv) {
   try {
-    const res = await fetch(`http://localhost:${port}/api/ai-conversation`, {
+    const config = await getServerConfig();
+    const headers = { 'Content-Type': 'application/json' };
+    if (config.token) headers['Authorization'] = `Bearer ${config.token}`;
+    const isRemote = !config.url.includes('localhost') && !config.url.includes('127.0.0.1');
+    const res = await fetch(`${config.url}/api/ai-conversation`, {
       method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify(conv),
+      headers,
+      body:    JSON.stringify({ ...conv, ...(isRemote ? { fromRemote: true } : {}) }),
       signal:  AbortSignal.timeout(5000),
     });
     if (res.ok) await markSynced(conv.id);
   } catch {
-    // 로컬 서버 미실행 → 나중에 retry
+    // 서버 미실행 → 나중에 retry
   }
 }
 
@@ -154,10 +169,9 @@ async function markSynced(id) {
 // ── 미전송 재시도 (30분 알람) ─────────────────────────────────────────────────
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name !== RETRY_ALARM) return;
-  const { conversations = [], orbit_port } = await chrome.storage.local.get(['conversations', 'orbit_port']);
-  const port = orbit_port || ORBIT_PORT;
+  const { conversations = [] } = await chrome.storage.local.get(['conversations']);
   const unsynced = conversations.filter(c => !c.synced).slice(0, 20);
-  for (const conv of unsynced) await sendToLocal(port, conv);
+  for (const conv of unsynced) await sendToServer(conv);
 });
 
 chrome.runtime.onInstalled.addListener(() => {

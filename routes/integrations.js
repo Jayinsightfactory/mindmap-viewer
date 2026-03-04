@@ -7,7 +7,20 @@ module.exports = function createIntegrationsRouter(deps) {
   const express = require('express');
   const router  = express.Router();
 
-  const { broadcastAll, ollamaAnalyzer, dbModule, PORT } = deps;
+  const { broadcastAll, ollamaAnalyzer, dbModule, PORT, verifyToken } = deps;
+
+  // ── 선택적 인증 미들웨어 (Authorization 헤더 있으면 검증 → user_id 설정) ──
+  function optionalAuth(req, res, next) {
+    const authHeader = (req.headers.authorization || '').trim();
+    if (!authHeader || !verifyToken) return next();
+    const token = authHeader.replace(/^Bearer\s+/i, '');
+    if (!token) return next();
+    try {
+      const user = verifyToken(token);
+      if (user && user.id) req._userId = user.id;
+    } catch {}
+    next();
+  }
 
 // ── Chrome Extension AI 이벤트 수신 ─────────────────────────────────────────
 router.post('/api/ai-events', (req, res) => {
@@ -44,7 +57,7 @@ function forwardConvToRailway(convMeta) {
 }
 
 // ── AI 대화 수신 (Chrome Extension content-ai.js → background.js → 여기) ─────
-router.post('/api/ai-conversation', (req, res) => {
+router.post('/api/ai-conversation', optionalAuth, (req, res) => {
   const conv = req.body;
   // messages 없는 메타데이터 전용 요청(Railway 포워딩)도 허용
   if (!conv || (!conv.messages && !conv.fromRemote)) {
@@ -76,10 +89,11 @@ router.post('/api/ai-conversation', (req, res) => {
     const messages = conv.messages || [];
 
     // INSERT OR REPLACE (같은 id = 업데이트)
+    const userId = req._userId || conv.user_id || null;
     db.prepare(`
       INSERT OR REPLACE INTO ai_conversations
-        (id, site, url, title, msg_count, messages, shared, captured_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (id, site, url, title, msg_count, messages, shared, captured_at, updated_at, user_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       conv.site  || 'Unknown',
@@ -90,6 +104,7 @@ router.post('/api/ai-conversation', (req, res) => {
       conv.shared ? 1 : 0,
       conv.capturedAt || now,
       now,
+      userId,
     );
 
     // 브로드캐스트 (대시보드 실시간 업데이트)
@@ -215,7 +230,7 @@ router.post('/api/terminal-command', (req, res) => {
 });
 
 // ── VS Code 활동 수신 ─────────────────────────────────────────────────────────
-router.post('/api/vscode-activity', (req, res) => {
+router.post('/api/vscode-activity', optionalAuth, (req, res) => {
   const { type, data, timestamp, fromRemote } = req.body;
   if (!type) return res.status(400).json({ error: 'type required' });
 
@@ -258,7 +273,7 @@ router.post('/api/vscode-activity', (req, res) => {
 });
 
 // ── 브라우저 활동 수신 ────────────────────────────────────────────────────────
-router.post('/api/browser-activity', (req, res) => {
+router.post('/api/browser-activity', optionalAuth, (req, res) => {
   const { url, title, stayMs, fromRemote } = req.body;
   if (typeof broadcastAll === 'function') {
     broadcastAll({ type: 'browser_activity', url, title, stayMs });

@@ -15,7 +15,17 @@
         "orbit.serverPort": {
           "type": "number",
           "default": 4747,
-          "description": "Orbit 로컬 서버 포트 (기본값: 4747)"
+          "description": "Orbit 로컬 서버 포트 (기본값: 4747, serverUrl 미설정 시 사용)"
+        },
+        "orbit.serverUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Orbit 서버 URL (예: https://your-app.up.railway.app). 비어있으면 localhost:serverPort 사용"
+        },
+        "orbit.token": {
+          "type": "string",
+          "default": "",
+          "description": "Orbit 인증 토큰 (클라우드 서버 연결 시 필요)"
         },
         "orbit.enabled": {
           "type": "boolean",

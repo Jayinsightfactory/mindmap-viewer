@@ -6,6 +6,7 @@
   "permissions": ["tabs", "storage", "alarms", "scripting"],
   "host_permissions": [
     "http://localhost/*",
+    "https://*.up.railway.app/*",
     "https://chat.openai.com/*",
     "https://chatgpt.com/*",
     "https://claude.ai/*",

@@ -51,6 +51,7 @@ const {
   getUserCategories, upsertUserCategory, deleteUserCategory,
   getToolLabelMappings, setToolLabelMapping, deleteToolLabelMapping, getUserConfig,
   getEventsByUser, getSessionsByUser, getStatsByUser, claimLocalEvents,
+  hideEvents, unhideEvents, unhideAllEvents, getHiddenEventIds,
 } = dbModule;
 
 const { buildGraph, computeActivityScores, applyActivityVisualization, suggestLabel } = require('./src/graph-engine');
@@ -65,7 +66,9 @@ const { detectConflicts, checkNewEvent } = require('./src/conflict-detector');
 const { appendAuditLog, auditFromEvents, queryAuditLog, verifyIntegrity, renderAuditHtml } = require('./src/audit-log');
 const { detectShadowAI, checkEventForShadow, getApprovedSources, addApprovedSource, removeApprovedSource } = require('./src/shadow-ai-detector');
 const { getAllThemes, getThemeById, registerTheme, recordDownload, rateTheme, deleteUserTheme } = require('./src/theme-store');
-const { register: authRegister, login: authLogin, verifyToken, issueApiToken, getUserById, upsertOAuthUser } = require('./src/auth');
+const { register: authRegister, login: authLogin, verifyToken, issueApiToken, getUserById, upsertOAuthUser,
+  saveOAuthTokens, getOAuthTokens, refreshGoogleAccessToken, getValidGoogleToken, getGoogleOAuthUsers } = require('./src/auth');
+const gdriveUserBackup = require('./src/gdrive-user-backup');
 const { initOAuthStrategies, createOAuthRouter } = require('./src/auth-oauth');
 const { PLANS, createPayment, confirmPayment, MOCK_MODE: paymentMockMode } = require('./src/payment');
 const { analyzeAndSuggest, saveFeedback, getSuggestions, getPatterns, getMarketCandidates } = require('./src/growth-engine');
@@ -247,6 +250,7 @@ const { passport: oauthPassport, enabledProviders } = initOAuthStrategies({
   upsertOAuthUser,
   getUserById,
   insertToken: issueApiToken,
+  saveOAuthTokens,
 });
 app.use(oauthPassport.initialize());
 app.use(oauthPassport.session());
@@ -704,6 +708,40 @@ app.get('/api/tracker/status', (req, res) => {
   }
 });
 
+// ── 토큰 등록 (로컬 PC에 ~/.orbit-config.json 저장) ─────────────────────────
+// 프론트엔드 _postLoginSync → 이 엔드포인트 호출 → save-turn.js가 토큰 사용
+app.post('/api/register-hook-token', (req, res) => {
+  try {
+    const authToken = (req.headers.authorization || '').replace('Bearer ', '').trim();
+    const user = verifyToken(authToken);
+    if (!user) return res.status(401).json({ ok: false, error: 'unauthorized' });
+
+    const os = require('os');
+    const cfgPath = path.join(os.homedir(), '.orbit-config.json');
+
+    // 기존 설정 로드 후 병합
+    let cfg = {};
+    try { cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf8')); } catch {}
+
+    const serverUrl = process.env.RAILWAY_PUBLIC_DOMAIN
+      ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+      : `http://localhost:${PORT}`;
+
+    cfg.token = authToken;
+    cfg.userId = user.id;
+    cfg.serverUrl = serverUrl;
+    cfg.pcId = require('crypto').createHash('sha256')
+      .update(`${os.hostname()}|${os.platform()}|${os.userInfo().username}`)
+      .digest('hex').slice(0, 16);
+
+    fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2));
+    console.log(`[register-hook-token] ${user.email} → ${cfgPath}`);
+    res.json({ ok: true, pcId: cfg.pcId });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 // ─── 라우터 의존성 조립 + 마운트 ─────────────────────────────────────────────
 // 각 라우터는 createRouter(deps) 패턴으로 의존성을 주입받습니다.
 // deps 에 mock 객체를 주입하면 테스트 시 DB 없이 단위 테스트 가능합니다.
@@ -721,11 +759,12 @@ const dbDeps = {
 
 app.use('/api', createGraphRouter({
   getFullGraph, getFullGraphForUser, broadcastAll, broadcastToChannel,
-  db: { ...dbDeps, getEventsByUser, getSessionsByUser, getStatsByUser, claimLocalEvents },
+  db: { ...dbDeps, getEventsByUser, getSessionsByUser, getStatsByUser, claimLocalEvents,
+        hideEvents, unhideEvents, unhideAllEvents, getHiddenEventIds },
   purposeClassifier: { classifyPurposes, summarizePurposes, PURPOSE_CATEGORIES, annotateEventsWithPurpose },
   graphEngine: { buildGraph, computeActivityScores, applyActivityVisualization },
   CONV_FILE, SNAPSHOTS_DIR,
-  verifyToken,  // 그래프 라우터에서 사용자 인증에 사용
+  verifyToken,
 }));
 
 app.use('/api', createAnnotationsRouter({
@@ -863,6 +902,15 @@ app.use('/api', createChatRouter({ getDb: dbModule.getDb, verifyToken, broadcast
 
 // ─── Workspace (팀/회사 관리) ─────────────────────────────────────────────────
 app.use('/api', createWorkspaceRouter({ db: dbModule.getDb ? dbModule.getDb() : null, verifyToken }));
+
+// ─── Google Drive 사용자 백업 ────────────────────────────────────────────────
+const createGdriveRouter = require('./routes/gdrive');
+app.use('/api', createGdriveRouter({
+  verifyToken,
+  auth: { getValidGoogleToken, getOAuthTokens, saveOAuthTokens },
+  dbModule: { getAllEvents, getEventsByUser, getSessionsByUser, getSessions, insertEvent },
+  gdriveUserBackup,
+}));
 
 // ─── Regional Insight ────────────────────────────────────────────────────────
 app.use('/api', createRegionalInsightRouter({ getAllEvents }));
@@ -1027,7 +1075,7 @@ app.use('/', createSetupScriptsRouter({ PORT }));
 
 // ── 외부 통합 API (terminal, vscode, browser, keylog, chrome, AI conversations) ──
 const createIntegrationsRouter = require('./routes/integrations');
-app.use('/api', createIntegrationsRouter({ broadcastAll, ollamaAnalyzer, dbModule, PORT }));
+app.use('/', createIntegrationsRouter({ broadcastAll, ollamaAnalyzer, dbModule, PORT, verifyToken }));
 
 // ── 시스템 모니터 (활성 앱/윈도우/클립보드/브라우저 URL 추적) ──────────────
 try {
@@ -1100,6 +1148,24 @@ server.listen(PORT, () => {
   // 회사 컨설팅 크롤러 시작 (활동 집계 + 학습 + 진단 + 백업)
   companyCrawler.start({ db: dbModule.getDb(), broadcastAll });
 
+  // Google Drive 사용자 자동 백업 (2시간마다)
+  setInterval(async () => {
+    try {
+      const users = getGoogleOAuthUsers();
+      for (const u of users) {
+        try {
+          const token = await getValidGoogleToken(u.id);
+          if (token) {
+            await gdriveUserBackup.backupUserDataToDrive(u.id, token,
+              { getAllEvents, getEventsByUser, getSessionsByUser, getSessions, insertEvent });
+          }
+        } catch (e) {
+          console.warn(`[gdrive-auto] ${u.email} 백업 실패:`, e.message);
+        }
+      }
+    } catch {}
+  }, 2 * 60 * 60 * 1000); // 2시간
+
   console.log(`   회사 진단: http://localhost:${PORT}/api/company`);
   console.log(`   컨설턴트: http://localhost:${PORT}/consultant.html`);
   console.log(`   트래커 설치: http://localhost:${PORT}/api/tracker/install?token=TOKEN`);
@@ -1125,9 +1191,16 @@ server.listen(PORT, () => {
       const _syncToRailway = async () => {
         try {
           const stats = getStats();
-          // 1) 핑 전송
+          // 1) 핑 전송 — verifyToken으로 실제 userId 확인
+          let resolvedUserId = require('os').hostname();
+          if (railwayToken) {
+            try {
+              const user = verifyToken(railwayToken);
+              if (user) resolvedUserId = user.id;
+            } catch {}
+          }
           const pingBody = JSON.stringify({
-            userId: railwayToken ? railwayToken.slice(0, 20) : require('os').hostname(),
+            userId: resolvedUserId,
             hostname: require('os').hostname(),
             eventCount: stats.eventCount,
           });

@@ -48,8 +48,14 @@
 
   .empty { padding: 16px 14px; text-align: center; font-size: 11px; color: #6e7681; }
 
-  /* 포트 설정 */
-  .port-input { width: 70px; background: #161b22; border: 1px solid #30363d; border-radius: 5px; color: #cdd9e5; font-size: 11px; padding: 3px 6px; text-align: center; }
+  /* 서버 설정 */
+  .url-input { width: 100%; background: #161b22; border: 1px solid #30363d; border-radius: 5px; color: #cdd9e5; font-size: 11px; padding: 5px 8px; box-sizing: border-box; }
+  .url-input::placeholder { color: #484f58; }
+  .token-input { width: 100%; background: #161b22; border: 1px solid #30363d; border-radius: 5px; color: #cdd9e5; font-size: 11px; padding: 5px 8px; box-sizing: border-box; }
+  .token-input::placeholder { color: #484f58; }
+  .test-btn { background: #1f6feb; border: none; border-radius: 5px; color: #fff; font-size: 10px; padding: 4px 10px; cursor: pointer; margin-top: 4px; }
+  .test-btn:hover { background: #388bfd; }
+  .test-result { font-size: 10px; margin-top: 3px; }
 </style>
 </head>
 <body>
@@ -90,12 +96,15 @@
   </div>
   <div class="switch" id="enabled-toggle"></div>
 </div>
-<div class="toggle-row">
-  <div>
-    <div class="toggle-label">로컬 서버 포트</div>
-    <div class="toggle-sub">Orbit 서버 포트</div>
+<div style="padding:7px 14px">
+  <div class="toggle-label" style="margin-bottom:4px">서버 URL</div>
+  <input class="url-input" id="server-url-input" type="text" placeholder="https://your-app.up.railway.app">
+  <div class="toggle-label" style="margin-top:8px;margin-bottom:4px">인증 토큰</div>
+  <input class="token-input" id="token-input" type="password" placeholder="orbit_xxxxx...">
+  <div style="display:flex;align-items:center;gap:8px;margin-top:6px">
+    <button class="test-btn" id="test-conn-btn">연결 테스트</button>
+    <span class="test-result" id="test-result"></span>
   </div>
-  <input class="port-input" id="port-input" type="number" value="4747" min="1024" max="65535">
 </div>
 
 <!-- 최근 대화 -->
@@ -123,12 +132,13 @@ const SITE_COLORS = {
 };
 
 async function loadAll() {
-  const { orbit_port, enabled } = await chrome.storage.local.get(['orbit_port', 'enabled']);
-  const port = orbit_port || 4747;
+  const { orbit_server_url, orbit_token, enabled } = await chrome.storage.local.get(['orbit_server_url', 'orbit_token', 'enabled']);
+  const serverUrl = (orbit_server_url || 'http://localhost:4747').replace(/\/+$/, '');
 
-  // 포트 입력
-  document.getElementById('port-input').value = port;
-  document.getElementById('dash-link').href = `http://localhost:${port}/orbit3d.html`;
+  // 서버 URL / 토큰 입력
+  document.getElementById('server-url-input').value = orbit_server_url || '';
+  document.getElementById('token-input').value = orbit_token || '';
+  document.getElementById('dash-link').href = `${serverUrl}/orbit3d.html`;
 
   // 활성화 토글
   const isEnabled = enabled !== false;
@@ -165,7 +175,7 @@ async function loadAll() {
   renderConvList(convs || []);
 
   // 서버 상태
-  checkServer(port);
+  checkServer(serverUrl, orbit_token);
 }
 
 function renderConvList(convs) {
@@ -192,12 +202,18 @@ async function toggleShared(id, shared) {
   loadAll();
 }
 
-async function checkServer(port) {
+async function checkServer(serverUrl, token) {
   try {
-    const r = await fetch(`http://localhost:${port}/health`, { signal: AbortSignal.timeout(2000) });
+    const headers = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const r = await fetch(`${serverUrl}/health`, { signal: AbortSignal.timeout(3000), headers });
     if (r.ok) {
+      const isCloud = !serverUrl.includes('localhost') && !serverUrl.includes('127.0.0.1');
       document.getElementById('server-dot').className   = 'dot dot-green';
-      document.getElementById('server-label').textContent = `연결됨 :${port}`;
+      document.getElementById('server-label').textContent = isCloud ? '클라우드 연결됨' : `로컬 연결됨`;
+    } else {
+      document.getElementById('server-dot').className   = 'dot dot-gray';
+      document.getElementById('server-label').textContent = '연결 실패';
     }
   } catch {
     document.getElementById('server-dot').className   = 'dot dot-gray';
@@ -213,11 +229,43 @@ document.getElementById('enabled-toggle').onclick = async () => {
   document.getElementById('enabled-toggle').classList.toggle('on', newVal);
 };
 
-// 포트 변경
-document.getElementById('port-input').onchange = async (e) => {
-  const port = parseInt(e.target.value) || 4747;
-  await chrome.storage.local.set({ orbit_port: port });
-  document.getElementById('dash-link').href = `http://localhost:${port}/orbit3d.html`;
+// 서버 URL 변경
+document.getElementById('server-url-input').onchange = async (e) => {
+  const url = (e.target.value || '').trim();
+  await chrome.storage.local.set({ orbit_server_url: url || null });
+  const serverUrl = (url || 'http://localhost:4747').replace(/\/+$/, '');
+  document.getElementById('dash-link').href = `${serverUrl}/orbit3d.html`;
+};
+
+// 토큰 변경
+document.getElementById('token-input').onchange = async (e) => {
+  const token = (e.target.value || '').trim();
+  await chrome.storage.local.set({ orbit_token: token || null });
+};
+
+// 연결 테스트
+document.getElementById('test-conn-btn').onclick = async () => {
+  const resultEl = document.getElementById('test-result');
+  resultEl.textContent = '테스트 중...';
+  resultEl.style.color = '#8b949e';
+  const url = (document.getElementById('server-url-input').value || 'http://localhost:4747').replace(/\/+$/, '');
+  const token = document.getElementById('token-input').value.trim();
+  try {
+    const headers = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const r = await fetch(`${url}/health`, { signal: AbortSignal.timeout(5000), headers });
+    if (r.ok) {
+      resultEl.textContent = '연결 성공!';
+      resultEl.style.color = '#3fb950';
+      checkServer(url, token);
+    } else {
+      resultEl.textContent = `실패 (${r.status})`;
+      resultEl.style.color = '#f85149';
+    }
+  } catch (e) {
+    resultEl.textContent = '연결 불가';
+    resultEl.style.color = '#f85149';
+  }
 };
 
 loadAll();
