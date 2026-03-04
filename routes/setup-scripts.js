@@ -56,6 +56,8 @@ if (-not (Test-Path "$ORBIT\\package.json")) {
     Pop-Location
 } else {
     Push-Location $ORBIT
+    git checkout -- . 2>$null
+    git clean -fd 2>$null
     git pull --quiet
     cmd /c npm install --silent 2>&1 | Out-Null
     Pop-Location
@@ -197,7 +199,7 @@ if [ ! -f "$ORBIT/package.json" ]; then
   git clone ${REPO} $ORBIT
   cd $ORBIT && npm install --silent
 else
-  cd $ORBIT && git pull --quiet && npm install --silent
+  cd $ORBIT && git checkout -- . 2>/dev/null && git clean -fd 2>/dev/null && git pull --quiet && npm install --silent
 fi
 echo "  ✓ Orbit OK"
 
