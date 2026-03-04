@@ -67,6 +67,15 @@ if (db) {
       FOREIGN KEY (userId) REFERENCES users(id)
     );
 
+    -- 트래커 연결 상태 컬럼 (마이그레이션)
+    CREATE TABLE IF NOT EXISTS tracker_pings (
+      userId       TEXT PRIMARY KEY,
+      hostname     TEXT DEFAULT '',
+      eventCount   INTEGER DEFAULT 0,
+      lastSeen     INTEGER DEFAULT 0,
+      FOREIGN KEY (userId) REFERENCES users(id)
+    );
+
     CREATE TABLE IF NOT EXISTS sessions (
       id        TEXT PRIMARY KEY,
       userId    TEXT NOT NULL,
@@ -286,4 +295,5 @@ module.exports = {
   register, login, verifyToken, issueApiToken,
   getUserById, getUserByEmail, upgradePlan, upsertOAuthUser,
   authMiddleware, optionalAuth,
+  getDb: () => db,
 };

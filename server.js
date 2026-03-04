@@ -628,68 +628,71 @@ app.get('/health', (req, res) => {
 });
 
 // ── 트래커 핑 (로컬 서버 → Railway로 주기적 보고) ─────────────────────────
-// 로컬 트래커가 살아있음을 Railway에 알림
-const _trackerPings = {}; // { key: { lastSeen, hostname, events } }
+// DB 기반 — 배포해도 상태 유지됨
 app.post('/api/tracker/ping', (req, res) => {
   try {
-    const { userId, hostname, eventCount } = req.body || {};
-    const key = userId || req.ip;
-    _trackerPings[key] = {
-      lastSeen:   Date.now(),
-      hostname:   hostname || 'unknown',
-      eventCount: eventCount || 0,
-    };
-    // Authorization 헤더의 토큰으로도 등록 (대시보드 조회 매칭용)
+    const { userId: bodyUserId, hostname, eventCount } = req.body || {};
+
+    // 1) Authorization 토큰으로 사용자 식별
     const authToken = (req.headers.authorization || '').replace('Bearer ', '').trim();
-    if (authToken) {
+    let resolvedUserId = bodyUserId || '';
+    if (authToken && !resolvedUserId) {
       try {
         const user = verifyToken(authToken);
-        if (user) _trackerPings[user.id] = _trackerPings[key];
+        if (user) resolvedUserId = user.id;
       } catch {}
-      // 토큰 자체와 prefix로도 등록
-      _trackerPings[authToken.slice(0, 20)] = _trackerPings[key];
     }
-    console.log('[tracker/ping] 수신 — key:', key, 'hostname:', hostname, 'pings:', Object.keys(_trackerPings));
+    if (!resolvedUserId) resolvedUserId = req.ip; // fallback
+
+    // 2) DB에 upsert
+    try {
+      const authDb = require('./src/auth').getDb();
+      if (authDb) {
+        authDb.prepare(`
+          INSERT INTO tracker_pings (userId, hostname, eventCount, lastSeen)
+          VALUES (?, ?, ?, ?)
+          ON CONFLICT(userId) DO UPDATE SET hostname=?, eventCount=?, lastSeen=?
+        `).run(resolvedUserId, hostname || '', eventCount || 0, Date.now(),
+               hostname || '', eventCount || 0, Date.now());
+      }
+    } catch (dbErr) {
+      console.warn('[tracker/ping] DB 저장 실패:', dbErr.message);
+    }
+
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
   }
 });
 
-// 디버깅: 핑 상태 직접 확인용
-app.get('/api/tracker/debug', (req, res) => {
-  res.json({
-    pings: Object.entries(_trackerPings).map(([k, v]) => ({
-      key: k.slice(0, 10) + '...',
-      lastSeen: v.lastSeen,
-      ago: Math.round((Date.now() - v.lastSeen) / 1000) + 's',
-      hostname: v.hostname,
-    })),
-  });
-});
-
 // 트래커 상태 조회 (대시보드에서 연결 확인용)
 app.get('/api/tracker/status', (req, res) => {
   try {
     const token = (req.headers.authorization || '').replace('Bearer ', '');
-    let userId = req.query.userId || '';
-    // verifyToken으로 사용자 식별 (SQLite/PostgreSQL 모두 호환)
-    if (token && !userId) {
+    let userId = '';
+
+    // 토큰으로 사용자 식별
+    if (token) {
       try {
         const user = verifyToken(token);
         if (user) userId = user.id;
       } catch {}
     }
-    // 토큰 prefix(20자)로도 매칭 (로컬 서버가 token.slice(0,20)으로 핑 보냄)
-    const tokenPrefix = token ? token.slice(0, 20) : '';
-    const ping = _trackerPings[userId] || _trackerPings[tokenPrefix] || _trackerPings[req.ip]
-      || Object.values(_trackerPings).find(p => Date.now() - p.lastSeen < 6 * 60 * 1000)
-      || null;
-    const isOnline = ping && (Date.now() - ping.lastSeen < 6 * 60 * 1000); // 6분 이내
-    // 디버깅: 핑 상태 로그
-    if (!isOnline) {
-      console.log('[tracker/status] 미연결 — userId:', userId, 'tokenPrefix:', tokenPrefix, 'pings:', Object.keys(_trackerPings));
+
+    if (!userId) {
+      return res.json({ online: false, lastSeen: null, hostname: null, eventCount: 0 });
     }
+
+    // DB에서 핑 조회
+    let ping = null;
+    try {
+      const authDb = require('./src/auth').getDb();
+      if (authDb) {
+        ping = authDb.prepare('SELECT * FROM tracker_pings WHERE userId = ?').get(userId);
+      }
+    } catch {}
+
+    const isOnline = ping && (Date.now() - ping.lastSeen < 6 * 60 * 1000); // 6분 이내
     res.json({
       online:     !!isOnline,
       lastSeen:   ping?.lastSeen || null,
