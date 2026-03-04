@@ -99,79 +99,90 @@ function _setDataSource(src, accountEmail) {
 
 // ── 빈 화면 안내 ──────────────────────────────────────────────────────────────
 function _showEmptyStateGuide() {
-  if (document.getElementById('empty-state-guide')) return;
+  // 기존 안내가 있으면 먼저 제거 (로그인 상태 변경 시 갱신 위해)
+  _hideEmptyStateGuide();
+
   const isLoggedIn = !!_getAuthToken();
 
-  // ── 로그인 안 된 상태에서만 안내 표시 ──
-  // 로그인 후에는 설정(⚙️) 패널에 설치 명령어가 있으므로 별도 팝업 불필요
+  // ── 로그인 안 된 상태 ──
+  // 로그인 모달이 1.2초 후 자동으로 뜨므로 (orbit3d-ui.js) 여기선 별도 팝업 없음
   if (!isLoggedIn) {
-    const el = document.createElement('div');
-    el.id = 'empty-state-guide';
-    el.style.cssText = `
-      position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
-      background:rgba(13,17,23,0.97); border:1px solid #30363d;
-      border-radius:18px; padding:28px 32px; max-width:480px; text-align:center;
-      z-index:500; backdrop-filter:blur(20px);
-      box-shadow:0 16px 64px rgba(0,0,0,0.5);
-      font-family:-apple-system,'Segoe UI',sans-serif;
-      animation:fadeIn .4s ease;
-    `;
-    el.innerHTML = `
-      <div style="font-size:42px;margin-bottom:12px">⬡</div>
-      <div style="font-size:17px;font-weight:700;color:#e6edf3;margin-bottom:8px">
-        Orbit AI에 오신 것을 환영합니다
-      </div>
-      <div style="font-size:13px;color:#8b949e;line-height:1.6;margin-bottom:20px">
-        로그인하면 작업 데이터를 클라우드에 저장하고<br>
-        여러 PC에서 동기화할 수 있습니다.
-      </div>
-      <button onclick="document.getElementById('empty-state-guide').remove();openLoginModal()"
-        style="width:100%;background:linear-gradient(135deg,#1f6feb,#388bfd);border:none;color:#fff;
-        padding:12px 22px;border-radius:10px;cursor:pointer;font-size:14px;font-weight:600;margin-bottom:10px">
-        로그인 / 회원가입
-      </button>
-      <button onclick="document.getElementById('empty-state-guide').remove()"
-        style="width:100%;background:#21262d;border:1px solid #30363d;color:#8b949e;
-        padding:10px 22px;border-radius:10px;cursor:pointer;font-size:13px;margin-bottom:14px">
-        둘러보기
-      </button>
-      <div style="font-size:11px;color:#6e7681;line-height:1.5">
-        로그인 후 ⚙️ 설정에서 Orbit 설치 명령어를 확인할 수 있습니다.
-      </div>
-    `;
-    document.body.appendChild(el);
+    return; // 로그인 모달에서 처리
   }
-  // ── 로그인 된 상태: 데이터 없으면 간단 안내만 (설정 패널 유도) ──
-  else {
-    const el = document.createElement('div');
-    el.id = 'empty-state-guide';
-    el.style.cssText = `
-      position:fixed; bottom:80px; left:50%; transform:translateX(-50%);
-      background:rgba(13,17,23,0.95); border:1px solid #30363d;
-      border-radius:12px; padding:14px 22px; max-width:400px; text-align:center;
-      z-index:500; backdrop-filter:blur(16px);
-      box-shadow:0 8px 32px rgba(0,0,0,0.4);
-      font-family:-apple-system,'Segoe UI',sans-serif;
-      animation:fadeIn .4s ease;
-    `;
-    el.innerHTML = `
-      <div style="display:flex;align-items:center;gap:10px;justify-content:center;margin-bottom:8px">
-        <span style="font-size:18px">⬡</span>
-        <span style="font-size:13px;font-weight:600;color:#e6edf3">아직 수집된 데이터가 없습니다</span>
-        <span onclick="document.getElementById('empty-state-guide').remove()"
-          style="margin-left:8px;cursor:pointer;color:#6e7681;font-size:16px;line-height:1">✕</span>
+
+  // ── 로그인 된 상태: 설치 명령어 직접 안내 ──
+  const isMac = /Mac/i.test(navigator.userAgent);
+  const t = _getAuthToken();
+  const base = location.origin;
+  const installCmd = isMac
+    ? `bash <(curl -sL '${base}/orbit-setup.sh${t ? '?token='+encodeURIComponent(t) : ''}')`
+    : `powershell -ExecutionPolicy Bypass -Command "irm '${base}/orbit-setup.ps1${t ? '?token='+encodeURIComponent(t) : ''}' | iex"`;
+
+  const termOpen = isMac
+    ? '<kbd style="background:#21262d;padding:2px 6px;border-radius:3px;font-size:11px">Spotlight</kbd> → Terminal 검색 → Enter'
+    : '<kbd style="background:#21262d;padding:2px 6px;border-radius:3px;font-size:11px">Win + R</kbd> → <b style="color:#cdd9e5">powershell</b> 입력 → Enter';
+
+  const el = document.createElement('div');
+  el.id = 'empty-state-guide';
+  el.style.cssText = `
+    position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
+    background:rgba(13,17,23,0.97); border:1px solid #30363d;
+    border-radius:18px; padding:28px 32px; max-width:500px; text-align:center;
+    z-index:500; backdrop-filter:blur(20px);
+    box-shadow:0 16px 64px rgba(0,0,0,0.5);
+    font-family:-apple-system,'Segoe UI',sans-serif;
+    animation:fadeIn .4s ease;
+  `;
+  el.innerHTML = `
+    <div style="font-size:42px;margin-bottom:10px">⬡</div>
+    <div style="font-size:17px;font-weight:700;color:#e6edf3;margin-bottom:6px">
+      Orbit AI 설치
+    </div>
+    <div style="font-size:12px;color:#8b949e;margin-bottom:18px;line-height:1.6">
+      아래 명령어를 PC에서 실행하면 자동으로 설치됩니다.<br>
+      <b style="color:#f0a82e">설치에 1~2분 정도 소요됩니다.</b>
+    </div>
+
+    <div style="text-align:left;margin-bottom:14px">
+      <div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:10px">
+        <div style="width:22px;height:22px;background:#1f6feb;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0">1</div>
+        <div style="font-size:12px;color:#8b949e;line-height:1.6">${termOpen}</div>
       </div>
-      <div style="font-size:12px;color:#8b949e;margin-bottom:12px;line-height:1.6">
-        <b style="color:#cdd9e5">⚙️ 설정</b>에서 설치 명령어를 복사해 PC에서 실행하세요.
+      <div style="display:flex;gap:8px;align-items:flex-start">
+        <div style="width:22px;height:22px;background:#1f6feb;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0">2</div>
+        <div style="font-size:12px;color:#8b949e;line-height:1.6">
+          아래 명령어 <b style="color:#cdd9e5">복사</b> → 붙여넣기(<kbd style="background:#21262d;padding:1px 5px;border-radius:3px;font-size:10px">Ctrl+V</kbd>) → <b style="color:#cdd9e5">Enter</b>
+        </div>
       </div>
-      <button onclick="document.getElementById('empty-state-guide').remove();openSetupPanel()"
-        style="padding:8px 20px;background:#1f6feb;border:none;border-radius:8px;
-        color:#fff;font-size:12px;font-weight:600;cursor:pointer">
-        ⚙️ 설정 열기
-      </button>
-    `;
-    document.body.appendChild(el);
-  }
+    </div>
+
+    <div style="background:#010409;border:1px solid #21262d;border-radius:10px;
+      padding:12px 14px;margin-bottom:10px;position:relative">
+      <code id="esg-install-cmd" style="font-family:'Consolas','Courier New',monospace;
+        font-size:11px;color:#3fb950;word-break:break-all;line-height:1.6;display:block;padding-right:44px">${installCmd}</code>
+      <button onclick="(function(){
+        const cmd=document.getElementById('esg-install-cmd').textContent.trim();
+        navigator.clipboard.writeText(cmd).then(()=>{
+          const b=document.getElementById('esg-copy-btn');
+          b.textContent='✅';b.style.background='#238636';
+          setTimeout(()=>{b.textContent='복사';b.style.background='#1f6feb';},2000);
+        }).catch(()=>prompt('복사:',cmd));
+      })()" id="esg-copy-btn"
+        style="position:absolute;top:10px;right:10px;background:#1f6feb;border:none;
+        border-radius:5px;color:#fff;font-size:10px;font-weight:600;padding:3px 8px;cursor:pointer">복사</button>
+    </div>
+
+    <div style="font-size:11px;color:#6e7681;line-height:1.6;margin-bottom:14px">
+      설치 완료 후 자동으로 데이터 수집이 시작됩니다.<br>
+      모든 앱 사용·웹 브라우징·키 입력이 로컬에 저장됩니다.
+    </div>
+    <button onclick="document.getElementById('empty-state-guide').remove()"
+      style="background:#21262d;border:1px solid #30363d;color:#e6edf3;
+      padding:8px 20px;border-radius:8px;cursor:pointer;font-size:13px">
+      닫기
+    </button>
+  `;
+  document.body.appendChild(el);
 }
 
 function _getCurrentUserEmail() {
