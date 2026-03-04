@@ -658,7 +658,11 @@ app.get('/api/tracker/status', (req, res) => {
         if (row) userId = row.id;
       } catch {}
     }
-    const ping = _trackerPings[userId] || _trackerPings[req.ip] || null;
+    // 토큰 prefix(20자)로도 매칭 (로컬 서버가 token.slice(0,20)으로 핑 보냄)
+    const tokenPrefix = token ? token.slice(0, 20) : '';
+    const ping = _trackerPings[userId] || _trackerPings[tokenPrefix] || _trackerPings[req.ip]
+      || Object.values(_trackerPings).find(p => Date.now() - p.lastSeen < 6 * 60 * 1000)
+      || null;
     const isOnline = ping && (Date.now() - ping.lastSeen < 6 * 60 * 1000); // 6분 이내
     res.json({
       online:     !!isOnline,
@@ -1121,8 +1125,8 @@ server.listen(PORT, () => {
         }
       };
 
-      // 시작 후 30초 뒤 첫 동기화, 이후 5분마다
-      setTimeout(_syncToRailway, 30000);
+      // 시작 후 10초 뒤 첫 동기화, 이후 5분마다
+      setTimeout(_syncToRailway, 10000);
       setInterval(_syncToRailway, 5 * 60 * 1000);
     }
   }

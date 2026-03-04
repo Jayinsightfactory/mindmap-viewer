@@ -136,12 +136,12 @@ async function _showEmptyStateGuide() {
     el.innerHTML = `
       <div style="display:flex;align-items:center;gap:8px;justify-content:center">
         <span style="width:7px;height:7px;border-radius:50%;background:#3fb950;display:inline-block;box-shadow:0 0 6px #3fb950"></span>
-        <span style="font-size:12px;color:#e6edf3">트래커 연결됨 — 데이터 수집 대기 중</span>
+        <span style="font-size:12px;color:#e6edf3">Orbit 연결됨 — 작업 패턴 학습 중</span>
         <span onclick="document.getElementById('empty-state-guide').remove()"
           style="margin-left:8px;cursor:pointer;color:#6e7681;font-size:14px">✕</span>
       </div>
       <div style="font-size:11px;color:#8b949e;margin-top:6px">
-        PC 사용 활동이 감지되면 자동으로 대시보드에 표시됩니다.
+        AI가 작업 패턴을 학습하면 맞춤 피드백이 대시보드에 표시됩니다.
       </div>
     `;
     document.body.appendChild(el);
@@ -178,6 +178,8 @@ async function _showEmptyStateGuide() {
     </div>
     <div style="font-size:12px;color:#8b949e;margin-bottom:16px;line-height:1.6">
       아래 명령어를 PC에서 실행하면 자동으로 설치됩니다.<br>
+      AI가 작업 패턴을 학습하여 <b style="color:#58a6ff">업무 효율 피드백</b>을 제공합니다.<br>
+      <span style="color:#3fb950;font-size:11px">🔒 데이터는 외부로 전송되지 않습니다.</span><br>
       <b style="color:#f0a82e">설치에 1~2분 정도 소요됩니다.</b>
     </div>
 
@@ -211,8 +213,8 @@ async function _showEmptyStateGuide() {
     </div>
 
     <div style="font-size:11px;color:#6e7681;line-height:1.6;margin-bottom:10px">
-      <b style="color:#cdd9e5">수집 항목:</b> 모든 앱 사용 · 웹 브라우징 · 키 입력 · Claude Code · VS Code · 터미널<br>
-      설치 완료 후 자동으로 데이터 수집이 시작됩니다.
+      <b style="color:#cdd9e5">학습 항목:</b> 앱 사용 패턴 · 웹 리서치 흐름 · 타이핑 리듬 · 코딩 워크플로우<br>
+      설치 완료 후 AI가 자동으로 패턴 학습을 시작합니다.
     </div>
     <button onclick="document.getElementById('empty-state-guide').remove()"
       style="background:#21262d;border:1px solid #30363d;color:#e6edf3;
