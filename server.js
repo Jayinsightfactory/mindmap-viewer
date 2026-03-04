@@ -627,6 +627,50 @@ app.get('/health', (req, res) => {
   }
 });
 
+// ── 트래커 핑 (로컬 서버 → Railway로 주기적 보고) ─────────────────────────
+// 로컬 트래커가 살아있음을 Railway에 알림
+const _trackerPings = {}; // { userId: { lastSeen, hostname, events } }
+app.post('/api/tracker/ping', (req, res) => {
+  try {
+    const { userId, hostname, eventCount } = req.body || {};
+    const key = userId || req.ip;
+    _trackerPings[key] = {
+      lastSeen:   Date.now(),
+      hostname:   hostname || 'unknown',
+      eventCount: eventCount || 0,
+    };
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// 트래커 상태 조회 (대시보드에서 연결 확인용)
+app.get('/api/tracker/status', (req, res) => {
+  try {
+    const token = (req.headers.authorization || '').replace('Bearer ', '');
+    let userId = req.query.userId || '';
+    // 토큰으로 사용자 식별
+    if (token && !userId) {
+      try {
+        const db = dbModule.getDb();
+        const row = db.prepare('SELECT id FROM users WHERE token = ?').get(token);
+        if (row) userId = row.id;
+      } catch {}
+    }
+    const ping = _trackerPings[userId] || _trackerPings[req.ip] || null;
+    const isOnline = ping && (Date.now() - ping.lastSeen < 6 * 60 * 1000); // 6분 이내
+    res.json({
+      online:     !!isOnline,
+      lastSeen:   ping?.lastSeen || null,
+      hostname:   ping?.hostname || null,
+      eventCount: ping?.eventCount || 0,
+    });
+  } catch (e) {
+    res.json({ online: false, lastSeen: null });
+  }
+});
+
 // ─── 라우터 의존성 조립 + 마운트 ─────────────────────────────────────────────
 // 각 라우터는 createRouter(deps) 패턴으로 의존성을 주입받습니다.
 // deps 에 mock 객체를 주입하면 테스트 시 DB 없이 단위 테스트 가능합니다.
@@ -1027,4 +1071,59 @@ server.listen(PORT, () => {
   console.log(`   컨설턴트: http://localhost:${PORT}/consultant.html`);
   console.log(`   트래커 설치: http://localhost:${PORT}/api/tracker/install?token=TOKEN`);
   console.log(`   부트캠프: http://localhost:${PORT}/api/bootcamp/start`);
+
+  // ── 로컬→Railway 주기적 동기화 (5분마다) ──────────────────────────────────
+  // Railway 환경이 아닌 로컬 서버에서만 실행
+  if (!process.env.RAILWAY_PUBLIC_DOMAIN && !process.env.RAILWAY_ENVIRONMENT) {
+    const orbitCfgPath = require('path').join(require('os').homedir(), '.orbit-config.json');
+    let railwayUrl = null;
+    let railwayToken = '';
+    try {
+      const ocfg = JSON.parse(require('fs').readFileSync(orbitCfgPath, 'utf8'));
+      railwayUrl = ocfg.serverUrl || null;
+      railwayToken = ocfg.token || '';
+    } catch {}
+    railwayUrl = process.env.ORBIT_SERVER_URL || railwayUrl;
+
+    if (railwayUrl && railwayUrl !== `http://localhost:${PORT}`) {
+      console.log(`\n[Sync] Railway 동기화 활성화 (5분 간격)`);
+      console.log(`   → ${railwayUrl}`);
+
+      const _syncToRailway = async () => {
+        try {
+          const stats = getStats();
+          // 1) 핑 전송
+          const pingBody = JSON.stringify({
+            userId: railwayToken ? railwayToken.slice(0, 20) : require('os').hostname(),
+            hostname: require('os').hostname(),
+            eventCount: stats.eventCount,
+          });
+          const pingUrl = new URL('/api/tracker/ping', railwayUrl);
+          const mod = pingUrl.protocol === 'https:' ? require('https') : require('http');
+          const pingReq = mod.request({
+            hostname: pingUrl.hostname, port: pingUrl.port || (pingUrl.protocol === 'https:' ? 443 : 80),
+            path: pingUrl.pathname, method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(pingBody),
+              ...(railwayToken ? { 'Authorization': `Bearer ${railwayToken}` } : {}) },
+          }, () => {});
+          pingReq.on('error', () => {});
+          pingReq.write(pingBody);
+          pingReq.end();
+
+          // 2) 최근 이벤트 동기화
+          const { execSync } = require('child_process');
+          const syncScript = require('path').join(__dirname, 'bin', 'sync-to-railway.js');
+          if (require('fs').existsSync(syncScript)) {
+            execSync(`node "${syncScript}" --limit=200`, { timeout: 30000, stdio: 'ignore' });
+          }
+        } catch (e) {
+          // 동기화 실패 시 조용히 넘어감
+        }
+      };
+
+      // 시작 후 30초 뒤 첫 동기화, 이후 5분마다
+      setTimeout(_syncToRailway, 30000);
+      setInterval(_syncToRailway, 5 * 60 * 1000);
+    }
+  }
 });

@@ -19,6 +19,7 @@ window.addEventListener('DOMContentLoaded', () => {
   resizeRendererToSidebar();
   initClaudeStatusBadge();     // Claude 트래킹 배지 초기화
   _loadPersonalStats();        // 개인 학습 통계 초기화
+  _initTrackerStatusBadge();   // 트래커 연결 상태 배지
 
   // ── 뷰 모드 복원 ──────────────────────────────────────────────────────────
   setTimeout(() => {
@@ -2004,6 +2005,63 @@ function _updateTrackingBadge(tracking, running) {
 }
 
 /** 페이지 로드 시 Claude 상태 배지 초기화 */
+// ── 트래커 연결 상태 배지 ─────────────────────────────────────────────────
+function _initTrackerStatusBadge() {
+  // 배지 컨테이너 생성
+  let badge = document.getElementById('tracker-status-badge');
+  if (!badge) {
+    badge = document.createElement('div');
+    badge.id = 'tracker-status-badge';
+    badge.style.cssText = `
+      position:fixed; top:12px; right:12px; z-index:600;
+      background:rgba(13,17,23,0.92); border:1px solid #30363d;
+      border-radius:8px; padding:6px 12px;
+      font-family:-apple-system,'Segoe UI',sans-serif;
+      font-size:11px; color:#8b949e;
+      backdrop-filter:blur(12px);
+      display:flex; align-items:center; gap:6px;
+      cursor:default; user-select:none;
+      transition:all .3s ease;
+    `;
+    badge.innerHTML = `<span id="tracker-dot" style="width:7px;height:7px;border-radius:50%;background:#484f58;display:inline-block"></span><span id="tracker-label">확인 중…</span>`;
+    document.body.appendChild(badge);
+  }
+
+  const updateStatus = async () => {
+    const token = typeof _getAuthToken === 'function' ? _getAuthToken() : '';
+    if (!token) {
+      badge.style.display = 'none';
+      return;
+    }
+    badge.style.display = 'flex';
+    try {
+      const r = await fetch('/api/tracker/status', {
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+      });
+      const d = await r.json();
+      const dot   = document.getElementById('tracker-dot');
+      const label = document.getElementById('tracker-label');
+      if (d.online) {
+        dot.style.background = '#3fb950';
+        dot.style.boxShadow  = '0 0 6px #3fb950';
+        label.textContent = `트래커 연결됨${d.hostname ? ' · ' + d.hostname : ''}`;
+        badge.style.borderColor = '#23893680';
+      } else {
+        dot.style.background = '#f85149';
+        dot.style.boxShadow  = 'none';
+        label.textContent = '트래커 미연결';
+        badge.style.borderColor = '#f8514950';
+      }
+    } catch {
+      badge.style.display = 'none';
+    }
+  };
+
+  // 첫 체크: 2초 후 (로그인 상태 복원 이후), 이후 60초마다
+  setTimeout(updateStatus, 2000);
+  setInterval(updateStatus, 60000);
+}
+
 async function initClaudeStatusBadge() {
   try {
     const r    = await fetch('/api/setup/claude-status');
@@ -2634,20 +2692,36 @@ function drawLabels() {
 
     _lctx.globalAlpha = globalAlpha;
 
+    // ── 선택 글로우 효과 (강한 시각적 피드백) ─────────────────────────────
+    if (isSelected) {
+      _lctx.save();
+      const pulse = 0.6 + 0.4 * Math.sin(Date.now() / 300);
+      _lctx.shadowColor = hex;
+      _lctx.shadowBlur  = 16 + pulse * 8;
+      _lctx.strokeStyle = hex;
+      _lctx.lineWidth   = 3;
+      _lctx.globalAlpha = globalAlpha * (0.7 + pulse * 0.3);
+      roundRect(_lctx, lx - 3, ly - 3, pw + 6, ph + 6, (ph + 6) / 2);
+      _lctx.stroke();
+      _lctx.shadowBlur = 0;
+      _lctx.restore();
+      _lctx.globalAlpha = globalAlpha;
+    }
+
     // ── 배경 pill ────────────────────────────────────────────────────────
     const bgAlpha = isSelected ? 0.97 : isHovered ? 0.93 : lod === 0 ? 0.88 : 0.78;
-    _lctx.fillStyle = `rgba(6,10,16,${bgAlpha})`;
+    _lctx.fillStyle = isSelected ? `rgba(31,111,235,0.15)` : `rgba(6,10,16,${bgAlpha})`;
     roundRect(_lctx, lx, ly, pw, ph, ph / 2);
     _lctx.fill();
 
     // ── 테두리 ────────────────────────────────────────────────────────────
-    _lctx.strokeStyle = hex;
+    _lctx.strokeStyle = isSelected ? '#58a6ff' : hex;
     _lctx.lineWidth   = isSelected ? 2.5 : isHovered ? 2 : glow > 0.1 ? 1.8 : lod === 0 ? 1.5 : 1;
     roundRect(_lctx, lx, ly, pw, ph, ph / 2);
     _lctx.stroke();
 
     // ── 텍스트 ────────────────────────────────────────────────────────────
-    _lctx.fillStyle = isSelected ? '#ffffff' : lod === 0 ? '#f0f6fc' : '#cdd9e5';
+    _lctx.fillStyle = isSelected ? '#ffffff' : isHovered ? '#f0f6fc' : lod === 0 ? '#f0f6fc' : '#cdd9e5';
     _lctx.fillText(text, sc.x, ly + ph * 0.68);
 
     // ── 서브 키워드 (LOD0,1만) — 도움이 되는 단어만 표시 ─────────────────
