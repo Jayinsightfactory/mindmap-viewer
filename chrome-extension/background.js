@@ -1,16 +1,16 @@
 /**
- * Orbit Chrome Extension — background.js (v2)
+ * Orbit Chrome Extension — background.js (v3 — Hybrid Cloud)
  * ─────────────────────────────────────────────────────────────────────────────
  * 역할:
  *   1. content-ai.js에서 AI 대화 수신 → chrome.storage.local 저장
- *   2. 로컬 Orbit 서버(localhost:4747)로 전달 (원문 포함)
+ *   2. 설정된 서버(localhost 또는 클라우드)로 전달
  *   3. 30분마다 미전송 데이터 재시도
  *   4. 탭 방문 시간 추적 (기존 기능 유지)
  *
- * 프라이버시 원칙:
- *   - 원문(messages)은 로컬에만 저장 (chrome.storage + localhost)
- *   - Railway 서버에는 원문 절대 전송 안 함
- *   - shared=true 설정 시에도 요약/인사이트만 전송
+ * 서버 설정:
+ *   - orbit_server_url: 서버 URL (기본 http://localhost:4747)
+ *   - orbit_token: 클라우드 서버 인증 토큰
+ *   - 클라우드 전송 시 fromRemote: true 추가 (서버 재포워딩 방지)
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
