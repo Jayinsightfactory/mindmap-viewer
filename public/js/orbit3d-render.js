@@ -2145,6 +2145,15 @@ function showOnboardingSkipWarning() {
 function confirmOnboardingDone() {
   localStorage.setItem('orbit_onboarding_done', '1');
   dismissOnboarding(false);
+  // 서버에 트래커 핑 전송 (로그인 상태면 자동 등록)
+  const token = _getAuthToken();
+  if (token) {
+    fetch('/api/tracker/ping', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ hostname: navigator.userAgent.slice(0, 50), eventCount: 1 }),
+    }).catch(() => {});
+  }
   // 트래커 배지 새로고침
   if (typeof _initTrackerStatusBadge === 'function') _initTrackerStatusBadge();
 }

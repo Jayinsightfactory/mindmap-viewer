@@ -155,9 +155,9 @@ if (Test-Path "$ORBIT\\bin\\sync-to-railway.js") {
     node "$ORBIT\\bin\\sync-to-railway.js" --limit=500 2>$null
 }
 
-# Railway 서버에 설치 완료 핑 전송
+# Railway 서버에 설치 완료 핑 전송 (userId 제거 — 서버가 토큰에서 추출)
 try {
-    $pingBody = @{ userId = $orbitToken; hostname = $env:COMPUTERNAME; eventCount = 1 } | ConvertTo-Json -Compress
+    $pingBody = @{ hostname = $env:COMPUTERNAME; eventCount = 1 } | ConvertTo-Json -Compress
     $pingHeaders = @{ "Content-Type" = "application/json" }
     if ($orbitToken) { $pingHeaders["Authorization"] = "Bearer $orbitToken" }
     Invoke-RestMethod -Uri "${serverUrl}/api/tracker/ping" -Method POST -Body $pingBody -Headers $pingHeaders -TimeoutSec 5 -ErrorAction SilentlyContinue | Out-Null
