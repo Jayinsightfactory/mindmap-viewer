@@ -594,6 +594,21 @@ app.post('/api/hook', (req, res) => {
     // Ollama 실시간 분석 (이벤트 큐에 추가)
     for (const ev of events) ollamaAnalyzer.addEvent(ev);
 
+    // ── 트래커 핑 자동 갱신 (hook 이벤트 수신 → 온라인 표시) ──────────────
+    if (hookUserId && hookUserId !== 'local') {
+      try {
+        const authDb = require('./src/auth').getDb();
+        if (authDb) {
+          authDb.prepare(`
+            INSERT INTO tracker_pings (userId, hostname, eventCount, lastSeen)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(userId) DO UPDATE SET eventCount=eventCount+?, lastSeen=?
+          `).run(hookUserId, '', events.length, Date.now(),
+                 events.length, Date.now());
+        }
+      } catch {}
+    }
+
     console.log(`[HOOK] ${events.length}개 이벤트 수신 (채널: #${channelId}, ${memberName})`);
     res.json({ success: true, received: events.length, leaksDetected: leaks.length });
   } catch (e) {

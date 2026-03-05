@@ -2005,21 +2005,23 @@ async function checkOnboardingState() {
   const overlay = document.getElementById('onboarding-overlay');
   if (!overlay) return;
 
-  // 트래커 상태 + 설정 상태 병렬 확인
-  let trackerOnline = false, setupReady = false;
+  // 트래커 상태 + 설정 상태 + Claude 상태 병렬 확인
+  let trackerOnline = false, setupReady = false, hasHookEvents = false;
   try {
     const token = _getAuthToken();
     const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
-    const [tRes, sRes] = await Promise.all([
+    const [tRes, sRes, cRes] = await Promise.all([
       fetch('/api/tracker/status', { headers }).then(r => r.json()).catch(() => ({})),
       fetch('/api/setup/check').then(r => r.json()).catch(() => ({})),
+      fetch('/api/setup/claude-status').then(r => r.json()).catch(() => ({})),
     ]);
-    trackerOnline = !!tRes.online;
-    setupReady    = !!sRes.ready;
+    trackerOnline  = !!tRes.online || (tRes.eventCount > 0);
+    setupReady     = !!sRes.ready;
+    hasHookEvents  = !!cRes.hookRegistered || !!cRes.connected;
   } catch {}
 
   // 설치됨 → 오버레이 없음
-  if (trackerOnline || setupReady) return;
+  if (trackerOnline || setupReady || hasHookEvents) return;
 
   const visited   = localStorage.getItem('orbit_onboarding_visited');
   const skippedAt = parseInt(localStorage.getItem('orbit_onboarding_skipped_at') || '0', 10);

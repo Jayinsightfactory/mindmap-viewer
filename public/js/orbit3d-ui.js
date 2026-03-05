@@ -1278,16 +1278,20 @@ function buildCoreMesh() {
   const coronaMat = new THREE.ShaderMaterial({
     vertexShader: `
       varying vec3 vNormal;
+      varying vec3 vWorldPos;
       void main() {
         vNormal = normalize(normalMatrix * normal);
+        vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
         gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
       }
     `,
     fragmentShader: `
       uniform float uTime;
       varying vec3 vNormal;
+      varying vec3 vWorldPos;
       void main() {
-        float intensity = pow(0.65 - dot(vNormal, vec3(0.0,0.0,1.0)), 3.0);
+        vec3 viewDir = normalize(cameraPosition - vWorldPos);
+        float intensity = pow(0.65 - dot(vNormal, viewDir), 3.0);
         float pulse = 0.8 + 0.2 * sin(uTime * 2.0);
         vec3 col = vec3(1.0, 0.4, 0.05) * intensity * pulse * 2.0;
         gl_FragColor = vec4(col, intensity * 0.7);

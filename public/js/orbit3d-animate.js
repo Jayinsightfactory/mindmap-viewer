@@ -743,6 +743,32 @@ function showPanel(data, obj) {
       <div style="margin-top:8px;font-size:10px;color:#6e7681">🤖 ${cfg.autoRun ? '자동으로 백그라운드 실행되는 에이전트' : '수동 트리거 방식 에이전트'}</div>
     `;
     pv.style.display = 'block';
+
+  } else if (data.type === 'core') {
+    // ── 태양 (Orbit AI 중심) 패널 ────────────────────────────────────────────
+    document.getElementById('ip-dot').style.background  = '#ffd080';
+    document.getElementById('ip-type-text').textContent = '⬡ 중심';
+    document.getElementById('ip-intent').textContent    = 'Orbit AI';
+
+    const stats = typeof getStats === 'function' ? getStats() : {};
+    const sessions = typeof getSessions === 'function' ? getSessions() : [];
+    document.getElementById('ip-kv-list').innerHTML = [
+      ['세션 수',  `${stats.sessionCount || sessions.length || 0}개`],
+      ['이벤트 수', `${stats.eventCount || 0}개`],
+      ['상태',     '⬡ 실행 중'],
+    ].map(([k,v]) => `<div class="ip-kv"><span class="k">${k}</span><span class="v">${v}</span></div>`).join('');
+
+    const pv = document.getElementById('ip-preview');
+    pv.innerHTML = `
+      <div style="text-align:center;padding:16px 0">
+        <div style="font-size:32px;margin-bottom:8px">⬡</div>
+        <div style="font-size:13px;color:#e6edf3;font-weight:600;margin-bottom:4px">Orbit AI 우주 중심</div>
+        <div style="font-size:11px;color:#6e7681;line-height:1.5">
+          모든 작업 세션이 이 중심을 기준으로<br>궤도를 형성합니다.
+        </div>
+      </div>
+    `;
+    pv.style.display = 'block';
   }
 
   // ── 메모 + 즐겨찾기 섹션 (요약 탭 하단) ────────────────────────────────
