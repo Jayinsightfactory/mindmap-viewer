@@ -30,11 +30,6 @@ COPY . .
 # 데이터/스냅샷 디렉토리 준비
 RUN mkdir -p data snapshots && chmod 755 data snapshots
 
-# 비루트 사용자로 실행 (보안)
-RUN addgroup -S orbit && adduser -S orbit -G orbit \
-    && chown -R orbit:orbit /app
-USER orbit
-
 ENV NODE_ENV=production \
     PORT=4747 \
     AUTH_DISABLED=0
