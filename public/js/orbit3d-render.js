@@ -2005,28 +2005,7 @@ async function checkOnboardingState() {
   const overlay = document.getElementById('onboarding-overlay');
   if (!overlay) return;
 
-  // 트래커 상태 + 설정 상태 + Claude 상태 병렬 확인
-  let trackerOnline = false, setupReady = false, hasHookEvents = false;
-  try {
-    const token = _getAuthToken();
-    const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
-    const [tRes, sRes, cRes] = await Promise.all([
-      fetch('/api/tracker/status', { headers }).then(r => r.json()).catch(() => ({})),
-      fetch('/api/setup/check').then(r => r.json()).catch(() => ({})),
-      fetch('/api/setup/claude-status').then(r => r.json()).catch(() => ({})),
-    ]);
-    trackerOnline  = !!tRes.online || (tRes.eventCount > 0);
-    setupReady     = !!sRes.ready;
-    hasHookEvents  = !!cRes.hookRegistered || !!cRes.connected;
-  } catch {}
-
-  // 설치됨 (서버 확인 또는 로컬 완료 표시) → 오버레이 없음
-  if (trackerOnline || setupReady || hasHookEvents) {
-    localStorage.setItem('orbit_onboarding_done', '1');
-    return;
-  }
-
-  // 사용자가 "설치 완료" 눌렀으면 → 오버레이 없음
+  // 설치 완료 표시가 있으면 → 오버레이 없음
   if (localStorage.getItem('orbit_onboarding_done') === '1') return;
 
   const visited   = localStorage.getItem('orbit_onboarding_visited');
