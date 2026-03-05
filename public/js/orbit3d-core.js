@@ -543,32 +543,35 @@ function sessionIntent(events) {
   const msg = events.find(e => e.type === 'user.message');
   const firstMsg = (msg?.data?.contentPreview || msg?.data?.content || msg?.label || '').slice(0,30) || null;
 
-  // 조합: [프로젝트] 첫메시지 or 최다편집파일
-  if (projectName && firstMsg) return `[${projectName}] ${firstMsg}`;
-  if (projectName && topFile)  return `[${projectName}] ${topFile}`;
-  if (projectName)             return projectName;
-  if (firstMsg)                return firstMsg;
-  if (topFile)                 return topFile;
-
-  // ── 브라우저/앱 활동 세션 → 구체적 라벨 생성 ──────────────────────────────
+  // ── 브라우저/앱 활동 세션 → 도메인 라벨 (작업 설명 우선) ─────────────────
   const browseEvs = events.filter(e => e.type === 'browser_activity' || e.type === 'browse' || e.type === 'app_switch');
+  let domainLabel = null;
   if (browseEvs.length > 0) {
-    // 가장 최근 활동의 구체적 라벨 사용
     const latest = browseEvs[browseEvs.length - 1];
     const latentLabel = extractIntent(latest);
     if (latentLabel && latentLabel !== '🌐 브라우저') {
-      // 고유 활동 수 카운트
       const uniqueApps = new Set(browseEvs.map(e => (e.data?.app || e.data?.title || '').slice(0,20)));
       const appCount = uniqueApps.size;
-      return appCount > 1 ? `${latentLabel} (+${appCount - 1}개 작업)` : latentLabel;
+      domainLabel = appCount > 1 ? `${latentLabel} (+${appCount - 1}개 작업)` : latentLabel;
     }
   }
-
-  // 도메인 클러스터 라벨 폴백 (세션 ID 대신 작업 유형 표시)
-  if (sid) {
+  if (!domainLabel && sid) {
     const cls = clusterByIntent(sid, events);
     const best = cls.find(c => c.domain !== 'general') || cls[0];
-    if (best?.label) return best.label;
+    if (best?.label) domainLabel = best.label;
+  }
+
+  // 조합 우선순위: firstMsg → domainLabel → topFile
+  if (projectName && firstMsg)    return `[${projectName}] ${firstMsg}`;
+  if (projectName && domainLabel) return `[${projectName}] ${domainLabel}`;
+  if (projectName && topFile)     return `[${projectName}] ${topFile}`;
+  if (projectName)                return projectName;
+  if (firstMsg)                   return firstMsg;
+  if (domainLabel)                return domainLabel;
+  if (topFile)                    return topFile;
+
+  // 도메인 라벨 폴백
+  if (sid) {
     // 세션명 readable 변환 (UUID가 아닌 경우, 'session' prefix 제거)
     if (!/^[0-9a-f]{8}-/.test(sid) && sid.length <= 30) {
       const parts = sid.split(/[-_]/).filter(s => s && s !== 'session' && s !== 'wf');
@@ -587,14 +590,19 @@ class OrbitCam {
     this.tgt = new THREE.Vector3();
     this.sph = { r:75, θ:0.3, φ:1.1 };
     this._d = false; this._r = false; this._lx=0; this._ly=0;
-    el.addEventListener('mousedown',  e => { this._lx=e.clientX; this._ly=e.clientY; e.button===2?this._r=true:this._d=true; });
+    this._dragging = false; // 드래그 중 플래그 (자동전환 방지)
+    el.addEventListener('mousedown',  e => { this._lx=e.clientX; this._ly=e.clientY; e.button===2?this._r=true:this._d=true; this._dragging=true; });
     el.addEventListener('mousemove',  e => this._move(e));
-    el.addEventListener('mouseup',    () => { this._d=this._r=false; });
+    el.addEventListener('mouseup',    () => { this._d=this._r=false; this._dragging=false; });
     el.addEventListener('wheel', e => {
-      this.sph.r = Math.max(4, Math.min(300, this.sph.r + e.deltaY * 0.08));
+      // 줌 감도 낮춤 (0.08 → 0.04) + 부드러운 줌
+      this.sph.r = Math.max(4, Math.min(300, this.sph.r + e.deltaY * 0.04));
+      // 선택된 노드가 있으면 그 위치 기준 줌
+      if (typeof _selectedHit !== 'undefined' && _selectedHit?.obj?.position) {
+        const sp = _selectedHit.obj.position;
+        this.tgt.set(sp.x, sp.y, sp.z);
+      }
       this._apply();
-      clearTimeout(window._zoomViewTimer);
-      window._zoomViewTimer = setTimeout(_autoSwitchViewByZoom, 180);
     }, {passive:true});
     el.addEventListener('dblclick',   e => this._dbl(e));
     el.addEventListener('contextmenu',e => e.preventDefault());
@@ -604,23 +612,22 @@ class OrbitCam {
     const dx=e.clientX-this._lx, dy=e.clientY-this._ly;
     this._lx=e.clientX; this._ly=e.clientY;
     if (this._d) {
-      this.sph.θ -= dx*.004;
-      this.sph.φ = Math.max(.05, Math.min(Math.PI-.05, this.sph.φ+dy*.004));
+      // 회전 감도 약간 낮춤 (0.004 → 0.003) — 더 정밀한 조작
+      this.sph.θ -= dx*.003;
+      this.sph.φ = Math.max(.05, Math.min(Math.PI-.05, this.sph.φ+dy*.003));
     } else if (this._r) {
+      // 팬 감도 낮춤 (0.05 → 0.03)
       const fwd = new THREE.Vector3(); this.cam.getWorldDirection(fwd);
       const right = new THREE.Vector3().crossVectors(fwd, this.cam.up).normalize();
-      this.tgt.addScaledVector(right, -dx*.05).addScaledVector(this.cam.up, dy*.05);
+      this.tgt.addScaledVector(right, -dx*.03).addScaledVector(this.cam.up, dy*.03);
     }
     this._apply();
   }
   _dbl(e) {
-    const rect=renderer.domElement.getBoundingClientRect();
-    const mx=((e.clientX-rect.left)/rect.width)*2-1;
-    const my=-((e.clientY-rect.top)/rect.height)*2+1;
-    _raycaster.setFromCamera({x:mx,y:my},this.cam);
-    const hits=_raycaster.intersectObjects([...planetMeshes,...satelliteMeshes]);
-    if (hits[0]) {
-      this.tgt.copy(hits[0].object.userData.orbitCenter||hits[0].object.position);
+    // 더블클릭: hitTest 기반으로 선택 노드에 줌인
+    const hit = hitTest(e.clientX, e.clientY);
+    if (hit && hit.obj?.position) {
+      this.tgt.copy(hit.obj.position);
       this.sph.r = 40; this._apply();
     }
   }
@@ -682,36 +689,16 @@ window.setFilter = setFilter;
 function toggleOrbitAnim() {
   orbitAnimOn = !orbitAnimOn;
   const oldBtn = document.getElementById('orbit-toggle-btn');
-  if (oldBtn) oldBtn.textContent = orbitAnimOn ? '⏸ 공전 중지' : '▶ 공전 시작';
+  if (oldBtn) oldBtn.textContent = orbitAnimOn ? '⏸ 애니 중지' : '▶ 애니 시작';
   const upBtn = document.getElementById('up-orbit-btn');
-  if (upBtn) upBtn.textContent = orbitAnimOn ? '⏸ 공전 중지' : '▶ 공전 시작';
+  if (upBtn) upBtn.textContent = orbitAnimOn ? '⏸ 애니 중지' : '▶ 애니 시작';
 }
 window.toggleOrbitAnim = toggleOrbitAnim;
 
 // ─── 휠 줌 기반 뷰 자동 전환 ─────────────────────────────────────────────────
-// 주의: 샘플 데이터 직접 호출 금지 → 반드시 loadTeamDemo/loadCompanyDemo 경유
+// 비활성화: 자동 전환이 마우스 조작 중 예기치 않은 점프를 유발함
+// 뷰 전환은 UI 버튼(팀뷰/전사뷰)으로만 수동 전환
 function _autoSwitchViewByZoom() {
-  const r = controls.sph.r;
-  if (!_teamMode && !_companyMode && !_parallelMode) {
-    // 개인 모드: 멀리 줌아웃 → 팀뷰로 (로그인 필요)
-    if (r > 90) {
-      const savedR = r;
-      loadTeamDemo().then(() => { controls.sph.r = savedR; controls._apply(); }).catch(() => {});
-    }
-  } else if (_teamMode && !_companyMode) {
-    // 팀 모드: 더 멀리 → 전사뷰 (로그인 필요)
-    if (r > 160) {
-      const savedR = r;
-      loadCompanyDemo().then(() => { controls.sph.r = savedR; controls._apply(); }).catch(() => {});
-    } else if (r < 20 && _focusedMember) {
-      drillDownToMember(_focusedMember);
-    }
-  } else if (_companyMode) {
-    // 전사 모드: 줌인 → 팀뷰로 (로그인 필요)
-    if (r < 110) {
-      const savedR = r;
-      loadTeamDemo().then(() => { controls.sph.r = savedR; controls._apply(); }).catch(() => {});
-    }
-  }
+  // 의도적으로 비활성화 — 사용자가 직접 뷰 버튼으로 전환
 }
 

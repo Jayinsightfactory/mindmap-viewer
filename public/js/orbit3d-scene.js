@@ -110,20 +110,29 @@ function buildPlanetSystem(nodeList) {
     git:0.40, research:0.44, chat:0.48, general:0.52,
   };
 
+  // ── 방사형 트리: 프로젝트별 가지 방향 계산 ──────────────────────────────
+  const projList = [...new Set(planets.map(p => p.projectName))];
+  const projAngleStep = (Math.PI * 2) / Math.max(projList.length, 1);
+
   planets.forEach((pl, pi) => {
     const { clusterId, sessionId: sid, domain, label, events } = pl;
     const rawEvents = events;
 
-    // ── 행성 위치 (황금각 균등 배치, 압축) ─────────────────────────────────
-    const BASE_R   = N <= 3 ? 16 : N <= 6 ? 20 : N <= 10 ? 24 : N <= 16 ? 28 : 32;
-    const PLANET_R = BASE_R + (pi % 3) * 2.5;
-    const golden   = Math.PI * (3 - Math.sqrt(5));
-    const θ_planet = pi * golden;
-    const φ_planet = Math.acos(1 - 2*(pi+0.5)/Math.max(N,1));
+    // ── 행성 위치 — 방사형 트리 가지 배치 ─────────────────────────────────
+    const projIdx = projList.indexOf(pl.projectName);
+    const branchAngle = projIdx * projAngleStep;
+    // 같은 프로젝트 내 클러스터는 부채꼴로 약간 벌림
+    const siblings = planets.filter(p => p.projectName === pl.projectName);
+    const sibIdx = siblings.indexOf(pl);
+    const spread = Math.PI * 0.15;
+    const subAngle = branchAngle + (sibIdx - (siblings.length - 1) / 2) * spread / Math.max(siblings.length - 1, 1);
 
-    const px = PLANET_R * Math.sin(φ_planet) * Math.cos(θ_planet);
-    const py = PLANET_R * Math.cos(φ_planet) * 0.32;
-    const pz = PLANET_R * Math.sin(φ_planet) * Math.sin(θ_planet);
+    const BRANCH_R = 35 + sibIdx * 8;
+    const yOffset = (projIdx % 3 - 1) * 8;
+
+    const px = BRANCH_R * Math.cos(subAngle);
+    const py = yOffset + (sibIdx % 2) * 3;
+    const pz = BRANCH_R * Math.sin(subAngle);
     const planetPos = new THREE.Vector3(px, py, pz);
 
     // ── 행성 의도 & 색상 ─────────────────────────────────────────────────
@@ -158,10 +167,11 @@ function buildPlanetSystem(nodeList) {
     planet.userData.hue         = hue;
     planet.userData.hueHex      = hueHex;
     planet.userData.eventCount  = rawEvents.length;
+    planet.userData._treeBasePos = planetPos.clone();
     planet.userData.orbitSpeed  = 0.04 + pi * 0.006;
-    planet.userData.orbitR      = PLANET_R;
-    planet.userData.orbitθ      = θ_planet;
-    planet.userData.orbitφ      = φ_planet;
+    planet.userData.orbitR      = BRANCH_R;
+    planet.userData.orbitθ      = subAngle;
+    planet.userData.orbitφ      = 0;
     planet.userData.orbitCenter  = new THREE.Vector3(0,0,0);
     planet.userData.projectName  = pl.projectName || '기타';
     // LOD0 줌인 세부 정보용
@@ -171,36 +181,41 @@ function buildPlanetSystem(nodeList) {
     scene.add(planet);
     planetMeshes.push(planet);
 
-    // ── 중심→행성 연결선 ──────────────────────────────────────────────────
+    // ── 중심→행성 곡선 브랜치 연결선 ──────────────────────────────────────
     {
-      const lg = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), planetPos.clone()]);
-      const lm = new THREE.LineBasicMaterial({ color:0x1c2433, transparent:true, opacity:0.35 });
-      connections.push(new THREE.Line(lg, lm));
-      scene.add(connections[connections.length-1]);
-    }
-
-    // ── 궤도 링 ───────────────────────────────────────────────────────────
-    {
-      const ring = new THREE.RingGeometry(PLANET_R - 0.08, PLANET_R + 0.08, 96);
-      const rm   = new THREE.MeshBasicMaterial({ color:0x1c2733, transparent:true, opacity:0.18, side:THREE.DoubleSide });
-      const rm2  = new THREE.Mesh(ring, rm);
-      rm2.rotation.x = Math.PI/2 - φ_planet * 0.25;
-      orbitRings.push(rm2); scene.add(rm2);
+      const mid = planetPos.clone().multiplyScalar(0.5);
+      mid.y += 5; // 약간 위로 꺾여서 자연스러운 가지 느낌
+      const curve = new THREE.QuadraticBezierCurve3(
+        new THREE.Vector3(0, 0, 0), mid, planetPos.clone()
+      );
+      const pts = curve.getPoints(20);
+      const lg = new THREE.BufferGeometry().setFromPoints(pts);
+      const lm = new THREE.LineBasicMaterial({
+        color: new THREE.Color(hueHex), transparent: true, opacity: 0.6, linewidth: 2
+      });
+      const branchLine = new THREE.Line(lg, lm);
+      branchLine.userData.isBranch = true;
+      branchLine.userData.planetObj = planet;
+      connections.push(branchLine);
+      scene.add(branchLine);
     }
 
     // ── 파일 위성 집계 (텍스트 태그로 표시) ──────────────────────────────
     const fileSats   = buildFileSatellites(rawEvents);
     const satObjects = [];
-    const SAT_R_BASE = 9;
+
+    // 부모→중심 방향의 반대(바깥)로 뻗어나감
+    const parentDir = new THREE.Vector3(px, 0, pz).normalize();
+    const perpDir   = new THREE.Vector3(-parentDir.z, 0, parentDir.x); // 수직방향
 
     fileSats.forEach((fs, fi) => {
-      const satθ = (fi / Math.max(fileSats.length,1)) * Math.PI * 2;
-      const satφ = (fi % 3) * (Math.PI / 5) - Math.PI / 5;
-      const SAT_R = SAT_R_BASE + Math.floor(fi / 6) * 4;
+      const SAT_DIST = 8 + fi * 3;
+      const lateralOffset = (fi - (fileSats.length - 1) / 2) * 4;
+      const yOff = (fi % 3 - 1) * 2;
 
-      const sx = planetPos.x + SAT_R * Math.cos(satθ) * Math.cos(satφ);
-      const sy = planetPos.y + SAT_R * Math.sin(satφ);
-      const sz = planetPos.z + SAT_R * Math.sin(satθ) * Math.cos(satφ);
+      const sx = px + parentDir.x * SAT_DIST + perpDir.x * lateralOffset;
+      const sy = py + yOff;
+      const sz = pz + parentDir.z * SAT_DIST + perpDir.z * lateralOffset;
 
       const sat = new THREE.Object3D();
       sat.position.set(sx, sy, sz);
@@ -212,10 +227,11 @@ function buildPlanetSystem(nodeList) {
       sat.userData.count      = fs.count;
       sat.userData.isWrite    = fs.isWrite;
       sat.userData.planetHex  = hueHex;   // ← 부모 행성 색 상속
-      sat.userData.orbitR     = SAT_R;
-      sat.userData.orbitθ0    = satθ;
-      sat.userData.orbitφ0    = satφ;
-      sat.userData.orbitSpeed = 0.12 + Math.random() * 0.08;
+      sat.userData._treeBasePos = new THREE.Vector3(sx, sy, sz);
+      sat.userData.orbitR     = SAT_DIST;
+      sat.userData.orbitθ0    = 0;
+      sat.userData.orbitφ0    = 0;
+      sat.userData.orbitSpeed = 0.12;
       sat.userData.orbitCenter= planetPos;
       scene.add(sat);
       satelliteMeshes.push(sat);

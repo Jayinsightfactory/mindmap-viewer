@@ -1,36 +1,28 @@
 // ══════════════════════════════════════════════════════════════════════════════
 // Orbit AI — Animation, interaction, drilldown panels
 // ══════════════════════════════════════════════════════════════════════════════
-// ─── 애니메이션 — 행성 공전 + 파일위성 공전 ─────────────────────────────────
+// ─── 애니메이션 — 방사형 트리 미세 부유 (공전 없음) ─────────────────────────
 function updateOrbits(dt) {
   if (!orbitAnimOn) return;
-  _clock += dt * 0.00025;
+  _clock += dt * 0.0003;
 
-  // 행성 공전 (중심별 주위)
-  planetMeshes.forEach(p => {
-    const { orbitR, orbitφ, orbitSpeed } = p.userData;
-    const θ = p.userData.orbitθ + _clock * orbitSpeed;
-    const px = orbitR * Math.sin(orbitφ) * Math.cos(θ);
-    const py = orbitR * Math.cos(orbitφ) * 0.32;
-    const pz = orbitR * Math.sin(orbitφ) * Math.sin(θ);
-    p.position.set(px, py, pz);
-    p.userData.orbitCenter.set(0,0,0);
+  // 행성: 제자리에서 미세 부유 (공전 아님)
+  planetMeshes.forEach((p, i) => {
+    const basePos = p.userData._treeBasePos;
+    if (!basePos) return;
+    const breathe = Math.sin(_clock * 0.8 + i * 1.3) * 0.5;
+    p.position.set(basePos.x, basePos.y + breathe, basePos.z);
   });
 
-  // 파일 위성 공전 (각 행성 주위)
-  satelliteMeshes.forEach(s => {
-    const planet = (_sessionMap[s.userData.clusterId] || _sessionMap[s.userData.sessionId])?.planet;
-    if (!planet) return;
-    const { orbitR, orbitθ0, orbitφ0, orbitSpeed } = s.userData;
-    const θ = orbitθ0 + _clock * orbitSpeed * 3;
-    const sx = planet.position.x + orbitR * Math.cos(θ) * Math.cos(orbitφ0);
-    const sy = planet.position.y + orbitR * Math.sin(orbitφ0);
-    const sz = planet.position.z + orbitR * Math.sin(θ) * Math.cos(orbitφ0);
-    s.position.set(sx, sy, sz);
-    s.userData.orbitCenter = planet.position;
+  // 위성: 부모 기준 미세 부유
+  satelliteMeshes.forEach((s, i) => {
+    const basePos = s.userData._treeBasePos;
+    if (!basePos) return;
+    const breathe = Math.sin(_clock * 1.2 + i * 0.9) * 0.3;
+    s.position.set(basePos.x, basePos.y + breathe, basePos.z);
   });
 
-  // 연결선 업데이트 (파일위성 → 행성)
+  // 연결선 업데이트 (위성→행성)
   connections.forEach(line => {
     if (!line.userData.satObj) return;
     const s = line.userData.satObj;
@@ -199,8 +191,8 @@ function updateRaycast() {
       // 편집 아이콘: 레이블 우측에 표시 (편집 중이 아닐 때)
       if (!_editingNode && (data.label || data.intent)) {
         _editIconEl.style.display = 'block';
-        _editIconEl.style.left = (hit.cx + hit.r - 2) + 'px';
-        _editIconEl.style.top  = (hit.cy - 11) + 'px';
+        _editIconEl.style.left = (hit.cx - 11) + 'px';
+        _editIconEl.style.top  = (hit.cy - hit.r - 26) + 'px';
       }
     }
   } else {
@@ -226,8 +218,43 @@ function switchTab(name, btn) {
   document.getElementById(`ip-pane-${name}`).classList.add('active');
   if (name === 'history' && _currentPanelData) renderHistory(_currentPanelData);
   if (name === 'files'   && _currentPanelData) renderFiles(_currentPanelData);
+  if (name === 'guides') renderGuideHub();
 }
 window.switchTab = switchTab;
+
+// ─── 가이드 허브 탭 렌더 ──────────────────────────────────────────────────────
+async function renderGuideHub() {
+  const el = document.getElementById('ip-guide-list');
+  if (!el) return;
+  el.innerHTML = '<div style="color:#6e7681;font-size:12px;text-align:center;padding:12px 0">로딩 중...</div>';
+
+  try {
+    const r = await fetch('/api/personal/guides');
+    const data = await r.json();
+    if (!data || (!data.learning?.length && !data.patterns?.length && !data.productivity?.length)) {
+      el.innerHTML = '<div style="color:#6e7681;font-size:12px;text-align:center;padding:20px 0">아직 가이드가 없습니다.<br>학습 모드를 켜고 강의를 시청해보세요.</div>';
+      return;
+    }
+
+    let html = '';
+    const renderSection = (icon, title, items) => {
+      if (!items?.length) return '';
+      let s = `<div style="margin-bottom:12px"><div style="font-size:12px;font-weight:600;color:#c9d1d9;margin-bottom:6px">${icon} ${title}</div>`;
+      for (const item of items) {
+        s += `<div style="background:rgba(110,118,129,0.08);border-radius:6px;padding:8px 10px;margin-bottom:4px;font-size:11px;color:#8b949e;line-height:1.5">${item.description || item.title || ''}</div>`;
+      }
+      s += '</div>';
+      return s;
+    };
+
+    html += renderSection('🎓', '학습 인사이트', data.learning);
+    html += renderSection('🔄', '작업 패턴', data.patterns);
+    html += renderSection('⚡', '생산성 제안', data.productivity);
+    el.innerHTML = html;
+  } catch {
+    el.innerHTML = '<div style="color:#6e7681;font-size:12px;text-align:center;padding:12px 0">가이드를 불러올 수 없습니다</div>';
+  }
+}
 
 // ─── 히스토리 탭 렌더 ─────────────────────────────────────────────────────────
 function renderHistory(data) {

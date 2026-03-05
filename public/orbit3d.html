@@ -4,6 +4,10 @@
   <meta charset="UTF-8">
   <title>Orbit AI — 작업 우주</title>
   <link rel="stylesheet" href="css/orbit3d.css">
+  <link rel="manifest" href="/manifest.json">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#58a6ff">
 </head>
 <body>
 
@@ -662,6 +666,7 @@
     <button class="ip-tab active" onclick="switchTab('summary',this)">📋 요약</button>
     <button class="ip-tab" onclick="switchTab('history',this)">🕐 히스토리</button>
     <button class="ip-tab" onclick="switchTab('files',this)">📁 파일</button>
+    <button class="ip-tab" onclick="switchTab('guides',this)">💡 가이드</button>
   </div>
   <!-- 탭 콘텐츠 -->
   <div class="ip-body">
@@ -677,6 +682,12 @@
     <!-- 파일 탭 -->
     <div class="ip-tab-pane" id="ip-pane-files">
       <div class="ip-file-list" id="ip-file-list"></div>
+    </div>
+    <!-- 가이드 탭 -->
+    <div class="ip-tab-pane" id="ip-pane-guides">
+      <div id="ip-guide-list" style="padding:8px 0">
+        <div style="color:#6e7681;font-size:12px;text-align:center;padding:20px 0">가이드 로딩 중...</div>
+      </div>
     </div>
   </div>
 </div>

@@ -1948,7 +1948,7 @@ function _initTrackerStatusBadge() {
     badge = document.createElement('div');
     badge.id = 'tracker-status-badge';
     badge.style.cssText = `
-      position:fixed; top:44px; right:14px; z-index:8901;
+      position:fixed; top:44px; right:14px; z-index:90;
       background:rgba(13,17,23,0.92); border:1px solid #30363d;
       border-radius:8px; padding:6px 12px;
       font-family:-apple-system,'Segoe UI',sans-serif;
@@ -1958,16 +1958,16 @@ function _initTrackerStatusBadge() {
       cursor:default; user-select:none;
       transition:all .3s ease;
     `;
-    badge.innerHTML = `<span id="tracker-dot" style="width:7px;height:7px;border-radius:50%;background:#484f58;display:inline-block"></span><span id="tracker-label">확인 중…</span>`;
+    badge.innerHTML = `<span id="tracker-dot" style="width:7px;height:7px;border-radius:50%;background:#484f58;display:inline-block"></span><span id="tracker-label">확인 중…</span><button id="tracker-close-btn" style="background:none;border:none;color:#6e7681;font-size:13px;cursor:pointer;padding:0 0 0 4px;line-height:1" title="닫기">✕</button>`;
+    badge.querySelector('#tracker-close-btn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      badge.style.display = 'none';
+    });
     document.body.appendChild(badge);
   }
 
   const updateStatus = async () => {
     const token = typeof _getAuthToken === 'function' ? _getAuthToken() : '';
-    if (!token) {
-      badge.style.display = 'none';
-      return;
-    }
     badge.style.display = 'flex';
     try {
       const r = await fetch('/api/tracker/status', {
@@ -2731,7 +2731,7 @@ function drawLabels() {
       _hitAreas.push({
         cx: sunSc.x, cy: sunSc.y, r: sunR,
         obj: _coreMeshRef,
-        data: { type: 'core', intent: 'Orbit AI 중심', label: 'Orbit AI' },
+        data: { type: 'core', intent: _coreMeshRef.userData.intent || 'Orbit AI 중심', label: _coreMeshRef.userData.intent || 'Orbit AI', nodeKey: '__orbit_core__' },
       });
     }
   }
@@ -2754,27 +2754,42 @@ function drawLabels() {
     const isSelected = _selectedHit?.obj === p;
     const glow       = glowIntensity(p.userData.clusterId);
 
-    // ── LOD별 폰트 크기 ───────────────────────────────────────────────────
-    // LOD0: 크게(18~36) / LOD1: 보통(14~26) / LOD2: 작게(11~18) / LOD3: 아주작게(9~13)
-    const [minPx, maxPx, scaleMul] = lod === 0 ? [18,36,22] : lod === 1 ? [14,26,18] : lod === 2 ? [11,18,14] : [9,13,11];
-    const basePx = Math.max(minPx, Math.min(maxPx, scale * scaleMul));
-    const pxSize = isSelected ? basePx * 1.12 : basePx;
+    // ── 폰트 크기 — 선택 노드 기준 차등 ──────────────────────────────────
+    const isFocused = _selectedHit?.obj === p;
+    const isChildOfFocused = _selectedHit?.obj?.userData?.clusterId
+      && p.userData.clusterId === _selectedHit.obj.userData.clusterId;
 
-    // ── 텍스트 — LOD별 축약 ───────────────────────────────────────────────
-    let fullText = p.userData.intent || '';
-    let text = fullText;
-    if (lod >= 2) {
-      // 줌아웃: 이모지+첫 단어만 (최대 10자)
-      text = fullText.length > 12 ? fullText.slice(0, 10) + '…' : fullText;
+    let pxSize;
+    if (isFocused) {
+      pxSize = 22;
+    } else if (isChildOfFocused) {
+      pxSize = 16;
+    } else {
+      pxSize = Math.max(9, Math.min(14, scale * 12));
     }
+    if (isSelected) pxSize *= 1.12;
+
+    // ── 텍스트 — 짧은 주제 키워드만 표시 ────────────────────────────────
+    const DOMAIN_SHORT = {
+      auth:'인증', api:'API', data:'데이터', ui:'UI', test:'테스트',
+      server:'서버', infra:'인프라', fix:'수정', git:'Git', chat:'대화',
+      general:'일반', docs:'문서', design:'디자인', research:'조사', purpose:''
+    };
+    let fullText = p.userData.intent || '';
+    let text = DOMAIN_SHORT[p.userData.domain] || '';
+    const proj = p.userData.projectName;
+    if (proj && proj !== '기타' && proj.length <= 10) {
+      text = text ? `${text} · ${proj}` : proj;
+    }
+    if (!text) text = (p.userData.intent || '').slice(0, 8);
     if (!text) return;
 
     _lctx.font = `700 ${pxSize}px -apple-system,'Segoe UI',sans-serif`;
     _lctx.textAlign = 'center';
 
     const tw = _lctx.measureText(text).width;
-    const pw = tw + (lod <= 1 ? 28 : 18);
-    const ph = pxSize + (lod <= 1 ? 14 : 8);
+    const pw = tw + 22;
+    const ph = pxSize + 10;
     const lx = sc.x - pw / 2;
     const ly = sc.y - ph / 2;
 
@@ -2816,20 +2831,42 @@ function drawLabels() {
       _lctx.globalAlpha = globalAlpha;
     }
 
+    // ── 중요 항목 주목 이펙트 (attention) ──────────────────────────────────
+    const isImportant = p.userData._attention > 0;
+    if (isImportant) {
+      const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 200);
+      _lctx.save();
+      _lctx.shadowColor = '#ffd700';
+      _lctx.shadowBlur = 20 + pulse * 15;
+      _lctx.strokeStyle = '#ffd700';
+      _lctx.lineWidth = 3 + pulse * 2;
+      roundRect(_lctx, lx - 4, ly - 4, pw + 8, ph + 8, (ph + 8) / 2);
+      _lctx.stroke();
+      _lctx.restore();
+      // "!" 배지
+      _lctx.save();
+      _lctx.font = 'bold 12px sans-serif';
+      _lctx.fillStyle = '#ffd700';
+      _lctx.textAlign = 'left';
+      _lctx.fillText('!', lx + pw + 6, ly + 10);
+      _lctx.restore();
+      _lctx.textAlign = 'center';
+    }
+
     // ── 배경 pill ────────────────────────────────────────────────────────
-    const bgAlpha = isSelected ? 0.97 : isHovered ? 0.93 : lod === 0 ? 0.88 : 0.78;
+    const bgAlpha = isSelected ? 0.97 : isHovered ? 0.93 : 0.78;
     _lctx.fillStyle = isSelected ? `rgba(31,111,235,0.15)` : `rgba(6,10,16,${bgAlpha})`;
     roundRect(_lctx, lx, ly, pw, ph, ph / 2);
     _lctx.fill();
 
     // ── 테두리 ────────────────────────────────────────────────────────────
     _lctx.strokeStyle = isSelected ? '#58a6ff' : hex;
-    _lctx.lineWidth   = isSelected ? 2.5 : isHovered ? 2 : glow > 0.1 ? 1.8 : lod === 0 ? 1.5 : 1;
+    _lctx.lineWidth   = isSelected ? 2.5 : isHovered ? 2 : glow > 0.1 ? 1.8 : 1;
     roundRect(_lctx, lx, ly, pw, ph, ph / 2);
     _lctx.stroke();
 
     // ── 텍스트 ────────────────────────────────────────────────────────────
-    _lctx.fillStyle = isSelected ? '#ffffff' : isHovered ? '#f0f6fc' : lod === 0 ? '#f0f6fc' : '#cdd9e5';
+    _lctx.fillStyle = isSelected ? '#ffffff' : isHovered ? '#f0f6fc' : '#cdd9e5';
     _lctx.fillText(text, sc.x, ly + ph * 0.68);
 
     // ── 즐겨찾기 ★ 표시 ──────────────────────────────────────────────────
@@ -2845,27 +2882,13 @@ function drawLabels() {
       _lctx.textAlign = 'center';
     }
 
-    // ── 서브 키워드 (LOD0,1만) — 도움이 되는 단어만 표시 ─────────────────
-    if (lod <= 1 && evCnt > 0 && pxSize >= 13) {
+    // ── 서브 정보 — 이벤트 수 (줌인 시만) ──────────────────────────────────
+    if (evCnt > 0 && pxSize >= 13) {
       const sub = Math.max(9, pxSize * 0.5);
-      _lctx.font      = `500 ${sub}px -apple-system,sans-serif`;
-
-      // 키워드 추출: 프로젝트명, 작업수, 도메인
-      const keywords = [];
-      const proj = p.userData.projectName;
-      if (proj && proj !== '기타') keywords.push(proj);
-      keywords.push(`${evCnt}개`);
-      const domain = p.userData.domain;
-      const DOMAIN_KR = { auth:'인증', api:'API', data:'데이터', ui:'UI', test:'테스트',
-        server:'서버', infra:'인프라', fix:'수정', git:'Git', chat:'대화', general:'일반',
-        docs:'문서', design:'디자인', research:'조사' };
-      if (domain && DOMAIN_KR[domain]) keywords.push(DOMAIN_KR[domain]);
-
-      // 키워드를 작은 태그들로 나열
+      _lctx.font = `500 ${sub}px -apple-system,sans-serif`;
       const tagY = ly + ph + sub + 1;
-      const tagText = keywords.join(' · ');
       _lctx.fillStyle = hex + '88';
-      _lctx.fillText(tagText.slice(0, 30), sc.x, tagY);
+      _lctx.fillText(`${evCnt}개 작업`, sc.x, tagY);
     }
 
     // 히트 영역
@@ -3123,6 +3146,141 @@ function updateZoomSummary() {
 
   el.classList.add('visible');
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ⬡ 학습 모드 위젯 — Web Speech API 음성 인식
+// ═══════════════════════════════════════════════════════════════════════════════
+(function initLearningModeWidget() {
+  let _recognition = null;
+  let _isListening = false;
+  let _textBuffer = '';
+  let _startTime = 0;
+  let _timerInterval = null;
+  let _retryCount = 0;
+  const MAX_RETRIES = 3;
+  const SEND_INTERVAL = 30000; // 30초마다 전송
+  let _sendInterval = null;
+
+  // 위젯 버튼 생성
+  const btn = document.createElement('button');
+  btn.id = 'learning-mode-btn';
+  btn.style.cssText = `
+    position:fixed; bottom:20px; left:20px; z-index:95;
+    background:rgba(13,17,23,0.92); border:1px solid #30363d;
+    border-radius:10px; padding:8px 14px;
+    font-family:-apple-system,'Segoe UI',sans-serif;
+    font-size:12px; color:#8b949e;
+    backdrop-filter:blur(12px);
+    cursor:pointer; user-select:none;
+    transition:all .3s ease;
+    display:flex; align-items:center; gap:6px;
+  `;
+  btn.innerHTML = '<span style="font-size:14px">🎧</span><span id="lm-label">학습 모드</span>';
+  document.body.appendChild(btn);
+
+  btn.addEventListener('click', () => {
+    if (_isListening) stopListening();
+    else startListening();
+  });
+
+  function startListening() {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert('이 브라우저는 음성 인식을 지원하지 않습니다. Chrome 또는 Edge를 사용하세요.');
+      return;
+    }
+    _recognition = new SpeechRecognition();
+    _recognition.continuous = true;
+    _recognition.interimResults = false;
+    _recognition.lang = 'ko-KR';
+
+    _recognition.onresult = (event) => {
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        if (event.results[i].isFinal) {
+          _textBuffer += event.results[i][0].transcript + ' ';
+        }
+      }
+    };
+
+    _recognition.onerror = (event) => {
+      if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+        stopListening();
+        return;
+      }
+      if (_retryCount < MAX_RETRIES && _isListening) {
+        _retryCount++;
+        try { _recognition.start(); } catch {}
+      } else {
+        stopListening();
+      }
+    };
+
+    _recognition.onend = () => {
+      if (_isListening && _retryCount < MAX_RETRIES) {
+        _retryCount++;
+        try { _recognition.start(); } catch {}
+      }
+    };
+
+    _isListening = true;
+    _startTime = Date.now();
+    _retryCount = 0;
+    _textBuffer = '';
+    try { _recognition.start(); } catch {}
+
+    // UI 업데이트
+    btn.style.borderColor = '#3fb950';
+    btn.style.background = 'rgba(63,185,80,0.12)';
+    _timerInterval = setInterval(updateTimer, 1000);
+    updateTimer();
+
+    // 30초마다 전송
+    _sendInterval = setInterval(sendBuffer, SEND_INTERVAL);
+  }
+
+  function stopListening() {
+    _isListening = false;
+    if (_recognition) {
+      try { _recognition.stop(); } catch {}
+      _recognition = null;
+    }
+    if (_timerInterval) { clearInterval(_timerInterval); _timerInterval = null; }
+    if (_sendInterval) { clearInterval(_sendInterval); _sendInterval = null; }
+
+    // 남은 버퍼 전송
+    sendBuffer();
+
+    // UI 복원
+    btn.style.borderColor = '#30363d';
+    btn.style.background = 'rgba(13,17,23,0.92)';
+    document.getElementById('lm-label').textContent = '학습 모드';
+  }
+
+  function updateTimer() {
+    const elapsed = Math.floor((Date.now() - _startTime) / 1000);
+    const mm = String(Math.floor(elapsed / 60)).padStart(2, '0');
+    const ss = String(elapsed % 60).padStart(2, '0');
+    document.getElementById('lm-label').textContent = `학습 중... ${mm}:${ss}`;
+  }
+
+  function sendBuffer() {
+    const text = _textBuffer.trim();
+    if (!text || text.length < 5) return;
+    _textBuffer = '';
+
+    const duration = Math.floor((Date.now() - _startTime) / 1000);
+    fetch('/api/personal/media', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text,
+        source: 'speech',
+        lang: 'ko-KR',
+        duration,
+      }),
+    }).catch(() => {});
+  }
+})();
 
 // ─── 데이터 로드 ──────────────────────────────────────────────────────────────
 // 현재 로그인 토큰 반환 헬퍼 (fetch 인증 헤더용)

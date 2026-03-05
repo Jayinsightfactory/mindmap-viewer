@@ -67,8 +67,9 @@ function _addLiveBranch(eventData) {
   branchNode.userData.orbitSpeed  = 0;  // 정적 (애니메이션으로 위치 이동)
   branchNode.userData.orbitCenter = parentPlanet.position;
 
-  // 타겟 위치 (애니메이션용)
+  // 타겟 위치 (애니메이션용) + 트리 기본 위치
   branchNode.userData._targetPos  = new THREE.Vector3(sx, sy, sz);
+  branchNode.userData._treeBasePos = new THREE.Vector3(sx, sy, sz);
   branchNode.userData._birthTime  = performance.now();
 
   scene.add(branchNode);
@@ -180,6 +181,17 @@ function connectWS() {
       // 듀얼 Ollama 스킬/에이전트 제안 알림
       if (m.type === 'skill_suggestion' && m.data) {
         showSkillToast(m.data);
+      }
+      // ── 중요 항목 주목 이펙트 (suggestion/anomaly → 금색 펄스) ──────────
+      if (m.type === 'skill_suggestion' || m.type === 'anomaly') {
+        const targetSid = m.sessionId || m.data?.sessionId;
+        if (targetSid) {
+          const planet = planetMeshes.find(p => p.userData.sessionId === targetSid || p.userData.clusterId === targetSid);
+          if (planet) {
+            planet.userData._attention = 1;
+            setTimeout(() => { planet.userData._attention = 0; }, 10000);
+          }
+        }
       }
       // Ollama 실시간 분석 결과
       if (m.type === 'ollama_analysis' && m.data) {
