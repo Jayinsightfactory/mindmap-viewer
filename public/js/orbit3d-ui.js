@@ -1177,10 +1177,12 @@ function buildCoreMesh() {
     varying vec2 vUv;
     varying vec3 vNormal;
     varying vec3 vPosition;
+    varying vec3 vWorldPos;
     void main() {
       vUv = uv;
       vNormal = normalize(normalMatrix * normal);
       vPosition = position;
+      vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
       gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
     }
   `;
@@ -1190,6 +1192,7 @@ function buildCoreMesh() {
     varying vec2 vUv;
     varying vec3 vNormal;
     varying vec3 vPosition;
+    varying vec3 vWorldPos;
 
     // simplex noise helpers
     vec3 mod289(vec3 x){ return x - floor(x*(1.0/289.0))*289.0; }
@@ -1245,8 +1248,9 @@ function buildCoreMesh() {
       // 텍스처 + FBM 블렌딩 (텍스처 70% + FBM 30%)
       vec3 col = texCol * 0.7 + fbmCol * 0.3;
 
-      // 가장자리 림 라이팅 (코로나 효과)
-      float rim = 1.0 - max(dot(vNormal, vec3(0.0, 0.0, 1.0)), 0.0);
+      // 가장자리 림 라이팅 (카메라 방향 기반 — 뒤에서 봐도 균일)
+      vec3 viewDir = normalize(cameraPosition - vWorldPos);
+      float rim = 1.0 - max(dot(vNormal, viewDir), 0.0);
       rim = pow(rim, 2.0);
       col += vec3(1.0, 0.3, 0.0) * rim * 0.8;
 

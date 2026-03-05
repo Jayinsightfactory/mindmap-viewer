@@ -2200,3 +2200,99 @@
   }
   .ip-pop-btn:hover { color:#58a6ff; background:rgba(88,166,255,.1); }
 
+  /* ── 온보딩 오버레이 ─────────────────────────────────────────────────── */
+  #onboarding-overlay {
+    position:fixed; inset:0; z-index:9400;
+    background:rgba(6,10,16,.85);
+    backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
+    display:none; align-items:center; justify-content:center;
+  }
+  #onboarding-overlay.open { display:flex; }
+
+  .ob-box {
+    width:460px; max-width:92vw;
+    background:rgba(13,17,23,.97); border:1px solid #21262d;
+    border-radius:18px; padding:40px 36px 32px;
+    text-align:center; color:#e6edf3;
+    box-shadow:0 16px 64px rgba(0,0,0,.6);
+    animation:ob-in .35s ease;
+  }
+  @keyframes ob-in { from { opacity:0; transform:translateY(18px) scale(.97); } to { opacity:1; transform:none; } }
+
+  .ob-logo { font-size:42px; margin-bottom:12px; }
+  .ob-title { font-size:22px; font-weight:700; margin-bottom:6px; color:#e6edf3; }
+  .ob-desc { font-size:13px; color:#8b949e; line-height:1.5; margin-bottom:28px; }
+
+  .ob-btn-install {
+    display:inline-flex; align-items:center; gap:8px;
+    padding:12px 32px; border:none; border-radius:10px;
+    font-size:15px; font-weight:600; color:#fff; cursor:pointer;
+    background:linear-gradient(135deg,#2f81f7,#58a6ff);
+    box-shadow:0 4px 20px rgba(47,129,247,.35);
+    transition:all .2s;
+  }
+  .ob-btn-install:hover { transform:translateY(-1px); box-shadow:0 6px 28px rgba(47,129,247,.45); }
+
+  .ob-btn-skip {
+    display:block; margin:18px auto 0; padding:6px 16px;
+    background:none; border:none; color:#6e7681;
+    font-size:12px; cursor:pointer; text-decoration:underline;
+    text-underline-offset:3px; transition:color .15s;
+  }
+  .ob-btn-skip:hover { color:#8b949e; }
+
+  /* 경고 박스 */
+  .ob-warning {
+    background:rgba(210,153,34,.08); border:1px solid rgba(210,153,34,.25);
+    border-radius:10px; padding:16px 18px; margin-bottom:20px;
+    color:#d2992a; font-size:12px; line-height:1.55; text-align:left;
+  }
+  .ob-warning strong { color:#e3b341; }
+
+  /* 터미널 명령어 박스 */
+  .ob-cmd-box {
+    background:#0d1117; border:1px solid #21262d; border-radius:10px;
+    padding:14px 16px; margin:20px 0 16px; text-align:left;
+    position:relative;
+  }
+  .ob-cmd-label { font-size:10px; color:#6e7681; text-transform:uppercase; letter-spacing:.5px; margin-bottom:8px; }
+  .ob-cmd-code {
+    font-family:'SF Mono','Fira Code',monospace; font-size:12px;
+    color:#79c0ff; word-break:break-all; line-height:1.6;
+    user-select:all; -webkit-user-select:all;
+  }
+  .ob-copy-btn {
+    position:absolute; top:10px; right:10px;
+    background:#21262d; border:1px solid #30363d; border-radius:6px;
+    padding:4px 10px; font-size:11px; color:#8b949e; cursor:pointer;
+    transition:all .15s;
+  }
+  .ob-copy-btn:hover { background:#30363d; color:#e6edf3; }
+  .ob-hint { font-size:11px; color:#6e7681; margin-top:8px; }
+
+  /* 재방문 작은 모달 */
+  .ob-return-box {
+    width:380px; max-width:90vw;
+    background:rgba(13,17,23,.97); border:1px solid #21262d;
+    border-radius:14px; padding:28px 28px 22px;
+    text-align:center; color:#e6edf3;
+    box-shadow:0 12px 48px rgba(0,0,0,.5);
+    animation:ob-in .3s ease;
+  }
+  .ob-return-box .ob-title { font-size:16px; margin-bottom:4px; }
+  .ob-return-box .ob-desc { font-size:12px; margin-bottom:20px; }
+  .ob-return-btns { display:flex; gap:10px; justify-content:center; }
+  .ob-btn-later {
+    padding:9px 22px; border:1px solid #30363d; border-radius:8px;
+    background:none; color:#8b949e; font-size:13px; cursor:pointer;
+    transition:all .15s;
+  }
+  .ob-btn-later:hover { border-color:#6e7681; color:#e6edf3; }
+  .ob-btn-install-sm {
+    padding:9px 22px; border:none; border-radius:8px;
+    background:linear-gradient(135deg,#2f81f7,#58a6ff);
+    color:#fff; font-size:13px; font-weight:600; cursor:pointer;
+    transition:all .15s;
+  }
+  .ob-btn-install-sm:hover { transform:translateY(-1px); }
+

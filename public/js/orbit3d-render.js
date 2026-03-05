@@ -1997,20 +1997,167 @@ function _initTrackerStatusBadge() {
   setInterval(updateStatus, 60000);
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// ⬡ 온보딩 플로우 — 첫 방문 / 재방문 간소화
+// ═══════════════════════════════════════════════════════════════════════════════
+
+async function checkOnboardingState() {
+  const overlay = document.getElementById('onboarding-overlay');
+  if (!overlay) return;
+
+  // 트래커 상태 + 설정 상태 병렬 확인
+  let trackerOnline = false, setupReady = false;
+  try {
+    const token = _getAuthToken();
+    const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+    const [tRes, sRes] = await Promise.all([
+      fetch('/api/tracker/status', { headers }).then(r => r.json()).catch(() => ({})),
+      fetch('/api/setup/check').then(r => r.json()).catch(() => ({})),
+    ]);
+    trackerOnline = !!tRes.online;
+    setupReady    = !!sRes.ready;
+  } catch {}
+
+  // 설치됨 → 오버레이 없음
+  if (trackerOnline || setupReady) return;
+
+  const visited   = localStorage.getItem('orbit_onboarding_visited');
+  const skippedAt = parseInt(localStorage.getItem('orbit_onboarding_skipped_at') || '0', 10);
+  const cooldown  = 24 * 60 * 60 * 1000; // 24시간
+
+  if (!visited) {
+    // 첫 방문
+    localStorage.setItem('orbit_onboarding_visited', '1');
+    showOnboardingOverlay('first');
+  } else if (skippedAt && (Date.now() - skippedAt < cooldown)) {
+    // 24시간 쿨다운 내 → 표시하지 않음
+    return;
+  } else {
+    // 재방문 + 쿨다운 지남
+    showOnboardingOverlay('returning');
+  }
+}
+
+function showOnboardingOverlay(mode) {
+  const overlay = document.getElementById('onboarding-overlay');
+  if (!overlay) return;
+
+  if (mode === 'first') {
+    overlay.innerHTML = `
+      <div class="ob-box">
+        <div class="ob-logo">⬡</div>
+        <div class="ob-title">Orbit AI 설치하기</div>
+        <div class="ob-desc">
+          업무 패턴을 자동으로 분석하고<br>
+          AI가 맞춤 인사이트를 제공합니다.
+        </div>
+        <button class="ob-btn-install" onclick="showOnboardingInstall()">
+          📦 설치하기
+        </button>
+        <button class="ob-btn-skip" onclick="showOnboardingSkipWarning()">
+          건너뛰기
+        </button>
+      </div>`;
+  } else {
+    // returning
+    overlay.innerHTML = `
+      <div class="ob-return-box">
+        <div class="ob-title">⬡ Orbit AI가 설치되지 않았습니다</div>
+        <div class="ob-desc">트래커를 설치하면 업무 AI 분석이 시작됩니다.</div>
+        <div class="ob-return-btns">
+          <button class="ob-btn-later" onclick="dismissOnboarding(true)">나중에</button>
+          <button class="ob-btn-install-sm" onclick="showOnboardingInstall()">설치하기</button>
+        </div>
+      </div>`;
+  }
+
+  overlay.classList.add('open');
+}
+
+function showOnboardingInstall() {
+  const overlay = document.getElementById('onboarding-overlay');
+  if (!overlay) return;
+
+  const status = detectClientEnv();
+  const { os } = status;
+  const _token       = _getAuthToken();
+  const _setupScript = location.origin + '/orbit-setup.ps1' + (_token ? `?token=${encodeURIComponent(_token)}` : '');
+  const _setupSh     = location.origin + '/orbit-setup.sh'  + (_token ? `?token=${encodeURIComponent(_token)}` : '');
+  const _installCmd  = os === 'windows'
+    ? `powershell -ExecutionPolicy Bypass -Command "irm '${_setupScript}' | iex"`
+    : `bash <(curl -sL '${_setupSh}')`;
+
+  const osLabel = os === 'mac' ? 'macOS / Linux' : os === 'windows' ? 'Windows PowerShell' : 'Linux';
+
+  overlay.innerHTML = `
+    <div class="ob-box">
+      <div class="ob-logo">⬡</div>
+      <div class="ob-title">터미널에서 실행하세요</div>
+      <div class="ob-desc">${osLabel} 터미널을 열고 아래 명령어를 붙여넣으세요.</div>
+      <div class="ob-cmd-box">
+        <div class="ob-cmd-label">${osLabel}</div>
+        <div class="ob-cmd-code" id="ob-cmd-text">${_installCmd}</div>
+        <button class="ob-copy-btn" onclick="copyOnboardingCmd()">복사</button>
+      </div>
+      <div class="ob-hint">설치 후 이 페이지를 새로고침하면 자동 연결됩니다.</div>
+      <button class="ob-btn-skip" onclick="dismissOnboarding(false)" style="margin-top:16px">닫기</button>
+    </div>`;
+}
+
+function copyOnboardingCmd() {
+  const code = document.getElementById('ob-cmd-text');
+  if (!code) return;
+  navigator.clipboard.writeText(code.textContent).then(() => {
+    const btn = document.querySelector('.ob-copy-btn');
+    if (btn) { btn.textContent = '✓ 복사됨'; setTimeout(() => { btn.textContent = '복사'; }, 2000); }
+  }).catch(() => {});
+}
+
+function showOnboardingSkipWarning() {
+  const overlay = document.getElementById('onboarding-overlay');
+  if (!overlay) return;
+
+  overlay.innerHTML = `
+    <div class="ob-box">
+      <div class="ob-warning">
+        <strong>⚠ 설치하지 않으면</strong> 업무 효율 AI를 활성화할 수 없습니다.<br>
+        트래커가 업무 패턴을 수집해야 AI 분석이 시작됩니다.
+      </div>
+      <div style="display:flex;gap:10px;justify-content:center">
+        <button class="ob-btn-install-sm" onclick="showOnboardingInstall()">설치하기</button>
+        <button class="ob-btn-later" onclick="dismissOnboarding(true)">계속 건너뛰기</button>
+      </div>
+    </div>`;
+}
+
+function dismissOnboarding(markSkipped) {
+  if (markSkipped) {
+    localStorage.setItem('orbit_onboarding_skipped_at', String(Date.now()));
+  }
+  const overlay = document.getElementById('onboarding-overlay');
+  if (overlay) {
+    overlay.classList.remove('open');
+    overlay.innerHTML = '';
+  }
+}
+
+// 전역 노출
+window.checkOnboardingState       = checkOnboardingState;
+window.showOnboardingOverlay      = showOnboardingOverlay;
+window.showOnboardingInstall      = showOnboardingInstall;
+window.copyOnboardingCmd          = copyOnboardingCmd;
+window.showOnboardingSkipWarning  = showOnboardingSkipWarning;
+window.dismissOnboarding          = dismissOnboarding;
+
 async function initClaudeStatusBadge() {
   try {
     const r    = await fetch('/api/setup/claude-status');
     const data = await r.json();
     _updateTrackingBadge(data.tracking, data.running);
 
-    // 신규 사용자 감지 (훅 미등록 + Ollama 미실행) → 자동 온보딩 표시
+    // 신규 사용자 감지 (훅 미등록) → 간소화된 온보딩 플로우
     if (!data.hookRegistered) {
-      const checkR = await fetch('/api/setup/check');
-      const chk    = await checkR.json();
-      if (!chk.ready) {
-        // 약간의 지연 후 온보딩 패널 자동 표시
-        setTimeout(() => openSetupPanel(), 1500);
-      }
+      setTimeout(checkOnboardingState, 1500);
     }
   } catch {}
 }
