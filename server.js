@@ -198,6 +198,7 @@ const db = initDatabase();
 console.log('[DB] SQLite 초기화 완료');
 
 const app    = express();
+if (process.env.RAILWAY_ENVIRONMENT) app.set('trust proxy', 1);
 const server = http.createServer(app);
 const wss    = new WebSocket.Server({ server });
 
