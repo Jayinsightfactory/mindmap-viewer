@@ -17,6 +17,7 @@ function initDatabase() {
   if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
   }
+  console.log(`[DB] 경로: ${DB_PATH}`);
 
   db = new Database(DB_PATH);
   db.pragma('journal_mode = WAL');
@@ -332,16 +333,28 @@ function convertLegacyEntry(entry) {
 
 // ─── 이벤트 CRUD ────────────────────────────────────
 function insertEvent(event) {
+  // 필수 필드 기본값 보장 (INSERT OR IGNORE가 NOT NULL 위반 시 조용히 무시하므로)
+  if (!event.id)        event.id = Date.now().toString(36) + Math.random().toString(36).slice(2);
+  if (!event.source)    event.source = 'claude-hook';
+  if (!event.sessionId) event.sessionId = 'default';
+  if (!event.userId)    event.userId = 'local';
+  if (!event.channelId) event.channelId = 'default';
+  if (!event.timestamp) event.timestamp = new Date().toISOString();
+  if (event.data == null) event.data = {};
+
   const stmt = db.prepare(`
     INSERT OR IGNORE INTO events (id, type, source, session_id, user_id, channel_id, parent_event_id, timestamp, data_json, metadata_json)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
-  stmt.run(
+  const info = stmt.run(
     event.id, event.type, event.source,
     event.sessionId, event.userId, event.channelId,
     event.parentEventId, event.timestamp,
     JSON.stringify(event.data), JSON.stringify(event.metadata || {})
   );
+  if (info.changes === 0) {
+    console.warn(`[DB] insertEvent 무시됨 (중복 id=${event.id})`);
+  }
 
   // 세션 업데이트
   upsertSession(event);

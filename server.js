@@ -537,7 +537,7 @@ app.post('/api/hook', (req, res) => {
     for (const event of events) {
       // user_id를 토큰에서 추출한 값으로 덮어쓰기 (프라이버시 격리)
       if (hookUserId !== 'local') event.userId = hookUserId;
-      try { insertEvent(event); } catch {}
+      try { insertEvent(event); } catch (e) { console.error('[hook] insertEvent 실패:', e.message); }
       try {
         const entry = {
           id: event.id, type: event.type, source: event.source,
@@ -545,7 +545,7 @@ app.post('/api/hook', (req, res) => {
           data: event.data, ts: event.timestamp,
         };
         fs.appendFileSync(CONV_FILE, JSON.stringify(entry) + '\n');
-      } catch {}
+      } catch (e) { console.error('[hook] JSONL 쓰기 실패:', e.message); }
     }
 
     const graph    = getFullGraph();

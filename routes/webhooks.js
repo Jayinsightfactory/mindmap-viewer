@@ -310,8 +310,8 @@ function normalizeToOrbitEvent({ type, source, data }) {
     userId:    'webhook',
     channelId: 'default',
     timestamp: new Date().toISOString(),
-    data:      typeof data === 'string' ? data : JSON.stringify(data),
-    metadata:  JSON.stringify({ via: 'webhook', platform: source }),
+    data:      typeof data === 'string' ? JSON.parse(data) : (data || {}),
+    metadata:  { via: 'webhook', platform: source },
   };
 }
 

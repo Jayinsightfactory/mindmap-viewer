@@ -33,7 +33,8 @@ try {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   db = new Database(dbPath);
   db.pragma('journal_mode = WAL');
-} catch {
+} catch (e) {
+  console.error('[AUTH] DB 초기화 실패:', e.message);
   db = null; // DB 없으면 인증 비활성화 (로컬 전용 모드)
 }
 
