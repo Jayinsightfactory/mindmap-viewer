@@ -2070,11 +2070,12 @@ function showOnboardingOverlay(mode) {
     // returning
     overlay.innerHTML = `
       <div class="ob-return-box">
-        <div class="ob-title">⬡ Orbit AI가 설치되지 않았습니다</div>
-        <div class="ob-desc">트래커를 설치하면 업무 AI 분석이 시작됩니다.</div>
-        <div class="ob-return-btns">
+        <div class="ob-title">⬡ Orbit AI 트래커 상태</div>
+        <div class="ob-desc">트래커 연결이 확인되지 않았습니다.</div>
+        <div class="ob-return-btns" style="flex-direction:column;gap:8px">
+          <button class="ob-btn-install-sm" onclick="confirmOnboardingDone()" style="width:100%">✓ 이미 설치했어요</button>
+          <button class="ob-btn-install-sm" onclick="showOnboardingInstall()" style="width:100%;background:linear-gradient(135deg,#21262d,#30363d)">📦 설치하기</button>
           <button class="ob-btn-later" onclick="dismissOnboarding(true)">나중에</button>
-          <button class="ob-btn-install-sm" onclick="showOnboardingInstall()">설치하기</button>
         </div>
       </div>`;
   }
