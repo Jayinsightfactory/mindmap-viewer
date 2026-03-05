@@ -212,16 +212,17 @@ app.use(helmet({
 }));
 
 // Rate Limiting: API 남용 방지 (15분 당 최대 2000회)
+const _rlOpts = { validate: { xForwardedForHeader: false, trustProxy: false, ip: false } };
 const apiLimiter = rateLimit({
+  ..._rlOpts,
   windowMs: 15 * 60 * 1000,
   max: 2000,
   standardHeaders: true,
   legacyHeaders: false,
-  validate: false,
+  keyGenerator: (req) => req.ip || req.socket?.remoteAddress || 'unknown',
   message: { error: 'Too many requests, please try again later.' },
-  // 로컬호스트 + 폴링 엔드포인트는 제한 제외
   skip: req => {
-    const ip = req.ip || req.connection?.remoteAddress || '';
+    const ip = req.ip || req.socket?.remoteAddress || '';
     const isLocal = ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
     const isPolling = req.path === '/health' || req.path === '/api/signal' || req.path === '/api/learn/suggestions';
     return isLocal || isPolling;
@@ -230,11 +231,12 @@ const apiLimiter = rateLimit({
 
 // 훅 엔드포인트는 별도 제한 (CI 자동 호출 많음 — 5분 당 500회)
 const hookLimiter = rateLimit({
+  ..._rlOpts,
   windowMs: 5 * 60 * 1000,
   max: 500,
   standardHeaders: true,
   legacyHeaders: false,
-  validate: false,
+  keyGenerator: (req) => req.ip || req.socket?.remoteAddress || 'unknown',
   message: { error: 'Hook rate limit exceeded.' },
 });
 
