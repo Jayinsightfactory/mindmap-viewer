@@ -731,11 +731,17 @@ app.get('/api/tracker/status', (req, res) => {
     } catch {}
 
     const isOnline = ping && (Date.now() - ping.lastSeen < 6 * 60 * 1000); // 6분 이내
+    // 유저의 실제 이벤트 수 (tracker ping과 별개로 DB에 저장된 이벤트)
+    let userEventCount = ping?.eventCount || 0;
+    try {
+      const stats = getStatsByUser ? getStatsByUser(userId) : null;
+      if (stats && stats.eventCount > userEventCount) userEventCount = stats.eventCount;
+    } catch {}
     res.json({
       online:     !!isOnline,
       lastSeen:   ping?.lastSeen || null,
       hostname:   ping?.hostname || null,
-      eventCount: ping?.eventCount || 0,
+      eventCount: userEventCount,
     });
   } catch (e) {
     res.json({ online: false, lastSeen: null });

@@ -1948,7 +1948,7 @@ function _initTrackerStatusBadge() {
     badge = document.createElement('div');
     badge.id = 'tracker-status-badge';
     badge.style.cssText = `
-      position:fixed; top:12px; right:12px; z-index:600;
+      position:fixed; top:44px; right:14px; z-index:8901;
       background:rgba(13,17,23,0.92); border:1px solid #30363d;
       border-radius:8px; padding:6px 12px;
       font-family:-apple-system,'Segoe UI',sans-serif;
@@ -1981,6 +1981,11 @@ function _initTrackerStatusBadge() {
         dot.style.boxShadow  = '0 0 6px #3fb950';
         label.textContent = `트래커 연결됨${d.hostname ? ' · ' + d.hostname : ''}`;
         badge.style.borderColor = '#23893680';
+      } else if (d.eventCount > 0) {
+        dot.style.background = '#d29922';
+        dot.style.boxShadow  = '0 0 4px #d29922';
+        label.textContent = '트래커 설치됨 · 실행 필요';
+        badge.style.borderColor = '#d2992240';
       } else {
         dot.style.background = '#f85149';
         dot.style.boxShadow  = 'none';
