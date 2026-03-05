@@ -52,6 +52,9 @@ const {
   getToolLabelMappings, setToolLabelMapping, deleteToolLabelMapping, getUserConfig,
   getEventsByUser, getSessionsByUser, getStatsByUser, claimLocalEvents,
   hideEvents, unhideEvents, unhideAllEvents, getHiddenEventIds,
+  getNodeMemos, upsertNodeMemo, deleteNodeMemo,
+  getBookmarks, addBookmark, removeBookmark,
+  touchTrackerPing, getTrackerPing,
 } = dbModule;
 
 const { buildGraph, computeActivityScores, applyActivityVisualization, suggestLabel } = require('./src/graph-engine');
@@ -755,6 +758,9 @@ const dbDeps = {
   getUserCategories, upsertUserCategory, deleteUserCategory,
   getToolLabelMappings, setToolLabelMapping, deleteToolLabelMapping, getUserConfig,
   searchEvents,
+  getNodeMemos, upsertNodeMemo, deleteNodeMemo,
+  getBookmarks, addBookmark, removeBookmark,
+  touchTrackerPing, getTrackerPing,
 };
 
 app.use('/api', createGraphRouter({

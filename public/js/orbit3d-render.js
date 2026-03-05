@@ -2659,6 +2659,19 @@ function drawLabels() {
     _lctx.fillStyle = isSelected ? '#ffffff' : isHovered ? '#f0f6fc' : lod === 0 ? '#f0f6fc' : '#cdd9e5';
     _lctx.fillText(text, sc.x, ly + ph * 0.68);
 
+    // ── 즐겨찾기 ★ 표시 ──────────────────────────────────────────────────
+    const nodeId = p.userData?.clusterId || p.userData?.sessionId || p.userData?.eventId || '';
+    if (nodeId && typeof _bookmarksCache !== 'undefined' && _bookmarksCache.some(b => b.event_id === nodeId)) {
+      const starSize = Math.max(10, pxSize * 0.7);
+      _lctx.save();
+      _lctx.font = `${starSize}px sans-serif`;
+      _lctx.fillStyle = '#ffd700';
+      _lctx.textAlign = 'left';
+      _lctx.fillText('★', lx + pw + 3, ly + ph * 0.72);
+      _lctx.restore();
+      _lctx.textAlign = 'center';
+    }
+
     // ── 서브 키워드 (LOD0,1만) — 도움이 되는 단어만 표시 ─────────────────
     if (lod <= 1 && evCnt > 0 && pxSize >= 13) {
       const sub = Math.max(9, pxSize * 0.5);

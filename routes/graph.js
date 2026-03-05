@@ -55,6 +55,7 @@ function createRouter(deps) {
     getAllEvents, getEventsBySession, getEventsByChannel,
     getSessions, updateSessionTitle, getFiles, getStats, rollbackToEvent, clearAll,
     getEventsByUser, getSessionsByUser, getStatsByUser, claimLocalEvents,
+    hideEvents, unhideEvents, unhideAllEvents, getHiddenEventIds,
   } = db;
 
   const { classifyPurposes, summarizePurposes, PURPOSE_CATEGORIES } = purposeClassifier;
@@ -78,15 +79,24 @@ function createRouter(deps) {
   router.get('/graph', (req, res) => {
     const user = getUserFromReq(req);
     if (!user) {
-      // 미인증 → 'local' + 'visitor' 이벤트 포함 전체 그래프 반환
       const graph = getFullGraph(req.query.session, req.query.channel);
       return res.json(graph);
     }
     const graph = user.id === 'local'
-      ? getFullGraph(req.query.session, req.query.channel)      // 로컬 개발: 전체
+      ? getFullGraph(req.query.session, req.query.channel)
       : (getFullGraphForUser
-          ? getFullGraphForUser(user.id, req.query.session)     // 프로덕션: 내 이벤트만
+          ? getFullGraphForUser(user.id, req.query.session)
           : getFullGraph(req.query.session, req.query.channel));
+
+    // hidden 이벤트 제외
+    if (getHiddenEventIds) {
+      const hiddenSet = new Set(getHiddenEventIds(user.id));
+      if (hiddenSet.size > 0) {
+        graph.nodes = graph.nodes.filter(n => !hiddenSet.has(n.id));
+        graph.edges = graph.edges.filter(e => !hiddenSet.has(e.from) && !hiddenSet.has(e.to));
+      }
+    }
+
     res.json(graph);
   });
 
@@ -99,6 +109,44 @@ function createRouter(deps) {
     if (!user || user.id === 'local') return res.status(401).json({ error: 'login required' });
     const changed = claimLocalEvents ? claimLocalEvents(user.id) : 0;
     res.json({ ok: true, claimed: changed });
+  });
+
+  // ── 노드 숨김 (소프트 삭제) ─────────────────────────────────────────────────
+
+  /** POST /api/events/hide — 이벤트 숨김 */
+  router.post('/events/hide', (req, res) => {
+    const user = getUserFromReq(req);
+    if (!user || user.id === 'local') return res.status(401).json({ error: 'login required' });
+    const ids = req.body.eventIds;
+    if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'eventIds required' });
+    const count = hideEvents(ids, user.id);
+    res.json({ ok: true, hidden: count });
+  });
+
+  /** POST /api/events/unhide — 이벤트 복원 */
+  router.post('/events/unhide', (req, res) => {
+    const user = getUserFromReq(req);
+    if (!user || user.id === 'local') return res.status(401).json({ error: 'login required' });
+    const ids = req.body.eventIds;
+    if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'eventIds required' });
+    const count = unhideEvents(ids, user.id);
+    res.json({ ok: true, unhidden: count });
+  });
+
+  /** POST /api/events/unhide-all — 모든 숨긴 이벤트 복원 */
+  router.post('/events/unhide-all', (req, res) => {
+    const user = getUserFromReq(req);
+    if (!user || user.id === 'local') return res.status(401).json({ error: 'login required' });
+    const count = unhideAllEvents(user.id);
+    res.json({ ok: true, unhidden: count });
+  });
+
+  /** GET /api/events/hidden — 숨긴 이벤트 ID 목록 */
+  router.get('/events/hidden', (req, res) => {
+    const user = getUserFromReq(req);
+    if (!user || user.id === 'local') return res.json({ eventIds: [] });
+    const ids = getHiddenEventIds(user.id);
+    res.json({ eventIds: ids, count: ids.length });
   });
 
   // ── 세션 ─────────────────────────────────────────────────────────────────

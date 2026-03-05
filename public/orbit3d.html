@@ -44,14 +44,12 @@
 
     <!-- 마켓 -->
     <div class="ln-sep">마켓</div>
-    <button class="ln-item" onclick="toggleEffectsPanel()">✨ 이펙트 마켓</button>
-    <button class="ln-item" onclick="toggleCoreSkinPanel()">🌍 스킨 마켓</button>
     <button class="ln-item" onclick="toggleTalentBoard()">📡 인재 마켓</button>
+    <button class="ln-item" onclick="openPricing()">💎 구독 플랜</button>
 
     <!-- 도구 -->
     <div class="ln-sep">도구</div>
     <button class="ln-item" onclick="toggleFeatPanel()">📋 기능 목록</button>
-    <button class="ln-item" onclick="toggleViewPanel()">👤 내 뷰 설정</button>
     <button class="ln-item" onclick="toggleInsightPanel()">📊 전체 인사이트</button>
     <button class="ln-item" id="ln-purpose-btn" onclick="togglePurposeTimeline()">⚡ 목적 타임라인</button>
     <button class="ln-item" onclick="openLlmPanel()">🤖 AI 설정</button>
@@ -59,7 +57,6 @@
     <button class="ln-item" id="ln-suggest-btn" onclick="toggleSuggestionPanel()">💡 AI 추천</button>
     <button class="ln-item" onclick="toggleMgrPanel()">👔 관리자</button>
     <button class="ln-item" onclick="toggleTaskSidebar()">📋 할 일</button>
-    <button class="ln-item" id="ln-orbit-btn" onclick="toggleOrbitAnim()">⏸ 궤도 멈춤</button>
 
     <!-- 커뮤니티 -->
     <div class="ln-sep">커뮤니티</div>
@@ -458,21 +455,7 @@
 <!-- 멤버 작업 상세 패널 (줌인 시 자동 표시) -->
 <div id="member-detail-panel"></div>
 
-<!-- ══ 코어 행성 스킨 패널 ═════════════════════════════════════════════════ -->
-<div id="core-skin-panel">
-  <div class="csp-header">
-    <span class="csp-title">🌍 행성 스킨</span>
-    <button class="csp-close" onclick="toggleCoreSkinPanel()">✕</button>
-  </div>
-  <div class="csp-body">
-    <div class="csp-section">모양 선택</div>
-    <div class="csp-grid" id="csp-grid"><!-- JS 동적 생성 --></div>
-    <div class="csp-toggle-row">
-      <span class="csp-toggle-label">중앙 행성 표시</span>
-      <button id="csp-visibility-btn" class="csp-toggle-btn" onclick="toggleCoreVisibility()">숨기기</button>
-    </div>
-  </div>
-</div>
+<!-- core-skin-panel: 통합 패널로 이동됨 -->
 
 <!-- ══ 프로필 등록 유도 모달 ═══════════════════════════════════════════════ -->
 <div id="profile-prompt-modal">
@@ -668,6 +651,7 @@
       <div class="ip-type-label" id="ip-type-text"></div>
       <div class="ip-intent" id="ip-intent"></div>
     </div>
+    <button class="ip-pop-btn" onclick="popOutCurrentPanel()" title="새 창으로 열기">⧉</button>
     <button class="ip-close" onclick="closePanel()">✕</button>
   </div>
   <!-- 탭 바 -->
@@ -802,63 +786,110 @@
 <div id="top-right" style="display:none">
   <!-- info panel이 열리면 여기를 숨김 -->
 </div>
-<!-- 상단 우측: 뷰 모드 버튼은 사이드바로 이동, 거리 조절만 유지 -->
-<div style="position:fixed;top:14px;right:178px;z-index:101;display:flex;gap:8px;">
-  <button class="tr-btn" id="orbit-toggle-btn" onclick="toggleOrbitAnim()">⏸ 공전</button>
-  <button class="tr-btn" onclick="toggleDistPanel()" title="거리 조절">⚙️ 거리</button>
-</div>
+<!-- 통합 제어판 버튼 (우측 하단) -->
+<button id="unified-ctrl-btn" onclick="toggleUnifiedPanel()">⚙</button>
 
-<!-- 마켓 이펙트 패널 -->
-<div id="effects-panel">
-  <div class="dp-title">
-    ✨ 마켓 이펙트
-    <button class="dp-close" onclick="closeEffectsPanel()">✕</button>
+<!-- ═══ 통합 제어판 ═══ -->
+<div id="unified-panel">
+  <div class="up-header">
+    <span class="up-title">⚙ 제어판</span>
+    <button class="up-close" onclick="toggleUnifiedPanel()">✕</button>
   </div>
-  <div style="font-size:10px;color:#6e7681;margin-bottom:8px;padding:0 2px">노드를 먼저 클릭한 후 이펙트를 선택하세요</div>
-  <div id="effects-selected-node" style="font-size:11px;color:#58a6ff;margin-bottom:10px;padding:4px 8px;background:#1c2128;border-radius:6px;min-height:22px"></div>
-  <div id="effects-grid"></div>
-  <div style="margin-top:10px;display:flex;gap:6px">
-    <button class="dp-btn" onclick="clearNodeEffect()" style="flex:1;background:#21262d;color:#f85149">이펙트 제거</button>
-    <button class="dp-btn" onclick="applySelectedEffect()" style="flex:1">적용</button>
+  <div class="up-tabs">
+    <button class="up-tab active" data-tab="ctrl" onclick="switchUpTab('ctrl',this)">🎮</button>
+    <button class="up-tab" data-tab="node" onclick="switchUpTab('node',this)">📐</button>
+    <button class="up-tab" data-tab="fx" onclick="switchUpTab('fx',this)">✨</button>
+    <button class="up-tab" data-tab="skin" onclick="switchUpTab('skin',this)">🌍</button>
+    <button class="up-tab" data-tab="bm" onclick="switchUpTab('bm',this)">★</button>
   </div>
-</div>
+  <div class="up-body">
+    <!-- 🎮 조작 탭 -->
+    <div class="up-pane active" id="up-pane-ctrl">
+      <div class="dp-row"><div class="dp-lbl">미니맵</div></div>
+      <canvas id="up-minimap-canvas" width="240" height="140" style="width:100%;border-radius:8px;background:#0d1117;border:1px solid #21262d"></canvas>
+      <div class="dp-row" style="margin-top:10px">
+        <div class="dp-lbl">줌 조절</div>
+        <div style="display:flex;align-items:center;gap:6px;margin-top:4px">
+          <button class="dp-btn" onclick="zoomStep(-1)" style="width:36px">＋</button>
+          <span id="up-zoom-level" style="font-size:11px;color:#8b949e;flex:1;text-align:center">r:—</span>
+          <button class="dp-btn" onclick="zoomStep(1)" style="width:36px">－</button>
+        </div>
+      </div>
+      <div style="display:flex;gap:6px;margin-top:10px">
+        <button class="dp-btn" id="up-orbit-btn" onclick="toggleOrbitAnim()" style="flex:1">⏸ 공전 중지</button>
+        <button class="dp-btn" onclick="autoFitView()" style="flex:1">🔭 전체 맞춤</button>
+      </div>
+    </div>
 
-<!-- 거리 조절 패널 -->
-<div id="dist-panel">
-  <div class="dp-title">
-    ⚙️ 노드 조절
-    <button class="dp-close" onclick="closeDistPanel()">✕</button>
-  </div>
-  <hr class="dp-divider">
+    <!-- 📐 노드 탭 -->
+    <div class="up-pane" id="up-pane-node">
+      <div class="dp-row">
+        <div class="dp-lbl">👁 표시 노드 <b id="v-node-level">멤버만</b></div>
+        <input type="range" id="sl-node-level" min="1" max="4" value="1" oninput="updateNodeLevel(this)">
+        <div class="dp-hint" id="node-level-hint" style="text-align:left;opacity:1;color:#58a6ff;font-size:10px">팀원 + 목표만 표시</div>
+      </div>
+      <hr class="dp-divider">
+      <div class="dp-row">
+        <div class="dp-lbl">🔵 팀원 ↔ 중심 <b id="v-member-r">40</b></div>
+        <input type="range" id="sl-member-r" min="20" max="80" value="40" oninput="updateDist('MEMBER_R',this)">
+      </div>
+      <div class="dp-row">
+        <div class="dp-lbl">🔹 작업 ↔ 팀원 <b id="v-task-r">16</b></div>
+        <input type="range" id="sl-task-r" min="6" max="32" value="16" oninput="updateDist('TASK_R',this)">
+      </div>
+      <div class="dp-row">
+        <div class="dp-lbl">🔸 스킬 ↔ 팀원 <b id="v-tool-r">9</b></div>
+        <input type="range" id="sl-tool-r" min="4" max="18" value="9" oninput="updateDist('TOOL_R',this)">
+      </div>
+      <hr class="dp-divider">
+      <div class="dp-row">
+        <div class="dp-lbl">📐 배율 설정</div>
+      </div>
+      <div class="dp-row">
+        <span class="dp-lbl" style="font-size:11px">개인</span>
+        <input type="range" min="10" max="60" value="22" id="zoom-personal" oninput="document.getElementById('zoom-personal-val').textContent=this.value" onchange="saveZoomPref('personal',this.value)">
+        <span id="zoom-personal-val" style="font-size:11px;color:#8b949e;min-width:20px">22</span>
+      </div>
+      <div class="dp-row">
+        <span class="dp-lbl" style="font-size:11px">팀</span>
+        <input type="range" min="30" max="120" value="55" id="zoom-team" oninput="document.getElementById('zoom-team-val').textContent=this.value" onchange="saveZoomPref('team',this.value)">
+        <span id="zoom-team-val" style="font-size:11px;color:#8b949e;min-width:20px">55</span>
+      </div>
+      <div class="dp-row">
+        <span class="dp-lbl" style="font-size:11px">회사</span>
+        <input type="range" min="60" max="200" value="100" id="zoom-company" oninput="document.getElementById('zoom-company-val').textContent=this.value" onchange="saveZoomPref('company',this.value)">
+        <span id="zoom-company-val" style="font-size:11px;color:#8b949e;min-width:20px">100</span>
+      </div>
+    </div>
 
-  <!-- 노드 표시 레벨 -->
-  <div class="dp-row">
-    <div class="dp-lbl">👁 표시 노드 <b id="v-node-level">멤버만</b></div>
-    <input type="range" id="sl-node-level" min="1" max="4" value="1"
-           oninput="updateNodeLevel(this)">
-    <div class="dp-hint" id="node-level-hint" style="text-align:left;opacity:1;color:#58a6ff;font-size:10px">
-      팀원 + 목표만 표시
+    <!-- ✨ 이펙트 탭 -->
+    <div class="up-pane" id="up-pane-fx">
+      <div style="font-size:10px;color:#6e7681;margin-bottom:8px">노드를 먼저 클릭한 후 이펙트를 선택하세요</div>
+      <div id="effects-selected-node" style="font-size:11px;color:#58a6ff;margin-bottom:10px;padding:4px 8px;background:#1c2128;border-radius:6px;min-height:22px"></div>
+      <div id="effects-grid"></div>
+      <div style="margin-top:10px;display:flex;gap:6px">
+        <button class="dp-btn" onclick="clearNodeEffect()" style="flex:1;background:#21262d;color:#f85149">이펙트 제거</button>
+        <button class="dp-btn" onclick="applySelectedEffect()" style="flex:1">적용</button>
+      </div>
+    </div>
+
+    <!-- 🌍 스킨 탭 -->
+    <div class="up-pane" id="up-pane-skin">
+      <div class="dp-lbl" style="margin-bottom:8px">모양 선택</div>
+      <div class="csp-grid" id="csp-grid"><!-- JS 동적 생성 --></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px;padding:6px 0">
+        <span style="font-size:11px;color:#8b949e">중앙 행성 표시</span>
+        <button id="csp-visibility-btn" class="dp-btn" onclick="toggleCoreVisibility()" style="width:auto;padding:4px 12px">숨기기</button>
+      </div>
+    </div>
+
+    <!-- ★ 즐겨찾기 탭 -->
+    <div class="up-pane" id="up-pane-bm">
+      <div id="bm-list" style="display:flex;flex-direction:column;gap:4px">
+        <div style="font-size:11px;color:#6e7681;padding:20px 0;text-align:center">즐겨찾기가 없습니다</div>
+      </div>
     </div>
   </div>
-  <hr class="dp-divider">
-
-  <!-- 거리 조절 (실시간 적용) -->
-  <div class="dp-row">
-    <div class="dp-lbl">🔵 팀원 ↔ 중심 <b id="v-member-r">40</b></div>
-    <input type="range" id="sl-member-r" min="20" max="80" value="40"
-           oninput="updateDist('MEMBER_R',this)">
-  </div>
-  <div class="dp-row">
-    <div class="dp-lbl">🔹 작업 ↔ 팀원 <b id="v-task-r">16</b></div>
-    <input type="range" id="sl-task-r" min="6" max="32" value="16"
-           oninput="updateDist('TASK_R',this)">
-  </div>
-  <div class="dp-row">
-    <div class="dp-lbl">🔸 스킬 ↔ 팀원 <b id="v-tool-r">9</b></div>
-    <input type="range" id="sl-tool-r" min="4" max="18" value="9"
-           oninput="updateDist('TOOL_R',this)">
-  </div>
-  <div class="dp-hint" style="margin-top:2px">슬라이더 조작 시 즉시 반영됩니다</div>
 </div>
 
 <!-- 로그인 버튼 (사이드바에서 처리, 숨김) -->
@@ -925,66 +956,7 @@
 <!-- 뷰 설정 버튼 -->
 <button id="view-btn" onclick="toggleViewPanel()">👤 내 뷰</button>
 
-<!-- 뷰 설정 패널 -->
-<div id="view-panel">
-  <div class="vp-header">
-    <span class="vp-title">👤 내 뷰 설정</span>
-    <button class="vp-close" onclick="toggleViewPanel()">✕</button>
-  </div>
-  <div class="vp-body">
-
-    <!-- 섹션 A: 배율 설정 -->
-    <div class="vp-section">📐 배율 설정</div>
-    <div class="vp-row">
-      <span class="vp-lbl">개인</span>
-      <input type="range" min="10" max="60" value="22" id="zoom-personal"
-        oninput="document.getElementById('zoom-personal-val').textContent=this.value"
-        onchange="saveZoomPref('personal',this.value)">
-      <span id="zoom-personal-val" class="vp-lbl">22</span>
-    </div>
-    <div class="vp-row">
-      <span class="vp-lbl">팀</span>
-      <input type="range" min="40" max="130" value="70" id="zoom-team"
-        oninput="document.getElementById('zoom-team-val').textContent=this.value"
-        onchange="saveZoomPref('team',this.value)">
-      <span id="zoom-team-val" class="vp-lbl">70</span>
-    </div>
-    <div class="vp-row">
-      <span class="vp-lbl">회사</span>
-      <input type="range" min="60" max="200" value="100" id="zoom-company"
-        oninput="document.getElementById('zoom-company-val').textContent=this.value"
-        onchange="saveZoomPref('company',this.value)">
-      <span id="zoom-company-val" class="vp-lbl">100</span>
-    </div>
-    <button class="vp-apply-btn" onclick="applyCurrentModeZoom()">배율 지금 적용</button>
-
-    <!-- 섹션 B: 보기 범위 -->
-    <div class="vp-section">🔭 보기 범위</div>
-    <div class="vp-presets" id="vp-presets">
-      <button class="vp-preset active" onclick="setNodeFilter('all',this)">전체</button>
-      <button class="vp-preset" onclick="setNodeFilter('mine',this)">내 할 일</button>
-      <button class="vp-preset" onclick="setNodeFilter('team',this)">팀</button>
-      <button class="vp-preset" onclick="setNodeFilter('company',this)">전사</button>
-    </div>
-    <div class="vp-section" style="margin-top:8px;font-size:10px;opacity:.7">커스텀 그룹</div>
-    <div class="vp-group-list" id="vp-group-list"><!-- JS 동적 생성 --></div>
-    <div style="display:flex;gap:6px;margin-top:4px;">
-      <input class="vp-group-input" id="vp-new-group-name" placeholder="그룹 이름" />
-      <button class="vp-group-new" onclick="openGroupCreator()">＋</button>
-    </div>
-
-    <!-- 섹션 C: AI 필터 채팅 -->
-    <div class="vp-section">🤖 AI 필터</div>
-    <div class="vp-ai-bar">
-      <input class="vp-ai-input" id="ai-filter-input"
-        placeholder="예: 마케팅팀이랑 영업팀만 보여줘"
-        onkeydown="if(event.key==='Enter')applyAIFilter()">
-      <button class="vp-ai-btn" onclick="applyAIFilter()">적용</button>
-    </div>
-    <div id="vp-active-filter" style="margin-top:6px;"></div>
-
-  </div>
-</div>
+<!-- view-panel: 통합 패널 📐 탭으로 이동됨 -->
 
 <!-- 기능 샘플링 버튼 -->
 <button id="feat-btn" onclick="toggleFeatPanel()">⚡ 기능 목록</button>
@@ -1072,29 +1044,7 @@
   <div class="mgr-bot-resp" id="mgr-bot-resp"></div>
 </div>
 
-<button id="ctrl-hub-btn" onclick="toggleCtrlHub()">🎮 조작</button>
-
-<!-- 컨트롤 허브 팝업 -->
-<div id="ctrl-hub">
-  <div class="ch-section">
-    <div class="ch-label">미니맵</div>
-    <canvas id="ch-minimap-canvas" width="156" height="100"></canvas>
-  </div>
-  <div class="ch-section">
-    <div class="ch-label">줌 조절</div>
-    <div class="ch-zoom-row">
-      <button class="ch-zoom-btn" onclick="zoomStep(-1)" title="줌인">＋</button>
-      <span id="ch-zoom-level">r:—</span>
-      <button class="ch-zoom-btn" onclick="zoomStep(1)" title="줌아웃">－</button>
-    </div>
-  </div>
-  <div class="ch-section">
-    <button style="width:100%;background:none;border:none;color:#8b949e;font-size:11px;font-family:inherit;cursor:pointer;padding:2px;text-align:left"
-      onclick="closeCtrlHub();toggleDistPanel()">⚙️ 노드 거리 조절</button>
-    <button style="width:100%;background:none;border:none;color:#8b949e;font-size:11px;font-family:inherit;cursor:pointer;padding:2px;text-align:left;margin-top:4px"
-      onclick="closeCtrlHub();autoFitView()">🔭 전체 뷰 맞춤</button>
-  </div>
-</div>
+<!-- ctrl-hub: 통합 패널로 이동됨 -->
 
 <!-- 노드 별명 편집 바 (info-panel 내부 동적 주입) -->
 <template id="alias-edit-tpl">
@@ -1144,6 +1094,38 @@
 <script src="js/orbit3d-scene.js"></script>
 <script src="js/orbit3d-team.js"></script>
 <script src="js/orbit3d-parallel.js"></script>
+<!-- ═══ 구독 플랜 모달 ═══ -->
+<div id="pricing-overlay" onclick="if(event.target===this)closePricing()">
+  <div id="pricing-modal">
+    <div class="pm-header">
+      <div class="pm-title-row">
+        <span class="pm-title">⬡ Orbit AI 구독 플랜</span>
+        <button class="pm-close" onclick="closePricing()">✕</button>
+      </div>
+      <div class="pm-sub">당신의 개발 워크플로우에 맞는 플랜을 선택하세요</div>
+      <div class="pm-toggle">
+        <button class="pm-period-btn active" onclick="setPricePeriod('monthly',this)">월간</button>
+        <button class="pm-period-btn" onclick="setPricePeriod('yearly',this)">연간 <span class="pm-save">20% 할인</span></button>
+      </div>
+    </div>
+    <div class="pm-grid" id="pm-grid"><!-- JS 동적 생성 --></div>
+    <div class="pm-footer">
+      <div>모든 플랜은 7일 무료 체험 포함 · 언제든 취소 가능</div>
+      <div style="margin-top:4px;color:#58a6ff;cursor:pointer" onclick="window.open('/terms.html')">이용약관 · 개인정보처리방침</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ 바탕화면 작업표시줄 + 윈도우 시스템 ═══ -->
+<div id="desktop-taskbar">
+  <div id="taskbar-items"></div>
+  <div id="taskbar-right">
+    <button class="tb-icon-btn" onclick="openPricing()" title="구독 플랜">💎</button>
+    <span id="taskbar-clock"></span>
+  </div>
+</div>
+<div id="desktop-windows"></div>
+
 <script src="js/orbit3d-camera.js"></script>
 <script src="js/orbit3d-animate.js"></script>
 <script src="js/orbit3d-render.js"></script>

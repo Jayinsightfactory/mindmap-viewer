@@ -123,7 +123,7 @@ window.zoomStep = zoomStep;
 
 // 줌 레벨 표시 업데이트 (렌더 루프에서 호출) — ctrl-hub 내부 표시
 function updateZoomDisplay() {
-  const el = document.getElementById('ch-zoom-level');
+  const el = document.getElementById('up-zoom-level');
   if (el && controls?.sph) el.textContent = `r:${Math.round(controls.sph.r)}`;
 }
 
@@ -172,17 +172,116 @@ function applyCurrentModeZoom() {
 }
 
 function toggleViewPanel() {
-  const panel = document.getElementById('view-panel');
-  const btn   = document.getElementById('view-btn');
-  if (!panel) return;
-  const isOpen = panel.classList.toggle('open');
-  btn && btn.classList.toggle('open', isOpen);
-  if (isOpen) {
-    renderGroupList();
-    renderActiveFilter();
+  // 통합 패널의 📐 노드 탭으로 이동
+  const panel = document.getElementById('unified-panel');
+  if (panel) {
+    panel.classList.add('open');
+    switchUpTab('node', document.querySelector('.up-tab[data-tab="node"]'));
   }
 }
 window.toggleViewPanel = toggleViewPanel;
+
+// ═══ 통합 제어판 ══════════════════════════════════════════════════════════
+
+function toggleUnifiedPanel() {
+  const panel = document.getElementById('unified-panel');
+  if (!panel) return;
+  const isOpen = panel.classList.toggle('open');
+  if (isOpen) {
+    // 이펙트 탭이 열려있으면 초기화
+    const fxPane = document.getElementById('up-pane-fx');
+    if (fxPane && fxPane.classList.contains('active')) {
+      if (typeof initEffectsPanel === 'function') initEffectsPanel();
+      if (typeof updateEffectsPanelNode === 'function') updateEffectsPanelNode();
+    }
+    // 스킨 탭이 열려있으면 초기화
+    const skinPane = document.getElementById('up-pane-skin');
+    if (skinPane && skinPane.classList.contains('active')) {
+      if (typeof renderCoreSkinGrid === 'function') renderCoreSkinGrid();
+    }
+    // 즐겨찾기 탭이 열려있으면 새로고침
+    const bmPane = document.getElementById('up-pane-bm');
+    if (bmPane && bmPane.classList.contains('active')) {
+      renderBookmarkList();
+    }
+  }
+}
+window.toggleUnifiedPanel = toggleUnifiedPanel;
+
+function switchUpTab(tabId, btn) {
+  document.querySelectorAll('.up-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.up-pane').forEach(p => p.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  else {
+    const tb = document.querySelector(`.up-tab[data-tab="${tabId}"]`);
+    if (tb) tb.classList.add('active');
+  }
+  const pane = document.getElementById('up-pane-' + tabId);
+  if (pane) pane.classList.add('active');
+
+  // 탭 전환 시 초기화
+  if (tabId === 'fx') {
+    if (typeof initEffectsPanel === 'function') initEffectsPanel();
+    if (typeof updateEffectsPanelNode === 'function') updateEffectsPanelNode();
+  } else if (tabId === 'skin') {
+    if (typeof renderCoreSkinGrid === 'function') renderCoreSkinGrid();
+  } else if (tabId === 'bm') {
+    renderBookmarkList();
+  } else if (tabId === 'ctrl') {
+    // 공전 버튼 상태 동기화
+    const ob = document.getElementById('up-orbit-btn');
+    if (ob) ob.textContent = (typeof orbitAnimOn !== 'undefined' && orbitAnimOn) ? '⏸ 공전 중지' : '▶ 공전 시작';
+  }
+}
+window.switchUpTab = switchUpTab;
+
+// ── 즐겨찾기 목록 렌더링 ─────────────────────────────────────────────────
+let _bookmarksCache = [];
+
+async function loadBookmarks() {
+  try {
+    const res = await fetch('/api/bookmarks');
+    _bookmarksCache = await res.json();
+  } catch { _bookmarksCache = []; }
+}
+
+function renderBookmarkList() {
+  const list = document.getElementById('bm-list');
+  if (!list) return;
+  if (!_bookmarksCache.length) {
+    list.innerHTML = '<div style="font-size:11px;color:#6e7681;padding:20px 0;text-align:center">즐겨찾기가 없습니다</div>';
+    return;
+  }
+  list.innerHTML = _bookmarksCache.map(bm => {
+    const label = bm.label || bm.event_id.slice(-8);
+    return `<div class="bm-item" onclick="flyToBookmark('${bm.event_id}')">
+      <div class="bm-item-dot" style="background:#ffd700"></div>
+      <div class="bm-item-label">${label}</div>
+      <button class="bm-item-del" onclick="event.stopPropagation();removeBookmarkById('${bm.id}')" title="제거">✕</button>
+    </div>`;
+  }).join('');
+}
+
+async function removeBookmarkById(id) {
+  await fetch('/api/bookmarks/' + id, { method: 'DELETE' });
+  await loadBookmarks();
+  renderBookmarkList();
+}
+
+function flyToBookmark(eventId) {
+  // 노드 찾아서 카메라 이동
+  const all = [...(planetMeshes || []), ...(satelliteMeshes || [])];
+  const target = all.find(m => m.userData?.clusterId === eventId || m.userData?.eventId === eventId || m.userData?.sessionId === eventId);
+  if (target && typeof controls !== 'undefined') {
+    controls.target.copy(target.position);
+    camera.position.set(target.position.x, target.position.y + 15, target.position.z + 20);
+  }
+}
+window.flyToBookmark = flyToBookmark;
+window.removeBookmarkById = removeBookmarkById;
+
+// 초기 로드
+loadBookmarks();
 
 // ── 필터 ──────────────────────────────────────────────────────────────────
 function nodeMatchesFilter(node) {
@@ -385,16 +484,18 @@ function autoFitView(nodes, padding = 1.35) {
 }
 window.autoFitView = autoFitView;
 
-// ── 컨트롤 허브 팝업 ──────────────────────────────────────────────────────────
+// ── 컨트롤 허브 → 통합 패널의 🎮 탭으로 이동 ─────────────────────────────────
 function toggleCtrlHub() {
-  const hub = document.getElementById('ctrl-hub');
-  const btn = document.getElementById('ctrl-hub-btn');
-  const open = hub.classList.toggle('open');
-  btn.classList.toggle('open', open);
+  // 통합 패널의 🎮 조작 탭 열기
+  const panel = document.getElementById('unified-panel');
+  if (panel) {
+    panel.classList.add('open');
+    if (typeof switchUpTab === 'function') switchUpTab('ctrl', document.querySelector('.up-tab[data-tab="ctrl"]'));
+  }
 }
 function closeCtrlHub() {
-  document.getElementById('ctrl-hub')?.classList.remove('open');
-  document.getElementById('ctrl-hub-btn')?.classList.remove('open');
+  const panel = document.getElementById('unified-panel');
+  if (panel) panel.classList.remove('open');
 }
 window.toggleCtrlHub = toggleCtrlHub;
 window.closeCtrlHub  = closeCtrlHub;
@@ -404,7 +505,7 @@ window.closeCtrlHub  = closeCtrlHub;
 // ── 미니맵: ctrl-hub 내부 캔버스 사용 ────────────────────────────────────────
 function drawMinimap3d() {
   // ctrl-hub 내부 캔버스
-  const mc = document.getElementById('ch-minimap-canvas');
+  const mc = document.getElementById('up-minimap-canvas');
   if (!mc) return;
   const mctx = mc.getContext('2d');
   const W = 156, H = 100, PAD = 5;
@@ -477,7 +578,7 @@ function drawMinimap3d() {
 (function initCtrlHubMinimap() {
   let dragging = false;
   function moveTo(e) {
-    const mc = document.getElementById('ch-minimap-canvas');
+    const mc = document.getElementById('up-minimap-canvas');
     if (!mc) return;
     const rect = mc.getBoundingClientRect();
     const PAD = 5, W = 156, H = 100;
@@ -494,7 +595,7 @@ function drawMinimap3d() {
     lerpCameraTo(controls.sph.r, tx, controls.tgt?.y || 0, tz, 300);
   }
   document.addEventListener('mousedown', e => {
-    const mc = document.getElementById('ch-minimap-canvas');
+    const mc = document.getElementById('up-minimap-canvas');
     if (mc && mc.contains(e.target)) { dragging = true; moveTo(e); }
   });
   document.addEventListener('mousemove', e => { if (dragging) moveTo(e); });
@@ -1068,7 +1169,10 @@ function buildCoreMesh() {
   if (typeof _teamMode !== 'undefined' && (_teamMode || _companyMode || _parallelMode)) return;
   if (!_coreVisible) return;
 
-  // ── 리얼 타오르는 태양 셰이더 ─────────────────────────────────────────
+  // ── 고화질 태양 셰이더 (텍스처 + FBM 오버레이) ──────────────────────
+  const sunTex = new THREE.TextureLoader().load('/textures/sun_2k.jpg');
+  sunTex.wrapS = sunTex.wrapT = THREE.RepeatWrapping;
+
   const sunVertexShader = `
     varying vec2 vUv;
     varying vec3 vNormal;
@@ -1082,6 +1186,7 @@ function buildCoreMesh() {
   `;
   const sunFragmentShader = `
     uniform float uTime;
+    uniform sampler2D uSunTexture;
     varying vec2 vUv;
     varying vec3 vNormal;
     varying vec3 vPosition;
@@ -1117,26 +1222,28 @@ function buildCoreMesh() {
     }
 
     void main() {
+      // UV 천천히 회전 (태양 자전 효과)
+      float rot = uTime * 0.02;
+      vec2 rotUv = vec2(
+        vUv.x + rot,
+        vUv.y
+      );
+      vec3 texCol = texture2D(uSunTexture, rotUv).rgb;
+
+      // FBM 노이즈 오버레이 (발광 강조)
       vec3 pos = vPosition * 0.8;
       float t = uTime * 0.4;
-
-      // 다층 노이즈로 용암/불꽃 패턴
       float n1 = fbm(pos + vec3(t * 0.3, t * 0.1, t * 0.2));
       float n2 = fbm(pos * 2.0 + vec3(t * 0.5, -t * 0.3, t * 0.1));
-      float n3 = fbm(pos * 4.0 + vec3(-t * 0.2, t * 0.6, -t * 0.4));
+      float fire = n1 * 0.6 + n2 * 0.4;
 
-      float fire = n1 * 0.6 + n2 * 0.3 + n3 * 0.1;
+      // 태양 색상 그라데이션 (FBM 기반)
+      vec3 orange = vec3(1.0, 0.35, 0.0);
+      vec3 yellow = vec3(1.0, 0.75, 0.1);
+      vec3 fbmCol = mix(orange, yellow, fire);
 
-      // 태양 색상 그라데이션 (어두운빨강 → 주황 → 노랑 → 흰색)
-      vec3 darkRed  = vec3(0.6, 0.05, 0.0);
-      vec3 orange   = vec3(1.0, 0.35, 0.0);
-      vec3 yellow   = vec3(1.0, 0.75, 0.1);
-      vec3 white    = vec3(1.0, 0.95, 0.8);
-
-      vec3 col;
-      if (fire < 0.35) col = mix(darkRed, orange, fire / 0.35);
-      else if (fire < 0.55) col = mix(orange, yellow, (fire - 0.35) / 0.2);
-      else col = mix(yellow, white, min((fire - 0.55) / 0.3, 1.0));
+      // 텍스처 + FBM 블렌딩 (텍스처 70% + FBM 30%)
+      vec3 col = texCol * 0.7 + fbmCol * 0.3;
 
       // 가장자리 림 라이팅 (코로나 효과)
       float rim = 1.0 - max(dot(vNormal, vec3(0.0, 0.0, 1.0)), 0.0);
@@ -1144,14 +1251,14 @@ function buildCoreMesh() {
       col += vec3(1.0, 0.3, 0.0) * rim * 0.8;
 
       // 밝기 + 글로우
-      float brightness = 1.2 + fire * 0.5 + rim * 0.3;
+      float brightness = 1.3 + fire * 0.4 + rim * 0.3;
       col *= brightness;
 
       gl_FragColor = vec4(col, 1.0);
     }
   `;
 
-  const sunUniforms = { uTime: { value: 0 } };
+  const sunUniforms = { uTime: { value: 0 }, uSunTexture: { value: sunTex } };
   const sunMat = new THREE.ShaderMaterial({
     vertexShader: sunVertexShader,
     fragmentShader: sunFragmentShader,
@@ -1195,9 +1302,13 @@ function buildCoreMesh() {
 window.buildCoreMesh = buildCoreMesh;
 
 function toggleCoreSkinPanel() {
-  const panel = document.getElementById('core-skin-panel');
-  const isOpen = panel.classList.toggle('open');
-  if (isOpen) renderCoreSkinGrid();
+  // 통합 패널의 🌍 스킨 탭으로 이동
+  const panel = document.getElementById('unified-panel');
+  if (panel) {
+    panel.classList.add('open');
+    switchUpTab('skin', document.querySelector('.up-tab[data-tab="skin"]'));
+  }
+  renderCoreSkinGrid();
 }
 window.toggleCoreSkinPanel = toggleCoreSkinPanel;
 
@@ -2384,3 +2495,373 @@ window.fpFollowUser = fpFollowUser;
     track('session.heartbeat', { mode });
   }, 60000);
 })();
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 구독 플랜 모달
+// ══════════════════════════════════════════════════════════════════════════════
+let _pricePeriod = 'monthly';
+
+function openPricing() {
+  const overlay = document.getElementById('pricing-overlay');
+  overlay.classList.add('open');
+  renderPricingGrid();
+}
+window.openPricing = openPricing;
+
+function closePricing() {
+  document.getElementById('pricing-overlay').classList.remove('open');
+}
+window.closePricing = closePricing;
+
+function setPricePeriod(period, btn) {
+  _pricePeriod = period;
+  document.querySelectorAll('.pm-period-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  renderPricingGrid();
+}
+window.setPricePeriod = setPricePeriod;
+
+async function renderPricingGrid() {
+  const grid = document.getElementById('pm-grid');
+  if (!grid) return;
+  let plans;
+  try {
+    const res = await fetch('/api/payment/plans');
+    const data = await res.json();
+    plans = data.plans || [];
+  } catch {
+    plans = [
+      { id:'free', name:'Free', badge:'', priceLabel:'₩0', period:'', description:'개인 개발자를 위한 무료 플랜',
+        features:['개인 작업 추적','기본 3D 마인드맵','5개 세션 히스토리','기본 이펙트 2개','커뮤니티 지원'], cta:'현재 플랜', popular:false, price:0 },
+      { id:'pro', name:'Pro', badge:'POPULAR', priceLabel:'₩9,900', period:'/월', description:'파워 유저를 위한 프로 플랜',
+        features:['Free의 모든 기능','무제한 세션 히스토리','팀 대시보드 (10명)','AI 인사이트 분석','Shadow AI 감지','감사 로그','컨텍스트 브릿지','모든 이펙트 + 스킨','테마 마켓 판매 가능','이메일 지원'], cta:'프로 시작하기', popular:true, price:9900 },
+      { id:'team', name:'Team', badge:'', priceLabel:'₩29,900', period:'/월/멤버', description:'팀 협업을 위한 비즈니스 플랜',
+        features:['Pro의 모든 기능','무제한 채널 & 멤버','실시간 팀 협업','부서별 대시보드','관리자 뷰','PR 자동 태그','PDF 감사 리포트','작업 충돌 감지','팀 인사이트 분석','우선 지원 (SLA 24h)'], cta:'팀 시작하기', popular:false, price:29900 },
+      { id:'enterprise', name:'Enterprise', badge:'', priceLabel:'문의', period:'', description:'대규모 조직을 위한 엔터프라이즈',
+        features:['Team의 모든 기능','온프레미스 배포 지원','SSO / SAML 인증','커스텀 AI 모델 연동','전용 인프라 격리','SLA 99.9% 보장','전담 매니저 배정','API 무제한 호출','보안 감사 인증서','맞춤 교육 & 온보딩'], cta:'영업팀 문의', popular:false, price:-1 },
+    ];
+  }
+
+  grid.innerHTML = plans.map(p => {
+    const yearly = _pricePeriod === 'yearly';
+    let priceLabel = p.priceLabel || '₩0';
+    let period = p.period || '';
+    if (yearly && p.price > 0) {
+      const yp = Math.round(p.price * 12 * 0.8);
+      priceLabel = '₩' + yp.toLocaleString();
+      period = '/년' + (p.period?.includes('멤버') ? '/멤버' : '');
+    }
+    return `
+      <div class="pm-card${p.popular ? ' popular' : ''}">
+        ${p.badge ? `<div class="pm-badge">${p.badge}</div>` : ''}
+        <div class="pm-plan-name">${p.name}</div>
+        <div class="pm-plan-desc">${p.description || ''}</div>
+        <div class="pm-price">
+          <span class="pm-price-amount">${priceLabel}</span>
+          <span class="pm-price-period">${period}</span>
+        </div>
+        <ul class="pm-features">
+          ${(p.features || []).map(f => `<li>${f}</li>`).join('')}
+        </ul>
+        <button class="pm-cta" onclick="selectPlan('${p.id}')">${p.cta || '선택'}</button>
+      </div>
+    `;
+  }).join('');
+}
+
+async function selectPlan(planId) {
+  if (planId === 'free') { closePricing(); return; }
+  if (planId === 'enterprise') { alert('enterprise@orbit-ai.dev 로 문의해주세요.'); return; }
+  try {
+    const userId = _orbitUser?.id || 'local';
+    const res = await fetch('/api/payment/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ planId, userId, userEmail: _orbitUser?.email || '' })
+    });
+    const result = await res.json();
+    if (result.mock) {
+      alert(`[테스트 모드] ${planId.toUpperCase()} 플랜 구독 완료!\n주문번호: ${result.orderId}\n금액: ₩${result.amount?.toLocaleString()}`);
+      closePricing();
+    } else if (result.clientKey) {
+      alert('결제 페이지로 이동합니다...');
+    }
+  } catch (e) {
+    alert('결제 오류: ' + e.message);
+  }
+}
+window.selectPlan = selectPlan;
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 바탕화면 윈도우 시스템 — 3D 마인드맵 위에서 다중 창 열기/닫기
+// ══════════════════════════════════════════════════════════════════════════════
+const _openWindows = new Map(); // windowId → { el, data, minimized }
+let _windowZIndex = 260;
+let _taskbarVisible = false;
+
+// 아이콘 매핑 (AI 도구 / 웹 사이트)
+const TOOL_ICONS = {
+  'chatgpt': '🤖', 'claude': '⬡', 'gemini': '✦', 'copilot': '🧑‍✈️',
+  'cursor': '📝', 'windsurf': '🏄', 'perplexity': '🔍', 'midjourney': '🎨',
+  'github': '🐙', 'vscode': '💻', 'terminal': '⌨️', 'browser': '🌐',
+  'default': '📄',
+};
+
+function getToolIcon(source) {
+  if (!source) return TOOL_ICONS.default;
+  const s = source.toLowerCase();
+  for (const [key, icon] of Object.entries(TOOL_ICONS)) {
+    if (s.includes(key)) return icon;
+  }
+  return TOOL_ICONS.default;
+}
+
+function showTaskbar() {
+  if (_taskbarVisible) return;
+  _taskbarVisible = true;
+  document.getElementById('desktop-taskbar').classList.add('active');
+  // 통합 패널 버튼 위치 조정
+  const ucBtn = document.getElementById('unified-ctrl-btn');
+  if (ucBtn) ucBtn.style.bottom = '56px';
+  // 시계 업데이트
+  updateTaskbarClock();
+  setInterval(updateTaskbarClock, 30000);
+}
+
+function updateTaskbarClock() {
+  const el = document.getElementById('taskbar-clock');
+  if (!el) return;
+  const now = new Date();
+  el.textContent = `${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}`;
+}
+
+function openDesktopWindow(data) {
+  const id = data.windowId || 'win-' + Date.now();
+  if (_openWindows.has(id)) {
+    // 이미 열린 창 → 포커스 + 복원
+    const win = _openWindows.get(id);
+    win.minimized = false;
+    win.el.classList.remove('minimized');
+    focusWindow(id);
+    updateTaskbarItems();
+    return id;
+  }
+
+  showTaskbar();
+
+  const icon = getToolIcon(data.source || data.type || '');
+  const title = data.title || data.label || data.intent || 'Window';
+
+  // 새 창 위치 계산 (cascade)
+  const offset = _openWindows.size * 30;
+  const left = 100 + offset;
+  const top = 60 + offset;
+
+  const win = document.createElement('div');
+  win.className = 'dw-window focused';
+  win.id = id;
+  win.style.cssText = `left:${left}px;top:${top}px;width:${data.width||480}px;height:${data.height||360}px;z-index:${++_windowZIndex}`;
+
+  // 타이틀바
+  const titlebar = document.createElement('div');
+  titlebar.className = 'dw-titlebar';
+  titlebar.innerHTML = `
+    <span class="dw-title-icon">${icon}</span>
+    <span class="dw-title-text">${escapeHtml(title)}</span>
+    <button class="dw-btn" onclick="minimizeWindow('${id}')" title="최소화">─</button>
+    <button class="dw-btn close" onclick="closeDesktopWindow('${id}')" title="닫기">✕</button>
+  `;
+
+  // 드래그 가능
+  makeDraggable(win, titlebar);
+
+  // 본문
+  const body = document.createElement('div');
+  body.className = 'dw-body';
+
+  if (data.url) {
+    body.innerHTML = `<iframe src="${escapeHtml(data.url)}" sandbox="allow-scripts allow-same-origin allow-forms"></iframe>`;
+    body.style.padding = '0';
+  } else {
+    body.innerHTML = buildWindowContent(data);
+  }
+
+  // 상태바
+  const status = document.createElement('div');
+  status.className = 'dw-status';
+  const dotColor = data.active ? '#3fb950' : '#6e7681';
+  status.innerHTML = `<div class="dw-status-dot" style="background:${dotColor}"></div>
+    <span>${data.source || data.type || 'orbit'}</span>
+    <span style="margin-left:auto">${data.timestamp ? relativeTime(data.timestamp) : ''}</span>`;
+
+  win.appendChild(titlebar);
+  win.appendChild(body);
+  win.appendChild(status);
+
+  // 클릭 시 포커스
+  win.addEventListener('mousedown', () => focusWindow(id));
+
+  document.getElementById('desktop-windows').appendChild(win);
+
+  _openWindows.set(id, { el: win, data, minimized: false });
+  updateTaskbarItems();
+  return id;
+}
+window.openDesktopWindow = openDesktopWindow;
+
+function buildWindowContent(data) {
+  if (data.type === 'session') {
+    const ctx = typeof _sessionContextCache !== 'undefined' ? _sessionContextCache[data.sessionId] : null;
+    return `
+      <div style="padding:4px">
+        <div style="font-size:14px;font-weight:700;color:#e6edf3;margin-bottom:8px">${data.intent || '작업 세션'}</div>
+        <div style="display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:12px">
+          <span style="color:#6e7681">세션</span><span>${data.sessionId?.slice(-8) || '-'}</span>
+          <span style="color:#6e7681">작업수</span><span>${data.eventCount || 0}개</span>
+          <span style="color:#6e7681">프로젝트</span><span>${ctx?.projectName || '-'}</span>
+        </div>
+        ${ctx?.firstMsg ? `<div style="margin-top:12px;padding:8px;background:#161b22;border-radius:8px;font-size:11px;color:#8b949e">${ctx.firstMsg.slice(0,300)}</div>` : ''}
+      </div>
+    `;
+  }
+  if (data.type === 'file') {
+    return `
+      <div style="padding:4px">
+        <div style="font-size:14px;font-weight:700;color:#e6edf3;margin-bottom:8px">${data.filename || data.fileLabel || '파일'}</div>
+        <div style="display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:12px">
+          <span style="color:#6e7681">접근</span><span>${data.count || 1}회</span>
+          <span style="color:#6e7681">역할</span><span>${data.isWrite ? '✏️ 수정' : '📄 읽기'}</span>
+        </div>
+      </div>
+    `;
+  }
+  if (data.type === 'ai_tool' || data.site) {
+    return `
+      <div style="padding:4px">
+        <div style="font-size:14px;font-weight:700;color:#e6edf3;margin-bottom:8px">${data.title || data.site || 'AI Tool'}</div>
+        <div style="font-size:12px;color:#8b949e;margin-bottom:8px">${data.url || ''}</div>
+        <div style="display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:12px">
+          <span style="color:#6e7681">소스</span><span>${data.site || data.source || '-'}</span>
+          <span style="color:#6e7681">메시지</span><span>${data.msgCount || data.msg_count || '-'}개</span>
+        </div>
+      </div>
+    `;
+  }
+  // 기본
+  return `
+    <div style="padding:4px">
+      <div style="font-size:14px;font-weight:700;color:#e6edf3;margin-bottom:8px">${data.label || data.title || 'Window'}</div>
+      <pre style="font-size:11px;color:#8b949e;white-space:pre-wrap;word-break:break-all">${JSON.stringify(data, null, 2).slice(0, 1000)}</pre>
+    </div>
+  `;
+}
+
+function escapeHtml(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function relativeTime(ts) {
+  const diff = Date.now() - new Date(ts).getTime();
+  if (diff < 60000) return '방금';
+  if (diff < 3600000) return Math.floor(diff/60000) + '분 전';
+  if (diff < 86400000) return Math.floor(diff/3600000) + '시간 전';
+  return Math.floor(diff/86400000) + '일 전';
+}
+
+function focusWindow(id) {
+  document.querySelectorAll('.dw-window').forEach(w => w.classList.remove('focused'));
+  const win = _openWindows.get(id);
+  if (!win) return;
+  win.el.style.zIndex = ++_windowZIndex;
+  win.el.classList.add('focused');
+  updateTaskbarItems();
+}
+window.focusWindow = focusWindow;
+
+function minimizeWindow(id) {
+  const win = _openWindows.get(id);
+  if (!win) return;
+  win.minimized = true;
+  win.el.classList.add('minimized');
+  updateTaskbarItems();
+}
+window.minimizeWindow = minimizeWindow;
+
+function restoreWindow(id) {
+  const win = _openWindows.get(id);
+  if (!win) return;
+  if (win.minimized) {
+    win.minimized = false;
+    win.el.classList.remove('minimized');
+  }
+  focusWindow(id);
+  updateTaskbarItems();
+}
+window.restoreWindow = restoreWindow;
+
+function closeDesktopWindow(id) {
+  const win = _openWindows.get(id);
+  if (!win) return;
+  win.el.remove();
+  _openWindows.delete(id);
+  updateTaskbarItems();
+  if (_openWindows.size === 0) {
+    _taskbarVisible = false;
+    document.getElementById('desktop-taskbar').classList.remove('active');
+    const ucBtn = document.getElementById('unified-ctrl-btn');
+    if (ucBtn) ucBtn.style.bottom = '16px';
+  }
+}
+window.closeDesktopWindow = closeDesktopWindow;
+
+function toggleDesktopWindow(id) {
+  const win = _openWindows.get(id);
+  if (!win) return;
+  if (win.minimized) {
+    restoreWindow(id);
+  } else if (win.el.classList.contains('focused')) {
+    minimizeWindow(id);
+  } else {
+    focusWindow(id);
+  }
+}
+
+function updateTaskbarItems() {
+  const container = document.getElementById('taskbar-items');
+  if (!container) return;
+  container.innerHTML = '';
+  for (const [id, win] of _openWindows) {
+    const icon = getToolIcon(win.data.source || win.data.type || '');
+    const label = win.data.title || win.data.label || win.data.intent || 'Window';
+    const isFocused = win.el.classList.contains('focused') && !win.minimized;
+    const item = document.createElement('div');
+    item.className = 'tb-item' + (isFocused ? ' active' : '');
+    item.innerHTML = `
+      <span class="tb-item-icon">${icon}</span>
+      <span class="tb-item-label">${escapeHtml(label)}</span>
+      <button class="tb-item-close" onclick="event.stopPropagation();closeDesktopWindow('${id}')">✕</button>
+    `;
+    item.onclick = () => toggleDesktopWindow(id);
+    container.appendChild(item);
+  }
+}
+
+function makeDraggable(el, handle) {
+  let startX, startY, origX, origY;
+  handle.addEventListener('mousedown', e => {
+    if (e.target.tagName === 'BUTTON') return;
+    e.preventDefault();
+    startX = e.clientX; startY = e.clientY;
+    origX = el.offsetLeft; origY = el.offsetTop;
+    const onMove = ev => {
+      el.style.left = (origX + ev.clientX - startX) + 'px';
+      el.style.top  = (origY + ev.clientY - startY) + 'px';
+    };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+}

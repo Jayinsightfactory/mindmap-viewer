@@ -83,6 +83,16 @@ if (db) {
       expiresAt TEXT,
       FOREIGN KEY (userId) REFERENCES users(id)
     );
+
+    -- OAuth 토큰 저장 (Google Drive 백업용)
+    CREATE TABLE IF NOT EXISTS oauth_tokens (
+      userId       TEXT PRIMARY KEY,
+      accessToken  TEXT NOT NULL DEFAULT '',
+      refreshToken TEXT NOT NULL DEFAULT '',
+      expiresAt    INTEGER DEFAULT 0,
+      updatedAt    TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (userId) REFERENCES users(id)
+    );
   `);
 }
 
@@ -291,9 +301,80 @@ function optionalAuth(req, res, next) {
   next();
 }
 
+// ─── OAuth 토큰 관리 (Google Drive 백업용) ────────
+function saveOAuthTokens(userId, { accessToken, refreshToken, expiresAt }) {
+  if (!db) return;
+  db.prepare(`
+    INSERT INTO oauth_tokens (userId, accessToken, refreshToken, expiresAt, updatedAt)
+    VALUES (?, ?, ?, ?, datetime('now'))
+    ON CONFLICT(userId) DO UPDATE SET
+      accessToken = CASE WHEN ? != '' THEN ? ELSE accessToken END,
+      refreshToken = CASE WHEN ? != '' THEN ? ELSE refreshToken END,
+      expiresAt = ?, updatedAt = datetime('now')
+  `).run(userId, accessToken || '', refreshToken || '', expiresAt || 0,
+         accessToken || '', accessToken || '',
+         refreshToken || '', refreshToken || '',
+         expiresAt || 0);
+}
+
+function getOAuthTokens(userId) {
+  if (!db) return null;
+  return db.prepare('SELECT * FROM oauth_tokens WHERE userId = ?').get(userId) || null;
+}
+
+async function refreshGoogleAccessToken(userId) {
+  const tokens = getOAuthTokens(userId);
+  if (!tokens?.refreshToken) return null;
+
+  try {
+    const res = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id:     process.env.GOOGLE_CLIENT_ID,
+        client_secret: process.env.GOOGLE_CLIENT_SECRET,
+        refresh_token: tokens.refreshToken,
+        grant_type:    'refresh_token',
+      }),
+    });
+    const data = await res.json();
+    if (data.access_token) {
+      const expiresAt = Date.now() + (data.expires_in || 3600) * 1000;
+      saveOAuthTokens(userId, { accessToken: data.access_token, refreshToken: '', expiresAt });
+      return data.access_token;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+// 유효한 Google access token 가져오기 (만료 시 자동 갱신)
+async function getValidGoogleToken(userId) {
+  const tokens = getOAuthTokens(userId);
+  if (!tokens) return null;
+  if (tokens.accessToken && tokens.expiresAt > Date.now() + 60000) {
+    return tokens.accessToken;
+  }
+  return refreshGoogleAccessToken(userId);
+}
+
+// Google OAuth 사용자 목록
+function getGoogleOAuthUsers() {
+  if (!db) return [];
+  return db.prepare(`
+    SELECT u.id, u.email, u.name, o.refreshToken
+    FROM users u
+    JOIN oauth_tokens o ON u.id = o.userId
+    WHERE u.provider = 'google' AND o.refreshToken != ''
+  `).all();
+}
+
 module.exports = {
   register, login, verifyToken, issueApiToken,
   getUserById, getUserByEmail, upgradePlan, upsertOAuthUser,
   authMiddleware, optionalAuth,
   getDb: () => db,
+  saveOAuthTokens, getOAuthTokens, refreshGoogleAccessToken,
+  getValidGoogleToken, getGoogleOAuthUsers,
 };

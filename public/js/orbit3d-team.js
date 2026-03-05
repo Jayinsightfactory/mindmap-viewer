@@ -192,11 +192,16 @@ function applyTeamCfg() {
   else if (_teamMode && _activeSimData) buildTeamSystem(_activeSimData);
 }
 function toggleDistPanel() {
-  document.getElementById('dist-panel').classList.toggle('open');
-  document.getElementById('effects-panel').classList.remove('open');
+  // 통합 패널의 📐 노드 탭으로 이동
+  const panel = document.getElementById('unified-panel');
+  if (panel) {
+    panel.classList.add('open');
+    if (typeof switchUpTab === 'function') switchUpTab('node', document.querySelector('.up-tab[data-tab="node"]'));
+  }
 }
 function closeDistPanel() {
-  document.getElementById('dist-panel').classList.remove('open');
+  const panel = document.getElementById('unified-panel');
+  if (panel) panel.classList.remove('open');
 }
 
 // ── 마켓 이펙트 패널 ─────────────────────────────────────────────────────────
@@ -267,19 +272,21 @@ function clearNodeEffect() {
 }
 
 function toggleEffectsPanel() {
-  const panel = document.getElementById('effects-panel');
-  panel.classList.toggle('open');
-  document.getElementById('dist-panel').classList.remove('open');
-  if (panel.classList.contains('open')) {
-    if (typeof track === 'function') track('view.panel_open', { panel: 'effects' });
-    initEffectsPanel();
-    // 현재 선택된 노드 표시 업데이트는 updateEffectsPanelNode에서
-    updateEffectsPanelNode();
+  // 통합 패널의 ✨ 이펙트 탭으로 이동
+  const panel = document.getElementById('unified-panel');
+  if (panel) {
+    panel.classList.add('open');
+    if (typeof switchUpTab === 'function') switchUpTab('fx', document.querySelector('.up-tab[data-tab="fx"]'));
   }
+  if (typeof track === 'function') track('view.panel_open', { panel: 'effects' });
+  initEffectsPanel();
+  updateEffectsPanelNode();
 }
 
 function closeEffectsPanel() {
-  document.getElementById('effects-panel').classList.remove('open');
+  // 통합 패널 닫기
+  const panel = document.getElementById('unified-panel');
+  if (panel) panel.classList.remove('open');
 }
 
 function updateEffectsPanelNode() {

@@ -745,12 +745,120 @@ function showPanel(data, obj) {
     pv.style.display = 'block';
   }
 
+  // ── 메모 + 즐겨찾기 섹션 (요약 탭 하단) ────────────────────────────────
+  const eventId = data.clusterId || data.sessionId || data.eventId || data.memberId || '';
+  if (eventId && (data.type === 'session' || data.type === 'file')) {
+    const summaryPane = document.getElementById('ip-pane-summary');
+    if (summaryPane) {
+      // 즐겨찾기 버튼 (헤더에 추가)
+      let bmBtn = document.getElementById('ip-bookmark-toggle');
+      if (!bmBtn) {
+        bmBtn = document.createElement('button');
+        bmBtn.id = 'ip-bookmark-toggle';
+        bmBtn.className = 'ip-bookmark-btn';
+        const headerText = document.querySelector('.ip-header-text');
+        if (headerText) headerText.parentElement.insertBefore(bmBtn, document.querySelector('.ip-close'));
+      }
+      const isBM = (typeof _bookmarksCache !== 'undefined' ? _bookmarksCache : []).some(b => b.event_id === eventId);
+      bmBtn.textContent = isBM ? '★' : '☆';
+      bmBtn.className = 'ip-bookmark-btn' + (isBM ? ' active' : '');
+      bmBtn.onclick = async () => {
+        const bms = typeof _bookmarksCache !== 'undefined' ? _bookmarksCache : [];
+        const existing = bms.find(b => b.event_id === eventId);
+        if (existing) {
+          await fetch('/api/bookmarks/' + existing.id, { method: 'DELETE' });
+        } else {
+          await fetch('/api/bookmarks', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: 'bm-' + Date.now(), eventId, label: data.intent || data.fileLabel || eventId.slice(-8) })
+          });
+        }
+        if (typeof loadBookmarks === 'function') await loadBookmarks();
+        const nowBM = (typeof _bookmarksCache !== 'undefined' ? _bookmarksCache : []).some(b => b.event_id === eventId);
+        bmBtn.textContent = nowBM ? '★' : '☆';
+        bmBtn.className = 'ip-bookmark-btn' + (nowBM ? ' active' : '');
+      };
+
+      // 메모 섹션
+      let memoDiv = document.getElementById('ip-memo-section');
+      if (!memoDiv) {
+        memoDiv = document.createElement('div');
+        memoDiv.id = 'ip-memo-section';
+        memoDiv.style.cssText = 'padding:8px 0;border-top:1px solid #21262d;margin-top:8px';
+        summaryPane.appendChild(memoDiv);
+      }
+      // 기존 메모 찾기
+      const memos = typeof _memosCache !== 'undefined' ? _memosCache : [];
+      const existingMemo = memos.find(m => m.event_id === eventId);
+      memoDiv.innerHTML = `
+        <div style="font-size:10px;color:#6e7681;margin-bottom:4px;text-transform:uppercase;letter-spacing:.6px">메모</div>
+        <textarea class="ip-memo-area" id="ip-memo-text" placeholder="이 노드에 대한 메모를 작성하세요…">${existingMemo ? existingMemo.content : ''}</textarea>
+        <div class="ip-memo-actions">
+          <button class="ip-memo-btn" onclick="saveMemo('${eventId}')">저장</button>
+          ${existingMemo ? `<button class="ip-memo-btn del" onclick="deleteMemo('${existingMemo.id}','${eventId}')">삭제</button>` : ''}
+        </div>
+      `;
+    }
+  }
+
   panel.classList.add('open');
-  // 이펙트 패널이 열려있으면 선택 노드 업데이트
-  if (document.getElementById('effects-panel')?.classList.contains('open')) {
+  // 이펙트 탭이 열려있으면 선택 노드 업데이트
+  const fxPane = document.getElementById('up-pane-fx');
+  if (fxPane && fxPane.classList.contains('active')) {
     updateEffectsPanelNode();
   }
 }
+
+// ── 팝아웃: info-panel 내용을 바탕화면 윈도우로 분리 ──────────────────────
+function popOutCurrentPanel() {
+  if (!_currentPanelData) return;
+  const data = { ..._currentPanelData };
+  data.windowId = 'win-' + (data.clusterId || data.sessionId || data.eventId || Date.now());
+  data.title = data.intent || data.fileLabel || data.label || data.sessionId?.slice(-8) || 'Window';
+  data.source = data.type;
+  if (typeof openDesktopWindow === 'function') {
+    openDesktopWindow(data);
+    closePanel();
+  }
+}
+window.popOutCurrentPanel = popOutCurrentPanel;
+
+// ── 메모 CRUD 헬퍼 ────────────────────────────────────────────────────────
+let _memosCache = [];
+
+async function loadMemos() {
+  try {
+    const res = await fetch('/api/node-memos');
+    _memosCache = await res.json();
+  } catch { _memosCache = []; }
+}
+
+async function saveMemo(eventId) {
+  const content = document.getElementById('ip-memo-text')?.value?.trim();
+  if (!content) return;
+  const existing = _memosCache.find(m => m.event_id === eventId);
+  const id = existing ? existing.id : 'memo-' + Date.now();
+  await fetch('/api/node-memos', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, eventId, content })
+  });
+  await loadMemos();
+  // 패널 리프레시
+  if (_currentPanelData && _selectedHit) showPanel(_currentPanelData, _selectedHit.obj);
+}
+window.saveMemo = saveMemo;
+
+async function deleteMemo(id, eventId) {
+  await fetch('/api/node-memos/' + id, { method: 'DELETE' });
+  await loadMemos();
+  if (_currentPanelData && _selectedHit) showPanel(_currentPanelData, _selectedHit.obj);
+}
+window.deleteMemo = deleteMemo;
+
+// 초기 로드
+loadMemos();
 
 function closePanel() {
   document.getElementById('info-panel').classList.remove('open');

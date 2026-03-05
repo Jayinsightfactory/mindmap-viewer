@@ -241,6 +241,48 @@ function createRouter(deps) {
     res.json(suggestion);
   });
 
+  // ── 노드 메모 CRUD ─────────────────────────────────────────────────────
+
+  router.get('/node-memos', (req, res) => {
+    const userId = req.query.userId || 'local';
+    res.json(db.getNodeMemos(userId));
+  });
+
+  router.post('/node-memos', (req, res) => {
+    const { id, eventId, userId, content } = req.body;
+    if (!id || !eventId || !content) return res.status(400).json({ error: 'id, eventId, content required' });
+    db.upsertNodeMemo(id, eventId, userId || 'local', content);
+    broadcastAll({ type: 'memoUpdate' });
+    res.json({ success: true, id });
+  });
+
+  router.delete('/node-memos/:id', (req, res) => {
+    db.deleteNodeMemo(req.params.id);
+    broadcastAll({ type: 'memoUpdate' });
+    res.json({ success: true });
+  });
+
+  // ── 즐겨찾기 CRUD ──────────────────────────────────────────────────────
+
+  router.get('/bookmarks', (req, res) => {
+    const userId = req.query.userId || 'local';
+    res.json(db.getBookmarks(userId));
+  });
+
+  router.post('/bookmarks', (req, res) => {
+    const { id, eventId, userId, label } = req.body;
+    if (!id || !eventId) return res.status(400).json({ error: 'id, eventId required' });
+    db.addBookmark(id, eventId, userId || 'local', label || null);
+    broadcastAll({ type: 'bookmarkUpdate' });
+    res.json({ success: true, id });
+  });
+
+  router.delete('/bookmarks/:id', (req, res) => {
+    db.removeBookmark(req.params.id);
+    broadcastAll({ type: 'bookmarkUpdate' });
+    res.json({ success: true });
+  });
+
   return router;
 }
 

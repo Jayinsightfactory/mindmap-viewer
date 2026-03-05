@@ -681,7 +681,10 @@ window.setFilter = setFilter;
 
 function toggleOrbitAnim() {
   orbitAnimOn = !orbitAnimOn;
-  document.getElementById('orbit-toggle-btn').textContent = orbitAnimOn ? '⏸ 공전 중지' : '▶ 공전 시작';
+  const oldBtn = document.getElementById('orbit-toggle-btn');
+  if (oldBtn) oldBtn.textContent = orbitAnimOn ? '⏸ 공전 중지' : '▶ 공전 시작';
+  const upBtn = document.getElementById('up-orbit-btn');
+  if (upBtn) upBtn.textContent = orbitAnimOn ? '⏸ 공전 중지' : '▶ 공전 시작';
 }
 window.toggleOrbitAnim = toggleOrbitAnim;
 

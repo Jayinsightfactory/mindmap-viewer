@@ -102,6 +102,12 @@ let t        = 0;
 let currentVisibleNodes = [];
 let MAX_VISIBLE_NODES = 300;
 
+// ── 멀티 선택 상태 (F4: 노드 소프트 삭제) ──
+const selectedNodes = new Set();   // 선택된 node id
+let _dragSelecting = false;
+let _dragSelStart  = null;         // {x, y} screen coords
+let _dragSelBox    = null;         // DOM element
+
 // ── CSS2D 노드 라벨 풀 ──
 // 라벨은 MAX_LABELS개까지 재사용 (성능 최적화)
 const MAX_LABELS = 80;
@@ -271,6 +277,12 @@ function updateInstancedMesh(visibleNodes) {
       }
     }
     if (n._dimmed) { _color.multiplyScalar(0.2); }
+    // 선택된 노드 하이라이트
+    if (selectedNodes.has(n.id)) {
+      _color.r = Math.min(1, _color.r + 0.4);
+      _color.g = Math.min(1, _color.g + 0.4);
+      _color.b = Math.min(1, _color.b + 0.4);
+    }
     instancedMesh.setColorAt(i, _color);
   });
 
@@ -350,6 +362,21 @@ let _clickStart = { x: 0, y: 0 };
 
 renderer.domElement.addEventListener('mousedown', e => {
   _clickStart = { x: e.clientX, y: e.clientY };
+  // Shift+드래그: 선택 박스 시작
+  if (e.shiftKey && e.button === 0) {
+    _dragSelecting = true;
+    _dragSelStart = { x: e.clientX, y: e.clientY };
+    if (!_dragSelBox) {
+      _dragSelBox = document.createElement('div');
+      _dragSelBox.style.cssText = 'position:fixed;border:1px solid #58a6ff;background:rgba(88,166,255,0.1);pointer-events:none;z-index:999;display:none;';
+      document.body.appendChild(_dragSelBox);
+    }
+    _dragSelBox.style.display = 'block';
+    _dragSelBox.style.left = e.clientX + 'px';
+    _dragSelBox.style.top = e.clientY + 'px';
+    _dragSelBox.style.width = '0';
+    _dragSelBox.style.height = '0';
+  }
 });
 
 renderer.domElement.addEventListener('click', e => {
@@ -362,10 +389,20 @@ renderer.domElement.addEventListener('click', e => {
   if (hits.length) {
     const n = currentVisibleNodes[hits[0].instanceId];
     if (n) {
+      // Shift/Ctrl+Click: 멀티 선택 토글
+      if (e.shiftKey || e.ctrlKey || e.metaKey) {
+        if (selectedNodes.has(n.id)) selectedNodes.delete(n.id);
+        else selectedNodes.add(n.id);
+        _updateSelectionBar();
+        return;
+      }
+      // 일반 클릭: 선택 해제 후 원래 동작
+      if (selectedNodes.size > 0) { selectedNodes.clear(); _updateSelectionBar(); }
       if (n.level >= 1) zoomIntoNode(n);
       else openSidePanel(n);
     }
   } else {
+    if (selectedNodes.size > 0) { selectedNodes.clear(); _updateSelectionBar(); }
     closeSidePanel();
   }
 });
@@ -385,6 +422,19 @@ renderer.domElement.addEventListener('dblclick', e => {
 });
 
 renderer.domElement.addEventListener('mousemove', e => {
+  // 드래그 선택 박스 업데이트
+  if (_dragSelecting && _dragSelStart && _dragSelBox) {
+    const x = Math.min(e.clientX, _dragSelStart.x);
+    const y = Math.min(e.clientY, _dragSelStart.y);
+    const w = Math.abs(e.clientX - _dragSelStart.x);
+    const h = Math.abs(e.clientY - _dragSelStart.y);
+    _dragSelBox.style.left = x + 'px';
+    _dragSelBox.style.top = y + 'px';
+    _dragSelBox.style.width = w + 'px';
+    _dragSelBox.style.height = h + 'px';
+    return;
+  }
+
   const H = tlOpen ? innerHeight - 48 - 220 : innerHeight;
   pointer.x = (e.clientX / innerWidth) * 2 - 1;
   pointer.y = -((e.clientY - 48) / H) * 2 + 1;
@@ -874,7 +924,32 @@ minimap.addEventListener('mousemove', e => {
   if (!minimapDragging) return;
   minimapMoveTo(e.clientX, e.clientY);
 });
-document.addEventListener('mouseup', () => { minimapDragging = false; });
+document.addEventListener('mouseup', (e) => {
+  minimapDragging = false;
+  // 드래그 선택 완료
+  if (_dragSelecting && _dragSelStart) {
+    _dragSelecting = false;
+    if (_dragSelBox) _dragSelBox.style.display = 'none';
+    const x1 = Math.min(e.clientX, _dragSelStart.x);
+    const y1 = Math.min(e.clientY, _dragSelStart.y);
+    const x2 = Math.max(e.clientX, _dragSelStart.x);
+    const y2 = Math.max(e.clientY, _dragSelStart.y);
+    if (x2 - x1 > 5 && y2 - y1 > 5) {
+      // 스크린 영역 안에 있는 노드 선택
+      const H = typeof tlOpen !== 'undefined' && tlOpen ? innerHeight - 48 - 220 : innerHeight;
+      for (const n of currentVisibleNodes) {
+        const v = new THREE.Vector3(n.x, n.y, n.z || 0).project(camera);
+        const sx = (v.x + 1) / 2 * innerWidth;
+        const sy = -(v.y - 1) / 2 * H + 48;
+        if (sx >= x1 && sx <= x2 && sy >= y1 && sy <= y2) {
+          selectedNodes.add(n.id);
+        }
+      }
+      _updateSelectionBar();
+    }
+    _dragSelStart = null;
+  }
+});
 
 // ── 메인 렌더 루프 ──
 let lastTime = 0;
@@ -1100,7 +1175,12 @@ document.addEventListener('keydown', e => {
     case '+': case '=': zcZoomIn(); e.preventDefault(); break;
     case '-': zcZoomOut(); e.preventDefault(); break;
     case '?': toggleShortcutHint(); e.preventDefault(); break;
-    case 'Escape': closeNodeSearch(); closeSidePanel(); hideShortcutHint(); e.preventDefault(); break;
+    case 'Escape':
+      if (selectedNodes.size > 0) { selectedNodes.clear(); _updateSelectionBar(); }
+      closeNodeSearch(); closeSidePanel(); hideShortcutHint(); e.preventDefault(); break;
+    case 'Delete': case 'Backspace':
+      if (selectedNodes.size > 0) { _hideSelectedNodes(); e.preventDefault(); }
+      break;
     case 'k': if (e.ctrlKey || e.metaKey) { openNodeSearch(); e.preventDefault(); } break;
     case '1': if (e.shiftKey) { autoFit(); e.preventDefault(); } break;
     case 'a': case 'A': if (!e.ctrlKey && !e.metaKey) { toggleAlertPanel(); e.preventDefault(); } break;
@@ -1856,6 +1936,84 @@ if (_origShowSidePanel) {
     }
   };
 }
+
+// ── 노드 멀티 선택 + 숨기기 (F4) ─────────────────────────────────────────────
+
+function _updateSelectionBar() {
+  let bar = document.getElementById('orbit-sel-bar');
+  if (selectedNodes.size === 0) {
+    if (bar) bar.style.display = 'none';
+    return;
+  }
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'orbit-sel-bar';
+    bar.style.cssText = `
+      position:fixed;bottom:24px;left:50%;transform:translateX(-50%);
+      background:rgba(13,17,23,0.95);border:1px solid #58a6ff;
+      border-radius:12px;padding:8px 16px;z-index:600;
+      display:flex;align-items:center;gap:12px;
+      backdrop-filter:blur(16px);box-shadow:0 8px 32px rgba(0,0,0,0.4);
+      font-family:-apple-system,'Segoe UI',sans-serif;font-size:13px;color:#e6edf3;
+      animation:fadeIn .3s ease;
+    `;
+    document.body.appendChild(bar);
+  }
+  bar.style.display = 'flex';
+  bar.innerHTML = `
+    <span style="color:#58a6ff;font-weight:600">${selectedNodes.size}개 선택됨</span>
+    <span style="color:#30363d">|</span>
+    <button onclick="_hideSelectedNodes()" style="background:#da3633;border:none;border-radius:6px;
+      color:#fff;padding:4px 12px;cursor:pointer;font-size:12px;font-weight:600">숨기기</button>
+    <button onclick="selectedNodes.clear();_updateSelectionBar()" style="background:#21262d;border:1px solid #30363d;
+      border-radius:6px;color:#8b949e;padding:4px 12px;cursor:pointer;font-size:12px">선택 해제</button>
+  `;
+}
+
+async function _hideSelectedNodes() {
+  const ids = [...selectedNodes];
+  if (ids.length === 0) return;
+  try {
+    const res = await _authFetch('/api/events/hide', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ eventIds: ids }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      // 즉시 시각적 제거
+      ids.forEach(id => {
+        const n = nodes.find(nd => nd.id === id);
+        if (n) n._hidden = true;
+      });
+      selectedNodes.clear();
+      _updateSelectionBar();
+      if (typeof showToast === 'function') showToast(`${ids.length}개 노드를 숨겼습니다`, 'success');
+    }
+  } catch (e) {
+    if (typeof showToast === 'function') showToast('숨기기 실패: ' + e.message, 'error');
+  }
+}
+
+async function _unhideAllNodes() {
+  try {
+    const res = await _authFetch('/api/events/unhide-all', { method: 'POST' });
+    const data = await res.json();
+    if (data.ok) {
+      nodes.forEach(n => { n._hidden = false; });
+      if (typeof showToast === 'function') showToast(`${data.unhidden}개 노드를 복원했습니다`, 'success');
+      loadData();
+    }
+  } catch (e) {
+    if (typeof showToast === 'function') showToast('복원 실패: ' + e.message, 'error');
+  }
+}
+
+// 전역 노출 (HTML onclick에서 접근)
+window._hideSelectedNodes = _hideSelectedNodes;
+window._unhideAllNodes    = _unhideAllNodes;
+window._updateSelectionBar = _updateSelectionBar;
+window.selectedNodes       = selectedNodes;
 
 // ── initHudTooltips 내 aria-label 자동 설정 (패치) ──
 const _origHudTooltips = window.initHudTooltips;

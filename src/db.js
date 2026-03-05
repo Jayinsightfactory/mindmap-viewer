@@ -182,6 +182,39 @@ function createTables() {
 
     CREATE INDEX IF NOT EXISTS idx_wm_user ON workspace_members(user_id);
     CREATE INDEX IF NOT EXISTS idx_wm_ws   ON workspace_members(workspace_id);
+
+    -- 노드 소프트 삭제 (숨김 처리)
+    CREATE TABLE IF NOT EXISTS hidden_events (
+      event_id TEXT NOT NULL,
+      user_id  TEXT NOT NULL DEFAULT 'local',
+      hidden_at TEXT DEFAULT (datetime('now')),
+      PRIMARY KEY (event_id, user_id)
+    );
+
+    -- 노드 메모
+    CREATE TABLE IF NOT EXISTS node_memos (
+      id TEXT PRIMARY KEY,
+      event_id TEXT NOT NULL,
+      user_id TEXT DEFAULT 'local',
+      content TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
+    -- 즐겨찾기
+    CREATE TABLE IF NOT EXISTS bookmarks (
+      id TEXT PRIMARY KEY,
+      event_id TEXT NOT NULL,
+      user_id TEXT DEFAULT 'local',
+      label TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    -- 트래커 핑 (확장 프로그램 활성 상태)
+    CREATE TABLE IF NOT EXISTS tracker_pings (
+      user_id TEXT PRIMARY KEY,
+      last_ping TEXT DEFAULT (datetime('now'))
+    );
   `);
 
   // ─── 컬럼 마이그레이션 (기존 DB 호환) ───────────────
@@ -604,6 +637,76 @@ function deserializeEvent(row) {
   };
 }
 
+// ─── 노드 숨김 (소프트 삭제) ──────────────────────
+function hideEvents(eventIds, userId = 'local') {
+  const stmt = db.prepare('INSERT OR IGNORE INTO hidden_events (event_id, user_id) VALUES (?, ?)');
+  const tx = db.transaction(() => {
+    for (const id of eventIds) stmt.run(id, userId);
+  });
+  tx();
+  return eventIds.length;
+}
+
+function unhideEvents(eventIds, userId = 'local') {
+  const stmt = db.prepare('DELETE FROM hidden_events WHERE event_id = ? AND user_id = ?');
+  const tx = db.transaction(() => {
+    for (const id of eventIds) stmt.run(id, userId);
+  });
+  tx();
+  return eventIds.length;
+}
+
+function unhideAllEvents(userId = 'local') {
+  return db.prepare('DELETE FROM hidden_events WHERE user_id = ?').run(userId).changes;
+}
+
+function getHiddenEventIds(userId = 'local') {
+  return db.prepare('SELECT event_id FROM hidden_events WHERE user_id = ?')
+    .all(userId).map(r => r.event_id);
+}
+
+// ─── 노드 메모 CRUD ─────────────────────────────────
+function getNodeMemos(userId = 'local') {
+  return db.prepare('SELECT * FROM node_memos WHERE user_id = ? ORDER BY updated_at DESC').all(userId);
+}
+
+function upsertNodeMemo(id, eventId, userId, content) {
+  db.prepare(`
+    INSERT OR REPLACE INTO node_memos (id, event_id, user_id, content, created_at, updated_at)
+    VALUES (?, ?, ?, ?, COALESCE((SELECT created_at FROM node_memos WHERE id = ?), datetime('now')), datetime('now'))
+  `).run(id, eventId, userId || 'local', content, id);
+}
+
+function deleteNodeMemo(id) {
+  db.prepare('DELETE FROM node_memos WHERE id = ?').run(id);
+}
+
+// ─── 즐겨찾기 CRUD ──────────────────────────────────
+function getBookmarks(userId = 'local') {
+  return db.prepare('SELECT * FROM bookmarks WHERE user_id = ? ORDER BY created_at DESC').all(userId);
+}
+
+function addBookmark(id, eventId, userId, label) {
+  db.prepare('INSERT OR IGNORE INTO bookmarks (id, event_id, user_id, label) VALUES (?, ?, ?, ?)')
+    .run(id, eventId, userId || 'local', label || null);
+}
+
+function removeBookmark(id) {
+  db.prepare('DELETE FROM bookmarks WHERE id = ?').run(id);
+}
+
+// ─── 트래커 핑 ──────────────────────────────────────
+function touchTrackerPing(userId = 'local') {
+  db.prepare(`
+    INSERT OR REPLACE INTO tracker_pings (user_id, last_ping)
+    VALUES (?, datetime('now'))
+  `).run(userId);
+}
+
+function getTrackerPing(userId = 'local') {
+  return db.prepare('SELECT * FROM tracker_pings WHERE user_id = ?').get(userId);
+}
+
 function getDb() { return db; }
 
 module.exports = {
@@ -641,4 +744,20 @@ module.exports = {
   getSessionsByUser,
   getStatsByUser,
   claimLocalEvents,
+  // 노드 숨김 (소프트 삭제)
+  hideEvents,
+  unhideEvents,
+  unhideAllEvents,
+  getHiddenEventIds,
+  // 노드 메모
+  getNodeMemos,
+  upsertNodeMemo,
+  deleteNodeMemo,
+  // 즐겨찾기
+  getBookmarks,
+  addBookmark,
+  removeBookmark,
+  // 트래커 핑
+  touchTrackerPing,
+  getTrackerPing,
 };

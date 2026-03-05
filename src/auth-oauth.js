@@ -60,7 +60,7 @@ function initOAuthStrategies(db) {
           ? `${process.env.OAUTH_CALLBACK_BASE}/api/auth/google/callback`
           : '/api/auth/google/callback',
       },
-      async (_accessToken, _refreshToken, profile, done) => {
+      async (accessToken, refreshToken, profile, done) => {
         try {
           const email = profile.emails?.[0]?.value || `google_${profile.id}@oauth.local`;
           const user  = await db.upsertOAuthUser({
@@ -70,6 +70,16 @@ function initOAuthStrategies(db) {
             name:        profile.displayName || email.split('@')[0],
             avatar:      profile.photos?.[0]?.value || null,
           });
+          // OAuth 토큰 저장 (Drive 백업용)
+          if (db.saveOAuthTokens && (accessToken || refreshToken)) {
+            try {
+              db.saveOAuthTokens(user.id, {
+                accessToken:  accessToken || '',
+                refreshToken: refreshToken || '',
+                expiresAt:    Date.now() + 3600 * 1000,
+              });
+            } catch {}
+          }
           done(null, user);
         } catch (err) {
           done(err);
@@ -248,7 +258,12 @@ function createOAuthRouter({ passport, enabledProviders, insertToken, CLIENT_ORI
   // ── Google 로그인 ───────────────────────────────────────────────────────────
   if (enabledProviders.includes('google')) {
     router.get('/google',
-      passport.authenticate('google', { scope: ['profile', 'email'], session: false })
+      passport.authenticate('google', {
+        scope: ['profile', 'email', 'https://www.googleapis.com/auth/drive.file'],
+        accessType: 'offline',
+        prompt: 'consent',
+        session: false,
+      })
     );
 
     router.get('/google/callback',

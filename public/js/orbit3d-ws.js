@@ -201,10 +201,25 @@ function connectWS() {
           showActivityPulse(et, m.event.data);
         }
       }
-      // AI 대화 저장 알림
+      // AI 대화 저장 알림 + 작업표시줄 아이템 추가
       if (m.type === 'ai_conversation_saved') {
         showActivityPulse('ai.conversation', { site: m.site, title: m.title });
+        if (typeof openDesktopWindow === 'function') {
+          openDesktopWindow({
+            windowId: 'ai-conv-' + (m.id || Date.now()),
+            type: 'ai_tool',
+            source: m.site || 'AI',
+            title: m.title || m.site || 'AI 대화',
+            site: m.site,
+            msgCount: m.msgs,
+            active: true,
+            timestamp: new Date().toISOString(),
+          });
+        }
       }
+      // 즐겨찾기/메모 변경 → 캐시 새로고침
+      if (m.type === 'bookmarkUpdate' && typeof loadBookmarks === 'function') loadBookmarks();
+      if (m.type === 'memoUpdate' && typeof loadMemos === 'function') loadMemos();
     } catch{}
   };
   ws.onclose = () => setTimeout(connectWS, 3000);
