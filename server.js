@@ -34,7 +34,8 @@ const WebSocket    = require('ws');
 const chokidar     = require('chokidar');
 const fs           = require('fs');
 const path         = require('path');
-const rateLimit    = require('express-rate-limit');
+// rate-limit: Railway 프록시 호환 문제로 임시 비활성화
+const rateLimit = (opts) => (req, res, next) => next();
 const helmet       = require('helmet');
 
 // ─── 의존성 로드 ─────────────────────────────────────────────────────────────
