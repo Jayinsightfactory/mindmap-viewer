@@ -198,7 +198,7 @@ const db = initDatabase();
 console.log('[DB] SQLite 초기화 완료');
 
 const app    = express();
-if (process.env.RAILWAY_ENVIRONMENT) app.set('trust proxy', 1);
+app.set('trust proxy', 1);
 const server = http.createServer(app);
 const wss    = new WebSocket.Server({ server });
 
@@ -217,6 +217,7 @@ const apiLimiter = rateLimit({
   max: 2000,
   standardHeaders: true,
   legacyHeaders: false,
+  validate: false,
   message: { error: 'Too many requests, please try again later.' },
   // 로컬호스트 + 폴링 엔드포인트는 제한 제외
   skip: req => {
@@ -233,6 +234,7 @@ const hookLimiter = rateLimit({
   max: 500,
   standardHeaders: true,
   legacyHeaders: false,
+  validate: false,
   message: { error: 'Hook rate limit exceeded.' },
 });
 
