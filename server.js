@@ -132,8 +132,9 @@ const companyCrawler                  = require('./src/company-crawler');
 
 // ─── 상수 ────────────────────────────────────────────────────────────────────
 const PORT         = process.env.PORT ? parseInt(process.env.PORT) : 4747;
-const CONV_FILE    = path.join(__dirname, 'conversation.jsonl');
-const SNAPSHOTS_DIR = path.join(__dirname, 'snapshots');
+const _dataRoot     = process.env.DATA_DIR || __dirname;
+const CONV_FILE    = path.join(_dataRoot, 'conversation.jsonl');
+const SNAPSHOTS_DIR = path.join(_dataRoot, 'snapshots');
 
 // ─── 채널(Room) 시스템 ────────────────────────────────────────────────────────
 // 각 채널은 독립된 마인드맵 공간. 팀원이 같은 채널에 접속하면 실시간 공유.

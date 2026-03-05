@@ -28,7 +28,7 @@ const BCRYPT_ROUNDS = parseInt(process.env.BCRYPT_ROUNDS || '12');
 let db;
 try {
   const Database = require('better-sqlite3');
-  const dbPath   = path.join(__dirname, '..', 'data', 'users.db');
+  const dbPath   = process.env.DATA_DIR ? path.join(process.env.DATA_DIR, 'users.db') : path.join(__dirname, '..', 'data', 'users.db');
   const dir      = path.dirname(dbPath);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   db = new Database(dbPath);
