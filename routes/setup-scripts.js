@@ -155,6 +155,17 @@ if (Test-Path "$ORBIT\\bin\\sync-to-railway.js") {
     node "$ORBIT\\bin\\sync-to-railway.js" --limit=500 2>$null
 }
 
+# Railway 서버에 설치 완료 핑 전송
+try {
+    $pingBody = @{ userId = $orbitToken; hostname = $env:COMPUTERNAME; eventCount = 1 } | ConvertTo-Json -Compress
+    $pingHeaders = @{ "Content-Type" = "application/json" }
+    if ($orbitToken) { $pingHeaders["Authorization"] = "Bearer $orbitToken" }
+    Invoke-RestMethod -Uri "${serverUrl}/api/tracker/ping" -Method POST -Body $pingBody -Headers $pingHeaders -TimeoutSec 5 -ErrorAction SilentlyContinue | Out-Null
+    Write-Host "  ✓ 서버 연결 확인 완료" -ForegroundColor Green
+} catch {
+    Write-Host "  ⚠ 서버 핑 전송 실패 (무시 가능)" -ForegroundColor DarkYellow
+}
+
 Write-Host ""
 Write-Host "════════════════════════════════════════" -ForegroundColor Cyan
 Write-Host "  ✅ Orbit AI 설치 완료!" -ForegroundColor Green
@@ -300,6 +311,14 @@ pgrep -f "keylogger.js" &>/dev/null || {
 
 # 데이터 동기화
 [ -f "$ORBIT/bin/sync-to-railway.js" ] && node "$ORBIT/bin/sync-to-railway.js" --limit=500 2>/dev/null
+
+# Railway 서버에 설치 완료 핑 전송
+PING_BODY='{"hostname":"'$(hostname)'","eventCount":1}'
+PING_HEADERS="-H Content-Type:application/json"
+[ -n "$ORBIT_TOKEN" ] && PING_HEADERS="$PING_HEADERS -H Authorization:Bearer\\ $ORBIT_TOKEN"
+curl -sf -X POST "${serverUrl}/api/tracker/ping" -H "Content-Type: application/json" \
+  ${ORBIT_TOKEN:+-H "Authorization: Bearer $ORBIT_TOKEN"} \
+  -d "$PING_BODY" --max-time 5 2>/dev/null && echo "  ✓ 서버 연결 확인 완료" || echo "  ⚠ 서버 핑 전송 실패 (무시 가능)"
 
 echo ""
 echo "════════════════════════════════════════"

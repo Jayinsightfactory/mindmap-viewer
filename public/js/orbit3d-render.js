@@ -2020,8 +2020,14 @@ async function checkOnboardingState() {
     hasHookEvents  = !!cRes.hookRegistered || !!cRes.connected;
   } catch {}
 
-  // 설치됨 → 오버레이 없음
-  if (trackerOnline || setupReady || hasHookEvents) return;
+  // 설치됨 (서버 확인 또는 로컬 완료 표시) → 오버레이 없음
+  if (trackerOnline || setupReady || hasHookEvents) {
+    localStorage.setItem('orbit_onboarding_done', '1');
+    return;
+  }
+
+  // 사용자가 "설치 완료" 눌렀으면 → 오버레이 없음
+  if (localStorage.getItem('orbit_onboarding_done') === '1') return;
 
   const visited   = localStorage.getItem('orbit_onboarding_visited');
   const skippedAt = parseInt(localStorage.getItem('orbit_onboarding_skipped_at') || '0', 10);
@@ -2101,8 +2107,11 @@ function showOnboardingInstall() {
         <div class="ob-cmd-code" id="ob-cmd-text">${_installCmd}</div>
         <button class="ob-copy-btn" onclick="copyOnboardingCmd()">복사</button>
       </div>
-      <div class="ob-hint">설치 후 이 페이지를 새로고침하면 자동 연결됩니다.</div>
-      <button class="ob-btn-skip" onclick="dismissOnboarding(false)" style="margin-top:16px">닫기</button>
+      <div class="ob-hint">설치가 완료되면 아래 버튼을 눌러주세요.</div>
+      <button class="ob-btn-install" onclick="confirmOnboardingDone()" style="margin-top:16px">
+        ✓ 설치 완료
+      </button>
+      <button class="ob-btn-skip" onclick="dismissOnboarding(false)" style="margin-top:8px">닫기</button>
     </div>`;
 }
 
@@ -2132,6 +2141,13 @@ function showOnboardingSkipWarning() {
     </div>`;
 }
 
+function confirmOnboardingDone() {
+  localStorage.setItem('orbit_onboarding_done', '1');
+  dismissOnboarding(false);
+  // 트래커 배지 새로고침
+  if (typeof _initTrackerStatusBadge === 'function') _initTrackerStatusBadge();
+}
+
 function dismissOnboarding(markSkipped) {
   if (markSkipped) {
     localStorage.setItem('orbit_onboarding_skipped_at', String(Date.now()));
@@ -2150,6 +2166,7 @@ window.showOnboardingInstall      = showOnboardingInstall;
 window.copyOnboardingCmd          = copyOnboardingCmd;
 window.showOnboardingSkipWarning  = showOnboardingSkipWarning;
 window.dismissOnboarding          = dismissOnboarding;
+window.confirmOnboardingDone      = confirmOnboardingDone;
 
 async function initClaudeStatusBadge() {
   try {
