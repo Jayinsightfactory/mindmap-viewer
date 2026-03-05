@@ -34,8 +34,17 @@ const WebSocket    = require('ws');
 const chokidar     = require('chokidar');
 const fs           = require('fs');
 const path         = require('path');
-// rate-limit: Railway 프록시 호환 문제로 임시 비활성화
-const rateLimit = (opts) => (req, res, next) => next();
+// rate-limit: 인메모리 구현 (express-rate-limit v8 Railway 프록시 호환 문제 대체)
+const _rlStore = new Map();
+setInterval(() => _rlStore.clear(), 15 * 60 * 1000); // 15분마다 리셋
+const rateLimit = ({ windowMs = 900000, max = 2000 } = {}) => (req, res, next) => {
+  const key = req.ip || 'unknown';
+  const entry = _rlStore.get(key) || { count: 0, resetAt: Date.now() + windowMs };
+  if (Date.now() > entry.resetAt) { entry.count = 0; entry.resetAt = Date.now() + windowMs; }
+  if (++entry.count > max) return res.status(429).json({ error: 'Too many requests' });
+  _rlStore.set(key, entry);
+  next();
+};
 const helmet       = require('helmet');
 
 // ─── 의존성 로드 ─────────────────────────────────────────────────────────────

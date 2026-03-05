@@ -1241,7 +1241,7 @@ function buildCoreMesh() {
       float fire = n1 * 0.6 + n2 * 0.4;
 
       // 태양 색상 그라데이션 (FBM 기반)
-      vec3 orange = vec3(1.0, 0.35, 0.0);
+      vec3 orange = vec3(1.0, 0.5, 0.05);
       vec3 yellow = vec3(1.0, 0.75, 0.1);
       vec3 fbmCol = mix(orange, yellow, fire);
 
@@ -1252,7 +1252,7 @@ function buildCoreMesh() {
       vec3 viewDir = normalize(cameraPosition - vWorldPos);
       float rim = 1.0 - max(dot(vNormal, viewDir), 0.0);
       rim = pow(rim, 2.0);
-      col += vec3(1.0, 0.3, 0.0) * rim * 0.8;
+      col += vec3(1.0, 0.6, 0.1) * rim * 0.8;
 
       // 밝기 + 글로우
       float brightness = 1.3 + fire * 0.4 + rim * 0.3;
@@ -1293,7 +1293,7 @@ function buildCoreMesh() {
         vec3 viewDir = normalize(cameraPosition - vWorldPos);
         float intensity = pow(0.65 - dot(vNormal, viewDir), 3.0);
         float pulse = 0.8 + 0.2 * sin(uTime * 2.0);
-        vec3 col = vec3(1.0, 0.4, 0.05) * intensity * pulse * 2.0;
+        vec3 col = vec3(1.0, 0.6, 0.1) * intensity * pulse * 2.0;
         gl_FragColor = vec4(col, intensity * 0.7);
       }
     `,

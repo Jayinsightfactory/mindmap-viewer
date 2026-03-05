@@ -2008,6 +2008,19 @@ async function checkOnboardingState() {
   // 설치 완료 표시가 있으면 → 오버레이 없음
   if (localStorage.getItem('orbit_onboarding_done') === '1') return;
 
+  // 서버에서 트래커 상태만 확인 (단일 API, 실패 무시)
+  try {
+    const token = _getAuthToken();
+    const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+    const r = await fetch('/api/tracker/status', { headers });
+    const d = await r.json();
+    if (d.online || d.eventCount > 0) {
+      localStorage.setItem('orbit_onboarding_done', '1');
+      return;
+    }
+  } catch {}
+
+  // localStorage 분기 (기존과 동일)
   const visited   = localStorage.getItem('orbit_onboarding_visited');
   const skippedAt = parseInt(localStorage.getItem('orbit_onboarding_skipped_at') || '0', 10);
   const cooldown  = 24 * 60 * 60 * 1000; // 24시간
