@@ -119,9 +119,10 @@ async function _showEmptyStateGuide() {
 
   const isLoggedIn = !!_getAuthToken();
 
-  // ── 로그인 안 된 상태 ──
+  // ── 비로그인 → Google 로그인 모달 자동 오픈 ──
   if (!isLoggedIn) {
-    return; // 로그인 모달이 자동 오픈됨 (orbit3d-ui.js)
+    if (typeof openLoginModal === 'function') openLoginModal();
+    return;
   }
 
   // ── 로그인 된 상태: 트래커 연결 여부 확인 ──
@@ -163,12 +164,11 @@ async function _showEmptyStateGuide() {
     return;
   }
 
-  // ── 트래커 미연결: 확장 프로그램 우선 안내 ──
+  // ── 트래커 미연결: 로컬 PC 트래커 설치 안내 ──
   const t = _getAuthToken();
   const base = location.origin;
   const isMac = /Mac/i.test(navigator.userAgent);
 
-  // 고급 옵션용 로컬 서버 설치 명령어
   const installCmd = isMac
     ? `bash <(curl -sL '${base}/orbit-setup.sh${t ? '?token='+encodeURIComponent(t) : ''}')`
     : `powershell -ExecutionPolicy Bypass -Command "irm '${base}/orbit-setup.ps1${t ? '?token='+encodeURIComponent(t) : ''}' | iex"`;
@@ -178,117 +178,58 @@ async function _showEmptyStateGuide() {
   el.style.cssText = `
     position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
     background:rgba(13,17,23,0.97); border:1px solid #30363d;
-    border-radius:18px; padding:28px 32px; max-width:520px; text-align:center;
+    border-radius:18px; padding:32px 36px; max-width:480px; text-align:center;
     z-index:500; backdrop-filter:blur(20px);
     box-shadow:0 16px 64px rgba(0,0,0,0.5);
     font-family:-apple-system,'Segoe UI',sans-serif;
     animation:fadeIn .4s ease;
-    max-height:90vh; overflow-y:auto;
   `;
   el.innerHTML = `
-    <div style="font-size:42px;margin-bottom:10px">⬡</div>
-    <div style="font-size:17px;font-weight:700;color:#e6edf3;margin-bottom:6px">
-      Orbit AI 시작하기
+    <div style="font-size:42px;margin-bottom:12px">⬡</div>
+    <div style="font-size:18px;font-weight:700;color:#e6edf3;margin-bottom:8px">
+      Orbit 트래커 설치
     </div>
-    <div style="font-size:12px;color:#8b949e;margin-bottom:18px;line-height:1.6">
-      확장 프로그램을 설치하면 <b style="color:#58a6ff">별도 서버 설치 없이</b> 바로 사용할 수 있습니다.<br>
-      AI가 작업 패턴을 학습하여 업무 효율 피드백을 제공합니다.
-    </div>
-
-    <div style="text-align:left;margin-bottom:16px">
-      <!-- 1단계: Chrome 확장 -->
-      <div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:14px">
-        <div style="width:24px;height:24px;background:#1f6feb;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0">1</div>
-        <div style="flex:1">
-          <div style="font-size:13px;font-weight:600;color:#e6edf3;margin-bottom:4px">Chrome 확장 프로그램 설치</div>
-          <div style="font-size:11px;color:#8b949e;line-height:1.5;margin-bottom:6px">
-            AI 대화(ChatGPT, Claude, Gemini 등)를 자동으로 수집합니다.
-          </div>
-          <div style="font-size:11px;color:#6e7681;line-height:1.5;background:#161b22;border:1px solid #21262d;border-radius:8px;padding:8px 10px">
-            <b style="color:#cdd9e5">설치 방법:</b><br>
-            1. <code style="color:#3fb950">chrome://extensions</code> 접속<br>
-            2. 우측 상단 <b style="color:#cdd9e5">개발자 모드</b> ON<br>
-            3. <b style="color:#cdd9e5">압축해제된 확장 프로그램을 로드</b> → <code style="color:#3fb950">chrome-extension</code> 폴더 선택
-          </div>
-        </div>
-      </div>
-
-      <!-- 2단계: VS Code 확장 -->
-      <div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:14px">
-        <div style="width:24px;height:24px;background:#1f6feb;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0">2</div>
-        <div style="flex:1">
-          <div style="font-size:13px;font-weight:600;color:#e6edf3;margin-bottom:4px">VS Code 확장 프로그램 설치</div>
-          <div style="font-size:11px;color:#8b949e;line-height:1.5;margin-bottom:6px">
-            코딩 활동(파일 저장, 디버그, 프로젝트 전환 등)을 추적합니다.
-          </div>
-          <div style="font-size:11px;color:#6e7681;line-height:1.5;background:#161b22;border:1px solid #21262d;border-radius:8px;padding:8px 10px">
-            <b style="color:#cdd9e5">설치 방법:</b><br>
-            VS Code → Extensions(<kbd style="background:#21262d;padding:1px 4px;border-radius:3px;font-size:10px">Ctrl+Shift+X</kbd>) → <code style="color:#3fb950">VSIX에서 설치</code> → <code style="color:#3fb950">vscode-extension</code> 폴더
-          </div>
-        </div>
-      </div>
-
-      <!-- 3단계: 토큰 설정 -->
-      <div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:14px">
-        <div style="width:24px;height:24px;background:#1f6feb;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0">3</div>
-        <div style="flex:1">
-          <div style="font-size:13px;font-weight:600;color:#e6edf3;margin-bottom:4px">서버 URL + 토큰 설정</div>
-          <div style="font-size:11px;color:#8b949e;line-height:1.5;margin-bottom:6px">
-            아래 토큰을 복사하여 각 확장 프로그램 설정에 붙여넣으세요.
-          </div>
-          <div style="display:flex;gap:6px;margin-bottom:6px">
-            <div style="flex:1;background:#010409;border:1px solid #21262d;border-radius:8px;padding:8px 10px">
-              <div style="font-size:10px;color:#6e7681;margin-bottom:3px">서버 URL</div>
-              <code id="esg-server-url" style="font-size:11px;color:#58a6ff;word-break:break-all">${base}</code>
-            </div>
-          </div>
-          <div style="background:#010409;border:1px solid #21262d;border-radius:8px;padding:8px 10px;position:relative">
-            <div style="font-size:10px;color:#6e7681;margin-bottom:3px">인증 토큰</div>
-            <code id="esg-token" style="font-size:11px;color:#3fb950;word-break:break-all">${t || '(로그인 후 표시됩니다)'}</code>
-            ${t ? `<button onclick="(function(){
-              navigator.clipboard.writeText('${t}').then(()=>{
-                const b=document.getElementById('esg-copy-token');
-                b.textContent='복사됨';b.style.background='#238636';
-                setTimeout(()=>{b.textContent='토큰 복사';b.style.background='#1f6feb';},2000);
-              }).catch(()=>prompt('토큰:','${t}'));
-            })()" id="esg-copy-token"
-              style="position:absolute;top:8px;right:8px;background:#1f6feb;border:none;
-              border-radius:5px;color:#fff;font-size:10px;font-weight:600;padding:3px 10px;cursor:pointer">토큰 복사</button>` : ''}
-          </div>
-          <div style="font-size:10px;color:#6e7681;margin-top:4px;line-height:1.4">
-            <b style="color:#cdd9e5">Chrome:</b> 확장 팝업 → 서버 URL / 토큰 입력<br>
-            <b style="color:#cdd9e5">VS Code:</b> 설정(<kbd style="background:#21262d;padding:1px 4px;border-radius:3px;font-size:10px">Ctrl+,</kbd>) → orbit.serverUrl / orbit.token 입력
-          </div>
-        </div>
-      </div>
+    <div style="font-size:13px;color:#8b949e;margin-bottom:20px;line-height:1.6">
+      로컬 PC에서 작업 데이터를 수집하려면<br>아래 명령어를 터미널에 붙여넣으세요.
     </div>
 
-    <!-- 고급: 로컬 서버 설치 (접이식) -->
-    <details style="text-align:left;margin-bottom:12px;border:1px solid #21262d;border-radius:8px;background:#161b22">
-      <summary style="font-size:12px;color:#8b949e;cursor:pointer;padding:10px 12px;font-weight:600">
-        고급: 로컬 서버 설치 (선택 사항)
-      </summary>
-      <div style="padding:0 12px 10px;font-size:11px;color:#6e7681;line-height:1.6">
-        <div style="margin-bottom:6px">로컬 서버를 설치하면 데이터가 PC에만 저장됩니다. (오프라인 가능)</div>
-        <div style="background:#010409;border:1px solid #21262d;border-radius:8px;padding:10px;position:relative">
-          <code id="esg-install-cmd" style="font-family:'Consolas','Courier New',monospace;font-size:11px;color:#3fb950;word-break:break-all;line-height:1.6;display:block;padding-right:44px">${installCmd}</code>
-          <button onclick="(function(){
-            const cmd=document.getElementById('esg-install-cmd').textContent.trim();
-            navigator.clipboard.writeText(cmd).then(()=>{
-              const b=document.getElementById('esg-copy-cmd');
-              b.textContent='복사됨';b.style.background='#238636';
-              setTimeout(()=>{b.textContent='복사';b.style.background='#1f6feb';},2000);
-            }).catch(()=>prompt('복사:',cmd));
-          })()" id="esg-copy-cmd"
-            style="position:absolute;top:8px;right:8px;background:#1f6feb;border:none;
-            border-radius:5px;color:#fff;font-size:10px;font-weight:600;padding:3px 8px;cursor:pointer">복사</button>
-        </div>
-      </div>
-    </details>
+    <!-- OS 탭 -->
+    <div style="display:flex;gap:6px;justify-content:center;margin-bottom:12px">
+      <button id="esg-tab-${isMac?'mac':'win'}" onclick="document.getElementById('esg-cmd-mac').style.display='${isMac?'block':'none'}';document.getElementById('esg-cmd-win').style.display='${isMac?'none':'block'}';this.style.background='#1f6feb';document.getElementById('esg-tab-${isMac?'win':'mac'}').style.background='#21262d'"
+        style="background:#1f6feb;border:none;color:#fff;padding:5px 14px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer">${isMac?'macOS':'Windows'}</button>
+      <button id="esg-tab-${isMac?'win':'mac'}" onclick="document.getElementById('esg-cmd-win').style.display='${isMac?'block':'none'}';document.getElementById('esg-cmd-mac').style.display='${isMac?'none':'block'}';this.style.background='#1f6feb';document.getElementById('esg-tab-${isMac?'mac':'win'}').style.background='#21262d'"
+        style="background:#21262d;border:none;color:#8b949e;padding:5px 14px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer">${isMac?'Windows':'macOS'}</button>
+    </div>
+
+    <!-- macOS 명령어 -->
+    <div id="esg-cmd-mac" style="display:${isMac?'block':'none'};text-align:left;background:#010409;border:1px solid #21262d;border-radius:10px;padding:14px;position:relative;margin-bottom:14px">
+      <div style="font-size:10px;color:#6e7681;margin-bottom:6px">Terminal</div>
+      <code style="font-family:'Consolas','Courier New',monospace;font-size:12px;color:#3fb950;word-break:break-all;line-height:1.6;display:block;padding-right:44px">bash <(curl -sL '${base}/orbit-setup.sh${t ? '?token='+encodeURIComponent(t) : ''}')</code>
+      <button onclick="(function(){
+        const cmd=\`bash <(curl -sL '${base}/orbit-setup.sh${t ? '?token='+encodeURIComponent(t) : ''}')\`;
+        navigator.clipboard.writeText(cmd).then(()=>{const b=event.target;b.textContent='Copied';b.style.background='#238636';setTimeout(()=>{b.textContent='Copy';b.style.background='#1f6feb'},1500)}).catch(()=>prompt('Copy:',cmd))
+      })()"
+        style="position:absolute;top:12px;right:12px;background:#1f6feb;border:none;border-radius:6px;color:#fff;font-size:11px;font-weight:600;padding:4px 12px;cursor:pointer">Copy</button>
+    </div>
+
+    <!-- Windows 명령어 -->
+    <div id="esg-cmd-win" style="display:${isMac?'none':'block'};text-align:left;background:#010409;border:1px solid #21262d;border-radius:10px;padding:14px;position:relative;margin-bottom:14px">
+      <div style="font-size:10px;color:#6e7681;margin-bottom:6px">PowerShell (관리자)</div>
+      <code style="font-family:'Consolas','Courier New',monospace;font-size:12px;color:#3fb950;word-break:break-all;line-height:1.6;display:block;padding-right:44px">powershell -ExecutionPolicy Bypass -Command "irm '${base}/orbit-setup.ps1${t ? '?token='+encodeURIComponent(t) : ''}' | iex"</code>
+      <button onclick="(function(){
+        const cmd='powershell -ExecutionPolicy Bypass -Command \\x22irm \\'${base}/orbit-setup.ps1${t ? '?token='+encodeURIComponent(t) : ''}\\' | iex\\x22';
+        navigator.clipboard.writeText(cmd).then(()=>{const b=event.target;b.textContent='Copied';b.style.background='#238636';setTimeout(()=>{b.textContent='Copy';b.style.background='#1f6feb'},1500)}).catch(()=>prompt('Copy:',cmd))
+      })()"
+        style="position:absolute;top:12px;right:12px;background:#1f6feb;border:none;border-radius:6px;color:#fff;font-size:11px;font-weight:600;padding:4px 12px;cursor:pointer">Copy</button>
+    </div>
+
+    <div style="font-size:11px;color:#6e7681;line-height:1.6;margin-bottom:16px">
+      설치 후 자동으로 작업 데이터가 수집되며<br>이 화면에 실시간 시각화됩니다.
+    </div>
 
     <button onclick="document.getElementById('empty-state-guide').remove()"
       style="background:#21262d;border:1px solid #30363d;color:#e6edf3;
-      padding:8px 20px;border-radius:8px;cursor:pointer;font-size:13px">
+      padding:8px 24px;border-radius:8px;cursor:pointer;font-size:13px">
       닫기
     </button>
   `;
