@@ -17,7 +17,7 @@
   <div id="ln-content">
 
     <!-- 프로필 -->
-    <div id="ln-profile-area">
+    <div id="ln-profile-area" onclick="if(typeof _orbitUser!=='undefined' && _orbitUser) openProfileEditModal(); else openLoginModal();" style="cursor:pointer">
       <div id="ln-avatar-box">?</div>
       <div>
         <div id="ln-username">게스트</div>

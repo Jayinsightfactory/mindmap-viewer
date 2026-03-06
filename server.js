@@ -106,10 +106,13 @@ const { appendAuditLog, auditFromEvents, queryAuditLog, verifyIntegrity, renderA
 const { detectShadowAI, checkEventForShadow, getApprovedSources, addApprovedSource, removeApprovedSource } = require('./src/shadow-ai-detector');
 const { getAllThemes, getThemeById, registerTheme, recordDownload, rateTheme, deleteUserTheme } = require('./src/theme-store');
 const { register: authRegister, login: authLogin, verifyToken, issueApiToken, getUserById, upsertOAuthUser,
-  saveOAuthTokens, getOAuthTokens, refreshGoogleAccessToken, getValidGoogleToken, getGoogleOAuthUsers } = require('./src/auth');
+  saveOAuthTokens, getOAuthTokens, refreshGoogleAccessToken, getValidGoogleToken, getGoogleOAuthUsers,
+  searchUsers, upgradePlan,                                          // searchUsers: 팔로우 검색용, upgradePlan: 결제 후 플랜 업그레이드
+  inviteUser, isInvitedUser, getEffectivePlan, getAdminInvites, ADMIN_EMAILS, // 관리자 초대 시스템
+} = require('./src/auth');
 const gdriveUserBackup = require('./src/gdrive-user-backup');
 const { initOAuthStrategies, createOAuthRouter } = require('./src/auth-oauth');
-const { PLANS, createPayment, confirmPayment, MOCK_MODE: paymentMockMode } = require('./src/payment');
+const { PLANS, createPayment, confirmPayment, cancelSubscription, MOCK_MODE: paymentMockMode } = require('./src/payment');
 const { analyzeAndSuggest, saveFeedback, getSuggestions, getPatterns, getMarketCandidates } = require('./src/growth-engine');
 const solutionStore  = require('./src/solution-store');
 const communityStore = require('./src/community-store');
@@ -903,7 +906,11 @@ app.use('/api', createThemesRouter({
 }));
 
 app.use('/api', createAuthRouter({
-  auth: { register: authRegister, login: authLogin, verifyToken },
+  auth: {
+    register: authRegister, login: authLogin, verifyToken,        // 기존 인증 함수
+    inviteUser, isInvitedUser, getEffectivePlan, getAdminInvites, // 관리자 초대 시스템
+    ADMIN_EMAILS,                                                 // 관리자 이메일 목록
+  },
 }));
 
 // OAuth 소셜 로그인 (Google, GitHub)
@@ -919,7 +926,9 @@ app.use('/api/auth', oauthRouter);
 app.use('/api/signal', signalEngine.createRouter());
 
 app.use('/api', createPaymentRouter({
-  payment: { PLANS, createPayment, confirmPayment, MOCK_MODE: paymentMockMode },
+  payment: { PLANS, createPayment, confirmPayment, cancelSubscription, MOCK_MODE: paymentMockMode },  // PG 관련 함수 전달
+  upgradePlan,                                                                                        // 플랜 업그레이드 함수 (auth.js)
+  verifyToken,                                                                                        // 토큰 검증 함수 (auth.js)
 }));
 
 app.use('/api', createGrowthRouter({
@@ -996,7 +1005,7 @@ app.use('/api', createRoiRouter({ getAllEvents, getSessions, optionalAuth, getEv
 // ─── Analytics (사용자 행동 분석) ────────────────────────────────────────────
 app.use('/api', createAnalyticsRouter({ getDb: dbModule.getDb }));
 app.use('/api', createProfileRouter({ getDb: dbModule.getDb, verifyToken }));
-app.use('/api', createFollowRouter({ getDb: dbModule.getDb, verifyToken }));
+app.use('/api', createFollowRouter({ getDb: dbModule.getDb, verifyToken, searchUsers })); // searchUsers 주입
 app.use('/api', createChatRouter({ getDb: dbModule.getDb, verifyToken, broadcastToRoom }));
 
 // ─── Workspace (팀/회사 관리) ─────────────────────────────────────────────────

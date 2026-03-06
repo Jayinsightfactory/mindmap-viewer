@@ -51,6 +51,13 @@ let _lastMouseEvent = { clientX:0, clientY:0 };
 let _hoveredHit     = null;  // { cx, cy, r, data, obj }
 let _selectedHit    = null;
 let _editingNode    = null;  // 현재 인라인 편집 중인 노드
+let _pyramidScrollOffset = 0; // 역피라미드 스크롤 오프셋
+// 역피라미드 마우스 휠 스크롤 — 선택된 개체의 상세 내용 탐색
+renderer.domElement.addEventListener('wheel', e => {
+  if (!_selectedHit || (_teamMode || _companyMode || _parallelMode)) return; // 개인 모드만
+  e.preventDefault();                                              // 카메라 줌 방지
+  _pyramidScrollOffset = Math.max(0, _pyramidScrollOffset + e.deltaY * 0.5);
+}, { passive: false });
 let _mouseDownPos   = null;  // 클릭 시작 위치 (드래그 감지용)
 const DRAG_THRESHOLD = 6;    // 이 이상 움직이면 드래그로 판정 (px)
 
@@ -144,20 +151,22 @@ renderer.domElement.addEventListener('click', e => {
 
     showPanel(hit.data, hit.obj);
 
-    // ── 클릭한 노드를 카메라 중심으로 이동 ─────────────────────────────────
-    // focusMember/focusDept가 처리하지 않은 나머지 노드: 개인 모드 행성, 태스크, 병렬 노드
+    // ── 클릭 시 카메라 동작 ─────────────────────────────────────────────────
+    // 개인 모드: 카메라 고정 — 역피라미드 오버레이로 상세 표시
+    // 팀/회사 모드: 기존 줌인 유지
     const _alreadyFocused = (_teamMode && type === 'member') ||
                             (_companyMode && (type === 'member' || type === 'department'));
-    if (!_alreadyFocused) {
-      const p3 = hit.data?.pos;              // _teamNodes 의 THREE.Vector3 pos
-      const m3 = hit.obj?.position;          // 개인 모드 planet mesh position
+    const isPersonal = !_teamMode && !_companyMode && !_parallelMode;
+    if (isPersonal) {
+      // 개인 모드: 카메라 고정 + 역피라미드 펼침 (drawInvertedPyramid에서 처리)
+      _pyramidScrollOffset = 0;     // 스크롤 초기화
+    } else if (!_alreadyFocused) {
+      const p3 = hit.data?.pos;
+      const m3 = hit.obj?.position;
       const tp = (p3 instanceof THREE.Vector3) ? p3 : (m3 instanceof THREE.Vector3 ? m3 : null);
       if (tp) {
         const curR = controls.sph.r;
-        // 개인모드: 선택 시 확장 위치로 줌인 / 팀모드: 적당히 당겨줌
-        const targetR = (!_teamMode && !_companyMode && !_parallelMode)
-          ? Math.min(curR, 45)              // 2단계 확장 뷰에 맞는 거리
-          : Math.min(curR, 40);
+        const targetR = Math.min(curR, 40);
         lerpCameraTo(targetR, tp.x, tp.y, tp.z, 450);
       }
     }

@@ -2886,6 +2886,243 @@ function rectOverlaps(x, y, w, h) {
 }
 function reserveRect(x, y, w, h) { _usedRects.push({ x, y, w, h }); }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// 역피라미드(Inverted Pyramid) 상세 뷰
+// — 개체 클릭 시 카메라 고정, 아래 방향으로 펼쳐지는 트리 오버레이
+// ═══════════════════════════════════════════════════════════════════════════════
+function drawInvertedPyramid(planetObj, hitData) {
+  const sc = toScreen(planetObj.position);                 // 행성의 화면 좌표
+  if (sc.z > 1) return;                                    // 카메라 뒤면 생략
+
+  const ctx = _lctx;
+  const clusterId = planetObj.userData?.clusterId || planetObj.userData?.sessionId;
+  const entry     = _sessionMap[clusterId];
+  const events    = entry?.events || [];
+  if (events.length === 0) return;
+
+  const hex = planetObj.userData?.hueHex || '#58a6ff';
+
+  // ── 데이터 준비: 역피라미드 레벨 구성 ────────────────────────────────────
+  // L0: 선택된 행성 (이미 drawLabels에서 그려짐)
+  // L1: 요약 카드 (작업 수, 프로젝트, 경로)
+  // L2: 이벤트 목록 (최신 이벤트 카드들 — 스크롤 가능)
+  // L3: 파일 목록 (수정된 파일 카드들)
+
+  const sessionCtx = _sessionContextCache[clusterId] || {};
+  const projName   = sessionCtx.projectName || planetObj.userData?.projectName || '';
+  const firstMsg   = sessionCtx.firstMsg || sessionCtx.autoTitle || '';
+
+  // 파일 집계
+  const fileCounts = {};
+  for (const e of events) {
+    let d = e.data || {};
+    if (e.fullContent && typeof e.fullContent === 'string' && e.fullContent.startsWith('{')) {
+      try { d = {...d, ...JSON.parse(e.fullContent)}; } catch {}
+    }
+    const raw = d.filePath || d.fileName || '';
+    if (!raw) continue;
+    const fname = raw.replace(/\\/g, '/').split('/').pop();
+    if (!fname || fname.length < 2) continue;
+    if (!fileCounts[fname]) fileCounts[fname] = { count: 0, writes: 0 };
+    fileCounts[fname].count++;
+    if (e.type === 'file.write' || (e.type === 'tool.end' && d.toolName === 'Write')) fileCounts[fname].writes++;
+  }
+  const fileList = Object.entries(fileCounts).sort((a,b) => b[1].count - a[1].count).slice(0, 8);
+
+  // 최근 이벤트 (스크롤 오프셋 적용)
+  const recentEvts = [...events].reverse().slice(0, 30);
+  const scrollIdx  = Math.min(Math.floor((_pyramidScrollOffset || 0) / 36), Math.max(0, recentEvts.length - 6));
+  const visibleEvts = recentEvts.slice(scrollIdx, scrollIdx + 6);
+
+  // ── 레이아웃 상수 ────────────────────────────────────────────────────────
+  const CARD_W   = 280;                                    // 카드 너비
+  const CARD_H   = 32;                                     // 카드 높이
+  const GAP      = 6;                                      // 카드 간격
+  const LEVEL_GAP = 18;                                    // 레벨 간격
+  const startX   = sc.x;                                   // 행성 중심 X
+  const startY   = sc.y + 28;                              // 행성 아래에서 시작
+
+  ctx.save();
+
+  // ── L0→L1 연결선 (행성에서 아래로) ────────────────────────────────────────
+  ctx.strokeStyle = hex;
+  ctx.lineWidth   = 1.5;
+  ctx.globalAlpha = 0.5;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  ctx.moveTo(sc.x, sc.y + 16);
+  ctx.lineTo(startX, startY + 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.globalAlpha = 1;
+
+  let curY = startY;
+
+  // ── L1: 요약 카드 (1행) ──────────────────────────────────────────────────
+  const summaryText = firstMsg
+    ? (firstMsg.length > 36 ? firstMsg.slice(0, 35) + '…' : firstMsg)
+    : `${events.length}개 작업 · ${fileList.length}개 파일`;
+  const sumW = CARD_W + 40;
+  const sumH = 38;
+  const sumX = startX - sumW / 2;
+  const sumY = curY;
+
+  // 배경
+  ctx.fillStyle = 'rgba(13,17,23,0.95)';
+  roundRect(ctx, sumX, sumY, sumW, sumH, 10);
+  ctx.fill();
+  ctx.strokeStyle = hex;
+  ctx.lineWidth = 1.5;
+  roundRect(ctx, sumX, sumY, sumW, sumH, 10);
+  ctx.stroke();
+
+  // 요약 텍스트
+  ctx.font = '600 13px -apple-system,"Segoe UI",sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#e6edf3';
+  ctx.fillText(summaryText, startX, sumY + 15);
+  // 프로젝트명 서브
+  ctx.font = '400 10px -apple-system,sans-serif';
+  ctx.fillStyle = hex;
+  ctx.fillText(projName ? `📁 ${projName} · ${events.length}개 작업` : `${events.length}개 작업`, startX, sumY + 31);
+
+  curY = sumY + sumH + LEVEL_GAP;
+
+  // ── L1→L2 분기선 (역삼각형 형태로 펼쳐짐) ────────────────────────────────
+  const branchCount = Math.min(visibleEvts.length, 6);
+  const totalW = branchCount * (CARD_W * 0.48 + GAP);
+  const branchStartX = startX - totalW / 2 + (CARD_W * 0.48 + GAP) / 2;
+
+  ctx.strokeStyle = hex;
+  ctx.lineWidth = 1;
+  ctx.globalAlpha = 0.35;
+  ctx.setLineDash([3, 5]);
+  for (let i = 0; i < branchCount; i++) {
+    const bx = branchStartX + i * (CARD_W * 0.48 + GAP);
+    ctx.beginPath();
+    ctx.moveTo(startX, curY - LEVEL_GAP + 4);
+    ctx.lineTo(bx, curY);
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  ctx.globalAlpha = 1;
+
+  // ── L2: 이벤트 카드 (스크롤 가능) ────────────────────────────────────────
+  const evtCardW = CARD_W * 0.48;
+  const evtCardH = CARD_H + 4;
+  const TYPE_ICONS = {
+    'user.message': '💬', 'assistant.message': '🤖', 'assistant.response': '🤖',
+    'tool.start': '⚡', 'tool.end': '✅', 'tool.error': '❌',
+    'file.read': '📄', 'file.write': '✏️', 'git.commit': '🌿', 'git.push': '🚀',
+  };
+
+  visibleEvts.forEach((evt, i) => {
+    const cx = branchStartX + i * (evtCardW + GAP);
+    const cy = curY;
+    const icon = TYPE_ICONS[evt.type] || '⚙️';
+    const label = (evt.label || extractIntent(evt) || evt.type || '').slice(0, 18);
+    const ts = evt.timestamp
+      ? new Date(evt.timestamp).toLocaleTimeString('ko', { hour: '2-digit', minute: '2-digit' })
+      : '';
+
+    // 카드 배경
+    ctx.fillStyle = 'rgba(13,17,23,0.92)';
+    roundRect(ctx, cx - evtCardW / 2, cy, evtCardW, evtCardH, 8);
+    ctx.fill();
+    ctx.strokeStyle = hex + '60';
+    ctx.lineWidth = 1;
+    roundRect(ctx, cx - evtCardW / 2, cy, evtCardW, evtCardH, 8);
+    ctx.stroke();
+
+    // 아이콘 + 텍스트
+    ctx.textAlign = 'left';
+    ctx.font = '500 11px -apple-system,sans-serif';
+    ctx.fillStyle = '#cdd9e5';
+    ctx.fillText(`${icon} ${label}`, cx - evtCardW / 2 + 8, cy + evtCardH * 0.6);
+    // 시간
+    ctx.textAlign = 'right';
+    ctx.font = '400 9px -apple-system,sans-serif';
+    ctx.fillStyle = '#6e7681';
+    ctx.fillText(ts, cx + evtCardW / 2 - 6, cy + evtCardH * 0.6);
+    ctx.textAlign = 'center';
+
+    // 히트 영역 (이벤트 카드 클릭)
+    _hitAreas.push({
+      cx, cy: cy + evtCardH / 2, r: evtCardW / 2,
+      obj: planetObj,
+      data: { type: 'session', intent: label, clusterId, sessionId: planetObj.userData?.sessionId,
+              eventCount: events.length, hueHex: hex },
+    });
+  });
+
+  curY += evtCardH + LEVEL_GAP;
+
+  // ── 스크롤 힌트 ──────────────────────────────────────────────────────────
+  if (recentEvts.length > 6) {
+    ctx.font = '400 10px -apple-system,sans-serif';
+    ctx.fillStyle = '#6e7681';
+    ctx.textAlign = 'center';
+    const scrollPct = Math.round((scrollIdx / Math.max(1, recentEvts.length - 6)) * 100);
+    ctx.fillText(`↕ 스크롤하여 탐색 (${scrollIdx + 1}~${scrollIdx + visibleEvts.length} / ${recentEvts.length})`, startX, curY - 4);
+    curY += 14;
+  }
+
+  // ── L3: 파일 카드 (가장 넓게 펼침 — 역삼각형 하단) ────────────────────────
+  if (fileList.length > 0) {
+    // L2→L3 연결선
+    const fileCardW = 120;
+    const fileTotalW = fileList.length * (fileCardW + GAP);
+    const fileStartX = startX - fileTotalW / 2 + (fileCardW + GAP) / 2;
+
+    ctx.strokeStyle = hex;
+    ctx.lineWidth = 0.8;
+    ctx.globalAlpha = 0.25;
+    ctx.setLineDash([2, 4]);
+    for (let i = 0; i < fileList.length; i++) {
+      const fx = fileStartX + i * (fileCardW + GAP);
+      ctx.beginPath();
+      ctx.moveTo(startX, curY - 6);
+      ctx.lineTo(fx, curY + 4);
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
+
+    fileList.forEach(([fname, info], i) => {
+      const fx = fileStartX + i * (fileCardW + GAP);
+      const fy = curY + 4;
+      const fh = 28;
+
+      // 파일 카드 배경
+      const isWrite = info.writes > 0;
+      ctx.fillStyle = isWrite ? 'rgba(255,166,87,0.08)' : 'rgba(88,166,255,0.06)';
+      roundRect(ctx, fx - fileCardW / 2, fy, fileCardW, fh, 7);
+      ctx.fill();
+      ctx.strokeStyle = isWrite ? '#ffa65750' : hex + '40';
+      ctx.lineWidth = 0.8;
+      roundRect(ctx, fx - fileCardW / 2, fy, fileCardW, fh, 7);
+      ctx.stroke();
+
+      // 파일명
+      const shortName = fname.length > 14 ? fname.slice(0, 13) + '…' : fname;
+      ctx.font = '500 10px -apple-system,sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = isWrite ? '#ffa657' : '#79c0ff';
+      ctx.fillText(`${isWrite ? '✏️' : '📄'} ${shortName}`, fx, fy + fh * 0.62);
+
+      // 히트 영역
+      _hitAreas.push({
+        cx: fx, cy: fy + fh / 2, r: fileCardW / 2,
+        obj: planetObj,
+        data: { type: 'file', intent: fname, fileLabel: fname, filename: fname,
+                count: info.count, isWrite },
+      });
+    });
+  }
+
+  ctx.restore();
+}
+
 function drawLabels() {
   _lctx.clearRect(0, 0, innerWidth, innerHeight);
   _hitAreas = [];
@@ -3163,6 +3400,11 @@ function drawLabels() {
       },
     });
   });
+
+  // ── 역피라미드 뷰 — 선택된 행성에서 아래로 상세 펼침 ─────────────────────
+  if (isPersonalMode && _selectedHit?.obj) {
+    drawInvertedPyramid(_selectedHit.obj, _selectedHit.data);
+  }
 
   // ── 2. 파일 위성 — 3단계: 선택된 클러스터의 위성만 표시 ─────────────────
   const selectedCluster = _selectedHit?.obj?.userData?.clusterId;

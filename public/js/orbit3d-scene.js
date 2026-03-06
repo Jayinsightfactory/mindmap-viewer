@@ -124,27 +124,53 @@ function buildPlanetSystem(nodeList) {
     const { clusterId, sessionId: sid, domain, label, events } = pl;
     const rawEvents = events;
 
-    // ── 행성 위치 — 카테고리 섹터 기반 고정 배치 ──────────────────────────
+    // ── 행성 위치 — 카테고리 섹터 기반 그리드 배치 ────────────────────────
     const catCfg   = MACRO_CATS[pl.macroCat];                // 카테고리 설정
     const catAngle = catCfg.angle;                            // 섹터 기준 각도
     const bucket   = catBuckets[pl.macroCat];                 // 같은 카테고리 행성들
     const idxInCat = bucket.indexOf(pl);                      // 카테고리 내 순번
     const catCount = bucket.length;
 
-    // 컴팩트: 섹터 중심 주변에 밀착 배치
-    const sectorSpread = Math.PI * 0.35;                      // 섹터 부채꼴 폭
-    const subAngle = catAngle + (idxInCat - (catCount - 1) / 2) * sectorSpread / Math.max(catCount, 1);
-    const COMPACT_R = 10 + (idxInCat % 3) * 3;               // 가까이 밀착
-    const yOffset = (idxInCat % 3 - 1) * 2;
+    // 그리드 배치: 행(row)/열(col) 정렬 — 깔끔한 격자 형태
+    const COLS     = Math.min(4, Math.ceil(Math.sqrt(catCount))); // 열 수 (최대 4열)
+    const col      = idxInCat % COLS;                             // 열 인덱스
+    const row      = Math.floor(idxInCat / COLS);                 // 행 인덱스
+    const CELL_W   = 6;                                           // 셀 너비 간격
+    const CELL_H   = 5;                                           // 셀 높이 간격
 
-    const px = COMPACT_R * Math.cos(subAngle);
-    const py = yOffset;
-    const pz = COMPACT_R * Math.sin(subAngle);
+    // 섹터 방향 벡터 (catAngle 방향으로 행 배치, 직교 방향으로 열 배치)
+    const dirX  = Math.cos(catAngle);                              // 섹터 정방향 X
+    const dirZ  = Math.sin(catAngle);                              // 섹터 정방향 Z
+    const perpX = -dirZ;                                           // 직교 방향 X
+    const perpZ = dirX;                                            // 직교 방향 Z
+
+    // 그리드 중심 = 섹터 방향 12 거리 지점
+    const BASE_R   = 12;                                           // 태양에서 그리드 시작 거리
+    const gridCX   = dirX * BASE_R;
+    const gridCZ   = dirZ * BASE_R;
+
+    // 행/열 오프셋 (그리드 중앙 정렬)
+    const totalCols = Math.min(catCount, COLS);
+    const totalRows = Math.ceil(catCount / COLS);
+    const colOffset = (col - (totalCols - 1) / 2) * CELL_W;       // 열 오프셋
+    const rowOffset = row * CELL_H;                                // 행 오프셋 (앞→뒤)
+
+    const px = gridCX + perpX * colOffset + dirX * rowOffset;
+    const py = 0;                                                  // Y축 고정 (평면 배치)
+    const pz = gridCZ + perpZ * colOffset + dirZ * rowOffset;
+    const COMPACT_R = Math.sqrt(px * px + pz * pz);                // 계산용
+    const subAngle  = Math.atan2(pz, px);                          // 계산용
     const planetPos = new THREE.Vector3(px, py, pz);
 
-    // 확장: 카테고리 클릭 시 펼쳐지는 위치
-    const EXPAND_R = 22 + idxInCat * 5;
-    const expandAngle = catAngle + (idxInCat - (catCount - 1) / 2) * (sectorSpread * 1.2) / Math.max(catCount, 1);
+    // 확장: 카테고리 클릭 시 더 넓게 펼쳐지는 위치
+    const EXP_CELL_W = 10;                                         // 확장 셀 너비
+    const EXP_CELL_H = 8;                                          // 확장 셀 높이
+    const EXP_BASE_R = 20;                                         // 확장 시작 거리
+    const expCX = dirX * EXP_BASE_R;
+    const expCZ = dirZ * EXP_BASE_R;
+    const expColOff = (col - (totalCols - 1) / 2) * EXP_CELL_W;
+    const expRowOff = row * EXP_CELL_H;
+    const yOffset = 0;
 
     // ── 행성 의도 & 색상 — 카테고리 색상 기반 ──────────────────────────────
     let hueHex;
@@ -183,10 +209,10 @@ function buildPlanetSystem(nodeList) {
     planet.userData.hueHex      = hueHex;
     planet.userData.eventCount  = rawEvents.length;
     planet.userData._treeBasePos = planetPos.clone();
-    // 2단계 확장 위치 저장 (카테고리 클릭 시 이 위치로 이동)
-    const epx = EXPAND_R * Math.cos(expandAngle);
-    const epy = yOffset + (idxInCat % 2) * 3;
-    const epz = EXPAND_R * Math.sin(expandAngle);
+    // 2단계 확장 위치 저장 (카테고리 클릭 시 넓게 펼쳐진 그리드)
+    const epx = expCX + perpX * expColOff + dirX * expRowOff;
+    const epy = 0;
+    const epz = expCZ + perpZ * expColOff + dirZ * expRowOff;
     planet.userData._expandedPos = new THREE.Vector3(epx, epy, epz);
     planet.userData._compactPos  = planetPos.clone();
     planet.userData._isExpanded  = false;

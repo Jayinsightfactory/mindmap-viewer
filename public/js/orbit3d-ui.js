@@ -857,7 +857,8 @@ async function doEmailLogin() {
     });
     const d = await r.json();
     if (!r.ok) { showLoginError(d.error || '로그인 실패'); return; }
-    _orbitUser = { name: d.name, email: d.email, avatar: d.avatar || null, token: d.token };
+    const u = d.user || d;                                                       // auth API 응답 형식 호환 (user 객체 또는 플랫)
+    _orbitUser = { id: u.id || d.id, name: u.name || d.name, email: u.email || d.email, avatar: u.avatar || d.avatar || null, plan: u.plan || 'free', token: d.token }; // id·plan 포함
     localStorage.setItem('orbitUser', JSON.stringify(_orbitUser));
     if (typeof track === 'function') track('auth.login', { provider: 'email' });
     renderLoginState();
@@ -878,7 +879,8 @@ async function doRegister() {
     });
     const d = await r.json();
     if (!r.ok) { showLoginError(d.error || '회원가입 실패'); return; }
-    _orbitUser = { name: d.name || name, email, avatar: null, token: d.token };
+    const ru = d.user || d;                                                      // auth API 응답 형식 호환
+    _orbitUser = { id: ru.id || d.id, name: ru.name || name, email, avatar: null, plan: ru.plan || 'free', token: d.token }; // id·plan 포함
     localStorage.setItem('orbitUser', JSON.stringify(_orbitUser));
     if (typeof track === 'function') track('auth.register', { provider: 'email' });
     renderLoginState();
@@ -924,7 +926,7 @@ window.doLogoutMain = doLogoutMain;
     fetch('/api/auth/me', { headers: { Authorization: `Bearer ${oauthToken}` } })
       .then(r => r.json())
       .then(d => {
-        _orbitUser = { name: d.name || '사용자', email: d.email || '', avatar: d.avatar || null, token: oauthToken };
+        _orbitUser = { id: d.id || d.user?.id, name: d.name || d.user?.name || '사용자', email: d.email || d.user?.email || '', avatar: d.avatar || d.user?.avatar || null, plan: d.plan || d.user?.plan || 'free', token: oauthToken }; // OAuth 로그인 시 id·plan 포함
         localStorage.setItem('orbitUser', JSON.stringify(_orbitUser));
         window.history.replaceState({}, '', window.location.pathname);
         renderLoginState();
@@ -932,7 +934,7 @@ window.doLogoutMain = doLogoutMain;
         _postLoginSync(oauthToken);
       })
       .catch(() => {
-        _orbitUser = { name: provider || '사용자', email: '', avatar: null, token: oauthToken };
+        _orbitUser = { id: null, name: provider || '사용자', email: '', avatar: null, plan: 'free', token: oauthToken }; // 폴백: id 없이 기본 free 플랜
         localStorage.setItem('orbitUser', JSON.stringify(_orbitUser));
         window.history.replaceState({}, '', window.location.pathname);
         renderLoginState();
@@ -2576,24 +2578,50 @@ async function renderPricingGrid() {
 }
 
 async function selectPlan(planId) {
-  if (planId === 'free') { closePricing(); return; }
-  if (planId === 'enterprise') { alert('enterprise@orbit-ai.dev 로 문의해주세요.'); return; }
+  if (planId === 'free') { closePricing(); return; }                             // Free 플랜 → 모달 닫기
+  if (planId === 'enterprise') { alert('enterprise@orbit-ai.dev 로 문의해주세요.'); return; } // 엔터프라이즈 → 문의 안내
   try {
-    const userId = _orbitUser?.id || 'local';
-    const res = await fetch('/api/payment/create', {
+    const userId = _orbitUser?.id || 'local';                                    // 현재 로그인 사용자 ID
+    // 1단계: 결제 요청 생성
+    const res = await fetch('/api/payment/create', {                             // 결제 초기화 API 호출
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ planId, userId, userEmail: _orbitUser?.email || '' })
     });
-    const result = await res.json();
+    const result = await res.json();                                             // 결제 생성 결과
+
     if (result.mock) {
-      alert(`[테스트 모드] ${planId.toUpperCase()} 플랜 구독 완료!\n주문번호: ${result.orderId}\n금액: ₩${result.amount?.toLocaleString()}`);
-      closePricing();
+      // 2단계: 결제 승인 (목 모드 — 즉시 승인)
+      const confirmRes = await fetch('/api/payment/confirm', {                   // 결제 승인 API 호출
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          paymentKey: 'mock-key-' + Date.now(),                                  // 목 결제 키
+          orderId: result.orderId,                                               // 주문 ID
+          amount: result.amount,                                                 // 결제 금액
+          userId: userId,                                                        // 사용자 ID
+          planId: planId,                                                        // 업그레이드할 플랜
+        })
+      });
+      const confirmResult = await confirmRes.json();                             // 승인 결과
+
+      if (confirmResult.success) {
+        // 로컬 사용자 객체에 플랜 정보 반영
+        if (_orbitUser) {
+          _orbitUser.plan = planId;                                               // 로컬 플랜 업데이트
+          localStorage.setItem('orbitUser', JSON.stringify(_orbitUser));          // localStorage에 저장
+        }
+        alert(`${planId.toUpperCase()} 플랜으로 업그레이드 되었습니다!\n주문번호: ${result.orderId}\n금액: ₩${result.amount?.toLocaleString()}`);
+      } else {
+        alert('결제 승인 실패: ' + (confirmResult.error || '알 수 없는 오류'));     // 승인 실패 안내
+      }
+      closePricing();                                                            // 가격 모달 닫기
     } else if (result.clientKey) {
-      alert('결제 페이지로 이동합니다...');
+      // 실제 PG 결제 — Toss Payments SDK 연동 (추후 구현)
+      alert('결제 페이지로 이동합니다...');                                        // 실결제 페이지 이동 안내
     }
   } catch (e) {
-    alert('결제 오류: ' + e.message);
+    alert('결제 오류: ' + e.message);                                             // 네트워크 등 오류 처리
   }
 }
 window.selectPlan = selectPlan;

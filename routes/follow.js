@@ -20,11 +20,12 @@ const router  = express.Router();
 
 /**
  * @param {object}   deps
- * @param {Function} deps.getDb       - better-sqlite3 db 인스턴스 반환
- * @param {Function} deps.verifyToken - JWT 검증 함수
+ * @param {Function} deps.getDb        - better-sqlite3 db 인스턴스 반환 (메인 DB)
+ * @param {Function} deps.verifyToken  - JWT 검증 함수
+ * @param {Function} [deps.searchUsers] - auth DB에서 사용자 검색 (이메일·이름)
  * @returns {express.Router}
  */
-function createRouter({ getDb, verifyToken }) {
+function createRouter({ getDb, verifyToken, searchUsers }) {
 
   // ── DB 테이블 초기화 ──────────────────────────────────────────────────────
   function initFollowTable() {
@@ -137,37 +138,70 @@ function createRouter({ getDb, verifyToken }) {
   });
 
   // ── GET /api/follow/search — 사용자 검색 (이름·이메일) ───────────────────
+  // 메인 DB(user_profiles)와 auth DB(users) 양쪽에서 검색 후 병합
   router.get('/follow/search', auth, (req, res) => {
-    const q = (req.query.q || '').trim();
-    if (!q || q.length < 1) return res.json([]);
+    const q = (req.query.q || '').trim();                   // 검색어 추출
+    if (!q || q.length < 1) return res.json([]);            // 빈 검색어 → 빈 배열
     try {
-      const db = getDb();
-      const like = `%${q}%`;
-      // user_profiles 테이블에서 이름·이메일로 검색 (자신 제외, 최대 20명)
-      let rows = [];
+      const db = getDb();                                   // 메인 DB 가져오기
+      const like = `%${q}%`;                                // LIKE 패턴 (부분 일치)
+
+      // ① 메인 DB의 user_profiles 테이블에서 검색 (프로필이 있는 사용자)
+      let profileRows = [];
       try {
-        rows = db.prepare(`
-          SELECT up.user_id AS id, up.name, up.headline, up.avatar_url, u.email,
-                 CASE WHEN uf.follower_id IS NOT NULL THEN 1 ELSE 0 END AS is_following
-          FROM user_profiles up
-          LEFT JOIN users u ON u.id = up.user_id
-          LEFT JOIN user_follows uf ON uf.follower_id = ? AND uf.following_id = up.user_id
-          WHERE up.user_id != ?
-            AND (up.name LIKE ? OR u.email LIKE ?)
-          LIMIT 20
-        `).all(req.user.id, req.user.id, like, like);
-      } catch (_) {
-        // users 테이블 없으면 user_profiles만 검색
-        rows = db.prepare(`
+        profileRows = db.prepare(`
           SELECT up.user_id AS id, up.name, up.headline, up.avatar_url, NULL AS email,
                  CASE WHEN uf.follower_id IS NOT NULL THEN 1 ELSE 0 END AS is_following
           FROM user_profiles up
           LEFT JOIN user_follows uf ON uf.follower_id = ? AND uf.following_id = up.user_id
           WHERE up.user_id != ? AND up.name LIKE ?
           LIMIT 20
-        `).all(req.user.id, req.user.id, like);
+        `).all(req.user.id, req.user.id, like);             // 자신 제외, 이름 검색
+      } catch (_) {
+        // user_profiles 테이블 없으면 무시
       }
-      res.json(rows);
+
+      // ② auth DB(users.db)에서 이메일·이름 검색 (searchUsers 함수 사용)
+      let authRows = [];
+      if (typeof searchUsers === 'function') {              // searchUsers가 주입되었을 때만
+        try {
+          const rawAuthRows = searchUsers(q, req.user.id, 20); // auth DB에서 검색
+          // 팔로우 상태 확인을 위해 메인 DB에서 체크
+          const followCheckStmt = (() => {
+            try {
+              return db.prepare(
+                `SELECT 1 FROM user_follows WHERE follower_id = ? AND following_id = ?`
+              );
+            } catch { return null; }                        // user_follows 없으면 null
+          })();
+
+          authRows = rawAuthRows.map(u => ({                // auth 결과를 표준 형식으로 변환
+            id: u.id,
+            name: u.name,
+            headline: null,                                 // auth DB에는 headline 없음
+            avatar_url: u.avatar_url,
+            email: u.email,
+            plan: u.plan,
+            is_following: followCheckStmt                    // 팔로우 여부 확인
+              ? (followCheckStmt.get(req.user.id, u.id) ? 1 : 0)
+              : 0,
+          }));
+        } catch (e) {
+          console.warn('[follow/search] auth DB 검색 실패:', e.message);
+        }
+      }
+
+      // ③ 두 결과를 병합 (중복 제거: profileRows 우선)
+      const seen = new Set(profileRows.map(r => r.id));     // 이미 있는 ID 수집
+      const merged = [...profileRows];                      // 프로필 결과 먼저
+      for (const row of authRows) {                         // auth 결과 추가 (중복 제외)
+        if (!seen.has(row.id)) {
+          seen.add(row.id);
+          merged.push(row);
+        }
+      }
+
+      res.json(merged.slice(0, 20));                        // 최대 20명 반환
     } catch (e) {
       console.error('[follow/search]', e.message);
       res.status(500).json({ error: e.message });

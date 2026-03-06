@@ -94,6 +94,15 @@ if (db) {
       updatedAt    TEXT DEFAULT (datetime('now')),
       FOREIGN KEY (userId) REFERENCES users(id)
     );
+
+    -- 관리자 초대 테이블 (관리자가 초대한 사용자에게 팀 플랜 부여)
+    CREATE TABLE IF NOT EXISTS admin_invites (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      inviter_id    TEXT NOT NULL,
+      invitee_email TEXT NOT NULL,
+      created_at    TEXT DEFAULT (datetime('now')),
+      UNIQUE(invitee_email)
+    );
   `);
 }
 
@@ -371,6 +380,123 @@ function getGoogleOAuthUsers() {
   `).all();
 }
 
+// ─── 관리자 초대 시스템 ──────────────────────────────────────────────────────
+
+/** 관리자 이메일 목록 (환경변수 또는 기본값) */
+const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || 'dlaww@kicda.com').split(',').map(s => s.trim());
+
+/**
+ * 관리자가 사용자를 초대합니다.
+ * 초대된 사용자는 팀(team) 플랜 혜택을 받습니다.
+ *
+ * @param {string} adminEmail   - 초대하는 관리자의 이메일
+ * @param {string} inviteeEmail - 초대받는 사용자의 이메일
+ * @returns {{ ok: boolean } | { error: string }}
+ */
+function inviteUser(adminEmail, inviteeEmail) {
+  if (!db) return { error: 'DB not available' };                      // DB 미사용 시 에러
+  if (!ADMIN_EMAILS.includes(adminEmail.toLowerCase().trim())) {      // 관리자 이메일 확인
+    return { error: 'admin only' };
+  }
+  if (!inviteeEmail) return { error: 'invitee email required' };      // 초대 이메일 필수
+
+  const admin = db.prepare('SELECT id FROM users WHERE email = ?')    // 관리자 사용자 ID 조회
+    .get(adminEmail.toLowerCase().trim());
+  if (!admin) return { error: 'admin user not found' };               // 관리자 계정 없음
+
+  try {
+    db.prepare(`
+      INSERT INTO admin_invites (inviter_id, invitee_email)
+      VALUES (?, ?)
+    `).run(admin.id, inviteeEmail.toLowerCase().trim());              // 초대 레코드 삽입
+    return { ok: true };                                              // 성공
+  } catch (e) {
+    if (e.message?.includes('UNIQUE')) {                              // 이미 초대된 이메일
+      return { error: 'already invited' };
+    }
+    return { error: e.message };                                      // 기타 DB 오류
+  }
+}
+
+/**
+ * 해당 이메일이 관리자에게 초대되었는지 확인합니다.
+ *
+ * @param {string} email - 확인할 이메일
+ * @returns {boolean} 초대 여부
+ */
+function isInvitedUser(email) {
+  if (!db || !email) return false;                                    // DB 없거나 이메일 없으면 false
+  const row = db.prepare(
+    'SELECT 1 FROM admin_invites WHERE invitee_email = ?'
+  ).get(email.toLowerCase().trim());                                  // 초대 테이블에서 조회
+  return !!row;                                                       // 존재하면 true
+}
+
+/**
+ * 사용자의 실효 플랜을 반환합니다.
+ * 관리자가 초대한 사용자라면 'team' 플랜으로 처리합니다.
+ * 관리자 이메일 본인도 'team' 플랜으로 처리합니다.
+ *
+ * @param {string} userId - 사용자 ID
+ * @returns {string} 'free' | 'pro' | 'team'
+ */
+function getEffectivePlan(userId) {
+  if (!db) return 'free';                                             // DB 없으면 기본 free
+  const user = db.prepare('SELECT email, plan FROM users WHERE id = ?').get(userId);
+  if (!user) return 'free';                                           // 사용자 없으면 free
+
+  // 관리자 이메일이면 무조건 team
+  if (ADMIN_EMAILS.includes(user.email.toLowerCase().trim())) return 'team';
+
+  // 관리자에게 초대된 사용자면 team
+  if (isInvitedUser(user.email)) return 'team';
+
+  return user.plan || 'free';                                         // 그 외에는 실제 플랜 반환
+}
+
+/**
+ * 관리자 초대 목록을 반환합니다.
+ *
+ * @param {string} adminEmail - 관리자 이메일
+ * @returns {Array<{invitee_email, created_at}>}
+ */
+function getAdminInvites(adminEmail) {
+  if (!db) return [];                                                 // DB 없으면 빈 배열
+  if (!ADMIN_EMAILS.includes(adminEmail.toLowerCase().trim())) return []; // 관리자가 아니면 빈 배열
+
+  return db.prepare(`
+    SELECT invitee_email, created_at FROM admin_invites
+    ORDER BY created_at DESC
+  `).all();                                                           // 모든 초대 내역 조회
+}
+
+// ─── 사용자 검색 (팔로우 시스템용) ────────────────────────────────────────────
+/**
+ * users 테이블에서 이메일·이름으로 사용자를 검색합니다.
+ * auth DB(users.db)에 직접 쿼리하므로 user_profiles가 없어도 검색 가능.
+ *
+ * @param {string} query     - 검색어 (이메일 또는 이름 부분 일치)
+ * @param {string} excludeId - 제외할 사용자 ID (본인)
+ * @param {number} [limit=20] - 최대 반환 수
+ * @returns {Array<{id, email, name, avatar_url, plan}>}
+ */
+function searchUsers(query, excludeId, limit = 20) {
+  if (!db) return [];                                       // DB 없으면 빈 배열
+  const like = `%${query}%`;                                // LIKE 패턴 (부분 일치)
+  return db.prepare(`
+    SELECT id, email, name, avatar, plan
+    FROM users
+    WHERE id != ? AND (email LIKE ? OR name LIKE ?)
+    LIMIT ?
+  `).all(excludeId || '', like, like, limit).map(u => ({    // 결과를 표준 형식으로 변환
+    id: u.id,                                               // 사용자 고유 ID
+    email: u.email,                                         // 이메일 주소
+    name: u.name || u.email?.split('@')[0] || '사용자',      // 표시 이름 (없으면 이메일 앞부분)
+    avatar_url: u.avatar || null,                           // 프로필 이미지 URL
+    plan: u.plan || 'free',                                 // 요금제 (기본: free)
+  }));
+}
+
 module.exports = {
   register, login, verifyToken, issueApiToken,
   getUserById, getUserByEmail, upgradePlan, upsertOAuthUser,
@@ -378,4 +504,7 @@ module.exports = {
   getDb: () => db,
   saveOAuthTokens, getOAuthTokens, refreshGoogleAccessToken,
   getValidGoogleToken, getGoogleOAuthUsers,
+  searchUsers,                                              // 팔로우 검색용 함수 추가
+  inviteUser, isInvitedUser, getEffectivePlan, getAdminInvites, // 관리자 초대 시스템
+  ADMIN_EMAILS,                                             // 관리자 이메일 목록 (라우터에서 사용)
 };
