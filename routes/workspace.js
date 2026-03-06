@@ -18,7 +18,7 @@ const express = require('express');
 const { ulid }  = require('ulid');
 const crypto    = require('crypto');
 
-function createWorkspaceRouter({ db, verifyToken }) {
+function createWorkspaceRouter({ db, verifyToken, getUserById, ADMIN_EMAILS }) {
   const router = express.Router();
 
   // ── 헬퍼: 짧은 초대코드 생성 (8자 영숫자) ────────────────────────────────
@@ -175,15 +175,22 @@ function createWorkspaceRouter({ db, verifyToken }) {
         workspaceId = first.workspace_id;
       }
 
-      // 멤버 목록
-      const members = await dbAll(
-        `SELECT u.id, u.name, u.email, u.avatar, wm.role, wm.team_name
-         FROM workspace_members wm
-         JOIN users u ON u.id = wm.user_id
-         WHERE wm.workspace_id = ?
-         ORDER BY wm.joined_at ASC`,
+      // 멤버 목록 (cross-DB JOIN 회피: 2단계 조회)
+      const rawMembers = await dbAll(
+        `SELECT user_id, role, team_name FROM workspace_members WHERE workspace_id = ? ORDER BY joined_at ASC`,
         [workspaceId]
       );
+      const members = rawMembers.map(wm => {
+        const u = typeof getUserById === 'function' ? getUserById(wm.user_id) : null;
+        return {
+          id: wm.user_id,
+          name: u?.name || u?.email?.split('@')[0] || '사용자',
+          email: u?.email || '',
+          avatar: u?.avatar || null,
+          role: wm.role,
+          team_name: wm.team_name,
+        };
+      });
 
       const ws = await dbGet(`SELECT * FROM workspaces WHERE id = ?`, [workspaceId]);
       if (!ws) return res.status(404).json({ error: 'workspace not found' });
@@ -275,14 +282,21 @@ function createWorkspaceRouter({ db, verifyToken }) {
       const ws = await dbGet(`SELECT * FROM workspaces WHERE id = ?`, [workspaceId]);
       if (!ws) return res.status(404).json({ error: 'not found' });
 
-      const members = await dbAll(
-        `SELECT u.id, u.name, u.email, u.avatar, wm.role, wm.team_name
-         FROM workspace_members wm
-         JOIN users u ON u.id = wm.user_id
-         WHERE wm.workspace_id = ?
-         ORDER BY wm.team_name, wm.joined_at`,
+      const rawMembers2 = await dbAll(
+        `SELECT user_id, role, team_name FROM workspace_members WHERE workspace_id = ? ORDER BY team_name, joined_at`,
         [workspaceId]
       );
+      const members = rawMembers2.map(wm => {
+        const u = typeof getUserById === 'function' ? getUserById(wm.user_id) : null;
+        return {
+          id: wm.user_id,
+          name: u?.name || u?.email?.split('@')[0] || '사용자',
+          email: u?.email || '',
+          avatar: u?.avatar || null,
+          role: wm.role,
+          team_name: wm.team_name,
+        };
+      });
 
       // 팀 이름별로 그룹화
       const teamsMap = {};
@@ -352,6 +366,150 @@ function createWorkspaceRouter({ db, verifyToken }) {
     } catch (e) {
       res.status(500).json({ error: e.message });
     }
+  });
+
+  // ── 어드민 권한 체크 헬퍼 ──────────────────────────────────────────────────
+  function isWsAdmin(req, workspaceId) {
+    // 글로벌 어드민이면 무조건 true
+    if (ADMIN_EMAILS && ADMIN_EMAILS.includes(req.user.email?.toLowerCase())) return true;
+    // 워크스페이스 owner/admin이면 true
+    const member = db.prepare
+      ? db.prepare('SELECT role FROM workspace_members WHERE workspace_id = ? AND user_id = ?').get(workspaceId, req.user.id)
+      : null;
+    return member && (member.role === 'owner' || member.role === 'admin');
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // GET /api/workspace/:id/members — 멤버 목록 상세
+  // ─────────────────────────────────────────────────────────────────────────
+  router.get('/workspace/:id/members', auth, async (req, res) => {
+    try {
+      const rows = await dbAll(
+        `SELECT user_id, role, team_name, joined_at FROM workspace_members WHERE workspace_id = ? ORDER BY joined_at`,
+        [req.params.id]
+      );
+      const members = rows.map(wm => {
+        const u = typeof getUserById === 'function' ? getUserById(wm.user_id) : null;
+        return {
+          userId: wm.user_id,
+          name: u?.name || '사용자',
+          email: u?.email || '',
+          avatar: u?.avatar || null,
+          role: wm.role,
+          teamName: wm.team_name,
+          joinedAt: wm.joined_at,
+          provider: u?.provider || 'local',
+        };
+      });
+      res.json(members);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // POST /api/workspace/:id/invite — 이메일로 멤버 초대
+  // body: { email, teamName, role }
+  // ─────────────────────────────────────────────────────────────────────────
+  router.post('/workspace/:id/invite', auth, async (req, res) => {
+    try {
+      const wsId = req.params.id;
+      if (!isWsAdmin(req, wsId)) return res.status(403).json({ error: 'admin only' });
+
+      const { email, teamName, role } = req.body;
+      if (!email) return res.status(400).json({ error: 'email required' });
+
+      // auth DB에서 사용자 찾기
+      const { getUserByEmail } = require('../src/auth');
+      const target = getUserByEmail(email);
+      if (!target) return res.status(404).json({ error: 'user not found — 먼저 가입 필요' });
+
+      // 이미 멤버인지 확인
+      const existing = await dbGet(
+        'SELECT 1 FROM workspace_members WHERE workspace_id = ? AND user_id = ?',
+        [wsId, target.id]
+      );
+      if (existing) return res.json({ message: 'already member' });
+
+      await dbRun(
+        `INSERT INTO workspace_members (workspace_id, user_id, role, team_name) VALUES (?, ?, ?, ?)`,
+        [wsId, target.id, role || 'member', teamName || '팀 1']
+      );
+      res.json({ ok: true, userId: target.id, name: target.name });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // DELETE /api/workspace/:id/members/:userId — 멤버 제거
+  // ─────────────────────────────────────────────────────────────────────────
+  router.delete('/workspace/:id/members/:userId', auth, async (req, res) => {
+    try {
+      const wsId = req.params.id;
+      if (!isWsAdmin(req, wsId)) return res.status(403).json({ error: 'admin only' });
+      await dbRun(
+        'DELETE FROM workspace_members WHERE workspace_id = ? AND user_id = ?',
+        [wsId, req.params.userId]
+      );
+      res.json({ ok: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // PATCH /api/workspace/:id/members/:userId/role — 멤버 역할 변경
+  // body: { role: 'admin' | 'member' }
+  // ─────────────────────────────────────────────────────────────────────────
+  router.patch('/workspace/:id/members/:userId/role', auth, async (req, res) => {
+    try {
+      const wsId = req.params.id;
+      if (!isWsAdmin(req, wsId)) return res.status(403).json({ error: 'admin only' });
+      const { role } = req.body;
+      if (!['admin', 'member'].includes(role)) return res.status(400).json({ error: 'invalid role' });
+      await dbRun(
+        'UPDATE workspace_members SET role = ? WHERE workspace_id = ? AND user_id = ?',
+        [role, wsId, req.params.userId]
+      );
+      res.json({ ok: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // DELETE /api/workspace/:id — 워크스페이스 삭제 (owner/admin만)
+  // ─────────────────────────────────────────────────────────────────────────
+  router.delete('/workspace/:id', auth, async (req, res) => {
+    try {
+      const wsId = req.params.id;
+      if (!isWsAdmin(req, wsId)) return res.status(403).json({ error: 'admin only' });
+      await dbRun('DELETE FROM workspace_members WHERE workspace_id = ?', [wsId]);
+      await dbRun('DELETE FROM workspaces WHERE id = ?', [wsId]);
+      res.json({ ok: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // POST /api/workspace/:id/regenerate-code — 초대코드 재생성
+  // ─────────────────────────────────────────────────────────────────────────
+  router.post('/workspace/:id/regenerate-code', auth, async (req, res) => {
+    try {
+      const wsId = req.params.id;
+      if (!isWsAdmin(req, wsId)) return res.status(403).json({ error: 'admin only' });
+      const newCode = genInviteCode();
+      await dbRun('UPDATE workspaces SET invite_code = ? WHERE id = ?', [newCode, wsId]);
+      res.json({ ok: true, inviteCode: newCode });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // GET /api/workspace/admin/all — 전체 워크스페이스 (글로벌 어드민 전용)
+  // ─────────────────────────────────────────────────────────────────────────
+  router.get('/workspace/admin/all', auth, async (req, res) => {
+    try {
+      if (!ADMIN_EMAILS || !ADMIN_EMAILS.includes(req.user.email?.toLowerCase())) {
+        return res.status(403).json({ error: 'global admin only' });
+      }
+      const rows = await dbAll(
+        `SELECT w.*, (SELECT COUNT(*) FROM workspace_members WHERE workspace_id = w.id) AS member_count
+         FROM workspaces w ORDER BY w.created_at DESC`
+      );
+      res.json(rows);
+    } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
   return router;

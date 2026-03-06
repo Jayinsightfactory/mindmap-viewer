@@ -33,6 +33,7 @@ function readOrbitConfig() {
 const cfg = readOrbitConfig();
 const SERVER_URL = process.env.ORBIT_SERVER_URL || cfg.serverUrl || null;
 const TOKEN      = process.env.ORBIT_TOKEN       || cfg.token      || '';
+const USER_ID    = process.env.ORBIT_USER_ID     || cfg.userId     || null; // config에서 유저 ID 읽기
 const DB_PATH    = path.join(__dirname, '..', 'src', 'data', 'mindmap.db');
 
 // ── CLI 인수 파싱 ────────────────────────────────────────────────────────────
@@ -68,13 +69,13 @@ function loadEvents() {
     const rows = db.prepare(query).all(...params);
     db.close();
 
-    // DB 컬럼 → 이벤트 객체로 변환
+    // DB 컬럼 → 이벤트 객체로 변환 (userId를 config에서 읽은 값으로 덮어쓰기)
     return rows.map(r => ({
       id:            r.id,
       type:          r.type,
       source:        r.source,
       sessionId:     r.session_id,
-      userId:        r.user_id,
+      userId:        USER_ID || r.user_id,                         // config userId 우선 사용
       channelId:     r.channel_id,
       parentEventId: r.parent_event_id,
       timestamp:     r.timestamp,

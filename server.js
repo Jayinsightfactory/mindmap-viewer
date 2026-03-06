@@ -874,6 +874,23 @@ app.post('/api/register-hook-token', (req, res) => {
   }
 });
 
+// ─── 어드민 CLI 토큰 발급 (이메일 기반, 비밀번호 불필요) ──────────────────────
+// Railway 환경에서만 동작 (ADMIN_EMAILS에 등록된 이메일만 허용)
+app.post('/api/admin/issue-token', (req, res) => {
+  const { email, secret } = req.body || {};
+  if (!email) return res.status(400).json({ error: 'email required' });
+  // 보안: ADMIN_SECRET 환경변수 또는 ADMIN_EMAILS 체크
+  const adminSecret = process.env.ADMIN_SECRET || 'orbit-admin-2026';
+  if (secret !== adminSecret && !ADMIN_EMAILS.includes(email.toLowerCase().trim())) {
+    return res.status(403).json({ error: 'forbidden' });
+  }
+  const { getUserByEmail } = require('./src/auth');
+  const user = getUserByEmail(email);
+  if (!user) return res.status(404).json({ error: 'user not found' });
+  const token = issueApiToken(user.id);
+  res.json({ ok: true, userId: user.id, token, email: user.email, name: user.name });
+});
+
 // ─── 라우터 의존성 조립 + 마운트 ─────────────────────────────────────────────
 // 각 라우터는 createRouter(deps) 패턴으로 의존성을 주입받습니다.
 // deps 에 mock 객체를 주입하면 테스트 시 DB 없이 단위 테스트 가능합니다.
@@ -1048,7 +1065,7 @@ app.use('/api', createFollowRouter({ getDb: dbModule.getDb, verifyToken, searchU
 app.use('/api', createChatRouter({ getDb: dbModule.getDb, verifyToken, broadcastToRoom }));
 
 // ─── Workspace (팀/회사 관리) ─────────────────────────────────────────────────
-app.use('/api', createWorkspaceRouter({ db: dbModule.getDb ? dbModule.getDb() : null, verifyToken }));
+app.use('/api', createWorkspaceRouter({ db: dbModule.getDb ? dbModule.getDb() : null, verifyToken, getUserById, ADMIN_EMAILS }));
 
 // ─── Google Drive 사용자 백업 ────────────────────────────────────────────────
 const createGdriveRouter = require('./routes/gdrive');

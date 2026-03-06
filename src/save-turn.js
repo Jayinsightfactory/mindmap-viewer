@@ -40,6 +40,8 @@ const _orbitConfig = readOrbitConfig();
 const ORBIT_SERVER_URL = process.env.ORBIT_SERVER_URL || _orbitConfig.serverUrl || null;
 // 사용자 인증 토큰 (원격 서버 전송 시 필요)
 const ORBIT_TOKEN = process.env.ORBIT_TOKEN || _orbitConfig.token || '';
+// 사용자 ID (config에서 읽어 이벤트에 적용 — 'local' 대신 실제 유저 ID)
+const ORBIT_USER_ID = process.env.ORBIT_USER_ID || _orbitConfig.userId || 'local';
 // 미전송 큐 파일 (Railway 전송 실패 시 임시 저장)
 const PENDING_FILE = path.join(__dirname, '.pending-upload.jsonl');
 // 멤버 이름: 환경변수로 설정 (예: export MINDMAP_MEMBER=다린)
@@ -397,7 +399,7 @@ async function analyzeAndUpload(hookData, events) {
         type:      'ollama.insight',
         source:    'save-turn',
         sessionId: hookData.session_id || 'unknown',
-        userId:    'local',
+        userId:    ORBIT_USER_ID,
         channelId: CHANNEL_ID,
         timestamp: new Date().toISOString(),
         data:      { insight, model: OLLAMA_MODEL },
@@ -438,6 +440,11 @@ process.stdin.on('end', async () => {
 
     // 이벤트 정규화
     const events = normalizeHookEvent(hookData, sessionState);
+
+    // config에서 읽은 userId로 이벤트 덮어쓰기 (local → 실제 유저 ID)
+    if (ORBIT_USER_ID !== 'local') {
+      for (const event of events) event.userId = ORBIT_USER_ID;
+    }
 
     // 각 이벤트 로컬 저장 + 상태 업데이트
     for (const event of events) {
