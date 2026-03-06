@@ -1285,36 +1285,7 @@ function buildCoreMesh() {
   _coreMeshRef.userData.sunUniforms = sunUniforms;
   scene.add(_coreMeshRef);
 
-  // 외곽 글로우 — 아주 미세한 소프트 글로우만 (큰 노란 코로나 제거)
-  const coronaMat = new THREE.ShaderMaterial({
-    vertexShader: `
-      varying vec3 vNormal;
-      varying vec3 vWorldPos;
-      void main() {
-        vNormal = normalize(normalMatrix * normal);
-        vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      }
-    `,
-    fragmentShader: `
-      varying vec3 vNormal;
-      varying vec3 vWorldPos;
-      void main() {
-        vec3 viewDir = normalize(cameraPosition - vWorldPos);
-        float intensity = pow(0.55 - dot(vNormal, viewDir), 4.0);
-        vec3 col = vec3(1.0, 0.92, 0.7) * intensity * 1.2;
-        gl_FragColor = vec4(col, intensity * 0.3);
-      }
-    `,
-    uniforms: {},
-    transparent: true,
-    side: THREE.BackSide,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-  });
-  _coreGlowRef = new THREE.Mesh(new THREE.SphereGeometry(4.5, 32, 32), coronaMat);
-  _coreGlowRef.userData.isCore = true;
-  scene.add(_coreGlowRef);
+  // 코로나/글로우 제거 — 태양 셰이더의 림 라이트만 유지
 }
 window.buildCoreMesh = buildCoreMesh;
 

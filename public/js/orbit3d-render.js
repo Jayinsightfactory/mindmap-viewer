@@ -3022,6 +3022,8 @@ function _drawPersonalPlanets() {
   _lctx.globalAlpha = globalAlpha;
 
   planetMeshes.forEach(p => {
+    // 포커스된 카테고리가 있으면 해당 타입만 표시
+    if (_focusedCategory && p.userData.macroCat !== _focusedCategory) return;
     const sc = toScreen(p.position);
     if (sc.z > 1) return;
 
@@ -3387,10 +3389,14 @@ function drawLabels() {
     }
   });
 
-  // 개인 모드: 항상 컴팩트 뷰 유지 (연결선/위성/토픽링크 없음)
+  // 개인 모드: 프로젝트 타입 카드 중심 뷰
   if (isPersonalMode) {
-    drawCompactProjectView();                                                  // 3대 카테고리 카드
-    _drawPersonalPlanets();                                                    // 행성 라벨 (오와 열 정렬)
+    drawCompactProjectView();                                                  // 프로젝트 타입 카드
+    // 카테고리가 포커스된 경우에만 해당 타입의 개별 행성 표시
+    // 기본 뷰에서는 타입 카드만 보여서 깔끔하게 유지
+    if (_focusedCategory) {
+      _drawPersonalPlanets();                                                  // 포커스된 타입의 행성만
+    }
     // 선택된 개체가 있으면 트레이 오버레이 추가
     if (_selectedHit?.obj) {
       drawInvertedPyramid(_selectedHit.obj, _selectedHit.data);
