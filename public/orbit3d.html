@@ -85,6 +85,7 @@
 
 <!-- ══ 메신저 패널 ══════════════════════════════════════════════════════════ -->
 <div id="messenger-panel">
+  <button class="panel-side-close" onclick="toggleMessenger()" title="닫기">✕</button>
   <div class="msg-hdr">
     <span class="msg-hdr-title">💬 채팅</span>
     <button class="msg-close-btn" onclick="toggleMessenger()">✕</button>
@@ -155,6 +156,7 @@
 
 <!-- ⚡ AI 인사이트 패널 -->
 <div id="insight-panel">
+  <button class="panel-side-close" onclick="toggleInsightPanel()" title="닫기">✕</button>
   <div class="ins-hdr">
     <span class="ins-title">⚡ AI 현황</span>
     <div style="display:flex;gap:6px">
@@ -651,6 +653,8 @@
 
 <!-- 드릴다운 패널 (클릭) -->
 <div id="info-panel">
+  <!-- 좌측 중앙 닫기 버튼 -->
+  <button class="panel-side-close" onclick="closePanel()" title="닫기">✕</button>
   <!-- 헤더 -->
   <div class="ip-header">
     <div class="ip-dot-wrap"><div class="ip-type-dot" id="ip-dot"></div></div>
@@ -698,6 +702,23 @@
   <div class="zs-chips" id="zs-chips"></div>
   <div class="zs-sub" id="zs-sub"></div>
 </div>
+
+<!-- 화면 줌 조절 버튼 (우하단 고정) -->
+<div id="view-zoom-controls" style="position:fixed;bottom:24px;right:24px;z-index:200;display:flex;gap:6px;align-items:center">
+  <button onclick="viewZoom(-1)" style="width:36px;height:36px;border-radius:8px;border:1px solid #30363d;background:rgba(13,17,23,0.9);color:#e6edf3;font-size:20px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center" title="축소">−</button>
+  <span id="view-zoom-pct" style="color:#8b949e;font-size:11px;min-width:32px;text-align:center">100%</span>
+  <button onclick="viewZoom(1)" style="width:36px;height:36px;border-radius:8px;border:1px solid #30363d;background:rgba(13,17,23,0.9);color:#e6edf3;font-size:20px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center" title="확대">+</button>
+</div>
+<script>
+function viewZoom(dir) {
+  var step = 8;                                                                // 줌 단계
+  var curR = controls.sph.r;                                                   // 현재 카메라 거리
+  var newR = Math.max(10, Math.min(200, curR + dir * -step));                  // +버튼 → 가까이(작은r), -버튼 → 멀리
+  lerpCameraTo(newR, controls.tgt.x, controls.tgt.y, controls.tgt.z, 300);
+  var pct = Math.round((55 / newR) * 100);                                     // 기본거리 55 기준 퍼센트
+  document.getElementById('view-zoom-pct').textContent = pct + '%';
+}
+</script>
 
 <!-- 툴팁 -->
 <div id="tooltip">

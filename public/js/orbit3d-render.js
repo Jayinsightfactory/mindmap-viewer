@@ -2964,43 +2964,7 @@ function drawInvertedPyramid(planetObj, hitData) {
   roundRect(ctx, trayX, trayY, TRAY_W, totalH, 14);
   ctx.stroke();
 
-  // ── 크기 조절 버튼 (우상단, 배경 있는 둥근 버튼) ────────────────────────
-  const btnSize = 26;                                                          // 버튼 크기
-  const btnGap  = 6;                                                           // 버튼 사이 간격
-  const btnY    = trayY + 10;
-  const btnPlusX  = trayX + TRAY_W - PAD;                                      // + 버튼 X (우측)
-  const btnMinusX = btnPlusX - btnSize - btnGap;                               // - 버튼 X (좌측)
-
-  // - 버튼
-  ctx.fillStyle = 'rgba(255,255,255,0.08)';
-  roundRect(ctx, btnMinusX - btnSize / 2, btnY, btnSize, btnSize, 6);
-  ctx.fill();
-  ctx.strokeStyle = '#8b949e';
-  ctx.lineWidth = 1;
-  roundRect(ctx, btnMinusX - btnSize / 2, btnY, btnSize, btnSize, 6);
-  ctx.stroke();
-  ctx.font = '700 16px -apple-system,sans-serif';
-  ctx.textAlign = 'center';
-  ctx.fillStyle = '#e6edf3';
-  ctx.fillText('−', btnMinusX, btnY + btnSize * 0.72);
-
-  // + 버튼
-  ctx.fillStyle = 'rgba(255,255,255,0.08)';
-  roundRect(ctx, btnPlusX - btnSize / 2, btnY, btnSize, btnSize, 6);
-  ctx.fill();
-  ctx.strokeStyle = '#8b949e';
-  ctx.lineWidth = 1;
-  roundRect(ctx, btnPlusX - btnSize / 2, btnY, btnSize, btnSize, 6);
-  ctx.stroke();
-  ctx.font = '700 16px -apple-system,sans-serif';
-  ctx.fillStyle = '#e6edf3';
-  ctx.fillText('+', btnPlusX, btnY + btnSize * 0.72);
-
-  // 히트 영역
-  _hitAreas.push({ cx: btnMinusX, cy: btnY + btnSize / 2, r: btnSize / 2 + 2, obj: planetObj,
-    data: { type: '_trayResize', action: 'shrink' } });
-  _hitAreas.push({ cx: btnPlusX, cy: btnY + btnSize / 2, r: btnSize / 2 + 2, obj: planetObj,
-    data: { type: '_trayResize', action: 'grow' } });
+  // (크기 조절은 화면 우하단 줌 버튼으로 통합)
 
   let curY = trayY;
 
@@ -3151,14 +3115,15 @@ function drawLabels() {
   const selectedProj   = _selectedHit?.obj?.userData?.projectName;
   const selectedCat    = _selectedHit?.obj?.userData?.macroCat;
 
-  // 연결선 표시/숨김 — 포커스된 카테고리/프로젝트의 라인만 표시
+  // 연결선 표시/숨김 — 개인 모드에서는 모든 연결선 숨김
   connections.forEach(c => {
-    if (c.userData.isBranch) {
+    if (isPersonalMode) {
+      c.visible = false;                                                     // 개인 모드: 연결선 전부 숨김
+    } else if (c.userData.isBranch) {
       const pCat  = c.userData.planetObj?.userData?.macroCat;
       const proj  = c.userData.planetObj?.userData?.projectName;
       c.visible = !!(focusedCat && pCat === focusedCat)
-               || !!(focusedProj && proj === focusedProj)
-               || !!(selectedProj && proj === selectedProj);
+               || !!(focusedProj && proj === focusedProj);
     } else if (c.userData.satObj) {
       const cid = c.userData.satObj?.userData?.clusterId;
       c.visible = !!(_selectedHit?.obj?.userData?.clusterId === cid);
