@@ -110,45 +110,56 @@ function buildPlanetSystem(nodeList) {
     git:0.40, research:0.44, chat:0.48, general:0.52,
   };
 
-  // ── 방사형 트리: 프로젝트별 가지 방향 계산 ──────────────────────────────
-  const projList = [...new Set(planets.map(p => p.projectName))];
-  const projAngleStep = (Math.PI * 2) / Math.max(projList.length, 1);
+  // ── 3대 카테고리 섹터 배치 (기능구현 / 조사분석 / 배포운영) ──────────────
+  // 각 행성에 매크로 카테고리 할당
+  planets.forEach(pl => {
+    pl.macroCat = classifyMacroCategory(pl.events);
+  });
+
+  // 카테고리별 행성 분류
+  const catBuckets = { dev: [], research: [], ops: [] };
+  planets.forEach(pl => catBuckets[pl.macroCat].push(pl));
 
   planets.forEach((pl, pi) => {
     const { clusterId, sessionId: sid, domain, label, events } = pl;
     const rawEvents = events;
 
-    // ── 행성 위치 — 2단계 배치 ────────────────────────────────────────────
-    // 1단계(컴팩트): 태양 가까이 밀착 / 2단계(확장): 클릭 시 펼쳐짐
-    const projIdx = projList.indexOf(pl.projectName);
-    const branchAngle = projIdx * projAngleStep;
-    const siblings = planets.filter(p => p.projectName === pl.projectName);
-    const sibIdx = siblings.indexOf(pl);
-    const spread = Math.PI * 0.18;
-    const subAngle = branchAngle + (sibIdx - (siblings.length - 1) / 2) * spread / Math.max(siblings.length - 1, 1);
+    // ── 행성 위치 — 카테고리 섹터 기반 고정 배치 ──────────────────────────
+    const catCfg   = MACRO_CATS[pl.macroCat];                // 카테고리 설정
+    const catAngle = catCfg.angle;                            // 섹터 기준 각도
+    const bucket   = catBuckets[pl.macroCat];                 // 같은 카테고리 행성들
+    const idxInCat = bucket.indexOf(pl);                      // 카테고리 내 순번
+    const catCount = bucket.length;
 
-    // 컴팩트 위치: 태양 중심에 가깝게 (1단계용)
-    const COMPACT_R = 12 + projIdx * 2;
-    // 확장 위치: 클릭 시 펼쳐지는 거리 (2단계용)
-    const EXPAND_R = 30 + sibIdx * 7;
-    const yOffset = (projIdx % 3 - 1) * 4;
+    // 컴팩트: 섹터 중심 주변에 밀착 배치
+    const sectorSpread = Math.PI * 0.35;                      // 섹터 부채꼴 폭
+    const subAngle = catAngle + (idxInCat - (catCount - 1) / 2) * sectorSpread / Math.max(catCount, 1);
+    const COMPACT_R = 10 + (idxInCat % 3) * 3;               // 가까이 밀착
+    const yOffset = (idxInCat % 3 - 1) * 2;
 
-    // 기본은 컴팩트 위치로 시작
-    const px = COMPACT_R * Math.cos(branchAngle);
-    const py = yOffset + (sibIdx % 2) * 2;
-    const pz = COMPACT_R * Math.sin(branchAngle);
+    const px = COMPACT_R * Math.cos(subAngle);
+    const py = yOffset;
+    const pz = COMPACT_R * Math.sin(subAngle);
     const planetPos = new THREE.Vector3(px, py, pz);
 
-    // ── 행성 의도 & 색상 ─────────────────────────────────────────────────
+    // 확장: 카테고리 클릭 시 펼쳐지는 위치
+    const EXPAND_R = 22 + idxInCat * 5;
+    const expandAngle = catAngle + (idxInCat - (catCount - 1) / 2) * (sectorSpread * 1.2) / Math.max(catCount, 1);
+
+    // ── 행성 의도 & 색상 — 카테고리 색상 기반 ──────────────────────────────
     let hueHex;
     if (pl.color) {
-      // purposeColor 직접 사용
-      hueHex = pl.color;
+      hueHex = pl.color;                                     // purposeColor 직접 사용
     } else {
-      const baseHue   = SESSION_HUES[sid] || 0.55;
-      const domOffset = DOMAIN_HUE_OFFSET[domain] || 0;
-      const hue2      = (baseHue + domOffset * 0.3) % 1;
-      hueHex = '#' + new THREE.Color(0).setHSL(hue2, 0.7, 0.55).getHexString();
+      // 카테고리 색상 사용 (기능구현=파랑, 조사분석=보라, 배포운영=초록)
+      const catColor = MACRO_CATS[pl.macroCat]?.color || '#58a6ff';
+      // 같은 카테고리 내에서 약간의 색조 변화
+      const catBase = new THREE.Color(catColor);
+      const hsl = catBase.getHSL({});
+      const variation = (idxInCat * 0.04) % 0.15;            // 카테고리 내 미세한 변화
+      hueHex = '#' + new THREE.Color(0).setHSL(
+        hsl.h + variation, hsl.s * 0.9, hsl.l + (idxInCat % 2) * 0.08
+      ).getHexString();
     }
     const hue = new THREE.Color(hueHex).getHSL({}).h;
 
@@ -172,19 +183,20 @@ function buildPlanetSystem(nodeList) {
     planet.userData.hueHex      = hueHex;
     planet.userData.eventCount  = rawEvents.length;
     planet.userData._treeBasePos = planetPos.clone();
-    // 2단계 확장 위치 저장 (클릭 시 이 위치로 이동)
-    const epx = EXPAND_R * Math.cos(subAngle);
-    const epy = yOffset + (sibIdx % 2) * 3;
-    const epz = EXPAND_R * Math.sin(subAngle);
+    // 2단계 확장 위치 저장 (카테고리 클릭 시 이 위치로 이동)
+    const epx = EXPAND_R * Math.cos(expandAngle);
+    const epy = yOffset + (idxInCat % 2) * 3;
+    const epz = EXPAND_R * Math.sin(expandAngle);
     planet.userData._expandedPos = new THREE.Vector3(epx, epy, epz);
     planet.userData._compactPos  = planetPos.clone();
     planet.userData._isExpanded  = false;
-    planet.userData.orbitSpeed  = 0.04 + pi * 0.006;
+    planet.userData.orbitSpeed  = 0;                         // 고정 위치 (회전 없음)
     planet.userData.orbitR      = COMPACT_R;
     planet.userData.orbitθ      = subAngle;
     planet.userData.orbitφ      = 0;
     planet.userData.orbitCenter  = new THREE.Vector3(0,0,0);
     planet.userData.projectName  = pl.projectName || '기타';
+    planet.userData.macroCat     = pl.macroCat;              // 매크로 카테고리
     // LOD0 줌인 세부 정보용
     const _fmsg = rawEvents.find(e => e.type === 'user.message');
     planet.userData.firstMsg = (_fmsg?.data?.contentPreview || _fmsg?.data?.content || _fmsg?.label || '').slice(0, 40);
@@ -279,6 +291,21 @@ function buildPlanetSystem(nodeList) {
       _projectGroups[proj] = { planetMeshes: [], color: p.userData.hueHex || '#58a6ff' };
     }
     _projectGroups[proj].planetMeshes.push(p);
+  });
+
+  // ── 카테고리별 그룹화 빌드 (기능구현 / 조사분석 / 배포운영) ──────────────
+  _categoryGroups = {};
+  for (const cat of ['dev', 'research', 'ops']) {
+    _categoryGroups[cat] = { planets: [], projects: {}, color: MACRO_CATS[cat].color };
+  }
+  planetMeshes.forEach(p => {
+    const cat  = p.userData.macroCat || 'dev';
+    const proj = p.userData.projectName || '기타';
+    _categoryGroups[cat].planets.push(p);
+    if (!_categoryGroups[cat].projects[proj]) {
+      _categoryGroups[cat].projects[proj] = [];
+    }
+    _categoryGroups[cat].projects[proj].push(p);
   });
 }
 

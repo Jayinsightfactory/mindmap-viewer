@@ -2413,6 +2413,7 @@ window._applyExec  = _applyExec;
 // ─── 프로젝트 별자리 포커스 ───────────────────────────────────────────────────
 function focusProject(projName) {
   _focusedProject = projName;
+  _focusedCategory = null;                                   // 카테고리 포커스 해제
   const grp = _projectGroups[projName];
   if (!grp || !grp.planetMeshes.length) return;
 
@@ -2435,6 +2436,34 @@ function exitConstellationFocus() {
   if (btn) btn.style.display = 'none';
 }
 window.exitConstellationFocus = exitConstellationFocus;
+
+// ── 카테고리 포커스 (기능구현/조사분석/배포운영) ─────────────────────────────
+function focusCategoryView(catKey) {
+  _focusedCategory = catKey;
+  _focusedProject  = null;                                   // 프로젝트 포커스 해제
+  const catCfg = MACRO_CATS[catKey];
+  if (!catCfg) return;
+
+  // 카테고리 섹터 방향으로 카메라 이동
+  const angle = catCfg.angle;
+  const dist  = 15;                                          // 섹터 중심에서의 거리
+  const tx = dist * Math.cos(angle);
+  const tz = dist * Math.sin(angle);
+  lerpCameraTo(35, tx, 0, tz, 700);
+
+  // 뒤로가기 버튼
+  const btn = document.getElementById('constellation-back-btn');
+  if (btn) { btn.textContent = `← ${catCfg.label} / 전체 보기`; btn.style.display = 'block'; }
+}
+window.focusCategoryView = focusCategoryView;
+
+function exitCategoryFocus() {
+  _focusedCategory = null;
+  lerpCameraTo(55, 0, 0, 0, 700);
+  const btn = document.getElementById('constellation-back-btn');
+  if (btn) btn.style.display = 'none';
+}
+window.exitCategoryFocus = exitCategoryFocus;
 
 // ─── 토픽 유사도 기반 글로잉 연결선 ──────────────────────────────────────────
 // 로컬 키워드 분석: Ollama 없이도 의미 있는 연결 추론
@@ -2692,159 +2721,158 @@ function drawConstellations() {
 // ─── 1단계 컴팩트 프로젝트 뷰 ────────────────────────────────────────────────
 // 태양 중심에 프로젝트 라벨만 밀착 표시 — 라인/위성 없음
 function drawCompactProjectView() {
-  const projEntries = Object.entries(_projectGroups);
-  if (!projEntries.length) return;
+  if (!Object.keys(_categoryGroups).length) return;
 
   const now = performance.now() / 1000;
 
-  // 태양 히트 영역
-  if (_coreMeshRef) {
-    const sunSc = toScreen(_coreMeshRef.position || new THREE.Vector3(0,0,0));
-    if (sunSc.z <= 1) {
-      _hitAreas.push({
-        cx: sunSc.x, cy: sunSc.y, r: 28,
-        obj: _coreMeshRef,
-        data: { type: 'core', intent: 'Orbit AI', label: 'Orbit AI', nodeKey: '__orbit_core__' },
-      });
-    }
-  }
-
-  // ── 상위 3개 프로젝트만 표시 (이벤트 수 기준 정렬) ─────────────────────
-  const sorted = projEntries
-    .map(([name, grp]) => ({
-      name, grp,
-      totalEvents: grp.planetMeshes.reduce((s, p) => s + (p.userData.eventCount || 0), 0),
-    }))
-    .sort((a, b) => b.totalEvents - a.totalEvents);
-
-  const TOP_N = 3;                                          // 최대 3개 그룹만 표시
-  const topProjs  = sorted.slice(0, TOP_N);
-  const restCount = sorted.length - TOP_N;                  // 숨겨진 프로젝트 수
-
-  // ── 프로젝트 이름 → 사람이 이해할 수 있는 작업 설명으로 변환 ────────────
-  function humanLabel(projName, grp) {
-    // 1순위: 행성 intent에서 의미있는 텍스트 찾기
-    const intents = grp.planetMeshes
-      .map(p => p.userData.intent || '')
-      .filter(t => t && !/^(⚙️\s?(기타|작업|일반)|세션-)/.test(t));
-
-    if (intents.length > 0) {
-      // 아이콘 제거 후 핵심 텍스트만
-      let best = intents[0]
-        .replace(/^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE00}-\u{FEFF}⚙️🔐🌐🗄🎨🧪🚀🐳📝📐🔧🌿💬]\s*/gu, '')
-        .replace(/^\[.+?\]\s+/, '')                        // [프로젝트] 제거
-        .trim();
-      if (best.length > 18) best = best.slice(0, 17) + '…';
-      if (best) return best;
-    }
-
-    // 2순위: 첫 메시지 프리뷰
-    const msg = grp.planetMeshes.find(p => p.userData.msgPreview)?.userData.msgPreview;
-    if (msg) return msg.slice(0, 18);
-
-    // 3순위: 프로젝트명 정제
-    let dispName = projName;
-    if (/^세션-/.test(projName)) return '최근 작업';
-    if (/[-_]/.test(projName) && !/\s/.test(projName)) {
-      dispName = projName.split(/[-_]/).filter(s => s !== 'session')
-        .map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(' ');
-    }
-    return dispName.slice(0, 18);
-  }
-
-  // ── 태양 주변 원형 배치 (상위 3개) ──────────────────────────────────────
+  // ── 태양 화면 좌표 (기준점) ───────────────────────────────────────────────
   const sunSc = _coreMeshRef
     ? toScreen(_coreMeshRef.position || new THREE.Vector3(0,0,0))
     : { x: innerWidth / 2, y: innerHeight / 2, z: 0 };
 
-  topProjs.forEach((item, idx) => {
-    const { name: projName, grp, totalEvents } = item;
+  // 태양 히트 영역
+  if (_coreMeshRef && sunSc.z <= 1) {
+    _hitAreas.push({
+      cx: sunSc.x, cy: sunSc.y, r: 28,
+      obj: _coreMeshRef,
+      data: { type: 'core', intent: 'Orbit AI', label: 'Orbit AI', nodeKey: '__orbit_core__' },
+    });
+  }
 
-    // 행성 화면 중심점 계산
-    const pts = grp.planetMeshes.map(p => toScreen(p.position)).filter(s => s.z <= 1);
-    if (!pts.length) return;
-    let cx = 0, cy = 0;
-    pts.forEach(s => { cx += s.x; cy += s.y; });
-    cx /= pts.length; cy /= pts.length;
+  // ── 3대 카테고리를 태양 주변 고정 위치에 배치 ──────────────────────────────
+  // 화면 좌표 기준: 오른쪽(기능구현), 왼쪽 위(조사분석), 왼쪽 아래(배포운영)
+  const CARD_DIST = 140;                                     // 태양에서 카드까지 거리(px)
+  const catDefs = [
+    { key: 'dev',      screenAngle: -0.15 },                 // 오른쪽 (약간 위)
+    { key: 'research', screenAngle: Math.PI * 0.75 },        // 왼쪽 위
+    { key: 'ops',      screenAngle: Math.PI * 1.35 },        // 왼쪽 아래
+  ];
 
-    const color   = grp.color || '#58a6ff';
-    const cnt     = grp.planetMeshes.length;
-    const isHover = _hoveredHit?.data?.type === 'constellation' && _hoveredHit?.data?.projName === projName;
+  catDefs.forEach(({ key, screenAngle }) => {
+    const catCfg = MACRO_CATS[key];
+    const grp    = _categoryGroups[key];
+    if (!grp) return;
 
-    const dispName = humanLabel(projName, grp);
+    const totalPlanets = grp.planets.length;
+    const totalEvents  = grp.planets.reduce((s, p) => s + (p.userData.eventCount || 0), 0);
+    if (totalPlanets === 0) return;                          // 해당 카테고리에 데이터 없으면 스킵
 
-    const pxMain = isHover ? 16 : 14;
-    _lctx.font = `700 ${pxMain}px -apple-system,'Segoe UI',sans-serif`;
+    // ── 고정 화면 좌표 계산 ───────────────────────────────────────────────
+    const cx = sunSc.x + Math.cos(screenAngle) * CARD_DIST;
+    const cy = sunSc.y + Math.sin(screenAngle) * CARD_DIST;
+
+    const color   = catCfg.color;
+    const catName = catCfg.label;
+    const isHover = _hoveredHit?.data?.type === 'category' && _hoveredHit?.data?.catKey === key;
+
+    // ── 하위 프로젝트 목록 (상위 3개) ─────────────────────────────────────
+    const projEntries = Object.entries(grp.projects)
+      .map(([name, planets]) => ({
+        name,
+        events: planets.reduce((s, p) => s + (p.userData.eventCount || 0), 0),
+      }))
+      .sort((a, b) => b.events - a.events)
+      .slice(0, 3);
+
+    // 프로젝트명 정제
+    function cleanProjName(n) {
+      if (/^세션-/.test(n)) return '최근 작업';
+      if (/[-_]/.test(n) && !/\s/.test(n)) {
+        return n.split(/[-_]/).filter(s => s !== 'session')
+          .map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(' ').slice(0, 14);
+      }
+      return n.slice(0, 14);
+    }
+
+    // ── 카드 크기 계산 ───────────────────────────────────────────────────
+    const pxTitle = isHover ? 16 : 14;
+    const pxSub   = 10;
+    const lineH   = pxSub + 4;
+    _lctx.font = `700 ${pxTitle}px -apple-system,'Segoe UI',sans-serif`;
     _lctx.textAlign = 'center';
-    const tw = _lctx.measureText(dispName).width;
-    const pw = tw + 24;
-    const ph = pxMain + 12;
+    const titleW  = _lctx.measureText(catName).width;
+
+    // 프로젝트명들 너비 측정
+    _lctx.font = `400 ${pxSub}px -apple-system,sans-serif`;
+    let maxSubW = 0;
+    projEntries.forEach(pe => {
+      const w = _lctx.measureText(`${cleanProjName(pe.name)} (${pe.events})`).width;
+      if (w > maxSubW) maxSubW = w;
+    });
+
+    const pw = Math.max(titleW, maxSubW) + 30;
+    const ph = pxTitle + 14 + projEntries.length * lineH + 8;
     const lx = cx - pw / 2;
     const ly = cy - ph / 2;
 
     // 겹침 방지
-    if (rectOverlaps(lx - 4, ly - 4, pw + 8, ph + 24)) return;
-    reserveRect(lx - 4, ly - 4, pw + 8, ph + 24);
+    if (rectOverlaps(lx - 4, ly - 4, pw + 8, ph + 8)) return;
+    reserveRect(lx - 4, ly - 4, pw + 8, ph + 8);
 
-    // 미세한 글로우
+    // ── 태양→카테고리 연결선 ─────────────────────────────────────────────
+    _lctx.save();
+    _lctx.globalAlpha = 0.25;
+    _lctx.strokeStyle = color;
+    _lctx.lineWidth   = 1.5;
+    _lctx.setLineDash([6, 4]);
+    _lctx.beginPath();
+    _lctx.moveTo(sunSc.x, sunSc.y);
+    _lctx.lineTo(cx, cy);
+    _lctx.stroke();
+    _lctx.setLineDash([]);
+    _lctx.restore();
+
+    // ── 글로우 ───────────────────────────────────────────────────────────
     const pulse = 0.5 + 0.5 * Math.sin(now * 0.8 + cx * 0.01);
     _lctx.save();
-    _lctx.globalAlpha = 0.12 + pulse * 0.08;
+    _lctx.globalAlpha = 0.10 + pulse * 0.06;
     _lctx.fillStyle = color;
-    _lctx.shadowColor = color; _lctx.shadowBlur = 12;
+    _lctx.shadowColor = color; _lctx.shadowBlur = 16;
     _lctx.beginPath(); _lctx.arc(cx, cy, pw / 2, 0, Math.PI * 2); _lctx.fill();
     _lctx.restore();
 
-    // 배경 pill
-    _lctx.globalAlpha = isHover ? 0.97 : 0.85;
-    _lctx.fillStyle = 'rgba(6,10,16,0.92)';
-    roundRect(_lctx, lx, ly, pw, ph, ph / 2); _lctx.fill();
+    // ── 카드 배경 ────────────────────────────────────────────────────────
+    _lctx.globalAlpha = isHover ? 0.97 : 0.88;
+    _lctx.fillStyle = 'rgba(6,10,16,0.94)';
+    roundRect(_lctx, lx, ly, pw, ph, 8); _lctx.fill();
 
     // 테두리
     _lctx.strokeStyle = color;
     _lctx.lineWidth = isHover ? 2.5 : 1.5;
-    roundRect(_lctx, lx, ly, pw, ph, ph / 2); _lctx.stroke();
+    roundRect(_lctx, lx, ly, pw, ph, 8); _lctx.stroke();
 
-    // 순위 번호 (좌측 상단에 작은 뱃지)
-    _lctx.save();
-    _lctx.font = 'bold 9px -apple-system,sans-serif';
-    _lctx.fillStyle = color;
-    _lctx.globalAlpha = 0.6;
+    // ── 카테고리명 (타이틀) ──────────────────────────────────────────────
+    _lctx.font = `700 ${pxTitle}px -apple-system,'Segoe UI',sans-serif`;
     _lctx.textAlign = 'center';
-    _lctx.fillText(`${idx + 1}`, lx + 8, ly - 2);
-    _lctx.restore();
+    _lctx.fillStyle = isHover ? '#fff' : '#e6edf3';
+    _lctx.fillText(catName, cx, ly + pxTitle + 4);
 
-    // 프로젝트명 (실제 작업 설명)
+    // 이벤트 수 뱃지
+    _lctx.font = `400 9px -apple-system,sans-serif`;
+    _lctx.fillStyle = color + 'aa';
+    _lctx.fillText(`${totalEvents}건`, cx, ly + pxTitle + 16);
+
+    // ── 하위 프로젝트 목록 ──────────────────────────────────────────────
+    const listStartY = ly + pxTitle + 24;
+    _lctx.font = `400 ${pxSub}px -apple-system,sans-serif`;
     _lctx.textAlign = 'center';
-    _lctx.fillStyle = isHover ? '#fff' : '#cdd9e5';
-    _lctx.font = `700 ${pxMain}px -apple-system,'Segoe UI',sans-serif`;
-    _lctx.fillText(dispName, cx, ly + ph * 0.68);
 
-    // 서브: 세션 수 + 이벤트 수
-    _lctx.font = '400 10px -apple-system,sans-serif';
-    _lctx.fillStyle = color + '88';
-    _lctx.globalAlpha = 0.75;
-    _lctx.fillText(`${cnt}개 작업 · ${totalEvents}건`, cx, ly + ph + 12);
+    projEntries.forEach((pe, pi) => {
+      const py = listStartY + pi * lineH;
+      const projLabel = `${cleanProjName(pe.name)} (${pe.events})`;
+      _lctx.fillStyle = '#8b949e';
+      _lctx.fillText(projLabel, cx, py + pxSub);
+    });
+
     _lctx.globalAlpha = 1;
 
-    // 히트 영역
+    // ── 히트 영역 ────────────────────────────────────────────────────────
     _hitAreas.push({
       cx, cy, r: Math.max(pw, ph) / 2 + 6,
       obj: null,
-      data: { type: 'constellation', projName, planetCount: cnt, color },
+      data: { type: 'category', catKey: key, catName, planetCount: totalPlanets, color },
     });
   });
-
-  // ── 추가 프로젝트 있으면 "더보기" 표시 ──────────────────────────────────
-  if (restCount > 0) {
-    _lctx.save();
-    _lctx.font = '400 11px -apple-system,sans-serif';
-    _lctx.textAlign = 'center';
-    _lctx.fillStyle = '#8b949e';
-    _lctx.globalAlpha = 0.6;
-    _lctx.fillText(`+${restCount}개 더`, sunSc.x, sunSc.y + 50);
-    _lctx.restore();
-  }
 }
 
 // ─── drawLabels ──────────────────────────────────────────────────────────────
@@ -2866,40 +2894,44 @@ function drawLabels() {
   const lod = getLOD();
 
   // ── 3단계 확장형 뷰 시스템 ────────────────────────────────────────────────
-  // 1단계: 아무것도 선택 안 됨 → 프로젝트 라벨만 컴팩트 표시 (라인/위성 숨김)
-  // 2단계: 프로젝트 포커스 → 해당 프로젝트 클러스터 펼침 + 브랜치 라인
+  // 1단계: 아무것도 선택 안 됨 → 3대 카테고리 고정 표시 (기능구현/조사분석/배포운영)
+  // 2단계: 카테고리/프로젝트 포커스 → 해당 클러스터 펼침 + 브랜치 라인
   // 3단계: 특정 클러스터 선택 → 파일 위성 표시 + 상세 정보
   const isPersonalMode = !_teamMode && !_companyMode && !_parallelMode;
   const hasSelection   = !!_selectedHit;
   const focusedProj    = _focusedProject;
+  const focusedCat     = _focusedCategory;
   const selectedProj   = _selectedHit?.obj?.userData?.projectName;
+  const selectedCat    = _selectedHit?.obj?.userData?.macroCat;
 
-  // 연결선 표시/숨김 — 선택된 프로젝트의 라인만 표시
+  // 연결선 표시/숨김 — 포커스된 카테고리/프로젝트의 라인만 표시
   connections.forEach(c => {
     if (c.userData.isBranch) {
-      const proj = c.userData.planetObj?.userData?.projectName;
-      c.visible = !!(focusedProj && proj === focusedProj)
+      const pCat  = c.userData.planetObj?.userData?.macroCat;
+      const proj  = c.userData.planetObj?.userData?.projectName;
+      c.visible = !!(focusedCat && pCat === focusedCat)
+               || !!(focusedProj && proj === focusedProj)
                || !!(selectedProj && proj === selectedProj);
     } else if (c.userData.satObj) {
-      // 위성 연결선: 선택된 클러스터의 것만 표시
       const cid = c.userData.satObj?.userData?.clusterId;
       c.visible = !!(_selectedHit?.obj?.userData?.clusterId === cid);
     }
   });
 
-  // 행성 위치 보간: 선택된 프로젝트는 확장, 나머지는 컴팩트
+  // 행성 위치 보간: 포커스된 카테고리/프로젝트는 확장, 나머지는 컴팩트
   planetMeshes.forEach(p => {
-    const targetExpanded = (focusedProj && p.userData.projectName === focusedProj)
-                        || (selectedProj && p.userData.projectName === selectedProj);
+    const inFocusedCat  = focusedCat && p.userData.macroCat === focusedCat;
+    const inFocusedProj = focusedProj && p.userData.projectName === focusedProj;
+    const inSelectedProj = selectedProj && p.userData.projectName === selectedProj;
+    const targetExpanded = inFocusedCat || inFocusedProj || inSelectedProj;
     const target = targetExpanded ? p.userData._expandedPos : p.userData._compactPos;
     if (target) {
-      p.position.lerp(target, 0.08);       // 부드러운 위치 보간
+      p.position.lerp(target, 0.08);
     }
   });
 
-  // 1단계 컴팩트 뷰: 선택 없고 개인 모드면 프로젝트 요약만
-  const projKeys = Object.keys(_projectGroups);
-  const showCompactView = isPersonalMode && !hasSelection && !focusedProj && projKeys.length > 1;
+  // 1단계 컴팩트 뷰: 선택 없고 개인 모드면 3대 카테고리 고정 표시
+  const showCompactView = isPersonalMode && !hasSelection && !focusedProj && !focusedCat;
 
   if (showCompactView) {
     drawCompactProjectView();
@@ -2928,13 +2960,15 @@ function drawLabels() {
   _lctx.globalAlpha = globalAlpha;
 
   // ── 1. 행성 ──────────────────────────────────────────────────────────────
-  // 2단계: 선택/포커스된 프로젝트의 행성만 표시, 나머지는 작은 점으로
+  // 2단계: 포커스된 카테고리/프로젝트의 행성만 표시, 나머지는 작은 점으로
   const activeProj = focusedProj || selectedProj;
+  const activeCat  = focusedCat || selectedCat;
 
   planetMeshes.forEach(p => {
+    const catMatch  = !activeCat  || p.userData.macroCat === activeCat;
     const projMatch = !activeProj || p.userData.projectName === activeProj;
-    // 활성 프로젝트 아닌 행성은 작은 점으로만 표시
-    if (activeProj && !projMatch) {
+    // 활성 카테고리/프로젝트 아닌 행성은 작은 점으로만 표시
+    if ((activeCat && !catMatch) || (activeProj && !projMatch)) {
       const sc = toScreen(p.position);
       if (sc.z <= 1) {
         _lctx.save();

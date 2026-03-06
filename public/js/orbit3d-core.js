@@ -696,6 +696,42 @@ let _hitAreas = []; // { cx, cy, r, data }
 let _projectGroups  = {};   // projectName → { planetMeshes:[], color:string }
 let _focusedProject = null; // null=별자리 전체 뷰, 'name'=특정 프로젝트 집중
 
+// ── 3대 카테고리 시스템 (기능구현 / 조사분석 / 배포운영) ─────────────────────
+const MACRO_CATS = {
+  dev:      { label: '기능구현', color: '#58a6ff', angle: 0 },             // 오른쪽
+  research: { label: '조사분석', color: '#d2a8ff', angle: (Math.PI * 2) / 3 },  // 왼쪽 위
+  ops:      { label: '배포운영', color: '#3fb950', angle: (Math.PI * 4) / 3 },  // 왼쪽 아래
+};
+let _categoryGroups = {};   // 'dev'|'research'|'ops' → { projects:{}, planets:[], color }
+let _focusedCategory = null; // null=전체뷰, 'dev'|'research'|'ops'=카테고리 집중
+
+// ── 이벤트 기반 매크로 카테고리 분류 ──────────────────────────────────────────
+function classifyMacroCategory(events) {
+  let dev = 0, research = 0, ops = 0;
+  for (const e of events) {
+    const t = e.type || '';
+    const d = e.data || {};
+    const tool = d.toolName || '';
+    // 기능구현: 파일 작성/수정, 코딩
+    if (t === 'file.write' || t === 'file.create') dev += 3;
+    if (t === 'tool.end' && /^(Write|Edit)$/.test(tool)) dev += 3;
+    if (t === 'task.complete') dev += 2;
+    // 조사분석: 파일 읽기, 검색, 대화, 브라우저
+    if (t === 'file.read') research += 1;
+    if (t === 'tool.end' && /^(Read|Grep|Glob|WebFetch|WebSearch)$/.test(tool)) research += 2;
+    if (t === 'user.message') research += 1;
+    if (t === 'assistant.message' || t === 'assistant.response') research += 1;
+    if (t === 'browser_activity' || t === 'browse' || t === 'app_switch' || t === 'app.activity') research += 2;
+    // 배포운영: git, 터미널, 인프라
+    if (t === 'git.commit' || t === 'git.push') ops += 3;
+    if (t === 'terminal.command') ops += 2;
+    if (t === 'tool.end' && /^Bash$/.test(tool)) ops += 1;
+  }
+  if (dev >= research && dev >= ops) return 'dev';
+  if (research >= ops) return 'research';
+  return 'ops';
+}
+
 let _activeFilter = 'all';
 const FILTER_CATS = {
   all:  null,

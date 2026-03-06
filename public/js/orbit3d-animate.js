@@ -96,6 +96,16 @@ renderer.domElement.addEventListener('click', e => {
     _selectedHit = hit;
     const type = hit.data.type;
 
+    // ── 카테고리 카드 클릭 → 해당 카테고리 포커스 ──────────────────────────
+    if (type === 'category') {
+      if (_focusedCategory === hit.data.catKey) {
+        exitCategoryFocus();                                  // 같은 카테고리 재클릭 → 줌아웃
+      } else {
+        focusCategoryView(hit.data.catKey);                   // 카테고리 포커스
+      }
+      return;
+    }
+
     // ── 별자리 오브 클릭 → 해당 프로젝트 포커스 ────────────────────────────
     if (type === 'constellation') {
       if (_focusedProject === hit.data.projName) {
@@ -162,9 +172,12 @@ renderer.domElement.addEventListener('click', e => {
       // ── 개인 모드: 빈 공간 클릭 → 1단계 컴팩트 뷰로 복귀 ──────────────
       if (!_teamMode && !_companyMode && !_parallelMode) {
         if (_focusedProject) {
-          exitConstellationFocus();          // 프로젝트 포커스 해제 → 컴팩트 뷰
+          exitConstellationFocus();
         }
-        lerpCameraTo(55, 0, 0, 0, 500);     // 카메라를 컴팩트 뷰 거리로 복귀
+        if (_focusedCategory) {
+          exitCategoryFocus();               // 카테고리 포커스 해제
+        }
+        lerpCameraTo(55, 0, 0, 0, 500);
       }
     }
   }
