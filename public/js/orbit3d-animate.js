@@ -50,6 +50,8 @@ function pulseSun() {
 let _lastMouseEvent = { clientX:0, clientY:0 };
 let _hoveredHit     = null;  // { cx, cy, r, data, obj }
 let _selectedHit    = null;
+let _navStack       = [];    // 네비게이션 히스토리 스택 (이전 단계 복귀용)
+let _pyramidDepth   = 0;     // 현재 역피라미드 진입 깊이 (0=첫화면, 1=세션, 2=상세)
 let _editingNode    = null;  // 현재 인라인 편집 중인 노드
 let _pyramidScrollOffset = 0; // 역피라미드 스크롤 오프셋
 // 역피라미드 마우스 휠 스크롤 — 선택된 개체의 상세 내용 탐색
@@ -100,8 +102,16 @@ renderer.domElement.addEventListener('click', e => {
 
   const hit = hitTest(e.clientX, e.clientY);
   if (hit) {
-    _selectedHit = hit;
     const type = hit.data.type;
+
+    // ── 트레이 크기 조절 버튼 ─────────────────────────────────────────────
+    if (type === '_trayResize') {
+      if (hit.data.action === 'grow')   _pyramidTrayScale = Math.min(2.0, _pyramidTrayScale + 0.15);
+      if (hit.data.action === 'shrink') _pyramidTrayScale = Math.max(0.5, _pyramidTrayScale - 0.15);
+      return;                                                                // 선택 상태 유지
+    }
+
+    _selectedHit = hit;
 
     // ── 카테고리 카드 클릭 → 해당 카테고리 포커스 ──────────────────────────
     if (type === 'category') {
@@ -152,14 +162,19 @@ renderer.domElement.addEventListener('click', e => {
     showPanel(hit.data, hit.obj);
 
     // ── 클릭 시 카메라 동작 ─────────────────────────────────────────────────
-    // 개인 모드: 카메라 고정 — 역피라미드 오버레이로 상세 표시
-    // 팀/회사 모드: 기존 줌인 유지
     const _alreadyFocused = (_teamMode && type === 'member') ||
                             (_companyMode && (type === 'member' || type === 'department'));
     const isPersonal = !_teamMode && !_companyMode && !_parallelMode;
     if (isPersonal) {
-      // 개인 모드: 카메라 고정 + 역피라미드 펼침 (drawInvertedPyramid에서 처리)
-      _pyramidScrollOffset = 0;     // 스크롤 초기화
+      // 이전 상태를 스택에 저장 (배경 클릭 시 복귀용)
+      _navStack.push({
+        selectedHit: _selectedHit !== hit ? _selectedHit : null,             // 이전 선택 상태
+        depth: _pyramidDepth,                                                // 이전 깊이
+        focusedProject: _focusedProject || null,                             // 포커스된 프로젝트
+        focusedCategory: _focusedCategory || null,                           // 포커스된 카테고리
+      });
+      _pyramidDepth++;                                                       // 깊이 증가
+      _pyramidScrollOffset = 0;                                              // 스크롤 초기화
     } else if (!_alreadyFocused) {
       const p3 = hit.data?.pos;
       const m3 = hit.obj?.position;
@@ -172,20 +187,40 @@ renderer.domElement.addEventListener('click', e => {
     }
 
   } else {
-    _selectedHit = null;
-    if ((_teamMode || _companyMode) && (_focusedMember || _focusedDept)) {
+    // ── 빈 공간 클릭: 이전 단계로 복귀 ──────────────────────────────────────
+    const isPersonal = !_teamMode && !_companyMode && !_parallelMode;
+
+    if (isPersonal && _navStack.length > 0) {
+      // 스택에서 이전 상태 복원
+      const prev = _navStack.pop();
+      _pyramidDepth = prev.depth;
+      _pyramidScrollOffset = 0;
+
+      if (prev.selectedHit) {
+        // 이전에 선택된 개체가 있으면 그 상태로 복원
+        _selectedHit = prev.selectedHit;
+        showPanel(prev.selectedHit.data, prev.selectedHit.obj);
+      } else {
+        // 스택 첫 단계 → 선택 해제
+        _selectedHit = null;
+        closePanel();
+        // 카테고리/프로젝트 포커스도 해제
+        if (_focusedProject) exitConstellationFocus();
+        if (_focusedCategory) exitCategoryFocus();
+        lerpCameraTo(55, 0, 0, 0, 500);
+      }
+    } else if ((_teamMode || _companyMode) && (_focusedMember || _focusedDept)) {
+      _selectedHit = null;
       if (_companyMode) unfocusDept(); else unfocusMember();
       closePanel();
     } else {
+      _selectedHit = null;
+      _navStack = [];
+      _pyramidDepth = 0;
       closePanel();
-      // ── 개인 모드: 빈 공간 클릭 → 1단계 컴팩트 뷰로 복귀 ──────────────
-      if (!_teamMode && !_companyMode && !_parallelMode) {
-        if (_focusedProject) {
-          exitConstellationFocus();
-        }
-        if (_focusedCategory) {
-          exitCategoryFocus();               // 카테고리 포커스 해제
-        }
+      if (isPersonal) {
+        if (_focusedProject) exitConstellationFocus();
+        if (_focusedCategory) exitCategoryFocus();
         lerpCameraTo(55, 0, 0, 0, 500);
       }
     }
@@ -955,6 +990,8 @@ loadMemos();
 function closePanel() {
   document.getElementById('info-panel').classList.remove('open');
   _selectedHit = null;
+  _navStack = [];                                                            // 네비게이션 스택 초기화
+  _pyramidDepth = 0;                                                         // 깊이 초기화
   _currentPanelData = null;
 }
 window.closePanel = closePanel;

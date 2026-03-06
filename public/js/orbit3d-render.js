@@ -2888,11 +2888,14 @@ function reserveRect(x, y, w, h) { _usedRects.push({ x, y, w, h }); }
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // 역피라미드(Inverted Pyramid) 상세 뷰
-// — 개체 클릭 시 카메라 고정, 아래 방향으로 펼쳐지는 트리 오버레이
+// — 개체 클릭 시 화면 중앙에 깔끔한 카드 리스트로 정보 표시
+// — 연결선 없음, 세로 리스트 레이아웃, 스크롤 가능
 // ═══════════════════════════════════════════════════════════════════════════════
+let _pyramidTrayScale = 1.0;                                                   // 트레이 크기 배율 (조절 가능)
+
 function drawInvertedPyramid(planetObj, hitData) {
-  const sc = toScreen(planetObj.position);                 // 행성의 화면 좌표
-  if (sc.z > 1) return;                                    // 카메라 뒤면 생략
+  const sc = toScreen(planetObj.position);                                     // 행성의 화면 좌표
+  if (sc.z > 1) return;
 
   const ctx = _lctx;
   const clusterId = planetObj.userData?.clusterId || planetObj.userData?.sessionId;
@@ -2902,12 +2905,7 @@ function drawInvertedPyramid(planetObj, hitData) {
 
   const hex = planetObj.userData?.hueHex || '#58a6ff';
 
-  // ── 데이터 준비: 역피라미드 레벨 구성 ────────────────────────────────────
-  // L0: 선택된 행성 (이미 drawLabels에서 그려짐)
-  // L1: 요약 카드 (작업 수, 프로젝트, 경로)
-  // L2: 이벤트 목록 (최신 이벤트 카드들 — 스크롤 가능)
-  // L3: 파일 목록 (수정된 파일 카드들)
-
+  // ── 데이터 준비 ─────────────────────────────────────────────────────────
   const sessionCtx = _sessionContextCache[clusterId] || {};
   const projName   = sessionCtx.projectName || planetObj.userData?.projectName || '';
   const firstMsg   = sessionCtx.firstMsg || sessionCtx.autoTitle || '';
@@ -2927,196 +2925,180 @@ function drawInvertedPyramid(planetObj, hitData) {
     fileCounts[fname].count++;
     if (e.type === 'file.write' || (e.type === 'tool.end' && d.toolName === 'Write')) fileCounts[fname].writes++;
   }
-  const fileList = Object.entries(fileCounts).sort((a,b) => b[1].count - a[1].count).slice(0, 8);
+  const fileList = Object.entries(fileCounts).sort((a,b) => b[1].count - a[1].count).slice(0, 12);
 
   // 최근 이벤트 (스크롤 오프셋 적용)
-  const recentEvts = [...events].reverse().slice(0, 30);
-  const scrollIdx  = Math.min(Math.floor((_pyramidScrollOffset || 0) / 36), Math.max(0, recentEvts.length - 6));
-  const visibleEvts = recentEvts.slice(scrollIdx, scrollIdx + 6);
+  const recentEvts = [...events].reverse().slice(0, 50);
+  const scrollIdx  = Math.min(Math.floor((_pyramidScrollOffset || 0) / 36), Math.max(0, recentEvts.length - 8));
+  const visibleEvts = recentEvts.slice(scrollIdx, scrollIdx + 8);
 
-  // ── 레이아웃 상수 ────────────────────────────────────────────────────────
-  const CARD_W   = 280;                                    // 카드 너비
-  const CARD_H   = 32;                                     // 카드 높이
-  const GAP      = 6;                                      // 카드 간격
-  const LEVEL_GAP = 18;                                    // 레벨 간격
-  // 사이드바 너비를 고려한 화면 중앙 X 계산
-  const sidebar   = document.getElementById('ln-sidebar');                    // 사이드바 DOM
+  // ── 레이아웃 ─────────────────────────────────────────────────────────────
+  const S = _pyramidTrayScale;                                                 // 크기 배율
+  const TRAY_W   = Math.min(520 * S, ctx.canvas.width * 0.85);                // 트레이 전체 너비
+  const ROW_H    = 32 * S;                                                     // 행 높이
+  const GAP      = 4 * S;                                                      // 행 간격
+  const PAD      = 16 * S;                                                     // 내부 패딩
+  const HEADER_H = 48 * S;                                                     // 헤더 높이
+
+  // 사이드바 고려한 화면 중앙
+  const sidebar   = document.getElementById('ln-sidebar');
   const sidebarW  = (sidebar && sidebar.offsetWidth && sidebar.style.display !== 'none') ? sidebar.offsetWidth : 0;
-  const startX    = (ctx.canvas.width - sidebarW) / 2 + sidebarW;           // 보이는 영역의 정중앙 X
-  const startY    = 80;                                                      // 화면 상단 고정 위치에서 시작
+  const centerX   = (ctx.canvas.width - sidebarW) / 2 + sidebarW;
+  const trayX     = centerX - TRAY_W / 2;
+  const trayY     = 60;
+
+  // 트레이에 들어갈 전체 높이 계산
+  const evtSectionH = visibleEvts.length * (ROW_H + GAP);
+  const fileSectionH = fileList.length > 0 ? (20 * S + Math.ceil(fileList.length / 3) * (ROW_H + GAP)) : 0;
+  const scrollHintH = recentEvts.length > 8 ? 20 * S : 0;
+  const totalH = HEADER_H + PAD + evtSectionH + scrollHintH + fileSectionH + PAD;
 
   ctx.save();
 
-  // ── L0→L1 연결선 (행성에서 화면 상단 중앙으로 곡선 연결) ──────────────────
-  ctx.strokeStyle = hex;
-  ctx.lineWidth   = 1.5;
-  ctx.globalAlpha = 0.5;
-  ctx.setLineDash([4, 4]);
-  ctx.beginPath();
-  ctx.moveTo(sc.x, sc.y + 16);                                              // 행성 위치에서 시작
-  const midY = (sc.y + 16 + startY) / 2;                                    // 중간 Y 지점
-  ctx.quadraticCurveTo(startX, midY, startX, startY + 2);                   // 화면 중앙 상단으로 곡선 연결
-  ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.globalAlpha = 1;
-
-  let curY = startY;
-
-  // ── L1: 요약 카드 (1행) ──────────────────────────────────────────────────
-  const summaryText = firstMsg
-    ? (firstMsg.length > 36 ? firstMsg.slice(0, 35) + '…' : firstMsg)
-    : `${events.length}개 작업 · ${fileList.length}개 파일`;
-  const sumW = CARD_W + 40;
-  const sumH = 38;
-  const sumX = startX - sumW / 2;
-  const sumY = curY;
-
-  // 배경
-  ctx.fillStyle = 'rgba(13,17,23,0.95)';
-  roundRect(ctx, sumX, sumY, sumW, sumH, 10);
+  // ── 트레이 배경 (반투명 다크 패널) ──────────────────────────────────────
+  ctx.fillStyle = 'rgba(13,17,23,0.94)';
+  roundRect(ctx, trayX, trayY, TRAY_W, totalH, 14);
   ctx.fill();
-  ctx.strokeStyle = hex;
-  ctx.lineWidth = 1.5;
-  roundRect(ctx, sumX, sumY, sumW, sumH, 10);
+  ctx.strokeStyle = hex + '40';
+  ctx.lineWidth = 1;
+  roundRect(ctx, trayX, trayY, TRAY_W, totalH, 14);
   ctx.stroke();
 
-  // 요약 텍스트
-  ctx.font = '600 13px -apple-system,"Segoe UI",sans-serif';
+  // ── 크기 조절 핸들 (우상단) ─────────────────────────────────────────────
+  const handleX = trayX + TRAY_W - 30;
+  const handleY = trayY + 6;
+  ctx.font = `${12 * S}px -apple-system,sans-serif`;
   ctx.textAlign = 'center';
+  ctx.fillStyle = '#6e7681';
+  ctx.fillText('[ - ]', handleX - 18, handleY + 14);
+  ctx.fillText('[ + ]', handleX + 18, handleY + 14);
+  // 크기 조절 히트 영역
+  _hitAreas.push({ cx: handleX - 18, cy: handleY + 8, r: 14, obj: planetObj,
+    data: { type: '_trayResize', action: 'shrink' } });
+  _hitAreas.push({ cx: handleX + 18, cy: handleY + 8, r: 14, obj: planetObj,
+    data: { type: '_trayResize', action: 'grow' } });
+
+  let curY = trayY;
+
+  // ── 헤더: 프로젝트명 + 요약 ──────────────────────────────────────────────
+  const summaryText = firstMsg
+    ? (firstMsg.length > 50 ? firstMsg.slice(0, 49) + '…' : firstMsg)
+    : `${events.length}개 작업 · ${fileList.length}개 파일`;
+
+  ctx.font = `600 ${14 * S}px -apple-system,"Segoe UI",sans-serif`;
+  ctx.textAlign = 'left';
   ctx.fillStyle = '#e6edf3';
-  ctx.fillText(summaryText, startX, sumY + 15);
-  // 프로젝트명 서브
-  ctx.font = '400 10px -apple-system,sans-serif';
+  ctx.fillText(summaryText, trayX + PAD, curY + 28 * S);
+
+  ctx.font = `400 ${11 * S}px -apple-system,sans-serif`;
   ctx.fillStyle = hex;
-  ctx.fillText(projName ? `📁 ${projName} · ${events.length}개 작업` : `${events.length}개 작업`, startX, sumY + 31);
+  const subText = projName ? `${projName} · ${events.length}개 작업 · ${fileList.length}개 파일` : `${events.length}개 작업 · ${fileList.length}개 파일`;
+  ctx.fillText(subText, trayX + PAD, curY + 44 * S);
 
-  curY = sumY + sumH + LEVEL_GAP;
+  // 헤더 하단 구분선
+  curY += HEADER_H;
+  ctx.strokeStyle = hex + '30';
+  ctx.lineWidth = 0.5;
+  ctx.beginPath();
+  ctx.moveTo(trayX + PAD, curY);
+  ctx.lineTo(trayX + TRAY_W - PAD, curY);
+  ctx.stroke();
+  curY += PAD * 0.5;
 
-  // ── L1→L2 분기선 (역삼각형 형태로 펼쳐짐) ────────────────────────────────
-  const branchCount = Math.min(visibleEvts.length, 6);
-  const totalW = branchCount * (CARD_W * 0.48 + GAP);
-  const branchStartX = startX - totalW / 2 + (CARD_W * 0.48 + GAP) / 2;
-
-  ctx.strokeStyle = hex;
-  ctx.lineWidth = 1;
-  ctx.globalAlpha = 0.35;
-  ctx.setLineDash([3, 5]);
-  for (let i = 0; i < branchCount; i++) {
-    const bx = branchStartX + i * (CARD_W * 0.48 + GAP);
-    ctx.beginPath();
-    ctx.moveTo(startX, curY - LEVEL_GAP + 4);
-    ctx.lineTo(bx, curY);
-    ctx.stroke();
-  }
-  ctx.setLineDash([]);
-  ctx.globalAlpha = 1;
-
-  // ── L2: 이벤트 카드 (스크롤 가능) ────────────────────────────────────────
-  const evtCardW = CARD_W * 0.48;
-  const evtCardH = CARD_H + 4;
+  // ── 이벤트 리스트 (세로 카드 리스트, 연결선 없음) ───────────────────────
   const TYPE_ICONS = {
     'user.message': '💬', 'assistant.message': '🤖', 'assistant.response': '🤖',
     'tool.start': '⚡', 'tool.end': '✅', 'tool.error': '❌',
     'file.read': '📄', 'file.write': '✏️', 'git.commit': '🌿', 'git.push': '🚀',
   };
+  const evtCardW = TRAY_W - PAD * 2;
 
   visibleEvts.forEach((evt, i) => {
-    const cx = branchStartX + i * (evtCardW + GAP);
-    const cy = curY;
+    const cx = trayX + PAD;
+    const cy = curY + i * (ROW_H + GAP);
     const icon = TYPE_ICONS[evt.type] || '⚙️';
-    const label = (evt.label || extractIntent(evt) || evt.type || '').slice(0, 18);
+    const label = (evt.label || extractIntent(evt) || evt.type || '').slice(0, 40);
     const ts = evt.timestamp
       ? new Date(evt.timestamp).toLocaleTimeString('ko', { hour: '2-digit', minute: '2-digit' })
       : '';
 
-    // 카드 배경
-    ctx.fillStyle = 'rgba(13,17,23,0.92)';
-    roundRect(ctx, cx - evtCardW / 2, cy, evtCardW, evtCardH, 8);
-    ctx.fill();
-    ctx.strokeStyle = hex + '60';
-    ctx.lineWidth = 1;
-    roundRect(ctx, cx - evtCardW / 2, cy, evtCardW, evtCardH, 8);
-    ctx.stroke();
+    // 행 배경 (hover 느낌의 줄무늬)
+    if (i % 2 === 0) {
+      ctx.fillStyle = 'rgba(255,255,255,0.02)';
+      roundRect(ctx, cx, cy, evtCardW, ROW_H, 6);
+      ctx.fill();
+    }
 
-    // 아이콘 + 텍스트
+    // 좌측: 아이콘 + 라벨
     ctx.textAlign = 'left';
-    ctx.font = '500 11px -apple-system,sans-serif';
+    ctx.font = `500 ${12 * S}px -apple-system,sans-serif`;
     ctx.fillStyle = '#cdd9e5';
-    ctx.fillText(`${icon} ${label}`, cx - evtCardW / 2 + 8, cy + evtCardH * 0.6);
-    // 시간
-    ctx.textAlign = 'right';
-    ctx.font = '400 9px -apple-system,sans-serif';
-    ctx.fillStyle = '#6e7681';
-    ctx.fillText(ts, cx + evtCardW / 2 - 6, cy + evtCardH * 0.6);
-    ctx.textAlign = 'center';
+    ctx.fillText(`${icon}  ${label}`, cx + 10, cy + ROW_H * 0.62);
 
-    // 히트 영역 (이벤트 카드 클릭)
+    // 우측: 시간
+    ctx.textAlign = 'right';
+    ctx.font = `400 ${10 * S}px -apple-system,sans-serif`;
+    ctx.fillStyle = '#6e7681';
+    ctx.fillText(ts, cx + evtCardW - 8, cy + ROW_H * 0.62);
+
+    // 히트 영역
     _hitAreas.push({
-      cx, cy: cy + evtCardH / 2, r: evtCardW / 2,
+      cx: cx + evtCardW / 2, cy: cy + ROW_H / 2, r: evtCardW / 2,
       obj: planetObj,
       data: { type: 'session', intent: label, clusterId, sessionId: planetObj.userData?.sessionId,
               eventCount: events.length, hueHex: hex },
     });
   });
 
-  curY += evtCardH + LEVEL_GAP;
+  curY += visibleEvts.length * (ROW_H + GAP);
 
   // ── 스크롤 힌트 ──────────────────────────────────────────────────────────
-  if (recentEvts.length > 6) {
-    ctx.font = '400 10px -apple-system,sans-serif';
+  if (recentEvts.length > 8) {
+    ctx.font = `400 ${10 * S}px -apple-system,sans-serif`;
     ctx.fillStyle = '#6e7681';
     ctx.textAlign = 'center';
-    const scrollPct = Math.round((scrollIdx / Math.max(1, recentEvts.length - 6)) * 100);
-    ctx.fillText(`↕ 스크롤하여 탐색 (${scrollIdx + 1}~${scrollIdx + visibleEvts.length} / ${recentEvts.length})`, startX, curY - 4);
-    curY += 14;
+    ctx.fillText(
+      `↕ 스크롤 (${scrollIdx + 1}~${scrollIdx + visibleEvts.length} / ${recentEvts.length})`,
+      centerX, curY + 6
+    );
+    curY += 20 * S;
   }
 
-  // ── L3: 파일 카드 (가장 넓게 펼침 — 역삼각형 하단) ────────────────────────
+  // ── 파일 섹션 (가로 3열 그리드, 연결선 없음) ─────────────────────────────
   if (fileList.length > 0) {
-    // L2→L3 연결선
-    const fileCardW = 120;
-    const fileTotalW = fileList.length * (fileCardW + GAP);
-    const fileStartX = startX - fileTotalW / 2 + (fileCardW + GAP) / 2;
+    // 섹션 라벨
+    ctx.textAlign = 'left';
+    ctx.font = `600 ${11 * S}px -apple-system,sans-serif`;
+    ctx.fillStyle = '#8b949e';
+    ctx.fillText('관련 파일', trayX + PAD, curY + 14 * S);
+    curY += 20 * S;
 
-    ctx.strokeStyle = hex;
-    ctx.lineWidth = 0.8;
-    ctx.globalAlpha = 0.25;
-    ctx.setLineDash([2, 4]);
-    for (let i = 0; i < fileList.length; i++) {
-      const fx = fileStartX + i * (fileCardW + GAP);
-      ctx.beginPath();
-      ctx.moveTo(startX, curY - 6);
-      ctx.lineTo(fx, curY + 4);
-      ctx.stroke();
-    }
-    ctx.setLineDash([]);
-    ctx.globalAlpha = 1;
+    const COLS = 3;
+    const fileCardW = (TRAY_W - PAD * 2 - GAP * (COLS - 1)) / COLS;
 
     fileList.forEach(([fname, info], i) => {
-      const fx = fileStartX + i * (fileCardW + GAP);
-      const fy = curY + 4;
-      const fh = 28;
+      const col = i % COLS;
+      const row = Math.floor(i / COLS);
+      const fx = trayX + PAD + col * (fileCardW + GAP);
+      const fy = curY + row * (ROW_H + GAP);
 
-      // 파일 카드 배경
       const isWrite = info.writes > 0;
       ctx.fillStyle = isWrite ? 'rgba(255,166,87,0.08)' : 'rgba(88,166,255,0.06)';
-      roundRect(ctx, fx - fileCardW / 2, fy, fileCardW, fh, 7);
+      roundRect(ctx, fx, fy, fileCardW, ROW_H, 6);
       ctx.fill();
-      ctx.strokeStyle = isWrite ? '#ffa65750' : hex + '40';
-      ctx.lineWidth = 0.8;
-      roundRect(ctx, fx - fileCardW / 2, fy, fileCardW, fh, 7);
+      ctx.strokeStyle = isWrite ? '#ffa65730' : hex + '25';
+      ctx.lineWidth = 0.5;
+      roundRect(ctx, fx, fy, fileCardW, ROW_H, 6);
       ctx.stroke();
 
-      // 파일명
-      const shortName = fname.length > 14 ? fname.slice(0, 13) + '…' : fname;
-      ctx.font = '500 10px -apple-system,sans-serif';
-      ctx.textAlign = 'center';
+      const shortName = fname.length > 16 ? fname.slice(0, 15) + '…' : fname;
+      ctx.font = `500 ${10 * S}px -apple-system,sans-serif`;
+      ctx.textAlign = 'left';
       ctx.fillStyle = isWrite ? '#ffa657' : '#79c0ff';
-      ctx.fillText(`${isWrite ? '✏️' : '📄'} ${shortName}`, fx, fy + fh * 0.62);
+      ctx.fillText(`${isWrite ? '✏️' : '📄'} ${shortName}`, fx + 6, fy + ROW_H * 0.62);
 
-      // 히트 영역
       _hitAreas.push({
-        cx: fx, cy: fy + fh / 2, r: fileCardW / 2,
+        cx: fx + fileCardW / 2, cy: fy + ROW_H / 2, r: fileCardW / 2,
         obj: planetObj,
         data: { type: 'file', intent: fname, fileLabel: fname, filename: fname,
                 count: info.count, isWrite },
