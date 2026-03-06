@@ -22,6 +22,7 @@ async function loadData() {
     const data = await res.json();
     const nodes = data.nodes || [];
     buildPlanetSystem(nodes);
+    if (typeof updateActiveFiles === 'function') updateActiveFiles();  // 활성 파일 갱신
     document.getElementById('loading').style.display = 'none';
 
     // 이벤트 없음 → 안내 메시지 표시

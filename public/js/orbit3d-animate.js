@@ -114,6 +114,14 @@ renderer.domElement.addEventListener('click', e => {
       return;
     }
 
+    // ── 활성 파일 배지 클릭 → VS Code로 파일 열기 ────────────────────────
+    if (type === 'activeFile') {
+      if (typeof openFileInEditor === 'function') {
+        openFileInEditor(hit.data.filePath);
+      }
+      return;
+    }
+
     // ── 별자리 오브 클릭 → 해당 프로젝트 포커스 ────────────────────────────
     if (type === 'constellation') {
       if (_focusedProject === hit.data.projName) {
@@ -214,7 +222,11 @@ function updateRaycast() {
     if (data) {
       let ttIntent = data.label || data.intent || '';
       let ttMeta   = '';
-      if (data.type === 'member')  ttMeta = `👤 ${data.sublabel || ''} · 클릭하여 포커스`;
+      if (data.type === 'activeFile') {
+        ttIntent = `📂 ${data.fileName || ''}`;
+        ttMeta = '클릭하여 VS Code에서 열기';
+      }
+      else if (data.type === 'member')  ttMeta = `👤 ${data.sublabel || ''} · 클릭하여 포커스`;
       else if (data.type === 'task')  ttMeta = `${data.emoji || ''} ${Math.round((data.progress||0)*100)}% 완료`;
       else if (data.type === 'goal')  ttMeta = '🎯 팀 목표';
       else if (data.type === 'file')  ttMeta = `📄 ${data.filename || ''}  ×${data.count || 1}`;

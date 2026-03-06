@@ -96,6 +96,57 @@ function glowIntensity(clusterId) {
   return 1 - age / GLOW_FADE_MS;
 }
 
+// ─── 프로젝트별 활성 파일 추적 ────────────────────────────────────────────────
+// 최근 5분 내 이벤트에서 파일 경로를 추출하여 프로젝트별로 그룹화
+const _activeFilesPerProject = {};          // projName → [{ file, shortName, timestamp, filePath }]
+const ACTIVE_FILE_TTL = 5 * 60 * 1000;     // 5분간 활성 표시
+
+// 씬 빌드 후 또는 데이터 로드 시 호출
+function updateActiveFiles() {
+  const now = Date.now();
+  // _sessionMap: clusterId → { planet, fileSats, events }
+  Object.keys(_activeFilesPerProject).forEach(k => delete _activeFilesPerProject[k]);
+
+  for (const [clusterId, entry] of Object.entries(_sessionMap || {})) {
+    if (!entry || !entry.events) continue;
+    const proj = entry.planet?.userData?.projectName || '기타';
+    if (!_activeFilesPerProject[proj]) _activeFilesPerProject[proj] = [];
+
+    // 최근 이벤트에서 파일 경로 추출
+    for (let i = entry.events.length - 1; i >= 0; i--) {
+      const e = entry.events[i];
+      const ts = new Date(e.timestamp).getTime();
+      if (now - ts > ACTIVE_FILE_TTL) break;     // 5분 초과 → 중단
+
+      const fp = e.data?.filePath || e.data?.fileName || '';
+      if (!fp) continue;
+      const shortName = fp.replace(/\\/g, '/').split('/').pop();
+      // 중복 방지
+      if (_activeFilesPerProject[proj].some(f => f.filePath === fp)) continue;
+
+      _activeFilesPerProject[proj].push({
+        file: shortName,
+        shortName: shortName.length > 18 ? shortName.slice(0, 16) + '…' : shortName,
+        timestamp: e.timestamp,
+        filePath: fp,
+        eventType: e.type,
+        isWrite: e.type === 'file.write' || e.type === 'tool.end',
+      });
+      if (_activeFilesPerProject[proj].length >= 5) break;  // 프로젝트당 최대 5개
+    }
+  }
+}
+
+// VS Code로 파일 열기 (vscode:// 프로토콜 사용)
+function openFileInEditor(filePath) {
+  if (!filePath) return;
+  // Windows 경로 → URI 변환
+  const uri = filePath.replace(/\\/g, '/');
+  const vscodeUrl = `vscode://file/${uri}`;
+  window.open(vscodeUrl, '_blank');
+  if (typeof showToast === 'function') showToast(`📂 ${uri.split('/').pop()} 열기`, 2000);
+}
+
 // ─── 글로우 pill 헬퍼 ────────────────────────────────────────────────────────
 function drawGlow(ctx, cx, cy, r, hex, intensity) {
   if (intensity <= 0.02) return;
@@ -2708,6 +2759,79 @@ function drawConstellations() {
 
     _lctx.globalAlpha = 1;
 
+    // ── 활성 파일 배지 (프로젝트 pill 아래에 표시) ─────────────────────────
+    const activeFiles = _activeFilesPerProject[projName] || [];
+    if (activeFiles.length > 0) {
+      const badgeY = ly + ph + pxSub + 18;       // 서브 레이블 아래
+      const badgePx = 10;
+      const badgeH = badgePx + 8;
+      const badgeGap = 3;
+      const maxBadges = Math.min(activeFiles.length, 3);   // 최대 3개 표시
+
+      // 전체 너비 계산 (중앙 정렬용)
+      _lctx.font = `600 ${badgePx}px -apple-system,'Segoe UI',monospace`;
+      let totalW = 0;
+      for (let bi = 0; bi < maxBadges; bi++) {
+        totalW += _lctx.measureText('⚡ ' + activeFiles[bi].shortName).width + 16;
+        if (bi < maxBadges - 1) totalW += badgeGap;
+      }
+      let bx = cx - totalW / 2;
+
+      for (let bi = 0; bi < maxBadges; bi++) {
+        const af = activeFiles[bi];
+        const afLabel = (af.isWrite ? '✏️ ' : '⚡ ') + af.shortName;
+        const afW = _lctx.measureText(afLabel).width + 16;
+        const bPulse = 0.5 + 0.5 * Math.sin(now * 2.5 + bi * 1.3);
+
+        // 배지 배경 (어두운 반투명 + 활성 색상 테두리)
+        _lctx.save();
+        _lctx.globalAlpha = 0.92;
+        _lctx.fillStyle = 'rgba(13,17,23,0.95)';
+        roundRect(_lctx, bx, badgeY, afW, badgeH, badgeH / 2);
+        _lctx.fill();
+
+        // 테두리 + 펄스 글로우
+        _lctx.strokeStyle = af.isWrite ? '#f0883e' : '#3fb950';
+        _lctx.lineWidth = 1.5;
+        _lctx.shadowColor = af.isWrite ? '#f0883e' : '#3fb950';
+        _lctx.shadowBlur = 4 + bPulse * 6;
+        roundRect(_lctx, bx, badgeY, afW, badgeH, badgeH / 2);
+        _lctx.stroke();
+        _lctx.shadowBlur = 0;
+
+        // 텍스트
+        _lctx.font = `600 ${badgePx}px -apple-system,'Segoe UI',monospace`;
+        _lctx.fillStyle = af.isWrite ? '#f0883e' : '#3fb950';
+        _lctx.globalAlpha = 0.7 + bPulse * 0.3;
+        _lctx.textAlign = 'left';
+        _lctx.fillText(afLabel, bx + 8, badgeY + badgeH * 0.7);
+        _lctx.restore();
+
+        // 히트 영역 (클릭으로 파일 열기)
+        _hitAreas.push({
+          cx: bx + afW / 2, cy: badgeY + badgeH / 2,
+          r: Math.max(afW, badgeH) / 2 + 4,
+          obj: null,
+          data: { type: 'activeFile', filePath: af.filePath, fileName: af.file, projName },
+        });
+
+        bx += afW + badgeGap;
+      }
+
+      // 추가 파일 수 표시 (+N more)
+      if (activeFiles.length > maxBadges) {
+        _lctx.save();
+        _lctx.font = `400 9px -apple-system,sans-serif`;
+        _lctx.fillStyle = '#6e7681';
+        _lctx.globalAlpha = 0.7;
+        _lctx.textAlign = 'left';
+        _lctx.fillText(`+${activeFiles.length - maxBadges}`, bx + 4, badgeY + badgeH * 0.7);
+        _lctx.restore();
+      }
+
+      _lctx.textAlign = 'center';  // 원래대로 복원
+    }
+
     // 히트 영역
     _hitAreas.push({
       cx, cy,
@@ -2859,9 +2983,22 @@ function drawCompactProjectView() {
 
     projEntries.forEach((pe, pi) => {
       const py = listStartY + pi * lineH;
+      const hasActive = (_activeFilesPerProject[pe.name] || []).length > 0;  // 활성 파일 있으면 표시
       const projLabel = `${cleanProjName(pe.name)} (${pe.events})`;
-      _lctx.fillStyle = '#8b949e';
+      _lctx.fillStyle = hasActive ? '#3fb950' : '#8b949e';
       _lctx.fillText(projLabel, cx, py + pxSub);
+      // 활성 점 (녹색 펄스)
+      if (hasActive) {
+        const dotPulse = 0.5 + 0.5 * Math.sin(now * 2.5 + pi);
+        _lctx.save();
+        _lctx.fillStyle = '#3fb950';
+        _lctx.shadowColor = '#3fb950';
+        _lctx.shadowBlur = 4 + dotPulse * 4;
+        _lctx.beginPath();
+        _lctx.arc(cx + _lctx.measureText(projLabel).width / 2 + 8, py + pxSub - 3, 3, 0, Math.PI * 2);
+        _lctx.fill();
+        _lctx.restore();
+      }
     });
 
     _lctx.globalAlpha = 1;
