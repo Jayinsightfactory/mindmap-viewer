@@ -857,12 +857,14 @@ app.get('/api/tracker/status', (req, res) => {
       }
     } catch {}
 
-    const isOnline = ping && (Date.now() - ping.lastSeen < 6 * 60 * 1000); // 6분 이내
+    let isOnline = ping && (Date.now() - ping.lastSeen < 6 * 60 * 1000); // 6분 이내
     // 유저의 실제 이벤트 수 (tracker ping과 별개로 DB에 저장된 이벤트)
     let userEventCount = ping?.eventCount || 0;
     try {
       const stats = getStatsByUser ? getStatsByUser(userId) : null;
       if (stats && stats.eventCount > userEventCount) userEventCount = stats.eventCount;
+      // 이벤트가 1건 이상 있으면 트래커 연결된 것으로 판단
+      if (stats && stats.eventCount > 0) isOnline = true;
     } catch {}
     res.json({
       online:     !!isOnline,

@@ -135,32 +135,8 @@ async function _showEmptyStateGuide() {
     trackerOnline = d.online;
   } catch {}
 
-  // 트래커 연결되어 있으면 설치 안내 불필요
-  if (trackerOnline) {
-    // 데이터만 아직 없는 상태 — 간단 안내
-    const el = document.createElement('div');
-    el.id = 'empty-state-guide';
-    el.style.cssText = `
-      position:fixed; bottom:80px; left:50%; transform:translateX(-50%);
-      background:rgba(13,17,23,0.95); border:1px solid #23893680;
-      border-radius:12px; padding:14px 22px; max-width:400px; text-align:center;
-      z-index:500; backdrop-filter:blur(16px);
-      box-shadow:0 8px 32px rgba(0,0,0,0.4);
-      font-family:-apple-system,'Segoe UI',sans-serif;
-      animation:fadeIn .4s ease;
-    `;
-    el.innerHTML = `
-      <div style="display:flex;align-items:center;gap:8px;justify-content:center">
-        <span style="width:7px;height:7px;border-radius:50%;background:#3fb950;display:inline-block;box-shadow:0 0 6px #3fb950"></span>
-        <span style="font-size:12px;color:#e6edf3">Orbit 연결됨 — 작업 패턴 학습 중</span>
-        <span onclick="document.getElementById('empty-state-guide').remove()"
-          style="margin-left:8px;cursor:pointer;color:#6e7681;font-size:14px">✕</span>
-      </div>
-      <div style="font-size:11px;color:#8b949e;margin-top:6px">
-        AI가 작업 패턴을 학습하면 맞춤 피드백이 대시보드에 표시됩니다.
-      </div>
-    `;
-    document.body.appendChild(el);
+  // 트래커 연결되어 있거나 이미 닫은 적 있으면 설치 안내 불필요
+  if (trackerOnline || localStorage.getItem('orbit_tracker_dismissed')) {
     return;
   }
 
@@ -227,7 +203,7 @@ async function _showEmptyStateGuide() {
       설치 후 자동으로 작업 데이터가 수집되며<br>이 화면에 실시간 시각화됩니다.
     </div>
 
-    <button onclick="document.getElementById('empty-state-guide').remove()"
+    <button onclick="localStorage.setItem('orbit_tracker_dismissed','1');document.getElementById('empty-state-guide').remove()"
       style="background:#21262d;border:1px solid #30363d;color:#e6edf3;
       padding:8px 24px;border-radius:8px;cursor:pointer;font-size:13px">
       닫기
