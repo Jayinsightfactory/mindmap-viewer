@@ -10,13 +10,11 @@
 const fs      = require('fs');
 const path    = require('path');
 const crypto  = require('crypto');
-const fetch   = (() => { try { return require('node-fetch'); } catch { return globalThis.fetch; } })();
+const { generate } = require('./llm-gateway');
 
 // ── 학습 데이터 저장소 ─────────────────────────────────────────────────────
 const LEARN_DB_PATH = path.join(__dirname, '../data/learn-db.json');
 const MAX_ENTRIES   = 500;   // 최대 저장 항목
-const OLLAMA_URL    = 'http://localhost:11434/api/generate';
-const OLLAMA_MODEL  = 'llama3.2';  // 또는 orbit-insight:v1
 
 function loadDB() {
   try {
@@ -161,16 +159,15 @@ JSON으로 응답: {"pattern": "...", "suggestion": "...", "automatable": true/f
 `.trim();
 
   try {
-    const res = await fetch(OLLAMA_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: OLLAMA_MODEL, prompt, stream: false, options: { temperature: 0.3 } }),
-      signal: AbortSignal.timeout(15000),
-    });
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) return;
 
-    if (!res.ok) return;
-    const data = await res.json();
-    const text = data.response || '';
+    const text = await generate({
+      provider: 'anthropic',
+      model:    'claude-haiku-3-5',
+      prompt,
+      apiKey,
+    });
 
     // JSON 추출
     const match = text.match(/\{[\s\S]*\}/);
@@ -194,10 +191,7 @@ JSON으로 응답: {"pattern": "...", "suggestion": "...", "automatable": true/f
     }
 
   } catch (e) {
-    // Ollama 없으면 조용히 스킵
-    if (!e.message?.includes('fetch')) {
-      console.error('[DiffLearner] Ollama 분석 오류:', e.message);
-    }
+    console.warn('[DiffLearner] 분석 스킵:', e.message);
   }
 }
 

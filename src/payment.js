@@ -18,9 +18,9 @@ const MOCK_MODE       = !TOSS_SECRET_KEY;
 const PLANS = {
   free: {
     id: 'free', name: 'Free', badge: '',
-    price: 0, priceLabel: '₩0', period: '',
-    currency: 'KRW',
-    description: '개인 개발자를 위한 무료 플랜',
+    price: 0, priceLabel: '$0', period: '',
+    currency: 'USD',
+    description: 'Free plan for individual developers',
     features: [
       '개인 작업 추적',
       '기본 3D 마인드맵',
@@ -34,9 +34,9 @@ const PLANS = {
   },
   pro: {
     id: 'pro', name: 'Pro', badge: 'POPULAR',
-    price: 9900, priceLabel: '₩9,900', period: '/월',
-    currency: 'KRW',
-    description: '파워 유저를 위한 프로 플랜',
+    price: 1900, priceLabel: '$19', period: '/mo',
+    currency: 'USD',
+    description: 'Pro plan for power users',
     features: [
       'Free의 모든 기능',
       '무제한 세션 히스토리',
@@ -47,17 +47,18 @@ const PLANS = {
       '컨텍스트 브릿지',
       '모든 이펙트 + 스킨',
       '테마 마켓 판매 가능',
+      'AI 모니터 (PIP/타일/도킹)',
       '이메일 지원',
     ],
     limits: { channels: 5, events: -1, members: 10, sessions: -1, aiQueries: 500 },
-    cta: '프로 시작하기',
+    cta: 'Start Pro',
     popular: true,
   },
   team: {
     id: 'team', name: 'Team', badge: '',
-    price: 29900, priceLabel: '₩29,900', period: '/월/멤버',
-    currency: 'KRW',
-    description: '팀 협업을 위한 비즈니스 플랜',
+    price: 4900, priceLabel: '$49', period: '/user/mo',
+    currency: 'USD',
+    description: 'Team plan for collaboration',
     features: [
       'Pro의 모든 기능',
       '무제한 채널 & 멤버',
@@ -68,17 +69,18 @@ const PLANS = {
       'PDF 감사 리포트',
       '작업 충돌 감지',
       '팀 인사이트 분석',
+      '성장 엔진 (레벨/뱃지)',
       '우선 지원 (SLA 24h)',
     ],
     limits: { channels: -1, events: -1, members: -1, sessions: -1, aiQueries: 2000 },
-    cta: '팀 시작하기',
+    cta: 'Start Team',
     popular: false,
   },
   enterprise: {
     id: 'enterprise', name: 'Enterprise', badge: '',
-    price: -1, priceLabel: '문의', period: '',
-    currency: 'KRW',
-    description: '대규모 조직을 위한 엔터프라이즈',
+    price: -1, priceLabel: 'Contact Us', period: '',
+    currency: 'USD',
+    description: 'Enterprise plan for large organizations',
     features: [
       'Team의 모든 기능',
       '온프레미스 배포 지원',
@@ -92,7 +94,7 @@ const PLANS = {
       '맞춤 교육 & 온보딩',
     ],
     limits: { channels: -1, events: -1, members: -1, sessions: -1, aiQueries: -1 },
-    cta: '영업팀 문의',
+    cta: 'Contact Sales',
     popular: false,
   },
 };
@@ -197,4 +199,20 @@ async function cancelSubscription({ billingKey, cancelReason }) {
   });
 }
 
-module.exports = { PLANS, createPayment, confirmPayment, cancelSubscription, MOCK_MODE };
+// ─── 구독 만료일 추적 ────────────────────────────
+function getSubscriptionExpiry(purchaseDate) {
+  const d = new Date(purchaseDate);
+  d.setMonth(d.getMonth() + 1);
+  return d.toISOString();
+}
+
+// ─── 플랜별 기능 게이팅 미들웨어 ──────────────────
+function requirePlan(...allowedPlans) {
+  return (req, res, next) => {
+    const userPlan = req.user?.plan || 'free';
+    if (allowedPlans.includes(userPlan)) return next();
+    res.status(403).json({ error: 'upgrade_required', requiredPlans: allowedPlans, currentPlan: userPlan });
+  };
+}
+
+module.exports = { PLANS, createPayment, confirmPayment, cancelSubscription, MOCK_MODE, getSubscriptionExpiry, requirePlan };

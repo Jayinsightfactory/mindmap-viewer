@@ -5,7 +5,7 @@
 let _lastNow = 0;
 let _fpsBuf  = [];
 
-renderer.setAnimationLoop(now => {
+function _orbitAnimLoop(now) {
   const dt = now - _lastNow; _lastNow = now;
   _fpsBuf.push(1000/(dt||16));
   if (_fpsBuf.length>30) _fpsBuf.shift();
@@ -76,7 +76,7 @@ renderer.setAnimationLoop(now => {
         cl.toNode?.memberId   === focusId;
 
       if (cl.crossDept) {
-        // 🔥 크로스-부서 불꽃 이펙트: 빠른 고진폭 파동 + 랜덤 플리커
+        // 크로스-부서 이펙트: 빠른 고진폭 파동 + 랜덤 플리커
         const flicker = 0.7 + 0.3 * Math.sin(t * 9.5 + cl.phase * 1.7);
         const wave    = 0.55 + 0.45 * Math.sin(t * 4.0 + cl.phase);
         const fire    = flicker * wave;
@@ -89,6 +89,18 @@ renderer.setAnimationLoop(now => {
       }
     });
   }
+}
+
+renderer.setAnimationLoop(_orbitAnimLoop);
+
+// ─── 탭 비활성 시 렌더링 일시 정지 (CPU/GPU 절약) ──────────────────────────────
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    renderer.setAnimationLoop(null); // 렌더링 정지 → CPU/GPU 해방
+  } else {
+    _lastNow = performance.now();
+    renderer.setAnimationLoop(_orbitAnimLoop); // 렌더링 재개
+  }
 });
 
 // ─── 리사이즈 ─────────────────────────────────────────────────────────────────
@@ -96,4 +108,3 @@ window.addEventListener('resize', () => {
   resizeRendererToSidebar();
   resizeLabelCanvas();
 });
-

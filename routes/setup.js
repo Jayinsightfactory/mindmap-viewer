@@ -323,7 +323,7 @@ module.exports = function createSetupRouter({ getAllEvents, getDb, port = 4747 }
           connected: claudeConnected,
           tracking:  trackingEnabled,
         },
-        ready: ollamaStatus.running && hookStatus.registered,
+        ready: hookStatus.registered,  // Ollama 불필요 — Cloud Haiku 사용
       });
     } catch (e) {
       res.status(500).json({ error: e.message });

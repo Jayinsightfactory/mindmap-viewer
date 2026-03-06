@@ -86,11 +86,31 @@ function createRouter(deps) {
       // 비로그인: 빈 그래프 반환 (프라이버시 보호)
       return res.json({ nodes: [], edges: [] });
     }
-    const graph = user.id === 'local'
-      ? getFullGraph(req.query.session, req.query.channel)
-      : (getFullGraphForUser
-          ? getFullGraphForUser(user.id, req.query.session)
-          : getFullGraph(req.query.session, req.query.channel));
+
+    let graph;
+    if (user.id === 'local') {
+      graph = getFullGraph(req.query.session, req.query.channel);
+    } else {
+      // 로그인 유저: user_id 필터링 시도
+      graph = getFullGraphForUser
+        ? getFullGraphForUser(user.id, req.query.session)
+        : getFullGraph(req.query.session, req.query.channel);
+
+      // 유저 이벤트가 0건이면 local 이벤트 자동 귀속 후 재시도
+      if (graph.nodes.length === 0 && claimLocalEvents) {
+        const claimed = claimLocalEvents(user.id);
+        if (claimed > 0) {
+          console.log(`[graph] ${user.id}: ${claimed}개 local 이벤트 자동 귀속`);
+          graph = getFullGraphForUser
+            ? getFullGraphForUser(user.id, req.query.session)
+            : getFullGraph(req.query.session, req.query.channel);
+        }
+        // 귀속 후에도 0건이면 전체 그래프 반환 (로컬 서버 모드)
+        if (graph.nodes.length === 0) {
+          graph = getFullGraph(req.query.session, req.query.channel);
+        }
+      }
+    }
 
     // hidden 이벤트 제외
     if (getHiddenEventIds) {
@@ -162,9 +182,13 @@ function createRouter(deps) {
   router.get('/sessions', (req, res) => {
     const user = getUserFromReq(req);
     if (!user) return res.json([]);                                            // 비로그인: 빈 목록
-    const sessions = (user.id !== 'local' && getSessionsByUser)
+    let sessions = (user.id !== 'local' && getSessionsByUser)
       ? getSessionsByUser(user.id)
       : getSessions();
+    // 유저 세션 0건이면 전체 세션 반환 (local 이벤트 아직 미귀속)
+    if (sessions.length === 0 && user.id !== 'local') {
+      sessions = getSessions();
+    }
     res.json(sessions);
   });
 

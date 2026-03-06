@@ -634,11 +634,6 @@ class OrbitCam {
     el.addEventListener('wheel', e => {
       // 줌 감도 낮춤 (0.08 → 0.04) + 부드러운 줌
       this.sph.r = Math.max(4, Math.min(300, this.sph.r + e.deltaY * 0.04));
-      // 선택된 노드가 있으면 그 위치 기준 줌
-      if (typeof _selectedHit !== 'undefined' && _selectedHit?.obj?.position) {
-        const sp = _selectedHit.obj.position;
-        this.tgt.set(sp.x, sp.y, sp.z);
-      }
       this._apply();
     }, {passive:true});
     el.addEventListener('dblclick',   e => this._dbl(e));

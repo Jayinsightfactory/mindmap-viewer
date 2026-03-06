@@ -16,38 +16,29 @@
  */
 
 const { ulid } = require('ulid');
-const http     = require('http');
 const https    = require('https');
+const http     = require('http');
 
 const stressDetector = require('./stress-detector');
+const { generate }   = require('./llm-gateway');
 
-// ── Ollama 호출 ───────────────────────────────────────────────────────────────
-async function askOllama(prompt, model = 'llama3.2') {
-  return new Promise((resolve) => {
-    const body = JSON.stringify({
-      model,
+// ── Cloud Haiku 호출 ─────────────────────────────────────────────────────────
+async function askLLM(prompt) {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return '';
+  try {
+    return await generate({
+      provider: 'anthropic',
+      model:    'claude-haiku-3-5',
       prompt,
-      stream: false,
-      options: { temperature: 0.3, num_predict: 300 },
+      apiKey,
     });
-    const req = http.request({
-      hostname: 'localhost', port: 11434,
-      path: '/api/generate', method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
-    }, res => {
-      let data = '';
-      res.on('data', c => data += c);
-      res.on('end', () => {
-        try { resolve(JSON.parse(data).response || ''); }
-        catch { resolve(''); }
-      });
-    });
-    req.on('error', () => resolve(''));
-    req.setTimeout(15000, () => { req.destroy(); resolve(''); });
-    req.write(body);
-    req.end();
-  });
+  } catch {
+    return '';
+  }
 }
+// 하위 호환
+const askOllama = askLLM;
 
 // ── 유사도 계산 (간단한 단어 겹침) ────────────────────────────────────────────
 function similarity(a, b) {
@@ -249,14 +240,66 @@ function detectPromptRefinements(events, since = Date.now() - 3 * 86400_000) {
   return results;
 }
 
+// ── 패턴 H: 미디어 학습 가이드 ────────────────────────────────────────────────
+// media.transcript 이벤트에서 반복 주제 감지 → 코드 활동과 교차 분석
+function detectMediaLearningPatterns(events, since = Date.now() - 3 * 86400_000) {
+  const mediaEvents = events.filter(e =>
+    e.type === 'media.transcript' &&
+    new Date(e.timestamp || e.ts || 0) > since
+  );
+  if (mediaEvents.length < 2) return [];
+
+  // 미디어 텍스트에서 주요 키워드 추출 (간단한 빈도 분석)
+  const wordCounts = {};
+  const STOP_WORDS = new Set(['the','a','an','is','are','was','were','be','been','being',
+    '이','가','은','는','을','를','에','의','로','와','과','도','다','한','할','하는','있는','없는','그','이것','저것']);
+  for (const e of mediaEvents) {
+    const text = (e.data?.text || '').toLowerCase();
+    const words = text.split(/[\s,;:.!?()[\]{}]+/).filter(w => w.length > 2 && !STOP_WORDS.has(w));
+    for (const w of words) wordCounts[w] = (wordCounts[w] || 0) + 1;
+  }
+
+  const topTopics = Object.entries(wordCounts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([word, count]) => ({ word, count }));
+
+  if (!topTopics.length) return [];
+
+  // 코드 활동에서 관련 파일 찾기
+  const codeEvents = events.filter(e =>
+    (e.type === 'file.write' || e.type === 'file.content' || e.type === 'tool.end') &&
+    new Date(e.timestamp || e.ts || 0) > since
+  );
+  const recentFiles = {};
+  for (const e of codeEvents) {
+    const f = (e.data?.filePath || e.data?.fileName || '').replace(/\\/g, '/').split('/').pop();
+    if (f) recentFiles[f] = (recentFiles[f] || 0) + 1;
+  }
+  const topFiles = Object.entries(recentFiles)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([file, count]) => ({ file, count }));
+
+  return [{
+    pattern: 'media_learning',
+    mediaTopics: topTopics,
+    codeActivity: topFiles,
+    transcriptCount: mediaEvents.length,
+    correlation: topTopics.some(t =>
+      topFiles.some(f => f.file.toLowerCase().includes(t.word) || t.word.includes(f.file.toLowerCase().replace(/\.\w+$/, '')))
+    ),
+  }];
+}
+
 // ── 제안 생성 ─────────────────────────────────────────────────────────────────
-async function buildSuggestion(pattern, ollamaModel) {
+async function buildSuggestion(pattern) {
   let type, priority, title, description, evidence, action;
 
   if (pattern.pattern === 'repeat_file') {
     const name = pattern.filePath.split('/').pop();
     const prompt = `파일 "${name}"이(가) 지난 7일 동안 ${pattern.count}번 반복적으로 열렸습니다. 이 파일 작업을 자동화하거나 효율화할 수 있는 간결한 제안을 한국어로 2문장 이내로 작성하세요.`;
-    const desc = await askOllama(prompt, ollamaModel);
+    const desc = await askLLM(prompt);
     type = 'automation'; priority = 4;
     title = `"${name}" 반복 접근 자동화`;
     description = desc || `지난 7일간 ${pattern.count}회 접근됨 — 자동화 스크립트 또는 단축키 설정을 권장합니다.`;
@@ -299,7 +342,7 @@ async function buildSuggestion(pattern, ollamaModel) {
       `위 대화 흐름을 분석하여 한 번에 원하는 결과를 얻을 수 있는 최적 프롬프트 구조를 한국어로 제안하세요.`,
       `응답 형식: "최적 프롬프트: [구체적 프롬프트 템플릿]" 형식으로 2-3문장.`,
     ].join(' ');
-    const desc = await askOllama(prompt, ollamaModel);
+    const desc = await askLLM(prompt);
     type = 'prompt_template'; priority = 5;
     title = `${appName} 프롬프트 최적화 (${pattern.revisionCount}회 수정 감지)`;
     description = desc ||
@@ -324,6 +367,27 @@ async function buildSuggestion(pattern, ollamaModel) {
       },
     };
 
+  } else if (pattern.pattern === 'media_learning') {
+    // Pattern H: 미디어 학습 → 코드 활동 교차 가이드
+    const topics = (pattern.mediaTopics || []).map(t => t.word).join(', ');
+    const files  = (pattern.codeActivity || []).map(f => f.file).join(', ');
+    const prompt = [
+      `사용자가 최근 강의/영상에서 다음 주제를 학습했습니다: ${topics}`,
+      files ? `현재 작업 중인 파일: ${files}` : '',
+      `학습 내용을 현재 프로젝트에 어떻게 적용할 수 있는지 구체적이고 실행 가능한 가이드를 한국어 2-3문장으로 작성하세요.`,
+    ].filter(Boolean).join(' ');
+    const desc = await askLLM(prompt);
+    type = 'learning_guide'; priority = 4;
+    title = `학습 인사이트: ${(pattern.mediaTopics[0]?.word || '').slice(0, 20)} 적용 가이드`;
+    description = desc || `최근 ${pattern.transcriptCount}개 강의에서 학습한 내용(${topics})을 현재 프로젝트에 적용할 수 있습니다.`;
+    evidence = [{
+      type: 'media_learning',
+      mediaTopics: pattern.mediaTopics,
+      codeActivity: pattern.codeActivity,
+      correlation: pattern.correlation,
+    }];
+    action = { action: '학습 내용 프로젝트 적용', topics: pattern.mediaTopics, files: pattern.codeActivity };
+
   } else {
     return null;
   }
@@ -347,9 +411,9 @@ async function buildSuggestion(pattern, ollamaModel) {
 /**
  * @param {object[]} events - DB에서 읽어온 최근 이벤트 배열
  * @param {object}   db     - better-sqlite3 DB 인스턴스
- * @param {string}   [ollamaModel]
+ * @param {string}   [_model] - 레거시 호환 (무시됨, Cloud Haiku 사용)
  */
-async function run(events, db, ollamaModel = 'llama3.2') {
+async function run(events, db, _model) {
   if (!events || !events.length || !db) return [];
 
   // 이벤트 data 필드 파싱
@@ -365,6 +429,7 @@ async function run(events, db, ollamaModel = 'llama3.2') {
     ...detectAppSwitching(parsed),
     ...detectLongSession(parsed),
     ...detectPromptRefinements(parsed),   // F. AI 프롬프트 수정 패턴
+    ...detectMediaLearningPatterns(parsed), // H. 미디어 학습 가이드
   ];
 
   // ── 패턴 G: 행동 이상 신호 (wellbeing) ───────────────────────────────────
@@ -400,7 +465,7 @@ async function run(events, db, ollamaModel = 'llama3.2') {
     }
 
     let sug;
-    try { sug = await buildSuggestion(pattern, ollamaModel); }
+    try { sug = await buildSuggestion(pattern); }
     catch { continue; }
     if (!sug) continue;
     if (existing.includes(sug.title)) continue;

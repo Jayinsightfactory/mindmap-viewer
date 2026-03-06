@@ -104,36 +104,27 @@ function createRouter({ getDb, verifyToken, broadcastToRoom }) {
     return row?.cnt || 0;
   }
 
-  // ── 유틸: AI 봇 응답 (Ollama) ────────────────────────────────────────────────
+  // ── 유틸: AI 봇 응답 (Cloud Haiku) ──────────────────────────────────────────
   async function getAIReply(userMsg, history = []) {
-    const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
+    const { generate } = require('../src/llm-gateway');
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) return 'AI API 키가 설정되지 않았습니다.';
+
     const prompt = history.slice(-6).map(m =>
       `${m.sender_name || '사용자'}: ${m.content}`
     ).join('\n') + `\n사용자: ${userMsg}\nOrbit AI:`;
 
-    return new Promise((resolve) => {
-      const data = JSON.stringify({
-        model:  process.env.ORBIT_MODEL || 'llama3.2',
+    try {
+      const reply = await generate({
+        provider: 'anthropic',
+        model:    'claude-haiku-3-5',
         prompt,
-        stream: false,
-        options: { num_predict: 200, temperature: 0.7 }
+        apiKey,
       });
-
-      const req = http.request(`${OLLAMA_URL}/api/generate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) }
-      }, res => {
-        let body = '';
-        res.on('data', c => body += c);
-        res.on('end', () => {
-          try { resolve(JSON.parse(body).response || '죄송해요, 지금 답변하기 어려워요.'); }
-          catch { resolve('AI 연결 오류가 발생했습니다.'); }
-        });
-      });
-      req.on('error', () => resolve('AI 서버에 연결할 수 없습니다. Ollama가 실행 중인지 확인해주세요.'));
-      req.setTimeout(8000, () => { req.destroy(); resolve('AI 응답 시간이 초과됐습니다.'); });
-      req.write(data); req.end();
-    });
+      return reply || '죄송해요, 지금 답변하기 어려워요.';
+    } catch {
+      return 'AI 응답 생성 중 오류가 발생했습니다.';
+    }
   }
 
   // ── POST /api/chat/dm/:userId ────────────────────────────────────────────────

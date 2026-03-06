@@ -244,7 +244,7 @@ function buildPlanetSystem(nodeList) {
     // ── 중심→행성 곡선 브랜치 연결선 ──────────────────────────────────────
     {
       const mid = planetPos.clone().multiplyScalar(0.5);
-      mid.y += 5; // 약간 위로 꺾여서 자연스러운 가지 느낌
+      mid.y += 2; // 약간 위로 꺾여서 자연스러운 가지 느낌
       const curve = new THREE.QuadraticBezierCurve3(
         new THREE.Vector3(0, 0, 0), mid, planetPos.clone()
       );
@@ -270,9 +270,9 @@ function buildPlanetSystem(nodeList) {
     const perpDir   = new THREE.Vector3(-parentDir.z, 0, parentDir.x); // 수직방향
 
     fileSats.forEach((fs, fi) => {
-      const SAT_DIST = 8 + fi * 3;
-      const lateralOffset = (fi - (fileSats.length - 1) / 2) * 4;
-      const yOff = (fi % 3 - 1) * 2;
+      const SAT_DIST = 4 + fi * 1.5;
+      const lateralOffset = (fi - (fileSats.length - 1) / 2) * 2;
+      const yOff = (fi % 3 - 1) * 1;
 
       const sx = px + parentDir.x * SAT_DIST + perpDir.x * lateralOffset;
       const sy = py + yOff;

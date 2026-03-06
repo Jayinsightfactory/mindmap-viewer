@@ -488,17 +488,80 @@ function showPanel(data, obj) {
     }
 
   } else if (data.type === 'file') {
-    document.getElementById('ip-dot').style.background  = '#ffa657';
+    const fname = data.filename || data.fileLabel || '';
+    const ext = fname.split('.').pop()?.toLowerCase() || '';
+    const roleMap = {
+      js:'🔧 로직', ts:'🔧 로직', py:'🔧 로직', go:'🔧 로직', rs:'🔧 로직',
+      html:'🌐 UI', css:'🎨 스타일', scss:'🎨 스타일',
+      json:'⚙️ 설정', yaml:'⚙️ 설정', yml:'⚙️ 설정', toml:'⚙️ 설정', env:'⚙️ 설정',
+      md:'📝 문서', txt:'📝 문서', rst:'📝 문서',
+      sql:'🗄 DB', db:'🗄 DB',
+      test:'🧪 테스트', spec:'🧪 테스트',
+      sh:'⌨️ 스크립트', bash:'⌨️ 스크립트', zsh:'⌨️ 스크립트',
+      png:'🖼 이미지', jpg:'🖼 이미지', svg:'🖼 이미지',
+    };
+    const fileRole = roleMap[ext] || (data.isWrite ? '✏️ 수정 대상' : '📄 파일');
+    // auth/security detection
+    const secFiles = ['auth','login','token','session','password','secret','key','cred'];
+    const isSecurity = secFiles.some(s => fname.toLowerCase().includes(s));
+    const displayRole = isSecurity ? '🔐 인증/보안' : fileRole;
+
+    document.getElementById('ip-dot').style.background  = data.isWrite ? '#ffa657' : '#58a6ff';
     document.getElementById('ip-type-text').textContent = '파일 위성';
-    document.getElementById('ip-intent').textContent    = data.fileLabel || data.intent || '';
+    document.getElementById('ip-intent').textContent    = data.fileLabel || data.intent || fname;
 
-    document.getElementById('ip-kv-list').innerHTML = [
-      ['파일명',   data.filename || '-'],
-      ['접근 횟수', `${data.count || 1}회`],
-      ['역할',     data.isWrite ? '✏️ 수정 대상' : '📄 읽기'],
-    ].map(([k,v]) => `<div class="ip-kv"><span class="k">${k}</span><span class="v">${v}</span></div>`).join('');
+    // Build enhanced KV list
+    const readCount  = data.isWrite ? 0 : (data.count || 1);
+    const writeCount = data.isWrite ? (data.count || 1) : 0;
+    const kvPairs = [
+      ['파일명',    fname || '-'],
+      ['파일 역할',  displayRole],
+      ['수정 횟수',  `${writeCount}회`],
+      ['읽기 횟수',  `${readCount}회`],
+      ['타입',      ext.toUpperCase() || '-'],
+    ];
 
-    document.getElementById('ip-preview').style.display = 'none';
+    // Related agent (who modified this file)
+    const agentSource = data.agentSource || (data.isWrite ? 'VS Code' : '-');
+    kvPairs.push(['관련 에이전트', agentSource]);
+
+    // Lines estimation (from count as proxy for complexity)
+    const complexityLabel = (data.count || 1) > 10 ? '🔴 높음' : (data.count || 1) > 5 ? '🟡 보통' : '🟢 낮음';
+    kvPairs.push(['변경 빈도', complexityLabel]);
+
+    document.getElementById('ip-kv-list').innerHTML = kvPairs.map(([k,v]) =>
+      `<div class="ip-kv"><span class="k">${k}</span><span class="v">${v}</span></div>`
+    ).join('');
+
+    // Build change timeline in preview area
+    const previewEl = document.getElementById('ip-preview');
+    const sessionEntry = _sessionMap[data.clusterId || data.sessionId];
+    const relatedEvents = (sessionEntry?.events || []).filter(e => {
+      const ef = e.data?.filename || e.data?.file || '';
+      return ef && fname && ef.includes(fname.split('/').pop());
+    }).slice(0, 5);
+
+    if (relatedEvents.length > 0) {
+      previewEl.innerHTML = `<div style="font-size:10px;color:#6e7681;margin-bottom:6px">최근 변경 이력</div>` +
+        relatedEvents.map(e => {
+          const ts = new Date(e.timestamp || e.ts || Date.now()).toLocaleTimeString('ko-KR', {hour:'2-digit',minute:'2-digit'});
+          const action = e.type?.includes('save') ? '💾 저장' : e.type?.includes('open') ? '📂 열기' : '📄 접근';
+          return `<div style="display:flex;align-items:center;gap:6px;font-size:11px;padding:3px 0;border-bottom:1px solid #161b22"><span style="color:#6e7681;min-width:40px">${ts}</span><span style="color:#cdd9e5">${action}</span></div>`;
+        }).join('');
+      previewEl.style.display = 'block';
+    } else {
+      // Show related files hint
+      const siblings = satelliteMeshes.filter(s =>
+        s.userData.isFileSat && s.userData.clusterId === data.clusterId && s.userData.filename !== fname
+      ).slice(0, 3);
+      if (siblings.length > 0) {
+        previewEl.innerHTML = `<div style="font-size:10px;color:#6e7681;margin-bottom:6px">연관 파일 (같은 프로젝트)</div>` +
+          siblings.map(s => `<div style="font-size:11px;color:#79c0ff;padding:2px 0">${s.userData.fileLabel || s.userData.filename}</div>`).join('');
+        previewEl.style.display = 'block';
+      } else {
+        previewEl.style.display = 'none';
+      }
+    }
 
   } else if (data.type === 'member') {
     // ── 팀원/직원 디테일 패널 ───────────────────────────────────────────────

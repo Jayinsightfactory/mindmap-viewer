@@ -387,14 +387,15 @@ function openInlineEdit(hit) {
   const input   = document.getElementById('inline-edit-input');
   const label   = document.getElementById('inline-edit-label');
 
-  const nodeKey = _editingNode.memberId || _editingNode.deptId
+  const nodeKey = _editingNode.nodeKey
+                || _editingNode.memberId || _editingNode.deptId
                 || _editingNode.clusterId || _editingNode.sessionId
                 || (_editingNode.intent || _editingNode.label || '').slice(0, 20);
   label.textContent = `✎ 레이블 편집`;
   input.value = _labelAliasMap[nodeKey] || _editingNode.intent || _editingNode.label || '';
 
-  // 위치: 히트 박스 우측
-  overlay.style.left = Math.min(hit.cx + hit.r + 6, innerWidth - 220) + 'px';
+  // 위치: 노드 상단 중앙 근처
+  overlay.style.left = Math.min(hit.cx + 20, innerWidth - 220) + 'px';
   overlay.style.top  = Math.max(hit.cy - 30, 10) + 'px';
   overlay.classList.add('open');
   overlay.dataset.nodeKey = nodeKey;
@@ -417,6 +418,10 @@ function saveInlineEdit() {
     if (cid) {
       const planet = planetMeshes.find(p => p.userData.clusterId === cid || p.userData.sessionId === cid);
       if (planet) planet.userData.intent = newLabel;
+    }
+    // 중앙 태양(core) 편집 시 userData 업데이트
+    if (nodeKey === '__orbit_core__' && typeof _coreMeshRef !== 'undefined' && _coreMeshRef) {
+      _coreMeshRef.userData.intent = newLabel;
     }
     // _nodeAliases 도 저장 (orbit3d-ui.js alias 시스템과 연동)
     if (typeof _nodeAliases !== 'undefined' && _editingNode.label) {

@@ -17,7 +17,7 @@
   <div id="ln-content">
 
     <!-- 프로필 -->
-    <div id="ln-profile-area" onclick="if(typeof _orbitUser!=='undefined' && _orbitUser) openProfileEditModal(); else openLoginModal();" style="cursor:pointer">
+    <div id="ln-profile-area" onclick="handleProfileAreaClick()">
       <div id="ln-avatar-box">?</div>
       <div>
         <div id="ln-username">게스트</div>
@@ -58,6 +58,7 @@
     <button class="ln-item" id="ln-purpose-btn" onclick="togglePurposeTimeline()">⚡ 목적 타임라인</button>
     <button class="ln-item" onclick="openLlmPanel()">🤖 AI 설정</button>
     <button class="ln-item" onclick="openSetupPanel()">⚙️ 설정</button>
+    <button class="ln-item" id="ln-monitor-btn" onclick="toggleMonitor()">📹 AI 모니터</button>
     <button class="ln-item" id="ln-suggest-btn" onclick="toggleSuggestionPanel()">💡 AI 추천</button>
     <button class="ln-item" onclick="toggleMgrPanel()">👔 관리자</button>
     <button class="ln-item" onclick="toggleTaskSidebar()">📋 할 일</button>
@@ -1104,6 +1105,70 @@ function viewZoom(dir) {
   </div>
 </div>
 
+<!-- ═══ 성장 엔진 패널 ═══ -->
+<div id="growth-panel">
+  <div class="gp-header">
+    <span class="gp-title">📈 성장 엔진</span>
+    <button class="gp-close" onclick="toggleGrowthPanel()">✕</button>
+  </div>
+  <div class="gp-body">
+    <div class="gp-level-row">
+      <div class="gp-level-circle" id="gp-level">1</div>
+      <div class="gp-level-info">
+        <div class="gp-level-label">Level <span id="gp-level-num">1</span></div>
+        <div class="gp-xp-bar"><div class="gp-xp-fill" id="gp-xp-fill" style="width:0%"></div></div>
+        <div class="gp-xp-text"><span id="gp-xp">0</span> / <span id="gp-xp-max">100</span> XP</div>
+      </div>
+    </div>
+    <div class="gp-streak-row">
+      <div class="gp-streak-icon">🔥</div>
+      <div class="gp-streak-info">
+        <div class="gp-streak-count"><span id="gp-streak">0</span>일 연속</div>
+        <div class="gp-streak-hint" id="gp-streak-hint">오늘 작업을 시작하세요!</div>
+      </div>
+    </div>
+    <div class="gp-section-label">뱃지</div>
+    <div class="gp-badges" id="gp-badges">
+      <div class="gp-badge locked">🌱 첫 작업</div>
+      <div class="gp-badge locked">🔥 3일 연속</div>
+      <div class="gp-badge locked">⚡ 7일 연속</div>
+      <div class="gp-badge locked">🏆 30일 연속</div>
+      <div class="gp-badge locked">💯 100개 파일</div>
+      <div class="gp-badge locked">🤖 AI 대화 50회</div>
+      <div class="gp-badge locked">👥 팀 시뮬 참여</div>
+      <div class="gp-badge locked">🌟 레벨 10</div>
+    </div>
+    <div class="gp-section-label">최근 활동</div>
+    <div class="gp-history" id="gp-history">
+      <div style="color:#6e7681;font-size:11px;text-align:center;padding:10px">활동 데이터 로딩 중...</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ AI 모니터 피커 + PIP 컨테이너 ═══ -->
+<div id="monitor-picker">
+  <div class="mp-header">
+    <span class="mp-title">📹 AI 에이전트 모니터</span>
+    <div class="mp-modes">
+      <button class="mp-mode-btn active" data-mode="pip" onclick="setMonitorMode('pip')" title="PIP">🖼</button>
+      <button class="mp-mode-btn" data-mode="tile" onclick="setMonitorMode('tile')" title="타일">⊞</button>
+      <button class="mp-mode-btn" data-mode="dock" onclick="setMonitorMode('dock')" title="도킹">▐</button>
+    </div>
+    <button class="mp-close" onclick="toggleMonitor()">✕</button>
+  </div>
+  <div class="mp-agents">
+    <button class="mp-agent-chip" data-agent="claude" onclick="toggleAgentPanel('claude')">🟣 Claude</button>
+    <button class="mp-agent-chip" data-agent="openai" onclick="toggleAgentPanel('openai')">🟢 OpenAI</button>
+    <button class="mp-agent-chip" data-agent="gemini" onclick="toggleAgentPanel('gemini')">🔵 Gemini</button>
+    <button class="mp-agent-chip" data-agent="perplexity" onclick="toggleAgentPanel('perplexity')">🟡 Perplexity</button>
+    <button class="mp-agent-chip" data-agent="grok" onclick="toggleAgentPanel('grok')">⚪ Grok</button>
+    <button class="mp-agent-chip" data-agent="openclaw" onclick="toggleAgentPanel('openclaw')">🔴 OpenClaw</button>
+    <button class="mp-agent-chip" data-agent="cowork" onclick="toggleAgentPanel('cowork')">🟠 Co-Work</button>
+    <button class="mp-agent-chip" data-agent="vscode" onclick="toggleAgentPanel('vscode')">💠 VS Code</button>
+  </div>
+</div>
+<div id="pip-container" class="pip-container mode-pip"></div>
+
 <!-- Orbit AI 동의 모달 -->
 <div id="consent-modal">
   <div class="cm-box">
@@ -1170,5 +1235,6 @@ function viewZoom(dir) {
 <script src="js/orbit3d-loop.js"></script>
 <script src="js/orbit3d-social.js"></script>
 <script src="js/orbit3d-ui.js"></script>
+<script src="js/orbit3d-monitor.js"></script>
 </body>
 </html>

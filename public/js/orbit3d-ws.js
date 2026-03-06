@@ -238,6 +238,8 @@ function connectWS() {
       // 즐겨찾기/메모 변경 → 캐시 새로고침
       if (m.type === 'bookmarkUpdate' && typeof loadBookmarks === 'function') loadBookmarks();
       if (m.type === 'memoUpdate' && typeof loadMemos === 'function') loadMemos();
+      // AI 모니터에 이벤트 라우팅
+      if (typeof routeEventToMonitor === 'function') routeEventToMonitor(m);
     } catch{}
   };
   ws.onclose = () => setTimeout(connectWS, 3000);

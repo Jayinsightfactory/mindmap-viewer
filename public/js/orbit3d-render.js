@@ -2472,7 +2472,7 @@ function focusProject(projName) {
   let cx = 0, cy = 0, cz = 0;
   grp.planetMeshes.forEach(p => { cx += p.position.x; cy += p.position.y; cz += p.position.z; });
   cx /= grp.planetMeshes.length; cy /= grp.planetMeshes.length; cz /= grp.planetMeshes.length;
-  lerpCameraTo(28, cx, cy, cz, 900);
+  lerpCameraTo(20, cx, cy, cz, 900);
 
   // 뒤로가기 버튼 표시
   const btn = document.getElementById('constellation-back-btn');
@@ -3710,7 +3710,8 @@ const ORBIT_FEATURES = [
   { icon:'📡', name:'인재 마켓',   color:'#f0883e', desc:'팀원 프로필·스킬 탐색',                    badge:'인재',    action:()=>{ toggleFeatPanel(); toggleTalentBoard(); } },
   { icon:'📋', name:'할 일',       color:'#6e7681', desc:'팀/개인 작업 목록 관리',                   badge:'할 일',   action:()=>{ toggleFeatPanel(); toggleTaskSidebar(); } },
   { icon:'🤖', name:'AI 모델',     color:'#58a6ff', desc:'Ollama 로컬 모델·API 키 설정',             badge:'LLM',     action:()=>{ toggleFeatPanel(); openLlmPanel(); } },
-  { icon:'📈', name:'성장 엔진',   color:'#79c0ff', desc:'작업 스트릭·레벨업·뱃지 시스템',            badge:'XP',      action:null },
+  { icon:'📈', name:'성장 엔진',   color:'#79c0ff', desc:'작업 스트릭·레벨업·뱃지 시스템',            badge:'XP',      action:()=>{ toggleFeatPanel(); toggleGrowthPanel(); } },
+  { icon:'📹', name:'AI 모니터',  color:'#bc8cff', desc:'멀티 AI 에이전트 실시간 모니터링',           badge:'관제',    action:()=>{ toggleFeatPanel(); toggleMonitor(); } },
 ];
 
 function buildFeatCards() {

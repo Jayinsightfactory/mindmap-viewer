@@ -253,9 +253,6 @@ async function enrichWithOllama(ruleInsights, stats) {
  * @returns {Promise<object[]>}
  */
 async function enrichWithLLM(ruleInsights, stats) {
-  if (process.env.INSIGHT_ENGINE === 'ollama') {
-    return enrichWithOllama(ruleInsights, stats);
-  }
   if (process.env.ANTHROPIC_API_KEY) {
     return enrichWithClaude(ruleInsights, stats);
   }

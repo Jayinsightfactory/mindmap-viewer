@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>Orbit AI — Pricing</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{background:#060a10;color:#e6edf3;font-family:-apple-system,'Segoe UI',sans-serif;min-height:100vh}
+    .pricing-hero{text-align:center;padding:60px 20px 40px}
+    .pricing-hero h1{font-size:36px;font-weight:800;background:linear-gradient(135deg,#58a6ff,#bc8cff);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+    .pricing-hero p{color:#8b949e;font-size:16px;margin-top:12px;max-width:500px;margin-inline:auto}
+    .pricing-toggle{display:flex;justify-content:center;gap:4px;margin-top:24px}
+    .pricing-toggle button{padding:8px 20px;border-radius:20px;border:1px solid #30363d;background:none;color:#8b949e;font-size:13px;cursor:pointer;font-family:inherit;transition:all .15s}
+    .pricing-toggle button.active{background:rgba(88,166,255,.1);border-color:#58a6ff;color:#58a6ff}
+    .pricing-toggle .save-badge{font-size:10px;background:#238636;color:#fff;padding:2px 6px;border-radius:8px;margin-left:4px}
+
+    .pricing-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:20px;max-width:1100px;margin:0 auto;padding:0 20px 60px}
+    .plan-card{background:rgba(13,17,23,.96);border:1px solid #21262d;border-radius:16px;padding:28px 24px;display:flex;flex-direction:column;transition:all .2s;position:relative}
+    .plan-card:hover{border-color:#30363d;transform:translateY(-2px)}
+    .plan-card.popular{border-color:#58a6ff}
+    .plan-badge{position:absolute;top:-10px;right:20px;background:linear-gradient(135deg,#2f81f7,#58a6ff);color:#fff;font-size:10px;font-weight:700;padding:3px 10px;border-radius:10px;letter-spacing:.5px}
+    .plan-name{font-size:20px;font-weight:700;margin-bottom:4px}
+    .plan-desc{font-size:12px;color:#8b949e;margin-bottom:16px}
+    .plan-price{font-size:42px;font-weight:800;margin-bottom:4px}
+    .plan-price .period{font-size:14px;font-weight:400;color:#6e7681}
+    .plan-features{list-style:none;flex:1;margin:20px 0}
+    .plan-features li{font-size:13px;color:#8b949e;padding:5px 0;display:flex;align-items:center;gap:8px}
+    .plan-features li::before{content:'✓';color:#3fb950;font-weight:700;font-size:12px}
+    .plan-cta{width:100%;padding:12px;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;transition:all .15s;border:none}
+    .plan-cta.primary{background:linear-gradient(135deg,#2f81f7,#58a6ff);color:#fff}
+    .plan-cta.primary:hover{transform:translateY(-1px);box-shadow:0 4px 16px rgba(88,166,255,.3)}
+    .plan-cta.secondary{background:none;border:1px solid #30363d;color:#8b949e}
+    .plan-cta.secondary:hover{border-color:#58a6ff;color:#58a6ff}
+
+    .compare-section{max-width:1100px;margin:0 auto;padding:40px 20px 80px}
+    .compare-section h2{text-align:center;font-size:24px;margin-bottom:30px;color:#cdd9e5}
+    .compare-table{width:100%;border-collapse:collapse}
+    .compare-table th,.compare-table td{padding:10px 14px;text-align:left;border-bottom:1px solid #161b22;font-size:13px}
+    .compare-table th{color:#6e7681;font-weight:600;text-transform:uppercase;font-size:11px;letter-spacing:.5px}
+    .compare-table td:first-child{color:#cdd9e5;font-weight:500}
+    .compare-table td{color:#8b949e}
+    .check{color:#3fb950}
+    .cross{color:#6e7681}
+
+    .pricing-footer{text-align:center;padding:20px;color:#6e7681;font-size:12px;border-top:1px solid #161b22}
+    .pricing-footer a{color:#58a6ff;text-decoration:none}
+
+    @media(max-width:700px){
+      .pricing-grid{grid-template-columns:1fr}
+      .pricing-hero h1{font-size:28px}
+    }
+  </style>
+</head>
+<body>
+
+<div class="pricing-hero">
+  <h1>Orbit AI Pricing</h1>
+  <p>AI 작업 관제센터. 개인부터 팀, 기업까지 맞는 플랜을 선택하세요.</p>
+  <div class="pricing-toggle">
+    <button class="active" onclick="setPeriod('monthly',this)">Monthly</button>
+    <button onclick="setPeriod('yearly',this)">Yearly <span class="save-badge">-20%</span></button>
+  </div>
+</div>
+
+<div class="pricing-grid" id="pricing-grid"></div>
+
+<div class="compare-section">
+  <h2>Feature Comparison</h2>
+  <table class="compare-table">
+    <thead>
+      <tr><th>Feature</th><th>Free</th><th>Pro</th><th>Team</th><th>Enterprise</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>3D 마인드맵</td><td class="check">&#10003;</td><td class="check">&#10003;</td><td class="check">&#10003;</td><td class="check">&#10003;</td></tr>
+      <tr><td>세션 히스토리</td><td>5개</td><td>무제한</td><td>무제한</td><td>무제한</td></tr>
+      <tr><td>AI 모니터 (PIP/타일/도킹)</td><td class="cross">-</td><td class="check">&#10003;</td><td class="check">&#10003;</td><td class="check">&#10003;</td></tr>
+      <tr><td>팀 대시보드</td><td class="cross">-</td><td>10명</td><td>무제한</td><td>무제한</td></tr>
+      <tr><td>부서별 관리</td><td class="cross">-</td><td class="cross">-</td><td class="check">&#10003;</td><td class="check">&#10003;</td></tr>
+      <tr><td>AI 인사이트</td><td class="cross">-</td><td class="check">&#10003;</td><td class="check">&#10003;</td><td class="check">&#10003;</td></tr>
+      <tr><td>Shadow AI 감지</td><td class="cross">-</td><td class="check">&#10003;</td><td class="check">&#10003;</td><td class="check">&#10003;</td></tr>
+      <tr><td>성장 엔진 (레벨/뱃지)</td><td class="cross">-</td><td class="cross">-</td><td class="check">&#10003;</td><td class="check">&#10003;</td></tr>
+      <tr><td>PDF 감사 리포트</td><td class="cross">-</td><td class="cross">-</td><td class="check">&#10003;</td><td class="check">&#10003;</td></tr>
+      <tr><td>SSO / SAML</td><td class="cross">-</td><td class="cross">-</td><td class="cross">-</td><td class="check">&#10003;</td></tr>
+      <tr><td>온프레미스 배포</td><td class="cross">-</td><td class="cross">-</td><td class="cross">-</td><td class="check">&#10003;</td></tr>
+      <tr><td>SLA</td><td>커뮤니티</td><td>이메일</td><td>24h</td><td>99.9%</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="pricing-footer">
+  <p>모든 플랜 7일 무료 체험 포함 &middot; <a href="/terms.html">이용약관</a> &middot; <a href="/privacy.html">개인정보처리방침</a></p>
+  <p style="margin-top:8px"><a href="/orbit3d.html">Orbit AI로 돌아가기</a></p>
+</div>
+
+<script>
+let _yearly = false;
+const plans = [
+  { id:'free', name:'Free', price:0, yearlyPrice:0, period:'', desc:'Free plan for individuals', badge:'',
+    features:['개인 작업 추적','기본 3D 마인드맵','5개 세션 히스토리','기본 이펙트 2개','커뮤니티 지원'],
+    cta:'현재 플랜', ctaClass:'secondary' },
+  { id:'pro', name:'Pro', price:19, yearlyPrice:15, period:'/mo', desc:'Pro plan for power users', badge:'POPULAR',
+    features:['무제한 세션 히스토리','팀 대시보드 (10명)','AI 인사이트 분석','Shadow AI 감지','AI 모니터 (PIP/타일/도킹)','모든 이펙트 + 스킨','이메일 지원'],
+    cta:'Start Pro', ctaClass:'primary' },
+  { id:'team', name:'Team', price:49, yearlyPrice:39, period:'/user/mo', desc:'Team plan for collaboration', badge:'',
+    features:['무제한 채널 & 멤버','실시간 팀 협업','부서별 대시보드','관리자 뷰 & 권한','PDF 감사 리포트','성장 엔진 (레벨/뱃지)','우선 지원 (SLA 24h)'],
+    cta:'Start Team', ctaClass:'primary' },
+  { id:'enterprise', name:'Enterprise', price:-1, yearlyPrice:-1, period:'', desc:'For large organizations', badge:'',
+    features:['온프레미스 배포','SSO / SAML 인증','커스텀 AI 모델','전용 인프라 격리','SLA 99.9%','전담 매니저','맞춤 교육 & 온보딩'],
+    cta:'Contact Sales', ctaClass:'secondary' }
+];
+
+function renderPlans() {
+  const grid = document.getElementById('pricing-grid');
+  grid.innerHTML = plans.map(p => {
+    const price = _yearly ? p.yearlyPrice : p.price;
+    const priceStr = price < 0 ? 'Contact Us' : (price === 0 ? '$0' : `$${price}`);
+    return `
+    <div class="plan-card ${p.badge?'popular':''}">
+      ${p.badge?`<div class="plan-badge">${p.badge}</div>`:''}
+      <div class="plan-name">${p.name}</div>
+      <div class="plan-desc">${p.desc}</div>
+      <div class="plan-price">${priceStr} <span class="period">${p.period}</span></div>
+      <ul class="plan-features">${p.features.map(f=>`<li>${f}</li>`).join('')}</ul>
+      <button class="plan-cta ${p.ctaClass}" onclick="selectPlan('${p.id}')">${p.cta}</button>
+    </div>`;
+  }).join('');
+}
+
+function setPeriod(period, btn) {
+  _yearly = period === 'yearly';
+  document.querySelectorAll('.pricing-toggle button').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  renderPlans();
+}
+
+function selectPlan(planId) {
+  if (planId === 'free') return;
+  if (planId === 'enterprise') { window.location.href = 'mailto:contact@orbitai.dev'; return; }
+  window.location.href = `/orbit3d.html?subscribe=${planId}`;
+}
+
+renderPlans();
+</script>
+</body>
+</html>

@@ -1823,12 +1823,13 @@
 
   /* Claude 헤더 상태 배지 */
   #claude-tracking-badge {
-    position:fixed; top:10px; right:14px; z-index:8900;
+    position:fixed; bottom:14px; left:214px; z-index:8900;
     background:rgba(13,17,23,0.85); border:1px solid #21262d; border-radius:20px;
     padding:4px 8px 4px 10px; font-size:11px; font-weight:600; cursor:default;
     display:flex; align-items:center; gap:5px; backdrop-filter:blur(8px);
-    transition:border-color .2s;
+    transition:border-color .2s, left .2s ease;
   }
+  #left-nav.collapsed ~ #claude-tracking-badge { left:58px; }
   #claude-tracking-badge.on  { color:#3fb950; border-color:#238636; }
   #claude-tracking-badge.off { color:#8b949e; }
   /* 배지 안의 설정 버튼 */
@@ -2319,4 +2320,231 @@
     transition:all .15s;
   }
   .ob-btn-install-sm:hover { transform:translateY(-1px); }
+
+  /* ══════════════════════════════════════════════════════════════════════════ */
+  /* AI 모니터 — PIP / 타일 / 도킹                                            */
+  /* ══════════════════════════════════════════════════════════════════════════ */
+
+  /* ── 모니터 피커 오버레이 ──────────────────────── */
+  #monitor-picker {
+    position:fixed; top:60px; left:214px; z-index:9000;
+    background:rgba(10,13,20,0.97); border:1px solid #21262d; border-radius:14px;
+    padding:12px 14px; width:320px; backdrop-filter:blur(16px);
+    box-shadow:0 8px 32px rgba(0,0,0,0.5);
+    display:none; flex-direction:column; gap:10px;
+    transition:left .2s ease;
+  }
+  #left-nav.collapsed ~ #monitor-picker { left:58px; }
+  #monitor-picker.open { display:flex; }
+
+  .mp-header {
+    display:flex; align-items:center; gap:8px;
+  }
+  .mp-title {
+    font-size:13px; font-weight:700; color:#e6edf3; flex:1;
+  }
+  .mp-modes { display:flex; gap:4px; }
+  .mp-mode-btn {
+    width:28px; height:28px; border-radius:7px;
+    background:rgba(30,38,50,0.8); border:1px solid #30363d;
+    color:#8b949e; cursor:pointer; font-size:14px;
+    display:flex; align-items:center; justify-content:center;
+    transition:all .15s;
+  }
+  .mp-mode-btn:hover { border-color:#58a6ff; color:#58a6ff; }
+  .mp-mode-btn.active { border-color:#58a6ff; color:#58a6ff; background:rgba(88,166,255,0.1); }
+  .mp-close {
+    background:none; border:none; color:#6e7681; font-size:16px;
+    cursor:pointer; padding:2px 5px; border-radius:4px;
+  }
+  .mp-close:hover { color:#e6edf3; background:#21262d; }
+
+  .mp-agents {
+    display:flex; flex-wrap:wrap; gap:6px;
+  }
+  .mp-agent-chip {
+    padding:5px 10px; border-radius:20px; font-size:11px; font-weight:600;
+    background:rgba(30,38,50,0.6); border:1px solid #30363d; color:#8b949e;
+    cursor:pointer; transition:all .15s; font-family:inherit;
+  }
+  .mp-agent-chip:hover { border-color:#58a6ff; color:#cdd9e5; }
+  .mp-agent-chip.active { border-color:#58a6ff; color:#58a6ff; background:rgba(88,166,255,0.1); }
+
+  /* ── PIP 컨테이너 ─────────────────────────────── */
+  .pip-container {
+    position:fixed; inset:0; z-index:8800;
+    pointer-events:none; display:none;
+  }
+  .pip-container.open { display:block; }
+  .pip-container.mode-tile.open {
+    display:grid; gap:8px; padding:70px 14px 70px;
+    pointer-events:auto;
+  }
+  .pip-container.mode-dock.open {
+    display:flex; flex-direction:column; gap:6px;
+    position:fixed; right:0; top:60px; width:30%; height:calc(100vh - 120px);
+    padding:8px; overflow-y:auto; pointer-events:auto;
+    background:rgba(6,10,16,0.5); backdrop-filter:blur(8px);
+    border-left:1px solid #21262d;
+  }
+
+  /* ── 모니터 패널 (공통) ───────────────────────── */
+  .monitor-panel {
+    background:rgba(10,13,20,0.96); border:1px solid #30363d40;
+    border-radius:12px; overflow:hidden; pointer-events:auto;
+    box-shadow:0 4px 20px rgba(0,0,0,0.4);
+    backdrop-filter:blur(12px);
+    display:flex; flex-direction:column;
+    transition:height .2s ease, opacity .15s;
+  }
+  .monitor-panel.minimized .mp-body,
+  .monitor-panel.minimized .mp-resize { display:none; }
+  .monitor-panel.minimized { height:auto !important; }
+
+  /* PIP mode: absolute positioned */
+  .mode-pip .monitor-panel { position:fixed; }
+  /* Tile mode: fill grid */
+  .mode-tile .monitor-panel { position:relative; min-height:240px; }
+  /* Dock mode: stacked */
+  .mode-dock .monitor-panel { position:relative; min-height:200px; }
+
+  /* ── 패널 헤더 ────────────────────────────────── */
+  .mp-hdr {
+    display:flex; align-items:center; gap:7px;
+    padding:8px 10px; border-bottom:1px solid #21262d;
+    cursor:grab; user-select:none; flex-shrink:0;
+  }
+  .mp-hdr:active { cursor:grabbing; }
+
+  .mp-led {
+    width:8px; height:8px; border-radius:50%; flex-shrink:0;
+  }
+  .mp-led.green { background:#3fb950; box-shadow:0 0 6px #3fb950; }
+  .mp-led.yellow { background:#f0c000; box-shadow:0 0 6px #f0c000; }
+  .mp-led.gray { background:#6e7681; }
+  .mp-led.red { background:#f85149; box-shadow:0 0 6px #f85149; animation:blink-led 1s infinite; }
+  @keyframes blink-led { 50% { opacity:0.4; } }
+
+  .mp-agent-icon { font-size:14px; }
+  .mp-agent-label { font-size:12px; font-weight:600; color:#e6edf3; flex:1; }
+
+  .mp-hdr-actions { display:flex; gap:3px; }
+  .mp-btn {
+    background:none; border:none; color:#6e7681; cursor:pointer;
+    font-size:12px; padding:2px 5px; border-radius:4px;
+    transition:all .12s;
+  }
+  .mp-btn:hover { color:#e6edf3; background:#21262d; }
+
+  /* ── 패널 바디 ────────────────────────────────── */
+  .mp-body {
+    flex:1; display:flex; flex-direction:column; overflow:hidden;
+  }
+  .mp-cctv {
+    flex:1; padding:8px 10px; overflow-y:auto;
+  }
+  .mp-cctv::-webkit-scrollbar { width:3px; }
+  .mp-cctv::-webkit-scrollbar-thumb { background:#21262d; border-radius:2px; }
+
+  .mp-status-row {
+    margin-bottom:6px;
+  }
+  .mp-status-text {
+    font-size:11px; color:#8b949e; font-weight:500;
+    display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .mp-events { display:flex; flex-direction:column; gap:3px; }
+  .mp-event-empty { font-size:11px; color:#6e7681; text-align:center; padding:10px 0; }
+  .mp-event-item {
+    display:flex; align-items:center; gap:6px;
+    font-size:11px; padding:3px 6px; border-radius:5px;
+    background:rgba(255,255,255,0.02);
+  }
+  .mp-ev-time { color:#6e7681; font-size:10px; flex-shrink:0; min-width:30px; }
+  .mp-ev-text { color:#cdd9e5; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+  /* ── 하단 통계 행 ─────────────────────────────── */
+  .mp-stats-row {
+    display:flex; border-top:1px solid #21262d; flex-shrink:0;
+  }
+  .mp-stat {
+    flex:1; text-align:center; padding:6px 0;
+    border-right:1px solid #161b22;
+  }
+  .mp-stat:last-child { border-right:none; }
+  .mp-stat b { display:block; font-size:13px; color:#e6edf3; font-weight:700; }
+  .mp-stat span { font-size:9px; color:#6e7681; }
+
+  /* ── 리사이즈 핸들 ────────────────────────────── */
+  .mp-resize {
+    position:absolute; bottom:2px; right:4px;
+    font-size:10px; color:#6e7681; cursor:nwse-resize;
+    user-select:none; line-height:1;
+  }
+  .mode-tile .mp-resize, .mode-dock .mp-resize { display:none; }
+
+  /* ── 프로필 영역 클릭 커서 ────────────────────── */
+  #ln-profile-area { cursor:pointer; }
+  #ln-profile-area:hover { background:rgba(255,255,255,0.04); border-radius:8px; }
+
+  /* ── 성장 엔진 패널 ───────────────────────────── */
+  #growth-panel {
+    position:fixed; right:14px; bottom:70px; z-index:9100;
+    width:300px; max-height:500px;
+    background:rgba(10,13,20,0.97); border:1px solid #79c0ff40;
+    border-radius:14px; backdrop-filter:blur(16px);
+    box-shadow:0 8px 32px rgba(121,192,255,0.15);
+    display:none; flex-direction:column; overflow:hidden;
+  }
+  #growth-panel.open { display:flex; }
+
+  .gp-header {
+    display:flex; align-items:center; justify-content:space-between;
+    padding:12px 14px; border-bottom:1px solid #21262d;
+  }
+  .gp-title { font-size:13px; font-weight:700; color:#e6edf3; }
+  .gp-close { background:none; border:none; color:#6e7681; cursor:pointer; font-size:16px; }
+
+  .gp-body { padding:12px 14px; overflow-y:auto; flex:1; }
+  .gp-body::-webkit-scrollbar { width:3px; }
+  .gp-body::-webkit-scrollbar-thumb { background:#21262d; border-radius:2px; }
+
+  .gp-level-row {
+    display:flex; align-items:center; gap:12px; margin-bottom:14px;
+    padding:10px; background:#161b22; border-radius:10px;
+  }
+  .gp-level-circle {
+    width:44px; height:44px; border-radius:50%;
+    background:linear-gradient(135deg,#2f81f7,#bc8cff);
+    display:flex; align-items:center; justify-content:center;
+    font-size:18px; font-weight:800; color:#fff; flex-shrink:0;
+  }
+  .gp-level-info { flex:1; }
+  .gp-level-label { font-size:12px; font-weight:700; color:#e6edf3; margin-bottom:4px; }
+  .gp-xp-bar { height:6px; background:#21262d; border-radius:3px; overflow:hidden; margin-bottom:3px; }
+  .gp-xp-fill { height:6px; background:linear-gradient(90deg,#58a6ff,#bc8cff); border-radius:3px; transition:width .5s; }
+  .gp-xp-text { font-size:10px; color:#6e7681; }
+
+  .gp-streak-row {
+    display:flex; align-items:center; gap:10px; margin-bottom:14px;
+    padding:8px 10px; background:#161b22; border-radius:10px;
+    border:1px solid #ffd70020;
+  }
+  .gp-streak-icon { font-size:24px; }
+  .gp-streak-count { font-size:16px; font-weight:800; color:#ffd700; }
+  .gp-streak-hint { font-size:10px; color:#6e7681; margin-top:2px; }
+
+  .gp-section-label {
+    font-size:10px; color:#6e7681; text-transform:uppercase; letter-spacing:.5px;
+    margin:10px 0 6px; font-weight:600;
+  }
+  .gp-badges { display:flex; flex-wrap:wrap; gap:5px; margin-bottom:10px; }
+  .gp-badge {
+    padding:4px 8px; border-radius:8px; font-size:11px;
+    background:rgba(121,192,255,.1); border:1px solid #79c0ff40; color:#79c0ff;
+  }
+  .gp-badge.locked { opacity:0.4; filter:grayscale(0.8); }
+  .gp-badge.earned { opacity:1; filter:none; border-color:#3fb950; color:#3fb950; background:rgba(63,185,80,.1); }
+
+  .gp-history { display:flex; flex-direction:column; gap:3px; }
 

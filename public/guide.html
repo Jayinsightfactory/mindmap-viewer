@@ -271,7 +271,9 @@ footer a:hover { text-decoration: underline; }
   <div class="nav-links">
     <a class="nav-link" href="#samples">샘플 보기</a>
     <a class="nav-link" href="#zoom">줌 가이드</a>
-    <a class="nav-link" href="#follow">팔로우</a>
+    <a class="nav-link" href="#screens">화면 사용법</a>
+    <a class="nav-link" href="#monitor">AI 모니터</a>
+    <a class="nav-link" href="#plans">결제</a>
     <a class="nav-link" href="#controls">조작법</a>
     <a class="nav-cta" href="/orbit3d.html">🚀 지금 시작</a>
   </div>
@@ -501,6 +503,166 @@ footer a:hover { text-decoration: underline; }
 
 <hr class="divider" />
 
+<!-- ── 화면별 상세 사용법 ─────────────────────────────────────────── -->
+<section id="screens">
+  <div class="section-label">화면별 사용법</div>
+  <h2 class="section-title">각 뷰 모드 상세 가이드</h2>
+  <p class="section-sub">개인, 팀, 부서, 회사 화면의 구체적인 사용법을 알아보세요.</p>
+
+  <div style="display:flex;flex-direction:column;gap:32px">
+
+    <!-- 개인 화면 -->
+    <div class="follow-card" style="border-color:rgba(88,166,255,.3)">
+      <h3 style="font-size:18px;margin-bottom:12px;color:var(--accent)">👤 개인 화면</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;font-size:13px;color:var(--muted)">
+        <div>
+          <strong style="color:var(--text)">별자리 뷰</strong>
+          <p style="margin-top:4px">작업 세션들이 행성으로 표시됩니다. 각 행성은 하나의 프로젝트 또는 작업 세션을 나타냅니다.</p>
+        </div>
+        <div>
+          <strong style="color:var(--text)">프로젝트 클릭 &rarr; 펼침</strong>
+          <p style="margin-top:4px">행성을 클릭하면 해당 프로젝트의 파일 위성들이 펼쳐집니다. 파일 수정 횟수, AI 대화 내역 등을 확인할 수 있습니다.</p>
+        </div>
+        <div>
+          <strong style="color:var(--text)">위성 파일 노드</strong>
+          <p style="margin-top:4px">각 파일은 행성 주위를 도는 위성으로 표시됩니다. 파란색은 읽기, 주황색은 쓰기 작업을 나타냅니다.</p>
+        </div>
+        <div>
+          <strong style="color:var(--text)">실시간 추적</strong>
+          <p style="margin-top:4px">파일 편집, AI 대화, 터미널 명령이 실시간으로 3D 공간에 반영됩니다. 활성 작업에 글로우 효과가 나타납니다.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 팀 화면 -->
+    <div class="follow-card" style="border-color:rgba(63,185,80,.3)">
+      <h3 style="font-size:18px;margin-bottom:12px;color:var(--green)">👥 팀 화면</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;font-size:13px;color:var(--muted)">
+        <div>
+          <strong style="color:var(--text)">팀원 배치</strong>
+          <p style="margin-top:4px">팀원들이 목표 구체를 중심으로 공전합니다. 각 팀원의 작업 진행률이 프로그레스 바로 표시됩니다.</p>
+        </div>
+        <div>
+          <strong style="color:var(--text)">실시간 협업</strong>
+          <p style="margin-top:4px">같은 파일을 동시에 수정 중인 팀원들은 연결선으로 표시되어 협업 관계를 한눈에 파악할 수 있습니다.</p>
+        </div>
+        <div>
+          <strong style="color:var(--text)">DM 채팅</strong>
+          <p style="margin-top:4px">팀원 노드를 클릭하면 정보 패널에서 직접 DM을 보낼 수 있습니다. 별도의 메신저 앱 필요 없이 바로 소통 가능합니다.</p>
+        </div>
+        <div>
+          <strong style="color:var(--text)">충돌 감지</strong>
+          <p style="margin-top:4px">두 팀원이 같은 파일을 동시에 수정하면 빨간색 경고가 표시됩니다. 충돌을 미리 방지할 수 있습니다.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 부서 화면 -->
+    <div class="follow-card" style="border-color:rgba(188,140,255,.3)">
+      <h3 style="font-size:18px;margin-bottom:12px;color:var(--purple)">🏛 부서 화면</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;font-size:13px;color:var(--muted)">
+        <div>
+          <strong style="color:var(--text)">부서별 그룹</strong>
+          <p style="margin-top:4px">각 부서가 하나의 행성계로 표시됩니다. 개발팀, 디자인팀, 기획팀 등이 각각의 궤도에 배치됩니다.</p>
+        </div>
+        <div>
+          <strong style="color:var(--text)">관리자 뷰</strong>
+          <p style="margin-top:4px">관리자는 부서별 진행률, 블로커, 마감일을 한눈에 확인할 수 있습니다. 관리자 패널에서 필터링도 가능합니다.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 회사 화면 -->
+    <div class="follow-card" style="border-color:rgba(57,210,192,.3)">
+      <h3 style="font-size:18px;margin-bottom:12px;color:#39d2c0">🏢 회사 화면</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;font-size:13px;color:var(--muted)">
+        <div>
+          <strong style="color:var(--text)">전사 현황</strong>
+          <p style="margin-top:4px">모든 부서의 행성계를 한 화면에서 조망합니다. 전체 조직의 업무 흐름과 병목을 파악할 수 있습니다.</p>
+        </div>
+        <div>
+          <strong style="color:var(--text)">KPI 대시보드</strong>
+          <p style="margin-top:4px">줌아웃하면 각 부서의 핵심 지표(완료율, 작업 수, 활동 시간)가 요약 칩으로 표시됩니다.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<hr class="divider" />
+
+<!-- ── AI 모니터 사용법 ──────────────────────────────────────────── -->
+<section id="monitor">
+  <div class="section-label">AI 모니터</div>
+  <h2 class="section-title">멀티 AI 관제센터</h2>
+  <p class="section-sub">Claude, GPT, Gemini, Grok 등 여러 AI를 하나의 모니터에서 동시에 관리하세요.</p>
+
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-top:24px">
+    <div class="follow-card" style="text-align:center;border-color:rgba(88,166,255,.3)">
+      <div style="font-size:32px;margin-bottom:8px">🖼</div>
+      <h4 style="font-size:15px;margin-bottom:6px;color:var(--accent)">PIP 모드</h4>
+      <p style="font-size:12px;color:var(--muted)">3D 배경 위에 떠있는 창. 자유롭게 드래그, 리사이즈, 최소화. OBS 멀티소스 느낌.</p>
+    </div>
+    <div class="follow-card" style="text-align:center;border-color:rgba(63,185,80,.3)">
+      <div style="font-size:32px;margin-bottom:8px">⊞</div>
+      <h4 style="font-size:15px;margin-bottom:6px;color:var(--green)">타일 모드</h4>
+      <p style="font-size:12px;color:var(--muted)">화면 분할 그리드. CCTV 관제센터처럼 모든 에이전트를 동시에 모니터링.</p>
+    </div>
+    <div class="follow-card" style="text-align:center;border-color:rgba(188,140,255,.3)">
+      <div style="font-size:32px;margin-bottom:8px">▐</div>
+      <h4 style="font-size:15px;margin-bottom:6px;color:var(--purple)">도킹 모드</h4>
+      <p style="font-size:12px;color:var(--muted)">좌=3D(70%) 우=스택(30%). 심플하고 안정적인 아코디언 토글.</p>
+    </div>
+  </div>
+
+  <div class="zoom-tip" style="margin-top:24px;border-color:rgba(188,140,255,.2);background:rgba(188,140,255,.04)">
+    <span style="font-size:20px">📹</span>
+    <div style="color:var(--muted)">
+      <strong style="color:var(--purple)">시작하기</strong>: 좌측 메뉴 → <strong>📹 AI 모니터</strong> 클릭 → 에이전트 선택 → 레이아웃 모드 선택.
+      각 패널에는 상태 LED, 현재 작업, 최근 이벤트 스트림, 파일/메시지/활동 통계가 표시됩니다.
+    </div>
+  </div>
+</section>
+
+<hr class="divider" />
+
+<!-- ── 결제 플랜 비교 ────────────────────────────────────────────── -->
+<section id="plans">
+  <div class="section-label">구독 플랜</div>
+  <h2 class="section-title">Free vs Pro vs Team</h2>
+  <p class="section-sub">결제 시 사용할 수 있는 추가 기능을 비교해보세요.</p>
+
+  <div style="overflow-x:auto">
+    <table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead>
+        <tr style="border-bottom:2px solid var(--border)">
+          <th style="padding:10px 14px;text-align:left;color:var(--muted)">기능</th>
+          <th style="padding:10px 14px;text-align:center;color:var(--muted)">Free ($0)</th>
+          <th style="padding:10px 14px;text-align:center;color:var(--accent)">Pro ($19/mo)</th>
+          <th style="padding:10px 14px;text-align:center;color:var(--green)">Team ($49/user/mo)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr style="border-bottom:1px solid #161b22"><td style="padding:8px 14px">3D 마인드맵</td><td style="text-align:center;color:var(--green)">&#10003;</td><td style="text-align:center;color:var(--green)">&#10003;</td><td style="text-align:center;color:var(--green)">&#10003;</td></tr>
+        <tr style="border-bottom:1px solid #161b22"><td style="padding:8px 14px">세션 히스토리</td><td style="text-align:center;color:var(--muted)">5개</td><td style="text-align:center;color:var(--green)">무제한</td><td style="text-align:center;color:var(--green)">무제한</td></tr>
+        <tr style="border-bottom:1px solid #161b22"><td style="padding:8px 14px">AI 모니터</td><td style="text-align:center;color:var(--muted)">&mdash;</td><td style="text-align:center;color:var(--green)">&#10003;</td><td style="text-align:center;color:var(--green)">&#10003;</td></tr>
+        <tr style="border-bottom:1px solid #161b22"><td style="padding:8px 14px">팀 대시보드</td><td style="text-align:center;color:var(--muted)">&mdash;</td><td style="text-align:center;color:var(--muted)">10명</td><td style="text-align:center;color:var(--green)">무제한</td></tr>
+        <tr style="border-bottom:1px solid #161b22"><td style="padding:8px 14px">AI 인사이트</td><td style="text-align:center;color:var(--muted)">&mdash;</td><td style="text-align:center;color:var(--green)">&#10003;</td><td style="text-align:center;color:var(--green)">&#10003;</td></tr>
+        <tr style="border-bottom:1px solid #161b22"><td style="padding:8px 14px">Shadow AI 감지</td><td style="text-align:center;color:var(--muted)">&mdash;</td><td style="text-align:center;color:var(--green)">&#10003;</td><td style="text-align:center;color:var(--green)">&#10003;</td></tr>
+        <tr style="border-bottom:1px solid #161b22"><td style="padding:8px 14px">성장 엔진 (레벨/뱃지)</td><td style="text-align:center;color:var(--muted)">&mdash;</td><td style="text-align:center;color:var(--muted)">&mdash;</td><td style="text-align:center;color:var(--green)">&#10003;</td></tr>
+        <tr style="border-bottom:1px solid #161b22"><td style="padding:8px 14px">PDF 리포트</td><td style="text-align:center;color:var(--muted)">&mdash;</td><td style="text-align:center;color:var(--muted)">&mdash;</td><td style="text-align:center;color:var(--green)">&#10003;</td></tr>
+        <tr><td style="padding:8px 14px">지원 수준</td><td style="text-align:center;color:var(--muted)">커뮤니티</td><td style="text-align:center;color:var(--accent)">이메일</td><td style="text-align:center;color:var(--green)">SLA 24h</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div style="text-align:center;margin-top:24px">
+    <a class="btn-primary" href="/pricing.html">전체 가격 보기 &rarr;</a>
+  </div>
+</section>
+
+<hr class="divider" />
+
 <!-- ── FAQ ──────────────────────────────────────────────────────── -->
 <section id="faq">
   <div class="section-label">자주 묻는 질문</div>
@@ -537,6 +699,24 @@ footer a:hover { text-decoration: underline; }
         모바일에서도 사용할 수 있나요?<span>+</span>
       </button>
       <div class="faq-a">현재는 데스크탑 브라우저에 최적화되어 있습니다. 터치 드래그로 기본 조작은 가능하지만, 정밀한 조작을 위해 데스크탑을 권장합니다.</div>
+    </div>
+    <div class="faq-item">
+      <button class="faq-q" onclick="toggleFaq(this)">
+        AI 모니터는 어떤 AI를 지원하나요?<span>+</span>
+      </button>
+      <div class="faq-a">Claude, OpenAI(GPT), Gemini, Perplexity, Grok, OpenClaw, Co-Work, VS Code 총 8개 에이전트를 동시에 모니터링할 수 있습니다. PIP/타일/도킹 3가지 레이아웃 중 선택 가능합니다. (Pro 플랜 이상)</div>
+    </div>
+    <div class="faq-item">
+      <button class="faq-q" onclick="toggleFaq(this)">
+        결제 후 바로 사용할 수 있나요?<span>+</span>
+      </button>
+      <div class="faq-a">네. 결제 완료 즉시 플랜이 업그레이드되며, 모든 Pro/Team 기능을 바로 사용할 수 있습니다. 7일 무료 체험도 제공됩니다.</div>
+    </div>
+    <div class="faq-item">
+      <button class="faq-q" onclick="toggleFaq(this)">
+        성장 엔진이란 무엇인가요?<span>+</span>
+      </button>
+      <div class="faq-a">작업 스트릭, 레벨업, 뱃지 시스템입니다. 매일 작업하면 스트릭이 쌓이고 경험치를 얻어 레벨업합니다. 특정 조건 달성 시 뱃지를 획득합니다. (Team 플랜 이상)</div>
     </div>
   </div>
 </section>

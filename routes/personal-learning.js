@@ -335,6 +335,186 @@ module.exports = function createPersonalLearningRouter({ getDb, insertEvent, bro
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
+  // ── POST /api/personal/media ──────────────────────────────────────────────
+  // 음성/영상 전사 텍스트 수신 → events 저장 → Ollama 분석
+  router.post('/personal/media', (req, res) => {
+    try {
+      const { text, source = 'speech', lang = 'ko-KR', duration = 0 } = req.body;
+      if (!text || text.trim().length < 5) return res.status(400).json({ error: 'text required (min 5 chars)' });
+
+      const event = saveEvent('media.transcript', {
+        text: text.trim(),
+        source,
+        lang,
+        duration,
+        contentPreview: text.trim().slice(0, 100),
+        textLength: text.trim().length,
+      });
+
+      // 비동기 Ollama 분석 (content-analyzer 재사용)
+      const contentAnalyzer = requireSafe(path.join(__dirname, '../src/content-analyzer'));
+      if (contentAnalyzer && event) {
+        setImmediate(async () => {
+          try {
+            const db = getDb();
+            const evRow = db.prepare(`SELECT * FROM events WHERE id = ?`).get(event.id);
+            if (evRow) {
+              const parsed = { ...evRow, data: tryParse(evRow.data_json || evRow.data), type: 'media.transcript' };
+              await contentAnalyzer.analyzeAndStore([parsed], db);
+            }
+          } catch {}
+        });
+      }
+
+      res.json({ ok: true, eventId: event?.id });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── GET /api/personal/guides ──────────────────────────────────────────────
+  // 가이드 허브: 학습+패턴+생산성 교차 분석 가이드
+  router.get('/personal/guides', (req, res) => {
+    try {
+      const db = getDb();
+
+      // 1. 학습 가이드 (learning_guide 타입 suggestions)
+      let learning = [];
+      try {
+        learning = db.prepare(
+          `SELECT id, title, description, evidence, created_at FROM suggestions
+           WHERE type='learning_guide' AND status='pending'
+           ORDER BY priority DESC, created_at DESC LIMIT 5`
+        ).all().map(r => ({ ...r, evidence: tryParse(r.evidence) }));
+      } catch {}
+
+      // 2. 작업 패턴 (반복 파일, 장시간 세션 등)
+      let patterns = [];
+      try {
+        patterns = db.prepare(
+          `SELECT id, title, description, type, created_at FROM suggestions
+           WHERE type IN ('automation','review') AND status='pending'
+           ORDER BY priority DESC, created_at DESC LIMIT 5`
+        ).all();
+      } catch {}
+
+      // 3. 생산성 제안 (앱 전환, 템플릿, 프롬프트 등)
+      let productivity = [];
+      try {
+        productivity = db.prepare(
+          `SELECT id, title, description, type, created_at FROM suggestions
+           WHERE type IN ('shortcut','template','prompt_template') AND status='pending'
+           ORDER BY priority DESC, created_at DESC LIMIT 5`
+        ).all();
+      } catch {}
+
+      // 4. 최근 미디어 인사이트 추가 (learning 없을 때 보강)
+      if (!learning.length) {
+        try {
+          const since = new Date(Date.now() - 72 * 3600_000).toISOString();
+          const mediaCount = db.prepare(
+            `SELECT COUNT(*) as cnt FROM events WHERE type='media.transcript' AND timestamp > ?`
+          ).get(since)?.cnt || 0;
+          if (mediaCount > 0) {
+            learning.push({
+              title: '미디어 학습 데이터 수집 중',
+              description: `최근 ${mediaCount}건의 음성/영상 전사가 분석 대기 중입니다. 더 많은 학습 데이터가 쌓이면 구체적인 가이드가 생성됩니다.`,
+            });
+          }
+        } catch {}
+      }
+
+      res.json({ learning, patterns, productivity });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── GET /api/personal/media/insights ────────────────────────────────────────
+  // media.transcript 이벤트의 content_tags 기반 주제별 요약
+  router.get('/personal/media/insights', (req, res) => {
+    try {
+      const db    = getDb();
+      const hours = parseInt(req.query.hours) || 24;
+      const since = new Date(Date.now() - hours * 3600_000).toISOString();
+
+      // media.transcript 이벤트 ID 목록
+      let mediaEventIds = [];
+      try {
+        mediaEventIds = db.prepare(
+          `SELECT id FROM events WHERE type='media.transcript' AND timestamp > ?`
+        ).all(since).map(r => r.id);
+      } catch {}
+
+      if (!mediaEventIds.length) {
+        return res.json({ insights: [], totalTranscripts: 0, windowHours: hours });
+      }
+
+      // 해당 이벤트들의 content_tags 조회
+      const placeholders = mediaEventIds.map(() => '?').join(',');
+      let tags = [];
+      try {
+        tags = db.prepare(
+          `SELECT * FROM content_tags WHERE event_id IN (${placeholders}) ORDER BY timestamp ASC`
+        ).all(...mediaEventIds);
+      } catch {}
+
+      // 주제별 집계
+      const topicCounts = {};
+      const sentimentCounts = {};
+      for (const t of tags) {
+        topicCounts[t.topic] = (topicCounts[t.topic] || 0) + 1;
+        sentimentCounts[t.sentiment] = (sentimentCounts[t.sentiment] || 0) + 1;
+      }
+
+      const topTopics = Object.entries(topicCounts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .map(([topic, count]) => ({ topic, count }));
+
+      res.json({
+        insights: topTopics,
+        dominantSentiment: Object.entries(sentimentCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || 'neutral',
+        totalTranscripts: mediaEventIds.length,
+        taggedCount: tags.length,
+        windowHours: hours,
+      });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── Palantir-inspired: 작업 스케줄 분석 ─────────────────────────────────────
+  router.get('/personal/work-schedule', (req, res) => {
+    try {
+      const { PersonalLearningEngine } = requireSafe('../src/palantir-integration') || {};
+      if (!PersonalLearningEngine) return res.json({ error: 'module_not_loaded' });
+
+      const db = getDb();
+      const engine = new PersonalLearningEngine(db);
+      const events = db.prepare('SELECT * FROM events ORDER BY timestamp DESC LIMIT 1000').all();
+      const result = engine.analyzeWorkSchedule(events, 'local');
+      res.json(result);
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── Palantir-inspired: 자동 스크립트 제안 ──────────────────────────────────
+  router.get('/personal/auto-scripts', (req, res) => {
+    try {
+      const { AutoScriptGenerator } = requireSafe('../src/palantir-integration') || {};
+      if (!AutoScriptGenerator) return res.json([]);
+
+      const db = getDb();
+      const events = db.prepare('SELECT * FROM events ORDER BY timestamp DESC LIMIT 500').all();
+      const suggestions = AutoScriptGenerator.detectAndSuggest(events);
+      res.json(suggestions);
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   return router;
 };
 

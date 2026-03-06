@@ -810,6 +810,18 @@ app.get('/api/tracker/status', (req, res) => {
     }
 
     if (!userId) {
+      // 로그인 없어도 최근 이벤트 존재 시 로컬 트래커 활성 판단
+      try {
+        const db = require('./src/auth').getDb?.() || getDb?.();
+        if (db) {
+          const recent = db.prepare(
+            `SELECT COUNT(*) as cnt FROM events WHERE timestamp > datetime('now', '-10 minutes')`
+          ).get();
+          if (recent && recent.cnt > 0) {
+            return res.json({ online: true, lastSeen: Date.now(), hostname: 'localhost', eventCount: recent.cnt });
+          }
+        }
+      } catch {}
       return res.json({ online: false, lastSeen: null, hostname: null, eventCount: 0 });
     }
 
@@ -1118,6 +1130,88 @@ app.use('/api', createPurposesRouter({ getAllEvents, getEventsBySession, getSess
 // ─── 개인 학습 에이전트 ───────────────────────────────────────────────────────
 const createPersonalLearningRouter = require('./routes/personal-learning');
 app.use('/api', createPersonalLearningRouter({ getDb: dbModule.getDb, insertEvent, broadcastAll }));
+
+// ─── 데모 시드 (개발/미리보기용) ─────────────────────────────────────────────
+app.post('/api/demo/seed', (req, res) => {
+  try {
+    const { ulid } = require('ulid');
+    const now = Date.now();
+    const sessions = [
+      { id: 'demo-api-dev',     project: 'orbit-backend',   label: 'API 엔드포인트 개발' },
+      { id: 'demo-react-ui',    project: 'orbit-frontend',  label: 'React 컴포넌트 구현' },
+      { id: 'demo-db-optimize', project: 'orbit-backend',   label: 'DB 쿼리 최적화' },
+      { id: 'demo-auth-flow',   project: 'orbit-auth',      label: '인증 플로우 리팩토링' },
+      { id: 'demo-docs-review', project: 'orbit-docs',      label: 'API 문서 작성' },
+    ];
+    const types = [
+      { type: 'file.write',    files: ['server.js','auth.js','routes/api.js','db.js','index.tsx','App.tsx','useAuth.ts'] },
+      { type: 'tool.end',      tools: ['Edit','Write','Read','Bash','Grep'] },
+      { type: 'user.message',  msgs: ['API 응답 형식 변경해줘','로그인 리다이렉트 수정','쿼리 느린 부분 최적화','테스트 추가해줘','타입 에러 수정'] },
+      { type: 'assistant.message', msgs: ['수정 완료했습니다','최적화 적용했습니다','테스트 통과 확인됨'] },
+      { type: 'git.commit',    msgs: ['fix: auth redirect','feat: add pagination','refactor: query optimize'] },
+    ];
+
+    const events = [];
+    for (const sess of sessions) {
+      // session.start
+      events.push({
+        id: ulid(), type: 'session.start', sessionId: sess.id,
+        userId: 'local', channelId: 'default', source: 'demo',
+        timestamp: new Date(now - 3600_000 * (5 - sessions.indexOf(sess))).toISOString(),
+        data: { title: sess.label, projectDir: `/projects/${sess.project}` },
+      });
+      // 세션당 8~15개 이벤트
+      const count = 8 + Math.floor(Math.random() * 8);
+      for (let i = 0; i < count; i++) {
+        const tg = types[Math.floor(Math.random() * types.length)];
+        const ts = new Date(now - 3600_000 * (5 - sessions.indexOf(sess)) + i * 120_000).toISOString();
+        const ev = { id: ulid(), type: tg.type, sessionId: sess.id, userId: 'local', channelId: 'default', source: 'demo', timestamp: ts, data: {} };
+        if (tg.files) {
+          const f = tg.files[Math.floor(Math.random() * tg.files.length)];
+          ev.data = { filePath: `/projects/${sess.project}/${f}`, fileName: f };
+        }
+        if (tg.tools) ev.data.toolName = tg.tools[Math.floor(Math.random() * tg.tools.length)];
+        if (tg.msgs) ev.data.contentPreview = tg.msgs[Math.floor(Math.random() * tg.msgs.length)];
+        events.push(ev);
+      }
+    }
+
+    // media.transcript 데모
+    events.push({
+      id: ulid(), type: 'media.transcript', sessionId: 'personal',
+      userId: 'local', channelId: 'default', source: 'demo',
+      timestamp: new Date(now - 1800_000).toISOString(),
+      data: { text: 'React에서 useReducer는 복잡한 상태 관리에 적합합니다. useState보다 액션 기반으로 상태를 변경하면 예측 가능성이 높아집니다.', source: 'speech', lang: 'ko-KR', duration: 120 },
+    });
+    events.push({
+      id: ulid(), type: 'media.transcript', sessionId: 'personal',
+      userId: 'local', channelId: 'default', source: 'demo',
+      timestamp: new Date(now - 900_000).toISOString(),
+      data: { text: 'SQL 인덱스 설계 시 카디널리티가 높은 컬럼을 앞에 배치하고, 커버링 인덱스를 활용하면 쿼리 성능이 크게 향상됩니다.', source: 'speech', lang: 'ko-KR', duration: 180 },
+    });
+
+    for (const ev of events) {
+      try { insertEvent(ev); } catch {}
+    }
+
+    broadcastAll({ type: 'refresh' });
+    res.json({ ok: true, eventCount: events.length, sessions: sessions.length });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// 데모 데이터 삭제
+app.post('/api/demo/clear', (req, res) => {
+  try {
+    const db = dbModule.getDb();
+    const deleted = db.prepare(`DELETE FROM events WHERE source = 'demo'`).run();
+    broadcastAll({ type: 'refresh' });
+    res.json({ ok: true, deleted: deleted.changes });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
 // ─── 클라우드 동기화 ──────────────────────────────────────────────────────────
 const createSyncRouter = require('./routes/sync');

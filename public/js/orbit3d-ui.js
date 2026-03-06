@@ -1452,6 +1452,28 @@ async function openProfileEditModal() {
 }
 window.openProfileEditModal = openProfileEditModal;
 
+// ── 프로필 영역 클릭 핸들러 (좌측 네비) ────────────
+function handleProfileAreaClick() {
+  if (typeof _orbitUser !== 'undefined' && _orbitUser) {
+    openProfileEditModal();
+  } else {
+    if (typeof openLoginModal === 'function') openLoginModal();
+  }
+}
+window.handleProfileAreaClick = handleProfileAreaClick;
+
+// ── 필터칩 표시 조건 (별자리 뷰에서는 숨김) ────────
+function updateFilterBarVisibility() {
+  const bar = document.getElementById('filter-bar');
+  if (!bar) return;
+  // focusedProject가 있을 때만 표시, 그 외 숨김
+  const hasFocus = typeof _focusedProject !== 'undefined' && _focusedProject;
+  bar.style.display = hasFocus ? 'flex' : 'none';
+}
+window.updateFilterBarVisibility = updateFilterBarVisibility;
+// 초기에는 숨김
+document.addEventListener('DOMContentLoaded', () => updateFilterBarVisibility());
+
 function closeProfileEditModal() {
   document.getElementById('profile-edit-modal').classList.remove('open');
 }
@@ -2911,3 +2933,173 @@ function makeDraggable(el, handle) {
     document.addEventListener('mouseup', onUp);
   });
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 성장 엔진 — 스트릭, 레벨업, 뱃지 시스템
+// ══════════════════════════════════════════════════════════════════════════════
+
+const _GROWTH_KEY = 'orbitGrowthData';
+const _growthData = JSON.parse(localStorage.getItem(_GROWTH_KEY) || 'null') || {
+  xp: 0, level: 1, streak: 0,
+  lastActiveDate: null,
+  badges: [],
+  history: [],
+};
+
+function saveGrowthData() {
+  localStorage.setItem(_GROWTH_KEY, JSON.stringify(_growthData));
+}
+
+// XP 요구량 계산 (레벨 * 100)
+function xpForLevel(lvl) { return lvl * 100; }
+
+// XP 추가
+function addXP(amount, reason) {
+  _growthData.xp += amount;
+  _growthData.history.unshift({ text: `+${amount} XP — ${reason}`, ts: Date.now() });
+  if (_growthData.history.length > 50) _growthData.history.length = 50;
+
+  // 레벨업 체크
+  while (_growthData.xp >= xpForLevel(_growthData.level)) {
+    _growthData.xp -= xpForLevel(_growthData.level);
+    _growthData.level++;
+    _growthData.history.unshift({ text: `🎉 Level ${_growthData.level} 달성!`, ts: Date.now() });
+    checkBadge('level10', _growthData.level >= 10);
+  }
+
+  saveGrowthData();
+  renderGrowthPanel();
+}
+
+// 스트릭 업데이트 (매일 첫 작업 시 호출)
+function updateStreak() {
+  const today = new Date().toDateString();
+  if (_growthData.lastActiveDate === today) return; // 이미 오늘 업데이트됨
+
+  const yesterday = new Date(Date.now() - 86400000).toDateString();
+  if (_growthData.lastActiveDate === yesterday) {
+    _growthData.streak++;
+  } else if (_growthData.lastActiveDate !== today) {
+    _growthData.streak = 1; // 리셋
+  }
+
+  _growthData.lastActiveDate = today;
+  addXP(10, '일일 로그인');
+
+  // 스트릭 뱃지 체크
+  checkBadge('streak3',  _growthData.streak >= 3);
+  checkBadge('streak7',  _growthData.streak >= 7);
+  checkBadge('streak30', _growthData.streak >= 30);
+
+  saveGrowthData();
+  renderGrowthPanel();
+}
+
+// 뱃지 체크 & 부여
+const BADGE_DEFS = [
+  { id:'firstWork',   label:'🌱 첫 작업',     condition:'first_work' },
+  { id:'streak3',     label:'🔥 3일 연속',     condition:'streak3' },
+  { id:'streak7',     label:'⚡ 7일 연속',     condition:'streak7' },
+  { id:'streak30',    label:'🏆 30일 연속',    condition:'streak30' },
+  { id:'files100',    label:'💯 100개 파일',   condition:'files100' },
+  { id:'aiChat50',    label:'🤖 AI 대화 50회', condition:'aiChat50' },
+  { id:'teamSim',     label:'👥 팀 시뮬 참여',  condition:'teamSim' },
+  { id:'level10',     label:'🌟 레벨 10',      condition:'level10' },
+];
+
+function checkBadge(id, condition) {
+  if (!condition) return;
+  if (_growthData.badges.includes(id)) return;
+  _growthData.badges.push(id);
+  _growthData.history.unshift({ text: `🏅 뱃지 획득: ${BADGE_DEFS.find(b => b.id === id)?.label || id}`, ts: Date.now() });
+  saveGrowthData();
+  if (typeof showToast === 'function') showToast(`🏅 뱃지 획득!`, 3000);
+}
+
+// 이벤트 훅: 파일 작업 시 XP
+function onFileEvent(isWrite) {
+  addXP(isWrite ? 5 : 2, isWrite ? '파일 수정' : '파일 읽기');
+  checkBadge('firstWork', true);
+}
+window.onFileEvent = onFileEvent;
+
+// 이벤트 훅: AI 대화 시 XP
+function onAIConversation() {
+  addXP(8, 'AI 대화');
+}
+window.onAIConversation = onAIConversation;
+
+// 이벤트 훅: 팀 시뮬 참여 시
+function onTeamSimJoin() {
+  checkBadge('teamSim', true);
+  addXP(15, '팀 시뮬 참여');
+}
+window.onTeamSimJoin = onTeamSimJoin;
+
+// ─── 성장 패널 렌더링 ────────────────────────────
+function renderGrowthPanel() {
+  const lvEl = document.getElementById('gp-level');
+  const lvnEl = document.getElementById('gp-level-num');
+  const xpEl = document.getElementById('gp-xp');
+  const xpmEl = document.getElementById('gp-xp-max');
+  const xpfEl = document.getElementById('gp-xp-fill');
+  const skEl = document.getElementById('gp-streak');
+  const shEl = document.getElementById('gp-streak-hint');
+  const bdEl = document.getElementById('gp-badges');
+  const hiEl = document.getElementById('gp-history');
+
+  if (lvEl) lvEl.textContent = _growthData.level;
+  if (lvnEl) lvnEl.textContent = _growthData.level;
+  if (xpEl) xpEl.textContent = _growthData.xp;
+  const maxXP = xpForLevel(_growthData.level);
+  if (xpmEl) xpmEl.textContent = maxXP;
+  if (xpfEl) xpfEl.style.width = Math.min(100, Math.round((_growthData.xp / maxXP) * 100)) + '%';
+  if (skEl) skEl.textContent = _growthData.streak;
+  if (shEl) {
+    const today = new Date().toDateString();
+    shEl.textContent = _growthData.lastActiveDate === today ? '오늘 활동 완료!' : '오늘 작업을 시작하세요!';
+  }
+
+  // Badges
+  if (bdEl) {
+    bdEl.innerHTML = BADGE_DEFS.map(b => {
+      const earned = _growthData.badges.includes(b.id);
+      return `<div class="gp-badge ${earned ? 'earned' : 'locked'}">${b.label}</div>`;
+    }).join('');
+  }
+
+  // History
+  if (hiEl) {
+    const items = _growthData.history.slice(0, 10);
+    if (items.length === 0) {
+      hiEl.innerHTML = '<div style="color:#6e7681;font-size:11px;text-align:center;padding:10px">아직 활동이 없습니다</div>';
+    } else {
+      hiEl.innerHTML = items.map(h => {
+        const ago = formatGrowthTimeAgo(h.ts);
+        return `<div style="display:flex;justify-content:space-between;font-size:11px;padding:3px 0;border-bottom:1px solid #161b22"><span style="color:#cdd9e5">${h.text}</span><span style="color:#6e7681;flex-shrink:0;margin-left:8px">${ago}</span></div>`;
+      }).join('');
+    }
+  }
+}
+
+function formatGrowthTimeAgo(ts) {
+  const sec = Math.round((Date.now() - ts) / 1000);
+  if (sec < 60) return '방금';
+  if (sec < 3600) return Math.floor(sec / 60) + '분 전';
+  if (sec < 86400) return Math.floor(sec / 3600) + '시간 전';
+  return Math.floor(sec / 86400) + '일 전';
+}
+
+function toggleGrowthPanel() {
+  const panel = document.getElementById('growth-panel');
+  if (!panel) return;
+  const isOpen = panel.classList.toggle('open');
+  if (isOpen) renderGrowthPanel();
+}
+window.toggleGrowthPanel = toggleGrowthPanel;
+
+// 초기 스트릭 체크
+document.addEventListener('DOMContentLoaded', () => {
+  updateStreak();
+  renderGrowthPanel();
+});
