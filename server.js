@@ -861,10 +861,18 @@ app.get('/api/tracker/status', (req, res) => {
     // 유저의 실제 이벤트 수 (tracker ping과 별개로 DB에 저장된 이벤트)
     let userEventCount = ping?.eventCount || 0;
     try {
+      // 유저별 이벤트 확인
       const stats = getStatsByUser ? getStatsByUser(userId) : null;
       if (stats && stats.eventCount > userEventCount) userEventCount = stats.eventCount;
-      // 이벤트가 1건 이상 있으면 트래커 연결된 것으로 판단
       if (stats && stats.eventCount > 0) isOnline = true;
+      // 유저 이벤트 없어도 전체 이벤트가 있으면 트래커 활성 (local 이벤트 아직 미귀속)
+      if (!isOnline) {
+        const totalStats = getStats ? getStats() : null;
+        if (totalStats && totalStats.eventCount > 0) {
+          isOnline = true;
+          if (totalStats.eventCount > userEventCount) userEventCount = totalStats.eventCount;
+        }
+      }
     } catch {}
     res.json({
       online:     !!isOnline,
