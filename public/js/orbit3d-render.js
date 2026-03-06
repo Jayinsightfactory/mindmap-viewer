@@ -2875,6 +2875,109 @@ function drawCompactProjectView() {
   });
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// 개인 모드 행성 라벨 (오와 열 정렬 상태 유지, 연결선 없음)
+// ═══════════════════════════════════════════════════════════════════════════════
+function _drawPersonalPlanets() {
+  const lod = getLOD();
+  const globalAlpha = lod === 3 ? 0.12 : 1;
+  _lctx.globalAlpha = globalAlpha;
+
+  planetMeshes.forEach(p => {
+    const sc = toScreen(p.position);
+    if (sc.z > 1) return;
+
+    const scale      = screenScale(p.position);
+    const hex        = p.userData.hueHex || '#58a6ff';
+    const evCnt      = p.userData.eventCount || 0;
+    const isHovered  = _hoveredHit?.obj === p;
+    const isSelected = _selectedHit?.obj === p;
+    const glow       = glowIntensity(p.userData.clusterId);
+
+    const pxSize = isSelected ? 20 : isHovered ? 16 : Math.max(9, Math.min(14, scale * 12));
+
+    // 텍스트 추출
+    let fullText = p.userData.intent || '';
+    let text = '';
+    if (fullText) {
+      text = fullText.replace(/^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE00}-\u{FEFF}⚙️🔐🌐🗄🎨🧪🚀🐳📝📐🔧🌿💬]\s*/gu, '').trim();
+      if (/^\[.+?\]\s+/.test(text)) text = text.replace(/^\[.+?\]\s+/, '');
+      if (text.length > 24) text = text.slice(0, 23) + '…';
+    }
+    if (!text && p.userData.msgPreview) text = p.userData.msgPreview.slice(0, 24);
+    if (!text && p.userData.firstMsg) text = p.userData.firstMsg.slice(0, 24);
+    if (!text && p.userData.projectName && p.userData.projectName !== '기타') text = p.userData.projectName.slice(0, 16);
+    if (!text) {
+      const DS = { auth:'인증', api:'API', data:'데이터', ui:'UI', test:'테스트',
+        server:'서버', infra:'인프라', fix:'수정', git:'Git', chat:'대화', general:'작업', docs:'문서', design:'설계' };
+      text = DS[p.userData.domain] || '작업';
+    }
+    if (!text) return;
+
+    _lctx.font = `700 ${pxSize}px -apple-system,'Segoe UI',sans-serif`;
+    _lctx.textAlign = 'center';
+
+    const tw = _lctx.measureText(text).width;
+    const pw = tw + 22;
+    const ph = pxSize + 10;
+    const lx = sc.x - pw / 2;
+    const ly = sc.y - ph / 2;
+
+    if (rectOverlaps(lx - 4, ly - 4, pw + 8, ph + 30)) return;
+    reserveRect(lx - 4, ly - 4, pw + 8, ph + 30);
+
+    // 글로우
+    if (glow > 0) {
+      drawGlow(_lctx, sc.x, sc.y, Math.max(pw, ph) / 2, hex, glow);
+    }
+
+    // 선택 글로우
+    if (isSelected) {
+      _lctx.save();
+      const pulse = 0.6 + 0.4 * Math.sin(Date.now() / 300);
+      _lctx.shadowColor = hex; _lctx.shadowBlur = 16 + pulse * 8;
+      _lctx.strokeStyle = hex; _lctx.lineWidth = 3;
+      _lctx.globalAlpha = globalAlpha * (0.7 + pulse * 0.3);
+      roundRect(_lctx, lx - 3, ly - 3, pw + 6, ph + 6, (ph + 6) / 2);
+      _lctx.stroke(); _lctx.shadowBlur = 0;
+      _lctx.restore();
+      _lctx.globalAlpha = globalAlpha;
+    }
+
+    // 배경 pill
+    const bgAlpha = isSelected ? 0.97 : isHovered ? 0.93 : 0.78;
+    _lctx.fillStyle = isSelected ? 'rgba(31,111,235,0.15)' : `rgba(6,10,16,${bgAlpha})`;
+    roundRect(_lctx, lx, ly, pw, ph, ph / 2); _lctx.fill();
+
+    // 테두리
+    _lctx.strokeStyle = isSelected ? '#58a6ff' : hex;
+    _lctx.lineWidth = isSelected ? 2.5 : isHovered ? 2 : 1;
+    roundRect(_lctx, lx, ly, pw, ph, ph / 2); _lctx.stroke();
+
+    // 텍스트
+    _lctx.fillStyle = isSelected ? '#ffffff' : isHovered ? '#f0f6fc' : '#cdd9e5';
+    _lctx.fillText(text, sc.x, ly + ph * 0.68);
+
+    // 이벤트 수 (선택/호버 시)
+    if (evCnt > 0 && pxSize >= 13) {
+      const sub = Math.max(9, pxSize * 0.5);
+      _lctx.font = `500 ${sub}px -apple-system,sans-serif`;
+      _lctx.fillStyle = hex + '88';
+      _lctx.fillText(`${evCnt}개 작업`, sc.x, ly + ph + sub + 1);
+    }
+
+    // 히트 영역
+    _hitAreas.push({
+      cx: sc.x, cy: sc.y, r: Math.max(pw, ph) / 2 + 4,
+      obj: p,
+      data: { type: 'session', intent: fullText, clusterId: p.userData.clusterId,
+              sessionId: p.userData.sessionId, eventCount: evCnt, hueHex: hex },
+    });
+  });
+
+  _lctx.globalAlpha = 1;
+}
+
 // ─── drawLabels ──────────────────────────────────────────────────────────────
 // ── 텍스트 겹침 방지 ──────────────────────────────────────────────────────
 const _usedRects = [];
@@ -3130,29 +3233,36 @@ function drawLabels() {
     }
   });
 
-  // 행성 위치 보간: 포커스된 카테고리/프로젝트는 확장, 나머지는 컴팩트
+  // 행성 위치 보간: 개인 모드는 항상 컴팩트, 그 외 모드만 확장
   planetMeshes.forEach(p => {
-    const inFocusedCat  = focusedCat && p.userData.macroCat === focusedCat;
-    const inFocusedProj = focusedProj && p.userData.projectName === focusedProj;
-    const inSelectedProj = selectedProj && p.userData.projectName === selectedProj;
-    const targetExpanded = inFocusedCat || inFocusedProj || inSelectedProj;
-    const target = targetExpanded ? p.userData._expandedPos : p.userData._compactPos;
-    if (target) {
-      p.position.lerp(target, 0.08);
+    if (isPersonalMode) {
+      // 개인 모드: 항상 컴팩트 위치 유지 (펼쳐지지 않음)
+      const target = p.userData._compactPos;
+      if (target) p.position.lerp(target, 0.08);
+    } else {
+      const inFocusedCat  = focusedCat && p.userData.macroCat === focusedCat;
+      const inFocusedProj = focusedProj && p.userData.projectName === focusedProj;
+      const inSelectedProj = selectedProj && p.userData.projectName === selectedProj;
+      const targetExpanded = inFocusedCat || inFocusedProj || inSelectedProj;
+      const target = targetExpanded ? p.userData._expandedPos : p.userData._compactPos;
+      if (target) p.position.lerp(target, 0.08);
     }
   });
 
-  // 1단계 컴팩트 뷰: 선택 없고 개인 모드면 3대 카테고리 고정 표시
-  const showCompactView = isPersonalMode && !hasSelection && !focusedProj && !focusedCat;
-
-  if (showCompactView) {
-    drawCompactProjectView();
+  // 개인 모드: 항상 컴팩트 뷰 유지 (연결선/위성/토픽링크 없음)
+  if (isPersonalMode) {
+    drawCompactProjectView();                                                  // 3대 카테고리 카드
+    _drawPersonalPlanets();                                                    // 행성 라벨 (오와 열 정렬)
+    // 선택된 개체가 있으면 트레이 오버레이 추가
+    if (_selectedHit?.obj) {
+      drawInvertedPyramid(_selectedHit.obj, _selectedHit.data);
+    }
     _lctx.globalAlpha = 1;
     return;
   }
 
-  // 토픽 유사도 글로잉 연결선 — 개인 모드에서는 숨김 (깔끔한 화면)
-  if (!isPersonalMode) drawTopicLinks();
+  // 토픽 유사도 글로잉 연결선 (팀/회사 모드 전용)
+  drawTopicLinks();
 
   // ── 0. 중심 태양 히트 영역 ────────────────────────────────────────────────
   if (_coreMeshRef) {
@@ -3376,13 +3486,7 @@ function drawLabels() {
     });
   });
 
-  // ── 역피라미드 뷰 — 선택된 행성에서 아래로 상세 펼침 ─────────────────────
-  if (isPersonalMode && _selectedHit?.obj) {
-    drawInvertedPyramid(_selectedHit.obj, _selectedHit.data);
-  }
-
-  // ── 2. 파일 위성 — 개인 모드에서는 숨김 (트레이에서 파일 표시) ──────────
-  if (isPersonalMode) { _lctx.globalAlpha = 1; return; }
+  // ── 2. 파일 위성 (팀/회사 모드 전용, 개인 모드는 위에서 return) ─────────
   const selectedCluster = _selectedHit?.obj?.userData?.clusterId;
   if (!selectedCluster) { _lctx.globalAlpha = 1; return; }
 
