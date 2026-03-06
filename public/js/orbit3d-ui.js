@@ -865,7 +865,7 @@ async function doEmailLogin() {
     if (typeof _postLoginSync === 'function') _postLoginSync(d.token);
     if (typeof track === 'function') track('auth.login', { provider: 'email' });
     renderLoginState();
-    setTimeout(closeLoginModal, 800);
+    closeLoginModal();
   } catch { showLoginError('서버 연결 오류'); }
 }
 window.doEmailLogin = doEmailLogin;
@@ -889,7 +889,7 @@ async function doRegister() {
     if (typeof _postLoginSync === 'function') _postLoginSync(d.token);         // claim + Drive 동기화
     if (typeof track === 'function') track('auth.register', { provider: 'email' });
     renderLoginState();
-    setTimeout(closeLoginModal, 800);
+    closeLoginModal();
   } catch { showLoginError('서버 연결 오류'); }
 }
 window.doRegister = doRegister;
@@ -937,6 +937,7 @@ window.doLogoutMain = doLogoutMain;
         localStorage.setItem('orbitUser', JSON.stringify(_orbitUser));
         window.history.replaceState({}, '', window.location.pathname);
         renderLoginState();
+        closeLoginModal();
         // ★ 기존 local 이벤트를 내 계정으로 자동 귀속 + 토큰 저장
         _postLoginSync(oauthToken);
       })
@@ -945,6 +946,7 @@ window.doLogoutMain = doLogoutMain;
         localStorage.setItem('orbitUser', JSON.stringify(_orbitUser));
         window.history.replaceState({}, '', window.location.pathname);
         renderLoginState();
+        closeLoginModal();
         _postLoginSync(oauthToken);
       });
     return;
