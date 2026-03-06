@@ -2939,19 +2939,23 @@ function drawInvertedPyramid(planetObj, hitData) {
   const CARD_H   = 32;                                     // 카드 높이
   const GAP      = 6;                                      // 카드 간격
   const LEVEL_GAP = 18;                                    // 레벨 간격
-  const startX   = sc.x;                                   // 행성 중심 X
-  const startY   = sc.y + 28;                              // 행성 아래에서 시작
+  // 사이드바 너비를 고려한 화면 중앙 X 계산
+  const sidebar   = document.getElementById('ln-sidebar');                    // 사이드바 DOM
+  const sidebarW  = (sidebar && sidebar.offsetWidth && sidebar.style.display !== 'none') ? sidebar.offsetWidth : 0;
+  const startX    = (ctx.canvas.width - sidebarW) / 2 + sidebarW;           // 보이는 영역의 정중앙 X
+  const startY    = sc.y + 28;                                               // 행성 아래에서 시작
 
   ctx.save();
 
-  // ── L0→L1 연결선 (행성에서 아래로) ────────────────────────────────────────
+  // ── L0→L1 연결선 (행성에서 화면 중앙으로 내려오는 곡선) ──────────────────
   ctx.strokeStyle = hex;
   ctx.lineWidth   = 1.5;
   ctx.globalAlpha = 0.5;
   ctx.setLineDash([4, 4]);
   ctx.beginPath();
-  ctx.moveTo(sc.x, sc.y + 16);
-  ctx.lineTo(startX, startY + 2);
+  ctx.moveTo(sc.x, sc.y + 16);                                              // 행성 위치에서 시작
+  const midY = (sc.y + 16 + startY + 2) / 2;                                // 중간 Y 지점
+  ctx.quadraticCurveTo(sc.x, midY, startX, startY + 2);                     // 부드러운 곡선으로 중앙에 연결
   ctx.stroke();
   ctx.setLineDash([]);
   ctx.globalAlpha = 1;
