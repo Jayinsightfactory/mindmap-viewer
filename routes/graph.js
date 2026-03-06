@@ -83,8 +83,8 @@ function createRouter(deps) {
   router.get('/graph', (req, res) => {
     const user = getUserFromReq(req);
     if (!user) {
-      const graph = getFullGraph(req.query.session, req.query.channel);
-      return res.json(graph);
+      // 비로그인: 빈 그래프 반환 (프라이버시 보호)
+      return res.json({ nodes: [], edges: [] });
     }
     const graph = user.id === 'local'
       ? getFullGraph(req.query.session, req.query.channel)
@@ -161,7 +161,7 @@ function createRouter(deps) {
    */
   router.get('/sessions', (req, res) => {
     const user = getUserFromReq(req);
-    if (!user) return res.json(getSessions());
+    if (!user) return res.json([]);                                            // 비로그인: 빈 목록
     const sessions = (user.id !== 'local' && getSessionsByUser)
       ? getSessionsByUser(user.id)
       : getSessions();
@@ -421,10 +421,18 @@ function createRouter(deps) {
   // ── 파일 / 통계 / 활동 점수 ────────────────────────────────────────────────
 
   /** GET /api/files → 파일 접근 통계 목록 */
-  router.get('/files', (req, res) => res.json(getFiles()));
+  router.get('/files', (req, res) => {
+    const user = getUserFromReq(req);
+    if (!user) return res.json([]);                                            // 비로그인: 빈 목록
+    res.json(getFiles());
+  });
 
   /** GET /api/stats → 이벤트/세션/파일 수 */
-  router.get('/stats', (req, res) => res.json(getStats()));
+  router.get('/stats', (req, res) => {
+    const user = getUserFromReq(req);
+    if (!user) return res.json({ events: 0, sessions: 0, files: 0 });         // 비로그인: 빈 통계
+    res.json(getStats());
+  });
 
   /**
    * GET /api/activity
@@ -455,7 +463,11 @@ function createRouter(deps) {
    * @deprecated /api/graph 사용 권장
    * @returns {Event[]}
    */
-  router.get('/turns', (req, res) => res.json(getAllEvents()));
+  router.get('/turns', (req, res) => {
+    const user = getUserFromReq(req);
+    if (!user) return res.json([]);                                            // 비로그인: 빈 목록
+    res.json(getAllEvents());
+  });
 
   /**
    * POST /api/rollback/:id

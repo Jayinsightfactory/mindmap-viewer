@@ -860,6 +860,10 @@ async function doEmailLogin() {
     const u = d.user || d;                                                       // auth API 응답 형식 호환 (user 객체 또는 플랫)
     _orbitUser = { id: u.id || d.id, name: u.name || d.name, email: u.email || d.email, avatar: u.avatar || d.avatar || null, plan: u.plan || 'free', token: d.token }; // id·plan 포함
     localStorage.setItem('orbitUser', JSON.stringify(_orbitUser));
+    localStorage.setItem('orbit_token', d.token);                              // 토큰 저장 (API 인증용)
+    // 로컬 이벤트를 본인 계정으로 귀속 + 데이터 새로고침
+    fetch('/api/claim-local-events', { method:'POST', headers:{ 'Authorization':'Bearer '+d.token } }).catch(()=>{});
+    if (typeof loadData === 'function') loadData();                            // 본인 데이터만 다시 로드
     if (typeof track === 'function') track('auth.login', { provider: 'email' });
     renderLoginState();
     setTimeout(closeLoginModal, 800);
@@ -882,6 +886,9 @@ async function doRegister() {
     const ru = d.user || d;                                                      // auth API 응답 형식 호환
     _orbitUser = { id: ru.id || d.id, name: ru.name || name, email, avatar: null, plan: ru.plan || 'free', token: d.token }; // id·plan 포함
     localStorage.setItem('orbitUser', JSON.stringify(_orbitUser));
+    localStorage.setItem('orbit_token', d.token);                              // 토큰 저장 (API 인증용)
+    fetch('/api/claim-local-events', { method:'POST', headers:{ 'Authorization':'Bearer '+d.token } }).catch(()=>{});
+    if (typeof loadData === 'function') loadData();                            // 본인 데이터만 로드
     if (typeof track === 'function') track('auth.register', { provider: 'email' });
     renderLoginState();
     setTimeout(closeLoginModal, 800);
@@ -903,8 +910,10 @@ function doLogoutMain() {
   if (typeof track === 'function') track('auth.logout');
   _orbitUser = null;
   localStorage.removeItem('orbitUser');
+  localStorage.removeItem('orbit_token');                                      // 토큰 제거
   renderLoginState();
   closeLoginModal();
+  if (typeof loadData === 'function') loadData();                              // 빈 화면으로 새로고침
 }
 window.doLogoutMain = doLogoutMain;
 

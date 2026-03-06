@@ -1099,7 +1099,11 @@ async function loadData() {
     const url = currentChannel
       ? `/api/graph?channel=${encodeURIComponent(currentChannel)}`
       : '/api/graph';
-    const res = await fetch(url);
+    // 토큰: _orbitUser → localStorage 순서로 탐색
+    const token = (typeof _orbitUser !== 'undefined' && _orbitUser?.token)
+                  || localStorage.getItem('orbit_token') || '';
+    const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+    const res = await fetch(url, { headers });
     const graph = await res.json();
     layoutPlanetSystem(graph);
     document.getElementById('live-dot').style.background = 'var(--green)';
@@ -1131,7 +1135,9 @@ function loadDemoData() {
 let ws = null;
 function connectWS() {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  ws = new WebSocket(`${proto}//${location.host}`);
+  const tkn = (typeof _orbitUser !== 'undefined' && _orbitUser?.token) || '';
+  const wsUrl = tkn ? `${proto}//${location.host}?token=${encodeURIComponent(tkn)}` : `${proto}//${location.host}`;
+  ws = new WebSocket(wsUrl);
   ws.onopen    = () => console.log('[Orbit] WS 연결');
   ws.onmessage = async (e) => {
     const msg = JSON.parse(e.data);
