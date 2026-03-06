@@ -60,6 +60,10 @@ function createRouter(deps) {
 
   const { classifyPurposes, summarizePurposes, PURPOSE_CATEGORIES } = purposeClassifier;
 
+  // AI 분류기 (ollama-analyzer)
+  let _aiClassifier = null;
+  try { _aiClassifier = require('../src/ollama-analyzer'); } catch {}
+
   // ── 인증 헬퍼 ─────────────────────────────────────────────────────────────
   // 토큰에서 사용자 추출. AUTH_DISABLED=1이면 'local' 반환 (로컬 개발용)
   function getUserFromReq(req) {
@@ -247,13 +251,29 @@ function createRouter(deps) {
       return '⚙️ 작업 중';
     })();
 
+    // AI 분류 결과 (캐시에 있으면 즉시 반환, 없으면 비동기 분류 시작)
+    let aiLabel = null;
+    let aiCat   = null;
+    if (_aiClassifier) {
+      const cached = _aiClassifier.getSessionClassification(id);
+      if (cached) {
+        aiLabel = cached.purposeLabel;
+        aiCat   = cached.macroCat;
+      } else {
+        // 비동기로 분류 시작 (다음 요청 시 캐시됨)
+        _aiClassifier.classifySession(id, events).catch(() => {});
+      }
+    }
+
     res.json({
       sessionId:   id,
       projectDir,
       projectName,
       firstMsg:    firstMsgText,
       topFile,
-      autoTitle,
+      autoTitle:   aiLabel || autoTitle,          // AI 라벨 우선
+      aiLabel,                                     // AI 생성 목적 라벨
+      aiCat,                                       // AI 매크로 카테고리
       eventCount:  events.length,
     });
   });

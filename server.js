@@ -73,7 +73,15 @@ const { verifyToken: _verifyToken } = require('./src/auth');
 
 function getEventsForUser(userId) {                       // userId 기반 이벤트 조회
   if (!userId || userId === 'local' || userId === 'anonymous') return getAllEvents();
-  return getEventsByUser ? getEventsByUser(userId) : getAllEvents().filter(e => e.userId === userId);
+  // 로그인한 사용자: 본인 이벤트 + 본인에게 claim된 local 이벤트만
+  const userEvents = getEventsByUser ? getEventsByUser(userId) : [];
+  // 본인 이벤트가 없고 어드민이면 local 이벤트도 포함 (자기 데이터 claim 전)
+  if (userEvents.length === 0) {
+    const adminEmails = (process.env.ADMIN_EMAILS || 'dlaww@kicda.com').split(',').map(s => s.trim());
+    const isAdmin = adminEmails.includes(userId);
+    if (isAdmin) return getAllEvents();
+  }
+  return userEvents;
 }
 
 function getSessionsForUser(userId) {                     // userId 기반 세션 조회

@@ -506,17 +506,26 @@ async function loadSessionContext(sessionId) {
     if (!r.ok) return null;
     const ctx = await r.json();
     _sessionContextCache[sessionId] = ctx;
-    // 행성 라벨 즉시 업데이트 (의미있는 autoTitle인 경우만)
-    const _isMeaningful = t => t && !/^(세션\s|⚙️\s?작업\s?중|작업\s?중)/.test(t);
+    // 행성 라벨 즉시 업데이트 — AI 라벨 우선, autoTitle 폴백
+    const _isMeaningful = t => t && !/^(세션\s|⚙️\s?작업\s?중|작업\s?중|\[.*\]\s*$)/.test(t);
     const planet = _sessionMap[sessionId]?.planet;
     if (planet) {
-      if (_isMeaningful(ctx.autoTitle)) planet.userData.intent = ctx.autoTitle;
+      // AI 라벨이 있으면 최우선 사용
+      if (ctx.aiLabel && _isMeaningful(ctx.aiLabel)) {
+        planet.userData.intent = ctx.aiLabel;
+      } else if (_isMeaningful(ctx.autoTitle)) {
+        planet.userData.intent = ctx.autoTitle;
+      }
+      // AI 매크로 카테고리 업데이트
+      if (ctx.aiCat && ['dev', 'research', 'ops'].includes(ctx.aiCat)) {
+        planet.userData.macroCat = ctx.aiCat;
+      }
       if (ctx.projectName) {
         const oldProj = planet.userData.projectName;
         const newProj = ctx.projectName;
         if (oldProj !== newProj) {
-          // _projectGroups 재구성
           planet.userData.projectName = newProj;
+          // _projectGroups 재구성
           _projectGroups = {};
           planetMeshes.forEach(p => {
             const proj = p.userData.projectName || '기타';

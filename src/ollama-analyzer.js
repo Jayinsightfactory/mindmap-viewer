@@ -249,7 +249,9 @@ ${lines}
   "summary": "작업 요약 (50자 이내)",
   "skills": ["기술1", "기술2"],
   "suggestion": "다음 추천 작업 (30자 이내)",
-  "type": "code|debug|research|review|meeting"
+  "type": "code|debug|research|review|meeting",
+  "purposeLabel": "프로젝트명 - 구체적 작업목적 (20자 이내, 예: Orbit 플랫폼 - UI 라벨 개선)",
+  "macroCat": "dev|research|ops"
 }`;
 }
 
@@ -300,4 +302,103 @@ function queryOllama(prompt) {
   });
 }
 
-module.exports = { init, addEvent, getLearnedInsights };
+// ── 세션별 AI 분류 캐시 ─────────────────────────────────────
+const _sessionClassifyCache = {};   // sessionId → { purposeLabel, macroCat, goal, ts }
+
+// 세션 이벤트를 AI로 분류 (Haiku 우선 → 룰 기반 폴백)
+async function classifySession(sessionId, events) {
+  // 캐시 확인 (1시간 유효)
+  const cached = _sessionClassifyCache[sessionId];
+  if (cached && Date.now() - cached.ts < 3600000) return cached;
+
+  // 이벤트 요약 생성
+  const userMsgs = events
+    .filter(e => e.type === 'user.message')
+    .map(e => (e.data?.contentPreview || e.data?.content || e.label || '').slice(0, 60))
+    .filter(Boolean)
+    .slice(0, 3);
+
+  const files = {};
+  events.forEach(e => {
+    const f = (e.data?.filePath || e.data?.fileName || '').replace(/\\/g, '/').split('/').pop();
+    if (f && f.length > 2) files[f] = (files[f] || 0) + 1;
+  });
+  const topFiles = Object.entries(files).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([f]) => f);
+
+  // 프로젝트명 추출
+  const startEv = events.find(e => e.type === 'session.start');
+  const pd = startEv?.data?.projectDir || startEv?.data?.cwd || '';
+  const projName = pd ? pd.replace(/\\/g, '/').split('/').filter(Boolean).pop() : '';
+
+  const prompt = `다음 개발 세션의 목적을 분석하세요.
+
+프로젝트: ${projName || '(알 수 없음)'}
+사용자 메시지: ${userMsgs.length ? userMsgs.join(' | ') : '(없음)'}
+편집 파일: ${topFiles.join(', ') || '(없음)'}
+이벤트 수: ${events.length}건
+
+JSON으로만 응답:
+{
+  "purposeLabel": "[프로젝트명] 구체적 작업목적 (20자 이내, 예: [Orbit] UI 라벨 개선)",
+  "macroCat": "dev|research|ops",
+  "goal": "최종 목표 (15자 이내)"
+}`;
+
+  let result = null;
+
+  // Haiku 시도
+  if (process.env.ANTHROPIC_API_KEY) {
+    result = await queryHaiku(prompt);
+  }
+
+  // Ollama 폴백
+  if (!result && await checkOllamaAlive()) {
+    try { result = await queryOllama(prompt); } catch {}
+  }
+
+  // 룰 기반 폴백
+  if (!result) {
+    const mainMsg = userMsgs[0] || topFiles[0] || '작업';
+    // 사용자 메시지에서 핵심 키워드 추출
+    let purpose = mainMsg.slice(0, 20);
+    // 프로젝트명 포함
+    if (projName) purpose = `[${projName}] ${purpose}`;
+    // 매크로 카테고리 룰 기반
+    let cat = 'dev';
+    const allTypes = events.map(e => e.type);
+    const readCnt = allTypes.filter(t => t === 'file.read' || t === 'user.message').length;
+    const writeCnt = allTypes.filter(t => t === 'file.write' || t === 'file.create').length;
+    const opsCnt = allTypes.filter(t => t === 'git.commit' || t === 'terminal.command').length;
+    if (readCnt > writeCnt && readCnt > opsCnt) cat = 'research';
+    if (opsCnt > writeCnt && opsCnt > readCnt) cat = 'ops';
+    result = { purposeLabel: purpose, macroCat: cat, goal: purpose };
+  }
+
+  const entry = {
+    purposeLabel: result.purposeLabel || '작업',
+    macroCat:     result.macroCat || 'dev',
+    goal:         result.goal || '',
+    ts:           Date.now(),
+  };
+  _sessionClassifyCache[sessionId] = entry;
+  return entry;
+}
+
+// 여러 세션 한번에 분류 (프론트에서 호출)
+async function classifySessionsBulk(sessionsData) {
+  const results = {};
+  const promises = sessionsData.map(async ({ sessionId, events }) => {
+    results[sessionId] = await classifySession(sessionId, events);
+  });
+  // 동시 5개씩 처리
+  for (let i = 0; i < promises.length; i += 5) {
+    await Promise.all(promises.slice(i, i + 5));
+  }
+  return results;
+}
+
+function getSessionClassification(sessionId) {
+  return _sessionClassifyCache[sessionId] || null;
+}
+
+module.exports = { init, addEvent, getLearnedInsights, classifySession, classifySessionsBulk, getSessionClassification };

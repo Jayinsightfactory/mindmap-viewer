@@ -1240,22 +1240,22 @@ function buildCoreMesh() {
       float n2 = fbm(pos * 2.0 + vec3(t * 0.5, -t * 0.3, t * 0.1));
       float fire = n1 * 0.6 + n2 * 0.4;
 
-      // 태양 색상 그라데이션 (FBM 기반)
-      vec3 orange = vec3(1.0, 0.5, 0.05);
-      vec3 yellow = vec3(1.0, 0.75, 0.1);
-      vec3 fbmCol = mix(orange, yellow, fire);
+      // 태양 색상 — 밝고 깨끗한 골드/화이트 (마그마 X)
+      vec3 gold  = vec3(1.0, 0.85, 0.4);
+      vec3 white = vec3(1.0, 0.95, 0.85);
+      vec3 fbmCol = mix(gold, white, fire);
 
-      // 텍스처 + FBM 블렌딩 (텍스처 70% + FBM 30%)
-      vec3 col = texCol * 0.7 + fbmCol * 0.3;
+      // 텍스처 + FBM 블렌딩 (텍스처 50% + FBM 50% — 깔끔한 발광)
+      vec3 col = texCol * 0.4 + fbmCol * 0.6;
 
-      // 가장자리 림 라이팅 (카메라 방향 기반 — 뒤에서 봐도 균일)
+      // 가장자리 림 — 부드럽고 밝은 글로우
       vec3 viewDir = normalize(cameraPosition - vWorldPos);
       float rim = 1.0 - max(dot(vNormal, viewDir), 0.0);
-      rim = pow(rim, 2.0);
-      col += vec3(1.0, 0.6, 0.1) * rim * 0.8;
+      rim = pow(rim, 3.0);
+      col += vec3(1.0, 0.9, 0.6) * rim * 0.5;
 
-      // 밝기 + 글로우
-      float brightness = 1.3 + fire * 0.4 + rim * 0.3;
+      // 밝기 — 전체적으로 밝고 균일
+      float brightness = 1.5 + fire * 0.2;
       col *= brightness;
 
       gl_FragColor = vec4(col, 1.0);
@@ -1274,7 +1274,7 @@ function buildCoreMesh() {
   _coreMeshRef.userData.sunUniforms = sunUniforms;
   scene.add(_coreMeshRef);
 
-  // 외곽 글로우 (코로나)
+  // 외곽 글로우 — 아주 미세한 소프트 글로우만 (큰 노란 코로나 제거)
   const coronaMat = new THREE.ShaderMaterial({
     vertexShader: `
       varying vec3 vNormal;
@@ -1286,24 +1286,22 @@ function buildCoreMesh() {
       }
     `,
     fragmentShader: `
-      uniform float uTime;
       varying vec3 vNormal;
       varying vec3 vWorldPos;
       void main() {
         vec3 viewDir = normalize(cameraPosition - vWorldPos);
-        float intensity = pow(0.65 - dot(vNormal, viewDir), 3.0);
-        float pulse = 0.8 + 0.2 * sin(uTime * 2.0);
-        vec3 col = vec3(1.0, 0.6, 0.1) * intensity * pulse * 2.0;
-        gl_FragColor = vec4(col, intensity * 0.7);
+        float intensity = pow(0.55 - dot(vNormal, viewDir), 4.0);
+        vec3 col = vec3(1.0, 0.92, 0.7) * intensity * 1.2;
+        gl_FragColor = vec4(col, intensity * 0.3);
       }
     `,
-    uniforms: { uTime: sunUniforms.uTime },
+    uniforms: {},
     transparent: true,
     side: THREE.BackSide,
     blending: THREE.AdditiveBlending,
     depthWrite: false,
   });
-  _coreGlowRef = new THREE.Mesh(new THREE.SphereGeometry(5.5, 32, 32), coronaMat);
+  _coreGlowRef = new THREE.Mesh(new THREE.SphereGeometry(4.5, 32, 32), coronaMat);
   _coreGlowRef.userData.isCore = true;
   scene.add(_coreGlowRef);
 }
