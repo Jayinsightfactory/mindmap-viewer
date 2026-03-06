@@ -25,27 +25,24 @@ async function loadData() {
     if (typeof updateActiveFiles === 'function') updateActiveFiles();  // 활성 파일 갱신
     document.getElementById('loading').style.display = 'none';
 
-    // 이벤트 없음 → 트래커 상태 확인 후 안내
+    // 이벤트 없음 → 조건부 안내
     if (nodes.length === 0) {
-      // 트래커가 이미 online이면 설치 안내 불필요 (데이터 도착 대기)
-      try {
-        const sr = await _authFetch('/api/tracker/status');
-        const sd = await sr.json();
-        if (sd.online || sd.eventCount > 0) {
-          // 이벤트는 있지만 유저 귀속 안 됨 → 자동 귀속 재시도 후 리로드 (최대 2회)
-          const retries = parseInt(sessionStorage.getItem('orbit_reload_retries') || '0');
-          if (retries < 2) {
-            sessionStorage.setItem('orbit_reload_retries', String(retries + 1));
-            setTimeout(() => location.reload(), 3000);
-            return;
-          }
-          sessionStorage.removeItem('orbit_reload_retries');
-          return; // 3회 시도해도 안 되면 빈 화면 유지 (설치 창 안 띄움)
-        }
-      } catch {}
+      // OAuth 리디렉트 직후면 _postLoginSync가 곧 loadData를 다시 호출하므로 대기
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('oauth_token')) return;
+
+      // 로그인 상태면 트래커 확인 → online이면 안내 스킵
+      if (_getAuthToken()) {
+        try {
+          const sr = await _authFetch('/api/tracker/status');
+          const sd = await sr.json();
+          if (sd.online || sd.eventCount > 0) return; // 트래커 활성 — 데이터 도착 대기
+        } catch {}
+      }
       _showEmptyStateGuide();
     } else {
       _hideEmptyStateGuide();
+      sessionStorage.removeItem('orbit_reload_retries');
     }
   } catch(e) {
     document.getElementById('loading').innerHTML =
