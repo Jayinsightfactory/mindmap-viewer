@@ -1,0 +1,91 @@
+===============================================================================
+  Orbit AI - 작업 요약 (2026-03-06)
+  집에서 이어서 작업하기 위한 가이드
+===============================================================================
+
+## 현재 상태
+- GitHub: https://github.com/dlaww-wq/mindmap-viewer (최신 push 완료)
+- Railway: https://orbit3d-production.up.railway.app (정상 운영중, 7735+ 이벤트)
+- 어드민 계정: dlaww@kicda.com (Google OAuth, userId: MMDFB0XN5580E306A1)
+
+## 집에서 시작하기
+  1. git clone https://github.com/dlaww-wq/mindmap-viewer.git
+     또는 기존 clone이 있으면: git pull origin main
+
+  2. cd mindmap-viewer && npm install
+
+  3. 로컬 실행: npm run dev  (http://localhost:4747)
+
+  4. orbit-config 설정 (홈 디렉토리에):
+     파일: ~/.orbit-config.json
+     내용:
+     {
+       "serverUrl": "https://orbit3d-production.up.railway.app",
+       "token": "orbit_1f9ff8879e95cdeaaf57c550b0b59c825531ef3c7d35ac56",
+       "userId": "MMDFB0XN5580E306A1"
+     }
+
+  5. Railway 데이터 동기화:
+     node bin/sync-to-railway.js --limit=2000
+
+## 오늘 완료한 작업
+
+  1. Google OAuth 팔로우 검색 (ec3a35f)
+     - searchUsers에 provider 필드 추가
+     - 팔로우 UI에 Google "G" 배지 표시
+
+  2. 비로그인 사용자 데이터 격리 (3f42a42)
+     - 비로그인 시 빈 화면 (로그인해야 자기 데이터 볼 수 있음)
+     - getUserFromReq → null 반환 (비로그인)
+
+  3. 프로젝트 단위 노드 클러스터링 (b8f7b22)
+     - 기존 카테고리(dev/research/ops) 기반 배치 → 프로젝트 기반 원형 배치
+     - 각 프로젝트별 고유 색상, 내부 그리드 배치
+
+  4. 유저 토큰 동기화 + 워크스페이스 어드민 (7b37fe0)
+     - save-turn.js와 sync 스크립트에 userId 주입 (.orbit-config.json)
+     - 워크스페이스 CRUD + 멤버 초대/관리/역할 API 완성
+     - /api/admin/issue-token 엔드포인트
+
+  5. 프로젝트별 활성 파일 실시간 표시 (0c2d381) ← 오늘 마지막 작업
+     - 프로젝트 라벨 아래 최근 5분 내 작업 파일 배지 표시
+     - 녹색(읽기)/주황(쓰기) 펄스 애니메이션
+     - 배지 클릭 시 VS Code에서 해당 파일 즉시 열기
+     - 컴팩트 뷰에서도 활성 프로젝트에 녹색 점 표시
+
+## 남은 작업 (TODO)
+
+  1. [우선] 워크스페이스 어드민 UI 페이지
+     - public/admin-workspace.html 구현 필요
+     - 백엔드 API는 routes/workspace.js에 모두 완성됨
+
+  2. [중요] 트래커 설치 스크립트 개선
+     - Windows/Mac 자동 감지, 설치 가이드 UI
+
+  3. [개선] 활성 파일 기능 확장
+     - 프로그램(Excel, 브라우저 등) 열기 지원
+     - 데스크톱 에이전트와 연동 (트래커가 실시간 활성 앱 정보 전송)
+
+  4. [개선] Google Drive 자동 백업
+     - 현재 수동 push → 자동 주기적 백업
+
+## 주요 파일 구조
+  server.js                    - Express + WebSocket 메인 서버
+  src/save-turn.js             - Claude Code 훅 수신기
+  src/db.js                    - SQLite DB 모듈
+  src/auth.js                  - Google OAuth + 로컬 인증
+  routes/graph.js              - 그래프/세션/통계 API
+  routes/workspace.js          - 워크스페이스 관리 API
+  routes/follow.js             - 팔로우 시스템 API
+  bin/sync-to-railway.js       - 로컬→Railway 동기화
+  public/orbit3d.html          - 3D 우주 시각화 메인
+  public/js/orbit3d-scene.js   - 씬 빌드 (프로젝트 클러스터)
+  public/js/orbit3d-render.js  - Canvas2D 오버레이 렌더링
+  public/js/orbit3d-animate.js - 인터랙션/클릭 핸들러
+  public/js/orbit3d-ws.js      - WebSocket 실시간 업데이트
+
+## 환경 정보
+  Node.js, Express, better-sqlite3, Three.js
+  Railway 배포 (자동 GitHub 연동)
+  포트: 4747 (로컬), Railway 자동 할당
+===============================================================================
