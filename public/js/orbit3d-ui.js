@@ -861,9 +861,8 @@ async function doEmailLogin() {
     _orbitUser = { id: u.id || d.id, name: u.name || d.name, email: u.email || d.email, avatar: u.avatar || d.avatar || null, plan: u.plan || 'free', token: d.token }; // id·plan 포함
     localStorage.setItem('orbitUser', JSON.stringify(_orbitUser));
     localStorage.setItem('orbit_token', d.token);                              // 토큰 저장 (API 인증용)
-    // 로컬 이벤트를 본인 계정으로 귀속 + 데이터 새로고침
-    fetch('/api/claim-local-events', { method:'POST', headers:{ 'Authorization':'Bearer '+d.token } }).catch(()=>{});
-    if (typeof loadData === 'function') loadData();                            // 본인 데이터만 다시 로드
+    // claim + Drive 동기화 + 데이터 새로고침 (OAuth 로그인과 동일 흐름)
+    if (typeof _postLoginSync === 'function') _postLoginSync(d.token);
     if (typeof track === 'function') track('auth.login', { provider: 'email' });
     renderLoginState();
     setTimeout(closeLoginModal, 800);
@@ -887,8 +886,7 @@ async function doRegister() {
     _orbitUser = { id: ru.id || d.id, name: ru.name || name, email, avatar: null, plan: ru.plan || 'free', token: d.token }; // id·plan 포함
     localStorage.setItem('orbitUser', JSON.stringify(_orbitUser));
     localStorage.setItem('orbit_token', d.token);                              // 토큰 저장 (API 인증용)
-    fetch('/api/claim-local-events', { method:'POST', headers:{ 'Authorization':'Bearer '+d.token } }).catch(()=>{});
-    if (typeof loadData === 'function') loadData();                            // 본인 데이터만 로드
+    if (typeof _postLoginSync === 'function') _postLoginSync(d.token);         // claim + Drive 동기화
     if (typeof track === 'function') track('auth.register', { provider: 'email' });
     renderLoginState();
     setTimeout(closeLoginModal, 800);

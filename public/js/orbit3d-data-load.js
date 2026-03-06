@@ -70,7 +70,10 @@ async function _postLoginSync(token) {
     // 4) 다른 PC 동기화 확인 (F3)
     _checkSyncFromOtherPC(token);
 
-    // 5) 데이터 새로 로드
+    // 5) 주기적 자동 백업 시작
+    if (typeof _startAutoBackup === 'function') _startAutoBackup();
+
+    // 6) 데이터 새로 로드
     setTimeout(() => loadData(), 500);
   } catch (e) {
     console.warn('[postLoginSync]', e.message);
@@ -424,6 +427,24 @@ async function _importFromDrive(fileId, token) {
     showToast('가져오기 오류: ' + e.message, 'error');
   }
 }
+
+// ─── 주기적 Google Drive 자동 백업 (5분마다) ──────────────────────────────────
+let _autoBackupTimer = null;
+function _startAutoBackup() {
+  if (_autoBackupTimer) return;                                                  // 이미 실행 중
+  _autoBackupTimer = setInterval(() => {
+    const token = _getAuthToken();
+    if (!token) return;                                                          // 비로그인 시 스킵
+    fetch('/api/gdrive/backup', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    }).then(r => r.json()).then(d => {
+      if (d.ok) console.log('[gdrive] 자동 백업:', d.eventCount, '이벤트');
+    }).catch(() => {});
+  }, 5 * 60 * 1000);                                                            // 5분 간격
+}
+// 페이지 로드 시 로그인 상태면 자동 백업 시작
+setTimeout(() => { if (_getAuthToken()) _startAutoBackup(); }, 10000);
 
 // ─── 관리자 맞춤 뷰 ───────────────────────────────────────────────────────────
 
