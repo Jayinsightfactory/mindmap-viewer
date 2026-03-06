@@ -171,7 +171,7 @@ function computeBadgeData(getAllEvents, getSessions, userId) {
 
 // ─── 라우터 팩토리 ────────────────────────────────────────────────────────────
 
-function createBadgeRouter({ getAllEvents, getSessions, optionalAuth } = {}) {
+function createBadgeRouter({ getAllEvents, getSessions, getEventsForUser, getSessionsForUser, resolveUserId, optionalAuth } = {}) {
   const router = express.Router();
 
   // ── SVG 배지 ──────────────────────────────────────────────────────────
@@ -187,7 +187,10 @@ function createBadgeRouter({ getAllEvents, getSessions, optionalAuth } = {}) {
       );
     }
 
-    const data     = computeBadgeData(getAllEvents, getSessions, userId);
+    // 사용자별 이벤트/세션 필터링 (없으면 전체 폴백)
+    const _getEv  = getEventsForUser ? () => getEventsForUser(resolveUserId(req)) : getAllEvents;
+    const _getSes = getSessionsForUser ? () => getSessionsForUser(resolveUserId(req)) : getSessions;
+    const data     = computeBadgeData(_getEv, _getSes, userId);
     const badgeColor = color || '#58a6ff';
 
     let label, value;
@@ -210,7 +213,10 @@ function createBadgeRouter({ getAllEvents, getSessions, optionalAuth } = {}) {
   router.get('/badge/:userId/card', (req, res) => {
     const { userId } = req.params;
     const { color }  = req.query;
-    const data  = computeBadgeData(getAllEvents, getSessions, userId);
+    // 사용자별 이벤트/세션 필터링 (없으면 전체 폴백)
+    const _getEv  = getEventsForUser ? () => getEventsForUser(resolveUserId(req)) : getAllEvents;
+    const _getSes = getSessionsForUser ? () => getSessionsForUser(resolveUserId(req)) : getSessions;
+    const data  = computeBadgeData(_getEv, _getSes, userId);
     const svg   = makeProfileCard({
       username:   userId,
       events:     data.eventCount,
@@ -229,7 +235,10 @@ function createBadgeRouter({ getAllEvents, getSessions, optionalAuth } = {}) {
 
   // ── JSON 데이터 ───────────────────────────────────────────────────────
   router.get('/badge/:userId/json', (req, res) => {
-    const data = computeBadgeData(getAllEvents, getSessions, req.params.userId);
+    // 사용자별 이벤트/세션 필터링 (없으면 전체 폴백)
+    const _getEv  = getEventsForUser ? () => getEventsForUser(resolveUserId(req)) : getAllEvents;
+    const _getSes = getSessionsForUser ? () => getSessionsForUser(resolveUserId(req)) : getSessions;
+    const data = computeBadgeData(_getEv, _getSes, req.params.userId);
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.json({
       ...data,
@@ -246,7 +255,10 @@ function createBadgeRouter({ getAllEvents, getSessions, optionalAuth } = {}) {
 
   // ── shields.io 호환 ───────────────────────────────────────────────────
   router.get('/badge/:userId/shield', (req, res) => {
-    const data = computeBadgeData(getAllEvents, getSessions, req.params.userId);
+    // 사용자별 이벤트/세션 필터링 (없으면 전체 폴백)
+    const _getEv  = getEventsForUser ? () => getEventsForUser(resolveUserId(req)) : getAllEvents;
+    const _getSes = getSessionsForUser ? () => getSessionsForUser(resolveUserId(req)) : getSessions;
+    const data = computeBadgeData(_getEv, _getSes, req.params.userId);
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.json({
       schemaVersion: 1,
@@ -273,7 +285,10 @@ function createBadgeRouter({ getAllEvents, getSessions, optionalAuth } = {}) {
 
   // ── 전체 배지 통계 ────────────────────────────────────────────────────
   router.get('/badge/stats', (req, res) => {
-    const data = computeBadgeData(getAllEvents, getSessions, 'all');
+    // 사용자별 이벤트/세션 필터링 (없으면 전체 폴백)
+    const _getEv  = getEventsForUser ? () => getEventsForUser(resolveUserId(req)) : getAllEvents;
+    const _getSes = getSessionsForUser ? () => getSessionsForUser(resolveUserId(req)) : getSessions;
+    const data = computeBadgeData(_getEv, _getSes, 'all');
     res.json({
       ...data,
       publishedBadges: badgePublishMap.size,

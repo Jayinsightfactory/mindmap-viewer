@@ -98,7 +98,7 @@ function extractCostFromEvent(ev) {
   return { modelId, inputTokens: inTok, outputTokens: outTok, costUsd, isEstimated };
 }
 
-function createCostTrackerRouter({ getAllEvents, getSessions, optionalAuth }) {
+function createCostTrackerRouter({ getAllEvents, getSessions, getEventsForUser, getSessionsForUser, resolveUserId, optionalAuth }) {
   const router = express.Router();
 
   // ── 비용 대시보드 ────────────────────────────────────────────────────────
@@ -106,7 +106,8 @@ function createCostTrackerRouter({ getAllEvents, getSessions, optionalAuth }) {
     try {
       const days    = parseInt(req.query.days) || 30;
       const cutoff  = new Date(Date.now() - days * 86400000).toISOString();
-      const events  = getAllEvents().filter(e => e.timestamp >= cutoff);
+      // 사용자별 이벤트 필터링 (getEventsForUser 없으면 전체 폴백)
+      const events  = (getEventsForUser ? getEventsForUser(resolveUserId(req)) : getAllEvents()).filter(e => e.timestamp >= cutoff);
 
       let totalCost = 0;
       let totalInput = 0;
@@ -181,8 +182,9 @@ function createCostTrackerRouter({ getAllEvents, getSessions, optionalAuth }) {
   router.get('/costs/by-session', optionalAuth, (req, res) => {
     try {
       const limit    = Math.min(parseInt(req.query.limit) || 20, 100);
-      const events   = getAllEvents();
-      const sessions = getSessions ? getSessions() : [];
+      // 사용자별 이벤트/세션 필터링 (없으면 전체 폴백)
+      const events   = getEventsForUser ? getEventsForUser(resolveUserId(req)) : getAllEvents();
+      const sessions = getSessionsForUser ? getSessionsForUser(resolveUserId(req)) : (getSessions ? getSessions() : []);
 
       const sessionCosts = {};
       for (const ev of events) {
@@ -221,7 +223,8 @@ function createCostTrackerRouter({ getAllEvents, getSessions, optionalAuth }) {
   // ── 도구별 비용 ──────────────────────────────────────────────────────────
   router.get('/costs/by-tool', optionalAuth, (req, res) => {
     try {
-      const events = getAllEvents();
+      // 사용자별 이벤트 필터링 (없으면 전체 폴백)
+      const events = getEventsForUser ? getEventsForUser(resolveUserId(req)) : getAllEvents();
       const toolCosts = {};
 
       for (const ev of events) {
@@ -252,7 +255,8 @@ function createCostTrackerRouter({ getAllEvents, getSessions, optionalAuth }) {
     try {
       const days   = parseInt(req.query.days) || 30;
       const cutoff = new Date(Date.now() - days * 86400000).toISOString();
-      const events = getAllEvents().filter(e => e.timestamp >= cutoff);
+      // 사용자별 이벤트 필터링 (없으면 전체 폴백)
+      const events = (getEventsForUser ? getEventsForUser(resolveUserId(req)) : getAllEvents()).filter(e => e.timestamp >= cutoff);
 
       const daily = {};
       for (const ev of events) {
@@ -309,7 +313,8 @@ function createCostTrackerRouter({ getAllEvents, getSessions, optionalAuth }) {
   router.get('/costs/estimate', optionalAuth, (req, res) => {
     try {
       const sessionId = req.query.sessionId;
-      const events    = getAllEvents().filter(e => !sessionId || (e.sessionId || e.session_id) === sessionId);
+      // 사용자별 이벤트 필터링 (없으면 전체 폴백)
+      const events    = (getEventsForUser ? getEventsForUser(resolveUserId(req)) : getAllEvents()).filter(e => !sessionId || (e.sessionId || e.session_id) === sessionId);
       const today     = new Date().toISOString().slice(0, 10);
       const todayEvs  = events.filter(e => e.timestamp?.slice(0, 10) === today);
 

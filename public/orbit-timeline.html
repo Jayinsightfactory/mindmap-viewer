@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>Orbit AI - 목적 타임라인</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { background:#0a0e17; color:#c9d1d9; font-family:'Segoe UI',sans-serif; }
+    #header { padding:20px 30px; border-bottom:1px solid #21262d; display:flex; align-items:center; gap:16px; }
+    #header h1 { font-size:20px; color:#58a6ff; }
+    #header a { color:#8b949e; text-decoration:none; font-size:14px; }
+    #header a:hover { color:#58a6ff; }
+    #timeline { padding:20px 30px; max-width:900px; margin:0 auto; }
+    .day-group { margin-bottom:32px; }
+    .day-label { font-size:14px; color:#8b949e; margin-bottom:12px; padding-bottom:6px; border-bottom:1px solid #21262d; }
+    .event-card { background:#161b22; border:1px solid #21262d; border-radius:8px; padding:14px 18px; margin-bottom:8px; display:flex; gap:14px; align-items:flex-start; transition:border-color .2s; }
+    .event-card:hover { border-color:#58a6ff; }
+    .ev-time { color:#8b949e; font-size:12px; min-width:50px; padding-top:2px; }
+    .ev-icon { font-size:18px; min-width:28px; text-align:center; }
+    .ev-body { flex:1; }
+    .ev-type { font-size:12px; color:#58a6ff; margin-bottom:2px; }
+    .ev-content { font-size:14px; color:#c9d1d9; word-break:break-all; }
+    .ev-purpose { display:inline-block; font-size:11px; padding:2px 8px; border-radius:10px; margin-top:4px; }
+    .purpose-build { background:#1f3a1f; color:#3fb950; }
+    .purpose-debug { background:#3b1f1f; color:#f85149; }
+    .purpose-explore { background:#1f2d3b; color:#58a6ff; }
+    .purpose-refactor { background:#2d2b1f; color:#d29922; }
+    .purpose-test { background:#1f2b2d; color:#39d0d8; }
+    #loading { text-align:center; padding:60px; color:#8b949e; }
+    #error { text-align:center; padding:60px; color:#f85149; display:none; }
+  </style>
+</head>
+<body>
+
+<div id="header">
+  <h1>Orbit AI - 목적 타임라인</h1>
+  <a href="/orbit3d.html">3D 뷰로 돌아가기</a>
+</div>
+
+<div id="timeline">
+  <div id="loading">타임라인 불러오는 중...</div>
+  <div id="error">데이터를 불러올 수 없습니다.</div>
+</div>
+
+<script>
+const TYPE_ICONS = {                                       // 이벤트 타입별 아이콘
+  'tool.start':'wrench', 'tool.end':'check', 'tool.error':'x',
+  'assistant.message':'comment', 'user.message':'user',
+  'session.start':'play', 'session.end':'stop',
+};
+const PURPOSE_CLASS = { build:'purpose-build', debug:'purpose-debug', explore:'purpose-explore', refactor:'purpose-refactor', test:'purpose-test' };
+
+async function load() {
+  try {
+    const token = localStorage.getItem('orbit_token') || '';  // 로그인 토큰
+    const headers = token ? { Authorization: token } : {};
+    const res = await fetch('/api/purposes/timeline', { headers });
+    if (!res.ok) throw new Error(res.status);
+    const data = await res.json();
+    render(data.timeline || data);
+  } catch (e) {
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('error').style.display = 'block';
+    document.getElementById('error').textContent = '데이터 로드 실패: ' + e.message;
+  }
+}
+
+function render(events) {                                   // 타임라인 렌더링
+  document.getElementById('loading').style.display = 'none';
+  const container = document.getElementById('timeline');
+  if (!events || events.length === 0) {
+    container.innerHTML = '<div style="text-align:center;padding:60px;color:#8b949e">아직 이벤트가 없습니다.</div>';
+    return;
+  }
+
+  // 날짜별 그룹화
+  const groups = {};
+  for (const ev of events) {
+    const day = (ev.timestamp || ev.ts || '').slice(0, 10);
+    if (!groups[day]) groups[day] = [];
+    groups[day].push(ev);
+  }
+
+  let html = '';
+  for (const [day, evs] of Object.entries(groups).sort((a,b) => b[0].localeCompare(a[0]))) {
+    html += '<div class="day-group">';
+    html += `<div class="day-label">${day}</div>`;
+    for (const ev of evs.slice(0, 200)) {
+      const time = (ev.timestamp || ev.ts || '').slice(11, 16);
+      const type = ev.type || '';
+      const icon = type.includes('error') ? 'X' : type.includes('tool') ? 'T' : type.includes('session') ? 'S' : 'E';
+      const preview = ev.data?.contentPreview || ev.data?.filePath || ev.data?.content?.slice(0, 120) || type;
+      const purpose = ev.purpose || '';
+      html += `<div class="event-card">
+        <div class="ev-time">${time}</div>
+        <div class="ev-icon">${icon}</div>
+        <div class="ev-body">
+          <div class="ev-type">${type}</div>
+          <div class="ev-content">${escapeHtml(preview)}</div>
+          ${purpose ? `<span class="ev-purpose ${PURPOSE_CLASS[purpose] || ''}">${purpose}</span>` : ''}
+        </div>
+      </div>`;
+    }
+    html += '</div>';
+  }
+  container.innerHTML = html;
+}
+
+function escapeHtml(s) {                                    // XSS 방지
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+load();
+</script>
+</body>
+</html>

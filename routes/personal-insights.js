@@ -16,7 +16,7 @@
 
 const express = require('express');
 
-function createPersonalInsightsRouter({ getAllEvents, getStats, getSessions, authMiddleware, optionalAuth, getInsights }) {
+function createPersonalInsightsRouter({ getAllEvents, getStats, getSessions, getEventsForUser, getSessionsForUser, resolveUserId, authMiddleware, optionalAuth, getInsights }) {
   const router = express.Router();
 
   // ── 개인 인사이트 목록 ───────────────────────────────────────────────────
@@ -29,8 +29,8 @@ function createPersonalInsightsRouter({ getAllEvents, getStats, getSessions, aut
       // 사용자 필터 (user_id 파라미터 또는 인증 토큰)
       const userId = req.user?.id || req.query.userId || 'local';
 
-      // 인사이트는 전체 이벤트 기반 — 사용자별 관련 이벤트 비율로 스코어 조정
-      const events = getAllEvents();
+      // 사용자별 이벤트 필터링 (없으면 전체 폴백)
+      const events = getEventsForUser ? getEventsForUser(resolveUserId(req)) : getAllEvents();
       const userEvents = events.filter(e => (e.userId || e.user_id || 'local') === userId);
       const userRatio = events.length > 0 ? userEvents.length / events.length : 1;
 
@@ -60,7 +60,8 @@ function createPersonalInsightsRouter({ getAllEvents, getStats, getSessions, aut
   // ── AI 절약 시간 추정 ────────────────────────────────────────────────────
   router.get('/me/ai-savings', optionalAuth, (req, res) => {
     try {
-      const events   = getAllEvents();
+      // 사용자별 이벤트 필터링 (없으면 전체 폴백)
+      const events   = getEventsForUser ? getEventsForUser(resolveUserId(req)) : getAllEvents();
       const userId   = req.user?.id || req.query.userId || 'local';
       const myEvents = events.filter(e => (e.userId || e.user_id || 'local') === userId);
 
@@ -116,7 +117,8 @@ function createPersonalInsightsRouter({ getAllEvents, getStats, getSessions, aut
   // ── 기술 성장 추적 ───────────────────────────────────────────────────────
   router.get('/me/skill-growth', optionalAuth, (req, res) => {
     try {
-      const events = getAllEvents();
+      // 사용자별 이벤트 필터링 (없으면 전체 폴백)
+      const events = getEventsForUser ? getEventsForUser(resolveUserId(req)) : getAllEvents();
       const userId = req.user?.id || req.query.userId || 'local';
       const days   = parseInt(req.query.days) || 30;
       const cutoff = new Date(Date.now() - days * 86400000).toISOString();
@@ -210,7 +212,8 @@ function createPersonalInsightsRouter({ getAllEvents, getStats, getSessions, aut
   // ── 팀 익명 집계 (최소 5인 이상) ────────────────────────────────────────
   router.get('/team/aggregate', optionalAuth, (req, res) => {
     try {
-      const events  = getAllEvents();
+      // 사용자별 이벤트 필터링 (없으면 전체 폴백)
+      const events  = getEventsForUser ? getEventsForUser(resolveUserId(req)) : getAllEvents();
       const stats   = getStats();
 
       // 동의한 사용자 수 파악
@@ -276,7 +279,8 @@ function createPersonalInsightsRouter({ getAllEvents, getStats, getSessions, aut
   // ── 개인 주간 리포트 ─────────────────────────────────────────────────────
   router.get('/me/weekly-report', optionalAuth, (req, res) => {
     try {
-      const events  = getAllEvents();
+      // 사용자별 이벤트 필터링 (없으면 전체 폴백)
+      const events  = getEventsForUser ? getEventsForUser(resolveUserId(req)) : getAllEvents();
       const userId  = req.user?.id || req.query.userId || 'local';
       const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString();
       const dayAgo  = new Date(Date.now() - 1 * 86400000).toISOString();

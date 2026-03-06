@@ -122,7 +122,7 @@ function getRank(allStats, userId) {
 
 // ─── 라우터 팩토리 ────────────────────────────────────────────────────────────
 
-function createLeaderboardRouter({ getAllEvents, getSessions, optionalAuth } = {}) {
+function createLeaderboardRouter({ getAllEvents, getSessions, getEventsForUser, getSessionsForUser, resolveUserId, optionalAuth } = {}) {
   const router = express.Router();
   const noAuth = (req, res, next) => next();
   const auth   = optionalAuth || noAuth;
@@ -130,7 +130,8 @@ function createLeaderboardRouter({ getAllEvents, getSessions, optionalAuth } = {
   // ── 전체 랭킹 ─────────────────────────────────────────────────────────
   router.get('/leaderboard', (req, res) => {
     const { limit = 20, period } = req.query;
-    let events = getAllEvents ? getAllEvents() : [];
+    // 사용자별 이벤트 필터링 (없으면 전체 폴백)
+    let events = getEventsForUser ? getEventsForUser(resolveUserId(req)) : (getAllEvents ? getAllEvents() : []);
 
     // 기간 필터
     if (period === 'week')  events = events.filter(e => e.timestamp >= new Date(Date.now() - 7  * 86400000).toISOString());
@@ -158,7 +159,8 @@ function createLeaderboardRouter({ getAllEvents, getSessions, optionalAuth } = {
   // ── 내 순위 ───────────────────────────────────────────────────────────
   router.get('/leaderboard/me', auth, (req, res) => {
     const userId   = req.user?.id || 'local';
-    const events   = getAllEvents ? getAllEvents() : [];
+    // 사용자별 이벤트 필터링 (없으면 전체 폴백)
+    const events   = getEventsForUser ? getEventsForUser(resolveUserId(req)) : (getAllEvents ? getAllEvents() : []);
     const allStats = computeAllUserStats(events);
     const myStats  = allStats.find(s => s.userId === userId);
 
@@ -187,7 +189,8 @@ function createLeaderboardRouter({ getAllEvents, getSessions, optionalAuth } = {
   router.get('/leaderboard/weekly', (req, res) => {
     const { limit = 10 } = req.query;
     const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString();
-    const events  = (getAllEvents ? getAllEvents() : []).filter(e => e.timestamp >= weekAgo);
+    // 사용자별 이벤트 필터링 (없으면 전체 폴백)
+    const events  = (getEventsForUser ? getEventsForUser(resolveUserId(req)) : (getAllEvents ? getAllEvents() : [])).filter(e => e.timestamp >= weekAgo);
 
     const allStats = computeAllUserStats(events);
     const weekly   = allStats.slice(0, Math.min(parseInt(limit) || 10, 50)).map((s, i) => ({
@@ -201,7 +204,8 @@ function createLeaderboardRouter({ getAllEvents, getSessions, optionalAuth } = {
   // ── 도구별 사용 랭킹 ──────────────────────────────────────────────────
   router.get('/leaderboard/tools', (req, res) => {
     const { limit = 15 } = req.query;
-    const events = getAllEvents ? getAllEvents() : [];
+    // 사용자별 이벤트 필터링 (없으면 전체 폴백)
+    const events = getEventsForUser ? getEventsForUser(resolveUserId(req)) : (getAllEvents ? getAllEvents() : []);
     const toolCounts = {};
 
     for (const ev of events) {
@@ -223,7 +227,8 @@ function createLeaderboardRouter({ getAllEvents, getSessions, optionalAuth } = {
 
   // ── 연속 사용일 랭킹 ──────────────────────────────────────────────────
   router.get('/leaderboard/streaks', (req, res) => {
-    const events   = getAllEvents ? getAllEvents() : [];
+    // 사용자별 이벤트 필터링 (없으면 전체 폴백)
+    const events   = getEventsForUser ? getEventsForUser(resolveUserId(req)) : (getAllEvents ? getAllEvents() : []);
     const allStats = computeAllUserStats(events);
     const streaks  = allStats
       .filter(s => s.streak > 0)
@@ -244,7 +249,8 @@ function createLeaderboardRouter({ getAllEvents, getSessions, optionalAuth } = {
 
   // ── 사용자 업적 ───────────────────────────────────────────────────────
   router.get('/leaderboard/achievements/:userId', (req, res) => {
-    const events = getAllEvents ? getAllEvents() : [];
+    // 사용자별 이벤트 필터링 (없으면 전체 폴백)
+    const events = getEventsForUser ? getEventsForUser(resolveUserId(req)) : (getAllEvents ? getAllEvents() : []);
     const stats  = computeUserStats(events, req.params.userId);
     const earned = getAchievements(stats);
     const locked = ACHIEVEMENTS

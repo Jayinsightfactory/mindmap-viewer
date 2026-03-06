@@ -51,6 +51,8 @@ let _lastMouseEvent = { clientX:0, clientY:0 };
 let _hoveredHit     = null;  // { cx, cy, r, data, obj }
 let _selectedHit    = null;
 let _editingNode    = null;  // 현재 인라인 편집 중인 노드
+let _mouseDownPos   = null;  // 클릭 시작 위치 (드래그 감지용)
+const DRAG_THRESHOLD = 6;    // 이 이상 움직이면 드래그로 판정 (px)
 
 // 편집 아이콘 요소 (동적으로 위치 변경)
 const _editIconEl = document.createElement('div');
@@ -72,7 +74,23 @@ renderer.domElement.addEventListener('mousemove', e => {
   _lastMouseEvent = e;
 });
 
+// 마우스다운 위치 기록 — 드래그 판별용
+renderer.domElement.addEventListener('mousedown', e => {
+  _mouseDownPos = { x: e.clientX, y: e.clientY };
+});
+
 renderer.domElement.addEventListener('click', e => {
+  // ── 드래그 감지: 마우스다운 위치에서 많이 움직였으면 클릭 무시 ─────────
+  if (_mouseDownPos) {
+    const dx = e.clientX - _mouseDownPos.x;
+    const dy = e.clientY - _mouseDownPos.y;
+    if (Math.sqrt(dx * dx + dy * dy) > DRAG_THRESHOLD) {
+      _mouseDownPos = null;
+      return; // 드래그였으므로 노드 선택 안 함
+    }
+  }
+  _mouseDownPos = null;
+
   const hit = hitTest(e.clientX, e.clientY);
   if (hit) {
     _selectedHit = hit;

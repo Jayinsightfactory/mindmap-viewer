@@ -156,7 +156,13 @@ function _cleanupLiveBranches() {
 
 // ─────────────────────────────────────────────────────────────────────────────
 function connectWS() {
-  const ws = new WebSocket(`ws://${location.host}`);
+  // 로그인 토큰이 있으면 WS URL에 포함 → 서버에서 사용자별 데이터 격리
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const token = localStorage.getItem('orbit_token') || '';
+  const wsUrl = token
+    ? `${proto}//${location.host}?token=${encodeURIComponent(token)}`
+    : `${proto}//${location.host}`;
+  const ws = new WebSocket(wsUrl);
   ws.onmessage = ev => {
     try {
       const m = JSON.parse(ev.data);

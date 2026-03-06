@@ -67,6 +67,24 @@ const {
   touchTrackerPing, getTrackerPing,
 } = dbModule;
 
+// ─── 사용자별 데이터 격리 헬퍼 ──────────────────────────────────────────────
+// 로그인 유저 → 본인 이벤트만, 비로그인/로컬 → 전체
+const { verifyToken: _verifyToken } = require('./src/auth');
+
+function getEventsForUser(userId) {                       // userId 기반 이벤트 조회
+  if (!userId || userId === 'local' || userId === 'anonymous') return getAllEvents();
+  return getEventsByUser ? getEventsByUser(userId) : getAllEvents().filter(e => e.userId === userId);
+}
+
+function getSessionsForUser(userId) {                     // userId 기반 세션 조회
+  if (!userId || userId === 'local' || userId === 'anonymous') return getSessions();
+  return getSessionsByUser ? getSessionsByUser(userId) : getSessions();
+}
+
+function resolveUserId(req) {                             // req에서 userId 추출
+  return req?.user?.id || 'local';
+}
+
 const { buildGraph, computeActivityScores, applyActivityVisualization, suggestLabel } = require('./src/graph-engine');
 const { annotateEventsWithPurpose, classifyPurposes, summarizePurposes, PURPOSE_CATEGORIES } = require('./src/purpose-classifier');
 const { createAnnotationEvent } = require('./src/event-normalizer');
@@ -357,15 +375,23 @@ function getChannelMembers(channelId) {
 }
 
 // ─── WebSocket 서버 ──────────────────────────────────────────────────────────
-wss.on('connection', (ws) => {
-  console.log('[WS] 클라이언트 연결됨');
+wss.on('connection', (ws, req) => {
+  // ── WS 접속 시 토큰으로 사용자 식별 ─────────────────────────────────────
+  const urlParams = new URL(req.url, 'http://localhost').searchParams;
+  const token     = urlParams.get('token');                          // ws://host?token=xxx
+  const wsUser    = token ? _verifyToken(token) : null;              // 토큰 검증
+  const wsUserId  = wsUser?.id || 'local';                           // 사용자 ID
+  ws._userId = wsUserId;                                             // WS에 사용자 ID 저장
+  console.log(`[WS] 클라이언트 연결됨 (user: ${wsUserId})`);
 
-  // 초기 접속: 채널 미지정 상태로 현재 그래프 전송
+  // 초기 접속: 해당 사용자의 데이터만 전송
   try {
+    const userId = wsUserId;
     ws.send(JSON.stringify({
       type:       'init',
-      graph:      getFullGraph(),
-      sessions:   getSessions(),
+      graph:      userId !== 'local' && userId !== 'anonymous'
+                    ? getFullGraphForUser(userId) : getFullGraph(),
+      sessions:   getSessionsForUser(userId),
       stats:      getStats(),
       userConfig: getUserConfig(),
     }));
@@ -422,13 +448,15 @@ wss.on('connection', (ws) => {
         channelClients.get(channelId).add(ws);
         wsChannelMap.set(ws, { channelId, memberId, memberName, memberColor });
 
-        // 이 클라이언트에 채널 정보 전송
+        // 이 클라이언트에 채널 정보 전송 (사용자별 데이터 격리)
+        const uid = ws._userId || 'local';
         ws.send(JSON.stringify({
           type:        'channel.joined',
           channelId, memberId, memberName, memberColor,
           members:  getChannelMembers(channelId),
-          graph:    getFullGraph(),
-          sessions: getSessions(),
+          graph:    uid !== 'local' && uid !== 'anonymous'
+                      ? getFullGraphForUser(uid) : getFullGraph(),
+          sessions: getSessionsForUser(uid),
           stats:    getStats(),
         }));
 
@@ -481,7 +509,26 @@ wss.on('connection', (ws) => {
 
       // ── 세션 필터 ────────────────────────────────────────────────────────
       if (msg.type === 'filter') {
-        ws.send(JSON.stringify({ type: 'filtered', graph: getFullGraph(msg.sessionId) }));
+        const uid = ws._userId || 'local';
+        const graph = uid !== 'local' && uid !== 'anonymous'
+          ? getFullGraphForUser(uid, msg.sessionId)
+          : getFullGraph(msg.sessionId);
+        ws.send(JSON.stringify({ type: 'filtered', graph }));
+      }
+
+      // ── WS 인증 (클라이언트에서 로그인 후 토큰 전송) ───────────────────
+      if (msg.type === 'auth') {
+        const u = msg.token ? _verifyToken(msg.token) : null;
+        ws._userId = u?.id || 'local';
+        const uid = ws._userId;
+        ws.send(JSON.stringify({
+          type:     'init',
+          graph:    uid !== 'local' && uid !== 'anonymous'
+                      ? getFullGraphForUser(uid) : getFullGraph(),
+          sessions: getSessionsForUser(uid),
+          stats:    getStats(),
+          userConfig: getUserConfig(),
+        }));
       }
 
     } catch (e) {
@@ -798,6 +845,7 @@ const dbDeps = {
   getNodeMemos, upsertNodeMemo, deleteNodeMemo,
   getBookmarks, addBookmark, removeBookmark,
   touchTrackerPing, getTrackerPing,
+  getEventsForUser, getSessionsForUser, resolveUserId,   // 사용자별 데이터 격리
 };
 
 app.use('/api', createGraphRouter({
@@ -901,11 +949,11 @@ app.use('/api', createMarketRouter({ marketStore, authMiddleware, optionalAuth }
 app.use('/api', createModelRouter({ getAllEvents, modelTrainer, broadcastAll }));
 
 // ─── AI 역량 포트폴리오 PDF ──────────────────────────────────────────────────
-app.use('/api', createPortfolioRouter({ getAllEvents, getSessions, getStats, getFiles, optionalAuth }));
+app.use('/api', createPortfolioRouter({ getAllEvents, getSessions, getStats, getFiles, optionalAuth, getEventsForUser, getSessionsForUser, resolveUserId }));
 
 // ─── 개인/팀 인사이트 분리 ───────────────────────────────────────────────────
 app.use('/api', createPersonalInsightsRouter({
-  getAllEvents,
+  getAllEvents, getEventsForUser, getSessionsForUser, resolveUserId,
   getStats,
   getSessions,
   authMiddleware: require('./src/auth').authMiddleware,
@@ -914,7 +962,7 @@ app.use('/api', createPersonalInsightsRouter({
 }));
 
 // ─── AI 토큰 비용 추적 ────────────────────────────────────────────────────────
-app.use('/api', createCostTrackerRouter({ getAllEvents, getSessions, optionalAuth: require('./src/auth').optionalAuth }));
+app.use('/api', createCostTrackerRouter({ getAllEvents, getSessions, optionalAuth: require('./src/auth').optionalAuth, getEventsForUser, getSessionsForUser, resolveUserId }));
 
 // ─── 외부 도구 웹훅 수신 (n8n / Slack / Notion / GitHub) ─────────────────────
 app.use('/api', createWebhooksRouter({ insertEvent, broadcastAll }));
@@ -923,19 +971,19 @@ app.use('/api', createWebhooksRouter({ insertEvent, broadcastAll }));
 app.use('/api', mcpWatcher.createMcpWatcherRouter({ getAllEvents }));
 
 // ─── Orbit Badge SVG ─────────────────────────────────────────────────────────
-app.use('/api', createBadgeRouter({ getAllEvents, getSessions, optionalAuth }));
+app.use('/api', createBadgeRouter({ getAllEvents, getSessions, optionalAuth, getEventsForUser, getSessionsForUser, resolveUserId }));
 
 // ─── Share My Session ────────────────────────────────────────────────────────
 app.use('/api', createShareRouter({ getAllEvents, getSessions, getEventsBySession, insertEvent, broadcastAll, optionalAuth }));
 
 // ─── Team Ontology Graph ──────────────────────────────────────────────────────
-app.use('/api', createOntologyRouter({ getAllEvents, getFiles, optionalAuth }));
+app.use('/api', createOntologyRouter({ getAllEvents, getFiles, optionalAuth, getEventsForUser, resolveUserId }));
 
 // ─── AI Leaderboard ───────────────────────────────────────────────────────────
-app.use('/api', createLeaderboardRouter({ getAllEvents, getSessions, optionalAuth }));
+app.use('/api', createLeaderboardRouter({ getAllEvents, getSessions, optionalAuth, getEventsForUser, getSessionsForUser, resolveUserId }));
 
 // ─── ROI Calculator ───────────────────────────────────────────────────────────
-app.use('/api', createRoiRouter({ getAllEvents, getSessions, optionalAuth }));
+app.use('/api', createRoiRouter({ getAllEvents, getSessions, optionalAuth, getEventsForUser, getSessionsForUser, resolveUserId }));
 
 // ─── Analytics (사용자 행동 분석) ────────────────────────────────────────────
 app.use('/api', createAnalyticsRouter({ getDb: dbModule.getDb }));
@@ -959,10 +1007,10 @@ app.use('/api', createGdriveRouter({
 app.use('/api', createRegionalInsightRouter({ getAllEvents }));
 
 // ─── Orbit Points Economy ────────────────────────────────────────────────────
-app.use('/api', createPointsRouter({ getAllEvents, getSessions, optionalAuth }));
+app.use('/api', createPointsRouter({ getAllEvents, getSessions, optionalAuth, getEventsForUser, getSessionsForUser, resolveUserId }));
 
 // ─── Orbit Certificate & Score ───────────────────────────────────────────────
-app.use('/api', createCertificateRouter({ getAllEvents, getSessions, optionalAuth }));
+app.use('/api', createCertificateRouter({ getAllEvents, getSessions, optionalAuth, getEventsForUser, getSessionsForUser, resolveUserId }));
 
 // ─── MCP 서버 (Claude Desktop 연동) ─────────────────────────────────────────
 app.use('/api', createMcpRouter({
@@ -1051,8 +1099,18 @@ chokidar.watch(CONV_FILE, {
         } catch {}
       }
 
-      broadcastAll({ type: 'update', graph, stats, sessions, completedToolStarts });
-      console.log(`[WATCH] ${lines.length}개 새 이벤트 감지 → 그래프 업데이트`);
+      // 사용자별 데이터 격리: 각 WS 클라이언트에 본인 그래프만 전송
+      for (const client of wss.clients) {
+        if (client.readyState !== WebSocket.OPEN) continue;
+        try {
+          const uid = client._userId || 'local';
+          const g   = uid !== 'local' && uid !== 'anonymous'
+                        ? getFullGraphForUser(uid) : graph;
+          const s   = getSessionsForUser(uid);
+          client.send(JSON.stringify({ type: 'update', graph: g, stats, sessions: s, completedToolStarts }));
+        } catch {}
+      }
+      console.log(`[WATCH] ${lines.length}개 새 이벤트 감지 → 사용자별 그래프 업데이트`);
     }
   } catch (e) {
     console.error('[WATCH] 오류:', e.message);
@@ -1063,20 +1121,28 @@ chokidar.watch(CONV_FILE, {
 setInterval(() => {
   if (wss.clients.size === 0) return;
   try {
-    const graph  = buildGraph(getAllEvents());
-    computeActivityScores(graph.nodes, Date.now());
-    applyActivityVisualization(graph.nodes);
+    // 사용자별 활동 점수 전송
+    for (const client of wss.clients) {
+      if (client.readyState !== WebSocket.OPEN) continue;
+      try {
+        const uid    = client._userId || 'local';
+        const events = getEventsForUser(uid);
+        const graph  = buildGraph(events);
+        computeActivityScores(graph.nodes, Date.now());
+        applyActivityVisualization(graph.nodes);
 
-    const scores = {};
-    for (const node of graph.nodes) {
-      scores[node.id] = {
-        activityScore: node.activityScore,
-        size:          node.size,
-        borderWidth:   node.borderWidth,
-        shadow:        node.shadow,
-      };
+        const scores = {};
+        for (const node of graph.nodes) {
+          scores[node.id] = {
+            activityScore: node.activityScore,
+            size:          node.size,
+            borderWidth:   node.borderWidth,
+            shadow:        node.shadow,
+          };
+        }
+        client.send(JSON.stringify({ type: 'activity', scores }));
+      } catch {}
     }
-    broadcastAll({ type: 'activity', scores });
   } catch (e) {
     console.error('[ACTIVITY] 오류:', e.message);
   }

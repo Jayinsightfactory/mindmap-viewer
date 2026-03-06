@@ -126,6 +126,15 @@ module.exports = function createDiagnosisRouter({ getDb, broadcastAll }) {
   // 부트캠프 세션 (2시간 현장 진단)
   // ══════════════════════════════════════════════════════════════════════════
 
+  // GET /bootcamp/start — 부트캠프 안내 페이지 (상태 확인용)
+  router.get('/bootcamp/start', (req, res) => {
+    res.json({
+      ok: true,
+      message: '부트캠프 세션을 시작하려면 POST 요청을 보내세요.',
+      usage: 'POST /api/bootcamp/start { company_id, consultant_id }',
+    });
+  });
+
   router.post('/bootcamp/start', (req, res) => {
     try {
       ontology.ensureCompanyTables(db());

@@ -169,7 +169,7 @@ function getLevel(totalEarned) {
 
 // ─── 라우터 팩토리 ────────────────────────────────────────────────────────────
 
-function createPointsRouter({ getAllEvents, getSessions, optionalAuth } = {}) {
+function createPointsRouter({ getAllEvents, getSessions, optionalAuth, getEventsForUser, getSessionsForUser, resolveUserId } = {}) {
   const router = express.Router();
   const noAuth = (req, res, next) => next();
   const auth   = optionalAuth || noAuth;
@@ -177,7 +177,7 @@ function createPointsRouter({ getAllEvents, getSessions, optionalAuth } = {}) {
   // ── 내 포인트 잔액 ────────────────────────────────────────────────────
   router.get('/points/balance', auth, (req, res) => {
     const userId  = req.user?.id || 'local';
-    const events  = (getAllEvents ? getAllEvents() : []).filter(e => (e.userId || 'local') === userId);
+    const events  = (getEventsForUser ? getEventsForUser(userId) : (getAllEvents ? getAllEvents() : []).filter(e => (e.userId || 'local') === userId));
     const computed = computePointsFromEvents(events, userId);
 
     // 계정 초기화 및 이벤트 기반 포인트 적용

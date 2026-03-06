@@ -2707,11 +2707,13 @@ function drawLabels() {
 
   const lod = getLOD();
 
-  // ── 별자리 모드: 개인뷰에서 LOD>=1이고 여러 프로젝트 있으면 → 프로젝트 오브만 표시 ──
+  // ── 별자리 모드: 노드가 많으면 프로젝트 단위 요약으로 자동 전환 ──────────
+  // LOD 0(줌인)이 아닌 모든 거리에서 + 행성이 8개 이상이면 별자리 모드 활성화
   const projKeys = Object.keys(_projectGroups);
+  const tooManyNodes = planetMeshes.length > 8;
   const inConstellationMode = !_teamMode && !_companyMode && !_parallelMode
                               && _focusedProject === null
-                              && lod >= 1
+                              && (lod >= 1 || tooManyNodes)
                               && projKeys.length > 1;
 
   if (inConstellationMode) {
@@ -2741,9 +2743,17 @@ function drawLabels() {
   _lctx.globalAlpha = globalAlpha;
 
   // ── 1. 행성 ──────────────────────────────────────────────────────────────
+  // 표시 가능한 최대 행성 수 제한 (LOD에 따라 조절)
+  const maxVisiblePlanets = lod === 0 ? 60 : lod === 1 ? 30 : 15;
+  let visiblePlanetCount = 0;
+
   planetMeshes.forEach(p => {
     // 특정 프로젝트 포커스 중이면 해당 프로젝트만 렌더
     if (_focusedProject && p.userData.projectName !== _focusedProject) return;
+    // 선택된 노드와 같은 프로젝트는 항상 표시
+    const isSameProject = _selectedHit?.obj?.userData?.projectName === p.userData.projectName;
+    if (!isSameProject && visiblePlanetCount >= maxVisiblePlanets) return;
+    visiblePlanetCount++;
     const sc = toScreen(p.position);
     if (sc.z > 1) return;
 
@@ -2905,10 +2915,17 @@ function drawLabels() {
     });
   });
 
-  // ── 2. 파일 위성 — LOD0,1에서만 표시 ────────────────────────────────────
-  if (lod >= 2) { _lctx.globalAlpha = 1; return; } // LOD2 이상: 위성 숨김
+  // ── 2. 파일 위성 — LOD0에서만 표시 (LOD1부터 숨김) ───────────────────────
+  if (lod >= 1) { _lctx.globalAlpha = 1; return; } // LOD1 이상: 위성 숨김 → 깔끔한 뷰
+
+  // 선택된 노드의 위성만 우선 표시, 나머지는 최대 20개
+  let visibleSatCount = 0;
+  const maxVisibleSats = 20;
 
   satelliteMeshes.forEach(s => {
+    const isSameCluster = _selectedHit?.obj?.userData?.clusterId === s.userData.clusterId;
+    if (!isSameCluster && visibleSatCount >= maxVisibleSats) return;
+    visibleSatCount++;
     const sc = toScreen(s.position);
     if (sc.z > 1) return;
 

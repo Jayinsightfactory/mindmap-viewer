@@ -223,7 +223,7 @@ function signCert(data) {
 
 // ─── 라우터 팩토리 ────────────────────────────────────────────────────────────
 
-function createCertificateRouter({ getAllEvents, getSessions, optionalAuth } = {}) {
+function createCertificateRouter({ getAllEvents, getSessions, optionalAuth, getEventsForUser, getSessionsForUser, resolveUserId } = {}) {
   const router = express.Router();
   const noAuth = (req, res, next) => next();
   const auth   = optionalAuth || noAuth;
@@ -231,7 +231,7 @@ function createCertificateRouter({ getAllEvents, getSessions, optionalAuth } = {
   // ── AI 점수 계산 ──────────────────────────────────────────────────────
   router.get('/certificate/:userId/score', (req, res) => {
     const { userId } = req.params;
-    const events   = (getAllEvents ? getAllEvents() : []).filter(e => userId === 'all' || (e.userId || 'local') === userId);
+    const events   = (getEventsForUser ? getEventsForUser(userId) : (getAllEvents ? getAllEvents() : [])).filter(e => userId === 'all' || (e.userId || 'local') === userId);
     const sessions = getSessions ? getSessions() : [];
     const result   = computeScore(events, sessions);
     const grade    = getGrade(result.total);
@@ -247,7 +247,7 @@ function createCertificateRouter({ getAllEvents, getSessions, optionalAuth } = {
   // ── 인증서 SVG ────────────────────────────────────────────────────────
   router.get('/certificate/:userId/svg', (req, res) => {
     const { userId } = req.params;
-    const events   = (getAllEvents ? getAllEvents() : []).filter(e => (e.userId || 'local') === userId);
+    const events   = (getEventsForUser ? getEventsForUser(userId) : (getAllEvents ? getAllEvents() : []));
     const sessions = getSessions ? getSessions() : [];
     const result   = computeScore(events, sessions);
     const grade    = getGrade(result.total);
@@ -272,7 +272,7 @@ function createCertificateRouter({ getAllEvents, getSessions, optionalAuth } = {
   // ── 인증서 JSON ───────────────────────────────────────────────────────
   router.get('/certificate/:userId/json', (req, res) => {
     const { userId } = req.params;
-    const events   = (getAllEvents ? getAllEvents() : []).filter(e => (e.userId || 'local') === userId);
+    const events   = (getEventsForUser ? getEventsForUser(userId) : (getAllEvents ? getAllEvents() : []));
     const sessions = getSessions ? getSessions() : [];
     const result   = computeScore(events, sessions);
     const grade    = getGrade(result.total);
@@ -298,7 +298,7 @@ function createCertificateRouter({ getAllEvents, getSessions, optionalAuth } = {
   // ── 인증서 발급 ───────────────────────────────────────────────────────
   router.post('/certificate/:userId/issue', auth, (req, res) => {
     const { userId } = req.params;
-    const events   = (getAllEvents ? getAllEvents() : []).filter(e => (e.userId || 'local') === userId);
+    const events   = (getEventsForUser ? getEventsForUser(userId) : (getAllEvents ? getAllEvents() : []));
     const sessions = getSessions ? getSessions() : [];
     const result   = computeScore(events, sessions);
     const grade    = getGrade(result.total);
