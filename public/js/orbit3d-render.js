@@ -2964,18 +2964,42 @@ function drawInvertedPyramid(planetObj, hitData) {
   roundRect(ctx, trayX, trayY, TRAY_W, totalH, 14);
   ctx.stroke();
 
-  // ── 크기 조절 핸들 (우상단) ─────────────────────────────────────────────
-  const handleX = trayX + TRAY_W - 30;
-  const handleY = trayY + 6;
-  ctx.font = `${12 * S}px -apple-system,sans-serif`;
+  // ── 크기 조절 버튼 (우상단, 배경 있는 둥근 버튼) ────────────────────────
+  const btnSize = 26;                                                          // 버튼 크기
+  const btnGap  = 6;                                                           // 버튼 사이 간격
+  const btnY    = trayY + 10;
+  const btnPlusX  = trayX + TRAY_W - PAD;                                      // + 버튼 X (우측)
+  const btnMinusX = btnPlusX - btnSize - btnGap;                               // - 버튼 X (좌측)
+
+  // - 버튼
+  ctx.fillStyle = 'rgba(255,255,255,0.08)';
+  roundRect(ctx, btnMinusX - btnSize / 2, btnY, btnSize, btnSize, 6);
+  ctx.fill();
+  ctx.strokeStyle = '#8b949e';
+  ctx.lineWidth = 1;
+  roundRect(ctx, btnMinusX - btnSize / 2, btnY, btnSize, btnSize, 6);
+  ctx.stroke();
+  ctx.font = '700 16px -apple-system,sans-serif';
   ctx.textAlign = 'center';
-  ctx.fillStyle = '#6e7681';
-  ctx.fillText('[ - ]', handleX - 18, handleY + 14);
-  ctx.fillText('[ + ]', handleX + 18, handleY + 14);
-  // 크기 조절 히트 영역
-  _hitAreas.push({ cx: handleX - 18, cy: handleY + 8, r: 14, obj: planetObj,
+  ctx.fillStyle = '#e6edf3';
+  ctx.fillText('−', btnMinusX, btnY + btnSize * 0.72);
+
+  // + 버튼
+  ctx.fillStyle = 'rgba(255,255,255,0.08)';
+  roundRect(ctx, btnPlusX - btnSize / 2, btnY, btnSize, btnSize, 6);
+  ctx.fill();
+  ctx.strokeStyle = '#8b949e';
+  ctx.lineWidth = 1;
+  roundRect(ctx, btnPlusX - btnSize / 2, btnY, btnSize, btnSize, 6);
+  ctx.stroke();
+  ctx.font = '700 16px -apple-system,sans-serif';
+  ctx.fillStyle = '#e6edf3';
+  ctx.fillText('+', btnPlusX, btnY + btnSize * 0.72);
+
+  // 히트 영역
+  _hitAreas.push({ cx: btnMinusX, cy: btnY + btnSize / 2, r: btnSize / 2 + 2, obj: planetObj,
     data: { type: '_trayResize', action: 'shrink' } });
-  _hitAreas.push({ cx: handleX + 18, cy: handleY + 8, r: 14, obj: planetObj,
+  _hitAreas.push({ cx: btnPlusX, cy: btnY + btnSize / 2, r: btnSize / 2 + 2, obj: planetObj,
     data: { type: '_trayResize', action: 'grow' } });
 
   let curY = trayY;
