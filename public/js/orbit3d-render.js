@@ -3151,8 +3151,8 @@ function drawLabels() {
     return;
   }
 
-  // 토픽 유사도 글로잉 연결선 (행성 레이블 아래 레이어로 먼저 그림)
-  drawTopicLinks();
+  // 토픽 유사도 글로잉 연결선 — 개인 모드에서는 숨김 (깔끔한 화면)
+  if (!isPersonalMode) drawTopicLinks();
 
   // ── 0. 중심 태양 히트 영역 ────────────────────────────────────────────────
   if (_coreMeshRef) {
@@ -3381,9 +3381,10 @@ function drawLabels() {
     drawInvertedPyramid(_selectedHit.obj, _selectedHit.data);
   }
 
-  // ── 2. 파일 위성 — 3단계: 선택된 클러스터의 위성만 표시 ─────────────────
+  // ── 2. 파일 위성 — 개인 모드에서는 숨김 (트레이에서 파일 표시) ──────────
+  if (isPersonalMode) { _lctx.globalAlpha = 1; return; }
   const selectedCluster = _selectedHit?.obj?.userData?.clusterId;
-  if (!selectedCluster) { _lctx.globalAlpha = 1; return; } // 선택 없으면 위성 숨김
+  if (!selectedCluster) { _lctx.globalAlpha = 1; return; }
 
   satelliteMeshes.forEach(s => {
     // 선택된 클러스터의 위성만 표시
@@ -3417,24 +3418,7 @@ function drawLabels() {
     const lx = sc.x - pw / 2;
     const ly = sc.y - ph / 2;
 
-    // ── Canvas2D 행성↔위성 연결선 (가장 먼저 그려서 라벨 위에 안 걸림) ──
-    const parentPlanet = (_sessionMap[s.userData.clusterId] || _sessionMap[s.userData.sessionId])?.planet;
-    if (parentPlanet) {
-      const pc = toScreen(parentPlanet.position);
-      if (pc.z <= 1) {
-        _lctx.save();
-        _lctx.globalAlpha = isHovered ? 0.55 : 0.28;
-        _lctx.strokeStyle = pHex;
-        _lctx.lineWidth   = isHovered ? 1.2 : 0.7;
-        _lctx.setLineDash([4, 6]);
-        _lctx.beginPath();
-        _lctx.moveTo(sc.x, sc.y);
-        _lctx.lineTo(pc.x, pc.y);
-        _lctx.stroke();
-        _lctx.setLineDash([]);
-        _lctx.restore();
-      }
-    }
+    // (Canvas2D 위성↔행성 연결선 제거 — 깔끔한 화면 유지)
 
     const bgA   = isHovered ? 0.28 : lod === 0 ? 0.16 : 0.10;
     _lctx.fillStyle = `rgba(${pR},${pG},${pB},${bgA})`;
