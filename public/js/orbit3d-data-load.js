@@ -25,8 +25,24 @@ async function loadData() {
     if (typeof updateActiveFiles === 'function') updateActiveFiles();  // 활성 파일 갱신
     document.getElementById('loading').style.display = 'none';
 
-    // 이벤트 없음 → 안내 메시지 표시
+    // 이벤트 없음 → 트래커 상태 확인 후 안내
     if (nodes.length === 0) {
+      // 트래커가 이미 online이면 설치 안내 불필요 (데이터 도착 대기)
+      try {
+        const sr = await _authFetch('/api/tracker/status');
+        const sd = await sr.json();
+        if (sd.online || sd.eventCount > 0) {
+          // 이벤트는 있지만 유저 귀속 안 됨 → 자동 귀속 재시도 후 리로드 (최대 2회)
+          const retries = parseInt(sessionStorage.getItem('orbit_reload_retries') || '0');
+          if (retries < 2) {
+            sessionStorage.setItem('orbit_reload_retries', String(retries + 1));
+            setTimeout(() => location.reload(), 3000);
+            return;
+          }
+          sessionStorage.removeItem('orbit_reload_retries');
+          return; // 3회 시도해도 안 되면 빈 화면 유지 (설치 창 안 띄움)
+        }
+      } catch {}
       _showEmptyStateGuide();
     } else {
       _hideEmptyStateGuide();
