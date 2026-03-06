@@ -699,9 +699,15 @@ app.post('/api/hook', (req, res) => {
         if (client.readyState !== WebSocket.OPEN) continue;
         try {
           const uid = client._userId || 'local';
-          const userGraph    = (uid !== 'local' && uid !== 'anonymous')
-            ? getFullGraphForUser(uid) : fullGraph;
-          const userSessions = getSessionsForUser(uid);
+          // 엄격 격리: 비인증 클라이언트에게 빈 그래프 전송
+          let userGraph, userSessions;
+          if (uid !== 'local' && uid !== 'anonymous') {
+            userGraph    = getFullGraphForUser(uid);
+            userSessions = getSessionsForUser(uid);
+          } else {
+            userGraph    = { nodes: [], edges: [] };
+            userSessions = [];
+          }
           client.send(JSON.stringify({
             type: 'update',
             graph: userGraph, stats, sessions: userSessions, completedToolStarts,
@@ -714,13 +720,8 @@ app.post('/api/hook', (req, res) => {
       }
     };
 
-    if (channelClients.has(channelId)) broadcastToChannel(channelId, {
-      type: 'update',
-      graph: fullGraph, stats, sessions: getSessions(), completedToolStarts,
-      hookSource: { channelId, memberName },
-      securityLeaks: leaks, conflicts: newConflicts, shadowAI: shadowFindings,
-    });
-    else _broadcastUserFiltered();
+    // 채널/개인 모두 사용자별 격리 브로드캐스트 사용
+    _broadcastUserFiltered();
 
     // Ollama 실시간 분석 (이벤트 큐에 추가)
     for (const ev of events) ollamaAnalyzer.addEvent(ev);
