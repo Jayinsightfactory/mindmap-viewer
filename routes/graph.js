@@ -81,11 +81,7 @@ function createRouter(deps) {
    * 비로그인 시: AUTH_DISABLED=1이면 전체, 아니면 빈 그래프
    */
   router.get('/graph', (req, res) => {
-    const user = getUserFromReq(req);
-    if (!user) {
-      // 비로그인: 빈 그래프 반환 (프라이버시 보호)
-      return res.json({ nodes: [], edges: [] });
-    }
+    const user = getUserFromReq(req) || { id: 'local' };
 
     let graph;
     if (user.id === 'local') {
@@ -180,8 +176,7 @@ function createRouter(deps) {
    * 로그인 시: 해당 유저의 세션만 반환
    */
   router.get('/sessions', (req, res) => {
-    const user = getUserFromReq(req);
-    if (!user) return res.json([]);                                            // 비로그인: 빈 목록
+    const user = getUserFromReq(req) || { id: 'local' };
     let sessions = (user.id !== 'local' && getSessionsByUser)
       ? getSessionsByUser(user.id)
       : getSessions();
