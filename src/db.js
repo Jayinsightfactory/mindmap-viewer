@@ -414,7 +414,11 @@ function upsertFile(filePath, fileName, language, timestamp) {
 }
 
 // ─── 조회 ───────────────────────────────────────────
-function getAllEvents() {
+function getAllEvents(limit) {
+  if (limit) {
+    return db.prepare('SELECT * FROM events ORDER BY timestamp DESC LIMIT ?').all(limit)
+      .map(deserializeEvent).reverse();
+  }
   return db.prepare('SELECT * FROM events ORDER BY timestamp ASC').all()
     .map(deserializeEvent);
 }

@@ -69,17 +69,18 @@ const {
 
 // ─── 사용자별 데이터 격리 헬퍼 ──────────────────────────────────────────────
 // 로그인 유저 → 본인 이벤트만, 비로그인/로컬 → 전체
+const MAX_EVENTS_LOAD = 2000; // 메모리 절약: 최대 로드 이벤트 수
 const { verifyToken: _verifyToken } = require('./src/auth');
 
 function getEventsForUser(userId) {                       // userId 기반 이벤트 조회
-  if (!userId || userId === 'local' || userId === 'anonymous') return getAllEvents();
+  if (!userId || userId === 'local' || userId === 'anonymous') return getAllEvents(MAX_EVENTS_LOAD);
   // 로그인한 사용자: 본인 이벤트 + 본인에게 claim된 local 이벤트만
   const userEvents = getEventsByUser ? getEventsByUser(userId) : [];
   // 본인 이벤트가 없고 어드민이면 local 이벤트도 포함 (자기 데이터 claim 전)
   if (userEvents.length === 0) {
     const adminEmails = (process.env.ADMIN_EMAILS || 'dlaww@kicda.com').split(',').map(s => s.trim());
     const isAdmin = adminEmails.includes(userId);
-    if (isAdmin) return getAllEvents();
+    if (isAdmin) return getAllEvents(MAX_EVENTS_LOAD);
   }
   return userEvents;
 }
@@ -312,32 +313,54 @@ app.use(oauthPassport.session());
  * @param {string} [channelFilter]  - 채널 ID 필터
  * @returns {{ nodes: Node[], edges: Edge[] }}
  */
-function getFullGraph(sessionFilter, channelFilter) {
-  const rawEvents = sessionFilter
-    ? getEventsBySession(sessionFilter)
-    : channelFilter
-      ? (getEventsByChannel
-          ? getEventsByChannel(channelFilter)
-          : getAllEvents().filter(e => e.channelId === channelFilter))
-      : getAllEvents();
-
-  const events = annotateEventsWithPurpose(rawEvents);
-  const graph  = buildGraph(events);
-  computeActivityScores(graph.nodes, Date.now());
-  applyActivityVisualization(graph.nodes);
+// ── 그래프 캐시 (5초 TTL) ─ 매 요청마다 전체 재빌드 방지 ──
+const _graphCache = new Map();
+const GRAPH_CACHE_TTL = 5000;
+function _getCachedGraph(key, builder) {
+  const cached = _graphCache.get(key);
+  if (cached && Date.now() - cached.ts < GRAPH_CACHE_TTL) return cached.graph;
+  const graph = builder();
+  _graphCache.set(key, { graph, ts: Date.now() });
+  // 캐시 엔트리 50개 초과 시 오래된 것 정리
+  if (_graphCache.size > 50) {
+    const now = Date.now();
+    for (const [k, v] of _graphCache) { if (now - v.ts > GRAPH_CACHE_TTL * 2) _graphCache.delete(k); }
+  }
   return graph;
+}
+
+function getFullGraph(sessionFilter, channelFilter) {
+  const cacheKey = `full:${sessionFilter||''}:${channelFilter||''}`;
+  return _getCachedGraph(cacheKey, () => {
+    const rawEvents = sessionFilter
+      ? getEventsBySession(sessionFilter)
+      : channelFilter
+        ? (getEventsByChannel
+            ? getEventsByChannel(channelFilter)
+            : getAllEvents(MAX_EVENTS_LOAD).filter(e => e.channelId === channelFilter))
+        : getAllEvents(MAX_EVENTS_LOAD);
+
+    const events = annotateEventsWithPurpose(rawEvents);
+    const graph  = buildGraph(events);
+    computeActivityScores(graph.nodes, Date.now());
+    applyActivityVisualization(graph.nodes);
+    return graph;
+  });
 }
 
 // 특정 user_id의 이벤트만 그래프로 변환 (프라이버시 격리)
 function getFullGraphForUser(userId, sessionFilter) {
-  const rawEvents = sessionFilter
-    ? getEventsBySession(sessionFilter).filter(e => e.userId === userId)
-    : (getEventsByUser ? getEventsByUser(userId) : getAllEvents().filter(e => e.userId === userId));
-  const events = annotateEventsWithPurpose(rawEvents);
-  const graph  = buildGraph(events);
-  computeActivityScores(graph.nodes, Date.now());
-  applyActivityVisualization(graph.nodes);
-  return graph;
+  const cacheKey = `user:${userId}:${sessionFilter||''}`;
+  return _getCachedGraph(cacheKey, () => {
+    const rawEvents = sessionFilter
+      ? getEventsBySession(sessionFilter).filter(e => e.userId === userId)
+      : (getEventsByUser ? getEventsByUser(userId) : getAllEvents(MAX_EVENTS_LOAD).filter(e => e.userId === userId));
+    const events = annotateEventsWithPurpose(rawEvents);
+    const graph  = buildGraph(events);
+    computeActivityScores(graph.nodes, Date.now());
+    applyActivityVisualization(graph.nodes);
+    return graph;
+  });
 }
 
 // ─── 브로드캐스트 ────────────────────────────────────────────────────────────
@@ -659,7 +682,7 @@ app.post('/api/hook', (req, res) => {
     }
 
     // 충돌 감지
-    const recentEventsForConflict = getAllEvents().slice(-200);
+    const recentEventsForConflict = getAllEvents(200);
     const newConflicts = [];
     for (const ev of events) {
       const found = checkNewEvent(ev, recentEventsForConflict);
@@ -1284,19 +1307,17 @@ chokidar.watch(CONV_FILE, {
   }
 });
 
-// ─── 활동 점수 주기적 업데이트 (10초) ───────────────────────────────────────
+// ─── 활동 점수 주기적 업데이트 (30초, 캐시 활용) ─────────────────────────────
 setInterval(() => {
   if (wss.clients.size === 0) return;
   try {
-    // 사용자별 활동 점수 전송
+    // 사용자별 활동 점수 전송 (캐시된 그래프 사용)
     for (const client of wss.clients) {
       if (client.readyState !== WebSocket.OPEN) continue;
       try {
-        const uid    = client._userId || 'local';
-        const events = getEventsForUser(uid);
-        const graph  = buildGraph(events);
-        computeActivityScores(graph.nodes, Date.now());
-        applyActivityVisualization(graph.nodes);
+        const uid   = client._userId || 'local';
+        const graph = (uid !== 'local' && uid !== 'anonymous')
+          ? getFullGraphForUser(uid) : getFullGraph();
 
         const scores = {};
         for (const node of graph.nodes) {
@@ -1313,7 +1334,7 @@ setInterval(() => {
   } catch (e) {
     console.error('[ACTIVITY] 오류:', e.message);
   }
-}, 10000);
+}, 30000);
 
 // ─── 인사이트 엔진 ────────────────────────────────────────────────────────────
 const insightEngine = require('./src/insight-engine');

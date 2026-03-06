@@ -221,6 +221,7 @@ class AgentOrchestrator {
       messages: [{ role: fromAgent, text: topic, ts: Date.now() }],
     };
     this.conversations.push(conv);
+    if (this.conversations.length > 100) this.conversations = this.conversations.slice(-50);
     return conv;
   }
 
