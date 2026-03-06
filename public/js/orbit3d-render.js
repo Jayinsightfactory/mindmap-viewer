@@ -2488,23 +2488,24 @@ function exitConstellationFocus() {
 }
 window.exitConstellationFocus = exitConstellationFocus;
 
-// ── 카테고리 포커스 (기능구현/조사분석/배포운영) ─────────────────────────────
+// ── 카테고리 포커스 (동적 프로젝트 타입) ──────────────────────────────────────
 function focusCategoryView(catKey) {
   _focusedCategory = catKey;
-  _focusedProject  = null;                                   // 프로젝트 포커스 해제
-  const catCfg = MACRO_CATS[catKey];
-  if (!catCfg) return;
+  _focusedProject  = null;
+  const catCfg = PROJECT_TYPES[catKey] || PROJECT_TYPES.general;
 
-  // 카테고리 섹터 방향으로 카메라 이동
-  const angle = catCfg.angle;
-  const dist  = 15;                                          // 섹터 중심에서의 거리
-  const tx = dist * Math.cos(angle);
-  const tz = dist * Math.sin(angle);
+  // 해당 프로젝트 타입의 행성들 중심으로 카메라 이동
+  const grp = _categoryGroups[catKey];
+  if (!grp || grp.planets.length === 0) return;
+  // 행성들의 평균 위치로 카메라 포커스
+  let tx = 0, tz = 0;
+  grp.planets.forEach(p => { tx += p.position.x; tz += p.position.z; });
+  tx /= grp.planets.length;
+  tz /= grp.planets.length;
   lerpCameraTo(35, tx, 0, tz, 700);
 
-  // 뒤로가기 버튼
   const btn = document.getElementById('constellation-back-btn');
-  if (btn) { btn.textContent = `← ${catCfg.label} / 전체 보기`; btn.style.display = 'block'; }
+  if (btn) { btn.textContent = `← ${catCfg.icon} ${catCfg.label} / 전체 보기`; btn.style.display = 'block'; }
 }
 window.focusCategoryView = focusCategoryView;
 
@@ -2863,30 +2864,30 @@ function drawCompactProjectView() {
     });
   }
 
-  // ── 3대 카테고리를 태양 주변 고정 위치에 배치 ──────────────────────────────
-  // 화면 좌표 기준: 오른쪽(기능구현), 왼쪽 위(조사분석), 왼쪽 아래(배포운영)
-  const CARD_DIST = 140;                                     // 태양에서 카드까지 거리(px)
-  const catDefs = [
-    { key: 'dev',      screenAngle: -0.15 },                 // 오른쪽 (약간 위)
-    { key: 'research', screenAngle: Math.PI * 0.75 },        // 왼쪽 위
-    { key: 'ops',      screenAngle: Math.PI * 1.35 },        // 왼쪽 아래
-  ];
+  // ── 감지된 프로젝트 타입을 태양 주변에 동적 배치 ─────────────────────────
+  // 활성 타입만 표시, 개수에 따라 균등 배분
+  const CARD_DIST = 140;
+  const activeTypes = _activeProjectTypes.length > 0 ? _activeProjectTypes : Object.keys(_categoryGroups);
+  const catDefs = activeTypes.map((key, i) => ({
+    key,
+    screenAngle: (i / Math.max(activeTypes.length, 1)) * Math.PI * 2 - Math.PI / 2, // 12시 방향부터 시계방향
+  }));
 
   catDefs.forEach(({ key, screenAngle }) => {
-    const catCfg = MACRO_CATS[key];
+    const catCfg = PROJECT_TYPES[key] || PROJECT_TYPES.general;
     const grp    = _categoryGroups[key];
     if (!grp) return;
 
     const totalPlanets = grp.planets.length;
     const totalEvents  = grp.planets.reduce((s, p) => s + (p.userData.eventCount || 0), 0);
-    if (totalPlanets === 0) return;                          // 해당 카테고리에 데이터 없으면 스킵
+    if (totalPlanets === 0) return;
 
-    // ── 고정 화면 좌표 계산 ───────────────────────────────────────────────
+    // ── 화면 좌표 계산 (동적 배치) ──────────────────────────────────────────
     const cx = sunSc.x + Math.cos(screenAngle) * CARD_DIST;
     const cy = sunSc.y + Math.sin(screenAngle) * CARD_DIST;
 
     const color   = catCfg.color;
-    const catName = catCfg.label;
+    const catName = `${catCfg.icon} ${catCfg.label}`;
     const isHover = _hoveredHit?.data?.type === 'category' && _hoveredHit?.data?.catKey === key;
 
     // ── 하위 프로젝트 목록 (상위 3개) ─────────────────────────────────────

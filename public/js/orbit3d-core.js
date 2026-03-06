@@ -516,9 +516,11 @@ async function loadSessionContext(sessionId) {
       } else if (_isMeaningful(ctx.autoTitle)) {
         planet.userData.intent = ctx.autoTitle;
       }
-      // AI 매크로 카테고리 업데이트
-      if (ctx.aiCat && ['dev', 'research', 'ops'].includes(ctx.aiCat)) {
-        planet.userData.macroCat = ctx.aiCat;
+      // AI 프로젝트 타입 업데이트 (새 타입 + 레거시 dev/research/ops 모두 허용)
+      if (ctx.aiCat && (PROJECT_TYPES[ctx.aiCat] || ['dev', 'research', 'ops'].includes(ctx.aiCat))) {
+        // 레거시 값 → 새 타입 매핑
+        const legacyMap = { dev: 'development', research: 'web_research', ops: 'development' };
+        planet.userData.macroCat = legacyMap[ctx.aiCat] || ctx.aiCat;
       }
       if (ctx.projectName) {
         const oldProj = planet.userData.projectName;
@@ -700,41 +702,108 @@ let _hitAreas = []; // { cx, cy, r, data }
 let _projectGroups  = {};   // projectName → { planetMeshes:[], color:string }
 let _focusedProject = null; // null=별자리 전체 뷰, 'name'=특정 프로젝트 집중
 
-// ── 3대 카테고리 시스템 (기능구현 / 조사분석 / 배포운영) ─────────────────────
-const MACRO_CATS = {
-  dev:      { label: '기능구현', color: '#58a6ff', angle: 0 },             // 오른쪽
-  research: { label: '조사분석', color: '#d2a8ff', angle: (Math.PI * 2) / 3 },  // 왼쪽 위
-  ops:      { label: '배포운영', color: '#3fb950', angle: (Math.PI * 4) / 3 },  // 왼쪽 아래
+// ── 스마트 프로젝트 타입 시스템 (활동 패턴 기반 자동 감지) ────────────────────
+// 고정 3카테고리(dev/research/ops) 대신, 실제 활동에서 프로젝트 유형을 감지
+const PROJECT_TYPES = {
+  content:       { label: '콘텐츠 제작',   icon: '🎬', color: '#ff6b6b' },
+  web_research:  { label: '웹 리서치',     icon: '🔍', color: '#d2a8ff' },
+  data:          { label: '데이터 분석',   icon: '📊', color: '#3fb950' },
+  development:   { label: '개발',         icon: '💻', color: '#58a6ff' },
+  design:        { label: '디자인',       icon: '🎨', color: '#f778ba' },
+  writing:       { label: '문서 작성',    icon: '📝', color: '#e3b341' },
+  communication: { label: '커뮤니케이션',  icon: '💬', color: '#39d2c0' },
+  general:       { label: '일반 작업',    icon: '⚙️', color: '#8b949e' },
 };
-let _categoryGroups = {};   // 'dev'|'research'|'ops' → { projects:{}, planets:[], color }
-let _focusedCategory = null; // null=전체뷰, 'dev'|'research'|'ops'=카테고리 집중
 
-// ── 이벤트 기반 매크로 카테고리 분류 ──────────────────────────────────────────
-function classifyMacroCategory(events) {
-  let dev = 0, research = 0, ops = 0;
+// 하위호환: 기존 코드가 MACRO_CATS를 참조하는 곳 대비
+const MACRO_CATS = PROJECT_TYPES;
+
+let _categoryGroups = {};   // projectType → { projects:{}, planets:[], color }
+let _focusedCategory = null; // null=전체뷰, 'development'|'web_research'|...=타입 집중
+// 현재 데이터에서 감지된 활성 프로젝트 타입 목록 (동적)
+let _activeProjectTypes = [];
+
+// ── 스마트 프로젝트 타입 감지 ────────────────────────────────────────────────
+// 이벤트 패턴을 분석해서 어떤 종류의 프로젝트인지 자동 판별
+// PPT+영상AI+이미지AI → 콘텐츠 제작, 크롬+YouTube → 웹 리서치, Excel → 데이터 분석 등
+function detectProjectType(events) {
+  const scores = {};
+  for (const type of Object.keys(PROJECT_TYPES)) scores[type] = 0;
+
   for (const e of events) {
     const t = e.type || '';
     const d = e.data || {};
-    const tool = d.toolName || '';
-    // 기능구현: 파일 작성/수정, 코딩
-    if (t === 'file.write' || t === 'file.create') dev += 3;
-    if (t === 'tool.end' && /^(Write|Edit)$/.test(tool)) dev += 3;
-    if (t === 'task.complete') dev += 2;
-    // 조사분석: 파일 읽기, 검색, 대화, 브라우저
-    if (t === 'file.read') research += 1;
-    if (t === 'tool.end' && /^(Read|Grep|Glob|WebFetch|WebSearch)$/.test(tool)) research += 2;
-    if (t === 'user.message') research += 1;
-    if (t === 'assistant.message' || t === 'assistant.response') research += 1;
-    if (t === 'browser_activity' || t === 'browse' || t === 'app_switch' || t === 'app.activity') research += 2;
-    // 배포운영: git, 터미널, 인프라
-    if (t === 'git.commit' || t === 'git.push') ops += 3;
-    if (t === 'terminal.command') ops += 2;
-    if (t === 'tool.end' && /^Bash$/.test(tool)) ops += 1;
+    const tool = (d.toolName || '').toLowerCase();
+    const app  = (d.app || '').toLowerCase();
+    const url  = (d.url || '').toLowerCase();
+    const file = (d.filePath || d.fileName || '').toLowerCase();
+    const title = (d.title || e.label || '').toLowerCase();
+    const combined = `${app} ${title} ${url}`;
+
+    // ── 콘텐츠 제작: 영상 편집, 이미지 생성 AI, PPT ──────────────────────
+    if (/premiere|aftereffects|davinci|final.cut|capcut|filmora|imovie|openshot/i.test(combined)) scores.content += 4;
+    if (/midjourney|dall-e|stable.diffusion|runway|gen-2|suno|kling|pika|luma/i.test(combined)) scores.content += 4;
+    if (/gamma\.app|beautiful\.ai|slidesgo|pitch\.com/i.test(combined)) scores.content += 3;
+    if (/powerpoint|keynote/i.test(app)) scores.content += 2;
+    if (/\.(mp4|mov|avi|mkv|psd|ai|pptx?|prproj|aep)$/i.test(file)) scores.content += 3;
+    if (/canva/i.test(combined)) scores.content += 2;
+    if (/youtube.*upload|영상.*편집|thumbnail|render/i.test(combined)) scores.content += 2;
+
+    // ── 웹 리서치: 브라우저 검색, YouTube 시청, 조사 ──────────────────────
+    if ((t === 'browse' || t === 'browser_activity') && url) {
+      scores.web_research += 1;  // 모든 브라우징에 기본 점수
+      if (/youtube\.com\/watch|youtube\.com\/results/i.test(url)) scores.web_research += 3;
+      if (/google\.com\/search|naver\.com\/search|bing\.com\/search/i.test(url)) scores.web_research += 3;
+      if (/arxiv|scholar\.google|wikipedia|stackoverflow|reddit/i.test(url)) scores.web_research += 3;
+      if (/medium\.com|dev\.to|velog\.io|tistory/i.test(url)) scores.web_research += 2;
+    }
+    if (t === 'app_switch' && /chrome|safari|firefox|edge|brave|arc/i.test(app) && !url) scores.web_research += 1;
+    if (t === 'tool.end' && /^(WebFetch|WebSearch)$/.test(d.toolName)) scores.web_research += 2;
+
+    // ── 데이터 분석: 스프레드시트, BI 도구, 데이터 파일 ───────────────────
+    if (/excel|numbers|sheets|libreoffice.calc/i.test(app)) scores.data += 4;
+    if (/tableau|power.bi|metabase|looker|grafana|jupyter|rstudio|pandas/i.test(combined)) scores.data += 4;
+    if (/\.(xlsx?|csv|tsv|json|parquet|sql|sqlite|db)$/i.test(file)) scores.data += 3;
+    if (/analytics|dashboard|통계|분석|pivot|차트/i.test(combined)) scores.data += 2;
+
+    // ── 개발: 코드 편집, 터미널, Git, AI 코딩 ────────────────────────────
+    if (t === 'file.write' || t === 'file.create') scores.development += 3;
+    if (t === 'git.commit' || t === 'git.push') scores.development += 4;
+    if (t === 'terminal.command') scores.development += 2;
+    if (t === 'tool.end' && /^(Write|Edit|Bash)$/.test(d.toolName)) scores.development += 3;
+    if (t === 'tool.end' && /^(Read|Grep|Glob)$/.test(d.toolName)) scores.development += 1;
+    if (/vscode|cursor|zed|sublime|vim|emacs|idea|xcode|webstorm|neovim/i.test(app)) scores.development += 3;
+    if (/terminal|iterm|warp|hyper|powershell|cmd\.exe/i.test(app)) scores.development += 2;
+    if (/\.(js|ts|jsx|tsx|py|java|go|rs|rb|php|c|cpp|h|swift|kt|vue|svelte|html|css|scss)$/i.test(file)) scores.development += 2;
+    if (/github\.com|gitlab\.com|bitbucket/i.test(url)) scores.development += 2;
+
+    // ── 디자인: 디자인 도구, UI 프로토타이핑 ──────────────────────────────
+    if (/figma|sketch|xd|illustrator|photoshop|affinity|framer|zeplin|invision/i.test(combined)) scores.design += 4;
+    if (/figma\.com|sketch\.cloud/i.test(url)) scores.design += 3;
+    if (/\.(fig|sketch|xd|psd|ai|svg|eps)$/i.test(file)) scores.design += 3;
+    if (/ui|ux|wireframe|prototype|목업|mockup|디자인/i.test(combined)) scores.design += 2;
+
+    // ── 문서 작성: 워드, 노트, 마크다운 ──────────────────────────────────
+    if (/word|한글|hwp|pages|google.docs/i.test(app)) scores.writing += 4;
+    if (/notion|obsidian|bear|typora|roam|logseq|coda/i.test(combined)) scores.writing += 3;
+    if (/\.(doc|docx|md|txt|hwp|rtf|pdf|odt)$/i.test(file)) scores.writing += 2;
+    if (t === 'user.message' || t === 'assistant.message' || t === 'assistant.response') scores.writing += 1;
+
+    // ── 커뮤니케이션: 채팅, 화상회의, 이메일 ─────────────────────────────
+    if (/slack|discord|teams|zoom|meet|webex|kakao|line|telegram|whatsapp/i.test(combined)) scores.communication += 4;
+    if (/mail|gmail|outlook|thunderbird|spark/i.test(combined)) scores.communication += 3;
+    if (/jira|linear|asana|trello|basecamp|monday/i.test(combined)) scores.communication += 2;
   }
-  if (dev >= research && dev >= ops) return 'dev';
-  if (research >= ops) return 'research';
-  return 'ops';
+
+  // 최고 점수 타입 반환 (0점이면 general)
+  let bestType = 'general', bestScore = 0;
+  for (const [type, score] of Object.entries(scores)) {
+    if (score > bestScore) { bestScore = score; bestType = type; }
+  }
+  return bestType;
 }
+// 하위호환: 기존 classifyMacroCategory 호출하는 코드 대비
+function classifyMacroCategory(events) { return detectProjectType(events); }
 
 let _activeFilter = 'all';
 const FILTER_CATS = {

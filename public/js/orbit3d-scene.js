@@ -110,12 +110,16 @@ function buildPlanetSystem(nodeList) {
     git:0.40, research:0.44, chat:0.48, general:0.52,
   };
 
-  // ── 매크로 카테고리 할당 (색상 참조용) ───────────────────────────────────
+  // ── 스마트 프로젝트 타입 감지 (활동 패턴 기반) ───────────────────────────
   planets.forEach(pl => {
-    pl.macroCat = classifyMacroCategory(pl.events);
+    pl.macroCat = detectProjectType(pl.events);
   });
-  const catBuckets = { dev: [], research: [], ops: [] };
-  planets.forEach(pl => catBuckets[pl.macroCat].push(pl));
+  // 동적 카테고리 버킷: 감지된 타입만 생성
+  const catBuckets = {};
+  planets.forEach(pl => {
+    if (!catBuckets[pl.macroCat]) catBuckets[pl.macroCat] = [];
+    catBuckets[pl.macroCat].push(pl);
+  });
 
   // ── 프로젝트 단위로 그룹화 → 클러스터 배치 ───────────────────────────────
   const projBuckets = {};                                          // projectName → [planet]
@@ -330,19 +334,24 @@ function buildPlanetSystem(nodeList) {
     _projectGroups[proj].planetMeshes.push(p);
   });
 
-  // ── 카테고리별 그룹화 빌드 (기능구현 / 조사분석 / 배포운영) ──────────────
+  // ── 카테고리별 그룹화 빌드 (동적 프로젝트 타입) ─────────────────────────
   _categoryGroups = {};
-  for (const cat of ['dev', 'research', 'ops']) {
-    _categoryGroups[cat] = { planets: [], projects: {}, color: MACRO_CATS[cat].color };
-  }
   planetMeshes.forEach(p => {
-    const cat  = p.userData.macroCat || 'dev';
+    const cat  = p.userData.macroCat || 'general';
     const proj = p.userData.projectName || '기타';
+    if (!_categoryGroups[cat]) {
+      const typeCfg = PROJECT_TYPES[cat] || PROJECT_TYPES.general;
+      _categoryGroups[cat] = { planets: [], projects: {}, color: typeCfg.color };
+    }
     _categoryGroups[cat].planets.push(p);
     if (!_categoryGroups[cat].projects[proj]) {
       _categoryGroups[cat].projects[proj] = [];
     }
     _categoryGroups[cat].projects[proj].push(p);
   });
+  // 활성 프로젝트 타입 목록 업데이트 (이벤트 수 기준 정렬)
+  _activeProjectTypes = Object.keys(_categoryGroups)
+    .filter(k => _categoryGroups[k].planets.length > 0)
+    .sort((a, b) => _categoryGroups[b].planets.length - _categoryGroups[a].planets.length);
 }
 
