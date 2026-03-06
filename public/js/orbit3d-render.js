@@ -2709,11 +2709,60 @@ function drawCompactProjectView() {
     }
   }
 
-  projEntries.forEach(([projName, grp]) => {
-    // 프로젝트 내 행성들의 화면 중심점
+  // ── 상위 3개 프로젝트만 표시 (이벤트 수 기준 정렬) ─────────────────────
+  const sorted = projEntries
+    .map(([name, grp]) => ({
+      name, grp,
+      totalEvents: grp.planetMeshes.reduce((s, p) => s + (p.userData.eventCount || 0), 0),
+    }))
+    .sort((a, b) => b.totalEvents - a.totalEvents);
+
+  const TOP_N = 3;                                          // 최대 3개 그룹만 표시
+  const topProjs  = sorted.slice(0, TOP_N);
+  const restCount = sorted.length - TOP_N;                  // 숨겨진 프로젝트 수
+
+  // ── 프로젝트 이름 → 사람이 이해할 수 있는 작업 설명으로 변환 ────────────
+  function humanLabel(projName, grp) {
+    // 1순위: 행성 intent에서 의미있는 텍스트 찾기
+    const intents = grp.planetMeshes
+      .map(p => p.userData.intent || '')
+      .filter(t => t && !/^(⚙️\s?(기타|작업|일반)|세션-)/.test(t));
+
+    if (intents.length > 0) {
+      // 아이콘 제거 후 핵심 텍스트만
+      let best = intents[0]
+        .replace(/^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE00}-\u{FEFF}⚙️🔐🌐🗄🎨🧪🚀🐳📝📐🔧🌿💬]\s*/gu, '')
+        .replace(/^\[.+?\]\s+/, '')                        // [프로젝트] 제거
+        .trim();
+      if (best.length > 18) best = best.slice(0, 17) + '…';
+      if (best) return best;
+    }
+
+    // 2순위: 첫 메시지 프리뷰
+    const msg = grp.planetMeshes.find(p => p.userData.msgPreview)?.userData.msgPreview;
+    if (msg) return msg.slice(0, 18);
+
+    // 3순위: 프로젝트명 정제
+    let dispName = projName;
+    if (/^세션-/.test(projName)) return '최근 작업';
+    if (/[-_]/.test(projName) && !/\s/.test(projName)) {
+      dispName = projName.split(/[-_]/).filter(s => s !== 'session')
+        .map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(' ');
+    }
+    return dispName.slice(0, 18);
+  }
+
+  // ── 태양 주변 원형 배치 (상위 3개) ──────────────────────────────────────
+  const sunSc = _coreMeshRef
+    ? toScreen(_coreMeshRef.position || new THREE.Vector3(0,0,0))
+    : { x: innerWidth / 2, y: innerHeight / 2, z: 0 };
+
+  topProjs.forEach((item, idx) => {
+    const { name: projName, grp, totalEvents } = item;
+
+    // 행성 화면 중심점 계산
     const pts = grp.planetMeshes.map(p => toScreen(p.position)).filter(s => s.z <= 1);
     if (!pts.length) return;
-
     let cx = 0, cy = 0;
     pts.forEach(s => { cx += s.x; cy += s.y; });
     cx /= pts.length; cy /= pts.length;
@@ -2722,18 +2771,7 @@ function drawCompactProjectView() {
     const cnt     = grp.planetMeshes.length;
     const isHover = _hoveredHit?.data?.type === 'constellation' && _hoveredHit?.data?.projName === projName;
 
-    // 프로젝트 이름 정제
-    let dispName = projName;
-    if (/^세션-/.test(projName)) {
-      const best = grp.planetMeshes.map(p => p.userData.intent).find(t => t && !/^(⚙️\s?기타|⚙️\s?작업)/.test(t));
-      dispName = best ? best.split(/\s{2,}/)[0].trim().slice(0, 16) : projName;
-    } else if (/[-_]/.test(projName) && !/\s/.test(projName)) {
-      dispName = projName.split(/[-_]/).filter(s => s !== 'session').map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(' ').slice(0, 16);
-    }
-    if (dispName.length > 16) dispName = dispName.slice(0, 15) + '…';
-
-    // 이벤트 수 합산
-    const totalEvents = grp.planetMeshes.reduce((s, p) => s + (p.userData.eventCount || 0), 0);
+    const dispName = humanLabel(projName, grp);
 
     const pxMain = isHover ? 16 : 14;
     _lctx.font = `700 ${pxMain}px -apple-system,'Segoe UI',sans-serif`;
@@ -2767,15 +2805,26 @@ function drawCompactProjectView() {
     _lctx.lineWidth = isHover ? 2.5 : 1.5;
     roundRect(_lctx, lx, ly, pw, ph, ph / 2); _lctx.stroke();
 
-    // 프로젝트명
+    // 순위 번호 (좌측 상단에 작은 뱃지)
+    _lctx.save();
+    _lctx.font = 'bold 9px -apple-system,sans-serif';
+    _lctx.fillStyle = color;
+    _lctx.globalAlpha = 0.6;
+    _lctx.textAlign = 'center';
+    _lctx.fillText(`${idx + 1}`, lx + 8, ly - 2);
+    _lctx.restore();
+
+    // 프로젝트명 (실제 작업 설명)
+    _lctx.textAlign = 'center';
     _lctx.fillStyle = isHover ? '#fff' : '#cdd9e5';
+    _lctx.font = `700 ${pxMain}px -apple-system,'Segoe UI',sans-serif`;
     _lctx.fillText(dispName, cx, ly + ph * 0.68);
 
     // 서브: 세션 수 + 이벤트 수
     _lctx.font = '400 10px -apple-system,sans-serif';
     _lctx.fillStyle = color + '88';
     _lctx.globalAlpha = 0.75;
-    _lctx.fillText(`${cnt}개 세션 · ${totalEvents}건`, cx, ly + ph + 12);
+    _lctx.fillText(`${cnt}개 작업 · ${totalEvents}건`, cx, ly + ph + 12);
     _lctx.globalAlpha = 1;
 
     // 히트 영역
@@ -2785,6 +2834,17 @@ function drawCompactProjectView() {
       data: { type: 'constellation', projName, planetCount: cnt, color },
     });
   });
+
+  // ── 추가 프로젝트 있으면 "더보기" 표시 ──────────────────────────────────
+  if (restCount > 0) {
+    _lctx.save();
+    _lctx.font = '400 11px -apple-system,sans-serif';
+    _lctx.textAlign = 'center';
+    _lctx.fillStyle = '#8b949e';
+    _lctx.globalAlpha = 0.6;
+    _lctx.fillText(`+${restCount}개 더`, sunSc.x, sunSc.y + 50);
+    _lctx.restore();
+  }
 }
 
 // ─── drawLabels ──────────────────────────────────────────────────────────────
@@ -2910,19 +2970,43 @@ function drawLabels() {
     }
     if (isSelected) pxSize *= 1.12;
 
-    // ── 텍스트 — 짧은 주제 키워드만 표시 ────────────────────────────────
-    const DOMAIN_SHORT = {
-      auth:'인증', api:'API', data:'데이터', ui:'UI', test:'테스트',
-      server:'서버', infra:'인프라', fix:'수정', git:'Git', chat:'대화',
-      general:'일반', docs:'문서', design:'디자인', research:'조사', purpose:''
-    };
-    let fullText = p.userData.intent || '';
-    let text = DOMAIN_SHORT[p.userData.domain] || '';
-    const proj = p.userData.projectName;
-    if (proj && proj !== '기타' && proj.length <= 10) {
-      text = text ? `${text} · ${proj}` : proj;
+    // ── 텍스트 — 사람이 이해할 수 있는 작업 설명 표시 ────────────────────
+    let fullText = p.userData.intent || '';                   // 전체 의도 텍스트
+    let text = '';                                            // 화면 표시용
+
+    // 1순위: intent에서 실제 작업 설명 추출 (아이콘 제거 후 핵심만)
+    if (fullText) {
+      // 아이콘 이모지 제거 + 앞뒤 공백 정리
+      text = fullText.replace(/^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE00}-\u{FEFF}⚙️🔐🌐🗄🎨🧪🚀🐳📝📐🔧🌿💬]\s*/gu, '').trim();
+      // "[프로젝트명] 설명" 형태면 설명만 추출
+      if (/^\[.+?\]\s+/.test(text)) text = text.replace(/^\[.+?\]\s+/, '');
+      // 너무 길면 자름
+      if (text.length > 24) text = text.slice(0, 23) + '…';
     }
-    if (!text) text = (p.userData.intent || '').slice(0, 8);
+
+    // 2순위: msgPreview (첫 사용자 메시지)
+    if (!text && p.userData.msgPreview) {
+      text = p.userData.msgPreview.slice(0, 24);
+    }
+
+    // 3순위: firstMsg
+    if (!text && p.userData.firstMsg) {
+      text = p.userData.firstMsg.slice(0, 24);
+    }
+
+    // 4순위: 프로젝트명
+    const proj = p.userData.projectName;
+    if (!text && proj && proj !== '기타') {
+      text = proj.slice(0, 16);
+    }
+
+    // 최종 폴백: 도메인 라벨
+    if (!text) {
+      const DS = { auth:'인증 구현', api:'API 개발', data:'데이터', ui:'UI 작업',
+        test:'테스트', server:'서버 개발', infra:'인프라', fix:'버그 수정',
+        git:'Git 관리', chat:'AI 대화', general:'작업', docs:'문서화', design:'설계' };
+      text = DS[p.userData.domain] || '작업';
+    }
     if (!text) return;
 
     _lctx.font = `700 ${pxSize}px -apple-system,'Segoe UI',sans-serif`;

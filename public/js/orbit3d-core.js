@@ -466,13 +466,28 @@ function clusterByIntent(sessionId, events) {
 
   const clusters = [];
   for (const [domain, evs] of Object.entries(merged)) {
+    // 첫 user.message에서 실제 작업 내용 추출
     const msg = evs.find(e => e.type === 'user.message');
+    let msgText = '';
+    if (msg) {
+      const d = msg.data || {};
+      msgText = (d.contentPreview || d.content || msg.label || '').slice(0, 30);
+    }
+    // git commit 메시지도 후보로 활용
+    if (!msgText) {
+      const gitEv = evs.find(e => e.type === 'git.commit');
+      msgText = (gitEv?.data?.message || '').slice(0, 30);
+    }
+    // 라벨: 작업 설명이 있으면 도메인 라벨 + 설명 조합
+    const domainLabel = DOMAIN_LABELS[domain] || '⚙️ 작업';
+    const label = msgText ? `${domainLabel}  ${msgText}` : domainLabel;
+
     clusters.push({
       clusterId:  `${sessionId}__${domain}`,
       sessionId,
       domain,
-      label:      DOMAIN_LABELS[domain] || '⚙️ 작업',
-      msgPreview: (msg?.label || '').slice(0, 26),
+      label,
+      msgPreview: msgText,
       events:     evs,
     });
   }
@@ -539,9 +554,22 @@ function sessionIntent(events) {
   }
   const topFile = Object.entries(fileCounts).sort((a,b)=>b[1]-a[1])[0]?.[0] || null;
 
-  // 첫 user.message (label 필드도 확인)
+  // 첫 user.message — fullContent JSON에서도 content 추출 시도
   const msg = events.find(e => e.type === 'user.message');
-  const firstMsg = (msg?.data?.contentPreview || msg?.data?.content || msg?.label || '').slice(0,30) || null;
+  let firstMsg = null;
+  if (msg) {
+    let md = msg.data || {};
+    const mfc = msg.fullContent;
+    if (mfc && typeof mfc === 'string' && mfc.startsWith('{')) {
+      try { md = { ...md, ...JSON.parse(mfc) }; } catch {}
+    }
+    firstMsg = (md.contentPreview || md.content || msg.label || '').slice(0, 36) || null;
+  }
+  // git commit 메시지도 후보
+  if (!firstMsg) {
+    const gitMsg = events.find(e => e.type === 'git.commit');
+    firstMsg = (gitMsg?.data?.message || '').slice(0, 36) || null;
+  }
 
   // ── 브라우저/앱 활동 세션 → 도메인 라벨 (작업 설명 우선) ─────────────────
   const browseEvs = events.filter(e => e.type === 'browser_activity' || e.type === 'browse' || e.type === 'app_switch');
