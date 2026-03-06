@@ -31,7 +31,7 @@ const router  = express.Router();
  * @returns {express.Router}
  */
 function createRouter(deps) {
-  const { growthEngine, solutionStore, db } = deps;
+  const { growthEngine, solutionStore, db, getEventsForUser, resolveUserId } = deps;
 
   const { analyzeAndSuggest, saveFeedback, getSuggestions, getPatterns, getMarketCandidates } = growthEngine;
 
@@ -110,9 +110,12 @@ function createRouter(deps) {
   router.post('/growth/analyze', (req, res) => {
     try {
       const channel      = req.body.channel || 'default';
-      const recentEvents = db.getEventsByChannel
+      // 사용자별 이벤트로 분석
+      const uid = resolveUserId ? resolveUserId(req) : 'local';
+      const allEv = (getEventsForUser && uid !== 'local') ? getEventsForUser(uid) : (db.getAllEvents ? db.getAllEvents() : []);
+      const recentEvents = channel && db.getEventsByChannel
         ? db.getEventsByChannel(channel).slice(-500)
-        : db.getAllEvents().slice(-500);
+        : allEv.slice(-500);
 
       const results = analyzeAndSuggest(recentEvents, channel);
       res.json({ ok: true, patterns: results.length, results });

@@ -294,7 +294,11 @@ function createRouter(deps) {
    * @returns {object} { implement: 12, fix: 5, ... }
    */
   router.get('/purposes/summary', (req, res) => {
-    const events = _getEventsByQuery(req.query, getAllEvents, getEventsBySession, getEventsByChannel);
+    const user = getUserFromReq(req);
+    if (!user) return res.json({});
+    // 사용자별 이벤트로 목적 분류
+    const getEvFn = (user.id !== 'local' && getEventsByUser) ? () => getEventsByUser(user.id) : getAllEvents;
+    const events = _getEventsByQuery(req.query, getEvFn, getEventsBySession, getEventsByChannel);
     res.json(summarizePurposes(events));
   });
 
@@ -305,7 +309,10 @@ function createRouter(deps) {
    * @returns {PurposeWindow[]} 목적 윈도우 목록 (시간순)
    */
   router.get('/purposes', (req, res) => {
-    const events = _getEventsByQuery(req.query, getAllEvents, getEventsBySession, getEventsByChannel);
+    const user = getUserFromReq(req);
+    if (!user) return res.json([]);
+    const getEvFn = (user.id !== 'local' && getEventsByUser) ? () => getEventsByUser(user.id) : getAllEvents;
+    const events = _getEventsByQuery(req.query, getEvFn, getEventsBySession, getEventsByChannel);
     res.json(classifyPurposes(events));
   });
 
@@ -320,7 +327,14 @@ function createRouter(deps) {
     const { searchEvents } = db;
     const q = req.query.q;
     if (!q) return res.json([]);
-    res.json(searchEvents(q));
+    const user = getUserFromReq(req);
+    if (!user) return res.json([]);                                            // 비로그인: 빈 결과
+    // 검색 결과에서 본인 데이터만 필터
+    const results = searchEvents(q);
+    if (user.id !== 'local') {
+      return res.json(results.filter(e => e.userId === user.id || e.user_id === user.id));
+    }
+    res.json(results);
   });
 
   // ── 멤버 / 오버레이 ────────────────────────────────────────────────────────
@@ -331,8 +345,11 @@ function createRouter(deps) {
    * @returns {Member[]} { name, channels, eventCount, sources, lastActive }[]
    */
   router.get('/members', (req, res) => {
-    const allEvents   = getAllEvents();
-    const allSessions = getSessions();
+    const user = getUserFromReq(req);
+    if (!user) return res.json([]);                                            // 비로그인: 빈 목록
+    // 사용자별 이벤트·세션에서만 멤버 추출
+    const allEvents   = (user.id !== 'local' && getEventsByUser) ? getEventsByUser(user.id) : getAllEvents();
+    const allSessions = (user.id !== 'local' && getSessionsByUser) ? getSessionsByUser(user.id) : getSessions();
 
     // memberName → 집계 정보 맵
     const memberMap = new Map();
@@ -375,6 +392,8 @@ function createRouter(deps) {
    * @returns {{ overlay: { [name]: Graph }, timeRange: { from, to } }}
    */
   router.get('/overlay', (req, res) => {
+    const user = getUserFromReq(req);
+    if (!user) return res.json({ overlay: {}, timeRange: {} });               // 비로그인: 빈 결과
     const { annotateEventsWithPurpose } = purposeClassifier;
     const { buildGraph, computeActivityScores, applyActivityVisualization } = deps.graphEngine;
 
@@ -382,7 +401,8 @@ function createRouter(deps) {
     const from = req.query.from ? new Date(req.query.from) : null;
     const to   = req.query.to   ? new Date(req.query.to)   : null;
 
-    const allEvents = getAllEvents();
+    // 사용자별 이벤트만 사용
+    const allEvents = (user.id !== 'local' && getEventsByUser) ? getEventsByUser(user.id) : getAllEvents();
 
     // 시간 범위 필터
     const filtered = allEvents.filter(e => {
@@ -420,17 +440,37 @@ function createRouter(deps) {
 
   // ── 파일 / 통계 / 활동 점수 ────────────────────────────────────────────────
 
-  /** GET /api/files → 파일 접근 통계 목록 */
+  /** GET /api/files → 파일 접근 통계 목록 (사용자별 격리) */
   router.get('/files', (req, res) => {
     const user = getUserFromReq(req);
     if (!user) return res.json([]);                                            // 비로그인: 빈 목록
+    // 사용자별 파일 필터링: 해당 유저 이벤트에서 참조된 파일만
+    if (user.id !== 'local' && getEventsByUser) {
+      const userEvents = getEventsByUser(user.id);
+      const fileMap = {};
+      for (const e of userEvents) {
+        const fp = e.data?.filePath || e.data?.fileName;
+        if (fp) {
+          if (!fileMap[fp]) fileMap[fp] = { path: fp, count: 0, lastAccess: null };
+          fileMap[fp].count++;
+          if (!fileMap[fp].lastAccess || e.timestamp > fileMap[fp].lastAccess) {
+            fileMap[fp].lastAccess = e.timestamp;
+          }
+        }
+      }
+      return res.json(Object.values(fileMap));
+    }
     res.json(getFiles());
   });
 
-  /** GET /api/stats → 이벤트/세션/파일 수 */
+  /** GET /api/stats → 이벤트/세션/파일 수 (사용자별 격리) */
   router.get('/stats', (req, res) => {
     const user = getUserFromReq(req);
     if (!user) return res.json({ events: 0, sessions: 0, files: 0 });         // 비로그인: 빈 통계
+    // 사용자별 통계
+    if (user.id !== 'local' && getStatsByUser) {
+      return res.json(getStatsByUser(user.id));
+    }
     res.json(getStats());
   });
 
@@ -439,7 +479,12 @@ function createRouter(deps) {
    * @returns {{ [nodeId]: number }} 각 노드의 활동 점수 (0.0~1.0, 24h 감쇠)
    */
   router.get('/activity', (req, res) => {
-    const graph  = getFullGraph();
+    const user = getUserFromReq(req);
+    if (!user) return res.json({});                                            // 비로그인: 빈 결과
+    // 사용자별 그래프에서 활동 점수 추출
+    const graph = (user.id !== 'local' && getFullGraphForUser)
+      ? getFullGraphForUser(user.id)
+      : getFullGraph();
     const scores = {};
     for (const node of graph.nodes) scores[node.id] = node.activityScore;
     res.json(scores);
@@ -466,6 +511,10 @@ function createRouter(deps) {
   router.get('/turns', (req, res) => {
     const user = getUserFromReq(req);
     if (!user) return res.json([]);                                            // 비로그인: 빈 목록
+    // 사용자별 이벤트만 반환
+    if (user.id !== 'local' && getEventsByUser) {
+      return res.json(getEventsByUser(user.id));
+    }
     res.json(getAllEvents());
   });
 
@@ -475,6 +524,8 @@ function createRouter(deps) {
    * @param {string} id - 유지할 마지막 이벤트 ID
    */
   router.post('/rollback/:id', (req, res) => {
+    const user = getUserFromReq(req);
+    if (!user) return res.status(401).json({ error: 'login required' });      // 인증 필수
     try {
       rollbackToEvent(req.params.id);
 
@@ -498,6 +549,8 @@ function createRouter(deps) {
    * ⚠️ 되돌리기 불가능. 프로덕션에서는 권한 미들웨어 추가 권장.
    */
   router.delete('/clear', (req, res) => {
+    const user = getUserFromReq(req);
+    if (!user) return res.status(401).json({ error: 'login required' });      // 인증 필수
     try {
       clearAll();
       fs.writeFileSync(CONV_FILE, '');

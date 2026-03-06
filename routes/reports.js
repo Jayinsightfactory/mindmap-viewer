@@ -21,9 +21,15 @@ const router  = express.Router();
  * @returns {express.Router}
  */
 function createRouter(deps) {
-  const { db, reportGenerator } = deps;
+  const { db, reportGenerator, getEventsForUser, resolveUserId } = deps;
 
   const { getAllEvents, getEventsByChannel } = db;
+
+  // 사용자별 이벤트 조회 헬퍼
+  function _getUserEvents(req) {
+    const uid = resolveUserId ? resolveUserId(req) : 'local';
+    return (getEventsForUser && uid !== 'local') ? getEventsForUser(uid) : getAllEvents();
+  }
   const { buildReportData, renderMarkdown, renderSlackBlocks } = reportGenerator;
 
   // ── 일일 리포트 ──────────────────────────────────────────────────────────
@@ -47,9 +53,10 @@ function createRouter(deps) {
   router.get('/report/daily', (req, res) => {
     const { from, to, channel, format } = req.query;
 
+    const userEvents = _getUserEvents(req);
     let events = channel
-      ? (getEventsByChannel ? getEventsByChannel(channel) : getAllEvents().filter(e => e.channelId === channel))
-      : getAllEvents();
+      ? (getEventsByChannel ? getEventsByChannel(channel) : userEvents.filter(e => e.channelId === channel))
+      : userEvents;
 
     // 시간 범위 필터 적용
     if (from || to) {
@@ -84,9 +91,10 @@ function createRouter(deps) {
     const cutoff  = now - 7 * 24 * 3600 * 1000;
     const from    = new Date(cutoff).toISOString();
 
+    const userEvents = _getUserEvents(req);
     let events = channel
-      ? (getEventsByChannel ? getEventsByChannel(channel) : getAllEvents().filter(e => e.channelId === channel))
-      : getAllEvents();
+      ? (getEventsByChannel ? getEventsByChannel(channel) : userEvents.filter(e => e.channelId === channel))
+      : userEvents;
 
     events = events.filter(e => new Date(e.timestamp).getTime() >= cutoff);
 

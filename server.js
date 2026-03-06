@@ -360,9 +360,26 @@ function broadcastToChannel(channelId, msg) {
 
 /**
  * 연결된 모든 WebSocket 클라이언트에 메시지를 전송합니다.
+ * graph/sessions 포함 update 메시지는 자동으로 사용자별 데이터로 치환됩니다.
  * @param {object} msg - 전송할 메시지 객체
  */
 function broadcastAll(msg) {
+  // graph/sessions 포함 메시지 → 사용자별 격리 전송
+  if (msg.type === 'update' || msg.type === 'graph_update') {
+    for (const client of wss.clients) {
+      if (client.readyState !== WebSocket.OPEN) continue;
+      try {
+        const uid = client._userId || 'local';
+        const userGraph    = (uid !== 'local' && uid !== 'anonymous' && typeof getFullGraphForUser === 'function')
+          ? getFullGraphForUser(uid) : msg.graph;
+        const userSessions = (uid !== 'local' && uid !== 'anonymous' && typeof getSessionsForUser === 'function')
+          ? getSessionsForUser(uid) : msg.sessions;
+        client.send(JSON.stringify({ ...msg, graph: userGraph, sessions: userSessions }));
+      } catch {}
+    }
+    return;
+  }
+  // 그 외 메시지 → 동일하게 전체 전송
   const data = JSON.stringify(msg);
   wss.clients.forEach(client => {
     if (client.readyState === WebSocket.OPEN) {
@@ -606,15 +623,14 @@ app.post('/api/hook', (req, res) => {
       } catch (e) { console.error('[hook] JSONL 쓰기 실패:', e.message); }
     }
 
-    const graph    = getFullGraph();
-    const stats    = getStats();
-    const sessions = getSessions();
+    const fullGraph = getFullGraph();                                  // 충돌 감지용 전체 그래프
+    const stats     = getStats();
 
     // tool.end 이벤트 → 완료된 tool.start 노드 ID 추출 (FX 완료 효과용)
     const completedToolStarts = [];
     for (const ev of events) {
       if (ev.type === 'tool.end' || ev.type === 'tool.error') {
-        const startNode = graph.nodes.find(n =>
+        const startNode = fullGraph.nodes.find(n =>
           (n.eventType || n.type) === 'tool.start' && n.sessionId === ev.sessionId
         );
         if (startNode) completedToolStarts.push(startNode.id);
@@ -653,17 +669,35 @@ app.post('/api/hook', (req, res) => {
       console.warn(`[CONFLICT] ⚠️ 충돌 감지 ${newConflicts.length}건 — 채널: #${channelId}`);
     }
 
-    const payload = {
-      type: 'update',
-      graph, stats, sessions, completedToolStarts,
-      hookSource:   { channelId, memberName },
-      securityLeaks: leaks,
-      conflicts:     newConflicts,
-      shadowAI:      shadowFindings,
+    // ── 사용자별 데이터 격리 브로드캐스트 ─────────────────────────────────
+    // broadcastAll 대신 각 WS 클라이언트에 본인의 그래프/세션만 전송
+    const _broadcastUserFiltered = () => {
+      for (const client of wss.clients) {
+        if (client.readyState !== WebSocket.OPEN) continue;
+        try {
+          const uid = client._userId || 'local';
+          const userGraph    = (uid !== 'local' && uid !== 'anonymous')
+            ? getFullGraphForUser(uid) : fullGraph;
+          const userSessions = getSessionsForUser(uid);
+          client.send(JSON.stringify({
+            type: 'update',
+            graph: userGraph, stats, sessions: userSessions, completedToolStarts,
+            hookSource:    { channelId, memberName },
+            securityLeaks: leaks,
+            conflicts:     newConflicts,
+            shadowAI:      shadowFindings,
+          }));
+        } catch {}
+      }
     };
 
-    if (channelClients.has(channelId)) broadcastToChannel(channelId, payload);
-    else                               broadcastAll(payload);
+    if (channelClients.has(channelId)) broadcastToChannel(channelId, {
+      type: 'update',
+      graph: fullGraph, stats, sessions: getSessions(), completedToolStarts,
+      hookSource: { channelId, memberName },
+      securityLeaks: leaks, conflicts: newConflicts, shadowAI: shadowFindings,
+    });
+    else _broadcastUserFiltered();
 
     // Ollama 실시간 분석 (이벤트 큐에 추가)
     for (const ev of events) ollamaAnalyzer.addEvent(ev);
@@ -870,6 +904,7 @@ app.use('/api', createGraphRouter({
 }));
 
 app.use('/api', createAnnotationsRouter({
+  getEventsForUser, resolveUserId,
   broadcastAll,
   db: dbDeps,
   eventNormalizer: { createAnnotationEvent },
@@ -888,17 +923,20 @@ app.use('/api', createAnalysisRouter({
   codeAnalyzer: { generateReport },
   contextBridge: { extractContext, renderContextMd, renderContextPrompt, saveContextFile },
   conflictDetector: { detectConflicts },
+  getEventsForUser, resolveUserId,
 }));
 
 app.use('/api', createSecurityRouter({
   db: dbDeps,
   shadowAiDetector: { detectShadowAI, getApprovedSources, addApprovedSource, removeApprovedSource },
   auditLog: { queryAuditLog, verifyIntegrity, renderAuditHtml },
+  getEventsForUser, resolveUserId,
 }));
 
 app.use('/api', createReportsRouter({
   db: dbDeps,
   reportGenerator: { buildReportData, renderMarkdown, renderSlackBlocks },
+  getEventsForUser, resolveUserId,
 }));
 
 app.use('/api', createThemesRouter({
@@ -935,6 +973,7 @@ app.use('/api', createGrowthRouter({
   growthEngine:  { analyzeAndSuggest, saveFeedback, getSuggestions, getPatterns, getMarketCandidates },
   solutionStore,
   db: dbDeps,
+  getEventsForUser, resolveUserId,
 }));
 
 app.use('/api', createCommunityRouter({
@@ -963,7 +1002,7 @@ app.get('/api/me', (req, res) => {
 app.use('/api', createMarketRouter({ marketStore, authMiddleware, optionalAuth }));
 
 // ─── Ollama 커스텀 모델 관리 ──────────────────────────────────────────────────
-app.use('/api', createModelRouter({ getAllEvents, modelTrainer, broadcastAll }));
+app.use('/api', createModelRouter({ getAllEvents, modelTrainer, broadcastAll, getEventsForUser, resolveUserId }));
 
 // ─── AI 역량 포트폴리오 PDF ──────────────────────────────────────────────────
 app.use('/api', createPortfolioRouter({ getAllEvents, getSessions, getStats, getFiles, optionalAuth, getEventsForUser, getSessionsForUser, resolveUserId }));
@@ -1005,7 +1044,7 @@ app.use('/api', createRoiRouter({ getAllEvents, getSessions, optionalAuth, getEv
 // ─── Analytics (사용자 행동 분석) ────────────────────────────────────────────
 app.use('/api', createAnalyticsRouter({ getDb: dbModule.getDb }));
 app.use('/api', createProfileRouter({ getDb: dbModule.getDb, verifyToken }));
-app.use('/api', createFollowRouter({ getDb: dbModule.getDb, verifyToken, searchUsers })); // searchUsers 주입
+app.use('/api', createFollowRouter({ getDb: dbModule.getDb, verifyToken, searchUsers, getUserById })); // searchUsers + getUserById 주입
 app.use('/api', createChatRouter({ getDb: dbModule.getDb, verifyToken, broadcastToRoom }));
 
 // ─── Workspace (팀/회사 관리) ─────────────────────────────────────────────────
@@ -1057,7 +1096,7 @@ app.use('/api', createSetupRouter({ getAllEvents, getDb: dbModule.getDb, port: P
 
 // ─── 목적(Purpose) 타임라인 ──────────────────────────────────────────────────
 const createPurposesRouter = require('./routes/purposes');
-app.use('/api', createPurposesRouter({ getAllEvents, getEventsBySession, getSessions }));
+app.use('/api', createPurposesRouter({ getAllEvents, getEventsBySession, getSessions, getEventsForUser, getSessionsForUser, resolveUserId }));
 
 // ─── 개인 학습 에이전트 ───────────────────────────────────────────────────────
 const createPersonalLearningRouter = require('./routes/personal-learning');

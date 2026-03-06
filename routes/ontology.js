@@ -187,15 +187,21 @@ function computeHotspots(nodes) {
 
 // ─── 라우터 팩토리 ────────────────────────────────────────────────────────────
 
-function createOntologyRouter({ getAllEvents, getFiles, optionalAuth } = {}) {
+function createOntologyRouter({ getAllEvents, getFiles, optionalAuth, getEventsForUser, resolveUserId } = {}) {
   const router = express.Router();
   const noAuth = (req, res, next) => next();
   const auth   = optionalAuth || noAuth;
 
+  // 사용자별 이벤트 조회 헬퍼
+  function _getUserEvents(req) {
+    const uid = resolveUserId ? resolveUserId(req) : 'local';
+    return (getEventsForUser && uid !== 'local') ? getEventsForUser(uid) : (getAllEvents ? getAllEvents() : []);
+  }
+
   // ── 전체 온톨로지 그래프 ──────────────────────────────────────────────
   router.get('/ontology', (req, res) => {
     const { maxNodes = 200 } = req.query;
-    const events = getAllEvents ? getAllEvents() : [];
+    const events = _getUserEvents(req);
     const { nodes, edges, summary } = buildOntologyGraph(events);
 
     // 이벤트 수 기준 상위 N개 파일만
@@ -213,7 +219,7 @@ function createOntologyRouter({ getAllEvents, getFiles, optionalAuth } = {}) {
 
   // ── 파일 의존성 서브그래프 ────────────────────────────────────────────
   router.get('/ontology/files', (req, res) => {
-    const events = getAllEvents ? getAllEvents() : [];
+    const events = _getUserEvents(req);
     const { nodes, edges, summary } = buildOntologyGraph(events);
     const fileNodes  = nodes.filter(n => n.type === 'file');
     const fileEdges  = edges.filter(e => e.type === 'co-edited');
@@ -222,7 +228,7 @@ function createOntologyRouter({ getAllEvents, getFiles, optionalAuth } = {}) {
 
   // ── 팀 오너십 맵 ──────────────────────────────────────────────────────
   router.get('/ontology/ownership', (req, res) => {
-    const events = getAllEvents ? getAllEvents() : [];
+    const events = _getUserEvents(req);
     const { nodes } = buildOntologyGraph(events);
     const fileNodes = nodes.filter(n => n.type === 'file');
 
@@ -265,7 +271,7 @@ function createOntologyRouter({ getAllEvents, getFiles, optionalAuth } = {}) {
   // ── 파일별 AI 히스토리 ────────────────────────────────────────────────
   router.get('/ontology/ai-history/:file', (req, res) => {
     const fileName = decodeURIComponent(req.params.file);
-    const events   = (getAllEvents ? getAllEvents() : []).filter(ev => {
+    const events   = _getUserEvents(req).filter(ev => {
       const dataStr = typeof ev.data === 'string' ? ev.data : JSON.stringify(ev.data || '');
       return dataStr.includes(fileName);
     }).slice(-100); // 최근 100개
@@ -293,14 +299,14 @@ function createOntologyRouter({ getAllEvents, getFiles, optionalAuth } = {}) {
 
   // ── 핫스팟 ────────────────────────────────────────────────────────────
   router.get('/ontology/hotspots', (req, res) => {
-    const events = getAllEvents ? getAllEvents() : [];
+    const events = _getUserEvents(req);
     const { nodes } = buildOntologyGraph(events);
     res.json({ hotspots: computeHotspots(nodes) });
   });
 
   // ── 클러스터 ──────────────────────────────────────────────────────────
   router.get('/ontology/clusters', (req, res) => {
-    const events = getAllEvents ? getAllEvents() : [];
+    const events = _getUserEvents(req);
     const { nodes, edges } = buildOntologyGraph(events);
     res.json({ clusters: clusterNodes(nodes, edges) });
   });
@@ -324,7 +330,7 @@ function createOntologyRouter({ getAllEvents, getFiles, optionalAuth } = {}) {
     const { q, type } = req.query;
     if (!q) return res.status(400).json({ error: 'q 파라미터가 필요합니다.' });
 
-    const events = getAllEvents ? getAllEvents() : [];
+    const events = _getUserEvents(req);
     const { nodes } = buildOntologyGraph(events);
 
     const query   = q.toLowerCase();

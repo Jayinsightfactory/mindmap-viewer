@@ -11,8 +11,14 @@
 const { Router } = require('express');
 const { groupEventsByPurpose } = require('../src/purpose-engine');
 
-module.exports = function createPurposesRouter({ getAllEvents, getEventsBySession, getSessions }) {
+module.exports = function createPurposesRouter({ getAllEvents, getEventsBySession, getSessions, getEventsForUser, getSessionsForUser, resolveUserId }) {
   const router = Router();
+
+  // 사용자별 세션 조회 헬퍼
+  function _getSes(req) {
+    const uid = resolveUserId ? resolveUserId(req) : 'local';
+    return (getSessionsForUser && uid !== 'local') ? getSessionsForUser(uid) : (typeof getSessions === 'function' ? getSessions() : []);
+  }
 
   // ── 목적 타임라인 ────────────────────────────────────────────────────────────
   // GET /api/purposes/timeline?session_id=xxx&limit=50
@@ -28,8 +34,8 @@ module.exports = function createPurposesRouter({ getAllEvents, getEventsBySessio
         const events = getEventsBySession(sessionId);
         purposes = groupEventsByPurpose(events, { limit });
       } else {
-        // 전체: 세션별로 분리 처리 후 합산 (이벤트 혼용 방지)
-        const sessions = typeof getSessions === 'function' ? getSessions() : [];
+        // 전체: 사용자별 세션으로 분리 처리 후 합산
+        const sessions = _getSes(req);
         const perSess  = sessions.slice(0, 10).map(sess => {
           try {
             const evs = typeof getEventsBySession === 'function'
@@ -53,7 +59,7 @@ module.exports = function createPurposesRouter({ getAllEvents, getEventsBySessio
   // GET /api/purposes/sessions
   router.get('/purposes/sessions', (req, res) => {
     try {
-      const sessions = typeof getSessions === 'function' ? getSessions() : [];
+      const sessions = _getSes(req);
 
       const result = sessions.slice(0, 30).map(sess => {
         let events = [];

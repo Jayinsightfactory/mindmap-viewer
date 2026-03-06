@@ -50,7 +50,7 @@ const router  = express.Router();
  * @returns {express.Router}
  */
 function createRouter(deps) {
-  const { broadcastAll, db, eventNormalizer, graphEngine } = deps;
+  const { broadcastAll, db, eventNormalizer, graphEngine, getEventsForUser, resolveUserId } = deps;
 
   const {
     getAnnotations, insertAnnotation, deleteAnnotation, insertEvent,
@@ -234,7 +234,9 @@ function createRouter(deps) {
    * @returns {{ label: string, confidence: number }}
    */
   router.get('/suggest-label/:eventId', (req, res) => {
-    const events = getAllEvents();
+    // 사용자별 이벤트에서 검색
+    const uid = resolveUserId ? resolveUserId(req) : 'local';
+    const events = (getEventsForUser && uid !== 'local') ? getEventsForUser(uid) : getAllEvents();
     const event  = events.find(e => e.id === req.params.eventId);
     if (!event) return res.status(404).json({ error: 'Event not found' });
     const suggestion = suggestLabel(event, events);

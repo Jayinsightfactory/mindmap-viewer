@@ -1,0 +1,801 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Orbit AI — Feature Map</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, 'Segoe UI', 'Noto Sans KR', sans-serif;
+    background: #0a0e17;
+    color: #e6edf3;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── 헤더 ───────────────────────────────────────── */
+  .hero {
+    text-align: center;
+    padding: 60px 20px 40px;
+    background: radial-gradient(ellipse at 50% 0%, rgba(88,166,255,0.12) 0%, transparent 60%);
+  }
+  .hero h1 {
+    font-size: 48px;
+    font-weight: 800;
+    background: linear-gradient(135deg, #58a6ff 0%, #3fb950 50%, #bc8cff 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    letter-spacing: -1px;
+  }
+  .hero .sub {
+    font-size: 18px;
+    color: #8b949e;
+    margin-top: 12px;
+  }
+  .hero .stats-row {
+    display: flex;
+    justify-content: center;
+    gap: 40px;
+    margin-top: 32px;
+    flex-wrap: wrap;
+  }
+  .hero .stat-pill {
+    background: rgba(88,166,255,0.08);
+    border: 1px solid rgba(88,166,255,0.2);
+    border-radius: 24px;
+    padding: 10px 24px;
+    font-size: 14px;
+  }
+  .hero .stat-pill b {
+    color: #58a6ff;
+    font-size: 20px;
+    margin-right: 6px;
+  }
+
+  /* ── 섹션 레이아웃 ────────────────────────────────── */
+  .container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 0 24px 80px;
+  }
+  .section-title {
+    font-size: 22px;
+    font-weight: 700;
+    margin: 48px 0 20px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid rgba(88,166,255,0.15);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .section-title .icon {
+    font-size: 28px;
+    line-height: 1;
+  }
+
+  /* ── 카드 그리드 ───────────────────────────────────── */
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+    gap: 16px;
+  }
+  .card {
+    background: #111827;
+    border: 1px solid #1e293b;
+    border-radius: 12px;
+    padding: 20px;
+    transition: transform 0.2s, border-color 0.3s, box-shadow 0.3s;
+    position: relative;
+    overflow: hidden;
+  }
+  .card:hover {
+    transform: translateY(-3px);
+    border-color: rgba(88,166,255,0.4);
+    box-shadow: 0 8px 32px rgba(88,166,255,0.1);
+  }
+  .card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    border-radius: 12px 12px 0 0;
+  }
+  .card .card-icon {
+    font-size: 32px;
+    margin-bottom: 10px;
+    display: block;
+  }
+  .card h3 {
+    font-size: 16px;
+    font-weight: 700;
+    color: #f0f6fc;
+    margin-bottom: 6px;
+  }
+  .card p {
+    font-size: 13px;
+    color: #8b949e;
+    line-height: 1.5;
+  }
+  .card .tech {
+    margin-top: 10px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .card .tech span {
+    background: rgba(88,166,255,0.1);
+    color: #58a6ff;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    border: 1px solid rgba(88,166,255,0.15);
+  }
+
+  /* ── 카테고리 색상 ─────────────────────────────────── */
+  .cat-core .card::before { background: linear-gradient(90deg, #58a6ff, #79c0ff); }
+  .cat-viz .card::before { background: linear-gradient(90deg, #bc8cff, #d2a8ff); }
+  .cat-ai .card::before { background: linear-gradient(90deg, #3fb950, #56d364); }
+  .cat-social .card::before { background: linear-gradient(90deg, #f778ba, #ff9bce); }
+  .cat-security .card::before { background: linear-gradient(90deg, #f85149, #ff7b72); }
+  .cat-biz .card::before { background: linear-gradient(90deg, #ffa657, #ffc680); }
+  .cat-infra .card::before { background: linear-gradient(90deg, #39d2c0, #56d4c8); }
+  .cat-integration .card::before { background: linear-gradient(90deg, #d29922, #e3b341); }
+
+  /* ── 아키텍처 다이어그램 ────────────────────────────── */
+  .arch-diagram {
+    background: #111827;
+    border: 1px solid #1e293b;
+    border-radius: 16px;
+    padding: 40px;
+    margin: 48px 0 32px;
+    overflow-x: auto;
+  }
+  .arch-diagram h2 {
+    text-align: center;
+    font-size: 20px;
+    margin-bottom: 32px;
+    color: #79c0ff;
+  }
+  .arch-layers {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 900px;
+  }
+  .arch-layer {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .arch-label {
+    width: 120px;
+    font-size: 12px;
+    font-weight: 700;
+    color: #8b949e;
+    text-align: right;
+    flex-shrink: 0;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .arch-boxes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    flex: 1;
+  }
+  .arch-box {
+    padding: 8px 14px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .arch-box.blue { background: rgba(88,166,255,0.15); color: #79c0ff; border: 1px solid rgba(88,166,255,0.25); }
+  .arch-box.green { background: rgba(63,185,80,0.15); color: #56d364; border: 1px solid rgba(63,185,80,0.25); }
+  .arch-box.purple { background: rgba(188,140,255,0.15); color: #d2a8ff; border: 1px solid rgba(188,140,255,0.25); }
+  .arch-box.pink { background: rgba(247,120,186,0.15); color: #ff9bce; border: 1px solid rgba(247,120,186,0.25); }
+  .arch-box.orange { background: rgba(255,166,87,0.15); color: #ffc680; border: 1px solid rgba(255,166,87,0.25); }
+  .arch-box.red { background: rgba(248,81,73,0.15); color: #ff7b72; border: 1px solid rgba(248,81,73,0.25); }
+  .arch-box.teal { background: rgba(57,210,192,0.15); color: #56d4c8; border: 1px solid rgba(57,210,192,0.25); }
+  .arch-box.yellow { background: rgba(210,153,34,0.15); color: #e3b341; border: 1px solid rgba(210,153,34,0.25); }
+
+  .arch-connector {
+    text-align: center;
+    color: #30363d;
+    font-size: 20px;
+    letter-spacing: 8px;
+    padding: 2px 0;
+  }
+
+  /* ── 파일 카운트 바 ─────────────────────────────────── */
+  .file-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 12px;
+    margin: 24px 0;
+  }
+  .file-bar {
+    background: #111827;
+    border: 1px solid #1e293b;
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .file-bar .label {
+    font-size: 12px;
+    color: #8b949e;
+    margin-bottom: 6px;
+  }
+  .file-bar .bar-track {
+    height: 6px;
+    background: #1e293b;
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .file-bar .bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 1s ease;
+  }
+  .file-bar .count {
+    font-size: 20px;
+    font-weight: 700;
+    margin-top: 6px;
+  }
+
+  /* ── 푸터 ───────────────────────────────────────── */
+  .footer {
+    text-align: center;
+    padding: 40px 20px;
+    border-top: 1px solid #1e293b;
+    color: #484f58;
+    font-size: 13px;
+  }
+
+  @media (max-width: 768px) {
+    .hero h1 { font-size: 32px; }
+    .grid { grid-template-columns: 1fr; }
+    .arch-diagram { padding: 20px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════ HERO ═══════════════════════ -->
+<div class="hero">
+  <h1>Orbit AI</h1>
+  <div class="sub">Multi-User AI Activity Tracking & 3D Visualization Platform</div>
+  <div class="stats-row">
+    <div class="stat-pill"><b>41</b>Route Files</div>
+    <div class="stat-pill"><b>19</b>HTML Pages</div>
+    <div class="stat-pill"><b>60+</b>Backend Modules</div>
+    <div class="stat-pill"><b>18</b>Frontend JS</div>
+    <div class="stat-pill"><b>12</b>AI Adapters</div>
+  </div>
+</div>
+
+<div class="container">
+
+<!-- ═══════════════════════ ARCHITECTURE ═══════════════════════ -->
+<div class="arch-diagram">
+  <h2>System Architecture</h2>
+  <div class="arch-layers">
+    <div class="arch-layer">
+      <div class="arch-label">Frontend</div>
+      <div class="arch-boxes">
+        <div class="arch-box purple">Three.js 3D Orbit</div>
+        <div class="arch-box purple">Canvas2D Overlay</div>
+        <div class="arch-box purple">WebSocket Client</div>
+        <div class="arch-box purple">Google OAuth UI</div>
+        <div class="arch-box purple">Settings SPA</div>
+      </div>
+    </div>
+    <div class="arch-connector">| | | | |</div>
+    <div class="arch-layer">
+      <div class="arch-label">API Layer</div>
+      <div class="arch-boxes">
+        <div class="arch-box blue">Express REST (41 routers)</div>
+        <div class="arch-box blue">WebSocket Server</div>
+        <div class="arch-box blue">JWT Auth + OAuth</div>
+        <div class="arch-box blue">User Data Isolation</div>
+      </div>
+    </div>
+    <div class="arch-connector">| | | | |</div>
+    <div class="arch-layer">
+      <div class="arch-label">Engine</div>
+      <div class="arch-boxes">
+        <div class="arch-box green">Graph Engine</div>
+        <div class="arch-box green">Insight Engine</div>
+        <div class="arch-box green">Growth Engine</div>
+        <div class="arch-box green">Purpose Classifier</div>
+        <div class="arch-box green">Ollama Analyzer</div>
+        <div class="arch-box green">Signal Engine</div>
+      </div>
+    </div>
+    <div class="arch-connector">| | | | |</div>
+    <div class="arch-layer">
+      <div class="arch-label">Data</div>
+      <div class="arch-boxes">
+        <div class="arch-box orange">SQLite (mindmap.db)</div>
+        <div class="arch-box orange">JSONL Event Log</div>
+        <div class="arch-box orange">Google Drive Sync</div>
+        <div class="arch-box orange">Cloud Sync (Railway)</div>
+      </div>
+    </div>
+    <div class="arch-connector">| | | | |</div>
+    <div class="arch-layer">
+      <div class="arch-label">Integrations</div>
+      <div class="arch-boxes">
+        <div class="arch-box yellow">Claude Code Hook</div>
+        <div class="arch-box yellow">Gemini Adapter</div>
+        <div class="arch-box yellow">OpenAI Adapter</div>
+        <div class="arch-box yellow">VSCode Adapter</div>
+        <div class="arch-box yellow">Slack / Notion</div>
+        <div class="arch-box yellow">Zoom / Calendar</div>
+        <div class="arch-box yellow">MCP Server</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════ FILE COUNTS ═══════════════════════ -->
+<div class="file-summary">
+  <div class="file-bar">
+    <div class="label">Backend Routes</div>
+    <div class="bar-track"><div class="bar-fill" style="width:100%;background:#58a6ff"></div></div>
+    <div class="count" style="color:#58a6ff">41 files</div>
+  </div>
+  <div class="file-bar">
+    <div class="label">Core Modules (src/)</div>
+    <div class="bar-track"><div class="bar-fill" style="width:95%;background:#3fb950"></div></div>
+    <div class="count" style="color:#3fb950">60 files</div>
+  </div>
+  <div class="file-bar">
+    <div class="label">Frontend JS</div>
+    <div class="bar-track"><div class="bar-fill" style="width:45%;background:#bc8cff"></div></div>
+    <div class="count" style="color:#bc8cff">18 files</div>
+  </div>
+  <div class="file-bar">
+    <div class="label">HTML Pages</div>
+    <div class="bar-track"><div class="bar-fill" style="width:48%;background:#f778ba"></div></div>
+    <div class="count" style="color:#f778ba">19 pages</div>
+  </div>
+  <div class="file-bar">
+    <div class="label">AI Adapters</div>
+    <div class="bar-track"><div class="bar-fill" style="width:30%;background:#ffa657"></div></div>
+    <div class="count" style="color:#ffa657">12 adapters</div>
+  </div>
+</div>
+
+<!-- ═══════════════════════ CORE PLATFORM ═══════════════════════ -->
+<div class="section-title cat-core"><span class="icon">&#x2B21;</span> Core Platform</div>
+<div class="grid cat-core">
+  <div class="card">
+    <span class="card-icon">&#x1F30D;</span>
+    <h3>3D Orbit Visualization</h3>
+    <p>Three.js 기반 우주 시각화. 프로젝트를 행성으로, 이벤트를 위성으로 표현. 실시간 궤도 애니메이션</p>
+    <div class="tech"><span>Three.js</span><span>Canvas2D</span><span>WebGL</span><span>orbit3d-*.js (10 files)</span></div>
+  </div>
+  <div class="card">
+    <span class="card-icon">&#x1F4CA;</span>
+    <h3>Real-time Graph Engine</h3>
+    <p>이벤트 스트림을 노드+엣지 그래프로 변환. 활동 점수, 감쇠, 크기/색상 자동 시각화</p>
+    <div class="tech"><span>graph-engine.js</span><span>activity scores</span><span>24h decay</span></div>
+  </div>
+  <div class="card">
+    <span class="card-icon">&#x26A1;</span>
+    <h3>WebSocket Real-time Sync</h3>
+    <p>이벤트 수신 즉시 모든 클라이언트에 사용자별 격리 데이터 푸시. 채널 브로드캐스트</p>
+    <div class="tech"><span>ws</span><span>user-filtered broadcast</span><span>channel system</span></div>
+  </div>
+  <div class="card">
+    <span class="card-icon">&#x1F512;</span>
+    <h3>Multi-User Auth System</h3>
+    <p>JWT + Google OAuth + Email 인증. 사용자별 데이터 완전 격리. 관리자 초대 시스템</p>
+    <div class="tech"><span>JWT</span><span>OAuth 2.0</span><span>Passport.js</span><span>bcrypt</span></div>
+  </div>
+  <div class="card">
+    <span class="card-icon">&#x1F4BE;</span>
+    <h3>Event Storage Engine</h3>
+    <p>SQLite + JSONL 이중 저장. 이벤트 삽입, 세션 관리, 사용자별 조회, 롤백, 스냅샷</p>
+    <div class="tech"><span>better-sqlite3</span><span>JSONL</span><span>db.js</span></div>
+  </div>
+  <div class="card">
+    <span class="card-icon">&#x2601;</span>
+    <h3>Google Drive Auto-Sync</h3>
+    <p>로그인 시 자동 백업/복원. 다른 PC에서도 동일 작업환경 구성. 5분 자동 백업</p>
+    <div class="tech"><span>Google Drive API</span><span>gdrive-user-backup.js</span><span>auto backup timer</span></div>
+  </div>
+</div>
+
+<!-- ═══════════════════════ 3D VISUALIZATION ═══════════════════════ -->
+<div class="section-title cat-viz"><span class="icon">&#x1F52D;</span> 3D Visualization Modes</div>
+<div class="grid cat-viz">
+  <div class="card">
+    <span class="card-icon">&#x1F468;</span>
+    <h3>Personal Mode</h3>
+    <p>개인 데이터만 표시. 컴팩트 그리드 행성 배치, 연결선 제거, 역피라미드 카드 리스트</p>
+    <div class="tech"><span>orbit3d-render.js</span><span>inverted pyramid</span><span>compact grid</span></div>
+  </div>
+  <div class="card">
+    <span class="card-icon">&#x1F46B;</span>
+    <h3>Team Mode</h3>
+    <p>팀원별 행성 클러스터. 멤버 포커스, 오버레이 비교, 활동 히트맵</p>
+    <div class="tech"><span>orbit3d-team.js</span><span>member overlay</span><span>channel system</span></div>
+  </div>
+  <div class="card">
+    <span class="card-icon">&#x1F3E2;</span>
+    <h3>Company Mode</h3>
+    <p>부서별 성운 클러스터링. 컨설턴트 뷰, 회사 전체 AI 활용 현황</p>
+    <div class="tech"><span>orbit3d-company.js</span><span>dept nebula</span><span>consultant view</span></div>
+  </div>
+  <div class="card">
+    <span class="card-icon">&#x1F300;</span>
+    <h3>Parallel Universe Mode</h3>
+    <p>여러 프로젝트를 병렬 우주로 시각화. 프로젝트 간 비교, 크로스 분석</p>
+    <div class="tech"><span>orbit3d-parallel.js</span><span>multi-project</span></div>
+  </div>
+  <div class="card">
+    <span class="card-icon">&#x1F3AE;</span>
+    <h3>Game Effects & VR</h3>
+    <p>파티클 효과, 쉐이크, 카메라 FX. WebXR VR 모드 지원</p>
+    <div class="tech"><span>game-effects.js</span><span>orbit3d-vr.js</span><span>WebXR</span></div>
+  </div>
+  <div class="card">
+    <span class="card-icon">&#x1F4F1;</span>
+    <h3>Social Layer</h3>
+    <p>프로필, 팔로우, 메신저, 실시간 채팅 오버레이</p>
+    <div class="tech"><span>orbit3d-social.js</span><span>follow.js</span><span>chat.js</span></div>
+  </div>
+</div>
+
+<!-- ═══════════════════════ AI & ANALYSIS ═══════════════════════ -->
+<div class="section-title cat-ai"><span class="icon">&#x1F9E0;</span> AI & Analysis Engine</div>
+<div class="grid cat-ai">
+  <div class="card">
+    <span class="card-icon">&#x1F4A1;</span>
+    <h3>Insight Engine</h3>
+    <p>이벤트 패턴에서 자동 인사이트 생성. 반복 작업 감지, 생산성 추세, 피크 시간대 분석</p>
+    <div class="tech"><span>insight-engine.js</span><span>auto-run interval</span></div>
+  </div>
+  <div class="card">
+    <span class="card-icon">&#x1F916;</span>
+    <h3>Ollama Local AI Analyzer</h3>
+    <p>로컬 LLM으로 실시간 이벤트 분석. 세션 분류, 목적 추론, 자동 라벨링</p>
+    <div class="tech"><span>ollama-analyzer.js</span><span>model-trainer.js</span><span>custom fine-tune</span></div>
+  </div>
+  <div class="card">
+    <span class="card-icon">&#x1F3AF;</span>
+    <h3>Purpose Classifier</h3>
+    <p>이벤트를 implement/fix/refactor 등 9개 카테고리로 자동 분류. 타임라인 시각화</p>
+    <div class="tech"><span>purpose-classifier.js</span><span>purpose-engine.js</span></div>
+  </div>
+  <div class="card">
+    <span class="card-icon">&#x1F4C8;</span>
+    <h3>Growth Engine</h3>
+    <p>반복 패턴 감지 &rarr; AI 자동화 제안 &rarr; 사용자 피드백 &rarr; 신뢰도 학습 루프</p>
+    <div class="tech"><span>growth-engine.js</span><span>suggestion-engine.js</span><span>confidence loop</span></div>
+  </div>
+  <div class="card">
+    <span class="card-icon">&#x1F4DA;</span>
+    <h3>Diff Learner</h3>
+    <p>코드 변경 패턴 학습. 자주 수정되는 파일, 반복 패턴, 리팩토링 후보 자동 감지</p>
+    <div class="tech"><span>diff-learner.js</span><span>file-learner.js</span></div>
+  </div>
+  <div class="card">
+    <span class="card-icon">&#x1F50D;</span>
+    <h3>Content Analyzer</h3>
+    <p>코드 복잡도 분석 (순환 복잡도, 등급), 프로젝트 일괄 분석, AI 리팩토링 제안</p>
+    <div class="tech"><span>code-analyzer.js</span><span>content-analyzer.js</span></div>
+  </div>
+  <div class="card">
+    <span class="card-icon">&#x1F9EC;</span>
+    <h3>Dual Skill Engine</h3>
+    <p>기술 스킬과 소프트 스킬 동시 분석. AI 활용 역량 점수화</p>
+    <div class="tech"><span>dual-skill-engine.js</span><span>certificate-engine.js</span></div>
+  </div>
+  <div class="card">
+    <span class="card-icon">&#x1F4E1;</span>
+    <h3>Signal Engine (Tesla FSD)</h3>
+    <p>Tesla FSD 방식 원시 신호 감지. 키보드/마우스/앱 전환 패턴에서 작업 의도 추론</p>
+    <div class="tech"><span>signal-engine.js</span><span>stress-detector.js</span></div>
+  </div>
+  <div class="card">
+    <span class="card-icon">&#x1F5FA;</span>
+    <h3>Team Ontology Graph</h3>
+    <p>파일 의존성 + 팀 오너십 + AI 히스토리 통합 그래프. 핫스팟, 자동 클러스터링</p>
+    <div class="tech"><span>ontology.js</span><span>co-edit edges</span><span>7 endpoints</span></div>
+  </div>
+</div>
+
+<!-- ═══════════════════════ SOCIAL & COMMUNITY ═══════════════════════ -->
+<div class="section-title cat-social"><span class="icon">&#x1F465;</span> Social & Community</div>
+<div class="grid cat-social">
+  <div class="card">
+    <span class="card-icon">&#x1F464;</span>
+    <h3>User Profile System</h3>
+    <p>사용자 프로필, 아바타, 바이오, 기술 스택 관리</p>
+    <div class="tech"><span>profile.js</span><span>avatars.js</span><span>avatar-store.js</span></div>
+  </div>
+  <div class="card">
+    <span class="card-icon">&#x1F4AC;</span>
+    <h3>Real-time Chat</h3>
+    <p>채널 내 실시간 메시지, 방 기반 채팅, WebSocket 구독</p>
+    <div class="tech"><span>chat.js</span><span>broadcastToRoom</span></div>
+  </div>
+  <div class="card">
+    <span class="card-icon">&#x1F91D;</span>
+    <h3>Follow System</h3>
+    <p>사용자 팔로우/언팔로우, 팔로워 목록, 활동 피드</p>
+    <div class="tech"><span>follow.js</span></div>
+  </div>
+  <div class="card">
+    <span class="card-icon">&#x1F3C6;</span>
+    <h3>AI Leaderboard</h3>
+    <p>AI 활용 랭킹, 주간 챌린지, 연속 기록, 레벨 시스템</p>
+    <div class="tech"><span>leaderboard.js</span><span>points-engine.js</span></div>
+  </div>
+  <div class="card">
+    <span class="card-icon">&#x1F3AA;</span>
+    <h3>Community Hub</h3>
+    <p>커뮤니티 게시판, 공유 세션, 추천 콘텐츠</p>
+    <div class="tech"><span>community.js</span><span>community-store.js</span></div>
+  </div>
+  <div class="card">
+    <span class="card-icon">&#x1F517;</span>
+    <h3>Session Sharing</h3>
+    <p>세션을 공개 링크로 공유. 좋아요, 댓글, 민감 정보 자동 마스킹</p>
+    <div class="tech"><span>share.js</span><span>sanitizeEvents</span><span>orbit-share viewer</span></div>
+  </div>
+  <div class="card">
+    <span class="card-icon">&#x1F396;</span>
+    <h3>Orbit Badge SVG</h3>
+    <p>GitHub README용 동적 SVG 뱃지. 이벤트 수, 연속일, AI 활용 등급 표시</p>
+    <div class="tech"><span>badge.js</span><span>dynamic SVG</span></div>
+  </div>
+  <div class="card">
+    <span class="card-icon">&#x1F3E2;</span>
+    <h3>Workspace Management</h3>
+    <p>팀/회사 워크스페이스 생성, 멤버 초대, 역할 관리</p>
+    <div class="tech"><span>workspace.js</span></div>
+  </div>
+</div>
+
+<!-- ═══════════════════════ SECURITY ═══════════════════════ -->
+<div class="section-title cat-security"><span class="icon">&#x1F6E1;</span> Security & Audit</div>
+<div class="grid cat-security">
+  <div class="card">
+    <span class="card-icon">&#x1F575;</span>
+    <h3>Shadow AI Detector</h3>
+    <p>비승인 AI 도구 사용 실시간 감지. 승인 소스 관리, 경고 알림</p>
+    <div class="tech"><span>shadow-ai-detector.js</span><span>real-time scan</span></div>
+  </div>
+  <div class="card">
+    <span class="card-icon">&#x1F4DC;</span>
+    <h3>Audit Log System</h3>
+    <p>전체 이벤트 감사 로그. 해시 체인 무결성 검증, HTML 리포트 생성</p>
+    <div class="tech"><span>audit-log.js</span><span>hash chain</span><span>integrity verify</span></div>
+  </div>
+  <div class="card">
+    <span class="card-icon">&#x1F6A8;</span>
+    <h3>Security Scanner</h3>
+    <p>이벤트 내 API 키, 토큰, 비밀번호 유출 실시간 스캔. critical 경고</p>
+    <div class="tech"><span>security-scanner.js</span><span>leak detection</span></div>
+  </div>
+  <div class="card">
+    <span class="card-icon">&#x1F510;</span>
+    <h3>User Data Isolation</h3>
+    <p>41개 라우트 전체 사용자별 데이터 격리. WebSocket 브로드캐스트 필터링</p>
+    <div class="tech"><span>getEventsForUser</span><span>resolveUserId</span><span>per-client WS</span></div>
+  </div>
+  <div class="card">
+    <span class="card-icon">&#x26A0;</span>
+    <h3>Conflict Detector</h3>
+    <p>동시 편집, 브랜치 충돌, 파일 충돌 실시간 감지</p>
+    <div class="tech"><span>conflict-detector.js</span></div>
+  </div>
+</div>
+
+<!-- ═══════════════════════ BUSINESS ═══════════════════════ -->
+<div class="section-title cat-biz"><span class="icon">&#x1F4B0;</span> Business & Monetization</div>
+<div class="grid cat-biz">
+  <div class="card">
+    <span class="card-icon">&#x1F4B3;</span>
+    <h3>Payment System</h3>
+    <p>플랜 구독 (Free/Pro/Enterprise), PG 결제, 구독 취소</p>
+    <div class="tech"><span>payment.js</span><span>PLANS</span><span>mock mode</span></div>
+  </div>
+  <div class="card">
+    <span class="card-icon">&#x1F6CD;</span>
+    <h3>Solution Market</h3>
+    <p>AI 자동화 솔루션 마켓플레이스. 판매, 수익 공유, 사용 통계</p>
+    <div class="tech"><span>market.js</span><span>market-store.js</span><span>revenue-scheduler.js</span></div>
+  </div>
+  <div class="card">
+    <span class="card-icon">&#x1F3A8;</span>
+    <h3>Theme Market</h3>
+    <p>3D 시각화 커스텀 테마 마켓. 등록, 다운로드, 별점, 프리뷰</p>
+    <div class="tech"><span>themes.js</span><span>theme-store.js</span></div>
+  </div>
+  <div class="card">
+    <span class="card-icon">&#x1F4C4;</span>
+    <h3>AI Portfolio PDF</h3>
+    <p>AI 역량 포트폴리오 자동 생성. SVG 차트, PDF 다운로드, 이력서 첨부용</p>
+    <div class="tech"><span>portfolio.js</span><span>html-pdf-node</span><span>SVG charts</span></div>
+  </div>
+  <div class="card">
+    <span class="card-icon">&#x1F4B5;</span>
+    <h3>AI Cost Tracker</h3>
+    <p>AI 도구별 토큰 사용량, 비용 추적, 세션별 비용 분석</p>
+    <div class="tech"><span>cost-tracker.js</span><span>token counting</span></div>
+  </div>
+  <div class="card">
+    <span class="card-icon">&#x1F4C8;</span>
+    <h3>ROI Calculator</h3>
+    <p>AI 도구 투자 대비 생산성 향상 ROI 계산, 시각화</p>
+    <div class="tech"><span>roi.js</span><span>productivity metrics</span></div>
+  </div>
+  <div class="card">
+    <span class="card-icon">&#x1F4DC;</span>
+    <h3>AI Certificate</h3>
+    <p>AI 활용 역량 인증서 자동 발급. 점수, 등급, 기술 스택 포함</p>
+    <div class="tech"><span>certificate-engine.js</span></div>
+  </div>
+  <div class="card">
+    <span class="card-icon">&#x1F3E2;</span>
+    <h3>Company Consulting</h3>
+    <p>회사 AI 활용 진단, 성숙도 평가, 부서별 분석, 학습 추천</p>
+    <div class="tech"><span>company.js</span><span>diagnosis.js</span><span>company-learning.js</span></div>
+  </div>
+</div>
+
+<!-- ═══════════════════════ INFRASTRUCTURE ═══════════════════════ -->
+<div class="section-title cat-infra"><span class="icon">&#x2699;</span> Infrastructure & DevOps</div>
+<div class="grid cat-infra">
+  <div class="card">
+    <span class="card-icon">&#x1F680;</span>
+    <h3>Railway Deployment</h3>
+    <p>Railway 자동 배포, 로컬&harr;클라우드 동기화, 환경변수 관리</p>
+    <div class="tech"><span>Railway</span><span>sync-to-railway.js</span><span>orbit-config.json</span></div>
+  </div>
+  <div class="card">
+    <span class="card-icon">&#x1F4E6;</span>
+    <h3>Cloud Sync (2-Level Consent)</h3>
+    <p>Level 1: 제안 데이터만 / Level 2: 원본 이벤트 포함. 30분 자동 동기화</p>
+    <div class="tech"><span>sync.js</span><span>2-level consent</span><span>auto 30min</span></div>
+  </div>
+  <div class="card">
+    <span class="card-icon">&#x1F527;</span>
+    <h3>One-Key Setup</h3>
+    <p>환경 감지, Claude Code 훅 자동 설치, 의존성 체크, 상태 대시보드</p>
+    <div class="tech"><span>setup.js</span><span>setup-scripts.js</span><span>setup.html</span></div>
+  </div>
+  <div class="card">
+    <span class="card-icon">&#x1F4BB;</span>
+    <h3>System Monitor</h3>
+    <p>활성 앱/윈도우/클립보드/브라우저 URL 자동 추적. 플랫폼별 지원</p>
+    <div class="tech"><span>system-monitor.js</span><span>keyboard-watcher.js</span></div>
+  </div>
+  <div class="card">
+    <span class="card-icon">&#x1F517;</span>
+    <h3>MCP Server</h3>
+    <p>Claude Desktop 연동 MCP 프로토콜 서버. 외부 AI에서 Orbit 데이터 접근</p>
+    <div class="tech"><span>mcp-server.js</span><span>mcp-watcher.js</span></div>
+  </div>
+  <div class="card">
+    <span class="card-icon">&#x1F4CA;</span>
+    <h3>Admin Analytics</h3>
+    <p>관리자 전용 사용 통계, 사용자 행동 분석, 트래커 핑</p>
+    <div class="tech"><span>analytics.js</span><span>usage-tracker.js</span><span>admin-analytics.html</span></div>
+  </div>
+  <div class="card">
+    <span class="card-icon">&#x2699;</span>
+    <h3>LLM Provider Settings</h3>
+    <p>다중 LLM 프로바이더 API 키 관리, 테스트, generate 엔드포인트</p>
+    <div class="tech"><span>llm-settings.js</span><span>llm-gateway.js</span><span>llm-providers.js</span></div>
+  </div>
+</div>
+
+<!-- ═══════════════════════ INTEGRATIONS ═══════════════════════ -->
+<div class="section-title cat-integration"><span class="icon">&#x1F50C;</span> External Integrations (12 Adapters)</div>
+<div class="grid cat-integration">
+  <div class="card">
+    <span class="card-icon">&#x1F4BB;</span>
+    <h3>Claude Code Hook</h3>
+    <p>Claude Code 모든 이벤트 실시간 캡처. save-turn.js 훅 수신기</p>
+    <div class="tech"><span>save-turn.js</span><span>POST /api/hook</span></div>
+  </div>
+  <div class="card">
+    <span class="card-icon">&#x2728;</span>
+    <h3>Gemini Adapter</h3>
+    <p>Google Gemini AI 이벤트 표준화 및 수집</p>
+    <div class="tech"><span>adapter-gemini.js</span></div>
+  </div>
+  <div class="card">
+    <span class="card-icon">&#x1F7E2;</span>
+    <h3>OpenAI Adapter</h3>
+    <p>OpenAI/ChatGPT 이벤트 표준화 및 수집</p>
+    <div class="tech"><span>adapter-openai.js</span></div>
+  </div>
+  <div class="card">
+    <span class="card-icon">&#x1F50E;</span>
+    <h3>Perplexity Adapter</h3>
+    <p>Perplexity AI 이벤트 표준화 및 수집</p>
+    <div class="tech"><span>adapter-perplexity.js</span></div>
+  </div>
+  <div class="card">
+    <span class="card-icon">&#x1F4DD;</span>
+    <h3>VSCode Adapter</h3>
+    <p>VS Code 에디터 활동 이벤트 수집</p>
+    <div class="tech"><span>adapter-vscode.js</span></div>
+  </div>
+  <div class="card">
+    <span class="card-icon">&#x1F4AC;</span>
+    <h3>Slack / Notion</h3>
+    <p>Slack 메시지, Notion 페이지 변경 이벤트 웹훅 수신</p>
+    <div class="tech"><span>slack-adapter.js</span><span>notion-adapter.js</span><span>webhooks.js</span></div>
+  </div>
+  <div class="card">
+    <span class="card-icon">&#x1F4F9;</span>
+    <h3>Zoom / Calendar</h3>
+    <p>Zoom 회의 참여자, Calendar 일정 이벤트 수집</p>
+    <div class="tech"><span>zoom-adapter.js</span><span>calendar-adapter.js</span></div>
+  </div>
+  <div class="card">
+    <span class="card-icon">&#x1F310;</span>
+    <h3>Browser / Terminal / Git</h3>
+    <p>브라우저 URL, 터미널 명령, Git 커밋 이벤트 수집</p>
+    <div class="tech"><span>integrations.js</span><span>git.js</span><span>daily-work-adapter.js</span></div>
+  </div>
+</div>
+
+<!-- ═══════════════════════ REPORTS & EXPORTS ═══════════════════════ -->
+<div class="section-title" style="border-color:rgba(57,210,192,0.15)"><span class="icon">&#x1F4CB;</span> Reports & Analytics Pages</div>
+<div class="grid cat-infra">
+  <div class="card">
+    <span class="card-icon">&#x1F4C5;</span>
+    <h3>Daily / Weekly Reports</h3>
+    <p>일일/주간 활동 요약 리포트. JSON, Markdown, Slack 블록 포맷</p>
+    <div class="tech"><span>reports.js</span><span>report-generator.js</span></div>
+  </div>
+  <div class="card">
+    <span class="card-icon">&#x1F4CA;</span>
+    <h3>Personal Insights</h3>
+    <p>개인 생산성 분석, 시간대 패턴, 도구 사용 분포, 성장 추이</p>
+    <div class="tech"><span>personal-insights.js</span><span>5 endpoints</span></div>
+  </div>
+  <div class="card">
+    <span class="card-icon">&#x1F30F;</span>
+    <h3>Regional Insight</h3>
+    <p>지역별 AI 활용 트렌드, 글로벌 비교</p>
+    <div class="tech"><span>regional-insight.js</span></div>
+  </div>
+  <div class="card">
+    <span class="card-icon">&#x1F6E4;</span>
+    <h3>Context Bridge</h3>
+    <p>현재 작업 컨텍스트를 AI 프롬프트 형식으로 추출. Claude/Cursor 연동</p>
+    <div class="tech"><span>context-bridge.js</span><span>ORBIT_CONTEXT.md</span></div>
+  </div>
+  <div class="card">
+    <span class="card-icon">&#x23F0;</span>
+    <h3>Orbit Timeline</h3>
+    <p>세션 이벤트 타임라인 뷰어. 공유 링크 렌더링</p>
+    <div class="tech"><span>orbit-timeline.html</span></div>
+  </div>
+  <div class="card">
+    <span class="card-icon">&#x1F4D6;</span>
+    <h3>19 HTML Pages</h3>
+    <p>3D Orbit, Dashboard, Settings, Setup, Community, Timeline, Guide 등</p>
+    <div class="tech"><span>orbit3d.html</span><span>dashboard.html</span><span>settings.html</span><span>+16 more</span></div>
+  </div>
+</div>
+
+</div><!-- /container -->
+
+<div class="footer">
+  Orbit AI &mdash; Built with Express + Three.js + SQLite + WebSocket<br>
+  Total: 41 Routes &bull; 60+ Modules &bull; 19 Pages &bull; 12 Adapters &bull; 150+ API Endpoints
+</div>
+
+</body>
+</html>

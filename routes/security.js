@@ -26,9 +26,15 @@ const router  = express.Router();
  * @returns {express.Router}
  */
 function createRouter(deps) {
-  const { db, shadowAiDetector, auditLog } = deps;
+  const { db, shadowAiDetector, auditLog, getEventsForUser, resolveUserId } = deps;
 
   const { getAllEvents, getEventsByChannel } = db;
+
+  // 사용자별 이벤트 조회 헬퍼
+  function _getUserEvents(req) {
+    const uid = resolveUserId ? resolveUserId(req) : 'local';
+    return (getEventsForUser && uid !== 'local') ? getEventsForUser(uid) : getAllEvents();
+  }
   const { detectShadowAI, getApprovedSources, addApprovedSource, removeApprovedSource } = shadowAiDetector;
   const { queryAuditLog, verifyIntegrity, renderAuditHtml } = auditLog;
 
@@ -46,9 +52,10 @@ function createRouter(deps) {
   router.get('/shadow-ai', (req, res) => {
     const { channel, hours } = req.query;
 
+    const userEvents = _getUserEvents(req);
     let events = channel
-      ? (getEventsByChannel ? getEventsByChannel(channel) : getAllEvents().filter(e => e.channelId === channel))
-      : getAllEvents();
+      ? (getEventsByChannel ? getEventsByChannel(channel) : userEvents.filter(e => e.channelId === channel))
+      : userEvents;
 
     const h      = parseInt(hours || '168');
     const cutoff = Date.now() - h * 3600 * 1000;

@@ -31,9 +31,15 @@ const IGNORE_DIRS = ['node_modules', '.git', 'dist', 'build', 'coverage', 'tests
  * @returns {express.Router}
  */
 function createRouter(deps) {
-  const { db, codeAnalyzer, contextBridge, conflictDetector } = deps;
+  const { db, codeAnalyzer, contextBridge, conflictDetector, getEventsForUser, resolveUserId } = deps;
 
   const { getAllEvents, getEventsBySession, getEventsByChannel } = db;
+
+  // 사용자별 이벤트 조회 헬퍼
+  function _getUserEvents(req) {
+    const uid = resolveUserId ? resolveUserId(req) : 'local';
+    return (getEventsForUser && uid !== 'local') ? getEventsForUser(uid) : getAllEvents();
+  }
   const { generateReport } = codeAnalyzer;
   const { extractContext, renderContextMd, renderContextPrompt, saveContextFile } = contextBridge;
   const { detectConflicts } = conflictDetector;
@@ -146,19 +152,20 @@ function createRouter(deps) {
   router.get('/context/bridge', (req, res) => {
     const { session, channel, format, save } = req.query;
 
-    // 이벤트 소스 결정 (session > channel > 전체)
+    // 이벤트 소스 결정 (session > channel > 사용자별 전체)
+    const userEvents = _getUserEvents(req);
     let events = session
       ? getEventsBySession(session)
       : channel
-        ? (getEventsByChannel ? getEventsByChannel(channel) : getAllEvents().filter(e => e.channelId === channel))
-        : getAllEvents();
+        ? (getEventsByChannel ? getEventsByChannel(channel) : userEvents.filter(e => e.channelId === channel))
+        : userEvents;
 
     // 최근 2시간으로 제한 (컨텍스트 과부하 방지)
     const cutoff = Date.now() - 2 * 3600 * 1000;
     events = events.filter(e => new Date(e.timestamp).getTime() >= cutoff);
 
     // 이벤트가 없으면 최근 100개로 fallback
-    if (!events.length) events = getAllEvents().slice(-100);
+    if (!events.length) events = userEvents.slice(-100);
 
     const ctx = extractContext(events, { sessionId: session });
 
@@ -191,9 +198,10 @@ function createRouter(deps) {
   router.get('/conflicts', (req, res) => {
     const { channel, hours } = req.query;
 
+    const userEvents = _getUserEvents(req);
     let events = channel
-      ? (getEventsByChannel ? getEventsByChannel(channel) : getAllEvents().filter(e => e.channelId === channel))
-      : getAllEvents();
+      ? (getEventsByChannel ? getEventsByChannel(channel) : userEvents.filter(e => e.channelId === channel))
+      : userEvents;
 
     const h      = parseInt(hours || '24');
     const cutoff = Date.now() - h * 3600 * 1000;

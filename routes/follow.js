@@ -25,7 +25,7 @@ const router  = express.Router();
  * @param {Function} [deps.searchUsers] - auth DB에서 사용자 검색 (이메일·이름)
  * @returns {express.Router}
  */
-function createRouter({ getDb, verifyToken, searchUsers }) {
+function createRouter({ getDb, verifyToken, searchUsers, getUserById }) {
 
   // ── DB 테이블 초기화 ──────────────────────────────────────────────────────
   function initFollowTable() {
@@ -99,6 +99,22 @@ function createRouter({ getDb, verifyToken, searchUsers }) {
     }
   });
 
+  // ── auth DB에서 사용자 정보 보완 (user_profiles에 없는 Google OAuth 유저용) ─
+  function _enrichWithAuthDb(rows) {
+    if (typeof getUserById !== 'function') return rows;       // getUserById 미주입 시 그대로 반환
+    return rows.map(row => {
+      if (row.name) return row;                               // 이미 이름 있으면 스킵
+      const authUser = getUserById(row.user_id);              // auth DB에서 조회
+      if (!authUser) return row;
+      return {
+        ...row,
+        name: authUser.name || authUser.email?.split('@')[0], // Google 계정 이름
+        avatar_url: row.avatar_url || authUser.avatar || null,// Google 프로필 이미지
+        provider: authUser.provider || 'local',               // 인증 제공자 (google 등)
+      };
+    });
+  }
+
   // ── GET /api/follow/list — 내 팔로잉 목록 ────────────────────────────────
   router.get('/follow/list', auth, (req, res) => {
     try {
@@ -112,7 +128,7 @@ function createRouter({ getDb, verifyToken, searchUsers }) {
         ORDER BY uf.created_at DESC
         LIMIT 200
       `).all(req.user.id);
-      res.json(rows);
+      res.json(_enrichWithAuthDb(rows));                      // auth DB로 빈 이름 보완
     } catch (e) {
       res.status(500).json({ error: e.message });
     }
@@ -131,7 +147,7 @@ function createRouter({ getDb, verifyToken, searchUsers }) {
         ORDER BY uf.created_at DESC
         LIMIT 200
       `).all(req.user.id);
-      res.json(rows);
+      res.json(_enrichWithAuthDb(rows));                      // auth DB로 빈 이름 보완
     } catch (e) {
       res.status(500).json({ error: e.message });
     }
@@ -182,6 +198,7 @@ function createRouter({ getDb, verifyToken, searchUsers }) {
             avatar_url: u.avatar_url,
             email: u.email,
             plan: u.plan,
+            provider: u.provider || 'local',                // 인증 제공자 (google 등)
             is_following: followCheckStmt                    // 팔로우 여부 확인
               ? (followCheckStmt.get(req.user.id, u.id) ? 1 : 0)
               : 0,

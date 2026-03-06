@@ -2403,14 +2403,19 @@ async function fpSearchUsers(q) {
       resultEl.innerHTML = '<div style="font-size:11px;color:#6e7681;padding:6px 0">검색 결과 없음</div>';
       return;
     }
-    resultEl.innerHTML = list.map(u => `
+    resultEl.innerHTML = list.map(u => {
+      const isGoogle = u.provider === 'google';              // Google OAuth 계정 여부
+      const provBadge = isGoogle                             // Google 배지 표시
+        ? '<span style="font-size:9px;background:rgba(66,133,244,0.15);color:#4285f4;padding:1px 5px;border-radius:3px;margin-left:4px">G</span>'
+        : '';
+      return `
       <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #21262d">
-        <div style="width:28px;height:28px;border-radius:50%;background:#1f6feb;display:flex;align-items:center;
+        <div style="width:28px;height:28px;border-radius:50%;background:${isGoogle?'#4285f4':'#1f6feb'};display:flex;align-items:center;
                     justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0">
           ${u.avatar_url ? `<img src="${u.avatar_url}" style="width:100%;height:100%;border-radius:50%;object-fit:cover">` : (u.name||'?').charAt(0)}
         </div>
         <div style="flex:1;min-width:0">
-          <div style="font-size:12px;font-weight:600;color:#e6edf3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${u.name||'익명'}</div>
+          <div style="font-size:12px;font-weight:600;color:#e6edf3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${u.name||'익명'}${provBadge}</div>
           <div style="font-size:10px;color:#6e7681">${u.email||u.headline||''}</div>
         </div>
         <button onclick="fpFollowUser('${u.id}','${(u.name||'').replace(/'/g,"\\'")}',this)"
@@ -2420,8 +2425,8 @@ async function fpSearchUsers(q) {
                  border-radius:6px;padding:2px 8px;font-size:10px;cursor:pointer;flex-shrink:0">
           ${u.is_following?'✓ 팔로잉':'+ 팔로우'}
         </button>
-      </div>
-    `).join('');
+      </div>`;
+    }).join('');
   } catch(e) {
     resultEl.innerHTML = '<div style="font-size:11px;color:#f85149;padding:6px 0">검색 실패</div>';
   }

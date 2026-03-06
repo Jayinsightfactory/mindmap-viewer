@@ -318,16 +318,26 @@ ${recentInsights.length > 0 ? `
  * @param {{ getAllEvents: Function, getSessions: Function, getStats: Function, getFiles: Function, optionalAuth: Function }} deps
  * @returns {express.Router}
  */
-function createRouter({ getAllEvents, getSessions, getStats, getFiles, optionalAuth }) {
+function createRouter({ getAllEvents, getSessions, getStats, getFiles, optionalAuth, getEventsForUser, getSessionsForUser, resolveUserId }) {
   const router = express.Router();
+
+  // 사용자별 데이터 조회 헬퍼
+  function _ev(req) {
+    const uid = resolveUserId ? resolveUserId(req) : 'local';
+    return (getEventsForUser && uid !== 'local') ? getEventsForUser(uid) : getAllEvents();
+  }
+  function _ses(req) {
+    const uid = resolveUserId ? resolveUserId(req) : 'local';
+    return (getSessionsForUser && uid !== 'local') ? getSessionsForUser(uid) : getSessions();
+  }
 
   // ─── GET /api/portfolio/preview ────────────────────────────────────────────
   // HTML 미리보기 (브라우저 확인용)
   router.get('/portfolio/preview', optionalAuth, (req, res) => {
     try {
       const html = buildPortfolioHtml(
-        getAllEvents(),
-        getSessions(),
+        _ev(req),
+        _ses(req),
         getStats(),
         getFiles(),
       );
@@ -343,8 +353,8 @@ function createRouter({ getAllEvents, getSessions, getStats, getFiles, optionalA
   router.get('/portfolio/pdf', optionalAuth, async (req, res) => {
     try {
       const html = buildPortfolioHtml(
-        getAllEvents(),
-        getSessions(),
+        _ev(req),
+        _ses(req),
         getStats(),
         getFiles(),
       );

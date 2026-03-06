@@ -484,7 +484,7 @@ function searchUsers(query, excludeId, limit = 20) {
   if (!db) return [];                                       // DB 없으면 빈 배열
   const like = `%${query}%`;                                // LIKE 패턴 (부분 일치)
   return db.prepare(`
-    SELECT id, email, name, avatar, plan
+    SELECT id, email, name, avatar, plan, provider
     FROM users
     WHERE id != ? AND (email LIKE ? OR name LIKE ?)
     LIMIT ?
@@ -494,6 +494,7 @@ function searchUsers(query, excludeId, limit = 20) {
     name: u.name || u.email?.split('@')[0] || '사용자',      // 표시 이름 (없으면 이메일 앞부분)
     avatar_url: u.avatar || null,                           // 프로필 이미지 URL
     plan: u.plan || 'free',                                 // 요금제 (기본: free)
+    provider: u.provider || 'local',                        // 인증 제공자 (google, local 등)
   }));
 }
 

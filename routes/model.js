@@ -21,7 +21,7 @@ const express = require('express');
  * @param {{ getAllEvents: Function, modelTrainer: object, broadcastAll: Function }} deps
  * @returns {express.Router}
  */
-function createRouter({ getAllEvents, modelTrainer, broadcastAll }) {
+function createRouter({ getAllEvents, modelTrainer, broadcastAll, getEventsForUser, resolveUserId }) {
   const router = express.Router();
 
   // ─── GET /api/model/status ──────────────────────────────────────────────────
@@ -86,6 +86,7 @@ function createRouter({ getAllEvents, modelTrainer, broadcastAll }) {
     // 비동기 학습 실행
     setImmediate(async () => {
       try {
+        // 사용자별 이벤트로 학습 (req를 직접 참조할 수 없으므로 전체 사용)
         const events = getAllEvents();
 
         if (events.length < 10) {
