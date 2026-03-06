@@ -110,81 +110,92 @@ function buildPlanetSystem(nodeList) {
     git:0.40, research:0.44, chat:0.48, general:0.52,
   };
 
-  // ── 3대 카테고리 섹터 배치 (기능구현 / 조사분석 / 배포운영) ──────────────
-  // 각 행성에 매크로 카테고리 할당
+  // ── 매크로 카테고리 할당 (색상 참조용) ───────────────────────────────────
   planets.forEach(pl => {
     pl.macroCat = classifyMacroCategory(pl.events);
   });
-
-  // 카테고리별 행성 분류
   const catBuckets = { dev: [], research: [], ops: [] };
   planets.forEach(pl => catBuckets[pl.macroCat].push(pl));
+
+  // ── 프로젝트 단위로 그룹화 → 클러스터 배치 ───────────────────────────────
+  const projBuckets = {};                                          // projectName → [planet]
+  planets.forEach(pl => {
+    const proj = pl.projectName || '기타';
+    if (!projBuckets[proj]) projBuckets[proj] = [];
+    projBuckets[proj].push(pl);
+  });
+  const projNames = Object.keys(projBuckets);                      // 프로젝트 이름 목록
+  const projCount = projNames.length;                               // 프로젝트 수
+
+  // 프로젝트별 인덱스 맵 (행성 → 프로젝트 내 순번)
+  const projIndexOf = {};                                           // clusterId → { projIdx, innerIdx }
+  projNames.forEach((pn, pi) => {
+    projBuckets[pn].forEach((pl, ii) => {
+      projIndexOf[pl.clusterId] = { projIdx: pi, innerIdx: ii, projSize: projBuckets[pn].length };
+    });
+  });
 
   planets.forEach((pl, pi) => {
     const { clusterId, sessionId: sid, domain, label, events } = pl;
     const rawEvents = events;
 
-    // ── 행성 위치 — 카테고리 섹터 기반 그리드 배치 ────────────────────────
-    const catCfg   = MACRO_CATS[pl.macroCat];                // 카테고리 설정
-    const catAngle = catCfg.angle;                            // 섹터 기준 각도
-    const bucket   = catBuckets[pl.macroCat];                 // 같은 카테고리 행성들
-    const idxInCat = bucket.indexOf(pl);                      // 카테고리 내 순번
-    const catCount = bucket.length;
+    // ── 행성 위치 — 프로젝트 클러스터 기반 배치 ──────────────────────────
+    const pInfo    = projIndexOf[clusterId];                        // 프로젝트 내 위치 정보
+    const projIdx  = pInfo.projIdx;                                 // 프로젝트 순번 (0,1,2...)
+    const innerIdx = pInfo.innerIdx;                                // 프로젝트 내 행성 순번
+    const projSize = pInfo.projSize;                                // 프로젝트 내 행성 수
 
-    // 그리드 배치: 행(row)/열(col) 정렬 — 깔끔한 격자 형태
-    const COLS     = Math.min(4, Math.ceil(Math.sqrt(catCount))); // 열 수 (최대 4열)
-    const col      = idxInCat % COLS;                             // 열 인덱스
-    const row      = Math.floor(idxInCat / COLS);                 // 행 인덱스
-    const CELL_W   = 6;                                           // 셀 너비 간격
-    const CELL_H   = 5;                                           // 셀 높이 간격
+    // 프로젝트 그룹 중심 위치 — 원형 배치 (중심에서 바깥으로)
+    const projAngle = (projIdx / Math.max(projCount, 1)) * Math.PI * 2; // 프로젝트별 각도
+    const BASE_R    = 14 + Math.floor(projIdx / 6) * 12;           // 프로젝트 수 많으면 바깥 링으로
+    const projCX    = Math.cos(projAngle) * BASE_R;                // 프로젝트 그룹 중심 X
+    const projCZ    = Math.sin(projAngle) * BASE_R;                // 프로젝트 그룹 중심 Z
 
-    // 섹터 방향 벡터 (catAngle 방향으로 행 배치, 직교 방향으로 열 배치)
-    const dirX  = Math.cos(catAngle);                              // 섹터 정방향 X
-    const dirZ  = Math.sin(catAngle);                              // 섹터 정방향 Z
-    const perpX = -dirZ;                                           // 직교 방향 X
-    const perpZ = dirX;                                            // 직교 방향 Z
+    // 프로젝트 내 행성들 — 작은 그리드 배치
+    const INNER_COLS = Math.min(3, Math.ceil(Math.sqrt(projSize))); // 내부 열 수 (최대 3)
+    const iCol       = innerIdx % INNER_COLS;                       // 내부 열
+    const iRow       = Math.floor(innerIdx / INNER_COLS);           // 내부 행
+    const INNER_W    = 5;                                           // 내부 셀 너비
+    const INNER_H    = 4;                                           // 내부 셀 높이
+    const innerTotalCols = Math.min(projSize, INNER_COLS);
 
-    // 그리드 중심 = 섹터 방향 12 거리 지점
-    const BASE_R   = 12;                                           // 태양에서 그리드 시작 거리
-    const gridCX   = dirX * BASE_R;
-    const gridCZ   = dirZ * BASE_R;
+    // 프로젝트 방향 벡터 (중심→프로젝트 방향)
+    const dirX  = Math.cos(projAngle);
+    const dirZ  = Math.sin(projAngle);
+    const perpX = -dirZ;                                            // 직교 방향
+    const perpZ = dirX;
 
-    // 행/열 오프셋 (그리드 중앙 정렬)
-    const totalCols = Math.min(catCount, COLS);
-    const totalRows = Math.ceil(catCount / COLS);
-    const colOffset = (col - (totalCols - 1) / 2) * CELL_W;       // 열 오프셋
-    const rowOffset = row * CELL_H;                                // 행 오프셋 (앞→뒤)
+    // 내부 오프셋 (그리드 중앙 정렬)
+    const colOff = (iCol - (innerTotalCols - 1) / 2) * INNER_W;
+    const rowOff = iRow * INNER_H;
 
-    const px = gridCX + perpX * colOffset + dirX * rowOffset;
-    const py = 0;                                                  // Y축 고정 (평면 배치)
-    const pz = gridCZ + perpZ * colOffset + dirZ * rowOffset;
-    const COMPACT_R = Math.sqrt(px * px + pz * pz);                // 계산용
-    const subAngle  = Math.atan2(pz, px);                          // 계산용
+    const px = projCX + perpX * colOff + dirX * rowOff;
+    const py = 0;
+    const pz = projCZ + perpZ * colOff + dirZ * rowOff;
+    const COMPACT_R = Math.sqrt(px * px + pz * pz);
+    const subAngle  = Math.atan2(pz, px);
     const planetPos = new THREE.Vector3(px, py, pz);
 
-    // 확장: 카테고리 클릭 시 더 넓게 펼쳐지는 위치
-    const EXP_CELL_W = 10;                                         // 확장 셀 너비
-    const EXP_CELL_H = 8;                                          // 확장 셀 높이
-    const EXP_BASE_R = 20;                                         // 확장 시작 거리
-    const expCX = dirX * EXP_BASE_R;
-    const expCZ = dirZ * EXP_BASE_R;
-    const expColOff = (col - (totalCols - 1) / 2) * EXP_CELL_W;
-    const expRowOff = row * EXP_CELL_H;
+    // 확장: 프로젝트 클릭 시 펼쳐지는 위치
+    const EXP_BASE_R = BASE_R + 10;
+    const EXP_INNER_W = 8;
+    const EXP_INNER_H = 7;
+    const expCX  = Math.cos(projAngle) * EXP_BASE_R;
+    const expCZ  = Math.sin(projAngle) * EXP_BASE_R;
+    const expColOff = (iCol - (innerTotalCols - 1) / 2) * EXP_INNER_W;
+    const expRowOff = iRow * EXP_INNER_H;
     const yOffset = 0;
 
-    // ── 행성 의도 & 색상 — 카테고리 색상 기반 ──────────────────────────────
+    // ── 행성 의도 & 색상 — 프로젝트별 색상 기반 ─────────────────────────────
     let hueHex;
     if (pl.color) {
       hueHex = pl.color;                                     // purposeColor 직접 사용
     } else {
-      // 카테고리 색상 사용 (기능구현=파랑, 조사분석=보라, 배포운영=초록)
-      const catColor = MACRO_CATS[pl.macroCat]?.color || '#58a6ff';
-      // 같은 카테고리 내에서 약간의 색조 변화
-      const catBase = new THREE.Color(catColor);
-      const hsl = catBase.getHSL({});
-      const variation = (idxInCat * 0.04) % 0.15;            // 카테고리 내 미세한 변화
+      // 프로젝트별 고유 색상 (프로젝트 인덱스로 색조 분배)
+      const projHue = (projIdx / Math.max(projCount, 1)) * 0.85 + 0.05; // 프로젝트별 색조
+      const variation = (innerIdx * 0.03) % 0.1;             // 프로젝트 내 미세한 변화
       hueHex = '#' + new THREE.Color(0).setHSL(
-        hsl.h + variation, hsl.s * 0.9, hsl.l + (idxInCat % 2) * 0.08
+        projHue + variation, 0.7, 0.55 + (innerIdx % 2) * 0.06
       ).getHexString();
     }
     const hue = new THREE.Color(hueHex).getHSL({}).h;
