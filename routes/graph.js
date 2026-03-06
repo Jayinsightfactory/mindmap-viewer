@@ -70,7 +70,8 @@ function createRouter(deps) {
     if (process.env.AUTH_DISABLED === '1') return { id: 'local' };
     const token = (req.headers.authorization || '').replace('Bearer ', '').trim()
                 || req.query.token || req.cookies?.orbit_token;
-    return verifyToken ? verifyToken(token) : null;
+    const user = verifyToken ? verifyToken(token) : null;
+    return user || { id: 'local' };                           // 비로그인 → local 데이터 접근 허용
   }
 
   // ── 그래프 ────────────────────────────────────────────────────────────────
