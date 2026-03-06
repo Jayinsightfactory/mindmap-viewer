@@ -144,9 +144,9 @@ renderer.domElement.addEventListener('click', e => {
       const tp = (p3 instanceof THREE.Vector3) ? p3 : (m3 instanceof THREE.Vector3 ? m3 : null);
       if (tp) {
         const curR = controls.sph.r;
-        // 개인모드는 현재 거리 유지, 팀/병렬 태스크는 적당히 당겨줌
+        // 개인모드: 선택 시 확장 위치로 줌인 / 팀모드: 적당히 당겨줌
         const targetR = (!_teamMode && !_companyMode && !_parallelMode)
-          ? curR
+          ? Math.min(curR, 45)              // 2단계 확장 뷰에 맞는 거리
           : Math.min(curR, 40);
         lerpCameraTo(targetR, tp.x, tp.y, tp.z, 450);
       }
@@ -159,13 +159,12 @@ renderer.domElement.addEventListener('click', e => {
       closePanel();
     } else {
       closePanel();
-      // ── 개인 모드: 빈 공간 클릭 → 전체 "내 화면"으로 복귀 ──────────────
+      // ── 개인 모드: 빈 공간 클릭 → 1단계 컴팩트 뷰로 복귀 ──────────────
       if (!_teamMode && !_companyMode && !_parallelMode) {
         if (_focusedProject) {
-          exitConstellationFocus();          // 별자리 포커스 해제 → 전체 뷰
-        } else {
-          lerpCameraTo(75, 0, 0, 0, 600);   // 카메라를 기본 위치로 부드럽게 복귀
+          exitConstellationFocus();          // 프로젝트 포커스 해제 → 컴팩트 뷰
         }
+        lerpCameraTo(55, 0, 0, 0, 500);     // 카메라를 컴팩트 뷰 거리로 복귀
       }
     }
   }

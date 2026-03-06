@@ -118,21 +118,25 @@ function buildPlanetSystem(nodeList) {
     const { clusterId, sessionId: sid, domain, label, events } = pl;
     const rawEvents = events;
 
-    // ── 행성 위치 — 방사형 트리 가지 배치 ─────────────────────────────────
+    // ── 행성 위치 — 2단계 배치 ────────────────────────────────────────────
+    // 1단계(컴팩트): 태양 가까이 밀착 / 2단계(확장): 클릭 시 펼쳐짐
     const projIdx = projList.indexOf(pl.projectName);
     const branchAngle = projIdx * projAngleStep;
-    // 같은 프로젝트 내 클러스터는 부채꼴로 약간 벌림
     const siblings = planets.filter(p => p.projectName === pl.projectName);
     const sibIdx = siblings.indexOf(pl);
-    const spread = Math.PI * 0.15;
+    const spread = Math.PI * 0.18;
     const subAngle = branchAngle + (sibIdx - (siblings.length - 1) / 2) * spread / Math.max(siblings.length - 1, 1);
 
-    const BRANCH_R = 35 + sibIdx * 8;
-    const yOffset = (projIdx % 3 - 1) * 8;
+    // 컴팩트 위치: 태양 중심에 가깝게 (1단계용)
+    const COMPACT_R = 12 + projIdx * 2;
+    // 확장 위치: 클릭 시 펼쳐지는 거리 (2단계용)
+    const EXPAND_R = 30 + sibIdx * 7;
+    const yOffset = (projIdx % 3 - 1) * 4;
 
-    const px = BRANCH_R * Math.cos(subAngle);
-    const py = yOffset + (sibIdx % 2) * 3;
-    const pz = BRANCH_R * Math.sin(subAngle);
+    // 기본은 컴팩트 위치로 시작
+    const px = COMPACT_R * Math.cos(branchAngle);
+    const py = yOffset + (sibIdx % 2) * 2;
+    const pz = COMPACT_R * Math.sin(branchAngle);
     const planetPos = new THREE.Vector3(px, py, pz);
 
     // ── 행성 의도 & 색상 ─────────────────────────────────────────────────
@@ -168,8 +172,15 @@ function buildPlanetSystem(nodeList) {
     planet.userData.hueHex      = hueHex;
     planet.userData.eventCount  = rawEvents.length;
     planet.userData._treeBasePos = planetPos.clone();
+    // 2단계 확장 위치 저장 (클릭 시 이 위치로 이동)
+    const epx = EXPAND_R * Math.cos(subAngle);
+    const epy = yOffset + (sibIdx % 2) * 3;
+    const epz = EXPAND_R * Math.sin(subAngle);
+    planet.userData._expandedPos = new THREE.Vector3(epx, epy, epz);
+    planet.userData._compactPos  = planetPos.clone();
+    planet.userData._isExpanded  = false;
     planet.userData.orbitSpeed  = 0.04 + pi * 0.006;
-    planet.userData.orbitR      = BRANCH_R;
+    planet.userData.orbitR      = COMPACT_R;
     planet.userData.orbitθ      = subAngle;
     planet.userData.orbitφ      = 0;
     planet.userData.orbitCenter  = new THREE.Vector3(0,0,0);
@@ -196,6 +207,7 @@ function buildPlanetSystem(nodeList) {
       const branchLine = new THREE.Line(lg, lm);
       branchLine.userData.isBranch = true;
       branchLine.userData.planetObj = planet;
+      branchLine.visible = false;           // 기본 숨김 — 2단계 확장 시 표시
       connections.push(branchLine);
       scene.add(branchLine);
     }
@@ -242,6 +254,7 @@ function buildPlanetSystem(nodeList) {
       const lm = new THREE.LineBasicMaterial({ color: new THREE.Color(hueHex), transparent:true, opacity:0.55 });
       const conn = new THREE.Line(lg, lm);
       conn.userData.satObj = sat;
+      conn.visible = false;                 // 기본 숨김 — 3단계 확장 시 표시
       connections.push(conn); scene.add(conn);
     });
 

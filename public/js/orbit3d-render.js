@@ -2689,6 +2689,104 @@ function drawConstellations() {
   });
 }
 
+// ─── 1단계 컴팩트 프로젝트 뷰 ────────────────────────────────────────────────
+// 태양 중심에 프로젝트 라벨만 밀착 표시 — 라인/위성 없음
+function drawCompactProjectView() {
+  const projEntries = Object.entries(_projectGroups);
+  if (!projEntries.length) return;
+
+  const now = performance.now() / 1000;
+
+  // 태양 히트 영역
+  if (_coreMeshRef) {
+    const sunSc = toScreen(_coreMeshRef.position || new THREE.Vector3(0,0,0));
+    if (sunSc.z <= 1) {
+      _hitAreas.push({
+        cx: sunSc.x, cy: sunSc.y, r: 28,
+        obj: _coreMeshRef,
+        data: { type: 'core', intent: 'Orbit AI', label: 'Orbit AI', nodeKey: '__orbit_core__' },
+      });
+    }
+  }
+
+  projEntries.forEach(([projName, grp]) => {
+    // 프로젝트 내 행성들의 화면 중심점
+    const pts = grp.planetMeshes.map(p => toScreen(p.position)).filter(s => s.z <= 1);
+    if (!pts.length) return;
+
+    let cx = 0, cy = 0;
+    pts.forEach(s => { cx += s.x; cy += s.y; });
+    cx /= pts.length; cy /= pts.length;
+
+    const color   = grp.color || '#58a6ff';
+    const cnt     = grp.planetMeshes.length;
+    const isHover = _hoveredHit?.data?.type === 'constellation' && _hoveredHit?.data?.projName === projName;
+
+    // 프로젝트 이름 정제
+    let dispName = projName;
+    if (/^세션-/.test(projName)) {
+      const best = grp.planetMeshes.map(p => p.userData.intent).find(t => t && !/^(⚙️\s?기타|⚙️\s?작업)/.test(t));
+      dispName = best ? best.split(/\s{2,}/)[0].trim().slice(0, 16) : projName;
+    } else if (/[-_]/.test(projName) && !/\s/.test(projName)) {
+      dispName = projName.split(/[-_]/).filter(s => s !== 'session').map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(' ').slice(0, 16);
+    }
+    if (dispName.length > 16) dispName = dispName.slice(0, 15) + '…';
+
+    // 이벤트 수 합산
+    const totalEvents = grp.planetMeshes.reduce((s, p) => s + (p.userData.eventCount || 0), 0);
+
+    const pxMain = isHover ? 16 : 14;
+    _lctx.font = `700 ${pxMain}px -apple-system,'Segoe UI',sans-serif`;
+    _lctx.textAlign = 'center';
+    const tw = _lctx.measureText(dispName).width;
+    const pw = tw + 24;
+    const ph = pxMain + 12;
+    const lx = cx - pw / 2;
+    const ly = cy - ph / 2;
+
+    // 겹침 방지
+    if (rectOverlaps(lx - 4, ly - 4, pw + 8, ph + 24)) return;
+    reserveRect(lx - 4, ly - 4, pw + 8, ph + 24);
+
+    // 미세한 글로우
+    const pulse = 0.5 + 0.5 * Math.sin(now * 0.8 + cx * 0.01);
+    _lctx.save();
+    _lctx.globalAlpha = 0.12 + pulse * 0.08;
+    _lctx.fillStyle = color;
+    _lctx.shadowColor = color; _lctx.shadowBlur = 12;
+    _lctx.beginPath(); _lctx.arc(cx, cy, pw / 2, 0, Math.PI * 2); _lctx.fill();
+    _lctx.restore();
+
+    // 배경 pill
+    _lctx.globalAlpha = isHover ? 0.97 : 0.85;
+    _lctx.fillStyle = 'rgba(6,10,16,0.92)';
+    roundRect(_lctx, lx, ly, pw, ph, ph / 2); _lctx.fill();
+
+    // 테두리
+    _lctx.strokeStyle = color;
+    _lctx.lineWidth = isHover ? 2.5 : 1.5;
+    roundRect(_lctx, lx, ly, pw, ph, ph / 2); _lctx.stroke();
+
+    // 프로젝트명
+    _lctx.fillStyle = isHover ? '#fff' : '#cdd9e5';
+    _lctx.fillText(dispName, cx, ly + ph * 0.68);
+
+    // 서브: 세션 수 + 이벤트 수
+    _lctx.font = '400 10px -apple-system,sans-serif';
+    _lctx.fillStyle = color + '88';
+    _lctx.globalAlpha = 0.75;
+    _lctx.fillText(`${cnt}개 세션 · ${totalEvents}건`, cx, ly + ph + 12);
+    _lctx.globalAlpha = 1;
+
+    // 히트 영역
+    _hitAreas.push({
+      cx, cy, r: Math.max(pw, ph) / 2 + 6,
+      obj: null,
+      data: { type: 'constellation', projName, planetCount: cnt, color },
+    });
+  });
+}
+
 // ─── drawLabels ──────────────────────────────────────────────────────────────
 // ── 텍스트 겹침 방지 ──────────────────────────────────────────────────────
 const _usedRects = [];
@@ -2707,17 +2805,44 @@ function drawLabels() {
 
   const lod = getLOD();
 
-  // ── 별자리 모드: 노드가 많으면 프로젝트 단위 요약으로 자동 전환 ──────────
-  // LOD 0(줌인)이 아닌 모든 거리에서 + 행성이 8개 이상이면 별자리 모드 활성화
-  const projKeys = Object.keys(_projectGroups);
-  const tooManyNodes = planetMeshes.length > 8;
-  const inConstellationMode = !_teamMode && !_companyMode && !_parallelMode
-                              && _focusedProject === null
-                              && (lod >= 1 || tooManyNodes)
-                              && projKeys.length > 1;
+  // ── 3단계 확장형 뷰 시스템 ────────────────────────────────────────────────
+  // 1단계: 아무것도 선택 안 됨 → 프로젝트 라벨만 컴팩트 표시 (라인/위성 숨김)
+  // 2단계: 프로젝트 포커스 → 해당 프로젝트 클러스터 펼침 + 브랜치 라인
+  // 3단계: 특정 클러스터 선택 → 파일 위성 표시 + 상세 정보
+  const isPersonalMode = !_teamMode && !_companyMode && !_parallelMode;
+  const hasSelection   = !!_selectedHit;
+  const focusedProj    = _focusedProject;
+  const selectedProj   = _selectedHit?.obj?.userData?.projectName;
 
-  if (inConstellationMode) {
-    drawConstellations();
+  // 연결선 표시/숨김 — 선택된 프로젝트의 라인만 표시
+  connections.forEach(c => {
+    if (c.userData.isBranch) {
+      const proj = c.userData.planetObj?.userData?.projectName;
+      c.visible = !!(focusedProj && proj === focusedProj)
+               || !!(selectedProj && proj === selectedProj);
+    } else if (c.userData.satObj) {
+      // 위성 연결선: 선택된 클러스터의 것만 표시
+      const cid = c.userData.satObj?.userData?.clusterId;
+      c.visible = !!(_selectedHit?.obj?.userData?.clusterId === cid);
+    }
+  });
+
+  // 행성 위치 보간: 선택된 프로젝트는 확장, 나머지는 컴팩트
+  planetMeshes.forEach(p => {
+    const targetExpanded = (focusedProj && p.userData.projectName === focusedProj)
+                        || (selectedProj && p.userData.projectName === selectedProj);
+    const target = targetExpanded ? p.userData._expandedPos : p.userData._compactPos;
+    if (target) {
+      p.position.lerp(target, 0.08);       // 부드러운 위치 보간
+    }
+  });
+
+  // 1단계 컴팩트 뷰: 선택 없고 개인 모드면 프로젝트 요약만
+  const projKeys = Object.keys(_projectGroups);
+  const showCompactView = isPersonalMode && !hasSelection && !focusedProj && projKeys.length > 1;
+
+  if (showCompactView) {
+    drawCompactProjectView();
     _lctx.globalAlpha = 1;
     return;
   }
@@ -2743,17 +2868,23 @@ function drawLabels() {
   _lctx.globalAlpha = globalAlpha;
 
   // ── 1. 행성 ──────────────────────────────────────────────────────────────
-  // 표시 가능한 최대 행성 수 제한 (LOD에 따라 조절)
-  const maxVisiblePlanets = lod === 0 ? 60 : lod === 1 ? 30 : 15;
-  let visiblePlanetCount = 0;
+  // 2단계: 선택/포커스된 프로젝트의 행성만 표시, 나머지는 작은 점으로
+  const activeProj = focusedProj || selectedProj;
 
   planetMeshes.forEach(p => {
-    // 특정 프로젝트 포커스 중이면 해당 프로젝트만 렌더
-    if (_focusedProject && p.userData.projectName !== _focusedProject) return;
-    // 선택된 노드와 같은 프로젝트는 항상 표시
-    const isSameProject = _selectedHit?.obj?.userData?.projectName === p.userData.projectName;
-    if (!isSameProject && visiblePlanetCount >= maxVisiblePlanets) return;
-    visiblePlanetCount++;
+    const projMatch = !activeProj || p.userData.projectName === activeProj;
+    // 활성 프로젝트 아닌 행성은 작은 점으로만 표시
+    if (activeProj && !projMatch) {
+      const sc = toScreen(p.position);
+      if (sc.z <= 1) {
+        _lctx.save();
+        _lctx.globalAlpha = 0.25;
+        _lctx.fillStyle = p.userData.hueHex || '#58a6ff';
+        _lctx.beginPath(); _lctx.arc(sc.x, sc.y, 3, 0, Math.PI*2); _lctx.fill();
+        _lctx.restore();
+      }
+      return;
+    }
     const sc = toScreen(p.position);
     if (sc.z > 1) return;
 
@@ -2915,17 +3046,13 @@ function drawLabels() {
     });
   });
 
-  // ── 2. 파일 위성 — LOD0에서만 표시 (LOD1부터 숨김) ───────────────────────
-  if (lod >= 1) { _lctx.globalAlpha = 1; return; } // LOD1 이상: 위성 숨김 → 깔끔한 뷰
-
-  // 선택된 노드의 위성만 우선 표시, 나머지는 최대 20개
-  let visibleSatCount = 0;
-  const maxVisibleSats = 20;
+  // ── 2. 파일 위성 — 3단계: 선택된 클러스터의 위성만 표시 ─────────────────
+  const selectedCluster = _selectedHit?.obj?.userData?.clusterId;
+  if (!selectedCluster) { _lctx.globalAlpha = 1; return; } // 선택 없으면 위성 숨김
 
   satelliteMeshes.forEach(s => {
-    const isSameCluster = _selectedHit?.obj?.userData?.clusterId === s.userData.clusterId;
-    if (!isSameCluster && visibleSatCount >= maxVisibleSats) return;
-    visibleSatCount++;
+    // 선택된 클러스터의 위성만 표시
+    if (s.userData.clusterId !== selectedCluster) return;
     const sc = toScreen(s.position);
     if (sc.z > 1) return;
 
