@@ -3190,36 +3190,18 @@ function drawCompactProjectView() {
           });
         }
 
-        // ── 세션 노드: 역피라미드 배치 (위쪽=넓게, 아래쪽=좁게) ──────────
+        // ── 세션 노드: 카테고리 아래 화면 정렬 그리드 ─────────────────────
         const maxShow = Math.min(catPlanets.length, 12);
         const NODE_W = 86;                 // 세션 노드 고정 너비
         const NODE_H = 24;                 // 세션 노드 고정 높이
         const GAP_X = 6;                   // 열 간격
         const GAP_Y = 6;                   // 행 간격
-        const GRID_GAP = 16;               // 카테고리~그리드 간격
+        const GRID_GAP = 10;               // 카테고리~그리드 간격
+        const COLS = Math.min(3, maxShow);  // 한 행 최대 3열
 
-        // 바깥 방향 단위 벡터
-        const outDx = Math.cos(catAngle);
-        const outDy = Math.sin(catAngle);
-        // 수직 벡터 (열 방향)
-        const perpDx = -outDy;
-        const perpDy = outDx;
-
-        // 역피라미드 행 구성: 첫 행이 가장 넓고 점점 좁아짐
-        // 예: 12개 → [4, 3, 3, 2], 9개 → [4, 3, 2], 6개 → [3, 2, 1]
-        const pyramidRows = [];
-        let remaining = maxShow;
-        let rowWidth = Math.min(4, remaining);  // 첫 행 최대 4개
-        while (remaining > 0) {
-          const cnt = Math.min(rowWidth, remaining);
-          pyramidRows.push(cnt);
-          remaining -= cnt;
-          rowWidth = Math.max(1, rowWidth - 1);
-        }
-
-        // 그리드 시작점
-        const gridOriginX = catCx + outDx * (cph / 2 + GRID_GAP);
-        const gridOriginY = catCy + outDy * (cph / 2 + GRID_GAP);
+        // 그리드 시작점: 카테고리 카드 바로 아래, 수평 중앙 정렬
+        const gridTopX = catCx;
+        const gridTopY = catCy + cph / 2 + GRID_GAP;
 
         // 카테고리 → 그리드 연결선
         ctx.save();
@@ -3227,21 +3209,24 @@ function drawCompactProjectView() {
         ctx.strokeStyle = cfg.color;
         ctx.lineWidth = 1;
         ctx.setLineDash([3, 3]);
-        ctx.beginPath(); ctx.moveTo(catCx, catCy); ctx.lineTo(gridOriginX, gridOriginY); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(catCx, catCy + cph / 2); ctx.lineTo(gridTopX, gridTopY); ctx.stroke();
         ctx.setLineDash([]);
         ctx.restore();
 
+        const totalRows = Math.ceil(maxShow / COLS);
         let planetIdx = 0;
-        pyramidRows.forEach((colsInRow, row) => {
+
+        for (let row = 0; row < totalRows; row++) {
+          const colsInRow = Math.min(COLS, maxShow - row * COLS);
           for (let col = 0; col < colsInRow; col++) {
-            if (planetIdx >= maxShow) return;
+            if (planetIdx >= maxShow) break;
             const planet = catPlanets[planetIdx];
             planetIdx++;
 
-            // 열 중앙 정렬
+            // 화면 좌표 기준 가로·세로 정렬 (중앙 정렬)
             const colOffset = col - (colsInRow - 1) / 2;
-            const sx = gridOriginX + outDx * row * (NODE_H + GAP_Y) + perpDx * colOffset * (NODE_W + GAP_X);
-            const sy = gridOriginY + outDy * row * (NODE_H + GAP_Y) + perpDy * colOffset * (NODE_W + GAP_X);
+            const sx = gridTopX + colOffset * (NODE_W + GAP_X);
+            const sy = gridTopY + row * (NODE_H + GAP_Y) + NODE_H / 2;
 
             const evCnt = planet.userData.eventCount || 0;
             const isSubHover = _hoveredHit?.obj === planet;
@@ -3312,14 +3297,12 @@ function drawCompactProjectView() {
 
         // 남은 세션 수
         if (catPlanets.length > maxShow) {
-          const lastRowY = pyramidRows.length;
-          const moreX = gridOriginX + outDx * lastRowY * (NODE_H + GAP_Y);
-          const moreY = gridOriginY + outDy * lastRowY * (NODE_H + GAP_Y);
+          const moreY = gridTopY + totalRows * (NODE_H + GAP_Y) + 4;
           ctx.globalAlpha = 0.6;
           ctx.font = '400 10px -apple-system,sans-serif';
           ctx.fillStyle = cfg.color;
           ctx.textAlign = 'center';
-          ctx.fillText(`+${catPlanets.length - maxShow}개 더`, moreX, moreY);
+          ctx.fillText(`+${catPlanets.length - maxShow}개 더`, gridTopX, moreY);
           ctx.globalAlpha = 1;
         }
       });
