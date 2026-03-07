@@ -3190,13 +3190,34 @@ function drawCompactProjectView() {
           });
         }
 
-        // ── 세션 노드들: 카테고리에서 더 바깥으로 방사형 ──────────────────
-        const maxShow = Math.min(catPlanets.length, 6);
+        // ── 세션 노드들: 카테고리 바깥쪽 그리드(오와 열) 배치 ──────────────
+        const maxShow = Math.min(catPlanets.length, 9);
+        const COLS = 3;                     // 열 수 (한 줄에 3개)
+        const CELL_W = 90;                  // 셀 가로 간격
+        const CELL_H = 30;                  // 셀 세로 간격
+        const GRID_GAP = 14;               // 카테고리~그리드 간격
+
+        // 바깥 방향 단위 벡터 (카테고리에서 프로젝트 반대쪽)
+        const outDx = Math.cos(catAngle);
+        const outDy = Math.sin(catAngle);
+        // 수직 벡터 (그리드 열 방향)
+        const perpDx = -outDy;
+        const perpDy = outDx;
+
+        // 그리드 시작점: 카테고리 카드 바깥쪽 끝에서 GAP만큼 더 바깥
+        const gridOriginX = catCx + outDx * (cph / 2 + GRID_GAP);
+        const gridOriginY = catCy + outDy * (cph / 2 + GRID_GAP);
+
+        const rows = Math.ceil(maxShow / COLS);
+
         catPlanets.slice(0, maxShow).forEach((planet, si) => {
-          const sesSpread = Math.min(Math.PI * 0.35, maxShow * 0.25);
-          const sesAngle = catAngle + (si - (maxShow - 1) / 2) * (sesSpread / Math.max(maxShow - 1, 1));
-          const sx = catCx + Math.cos(sesAngle) * SESSION_RING_R;
-          const sy = catCy + Math.sin(sesAngle) * SESSION_RING_R;
+          const row = Math.floor(si / COLS);
+          const col = si % COLS;
+          // 행: 바깥 방향으로 진행, 열: 수직 방향으로 중앙 정렬
+          const colsInRow = Math.min(COLS, maxShow - row * COLS);
+          const colOffset = col - (colsInRow - 1) / 2;
+          const sx = gridOriginX + outDx * row * CELL_H + perpDx * colOffset * CELL_W;
+          const sy = gridOriginY + outDy * row * CELL_H + perpDy * colOffset * CELL_W;
 
           const evCnt = planet.userData.eventCount || 0;
           const isSubHover = _hoveredHit?.obj === planet;
@@ -3204,12 +3225,10 @@ function drawCompactProjectView() {
 
           let sLabel = planet.userData.intent || '';
           sLabel = sLabel.replace(/^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE00}-\u{FEFF}⚙️🔐🌐🗄🎨🧪🚀🐳📝📐🔧🌿💬]\s*/gu, '').trim();
-          if (sLabel.length > 14) sLabel = sLabel.slice(0, 13) + '…';
+          if (sLabel.length > 12) sLabel = sLabel.slice(0, 11) + '…';
           if (!sLabel) sLabel = planet.userData.domain || '작업';
 
-          ctx.font = '500 10px -apple-system,sans-serif';
-          const stw = ctx.measureText(sLabel).width;
-          const spw = stw + 16;
+          const spw = 80;
           const sph = 22;
           const slx = sx - spw / 2;
           const sly = sy - sph / 2;
@@ -3217,20 +3236,22 @@ function drawCompactProjectView() {
           if (rectOverlaps(slx - 2, sly - 2, spw + 4, sph + 4)) return;
           reserveRect(slx - 2, sly - 2, spw + 4, sph + 4);
 
-          // 카테고리 → 세션 연결선
-          ctx.save();
-          ctx.globalAlpha = 0.12;
-          ctx.strokeStyle = nodeColor;
-          ctx.lineWidth = 0.8;
-          ctx.setLineDash([2, 3]);
-          ctx.beginPath(); ctx.moveTo(catCx, catCy); ctx.lineTo(sx, sy); ctx.stroke();
-          ctx.setLineDash([]);
-          ctx.restore();
+          // 카테고리 → 첫 번째 세션만 연결선 (깔끔하게)
+          if (si === 0) {
+            ctx.save();
+            ctx.globalAlpha = 0.12;
+            ctx.strokeStyle = nodeColor;
+            ctx.lineWidth = 0.8;
+            ctx.setLineDash([2, 3]);
+            ctx.beginPath(); ctx.moveTo(catCx, catCy); ctx.lineTo(gridOriginX, gridOriginY); ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.restore();
+          }
 
-          // 세션 pill
+          // 세션 pill (고정 너비)
           ctx.save();
           ctx.shadowColor = 'rgba(0,0,0,0.04)'; ctx.shadowBlur = 4; ctx.shadowOffsetY = 1;
-          ctx.fillStyle = 'rgba(255,255,255,0.92)';
+          ctx.fillStyle = isSubHover ? 'rgba(240,245,255,0.98)' : 'rgba(255,255,255,0.92)';
           roundRect(ctx, slx, sly, spw, sph, sph / 2); ctx.fill();
           ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
           ctx.restore();
@@ -3268,13 +3289,14 @@ function drawCompactProjectView() {
 
         // 남은 세션 수
         if (catPlanets.length > maxShow) {
+          const lastRow = Math.ceil(maxShow / COLS);
+          const moreX = gridOriginX + outDx * lastRow * CELL_H;
+          const moreY = gridOriginY + outDy * lastRow * CELL_H;
           ctx.globalAlpha = 0.6;
           ctx.font = '400 10px -apple-system,sans-serif';
           ctx.fillStyle = cfg.color;
           ctx.textAlign = 'center';
-          const moreX = catCx + Math.cos(catAngle) * (SESSION_RING_R + 30);
-          const moreY = catCy + Math.sin(catAngle) * (SESSION_RING_R + 30);
-          ctx.fillText(`+${catPlanets.length - maxShow}개`, moreX, moreY);
+          ctx.fillText(`+${catPlanets.length - maxShow}개 더`, moreX, moreY);
           ctx.globalAlpha = 1;
         }
       });
