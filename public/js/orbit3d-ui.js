@@ -1175,10 +1175,14 @@ function buildCoreMesh() {
     if (c.material) { if (c.material.dispose) c.material.dispose(); }
     scene.remove(c);
   });
+  // 원점 근처(거리 10 이내)의 모든 Mesh도 강제 제거 (캐시된 태양 잔재물)
+  scene.children.filter(c => c.isMesh && c.position.length() < 10).forEach(c => {
+    if (c.geometry) c.geometry.dispose();
+    if (c.material) { if (c.material.dispose) c.material.dispose(); }
+    scene.remove(c);
+  });
   _coreMeshRef = null;
   _coreGlowRef = null;
-
-  // 태양 메시 제거됨 — 프로젝트 노드만 표시
 }
 window.buildCoreMesh = buildCoreMesh;
 
