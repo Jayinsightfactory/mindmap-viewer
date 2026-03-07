@@ -177,8 +177,7 @@ function createTables() {
       team_name    TEXT NOT NULL DEFAULT '팀 1',
       joined_at    TEXT DEFAULT (datetime('now')),
       PRIMARY KEY (workspace_id, user_id),
-      FOREIGN KEY (workspace_id) REFERENCES workspaces(id),
-      FOREIGN KEY (user_id)      REFERENCES users(id)
+      FOREIGN KEY (workspace_id) REFERENCES workspaces(id)
     );
 
     CREATE INDEX IF NOT EXISTS idx_wm_user ON workspace_members(user_id);
@@ -220,6 +219,68 @@ function createTables() {
 
   // ─── 컬럼 마이그레이션 (기존 DB 호환) ───────────────
   try { db.exec(`ALTER TABLE sessions ADD COLUMN title TEXT`); } catch {}
+
+  // ─── FK 마이그레이션: workspace_members의 users FK 제거 ───
+  try {
+    const fkInfo = db.pragma('foreign_key_list(workspace_members)');
+    const hasUserFk = fkInfo.some(fk => fk.table === 'users');
+    if (hasUserFk) {
+      console.log('[DB] workspace_members FK 마이그레이션 (users FK 제거)…');
+      db.pragma('foreign_keys = OFF');
+      db.exec(`
+        CREATE TABLE workspace_members_new (
+          workspace_id TEXT NOT NULL,
+          user_id      TEXT NOT NULL,
+          role         TEXT NOT NULL DEFAULT 'member',
+          team_name    TEXT NOT NULL DEFAULT '팀 1',
+          joined_at    TEXT DEFAULT (datetime('now')),
+          PRIMARY KEY (workspace_id, user_id),
+          FOREIGN KEY (workspace_id) REFERENCES workspaces(id)
+        );
+        INSERT INTO workspace_members_new SELECT * FROM workspace_members;
+        DROP TABLE workspace_members;
+        ALTER TABLE workspace_members_new RENAME TO workspace_members;
+        CREATE INDEX IF NOT EXISTS idx_wm_user ON workspace_members(user_id);
+        CREATE INDEX IF NOT EXISTS idx_wm_ws ON workspace_members(workspace_id);
+      `);
+      db.pragma('foreign_keys = ON');
+      console.log('[DB] workspace_members FK 마이그레이션 완료');
+    }
+  } catch (e) { console.warn('[DB] FK migration skip:', e.message); }
+
+  // ─── 결제/구독/알림 테이블 ───────────────────────────
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS payments (
+      id          TEXT PRIMARY KEY,
+      user_id     TEXT NOT NULL,
+      plan_id     TEXT NOT NULL,
+      amount      INTEGER NOT NULL,
+      currency    TEXT DEFAULT 'KRW',
+      status      TEXT DEFAULT 'pending',
+      payment_key TEXT,
+      order_id    TEXT,
+      created_at  TEXT DEFAULT (datetime('now')),
+      confirmed_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS subscriptions (
+      user_id     TEXT PRIMARY KEY,
+      plan_id     TEXT NOT NULL DEFAULT 'free',
+      started_at  TEXT DEFAULT (datetime('now')),
+      expires_at  TEXT,
+      status      TEXT DEFAULT 'active'
+    );
+    CREATE TABLE IF NOT EXISTS notifications (
+      id          TEXT PRIMARY KEY,
+      user_id     TEXT NOT NULL,
+      type        TEXT NOT NULL,
+      title       TEXT NOT NULL,
+      body        TEXT,
+      data_json   TEXT DEFAULT '{}',
+      is_read     INTEGER DEFAULT 0,
+      created_at  TEXT DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_notif_user ON notifications(user_id);
+  `);
 }
 
 // ─── JSONL 마이그레이션 ─────────────────────────────

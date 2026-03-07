@@ -23,6 +23,8 @@ async function loadData() {
     const nodes = data.nodes || [];
     buildPlanetSystem(nodes);
     if (typeof updateActiveFiles === 'function') updateActiveFiles();  // 활성 파일 갱신
+    if (typeof _loadWorkspaceState === 'function') _loadWorkspaceState();
+    if (!_teamMode && !_companyMode && !_parallelMode && typeof controls !== 'undefined') controls.enabled = false;
     document.getElementById('loading').style.display = 'none';
 
     // 이벤트 없음 → 조건부 안내

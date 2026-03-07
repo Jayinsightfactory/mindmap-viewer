@@ -31,8 +31,13 @@ function _orbitAnimLoop(now) {
     updateOrbits(dt);
     pulseSun();
     updateRaycast();
-    updateZoomSummary();
-    _labelCanvas2d.style.opacity = _zoomSummaryVisible ? '0.15' : '1';
+    const isPersonal = !_teamMode && !_companyMode && !_parallelMode;
+    if (!isPersonal) {
+      updateZoomSummary();
+      _labelCanvas2d.style.opacity = _zoomSummaryVisible ? '0.15' : '1';
+    } else {
+      _labelCanvas2d.style.opacity = '1';
+    }
     drawLabels();
     // ── 라이브 브랜치 노드 확장 애니메이션 ──────────────────────────────
     if (typeof _animateLiveBranches === 'function') _animateLiveBranches();

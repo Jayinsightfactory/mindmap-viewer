@@ -18,7 +18,7 @@ const express = require('express');
 const { ulid }  = require('ulid');
 const crypto    = require('crypto');
 
-function createWorkspaceRouter({ db, verifyToken, getUserById, ADMIN_EMAILS }) {
+function createWorkspaceRouter({ db, verifyToken, getUserById, ADMIN_EMAILS, createNotification }) {
   const router = express.Router();
 
   // ── 헬퍼: 짧은 초대코드 생성 (8자 영숫자) ────────────────────────────────
@@ -433,6 +433,15 @@ function createWorkspaceRouter({ db, verifyToken, getUserById, ADMIN_EMAILS }) {
         `INSERT INTO workspace_members (workspace_id, user_id, role, team_name) VALUES (?, ?, ?, ?)`,
         [wsId, target.id, role || 'member', teamName || '팀 1']
       );
+      // 초대 알림 생성
+      if (typeof createNotification === 'function' && db) {
+        createNotification(db, {
+          userId: target.id, type: 'workspace_invite',
+          title: '워크스페이스 초대',
+          body: `워크스페이스에 초대되었습니다.`,
+          data: { workspaceId: wsId },
+        });
+      }
       res.json({ ok: true, userId: target.id, name: target.name });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });

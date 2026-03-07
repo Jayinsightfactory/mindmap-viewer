@@ -3,7 +3,7 @@
 // ══════════════════════════════════════════════════════════════════════════════
 // ── 노드 별명 (공개명 / 내 표시명) 시스템 ──────────────────────────────────
 // _nodeAliases: { originalLabel → displayAlias }  (사용자가 지정한 내 표시 이름)
-const _nodeAliases = JSON.parse(localStorage.getItem('orbitNodeAliases') || '{}');
+const _nodeAliases = (() => { try { return JSON.parse(localStorage.getItem('orbitNodeAliases') || '{}'); } catch { return {}; } })();
 
 function saveAliases() {
   localStorage.setItem('orbitNodeAliases', JSON.stringify(_nodeAliases));
@@ -131,7 +131,7 @@ function updateZoomDisplay() {
 
 // ── 뷰 설정 패널 (view-panel) ────────────────────────────────────────────────
 const _VP_KEY = 'orbitViewPrefs';
-const _viewPrefs = JSON.parse(localStorage.getItem(_VP_KEY) || 'null') || {
+const _viewPrefs = (() => { try { return JSON.parse(localStorage.getItem(_VP_KEY) || 'null'); } catch { return null; } })() || {
   zoom: { personal: 22, team: 70, company: 100 },
   filter: { type: 'all' },
   customGroups: [],
@@ -741,7 +741,7 @@ window.showPanel = function(data, obj) {
 };
 
 // ── 로그인 모달 ──────────────────────────────────────────────────────────────
-let _orbitUser = JSON.parse(localStorage.getItem('orbitUser') || 'null');
+let _orbitUser = (() => { try { return JSON.parse(localStorage.getItem('orbitUser') || 'null'); } catch { return null; } })();
 
 function openLoginModal() {
   document.getElementById('login-modal-overlay').classList.add('open');
@@ -1000,6 +1000,7 @@ window.toggleLeftNav = toggleLeftNav;
 function setViewPersonal() {
   if (typeof _teamMode !== 'undefined' && (_teamMode || _companyMode)) exitTeamMode();
   if (typeof _parallelMode !== 'undefined' && _parallelMode) exitParallelMode();
+  if (typeof controls !== 'undefined') controls.enabled = false;
 }
 window.setViewPersonal = setViewPersonal;
 

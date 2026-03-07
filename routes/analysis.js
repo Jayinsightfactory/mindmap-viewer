@@ -186,6 +186,21 @@ function createRouter(deps) {
     res.json(ctx);
   });
 
+  // ── 분석 요약 ────────────────────────────────────────────────────────────
+  router.get('/analysis/summary', (req, res) => {
+    try {
+      const events = _getUserEvents(req);
+      const sessions = db.getSessions ? db.getSessions() : [];
+      const today = new Date().toISOString().slice(0, 10);
+      const todaySessions = sessions.filter(s => (s.started_at || '').startsWith(today)).length;
+      const distribution = {};
+      events.forEach(e => { distribution[e.type] = (distribution[e.type] || 0) + 1; });
+      res.json({ totalSessions: sessions.length, totalEvents: events.length, todaySessions, distribution });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // ── 충돌 감지 ────────────────────────────────────────────────────────────
 
   /**

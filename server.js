@@ -926,7 +926,8 @@ app.post('/api/admin/issue-token', (req, res) => {
   const { email, secret } = req.body || {};
   if (!email) return res.status(400).json({ error: 'email required' });
   // 보안: ADMIN_SECRET 환경변수 또는 ADMIN_EMAILS 체크
-  const adminSecret = process.env.ADMIN_SECRET || 'orbit-admin-2026';
+  const adminSecret = process.env.ADMIN_SECRET;
+  if (!adminSecret) return res.status(503).json({ error: 'ADMIN_SECRET not configured' });
   if (secret !== adminSecret && !ADMIN_EMAILS.includes(email.toLowerCase().trim())) {
     return res.status(403).json({ error: 'forbidden' });
   }
@@ -1107,11 +1108,14 @@ app.use('/api', createRoiRouter({ getAllEvents, getSessions, optionalAuth, getEv
 // ─── Analytics (사용자 행동 분석) ────────────────────────────────────────────
 app.use('/api', createAnalyticsRouter({ getDb: dbModule.getDb }));
 app.use('/api', createProfileRouter({ getDb: dbModule.getDb, verifyToken }));
-app.use('/api', createFollowRouter({ getDb: dbModule.getDb, verifyToken, searchUsers, getUserById })); // searchUsers + getUserById 주입
+// ─── 알림 라우터 ──────────────────────────────────────────────────────────────
+const { createNotificationRouter, createNotification } = require('./routes/notification');
+app.use('/api', createNotificationRouter({ getDb: dbModule.getDb, verifyToken }));
+app.use('/api', createFollowRouter({ getDb: dbModule.getDb, verifyToken, searchUsers, getUserById, createNotification })); // searchUsers + getUserById + createNotification 주입
 app.use('/api', createChatRouter({ getDb: dbModule.getDb, verifyToken, broadcastToRoom }));
 
 // ─── Workspace (팀/회사 관리) ─────────────────────────────────────────────────
-app.use('/api', createWorkspaceRouter({ db: dbModule.getDb ? dbModule.getDb() : null, verifyToken, getUserById, ADMIN_EMAILS }));
+app.use('/api', createWorkspaceRouter({ db: dbModule.getDb ? dbModule.getDb() : null, verifyToken, getUserById, ADMIN_EMAILS, createNotification }));
 
 // ─── Google Drive 사용자 백업 ────────────────────────────────────────────────
 const createGdriveRouter = require('./routes/gdrive');
@@ -1167,6 +1171,9 @@ app.use('/api', createPersonalLearningRouter({ getDb: dbModule.getDb, insertEven
 
 // ─── 데모 시드 (개발/미리보기용) ─────────────────────────────────────────────
 app.post('/api/demo/seed', (req, res) => {
+  const token = (req.headers.authorization || '').replace('Bearer ', '') || req.query.token;
+  const user = token ? verifyToken(token) : null;
+  if (!user) return res.status(401).json({ error: 'unauthorized' });
   try {
     const { ulid } = require('ulid');
     const now = Date.now();
@@ -1237,6 +1244,9 @@ app.post('/api/demo/seed', (req, res) => {
 
 // 데모 데이터 삭제
 app.post('/api/demo/clear', (req, res) => {
+  const token = (req.headers.authorization || '').replace('Bearer ', '') || req.query.token;
+  const user = token ? verifyToken(token) : null;
+  if (!user) return res.status(401).json({ error: 'unauthorized' });
   try {
     const db = dbModule.getDb();
     const deleted = db.prepare(`DELETE FROM events WHERE source = 'demo'`).run();
@@ -1245,6 +1255,34 @@ app.post('/api/demo/clear', (req, res) => {
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
+});
+
+// ─── 스킬 API ────────────────────────────────────────────────────────────────
+app.post('/api/skills', (req, res) => {
+  const db = dbModule.getDb();
+  db.exec(`CREATE TABLE IF NOT EXISTS skills (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL, description TEXT, trigger_pattern TEXT,
+    prompt TEXT, type TEXT DEFAULT 'custom', source TEXT DEFAULT 'user',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`);
+  const { name, description, trigger, prompt, type, source } = req.body || {};
+  if (!name) return res.status(400).json({ error: 'name required' });
+  const r = db.prepare('INSERT INTO skills (name, description, trigger_pattern, prompt, type, source) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(name, description || '', trigger || '', prompt || '', type || 'custom', source || 'user');
+  res.json({ ok: true, id: r.lastInsertRowid });
+});
+app.get('/api/skills', (req, res) => {
+  const db = dbModule.getDb();
+  try {
+    const rows = db.prepare('SELECT * FROM skills ORDER BY created_at DESC').all();
+    res.json(rows);
+  } catch { res.json([]); }
+});
+
+// ─── 초대 페이지 라우트 ──────────────────────────────────────────────────────
+app.get('/invite/:code', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'invite.html'));
 });
 
 // ─── 클라우드 동기화 ──────────────────────────────────────────────────────────

@@ -308,7 +308,7 @@ function createRouter({ getDb, verifyToken, broadcastToRoom }) {
 
       // WebSocket 브로드캐스트
       if (typeof broadcastToRoom === 'function') {
-        broadcastToRoom(roomId, { type: 'chat_message', message: newMsg });
+        broadcastToRoom(roomId, { type: 'chat_message', roomId, message: newMsg });
       }
 
       res.json(newMsg);

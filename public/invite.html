@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Orbit AI - 워크스페이스 초대</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+         background: #0d1117; color: #c9d1d9; min-height: 100vh;
+         display: flex; align-items: center; justify-content: center; }
+  .invite-card { background: #161b22; border: 1px solid #30363d; border-radius: 16px;
+                 padding: 40px; max-width: 420px; width: 90%; text-align: center; }
+  .invite-logo { font-size: 48px; margin-bottom: 16px; }
+  .invite-title { font-size: 22px; font-weight: 700; color: #f0f6fc; margin-bottom: 8px; }
+  .invite-sub { font-size: 14px; color: #8b949e; margin-bottom: 24px; }
+  .invite-info { background: #21262d; border-radius: 10px; padding: 20px; margin-bottom: 24px; }
+  .invite-ws-name { font-size: 18px; font-weight: 600; color: #58a6ff; }
+  .invite-company { font-size: 13px; color: #8b949e; margin-top: 4px; }
+  .invite-members { font-size: 12px; color: #6e7681; margin-top: 8px; }
+  .invite-btn { display: inline-block; background: #238636; color: #fff; border: none;
+                border-radius: 8px; padding: 12px 32px; font-size: 15px; font-weight: 600;
+                cursor: pointer; text-decoration: none; transition: background .2s; }
+  .invite-btn:hover { background: #2ea043; }
+  .invite-err { color: #f85149; font-size: 13px; margin-top: 16px; }
+  .invite-login { font-size: 12px; color: #8b949e; margin-top: 16px; }
+  .invite-login a { color: #58a6ff; text-decoration: none; }
+</style>
+</head>
+<body>
+<div class="invite-card" id="card">
+  <div class="invite-logo">⬡</div>
+  <div class="invite-title">워크스페이스 초대</div>
+  <div class="invite-sub">아래 워크스페이스에 참여하세요</div>
+  <div class="invite-info" id="info" style="display:none">
+    <div class="invite-ws-name" id="ws-name"></div>
+    <div class="invite-company" id="ws-company"></div>
+    <div class="invite-members" id="ws-members"></div>
+  </div>
+  <div id="loading" style="font-size:13px;color:#8b949e">불러오는 중...</div>
+  <div id="err" class="invite-err" style="display:none"></div>
+  <div id="actions" style="display:none">
+    <button class="invite-btn" onclick="joinWorkspace()">참여하기</button>
+  </div>
+  <div class="invite-login">
+    이미 계정이 있나요? <a href="/orbit3d.html">로그인하기</a>
+  </div>
+</div>
+<script>
+const code = location.pathname.split('/invite/')[1] || location.search.replace('?code=','');
+if (!code) {
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('err').style.display = 'block';
+  document.getElementById('err').textContent = '유효하지 않은 초대 링크입니다.';
+} else {
+  fetch('/api/workspace/invite/' + code)
+    .then(r => r.json())
+    .then(d => {
+      document.getElementById('loading').style.display = 'none';
+      if (d.error) {
+        document.getElementById('err').style.display = 'block';
+        document.getElementById('err').textContent = '유효하지 않은 초대코드입니다.';
+        return;
+      }
+      document.getElementById('info').style.display = 'block';
+      document.getElementById('ws-name').textContent = d.name;
+      document.getElementById('ws-company').textContent = d.company_name || '';
+      document.getElementById('ws-members').textContent = (d.member_count || 0) + '명 참여 중';
+      document.getElementById('actions').style.display = 'block';
+    })
+    .catch(() => {
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('err').style.display = 'block';
+      document.getElementById('err').textContent = '서버 연결에 실패했습니다.';
+    });
+}
+function joinWorkspace() {
+  const token = localStorage.getItem('orbit_token');
+  if (!token) {
+    localStorage.setItem('orbit_pending_invite', code);
+    location.href = '/orbit3d.html';
+    return;
+  }
+  fetch('/api/workspace/join', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+    body: JSON.stringify({ inviteCode: code })
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (d.error) { alert(d.error); return; }
+    location.href = '/orbit3d.html';
+  })
+  .catch(() => alert('참여에 실패했습니다.'));
+}
+</script>
+</body>
+</html>

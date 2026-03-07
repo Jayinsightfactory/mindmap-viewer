@@ -6,10 +6,10 @@ const _TALENT_KEY = 'orbitTalentBoard';
 
 // 내 공개 프로필 (localStorage)
 function getMyTalentProfile() {
-  return JSON.parse(localStorage.getItem(_TALENT_KEY + '_me') || 'null');
+  try { return JSON.parse(localStorage.getItem(_TALENT_KEY + '_me') || 'null'); } catch { return null; }
 }
 function saveMyTalentProfile(profile) {
-  localStorage.setItem(_TALENT_KEY + '_me', JSON.stringify(profile));
+  try { localStorage.setItem(_TALENT_KEY + '_me', JSON.stringify(profile)); } catch {}
 }
 
 // 현재 작업 기반 스킬 자동 분석
@@ -376,7 +376,7 @@ window.closeDmPanel = closeDmPanel;
 // escHtml is defined in orbit3d-render.js
 
 // ─── 인라인 텍스트 편집 ────────────────────────────────────────────────────────
-const _labelAliasMap = JSON.parse(localStorage.getItem('orbitLabelAliases') || '{}');
+const _labelAliasMap = (() => { try { return JSON.parse(localStorage.getItem('orbitLabelAliases') || '{}'); } catch { return {}; } })();
 
 function openInlineEdit(hit) {
   if (!hit?.data) return;

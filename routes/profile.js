@@ -143,7 +143,7 @@ function createRouter({ getDb, verifyToken }) {
         JSON.stringify(Array.isArray(skills)      ? skills.slice(0, 50)      : []),
         JSON.stringify(Array.isArray(experiences) ? experiences.slice(0, 20) : []),
         JSON.stringify(Array.isArray(education)   ? education.slice(0, 10)   : []),
-        JSON.stringify(typeof links === 'object' && links ? links : {}),
+        JSON.stringify(links && typeof links === 'object' && !Array.isArray(links) ? links : {}),
         (avatar_url  || null),
         is_public !== false ? 1 : 0,
       );

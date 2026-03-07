@@ -83,8 +83,10 @@ function createRouter(deps) {
    */
   router.post('/payment/confirm', async (req, res) => {
     try {
-      const { paymentKey, orderId, amount, userId, planId } = req.body;          // 요청 바디에서 필드 추출
-      const result = await confirmPayment({ paymentKey, orderId, amount });      // PG 결제 승인 요청
+      const { paymentKey, orderId, amount, userId, planId } = req.body || {};
+      if (!paymentKey || !orderId) return res.status(400).json({ error: 'paymentKey and orderId required' });
+      const result = await confirmPayment({ paymentKey, orderId, amount });
+      if (!result) return res.status(502).json({ error: 'PG confirmation failed' });
 
       // 결제 승인 성공 시 사용자 플랜 업그레이드
       if (result.status === 'DONE' || result.mock) {                             // 실결제 또는 목 모드 둘 다 처리

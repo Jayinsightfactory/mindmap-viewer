@@ -9,6 +9,7 @@ function buildParallelView(graphData) {
   _teamMode     = false;
   _companyMode  = false;
   _activeSimData = null;
+  if (typeof controls !== 'undefined') controls.enabled = true;
 
   const RING_R = 22;
 

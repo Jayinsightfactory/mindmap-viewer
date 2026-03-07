@@ -25,7 +25,7 @@ const router  = express.Router();
  * @param {Function} [deps.searchUsers] - auth DB에서 사용자 검색 (이메일·이름)
  * @returns {express.Router}
  */
-function createRouter({ getDb, verifyToken, searchUsers, getUserById }) {
+function createRouter({ getDb, verifyToken, searchUsers, getUserById, createNotification }) {
 
   // ── DB 테이블 초기화 ──────────────────────────────────────────────────────
   function initFollowTable() {
@@ -64,6 +64,15 @@ function createRouter({ getDb, verifyToken, searchUsers, getUserById }) {
       db.prepare(`
         INSERT OR IGNORE INTO user_follows (follower_id, following_id) VALUES (?, ?)
       `).run(req.user.id, userId);
+      // 팔로우 알림 생성
+      if (typeof createNotification === 'function') {
+        createNotification(db, {
+          userId, type: 'follow',
+          title: '새 팔로워',
+          body: `${req.user.name || req.user.email || '누군가'}님이 팔로우했습니다.`,
+          data: { followerId: req.user.id },
+        });
+      }
       res.json({ ok: true, following: true });
     } catch (e) {
       console.error('[follow/post]', e.message);

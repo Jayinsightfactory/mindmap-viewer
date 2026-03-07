@@ -668,6 +668,7 @@ function buildTeamSystem(teamData) {
   _teamMode  = true;
   _companyMode = false;
   _activeSimData = teamData;
+  if (typeof controls !== 'undefined') controls.enabled = true;
 
   const { name, goal, goalColor, members } = teamData;
 
@@ -882,6 +883,7 @@ function buildCompanySystem(companyData) {
   _teamMode  = true;
   _companyMode = true;
   _activeSimData = companyData;
+  if (typeof controls !== 'undefined') controls.enabled = true;
 
   const { name, goal, goalColor, departments } = companyData;
   const DEPT_R   = 72;
