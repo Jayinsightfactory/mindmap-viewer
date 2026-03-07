@@ -1108,18 +1108,78 @@ function showDrillTimeline(catData) {
     dayEvents.forEach(e => {
       const cfg = typeCfg(e.type);
       const hex = '#' + new THREE.Color(cfg.color).getHexString();
-      const label = e.label || extractIntent(e) || e.type;
       const ts = e.timestamp ? new Date(e.timestamp).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : '';
       const fileName = (e.data?.filePath || e.data?.fileName || '').replace(/\\/g, '/').split('/').pop();
       const filePath = e.data?.filePath || e.data?.fileName || '';
 
-      html += `<div class="drill-tl-item" onclick="${filePath ? `drillToFileDetail('${fileName.replace(/'/g, "\\'")}','${filePath.replace(/'/g, "\\'")}')` : ''}" style="display:flex;align-items:center;gap:8px;padding:7px 6px;border-radius:8px;cursor:${filePath ? 'pointer' : 'default'};transition:background .12s;border-left:3px solid ${hex}" onmouseenter="this.style.background='rgba(0,0,0,0.03)'" onmouseleave="this.style.background='transparent'">
-        <span style="font-size:12px;flex-shrink:0">${cfg.icon || '·'}</span>
+      // ── 이벤트 상세 내용 추출 (타임라인에서 실제 내용 표시) ──
+      let d = e.data || {};
+      const fc = e.fullContent;
+      if (fc && typeof fc === 'string' && fc.startsWith('{')) {
+        try { d = { ...d, ...JSON.parse(fc) }; } catch {}
+      }
+      const t = e.type || '';
+      let typeLabel = '';   // 이벤트 종류 (짧은 라벨)
+      let detail = '';      // 실제 내용 (명령, 메시지 등)
+
+      if (t === 'user.message') {
+        typeLabel = '💬 사용자 지시';
+        detail = d.contentPreview || d.content || '';
+      } else if (t === 'assistant.message' || t === 'assistant.response') {
+        typeLabel = '🤖 AI 응답';
+        detail = d.contentPreview || d.content || '';
+      } else if (t === 'tool.end' || t === 'tool.start') {
+        const tool = d.toolName || '';
+        const TOOLS = { 'Write':'파일 작성', 'Edit':'파일 수정', 'Read':'파일 읽기',
+          'Bash':'명령 실행', 'Grep':'코드 검색', 'Glob':'파일 탐색',
+          'Task':'에이전트', 'WebFetch':'웹 조회' };
+        typeLabel = `🔧 ${TOOLS[tool] || tool}`;
+        // 실제 내용: 명령어, 수정 내용, 파일경로 등
+        if (tool === 'Bash') {
+          detail = d.command || d.input || '';
+        } else if (tool === 'Edit') {
+          detail = fileName ? `${fileName}` : '';
+          if (d.old_string || d.new_string) detail += d.old_string ? ` — "${(d.old_string||'').slice(0,60)}…" → "${(d.new_string||'').slice(0,60)}…"` : '';
+        } else if (tool === 'Write') {
+          detail = d.filePath || fileName || '';
+        } else if (tool === 'Read') {
+          detail = d.filePath || fileName || '';
+        } else if (tool === 'Grep') {
+          detail = d.pattern ? `검색: "${d.pattern}"` : (d.query || '');
+        } else {
+          detail = d.filePath || d.input || fileName || '';
+        }
+      } else if (t === 'terminal.command') {
+        typeLabel = '⚡ 터미널';
+        detail = d.command || '';
+      } else if (t === 'file.write' || t === 'file.create') {
+        typeLabel = '✏️ 파일 수정';
+        detail = d.filePath || d.fileName || '';
+      } else if (t === 'file.read') {
+        typeLabel = '📄 파일 읽기';
+        detail = d.filePath || d.fileName || '';
+      } else if (t === 'git.commit') {
+        typeLabel = '📦 Git 커밋';
+        detail = d.message || '';
+      } else if (t.startsWith('vscode.')) {
+        typeLabel = '💻 VS Code';
+        detail = d.fileName || d.filePath || t.replace('vscode.', '');
+      } else {
+        typeLabel = cfg.icon ? `${cfg.icon} ${e.label || t}` : (e.label || t);
+        detail = d.contentPreview || d.content || d.command || '';
+      }
+
+      // 상세 내용이 너무 길면 120자로 자르기 (하지만 충분히 보여줌)
+      if (detail.length > 120) detail = detail.slice(0, 117) + '…';
+
+      html += `<div class="drill-tl-item" onclick="${filePath ? `drillToFileDetail('${fileName.replace(/'/g, "\\'")}','${filePath.replace(/'/g, "\\'")}')` : ''}" style="display:flex;align-items:flex-start;gap:8px;padding:8px 6px;border-radius:8px;cursor:${filePath ? 'pointer' : 'default'};transition:background .12s;border-left:3px solid ${hex}" onmouseenter="this.style.background='rgba(0,0,0,0.03)'" onmouseleave="this.style.background='transparent'">
+        <span style="font-size:12px;flex-shrink:0;margin-top:1px">${cfg.icon || '·'}</span>
         <div style="flex:1;min-width:0">
-          <div style="font-size:12px;color:#1a1a2e;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(label)}">${escHtml(label.slice(0, 40))}</div>
-          ${fileName ? `<div style="font-size:10px;color:#9ca3af;margin-top:1px">📄 ${fileName}</div>` : ''}
+          <div style="font-size:11px;color:#6b7280;font-weight:500;margin-bottom:2px">${escHtml(typeLabel)}</div>
+          ${detail ? `<div style="font-size:12px;color:#1a1a2e;line-height:1.4;word-break:break-all;white-space:pre-wrap;max-height:60px;overflow:hidden" title="${escHtml(detail)}">${escHtml(detail)}</div>` : ''}
+          ${fileName && !detail.includes(fileName) ? `<div style="font-size:10px;color:#9ca3af;margin-top:2px">📄 ${fileName}</div>` : ''}
         </div>
-        <div style="font-size:10px;color:#9ca3af;flex-shrink:0">${ts}</div>
+        <div style="font-size:10px;color:#9ca3af;flex-shrink:0;margin-top:2px">${ts}</div>
       </div>`;
     });
   });
@@ -1195,12 +1255,38 @@ function showDrillFileDetail(fileName, filePath) {
   fileEvents.slice(0, 50).forEach(e => {
     const cfg = typeCfg(e.type);
     const hex = '#' + new THREE.Color(cfg.color).getHexString();
-    const label = e.label || extractIntent(e) || e.type;
     const ts = e.timestamp ? new Date(e.timestamp).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : '';
     const dateStr = e.timestamp ? new Date(e.timestamp).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' }) : '';
-    html += `<div style="display:flex;align-items:center;gap:8px;padding:6px 4px;border-left:3px solid ${hex}">
-      <span style="font-size:11px;flex-shrink:0">${cfg.icon || '·'}</span>
-      <div style="flex:1;min-width:0;font-size:11px;color:#374151;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(label.slice(0, 36))}</div>
+
+    // 파일 상세에서도 실제 내용 표시
+    let d = e.data || {};
+    const fc = e.fullContent;
+    if (fc && typeof fc === 'string' && fc.startsWith('{')) {
+      try { d = { ...d, ...JSON.parse(fc) }; } catch {}
+    }
+    const t = e.type || '';
+    let typeLabel = '';
+    let detail = '';
+    if (t === 'user.message') { typeLabel = '💬 지시'; detail = d.contentPreview || d.content || ''; }
+    else if (t === 'assistant.message' || t === 'assistant.response') { typeLabel = '🤖 응답'; detail = d.contentPreview || d.content || ''; }
+    else if (t === 'tool.end' || t === 'tool.start') {
+      const tool = d.toolName || '';
+      const TOOLS = { 'Write':'작성', 'Edit':'수정', 'Read':'읽기', 'Bash':'실행', 'Grep':'검색', 'Glob':'탐색' };
+      typeLabel = `🔧 ${TOOLS[tool] || tool}`;
+      if (tool === 'Bash') detail = d.command || d.input || '';
+      else if (tool === 'Edit') detail = d.old_string ? `"${(d.old_string||'').slice(0,50)}…"` : '';
+      else detail = d.pattern || d.input || '';
+    } else if (t === 'terminal.command') { typeLabel = '⚡ 터미널'; detail = d.command || ''; }
+    else if (t === 'git.commit') { typeLabel = '📦 커밋'; detail = d.message || ''; }
+    else { typeLabel = cfg.icon ? `${cfg.icon} ${e.label || t}` : (e.label || t); detail = d.contentPreview || d.command || ''; }
+    if (detail.length > 80) detail = detail.slice(0, 77) + '…';
+
+    html += `<div style="display:flex;align-items:flex-start;gap:8px;padding:6px 4px;border-left:3px solid ${hex}">
+      <span style="font-size:11px;flex-shrink:0;margin-top:1px">${cfg.icon || '·'}</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:10px;color:#6b7280;font-weight:500">${escHtml(typeLabel)}</div>
+        ${detail ? `<div style="font-size:11px;color:#374151;line-height:1.3;word-break:break-all;max-height:40px;overflow:hidden;margin-top:1px">${escHtml(detail)}</div>` : ''}
+      </div>
       <div style="font-size:10px;color:#9ca3af;flex-shrink:0;white-space:nowrap">${dateStr} ${ts}</div>
     </div>`;
   });

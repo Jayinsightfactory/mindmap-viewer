@@ -2979,7 +2979,7 @@ function drawCompactProjectView() {
 
   // ── 프로젝트 노드 방사형 배치 ──────────────────────────────────────────────
   const NODE_DIST = projects.length === 1 ? 0 : 160;
-  const isDrillStage1 = _drillStage === 1 && _drillProject;
+  const isDrillStage1 = _drillStage >= 1 && _drillProject;
 
   projects.forEach((proj, i) => {
     const angle = (i / projects.length) * Math.PI * 2 - Math.PI / 2;
@@ -3095,7 +3095,7 @@ function drawCompactProjectView() {
       data: { type: 'constellation', projName: proj.name, planetCount: proj.planets.length, color, info },
     });
 
-    // ══ 2단계: 카테고리 링 (드릴된 프로젝트만) ══════════════════════════════
+    // ══ 2단계: 카테고리 + 세션 노드 — 프로젝트 바깥쪽 방사형 ══════════════
     if (isThisDrilled && proj.planets.length > 0) {
       const catGroups = {};
       proj.planets.forEach(planet => {
@@ -3106,16 +3106,25 @@ function drawCompactProjectView() {
 
       const sortedCats = Object.entries(catGroups).sort((a, b) => b[1].length - a[1].length);
       const numCats = sortedCats.length;
-      const CAT_RING_R = 80;
+
+      // 프로젝트→바깥 방향 벡터 (중심에서 프로젝트를 지나는 방향)
+      const projDx = cx - centerX;
+      const projDy = cy - centerY;
+      const projDist = Math.sqrt(projDx * projDx + projDy * projDy) || 1;
+      const projAngle = Math.atan2(projDy, projDx);
+
+      // 카테고리: 프로젝트 노드에서 바깥쪽으로 110px 떨어져 방사형 배치
+      const CAT_RING_R = 110;
+      // 세션: 카테고리에서 더 바깥으로 70px
+      const SESSION_RING_R = 60;
 
       sortedCats.forEach(([catKey, catPlanets], ci) => {
         const cfg = PROJECT_TYPES[catKey] || PROJECT_TYPES.general;
-        const catAngle = (ci / numCats) * Math.PI * 2 - Math.PI / 2;
-        // 카테고리를 ME와 프로젝트 사이에 배치
-        const midX = (centerX + cx) / 2;
-        const midY = (centerY + cy) / 2;
-        const catCx = midX + Math.cos(catAngle) * CAT_RING_R;
-        const catCy = midY + Math.sin(catAngle) * CAT_RING_R;
+        // 카테고리를 프로젝트 바깥쪽 부채꼴로 배치
+        const spreadAngle = Math.min(Math.PI * 0.8, numCats * 0.4);
+        const catAngle = projAngle + (ci - (numCats - 1) / 2) * (spreadAngle / Math.max(numCats - 1, 1));
+        const catCx = cx + Math.cos(catAngle) * CAT_RING_R;
+        const catCy = cy + Math.sin(catAngle) * CAT_RING_R;
 
         const catSessionCount = catPlanets.length;
         const catLabel = `${cfg.icon} ${cfg.label}`;
@@ -3133,6 +3142,16 @@ function drawCompactProjectView() {
 
         if (!rectOverlaps(clx - 2, cly - 2, cpw + 4, cph + 4)) {
           reserveRect(clx - 2, cly - 2, cpw + 4, cph + 4);
+
+          // 프로젝트 → 카테고리 연결선
+          ctx.save();
+          ctx.globalAlpha = 0.18;
+          ctx.strokeStyle = cfg.color;
+          ctx.lineWidth = 1.2;
+          ctx.setLineDash([4, 4]);
+          ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(catCx, catCy); ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.restore();
 
           // 카테고리 카드
           ctx.save();
@@ -3154,26 +3173,6 @@ function drawCompactProjectView() {
           ctx.fillStyle = '#9ca3af';
           ctx.fillText(catSub, catCx, catCy + 13);
 
-          // ME → 카테고리 연결선
-          ctx.save();
-          ctx.globalAlpha = 0.15;
-          ctx.strokeStyle = cfg.color;
-          ctx.lineWidth = 1;
-          ctx.setLineDash([3, 3]);
-          ctx.beginPath(); ctx.moveTo(centerX, centerY); ctx.lineTo(catCx, catCy); ctx.stroke();
-          ctx.setLineDash([]);
-          ctx.restore();
-
-          // 카테고리 → 프로젝트 연결선
-          ctx.save();
-          ctx.globalAlpha = 0.12;
-          ctx.strokeStyle = cfg.color;
-          ctx.lineWidth = 1;
-          ctx.setLineDash([3, 3]);
-          ctx.beginPath(); ctx.moveTo(catCx, catCy); ctx.lineTo(cx, cy); ctx.stroke();
-          ctx.setLineDash([]);
-          ctx.restore();
-
           // 카테고리 히트 영역
           _hitAreas.push({
             cx: catCx, cy: catCy, r: Math.max(cpw, cph) / 2 + 4,
@@ -3189,6 +3188,94 @@ function drawCompactProjectView() {
               sessionCount: catSessionCount,
             },
           });
+        }
+
+        // ── 세션 노드들: 카테고리에서 더 바깥으로 방사형 ──────────────────
+        const maxShow = Math.min(catPlanets.length, 6);
+        catPlanets.slice(0, maxShow).forEach((planet, si) => {
+          const sesSpread = Math.min(Math.PI * 0.35, maxShow * 0.25);
+          const sesAngle = catAngle + (si - (maxShow - 1) / 2) * (sesSpread / Math.max(maxShow - 1, 1));
+          const sx = catCx + Math.cos(sesAngle) * SESSION_RING_R;
+          const sy = catCy + Math.sin(sesAngle) * SESSION_RING_R;
+
+          const evCnt = planet.userData.eventCount || 0;
+          const isSubHover = _hoveredHit?.obj === planet;
+          const nodeColor = cfg.color;
+
+          let sLabel = planet.userData.intent || '';
+          sLabel = sLabel.replace(/^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE00}-\u{FEFF}⚙️🔐🌐🗄🎨🧪🚀🐳📝📐🔧🌿💬]\s*/gu, '').trim();
+          if (sLabel.length > 14) sLabel = sLabel.slice(0, 13) + '…';
+          if (!sLabel) sLabel = planet.userData.domain || '작업';
+
+          ctx.font = '500 10px -apple-system,sans-serif';
+          const stw = ctx.measureText(sLabel).width;
+          const spw = stw + 16;
+          const sph = 22;
+          const slx = sx - spw / 2;
+          const sly = sy - sph / 2;
+
+          if (rectOverlaps(slx - 2, sly - 2, spw + 4, sph + 4)) return;
+          reserveRect(slx - 2, sly - 2, spw + 4, sph + 4);
+
+          // 카테고리 → 세션 연결선
+          ctx.save();
+          ctx.globalAlpha = 0.12;
+          ctx.strokeStyle = nodeColor;
+          ctx.lineWidth = 0.8;
+          ctx.setLineDash([2, 3]);
+          ctx.beginPath(); ctx.moveTo(catCx, catCy); ctx.lineTo(sx, sy); ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.restore();
+
+          // 세션 pill
+          ctx.save();
+          ctx.shadowColor = 'rgba(0,0,0,0.04)'; ctx.shadowBlur = 4; ctx.shadowOffsetY = 1;
+          ctx.fillStyle = 'rgba(255,255,255,0.92)';
+          roundRect(ctx, slx, sly, spw, sph, sph / 2); ctx.fill();
+          ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+          ctx.restore();
+          ctx.strokeStyle = isSubHover ? nodeColor : '#d0d7de';
+          ctx.lineWidth = isSubHover ? 1.5 : 0.8;
+          roundRect(ctx, slx, sly, spw, sph, sph / 2); ctx.stroke();
+
+          // 세션 텍스트
+          ctx.textAlign = 'center';
+          ctx.font = '500 10px -apple-system,sans-serif';
+          ctx.fillStyle = '#4b5563';
+          ctx.fillText(sLabel, sx, sy + 3.5);
+
+          // 이벤트 수 뱃지
+          if (evCnt > 0) {
+            const badgeX = slx + spw - 4;
+            const badgeY = sly - 2;
+            ctx.save();
+            ctx.fillStyle = nodeColor;
+            ctx.beginPath(); ctx.arc(badgeX, badgeY, 8, 0, Math.PI * 2); ctx.fill();
+            ctx.font = '600 8px -apple-system,sans-serif';
+            ctx.fillStyle = '#fff';
+            ctx.fillText(`${evCnt}`, badgeX, badgeY + 3);
+            ctx.restore();
+          }
+
+          // 세션 히트 영역
+          _hitAreas.push({
+            cx: sx, cy: sy, r: Math.max(spw, sph) / 2 + 4,
+            obj: planet,
+            data: { type: 'session', intent: planet.userData.intent, clusterId: planet.userData.clusterId,
+                    sessionId: planet.userData.sessionId, eventCount: evCnt, hueHex: nodeColor },
+          });
+        });
+
+        // 남은 세션 수
+        if (catPlanets.length > maxShow) {
+          ctx.globalAlpha = 0.6;
+          ctx.font = '400 10px -apple-system,sans-serif';
+          ctx.fillStyle = cfg.color;
+          ctx.textAlign = 'center';
+          const moreX = catCx + Math.cos(catAngle) * (SESSION_RING_R + 30);
+          const moreY = catCy + Math.sin(catAngle) * (SESSION_RING_R + 30);
+          ctx.fillText(`+${catPlanets.length - maxShow}개`, moreX, moreY);
+          ctx.globalAlpha = 1;
         }
       });
     }
