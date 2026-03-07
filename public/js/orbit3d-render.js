@@ -2870,45 +2870,110 @@ function drawCompactProjectView() {
 
   if (projects.length === 0) return;
 
-  // ── 프로젝트명 정제 함수 ──────────────────────────────────────────────────
-  function cleanName(n) {
-    if (/^세션-/.test(n)) return '최근 작업';
-    if (n === '기타') return '기타 작업';
-    if (/[-_]/.test(n) && !/\s/.test(n)) {
-      return n.split(/[-_]/).filter(s => s !== 'session')
-        .map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(' ').slice(0, 18);
+  // ── 스마트 프로젝트명 분석 ────────────────────────────────────────────────
+  function analyzeProject(proj) {
+    const planets = proj.planets || [];
+    // 카테고리 분포 집계
+    const catCounts = {};
+    planets.forEach(p => {
+      const c = p.userData.macroCat || 'general';
+      catCounts[c] = (catCounts[c] || 0) + 1;
+    });
+    const topCats = Object.entries(catCounts).sort((a,b) => b[1] - a[1]);
+    const topCat = topCats[0]?.[0] || 'general';
+    const topCfg = PROJECT_TYPES[topCat] || PROJECT_TYPES.general;
+
+    // 파일 확장자 집계 (기술 스택 감지)
+    const exts = {};
+    planets.forEach(p => {
+      const entry = _sessionMap[p.userData.clusterId];
+      if (!entry) return;
+      for (const e of entry.events) {
+        const f = (e.data?.filePath || e.data?.fileName || '');
+        const m = f.match(/\.([a-z]{1,6})$/i);
+        if (m) exts[m[1].toLowerCase()] = (exts[m[1].toLowerCase()] || 0) + 1;
+      }
+    });
+    const topExts = Object.entries(exts).sort((a,b) => b[1] - a[1]).slice(0, 3).map(([e]) => e);
+
+    // 프로젝트 디렉토리명
+    const rawName = proj.name;
+    let smartName;
+    if (rawName && rawName !== '기타' && !/^세션-/.test(rawName)) {
+      // 디렉토리명 → 사람이 읽기 좋은 형태
+      smartName = rawName.split(/[-_]/).filter(s => s !== 'session')
+        .map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(' ');
+      // 카테고리 힌트 추가
+      smartName += ` ${topCfg.label}`;
+    } else {
+      // 분석 기반 이름 생성
+      const stack = topExts.length > 0 ? topExts.join('+').toUpperCase() : '';
+      smartName = stack ? `${stack} ${topCfg.label}` : topCfg.label + ' 프로젝트';
     }
-    return n.slice(0, 18);
+
+    // 파일 수 집계
+    const allFiles = new Set();
+    planets.forEach(p => {
+      const entry = _sessionMap[p.userData.clusterId];
+      if (!entry) return;
+      for (const e of entry.events) {
+        const f = (e.data?.filePath || e.data?.fileName || '');
+        if (f) allFiles.add(f.split(/[\\/]/).pop());
+      }
+    });
+
+    return {
+      name: smartName.slice(0, 24),
+      icon: topCfg.icon,
+      catBreakdown: topCats.slice(0, 3).map(([k, v]) => {
+        const cfg = PROJECT_TYPES[k] || PROJECT_TYPES.general;
+        return { key: k, label: cfg.label, icon: cfg.icon, count: v, color: cfg.color };
+      }),
+      fileCount: allFiles.size,
+      sessionCount: planets.length,
+      techStack: topExts.join(' · ') || '',
+    };
   }
 
   // ── 프로젝트 노드 배치 (화면 중심 기준, 1개면 중앙에) ────────────────────
-  const NODE_DIST = projects.length === 1 ? 0 : 130;
+  const NODE_DIST = projects.length === 1 ? 0 : 160;
   const isFocused = !!_focusedProject;
 
   projects.forEach((proj, i) => {
     const angle = (i / projects.length) * Math.PI * 2 - Math.PI / 2;
-    const cx = sunSc.x + Math.cos(angle) * NODE_DIST;
-    const cy = sunSc.y + Math.sin(angle) * NODE_DIST;
     const isThisFocused = _focusedProject === proj.name;
-    const isHover = _hoveredHit?.data?.type === 'constellation' && _hoveredHit?.data?.projName === proj.name;
     const dimmed = isFocused && !isThisFocused;
 
-    const color = proj.color;
-    const icon  = proj.typeCfg.icon;
-    const label = `${icon} ${cleanName(proj.name)}`;
-    const sub   = `${proj.eventCount}건 · ${proj.typeCfg.label}`;
+    // 포커스 시 프로젝트 노드를 화면 하단 중앙으로 이동
+    const cx = isThisFocused ? sunSc.x : sunSc.x + Math.cos(angle) * NODE_DIST;
+    const cy = isThisFocused ? sunSc.y + sunSc.y * 0.35 : sunSc.y + Math.sin(angle) * NODE_DIST;
+    const isHover = _hoveredHit?.data?.type === 'constellation' && _hoveredHit?.data?.projName === proj.name;
 
-    // ── 크기 계산 ──────────────────────────────────────────────────────────
-    const pxTitle = isThisFocused ? 16 : isHover ? 15 : 13;
-    const pxSub   = 10;
+    const color = proj.color;
+    const info = analyzeProject(proj);
+
+    // ── 크기 계산 (확대된 프로젝트 노드) ──────────────────────────────────
+    const pxTitle = isThisFocused ? 18 : isHover ? 16 : 15;
+    const pxSub   = 11;
+    const pxDetail = 10;
     _lctx.font = `700 ${pxTitle}px -apple-system,'Segoe UI',sans-serif`;
     _lctx.textAlign = 'center';
-    const titleW = _lctx.measureText(label).width;
-    _lctx.font = `400 ${pxSub}px -apple-system,sans-serif`;
-    const subW   = _lctx.measureText(sub).width;
+    const titleLabel = `${info.icon} ${info.name}`;
+    const titleW = _lctx.measureText(titleLabel).width;
 
-    const pw = Math.max(titleW, subW) + 28;
-    const ph = pxTitle + pxSub + 20;
+    const subLabel = info.techStack
+      ? `${info.techStack} · ${info.sessionCount} 세션 · ${info.fileCount} 파일`
+      : `${info.sessionCount} 세션 · ${info.fileCount} 파일`;
+    _lctx.font = `400 ${pxSub}px -apple-system,sans-serif`;
+    const subW = _lctx.measureText(subLabel).width;
+
+    // 카테고리 브레이크다운 한줄
+    const catLine = info.catBreakdown.map(c => `${c.icon}${c.count}`).join('  ');
+    _lctx.font = `400 ${pxDetail}px -apple-system,sans-serif`;
+    const catW = _lctx.measureText(catLine).width;
+
+    const pw = Math.max(titleW, subW, catW) + 40;
+    const ph = pxTitle + pxSub + pxDetail + 32;
     const lx = cx - pw / 2;
     const ly = cy - ph / 2;
 
@@ -2920,22 +2985,22 @@ function drawCompactProjectView() {
     if (!dimmed) {
       const pulse = 0.5 + 0.5 * Math.sin(now * 0.8 + i * 1.5);
       _lctx.save();
-      _lctx.globalAlpha = 0.08 + pulse * 0.05;
+      _lctx.globalAlpha = 0.10 + pulse * 0.06;
       _lctx.fillStyle = color;
-      _lctx.shadowColor = color; _lctx.shadowBlur = 14;
-      _lctx.beginPath(); _lctx.arc(cx, cy, pw / 2, 0, Math.PI * 2); _lctx.fill();
+      _lctx.shadowColor = color; _lctx.shadowBlur = 20;
+      _lctx.beginPath(); _lctx.arc(cx, cy, pw / 2 + 6, 0, Math.PI * 2); _lctx.fill();
       _lctx.restore();
     }
 
     // ── 노드 배경 ──────────────────────────────────────────────────────────
-    _lctx.globalAlpha = dimmed ? 0.3 : (isHover ? 0.97 : 0.90);
-    _lctx.fillStyle = isThisFocused ? 'rgba(31,111,235,0.12)' : 'rgba(6,10,16,0.92)';
-    roundRect(_lctx, lx, ly, pw, ph, ph / 2); _lctx.fill();
+    _lctx.globalAlpha = dimmed ? 0.25 : (isHover ? 0.97 : 0.93);
+    _lctx.fillStyle = isThisFocused ? 'rgba(31,111,235,0.15)' : 'rgba(6,10,16,0.94)';
+    roundRect(_lctx, lx, ly, pw, ph, 14); _lctx.fill();
 
     // 테두리
     _lctx.strokeStyle = color;
-    _lctx.lineWidth = isThisFocused ? 2.5 : isHover ? 2 : 1.2;
-    roundRect(_lctx, lx, ly, pw, ph, ph / 2); _lctx.stroke();
+    _lctx.lineWidth = isThisFocused ? 2.5 : isHover ? 2 : 1.4;
+    roundRect(_lctx, lx, ly, pw, ph, 14); _lctx.stroke();
 
     // 활성 표시 (녹색 점)
     if (proj.hasActive && !dimmed) {
@@ -2943,136 +3008,207 @@ function drawCompactProjectView() {
       _lctx.save();
       _lctx.fillStyle = '#3fb950';
       _lctx.shadowColor = '#3fb950'; _lctx.shadowBlur = 4 + dp * 4;
-      _lctx.beginPath(); _lctx.arc(lx + pw - 6, ly + 6, 4, 0, Math.PI * 2); _lctx.fill();
+      _lctx.beginPath(); _lctx.arc(lx + pw - 8, ly + 8, 5, 0, Math.PI * 2); _lctx.fill();
       _lctx.restore();
     }
 
-    // ── 타이틀 ──────────────────────────────────────────────────────────────
-    _lctx.globalAlpha = dimmed ? 0.3 : 1;
+    // ── 타이틀 (스마트 프로젝트명) ──────────────────────────────────────────
+    _lctx.globalAlpha = dimmed ? 0.25 : 1;
     _lctx.font = `700 ${pxTitle}px -apple-system,'Segoe UI',sans-serif`;
     _lctx.textAlign = 'center';
-    _lctx.fillStyle = isThisFocused ? '#fff' : isHover ? '#f0f6fc' : '#cdd9e5';
-    _lctx.fillText(label, cx, ly + pxTitle + 4);
+    _lctx.fillStyle = isThisFocused ? '#fff' : isHover ? '#f0f6fc' : '#e6edf3';
+    _lctx.fillText(titleLabel, cx, ly + pxTitle + 6);
 
-    // 서브라벨 (이벤트 수 · 타입)
+    // 서브라벨 (기술 스택 · 세션 수 · 파일 수)
     _lctx.font = `400 ${pxSub}px -apple-system,sans-serif`;
-    _lctx.fillStyle = dimmed ? color + '44' : color + 'aa';
-    _lctx.fillText(sub, cx, ly + pxTitle + pxSub + 10);
+    _lctx.fillStyle = dimmed ? '#8b949e44' : '#8b949e';
+    _lctx.fillText(subLabel, cx, ly + pxTitle + pxSub + 14);
+
+    // 카테고리 브레이크다운 (아이콘 + 숫자)
+    _lctx.font = `400 ${pxDetail}px -apple-system,sans-serif`;
+    _lctx.fillStyle = dimmed ? color + '33' : color + '99';
+    _lctx.fillText(catLine, cx, ly + pxTitle + pxSub + pxDetail + 22);
 
     _lctx.globalAlpha = 1;
 
     // ── 히트 영역 ──────────────────────────────────────────────────────────
     _hitAreas.push({
-      cx, cy, r: Math.max(pw, ph) / 2 + 6,
+      cx, cy, r: Math.max(pw, ph) / 2 + 8,
       obj: null,
       data: { type: 'constellation', projName: proj.name, planetCount: proj.planets.length, color },
     });
 
-    // ── 포커스된 프로젝트: 하위 세션을 방사형 노드로 펼침 ─────────────────
+    // ── 포커스된 프로젝트: 피라미드 트리 (카테고리별 그룹 + 타임라인) ──────
     if (isThisFocused && proj.planets.length > 0) {
-      const subs = proj.planets.slice().sort((a,b) => (b.userData.eventCount||0) - (a.userData.eventCount||0));
-      const maxShow = Math.min(subs.length, 24);  // 최대 24개 표시
+      // 세션을 카테고리별로 그룹화
+      const catGroups = {};
+      proj.planets.forEach(planet => {
+        const cat = planet.userData.macroCat || 'general';
+        if (!catGroups[cat]) catGroups[cat] = [];
+        catGroups[cat].push(planet);
+      });
 
-      // 동심원 링 배치 — 프로젝트 노드 주변으로 퍼짐
-      const RING_1_CAP = Math.min(8, maxShow);
-      const RING_1_R   = 120;    // 1링 반지름
-      const RING_2_R   = 200;    // 2링 반지름
-      const RING_3_R   = 270;    // 3링 반지름
-      const NODE_R     = 28;     // 하위 노드 반지름
-
-      subs.slice(0, maxShow).forEach((planet, si) => {
-        // 링 결정
-        let ring, posInRing, ringCap, ringR;
-        if (si < RING_1_CAP) {
-          ring = 0; posInRing = si; ringCap = RING_1_CAP; ringR = RING_1_R;
-        } else if (si < RING_1_CAP + 12) {
-          ring = 1; posInRing = si - RING_1_CAP; ringCap = Math.min(12, maxShow - RING_1_CAP); ringR = RING_2_R;
-        } else {
-          ring = 2; posInRing = si - RING_1_CAP - 12; ringCap = maxShow - RING_1_CAP - 12; ringR = RING_3_R;
-        }
-
-        const subAngle = (posInRing / ringCap) * Math.PI * 2 - Math.PI / 2;
-        const sx = cx + Math.cos(subAngle) * ringR;
-        const sy = cy + Math.sin(subAngle) * ringR;
-
-        const evCnt = planet.userData.eventCount || 0;
-        const isSubHover = _hoveredHit?.obj === planet;
-        const isSubSel   = _selectedHit?.obj === planet;
-        const nodeColor  = planet.userData.hueHex || color;
-
-        // 세션 라벨
-        let sLabel = planet.userData.intent || '';
-        sLabel = sLabel.replace(/^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE00}-\u{FEFF}⚙️🔐🌐🗄🎨🧪🚀🐳📝📐🔧🌿💬]\s*/gu, '').trim();
-        if (sLabel.length > 14) sLabel = sLabel.slice(0, 13) + '…';
-        if (!sLabel) sLabel = planet.userData.domain || '작업';
-
-        // 겹침 방지
-        const hitR = NODE_R + 6;
-        if (rectOverlaps(sx - hitR, sy - hitR, hitR * 2, hitR * 2)) return;
-        reserveRect(sx - hitR, sy - hitR, hitR * 2, hitR * 2);
-
-        // ── 프로젝트→세션 연결선 ──────────────────────────────────────────
-        _lctx.save();
-        _lctx.globalAlpha = isSubSel ? 0.5 : 0.2;
-        _lctx.strokeStyle = nodeColor;
-        _lctx.lineWidth = isSubSel ? 2 : 1;
-        _lctx.beginPath(); _lctx.moveTo(cx, cy); _lctx.lineTo(sx, sy); _lctx.stroke();
-        _lctx.restore();
-
-        // ── 노드 원형 배경 ────────────────────────────────────────────────
-        const r = isSubHover ? NODE_R + 4 : isSubSel ? NODE_R + 3 : NODE_R;
-
-        // 글로우
-        _lctx.save();
-        _lctx.globalAlpha = isSubSel ? 0.3 : isSubHover ? 0.2 : 0.08;
-        _lctx.fillStyle = nodeColor;
-        _lctx.shadowColor = nodeColor; _lctx.shadowBlur = isSubSel ? 18 : 10;
-        _lctx.beginPath(); _lctx.arc(sx, sy, r + 4, 0, Math.PI * 2); _lctx.fill();
-        _lctx.restore();
-
-        // 배경 원
-        _lctx.globalAlpha = 0.95;
-        _lctx.fillStyle = isSubSel ? 'rgba(31,111,235,0.2)' : 'rgba(13,17,23,0.92)';
-        _lctx.beginPath(); _lctx.arc(sx, sy, r, 0, Math.PI * 2); _lctx.fill();
-
-        // 테두리
-        _lctx.strokeStyle = isSubSel ? '#58a6ff' : nodeColor;
-        _lctx.lineWidth = isSubSel ? 2.5 : isSubHover ? 2 : 1.2;
-        _lctx.globalAlpha = isSubSel ? 1 : 0.7;
-        _lctx.beginPath(); _lctx.arc(sx, sy, r, 0, Math.PI * 2); _lctx.stroke();
-
-        // ── 이벤트 수 (노드 안쪽 중앙) ───────────────────────────────────
-        _lctx.globalAlpha = 1;
-        _lctx.textAlign = 'center';
-        _lctx.font = `700 13px -apple-system,sans-serif`;
-        _lctx.fillStyle = isSubSel ? '#fff' : '#e6edf3';
-        _lctx.fillText(`${evCnt}`, sx, sy + 4);
-
-        // ── 라벨 (노드 아래) ──────────────────────────────────────────────
-        _lctx.font = `500 10px -apple-system,sans-serif`;
-        _lctx.fillStyle = isSubSel ? '#fff' : '#8b949e';
-        _lctx.fillText(sLabel, sx, sy + r + 14);
-
-        _lctx.globalAlpha = 1;
-
-        // 히트 영역
-        _hitAreas.push({
-          cx: sx, cy: sy, r: r + 6,
-          obj: planet,
-          data: { type: 'session', intent: planet.userData.intent, clusterId: planet.userData.clusterId,
-                  sessionId: planet.userData.sessionId, eventCount: evCnt, hueHex: nodeColor },
+      // 각 카테고리 내 세션을 타임라인 순 정렬 (가장 오래된 것 → 최신)
+      Object.values(catGroups).forEach(arr => {
+        arr.sort((a, b) => {
+          const entryA = _sessionMap[a.userData.clusterId];
+          const entryB = _sessionMap[b.userData.clusterId];
+          const tsA = entryA?.events?.[0]?.timestamp ? new Date(entryA.events[0].timestamp).getTime() : 0;
+          const tsB = entryB?.events?.[0]?.timestamp ? new Date(entryB.events[0].timestamp).getTime() : 0;
+          return tsA - tsB;
         });
       });
 
-      // 남은 세션 수 표시
-      if (subs.length > maxShow) {
-        _lctx.globalAlpha = 0.6;
-        _lctx.font = '400 11px -apple-system,sans-serif';
-        _lctx.fillStyle = color;
+      // 카테고리를 세션 수 많은 순으로 정렬
+      const sortedCats = Object.entries(catGroups).sort((a, b) => b[1].length - a[1].length);
+      const numCats = sortedCats.length;
+      const maxSessionsInCat = Math.max(...sortedCats.map(([, arr]) => arr.length));
+
+      // 레이아웃 상수
+      const NODE_R = 24;
+      const COL_SPACING = Math.min(160, (_labelCanvas2d.width - 80) / Math.max(numCats, 1));
+      const ROW_SPACING = 58;
+      const BRANCH_START_Y = cy - ph / 2 - 40;  // 프로젝트 노드 바로 위
+      const treeStartX = cx - (numCats - 1) * COL_SPACING / 2;
+
+      sortedCats.forEach(([catKey, catPlanets], ci) => {
+        const cfg = PROJECT_TYPES[catKey] || PROJECT_TYPES.general;
+        const branchX = treeStartX + ci * COL_SPACING;
+
+        // ── 프로젝트→카테고리 연결선 (곡선) ──────────────────────────────
+        _lctx.save();
+        _lctx.globalAlpha = 0.25;
+        _lctx.strokeStyle = cfg.color;
+        _lctx.lineWidth = 1.5;
+        _lctx.beginPath();
+        _lctx.moveTo(cx, cy - ph / 2);
+        const ctrlY = BRANCH_START_Y + 15;
+        _lctx.quadraticCurveTo(cx, ctrlY, branchX, BRANCH_START_Y);
+        _lctx.stroke();
+        _lctx.restore();
+
+        // ── 카테고리 라벨 ────────────────────────────────────────────────
+        const catLabelY = BRANCH_START_Y - 4;
+        _lctx.save();
+        _lctx.globalAlpha = 0.85;
+        _lctx.font = `600 11px -apple-system,sans-serif`;
         _lctx.textAlign = 'center';
-        _lctx.fillText(`+${subs.length - maxShow}개 더`, cx, cy + RING_3_R + 40);
-        _lctx.globalAlpha = 1;
-      }
+        _lctx.fillStyle = cfg.color;
+        _lctx.fillText(`${cfg.icon} ${cfg.label}`, branchX, catLabelY);
+        _lctx.restore();
+
+        // ── 세션 노드들 (타임라인 순, 위로 쌓임) ─────────────────────────
+        const maxShow = Math.min(catPlanets.length, 8);
+        catPlanets.slice(0, maxShow).forEach((planet, si) => {
+          const sx = branchX;
+          const sy = BRANCH_START_Y - 28 - si * ROW_SPACING;
+
+          const evCnt = planet.userData.eventCount || 0;
+          const isSubHover = _hoveredHit?.obj === planet;
+          const isSubSel   = _selectedHit?.obj === planet;
+          const nodeColor  = cfg.color;
+
+          // 세션 라벨
+          let sLabel = planet.userData.intent || '';
+          sLabel = sLabel.replace(/^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE00}-\u{FEFF}⚙️🔐🌐🗄🎨🧪🚀🐳📝📐🔧🌿💬]\s*/gu, '').trim();
+          if (sLabel.length > 16) sLabel = sLabel.slice(0, 15) + '…';
+          if (!sLabel) sLabel = planet.userData.domain || '작업';
+
+          // 겹침 방지
+          const hitR = NODE_R + 6;
+          if (rectOverlaps(sx - hitR, sy - hitR, hitR * 2, hitR * 2 + 14)) return;
+          reserveRect(sx - hitR, sy - hitR, hitR * 2, hitR * 2 + 14);
+
+          // ── 세션 간 수직 연결선 ────────────────────────────────────────
+          if (si > 0) {
+            const prevY = BRANCH_START_Y - 28 - (si - 1) * ROW_SPACING;
+            _lctx.save();
+            _lctx.globalAlpha = 0.15;
+            _lctx.strokeStyle = nodeColor;
+            _lctx.lineWidth = 1;
+            _lctx.setLineDash([3, 3]);
+            _lctx.beginPath(); _lctx.moveTo(sx, prevY - NODE_R); _lctx.lineTo(sx, sy + NODE_R); _lctx.stroke();
+            _lctx.setLineDash([]);
+            _lctx.restore();
+          } else {
+            // 첫 노드 → 카테고리 라벨 연결
+            _lctx.save();
+            _lctx.globalAlpha = 0.15;
+            _lctx.strokeStyle = nodeColor;
+            _lctx.lineWidth = 1;
+            _lctx.beginPath(); _lctx.moveTo(sx, BRANCH_START_Y - 14); _lctx.lineTo(sx, sy + NODE_R); _lctx.stroke();
+            _lctx.restore();
+          }
+
+          // ── 노드 원형 배경 ────────────────────────────────────────────
+          const r = isSubHover ? NODE_R + 4 : isSubSel ? NODE_R + 3 : NODE_R;
+
+          // 글로우
+          _lctx.save();
+          _lctx.globalAlpha = isSubSel ? 0.35 : isSubHover ? 0.2 : 0.08;
+          _lctx.fillStyle = nodeColor;
+          _lctx.shadowColor = nodeColor; _lctx.shadowBlur = isSubSel ? 18 : 10;
+          _lctx.beginPath(); _lctx.arc(sx, sy, r + 4, 0, Math.PI * 2); _lctx.fill();
+          _lctx.restore();
+
+          // 배경 원
+          _lctx.globalAlpha = 0.95;
+          _lctx.fillStyle = isSubSel ? 'rgba(31,111,235,0.2)' : 'rgba(13,17,23,0.92)';
+          _lctx.beginPath(); _lctx.arc(sx, sy, r, 0, Math.PI * 2); _lctx.fill();
+
+          // 테두리
+          _lctx.strokeStyle = isSubSel ? '#58a6ff' : nodeColor;
+          _lctx.lineWidth = isSubSel ? 2.5 : isSubHover ? 2 : 1.2;
+          _lctx.globalAlpha = isSubSel ? 1 : 0.7;
+          _lctx.beginPath(); _lctx.arc(sx, sy, r, 0, Math.PI * 2); _lctx.stroke();
+
+          // ── 이벤트 수 (노드 안쪽 중앙) ────────────────────────────────
+          _lctx.globalAlpha = 1;
+          _lctx.textAlign = 'center';
+          _lctx.font = `700 13px -apple-system,sans-serif`;
+          _lctx.fillStyle = isSubSel ? '#fff' : '#e6edf3';
+          _lctx.fillText(`${evCnt}`, sx, sy + 5);
+
+          // ── 라벨 (노드 우측) ──────────────────────────────────────────
+          _lctx.font = `500 10px -apple-system,sans-serif`;
+          _lctx.textAlign = 'left';
+          _lctx.fillStyle = isSubSel ? '#fff' : '#8b949e';
+          _lctx.fillText(sLabel, sx + r + 6, sy + 4);
+
+          // 타임스탬프 (노드 좌측)
+          const entry = _sessionMap[planet.userData.clusterId];
+          if (entry?.events?.[0]?.timestamp) {
+            const ts = new Date(entry.events[0].timestamp);
+            const timeStr = ts.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+            _lctx.font = `400 9px -apple-system,sans-serif`;
+            _lctx.textAlign = 'right';
+            _lctx.fillStyle = '#6e768188';
+            _lctx.fillText(timeStr, sx - r - 6, sy + 4);
+          }
+
+          _lctx.textAlign = 'center';
+          _lctx.globalAlpha = 1;
+
+          // 히트 영역
+          _hitAreas.push({
+            cx: sx, cy: sy, r: r + 6,
+            obj: planet,
+            data: { type: 'session', intent: planet.userData.intent, clusterId: planet.userData.clusterId,
+                    sessionId: planet.userData.sessionId, eventCount: evCnt, hueHex: nodeColor },
+          });
+        });
+
+        // 남은 세션 수 표시
+        if (catPlanets.length > maxShow) {
+          const lastY = BRANCH_START_Y - 28 - (maxShow - 1) * ROW_SPACING;
+          _lctx.globalAlpha = 0.5;
+          _lctx.font = '400 10px -apple-system,sans-serif';
+          _lctx.fillStyle = cfg.color;
+          _lctx.textAlign = 'center';
+          _lctx.fillText(`+${catPlanets.length - maxShow}개`, branchX, lastY - NODE_R - 10);
+          _lctx.globalAlpha = 1;
+        }
+      });
     }
   });
 }
