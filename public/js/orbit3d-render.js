@@ -2848,19 +2848,8 @@ function drawCompactProjectView() {
 
   const now = performance.now() / 1000;
 
-  // ── 태양 화면 좌표 (기준점) ───────────────────────────────────────────────
-  const sunSc = _coreMeshRef
-    ? toScreen(_coreMeshRef.position || new THREE.Vector3(0,0,0))
-    : { x: innerWidth / 2, y: innerHeight / 2, z: 0 };
-
-  // 태양 히트 영역
-  if (_coreMeshRef && sunSc.z <= 1) {
-    _hitAreas.push({
-      cx: sunSc.x, cy: sunSc.y, r: 28,
-      obj: _coreMeshRef,
-      data: { type: 'core', intent: 'Orbit AI', label: 'Orbit AI', nodeKey: '__orbit_core__' },
-    });
-  }
+  // ── 화면 중심 기준점 (태양 제거됨) ──────────────────────────────────────
+  const sunSc = { x: innerWidth / 2, y: innerHeight / 2, z: 0 };
 
   // ── 프로젝트별 정보 집계 ──────────────────────────────────────────────────
   const projects = projNames.map(name => {
@@ -2892,12 +2881,12 @@ function drawCompactProjectView() {
     return n.slice(0, 18);
   }
 
-  // ── 태양 주변에 프로젝트 노드 원형 배치 ───────────────────────────────────
-  const NODE_DIST = 130;
+  // ── 프로젝트 노드 배치 (화면 중심 기준, 1개면 중앙에) ────────────────────
+  const NODE_DIST = projects.length === 1 ? 0 : 130;
   const isFocused = !!_focusedProject;
 
   projects.forEach((proj, i) => {
-    const angle = (i / projects.length) * Math.PI * 2 - Math.PI / 2; // 12시부터 시계방향
+    const angle = (i / projects.length) * Math.PI * 2 - Math.PI / 2;
     const cx = sunSc.x + Math.cos(angle) * NODE_DIST;
     const cy = sunSc.y + Math.sin(angle) * NODE_DIST;
     const isThisFocused = _focusedProject === proj.name;
@@ -2926,19 +2915,6 @@ function drawCompactProjectView() {
     // 겹침 방지
     if (rectOverlaps(lx - 4, ly - 4, pw + 8, ph + 8)) return;
     reserveRect(lx - 4, ly - 4, pw + 8, ph + 8);
-
-    // ── 태양→프로젝트 연결선 ────────────────────────────────────────────────
-    _lctx.save();
-    _lctx.globalAlpha = dimmed ? 0.08 : 0.22;
-    _lctx.strokeStyle = color;
-    _lctx.lineWidth   = isThisFocused ? 2 : 1.2;
-    _lctx.setLineDash(isThisFocused ? [] : [6, 4]);
-    _lctx.beginPath();
-    _lctx.moveTo(sunSc.x, sunSc.y);
-    _lctx.lineTo(cx, cy);
-    _lctx.stroke();
-    _lctx.setLineDash([]);
-    _lctx.restore();
 
     // ── 글로우 ──────────────────────────────────────────────────────────────
     if (!dimmed) {
@@ -3000,10 +2976,29 @@ function drawCompactProjectView() {
       const CELL_H = 42;
       const GAP = 10;
 
+      // ── 프로젝트 이슈 요약 (프로젝트↔세션 사이에 표시) ─────────────────
+      const topDomains = {};
+      subs.forEach(p => {
+        const d = p.userData.domain || p.userData.macroCat || '';
+        if (d) topDomains[d] = (topDomains[d] || 0) + (p.userData.eventCount || 1);
+      });
+      const issueLine = Object.entries(topDomains)
+        .sort((a,b) => b[1] - a[1]).slice(0, 3)
+        .map(([d]) => d).join(' · ');
+      if (issueLine) {
+        _lctx.save();
+        _lctx.font = '400 10px -apple-system,sans-serif';
+        _lctx.textAlign = 'center';
+        _lctx.fillStyle = color + 'aa';
+        _lctx.globalAlpha = 0.85;
+        _lctx.fillText(issueLine, cx, cy + ph / 2 + 14);
+        _lctx.restore();
+      }
+
       // 프로젝트 노드 아래에 균일한 그리드로 전개 (항상 아래 방향)
       const gridW = COLS * (CELL_W + GAP) - GAP;
       const gridStartX = cx - gridW / 2 + CELL_W / 2;
-      const gridStartY = cy + ph / 2 + 24;
+      const gridStartY = cy + ph / 2 + 28;
 
       subs.forEach((planet, si) => {
         const col = si % COLS;
@@ -3461,19 +3456,6 @@ function drawLabels() {
 
   // 토픽 유사도 글로잉 연결선 (팀/회사 모드 전용)
   drawTopicLinks();
-
-  // ── 0. 중심 태양 히트 영역 ────────────────────────────────────────────────
-  if (_coreMeshRef) {
-    const sunSc = toScreen(_coreMeshRef.position || new THREE.Vector3(0,0,0));
-    if (sunSc.z <= 1) {
-      const sunR = 28;
-      _hitAreas.push({
-        cx: sunSc.x, cy: sunSc.y, r: sunR,
-        obj: _coreMeshRef,
-        data: { type: 'core', intent: _coreMeshRef.userData.intent || 'Orbit AI 중심', label: _coreMeshRef.userData.intent || 'Orbit AI', nodeKey: '__orbit_core__' },
-      });
-    }
-  }
 
   // LOD 3: 요약 뷰, 라벨은 아주 희미하게만
   const globalAlpha = lod === 3 ? 0.12 : 1;

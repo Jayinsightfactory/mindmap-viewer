@@ -39,11 +39,7 @@ let _pulseT = 0;
 function pulseSun() {
   _pulseT += 0.02;
   sun.intensity = 2.5 + Math.sin(_pulseT)*0.5;
-  sun.position.set(Math.cos(_pulseT*0.1)*5, 3, Math.sin(_pulseT*0.1)*5);
-  // 태양 셰이더 시간 업데이트
-  if (_coreMeshRef && _coreMeshRef.userData.sunUniforms) {
-    _coreMeshRef.userData.sunUniforms.uTime.value = _pulseT;
-  }
+  sun.position.set(0, 10, 0);  // 고정 위치 (태양 메시 제거됨, 조명만 유지)
 }
 
 // ─── 인터랙션 — Canvas2D 히트 영역 기반 ─────────────────────────────────────
