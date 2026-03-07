@@ -49,10 +49,14 @@ function createRouter({ getDb, verifyToken, searchUsers, getUserById, createNoti
     const token = (req.headers.authorization || '').replace('Bearer ', '') ||
                   req.headers['x-api-token'] || req.query.token;
     if (!token) return res.status(401).json({ error: 'token required' });
-    const user = verifyToken(token);
-    if (!user) return res.status(401).json({ error: 'invalid token' });
-    req.user = user;
-    next();
+    try {
+      const user = verifyToken(token);
+      if (!user) return res.status(401).json({ error: 'invalid token' });
+      req.user = user;
+      next();
+    } catch {
+      res.status(401).json({ error: 'invalid token' });
+    }
   }
 
   // ── POST /api/follow/:userId — 팔로우 ────────────────────────────────────
@@ -217,17 +221,25 @@ function createRouter({ getDb, verifyToken, searchUsers, getUserById, createNoti
         }
       }
 
-      // ③ 두 결과를 병합 (중복 제거: profileRows 우선)
-      const seen = new Set(profileRows.map(r => r.id));     // 이미 있는 ID 수집
-      const merged = [...profileRows];                      // 프로필 결과 먼저
-      for (const row of authRows) {                         // auth 결과 추가 (중복 제외)
+      // ③ 두 결과를 병합 (중복 제거 + email 보강)
+      const seen = new Set(profileRows.map(r => r.id));
+      const authById = {};
+      authRows.forEach(r => { authById[r.id] = r; });
+
+      // profileRows에 email 보강 (auth DB에서)
+      const merged = profileRows.map(r => {
+        const auth = authById[r.id];
+        return auth ? { ...r, email: auth.email || r.email, provider: auth.provider || 'local' } : r;
+      });
+
+      for (const row of authRows) {
         if (!seen.has(row.id)) {
           seen.add(row.id);
           merged.push(row);
         }
       }
 
-      res.json(merged.slice(0, 20));                        // 최대 20명 반환
+      res.json(merged.slice(0, 20));
     } catch (e) {
       console.error('[follow/search]', e.message);
       res.status(500).json({ error: e.message });

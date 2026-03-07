@@ -38,39 +38,29 @@ function resizeRendererToSidebar() {
 window.resizeRendererToSidebar = resizeRendererToSidebar;
 
 const scene  = new THREE.Scene();
-scene.background = new THREE.Color(0x060a10);
-scene.fog = new THREE.FogExp2(0x060a10, 0.004);
+scene.background = new THREE.Color(0xf0f2f5);
+scene.fog = new THREE.FogExp2(0xf0f2f5, 0.003);
+
+// ─── 4단계 드릴다운 상태 ──────────────────────────────────────────────────────
+let _drillStage = 0;              // 0=전체, 1=카테고리링, 2=타임라인, 3=파일상세
+let _drillProject = null;          // { name, planets[], info }
+let _drillCategory = null;         // { catKey, catLabel, catColor, planets[], events[] }
+let _drillTimelineEvent = null;    // { fileName, filePath }
 
 const camera = new THREE.PerspectiveCamera(55, innerWidth/innerHeight, 0.1, 2000);
 camera.position.set(0, 25, 55);                       // 컴팩트 뷰에 맞는 초기 거리
 camera.lookAt(0,0,0);
 
-// ─── 조명 ─────────────────────────────────────────────────────────────────────
-scene.add(new THREE.AmbientLight(0xffffff, 0.6));
-const sun = new THREE.PointLight(0xffffff, 1.5, 500);
-sun.position.set(0, 20, 0);
+// ─── 조명 (밝은 테마) ─────────────────────────────────────────────────────────
+scene.add(new THREE.AmbientLight(0xffffff, 1.0));
+const sun = new THREE.PointLight(0xffffff, 0.8, 500);
+sun.position.set(0, 30, 0);
 scene.add(sun);
-const rimLight = new THREE.PointLight(0x58a6ff, 1.2, 300);
+const rimLight = new THREE.PointLight(0x8bb8f0, 0.6, 300);
 rimLight.position.set(-100,80,-80);
 scene.add(rimLight);
 
-// ─── 별 배경 ──────────────────────────────────────────────────────────────────
-(function () {
-  const geo = new THREE.BufferGeometry();
-  const N = 4000, pos = new Float32Array(N*3), col = new Float32Array(N*3);
-  for (let i=0; i<N; i++) {
-    const r = 600 + Math.random()*400;
-    const θ = Math.random()*Math.PI*2, φ = Math.acos(2*Math.random()-1);
-    pos[i*3]   = r*Math.sin(φ)*Math.cos(θ);
-    pos[i*3+1] = r*Math.sin(φ)*Math.sin(θ);
-    pos[i*3+2] = r*Math.cos(φ);
-    const c = new THREE.Color().setHSL(Math.random(), 0.2+Math.random()*0.3, 0.5+Math.random()*0.4);
-    col[i*3]=c.r; col[i*3+1]=c.g; col[i*3+2]=c.b;
-  }
-  geo.setAttribute('position', new THREE.BufferAttribute(pos,3));
-  geo.setAttribute('color',    new THREE.BufferAttribute(col,3));
-  scene.add(new THREE.Points(geo, new THREE.PointsMaterial({size:0.6, vertexColors:true, transparent:true, opacity:0.7})));
-})();
+// ─── 별 배경 제거 (밝은 테마에서는 깔끔한 배경) ─────────────────────────────
 
 // ─── 타입 → 색상 / 의미 매핑 ─────────────────────────────────────────────────
 const TYPE_CFG = {

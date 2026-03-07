@@ -96,7 +96,7 @@ function lerpCameraTo(r, tx, ty, tz, duration = 700) {
     endTx:    tx,
     endTy:    ty,
     endTz:    tz,
-    endPhi:   1.05,
+    endPhi:   0.8,
     duration,
     elapsed:  0,
   };

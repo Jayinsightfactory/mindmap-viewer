@@ -2461,55 +2461,90 @@ async function _applyExec() {
 window._regenExec  = _regenExec;
 window._applyExec  = _applyExec;
 
-// ─── 프로젝트 별자리 포커스 ───────────────────────────────────────────────────
+// ─── 4단계 드릴다운 네비게이션 ─────────────────────────────────────────────
 function focusProject(projName) {
   _focusedProject = projName;
   _focusedCategory = null;
+  _drillStage = 1;
+  _drillProject = { name: projName };
+  _drillCategory = null;
+  _drillTimelineEvent = null;
 
-  // 뒤로가기 버튼 표시
-  const cleanLabel = projName.length > 16 ? projName.slice(0, 15) + '…' : projName;
   const btn = document.getElementById('constellation-back-btn');
-  if (btn) { btn.textContent = `← ${cleanLabel} / 전체 보기`; btn.style.display = 'block'; }
+  if (btn) btn.style.display = 'none'; // 빈곳 클릭으로 뒤로가기
 
-  // 카메라를 중심으로 줌인 (전체 프로젝트 노드가 보이는 거리 유지)
-  lerpCameraTo(45, 0, 0, 0, 700);
+  lerpCameraTo(70, 0, 0, 0, 700);
 }
 window.focusProject = focusProject;
 
 function exitConstellationFocus() {
   _focusedProject = null;
-  lerpCameraTo(controls.sph.r < 60 ? 75 : controls.sph.r, 0, 0, 0, 700);
+  _drillStage = 0;
+  _drillProject = null;
+  _drillCategory = null;
+  _drillTimelineEvent = null;
+  closePanel();
+  lerpCameraTo(55, 0, 0, 0, 700);
   const btn = document.getElementById('constellation-back-btn');
   if (btn) btn.style.display = 'none';
 }
 window.exitConstellationFocus = exitConstellationFocus;
 
-// ── 카테고리 포커스 (동적 프로젝트 타입) ──────────────────────────────────────
+// ── 카테고리 드릴 (2단계 → 3단계: 타임라인 패널) ───────────────────────────
+function drillToCategory(catData) {
+  _drillStage = 2;
+  _drillCategory = catData;
+  _focusedCategory = catData.catKey;
+
+  // 해당 카테고리의 모든 이벤트 수집
+  const allEvents = [];
+  (catData.planets || []).forEach(planet => {
+    const entry = _sessionMap[planet.userData.clusterId];
+    if (!entry) return;
+    for (const e of entry.events) {
+      allEvents.push({ ...e, clusterId: planet.userData.clusterId });
+    }
+  });
+  allEvents.sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0));
+  _drillCategory.events = allEvents;
+
+  lerpCameraTo(75, 0, 0, 0, 500);
+  showDrillTimeline(_drillCategory);
+}
+window.drillToCategory = drillToCategory;
+
+function drillToFileDetail(fileName, filePath) {
+  _drillStage = 3;
+  _drillTimelineEvent = { fileName, filePath };
+  showDrillFileDetail(fileName, filePath);
+}
+window.drillToFileDetail = drillToFileDetail;
+
+// ── 카테고리 포커스 (동적 프로젝트 타입 - 호환) ─────────────────────────────
 function focusCategoryView(catKey) {
   _focusedCategory = catKey;
   _focusedProject  = null;
   const catCfg = PROJECT_TYPES[catKey] || PROJECT_TYPES.general;
-
-  // 해당 프로젝트 타입의 행성들 중심으로 카메라 이동
   const grp = _categoryGroups[catKey];
   if (!grp || grp.planets.length === 0) return;
-  // 행성들의 평균 위치로 카메라 포커스
   let tx = 0, tz = 0;
   grp.planets.forEach(p => { tx += p.position.x; tz += p.position.z; });
-  tx /= grp.planets.length;
-  tz /= grp.planets.length;
+  tx /= grp.planets.length; tz /= grp.planets.length;
   lerpCameraTo(35, tx, 0, tz, 700);
-
-  const btn = document.getElementById('constellation-back-btn');
-  if (btn) { btn.textContent = `← ${catCfg.icon} ${catCfg.label} / 전체 보기`; btn.style.display = 'block'; }
 }
 window.focusCategoryView = focusCategoryView;
 
 function exitCategoryFocus() {
   _focusedCategory = null;
-  lerpCameraTo(55, 0, 0, 0, 700);
-  const btn = document.getElementById('constellation-back-btn');
-  if (btn) btn.style.display = 'none';
+  if (_drillStage >= 2) {
+    _drillStage = 1;
+    _drillCategory = null;
+    _drillTimelineEvent = null;
+    closePanel();
+    lerpCameraTo(70, 0, 0, 0, 500);
+  } else {
+    lerpCameraTo(55, 0, 0, 0, 700);
+  }
 }
 window.exitCategoryFocus = exitCategoryFocus;
 
@@ -2839,17 +2874,18 @@ function drawConstellations() {
   });
 }
 
-// ─── 1단계: 프로젝트 노드 뷰 ──────────────────────────────────────────────────
-// 태양 중심에 프로젝트 단위 노드를 원형 배치
-// 클릭 시 → 해당 프로젝트의 하위 세션/클러스터를 오와 열 맞춰 뒤에 전개
+// ─── 1단계: 프로젝트 노드 뷰 (방사형 + 밝은 테마) ──────────────────────────
+// ME 노드 중심, 프로젝트를 원형 배치, 클릭 시 2단계 카테고리 링 전개
 function drawCompactProjectView() {
   const projNames = Object.keys(_projectGroups);
   if (projNames.length === 0) return;
 
   const now = performance.now() / 1000;
+  const ctx = _lctx;
 
-  // ── 캔버스 중앙 기준점 (사이드바 고려, 태양 제거됨) ────────────────────
-  const sunSc = { x: _labelCanvas2d.width / 2, y: _labelCanvas2d.height / 2, z: 0 };
+  // ── 캔버스 중앙 기준점 ────────────────────────────────────────────────────
+  const centerX = _labelCanvas2d.width / 2;
+  const centerY = _labelCanvas2d.height / 2;
 
   // ── 프로젝트별 정보 집계 ──────────────────────────────────────────────────
   const projects = projNames.map(name => {
@@ -2857,7 +2893,6 @@ function drawCompactProjectView() {
     const planets = grp.planetMeshes || [];
     const eventCount = planets.reduce((s, p) => s + (p.userData.eventCount || 0), 0);
     const hasActive = (_activeFilesPerProject[name] || []).length > 0;
-    // 대표 프로젝트 타입 (가장 많은 행성의 macroCat)
     const typeCounts = {};
     planets.forEach(p => {
       const t = p.userData.macroCat || 'general';
@@ -2873,7 +2908,6 @@ function drawCompactProjectView() {
   // ── 스마트 프로젝트명 분석 ────────────────────────────────────────────────
   function analyzeProject(proj) {
     const planets = proj.planets || [];
-    // 카테고리 분포 집계
     const catCounts = {};
     planets.forEach(p => {
       const c = p.userData.macroCat || 'general';
@@ -2883,7 +2917,6 @@ function drawCompactProjectView() {
     const topCat = topCats[0]?.[0] || 'general';
     const topCfg = PROJECT_TYPES[topCat] || PROJECT_TYPES.general;
 
-    // 파일 확장자 집계 (기술 스택 감지)
     const exts = {};
     planets.forEach(p => {
       const entry = _sessionMap[p.userData.clusterId];
@@ -2896,22 +2929,16 @@ function drawCompactProjectView() {
     });
     const topExts = Object.entries(exts).sort((a,b) => b[1] - a[1]).slice(0, 3).map(([e]) => e);
 
-    // 프로젝트 디렉토리명
     const rawName = proj.name;
     let smartName;
     if (rawName && rawName !== '기타' && !/^세션-/.test(rawName)) {
-      // 디렉토리명 → 사람이 읽기 좋은 형태
       smartName = rawName.split(/[-_]/).filter(s => s !== 'session')
         .map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(' ');
-      // 카테고리 힌트 추가
-      smartName += ` ${topCfg.label}`;
     } else {
-      // 분석 기반 이름 생성
       const stack = topExts.length > 0 ? topExts.join('+').toUpperCase() : '';
       smartName = stack ? `${stack} ${topCfg.label}` : topCfg.label + ' 프로젝트';
     }
 
-    // 파일 수 집계
     const allFiles = new Set();
     planets.forEach(p => {
       const entry = _sessionMap[p.userData.clusterId];
@@ -2935,109 +2962,141 @@ function drawCompactProjectView() {
     };
   }
 
-  // ── 프로젝트 노드 배치 (화면 중심 기준, 1개면 중앙에) ────────────────────
+  // ── ME 노드 (화면 중앙) ────────────────────────────────────────────────────
+  const meW = 100, meH = 36;
+  ctx.save();
+  ctx.fillStyle = 'rgba(255,255,255,0.97)';
+  ctx.shadowColor = 'rgba(0,0,0,0.08)'; ctx.shadowBlur = 12; ctx.shadowOffsetY = 2;
+  roundRect(ctx, centerX - meW/2, centerY - meH/2, meW, meH, meH/2); ctx.fill();
+  ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+  ctx.strokeStyle = '#d0d7de'; ctx.lineWidth = 1.5;
+  roundRect(ctx, centerX - meW/2, centerY - meH/2, meW, meH, meH/2); ctx.stroke();
+  ctx.restore();
+  ctx.font = '600 14px -apple-system,sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#1a1a2e';
+  ctx.fillText('나의 작업', centerX, centerY + 5);
+
+  // ── 프로젝트 노드 방사형 배치 ──────────────────────────────────────────────
   const NODE_DIST = projects.length === 1 ? 0 : 160;
-  const isFocused = !!_focusedProject;
+  const isDrillStage1 = _drillStage === 1 && _drillProject;
 
   projects.forEach((proj, i) => {
     const angle = (i / projects.length) * Math.PI * 2 - Math.PI / 2;
-    const isThisFocused = _focusedProject === proj.name;
+    const isThisDrilled = isDrillStage1 && _drillProject.name === proj.name;
 
-    // 프로젝트 노드 위치 항상 고정 (카메라만 이동)
-    const cx = sunSc.x + Math.cos(angle) * NODE_DIST;
-    const cy = sunSc.y + Math.sin(angle) * NODE_DIST;
+    const cx = centerX + Math.cos(angle) * NODE_DIST;
+    const cy = centerY + Math.sin(angle) * NODE_DIST;
     const isHover = _hoveredHit?.data?.type === 'constellation' && _hoveredHit?.data?.projName === proj.name;
 
     const color = proj.color;
     const info = analyzeProject(proj);
 
-    // ── 크기 계산 (확대된 프로젝트 노드) ──────────────────────────────────
-    const pxTitle = isThisFocused ? 18 : isHover ? 16 : 15;
+    // ── 비활성 프로젝트 흐리게 (드릴 상태 1+) ──────────────────────────────
+    const dimmed = isDrillStage1 && !isThisDrilled;
+    if (dimmed) ctx.globalAlpha = 0.35;
+
+    // ── 크기 계산 ────────────────────────────────────────────────────────────
+    const pxTitle = isThisDrilled ? 16 : isHover ? 15 : 14;
     const pxSub   = 11;
     const pxDetail = 10;
-    _lctx.font = `700 ${pxTitle}px -apple-system,'Segoe UI',sans-serif`;
-    _lctx.textAlign = 'center';
+    ctx.font = `600 ${pxTitle}px -apple-system,'Segoe UI',sans-serif`;
+    ctx.textAlign = 'left';
     const titleLabel = `${info.icon} ${info.name}`;
-    const titleW = _lctx.measureText(titleLabel).width;
+    const titleW = ctx.measureText(titleLabel).width;
 
     const subLabel = info.techStack
-      ? `${info.techStack} · ${info.sessionCount} 세션 · ${info.fileCount} 파일`
+      ? `${info.sessionCount} 세션 · ${info.fileCount} 파일`
       : `${info.sessionCount} 세션 · ${info.fileCount} 파일`;
-    _lctx.font = `400 ${pxSub}px -apple-system,sans-serif`;
-    const subW = _lctx.measureText(subLabel).width;
+    ctx.font = `400 ${pxSub}px -apple-system,sans-serif`;
+    const subW = ctx.measureText(subLabel).width;
 
-    // 카테고리 브레이크다운 한줄
     const catLine = info.catBreakdown.map(c => `${c.icon}${c.count}`).join('  ');
-    _lctx.font = `400 ${pxDetail}px -apple-system,sans-serif`;
-    const catW = _lctx.measureText(catLine).width;
+    ctx.font = `400 ${pxDetail}px -apple-system,sans-serif`;
+    const catW = ctx.measureText(catLine).width;
 
-    const pw = Math.max(titleW, subW, catW) + 40;
-    const ph = pxTitle + pxSub + pxDetail + 32;
+    const COLOR_BAR = 5;
+    const pw = Math.max(titleW, subW, catW) + 36 + COLOR_BAR;
+    const ph = pxTitle + pxSub + pxDetail + 30;
     const lx = cx - pw / 2;
     const ly = cy - ph / 2;
 
-    // 겹침 방지
-    if (rectOverlaps(lx - 4, ly - 4, pw + 8, ph + 8)) return;
+    if (rectOverlaps(lx - 4, ly - 4, pw + 8, ph + 8)) { ctx.globalAlpha = 1; return; }
     reserveRect(lx - 4, ly - 4, pw + 8, ph + 8);
 
-    // ── 글로우 ──────────────────────────────────────────────────────────────
-    const pulse = 0.5 + 0.5 * Math.sin(now * 0.8 + i * 1.5);
-    _lctx.save();
-    _lctx.globalAlpha = 0.10 + pulse * 0.06;
-    _lctx.fillStyle = color;
-    _lctx.shadowColor = color; _lctx.shadowBlur = 20;
-    _lctx.beginPath(); _lctx.arc(cx, cy, pw / 2 + 6, 0, Math.PI * 2); _lctx.fill();
-    _lctx.restore();
+    // ── 카드 배경 (흰색 + 그림자) ───────────────────────────────────────────
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,0.07)'; ctx.shadowBlur = 10; ctx.shadowOffsetY = 2;
+    ctx.fillStyle = isThisDrilled ? 'rgba(240,245,255,0.98)' : 'rgba(255,255,255,0.95)';
+    roundRect(ctx, lx, ly, pw, ph, 12); ctx.fill();
+    ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+    ctx.restore();
 
-    // ── 노드 배경 ──────────────────────────────────────────────────────────
-    _lctx.globalAlpha = isHover ? 0.97 : 0.93;
-    _lctx.fillStyle = isThisFocused ? 'rgba(31,111,235,0.15)' : 'rgba(6,10,16,0.94)';
-    roundRect(_lctx, lx, ly, pw, ph, 14); _lctx.fill();
+    // 좌측 컬러 바
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(lx + 12, ly); ctx.lineTo(lx + COLOR_BAR + 12, ly);
+    ctx.lineTo(lx + COLOR_BAR + 12, ly + ph);
+    ctx.moveTo(lx + 12, ly + ph); ctx.arcTo(lx, ly + ph, lx, ly + ph - 12, 12);
+    ctx.lineTo(lx, ly + 12); ctx.arcTo(lx, ly, lx + 12, ly, 12);
+    ctx.closePath();
+    ctx.fillStyle = color; ctx.fill();
+    ctx.restore();
 
     // 테두리
-    _lctx.strokeStyle = color;
-    _lctx.lineWidth = isThisFocused ? 2.5 : isHover ? 2 : 1.4;
-    roundRect(_lctx, lx, ly, pw, ph, 14); _lctx.stroke();
+    ctx.strokeStyle = isThisDrilled ? color : '#e1e4e8';
+    ctx.lineWidth = isThisDrilled ? 2 : isHover ? 1.5 : 1;
+    roundRect(ctx, lx, ly, pw, ph, 12); ctx.stroke();
 
     // 활성 표시 (녹색 점)
     if (proj.hasActive) {
       const dp = 0.5 + 0.5 * Math.sin(now * 2.5 + i);
-      _lctx.save();
-      _lctx.fillStyle = '#3fb950';
-      _lctx.shadowColor = '#3fb950'; _lctx.shadowBlur = 4 + dp * 4;
-      _lctx.beginPath(); _lctx.arc(lx + pw - 8, ly + 8, 5, 0, Math.PI * 2); _lctx.fill();
-      _lctx.restore();
+      ctx.save();
+      ctx.fillStyle = '#22c55e';
+      ctx.shadowColor = '#22c55e'; ctx.shadowBlur = 4 + dp * 3;
+      ctx.beginPath(); ctx.arc(lx + pw - 10, ly + 10, 4, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
     }
 
-    // ── 타이틀 (스마트 프로젝트명) ──────────────────────────────────────────
-    _lctx.globalAlpha = 1;
-    _lctx.font = `700 ${pxTitle}px -apple-system,'Segoe UI',sans-serif`;
-    _lctx.textAlign = 'center';
-    _lctx.fillStyle = isThisFocused ? '#fff' : isHover ? '#f0f6fc' : '#e6edf3';
-    _lctx.fillText(titleLabel, cx, ly + pxTitle + 6);
+    // ── 텍스트 ──────────────────────────────────────────────────────────────
+    const textX = lx + COLOR_BAR + 16;
+    ctx.font = `600 ${pxTitle}px -apple-system,'Segoe UI',sans-serif`;
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#1a1a2e';
+    ctx.fillText(titleLabel, textX, ly + pxTitle + 6);
 
-    // 서브라벨 (기술 스택 · 세션 수 · 파일 수)
-    _lctx.font = `400 ${pxSub}px -apple-system,sans-serif`;
-    _lctx.fillStyle = '#8b949e';
-    _lctx.fillText(subLabel, cx, ly + pxTitle + pxSub + 14);
+    ctx.font = `400 ${pxSub}px -apple-system,sans-serif`;
+    ctx.fillStyle = '#6b7280';
+    ctx.fillText(subLabel, textX, ly + pxTitle + pxSub + 14);
 
-    // 카테고리 브레이크다운 (아이콘 + 숫자)
-    _lctx.font = `400 ${pxDetail}px -apple-system,sans-serif`;
-    _lctx.fillStyle = color + '99';
-    _lctx.fillText(catLine, cx, ly + pxTitle + pxSub + pxDetail + 22);
+    ctx.font = `400 ${pxDetail}px -apple-system,sans-serif`;
+    ctx.fillStyle = '#9ca3af';
+    ctx.fillText(catLine, textX, ly + pxTitle + pxSub + pxDetail + 22);
 
-    _lctx.globalAlpha = 1;
+    ctx.globalAlpha = 1;
+    ctx.textAlign = 'center';
+
+    // ── ME → 프로젝트 연결선 (점선) ─────────────────────────────────────────
+    if (NODE_DIST > 0) {
+      ctx.save();
+      ctx.globalAlpha = dimmed ? 0.12 : 0.2;
+      ctx.strokeStyle = '#9ca3af';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath(); ctx.moveTo(centerX, centerY); ctx.lineTo(cx, cy); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
 
     // ── 히트 영역 ──────────────────────────────────────────────────────────
     _hitAreas.push({
       cx, cy, r: Math.max(pw, ph) / 2 + 8,
       obj: null,
-      data: { type: 'constellation', projName: proj.name, planetCount: proj.planets.length, color },
+      data: { type: 'constellation', projName: proj.name, planetCount: proj.planets.length, color, info },
     });
 
-    // ── 포커스된 프로젝트: 피라미드 트리 (카테고리별 그룹 + 타임라인) ──────
-    if (isThisFocused && proj.planets.length > 0) {
-      // 세션을 카테고리별로 그룹화
+    // ══ 2단계: 카테고리 링 (드릴된 프로젝트만) ══════════════════════════════
+    if (isThisDrilled && proj.planets.length > 0) {
       const catGroups = {};
       proj.planets.forEach(planet => {
         const cat = planet.userData.macroCat || 'general';
@@ -3045,165 +3104,91 @@ function drawCompactProjectView() {
         catGroups[cat].push(planet);
       });
 
-      // 각 카테고리 내 세션을 타임라인 순 정렬 (가장 오래된 것 → 최신)
-      Object.values(catGroups).forEach(arr => {
-        arr.sort((a, b) => {
-          const entryA = _sessionMap[a.userData.clusterId];
-          const entryB = _sessionMap[b.userData.clusterId];
-          const tsA = entryA?.events?.[0]?.timestamp ? new Date(entryA.events[0].timestamp).getTime() : 0;
-          const tsB = entryB?.events?.[0]?.timestamp ? new Date(entryB.events[0].timestamp).getTime() : 0;
-          return tsA - tsB;
-        });
-      });
-
-      // 카테고리를 세션 수 많은 순으로 정렬
       const sortedCats = Object.entries(catGroups).sort((a, b) => b[1].length - a[1].length);
       const numCats = sortedCats.length;
-      const maxSessionsInCat = Math.max(...sortedCats.map(([, arr]) => arr.length));
-
-      // 레이아웃 상수
-      const NODE_R = 24;
-      const COL_SPACING = Math.min(160, (_labelCanvas2d.width - 80) / Math.max(numCats, 1));
-      const ROW_SPACING = 58;
-      const BRANCH_START_Y = cy - ph / 2 - 40;  // 프로젝트 노드 바로 위
-      const treeStartX = cx - (numCats - 1) * COL_SPACING / 2;
+      const CAT_RING_R = 80;
 
       sortedCats.forEach(([catKey, catPlanets], ci) => {
         const cfg = PROJECT_TYPES[catKey] || PROJECT_TYPES.general;
-        const branchX = treeStartX + ci * COL_SPACING;
+        const catAngle = (ci / numCats) * Math.PI * 2 - Math.PI / 2;
+        // 카테고리를 ME와 프로젝트 사이에 배치
+        const midX = (centerX + cx) / 2;
+        const midY = (centerY + cy) / 2;
+        const catCx = midX + Math.cos(catAngle) * CAT_RING_R;
+        const catCy = midY + Math.sin(catAngle) * CAT_RING_R;
 
-        // ── 프로젝트→카테고리 연결선 (곡선) ──────────────────────────────
-        _lctx.save();
-        _lctx.globalAlpha = 0.25;
-        _lctx.strokeStyle = cfg.color;
-        _lctx.lineWidth = 1.5;
-        _lctx.beginPath();
-        _lctx.moveTo(cx, cy - ph / 2);
-        const ctrlY = BRANCH_START_Y + 15;
-        _lctx.quadraticCurveTo(cx, ctrlY, branchX, BRANCH_START_Y);
-        _lctx.stroke();
-        _lctx.restore();
+        const catSessionCount = catPlanets.length;
+        const catLabel = `${cfg.icon} ${cfg.label}`;
+        const catSub = `${catSessionCount} 세션`;
 
-        // ── 카테고리 라벨 ────────────────────────────────────────────────
-        const catLabelY = BRANCH_START_Y - 4;
-        _lctx.save();
-        _lctx.globalAlpha = 0.85;
-        _lctx.font = `600 11px -apple-system,sans-serif`;
-        _lctx.textAlign = 'center';
-        _lctx.fillStyle = cfg.color;
-        _lctx.fillText(`${cfg.icon} ${cfg.label}`, branchX, catLabelY);
-        _lctx.restore();
+        ctx.font = '500 12px -apple-system,sans-serif';
+        const catTW = ctx.measureText(catLabel).width;
+        const cpw = Math.max(catTW + 24, 90);
+        const cph = 44;
+        const clx = catCx - cpw / 2;
+        const cly = catCy - cph / 2;
 
-        // ── 세션 노드들 (타임라인 순, 위로 쌓임) ─────────────────────────
-        const maxShow = Math.min(catPlanets.length, 8);
-        catPlanets.slice(0, maxShow).forEach((planet, si) => {
-          const sx = branchX;
-          const sy = BRANCH_START_Y - 28 - si * ROW_SPACING;
+        const isCatDrilled = _drillStage >= 2 && _drillCategory?.catKey === catKey;
+        const isCatHover = _hoveredHit?.data?.type === 'drillCategory' && _hoveredHit?.data?.catKey === catKey;
 
-          const evCnt = planet.userData.eventCount || 0;
-          const isSubHover = _hoveredHit?.obj === planet;
-          const isSubSel   = _selectedHit?.obj === planet;
-          const nodeColor  = cfg.color;
+        if (!rectOverlaps(clx - 2, cly - 2, cpw + 4, cph + 4)) {
+          reserveRect(clx - 2, cly - 2, cpw + 4, cph + 4);
 
-          // 세션 라벨
-          let sLabel = planet.userData.intent || '';
-          sLabel = sLabel.replace(/^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE00}-\u{FEFF}⚙️🔐🌐🗄🎨🧪🚀🐳📝📐🔧🌿💬]\s*/gu, '').trim();
-          if (sLabel.length > 16) sLabel = sLabel.slice(0, 15) + '…';
-          if (!sLabel) sLabel = planet.userData.domain || '작업';
+          // 카테고리 카드
+          ctx.save();
+          ctx.shadowColor = 'rgba(0,0,0,0.06)'; ctx.shadowBlur = 8; ctx.shadowOffsetY = 1;
+          ctx.fillStyle = isCatDrilled ? 'rgba(240,245,255,0.98)' : 'rgba(255,255,255,0.96)';
+          roundRect(ctx, clx, cly, cpw, cph, 10); ctx.fill();
+          ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+          ctx.restore();
+          ctx.strokeStyle = isCatDrilled ? cfg.color : isCatHover ? cfg.color + 'aa' : '#e1e4e8';
+          ctx.lineWidth = isCatDrilled ? 2 : isCatHover ? 1.5 : 1;
+          roundRect(ctx, clx, cly, cpw, cph, 10); ctx.stroke();
 
-          // 겹침 방지
-          const hitR = NODE_R + 6;
-          if (rectOverlaps(sx - hitR, sy - hitR, hitR * 2, hitR * 2 + 14)) return;
-          reserveRect(sx - hitR, sy - hitR, hitR * 2, hitR * 2 + 14);
+          // 카테고리 텍스트
+          ctx.textAlign = 'center';
+          ctx.font = '500 12px -apple-system,sans-serif';
+          ctx.fillStyle = '#1a1a2e';
+          ctx.fillText(catLabel, catCx, catCy - 1);
+          ctx.font = '400 10px -apple-system,sans-serif';
+          ctx.fillStyle = '#9ca3af';
+          ctx.fillText(catSub, catCx, catCy + 13);
 
-          // ── 세션 간 수직 연결선 ────────────────────────────────────────
-          if (si > 0) {
-            const prevY = BRANCH_START_Y - 28 - (si - 1) * ROW_SPACING;
-            _lctx.save();
-            _lctx.globalAlpha = 0.15;
-            _lctx.strokeStyle = nodeColor;
-            _lctx.lineWidth = 1;
-            _lctx.setLineDash([3, 3]);
-            _lctx.beginPath(); _lctx.moveTo(sx, prevY - NODE_R); _lctx.lineTo(sx, sy + NODE_R); _lctx.stroke();
-            _lctx.setLineDash([]);
-            _lctx.restore();
-          } else {
-            // 첫 노드 → 카테고리 라벨 연결
-            _lctx.save();
-            _lctx.globalAlpha = 0.15;
-            _lctx.strokeStyle = nodeColor;
-            _lctx.lineWidth = 1;
-            _lctx.beginPath(); _lctx.moveTo(sx, BRANCH_START_Y - 14); _lctx.lineTo(sx, sy + NODE_R); _lctx.stroke();
-            _lctx.restore();
-          }
+          // ME → 카테고리 연결선
+          ctx.save();
+          ctx.globalAlpha = 0.15;
+          ctx.strokeStyle = cfg.color;
+          ctx.lineWidth = 1;
+          ctx.setLineDash([3, 3]);
+          ctx.beginPath(); ctx.moveTo(centerX, centerY); ctx.lineTo(catCx, catCy); ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.restore();
 
-          // ── 노드 원형 배경 ────────────────────────────────────────────
-          const r = isSubHover ? NODE_R + 4 : isSubSel ? NODE_R + 3 : NODE_R;
+          // 카테고리 → 프로젝트 연결선
+          ctx.save();
+          ctx.globalAlpha = 0.12;
+          ctx.strokeStyle = cfg.color;
+          ctx.lineWidth = 1;
+          ctx.setLineDash([3, 3]);
+          ctx.beginPath(); ctx.moveTo(catCx, catCy); ctx.lineTo(cx, cy); ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.restore();
 
-          // 글로우
-          _lctx.save();
-          _lctx.globalAlpha = isSubSel ? 0.35 : isSubHover ? 0.2 : 0.08;
-          _lctx.fillStyle = nodeColor;
-          _lctx.shadowColor = nodeColor; _lctx.shadowBlur = isSubSel ? 18 : 10;
-          _lctx.beginPath(); _lctx.arc(sx, sy, r + 4, 0, Math.PI * 2); _lctx.fill();
-          _lctx.restore();
-
-          // 배경 원
-          _lctx.globalAlpha = 0.95;
-          _lctx.fillStyle = isSubSel ? 'rgba(31,111,235,0.2)' : 'rgba(13,17,23,0.92)';
-          _lctx.beginPath(); _lctx.arc(sx, sy, r, 0, Math.PI * 2); _lctx.fill();
-
-          // 테두리
-          _lctx.strokeStyle = isSubSel ? '#58a6ff' : nodeColor;
-          _lctx.lineWidth = isSubSel ? 2.5 : isSubHover ? 2 : 1.2;
-          _lctx.globalAlpha = isSubSel ? 1 : 0.7;
-          _lctx.beginPath(); _lctx.arc(sx, sy, r, 0, Math.PI * 2); _lctx.stroke();
-
-          // ── 이벤트 수 (노드 안쪽 중앙) ────────────────────────────────
-          _lctx.globalAlpha = 1;
-          _lctx.textAlign = 'center';
-          _lctx.font = `700 13px -apple-system,sans-serif`;
-          _lctx.fillStyle = isSubSel ? '#fff' : '#e6edf3';
-          _lctx.fillText(`${evCnt}`, sx, sy + 5);
-
-          // ── 라벨 (노드 우측) ──────────────────────────────────────────
-          _lctx.font = `500 10px -apple-system,sans-serif`;
-          _lctx.textAlign = 'left';
-          _lctx.fillStyle = isSubSel ? '#fff' : '#8b949e';
-          _lctx.fillText(sLabel, sx + r + 6, sy + 4);
-
-          // 타임스탬프 (노드 좌측)
-          const entry = _sessionMap[planet.userData.clusterId];
-          if (entry?.events?.[0]?.timestamp) {
-            const ts = new Date(entry.events[0].timestamp);
-            const timeStr = ts.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
-            _lctx.font = `400 9px -apple-system,sans-serif`;
-            _lctx.textAlign = 'right';
-            _lctx.fillStyle = '#6e768188';
-            _lctx.fillText(timeStr, sx - r - 6, sy + 4);
-          }
-
-          _lctx.textAlign = 'center';
-          _lctx.globalAlpha = 1;
-
-          // 히트 영역
+          // 카테고리 히트 영역
           _hitAreas.push({
-            cx: sx, cy: sy, r: r + 6,
-            obj: planet,
-            data: { type: 'session', intent: planet.userData.intent, clusterId: planet.userData.clusterId,
-                    sessionId: planet.userData.sessionId, eventCount: evCnt, hueHex: nodeColor },
+            cx: catCx, cy: catCy, r: Math.max(cpw, cph) / 2 + 4,
+            obj: null,
+            data: {
+              type: 'drillCategory',
+              catKey,
+              catLabel: cfg.label,
+              catColor: cfg.color,
+              catIcon: cfg.icon,
+              projName: proj.name,
+              planets: catPlanets,
+              sessionCount: catSessionCount,
+            },
           });
-        });
-
-        // 남은 세션 수 표시
-        if (catPlanets.length > maxShow) {
-          const lastY = BRANCH_START_Y - 28 - (maxShow - 1) * ROW_SPACING;
-          _lctx.globalAlpha = 0.5;
-          _lctx.font = '400 10px -apple-system,sans-serif';
-          _lctx.fillStyle = cfg.color;
-          _lctx.textAlign = 'center';
-          _lctx.fillText(`+${catPlanets.length - maxShow}개`, branchX, lastY - NODE_R - 10);
-          _lctx.globalAlpha = 1;
         }
       });
     }
@@ -3211,7 +3196,7 @@ function drawCompactProjectView() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 개인 모드 행성 라벨 (오와 열 정렬 상태 유지, 연결선 없음)
+// 개인 모드 행성 라벨 (밝은 테마, 연결선 없음)
 // ═══════════════════════════════════════════════════════════════════════════════
 function _drawPersonalPlanets() {
   const lod = getLOD();
@@ -3219,7 +3204,6 @@ function _drawPersonalPlanets() {
   _lctx.globalAlpha = globalAlpha;
 
   planetMeshes.forEach(p => {
-    // 포커스된 카테고리가 있으면 해당 타입만 표시
     if (_focusedCategory && p.userData.macroCat !== _focusedCategory) return;
     const sc = toScreen(p.position);
     if (sc.z > 1) return;
@@ -3229,11 +3213,9 @@ function _drawPersonalPlanets() {
     const evCnt      = p.userData.eventCount || 0;
     const isHovered  = _hoveredHit?.obj === p;
     const isSelected = _selectedHit?.obj === p;
-    const glow       = glowIntensity(p.userData.clusterId);
 
     const pxSize = isSelected ? 20 : isHovered ? 16 : Math.max(9, Math.min(14, scale * 12));
 
-    // 텍스트 추출
     let fullText = p.userData.intent || '';
     let text = '';
     if (fullText) {
@@ -3251,7 +3233,7 @@ function _drawPersonalPlanets() {
     }
     if (!text) return;
 
-    _lctx.font = `700 ${pxSize}px -apple-system,'Segoe UI',sans-serif`;
+    _lctx.font = `600 ${pxSize}px -apple-system,'Segoe UI',sans-serif`;
     _lctx.textAlign = 'center';
 
     const tw = _lctx.measureText(text).width;
@@ -3263,43 +3245,40 @@ function _drawPersonalPlanets() {
     if (rectOverlaps(lx - 4, ly - 4, pw + 8, ph + 30)) return;
     reserveRect(lx - 4, ly - 4, pw + 8, ph + 30);
 
-    // 글로우
-    if (glow > 0) {
-      drawGlow(_lctx, sc.x, sc.y, Math.max(pw, ph) / 2, hex, glow);
-    }
-
-    // 선택 글로우
+    // 선택 강조
     if (isSelected) {
       _lctx.save();
-      const pulse = 0.6 + 0.4 * Math.sin(Date.now() / 300);
-      _lctx.shadowColor = hex; _lctx.shadowBlur = 16 + pulse * 8;
-      _lctx.strokeStyle = hex; _lctx.lineWidth = 3;
-      _lctx.globalAlpha = globalAlpha * (0.7 + pulse * 0.3);
-      roundRect(_lctx, lx - 3, ly - 3, pw + 6, ph + 6, (ph + 6) / 2);
+      _lctx.shadowColor = hex; _lctx.shadowBlur = 10;
+      _lctx.strokeStyle = hex; _lctx.lineWidth = 2.5;
+      _lctx.globalAlpha = globalAlpha * 0.8;
+      roundRect(_lctx, lx - 2, ly - 2, pw + 4, ph + 4, (ph + 4) / 2);
       _lctx.stroke(); _lctx.shadowBlur = 0;
       _lctx.restore();
       _lctx.globalAlpha = globalAlpha;
     }
 
-    // 배경 pill
-    const bgAlpha = isSelected ? 0.97 : isHovered ? 0.93 : 0.78;
-    _lctx.fillStyle = isSelected ? 'rgba(31,111,235,0.15)' : `rgba(6,10,16,${bgAlpha})`;
+    // 배경 pill (밝은 테마)
+    _lctx.save();
+    _lctx.shadowColor = 'rgba(0,0,0,0.06)'; _lctx.shadowBlur = 6; _lctx.shadowOffsetY = 1;
+    _lctx.fillStyle = isSelected ? 'rgba(240,245,255,0.98)' : 'rgba(255,255,255,0.93)';
     roundRect(_lctx, lx, ly, pw, ph, ph / 2); _lctx.fill();
+    _lctx.shadowBlur = 0; _lctx.shadowOffsetY = 0;
+    _lctx.restore();
 
     // 테두리
-    _lctx.strokeStyle = isSelected ? '#58a6ff' : hex;
-    _lctx.lineWidth = isSelected ? 2.5 : isHovered ? 2 : 1;
+    _lctx.strokeStyle = isSelected ? hex : isHovered ? hex + 'aa' : '#d0d7de';
+    _lctx.lineWidth = isSelected ? 2 : isHovered ? 1.5 : 1;
     roundRect(_lctx, lx, ly, pw, ph, ph / 2); _lctx.stroke();
 
-    // 텍스트
-    _lctx.fillStyle = isSelected ? '#ffffff' : isHovered ? '#f0f6fc' : '#cdd9e5';
+    // 텍스트 (어두운 색)
+    _lctx.fillStyle = isSelected ? '#1a1a2e' : isHovered ? '#24292f' : '#57606a';
     _lctx.fillText(text, sc.x, ly + ph * 0.68);
 
     // 이벤트 수 (선택/호버 시)
     if (evCnt > 0 && pxSize >= 13) {
       const sub = Math.max(9, pxSize * 0.5);
       _lctx.font = `500 ${sub}px -apple-system,sans-serif`;
-      _lctx.fillStyle = hex + '88';
+      _lctx.fillStyle = '#9ca3af';
       _lctx.fillText(`${evCnt}개 작업`, sc.x, ly + ph + sub + 1);
     }
 
@@ -3404,23 +3383,23 @@ function drawInvertedPyramid(planetObj, hitData) {
 
   ctx.save();
 
-  // ── 윈도우 그림자 ─────────────────────────────────────────────────────
-  ctx.shadowColor = 'rgba(0,0,0,0.7)';
-  ctx.shadowBlur = 32;
-  ctx.shadowOffsetY = 6;
-  ctx.fillStyle = 'rgba(18,22,28,0.98)';
+  // ── 윈도우 그림자 (밝은 테마) ─────────────────────────────────────────
+  ctx.shadowColor = 'rgba(0,0,0,0.1)';
+  ctx.shadowBlur = 24;
+  ctx.shadowOffsetY = 4;
+  ctx.fillStyle = 'rgba(255,255,255,0.98)';
   roundRect(ctx, winX, winY, WIN_W, totalH, 12);
   ctx.fill();
   ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
 
   // 윈도우 테두리
-  ctx.strokeStyle = hex + '66';
-  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = '#e5e7eb';
+  ctx.lineWidth = 1;
   roundRect(ctx, winX, winY, WIN_W, totalH, 12);
   ctx.stroke();
 
-  // ── 타이틀바 (윈도우 상단) ─────────────────────────────────────────────
-  ctx.fillStyle = 'rgba(30,36,46,0.95)';
+  // ── 타이틀바 (밝은 테마) ───────────────────────────────────────────────
+  ctx.fillStyle = '#f8f9fa';
   // 상단 좌/우 모서리만 둥글게
   ctx.beginPath();
   ctx.moveTo(winX + 12, winY);
@@ -3451,7 +3430,7 @@ function drawInvertedPyramid(planetObj, hitData) {
     : planetObj.userData?.intent?.replace(/^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE00}-\u{FEFF}⚙️🔐🌐🗄🎨🧪🚀🐳📝📐🔧🌿💬]\s*/gu, '').trim().slice(0, 40) || '세션 상세';
   ctx.font = `600 13px -apple-system,"Segoe UI",sans-serif`;
   ctx.textAlign = 'center';
-  ctx.fillStyle = '#e6edf3';
+  ctx.fillStyle = '#1a1a2e';
   ctx.fillText(titleText, centerX, winY + TITLE_H / 2 + 4);
 
   let curY = winY + TITLE_H + 12;
@@ -3470,10 +3449,10 @@ function drawInvertedPyramid(planetObj, hitData) {
     const chipX = winX + PAD + si * (CHIP_W + 4);
     const chipY = curY;
 
-    // 칩 배경
-    ctx.fillStyle = 'rgba(255,255,255,0.03)';
+    // 칩 배경 (밝은 테마)
+    ctx.fillStyle = '#f8f9fa';
     roundRect(ctx, chipX, chipY, CHIP_W, CHIP_H, 8); ctx.fill();
-    ctx.strokeStyle = st.color + '30';
+    ctx.strokeStyle = '#e5e7eb';
     ctx.lineWidth = 0.5;
     roundRect(ctx, chipX, chipY, CHIP_W, CHIP_H, 8); ctx.stroke();
 
@@ -3508,7 +3487,7 @@ function drawInvertedPyramid(planetObj, hitData) {
   }
 
   // 구분선
-  ctx.strokeStyle = '#ffffff10';
+  ctx.strokeStyle = '#e5e7eb';
   ctx.lineWidth = 0.5;
   ctx.beginPath(); ctx.moveTo(winX + PAD, curY); ctx.lineTo(winX + WIN_W - PAD, curY); ctx.stroke();
   curY += 8;

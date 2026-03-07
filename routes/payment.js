@@ -82,23 +82,33 @@ function createRouter(deps) {
    * @returns {{ success: boolean, payment: object, plan: string }}
    */
   router.post('/payment/confirm', async (req, res) => {
+    // 인증 검증
+    const token = (req.headers.authorization || '').replace('Bearer ', '') ||
+                  req.headers['x-api-token'] || req.query.token;
+    let authUser = null;
+    if (token) {
+      try { authUser = verifyToken(token); } catch {}
+    }
+
     try {
-      const { paymentKey, orderId, amount, userId, planId } = req.body || {};
+      const { paymentKey, orderId, amount, planId } = req.body || {};
+      // 인증된 사용자의 ID 사용 (body의 userId 무시 → 보안)
+      const userId = authUser?.id || req.body?.userId;
       if (!paymentKey || !orderId) return res.status(400).json({ error: 'paymentKey and orderId required' });
       const result = await confirmPayment({ paymentKey, orderId, amount });
       if (!result) return res.status(502).json({ error: 'PG confirmation failed' });
 
       // 결제 승인 성공 시 사용자 플랜 업그레이드
-      if (result.status === 'DONE' || result.mock) {                             // 실결제 또는 목 모드 둘 다 처리
-        if (userId && planId && PLANS[planId]) {                                 // 유효한 사용자·플랜인지 확인
-          upgradePlan(userId, planId);                                           // DB에 플랜 업데이트
+      if (result.status === 'DONE' || result.mock) {
+        if (userId && planId && PLANS[planId]) {
+          upgradePlan(userId, planId);
         }
       }
 
       res.json({
-        success: true,                                                           // 성공 여부
-        payment: result,                                                         // PG 승인 결과
-        plan: planId || null,                                                    // 업그레이드된 플랜 ID
+        success: true,
+        payment: result,
+        plan: planId || null,
       });
     } catch (e) {
       res.status(500).json({ error: e.message });

@@ -85,14 +85,17 @@ function createRouter({ getDb, verifyToken, broadcastToRoom }) {
   }
 
   // ── 유틸: 플랜 조회 ──────────────────────────────────────────────────────────
-  function getUserPlan(userId) {
-    try {
-      const db  = getDb();
-      const row = db.prepare(
-        "SELECT plan FROM users WHERE id = ? OR email = ? LIMIT 1"
-      ).get(userId, userId);
-      return row?.plan || 'free';
-    } catch { return 'free'; }
+  function getUserPlan(userId, reqUser) {
+    // reqUser (verifyToken 결과)에 plan이 있으면 우선 사용
+    if (reqUser?.plan) return reqUser.plan;
+    // auth DB의 getUserById 함수가 주입되어 있으면 사용
+    if (typeof getUserById === 'function') {
+      try {
+        const u = getUserById(userId);
+        if (u?.plan) return u.plan;
+      } catch {}
+    }
+    return 'free';
   }
 
   // ── 유틸: 메시지 카운트 ──────────────────────────────────────────────────────
@@ -271,7 +274,7 @@ function createRouter({ getDb, verifyToken, broadcastToRoom }) {
       if (!isParticipant) return res.status(403).json({ error: 'not a participant' });
 
       // 스토리지 한도 체크
-      const plan  = getUserPlan(req.user.id);
+      const plan  = getUserPlan(req.user.id, req.user);
       const limit = PLAN_LIMITS[plan] || PLAN_LIMITS.free;
       if (limit !== Infinity) {
         const count = getMessageCount(req.user.id);
@@ -382,7 +385,7 @@ function createRouter({ getDb, verifyToken, broadcastToRoom }) {
   // ── GET /api/chat/quota ──────────────────────────────────────────────────────
   router.get('/chat/quota', auth, (req, res) => {
     try {
-      const plan  = getUserPlan(req.user.id);
+      const plan  = getUserPlan(req.user.id, req.user);
       const limit = PLAN_LIMITS[plan] || PLAN_LIMITS.free;
       const count = getMessageCount(req.user.id);
       res.json({

@@ -118,7 +118,18 @@ renderer.domElement.addEventListener('click', e => {
       return;
     }
 
-    // ── 별자리 오브 클릭 → 해당 프로젝트 포커스 ────────────────────────────
+    // ── 드릴 카테고리 클릭 → 3단계 타임라인 ────────────────────────────────
+    if (type === 'drillCategory') {
+      if (_drillStage >= 2 && _drillCategory?.catKey === hit.data.catKey) {
+        // 이미 같은 카테고리 → 닫기
+        exitCategoryFocus();
+      } else {
+        drillToCategory(hit.data);
+      }
+      return;
+    }
+
+    // ── 별자리 오브 클릭 → 해당 프로젝트 포커스 (1단계→2단계) ──────────────
     if (type === 'constellation') {
       if (_focusedProject === hit.data.projName) {
         exitConstellationFocus();
@@ -128,7 +139,7 @@ renderer.domElement.addEventListener('click', e => {
       return;
     }
 
-    // ── 세션 노드 클릭 (개인 모드) → 아직 세부 세션 미구현, 선택 표시만 ──
+    // ── 세션 노드 클릭 (개인 모드) ──────────────────────────────────────────
     if (isPersonal && type === 'session') {
       _selectedHit = hit;
       return;
@@ -186,17 +197,28 @@ renderer.domElement.addEventListener('click', e => {
       if (_companyMode) unfocusDept(); else unfocusMember();
       closePanel();
     } else if (isPersonal) {
-      // 개인 모드: 단계별 뒤로가기 (3→2→1)
-      if (_selectedHit) {
-        // 3단계 → 2단계: 상세 패널만 닫고 세션 펼침 유지
+      // 개인 모드: 4단계 드릴다운 뒤로가기 (3→2→1→0)
+      if (_drillStage === 3) {
+        // 4단계 → 3단계: 파일상세 → 타임라인 복귀
+        _drillStage = 2;
+        _drillTimelineEvent = null;
+        if (_drillCategory) showDrillTimeline(_drillCategory);
+        lerpCameraTo(75, 0, 0, 0, 400);
+      } else if (_drillStage === 2) {
+        // 3단계 → 2단계: 패널 닫기, 카테고리 링 유지
+        _drillStage = 1;
+        _drillCategory = null;
+        _focusedCategory = null;
+        _drillTimelineEvent = null;
+        closePanel();
+        lerpCameraTo(70, 0, 0, 0, 500);
+      } else if (_drillStage === 1 || _focusedProject) {
+        // 2단계 → 1단계: 전체 뷰로
+        exitConstellationFocus();
+      } else if (_selectedHit) {
         _selectedHit = null;
         _pyramidScrollOffset = 0;
         closePanel();
-      } else if (_focusedProject) {
-        // 2단계 → 1단계: 세션 펼침 접기
-        exitConstellationFocus();
-        closePanel();
-        lerpCameraTo(55, 0, 0, 0, 500);
       } else if (_focusedCategory) {
         exitCategoryFocus();
         closePanel();
@@ -1046,4 +1068,151 @@ function closePanel() {
   _currentPanelData = null;
 }
 window.closePanel = closePanel;
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 3단계: 우측 타임라인 패널 (카테고리 이벤트 시간순)
+// ═══════════════════════════════════════════════════════════════════════════════
+function showDrillTimeline(catData) {
+  const panel = document.getElementById('info-panel');
+  panel.classList.add('open');
+
+  // 탭바 숨기고 전체를 타임라인으로 활용
+  const tabs = panel.querySelector('.ip-tabs');
+  if (tabs) tabs.style.display = 'none';
+
+  // 헤더
+  document.getElementById('ip-dot').style.background = catData.catColor || '#58a6ff';
+  document.getElementById('ip-type-text').textContent = catData.catIcon ? `${catData.catIcon} ${catData.catLabel}` : catData.catLabel;
+  document.getElementById('ip-intent').textContent = `${catData.sessionCount || 0} 세션 · 타임라인`;
+
+  // 팝아웃 버튼 숨기기
+  const popBtn = panel.querySelector('.ip-pop-btn');
+  if (popBtn) popBtn.style.display = 'none';
+
+  // 본문: 날짜별 그룹핑 타임라인
+  const events = catData.events || [];
+  const dateGroups = {};
+  events.forEach(e => {
+    const ts = e.timestamp ? new Date(e.timestamp) : null;
+    if (!ts) return;
+    const dateKey = ts.toLocaleDateString('ko-KR', { year: 'numeric', month: 'short', day: 'numeric' });
+    if (!dateGroups[dateKey]) dateGroups[dateKey] = [];
+    dateGroups[dateKey].push(e);
+  });
+
+  let html = '<div style="display:flex;flex-direction:column;gap:0;max-height:calc(100vh - 140px);overflow-y:auto;padding:10px 14px 14px">';
+
+  Object.entries(dateGroups).forEach(([dateKey, dayEvents]) => {
+    html += `<div style="position:sticky;top:0;z-index:2;background:rgba(255,255,255,0.95);backdrop-filter:blur(4px);padding:8px 0 4px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb;margin-bottom:4px">${dateKey}</div>`;
+
+    dayEvents.forEach(e => {
+      const cfg = typeCfg(e.type);
+      const hex = '#' + new THREE.Color(cfg.color).getHexString();
+      const label = e.label || extractIntent(e) || e.type;
+      const ts = e.timestamp ? new Date(e.timestamp).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : '';
+      const fileName = (e.data?.filePath || e.data?.fileName || '').replace(/\\/g, '/').split('/').pop();
+      const filePath = e.data?.filePath || e.data?.fileName || '';
+
+      html += `<div class="drill-tl-item" onclick="${filePath ? `drillToFileDetail('${fileName.replace(/'/g, "\\'")}','${filePath.replace(/'/g, "\\'")}')` : ''}" style="display:flex;align-items:center;gap:8px;padding:7px 6px;border-radius:8px;cursor:${filePath ? 'pointer' : 'default'};transition:background .12s;border-left:3px solid ${hex}" onmouseenter="this.style.background='rgba(0,0,0,0.03)'" onmouseleave="this.style.background='transparent'">
+        <span style="font-size:12px;flex-shrink:0">${cfg.icon || '·'}</span>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:12px;color:#1a1a2e;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(label)}">${escHtml(label.slice(0, 40))}</div>
+          ${fileName ? `<div style="font-size:10px;color:#9ca3af;margin-top:1px">📄 ${fileName}</div>` : ''}
+        </div>
+        <div style="font-size:10px;color:#9ca3af;flex-shrink:0">${ts}</div>
+      </div>`;
+    });
+  });
+
+  if (events.length === 0) {
+    html += '<div style="padding:20px;text-align:center;color:#9ca3af;font-size:12px">이벤트 없음</div>';
+  }
+
+  html += '</div>';
+
+  // 탭 콘텐츠 영역 전체를 타임라인으로 교체
+  const body = panel.querySelector('.ip-body');
+  if (body) {
+    body.innerHTML = html;
+  }
+}
+window.showDrillTimeline = showDrillTimeline;
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 4단계: 파일 상세 (해당 파일의 전체 활동 기록)
+// ═══════════════════════════════════════════════════════════════════════════════
+function showDrillFileDetail(fileName, filePath) {
+  const panel = document.getElementById('info-panel');
+  panel.classList.add('open');
+
+  const tabs = panel.querySelector('.ip-tabs');
+  if (tabs) tabs.style.display = 'none';
+  const popBtn = panel.querySelector('.ip-pop-btn');
+  if (popBtn) popBtn.style.display = 'none';
+
+  // 헤더
+  const role = typeof inferFileRole === 'function' ? inferFileRole(fileName) : '📄';
+  document.getElementById('ip-dot').style.background = '#ffa657';
+  document.getElementById('ip-type-text').textContent = role || '📄 파일';
+  document.getElementById('ip-intent').textContent = fileName;
+
+  // 해당 파일의 모든 이벤트 수집
+  const fileEvents = [];
+  for (const [clusterId, entry] of Object.entries(_sessionMap || {})) {
+    if (!entry?.events) continue;
+    for (const e of entry.events) {
+      const fp = (e.data?.filePath || e.data?.fileName || '').replace(/\\/g, '/');
+      const fn = fp.split('/').pop();
+      if (fn === fileName || fp === filePath) {
+        fileEvents.push({ ...e, clusterId });
+      }
+    }
+  }
+  fileEvents.sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0));
+
+  let html = '<div style="display:flex;flex-direction:column;gap:0;max-height:calc(100vh - 140px);overflow-y:auto;padding:10px 14px 14px">';
+
+  // 뒤로가기 버튼
+  html += `<button onclick="if(_drillCategory){_drillStage=2;_drillTimelineEvent=null;showDrillTimeline(_drillCategory)}" style="display:flex;align-items:center;gap:4px;background:none;border:1px solid #e1e4e8;border-radius:6px;padding:6px 10px;font-size:11px;color:#6b7280;cursor:pointer;margin-bottom:8px;font-family:inherit;transition:background .15s" onmouseenter="this.style.background='#f3f4f6'" onmouseleave="this.style.background='transparent'">← 타임라인으로</button>`;
+
+  // 파일 정보 카드
+  html += `<div style="background:#f8f9fa;border:1px solid #e5e7eb;border-radius:10px;padding:12px;margin-bottom:10px">
+    <div style="font-size:13px;font-weight:600;color:#1a1a2e">${escHtml(fileName)}</div>
+    <div style="font-size:10px;color:#9ca3af;margin-top:2px;word-break:break-all">${escHtml(filePath || '')}</div>
+    <div style="display:flex;gap:12px;margin-top:8px">
+      <span style="font-size:11px;color:#6b7280">접근 ${fileEvents.length}회</span>
+      <span style="font-size:11px;color:#ffa657">수정 ${fileEvents.filter(e => e.type === 'file.write' || (e.type === 'tool.end' && e.data?.toolName === 'Write')).length}회</span>
+    </div>
+  </div>`;
+
+  // VS Code 열기 버튼
+  if (filePath) {
+    html += `<button onclick="openFileInEditor('${filePath.replace(/'/g, "\\'")}')" style="display:flex;align-items:center;justify-content:center;gap:4px;width:100%;background:#2563eb;color:#fff;border:none;border-radius:8px;padding:8px;font-size:12px;font-weight:500;cursor:pointer;margin-bottom:10px;font-family:inherit">💻 VS Code에서 열기</button>`;
+  }
+
+  // 활동 기록
+  html += '<div style="font-size:11px;font-weight:600;color:#6b7280;margin-bottom:6px">활동 기록</div>';
+  fileEvents.slice(0, 50).forEach(e => {
+    const cfg = typeCfg(e.type);
+    const hex = '#' + new THREE.Color(cfg.color).getHexString();
+    const label = e.label || extractIntent(e) || e.type;
+    const ts = e.timestamp ? new Date(e.timestamp).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : '';
+    const dateStr = e.timestamp ? new Date(e.timestamp).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' }) : '';
+    html += `<div style="display:flex;align-items:center;gap:8px;padding:6px 4px;border-left:3px solid ${hex}">
+      <span style="font-size:11px;flex-shrink:0">${cfg.icon || '·'}</span>
+      <div style="flex:1;min-width:0;font-size:11px;color:#374151;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(label.slice(0, 36))}</div>
+      <div style="font-size:10px;color:#9ca3af;flex-shrink:0;white-space:nowrap">${dateStr} ${ts}</div>
+    </div>`;
+  });
+
+  if (fileEvents.length === 0) {
+    html += '<div style="padding:16px;text-align:center;color:#9ca3af;font-size:12px">활동 기록 없음</div>';
+  }
+
+  html += '</div>';
+
+  const body = panel.querySelector('.ip-body');
+  if (body) body.innerHTML = html;
+}
+window.showDrillFileDetail = showDrillFileDetail;
 
