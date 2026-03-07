@@ -1281,6 +1281,7 @@ async function checkAndPromptProfile() {
 
   try {
     const res  = await fetch('/api/profile/check', { headers: { Authorization: `Bearer ${token}` } });
+    if (res.status === 401) { console.debug('[Profile] token expired, skipping'); return; }
     if (!res.ok) return;
     const data = await res.json();
     if (!data.exists) {
@@ -1819,10 +1820,11 @@ window.copyInviteCode = copyInviteCode;
 let _dmUnreadCount = 0;
 async function _pollUnreadDMs() {
   if (!_orbitUser) return;
-  const token = _orbitUser.token;
+  const token = _getToken();
   if (!token) return;
   try {
     const res = await fetch('/api/chat/rooms', { headers: { Authorization: `Bearer ${token}` } });
+    if (res.status === 401) { console.debug('[DM poll] token expired, skipping'); return; }
     if (!res.ok) return;
     const rooms = await res.json();
     if (!Array.isArray(rooms)) return;
