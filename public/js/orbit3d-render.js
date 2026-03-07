@@ -2883,9 +2883,10 @@ function drawCompactProjectView() {
   const now = performance.now() / 1000;
   const ctx = _lctx;
 
-  // ── 캔버스 중앙 기준점 ────────────────────────────────────────────────────
-  const centerX = _labelCanvas2d.width / 2;
-  const centerY = _labelCanvas2d.height / 2;
+  // ── 캔버스 중앙 기준점 (카메라 타겟을 투영하여 패닝 반영) ──────────────────
+  const tgtScreen = toScreen(controls.tgt);
+  const centerX = tgtScreen.x;
+  const centerY = tgtScreen.y;
 
   // ── 프로젝트별 정보 집계 ──────────────────────────────────────────────────
   const projects = projNames.map(name => {
@@ -2963,24 +2964,24 @@ function drawCompactProjectView() {
   }
 
   // ── ME 노드 (화면 중앙) ────────────────────────────────────────────────────
-  const meW = 100, meH = 36;
+  const meW = 130, meH = 48;
   ctx.save();
   ctx.fillStyle = 'rgba(255,255,255,0.97)';
-  ctx.shadowColor = 'rgba(0,0,0,0.08)'; ctx.shadowBlur = 12; ctx.shadowOffsetY = 2;
+  ctx.shadowColor = 'rgba(0,0,0,0.1)'; ctx.shadowBlur = 14; ctx.shadowOffsetY = 2;
   roundRect(ctx, centerX - meW/2, centerY - meH/2, meW, meH, meH/2); ctx.fill();
   ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
-  ctx.strokeStyle = '#d0d7de'; ctx.lineWidth = 1.5;
+  ctx.strokeStyle = '#6C5CE7'; ctx.lineWidth = 2;
   roundRect(ctx, centerX - meW/2, centerY - meH/2, meW, meH, meH/2); ctx.stroke();
   ctx.restore();
-  ctx.font = '600 14px -apple-system,sans-serif';
+  ctx.font = '700 16px -apple-system,sans-serif';
   ctx.textAlign = 'center';
   ctx.fillStyle = '#1a1a2e';
-  ctx.fillText('나의 작업', centerX, centerY + 5);
+  ctx.fillText('나의 작업', centerX, centerY + 6);
 
-  // ── 통일 노드 크기 ──────────────────────────────────────────────────────────
-  const UNI_W = 120, UNI_H = 34;          // 모든 노드 동일 크기
-  const UNI_R = 8;                          // 카드 border-radius
-  const COLOR_BAR = 4;                      // 좌측 컬러 바 두께
+  // ── 통일 노드 크기 (1.5배) ──────────────────────────────────────────────────
+  const UNI_W = 180, UNI_H = 51;          // 모든 노드 동일 크기
+  const UNI_R = 10;                         // 카드 border-radius
+  const COLOR_BAR = 5;                      // 좌측 컬러 바 두께
 
   // 라벨 별칭 맵 (인라인 편집 저장본)
   const _aliases = (() => { try { return JSON.parse(localStorage.getItem('orbitLabelAliases') || '{}'); } catch { return {}; } })();
@@ -3024,29 +3025,29 @@ function drawCompactProjectView() {
     }
 
     // 타이틀 (1줄)
-    const textX = lx + COLOR_BAR + UNI_R + 4;
-    const maxTextW = UNI_W - COLOR_BAR - UNI_R - 12;
+    const textX = lx + COLOR_BAR + UNI_R + 6;
+    const maxTextW = UNI_W - COLOR_BAR - UNI_R - 16;
     ctx.textAlign = 'left';
-    ctx.font = '600 11px -apple-system,sans-serif';
+    ctx.font = '600 14px -apple-system,sans-serif';
     ctx.fillStyle = '#1a1a2e';
     let clipped = title;
     while (ctx.measureText(clipped).width > maxTextW && clipped.length > 1) clipped = clipped.slice(0, -1);
     if (clipped !== title) clipped += '…';
-    ctx.fillText(clipped, textX, ly + 14);
+    ctx.fillText(clipped, textX, ly + 21);
 
     // 서브 (1줄)
     if (sub) {
-      ctx.font = '400 9px -apple-system,sans-serif';
+      ctx.font = '400 11px -apple-system,sans-serif';
       ctx.fillStyle = '#9ca3af';
       let clippedSub = sub;
       while (ctx.measureText(clippedSub).width > maxTextW && clippedSub.length > 1) clippedSub = clippedSub.slice(0, -1);
       if (clippedSub !== sub) clippedSub += '…';
-      ctx.fillText(clippedSub, textX, ly + 27);
+      ctx.fillText(clippedSub, textX, ly + 39);
     }
   }
 
   // ── 프로젝트 노드 방사형 배치 ──────────────────────────────────────────────
-  const NODE_DIST = projects.length === 1 ? 0 : Math.max(140, projects.length * 28);
+  const NODE_DIST = projects.length === 1 ? 0 : Math.max(200, projects.length * 42);
   const isDrillStage1 = _drillStage >= 1 && _drillProject;
 
   projects.forEach((proj, i) => {
@@ -3103,9 +3104,9 @@ function drawCompactProjectView() {
       const projAngle = Math.atan2(cy - centerY, cx - centerX);
 
       // 카테고리 링: 프로젝트에서 바깥으로
-      const CAT_RING_R = UNI_H + 90;
+      const CAT_RING_R = UNI_H + 120;
       // 세션 링: 카테고리에서 더 바깥으로
-      const SES_RING_R = UNI_H + 50;
+      const SES_RING_R = UNI_H + 80;
 
       sortedCats.forEach(([catKey, catPlanets], ci) => {
         const cfg = PROJECT_TYPES[catKey] || PROJECT_TYPES.general;

@@ -621,7 +621,13 @@ class OrbitCam {
     this.sph = { r:55, θ:0.3, φ:1.1 };                  // 컴팩트 뷰 기본 거리
     this._d = false; this._r = false; this._lx=0; this._ly=0;
     this._dragging = false; // 드래그 중 플래그 (자동전환 방지)
-    el.addEventListener('mousedown',  e => { this._lx=e.clientX; this._ly=e.clientY; e.button===2?this._r=true:this._d=true; this._dragging=true; });
+    el.addEventListener('mousedown',  e => {
+      this._lx=e.clientX; this._ly=e.clientY;
+      // 우클릭 OR 중클릭 OR Shift+좌클릭 → 패닝
+      if (e.button===2 || e.button===1 || (e.button===0 && e.shiftKey)) this._r=true;
+      else if (e.button===0) this._d=true;
+      this._dragging=true;
+    });
     el.addEventListener('mousemove',  e => this._move(e));
     el.addEventListener('mouseup',    () => { this._d=this._r=false; this._dragging=false; });
     el.addEventListener('wheel', e => {
