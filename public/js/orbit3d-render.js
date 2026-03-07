@@ -3293,7 +3293,7 @@ function drawCompactProjectView() {
                       projName: proj.name, planets: catPlanets },
             });
           }
-        });
+        }
 
         // 남은 세션 수
         if (catPlanets.length > maxShow) {
