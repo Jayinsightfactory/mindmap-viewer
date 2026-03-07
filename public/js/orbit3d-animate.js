@@ -172,21 +172,35 @@ renderer.domElement.addEventListener('click', e => {
     }
 
   } else {
-    // ── 빈 공간(배경) 클릭: 선택 해제 + 첫 화면 복귀 ────────────────────────
-    _selectedHit = null;
-    _pyramidScrollOffset = 0;
+    // ── 빈 공간(배경) 클릭: 단계별 뒤로가기 ──────────────────────────────────
+    const isPersonal = !_teamMode && !_companyMode && !_parallelMode;
 
     if ((_teamMode || _companyMode) && (_focusedMember || _focusedDept)) {
+      _selectedHit = null;
+      _pyramidScrollOffset = 0;
       if (_companyMode) unfocusDept(); else unfocusMember();
       closePanel();
-    } else {
-      closePanel();
-      const isPersonal = !_teamMode && !_companyMode && !_parallelMode;
-      if (isPersonal) {
-        if (_focusedProject) exitConstellationFocus();
-        if (_focusedCategory) exitCategoryFocus();
+    } else if (isPersonal) {
+      // 개인 모드: 단계별 뒤로가기 (3→2→1)
+      if (_selectedHit) {
+        // 3단계 → 2단계: 상세 패널만 닫고 세션 펼침 유지
+        _selectedHit = null;
+        _pyramidScrollOffset = 0;
+        closePanel();
+      } else if (_focusedProject) {
+        // 2단계 → 1단계: 세션 펼침 접기
+        exitConstellationFocus();
+        closePanel();
+        lerpCameraTo(55, 0, 0, 0, 500);
+      } else if (_focusedCategory) {
+        exitCategoryFocus();
+        closePanel();
         lerpCameraTo(55, 0, 0, 0, 500);
       }
+    } else {
+      _selectedHit = null;
+      _pyramidScrollOffset = 0;
+      closePanel();
     }
   }
 });
