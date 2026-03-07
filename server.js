@@ -1115,7 +1115,7 @@ app.use('/api', createFollowRouter({ getDb: dbModule.getDb, verifyToken, searchU
 app.use('/api', createChatRouter({ getDb: dbModule.getDb, verifyToken, broadcastToRoom }));
 
 // ─── Workspace (팀/회사 관리) ─────────────────────────────────────────────────
-app.use('/api', createWorkspaceRouter({ db: dbModule.getDb ? dbModule.getDb() : null, verifyToken, getUserById, ADMIN_EMAILS, createNotification }));
+app.use('/api', createWorkspaceRouter({ getDb: dbModule.getDb, verifyToken, getUserById, ADMIN_EMAILS, createNotification }));
 
 // ─── Google Drive 사용자 백업 ────────────────────────────────────────────────
 const createGdriveRouter = require('./routes/gdrive');

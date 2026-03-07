@@ -933,17 +933,24 @@ window.doLogoutMain = doLogoutMain;
     fetch('/api/auth/me', { headers: { Authorization: `Bearer ${oauthToken}` } })
       .then(r => r.json())
       .then(d => {
-        _orbitUser = { id: d.id || d.user?.id, name: d.name || d.user?.name || '사용자', email: d.email || d.user?.email || '', avatar: d.avatar || d.user?.avatar || null, plan: d.plan || d.user?.plan || 'free', token: oauthToken }; // OAuth 로그인 시 id·plan 포함
+        _orbitUser = { id: d.id || d.user?.id, name: d.name || d.user?.name || '사용자', email: d.email || d.user?.email || '', avatar: d.avatar || d.user?.avatar || null, plan: d.plan || d.user?.plan || 'free', token: oauthToken };
         localStorage.setItem('orbitUser', JSON.stringify(_orbitUser));
+        localStorage.setItem('orbit_token', oauthToken);
         window.history.replaceState({}, '', window.location.pathname);
         renderLoginState();
         closeLoginModal();
-        // ★ 기존 local 이벤트를 내 계정으로 자동 귀속 + 토큰 저장
         _postLoginSync(oauthToken);
       })
       .catch(() => {
-        _orbitUser = { id: null, name: provider || '사용자', email: '', avatar: null, plan: 'free', token: oauthToken }; // 폴백: id 없이 기본 free 플랜
+        // JWT 토큰에서 id 추출 시도 (base64 디코딩)
+        let tokenId = null;
+        try {
+          const payload = JSON.parse(atob(oauthToken.split('.')[1]));
+          tokenId = payload.id || payload.sub || payload.userId || null;
+        } catch {}
+        _orbitUser = { id: tokenId, name: provider || '사용자', email: '', avatar: null, plan: 'free', token: oauthToken };
         localStorage.setItem('orbitUser', JSON.stringify(_orbitUser));
+        localStorage.setItem('orbit_token', oauthToken);
         window.history.replaceState({}, '', window.location.pathname);
         renderLoginState();
         closeLoginModal();
@@ -957,6 +964,26 @@ window.doLogoutMain = doLogoutMain;
     setTimeout(() => {
       if (!_orbitUser) openLoginModal();
     }, 1200);
+  }
+})();
+
+// ── 결제 콜백 처리 (Toss 리다이렉트 후) ───────────────────────────────────
+(function handlePaymentCallback() {
+  const params = new URLSearchParams(window.location.search);
+  const paymentSuccess = params.get('paymentSuccess');
+  const paymentFail = params.get('paymentFail');
+  if (paymentSuccess) {
+    const plan = params.get('plan') || 'pro';
+    if (_orbitUser) {
+      _orbitUser.plan = plan;
+      localStorage.setItem('orbitUser', JSON.stringify(_orbitUser));
+    }
+    window.history.replaceState({}, '', window.location.pathname);
+    setTimeout(() => showToast(`${plan.toUpperCase()} 플랜으로 업그레이드 완료!`), 500);
+  } else if (paymentFail) {
+    const error = params.get('error') || '';
+    window.history.replaceState({}, '', window.location.pathname);
+    setTimeout(() => showToast('결제 실패: ' + (error || '다시 시도해주세요')), 500);
   }
 })();
 
@@ -1245,7 +1272,7 @@ let _profileEdus     = [];
 // ── 로그인 후 프로필 체크 ────────────────────────────────────────────────
 async function checkAndPromptProfile() {
   if (!_orbitUser) return;
-  const token = _orbitUser.token || localStorage.getItem('orbitToken');
+  const token = _getToken();
   if (!token) return;
 
   // 7일 내 이미 스킵했으면 표시 안 함
@@ -2166,9 +2193,14 @@ window.showApplyEffect = showApplyEffect;
  * ─────────────────────────────────────────────────────────────────────────── */
 let _followPanelTab = 'following'; // 'following' | 'followers'
 
+// ── 토큰 통일 헬퍼 ──────────────────────────────────────────────────────────
+function _getToken() {
+  return _orbitUser?.token || localStorage.getItem('orbit_token') || '';
+}
+
 async function toggleFollow(userId, btn) {
   if (!_orbitUser) { openLoginModal(); return; }
-  const token = _orbitUser.token || localStorage.getItem('orbitToken');
+  const token = _getToken();
   const isFollowing = btn.classList.contains('following');
   btn.disabled = true;
   try {
@@ -2191,7 +2223,7 @@ window.toggleFollow = toggleFollow;
 
 async function checkFollowStatus(userId, btn) {
   if (!_orbitUser) return;
-  const token = _orbitUser.token || localStorage.getItem('orbitToken');
+  const token = _getToken();
   try {
     const res  = await fetch(`/api/follow/check/${userId}`, {
       headers: { Authorization: `Bearer ${token}` },
@@ -2223,7 +2255,7 @@ async function loadFollowList(tab) {
   if (!listEl) return;
   listEl.innerHTML = '<div class="fp-empty">불러오는 중…</div>';
   if (!_orbitUser) { listEl.innerHTML = '<div class="fp-empty">로그인 후 이용하세요</div>'; return; }
-  const token = _orbitUser.token || localStorage.getItem('orbit_token') || localStorage.getItem('orbitToken');
+  const token = _getToken();
   const url   = tab === 'followers' ? '/api/follow/followers' : '/api/follow/list';
   try {
     const res  = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
@@ -2283,44 +2315,44 @@ window.fpSearchDebounce = fpSearchDebounce;
 async function fpSearchUsers(q) {
   const resultEl = document.getElementById('fp-search-results');
   if (!_orbitUser) { resultEl.style.display = 'none'; return; }
-  const token = _orbitUser.token || localStorage.getItem('orbit_token') || localStorage.getItem('orbitToken');
+  const token = _getToken();
   resultEl.style.display = 'block';
-  resultEl.innerHTML = '<div style="font-size:11px;color:#6e7681;padding:6px 0">검색 중…</div>';
+  resultEl.innerHTML = '<div style="font-size:11px;color:#9ca3af;padding:6px 0">검색 중…</div>';
   try {
     const res  = await fetch(`/api/follow/search?q=${encodeURIComponent(q)}`, {
       headers: { Authorization: `Bearer ${token}` }
     });
     const list = await res.json();
     if (!Array.isArray(list) || list.length === 0) {
-      resultEl.innerHTML = '<div style="font-size:11px;color:#6e7681;padding:6px 0">검색 결과 없음</div>';
+      resultEl.innerHTML = '<div style="font-size:11px;color:#9ca3af;padding:6px 0">검색 결과 없음</div>';
       return;
     }
     resultEl.innerHTML = list.map(u => {
-      const isGoogle = u.provider === 'google';              // Google OAuth 계정 여부
-      const provBadge = isGoogle                             // Google 배지 표시
-        ? '<span style="font-size:9px;background:rgba(66,133,244,0.15);color:#4285f4;padding:1px 5px;border-radius:3px;margin-left:4px">G</span>'
+      const isGoogle = u.provider === 'google';
+      const provBadge = isGoogle
+        ? '<span style="font-size:9px;background:rgba(66,133,244,0.12);color:#4285f4;padding:1px 5px;border-radius:3px;margin-left:4px">G</span>'
         : '';
       return `
-      <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #21262d">
-        <div style="width:28px;height:28px;border-radius:50%;background:${isGoogle?'#4285f4':'#1f6feb'};display:flex;align-items:center;
+      <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #e5e7eb">
+        <div style="width:28px;height:28px;border-radius:50%;background:${isGoogle?'#4285f4':'#2563eb'};display:flex;align-items:center;
                     justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0">
           ${u.avatar_url ? `<img src="${u.avatar_url}" style="width:100%;height:100%;border-radius:50%;object-fit:cover">` : (u.name||'?').charAt(0)}
         </div>
         <div style="flex:1;min-width:0">
-          <div style="font-size:12px;font-weight:600;color:#e6edf3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${u.name||'익명'}${provBadge}</div>
-          <div style="font-size:10px;color:#6e7681">${u.email||u.headline||''}</div>
+          <div style="font-size:12px;font-weight:600;color:#1a1a2e;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${u.name||'익명'}${provBadge}</div>
+          <div style="font-size:10px;color:#6b7280">${u.email||u.headline||''}</div>
         </div>
         <button onclick="fpFollowUser('${u.id}','${(u.name||'').replace(/'/g,"\\'")}',this)"
-          style="background:${u.is_following?'rgba(63,185,80,0.1)':'rgba(31,111,235,0.1)'};
-                 border:1px solid ${u.is_following?'#238636':'#1f6feb'};
-                 color:${u.is_following?'#3fb950':'#58a6ff'};
+          style="background:${u.is_following?'rgba(34,197,94,0.1)':'rgba(37,99,235,0.1)'};
+                 border:1px solid ${u.is_following?'#22c55e':'#2563eb'};
+                 color:${u.is_following?'#16a34a':'#2563eb'};
                  border-radius:6px;padding:2px 8px;font-size:10px;cursor:pointer;flex-shrink:0">
           ${u.is_following?'✓ 팔로잉':'+ 팔로우'}
         </button>
       </div>`;
     }).join('');
   } catch(e) {
-    resultEl.innerHTML = '<div style="font-size:11px;color:#f85149;padding:6px 0">검색 실패</div>';
+    resultEl.innerHTML = '<div style="font-size:11px;color:#dc2626;padding:6px 0">검색 실패</div>';
   }
 }
 window.fpSearchUsers = fpSearchUsers;
@@ -2328,7 +2360,7 @@ window.fpSearchUsers = fpSearchUsers;
 // ── 팔로우/언팔로우 (검색 결과에서) ──────────────────────────────────────
 async function fpFollowUser(userId, name, btn) {
   if (!_orbitUser) { showToast('로그인이 필요합니다'); return; }
-  const token = _orbitUser.token || localStorage.getItem('orbit_token') || localStorage.getItem('orbitToken');
+  const token = _getToken();
   const isFollowing = btn.textContent.includes('팔로잉');
   btn.disabled = true;
   try {
@@ -2339,16 +2371,20 @@ async function fpFollowUser(userId, name, btn) {
     if (res.ok) {
       if (isFollowing) {
         btn.textContent = '+ 팔로우';
-        btn.style.borderColor = '#1f6feb'; btn.style.color = '#58a6ff';
-        btn.style.background = 'rgba(31,111,235,0.1)';
+        btn.style.borderColor = '#2563eb'; btn.style.color = '#2563eb';
+        btn.style.background = 'rgba(37,99,235,0.1)';
         showToast(`${name}님 언팔로우`);
       } else {
         btn.textContent = '✓ 팔로잉';
-        btn.style.borderColor = '#238636'; btn.style.color = '#3fb950';
-        btn.style.background = 'rgba(63,185,80,0.1)';
+        btn.style.borderColor = '#22c55e'; btn.style.color = '#16a34a';
+        btn.style.background = 'rgba(34,197,94,0.1)';
         showToast(`✓ ${name}님 팔로우 완료!`);
-        loadFollowList(_followPanelTab); // 목록 새로고침
+        loadFollowList(_followPanelTab);
       }
+    } else {
+      const err = await res.json().catch(() => ({}));
+      showToast(err.error === 'invalid token' ? '로그인이 만료되었습니다. 다시 로그인해주세요' : '팔로우 실패');
+      if (err.error === 'invalid token' || err.error === 'unauthorized') openLoginModal();
     }
   } catch(e) { showToast('오류 발생'); }
   btn.disabled = false;
@@ -2481,54 +2517,179 @@ async function renderPricingGrid() {
   }).join('');
 }
 
+// ── Toss Payments 결제 위젯 상태 ──────────────────────────────────────────────
+let _tossWidgets = null;     // TossPayments 위젯 인스턴스
+let _tossPendingOrder = null; // { planId, orderId, amount, userId }
+
 async function selectPlan(planId) {
-  if (planId === 'free') { closePricing(); return; }                             // Free 플랜 → 모달 닫기
-  if (planId === 'enterprise') { alert('enterprise@orbit-ai.dev 로 문의해주세요.'); return; } // 엔터프라이즈 → 문의 안내
+  if (planId === 'free') { closePricing(); return; }
+  if (planId === 'enterprise') { alert('enterprise@orbit-ai.dev 로 문의해주세요.'); return; }
+  if (!_orbitUser) { openLoginModal(); return; }
+
   try {
-    const userId = _orbitUser?.id || 'local';                                    // 현재 로그인 사용자 ID
+    const userId = _orbitUser.id || 'local';
+    const token = _orbitUser.token || localStorage.getItem('orbit_token') || '';
+
     // 1단계: 결제 요청 생성
-    const res = await fetch('/api/payment/create', {                             // 결제 초기화 API 호출
+    const res = await fetch('/api/payment/create', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ planId, userId, userEmail: _orbitUser?.email || '' })
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ planId, userId, userEmail: _orbitUser.email || '' })
     });
-    const result = await res.json();                                             // 결제 생성 결과
+    const result = await res.json();
+    if (result.error) { alert(result.error); return; }
+
+    _tossPendingOrder = { planId, orderId: result.orderId, amount: result.amount, userId };
 
     if (result.mock) {
-      // 2단계: 결제 승인 (목 모드 — 즉시 승인)
-      const confirmRes = await fetch('/api/payment/confirm', {                   // 결제 승인 API 호출
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          paymentKey: 'mock-key-' + Date.now(),                                  // 목 결제 키
-          orderId: result.orderId,                                               // 주문 ID
-          amount: result.amount,                                                 // 결제 금액
-          userId: userId,                                                        // 사용자 ID
-          planId: planId,                                                        // 업그레이드할 플랜
-        })
-      });
-      const confirmResult = await confirmRes.json();                             // 승인 결과
-
-      if (confirmResult.success) {
-        // 로컬 사용자 객체에 플랜 정보 반영
-        if (_orbitUser) {
-          _orbitUser.plan = planId;                                               // 로컬 플랜 업데이트
-          localStorage.setItem('orbitUser', JSON.stringify(_orbitUser));          // localStorage에 저장
-        }
-        alert(`${planId.toUpperCase()} 플랜으로 업그레이드 되었습니다!\n주문번호: ${result.orderId}\n금액: ₩${result.amount?.toLocaleString()}`);
-      } else {
-        alert('결제 승인 실패: ' + (confirmResult.error || '알 수 없는 오류'));     // 승인 실패 안내
-      }
-      closePricing();                                                            // 가격 모달 닫기
+      // ── MOCK 모드: Toss 위젯 없이 결제 확인 UI 표시 ──────────────────
+      _showMockPaymentUI(planId, result);
     } else if (result.clientKey) {
-      // 실제 PG 결제 — Toss Payments SDK 연동 (추후 구현)
-      alert('결제 페이지로 이동합니다...');                                        // 실결제 페이지 이동 안내
+      // ── 실결제: Toss Payment Widget 렌더링 ────────────────────────────
+      await _showTossPaymentWidget(result);
     }
   } catch (e) {
-    alert('결제 오류: ' + e.message);                                             // 네트워크 등 오류 처리
+    alert('결제 오류: ' + e.message);
   }
 }
 window.selectPlan = selectPlan;
+
+// ── MOCK 모드 결제 UI (테스트 결제 확인 화면) ─────────────────────────────────
+function _showMockPaymentUI(planId, result) {
+  const grid = document.getElementById('pm-grid');
+  const area = document.getElementById('toss-payment-area');
+  const widget = document.getElementById('toss-payment-widget');
+  const agreeWidget = document.getElementById('toss-agreement-widget');
+  const payBtn = document.getElementById('toss-pay-btn');
+
+  grid.style.display = 'none';
+  area.style.display = 'block';
+  document.getElementById('toss-plan-label').textContent = `${planId.toUpperCase()} 플랜 · 테스트 결제`;
+
+  // 결제 확인 카드 (mock)
+  widget.innerHTML = `
+    <div style="background:#fffbeb;border:1px solid #fbbf24;border-radius:12px;padding:20px;text-align:center">
+      <div style="font-size:24px;margin-bottom:8px">🧪</div>
+      <div style="font-size:14px;font-weight:600;color:#92400e;margin-bottom:8px">테스트 결제 모드</div>
+      <div style="font-size:12px;color:#a16207;line-height:1.6">
+        현재 PG사 연동 전 테스트 모드입니다.<br>
+        실제 결제는 발생하지 않습니다.
+      </div>
+      <div style="margin-top:16px;padding:12px;background:rgba(255,255,255,0.7);border-radius:8px">
+        <div style="font-size:20px;font-weight:700;color:#1a1a2e">₩${(result.amount || 0).toLocaleString()}<span style="font-size:12px;color:#6b7280">/월</span></div>
+        <div style="font-size:11px;color:#9ca3af;margin-top:4px">주문번호: ${result.orderId}</div>
+      </div>
+    </div>
+  `;
+  agreeWidget.innerHTML = `
+    <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:#374151;cursor:pointer">
+      <input type="checkbox" id="mock-agree-chk" checked>
+      테스트 결제에 동의합니다 (실제 청구 없음)
+    </label>
+  `;
+  payBtn.textContent = '🧪 테스트 결제 진행';
+  payBtn.onclick = () => executeMockPayment(planId);
+}
+
+async function executeMockPayment(planId) {
+  const order = _tossPendingOrder;
+  if (!order) return;
+  const token = _orbitUser?.token || localStorage.getItem('orbit_token') || '';
+  try {
+    const confirmRes = await fetch('/api/payment/confirm', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        paymentKey: 'mock-key-' + Date.now(),
+        orderId: order.orderId,
+        amount: order.amount,
+        userId: order.userId,
+        planId: order.planId,
+      })
+    });
+    const confirmResult = await confirmRes.json();
+    if (confirmResult.success) {
+      if (_orbitUser) {
+        _orbitUser.plan = planId;
+        localStorage.setItem('orbitUser', JSON.stringify(_orbitUser));
+      }
+      closeTossPayment();
+      closePricing();
+      showToast(`${planId.toUpperCase()} 플랜으로 업그레이드 되었습니다! (테스트)`);
+    } else {
+      alert('결제 승인 실패: ' + (confirmResult.error || '알 수 없는 오류'));
+    }
+  } catch (e) { alert('결제 오류: ' + e.message); }
+}
+
+// ── 실결제: Toss Payment Widget 렌더링 ────────────────────────────────────────
+async function _showTossPaymentWidget(result) {
+  const grid = document.getElementById('pm-grid');
+  const area = document.getElementById('toss-payment-area');
+  const payBtn = document.getElementById('toss-pay-btn');
+
+  grid.style.display = 'none';
+  area.style.display = 'block';
+  document.getElementById('toss-plan-label').textContent = `${result.planId?.toUpperCase() || ''} 플랜 결제`;
+
+  try {
+    // Toss Payments v2 SDK 초기화
+    const tossPayments = TossPayments(result.clientKey);
+    _tossWidgets = tossPayments.widgets({ customerKey: result.customerKey || result.userId || 'guest' });
+
+    // 결제 금액 설정
+    await _tossWidgets.setAmount({ currency: 'KRW', value: result.amount });
+
+    // 결제 수단 위젯 렌더링
+    await _tossWidgets.renderPaymentMethods({
+      selector: '#toss-payment-widget',
+      variantKey: 'DEFAULT',
+    });
+
+    // 약관 동의 위젯 렌더링
+    await _tossWidgets.renderAgreement({
+      selector: '#toss-agreement-widget',
+      variantKey: 'AGREEMENT',
+    });
+
+    payBtn.textContent = `₩${result.amount.toLocaleString()} 결제하기`;
+    payBtn.onclick = executeTossPayment;
+  } catch (e) {
+    document.getElementById('toss-payment-widget').innerHTML =
+      `<div style="padding:20px;text-align:center;color:#dc2626">결제 위젯 로드 실패: ${e.message}</div>`;
+  }
+}
+
+async function executeTossPayment() {
+  if (!_tossWidgets || !_tossPendingOrder) return;
+  const order = _tossPendingOrder;
+  try {
+    // Toss SDK가 결제창을 열고, 성공 시 successUrl로 리다이렉트
+    await _tossWidgets.requestPayment({
+      orderId: order.orderId,
+      orderName: `Orbit ${order.planId.toUpperCase()} 월정액`,
+      successUrl: `${window.location.origin}/api/payment/toss-success?planId=${order.planId}&userId=${order.userId}`,
+      failUrl: `${window.location.origin}/orbit3d.html?paymentFail=true`,
+    });
+  } catch (e) {
+    if (e.code === 'USER_CANCEL') {
+      showToast('결제가 취소되었습니다');
+    } else {
+      alert('결제 실패: ' + (e.message || e.code));
+    }
+  }
+}
+window.executeTossPayment = executeTossPayment;
+
+function closeTossPayment() {
+  document.getElementById('toss-payment-area').style.display = 'none';
+  document.getElementById('pm-grid').style.display = '';
+  document.getElementById('toss-payment-widget').innerHTML = '';
+  document.getElementById('toss-agreement-widget').innerHTML = '';
+  _tossWidgets = null;
+  _tossPendingOrder = null;
+}
+window.closeTossPayment = closeTossPayment;
 
 // ══════════════════════════════════════════════════════════════════════════════
 // 바탕화면 윈도우 시스템 — 3D 마인드맵 위에서 다중 창 열기/닫기

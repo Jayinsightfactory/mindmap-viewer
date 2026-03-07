@@ -115,6 +115,27 @@ function createRouter(deps) {
     }
   });
 
+  // ── Toss 결제 성공 콜백 (리다이렉트) ──────────────────────────────────────
+  router.get('/payment/toss-success', async (req, res) => {
+    const { paymentKey, orderId, amount, planId, userId } = req.query;
+    if (!paymentKey || !orderId) {
+      return res.redirect('/orbit3d.html?paymentFail=true&error=missing_params');
+    }
+    try {
+      const result = await confirmPayment({ paymentKey, orderId, amount: Number(amount) });
+      if (result && (result.status === 'DONE' || result.mock)) {
+        if (userId && planId && PLANS[planId]) {
+          upgradePlan(userId, planId);
+        }
+        res.redirect(`/orbit3d.html?paymentSuccess=true&plan=${planId}`);
+      } else {
+        res.redirect('/orbit3d.html?paymentFail=true&error=confirm_failed');
+      }
+    } catch (e) {
+      res.redirect(`/orbit3d.html?paymentFail=true&error=${encodeURIComponent(e.message)}`);
+    }
+  });
+
   // ── 현재 플랜 조회 ──────────────────────────────────────────────────────────
 
   /**

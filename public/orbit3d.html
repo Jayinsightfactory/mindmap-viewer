@@ -8,6 +8,7 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="theme-color" content="#f0f2f5">
+  <script src="https://js.tosspayments.com/v2/standard"></script>
 </head>
 <body>
 
@@ -1209,6 +1210,16 @@ function viewZoom(dir) {
       </div>
     </div>
     <div class="pm-grid" id="pm-grid"><!-- JS 동적 생성 --></div>
+    <!-- Toss Payment Widget 영역 (결제 시 표시) -->
+    <div id="toss-payment-area" style="display:none;padding:20px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
+        <button onclick="closeTossPayment()" style="background:none;border:1px solid #d1d5db;border-radius:6px;padding:6px 12px;font-size:12px;color:#374151;cursor:pointer;font-family:inherit">← 플랜 목록</button>
+        <span id="toss-plan-label" style="font-size:14px;font-weight:600;color:#1a1a2e"></span>
+      </div>
+      <div id="toss-payment-widget"></div>
+      <div id="toss-agreement-widget" style="margin-top:12px"></div>
+      <button id="toss-pay-btn" onclick="executeTossPayment()" style="width:100%;margin-top:16px;padding:14px;background:#2563eb;color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;font-family:inherit">결제하기</button>
+    </div>
     <div class="pm-footer">
       <div>모든 플랜은 7일 무료 체험 포함 · 언제든 취소 가능</div>
       <div style="margin-top:4px;color:#58a6ff;cursor:pointer" onclick="window.open('/terms.html')">이용약관 · 개인정보처리방침</div>

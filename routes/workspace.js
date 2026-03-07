@@ -18,8 +18,14 @@ const express = require('express');
 const { ulid }  = require('ulid');
 const crypto    = require('crypto');
 
-function createWorkspaceRouter({ db, verifyToken, getUserById, ADMIN_EMAILS, createNotification }) {
+function createWorkspaceRouter({ getDb, db: _dbLegacy, verifyToken, getUserById, ADMIN_EMAILS, createNotification }) {
   const router = express.Router();
+
+  // ── DB 인스턴스 획득 (getDb 함수 or 직접 인스턴스 호환) ──────────────────
+  function _db() {
+    if (typeof getDb === 'function') return getDb();
+    return _dbLegacy;
+  }
 
   // ── 헬퍼: 짧은 초대코드 생성 (8자 영숫자) ────────────────────────────────
   function genInviteCode() {
@@ -28,14 +34,20 @@ function createWorkspaceRouter({ db, verifyToken, getUserById, ADMIN_EMAILS, cre
 
   // ── 헬퍼: DB 쿼리 래퍼 (SQLite sync / PG async 통일) ─────────────────────
   function dbGet(sql, params = []) {
+    const db = _db();
+    if (!db) throw new Error('Database not initialized');
     if (db.prepare) return db.prepare(sql).get(...params);          // SQLite
     return db.query(sql, params).then(r => r.rows[0]);              // PG
   }
   function dbAll(sql, params = []) {
+    const db = _db();
+    if (!db) throw new Error('Database not initialized');
     if (db.prepare) return db.prepare(sql).all(...params);
     return db.query(sql, params).then(r => r.rows);
   }
   function dbRun(sql, params = []) {
+    const db = _db();
+    if (!db) throw new Error('Database not initialized');
     if (db.prepare) return db.prepare(sql).run(...params);
     return db.query(sql, params);
   }
