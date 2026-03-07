@@ -2470,6 +2470,18 @@ function focusProject(projName) {
   const cleanLabel = projName.length > 16 ? projName.slice(0, 15) + '…' : projName;
   const btn = document.getElementById('constellation-back-btn');
   if (btn) { btn.textContent = `← ${cleanLabel} / 전체 보기`; btn.style.display = 'block'; }
+
+  // 카메라를 프로젝트 중심 방향으로 이동 (확장된 노드들이 잘 보이도록)
+  const grp = _projectGroups[projName];
+  if (grp && grp.planetMeshes && grp.planetMeshes.length > 0) {
+    const center = new THREE.Vector3(0, 0, 0);
+    grp.planetMeshes.forEach(p => {
+      const ep = p.userData._expandedPos || p.userData._compactPos || p.position;
+      center.add(ep);
+    });
+    center.divideScalar(grp.planetMeshes.length);
+    lerpCameraTo(45, center.x * 0.5, center.y, center.z * 0.5, 700);
+  }
 }
 window.focusProject = focusProject;
 
@@ -2992,16 +3004,16 @@ function drawCompactProjectView() {
     // ── 포커스된 프로젝트: 하위 세션을 오와 열 맞춰 뒤에 전개 ────────────────
     if (isThisFocused && proj.planets.length > 0) {
       const subs = proj.planets.slice().sort((a,b) => (b.userData.eventCount||0) - (a.userData.eventCount||0));
-      const COLS = Math.min(4, Math.ceil(Math.sqrt(subs.length)));
-      const CELL_W = 140;
-      const CELL_H = 36;
-      const GAP = 6;
+      const COLS = Math.min(3, Math.ceil(Math.sqrt(subs.length)));
+      const CELL_W = 170;
+      const CELL_H = 42;
+      const GAP = 10;
 
-      // 노드 뒤 방향 (태양 반대편)
+      // 노드 뒤 방향 (태양 반대편) — 피라미드식 전개
       const dirX = Math.cos(angle);
       const dirY = Math.sin(angle);
-      const startX = cx + dirX * (ph / 2 + 20);
-      const startY = cy + dirY * (ph / 2 + 20);
+      const startX = cx + dirX * (ph / 2 + 30);
+      const startY = cy + dirY * (ph / 2 + 30);
 
       // 그리드의 가로 방향 (수직)
       const perpX = -dirY;
@@ -3442,20 +3454,14 @@ function drawLabels() {
     }
   });
 
-  // 행성 위치 보간: 개인 모드는 항상 컴팩트, 그 외 모드만 확장
+  // 행성 위치 보간: 포커스된 프로젝트/카테고리가 있으면 확장 위치로 이동
   planetMeshes.forEach(p => {
-    if (isPersonalMode) {
-      // 개인 모드: 항상 컴팩트 위치 유지 (펼쳐지지 않음)
-      const target = p.userData._compactPos;
-      if (target) p.position.lerp(target, 0.08);
-    } else {
-      const inFocusedCat  = focusedCat && p.userData.macroCat === focusedCat;
-      const inFocusedProj = focusedProj && p.userData.projectName === focusedProj;
-      const inSelectedProj = selectedProj && p.userData.projectName === selectedProj;
-      const targetExpanded = inFocusedCat || inFocusedProj || inSelectedProj;
-      const target = targetExpanded ? p.userData._expandedPos : p.userData._compactPos;
-      if (target) p.position.lerp(target, 0.08);
-    }
+    const inFocusedCat  = focusedCat && p.userData.macroCat === focusedCat;
+    const inFocusedProj = focusedProj && p.userData.projectName === focusedProj;
+    const inSelectedProj = selectedProj && p.userData.projectName === selectedProj;
+    const targetExpanded = inFocusedCat || inFocusedProj || inSelectedProj;
+    const target = targetExpanded ? p.userData._expandedPos : p.userData._compactPos;
+    if (target) p.position.lerp(target, 0.08);
   });
 
   // 개인 모드: 태양 → 프로젝트 노드 → 클릭 시 하위 세션 전개
