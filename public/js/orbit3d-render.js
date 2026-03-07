@@ -2968,107 +2968,111 @@ function drawCompactProjectView() {
       data: { type: 'constellation', projName: proj.name, planetCount: proj.planets.length, color },
     });
 
-    // ── 포커스된 프로젝트: 하위 세션을 아래쪽 균일 그리드로 전개 ──────────
+    // ── 포커스된 프로젝트: 하위 세션을 방사형 노드로 펼침 ─────────────────
     if (isThisFocused && proj.planets.length > 0) {
       const subs = proj.planets.slice().sort((a,b) => (b.userData.eventCount||0) - (a.userData.eventCount||0));
-      const COLS = Math.min(3, Math.ceil(Math.sqrt(subs.length)));
-      const CELL_W = 170;
-      const CELL_H = 42;
-      const GAP = 10;
+      const maxShow = Math.min(subs.length, 24);  // 최대 24개 표시
 
-      // ── 프로젝트 이슈 요약 (프로젝트↔세션 사이에 표시) ─────────────────
-      const topDomains = {};
-      subs.forEach(p => {
-        const d = p.userData.domain || p.userData.macroCat || '';
-        if (d) topDomains[d] = (topDomains[d] || 0) + (p.userData.eventCount || 1);
-      });
-      const issueLine = Object.entries(topDomains)
-        .sort((a,b) => b[1] - a[1]).slice(0, 3)
-        .map(([d]) => d).join(' · ');
-      if (issueLine) {
-        _lctx.save();
-        _lctx.font = '400 10px -apple-system,sans-serif';
-        _lctx.textAlign = 'center';
-        _lctx.fillStyle = color + 'aa';
-        _lctx.globalAlpha = 0.85;
-        _lctx.fillText(issueLine, cx, cy + ph / 2 + 14);
-        _lctx.restore();
-      }
+      // 동심원 링 배치 — 프로젝트 노드 주변으로 퍼짐
+      const RING_1_CAP = Math.min(8, maxShow);
+      const RING_1_R   = 120;    // 1링 반지름
+      const RING_2_R   = 200;    // 2링 반지름
+      const RING_3_R   = 270;    // 3링 반지름
+      const NODE_R     = 28;     // 하위 노드 반지름
 
-      // 프로젝트 노드 아래에 균일한 그리드로 전개 (항상 아래 방향)
-      const gridW = COLS * (CELL_W + GAP) - GAP;
-      const gridStartX = cx - gridW / 2 + CELL_W / 2;
-      const gridStartY = cy + ph / 2 + 28;
+      subs.slice(0, maxShow).forEach((planet, si) => {
+        // 링 결정
+        let ring, posInRing, ringCap, ringR;
+        if (si < RING_1_CAP) {
+          ring = 0; posInRing = si; ringCap = RING_1_CAP; ringR = RING_1_R;
+        } else if (si < RING_1_CAP + 12) {
+          ring = 1; posInRing = si - RING_1_CAP; ringCap = Math.min(12, maxShow - RING_1_CAP); ringR = RING_2_R;
+        } else {
+          ring = 2; posInRing = si - RING_1_CAP - 12; ringCap = maxShow - RING_1_CAP - 12; ringR = RING_3_R;
+        }
 
-      subs.forEach((planet, si) => {
-        const col = si % COLS;
-        const row = Math.floor(si / COLS);
-
-        const sx = gridStartX + col * (CELL_W + GAP);
-        const sy = gridStartY + row * (CELL_H + GAP);
+        const subAngle = (posInRing / ringCap) * Math.PI * 2 - Math.PI / 2;
+        const sx = cx + Math.cos(subAngle) * ringR;
+        const sy = cy + Math.sin(subAngle) * ringR;
 
         const evCnt = planet.userData.eventCount || 0;
         const isSubHover = _hoveredHit?.obj === planet;
         const isSubSel   = _selectedHit?.obj === planet;
+        const nodeColor  = planet.userData.hueHex || color;
 
-        // 세션 라벨 추출
+        // 세션 라벨
         let sLabel = planet.userData.intent || '';
         sLabel = sLabel.replace(/^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE00}-\u{FEFF}⚙️🔐🌐🗄🎨🧪🚀🐳📝📐🔧🌿💬]\s*/gu, '').trim();
-        if (sLabel.length > 22) sLabel = sLabel.slice(0, 21) + '…';
+        if (sLabel.length > 14) sLabel = sLabel.slice(0, 13) + '…';
         if (!sLabel) sLabel = planet.userData.domain || '작업';
 
-        const sPx = 11;
-        _lctx.font = `500 ${sPx}px -apple-system,sans-serif`;
-        const sLabelW = _lctx.measureText(sLabel).width;
-        const countW  = _lctx.measureText(`${evCnt}`).width;
-        const sPw = Math.max(sLabelW + countW + 30, CELL_W);
-        const sPh = CELL_H;
-        const sLx = sx - sPw / 2;
-        const sLy = sy - sPh / 2;
-
         // 겹침 방지
-        if (rectOverlaps(sLx - 2, sLy - 2, sPw + 4, sPh + 4)) return;
-        reserveRect(sLx - 2, sLy - 2, sPw + 4, sPh + 4);
+        const hitR = NODE_R + 6;
+        if (rectOverlaps(sx - hitR, sy - hitR, hitR * 2, hitR * 2)) return;
+        reserveRect(sx - hitR, sy - hitR, hitR * 2, hitR * 2);
 
-        // 프로젝트→세션 연결선
+        // ── 프로젝트→세션 연결선 ──────────────────────────────────────────
         _lctx.save();
-        _lctx.globalAlpha = 0.15;
-        _lctx.strokeStyle = color;
-        _lctx.lineWidth = 1;
+        _lctx.globalAlpha = isSubSel ? 0.5 : 0.2;
+        _lctx.strokeStyle = nodeColor;
+        _lctx.lineWidth = isSubSel ? 2 : 1;
         _lctx.beginPath(); _lctx.moveTo(cx, cy); _lctx.lineTo(sx, sy); _lctx.stroke();
         _lctx.restore();
 
-        // 배경 (시인성 강화)
-        _lctx.globalAlpha = isSubSel ? 0.98 : isSubHover ? 0.96 : 0.92;
-        _lctx.fillStyle = isSubSel ? 'rgba(31,111,235,0.18)' : 'rgba(22,27,34,0.95)';
-        roundRect(_lctx, sLx, sLy, sPw, sPh, sPh / 2); _lctx.fill();
-        _lctx.strokeStyle = isSubSel ? '#58a6ff' : color + 'aa';
+        // ── 노드 원형 배경 ────────────────────────────────────────────────
+        const r = isSubHover ? NODE_R + 4 : isSubSel ? NODE_R + 3 : NODE_R;
+
+        // 글로우
+        _lctx.save();
+        _lctx.globalAlpha = isSubSel ? 0.3 : isSubHover ? 0.2 : 0.08;
+        _lctx.fillStyle = nodeColor;
+        _lctx.shadowColor = nodeColor; _lctx.shadowBlur = isSubSel ? 18 : 10;
+        _lctx.beginPath(); _lctx.arc(sx, sy, r + 4, 0, Math.PI * 2); _lctx.fill();
+        _lctx.restore();
+
+        // 배경 원
+        _lctx.globalAlpha = 0.95;
+        _lctx.fillStyle = isSubSel ? 'rgba(31,111,235,0.2)' : 'rgba(13,17,23,0.92)';
+        _lctx.beginPath(); _lctx.arc(sx, sy, r, 0, Math.PI * 2); _lctx.fill();
+
+        // 테두리
+        _lctx.strokeStyle = isSubSel ? '#58a6ff' : nodeColor;
         _lctx.lineWidth = isSubSel ? 2.5 : isSubHover ? 2 : 1.2;
-        roundRect(_lctx, sLx, sLy, sPw, sPh, sPh / 2); _lctx.stroke();
+        _lctx.globalAlpha = isSubSel ? 1 : 0.7;
+        _lctx.beginPath(); _lctx.arc(sx, sy, r, 0, Math.PI * 2); _lctx.stroke();
 
-        // 텍스트 (크게, 밝게)
+        // ── 이벤트 수 (노드 안쪽 중앙) ───────────────────────────────────
         _lctx.globalAlpha = 1;
-        _lctx.textAlign = 'left';
-        _lctx.font = `600 ${sPx + 1}px -apple-system,sans-serif`;
-        _lctx.fillStyle = isSubSel ? '#fff' : '#e6edf3';
-        _lctx.fillText(sLabel, sLx + 14, sy + sPx / 3);
-
-        // 이벤트 수 (우측)
-        _lctx.textAlign = 'right';
-        _lctx.font = `500 10px -apple-system,sans-serif`;
-        _lctx.fillStyle = color + 'cc';
-        _lctx.fillText(`${evCnt}`, sLx + sPw - 10, sy + 3);
-
         _lctx.textAlign = 'center';
+        _lctx.font = `700 13px -apple-system,sans-serif`;
+        _lctx.fillStyle = isSubSel ? '#fff' : '#e6edf3';
+        _lctx.fillText(`${evCnt}`, sx, sy + 4);
+
+        // ── 라벨 (노드 아래) ──────────────────────────────────────────────
+        _lctx.font = `500 10px -apple-system,sans-serif`;
+        _lctx.fillStyle = isSubSel ? '#fff' : '#8b949e';
+        _lctx.fillText(sLabel, sx, sy + r + 14);
+
+        _lctx.globalAlpha = 1;
 
         // 히트 영역
         _hitAreas.push({
-          cx: sx, cy: sy, r: Math.max(sPw, sPh) / 2 + 4,
+          cx: sx, cy: sy, r: r + 6,
           obj: planet,
           data: { type: 'session', intent: planet.userData.intent, clusterId: planet.userData.clusterId,
-                  sessionId: planet.userData.sessionId, eventCount: evCnt, hueHex: color },
+                  sessionId: planet.userData.sessionId, eventCount: evCnt, hueHex: nodeColor },
         });
       });
+
+      // 남은 세션 수 표시
+      if (subs.length > maxShow) {
+        _lctx.globalAlpha = 0.6;
+        _lctx.font = '400 11px -apple-system,sans-serif';
+        _lctx.fillStyle = color;
+        _lctx.textAlign = 'center';
+        _lctx.fillText(`+${subs.length - maxShow}개 더`, cx, cy + RING_3_R + 40);
+        _lctx.globalAlpha = 1;
+      }
     }
   });
 }
