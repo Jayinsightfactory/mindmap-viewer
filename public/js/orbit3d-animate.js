@@ -139,9 +139,30 @@ renderer.domElement.addEventListener('click', e => {
       return;
     }
 
-    // ── 세션 노드 클릭 (개인 모드) ──────────────────────────────────────────
-    if (isPersonal && type === 'session') {
+    // ── 세션 노드 클릭 → 해당 세션의 타임라인 표시 ─────────────────────────
+    if (isPersonal && (type === 'drillSession' || type === 'session')) {
       _selectedHit = hit;
+      // 드릴 모드에서 세션 클릭 시 → 해당 세션의 이벤트 타임라인 표시
+      if (_drillStage >= 1 && hit.data) {
+        const sessionId = hit.data.clusterId || hit.data.sessionId;
+        const entry = _sessionMap[sessionId];
+        if (entry?.events?.length) {
+          // 카테고리 정보 구성 (세션 단위 타임라인)
+          const sesLabel = hit.data.intent || '세션';
+          const sesCatData = {
+            catKey: hit.data.catKey || 'session',
+            catLabel: sesLabel.length > 20 ? sesLabel.slice(0, 19) + '…' : sesLabel,
+            catColor: hit.data.hueHex || hit.data.catColor || '#58a6ff',
+            catIcon: '',
+            sessionCount: 1,
+            events: entry.events,
+          };
+          _drillStage = 2;
+          _drillCategory = sesCatData;
+          showDrillTimeline(sesCatData);
+          lerpCameraTo(75, 0, 0, 0, 400);
+        }
+      }
       return;
     }
 
@@ -1169,6 +1190,12 @@ function showDrillTimeline(catData) {
         detail = d.contentPreview || d.content || d.command || '';
       }
 
+      // detail이 비어있으면 extractIntent fallback 또는 label 사용
+      if (!detail) {
+        detail = (typeof extractIntent === 'function' ? extractIntent(e) : '') || e.label || '';
+        // extractIntent가 typeLabel과 같으면 중복 방지
+        if (detail === typeLabel || detail === t) detail = '';
+      }
       // 상세 내용이 너무 길면 120자로 자르기 (하지만 충분히 보여줌)
       if (detail.length > 120) detail = detail.slice(0, 117) + '…';
 
