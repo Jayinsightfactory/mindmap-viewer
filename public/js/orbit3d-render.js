@@ -2471,8 +2471,8 @@ function focusProject(projName) {
   const btn = document.getElementById('constellation-back-btn');
   if (btn) { btn.textContent = `← ${cleanLabel} / 전체 보기`; btn.style.display = 'block'; }
 
-  // 카메라를 태양 중심으로 살짝 줌인 (동심원 배치이므로 중심 유지)
-  lerpCameraTo(40, 0, 0, 0, 700);
+  // 카메라를 중심으로 줌인 (전체 프로젝트 노드가 보이는 거리 유지)
+  lerpCameraTo(45, 0, 0, 0, 700);
 }
 window.focusProject = focusProject;
 
@@ -2942,11 +2942,10 @@ function drawCompactProjectView() {
   projects.forEach((proj, i) => {
     const angle = (i / projects.length) * Math.PI * 2 - Math.PI / 2;
     const isThisFocused = _focusedProject === proj.name;
-    const dimmed = isFocused && !isThisFocused;
 
-    // 포커스 시 프로젝트 노드를 화면 하단 중앙으로 이동
-    const cx = isThisFocused ? sunSc.x : sunSc.x + Math.cos(angle) * NODE_DIST;
-    const cy = isThisFocused ? sunSc.y + sunSc.y * 0.35 : sunSc.y + Math.sin(angle) * NODE_DIST;
+    // 프로젝트 노드 위치 항상 고정 (카메라만 이동)
+    const cx = sunSc.x + Math.cos(angle) * NODE_DIST;
+    const cy = sunSc.y + Math.sin(angle) * NODE_DIST;
     const isHover = _hoveredHit?.data?.type === 'constellation' && _hoveredHit?.data?.projName === proj.name;
 
     const color = proj.color;
@@ -2982,18 +2981,16 @@ function drawCompactProjectView() {
     reserveRect(lx - 4, ly - 4, pw + 8, ph + 8);
 
     // ── 글로우 ──────────────────────────────────────────────────────────────
-    if (!dimmed) {
-      const pulse = 0.5 + 0.5 * Math.sin(now * 0.8 + i * 1.5);
-      _lctx.save();
-      _lctx.globalAlpha = 0.10 + pulse * 0.06;
-      _lctx.fillStyle = color;
-      _lctx.shadowColor = color; _lctx.shadowBlur = 20;
-      _lctx.beginPath(); _lctx.arc(cx, cy, pw / 2 + 6, 0, Math.PI * 2); _lctx.fill();
-      _lctx.restore();
-    }
+    const pulse = 0.5 + 0.5 * Math.sin(now * 0.8 + i * 1.5);
+    _lctx.save();
+    _lctx.globalAlpha = 0.10 + pulse * 0.06;
+    _lctx.fillStyle = color;
+    _lctx.shadowColor = color; _lctx.shadowBlur = 20;
+    _lctx.beginPath(); _lctx.arc(cx, cy, pw / 2 + 6, 0, Math.PI * 2); _lctx.fill();
+    _lctx.restore();
 
     // ── 노드 배경 ──────────────────────────────────────────────────────────
-    _lctx.globalAlpha = dimmed ? 0.25 : (isHover ? 0.97 : 0.93);
+    _lctx.globalAlpha = isHover ? 0.97 : 0.93;
     _lctx.fillStyle = isThisFocused ? 'rgba(31,111,235,0.15)' : 'rgba(6,10,16,0.94)';
     roundRect(_lctx, lx, ly, pw, ph, 14); _lctx.fill();
 
@@ -3003,7 +3000,7 @@ function drawCompactProjectView() {
     roundRect(_lctx, lx, ly, pw, ph, 14); _lctx.stroke();
 
     // 활성 표시 (녹색 점)
-    if (proj.hasActive && !dimmed) {
+    if (proj.hasActive) {
       const dp = 0.5 + 0.5 * Math.sin(now * 2.5 + i);
       _lctx.save();
       _lctx.fillStyle = '#3fb950';
@@ -3013,7 +3010,7 @@ function drawCompactProjectView() {
     }
 
     // ── 타이틀 (스마트 프로젝트명) ──────────────────────────────────────────
-    _lctx.globalAlpha = dimmed ? 0.25 : 1;
+    _lctx.globalAlpha = 1;
     _lctx.font = `700 ${pxTitle}px -apple-system,'Segoe UI',sans-serif`;
     _lctx.textAlign = 'center';
     _lctx.fillStyle = isThisFocused ? '#fff' : isHover ? '#f0f6fc' : '#e6edf3';
@@ -3021,12 +3018,12 @@ function drawCompactProjectView() {
 
     // 서브라벨 (기술 스택 · 세션 수 · 파일 수)
     _lctx.font = `400 ${pxSub}px -apple-system,sans-serif`;
-    _lctx.fillStyle = dimmed ? '#8b949e44' : '#8b949e';
+    _lctx.fillStyle = '#8b949e';
     _lctx.fillText(subLabel, cx, ly + pxTitle + pxSub + 14);
 
     // 카테고리 브레이크다운 (아이콘 + 숫자)
     _lctx.font = `400 ${pxDetail}px -apple-system,sans-serif`;
-    _lctx.fillStyle = dimmed ? color + '33' : color + '99';
+    _lctx.fillStyle = color + '99';
     _lctx.fillText(catLine, cx, ly + pxTitle + pxSub + pxDetail + 22);
 
     _lctx.globalAlpha = 1;
@@ -3673,13 +3670,9 @@ function drawLabels() {
     if (target) p.position.lerp(target, 0.08);
   });
 
-  // 개인 모드: 태양 → 프로젝트 노드 → 클릭 시 하위 세션 전개
+  // 개인 모드: 프로젝트 노드 → 클릭 시 하위 세션 전개 (상세 패널 없음)
   if (isPersonalMode) {
     drawCompactProjectView();
-    // 선택된 개체가 있으면 상세 오버레이 추가
-    if (_selectedHit?.obj) {
-      drawInvertedPyramid(_selectedHit.obj, _selectedHit.data);
-    }
     _lctx.globalAlpha = 1;
     return;
   }

@@ -95,15 +95,17 @@ renderer.domElement.addEventListener('click', e => {
   const hit = hitTest(e.clientX, e.clientY);
   if (hit) {
     const type = hit.data.type;
+    const isPersonal = !_teamMode && !_companyMode && !_parallelMode;
 
-    _selectedHit = hit;
+    // 개인 모드에서는 _selectedHit 사용 안 함 (상세 패널 없음)
+    if (!isPersonal) _selectedHit = hit;
 
     // ── 카테고리 카드 클릭 → 해당 카테고리 포커스 ──────────────────────────
     if (type === 'category') {
       if (_focusedCategory === hit.data.catKey) {
-        exitCategoryFocus();                                  // 같은 카테고리 재클릭 → 줌아웃
+        exitCategoryFocus();
       } else {
-        focusCategoryView(hit.data.catKey);                   // 카테고리 포커스
+        focusCategoryView(hit.data.catKey);
       }
       return;
     }
@@ -126,11 +128,16 @@ renderer.domElement.addEventListener('click', e => {
       return;
     }
 
+    // ── 세션 노드 클릭 (개인 모드) → 아직 세부 세션 미구현, 선택 표시만 ──
+    if (isPersonal && type === 'session') {
+      _selectedHit = hit;
+      return;
+    }
+
     if (_companyMode) {
-      // 회사 모드 클릭 처리
       if (type === 'department') {
         if (_focusedDept?.deptId === hit.data.deptId) {
-          unfocusDept();  // 같은 부서 재클릭 → 줌아웃
+          unfocusDept();
         } else {
           focusDept(hit.data);
         }
@@ -140,12 +147,11 @@ renderer.domElement.addEventListener('click', e => {
         unfocusDept();
       }
     } else if (_teamMode) {
-      // 팀 모드 클릭 처리
       if (type === 'member') {
         if (_focusedMember === hit.data) {
-          drillDownToMember(hit.data);   // 2번째 클릭 → 개인 화면
+          drillDownToMember(hit.data);
         } else {
-          focusMember(hit.data);          // 1번째 클릭 → 포커스
+          focusMember(hit.data);
         }
       } else if (_focusedMember && type === 'goal') {
         unfocusMember();
@@ -157,9 +163,8 @@ renderer.domElement.addEventListener('click', e => {
     // ── 클릭 시 카메라 동작 ─────────────────────────────────────────────────
     const _alreadyFocused = (_teamMode && type === 'member') ||
                             (_companyMode && (type === 'member' || type === 'department'));
-    const isPersonal = !_teamMode && !_companyMode && !_parallelMode;
     if (isPersonal) {
-      _pyramidScrollOffset = 0;                                              // 스크롤 초기화
+      // 개인 모드: 카메라 동작 없음 (focusProject에서 처리)
     } else if (!_alreadyFocused) {
       const p3 = hit.data?.pos;
       const m3 = hit.obj?.position;
@@ -210,7 +215,9 @@ function hitTest(clientX, clientY) {
   const rect = _labelCanvas2d.getBoundingClientRect();
   const mx   = clientX - rect.left;
   const my   = clientY - rect.top;
-  for (const h of _hitAreas) {
+  // 역순 검색: 나중에 그려진 것(세션 노드)이 먼저 매칭 (겹침 시 위에 있는 것 우선)
+  for (let i = _hitAreas.length - 1; i >= 0; i--) {
+    const h = _hitAreas[i];
     const dx = mx - h.cx, dy = my - h.cy;
     if (dx*dx + dy*dy <= h.r*h.r) return h;
   }
