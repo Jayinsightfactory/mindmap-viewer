@@ -2471,17 +2471,8 @@ function focusProject(projName) {
   const btn = document.getElementById('constellation-back-btn');
   if (btn) { btn.textContent = `← ${cleanLabel} / 전체 보기`; btn.style.display = 'block'; }
 
-  // 카메라를 프로젝트 중심 방향으로 이동 (확장된 노드들이 잘 보이도록)
-  const grp = _projectGroups[projName];
-  if (grp && grp.planetMeshes && grp.planetMeshes.length > 0) {
-    const center = new THREE.Vector3(0, 0, 0);
-    grp.planetMeshes.forEach(p => {
-      const ep = p.userData._expandedPos || p.userData._compactPos || p.position;
-      center.add(ep);
-    });
-    center.divideScalar(grp.planetMeshes.length);
-    lerpCameraTo(45, center.x * 0.5, center.y, center.z * 0.5, 700);
-  }
+  // 카메라를 태양 중심으로 살짝 줌인 (동심원 배치이므로 중심 유지)
+  lerpCameraTo(40, 0, 0, 0, 700);
 }
 window.focusProject = focusProject;
 
@@ -3001,7 +2992,7 @@ function drawCompactProjectView() {
       data: { type: 'constellation', projName: proj.name, planetCount: proj.planets.length, color },
     });
 
-    // ── 포커스된 프로젝트: 하위 세션을 오와 열 맞춰 뒤에 전개 ────────────────
+    // ── 포커스된 프로젝트: 하위 세션을 아래쪽 균일 그리드로 전개 ──────────
     if (isThisFocused && proj.planets.length > 0) {
       const subs = proj.planets.slice().sort((a,b) => (b.userData.eventCount||0) - (a.userData.eventCount||0));
       const COLS = Math.min(3, Math.ceil(Math.sqrt(subs.length)));
@@ -3009,24 +3000,17 @@ function drawCompactProjectView() {
       const CELL_H = 42;
       const GAP = 10;
 
-      // 노드 뒤 방향 (태양 반대편) — 피라미드식 전개
-      const dirX = Math.cos(angle);
-      const dirY = Math.sin(angle);
-      const startX = cx + dirX * (ph / 2 + 30);
-      const startY = cy + dirY * (ph / 2 + 30);
-
-      // 그리드의 가로 방향 (수직)
-      const perpX = -dirY;
-      const perpY = dirX;
+      // 프로젝트 노드 아래에 균일한 그리드로 전개 (항상 아래 방향)
+      const gridW = COLS * (CELL_W + GAP) - GAP;
+      const gridStartX = cx - gridW / 2 + CELL_W / 2;
+      const gridStartY = cy + ph / 2 + 24;
 
       subs.forEach((planet, si) => {
         const col = si % COLS;
         const row = Math.floor(si / COLS);
-        const colOffset = (col - (COLS - 1) / 2) * (CELL_W + GAP);
-        const rowOffset = row * (CELL_H + GAP);
 
-        const sx = startX + perpX * colOffset + dirX * rowOffset;
-        const sy = startY + perpY * colOffset + dirY * rowOffset;
+        const sx = gridStartX + col * (CELL_W + GAP);
+        const sy = gridStartY + row * (CELL_H + GAP);
 
         const evCnt = planet.userData.eventCount || 0;
         const isSubHover = _hoveredHit?.obj === planet;

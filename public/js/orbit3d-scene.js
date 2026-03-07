@@ -143,52 +143,41 @@ function buildPlanetSystem(nodeList) {
     const { clusterId, sessionId: sid, domain, label, events } = pl;
     const rawEvents = events;
 
-    // ── 행성 위치 — 프로젝트 클러스터 기반 배치 ──────────────────────────
-    const pInfo    = projIndexOf[clusterId];                        // 프로젝트 내 위치 정보
-    const projIdx  = pInfo.projIdx;                                 // 프로젝트 순번 (0,1,2...)
-    const innerIdx = pInfo.innerIdx;                                // 프로젝트 내 행성 순번
-    const projSize = pInfo.projSize;                                // 프로젝트 내 행성 수
+    // ── 행성 위치 — 동심원(Concentric Ring) 배치 (태양 주위 균등 분포) ────
+    const pInfo    = projIndexOf[clusterId];
+    const projIdx  = pInfo.projIdx;
+    const innerIdx = pInfo.innerIdx;
+    const projSize = pInfo.projSize;
 
-    // 프로젝트 그룹 중심 위치 — 원형 배치 (중심에서 바깥으로)
-    const projAngle = (projIdx / Math.max(projCount, 1)) * Math.PI * 2; // 프로젝트별 각도
-    const BASE_R    = 14 + Math.floor(projIdx / 6) * 12;           // 프로젝트 수 많으면 바깥 링으로
-    const projCX    = Math.cos(projAngle) * BASE_R;                // 프로젝트 그룹 중심 X
-    const projCZ    = Math.sin(projAngle) * BASE_R;                // 프로젝트 그룹 중심 Z
+    // 모든 행성을 태양(0,0,0) 주위 동심원 링으로 균등 분포
+    const RING_BASE_CAP  = 10;                                     // 첫 링 수용량
+    const RING_CAP_INC   = 8;                                      // 링마다 추가 수용량
+    const BASE_R         = 10;                                     // 첫 링 반지름
+    const RING_SPACING   = 6;                                      // 링 간 거리
 
-    // 프로젝트 내 행성들 — 작은 그리드 배치
-    const INNER_COLS = Math.min(3, Math.ceil(Math.sqrt(projSize))); // 내부 열 수 (최대 3)
-    const iCol       = innerIdx % INNER_COLS;                       // 내부 열
-    const iRow       = Math.floor(innerIdx / INNER_COLS);           // 내부 행
-    const INNER_W    = 5;                                           // 내부 셀 너비
-    const INNER_H    = 4;                                           // 내부 셀 높이
-    const innerTotalCols = Math.min(projSize, INNER_COLS);
+    const ringCap = (r) => RING_BASE_CAP + r * RING_CAP_INC;
+    let ring = 0, cumulative = 0;
+    while (cumulative + ringCap(ring) <= pi) {
+      cumulative += ringCap(ring);
+      ring++;
+    }
+    const posInRing   = pi - cumulative;
+    const cap         = ringCap(ring);
+    const planetAngle = (posInRing / cap) * Math.PI * 2;           // 링 내 균등 각도
+    const R           = BASE_R + ring * RING_SPACING;
 
-    // 프로젝트 방향 벡터 (중심→프로젝트 방향)
-    const dirX  = Math.cos(projAngle);
-    const dirZ  = Math.sin(projAngle);
-    const perpX = -dirZ;                                            // 직교 방향
-    const perpZ = dirX;
-
-    // 내부 오프셋 (그리드 중앙 정렬)
-    const colOff = (iCol - (innerTotalCols - 1) / 2) * INNER_W;
-    const rowOff = iRow * INNER_H;
-
-    const px = projCX + perpX * colOff + dirX * rowOff;
+    const px = Math.cos(planetAngle) * R;
     const py = 0;
-    const pz = projCZ + perpZ * colOff + dirZ * rowOff;
-    const COMPACT_R = Math.sqrt(px * px + pz * pz);
-    const subAngle  = Math.atan2(pz, px);
+    const pz = Math.sin(planetAngle) * R;
+    const COMPACT_R = R;
+    const subAngle  = planetAngle;
     const planetPos = new THREE.Vector3(px, py, pz);
 
-    // 확장: 프로젝트 클릭 시 펼쳐지는 위치
-    const EXP_BASE_R = BASE_R + 10;
-    const EXP_INNER_W = 8;
-    const EXP_INNER_H = 7;
-    const expCX  = Math.cos(projAngle) * EXP_BASE_R;
-    const expCZ  = Math.sin(projAngle) * EXP_BASE_R;
-    const expColOff = (iCol - (innerTotalCols - 1) / 2) * EXP_INNER_W;
-    const expRowOff = iRow * EXP_INNER_H;
-    const yOffset = 0;
+    // 확장 위치: 클릭 시 더 넓은 동심원으로 이동
+    const EXP_R = BASE_R + 8 + ring * 9;
+    const epx = Math.cos(planetAngle) * EXP_R;
+    const epy = 0;
+    const epz = Math.sin(planetAngle) * EXP_R;
 
     // ── 행성 의도 & 색상 — 프로젝트별 색상 기반 ─────────────────────────────
     let hueHex;
@@ -224,10 +213,7 @@ function buildPlanetSystem(nodeList) {
     planet.userData.hueHex      = hueHex;
     planet.userData.eventCount  = rawEvents.length;
     planet.userData._treeBasePos = planetPos.clone();
-    // 2단계 확장 위치 저장 (카테고리 클릭 시 넓게 펼쳐진 그리드)
-    const epx = expCX + perpX * expColOff + dirX * expRowOff;
-    const epy = 0;
-    const epz = expCZ + perpZ * expColOff + dirZ * expRowOff;
+    // 2단계 확장 위치 저장 (클릭 시 넓은 동심원으로 이동)
     planet.userData._expandedPos = new THREE.Vector3(epx, epy, epz);
     planet.userData._compactPos  = planetPos.clone();
     planet.userData._isExpanded  = false;
