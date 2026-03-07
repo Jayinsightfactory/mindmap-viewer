@@ -2848,8 +2848,8 @@ function drawCompactProjectView() {
 
   const now = performance.now() / 1000;
 
-  // ── 화면 중심 기준점 (태양 제거됨) ──────────────────────────────────────
-  const sunSc = { x: innerWidth / 2, y: innerHeight / 2, z: 0 };
+  // ── 캔버스 중앙 기준점 (사이드바 고려, 태양 제거됨) ────────────────────
+  const sunSc = { x: _labelCanvas2d.width / 2, y: _labelCanvas2d.height / 2, z: 0 };
 
   // ── 프로젝트별 정보 집계 ──────────────────────────────────────────────────
   const projects = projNames.map(name => {
@@ -3038,25 +3038,25 @@ function drawCompactProjectView() {
         _lctx.beginPath(); _lctx.moveTo(cx, cy); _lctx.lineTo(sx, sy); _lctx.stroke();
         _lctx.restore();
 
-        // 배경
-        _lctx.globalAlpha = isSubSel ? 0.97 : isSubHover ? 0.95 : 0.82;
-        _lctx.fillStyle = isSubSel ? 'rgba(31,111,235,0.15)' : 'rgba(13,17,23,0.92)';
+        // 배경 (시인성 강화)
+        _lctx.globalAlpha = isSubSel ? 0.98 : isSubHover ? 0.96 : 0.92;
+        _lctx.fillStyle = isSubSel ? 'rgba(31,111,235,0.18)' : 'rgba(22,27,34,0.95)';
         roundRect(_lctx, sLx, sLy, sPw, sPh, sPh / 2); _lctx.fill();
-        _lctx.strokeStyle = isSubSel ? '#58a6ff' : color + '66';
-        _lctx.lineWidth = isSubSel ? 2 : isSubHover ? 1.5 : 0.8;
+        _lctx.strokeStyle = isSubSel ? '#58a6ff' : color + 'aa';
+        _lctx.lineWidth = isSubSel ? 2.5 : isSubHover ? 2 : 1.2;
         roundRect(_lctx, sLx, sLy, sPw, sPh, sPh / 2); _lctx.stroke();
 
-        // 텍스트
+        // 텍스트 (크게, 밝게)
         _lctx.globalAlpha = 1;
         _lctx.textAlign = 'left';
-        _lctx.font = `500 ${sPx}px -apple-system,sans-serif`;
-        _lctx.fillStyle = isSubSel ? '#fff' : '#cdd9e5';
-        _lctx.fillText(sLabel, sLx + 12, sy + sPx / 3);
+        _lctx.font = `600 ${sPx + 1}px -apple-system,sans-serif`;
+        _lctx.fillStyle = isSubSel ? '#fff' : '#e6edf3';
+        _lctx.fillText(sLabel, sLx + 14, sy + sPx / 3);
 
         // 이벤트 수 (우측)
         _lctx.textAlign = 'right';
-        _lctx.font = `400 9px -apple-system,sans-serif`;
-        _lctx.fillStyle = color + '88';
+        _lctx.font = `500 10px -apple-system,sans-serif`;
+        _lctx.fillStyle = color + 'cc';
         _lctx.fillText(`${evCnt}`, sLx + sPw - 10, sy + 3);
 
         _lctx.textAlign = 'center';
@@ -3243,10 +3243,8 @@ function drawInvertedPyramid(planetObj, hitData) {
   const PAD      = 16 * S;                                                     // 내부 패딩
   const HEADER_H = 48 * S;                                                     // 헤더 높이
 
-  // 사이드바 고려한 화면 중앙
-  const sidebar   = document.getElementById('ln-sidebar');
-  const sidebarW  = (sidebar && sidebar.offsetWidth && sidebar.style.display !== 'none') ? sidebar.offsetWidth : 0;
-  const centerX   = (ctx.canvas.width - sidebarW) / 2 + sidebarW;
+  // 캔버스 중앙 (사이드바는 이미 캔버스 크기에서 제외됨)
+  const centerX   = ctx.canvas.width / 2;
   const trayX     = centerX - TRAY_W / 2;
   const trayY     = 60;
 
@@ -3258,12 +3256,16 @@ function drawInvertedPyramid(planetObj, hitData) {
 
   ctx.save();
 
-  // ── 트레이 배경 (반투명 다크 패널) ──────────────────────────────────────
-  ctx.fillStyle = 'rgba(13,17,23,0.94)';
+  // ── 트레이 배경 (확실한 패널 — 밝은 테두리 + 그림자) ─────────────────
+  ctx.shadowColor = 'rgba(0,0,0,0.6)';
+  ctx.shadowBlur = 24;
+  ctx.shadowOffsetY = 4;
+  ctx.fillStyle = 'rgba(22,27,34,0.97)';
   roundRect(ctx, trayX, trayY, TRAY_W, totalH, 14);
   ctx.fill();
-  ctx.strokeStyle = hex + '40';
-  ctx.lineWidth = 1;
+  ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+  ctx.strokeStyle = hex + '88';
+  ctx.lineWidth = 1.5;
   roundRect(ctx, trayX, trayY, TRAY_W, totalH, 14);
   ctx.stroke();
 
@@ -3276,15 +3278,15 @@ function drawInvertedPyramid(planetObj, hitData) {
     ? (firstMsg.length > 50 ? firstMsg.slice(0, 49) + '…' : firstMsg)
     : `${events.length}개 작업 · ${fileList.length}개 파일`;
 
-  ctx.font = `600 ${14 * S}px -apple-system,"Segoe UI",sans-serif`;
+  ctx.font = `700 ${16 * S}px -apple-system,"Segoe UI",sans-serif`;
   ctx.textAlign = 'left';
-  ctx.fillStyle = '#e6edf3';
+  ctx.fillStyle = '#ffffff';
   ctx.fillText(summaryText, trayX + PAD, curY + 28 * S);
 
-  ctx.font = `400 ${11 * S}px -apple-system,sans-serif`;
+  ctx.font = `500 ${12 * S}px -apple-system,sans-serif`;
   ctx.fillStyle = hex;
   const subText = projName ? `${projName} · ${events.length}개 작업 · ${fileList.length}개 파일` : `${events.length}개 작업 · ${fileList.length}개 파일`;
-  ctx.fillText(subText, trayX + PAD, curY + 44 * S);
+  ctx.fillText(subText, trayX + PAD, curY + 46 * S);
 
   // 헤더 하단 구분선
   curY += HEADER_H;
