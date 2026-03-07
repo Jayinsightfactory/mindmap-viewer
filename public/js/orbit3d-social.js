@@ -388,11 +388,16 @@ function openInlineEdit(hit) {
   const label   = document.getElementById('inline-edit-label');
 
   const nodeKey = _editingNode.nodeKey
-                || _editingNode.memberId || _editingNode.deptId
+                || _editingNode.projName  || _editingNode.memberId || _editingNode.deptId
                 || _editingNode.clusterId || _editingNode.sessionId
                 || (_editingNode.intent || _editingNode.label || '').slice(0, 20);
   label.textContent = `✎ 레이블 편집`;
-  input.value = _labelAliasMap[nodeKey] || _editingNode.intent || _editingNode.label || '';
+  // 노드 타입별 현재 라벨 결정
+  const currentLabel = _labelAliasMap[nodeKey]
+    || _editingNode.intent || _editingNode.label
+    || _editingNode.info?.name || _editingNode.projName
+    || _editingNode.catLabel || '';
+  input.value = currentLabel;
 
   // 위치: 노드 상단 중앙 근처
   overlay.style.left = Math.min(hit.cx + 20, innerWidth - 220) + 'px';
@@ -413,6 +418,11 @@ function saveInlineEdit() {
     // 노드 레이블 즉시 업데이트
     _editingNode.label = newLabel;
     _editingNode.intent = newLabel;
+    // 프로젝트 노드 편집 시 info.name 도 업데이트
+    if (_editingNode.info) _editingNode.info.name = newLabel;
+    if (_editingNode.projName && !_editingNode.clusterId) _editingNode.projName = newLabel;
+    // 카테고리 노드 편집 시 catLabel 업데이트
+    if (_editingNode.catLabel) _editingNode.catLabel = newLabel;
     // 3D 행성 userData도 업데이트 (개인 모드 행성)
     const cid = _editingNode.clusterId || _editingNode.sessionId;
     if (cid) {

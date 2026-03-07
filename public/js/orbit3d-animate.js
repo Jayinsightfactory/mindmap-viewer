@@ -160,7 +160,7 @@ renderer.domElement.addEventListener('click', e => {
           _drillStage = 2;
           _drillCategory = sesCatData;
           showDrillTimeline(sesCatData);
-          lerpCameraTo(75, 0, 0, 0, 400);
+          lerpCameraTo(90, 0, 0, 0, 400);
         }
       }
       return;
@@ -224,7 +224,7 @@ renderer.domElement.addEventListener('click', e => {
         _drillStage = 2;
         _drillTimelineEvent = null;
         if (_drillCategory) showDrillTimeline(_drillCategory);
-        lerpCameraTo(75, 0, 0, 0, 400);
+        lerpCameraTo(90, 0, 0, 0, 400);
       } else if (_drillStage === 2) {
         // 3단계 → 2단계: 패널 닫기, 카테고리 링 유지
         _drillStage = 1;
@@ -232,7 +232,7 @@ renderer.domElement.addEventListener('click', e => {
         _focusedCategory = null;
         _drillTimelineEvent = null;
         closePanel();
-        lerpCameraTo(70, 0, 0, 0, 500);
+        lerpCameraTo(85, 0, 0, 0, 500);
       } else if (_drillStage === 1 || _focusedProject) {
         // 2단계 → 1단계: 전체 뷰로
         exitConstellationFocus();
@@ -243,7 +243,7 @@ renderer.domElement.addEventListener('click', e => {
       } else if (_focusedCategory) {
         exitCategoryFocus();
         closePanel();
-        lerpCameraTo(55, 0, 0, 0, 500);
+        lerpCameraTo(60, 0, 0, 0, 500);
       }
     } else {
       _selectedHit = null;
@@ -295,7 +295,7 @@ function updateRaycast() {
       tooltip.style.left = (_lastMouseEvent.clientX + 14) + 'px';
       tooltip.style.top  = (_lastMouseEvent.clientY - 10) + 'px';
       // 편집 아이콘: 레이블 우측에 표시 (편집 중이 아닐 때)
-      if (!_editingNode && (data.label || data.intent)) {
+      if (!_editingNode && (data.label || data.intent || data.projName || data.catLabel)) {
         _editIconEl.style.display = 'block';
         _editIconEl.style.left = (hit.cx - 11) + 'px';
         _editIconEl.style.top  = (hit.cy - hit.r - 26) + 'px';
