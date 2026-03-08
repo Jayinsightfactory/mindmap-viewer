@@ -21,6 +21,8 @@ const path = require('path');
 const { ulid } = require('ulid');
 
 const DATA_DIR = path.join(__dirname, '..', 'data');
+const TOKENS_PATH = path.join(DATA_DIR, 'gdrive-tokens.json');
+const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 
 // ── 백업 설정 ────────────────────────────────────────────────────────────────
 
@@ -194,6 +196,136 @@ async function uploadToGDrive(filePath, folderId, accessToken) {
   }
 }
 
+// ── OAuth2 토큰 파일 인증 ────────────────────────────────────────────────────
+
+/**
+ * data/gdrive-tokens.json에서 OAuth2 토큰을 로드
+ */
+function loadOAuthTokens() {
+  try {
+    if (fs.existsSync(TOKENS_PATH)) {
+      return JSON.parse(fs.readFileSync(TOKENS_PATH, 'utf8'));
+    }
+  } catch (e) {
+    console.warn('[gdrive-backup] OAuth2 토큰 파일 로드 실패:', e.message);
+  }
+  return null;
+}
+
+/**
+ * OAuth2 토큰 파일 저장
+ */
+function saveOAuthTokens(tokens) {
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
+  const tokenData = {
+    access_token: tokens.access_token,
+    refresh_token: tokens.refresh_token,
+    token_type: tokens.token_type || 'Bearer',
+    expiry_date: tokens.expiry_date || (Date.now() + (tokens.expires_in || 3600) * 1000),
+    scope: tokens.scope || 'https://www.googleapis.com/auth/drive.file',
+    saved_at: new Date().toISOString(),
+  };
+  fs.writeFileSync(TOKENS_PATH, JSON.stringify(tokenData, null, 2));
+  return tokenData;
+}
+
+/**
+ * 토큰이 만료되었으면 자동으로 갱신
+ * @returns {string|null} 유효한 access_token 또는 null
+ */
+async function refreshTokenIfNeeded() {
+  const tokens = loadOAuthTokens();
+  if (!tokens) return null;
+
+  // 만료 시간 체크 (5분 여유)
+  const isExpired = tokens.expiry_date && Date.now() > tokens.expiry_date - 5 * 60 * 1000;
+
+  if (!isExpired && tokens.access_token) {
+    return tokens.access_token;
+  }
+
+  // 만료됨 — refresh_token으로 갱신 시도
+  if (!tokens.refresh_token) {
+    console.warn('[gdrive-backup] refresh_token 없음 — 재인증 필요 (npm run gdrive-auth)');
+    return null;
+  }
+
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+  if (!clientId || !clientSecret) {
+    console.warn('[gdrive-backup] GOOGLE_CLIENT_ID/SECRET 미설정 — 토큰 갱신 불가');
+    return null;
+  }
+
+  try {
+    const params = new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      refresh_token: tokens.refresh_token,
+      grant_type: 'refresh_token',
+    });
+
+    const response = await fetch(GOOGLE_TOKEN_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: params.toString(),
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error('[gdrive-backup] 토큰 갱신 실패:', response.status, errText);
+      return null;
+    }
+
+    const data = await response.json();
+    const newTokens = {
+      ...data,
+      refresh_token: data.refresh_token || tokens.refresh_token,
+    };
+    saveOAuthTokens(newTokens);
+    console.log('[gdrive-backup] OAuth2 토큰 갱신 완료');
+    return newTokens.access_token;
+  } catch (e) {
+    console.error('[gdrive-backup] 토큰 갱신 오류:', e.message);
+    return null;
+  }
+}
+
+/**
+ * 인증 헤더를 반환
+ * 우선순위: OAuth2 토큰 파일 > Service Account > API Key
+ * @returns {{ Authorization: string }|null}
+ */
+async function getAuthHeaders() {
+  // 1순위: OAuth2 토큰 파일 (data/gdrive-tokens.json)
+  const oauthToken = await refreshTokenIfNeeded();
+  if (oauthToken) {
+    return { Authorization: `Bearer ${oauthToken}` };
+  }
+
+  // 2순위: Service Account
+  if (_config.credentialsPath && fs.existsSync(_config.credentialsPath)) {
+    const saToken = await getServiceAccountToken(_config.credentialsPath);
+    if (saToken) {
+      return { Authorization: `Bearer ${saToken}` };
+    }
+  }
+
+  // 3순위: API Key (제한적 — 일부 API만 가능)
+  if (process.env.GDRIVE_API_KEY) {
+    // API Key는 Authorization 헤더가 아닌 쿼리 파라미터로 사용하므로
+    // 여기서는 null 반환하고, 호출 측에서 별도 처리
+    console.warn('[gdrive-backup] API Key 방식은 업로드에 제한이 있습니다.');
+    return null;
+  }
+
+  console.warn('[gdrive-backup] 인증 수단 없음 — npm run gdrive-auth 로 인증해주세요.');
+  return null;
+}
+
 // ── Service Account 인증 ────────────────────────────────────────────────────
 
 async function getServiceAccountToken(credentialsPath) {
@@ -254,9 +386,14 @@ async function runBackup(db) {
   if (analysisPath) results.local.push(analysisPath);
 
   // 2. Google Drive 업로드 (설정된 경우)
-  if (_config.folderId && _config.credentialsPath) {
+  if (_config.folderId) {
     try {
-      const token = await getServiceAccountToken(_config.credentialsPath);
+      // 새 인증 우선순위: OAuth2 토큰 > Service Account > API Key
+      const headers = await getAuthHeaders();
+      const token = headers
+        ? headers.Authorization.replace('Bearer ', '')
+        : (_config.credentialsPath ? await getServiceAccountToken(_config.credentialsPath) : null);
+
       if (token) {
         for (const localPath of results.local) {
           const uploadResult = await uploadToGDrive(localPath, _config.folderId, token);
@@ -272,6 +409,8 @@ async function runBackup(db) {
             } catch {}
           }
         }
+      } else {
+        console.warn('[gdrive-backup] 인증 토큰 없음 — GDrive 업로드 건너뜀');
       }
     } catch (e) {
       results.errors.push(e.message);
@@ -329,6 +468,8 @@ module.exports = {
   loadConfig, saveConfig,
   createDbBackup, createAnalysisExport,
   uploadToGDrive, getServiceAccountToken,
+  loadOAuthTokens, saveOAuthTokens,
+  refreshTokenIfNeeded, getAuthHeaders,
   runBackup, cleanOldBackups,
   start, stop,
 };

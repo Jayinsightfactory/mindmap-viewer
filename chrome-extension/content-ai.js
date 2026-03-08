@@ -27,6 +27,7 @@
     'www.perplexity.ai': 'Perplexity',
     'perplexity.ai':   'Perplexity',
     'copilot.microsoft.com': 'Copilot',
+    'www.bing.com':    'Copilot',  // Bing 내장 Copilot 채팅
   };
 
   const host     = location.hostname;

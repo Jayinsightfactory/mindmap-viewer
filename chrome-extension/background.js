@@ -14,7 +14,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-const DEFAULT_SERVER_URL = 'http://localhost:4747';
+const DEFAULT_SERVER_URL = 'https://mindmap-viewer-production.up.railway.app';
 const MAX_STORED   = 500;        // chrome.storage에 최대 보관 대화 수
 const RETRY_ALARM  = 'orbit-retry';
 const MIN_STAY_MS  = 5000;       // 탭 방문: 5초 이상 머문 페이지만

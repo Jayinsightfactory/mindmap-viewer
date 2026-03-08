@@ -36,7 +36,8 @@
  *
  * --- Tracker Data Ingest (NO AUTH — token-based) ---
  * POST   /api/tracker/heartbeat          — 직원 트래커 하트비트
- * POST   /api/tracker/activities         — 활동 데이터 벌크 전송
+ * POST   /api/tracker/activities         — 분석된 활동 데이터 수신 (원본 X)
+ * POST   /api/tracker/analyzed           — 로컬 학습 분석 결과 수신
  * GET    /api/tracker/config             — 트래커 설정 조회
  * ─────────────────────────────────────────────────────────────────────────────
  */
@@ -255,25 +256,55 @@ module.exports = function createCompanyRouter({ getDb, broadcastAll }) {
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
+  // POST /api/tracker/activities — 분석된 활동 데이터 수신
+  // 로컬에서 분석된 결과만 수신 (원본 키스트로크 절대 포함 안 됨)
   router.post('/tracker/activities', (req, res) => {
     try {
       ontology.ensureCompanyTables(db());
-      const { token, activities = [] } = req.body;
+      const { token, activities = [], analyzed } = req.body;
       if (!token) return res.status(400).json({ error: 'token required' });
-      if (!activities.length) return res.json({ ok: true, count: 0 });
 
       const emp = ontology.getEmployeeByToken(db(), token);
       if (!emp) return res.status(404).json({ error: 'invalid token' });
 
-      // 모든 활동에 employee_id, company_id 주입
-      const enriched = activities.map(a => ({
-        ...a,
-        employee_id: emp.id,
-        company_id: emp.company_id,
-        tracker_token: token,
-      }));
+      // ── 분석된 데이터 형식으로 수신 (로컬 학습 결과) ──
+      // 활동 데이터에서 원본 키스트로크 필드 제거 (안전장치)
+      const sanitized = activities.map(a => {
+        const { raw_keystrokes, keystroke_content, raw_buffer, ...safe } = a;
+        return {
+          ...safe,
+          employee_id: emp.id,
+          company_id: emp.company_id,
+          tracker_token: token,
+        };
+      });
 
-      const result = ontology.insertActivitiesBatch(db(), enriched);
+      let count = 0;
+      if (sanitized.length > 0) {
+        const result = ontology.insertActivitiesBatch(db(), sanitized);
+        count = result.count;
+      }
+
+      // 분석 결과가 함께 전송된 경우 저장
+      if (analyzed) {
+        try {
+          const analysisRecord = {
+            employee_id: emp.id,
+            company_id: emp.company_id,
+            period_start: analyzed.period?.start || new Date().toISOString(),
+            period_end: analyzed.period?.end || new Date().toISOString(),
+            activity_type: analyzed.activityType || 'unknown',
+            metrics: JSON.stringify(analyzed.metrics || {}),
+            patterns: JSON.stringify(analyzed.patterns || {}),
+            insights: JSON.stringify(analyzed.insights || {}),
+            summary: analyzed.summary || '',
+            timestamp: new Date().toISOString(),
+          };
+          ontology.insertActivitiesBatch(db(), [analysisRecord]);
+        } catch (analysisErr) {
+          console.warn('[tracker/activities] 분석 결과 저장 실패:', analysisErr.message);
+        }
+      }
 
       // 마지막 확인 시간 업데이트
       ontology.updateEmployee(db(), emp.id, {
@@ -281,28 +312,122 @@ module.exports = function createCompanyRouter({ getDb, broadcastAll }) {
         last_seen_at: new Date().toISOString(),
       });
 
-      // 실시간 브로드캐스트 (마인드맵에 표시)
-      if (broadcastAll && activities.length > 0) {
-        const latest = activities[activities.length - 1];
+      // 실시간 브로드캐스트 (마인드맵에 표시 — 분석 결과 기반)
+      if (broadcastAll && (activities.length > 0 || analyzed)) {
+        const latest = activities[activities.length - 1] || {};
         broadcastAll({
           type: 'employee_activity',
           employee: { id: emp.id, name: emp.name },
           activity: {
-            type: latest.activity_type,
-            app: latest.app_name,
-            title: latest.window_title,
-            category: latest.category,
+            type: analyzed?.activityType || latest.activity_type || 'unknown',
+            app: latest.app_name || analyzed?.appContext?.app || 'unknown',
+            category: latest.category || analyzed?.activityType || 'other',
+            // 원본 윈도우 제목 대신 분석된 앱 컨텍스트 전송
+            context: analyzed?.appContext || {},
+            metrics: analyzed?.metrics || {},
+            summary: analyzed?.summary || '',
           },
           timestamp: new Date().toISOString(),
         });
       }
 
-      res.json({ ok: true, count: result.count });
+      res.json({ ok: true, count });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── POST /api/tracker/analyzed — 로컬 학습 분석 결과 전용 엔드포인트 ──
+  // 트래커가 5분마다 로컬 분석 후 이 엔드포인트로 결과만 전송
+  // 구조: { period, activities, patterns, metrics, insights, summary }
+  // 원본 키스트로크 내용은 절대 포함되지 않음
+  router.post('/tracker/analyzed', (req, res) => {
+    try {
+      ontology.ensureCompanyTables(db());
+      const { token, period, activities, patterns, metrics, insights, summary } = req.body;
+      if (!token) return res.status(400).json({ error: 'token required' });
+
+      const emp = ontology.getEmployeeByToken(db(), token);
+      if (!emp) return res.status(404).json({ error: 'invalid token' });
+
+      // ── 분석 결과 저장 (원본 데이터 없음, 요약만) ──
+      const analysisRecord = {
+        employee_id: emp.id,
+        company_id: emp.company_id,
+        activity_type: 'analyzed_session',
+        category: 'analysis',
+        period_start: period?.start || new Date().toISOString(),
+        period_end: period?.end || new Date().toISOString(),
+        // 분석 결과를 JSON으로 직렬화하여 저장
+        app_name: 'local-learning-engine',
+        window_title: summary || '',
+        extra_data: JSON.stringify({
+          activities: (activities || []).map(a => ({
+            type: a.type,
+            app: a.app,
+            duration: a.duration,
+            category: a.category,
+            confidence: a.confidence,
+          })),
+          patterns: {
+            repetitive: patterns?.repetitive || [],
+            automation_opportunities: patterns?.automation_opportunities || [],
+          },
+          metrics: {
+            typingSpeed: metrics?.typingSpeed || 0,
+            activeTime: metrics?.activeTime || 0,
+            idleTime: metrics?.idleTime || 0,
+            contextSwitches: metrics?.contextSwitches || 0,
+            totalKeystrokes: metrics?.totalKeystrokes || 0,
+            copyPasteCount: metrics?.copyPasteCount || 0,
+          },
+          insights: {
+            topApps: insights?.topApps || [],
+            workflowSteps: insights?.workflowSteps || [],
+            efficiency_score: insights?.efficiency_score || 0,
+            categoryDistribution: insights?.categoryDistribution || {},
+          },
+        }),
+        timestamp: new Date().toISOString(),
+      };
+
+      ontology.insertActivitiesBatch(db(), [analysisRecord]);
+
+      // 마지막 확인 시간 업데이트
+      ontology.updateEmployee(db(), emp.id, {
+        tracker_active: 1,
+        last_seen_at: new Date().toISOString(),
+      });
+
+      // 실시간 브로드캐스트 — 분석 결과 기반
+      if (broadcastAll) {
+        broadcastAll({
+          type: 'employee_analysis',
+          employee: { id: emp.id, name: emp.name },
+          analysis: {
+            period,
+            summary: summary || '',
+            efficiency_score: insights?.efficiency_score || 0,
+            topApps: (insights?.topApps || []).slice(0, 3),
+            patterns: {
+              repetitive_count: (patterns?.repetitive || []).length,
+              automation_count: (patterns?.automation_opportunities || []).length,
+            },
+            metrics: {
+              typingSpeed: metrics?.typingSpeed || 0,
+              activeTime: metrics?.activeTime || 0,
+              contextSwitches: metrics?.contextSwitches || 0,
+            },
+          },
+          timestamp: new Date().toISOString(),
+        });
+      }
+
+      res.json({ ok: true, employee_id: emp.id });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
   // ── 트래커 버전 — 이 숫자를 올리면 모든 직원 PC가 자동 업데이트 ──────
-  const TRACKER_VERSION = 1;
+  // v2: 로컬 학습 아키텍처 — 원본 데이터 전송 안 함
+  const TRACKER_VERSION = 2;
 
   router.get('/tracker/config', (req, res) => {
     try {
@@ -321,14 +446,27 @@ module.exports = function createCompanyRouter({ getDb, broadcastAll }) {
         tracker_version: TRACKER_VERSION,
         config: {
           heartbeat_interval_sec: 60,
-          activity_send_interval_sec: 30,
+          // 로컬 학습 설정 — 분석 주기 5분
+          local_analysis_interval_sec: 300,
+          activity_collect_interval_sec: 30,
           capture_urls: true,
           capture_window_titles: true,
-          capture_keystrokes: true,
+          // 키스트로크 내용은 로컬에서만 수집/분석, 서버에 원본 전송 안 함
+          capture_keystrokes_locally: true,
+          send_raw_keystrokes: false,
           capture_mouse: true,
           idle_threshold_sec: 300,
           excluded_apps: ['lockscreen', 'screensaver'],
           excluded_urls: [],
+          // 로컬 학습 엔진 설정
+          local_learning: {
+            enabled: true,
+            analysis_interval_sec: 300,
+            pattern_detection: true,
+            activity_classification: true,
+            efficiency_scoring: true,
+            model_update_interval: 5,
+          },
         },
       });
     } catch (e) { res.status(500).json({ error: e.message }); }
@@ -347,8 +485,14 @@ module.exports = function createCompanyRouter({ getDb, broadcastAll }) {
     const token = req.query.token || '';
     const serverUrl = `${req.protocol}://${req.get('host')}`;
 
-    const ps1Script = `# Orbit Tracker Agent (PowerShell)
+    const ps1Script = `# Orbit Tracker Agent v2 (PowerShell) — 로컬 학습 아키텍처
 # 이 파일은 자동 생성됩니다. 직접 수정하지 마세요.
+# ═══════════════════════════════════════════════════════════════════════
+# 핵심 원칙: "로컬에서 학습 → 분석 결과만 전송"
+# - 키스트로크 내용은 로컬 메모리에만 존재 (절대 서버 전송 안 함)
+# - 5분마다 로컬 분석 실행 후 원본 버퍼 삭제
+# - 서버에는 활동 분류, 패턴, 메트릭 요약만 전송
+# ═══════════════════════════════════════════════════════════════════════
 $ErrorActionPreference = "SilentlyContinue"
 $TOKEN = "${token}"
 $SERVER = "${serverUrl}"
@@ -356,22 +500,31 @@ $INTERVAL = 30
 $IDLE_THRESHOLD = 300
 $SCRIPT_VERSION = ${TRACKER_VERSION}
 $UPDATE_CHECK_SEC = 3600
+$ANALYSIS_INTERVAL_SEC = 300  # 5분마다 로컬 분석
+
+# ── 로컬 데이터 버퍼 (절대 서버 전송 안 함) ────────────────────────────
+$script:rawKeystrokeBuffer = ""     # 원본 키스트로크 (로컬 전용)
+$script:activityBuffer = @()         # 활동 기록 (분석 대기)
+$script:analysisHistory = @()        # 분석 이력 (로컬 모델용)
+$script:lastAnalysisTime = Get-Date  # 마지막 분석 시간
+$script:keystrokeCount = 0           # 키스트로크 카운트
+$script:backspaceCount = 0           # 백스페이스 카운트 (정확도 측정)
+$script:copyPasteCount = 0           # 복사-붙여넣기 카운트
+$script:contextSwitchCount = 0       # 앱 전환 카운트
+$script:lastApp = ""                 # 이전 앱 (전환 감지용)
 
 # ── 자동 업데이트 함수 ───────────────────────────────────────────────
-# 서버에서 최신 버전을 확인하고, 새 버전이면 스크립트 교체 후 자동 재시작
 function Check-Update {
     try {
         $resp = Invoke-RestMethod -Uri "$SERVER/api/tracker/version" -TimeoutSec 5
         if ($resp.version -and [int]$resp.version -gt $SCRIPT_VERSION) {
             $myPath = $MyInvocation.ScriptName
             if (-not $myPath) { $myPath = "$env:LOCALAPPDATA\\OrbitTracker\\orbit-tracker.ps1" }
-            # 새 스크립트 다운로드
             [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
             $newScript = (New-Object Net.WebClient).DownloadString("$SERVER/api/tracker/install?token=$TOKEN")
             if ($newScript -and $newScript.Length -gt 100) {
                 Set-Content -Path $myPath -Value $newScript -Encoding UTF8
-                # 새 프로세스로 재시작
-                Start-Process powershell.exe -ArgumentList "-ExecutionPolicy Bypass -WindowStyle Hidden -NoProfile -File \`"$myPath\`"" -WindowStyle Hidden
+                Start-Process powershell.exe -ArgumentList "-ExecutionPolicy Bypass -WindowStyle Hidden -NoProfile -File \\\`"$myPath\\\`"" -WindowStyle Hidden
                 exit
             }
         }
@@ -407,6 +560,74 @@ public class Win32Window {
 }
 "@
 
+# ── 키보드 후킹 (로컬 버퍼에만 저장) ─────────────────────────────────
+Add-Type @"
+using System;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
+public class KeyboardHook {
+    private delegate IntPtr LowLevelKeyboardProc(int nCode, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll")] static extern IntPtr SetWindowsHookEx(int idHook, LowLevelKeyboardProc lpfn, IntPtr hMod, uint dwThreadId);
+    [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] static extern bool UnhookWindowsHookEx(IntPtr hhk);
+    [DllImport("user32.dll")] static extern IntPtr CallNextHookEx(IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
+    [DllImport("kernel32.dll")] static extern IntPtr GetModuleHandle(string lpModuleName);
+    [DllImport("user32.dll")] static extern short GetAsyncKeyState(int vKey);
+
+    private static IntPtr hookId = IntPtr.Zero;
+    private static LowLevelKeyboardProc proc;
+    public static int KeyCount = 0;
+    public static int BackspaceCount = 0;
+    public static int SymbolCount = 0;
+    public static int NumberCount = 0;
+    public static int SpaceCount = 0;
+    public static int EnterCount = 0;
+    public static int TabCount = 0;
+    public static bool CtrlCPressed = false;
+    public static bool CtrlVPressed = false;
+    public static int CopyPasteCount = 0;
+
+    public static void ResetCounters() {
+        KeyCount = 0; BackspaceCount = 0; SymbolCount = 0;
+        NumberCount = 0; SpaceCount = 0; EnterCount = 0;
+        TabCount = 0; CopyPasteCount = 0;
+        CtrlCPressed = false; CtrlVPressed = false;
+    }
+
+    private static IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam) {
+        if (nCode >= 0 && (int)wParam == 0x0100) {
+            int vkCode = Marshal.ReadInt32(lParam);
+            bool ctrlDown = (GetAsyncKeyState(0x11) & 0x8000) != 0;
+
+            if (ctrlDown && vkCode == 0x43) { CtrlCPressed = true; CopyPasteCount++; }
+            else if (ctrlDown && vkCode == 0x56) { CtrlVPressed = true; CopyPasteCount++; }
+            else if (vkCode == 0x08) { BackspaceCount++; KeyCount++; }
+            else if (vkCode == 0x0D) { EnterCount++; KeyCount++; }
+            else if (vkCode == 0x09) { TabCount++; KeyCount++; }
+            else if (vkCode == 0x20) { SpaceCount++; KeyCount++; }
+            else if (vkCode >= 0x30 && vkCode <= 0x39) { NumberCount++; KeyCount++; }
+            else if (vkCode >= 0x41 && vkCode <= 0x5A) { KeyCount++; }
+            else if ((vkCode >= 0xBA && vkCode <= 0xC0) || (vkCode >= 0xDB && vkCode <= 0xDF)) {
+                SymbolCount++; KeyCount++;
+            }
+            else { KeyCount++; }
+        }
+        return CallNextHookEx(hookId, nCode, wParam, lParam);
+    }
+
+    public static void Start() {
+        proc = HookCallback;
+        using (Process curProcess = Process.GetCurrentProcess())
+        using (ProcessModule curModule = curProcess.MainModule) {
+            hookId = SetWindowsHookEx(13, proc, GetModuleHandle(curModule.ModuleName), 0);
+        }
+    }
+
+    public static void Stop() {
+        if (hookId != IntPtr.Zero) { UnhookWindowsHookEx(hookId); hookId = IntPtr.Zero; }
+    }
+}
+"@
+
 function Get-ActiveWindow {
     $hwnd = [Win32Window]::GetForegroundWindow()
     $sb = New-Object System.Text.StringBuilder 256
@@ -418,10 +639,232 @@ function Get-ActiveWindow {
     return @{ Title = $title; App = if($proc){$proc.ProcessName}else{"unknown"}; Pid = $pid }
 }
 
+# ── 앱 카테고리 분류 ──────────────────────────────────────────────────
+function Get-AppCategory($appName, $windowTitle) {
+    $cat = "other"
+    switch -Regex ($appName) {
+        "chrome|firefox|edge|brave|whale"              { $cat = "browser" }
+        "code|rider|pycharm|intellij|cursor|windsurf"  { $cat = "coding" }
+        "excel|sheets|calc"                            { $cat = "data-entry" }
+        "word|hwp|docs|hanword"                        { $cat = "document" }
+        "powerpnt|powerpoint"                          { $cat = "presentation" }
+        "outlook|thunderbird"                          { $cat = "email" }
+        "slack|teams|kakaotalk|discord|zoom|line"      { $cat = "chat" }
+        "explorer"                                     { $cat = "file_manager" }
+        "terminal|cmd|powershell|iterm|warp"           { $cat = "coding" }
+    }
+    # 브라우저인 경우 제목으로 세분화
+    if ($cat -eq "browser" -and $windowTitle) {
+        $t = $windowTitle.ToLower()
+        if ($t -match "gmail|mail|inbox|outlook") { $cat = "email" }
+        elseif ($t -match "slack|teams|discord|messenger") { $cat = "chat" }
+        elseif ($t -match "docs.google|notion|confluence") { $cat = "document" }
+        elseif ($t -match "github|gitlab|stackoverflow") { $cat = "coding" }
+        elseif ($t -match "sheets.google|airtable") { $cat = "data-entry" }
+        elseif ($t -match "google|bing|naver|daum|search") { $cat = "search" }
+    }
+    return $cat
+}
+
+# ── 키스트로크 패턴 기반 활동 유형 보강 ───────────────────────────────
+function Get-KeystrokeActivityType($keyCount, $symbolCount, $numberCount, $tabCount, $enterCount, $spaceCount) {
+    if ($keyCount -lt 5) { return $null }
+    $symbolRatio = if ($keyCount -gt 0) { $symbolCount / $keyCount } else { 0 }
+    $numberRatio = if ($keyCount -gt 0) { $numberCount / $keyCount } else { 0 }
+    $tabRatio = if ($keyCount -gt 0) { $tabCount / $keyCount } else { 0 }
+    $enterRatio = if ($keyCount -gt 0) { $enterCount / $keyCount } else { 0 }
+
+    if ($symbolRatio -gt 0.15) { return "coding" }
+    if ($numberRatio -gt 0.3 -and $tabRatio -gt 0.05) { return "data-entry" }
+    if ($enterRatio -gt 0.05 -and $spaceCount -gt 0) { return "chat" }
+    return $null
+}
+
+# ── 윈도우 제목 정제 (민감 정보 제거) ─────────────────────────────────
+function Sanitize-WindowTitle($title) {
+    if (-not $title) { return "" }
+    $s = $title -replace '[\\w.-]+@[\\w.-]+', '[email]'
+    $s = $s -replace '\\?[^\\s]*', '?[params]'
+    $s = $s -replace 'C:\\\\Users\\\\[\\w.-]+\\\\', 'C:\\Users\\[user]\\'
+    if ($s.Length -gt 200) { $s = $s.Substring(0, 200) }
+    return $s
+}
+
+# ═══════════════════════════════════════════════════════════════════════
+# 로컬 분석 함수 — 5분마다 실행, 결과만 서버 전송
+# ═══════════════════════════════════════════════════════════════════════
+
+function Run-LocalAnalysis {
+    $now = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+    $periodStart = $script:lastAnalysisTime.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+
+    # 분석할 데이터 확인
+    if ($script:activityBuffer.Count -eq 0) { return }
+
+    # ── 1. 활동 분류 집계 ──
+    $activityTypes = @{}
+    $appDurations = @{}
+    $totalDuration = 0
+    $activeTime = 0
+    $idleTime = 0
+
+    foreach ($a in $script:activityBuffer) {
+        $type = $a.category
+        if (-not $activityTypes[$type]) { $activityTypes[$type] = 0 }
+        $activityTypes[$type] += $a.duration_sec
+
+        $app = $a.app_name
+        if (-not $appDurations[$app]) { $appDurations[$app] = 0 }
+        $appDurations[$app] += $a.duration_sec
+
+        $totalDuration += $a.duration_sec
+        if ($a.activity_type -eq "idle") { $idleTime += $a.duration_sec }
+        else { $activeTime += $a.duration_sec }
+    }
+
+    # ── 2. 상위 앱 추출 ──
+    $topApps = @()
+    $sortedApps = $appDurations.GetEnumerator() | Sort-Object Value -Descending | Select-Object -First 5
+    foreach ($entry in $sortedApps) {
+        $topApps += @{ app = $entry.Name; duration_sec = $entry.Value }
+    }
+
+    # ── 3. 타이핑 메트릭 (카운트 기반, 내용 없음) ──
+    $totalKeys = [KeyboardHook]::KeyCount
+    $backspaces = [KeyboardHook]::BackspaceCount
+    $symbols = [KeyboardHook]::SymbolCount
+    $numbers = [KeyboardHook]::NumberCount
+    $spaces = [KeyboardHook]::SpaceCount
+    $enters = [KeyboardHook]::EnterCount
+    $tabs = [KeyboardHook]::TabCount
+    $copyPaste = [KeyboardHook]::CopyPasteCount
+
+    $activeMin = $activeTime / 60
+    $wordsEstimate = if ($spaces -gt 0) { $spaces + 1 } else { 0 }
+    $typingSpeed = if ($activeMin -gt 0) { [math]::Round($wordsEstimate / $activeMin) } else { 0 }
+    $accuracy = if ($totalKeys -gt 0) { [math]::Round((1 - $backspaces / $totalKeys) * 100) } else { 100 }
+
+    # ── 4. 키스트로크 패턴으로 주요 활동 유형 판별 ──
+    $keystrokeType = Get-KeystrokeActivityType $totalKeys $symbols $numbers $tabs $enters $spaces
+    $primaryType = if ($keystrokeType) { $keystrokeType } else {
+        $maxType = "other"; $maxDur = 0
+        foreach ($entry in $activityTypes.GetEnumerator()) {
+            if ($entry.Value -gt $maxDur) { $maxType = $entry.Name; $maxDur = $entry.Value }
+        }
+        $maxType
+    }
+
+    # ── 5. 반복 패턴 감지 ──
+    $repetitive = @()
+    $appSequence = $script:activityBuffer | ForEach-Object { $_.app_name }
+    $seqCounts = @{}
+    for ($i = 0; $i -lt $appSequence.Count - 1; $i++) {
+        $pair = "$($appSequence[$i]) > $($appSequence[$i+1])"
+        if (-not $seqCounts[$pair]) { $seqCounts[$pair] = 0 }
+        $seqCounts[$pair]++
+    }
+    foreach ($entry in $seqCounts.GetEnumerator()) {
+        if ($entry.Value -ge 3) {
+            $repetitive += @{ sequence = $entry.Name; count = $entry.Value; type = "app_switch_loop" }
+        }
+    }
+
+    # ── 6. 자동화 기회 감지 ──
+    $automationOpps = @()
+    if ($copyPaste -ge 5) {
+        $automationOpps += @{
+            type = "copy_paste_automation"
+            frequency = $copyPaste
+            suggestion = "copy-paste automation recommended"
+            priority = if ($copyPaste -ge 10) { "high" } else { "medium" }
+        }
+    }
+    $switchRate = if ($script:activityBuffer.Count -gt 1) {
+        $script:contextSwitchCount / ($script:activityBuffer.Count - 1)
+    } else { 0 }
+    if ($switchRate -gt 0.7) {
+        $automationOpps += @{
+            type = "context_switch_reduction"
+            rate = [math]::Round($switchRate * 100)
+            suggestion = "high context switching detected"
+            priority = "medium"
+        }
+    }
+
+    # ── 7. 효율성 점수 계산 ──
+    $activeRatio = if ($totalDuration -gt 0) { $activeTime / $totalDuration } else { 0 }
+    $switchPenalty = [math]::Min($script:contextSwitchCount * 0.5, 20)
+    $efficiencyScore = [math]::Max(0, [math]::Min(100, [math]::Round($activeRatio * 100 - $switchPenalty)))
+
+    # ── 8. 활동 요약 텍스트 생성 (내용 없이 메트릭만) ──
+    $totalMin = [math]::Round($totalDuration / 60)
+    $activeMinR = [math]::Round($activeTime / 60)
+    $topAppName = if ($topApps.Count -gt 0) { $topApps[0].app } else { "none" }
+    $summaryText = "Total $($totalMin)min, Active $($activeMinR)min | Top: $topAppName | Speed: $($typingSpeed) WPM | Switches: $($script:contextSwitchCount) | Score: $efficiencyScore/100"
+
+    # ── 9. 분류된 활동 목록 (원본 제목/내용 없음) ──
+    $classifiedActivities = @()
+    foreach ($a in $script:activityBuffer) {
+        $classifiedActivities += @{
+            type = $a.category
+            app = $a.app_name
+            duration = $a.duration_sec
+            category = $a.category
+        }
+    }
+
+    # ═══ 분석 결과 구성 — 원본 키스트로크 내용 절대 포함 안 함 ═══
+    $analysisResult = @{
+        token = $TOKEN
+        period = @{ start = $periodStart; end = $now }
+        activities = $classifiedActivities
+        patterns = @{
+            repetitive = $repetitive
+            automation_opportunities = $automationOpps
+        }
+        metrics = @{
+            typingSpeed = $typingSpeed
+            activeTime = $activeTime
+            idleTime = $idleTime
+            contextSwitches = $script:contextSwitchCount
+            totalKeystrokes = $totalKeys
+            copyPasteCount = $copyPaste
+            accuracy = $accuracy
+            symbolRatio = if ($totalKeys -gt 0) { [math]::Round($symbols / $totalKeys, 2) } else { 0 }
+            numberRatio = if ($totalKeys -gt 0) { [math]::Round($numbers / $totalKeys, 2) } else { 0 }
+        }
+        insights = @{
+            topApps = $topApps
+            efficiency_score = $efficiencyScore
+            categoryDistribution = $activityTypes
+        }
+        summary = $summaryText
+        # 원본 키스트로크 내용 없음 — 절대 전송하지 않음
+    }
+
+    # ── 서버로 분석 결과만 전송 ──
+    $body = $analysisResult | ConvertTo-Json -Depth 10
+    try {
+        Invoke-RestMethod -Uri "$SERVER/api/tracker/analyzed" -Method POST ` + "`" + `
+            -Body ([System.Text.Encoding]::UTF8.GetBytes($body)) ` + "`" + `
+            -ContentType "application/json; charset=utf-8" -TimeoutSec 10 | Out-Null
+    } catch {}
+
+    # ═══ 핵심: 분석 후 원본 데이터 삭제 ═══
+    $script:rawKeystrokeBuffer = ""
+    $script:activityBuffer = @()
+    $script:contextSwitchCount = 0
+    $script:lastAnalysisTime = Get-Date
+    [KeyboardHook]::ResetCounters()
+}
+
 # ── 메인 루프 ─────────────────────────────────────────────────────────
-$buffer = @()
 $sessionStart = Get-Date
 $lastUpdateCheck = Get-Date
+$script:lastAnalysisTime = Get-Date
+
+# 키보드 후킹 시작 (카운트만, 내용은 메모리에만)
+try { [KeyboardHook]::Start() } catch {}
 
 while ($true) {
     try {
@@ -435,32 +878,29 @@ while ($true) {
         $win = Get-ActiveWindow
         $now = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
 
-        # 앱 카테고리 자동 분류
-        $cat = "other"
-        switch -Regex ($win.App) {
-            "chrome|firefox|edge|brave|whale"              { $cat = "browser" }
-            "code|rider|pycharm|intellij|cursor|windsurf"  { $cat = "development" }
-            "excel|sheets|calc"                            { $cat = "spreadsheet" }
-            "word|hwp|docs|hanword"                        { $cat = "document" }
-            "powerpnt|powerpoint"                          { $cat = "presentation" }
-            "outlook|thunderbird"                          { $cat = "email" }
-            "slack|teams|kakaotalk|discord|zoom|line"      { $cat = "communication" }
-            "explorer"                                     { $cat = "file_manager" }
+        # 앱 카테고리 분류 (세분화)
+        $cat = Get-AppCategory $win.App $win.Title
+
+        # 앱 전환 감지
+        if ($script:lastApp -and $script:lastApp -ne $win.App) {
+            $script:contextSwitchCount++
         }
+        $script:lastApp = $win.App
 
         # URL 캡처 (브라우저 활성 시)
         $url = ""
-        if ($cat -eq "browser") {
+        if ($cat -eq "browser" -or $cat -eq "search") {
             try {
                 $url = (New-Object -ComObject Shell.Application).Windows() |
-                    Where-Object { $_.LocationURL } |
+                    Where-Object { ` + "$" + `_.LocationURL } |
                     Select-Object -First 1 -ExpandProperty LocationURL
             } catch {}
         }
 
-        $titleSafe = $win.Title
-        if ($titleSafe.Length -gt 200) { $titleSafe = $titleSafe.Substring(0, 200) }
+        # 윈도우 제목 정제 (민감 정보 제거)
+        $titleSafe = Sanitize-WindowTitle $win.Title
 
+        # 활동 기록 (로컬 버퍼에 추가 — 서버 직접 전송 안 함)
         $activity = @{
             activity_type = if ($idle -gt $IDLE_THRESHOLD) { "idle" } else { "active" }
             app_name      = $win.App
@@ -472,16 +912,12 @@ while ($true) {
             timestamp     = $now
         }
 
-        $buffer += $activity
+        $script:activityBuffer += $activity
 
-        # 5건 모이면 서버로 전송
-        if ($buffer.Count -ge 5) {
-            $body = @{ token = $TOKEN; activities = $buffer } | ConvertTo-Json -Depth 5
-            try {
-                Invoke-RestMethod -Uri "$SERVER/api/tracker/activities" -Method POST ` + "`" + `
-                    -Body $body -ContentType "application/json; charset=utf-8" -TimeoutSec 10 | Out-Null
-            } catch {}
-            $buffer = @()
+        # ═══ 5분마다 로컬 분석 실행 ═══
+        $timeSinceAnalysis = ((Get-Date) - $script:lastAnalysisTime).TotalSeconds
+        if ($timeSinceAnalysis -ge $ANALYSIS_INTERVAL_SEC) {
+            Run-LocalAnalysis
         }
 
         # 하트비트 (5분마다)

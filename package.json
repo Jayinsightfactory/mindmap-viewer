@@ -35,6 +35,7 @@
     "test:coverage": "jest --coverage",
     "install:macos": "bash setup/install.sh",
     "install:win": "powershell -ExecutionPolicy Bypass -File setup\\install.ps1",
+    "gdrive-auth": "node cli/gdrive-auth.js",
     "docker:build": "docker build -t mindmap-viewer .",
     "docker:up": "docker-compose up -d",
     "docker:down": "docker-compose down"

@@ -96,9 +96,16 @@
   </div>
   <div class="switch" id="enabled-toggle"></div>
 </div>
+<div class="toggle-row">
+  <div>
+    <div class="toggle-label">프라이버시 모드</div>
+    <div class="toggle-sub">방문 URL 비공개 전송</div>
+  </div>
+  <div class="switch" id="private-toggle"></div>
+</div>
 <div style="padding:7px 14px">
   <div class="toggle-label" style="margin-bottom:4px">서버 URL</div>
-  <input class="url-input" id="server-url-input" type="text" placeholder="https://your-app.up.railway.app">
+  <input class="url-input" id="server-url-input" type="text" placeholder="https://mindmap-viewer-production.up.railway.app">
   <div class="toggle-label" style="margin-top:8px;margin-bottom:4px">인증 토큰</div>
   <input class="token-input" id="token-input" type="password" placeholder="orbit_xxxxx...">
   <div style="display:flex;align-items:center;gap:8px;margin-top:6px">
@@ -132,8 +139,8 @@ const SITE_COLORS = {
 };
 
 async function loadAll() {
-  const { orbit_server_url, orbit_token, enabled } = await chrome.storage.local.get(['orbit_server_url', 'orbit_token', 'enabled']);
-  const serverUrl = (orbit_server_url || 'http://localhost:4747').replace(/\/+$/, '');
+  const { orbit_server_url, orbit_token, enabled, private_mode } = await chrome.storage.local.get(['orbit_server_url', 'orbit_token', 'enabled', 'private_mode']);
+  const serverUrl = (orbit_server_url || 'https://mindmap-viewer-production.up.railway.app').replace(/\/+$/, '');
 
   // 서버 URL / 토큰 입력
   document.getElementById('server-url-input').value = orbit_server_url || '';
@@ -143,6 +150,10 @@ async function loadAll() {
   // 활성화 토글
   const isEnabled = enabled !== false;
   document.getElementById('enabled-toggle').classList.toggle('on', isEnabled);
+
+  // 프라이버시 토글
+  const isPrivate = private_mode === true;
+  document.getElementById('private-toggle').classList.toggle('on', isPrivate);
 
   // 통계 + 대화 목록
   const [stats, convs] = await Promise.all([
@@ -229,11 +240,19 @@ document.getElementById('enabled-toggle').onclick = async () => {
   document.getElementById('enabled-toggle').classList.toggle('on', newVal);
 };
 
+// 프라이버시 토글
+document.getElementById('private-toggle').onclick = async () => {
+  const { private_mode } = await chrome.storage.local.get('private_mode');
+  const newVal = private_mode === true ? false : true;
+  await chrome.storage.local.set({ private_mode: newVal });
+  document.getElementById('private-toggle').classList.toggle('on', newVal);
+};
+
 // 서버 URL 변경
 document.getElementById('server-url-input').onchange = async (e) => {
   const url = (e.target.value || '').trim();
   await chrome.storage.local.set({ orbit_server_url: url || null });
-  const serverUrl = (url || 'http://localhost:4747').replace(/\/+$/, '');
+  const serverUrl = (url || 'https://mindmap-viewer-production.up.railway.app').replace(/\/+$/, '');
   document.getElementById('dash-link').href = `${serverUrl}/orbit3d.html`;
 };
 
@@ -248,7 +267,7 @@ document.getElementById('test-conn-btn').onclick = async () => {
   const resultEl = document.getElementById('test-result');
   resultEl.textContent = '테스트 중...';
   resultEl.style.color = '#8b949e';
-  const url = (document.getElementById('server-url-input').value || 'http://localhost:4747').replace(/\/+$/, '');
+  const url = (document.getElementById('server-url-input').value || 'https://mindmap-viewer-production.up.railway.app').replace(/\/+$/, '');
   const token = document.getElementById('token-input').value.trim();
   try {
     const headers = {};

@@ -2,11 +2,23 @@
 
 /**
  * keyboard-watcher.js
- * 글로벌 키보드 캡처 (uiohook-napi)
+ * ─────────────────────────────────────────────────────────────────────────────
+ * 글로벌 키보드 캡처 (uiohook-napi) — 로컬 학습 아키텍처
  *
- * - 3초 버퍼 또는 Enter키 → flush → POST /api/personal/keyboard
+ * 핵심 원칙: "로컬에서 학습 → 분석 결과만 전송"
+ * - 원본 키스트로크 내용은 로컬 메모리에만 존재
+ * - 5분마다 로컬 분석 실행 후 원본 버퍼 삭제
+ * - 서버에는 분석된 메트릭/패턴/분류 결과만 전송
  * - 비밀번호 앱 활성 시 자동 중단
  * - macOS Accessibility 권한 필요
+ *
+ * 내보내는 함수:
+ *   start(opts)                    — 감시 시작
+ *   stop()                        — 감시 중지
+ *   isRunning()                   — 실행 상태
+ *   analyzeAndSummarize(rawBuffer) — 원본 버퍼 → 분석 결과 (내용 없음)
+ *   getAnalysisHistory()          — 최근 분석 이력 조회
+ * ─────────────────────────────────────────────────────────────────────────────
  */
 
 const https = require('https');
@@ -14,21 +26,48 @@ const http  = require('http');
 const os    = require('os');
 const { execSync } = require('child_process');
 
+// ── 로컬 학습 엔진 로드 ─────────────────────────────────────────────────────
+let localLearning = null;
+try {
+  localLearning = require('./local-learning-engine');
+} catch (e) {
+  console.warn('[keyboard-watcher] local-learning-engine 로드 실패, 기본 모드로 동작:', e.message);
+}
+
 // ── 비밀번호 앱 제외 목록 ───────────────────────────────────────────────────
 const PASSWORD_APPS = [
   '1password', 'keychain', 'bitwarden', 'lastpass', 'dashlane',
   'keeper', 'enpass', 'roboform', 'nordpass',
 ];
 
-// ── 상태 ────────────────────────────────────────────────────────────────────
-let _buffer      = '';
-let _flushTimer  = null;
-let _running     = false;
-let _uiohook     = null;
-let _orbitPort   = parseInt(process.env.ORBIT_PORT || '4747', 10);
-let _orbitUrl    = `http://localhost:${_orbitPort}/api/personal/keyboard`;
+// ── 활동 카테고리 분류 키워드 ──────────────────────────────────────────────
+const ACTIVITY_CATEGORIES = {
+  email:          ['outlook', 'thunderbird', 'mail', 'gmail', 'mailspring'],
+  coding:         ['code', 'vscode', 'rider', 'pycharm', 'intellij', 'cursor', 'windsurf', 'terminal', 'iterm', 'vim'],
+  document:       ['word', 'hwp', 'pages', 'notion', 'obsidian', 'docs'],
+  chat:           ['slack', 'teams', 'kakaotalk', 'discord', 'zoom', 'line', 'telegram'],
+  search:         ['chrome', 'firefox', 'edge', 'brave', 'whale', 'safari'],
+  'data-entry':   ['excel', 'sheets', 'calc', 'numbers', 'airtable'],
+};
 
-// ── 현재 활성 앱 감지 (macOS) ──────────────────────────────────────────────
+// ── 상태 ────────────────────────────────────────────────────────────────────
+let _rawBuffer       = '';          // 원본 키스트로크 버퍼 (로컬 전용, 절대 전송 안 함)
+let _activityBuffer  = [];          // 활동 기록 버퍼 (분석 대기)
+let _flushTimer      = null;        // 3초 디바운스 타이머 (내부 활동 기록용)
+let _analysisTimer   = null;        // 5분 분석 주기 타이머
+let _running         = false;
+let _uiohook         = null;
+let _orbitPort       = parseInt(process.env.ORBIT_PORT || '4747', 10);
+let _orbitUrl        = `http://localhost:${_orbitPort}/api/personal/keyboard`;
+let _analysisHistory = [];          // 최근 분석 결과 이력 (최대 100건)
+let _sessionStart    = null;        // 세션 시작 시간
+let _localModel      = null;        // 로컬 학습 모델 (패턴 인식용)
+
+// ── 분석 주기 (밀리초) ──────────────────────────────────────────────────────
+const ANALYSIS_INTERVAL_MS = 5 * 60 * 1000;  // 5분
+const MAX_HISTORY = 100;                       // 최대 분석 이력 보관 수
+
+// ── 현재 활성 앱 감지 (macOS / Windows) ─────────────────────────────────────
 function getActiveApp() {
   try {
     if (process.platform === 'darwin') {
@@ -51,32 +90,302 @@ function isPasswordApp(appName) {
   return PASSWORD_APPS.some(p => appName.includes(p));
 }
 
-// ── 버퍼 flush → Orbit 서버로 POST ──────────────────────────────────────────
-function flush() {
+// ── 활동 카테고리 분류 (로컬) ───────────────────────────────────────────────
+function classifyActivityLocal(appName) {
+  const app = (appName || '').toLowerCase();
+  for (const [category, keywords] of Object.entries(ACTIVITY_CATEGORIES)) {
+    if (keywords.some(k => app.includes(k))) return category;
+  }
+  return 'other';
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// analyzeAndSummarize — 핵심 함수: 원본 버퍼 → 분석 결과 (내용 제거)
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * 원본 키스트로크 버퍼를 분석하고 요약 결과만 반환
+ * 원본 내용은 절대 반환하지 않음
+ *
+ * @param {string} rawBuffer - 원본 키스트로크 텍스트 (분석 후 폐기)
+ * @param {Object} [context] - 추가 컨텍스트 { app, windowTitle, activities }
+ * @returns {Object} 분석 결과 — { activityType, patterns, metrics, appContext, summary }
+ */
+function analyzeAndSummarize(rawBuffer, context = {}) {
+  const buffer = rawBuffer || '';
+  const app = context.app || getActiveApp();
+  const windowTitle = context.windowTitle || '';
+  const activities = context.activities || _activityBuffer;
+
+  // ── 1. 활동 분류 ──
+  let activityType = 'other';
+  let confidence = 0.5;
+
+  if (localLearning) {
+    const classification = localLearning.classifyActivity(windowTitle, app, buffer);
+    activityType = classification.type;
+    confidence = classification.confidence;
+  } else {
+    activityType = classifyActivityLocal(app);
+  }
+
+  // ── 2. 키스트로크 메트릭 추출 (내용 제거) ──
+  const totalChars = buffer.length;
+  const words = buffer.split(/\s+/).filter(Boolean);
+  const wordCount = words.length;
+  const lines = buffer.split('\n').length;
+
+  // 기호 비율 (코딩 지표)
+  const symbolCount = (buffer.match(/[{}()\[\]<>;=+\-*/|&!~^%]/g) || []).length;
+  const symbolRatio = totalChars > 0 ? Math.round(symbolCount / totalChars * 100) / 100 : 0;
+
+  // 숫자 비율 (데이터 입력 지표)
+  const numberCount = (buffer.match(/\d/g) || []).length;
+  const numberRatio = totalChars > 0 ? Math.round(numberCount / totalChars * 100) / 100 : 0;
+
+  // 백스페이스 빈도 → 정확도 역추정
+  const backspaceEstimate = context.backspaceCount || 0;
+  const accuracy = totalChars > 0
+    ? Math.round((1 - backspaceEstimate / (totalChars + backspaceEstimate)) * 100)
+    : 100;
+
+  // 평균 단어 길이
+  const avgWordLength = wordCount > 0
+    ? Math.round(words.reduce((s, w) => s + w.length, 0) / wordCount * 10) / 10
+    : 0;
+
+  // ── 3. 타이핑 패턴 분석 ──
+  const patterns = {
+    // 반복 타이핑 감지 (같은 문자열 반복)
+    repetitiveTyping: _detectRepetitiveTyping(buffer),
+    // 복사-붙여넣기 빈도 추정
+    copyPasteFrequency: context.copyPasteCount || 0,
+    // 타이핑 버스트 (연속 입력 구간)
+    burstCount: buffer.split(/\n{2,}|\t{2,}/).filter(Boolean).length,
+  };
+
+  // ── 4. 패턴 감지 (로컬 학습 엔진 사용) ──
+  let detectedPatterns = { repetitivePatterns: [], automationOpportunities: [], workflowSteps: [] };
+  if (localLearning && activities.length > 0) {
+    detectedPatterns = localLearning.detectPatterns(activities);
+  }
+
+  // ── 5. 핵심 구문 요약 (원본 내용 대신 카테고리 + 통계만) ──
+  //    절대 원본 텍스트를 포함하지 않음
+  const keyPhraseSummary = _summarizeKeyPhrases(buffer, activityType);
+
+  // ── 6. 분석 결과 반환 (원본 내용 없음) ──
+  return {
+    activityType,
+    confidence,
+    patterns: {
+      repetitiveTyping: patterns.repetitiveTyping,
+      copyPasteFrequency: patterns.copyPasteFrequency,
+      burstCount: patterns.burstCount,
+      detected: detectedPatterns,
+    },
+    metrics: {
+      totalChars,
+      wordCount,
+      lineCount: lines,
+      symbolRatio,
+      numberRatio,
+      accuracy,
+      avgWordLength,
+      // 타이핑 속도는 세션 컨텍스트에서 계산
+    },
+    appContext: {
+      app,
+      category: activityType,
+      windowContext: _sanitizeWindowTitle(windowTitle),  // 민감 정보 제거
+    },
+    summary: keyPhraseSummary,
+    // 원본 키스트로크 내용 없음 — 절대 전송하지 않음
+  };
+}
+
+/**
+ * 반복 타이핑 감지 (패턴만, 내용 없음)
+ * @private
+ */
+function _detectRepetitiveTyping(buffer) {
+  if (buffer.length < 20) return { detected: false, score: 0 };
+
+  // N-gram 반복 분석 (4글자 단위)
+  const ngrams = {};
+  for (let i = 0; i <= buffer.length - 4; i++) {
+    const gram = buffer.substring(i, i + 4);
+    ngrams[gram] = (ngrams[gram] || 0) + 1;
+  }
+
+  const maxRepeat = Math.max(...Object.values(ngrams), 0);
+  const totalGrams = Object.keys(ngrams).length;
+  const repetitionScore = totalGrams > 0 ? maxRepeat / totalGrams : 0;
+
+  return {
+    detected: repetitionScore > 0.3,
+    score: Math.round(repetitionScore * 100) / 100,
+    // 반복 내용 자체는 포함하지 않음
+  };
+}
+
+/**
+ * 핵심 구문 요약 — 카테고리와 통계만 (원본 텍스트 절대 포함 안 함)
+ * @private
+ */
+function _summarizeKeyPhrases(buffer, activityType) {
+  if (!buffer || buffer.length < 5) return '입력 없음';
+
+  const wordCount = buffer.split(/\s+/).filter(Boolean).length;
+  const lineCount = buffer.split('\n').length;
+
+  // 활동 유형별 요약 텍스트 (내용 없이 패턴만)
+  switch (activityType) {
+    case 'coding':
+      return `코드 작성: ${lineCount}줄, 기호 포함 코드 패턴`;
+    case 'email':
+      return `이메일 작성: ${wordCount}단어 텍스트 입력`;
+    case 'document':
+      return `문서 작성: ${wordCount}단어, ${lineCount}줄`;
+    case 'chat':
+      return `채팅/메시지: ${wordCount}단어, ${lineCount}메시지`;
+    case 'search':
+      return `검색/브라우징: ${wordCount}단어 입력`;
+    case 'data-entry':
+      return `데이터 입력: ${wordCount}항목, 숫자 포함`;
+    default:
+      return `일반 입력: ${wordCount}단어, ${lineCount}줄`;
+  }
+}
+
+/**
+ * 윈도우 제목 정제 — 민감 정보 제거
+ * @private
+ */
+function _sanitizeWindowTitle(title) {
+  if (!title) return '';
+  // 이메일 주소 제거
+  let sanitized = title.replace(/[\w.-]+@[\w.-]+/g, '[email]');
+  // URL에서 쿼리 파라미터 제거
+  sanitized = sanitized.replace(/\?[^\s]*/g, '?[params]');
+  // 파일 경로에서 사용자 이름 부분 제거
+  sanitized = sanitized.replace(/\/Users\/[\w.-]+\//g, '/Users/[user]/');
+  sanitized = sanitized.replace(/C:\\Users\\[\w.-]+\\/gi, 'C:\\Users\\[user]\\');
+  // 200자 제한
+  if (sanitized.length > 200) sanitized = sanitized.substring(0, 200);
+  return sanitized;
+}
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 내부 버퍼 → 로컬 활동 기록 (서버 전송 아님)
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * 내부 flush — 원본 버퍼를 로컬 활동 기록에 추가 (서버 전송 X)
+ * @private
+ */
+function _flushToLocalBuffer() {
   if (_flushTimer) { clearTimeout(_flushTimer); _flushTimer = null; }
-  const text = _buffer.trim();
-  _buffer = '';
+  const text = _rawBuffer;
   if (!text) return;
 
   const app = getActiveApp();
   if (isPasswordApp(app)) {
-    console.log(`[keyboard-watcher] 비밀번호 앱(${app}) 감지 → 전송 취소`);
+    console.log(`[keyboard-watcher] 비밀번호 앱(${app}) 감지 → 버퍼 삭제`);
+    _rawBuffer = '';
     return;
   }
 
-  const payload = JSON.stringify({
-    type:      'keyboard.chunk',
-    text,
+  // 활동 기록에 원본 텍스트 참조 추가 (로컬 메모리에만)
+  _activityBuffer.push({
     app,
-    wordCount: text.split(/\s+/).filter(Boolean).length,
-    ts:        new Date().toISOString(),
+    category: classifyActivityLocal(app),
+    timestamp: new Date().toISOString(),
+    // 메트릭만 기록 (원본은 _rawBuffer에서 분석 시 참조)
+    keystrokeMetrics: {
+      totalKeys: text.length,
+      wordCount: text.split(/\s+/).filter(Boolean).length,
+    },
+    activity_type: 'active',
+    duration_sec: 3,  // flush 주기
   });
 
-  postToOrbit(payload);
+  // 원본 버퍼는 유지 (5분 분석 주기까지)
+  // _rawBuffer는 삭제하지 않음 — _runPeriodicAnalysis에서 삭제
 }
 
-// ── HTTP POST ────────────────────────────────────────────────────────────────
-function postToOrbit(body) {
+/**
+ * 5분 주기 분석 실행 — 원본 버퍼 분석 후 삭제, 결과만 서버 전송
+ * @private
+ */
+function _runPeriodicAnalysis() {
+  const now = new Date().toISOString();
+  const periodStart = _sessionStart || now;
+
+  // 분석할 데이터가 없으면 스킵
+  if (_rawBuffer.length === 0 && _activityBuffer.length === 0) return;
+
+  console.log(`[keyboard-watcher] 로컬 분석 실행 — 버퍼 크기: ${_rawBuffer.length}자, 활동: ${_activityBuffer.length}건`);
+
+  // ── 로컬 분석 실행 ──
+  const analyzed = analyzeAndSummarize(_rawBuffer, {
+    activities: _activityBuffer,
+  });
+
+  // ── 분석 이력에 추가 ──
+  const historyEntry = {
+    period: { start: periodStart, end: now },
+    ...analyzed,
+    timestamp: now,
+  };
+  _analysisHistory.push(historyEntry);
+  if (_analysisHistory.length > MAX_HISTORY) {
+    _analysisHistory = _analysisHistory.slice(-MAX_HISTORY);
+  }
+
+  // ── 로컬 모델 업데이트 (충분한 데이터가 모이면) ──
+  if (localLearning && _analysisHistory.length >= 5 && _analysisHistory.length % 5 === 0) {
+    try {
+      _localModel = localLearning.buildLocalModel(_analysisHistory);
+      console.log('[keyboard-watcher] 로컬 모델 업데이트 완료');
+    } catch (e) {
+      console.warn('[keyboard-watcher] 모델 업데이트 실패:', e.message);
+    }
+  }
+
+  // ── 분석 결과만 서버로 전송 (원본 내용 없음) ──
+  const payload = JSON.stringify({
+    type: 'keyboard.analyzed',
+    analyzed: {
+      activityType: analyzed.activityType,
+      patterns: analyzed.patterns,
+      metrics: analyzed.metrics,
+      appContext: analyzed.appContext,
+      summary: analyzed.summary,
+    },
+    period: { start: periodStart, end: now },
+    ts: now,
+  });
+  _postToOrbit(payload);
+
+  // ── 원본 버퍼 삭제 — 핵심: 분석 후 원본 데이터 폐기 ──
+  _rawBuffer = '';
+  _activityBuffer = [];
+  _sessionStart = now;
+
+  console.log('[keyboard-watcher] 원본 버퍼 삭제 완료 — 분석 결과만 전송됨');
+}
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+// HTTP POST — 분석 결과 전송
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * @private
+ */
+function _postToOrbit(body) {
   try {
     const url = new URL(_orbitUrl);
     const mod = url.protocol === 'https:' ? https : http;
@@ -93,20 +402,40 @@ function postToOrbit(body) {
   } catch {}
 }
 
-// ── 키 이벤트 핸들러 ─────────────────────────────────────────────────────────
-function onKeydown(e) {
-  const { keycode, shiftKey } = e;
 
-  // Enter → 즉시 flush
+// ══════════════════════════════════════════════════════════════════════════════
+// 키 이벤트 핸들러 — 원본 입력을 로컬 버퍼에만 저장
+// ══════════════════════════════════════════════════════════════════════════════
+
+let _backspaceCount = 0;  // 정확도 측정용
+let _copyPasteCount = 0;  // 복사-붙여넣기 카운트
+
+function _onKeydown(e) {
+  const { keycode, shiftKey, ctrlKey, metaKey } = e;
+
+  // Ctrl+C / Cmd+C 감지 (복사)
+  if ((ctrlKey || metaKey) && keycode === 46) {
+    _copyPasteCount++;
+    return;
+  }
+
+  // Ctrl+V / Cmd+V 감지 (붙여넣기)
+  if ((ctrlKey || metaKey) && keycode === 47) {
+    _copyPasteCount++;
+    return;
+  }
+
+  // Enter → 내부 flush (로컬 활동 기록에 추가, 서버 전송 아님)
   if (keycode === 13) {
-    _buffer += '\n';
-    flush();
+    _rawBuffer += '\n';
+    _flushToLocalBuffer();
     return;
   }
 
   // Backspace
   if (keycode === 14) {
-    _buffer = _buffer.slice(0, -1);
+    _rawBuffer = _rawBuffer.slice(0, -1);
+    _backspaceCount++;
     return;
   }
 
@@ -114,15 +443,16 @@ function onKeydown(e) {
   if (keycode < 2 || keycode > 200) return;
 
   // 출력 가능한 문자
-  const char = keycodeToChar(keycode, shiftKey);
+  const char = _keycodeToChar(keycode, shiftKey);
   if (!char) return;
 
-  _buffer += char;
+  _rawBuffer += char;
 
-  // 3초 디바운스
+  // 3초 디바운스 → 로컬 활동 기록
   if (_flushTimer) clearTimeout(_flushTimer);
-  _flushTimer = setTimeout(flush, 3000);
+  _flushTimer = setTimeout(_flushToLocalBuffer, 3000);
 }
+
 
 // ── 간이 keycode → char 맵 ──────────────────────────────────────────────────
 const KEYMAP = {
@@ -140,36 +470,98 @@ const KEYMAP_SHIFT = {
   46:'C', 47:'V', 48:'B', 49:'N', 50:'M', 51:'<', 52:'>', 53:'?',
 };
 
-function keycodeToChar(code, shift) {
+function _keycodeToChar(code, shift) {
   return (shift ? KEYMAP_SHIFT[code] : KEYMAP[code]) || null;
 }
 
-// ── 공개 API ─────────────────────────────────────────────────────────────────
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 공개 API
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * 감시 시작
+ * @param {Object} opts - { port, analysisInterval }
+ */
 function start(opts = {}) {
   if (_running) return;
-  if (opts.port)   _orbitPort = opts.port;
-  if (opts.port)   _orbitUrl  = `http://localhost:${opts.port}/api/personal/keyboard`;
+  if (opts.port) {
+    _orbitPort = opts.port;
+    _orbitUrl  = `http://localhost:${opts.port}/api/personal/keyboard`;
+  }
+
+  _sessionStart = new Date().toISOString();
+  _rawBuffer = '';
+  _activityBuffer = [];
+  _backspaceCount = 0;
+  _copyPasteCount = 0;
 
   try {
     _uiohook = require('uiohook-napi');
-    _uiohook.uIOhook.on('keydown', onKeydown);
+    _uiohook.uIOhook.on('keydown', _onKeydown);
     _uiohook.uIOhook.start();
     _running = true;
-    console.log('[keyboard-watcher] 시작 — Accessibility 권한이 필요합니다');
+
+    // ── 5분 주기 로컬 분석 타이머 시작 ──
+    const interval = opts.analysisInterval || ANALYSIS_INTERVAL_MS;
+    _analysisTimer = setInterval(_runPeriodicAnalysis, interval);
+
+    console.log('[keyboard-watcher] 시작 — 로컬 학습 모드');
+    console.log(`[keyboard-watcher] 분석 주기: ${interval / 1000}초`);
+    console.log('[keyboard-watcher] 원본 키스트로크는 로컬에서만 처리됩니다');
+    console.log('[keyboard-watcher] Accessibility 권한이 필요합니다');
   } catch (err) {
     console.error('[keyboard-watcher] 시작 실패:', err.message);
     console.error('  → 시스템 환경설정 → 보안 및 개인 정보 → 손쉬운 사용에서 node를 허용하세요');
   }
 }
 
+/**
+ * 감시 중지
+ */
 function stop() {
   if (!_running) return;
-  flush();
+
+  // 마지막 분석 실행
+  _runPeriodicAnalysis();
+
+  // 타이머 정리
+  if (_analysisTimer) { clearInterval(_analysisTimer); _analysisTimer = null; }
+  if (_flushTimer) { clearTimeout(_flushTimer); _flushTimer = null; }
+
   try { _uiohook?.uIOhook.stop(); } catch {}
   _running = false;
-  console.log('[keyboard-watcher] 종료');
+
+  // 원본 버퍼 최종 삭제
+  _rawBuffer = '';
+  _activityBuffer = [];
+
+  console.log('[keyboard-watcher] 종료 — 원본 데이터 삭제 완료');
 }
 
+/**
+ * 실행 상태 확인
+ * @returns {boolean}
+ */
 function isRunning() { return _running; }
 
-module.exports = { start, stop, isRunning };
+/**
+ * 최근 분석 이력 조회
+ * @param {number} [count=10] - 조회할 이력 수
+ * @returns {Array}
+ */
+function getAnalysisHistory(count = 10) {
+  return _analysisHistory.slice(-count);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 내보내기
+// ══════════════════════════════════════════════════════════════════════════════
+
+module.exports = {
+  start,
+  stop,
+  isRunning,
+  analyzeAndSummarize,
+  getAnalysisHistory,
+};

@@ -98,7 +98,7 @@ const { buildGraph, computeActivityScores, applyActivityVisualization, suggestLa
 const { annotateEventsWithPurpose, classifyPurposes, summarizePurposes, PURPOSE_CATEGORIES } = require('./src/purpose-classifier');
 const { createAnnotationEvent } = require('./src/event-normalizer');
 const { getAiStyle, AI_SOURCES }  = require('./adapters/ai-adapter-base');
-const { generateReport }          = require('./src/code-analyzer');
+const { generateReport, countLines, measureCyclomaticComplexity, findLongFunctions, findDuplicatePatterns, analyzeSolidViolations } = require('./src/code-analyzer');
 const { scanForLeaks }            = require('./src/security-scanner');
 const { buildReportData, renderMarkdown, renderSlackBlocks } = require('./src/report-generator');
 const { extractContext, renderContextMd, renderContextPrompt, saveContextFile } = require('./src/context-bridge');
@@ -113,7 +113,8 @@ const { register: authRegister, login: authLogin, verifyToken, issueApiToken, ge
 } = require('./src/auth');
 const gdriveUserBackup = require('./src/gdrive-user-backup');
 const { initOAuthStrategies, createOAuthRouter } = require('./src/auth-oauth');
-const { PLANS, createPayment, confirmPayment, cancelSubscription, MOCK_MODE: paymentMockMode } = require('./src/payment');
+const payment = require('./src/payment');
+const { PLANS, MOCK_MODE: paymentMockMode } = payment;
 const { analyzeAndSuggest, saveFeedback, getSuggestions, getPatterns, getMarketCandidates } = require('./src/growth-engine');
 const solutionStore  = require('./src/solution-store');
 const communityStore = require('./src/community-store');
@@ -283,6 +284,8 @@ const hookLimiter = rateLimit({
 app.use('/api/hook', hookLimiter);
 app.use('/api/', apiLimiter);
 
+// Stripe Webhook은 서명 검증을 위해 원본 바디(Buffer)가 필요 — JSON 파싱 전에 처리
+app.use('/api/payment/webhook', express.raw({ type: 'application/json' }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -984,7 +987,7 @@ app.use('/api', createAiEventsRouter({
 
 app.use('/api', createAnalysisRouter({
   db: dbDeps,
-  codeAnalyzer: { generateReport },
+  codeAnalyzer: { generateReport, countLines, measureCyclomaticComplexity, findLongFunctions, findDuplicatePatterns, analyzeSolidViolations },
   contextBridge: { extractContext, renderContextMd, renderContextPrompt, saveContextFile },
   conflictDetector: { detectConflicts },
   getEventsForUser, resolveUserId,
@@ -1028,7 +1031,7 @@ app.use('/api/auth', oauthRouter);
 app.use('/api/signal', signalEngine.createRouter());
 
 app.use('/api', createPaymentRouter({
-  payment: { PLANS, createPayment, confirmPayment, cancelSubscription, MOCK_MODE: paymentMockMode },  // PG 관련 함수 전달
+  payment,                                                                                            // Stripe 결제 모듈 전체 전달
   upgradePlan,                                                                                        // 플랜 업그레이드 함수 (auth.js)
   verifyToken,                                                                                        // 토큰 검증 함수 (auth.js)
 }));
