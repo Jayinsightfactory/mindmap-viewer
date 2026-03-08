@@ -258,13 +258,21 @@ function hitTest(clientX, clientY) {
   const rect = _labelCanvas2d.getBoundingClientRect();
   const mx   = clientX - rect.left;
   const my   = clientY - rect.top;
-  // 역순 검색: 나중에 그려진 것(세션 노드)이 먼저 매칭 (겹침 시 위에 있는 것 우선)
+  // 가장 가까운 히트 영역 반환 (겹침 시 클릭 위치에 중심이 가장 가까운 노드 선택)
+  // drawCompactProjectView에서 드릴 노드를 배열 끝에 정렬해 두므로,
+  // 동점일 경우 역순 우선순위(드릴 노드 우선)가 자연스럽게 적용됨
+  let bestHit = null;
+  let bestDist2 = Infinity;
   for (let i = _hitAreas.length - 1; i >= 0; i--) {
     const h = _hitAreas[i];
     const dx = mx - h.cx, dy = my - h.cy;
-    if (dx*dx + dy*dy <= h.r*h.r) return h;
+    const d2 = dx*dx + dy*dy;
+    if (d2 <= h.r*h.r && d2 < bestDist2) {
+      bestHit  = h;
+      bestDist2 = d2;
+    }
   }
-  return null;
+  return bestHit;
 }
 
 function updateRaycast() {

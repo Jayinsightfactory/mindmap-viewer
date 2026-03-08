@@ -3193,6 +3193,16 @@ function drawCompactProjectView() {
       });
     }
   });
+
+  // ── hitArea 우선순위 정렬: 드릴 노드가 프로젝트 카드보다 위 (역순 루프 대응) ──
+  // constellation(프로젝트 카드)을 앞으로, drillCategory/drillSession을 뒤로 이동
+  // → hitTest는 배열 역순이므로 드릴 노드가 겹칠 때 우선 선택됨
+  _hitAreas.sort((a, b) => {
+    const drillTypes = new Set(['drillCategory', 'drillSession']);
+    const aDrill = drillTypes.has(a.data?.type) ? 1 : 0;
+    const bDrill = drillTypes.has(b.data?.type) ? 1 : 0;
+    return aDrill - bDrill;
+  });
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
