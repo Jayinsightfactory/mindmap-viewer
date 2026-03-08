@@ -269,9 +269,7 @@ function createOAuthRouter({ passport, enabledProviders, insertToken, CLIENT_ORI
     router.get('/google/callback',
       passport.authenticate('google', { session: false, failureRedirect: `${origin}/?oauth_error=google_failed` }),
       async (req, res) => {
-        const token = generateToken();
-        await insertToken(req.user.id, token);
-        // 토큰을 URL 프래그먼트로 전달 (서버 로그에 남지 않음)
+        const token = await insertToken(req.user.id);
         res.redirect(`${clientPage}?oauth_token=${token}&provider=google`);
       }
     );
@@ -290,8 +288,7 @@ function createOAuthRouter({ passport, enabledProviders, insertToken, CLIENT_ORI
     router.get('/github/callback',
       passport.authenticate('github', { session: false, failureRedirect: `${origin}/?oauth_error=github_failed` }),
       async (req, res) => {
-        const token = generateToken();
-        await insertToken(req.user.id, token);
+        const token = await insertToken(req.user.id);
         res.redirect(`${clientPage}?oauth_token=${token}&provider=github`);
       }
     );
@@ -307,8 +304,7 @@ function createOAuthRouter({ passport, enabledProviders, insertToken, CLIENT_ORI
     router.get('/kakao/callback',
       passport.authenticate('kakao', { session: false, failureRedirect: `${origin}/?oauth_error=kakao_failed` }),
       async (req, res) => {
-        const token = generateToken();
-        await insertToken(req.user.id, token);
+        const token = await insertToken(req.user.id);
         res.redirect(`${clientPage}?oauth_token=${token}&provider=kakao`);
       }
     );
@@ -324,8 +320,7 @@ function createOAuthRouter({ passport, enabledProviders, insertToken, CLIENT_ORI
     router.get('/naver/callback',
       passport.authenticate('naver', { session: false, failureRedirect: `${origin}/?oauth_error=naver_failed` }),
       async (req, res) => {
-        const token = generateToken();
-        await insertToken(req.user.id, token);
+        const token = await insertToken(req.user.id);
         res.redirect(`${clientPage}?oauth_token=${token}&provider=naver`);
       }
     );
@@ -342,8 +337,7 @@ function createOAuthRouter({ passport, enabledProviders, insertToken, CLIENT_ORI
     router.post('/apple/callback',
       passport.authenticate('apple', { session: false, failureRedirect: `${origin}/?oauth_error=apple_failed` }),
       async (req, res) => {
-        const token = generateToken();
-        await insertToken(req.user.id, token);
+        const token = await insertToken(req.user.id);
         res.redirect(`${clientPage}?oauth_token=${token}&provider=apple`);
       }
     );
