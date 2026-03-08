@@ -43,6 +43,8 @@ function _orbitAnimLoop(now) {
     if (typeof _animateLiveBranches === 'function') _animateLiveBranches();
   }
   renderer.render(scene, camera);
+  if (typeof updateTweens === "function") updateTweens();
+  if (typeof animateCoreSkills === "function") animateCoreSkills(Date.now() / 1000);
   // 목표 HUD 업데이트 (Ollama 분석 결과)
   if (window._lastOllamaGoal && now % 2000 < 20) {
     const g = window._lastOllamaGoal;

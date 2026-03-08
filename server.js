@@ -1415,6 +1415,51 @@ app.get('/api/learned-insights/latest', (req, res) => {
   res.json({ ok: true, insight: data[0] || null });
 });
 
+// ── 행동 데이터 동기화 API ─────────────────────────────────────────────────────
+// 브라우저의 orbit3d-behavior.js가 주기적으로 POST하는 행동 스냅샷 수신
+const _behaviorStore = new Map(); // userId → [{ ts, score, kps, cps, ... }]
+
+app.post('/api/behavior/sync', (req, res) => {
+  try {
+    const token  = (req.headers.authorization || '').replace('Bearer ','').trim() || req.query.token;
+    const user   = _verifyToken(token);
+    const uid    = user?.id || 'anonymous';
+    const { score, kps, cps, history, sessionId } = req.body || {};
+    if (typeof score !== 'number') return res.status(400).json({ error: 'score required' });
+
+    const now = Date.now();
+    const snap = { ts: now, score, kps: kps || 0, cps: cps || 0, sessionId };
+
+    // 인메모리 저장 (최대 120개 = 2분)
+    if (!_behaviorStore.has(uid)) _behaviorStore.set(uid, []);
+    const arr = _behaviorStore.get(uid);
+    arr.push(snap);
+    if (arr.length > 120) arr.splice(0, arr.length - 120);
+
+    // WebSocket으로 실시간 브로드캐스트 (같은 사용자 세션에게만)
+    for (const client of wss.clients) {
+      if (client.readyState !== WebSocket.OPEN) continue;
+      if (client._userId && client._userId !== uid && uid !== 'anonymous') continue;
+      try { client.send(JSON.stringify({ type: 'behavior_score', uid, score, kps, cps, ts: now })); } catch {}
+    }
+
+    res.json({ ok: true, uid, score, buffered: arr.length });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET 최근 행동 통계
+app.get('/api/behavior/stats', (req, res) => {
+  const token  = (req.headers.authorization || '').replace('Bearer ','').trim() || req.query.token;
+  const user   = _verifyToken(token);
+  const uid    = user?.id || 'anonymous';
+  const arr    = _behaviorStore.get(uid) || [];
+  const avg    = arr.length ? arr.reduce((s,x) => s + x.score, 0) / arr.length : 0;
+  const peak   = arr.length ? Math.max(...arr.map(x => x.score)) : 0;
+  res.json({ ok: true, uid, snapshots: arr.length, avgScore: +avg.toFixed(3), peakScore: +peak.toFixed(3), latest: arr.slice(-5) });
+});
+
 // ── 설치 스크립트 (.ps1 / .sh) ─────────────────────────────────────────────
 const createSetupScriptsRouter = require('./routes/setup-scripts');
 app.use('/', createSetupScriptsRouter({ PORT }));

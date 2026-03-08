@@ -38,8 +38,8 @@ function resizeRendererToSidebar() {
 window.resizeRendererToSidebar = resizeRendererToSidebar;
 
 const scene  = new THREE.Scene();
-scene.background = new THREE.Color(0xf0f2f5);
-scene.fog = new THREE.FogExp2(0xf0f2f5, 0.003);
+scene.background = new THREE.Color(0x070b14);
+scene.fog = new THREE.FogExp2(0x070b14, 0.004);
 
 // ─── 4단계 드릴다운 상태 ──────────────────────────────────────────────────────
 let _drillStage = 0;              // 0=전체, 1=카테고리링, 2=타임라인, 3=파일상세
@@ -51,16 +51,48 @@ const camera = new THREE.PerspectiveCamera(55, innerWidth/innerHeight, 0.1, 2000
 camera.position.set(0, 25, 55);                       // 컴팩트 뷰에 맞는 초기 거리
 camera.lookAt(0,0,0);
 
-// ─── 조명 (밝은 테마) ─────────────────────────────────────────────────────────
-scene.add(new THREE.AmbientLight(0xffffff, 1.0));
-const sun = new THREE.PointLight(0xffffff, 0.8, 500);
-sun.position.set(0, 30, 0);
+// ─── 조명 (다크 네온 테마) ────────────────────────────────────────────────────
+scene.add(new THREE.AmbientLight(0x0a1428, 0.8));
+const sun = new THREE.PointLight(0x00c8ff, 1.2, 600);
+sun.position.set(0, 50, 0);
 scene.add(sun);
-const rimLight = new THREE.PointLight(0x8bb8f0, 0.6, 300);
-rimLight.position.set(-100,80,-80);
+const rimLight = new THREE.PointLight(0xa855f7, 0.9, 400);
+rimLight.position.set(-120, 90, -90);
 scene.add(rimLight);
+const rimLight2 = new THREE.PointLight(0x00ff88, 0.5, 300);
+rimLight2.position.set(100, -40, 80);
+scene.add(rimLight2);
 
-// ─── 별 배경 제거 (밝은 테마에서는 깔끔한 배경) ─────────────────────────────
+// ─── 별 배경 (다크 네온 테마) ─────────────────────────────────────────────
+(function addStarField() {
+  const starCount = 1800;
+  const positions = new Float32Array(starCount * 3);
+  const colors    = new Float32Array(starCount * 3);
+  const starColors = [
+    [0.0, 0.78, 1.0],   // neon cyan
+    [0.66, 0.33, 0.97],  // purple
+    [0.8, 0.8, 1.0],     // white-blue
+    [1.0, 1.0, 1.0],     // white
+  ];
+  for (let i = 0; i < starCount; i++) {
+    const r = 800 + Math.random() * 400;
+    const theta = Math.random() * Math.PI * 2;
+    const phi   = Math.acos(2 * Math.random() - 1);
+    positions[i*3]   = r * Math.sin(phi) * Math.cos(theta);
+    positions[i*3+1] = r * Math.sin(phi) * Math.sin(theta);
+    positions[i*3+2] = r * Math.cos(phi);
+    const c = starColors[Math.floor(Math.random() * starColors.length)];
+    const bright = 0.3 + Math.random() * 0.7;
+    colors[i*3]   = c[0] * bright;
+    colors[i*3+1] = c[1] * bright;
+    colors[i*3+2] = c[2] * bright;
+  }
+  const geo  = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('color',    new THREE.BufferAttribute(colors,    3));
+  const mat  = new THREE.PointsMaterial({ size: 0.7, vertexColors: true, transparent: true, opacity: 0.85 });
+  scene.add(new THREE.Points(geo, mat));
+})();
 
 // ─── 타입 → 색상 / 의미 매핑 ─────────────────────────────────────────────────
 const TYPE_CFG = {

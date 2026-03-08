@@ -4248,3 +4248,105 @@ function updateZoomSummary() {
 
 // ─── 데이터 로드 ──────────────────────────────────────────────────────────────
 // 현재 로그인 토큰 반환 헬퍼 (fetch 인증 헤더용)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// MY CREATIVE CORE — 개인 뷰 기술스택/핵심 도구 노드 링
+// ══════════════════════════════════════════════════════════════════════════════
+
+// 기본 스킬 세트 (사용자 데이터가 없을 때 표시)
+const _defaultCoreSkills = [
+  { id: 'sk-claude',  label: 'Claude AI',   icon: '🤖', color: '#00c8ff', type: 'ai'     },
+  { id: 'sk-code',    label: 'Coding',       icon: '💻', color: '#a855f7', type: 'tool'   },
+  { id: 'sk-design',  label: 'Design',       icon: '🎨', color: '#00ff88', type: 'skill'  },
+  { id: 'sk-data',    label: 'Data',         icon: '📊', color: '#ffd700', type: 'skill'  },
+  { id: 'sk-collab',  label: 'Collab',       icon: '🤝', color: '#ff6b35', type: 'social' },
+  { id: 'sk-deploy',  label: 'Deploy',       icon: '🚀', color: '#39d2c0', type: 'tool'   },
+];
+
+// 사용자 이벤트 데이터로부터 스킬 노드 추출
+function deriveSkillsFromEvents(events) {
+  const toolCounts = {};
+  const typeCounts = {};
+  for (const ev of events || []) {
+    const tool = ev.data?.tool || ev.data?.toolName;
+    if (tool) toolCounts[tool] = (toolCounts[tool] || 0) + 1;
+    if (ev.type) typeCounts[ev.type] = (typeCounts[ev.type] || 0) + 1;
+  }
+  const skills = [];
+  if ((typeCounts['assistant.message'] || 0) + (typeCounts['user.message'] || 0) > 5) {
+    skills.push({ id: 'sk-ai', label: 'AI 협업', icon: '🤖', color: '#00c8ff', type: 'ai' });
+  }
+  if ((typeCounts['file.write'] || 0) + (typeCounts['file.create'] || 0) > 3) {
+    skills.push({ id: 'sk-code', label: '코딩', icon: '💻', color: '#a855f7', type: 'tool' });
+  }
+  if ((typeCounts['git.commit'] || 0) > 1) {
+    skills.push({ id: 'sk-git', label: 'Git', icon: '🌿', color: '#3fb950', type: 'tool' });
+  }
+  if ((typeCounts['browse'] || 0) + (typeCounts['browser_activity'] || 0) > 3) {
+    skills.push({ id: 'sk-web', label: '웹 리서치', icon: '🌐', color: '#58a6ff', type: 'skill' });
+  }
+  return skills.length >= 3 ? skills : _defaultCoreSkills;
+}
+
+// MY CREATIVE CORE 링 빌드 (Three.js 메시)
+let _coreSkillMeshes = [];
+let _coreSkillData   = [];
+
+function buildCoreSkillRing(skills) {
+  // 기존 스킬 메시 제거
+  _coreSkillMeshes.forEach(m => scene.remove(m));
+  _coreSkillMeshes = [];
+  _coreSkillData   = [];
+
+  const RING_R = 18;   // 중심으로부터 반지름
+  const N      = skills.length;
+
+  skills.forEach((sk, i) => {
+    const angle = (i / N) * Math.PI * 2 - Math.PI / 2;
+    const x = Math.cos(angle) * RING_R;
+    const z = Math.sin(angle) * RING_R;
+
+    const color   = new THREE.Color(sk.color);
+    const geo     = new THREE.OctahedronGeometry(1.4, 0);
+    const mat     = new THREE.MeshStandardMaterial({
+      color, emissive: color, emissiveIntensity: 0.6,
+      transparent: true, opacity: 0.9,
+      roughness: 0.2, metalness: 0.7,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(x, 0, z);
+    mesh.rotation.y = angle;
+    mesh.userData = { type: 'coreSkill', skill: sk, baseY: 0, angle };
+    scene.add(mesh);
+    _coreSkillMeshes.push(mesh);
+
+    // 링 연결선 (중심 → 스킬)
+    const linePts = [new THREE.Vector3(0, 0, 0), new THREE.Vector3(x, 0, z)];
+    const lineGeo = new THREE.BufferGeometry().setFromPoints(linePts);
+    const lineMat = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.18 });
+    const line    = new THREE.Line(lineGeo, lineMat);
+    scene.add(line);
+    _coreSkillMeshes.push(line);
+
+    _coreSkillData.push({ mesh, x, z, color: sk.color, label: sk.label, icon: sk.icon, angle });
+  });
+}
+
+// 애니메이션 루프에서 스킬 노드 부유 효과 적용 (orbit3d-loop에서 호출)
+function animateCoreSkills(elapsed) {
+  _coreSkillData.forEach((sk, i) => {
+    if (!sk.mesh || sk.mesh.type === 'Line') return;
+    sk.mesh.position.y = Math.sin(elapsed * 0.8 + i * 1.1) * 0.5;
+    sk.mesh.rotation.y += 0.008;
+    // 활성 노드는 에미시브 강도 펄스
+    const pulseMat = sk.mesh.material;
+    if (pulseMat) {
+      pulseMat.emissiveIntensity = 0.4 + 0.3 * Math.sin(elapsed * 1.5 + i * 0.7);
+    }
+  });
+}
+window.animateCoreSkills   = animateCoreSkills;
+window.buildCoreSkillRing  = buildCoreSkillRing;
+window.deriveSkillsFromEvents = deriveSkillsFromEvents;
+window._coreSkillData      = _coreSkillData;
+window._coreSkillMeshes    = _coreSkillMeshes;

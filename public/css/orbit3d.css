@@ -2552,3 +2552,272 @@
 
   .gp-history { display:flex; flex-direction:column; gap:3px; }
 
+
+/* ══════════════════════════════════════════════════════════════════════════
+   ▌ DARK NEON THEME — 하이테크 사이언/퍼플 다크모드
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── CSS 변수 ──────────────────────────────────────────────────────────── */
+:root {
+  --neon-cyan:   #00c8ff;
+  --neon-purple: #a855f7;
+  --neon-green:  #00ff88;
+  --neon-pink:   #ff2d78;
+  --bg-base:     #070b14;
+  --bg-panel:    rgba(8, 14, 30, 0.96);
+  --bg-card:     rgba(12, 18, 36, 0.92);
+  --border-neon: rgba(0, 200, 255, 0.18);
+  --border-dim:  rgba(0, 200, 255, 0.08);
+  --text-primary:   #e2e8f0;
+  --text-secondary: #94a3b8;
+  --text-dim:       #4e5f7a;
+}
+
+/* ── body / background ─────────────────────────────────────────────────── */
+body { background: var(--bg-base) !important; color: var(--text-primary); }
+
+/* ── 로딩 화면 ─────────────────────────────────────────────────────────── */
+#loading {
+  background: var(--bg-base) !important;
+  color: var(--text-secondary) !important;
+}
+.spinner {
+  border-color: rgba(0,200,255,0.15) !important;
+  border-top-color: var(--neon-cyan) !important;
+  box-shadow: 0 0 20px rgba(0,200,255,0.3);
+}
+
+/* ── HUD 박스 ──────────────────────────────────────────────────────────── */
+.hud-box {
+  background: var(--bg-panel) !important;
+  border: 1px solid var(--border-neon) !important;
+  box-shadow: 0 0 24px rgba(0,200,255,0.06), inset 0 1px 0 rgba(0,200,255,0.08) !important;
+  color: var(--text-primary) !important;
+}
+.hud-title { color: var(--neon-cyan) !important; }
+.stat b     { color: var(--text-primary) !important; }
+.stat span  { color: var(--text-secondary) !important; }
+
+/* ── 범례 ──────────────────────────────────────────────────────────────── */
+#legend {
+  background: var(--bg-panel) !important;
+  border: 1px solid var(--border-neon) !important;
+  color: var(--text-secondary) !important;
+  box-shadow: 0 0 20px rgba(0,200,255,0.05) !important;
+}
+#legend .leg-title { color: var(--text-dim) !important; }
+
+/* ── 툴팁 ──────────────────────────────────────────────────────────────── */
+#tooltip {
+  background: var(--bg-panel) !important;
+  border: 1px solid var(--border-neon) !important;
+  color: var(--text-primary) !important;
+  box-shadow: 0 0 30px rgba(0,200,255,0.12) !important;
+}
+
+/* ── 드릴다운 패널 ─────────────────────────────────────────────────────── */
+#info-panel {
+  background: var(--bg-panel) !important;
+  border: 1px solid var(--border-neon) !important;
+  box-shadow: 0 0 40px rgba(0,200,255,0.08), -4px 0 30px rgba(0,0,0,0.6) !important;
+}
+.ip-header {
+  border-bottom-color: var(--border-dim) !important;
+  background: rgba(0,200,255,0.03) !important;
+}
+.ip-type-label { color: var(--text-dim) !important; }
+.ip-intent     { color: var(--text-primary) !important; }
+.ip-close { color: var(--text-dim) !important; }
+.ip-close:hover { background: rgba(0,200,255,0.08) !important; color: var(--neon-cyan) !important; }
+.ip-tabs { border-bottom-color: var(--border-dim) !important; }
+.ip-tab   { color: var(--text-dim) !important; }
+.ip-tab:hover  { color: var(--text-secondary) !important; }
+.ip-tab.active { color: var(--neon-cyan) !important; border-bottom-color: var(--neon-cyan) !important; }
+.ip-body::-webkit-scrollbar-thumb { background: rgba(0,200,255,0.2) !important; }
+.ip-kv { border-bottom-color: var(--border-dim) !important; }
+.ip-kv .k  { color: var(--text-dim) !important; }
+.ip-kv .v  { color: var(--text-secondary) !important; }
+.ip-msg-box {
+  background: rgba(0,200,255,0.04) !important;
+  border-color: var(--border-neon) !important;
+  color: var(--text-secondary) !important;
+}
+.ip-event-item:hover { background: rgba(0,200,255,0.06) !important; }
+.ip-event-text { color: var(--text-secondary) !important; }
+.ip-event-time { color: var(--text-dim) !important; }
+.ip-file-item {
+  background: rgba(0,200,255,0.03) !important;
+  border-color: var(--border-dim) !important;
+}
+.ip-file-item:hover { background: rgba(0,200,255,0.08) !important; border-color: var(--border-neon) !important; }
+.ip-file-name  { color: var(--text-secondary) !important; }
+.ip-file-cnt   { color: var(--text-dim) !important; }
+.panel-side-close {
+  background: var(--bg-card) !important;
+  border-color: var(--border-neon) !important;
+  color: var(--neon-cyan) !important;
+  box-shadow: -4px 0 14px rgba(0,0,0,0.5) !important;
+}
+.panel-side-close:hover { background: rgba(0,200,255,0.12) !important; }
+
+/* ── 줌아웃 요약 ────────────────────────────────────────────────────────── */
+.zs-title { color: var(--text-dim) !important; letter-spacing: 2px; }
+.zs-chip  { background: rgba(0,200,255,0.08) !important; }
+.zs-sub   { color: var(--text-dim) !important; }
+
+/* ── 좌측 네비게이션 ─────────────────────────────────────────────────────── */
+#left-nav {
+  background: rgba(6, 10, 22, 0.97) !important;
+  border-right: 1px solid var(--border-neon) !important;
+  box-shadow: 2px 0 24px rgba(0,200,255,0.06) !important;
+}
+#ln-toggle {
+  color: var(--text-dim) !important;
+  border-bottom-color: var(--border-dim) !important;
+}
+#ln-toggle:hover { color: var(--neon-cyan) !important; }
+#ln-content {
+  scrollbar-color: rgba(0,200,255,0.2) transparent !important;
+}
+#ln-profile-area {
+  border-bottom-color: var(--border-dim) !important;
+}
+#ln-avatar-box {
+  background: rgba(0,200,255,0.08) !important;
+  border-color: var(--border-neon) !important;
+  color: var(--neon-cyan) !important;
+}
+#ln-username  { color: var(--text-primary) !important; }
+#ln-useremail { color: var(--text-dim) !important; }
+#ln-auth-btn {
+  background: rgba(0,200,255,0.06) !important;
+  border-color: rgba(0,200,255,0.3) !important;
+  color: var(--neon-cyan) !important;
+}
+#ln-auth-btn:hover { background: rgba(0,200,255,0.14) !important; box-shadow: 0 0 14px rgba(0,200,255,0.2); }
+.ln-sep { color: var(--text-dim) !important; letter-spacing: 1px; }
+.ln-item { color: var(--text-secondary) !important; }
+.ln-item:hover { background: rgba(0,200,255,0.06) !important; color: var(--neon-cyan) !important; }
+.ln-item.active { background: rgba(0,200,255,0.1) !important; color: var(--neon-cyan) !important; }
+.ln-item.ln-logout { color: var(--neon-pink) !important; }
+.ln-item.ln-logout:hover { background: rgba(255,45,120,0.06) !important; }
+.ln-badge { background: var(--neon-pink) !important; box-shadow: 0 0 10px var(--neon-pink); }
+
+/* ── 브레드크럼 / 팀 라벨 ───────────────────────────────────────────────── */
+#breadcrumb-hud, .tm-label-wrap, #team-mode-label {
+  background: var(--bg-panel) !important;
+  border-color: var(--border-neon) !important;
+  color: var(--neon-cyan) !important;
+}
+
+/* ── 팝업 / 모달 ────────────────────────────────────────────────────────── */
+.popup-overlay { background: rgba(0,0,0,0.8) !important; }
+.popup-box {
+  background: var(--bg-card) !important;
+  border-color: var(--border-neon) !important;
+  box-shadow: 0 0 60px rgba(0,200,255,0.12), 0 24px 64px rgba(0,0,0,0.8) !important;
+}
+.popup-title { color: var(--text-primary) !important; }
+.popup-sub   { color: var(--text-secondary) !important; }
+.popup-close { color: var(--text-dim) !important; }
+
+/* ── 스크롤바 전역 ─────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(0,200,255,0.18); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(0,200,255,0.35); }
+
+/* ── 입력 폼 기본 ──────────────────────────────────────────────────────── */
+input, textarea, select {
+  background: rgba(0,200,255,0.04) !important;
+  border-color: var(--border-neon) !important;
+  color: var(--text-primary) !important;
+}
+input::placeholder, textarea::placeholder { color: var(--text-dim) !important; }
+input:focus, textarea:focus, select:focus {
+  outline: none !important;
+  border-color: var(--neon-cyan) !important;
+  box-shadow: 0 0 0 2px rgba(0,200,255,0.15) !important;
+}
+
+/* ── 버튼 기본 (테마 적용이 안 된 요소) ─────────────────────────────────── */
+button:not(.ln-item):not(.popup-close):not(.msg-tab):not(.ip-tab):not([class]) {
+  transition: box-shadow .15s, border-color .15s;
+}
+
+/* ── 팀/전사 뷰 팀 라벨 ─────────────────────────────────────────────────── */
+#team-hud-label {
+  color: var(--neon-cyan) !important;
+  text-shadow: 0 0 14px rgba(0,200,255,0.5) !important;
+}
+
+/* ── 줌 레벨 HUD ────────────────────────────────────────────────────────── */
+#ln-zoom-row {
+  background: rgba(0,200,255,0.04) !important;
+  border-color: var(--border-dim) !important;
+  color: var(--text-secondary) !important;
+}
+
+/* ── Toast 알림 ─────────────────────────────────────────────────────────── */
+#apply-toast {
+  background: rgba(8, 14, 30, 0.96) !important;
+  border: 1px solid var(--border-neon) !important;
+  color: var(--neon-cyan) !important;
+  box-shadow: 0 0 24px rgba(0,200,255,0.2) !important;
+}
+
+/* ── 메신저 패널 ────────────────────────────────────────────────────────── */
+#messenger-panel {
+  background: var(--bg-panel) !important;
+  border-left-color: var(--border-neon) !important;
+}
+
+/* ── Claude 트래킹 배지 ─────────────────────────────────────────────────── */
+#claude-tracking-badge {
+  background: rgba(0,200,255,0.1) !important;
+  border-color: var(--border-neon) !important;
+  color: var(--neon-cyan) !important;
+}
+
+/* ── 성장 게임 패널 ─────────────────────────────────────────────────────── */
+.gp-streak-row { border-color: rgba(255,215,0,0.15) !important; }
+.gp-badge {
+  background: rgba(0,200,255,0.07) !important;
+  border-color: rgba(0,200,255,0.25) !important;
+  color: var(--neon-cyan) !important;
+}
+.gp-badge.earned { background: rgba(0,255,136,0.07) !important; border-color: rgba(0,255,136,0.3) !important; color: var(--neon-green) !important; }
+
+/* ── 인사이트 패널 ─────────────────────────────────────────────────────── */
+.ins-panel, #insight-panel {
+  background: var(--bg-panel) !important;
+  border-color: var(--border-neon) !important;
+}
+
+/* ── 피처 칩 ────────────────────────────────────────────────────────────── */
+.fchip {
+  background: rgba(0,200,255,0.04) !important;
+  border-color: var(--border-dim) !important;
+  color: var(--text-secondary) !important;
+}
+.fchip.active { background: rgba(0,200,255,0.12) !important; border-color: var(--neon-cyan) !important; color: var(--neon-cyan) !important; }
+
+/* ── neon glow 유틸리티 ─────────────────────────────────────────────────── */
+.neon-glow-cyan { box-shadow: 0 0 20px rgba(0,200,255,0.3), 0 0 40px rgba(0,200,255,0.1); }
+.neon-glow-purple { box-shadow: 0 0 20px rgba(168,85,247,0.3), 0 0 40px rgba(168,85,247,0.1); }
+
+/* ── Canvas Label 오버레이 배경 보정 ────────────────────────────────────── */
+#label-canvas-2d { mix-blend-mode: normal; }
+
+/* ── 프로필 카드 ────────────────────────────────────────────────────────── */
+#ln-profile-card {
+  background: rgba(0,200,255,0.04) !important;
+  border-color: var(--border-dim) !important;
+}
+.lnpc-headline { color: var(--text-primary) !important; }
+.lnpc-company  { color: var(--text-secondary) !important; }
+.lnpc-edit-btn {
+  background: rgba(0,200,255,0.06) !important;
+  border-color: var(--border-neon) !important;
+  color: var(--neon-cyan) !important;
+}
