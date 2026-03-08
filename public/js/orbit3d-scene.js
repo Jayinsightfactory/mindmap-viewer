@@ -95,7 +95,7 @@ function buildPlanetSystem(nodeList) {
   const N = planets.length;
 
   // ── 중심 코어 — 스킨 시스템으로 위임 ──────────────────────────────────
-  buildCoreMesh();
+  if (typeof buildCoreMesh === 'function') buildCoreMesh();
 
   let totalTasks = 0, totalHours = 0;
 
