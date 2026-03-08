@@ -20,29 +20,125 @@ const router  = express.Router();
 
 /**
  * @param {object}   deps
- * @param {Function} deps.getDb        - better-sqlite3 db 인스턴스 반환 (메인 DB)
- * @param {Function} deps.verifyToken  - JWT 검증 함수
+ * @param {Function} deps.getDb        - DB 인스턴스 반환 (SQLite or PG Pool)
+ * @param {Function} deps.verifyToken  - 토큰 검증 함수
  * @param {Function} [deps.searchUsers] - auth DB에서 사용자 검색 (이메일·이름)
  * @returns {express.Router}
  */
 function createRouter({ getDb, verifyToken, searchUsers, getUserById, createNotification }) {
 
+  // ── DB 헬퍼: SQLite sync / PG async 통일 (workspace.js 패턴) ─────────────
+  function _db() { return getDb(); }
+  function _isPg(db) { return !db.prepare; } // PG Pool에는 prepare() 없음
+
+  /** SQLite의 ? 를 PG의 $1, $2, ... 로 변환 */
+  function _pgSql(sql) {
+    let i = 0;
+    return sql.replace(/\?/g, () => `$${++i}`);
+  }
+
+  async function dbRun(sql, params = []) {
+    const db = _db();
+    if (!db) throw new Error('Database not initialized');
+    if (db.prepare) return db.prepare(sql).run(...params);
+    return db.query(_pgSql(sql), params);
+  }
+  async function dbGet(sql, params = []) {
+    const db = _db();
+    if (!db) throw new Error('Database not initialized');
+    if (db.prepare) return db.prepare(sql).get(...params);
+    const r = await db.query(_pgSql(sql), params);
+    return r.rows[0];
+  }
+  async function dbAll(sql, params = []) {
+    const db = _db();
+    if (!db) throw new Error('Database not initialized');
+    if (db.prepare) return db.prepare(sql).all(...params);
+    const r = await db.query(_pgSql(sql), params);
+    return r.rows;
+  }
+  async function dbExec(sql) {
+    const db = _db();
+    if (!db) throw new Error('Database not initialized');
+    if (db.exec) return db.exec(sql);
+    // PG: 여러 문장을 ;로 분리해서 개별 실행
+    const stmts = sql.split(';').map(s => s.trim()).filter(Boolean);
+    for (const s of stmts) await db.query(s);
+  }
+
   // ── DB 테이블 초기화 ──────────────────────────────────────────────────────
-  function initFollowTable() {
-    const db = getDb();
-    db.exec(`
+  async function initFollowTable() {
+    const db = _db();
+    const isPg = _isPg(db);
+
+    // user_follows 테이블
+    await dbExec(`
       CREATE TABLE IF NOT EXISTS user_follows (
         follower_id   TEXT NOT NULL,
         following_id  TEXT NOT NULL,
-        created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+        created_at    ${isPg ? 'TIMESTAMPTZ DEFAULT NOW()' : 'DATETIME DEFAULT CURRENT_TIMESTAMP'},
         PRIMARY KEY (follower_id, following_id)
-      );
-      CREATE INDEX IF NOT EXISTS idx_uf_follower   ON user_follows(follower_id);
-      CREATE INDEX IF NOT EXISTS idx_uf_following  ON user_follows(following_id);
+      )
     `);
+    await dbExec(`CREATE INDEX IF NOT EXISTS idx_uf_follower  ON user_follows(follower_id)`);
+    await dbExec(`CREATE INDEX IF NOT EXISTS idx_uf_following ON user_follows(following_id)`);
+
+    // registered_users 테이블 (OAuth 로그인 시 메인 DB에 사용자 정보 영속 저장)
+    await dbExec(`
+      CREATE TABLE IF NOT EXISTS registered_users (
+        user_id    TEXT PRIMARY KEY,
+        email      TEXT,
+        name       TEXT,
+        avatar_url TEXT,
+        provider   TEXT DEFAULT 'local',
+        plan       TEXT DEFAULT 'free',
+        updated_at ${isPg ? 'TIMESTAMPTZ DEFAULT NOW()' : 'DATETIME DEFAULT CURRENT_TIMESTAMP'}
+      )
+    `);
+    await dbExec(`CREATE INDEX IF NOT EXISTS idx_ru_email ON registered_users(email)`);
+    await dbExec(`CREATE INDEX IF NOT EXISTS idx_ru_name  ON registered_users(name)`);
   }
 
-  try { initFollowTable(); } catch (e) { console.warn('[follow] DB init warn:', e.message); }
+  initFollowTable().catch(e => console.warn('[follow] DB init warn:', e.message));
+
+  // ── 사용자 등록 (OAuth 로그인 시 메인 DB에 저장) ─────────────────────────
+  async function registerUser(user) {
+    if (!user || !user.id) return;
+    try {
+      const db = _db();
+      const isPg = _isPg(db);
+      if (isPg) {
+        await db.query(
+          `INSERT INTO registered_users (user_id, email, name, avatar_url, provider, plan, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, NOW())
+           ON CONFLICT (user_id) DO UPDATE SET
+             email = COALESCE(EXCLUDED.email, registered_users.email),
+             name = COALESCE(EXCLUDED.name, registered_users.name),
+             avatar_url = COALESCE(EXCLUDED.avatar_url, registered_users.avatar_url),
+             provider = COALESCE(EXCLUDED.provider, registered_users.provider),
+             plan = COALESCE(EXCLUDED.plan, registered_users.plan),
+             updated_at = NOW()`,
+          [user.id, user.email || null, user.name || null, user.avatar || user.avatar_url || null,
+           user.provider || 'local', user.plan || 'free']
+        );
+      } else {
+        db.prepare(
+          `INSERT INTO registered_users (user_id, email, name, avatar_url, provider, plan, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+           ON CONFLICT (user_id) DO UPDATE SET
+             email = COALESCE(excluded.email, registered_users.email),
+             name = COALESCE(excluded.name, registered_users.name),
+             avatar_url = COALESCE(excluded.avatar_url, registered_users.avatar_url),
+             provider = COALESCE(excluded.provider, registered_users.provider),
+             plan = COALESCE(excluded.plan, registered_users.plan),
+             updated_at = datetime('now')`
+        ).run(user.id, user.email || null, user.name || null, user.avatar || user.avatar_url || null,
+              user.provider || 'local', user.plan || 'free');
+      }
+    } catch (e) {
+      console.warn('[follow] registerUser warn:', e.message);
+    }
+  }
 
   // ── 인증 미들웨어 ─────────────────────────────────────────────────────────
   function auth(req, res, next) {
@@ -53,6 +149,8 @@ function createRouter({ getDb, verifyToken, searchUsers, getUserById, createNoti
       const user = verifyToken(token);
       if (!user) return res.status(401).json({ error: 'invalid token' });
       req.user = user;
+      // 인증된 사용자를 메인 DB에 자동 등록 (비동기, 실패해도 무시)
+      registerUser(user).catch(() => {});
       next();
     } catch {
       res.status(401).json({ error: 'invalid token' });
@@ -60,22 +158,26 @@ function createRouter({ getDb, verifyToken, searchUsers, getUserById, createNoti
   }
 
   // ── POST /api/follow/:userId — 팔로우 ────────────────────────────────────
-  router.post('/follow/:userId', auth, (req, res) => {
+  router.post('/follow/:userId', auth, async (req, res) => {
     const { userId } = req.params;
     if (userId === req.user.id) return res.status(400).json({ error: 'cannot follow yourself' });
     try {
-      const db = getDb();
-      db.prepare(`
-        INSERT OR IGNORE INTO user_follows (follower_id, following_id) VALUES (?, ?)
-      `).run(req.user.id, userId);
+      await dbRun(
+        `INSERT INTO user_follows (follower_id, following_id)
+         VALUES (?, ?)
+         ON CONFLICT (follower_id, following_id) DO NOTHING`,
+        [req.user.id, userId]
+      );
       // 팔로우 알림 생성
       if (typeof createNotification === 'function') {
-        createNotification(db, {
-          userId, type: 'follow',
-          title: '새 팔로워',
-          body: `${req.user.name || req.user.email || '누군가'}님이 팔로우했습니다.`,
-          data: { followerId: req.user.id },
-        });
+        try {
+          createNotification(_db(), {
+            userId, type: 'follow',
+            title: '새 팔로워',
+            body: `${req.user.name || req.user.email || '누군가'}님이 팔로우했습니다.`,
+            data: { followerId: req.user.id },
+          });
+        } catch {}
       }
       res.json({ ok: true, following: true });
     } catch (e) {
@@ -85,13 +187,13 @@ function createRouter({ getDb, verifyToken, searchUsers, getUserById, createNoti
   });
 
   // ── DELETE /api/follow/:userId — 언팔로우 ────────────────────────────────
-  router.delete('/follow/:userId', auth, (req, res) => {
+  router.delete('/follow/:userId', auth, async (req, res) => {
     const { userId } = req.params;
     try {
-      const db = getDb();
-      db.prepare(`
-        DELETE FROM user_follows WHERE follower_id = ? AND following_id = ?
-      `).run(req.user.id, userId);
+      await dbRun(
+        `DELETE FROM user_follows WHERE follower_id = ? AND following_id = ?`,
+        [req.user.id, userId]
+      );
       res.json({ ok: true, following: false });
     } catch (e) {
       console.error('[follow/delete]', e.message);
@@ -100,12 +202,12 @@ function createRouter({ getDb, verifyToken, searchUsers, getUserById, createNoti
   });
 
   // ── GET /api/follow/check/:userId — 팔로우 여부 확인 ─────────────────────
-  router.get('/follow/check/:userId', auth, (req, res) => {
+  router.get('/follow/check/:userId', auth, async (req, res) => {
     try {
-      const db  = getDb();
-      const row = db.prepare(`
-        SELECT 1 FROM user_follows WHERE follower_id = ? AND following_id = ?
-      `).get(req.user.id, req.params.userId);
+      const row = await dbGet(
+        `SELECT 1 FROM user_follows WHERE follower_id = ? AND following_id = ?`,
+        [req.user.id, req.params.userId]
+      );
       res.json({ following: !!row });
     } catch (e) {
       res.status(500).json({ error: e.message });
@@ -114,120 +216,138 @@ function createRouter({ getDb, verifyToken, searchUsers, getUserById, createNoti
 
   // ── auth DB에서 사용자 정보 보완 (user_profiles에 없는 Google OAuth 유저용) ─
   function _enrichWithAuthDb(rows) {
-    if (typeof getUserById !== 'function') return rows;       // getUserById 미주입 시 그대로 반환
+    if (typeof getUserById !== 'function') return rows;
     return rows.map(row => {
-      if (row.name) return row;                               // 이미 이름 있으면 스킵
-      const authUser = getUserById(row.user_id);              // auth DB에서 조회
+      if (row.name) return row;
+      const authUser = getUserById(row.user_id);
       if (!authUser) return row;
       return {
         ...row,
-        name: authUser.name || authUser.email?.split('@')[0], // Google 계정 이름
-        avatar_url: row.avatar_url || authUser.avatar || null,// Google 프로필 이미지
-        provider: authUser.provider || 'local',               // 인증 제공자 (google 등)
+        name: authUser.name || authUser.email?.split('@')[0],
+        avatar_url: row.avatar_url || authUser.avatar || null,
+        provider: authUser.provider || 'local',
       };
     });
   }
 
   // ── GET /api/follow/list — 내 팔로잉 목록 ────────────────────────────────
-  router.get('/follow/list', auth, (req, res) => {
+  router.get('/follow/list', auth, async (req, res) => {
     try {
-      const db   = getDb();
-      const rows = db.prepare(`
+      const rows = await dbAll(`
         SELECT uf.following_id AS user_id, uf.created_at,
-               up.name, up.headline, up.company, up.avatar_url
+               COALESCE(up.name, ru.name) AS name,
+               up.headline, up.company,
+               COALESCE(up.avatar_url, ru.avatar_url) AS avatar_url
         FROM user_follows uf
         LEFT JOIN user_profiles up ON up.user_id = uf.following_id
+        LEFT JOIN registered_users ru ON ru.user_id = uf.following_id
         WHERE uf.follower_id = ?
         ORDER BY uf.created_at DESC
         LIMIT 200
-      `).all(req.user.id);
-      res.json(_enrichWithAuthDb(rows));                      // auth DB로 빈 이름 보완
+      `, [req.user.id]);
+      res.json(_enrichWithAuthDb(rows));
     } catch (e) {
       res.status(500).json({ error: e.message });
     }
   });
 
   // ── GET /api/follow/followers — 내 팔로워 목록 ───────────────────────────
-  router.get('/follow/followers', auth, (req, res) => {
+  router.get('/follow/followers', auth, async (req, res) => {
     try {
-      const db   = getDb();
-      const rows = db.prepare(`
+      const rows = await dbAll(`
         SELECT uf.follower_id AS user_id, uf.created_at,
-               up.name, up.headline, up.company, up.avatar_url
+               COALESCE(up.name, ru.name) AS name,
+               up.headline, up.company,
+               COALESCE(up.avatar_url, ru.avatar_url) AS avatar_url
         FROM user_follows uf
         LEFT JOIN user_profiles up ON up.user_id = uf.follower_id
+        LEFT JOIN registered_users ru ON ru.user_id = uf.follower_id
         WHERE uf.following_id = ?
         ORDER BY uf.created_at DESC
         LIMIT 200
-      `).all(req.user.id);
-      res.json(_enrichWithAuthDb(rows));                      // auth DB로 빈 이름 보완
+      `, [req.user.id]);
+      res.json(_enrichWithAuthDb(rows));
     } catch (e) {
       res.status(500).json({ error: e.message });
     }
   });
 
   // ── GET /api/follow/search — 사용자 검색 (이름·이메일) ───────────────────
-  // 메인 DB(user_profiles)와 auth DB(users) 양쪽에서 검색 후 병합
-  router.get('/follow/search', auth, (req, res) => {
-    const q = (req.query.q || '').trim();                   // 검색어 추출
-    if (!q || q.length < 1) return res.json([]);            // 빈 검색어 → 빈 배열
+  // 메인 DB(registered_users + user_profiles)와 auth DB(users) 양쪽에서 검색 후 병합
+  router.get('/follow/search', auth, async (req, res) => {
+    const q = (req.query.q || '').trim();
+    if (!q || q.length < 1) return res.json([]);
     try {
-      const db = getDb();                                   // 메인 DB 가져오기
-      const like = `%${q}%`;                                // LIKE 패턴 (부분 일치)
+      const like = `%${q}%`;
 
-      // ① 메인 DB의 user_profiles 테이블에서 검색 (프로필이 있는 사용자)
-      let profileRows = [];
+      // ① 메인 DB의 registered_users + user_profiles에서 검색 (이메일 + 이름)
+      let mainRows = [];
       try {
-        profileRows = db.prepare(`
-          SELECT up.user_id AS id, up.name, up.headline, up.avatar_url, NULL AS email,
+        mainRows = await dbAll(`
+          SELECT ru.user_id AS id, ru.name, up.headline,
+                 COALESCE(up.avatar_url, ru.avatar_url) AS avatar_url,
+                 ru.email, ru.provider, ru.plan,
                  CASE WHEN uf.follower_id IS NOT NULL THEN 1 ELSE 0 END AS is_following
-          FROM user_profiles up
-          LEFT JOIN user_follows uf ON uf.follower_id = ? AND uf.following_id = up.user_id
-          WHERE up.user_id != ? AND up.name LIKE ?
+          FROM registered_users ru
+          LEFT JOIN user_profiles up ON up.user_id = ru.user_id
+          LEFT JOIN user_follows uf ON uf.follower_id = ? AND uf.following_id = ru.user_id
+          WHERE ru.user_id != ? AND (ru.email LIKE ? OR ru.name LIKE ?)
           LIMIT 20
-        `).all(req.user.id, req.user.id, like);             // 자신 제외, 이름 검색
+        `, [req.user.id, req.user.id, like, like]);
       } catch (_) {
-        // user_profiles 테이블 없으면 무시
+        // registered_users 테이블 없으면 기존 user_profiles 검색 시도
+        try {
+          mainRows = await dbAll(`
+            SELECT up.user_id AS id, up.name, up.headline, up.avatar_url, NULL AS email,
+                   CASE WHEN uf.follower_id IS NOT NULL THEN 1 ELSE 0 END AS is_following
+            FROM user_profiles up
+            LEFT JOIN user_follows uf ON uf.follower_id = ? AND uf.following_id = up.user_id
+            WHERE up.user_id != ? AND up.name LIKE ?
+            LIMIT 20
+          `, [req.user.id, req.user.id, like]);
+        } catch (_) {}
       }
 
       // ② auth DB(users.db)에서 이메일·이름 검색 (searchUsers 함수 사용)
       let authRows = [];
-      if (typeof searchUsers === 'function') {              // searchUsers가 주입되었을 때만
+      if (typeof searchUsers === 'function') {
         try {
-          const rawAuthRows = searchUsers(q, req.user.id, 20); // auth DB에서 검색
-          // 팔로우 상태 확인을 위해 메인 DB에서 체크
-          const followCheckStmt = (() => {
+          const rawAuthRows = searchUsers(q, req.user.id, 20);
+          // 팔로우 상태 확인
+          const checkFollow = async (uid) => {
             try {
-              return db.prepare(
-                `SELECT 1 FROM user_follows WHERE follower_id = ? AND following_id = ?`
+              const row = await dbGet(
+                `SELECT 1 FROM user_follows WHERE follower_id = ? AND following_id = ?`,
+                [req.user.id, uid]
               );
-            } catch { return null; }                        // user_follows 없으면 null
-          })();
+              return row ? 1 : 0;
+            } catch { return 0; }
+          };
 
-          authRows = rawAuthRows.map(u => ({                // auth 결과를 표준 형식으로 변환
-            id: u.id,
-            name: u.name,
-            headline: null,                                 // auth DB에는 headline 없음
-            avatar_url: u.avatar_url,
-            email: u.email,
-            plan: u.plan,
-            provider: u.provider || 'local',                // 인증 제공자 (google 등)
-            is_following: followCheckStmt                    // 팔로우 여부 확인
-              ? (followCheckStmt.get(req.user.id, u.id) ? 1 : 0)
-              : 0,
-          }));
+          for (const u of rawAuthRows) {
+            authRows.push({
+              id: u.id,
+              name: u.name,
+              headline: null,
+              avatar_url: u.avatar_url,
+              email: u.email,
+              plan: u.plan,
+              provider: u.provider || 'local',
+              is_following: await checkFollow(u.id),
+            });
+          }
         } catch (e) {
           console.warn('[follow/search] auth DB 검색 실패:', e.message);
         }
       }
 
       // ③ 두 결과를 병합 (중복 제거 + email 보강)
-      const seen = new Set(profileRows.map(r => r.id));
+      const seen = new Set(mainRows.map(r => r.id));
       const authById = {};
       authRows.forEach(r => { authById[r.id] = r; });
 
-      // profileRows에 email 보강 (auth DB에서)
-      const merged = profileRows.map(r => {
+      // mainRows에 email 보강 (auth DB에서)
+      const merged = mainRows.map(r => {
         const auth = authById[r.id];
         return auth ? { ...r, email: auth.email || r.email, provider: auth.provider || 'local' } : r;
       });
@@ -247,42 +367,37 @@ function createRouter({ getDb, verifyToken, searchUsers, getUserById, createNoti
   });
 
   // ── GET /api/follow/nodes — 팔로잉한 유저들의 공개 노드 ──────────────────
-  // 각 팔로잉 유저의 프로필 + 노드 정보를 집계해서 반환
-  // (실제 노드 데이터는 각 유저가 저장한 그래프 DB에서 가져옴)
-  router.get('/follow/nodes', auth, (req, res) => {
+  router.get('/follow/nodes', auth, async (req, res) => {
     try {
-      const db = getDb();
-
       // 팔로잉 유저 목록 가져오기
-      const following = db.prepare(`
+      const following = await dbAll(`
         SELECT uf.following_id AS user_id,
-               up.name, up.headline, up.company, up.avatar_url, up.is_public
+               COALESCE(up.name, ru.name) AS name,
+               up.headline, up.company,
+               COALESCE(up.avatar_url, ru.avatar_url) AS avatar_url,
+               up.is_public
         FROM user_follows uf
         LEFT JOIN user_profiles up ON up.user_id = uf.following_id
+        LEFT JOIN registered_users ru ON ru.user_id = uf.following_id
         WHERE uf.follower_id = ?
         ORDER BY uf.created_at DESC
         LIMIT 100
-      `).all(req.user.id);
+      `, [req.user.id]);
 
       // 공개 프로필인 유저만 필터링
       const publicUsers = following.filter(u => u.is_public !== 0);
 
-      // 각 유저의 노드 정보 조회 (nodes 테이블이 있는 경우)
-      // nodes 테이블: id, label, type, owner_id 컬럼 가정
+      // 각 유저의 노드 정보 조회
       let nodesByUser = {};
-      try {
-        const nodeStmt = db.prepare(`
-          SELECT id, label, type, level, status, owner_id
-          FROM nodes
-          WHERE owner_id = ? AND (is_private IS NULL OR is_private = 0)
-          LIMIT 50
-        `);
-        for (const u of publicUsers) {
-          nodesByUser[u.user_id] = nodeStmt.all(u.user_id);
-        }
-      } catch (_) {
-        // nodes 테이블 없으면 빈 배열
-        for (const u of publicUsers) {
+      for (const u of publicUsers) {
+        try {
+          nodesByUser[u.user_id] = await dbAll(`
+            SELECT id, label, type, level, status, owner_id
+            FROM nodes
+            WHERE owner_id = ? AND (is_private IS NULL OR is_private = 0)
+            LIMIT 50
+          `, [u.user_id]);
+        } catch (_) {
           nodesByUser[u.user_id] = [];
         }
       }
@@ -298,6 +413,9 @@ function createRouter({ getDb, verifyToken, searchUsers, getUserById, createNoti
       res.status(500).json({ error: e.message });
     }
   });
+
+  // registerUser를 외부에서 사용할 수 있도록 router에 첨부
+  router.registerUser = registerUser;
 
   return router;
 }

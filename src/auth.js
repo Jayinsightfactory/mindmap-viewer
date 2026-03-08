@@ -184,7 +184,7 @@ function login({ email, password }) {
   const valid = bcrypt.compareSync(password, user.passwordHash);
   if (!valid) return { error: 'invalid credentials' };
 
-  db.prepare('UPDATE users SET lastLoginAt = datetime("now") WHERE id = ?').run(user.id);
+  db.prepare("UPDATE users SET lastLoginAt = datetime('now') WHERE id = ?").run(user.id);
 
   const token = generateToken();
   db.prepare(`
