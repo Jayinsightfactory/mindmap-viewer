@@ -162,7 +162,7 @@ function connectWS() {
   const wsUrl = token
     ? `${proto}//${location.host}?token=${encodeURIComponent(token)}`
     : `${proto}//${location.host}`;
-  const ws = new WebSocket(wsUrl);
+  const ws = window._globalWs = new WebSocket(wsUrl);
   ws.onmessage = ev => {
     try {
       const m = JSON.parse(ev.data);

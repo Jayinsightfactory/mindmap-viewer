@@ -107,13 +107,35 @@ if (!localStorage.getItem('orbitConsentDecided')) {
   console.log('[Orbit] 자동 트래킹 자동 허용됨');
 }
 
-// ── 줌 버튼 ──────────────────────────────────────────────────────────────────
+// ── 줌 버튼 (뷰 전환 포함) ───────────────────────────────────────────────────
 function zoomStep(dir) {
   // dir: -1 = 줌인(r 감소), +1 = 줌아웃(r 증가)
   const cur  = controls.sph.r;
+  const inTeam    = typeof _teamMode    !== 'undefined' && _teamMode && !(typeof _companyMode !== 'undefined' && _companyMode);
+  const inCompany = typeof _companyMode !== 'undefined' && _companyMode;
+  const inPersonal= !inTeam && !inCompany && !(typeof _parallelMode !== 'undefined' && _parallelMode);
+
+  // 줌아웃 시 뷰 전환 임계값 체크
+  if (dir > 0) {
+    if (inPersonal && cur > 100 && typeof loadTeamDemo === 'function') {
+      loadTeamDemo(); return;
+    }
+    if (inTeam && cur > 85 && typeof loadCompanyDemo === 'function') {
+      loadCompanyDemo(); return;
+    }
+  }
+  // 줌인 시 역방향 전환
+  if (dir < 0) {
+    if (inCompany && cur < 95 && typeof exitTeamMode === 'function') {
+      exitTeamMode(); setTimeout(() => loadTeamDemo(), 100); return;
+    }
+    if (inTeam && cur < 45 && typeof exitTeamMode === 'function') {
+      exitTeamMode(); return;
+    }
+  }
+
   const step = cur < 40 ? 5 : cur < 100 ? 10 : 20;
   const next = Math.max(8, Math.min(300, cur + dir * step));
-  // controls.tgt 가 실제 look-at 타겟 오브젝트
   const tx = controls.tgt?.x || 0;
   const ty = controls.tgt?.y || 0;
   const tz = controls.tgt?.z || 0;
@@ -1080,42 +1102,39 @@ function updateZoomLOD() {
       zhEl.onclick = null;
     }
 
-    // ── 자동 뷰 전환 → 취소 가능 확인 토스트로 교체 ──
+    // ── 자동 뷰 전환: 줌 임계값 초과 시 즉시 전환 ──
     const prevR = _lastLodR;
     _lastLodR = r;
 
-    if (inPersonal && r > 155 && prevR <= 155) {
+    if (inPersonal && r > 140 && prevR <= 140) {
       clearTimeout(_zoomLodTimer);
       _zoomLodTimer = setTimeout(() => {
-        if (controls.sph.r > 145 && !(typeof _teamMode !== 'undefined' && _teamMode)) {
-          showSwitchToast('👥 팀 화면으로 전환할까요?', () => loadTeamDemo());
+        if (controls.sph.r > 130 && !(typeof _teamMode !== 'undefined' && _teamMode)) {
+          if (typeof loadTeamDemo === 'function') loadTeamDemo();
         }
-      }, 1800);
-    } else if (inPersonal && r <= 145) {
+      }, 500);
+    } else if (inPersonal && r <= 130) {
       clearTimeout(_zoomLodTimer);
-      dismissSwitchToast();
     }
     if (inTeam && r > 100 && prevR <= 100) {
       clearTimeout(_zoomLodTimer);
       _zoomLodTimer = setTimeout(() => {
         if (controls.sph.r > 95 && (typeof _teamMode !== 'undefined' && _teamMode)) {
-          showSwitchToast('🏢 전사 화면으로 전환할까요?', () => loadCompanyDemo());
+          if (typeof loadCompanyDemo === 'function') loadCompanyDemo();
         }
-      }, 1800);
+      }, 500);
     } else if (inTeam && r <= 90) {
       clearTimeout(_zoomLodTimer);
-      dismissSwitchToast();
     }
     if (inCompany && r < 75 && prevR >= 75) {
       clearTimeout(_zoomLodTimer);
       _zoomLodTimer = setTimeout(() => {
         if (controls.sph.r < 80 && (typeof _companyMode !== 'undefined' && _companyMode)) {
-          showSwitchToast('👥 팀 화면으로 돌아갈까요?', () => { exitTeamMode(); setTimeout(loadTeamDemo, 100); });
+          if (typeof exitTeamMode === 'function') { exitTeamMode(); setTimeout(() => loadTeamDemo(), 100); }
         }
-      }, 1800);
+      }, 500);
     } else if (inCompany && r >= 80) {
       clearTimeout(_zoomLodTimer);
-      dismissSwitchToast();
     }
   }
 
@@ -2122,7 +2141,8 @@ window.createChatChannel = createChatChannel;
 // ── WebSocket 채팅 방 구독 (실시간 수신) ─────────────────────────────────────
 function _subscribeWsChatRoom(roomId) {
   // 전역 WebSocket이 있으면 재사용
-  if (typeof ws !== 'undefined' && ws && ws.readyState === WebSocket.OPEN) {
+  const ws = window._globalWs;
+  if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type: 'chat.subscribe', roomId }));
     // 원래 onmessage 핸들러를 래핑
     const origOnMsg = ws.onmessage;

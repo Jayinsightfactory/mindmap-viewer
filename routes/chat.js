@@ -120,7 +120,7 @@ function createRouter({ getDb, verifyToken, broadcastToRoom }) {
     try {
       const reply = await generate({
         provider: 'anthropic',
-        model:    'claude-haiku-3-5',
+        model:    'claude-3-5-haiku-20241022',
         prompt,
         apiKey,
       });
