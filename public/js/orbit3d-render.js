@@ -2951,16 +2951,16 @@ function drawCompactProjectView() {
   // ── ME 노드 (화면 중앙) ────────────────────────────────────────────────────
   const meW = 130, meH = 48;
   ctx.save();
-  ctx.fillStyle = 'rgba(255,255,255,0.97)';
-  ctx.shadowColor = 'rgba(0,0,0,0.1)'; ctx.shadowBlur = 14; ctx.shadowOffsetY = 2;
+  ctx.fillStyle = 'rgba(2, 6, 23, 0.82)';
+  ctx.shadowColor = 'rgba(6,182,212,0.15)'; ctx.shadowBlur = 20; ctx.shadowOffsetY = 0;
   roundRect(ctx, centerX - meW/2, centerY - meH/2, meW, meH, meH/2); ctx.fill();
   ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
-  ctx.strokeStyle = '#6C5CE7'; ctx.lineWidth = 2;
+  ctx.strokeStyle = 'rgba(6,182,212,0.5)'; ctx.lineWidth = 1.5;
   roundRect(ctx, centerX - meW/2, centerY - meH/2, meW, meH, meH/2); ctx.stroke();
   ctx.restore();
-  ctx.font = '700 16px -apple-system,sans-serif';
+  ctx.font = "700 16px 'Inter',-apple-system,sans-serif";
   ctx.textAlign = 'center';
-  ctx.fillStyle = '#1a1a2e';
+  ctx.fillStyle = '#e2e8f0';
   ctx.fillText('나의 작업', centerX, centerY + 6);
 
   // ── 통일 노드 크기 (1.5배) ──────────────────────────────────────────────────
@@ -2977,8 +2977,9 @@ function drawCompactProjectView() {
 
     // 카드 배경
     ctx.save();
-    ctx.shadowColor = 'rgba(0,0,0,0.06)'; ctx.shadowBlur = 8; ctx.shadowOffsetY = 1;
-    ctx.fillStyle = isDrilled ? 'rgba(240,245,255,0.98)' : isHover ? 'rgba(248,250,255,0.98)' : 'rgba(255,255,255,0.95)';
+    ctx.shadowColor = isDrilled ? 'rgba(6,182,212,0.25)' : 'rgba(0,0,0,0.3)';
+    ctx.shadowBlur = isDrilled ? 16 : 10; ctx.shadowOffsetY = 2;
+    ctx.fillStyle = isDrilled ? 'rgba(6,182,212,0.12)' : isHover ? 'rgba(6,182,212,0.08)' : 'rgba(2,6,23,0.80)';
     roundRect(ctx, lx, ly, UNI_W, UNI_H, UNI_R); ctx.fill();
     ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
     ctx.restore();
@@ -2992,12 +2993,12 @@ function drawCompactProjectView() {
     ctx.arcTo(lx, ly + UNI_H, lx, ly + UNI_H - UNI_R, UNI_R);
     ctx.lineTo(lx, ly + UNI_R); ctx.arcTo(lx, ly, lx + UNI_R, ly, UNI_R);
     ctx.closePath();
-    ctx.fillStyle = color; ctx.fill();
+    ctx.fillStyle = color; ctx.globalAlpha = 0.7; ctx.fill(); ctx.globalAlpha = 1;
     ctx.restore();
 
-    // 테두리
-    ctx.strokeStyle = isDrilled ? color : isHover ? color + 'aa' : '#e1e4e8';
-    ctx.lineWidth = isDrilled ? 2 : isHover ? 1.5 : 1;
+    // 테두리 (white/10 글래스 보더)
+    ctx.strokeStyle = isDrilled ? color : isHover ? 'rgba(6,182,212,0.4)' : 'rgba(255,255,255,0.10)';
+    ctx.lineWidth = isDrilled ? 1.5 : isHover ? 1.2 : 0.8;
     roundRect(ctx, lx, ly, UNI_W, UNI_H, UNI_R); ctx.stroke();
 
     // 활성 표시
@@ -3013,8 +3014,8 @@ function drawCompactProjectView() {
     const textX = lx + COLOR_BAR + UNI_R + 6;
     const maxTextW = UNI_W - COLOR_BAR - UNI_R - 16;
     ctx.textAlign = 'left';
-    ctx.font = '600 14px -apple-system,sans-serif';
-    ctx.fillStyle = '#1a1a2e';
+    ctx.font = "600 14px 'Inter',-apple-system,sans-serif";
+    ctx.fillStyle = '#e2e8f0';
     let clipped = title;
     while (ctx.measureText(clipped).width > maxTextW && clipped.length > 1) clipped = clipped.slice(0, -1);
     if (clipped !== title) clipped += '…';
@@ -3022,8 +3023,8 @@ function drawCompactProjectView() {
 
     // 서브 (1줄)
     if (sub) {
-      ctx.font = '400 11px -apple-system,sans-serif';
-      ctx.fillStyle = '#9ca3af';
+      ctx.font = "400 11px 'JetBrains Mono','Fira Code',monospace";
+      ctx.fillStyle = '#94a3b8';
       let clippedSub = sub;
       while (ctx.measureText(clippedSub).width > maxTextW && clippedSub.length > 1) clippedSub = clippedSub.slice(0, -1);
       if (clippedSub !== sub) clippedSub += '…';
@@ -3271,28 +3272,29 @@ function _drawPersonalPlanets() {
       _lctx.globalAlpha = globalAlpha;
     }
 
-    // 배경 pill (밝은 테마)
+    // 배경 pill (다크 글래스)
     _lctx.save();
-    _lctx.shadowColor = 'rgba(0,0,0,0.06)'; _lctx.shadowBlur = 6; _lctx.shadowOffsetY = 1;
-    _lctx.fillStyle = isSelected ? 'rgba(240,245,255,0.98)' : 'rgba(255,255,255,0.93)';
+    _lctx.shadowColor = isSelected ? 'rgba(6,182,212,0.2)' : 'rgba(0,0,0,0.3)';
+    _lctx.shadowBlur = isSelected ? 12 : 6; _lctx.shadowOffsetY = 1;
+    _lctx.fillStyle = isSelected ? 'rgba(6,182,212,0.12)' : 'rgba(2,6,23,0.78)';
     roundRect(_lctx, lx, ly, pw, ph, ph / 2); _lctx.fill();
     _lctx.shadowBlur = 0; _lctx.shadowOffsetY = 0;
     _lctx.restore();
 
-    // 테두리
-    _lctx.strokeStyle = isSelected ? hex : isHovered ? hex + 'aa' : '#d0d7de';
-    _lctx.lineWidth = isSelected ? 2 : isHovered ? 1.5 : 1;
+    // 테두리 (white/10)
+    _lctx.strokeStyle = isSelected ? hex : isHovered ? 'rgba(6,182,212,0.35)' : 'rgba(255,255,255,0.10)';
+    _lctx.lineWidth = isSelected ? 1.5 : isHovered ? 1 : 0.8;
     roundRect(_lctx, lx, ly, pw, ph, ph / 2); _lctx.stroke();
 
-    // 텍스트 (어두운 색)
-    _lctx.fillStyle = isSelected ? '#1a1a2e' : isHovered ? '#24292f' : '#57606a';
+    // 텍스트 (밝은 색)
+    _lctx.fillStyle = isSelected ? '#e2e8f0' : isHovered ? '#cbd5e1' : '#94a3b8';
     _lctx.fillText(text, sc.x, ly + ph * 0.68);
 
     // 이벤트 수 (선택/호버 시)
     if (evCnt > 0 && pxSize >= 13) {
       const sub = Math.max(9, pxSize * 0.5);
-      _lctx.font = `500 ${sub}px -apple-system,sans-serif`;
-      _lctx.fillStyle = '#9ca3af';
+      _lctx.font = `500 ${sub}px 'JetBrains Mono','Fira Code',monospace`;
+      _lctx.fillStyle = '#475569';
       _lctx.fillText(`${evCnt}개 작업`, sc.x, ly + ph + sub + 1);
     }
 
@@ -3397,23 +3399,23 @@ function drawInvertedPyramid(planetObj, hitData) {
 
   ctx.save();
 
-  // ── 윈도우 그림자 (밝은 테마) ─────────────────────────────────────────
-  ctx.shadowColor = 'rgba(0,0,0,0.1)';
-  ctx.shadowBlur = 24;
+  // ── 윈도우 그림자 (다크 글래스) ───────────────────────────────────────
+  ctx.shadowColor = 'rgba(6,182,212,0.1)';
+  ctx.shadowBlur = 30;
   ctx.shadowOffsetY = 4;
-  ctx.fillStyle = 'rgba(255,255,255,0.98)';
+  ctx.fillStyle = 'rgba(2, 6, 23, 0.88)';
   roundRect(ctx, winX, winY, WIN_W, totalH, 12);
   ctx.fill();
   ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
 
-  // 윈도우 테두리
-  ctx.strokeStyle = '#e5e7eb';
+  // 윈도우 테두리 (white/10)
+  ctx.strokeStyle = 'rgba(255,255,255,0.10)';
   ctx.lineWidth = 1;
   roundRect(ctx, winX, winY, WIN_W, totalH, 12);
   ctx.stroke();
 
-  // ── 타이틀바 (밝은 테마) ───────────────────────────────────────────────
-  ctx.fillStyle = '#f8f9fa';
+  // ── 타이틀바 (다크 글래스) ───────────────────────────────────────────
+  ctx.fillStyle = 'rgba(6,182,212,0.06)';
   // 상단 좌/우 모서리만 둥글게
   ctx.beginPath();
   ctx.moveTo(winX + 12, winY);
@@ -3442,9 +3444,9 @@ function drawInvertedPyramid(planetObj, hitData) {
   const titleText = firstMsg
     ? (firstMsg.length > 40 ? firstMsg.slice(0, 39) + '…' : firstMsg)
     : planetObj.userData?.intent?.replace(/^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE00}-\u{FEFF}⚙️🔐🌐🗄🎨🧪🚀🐳📝📐🔧🌿💬]\s*/gu, '').trim().slice(0, 40) || '세션 상세';
-  ctx.font = `600 13px -apple-system,"Segoe UI",sans-serif`;
+  ctx.font = "600 13px 'Inter',-apple-system,'Segoe UI',sans-serif";
   ctx.textAlign = 'center';
-  ctx.fillStyle = '#1a1a2e';
+  ctx.fillStyle = '#e2e8f0';
   ctx.fillText(titleText, centerX, winY + TITLE_H / 2 + 4);
 
   let curY = winY + TITLE_H + 12;
@@ -3463,22 +3465,22 @@ function drawInvertedPyramid(planetObj, hitData) {
     const chipX = winX + PAD + si * (CHIP_W + 4);
     const chipY = curY;
 
-    // 칩 배경 (밝은 테마)
-    ctx.fillStyle = '#f8f9fa';
+    // 칩 배경 (다크 글래스)
+    ctx.fillStyle = 'rgba(255,255,255,0.03)';
     roundRect(ctx, chipX, chipY, CHIP_W, CHIP_H, 8); ctx.fill();
-    ctx.strokeStyle = '#e5e7eb';
+    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
     ctx.lineWidth = 0.5;
     roundRect(ctx, chipX, chipY, CHIP_W, CHIP_H, 8); ctx.stroke();
 
     // 값
     ctx.textAlign = 'center';
-    ctx.font = `700 15px -apple-system,sans-serif`;
+    ctx.font = "700 15px 'JetBrains Mono','Fira Code',monospace";
     ctx.fillStyle = st.color;
     ctx.fillText(`${st.value}`, chipX + CHIP_W / 2, chipY + 18);
 
     // 라벨
-    ctx.font = `400 9px -apple-system,sans-serif`;
-    ctx.fillStyle = '#6e7681';
+    ctx.font = "400 9px 'Inter',-apple-system,sans-serif";
+    ctx.fillStyle = '#475569';
     ctx.fillText(`${st.icon} ${st.label}`, chipX + CHIP_W / 2, chipY + 34);
   });
 
@@ -3501,7 +3503,7 @@ function drawInvertedPyramid(planetObj, hitData) {
   }
 
   // 구분선
-  ctx.strokeStyle = '#e5e7eb';
+  ctx.strokeStyle = 'rgba(255,255,255,0.06)';
   ctx.lineWidth = 0.5;
   ctx.beginPath(); ctx.moveTo(winX + PAD, curY); ctx.lineTo(winX + WIN_W - PAD, curY); ctx.stroke();
   curY += 8;

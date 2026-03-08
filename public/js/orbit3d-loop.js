@@ -45,6 +45,16 @@ function _orbitAnimLoop(now) {
   renderer.render(scene, camera);
   if (typeof updateTweens === "function") updateTweens();
   if (typeof animateCoreSkills === "function") animateCoreSkills(Date.now() / 1000);
+  // ── Futuristic Space Dashboard: 와이어프레임 행성 + 별 회전 ──────────────
+  if (window._corePlanet) {
+    const cp = window._corePlanet;
+    const t  = now / 1000;
+    if (cp.wireMesh)  { cp.wireMesh.rotation.y += 0.002; cp.wireMesh.rotation.x += 0.0005; }
+    if (cp.glowMesh)  { cp.glowMesh.scale.setScalar(1.0 + 0.04 * Math.sin(t * 0.8)); }
+    if (cp.dustCloud) { cp.dustCloud.rotation.y += 0.001; }
+    if (cp.orbitMeshes) { cp.orbitMeshes.forEach((r,i) => { r.rotation.y += 0.0008 * (i+1); }); }
+  }
+  if (window._starField) { window._starField.rotation.y += 0.0001; }
   // 목표 HUD 업데이트 (Ollama 분석 결과)
   if (window._lastOllamaGoal && now % 2000 < 20) {
     const g = window._lastOllamaGoal;

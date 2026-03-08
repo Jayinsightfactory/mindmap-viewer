@@ -38,8 +38,8 @@ function resizeRendererToSidebar() {
 window.resizeRendererToSidebar = resizeRendererToSidebar;
 
 const scene  = new THREE.Scene();
-scene.background = new THREE.Color(0x070b14);
-scene.fog = new THREE.FogExp2(0x070b14, 0.004);
+scene.background = new THREE.Color(0x020617);
+scene.fog = new THREE.FogExp2(0x020617, 0.0035);
 
 // ─── 4단계 드릴다운 상태 ──────────────────────────────────────────────────────
 let _drillStage = 0;              // 0=전체, 1=카테고리링, 2=타임라인, 3=파일상세
@@ -51,47 +51,134 @@ const camera = new THREE.PerspectiveCamera(55, innerWidth/innerHeight, 0.1, 2000
 camera.position.set(0, 25, 55);                       // 컴팩트 뷰에 맞는 초기 거리
 camera.lookAt(0,0,0);
 
-// ─── 조명 (다크 네온 테마) ────────────────────────────────────────────────────
-scene.add(new THREE.AmbientLight(0x0a1428, 0.8));
-const sun = new THREE.PointLight(0x00c8ff, 1.2, 600);
-sun.position.set(0, 50, 0);
+// ─── 조명 (Futuristic Space Dashboard) ──────────────────────────────────────
+scene.add(new THREE.AmbientLight(0x060c1e, 0.6));
+const sun = new THREE.PointLight(0x06b6d4, 1.4, 700);     // Neon Cyan 키 라이트
+sun.position.set(0, 60, 30);
 scene.add(sun);
-const rimLight = new THREE.PointLight(0xa855f7, 0.9, 400);
-rimLight.position.set(-120, 90, -90);
+const rimLight = new THREE.PointLight(0xa855f7, 0.7, 400);  // Purple 림 라이트
+rimLight.position.set(-140, 80, -100);
 scene.add(rimLight);
-const rimLight2 = new THREE.PointLight(0x00ff88, 0.5, 300);
-rimLight2.position.set(100, -40, 80);
+const rimLight2 = new THREE.PointLight(0x34d399, 0.4, 300); // Green 필 라이트
+rimLight2.position.set(120, -50, 90);
 scene.add(rimLight2);
+const bottomLight = new THREE.PointLight(0x06b6d4, 0.3, 200); // 하단 반사
+bottomLight.position.set(0, -60, 0);
+scene.add(bottomLight);
 
-// ─── 별 배경 (다크 네온 테마) ─────────────────────────────────────────────
+// ─── 별 배경 (다층 파티클 필드) ────────────────────────────────────────────
 (function addStarField() {
-  const starCount = 1800;
+  const starCount = 2400;
   const positions = new Float32Array(starCount * 3);
   const colors    = new Float32Array(starCount * 3);
+  const sizes     = new Float32Array(starCount);
   const starColors = [
-    [0.0, 0.78, 1.0],   // neon cyan
-    [0.66, 0.33, 0.97],  // purple
-    [0.8, 0.8, 1.0],     // white-blue
-    [1.0, 1.0, 1.0],     // white
+    [0.024, 0.714, 0.831],  // #06b6d4 — neon cyan
+    [0.659, 0.333, 0.969],  // #a855f7 — purple
+    [0.204, 0.827, 0.600],  // #34d399 — green
+    [0.85,  0.90,  1.0],    // white-blue
+    [1.0,   1.0,   1.0],    // pure white
   ];
   for (let i = 0; i < starCount; i++) {
-    const r = 800 + Math.random() * 400;
+    const r     = 500 + Math.random() * 700;
     const theta = Math.random() * Math.PI * 2;
     const phi   = Math.acos(2 * Math.random() - 1);
     positions[i*3]   = r * Math.sin(phi) * Math.cos(theta);
     positions[i*3+1] = r * Math.sin(phi) * Math.sin(theta);
     positions[i*3+2] = r * Math.cos(phi);
-    const c = starColors[Math.floor(Math.random() * starColors.length)];
-    const bright = 0.3 + Math.random() * 0.7;
+    const c      = starColors[Math.floor(Math.random() * starColors.length)];
+    const bright = 0.25 + Math.random() * 0.75;
     colors[i*3]   = c[0] * bright;
     colors[i*3+1] = c[1] * bright;
     colors[i*3+2] = c[2] * bright;
+    sizes[i] = 0.3 + Math.random() * 0.8;
   }
-  const geo  = new THREE.BufferGeometry();
+  const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   geo.setAttribute('color',    new THREE.BufferAttribute(colors,    3));
-  const mat  = new THREE.PointsMaterial({ size: 0.7, vertexColors: true, transparent: true, opacity: 0.85 });
-  scene.add(new THREE.Points(geo, mat));
+  const mat = new THREE.PointsMaterial({
+    size: 0.6, vertexColors: true, transparent: true, opacity: 0.8,
+    blending: THREE.AdditiveBlending, depthWrite: false,
+  });
+  const stars = new THREE.Points(geo, mat);
+  scene.add(stars);
+  // 별 회전 (애니메이션 루프에서 참조)
+  window._starField = stars;
+})();
+
+// ─── 중앙 와이어프레임 행성 + 궤도 링 ─────────────────────────────────────────
+(function addWireframePlanet() {
+  // ── 와이어프레임 구 ────────────────────────────────────────────────────────
+  const sphereGeo = new THREE.IcosahedronGeometry(4.5, 1);
+  const wireframe = new THREE.WireframeGeometry(sphereGeo);
+  const wireMat   = new THREE.LineBasicMaterial({
+    color: 0x06b6d4, transparent: true, opacity: 0.25,
+    blending: THREE.AdditiveBlending,
+  });
+  const wireMesh = new THREE.LineSegments(wireframe, wireMat);
+  wireMesh.userData._isCorePlanet = true;
+  scene.add(wireMesh);
+
+  // ── 외곽 글로우 구 (반투명) ──────────────────────────────────────────────
+  const glowGeo = new THREE.SphereGeometry(5.2, 32, 32);
+  const glowMat = new THREE.MeshBasicMaterial({
+    color: 0x06b6d4, transparent: true, opacity: 0.04,
+    blending: THREE.AdditiveBlending, side: THREE.BackSide,
+  });
+  const glowMesh = new THREE.Mesh(glowGeo, glowMat);
+  scene.add(glowMesh);
+
+  // ── 궤도 링 3개 ───────────────────────────────────────────────────────────
+  const orbitConfigs = [
+    { r: 12,  color: 0x06b6d4, opacity: 0.12, tiltX: 0.3,  tiltZ: 0    },
+    { r: 20,  color: 0xa855f7, opacity: 0.08, tiltX: -0.2, tiltZ: 0.4  },
+    { r: 30,  color: 0x34d399, opacity: 0.06, tiltX: 0.15, tiltZ: -0.3 },
+  ];
+  const orbitMeshes = [];
+  orbitConfigs.forEach(cfg => {
+    const curve = new THREE.EllipseCurve(0, 0, cfg.r, cfg.r, 0, Math.PI * 2, false, 0);
+    const pts   = curve.getPoints(120);
+    const geo   = new THREE.BufferGeometry().setFromPoints(pts.map(p => new THREE.Vector3(p.x, 0, p.y)));
+    const mat   = new THREE.LineBasicMaterial({
+      color: cfg.color, transparent: true, opacity: cfg.opacity,
+      blending: THREE.AdditiveBlending,
+    });
+    const ring  = new THREE.Line(geo, mat);
+    ring.rotation.x = cfg.tiltX;
+    ring.rotation.z = cfg.tiltZ;
+    scene.add(ring);
+    orbitMeshes.push(ring);
+  });
+
+  // ── 궤도 위 작은 파티클 (도는 미세 먼지) ─────────────────────────────────
+  const dustCount = 200;
+  const dustPos   = new Float32Array(dustCount * 3);
+  const dustCol   = new Float32Array(dustCount * 3);
+  for (let i = 0; i < dustCount; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const r     = 8 + Math.random() * 26;
+    const y     = (Math.random() - 0.5) * 6;
+    dustPos[i*3]   = Math.cos(angle) * r;
+    dustPos[i*3+1] = y;
+    dustPos[i*3+2] = Math.sin(angle) * r;
+    const c = Math.random() < 0.5 ? [0.024, 0.714, 0.831] : [0.659, 0.333, 0.969];
+    const b = 0.3 + Math.random() * 0.5;
+    dustCol[i*3]   = c[0] * b;
+    dustCol[i*3+1] = c[1] * b;
+    dustCol[i*3+2] = c[2] * b;
+  }
+  const dustGeo = new THREE.BufferGeometry();
+  dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPos, 3));
+  dustGeo.setAttribute('color',    new THREE.BufferAttribute(dustCol, 3));
+  const dustMat = new THREE.PointsMaterial({
+    size: 0.25, vertexColors: true, transparent: true, opacity: 0.6,
+    blending: THREE.AdditiveBlending, depthWrite: false,
+  });
+  const dustCloud = new THREE.Points(dustGeo, dustMat);
+  scene.add(dustCloud);
+
+  // 애니메이션 참조
+  window._corePlanet = { wireMesh, glowMesh, orbitMeshes, dustCloud };
 })();
 
 // ─── 타입 → 색상 / 의미 매핑 ─────────────────────────────────────────────────
