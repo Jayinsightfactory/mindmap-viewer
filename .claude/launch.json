@@ -1,0 +1,29 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "orbit-server",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["server.js"],
+      "port": 4747
+    },
+    {
+      "name": "orbit-slack",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["adapters/slack-adapter.js"],
+      "port": 4748
+    },
+    {
+      "name": "orbit-zoom",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["adapters/zoom-adapter.js"],
+      "port": 4749
+    },
+    {
+      "name": "orbit-daily",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["adapters/daily-work-adapter.js"],
+      "port": 4750
+    }
+  ]
+}
