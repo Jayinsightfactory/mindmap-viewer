@@ -661,6 +661,336 @@ const COMPANY_DEMO = {
   ],
 };
 
+// ══════════════════════════════════════════════════════════════════════════════
+// Multi-Hub Demo: 나(Leader A) + 동료(Leader B) + 공동 프로젝트
+// "3D 멀티 허브 협업 구조" 스크린샷 기반
+// ══════════════════════════════════════════════════════════════════════════════
+const MULTI_HUB_DEMO = {
+  leaderA: {
+    id: 'la', name: '나 (Leader A)', color: '#6272e4', role: '팀 리더',
+    projects: [
+      { id: 'a1', name: 'A 프로젝트 1', sessionCount: 5, followerCount: 2 },
+      { id: 'a2', name: 'A 프로젝트 2', sessionCount: 3, followerCount: 1 },
+      { id: 'a3', name: 'A 프로젝트 3', sessionCount: 2, followerCount: 1 },
+    ],
+  },
+  leaderB: {
+    id: 'lb', name: '동료 (Leader B)', color: '#e472c4', role: '파트너 리더',
+    projects: [
+      { id: 'b1', name: 'B 프로젝트 1', sessionCount: 4, followerCount: 2 },
+      { id: 'b2', name: 'B 프로젝트 2', sessionCount: 2, followerCount: 1 },
+      { id: 'b3', name: 'B 프로젝트 3', sessionCount: 3, followerCount: 1 },
+    ],
+  },
+  sharedProjects: [
+    { id: 'sp1', name: '공동 프로젝트', color: '#ffd700', sessionCount: 6 },
+  ],
+};
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Enterprise Demo: 전사 생태계 (스크린샷 2) + 하이브리드 외주 파트너 (스크린샷 3)
+// ══════════════════════════════════════════════════════════════════════════════
+const ENTERPRISE_DEMO = {
+  tft:     { name: '전사 핵심 TFT',       color: '#ffd700', sublabel: '전략 핵심 TF' },
+  leaderA: {
+    id: 'la', name: '나 (Leader A)', color: '#3040a8', role: '리더 A',
+    projects: [
+      { id: 'a1', name: '프로젝트 A-1', sessions: 5 },
+      { id: 'a2', name: '프로젝트 A-2', sessions: 3 },
+      { id: 'a3', name: '프로젝트 A-3', sessions: 2 },
+      { id: 'a4', name: '프로젝트 A-4', sessions: 4 },
+    ],
+    dept: { name: '인사/HR',  color: '#8888ee' },
+  },
+  leaderB: {
+    id: 'lb', name: '동료 (Leader B)', color: '#a02060', role: '리더 B',
+    projects: [
+      { id: 'b1', name: '프로젝트 B-1', sessions: 4 },
+      { id: 'b2', name: '프로젝트 B-2', sessions: 2 },
+      { id: 'b3', name: '프로젝트 B-3', sessions: 3 },
+      { id: 'b4', name: '프로젝트 B-4', sessions: 2 },
+    ],
+    dept: { name: '재무/운영', color: '#e88888' },
+  },
+  hq:    { name: '회사 경영/비전 (HQ)', color: '#38b6ff' },
+  infra: { name: '공통 인프라/IT',       color: '#00c8a8' },
+  externalPartners: [
+    { id: 'ep1', name: '[파트너] 보안 컨설팅',   color: '#9b59b6', pos: [  0, 42, 0] },
+    { id: 'ep2', name: '[외주] 개발 협력사',      color: '#9b59b6', pos: [-72, 10, 0] },
+    { id: 'ep3', name: '[외주] 디자인 에이전시',  color: '#9b59b6', pos: [ 72, 10, 0] },
+  ],
+};
+
+// ══════════════════════════════════════════════════════════════════════════════
+// buildMultiHubSystem — 두 리더 허브 + 공동 프로젝트 렌더
+// ══════════════════════════════════════════════════════════════════════════════
+function buildMultiHubSystem(data) {
+  clearScene();
+  _teamNodes   = [];
+  _teamMode    = true;
+  _companyMode = false;
+  _activeSimData = data;
+  if (typeof controls !== 'undefined') controls.enabled = true;
+
+  const HUB_X  = 50;  // ±X 위치 (리더 간 거리)
+  const PROJ_R = 20;  // 리더 주위 프로젝트 궤도 반경
+
+  // ── 공통 헬퍼 ────────────────────────────────────────────────────────────
+  function addLine(from, to, hex, alpha) {
+    const ln = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints([from.clone(), to.clone()]),
+      new THREE.LineBasicMaterial({ color: new THREE.Color(hex), transparent: true, opacity: alpha ?? 0.32 })
+    );
+    connections.push(ln); scene.add(ln);
+  }
+
+  function addLeader(pos, hex, name, role) {
+    const col = new THREE.Color(hex);
+    const sp  = new THREE.Mesh(new THREE.SphereGeometry(4.5, 32, 32),
+      new THREE.MeshPhongMaterial({ color: col, emissive: col.clone().multiplyScalar(0.28), shininess: 120 }));
+    sp.position.copy(pos); scene.add(sp);
+    const hl  = new THREE.Mesh(new THREE.SphereGeometry(9, 32, 32),
+      new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.07, side: THREE.BackSide }));
+    hl.position.copy(pos); scene.add(hl);
+    const obj = new THREE.Object3D(); obj.position.copy(pos);
+    obj.userData = { isHubLeader: true, name, color: hex };
+    scene.add(obj); planetMeshes.push(obj);
+    _teamNodes.push({ type: 'leader', pos: pos.clone(), obj, label: name, sublabel: role, color: hex, size: 'xl' });
+    // 궤도 링
+    const ring = new THREE.Mesh(new THREE.RingGeometry(PROJ_R - 0.1, PROJ_R + 0.1, 64),
+      new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.09, side: THREE.DoubleSide }));
+    ring.position.copy(pos); ring.rotation.x = Math.PI / 2;
+    orbitRings.push(ring); scene.add(ring);
+  }
+
+  function addHubProject(proj, hubPos, hex, ang) {
+    const pPos = new THREE.Vector3(
+      hubPos.x + PROJ_R * Math.cos(ang),
+      hubPos.y + (Math.floor(ang * 10) % 2 === 0 ? 3 : -3),
+      hubPos.z + PROJ_R * Math.sin(ang)
+    );
+    const col = new THREE.Color(hex);
+    const sp  = new THREE.Mesh(new THREE.SphereGeometry(1.8, 24, 24),
+      new THREE.MeshPhongMaterial({ color: col, emissive: col.clone().multiplyScalar(0.2) }));
+    sp.position.copy(pPos); scene.add(sp);
+    const obj = new THREE.Object3D(); obj.position.copy(pPos);
+    obj.userData = { isHubProject: true, name: proj.name, color: hex,
+      orbitR: PROJ_R, orbitAngle: ang, orbitSpeed: 0.012, orbitCenter: hubPos.clone() };
+    scene.add(obj); satelliteMeshes.push(obj);
+    _teamNodes.push({ type: 'hubProject', pos: pPos.clone(), obj, label: proj.name,
+      sublabel: `${proj.sessionCount}세션`, color: hex, size: 'md' });
+    addLine(hubPos, pPos, hex, 0.27);
+    // 팔로워 파티클
+    for (let f = 0; f < (proj.followerCount || 1); f++) {
+      const fa = ang + 1.5 + f * 1.8;
+      const fp = new THREE.Vector3(pPos.x + 4.5 * Math.cos(fa), pPos.y, pPos.z + 4.5 * Math.sin(fa));
+      const fs = new THREE.Mesh(new THREE.SphereGeometry(0.33, 8, 8),
+        new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.55 }));
+      fs.position.copy(fp); scene.add(fs);
+      const fo = new THREE.Object3D(); fo.position.copy(fp);
+      fo.userData = { isFollower: true, orbitR: 4.5, orbitAngle: fa,
+        orbitSpeed: 0.04 + f * 0.01, orbitCenter: pPos.clone() };
+      scene.add(fo); satelliteMeshes.push(fo);
+    }
+  }
+
+  // ── Leader A (좌) ─────────────────────────────────────────────────────────
+  const laPos = new THREE.Vector3(-HUB_X, 0, 0);
+  addLeader(laPos, data.leaderA.color, data.leaderA.name, data.leaderA.role);
+  data.leaderA.projects.forEach((p, i) => {
+    addHubProject(p, laPos, data.leaderA.color, (i / data.leaderA.projects.length) * Math.PI * 2 - Math.PI / 2);
+  });
+
+  // ── Leader B (우) ─────────────────────────────────────────────────────────
+  const lbPos = new THREE.Vector3(HUB_X, 0, 0);
+  addLeader(lbPos, data.leaderB.color, data.leaderB.name, data.leaderB.role);
+  data.leaderB.projects.forEach((p, i) => {
+    addHubProject(p, lbPos, data.leaderB.color, (i / data.leaderB.projects.length) * Math.PI * 2 - Math.PI / 2);
+  });
+
+  // ── 공동 프로젝트 (상단 중앙) ──────────────────────────────────────────────
+  data.sharedProjects.forEach((sp, si) => {
+    const spPos = new THREE.Vector3(0, 28 + si * 16, 0);
+    const spCol = new THREE.Color(sp.color);
+    const spSp  = new THREE.Mesh(new THREE.SphereGeometry(3, 32, 32),
+      new THREE.MeshPhongMaterial({ color: spCol, emissive: spCol.clone().multiplyScalar(0.38), shininess: 180 }));
+    spSp.position.copy(spPos); scene.add(spSp);
+    const spHl = new THREE.Mesh(new THREE.SphereGeometry(6, 32, 32),
+      new THREE.MeshBasicMaterial({ color: spCol, transparent: true, opacity: 0.08, side: THREE.BackSide }));
+    spHl.position.copy(spPos); scene.add(spHl);
+    const spObj = new THREE.Object3D(); spObj.position.copy(spPos);
+    spObj.userData = { isSharedProject: true, name: sp.name, color: sp.color };
+    scene.add(spObj); planetMeshes.push(spObj);
+    _teamNodes.push({ type: 'sharedProject', pos: spPos.clone(), obj: spObj,
+      label: sp.name, sublabel: `${sp.sessionCount}개 세션`, color: sp.color, size: 'lg' });
+    addLine(laPos, spPos, sp.color, 0.30);
+    addLine(lbPos, spPos, sp.color, 0.30);
+  });
+
+  // HUD
+  const total = data.leaderA.projects.length + data.leaderB.projects.length + data.sharedProjects.length;
+  document.getElementById('h-sessions').textContent = total;
+  document.getElementById('h-tasks').textContent    = data.sharedProjects.length;
+  document.getElementById('h-hours').textContent    = '멀티허브';
+  document.getElementById('team-mode-badge').style.display = 'flex';
+  autoFitView(_teamNodes);
+  updateMyTaskSidebar();
+}
+window.buildMultiHubSystem = buildMultiHubSystem;
+
+// ══════════════════════════════════════════════════════════════════════════════
+// buildEnterpriseSystem — 전사 생태계 렌더 (하이브리드 외주 파트너 포함)
+// ══════════════════════════════════════════════════════════════════════════════
+function buildEnterpriseSystem(data, opts = {}) {
+  clearScene();
+  _teamNodes   = [];
+  _teamMode    = true;
+  _companyMode = true;
+  _activeSimData = data;
+  if (typeof controls !== 'undefined') controls.enabled = true;
+
+  const withExternal = opts.hybrid ?? true;
+  const LEADER_X = 42;
+  const PROJ_R   = 17;
+  const INFRA_Y  = -52;
+
+  function addLine(from, to, hex, alpha) {
+    const ln = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints([from.clone(), to.clone()]),
+      new THREE.LineBasicMaterial({ color: new THREE.Color(hex), transparent: true, opacity: alpha ?? 0.28 })
+    );
+    connections.push(ln); scene.add(ln);
+  }
+
+  // ── TFT 코어 ───────────────────────────────────────────────────────────────
+  const tftPos = new THREE.Vector3(0, 0, 0);
+  const tftCol = new THREE.Color(data.tft.color);
+  const tftSp  = new THREE.Mesh(new THREE.SphereGeometry(3.5, 32, 32),
+    new THREE.MeshPhongMaterial({ color: tftCol, emissive: tftCol.clone().multiplyScalar(0.4), shininess: 200 }));
+  tftSp.userData.isCore = true; scene.add(tftSp);
+  scene.add(Object.assign(new THREE.Mesh(new THREE.SphereGeometry(7, 32, 32),
+    new THREE.MeshBasicMaterial({ color: tftCol, transparent: true, opacity: 0.06, side: THREE.BackSide })),
+    { position: tftPos.clone() }));
+  _teamNodes.push({ type: 'goal', pos: tftPos.clone(),
+    label: data.tft.name, sublabel: data.tft.sublabel, color: data.tft.color, size: 'xl' });
+
+  // ── 리더 빌더 ─────────────────────────────────────────────────────────────
+  function buildLeader(ld, pos) {
+    const col = new THREE.Color(ld.color);
+    const sp  = new THREE.Mesh(new THREE.SphereGeometry(3.8, 32, 32),
+      new THREE.MeshPhongMaterial({ color: col, emissive: col.clone().multiplyScalar(0.25), shininess: 110 }));
+    sp.position.copy(pos); scene.add(sp);
+    const hl  = new THREE.Mesh(new THREE.SphereGeometry(7.5, 32, 32),
+      new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.06, side: THREE.BackSide }));
+    hl.position.copy(pos); scene.add(hl);
+    const obj = new THREE.Object3D(); obj.position.copy(pos);
+    obj.userData = { isHubLeader: true, name: ld.name, color: ld.color };
+    scene.add(obj); planetMeshes.push(obj);
+    _teamNodes.push({ type: 'leader', pos: pos.clone(), obj,
+      label: ld.name, sublabel: ld.role, color: ld.color, size: 'xl' });
+    addLine(tftPos, pos, data.tft.color, 0.28);
+
+    // 궤도 링
+    const ring = new THREE.Mesh(new THREE.RingGeometry(PROJ_R - 0.08, PROJ_R + 0.08, 64),
+      new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.08, side: THREE.DoubleSide }));
+    ring.position.copy(pos); ring.rotation.x = Math.PI / 2;
+    orbitRings.push(ring); scene.add(ring);
+
+    // 프로젝트 위성
+    ld.projects.forEach((proj, pi) => {
+      const ang  = (pi / ld.projects.length) * Math.PI * 2 - Math.PI / 2;
+      const pPos = new THREE.Vector3(
+        pos.x + PROJ_R * Math.cos(ang), pos.y + (pi % 2 === 0 ? 2 : -2), pos.z + PROJ_R * Math.sin(ang));
+      const pSp = new THREE.Mesh(new THREE.SphereGeometry(1.5, 20, 20),
+        new THREE.MeshPhongMaterial({ color: col, emissive: col.clone().multiplyScalar(0.18) }));
+      pSp.position.copy(pPos); scene.add(pSp);
+      const pObj = new THREE.Object3D(); pObj.position.copy(pPos);
+      pObj.userData = { isHubProject: true, name: proj.name, color: ld.color,
+        orbitR: PROJ_R, orbitAngle: ang, orbitSpeed: 0.013 + pi * 0.002, orbitCenter: pos.clone() };
+      scene.add(pObj); satelliteMeshes.push(pObj);
+      _teamNodes.push({ type: 'hubProject', pos: pPos.clone(), obj: pObj,
+        label: proj.name, sublabel: `${proj.sessions}세션`, color: ld.color, size: 'md' });
+      addLine(pos, pPos, ld.color, 0.24);
+    });
+
+    // 부서 노드
+    if (ld.dept) {
+      const sign = pos.x < 0 ? -1 : 1;
+      const dPos = new THREE.Vector3(pos.x + sign * 4, pos.y - 22, pos.z);
+      const dObj = new THREE.Object3D(); dObj.position.copy(dPos); scene.add(dObj);
+      _teamNodes.push({ type: 'dept', pos: dPos.clone(), obj: dObj,
+        label: ld.dept.name, color: ld.dept.color, size: 'sm' });
+      addLine(pos, dPos, ld.dept.color, 0.22);
+    }
+  }
+
+  const laPos = new THREE.Vector3(-LEADER_X, 0, 0);
+  buildLeader(data.leaderA, laPos);
+  const lbPos = new THREE.Vector3(LEADER_X, 0, 0);
+  buildLeader(data.leaderB, lbPos);
+
+  // ── HQ ────────────────────────────────────────────────────────────────────
+  if (data.hq) {
+    const hqPos = new THREE.Vector3(-14, -32, 0);
+    const hqObj = new THREE.Object3D(); hqObj.position.copy(hqPos); scene.add(hqObj);
+    _teamNodes.push({ type: 'hq', pos: hqPos.clone(), obj: hqObj,
+      label: data.hq.name, color: data.hq.color, size: 'md' });
+    addLine(tftPos, hqPos, data.hq.color, 0.22);
+  }
+
+  // ── 인프라 (하단 대형 구체) ────────────────────────────────────────────────
+  if (data.infra) {
+    const iPos = new THREE.Vector3(0, INFRA_Y, 0);
+    const iCol = new THREE.Color(data.infra.color);
+    const iSp  = new THREE.Mesh(new THREE.SphereGeometry(5, 32, 32),
+      new THREE.MeshPhongMaterial({ color: iCol, emissive: iCol.clone().multiplyScalar(0.4), shininess: 150 }));
+    iSp.position.copy(iPos); scene.add(iSp);
+    const iHl  = new THREE.Mesh(new THREE.SphereGeometry(10, 32, 32),
+      new THREE.MeshBasicMaterial({ color: iCol, transparent: true, opacity: 0.05, side: THREE.BackSide }));
+    iHl.position.copy(iPos); scene.add(iHl);
+    const iObj = new THREE.Object3D(); iObj.position.copy(iPos); scene.add(iObj); planetMeshes.push(iObj);
+    _teamNodes.push({ type: 'infra', pos: iPos.clone(), obj: iObj,
+      label: data.infra.name, color: data.infra.color, size: 'xl' });
+    addLine(tftPos, iPos, data.infra.color, 0.15);
+    addLine(laPos,  iPos, data.infra.color, 0.10);
+    addLine(lbPos,  iPos, data.infra.color, 0.10);
+  }
+
+  // ── 외주 파트너 — angular box node ────────────────────────────────────────
+  if (withExternal) {
+    (data.externalPartners || []).forEach(ep => {
+      const epPos = new THREE.Vector3(...ep.pos);
+      const epCol = new THREE.Color(ep.color);
+      // 45° 회전 다이아몬드 박스
+      const bm = new THREE.Mesh(new THREE.BoxGeometry(5, 5, 1.2),
+        new THREE.MeshPhongMaterial({ color: epCol, emissive: epCol.clone().multiplyScalar(0.22),
+          transparent: true, opacity: 0.88 }));
+      bm.position.copy(epPos); bm.rotation.z = Math.PI / 4; scene.add(bm);
+      // 와이어프레임 오버레이
+      const wm = new THREE.Mesh(new THREE.BoxGeometry(5.3, 5.3, 1.4),
+        new THREE.MeshBasicMaterial({ color: epCol, wireframe: true, transparent: true, opacity: 0.35 }));
+      wm.position.copy(epPos); wm.rotation.z = Math.PI / 4; scene.add(wm);
+      const epObj = new THREE.Object3D(); epObj.position.copy(epPos);
+      epObj.userData = { isExternal: true, name: ep.name, color: ep.color };
+      scene.add(epObj); planetMeshes.push(epObj);
+      _teamNodes.push({ type: 'external', pos: epPos.clone(), obj: epObj,
+        label: ep.name, color: ep.color, size: 'md' });
+      const nearest = Math.abs(epPos.x) < 20 ? tftPos : (epPos.x < 0 ? laPos : lbPos);
+      addLine(nearest, epPos, ep.color, 0.20);
+    });
+  }
+
+  // HUD
+  const total = data.leaderA.projects.length + data.leaderB.projects.length;
+  document.getElementById('h-sessions').textContent = total;
+  document.getElementById('h-tasks').textContent    = (withExternal ? (data.externalPartners?.length ?? 0) : 0);
+  document.getElementById('h-hours').textContent    = withExternal ? '하이브리드' : '전사';
+  document.getElementById('team-mode-badge').style.display = 'flex';
+  autoFitView(_teamNodes);
+  updateMyTaskSidebar();
+}
+window.buildEnterpriseSystem = buildEnterpriseSystem;
+
 // ── buildTeamSystem ──────────────────────────────────────────────────────────
 function buildTeamSystem(teamData) {
   clearScene();
@@ -1035,10 +1365,13 @@ async function loadTeamDemo() {
   const _u = typeof _orbitUser !== 'undefined' ? _orbitUser : JSON.parse(localStorage.getItem('orbitUser') || 'null');
   const token = _u?.token;
 
-  // ── 비로그인 → 로그인 요청 (샘플 표시 안 함) ──────────────────────────
+  // ── 비로그인 → 멀티허브 데모 (미리보기) ──────────────────────────────
   if (!token) {
-    showToast('👥 팀 화면은 로그인 후 이용 가능합니다');
-    setTimeout(() => openLoginModal(), 400);
+    buildMultiHubSystem(MULTI_HUB_DEMO);
+    updateBreadcrumb('team');
+    document.querySelector('.tm-label').textContent = '👥 팀 미리보기 (샘플)';
+    localStorage.setItem(_VIEW_MODE_KEY, 'team');
+    showToast('👥 팀 화면 미리보기 — 로그인 후 실제 협업 데이터를 확인하세요', 3500);
     return;
   }
 
@@ -1049,7 +1382,16 @@ async function loadTeamDemo() {
     });
     if (res.ok) {
       const data = await res.json();
+      if (data && data.leaderA && data.leaderB) {
+        // 새 멀티허브 포맷
+        buildMultiHubSystem(data);
+        updateBreadcrumb('team');
+        document.querySelector('.tm-label').textContent = '👥 실제 팀 데이터';
+        localStorage.setItem(_VIEW_MODE_KEY, 'team');
+        return;
+      }
       if (data && data.members && data.members.length > 0) {
+        // 기존 단일팀 포맷 (하위호환)
         buildTeamSystem(data);
         updateBreadcrumb('team');
         document.querySelector('.tm-label').textContent = '👥 실제 팀 데이터';
@@ -1059,8 +1401,12 @@ async function loadTeamDemo() {
     }
   } catch {}
 
-  // 로그인 상태인데 팀 데이터 없음 → 팀 초대 안내
-  _showNoTeamDataToast('team');
+  // 로그인 상태인데 팀 데이터 없음 → 멀티허브 데모 표시
+  buildMultiHubSystem(MULTI_HUB_DEMO);
+  updateBreadcrumb('team');
+  document.querySelector('.tm-label').textContent = '👥 팀 샘플 (데이터 없음)';
+  localStorage.setItem(_VIEW_MODE_KEY, 'team');
+  showToast('👥 팀 데이터 없음 — 팀원을 초대하면 실제 협업 구조가 표시됩니다', 3500);
 }
 window.loadTeamDemo = loadTeamDemo;
 
@@ -1070,10 +1416,13 @@ async function loadCompanyDemo() {
   const _u = typeof _orbitUser !== 'undefined' ? _orbitUser : JSON.parse(localStorage.getItem('orbitUser') || 'null');
   const token = _u?.token;
 
-  // ── 비로그인 → 로그인 요청 (샘플 표시 안 함) ──────────────────────────
+  // ── 비로그인 → 전사 데모 (미리보기) ──────────────────────────────────
   if (!token) {
-    showToast('🏢 전사 화면은 로그인 후 이용 가능합니다');
-    setTimeout(() => openLoginModal(), 400);
+    buildEnterpriseSystem(ENTERPRISE_DEMO);
+    updateBreadcrumb('company');
+    document.querySelector('.tm-label').textContent = '🏢 전사 미리보기 (샘플)';
+    localStorage.setItem(_VIEW_MODE_KEY, 'company');
+    showToast('🏢 전사 화면 미리보기 — 로그인 후 실제 전사 데이터를 확인하세요', 3500);
     return;
   }
 
@@ -1084,7 +1433,16 @@ async function loadCompanyDemo() {
     });
     if (res.ok) {
       const data = await res.json();
+      if (data && data.tft && data.leaderA) {
+        // 새 전사 포맷
+        buildEnterpriseSystem(data);
+        updateBreadcrumb('company');
+        document.querySelector('.tm-label').textContent = '🏢 실제 전사 데이터';
+        localStorage.setItem(_VIEW_MODE_KEY, 'company');
+        return;
+      }
       if (data && data.departments && data.departments.length > 0) {
+        // 기존 부서 포맷 (하위호환)
         buildCompanySystem(data);
         updateBreadcrumb('company');
         document.querySelector('.tm-label').textContent = '🏢 실제 회사 데이터';
@@ -1094,8 +1452,12 @@ async function loadCompanyDemo() {
     }
   } catch {}
 
-  // 로그인 상태인데 회사 데이터 없음 → 안내
-  _showNoTeamDataToast('company');
+  // 로그인 상태인데 전사 데이터 없음 → 전사 데모 표시
+  buildEnterpriseSystem(ENTERPRISE_DEMO);
+  updateBreadcrumb('company');
+  document.querySelector('.tm-label').textContent = '🏢 전사 샘플 (데이터 없음)';
+  localStorage.setItem(_VIEW_MODE_KEY, 'company');
+  showToast('🏢 회사 데이터 없음 — 팀장에게 초대를 요청하세요', 3500);
 }
 window.loadCompanyDemo = loadCompanyDemo;
 
@@ -1136,4 +1498,14 @@ function loadParallelDemo() {
   localStorage.setItem(_VIEW_MODE_KEY, 'parallel');
 }
 window.loadParallelDemo = loadParallelDemo;
+
+// 하이브리드 모드 (전사 + 외주 파트너) 로드
+function loadHybridDemo() {
+  if (typeof track === 'function') track('view.mode_switch', { from: 'company', to: 'hybrid' });
+  buildEnterpriseSystem(ENTERPRISE_DEMO, { hybrid: true });
+  updateBreadcrumb('company');
+  document.querySelector('.tm-label').textContent = '🔗 하이브리드 생태계 (샘플)';
+  localStorage.setItem(_VIEW_MODE_KEY, 'hybrid');
+}
+window.loadHybridDemo = loadHybridDemo;
 

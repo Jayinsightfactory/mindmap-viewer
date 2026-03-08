@@ -463,18 +463,26 @@ function drawTeamLabels() {
     const isFocused  = _focusedMember === node;
 
     let pxSize, pad;
-    if      (type === 'goal')       { pxSize = lod >= 2 ? 22 : 28; pad = lod >= 2 ? 14 : 20; }
-    else if (type === 'department') { pxSize = lod >= 2 ? 14 : 16; pad = lod >= 2 ? 10 : 13; }
-    else if (type === 'member')     { pxSize = lod >= 2 ? 14 : isFocused ? 22 : 18; pad = lod >= 2 ? 10 : isFocused ? 18 : 15; }
-    else if (type === 'task')       { pxSize = lod >= 2 ? 9 : 12; pad = lod >= 2 ? 7 : 10; }
-    else if (type === 'skill')      { pxSize = 9; pad = 7; }
-    else if (type === 'agent')      { pxSize = 9; pad = 7; }
-    else if (type === 'ptask')      { pxSize = 13; pad = 11; }
-    else if (type === 'prequest')   { pxSize = 16; pad = 14; }
-    else if (type === 'presult')    { pxSize = 15; pad = 13; }
-    else                            { pxSize = 10; pad = 7; }
+    if      (type === 'goal')         { pxSize = lod >= 2 ? 22 : 28; pad = lod >= 2 ? 14 : 20; }
+    else if (type === 'department')   { pxSize = lod >= 2 ? 14 : 16; pad = lod >= 2 ? 10 : 13; }
+    else if (type === 'member')       { pxSize = lod >= 2 ? 14 : isFocused ? 22 : 18; pad = lod >= 2 ? 10 : isFocused ? 18 : 15; }
+    else if (type === 'task')         { pxSize = lod >= 2 ? 9 : 12; pad = lod >= 2 ? 7 : 10; }
+    else if (type === 'skill')        { pxSize = 9; pad = 7; }
+    else if (type === 'agent')        { pxSize = 9; pad = 7; }
+    else if (type === 'ptask')        { pxSize = 13; pad = 11; }
+    else if (type === 'prequest')     { pxSize = 16; pad = 14; }
+    else if (type === 'presult')      { pxSize = 15; pad = 13; }
+    // ── Multi-hub / Enterprise new node types ──────────────────────────────
+    else if (type === 'leader')       { pxSize = 20; pad = 16; }   // 리더 (대형)
+    else if (type === 'sharedProject'){ pxSize = 16; pad = 13; }   // 공동 프로젝트
+    else if (type === 'hubProject')   { pxSize = 13; pad = 10; }   // 허브 프로젝트
+    else if (type === 'infra')        { pxSize = 18; pad = 14; }   // 인프라 (대형)
+    else if (type === 'hq')           { pxSize = 14; pad = 11; }   // HQ
+    else if (type === 'dept')         { pxSize = 12; pad = 9;  }   // 부서 라벨
+    else if (type === 'external')     { pxSize = 13; pad = 10; }   // 외주 파트너
+    else                              { pxSize = 10; pad = 7; }
 
-    const weight = (type === 'goal' || type === 'member' || type === 'department' || type === 'prequest' || type === 'presult') ? '700' : '500';
+    const weight = (type === 'goal' || type === 'leader' || type === 'infra' || type === 'member' || type === 'department' || type === 'sharedProject' || type === 'prequest' || type === 'presult') ? '700' : '500';
     _lctx.font = `${weight} ${pxSize}px -apple-system,'Segoe UI',sans-serif`;
     // skill: ⚡ 아이콘, agent: 🤖 아이콘 prefix
     const prefix = type === 'skill' ? '⚡ ' : type === 'agent' ? '🤖 ' : '';
@@ -484,8 +492,13 @@ function drawTeamLabels() {
     const txt = emoji ? `${emoji} ${displayLabel}` : `${prefix}${displayLabel}`;
     const pw  = _lctx.measureText(txt).width + pad;
     const ph  = pxSize + pad * 0.65;
-    // priority: prequest=7, goal=6, presult=5, ptask=4, department=5, member=4, task=2, skill=3, agent=3, tool=1
-    const priority = type === 'prequest' ? 7 : type === 'goal' ? 6 : type === 'presult' ? 5 : type === 'ptask' ? 4 : type === 'department' ? 5 : type === 'member' ? 4 : (type === 'skill' || type === 'agent') ? 3 : type === 'task' ? 2 : 1;
+    // priority: prequest=7, goal/leader=6, presult/department/infra/sharedProject=5, member/ptask/hq=4, skill/agent/hubProject/external=3, task/dept=2, tool=1
+    const priority = type === 'prequest' ? 7
+      : (type === 'goal' || type === 'leader') ? 6
+      : (type === 'presult' || type === 'department' || type === 'infra' || type === 'sharedProject') ? 5
+      : (type === 'member' || type === 'ptask' || type === 'hq') ? 4
+      : (type === 'skill' || type === 'agent' || type === 'hubProject' || type === 'external') ? 3
+      : (type === 'task' || type === 'dept') ? 2 : 1;
 
     labels.push({
       node, sc, type, label, sublabel, color, emoji, progress,
@@ -714,16 +727,74 @@ function drawTeamLabels() {
       _lctx.restore();
     }
 
+    // ── external 파트너: 다이아몬드 테두리 오버레이 ───────────────────────
+    if (type === 'external') {
+      const dSize = Math.max(pw, ph) * 0.65 + 10;
+      _lctx.save();
+      _lctx.translate(cx, cy);
+      _lctx.rotate(Math.PI / 4);
+      _lctx.strokeStyle = color;
+      _lctx.lineWidth = 1.5;
+      _lctx.globalAlpha = 0.65;
+      _lctx.setLineDash([4, 3]);
+      _lctx.strokeRect(-dSize / 2, -dSize / 2, dSize, dSize);
+      _lctx.setLineDash([]);
+      _lctx.restore();
+    }
+
+    // ── leader / infra / sharedProject: 글로우 링 ─────────────────────────
+    if (type === 'leader' || type === 'infra' || type === 'sharedProject') {
+      const gp = (Math.sin(now * 1.4 + (type === 'infra' ? 1 : 0)) + 1) * 0.5;
+      const gr = _lctx.createRadialGradient(cx, cy, pw * 0.3, cx, cy, pw * 1.5);
+      gr.addColorStop(0, color + Math.round((0.12 + gp * 0.08) * 255).toString(16).padStart(2, '0'));
+      gr.addColorStop(1, 'rgba(0,0,0,0)');
+      _lctx.fillStyle = gr;
+      _lctx.beginPath(); _lctx.arc(cx, cy, pw * 1.5, 0, Math.PI * 2); _lctx.fill();
+    }
+
     // pill 배경
     roundRect(_lctx, x, y, pw, ph, ph * 0.5);
-    const bgA = type === 'goal' ? 0.22 : type === 'department' ? 0.20 : type === 'member' ? (isFocused ? 0.26 : 0.16) : type === 'skill' ? 0.18 : type === 'agent' ? 0.18 : 0.10;
+    const bgA = type === 'goal'   ? 0.22
+      : type === 'leader'         ? 0.24
+      : type === 'infra'          ? 0.22
+      : type === 'sharedProject'  ? 0.20
+      : type === 'department'     ? 0.20
+      : type === 'member'         ? (isFocused ? 0.26 : 0.16)
+      : type === 'skill'          ? 0.18
+      : type === 'agent'          ? 0.18
+      : type === 'external'       ? 0.14
+      : type === 'hubProject'     ? 0.12
+      : type === 'hq'             ? 0.14
+      : type === 'dept'           ? 0.10
+      : 0.10;
     _lctx.fillStyle = color + Math.round(bgA * 255).toString(16).padStart(2, '0');
     _lctx.fill();
 
     // pill 테두리
-    const bdA = type === 'goal' ? 0.92 : type === 'department' ? 0.88 : type === 'member' ? (isFocused ? 1.0 : 0.78) : type === 'skill' ? 0.80 : type === 'agent' ? 0.80 : isActive ? 0.85 : 0.42;
+    const bdA = type === 'goal'   ? 0.92
+      : type === 'leader'         ? 0.90
+      : type === 'infra'          ? 0.88
+      : type === 'sharedProject'  ? 0.85
+      : type === 'department'     ? 0.88
+      : type === 'member'         ? (isFocused ? 1.0 : 0.78)
+      : type === 'skill'          ? 0.80
+      : type === 'agent'          ? 0.80
+      : type === 'external'       ? 0.75
+      : type === 'hubProject'     ? 0.60
+      : type === 'hq'             ? 0.65
+      : type === 'dept'           ? 0.50
+      : isActive                  ? 0.85 : 0.42;
     _lctx.strokeStyle = color + Math.round(bdA * 255).toString(16).padStart(2, '0');
-    _lctx.lineWidth   = type === 'goal' ? 2.5 : type === 'department' ? 2.0 : type === 'member' ? (isFocused ? 2.5 : 1.8) : type === 'skill' ? 1.4 : type === 'agent' ? 1.4 : isActive ? 1.8 : 1;
+    _lctx.lineWidth   = type === 'goal'   ? 2.5
+      : type === 'leader'                 ? 2.2
+      : type === 'infra'                  ? 2.2
+      : type === 'sharedProject'          ? 2.0
+      : type === 'department'             ? 2.0
+      : type === 'member'                 ? (isFocused ? 2.5 : 1.8)
+      : type === 'skill'                  ? 1.4
+      : type === 'agent'                  ? 1.4
+      : type === 'external'               ? 1.5
+      : isActive                          ? 1.8 : 1;
     // skill: 대시 테두리
     if (type === 'skill') { _lctx.setLineDash([3, 3]); _lctx.lineDashOffset = -now * 10; }
     roundRect(_lctx, x, y, pw, ph, ph * 0.5);
@@ -762,7 +833,8 @@ function drawTeamLabels() {
     _lctx.shadowBlur = 0;
 
     // 서브라벨
-    if (sublabel && lod <= 1 && (type === 'member' || type === 'goal' || type === 'department')) {
+    const _showSub = new Set(['member','goal','department','leader','infra','sharedProject','hq','hubProject']);
+    if (sublabel && lod <= 1 && _showSub.has(type)) {
       _lctx.font      = `400 ${Math.max(pxSize - 4, 9)}px -apple-system,sans-serif`;
       _lctx.fillStyle = color + '88';
       _lctx.fillText(sublabel, cx, y + ph + 10);
