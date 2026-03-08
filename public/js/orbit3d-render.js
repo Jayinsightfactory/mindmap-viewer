@@ -3032,7 +3032,11 @@ function drawCompactProjectView() {
   }
 
   // ── 프로젝트 노드 방사형 배치 ──────────────────────────────────────────────
-  const NODE_DIST = projects.length === 1 ? 0 : Math.max(200, projects.length * 42);
+  // 드릴다운 공간 확보: 캔버스 세로의 35%로 제한 (CAT_RING_R=151 확보)
+  const NODE_DIST = projects.length === 1 ? 0 : Math.min(
+    Math.max(150, projects.length * 40),
+    Math.floor(_labelCanvas2d.height * 0.35)
+  );
   const isDrillStage1 = _drillStage >= 1 && _drillProject;
 
   projects.forEach((proj, i) => {
@@ -3086,12 +3090,13 @@ function drawCompactProjectView() {
       const sortedCats = Object.entries(catGroups).sort((a, b) => b[1].length - a[1].length);
       const numCats = sortedCats.length;
 
-      const projAngle = Math.atan2(cy - centerY, cx - centerX);
+      // 안쪽 방향(중심→프로젝트 반대)으로 드릴 노드 배치 → 항상 캔버스 내에 표시
+      const projAngle = Math.atan2(centerY - cy, centerX - cx);
 
-      // 카테고리 링: 프로젝트에서 바깥으로
-      const CAT_RING_R = UNI_H + 120;
-      // 세션 링: 카테고리에서 더 바깥으로
-      const SES_RING_R = UNI_H + 80;
+      // 카테고리 링: 프로젝트에서 중심 방향으로
+      const CAT_RING_R = UNI_H + 100;
+      // 세션 링: 카테고리에서 더 안쪽으로
+      const SES_RING_R = UNI_H + 70;
 
       sortedCats.forEach(([catKey, catPlanets], ci) => {
         const cfg = PROJECT_TYPES[catKey] || PROJECT_TYPES.general;
