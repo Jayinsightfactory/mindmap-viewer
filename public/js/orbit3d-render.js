@@ -3095,8 +3095,7 @@ function drawCompactProjectView() {
 
       // 카테고리 링: 프로젝트에서 중심 방향으로
       const CAT_RING_R = UNI_H + 100;
-      // 세션 링: 카테고리에서 더 안쪽으로
-      const SES_RING_R = UNI_H + 70;
+      // SES_RING_R 은 maxShow에 따라 루프 안에서 동적 계산
 
       sortedCats.forEach(([catKey, catPlanets], ci) => {
         const cfg = PROJECT_TYPES[catKey] || PROJECT_TYPES.general;
@@ -3135,8 +3134,13 @@ function drawCompactProjectView() {
         });
 
         // ── 세션 노드: 카테고리 바깥 부채꼴 ─────────────────────────────────
-        const maxShow = Math.min(catPlanets.length, 9);
-        const sesSpread = Math.min(Math.PI * 0.5, maxShow * 0.25);
+        // 최대 4개로 제한, 겹침 방지를 위해 반경을 카드 수에 맞게 동적 계산
+        const maxShow   = Math.min(catPlanets.length, 4);
+        const sesSpread = Math.min(Math.PI * 0.6, (maxShow - 1) * 0.55);
+        const sesStep   = maxShow > 1 ? sesSpread / (maxShow - 1) : 1;
+        const SES_RING_R = maxShow <= 1
+          ? UNI_H + 80
+          : Math.max(UNI_H + 80, Math.ceil(UNI_W * 0.40 / Math.sin(sesStep / 2)));
 
         for (let si = 0; si < maxShow; si++) {
           const planet = catPlanets[si];
