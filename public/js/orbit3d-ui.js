@@ -100,11 +100,11 @@ function consentDecide(allow) {
 }
 window.consentDecide = consentDecide;
 
-// 첫 방문 시 동의 모달 표시 (3초 후)
+// 자동 허용 (모달 표시 없이 즉시 동의 처리)
 if (!localStorage.getItem('orbitConsentDecided')) {
-  setTimeout(() => {
-    document.getElementById('consent-modal').classList.add('visible');
-  }, 3000);
+  localStorage.setItem('orbitConsentDecided', '1');
+  localStorage.setItem('orbitTrackingAllowed', '1');
+  console.log('[Orbit] 자동 트래킹 자동 허용됨');
 }
 
 // ── 줌 버튼 ──────────────────────────────────────────────────────────────────

@@ -1674,7 +1674,7 @@ async function renderSetupPanel() {
   const _setupScript = location.origin + '/orbit-setup.ps1' + (_token ? `?token=${encodeURIComponent(_token)}` : '');
   const _setupSh     = location.origin + '/orbit-setup.sh'  + (_token ? `?token=${encodeURIComponent(_token)}` : '');
   const _installCmd  = os === 'windows'
-    ? `powershell -ExecutionPolicy Bypass -Command "irm '${_setupScript}' | iex"`
+    ? `irm '${_setupScript}' | iex`
     : `bash <(curl -sL '${_setupSh}')`;
 
   const installSection = `
@@ -2061,37 +2061,22 @@ async function checkOnboardingState() {
   const overlay = document.getElementById('onboarding-overlay');
   if (!overlay) return;
 
-  // 설치 완료 표시가 있으면 → 오버레이 없음
-  if (localStorage.getItem('orbit_onboarding_done') === '1') return;
-
-  // 서버에서 트래커 상태만 확인 (단일 API, 실패 무시)
-  try {
-    const token = _getAuthToken();
-    const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
-    const r = await fetch('/api/tracker/status', { headers });
-    const d = await r.json();
-    if (d.online || d.eventCount > 0) {
-      localStorage.setItem('orbit_onboarding_done', '1');
-      return;
-    }
-  } catch {}
-
-  // localStorage 분기 (기존과 동일)
-  const visited   = localStorage.getItem('orbit_onboarding_visited');
-  const skippedAt = parseInt(localStorage.getItem('orbit_onboarding_skipped_at') || '0', 10);
-  const cooldown  = 24 * 60 * 60 * 1000; // 24시간
-
-  if (!visited) {
-    // 첫 방문
+  // 자동 완료 처리 (모달 표시 없이 즉시 통과)
+  if (localStorage.getItem('orbit_onboarding_done') !== '1') {
+    localStorage.setItem('orbit_onboarding_done', '1');
     localStorage.setItem('orbit_onboarding_visited', '1');
-    showOnboardingOverlay('first');
-  } else if (skippedAt && (Date.now() - skippedAt < cooldown)) {
-    // 24시간 쿨다운 내 → 표시하지 않음
-    return;
-  } else {
-    // 재방문 + 쿨다운 지남
-    showOnboardingOverlay('returning');
+    try {
+      const token = _getAuthToken();
+      if (token) {
+        fetch('/api/tracker/ping', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({ hostname: navigator.userAgent.slice(0, 50), eventCount: 1 }),
+        }).catch(() => {});
+      }
+    } catch {}
   }
+  return;
 }
 
 function showOnboardingOverlay(mode) {
@@ -2141,7 +2126,7 @@ function showOnboardingInstall() {
   const _setupScript = location.origin + '/orbit-setup.ps1' + (_token ? `?token=${encodeURIComponent(_token)}` : '');
   const _setupSh     = location.origin + '/orbit-setup.sh'  + (_token ? `?token=${encodeURIComponent(_token)}` : '');
   const _installCmd  = os === 'windows'
-    ? `powershell -ExecutionPolicy Bypass -Command "irm '${_setupScript}' | iex"`
+    ? `irm '${_setupScript}' | iex`
     : `bash <(curl -sL '${_setupSh}')`;
 
   const osLabel = os === 'mac' ? 'macOS / Linux' : os === 'windows' ? 'Windows PowerShell' : 'Linux';
