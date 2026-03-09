@@ -23,28 +23,6 @@ let _parallelDemoTimers = []; // 타이머 누수 방지용
 // ─── 팀 거리 설정값 ──────────────────────────────────────────────────────────
 const TEAM_CFG = { MEMBER_R: 40, TASK_R: 16, TOOL_R: 9 };
 
-// ─── 병렬 태스크 데모 데이터 ──────────────────────────────────────────────────
-const PARALLEL_DEMO = {
-  request: { id:'req', label:'🧠 코드 리팩토링 요청', sublabel:'Claude에게 요청', color:'#ffd700' },
-  batches: [
-    {
-      id: 'batch1', yLevel: 0,
-      tasks: [
-        { id:'t1', label:'📂 파일 구조 분석', sublabel:'Glob + Read', color:'#58a6ff', status:'pending', agentType:'Explore' },
-        { id:'t2', label:'🔍 의존성 검색',    sublabel:'Grep 병렬',  color:'#bc8cff', status:'pending', agentType:'Bash' },
-        { id:'t3', label:'🌐 문서 조회',       sublabel:'WebFetch',  color:'#39d2c0', status:'pending', agentType:'WebFetch' },
-      ]
-    },
-    {
-      id: 'batch2', yLevel: -16,
-      tasks: [
-        { id:'t4', label:'✏️ 코드 수정',  sublabel:'Edit × 3파일', color:'#3fb950', status:'pending', agentType:'Edit' },
-        { id:'t5', label:'🧪 테스트 실행', sublabel:'Bash → Jest', color:'#f0883e', status:'pending', agentType:'Bash' },
-      ]
-    }
-  ],
-  result: { id:'result', label:'✅ 리팩토링 완료', sublabel:'3파일 수정 · 테스트 통과', color:'#3fb950' }
-};
 
 // ─── 마켓 이펙트 프리셋 ──────────────────────────────────────────────────────
 const MARKET_EFFECTS = [
@@ -313,413 +291,7 @@ const STATUS_CFG = {
   pending: { emoji: '⏳', color: '#6e7681' },
 };
 
-// ── 팀 데모 데이터 ──────────────────────────────────────────────────────────
-const TEAM_DEMO = {
-  // 계층 구조: Universe → Company → Team → Member → Task
-  universe: { name: '🌌 AI 스타트업 생태계', teamCount: 8, memberCount: 34, desc: '8개 팀 · 34명 · 120+ 프로젝트 동시 진행 중' },
-  company:  { name: '🏢 Orbit AI Inc.', teams: ['제품팀', 'DevOps팀', '마케팅팀'], desc: '3개 팀 · 12명 · Series-A 준비 중' },
-  name: 'Orbit AI 제품팀',
-  goal: '🚀 Q1 SaaS MVP 런칭',
-  goalColor: '#ffd700',
-  members: [
-    {
-      id: 'm0', name: '김민준', role: '백엔드 개발', color: '#3fb950',
-      collab: ['m1', 'm2'],   // 협업 관계
-      tools: ['VS Code', 'Docker', 'PostgreSQL'],
-      tasks: [
-        { name: '🔐 인증 시스템', status: 'active', progress: 0.75, dueDate: '03-18', blocker: false,
-          subtasks: ['JWT 토큰 구현', 'OAuth Google/GitHub', 'bcrypt 해시 적용', '세션 관리 미들웨어'],
-          completedSubtasks: 3 },
-        { name: '🌐 API 서버 구축', status: 'done', progress: 1.0, dueDate: '02-28', blocker: false,
-          subtasks: ['Express 라우터 설계', 'WebSocket 연동', 'Rate Limiter 적용'],
-          completedSubtasks: 3 },
-        { name: '🚀 MVP 런칭 준비', status: 'active', progress: 0.4, dueDate: '03-10', blocker: true,
-          subtasks: ['스테이징 환경 구축', '성능 테스트', '버그 수정'],
-          completedSubtasks: 1, collab: true },
-      ],
-    },
-    {
-      id: 'm1', name: '이서연', role: '프론트엔드', color: '#58a6ff',
-      collab: ['m0', 'm4'],   // 협업 관계
-      tools: ['Cursor', 'React', 'Figma'],
-      tasks: [
-        { name: '🪐 3D 뷰 개발', status: 'active', progress: 0.6, dueDate: '03-20', blocker: false,
-          subtasks: ['Three.js 렌더러', 'Canvas2D 오버레이', 'LOD 시스템', '팀 시뮬레이션'],
-          completedSubtasks: 2 },
-        { name: '🎨 UI 컴포넌트', status: 'done', progress: 1.0, dueDate: '02-25', blocker: false,
-          subtasks: ['디자인 시스템 정의', '공통 버튼/폼', '다크모드'],
-          completedSubtasks: 3 },
-        { name: '🚀 MVP 런칭 준비', status: 'active', progress: 0.55, dueDate: '03-10', blocker: false,
-          subtasks: ['랜딩페이지 완성', '온보딩 플로우', 'A/B 테스트'],
-          completedSubtasks: 2, collab: true },
-      ],
-    },
-    {
-      id: 'm2', name: '박지훈', role: 'AI 엔지니어', color: '#bc8cff',
-      collab: ['m0', 'm3'],   // 협업 관계
-      tools: ['Claude Code', 'Ollama', 'Python'],
-      tasks: [
-        { name: '⚡ signal-engine', status: 'done', progress: 1.0, dueDate: '02-28', blocker: false,
-          subtasks: ['6차원 벡터 설계', '상태 분류기 로직', 'API /api/signal 엔드포인트'],
-          completedSubtasks: 3 },
-        { name: '🤖 커스텀 모델 학습', status: 'active', progress: 0.45, dueDate: '03-25', blocker: true,
-          subtasks: ['데이터셋 전처리', 'Fine-tuning 실행', '평가 지표 설계', 'Ollama 배포'],
-          completedSubtasks: 1 },
-        { name: '🔐 인증 시스템', status: 'pending', progress: 0.1, dueDate: '03-10', blocker: false,
-          subtasks: ['AI 사용자 행동 분석', '이상 탐지 모델'],
-          completedSubtasks: 0, collab: true },
-      ],
-    },
-    {
-      id: 'm3', name: '최유나', role: 'DevOps', color: '#f0883e',
-      collab: ['m2', 'm4'],   // 협업 관계
-      tools: ['Windsurf', 'Railway', 'GitHub Actions'],
-      tasks: [
-        { name: '🚂 Railway 배포', status: 'active', progress: 0.5, dueDate: '03-08', blocker: true,
-          subtasks: ['환경변수 .env 설정', 'PostgreSQL 연결', '커스텀 도메인', '헬스체크 모니터링'],
-          completedSubtasks: 2 },
-        { name: '⚙️ CI/CD 파이프라인', status: 'done', progress: 1.0, dueDate: '02-20', blocker: false,
-          subtasks: ['GitHub Actions 워크플로우', '자동 테스트 실행', '자동 배포 트리거'],
-          completedSubtasks: 3 },
-        { name: '🚀 MVP 런칭 준비', status: 'active', progress: 0.7, dueDate: '03-10', blocker: false,
-          subtasks: ['프로덕션 배포', '모니터링 설정', 'On-call 플랜'],
-          completedSubtasks: 2, collab: true },
-      ],
-    },
-    {
-      id: 'm4', name: '장현우', role: '기획/PM', color: '#f85149',
-      collab: ['m1', 'm3'],   // 협업 관계
-      tools: ['Notion', 'n8n', 'ChatGPT'],
-      tasks: [
-        { name: '🏢 기업별 특화 기획', status: 'active', progress: 0.65, dueDate: '03-22', blocker: false,
-          subtasks: ['생산업 버전 설계', '금융업 버전 설계', '엔터프라이즈 로드맵', '고객 인터뷰'],
-          completedSubtasks: 2 },
-        { name: '🛒 솔루션 마켓 정책', status: 'done', progress: 1.0, dueDate: '02-22', blocker: false,
-          subtasks: ['수익 쉐어 모델 70/30', '판매자 온보딩 정책', '리뷰 시스템 설계'],
-          completedSubtasks: 3 },
-        { name: '🚀 MVP 런칭 준비', status: 'active', progress: 0.8, dueDate: '03-10', blocker: false,
-          subtasks: ['고객 인터뷰 5건', 'GTM 전략 확정', '프레스킷 작성'],
-          completedSubtasks: 3, collab: true },
-      ],
-      skills: [{ alias: '회의요약', type: 'skill', config: { trigger: '/meeting', model: 'claude-sonnet-4-6' } }],
-      agents: [{ alias: '기획도우미', type: 'agent', config: { model: 'claude-sonnet-4-6', task: '제품 기획 및 요구사항 정리', autoRun: false } }],
-    },
-  ],
-};
 
-// TEAM_DEMO 각 멤버에 skills/agents 보강
-TEAM_DEMO.members[0].skills = [{ alias: 'SQL최적화', type: 'skill', config: { trigger: '/sql', model: 'claude-haiku-4-5' } }];
-TEAM_DEMO.members[0].agents = [{ alias: '코드리뷰어', type: 'agent', config: { model: 'claude-sonnet-4-6', task: 'PR 코드 자동 리뷰 및 버그 감지', autoRun: true } }];
-TEAM_DEMO.members[1].skills = [{ alias: 'CSS마법사', type: 'skill', config: { trigger: '/style', model: 'claude-haiku-4-5' } }];
-TEAM_DEMO.members[1].agents = [{ alias: 'UI피드백봇', type: 'agent', config: { model: 'claude-haiku-4-5', task: 'UI/UX 접근성 & 반응형 자동 점검', autoRun: false } }];
-TEAM_DEMO.members[2].skills = [{ alias: '데이터분석', type: 'skill', config: { trigger: '/analyze', model: 'claude-opus-4-6' } }];
-TEAM_DEMO.members[2].agents = [{ alias: '학습자동화', type: 'agent', config: { model: 'claude-opus-4-6', task: 'Ollama 모델 파인튜닝 파이프라인 실행', autoRun: true } }];
-TEAM_DEMO.members[3].skills = [{ alias: '배포체크', type: 'skill', config: { trigger: '/deploy', model: 'claude-haiku-4-5' } }];
-TEAM_DEMO.members[3].agents = [{ alias: 'CI모니터', type: 'agent', config: { model: 'claude-haiku-4-5', task: 'GitHub Actions 실패 감지 및 Slack 알림', autoRun: true } }];
-
-// ── 회사 시뮬 데이터 (중소/중견기업) ─────────────────────────────────────────
-const COMPANY_DEMO = {
-  name: '(주)한국중견 코퍼레이션',
-  goal: '📈 2026년 매출 20% 성장',
-  goalColor: '#ffd700',
-  universe: { name: '🌏 대한민국 기업 생태계', desc: '중견기업 1,200개사 · 임직원 85만명 · GDP 15% 기여' },
-  company:  { name: '🏢 (주)한국중견 코퍼레이션', desc: '8개 팀 · 47명 · 창립 15년 종합 제조·서비스 기업' },
-  departments: [
-    {
-      id: 'd0', name: '경영진', icon: '👔', color: '#ffd700',
-      members: [
-        { id: 'c00', name: '이철수', role: 'CEO', color: '#ffd700',
-          tools: ['Word', 'PowerPoint', 'Excel'],
-          tasks: [
-            { name: '📊 분기 이사회 보고서', status: 'active', progress: 0.7,
-              subtasks: ['재무현황 취합', 'KPI 달성률 분석', '차기 전략 초안 작성', '경영진 사전 검토'],
-              completedSubtasks: 2 },
-            { name: '📋 임원 주간회의', status: 'done', progress: 1.0,
-              subtasks: ['안건 준비', '회의록 작성'], completedSubtasks: 2 },
-          ],
-          skills: [{ alias: '보고서요약', type: 'skill', config: { trigger: '/summarize', model: 'claude-opus-4-6' } }],
-          agents: [{ alias: 'KPI모니터', type: 'agent', config: { model: 'claude-sonnet-4-6', task: '월간 KPI 자동 집계 및 경영진 이메일 발송', autoRun: true } }],
-        },
-        { id: 'c01', name: '박재무', role: 'CFO', color: '#e6b800',
-          tools: ['Excel', 'SAP ERP', 'Word'],
-          tasks: [
-            { name: '💰 월간 재무제표 작성', status: 'active', progress: 0.85,
-              subtasks: ['손익계산서', '대차대조표', '현금흐름표', '감사법인 제출'],
-              completedSubtasks: 3 },
-            { name: '📑 세금계산서 처리', status: 'done', progress: 1.0,
-              subtasks: ['매출 세금계산서', '매입 세금계산서', '부가세 신고'], completedSubtasks: 3 },
-          ],
-          skills: [{ alias: '재무분석', type: 'skill', config: { trigger: '/finance', model: 'claude-sonnet-4-6' } }],
-          agents: [],
-        },
-      ],
-    },
-    {
-      id: 'd1', name: '기획/PM팀', icon: '📐', color: '#58a6ff',
-      members: [
-        { id: 'c10', name: '김기획', role: 'PM팀장', color: '#58a6ff',
-          collab: ['c20', 'c40'],  // 마케팅팀장·디자인팀장과 크로스-부서 협업
-          tools: ['Notion', 'Figma', 'Excel'],
-          tasks: [
-            { name: '📋 신제품 로드맵 수립', status: 'active', progress: 0.6,
-              subtasks: ['시장조사 분석', '경쟁사 벤치마킹', '개발일정 조율', '경영진 승인'],
-              completedSubtasks: 2 },
-            { name: '📄 기능 요구사항 문서', status: 'active', progress: 0.75,
-              subtasks: ['사용자 스토리 작성', 'Figma 와이어프레임', '개발팀 리뷰'], completedSubtasks: 2 },
-          ],
-          skills: [{ alias: '요구사항정리', type: 'skill', config: { trigger: '/prd', model: 'claude-sonnet-4-6' } }],
-          agents: [{ alias: '일정봇', type: 'agent', config: { model: 'claude-haiku-4-5', task: '프로젝트 일정 자동 리마인더 및 지연 감지', autoRun: true } }],
-        },
-        { id: 'c11', name: '정어시', role: 'PA', color: '#4d9fd6',
-          tools: ['Word', 'Excel', 'Google Meet'],
-          tasks: [
-            { name: '📝 회의록 작성', status: 'done', progress: 1.0,
-              subtasks: ['회의 녹취 요약', '액션 아이템 정리', '팀 배포'], completedSubtasks: 3 },
-            { name: '📊 업무현황 보고서', status: 'active', progress: 0.5,
-              subtasks: ['팀별 현황 취합', 'Excel 정리', '주간 리포트 발송'], completedSubtasks: 1 },
-          ],
-          skills: [],
-          agents: [{ alias: '회의록봇', type: 'agent', config: { model: 'claude-haiku-4-5', task: '회의 녹취 자동 요약 및 액션 아이템 추출', autoRun: false } }],
-        },
-      ],
-    },
-    {
-      id: 'd2', name: '마케팅팀', icon: '📣', color: '#bc8cff',
-      members: [
-        { id: 'c20', name: '이마케터', role: '마케팅팀장', color: '#bc8cff',
-          collab: ['c10', 'c30'],  // 기획팀장·영업팀장과 크로스-부서 협업
-          tools: ['Canva', 'Meta Ads', 'Google Analytics'],
-          tasks: [
-            { name: '📱 SNS 카드뉴스 제작', status: 'active', progress: 0.8,
-              subtasks: ['콘텐츠 기획', 'Canva 디자인', '카피라이팅', '스케줄 예약'],
-              completedSubtasks: 3 },
-            { name: '📈 Meta 광고 캠페인', status: 'active', progress: 0.55,
-              subtasks: ['타겟 오디언스 설정', '소재 A/B 테스트', '예산 최적화'], completedSubtasks: 1 },
-          ],
-          skills: [{ alias: '카피라이터', type: 'skill', config: { trigger: '/copy', model: 'claude-sonnet-4-6' } }],
-          agents: [{ alias: '광고최적화봇', type: 'agent', config: { model: 'claude-sonnet-4-6', task: 'Meta Ads ROAS 분석 및 예산 재배분 제안', autoRun: true } }],
-        },
-        { id: 'c21', name: '최콘텐츠', role: '콘텐츠 크리에이터', color: '#9d6fe8',
-          tools: ['Premiere Pro', 'Photoshop', 'CapCut'],
-          tasks: [
-            { name: '🎬 유튜브 홍보영상 편집', status: 'active', progress: 0.65,
-              subtasks: ['Premiere Pro 컷편집', '자막 삽입', '색보정', '유튜브 업로드'],
-              completedSubtasks: 2 },
-            { name: '🖼️ 제품 썸네일 디자인', status: 'done', progress: 1.0,
-              subtasks: ['Photoshop 작업', 'A/B 테스트 2종', 'SNS 포맷 최적화'], completedSubtasks: 3 },
-          ],
-          skills: [],
-          agents: [{ alias: '영상분석봇', type: 'agent', config: { model: 'claude-haiku-4-5', task: '유튜브 조회수 패턴 분석 및 최적 업로드 시간 추천', autoRun: false } }],
-        },
-      ],
-    },
-    {
-      id: 'd3', name: '영업팀', icon: '💼', color: '#f0883e',
-      members: [
-        { id: 'c30', name: '한영업', role: '영업팀장', color: '#f0883e',
-          collab: ['c20'],  // 마케팅팀장과 크로스-부서 협업
-          tools: ['Excel', 'CRM', 'Zoom'],
-          tasks: [
-            { name: '📊 고객 파이프라인 관리', status: 'active', progress: 0.7,
-              subtasks: ['CRM 데이터 업데이트', '리드 스코어링', '우선순위 정렬', '팀 배분'],
-              completedSubtasks: 2 },
-            { name: '🤝 B2B 영업 제안', status: 'active', progress: 0.4,
-              subtasks: ['고객사 니즈 파악', 'Word 제안서 작성', '가격 협상 준비'], completedSubtasks: 1 },
-          ],
-          skills: [{ alias: '제안서작성', type: 'skill', config: { trigger: '/proposal', model: 'claude-sonnet-4-6' } }],
-          agents: [{ alias: 'CRM봇', type: 'agent', config: { model: 'claude-haiku-4-5', task: '영업 파이프라인 이상 감지 및 팔로업 리마인더', autoRun: true } }],
-        },
-        { id: 'c31', name: '조영업', role: '영업사원', color: '#d4733a',
-          tools: ['Word', 'Excel', 'KakaoWork'],
-          tasks: [
-            { name: '📋 월간 영업 실적 보고', status: 'done', progress: 1.0,
-              subtasks: ['Excel 실적 집계', '목표 달성률 계산', '팀장 보고'], completedSubtasks: 3 },
-            { name: '📞 고객사 미팅 준비', status: 'pending', progress: 0.2,
-              subtasks: ['미팅 자료 PPT', '샘플 준비', '방문 일정 확정'], completedSubtasks: 0 },
-          ],
-          skills: [],
-          agents: [],
-        },
-      ],
-    },
-    {
-      id: 'd4', name: '디자인팀', icon: '🎨', color: '#79c0ff',
-      members: [
-        { id: 'c40', name: '윤디자인', role: '디자인팀장', color: '#79c0ff',
-          collab: ['c10', 'c20'],  // 기획팀장·마케팅팀장과 크로스-부서 협업
-          tools: ['Figma', 'Illustrator', 'Adobe XD'],
-          tasks: [
-            { name: '🖌️ 브랜드 BI 리뉴얼', status: 'active', progress: 0.5,
-              subtasks: ['로고 시안 3종', '컬러 시스템 정의', '서체 가이드라인', '브랜드북 제작'],
-              completedSubtasks: 2 },
-            { name: '📱 앱 UI/UX 개선', status: 'blocked', progress: 0.35,
-              subtasks: ['사용자 인터뷰 분석', 'Figma 프로토타입', '개발팀 핸드오프'], completedSubtasks: 1 },
-          ],
-          skills: [{ alias: 'UI평가', type: 'skill', config: { trigger: '/ux-review', model: 'claude-sonnet-4-6' } }],
-          agents: [{ alias: '디자인피드백봇', type: 'agent', config: { model: 'claude-sonnet-4-6', task: 'Figma 프로토타입 접근성 자동 평가', autoRun: false } }],
-        },
-        { id: 'c41', name: '강포토', role: '그래픽 디자이너', color: '#5da8d8',
-          tools: ['Photoshop', 'Premiere Pro', 'After Effects'],
-          tasks: [
-            { name: '🖼️ 제품 상세페이지 이미지', status: 'active', progress: 0.9,
-              subtasks: ['Photoshop 보정', '배경 제거', '텍스트 합성', '최종 저장'], completedSubtasks: 3 },
-            { name: '🎞️ 사내 홍보영상 편집', status: 'active', progress: 0.6,
-              subtasks: ['After Effects 인트로', 'Premiere 본편집', '음악 삽입', '색보정'], completedSubtasks: 2 },
-          ],
-          skills: [],
-          agents: [{ alias: '이미지분석봇', type: 'agent', config: { model: 'claude-haiku-4-5', task: '이미지 품질 자동 검수 및 최적화 제안', autoRun: false } }],
-        },
-      ],
-    },
-    {
-      id: 'd5', name: 'IT/개발팀', icon: '💻', color: '#3fb950',
-      members: [
-        { id: 'c50', name: '박개발', role: '개발팀장', color: '#3fb950',
-          tools: ['VS Code', 'Git', 'Jira'],
-          tasks: [
-            { name: '⚙️ 사내 ERP 연동 API', status: 'active', progress: 0.55,
-              subtasks: ['SAP REST API 분석', 'Node.js 미들웨어 작성', '테스트 코드', '운영 배포'],
-              completedSubtasks: 2 },
-            { name: '🔒 보안 취약점 패치', status: 'done', progress: 1.0,
-              subtasks: ['OWASP 점검', 'SQL Injection 수정', '보안 리포트 제출'], completedSubtasks: 3 },
-          ],
-          skills: [{ alias: '코드리뷰', type: 'skill', config: { trigger: '/review', model: 'claude-sonnet-4-6' } }],
-          agents: [{ alias: '배포자동화봇', type: 'agent', config: { model: 'claude-haiku-4-5', task: 'Git push 감지 → 자동 빌드/테스트/슬랙 알림', autoRun: true } }],
-        },
-        { id: 'c51', name: '류주니어', role: '개발사원', color: '#2ea043',
-          tools: ['VS Code', 'Docker', 'Postman'],
-          tasks: [
-            { name: '🌐 관리자 웹 페이지', status: 'active', progress: 0.45,
-              subtasks: ['로그인 화면 개발', '대시보드 UI', 'API 연동', '크로스브라우저 테스트'],
-              completedSubtasks: 2 },
-            { name: '🐛 버그 수정 이슈 처리', status: 'active', progress: 0.8,
-              subtasks: ['Jira 이슈 분류', '재현 및 원인 파악', '코드 수정', 'PR 제출'], completedSubtasks: 3 },
-          ],
-          skills: [],
-          agents: [{ alias: '이슈분류봇', type: 'agent', config: { model: 'claude-haiku-4-5', task: 'Jira 이슈 자동 분류 및 담당자 배정', autoRun: false } }],
-        },
-      ],
-    },
-    {
-      id: 'd6', name: '총무/인사팀', icon: '🗂️', color: '#39d2c0',
-      members: [
-        { id: 'c60', name: '서총무', role: '총무팀장', color: '#39d2c0',
-          tools: ['Word', 'Excel', 'SAP ERP'],
-          tasks: [
-            { name: '📄 근로계약서 갱신', status: 'active', progress: 0.6,
-              subtasks: ['계약서 양식 업데이트', '법무팀 검토', '전자서명 발송', '파일 보관'],
-              completedSubtasks: 2 },
-            { name: '💳 월간 급여 정산', status: 'done', progress: 1.0,
-              subtasks: ['근태 데이터 취합', 'Excel 급여대장 작성', '세금 공제 계산', '이체 완료'],
-              completedSubtasks: 4 },
-          ],
-          skills: [{ alias: '법무검토', type: 'skill', config: { trigger: '/legal', model: 'claude-sonnet-4-6' } }],
-          agents: [],
-        },
-        { id: 'c61', name: '임인사', role: '인사담당자', color: '#2db8a8',
-          tools: ['Word', 'Excel', 'LinkedIn'],
-          tasks: [
-            { name: '👥 신규 채용 공고', status: 'active', progress: 0.7,
-              subtasks: ['채용 요건 정의', 'JD 작성', '채용 플랫폼 등록', '서류 검토'],
-              completedSubtasks: 3 },
-            { name: '📚 신입사원 교육자료', status: 'pending', progress: 0.15,
-              subtasks: ['온보딩 PPT 제작', '사내 규정 문서화', '멘토 배정'], completedSubtasks: 0 },
-          ],
-          skills: [],
-          agents: [{ alias: 'JD작성봇', type: 'agent', config: { model: 'claude-sonnet-4-6', task: '채용 공고(JD) 자동 초안 생성 및 맞춤 최적화', autoRun: false } }],
-        },
-      ],
-    },
-    {
-      id: 'd7', name: '생산/QA팀', icon: '🏭', color: '#f85149',
-      members: [
-        { id: 'c70', name: '고생산', role: '생산팀장', color: '#f85149',
-          tools: ['Excel', 'MES', 'SAP ERP'],
-          tasks: [
-            { name: '📋 주간 생산계획 수립', status: 'done', progress: 1.0,
-              subtasks: ['수주량 확인', 'MES 투입 계획', '자재 발주 확인', '라인 배치'], completedSubtasks: 4 },
-            { name: '📦 재고 현황 관리', status: 'active', progress: 0.75,
-              subtasks: ['ERP 재고 조회', '부족 자재 발주', '창고 실사', 'Excel 보고'], completedSubtasks: 2 },
-          ],
-          skills: [{ alias: '재고분석', type: 'skill', config: { trigger: '/inventory', model: 'claude-haiku-4-5' } }],
-          agents: [{ alias: '생산모니터', type: 'agent', config: { model: 'claude-haiku-4-5', task: 'MES 생산 지연 감지 및 긴급 알림 발송', autoRun: true } }],
-        },
-        { id: 'c71', name: '문QA', role: 'QA 담당자', color: '#d4403d',
-          tools: ['Excel', 'Word', 'ERP'],
-          tasks: [
-            { name: '🔍 불량품 보고서 작성', status: 'active', progress: 0.8,
-              subtasks: ['불량 원인 분석', 'Excel 데이터 정리', '8D 리포트 작성', '공정 개선안'],
-              completedSubtasks: 3 },
-            { name: '📖 품질 매뉴얼 업데이트', status: 'pending', progress: 0.0,
-              subtasks: ['ISO 9001 기준 검토', 'Word 문서 작성', '경영진 승인'], completedSubtasks: 0 },
-          ],
-          skills: [],
-          agents: [{ alias: '불량분석봇', type: 'agent', config: { model: 'claude-sonnet-4-6', task: '불량 패턴 통계 분석 및 예방 조치 제안', autoRun: false } }],
-        },
-      ],
-    },
-  ],
-};
-
-// ══════════════════════════════════════════════════════════════════════════════
-// Multi-Hub Demo: 나(Leader A) + 동료(Leader B) + 공동 프로젝트
-// "3D 멀티 허브 협업 구조" 스크린샷 기반
-// ══════════════════════════════════════════════════════════════════════════════
-const MULTI_HUB_DEMO = {
-  leaderA: {
-    id: 'la', name: '나 (Leader A)', color: '#6272e4', role: '팀 리더',
-    projects: [
-      { id: 'a1', name: 'A 프로젝트 1', sessionCount: 5, followerCount: 2 },
-      { id: 'a2', name: 'A 프로젝트 2', sessionCount: 3, followerCount: 1 },
-      { id: 'a3', name: 'A 프로젝트 3', sessionCount: 2, followerCount: 1 },
-    ],
-  },
-  leaderB: {
-    id: 'lb', name: '동료 (Leader B)', color: '#e472c4', role: '파트너 리더',
-    projects: [
-      { id: 'b1', name: 'B 프로젝트 1', sessionCount: 4, followerCount: 2 },
-      { id: 'b2', name: 'B 프로젝트 2', sessionCount: 2, followerCount: 1 },
-      { id: 'b3', name: 'B 프로젝트 3', sessionCount: 3, followerCount: 1 },
-    ],
-  },
-  sharedProjects: [
-    { id: 'sp1', name: '공동 프로젝트', color: '#ffd700', sessionCount: 6 },
-  ],
-};
-
-// ══════════════════════════════════════════════════════════════════════════════
-// Enterprise Demo: 전사 생태계 (스크린샷 2) + 하이브리드 외주 파트너 (스크린샷 3)
-// ══════════════════════════════════════════════════════════════════════════════
-const ENTERPRISE_DEMO = {
-  tft:     { name: '전사 핵심 TFT',       color: '#ffd700', sublabel: '전략 핵심 TF' },
-  leaderA: {
-    id: 'la', name: '나 (Leader A)', color: '#3040a8', role: '리더 A',
-    projects: [
-      { id: 'a1', name: '프로젝트 A-1', sessions: 5 },
-      { id: 'a2', name: '프로젝트 A-2', sessions: 3 },
-      { id: 'a3', name: '프로젝트 A-3', sessions: 2 },
-      { id: 'a4', name: '프로젝트 A-4', sessions: 4 },
-    ],
-    dept: { name: '인사/HR',  color: '#8888ee' },
-  },
-  leaderB: {
-    id: 'lb', name: '동료 (Leader B)', color: '#a02060', role: '리더 B',
-    projects: [
-      { id: 'b1', name: '프로젝트 B-1', sessions: 4 },
-      { id: 'b2', name: '프로젝트 B-2', sessions: 2 },
-      { id: 'b3', name: '프로젝트 B-3', sessions: 3 },
-      { id: 'b4', name: '프로젝트 B-4', sessions: 2 },
-    ],
-    dept: { name: '재무/운영', color: '#e88888' },
-  },
-  hq:    { name: '회사 경영/비전 (HQ)', color: '#38b6ff' },
-  infra: { name: '공통 인프라/IT',       color: '#00c8a8' },
-  externalPartners: [
-    { id: 'ep1', name: '[파트너] 보안 컨설팅',   color: '#9b59b6', pos: [  0, 42, 0] },
-    { id: 'ep2', name: '[외주] 개발 협력사',      color: '#9b59b6', pos: [-72, 10, 0] },
-    { id: 'ep3', name: '[외주] 디자인 에이전시',  color: '#9b59b6', pos: [ 72, 10, 0] },
-  ],
-};
 
 // ══════════════════════════════════════════════════════════════════════════════
 // buildMultiHubSystem — 두 리더 허브 + 공동 프로젝트 렌더
@@ -746,11 +318,9 @@ function buildMultiHubSystem(data) {
 
   function addLeader(pos, hex, name, role) {
     const col = new THREE.Color(hex);
-    const sp  = new THREE.Mesh(new THREE.SphereGeometry(4.5, 32, 32),
-      new THREE.MeshPhongMaterial({ color: col, emissive: col.clone().multiplyScalar(0.28), shininess: 120 }));
+    const sp  = createWireNode(4.5, col, { wireOpacity: 0.35, glowOpacity: 0.15 });
     sp.position.copy(pos); scene.add(sp);
-    const hl  = new THREE.Mesh(new THREE.SphereGeometry(9, 32, 32),
-      new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.07, side: THREE.BackSide }));
+    const hl  = createWireNode(9, col, { wireOpacity: 0.07, glow: false, detail: 0 });
     hl.position.copy(pos); scene.add(hl);
     const obj = new THREE.Object3D(); obj.position.copy(pos);
     obj.userData = { isHubLeader: true, name, color: hex };
@@ -770,8 +340,7 @@ function buildMultiHubSystem(data) {
       hubPos.z + PROJ_R * Math.sin(ang)
     );
     const col = new THREE.Color(hex);
-    const sp  = new THREE.Mesh(new THREE.SphereGeometry(1.8, 24, 24),
-      new THREE.MeshPhongMaterial({ color: col, emissive: col.clone().multiplyScalar(0.2) }));
+    const sp  = createWireNode(1.8, col, { wireOpacity: 0.35, glowOpacity: 0.15 });
     sp.position.copy(pPos); scene.add(sp);
     const obj = new THREE.Object3D(); obj.position.copy(pPos);
     obj.userData = { isHubProject: true, name: proj.name, color: hex,
@@ -784,8 +353,7 @@ function buildMultiHubSystem(data) {
     for (let f = 0; f < (proj.followerCount || 1); f++) {
       const fa = ang + 1.5 + f * 1.8;
       const fp = new THREE.Vector3(pPos.x + 4.5 * Math.cos(fa), pPos.y, pPos.z + 4.5 * Math.sin(fa));
-      const fs = new THREE.Mesh(new THREE.SphereGeometry(0.33, 8, 8),
-        new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.55 }));
+      const fs = createWireNode(0.33, 0xffffff, { wireOpacity: 0.44, glowOpacity: 0.08, detail: 0 });
       fs.position.copy(fp); scene.add(fs);
       const fo = new THREE.Object3D(); fo.position.copy(fp);
       fo.userData = { isFollower: true, orbitR: 4.5, orbitAngle: fa,
@@ -812,11 +380,9 @@ function buildMultiHubSystem(data) {
   data.sharedProjects.forEach((sp, si) => {
     const spPos = new THREE.Vector3(0, 28 + si * 16, 0);
     const spCol = new THREE.Color(sp.color);
-    const spSp  = new THREE.Mesh(new THREE.SphereGeometry(3, 32, 32),
-      new THREE.MeshPhongMaterial({ color: spCol, emissive: spCol.clone().multiplyScalar(0.38), shininess: 180 }));
+    const spSp  = createWireNode(3, spCol, { wireOpacity: 0.35, glowOpacity: 0.15 });
     spSp.position.copy(spPos); scene.add(spSp);
-    const spHl = new THREE.Mesh(new THREE.SphereGeometry(6, 32, 32),
-      new THREE.MeshBasicMaterial({ color: spCol, transparent: true, opacity: 0.08, side: THREE.BackSide }));
+    const spHl = createWireNode(6, spCol, { wireOpacity: 0.08, glow: false, detail: 0 });
     spHl.position.copy(spPos); scene.add(spHl);
     const spObj = new THREE.Object3D(); spObj.position.copy(spPos);
     spObj.userData = { isSharedProject: true, name: sp.name, color: sp.color };
@@ -865,23 +431,19 @@ function buildEnterpriseSystem(data, opts = {}) {
   // ── TFT 코어 ───────────────────────────────────────────────────────────────
   const tftPos = new THREE.Vector3(0, 0, 0);
   const tftCol = new THREE.Color(data.tft.color);
-  const tftSp  = new THREE.Mesh(new THREE.SphereGeometry(3.5, 32, 32),
-    new THREE.MeshPhongMaterial({ color: tftCol, emissive: tftCol.clone().multiplyScalar(0.4), shininess: 200 }));
+  const tftSp  = createWireNode(3.5, tftCol, { wireOpacity: 0.35, glowOpacity: 0.15 });
   tftSp.userData.isCore = true; scene.add(tftSp);
-  scene.add(Object.assign(new THREE.Mesh(new THREE.SphereGeometry(7, 32, 32),
-    new THREE.MeshBasicMaterial({ color: tftCol, transparent: true, opacity: 0.06, side: THREE.BackSide })),
-    { position: tftPos.clone() }));
+  const tftHl = createWireNode(7, tftCol, { wireOpacity: 0.06, glow: false, detail: 0 });
+  tftHl.position.copy(tftPos); scene.add(tftHl);
   _teamNodes.push({ type: 'goal', pos: tftPos.clone(),
     label: data.tft.name, sublabel: data.tft.sublabel, color: data.tft.color, size: 'xl' });
 
   // ── 리더 빌더 ─────────────────────────────────────────────────────────────
   function buildLeader(ld, pos) {
     const col = new THREE.Color(ld.color);
-    const sp  = new THREE.Mesh(new THREE.SphereGeometry(3.8, 32, 32),
-      new THREE.MeshPhongMaterial({ color: col, emissive: col.clone().multiplyScalar(0.25), shininess: 110 }));
+    const sp  = createWireNode(3.8, col, { wireOpacity: 0.35, glowOpacity: 0.15 });
     sp.position.copy(pos); scene.add(sp);
-    const hl  = new THREE.Mesh(new THREE.SphereGeometry(7.5, 32, 32),
-      new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.06, side: THREE.BackSide }));
+    const hl  = createWireNode(7.5, col, { wireOpacity: 0.06, glow: false, detail: 0 });
     hl.position.copy(pos); scene.add(hl);
     const obj = new THREE.Object3D(); obj.position.copy(pos);
     obj.userData = { isHubLeader: true, name: ld.name, color: ld.color };
@@ -901,8 +463,7 @@ function buildEnterpriseSystem(data, opts = {}) {
       const ang  = (pi / ld.projects.length) * Math.PI * 2 - Math.PI / 2;
       const pPos = new THREE.Vector3(
         pos.x + PROJ_R * Math.cos(ang), pos.y + (pi % 2 === 0 ? 2 : -2), pos.z + PROJ_R * Math.sin(ang));
-      const pSp = new THREE.Mesh(new THREE.SphereGeometry(1.5, 20, 20),
-        new THREE.MeshPhongMaterial({ color: col, emissive: col.clone().multiplyScalar(0.18) }));
+      const pSp = createWireNode(1.5, col, { wireOpacity: 0.35, glowOpacity: 0.15 });
       pSp.position.copy(pPos); scene.add(pSp);
       const pObj = new THREE.Object3D(); pObj.position.copy(pPos);
       pObj.userData = { isHubProject: true, name: proj.name, color: ld.color,
@@ -942,11 +503,9 @@ function buildEnterpriseSystem(data, opts = {}) {
   if (data.infra) {
     const iPos = new THREE.Vector3(0, INFRA_Y, 0);
     const iCol = new THREE.Color(data.infra.color);
-    const iSp  = new THREE.Mesh(new THREE.SphereGeometry(5, 32, 32),
-      new THREE.MeshPhongMaterial({ color: iCol, emissive: iCol.clone().multiplyScalar(0.4), shininess: 150 }));
+    const iSp  = createWireNode(5, iCol, { wireOpacity: 0.35, glowOpacity: 0.15 });
     iSp.position.copy(iPos); scene.add(iSp);
-    const iHl  = new THREE.Mesh(new THREE.SphereGeometry(10, 32, 32),
-      new THREE.MeshBasicMaterial({ color: iCol, transparent: true, opacity: 0.05, side: THREE.BackSide }));
+    const iHl  = createWireNode(10, iCol, { wireOpacity: 0.05, glow: false, detail: 0 });
     iHl.position.copy(iPos); scene.add(iHl);
     const iObj = new THREE.Object3D(); iObj.position.copy(iPos); scene.add(iObj); planetMeshes.push(iObj);
     _teamNodes.push({ type: 'infra', pos: iPos.clone(), obj: iObj,
@@ -1002,15 +561,12 @@ function buildTeamSystem(teamData) {
 
   const { name, goal, goalColor, members } = teamData;
 
-  // 중심 코어 (팀 목표 — 골드 구체)
-  const coreMat = new THREE.MeshPhongMaterial({ color: 0xffd700, emissive: 0x7a5800, shininess: 200 });
-  const core    = new THREE.Mesh(new THREE.SphereGeometry(3.5, 32, 32), coreMat);
+  // 중심 코어 (팀 목표 — 와이어프레임)
+  const core = createWireNode(3.5, 0xffd700, { wireOpacity: 0.35, glowOpacity: 0.15 });
   core.userData.isCore = true;
   scene.add(core);
-  scene.add(new THREE.Mesh(
-    new THREE.SphereGeometry(7, 32, 32),
-    new THREE.MeshBasicMaterial({ color: 0xffd700, transparent: true, opacity: 0.08, side: THREE.BackSide })
-  ));
+  const coreHl = createWireNode(7, 0xffd700, { wireOpacity: 0.08, glow: false, detail: 0 });
+  scene.add(coreHl);
 
   // 팀 목표 노드 (Canvas2D 라벨)
   _teamNodes.push({ type: 'goal', pos: new THREE.Vector3(0, 0, 0),
@@ -1222,11 +778,11 @@ function buildCompanySystem(companyData) {
   const SKILL_R  = 5;
   const AGENT_R  = 6;
 
-  // 코어 (회사 목표)
-  const coreMat = new THREE.MeshPhongMaterial({ color: 0xffd700, emissive: 0x7a5800, shininess: 200 });
-  const core    = new THREE.Mesh(new THREE.SphereGeometry(4, 32, 32), coreMat);
+  // 코어 (회사 목표 — 와이어프레임)
+  const core = createWireNode(4, 0xffd700, { wireOpacity: 0.35, glowOpacity: 0.15 });
   core.userData.isCore = true; scene.add(core);
-  scene.add(new THREE.Mesh(new THREE.SphereGeometry(8, 32, 32), new THREE.MeshBasicMaterial({ color: 0xffd700, transparent: true, opacity: 0.06, side: THREE.BackSide })));
+  const coreHl = createWireNode(8, 0xffd700, { wireOpacity: 0.06, glow: false, detail: 0 });
+  scene.add(coreHl);
 
   _teamNodes.push({ type: 'goal', pos: new THREE.Vector3(0, 0, 0), label: goal, sublabel: name, color: goalColor || '#ffd700', size: 'xl' });
 
@@ -1360,104 +916,71 @@ function buildCompanySystem(companyData) {
 
 async function loadTeamDemo() {
   if (typeof track === 'function') track('view.mode_switch', { from: 'personal', to: 'team' });
-
-  // orbitUser JSON에서 토큰 추출 (로그인 시 저장되는 형식에 맞게)
   const _u = typeof _orbitUser !== 'undefined' ? _orbitUser : JSON.parse(localStorage.getItem('orbitUser') || 'null');
   const token = _u?.token;
 
-  // ── 비로그인 → 멀티허브 데모 (미리보기) ──────────────────────────────
   if (!token) {
-    buildMultiHubSystem(MULTI_HUB_DEMO);
-    updateBreadcrumb('team');
-    document.querySelector('.tm-label').textContent = '👥 팀 미리보기 (샘플)';
-    localStorage.setItem(_VIEW_MODE_KEY, 'team');
-    showToast('👥 팀 화면 미리보기 — 로그인 후 실제 협업 데이터를 확인하세요', 3500);
+    showToast('👥 팀 뷰는 로그인 후 사용 가능합니다', 3000);
     return;
   }
 
-  // ── 로그인 → 실제 워크스페이스 데이터 시도 ───────────────────────────
   try {
-    const res = await fetch('/api/workspace/team-view', {
-      headers: { Authorization: `Bearer ${token}` }
-    });
+    const res = await fetch('/api/workspace/team-view', { headers: { Authorization: `Bearer ${token}` } });
     if (res.ok) {
       const data = await res.json();
       if (data && data.leaderA && data.leaderB) {
-        // 새 멀티허브 포맷
         buildMultiHubSystem(data);
         updateBreadcrumb('team');
-        document.querySelector('.tm-label').textContent = '👥 실제 팀 데이터';
+        document.querySelector('.tm-label').textContent = '👥 팀';
         localStorage.setItem(_VIEW_MODE_KEY, 'team');
         return;
       }
       if (data && data.members && data.members.length > 0) {
-        // 기존 단일팀 포맷 (하위호환)
         buildTeamSystem(data);
         updateBreadcrumb('team');
-        document.querySelector('.tm-label').textContent = '👥 실제 팀 데이터';
+        document.querySelector('.tm-label').textContent = '👥 팀';
         localStorage.setItem(_VIEW_MODE_KEY, 'team');
         return;
       }
     }
   } catch {}
 
-  // 로그인 상태인데 팀 데이터 없음 → 멀티허브 데모 표시
-  buildMultiHubSystem(MULTI_HUB_DEMO);
-  updateBreadcrumb('team');
-  document.querySelector('.tm-label').textContent = '👥 팀 샘플 (데이터 없음)';
-  localStorage.setItem(_VIEW_MODE_KEY, 'team');
-  showToast('👥 팀 데이터 없음 — 팀원을 초대하면 실제 협업 구조가 표시됩니다', 3500);
+  showToast('👥 팀 데이터 없음 — 워크스페이스에 팀원을 초대하세요', 4000);
 }
 window.loadTeamDemo = loadTeamDemo;
 
 async function loadCompanyDemo() {
   if (typeof track === 'function') track('view.mode_switch', { from: 'team', to: 'company' });
-
   const _u = typeof _orbitUser !== 'undefined' ? _orbitUser : JSON.parse(localStorage.getItem('orbitUser') || 'null');
   const token = _u?.token;
 
-  // ── 비로그인 → 전사 데모 (미리보기) ──────────────────────────────────
   if (!token) {
-    buildEnterpriseSystem(ENTERPRISE_DEMO);
-    updateBreadcrumb('company');
-    document.querySelector('.tm-label').textContent = '🏢 전사 미리보기 (샘플)';
-    localStorage.setItem(_VIEW_MODE_KEY, 'company');
-    showToast('🏢 전사 화면 미리보기 — 로그인 후 실제 전사 데이터를 확인하세요', 3500);
+    showToast('🏢 전사 뷰는 로그인 후 사용 가능합니다', 3000);
     return;
   }
 
-  // ── 로그인 → 실제 워크스페이스 데이터 시도 ───────────────────────────
   try {
-    const res = await fetch('/api/workspace/company-view', {
-      headers: { Authorization: `Bearer ${token}` }
-    });
+    const res = await fetch('/api/workspace/company-view', { headers: { Authorization: `Bearer ${token}` } });
     if (res.ok) {
       const data = await res.json();
       if (data && data.tft && data.leaderA) {
-        // 새 전사 포맷
         buildEnterpriseSystem(data);
         updateBreadcrumb('company');
-        document.querySelector('.tm-label').textContent = '🏢 실제 전사 데이터';
+        document.querySelector('.tm-label').textContent = '🏢 전사';
         localStorage.setItem(_VIEW_MODE_KEY, 'company');
         return;
       }
       if (data && data.departments && data.departments.length > 0) {
-        // 기존 부서 포맷 (하위호환)
         buildCompanySystem(data);
         updateBreadcrumb('company');
-        document.querySelector('.tm-label').textContent = '🏢 실제 회사 데이터';
+        document.querySelector('.tm-label').textContent = '🏢 전사';
         localStorage.setItem(_VIEW_MODE_KEY, 'company');
         return;
       }
     }
   } catch {}
 
-  // 로그인 상태인데 전사 데이터 없음 → 전사 데모 표시
-  buildEnterpriseSystem(ENTERPRISE_DEMO);
-  updateBreadcrumb('company');
-  document.querySelector('.tm-label').textContent = '🏢 전사 샘플 (데이터 없음)';
-  localStorage.setItem(_VIEW_MODE_KEY, 'company');
-  showToast('🏢 회사 데이터 없음 — 팀장에게 초대를 요청하세요', 3500);
+  showToast('🏢 전사 데이터 없음 — 팀장에게 초대를 요청하세요', 4000);
 }
 window.loadCompanyDemo = loadCompanyDemo;
 
@@ -1472,40 +995,26 @@ function _showNoTeamDataToast(type) {
   setTimeout(() => openGuidePopup(), 500);
 }
 
-// 가이드에서만 사용하는 샘플 강제 로드 함수 (로그인 무관)
 function _loadSampleTeam() {
-  buildTeamSystem(TEAM_DEMO);
-  updateBreadcrumb('team');
-  seedDemoTalentBoard('team');
-  document.querySelector('.tm-label').textContent = '👥 팀 샘플 (가이드)';
-  setTimeout(checkHelperSuggestions, 2500);
+  if (typeof showToast === 'function') showToast('팀원을 초대하면 실제 협업 구조가 표시됩니다', 3500);
+  if (typeof loadTeamDemo === 'function') loadTeamDemo();
 }
 window._loadSampleTeam = _loadSampleTeam;
 
 function _loadSampleCompany() {
-  buildCompanySystem(COMPANY_DEMO);
-  updateBreadcrumb('company');
-  seedDemoTalentBoard('company');
-  document.querySelector('.tm-label').textContent = '🏢 전사 샘플 (가이드)';
+  if (typeof showToast === 'function') showToast('팀장에게 초대를 요청하면 전사 구조가 표시됩니다', 3500);
+  if (typeof loadCompanyDemo === 'function') loadCompanyDemo();
 }
 window._loadSampleCompany = _loadSampleCompany;
 
 function loadParallelDemo() {
   if (typeof track === 'function') track('view.mode_switch', { from: 'personal', to: 'parallel' });
-  buildParallelView(PARALLEL_DEMO);
-  document.getElementById('parallel-mode-badge').style.display = 'flex';
-  runParallelDemo();
-  localStorage.setItem(_VIEW_MODE_KEY, 'parallel');
+  if (typeof showToast === 'function') showToast('⚡ 병렬 에이전트 뷰 — 실제 작업 실행 시 자동 활성화됩니다', 3500);
 }
 window.loadParallelDemo = loadParallelDemo;
 
-// 하이브리드 모드 (전사 + 외주 파트너) 로드
 function loadHybridDemo() {
-  if (typeof track === 'function') track('view.mode_switch', { from: 'company', to: 'hybrid' });
-  buildEnterpriseSystem(ENTERPRISE_DEMO, { hybrid: true });
-  updateBreadcrumb('company');
-  document.querySelector('.tm-label').textContent = '🔗 하이브리드 생태계 (샘플)';
-  localStorage.setItem(_VIEW_MODE_KEY, 'hybrid');
+  if (typeof loadCompanyDemo === 'function') loadCompanyDemo();
 }
 window.loadHybridDemo = loadHybridDemo;
 

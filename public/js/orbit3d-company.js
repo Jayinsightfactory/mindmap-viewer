@@ -64,25 +64,14 @@ function buildCompanyPlanetSystem(data) {
 
   // ── 회사 (태양) ──────────────────────────────────────────────────────
   if (companyNode) {
-    const sunGeo = new THREE.SphereGeometry(3.5, 32, 32);
-    const sunMat = new THREE.MeshStandardMaterial({
-      color: COLOR_MAP.company,
-      emissive: COLOR_MAP.company,
-      emissiveIntensity: 0.6,
-      roughness: 0.3,
-    });
-    const sunMesh = new THREE.Mesh(sunGeo, sunMat);
+    const sunMesh = createWireNode(3.5, COLOR_MAP.company, { wireOpacity: 0.4, glowOpacity: 0.15, detail: 2 });
     sunMesh.position.set(0, 0, 0);
     sunMesh.userData = { nodeId: companyNode.id, type: 'company', data: companyNode.data };
     scene.add(sunMesh);
     _companyMeshes.push(sunMesh);
 
     // 글로우 이펙트
-    const glowGeo = new THREE.SphereGeometry(4.5, 16, 16);
-    const glowMat = new THREE.MeshBasicMaterial({
-      color: COLOR_MAP.company, transparent: true, opacity: 0.15,
-    });
-    const glow = new THREE.Mesh(glowGeo, glowMat);
+    const glow = createWireNode(4.5, COLOR_MAP.company, { wireOpacity: 0.04, glow: false, detail: 0 });
     sunMesh.add(glow);
   }
 
@@ -104,11 +93,7 @@ function buildCompanyPlanetSystem(data) {
     const goodColor = new THREE.Color(0x3fb950);
     const color = score > 50 ? goodColor.clone().lerp(baseColor, 0.5) : badColor.clone().lerp(baseColor, 0.5);
 
-    const geo = new THREE.SphereGeometry(size, 24, 24);
-    const mat = new THREE.MeshStandardMaterial({
-      color, emissive: color, emissiveIntensity: 0.3, roughness: 0.5,
-    });
-    const mesh = new THREE.Mesh(geo, mat);
+    const mesh = createWireNode(size, color, { wireOpacity: Math.min(0.3 * 0.8, 0.4), glowOpacity: 0.3 * 0.15 });
     mesh.position.set(x, y, z);
     mesh.userData = { nodeId: dept.id, type: 'department', data: dept.data, angle, radius };
     scene.add(mesh);
@@ -162,11 +147,8 @@ function buildCompanyPlanetSystem(data) {
       const size = 0.3 + bottleneck * 0.5;
       const color = bottleneck > 0.6 ? 0xf85149 : bottleneck > 0.3 ? 0xffa657 : 0x3fb950;
 
-      const geo = new THREE.SphereGeometry(size, 12, 12);
-      const mat = new THREE.MeshStandardMaterial({
-        color, emissive: color, emissiveIntensity: bottleneck * 0.5, roughness: 0.4,
-      });
-      const mesh = new THREE.Mesh(geo, mat);
+      const emissiveIntensity = bottleneck * 0.5;
+      const mesh = createWireNode(size, color, { wireOpacity: Math.min(emissiveIntensity * 0.8, 0.4), glowOpacity: emissiveIntensity * 0.15, detail: 1 });
       mesh.position.set(x, y, z);
       mesh.userData = {
         nodeId: proc.id, type: 'process', data: proc.data,
@@ -198,9 +180,7 @@ function buildCompanyPlanetSystem(data) {
     const active = emp.data?.tracker_active;
     const color = active ? 0x3fb950 : 0x484f58;
 
-    const geo = new THREE.SphereGeometry(0.2, 8, 8);
-    const mat = new THREE.MeshBasicMaterial({ color });
-    const mesh = new THREE.Mesh(geo, mat);
+    const mesh = createWireNode(0.2, color, { wireOpacity: 0.4, glow: false, detail: 0 });
     mesh.position.set(x, y, z);
     mesh.userData = { nodeId: emp.id, type: 'employee', data: emp.data };
     scene.add(mesh);
@@ -303,18 +283,10 @@ function drawCompanyLabels() {
 
     if (pos.z > 1) continue; // 카메라 뒤
 
-    const fontSize = item.type === 'department' ? 13 : 10;
-    ctx.font = `${fontSize}px 'Inter', sans-serif`;
-    ctx.fillStyle = item.type === 'department' ? '#58a6ff'
+    const color = item.type === 'department' ? '#58a6ff'
       : item.type === 'process' ? '#ffa657' : '#bc8cff';
-    ctx.textAlign = 'center';
-    ctx.fillText(item.label, x, y - 12);
 
-    if (item.sub) {
-      ctx.font = `${fontSize - 2}px 'Inter', sans-serif`;
-      ctx.fillStyle = '#8b949e';
-      ctx.fillText(item.sub, x, y + 2);
-    }
+    drawUnifiedCard(ctx, x, y - 6, color, item.label, item.sub || '', false, false, false);
   }
 }
 

@@ -62,9 +62,9 @@ scene.add(new THREE.Points(starGeo, starMat));
 
 // ── InstancedMesh 노드 ──
 const MAX_NODES = 600;
-const nodeGeoHigh = new THREE.SphereGeometry(1, 16, 12);
-const nodeGeoLow  = new THREE.SphereGeometry(1, 8, 6);
-const nodeMat = new THREE.MeshPhongMaterial({ shininess: 80 });
+const nodeGeoHigh = new THREE.IcosahedronGeometry(1, 1);
+const nodeGeoLow  = new THREE.IcosahedronGeometry(1, 0);
+const nodeMat = new THREE.MeshPhongMaterial({ shininess: 80, wireframe: true });
 const instancedMesh = new THREE.InstancedMesh(nodeGeoHigh, nodeMat, MAX_NODES);
 instancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
 instancedMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(MAX_NODES * 3), 3);
@@ -73,8 +73,8 @@ scene.add(instancedMesh);
 
 // 호버 하이라이트 구체
 const hoverMesh = new THREE.Mesh(
-  new THREE.SphereGeometry(1, 16, 12),
-  new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.25, depthWrite: false })
+  new THREE.IcosahedronGeometry(1, 1),
+  new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.25, depthWrite: false, wireframe: true })
 );
 hoverMesh.visible = false;
 scene.add(hoverMesh);

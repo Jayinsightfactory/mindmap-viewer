@@ -3003,11 +3003,24 @@ const _TEAM_WORLD_POS = [
 
 function _drawTeamClusters(ctx, W, H, panX, panY, scale) {
   const data = window._teamWorldData;
-  if (!data?.members?.length) return;
 
   // 페이드인: scale 0.75→0.5 구간에서 0→1 알파
   const fadeAlpha = Math.min(1, Math.max(0, (0.75 - scale) / 0.25));
   if (fadeAlpha <= 0) return;
+
+  // 팀 데이터 없으면 초대 플레이스홀더 표시
+  if (!data?.members?.length) {
+    _TEAM_WORLD_POS.slice(0, 2).forEach(([wox, woy]) => {
+      const scx = W / 2 + panX + wox * scale;
+      const scy = H / 2 + panY + woy * scale;
+      if (scx < -200 || scx > W + 200 || scy < -200 || scy > H + 200) return;
+      ctx.save();
+      ctx.globalAlpha = fadeAlpha * 0.45;
+      drawUnifiedCard(ctx, scx, scy, '#4a5568', '+ 팀원 초대', '워크스페이스에 팀원 추가', false, false, false);
+      ctx.restore();
+    });
+    return;
+  }
 
   data.members.forEach((m, i) => {
     const [wox, woy] = _TEAM_WORLD_POS[i] || [900 + i * 200, 0];

@@ -143,17 +143,19 @@ function buildPlanetSystem(nodeList) {
     const { clusterId, sessionId: sid, domain, label, events } = pl;
     const rawEvents = events;
 
-    // ── 행성 위치 — 동심원(Concentric Ring) 배치 (태양 주위 균등 분포) ────
+    // ── 행성 위치 — 부채꼴 방사형 배치 (노드 간격 최소화) ────
     const pInfo    = projIndexOf[clusterId];
     const projIdx  = pInfo.projIdx;
     const innerIdx = pInfo.innerIdx;
     const projSize = pInfo.projSize;
 
-    // 모든 행성을 태양(0,0,0) 주위 동심원 링으로 균등 분포
-    const RING_BASE_CAP  = 10;                                     // 첫 링 수용량
-    const RING_CAP_INC   = 8;                                      // 링마다 추가 수용량
-    const BASE_R         = 10;                                     // 첫 링 반지름
-    const RING_SPACING   = 6;                                      // 링 간 거리
+    // 부채꼴 방사형: 동심 링 + 제한된 각도 범위
+    const RING_BASE_CAP  = 10;
+    const RING_CAP_INC   = 8;
+    const BASE_R         = 10;
+    const RING_SPACING   = 3.5;                                    // 링 간 거리 축소 → 테두리 밀착
+    const FAN_SPAN       = Math.PI * 1.2;                          // 부채꼴 범위 (216°)
+    const FAN_START      = -FAN_SPAN / 2;                          // 위쪽 중심 기준 좌우 대칭
 
     const ringCap = (r) => RING_BASE_CAP + r * RING_CAP_INC;
     let ring = 0, cumulative = 0;
@@ -163,7 +165,10 @@ function buildPlanetSystem(nodeList) {
     }
     const posInRing   = pi - cumulative;
     const cap         = ringCap(ring);
-    const planetAngle = (posInRing / cap) * Math.PI * 2;           // 링 내 균등 각도
+    // 부채꼴 내 균등 배치 (간격 최소화)
+    const planetAngle = cap <= 1
+      ? 0
+      : FAN_START + (posInRing / (cap - 1)) * FAN_SPAN;
     const R           = BASE_R + ring * RING_SPACING;
 
     const px = Math.cos(planetAngle) * R;
@@ -173,8 +178,8 @@ function buildPlanetSystem(nodeList) {
     const subAngle  = planetAngle;
     const planetPos = new THREE.Vector3(px, py, pz);
 
-    // 확장 위치: 클릭 시 더 넓은 동심원으로 이동
-    const EXP_R = BASE_R + 8 + ring * 9;
+    // 확장 위치: 클릭 시 더 넓은 부채꼴로 이동
+    const EXP_R = BASE_R + 5 + ring * 6;
     const epx = Math.cos(planetAngle) * EXP_R;
     const epy = 0;
     const epz = Math.sin(planetAngle) * EXP_R;
@@ -260,9 +265,9 @@ function buildPlanetSystem(nodeList) {
     const perpDir   = new THREE.Vector3(-parentDir.z, 0, parentDir.x); // 수직방향
 
     fileSats.forEach((fs, fi) => {
-      const SAT_DIST = 4 + fi * 1.5;
-      const lateralOffset = (fi - (fileSats.length - 1) / 2) * 2;
-      const yOff = (fi % 3 - 1) * 1;
+      const SAT_DIST = 2.5 + fi * 1.0;                           // 간격 축소 → 밀착 배치
+      const lateralOffset = (fi - (fileSats.length - 1) / 2) * 1.2;
+      const yOff = (fi % 3 - 1) * 0.6;
 
       const sx = px + parentDir.x * SAT_DIST + perpDir.x * lateralOffset;
       const sy = py + yOff;

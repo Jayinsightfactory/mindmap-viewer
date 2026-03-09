@@ -16,14 +16,11 @@ function buildParallelView(graphData) {
   // 1. 황금 코어 — 요청 노드 (Y=+8)
   const reqPos = new THREE.Vector3(0, 8, 0);
   const coreMat = new THREE.MeshPhongMaterial({ color: 0xffd700, emissive: 0x7a5800, shininess: 200 });
-  const core    = new THREE.Mesh(new THREE.SphereGeometry(2.5, 32, 32), coreMat);
+  const core    = createWireNode(2.5, coreMat.color || 0xffd700, { wireOpacity: 0.35, glowOpacity: 0.06 });
   core.position.copy(reqPos);
   core.userData.isCore = true;
   scene.add(core);
-  scene.add(new THREE.Mesh(
-    new THREE.SphereGeometry(5, 32, 32),
-    new THREE.MeshBasicMaterial({ color: 0xffd700, transparent: true, opacity: 0.07, side: THREE.BackSide })
-  ));
+  scene.add(createWireNode(5, 0xffd700, { wireOpacity: 0.06, glow: false, detail: 0 }));
   const reqNode = { type:'prequest', pos: reqPos.clone(), label: graphData.request.label,
     sublabel: graphData.request.sublabel, color: graphData.request.color, size:'xl' };
   _teamNodes.push(reqNode);

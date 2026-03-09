@@ -490,8 +490,10 @@ function drawTeamLabels() {
     const _alias = typeof _nodeAliases !== 'undefined' ? _nodeAliases[label] : null;
     const displayLabel = node.displayLabel || _alias || label;
     const txt = emoji ? `${emoji} ${displayLabel}` : `${prefix}${displayLabel}`;
-    const pw  = _lctx.measureText(txt).width + pad;
-    const ph  = pxSize + pad * 0.65;
+    const _useUnified = ['goal','leader','infra','sharedProject','department',
+      'member','hubProject','hq','external','prequest','presult'].includes(type);
+    const pw  = _useUnified ? UNI_CARD_W : _lctx.measureText(txt).width + pad;
+    const ph  = _useUnified ? UNI_CARD_H : pxSize + pad * 0.65;
     // priority: prequest=7, goal/leader=6, presult/department/infra/sharedProject=5, member/ptask/hq=4, skill/agent/hubProject/external=3, task/dept=2, tool=1
     const priority = type === 'prequest' ? 7
       : (type === 'goal' || type === 'leader') ? 6
@@ -503,7 +505,7 @@ function drawTeamLabels() {
     labels.push({
       node, sc, type, label, sublabel, color, emoji, progress,
       taskStatus, memberId, isActive, isSelected, isFocused, prefix,
-      txt, pw, ph, pxSize, pad, weight,
+      txt, pw, ph, pxSize, pad, weight, _useUnified,
       x:  sc.x - pw * 0.5,
       y:  sc.y - ph * 0.5,
       ax: sc.x,
@@ -752,92 +754,41 @@ function drawTeamLabels() {
       _lctx.beginPath(); _lctx.arc(cx, cy, pw * 1.5, 0, Math.PI * 2); _lctx.fill();
     }
 
-    // pill 배경
-    roundRect(_lctx, x, y, pw, ph, ph * 0.5);
-    const bgA = type === 'goal'   ? 0.22
-      : type === 'leader'         ? 0.24
-      : type === 'infra'          ? 0.22
-      : type === 'sharedProject'  ? 0.20
-      : type === 'department'     ? 0.20
-      : type === 'member'         ? (isFocused ? 0.26 : 0.16)
-      : type === 'skill'          ? 0.18
-      : type === 'agent'          ? 0.18
-      : type === 'external'       ? 0.14
-      : type === 'hubProject'     ? 0.12
-      : type === 'hq'             ? 0.14
-      : type === 'dept'           ? 0.10
-      : 0.10;
-    _lctx.fillStyle = color + Math.round(bgA * 255).toString(16).padStart(2, '0');
-    _lctx.fill();
-
-    // pill 테두리
-    const bdA = type === 'goal'   ? 0.92
-      : type === 'leader'         ? 0.90
-      : type === 'infra'          ? 0.88
-      : type === 'sharedProject'  ? 0.85
-      : type === 'department'     ? 0.88
-      : type === 'member'         ? (isFocused ? 1.0 : 0.78)
-      : type === 'skill'          ? 0.80
-      : type === 'agent'          ? 0.80
-      : type === 'external'       ? 0.75
-      : type === 'hubProject'     ? 0.60
-      : type === 'hq'             ? 0.65
-      : type === 'dept'           ? 0.50
-      : isActive                  ? 0.85 : 0.42;
-    _lctx.strokeStyle = color + Math.round(bdA * 255).toString(16).padStart(2, '0');
-    _lctx.lineWidth   = type === 'goal'   ? 2.5
-      : type === 'leader'                 ? 2.2
-      : type === 'infra'                  ? 2.2
-      : type === 'sharedProject'          ? 2.0
-      : type === 'department'             ? 2.0
-      : type === 'member'                 ? (isFocused ? 2.5 : 1.8)
-      : type === 'skill'                  ? 1.4
-      : type === 'agent'                  ? 1.4
-      : type === 'external'               ? 1.5
-      : isActive                          ? 1.8 : 1;
-    // skill: 대시 테두리
-    if (type === 'skill') { _lctx.setLineDash([3, 3]); _lctx.lineDashOffset = -now * 10; }
-    roundRect(_lctx, x, y, pw, ph, ph * 0.5);
-    _lctx.stroke();
-    if (type === 'skill') { _lctx.setLineDash([]); }
-    // agent: 이중 테두리
-    if (type === 'agent') {
-      _lctx.globalAlpha = 0.4;
-      _lctx.lineWidth = 0.8;
-      roundRect(_lctx, x - 2, y - 2, pw + 4, ph + 4, (ph + 4) * 0.5);
-      _lctx.stroke();
-      _lctx.globalAlpha = 1;
-    }
-
-    // 목표 노드 글로우
-    if (type === 'goal') {
-      const gp = (Math.sin(now * 1.2) + 1) * 0.5;
-      const gr = _lctx.createRadialGradient(cx, cy, pw * 0.3, cx, cy, pw * 1.6);
-      gr.addColorStop(0, color + Math.round((0.15 + gp * 0.1) * 255).toString(16).padStart(2, '0'));
-      gr.addColorStop(1, 'rgba(0,0,0,0)');
-      _lctx.fillStyle = gr;
-      _lctx.beginPath();
-      _lctx.arc(cx, cy, pw * 1.6, 0, Math.PI * 2);
+    // ── 통일 카드 vs pill 분기 ──────────────────────────────────────────────
+    if (lr._useUnified) {
+      // 통일 카드 (drawUnifiedCard)
+      const nodeTitle = txt;
+      const nodeSub = sublabel || '';
+      const nodeActive = isActive && type === 'task';
+      drawUnifiedCard(_lctx, cx, cy, color, nodeTitle, nodeSub, nodeActive, isSelected || isFocused, false);
+    } else {
+      // 기존 pill 렌더링 (소형 노드: task, skill, agent, tool, ptask, dept)
+      roundRect(_lctx, x, y, pw, ph, ph * 0.5);
+      const bgA = type === 'skill' ? 0.18 : type === 'agent' ? 0.18 : type === 'dept' ? 0.10 : 0.10;
+      _lctx.fillStyle = color + Math.round(bgA * 255).toString(16).padStart(2, '0');
       _lctx.fill();
-    }
+      drawWireframeGrid(_lctx, x, y, pw, ph, ph * 0.5, color, isActive ? 0.28 : 0.18);
 
-    // 텍스트
-    _lctx.font         = `${weight} ${pxSize}px -apple-system,'Segoe UI',sans-serif`;
-    _lctx.fillStyle    = type === 'tool' ? color + 'bb' : type === 'skill' ? '#e2c9ff' : type === 'agent' ? '#8ff0ea' : (isSelected ? '#ffffff' : color);
-    _lctx.textAlign    = 'center';
-    _lctx.textBaseline = 'middle';
-    if (isActive && type === 'task') { _lctx.shadowColor = color; _lctx.shadowBlur = 8; }
-    if (type === 'skill') { _lctx.shadowColor = '#d2a8ff'; _lctx.shadowBlur = 4; }
-    if (type === 'agent') { _lctx.shadowColor = '#39d2c0'; _lctx.shadowBlur = 4; }
-    _lctx.fillText(txt, cx, cy);
-    _lctx.shadowBlur = 0;
+      const bdA = type === 'skill' ? 0.80 : type === 'agent' ? 0.80 : type === 'dept' ? 0.50 : isActive ? 0.85 : 0.42;
+      _lctx.strokeStyle = color + Math.round(bdA * 255).toString(16).padStart(2, '0');
+      _lctx.lineWidth = type === 'skill' ? 1.4 : type === 'agent' ? 1.4 : isActive ? 1.8 : 1;
+      if (type === 'skill') { _lctx.setLineDash([3, 3]); _lctx.lineDashOffset = -now * 10; }
+      roundRect(_lctx, x, y, pw, ph, ph * 0.5); _lctx.stroke();
+      if (type === 'skill') { _lctx.setLineDash([]); }
+      if (type === 'agent') {
+        _lctx.globalAlpha = 0.4; _lctx.lineWidth = 0.8;
+        roundRect(_lctx, x - 2, y - 2, pw + 4, ph + 4, (ph + 4) * 0.5); _lctx.stroke(); _lctx.globalAlpha = 1;
+      }
 
-    // 서브라벨
-    const _showSub = new Set(['member','goal','department','leader','infra','sharedProject','hq','hubProject']);
-    if (sublabel && lod <= 1 && _showSub.has(type)) {
-      _lctx.font      = `400 ${Math.max(pxSize - 4, 9)}px -apple-system,sans-serif`;
-      _lctx.fillStyle = color + '88';
-      _lctx.fillText(sublabel, cx, y + ph + 10);
+      // pill 텍스트
+      _lctx.font = `${weight} ${pxSize}px -apple-system,'Segoe UI',sans-serif`;
+      _lctx.fillStyle = type === 'tool' ? color + 'bb' : type === 'skill' ? '#e2c9ff' : type === 'agent' ? '#8ff0ea' : (isSelected ? '#ffffff' : color);
+      _lctx.textAlign = 'center'; _lctx.textBaseline = 'middle';
+      if (isActive && type === 'task') { _lctx.shadowColor = color; _lctx.shadowBlur = 8; }
+      if (type === 'skill') { _lctx.shadowColor = '#d2a8ff'; _lctx.shadowBlur = 4; }
+      if (type === 'agent') { _lctx.shadowColor = '#39d2c0'; _lctx.shadowBlur = 4; }
+      _lctx.fillText(txt, cx, cy);
+      _lctx.shadowBlur = 0;
     }
 
     // 관리자 뱃지 (member 노드, LOD1 이하)
