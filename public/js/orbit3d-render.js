@@ -3150,10 +3150,9 @@ function drawCompactProjectView() {
       const drillAngle = baseAngle + drillIdx * angleStep;
       const dX = Math.cos(drillAngle), dY = Math.sin(drillAngle);
       const baseDist = getNodeDist(drillAngle);
-      // 카테고리 최대 6개 × 카드 크기 + 세션 perp 방향 여유분
-      const outStep = Math.abs(dX) * UNI_CARD_W + Math.abs(dY) * UNI_CARD_H;
+      // fan layout: 카테고리 fan 반경(300px) + 세션 여유분
       const numCats = Object.keys(_projectGroups[_drillProject.name]?.planetMeshes?.reduce((m,p)=>{m[p.userData.macroCat||'general']=1;return m;},{}) || {}).length || 4;
-      const totalExpand = baseDist + (numCats + 1) * (outStep + 8);
+      const totalExpand = baseDist + 300 + (UNI_CARD_H + 8) * 2;
       const SIDEBAR_W = 210, marginR = 40, marginT = 80, marginB = 60;
       const availX = dX > 0 ? W - centerX - marginR : centerX - SIDEBAR_W;
       const availY = dY > 0 ? H - centerY - marginB : centerY - marginT;
@@ -3229,13 +3228,24 @@ function drawCompactProjectView() {
       const perpStep    = Math.abs(perpX) * UNI_CARD_W + Math.abs(perpY) * UNI_CARD_H;
       const CARD_GAP = 8;
 
-      // ── 카테고리: outward 방향으로 순차 쌓기 ────────────────────────────────
+      // ── 카테고리: 부채꼴(fan) 배치 — dirAngle 기준 ±각도로 균등 배분 ──────
+      const numCatsNow = sortedCats.length;
+      const dirAngle = Math.atan2(dirY, dirX);
+      const CAT_DIST = 300;  // 프로젝트 카드 → 카테고리 카드 거리(px)
+      // 비겹침 최소 각도: 카드 edge 간 간격 확보
+      const catAngleStep = Math.max(
+        2 * Math.asin(Math.min((UNI_CARD_W + CARD_GAP) / (2 * CAT_DIST), 1)),
+        Math.PI / 8  // 최소 22.5°
+      );
+      const catHalfSpan = (numCatsNow - 1) / 2 * catAngleStep;
+
       sortedCats.forEach(([catKey, catPlanets], ci) => {
         const cfg = PROJECT_TYPES[catKey] || PROJECT_TYPES.general;
-        // ci번째 카테고리: 프로젝트에서 outward 방향으로 (ci+1) * 1카드 간격
-        const catDist = (ci + 1) * (outwardStep + CARD_GAP);
-        const catCx = cx + dirX * catDist;
-        const catCy = cy + dirY * catDist;
+        // 카테고리 각도: dirAngle ± catHalfSpan에서 균등 배분
+        const catAngle = numCatsNow === 1 ? dirAngle : dirAngle - catHalfSpan + ci * catAngleStep;
+        const catDirX = Math.cos(catAngle), catDirY = Math.sin(catAngle);
+        const catCx = cx + catDirX * CAT_DIST;
+        const catCy = cy + catDirY * CAT_DIST;
 
         const catSessionCount = catPlanets.length;
         const isCatDrilled = _drillStage >= 2 && _drillCategory?.catKey === catKey;
@@ -3264,13 +3274,16 @@ function drawCompactProjectView() {
           },
         });
 
-        // ── 세션: 카테고리에서 perp 방향으로 나열 ───────────────────────────
-        const maxShow = Math.min(catPlanets.length, 5);
+        // ── 세션: 카테고리 방향의 수직(perp)으로 나열 — sesStep 캡으로 겹침 방지 ──
+        const catPerpX = -catDirY, catPerpY = catDirX;
+        const rawPerpStep = Math.abs(catPerpX) * UNI_CARD_W + Math.abs(catPerpY) * UNI_CARD_H;
+        const sesStep = Math.min(rawPerpStep, UNI_CARD_H + CARD_GAP);  // 최대 card-height 간격
+        const maxShow = Math.min(catPlanets.length, 3);
         for (let si = 0; si < maxShow; si++) {
           const planet = catPlanets[si];
-          const sesOff = (si - (maxShow - 1) / 2) * (perpStep + CARD_GAP);
-          const sx = catCx + perpX * sesOff;
-          const sy = catCy + perpY * sesOff;
+          const sesOff = (si - (maxShow - 1) / 2) * (sesStep + CARD_GAP);
+          const sx = catCx + catPerpX * sesOff;
+          const sy = catCy + catPerpY * sesOff;
 
           const evCnt = planet.userData.eventCount || 0;
           const isSubHover = _hoveredHit?.obj === planet;
@@ -3303,9 +3316,9 @@ function drawCompactProjectView() {
         }
 
         if (catPlanets.length > maxShow) {
-          const lastSesOff = ((maxShow - 1) - (maxShow - 1) / 2) * (perpStep + CARD_GAP);
-          const mx = catCx + perpX * lastSesOff + perpX * (perpStep / 2 + 14);
-          const my = catCy + perpY * lastSesOff + perpY * (perpStep / 2 + 14);
+          const lastSesOff = ((maxShow - 1) - (maxShow - 1) / 2) * (sesStep + CARD_GAP);
+          const mx = catCx + catPerpX * lastSesOff + catPerpX * (sesStep / 2 + 14);
+          const my = catCy + catPerpY * lastSesOff + catPerpY * (sesStep / 2 + 14);
           ctx.globalAlpha = 0.6;
           ctx.font = '400 10px -apple-system,sans-serif';
           ctx.fillStyle = cfg.color; ctx.textAlign = 'center';
