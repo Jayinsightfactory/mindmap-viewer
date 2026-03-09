@@ -3150,7 +3150,10 @@ function drawCompactProjectView() {
       const drillAngle = baseAngle + drillIdx * angleStep;
       const dX = Math.cos(drillAngle), dY = Math.sin(drillAngle);
       const baseDist = getNodeDist(drillAngle);
-      const totalExpand = baseDist + (UNI_CARD_W + 8) * 3;
+      // 카테고리 최대 6개 × 카드 크기 + 세션 perp 방향 여유분
+      const outStep = Math.abs(dX) * UNI_CARD_W + Math.abs(dY) * UNI_CARD_H;
+      const numCats = Object.keys(_projectGroups[_drillProject.name]?.planetMeshes?.reduce((m,p)=>{m[p.userData.macroCat||'general']=1;return m;},{}) || {}).length || 4;
+      const totalExpand = baseDist + (numCats + 1) * (outStep + 8);
       const SIDEBAR_W = 210, marginR = 40, marginT = 80, marginB = 60;
       const availX = dX > 0 ? W - centerX - marginR : centerX - SIDEBAR_W;
       const availY = dY > 0 ? H - centerY - marginB : centerY - marginT;
@@ -3205,7 +3208,7 @@ function drawCompactProjectView() {
       data: { type: 'constellation', projName: proj.name, planetCount: proj.planets.length, color, info },
     });
 
-    // ══ 2단계: 카테고리 + 세션 — 바깥 방향 스택 (카드 밀착, 겹침 방지) ══════
+    // ══ 2단계: 카테고리 + 세션 — outward 방향 순차 스택 ══════════════════════
     if (isThisDrilled && proj.planets.length > 0) {
       const catGroups = {};
       proj.planets.forEach(planet => {
@@ -3214,47 +3217,29 @@ function drawCompactProjectView() {
         catGroups[cat].push(planet);
       });
       const sortedCats = Object.entries(catGroups).sort((a, b) => b[1].length - a[1].length);
-      const numCats = sortedCats.length;
 
-      // 방사형: 각 프로젝트→바깥 방향 벡터
+      // 프로젝트 → ME 방향 단위 벡터
       const dx = cx - centerX, dy = cy - centerY;
       const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-      const dirX = dx / dist, dirY = dy / dist;
-      const perpX = -dirY, perpY = dirX;
+      const dirX = dx / dist, dirY = dy / dist;  // outward 방향
+      const perpX = -dirY, perpY = dirX;          // 수직(perp) 방향
 
-      // 방향에 따른 동적 간격: 카드(180x51)가 가로로 길어서 방향별 룰이 다름
-      // outward 방향 간격 = 카드가 그 방향에서 차지하는 크기
+      // outward/perp 방향 카드 크기
       const outwardStep = Math.abs(dirX) * UNI_CARD_W + Math.abs(dirY) * UNI_CARD_H;
-      // perpendicular 방향 간격 = 카드가 수직 방향에서 차지하는 크기
-      const perpStep = Math.abs(perpX) * UNI_CARD_W + Math.abs(perpY) * UNI_CARD_H;
+      const perpStep    = Math.abs(perpX) * UNI_CARD_W + Math.abs(perpY) * UNI_CARD_H;
+      const CARD_GAP = 8;
 
-      const CAT_GAP = 4;
-      const CAT_OFFSET = outwardStep + 8;                               // 프로젝트→카테고리 밀착 거리
-      const catBaseX = cx + dirX * CAT_OFFSET;
-      const catBaseY = cy + dirY * CAT_OFFSET;
-
-      // 각 카테고리의 세션 수를 고려한 동적 스텝 — 세션 서브스택끼리 겹치지 않게
-      const maxShowPerCat = sortedCats.map(([, ps]) => Math.min(ps.length, 4));
-      const catHeights = maxShowPerCat.map(n => Math.max(perpStep, n * (perpStep + 4) - 4));
-      const totalH = catHeights.reduce((s, h, i) => s + h + (i > 0 ? CAT_GAP : 0), 0);
-      const catOffsets = [];
-      let cumY = -totalH / 2;
-      catHeights.forEach((h, i) => {
-        catOffsets.push(cumY + h / 2);
-        cumY += h + CAT_GAP;
-      });
-
+      // ── 카테고리: outward 방향으로 순차 쌓기 ────────────────────────────────
       sortedCats.forEach(([catKey, catPlanets], ci) => {
         const cfg = PROJECT_TYPES[catKey] || PROJECT_TYPES.general;
-        // 수직 스택: 중앙 정렬 (세션 높이 고려)
-        const stackOffset = catOffsets[ci];
-        const catCx = catBaseX + perpX * stackOffset;
-        const catCy = catBaseY + perpY * stackOffset;
+        // ci번째 카테고리: 프로젝트에서 outward 방향으로 (ci+1) * 1카드 간격
+        const catDist = (ci + 1) * (outwardStep + CARD_GAP);
+        const catCx = cx + dirX * catDist;
+        const catCy = cy + dirY * catDist;
 
         const catSessionCount = catPlanets.length;
         const isCatDrilled = _drillStage >= 2 && _drillCategory?.catKey === catKey;
         const isCatHover = _hoveredHit?.data?.type === 'drillCategory' && _hoveredHit?.data?.catKey === catKey;
-
         const catTitle = _aliases[catKey] || `${cfg.icon} ${cfg.label}`;
         const catSub = `${catSessionCount} 세션`;
 
@@ -3269,7 +3254,6 @@ function drawCompactProjectView() {
 
         drawUnifiedCard(ctx, catCx, catCy, cfg.color, catTitle, catSub, false, isCatHover, isCatDrilled);
 
-        // 카테고리 히트 영역
         _hitAreas.push({
           cx: catCx, cy: catCy, r: Math.max(UNI_CARD_W, UNI_CARD_H) / 2 + 4,
           obj: null,
@@ -3280,29 +3264,22 @@ function drawCompactProjectView() {
           },
         });
 
-        // ── 세션 노드: 같은 바깥 방향으로 밀착 스택 ──────────────────────────
-        const maxShow = Math.min(catPlanets.length, 4);
-        const SES_GAP = 4;
-        const SES_OFFSET = outwardStep + 8;                            // 카테고리→세션 밀착 거리
-
+        // ── 세션: 카테고리에서 perp 방향으로 나열 ───────────────────────────
+        const maxShow = Math.min(catPlanets.length, 5);
         for (let si = 0; si < maxShow; si++) {
           const planet = catPlanets[si];
-          const sesStackOff = (si - (maxShow - 1) / 2) * (perpStep + SES_GAP);
-          const sx = catCx + dirX * SES_OFFSET + perpX * sesStackOff;
-          const sy = catCy + dirY * SES_OFFSET + perpY * sesStackOff;
+          const sesOff = (si - (maxShow - 1) / 2) * (perpStep + CARD_GAP);
+          const sx = catCx + perpX * sesOff;
+          const sy = catCy + perpY * sesOff;
 
           const evCnt = planet.userData.eventCount || 0;
           const isSubHover = _hoveredHit?.obj === planet;
-          const nodeColor = cfg.color;
-
-          // 세션 라벨
           const sesKey = planet.userData.clusterId || planet.userData.sessionId || '';
           let sLabel = _aliases[sesKey] || planet.userData.intent || '';
           sLabel = sLabel.replace(/^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE00}-\u{FEFF}⚙️🔐🌐🗄🎨🧪🚀🐳📝📐🔧🌿💬]\s*/gu, '').trim();
           if (!sLabel) sLabel = planet.userData.domain || '작업';
           const sesSub = evCnt > 0 ? `${evCnt}개 작업` : '';
 
-          // 카테고리 → 세션 연결선
           ctx.save();
           ctx.globalAlpha = 0.12;
           ctx.strokeStyle = cfg.color; ctx.lineWidth = 0.8;
@@ -3311,25 +3288,24 @@ function drawCompactProjectView() {
           ctx.setLineDash([]);
           ctx.restore();
 
-          drawUnifiedCard(ctx, sx, sy, nodeColor, sLabel, sesSub, false, isSubHover, false);
+          drawUnifiedCard(ctx, sx, sy, cfg.color, sLabel, sesSub, false, isSubHover, false);
 
-          // 히트 영역
           _hitAreas.push({
             cx: sx, cy: sy, r: Math.max(UNI_CARD_W, UNI_CARD_H) / 2 + 4,
             obj: planet,
             data: { type: 'drillSession', intent: planet.userData.intent,
                     clusterId: planet.userData.clusterId,
                     sessionId: planet.userData.sessionId,
-                    eventCount: evCnt, hueHex: nodeColor,
+                    eventCount: evCnt, hueHex: cfg.color,
                     catKey, catLabel: cfg.label, catColor: cfg.color, catIcon: cfg.icon,
                     projName: proj.name, planets: catPlanets },
           });
         }
 
-        // 남은 세션 수
         if (catPlanets.length > maxShow) {
-          const mx = catCx + dirX * (SES_OFFSET + UNI_CARD_W / 2 + 16);
-          const my = catCy + dirY * (SES_OFFSET + UNI_CARD_W / 2 + 16);
+          const lastSesOff = ((maxShow - 1) - (maxShow - 1) / 2) * (perpStep + CARD_GAP);
+          const mx = catCx + perpX * lastSesOff + perpX * (perpStep / 2 + 14);
+          const my = catCy + perpY * lastSesOff + perpY * (perpStep / 2 + 14);
           ctx.globalAlpha = 0.6;
           ctx.font = '400 10px -apple-system,sans-serif';
           ctx.fillStyle = cfg.color; ctx.textAlign = 'center';
