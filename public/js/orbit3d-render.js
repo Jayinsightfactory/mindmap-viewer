@@ -3535,13 +3535,24 @@ function _drawPersonalPlanets() {
 // ─── drawLabels ──────────────────────────────────────────────────────────────
 // ── 텍스트 겹침 방지 ──────────────────────────────────────────────────────
 const _usedRects = [];
+const LABEL_PADDING = 12; // 라벨 간 최소 간격
+
 function rectOverlaps(x, y, w, h) {
   for (const r of _usedRects) {
-    if (x < r.x + r.w && x + w > r.x && y < r.y + r.h && y + h > r.y) return true;
+    // 패딩을 포함한 엄격한 겹침 검사
+    if (x < r.x + r.w + LABEL_PADDING &&
+        x + w + LABEL_PADDING > r.x &&
+        y < r.y + r.h + LABEL_PADDING &&
+        y + h + LABEL_PADDING > r.y) {
+      return true;
+    }
   }
   return false;
 }
-function reserveRect(x, y, w, h) { _usedRects.push({ x, y, w, h }); }
+
+function reserveRect(x, y, w, h) {
+  _usedRects.push({ x, y, w, h });
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // 세션 상세 윈도우 — 데스크톱 창 스타일
@@ -3994,22 +4005,54 @@ function drawLabels() {
     const lx = sc.x - pw / 2;
     const ly = sc.y - ph / 2;
 
-    // ── 텍스트 겹침 방지 — 겹치면 바깥 방향으로 밀어내기 ───────────────
-    let offX = 0, offY = 0;
-    const ndx = sc.x - innerWidth / 2, ndy = sc.y - innerHeight / 2;
-    const nDist = Math.sqrt(ndx * ndx + ndy * ndy) || 1;
-    const nudgeStepX = (ndx / nDist) * (ph * 0.6);
-    const nudgeStepY = (ndy / nDist) * (ph * 0.6);
-    for (let nudge = 0; nudge < 3; nudge++) {
-      if (!rectOverlaps(lx + offX - 4, ly + offY - 4, pw + 8, ph + 30)) break;
-      offX += nudgeStepX;
-      offY += nudgeStepY;
+    // ── 텍스트 겹침 방지 — 지능형 위치 조정 ───────────────────────────────
+    // 여러 방향과 거리를 시도해서 최적의 위치 찾기
+    let bestOffX = 0, bestOffY = 0;
+    let foundNoOverlap = !rectOverlaps(lx - 4, ly - 4, pw + 8, ph + 30);
+
+    if (!foundNoOverlap) {
+      // 화면 중심에서의 거리와 각도
+      const ndx = sc.x - innerWidth / 2, ndy = sc.y - innerHeight / 2;
+      const nDist = Math.sqrt(ndx * ndx + ndy * ndy) || 1;
+      const baseStepSize = Math.max(ph, pw) * 0.8;
+
+      // 8방향 + 거리 조정 시도
+      const directions = [
+        { x: ndx/nDist, y: ndy/nDist },  // 바깥쪽
+        { x: -ndy/nDist, y: ndx/nDist }, // 우측
+        { x: ndy/nDist, y: -ndx/nDist }, // 좌측
+        { x: -ndx/nDist, y: -ndy/nDist }, // 안쪽
+        { x: 1, y: 0 }, // 우측
+        { x: -1, y: 0 }, // 좌측
+        { x: 0, y: -1 }, // 위
+        { x: 0, y: 1 }   // 아래
+      ];
+
+      // 각 방향별로 여러 거리 시도
+      for (const dir of directions) {
+        for (let dist = 1; dist <= 6; dist++) {
+          const testX = dir.x * baseStepSize * dist;
+          const testY = dir.y * baseStepSize * dist;
+
+          if (!rectOverlaps(lx + testX - 4, ly + testY - 4, pw + 8, ph + 30)) {
+            bestOffX = testX;
+            bestOffY = testY;
+            foundNoOverlap = true;
+            break;
+          }
+        }
+        if (foundNoOverlap) break;
+      }
     }
-    if (rectOverlaps(lx + offX - 4, ly + offY - 4, pw + 8, ph + 30)) return;
-    reserveRect(lx + offX - 4, ly + offY - 4, pw + 8, ph + 30);
+
+    // 겹침 방지 - 오프셋을 적용했으면 기록
+    if (foundNoOverlap || rectOverlaps(lx + bestOffX - 4, ly + bestOffY - 4, pw + 8, ph + 30)) {
+      reserveRect(lx + bestOffX - 4, ly + bestOffY - 4, pw + 8, ph + 30);
+    }
+
     // 오프셋 적용
-    sc.x += offX; sc.y += offY;
-    const _lx = lx + offX, _ly = ly + offY;
+    sc.x += bestOffX; sc.y += bestOffY;
+    const _lx = lx + bestOffX, _ly = ly + bestOffY;
 
     // ── 글로우 효과 (실시간 작업 중) ─────────────────────────────────────
     if (glow > 0) {

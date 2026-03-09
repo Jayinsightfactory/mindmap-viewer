@@ -153,8 +153,8 @@ function buildPlanetSystem(nodeList) {
     const RING_BASE_CAP  = 10;
     const RING_CAP_INC   = 8;
     const BASE_R         = 10;
-    const RING_SPACING   = 3.5;                                    // 링 간 거리 축소 → 테두리 밀착
-    const FAN_SPAN       = Math.PI * 1.2;                          // 부채꼴 범위 (216°)
+    const RING_SPACING   = 5.5;                                    // 링 간 거리 증가 (겹침 방지)
+    const FAN_SPAN       = Math.PI * 1.0;                          // 부채꼴 범위 (180°) - 축소
     const FAN_START      = -FAN_SPAN / 2;                          // 위쪽 중심 기준 좌우 대칭
 
     const ringCap = (r) => RING_BASE_CAP + r * RING_CAP_INC;
