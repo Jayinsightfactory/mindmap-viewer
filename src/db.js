@@ -215,6 +215,24 @@ function createTables() {
       user_id TEXT PRIMARY KEY,
       last_ping TEXT DEFAULT (datetime('now'))
     );
+
+    -- 메시지 서비스 토큰 저장소
+    CREATE TABLE IF NOT EXISTS service_tokens (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      userId TEXT NOT NULL,
+      service TEXT NOT NULL,
+      accessToken TEXT NOT NULL,
+      refreshToken TEXT,
+      expiresAt INTEGER,
+      isActive INTEGER DEFAULT 1,
+      createdAt TEXT DEFAULT (datetime('now')),
+      updatedAt TEXT DEFAULT (datetime('now')),
+      UNIQUE(userId, service),
+      FOREIGN KEY (userId) REFERENCES users(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_service_tokens_userId ON service_tokens(userId);
+    CREATE INDEX IF NOT EXISTS idx_service_tokens_service ON service_tokens(service);
   `);
 
   // ─── 컬럼 마이그레이션 (기존 DB 호환) ───────────────
@@ -785,6 +803,69 @@ function getTrackerPing(userId = 'local') {
   return db.prepare('SELECT * FROM tracker_pings WHERE user_id = ?').get(userId);
 }
 
+// ─── 메시지 서비스 토큰 CRUD ──────────────────────────────
+function saveServiceToken(userId, service, { accessToken, refreshToken, expiresAt }) {
+  const stmt = db.prepare(`
+    INSERT INTO service_tokens (userId, service, accessToken, refreshToken, expiresAt, updatedAt)
+    VALUES (?, ?, ?, ?, ?, datetime('now'))
+    ON CONFLICT(userId, service) DO UPDATE SET
+      accessToken = excluded.accessToken,
+      refreshToken = excluded.refreshToken,
+      expiresAt = excluded.expiresAt,
+      isActive = 1,
+      updatedAt = datetime('now')
+  `);
+  stmt.run(userId, service, accessToken, refreshToken, expiresAt);
+}
+
+function getServiceToken(userId, service) {
+  return db.prepare(`
+    SELECT accessToken, refreshToken, expiresAt, isActive
+    FROM service_tokens
+    WHERE userId = ? AND service = ? AND isActive = 1
+  `).get(userId, service);
+}
+
+function getUserServiceTokens(userId) {
+  const rows = db.prepare(`
+    SELECT service, accessToken FROM service_tokens
+    WHERE userId = ? AND isActive = 1
+  `).all(userId);
+
+  const result = {};
+  rows.forEach(r => {
+    result[r.service] = r.accessToken;
+  });
+  return result;
+}
+
+function toggleServiceToken(userId, service, isActive) {
+  db.prepare(`
+    UPDATE service_tokens SET isActive = ?, updatedAt = datetime('now')
+    WHERE userId = ? AND service = ?
+  `).run(isActive ? 1 : 0, userId, service);
+}
+
+function deleteServiceToken(userId, service) {
+  db.prepare(`
+    DELETE FROM service_tokens WHERE userId = ? AND service = ?
+  `).run(userId, service);
+}
+
+function getUserTokenStatus(userId) {
+  const rows = db.prepare(`
+    SELECT service, isActive, updatedAt FROM service_tokens
+    WHERE userId = ?
+    ORDER BY service
+  `).all(userId);
+
+  return rows.map(r => ({
+    service: r.service,
+    connected: r.isActive === 1,
+    lastUpdated: r.updatedAt
+  }));
+}
+
 function getDb() { return db; }
 
 module.exports = {
@@ -838,4 +919,11 @@ module.exports = {
   // 트래커 핑
   touchTrackerPing,
   getTrackerPing,
+  // 메시지 서비스 토큰
+  saveServiceToken,
+  getServiceToken,
+  getUserServiceTokens,
+  toggleServiceToken,
+  deleteServiceToken,
+  getUserTokenStatus,
 };

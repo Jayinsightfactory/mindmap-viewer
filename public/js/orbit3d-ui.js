@@ -817,6 +817,8 @@ function renderLoginState() {
     // 팔로잉 버튼 표시
     const lnFollowingBtn = document.getElementById('ln-following-btn');
     if (lnFollowingBtn) lnFollowingBtn.style.display = 'flex';
+    // 트래커 배너 업데이트 (비동기)
+    setTimeout(updateTrackerBanner, 500);
     // 프로필 체크 (비동기)
     setTimeout(checkAndPromptProfile, 800);
     // DM 미읽음 폴링 즉시 시작
@@ -3208,3 +3210,93 @@ function openHiddenNodePanel() {
   `;
 }
 window.openHiddenNodePanel = openHiddenNodePanel;
+
+// ── 트래커 설치 배너 ────────────────────────────────────────────────
+async function updateTrackerBanner() {
+  const profileView = document.getElementById('lm-profile-view');
+  if (!profileView) return;
+
+  // 기존 배너 제거
+  const existingBanner = profileView.querySelector('.tracker-banner');
+  if (existingBanner) existingBanner.remove();
+
+  // 트래커 상태 확인
+  try {
+    const token = localStorage.getItem('orbit_token');
+    if (!token) return;
+
+    const res = await fetch('/api/tracker/status', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const status = await res.json();
+
+    // 배너 생성
+    const banner = document.createElement('div');
+    banner.className = 'tracker-banner';
+
+    if (status.installed) {
+      // 이미 설치됨 상태
+      banner.innerHTML = `
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+          <div>
+            <div style="font-weight:600;font-size:15px;color:#fff">✓ PC 작업 추적 설치됨</div>
+            <div style="font-size:13px;color:rgba(255,255,255,0.8);margin-top:4px">메시지 서비스 ${status.messageServices?.length || 0}개 연결</div>
+          </div>
+          <button onclick="window.openTrackerSettings()" style="
+            background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);
+            color:#fff;padding:8px 14px;border-radius:6px;cursor:pointer;font-size:13px;
+            white-space:nowrap">설정</button>
+        </div>
+      `;
+    } else {
+      // 설치되지 않음 - CTA 배너
+      banner.innerHTML = `
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+          <div>
+            <div style="font-weight:600;font-size:15px;color:#fff">🚀 PC 작업 추적 설치</div>
+            <div style="font-size:13px;color:rgba(255,255,255,0.8);margin-top:4px">파일 변경, 메시지를 자동 분석하고 업무 환경 개선 기회 발견</div>
+          </div>
+          <button onclick="window.startTrackerSetup()" style="
+            background:rgba(255,255,255,0.2);border:1px solid rgba(255,255,255,0.3);
+            color:#fff;padding:8px 16px;border-radius:6px;cursor:pointer;font-weight:500;
+            white-space:nowrap">설치하기</button>
+        </div>
+      `;
+    }
+
+    profileView.appendChild(banner);
+  } catch (e) {
+    console.warn('[tracker-banner]', e.message);
+  }
+}
+
+async function startTrackerSetup() {
+  try {
+    const token = localStorage.getItem('orbit_token');
+    if (!token) {
+      alert('로그인이 필요합니다');
+      return;
+    }
+
+    const res = await fetch('/api/tracker/oauth/init', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const data = await res.json();
+
+    if (data.authUrl) {
+      window.location.href = data.authUrl;
+    } else if (data.error) {
+      alert('설치 오류: ' + data.error);
+    }
+  } catch (e) {
+    alert('설치 시작 실패: ' + e.message);
+  }
+}
+window.startTrackerSetup = startTrackerSetup;
+
+async function openTrackerSettings() {
+  // TODO: Tracker 설정 모달 열기
+  alert('트래커 설정 준비 중입니다');
+}
+window.openTrackerSettings = openTrackerSettings;

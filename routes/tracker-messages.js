@@ -4,9 +4,11 @@
  * 메시지 추적 API 라우터
  *
  * 엔드포인트:
- *   POST /api/tracker/messages/sync   - 수동 메시지 동기화
- *   GET  /api/tracker/messages/summary - 메시지 통계
- *   GET  /api/tracker/messages/status - 메시지 서비스 연결 상태
+ *   POST /api/tracker/messages/sync         - 수동 메시지 동기화
+ *   GET  /api/tracker/messages/summary      - 메시지 통계
+ *   GET  /api/tracker/messages/status       - 메시지 서비스 연결 상태
+ *   POST /api/tracker/messages/connect/:service    - 서비스 토큰 저장
+ *   DELETE /api/tracker/messages/disconnect/:service - 서비스 토큰 삭제
  * ─────────────────────────────────────────────────────────────────
  */
 
@@ -15,6 +17,7 @@
 const express = require('express');
 const router = express.Router();
 const { trackAllServices, getMessageTrackingStatus } = require('../src/tracker/message-tracker');
+const { getServiceToken, saveServiceToken, deleteServiceToken, getUserTokenStatus, getUserServiceTokens } = require('../src/db');
 
 function createRouter({ verifyToken, getValidGoogleTokenForService }) {
   // ── 인증 미들웨어 ────────────────────────────────────────────────
@@ -29,6 +32,53 @@ function createRouter({ verifyToken, getValidGoogleTokenForService }) {
     next();
   }
 
+  // ── POST /api/tracker/messages/connect/:service ──────────────────
+  /**
+   * 메시지 서비스 토큰 저장/연결
+   */
+  router.post('/messages/connect/:service', authRequired, (req, res) => {
+    try {
+      const { service } = req.params;
+      const { accessToken, refreshToken, expiresAt } = req.body;
+
+      if (!accessToken) {
+        return res.status(400).json({ error: 'accessToken required' });
+      }
+
+      saveServiceToken(req.user.id, service, { accessToken, refreshToken, expiresAt });
+
+      res.json({
+        ok: true,
+        message: `${service} 서비스 연결됨`,
+        service,
+        connectedAt: new Date().toISOString(),
+      });
+    } catch (e) {
+      console.error('[tracker-messages/connect]', e.message);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── DELETE /api/tracker/messages/disconnect/:service ──────────────
+  /**
+   * 메시지 서비스 토큰 삭제/연결 해제
+   */
+  router.delete('/messages/disconnect/:service', authRequired, (req, res) => {
+    try {
+      const { service } = req.params;
+      deleteServiceToken(req.user.id, service);
+
+      res.json({
+        ok: true,
+        message: `${service} 연결 해제됨`,
+        service,
+      });
+    } catch (e) {
+      console.error('[tracker-messages/disconnect]', e.message);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // ── POST /api/tracker/messages/sync ──────────────────────────────
   /**
    * 수동 메시지 동기화
@@ -36,14 +86,8 @@ function createRouter({ verifyToken, getValidGoogleTokenForService }) {
    */
   router.post('/messages/sync', authRequired, async (req, res) => {
     try {
-      // 사용자의 메시지 서비스 토큰 조회
-      const tokens = {
-        slack: getValidGoogleTokenForService?.('slack'),
-        gmail: getValidGoogleTokenForService?.('gmail'),
-        teams: getValidGoogleTokenForService?.('teams'),
-        discord: getValidGoogleTokenForService?.('discord'),
-        kakao: getValidGoogleTokenForService?.('kakao'),
-      };
+      // DB에서 사용자의 메시지 서비스 토큰 조회
+      const tokens = getUserServiceTokens(req.user.id);
 
       // 모든 서비스에서 데이터 수집
       const result = await trackAllServices(tokens);
@@ -70,14 +114,16 @@ function createRouter({ verifyToken, getValidGoogleTokenForService }) {
    */
   router.get('/messages/summary', authRequired, async (req, res) => {
     try {
-      // 사용자의 메시지 서비스 토큰 조회
-      const tokens = {
-        slack: getValidGoogleTokenForService?.('slack'),
-        gmail: getValidGoogleTokenForService?.('gmail'),
-        teams: getValidGoogleTokenForService?.('teams'),
-        discord: getValidGoogleTokenForService?.('discord'),
-        kakao: getValidGoogleTokenForService?.('kakao'),
-      };
+      // DB에서 사용자의 메시지 서비스 토큰 조회
+      const tokens = getUserServiceTokens(req.user.id);
+
+      if (Object.keys(tokens).length === 0) {
+        return res.json({
+          message: '연결된 메시지 서비스가 없습니다',
+          timestamp: new Date().toISOString(),
+          services: {},
+        });
+      }
 
       // 모든 서비스에서 데이터 수집
       const result = await trackAllServices(tokens);
@@ -127,29 +173,17 @@ function createRouter({ verifyToken, getValidGoogleTokenForService }) {
    */
   router.get('/messages/status', authRequired, (req, res) => {
     try {
-      // 사용자의 메시지 서비스 토큰 확인
-      const tokens = {
-        slack: getValidGoogleTokenForService?.('slack'),
-        gmail: getValidGoogleTokenForService?.('gmail'),
-        teams: getValidGoogleTokenForService?.('teams'),
-        discord: getValidGoogleTokenForService?.('discord'),
-        kakao: getValidGoogleTokenForService?.('kakao'),
-      };
+      // DB에서 사용자의 토큰 상태 조회
+      const status = getUserTokenStatus(req.user.id);
 
-      const status = getMessageTrackingStatus(tokens);
+      const connectedCount = status.filter(s => s.connected).length;
 
       res.json({
-        connectedServices: status.available,
-        services: {
-          slack: status.slack,
-          gmail: status.gmail,
-          teams: status.teams,
-          discord: status.discord,
-          kakao: status.kakao,
-        },
-        message: status.available > 0
-          ? `${status.available}개 메시지 서비스 연결됨`
-          : 'No message services connected',
+        connectedServices: connectedCount,
+        services: status,
+        message: connectedCount > 0
+          ? `${connectedCount}개 메시지 서비스 연결됨`
+          : '연결된 메시지 서비스가 없습니다',
       });
     } catch (e) {
       console.error('[tracker-messages/status]', e.message);
