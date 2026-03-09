@@ -1024,7 +1024,7 @@ app.use('/api', createAuthRouter({
 }));
 
 // Tracker OAuth (Google Drive 연동 + 설치 토큰)
-app.use('/api/tracker', createTrackerOAuthRouter(app, {
+app.use('/api/tracker', createTrackerOAuthRouter({
   verifyToken,
   getDb: () => db,
 }));

@@ -16,6 +16,8 @@
 
 'use strict';
 
+const express = require('express');
+const router = express.Router();
 const crypto = require('crypto');
 const { google } = require('googleapis');
 
@@ -63,13 +65,14 @@ const googleAuth = new google.auth.OAuth2(
 
 // ─── 라우터 정의 ──────────────────────────────────────────────────────
 
-module.exports = function setupTrackerOAuth(app, { verifyToken, getDb }) {
+function createRouter(deps) {
+  const { verifyToken, getDb } = deps;
 
   /**
-   * POST /api/tracker/oauth/init
+   * POST /tracker/oauth/init
    * 로그인된 사용자 → Google OAuth 시작
    */
-  app.post('/api/tracker/oauth/init', (req, res) => {
+  router.post('/oauth/init', (req, res) => {
     try {
       // 1. 사용자 인증 확인
       const authToken = (req.headers.authorization || '').replace('Bearer ', '').trim();
@@ -105,7 +108,7 @@ module.exports = function setupTrackerOAuth(app, { verifyToken, getDb }) {
    * GET /api/tracker/oauth/callback
    * Google OAuth 콜백 → googleDriveToken 저장 → 설치 토큰 생성
    */
-  app.get('/api/tracker/oauth/callback', async (req, res) => {
+  router.get('/oauth/callback', async (req, res) => {
     try {
       const { code, state } = req.query;
 
@@ -235,7 +238,7 @@ module.exports = function setupTrackerOAuth(app, { verifyToken, getDb }) {
    * 터미널 설치 스크립트 제공
    * curl ... | bash 로 실행됨
    */
-  app.get('/installer/:token', (req, res) => {
+  router.get('/installer/:token', (req, res) => {
     try {
       const { token } = req.params;
 
@@ -270,7 +273,7 @@ exit 1
    * 터미널 스크립트에서 호출
    * 최종 설치 확인 + config.json 생성
    */
-  app.post('/api/tracker/install/:token', (req, res) => {
+  router.post('/install/:token', (req, res) => {
     try {
       const { token } = req.params;
       const { hostname, platform } = req.body || {};
@@ -349,7 +352,7 @@ exit 1
    * GET /api/tracker/status
    * 현재 추적 상태 조회 (로그인 사용자)
    */
-  app.get('/api/tracker/status', (req, res) => {
+  router.get('/status', (req, res) => {
     try {
       const authToken = (req.headers.authorization || '').replace('Bearer ', '').trim();
       if (!authToken) {
@@ -387,7 +390,11 @@ exit 1
       res.status(500).json({ error: e.message });
     }
   });
-};
+
+  return router;
+}
+
+module.exports = createRouter;
 
 // ─── 설치 스크립트 생성 ────────────────────────────────────────────────
 
