@@ -21,6 +21,12 @@ window.addEventListener('DOMContentLoaded', () => {
   _loadPersonalStats();        // 개인 학습 통계 초기화
   _initTrackerStatusBadge();   // 트래커 연결 상태 배지
 
+  // 숨긴 노드 있으면 사이드바 버튼 표시
+  if (Object.keys(_hiddenNodes).length > 0) {
+    const btn = document.getElementById('ln-hidden-btn');
+    if (btn) btn.style.display = '';
+  }
+
   // ── 뷰 모드 복원 ──────────────────────────────────────────────────────────
   setTimeout(() => {
     const savedView = localStorage.getItem('orbitViewMode');
@@ -103,7 +109,40 @@ function drawWireframeGrid(ctx, x, y, w, h, r, color, alpha) {
 const UNI_CARD_W = 180, UNI_CARD_H = 51;
 const UNI_CARD_R = 10, UNI_CARD_BAR = 5;
 
+// ── 노드 숨기기 ────────────────────────────────────────────────────────────
+const _hiddenNodes = (() => { try { return JSON.parse(localStorage.getItem('orbitHiddenNodes') || '{}'); } catch { return {}; } })();
+function _saveHiddenNodes() { localStorage.setItem('orbitHiddenNodes', JSON.stringify(_hiddenNodes)); }
+window._hiddenNodes = _hiddenNodes;
+window._saveHiddenNodes = _saveHiddenNodes;
+window.unhideNode = function(key) { delete _hiddenNodes[key]; _saveHiddenNodes(); };
+window.getHiddenNodeList = function() { return Object.keys(_hiddenNodes).map(k => ({ key: k, label: _hiddenNodes[k] })); };
+
 // ── 통일 카드 그리기 (모든 뷰 공통) ──────────────────────────────────────────
+// 카드 내 버튼 히트 영역 등록 (편집·숨기기) — forEach 루프 내에서 호출
+function drawCardIcons(ctx, cx, cy, projKey, projLabel, isHover, hitAreas) {
+  if (!isHover) return;
+  const lx = cx - UNI_CARD_W / 2, ly = cy - UNI_CARD_H / 2;
+  // ✎ 편집: 우측 상단 내부
+  const eX = lx + UNI_CARD_W - 26, eY = ly + 4;
+  ctx.save();
+  ctx.fillStyle = 'rgba(31,111,235,0.85)';
+  roundRect(ctx, eX, eY, 20, 20, 5); ctx.fill();
+  ctx.fillStyle = '#fff'; ctx.font = '13px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('✎', eX + 10, eY + 11);
+  ctx.restore();
+  if (hitAreas) hitAreas.push({ cx: eX + 10, cy: eY + 10, r: 12, data: { type: 'editNode', projKey, projLabel } });
+
+  // 👁 숨기기: 편집 버튼 왼쪽
+  const hX = eX - 24, hY = eY;
+  ctx.save();
+  ctx.fillStyle = 'rgba(51,65,85,0.85)';
+  roundRect(ctx, hX, hY, 20, 20, 5); ctx.fill();
+  ctx.fillStyle = '#94a3b8'; ctx.font = '13px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('🙈', hX + 10, hY + 11);
+  ctx.restore();
+  if (hitAreas) hitAreas.push({ cx: hX + 10, cy: hY + 10, r: 12, data: { type: 'hideNode', projKey, projLabel } });
+}
+
 function drawUnifiedCard(ctx, cx, cy, color, title, sub, isActive, isHover, isDrilled) {
   const lx = cx - UNI_CARD_W / 2, ly = cy - UNI_CARD_H / 2;
   ctx.save();
@@ -2984,7 +3023,7 @@ function drawCompactProjectView() {
     const mainType = Object.entries(typeCounts).sort((a,b) => b[1] - a[1])[0]?.[0] || 'general';
     const typeCfg = PROJECT_TYPES[mainType] || PROJECT_TYPES.general;
     return { name, planets, eventCount, hasActive, mainType, typeCfg, color: grp.color || typeCfg.color };
-  }).filter(p => p.eventCount > 0).sort((a,b) => b.eventCount - a.eventCount);
+  }).filter(p => p.eventCount > 0 && !_hiddenNodes[p.name]).sort((a,b) => b.eventCount - a.eventCount);
 
   if (projects.length === 0) return;
 
@@ -3145,6 +3184,9 @@ function drawCompactProjectView() {
 
     ctx.globalAlpha = 1;
 
+    // 카드 내 버튼 (편집·숨기기) — hover 시에만 표시
+    if (!dimmed) drawCardIcons(ctx, cx, cy, proj.name, projTitle, isHover, _hitAreas);
+
     // ME → 프로젝트 연결선
     {
       ctx.save();
@@ -3156,7 +3198,7 @@ function drawCompactProjectView() {
       ctx.restore();
     }
 
-    // 히트 영역
+    // 히트 영역 (카드 전체 — 버튼 히트 영역은 drawCardIcons에서 이미 추가)
     _hitAreas.push({
       cx, cy, r: Math.max(UNI_CARD_W, UNI_CARD_H) / 2 + 6,
       obj: null,

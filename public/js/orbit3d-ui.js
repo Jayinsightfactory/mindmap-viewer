@@ -3157,3 +3157,41 @@ document.addEventListener('DOMContentLoaded', () => {
   updateStreak();
   renderGrowthPanel();
 });
+
+// ── 숨김 노드 리스트 패널 ──────────────────────────────────────────────────
+function openHiddenNodePanel() {
+  let panel = document.getElementById('hidden-node-panel');
+  if (!panel) {
+    panel = document.createElement('div');
+    panel.id = 'hidden-node-panel';
+    Object.assign(panel.style, {
+      position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
+      zIndex: '2000', background: '#0d1117', border: '1px solid rgba(99,102,241,0.4)',
+      borderRadius: '16px', padding: '24px', width: '360px', maxHeight: '480px',
+      overflowY: 'auto', boxShadow: '0 8px 40px rgba(0,0,0,0.7)', color: '#e2e8f0',
+    });
+    document.body.appendChild(panel);
+  }
+
+  const hidden = typeof window.getHiddenNodeList === 'function' ? window.getHiddenNodeList() : [];
+  panel.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <span style="font-weight:700;font-size:15px">🙈 숨긴 노드 (${hidden.length})</span>
+      <button onclick="document.getElementById('hidden-node-panel').remove()"
+        style="background:none;border:none;color:#94a3b8;font-size:20px;cursor:pointer;line-height:1">×</button>
+    </div>
+    ${hidden.length === 0
+      ? '<p style="color:#64748b;text-align:center;padding:20px 0">숨긴 노드가 없습니다</p>'
+      : hidden.map(n => `
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;
+          margin-bottom:8px;background:rgba(255,255,255,0.04);border-radius:10px;border:1px solid rgba(255,255,255,0.06)">
+          <span style="font-size:13px;color:#e2e8f0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:240px">${escHtml(n.label)}</span>
+          <button onclick="window.unhideNode('${escHtml(n.key)}');openHiddenNodePanel()" style="
+            background:rgba(99,102,241,0.2);border:1px solid rgba(99,102,241,0.4);color:#a5b4fc;
+            border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;flex-shrink:0;margin-left:8px">
+            복원
+          </button>
+        </div>`).join('')}
+  `;
+}
+window.openHiddenNodePanel = openHiddenNodePanel;

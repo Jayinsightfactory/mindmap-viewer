@@ -100,6 +100,27 @@ renderer.domElement.addEventListener('click', e => {
     // 개인 모드에서는 _selectedHit 사용 안 함 (상세 패널 없음)
     if (!isPersonal) _selectedHit = hit;
 
+    // ── 노드 숨기기 버튼 클릭 ────────────────────────────────────────────────
+    if (type === 'hideNode') {
+      const { projKey, projLabel } = hit.data;
+      if (window._hiddenNodes) {
+        window._hiddenNodes[projKey] = projLabel;
+        if (typeof window._saveHiddenNodes === 'function') window._saveHiddenNodes();
+        else localStorage.setItem('orbitHiddenNodes', JSON.stringify(window._hiddenNodes));
+        // 숨긴 노드 버튼 사이드바 표시
+        const btn = document.getElementById('ln-hidden-btn');
+        if (btn) btn.style.display = '';
+        if (typeof showToast === 'function') showToast(`"${projLabel}" 숨김 처리됨 · 사이드바 [숨긴 노드]에서 복원 가능`);
+      }
+      return;
+    }
+
+    // ── 노드 편집 버튼 클릭 ────────────────────────────────────────────────
+    if (type === 'editNode') {
+      if (typeof openInlineEdit === 'function') openInlineEdit(_hoveredHit || hit);
+      return;
+    }
+
     // ── 카테고리 카드 클릭 → 해당 카테고리 포커스 ──────────────────────────
     if (type === 'category') {
       if (_focusedCategory === hit.data.catKey) {
@@ -303,10 +324,12 @@ function updateRaycast() {
       tooltip.style.left = (_lastMouseEvent.clientX + 14) + 'px';
       tooltip.style.top  = (_lastMouseEvent.clientY - 10) + 'px';
       // 편집 아이콘: 레이블 우측에 표시 (편집 중이 아닐 때)
-      if (!_editingNode && (data.label || data.intent || data.projName || data.catLabel)) {
+      // 편집 아이콘: constellation 노드는 canvas 내부 버튼으로 처리 — 그 외 노드만 div 아이콘 표시
+      if (!_editingNode && (data.label || data.intent || data.projName || data.catLabel) && data.type !== 'constellation') {
         _editIconEl.style.display = 'block';
-        _editIconEl.style.left = (hit.cx - 11) + 'px';
-        _editIconEl.style.top  = (hit.cy - hit.r - 26) + 'px';
+        // 카드 내부 우측 상단에 배치
+        _editIconEl.style.left = (hit.cx + UNI_CARD_W / 2 - 26) + 'px';
+        _editIconEl.style.top  = (hit.cy - UNI_CARD_H / 2 + 4) + 'px';
       }
     }
   } else {
