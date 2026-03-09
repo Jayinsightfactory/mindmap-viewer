@@ -933,6 +933,12 @@ function doLogoutMain() {
   localStorage.removeItem('orbit_token');                                      // 토큰 제거
   renderLoginState();
   closeLoginModal();
+  // WS 재연결: 토큰 없는 상태로 → 서버가 빈 그래프 전송
+  if (window._globalWs && window._globalWs.readyState <= WebSocket.OPEN) {
+    window._globalWs.onclose = null;
+    window._globalWs.close();
+    if (typeof connectWS === 'function') setTimeout(connectWS, 200);
+  }
   if (typeof loadData === 'function') loadData();                              // 빈 화면으로 새로고침
 }
 window.doLogoutMain = doLogoutMain;

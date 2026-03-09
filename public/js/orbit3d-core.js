@@ -106,6 +106,37 @@ scene.add(bottomLight);
   window._starField = stars;
 })();
 
+// ─── 와이어프레임 노드 헬퍼 (전역) ──────────────────────────────────────────
+function createWireNode(radius, color, opts = {}) {
+  const group = new THREE.Group();
+  const detail = opts.detail ?? 1;
+  const geo = new THREE.IcosahedronGeometry(radius, detail);
+
+  // 와이어프레임 라인
+  const wireGeo = new THREE.WireframeGeometry(geo);
+  const wireMat = new THREE.LineBasicMaterial({
+    color: color, transparent: true, opacity: opts.wireOpacity ?? 0.3,
+    blending: THREE.AdditiveBlending,
+  });
+  const wire = new THREE.LineSegments(wireGeo, wireMat);
+  group.add(wire);
+
+  // 반투명 글로우 쉘
+  if (opts.glow !== false) {
+    const glowGeo = new THREE.SphereGeometry(radius * (opts.glowScale ?? 1.15), 16, 16);
+    const glowMat = new THREE.MeshBasicMaterial({
+      color: color, transparent: true, opacity: opts.glowOpacity ?? 0.05,
+      blending: THREE.AdditiveBlending, side: THREE.BackSide, depthWrite: false,
+    });
+    group.add(new THREE.Mesh(glowGeo, glowMat));
+  }
+
+  group.userData._wireNode = true;
+  // 기본적으로 숨김 — 2D 카드가 시각적 표현을 담당하므로 3D 노드는 위치 마커로만 사용
+  group.visible = !!opts.visible;
+  return group;
+}
+
 // ─── 중앙 와이어프레임 행성 + 궤도 링 ─────────────────────────────────────────
 (function addWireframePlanet() {
   // ── 와이어프레임 구 ────────────────────────────────────────────────────────
@@ -119,13 +150,8 @@ scene.add(bottomLight);
   wireMesh.userData._isCorePlanet = true;
   scene.add(wireMesh);
 
-  // ── 외곽 글로우 구 (반투명) ──────────────────────────────────────────────
-  const glowGeo = new THREE.SphereGeometry(5.2, 32, 32);
-  const glowMat = new THREE.MeshBasicMaterial({
-    color: 0x06b6d4, transparent: true, opacity: 0.04,
-    blending: THREE.AdditiveBlending, side: THREE.BackSide,
-  });
-  const glowMesh = new THREE.Mesh(glowGeo, glowMat);
+  // ── 외곽 글로우 (와이어프레임) ──────────────────────────────────────────────
+  const glowMesh = createWireNode(5.2, 0x06b6d4, { wireOpacity: 0.04, glow: false, detail: 0 });
   scene.add(glowMesh);
 
   // ── 궤도 링 3개 ───────────────────────────────────────────────────────────
@@ -750,6 +776,8 @@ class OrbitCam {
     el.addEventListener('mousemove',  e => this._move(e));
     el.addEventListener('mouseup',    () => { this._d=this._r=false; this._dragging=false; });
     el.addEventListener('wheel', e => {
+      // 카드 선택 중(역피라미드 열림)엔 카메라 줌 비활성 — 스크롤이 패널로만 전달
+      if (typeof _selectedHit !== 'undefined' && _selectedHit) return;
       // 줌 감도 낮춤 (0.08 → 0.04) + 부드러운 줌
       this.sph.r = Math.max(4, Math.min(300, this.sph.r + e.deltaY * 0.04));
       this._apply();

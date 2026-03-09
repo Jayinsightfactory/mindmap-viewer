@@ -57,6 +57,12 @@ async function loadData() {
 // 2) 토큰을 서버에 전달 → save-turn.js가 사용할 수 있도록 ~/.orbit-config.json 업데이트
 // 3) 데이터 새로 로드
 async function _postLoginSync(token) {
+  // WS 재연결: 기존 연결(이전 사용자 토큰)을 닫고 새 토큰으로 재연결
+  if (window._globalWs && window._globalWs.readyState <= WebSocket.OPEN) {
+    window._globalWs.onclose = null; // 자동재연결 일시 억제
+    window._globalWs.close();
+    if (typeof connectWS === 'function') setTimeout(connectWS, 300);
+  }
   try {
     // 1) local 이벤트 귀속
     const claimRes = await fetch('/api/claim-local-events', {

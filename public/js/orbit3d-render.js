@@ -3150,9 +3150,9 @@ function drawCompactProjectView() {
       const drillAngle = baseAngle + drillIdx * angleStep;
       const dX = Math.cos(drillAngle), dY = Math.sin(drillAngle);
       const baseDist = getNodeDist(drillAngle);
-      // fan layout: 카테고리 fan 반경(300px) + 세션 여유분
+      // fan layout: 카테고리 fan 반경(200px) + 세션 여유분
       const numCats = Object.keys(_projectGroups[_drillProject.name]?.planetMeshes?.reduce((m,p)=>{m[p.userData.macroCat||'general']=1;return m;},{}) || {}).length || 4;
-      const totalExpand = baseDist + 300 + (UNI_CARD_H + 8) * 2;
+      const totalExpand = baseDist + 200 + (UNI_CARD_H + 8) * 2;
       const SIDEBAR_W = 210, marginR = 40, marginT = 80, marginB = 60;
       const availX = dX > 0 ? W - centerX - marginR : centerX - SIDEBAR_W;
       const availY = dY > 0 ? H - centerY - marginB : centerY - marginT;
@@ -3231,13 +3231,14 @@ function drawCompactProjectView() {
       // ── 카테고리: 부채꼴(fan) 배치 — dirAngle 기준 ±각도로 균등 배분 ──────
       const numCatsNow = sortedCats.length;
       const dirAngle = Math.atan2(dirY, dirX);
-      const CAT_DIST = 300;  // 프로젝트 카드 → 카테고리 카드 거리(px)
+      const CAT_DIST = 200;  // 프로젝트 카드 → 카테고리 카드 거리(px)
       // 비겹침 최소 각도: 카드 edge 간 간격 확보
       const catAngleStep = Math.max(
         2 * Math.asin(Math.min((UNI_CARD_W + CARD_GAP) / (2 * CAT_DIST), 1)),
         Math.PI / 8  // 최소 22.5°
       );
-      const catHalfSpan = (numCatsNow - 1) / 2 * catAngleStep;
+      // 최대 halfSpan 150° 캡 — 8개 이상 카테고리에서 wrap-around 방지
+      const catHalfSpan = Math.min((numCatsNow - 1) / 2 * catAngleStep, Math.PI * 5 / 6);
 
       sortedCats.forEach(([catKey, catPlanets], ci) => {
         const cfg = PROJECT_TYPES[catKey] || PROJECT_TYPES.general;
@@ -3274,16 +3275,14 @@ function drawCompactProjectView() {
           },
         });
 
-        // ── 세션: 카테고리 방향의 수직(perp)으로 나열 — sesStep 캡으로 겹침 방지 ──
-        const catPerpX = -catDirY, catPerpY = catDirX;
-        const rawPerpStep = Math.abs(catPerpX) * UNI_CARD_W + Math.abs(catPerpY) * UNI_CARD_H;
-        const sesStep = Math.min(rawPerpStep, UNI_CARD_H + CARD_GAP);  // 최대 card-height 간격
+        // ── 세션: 카테고리 카드 아래로 수직 정렬 — 모든 방향에서 겹침 없음 ──
+        const sesStep = UNI_CARD_H + CARD_GAP;  // 51px 고정 간격 (수직)
         const maxShow = Math.min(catPlanets.length, 3);
         for (let si = 0; si < maxShow; si++) {
           const planet = catPlanets[si];
-          const sesOff = (si - (maxShow - 1) / 2) * (sesStep + CARD_GAP);
-          const sx = catCx + catPerpX * sesOff;
-          const sy = catCy + catPerpY * sesOff;
+          const sesOff = (si - (maxShow - 1) / 2) * sesStep;
+          const sx = catCx;                // 카테고리와 같은 X (수직 정렬)
+          const sy = catCy + sesOff;       // 수직으로만 분포
 
           const evCnt = planet.userData.eventCount || 0;
           const isSubHover = _hoveredHit?.obj === planet;
@@ -3316,9 +3315,9 @@ function drawCompactProjectView() {
         }
 
         if (catPlanets.length > maxShow) {
-          const lastSesOff = ((maxShow - 1) - (maxShow - 1) / 2) * (sesStep + CARD_GAP);
-          const mx = catCx + catPerpX * lastSesOff + catPerpX * (sesStep / 2 + 14);
-          const my = catCy + catPerpY * lastSesOff + catPerpY * (sesStep / 2 + 14);
+          const lastSesOff = ((maxShow - 1) - (maxShow - 1) / 2) * sesStep;
+          const mx = catCx;
+          const my = catCy + lastSesOff + sesStep / 2 + 10;  // 마지막 세션 아래
           ctx.globalAlpha = 0.6;
           ctx.font = '400 10px -apple-system,sans-serif';
           ctx.fillStyle = cfg.color; ctx.textAlign = 'center';
