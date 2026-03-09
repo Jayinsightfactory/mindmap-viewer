@@ -131,6 +131,9 @@ const createThemesRouter     = require('./routes/themes');
 const createAuthRouter       = require('./routes/auth');
 const createPaymentRouter    = require('./routes/payment');
 const createTrackerOAuthRouter = require('./routes/tracker-oauth');
+const createTrackerFilesRouter = require('./routes/tracker-files');
+const createTrackerMessagesRouter = require('./routes/tracker-messages');
+const { getInstance: getSyncScheduler } = require('./src/tracker/sync-scheduler');
 const createGrowthRouter     = require('./routes/growth');
 const createCommunityRouter  = require('./routes/community');
 const createGitRouter        = require('./routes/git');
@@ -1027,6 +1030,39 @@ app.use('/api', createAuthRouter({
 app.use('/api/tracker', createTrackerOAuthRouter({
   verifyToken,
   getDb: () => db,
+}));
+
+// Tracker Files (파일 변경 감지)
+const syncScheduler = getSyncScheduler({
+  getValidGoogleToken: () => {
+    // 구현 예시: DB에서 사용자의 Google Drive 토큰 조회
+    // const token = db.prepare('SELECT googleDriveToken FROM users_google_tokens WHERE userId = ?').get(userId);
+    // return token?.googleDriveToken;
+    return null;  // TODO: 실제 토큰 조회 로직 구현
+  },
+  getUserId: () => 'tracker-system',
+  getDb: () => db,
+  onSync: (data) => {
+    // 동기화 완료 시 WebSocket 브로드캐스트
+    // broadcastAll({ type: 'tracker_sync', data });
+  },
+});
+syncScheduler.init().catch(e => console.error('[tracker] Init error:', e.message));
+
+app.use('/api/tracker', createTrackerFilesRouter({
+  verifyToken,
+  syncScheduler,
+}));
+
+// Tracker Messages (메시지 추적)
+app.use('/api/tracker', createTrackerMessagesRouter({
+  verifyToken,
+  getValidGoogleTokenForService: (service) => {
+    // 구현 예시: DB에서 각 서비스별 토큰 조회
+    // const tokens = db.prepare('SELECT * FROM message_service_tokens WHERE userId = ?').get(userId);
+    // return tokens?.[service];
+    return null;  // TODO: 실제 토큰 조회 로직 구현
+  },
 }));
 
 // OAuth 소셜 로그인 (Google, GitHub)
