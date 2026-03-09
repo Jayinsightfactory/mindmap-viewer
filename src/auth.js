@@ -498,14 +498,119 @@ function searchUsers(query, excludeId, limit = 20) {
   }));
 }
 
+// ─── PostgreSQL 백업 / 복원 (Railway 재배포 시 users.db 유실 대비) ─────────────
+// DATABASE_URL이 있을 때만 활성화: 토큰/사용자를 PG에도 저장, 부팅 시 복원
+let _pgPool = null;
+if (process.env.DATABASE_URL) {
+  try {
+    const { Pool } = require('pg');
+    _pgPool = new Pool({ connectionString: process.env.DATABASE_URL, max: 3 });
+  } catch { /* pg 없으면 무시 */ }
+}
+
+async function _pgInit() {
+  if (!_pgPool) return;
+  try {
+    await _pgPool.query(`
+      CREATE TABLE IF NOT EXISTS orbit_auth_users (
+        id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL,
+        name TEXT, password_hash TEXT NOT NULL DEFAULT '',
+        plan TEXT DEFAULT 'free', provider TEXT DEFAULT 'local',
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS orbit_auth_tokens (
+        token TEXT PRIMARY KEY, user_id TEXT NOT NULL,
+        type TEXT DEFAULT 'session',
+        expires_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+  } catch (e) { console.warn('[AUTH-PG] init warn:', e.message); }
+}
+
+// 사용자 + 토큰을 PG에 비동기 백업
+function _pgBackupUser(user) {
+  if (!_pgPool || !user?.id) return;
+  _pgPool.query(
+    `INSERT INTO orbit_auth_users (id, email, name, plan, provider)
+     VALUES ($1, $2, $3, $4, $5) ON CONFLICT (id) DO UPDATE
+     SET email=$2, name=COALESCE($3, orbit_auth_users.name), plan=$4, provider=$5`,
+    [user.id, user.email || '', user.name || null, user.plan || 'free', user.provider || 'local']
+  ).catch(() => {});
+}
+function _pgBackupToken(token, userId, expiresAt) {
+  if (!_pgPool || !token) return;
+  _pgPool.query(
+    `INSERT INTO orbit_auth_tokens (token, user_id, expires_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+    [token, userId, expiresAt || null]
+  ).catch(() => {});
+}
+
+// 부팅 시 SQLite가 비어있으면 PG에서 복원
+async function initFromPg() {
+  if (!_pgPool || !db) return;
+  try {
+    await _pgInit();
+    const sqliteCount = db.prepare('SELECT COUNT(*) as c FROM users').get()?.c || 0;
+    if (sqliteCount > 0) return; // 이미 데이터 있음
+
+    const { rows: users } = await _pgPool.query('SELECT * FROM orbit_auth_users');
+    if (users.length === 0) return;
+    console.log(`[AUTH-PG] SQLite 비어있음 → PG에서 ${users.length}명 복원 중...`);
+    const insertUser = db.prepare(
+      `INSERT OR IGNORE INTO users (id, email, name, passwordHash, plan, provider) VALUES (?, ?, ?, '', ?, ?)`
+    );
+    for (const u of users) insertUser.run(u.id, u.email, u.name || '', u.plan || 'free', u.provider || 'local');
+
+    const { rows: tokens } = await _pgPool.query(
+      `SELECT * FROM orbit_auth_tokens WHERE expires_at IS NULL OR expires_at > NOW()`
+    );
+    const insertToken = db.prepare(
+      `INSERT OR IGNORE INTO tokens (token, userId, type, expiresAt) VALUES (?, ?, ?, ?)`
+    );
+    for (const t of tokens) insertToken.run(t.token, t.user_id, t.type || 'session', t.expires_at || null);
+    console.log(`[AUTH-PG] 복원 완료: ${users.length}명 / ${tokens.length}토큰`);
+  } catch (e) {
+    console.warn('[AUTH-PG] 복원 실패:', e.message);
+  }
+}
+
+// register / login 에 PG 백업 주입
+const _origRegister = register;
+function registerWithPgBackup(params) {
+  const result = _origRegister(params);
+  if (result.ok && result.user) {
+    _pgInit().then(() => {
+      _pgBackupUser(result.user);
+      if (result.token) _pgBackupToken(result.token, result.user.id, null);
+    });
+  }
+  return result;
+}
+
+const _origLogin = login;
+function loginWithPgBackup(params) {
+  const result = _origLogin(params);
+  if (result.ok && result.user) {
+    _pgBackupUser(result.user);
+    if (result.token) {
+      const expAt = new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString();
+      _pgBackupToken(result.token, result.user.id, expAt);
+    }
+  }
+  return result;
+}
+
 module.exports = {
-  register, login, verifyToken, issueApiToken,
+  register: registerWithPgBackup, login: loginWithPgBackup,
+  verifyToken, issueApiToken,
   getUserById, getUserByEmail, upgradePlan, upsertOAuthUser,
   authMiddleware, optionalAuth,
   getDb: () => db,
   saveOAuthTokens, getOAuthTokens, refreshGoogleAccessToken,
   getValidGoogleToken, getGoogleOAuthUsers,
-  searchUsers,                                              // 팔로우 검색용 함수 추가
-  inviteUser, isInvitedUser, getEffectivePlan, getAdminInvites, // 관리자 초대 시스템
-  ADMIN_EMAILS,                                             // 관리자 이메일 목록 (라우터에서 사용)
+  searchUsers,
+  inviteUser, isInvitedUser, getEffectivePlan, getAdminInvites,
+  ADMIN_EMAILS,
+  initFromPg,   // server.js 시작 시 호출
 };

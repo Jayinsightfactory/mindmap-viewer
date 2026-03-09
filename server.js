@@ -108,8 +108,9 @@ const { detectShadowAI, checkEventForShadow, getApprovedSources, addApprovedSour
 const { getAllThemes, getThemeById, registerTheme, recordDownload, rateTheme, deleteUserTheme } = require('./src/theme-store');
 const { register: authRegister, login: authLogin, verifyToken, issueApiToken, getUserById, upsertOAuthUser,
   saveOAuthTokens, getOAuthTokens, refreshGoogleAccessToken, getValidGoogleToken, getGoogleOAuthUsers,
-  searchUsers, upgradePlan,                                          // searchUsers: 팔로우 검색용, upgradePlan: 결제 후 플랜 업그레이드
-  inviteUser, isInvitedUser, getEffectivePlan, getAdminInvites, ADMIN_EMAILS, // 관리자 초대 시스템
+  searchUsers, upgradePlan,
+  inviteUser, isInvitedUser, getEffectivePlan, getAdminInvites, ADMIN_EMAILS,
+  initFromPg: authInitFromPg,  // PG → SQLite 복원 (Railway 재배포 대비)
 } = require('./src/auth');
 const gdriveUserBackup = require('./src/gdrive-user-backup');
 const { initOAuthStrategies, createOAuthRouter } = require('./src/auth-oauth');
@@ -443,9 +444,12 @@ wss.on('connection', (ws, req) => {
     const userId = wsUserId;
     ws.send(JSON.stringify({
       type:       'init',
+      // 인증된 사용자만 본인 데이터 수신 — 미인증은 빈 그래프 (타인 데이터 노출 방지)
       graph:      userId !== 'local' && userId !== 'anonymous'
-                    ? getFullGraphForUser(userId) : getFullGraph(),
-      sessions:   getSessionsForUser(userId),
+                    ? getFullGraphForUser(userId)
+                    : { nodes: [], links: [], sessions: [], projectGroups: {} },
+      sessions:   userId !== 'local' && userId !== 'anonymous'
+                    ? getSessionsForUser(userId) : [],
       stats:      getStats(),
       userConfig: getUserConfig(),
     }));
@@ -1495,8 +1499,13 @@ try {
 } catch (e) {
   console.log(`   시스템 모니터: 비활성 (${e.message})`);
 }
-// ─── 서버 시작 ──────────────────────────────────────────────────────────────
-server.listen(PORT, () => {
+// ─── 서버 시작 (PG auth 복원 후 listen) ────────────────────────────────────
+async function startServer() {
+  // Railway 재배포 후 SQLite가 비어있으면 PG에서 사용자/토큰 복원
+  if (process.env.DATABASE_URL) {
+    await authInitFromPg().catch(e => console.warn('[startup] auth PG 복원 실패:', e.message));
+  }
+  server.listen(PORT, () => {
   const stats = getStats();
   console.log(`\n⬡ Orbit AI v2.0.0`);
   console.log(`   http://localhost:${PORT}`);
@@ -1626,4 +1635,6 @@ server.listen(PORT, () => {
       setInterval(_syncToRailway, 5 * 60 * 1000);
     }
   }
-});
+  });  // server.listen 콜백 끝
+}
+startServer();

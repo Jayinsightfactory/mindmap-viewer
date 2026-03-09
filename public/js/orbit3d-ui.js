@@ -2140,24 +2140,31 @@ async function createChatChannel() {
 window.createChatChannel = createChatChannel;
 
 // ── WebSocket 채팅 방 구독 (실시간 수신) ─────────────────────────────────────
+// WS 채팅 핸들러가 이미 설치됐는지 추적 — 중복 등록 방지
+let _wsChatHandlerInstalled = false;
+
 function _subscribeWsChatRoom(roomId) {
-  // 전역 WebSocket이 있으면 재사용
   const ws = window._globalWs;
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ type: 'chat.subscribe', roomId }));
-    // 원래 onmessage 핸들러를 래핑
-    const origOnMsg = ws.onmessage;
-    ws.onmessage = function(e) {
-      try {
-        const msg = JSON.parse(e.data);
-        if (msg.type === 'chat_message' && msg.message?.room_id === _msgRoomId) {
-          _appendIncomingMsg(msg.message);
-        } else if (msg.type === 'chat_delete' && msg.room_id === _msgRoomId) {
-          // 삭제 처리
-        } else if (origOnMsg) origOnMsg.call(this, e);
-      } catch (_) { if (origOnMsg) origOnMsg.call(this, e); }
-    };
-  }
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  ws.send(JSON.stringify({ type: 'chat.subscribe', roomId }));
+
+  // 핸들러는 한 번만 설치 (방이 바뀌어도 _msgRoomId로 필터링)
+  if (_wsChatHandlerInstalled) return;
+  _wsChatHandlerInstalled = true;
+
+  const origOnMsg = ws.onmessage;
+  ws.onmessage = function(e) {
+    try {
+      const msg = JSON.parse(e.data);
+      if (msg.type === 'chat_message' && msg.message?.room_id === _msgRoomId) {
+        _appendIncomingMsg(msg.message);
+      } else if (msg.type === 'chat_delete' && msg.room_id === _msgRoomId) {
+        // 삭제 처리
+      } else if (origOnMsg) origOnMsg.call(this, e);
+    } catch (_) { if (origOnMsg) origOnMsg.call(this, e); }
+  };
+  // WS 재연결 시 플래그 초기화
+  ws.addEventListener('close', () => { _wsChatHandlerInstalled = false; }, { once: true });
 }
 
 function _appendIncomingMsg(msg) {
