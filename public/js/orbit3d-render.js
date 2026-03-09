@@ -3091,13 +3091,26 @@ function drawCompactProjectView() {
     return Math.min(UNI_CARD_W / 2 / ax, UNI_CARD_H / 2 / ay);
   }
 
+  // ── 겹침 방지: 인접 카드가 겹치지 않는 최소 반경 계산 ──────────────────────────
+  const CARD_GAP_MIN = 10;
+  let _minRadius = 0;
+  if (projects.length > 1) {
+    const sinHalf = Math.sin(angleStep / 2);
+    if (sinHalf > 0) {
+      _minRadius = (UNI_CARD_W / 2 + CARD_GAP_MIN / 2) / sinHalf;
+    }
+  }
+  function getNodeDist(theta) {
+    return Math.max(meEdgeDist(theta) + NODE_GAP + cardHalfDist(theta), _minRadius);
+  }
+
   // ── 드릴다운 시 센터 이동: 드릴 방향 반대로 밀어서 전체 체인이 화면 안에 들어오게 ──
   if (isDrillStage1) {
     const drillIdx = projects.findIndex(p => p.name === _drillProject.name);
     if (drillIdx >= 0) {
       const drillAngle = baseAngle + drillIdx * angleStep;
       const dX = Math.cos(drillAngle), dY = Math.sin(drillAngle);
-      const baseDist = meEdgeDist(drillAngle) + NODE_GAP + cardHalfDist(drillAngle);
+      const baseDist = getNodeDist(drillAngle);
       const totalExpand = baseDist + (UNI_CARD_W + 8) * 3;
       const SIDEBAR_W = 210, marginR = 40, marginT = 80, marginB = 60;
       const availX = dX > 0 ? W - centerX - marginR : centerX - SIDEBAR_W;
@@ -3113,7 +3126,7 @@ function drawCompactProjectView() {
     // 360도 방사형: ME 박스 테두리에 밀착
     const angle = baseAngle + i * angleStep;
     const isThisDrilled = isDrillStage1 && _drillProject.name === proj.name;
-    const nodeDist = meEdgeDist(angle) + NODE_GAP + cardHalfDist(angle);
+    const nodeDist = getNodeDist(angle);
     const cx = centerX + Math.cos(angle) * nodeDist;
     const cy = centerY + Math.sin(angle) * nodeDist;
     const isHover = _hoveredHit?.data?.type === 'constellation' && _hoveredHit?.data?.projName === proj.name;
