@@ -3702,7 +3702,7 @@ function drawInvertedPyramid(planetObj, hitData) {
 
     // 라벨
     ctx.font = "400 9px 'Inter',-apple-system,sans-serif";
-    ctx.fillStyle = '#475569';
+    ctx.fillStyle = '#94a3b8';
     ctx.fillText(`${st.icon} ${st.label}`, chipX + CHIP_W / 2, chipY + 34);
   });
 
@@ -3712,7 +3712,7 @@ function drawInvertedPyramid(planetObj, hitData) {
   if (startTime) {
     ctx.textAlign = 'left';
     ctx.font = `400 10px -apple-system,sans-serif`;
-    ctx.fillStyle = '#6e7681';
+    ctx.fillStyle = '#94a3b8';
     const timeRange = `${startTime.toLocaleTimeString('ko-KR', {hour:'2-digit', minute:'2-digit'})} ~ ${endTime.toLocaleTimeString('ko-KR', {hour:'2-digit', minute:'2-digit'})}`;
     const dateStr = startTime.toLocaleDateString('ko-KR', {month:'short', day:'numeric'});
     ctx.fillText(`📅 ${dateStr}  ${timeRange}`, winX + PAD, curY);
@@ -3771,7 +3771,7 @@ function drawInvertedPyramid(planetObj, hitData) {
     // 시간
     ctx.textAlign = 'right';
     ctx.font = `400 10px -apple-system,sans-serif`;
-    ctx.fillStyle = '#6e7681';
+    ctx.fillStyle = '#94a3b8';
     ctx.fillText(ts, ex + evtCardW - 4, ey + ROW_H * 0.62);
 
     _hitAreas.push({
@@ -3787,7 +3787,7 @@ function drawInvertedPyramid(planetObj, hitData) {
   // ── 스크롤 힌트 ──────────────────────────────────────────────────────────
   if (recentEvts.length > 6) {
     ctx.font = `400 10px -apple-system,sans-serif`;
-    ctx.fillStyle = '#6e7681';
+    ctx.fillStyle = '#94a3b8';
     ctx.textAlign = 'center';
     ctx.fillText(
       `↕ 마우스 휠로 스크롤 (${scrollIdx + 1}~${scrollIdx + visibleEvts.length} / ${recentEvts.length})`,
@@ -3829,7 +3829,7 @@ function drawInvertedPyramid(planetObj, hitData) {
       // 횟수
       ctx.textAlign = 'right';
       ctx.font = `400 10px -apple-system,sans-serif`;
-      ctx.fillStyle = '#6e7681';
+      ctx.fillStyle = '#94a3b8';
       ctx.fillText(`${info.count}회`, fx + WIN_W - PAD * 2 - 8, fy + FILE_ROW_H * 0.62);
 
       _hitAreas.push({

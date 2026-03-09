@@ -327,9 +327,10 @@ function updateRaycast() {
       // 편집 아이콘: constellation 노드는 canvas 내부 버튼으로 처리 — 그 외 노드만 div 아이콘 표시
       if (!_editingNode && (data.label || data.intent || data.projName || data.catLabel) && data.type !== 'constellation') {
         _editIconEl.style.display = 'block';
-        // 카드 내부 우측 상단에 배치
-        _editIconEl.style.left = (hit.cx + UNI_CARD_W / 2 - 26) + 'px';
-        _editIconEl.style.top  = (hit.cy - UNI_CARD_H / 2 + 4) + 'px';
+        // 카드 내부 우측 상단에 배치 — worldScale 반영
+        const _s = window._worldScale || 1.0;
+        _editIconEl.style.left = (hit.cx + (UNI_CARD_W / 2 - 26) * _s) + 'px';
+        _editIconEl.style.top  = (hit.cy + (-UNI_CARD_H / 2 + 4) * _s) + 'px';
       }
     }
   } else {

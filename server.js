@@ -130,6 +130,7 @@ const createReportsRouter    = require('./routes/reports');
 const createThemesRouter     = require('./routes/themes');
 const createAuthRouter       = require('./routes/auth');
 const createPaymentRouter    = require('./routes/payment');
+const createTrackerOAuthRouter = require('./routes/tracker-oauth');
 const createGrowthRouter     = require('./routes/growth');
 const createCommunityRouter  = require('./routes/community');
 const createGitRouter        = require('./routes/git');
@@ -1020,6 +1021,12 @@ app.use('/api', createAuthRouter({
     inviteUser, isInvitedUser, getEffectivePlan, getAdminInvites, // 관리자 초대 시스템
     ADMIN_EMAILS,                                                 // 관리자 이메일 목록
   },
+}));
+
+// Tracker OAuth (Google Drive 연동 + 설치 토큰)
+app.use('/api/tracker', createTrackerOAuthRouter(app, {
+  verifyToken,
+  getDb: () => db,
 }));
 
 // OAuth 소셜 로그인 (Google, GitHub)

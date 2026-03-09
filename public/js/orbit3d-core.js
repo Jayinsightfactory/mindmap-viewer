@@ -79,10 +79,24 @@ window.autoFitZoom = function(nodeCount) {
 };
 
 // 드릴다운 카테고리 수 기반 자동 피트 (프로젝트 클릭 시 호출)
+// 뷰포트 크기 기반 실제 픽셀 맞춤 줌아웃 적용
 window.autoFitDrilldown = function(numCats) {
-  const target = numCats <= 2 ? 0.90 :
-                 numCats <= 4 ? 0.75 :
-                 numCats <= 6 ? 0.65 : 0.55;
+  // 드릴다운 체인의 월드 공간 최대 반경
+  // (ME→노드 ~170 + CAT_DIST 200 + 카드 절반 ~60 = 430)
+  const WORLD_EXTENT = 430;
+  const navW = getNavWidth();
+  const W = innerWidth - navW;
+  const H = innerHeight;
+  // 화면 중심에서 사용 가능한 픽셀 반경 (여백 80px)
+  const availPx = Math.min(W / 2, H / 2) - 80;
+  // 뷰포트 맞춤 스케일
+  const fitScale = Math.max(0.15, Math.min(1.0, availPx / WORLD_EXTENT));
+  // numCats 기반 보수적 추가 여유
+  const catTarget = numCats <= 2 ? 0.90 :
+                    numCats <= 4 ? 0.75 :
+                    numCats <= 6 ? 0.65 : 0.55;
+  // 둘 중 더 작은 값으로 줌아웃 (화면에 반드시 들어오게)
+  const target = Math.min(fitScale, catTarget);
   _animateWorldScale(target, 400);
 };
 
