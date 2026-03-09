@@ -72,6 +72,93 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.arcTo(x, y, x+r, y, r); ctx.closePath();
 }
 
+// 3D 와이어프레임 그리드 헬퍼 (모든 카드/pill 공통)
+function drawWireframeGrid(ctx, x, y, w, h, r, color, alpha) {
+  ctx.save();
+  roundRect(ctx, x, y, w, h, r); ctx.clip();
+  ctx.strokeStyle = color; ctx.lineWidth = 0.5; ctx.globalAlpha = alpha;
+  const midX = x + w / 2, midY = y + h / 2;
+  // 수평 곡선
+  const hLines = Math.max(2, Math.round(h / 14));
+  for (let i = 1; i < hLines; i++) {
+    const t = i / hLines;
+    const gy = y + h * t;
+    const bulge = Math.sin(t * Math.PI) * Math.min(3, h * 0.06);
+    ctx.beginPath(); ctx.moveTo(x, gy);
+    ctx.quadraticCurveTo(midX, gy - bulge, x + w, gy); ctx.stroke();
+  }
+  // 수직 곡선
+  const vLines = Math.max(3, Math.round(w / 22));
+  for (let i = 1; i < vLines; i++) {
+    const t = i / vLines;
+    const gx = x + w * t;
+    const bulge = Math.sin(t * Math.PI) * Math.min(2, w * 0.03);
+    ctx.beginPath(); ctx.moveTo(gx, y);
+    ctx.quadraticCurveTo(gx + bulge, midY, gx, y + h); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// ── 통일 카드 상수 (모든 뷰 공통) ──────────────────────────────────────────
+const UNI_CARD_W = 180, UNI_CARD_H = 51;
+const UNI_CARD_R = 10, UNI_CARD_BAR = 5;
+
+// ── 통일 카드 그리기 (모든 뷰 공통) ──────────────────────────────────────────
+function drawUnifiedCard(ctx, cx, cy, color, title, sub, isActive, isHover, isDrilled) {
+  const lx = cx - UNI_CARD_W / 2, ly = cy - UNI_CARD_H / 2;
+  ctx.save();
+  ctx.shadowColor = isDrilled ? 'rgba(6,182,212,0.25)' : 'rgba(0,0,0,0.3)';
+  ctx.shadowBlur = isDrilled ? 16 : 10; ctx.shadowOffsetY = 2;
+  ctx.fillStyle = isDrilled ? 'rgba(6,182,212,0.12)' : isHover ? 'rgba(6,182,212,0.08)' : 'rgba(2,6,23,0.80)';
+  roundRect(ctx, lx, ly, UNI_CARD_W, UNI_CARD_H, UNI_CARD_R); ctx.fill();
+  ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+  ctx.restore();
+
+  drawWireframeGrid(ctx, lx, ly, UNI_CARD_W, UNI_CARD_H, UNI_CARD_R, color, isDrilled ? 0.35 : isHover ? 0.28 : 0.18);
+
+  // 좌측 컬러 바
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(lx + UNI_CARD_R, ly); ctx.lineTo(lx + UNI_CARD_BAR + UNI_CARD_R, ly);
+  ctx.lineTo(lx + UNI_CARD_BAR + UNI_CARD_R, ly + UNI_CARD_H);
+  ctx.moveTo(lx + UNI_CARD_R, ly + UNI_CARD_H);
+  ctx.arcTo(lx, ly + UNI_CARD_H, lx, ly + UNI_CARD_H - UNI_CARD_R, UNI_CARD_R);
+  ctx.lineTo(lx, ly + UNI_CARD_R); ctx.arcTo(lx, ly, lx + UNI_CARD_R, ly, UNI_CARD_R);
+  ctx.closePath();
+  ctx.fillStyle = color; ctx.globalAlpha = 0.7; ctx.fill(); ctx.globalAlpha = 1;
+  ctx.restore();
+
+  ctx.strokeStyle = isDrilled ? color : isHover ? 'rgba(6,182,212,0.4)' : 'rgba(255,255,255,0.10)';
+  ctx.lineWidth = isDrilled ? 1.5 : isHover ? 1.2 : 0.8;
+  roundRect(ctx, lx, ly, UNI_CARD_W, UNI_CARD_H, UNI_CARD_R); ctx.stroke();
+
+  if (isActive) {
+    ctx.save();
+    ctx.fillStyle = '#22c55e'; ctx.shadowColor = '#22c55e'; ctx.shadowBlur = 6;
+    ctx.beginPath(); ctx.arc(lx + UNI_CARD_W - 8, ly + 8, 3.5, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+
+  const textX = lx + UNI_CARD_BAR + UNI_CARD_R + 6;
+  const maxTextW = UNI_CARD_W - UNI_CARD_BAR - UNI_CARD_R - 16;
+  ctx.textAlign = 'left';
+  ctx.font = "600 14px 'Inter',-apple-system,sans-serif";
+  ctx.fillStyle = '#e2e8f0';
+  let clipped = title;
+  while (ctx.measureText(clipped).width > maxTextW && clipped.length > 1) clipped = clipped.slice(0, -1);
+  if (clipped !== title) clipped += '\u2026';
+  ctx.fillText(clipped, textX, ly + 21);
+
+  if (sub) {
+    ctx.font = "400 11px 'JetBrains Mono','Fira Code',monospace";
+    ctx.fillStyle = '#94a3b8';
+    let cs = sub;
+    while (ctx.measureText(cs).width > maxTextW && cs.length > 1) cs = cs.slice(0, -1);
+    if (cs !== sub) cs += '\u2026';
+    ctx.fillText(cs, textX, ly + 39);
+  }
+}
+
 // 3D → 화면 좌표
 function toScreen(worldPos) {
   const v = worldPos.clone().project(camera);
@@ -2458,6 +2545,7 @@ function focusProject(projName) {
   const btn = document.getElementById('constellation-back-btn');
   if (btn) btn.style.display = 'none'; // 빈곳 클릭으로 뒤로가기
 
+  // 카메라 약간 줌아웃 (2D 센터 이동이 실제 레이아웃을 처리)
   lerpCameraTo(85, 0, 0, 0, 700);
 }
 window.focusProject = focusProject;
@@ -2757,6 +2845,9 @@ function drawConstellations() {
     _lctx.fillStyle   = 'rgba(6,10,16,0.93)';
     roundRect(_lctx, lx, ly, pw, ph, ph / 2); _lctx.fill();
 
+    // 3D 와이어프레임 그리드
+    drawWireframeGrid(_lctx, lx, ly, pw, ph, ph / 2, color, isHover ? 0.28 : 0.18);
+
     // 테두리
     _lctx.strokeStyle = color;
     _lctx.lineWidth   = isHover ? 2.5 : 1.8;
@@ -2868,10 +2959,10 @@ function drawCompactProjectView() {
   const now = performance.now() / 1000;
   const ctx = _lctx;
 
-  // ── 캔버스 중앙 기준점 (카메라 타겟을 투영하여 패닝 반영) ──────────────────
-  const tgtScreen = toScreen(controls.tgt);
-  const centerX = tgtScreen.x;
-  const centerY = tgtScreen.y;
+  // ── 캔버스 중앙 기준점 ──────────────────────────────────────────────────────
+  const W = _labelCanvas2d.width, H = _labelCanvas2d.height;
+  let centerX = W / 2;
+  let centerY = H / 2;
 
   // ── 프로젝트별 정보 집계 ──────────────────────────────────────────────────
   const projects = projNames.map(name => {
@@ -2950,102 +3041,54 @@ function drawCompactProjectView() {
 
   // ── ME 노드 (화면 중앙) ────────────────────────────────────────────────────
   const meW = 130, meH = 48;
+  const meLx = centerX - meW / 2, meLy = centerY - meH / 2;
+  const meR = meH / 2;
   ctx.save();
   ctx.fillStyle = 'rgba(2, 6, 23, 0.82)';
   ctx.shadowColor = 'rgba(6,182,212,0.15)'; ctx.shadowBlur = 20; ctx.shadowOffsetY = 0;
-  roundRect(ctx, centerX - meW/2, centerY - meH/2, meW, meH, meH/2); ctx.fill();
+  roundRect(ctx, meLx, meLy, meW, meH, meR); ctx.fill();
   ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
-  ctx.strokeStyle = 'rgba(6,182,212,0.5)'; ctx.lineWidth = 1.5;
-  roundRect(ctx, centerX - meW/2, centerY - meH/2, meW, meH, meH/2); ctx.stroke();
   ctx.restore();
+  // 3D 와이어프레임 그리드
+  drawWireframeGrid(ctx, meLx, meLy, meW, meH, meR, 'rgba(6,182,212,1)', 0.22);
+  ctx.strokeStyle = 'rgba(6,182,212,0.5)'; ctx.lineWidth = 1.5;
+  roundRect(ctx, meLx, meLy, meW, meH, meR); ctx.stroke();
   ctx.font = "700 16px 'Inter',-apple-system,sans-serif";
   ctx.textAlign = 'center';
   ctx.fillStyle = '#e2e8f0';
   ctx.fillText('나의 작업', centerX, centerY + 6);
 
-  // ── 통일 노드 크기 (1.5배) ──────────────────────────────────────────────────
-  const UNI_W = 180, UNI_H = 51;          // 모든 노드 동일 크기
-  const UNI_R = 10;                         // 카드 border-radius
-  const COLOR_BAR = 5;                      // 좌측 컬러 바 두께
-
   // 라벨 별칭 맵 (인라인 편집 저장본)
   const _aliases = (() => { try { return JSON.parse(localStorage.getItem('orbitLabelAliases') || '{}'); } catch { return {}; } })();
 
-  // ── 통일 카드 그리기 헬퍼 ──────────────────────────────────────────────────
-  function drawUnifiedCard(cx, cy, color, title, sub, isActive, isHover, isDrilled) {
-    const lx = cx - UNI_W / 2, ly = cy - UNI_H / 2;
+  // ── 프로젝트 노드 수평 직선 배치 (ME 박스 바로 위에 밀착) ─────────────────
+  const H_GAP = 6;                                           // 카드 간 가로 간격
+  const CARD_TOP_OFFSET = meH / 2 + UNI_CARD_H / 2 + 4;   // ME 박스 상단에서 카드 중심까지
+  const totalCardsW = projects.length * UNI_CARD_W + (projects.length - 1) * H_GAP;
+  const isDrillStage1 = _drillStage >= 1 && _drillProject;
+  const LAYER_OFFSET = UNI_CARD_W + 8;
 
-    // 카드 배경
-    ctx.save();
-    ctx.shadowColor = isDrilled ? 'rgba(6,182,212,0.25)' : 'rgba(0,0,0,0.3)';
-    ctx.shadowBlur = isDrilled ? 16 : 10; ctx.shadowOffsetY = 2;
-    ctx.fillStyle = isDrilled ? 'rgba(6,182,212,0.12)' : isHover ? 'rgba(6,182,212,0.08)' : 'rgba(2,6,23,0.80)';
-    roundRect(ctx, lx, ly, UNI_W, UNI_H, UNI_R); ctx.fill();
-    ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
-    ctx.restore();
-
-    // 좌측 컬러 바
-    ctx.save();
-    ctx.beginPath();
-    ctx.moveTo(lx + UNI_R, ly); ctx.lineTo(lx + COLOR_BAR + UNI_R, ly);
-    ctx.lineTo(lx + COLOR_BAR + UNI_R, ly + UNI_H);
-    ctx.moveTo(lx + UNI_R, ly + UNI_H);
-    ctx.arcTo(lx, ly + UNI_H, lx, ly + UNI_H - UNI_R, UNI_R);
-    ctx.lineTo(lx, ly + UNI_R); ctx.arcTo(lx, ly, lx + UNI_R, ly, UNI_R);
-    ctx.closePath();
-    ctx.fillStyle = color; ctx.globalAlpha = 0.7; ctx.fill(); ctx.globalAlpha = 1;
-    ctx.restore();
-
-    // 테두리 (white/10 글래스 보더)
-    ctx.strokeStyle = isDrilled ? color : isHover ? 'rgba(6,182,212,0.4)' : 'rgba(255,255,255,0.10)';
-    ctx.lineWidth = isDrilled ? 1.5 : isHover ? 1.2 : 0.8;
-    roundRect(ctx, lx, ly, UNI_W, UNI_H, UNI_R); ctx.stroke();
-
-    // 활성 표시
-    if (isActive) {
-      ctx.save();
-      ctx.fillStyle = '#22c55e';
-      ctx.shadowColor = '#22c55e'; ctx.shadowBlur = 6;
-      ctx.beginPath(); ctx.arc(lx + UNI_W - 8, ly + 8, 3.5, 0, Math.PI * 2); ctx.fill();
-      ctx.restore();
-    }
-
-    // 타이틀 (1줄)
-    const textX = lx + COLOR_BAR + UNI_R + 6;
-    const maxTextW = UNI_W - COLOR_BAR - UNI_R - 16;
-    ctx.textAlign = 'left';
-    ctx.font = "600 14px 'Inter',-apple-system,sans-serif";
-    ctx.fillStyle = '#e2e8f0';
-    let clipped = title;
-    while (ctx.measureText(clipped).width > maxTextW && clipped.length > 1) clipped = clipped.slice(0, -1);
-    if (clipped !== title) clipped += '…';
-    ctx.fillText(clipped, textX, ly + 21);
-
-    // 서브 (1줄)
-    if (sub) {
-      ctx.font = "400 11px 'JetBrains Mono','Fira Code',monospace";
-      ctx.fillStyle = '#94a3b8';
-      let clippedSub = sub;
-      while (ctx.measureText(clippedSub).width > maxTextW && clippedSub.length > 1) clippedSub = clippedSub.slice(0, -1);
-      if (clippedSub !== sub) clippedSub += '…';
-      ctx.fillText(clippedSub, textX, ly + 39);
+  // ── 드릴다운 시 centerY를 아래로 이동: 위로 방사되는 카드들이 전부 화면에 들어오게 ──
+  if (isDrillStage1) {
+    const drillIdx = projects.findIndex(p => p.name === _drillProject.name);
+    if (drillIdx >= 0) {
+      // 직선 배치이므로 방향은 항상 위(-y)
+      const expandLayers = 3;                               // 프로젝트→카테고리→세션 최대 3단계
+      const totalExpand = CARD_TOP_OFFSET + expandLayers * (UNI_CARD_H + H_GAP) * 4;
+      const marginT = 80;
+      const availY = centerY - marginT;
+      const needY = totalExpand;
+      const shiftY = Math.max(0, needY - availY);
+      centerY += shiftY;                                    // 아래로 밀어서 상단 확장 공간 확보
     }
   }
 
-  // ── 프로젝트 노드 방사형 배치 ──────────────────────────────────────────────
-  // 드릴다운 공간 확보: 캔버스 세로의 35%로 제한 (CAT_RING_R=151 확보)
-  const NODE_DIST = projects.length === 1 ? 0 : Math.min(
-    Math.max(150, projects.length * 40),
-    Math.floor(_labelCanvas2d.height * 0.35)
-  );
-  const isDrillStage1 = _drillStage >= 1 && _drillProject;
-
   projects.forEach((proj, i) => {
-    const angle = (i / projects.length) * Math.PI * 2 - Math.PI / 2;
+    // 수평 직선 배치: ME 박스 바로 위에 나란히
     const isThisDrilled = isDrillStage1 && _drillProject.name === proj.name;
 
-    const cx = centerX + Math.cos(angle) * NODE_DIST;
-    const cy = centerY + Math.sin(angle) * NODE_DIST;
+    const cx = centerX - totalCardsW / 2 + i * (UNI_CARD_W + H_GAP) + UNI_CARD_W / 2;
+    const cy = centerY - CARD_TOP_OFFSET;
     const isHover = _hoveredHit?.data?.type === 'constellation' && _hoveredHit?.data?.projName === proj.name;
     const color = proj.color;
     const info = analyzeProject(proj);
@@ -3058,29 +3101,29 @@ function drawCompactProjectView() {
     const projTitle = _aliases[proj.name] || `${info.icon} ${info.name}`;
     const projSub = `${info.sessionCount}세션 · ${info.fileCount}파일`;
 
-    drawUnifiedCard(cx, cy, color, projTitle, projSub, proj.hasActive, isHover, isThisDrilled);
+    drawUnifiedCard(ctx, cx, cy, color, projTitle, projSub, proj.hasActive, isHover, isThisDrilled);
 
     ctx.globalAlpha = 1;
 
     // ME → 프로젝트 연결선
-    if (NODE_DIST > 0) {
+    {
       ctx.save();
       ctx.globalAlpha = dimmed ? 0.1 : 0.18;
       ctx.strokeStyle = '#9ca3af'; ctx.lineWidth = 1;
       ctx.setLineDash([4, 4]);
-      ctx.beginPath(); ctx.moveTo(centerX, centerY); ctx.lineTo(cx, cy); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(centerX, centerY - meH / 2); ctx.lineTo(cx, cy + UNI_CARD_H / 2); ctx.stroke();
       ctx.setLineDash([]);
       ctx.restore();
     }
 
     // 히트 영역
     _hitAreas.push({
-      cx, cy, r: Math.max(UNI_W, UNI_H) / 2 + 6,
+      cx, cy, r: Math.max(UNI_CARD_W, UNI_CARD_H) / 2 + 6,
       obj: null,
       data: { type: 'constellation', projName: proj.name, planetCount: proj.planets.length, color, info },
     });
 
-    // ══ 2단계: 카테고리 + 세션 — 동심원 ══════════════════════════════════════
+    // ══ 2단계: 카테고리 + 세션 — 바깥 방향 스택 (카드 밀착, 겹침 방지) ══════
     if (isThisDrilled && proj.planets.length > 0) {
       const catGroups = {};
       proj.planets.forEach(planet => {
@@ -3091,19 +3134,38 @@ function drawCompactProjectView() {
       const sortedCats = Object.entries(catGroups).sort((a, b) => b[1].length - a[1].length);
       const numCats = sortedCats.length;
 
-      // 안쪽 방향(중심→프로젝트 반대)으로 드릴 노드 배치 → 항상 캔버스 내에 표시
-      const projAngle = Math.atan2(centerY - cy, centerX - cx);
+      // 직선 배치: 방향은 항상 위(-y), 수직은 가로(+x)
+      const dirX = 0, dirY = -1;
+      const perpX = 1, perpY = 0;
 
-      // 카테고리 링: 프로젝트에서 중심 방향으로
-      const CAT_RING_R = UNI_H + 100;
-      // SES_RING_R 은 maxShow에 따라 루프 안에서 동적 계산
+      // 방향에 따른 동적 간격: 카드(180x51)가 가로로 길어서 방향별 룰이 다름
+      // outward 방향 간격 = 카드가 그 방향에서 차지하는 크기
+      const outwardStep = Math.abs(dirX) * UNI_CARD_W + Math.abs(dirY) * UNI_CARD_H;
+      // perpendicular 방향 간격 = 카드가 수직 방향에서 차지하는 크기
+      const perpStep = Math.abs(perpX) * UNI_CARD_W + Math.abs(perpY) * UNI_CARD_H;
+
+      const CAT_GAP = 4;
+      const CAT_OFFSET = outwardStep + 8;                               // 프로젝트→카테고리 밀착 거리
+      const catBaseX = cx + dirX * CAT_OFFSET;
+      const catBaseY = cy + dirY * CAT_OFFSET;
+
+      // 각 카테고리의 세션 수를 고려한 동적 스텝 — 세션 서브스택끼리 겹치지 않게
+      const maxShowPerCat = sortedCats.map(([, ps]) => Math.min(ps.length, 4));
+      const catHeights = maxShowPerCat.map(n => Math.max(perpStep, n * (perpStep + 4) - 4));
+      const totalH = catHeights.reduce((s, h, i) => s + h + (i > 0 ? CAT_GAP : 0), 0);
+      const catOffsets = [];
+      let cumY = -totalH / 2;
+      catHeights.forEach((h, i) => {
+        catOffsets.push(cumY + h / 2);
+        cumY += h + CAT_GAP;
+      });
 
       sortedCats.forEach(([catKey, catPlanets], ci) => {
         const cfg = PROJECT_TYPES[catKey] || PROJECT_TYPES.general;
-        const spreadAngle = Math.min(Math.PI * 0.7, numCats * 0.45);
-        const catAngle = projAngle + (ci - (numCats - 1) / 2) * (spreadAngle / Math.max(numCats - 1, 1));
-        const catCx = cx + Math.cos(catAngle) * CAT_RING_R;
-        const catCy = cy + Math.sin(catAngle) * CAT_RING_R;
+        // 수직 스택: 중앙 정렬 (세션 높이 고려)
+        const stackOffset = catOffsets[ci];
+        const catCx = catBaseX + perpX * stackOffset;
+        const catCy = catBaseY + perpY * stackOffset;
 
         const catSessionCount = catPlanets.length;
         const isCatDrilled = _drillStage >= 2 && _drillCategory?.catKey === catKey;
@@ -3121,11 +3183,11 @@ function drawCompactProjectView() {
         ctx.setLineDash([]);
         ctx.restore();
 
-        drawUnifiedCard(catCx, catCy, cfg.color, catTitle, catSub, false, isCatHover, isCatDrilled);
+        drawUnifiedCard(ctx, catCx, catCy, cfg.color, catTitle, catSub, false, isCatHover, isCatDrilled);
 
         // 카테고리 히트 영역
         _hitAreas.push({
-          cx: catCx, cy: catCy, r: Math.max(UNI_W, UNI_H) / 2 + 4,
+          cx: catCx, cy: catCy, r: Math.max(UNI_CARD_W, UNI_CARD_H) / 2 + 4,
           obj: null,
           data: {
             type: 'drillCategory', catKey,
@@ -3134,20 +3196,16 @@ function drawCompactProjectView() {
           },
         });
 
-        // ── 세션 노드: 카테고리 바깥 부채꼴 ─────────────────────────────────
-        // 최대 4개로 제한, 겹침 방지를 위해 반경을 카드 수에 맞게 동적 계산
-        const maxShow   = Math.min(catPlanets.length, 4);
-        const sesSpread = Math.min(Math.PI * 0.6, (maxShow - 1) * 0.55);
-        const sesStep   = maxShow > 1 ? sesSpread / (maxShow - 1) : 1;
-        const SES_RING_R = maxShow <= 1
-          ? UNI_H + 80
-          : Math.max(UNI_H + 80, Math.ceil(UNI_W * 0.40 / Math.sin(sesStep / 2)));
+        // ── 세션 노드: 같은 바깥 방향으로 밀착 스택 ──────────────────────────
+        const maxShow = Math.min(catPlanets.length, 4);
+        const SES_GAP = 4;
+        const SES_OFFSET = outwardStep + 8;                            // 카테고리→세션 밀착 거리
 
         for (let si = 0; si < maxShow; si++) {
           const planet = catPlanets[si];
-          const sesAngle = catAngle + (si - (maxShow - 1) / 2) * (sesSpread / Math.max(maxShow - 1, 1));
-          const sx = catCx + Math.cos(sesAngle) * SES_RING_R;
-          const sy = catCy + Math.sin(sesAngle) * SES_RING_R;
+          const sesStackOff = (si - (maxShow - 1) / 2) * (perpStep + SES_GAP);
+          const sx = catCx + dirX * SES_OFFSET + perpX * sesStackOff;
+          const sy = catCy + dirY * SES_OFFSET + perpY * sesStackOff;
 
           const evCnt = planet.userData.eventCount || 0;
           const isSubHover = _hoveredHit?.obj === planet;
@@ -3169,11 +3227,11 @@ function drawCompactProjectView() {
           ctx.setLineDash([]);
           ctx.restore();
 
-          drawUnifiedCard(sx, sy, nodeColor, sLabel, sesSub, false, isSubHover, false);
+          drawUnifiedCard(ctx, sx, sy, nodeColor, sLabel, sesSub, false, isSubHover, false);
 
           // 히트 영역
           _hitAreas.push({
-            cx: sx, cy: sy, r: Math.max(UNI_W, UNI_H) / 2 + 4,
+            cx: sx, cy: sy, r: Math.max(UNI_CARD_W, UNI_CARD_H) / 2 + 4,
             obj: planet,
             data: { type: 'drillSession', intent: planet.userData.intent,
                     clusterId: planet.userData.clusterId,
@@ -3186,9 +3244,8 @@ function drawCompactProjectView() {
 
         // 남은 세션 수
         if (catPlanets.length > maxShow) {
-          const moreAngle = catAngle;
-          const mx = catCx + Math.cos(moreAngle) * (SES_RING_R + UNI_H / 2 + 16);
-          const my = catCy + Math.sin(moreAngle) * (SES_RING_R + UNI_H / 2 + 16);
+          const mx = catCx + dirX * (SES_OFFSET + UNI_CARD_W / 2 + 16);
+          const my = catCy + dirY * (SES_OFFSET + UNI_CARD_W / 2 + 16);
           ctx.globalAlpha = 0.6;
           ctx.font = '400 10px -apple-system,sans-serif';
           ctx.fillStyle = cfg.color; ctx.textAlign = 'center';
@@ -3772,9 +3829,22 @@ function drawLabels() {
     const lx = sc.x - pw / 2;
     const ly = sc.y - ph / 2;
 
-    // ── 텍스트 겹침 방지 — 이미 차지된 영역이면 스킵 ─────────────────────
-    if (rectOverlaps(lx - 4, ly - 4, pw + 8, ph + 30)) return;
-    reserveRect(lx - 4, ly - 4, pw + 8, ph + 30);
+    // ── 텍스트 겹침 방지 — 겹치면 바깥 방향으로 밀어내기 ───────────────
+    let offX = 0, offY = 0;
+    const ndx = sc.x - innerWidth / 2, ndy = sc.y - innerHeight / 2;
+    const nDist = Math.sqrt(ndx * ndx + ndy * ndy) || 1;
+    const nudgeStepX = (ndx / nDist) * (ph * 0.6);
+    const nudgeStepY = (ndy / nDist) * (ph * 0.6);
+    for (let nudge = 0; nudge < 3; nudge++) {
+      if (!rectOverlaps(lx + offX - 4, ly + offY - 4, pw + 8, ph + 30)) break;
+      offX += nudgeStepX;
+      offY += nudgeStepY;
+    }
+    if (rectOverlaps(lx + offX - 4, ly + offY - 4, pw + 8, ph + 30)) return;
+    reserveRect(lx + offX - 4, ly + offY - 4, pw + 8, ph + 30);
+    // 오프셋 적용
+    sc.x += offX; sc.y += offY;
+    const _lx = lx + offX, _ly = ly + offY;
 
     // ── 글로우 효과 (실시간 작업 중) ─────────────────────────────────────
     if (glow > 0) {
@@ -3787,7 +3857,7 @@ function drawLabels() {
       _lctx.lineWidth   = 2 + glow * 3;
       _lctx.shadowColor = hex;
       _lctx.shadowBlur  = 12 * glow;
-      roundRect(_lctx, lx - 2, ly - 2, pw + 4, ph + 4, (ph + 4) / 2);
+      roundRect(_lctx, _lx - 2, _ly - 2, pw + 4, ph + 4, (ph + 4) / 2);
       _lctx.stroke();
       _lctx.restore();
     }
@@ -3803,7 +3873,7 @@ function drawLabels() {
       _lctx.strokeStyle = hex;
       _lctx.lineWidth   = 3;
       _lctx.globalAlpha = globalAlpha * (0.7 + pulse * 0.3);
-      roundRect(_lctx, lx - 3, ly - 3, pw + 6, ph + 6, (ph + 6) / 2);
+      roundRect(_lctx, _lx - 3, _ly - 3, pw + 6, ph + 6, (ph + 6) / 2);
       _lctx.stroke();
       _lctx.shadowBlur = 0;
       _lctx.restore();
@@ -3819,7 +3889,7 @@ function drawLabels() {
       _lctx.shadowBlur = 20 + pulse * 15;
       _lctx.strokeStyle = '#ffd700';
       _lctx.lineWidth = 3 + pulse * 2;
-      roundRect(_lctx, lx - 4, ly - 4, pw + 8, ph + 8, (ph + 8) / 2);
+      roundRect(_lctx, _lx - 4, _ly - 4, pw + 8, ph + 8, (ph + 8) / 2);
       _lctx.stroke();
       _lctx.restore();
       // "!" 배지
@@ -3827,7 +3897,7 @@ function drawLabels() {
       _lctx.font = 'bold 12px sans-serif';
       _lctx.fillStyle = '#ffd700';
       _lctx.textAlign = 'left';
-      _lctx.fillText('!', lx + pw + 6, ly + 10);
+      _lctx.fillText('!', _lx + pw + 6, _ly + 10);
       _lctx.restore();
       _lctx.textAlign = 'center';
     }
@@ -3835,18 +3905,21 @@ function drawLabels() {
     // ── 배경 pill ────────────────────────────────────────────────────────
     const bgAlpha = isSelected ? 0.97 : isHovered ? 0.93 : 0.78;
     _lctx.fillStyle = isSelected ? `rgba(31,111,235,0.15)` : `rgba(6,10,16,${bgAlpha})`;
-    roundRect(_lctx, lx, ly, pw, ph, ph / 2);
+    roundRect(_lctx, _lx, _ly, pw, ph, ph / 2);
     _lctx.fill();
+
+    // 3D 와이어프레임 그리드
+    drawWireframeGrid(_lctx, _lx, _ly, pw, ph, ph / 2, hex, isSelected ? 0.30 : isHovered ? 0.24 : 0.18);
 
     // ── 테두리 ────────────────────────────────────────────────────────────
     _lctx.strokeStyle = isSelected ? '#58a6ff' : hex;
     _lctx.lineWidth   = isSelected ? 2.5 : isHovered ? 2 : glow > 0.1 ? 1.8 : 1;
-    roundRect(_lctx, lx, ly, pw, ph, ph / 2);
+    roundRect(_lctx, _lx, _ly, pw, ph, ph / 2);
     _lctx.stroke();
 
     // ── 텍스트 ────────────────────────────────────────────────────────────
     _lctx.fillStyle = isSelected ? '#ffffff' : isHovered ? '#f0f6fc' : '#cdd9e5';
-    _lctx.fillText(text, sc.x, ly + ph * 0.68);
+    _lctx.fillText(text, sc.x, _ly + ph * 0.68);
 
     // ── 즐겨찾기 ★ 표시 ──────────────────────────────────────────────────
     const nodeId = p.userData?.clusterId || p.userData?.sessionId || p.userData?.eventId || '';
@@ -3856,7 +3929,7 @@ function drawLabels() {
       _lctx.font = `${starSize}px sans-serif`;
       _lctx.fillStyle = '#ffd700';
       _lctx.textAlign = 'left';
-      _lctx.fillText('★', lx + pw + 3, ly + ph * 0.72);
+      _lctx.fillText('★', _lx + pw + 3, _ly + ph * 0.72);
       _lctx.restore();
       _lctx.textAlign = 'center';
     }
@@ -3865,7 +3938,7 @@ function drawLabels() {
     if (evCnt > 0 && pxSize >= 13) {
       const sub = Math.max(9, pxSize * 0.5);
       _lctx.font = `500 ${sub}px -apple-system,sans-serif`;
-      const tagY = ly + ph + sub + 1;
+      const tagY = _ly + ph + sub + 1;
       _lctx.fillStyle = hex + '88';
       _lctx.fillText(`${evCnt}개 작업`, sc.x, tagY);
     }

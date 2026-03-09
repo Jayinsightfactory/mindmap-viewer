@@ -1806,7 +1806,8 @@ async function createWorkspacePopup() {
   const company = (document.getElementById('ws-create-company')?.value || '').trim();
   if (!name) { showToast('워크스페이스 이름을 입력하세요'); return; }
   if (!_orbitUser) { openLoginModal(); return; }
-  const token = _orbitUser.token;
+  const token = _getToken();
+  if (!token) { showToast('로그인이 필요합니다'); openLoginModal(); return; }
   try {
     const res  = await fetch('/api/workspace/create', {
       method: 'POST',
