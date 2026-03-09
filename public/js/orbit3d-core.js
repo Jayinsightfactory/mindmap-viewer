@@ -52,6 +52,40 @@ let _drillTimelineEvent = null;    // { fileName, filePath }
 let _worldPanX = 0, _worldPanY = 0, _worldScale = 1.0;
 window._worldPanX = 0; window._worldPanY = 0; window._worldScale = 1.0;
 
+// ── 자동 피트 줌: 부드러운 이징 애니메이션으로 목표 스케일로 이동 ────────────
+function _animateWorldScale(targetScale, durationMs) {
+  const start = _worldScale;
+  const diff  = targetScale - start;
+  const t0    = performance.now();
+  function step(now) {
+    const p = Math.min(1, (now - t0) / durationMs);
+    const eased = p < 0.5 ? 2*p*p : -1+(4-2*p)*p;  // ease-in-out quad
+    _worldScale = start + diff * eased;
+    window._worldScale = _worldScale;
+    if (p < 1) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+
+// 노드 수 기반 자동 피트 (로드 시 호출)
+window.autoFitZoom = function(nodeCount) {
+  if (!nodeCount) return;
+  const target = nodeCount <= 3  ? 1.1  :
+                 nodeCount <= 6  ? 0.95 :
+                 nodeCount <= 12 ? 0.80 :
+                 nodeCount <= 20 ? 0.65 : 0.50;
+  // 현재보다 작을 때만 줌아웃 (이미 줌인돼 있으면 유지)
+  if (target < _worldScale) _animateWorldScale(target, 500);
+};
+
+// 드릴다운 카테고리 수 기반 자동 피트 (프로젝트 클릭 시 호출)
+window.autoFitDrilldown = function(numCats) {
+  const target = numCats <= 2 ? 0.90 :
+                 numCats <= 4 ? 0.75 :
+                 numCats <= 6 ? 0.65 : 0.55;
+  _animateWorldScale(target, 400);
+};
+
 const camera = new THREE.PerspectiveCamera(55, innerWidth/innerHeight, 0.1, 2000);
 camera.position.set(0, 25, 55);                       // 컴팩트 뷰에 맞는 초기 거리
 camera.lookAt(0,0,0);
@@ -785,7 +819,7 @@ class OrbitCam {
       if (typeof _selectedHit !== 'undefined' && _selectedHit) return;
       // 2D 월드 스케일 줌 (팀 탐색: 줌아웃→팀원 클러스터 등장)
       const factor = e.deltaY > 0 ? 0.92 : 1.085;
-      _worldScale = Math.max(0.2, Math.min(2.0, _worldScale * factor));
+      _worldScale = Math.max(0.15, Math.min(3.0, _worldScale * factor));
       window._worldScale = _worldScale;
     }, {passive:true});
     el.addEventListener('dblclick',   e => this._dbl(e));

@@ -41,6 +41,8 @@ async function loadData() {
     const data = await res.json();
     const nodes = data.nodes || [];
     buildPlanetSystem(nodes);
+    // 노드 수에 맞게 자동 줌 피트 (많을수록 줌아웃해서 한눈에 보이게)
+    if (typeof autoFitZoom === 'function') autoFitZoom(nodes.length);
     if (typeof updateActiveFiles === 'function') updateActiveFiles();  // 활성 파일 갱신
     if (typeof _loadWorkspaceState === 'function') _loadWorkspaceState();
     if (!_teamMode && !_companyMode && !_parallelMode && typeof controls !== 'undefined') controls.enabled = false;
