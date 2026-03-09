@@ -2992,19 +2992,21 @@ function drawConstellations() {
 // ─── 팀원 클러스터 렌더링 (월드 줌아웃 시 등장) ──────────────────────────────
 // 월드 좌표 오프셋에 각 팀원의 작업 허브를 그림
 // worldScale < 0.85 에서 서서히 등장 (페이드인)
+// 팀원 월드 오프셋 (px, scale=1.0 기준)
+// 줌아웃(scale≈0.5)에서 화면 가장자리에 등장하도록 설정
 const _TEAM_WORLD_POS = [
-  [850,  0], [-850,  0],
-  [425,  680], [-425,  680],
-  [425, -680], [-425, -680],
-  [900,  500], [-900,  500],
+  [ 480,    0], [-480,    0],
+  [ 240,  380], [-240,  380],
+  [ 240, -380], [-240, -380],
+  [ 520,  300], [-520,  300],
 ];
 
 function _drawTeamClusters(ctx, W, H, panX, panY, scale) {
   const data = window._teamWorldData;
   if (!data?.members?.length) return;
 
-  // 페이드인: scale 0.85→0.6 구간에서 0→1 알파
-  const fadeAlpha = Math.min(1, Math.max(0, (0.85 - scale) / 0.25));
+  // 페이드인: scale 0.75→0.5 구간에서 0→1 알파
+  const fadeAlpha = Math.min(1, Math.max(0, (0.75 - scale) / 0.25));
   if (fadeAlpha <= 0) return;
 
   data.members.forEach((m, i) => {
@@ -3395,7 +3397,7 @@ function drawCompactProjectView() {
   });
 
   // ── 팀원 클러스터 (worldScale < 0.85에서 페이드인) ──────────────────────────
-  if (_wScale < 0.85) _drawTeamClusters(ctx, W, H, _wPanX, _wPanY, _wScale);
+  if (_wScale < 0.75) _drawTeamClusters(ctx, W, H, _wPanX, _wPanY, _wScale);
 
   // ── hitArea 우선순위 정렬: 드릴 노드가 프로젝트 카드보다 위 (역순 루프 대응) ──
   // constellation(프로젝트 카드)을 앞으로, drillCategory/drillSession을 뒤로 이동
