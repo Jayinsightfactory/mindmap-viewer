@@ -2959,10 +2959,16 @@ function drawCompactProjectView() {
   const now = performance.now() / 1000;
   const ctx = _lctx;
 
-  // ── 캔버스 중앙 기준점 ──────────────────────────────────────────────────────
+  // ── 기준점: _corePlanet을 3D→2D 투영해서 실제 화면 위치에 정확히 맞춤 ─────
   const W = _labelCanvas2d.width, H = _labelCanvas2d.height;
   let centerX = W / 2;
   let centerY = H / 2;
+  if (window._corePlanet && window.camera) {
+    const v = new THREE.Vector3(0, 0, 0);
+    v.project(window.camera);
+    centerX = (v.x + 1) / 2 * W;
+    centerY = (-v.y + 1) / 2 * H;
+  }
 
   // ── 프로젝트별 정보 집계 ──────────────────────────────────────────────────
   const projects = projNames.map(name => {
@@ -3061,34 +3067,55 @@ function drawCompactProjectView() {
   // 라벨 별칭 맵 (인라인 편집 저장본)
   const _aliases = (() => { try { return JSON.parse(localStorage.getItem('orbitLabelAliases') || '{}'); } catch { return {}; } })();
 
-  // ── 프로젝트 노드 수평 직선 배치 (ME 박스 바로 위에 밀착) ─────────────────
-  const H_GAP = 6;                                           // 카드 간 가로 간격
-  const CARD_TOP_OFFSET = meH / 2 + UNI_CARD_H / 2 + 4;   // ME 박스 상단에서 카드 중심까지
-  const totalCardsW = projects.length * UNI_CARD_W + (projects.length - 1) * H_GAP;
-  const isDrillStage1 = _drillStage >= 1 && _drillProject;
+  // ── 360도 방사형 배치 — ME 박스 테두리에 밀착 ──────────────────────────────
+  const NODE_GAP = 6;                                        // ME 테두리 ↔ 카드 테두리 간격
   const LAYER_OFFSET = UNI_CARD_W + 8;
+  const isDrillStage1 = _drillStage >= 1 && _drillProject;
 
-  // ── 드릴다운 시 centerY를 아래로 이동: 위로 방사되는 카드들이 전부 화면에 들어오게 ──
+  // 균등 각도 (상단 -90° 시작, 시계방향)
+  const baseAngle = -Math.PI / 2;
+  const angleStep = (Math.PI * 2) / projects.length;
+
+  // 각도 θ에서 ME 박스 테두리까지의 거리 (직사각형 근사)
+  function meEdgeDist(theta) {
+    const ax = Math.abs(Math.cos(theta)), ay = Math.abs(Math.sin(theta));
+    if (ax < 1e-6) return meH / 2;
+    if (ay < 1e-6) return meW / 2;
+    return Math.min(meW / 2 / ax, meH / 2 / ay);
+  }
+  // 각도 θ에서 카드 반크기
+  function cardHalfDist(theta) {
+    const ax = Math.abs(Math.cos(theta)), ay = Math.abs(Math.sin(theta));
+    if (ax < 1e-6) return UNI_CARD_H / 2;
+    if (ay < 1e-6) return UNI_CARD_W / 2;
+    return Math.min(UNI_CARD_W / 2 / ax, UNI_CARD_H / 2 / ay);
+  }
+
+  // ── 드릴다운 시 센터 이동: 드릴 방향 반대로 밀어서 전체 체인이 화면 안에 들어오게 ──
   if (isDrillStage1) {
     const drillIdx = projects.findIndex(p => p.name === _drillProject.name);
     if (drillIdx >= 0) {
-      // 직선 배치이므로 방향은 항상 위(-y)
-      const expandLayers = 3;                               // 프로젝트→카테고리→세션 최대 3단계
-      const totalExpand = CARD_TOP_OFFSET + expandLayers * (UNI_CARD_H + H_GAP) * 4;
-      const marginT = 80;
-      const availY = centerY - marginT;
-      const needY = totalExpand;
-      const shiftY = Math.max(0, needY - availY);
-      centerY += shiftY;                                    // 아래로 밀어서 상단 확장 공간 확보
+      const drillAngle = baseAngle + drillIdx * angleStep;
+      const dX = Math.cos(drillAngle), dY = Math.sin(drillAngle);
+      const baseDist = meEdgeDist(drillAngle) + NODE_GAP + cardHalfDist(drillAngle);
+      const totalExpand = baseDist + (UNI_CARD_W + 8) * 3;
+      const SIDEBAR_W = 210, marginR = 40, marginT = 80, marginB = 60;
+      const availX = dX > 0 ? W - centerX - marginR : centerX - SIDEBAR_W;
+      const availY = dY > 0 ? H - centerY - marginB : centerY - marginT;
+      const shiftX = Math.max(0, Math.abs(dX) * totalExpand - availX);
+      const shiftY = Math.max(0, Math.abs(dY) * totalExpand - availY);
+      centerX -= dX * shiftX;
+      centerY -= dY * shiftY;
     }
   }
 
   projects.forEach((proj, i) => {
-    // 수평 직선 배치: ME 박스 바로 위에 나란히
+    // 360도 방사형: ME 박스 테두리에 밀착
+    const angle = baseAngle + i * angleStep;
     const isThisDrilled = isDrillStage1 && _drillProject.name === proj.name;
-
-    const cx = centerX - totalCardsW / 2 + i * (UNI_CARD_W + H_GAP) + UNI_CARD_W / 2;
-    const cy = centerY - CARD_TOP_OFFSET;
+    const nodeDist = meEdgeDist(angle) + NODE_GAP + cardHalfDist(angle);
+    const cx = centerX + Math.cos(angle) * nodeDist;
+    const cy = centerY + Math.sin(angle) * nodeDist;
     const isHover = _hoveredHit?.data?.type === 'constellation' && _hoveredHit?.data?.projName === proj.name;
     const color = proj.color;
     const info = analyzeProject(proj);
@@ -3111,7 +3138,7 @@ function drawCompactProjectView() {
       ctx.globalAlpha = dimmed ? 0.1 : 0.18;
       ctx.strokeStyle = '#9ca3af'; ctx.lineWidth = 1;
       ctx.setLineDash([4, 4]);
-      ctx.beginPath(); ctx.moveTo(centerX, centerY - meH / 2); ctx.lineTo(cx, cy + UNI_CARD_H / 2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(centerX, centerY); ctx.lineTo(cx, cy); ctx.stroke();
       ctx.setLineDash([]);
       ctx.restore();
     }
@@ -3134,9 +3161,11 @@ function drawCompactProjectView() {
       const sortedCats = Object.entries(catGroups).sort((a, b) => b[1].length - a[1].length);
       const numCats = sortedCats.length;
 
-      // 직선 배치: 방향은 항상 위(-y), 수직은 가로(+x)
-      const dirX = 0, dirY = -1;
-      const perpX = 1, perpY = 0;
+      // 방사형: 각 프로젝트→바깥 방향 벡터
+      const dx = cx - centerX, dy = cy - centerY;
+      const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+      const dirX = dx / dist, dirY = dy / dist;
+      const perpX = -dirY, perpY = dirX;
 
       // 방향에 따른 동적 간격: 카드(180x51)가 가로로 길어서 방향별 룰이 다름
       // outward 방향 간격 = 카드가 그 방향에서 차지하는 크기
