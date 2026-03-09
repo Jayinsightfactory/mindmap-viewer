@@ -15,6 +15,25 @@ function _authFetch(url, opts = {}) {
   return fetch(url, opts);
 }
 
+// ── 팀원 월드 데이터 로드 (워크스페이스 팀원 클러스터용) ─────────────────────
+async function loadTeamWorldData() {
+  const token = _getAuthToken();
+  if (!token) { window._teamWorldData = null; return; }
+  try {
+    const res = await _authFetch('/api/workspace/team-view');
+    if (!res.ok) return;
+    const data = await res.json();
+    // members 배열이 있으면 저장 (나 자신 제외)
+    if (data?.members?.length) {
+      const myId = (typeof _orbitUser !== 'undefined' ? _orbitUser?.id : null)
+                || JSON.parse(localStorage.getItem('orbitUser') || 'null')?.id;
+      data.members = data.members.filter(m => m.userId !== myId);
+      window._teamWorldData = data;
+    }
+  } catch {}
+}
+window.loadTeamWorldData = loadTeamWorldData;
+
 async function loadData() {
   document.getElementById('loading-msg').textContent = '서버에서 작업 데이터 가져오는 중…';
   try {
@@ -25,6 +44,8 @@ async function loadData() {
     if (typeof updateActiveFiles === 'function') updateActiveFiles();  // 활성 파일 갱신
     if (typeof _loadWorkspaceState === 'function') _loadWorkspaceState();
     if (!_teamMode && !_companyMode && !_parallelMode && typeof controls !== 'undefined') controls.enabled = false;
+    // 팀원 월드 데이터 비동기 로드 (개인 뷰에서 줌아웃 시 표시용)
+    loadTeamWorldData();
     document.getElementById('loading').style.display = 'none';
 
     // 이벤트 없음 → 조건부 안내

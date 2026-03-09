@@ -47,6 +47,11 @@ let _drillProject = null;          // { name, planets[], info }
 let _drillCategory = null;         // { catKey, catLabel, catColor, planets[], events[] }
 let _drillTimelineEvent = null;    // { fileName, filePath }
 
+// ─── 2D 월드 네비게이션 (팀 탐색용) ─────────────────────────────────────────
+// 좌클릭 드래그 → 팬,  스크롤 → 줌 스케일,  팀원 클러스터 세계 좌표에 배치
+let _worldPanX = 0, _worldPanY = 0, _worldScale = 1.0;
+window._worldPanX = 0; window._worldPanY = 0; window._worldScale = 1.0;
+
 const camera = new THREE.PerspectiveCamera(55, innerWidth/innerHeight, 0.1, 2000);
 camera.position.set(0, 25, 55);                       // 컴팩트 뷰에 맞는 초기 거리
 camera.lookAt(0,0,0);
@@ -776,11 +781,12 @@ class OrbitCam {
     el.addEventListener('mousemove',  e => this._move(e));
     el.addEventListener('mouseup',    () => { this._d=this._r=false; this._dragging=false; });
     el.addEventListener('wheel', e => {
-      // 카드 선택 중(역피라미드 열림)엔 카메라 줌 비활성 — 스크롤이 패널로만 전달
+      // 카드 선택 중(역피라미드 열림)엔 스크롤이 패널로만 전달
       if (typeof _selectedHit !== 'undefined' && _selectedHit) return;
-      // 줌 감도 낮춤 (0.08 → 0.04) + 부드러운 줌
-      this.sph.r = Math.max(4, Math.min(300, this.sph.r + e.deltaY * 0.04));
-      this._apply();
+      // 2D 월드 스케일 줌 (팀 탐색: 줌아웃→팀원 클러스터 등장)
+      const factor = e.deltaY > 0 ? 0.92 : 1.085;
+      _worldScale = Math.max(0.2, Math.min(2.0, _worldScale * factor));
+      window._worldScale = _worldScale;
     }, {passive:true});
     el.addEventListener('dblclick',   e => this._dbl(e));
     el.addEventListener('contextmenu',e => e.preventDefault());
@@ -790,16 +796,15 @@ class OrbitCam {
     const dx=e.clientX-this._lx, dy=e.clientY-this._ly;
     this._lx=e.clientX; this._ly=e.clientY;
     if (this._d) {
-      // 회전 감도 약간 낮춤 (0.004 → 0.003) — 더 정밀한 조작
+      // 좌클릭 드래그 → 2D 월드 팬 (팀 탐색: 드래그로 이동)
+      _worldPanX += dx; _worldPanY += dy;
+      window._worldPanX = _worldPanX; window._worldPanY = _worldPanY;
+    } else if (this._r) {
+      // 우클릭/Shift → 3D 배경 회전
       this.sph.θ -= dx*.003;
       this.sph.φ = Math.max(.05, Math.min(Math.PI-.05, this.sph.φ+dy*.003));
-    } else if (this._r) {
-      // 팬 감도 낮춤 (0.05 → 0.03)
-      const fwd = new THREE.Vector3(); this.cam.getWorldDirection(fwd);
-      const right = new THREE.Vector3().crossVectors(fwd, this.cam.up).normalize();
-      this.tgt.addScaledVector(right, -dx*.03).addScaledVector(this.cam.up, dy*.03);
+      this._apply();
     }
-    this._apply();
   }
   _dbl(e) {
     // 더블클릭: hitTest 기반으로 선택 노드에 줌인
