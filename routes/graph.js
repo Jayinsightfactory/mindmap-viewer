@@ -101,10 +101,7 @@ function createRouter(deps) {
             ? getFullGraphForUser(user.id, req.query.session)
             : getFullGraph(req.query.session, req.query.channel);
         }
-        // 귀속 후에도 0건이면 전체 그래프 반환 (로컬 서버 모드)
-        if (graph.nodes.length === 0) {
-          graph = getFullGraph(req.query.session, req.query.channel);
-        }
+        // 귀속 후에도 0건이면 빈 그래프 유지 (다른 유저 데이터 노출 방지)
       }
     }
 
