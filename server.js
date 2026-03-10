@@ -160,6 +160,8 @@ const createAnalyticsRouter          = require('./routes/analytics');
 const createProfileRouter            = require('./routes/profile');
 const createFollowRouter             = require('./routes/follow');
 const createChatRouter               = require('./routes/chat');
+const createMarketplaceRouter        = require('./routes/marketplace');
+const createRecommendationsRouter    = require('./routes/recommendations');
 const { createRegionalInsightRouter } = require('./src/regional-insight');
 const { createPointsRouter }          = require('./src/points-engine');
 const { createCertificateRouter }     = require('./src/certificate-engine');
@@ -1164,7 +1166,11 @@ app.use('/api', createNotificationRouter({ getDb: dbModule.getDb, verifyToken })
 app.use('/api', createFollowRouter({ getDb: dbModule.getDb, verifyToken, searchUsers, getUserById, createNotification })); // searchUsers + getUserById + createNotification 주입
 app.use('/api', createChatRouter({ getDb: dbModule.getDb, verifyToken, broadcastToRoom }));
 
-// ─── Workspace (팀/회사 관리) ─────────────────────────────────────────────────
+// ─── 마켓플레이스 및 추천 엔진 ────────────────────────────────────────────────────
+app.use('/api', createMarketplaceRouter({ verifyToken, dbModule }));
+app.use('/api', createRecommendationsRouter({ verifyToken, dbModule }));
+
+// ─── Workspace (팀/회사 관리) ─────────────────────────────────────────────────────
 app.use('/api', createWorkspaceRouter({ getDb: dbModule.getDb, verifyToken, getUserById, ADMIN_EMAILS, createNotification }));
 
 // ─── Google Drive 사용자 백업 ────────────────────────────────────────────────

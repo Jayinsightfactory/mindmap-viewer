@@ -1,6 +1,66 @@
 // ══════════════════════════════════════════════════════════════════════════════
 // Orbit AI — Scene Build (planets, orbits, satellites)
 // ══════════════════════════════════════════════════════════════════════════════
+
+// ─── 다단계 계층 노드 위치 계산 (6-level hierarchy) ──────────────────────────
+/**
+ * 레벨별 노드 위치 계산
+ * Level 0: Compact (기본 위치)
+ * Level 1: Personal Work (확장)
+ * Level 2: Team Project (더블 확장)
+ * Level 3: Collaboration (트리플 확장)
+ * Level 4: Department (쿼드러플 확장)
+ * Level 5: Company (퀸터플 확장)
+ * Level 6: Universe (최대 확장)
+ */
+function computeMultiLevelPositions(baseR, ring, cap, posInRing) {
+  const positions = {};
+
+  // ── Level 0: Compact (기본 부채꼴 배치) ────────────────────────
+  const COMPACT_RING_SPACING = 5.5;
+  const COMPACT_FAN_SPAN = Math.PI * 1.0;  // 180°
+  const COMPACT_FAN_START = -COMPACT_FAN_SPAN / 2;
+  const compactR = baseR + ring * COMPACT_RING_SPACING;
+  const compactAngle = cap <= 1 ? 0 :
+    COMPACT_FAN_START + (posInRing / (cap - 1)) * COMPACT_FAN_SPAN;
+
+  positions.compact = new THREE.Vector3(
+    Math.cos(compactAngle) * compactR,
+    0,
+    Math.sin(compactAngle) * compactR
+  );
+
+  // ── Level 1~6: 동적 확장 (레벨별 다른 반지름 & 부채꼴) ────────────
+  // 각 레벨마다 더 넓은 각도와 더 큰 반지름 사용
+  const expansionConfigs = [
+    // [FAN_SPAN_MULTIPLIER, RADIUS_BONUS]
+    [1.8,  15],   // Level 1: 324° = 180 * 1.8
+    [2.2,  22],   // Level 2: 396° = 180 * 2.2
+    [2.6,  33],   // Level 3: 468° = 180 * 2.6
+    [3.0,  45],   // Level 4: 540° = 180 * 3.0
+    [3.4,  60],   // Level 5: 612° = 180 * 3.4
+    [3.8,  77],   // Level 6: 684° = 180 * 3.8 (Universe - 최대 확장)
+  ];
+
+  expansionConfigs.forEach((config, idx) => {
+    const level = idx + 1;
+    const [spanMult, radiusBonus] = config;
+    const expandFanSpan = Math.PI * spanMult;
+    const expandFanStart = -expandFanSpan / 2;
+    const expandR = baseR + radiusBonus + ring * 10;
+    const expandAngle = cap <= 1 ? 0 :
+      expandFanStart + (posInRing / (cap - 1)) * expandFanSpan;
+
+    positions[`level${level}`] = new THREE.Vector3(
+      Math.cos(expandAngle) * expandR,
+      0,
+      Math.sin(expandAngle) * expandR
+    );
+  });
+
+  return positions;
+}
+
 // ─── 씬 빌드 ──────────────────────────────────────────────────────────────────
 function clearScene() {
   [...planetMeshes, ...satelliteMeshes, ...orbitRings, ...connections].forEach(o => scene.remove(o));
@@ -153,9 +213,6 @@ function buildPlanetSystem(nodeList) {
     const RING_BASE_CAP  = 10;
     const RING_CAP_INC   = 8;
     const BASE_R         = 10;
-    const RING_SPACING   = 5.5;                                    // 링 간 거리 증가 (겹침 방지)
-    const FAN_SPAN       = Math.PI * 1.0;                          // 부채꼴 범위 (180°) - 축소
-    const FAN_START      = -FAN_SPAN / 2;                          // 위쪽 중심 기준 좌우 대칭
 
     const ringCap = (r) => RING_BASE_CAP + r * RING_CAP_INC;
     let ring = 0, cumulative = 0;
@@ -165,31 +222,18 @@ function buildPlanetSystem(nodeList) {
     }
     const posInRing   = pi - cumulative;
     const cap         = ringCap(ring);
-    // 부채꼴 내 균등 배치 (간격 최소화)
-    const planetAngle = cap <= 1
-      ? 0
-      : FAN_START + (posInRing / (cap - 1)) * FAN_SPAN;
-    const R           = BASE_R + ring * RING_SPACING;
 
-    const px = Math.cos(planetAngle) * R;
-    const py = 0;
-    const pz = Math.sin(planetAngle) * R;
-    const COMPACT_R = R;
-    const subAngle  = planetAngle;
-    const planetPos = new THREE.Vector3(px, py, pz);
+    // 다단계 계층 위치 계산 (Level 0~6)
+    const levelPositions = computeMultiLevelPositions(BASE_R, ring, cap, posInRing);
+    const planetPos = levelPositions.compact;  // 기본 위치
 
-    // 확장 위치: 클릭 시 더 넓은 부채꼴로 이동
-    // 드릴다운 시 노드 겹침 방지를 위해 반지름을 크게 증가
-    const EXP_R = BASE_R + 15 + ring * 10;  // 확대됨: 5→15, 6→10
-    // 드릴다운 시 더 넓은 부채꼴 범위 사용 (전체 360도 사용)
-    const EXP_FAN_SPAN = Math.PI * 1.8;     // 확장 시: 324도 (기본 180도에서 확대)
-    const EXP_FAN_START = -EXP_FAN_SPAN / 2;
-    const expPlanetAngle = cap <= 1
-      ? 0
-      : EXP_FAN_START + (posInRing / (cap - 1)) * EXP_FAN_SPAN;
-    const epx = Math.cos(expPlanetAngle) * EXP_R;
-    const epy = 0;
-    const epz = Math.sin(expPlanetAngle) * EXP_R;
+    const px = planetPos.x;
+    const py = planetPos.y;
+    const pz = planetPos.z;
+
+    // 컴팩트 모드 좌표 저장 (카메라 포커싱 용)
+    const COMPACT_R = Math.sqrt(px*px + pz*pz);
+    const subAngle  = Math.atan2(pz, px);
 
     // ── 행성 의도 & 색상 — 프로젝트별 색상 기반 ─────────────────────────────
     let hueHex;
@@ -225,10 +269,18 @@ function buildPlanetSystem(nodeList) {
     planet.userData.hueHex      = hueHex;
     planet.userData.eventCount  = rawEvents.length;
     planet.userData._treeBasePos = planetPos.clone();
-    // 2단계 확장 위치 저장 (클릭 시 넓은 동심원으로 이동)
-    planet.userData._expandedPos = new THREE.Vector3(epx, epy, epz);
-    planet.userData._compactPos  = planetPos.clone();
-    planet.userData._isExpanded  = false;
+
+    // 다단계 계층 위치 저장 (Level 0~6)
+    planet.userData._levelPositions = levelPositions;
+    planet.userData._currentLevel   = 0;  // 현재 표시 중인 레벨 (0=Compact)
+    planet.userData._expandedPos    = levelPositions.level1;  // 하위호환성 (기본 확장 = Level 1)
+    planet.userData._compactPos     = planetPos.clone();
+    planet.userData._isExpanded     = false;
+
+    // 계층 정보 저장
+    planet.userData.hierarchyLevel = 0;  // 0=top-level, 1=child, 2=grandchild...
+    planet.userData.hierarchyLabel = 'Personal Work';  // 계층 라벨 (필요시 수정)
+
     planet.userData.orbitSpeed  = 0;                         // 고정 위치 (회전 없음)
     planet.userData.orbitR      = COMPACT_R;
     planet.userData.orbitθ      = subAngle;

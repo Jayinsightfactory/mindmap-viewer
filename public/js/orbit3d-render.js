@@ -3891,13 +3891,26 @@ function drawLabels() {
     }
   });
 
-  // 행성 위치 보간: 포커스된 프로젝트/카테고리가 있으면 확장 위치로 이동
+  // 행성 위치 보간: 다단계 계층별 확장 위치로 이동
   planetMeshes.forEach(p => {
     const inFocusedCat  = focusedCat && p.userData.macroCat === focusedCat;
     const inFocusedProj = focusedProj && p.userData.projectName === focusedProj;
     const inSelectedProj = selectedProj && p.userData.projectName === selectedProj;
     const targetExpanded = inFocusedCat || inFocusedProj || inSelectedProj;
-    const target = targetExpanded ? p.userData._expandedPos : p.userData._compactPos;
+
+    // 다단계 계층 지원: _currentLevel에 따라 적절한 위치 선택
+    let target;
+    if (targetExpanded && p.userData._levelPositions) {
+      const currentLevel = p.userData._currentLevel || 0;
+      if (currentLevel === 0) {
+        target = p.userData._levelPositions.compact;
+      } else {
+        target = p.userData._levelPositions[`level${currentLevel}`] || p.userData._levelPositions.compact;
+      }
+    } else {
+      target = p.userData._compactPos;
+    }
+
     if (target) p.position.lerp(target, 0.08);
   });
 

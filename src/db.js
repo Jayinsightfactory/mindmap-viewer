@@ -298,6 +298,46 @@ function createTables() {
       created_at  TEXT DEFAULT (datetime('now'))
     );
     CREATE INDEX IF NOT EXISTS idx_notif_user ON notifications(user_id);
+
+    -- ─── 마켓플레이스 솔루션 설치 기록 ─────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS solution_installations (
+      id            TEXT PRIMARY KEY,
+      user_id       TEXT NOT NULL,
+      solution_id   TEXT NOT NULL,
+      status        TEXT DEFAULT 'pending',  -- pending, installing, active, completed
+      config_json   TEXT DEFAULT '{}',
+      created_at    TEXT DEFAULT (datetime('now')),
+      updated_at    TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (user_id) REFERENCES events(user_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_sol_inst_user ON solution_installations(user_id);
+    CREATE INDEX IF NOT EXISTS idx_sol_inst_status ON solution_installations(status);
+
+    -- ─── 기업 분석 결과 ────────────────────────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS analysis_results (
+      id                    TEXT PRIMARY KEY,
+      user_id               TEXT NOT NULL,
+      company_id            TEXT NOT NULL,
+      findings_json         TEXT NOT NULL,
+      recommendations_json  TEXT NOT NULL,
+      created_at            TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (user_id) REFERENCES events(user_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_analysis_user ON analysis_results(user_id);
+    CREATE INDEX IF NOT EXISTS idx_analysis_company ON analysis_results(company_id);
+
+    -- ─── 솔루션 설치 ROI 추적 ──────────────────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS solution_roi (
+      id                TEXT PRIMARY KEY,
+      installation_id   TEXT NOT NULL,
+      date              TEXT NOT NULL,
+      invested          REAL DEFAULT 0,
+      actual_savings    REAL DEFAULT 0,
+      status            TEXT,
+      FOREIGN KEY (installation_id) REFERENCES solution_installations(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_roi_inst ON solution_roi(installation_id);
+    CREATE INDEX IF NOT EXISTS idx_roi_date ON solution_roi(date);
   `);
 }
 
@@ -868,6 +908,104 @@ function getUserTokenStatus(userId) {
 
 function getDb() { return db; }
 
+// ─── 마켓플레이스 솔루션 설치 CRUD ──────────────────────────────────────
+function installSolution(userId, solutionId) {
+  const installationId = `inst_${Date.now()}_${userId}`;
+  db.prepare(`
+    INSERT INTO solution_installations (id, user_id, solution_id, status)
+    VALUES (?, ?, ?, 'pending')
+  `).run(installationId, userId, solutionId);
+  return installationId;
+}
+
+function getSolutionInstallation(installationId) {
+  return db.prepare(`
+    SELECT * FROM solution_installations WHERE id = ?
+  `).get(installationId);
+}
+
+function getUserSolutionInstallations(userId) {
+  return db.prepare(`
+    SELECT * FROM solution_installations
+    WHERE user_id = ?
+    ORDER BY created_at DESC
+  `).all(userId);
+}
+
+function updateSolutionInstallationStatus(installationId, status) {
+  db.prepare(`
+    UPDATE solution_installations
+    SET status = ?, updated_at = datetime('now')
+    WHERE id = ?
+  `).run(status, installationId);
+}
+
+// ─── 기업 분석 결과 CRUD ──────────────────────────────────────────────────
+function saveAnalysisResult(analysisId, userId, companyId, findings, recommendations) {
+  db.prepare(`
+    INSERT INTO analysis_results (id, user_id, company_id, findings_json, recommendations_json)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(analysisId, userId, companyId, JSON.stringify(findings), JSON.stringify(recommendations));
+}
+
+function getAnalysisResult(analysisId, userId) {
+  const result = db.prepare(`
+    SELECT * FROM analysis_results
+    WHERE id = ? AND user_id = ?
+  `).get(analysisId, userId);
+
+  if (result) {
+    result.findings = JSON.parse(result.findings_json);
+    result.recommendations = JSON.parse(result.recommendations_json);
+  }
+  return result;
+}
+
+function getUserAnalysisResults(userId, limit = 10) {
+  return db.prepare(`
+    SELECT id, company_id, created_at FROM analysis_results
+    WHERE user_id = ?
+    ORDER BY created_at DESC
+    LIMIT ?
+  `).all(userId, limit);
+}
+
+// ─── ROI 추적 CRUD ──────────────────────────────────────────────────────
+function addRoiTrackingRecord(installationId, date, invested, actualSavings, status) {
+  const id = `roi_${Date.now()}`;
+  db.prepare(`
+    INSERT INTO solution_roi (id, installation_id, date, invested, actual_savings, status)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(id, installationId, date, invested, actualSavings, status);
+  return id;
+}
+
+function getRoiTimeline(installationId) {
+  return db.prepare(`
+    SELECT * FROM solution_roi
+    WHERE installation_id = ?
+    ORDER BY date ASC
+  `).all(installationId);
+}
+
+function calculateRoi(installationId) {
+  const records = getRoiTimeline(installationId);
+  if (records.length === 0) return null;
+
+  const totalInvested = records.reduce((sum, r) => sum + r.invested, 0);
+  const totalSavings = records.reduce((sum, r) => sum + r.actual_savings, 0);
+  const roi = totalInvested > 0 ? ((totalSavings - totalInvested) / totalInvested * 100) : 0;
+  const breakEvenDate = records.find(r => r.actual_savings >= r.invested)?.date || null;
+
+  return {
+    totalInvested,
+    totalSavings,
+    roi,
+    breakEvenDate,
+    timeline: records
+  };
+}
+
 module.exports = {
   initDatabase,
   getDb,
@@ -926,4 +1064,17 @@ module.exports = {
   toggleServiceToken,
   deleteServiceToken,
   getUserTokenStatus,
+  // 마켓플레이스 솔루션
+  installSolution,
+  getSolutionInstallation,
+  getUserSolutionInstallations,
+  updateSolutionInstallationStatus,
+  // 기업 분석
+  saveAnalysisResult,
+  getAnalysisResult,
+  getUserAnalysisResults,
+  // ROI 추적
+  addRoiTrackingRecord,
+  getRoiTimeline,
+  calculateRoi,
 };
