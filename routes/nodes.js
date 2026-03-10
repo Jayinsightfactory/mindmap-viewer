@@ -1,110 +1,35 @@
 /**
  * routes/nodes.js
- * 3D 노드 생성 및 분류 API
+ * 다계층 노드 드릴다운 API
+ * 6단계 계층 시스템 (Level 0-5)
  */
 
 const { Router } = require('express');
-const classificationEngine = require('../src/node-classification-engine');
-const orbitalLayout = require('../src/orbital-layout');
+const multiLevelSystem = require('../src/multilevel-node-system');
 
 module.exports = function createNodesRouter({ getDb }) {
   const router = Router();
 
-  /**
-   * GET /api/nodes/analyze
-   * 추적 데이터 분석 → 자동 노드 생성
-   */
-  router.get('/nodes/analyze', (req, res) => {
-    try {
-      const db = getDb();
-      if (!db) return res.status(500).json({ error: 'Database not initialized' });
-
-      // 도메인별 분류
-      const domainStats = classificationEngine.aggregateByDomain(db);
-
-      // 궤도 레이아웃 생성
-      const layout = orbitalLayout.generateOrbitalLayout(domainStats);
-
-      // 시간대 분석
-      const temporal = classificationEngine.analyzeTemporalPatterns(db);
-
-      res.json({
-        ok: true,
-        layout: {
-          planets: layout.planets,
-          moons: layout.moons
-        },
-        statistics: {
-          totalEvents: Object.values(domainStats).reduce((sum, d) => sum + d.count, 0),
-          domains: domainStats,
-          temporal
-        }
-      });
-    } catch (e) {
-      console.error('[nodes/analyze]', e);
-      res.status(500).json({ error: e.message });
-    }
-  });
-
-  /**
-   * GET /api/nodes/domain/:domain
-   * 특정 도메인의 세부 노드 조회 (드릴다운)
-   */
-  router.get('/nodes/domain/:domain', (req, res) => {
-    try {
-      const db = getDb();
-      if (!db) return res.status(500).json({ error: 'Database not initialized' });
-
-      const domain = req.params.domain;
-      
-      // 도메인별 상세 이벤트 조회
-      const sql = `
-        SELECT * FROM events
-        WHERE type LIKE ? OR data_json LIKE ? OR metadata_json LIKE ?
-        ORDER BY timestamp DESC
-        LIMIT 100
-      `;
-      
-      const pattern = `%${domain.toLowerCase()}%`;
-      const events = db.prepare(sql).all(pattern, pattern, pattern);
-
-      // 도메인별 키워드 분포
-      const keywords = {};
-      for (const evt of events) {
-        const classified = classificationEngine.classifyEvent(evt);
-        if (classified.domain === domain) {
-          for (const kw of classified.matched) {
-            keywords[kw] = (keywords[kw] || 0) + 1;
-          }
-        }
-      }
-
-      res.json({
-        ok: true,
-        domain,
-        events: events.slice(0, 20),
-        keywords,
-        totalCount: events.length
-      });
-    } catch (e) {
-      console.error('[nodes/domain]', e);
-      res.status(500).json({ error: e.message });
-    }
-  });
+  // 세션별 현재 드릴 레벨 추적
+  const sessionState = new Map();
 
   /**
    * GET /api/nodes/structure
-   * 현재 3D 노드 구조 조회
+   * 현재 구조(기본 Level 0) 조회
    */
   router.get('/nodes/structure', (req, res) => {
+    // 기존 호환성을 위해 기본 API는 계속 유지
+    const db = getDb();
+    if (!db) return res.status(500).json({ error: 'Database not initialized' });
+
     try {
-      const db = getDb();
-      if (!db) return res.status(500).json({ error: 'Database not initialized' });
+      const classificationEngine = require('../src/node-classification-engine');
+      const orbitalLayout = require('../src/orbital-layout');
 
       const domainStats = classificationEngine.aggregateByDomain(db);
       const layout = orbitalLayout.generateOrbitalLayout(domainStats);
 
-      res.json({
+      return res.json({
         ok: true,
         planets: layout.planets,
         moons: layout.moons,
@@ -116,8 +41,261 @@ module.exports = function createNodesRouter({ getDb }) {
       });
     } catch (e) {
       console.error('[nodes/structure]', e);
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  /**
+   * GET /api/multilevel/structure
+   * 현재 구조(기본 Level 0) 조회 (다계층)
+   */
+  router.get('/multilevel/structure', (req, res) => {
+    try {
+      const sessionId = req.query.sessionId || 'default';
+
+      // 세션 초기화
+      if (!sessionState.has(sessionId)) {
+        sessionState.set(sessionId, {
+          level: 0,
+          selectedNode: null,
+          nodeStack: []
+        });
+      }
+
+      const state = sessionState.get(sessionId);
+      const currentView = multiLevelSystem.initializeCompactView();
+
+      res.json({
+        ok: true,
+        level: state.level,
+        nodes: currentView.nodes,
+        levelConfig: multiLevelSystem.MULTILEVEL_CONFIG.levels[0],
+        navigation: {
+          canDrillDown: true,
+          canDrillUp: false,
+          currentLevel: 'Compact'
+        },
+        summary: {
+          totalNodes: currentView.nodes.length,
+          shapes: currentView.nodes.map(n => n.shape)
+        }
+      });
+    } catch (e) {
+      console.error('[nodes/structure]', e);
       res.status(500).json({ error: e.message });
     }
+  });
+
+  /**
+   * POST /api/multilevel/drill/down
+   * 특정 노드로 드릴다운
+   * Body: { sessionId, nodeId, level }
+   */
+  router.post('/multilevel/drill/down', (req, res) => {
+    try {
+      const { sessionId = 'default', nodeId, level } = req.body;
+
+      if (!sessionState.has(sessionId)) {
+        sessionState.set(sessionId, {
+          level: 0,
+          selectedNode: null,
+          nodeStack: []
+        });
+      }
+
+      const state = sessionState.get(sessionId);
+      const currentLevel = state.level || 0;
+
+      // 레벨 검증
+      if (level <= currentLevel || level > 5) {
+        return res.status(400).json({
+          error: 'Invalid drill level',
+          currentLevel,
+          requestedLevel: level
+        });
+      }
+
+      // 현재 레벨 노드 조회
+      const currentNodes = multiLevelSystem.generateNodesForLevel(currentLevel);
+      const selectedNode = currentNodes.find(n => n.id === nodeId);
+
+      if (!selectedNode) {
+        return res.status(400).json({ error: 'Node not found' });
+      }
+
+      // 드릴다운 실행
+      const drillResult = multiLevelSystem.drillToLevel(selectedNode, level);
+
+      // 상태 업데이트
+      state.level = level;
+      state.selectedNode = selectedNode;
+      state.nodeStack.push({
+        level: currentLevel,
+        nodes: currentNodes,
+        selectedId: nodeId
+      });
+
+      // 연결선 생성
+      const connections = multiLevelSystem.generateConnectionLines(
+        [selectedNode],
+        drillResult.nodes,
+        0
+      );
+
+      res.json({
+        ok: true,
+        level,
+        nodes: drillResult.nodes,
+        levelConfig: multiLevelSystem.MULTILEVEL_CONFIG.levels[level],
+        parent: selectedNode,
+        animation: drillResult.animation,
+        connections,
+        navigation: {
+          canDrillDown: level < 5,
+          canDrillUp: true,
+          currentLevel: multiLevelSystem.MULTILEVEL_CONFIG.levels[level].name
+        },
+        summary: {
+          totalNodes: drillResult.nodes.length,
+          parentNode: selectedNode.name,
+          shapes: drillResult.nodes.map(n => n.shape)
+        }
+      });
+    } catch (e) {
+      console.error('[nodes/drill/down]', e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  /**
+   * POST /api/multilevel/drill/up
+   * 상위 레벨로 돌아가기
+   * Body: { sessionId }
+   */
+  router.post('/multilevel/drill/up', (req, res) => {
+    try {
+      const { sessionId = 'default' } = req.body;
+
+      if (!sessionState.has(sessionId)) {
+        return res.status(400).json({ error: 'Session not found' });
+      }
+
+      const state = sessionState.get(sessionId);
+      const currentLevel = state.level || 0;
+
+      if (currentLevel === 0) {
+        return res.json({
+          ok: true,
+          level: 0,
+          message: 'Already at top level',
+          nodes: multiLevelSystem.generateNodesForLevel(0)
+        });
+      }
+
+      // 스택에서 이전 상태 복원
+      if (state.nodeStack.length > 0) {
+        const previous = state.nodeStack.pop();
+        state.level = previous.level;
+        state.selectedNode = previous.nodes.find(n => n.id === previous.selectedId);
+
+        res.json({
+          ok: true,
+          level: previous.level,
+          nodes: previous.nodes,
+          levelConfig: multiLevelSystem.MULTILEVEL_CONFIG.levels[previous.level],
+          navigation: {
+            canDrillDown: previous.level < 5,
+            canDrillUp: previous.level > 0,
+            currentLevel: multiLevelSystem.MULTILEVEL_CONFIG.levels[previous.level].name
+          }
+        });
+      } else {
+        // 스택 비어있으면 Level 0으로 리셋
+        state.level = 0;
+        res.json({
+          ok: true,
+          level: 0,
+          nodes: multiLevelSystem.generateNodesForLevel(0)
+        });
+      }
+    } catch (e) {
+      console.error('[nodes/drill/up]', e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  /**
+   * GET /api/multilevel/level/:level
+   * 특정 레벨의 노드 조회 (드릴다운 없이 직접 접근)
+   */
+  router.get('/multilevel/level/:level', (req, res) => {
+    try {
+      const level = parseInt(req.params.level, 10);
+
+      if (level < 0 || level > 5) {
+        return res.status(400).json({ error: 'Level must be 0-5' });
+      }
+
+      const nodes = multiLevelSystem.generateNodesForLevel(level);
+      const config = multiLevelSystem.MULTILEVEL_CONFIG.levels[level];
+
+      res.json({
+        ok: true,
+        level,
+        nodes,
+        levelConfig: config,
+        navigation: {
+          canDrillDown: level < 5,
+          canDrillUp: level > 0,
+          currentLevel: config.name
+        }
+      });
+    } catch (e) {
+      console.error('[nodes/level/:level]', e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  /**
+   * GET /api/multilevel/all-levels
+   * 모든 레벨의 구조를 한 번에 조회 (성능 최적화용)
+   */
+  router.get('/multilevel/all-levels', (req, res) => {
+    try {
+      const allLevels = {};
+
+      for (let level = 0; level <= 5; level++) {
+        const nodes = multiLevelSystem.generateNodesForLevel(level);
+        allLevels[level] = {
+          name: multiLevelSystem.MULTILEVEL_CONFIG.levels[level].name,
+          nodes,
+          config: multiLevelSystem.MULTILEVEL_CONFIG.levels[level]
+        };
+      }
+
+      res.json({
+        ok: true,
+        allLevels,
+        summary: {
+          totalLevels: 6,
+          totalNodes: Object.values(allLevels).reduce((sum, l) => sum + l.nodes.length, 0),
+          levelNames: Object.values(allLevels).map((l, i) => `${i}: ${l.name}`)
+        }
+      });
+    } catch (e) {
+      console.error('[nodes/all-levels]', e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  /**
+   * GET /api/multilevel/reset
+   * 세션 상태 초기화
+   */
+  router.get('/multilevel/reset', (req, res) => {
+    const sessionId = req.query.sessionId || 'default';
+    sessionState.delete(sessionId);
+    res.json({ ok: true, message: 'Session reset' });
   });
 
   return router;

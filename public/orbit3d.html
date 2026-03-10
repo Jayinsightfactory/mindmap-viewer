@@ -1260,5 +1260,102 @@ function viewZoom(dir) {
 <script src="js/orbit3d-interaction.js?v=20260310"></script>
 <!-- 3D 노드 로더 - 행성 구조 자동 생성 -->
 <script src="js/orbit3d-node-loader.js"></script>
+<!-- 다계층 노드 렌더러 - 6단계 드릴다운 시스템 -->
+<script src="js/orbit3d-multilevel-renderer.js"></script>
+
+<!-- 드릴다운 UI 컨트롤 -->
+<div id="drill-controls" style="display: none; position: fixed; bottom: 100px; right: 20px; z-index: 500; background: rgba(2, 6, 23, 0.95); border: 1px solid #334155; border-radius: 8px; padding: 15px; min-width: 200px;">
+  <div id="level-indicator" style="font-size: 12px; color: #94a3b8; margin-bottom: 10px;">Level <span id="current-level">0</span> — <span id="level-name">Compact</span></div>
+
+  <div style="display: flex; gap: 8px; flex-direction: column;">
+    <button id="drill-down-btn" onclick="handleDrillDown()" style="padding: 8px 12px; background: #06b6d4; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 500;">
+      ↓ 드릴다운
+    </button>
+    <button id="drill-up-btn" onclick="handleDrillUp()" style="padding: 8px 12px; background: #64748b; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 500; opacity: 0.5;" disabled>
+      ↑ 드릴업
+    </button>
+    <button id="reset-btn" onclick="handleReset()" style="padding: 8px 12px; background: #475569; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 500;">
+      ⟲ 초기화
+    </button>
+  </div>
+
+  <div id="node-info" style="font-size: 11px; color: #cbd5e1; margin-top: 12px; padding-top: 12px; border-top: 1px solid #334155;">
+    <div>노드 수: <span id="node-count">7</span></div>
+    <div>선택됨: <span id="selected-node">없음</span></div>
+  </div>
+</div>
+
+<script>
+// 드릴다운 UI 핸들러
+async function handleDrillDown() {
+  if (!window.multiLevelRenderer || !window.scene) return;
+
+  const currentLevel = window.multiLevelRenderer.currentLevel || 0;
+  if (currentLevel >= 5) {
+    alert('최대 레벨에 도달했습니다.');
+    return;
+  }
+
+  // 선택된 노드 찾기
+  const selectedNode = Object.values(window.multiLevelRenderer.nodeMeshes || {})
+    .find(m => m.userData && m.userData.selected);
+
+  if (!selectedNode) {
+    alert('노드를 선택한 후 드릴다운하세요.');
+    return;
+  }
+
+  await window.multiLevelRenderer.loadAndRenderLevel(
+    currentLevel + 1,
+    window.scene,
+    selectedNode.userData.nodeId
+  );
+  updateDrillUI();
+}
+
+async function handleDrillUp() {
+  if (!window.multiLevelRenderer || !window.scene) return;
+  await window.multiLevelRenderer.drillUp(window.scene);
+  updateDrillUI();
+}
+
+async function handleReset() {
+  if (!window.multiLevelRenderer || !window.scene) return;
+  // 세션 초기화
+  await fetch(`/api/multilevel/reset?sessionId=${window.multiLevelRenderer.sessionId || 'default'}`);
+  await window.multiLevelRenderer.initializeLevel0(window.scene);
+  updateDrillUI();
+}
+
+function updateDrillUI() {
+  const level = window.multiLevelRenderer.currentLevel || 0;
+  const nodeCount = (window.multiLevelRenderer.currentNodes || []).length;
+  const levelNames = ['Compact', 'Personal', 'Team', 'Collaboration', 'Department', 'Universe'];
+
+  document.getElementById('current-level').textContent = level;
+  document.getElementById('level-name').textContent = levelNames[level] || 'Unknown';
+  document.getElementById('node-count').textContent = nodeCount;
+
+  document.getElementById('drill-down-btn').disabled = level >= 5;
+  document.getElementById('drill-down-btn').style.opacity = level >= 5 ? '0.5' : '1';
+
+  document.getElementById('drill-up-btn').disabled = level === 0;
+  document.getElementById('drill-up-btn').style.opacity = level === 0 ? '0.5' : '1';
+}
+
+// 초기화 시 드릴 컨트롤 표시
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => {
+    const drillControls = document.getElementById('drill-controls');
+    if (drillControls) drillControls.style.display = 'block';
+    updateDrillUI();
+  });
+} else {
+  const drillControls = document.getElementById('drill-controls');
+  if (drillControls) drillControls.style.display = 'block';
+  updateDrillUI();
+}
+</script>
+
 </body>
 </html>
