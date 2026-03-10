@@ -266,6 +266,14 @@ function createTables() {
     }
   } catch (e) { console.warn('[DB] FK migration skip:', e.message); }
 
+  // ─── 컬럼 마이그레이션: workspace_members에 team_hierarchy_id, department_id 추가 ───
+  try {
+    db.exec(`ALTER TABLE workspace_members ADD COLUMN team_hierarchy_id TEXT`);
+  } catch {}
+  try {
+    db.exec(`ALTER TABLE workspace_members ADD COLUMN department_id TEXT`);
+  } catch {}
+
   // ─── 결제/구독/알림 테이블 ───────────────────────────
   db.exec(`
     CREATE TABLE IF NOT EXISTS payments (
@@ -337,6 +345,54 @@ function createTables() {
     );
     CREATE INDEX IF NOT EXISTS idx_roi_inst ON solution_roi(installation_id);
     CREATE INDEX IF NOT EXISTS idx_roi_date ON solution_roi(date);
+
+    -- ─── 워크스페이스 다계층 노드 시스템 ────────────────────────────────────────
+    -- 팀/부서 조직 구조
+    CREATE TABLE IF NOT EXISTS team_hierarchy (
+      id TEXT PRIMARY KEY,
+      workspace_id TEXT NOT NULL,
+      parent_id TEXT,
+      name TEXT NOT NULL,
+      level_type TEXT NOT NULL,
+      icon TEXT DEFAULT '👥',
+      color TEXT DEFAULT '#58a6ff',
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (workspace_id) REFERENCES workspaces(id),
+      FOREIGN KEY (parent_id) REFERENCES team_hierarchy(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_th_ws ON team_hierarchy(workspace_id);
+    CREATE INDEX IF NOT EXISTS idx_th_parent ON team_hierarchy(parent_id);
+
+    -- 협업 신호 (workspace_activity)
+    CREATE TABLE IF NOT EXISTS workspace_activity (
+      id TEXT PRIMARY KEY,
+      workspace_id TEXT NOT NULL,
+      user_id_1 TEXT NOT NULL,
+      user_id_2 TEXT NOT NULL,
+      activity_type TEXT NOT NULL,
+      strength REAL DEFAULT 0.5,
+      last_interaction TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (workspace_id) REFERENCES workspaces(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_wa_ws ON workspace_activity(workspace_id);
+    CREATE INDEX IF NOT EXISTS idx_wa_users ON workspace_activity(user_id_1, user_id_2);
+
+    -- 다계층 노드 캐시 (권한별)
+    CREATE TABLE IF NOT EXISTS multilevel_cache (
+      id TEXT PRIMARY KEY,
+      workspace_id TEXT NOT NULL,
+      level INTEGER NOT NULL,
+      role TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      nodes_json TEXT NOT NULL,
+      generated_at TEXT DEFAULT (datetime('now')),
+      expires_at TEXT,
+      UNIQUE(workspace_id, level, role, user_id),
+      FOREIGN KEY (workspace_id) REFERENCES workspaces(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_mc_ws ON multilevel_cache(workspace_id);
+    CREATE INDEX IF NOT EXISTS idx_mc_expires ON multilevel_cache(expires_at);
   `);
 }
 
@@ -1011,6 +1067,125 @@ function calculateRoi(installationId) {
   };
 }
 
+// ─── 다계층 노드 시스템 CRUD ────────────────────────────────────────────────
+/**
+ * 다계층 노드 캐시 조회 (권한별)
+ */
+function getMultilevelCache(workspaceId, level, role, userId) {
+  const result = db.prepare(`
+    SELECT nodes_json FROM multilevel_cache
+    WHERE workspace_id = ? AND level = ? AND role = ? AND user_id = ?
+    AND datetime(expires_at) > datetime('now')
+  `).get(workspaceId, level, role, userId);
+
+  return result ? JSON.parse(result.nodes_json) : null;
+}
+
+/**
+ * 다계층 노드 캐시 저장 (15분 TTL)
+ */
+function saveMultilevelCache(workspaceId, level, role, userId, nodesJson) {
+  const id = `cache_${workspaceId}_${level}_${role}_${userId}_${Date.now()}`;
+  db.prepare(`
+    INSERT OR REPLACE INTO multilevel_cache
+    (id, workspace_id, level, role, user_id, nodes_json, expires_at)
+    VALUES (?, ?, ?, ?, ?, ?, datetime('now', '+15 minutes'))
+  `).run(id, workspaceId, level, role, userId, JSON.stringify(nodesJson));
+}
+
+/**
+ * 워크스페이스 캐시 무효화
+ */
+function invalidateMultilevelCache(workspaceId) {
+  db.prepare(`
+    DELETE FROM multilevel_cache WHERE workspace_id = ?
+  `).run(workspaceId);
+}
+
+/**
+ * 팀/부서 계층 구조 저장
+ */
+function saveTeamHierarchy(id, workspaceId, parentId, name, levelType, icon, color) {
+  db.prepare(`
+    INSERT OR REPLACE INTO team_hierarchy
+    (id, workspace_id, parent_id, name, level_type, icon, color)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(id, workspaceId, parentId || null, name, levelType, icon || '👥', color || '#58a6ff');
+}
+
+/**
+ * 워크스페이스 팀 계층 조회
+ */
+function getWorkspaceTeamHierarchy(workspaceId) {
+  return db.prepare(`
+    SELECT * FROM team_hierarchy
+    WHERE workspace_id = ?
+    ORDER BY created_at ASC
+  `).all(workspaceId);
+}
+
+/**
+ * 부모 ID로 팀/부서 조회
+ */
+function getTeamsByParentId(parentId) {
+  return db.prepare(`
+    SELECT * FROM team_hierarchy
+    WHERE parent_id = ?
+    ORDER BY created_at ASC
+  `).all(parentId || null);
+}
+
+/**
+ * 협업 신호 저장
+ */
+function saveWorkspaceActivity(workspaceId, userId1, userId2, activityType, strength) {
+  const id = `activity_${workspaceId}_${userId1}_${userId2}_${Date.now()}`;
+  // user_id_1과 user_id_2를 정렬하여 중복 방지
+  const [id1, id2] = [userId1, userId2].sort();
+
+  db.prepare(`
+    INSERT OR REPLACE INTO workspace_activity
+    (id, workspace_id, user_id_1, user_id_2, activity_type, strength, last_interaction)
+    VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+  `).run(id, workspaceId, id1, id2, activityType, strength);
+}
+
+/**
+ * 사용자의 협업 관계 조회
+ */
+function getWorkspaceActivityByUser(workspaceId, userId) {
+  return db.prepare(`
+    SELECT * FROM workspace_activity
+    WHERE workspace_id = ? AND (user_id_1 = ? OR user_id_2 = ?)
+    ORDER BY strength DESC, last_interaction DESC
+  `).all(workspaceId, userId, userId);
+}
+
+/**
+ * 워크스페이스의 모든 협업 관계 조회
+ */
+function getWorkspaceActivityAll(workspaceId) {
+  return db.prepare(`
+    SELECT * FROM workspace_activity
+    WHERE workspace_id = ?
+    ORDER BY strength DESC
+  `).all(workspaceId);
+}
+
+/**
+ * 협업 신호 업데이트 (강도 증가)
+ */
+function updateWorkspaceActivityStrength(workspaceId, userId1, userId2, strengthDelta = 0.1) {
+  const [id1, id2] = [userId1, userId2].sort();
+
+  db.prepare(`
+    UPDATE workspace_activity
+    SET strength = MIN(1.0, strength + ?),
+        last_interaction = datetime('now')
+    WHERE workspace_id = ? AND user_id_1 = ? AND user_id_2 = ?
+  `).run(strengthDelta, workspaceId, id1, id2);
+}
+
 module.exports = {
   initDatabase,
   getDb,
@@ -1082,4 +1257,15 @@ module.exports = {
   addRoiTrackingRecord,
   getRoiTimeline,
   calculateRoi,
+  // 다계층 노드 시스템
+  getMultilevelCache,
+  saveMultilevelCache,
+  invalidateMultilevelCache,
+  saveTeamHierarchy,
+  getWorkspaceTeamHierarchy,
+  getTeamsByParentId,
+  saveWorkspaceActivity,
+  getWorkspaceActivityByUser,
+  getWorkspaceActivityAll,
+  updateWorkspaceActivityStrength,
 };

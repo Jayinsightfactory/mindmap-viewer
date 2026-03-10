@@ -298,5 +298,237 @@ module.exports = function createNodesRouter({ getDb }) {
     res.json({ ok: true, message: 'Session reset' });
   });
 
+  // ───────────────────────────────────────────────────────────
+  // 워크스페이스 다계층 노드 시스템 (역할 기반 권한 제어)
+  // ───────────────────────────────────────────────────────────
+
+  const {
+    authWorkspaceLevel,
+    requireLevelAccess,
+    requireLevelModify,
+    getPermissionsResponse
+  } = require('./multilevel-auth');
+  const multiLevelWorkspaceNodes = require('../src/multilevel-workspace-nodes');
+
+  /**
+   * POST /api/multilevel/workspace/:workspaceId/structure
+   * 워크스페이스 기반 Level 0 로드
+   */
+  router.post('/multilevel/workspace/:workspaceId/structure',
+    authWorkspaceLevel,
+    async (req, res) => {
+      try {
+        const { workspaceId } = req.params;
+        const { sessionId = 'default' } = req.body;
+        const { userId, role } = req.wsContext;
+
+        // sessionState에 워크스페이스 정보 저장
+        if (!sessionState.has(sessionId)) {
+          sessionState.set(sessionId, {
+            workspaceId,
+            userId,
+            role,
+            level: 0,
+            selectedNode: null,
+            nodeStack: []
+          });
+        }
+
+        const state = sessionState.get(sessionId);
+        state.workspaceId = workspaceId;
+        state.userId = userId;
+        state.role = role;
+
+        // 워크스페이스 기반 Level 0 노드 생성
+        const nodes = await multiLevelWorkspaceNodes.generateNodesForWorkspace(
+          workspaceId, userId, 0, role
+        );
+
+        res.json({
+          ok: true,
+          workspaceId,
+          level: 0,
+          role,
+          nodes,
+          permissions: getPermissionsResponse(role),
+          navigation: {
+            canDrillDown: true,
+            canDrillUp: false,
+            currentLevel: 'Compact'
+          }
+        });
+      } catch (e) {
+        console.error('[multilevel/workspace/structure]', e);
+        res.status(403).json({ error: e.message });
+      }
+    }
+  );
+
+  /**
+   * POST /api/multilevel/workspace/:workspaceId/drill/down
+   * 워크스페이스 권한 기반 드릴다운
+   */
+  router.post('/multilevel/workspace/:workspaceId/drill/down',
+    authWorkspaceLevel,
+    async (req, res) => {
+      try {
+        const { workspaceId } = req.params;
+        const { sessionId = 'default', nodeId, level } = req.body;
+        const { userId, role, permissions } = req.wsContext;
+
+        // 레벨 권한 검증
+        if (!permissions.canViewLevels.includes(level)) {
+          return res.status(403).json({
+            error: 'access_denied',
+            message: `Role '${role}' cannot access level ${level}`
+          });
+        }
+
+        const state = sessionState.get(sessionId) || {
+          workspaceId,
+          userId,
+          role,
+          level: 0,
+          selectedNode: null,
+          nodeStack: []
+        };
+        sessionState.set(sessionId, state);
+
+        // 현재 노드 조회
+        const currentNodes = await multiLevelWorkspaceNodes.generateNodesForWorkspace(
+          workspaceId, userId, state.level || 0, role
+        );
+
+        const selectedNode = currentNodes.find(n => n.id === nodeId);
+        if (!selectedNode) {
+          return res.status(400).json({ error: 'Node not found' });
+        }
+
+        // 드릴다운: 다음 레벨 노드 생성
+        const toNodes = await multiLevelWorkspaceNodes.generateNodesForWorkspace(
+          workspaceId, userId, level, role, nodeId
+        );
+
+        // 연결선 생성
+        const connections = await multiLevelWorkspaceNodes.generateConnectionsForLevel(
+          currentNodes, level, toNodes
+        );
+
+        // 상태 업데이트
+        state.level = level;
+        state.selectedNode = selectedNode;
+        state.nodeStack.push({
+          level: state.level - 1,
+          nodes: currentNodes,
+          nodeId
+        });
+
+        res.json({
+          ok: true,
+          workspaceId,
+          level,
+          role,
+          nodes: toNodes,
+          connections,
+          parent: selectedNode,
+          permissions,
+          navigation: {
+            canDrillDown: level < 5 && permissions.canViewLevels.includes(level + 1),
+            canDrillUp: level > 0,
+            currentLevel: multiLevelWorkspaceNodes.LEVEL_STYLES[level].name
+          }
+        });
+      } catch (e) {
+        console.error('[multilevel/workspace/drill/down]', e);
+        res.status(403).json({ error: e.message });
+      }
+    }
+  );
+
+  /**
+   * POST /api/multilevel/workspace/:workspaceId/drill/up
+   * 워크스페이스 권한 기반 드릴업
+   */
+  router.post('/multilevel/workspace/:workspaceId/drill/up',
+    authWorkspaceLevel,
+    async (req, res) => {
+      try {
+        const { workspaceId } = req.params;
+        const { sessionId = 'default' } = req.body;
+        const { userId, role } = req.wsContext;
+
+        const state = sessionState.get(sessionId);
+        if (!state || state.level === 0) {
+          return res.json({
+            ok: true,
+            level: 0,
+            message: 'Already at top level',
+            nodes: await multiLevelWorkspaceNodes.generateNodesForWorkspace(
+              workspaceId, userId, 0, role
+            )
+          });
+        }
+
+        // 스택에서 이전 상태 복원
+        if (state.nodeStack.length > 0) {
+          const previous = state.nodeStack.pop();
+          state.level = previous.level;
+
+          const nodes = await multiLevelWorkspaceNodes.generateNodesForWorkspace(
+            workspaceId, userId, previous.level, role
+          );
+
+          res.json({
+            ok: true,
+            level: previous.level,
+            role,
+            nodes,
+            permissions: getPermissionsResponse(role),
+            navigation: {
+              canDrillDown: previous.level < 5,
+              canDrillUp: previous.level > 0,
+              currentLevel: multiLevelWorkspaceNodes.LEVEL_STYLES[previous.level].name
+            }
+          });
+        } else {
+          // 스택 비어있으면 Level 0으로 리셋
+          state.level = 0;
+          const nodes = await multiLevelWorkspaceNodes.generateNodesForWorkspace(
+            workspaceId, userId, 0, role
+          );
+
+          res.json({
+            ok: true,
+            level: 0,
+            role,
+            nodes,
+            permissions: getPermissionsResponse(role),
+            navigation: {
+              canDrillDown: true,
+              canDrillUp: false,
+              currentLevel: 'Compact'
+            }
+          });
+        }
+      } catch (e) {
+        console.error('[multilevel/workspace/drill/up]', e);
+        res.status(403).json({ error: e.message });
+      }
+    }
+  );
+
+  /**
+   * POST /api/multilevel/workspace/:workspaceId/reset
+   * 워크스페이스 세션 초기화
+   */
+  router.post('/multilevel/workspace/:workspaceId/reset',
+    authWorkspaceLevel,
+    (req, res) => {
+      const { sessionId = 'default' } = req.body;
+      sessionState.delete(sessionId);
+      res.json({ ok: true, message: 'Workspace session reset' });
+    }
+  );
+
   return router;
 };
