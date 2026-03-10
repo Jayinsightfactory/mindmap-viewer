@@ -179,10 +179,17 @@ function buildPlanetSystem(nodeList) {
     const planetPos = new THREE.Vector3(px, py, pz);
 
     // 확장 위치: 클릭 시 더 넓은 부채꼴로 이동
-    const EXP_R = BASE_R + 5 + ring * 6;
-    const epx = Math.cos(planetAngle) * EXP_R;
+    // 드릴다운 시 노드 겹침 방지를 위해 반지름을 크게 증가
+    const EXP_R = BASE_R + 15 + ring * 10;  // 확대됨: 5→15, 6→10
+    // 드릴다운 시 더 넓은 부채꼴 범위 사용 (전체 360도 사용)
+    const EXP_FAN_SPAN = Math.PI * 1.8;     // 확장 시: 324도 (기본 180도에서 확대)
+    const EXP_FAN_START = -EXP_FAN_SPAN / 2;
+    const expPlanetAngle = cap <= 1
+      ? 0
+      : EXP_FAN_START + (posInRing / (cap - 1)) * EXP_FAN_SPAN;
+    const epx = Math.cos(expPlanetAngle) * EXP_R;
     const epy = 0;
-    const epz = Math.sin(planetAngle) * EXP_R;
+    const epz = Math.sin(expPlanetAngle) * EXP_R;
 
     // ── 행성 의도 & 색상 — 프로젝트별 색상 기반 ─────────────────────────────
     let hueHex;

@@ -3630,6 +3630,9 @@ function drawInvertedPyramid(planetObj, hitData) {
   const winX = centerX - WIN_W / 2;
   const winY = Math.max(30, (ctx.canvas.height - totalH) / 2 - 30);
 
+  // ── 호버 윈도우 영역 미리 예약 (라벨이 겹치지 않도록) ────────────────────
+  reserveRect(winX - 20, winY - 20, WIN_W + 40, totalH + 40);
+
   ctx.save();
 
   // ── 윈도우 그림자 (다크 글래스) ───────────────────────────────────────
