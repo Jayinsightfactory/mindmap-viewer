@@ -34,6 +34,7 @@ function registerInteractive(obj, data) {
 
 // 전역 노출
 window.registerInteractive = registerInteractive;
+console.log('[orbit3d-interaction] registerInteractive exposed to window');
 
 /**
  * 객체 등록 해제
@@ -191,3 +192,6 @@ function disableInteraction() {
 function enableInteraction() {
   raycaster.enabled = true;
 }
+
+// 스크립트 로드 완료 확인
+console.log('[orbit3d-interaction] Script fully loaded and initialized');
