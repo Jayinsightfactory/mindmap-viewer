@@ -86,17 +86,96 @@ const MULTILEVEL_CONFIG = {
 };
 
 /**
+ * 동심원 배치 계산 (노드가 많을 때 안쪽부터 여러 레이어)
+ * @param {number} totalNodes - 전체 노드 수
+ * @param {number} nodeIndex - 노드 인덱스
+ * @param {number} baseRadius - 기본 반지름
+ * @param {Object} centerPos - 중심 위치
+ * @returns {Object} {x, y, z, radius, angle, layer}
+ */
+function calculateConcentricPosition(totalNodes, nodeIndex, baseRadius, centerPos = {x: 0, y: 0, z: 0}) {
+  // 동심원 레이어 수 결정 (노드 수에 따라)
+  let layers, nodesPerLayer;
+
+  if (totalNodes <= 8) {
+    layers = 1;
+    nodesPerLayer = totalNodes;
+  } else if (totalNodes <= 16) {
+    layers = 2;
+    nodesPerLayer = Math.ceil(totalNodes / 2);
+  } else if (totalNodes <= 30) {
+    layers = 3;
+    nodesPerLayer = Math.ceil(totalNodes / 3);
+  } else if (totalNodes <= 50) {
+    layers = 4;
+    nodesPerLayer = Math.ceil(totalNodes / 4);
+  } else {
+    layers = 5;
+    nodesPerLayer = Math.ceil(totalNodes / 5);
+  }
+
+  // 어느 레이어에 속할지 계산
+  let layer = 0;
+  let layerStartIndex = 0;
+  for (let i = 0; i < layers; i++) {
+    const layerNodeCount = i === layers - 1 ?
+      totalNodes - layerStartIndex :
+      nodesPerLayer;
+    if (nodeIndex < layerStartIndex + layerNodeCount) {
+      layer = i;
+      break;
+    }
+    layerStartIndex += layerNodeCount;
+  }
+
+  // 레이어별 반지름 (안쪽부터 바깥쪽)
+  const layerRadius = baseRadius * (layer + 1) / Math.max(layers, 1);
+
+  // 이 레이어의 노드 수
+  const layerNodeCount = layer === layers - 1 ?
+    totalNodes - layerStartIndex :
+    nodesPerLayer;
+
+  // 레이어 내 인덱스
+  const layerNodeIndex = nodeIndex - layerStartIndex;
+
+  // 각도 계산 (레이어당 360도)
+  const angleStep = 360 / layerNodeCount;
+  const angle = layerNodeIndex * angleStep - 180;
+  const angleRad = angle * Math.PI / 180;
+
+  // 3D 위치
+  const x = centerPos.x + Math.cos(angleRad) * layerRadius;
+  const z = centerPos.z + Math.sin(angleRad) * layerRadius;
+
+  return {
+    x, y: centerPos.y, z,
+    radius: layerRadius,
+    angle,
+    layer,
+    layerNodeIndex,
+    totalNodesInLayer: layerNodeCount
+  };
+}
+
+/**
  * 현재 드릴 레벨에 따른 노드 위치 계산
  * @param {number} level - 드릴 레벨 (0-5)
  * @param {number} nodeIndex - 노드 인덱스 (0부터)
  * @param {Object} centerPos - 중심 위치 {x, y, z}
+ * @param {boolean} useConcentricLayout - 동심원 배치 사용 여부
  * @returns {Object} {x, y, z, radius, angle}
  */
-function calculateNodePosition(level, nodeIndex, centerPos = {x: 0, y: 0, z: 0}) {
+function calculateNodePosition(level, nodeIndex, centerPos = {x: 0, y: 0, z: 0}, useConcentricLayout = true) {
   const config = MULTILEVEL_CONFIG.levels[level];
   if (!config) return centerPos;
 
   const nodeCount = config.nodeCount;
+
+  // 노드가 적으면 기본 배치, 많으면 동심원 배치
+  if (useConcentricLayout && nodeCount > 12) {
+    return calculateConcentricPosition(nodeCount, nodeIndex, config.radiusMin, centerPos);
+  }
 
   // 반지름 (여러 노드가 같은 거리에 있을 수 있음)
   const radiusVariation = (config.radiusMax - config.radiusMin) / Math.max(nodeCount - 1, 1);
@@ -144,7 +223,9 @@ function generateNodesForLevel(level, parentNode = null) {
   const nodeCount = config.nodeCount;
 
   for (let i = 0; i < nodeCount; i++) {
-    const position = calculateNodePosition(level, i);
+    // Level 3 이상에서는 동심원 배치 사용
+    const useConcentricLayout = level >= 3;
+    const position = calculateNodePosition(level, i, {x: 0, y: 0, z: 0}, useConcentricLayout);
 
     // 도메인 결정 (로드 밸런싱)
     const domains = Object.keys(MULTILEVEL_CONFIG.domainColors);
@@ -304,13 +385,88 @@ function initializeCompactView() {
   };
 }
 
+/**
+ * "My work" 프로젝트 상태 관리
+ */
+const projectManagement = {
+  // 프로젝트 가시성 상태
+  visibleProjects: new Map(),
+
+  /**
+   * 프로젝트 가시성 토글
+   */
+  toggleProjectVisibility(projectId) {
+    const current = this.visibleProjects.get(projectId) !== false;
+    this.visibleProjects.set(projectId, !current);
+    return !current;
+  },
+
+  /**
+   * 프로젝트 숨기기
+   */
+  hideProject(projectId) {
+    this.visibleProjects.set(projectId, false);
+  },
+
+  /**
+   * 프로젝트 보이기
+   */
+  showProject(projectId) {
+    this.visibleProjects.set(projectId, true);
+  },
+
+  /**
+   * 프로젝트 가시성 확인
+   */
+  isProjectVisible(projectId) {
+    return this.visibleProjects.get(projectId) !== false;
+  },
+
+  /**
+   * 모든 프로젝트 가시성 리셋
+   */
+  resetVisibility() {
+    this.visibleProjects.clear();
+  },
+
+  /**
+   * 현재 가시성 상태 반환
+   */
+  getVisibilityState() {
+    return Object.fromEntries(this.visibleProjects);
+  }
+};
+
+/**
+ * 필터링된 노드 반환 (프로젝트 가시성에 따라)
+ */
+function getFilteredNodesForLevel(level) {
+  const allNodes = generateNodesForLevel(level);
+
+  // Level 0 (Compact)에서만 필터링 적용
+  if (level !== 0) return allNodes;
+
+  // "My work" 노드는 항상 표시
+  const myWorkNode = allNodes.find(n => n.name.includes('My work') || n.index === 0);
+
+  // 다른 노드들 중 보이는 것만
+  const otherNodes = allNodes.filter((n, idx) => {
+    if (idx === 0) return true; // My work
+    return projectManagement.isProjectVisible(n.id);
+  });
+
+  return myWorkNode ? [myWorkNode, ...otherNodes.slice(1)] : otherNodes;
+}
+
 module.exports = {
   MULTILEVEL_CONFIG,
   calculateNodePosition,
   generateNodesForLevel,
+  getFilteredNodesForLevel,
   calculateDrillDownAnimation,
   generateConnectionLines,
   drillToLevel,
   drillUp,
-  initializeCompactView
+  initializeCompactView,
+  projectManagement
 };

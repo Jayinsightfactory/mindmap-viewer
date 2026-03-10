@@ -1263,6 +1263,23 @@ function viewZoom(dir) {
 <!-- 다계층 노드 렌더러 - 6단계 드릴다운 시스템 -->
 <script src="js/orbit3d-multilevel-renderer.js"></script>
 
+<!-- 프로젝트 관리 패널 -->
+<div id="project-manager" style="display: none; position: fixed; bottom: 100px; left: 20px; z-index: 500; background: rgba(2, 6, 23, 0.95); border: 1px solid #334155; border-radius: 8px; padding: 15px; min-width: 250px; max-height: 400px; overflow-y: auto;">
+  <div style="font-weight: 600; color: #06b6d4; margin-bottom: 12px; font-size: 13px;">📁 프로젝트 관리</div>
+
+  <div id="project-list" style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px;">
+    <!-- 프로젝트 항목이 동적으로 추가됨 -->
+  </div>
+
+  <button id="add-project-btn" onclick="showAddProjectDialog()" style="width: 100%; padding: 8px; background: #10b981; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 500; margin-bottom: 8px;">
+    + 프로젝트 추가
+  </button>
+
+  <button id="close-project-mgr" onclick="closeProjectManager()" style="width: 100%; padding: 8px; background: #64748b; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">
+    닫기
+  </button>
+</div>
+
 <!-- 드릴다운 UI 컨트롤 -->
 <div id="drill-controls" style="display: none; position: fixed; bottom: 100px; right: 20px; z-index: 500; background: rgba(2, 6, 23, 0.95); border: 1px solid #334155; border-radius: 8px; padding: 15px; min-width: 200px;">
   <div id="level-indicator" style="font-size: 12px; color: #94a3b8; margin-bottom: 10px;">Level <span id="current-level">0</span> — <span id="level-name">Compact</span></div>
@@ -1341,6 +1358,64 @@ function updateDrillUI() {
 
   document.getElementById('drill-up-btn').disabled = level === 0;
   document.getElementById('drill-up-btn').style.opacity = level === 0 ? '0.5' : '1';
+}
+
+// 프로젝트 관리 함수
+function showProjectManager() {
+  const panel = document.getElementById('project-manager');
+  if (panel) panel.style.display = 'block';
+  updateProjectList();
+}
+
+function closeProjectManager() {
+  const panel = document.getElementById('project-manager');
+  if (panel) panel.style.display = 'none';
+}
+
+function updateProjectList() {
+  const projectList = document.getElementById('project-list');
+  if (!projectList) return;
+
+  // 프로젝트 목록 (임시 더미 데이터)
+  const projects = [
+    { id: '0-1', name: 'Project A', color: '#3b82f6' },
+    { id: '0-2', name: 'Project B', color: '#ef4444' },
+    { id: '0-3', name: 'Project C', color: '#10b981' },
+    { id: '0-4', name: 'Project D', color: '#f59e0b' },
+    { id: '0-5', name: 'Project E', color: '#8b5cf6' },
+    { id: '0-6', name: 'Project F', color: '#ec4899' }
+  ];
+
+  projectList.innerHTML = projects.map(proj => `
+    <div style="display: flex; align-items: center; gap: 8px; padding: 8px; background: rgba(51, 65, 85, 0.5); border-radius: 4px;">
+      <input type="checkbox"
+             id="proj-${proj.id}"
+             onchange="toggleProject('${proj.id}', '${proj.name}')"
+             checked
+             style="width: 16px; height: 16px; cursor: pointer;">
+      <div style="flex: 1; font-size: 12px; color: #cbd5e1;">${proj.name}</div>
+      <div style="width: 8px; height: 8px; border-radius: 50%; background: ${proj.color};"></div>
+    </div>
+  `).join('');
+}
+
+function toggleProject(projectId, projectName) {
+  const checkbox = document.getElementById(`proj-${projectId}`);
+  console.log(`프로젝트 "${projectName}" 상태:`, checkbox.checked ? '표시' : '숨김');
+  // 실제 구현 시 API 호출
+}
+
+function showAddProjectDialog() {
+  const projectName = prompt('새로운 프로젝트 이름을 입력하세요:');
+  if (projectName) {
+    console.log('프로젝트 추가:', projectName);
+    updateProjectList();
+  }
+}
+
+// "My work" 클릭 시 프로젝트 관리 패널 표시
+function onMyWorkClick() {
+  showProjectManager();
 }
 
 // 초기화 시 드릴 컨트롤 표시
