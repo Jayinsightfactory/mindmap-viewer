@@ -320,8 +320,7 @@ function createTables() {
       company_id            TEXT NOT NULL,
       findings_json         TEXT NOT NULL,
       recommendations_json  TEXT NOT NULL,
-      created_at            TEXT DEFAULT (datetime('now')),
-      FOREIGN KEY (user_id) REFERENCES events(user_id)
+      created_at            TEXT DEFAULT (datetime('now'))
     );
     CREATE INDEX IF NOT EXISTS idx_analysis_user ON analysis_results(user_id);
     CREATE INDEX IF NOT EXISTS idx_analysis_company ON analysis_results(company_id);
@@ -578,13 +577,19 @@ function getStatsByUser(userId) {
 
 // 'local' 이벤트를 특정 user_id로 귀속 (최초 로그인 시 기존 데이터 주장)
 function claimLocalEvents(userId) {
-  const result = db.prepare(`
-    UPDATE events SET user_id = ? WHERE user_id = 'local' OR user_id = 'anonymous'
-  `).run(userId);
-  db.prepare(`
-    UPDATE sessions SET user_id = ? WHERE user_id = 'local' OR user_id = 'anonymous'
-  `).run(userId);
-  return result.changes;
+  try {
+    const result = db.prepare(`
+      UPDATE events SET user_id = ? WHERE user_id = 'local' OR user_id = 'anonymous'
+    `).run(userId);
+    db.prepare(`
+      UPDATE sessions SET user_id = ? WHERE user_id = 'local' OR user_id = 'anonymous'
+    `).run(userId);
+    return result.changes;
+  } catch (e) {
+    // Handle foreign key constraint errors gracefully
+    console.warn('[DB] claimLocalEvents error:', e.message);
+    return 0;
+  }
 }
 
 function getEventsByType(type) {
