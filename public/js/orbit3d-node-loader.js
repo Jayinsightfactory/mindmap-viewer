@@ -3,9 +3,14 @@
  * 3D 노드 로더 - API에서 행성 구조 로드 및 3D 렌더링
  */
 
-let nodesData = null;
-let planetMeshes = {};
-let moonMeshes = {};
+// 전역 네임스페이스 (중복 선언 방지)
+if (!window.orbitLoader) {
+  window.orbitLoader = {
+    nodesData: null,
+    planetMeshes: {},
+    moonMeshes: {}
+  };
+}
 
 /**
  * 서버에서 노드 구조 로드
@@ -16,7 +21,7 @@ async function loadNodesFromServer() {
     const data = await response.json();
     
     if (data.ok) {
-      nodesData = data;
+      window.orbitLoader.nodesData = data;
       console.log('[NodeLoader] 노드 로드 완료:', data.summary);
       return data;
     } else {
@@ -125,35 +130,35 @@ function createMoonMesh(moon) {
  * 모든 노드를 씬에 추가
  */
 function addNodesToScene() {
-  if (!nodesData || !window.scene) {
+  if (!window.orbitLoader.nodesData || !window.scene) {
     console.warn('[NodeLoader] 데이터 또는 씬이 없음');
     return;
   }
   
   // 행성 추가
-  for (const planet of nodesData.planets) {
+  for (const planet of window.orbitLoader.nodesData.planets) {
     const mesh = createPlanetMesh(planet);
     window.scene.add(mesh);
-    planetMeshes[planet.id] = mesh;
-    
+    window.orbitLoader.planetMeshes[planet.id] = mesh;
+
     // 클릭 등록
     if (window.registerInteractive) {
-      mesh.children[0]?.userData && 
+      mesh.children[0]?.userData &&
       window.registerInteractive(mesh.children[0], planet);
     }
   }
-  
+
   // 위성 추가 (기본적으로 숨김, 드릴다운 시만 표시)
-  for (const moon of nodesData.moons) {
+  for (const moon of window.orbitLoader.nodesData.moons) {
     const mesh = createMoonMesh(moon);
     if (!moon.visible) mesh.visible = false;
     window.scene.add(mesh);
-    moonMeshes[moon.id] = mesh;
+    window.orbitLoader.moonMeshes[moon.id] = mesh;
   }
-  
-  console.log('[NodeLoader] 씬에 노드 추가 완료:', 
-    Object.keys(planetMeshes).length, '개 행성,',
-    Object.keys(moonMeshes).length, '개 위성'
+
+  console.log('[NodeLoader] 씬에 노드 추가 완료:',
+    Object.keys(window.orbitLoader.planetMeshes).length, '개 행성,',
+    Object.keys(window.orbitLoader.moonMeshes).length, '개 위성'
   );
 }
 
@@ -163,17 +168,17 @@ function addNodesToScene() {
  */
 function drilldownPlanet(domainName) {
   // 모든 위성 숨김
-  for (const moonId in moonMeshes) {
-    moonMeshes[moonId].visible = false;
+  for (const moonId in window.orbitLoader.moonMeshes) {
+    window.orbitLoader.moonMeshes[moonId].visible = false;
   }
-  
+
   // 선택된 도메인의 위성만 표시
-  for (const moonId in moonMeshes) {
-    if (moonMeshes[moonId].userData.parentPlanet === domainName) {
-      moonMeshes[moonId].visible = true;
+  for (const moonId in window.orbitLoader.moonMeshes) {
+    if (window.orbitLoader.moonMeshes[moonId].userData.parentPlanet === domainName) {
+      window.orbitLoader.moonMeshes[moonId].visible = true;
     }
   }
-  
+
   console.log('[NodeLoader] 드릴다운:', domainName);
 }
 
