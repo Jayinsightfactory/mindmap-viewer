@@ -565,7 +565,6 @@ function buildTeamSystem(teamData) {
   _teamMode  = true;
   _companyMode = false;
   _activeSimData = teamData;
-  exposeTeamDataToWindow(); // 글로벌 접근 활성화
   if (typeof controls !== 'undefined') controls.enabled = true;
 
   const { name, goal, goalColor, members } = teamData;
@@ -772,6 +771,9 @@ function buildTeamSystem(teamData) {
 
   // 사이드바 업데이트
   updateMyTaskSidebar();
+
+  // 글로벌 접근 활성화 (모든 노드 추가 후 호출)
+  exposeTeamDataToWindow();
 }
 
 // ── 팀 노드를 선택 시스템에 등록 ─────────────────────────────────────────
