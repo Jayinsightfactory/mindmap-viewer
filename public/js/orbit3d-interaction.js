@@ -11,9 +11,9 @@ const mouse = new THREE.Vector2();
 // 클릭 가능한 객체 추적
 const interactiveObjects = new Map();
 
-// Three.js 객체 초기화 대기
-let camera = null;
-let scene = null;
+// Three.js 객체 초기화 대기 (window.camera/scene에서 참조)
+function getCamera() { return window.camera || null; }
+function getScene() { return window.scene || null; }
 
 function ensureRaycaster() {
   if (!raycaster && typeof THREE !== 'undefined') {
@@ -49,7 +49,8 @@ function unregisterInteractive(obj) {
  */
 document.addEventListener('click', (event) => {
   ensureRaycaster();
-  if (!raycaster || !camera) return;
+  const cam = getCamera();
+  if (!raycaster || !cam) return;
 
   // 패널이나 버튼 등 UI 요소 클릭 무시
   if (event.target.closest('.sel-panel') ||
@@ -63,7 +64,7 @@ document.addEventListener('click', (event) => {
   mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
   mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
 
-  raycaster.setFromCamera(mouse, camera);
+  raycaster.setFromCamera(mouse, cam);
 
   // 대화형 객체만 검사
   const interactiveArray = Array.from(interactiveObjects.keys());
@@ -143,13 +144,14 @@ function generateChildrenFromData(data) {
  */
 document.addEventListener('mousemove', (event) => {
   ensureRaycaster();
-  if (!raycaster || !camera) return;
+  const cam = getCamera();
+  if (!raycaster || !cam) return;
   if (typeof window.selectionMgr !== 'undefined' && window.selectionMgr && window.selectionMgr.panelOpen) return; // 선택 중에는 무시
 
   mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
   mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
 
-  raycaster.setFromCamera(mouse, camera);
+  raycaster.setFromCamera(mouse, cam);
   const interactiveArray = Array.from(interactiveObjects.keys());
   const intersects = raycaster.intersectObjects(interactiveArray, true);
 

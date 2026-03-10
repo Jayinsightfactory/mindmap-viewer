@@ -40,6 +40,7 @@ window.resizeRendererToSidebar = resizeRendererToSidebar;
 const scene  = new THREE.Scene();
 scene.background = new THREE.Color(0x020617);
 scene.fog = new THREE.FogExp2(0x020617, 0.0035);
+window.scene = scene; // 전역 참조 할당
 
 // ─── 4단계 드릴다운 상태 ──────────────────────────────────────────────────────
 let _drillStage = 0;              // 0=전체, 1=카테고리링, 2=타임라인, 3=파일상세
@@ -103,6 +104,7 @@ window.autoFitDrilldown = function(numCats) {
 const camera = new THREE.PerspectiveCamera(55, innerWidth/innerHeight, 0.1, 2000);
 camera.position.set(0, 25, 55);                       // 컴팩트 뷰에 맞는 초기 거리
 camera.lookAt(0,0,0);
+window.camera = camera; // 전역 참조 할당
 
 // ─── 조명 (Futuristic Space Dashboard) ──────────────────────────────────────
 scene.add(new THREE.AmbientLight(0x060c1e, 0.6));
