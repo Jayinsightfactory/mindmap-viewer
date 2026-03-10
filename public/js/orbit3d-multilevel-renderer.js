@@ -12,18 +12,38 @@ if (!window.multiLevelRenderer) {
     connectionLines: [],
     animationState: null,
     sessionId: 'default',
-    isAnimating: false
+    isAnimating: false,
+    isDragging: false,
+    selectedNodeId: null
   };
 }
+
+// 드래그 상태 추적
+document.addEventListener('mousedown', () => {
+  window.multiLevelRenderer.isDragging = false; // 초기값
+});
+
+document.addEventListener('mousemove', (e) => {
+  if (e.buttons > 0) { // 마우스 버튼이 눌려있음
+    window.multiLevelRenderer.isDragging = true;
+  }
+});
+
+document.addEventListener('mouseup', () => {
+  window.multiLevelRenderer.isDragging = false;
+});
 
 /**
  * 노드 형태에 따른 메시 생성
  * @param {string} shape - 'circle', 'hexagon', 'diamond', 'star'
  * @param {number} size - 노드 크기
  * @param {string} color - 색상 (CSS color)
- * @returns {THREE.Mesh}
+ * @param {string} label - 노드 라벨 텍스트
+ * @returns {THREE.Group}
  */
-function createNodeMesh(shape, size, color) {
+function createNodeMesh(shape, size, color, label = '') {
+  const group = new THREE.Group();
+
   let geometry;
 
   switch (shape) {
@@ -59,8 +79,30 @@ function createNodeMesh(shape, size, color) {
   const mesh = new THREE.Mesh(geometry, material);
   mesh.userData.shape = shape;
   mesh.userData.color = color;
+  group.add(mesh);
 
-  return mesh;
+  // 라벨 추가 (겹침 방지)
+  if (label) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 128;
+    canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.font = 'bold 14px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(label.substring(0, 15), 64, 40); // 글자 수 제한
+
+    const texture = new THREE.CanvasTexture(canvas);
+    const spriteMaterial = new THREE.SpriteMaterial({ map: texture });
+    const sprite = new THREE.Sprite(spriteMaterial);
+    sprite.position.y = size + 1.5;
+    sprite.scale.set(3, 1.5, 1);
+    sprite.renderOrder = 1; // 항상 위에 렌더링
+    group.add(sprite);
+  }
+
+  return group;
 }
 
 /**
@@ -72,6 +114,16 @@ async function renderNodes(nodes, scene) {
   try {
     // 기존 노드 제거
     Object.values(window.multiLevelRenderer.nodeMeshes).forEach(mesh => {
+      // Group의 경우 자식 메시들도 정리
+      if (mesh.children) {
+        mesh.children.forEach(child => {
+          if (child.geometry) child.geometry.dispose();
+          if (child.material) {
+            if (child.material.map) child.material.map.dispose();
+            child.material.dispose();
+          }
+        });
+      }
       scene.remove(mesh);
       if (mesh.geometry) mesh.geometry.dispose();
       if (mesh.material) mesh.material.dispose();
@@ -80,20 +132,21 @@ async function renderNodes(nodes, scene) {
 
     // 새 노드 추가
     nodes.forEach((node, index) => {
-      const mesh = createNodeMesh(node.shape, node.size, node.color);
+      const mesh = createNodeMesh(node.shape, node.size, node.color, node.name);
       mesh.position.set(node.position.x, node.position.y, node.position.z);
       mesh.userData = {
         ...node,
         nodeId: node.id,
-        nodeIndex: index
+        nodeIndex: index,
+        isNode: true
       };
 
       scene.add(mesh);
       window.multiLevelRenderer.nodeMeshes[node.id] = mesh;
 
-      // 클릭 감지를 위해 등록
-      if (window.registerInteractive) {
-        window.registerInteractive(mesh);
+      // 클릭 감지를 위해 등록 (Group의 경우 첫번째 메시만)
+      if (window.registerInteractive && mesh.children && mesh.children[0]) {
+        window.registerInteractive(mesh.children[0]);
       }
     });
 

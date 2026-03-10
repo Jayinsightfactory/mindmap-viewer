@@ -1281,24 +1281,26 @@ function viewZoom(dir) {
 </div>
 
 <!-- 드릴다운 UI 컨트롤 -->
-<div id="drill-controls" style="display: none; position: fixed; bottom: 100px; right: 20px; z-index: 500; background: rgba(2, 6, 23, 0.95); border: 1px solid #334155; border-radius: 8px; padding: 15px; min-width: 200px;">
-  <div id="level-indicator" style="font-size: 12px; color: #94a3b8; margin-bottom: 10px;">Level <span id="current-level">0</span> — <span id="level-name">Compact</span></div>
+<div id="drill-controls" style="display: none; position: fixed; bottom: 100px; right: 20px; z-index: 500; background: rgba(2, 6, 23, 0.95); border: 1px solid #334155; border-radius: 8px; padding: 12px; min-width: 180px; max-width: 220px;">
+  <div id="level-indicator" style="font-size: 11px; color: #94a3b8; margin-bottom: 8px; word-break: break-word;">
+    <span id="current-level">0</span>단계 • <span id="level-name">Compact</span>
+  </div>
 
-  <div style="display: flex; gap: 8px; flex-direction: column;">
-    <button id="drill-down-btn" onclick="handleDrillDown()" style="padding: 8px 12px; background: #06b6d4; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 500;">
+  <div style="display: flex; gap: 6px; flex-direction: column; margin-bottom: 8px;">
+    <button id="drill-down-btn" onclick="handleDrillDown()" style="padding: 6px 10px; background: #06b6d4; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: 500;">
       ↓ 드릴다운
     </button>
-    <button id="drill-up-btn" onclick="handleDrillUp()" style="padding: 8px 12px; background: #64748b; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 500; opacity: 0.5;" disabled>
+    <button id="drill-up-btn" onclick="handleDrillUp()" style="padding: 6px 10px; background: #64748b; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: 500; opacity: 0.5;" disabled>
       ↑ 드릴업
     </button>
-    <button id="reset-btn" onclick="handleReset()" style="padding: 8px 12px; background: #475569; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 500;">
+    <button id="reset-btn" onclick="handleReset()" style="padding: 6px 10px; background: #475569; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: 500;">
       ⟲ 초기화
     </button>
   </div>
 
-  <div id="node-info" style="font-size: 11px; color: #cbd5e1; margin-top: 12px; padding-top: 12px; border-top: 1px solid #334155;">
-    <div>노드 수: <span id="node-count">7</span></div>
-    <div>선택됨: <span id="selected-node">없음</span></div>
+  <div id="node-info" style="font-size: 10px; color: #cbd5e1; padding-top: 8px; border-top: 1px solid #334155; line-height: 1.4;">
+    <div style="margin-bottom: 2px;">노드: <span id="node-count">7</span>개</div>
+    <div style="word-break: break-word; max-height: 40px; overflow: hidden; text-overflow: ellipsis;">선택: <span id="selected-node">없음</span></div>
   </div>
 </div>
 
