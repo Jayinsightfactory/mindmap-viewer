@@ -175,6 +175,7 @@ const ollamaAnalyzer                  = require('./src/ollama-analyzer'); // Oll
 const createCompanyRouter             = require('./routes/company');
 const createDiagnosisRouter           = require('./routes/diagnosis');
 const createCompanyLearningRouter     = require('./routes/company-learning');
+const createNodesRouter               = require('./routes/nodes');
 const companyOntology                 = require('./src/company-ontology');
 const companyCrawler                  = require('./src/company-crawler');
 
@@ -1350,6 +1351,7 @@ companyOntology.ensureCompanyTables(dbModule.getDb());
 app.use('/api', createCompanyRouter({ getDb: dbModule.getDb, broadcastAll }));
 app.use('/api', createDiagnosisRouter({ getDb: dbModule.getDb, broadcastAll }));
 app.use('/api', createCompanyLearningRouter({ getDb: dbModule.getDb }));
+app.use('/api', createNodesRouter({ getDb: dbModule.getDb })); // 3D 노드 분류 + 궤도 레이아웃
 
 // ─── JSONL 파일 감시 (레거시 이벤트 소스 지원) ───────────────────────────────
 // /api/hook 를 사용하지 않는 구버전 save-turn.js 호환용
