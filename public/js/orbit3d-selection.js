@@ -13,12 +13,37 @@
 class SelectionLayoutManager {
   constructor() {
     this.selectedNode = null;
+    this.selectedNodeData = null;
     this.selectionStack = []; // 네비게이션 히스토리
     this.isAnimating = false;
     this.panelOpen = false;
     this.panelWidth = 320; // 왼쪽/오른쪽 패널 너비
+    this.camera = null;
+    this.scene = null;
+
+    // 지연 초기화: camera와 scene이 로드될 때까지 대기
+    this.waitForThreeJS();
     this.initPanels();
     this.setupEventListeners();
+  }
+
+  /**
+   * Three.js 객체(camera, scene)가 로드될 때까지 대기
+   */
+  waitForThreeJS() {
+    let attempts = 0;
+    const check = setInterval(() => {
+      // window 객체에 할당된 camera/scene이 있는지 확인
+      if (typeof camera !== 'undefined' && typeof scene !== 'undefined') {
+        this.camera = camera;
+        this.scene = scene;
+        console.log('[orbit3d-selection] Three.js 객체 로드 완료');
+        clearInterval(check);
+      } else if (attempts++ > 50) {
+        console.warn('[orbit3d-selection] Three.js 객체를 찾을 수 없음. 스크립트 로드 순서 확인 필요');
+        clearInterval(check);
+      }
+    }, 100);
   }
 
   /**
@@ -229,8 +254,8 @@ class SelectionLayoutManager {
    * 카메라 애니메이션: 줌인 + 위치 이동
    */
   animateCamera(node) {
-    if (!node || !node.position) {
-      console.warn('Invalid node for camera animation');
+    if (!node || !node.position || !this.camera) {
+      console.warn('Invalid node or camera not ready');
       return;
     }
 
@@ -243,21 +268,21 @@ class SelectionLayoutManager {
       direction.multiplyScalar(distance)
     );
 
-    // GSAP로 스무스한 애니메이션
-    if (typeof TWEEN !== 'undefined') {
-      const start = { x: camera.position.x, y: camera.position.y, z: camera.position.z };
+    // TWEEN으로 스무스한 애니메이션
+    if (typeof TWEEN !== 'undefined' && this.camera) {
+      const start = { x: this.camera.position.x, y: this.camera.position.y, z: this.camera.position.z };
       new TWEEN.Tween(start)
         .to(cameraTarget, 600)
         .easing(TWEEN.Easing.Cubic.InOut)
         .onUpdate(() => {
-          camera.position.set(start.x, start.y, start.z);
-          camera.lookAt(targetPos);
+          this.camera.position.set(start.x, start.y, start.z);
+          this.camera.lookAt(targetPos);
         })
         .start();
-    } else {
-      // GSAP 없으면 즉시 이동
-      camera.position.copy(cameraTarget);
-      camera.lookAt(targetPos);
+    } else if (this.camera) {
+      // TWEEN 없으면 즉시 이동
+      this.camera.position.copy(cameraTarget);
+      this.camera.lookAt(targetPos);
     }
   }
 
@@ -347,20 +372,22 @@ class SelectionLayoutManager {
    * 카메라 리셋 (초기 상태로)
    */
   resetCamera() {
+    if (!this.camera) return;
+
     if (typeof TWEEN !== 'undefined') {
-      const start = { x: camera.position.x, y: camera.position.y, z: camera.position.z };
+      const start = { x: this.camera.position.x, y: this.camera.position.y, z: this.camera.position.z };
       const target = { x: 0, y: 0, z: 15 };
       new TWEEN.Tween(start)
         .to(target, 600)
         .easing(TWEEN.Easing.Cubic.InOut)
         .onUpdate(() => {
-          camera.position.set(start.x, start.y, start.z);
-          camera.lookAt(0, 0, 0);
+          this.camera.position.set(start.x, start.y, start.z);
+          this.camera.lookAt(0, 0, 0);
         })
         .start();
     } else {
-      camera.position.set(0, 0, 15);
-      camera.lookAt(0, 0, 0);
+      this.camera.position.set(0, 0, 15);
+      this.camera.lookAt(0, 0, 0);
     }
   }
 
@@ -380,12 +407,17 @@ class SelectionLayoutManager {
 }
 
 // 전역 인스턴스
-const selectionMgr = new SelectionLayoutManager();
+window.selectionMgr = new SelectionLayoutManager();
+const selectionMgr = window.selectionMgr;
+
+console.log('[orbit3d-selection] Selection manager 인스턴스 생성됨');
 
 /**
  * 편의 함수: 노드 클릭 시 호출
  * (orbit3d-render.js에서 호출)
  */
 function onNodeClicked(node, nodeData) {
-  selectionMgr.selectNode(node, nodeData);
+  if (window.selectionMgr) {
+    window.selectionMgr.selectNode(node, nodeData);
+  }
 }

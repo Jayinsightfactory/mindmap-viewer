@@ -4,12 +4,23 @@
  * ══════════════════════════════════════════════════════════════════════════════
  */
 
-// Raycaster 초기화
-const raycaster = new THREE.Raycaster();
+// Raycaster 초기화 (Three.js 로드 후)
+let raycaster = null;
 const mouse = new THREE.Vector2();
 
 // 클릭 가능한 객체 추적
 const interactiveObjects = new Map();
+
+// Three.js 객체 초기화 대기
+let camera = null;
+let scene = null;
+
+function ensureRaycaster() {
+  if (!raycaster && typeof THREE !== 'undefined') {
+    raycaster = new THREE.Raycaster();
+    console.log('[orbit3d-interaction] Raycaster 초기화 완료');
+  }
+}
 
 /**
  * 객체를 클릭 가능하게 등록
@@ -33,6 +44,9 @@ function unregisterInteractive(obj) {
  * 마우스 클릭 이벤트
  */
 document.addEventListener('click', (event) => {
+  ensureRaycaster();
+  if (!raycaster || !camera) return;
+
   // 패널이나 버튼 등 UI 요소 클릭 무시
   if (event.target.closest('.sel-panel') ||
       event.target.closest('button') ||
@@ -124,7 +138,9 @@ function generateChildrenFromData(data) {
  * 마우스오버 - 하이라이트 준비
  */
 document.addEventListener('mousemove', (event) => {
-  if (selectionMgr && selectionMgr.panelOpen) return; // 선택 중에는 무시
+  ensureRaycaster();
+  if (!raycaster || !camera) return;
+  if (typeof window.selectionMgr !== 'undefined' && window.selectionMgr && window.selectionMgr.panelOpen) return; // 선택 중에는 무시
 
   mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
   mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
