@@ -23,6 +23,19 @@ let _parallelDemoTimers = []; // 타이머 누수 방지용
 // ─── 팀 거리 설정값 ──────────────────────────────────────────────────────────
 const TEAM_CFG = { MEMBER_R: 40, TASK_R: 16, TOOL_R: 9 };
 
+// ─── 글로벌 접근 (디버깅 & 외부 스크립트) ────────────────────────────────────
+// 팀/회사 데이터와 노드 정보를 전역으로 노출
+function exposeTeamDataToWindow() {
+  Object.defineProperty(window, '_teamNodes', {
+    get: () => _teamNodes,
+    configurable: true
+  });
+  Object.defineProperty(window, '_activeSimData', {
+    get: () => _activeSimData,
+    configurable: true
+  });
+}
+
 
 // ─── 마켓 이펙트 프리셋 ──────────────────────────────────────────────────────
 const MARKET_EFFECTS = [
@@ -557,6 +570,7 @@ function buildTeamSystem(teamData) {
   _teamMode  = true;
   _companyMode = false;
   _activeSimData = teamData;
+  exposeTeamDataToWindow(); // 글로벌 접근 활성화
   if (typeof controls !== 'undefined') controls.enabled = true;
 
   const { name, goal, goalColor, members } = teamData;
@@ -755,11 +769,177 @@ function buildTeamSystem(teamData) {
   document.getElementById('h-hours').textContent    = '팀';
   document.getElementById('team-mode-badge').style.display = 'flex';
 
+  // 모든 노드를 선택 가능하게 등록
+  registerTeamNodesAsInteractive(_teamNodes, members, teamData);
+
   // 뷰 자동 맞춤
   autoFitView(_teamNodes);
 
   // 사이드바 업데이트
   updateMyTaskSidebar();
+}
+
+// ── 팀 노드를 선택 시스템에 등록 ─────────────────────────────────────────
+function registerTeamNodesAsInteractive(teamNodes, members, teamData) {
+  if (!window.registerInteractive) {
+    console.warn('[orbit3d-team] registerInteractive 함수를 찾을 수 없음');
+    return;
+  }
+
+  // 비즈니스 도메인 분석 (회원 역할 기반)
+  const businessDomain = analyzeBusinessDomain(members, teamData);
+
+  teamNodes.forEach(node => {
+    if (!node.obj) return; // Three.js 객체가 없으면 스킵
+
+    let nodeData = {
+      id: node.label + '_' + Math.random().toString(36).substr(2, 9),
+      name: node.label,
+      type: node.type,
+      role: node.sublabel || node.type,
+      icon: getNodeIcon(node.type),
+      avatar: getNodeAvatar(node.type, node.color),
+      color: node.color,
+      progress: node.progress || 0,
+      status: node.taskStatus || 'active',
+      reliability: 85,
+    };
+
+    // 노드 타입별 추가 정보
+    if (node.type === 'member') {
+      const member = members.find(m => m.id === node.memberId);
+      if (member) {
+        nodeData.department = businessDomain.departments[node.memberId] || businessDomain.category;
+        nodeData.team = businessDomain.category;
+        nodeData.children = (member.tasks || []).slice(0, 9).map(task => ({
+          id: 'task_' + task.name,
+          name: task.name,
+          subtitle: task.status,
+          icon: getStatusEmoji(task.status),
+          type: 'task'
+        }));
+        // 같은 팀의 협업자
+        nodeData.collaborators = {
+          sameTeam: members
+            .filter(m => m.id !== node.memberId && businessDomain.departments[m.id] === businessDomain.departments[node.memberId])
+            .map(m => ({ id: m.id, name: m.name, avatar: m.name[0], role: m.role })),
+          otherTeam: members
+            .filter(m => m.id !== node.memberId && businessDomain.departments[m.id] !== businessDomain.departments[node.memberId])
+            .map(m => ({ id: m.id, name: m.name, avatar: m.name[0], role: m.role }))
+        };
+      }
+    } else if (node.type === 'task') {
+      const member = members.find(m => m.id === node.memberId);
+      if (member) {
+        nodeData.department = businessDomain.departments[node.memberId] || businessDomain.category;
+        nodeData.team = member.name;
+      }
+    } else if (node.type === 'goal') {
+      nodeData.department = businessDomain.category;
+      nodeData.team = teamData.name;
+      nodeData.children = members.map(m => ({
+        id: m.id,
+        name: m.name,
+        subtitle: m.role,
+        icon: '👤',
+        type: 'member'
+      }));
+    }
+
+    window.registerInteractive(node.obj, nodeData);
+  });
+
+  console.log('[orbit3d-team] 팀 노드 등록 완료:', teamNodes.length + '개 노드');
+}
+
+// 회원 역할 기반 비즈니스 도메인 분석
+function analyzeBusinessDomain(members, teamData) {
+  // 역할 키워드로 부서 분류
+  const roleToCategory = {
+    '영업': 'Sales',
+    '판매': 'Sales',
+    '수출': 'Export',
+    '수입': 'Import',
+    '물류': 'Logistics',
+    '배송': 'Logistics',
+    '생산': 'Production',
+    '품질': 'Quality',
+    '회계': 'Finance',
+    '재무': 'Finance',
+    '개발': 'Engineering',
+    '설계': 'Engineering',
+    '디자인': 'Design',
+    '마케팅': 'Marketing',
+    '기획': 'Strategy',
+    '전략': 'Strategy',
+    '운영': 'Operations',
+  };
+
+  const departments = {};
+  let categoryCount = {};
+
+  members.forEach(member => {
+    let category = 'Operations'; // 기본값
+    const role = member.role || '';
+
+    // 역할에서 가장 가까운 카테고리 찾기
+    for (const [keyword, dept] of Object.entries(roleToCategory)) {
+      if (role.includes(keyword)) {
+        category = dept;
+        break;
+      }
+    }
+
+    departments[member.id] = category;
+    categoryCount[category] = (categoryCount[category] || 0) + 1;
+  });
+
+  // 가장 많은 부서를 카테고리로 선정
+  const topCategory = Object.keys(categoryCount).reduce((a, b) =>
+    categoryCount[a] > categoryCount[b] ? a : b, 'Operations');
+
+  return {
+    category: topCategory,
+    departments,
+    counts: categoryCount
+  };
+}
+
+// 노드 타입별 아이콘
+function getNodeIcon(type) {
+  const iconMap = {
+    'goal': '🎯',
+    'member': '👤',
+    'task': '✓',
+    'tool': '🔧',
+    'skill': '⚡',
+    'agent': '🤖',
+  };
+  return iconMap[type] || '◆';
+}
+
+// 노드 타입별 아바타
+function getNodeAvatar(type, color) {
+  const iconMap = {
+    'goal': '🎯',
+    'member': '👤',
+    'task': '✓',
+    'tool': '🔧',
+    'skill': '⚡',
+    'agent': '🤖',
+  };
+  return iconMap[type] || '◆';
+}
+
+// 작업 상태별 이모지
+function getStatusEmoji(status) {
+  const statusMap = {
+    'todo': '⭕',
+    'wip': '🟡',
+    'done': '✅',
+    'pending': '⏳',
+  };
+  return statusMap[status] || '◆';
 }
 
 // ── buildCompanySystem ───────────────────────────────────────────────────────
