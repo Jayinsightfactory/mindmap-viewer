@@ -24,16 +24,11 @@ let _parallelDemoTimers = []; // 타이머 누수 방지용
 const TEAM_CFG = { MEMBER_R: 40, TASK_R: 16, TOOL_R: 9 };
 
 // ─── 글로벌 접근 (디버깅 & 외부 스크립트) ────────────────────────────────────
-// 팀/회사 데이터와 노드 정보를 전역으로 노출
+// 팀/회사 데이터와 노드 정보를 전역으로 노출 (직접 할당)
 function exposeTeamDataToWindow() {
-  Object.defineProperty(window, '_teamNodes', {
-    get: () => _teamNodes,
-    configurable: true
-  });
-  Object.defineProperty(window, '_activeSimData', {
-    get: () => _activeSimData,
-    configurable: true
-  });
+  window._teamNodes = _teamNodes;
+  window._activeSimData = _activeSimData;
+  window._teamMode = _teamMode;
 }
 
 

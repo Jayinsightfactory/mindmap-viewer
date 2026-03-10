@@ -32,6 +32,9 @@ function registerInteractive(obj, data) {
   obj.userData._interactive = true;
 }
 
+// 전역 노출
+window.registerInteractive = registerInteractive;
+
 /**
  * 객체 등록 해제
  */
