@@ -560,6 +560,7 @@ window.buildEnterpriseSystem = buildEnterpriseSystem;
 
 // ── buildTeamSystem ──────────────────────────────────────────────────────────
 function buildTeamSystem(teamData) {
+  console.log('[orbit3d-team] buildTeamSystem called with team:', teamData?.name);
   clearScene();
   _teamNodes = [];
   _teamMode  = true;
@@ -774,6 +775,7 @@ function buildTeamSystem(teamData) {
 
   // 글로벌 접근 활성화 (모든 노드 추가 후 호출)
   exposeTeamDataToWindow();
+  console.log('[orbit3d-team] buildTeamSystem completed with', _teamNodes.length, 'nodes exposed to window');
 }
 
 // ── 팀 노드를 선택 시스템에 등록 ─────────────────────────────────────────
