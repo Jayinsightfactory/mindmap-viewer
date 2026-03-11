@@ -396,18 +396,23 @@ window.buildPlanetSystem = function(nodeList) {
   }
 };
 
-// ─── 빈 상태(노드 없음)일 때도 허브는 표시 ─────────────────────────────
-(function initEmpty() {
+// ─── 초기 로드: 스크립트 로드 후 loadData() 재호출 ─────────────────────
+// 이 스크립트가 로드되기 전에 loadData()의 fetch가 완료될 수 있으므로
+// 오버라이드를 통해 데이터를 다시 로드한다.
+(function initMyWork() {
   const tryInit = () => {
-    if (window.scene) {
-      MW.scene = window.scene;
-      if (MW.cardMeshes.length === 0 && !MW.hubMesh) {
-        console.log('[MW] initEmpty: no hub/cards, rendering empty hub');
+    if (!window.scene) { setTimeout(tryInit, 200); return; }
+    MW.scene = window.scene;
+
+    if (MW.cardMeshes.length === 0 && !MW.hubMesh) {
+      console.log('[MW] initMyWork: re-calling loadData via override');
+      if (typeof loadData === 'function') {
+        loadData();
+      } else {
+        // loadData가 없으면 빈 허브만 표시
         renderView([], '내 작업', CARD_POSITIONS);
       }
-    } else {
-      setTimeout(tryInit, 600);
     }
   };
-  setTimeout(tryInit, 1500);
+  setTimeout(tryInit, 500);  // 스크립트 로드 직후 빠르게 실행
 })();
