@@ -259,6 +259,24 @@ async function renderNodes(nodes, scene) {
     };
 
     window.multiLevelRenderer.currentNodes = nodes;
+
+    // 워크스페이스 모드: 카메라를 노드 가까이 이동 (기존 궤도 뷰는 멀어짐)
+    if (window.multiLevelRenderer.workspaceMode && window.camera) {
+      // 노드 중심 계산
+      let cx = 0, cy = 0, cz = 0;
+      if (nodes.length > 0) {
+        nodes.forEach(n => { cx += n.position.x; cy += n.position.y; cz += n.position.z; });
+        cx /= nodes.length; cy /= nodes.length; cz /= nodes.length;
+      }
+      // 카드 시야각: 중심에서 약간 위, 앞쪽에 카메라 배치
+      const targetZ = cz + 18;
+      window.camera.position.set(cx, cy + 4, targetZ);
+      if (window.controls) {
+        window.controls.target.set(cx, cy, cz);
+        window.controls.update();
+      }
+    }
+
     console.log(`[MultiLevelRenderer] ${nodes.length}개 노드 렌더링 완료`);
   } catch (e) {
     console.error('[MultiLevelRenderer] 노드 렌더링 실패:', e);

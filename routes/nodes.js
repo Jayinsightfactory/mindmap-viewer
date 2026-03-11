@@ -322,22 +322,17 @@ module.exports = function createNodesRouter({ getDb }) {
         const { sessionId = 'default' } = req.body;
         const { userId, role } = req.wsContext;
 
-        // sessionState에 워크스페이스 정보 저장
-        if (!sessionState.has(sessionId)) {
-          sessionState.set(sessionId, {
-            workspaceId,
-            userId,
-            role,
-            level: 0,
-            selectedNode: null,
-            nodeStack: []
-          });
-        }
+        // /structure 호출 시 항상 Level 0으로 리셋 (페이지 리로드 등)
+        sessionState.set(sessionId, {
+          workspaceId,
+          userId,
+          role,
+          level: 0,
+          selectedNode: null,
+          nodeStack: []
+        });
 
         const state = sessionState.get(sessionId);
-        state.workspaceId = workspaceId;
-        state.userId = userId;
-        state.role = role;
 
         // 워크스페이스 기반 Level 0 노드 생성
         const nodes = await multiLevelWorkspaceNodes.generateNodesForWorkspace(

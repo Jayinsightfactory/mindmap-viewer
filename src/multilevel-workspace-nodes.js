@@ -8,6 +8,7 @@
 
 const { getDb } = require('./db');
 const { ulid } = require('ulid');
+const { getUserById } = require('./auth');
 
 // ─── 색상 및 스타일 정의 ────────────────────────────────────────────────────
 const LEVEL_STYLES = {
@@ -97,10 +98,8 @@ async function generateLevel1Nodes(workspaceId, userId, userRole, center = { x: 
 
   // 멤버 목록 조회
   let query = `
-    SELECT wm.user_id, wm.role, wm.team_name, wm.joined_at,
-           u.name as user_name, u.email as user_email
+    SELECT wm.user_id, wm.role, wm.team_name, wm.joined_at
     FROM workspace_members wm
-    LEFT JOIN users u ON u.id = wm.user_id
     WHERE wm.workspace_id = ?
   `;
   const params = [workspaceId];
@@ -122,7 +121,9 @@ async function generateLevel1Nodes(workspaceId, userId, userRole, center = { x: 
 
   return members.map((member, index) => {
     const position = calculateNodePosition(1, index, allMembers.count, center);
-    const displayName = member.user_name || member.user_email?.split('@')[0] || member.user_id;
+    // auth DB(users.db)에서 실제 이름 조회
+    const userInfo = getUserById(member.user_id);
+    const displayName = userInfo?.name || userInfo?.email?.split('@')[0] || member.user_id;
     return {
       id: `member-${member.user_id}`,
       level: 1,
