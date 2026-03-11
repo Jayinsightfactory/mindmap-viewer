@@ -341,7 +341,6 @@ function updateBillboard() {
 window._origBuildPlanetSystem = window.buildPlanetSystem;
 
 window.buildPlanetSystem = function(nodeList) {
-  console.log('[MW] buildPlanetSystem called, nodes:', nodeList?.length, 'scene:', !!window.scene, 'stack:', new Error().stack.split('\n')[2]);
   // scene이 아직 없으면 대기
   if (!window.scene) {
     const wait = setInterval(() => {
@@ -379,7 +378,6 @@ window.buildPlanetSystem = function(nodeList) {
     .sort((a, b) => b.children.length - a.children.length)
     .slice(0, CARD_POSITIONS.length);
 
-  console.log('[MW] renderView called, groups:', topNodes.length, 'first:', topNodes[0]?.topic);
   renderView(topNodes, '내 작업', CARD_POSITIONS);
 
   // 클릭 이벤트 등록 (한 번만)
@@ -412,19 +410,20 @@ window.buildPlanetSystem = function(nodeList) {
 // 이 스크립트가 로드되기 전에 loadData()의 fetch가 완료될 수 있으므로
 // 오버라이드를 통해 데이터를 다시 로드한다.
 (function initMyWork() {
+  let triggered = false;  // 중복 호출 방지
   const tryInit = () => {
+    if (triggered) return;
     if (!window.scene) { setTimeout(tryInit, 200); return; }
     MW.scene = window.scene;
 
     if (MW.cardMeshes.length === 0 && !MW.hubMesh) {
-      console.log('[MW] initMyWork: re-calling loadData via override');
+      triggered = true;
       if (typeof loadData === 'function') {
         loadData();
       } else {
-        // loadData가 없으면 빈 허브만 표시
         renderView([], '내 작업', CARD_POSITIONS);
       }
     }
   };
-  setTimeout(tryInit, 500);  // 스크립트 로드 직후 빠르게 실행
+  setTimeout(tryInit, 500);
 })();
