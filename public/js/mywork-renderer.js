@@ -305,7 +305,7 @@ function onMyWorkClick(event) {
   // 카드 클릭 → 하위 노드 표시
   if (hit.userData.isCard) {
     const node = hit.userData.nodeData;
-    const children = node.subtopics || node.children || node.events || [];
+    const children = node.children || node.subtopics || node.events || [];
 
     if (children.length === 0) {
       // 하위 없음: 토스트
@@ -353,21 +353,33 @@ window.buildPlanetSystem = function(nodeList) {
   MW.scene = window.scene;
   MW.viewStack = [];
 
-  // renderView 내부에서 clearAllPlanets() 호출함
+  // ── purposeLabel별 그룹화 → PPTX 구조에 맞게 카드 생성 ──
+  const groupMap = {};
+  (nodeList || []).forEach(n => {
+    const key = n.purposeLabel || n.domain || n.type || '기타';
+    if (!groupMap[key]) {
+      groupMap[key] = {
+        topic: key,
+        name: key,
+        icon: n.purposeIcon || '',
+        color: n.purposeColor || extractColor(n.color),
+        children: [],
+      };
+    }
+    groupMap[key].children.push({
+      topic: n.label || n.topic || n.name || '작업',
+      name: n.label || n.name || '작업',
+      color: n.purposeColor || extractColor(n.color),
+      _raw: n,
+    });
+  });
 
-  // 최상위 노드를 project 카드로 사용
-  const topNodes = (nodeList || []).map(n => ({
-    topic: n.topic || n.title || n.name || '작업',
-    name: n.topic || n.title || n.name || '작업',
-    domain: n.domain || n.type || '',
-    color: n.color || '#06b6d4',
-    subtopics: n.subtopics || n.children || [],
-    events: n.events || [],
-    size: n.size || 1,
-    _raw: n,
-  }));
+  // 가장 많은 이벤트 순으로 정렬 (최대 13개)
+  const topNodes = Object.values(groupMap)
+    .sort((a, b) => b.children.length - a.children.length)
+    .slice(0, CARD_POSITIONS.length);
 
-  console.log('[MW] renderView called, topNodes:', topNodes.length, 'first:', topNodes[0]?.topic);
+  console.log('[MW] renderView called, groups:', topNodes.length, 'first:', topNodes[0]?.topic);
   renderView(topNodes, '내 작업', CARD_POSITIONS);
 
   // 클릭 이벤트 등록 (한 번만)
