@@ -341,6 +341,13 @@ function updateBillboard() {
 window._origBuildPlanetSystem = window.buildPlanetSystem;
 
 window.buildPlanetSystem = function(nodeList) {
+  // 팀/전사/병렬 모드에서는 원본 렌더러 사용
+  if (window._teamMode || window._companyMode || window._parallelMode) {
+    if (typeof window._origBuildPlanetSystem === 'function') {
+      return window._origBuildPlanetSystem(nodeList);
+    }
+  }
+
   // scene이 아직 없으면 대기
   if (!window.scene) {
     const wait = setInterval(() => {
@@ -427,3 +434,16 @@ window.buildPlanetSystem = function(nodeList) {
   };
   setTimeout(tryInit, 500);
 })();
+
+// ─── "내 화면" 복귀 시 카드 뷰 재렌더 ───────────────────────────────────
+// setViewPersonal() 호출 후 카드 레이아웃 복원
+const _origSetViewPersonal = window.setViewPersonal;
+window.setViewPersonal = function(...args) {
+  if (typeof _origSetViewPersonal === 'function') _origSetViewPersonal(...args);
+  // _teamMode/_companyMode가 false가 된 후 loadData 재호출
+  setTimeout(() => {
+    if (!window._teamMode && !window._companyMode && !window._parallelMode) {
+      if (typeof loadData === 'function') loadData();
+    }
+  }, 300);
+};
