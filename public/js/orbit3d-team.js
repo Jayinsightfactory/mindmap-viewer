@@ -1124,7 +1124,9 @@ async function loadTeamDemo() {
     }
   } catch {}
 
-  showToast('👥 팀 데이터 없음 — 워크스페이스에 팀원을 초대하세요', 4000);
+  // 워크스페이스가 없으면 팝업 직접 열어줌
+  if (typeof openWorkspacePopup === 'function') openWorkspacePopup();
+  showToast('👥 팀원과 함께하려면 워크스페이스를 만들거나 참여하세요 👇', 4000);
 }
 window.loadTeamDemo = loadTeamDemo;
 
@@ -1159,7 +1161,9 @@ async function loadCompanyDemo() {
     }
   } catch {}
 
-  showToast('🏢 전사 데이터 없음 — 팀장에게 초대를 요청하세요', 4000);
+  // 워크스페이스가 없으면 팝업 직접 열어줌
+  if (typeof openWorkspacePopup === 'function') openWorkspacePopup();
+  showToast('🏢 전사 뷰는 워크스페이스 참여 후 사용 가능합니다 👇', 4000);
 }
 window.loadCompanyDemo = loadCompanyDemo;
 

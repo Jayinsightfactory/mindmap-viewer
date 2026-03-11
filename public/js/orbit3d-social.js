@@ -295,7 +295,17 @@ function closeHelperToast() {
 window.closeHelperToast = closeHelperToast;
 
 // ─── DM 패널 ──────────────────────────────────────────────────────────────────
-const _dmHistory = {};  // { memberId: [{ me, text, time }] }
+// localStorage에 사용자별로 저장 (계정 전환 시 대화 혼용 방지)
+function _dmKey() {
+  try {
+    const u = JSON.parse(localStorage.getItem('orbitUser') || 'null');
+    return 'orbitDmHistory_v1_' + (u?.id || u?.email || 'guest');
+  } catch { return 'orbitDmHistory_v1_guest'; }
+}
+function _dmLoad()  { try { return JSON.parse(localStorage.getItem(_dmKey()) || '{}'); } catch { return {}; } }
+function _dmSave(h) { try { localStorage.setItem(_dmKey(), JSON.stringify(h)); } catch {} }
+
+const _dmHistory = _dmLoad();   // { memberId: [{ me, text, time }] }
 let   _dmTarget  = null;
 
 function openDmPanel(memberId, memberName, memberColor) {
@@ -349,6 +359,7 @@ function sendDm() {
   const now = new Date();
   const time = `${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}`;
   _dmHistory[memberId].push({ me: true, text, time });
+  _dmSave(_dmHistory);           // ← localStorage에 즉시 저장
   input.value = '';
   renderDmMessages(memberId);
   // 자동 응답 (시뮬레이션)
@@ -362,6 +373,7 @@ function sendDm() {
     ];
     const reply = replies[Math.floor(Math.random() * replies.length)];
     _dmHistory[memberId].push({ me: false, text: reply, time });
+    _dmSave(_dmHistory);         // ← 응답도 저장
     renderDmMessages(memberId);
   }, 800 + Math.random() * 1200);
 }
