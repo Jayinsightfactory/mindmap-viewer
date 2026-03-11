@@ -394,7 +394,7 @@ module.exports = function createNodesRouter({ getDb }) {
         };
         sessionState.set(sessionId, state);
 
-        // 현재 노드 조회
+        // 현재 노드 조회 (선택 노드 위치 파악용)
         const currentNodes = await multiLevelWorkspaceNodes.generateNodesForWorkspace(
           workspaceId, userId, state.level || 0, role
         );
@@ -404,9 +404,10 @@ module.exports = function createNodesRouter({ getDb }) {
           return res.status(400).json({ error: 'Node not found' });
         }
 
-        // 드릴다운: 다음 레벨 노드 생성
+        // 드릴다운: 선택된 노드 위치를 새 중심으로 하위 노드 생성
+        const parentNodePos = selectedNode.position || { x: 0, y: 0, z: 0 };
         const toNodes = await multiLevelWorkspaceNodes.generateNodesForWorkspace(
-          workspaceId, userId, level, role, nodeId
+          workspaceId, userId, level, role, nodeId, parentNodePos
         );
 
         // 연결선 생성

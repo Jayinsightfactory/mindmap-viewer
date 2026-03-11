@@ -19,21 +19,13 @@ const LEVEL_STYLES = {
   5: { color: '#d29922', shape: 'circle', size: 2.5, name: 'Universe' }
 };
 
-// ─── 동심원 배치 알고리즘 ────────────────────────────────────────────────────
+// ─── 황금각 산포형 배치 알고리즘 ─────────────────────────────────────────────
 /**
- * 노드 수에 따라 동심원 레이어 계산
- * @param {number} totalNodes - 총 노드 수
- * @returns {Array} - 각 레이어별 노드 수 배열
- */
-function calculateConcentricLayers(totalNodes) {
-  if (totalNodes <= 7) return [totalNodes];
-  if (totalNodes <= 20) return [7, totalNodes - 7];
-  if (totalNodes <= 50) return [7, 15, totalNodes - 22];
-  return [7, 15, 20, totalNodes - 42];
-}
-
-/**
- * 동심원 배치 위치 계산
+ * 황금각(golden angle) 기반 자연스러운 산포형 위치 계산
+ * - 이미지처럼 "My work" 중심에서 프로젝트들이 방사형으로 산포
+ * - 원근감(perspective): 멀수록 y축 위로, z 깊이 변화
+ * - 선택 노드의 위치를 새 중심으로 하위 노드 배치 지원
+ *
  * @param {number} level - 레벨 (0-5)
  * @param {number} index - 노드 인덱스
  * @param {number} totalNodes - 총 노드 수
@@ -41,31 +33,31 @@ function calculateConcentricLayers(totalNodes) {
  * @returns {Object} - {x, y, z} 좌표
  */
 function calculateNodePosition(level, index, totalNodes, center = { x: 0, y: 0, z: 0 }) {
-  const layers = calculateConcentricLayers(totalNodes);
+  if (totalNodes === 0) return { x: center.x, y: center.y, z: center.z };
+  if (totalNodes === 1) return { x: center.x, y: center.y, z: center.z };
 
-  // 현재 노드가 어느 레이어에 속하는지 계산
-  let layerIndex = 0;
-  let nodeIndexInLayer = index;
-  let accumulatedNodes = 0;
+  // 황금각: 피보나치 나선 기반 자연스러운 분포
+  const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5)); // ≈ 2.399 rad
 
-  for (let i = 0; i < layers.length; i++) {
-    if (accumulatedNodes + layers[i] > index) {
-      layerIndex = i;
-      nodeIndexInLayer = index - accumulatedNodes;
-      break;
-    }
-    accumulatedNodes += layers[i];
-  }
+  // 레벨에 따른 기본 반지름 (레벨이 깊어질수록 노드 간 거리 다양)
+  const BASE_RADIUS = [4, 5, 6, 7, 8, 9][level] || 5;
 
-  const nodesInLayer = layers[layerIndex];
-  const angle = (nodeIndexInLayer / nodesInLayer) * Math.PI * 2;
-  const radius = (layerIndex + 1) * 3; // 각 레이어마다 3 단위 간격
+  // 피보나치 나선 반지름 (균등 분포)
+  const t = totalNodes === 1 ? 0.5 : (index + 0.5) / totalNodes;
+  const radius = BASE_RADIUS * (0.4 + Math.sqrt(t) * 1.1);
 
-  return {
-    x: center.x + radius * Math.cos(angle),
-    y: center.y + radius * Math.sin(angle),
-    z: center.z + (level - 2.5) * 0.5 // Z축 레벨별 오프셋
-  };
+  // 황금각 기반 방향
+  const angle = GOLDEN_ANGLE * index;
+
+  // XZ 평면 배치 (3D에서 수평 산포)
+  const x = center.x + radius * Math.cos(angle);
+  const z = center.z + radius * Math.sin(angle);
+
+  // 원근감 Y: 거리에 따라 약간 위로 이동 (멀리 있는 노드는 화면 위쪽)
+  const perspectiveY = radius * 0.15 * Math.sin(angle * 0.7);
+  const y = center.y + perspectiveY;
+
+  return { x, y, z };
 }
 
 // ─── Level별 노드 생성 함수 ────────────────────────────────────────────────
@@ -100,13 +92,15 @@ async function generateLevel0Nodes(workspaceId) {
  * - Member 역할: 자신만 표시
  * - Admin/Owner: 모든 멤버 표시
  */
-async function generateLevel1Nodes(workspaceId, userId, userRole) {
+async function generateLevel1Nodes(workspaceId, userId, userRole, center = { x: 0, y: 0, z: 0 }) {
   const db = getDb();
 
   // 멤버 목록 조회
   let query = `
-    SELECT wm.user_id, wm.role, wm.team_name, wm.joined_at
+    SELECT wm.user_id, wm.role, wm.team_name, wm.joined_at,
+           u.name as user_name, u.email as user_email
     FROM workspace_members wm
+    LEFT JOIN users u ON u.id = wm.user_id
     WHERE wm.workspace_id = ?
   `;
   const params = [workspaceId];
@@ -127,11 +121,12 @@ async function generateLevel1Nodes(workspaceId, userId, userRole) {
   `).get(workspaceId);
 
   return members.map((member, index) => {
-    const position = calculateNodePosition(1, index, allMembers.count);
+    const position = calculateNodePosition(1, index, allMembers.count, center);
+    const displayName = member.user_name || member.user_email?.split('@')[0] || member.user_id;
     return {
       id: `member-${member.user_id}`,
       level: 1,
-      name: member.user_id, // 실제로는 users 테이블에서 이름 가져와야 함
+      name: displayName,
       type: 'member',
       domain: member.role.toUpperCase(),
       role: member.role,
@@ -151,7 +146,7 @@ async function generateLevel1Nodes(workspaceId, userId, userRole) {
 /**
  * Level 2 (Team): 워크스페이스 내 팀들
  */
-async function generateLevel2Nodes(workspaceId, userRole, parentNodeId) {
+async function generateLevel2Nodes(workspaceId, userRole, parentNodeId, center = { x: 0, y: 0, z: 0 }) {
   const db = getDb();
 
   // 팀 목록 조회 (workspace_members.team_name의 DISTINCT)
@@ -164,7 +159,7 @@ async function generateLevel2Nodes(workspaceId, userRole, parentNodeId) {
   const totalTeams = teams.length;
 
   return teams.map((team, index) => {
-    const position = calculateNodePosition(2, index, totalTeams);
+    const position = calculateNodePosition(2, index, totalTeams, center);
     return {
       id: `team-${team.team_name}`,
       level: 2,
@@ -186,7 +181,7 @@ async function generateLevel2Nodes(workspaceId, userRole, parentNodeId) {
  * Level 3 (Collaboration): 협업 관계
  * 사용자 자신의 협업 관계만 표시
  */
-async function generateLevel3Nodes(workspaceId, userId) {
+async function generateLevel3Nodes(workspaceId, userId, center = { x: 0, y: 0, z: 0 }) {
   const db = getDb();
 
   // 사용자의 협업 관계 조회
@@ -205,7 +200,7 @@ async function generateLevel3Nodes(workspaceId, userId) {
   const totalCollabs = collaborations.length;
 
   return collaborations.map((collab, index) => {
-    const position = calculateNodePosition(3, index, totalCollabs);
+    const position = calculateNodePosition(3, index, totalCollabs, center);
     // 협업 강도로 색상 결정 (강도 높을수록 더 보라색)
     const strength = collab.strength || 0.5;
     const hue = 270 + (strength * 20); // 보라색 범위
@@ -237,7 +232,7 @@ async function generateLevel3Nodes(workspaceId, userId) {
  * - Member 역할: 자신의 부서만
  * - Admin/Owner: 모든 부서
  */
-async function generateLevel4Nodes(workspaceId, userId, userRole) {
+async function generateLevel4Nodes(workspaceId, userId, userRole, center = { x: 0, y: 0, z: 0 }) {
   const db = getDb();
 
   let departments;
@@ -269,7 +264,7 @@ async function generateLevel4Nodes(workspaceId, userId, userRole) {
   const totalDepts = departments.length;
 
   return departments.map((dept, index) => {
-    const position = calculateNodePosition(4, index, totalDepts);
+    const position = calculateNodePosition(4, index, totalDepts, center);
     return {
       id: `dept-${dept.id}`,
       level: 4,
@@ -293,7 +288,7 @@ async function generateLevel4Nodes(workspaceId, userId, userRole) {
  * Level 5 (Universe): 전체 조직 구조
  * Owner만 접근 가능
  */
-async function generateLevel5Nodes(workspaceId, userRole) {
+async function generateLevel5Nodes(workspaceId, userRole, center = { x: 0, y: 0, z: 0 }) {
   // Member/Admin은 접근 불가
   if (userRole !== 'owner') {
     return [];
@@ -311,7 +306,7 @@ async function generateLevel5Nodes(workspaceId, userRole) {
   const totalEcosystems = ecosystems.length;
 
   return ecosystems.map((eco, index) => {
-    const position = calculateNodePosition(5, index, totalEcosystems);
+    const position = calculateNodePosition(5, index, totalEcosystems, center);
     return {
       id: `ecosystem-${eco.id}`,
       level: 5,
@@ -369,23 +364,22 @@ async function generateConnectionsForLevel(nodes, toLevel, toNodes) {
  * @param {string} parentNodeId - 부모 노드 ID (드릴다운 시)
  * @returns {Array} - 노드 배열
  */
-async function generateNodesForWorkspace(workspaceId, userId, level, userRole, parentNodeId = null) {
+/**
+ * @param {string} workspaceId
+ * @param {string} userId
+ * @param {number} level
+ * @param {string} userRole
+ * @param {string} parentNodeId - 드릴다운한 부모 노드 ID
+ * @param {Object} parentNodePos - 부모 노드의 3D 위치 {x,y,z} — 이 위치를 새 중심으로 사용
+ */
+async function generateNodesForWorkspace(workspaceId, userId, level, userRole, parentNodeId = null, parentNodePos = null) {
   const db = getDb();
 
+  // 드릴다운 시 부모 노드 위치를 중심으로 사용, 없으면 원점
+  const center = parentNodePos || { x: 0, y: 0, z: 0 };
+
   try {
-    // 1. 캐시 확인 (15분 TTL)
-    const cached = db.prepare(`
-      SELECT nodes_json FROM multilevel_cache
-      WHERE workspace_id = ? AND level = ? AND role = ? AND user_id = ?
-      AND datetime(expires_at) > datetime('now')
-    `).get(workspaceId, level, userRole, userId);
-
-    if (cached) {
-      console.log(`[multilevel] 캐시 히트: ws=${workspaceId}, level=${level}, role=${userRole}`);
-      return JSON.parse(cached.nodes_json);
-    }
-
-    // 2. 권한 검증
+    // 1. 권한 검증
     const roleLevelPerms = {
       owner: { canViewLevels: [0, 1, 2, 3, 4, 5] },
       admin: { canViewLevels: [1, 2, 3, 4] },
@@ -396,40 +390,32 @@ async function generateNodesForWorkspace(workspaceId, userId, level, userRole, p
       throw new Error(`Access denied to level ${level}`);
     }
 
-    // 3. 레벨별 노드 생성
+    // 2. 레벨별 노드 생성 (캐시 미사용 — 위치가 center에 따라 달라지므로)
     let nodes = [];
     switch (level) {
       case 0:
         nodes = await generateLevel0Nodes(workspaceId);
         break;
       case 1:
-        nodes = await generateLevel1Nodes(workspaceId, userId, userRole);
+        nodes = await generateLevel1Nodes(workspaceId, userId, userRole, center);
         break;
       case 2:
-        nodes = await generateLevel2Nodes(workspaceId, userRole, parentNodeId);
+        nodes = await generateLevel2Nodes(workspaceId, userRole, parentNodeId, center);
         break;
       case 3:
-        nodes = await generateLevel3Nodes(workspaceId, userId);
+        nodes = await generateLevel3Nodes(workspaceId, userId, center);
         break;
       case 4:
-        nodes = await generateLevel4Nodes(workspaceId, userId, userRole);
+        nodes = await generateLevel4Nodes(workspaceId, userId, userRole, center);
         break;
       case 5:
-        nodes = await generateLevel5Nodes(workspaceId, userRole);
+        nodes = await generateLevel5Nodes(workspaceId, userRole, center);
         break;
       default:
         throw new Error(`Invalid level: ${level}`);
     }
 
-    // 4. 캐시 저장 (15분 TTL)
-    const cacheId = ulid();
-    db.prepare(`
-      INSERT OR REPLACE INTO multilevel_cache
-      (id, workspace_id, level, role, user_id, nodes_json, expires_at)
-      VALUES (?, ?, ?, ?, ?, ?, datetime('now', '+15 minutes'))
-    `).run(cacheId, workspaceId, level, userRole, userId, JSON.stringify(nodes));
-
-    console.log(`[multilevel] 노드 생성: ws=${workspaceId}, level=${level}, role=${userRole}, nodes=${nodes.length}`);
+    console.log(`[multilevel] 노드 생성: ws=${workspaceId}, level=${level}, role=${userRole}, nodes=${nodes.length}, center=(${center.x.toFixed(1)},${center.y.toFixed(1)},${center.z.toFixed(1)})`);
     return nodes;
   } catch (e) {
     console.error('[multilevel] generateNodesForWorkspace error:', e);
@@ -439,7 +425,6 @@ async function generateNodesForWorkspace(workspaceId, userId, level, userRole, p
 
 module.exports = {
   // 알고리즘
-  calculateConcentricLayers,
   calculateNodePosition,
   // Level별 생성 함수
   generateLevel0Nodes,
