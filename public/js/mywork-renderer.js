@@ -341,8 +341,12 @@ function updateBillboard() {
 window._origBuildPlanetSystem = window.buildPlanetSystem;
 
 window.buildPlanetSystem = function(nodeList) {
-  // 팀/전사/병렬 모드에서는 원본 렌더러 사용
-  if (window._teamMode || window._companyMode || window._parallelMode) {
+  // 팀/전사/병렬 모드 감지 (_teamMode는 let 변수 → window.으로 접근 불가)
+  const inTeam =
+    (typeof _teamMode     !== 'undefined' && _teamMode) ||
+    (typeof _companyMode  !== 'undefined' && _companyMode) ||
+    (typeof _parallelMode !== 'undefined' && _parallelMode);
+  if (inTeam) {
     if (typeof window._origBuildPlanetSystem === 'function') {
       return window._origBuildPlanetSystem(nodeList);
     }
@@ -437,13 +441,23 @@ window.buildPlanetSystem = function(nodeList) {
 
 // ─── "내 화면" 복귀 시 카드 뷰 재렌더 ───────────────────────────────────
 // setViewPersonal() 호출 후 카드 레이아웃 복원
-const _origSetViewPersonal = window.setViewPersonal;
-window.setViewPersonal = function(...args) {
-  if (typeof _origSetViewPersonal === 'function') _origSetViewPersonal(...args);
-  // _teamMode/_companyMode가 false가 된 후 loadData 재호출
-  setTimeout(() => {
-    if (!window._teamMode && !window._companyMode && !window._parallelMode) {
-      if (typeof loadData === 'function') loadData();
+// ※ patchViewTransitions(800ms)가 나중에 이 함수를 또 래핑할 수 있으므로
+//   DOMContentLoaded 후 1000ms 시점에 한 번 더 패치해 안전망 확보
+function _mwHookSetViewPersonal() {
+  const _prev = window.setViewPersonal;
+  window.setViewPersonal = function(...args) {
+    // 원본 체인 호출 (exitTeamMode → loadData 포함)
+    if (typeof _prev === 'function') {
+      try { _prev(...args); } catch(e) { console.warn('[MW] setViewPersonal err', e); }
     }
-  }, 300);
-};
+    // 트랜지션(700ms) + exitTeamMode 완료 후 카드 강제 복원
+    setTimeout(() => {
+      MW.scene = window.scene;
+      if (MW.scene && typeof loadData === 'function') loadData();
+    }, 900);
+  };
+}
+// 즉시 한 번 (초기 로드 시)
+_mwHookSetViewPersonal();
+// patchViewTransitions가 800ms에 덮어쓸 수 있으므로 1100ms에 다시 패치
+setTimeout(_mwHookSetViewPersonal, 1100);
