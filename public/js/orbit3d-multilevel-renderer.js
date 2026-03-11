@@ -2,6 +2,7 @@
  * orbit3d-multilevel-renderer.js
  * 다계층 노드 렌더링 및 드릴다운 애니메이션
  * 6단계 계층 시각화 (Level 0-5)
+ * 워크스페이스 API 통합 (로그인 시 실제 데이터)
  */
 
 if (!window.multiLevelRenderer) {
@@ -14,17 +15,22 @@ if (!window.multiLevelRenderer) {
     sessionId: 'default',
     isAnimating: false,
     isDragging: false,
-    selectedNodeId: null
+    selectedNodeId: null,
+    // 워크스페이스 모드
+    workspaceMode: false,
+    workspaceId: null,
+    userRole: null,
+    permissions: null
   };
 }
 
 // 드래그 상태 추적
 document.addEventListener('mousedown', () => {
-  window.multiLevelRenderer.isDragging = false; // 초기값
+  window.multiLevelRenderer.isDragging = false;
 });
 
 document.addEventListener('mousemove', (e) => {
-  if (e.buttons > 0) { // 마우스 버튼이 눌려있음
+  if (e.buttons > 0) {
     window.multiLevelRenderer.isDragging = true;
   }
 });
@@ -34,12 +40,79 @@ document.addEventListener('mouseup', () => {
 });
 
 /**
+ * 로그인 사용자 토큰 가져오기
+ */
+function _getRendererToken() {
+  try {
+    const u = typeof _orbitUser !== 'undefined' ? _orbitUser : JSON.parse(localStorage.getItem('orbitUser') || 'null');
+    return u?.token || null;
+  } catch { return null; }
+}
+
+/**
+ * 워크스페이스 모드 초기화 - 로그인 사용자의 워크스페이스 자동 감지
+ */
+async function initWorkspaceMode(scene) {
+  const token = _getRendererToken();
+  if (!token) {
+    console.log('[MultiLevelRenderer] 비로그인 → 더미 데이터 모드');
+    window.multiLevelRenderer.workspaceMode = false;
+    return initializeLevel0(scene);
+  }
+
+  try {
+    // 사용자의 워크스페이스 목록 조회
+    const res = await fetch('/api/workspace/my', {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (!res.ok) throw new Error('workspace list failed');
+    const workspaces = await res.json();
+    if (!workspaces || workspaces.length === 0) {
+      console.log('[MultiLevelRenderer] 워크스페이스 없음 → 더미 데이터 모드');
+      window.multiLevelRenderer.workspaceMode = false;
+      return initializeLevel0(scene);
+    }
+
+    // 첫 번째 워크스페이스 사용
+    const ws = workspaces[0];
+    const wsId = ws.id || ws.workspace_id;
+
+    // 워크스페이스 구조 로드 (Level 0)
+    const structRes = await fetch(`/api/multilevel/workspace/${wsId}/structure`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({})
+    });
+
+    const structData = await structRes.json();
+    if (structData.ok) {
+      window.multiLevelRenderer.workspaceMode = true;
+      window.multiLevelRenderer.workspaceId = wsId;
+      window.multiLevelRenderer.sessionId = structData.sessionId || 'default';
+      window.multiLevelRenderer.userRole = structData.role || structData.permissions?.role;
+      window.multiLevelRenderer.permissions = structData.permissions;
+      window.multiLevelRenderer.currentLevel = structData.level || 0;
+
+      await renderNodes(structData.nodes, scene);
+      if (structData.connections) renderConnections(structData.connections, scene);
+
+      console.log(`[MultiLevelRenderer] 워크스페이스 모드 활성화: ${wsId} (${structData.permissions?.role})`);
+      return structData;
+    }
+  } catch (e) {
+    console.warn('[MultiLevelRenderer] 워크스페이스 모드 실패, 더미 데이터로 전환:', e.message);
+  }
+
+  // 폴백: 더미 데이터 모드
+  window.multiLevelRenderer.workspaceMode = false;
+  return initializeLevel0(scene);
+}
+
+/**
  * 노드 형태에 따른 메시 생성
- * @param {string} shape - 'circle', 'hexagon', 'diamond', 'star'
- * @param {number} size - 노드 크기
- * @param {string} color - 색상 (CSS color)
- * @param {string} label - 노드 라벨 텍스트
- * @returns {THREE.Group}
  */
 function createNodeMesh(shape, size, color, label = '') {
   const group = new THREE.Group();
@@ -48,19 +121,15 @@ function createNodeMesh(shape, size, color, label = '') {
 
   switch (shape) {
     case 'circle':
-      // 구형
       geometry = new THREE.IcosahedronGeometry(size, 3);
       break;
     case 'hexagon':
-      // 육각형 (실린더 사용)
       geometry = new THREE.CylinderGeometry(size, size, size * 0.5, 6);
       break;
     case 'diamond':
-      // 다이아몬드 (8면체)
       geometry = new THREE.OctahedronGeometry(size);
       break;
     case 'star':
-      // 별 (복잡한 형태는 구 사용하되 극점 강조)
       geometry = new THREE.IcosahedronGeometry(size, 4);
       break;
     default:
@@ -81,7 +150,6 @@ function createNodeMesh(shape, size, color, label = '') {
   mesh.userData.color = color;
   group.add(mesh);
 
-  // 라벨 추가 (겹침 방지)
   if (label) {
     const canvas = document.createElement('canvas');
     canvas.width = 128;
@@ -91,14 +159,14 @@ function createNodeMesh(shape, size, color, label = '') {
     ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
     ctx.font = 'bold 14px Arial';
     ctx.textAlign = 'center';
-    ctx.fillText(label.substring(0, 15), 64, 40); // 글자 수 제한
+    ctx.fillText(label.substring(0, 15), 64, 40);
 
     const texture = new THREE.CanvasTexture(canvas);
     const spriteMaterial = new THREE.SpriteMaterial({ map: texture });
     const sprite = new THREE.Sprite(spriteMaterial);
     sprite.position.y = size + 1.5;
     sprite.scale.set(3, 1.5, 1);
-    sprite.renderOrder = 1; // 항상 위에 렌더링
+    sprite.renderOrder = 1;
     group.add(sprite);
   }
 
@@ -107,14 +175,11 @@ function createNodeMesh(shape, size, color, label = '') {
 
 /**
  * 노드를 3D 씬에 추가
- * @param {Array} nodes - 노드 배열
- * @param {Object} scene - Three.js 씬
  */
 async function renderNodes(nodes, scene) {
   try {
     // 기존 노드 제거
     Object.values(window.multiLevelRenderer.nodeMeshes).forEach(mesh => {
-      // Group의 경우 자식 메시들도 정리
       if (mesh.children) {
         mesh.children.forEach(child => {
           if (child.geometry) child.geometry.dispose();
@@ -144,7 +209,6 @@ async function renderNodes(nodes, scene) {
       scene.add(mesh);
       window.multiLevelRenderer.nodeMeshes[node.id] = mesh;
 
-      // 클릭 감지를 위해 등록 (Group의 경우 첫번째 메시만)
       if (window.registerInteractive && mesh.children && mesh.children[0]) {
         window.registerInteractive(mesh.children[0]);
       }
@@ -159,12 +223,9 @@ async function renderNodes(nodes, scene) {
 
 /**
  * 연결선 렌더링
- * @param {Array} connections - 연결선 정보 배열
- * @param {Object} scene - Three.js 씬
  */
 function renderConnections(connections, scene) {
   try {
-    // 기존 연결선 제거
     window.multiLevelRenderer.connectionLines.forEach(line => {
       scene.remove(line);
       if (line.geometry) line.geometry.dispose();
@@ -172,7 +233,6 @@ function renderConnections(connections, scene) {
     });
     window.multiLevelRenderer.connectionLines = [];
 
-    // 새 연결선 추가
     connections.forEach(conn => {
       const points = [
         new THREE.Vector3(conn.from.x, conn.from.y, conn.from.z),
@@ -202,10 +262,6 @@ function renderConnections(connections, scene) {
 
 /**
  * 드릴다운 애니메이션 실행
- * @param {Object} fromNodes - 현재 노드들
- * @param {Object} toNodes - 목표 노드들
- * @param {Object} animation - 애니메이션 정보
- * @param {Object} scene - Three.js 씬
  */
 async function animateDrillDown(fromNodes, toNodes, animation, scene) {
   return new Promise((resolve) => {
@@ -222,36 +278,29 @@ async function animateDrillDown(fromNodes, toNodes, animation, scene) {
       const elapsed = Date.now() - startTime;
       const progress = Math.min(elapsed / duration, 1);
 
-      // 이징 함수 (ease-in-out)
       const easeProgress = progress < 0.5 ? 2 * progress * progress : -1 + (4 - 2 * progress) * progress;
 
-      // 현재 노드들 업데이트
       fromNodes.forEach((fromNode, index) => {
         const mesh = window.multiLevelRenderer.nodeMeshes[fromNode.id];
         if (!mesh) return;
 
-        // 선택된 노드 기준으로 회전
         const angle = fromNode.position.angle - (animation.selectedNode === index ? 0 : animation.rotationBias);
         const currentRadius = fromNode.position.radius +
           (toNodes[0].position.radius - fromNode.position.radius) * easeProgress;
 
-        // 점진적으로 숨김
         mesh.material.opacity = 1 - easeProgress;
         mesh.material.transparent = true;
       });
 
-      // 목표 노드들 표시 및 배치
       toNodes.forEach((toNode) => {
         let mesh = window.multiLevelRenderer.nodeMeshes[toNode.id];
 
         if (!mesh) {
-          // 새 노드 생성
           mesh = createNodeMesh(toNode.shape, toNode.size, toNode.color);
           scene.add(mesh);
           window.multiLevelRenderer.nodeMeshes[toNode.id] = mesh;
         }
 
-        // 점진적 나타나기 및 움직임
         mesh.material.opacity = easeProgress;
         mesh.material.transparent = true;
         mesh.position.set(
@@ -264,7 +313,6 @@ async function animateDrillDown(fromNodes, toNodes, animation, scene) {
       if (progress < 1) {
         requestAnimationFrame(animate);
       } else {
-        // 애니메이션 완료
         fromNodes.forEach(node => {
           const mesh = window.multiLevelRenderer.nodeMeshes[node.id];
           if (mesh) scene.remove(mesh);
@@ -290,50 +338,78 @@ async function animateDrillDown(fromNodes, toNodes, animation, scene) {
 
 /**
  * 서버에서 노드 데이터 로드 및 렌더링
- * @param {number} level - 대상 레벨
- * @param {Object} scene - Three.js 씬
- * @param {string} nodeId - 드릴다운할 노드 ID (선택사항)
+ * 워크스페이스 모드일 경우 워크스페이스 API 사용
  */
 async function loadAndRenderLevel(level, scene, nodeId = null) {
   try {
-    const sessionId = window.multiLevelRenderer.sessionId;
+    const mlr = window.multiLevelRenderer;
     let response;
 
-    if (nodeId && level > window.multiLevelRenderer.currentLevel) {
-      // 드릴다운
-      response = await fetch('/api/multilevel/drill/down', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId, nodeId, level })
-      });
-    } else if (nodeId && level < window.multiLevelRenderer.currentLevel) {
-      // 드릴업
-      response = await fetch('/api/multilevel/drill/up', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId })
-      });
+    if (mlr.workspaceMode && mlr.workspaceId) {
+      // 워크스페이스 모드: 인증된 API 사용
+      const token = _getRendererToken();
+      const headers = {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      };
+      const wsId = mlr.workspaceId;
+
+      if (nodeId && level > mlr.currentLevel) {
+        response = await fetch(`/api/multilevel/workspace/${wsId}/drill/down`, {
+          method: 'POST', headers,
+          body: JSON.stringify({ sessionId: mlr.sessionId, nodeId, level })
+        });
+      } else if (level < mlr.currentLevel) {
+        response = await fetch(`/api/multilevel/workspace/${wsId}/drill/up`, {
+          method: 'POST', headers,
+          body: JSON.stringify({ sessionId: mlr.sessionId })
+        });
+      } else {
+        response = await fetch(`/api/multilevel/workspace/${wsId}/structure`, {
+          method: 'POST', headers,
+          body: JSON.stringify({})
+        });
+      }
     } else {
-      // 직접 레벨 접근
-      response = await fetch(`/api/multilevel/level/${level}`);
+      // 더미 데이터 모드
+      const sessionId = mlr.sessionId;
+
+      if (nodeId && level > mlr.currentLevel) {
+        response = await fetch('/api/multilevel/drill/down', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId, nodeId, level })
+        });
+      } else if (nodeId && level < mlr.currentLevel) {
+        response = await fetch('/api/multilevel/drill/up', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId })
+        });
+      } else {
+        response = await fetch(`/api/multilevel/level/${level}`);
+      }
     }
 
     const data = await response.json();
 
     if (data.ok) {
-      // 노드 렌더링
       await renderNodes(data.nodes, scene);
 
-      // 연결선 렌더링 (있을 경우)
       if (data.connections) {
         renderConnections(data.connections, scene);
       }
 
-      // 상태 업데이트
-      window.multiLevelRenderer.currentLevel = data.level;
-      window.multiLevelRenderer.animationState = data.animation;
+      mlr.currentLevel = data.level;
+      mlr.animationState = data.animation;
 
-      console.log(`[MultiLevelRenderer] Level ${data.level} (${data.levelConfig.name}) 로드 완료`);
+      if (data.permissions) {
+        mlr.permissions = data.permissions;
+        mlr.userRole = data.permissions.role;
+      }
+
+      const levelName = data.levelConfig?.name || data.levelName || '';
+      console.log(`[MultiLevelRenderer] Level ${data.level} (${levelName}) 로드 완료 [${mlr.workspaceMode ? 'workspace' : 'dummy'}]`);
       return data;
     } else {
       console.error('[MultiLevelRenderer] API 에러:', data.error);
@@ -346,8 +422,7 @@ async function loadAndRenderLevel(level, scene, nodeId = null) {
 }
 
 /**
- * 초기화: Level 0 로드
- * @param {Object} scene - Three.js 씬
+ * 초기화: Level 0 로드 (더미 데이터 모드)
  */
 async function initializeLevel0(scene) {
   try {
@@ -385,8 +460,6 @@ async function preloadAllLevels() {
 
 /**
  * 마우스 클릭으로 노드 선택 시 드릴다운
- * @param {THREE.Mesh} mesh - 클릭된 메시
- * @param {Object} scene - Three.js 씬
  */
 async function handleNodeClick(mesh, scene) {
   if (!mesh.userData.nodeId) return;
@@ -398,29 +471,70 @@ async function handleNodeClick(mesh, scene) {
   }
 
   console.log(`[MultiLevelRenderer] 노드 클릭: ${mesh.userData.nodeId}, 드릴다운 시작...`);
-  await loadAndRenderLevel(currentLevel + 1, scene, mesh.userData.nodeId);
+  const data = await loadAndRenderLevel(currentLevel + 1, scene, mesh.userData.nodeId);
+  if (data && typeof updateDrillUI === 'function') updateDrillUI();
 }
 
 /**
  * UI 버튼 핸들러들
  */
 async function drillDown(nodeId, scene) {
-  await loadAndRenderLevel(window.multiLevelRenderer.currentLevel + 1, scene, nodeId);
+  const data = await loadAndRenderLevel(window.multiLevelRenderer.currentLevel + 1, scene, nodeId);
+  if (data && typeof updateDrillUI === 'function') updateDrillUI();
 }
 
 async function drillUp(scene) {
-  await loadAndRenderLevel(Math.max(0, window.multiLevelRenderer.currentLevel - 1), scene);
+  const mlr = window.multiLevelRenderer;
+
+  if (mlr.workspaceMode && mlr.workspaceId) {
+    const token = _getRendererToken();
+    const response = await fetch(`/api/multilevel/workspace/${mlr.workspaceId}/drill/up`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({ sessionId: mlr.sessionId })
+    });
+    const data = await response.json();
+    if (data.ok) {
+      await renderNodes(data.nodes, scene);
+      if (data.connections) renderConnections(data.connections, scene);
+      mlr.currentLevel = data.level;
+      if (typeof updateDrillUI === 'function') updateDrillUI();
+      return data;
+    }
+  } else {
+    const data = await loadAndRenderLevel(Math.max(0, mlr.currentLevel - 1), scene);
+    if (data && typeof updateDrillUI === 'function') updateDrillUI();
+    return data;
+  }
 }
 
 async function resetToLevel0(scene) {
-  // 세션 초기화
-  await fetch(`/api/nodes/reset?sessionId=${window.multiLevelRenderer.sessionId}`);
-  await initializeLevel0(scene);
+  const mlr = window.multiLevelRenderer;
+
+  if (mlr.workspaceMode && mlr.workspaceId) {
+    const token = _getRendererToken();
+    await fetch(`/api/multilevel/workspace/${mlr.workspaceId}/reset`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({ sessionId: mlr.sessionId })
+    });
+    return initWorkspaceMode(scene);
+  } else {
+    await fetch(`/api/nodes/reset?sessionId=${mlr.sessionId}`);
+    return initializeLevel0(scene);
+  }
 }
 
 // 전역 함수 노출
 window.multiLevelRenderer.loadAndRenderLevel = loadAndRenderLevel;
 window.multiLevelRenderer.initializeLevel0 = initializeLevel0;
+window.multiLevelRenderer.initWorkspaceMode = initWorkspaceMode;
 window.multiLevelRenderer.handleNodeClick = handleNodeClick;
 window.multiLevelRenderer.drillDown = drillDown;
 window.multiLevelRenderer.drillUp = drillUp;

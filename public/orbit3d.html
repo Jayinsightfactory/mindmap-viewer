@@ -1309,26 +1309,35 @@ function viewZoom(dir) {
 async function handleDrillDown() {
   if (!window.multiLevelRenderer || !window.scene) return;
 
-  const currentLevel = window.multiLevelRenderer.currentLevel || 0;
+  const mlr = window.multiLevelRenderer;
+  const currentLevel = mlr.currentLevel || 0;
+
+  // 권한 체크 (워크스페이스 모드)
+  if (mlr.workspaceMode && mlr.permissions) {
+    const canView = mlr.permissions.canViewLevels || [];
+    if (!canView.includes(currentLevel + 1)) {
+      if (typeof showToast === 'function') showToast('이 레벨에 접근 권한이 없습니다', 3000);
+      return;
+    }
+  }
+
   if (currentLevel >= 5) {
-    alert('최대 레벨에 도달했습니다.');
+    if (typeof showToast === 'function') showToast('최대 레벨에 도달했습니다', 2000);
     return;
   }
 
   // 선택된 노드 찾기
-  const selectedNode = Object.values(window.multiLevelRenderer.nodeMeshes || {})
+  const selectedNode = Object.values(mlr.nodeMeshes || {})
     .find(m => m.userData && m.userData.selected);
 
-  if (!selectedNode) {
-    alert('노드를 선택한 후 드릴다운하세요.');
+  const nodeId = selectedNode ? selectedNode.userData.nodeId : (mlr.currentNodes[0]?.id || null);
+
+  if (!nodeId) {
+    if (typeof showToast === 'function') showToast('노드를 선택한 후 드릴다운하세요', 2000);
     return;
   }
 
-  await window.multiLevelRenderer.loadAndRenderLevel(
-    currentLevel + 1,
-    window.scene,
-    selectedNode.userData.nodeId
-  );
+  await mlr.loadAndRenderLevel(currentLevel + 1, window.scene, nodeId);
   updateDrillUI();
 }
 
@@ -1340,26 +1349,45 @@ async function handleDrillUp() {
 
 async function handleReset() {
   if (!window.multiLevelRenderer || !window.scene) return;
-  // 세션 초기화
-  await fetch(`/api/multilevel/reset?sessionId=${window.multiLevelRenderer.sessionId || 'default'}`);
-  await window.multiLevelRenderer.initializeLevel0(window.scene);
+
+  if (window.multiLevelRenderer.workspaceMode) {
+    await window.multiLevelRenderer.resetToLevel0(window.scene);
+  } else {
+    await fetch(`/api/multilevel/reset?sessionId=${window.multiLevelRenderer.sessionId || 'default'}`);
+    await window.multiLevelRenderer.initializeLevel0(window.scene);
+  }
   updateDrillUI();
 }
 
 function updateDrillUI() {
-  const level = window.multiLevelRenderer.currentLevel || 0;
-  const nodeCount = (window.multiLevelRenderer.currentNodes || []).length;
+  const mlr = window.multiLevelRenderer;
+  const level = mlr.currentLevel || 0;
+  const nodeCount = (mlr.currentNodes || []).length;
   const levelNames = ['Compact', 'Personal', 'Team', 'Collaboration', 'Department', 'Universe'];
 
-  document.getElementById('current-level').textContent = level;
-  document.getElementById('level-name').textContent = levelNames[level] || 'Unknown';
-  document.getElementById('node-count').textContent = nodeCount;
+  const levelEl = document.getElementById('current-level');
+  const nameEl = document.getElementById('level-name');
+  const countEl = document.getElementById('node-count');
 
-  document.getElementById('drill-down-btn').disabled = level >= 5;
-  document.getElementById('drill-down-btn').style.opacity = level >= 5 ? '0.5' : '1';
+  if (levelEl) levelEl.textContent = level;
+  if (nameEl) {
+    let name = levelNames[level] || 'Unknown';
+    if (mlr.workspaceMode && mlr.userRole) name += ` (${mlr.userRole})`;
+    nameEl.textContent = name;
+  }
+  if (countEl) countEl.textContent = nodeCount;
 
-  document.getElementById('drill-up-btn').disabled = level === 0;
-  document.getElementById('drill-up-btn').style.opacity = level === 0 ? '0.5' : '1';
+  const downBtn = document.getElementById('drill-down-btn');
+  const upBtn = document.getElementById('drill-up-btn');
+
+  if (downBtn) {
+    downBtn.disabled = level >= 5;
+    downBtn.style.opacity = level >= 5 ? '0.5' : '1';
+  }
+  if (upBtn) {
+    upBtn.disabled = level === 0;
+    upBtn.style.opacity = level === 0 ? '0.5' : '1';
+  }
 }
 
 // 프로젝트 관리 함수
@@ -1420,17 +1448,28 @@ function onMyWorkClick() {
   showProjectManager();
 }
 
-// 초기화 시 드릴 컨트롤 표시
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', () => {
-    const drillControls = document.getElementById('drill-controls');
-    if (drillControls) drillControls.style.display = 'block';
-    updateDrillUI();
-  });
-} else {
+// 초기화 시 드릴 컨트롤 표시 + 워크스페이스 모드 자동 감지
+function _initDrillControls() {
   const drillControls = document.getElementById('drill-controls');
   if (drillControls) drillControls.style.display = 'block';
-  updateDrillUI();
+
+  // scene이 준비되면 워크스페이스 모드 시도
+  const tryInit = () => {
+    if (window.scene && window.multiLevelRenderer?.initWorkspaceMode) {
+      window.multiLevelRenderer.initWorkspaceMode(window.scene).then(() => {
+        updateDrillUI();
+      });
+    } else {
+      setTimeout(tryInit, 500);
+    }
+  };
+  setTimeout(tryInit, 1000);
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', _initDrillControls);
+} else {
+  _initDrillControls();
 }
 </script>
 
