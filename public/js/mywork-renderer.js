@@ -440,21 +440,35 @@ window.buildPlanetSystem = function(nodeList) {
 })();
 
 // ─── "내 화면" 복귀 시 카드 뷰 재렌더 ───────────────────────────────────
-// setViewPersonal() 호출 후 카드 레이아웃 복원
-// ※ patchViewTransitions(800ms)가 나중에 이 함수를 또 래핑할 수 있으므로
-//   DOMContentLoaded 후 1000ms 시점에 한 번 더 패치해 안전망 확보
+// TWEEN 콜백 체인에 의존하지 않고 직접 exitTeamMode + 루프 재시작
 function _mwHookSetViewPersonal() {
   const _prev = window.setViewPersonal;
   window.setViewPersonal = function(...args) {
-    // 원본 체인 호출 (exitTeamMode → loadData 포함)
-    if (typeof _prev === 'function') {
-      try { _prev(...args); } catch(e) { console.warn('[MW] setViewPersonal err', e); }
+    // 1. 팀/전사/병렬 모드 직접 종료 (TWEEN 체인 우회)
+    if (typeof exitTeamMode   === 'function' &&
+        typeof _teamMode      !== 'undefined' && (_teamMode || _companyMode)) {
+      try { exitTeamMode(); } catch(e) {}
     }
-    // 트랜지션(700ms) + exitTeamMode 완료 후 카드 강제 복원
+    if (typeof exitParallelMode === 'function' &&
+        typeof _parallelMode    !== 'undefined' && _parallelMode) {
+      try { exitParallelMode(); } catch(e) {}
+    }
+
+    // 2. 원본 체인도 호출 (카메라 트랜지션 등 side effect)
+    if (typeof _prev === 'function') {
+      try { _prev(...args); } catch(e) {}
+    }
+
+    // 3. 애니메이션 루프 재시작 보장 + 카드 재렌더
     setTimeout(() => {
+      // 루프 재시작 (setAnimationLoop + RAF 직접 kick 이중 보장)
+      if (typeof _orbitAnimLoop === 'function') {
+        try { renderer.setAnimationLoop(_orbitAnimLoop); } catch(e) {}
+        requestAnimationFrame(_orbitAnimLoop);  // headless/preview 환경 폴백
+      }
       MW.scene = window.scene;
       if (MW.scene && typeof loadData === 'function') loadData();
-    }, 900);
+    }, 200);
   };
 }
 // 즉시 한 번 (초기 로드 시)
