@@ -12,10 +12,11 @@ const CARD_W  = 4.5;  // PlaneGeometry 가로
 const CARD_H  = 1.72; // PlaneGeometry 세로
 
 // 레벨별 최소 반지름·최대 카드 수
+// minR: 허브(3.2 크기) 클리어런스 최소값, gap: 카드 간 여유 (1.0=완전 밀착)
 const LEVEL_CFG = [
-  { minR: 10, maxCards: 13, gap: 1.35 },  // 0단계: 카테고리
-  { minR:  8, maxCards: 10, gap: 1.35 },  // 1단계: 이벤트
-  { minR:  6, maxCards:  6, gap: 1.40 },  // 2단계: 세부정보
+  { minR: 4,   maxCards: 13, gap: 1.08 },  // 0단계: 카테고리
+  { minR: 4,   maxCards: 10, gap: 1.08 },  // 1단계: 이벤트
+  { minR: 3.5, maxCards:  6, gap: 1.08 },  // 2단계: 세부정보
 ];
 
 /**
@@ -319,7 +320,7 @@ function createHub(label, pos) {
 // ─── 카메라 포커스 ────────────────────────────────────────────────────────────
 function _mwFocusCamera(hubPos, ringRadius) {
   // 링 반지름에 비례해 카메라 거리 결정 (카드가 모두 시야에 들어오도록)
-  const dist = Math.max(18, ringRadius * 2.6 + 6);
+  const dist = Math.max(14, ringRadius * 2.4 + 4);
   if (typeof lerpCameraTo === 'function') {
     lerpCameraTo(dist, hubPos.x, hubPos.y, hubPos.z, 350);
   } else if (typeof controls !== 'undefined' && controls.tgt && controls.sph) {
