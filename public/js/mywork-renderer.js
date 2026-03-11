@@ -341,6 +341,7 @@ function updateBillboard() {
 window._origBuildPlanetSystem = window.buildPlanetSystem;
 
 window.buildPlanetSystem = function(nodeList) {
+  console.log('[MW] buildPlanetSystem called, nodes:', nodeList?.length, 'scene:', !!window.scene, 'stack:', new Error().stack.split('\n')[2]);
   // scene이 아직 없으면 대기
   if (!window.scene) {
     const wait = setInterval(() => {
@@ -366,6 +367,7 @@ window.buildPlanetSystem = function(nodeList) {
     _raw: n,
   }));
 
+  console.log('[MW] renderView called, topNodes:', topNodes.length, 'first:', topNodes[0]?.topic);
   renderView(topNodes, '내 작업', CARD_POSITIONS);
 
   // 클릭 이벤트 등록 (한 번만)
@@ -400,6 +402,7 @@ window.buildPlanetSystem = function(nodeList) {
     if (window.scene) {
       MW.scene = window.scene;
       if (MW.cardMeshes.length === 0 && !MW.hubMesh) {
+        console.log('[MW] initEmpty: no hub/cards, rendering empty hub');
         renderView([], '내 작업', CARD_POSITIONS);
       }
     } else {
