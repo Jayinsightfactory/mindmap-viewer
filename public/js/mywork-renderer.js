@@ -391,8 +391,10 @@ window.buildPlanetSystem = function(nodeList) {
 
   renderView(topNodes, '내 작업', CARD_POSITIONS);
 
-  // 클릭 이벤트 등록 (한 번만)
-  const canvas = document.getElementById('orbit-canvas') || document.querySelector('canvas');
+  // 클릭 이벤트 등록 (한 번만) — renderer.domElement 우선 사용 (minimap 캔버스 오바인딩 방지)
+  const canvas = (typeof renderer !== 'undefined' && renderer.domElement)
+    || document.getElementById('orbit-canvas')
+    || document.querySelector('canvas');
   if (canvas && !canvas._mwClickBound) {
     canvas.addEventListener('click', onMyWorkClick);
     canvas._mwClickBound = true;
