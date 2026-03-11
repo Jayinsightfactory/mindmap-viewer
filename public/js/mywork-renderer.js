@@ -1,15 +1,15 @@
 /**
- * mywork-renderer.js  v4
- * - 동적 링 배치: 카드 수 → 반지름 자동 계산 → 겹침 완전 방지
- * - 3단계 드릴다운 (카테고리 → 이벤트 → 세부정보)
- * - 스프라이트 빌보드 (camera.quaternion 복사 → 텍스트 기울어짐 제거)
- * - renderOrder: 연결선(0) < 카드(1) → 선이 카드 뒤로
- * - 3D 그리드/행성 텍스처, lerpCameraTo 중앙정렬
+ * mywork-renderer.js  v5
+ * - renderOrder: 연결선(0) < 허브(1) < 카드(2) → 카드가 항상 허브 앞에
+ * - 동적 링 배치: 360°/N 균등 분할, CARD_W/H 비율 감안한 반지름
+ * - 카드 텍스트 2줄 표시 (제목 + 항목수/최근활동)
+ * - 카테고리 정규화 (file/idle 등 → 한국어)
+ * - 3단계 드릴다운 / 스프라이트 빌보드
  */
 
 // ─── 카드 물리 크기 (Three.js 단위) ──────────────────────────────────────────
 const CARD_W  = 4.5;  // PlaneGeometry 가로
-const CARD_H  = 1.72; // PlaneGeometry 세로
+const CARD_H  = 2.1;  // 세로 (텍스트 2줄 공간 확보, 캔버스 512×240 비율)
 
 // 레벨별 최소 반지름·최대 카드 수
 // minR: 허브(3.2 크기) 클리어런스 최소값, gap: 카드 간 여유 (1.0=완전 밀착)
@@ -68,6 +68,55 @@ function _mwHex2rgb(hex) {
   };
 }
 
+// ─── 카테고리 정규화 ──────────────────────────────────────────────────────────
+const _MW_CAT_MAP = {
+  // 영문 raw → 한국어
+  'file':          '📁 파일 작업',
+  'idle':          '⏸ 대기',
+  'code':          '💻 코딩',
+  'coding':        '💻 코딩',
+  'browser':       '🌐 웹 작업',
+  'terminal':      '⚡ 터미널',
+  'design':        '🎨 디자인',
+  'document':      '📄 문서 작업',
+  'meeting':       '💬 미팅/소통',
+  'test':          '🧪 테스트',
+  'deploy':        '🚀 배포/운영',
+  'research':      '🔍 조사/분석',
+  'planning':      '📋 기획/설계',
+  'feature':       '⚙️ 기능 개발',
+  'bugfix':        '🐛 버그 수정',
+  'review':        '👀 코드 리뷰',
+  'communication': '💬 소통',
+  'etc':           '📌 기타',
+  'other':         '📌 기타',
+};
+// 카테고리별 강조색
+const _MW_CAT_COLOR = {
+  '📁 파일 작업':  '#64748b',
+  '⏸ 대기':       '#475569',
+  '💻 코딩':       '#3b82f6',
+  '🌐 웹 작업':    '#0ea5e9',
+  '⚡ 터미널':     '#22c55e',
+  '🎨 디자인':     '#ec4899',
+  '📄 문서 작업':  '#a78bfa',
+  '💬 미팅/소통':  '#f97316',
+  '🧪 테스트':     '#06b6d4',
+  '🚀 배포/운영':  '#10b981',
+  '🔍 조사/분석':  '#f59e0b',
+  '📋 기획/설계':  '#8b5cf6',
+  '⚙️ 기능 개발':  '#3b82f6',
+  '🐛 버그 수정':  '#ef4444',
+  '👀 코드 리뷰':  '#14b8a6',
+  '💬 소통':       '#f97316',
+  '📌 기타':       '#94a3b8',
+};
+function _mwNormCat(raw) {
+  if (!raw) return '📌 기타';
+  const k = raw.toLowerCase().trim();
+  return _MW_CAT_MAP[k] || raw;
+}
+
 // ─── 2단계용 세부 노드 생성 ───────────────────────────────────────────────────
 function _mwMakeDetailNodes(rawNode, parentColor) {
   const pc = parentColor || '#06b6d4';
@@ -98,9 +147,10 @@ function _mwMakeDetailNodes(rawNode, parentColor) {
   return out.slice(0, LEVEL_CFG[2].maxCards);
 }
 
-// ─── 카드 텍스처 (3D 그리드 행성 스타일) ─────────────────────────────────────
-function makeCardTexture(title, subText, accentColor) {
-  const W = 512, H = 192;
+// ─── 카드 텍스처 (3D 그리드 행성 스타일, 텍스트 2줄) ─────────────────────────
+// sub1: 항목 수 / 유형   sub2: 최근 활동 / 세부
+function makeCardTexture(title, sub1, sub2, accentColor) {
+  const W = 512, H = 240;   // 세로 240 → 2줄 텍스트 여유
   const canvas = document.createElement('canvas');
   canvas.width = W; canvas.height = H;
   const ctx = canvas.getContext('2d');
@@ -112,19 +162,19 @@ function makeCardTexture(title, subText, accentColor) {
   bg.addColorStop(0,   `rgba(4,10,24,0.98)`);
   bg.addColorStop(0.7, `rgba(8,18,40,0.97)`);
   bg.addColorStop(1,   `rgba(${rgb.r*0.12|0},${rgb.g*0.12|0},${rgb.b*0.12|0},0.97)`);
-  const R = 16;
+  const Rv = 16;
   ctx.beginPath();
-  ctx.moveTo(R,0); ctx.lineTo(W-R,0);
-  ctx.quadraticCurveTo(W,0,W,R); ctx.lineTo(W,H-R);
-  ctx.quadraticCurveTo(W,H,W-R,H); ctx.lineTo(R,H);
-  ctx.quadraticCurveTo(0,H,0,H-R); ctx.lineTo(0,R);
-  ctx.quadraticCurveTo(0,0,R,0); ctx.closePath();
+  ctx.moveTo(Rv,0); ctx.lineTo(W-Rv,0);
+  ctx.quadraticCurveTo(W,0,W,Rv); ctx.lineTo(W,H-Rv);
+  ctx.quadraticCurveTo(W,H,W-Rv,H); ctx.lineTo(Rv,H);
+  ctx.quadraticCurveTo(0,H,0,H-Rv); ctx.lineTo(0,Rv);
+  ctx.quadraticCurveTo(0,0,Rv,0); ctx.closePath();
   ctx.fillStyle = bg; ctx.fill();
 
   // 그리드 라인
   ctx.save(); ctx.clip();
-  ctx.strokeStyle = `rgba(${rgb.r},${rgb.g},${rgb.b},0.09)`;
-  ctx.lineWidth = 0.8;
+  ctx.strokeStyle = `rgba(${rgb.r},${rgb.g},${rgb.b},0.08)`;
+  ctx.lineWidth = 0.7;
   for (let y = 0; y < H; y += 20) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
   for (let x = 0; x < W; x += 20) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
   ctx.restore();
@@ -138,39 +188,61 @@ function makeCardTexture(title, subText, accentColor) {
 
   // 글로우 테두리
   ctx.shadowColor = ac; ctx.shadowBlur = 12;
-  ctx.strokeStyle = `rgba(${rgb.r},${rgb.g},${rgb.b},0.6)`;
+  ctx.strokeStyle = `rgba(${rgb.r},${rgb.g},${rgb.b},0.55)`;
   ctx.lineWidth = 1.8;
   ctx.beginPath();
-  ctx.moveTo(R,0); ctx.lineTo(W-R,0);
-  ctx.quadraticCurveTo(W,0,W,R); ctx.lineTo(W,H-R);
-  ctx.quadraticCurveTo(W,H,W-R,H); ctx.lineTo(R,H);
-  ctx.quadraticCurveTo(0,H,0,H-R); ctx.lineTo(0,R);
-  ctx.quadraticCurveTo(0,0,R,0); ctx.closePath();
+  ctx.moveTo(Rv,0); ctx.lineTo(W-Rv,0);
+  ctx.quadraticCurveTo(W,0,W,Rv); ctx.lineTo(W,H-Rv);
+  ctx.quadraticCurveTo(W,H,W-Rv,H); ctx.lineTo(Rv,H);
+  ctx.quadraticCurveTo(0,H,0,H-Rv); ctx.lineTo(0,Rv);
+  ctx.quadraticCurveTo(0,0,Rv,0); ctx.closePath();
   ctx.stroke(); ctx.shadowBlur = 0;
 
-  // 타이틀
-  ctx.fillStyle = '#e8f4ff';
-  ctx.font = 'bold 36px "Apple SD Gothic Neo","Malgun Gothic","NanumGothic",sans-serif';
-  ctx.textBaseline = 'middle';
-  ctx.shadowColor = ac; ctx.shadowBlur = 6;
-  const maxW = W - 30;
-  let t = String(title || '작업');
-  while (ctx.measureText(t).width > maxW && t.length > 1) t = t.slice(0,-1);
-  if (t !== String(title||'작업')) t += '…';
-  ctx.fillText(t, 18, H * 0.38); ctx.shadowBlur = 0;
-
-  // 서브텍스트
-  if (subText) {
-    ctx.fillStyle = `rgba(${rgb.r},${rgb.g},${rgb.b},0.90)`;
-    ctx.font = '21px "Apple SD Gothic Neo","Malgun Gothic","NanumGothic",sans-serif';
-    let s = String(subText);
-    while (ctx.measureText(s).width > maxW - 6 && s.length > 1) s = s.slice(0,-1);
-    if (s !== String(subText)) s += '…';
-    ctx.fillText(s, 18, H * 0.70);
+  const maxW = W - 28;
+  function drawLine(text, y, font, color, glow) {
+    if (!text) return;
+    ctx.font = font;
+    ctx.fillStyle = color;
+    ctx.textBaseline = 'middle';
+    if (glow) { ctx.shadowColor = ac; ctx.shadowBlur = 5; }
+    let s = String(text);
+    while (ctx.measureText(s).width > maxW && s.length > 1) s = s.slice(0,-1);
+    if (s !== String(text)) s += '…';
+    ctx.fillText(s, 16, y);
+    ctx.shadowBlur = 0;
   }
 
+  // 제목 (굵고 크게 — 상단 30%)
+  drawLine(
+    title || '작업',
+    H * 0.26,  // y ≈ 62px
+    'bold 34px "Apple SD Gothic Neo","Malgun Gothic","NanumGothic",sans-serif',
+    '#e8f4ff', true
+  );
+
+  // 구분선
+  ctx.strokeStyle = `rgba(${rgb.r},${rgb.g},${rgb.b},0.2)`;
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(16, H*0.46); ctx.lineTo(W-16, H*0.46); ctx.stroke();
+
+  // 서브1 (액센트 색 — 중간)
+  drawLine(
+    sub1 || '',
+    H * 0.62,  // y ≈ 149px
+    '21px "Apple SD Gothic Neo","Malgun Gothic","NanumGothic",sans-serif',
+    `rgba(${rgb.r},${rgb.g},${rgb.b},0.95)`, false
+  );
+
+  // 서브2 (흐린 색 — 하단)
+  drawLine(
+    sub2 || '',
+    H * 0.82,  // y ≈ 197px
+    '18px "Apple SD Gothic Neo","Malgun Gothic","NanumGothic",sans-serif',
+    'rgba(148,163,184,0.85)', false
+  );
+
   // 우측 상단 펄스 점
-  ctx.beginPath(); ctx.arc(W-20, 20, 5, 0, Math.PI*2);
+  ctx.beginPath(); ctx.arc(W-18, 18, 5, 0, Math.PI*2);
   ctx.fillStyle = `rgba(${rgb.r},${rgb.g},${rgb.b},0.9)`;
   ctx.shadowColor = ac; ctx.shadowBlur = 8; ctx.fill(); ctx.shadowBlur = 0;
 
@@ -277,13 +349,22 @@ function drawLine(from, to, colorHex) {
   MW.lineMeshes.push(line);
 }
 
-// ─── 카드 메시 (renderOrder=1 → 연결선 앞에) ─────────────────────────────────
+// ─── 카드 메시 (renderOrder=2 → 허브(1)보다 항상 앞에 렌더) ─────────────────
 function createCard(node, pos) {
   const color = _mwExtractColor(node.color);
   const count = (node.children || []).length;
-  const sub   = node.latestActivity
-    || (count > 0 ? `${count}개 항목` : (node.domain || node.type || ''));
-  const tex = makeCardTexture(node.topic || node.name || '작업', sub, color);
+
+  // 서브1: 항목 수 or 유형/도메인
+  const sub1 = count > 0
+    ? `하위 ${count}개 항목`
+    : (node.domain || node.type || node.eventType || '');
+
+  // 서브2: 최근 활동명 (있을 때만)
+  const sub2 = node.latestActivity
+    ? String(node.latestActivity).slice(0, 38)
+    : (node.name && node.name !== node.topic ? String(node.name).slice(0, 38) : '');
+
+  const tex = makeCardTexture(node.topic || node.name || '작업', sub1, sub2, color);
   const geo = new THREE.PlaneGeometry(CARD_W, CARD_H);
   const mat = new THREE.MeshBasicMaterial({
     map: tex, transparent: true,
@@ -292,7 +373,7 @@ function createCard(node, pos) {
   });
   const mesh = new THREE.Mesh(geo, mat);
   mesh.position.set(pos.x, pos.y + CARD_H * 0.5, pos.z);
-  mesh.renderOrder = 1;
+  mesh.renderOrder = 2;   // 허브(1)보다 나중에 렌더 → 허브 뒤로 숨지 않음
   mesh.userData = { nodeData: node, isCard: true };
   MW.scene.add(mesh);
   MW.cardMeshes.push(mesh);
@@ -459,15 +540,20 @@ window.buildPlanetSystem = function(nodeList) {
   MW.scene     = window.scene;
   MW.viewStack = [];
 
-  // purposeLabel 기준 그룹화 → 0단계 카드
+  // purposeLabel 기준 그룹화 → 0단계 카드 (카테고리 정규화 적용)
   const groupMap = {};
   (nodeList || []).forEach(n => {
-    const key = n.purposeLabel || n.domain || n.type || '기타';
+    const rawKey = n.purposeLabel || n.domain || n.type || '기타';
+    const key    = _mwNormCat(rawKey);  // 영문 → 한국어 정규화
     if (!groupMap[key]) {
+      // 카테고리 색: purposeColor → CAT_COLOR → 랜덤 액센트
+      const catColor = n.purposeColor
+        || _MW_CAT_COLOR[key]
+        || _mwExtractColor(n.color);
       groupMap[key] = {
         topic:          key,
         name:           key,
-        color:          n.purposeColor || _mwExtractColor(n.color),
+        color:          catColor,
         children:       [],
         latestActivity: null,
       };
