@@ -1,129 +1,109 @@
 /**
- * mywork-renderer.js  v3
+ * mywork-renderer.js  v4
+ * - 동적 링 배치: 카드 수 → 반지름 자동 계산 → 겹침 완전 방지
  * - 3단계 드릴다운 (카테고리 → 이벤트 → 세부정보)
- * - 스프라이트 빌보드 (camera.quaternion 복사 → 텍스트 기울어짐 완전 제거)
+ * - 스프라이트 빌보드 (camera.quaternion 복사 → 텍스트 기울어짐 제거)
  * - renderOrder: 연결선(0) < 카드(1) → 선이 카드 뒤로
  * - 3D 그리드/행성 텍스처, lerpCameraTo 중앙정렬
  */
 
-// ─── 위치 테이블 (3단계) ──────────────────────────────────────────────────────
-// 0단계: 카테고리 카드 (최대 13개, 이중 원형)
-const CARD_POSITIONS = [
-  { x:  5.50, y: 0, z:  0.00 },
-  { x:  3.90, y: 0, z: -3.90 },
-  { x:  0.00, y: 0, z: -5.50 },
-  { x: -3.90, y: 0, z: -3.90 },
-  { x: -5.50, y: 0, z:  0.00 },
-  { x: -3.90, y: 0, z:  3.90 },
-  { x:  0.00, y: 0, z:  5.50 },
-  { x:  3.90, y: 0, z:  3.90 },
-  { x:  9.20, y: 0, z:  0.00 },
-  { x:  6.51, y: 0, z: -6.51 },
-  { x:  0.00, y: 0, z: -9.20 },
-  { x: -6.51, y: 0, z: -6.51 },
-  { x: -9.20, y: 0, z:  0.00 },
+// ─── 카드 물리 크기 (Three.js 단위) ──────────────────────────────────────────
+const CARD_W  = 4.5;  // PlaneGeometry 가로
+const CARD_H  = 1.72; // PlaneGeometry 세로
+
+// 레벨별 최소 반지름·최대 카드 수
+const LEVEL_CFG = [
+  { minR: 10, maxCards: 13, gap: 1.35 },  // 0단계: 카테고리
+  { minR:  8, maxCards: 10, gap: 1.35 },  // 1단계: 이벤트
+  { minR:  6, maxCards:  6, gap: 1.40 },  // 2단계: 세부정보
 ];
 
-// 1단계: 이벤트 카드 (최대 7개, 중간 원형)
-const CHILD_POSITIONS = [
-  { x:  5.00, y: 0, z:  0.00 },
-  { x:  2.50, y: 0, z: -4.33 },
-  { x: -2.50, y: 0, z: -4.33 },
-  { x: -5.00, y: 0, z:  0.00 },
-  { x: -2.50, y: 0, z:  4.33 },
-  { x:  2.50, y: 0, z:  4.33 },
-  { x:  0.00, y: 0, z: -6.00 },
-];
-
-// 2단계: 세부정보 카드 (최대 5개, 작은 원형)
-const GRAND_POSITIONS = [
-  { x:  3.20, y: 0, z:  0.00 },
-  { x:  0.99, y: 0, z: -3.04 },
-  { x: -2.57, y: 0, z: -1.87 },
-  { x: -2.57, y: 0, z:  1.87 },
-  { x:  0.99, y: 0, z:  3.04 },
-];
+/**
+ * 동적 원형 위치 계산
+ * 이웃 카드 사이 호(arc) ≥ CARD_W × gap 이 되도록 반지름 결정
+ */
+function makeRingPositions(count, levelIdx) {
+  if (count === 0) return [];
+  const li  = Math.min(levelIdx || 0, LEVEL_CFG.length - 1);
+  const cfg = LEVEL_CFG[li];
+  const r   = Math.max(cfg.minR, (count * CARD_W * cfg.gap) / (Math.PI * 2));
+  const ang = -Math.PI / 2; // 12시 방향 시작
+  return Array.from({ length: count }, (_, i) => {
+    const a = ang + (i / count) * Math.PI * 2;
+    return { x: Math.cos(a) * r, y: 0, z: Math.sin(a) * r };
+  });
+}
 
 // ─── 상태 ─────────────────────────────────────────────────────────────────────
 const MW = {
-  hubMesh:          null,
-  cardMeshes:       [],
-  lineMeshes:       [],
-  currentNodes:     [],
-  currentHubLabel:  '내 작업',
-  currentPositions: null,   // 현재 레벨에서 쓴 positions 배열
-  viewStack:        [],     // [{nodes, hubLabel, positions}]
-  scene:            null,
-  raycaster:        new THREE.Raycaster(),
-  mouse:            new THREE.Vector2(),
-  animating:        false,
+  hubMesh:         null,
+  cardMeshes:      [],
+  lineMeshes:      [],
+  currentNodes:    [],
+  currentHubLabel: '내 작업',
+  currentLevel:    0,     // 현재 드릴 단계 (0/1/2)
+  viewStack:       [],    // [{nodes, hubLabel, levelIdx}]
+  scene:           null,
+  raycaster:       new THREE.Raycaster(),
+  mouse:           new THREE.Vector2(),
+  animating:       false,
 };
 
 // ─── 색상 유틸 ────────────────────────────────────────────────────────────────
-function _mwExtractColor(color, fallback = '#06b6d4') {
-  if (!color) return fallback;
+function _mwExtractColor(color, fallback) {
+  const fb = fallback || '#06b6d4';
+  if (!color) return fb;
   if (typeof color === 'string') return color;
   if (typeof color === 'number') return '#' + color.toString(16).padStart(6, '0');
-  if (typeof color === 'object') return color.background || color.border || color.hex || fallback;
-  return fallback;
+  if (typeof color === 'object') return color.background || color.border || color.hex || fb;
+  return fb;
 }
 function _mwHex2rgb(hex) {
   const h = (hex || '#06b6d4').replace('#', '');
-  return { r: parseInt(h.slice(0,2),16)||6, g: parseInt(h.slice(2,4),16)||182, b: parseInt(h.slice(4,6),16)||212 };
+  return {
+    r: parseInt(h.slice(0,2),16)||6,
+    g: parseInt(h.slice(2,4),16)||182,
+    b: parseInt(h.slice(4,6),16)||212,
+  };
 }
 
-// ─── 2단계용 세부 노드 생성 (rawNode 프로퍼티 → 카드화) ─────────────────────
+// ─── 2단계용 세부 노드 생성 ───────────────────────────────────────────────────
 function _mwMakeDetailNodes(rawNode, parentColor) {
   const pc = parentColor || '#06b6d4';
   const mk = (topic, name, color) => ({
     topic, name: String(name || '').slice(0, 40),
-    color, children: [],  // 3단계가 끝이므로 자식 없음
+    color, children: [],
   });
   const out = [];
-  // 시간
-  if (rawNode.timestamp || rawNode.createdAt || rawNode.time) {
-    const ts = rawNode.timestamp || rawNode.createdAt || rawNode.time;
+  const ts = rawNode.timestamp || rawNode.createdAt || rawNode.time;
+  if (ts) {
     const dt = new Date(ts);
     const label = isNaN(dt.getTime()) ? String(ts).slice(0,20)
       : dt.toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});
     out.push(mk('🕐 시간', label, '#64748b'));
   }
-  // 세션 ID
-  if (rawNode.session || rawNode.sessionId || rawNode.session_id) {
-    const sid = rawNode.session || rawNode.sessionId || rawNode.session_id;
-    out.push(mk('🔗 세션', String(sid).slice(0,20), '#8b5cf6'));
-  }
-  // 도메인/카테고리
-  if (rawNode.domain || rawNode.category) {
+  const sid = rawNode.session || rawNode.sessionId || rawNode.session_id;
+  if (sid) out.push(mk('🔗 세션', String(sid).slice(0,20), '#8b5cf6'));
+  if (rawNode.domain || rawNode.category)
     out.push(mk('🌐 도메인', rawNode.domain || rawNode.category, '#06b6d4'));
-  }
-  // 유형
-  if (rawNode.type || rawNode.eventType || rawNode.purposeLabel) {
+  if (rawNode.type || rawNode.eventType || rawNode.purposeLabel)
     out.push(mk('🏷️ 유형', rawNode.type || rawNode.eventType || rawNode.purposeLabel, '#f59e0b'));
-  }
-  // 프로젝트
-  if (rawNode.projectName || rawNode.project || rawNode.repo) {
+  if (rawNode.projectName || rawNode.project || rawNode.repo)
     out.push(mk('📁 프로젝트', rawNode.projectName || rawNode.project || rawNode.repo, '#10b981'));
-  }
-  // 상세 레이블 (이름과 다를 때)
-  if (rawNode.detail || rawNode.description || rawNode.summary) {
+  if (rawNode.detail || rawNode.description || rawNode.summary)
     out.push(mk('📝 요약', rawNode.detail || rawNode.description || rawNode.summary, '#ec4899'));
-  }
-
-  // 아무것도 없으면 기본 카드 생성
-  if (out.length === 0) {
+  if (out.length === 0)
     out.push(mk('📋 상세', rawNode.label || rawNode.name || rawNode.id || '없음', pc));
-  }
-  return out.slice(0, GRAND_POSITIONS.length);
+  return out.slice(0, LEVEL_CFG[2].maxCards);
 }
 
-// ─── 카드 텍스처 (3D 그리드 행성 스타일) ────────────────────────────────────
+// ─── 카드 텍스처 (3D 그리드 행성 스타일) ─────────────────────────────────────
 function makeCardTexture(title, subText, accentColor) {
   const W = 512, H = 192;
   const canvas = document.createElement('canvas');
   canvas.width = W; canvas.height = H;
   const ctx = canvas.getContext('2d');
-  const ac = accentColor || '#06b6d4';
+  const ac  = accentColor || '#06b6d4';
   const rgb = _mwHex2rgb(ac);
 
   // 배경 딥우주 그라디언트
@@ -140,7 +120,7 @@ function makeCardTexture(title, subText, accentColor) {
   ctx.quadraticCurveTo(0,0,R,0); ctx.closePath();
   ctx.fillStyle = bg; ctx.fill();
 
-  // 그리드 라인 (클립 내부)
+  // 그리드 라인
   ctx.save(); ctx.clip();
   ctx.strokeStyle = `rgba(${rgb.r},${rgb.g},${rgb.b},0.09)`;
   ctx.lineWidth = 0.8;
@@ -148,7 +128,7 @@ function makeCardTexture(title, subText, accentColor) {
   for (let x = 0; x < W; x += 20) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
   ctx.restore();
 
-  // 왼쪽 글로우 액센트 바
+  // 왼쪽 액센트 바
   const bar = ctx.createLinearGradient(0,0,0,H);
   bar.addColorStop(0,   `rgba(${rgb.r},${rgb.g},${rgb.b},0.0)`);
   bar.addColorStop(0.5, `rgba(${rgb.r},${rgb.g},${rgb.b},1.0)`);
@@ -167,7 +147,7 @@ function makeCardTexture(title, subText, accentColor) {
   ctx.quadraticCurveTo(0,0,R,0); ctx.closePath();
   ctx.stroke(); ctx.shadowBlur = 0;
 
-  // 타이틀 (밝고 크게)
+  // 타이틀
   ctx.fillStyle = '#e8f4ff';
   ctx.font = 'bold 36px "Apple SD Gothic Neo","Malgun Gothic","NanumGothic",sans-serif';
   ctx.textBaseline = 'middle';
@@ -176,8 +156,7 @@ function makeCardTexture(title, subText, accentColor) {
   let t = String(title || '작업');
   while (ctx.measureText(t).width > maxW && t.length > 1) t = t.slice(0,-1);
   if (t !== String(title||'작업')) t += '…';
-  ctx.fillText(t, 18, H * 0.38);
-  ctx.shadowBlur = 0;
+  ctx.fillText(t, 18, H * 0.38); ctx.shadowBlur = 0;
 
   // 서브텍스트
   if (subText) {
@@ -199,18 +178,16 @@ function makeCardTexture(title, subText, accentColor) {
 
 // ─── 허브 텍스처 (행성 구체) ──────────────────────────────────────────────────
 function makeHubTexture(label) {
-  const S = 320; const cx=S/2, cy=S/2, R=S*0.44;
+  const S=320, cx=S/2, cy=S/2, R=S*0.44;
   const canvas = document.createElement('canvas');
   canvas.width = S; canvas.height = S;
   const ctx = canvas.getContext('2d');
 
-  // 외곽 글로우
   let glow = ctx.createRadialGradient(cx,cy,R*0.4,cx,cy,R*1.15);
   glow.addColorStop(0,'rgba(6,182,212,0.3)'); glow.addColorStop(1,'rgba(6,182,212,0)');
   ctx.fillStyle = glow;
   ctx.beginPath(); ctx.arc(cx,cy,R*1.15,0,Math.PI*2); ctx.fill();
 
-  // 구체 그라디언트
   let sp = ctx.createRadialGradient(cx-R*0.28,cy-R*0.22,R*0.04,cx,cy,R);
   sp.addColorStop(0,'rgba(22,55,88,0.99)');
   sp.addColorStop(0.5,'rgba(8,26,54,0.99)');
@@ -218,12 +195,11 @@ function makeHubTexture(label) {
   ctx.fillStyle = sp;
   ctx.beginPath(); ctx.arc(cx,cy,R,0,Math.PI*2); ctx.fill();
 
-  // 위도/경도 그리드
   ctx.save(); ctx.beginPath(); ctx.arc(cx,cy,R,0,Math.PI*2); ctx.clip();
-  ctx.strokeStyle = 'rgba(6,182,212,0.2)'; ctx.lineWidth = 1;
+  ctx.strokeStyle='rgba(6,182,212,0.2)'; ctx.lineWidth=1;
   for (let lat=-60; lat<=60; lat+=30) {
     const ry=R*Math.cos(lat*Math.PI/180), rz=R*Math.sin(lat*Math.PI/180);
-    ctx.beginPath(); ctx.ellipse(cx, cy+rz, ry, ry*0.22, 0, 0, Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(cx,cy+rz,ry,ry*0.22,0,0,Math.PI*2); ctx.stroke();
   }
   for (let lon=0; lon<180; lon+=36) {
     ctx.save(); ctx.translate(cx,cy); ctx.rotate(lon*Math.PI/180);
@@ -232,18 +208,17 @@ function makeHubTexture(label) {
   }
   ctx.restore();
 
-  // 테두리 링
   ctx.strokeStyle='#06b6d4'; ctx.lineWidth=3;
   ctx.shadowColor='#06b6d4'; ctx.shadowBlur=20;
-  ctx.beginPath(); ctx.arc(cx,cy,R,0,Math.PI*2); ctx.stroke();
-  ctx.shadowBlur=0;
+  ctx.beginPath(); ctx.arc(cx,cy,R,0,Math.PI*2); ctx.stroke(); ctx.shadowBlur=0;
 
-  // 텍스트
   ctx.fillStyle='#e8f4ff'; ctx.textAlign='center'; ctx.textBaseline='middle';
   ctx.shadowColor='#06b6d4'; ctx.shadowBlur=10;
   ctx.font='bold 32px "Apple SD Gothic Neo","Malgun Gothic","NanumGothic",sans-serif';
-  ctx.fillText(label||'내 작업', cx, cy);
-  ctx.shadowBlur=0;
+  // 허브 텍스트 길이 제한
+  let hl = String(label || '내 작업');
+  if (hl.length > 10) hl = hl.slice(0, 9) + '…';
+  ctx.fillText(hl, cx, cy); ctx.shadowBlur=0;
 
   return new THREE.CanvasTexture(canvas);
 }
@@ -284,7 +259,7 @@ function clearAllPlanets() {
   ).forEach(m => sc.remove(m));
 }
 
-// ─── 연결선 (renderOrder=0 → 카드 뒤에 그려짐) ───────────────────────────────
+// ─── 연결선 (renderOrder=0 → 카드 뒤에) ──────────────────────────────────────
 function drawLine(from, to, colorHex) {
   const mat = new THREE.LineBasicMaterial({
     color: colorHex || 0x06b6d4,
@@ -296,27 +271,27 @@ function drawLine(from, to, colorHex) {
     new THREE.Vector3(to.x,   to.y,   to.z),
   ]);
   const line = new THREE.Line(geo, mat);
-  line.renderOrder = 0;   // ← 카드보다 먼저 렌더 → 카드 뒤에 보임
+  line.renderOrder = 0;
   MW.scene.add(line);
   MW.lineMeshes.push(line);
 }
 
-// ─── 카드 메시 (renderOrder=1 → 연결선 위에 그려짐) ─────────────────────────
+// ─── 카드 메시 (renderOrder=1 → 연결선 앞에) ─────────────────────────────────
 function createCard(node, pos) {
   const color = _mwExtractColor(node.color);
   const count = (node.children || []).length;
   const sub   = node.latestActivity
     || (count > 0 ? `${count}개 항목` : (node.domain || node.type || ''));
   const tex = makeCardTexture(node.topic || node.name || '작업', sub, color);
-  const geo = new THREE.PlaneGeometry(5.0, 1.92);
+  const geo = new THREE.PlaneGeometry(CARD_W, CARD_H);
   const mat = new THREE.MeshBasicMaterial({
     map: tex, transparent: true,
     side: THREE.DoubleSide,
     depthTest: true, depthWrite: false,
   });
   const mesh = new THREE.Mesh(geo, mat);
-  mesh.position.set(pos.x, pos.y + 0.96, pos.z);
-  mesh.renderOrder = 1;   // ← 연결선보다 나중에 렌더 → 선이 카드 뒤로 가려짐
+  mesh.position.set(pos.x, pos.y + CARD_H * 0.5, pos.z);
+  mesh.renderOrder = 1;
   mesh.userData = { nodeData: node, isCard: true };
   MW.scene.add(mesh);
   MW.cardMeshes.push(mesh);
@@ -341,49 +316,57 @@ function createHub(label, pos) {
   return mesh;
 }
 
-// ─── 카메라 중앙 이동 ─────────────────────────────────────────────────────────
-function _mwFocusCamera(hubPos, radius) {
-  const r = Math.max(18, (radius || 22) * 2.1);
+// ─── 카메라 포커스 ────────────────────────────────────────────────────────────
+function _mwFocusCamera(hubPos, ringRadius) {
+  // 링 반지름에 비례해 카메라 거리 결정 (카드가 모두 시야에 들어오도록)
+  const dist = Math.max(18, ringRadius * 2.6 + 6);
   if (typeof lerpCameraTo === 'function') {
-    lerpCameraTo(r, hubPos.x, hubPos.y, hubPos.z, 350);
+    lerpCameraTo(dist, hubPos.x, hubPos.y, hubPos.z, 350);
   } else if (typeof controls !== 'undefined' && controls.tgt && controls.sph) {
     controls.tgt.set(hubPos.x, hubPos.y, hubPos.z);
-    controls.sph.r = r;
+    controls.sph.r = dist;
     if (typeof controls._apply === 'function') controls._apply();
   } else if (window.camera) {
-    window.camera.position.set(hubPos.x, r*0.3, hubPos.z + r*0.95);
+    window.camera.position.set(hubPos.x, dist * 0.3, hubPos.z + dist * 0.95);
     window.camera.lookAt(hubPos.x, hubPos.y, hubPos.z);
   }
 }
 
-// ─── 뷰 렌더링 ────────────────────────────────────────────────────────────────
-function renderView(nodes, hubLabel, positions, hubPos) {
-  const hp = hubPos || { x:0, y:0, z:0 };
+// ─── 뷰 렌더링 (levelIdx 기반 동적 포지션) ────────────────────────────────────
+function renderView(nodes, hubLabel, levelIdx, hubPos) {
+  const li = Math.min(levelIdx || 0, LEVEL_CFG.length - 1);
+  const hp = hubPos || { x: 0, y: 0, z: 0 };
+
   clearAllPlanets();
   clearMyWork();
 
   createHub(hubLabel, hp);
 
-  const count = Math.min(nodes.length, positions.length);
-  for (let i = 0; i < count; i++) {
-    const pos = { x: hp.x+positions[i].x, y: hp.y+positions[i].y, z: hp.z+positions[i].z };
-    createCard(nodes[i], pos);
-    const hexStr = _mwExtractColor(nodes[i].color,'#334155').replace('#','');
+  const maxCards = LEVEL_CFG[li].maxCards;
+  const visNodes = nodes.slice(0, maxCards);
+  const positions = makeRingPositions(visNodes.length, li);
+
+  for (let i = 0; i < visNodes.length; i++) {
+    const p   = positions[i];
+    const pos = { x: hp.x + p.x, y: hp.y + p.y, z: hp.z + p.z };
+    createCard(visNodes[i], pos);
+    const hexStr = _mwExtractColor(visNodes[i].color, '#334155').replace('#', '');
     drawLine(
-      { x:hp.x, y:hp.y+0.5, z:hp.z },        // 허브 중심 (낮은 y)
-      { x:pos.x, y:pos.y+0.96, z:pos.z },     // 카드 중심
+      { x: hp.x,   y: hp.y + 0.5,        z: hp.z },
+      { x: pos.x,  y: pos.y + CARD_H * 0.5, z: pos.z },
       parseInt(hexStr, 16)
     );
   }
 
-  MW.currentNodes     = nodes;
-  MW.currentHubLabel  = hubLabel;
-  MW.currentPositions = positions;
+  MW.currentNodes    = nodes;
+  MW.currentHubLabel = hubLabel;
+  MW.currentLevel    = li;
 
-  // 카드 분포 반경 → 적정 카메라 거리
-  const farthest = positions.slice(0, count).reduce((mx,p) =>
-    Math.max(mx, Math.hypot(p.x, p.z)), 0);
-  _mwFocusCamera(hp, farthest);
+  // 실제 링 반지름 계산해 카메라 맞춤
+  const ringR = positions.length > 0
+    ? Math.max(...positions.map(p => Math.hypot(p.x, p.z)))
+    : LEVEL_CFG[li].minR;
+  _mwFocusCamera(hp, ringR);
 }
 
 // ─── 카드 클릭 핸들러 ─────────────────────────────────────────────────────────
@@ -405,7 +388,7 @@ function onMyWorkClick(event) {
   // 허브 클릭 → 뒤로가기
   if (hit.userData.isHub && MW.viewStack.length > 0) {
     const prev = MW.viewStack.pop();
-    renderView(prev.nodes, prev.hubLabel, prev.positions);
+    renderView(prev.nodes, prev.hubLabel, prev.levelIdx);
     return;
   }
 
@@ -420,33 +403,30 @@ function onMyWorkClick(event) {
       return;
     }
 
-    // 스택에 현재 상태 저장 (돌아올 때 사용)
+    // 현재 상태 스택에 저장
     MW.viewStack.push({
-      nodes:     MW.currentNodes.slice(),
-      hubLabel:  MW.currentHubLabel,
-      positions: MW.currentPositions || CARD_POSITIONS,
+      nodes:    MW.currentNodes.slice(),
+      hubLabel: MW.currentHubLabel,
+      levelIdx: MW.currentLevel,
     });
 
-    // 레벨에 따라 다음 위치 배열 결정
-    const depth       = MW.viewStack.length; // 방금 push했으므로 이미 +1
-    const nextPos     = depth === 1 ? CHILD_POSITIONS : GRAND_POSITIONS;
-    const maxCards    = nextPos.length;
+    const nextLevel  = MW.currentLevel + 1;
+    const maxCards   = LEVEL_CFG[Math.min(nextLevel, LEVEL_CFG.length - 1)].maxCards;
 
-    const childNodes  = children.slice(0, maxCards).map(c =>
+    const childNodes = children.slice(0, maxCards).map(c =>
       typeof c === 'string'
         ? { topic: c, name: c, color: node.color || '#06b6d4', children: [] }
         : { ...c, color: c.color || node.color || '#06b6d4' }
     );
 
-    renderView(childNodes, node.topic || node.name, nextPos);
+    renderView(childNodes, node.topic || node.name, nextLevel);
   }
 }
 
-// ─── 스프라이트 빌보드 (camera.quaternion 복사 → 텍스트 완전 수평) ────────────
-// lookAt/atan2보다 정확: 카메라 기울어진 각도까지 반영해 텍스트가 항상 정면
+// ─── 스프라이트 빌보드 ────────────────────────────────────────────────────────
 function updateBillboard() {
   if (!window.camera) return;
-  const q = window.camera.quaternion;
+  const q     = window.camera.quaternion;
   const items = [...MW.cardMeshes];
   if (MW.hubMesh) items.push(MW.hubMesh);
   items.forEach(m => m.quaternion.copy(q));
@@ -456,7 +436,6 @@ function updateBillboard() {
 window._origBuildPlanetSystem = window.buildPlanetSystem;
 
 window.buildPlanetSystem = function(nodeList) {
-  // 팀/전사/병렬 모드는 원본 위임
   const inTeam =
     (typeof _teamMode     !== 'undefined' && _teamMode) ||
     (typeof _companyMode  !== 'undefined' && _companyMode) ||
@@ -473,7 +452,7 @@ window.buildPlanetSystem = function(nodeList) {
     return;
   }
 
-  // 드릴다운 중(viewStack > 0)이면 WS 실시간 데이터에도 뷰를 유지
+  // 드릴다운 중이면 WS 실시간 데이터로 뷰 리셋 방지
   if (MW.viewStack.length > 0) return;
 
   MW.scene     = window.scene;
@@ -492,26 +471,25 @@ window.buildPlanetSystem = function(nodeList) {
         latestActivity: null,
       };
     }
-    // 1단계 자식에 2단계 세부정보 심어 넣기
     const childColor = n.purposeColor || _mwExtractColor(n.color);
     groupMap[key].children.push({
-      topic:          n.label || n.topic || n.name || '작업',
-      name:           n.label || n.name  || '작업',
-      color:          childColor,
-      children:       _mwMakeDetailNodes(n, childColor),  // ← 2단계
-      _raw:           n,
+      topic:    n.label || n.topic || n.name || '작업',
+      name:     n.label || n.name  || '작업',
+      color:    childColor,
+      children: _mwMakeDetailNodes(n, childColor),
+      _raw:     n,
     });
     if (!groupMap[key].latestActivity)
       groupMap[key].latestActivity = n.label || n.topic || n.name || null;
   });
 
   const topNodes = Object.values(groupMap)
-    .sort((a,b) => b.children.length - a.children.length)
-    .slice(0, CARD_POSITIONS.length);
+    .sort((a, b) => b.children.length - a.children.length)
+    .slice(0, LEVEL_CFG[0].maxCards);
 
-  renderView(topNodes, '내 작업', CARD_POSITIONS);
+  renderView(topNodes, '내 작업', 0);
 
-  // 클릭 이벤트 등록 (renderer.domElement 우선)
+  // 클릭 이벤트 (renderer.domElement 우선)
   const cvs = (typeof renderer !== 'undefined' && renderer.domElement)
     || document.getElementById('orbit-canvas')
     || document.querySelector('canvas');
@@ -537,7 +515,7 @@ window.buildPlanetSystem = function(nodeList) {
     if (MW.cardMeshes.length === 0 && !MW.hubMesh) {
       triggered = true;
       if (typeof loadData === 'function') loadData();
-      else renderView([], '내 작업', CARD_POSITIONS);
+      else renderView([], '내 작업', 0);
     }
   };
   setTimeout(tryInit, 500);
