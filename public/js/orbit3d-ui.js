@@ -1055,6 +1055,12 @@ function toggleLeftNav() {
 window.toggleLeftNav = toggleLeftNav;
 
 function setViewPersonal() {
+  // workspace → personal 전환 시 multilevel scene 정리
+  if (window.RendererManager) window.RendererManager.switchTo('personal');
+  else if (window.multiLevelRenderer) {
+    // RendererManager 미로드 폴백
+    if (typeof closeDrillPanel === 'function') closeDrillPanel();
+  }
   if (typeof _teamMode !== 'undefined' && (_teamMode || _companyMode)) exitTeamMode();
   if (typeof _parallelMode !== 'undefined' && _parallelMode) exitParallelMode();
   if (typeof controls !== 'undefined') controls.enabled = false;
@@ -1777,20 +1783,26 @@ function _copyCode(code) {
 }
 
 function _selectWorkspace(id, name) {
-  // 워크스페이스 팝업 닫기
   closePopup('workspace-popup');
   _currentWorkspaceId = id;
   showToast(`'${name}' 워크스페이스 로딩 중...`);
 
-  // 다계층 워크스페이스 뷰 시작 (scene 준비 후 실행)
   const _launchWsMode = async () => {
     try {
+      // ── 이전 렌더러 완전 정리 (충돌 방지) ─────────────────────────
+      if (window.RendererManager) {
+        window.RendererManager.switchTo('workspace');
+      } else {
+        // RendererManager 미로드 폴백: 직접 정리
+        if (typeof clearMyWork === 'function') clearMyWork();
+        if (typeof clearAllPlanets === 'function') clearAllPlanets();
+        if (typeof exitTeamMode === 'function') exitTeamMode();
+      }
+
       const mlr = window.multiLevelRenderer;
       if (mlr && mlr.initWorkspaceMode && window.scene) {
-        // 워크스페이스 ID 설정
         mlr.workspaceId = id;
         const data = await mlr.initWorkspaceMode(window.scene);
-        // 드릴 패널 열기
         if (typeof openDrillPanel === 'function') {
           openDrillPanel(
             mlr.currentLevel || 0,
@@ -1801,7 +1813,6 @@ function _selectWorkspace(id, name) {
         }
         showToast(`✅ '${name}' 워크스페이스 로드됨`);
       } else {
-        // fallback: 팀 데모 뷰
         loadTeamDemo();
       }
     } catch (e) {
@@ -1810,7 +1821,6 @@ function _selectWorkspace(id, name) {
     }
   };
 
-  // scene이 준비될 때까지 최대 2초 대기
   let waited = 0;
   const _waitScene = setInterval(() => {
     waited += 100;

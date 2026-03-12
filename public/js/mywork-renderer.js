@@ -538,6 +538,19 @@ window.buildPlanetSystem = function(nodeList) {
     return;
   }
 
+  // ── workspace → personal 전환 시 multilevel scene 완전 정리 ─────────────
+  if (window.RendererManager) {
+    window.RendererManager.cleanupMultilevel();
+  } else if (window.multiLevelRenderer) {
+    // 폴백: 직접 정리
+    const mlr = window.multiLevelRenderer;
+    Object.values(mlr.nodeMeshes || {}).forEach(m => window.scene.remove(m));
+    mlr.nodeMeshes = {};
+    (mlr.connectionLines || []).forEach(l => window.scene.remove(l));
+    mlr.connectionLines = [];
+    if (typeof closeDrillPanel === 'function') closeDrillPanel();
+  }
+
   // 드릴다운 중이면 WS 실시간 데이터로 뷰 리셋 방지
   if (MW.viewStack.length > 0) return;
 

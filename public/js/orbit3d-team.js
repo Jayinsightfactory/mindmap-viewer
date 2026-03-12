@@ -1094,6 +1094,9 @@ function buildCompanySystem(companyData) {
 }
 
 async function loadTeamDemo() {
+  // workspace → team 전환 시 multilevel scene 정리
+  if (window.RendererManager) window.RendererManager.switchTo('team');
+  else if (window.RendererManager?.cleanupMultilevel) window.RendererManager.cleanupMultilevel();
   if (typeof track === 'function') track('view.mode_switch', { from: 'personal', to: 'team' });
   const _u = typeof _orbitUser !== 'undefined' ? _orbitUser : JSON.parse(localStorage.getItem('orbitUser') || 'null');
   const token = _u?.token;
@@ -1131,6 +1134,7 @@ async function loadTeamDemo() {
 window.loadTeamDemo = loadTeamDemo;
 
 async function loadCompanyDemo() {
+  if (window.RendererManager) window.RendererManager.switchTo('company');
   if (typeof track === 'function') track('view.mode_switch', { from: 'team', to: 'company' });
   const _u = typeof _orbitUser !== 'undefined' ? _orbitUser : JSON.parse(localStorage.getItem('orbitUser') || 'null');
   const token = _u?.token;
