@@ -372,8 +372,12 @@ ${BOLD}설정${RESET}
   ${CYAN}config [k] [v]${RESET}    설정 보기/변경
   ${CYAN}remote [url]${RESET}      원격 URL 설정
 
-${BOLD}학습${RESET}
-  ${CYAN}learn start|stop|status${RESET}  개인 학습 에이전트
+${BOLD}분석 (Phase 2-5)${RESET}
+  ${CYAN}analysis [dash|cap|learn]${RESET}  작업 분석 대시보드
+  ${CYAN}learn start|stop|status${RESET}    개인 학습 에이전트
+  ${CYAN}deploy install [code]${RESET}      전사 배포 (직원 PC)
+  ${CYAN}deploy batch [code]${RESET}        일괄 설치 스크립트 생성
+  ${CYAN}deploy status [ws-id]${RESET}      배포 현황 확인
 
 ${BOLD}글로벌 옵션${RESET}
   ${CYAN}--remote${RESET}          Railway 원격 서버 대상으로 실행
@@ -700,6 +704,226 @@ function cmdRemote(args) {
   }
 }
 
+// ─── orbit deploy (Phase 4: 전사 배포) ──────────────
+async function cmdDeploy(args) {
+  const sub = args[0];
+
+  if (sub === 'install') {
+    // 원격 서버에 접속해서 현재 PC를 워크스페이스에 등록
+    console.log(`\n${BOLD}${CYAN}⬡ Orbit 전사 배포 — 직원 PC 설치${RESET}\n`);
+    const cfg = loadConfig();
+
+    if (!cfg.remote) {
+      err('원격 서버 미설정. orbit remote <url> 먼저 실행하세요.');
+      return;
+    }
+    if (!cfg.token) {
+      err('로그인 필요. orbit login <email> <token> 먼저 실행하세요.');
+      return;
+    }
+
+    log('1/4  환경 감지...');
+    const platform = process.platform;
+    const hostname = os.hostname();
+    const username = os.userInfo().username;
+    ok(`  OS: ${platform}, 호스트: ${hostname}, 사용자: ${username}`);
+
+    log('2/4  Claude Code hooks 설정...');
+    await cmdInit();
+
+    log('3/4  원격 서버에 PC 등록...');
+    try {
+      const result = await apiCall('POST', '/api/tracker/register-device', {
+        hostname,
+        username,
+        platform,
+        nodeVersion: process.version,
+        installedAt: new Date().toISOString(),
+      });
+      if (result?.ok) {
+        ok(`  디바이스 등록 완료 (ID: ${result.deviceId || 'ok'})`);
+      } else {
+        warn(`  등록 응답: ${JSON.stringify(result).slice(0, 100)}`);
+      }
+    } catch (e) {
+      warn(`  디바이스 등록 실패 (서버 미지원일 수 있음): ${e.message}`);
+    }
+
+    log('4/4  워크스페이스 연결...');
+    const workspaceCode = args[1];
+    if (workspaceCode) {
+      try {
+        const result = await apiCall('POST', '/api/workspace/join', { inviteCode: workspaceCode });
+        if (result?.ok) {
+          ok(`  워크스페이스 참여 완료`);
+        } else {
+          warn(`  참여 실패: ${result?.error || JSON.stringify(result)}`);
+        }
+      } catch (e) {
+        warn(`  워크스페이스 참여 실패: ${e.message}`);
+      }
+    } else {
+      log('  초대 코드 없음 — orbit deploy install <invite-code> 로 워크스페이스 참여 가능');
+    }
+
+    console.log(`\n${BOLD}${GREEN}✓ 설치 완료!${RESET}`);
+    console.log(`  → orbit start --bg   백그라운드 서버 시작`);
+    console.log(`  → orbit learn start  학습 에이전트 시작`);
+    console.log(`  → orbit dashboard    대시보드 확인\n`);
+
+  } else if (sub === 'batch') {
+    // 일괄 설치 스크립트 생성
+    console.log(`\n${BOLD}⬡ 일괄 설치 스크립트 생성${RESET}\n`);
+    const cfg = loadConfig();
+    const remote = cfg.remote || 'https://your-orbit-server.com';
+    const token  = cfg.token  || '<YOUR_API_TOKEN>';
+    const code   = args[1]    || '<INVITE_CODE>';
+
+    const script = `#!/bin/bash
+# ⬡ Orbit AI — 전사 일괄 설치 스크립트
+# 각 직원 PC에서 실행
+# 생성일: ${new Date().toISOString()}
+
+set -e
+
+echo "⬡ Orbit AI 설치 시작..."
+
+# 1. Node.js 확인
+if ! command -v node &>/dev/null; then
+  echo "❌ Node.js가 필요합니다. https://nodejs.org 에서 설치하세요."
+  exit 1
+fi
+echo "✓ Node.js $(node -v)"
+
+# 2. Orbit 설치
+npm install -g orbit-ai 2>/dev/null || npx orbit-ai --version
+
+# 3. 원격 서버 설정
+orbit remote ${remote}
+
+# 4. 로그인 (관리자가 토큰 발급 후 배포)
+orbit login "$USER@company.com" "${token}"
+
+# 5. 전사 설치 + 워크스페이스 참여
+orbit deploy install ${code}
+
+# 6. 백그라운드 시작
+orbit start --bg
+
+echo ""
+echo "⬡ Orbit AI 설치 완료!"
+echo "  대시보드: orbit dashboard"
+echo "  웹 뷰: orbit open"
+`;
+    console.log(script);
+    log('위 스크립트를 install-orbit.sh 로 저장 후 배포하세요.');
+    log('  각 직원 PC에서: bash install-orbit.sh');
+
+  } else if (sub === 'status') {
+    // 전사 배포 현황
+    try {
+      const data = await apiCall('GET', '/api/intelligence/realtime?workspaceId=' + (args[1] || 'default'));
+      console.log(`\n${BOLD}⬡ 전사 배포 현황${RESET}\n`);
+      console.log(`  전체 멤버: ${data.totalMemberCount || 0}명`);
+      console.log(`  활성 멤버: ${data.activeMemberCount || 0}명`);
+      console.log(`  최근 이벤트: ${data.recentEvents || 0}건\n`);
+      if (data.activeMembers?.length) {
+        for (const m of data.activeMembers) {
+          console.log(`  ${GREEN}●${RESET} ${m.userId.slice(0, 8)} — ${m.currentPurpose} (${timeAgo(m.lastActivity)})`);
+        }
+      } else {
+        console.log('  (활성 멤버 없음)');
+      }
+      console.log('');
+    } catch (e) {
+      err(`배포 현황 조회 실패: ${e.message}`);
+    }
+
+  } else {
+    console.log(`
+${BOLD}orbit deploy${RESET} — 전사 배포 관리 (Phase 4)
+
+  ${CYAN}orbit deploy install [invite-code]${RESET}   이 PC에 Orbit 설치 + 워크스페이스 참여
+  ${CYAN}orbit deploy batch [invite-code]${RESET}     일괄 설치 스크립트 생성
+  ${CYAN}orbit deploy status [workspace-id]${RESET}   배포 현황 확인
+    `);
+  }
+}
+
+// ─── orbit analysis (Phase 2 터미널 분석) ──────────────
+async function cmdAnalysis(args) {
+  const sub = args[0] || 'dashboard';
+  try {
+    if (sub === 'dashboard' || sub === 'dash') {
+      const data = await apiCall('GET', '/api/work-analysis/dashboard?period=7d');
+      console.log(`\n${BOLD}${CYAN}⬡ 작업 분석 대시보드${RESET} (최근 7일)\n`);
+
+      if (data.efficiency) {
+        const eff = data.efficiency;
+        const gradeColor = eff.grade === 'S' || eff.grade === 'A' ? GREEN : eff.grade === 'B' ? CYAN : YELLOW;
+        console.log(`  효율 점수: ${BOLD}${gradeColor}${eff.score}점 (${eff.grade})${RESET}  ${eff.comparison || ''}`);
+        if (eff.breakdown) {
+          const bd = eff.breakdown;
+          console.log(`  ├ 집중도:    ${'█'.repeat(Math.round(bd.focus?.score / 10))}${'░'.repeat(10 - Math.round(bd.focus?.score / 10))} ${bd.focus?.score || 0}`);
+          console.log(`  ├ 도구활용:  ${'█'.repeat(Math.round(bd.toolUsage?.score / 10))}${'░'.repeat(10 - Math.round(bd.toolUsage?.score / 10))} ${bd.toolUsage?.score || 0}`);
+          console.log(`  ├ 에러회복:  ${'█'.repeat(Math.round(bd.resilience?.score / 10))}${'░'.repeat(10 - Math.round(bd.resilience?.score / 10))} ${bd.resilience?.score || 0}`);
+          console.log(`  ├ 꾸준함:    ${'█'.repeat(Math.round(bd.consistency?.score / 10))}${'░'.repeat(10 - Math.round(bd.consistency?.score / 10))} ${bd.consistency?.score || 0}`);
+          console.log(`  └ 자동화:    ${'█'.repeat(Math.round(bd.automation?.score / 10))}${'░'.repeat(10 - Math.round(bd.automation?.score / 10))} ${bd.automation?.score || 0}`);
+        }
+      }
+
+      if (data.todaySummary) {
+        const ts = data.todaySummary;
+        console.log(`\n  ${BOLD}오늘${RESET}: ${ts.eventCount}건, ${ts.activeMinutes}분 활동, ${ts.topPurpose?.label || '-'}`);
+      }
+
+      if (data.efficiency?.insights?.length) {
+        console.log(`\n  ${BOLD}인사이트${RESET}`);
+        for (const ins of data.efficiency.insights) {
+          const icon = ins.type === 'positive' ? GREEN + '✓' : ins.type === 'warning' ? YELLOW + '⚠' : CYAN + '💡';
+          console.log(`  ${icon}${RESET} ${ins.message}`);
+        }
+      }
+      console.log('');
+
+    } else if (sub === 'capability' || sub === 'cap') {
+      const data = await apiCall('GET', '/api/work-analysis/capability');
+      console.log(`\n${BOLD}⬡ 역량 프로필${RESET}\n`);
+      if (data.workStyle) {
+        console.log(`  작업 스타일: ${BOLD}${data.workStyle.type}${RESET}`);
+        console.log(`  등급: ${data.workStyle.overallGrade}\n`);
+      }
+      if (data.skills?.length) {
+        console.log(`  ${BOLD}기술 스택${RESET}`);
+        for (const s of data.skills.slice(0, 10)) {
+          const bar = '█'.repeat(Math.min(15, Math.round(s.usage / 10)));
+          console.log(`  ${CYAN}${s.name.padEnd(18)}${RESET} ${bar} ${s.level}`);
+        }
+      }
+      console.log('');
+
+    } else if (sub === 'learn') {
+      const data = await apiCall('GET', '/api/learning/profile');
+      console.log(`\n${BOLD}⬡ AI 학습 프로필${RESET}\n`);
+      if (data.routines?.length) {
+        console.log(`  ${BOLD}루틴${RESET}`);
+        data.routines.forEach(r => console.log(`  📅 ${r.description}`));
+      }
+      if (data.triggers?.length) {
+        console.log(`\n  ${BOLD}트리거${RESET}`);
+        data.triggers.slice(0, 5).forEach(t => console.log(`  ⚡ ${t.description}`));
+      }
+      if (data.automationAreas?.areas?.length) {
+        console.log(`\n  ${BOLD}자동화 추천${RESET}`);
+        data.automationAreas.areas.forEach(a => console.log(`  🤖 ${a.area}: ${a.currentWaste}`));
+      }
+      console.log('');
+    }
+  } catch (e) {
+    err(`분석 조회 실패: ${e.message}`);
+  }
+}
+
 // ─── orbit sync ───────────────────────────────────
 async function cmdSync() {
   try {
@@ -739,5 +963,8 @@ switch (cmd) {
   case 'config':    cmdConfigCli(cleanArgs); break;
   case 'remote':    cmdRemote(cleanArgs);   break;
   case 'sync':      cmdSync();              break;
+  case 'deploy':    cmdDeploy(cleanArgs);   break;
+  case 'analysis':  cmdAnalysis(cleanArgs); break;
+  case 'analyze':   cmdAnalysis(cleanArgs); break;
   case 'help': default: cmdHelp();          break;
 }

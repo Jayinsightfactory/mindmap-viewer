@@ -203,6 +203,11 @@ const createWorkspaceActivityRouter    = require('./routes/workspace-activity');
 const companyOntology                 = require('./src/company-ontology');
 const companyCrawler                  = require('./src/company-crawler');
 
+// ─── Phase 2-5: 작업 분석 + 인텔리전스 + AI 학습 ──────────────────────────────
+const createWorkAnalysisRouter        = require('./routes/work-analysis');
+const createIntelligenceRouter        = require('./routes/intelligence');
+const createLearningRouter            = require('./routes/learning');
+
 // ─── 상수 ────────────────────────────────────────────────────────────────────
 const PORT         = process.env.PORT ? parseInt(process.env.PORT) : 4747;
 const _dataRoot     = process.env.DATA_DIR || __dirname;
@@ -1302,6 +1307,15 @@ app.use('/api', createPurposesRouter({ getAllEvents, getEventsBySession, getSess
 // ─── 개인 학습 에이전트 ───────────────────────────────────────────────────────
 const createPersonalLearningRouter = require('./routes/personal-learning');
 app.use('/api', createPersonalLearningRouter({ getDb: dbModule.getDb, insertEvent, broadcastAll }));
+
+// ─── Phase 2: 작업 분석 엔진 ─────────────────────────────────────────────────
+app.use('/api', createWorkAnalysisRouter({ verifyToken, getEventsForUser, getSessionsForUser, resolveUserId }));
+
+// ─── Phase 3: 팔란티어 인텔리전스 ────────────────────────────────────────────
+app.use('/api', createIntelligenceRouter({ verifyToken, getEventsForUser, resolveUserId, getDb: dbModule.getDb, getUserById, ADMIN_EMAILS }));
+
+// ─── Phase 5: AI 학습 + 맞춤 추천 ────────────────────────────────────────────
+app.use('/api', createLearningRouter({ verifyToken, getEventsForUser, resolveUserId }));
 
 // ─── 데모 시드 (개발/미리보기용) ─────────────────────────────────────────────
 app.post('/api/demo/seed', (req, res) => {

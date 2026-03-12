@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Orbit AI — 작업 분석 대시보드</title>
+  <style>
+    :root {
+      --bg: #0d1117; --surface: #161b22; --border: #30363d;
+      --text: #e6edf3; --text-muted: #8b949e; --accent: #58a6ff;
+      --green: #3fb950; --red: #f85149; --yellow: #d29922; --purple: #bc8cff;
+      --cyan: #39d2c0; --orange: #ffa657;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+    .header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 16px 24px; display: flex; align-items: center; gap: 16px; }
+    .header h1 { font-size: 20px; font-weight: 600; }
+    .header .back { color: var(--accent); text-decoration: none; font-size: 14px; }
+    .period-select { margin-left: auto; display: flex; gap: 8px; }
+    .period-select button { background: var(--bg); border: 1px solid var(--border); color: var(--text-muted); padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+    .period-select button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
+
+    .grid { display: grid; gap: 20px; }
+    .grid-2 { grid-template-columns: 1fr 1fr; }
+    .grid-3 { grid-template-columns: 1fr 1fr 1fr; }
+    .grid-4 { grid-template-columns: repeat(4, 1fr); }
+    @media (max-width: 900px) { .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; } }
+
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+    .card h2 { font-size: 15px; color: var(--text-muted); margin-bottom: 16px; font-weight: 500; }
+
+    .score-hero { text-align: center; padding: 32px; }
+    .score-circle { width: 140px; height: 140px; border-radius: 50%; border: 6px solid var(--border); display: inline-flex; flex-direction: column; align-items: center; justify-content: center; margin-bottom: 16px; }
+    .score-circle .number { font-size: 42px; font-weight: 700; }
+    .score-circle .grade { font-size: 18px; font-weight: 600; color: var(--text-muted); }
+    .score-circle.grade-S, .score-circle.grade-A { border-color: var(--green); }
+    .score-circle.grade-S .number, .score-circle.grade-A .number { color: var(--green); }
+    .score-circle.grade-B { border-color: var(--cyan); }
+    .score-circle.grade-B .number { color: var(--cyan); }
+    .score-circle.grade-C { border-color: var(--yellow); }
+    .score-circle.grade-C .number { color: var(--yellow); }
+
+    .bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; font-size: 13px; }
+    .bar-row .label { width: 80px; color: var(--text-muted); text-align: right; }
+    .bar-row .bar-bg { flex: 1; height: 10px; background: var(--bg); border-radius: 5px; overflow: hidden; }
+    .bar-row .bar-fill { height: 100%; border-radius: 5px; transition: width 0.6s ease; }
+    .bar-row .val { width: 30px; color: var(--text-muted); font-size: 12px; }
+
+    .insight-item { padding: 10px 12px; margin-bottom: 8px; border-radius: 8px; font-size: 13px; line-height: 1.4; }
+    .insight-item.positive { background: rgba(63,185,80,0.1); border-left: 3px solid var(--green); }
+    .insight-item.warning { background: rgba(210,153,34,0.1); border-left: 3px solid var(--yellow); }
+    .insight-item.suggestion { background: rgba(88,166,255,0.1); border-left: 3px solid var(--accent); }
+
+    .purpose-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+    .purpose-row .dot { width: 10px; height: 10px; border-radius: 50%; }
+    .purpose-row .name { font-size: 13px; width: 80px; }
+    .purpose-row .pbar { flex: 1; height: 8px; background: var(--bg); border-radius: 4px; overflow: hidden; }
+    .purpose-row .pbar-fill { height: 100%; border-radius: 4px; }
+    .purpose-row .pct { font-size: 12px; color: var(--text-muted); width: 40px; text-align: right; }
+
+    .heatmap-grid { display: grid; grid-template-columns: 40px repeat(24, 1fr); gap: 2px; }
+    .heatmap-grid .day-label { font-size: 11px; color: var(--text-muted); display: flex; align-items: center; justify-content: flex-end; padding-right: 4px; }
+    .heatmap-cell { aspect-ratio: 1; border-radius: 2px; background: var(--bg); }
+
+    .skill-chip { display: inline-block; padding: 4px 12px; margin: 3px; border-radius: 16px; font-size: 12px; background: var(--bg); border: 1px solid var(--border); }
+    .skill-chip.expert { border-color: var(--green); color: var(--green); }
+    .skill-chip.advanced { border-color: var(--accent); color: var(--accent); }
+    .skill-chip.intermediate { border-color: var(--yellow); color: var(--yellow); }
+
+    .kpi-card { text-align: center; padding: 20px 16px; }
+    .kpi-card .kpi-value { font-size: 28px; font-weight: 700; margin-bottom: 4px; }
+    .kpi-card .kpi-label { font-size: 12px; color: var(--text-muted); }
+
+    .bottleneck-item { padding: 12px; margin-bottom: 8px; background: var(--bg); border-radius: 8px; font-size: 13px; }
+    .bottleneck-item .bn-severity { font-weight: 600; margin-right: 8px; }
+    .bottleneck-item .bn-severity.high { color: var(--red); }
+    .bottleneck-item .bn-severity.medium { color: var(--yellow); }
+    .bottleneck-item .bn-desc { margin-top: 4px; color: var(--text-muted); font-size: 12px; }
+
+    .automation-card { padding: 12px; margin-bottom: 8px; background: var(--bg); border-radius: 8px; }
+    .automation-card .auto-name { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+    .automation-card .auto-desc { font-size: 12px; color: var(--text-muted); }
+    .automation-card .auto-savings { font-size: 12px; color: var(--green); margin-top: 4px; }
+
+    .loading { text-align: center; padding: 40px; color: var(--text-muted); }
+    .tab-bar { display: flex; gap: 4px; margin-bottom: 20px; }
+    .tab-bar button { background: transparent; border: 1px solid var(--border); color: var(--text-muted); padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 13px; }
+    .tab-bar button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .tab-pane { display: none; }
+    .tab-pane.active { display: block; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="/orbit3d.html" class="back">← 3D 뷰</a>
+    <h1>⬡ 작업 분석 대시보드</h1>
+    <div class="period-select">
+      <button data-period="7d" class="active">7일</button>
+      <button data-period="30d">30일</button>
+      <button data-period="all">전체</button>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="tab-bar">
+      <button class="active" data-tab="overview">📊 종합</button>
+      <button data-tab="intelligence">🔍 인텔리전스</button>
+      <button data-tab="capability">💼 역량 프로필</button>
+      <button data-tab="learning">🧠 AI 학습</button>
+    </div>
+
+    <!-- ═══ TAB: 종합 ═══ -->
+    <div class="tab-pane active" id="tab-overview">
+      <div id="kpi-row" class="grid grid-4" style="margin-bottom:20px;"></div>
+      <div class="grid grid-2">
+        <div class="card score-hero" id="score-card"></div>
+        <div class="card" id="insights-card"><h2>💡 인사이트</h2><div id="insights-list"></div></div>
+      </div>
+      <div class="grid grid-2" style="margin-top:20px;">
+        <div class="card"><h2>🎯 시간 분배 (목적별)</h2><div id="purpose-chart"></div></div>
+        <div class="card"><h2>🔥 작업 히트맵</h2><div id="heatmap"></div></div>
+      </div>
+      <div class="grid grid-2" style="margin-top:20px;">
+        <div class="card"><h2>⚠️ 병목</h2><div id="bottleneck-list"></div></div>
+        <div class="card"><h2>🤖 자동화 후보</h2><div id="automation-list"></div></div>
+      </div>
+    </div>
+
+    <!-- ═══ TAB: 인텔리전스 ═══ -->
+    <div class="tab-pane" id="tab-intelligence">
+      <div class="grid grid-2">
+        <div class="card"><h2>📋 의사결정 액션</h2><div id="intel-actions"></div></div>
+        <div class="card"><h2>🔮 예측</h2><div id="intel-predictions"></div></div>
+      </div>
+      <div class="grid grid-2" style="margin-top:20px;">
+        <div class="card"><h2>⚡ 리스크</h2><div id="intel-risks"></div></div>
+        <div class="card"><h2>🚨 이상 탐지</h2><div id="intel-anomalies"></div></div>
+      </div>
+      <div class="card" style="margin-top:20px;"><h2>🔄 업무 흐름</h2><div id="intel-workflow"></div></div>
+    </div>
+
+    <!-- ═══ TAB: 역량 프로필 ═══ -->
+    <div class="tab-pane" id="tab-capability">
+      <div class="grid grid-2">
+        <div class="card"><h2>🛠 기술 스택</h2><div id="cap-skills"></div></div>
+        <div class="card"><h2>📈 전문 분야</h2><div id="cap-expertise"></div></div>
+      </div>
+      <div class="grid grid-2" style="margin-top:20px;">
+        <div class="card"><h2>💡 작업 스타일</h2><div id="cap-workstyle"></div></div>
+        <div class="card"><h2>📁 주요 프로젝트</h2><div id="cap-projects"></div></div>
+      </div>
+    </div>
+
+    <!-- ═══ TAB: AI 학습 ═══ -->
+    <div class="tab-pane" id="tab-learning">
+      <div class="grid grid-2">
+        <div class="card"><h2>📅 루틴</h2><div id="learn-routines"></div></div>
+        <div class="card"><h2>⚡ 트리거</h2><div id="learn-triggers"></div></div>
+      </div>
+      <div class="card" style="margin-top:20px;"><h2>🤖 맞춤 솔루션 추천</h2><div id="learn-recs"></div></div>
+      <div class="card" style="margin-top:20px;"><h2>📋 학습 데이터 시트</h2><div id="learn-sheet"></div></div>
+    </div>
+  </div>
+
+  <script>
+    const TOKEN = localStorage.getItem('orbit_token');
+    const headers = TOKEN ? { 'Authorization': `Bearer ${TOKEN}` } : {};
+    let currentPeriod = '7d';
+
+    async function api(path) {
+      const res = await fetch(path, { headers });
+      if (!res.ok) throw new Error(`${res.status}`);
+      return res.json();
+    }
+
+    // ─── 탭 전환 ──────────────────
+    document.querySelectorAll('.tab-bar button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab-bar button').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+        loadTab(btn.dataset.tab);
+      });
+    });
+
+    // ─── 기간 선택 ──────────────────
+    document.querySelectorAll('.period-select button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.period-select button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        currentPeriod = btn.dataset.period;
+        loadOverview();
+      });
+    });
+
+    // ─── 종합 탭 ──────────────────
+    async function loadOverview() {
+      try {
+        const data = await api(`/api/work-analysis/dashboard?period=${currentPeriod}`);
+
+        // KPI
+        const kpi = document.getElementById('kpi-row');
+        const ts = data.todaySummary || {};
+        const trend = data.trend || {};
+        const trendIcon = trend.direction === 'up' ? '📈' : trend.direction === 'down' ? '📉' : '➡️';
+        kpi.innerHTML = `
+          <div class="card kpi-card"><div class="kpi-value">${data.totalEvents?.toLocaleString() || 0}</div><div class="kpi-label">총 이벤트</div></div>
+          <div class="card kpi-card"><div class="kpi-value">${ts.activeMinutes || 0}<small>분</small></div><div class="kpi-label">오늘 활동</div></div>
+          <div class="card kpi-card"><div class="kpi-value">${data.efficiency?.score || 0}</div><div class="kpi-label">효율 점수</div></div>
+          <div class="card kpi-card"><div class="kpi-value">${trendIcon} ${trend.recentCount || 0}</div><div class="kpi-label">주간 이벤트</div></div>
+        `;
+
+        // 점수 원형
+        const eff = data.efficiency || {};
+        const sc = document.getElementById('score-card');
+        sc.innerHTML = `
+          <div class="score-circle grade-${eff.grade || 'C'}">
+            <div class="number">${eff.score || 0}</div>
+            <div class="grade">${eff.grade || '-'}</div>
+          </div>
+          <div style="color:var(--text-muted);font-size:13px;">${eff.comparison || ''}</div>
+          ${Object.entries(eff.breakdown || {}).map(([k, v]) => `
+            <div class="bar-row">
+              <span class="label">${v.label}</span>
+              <div class="bar-bg"><div class="bar-fill" style="width:${v.score}%;background:var(--accent);"></div></div>
+              <span class="val">${v.score}</span>
+            </div>
+          `).join('')}
+        `;
+
+        // 인사이트
+        const il = document.getElementById('insights-list');
+        il.innerHTML = (eff.insights || []).map(i =>
+          `<div class="insight-item ${i.type}">${i.message}</div>`
+        ).join('') || '<div class="insight-item suggestion">충분한 데이터가 쌓이면 인사이트가 생성됩니다.</div>';
+
+        // 목적별 시간
+        const pc = document.getElementById('purpose-chart');
+        const td = data.timeDistribution || {};
+        pc.innerHTML = (td.byPurpose || []).slice(0, 8).map(p => `
+          <div class="purpose-row">
+            <div class="dot" style="background:${p.color}"></div>
+            <span class="name">${p.icon || ''} ${p.label}</span>
+            <div class="pbar"><div class="pbar-fill" style="width:${p.percent}%;background:${p.color};"></div></div>
+            <span class="pct">${p.minutes}분</span>
+          </div>
+        `).join('') || '<div style="color:var(--text-muted);font-size:13px;">데이터 없음</div>';
+
+        // 히트맵
+        await loadHeatmap();
+
+        // 병목
+        const bl = document.getElementById('bottleneck-list');
+        const bn = data.bottlenecks?.bottlenecks || [];
+        bl.innerHTML = bn.map(b => `
+          <div class="bottleneck-item">
+            <span class="bn-severity ${b.severity}">${b.severity === 'high' ? '🔴' : '🟡'} ${b.type}</span>
+            ${b.description}
+            <div class="bn-desc">${b.suggestion || ''}</div>
+          </div>
+        `).join('') || '<div style="color:var(--text-muted);font-size:13px;">병목 없음 — 좋은 상태입니다!</div>';
+
+        // 자동화
+        const al = document.getElementById('automation-list');
+        const auto = data.repetitiveWork?.automationCandidates || [];
+        al.innerHTML = auto.map(a => `
+          <div class="automation-card">
+            <div class="auto-name">${a.task}</div>
+            <div class="auto-desc">${a.suggestion}</div>
+            <div class="auto-savings">예상 절약: ${a.estimatedTimeSavedMin}분 (난이도: ${a.difficulty})</div>
+          </div>
+        `).join('') || '<div style="color:var(--text-muted);font-size:13px;">자동화 후보가 아직 없습니다.</div>';
+
+      } catch (e) {
+        console.error('loadOverview error:', e);
+      }
+    }
+
+    async function loadHeatmap() {
+      try {
+        const data = await api('/api/intelligence/heatmap');
+        const hm = document.getElementById('heatmap');
+        const grid = data.heatmap || [];
+        let html = '<div class="heatmap-grid">';
+        // 헤더
+        html += '<div></div>';
+        for (let h = 0; h < 24; h++) html += `<div style="font-size:10px;color:var(--text-muted);text-align:center;">${h}</div>`;
+        for (const row of grid) {
+          html += `<div class="day-label">${row.day}</div>`;
+          for (const cell of row.hours) {
+            const alpha = Math.max(0.05, cell.intensity / 100);
+            html += `<div class="heatmap-cell" style="background:rgba(88,166,255,${alpha});" title="${row.day} ${cell.hour}시: ${cell.count}건"></div>`;
+          }
+        }
+        html += '</div>';
+        hm.innerHTML = html;
+      } catch {}
+    }
+
+    // ─── 인텔리전스 탭 ──────────────────
+    async function loadIntelligence() {
+      try {
+        const [decisions, anomalies, workflow] = await Promise.all([
+          api('/api/intelligence/decisions'),
+          api('/api/intelligence/anomalies'),
+          api('/api/intelligence/workflow'),
+        ]);
+
+        document.getElementById('intel-actions').innerHTML = (decisions.actions || []).map(a => `
+          <div class="bottleneck-item">
+            <span class="bn-severity ${a.priority}">${a.priority === 'high' ? '🔴' : '🟡'} ${a.title}</span>
+            <div class="bn-desc">${a.action}</div>
+          </div>
+        `).join('') || '<div style="color:var(--text-muted)">액션 항목 없음</div>';
+
+        document.getElementById('intel-predictions').innerHTML = (decisions.predictions || []).map(p => `
+          <div class="insight-item positive">${p.title}: ${p.description}</div>
+        `).join('') || '<div style="color:var(--text-muted)">예측 데이터 없음</div>';
+
+        document.getElementById('intel-risks').innerHTML = (decisions.risks || []).map(r => `
+          <div class="bottleneck-item">
+            <span class="bn-severity ${r.level}">${r.level === 'high' ? '🔴' : '🟡'} ${r.title}</span>
+            <div>${r.description}</div>
+            <div class="bn-desc">대응: ${r.mitigation}</div>
+          </div>
+        `).join('') || '<div style="color:var(--text-muted)">리스크 없음</div>';
+
+        document.getElementById('intel-anomalies').innerHTML = (anomalies.anomalies || []).map(a => `
+          <div class="insight-item ${a.severity === 'alert' ? 'warning' : 'suggestion'}">${a.description}</div>
+        `).join('') || '<div style="color:var(--text-muted)">이상 징후 없음</div>';
+
+        // 워크플로우 시각화 (텍스트 기반)
+        const wf = workflow;
+        let wfHtml = '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">';
+        for (const n of (wf.nodes || []).slice(0, 8)) {
+          wfHtml += `<div style="padding:6px 14px;border-radius:20px;background:${n.color || 'var(--border)'};font-size:12px;">${n.label} (${n.count})</div>`;
+        }
+        wfHtml += '</div>';
+        if (wf.edges?.length) {
+          wfHtml += '<div style="font-size:12px;color:var(--text-muted);">';
+          for (const e of wf.edges.slice(0, 10)) {
+            wfHtml += `${e.from} → ${e.to} (${e.weight}회)<br>`;
+          }
+          wfHtml += '</div>';
+        }
+        document.getElementById('intel-workflow').innerHTML = wfHtml;
+      } catch (e) { console.error('loadIntelligence error:', e); }
+    }
+
+    // ─── 역량 탭 ──────────────────
+    async function loadCapability() {
+      try {
+        const data = await api('/api/work-analysis/capability');
+
+        document.getElementById('cap-skills').innerHTML = (data.skills || []).slice(0, 20).map(s =>
+          `<span class="skill-chip ${s.level}">${s.name}</span>`
+        ).join('') || '<div style="color:var(--text-muted)">기술 데이터 없음</div>';
+
+        document.getElementById('cap-expertise').innerHTML = (data.expertise || []).map(e => `
+          <div class="purpose-row">
+            <span style="font-size:18px;">${e.icon}</span>
+            <span class="name">${e.area}</span>
+            <div class="pbar"><div class="pbar-fill" style="width:${Math.min(100, e.eventCount / 10)}%;background:var(--accent);"></div></div>
+            <span class="pct">${e.eventCount}</span>
+          </div>
+        `).join('') || '<div style="color:var(--text-muted)">전문 분야 분석 중</div>';
+
+        const ws = data.workStyle || {};
+        document.getElementById('cap-workstyle').innerHTML = `
+          <div style="text-align:center;font-size:32px;margin-bottom:8px;">${ws.type || '분석 중'}</div>
+          <div class="bar-row"><span class="label">집중도</span><div class="bar-bg"><div class="bar-fill" style="width:${ws.focusLevel}%;background:var(--green);"></div></div><span class="val">${ws.focusLevel}</span></div>
+          <div class="bar-row"><span class="label">일관성</span><div class="bar-bg"><div class="bar-fill" style="width:${ws.consistency}%;background:var(--accent);"></div></div><span class="val">${ws.consistency}</span></div>
+          <div class="bar-row"><span class="label">도구 다양성</span><div class="bar-bg"><div class="bar-fill" style="width:${ws.toolDiversity}%;background:var(--purple);"></div></div><span class="val">${ws.toolDiversity}</span></div>
+        `;
+
+        document.getElementById('cap-projects').innerHTML = (data.topProjects || []).map(p => `
+          <div style="padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;">
+            <strong>${p.name}</strong> — ${p.eventCount}건<br>
+            <span style="color:var(--text-muted);font-size:12px;">${p.period}</span>
+          </div>
+        `).join('') || '<div style="color:var(--text-muted)">프로젝트 데이터 없음</div>';
+      } catch (e) { console.error('loadCapability error:', e); }
+    }
+
+    // ─── AI 학습 탭 ──────────────────
+    async function loadLearning() {
+      try {
+        const [profile, recs, sheet] = await Promise.all([
+          api('/api/learning/profile'),
+          api('/api/learning/recommendations'),
+          api('/api/learning/data-sheet'),
+        ]);
+
+        document.getElementById('learn-routines').innerHTML = (profile.routines || []).map(r => `
+          <div class="insight-item positive">📅 ${r.description}</div>
+        `).join('') || '<div style="color:var(--text-muted)">루틴 패턴 분석 중</div>';
+
+        document.getElementById('learn-triggers').innerHTML = (profile.triggers || []).map(t => `
+          <div class="insight-item suggestion">⚡ ${t.description}${t.automatable ? ' <span style="color:var(--green)">[자동화 가능]</span>' : ''}</div>
+        `).join('') || '<div style="color:var(--text-muted)">트리거 패턴 분석 중</div>';
+
+        // 추천
+        document.getElementById('learn-recs').innerHTML = (recs.recommendations || []).map(r => `
+          <div class="automation-card">
+            <div class="auto-name">${r.icon} ${r.name} <span style="font-size:11px;color:var(--text-muted);">(적합도 ${r.personalFit}%)</span></div>
+            <div class="auto-desc">${r.description}</div>
+            <div class="auto-savings">주간 절약: ~${r.estimatedSavingsPerWeek}분 | 설정: ~${r.estimatedSetupHours}시간 | 난이도: ${r.difficulty}</div>
+          </div>
+        `).join('') || '<div style="color:var(--text-muted)">추천 솔루션 분석 중</div>';
+
+        // 학습 데이터 시트
+        const entries = sheet.entries || [];
+        let sheetHtml = '<table style="width:100%;font-size:12px;border-collapse:collapse;">';
+        sheetHtml += '<tr style="border-bottom:1px solid var(--border);"><th style="text-align:left;padding:6px;">카테고리</th><th style="text-align:left;padding:6px;">항목</th><th style="text-align:left;padding:6px;">값</th><th style="text-align:left;padding:6px;">인사이트</th></tr>';
+        for (const e of entries.slice(0, 30)) {
+          sheetHtml += `<tr style="border-bottom:1px solid var(--border);"><td style="padding:6px;color:var(--accent);">${e.category}</td><td style="padding:6px;">${e.key}</td><td style="padding:6px;">${e.value}</td><td style="padding:6px;color:var(--text-muted);">${e.insight}</td></tr>`;
+        }
+        sheetHtml += '</table>';
+        document.getElementById('learn-sheet').innerHTML = sheetHtml;
+      } catch (e) { console.error('loadLearning error:', e); }
+    }
+
+    // ─── 탭 로드 라우터 ──────────────────
+    const tabLoaded = {};
+    function loadTab(tab) {
+      if (tab === 'overview') loadOverview();
+      else if (tab === 'intelligence' && !tabLoaded.intelligence) { loadIntelligence(); tabLoaded.intelligence = true; }
+      else if (tab === 'capability' && !tabLoaded.capability) { loadCapability(); tabLoaded.capability = true; }
+      else if (tab === 'learning' && !tabLoaded.learning) { loadLearning(); tabLoaded.learning = true; }
+    }
+
+    // 초기 로드
+    loadOverview();
+  </script>
+</body>
+</html>
