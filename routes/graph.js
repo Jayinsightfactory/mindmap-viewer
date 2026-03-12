@@ -80,63 +80,64 @@ function createRouter(deps) {
    * 로그인 시: 해당 user_id의 이벤트만 반환 (프라이버시 격리)
    * 비로그인 시: AUTH_DISABLED=1이면 전체, 아니면 빈 그래프
    */
-  router.get('/graph', (req, res) => {
-    const user = getUserFromReq(req);
+  router.get('/graph', async (req, res) => {
+    try {
+      const user = getUserFromReq(req);
 
-    // ── 비로그인 처리 ───────────────────────────────────────────────────────
-    // ⚠️ 이전 코드: || { id: 'local' } → getFullGraph() → 전체 데이터 노출 (크로스-유저 버그)
-    // 수정: 비로그인이면 개발모드(AUTH_DISABLED=1)만 전체 허용, 프로덕션은 빈 그래프
-    if (!user) {
-      if (process.env.AUTH_DISABLED === '1') {
-        return res.json(getFullGraph(req.query.session, req.query.channel));
-      }
-      return res.json({ nodes: [], edges: [] });
-    }
-
-    let graph;
-    if (user.id === 'local') {
-      // AUTH_DISABLED=1일 때 getUserFromReq가 { id: 'local' } 반환 → 개발 모드
-      graph = getFullGraph(req.query.session, req.query.channel);
-    } else {
-      // 로그인 유저: user_id 필터링 (본인 데이터만)
-      graph = getFullGraphForUser
-        ? getFullGraphForUser(user.id, req.query.session)
-        : getFullGraph(req.query.session, req.query.channel);
-
-      // 유저 이벤트가 0건이면 local 이벤트 귀속 시도 (최초 로그인 시 한 번만)
-      // ⚠️ 멀티-유저 환경에서는 한 명만 claim 가능 (이미 claimed 이벤트는 재귀속 안 됨)
-      if (graph.nodes.length === 0 && claimLocalEvents) {
-        const claimed = claimLocalEvents(user.id);
-        if (claimed > 0) {
-          console.log(`[graph] ${user.id}: ${claimed}개 local 이벤트 귀속 (최초 로그인)`);
-          graph = getFullGraphForUser
-            ? getFullGraphForUser(user.id, req.query.session)
-            : getFullGraph(req.query.session, req.query.channel);
+      // ── 비로그인 처리 ───────────────────────────────────────────────────────
+      if (!user) {
+        if (process.env.AUTH_DISABLED === '1') {
+          return res.json(await getFullGraph(req.query.session, req.query.channel));
         }
-        // 귀속 후에도 0건 → 빈 그래프 유지 (다른 유저 데이터 절대 노출 안 함)
+        return res.json({ nodes: [], edges: [] });
       }
-    }
 
-    // hidden 이벤트 제외
-    if (getHiddenEventIds) {
-      const hiddenSet = new Set(getHiddenEventIds(user.id));
-      if (hiddenSet.size > 0) {
-        graph.nodes = graph.nodes.filter(n => !hiddenSet.has(n.id));
-        graph.edges = graph.edges.filter(e => !hiddenSet.has(e.from) && !hiddenSet.has(e.to));
+      let graph;
+      if (user.id === 'local') {
+        graph = await getFullGraph(req.query.session, req.query.channel);
+      } else {
+        // 로그인 유저: user_id 필터링 (본인 데이터만)
+        graph = getFullGraphForUser
+          ? await getFullGraphForUser(user.id, req.query.session)
+          : await getFullGraph(req.query.session, req.query.channel);
+
+        // 유저 이벤트가 0건이면 local 이벤트 귀속 시도 (최초 로그인 시 한 번만)
+        if (graph.nodes.length === 0 && claimLocalEvents) {
+          const claimed = await Promise.resolve(claimLocalEvents(user.id));
+          if (claimed > 0) {
+            console.log(`[graph] ${user.id}: ${claimed}개 local 이벤트 귀속 (최초 로그인)`);
+            graph = getFullGraphForUser
+              ? await getFullGraphForUser(user.id, req.query.session)
+              : await getFullGraph(req.query.session, req.query.channel);
+          }
+        }
       }
-    }
 
-    res.json(graph);
+      // hidden 이벤트 제외
+      if (getHiddenEventIds) {
+        const hiddenIds = await Promise.resolve(getHiddenEventIds(user.id));
+        const hiddenSet = new Set(hiddenIds);
+        if (hiddenSet.size > 0) {
+          graph.nodes = graph.nodes.filter(n => !hiddenSet.has(n.id));
+          graph.edges = graph.edges.filter(e => !hiddenSet.has(e.from) && !hiddenSet.has(e.to));
+        }
+      }
+
+      res.json(graph);
+    } catch (e) {
+      console.error('[graph] 오류:', e.message);
+      res.json({ nodes: [], edges: [] });
+    }
   });
 
   /**
    * POST /api/claim-local-events
    * 'local' user_id로 저장된 기존 이벤트를 로그인 유저의 것으로 귀속
    */
-  router.post('/claim-local-events', (req, res) => {
+  router.post('/claim-local-events', async (req, res) => {
     const user = getUserFromReq(req);
     if (!user || user.id === 'local') return res.status(401).json({ error: 'login required' });
-    const changed = claimLocalEvents ? claimLocalEvents(user.id) : 0;
+    const changed = claimLocalEvents ? await Promise.resolve(claimLocalEvents(user.id)) : 0;
     res.json({ ok: true, claimed: changed });
   });
 
@@ -515,16 +516,20 @@ function createRouter(deps) {
    * GET /api/activity
    * @returns {{ [nodeId]: number }} 각 노드의 활동 점수 (0.0~1.0, 24h 감쇠)
    */
-  router.get('/activity', (req, res) => {
-    const user = getUserFromReq(req);
-    if (!user) return res.json({});                                            // 비로그인: 빈 결과
-    // 사용자별 그래프에서 활동 점수 추출
-    const graph = (user.id !== 'local' && getFullGraphForUser)
-      ? getFullGraphForUser(user.id)
-      : getFullGraph();
-    const scores = {};
-    for (const node of graph.nodes) scores[node.id] = node.activityScore;
-    res.json(scores);
+  router.get('/activity', async (req, res) => {
+    try {
+      const user = getUserFromReq(req);
+      if (!user) return res.json({});                                            // 비로그인: 빈 결과
+      // 사용자별 그래프에서 활동 점수 추출
+      const graph = (user.id !== 'local' && getFullGraphForUser)
+        ? await getFullGraphForUser(user.id)
+        : await getFullGraph();
+      const scores = {};
+      for (const node of graph.nodes) scores[node.id] = node.activityScore;
+      res.json(scores);
+    } catch (e) {
+      res.json({});
+    }
   });
 
   // ── 스냅샷 / 롤백 / 초기화 ─────────────────────────────────────────────────
@@ -625,18 +630,18 @@ function createRouter(deps) {
    * 지정 이벤트 ID 이후의 모든 이벤트를 삭제합니다. 되돌리기 불가능.
    * @param {string} id - 유지할 마지막 이벤트 ID
    */
-  router.post('/rollback/:id', (req, res) => {
+  router.post('/rollback/:id', async (req, res) => {
     const user = getUserFromReq(req);
     if (!user) return res.status(401).json({ error: 'login required' });      // 인증 필수
     try {
-      rollbackToEvent(req.params.id);
+      await Promise.resolve(rollbackToEvent(req.params.id));
 
       // JSONL 파일 동기화: DB와 일치시킴
-      const remaining = getAllEvents();
+      const remaining = await Promise.resolve(getAllEvents());
       fs.writeFileSync(CONV_FILE, remaining.map(e => JSON.stringify(e)).join('\n') + '\n');
 
-      const graph = getFullGraph();
-      broadcastAll({ type: 'graph_update', graph, sessions: getSessions(), stats: getStats() });
+      const graph = await getFullGraph();
+      broadcastAll({ type: 'graph_update', graph, sessions: await Promise.resolve(getSessions()), stats: await Promise.resolve(getStats()) });
 
       res.json({ success: true, remaining: remaining.length });
     } catch (e) {

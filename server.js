@@ -88,28 +88,28 @@ const { verifyToken: _verifyToken } = require('./src/auth');
 // ⚠️ 크로스-유저 격리: AUTH_DISABLED=1(개발)만 'local' userId에 전체 데이터 허용
 const _IS_DEV = process.env.AUTH_DISABLED === '1';
 
-function getEventsForUser(userId) {                       // userId 기반 이벤트 조회
+async function getEventsForUser(userId) {                  // userId 기반 이벤트 조회 (PG async 대응)
   if (!userId || userId === 'local' || userId === 'anonymous') {
     // 개발 모드에서만 전체 허용 — 프로덕션에서는 빈 배열 반환 (크로스-유저 노출 방지)
-    return _IS_DEV ? getAllEvents(MAX_EVENTS_LOAD) : [];
+    return _IS_DEV ? await Promise.resolve(getAllEvents(MAX_EVENTS_LOAD)) : [];
   }
   // 로그인한 사용자: 본인 이벤트 + 본인에게 claim된 local 이벤트만
-  const userEvents = getEventsByUser ? getEventsByUser(userId) : [];
+  const userEvents = getEventsByUser ? await Promise.resolve(getEventsByUser(userId)) : [];
   // 본인 이벤트가 없고 어드민이면 local 이벤트도 포함 (자기 데이터 claim 전)
   if (userEvents.length === 0) {
     const adminEmails = (process.env.ADMIN_EMAILS || 'dlaww@kicda.com').split(',').map(s => s.trim());
     const isAdmin = adminEmails.includes(userId);
-    if (isAdmin) return getAllEvents(MAX_EVENTS_LOAD);
+    if (isAdmin) return await Promise.resolve(getAllEvents(MAX_EVENTS_LOAD));
   }
   return userEvents;
 }
 
-function getSessionsForUser(userId) {                     // userId 기반 세션 조회
+async function getSessionsForUser(userId) {                // userId 기반 세션 조회 (PG async 대응)
   if (!userId || userId === 'local' || userId === 'anonymous') {
     // 개발 모드에서만 전체 허용 — 프로덕션에서는 빈 배열 반환
-    return _IS_DEV ? getSessions() : [];
+    return _IS_DEV ? await Promise.resolve(getSessions()) : [];
   }
-  return getSessionsByUser ? getSessionsByUser(userId) : getSessions();
+  return getSessionsByUser ? await Promise.resolve(getSessionsByUser(userId)) : await Promise.resolve(getSessions());
 }
 
 function resolveUserId(req) {                             // req에서 userId 추출
@@ -364,10 +364,10 @@ app.use(oauthPassport.session());
 // ── 그래프 캐시 (5초 TTL) ─ 매 요청마다 전체 재빌드 방지 ──
 const _graphCache = new Map();
 const GRAPH_CACHE_TTL = 5000;
-function _getCachedGraph(key, builder) {
+async function _getCachedGraph(key, builder) {
   const cached = _graphCache.get(key);
   if (cached && Date.now() - cached.ts < GRAPH_CACHE_TTL) return cached.graph;
-  const graph = builder();
+  const graph = await builder();
   _graphCache.set(key, { graph, ts: Date.now() });
   // 캐시 엔트리 50개 초과 시 오래된 것 정리
   if (_graphCache.size > 50) {
@@ -377,16 +377,16 @@ function _getCachedGraph(key, builder) {
   return graph;
 }
 
-function getFullGraph(sessionFilter, channelFilter) {
+async function getFullGraph(sessionFilter, channelFilter) {
   const cacheKey = `full:${sessionFilter||''}:${channelFilter||''}`;
-  return _getCachedGraph(cacheKey, () => {
+  return _getCachedGraph(cacheKey, async () => {
     const rawEvents = sessionFilter
-      ? getEventsBySession(sessionFilter)
+      ? await Promise.resolve(getEventsBySession(sessionFilter))
       : channelFilter
         ? (getEventsByChannel
-            ? getEventsByChannel(channelFilter)
-            : getAllEvents(MAX_EVENTS_LOAD).filter(e => e.channelId === channelFilter))
-        : getAllEvents(MAX_EVENTS_LOAD);
+            ? await Promise.resolve(getEventsByChannel(channelFilter))
+            : (await Promise.resolve(getAllEvents(MAX_EVENTS_LOAD))).filter(e => e.channelId === channelFilter))
+        : await Promise.resolve(getAllEvents(MAX_EVENTS_LOAD));
 
     const events = annotateEventsWithPurpose(rawEvents);
     const graph  = buildGraph(events);
@@ -397,12 +397,17 @@ function getFullGraph(sessionFilter, channelFilter) {
 }
 
 // 특정 user_id의 이벤트만 그래프로 변환 (프라이버시 격리)
-function getFullGraphForUser(userId, sessionFilter) {
+async function getFullGraphForUser(userId, sessionFilter) {
   const cacheKey = `user:${userId}:${sessionFilter||''}`;
-  return _getCachedGraph(cacheKey, () => {
-    const rawEvents = sessionFilter
-      ? getEventsBySession(sessionFilter).filter(e => e.userId === userId)
-      : (getEventsByUser ? getEventsByUser(userId) : getAllEvents(MAX_EVENTS_LOAD).filter(e => e.userId === userId));
+  return _getCachedGraph(cacheKey, async () => {
+    let rawEvents;
+    if (sessionFilter) {
+      rawEvents = (await Promise.resolve(getEventsBySession(sessionFilter))).filter(e => e.userId === userId);
+    } else {
+      rawEvents = getEventsByUser
+        ? await Promise.resolve(getEventsByUser(userId))
+        : (await Promise.resolve(getAllEvents(MAX_EVENTS_LOAD))).filter(e => e.userId === userId);
+    }
     const events = annotateEventsWithPurpose(rawEvents);
     const graph  = buildGraph(events);
     computeActivityScores(graph.nodes, Date.now());
@@ -435,19 +440,21 @@ function broadcastToChannel(channelId, msg) {
  * @param {object} msg - 전송할 메시지 객체
  */
 function broadcastAll(msg) {
-  // graph/sessions 포함 메시지 → 사용자별 격리 전송
+  // graph/sessions 포함 메시지 → 사용자별 격리 전송 (async 결과는 비동기 전송)
   if (msg.type === 'update' || msg.type === 'graph_update') {
-    for (const client of wss.clients) {
-      if (client.readyState !== WebSocket.OPEN) continue;
-      try {
-        const uid = client._userId || 'local';
-        const userGraph    = (uid !== 'local' && uid !== 'anonymous' && typeof getFullGraphForUser === 'function')
-          ? getFullGraphForUser(uid) : msg.graph;
-        const userSessions = (uid !== 'local' && uid !== 'anonymous' && typeof getSessionsForUser === 'function')
-          ? getSessionsForUser(uid) : msg.sessions;
-        client.send(JSON.stringify({ ...msg, graph: userGraph, sessions: userSessions }));
-      } catch {}
-    }
+    (async () => {
+      for (const client of wss.clients) {
+        if (client.readyState !== WebSocket.OPEN) continue;
+        try {
+          const uid = client._userId || 'local';
+          const userGraph    = (uid !== 'local' && uid !== 'anonymous' && typeof getFullGraphForUser === 'function')
+            ? await getFullGraphForUser(uid) : msg.graph;
+          const userSessions = (uid !== 'local' && uid !== 'anonymous' && typeof getSessionsForUser === 'function')
+            ? await getSessionsForUser(uid) : msg.sessions;
+          client.send(JSON.stringify({ ...msg, graph: userGraph, sessions: userSessions }));
+        } catch {}
+      }
+    })();
     return;
   }
   // 그 외 메시지 → 동일하게 전체 전송
@@ -855,7 +862,7 @@ app.post('/api/tracker/ping', (req, res) => {
 });
 
 // 트래커 상태 조회 (대시보드에서 연결 확인용)
-app.get('/api/tracker/status', (req, res) => {
+app.get('/api/tracker/status', async (req, res) => {
   try {
     const token = (req.headers.authorization || '').replace('Bearer ', '');
     let userId = '';
@@ -869,41 +876,35 @@ app.get('/api/tracker/status', (req, res) => {
     }
 
     if (!userId) {
-      // 로그인 없어도 최근 이벤트 존재 시 로컬 트래커 활성 판단
+      // 로그인 없어도 전체 이벤트 존재 시 로컬 트래커 활성 판단
       try {
-        const db = require('./src/auth').getDb?.() || getDb?.();
-        if (db) {
-          const recent = db.prepare(
-            `SELECT COUNT(*) as cnt FROM events WHERE timestamp > datetime('now', '-10 minutes')`
-          ).get();
-          if (recent && recent.cnt > 0) {
-            return res.json({ online: true, lastSeen: Date.now(), hostname: 'localhost', eventCount: recent.cnt });
-          }
+        const totalStats = getStats ? await Promise.resolve(getStats()) : null;
+        if (totalStats && totalStats.eventCount > 0) {
+          return res.json({ online: true, lastSeen: Date.now(), hostname: 'localhost', eventCount: totalStats.eventCount });
         }
       } catch {}
       return res.json({ online: false, lastSeen: null, hostname: null, eventCount: 0 });
     }
 
-    // DB에서 핑 조회
+    // 메인 DB에서 트래커 핑 조회 (PG/SQLite 양쪽 지원)
     let ping = null;
     try {
-      const authDb = require('./src/auth').getDb();
-      if (authDb) {
-        ping = authDb.prepare('SELECT * FROM tracker_pings WHERE userId = ?').get(userId);
-      }
+      ping = getTrackerPing ? await Promise.resolve(getTrackerPing(userId)) : null;
     } catch {}
 
-    let isOnline = ping && (Date.now() - ping.lastSeen < 6 * 60 * 1000); // 6분 이내
-    // 유저의 실제 이벤트 수 (tracker ping과 별개로 DB에 저장된 이벤트)
-    let userEventCount = ping?.eventCount || 0;
+    let isOnline = !!(ping && ping.last_ping);
+    let userEventCount = 0;
+
     try {
-      // 유저별 이벤트 확인
-      const stats = getStatsByUser ? getStatsByUser(userId) : null;
-      if (stats && stats.eventCount > userEventCount) userEventCount = stats.eventCount;
-      if (stats && stats.eventCount > 0) isOnline = true;
+      // 유저별 이벤트 확인 (PG async 대응: Promise.resolve로 래핑)
+      const stats = getStatsByUser ? await Promise.resolve(getStatsByUser(userId)) : null;
+      if (stats && stats.eventCount > 0) {
+        userEventCount = stats.eventCount;
+        isOnline = true;
+      }
       // 유저 이벤트 없어도 전체 이벤트가 있으면 트래커 활성 (local 이벤트 아직 미귀속)
       if (!isOnline) {
-        const totalStats = getStats ? getStats() : null;
+        const totalStats = getStats ? await Promise.resolve(getStats()) : null;
         if (totalStats && totalStats.eventCount > 0) {
           isOnline = true;
           if (totalStats.eventCount > userEventCount) userEventCount = totalStats.eventCount;
@@ -912,7 +913,7 @@ app.get('/api/tracker/status', (req, res) => {
     } catch {}
     res.json({
       online:     !!isOnline,
-      lastSeen:   ping?.lastSeen || null,
+      lastSeen:   ping?.last_ping || null,
       hostname:   ping?.hostname || null,
       eventCount: userEventCount,
     });

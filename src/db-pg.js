@@ -171,6 +171,125 @@ async function createTables() {
     );
     CREATE INDEX IF NOT EXISTS idx_mc_ws      ON multilevel_cache(workspace_id);
     CREATE INDEX IF NOT EXISTS idx_mc_expires ON multilevel_cache(expires_at);
+
+    -- 노드 소프트 삭제 (숨김 처리)
+    CREATE TABLE IF NOT EXISTS hidden_events (
+      event_id TEXT NOT NULL,
+      user_id  TEXT NOT NULL DEFAULT 'local',
+      hidden_at TIMESTAMPTZ DEFAULT NOW(),
+      PRIMARY KEY (event_id, user_id)
+    );
+
+    -- 노드 메모
+    CREATE TABLE IF NOT EXISTS node_memos (
+      id TEXT PRIMARY KEY,
+      event_id TEXT NOT NULL,
+      user_id TEXT DEFAULT 'local',
+      content TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    -- 즐겨찾기
+    CREATE TABLE IF NOT EXISTS bookmarks (
+      id TEXT PRIMARY KEY,
+      event_id TEXT NOT NULL,
+      user_id TEXT DEFAULT 'local',
+      label TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    -- 트래커 핑 (확장 프로그램 활성 상태)
+    CREATE TABLE IF NOT EXISTS tracker_pings (
+      user_id TEXT PRIMARY KEY,
+      last_ping TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    -- 메시지 서비스 토큰 저장소
+    CREATE TABLE IF NOT EXISTS service_tokens (
+      id BIGSERIAL PRIMARY KEY,
+      userId TEXT NOT NULL,
+      service TEXT NOT NULL,
+      accessToken TEXT NOT NULL,
+      refreshToken TEXT,
+      expiresAt BIGINT,
+      isActive INTEGER DEFAULT 1,
+      createdAt TIMESTAMPTZ DEFAULT NOW(),
+      updatedAt TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(userId, service)
+    );
+    CREATE INDEX IF NOT EXISTS idx_service_tokens_userId ON service_tokens(userId);
+    CREATE INDEX IF NOT EXISTS idx_service_tokens_service ON service_tokens(service);
+
+    -- 결제/구독/알림 테이블
+    CREATE TABLE IF NOT EXISTS payments (
+      id          TEXT PRIMARY KEY,
+      user_id     TEXT NOT NULL,
+      plan_id     TEXT NOT NULL,
+      amount      INTEGER NOT NULL,
+      currency    TEXT DEFAULT 'KRW',
+      status      TEXT DEFAULT 'pending',
+      payment_key TEXT,
+      order_id    TEXT,
+      created_at  TIMESTAMPTZ DEFAULT NOW(),
+      confirmed_at TIMESTAMPTZ
+    );
+    CREATE TABLE IF NOT EXISTS subscriptions (
+      user_id     TEXT PRIMARY KEY,
+      plan_id     TEXT NOT NULL DEFAULT 'free',
+      started_at  TIMESTAMPTZ DEFAULT NOW(),
+      expires_at  TIMESTAMPTZ,
+      status      TEXT DEFAULT 'active'
+    );
+    CREATE TABLE IF NOT EXISTS notifications (
+      id          TEXT PRIMARY KEY,
+      user_id     TEXT NOT NULL,
+      type        TEXT NOT NULL,
+      title       TEXT NOT NULL,
+      body        TEXT,
+      data_json   JSONB DEFAULT '{}',
+      is_read     INTEGER DEFAULT 0,
+      created_at  TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_notif_user ON notifications(user_id);
+
+    -- 마켓플레이스 솔루션 설치 기록
+    CREATE TABLE IF NOT EXISTS solution_installations (
+      id            TEXT PRIMARY KEY,
+      user_id       TEXT NOT NULL,
+      solution_id   TEXT NOT NULL,
+      status        TEXT DEFAULT 'pending',
+      config_json   JSONB DEFAULT '{}',
+      created_at    TIMESTAMPTZ DEFAULT NOW(),
+      updated_at    TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_sol_inst_user ON solution_installations(user_id);
+    CREATE INDEX IF NOT EXISTS idx_sol_inst_status ON solution_installations(status);
+
+    -- 기업 분석 결과
+    CREATE TABLE IF NOT EXISTS analysis_results (
+      id                    TEXT PRIMARY KEY,
+      user_id               TEXT NOT NULL,
+      company_id            TEXT NOT NULL,
+      findings_json         JSONB NOT NULL,
+      recommendations_json  JSONB NOT NULL,
+      created_at            TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_analysis_user ON analysis_results(user_id);
+    CREATE INDEX IF NOT EXISTS idx_analysis_company ON analysis_results(company_id);
+
+    -- 솔루션 설치 ROI 추적
+    CREATE TABLE IF NOT EXISTS solution_roi (
+      id                TEXT PRIMARY KEY,
+      installation_id   TEXT NOT NULL,
+      date              TEXT NOT NULL,
+      invested          REAL DEFAULT 0,
+      actual_savings    REAL DEFAULT 0,
+      status            TEXT,
+      FOREIGN KEY (installation_id) REFERENCES solution_installations(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_roi_inst ON solution_roi(installation_id);
+    CREATE INDEX IF NOT EXISTS idx_roi_date ON solution_roi(date);
   `);
 }
 
@@ -421,6 +540,358 @@ function deserializeEvent(row) {
 
 function getDb() { return pool; }
 
+// ─── 사용자 격리 ────────────────────────────────────
+async function getEventsByUser(userId) {
+  const { rows } = await pool.query('SELECT * FROM events WHERE user_id=$1 ORDER BY timestamp ASC', [userId]);
+  return rows.map(deserializeEvent);
+}
+
+async function getSessionsByUser(userId) {
+  const { rows } = await pool.query('SELECT * FROM sessions WHERE user_id=$1 ORDER BY started_at DESC', [userId]);
+  return rows;
+}
+
+async function getStatsByUser(userId) {
+  const [e, s, f, t] = await Promise.all([
+    pool.query('SELECT COUNT(*) AS c FROM events WHERE user_id=$1', [userId]),
+    pool.query('SELECT COUNT(*) AS c FROM sessions WHERE user_id=$1', [userId]),
+    pool.query('SELECT COUNT(*) AS c FROM files'),
+    pool.query("SELECT COUNT(*) AS c FROM events WHERE user_id=$1 AND type LIKE 'tool.%'", [userId]),
+  ]);
+  return {
+    eventCount:   parseInt(e.rows[0].c),
+    sessionCount: parseInt(s.rows[0].c),
+    fileCount:    parseInt(f.rows[0].c),
+    toolCount:    parseInt(t.rows[0].c),
+    aiSourceStats: {},
+  };
+}
+
+async function claimLocalEvents(userId) {
+  try {
+    const result = await pool.query(
+      `UPDATE events SET user_id=$1 WHERE user_id='local' OR user_id='anonymous'`, [userId]
+    );
+    await pool.query(
+      `UPDATE sessions SET user_id=$1 WHERE user_id='local' OR user_id='anonymous'`, [userId]
+    );
+    return result.rowCount;
+  } catch (e) {
+    console.warn('[DB-PG] claimLocalEvents error:', e.message);
+    return 0;
+  }
+}
+
+// ─── 기타 쿼리 ─────────────────────────────────────
+async function getEventsByChannel(channelId) {
+  const { rows } = await pool.query('SELECT * FROM events WHERE channel_id=$1 ORDER BY timestamp ASC', [channelId]);
+  return rows.map(deserializeEvent);
+}
+
+async function updateSessionTitle(sessionId, title) {
+  await pool.query('UPDATE sessions SET title=$1 WHERE id=$2', [title, sessionId]);
+}
+
+// ─── 노드 숨김 (소프트 삭제) ────────────────────────
+async function hideEvents(eventIds, userId = 'local') {
+  for (const id of eventIds) {
+    await pool.query(
+      'INSERT INTO hidden_events (event_id, user_id) VALUES ($1,$2) ON CONFLICT DO NOTHING',
+      [id, userId]
+    );
+  }
+  return eventIds.length;
+}
+
+async function unhideEvents(eventIds, userId = 'local') {
+  for (const id of eventIds) {
+    await pool.query('DELETE FROM hidden_events WHERE event_id=$1 AND user_id=$2', [id, userId]);
+  }
+  return eventIds.length;
+}
+
+async function unhideAllEvents(userId = 'local') {
+  const result = await pool.query('DELETE FROM hidden_events WHERE user_id=$1', [userId]);
+  return result.rowCount;
+}
+
+async function getHiddenEventIds(userId = 'local') {
+  const { rows } = await pool.query('SELECT event_id FROM hidden_events WHERE user_id=$1', [userId]);
+  return rows.map(r => r.event_id);
+}
+
+// ─── 노드 메모 CRUD ────────────────────────────────
+async function getNodeMemos(userId = 'local') {
+  const { rows } = await pool.query('SELECT * FROM node_memos WHERE user_id=$1 ORDER BY updated_at DESC', [userId]);
+  return rows;
+}
+
+async function upsertNodeMemo(id, eventId, userId, content) {
+  await pool.query(`
+    INSERT INTO node_memos (id, event_id, user_id, content, created_at, updated_at)
+    VALUES ($1,$2,$3,$4,NOW(),NOW())
+    ON CONFLICT (id) DO UPDATE SET content=$4, updated_at=NOW()
+  `, [id, eventId, userId || 'local', content]);
+}
+
+async function deleteNodeMemo(id) {
+  await pool.query('DELETE FROM node_memos WHERE id=$1', [id]);
+}
+
+// ─── 즐겨찾기 CRUD ─────────────────────────────────
+async function getBookmarks(userId = 'local') {
+  const { rows } = await pool.query('SELECT * FROM bookmarks WHERE user_id=$1 ORDER BY created_at DESC', [userId]);
+  return rows;
+}
+
+async function addBookmark(id, eventId, userId, label) {
+  await pool.query(
+    'INSERT INTO bookmarks (id, event_id, user_id, label) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING',
+    [id, eventId, userId || 'local', label || null]
+  );
+}
+
+async function removeBookmark(id) {
+  await pool.query('DELETE FROM bookmarks WHERE id=$1', [id]);
+}
+
+// ─── 트래커 핑 ─────────────────────────────────────
+async function touchTrackerPing(userId = 'local') {
+  await pool.query(`
+    INSERT INTO tracker_pings (user_id, last_ping)
+    VALUES ($1, NOW())
+    ON CONFLICT (user_id) DO UPDATE SET last_ping=NOW()
+  `, [userId]);
+}
+
+async function getTrackerPing(userId = 'local') {
+  const { rows } = await pool.query('SELECT * FROM tracker_pings WHERE user_id=$1', [userId]);
+  return rows[0] || null;
+}
+
+// ─── 메시지 서비스 토큰 CRUD ───────────────────────
+async function saveServiceToken(userId, service, { accessToken, refreshToken, expiresAt }) {
+  await pool.query(`
+    INSERT INTO service_tokens (userId, service, accessToken, refreshToken, expiresAt, updatedAt)
+    VALUES ($1,$2,$3,$4,$5,NOW())
+    ON CONFLICT (userId, service) DO UPDATE SET
+      accessToken=EXCLUDED.accessToken,
+      refreshToken=EXCLUDED.refreshToken,
+      expiresAt=EXCLUDED.expiresAt,
+      isActive=1,
+      updatedAt=NOW()
+  `, [userId, service, accessToken, refreshToken, expiresAt]);
+}
+
+async function getServiceToken(userId, service) {
+  const { rows } = await pool.query(`
+    SELECT accessToken AS "accessToken", refreshToken AS "refreshToken",
+           expiresAt AS "expiresAt", isActive AS "isActive"
+    FROM service_tokens
+    WHERE userId=$1 AND service=$2 AND isActive=1
+  `, [userId, service]);
+  return rows[0] || null;
+}
+
+async function getUserServiceTokens(userId) {
+  const { rows } = await pool.query(`
+    SELECT service, accessToken AS "accessToken"
+    FROM service_tokens WHERE userId=$1 AND isActive=1
+  `, [userId]);
+  const result = {};
+  rows.forEach(r => { result[r.service] = r.accessToken; });
+  return result;
+}
+
+async function toggleServiceToken(userId, service, isActive) {
+  await pool.query(
+    `UPDATE service_tokens SET isActive=$1, updatedAt=NOW() WHERE userId=$2 AND service=$3`,
+    [isActive ? 1 : 0, userId, service]
+  );
+}
+
+async function deleteServiceToken(userId, service) {
+  await pool.query('DELETE FROM service_tokens WHERE userId=$1 AND service=$2', [userId, service]);
+}
+
+async function getUserTokenStatus(userId) {
+  const { rows } = await pool.query(`
+    SELECT service, isActive AS "isActive", updatedAt AS "updatedAt"
+    FROM service_tokens WHERE userId=$1 ORDER BY service
+  `, [userId]);
+  return rows.map(r => ({
+    service: r.service,
+    connected: r.isActive === 1,
+    lastUpdated: r.updatedAt,
+  }));
+}
+
+// ─── 마켓플레이스 솔루션 설치 CRUD ──────────────────
+async function installSolution(userId, solutionId) {
+  const installationId = `inst_${Date.now()}_${userId}`;
+  await pool.query(`
+    INSERT INTO solution_installations (id, user_id, solution_id, status)
+    VALUES ($1,$2,$3,'pending')
+  `, [installationId, userId, solutionId]);
+  return installationId;
+}
+
+async function getSolutionInstallation(installationId) {
+  const { rows } = await pool.query('SELECT * FROM solution_installations WHERE id=$1', [installationId]);
+  return rows[0] || null;
+}
+
+async function getUserSolutionInstallations(userId) {
+  const { rows } = await pool.query(
+    'SELECT * FROM solution_installations WHERE user_id=$1 ORDER BY created_at DESC', [userId]
+  );
+  return rows;
+}
+
+async function updateSolutionInstallationStatus(installationId, status) {
+  await pool.query(
+    `UPDATE solution_installations SET status=$1, updated_at=NOW() WHERE id=$2`,
+    [status, installationId]
+  );
+}
+
+// ─── 기업 분석 결과 CRUD ───────────────────────────
+async function saveAnalysisResult(analysisId, userId, companyId, findings, recommendations) {
+  await pool.query(`
+    INSERT INTO analysis_results (id, user_id, company_id, findings_json, recommendations_json)
+    VALUES ($1,$2,$3,$4,$5)
+  `, [analysisId, userId, companyId, JSON.stringify(findings), JSON.stringify(recommendations)]);
+}
+
+async function getAnalysisResult(analysisId, userId) {
+  const { rows } = await pool.query(
+    'SELECT * FROM analysis_results WHERE id=$1 AND user_id=$2', [analysisId, userId]
+  );
+  if (!rows[0]) return null;
+  const result = rows[0];
+  result.findings = typeof result.findings_json === 'object' ? result.findings_json : JSON.parse(result.findings_json);
+  result.recommendations = typeof result.recommendations_json === 'object' ? result.recommendations_json : JSON.parse(result.recommendations_json);
+  return result;
+}
+
+async function getUserAnalysisResults(userId, limit = 10) {
+  const { rows } = await pool.query(
+    'SELECT id, company_id, created_at FROM analysis_results WHERE user_id=$1 ORDER BY created_at DESC LIMIT $2',
+    [userId, limit]
+  );
+  return rows;
+}
+
+// ─── ROI 추적 CRUD ─────────────────────────────────
+async function addRoiTrackingRecord(installationId, date, invested, actualSavings, status) {
+  const id = `roi_${Date.now()}`;
+  await pool.query(`
+    INSERT INTO solution_roi (id, installation_id, date, invested, actual_savings, status)
+    VALUES ($1,$2,$3,$4,$5,$6)
+  `, [id, installationId, date, invested, actualSavings, status]);
+  return id;
+}
+
+async function getRoiTimeline(installationId) {
+  const { rows } = await pool.query(
+    'SELECT * FROM solution_roi WHERE installation_id=$1 ORDER BY date ASC', [installationId]
+  );
+  return rows;
+}
+
+async function calculateRoi(installationId) {
+  const records = await getRoiTimeline(installationId);
+  if (records.length === 0) return null;
+  const totalInvested = records.reduce((sum, r) => sum + r.invested, 0);
+  const totalSavings = records.reduce((sum, r) => sum + r.actual_savings, 0);
+  const roi = totalInvested > 0 ? ((totalSavings - totalInvested) / totalInvested * 100) : 0;
+  const breakEvenDate = records.find(r => r.actual_savings >= r.invested)?.date || null;
+  return { totalInvested, totalSavings, roi, breakEvenDate, timeline: records };
+}
+
+// ─── 다계층 노드 시스템 CRUD ────────────────────────
+async function getMultilevelCache(workspaceId, level, role, userId) {
+  const { rows } = await pool.query(`
+    SELECT nodes_json FROM multilevel_cache
+    WHERE workspace_id=$1 AND level=$2 AND role=$3 AND user_id=$4
+    AND expires_at::timestamptz > NOW()
+  `, [workspaceId, level, role, userId]);
+  if (!rows[0]) return null;
+  return typeof rows[0].nodes_json === 'object' ? rows[0].nodes_json : JSON.parse(rows[0].nodes_json);
+}
+
+async function saveMultilevelCache(workspaceId, level, role, userId, nodesJson) {
+  const id = `cache_${workspaceId}_${level}_${role}_${userId}_${Date.now()}`;
+  await pool.query(`
+    INSERT INTO multilevel_cache (id, workspace_id, level, role, user_id, nodes_json, expires_at)
+    VALUES ($1,$2,$3,$4,$5,$6, NOW() + INTERVAL '15 minutes')
+    ON CONFLICT (workspace_id, level, role, user_id) DO UPDATE SET
+      nodes_json=$6, generated_at=NOW(), expires_at=NOW() + INTERVAL '15 minutes'
+  `, [id, workspaceId, level, role, userId, JSON.stringify(nodesJson)]);
+}
+
+async function invalidateMultilevelCache(workspaceId) {
+  await pool.query('DELETE FROM multilevel_cache WHERE workspace_id=$1', [workspaceId]);
+}
+
+async function saveTeamHierarchy(id, workspaceId, parentId, name, levelType, icon, color) {
+  await pool.query(`
+    INSERT INTO team_hierarchy (id, workspace_id, parent_id, name, level_type, icon, color)
+    VALUES ($1,$2,$3,$4,$5,$6,$7)
+    ON CONFLICT (id) DO UPDATE SET name=$4, level_type=$5, icon=$6, color=$7
+  `, [id, workspaceId, parentId || null, name, levelType, icon || '👥', color || '#58a6ff']);
+}
+
+async function getWorkspaceTeamHierarchy(workspaceId) {
+  const { rows } = await pool.query(
+    'SELECT * FROM team_hierarchy WHERE workspace_id=$1 ORDER BY created_at ASC', [workspaceId]
+  );
+  return rows;
+}
+
+async function getTeamsByParentId(parentId) {
+  const { rows } = await pool.query(
+    'SELECT * FROM team_hierarchy WHERE parent_id=$1 ORDER BY created_at ASC', [parentId || null]
+  );
+  return rows;
+}
+
+// ─── 워크스페이스 활동 CRUD ─────────────────────────
+async function saveWorkspaceActivity(workspaceId, userId1, userId2, activityType, strength) {
+  const id = `activity_${workspaceId}_${userId1}_${userId2}_${Date.now()}`;
+  const [id1, id2] = [userId1, userId2].sort();
+  await pool.query(`
+    INSERT INTO workspace_activity (id, workspace_id, user_id_1, user_id_2, activity_type, strength, last_interaction)
+    VALUES ($1,$2,$3,$4,$5,$6,NOW())
+    ON CONFLICT (id) DO UPDATE SET strength=$6, last_interaction=NOW()
+  `, [id, workspaceId, id1, id2, activityType, strength]);
+}
+
+async function getWorkspaceActivityByUser(workspaceId, userId) {
+  const { rows } = await pool.query(`
+    SELECT * FROM workspace_activity
+    WHERE workspace_id=$1 AND (user_id_1=$2 OR user_id_2=$2)
+    ORDER BY strength DESC, last_interaction DESC
+  `, [workspaceId, userId]);
+  return rows;
+}
+
+async function getWorkspaceActivityAll(workspaceId) {
+  const { rows } = await pool.query(
+    'SELECT * FROM workspace_activity WHERE workspace_id=$1 ORDER BY strength DESC', [workspaceId]
+  );
+  return rows;
+}
+
+async function updateWorkspaceActivityStrength(workspaceId, userId1, userId2, strengthDelta = 0.1) {
+  const [id1, id2] = [userId1, userId2].sort();
+  await pool.query(`
+    UPDATE workspace_activity
+    SET strength = LEAST(1.0, strength + $1), last_interaction=NOW()
+    WHERE workspace_id=$2 AND user_id_1=$3 AND user_id_2=$4
+  `, [strengthDelta, workspaceId, id1, id2]);
+}
+
 module.exports = {
   initDatabase, getDb,
   insertEvent, getAllEvents, getEventsBySession, getEventsByType, searchEvents,
@@ -430,4 +901,31 @@ module.exports = {
   getUserCategories, upsertUserCategory, deleteUserCategory,
   getToolLabelMappings, setToolLabelMapping, deleteToolLabelMapping,
   getUserConfig,
+  // 사용자 격리
+  getEventsByUser, getSessionsByUser, getStatsByUser, claimLocalEvents,
+  getEventsByChannel, updateSessionTitle,
+  // 노드 숨김 (소프트 삭제)
+  hideEvents, unhideEvents, unhideAllEvents, getHiddenEventIds,
+  // 노드 메모
+  getNodeMemos, upsertNodeMemo, deleteNodeMemo,
+  // 즐겨찾기
+  getBookmarks, addBookmark, removeBookmark,
+  // 트래커 핑
+  touchTrackerPing, getTrackerPing,
+  // 메시지 서비스 토큰
+  saveServiceToken, getServiceToken, getUserServiceTokens, toggleServiceToken,
+  deleteServiceToken, getUserTokenStatus,
+  // 마켓플레이스 솔루션
+  installSolution, getSolutionInstallation, getUserSolutionInstallations,
+  updateSolutionInstallationStatus,
+  // 기업 분석
+  saveAnalysisResult, getAnalysisResult, getUserAnalysisResults,
+  // ROI 추적
+  addRoiTrackingRecord, getRoiTimeline, calculateRoi,
+  // 다계층 노드 시스템
+  getMultilevelCache, saveMultilevelCache, invalidateMultilevelCache,
+  saveTeamHierarchy, getWorkspaceTeamHierarchy, getTeamsByParentId,
+  // 워크스페이스 활동
+  saveWorkspaceActivity, getWorkspaceActivityByUser, getWorkspaceActivityAll,
+  updateWorkspaceActivityStrength,
 };
