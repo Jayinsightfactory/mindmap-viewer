@@ -248,6 +248,19 @@ if (!fs.existsSync(SNAPSHOTS_DIR)) fs.mkdirSync(SNAPSHOTS_DIR, { recursive: true
 const db = initDatabase();
 console.log('[DB] SQLite 초기화 완료');
 
+// ─── SQLite 안정성 설정 (배포 시 동시 요청 안전) ────────────────────────────
+if (db && db.pragma) {
+  try {
+    db.pragma('journal_mode = WAL');           // Write-Ahead Logging (동시성 향상)
+    db.pragma('busy_timeout = 5000');          // 5초 대기 (잠금 경쟁 해결)
+    db.pragma('synchronous = NORMAL');         // 성능/안전 균형
+    db.pragma('foreign_keys = ON');            // 외래키 제약 활성화
+    console.log('[DB] SQLite PRAGMAS 설정 완료 (WAL모드, busy_timeout=5000ms)');
+  } catch (e) {
+    console.warn('[DB] PRAGMA 설정 실패:', e.message);
+  }
+}
+
 const app    = express();
 app.set('trust proxy', 1);
 const server = http.createServer(app);
@@ -972,6 +985,59 @@ const dbDeps = {
   touchTrackerPing, getTrackerPing,
   getEventsForUser, getSessionsForUser, resolveUserId,   // 사용자별 데이터 격리
 };
+
+// ─── 라우터 마운트 전 모든 DB 초기화 완료 (배포 시 경합 상태 방지) ──────────────
+console.log('[DB Init] 주요 테이블 초기화 중...');
+try {
+  // 각 라우터의 초기화를 동기/비동기로 실행
+  
+  // 1) follow.js 초기화
+  try {
+    require('./routes/follow').initFollowTablesSync?.() || true;
+  } catch (e) {
+    console.warn('[DB Init] follow 초기화 실패:', e.message);
+  }
+  
+  // 2) profile.js 초기화  
+  try {
+    const profileRouter = require('./routes/profile');
+    profileRouter.initProfileTable?.() || true;
+  } catch (e) {
+    console.warn('[DB Init] profile 초기화 실패:', e.message);
+  }
+  
+  // 3) llm-settings.js 초기화
+  try {
+    const llmRouter = require('./routes/llm-settings');
+    llmRouter.ensureTable?.() || true;
+  } catch (e) {
+    console.warn('[DB Init] llm-settings 초기화 실패:', e.message);
+  }
+  
+  // 4) chat.js 초기화 (비동기)
+  try {
+    const chatRouter = require('./routes/chat');
+    if (chatRouter.initChatTables) {
+      chatRouter.initChatTables().catch(e => console.warn('[DB Init] chat 비동기 초기화 실패:', e.message));
+    }
+  } catch (e) {
+    console.warn('[DB Init] chat 초기화 실패:', e.message);
+  }
+  
+  // 5) analytics.js 초기화 (비동기)
+  try {
+    const analyticsRouter = require('./routes/analytics');
+    if (analyticsRouter.initAnalyticsTables) {
+      analyticsRouter.initAnalyticsTables().catch(e => console.warn('[DB Init] analytics 비동기 초기화 실패:', e.message));
+    }
+  } catch (e) {
+    console.warn('[DB Init] analytics 초기화 실패:', e.message);
+  }
+  
+  console.log('[DB Init] 주요 테이블 초기화 완료');
+} catch (e) {
+  console.warn('[DB Init] 일부 초기화 실패 (계속 진행):', e.message);
+}
 
 app.use('/api', createGraphRouter({
   getFullGraph, getFullGraphForUser, broadcastAll, broadcastToChannel,

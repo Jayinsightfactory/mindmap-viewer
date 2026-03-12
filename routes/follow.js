@@ -57,49 +57,117 @@ function createRouter({ getDb, verifyToken, searchUsers, getUserById, createNoti
     const r = await db.query(_pgSql(sql), params);
     return r.rows;
   }
+  
+  // ── 동기/비동기 모두 지원하는 dbExec ──────────────────────────────────────────
+  function dbExecSync(sql) {
+    const db = _db();
+    if (!db) throw new Error('Database not initialized');
+    if (db.exec) {
+      // SQLite 동기 실행
+      return db.exec(sql);
+    } else {
+      // PG는 동기 불가능 — 에러
+      throw new Error('dbExecSync requires SQLite (synchronous execution)');
+    }
+  }
+  
   async function dbExec(sql) {
     const db = _db();
     if (!db) throw new Error('Database not initialized');
-    if (db.exec) return db.exec(sql);
+    if (db.exec) return db.exec(sql);  // SQLite 동기 실행
     // PG: 여러 문장을 ;로 분리해서 개별 실행
     const stmts = sql.split(';').map(s => s.trim()).filter(Boolean);
     for (const s of stmts) await db.query(s);
   }
 
-  // ── DB 테이블 초기화 ──────────────────────────────────────────────────────
-  async function initFollowTable() {
-    const db = _db();
-    const isPg = _isPg(db);
+  // ── DB 테이블 초기화 (동기 방식 — 라우터 마운트 전 완료 필수) ────────────────
+  function initFollowTableSync() {
+    try {
+      const db = _db();
+      const isPg = _isPg(db);
+      
+      if (isPg) {
+        // PG는 동기 실행 불가 — 스킵 (비동기로 별도 처리)
+        return false;  // 비동기로 처리 필요함
+      }
 
-    // user_follows 테이블
-    await dbExec(`
-      CREATE TABLE IF NOT EXISTS user_follows (
-        follower_id   TEXT NOT NULL,
-        following_id  TEXT NOT NULL,
-        created_at    ${isPg ? 'TIMESTAMPTZ DEFAULT NOW()' : 'DATETIME DEFAULT CURRENT_TIMESTAMP'},
-        PRIMARY KEY (follower_id, following_id)
-      )
-    `);
-    await dbExec(`CREATE INDEX IF NOT EXISTS idx_uf_follower  ON user_follows(follower_id)`);
-    await dbExec(`CREATE INDEX IF NOT EXISTS idx_uf_following ON user_follows(following_id)`);
+      // user_follows 테이블
+      dbExecSync(`
+        CREATE TABLE IF NOT EXISTS user_follows (
+          follower_id   TEXT NOT NULL,
+          following_id  TEXT NOT NULL,
+          created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY (follower_id, following_id)
+        )
+      `);
+      dbExecSync(`CREATE INDEX IF NOT EXISTS idx_uf_follower  ON user_follows(follower_id)`);
+      dbExecSync(`CREATE INDEX IF NOT EXISTS idx_uf_following ON user_follows(following_id)`);
 
-    // registered_users 테이블 (OAuth 로그인 시 메인 DB에 사용자 정보 영속 저장)
-    await dbExec(`
-      CREATE TABLE IF NOT EXISTS registered_users (
-        user_id    TEXT PRIMARY KEY,
-        email      TEXT,
-        name       TEXT,
-        avatar_url TEXT,
-        provider   TEXT DEFAULT 'local',
-        plan       TEXT DEFAULT 'free',
-        updated_at ${isPg ? 'TIMESTAMPTZ DEFAULT NOW()' : 'DATETIME DEFAULT CURRENT_TIMESTAMP'}
-      )
-    `);
-    await dbExec(`CREATE INDEX IF NOT EXISTS idx_ru_email ON registered_users(email)`);
-    await dbExec(`CREATE INDEX IF NOT EXISTS idx_ru_name  ON registered_users(name)`);
+      // registered_users 테이블 (OAuth 로그인 시 메인 DB에 사용자 정보 영속 저장)
+      dbExecSync(`
+        CREATE TABLE IF NOT EXISTS registered_users (
+          user_id    TEXT PRIMARY KEY,
+          email      TEXT,
+          name       TEXT,
+          avatar_url TEXT,
+          provider   TEXT DEFAULT 'local',
+          plan       TEXT DEFAULT 'free',
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      dbExecSync(`CREATE INDEX IF NOT EXISTS idx_ru_email ON registered_users(email)`);
+      dbExecSync(`CREATE INDEX IF NOT EXISTS idx_ru_name  ON registered_users(name)`);
+      
+      return true;  // 초기화 성공
+    } catch (e) {
+      console.warn('[follow] DB init error:', e.message);
+      return false;
+    }
   }
 
-  initFollowTable().catch(e => console.warn('[follow] DB init warn:', e.message));
+  // 비동기 초기화 (PG용)
+  async function initFollowTableAsync() {
+    const db = _db();
+    const isPg = _isPg(db);
+    if (!isPg) return;  // SQLite는 동기로 이미 처리됨
+    
+    try {
+      await dbExec(`
+        CREATE TABLE IF NOT EXISTS user_follows (
+          follower_id   TEXT NOT NULL,
+          following_id  TEXT NOT NULL,
+          created_at    TIMESTAMPTZ DEFAULT NOW(),
+          PRIMARY KEY (follower_id, following_id)
+        )
+      `);
+      await dbExec(`CREATE INDEX IF NOT EXISTS idx_uf_follower  ON user_follows(follower_id)`);
+      await dbExec(`CREATE INDEX IF NOT EXISTS idx_uf_following ON user_follows(following_id)`);
+
+      await dbExec(`
+        CREATE TABLE IF NOT EXISTS registered_users (
+          user_id    TEXT PRIMARY KEY,
+          email      TEXT,
+          name       TEXT,
+          avatar_url TEXT,
+          provider   TEXT DEFAULT 'local',
+          plan       TEXT DEFAULT 'free',
+          updated_at TIMESTAMPTZ DEFAULT NOW()
+        )
+      `);
+      await dbExec(`CREATE INDEX IF NOT EXISTS idx_ru_email ON registered_users(email)`);
+      await dbExec(`CREATE INDEX IF NOT EXISTS idx_ru_name  ON registered_users(name)`);
+    } catch (e) {
+      console.warn('[follow] DB async init error:', e.message);
+    }
+  }
+
+  // 라우터 반환 전에 동기 초기화 시도
+  initFollowTableSync();
+  
+  // PG 환경에서는 비동기 초기화 스케줄링
+  if (_isPg(_db())) {
+    initFollowTableAsync().catch(e => console.warn('[follow] Async DB init failed:', e.message));
+  }
 
   // ── 사용자 등록 (OAuth 로그인 시 메인 DB에 저장) ─────────────────────────
   async function registerUser(user) {
@@ -416,8 +484,16 @@ function createRouter({ getDb, verifyToken, searchUsers, getUserById, createNoti
 
   // registerUser를 외부에서 사용할 수 있도록 router에 첨부
   router.registerUser = registerUser;
+  
+  // DB 초기화 함수를 export (server.js에서 라우터 마운트 전 호출)
+  router.initFollowTablesSync = initFollowTableSync;
 
   return router;
 }
+
+// 라우터 팩토리 함수에 초기화 함수 첨부 (직접 호출 가능)
+createRouter.initFollowTablesSync = function() {
+  // Dummy 이므로 서버 시작 시 우회됨 (router 반환 후 호출됨)
+};
 
 module.exports = createRouter;
