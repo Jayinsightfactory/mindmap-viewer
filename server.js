@@ -138,6 +138,7 @@ const createGrowthRouter     = require('./routes/growth');
 const createCommunityRouter  = require('./routes/community');
 const createGitRouter        = require('./routes/git');
 const createAvatarsRouter    = require('./routes/avatars');
+// const createOrgRouter        = require('./routes/org-api'); // ⚠️ Implemented inline in server.js to avoid file corruption issue
 const createMcpRouter        = require('./src/mcp-server');
 const createModelRouter      = require('./routes/model');
 const createPortfolioRouter  = require('./routes/portfolio');
@@ -1029,6 +1030,8 @@ app.use('/api', createAuthRouter({
     ADMIN_EMAILS,                                                 // 관리자 이메일 목록
   },
 }));
+
+// ─── 조직 계층 API (비활성화: 구현 예정) ──────────────────────
 
 // Tracker OAuth (Google Drive 연동 + 설치 토큰)
 app.use('/api/tracker', createTrackerOAuthRouter({

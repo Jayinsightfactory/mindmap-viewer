@@ -159,7 +159,7 @@ function createTables() {
       value TEXT
     );
 
-    -- ─── 워크스페이스 (팀/회사 단위) ─────────────────────
+    -- ─── 워크스페이스 (회사 단위) ─────────────────────────
     CREATE TABLE IF NOT EXISTS workspaces (
       id           TEXT PRIMARY KEY,
       name         TEXT NOT NULL,
@@ -169,7 +169,61 @@ function createTables() {
       created_at   TEXT DEFAULT (datetime('now'))
     );
 
-    -- 워크스페이스 멤버십
+    -- ─── 회사 (Level 3) ─────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS org_companies (
+      id           TEXT PRIMARY KEY,
+      workspace_id TEXT NOT NULL,
+      name         TEXT NOT NULL,
+      status       TEXT DEFAULT 'active',
+      created_at   TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (workspace_id) REFERENCES workspaces(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_org_comp_ws ON org_companies(workspace_id);
+
+    -- ─── 부서 (Level 2) ─────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS org_departments (
+      id           TEXT PRIMARY KEY,
+      company_id   TEXT NOT NULL,
+      name         TEXT NOT NULL,
+      head_id      TEXT DEFAULT '',
+      status       TEXT DEFAULT 'active',
+      created_at   TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (company_id) REFERENCES org_companies(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_org_dept_comp ON org_departments(company_id);
+
+    -- ─── 팀 (Level 1) ──────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS org_teams (
+      id           TEXT PRIMARY KEY,
+      department_id TEXT NOT NULL,
+      name         TEXT NOT NULL,
+      leader_id    TEXT DEFAULT '',
+      status       TEXT DEFAULT 'active',
+      created_at   TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (department_id) REFERENCES org_departments(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_org_team_dept ON org_teams(department_id);
+
+    -- ─── 개인/멤버 (Level 0) ────────────────────────────────
+    CREATE TABLE IF NOT EXISTS org_members (
+      id           TEXT PRIMARY KEY,
+      team_id      TEXT NOT NULL,
+      user_id      TEXT NOT NULL,
+      role         TEXT NOT NULL DEFAULT 'member',
+      position     TEXT DEFAULT '',
+      status       TEXT DEFAULT 'active',
+      joined_at    TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (team_id) REFERENCES org_teams(id),
+      UNIQUE(team_id, user_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_org_mem_team ON org_members(team_id);
+    CREATE INDEX IF NOT EXISTS idx_org_mem_user ON org_members(user_id);
+
+    -- ─── 워크스페이스 멤버십 (기존 호환성)
     CREATE TABLE IF NOT EXISTS workspace_members (
       workspace_id TEXT NOT NULL,
       user_id      TEXT NOT NULL,
