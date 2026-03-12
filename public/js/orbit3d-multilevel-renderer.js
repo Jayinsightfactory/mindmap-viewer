@@ -61,21 +61,22 @@ async function initWorkspaceMode(scene) {
   }
 
   try {
-    // 사용자의 워크스페이스 목록 조회
-    const res = await fetch('/api/workspace/my', {
-      headers: { Authorization: `Bearer ${token}` }
-    });
-    if (!res.ok) throw new Error('workspace list failed');
-    const workspaces = await res.json();
-    if (!workspaces || workspaces.length === 0) {
-      console.log('[MultiLevelRenderer] 워크스페이스 없음 → 더미 데이터 모드');
-      window.multiLevelRenderer.workspaceMode = false;
-      return initializeLevel0(scene);
+    // workspaceId가 이미 설정되어 있으면 바로 사용, 아니면 목록 조회
+    let wsId = window.multiLevelRenderer.workspaceId;
+    if (!wsId) {
+      const res = await fetch('/api/workspace/my', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('workspace list failed');
+      const workspaces = await res.json();
+      if (!workspaces || workspaces.length === 0) {
+        console.log('[MultiLevelRenderer] 워크스페이스 없음 → 더미 데이터 모드');
+        window.multiLevelRenderer.workspaceMode = false;
+        return initializeLevel0(scene);
+      }
+      const ws = workspaces[0];
+      wsId = ws.id || ws.workspace_id;
     }
-
-    // 첫 번째 워크스페이스 사용
-    const ws = workspaces[0];
-    const wsId = ws.id || ws.workspace_id;
 
     // 워크스페이스 구조 로드 (Level 0)
     const structRes = await fetch(`/api/multilevel/workspace/${wsId}/structure`, {

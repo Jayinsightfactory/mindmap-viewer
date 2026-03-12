@@ -1777,11 +1777,48 @@ function _copyCode(code) {
 }
 
 function _selectWorkspace(id, name) {
-  // 팀뷰로 전환 + 워크스페이스 팝업 닫기
+  // 워크스페이스 팝업 닫기
   closePopup('workspace-popup');
   _currentWorkspaceId = id;
-  showToast(`'${name}' 워크스페이스 선택됨`);
-  loadTeamDemo();
+  showToast(`'${name}' 워크스페이스 로딩 중...`);
+
+  // 다계층 워크스페이스 뷰 시작 (scene 준비 후 실행)
+  const _launchWsMode = async () => {
+    try {
+      const mlr = window.multiLevelRenderer;
+      if (mlr && mlr.initWorkspaceMode && window.scene) {
+        // 워크스페이스 ID 설정
+        mlr.workspaceId = id;
+        const data = await mlr.initWorkspaceMode(window.scene);
+        // 드릴 패널 열기
+        if (typeof openDrillPanel === 'function') {
+          openDrillPanel(
+            mlr.currentLevel || 0,
+            Object.keys(mlr.nodeMeshes || {}).length,
+            mlr.userRole,
+            mlr.permissions
+          );
+        }
+        showToast(`✅ '${name}' 워크스페이스 로드됨`);
+      } else {
+        // fallback: 팀 데모 뷰
+        loadTeamDemo();
+      }
+    } catch (e) {
+      console.warn('[selectWorkspace] 워크스페이스 모드 실패, 팀 데모로 전환:', e.message);
+      loadTeamDemo();
+    }
+  };
+
+  // scene이 준비될 때까지 최대 2초 대기
+  let waited = 0;
+  const _waitScene = setInterval(() => {
+    waited += 100;
+    if (window.scene || waited >= 2000) {
+      clearInterval(_waitScene);
+      _launchWsMode();
+    }
+  }, 100);
 }
 
 async function joinWorkspacePopup() {

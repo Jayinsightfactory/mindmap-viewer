@@ -1262,6 +1262,8 @@ function viewZoom(dir) {
 <script src="js/orbit3d-history.js"></script>
 <!-- My Work 카드 렌더러 - PPTX 구조도 레이아웃 -->
 <script src="js/mywork-renderer.js?v=20260312g"></script>
+<!-- 다계층 워크스페이스 노드 렌더러 -->
+<script src="js/orbit3d-multilevel-renderer.js?v=20260312h"></script>
 
 <!-- 프로젝트 관리 패널 -->
 <div id="project-manager" style="display: none; position: fixed; bottom: 100px; left: 20px; z-index: 500; background: rgba(2, 6, 23, 0.95); border: 1px solid #334155; border-radius: 8px; padding: 15px; min-width: 250px; max-height: 400px; overflow-y: auto;">
@@ -1637,6 +1639,169 @@ function viewZoom(dir) {
 }
 </style>
 
+<!-- ═══ 워크스페이스 다계층 드릴다운 패널 ═══ -->
+<div id="ws-drill-panel" style="
+  display: none;
+  position: fixed;
+  bottom: 80px;
+  right: 20px;
+  z-index: 500;
+  background: rgba(2, 6, 23, 0.95);
+  border: 1px solid #334155;
+  border-radius: 12px;
+  padding: 14px 16px;
+  min-width: 210px;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+">
+  <!-- 헤더: 레벨 표시 -->
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+    <div id="ws-drill-level-badge" style="
+      width:28px;height:28px;border-radius:50%;
+      background:linear-gradient(135deg,#06b6d4,#0891b2);
+      display:flex;align-items:center;justify-content:center;
+      font-size:12px;font-weight:700;color:white;flex-shrink:0;
+    ">0</div>
+    <div>
+      <div id="ws-drill-level-name" style="font-size:12px;font-weight:600;color:#e6edf3;">Workspace</div>
+      <div id="ws-drill-role" style="font-size:10px;color:#8b949e;"></div>
+    </div>
+    <button onclick="closeDrillPanel()" style="
+      margin-left:auto;background:none;border:none;color:#6e7681;
+      cursor:pointer;font-size:14px;padding:2px;
+    ">✕</button>
+  </div>
+
+  <!-- 드릴 버튼들 -->
+  <div style="display:flex;flex-direction:column;gap:6px">
+    <button id="ws-drill-down-btn" onclick="handleWsDrillDown()" style="
+      padding:8px 12px;background:linear-gradient(135deg,#06b6d4,#0891b2);
+      color:white;border:none;border-radius:6px;cursor:pointer;
+      font-size:12px;font-weight:500;text-align:left;
+      display:flex;align-items:center;gap:6px;
+    ">
+      <span>⬇</span> <span id="ws-drill-down-label">팀원 보기</span>
+    </button>
+    <button id="ws-drill-up-btn" onclick="handleWsDrillUp()" style="
+      padding:8px 12px;background:#1e293b;
+      color:#94a3b8;border:1px solid #334155;border-radius:6px;cursor:pointer;
+      font-size:12px;font-weight:500;text-align:left;
+      display:flex;align-items:center;gap:6px;opacity:0.5;
+    " disabled>
+      <span>⬆</span> <span>이전 레벨</span>
+    </button>
+    <button onclick="handleWsReset()" style="
+      padding:6px 12px;background:none;
+      color:#6e7681;border:1px solid #30363d;border-radius:6px;cursor:pointer;
+      font-size:11px;
+    ">↺ 처음으로</button>
+  </div>
+
+  <!-- 노드 수 표시 -->
+  <div style="margin-top:10px;padding-top:10px;border-top:1px solid #21262d">
+    <div style="font-size:10px;color:#6e7681;">
+      노드 <span id="ws-drill-node-count" style="color:#8b949e;font-weight:600;">0</span>개
+      <span id="ws-drill-perms" style="float:right;color:#3fb950;"></span>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══ 워크스페이스 드릴다운 패널 컨트롤러 ═══
+const WS_LEVEL_LABELS = ['Workspace', '팀원', '팀', '협업', '부서', '전체'];
+const WS_DRILL_LABELS = ['팀원 보기', '팀 보기', '협업 관계', '부서 구조', '전체 조직', '—'];
+
+function openDrillPanel(level, nodeCount, role, permissions) {
+  const panel = document.getElementById('ws-drill-panel');
+  if (!panel) return;
+  panel.style.display = 'block';
+  updateDrillPanelUI(level, nodeCount, role, permissions);
+}
+
+function closeDrillPanel() {
+  const panel = document.getElementById('ws-drill-panel');
+  if (panel) panel.style.display = 'none';
+}
+
+function updateDrillPanelUI(level, nodeCount, role, permissions) {
+  const lvl = level || 0;
+  const badge = document.getElementById('ws-drill-level-badge');
+  const levelName = document.getElementById('ws-drill-level-name');
+  const roleEl = document.getElementById('ws-drill-role');
+  const downBtn = document.getElementById('ws-drill-down-btn');
+  const upBtn = document.getElementById('ws-drill-up-btn');
+  const downLabel = document.getElementById('ws-drill-down-label');
+  const countEl = document.getElementById('ws-drill-node-count');
+  const permsEl = document.getElementById('ws-drill-perms');
+
+  if (badge) badge.textContent = lvl;
+  if (levelName) levelName.textContent = WS_LEVEL_LABELS[lvl] || `Level ${lvl}`;
+  if (roleEl) roleEl.textContent = role ? `역할: ${role}` : '';
+  if (downLabel) downLabel.textContent = WS_DRILL_LABELS[lvl] || '더 보기';
+  if (countEl) countEl.textContent = nodeCount || 0;
+
+  // 권한 표시
+  const canDown = permissions?.canViewLevels?.includes(lvl + 1) && lvl < 5;
+  if (downBtn) {
+    downBtn.disabled = !canDown;
+    downBtn.style.opacity = canDown ? '1' : '0.35';
+    downBtn.style.cursor = canDown ? 'pointer' : 'not-allowed';
+  }
+  if (upBtn) {
+    upBtn.disabled = lvl === 0;
+    upBtn.style.opacity = lvl === 0 ? '0.35' : '1';
+    upBtn.style.cursor = lvl === 0 ? 'not-allowed' : 'pointer';
+  }
+  if (permsEl) {
+    const roleLabel = { owner: '🔑 오너', admin: '⚙ 관리자', member: '👤 멤버', lead: '⭐ 리드' };
+    permsEl.textContent = roleLabel[role] || '';
+  }
+}
+
+async function handleWsDrillDown() {
+  if (!window.multiLevelRenderer || !window.scene) return;
+  const mlr = window.multiLevelRenderer;
+  const selectedId = mlr.selectedNodeId;
+  if (!selectedId && mlr.currentLevel > 0) {
+    showToast && showToast('노드를 먼저 선택하세요');
+    return;
+  }
+  await mlr.drillDown(selectedId, window.scene);
+  const level = mlr.currentLevel;
+  const nodeCount = Object.keys(mlr.nodeMeshes || {}).length;
+  updateDrillPanelUI(level, nodeCount, mlr.userRole, mlr.permissions);
+}
+
+async function handleWsDrillUp() {
+  if (!window.multiLevelRenderer || !window.scene) return;
+  const mlr = window.multiLevelRenderer;
+  await mlr.drillUp(window.scene);
+  const level = mlr.currentLevel;
+  const nodeCount = Object.keys(mlr.nodeMeshes || {}).length;
+  updateDrillPanelUI(level, nodeCount, mlr.userRole, mlr.permissions);
+}
+
+async function handleWsReset() {
+  if (!window.multiLevelRenderer || !window.scene) return;
+  const mlr = window.multiLevelRenderer;
+  await mlr.resetToLevel0(window.scene);
+  const level = mlr.currentLevel;
+  const nodeCount = Object.keys(mlr.nodeMeshes || {}).length;
+  updateDrillPanelUI(level, nodeCount, mlr.userRole, mlr.permissions);
+}
+
+// updateDrillUI: orbit3d-multilevel-renderer.js에서 호출하는 전역 함수
+window.updateDrillUI = function() {
+  const mlr = window.multiLevelRenderer;
+  if (!mlr) return;
+  openDrillPanel(
+    mlr.currentLevel,
+    Object.keys(mlr.nodeMeshes || {}).length,
+    mlr.userRole,
+    mlr.permissions
+  );
+};
+</script>
 
 </body>
 </html>
