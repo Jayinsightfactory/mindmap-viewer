@@ -185,113 +185,101 @@ function _mwMakeDetailNodes(rawNode, parentColor) {
   return out.slice(0, LEVEL_CFG[2].maxCards);
 }
 
-// ─── 카드 텍스처 (3D 그리드 행성 스타일, 텍스트 2줄) ─────────────────────────
+// ─── 카드 텍스처 (3D 그리드 행성 스타일, 텍스트 3줄) ─────────────────────────
 // sub1: 항목 수 / 유형   sub2: 최근 활동 / 세부
 function makeCardTexture(title, sub1, sub2, accentColor) {
-  const W = 1024, H = 480;  // 2× 해상도로 선명한 텍스트
+  const W = 1024, H = 480;  // 캔버스 해상도 (2× 스케일로 선명하게)
   const canvas = document.createElement('canvas');
   canvas.width = W; canvas.height = H;
   const ctx = canvas.getContext('2d');
-  ctx.scale(2, 2);           // 모든 좌표를 절반으로 — 실제 렌더 영역 512×240 유지
+  ctx.scale(2, 2);           // 2× 스케일 → 좌표공간 512×240
+  const w = W / 2, h = H / 2; // 실제 좌표공간: 512×240
   const ac  = accentColor || '#06b6d4';
   const rgb = _mwHex2rgb(ac);
+  const FF = '"Apple SD Gothic Neo","Malgun Gothic","NanumGothic",sans-serif';
 
   // 배경 딥우주 그라디언트
-  const bg = ctx.createLinearGradient(0, 0, W, H);
+  const bg = ctx.createLinearGradient(0, 0, w, h);
   bg.addColorStop(0,   `rgba(4,10,24,0.98)`);
   bg.addColorStop(0.7, `rgba(8,18,40,0.97)`);
   bg.addColorStop(1,   `rgba(${rgb.r*0.12|0},${rgb.g*0.12|0},${rgb.b*0.12|0},0.97)`);
-  const Rv = 16;
+  const Rv = 10;
   ctx.beginPath();
-  ctx.moveTo(Rv,0); ctx.lineTo(W-Rv,0);
-  ctx.quadraticCurveTo(W,0,W,Rv); ctx.lineTo(W,H-Rv);
-  ctx.quadraticCurveTo(W,H,W-Rv,H); ctx.lineTo(Rv,H);
-  ctx.quadraticCurveTo(0,H,0,H-Rv); ctx.lineTo(0,Rv);
+  ctx.moveTo(Rv,0); ctx.lineTo(w-Rv,0);
+  ctx.quadraticCurveTo(w,0,w,Rv); ctx.lineTo(w,h-Rv);
+  ctx.quadraticCurveTo(w,h,w-Rv,h); ctx.lineTo(Rv,h);
+  ctx.quadraticCurveTo(0,h,0,h-Rv); ctx.lineTo(0,Rv);
   ctx.quadraticCurveTo(0,0,Rv,0); ctx.closePath();
   ctx.fillStyle = bg; ctx.fill();
 
   // 그리드 라인
   ctx.save(); ctx.clip();
-  ctx.strokeStyle = `rgba(${rgb.r},${rgb.g},${rgb.b},0.08)`;
-  ctx.lineWidth = 0.7;
-  for (let y = 0; y < H; y += 20) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
-  for (let x = 0; x < W; x += 20) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
+  ctx.strokeStyle = `rgba(${rgb.r},${rgb.g},${rgb.b},0.06)`;
+  ctx.lineWidth = 0.5;
+  for (let y = 0; y < h; y += 16) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(w,y); ctx.stroke(); }
+  for (let x = 0; x < w; x += 16) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,h); ctx.stroke(); }
   ctx.restore();
 
   // 왼쪽 액센트 바
-  const bar = ctx.createLinearGradient(0,0,0,H);
+  const bar = ctx.createLinearGradient(0,0,0,h);
   bar.addColorStop(0,   `rgba(${rgb.r},${rgb.g},${rgb.b},0.0)`);
   bar.addColorStop(0.5, `rgba(${rgb.r},${rgb.g},${rgb.b},1.0)`);
   bar.addColorStop(1,   `rgba(${rgb.r},${rgb.g},${rgb.b},0.0)`);
-  ctx.fillStyle = bar; ctx.fillRect(0,0,5,H);
+  ctx.fillStyle = bar; ctx.fillRect(0,0,3,h);
 
   // 글로우 테두리
-  ctx.shadowColor = ac; ctx.shadowBlur = 12;
+  ctx.shadowColor = ac; ctx.shadowBlur = 8;
   ctx.strokeStyle = `rgba(${rgb.r},${rgb.g},${rgb.b},0.55)`;
-  ctx.lineWidth = 1.8;
+  ctx.lineWidth = 1.2;
   ctx.beginPath();
-  ctx.moveTo(Rv,0); ctx.lineTo(W-Rv,0);
-  ctx.quadraticCurveTo(W,0,W,Rv); ctx.lineTo(W,H-Rv);
-  ctx.quadraticCurveTo(W,H,W-Rv,H); ctx.lineTo(Rv,H);
-  ctx.quadraticCurveTo(0,H,0,H-Rv); ctx.lineTo(0,Rv);
+  ctx.moveTo(Rv,0); ctx.lineTo(w-Rv,0);
+  ctx.quadraticCurveTo(w,0,w,Rv); ctx.lineTo(w,h-Rv);
+  ctx.quadraticCurveTo(w,h,w-Rv,h); ctx.lineTo(Rv,h);
+  ctx.quadraticCurveTo(0,h,0,h-Rv); ctx.lineTo(0,Rv);
   ctx.quadraticCurveTo(0,0,Rv,0); ctx.closePath();
   ctx.stroke(); ctx.shadowBlur = 0;
 
-  const maxW = W - 28;
+  const maxW = w - 24;
   function drawLine(text, y, font, color, glow) {
     if (!text) return;
     ctx.font = font;
     ctx.fillStyle = color;
     ctx.textBaseline = 'middle';
-    if (glow) { ctx.shadowColor = ac; ctx.shadowBlur = 5; }
+    if (glow) { ctx.shadowColor = ac; ctx.shadowBlur = 4; }
     let s = String(text);
     while (ctx.measureText(s).width > maxW && s.length > 1) s = s.slice(0,-1);
     if (s !== String(text)) s += '…';
-    ctx.fillText(s, 16, y);
+    ctx.fillText(s, 12, y);
     ctx.shadowBlur = 0;
   }
 
-  // 제목 (굵고 크게 — 상단 30%, 길이에 따라 폰트 크기 자동 조정)
+  // ── 제목 (굵고 크게 — 상단, 길이 기반 동적 폰트) ──
   const titleStr = String(title || '작업');
-  ctx.font = 'bold 34px "Apple SD Gothic Neo","Malgun Gothic","NanumGothic",sans-serif';
-  const titleFontSize = ctx.measureText(titleStr).width > maxW * 0.9
-    ? (ctx.measureText(titleStr).width > maxW * 1.4 ? 22 : 27)
-    : 34;
-  drawLine(
-    titleStr,
-    H * 0.26,
-    `bold ${titleFontSize}px "Apple SD Gothic Neo","Malgun Gothic","NanumGothic",sans-serif`,
-    '#e8f4ff', true
-  );
+  ctx.font = `bold 38px ${FF}`;
+  const tw = ctx.measureText(titleStr).width;
+  const titleFontSize = tw > maxW * 0.95
+    ? (tw > maxW * 1.5 ? 26 : 32)
+    : 38;
+  drawLine(titleStr, h * 0.28, `bold ${titleFontSize}px ${FF}`, '#e8f4ff', true);
 
-  // 구분선
+  // ── 구분선 ──
   ctx.strokeStyle = `rgba(${rgb.r},${rgb.g},${rgb.b},0.2)`;
-  ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(16, H*0.46); ctx.lineTo(W-16, H*0.46); ctx.stroke();
+  ctx.lineWidth = 0.8;
+  ctx.beginPath(); ctx.moveTo(12, h*0.48); ctx.lineTo(w-12, h*0.48); ctx.stroke();
 
-  // 서브1 (액센트 색 — 중간)
-  drawLine(
-    sub1 || '',
-    H * 0.62,  // y ≈ 149px
-    '21px "Apple SD Gothic Neo","Malgun Gothic","NanumGothic",sans-serif',
-    `rgba(${rgb.r},${rgb.g},${rgb.b},0.95)`, false
-  );
+  // ── 서브1 (액센트 색 — 중간) ──
+  drawLine(sub1 || '', h * 0.65, `24px ${FF}`, `rgba(${rgb.r},${rgb.g},${rgb.b},0.95)`, false);
 
-  // 서브2 (흐린 색 — 하단)
-  drawLine(
-    sub2 || '',
-    H * 0.82,  // y ≈ 197px
-    '18px "Apple SD Gothic Neo","Malgun Gothic","NanumGothic",sans-serif',
-    'rgba(148,163,184,0.85)', false
-  );
+  // ── 서브2 (흐린 색 — 하단) ──
+  drawLine(sub2 || '', h * 0.84, `20px ${FF}`, 'rgba(148,163,184,0.85)', false);
 
   // 우측 상단 펄스 점
-  ctx.beginPath(); ctx.arc(W-18, 18, 5, 0, Math.PI*2);
+  ctx.beginPath(); ctx.arc(w-10, 10, 4, 0, Math.PI*2);
   ctx.fillStyle = `rgba(${rgb.r},${rgb.g},${rgb.b},0.9)`;
-  ctx.shadowColor = ac; ctx.shadowBlur = 8; ctx.fill(); ctx.shadowBlur = 0;
+  ctx.shadowColor = ac; ctx.shadowBlur = 6; ctx.fill(); ctx.shadowBlur = 0;
 
   const tex = new THREE.CanvasTexture(canvas);
-  tex.anisotropy = 16;   // 각도 블러 방지
+  tex.anisotropy = 16;
   tex.needsUpdate = true;
   return tex;
 }
