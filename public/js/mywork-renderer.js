@@ -539,6 +539,13 @@ window.buildPlanetSystem = function(nodeList) {
   }
 
   // ── workspace → personal 전환 시 multilevel scene 완전 정리 ─────────────
+  // ⚠️ workspace/team/company 모드에서 WS 이벤트로 buildPlanetSystem이 호출되면
+  //    cleanupMultilevel() 실행 → 워크스페이스 뷰 파괴되므로 모드 확인 필수
+  const _rmMode = window.RendererManager?.currentMode;
+  if (_rmMode && _rmMode !== 'personal') {
+    // 비-personal 모드: 행성 재빌드 자체를 중단 (workspace/team 뷰 보호)
+    return;
+  }
   if (window.RendererManager) {
     window.RendererManager.cleanupMultilevel();
   } else if (window.multiLevelRenderer) {

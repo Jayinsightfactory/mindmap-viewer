@@ -163,11 +163,26 @@ function connectWS() {
     ? `${proto}//${location.host}?token=${encodeURIComponent(token)}`
     : `${proto}//${location.host}`;
   const ws = window._globalWs = new WebSocket(wsUrl);
+  // ── loadData 디바운서: 0.8초 안에 연속 호출 합치기 ─────────────────────────
+  let _loadDataTimer = null;
+  function _debouncedLoadData() {
+    clearTimeout(_loadDataTimer);
+    _loadDataTimer = setTimeout(() => {
+      _loadDataTimer = null;
+      if (typeof loadData === 'function') loadData();
+    }, 800);
+  }
+
   ws.onmessage = ev => {
     try {
       const m = JSON.parse(ev.data);
-      if (m.type === 'new_event' || m.type === 'graph_update') {
-        // 실시간 glow: 이벤트가 속한 세션의 모든 행성 클러스터에 빛 효과
+
+      // ── 그래프/이벤트 업데이트 — 모드 인식(mode-aware) ─────────────────────
+      // 처리 대상: new_event, graph_update, update(파일감시), hook.events(경량브로드캐스트)
+      if (m.type === 'new_event' || m.type === 'graph_update' ||
+          m.type === 'update'    || m.type === 'hook.events') {
+
+        // 실시간 glow: new_event 시 해당 세션 행성 클러스터 활성화
         if (m.type === 'new_event') {
           const sid = m.event?.sessionId || m.sessionId;
           if (sid) {
@@ -178,7 +193,21 @@ function connectWS() {
             });
           }
         }
-        loadData();
+
+        // ⚠️ 충돌 방지: personal 모드일 때만 행성 시스템 재빌드
+        // workspace/team/company 모드에서 loadData() → buildPlanetSystem() 호출 시
+        // RendererManager.cleanupMultilevel()이 실행되어 워크스페이스 뷰가 파괴됨
+        const _curMode = window.RendererManager?.currentMode;
+        if (!_curMode || _curMode === 'personal') {
+          _debouncedLoadData();
+        }
+        // workspace/team/company 모드에서는 scene 파괴 없이 stats만 토스트로 표시
+        else if (m.type === 'hook.events' && m.stats) {
+          // 경량 알림: 새 이벤트가 있다는 것만 알려줌 (뷰는 유지)
+          if (typeof showToast === 'function' && m.count > 0) {
+            showToast(`⚡ ${m.memberName || '이벤트'} +${m.count}`, 1500);
+          }
+        }
       }
       // ── 브라우저/앱 활동 이벤트 → 실시간 브랜치 확장 ────────────────────
       if (m.type === 'browser_activity' || m.type === 'app_switch') {
