@@ -519,6 +519,10 @@ function onMyWorkClick(event) {
   MW.mouse.x =  ((event.clientX - rect.left) / rect.width)  * 2 - 1;
   MW.mouse.y = -((event.clientY - rect.top)  / rect.height) * 2 + 1;
 
+  // 빌보드 회전 후 매트릭스 갱신 (raycaster 정확도 필수)
+  MW.cardMeshes.forEach(m => m.updateMatrixWorld(true));
+  if (MW.hubMesh) MW.hubMesh.updateMatrixWorld(true);
+
   MW.raycaster.setFromCamera(MW.mouse, window.camera);
   const hits = MW.raycaster.intersectObjects(
     [...MW.cardMeshes, MW.hubMesh].filter(Boolean), false
