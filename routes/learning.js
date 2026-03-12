@@ -24,8 +24,9 @@ function createLearningRouter(deps) {
   const { verifyToken, getEventsForUser, resolveUserId } = deps;
   const router = express.Router();
 
+  // ── 인증 미들웨어 (Bearer + Cookie + query token 지원) ──
   function auth(req, res, next) {
-    const token = (req.headers.authorization || '').replace('Bearer ', '') || req.query.token;
+    const token = req.headers.authorization || req.query.token || req.cookies?.orbit_token;
     if (!token) return res.status(401).json({ error: 'Unauthorized' });
     const user = verifyToken(token);
     if (!user) return res.status(401).json({ error: 'Invalid token' });
