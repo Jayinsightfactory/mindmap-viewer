@@ -3462,7 +3462,7 @@ function _drawPersonalPlanets() {
     }
     // ✅ 추상 카테고리 감지 → 실제 작업 내용(firstMsg/msgPreview)으로 교체
     // "버그 수정", "기능 구현" 등은 아무 정보가 없으므로 실제 내용으로 대체
-    const _isAbstract = t => /^(기능\s*구현|버그\s*수정|코드\s*정리|테스트|배포|조사[\s/]분석|설정|검토|논의|기타|작업)$/.test(t);
+    const _isAbstract = t => /^(기능\s*구현|버그\s*수정|코드\s*정리|테스트|배포|조사[\s/]분석|설정|검토|논의|기타|작업|명령\s*실행|파일\s*읽기|파일\s*수정|파일\s*작성|파일\s*탐색|파일\s*생성|코드\s*검색|웹\s*검색|웹\s*조회|하위\s*에이전트|에이전트\s*완료|할일\s*업데이트|사용자\s*질문|계획\s*수립\s*중|계획\s*확정|노트북\s*수정|시작|종료|세션|시간|유형|도메인|Tool|User|Assistant|Subagent|Event|File|Working|Notify|Done|Note|Bookmark)$/.test(t);
     if (!text || _isAbstract(text)) {
       const _specific = (p.userData.firstMsg || p.userData.msgPreview || '').replace(/[\n\r]/g, ' ').trim();
       if (_specific.length > 3) text = _specific.slice(0, 26);

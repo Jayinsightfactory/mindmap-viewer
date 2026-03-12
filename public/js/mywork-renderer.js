@@ -71,25 +71,41 @@ function _mwHex2rgb(hex) {
 // ─── 카테고리 정규화 ──────────────────────────────────────────────────────────
 const _MW_CAT_MAP = {
   // 영문 raw → 한국어
-  'file':          '📁 파일 작업',
-  'idle':          '⏸ 대기',
-  'code':          '💻 코딩',
-  'coding':        '💻 코딩',
-  'browser':       '🌐 웹 작업',
-  'terminal':      '⚡ 터미널',
-  'design':        '🎨 디자인',
-  'document':      '📄 문서 작업',
-  'meeting':       '💬 미팅/소통',
-  'test':          '🧪 테스트',
-  'deploy':        '🚀 배포/운영',
-  'research':      '🔍 조사/분석',
-  'planning':      '📋 기획/설계',
-  'feature':       '⚙️ 기능 개발',
-  'bugfix':        '🐛 버그 수정',
-  'review':        '👀 코드 리뷰',
-  'communication': '💬 소통',
-  'etc':           '📌 기타',
-  'other':         '📌 기타',
+  'file':              '📁 파일 작업',
+  'idle':              '⏸ 대기',
+  'code':              '💻 코딩',
+  'coding':            '💻 코딩',
+  'browser':           '🌐 웹 작업',
+  'terminal':          '⚡ 터미널',
+  'design':            '🎨 디자인',
+  'document':          '📄 문서 작업',
+  'meeting':           '💬 미팅/소통',
+  'test':              '🧪 테스트',
+  'deploy':            '🚀 배포/운영',
+  'research':          '🔍 조사/분석',
+  'planning':          '📋 기획/설계',
+  'feature':           '⚙️ 기능 개발',
+  'bugfix':            '🐛 버그 수정',
+  'review':            '👀 코드 리뷰',
+  'communication':     '💬 소통',
+  'etc':               '📌 기타',
+  'other':             '📌 기타',
+  // 이벤트 타입 직접 매핑 (purposeLabel 없을 때 fallback)
+  'subagent.start':    '🤖 하위 작업',
+  'subagent.stop':     '🤖 하위 작업',
+  'tool.end':          '🔧 도구 실행',
+  'tool.start':        '🔧 도구 실행',
+  'tool.error':        '❌ 오류',
+  'user.message':      '💬 대화',
+  'assistant.message': '🤖 AI 응답',
+  'session.start':     '🚀 세션 시작',
+  'session.end':       '⏹ 세션 종료',
+  'file.read':         '📄 파일 작업',
+  'file.write':        '✏️ 파일 수정',
+  'file.create':       '📝 파일 작성',
+  'git.commit':        '📦 Git 커밋',
+  'task.complete':     '✅ 작업 완료',
+  'annotation.add':    '📌 메모',
 };
 // 카테고리별 강조색
 const _MW_CAT_COLOR = {
@@ -110,6 +126,15 @@ const _MW_CAT_COLOR = {
   '👀 코드 리뷰':  '#14b8a6',
   '💬 소통':       '#f97316',
   '📌 기타':       '#94a3b8',
+  '🤖 하위 작업':  '#79c0ff',
+  '🔧 도구 실행':  '#d29922',
+  '❌ 오류':       '#f85149',
+  '💬 대화':       '#388bfd',
+  '🤖 AI 응답':    '#3fb950',
+  '🚀 세션 시작':  '#8b5cf6',
+  '📦 Git 커밋':   '#f0c674',
+  '✅ 작업 완료':  '#3fb950',
+  '📌 메모':       '#f0c674',
 };
 function _mwNormCat(raw) {
   if (!raw) return '📌 기타';
@@ -134,14 +159,27 @@ function _mwMakeDetailNodes(rawNode, parentColor) {
   }
   const sid = rawNode.session || rawNode.sessionId || rawNode.session_id;
   if (sid) out.push(mk('🔗 세션', String(sid).slice(0,20), '#8b5cf6'));
-  if (rawNode.domain || rawNode.category)
-    out.push(mk('🌐 도메인', rawNode.domain || rawNode.category, '#06b6d4'));
-  if (rawNode.type || rawNode.eventType || rawNode.purposeLabel)
-    out.push(mk('🏷️ 유형', rawNode.type || rawNode.eventType || rawNode.purposeLabel, '#f59e0b'));
+  // 도메인/목적 라벨
+  const purposeOrDomain = rawNode.purposeLabel || rawNode.domain || rawNode.category;
+  if (purposeOrDomain) out.push(mk('🎯 목적', purposeOrDomain, '#06b6d4'));
+  // 이벤트 유형 → 사람이 읽기 쉬운 라벨로 변환
+  const _typeLabels = { 'tool.end':'도구 실행', 'tool.start':'도구 시작', 'tool.error':'도구 실패',
+    'user.message':'사용자 메시지', 'assistant.message':'AI 응답',
+    'file.read':'파일 읽기', 'file.write':'파일 수정', 'file.create':'파일 생성',
+    'subagent.start':'하위 작업 시작', 'subagent.stop':'하위 작업 완료',
+    'git.commit':'Git 커밋', 'session.start':'세션 시작', 'session.end':'세션 종료',
+  };
+  const evType = rawNode.type || rawNode.eventType;
+  if (evType) out.push(mk('🏷️ 유형', _typeLabels[evType] || evType, '#f59e0b'));
+  // 프로젝트 이름
   if (rawNode.projectName || rawNode.project || rawNode.repo)
     out.push(mk('📁 프로젝트', rawNode.projectName || rawNode.project || rawNode.repo, '#10b981'));
-  if (rawNode.detail || rawNode.description || rawNode.summary)
-    out.push(mk('📝 요약', rawNode.detail || rawNode.description || rawNode.summary, '#ec4899'));
+  // fullContent에서 실제 내용 추출 (명령어, 파일 경로 등)
+  const fcRaw = String(rawNode.fullContent || rawNode.detail || rawNode.description || rawNode.summary || '');
+  if (fcRaw.length > 3) {
+    const fcClean = fcRaw.replace(/[{}"\\]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
+    out.push(mk('📝 내용', fcClean, '#ec4899'));
+  }
   if (out.length === 0)
     out.push(mk('📋 상세', rawNode.label || rawNode.name || rawNode.id || '없음', pc));
   return out.slice(0, LEVEL_CFG[2].maxCards);
@@ -213,11 +251,16 @@ function makeCardTexture(title, sub1, sub2, accentColor) {
     ctx.shadowBlur = 0;
   }
 
-  // 제목 (굵고 크게 — 상단 30%)
+  // 제목 (굵고 크게 — 상단 30%, 길이에 따라 폰트 크기 자동 조정)
+  const titleStr = String(title || '작업');
+  ctx.font = 'bold 34px "Apple SD Gothic Neo","Malgun Gothic","NanumGothic",sans-serif';
+  const titleFontSize = ctx.measureText(titleStr).width > maxW * 0.9
+    ? (ctx.measureText(titleStr).width > maxW * 1.4 ? 22 : 27)
+    : 34;
   drawLine(
-    title || '작업',
-    H * 0.26,  // y ≈ 62px
-    'bold 34px "Apple SD Gothic Neo","Malgun Gothic","NanumGothic",sans-serif',
+    titleStr,
+    H * 0.26,
+    `bold ${titleFontSize}px "Apple SD Gothic Neo","Malgun Gothic","NanumGothic",sans-serif`,
     '#e8f4ff', true
   );
 
@@ -583,9 +626,21 @@ window.buildPlanetSystem = function(nodeList) {
       };
     }
     const childColor = n.purposeColor || _mwExtractColor(n.color);
+    // 추상 라벨 감지 → 실제 내용(fullContent, label 내 파일명)으로 대체
+    const _abstractSet = new Set(['명령 실행','파일 읽기','파일 수정','파일 작성','파일 탐색','파일 생성','코드 검색','웹 검색','하위 에이전트','에이전트 완료','작업','기타']);
+    const rawLabel = n.label || n.topic || n.name || '작업';
+    // rawLabel에 ": " 구분자가 있으면 뒷부분(실제 파일명/명령)만 추출
+    let childTopic = rawLabel;
+    if (rawLabel.includes(': ')) {
+      childTopic = rawLabel.split(': ').slice(1).join(': ');
+    } else if (_abstractSet.has(rawLabel.replace(/^[🔧📄✏️📝⚡🔍🌐🤖✅📌❌💬]+\s*/u, '').trim())) {
+      // fullContent에서 실제 내용 추출 (최대 35자)
+      const fc = String(n.fullContent || '').replace(/[{}"\\]/g, ' ').trim();
+      if (fc.length > 3) childTopic = fc.slice(0, 35);
+    }
     groupMap[key].children.push({
-      topic:    n.label || n.topic || n.name || '작업',
-      name:     n.label || n.name  || '작업',
+      topic:    childTopic,
+      name:     childTopic,
       color:    childColor,
       children: _mwMakeDetailNodes(n, childColor),
       _raw:     n,

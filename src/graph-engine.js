@@ -244,8 +244,15 @@ function buildLabel(event) {
     }
     case 'tool.end': {
       const toolLabel = TOOL_LABELS[d.toolName] || d.toolName || '작업';
-      const fileName  = _getFileName(d.filePath || '');
       const success   = d.success === false ? ' ✗' : '';
+      // Bash: 실제 명령어 앞부분 표시
+      if (d.toolName === 'Bash') {
+        const cmd = (d.input?.command || d.inputPreview || '').trim();
+        if (cmd) return `${toolLabel}: ${truncate(cmd, 35)}${success}`;
+      }
+      // 파일 경로 다양한 필드에서 시도
+      const rawPath = d.filePath || d.input?.file_path || d.inputPreview || '';
+      const fileName = _getFileName(rawPath);
       return `${toolLabel}${fileName ? `: ${fileName}` : ''}${success}`;
     }
     case 'tool.error': {
