@@ -72,14 +72,19 @@ function createRouter({ getDb, verifyToken, broadcastToRoom }) {
     const isPg = _isPg(db);
     await dbExec(`
       CREATE TABLE IF NOT EXISTS chat_rooms (
-        id          TEXT PRIMARY KEY,
-        type        TEXT NOT NULL DEFAULT 'dm',
-        name        TEXT,
-        created_by  TEXT,
-        meta        TEXT DEFAULT '{}',
-        created_at  ${isPg ? 'TIMESTAMPTZ DEFAULT NOW()' : 'DATETIME DEFAULT CURRENT_TIMESTAMP'}
+        id           TEXT PRIMARY KEY,
+        type         TEXT NOT NULL DEFAULT 'dm',
+        name         TEXT,
+        created_by   TEXT,
+        workspace_id TEXT DEFAULT 'global',
+        meta         TEXT DEFAULT '{}',
+        created_at   ${isPg ? 'TIMESTAMPTZ DEFAULT NOW()' : 'DATETIME DEFAULT CURRENT_TIMESTAMP'}
       )
     `);
+    // 기존 테이블에 workspace_id 컬럼 안전하게 추가 (없으면 추가)
+    try {
+      await dbExec(`ALTER TABLE chat_rooms ADD COLUMN workspace_id TEXT DEFAULT 'global'`);
+    } catch (_) {} // 이미 있으면 무시
     await dbExec(`
       CREATE TABLE IF NOT EXISTS chat_messages (
         id          ${isPg ? 'BIGSERIAL PRIMARY KEY' : 'INTEGER PRIMARY KEY AUTOINCREMENT'},
@@ -122,6 +127,12 @@ function createRouter({ getDb, verifyToken, broadcastToRoom }) {
     return 'dm_' + [a, b].sort().join('__');
   }
 
+  // ── 유틸: 요청에서 workspace_id 추출 ─────────────────────────────────────────
+  // 우선순위: X-Workspace-ID 헤더 → ?workspace_id 쿼리 → 'global'
+  function getWorkspaceId(req) {
+    return req.headers['x-workspace-id'] || req.query.workspace_id || 'global';
+  }
+
   // ── 유틸: 플랜 조회 ──────────────────────────────────────────────────────────
   function getUserPlan(userId, reqUser) {
     if (reqUser?.plan) return reqUser.plan;
@@ -159,9 +170,13 @@ function createRouter({ getDb, verifyToken, broadcastToRoom }) {
 
       const roomId = dmRoomId(myId, peerId);
 
+      const wsId    = getWorkspaceId(req);
       const existing = await dbGet('SELECT id FROM chat_rooms WHERE id = ?', [roomId]);
       if (!existing) {
-        await dbRun('INSERT INTO chat_rooms (id, type, created_by) VALUES (?, ?, ?)', [roomId, 'dm', myId]);
+        await dbRun(
+          'INSERT INTO chat_rooms (id, type, created_by, workspace_id) VALUES (?, ?, ?, ?)',
+          [roomId, 'dm', myId, wsId]
+        );
         await dbRun('INSERT INTO chat_participants (room_id, user_id) VALUES (?, ?) ON CONFLICT DO NOTHING', [roomId, myId]);
         await dbRun('INSERT INTO chat_participants (room_id, user_id) VALUES (?, ?) ON CONFLICT DO NOTHING', [roomId, peerId]);
       }
@@ -181,7 +196,11 @@ function createRouter({ getDb, verifyToken, broadcastToRoom }) {
       if (!name) return res.status(400).json({ error: 'name required' });
 
       const roomId = `ch_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-      await dbRun('INSERT INTO chat_rooms (id, type, name, created_by) VALUES (?, ?, ?, ?)', [roomId, type, name, req.user.id]);
+      const wsId   = getWorkspaceId(req);
+      await dbRun(
+        'INSERT INTO chat_rooms (id, type, name, created_by, workspace_id) VALUES (?, ?, ?, ?, ?)',
+        [roomId, type, name, req.user.id, wsId]
+      );
       await dbRun('INSERT INTO chat_participants (room_id, user_id) VALUES (?, ?) ON CONFLICT DO NOTHING', [roomId, req.user.id]);
       for (const uid of memberIds) {
         await dbRun('INSERT INTO chat_participants (room_id, user_id) VALUES (?, ?) ON CONFLICT DO NOTHING', [roomId, uid]);
@@ -198,9 +217,13 @@ function createRouter({ getDb, verifyToken, broadcastToRoom }) {
       const db = getDb();
       const isPg = _isPg(db);
 
+      // workspace_id 필터: 해당 워크스페이스 + 'global' DM 모두 조회
+      // ?workspace_id=xxx 또는 X-Workspace-ID 헤더로 전달, 없으면 'global'
+      const wsId = getWorkspaceId(req);
+
       // PG: NULLS LAST 문법 동일, SQLite도 지원
       const rooms = await dbAll(`
-        SELECT r.id, r.type, r.name, r.created_at,
+        SELECT r.id, r.type, r.name, r.created_at, r.workspace_id,
                MAX(m.created_at) AS last_msg_at,
                (SELECT content FROM chat_messages WHERE room_id = r.id ORDER BY id DESC LIMIT 1) AS last_msg,
                (SELECT COUNT(*) FROM chat_messages m2
@@ -209,10 +232,11 @@ function createRouter({ getDb, verifyToken, broadcastToRoom }) {
         FROM chat_rooms r
         JOIN chat_participants p ON p.room_id = r.id AND p.user_id = ?
         LEFT JOIN chat_messages m ON m.room_id = r.id
-        GROUP BY r.id, r.type, r.name, r.created_at, p.last_read
+        WHERE r.workspace_id = ? OR r.workspace_id = 'global' OR r.workspace_id IS NULL
+        GROUP BY r.id, r.type, r.name, r.created_at, r.workspace_id, p.last_read
         ORDER BY last_msg_at DESC NULLS LAST
         LIMIT 100
-      `, [req.user.id]);
+      `, [req.user.id, wsId]);
 
       // DM의 경우 상대방 정보 보강
       const result = await Promise.all(rooms.map(async room => {

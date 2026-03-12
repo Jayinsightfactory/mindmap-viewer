@@ -80,12 +80,17 @@ function createRouter({ getDb, verifyToken, searchUsers, getUserById, createNoti
     for (const s of stmts) await db.query(s);
   }
 
+  // ── workspace_id 헬퍼 ────────────────────────────────────────────────────
+  function getWorkspaceId(req) {
+    return req.headers['x-workspace-id'] || req.query.workspace_id || 'global';
+  }
+
   // ── DB 테이블 초기화 (동기 방식 — 라우터 마운트 전 완료 필수) ────────────────
   function initFollowTableSync() {
     try {
       const db = _db();
       const isPg = _isPg(db);
-      
+
       if (isPg) {
         // PG는 동기 실행 불가 — 스킵 (비동기로 별도 처리)
         return false;  // 비동기로 처리 필요함
@@ -96,12 +101,19 @@ function createRouter({ getDb, verifyToken, searchUsers, getUserById, createNoti
         CREATE TABLE IF NOT EXISTS user_follows (
           follower_id   TEXT NOT NULL,
           following_id  TEXT NOT NULL,
+          workspace_id  TEXT NOT NULL DEFAULT 'global',
           created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
-          PRIMARY KEY (follower_id, following_id)
+          PRIMARY KEY (follower_id, following_id, workspace_id)
         )
       `);
       dbExecSync(`CREATE INDEX IF NOT EXISTS idx_uf_follower  ON user_follows(follower_id)`);
       dbExecSync(`CREATE INDEX IF NOT EXISTS idx_uf_following ON user_follows(following_id)`);
+      dbExecSync(`CREATE INDEX IF NOT EXISTS idx_uf_workspace ON user_follows(workspace_id)`);
+
+      // 기존 테이블에 workspace_id 컬럼 추가 (마이그레이션)
+      try {
+        dbExecSync(`ALTER TABLE user_follows ADD COLUMN workspace_id TEXT NOT NULL DEFAULT 'global'`);
+      } catch (_) { /* 이미 존재하면 무시 */ }
 
       // registered_users 테이블 (OAuth 로그인 시 메인 DB에 사용자 정보 영속 저장)
       dbExecSync(`
@@ -130,18 +142,24 @@ function createRouter({ getDb, verifyToken, searchUsers, getUserById, createNoti
     const db = _db();
     const isPg = _isPg(db);
     if (!isPg) return;  // SQLite는 동기로 이미 처리됨
-    
+
     try {
       await dbExec(`
         CREATE TABLE IF NOT EXISTS user_follows (
           follower_id   TEXT NOT NULL,
           following_id  TEXT NOT NULL,
+          workspace_id  TEXT NOT NULL DEFAULT 'global',
           created_at    TIMESTAMPTZ DEFAULT NOW(),
-          PRIMARY KEY (follower_id, following_id)
+          PRIMARY KEY (follower_id, following_id, workspace_id)
         )
       `);
       await dbExec(`CREATE INDEX IF NOT EXISTS idx_uf_follower  ON user_follows(follower_id)`);
       await dbExec(`CREATE INDEX IF NOT EXISTS idx_uf_following ON user_follows(following_id)`);
+      await dbExec(`CREATE INDEX IF NOT EXISTS idx_uf_workspace ON user_follows(workspace_id)`);
+      // 기존 테이블에 workspace_id 컬럼 추가 (마이그레이션)
+      try {
+        await dbExec(`ALTER TABLE user_follows ADD COLUMN IF NOT EXISTS workspace_id TEXT NOT NULL DEFAULT 'global'`);
+      } catch (_) { /* 이미 존재하면 무시 */ }
 
       await dbExec(`
         CREATE TABLE IF NOT EXISTS registered_users (
@@ -228,13 +246,14 @@ function createRouter({ getDb, verifyToken, searchUsers, getUserById, createNoti
   // ── POST /api/follow/:userId — 팔로우 ────────────────────────────────────
   router.post('/follow/:userId', auth, async (req, res) => {
     const { userId } = req.params;
+    const wsId = getWorkspaceId(req);
     if (userId === req.user.id) return res.status(400).json({ error: 'cannot follow yourself' });
     try {
       await dbRun(
-        `INSERT INTO user_follows (follower_id, following_id)
-         VALUES (?, ?)
-         ON CONFLICT (follower_id, following_id) DO NOTHING`,
-        [req.user.id, userId]
+        `INSERT INTO user_follows (follower_id, following_id, workspace_id)
+         VALUES (?, ?, ?)
+         ON CONFLICT (follower_id, following_id, workspace_id) DO NOTHING`,
+        [req.user.id, userId, wsId]
       );
       // 팔로우 알림 생성
       if (typeof createNotification === 'function') {
@@ -257,10 +276,11 @@ function createRouter({ getDb, verifyToken, searchUsers, getUserById, createNoti
   // ── DELETE /api/follow/:userId — 언팔로우 ────────────────────────────────
   router.delete('/follow/:userId', auth, async (req, res) => {
     const { userId } = req.params;
+    const wsId = getWorkspaceId(req);
     try {
       await dbRun(
-        `DELETE FROM user_follows WHERE follower_id = ? AND following_id = ?`,
-        [req.user.id, userId]
+        `DELETE FROM user_follows WHERE follower_id = ? AND following_id = ? AND workspace_id = ?`,
+        [req.user.id, userId, wsId]
       );
       res.json({ ok: true, following: false });
     } catch (e) {
@@ -271,10 +291,13 @@ function createRouter({ getDb, verifyToken, searchUsers, getUserById, createNoti
 
   // ── GET /api/follow/check/:userId — 팔로우 여부 확인 ─────────────────────
   router.get('/follow/check/:userId', auth, async (req, res) => {
+    const wsId = getWorkspaceId(req);
     try {
       const row = await dbGet(
-        `SELECT 1 FROM user_follows WHERE follower_id = ? AND following_id = ?`,
-        [req.user.id, req.params.userId]
+        `SELECT 1 FROM user_follows
+         WHERE follower_id = ? AND following_id = ?
+           AND (workspace_id = ? OR workspace_id = 'global')`,
+        [req.user.id, req.params.userId, wsId]
       );
       res.json({ following: !!row });
     } catch (e) {
@@ -300,6 +323,7 @@ function createRouter({ getDb, verifyToken, searchUsers, getUserById, createNoti
 
   // ── GET /api/follow/list — 내 팔로잉 목록 ────────────────────────────────
   router.get('/follow/list', auth, async (req, res) => {
+    const wsId = getWorkspaceId(req);
     try {
       const rows = await dbAll(`
         SELECT uf.following_id AS user_id, uf.created_at,
@@ -310,9 +334,10 @@ function createRouter({ getDb, verifyToken, searchUsers, getUserById, createNoti
         LEFT JOIN user_profiles up ON up.user_id = uf.following_id
         LEFT JOIN registered_users ru ON ru.user_id = uf.following_id
         WHERE uf.follower_id = ?
+          AND (uf.workspace_id = ? OR uf.workspace_id = 'global' OR uf.workspace_id IS NULL)
         ORDER BY uf.created_at DESC
         LIMIT 200
-      `, [req.user.id]);
+      `, [req.user.id, wsId]);
       res.json(_enrichWithAuthDb(rows));
     } catch (e) {
       res.status(500).json({ error: e.message });
@@ -321,6 +346,7 @@ function createRouter({ getDb, verifyToken, searchUsers, getUserById, createNoti
 
   // ── GET /api/follow/followers — 내 팔로워 목록 ───────────────────────────
   router.get('/follow/followers', auth, async (req, res) => {
+    const wsId = getWorkspaceId(req);
     try {
       const rows = await dbAll(`
         SELECT uf.follower_id AS user_id, uf.created_at,
@@ -331,9 +357,10 @@ function createRouter({ getDb, verifyToken, searchUsers, getUserById, createNoti
         LEFT JOIN user_profiles up ON up.user_id = uf.follower_id
         LEFT JOIN registered_users ru ON ru.user_id = uf.follower_id
         WHERE uf.following_id = ?
+          AND (uf.workspace_id = ? OR uf.workspace_id = 'global' OR uf.workspace_id IS NULL)
         ORDER BY uf.created_at DESC
         LIMIT 200
-      `, [req.user.id]);
+      `, [req.user.id, wsId]);
       res.json(_enrichWithAuthDb(rows));
     } catch (e) {
       res.status(500).json({ error: e.message });
@@ -436,6 +463,7 @@ function createRouter({ getDb, verifyToken, searchUsers, getUserById, createNoti
 
   // ── GET /api/follow/nodes — 팔로잉한 유저들의 공개 노드 ──────────────────
   router.get('/follow/nodes', auth, async (req, res) => {
+    const wsId = getWorkspaceId(req);
     try {
       // 팔로잉 유저 목록 가져오기
       const following = await dbAll(`
@@ -448,9 +476,10 @@ function createRouter({ getDb, verifyToken, searchUsers, getUserById, createNoti
         LEFT JOIN user_profiles up ON up.user_id = uf.following_id
         LEFT JOIN registered_users ru ON ru.user_id = uf.following_id
         WHERE uf.follower_id = ?
+          AND (uf.workspace_id = ? OR uf.workspace_id = 'global' OR uf.workspace_id IS NULL)
         ORDER BY uf.created_at DESC
         LIMIT 100
-      `, [req.user.id]);
+      `, [req.user.id, wsId]);
 
       // 공개 프로필인 유저만 필터링
       const publicUsers = following.filter(u => u.is_public !== 0);
