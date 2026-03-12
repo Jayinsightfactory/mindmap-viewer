@@ -28,6 +28,15 @@
 
 require('dotenv').config();
 
+// ─── 전역 미처리 Promise 거부 안전망 (Node.js v24+ 크래시 방지) ────────────────
+process.on('unhandledRejection', (reason, promise) => {
+  console.warn('[Server] 미처리 Promise 거부 (무시됨):', reason?.message || reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[Server] 처리되지 않은 예외:', err.message);
+  // 치명적 예외가 아니면 계속 실행 (Railway 502 방지)
+});
+
 const express      = require('express');
 const http         = require('http');
 const WebSocket    = require('ws');

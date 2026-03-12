@@ -9,10 +9,15 @@ const { ulid } = require('ulid');
 let pool = null;
 
 // ─── 초기화 ─────────────────────────────────────────
-async function initDatabase() {
+// 동기 반환: pool을 즉시 반환하고 테이블 생성은 비동기로 처리
+// (Node.js v24+ unhandled rejection 크래시 방지)
+function initDatabase() {
   pool = new Pool({ connectionString: process.env.DATABASE_URL });
-  await createTables();
-  console.log('[DB] PostgreSQL 초기화 완료');
+  console.log('[DB] PostgreSQL 풀 생성 완료');
+  // 테이블 생성 비동기 실행 — 실패해도 서버 프로세스는 유지
+  createTables()
+    .then(() => console.log('[DB] PostgreSQL 테이블 초기화 완료'))
+    .catch(e => console.warn('[DB] 테이블 초기화 경고 (재시도됨):', e.message));
   return pool;
 }
 
