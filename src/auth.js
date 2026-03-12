@@ -216,6 +216,8 @@ function issueApiToken(userId) {
     INSERT INTO tokens (token, userId, type)
     VALUES (?, ?, 'api')
   `).run(token, userId);
+  // OAuth 토큰도 PG에 백업 (Railway 재시작 시 복원용)
+  _pgBackupToken(token, userId, null);
   return token;
 }
 
@@ -274,7 +276,10 @@ function upsertOAuthUser({ provider, providerId, email, name, avatar }) {
     db.prepare(`
       UPDATE users SET provider=?, providerId=?, avatar=?, lastLoginAt=datetime('now') WHERE id=?
     `).run(provider, String(providerId), avatar || existing.avatar, existing.id);
-    return sanitizeUser(db.prepare('SELECT * FROM users WHERE id=?').get(existing.id));
+    const user = sanitizeUser(db.prepare('SELECT * FROM users WHERE id=?').get(existing.id));
+    // Railway 재시작 대비 PG 백업
+    _pgBackupUser(user);
+    return user;
   }
 
   const id = ulid();
@@ -283,7 +288,10 @@ function upsertOAuthUser({ provider, providerId, email, name, avatar }) {
     VALUES (?, ?, ?, '', ?, ?, ?)
   `).run(id, email.toLowerCase(), name || email.split('@')[0], provider, String(providerId), avatar || null);
 
-  return sanitizeUser(db.prepare('SELECT * FROM users WHERE id=?').get(id));
+  const user = sanitizeUser(db.prepare('SELECT * FROM users WHERE id=?').get(id));
+  // Railway 재시작 대비 PG 백업
+  _pgBackupUser(user);
+  return user;
 }
 
 // ─── Express 미들웨어 ────────────────────────────
