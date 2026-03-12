@@ -150,10 +150,11 @@ function _mwMakeDetailNodes(rawNode, parentColor) {
 // ─── 카드 텍스처 (3D 그리드 행성 스타일, 텍스트 2줄) ─────────────────────────
 // sub1: 항목 수 / 유형   sub2: 최근 활동 / 세부
 function makeCardTexture(title, sub1, sub2, accentColor) {
-  const W = 512, H = 240;   // 세로 240 → 2줄 텍스트 여유
+  const W = 1024, H = 480;  // 2× 해상도로 선명한 텍스트
   const canvas = document.createElement('canvas');
   canvas.width = W; canvas.height = H;
   const ctx = canvas.getContext('2d');
+  ctx.scale(2, 2);           // 모든 좌표를 절반으로 — 실제 렌더 영역 512×240 유지
   const ac  = accentColor || '#06b6d4';
   const rgb = _mwHex2rgb(ac);
 
@@ -246,7 +247,10 @@ function makeCardTexture(title, sub1, sub2, accentColor) {
   ctx.fillStyle = `rgba(${rgb.r},${rgb.g},${rgb.b},0.9)`;
   ctx.shadowColor = ac; ctx.shadowBlur = 8; ctx.fill(); ctx.shadowBlur = 0;
 
-  return new THREE.CanvasTexture(canvas);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.anisotropy = 16;   // 각도 블러 방지
+  tex.needsUpdate = true;
+  return tex;
 }
 
 // ─── 허브 텍스처 (행성 구체) ──────────────────────────────────────────────────

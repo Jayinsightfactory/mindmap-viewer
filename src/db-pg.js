@@ -126,6 +126,51 @@ async function createTables() {
 
     CREATE INDEX IF NOT EXISTS idx_wm_user ON workspace_members(user_id);
     CREATE INDEX IF NOT EXISTS idx_wm_ws   ON workspace_members(workspace_id);
+
+    ALTER TABLE workspace_members ADD COLUMN IF NOT EXISTS team_hierarchy_id TEXT;
+    ALTER TABLE workspace_members ADD COLUMN IF NOT EXISTS department_id TEXT;
+
+    CREATE TABLE IF NOT EXISTS team_hierarchy (
+      id           TEXT PRIMARY KEY,
+      workspace_id TEXT NOT NULL,
+      parent_id    TEXT,
+      name         TEXT NOT NULL,
+      level_type   TEXT NOT NULL DEFAULT 'team',
+      icon         TEXT DEFAULT '👥',
+      color        TEXT DEFAULT '#58a6ff',
+      created_at   TIMESTAMPTZ DEFAULT NOW(),
+      FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_th_ws     ON team_hierarchy(workspace_id);
+    CREATE INDEX IF NOT EXISTS idx_th_parent ON team_hierarchy(parent_id);
+
+    CREATE TABLE IF NOT EXISTS workspace_activity (
+      id            TEXT PRIMARY KEY,
+      workspace_id  TEXT NOT NULL,
+      user_id_1     TEXT NOT NULL,
+      user_id_2     TEXT NOT NULL,
+      activity_type TEXT NOT NULL DEFAULT 'file_collab',
+      strength      REAL DEFAULT 0.5,
+      last_interaction TEXT,
+      created_at    TIMESTAMPTZ DEFAULT NOW(),
+      FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_wa_ws    ON workspace_activity(workspace_id);
+    CREATE INDEX IF NOT EXISTS idx_wa_users ON workspace_activity(user_id_1, user_id_2);
+
+    CREATE TABLE IF NOT EXISTS multilevel_cache (
+      id           TEXT PRIMARY KEY,
+      workspace_id TEXT NOT NULL,
+      level        INTEGER NOT NULL,
+      role         TEXT NOT NULL,
+      user_id      TEXT NOT NULL,
+      nodes_json   TEXT NOT NULL,
+      generated_at TIMESTAMPTZ DEFAULT NOW(),
+      expires_at   TEXT,
+      UNIQUE(workspace_id, level, role, user_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_mc_ws      ON multilevel_cache(workspace_id);
+    CREATE INDEX IF NOT EXISTS idx_mc_expires ON multilevel_cache(expires_at);
   `);
 }
 

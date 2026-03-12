@@ -120,64 +120,94 @@ async function initWorkspaceMode(scene) {
  * @param {string} label - 노드 라벨 텍스트
  * @returns {THREE.Group}
  */
+// mywork-renderer.js와 동일한 고정 카드 사이즈
+const _ML_CARD_W = 4.5;
+const _ML_CARD_H = 2.1;
+
 function createNodeMesh(shape, size, color, label = '') {
   const group = new THREE.Group();
 
-  // 카드 크기
-  const cardW = Math.max(2.5, 1.5 + label.length * 0.12) * size;
-  const cardH = 1.1 * size;
+  // 고정 카드 크기 (사이즈 통일 — 동적 크기 제거)
+  const cardW = _ML_CARD_W;
+  const cardH = _ML_CARD_H;
 
-  // 캔버스로 카드 텍스처 생성 (둥근 직사각형 + 텍스트)
-  const cw = 256, ch = 96;
+  // 고해상도 캔버스 (1024×480 @ 2× scale → 512×240 논리 공간)
+  const cw = 1024, ch = 480;
   const canvas = document.createElement('canvas');
   canvas.width = cw;
   canvas.height = ch;
   const ctx = canvas.getContext('2d');
+  ctx.scale(2, 2);  // 실제 렌더 영역 512×240 유지
 
-  // 파싱: CSS color → hex for canvas
-  const hexColor = color.startsWith('#') ? color : '#58a6ff';
+  // CSS color 파싱
+  const hexColor = (color || '#58a6ff').startsWith('#') ? (color || '#58a6ff') : '#58a6ff';
   const r = parseInt(hexColor.slice(1, 3), 16);
   const g = parseInt(hexColor.slice(3, 5), 16);
   const b = parseInt(hexColor.slice(5, 7), 16);
 
-  // 배경: 반투명 다크
+  const W = 512, H = 240;  // 논리 크기 (scale 2 적용 후)
   const radius = 16;
-  ctx.clearRect(0, 0, cw, ch);
+  ctx.clearRect(0, 0, W, H);
 
-  // 둥근 직사각형 배경
+  // 배경 그래디언트 (딥우주)
+  const bg = ctx.createLinearGradient(0, 0, W, H);
+  bg.addColorStop(0,   `rgba(4,10,24,0.98)`);
+  bg.addColorStop(0.7, `rgba(8,18,40,0.97)`);
+  bg.addColorStop(1,   `rgba(${r*0.12|0},${g*0.12|0},${b*0.12|0},0.97)`);
   ctx.beginPath();
-  ctx.moveTo(radius, 0);
-  ctx.lineTo(cw - radius, 0);
-  ctx.quadraticCurveTo(cw, 0, cw, radius);
-  ctx.lineTo(cw, ch - radius);
-  ctx.quadraticCurveTo(cw, ch, cw - radius, ch);
-  ctx.lineTo(radius, ch);
-  ctx.quadraticCurveTo(0, ch, 0, ch - radius);
-  ctx.lineTo(0, radius);
-  ctx.quadraticCurveTo(0, 0, radius, 0);
-  ctx.closePath();
+  ctx.moveTo(radius, 0); ctx.lineTo(W-radius, 0);
+  ctx.quadraticCurveTo(W, 0, W, radius); ctx.lineTo(W, H-radius);
+  ctx.quadraticCurveTo(W, H, W-radius, H); ctx.lineTo(radius, H);
+  ctx.quadraticCurveTo(0, H, 0, H-radius); ctx.lineTo(0, radius);
+  ctx.quadraticCurveTo(0, 0, radius, 0); ctx.closePath();
+  ctx.fillStyle = bg; ctx.fill();
 
-  // 배경 채우기 (반투명 다크블루)
-  ctx.fillStyle = `rgba(10, 20, 40, 0.85)`;
-  ctx.fill();
+  // 왼쪽 액센트 바
+  const bar = ctx.createLinearGradient(0, 0, 0, H);
+  bar.addColorStop(0,   `rgba(${r},${g},${b},0.0)`);
+  bar.addColorStop(0.5, `rgba(${r},${g},${b},1.0)`);
+  bar.addColorStop(1,   `rgba(${r},${g},${b},0.0)`);
+  ctx.fillStyle = bar; ctx.fillRect(0, 0, 5, H);
 
-  // 테두리 (색상 강조)
-  ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, 0.9)`;
-  ctx.lineWidth = 2.5;
-  ctx.stroke();
+  // 글로우 테두리
+  ctx.shadowColor = hexColor; ctx.shadowBlur = 12;
+  ctx.strokeStyle = `rgba(${r},${g},${b},0.55)`;
+  ctx.lineWidth = 1.8;
+  ctx.beginPath();
+  ctx.moveTo(radius, 0); ctx.lineTo(W-radius, 0);
+  ctx.quadraticCurveTo(W, 0, W, radius); ctx.lineTo(W, H-radius);
+  ctx.quadraticCurveTo(W, H, W-radius, H); ctx.lineTo(radius, H);
+  ctx.quadraticCurveTo(0, H, 0, H-radius); ctx.lineTo(0, radius);
+  ctx.quadraticCurveTo(0, 0, radius, 0); ctx.closePath();
+  ctx.stroke(); ctx.shadowBlur = 0;
 
-  // 라벨 텍스트
-  const displayText = (label || '').substring(0, 20);
-  ctx.fillStyle = `rgb(${Math.min(255, r + 80)}, ${Math.min(255, g + 80)}, ${Math.min(255, b + 80)})`;
-  ctx.font = `bold ${displayText.length > 12 ? 16 : 20}px "Inter", Arial, sans-serif`;
-  ctx.textAlign = 'center';
+  // 타이틀 텍스트 (상단 30%)
+  const maxTW = W - 28;
+  ctx.font = 'bold 34px "Apple SD Gothic Neo","Malgun Gothic","NanumGothic",sans-serif';
+  ctx.fillStyle = '#e8f4ff';
   ctx.textBaseline = 'middle';
-  ctx.fillText(displayText, cw / 2, ch / 2);
+  ctx.shadowColor = hexColor; ctx.shadowBlur = 5;
+  let t = String(label || '노드').substring(0, 30);
+  while (ctx.measureText(t).width > maxTW && t.length > 1) t = t.slice(0, -1);
+  if (t !== String(label || '노드')) t += '…';
+  ctx.fillText(t, 16, H * 0.26);
+  ctx.shadowBlur = 0;
+
+  // 구분선
+  ctx.strokeStyle = `rgba(${r},${g},${b},0.2)`;
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(16, H*0.46); ctx.lineTo(W-16, H*0.46); ctx.stroke();
+
+  // 서브 텍스트 (하단, 역할/레벨 표시)
+  ctx.font = '21px "Apple SD Gothic Neo","Malgun Gothic","NanumGothic",sans-serif';
+  ctx.fillStyle = `rgba(${r},${g},${b},0.9)`;
+  ctx.fillText(shape || '', 16, H * 0.66);
 
   const texture = new THREE.CanvasTexture(canvas);
+  texture.anisotropy = 16;
   texture.needsUpdate = true;
 
-  // PlaneGeometry로 카드 생성 (항상 카메라를 향하게 Billboard 처리는 animate loop에서)
+  // PlaneGeometry — 고정 사이즈
   const geometry = new THREE.PlaneGeometry(cardW, cardH);
   const material = new THREE.MeshBasicMaterial({
     map: texture,
@@ -187,6 +217,7 @@ function createNodeMesh(shape, size, color, label = '') {
   });
 
   const mesh = new THREE.Mesh(geometry, material);
+  mesh.renderOrder = 2;
   mesh.userData.shape = 'card';
   mesh.userData.color = color;
   mesh.userData.isCard = true;
