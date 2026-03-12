@@ -697,13 +697,30 @@ async function loadSessionContext(sessionId) {
     if (!r.ok) return null;
     const ctx = await r.json();
     _sessionContextCache[sessionId] = ctx;
-    // 행성 라벨 즉시 업데이트 — AI 라벨 우선, autoTitle 폴백
+    // 행성 라벨 즉시 업데이트
     const _isMeaningful = t => t && !/^(세션\s|⚙️\s?작업\s?중|작업\s?중|\[.*\]\s*$)/.test(t);
+    // purpose-classifier 추상 카테고리 감지 ("버그 수정", "기능 구현" 등)
+    // → 실제 작업 내용(firstMsg)보다 정보량이 없으므로 표시 우선순위 하향
+    const _isAbstractCat = t => /^[🛠🔧♻️🧪🚀🔍⚙️👁💬📌]?\s*(기능\s*구현|버그\s*수정|코드\s*정리|테스트|배포[\s/]운영|조사[\s/]분석|설정[\s/]환경|검토[\s/]리뷰|논의[\s/]질문|기타|작업)$/.test((t || '').trim());
     const planet = _sessionMap[sessionId]?.planet;
     if (planet) {
-      // AI 라벨이 있으면 최우선 사용
-      if (ctx.aiLabel && _isMeaningful(ctx.aiLabel)) {
-        planet.userData.intent = ctx.aiLabel;
+      // firstMsg를 항상 저장해둠 (drawLabels fallback용)
+      if (ctx.firstMsg) planet.userData.firstMsg = ctx.firstMsg;
+
+      // ✅ 실제 작업 내용 우선순위:
+      //  1순위: firstMsg (실제 사용자 요청 — 가장 구체적)
+      //  2순위: autoTitle (내용 기반 자동 제목)
+      //  3순위: aiLabel (추상 카테고리 — 정보 없으면 폴백)
+      const specificLabel = (ctx.firstMsg && ctx.firstMsg.length > 4)
+        ? ctx.firstMsg.slice(0, 42).trim()
+        : (_isMeaningful(ctx.autoTitle) && !_isAbstractCat(ctx.autoTitle))
+          ? ctx.autoTitle
+          : null;
+
+      if (specificLabel) {
+        planet.userData.intent = specificLabel;
+      } else if (ctx.aiLabel && _isMeaningful(ctx.aiLabel)) {
+        planet.userData.intent = ctx.aiLabel;   // 추상 카테고리지만 없는 것보다 낫다
       } else if (_isMeaningful(ctx.autoTitle)) {
         planet.userData.intent = ctx.autoTitle;
       }

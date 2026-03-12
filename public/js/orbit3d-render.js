@@ -3460,13 +3460,20 @@ function _drawPersonalPlanets() {
       if (/^\[.+?\]\s+/.test(text)) text = text.replace(/^\[.+?\]\s+/, '');
       if (text.length > 24) text = text.slice(0, 23) + '…';
     }
+    // ✅ 추상 카테고리 감지 → 실제 작업 내용(firstMsg/msgPreview)으로 교체
+    // "버그 수정", "기능 구현" 등은 아무 정보가 없으므로 실제 내용으로 대체
+    const _isAbstract = t => /^(기능\s*구현|버그\s*수정|코드\s*정리|테스트|배포|조사[\s/]분석|설정|검토|논의|기타|작업)$/.test(t);
+    if (!text || _isAbstract(text)) {
+      const _specific = (p.userData.firstMsg || p.userData.msgPreview || '').replace(/[\n\r]/g, ' ').trim();
+      if (_specific.length > 3) text = _specific.slice(0, 26);
+    }
     if (!text && p.userData.msgPreview) text = p.userData.msgPreview.slice(0, 24);
     if (!text && p.userData.firstMsg) text = p.userData.firstMsg.slice(0, 24);
     if (!text && p.userData.projectName && p.userData.projectName !== '기타') text = p.userData.projectName.slice(0, 16);
     if (!text) {
       const DS = { auth:'인증', api:'API', data:'데이터', ui:'UI', test:'테스트',
         server:'서버', infra:'인프라', fix:'수정', git:'Git', chat:'대화', general:'작업', docs:'문서', design:'설계' };
-      text = DS[p.userData.domain] || '작업';
+      text = DS[p.userData.domain] || '—';
     }
     if (!text) return;
 
