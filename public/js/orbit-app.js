@@ -115,6 +115,13 @@ const labelPool  = [];  // CSS2DObject 풀
 for (let i = 0; i < MAX_LABELS; i++) {
   const div = document.createElement('div');
   div.className = 'node-label';
+  div.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const nodeData = div._nodeData;
+    if (!nodeData) return;
+    if (nodeData.level >= 1) zoomIntoNode(nodeData);
+    else openSidePanel(nodeData);
+  });
   const obj = new CSS2DObject(div);
   obj.visible = false;
   scene.add(obj);
@@ -141,6 +148,7 @@ function updateNodeLabels(visibleNodes) {
     if (!shouldShow) continue;
 
     const { obj, div } = labelPool[labelIdx++];
+    div._nodeData = n;   // 클릭 핸들러에서 참조
     const text = n.label || n.type || n.id;
     div.textContent = text.length > 18 ? text.slice(0, 17) + '…' : text;
 
@@ -153,9 +161,10 @@ function updateNodeLabels(visibleNodes) {
     obj.visible = true;
   }
 
-  // 나머지 라벨 숨김
+  // 나머지 라벨 숨김 + stale 데이터 정리
   for (let i = labelIdx; i < MAX_LABELS; i++) {
     labelPool[i].obj.visible = false;
+    labelPool[i].div._nodeData = null;
   }
 }
 

@@ -406,9 +406,19 @@ function renderHistory(data) {
     return;
   }
 
+  // 전체 히스토리 팝업 열기 버튼
+  const popupBtnHtml = typeof showHistoryPopup === 'function'
+    ? `<div style="text-align:right;margin-bottom:8px">
+         <button onclick="showHistoryPopup({id:'${(clusterId||'').replace(/'/g,'')}',name:'${(data.label||data.name||'세션').replace(/'/g,'')}'});"
+                 style="background:rgba(88,166,255,0.15);color:#58a6ff;border:1px solid rgba(88,166,255,0.3);border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer">
+           📊 전체 타임라인 보기
+         </button>
+       </div>`
+    : '';
+
   // 최신 50개
   const slice = [...events].reverse().slice(0, 50);
-  el.innerHTML = slice.map(e => {
+  el.innerHTML = popupBtnHtml + slice.map(e => {
     const cfg   = typeCfg(e.type);
     const hex   = '#' + new THREE.Color(cfg.color).getHexString();
     const label = e.label || extractIntent(e) || e.type;

@@ -94,16 +94,20 @@
 
     /* ── CSS2D 노드 라벨 ── */
     .node-label {
-      background: rgba(13,17,23,0.82); border: 1px solid rgba(88,166,255,0.25);
-      border-radius: 4px; padding: 2px 6px;
-      font-size: 9px; color: rgba(240,246,252,0.85);
+      background: rgba(13,17,23,0.88); border: 1px solid rgba(88,166,255,0.3);
+      border-radius: 6px; padding: 4px 10px;
+      font-size: 12px; color: rgba(240,246,252,0.9);
       font-family: 'Inter', sans-serif; white-space: nowrap;
-      pointer-events: none; user-select: none;
-      max-width: 120px; overflow: hidden; text-overflow: ellipsis;
-      transform: translateX(-50%) translateY(-140%);
+      pointer-events: auto; user-select: none; cursor: pointer;
+      max-width: 180px; overflow: hidden; text-overflow: ellipsis;
+      transform: translateX(-50%) translateY(-160%);
+      transition: border-color 0.2s, background 0.2s;
     }
-    .node-label.session { color: #58a6ff; border-color: rgba(88,166,255,0.4); font-weight: 600; font-size: 10px; }
-    .node-label.center  { color: #bc8cff; border-color: rgba(188,140,255,0.5); font-weight: 700; font-size: 11px; }
+    .node-label:hover {
+      border-color: rgba(88,166,255,0.6); background: rgba(13,17,23,0.95);
+    }
+    .node-label.session { color: #58a6ff; border-color: rgba(88,166,255,0.4); font-weight: 600; font-size: 13px; }
+    .node-label.center  { color: #bc8cff; border-color: rgba(188,140,255,0.5); font-weight: 700; font-size: 14px; }
 
     /* ── AI 인사이트 오버레이 ── */
     #insight-overlay {

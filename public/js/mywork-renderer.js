@@ -347,6 +347,8 @@ function makeHubTexture(label) {
 function clearMyWork() {
   const sc = MW.scene; if (!sc) return;
   [...MW.cardMeshes, ...MW.lineMeshes].forEach(m => {
+    // interaction 시스템에서 등록 해제
+    if (window.unregisterInteractive) window.unregisterInteractive(m);
     sc.remove(m);
     m.traverse(c => {
       if (c.geometry) c.geometry.dispose();
@@ -478,7 +480,17 @@ function renderView(nodes, hubLabel, levelIdx, hubPos) {
   for (let i = 0; i < visNodes.length; i++) {
     const p   = positions[i];
     const pos = { x: hp.x + p.x, y: hp.y + p.y, z: hp.z + p.z };
-    createCard(visNodes[i], pos);
+    const cardMesh = createCard(visNodes[i], pos);
+    // orbit3d-interaction.js 연동: 히스토리 팝업 등에 활용
+    if (window.registerInteractive && cardMesh) {
+      const raw = visNodes[i]._raw || visNodes[i];
+      window.registerInteractive(cardMesh, {
+        id:   raw.id || raw.eventId || visNodes[i].topic || `mw_${i}`,
+        name: visNodes[i].topic || visNodes[i].name || raw.label || '작업',
+        label: visNodes[i].topic || visNodes[i].name || '',
+        type: raw.type || raw.eventType || 'category',
+      });
+    }
     const hexStr = _mwExtractColor(visNodes[i].color, '#334155').replace('#', '');
     drawLine(
       { x: hp.x,   y: hp.y + 0.5,        z: hp.z },
@@ -527,8 +539,17 @@ function onMyWorkClick(event) {
     const children = (node.children || node.subtopics || node.events || []).slice();
 
     if (children.length === 0) {
-      if (typeof showToast === 'function')
+      // 리프 노드: 히스토리 팝업 표시
+      if (typeof showHistoryPopup === 'function') {
+        const raw = node._raw || node;
+        showHistoryPopup({
+          id:   raw.id || raw.eventId || node.topic || 'node',
+          name: node.topic || node.name || raw.label || '작업',
+          type: raw.type || raw.eventType || node.type || 'event',
+        });
+      } else if (typeof showToast === 'function') {
         showToast(`${node.topic||node.name} — 더 이상 하위 항목이 없습니다`, 2000);
+      }
       return;
     }
 

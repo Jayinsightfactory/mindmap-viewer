@@ -34,7 +34,8 @@ function registerInteractive(obj, data) {
 
 // 전역 노출
 window.registerInteractive = registerInteractive;
-console.log('[orbit3d-interaction] registerInteractive exposed to window');
+window.unregisterInteractive = unregisterInteractive;
+console.log('[orbit3d-interaction] registerInteractive/unregisterInteractive exposed to window');
 
 /**
  * 객체 등록 해제
@@ -79,6 +80,8 @@ document.addEventListener('click', (event) => {
     }
 
     if (clickedObj && interactiveObjects.has(clickedObj)) {
+      // MW 카드는 mywork-renderer.js가 자체 클릭 핸들러로 처리
+      if (clickedObj.userData && clickedObj.userData.isCard) return;
       const data = interactiveObjects.get(clickedObj);
       handleObjectClick(clickedObj, data);
     }
