@@ -86,41 +86,41 @@ document.addEventListener('click', (event) => {
 });
 
 /**
- * 객체 클릭 처리
+ * 객체 클릭 처리 - 히스토리 팝업 표시
  */
 function handleObjectClick(obj, data) {
   console.log('Node clicked:', data);
 
-  // 선택 레이아웃 매니저에 전달
-  if (window.selectionMgr) {
-    // 노드 데이터 포맷 정규화
-    const nodeData = {
-      id: data.id || 'node_' + Math.random().toString(36).substr(2, 9),
-      name: data.name || data.label || 'Unnamed',
-      type: data.type || 'node',
-      subtitle: data.role || data.status || '',
-      icon: data.icon || '◆',
-      avatar: data.avatar || data.icon || '?',
+  // 노드 데이터 포맷 정규화
+  const nodeData = {
+    id: data.id || 'node_' + Math.random().toString(36).substr(2, 9),
+    name: data.name || data.label || 'Unnamed',
+    type: data.type || 'node',
+    subtitle: data.role || data.status || '',
+    icon: data.icon || '◆',
+    avatar: data.avatar || data.icon || '?',
 
-      // 메타데이터
-      department: data.department || data.team || '',
-      team: data.team || '',
-      duration: data.duration || '',
-      progress: data.progress || 0,
-      status: data.status || '',
-      reliability: data.reliability || 80,
+    // 메타데이터
+    department: data.department || data.team || '',
+    team: data.team || '',
+    duration: data.duration || '',
+    progress: data.progress || 0,
+    status: data.status || '',
+    reliability: data.reliability || 80,
 
-      // 자식 노드
-      children: data.children || generateChildrenFromData(data),
+    // 자식 노드
+    children: data.children || generateChildrenFromData(data),
 
-      // 협업자
-      collaborators: {
-        sameTeam: data.sameTeam || data.teammates || [],
-        otherTeam: data.otherTeam || data.collaborators || []
-      }
-    };
+    // 협업자
+    collaborators: {
+      sameTeam: data.sameTeam || data.teammates || [],
+      otherTeam: data.otherTeam || data.collaborators || []
+    }
+  };
 
-    selectionMgr.selectNode(obj, nodeData);
+  // 히스토리 팝업 표시
+  if (typeof showHistoryPopup === 'function') {
+    showHistoryPopup(nodeData);
   }
 }
 
