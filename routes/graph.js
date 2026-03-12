@@ -81,27 +81,39 @@ function createRouter(deps) {
    * 비로그인 시: AUTH_DISABLED=1이면 전체, 아니면 빈 그래프
    */
   router.get('/graph', (req, res) => {
-    const user = getUserFromReq(req) || { id: 'local' };
+    const user = getUserFromReq(req);
+
+    // ── 비로그인 처리 ───────────────────────────────────────────────────────
+    // ⚠️ 이전 코드: || { id: 'local' } → getFullGraph() → 전체 데이터 노출 (크로스-유저 버그)
+    // 수정: 비로그인이면 개발모드(AUTH_DISABLED=1)만 전체 허용, 프로덕션은 빈 그래프
+    if (!user) {
+      if (process.env.AUTH_DISABLED === '1') {
+        return res.json(getFullGraph(req.query.session, req.query.channel));
+      }
+      return res.json({ nodes: [], edges: [] });
+    }
 
     let graph;
     if (user.id === 'local') {
+      // AUTH_DISABLED=1일 때 getUserFromReq가 { id: 'local' } 반환 → 개발 모드
       graph = getFullGraph(req.query.session, req.query.channel);
     } else {
-      // 로그인 유저: user_id 필터링 시도
+      // 로그인 유저: user_id 필터링 (본인 데이터만)
       graph = getFullGraphForUser
         ? getFullGraphForUser(user.id, req.query.session)
         : getFullGraph(req.query.session, req.query.channel);
 
-      // 유저 이벤트가 0건이면 local 이벤트 자동 귀속 후 재시도
+      // 유저 이벤트가 0건이면 local 이벤트 귀속 시도 (최초 로그인 시 한 번만)
+      // ⚠️ 멀티-유저 환경에서는 한 명만 claim 가능 (이미 claimed 이벤트는 재귀속 안 됨)
       if (graph.nodes.length === 0 && claimLocalEvents) {
         const claimed = claimLocalEvents(user.id);
         if (claimed > 0) {
-          console.log(`[graph] ${user.id}: ${claimed}개 local 이벤트 자동 귀속`);
+          console.log(`[graph] ${user.id}: ${claimed}개 local 이벤트 귀속 (최초 로그인)`);
           graph = getFullGraphForUser
             ? getFullGraphForUser(user.id, req.query.session)
             : getFullGraph(req.query.session, req.query.channel);
         }
-        // 귀속 후에도 0건이면 빈 그래프 유지 (다른 유저 데이터 노출 방지)
+        // 귀속 후에도 0건 → 빈 그래프 유지 (다른 유저 데이터 절대 노출 안 함)
       }
     }
 
@@ -173,14 +185,19 @@ function createRouter(deps) {
    * 로그인 시: 해당 유저의 세션만 반환
    */
   router.get('/sessions', (req, res) => {
-    const user = getUserFromReq(req) || { id: 'local' };
+    const user = getUserFromReq(req);
+    // ⚠️ 이전: || { id: 'local' } → getSessions() → 전체 세션 노출
+    // 수정: 비로그인은 개발모드만 허용, 프로덕션은 빈 배열
+    if (!user) {
+      if (process.env.AUTH_DISABLED === '1') return res.json(getSessions());
+      return res.json([]);
+    }
     let sessions = (user.id !== 'local' && getSessionsByUser)
       ? getSessionsByUser(user.id)
       : getSessions();
-    // 유저 세션 0건이면 전체 세션 반환 (local 이벤트 아직 미귀속)
-    if (sessions.length === 0 && user.id !== 'local') {
-      sessions = getSessions();
-    }
+    // ⚠️ 이전: 0건이면 getSessions() 전체 반환 → 다른 유저 세션 노출
+    // 수정: 0건이면 그냥 빈 배열 (데이터 없는 신규 유저가 타인 세션 보는 것 방지)
+    // (local 이벤트 귀속은 /api/claim-local-events 또는 /api/graph에서 처리)
     res.json(sessions);
   });
 
@@ -327,7 +344,11 @@ function createRouter(deps) {
   router.get('/purposes', (req, res) => {
     const user = getUserFromReq(req);
     if (!user) return res.json([]);
-    const getEvFn = (user.id !== 'local' && getEventsByUser) ? () => getEventsByUser(user.id) : getAllEvents;
+    // ⚠️ 'local' userId이면 getAllEvents → 전체 목적 분류 노출
+    // 수정: 'local'은 개발모드만 허용
+    const getEvFn = (user.id !== 'local' && getEventsByUser)
+      ? () => getEventsByUser(user.id)
+      : (process.env.AUTH_DISABLED === '1' ? getAllEvents : () => []);
     const events = _getEventsByQuery(req.query, getEvFn, getEventsBySession, getEventsByChannel);
     res.json(classifyPurposes(events));
   });
