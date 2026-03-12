@@ -1,0 +1,805 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Orbit — 워크스페이스 관리</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/settings.css">
+  <style>
+    .workspace-card {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 12px;
+      background: var(--bg2);
+    }
+    .workspace-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    .workspace-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .workspace-meta {
+      font-size: 12px;
+      color: var(--text3);
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+    .role-badge {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 10px;
+      font-weight: 500;
+    }
+    .role-owner { background: rgba(255, 215, 0, 0.2); color: #ffd700; }
+    .role-admin { background: rgba(88, 166, 255, 0.2); color: #58a6ff; }
+    .role-member { background: rgba(63, 185, 80, 0.2); color: #3fb950; }
+    .invite-code {
+      font-family: 'Courier New', monospace;
+      background: var(--bg3);
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      border: 1px solid var(--border);
+    }
+    .member-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .member-item:last-child { border-bottom: none; }
+    .member-info {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .member-avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: var(--accent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      font-weight: 600;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+    .member-details {
+      flex: 1;
+    }
+    .member-name {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text);
+    }
+    .member-email {
+      font-size: 11px;
+      color: var(--text3);
+    }
+    .member-actions {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+    .btn-sm {
+      padding: 4px 8px;
+      font-size: 11px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      background: var(--bg3);
+      color: var(--text);
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .btn-sm:hover { background: var(--bg4); }
+    .btn-danger { border-color: rgba(248, 81, 73, 0.4); background: rgba(248, 81, 73, 0.1); color: #f85149; }
+    .btn-primary { border-color: var(--accent); background: rgba(137, 87, 229, 0.15); color: var(--accent); }
+    .form-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .form-input {
+      padding: 6px 10px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: var(--bg3);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 12px;
+      flex: 1;
+    }
+    .create-form {
+      background: var(--bg3);
+      padding: 16px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      margin-bottom: 20px;
+    }
+    .provider-badge {
+      font-size: 10px;
+      padding: 1px 4px;
+      border-radius: 8px;
+      font-weight: 500;
+    }
+    .provider-google { background: rgba(234, 67, 53, 0.2); color: #ea4335; }
+    .provider-github { background: rgba(255, 255, 255, 0.2); color: var(--text); }
+    .provider-local { background: rgba(136, 136, 136, 0.2); color: #888; }
+    .empty-state {
+      text-align: center;
+      padding: 40px 20px;
+      color: var(--text3);
+      font-size: 13px;
+    }
+    .loading {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 20px;
+      color: var(--text3);
+      font-size: 13px;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .spinner {
+      width: 16px;
+      height: 16px;
+      border: 2px solid transparent;
+      border-top: 2px solid currentColor;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+  </style>
+</head>
+<body>
+
+<div id="topbar">
+  <span class="logo">🌌 <span>Orbit</span> — 워크스페이스 관리</span>
+  <div class="topbar-right">
+    <a href="/settings.html" class="tb-btn">⚙️ 설정</a>
+    <a href="/orbit3d.html" class="tb-btn">🚀 우주뷰</a>
+    <a href="/" class="tb-btn">← 맵</a>
+  </div>
+</div>
+
+<div id="main">
+  <div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('my-workspaces')">🏢 내 워크스페이스</button>
+    <button class="tab-btn" onclick="switchTab('create')">➕ 생성</button>
+    <button class="tab-btn" onclick="switchTab('join')">🔗 참여</button>
+    <button class="tab-btn" onclick="switchTab('admin')" id="admin-tab" style="display:none">👑 전체 관리</button>
+  </div>
+
+  <!-- 내 워크스페이스 탭 -->
+  <div id="tab-my-workspaces" class="tab-content active">
+    <div id="my-workspaces-loading" class="loading">
+      <div class="spinner"></div>
+      워크스페이스 목록 로딩 중...
+    </div>
+    <div id="my-workspaces-list" style="display:none"></div>
+    <div id="my-workspaces-empty" class="empty-state" style="display:none">
+      <div>🏢</div>
+      <div style="margin-top:12px">참여 중인 워크스페이스가 없습니다</div>
+      <div style="margin-top:8px;font-size:12px">새 워크스페이스를 생성하거나 초대 코드로 참여하세요</div>
+    </div>
+  </div>
+
+  <!-- 생성 탭 -->
+  <div id="tab-create" class="tab-content">
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">🏢 새 워크스페이스 생성</span>
+        <span class="card-sub">팀 또는 회사 단위 작업 공간 만들기</span>
+      </div>
+      <div class="card-body">
+        <div class="create-form">
+          <div class="form-row">
+            <label style="min-width:80px;font-size:12px;color:var(--text2)">워크스페이스명</label>
+            <input type="text" id="create-name" class="form-input" placeholder="예: 개발팀, AI연구소" required>
+          </div>
+          <div class="form-row">
+            <label style="min-width:80px;font-size:12px;color:var(--text2)">회사명</label>
+            <input type="text" id="create-company" class="form-input" placeholder="예: ABC컴퍼니 (선택사항)">
+          </div>
+          <div style="margin-top:16px">
+            <button onclick="createWorkspace()" class="btn-primary" style="width:100%;padding:10px;font-size:13px">
+              🚀 워크스페이스 생성
+            </button>
+          </div>
+        </div>
+        <div style="font-size:12px;color:var(--text3);line-height:1.5">
+          <strong>생성 후 자동으로 제공되는 것:</strong><br>
+          • 8자리 초대 코드 (팀원 초대용)<br>
+          • 소유자(owner) 권한 부여<br>
+          • 3D 우주뷰 팀 모드 활성화
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 참여 탭 -->
+  <div id="tab-join" class="tab-content">
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">🔗 초대 코드로 참여</span>
+        <span class="card-sub">기존 워크스페이스에 멤버로 합류</span>
+      </div>
+      <div class="card-body">
+        <div class="create-form">
+          <div class="form-row">
+            <label style="min-width:60px;font-size:12px;color:var(--text2)">초대 코드</label>
+            <input type="text" id="join-code" class="form-input" placeholder="8자리 코드 입력 (예: A1B2C3D4)" maxlength="8" style="text-transform:uppercase">
+          </div>
+          <div class="form-row">
+            <label style="min-width:60px;font-size:12px;color:var(--text2)">내 팀명</label>
+            <input type="text" id="join-team" class="form-input" placeholder="팀 이름 (예: 개발팀, 디자인팀)">
+          </div>
+          <div style="margin-top:16px;display:flex;gap:8px">
+            <button onclick="previewInvite()" class="btn-sm" style="flex:1">
+              👁️ 미리보기
+            </button>
+            <button onclick="joinWorkspace()" class="btn-primary" style="flex:2;padding:10px;font-size:13px">
+              🤝 참여하기
+            </button>
+          </div>
+        </div>
+        <div id="invite-preview" style="display:none;margin-top:16px;padding:12px;background:var(--bg3);border-radius:6px;border:1px solid var(--border)">
+          <div style="font-size:12px;color:var(--text3);margin-bottom:8px">초대 정보:</div>
+          <div id="invite-info"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 전체 관리 탭 (글로벌 어드민 전용) -->
+  <div id="tab-admin" class="tab-content">
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">👑 전체 워크스페이스 관리</span>
+        <span class="card-sub">글로벌 어드민 전용</span>
+      </div>
+      <div class="card-body">
+        <div id="admin-loading" class="loading">
+          <div class="spinner"></div>
+          전체 워크스페이스 로딩 중...
+        </div>
+        <div id="admin-list" style="display:none"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 워크스페이스 상세 모달 -->
+<div id="workspace-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1000" onclick="closeModal()">
+  <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:600px;max-width:90vw;max-height:80vh;overflow-y:auto;background:var(--bg);border-radius:12px;border:1px solid var(--border)" onclick="event.stopPropagation()">
+    <div style="padding:20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <h3 style="margin:0;color:var(--text)" id="modal-title">워크스페이스 관리</h3>
+        <div style="font-size:12px;color:var(--text3);margin-top:4px" id="modal-subtitle"></div>
+      </div>
+      <button onclick="closeModal()" style="background:none;border:none;font-size:20px;color:var(--text3);cursor:pointer">×</button>
+    </div>
+    <div id="modal-content" style="padding:20px"></div>
+  </div>
+</div>
+
+<script>
+// 전역 변수
+let currentUser = null;
+let workspaceList = [];
+
+// 초기화
+document.addEventListener('DOMContentLoaded', async () => {
+  await loadCurrentUser();
+  await loadMyWorkspaces();
+});
+
+// 현재 사용자 정보 로드
+async function loadCurrentUser() {
+  try {
+    const token = localStorage.getItem('orbit_token') || getCookie('orbit_token');
+    if (!token) {
+      showLoginRequired();
+      return;
+    }
+
+    const resp = await fetch('/api/auth/me', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    
+    if (resp.ok) {
+      currentUser = await resp.json();
+      // 글로벌 어드민이면 어드민 탭 표시
+      if (currentUser.isAdmin) {
+        document.getElementById('admin-tab').style.display = 'block';
+      }
+    } else {
+      showLoginRequired();
+    }
+  } catch (e) {
+    console.error('사용자 정보 로드 실패:', e);
+    showLoginRequired();
+  }
+}
+
+// 로그인 필요 메시지
+function showLoginRequired() {
+  document.getElementById('main').innerHTML = `
+    <div style="text-align:center;padding:60px 20px;color:var(--text3)">
+      <div style="font-size:48px;margin-bottom:20px">🔒</div>
+      <div style="font-size:18px;font-weight:600;margin-bottom:12px">로그인이 필요합니다</div>
+      <div style="margin-bottom:24px">워크스페이스 관리 기능을 사용하려면 로그인하세요</div>
+      <a href="/settings.html" style="display:inline-block;padding:10px 20px;background:var(--accent);color:white;text-decoration:none;border-radius:6px">
+        로그인 페이지로 이동
+      </a>
+    </div>
+  `;
+}
+
+// 탭 전환
+function switchTab(tabName) {
+  document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(content => content.style.display = 'none');
+  
+  document.querySelector(`[onclick="switchTab('${tabName}')"]`).classList.add('active');
+  document.getElementById(`tab-${tabName}`).style.display = 'block';
+  
+  // 탭별 데이터 로드
+  if (tabName === 'admin' && currentUser?.isAdmin) {
+    loadAllWorkspaces();
+  }
+}
+
+// 내 워크스페이스 목록 로드
+async function loadMyWorkspaces() {
+  try {
+    const token = localStorage.getItem('orbit_token') || getCookie('orbit_token');
+    const resp = await fetch('/api/workspace/my', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    
+    if (!resp.ok) throw new Error('워크스페이스 목록 로드 실패');
+    
+    workspaceList = await resp.json();
+    renderMyWorkspaces();
+  } catch (e) {
+    console.error('워크스페이스 목록 로드 실패:', e);
+    document.getElementById('my-workspaces-loading').style.display = 'none';
+    document.getElementById('my-workspaces-empty').style.display = 'block';
+  }
+}
+
+// 내 워크스페이스 렌더링
+function renderMyWorkspaces() {
+  const loading = document.getElementById('my-workspaces-loading');
+  const list = document.getElementById('my-workspaces-list');
+  const empty = document.getElementById('my-workspaces-empty');
+  
+  loading.style.display = 'none';
+  
+  if (workspaceList.length === 0) {
+    empty.style.display = 'block';
+    return;
+  }
+  
+  list.style.display = 'block';
+  list.innerHTML = workspaceList.map(ws => `
+    <div class="workspace-card">
+      <div class="workspace-header">
+        <div class="workspace-title">
+          🏢 ${escapeHtml(ws.name)}
+          <span class="role-badge role-${ws.role}">${getRoleText(ws.role)}</span>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button onclick="openWorkspaceDetail('${ws.id}')" class="btn-sm">관리</button>
+          <button onclick="openTeamView('${ws.id}')" class="btn-primary">팀뷰</button>
+        </div>
+      </div>
+      <div class="workspace-meta">
+        ${ws.company_name ? `<span>🏭 ${escapeHtml(ws.company_name)}</span>` : ''}
+        <span>👥 ${ws.member_count}명</span>
+        <span>🔗 <code class="invite-code">${ws.invite_code}</code></span>
+        ${ws.team_name ? `<span>🏷️ ${escapeHtml(ws.team_name)}</span>` : ''}
+      </div>
+    </div>
+  `).join('');
+}
+
+// 워크스페이스 생성
+async function createWorkspace() {
+  const name = document.getElementById('create-name').value.trim();
+  const companyName = document.getElementById('create-company').value.trim();
+  
+  if (!name) {
+    alert('워크스페이스 이름을 입력하세요');
+    return;
+  }
+  
+  try {
+    const token = localStorage.getItem('orbit_token') || getCookie('orbit_token');
+    const resp = await fetch('/api/workspace/create', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ name, companyName })
+    });
+    
+    if (!resp.ok) throw new Error('워크스페이스 생성 실패');
+    
+    const result = await resp.json();
+    alert(`워크스페이스 생성 완료!
+초대 코드: ${result.invite_code}
+이 코드를 팀원들에게 공유하세요.`);
+    
+    // 폼 초기화 및 목록 새로고침
+    document.getElementById('create-name').value = '';
+    document.getElementById('create-company').value = '';
+    await loadMyWorkspaces();
+    switchTab('my-workspaces');
+  } catch (e) {
+    console.error('워크스페이스 생성 실패:', e);
+    alert('워크스페이스 생성에 실패했습니다: ' + e.message);
+  }
+}
+
+// 초대 코드 미리보기
+async function previewInvite() {
+  const code = document.getElementById('join-code').value.trim().toUpperCase();
+  if (!code) {
+    alert('초대 코드를 입력하세요');
+    return;
+  }
+  
+  try {
+    const resp = await fetch(`/api/workspace/invite/${code}`);
+    if (!resp.ok) throw new Error('유효하지 않은 초대 코드입니다');
+    
+    const info = await resp.json();
+    document.getElementById('invite-preview').style.display = 'block';
+    document.getElementById('invite-info').innerHTML = `
+      <div style="font-weight:600;color:var(--text)">${escapeHtml(info.name)}</div>
+      ${info.company_name ? `<div style="font-size:11px;color:var(--text3);margin-top:2px">${escapeHtml(info.company_name)}</div>` : ''}
+      <div style="font-size:11px;color:var(--text3);margin-top:4px">👥 ${info.member_count}명 참여 중</div>
+    `;
+  } catch (e) {
+    document.getElementById('invite-preview').style.display = 'none';
+    alert('초대 코드 확인 실패: ' + e.message);
+  }
+}
+
+// 워크스페이스 참여
+async function joinWorkspace() {
+  const inviteCode = document.getElementById('join-code').value.trim().toUpperCase();
+  const teamName = document.getElementById('join-team').value.trim() || '팀 1';
+  
+  if (!inviteCode) {
+    alert('초대 코드를 입력하세요');
+    return;
+  }
+  
+  try {
+    const token = localStorage.getItem('orbit_token') || getCookie('orbit_token');
+    const resp = await fetch('/api/workspace/join', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ inviteCode, teamName })
+    });
+    
+    if (!resp.ok) throw new Error('워크스페이스 참여 실패');
+    
+    const result = await resp.json();
+    alert(`워크스페이스 참여 완료!
+워크스페이스: ${result.workspace.name}
+팀: ${teamName}`);
+    
+    // 폼 초기화 및 목록 새로고침
+    document.getElementById('join-code').value = '';
+    document.getElementById('join-team').value = '';
+    document.getElementById('invite-preview').style.display = 'none';
+    await loadMyWorkspaces();
+    switchTab('my-workspaces');
+  } catch (e) {
+    console.error('워크스페이스 참여 실패:', e);
+    alert('워크스페이스 참여에 실패했습니다: ' + e.message);
+  }
+}
+
+// 워크스페이스 상세 관리 모달
+async function openWorkspaceDetail(workspaceId) {
+  try {
+    const token = localStorage.getItem('orbit_token') || getCookie('orbit_token');
+    const resp = await fetch(`/api/workspace/${workspaceId}/members`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    
+    if (!resp.ok) throw new Error('멤버 목록 로드 실패');
+    
+    const members = await resp.json();
+    const workspace = workspaceList.find(ws => ws.id === workspaceId);
+    
+    document.getElementById('modal-title').textContent = `${workspace.name} 관리`;
+    document.getElementById('modal-subtitle').textContent = `초대 코드: ${workspace.invite_code} · ${members.length}명 참여`;
+    
+    document.getElementById('modal-content').innerHTML = `
+      <div style="margin-bottom:20px">
+        <h4 style="margin:0 0 12px 0;color:var(--text)">👥 멤버 목록</h4>
+        <div>
+          ${members.map(member => `
+            <div class="member-item">
+              <div class="member-info">
+                <div class="member-avatar">
+                  ${member.avatar ? `<img src="${member.avatar}" style="width:100%;height:100%;border-radius:50%;object-fit:cover">` : getAvatarText(member.name)}
+                </div>
+                <div class="member-details">
+                  <div class="member-name">
+                    ${escapeHtml(member.name)}
+                    <span class="role-badge role-${member.role}">${getRoleText(member.role)}</span>
+                    ${member.provider !== 'local' ? `<span class="provider-badge provider-${member.provider}">${member.provider === 'google' ? 'G' : member.provider === 'github' ? 'GH' : member.provider}</span>` : ''}
+                  </div>
+                  <div class="member-email">${escapeHtml(member.email)} · 팀: ${escapeHtml(member.teamName)}</div>
+                </div>
+              </div>
+              <div class="member-actions">
+                ${canManageMember(workspace.role, member.role) ? `
+                  <button onclick="changeRole('${workspaceId}', '${member.userId}', '${member.role}')" class="btn-sm">
+                    ${member.role === 'admin' ? '👤 멤버로' : '👑 어드민으로'}
+                  </button>
+                  <button onclick="removeMember('${workspaceId}', '${member.userId}', '${escapeHtml(member.name)}')" class="btn-sm btn-danger">제거</button>
+                ` : ''}
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+      
+      ${workspace.role === 'owner' || workspace.role === 'admin' ? `
+        <div style="margin-bottom:20px">
+          <h4 style="margin:0 0 12px 0;color:var(--text)">✉️ 이메일 초대</h4>
+          <div class="form-row">
+            <input type="email" id="invite-email" class="form-input" placeholder="초대할 이메일 주소">
+            <input type="text" id="invite-team-name" class="form-input" placeholder="팀명 (선택)">
+            <button onclick="inviteMember('${workspaceId}')" class="btn-primary" style="white-space:nowrap">초대</button>
+          </div>
+        </div>
+        
+        <div style="margin-bottom:20px">
+          <h4 style="margin:0 0 12px 0;color:var(--text)">🔗 초대 코드 관리</h4>
+          <div style="display:flex;gap:8px;align-items:center">
+            <code class="invite-code" style="flex:1">${workspace.invite_code}</code>
+            <button onclick="regenerateInviteCode('${workspaceId}')" class="btn-sm">새 코드 생성</button>
+          </div>
+        </div>
+      ` : ''}
+      
+      <div style="border-top:1px solid var(--border);padding-top:16px;margin-top:20px">
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button onclick="leaveWorkspace('${workspaceId}', '${escapeHtml(workspace.name)}')" class="btn-sm btn-danger">
+            워크스페이스 나가기
+          </button>
+          <button onclick="closeModal()" class="btn-sm">닫기</button>
+        </div>
+      </div>
+    `;
+    
+    document.getElementById('workspace-modal').style.display = 'block';
+  } catch (e) {
+    console.error('워크스페이스 상세 로드 실패:', e);
+    alert('워크스페이스 정보를 불러올 수 없습니다');
+  }
+}
+
+// 팀뷰로 이동
+function openTeamView(workspaceId) {
+  window.open(`/orbit3d.html?workspaceId=${workspaceId}&view=team`, '_blank');
+}
+
+// 모달 닫기
+function closeModal() {
+  document.getElementById('workspace-modal').style.display = 'none';
+}
+
+// 전체 워크스페이스 로드 (글로벌 어드민)
+async function loadAllWorkspaces() {
+  try {
+    const token = localStorage.getItem('orbit_token') || getCookie('orbit_token');
+    const resp = await fetch('/api/workspace/admin/all', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    
+    if (!resp.ok) throw new Error('전체 워크스페이스 로드 실패');
+    
+    const allWorkspaces = await resp.json();
+    
+    document.getElementById('admin-loading').style.display = 'none';
+    document.getElementById('admin-list').style.display = 'block';
+    document.getElementById('admin-list').innerHTML = allWorkspaces.map(ws => `
+      <div class="workspace-card">
+        <div class="workspace-header">
+          <div class="workspace-title">🏢 ${escapeHtml(ws.name)}</div>
+          <div style="font-size:11px;color:var(--text3)">
+            생성: ${new Date(ws.created_at).toLocaleDateString()}
+          </div>
+        </div>
+        <div class="workspace-meta">
+          ${ws.company_name ? `<span>🏭 ${escapeHtml(ws.company_name)}</span>` : ''}
+          <span>👥 ${ws.member_count}명</span>
+          <span>🔗 <code class="invite-code">${ws.invite_code}</code></span>
+        </div>
+      </div>
+    `).join('') || '<div class="empty-state">등록된 워크스페이스가 없습니다</div>';
+  } catch (e) {
+    console.error('전체 워크스페이스 로드 실패:', e);
+    document.getElementById('admin-loading').innerHTML = '<div style="color:var(--red)">로드 실패: ' + e.message + '</div>';
+  }
+}
+
+// 헬퍼 함수들
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+function getRoleText(role) {
+  return role === 'owner' ? '소유자' : role === 'admin' ? '어드민' : '멤버';
+}
+
+function getAvatarText(name) {
+  return name ? name.charAt(0).toUpperCase() : '?';
+}
+
+function canManageMember(myRole, targetRole) {
+  return (myRole === 'owner') || (myRole === 'admin' && targetRole === 'member');
+}
+
+function getCookie(name) {
+  const value = `; ${document.cookie}`;
+  const parts = value.split(`; ${name}=`);
+  if (parts.length === 2) return parts.pop().split(';').shift();
+}
+
+// 멤버 관리 함수들
+async function inviteMember(workspaceId) {
+  const email = document.getElementById('invite-email').value.trim();
+  const teamName = document.getElementById('invite-team-name').value.trim() || '팀 1';
+  
+  if (!email) {
+    alert('이메일을 입력하세요');
+    return;
+  }
+  
+  try {
+    const token = localStorage.getItem('orbit_token') || getCookie('orbit_token');
+    const resp = await fetch(`/api/workspace/${workspaceId}/invite`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ email, teamName, role: 'member' })
+    });
+    
+    if (!resp.ok) throw new Error('초대 실패');
+    
+    alert(`${email}를 워크스페이스에 초대했습니다`);
+    document.getElementById('invite-email').value = '';
+    document.getElementById('invite-team-name').value = '';
+    closeModal();
+  } catch (e) {
+    console.error('멤버 초대 실패:', e);
+    alert('멤버 초대에 실패했습니다: ' + e.message);
+  }
+}
+
+async function changeRole(workspaceId, userId, currentRole) {
+  const newRole = currentRole === 'admin' ? 'member' : 'admin';
+  
+  try {
+    const token = localStorage.getItem('orbit_token') || getCookie('orbit_token');
+    const resp = await fetch(`/api/workspace/${workspaceId}/members/${userId}/role`, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ role: newRole })
+    });
+    
+    if (!resp.ok) throw new Error('역할 변경 실패');
+    
+    alert(`역할을 ${newRole === 'admin' ? '어드민' : '멤버'}로 변경했습니다`);
+    closeModal();
+  } catch (e) {
+    alert('역할 변경에 실패했습니다: ' + e.message);
+  }
+}
+
+async function removeMember(workspaceId, userId, userName) {
+  if (!confirm(`${userName}을(를) 워크스페이스에서 제거하시겠습니까?`)) return;
+  
+  try {
+    const token = localStorage.getItem('orbit_token') || getCookie('orbit_token');
+    const resp = await fetch(`/api/workspace/${workspaceId}/members/${userId}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    
+    if (!resp.ok) throw new Error('멤버 제거 실패');
+    
+    alert(`${userName}을(를) 워크스페이스에서 제거했습니다`);
+    closeModal();
+  } catch (e) {
+    alert('멤버 제거에 실패했습니다: ' + e.message);
+  }
+}
+
+async function regenerateInviteCode(workspaceId) {
+  if (!confirm('초대 코드를 새로 생성하면 기존 코드는 무효화됩니다. 계속하시겠습니까?')) return;
+  
+  try {
+    const token = localStorage.getItem('orbit_token') || getCookie('orbit_token');
+    const resp = await fetch(`/api/workspace/${workspaceId}/regenerate-code`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    
+    if (!resp.ok) throw new Error('초대 코드 재생성 실패');
+    
+    const result = await resp.json();
+    alert(`새 초대 코드: ${result.inviteCode}`);
+    await loadMyWorkspaces();
+    closeModal();
+  } catch (e) {
+    alert('초대 코드 재생성에 실패했습니다: ' + e.message);
+  }
+}
+
+async function leaveWorkspace(workspaceId, workspaceName) {
+  if (!confirm(`${workspaceName} 워크스페이스에서 나가시겠습니까?`)) return;
+  
+  try {
+    const token = localStorage.getItem('orbit_token') || getCookie('orbit_token');
+    const resp = await fetch('/api/workspace/leave', {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ workspaceId })
+    });
+    
+    if (!resp.ok) throw new Error('워크스페이스 나가기 실패');
+    
+    alert(`${workspaceName}에서 나갔습니다`);
+    await loadMyWorkspaces();
+    closeModal();
+  } catch (e) {
+    alert('워크스페이스 나가기에 실패했습니다: ' + e.message);
+  }
+}
+</script>
+
+</body>
+</html>

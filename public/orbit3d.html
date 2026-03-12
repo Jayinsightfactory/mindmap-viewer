@@ -1281,14 +1281,14 @@ function viewZoom(dir) {
 </div>
 
 <!-- ═══ 히스토리 팝업 모달 ═══ -->
-<div id="history-overlay" class="history-overlay" onclick="if(event.target===this)closeHistoryPopup()"></div>
+<div id="history-overlay" class="history-overlay" onclick="if(event.target.id==='history-overlay')closeHistoryPopup()"></div>
 <div id="history-modal" class="history-modal">
   <div class="history-header">
     <div class="history-title">
       <span class="history-icon">📊</span>
       <span id="history-node-name">작업 히스토리</span>
     </div>
-    <button class="history-close" onclick="closeHistoryPopup()">✕</button>
+    <button class="history-close" type="button" onclick="event.stopPropagation(); closeHistoryPopup()">✕</button>
   </div>
   
   <div class="history-content">
@@ -1323,27 +1323,30 @@ function viewZoom(dir) {
 <style>
 /* ═══ 히스토리 팝업 스타일 ═══ */
 .history-overlay {
-  display: none;
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, 0);
   z-index: 2000;
   animation: fadeIn 0.2s ease;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease, background 0.2s ease, pointer-events 0.2s ease;
 }
 
 .history-overlay.show {
-  display: block;
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.5);
+  pointer-events: auto;
 }
 
 .history-modal {
-  display: none;
   position: fixed;
   top: 50%;
   left: 50%;
-  transform: translate(-50%, -50%);
+  transform: translate(-50%, -50%) scale(0.95);
   background: #0f172a;
   border: 1px solid #1e293b;
   border-radius: 12px;
@@ -1353,24 +1356,25 @@ function viewZoom(dir) {
   max-height: 700px;
   z-index: 2001;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
-  animation: slideUp 0.3s ease;
-  display: flex;
   flex-direction: column;
   overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease, transform 0.3s ease, pointer-events 0.2s ease;
 }
 
 .history-modal.show {
-  display: flex !important;
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(-50%, -50%) scale(1);
 }
 
-@keyframes slideUp {
+@keyframes fadeIn {
   from {
     opacity: 0;
-    transform: translate(-50%, -40%);
   }
   to {
     opacity: 1;
-    transform: translate(-50%, -50%);
   }
 }
 

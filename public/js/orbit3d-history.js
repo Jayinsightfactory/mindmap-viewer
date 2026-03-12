@@ -51,12 +51,13 @@ function closeHistoryPopup() {
   if (overlay) overlay.classList.remove('show');
   if (modal) modal.classList.remove('show');
 
-  currentHistoryNode = null;
-  currentHistoryEvents = [];
-  selectedEventIndex = -1;
-
-  // 자세한 내용 초기화
-  clearHistoryDetail();
+  // 애니메이션 완료 후 상태 초기화
+  setTimeout(() => {
+    currentHistoryNode = null;
+    currentHistoryEvents = [];
+    selectedEventIndex = -1;
+    clearHistoryDetail();
+  }, 300);
 }
 
 /**
