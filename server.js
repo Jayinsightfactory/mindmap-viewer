@@ -34,7 +34,12 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 process.on('uncaughtException', (err) => {
   console.error('[Server] 처리되지 않은 예외:', err.message);
-  // 치명적 예외가 아니면 계속 실행 (Railway 502 방지)
+  // OOM은 복구 불가 → Railway가 자동 재시작하도록 종료
+  if (err.message && (err.message.includes('heap') || err.message.includes('memory'))) {
+    console.error('[Server] OOM 감지 — 프로세스 종료 (Railway 자동 재시작)');
+    process.exit(1);
+  }
+  // 기타 예외는 계속 실행
 });
 
 const express      = require('express');
@@ -669,36 +674,40 @@ app.post('/api/hook', (req, res) => {
     const hookUser  = hookToken ? verifyToken(hookToken) : null;
     const hookUserId = hookUser ? hookUser.id : 'local';
 
-    // DB + JSONL 저장 (save-turn.js 에서 이미 저장한 경우 중복 방지)
+    // DB 저장 (중복 방지) + JSONL 비동기 쓰기
+    const jsonlLines = [];
     for (const event of events) {
       // user_id를 토큰에서 추출한 값으로 덮어쓰기 (프라이버시 격리)
       if (hookUserId !== 'local') event.userId = hookUserId;
       try { insertEvent(event); } catch (e) { console.error('[hook] insertEvent 실패:', e.message); }
-      try {
-        const entry = {
-          id: event.id, type: event.type, source: event.source,
-          sessionId: event.sessionId, parentEventId: event.parentEventId,
-          data: event.data, ts: event.timestamp,
-        };
-        fs.appendFileSync(CONV_FILE, JSON.stringify(entry) + '\n');
-      } catch (e) { console.error('[hook] JSONL 쓰기 실패:', e.message); }
+      jsonlLines.push(JSON.stringify({
+        id: event.id, type: event.type, source: event.source,
+        sessionId: event.sessionId, parentEventId: event.parentEventId,
+        data: event.data, ts: event.timestamp,
+      }));
+    }
+    // 비동기 JSONL 쓰기 (이벤트 루프 블로킹 방지)
+    if (jsonlLines.length > 0) {
+      fs.appendFile(CONV_FILE, jsonlLines.join('\n') + '\n', e => {
+        if (e) console.error('[hook] JSONL 쓰기 실패:', e.message);
+      });
     }
 
-    const fullGraph = getFullGraph();                                  // 충돌 감지용 전체 그래프
-    const stats     = getStats();
+    // ── 경량 stats (DB 집계만, 전체 이벤트 로드 없음) ────────────────────
+    const stats = getStats();
 
-    // tool.end 이벤트 → 완료된 tool.start 노드 ID 추출 (FX 완료 효과용)
+    // tool.end/error → 완료된 tool.start ID (수신된 events 배열에서만 탐색)
     const completedToolStarts = [];
     for (const ev of events) {
       if (ev.type === 'tool.end' || ev.type === 'tool.error') {
-        const startNode = fullGraph.nodes.find(n =>
-          (n.eventType || n.type) === 'tool.start' && n.sessionId === ev.sessionId
+        const startEv = events.find(e =>
+          (e.type === 'tool.start') && e.sessionId === ev.sessionId
         );
-        if (startNode) completedToolStarts.push(startNode.id);
+        if (startEv) completedToolStarts.push(startEv.id);
       }
     }
 
-    // 보안 유출 스캔
+    // 보안 유출 스캔 (수신 이벤트만)
     const leaks = scanForLeaks(events);
     if (leaks.length > 0) {
       const criticals = leaks.filter(l => l.severity === 'critical');
@@ -708,7 +717,7 @@ app.post('/api/hook', (req, res) => {
     // 감사 로그 기록
     auditFromEvents(events);
 
-    // Shadow AI 실시간 감지
+    // Shadow AI 감지 (수신 이벤트만)
     const shadowFindings = [];
     for (const ev of events) {
       const found = checkEventForShadow(ev);
@@ -719,47 +728,27 @@ app.post('/api/hook', (req, res) => {
       shadowFindings.forEach(f => appendAuditLog('shadow.ai.detected', f, { channel: channelId }));
     }
 
-    // 충돌 감지
-    const recentEventsForConflict = getAllEvents(200);
-    const newConflicts = [];
-    for (const ev of events) {
-      const found = checkNewEvent(ev, recentEventsForConflict);
-      newConflicts.push(...found);
-    }
-    if (newConflicts.length > 0) {
-      console.warn(`[CONFLICT] ⚠️ 충돌 감지 ${newConflicts.length}건 — 채널: #${channelId}`);
-    }
-
-    // ── 사용자별 데이터 격리 브로드캐스트 ─────────────────────────────────
-    // broadcastAll 대신 각 WS 클라이언트에 본인의 그래프/세션만 전송
-    const _broadcastUserFiltered = () => {
+    // ── WS 경량 브로드캐스트: 풀 그래프 대신 "새 이벤트 알림"만 전송 ───────
+    // 클라이언트가 필요 시 별도 API로 그래프를 당겨가게 함 (pull 방식)
+    const _broadcastLightweight = () => {
+      const msg = JSON.stringify({
+        type:        'hook.events',
+        count:       events.length,
+        stats,
+        channelId,
+        memberName,
+        completedToolStarts,
+        securityLeaks: leaks,
+        shadowAI:      shadowFindings,
+        // 수신된 이벤트 타입 목록만 (풀 데이터 아님)
+        eventTypes: events.map(e => e.type),
+      });
       for (const client of wss.clients) {
         if (client.readyState !== WebSocket.OPEN) continue;
-        try {
-          const uid = client._userId || 'local';
-          // 엄격 격리: 비인증 클라이언트에게 빈 그래프 전송
-          let userGraph, userSessions;
-          if (uid !== 'local' && uid !== 'anonymous') {
-            userGraph    = getFullGraphForUser(uid);
-            userSessions = getSessionsForUser(uid);
-          } else {
-            userGraph    = { nodes: [], edges: [] };
-            userSessions = [];
-          }
-          client.send(JSON.stringify({
-            type: 'update',
-            graph: userGraph, stats, sessions: userSessions, completedToolStarts,
-            hookSource:    { channelId, memberName },
-            securityLeaks: leaks,
-            conflicts:     newConflicts,
-            shadowAI:      shadowFindings,
-          }));
-        } catch {}
+        try { client.send(msg); } catch {}
       }
     };
-
-    // 채널/개인 모두 사용자별 격리 브로드캐스트 사용
-    _broadcastUserFiltered();
+    _broadcastLightweight();
 
     // Ollama 실시간 분석 (이벤트 큐에 추가)
     for (const ev of events) ollamaAnalyzer.addEvent(ev);
