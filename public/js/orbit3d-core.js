@@ -103,16 +103,65 @@ window.zoomToScreenPos = function(screenX, screenY, targetScale, duration) {
   _animateWorldScale(targetScale, duration || 500);
 };
 
-// 노드 수 기반 자동 피트 (로드 시 호출)
+// 노드 수 기반 자동 피트 (로드 시 1회만)
+let _autoFitDone = false;
 window.autoFitZoom = function(nodeCount) {
-  if (!nodeCount) return;
+  if (!nodeCount || _autoFitDone) return;
+  _autoFitDone = true;
   const target = nodeCount <= 3  ? 1.1  :
                  nodeCount <= 6  ? 0.95 :
                  nodeCount <= 12 ? 0.80 :
                  nodeCount <= 20 ? 0.65 : 0.50;
-  // 현재보다 작을 때만 줌아웃 (이미 줌인돼 있으면 유지)
   if (target < _worldScale) _animateWorldScale(target, 500);
 };
+
+// ── 시점 각도 애니메이션 ─────────────────────────────────────────────────────
+function _animateViewAngle(targetYaw, targetPitch, durationMs) {
+  const startY = _viewYaw, startP = _viewPitch;
+  const dY = targetYaw - startY, dP = targetPitch - startP;
+  const t0 = performance.now();
+  function step(now) {
+    const p = Math.min(1, (now - t0) / durationMs);
+    const eased = p < 0.5 ? 2*p*p : -1+(4-2*p)*p;
+    _viewYaw = startY + dY * eased;
+    _viewPitch = startP + dP * eased;
+    window._viewYaw = _viewYaw; window._viewPitch = _viewPitch;
+    if (p < 1) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+
+// ── 뷰 상태 스택 (단계별 뒤로가기) ─────────────────────────────────────────
+let _viewStateStack = [];
+
+window.pushViewState = function() {
+  _viewStateStack.push({
+    panX: _worldPanX, panY: _worldPanY,
+    scale: _worldScale,
+    yaw: _viewYaw, pitch: _viewPitch,
+  });
+};
+
+window.popViewState = function(animate) {
+  if (_viewStateStack.length === 0) return false;
+  const state = _viewStateStack.pop();
+  const dur = animate ? 400 : 0;
+  if (animate) {
+    _animateWorldPan(state.panX, state.panY, dur);
+    _animateWorldScale(state.scale, dur);
+    _animateViewAngle(state.yaw, state.pitch, dur);
+  } else {
+    _worldPanX = state.panX; _worldPanY = state.panY;
+    _worldScale = state.scale;
+    _viewYaw = state.yaw; _viewPitch = state.pitch;
+    window._worldPanX = _worldPanX; window._worldPanY = _worldPanY;
+    window._worldScale = _worldScale;
+    window._viewYaw = _viewYaw; window._viewPitch = _viewPitch;
+  }
+  return true;
+};
+
+window.clearViewStateStack = function() { _viewStateStack = []; };
 
 // [extracted to orbit3d-drilldown.js]: autoFitDrilldown
 
@@ -990,9 +1039,8 @@ const controls   = new OrbitCam(camera, renderer.domElement);
     lockBtn.style.background = 'rgba(100,116,139,0.15)';
     _animateWorldPan(0, 0, 400);
     _animateWorldScale(1.0, 400);
-    // 시점 각도 리셋
-    _viewYaw = 0; _viewPitch = 0;
-    window._viewYaw = 0; window._viewPitch = 0;
+    _animateViewAngle(0, 0, 400);
+    if (typeof window.clearViewStateStack === 'function') window.clearViewStateStack();
   });
 
   container.appendChild(zoomInBtn);

@@ -153,7 +153,9 @@ renderer.domElement.addEventListener('click', e => {
     if (type === 'constellation') {
       if (_focusedProject === hit.data.projName) {
         exitConstellationFocus();
+        if (typeof window.popViewState === 'function') window.popViewState(true);
       } else {
+        if (typeof window.pushViewState === 'function') window.pushViewState();
         focusProject(hit.data.projName);
       }
       return;
@@ -161,11 +163,15 @@ renderer.domElement.addEventListener('click', e => {
 
     // ── 세션 노드 클릭 → 줌인 + 이벤트 리스트 패널 ─────────────────────────
     if (isPersonal && (type === 'drillSession' || type === 'session')) {
+      // 현재 뷰 상태 저장 (뒤로가기용)
+      if (typeof window.pushViewState === 'function') window.pushViewState();
       _selectedHit = hit;
 
-      // 해당 세션 화면 중심으로 줌인
+      // 해당 세션 화면 중심으로 줌인 (현재 배율 유지하며 약간 확대)
       if (typeof window.zoomToScreenPos === 'function') {
-        window.zoomToScreenPos(hit.cx, hit.cy, 1.8, 500);
+        const curScale = window._worldScale || 1.0;
+        const targetZoom = Math.max(curScale, Math.min(curScale * 1.5, 2.0));
+        window.zoomToScreenPos(hit.cx, hit.cy, targetZoom, 500);
       }
 
       const sessionId = hit.data.clusterId || hit.data.sessionId;
@@ -240,32 +246,36 @@ renderer.domElement.addEventListener('click', e => {
       if (_companyMode) unfocusDept(); else unfocusMember();
       closePanel();
     } else if (isPersonal) {
-      // 개인 모드: 4단계 드릴다운 뒤로가기 (3→2→1→0)
+      // 개인 모드: 단계별 뒤로가기 + 뷰 상태 복원
       if (_drillStage === 3) {
         // 4단계 → 3단계: 파일상세 → 타임라인 복귀
         _drillStage = 2;
         _drillTimelineEvent = null;
         if (_drillCategory) showDrillTimeline(_drillCategory);
-        lerpCameraTo(90, 0, 0, 0, 400);
+        if (typeof window.popViewState === 'function') window.popViewState(true);
       } else if (_drillStage === 2) {
-        // 3단계 → 2단계: 패널 닫기, 카테고리 링 유지
+        // 3단계 → 2단계: 타임라인 → 프로젝트 뷰 복귀
         _drillStage = 1;
         _drillCategory = null;
         _focusedCategory = null;
         _drillTimelineEvent = null;
+        _selectedHit = null;
         closePanel();
-        lerpCameraTo(85, 0, 0, 0, 500);
+        // 뷰 상태 복원 (세션 클릭 전으로)
+        if (typeof window.popViewState === 'function') window.popViewState(true);
       } else if (_drillStage === 1 || _focusedProject) {
         // 2단계 → 1단계: 전체 뷰로
         exitConstellationFocus();
+        if (typeof window.popViewState === 'function') window.popViewState(true);
       } else if (_selectedHit) {
         _selectedHit = null;
         _pyramidScrollOffset = 0;
         closePanel();
+        if (typeof window.popViewState === 'function') window.popViewState(true);
       } else if (_focusedCategory) {
         exitCategoryFocus();
         closePanel();
-        lerpCameraTo(60, 0, 0, 0, 500);
+        if (typeof window.popViewState === 'function') window.popViewState(true);
       }
     } else {
       _selectedHit = null;

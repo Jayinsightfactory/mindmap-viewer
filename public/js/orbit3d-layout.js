@@ -77,6 +77,14 @@ function _starPath(ctx, cx, cy, spikes, outerR, innerR, rotation) {
   ctx.closePath();
 }
 
+// ─── 월드 좌표 회전 유틸 (빌보드 방식) ─────────────────────────────────────
+function _applyViewRot(x, y) {
+  const yaw = window._viewYaw || 0, pitch = window._viewPitch || 0;
+  if (yaw === 0 && pitch === 0) return { x, y };
+  const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch);
+  return { x: x * cy - y * sy, y: x * sy * cp + y * cy * cp };
+}
+
 // ─── 팀원 클러스터 렌더링 (월드 줌아웃 시 등장) ──────────────────────────────
 const _TEAM_WORLD_POS = [
   [ 380,    0], [-380,    0],
@@ -95,7 +103,9 @@ function _drawTeamClusters(ctx, txX, txY, W, H, scale) {
   // 팀 데이터 없으면 별 모양 초대 플레이스홀더
   if (!data?.members?.length) {
     const now = performance.now() / 1000;
-    _TEAM_WORLD_POS.slice(0, 2).forEach(([wox, woy], idx) => {
+    _TEAM_WORLD_POS.slice(0, 2).forEach(([rawX, rawY], idx) => {
+      const rp = _applyViewRot(rawX, rawY);
+      const wox = rp.x, woy = rp.y;
       const scx = wox * scale + txX, scy = woy * scale + txY;
       if (scx < -200 || scx > W + 200 || scy < -200 || scy > H + 200) return;
       ctx.save();
@@ -135,7 +145,9 @@ function _drawTeamClusters(ctx, txX, txY, W, H, scale) {
   }
 
   data.members.forEach((m, i) => {
-    const [wox, woy] = _TEAM_WORLD_POS[i] || [900 + i * 200, 0];
+    const [rawMx, rawMy] = _TEAM_WORLD_POS[i] || [900 + i * 200, 0];
+    const rp = _applyViewRot(rawMx, rawMy);
+    const wox = rp.x, woy = rp.y;
     const scx = wox * scale + txX, scy = woy * scale + txY;
     if (scx < -200 || scx > W + 200 || scy < -200 || scy > H + 200) return;
 
@@ -333,34 +345,39 @@ function drawCompactProjectView() {
   const _aliases = (() => { try { return JSON.parse(localStorage.getItem('orbitLabelAliases') || '{}'); } catch { return {}; } })();
   const _sunScreenCoords = [];
 
-  // ── 시점 회전 (pseudo-3D perspective) ──────────────────────────────────────
+  // ── 시점 회전 (빌보드 방식: 위치만 회전, 모양은 정면 유지) ──────────────────
   const _vYaw = window._viewYaw || 0;
   const _vPitch = window._viewPitch || 0;
   const _cosY = Math.cos(_vYaw), _sinY = Math.sin(_vYaw);
   const _cosP = Math.cos(_vPitch);
 
-  // 월드→스크린 변환 (시점 회전 포함)
-  function worldToScreen(wx, wy) {
-    const rx = wx * _cosY + wy * (-_sinY);
-    const ry = wx * _sinY * _cosP + wy * _cosY * _cosP;
-    return { x: rx * _wScale + _txX, y: ry * _wScale + _txY };
+  // 월드 좌표 회전 (위치만 변환, 도형은 정면 유지 = 빌보드)
+  function _rotW(wx, wy) {
+    if (_vYaw === 0 && _vPitch === 0) return { x: wx, y: wy };
+    return { x: wx * _cosY - wy * _sinY, y: wx * _sinY * _cosP + wy * _cosY * _cosP };
   }
 
-  // ── 월드 트랜스폼 ──────────────────────────────────────────────────────────
+  // 월드→스크린 변환 (시점 회전 포함)
+  function worldToScreen(wx, wy) {
+    const r = _rotW(wx, wy);
+    return { x: r.x * _wScale + _txX, y: r.y * _wScale + _txY };
+  }
+
+  // ── 월드 트랜스폼 (translate + scale만, transform 없음 = 빌보드) ────────────
   ctx.save();
   ctx.translate(_txX, _txY);
   ctx.scale(_wScale, _wScale);
-  // 시점 회전 적용 (yaw + pitch)
-  if (_vYaw !== 0 || _vPitch !== 0) {
-    ctx.transform(_cosY, _sinY * _cosP, -_sinY, _cosY * _cosP, 0, 0);
-  }
+  // NOTE: ctx.transform() 사용하지 않음 — 도형이 찌그러지지 않게 (빌보드)
+  // 대신 각 위치를 _rotW()로 개별 회전
 
   // ── 태양계 렌더링 ──────────────────────────────────────────────────────────
   projects.forEach((proj, i) => {
     const angle = baseAngle + i * angleStep;
     const isThisDrilled = isDrillStage1 && _drillProject.name === proj.name;
-    const sunCx = Math.cos(angle) * CENTER_DIST;
-    const sunCy = Math.sin(angle) * CENTER_DIST;
+    const _rawSunX = Math.cos(angle) * CENTER_DIST;
+    const _rawSunY = Math.sin(angle) * CENTER_DIST;
+    const _sunR = _rotW(_rawSunX, _rawSunY);
+    const sunCx = _sunR.x, sunCy = _sunR.y;
     const isHover = _hoveredHit?.data?.type === 'constellation' && _hoveredHit?.data?.projName === proj.name;
     const color = proj.color;
     const info = analyzeProject(proj);
@@ -368,8 +385,8 @@ function drawCompactProjectView() {
     const solarR = solarRadii[i];
     const numPlanets = Math.min(proj.planets.length, 12);
 
-    const _sunSc = worldToScreen(sunCx, sunCy);
-    _sunScreenCoords.push({ sx: _sunSc.x, sy: _sunSc.y, color });
+    // sunCx/sunCy는 이미 _rotW 적용됨 → 직접 스크린 변환
+    _sunScreenCoords.push({ sx: sunCx * _wScale + _txX, sy: sunCy * _wScale + _txY, color });
 
     if (dimmed) ctx.globalAlpha = 0.15;
 
@@ -408,12 +425,18 @@ function drawCompactProjectView() {
       const planetAngleStep = (Math.PI * 2) / numPlanets;
       const orbitR = ORBIT_BASE + Math.min(numPlanets, 8) * (ORBIT_PER_PLANET * 0.6);
 
-      // 궤도 링
+      // 궤도 링 (회전된 경로로 그리기 — 시점 회전 시 타원형으로 보임)
       ctx.save();
       ctx.globalAlpha = dimmed ? 0.06 : 0.2;
       ctx.strokeStyle = color; ctx.lineWidth = 0.6;
       ctx.setLineDash([4, 6]);
-      ctx.beginPath(); ctx.arc(sunCx, sunCy, orbitR, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath();
+      for (let oa = 0; oa <= Math.PI * 2 + 0.1; oa += 0.15) {
+        const oRaw = _rotW(_rawSunX + Math.cos(oa) * orbitR, _rawSunY + Math.sin(oa) * orbitR);
+        if (oa === 0) ctx.moveTo(oRaw.x, oRaw.y);
+        else ctx.lineTo(oRaw.x, oRaw.y);
+      }
+      ctx.stroke();
       ctx.setLineDash([]);
       ctx.restore();
       if (dimmed) ctx.globalAlpha = 0.15;
@@ -422,8 +445,11 @@ function drawCompactProjectView() {
       for (let pi = 0; pi < maxShow; pi++) {
         const planet = proj.planets[pi];
         const pAngle = -Math.PI / 2 + pi * planetAngleStep + now * 0.05;
-        const px = sunCx + Math.cos(pAngle) * orbitR;
-        const py = sunCy + Math.sin(pAngle) * orbitR;
+        // 원본 위치에서 회전 적용 (빌보드: 위치만 회전, 구체는 정면)
+        const _rawPx = _rawSunX + Math.cos(pAngle) * orbitR;
+        const _rawPy = _rawSunY + Math.sin(pAngle) * orbitR;
+        const _pRot = _rotW(_rawPx, _rawPy);
+        const px = _pRot.x, py = _pRot.y;
         const evCnt = planet.userData.eventCount || 0;
         const pR = Math.max(18, Math.min(28, 18 + evCnt * 0.3));
         const isSubHover = _hoveredHit?.obj === planet;
@@ -494,11 +520,10 @@ function drawCompactProjectView() {
 
   ctx.restore();
 
-  // ── hitArea 스크린 변환 (시점 회전 포함) ──
+  // ── hitArea 스크린 변환 (위치는 이미 _rotW 적용됨 → scale+translate만) ──
   _hitAreas.forEach(h => {
-    const sc = worldToScreen(h.cx, h.cy);
-    h.cx = sc.x;
-    h.cy = sc.y;
+    h.cx = h.cx * _wScale + _txX;
+    h.cy = h.cy * _wScale + _txY;
     h.r  = h.r * _wScale;
   });
   _hitAreas.sort((a, b) => {
