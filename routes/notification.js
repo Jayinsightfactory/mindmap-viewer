@@ -27,29 +27,55 @@ function createNotificationRouter({ getDb, verifyToken }) {
     next();
   }
 
+  // ── DB 헬퍼 (SQLite sync / PG async 통일) ──────────────────────────────
+  function _toPg(sql) {
+    let i = 0;
+    return sql.replace(/\?/g, () => `$${++i}`);
+  }
+  function _isPg() { const db = getDb(); return db && !db.prepare; }
+
+  function dbGet(sql, params = []) {
+    const db = getDb();
+    if (!db) return null;
+    if (db.prepare) return db.prepare(sql).get(...params);
+    return db.query(_toPg(sql), params).then(r => r.rows[0]);
+  }
+  function dbAll(sql, params = []) {
+    const db = getDb();
+    if (!db) return [];
+    if (db.prepare) return db.prepare(sql).all(...params);
+    return db.query(_toPg(sql), params).then(r => r.rows);
+  }
+  function dbRun(sql, params = []) {
+    const db = getDb();
+    if (!db) return;
+    if (db.prepare) return db.prepare(sql).run(...params);
+    return db.query(_toPg(sql), params);
+  }
+
   // GET /api/notifications
-  router.get('/notifications', auth, (req, res) => {
+  router.get('/notifications', auth, async (req, res) => {
     try {
-      const db = getDb();
-      const rows = db.prepare(
-        'SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 100'
-      ).all(req.user.id);
-      rows.forEach(r => {
+      const rows = await Promise.resolve(dbAll(
+        'SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 100',
+        [req.user.id]
+      ));
+      (rows || []).forEach(r => {
         try { r.data = JSON.parse(r.data_json || '{}'); } catch { r.data = {}; }
       });
-      res.json(rows);
+      res.json(rows || []);
     } catch (e) {
       res.status(500).json({ error: e.message });
     }
   });
 
   // GET /api/notifications/unread-count
-  router.get('/notifications/unread-count', auth, (req, res) => {
+  router.get('/notifications/unread-count', auth, async (req, res) => {
     try {
-      const db = getDb();
-      const row = db.prepare(
-        'SELECT COUNT(*) as cnt FROM notifications WHERE user_id = ? AND is_read = 0'
-      ).get(req.user.id);
+      const row = await Promise.resolve(dbGet(
+        'SELECT COUNT(*) as cnt FROM notifications WHERE user_id = ? AND is_read = 0',
+        [req.user.id]
+      ));
       res.json({ count: row?.cnt || 0 });
     } catch (e) {
       res.status(500).json({ error: e.message });
@@ -57,11 +83,12 @@ function createNotificationRouter({ getDb, verifyToken }) {
   });
 
   // PUT /api/notifications/:id/read
-  router.put('/notifications/:id/read', auth, (req, res) => {
+  router.put('/notifications/:id/read', auth, async (req, res) => {
     try {
-      const db = getDb();
-      db.prepare('UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ?')
-        .run(req.params.id, req.user.id);
+      await Promise.resolve(dbRun(
+        'UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ?',
+        [req.params.id, req.user.id]
+      ));
       res.json({ ok: true });
     } catch (e) {
       res.status(500).json({ error: e.message });
@@ -69,10 +96,12 @@ function createNotificationRouter({ getDb, verifyToken }) {
   });
 
   // PUT /api/notifications/read-all
-  router.put('/notifications/read-all', auth, (req, res) => {
+  router.put('/notifications/read-all', auth, async (req, res) => {
     try {
-      const db = getDb();
-      db.prepare('UPDATE notifications SET is_read = 1 WHERE user_id = ?').run(req.user.id);
+      await Promise.resolve(dbRun(
+        'UPDATE notifications SET is_read = 1 WHERE user_id = ?',
+        [req.user.id]
+      ));
       res.json({ ok: true });
     } catch (e) {
       res.status(500).json({ error: e.message });
@@ -80,11 +109,12 @@ function createNotificationRouter({ getDb, verifyToken }) {
   });
 
   // DELETE /api/notifications/:id
-  router.delete('/notifications/:id', auth, (req, res) => {
+  router.delete('/notifications/:id', auth, async (req, res) => {
     try {
-      const db = getDb();
-      db.prepare('DELETE FROM notifications WHERE id = ? AND user_id = ?')
-        .run(req.params.id, req.user.id);
+      await Promise.resolve(dbRun(
+        'DELETE FROM notifications WHERE id = ? AND user_id = ?',
+        [req.params.id, req.user.id]
+      ));
       res.json({ ok: true });
     } catch (e) {
       res.status(500).json({ error: e.message });
@@ -98,10 +128,17 @@ function createNotificationRouter({ getDb, verifyToken }) {
 function createNotification(db, { userId, type, title, body, data } = {}) {
   if (!db || !userId || !type || !title) return null;
   const id = Date.now().toString(36) + Math.random().toString(36).slice(2);
+  const sql = 'INSERT INTO notifications (id, user_id, type, title, body, data_json) VALUES (?, ?, ?, ?, ?, ?)';
+  const params = [id, userId, type, title, body || '', JSON.stringify(data || {})];
   try {
-    db.prepare(
-      'INSERT INTO notifications (id, user_id, type, title, body, data_json) VALUES (?, ?, ?, ?, ?, ?)'
-    ).run(id, userId, type, title, body || '', JSON.stringify(data || {}));
+    if (db.prepare) {
+      db.prepare(sql).run(...params);
+    } else {
+      // PG
+      let i = 0;
+      const pgSql = sql.replace(/\?/g, () => `$${++i}`);
+      db.query(pgSql, params).catch(e => console.warn('[notification] PG insert error:', e.message));
+    }
     return id;
   } catch (e) {
     console.warn('[notification] create error:', e.message);

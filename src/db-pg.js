@@ -67,12 +67,14 @@ async function createTables() {
       channel_id TEXT NOT NULL DEFAULT 'default',
       started_at TEXT NOT NULL,
       ended_at TEXT,
+      title TEXT,
       source TEXT,
       model_id TEXT,
       project_dir TEXT,
       event_count INTEGER DEFAULT 0,
       status TEXT DEFAULT 'active'
     );
+    ALTER TABLE sessions ADD COLUMN IF NOT EXISTS title TEXT;
 
     CREATE TABLE IF NOT EXISTS files (
       path TEXT PRIMARY KEY,

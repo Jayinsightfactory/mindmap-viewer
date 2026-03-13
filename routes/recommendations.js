@@ -241,7 +241,7 @@ function createRecommendationsRouter({ verifyToken, dbModule }) {
    *   "recentProjects": ["Project A", "Project B"]
    * }
    */
-  router.post('/recommendations/analyze', authRequired, (req, res) => {
+  router.post('/recommendations/analyze', authRequired, async (req, res) => {
     try {
       const companyData = req.body;
       const { companyId, name, size, industry } = companyData;
@@ -261,16 +261,15 @@ function createRecommendationsRouter({ verifyToken, dbModule }) {
       // 분석 결과 저장
       const db = dbModule.getDb();
       if (db) {
-        db.prepare(`
-          INSERT INTO analysis_results (id, user_id, company_id, findings_json, recommendations_json, created_at)
-          VALUES (?, ?, ?, ?, ?, datetime('now'))
-        `).run(
-          analysisId,
-          req.user.id,
-          companyId || name,
-          JSON.stringify(findings),
-          JSON.stringify(recommendations)
-        );
+        const sql = `INSERT INTO analysis_results (id, user_id, company_id, findings_json, recommendations_json, created_at)
+          VALUES (?, ?, ?, ?, ?, datetime('now'))`;
+        const params = [analysisId, req.user.id, companyId || name, JSON.stringify(findings), JSON.stringify(recommendations)];
+        if (db.prepare) {
+          db.prepare(sql).run(...params);
+        } else {
+          let i = 0;
+          await db.query(sql.replace(/\?/g, () => `$${++i}`).replace(/datetime\('now'\)/g, 'NOW()'), params);
+        }
       }
 
       res.json({
@@ -313,16 +312,20 @@ function createRecommendationsRouter({ verifyToken, dbModule }) {
   /**
    * 분석 결과 조회
    */
-  router.get('/recommendations/:analysisId', authRequired, (req, res) => {
+  router.get('/recommendations/:analysisId', authRequired, async (req, res) => {
     try {
       const db = dbModule.getDb();
       let result = null;
 
       if (db) {
-        result = db.prepare(`
-          SELECT * FROM analysis_results
-          WHERE id = ? AND user_id = ?
-        `).get(req.params.analysisId, req.user.id);
+        const sql = 'SELECT * FROM analysis_results WHERE id = ? AND user_id = ?';
+        const params = [req.params.analysisId, req.user.id];
+        if (db.prepare) {
+          result = db.prepare(sql).get(...params);
+        } else {
+          const r = await db.query(sql.replace('?', '$1').replace('?', '$2'), params);
+          result = r.rows[0];
+        }
       }
 
       if (!result) {
@@ -346,18 +349,19 @@ function createRecommendationsRouter({ verifyToken, dbModule }) {
   /**
    * 분석 이력 조회 (최신 10개)
    */
-  router.get('/recommendations/history', authRequired, (req, res) => {
+  router.get('/recommendations/history', authRequired, async (req, res) => {
     try {
       const db = dbModule.getDb();
       let results = [];
 
       if (db) {
-        results = db.prepare(`
-          SELECT id, company_id, created_at FROM analysis_results
-          WHERE user_id = ?
-          ORDER BY created_at DESC
-          LIMIT 10
-        `).all(req.user.id);
+        const sql = 'SELECT id, company_id, created_at FROM analysis_results WHERE user_id = ? ORDER BY created_at DESC LIMIT 10';
+        if (db.prepare) {
+          results = db.prepare(sql).all(req.user.id);
+        } else {
+          const r = await db.query(sql.replace('?', '$1'), [req.user.id]);
+          results = r.rows;
+        }
       }
 
       res.json({

@@ -336,10 +336,15 @@ function createMarketplaceRouter({ verifyToken, dbModule }) {
         installationId = `inst_${Date.now()}_${req.user.id}`;
         const db = dbModule.getDb?.();
         if (db) {
-          db.prepare(`
-            INSERT INTO solution_installations (id, user_id, solution_id, status, created_at)
-            VALUES (?, ?, ?, 'pending', datetime('now'))
-          `).run(installationId, req.user.id, req.params.id);
+          const sql = `INSERT INTO solution_installations (id, user_id, solution_id, status, created_at)
+            VALUES (?, ?, ?, 'pending', datetime('now'))`;
+          const params = [installationId, req.user.id, req.params.id];
+          if (db.prepare) {
+            db.prepare(sql).run(...params);
+          } else {
+            let idx = 0;
+            await db.query(sql.replace(/\?/g, () => `$${++idx}`).replace(/datetime\('now'\)/g, 'NOW()'), params);
+          }
         }
       }
 
