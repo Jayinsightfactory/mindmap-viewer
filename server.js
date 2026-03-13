@@ -908,11 +908,11 @@ app.get('/api/tracker/status', async (req, res) => {
         isOnline = true;
       }
       // 유저 이벤트 없어도 전체 이벤트가 있으면 트래커 활성 (local 이벤트 아직 미귀속)
+      // 단, eventCount는 유저 본인의 이벤트만 표시 (데이터 격리)
       if (!isOnline) {
         const totalStats = getStats ? await Promise.resolve(getStats()) : null;
         if (totalStats && totalStats.eventCount > 0) {
           isOnline = true;
-          if (totalStats.eventCount > userEventCount) userEventCount = totalStats.eventCount;
         }
       }
     } catch {}

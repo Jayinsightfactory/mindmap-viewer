@@ -110,11 +110,14 @@ function createRouter({ getDb, verifyToken }) {
   router.post('/profile', auth, (req, res) => {
     try {
       const db = getDb();
+      const body = req.body || {};
       const {
-        name, headline, company, location, bio,
+        headline, company, location, bio,
         skills, experiences, education, links,
         avatar_url, is_public,
-      } = req.body || {};
+      } = body;
+      // displayName → name 호환 (프론트에서 displayName으로 보낼 수 있음)
+      const name = body.name || body.displayName || '';
 
       db.prepare(`
         INSERT INTO user_profiles

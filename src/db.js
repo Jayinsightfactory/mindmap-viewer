@@ -369,8 +369,7 @@ function createTables() {
       status        TEXT DEFAULT 'pending',  -- pending, installing, active, completed
       config_json   TEXT DEFAULT '{}',
       created_at    TEXT DEFAULT (datetime('now')),
-      updated_at    TEXT DEFAULT (datetime('now')),
-      FOREIGN KEY (user_id) REFERENCES events(user_id)
+      updated_at    TEXT DEFAULT (datetime('now'))
     );
     CREATE INDEX IF NOT EXISTS idx_sol_inst_user ON solution_installations(user_id);
     CREATE INDEX IF NOT EXISTS idx_sol_inst_status ON solution_installations(status);

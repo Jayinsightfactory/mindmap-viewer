@@ -320,22 +320,27 @@ function createMarketplaceRouter({ verifyToken, dbModule }) {
   /**
    * 솔루션 설치 요청 (인증 필요)
    */
-  router.post('/marketplace/solutions/install/:id', authRequired, (req, res) => {
+  router.post('/marketplace/solutions/install/:id', authRequired, async (req, res) => {
     try {
       const solution = SOLUTION_CATALOG.find(s => s.id === req.params.id);
       if (!solution) {
         return res.status(404).json({ error: 'Solution not found' });
       }
 
-      const installationId = `inst_${Date.now()}_${req.user.id}`;
-      const db = dbModule.getDb();
-
-      // 설치 기록 저장
-      if (db) {
-        db.prepare(`
-          INSERT INTO solution_installations (id, user_id, solution_id, status, created_at)
-          VALUES (?, ?, ?, 'pending', datetime('now'))
-        `).run(installationId, req.user.id, req.params.id);
+      // 모듈 함수 사용 (PG/SQLite 양쪽 호환)
+      let installationId = null;
+      if (typeof dbModule.installSolution === 'function') {
+        installationId = await Promise.resolve(dbModule.installSolution(req.user.id, req.params.id));
+      } else {
+        // fallback: 직접 DB 호출
+        installationId = `inst_${Date.now()}_${req.user.id}`;
+        const db = dbModule.getDb?.();
+        if (db) {
+          db.prepare(`
+            INSERT INTO solution_installations (id, user_id, solution_id, status, created_at)
+            VALUES (?, ?, ?, 'pending', datetime('now'))
+          `).run(installationId, req.user.id, req.params.id);
+        }
       }
 
       res.json({

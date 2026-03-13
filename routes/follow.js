@@ -397,9 +397,9 @@ function createRouter({ getDb, verifyToken, searchUsers, getUserById, createNoti
                    CASE WHEN uf.follower_id IS NOT NULL THEN 1 ELSE 0 END AS is_following
             FROM user_profiles up
             LEFT JOIN user_follows uf ON uf.follower_id = ? AND uf.following_id = up.user_id
-            WHERE up.user_id != ? AND up.name LIKE ?
+            WHERE up.user_id != ? AND (up.name LIKE ? OR up.headline LIKE ? OR up.bio LIKE ?)
             LIMIT 20
-          `, [req.user.id, req.user.id, like]);
+          `, [req.user.id, req.user.id, like, like, like]);
         } catch (_) {}
       }
 
