@@ -34,6 +34,23 @@ async function loadTeamWorldData() {
 }
 window.loadTeamWorldData = loadTeamWorldData;
 
+// ── 프로젝트 데이터 로드 (유니버스 뷰용) ──────────────────────────────────────
+async function loadProjectsData() {
+  const token = _getAuthToken();
+  if (!token) { window._userProjects = null; return; }
+  try {
+    const res = await _authFetch('/api/projects');
+    if (!res.ok) return;
+    const data = await res.json();
+    window._userProjects = data.projects || [];
+    console.log(`[projects] ${window._userProjects.length}개 프로젝트 로드`);
+  } catch (e) {
+    console.warn('[projects] load error:', e.message);
+    window._userProjects = null;
+  }
+}
+window.loadProjectsData = loadProjectsData;
+
 async function loadData() {
   document.getElementById('loading-msg').textContent = '서버에서 작업 데이터 가져오는 중…';
   try {
@@ -57,6 +74,8 @@ async function loadData() {
     if (typeof updateActiveFiles === 'function') updateActiveFiles();  // 활성 파일 갱신
     if (typeof _loadWorkspaceState === 'function') _loadWorkspaceState();
     if (!_teamMode && !_companyMode && !_parallelMode && typeof controls !== 'undefined') controls.enabled = false;
+    // 프로젝트 데이터 로드 (유니버스 뷰용)
+    loadProjectsData();
     // 팀원 월드 데이터 비동기 로드 (개인 뷰에서 줌아웃 시 표시용)
     loadTeamWorldData();
     document.getElementById('loading').style.display = 'none';
