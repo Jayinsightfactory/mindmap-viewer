@@ -38,6 +38,17 @@ async function loadData() {
   document.getElementById('loading-msg').textContent = '서버에서 작업 데이터 가져오는 중…';
   try {
     const res  = await _authFetch('/api/graph');  // 토큰 포함 → 내 데이터만 수신
+    // 토큰 만료/무효 → 자동 로그아웃 + 재로그인 유도
+    if (res.status === 401 && _getAuthToken()) {
+      console.warn('[auth] 토큰 만료 — 자동 로그아웃');
+      localStorage.removeItem('orbitUser');
+      localStorage.removeItem('orbit_token');
+      if (typeof _orbitUser !== 'undefined') _orbitUser = null;
+      if (typeof renderLoginState === 'function') renderLoginState();
+      if (typeof openLoginModal === 'function') setTimeout(openLoginModal, 300);
+      document.getElementById('loading').style.display = 'none';
+      return;
+    }
     const data = await res.json();
     const nodes = data.nodes || [];
     buildPlanetSystem(nodes);
