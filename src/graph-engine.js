@@ -107,6 +107,12 @@ function buildGraph(events) {
       purposeLabel: event.purposeLabel || null,
       purposeColor: event.purposeColor || null,
       purposeIcon:  event.purposeIcon  || null,
+      // 프로젝트 메타 (mywork-renderer에서 "프로젝트명 — 목적" 라벨용)
+      projectName:  event.data?.projectName || event.data?.project || event.data?.repo || null,
+      firstMsg:     event.data?.firstMsg    || null,
+      msgPreview:   event.data?.inputPreview || event.data?.content?.slice?.(0, 50) || null,
+      autoTitle:    event.autoTitle || null,
+      domain:       event.domain   || null,
     };
 
     nodes.push(node);

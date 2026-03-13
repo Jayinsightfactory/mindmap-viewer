@@ -382,6 +382,60 @@ async function _getCachedGraph(key, builder) {
   return graph;
 }
 
+// ── 세션별 프로젝트 메타데이터를 이벤트에 주입 ──────────────────────────────
+// mywork-renderer에서 "프로젝트명 — 작업 목적" 형태 라벨을 생성하기 위해 필요
+function _enrichEventsWithSessionMeta(events) {
+  const sessionMap = {};
+  for (const e of events) {
+    const sid = e.sessionId;
+    if (!sid) continue;
+    if (!sessionMap[sid]) {
+      sessionMap[sid] = { firstMsg: null, projectDir: null, projectName: null };
+    }
+    const sm = sessionMap[sid];
+    // 첫 user.message를 firstMsg로 사용
+    if (!sm.firstMsg && e.type === 'user.message' && e.data?.content) {
+      sm.firstMsg = String(e.data.content).slice(0, 60);
+    }
+    // 파일 경로에서 프로젝트 디렉토리 추출
+    if (!sm.projectDir && e.data?.file_path) {
+      const fp = e.data.file_path;
+      const parts = fp.replace(/\\/g, '/').split('/');
+      // /Users/xxx/프로젝트명/... 에서 프로젝트 폴더 추출
+      const srcIdx = parts.findIndex(p => p === 'src' || p === 'public' || p === 'routes' || p === 'lib');
+      if (srcIdx > 0) {
+        sm.projectDir = parts.slice(0, srcIdx).join('/');
+        sm.projectName = parts[srcIdx - 1];
+      }
+    }
+    if (!sm.projectDir && e.data?.command) {
+      const cdMatch = String(e.data.command).match(/cd\s+["']?([^\s"']+)/);
+      if (cdMatch) {
+        const dirParts = cdMatch[1].replace(/\\/g, '/').split('/');
+        sm.projectName = dirParts[dirParts.length - 1] || dirParts[dirParts.length - 2];
+      }
+    }
+    if (!sm.projectName && e.data?.projectName) sm.projectName = e.data.projectName;
+    if (!sm.projectName && e.data?.project)     sm.projectName = e.data.project;
+    if (!sm.projectName && e.data?.repo)        sm.projectName = e.data.repo;
+  }
+  // 메타데이터를 이벤트에 주입
+  for (const e of events) {
+    const sm = sessionMap[e.sessionId];
+    if (!sm) continue;
+    if (!e.data) e.data = {};
+    if (sm.projectName && !e.data.projectName) e.data.projectName = sm.projectName;
+    if (sm.firstMsg && !e.data.firstMsg)       e.data.firstMsg = sm.firstMsg;
+    // autoTitle: 프로젝트명 + firstMsg 조합
+    if (!e.autoTitle) {
+      if (sm.projectName && sm.firstMsg) e.autoTitle = `${sm.projectName} — ${sm.firstMsg.slice(0, 30)}`;
+      else if (sm.projectName) e.autoTitle = sm.projectName;
+      else if (sm.firstMsg) e.autoTitle = sm.firstMsg.slice(0, 40);
+    }
+  }
+  return events;
+}
+
 async function getFullGraph(sessionFilter, channelFilter) {
   const cacheKey = `full:${sessionFilter||''}:${channelFilter||''}`;
   return _getCachedGraph(cacheKey, async () => {
@@ -393,7 +447,7 @@ async function getFullGraph(sessionFilter, channelFilter) {
             : (await Promise.resolve(getAllEvents(MAX_EVENTS_LOAD))).filter(e => e.channelId === channelFilter))
         : await Promise.resolve(getAllEvents(MAX_EVENTS_LOAD));
 
-    const events = annotateEventsWithPurpose(rawEvents);
+    const events = _enrichEventsWithSessionMeta(annotateEventsWithPurpose(rawEvents));
     const graph  = buildGraph(events);
     computeActivityScores(graph.nodes, Date.now());
     applyActivityVisualization(graph.nodes);
@@ -413,7 +467,7 @@ async function getFullGraphForUser(userId, sessionFilter) {
         ? await Promise.resolve(getEventsByUser(userId))
         : (await Promise.resolve(getAllEvents(MAX_EVENTS_LOAD))).filter(e => e.userId === userId);
     }
-    const events = annotateEventsWithPurpose(rawEvents);
+    const events = _enrichEventsWithSessionMeta(annotateEventsWithPurpose(rawEvents));
     const graph  = buildGraph(events);
     computeActivityScores(graph.nodes, Date.now());
     applyActivityVisualization(graph.nodes);

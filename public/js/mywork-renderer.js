@@ -565,13 +565,21 @@ function onMyWorkClick(event) {
   }
 }
 
-// ─── 스프라이트 빌보드 ────────────────────────────────────────────────────────
+// ─── 스프라이트 빌보드 + 크기 보정 ───────────────────────────────────────────
 function updateBillboard() {
   if (!window.camera) return;
-  const q     = window.camera.quaternion;
+  const q   = window.camera.quaternion;
+  const cam = window.camera;
   const items = [...MW.cardMeshes];
   if (MW.hubMesh) items.push(MW.hubMesh);
-  items.forEach(m => m.quaternion.copy(q));
+  items.forEach(m => {
+    m.quaternion.copy(q);
+    // 카메라 거리에 비례한 스케일 보정 → 화면에서 동일 크기로 보임
+    const dist = cam.position.distanceTo(m.position);
+    const ref  = 14; // 기준 거리 (이 거리에서 scale=1)
+    const s    = Math.max(0.5, Math.min(2.0, dist / ref));
+    m.scale.setScalar(s);
+  });
 }
 
 // ─── buildPlanetSystem 오버라이드 ────────────────────────────────────────────
@@ -620,37 +628,93 @@ window.buildPlanetSystem = function(nodeList) {
   MW.scene     = window.scene;
   MW.viewStack = [];
 
-  // purposeLabel 기준 그룹화 → 0단계 카드 (카테고리 정규화 적용)
+  // ── 세션(프로젝트) 기반 그룹화 → 0단계 카드 ──
+  // "프로젝트명 — 작업 목적" 형태의 의미있는 카드 생성
   const groupMap = {};
   (nodeList || []).forEach(n => {
-    const rawKey = n.purposeLabel || n.domain || n.type || '기타';
-    const key    = _mwNormCat(rawKey);  // 영문 → 한국어 정규화
+    // 그룹 키: 세션ID(프로젝트 단위) > autoTitle > purposeLabel > 카테고리
+    const sessionKey = n.sessionId || n.group || null;
+    const autoTitle  = n.autoTitle || null;
+    const projName   = n.projectName || n.project || n.repo || null;
+    const firstMsg   = n.firstMsg || n.msgPreview || null;
+
+    // 의미있는 그룹 라벨 생성
+    let groupLabel;
+    if (autoTitle) {
+      groupLabel = autoTitle;
+    } else if (projName && firstMsg) {
+      groupLabel = `${projName} — ${firstMsg.slice(0, 25)}`;
+    } else if (projName) {
+      groupLabel = projName;
+    } else if (firstMsg && firstMsg.length > 3) {
+      groupLabel = firstMsg.slice(0, 35);
+    } else if (n.purposeLabel && n.purposeLabel !== n.type) {
+      groupLabel = n.purposeLabel;
+    } else {
+      groupLabel = _mwNormCat(n.domain || n.type || '기타');
+    }
+
+    // 같은 세션은 같은 그룹으로 묶기
+    const key = sessionKey || groupLabel;
     if (!groupMap[key]) {
-      // 카테고리 색: purposeColor → CAT_COLOR → 랜덤 액센트
       const catColor = n.purposeColor
-        || _MW_CAT_COLOR[key]
+        || _MW_CAT_COLOR[_mwNormCat(n.domain || n.type || '')]
         || _mwExtractColor(n.color);
       groupMap[key] = {
-        topic:          key,
-        name:           key,
+        topic:          groupLabel,
+        name:           groupLabel,
         color:          catColor,
         children:       [],
         latestActivity: null,
       };
     }
     const childColor = n.purposeColor || _mwExtractColor(n.color);
-    // 추상 라벨 감지 → 실제 내용(fullContent, label 내 파일명)으로 대체
-    const _abstractSet = new Set(['명령 실행','파일 읽기','파일 수정','파일 작성','파일 탐색','파일 생성','코드 검색','웹 검색','하위 에이전트','에이전트 완료','작업','기타']);
-    const rawLabel = n.label || n.topic || n.name || '작업';
-    // rawLabel에 ": " 구분자가 있으면 뒷부분(실제 파일명/명령)만 추출
-    let childTopic = rawLabel;
-    if (rawLabel.includes(': ')) {
-      childTopic = rawLabel.split(': ').slice(1).join(': ');
-    } else if (_abstractSet.has(rawLabel.replace(/^[🔧📄✏️📝⚡🔍🌐🤖✅📌❌💬]+\s*/u, '').trim())) {
-      // fullContent에서 실제 내용 추출 (최대 35자)
-      const fc = String(n.fullContent || '').replace(/[{}"\\]/g, ' ').trim();
-      if (fc.length > 3) childTopic = fc.slice(0, 35);
+    // ── 프로젝트명 + 작업 목적 형태의 라벨 생성 ──
+    // 우선순위: purposeLabel(AI분류) > "프로젝트 — firstMsg" > label 가공 > fallback
+    let childTopic = null;
+
+    // 1) AI 분류된 목적 라벨 (가장 이상적)
+    if (n.purposeLabel && n.purposeLabel !== n.type) {
+      childTopic = n.purposeLabel;
     }
+
+    // 2) 프로젝트명 + 첫 메시지 조합
+    if (!childTopic) {
+      const proj = n.projectName || n.project || n.repo || '';
+      const msg  = n.firstMsg || n.msgPreview || n.autoTitle || '';
+      if (proj && msg) {
+        childTopic = `${proj} — ${msg.slice(0, 30)}`;
+      } else if (proj) {
+        childTopic = proj;
+      } else if (msg && msg.length > 3) {
+        childTopic = msg.slice(0, 40);
+      }
+    }
+
+    // 3) label에서 실제 내용 추출 (추상 라벨 대체)
+    if (!childTopic) {
+      const rawLabel = n.label || n.topic || n.name || '';
+      const _abstractSet = new Set([
+        '명령 실행','파일 읽기','파일 수정','파일 작성','파일 탐색','파일 생성',
+        '코드 검색','웹 검색','하위 에이전트','에이전트 완료','작업','기타',
+        'idle','code','file','browser','terminal','design','document',
+        'meeting','test','deploy','research','planning','other','etc',
+      ]);
+      const stripped = rawLabel.replace(/^[🔧📄✏️📝⚡🔍🌐🤖✅📌❌💬⏸]+\s*/u, '').trim();
+      if (rawLabel.includes(': ')) {
+        childTopic = rawLabel.split(': ').slice(1).join(': ');
+      } else if (_abstractSet.has(stripped.toLowerCase())) {
+        // fullContent에서 실제 내용 추출
+        const fc = String(n.fullContent || n.detail || n.description || n.summary || '')
+          .replace(/[{}"\\]/g, ' ').trim();
+        if (fc.length > 3) childTopic = fc.slice(0, 40);
+      } else if (rawLabel.length > 2) {
+        childTopic = rawLabel;
+      }
+    }
+
+    // 4) 최종 fallback: 정규화된 카테고리명
+    if (!childTopic) childTopic = _mwNormCat(n.type || '작업');
     groupMap[key].children.push({
       topic:    childTopic,
       name:     childTopic,
