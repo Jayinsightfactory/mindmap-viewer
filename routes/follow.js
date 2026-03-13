@@ -106,14 +106,12 @@ function createRouter({ getDb, verifyToken, searchUsers, getUserById, createNoti
           PRIMARY KEY (follower_id, following_id, workspace_id)
         )
       `);
-      dbExecSync(`CREATE INDEX IF NOT EXISTS idx_uf_follower  ON user_follows(follower_id)`);
-      dbExecSync(`CREATE INDEX IF NOT EXISTS idx_uf_following ON user_follows(following_id)`);
-      dbExecSync(`CREATE INDEX IF NOT EXISTS idx_uf_workspace ON user_follows(workspace_id)`);
-
       // 기존 테이블에 workspace_id 컬럼 추가 (마이그레이션)
-      try {
-        dbExecSync(`ALTER TABLE user_follows ADD COLUMN workspace_id TEXT NOT NULL DEFAULT 'global'`);
-      } catch (_) { /* 이미 존재하면 무시 */ }
+      try { dbExecSync(`ALTER TABLE user_follows ADD COLUMN workspace_id TEXT NOT NULL DEFAULT 'global'`); } catch (_) {}
+      // 인덱스 (각각 개별 try-catch — 하나 실패해도 나머지 진행)
+      try { dbExecSync(`CREATE INDEX IF NOT EXISTS idx_uf_follower  ON user_follows(follower_id)`); } catch (_) {}
+      try { dbExecSync(`CREATE INDEX IF NOT EXISTS idx_uf_following ON user_follows(following_id)`); } catch (_) {}
+      try { dbExecSync(`CREATE INDEX IF NOT EXISTS idx_uf_workspace ON user_follows(workspace_id)`); } catch (_) {}
 
       // registered_users 테이블 (OAuth 로그인 시 메인 DB에 사용자 정보 영속 저장)
       dbExecSync(`
@@ -127,8 +125,8 @@ function createRouter({ getDb, verifyToken, searchUsers, getUserById, createNoti
           updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
       `);
-      dbExecSync(`CREATE INDEX IF NOT EXISTS idx_ru_email ON registered_users(email)`);
-      dbExecSync(`CREATE INDEX IF NOT EXISTS idx_ru_name  ON registered_users(name)`);
+      try { dbExecSync(`CREATE INDEX IF NOT EXISTS idx_ru_email ON registered_users(email)`); } catch (_) {}
+      try { dbExecSync(`CREATE INDEX IF NOT EXISTS idx_ru_name  ON registered_users(name)`); } catch (_) {}
       
       return true;  // 초기화 성공
     } catch (e) {

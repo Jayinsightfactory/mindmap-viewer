@@ -354,14 +354,15 @@ function drawCompactProjectView() {
           },
         });
 
-        // ── 세션: 카테고리 카드 아래로 수직 정렬 — 모든 방향에서 겹침 없음 ──
-        const sesStep = UNI_CARD_H + CARD_GAP;  // 51px 고정 간격 (수직)
+        // ── 세션: 카테고리 카드 아래로 수직 정렬 — 카테고리 카드와 겹침 방지 ──
+        const sesStep = UNI_CARD_H + CARD_GAP;  // 51 + 8 = 59px 고정 간격
         const maxShow = Math.min(catPlanets.length, 3);
+        // 카테고리 카드 아래쪽에서 시작 (catCy + UNI_CARD_H/2 + CARD_GAP)
+        const sesStartY = catCy + UNI_CARD_H / 2 + CARD_GAP + UNI_CARD_H / 2;
         for (let si = 0; si < maxShow; si++) {
           const planet = catPlanets[si];
-          const sesOff = (si - (maxShow - 1) / 2) * sesStep;
           const sx = catCx;                // 카테고리와 같은 X (수직 정렬)
-          const sy = catCy + sesOff;       // 수직으로만 분포
+          const sy = sesStartY + si * sesStep;  // 카테고리 아래로 일렬 배치
 
           const evCnt = planet.userData.eventCount || 0;
           const isSubHover = _hoveredHit?.obj === planet;
@@ -394,9 +395,8 @@ function drawCompactProjectView() {
         }
 
         if (catPlanets.length > maxShow) {
-          const lastSesOff = ((maxShow - 1) - (maxShow - 1) / 2) * sesStep;
           const mx = catCx;
-          const my = catCy + lastSesOff + sesStep / 2 + 10;  // 마지막 세션 아래
+          const my = sesStartY + (maxShow - 1) * sesStep + UNI_CARD_H / 2 + 10;  // 마지막 세션 아래
           ctx.globalAlpha = 0.6;
           ctx.font = '400 10px -apple-system,sans-serif';
           ctx.fillStyle = cfg.color; ctx.textAlign = 'center';
