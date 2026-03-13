@@ -1,10 +1,20 @@
 /* orbit3d-layout.js — Layout & positioning logic (extracted from render) */
 
+// ─── 별 모양 경로 유틸 ────────────────────────────────────────────────────────
+function _starPath(ctx, cx, cy, spikes, outerR, innerR, rotation) {
+  const rot0 = (rotation || 0) - Math.PI / 2;
+  const step = Math.PI / spikes;
+  ctx.beginPath();
+  for (let i = 0; i < spikes * 2; i++) {
+    const r = i % 2 === 0 ? outerR : innerR;
+    const a = rot0 + i * step;
+    if (i === 0) ctx.moveTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+    else ctx.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+  }
+  ctx.closePath();
+}
+
 // ─── 팀원 클러스터 렌더링 (월드 줌아웃 시 등장) ──────────────────────────────
-// 월드 좌표 오프셋에 각 팀원의 작업 허브를 그림
-// worldScale < 0.85 에서 서서히 등장 (페이드인)
-// 팀원 월드 오프셋 (px, scale=1.0 기준)
-// 줌아웃(scale≈0.5)에서 화면 가장자리에 등장하도록 설정
 const _TEAM_WORLD_POS = [
   [ 480,    0], [-480,    0],
   [ 240,  380], [-240,  380],
@@ -12,24 +22,69 @@ const _TEAM_WORLD_POS = [
   [ 520,  300], [-520,  300],
 ];
 
-// ctx는 이미 월드 트랜스폼(translate+scale)이 적용된 상태로 호출됨
-// 모든 드로잉은 월드 좌표계, hitArea는 월드 좌표 (함수 끝에서 일괄 스크린 변환)
 function _drawTeamClusters(ctx, txX, txY, W, H, scale) {
   const data = window._teamWorldData;
 
-  // 페이드인: scale 0.75→0.5 구간에서 0→1 알파
   const fadeAlpha = Math.min(1, Math.max(0, (0.75 - scale) / 0.25));
   if (fadeAlpha <= 0) return;
 
-  // 팀 데이터 없으면 초대 플레이스홀더 표시
+  // 팀 데이터 없으면 별 모양 초대 플레이스홀더
   if (!data?.members?.length) {
-    _TEAM_WORLD_POS.slice(0, 2).forEach(([wox, woy]) => {
+    const now = performance.now() / 1000;
+    _TEAM_WORLD_POS.slice(0, 2).forEach(([wox, woy], idx) => {
       const scx = wox * scale + txX, scy = woy * scale + txY;
       if (scx < -200 || scx > W + 200 || scy < -200 || scy > H + 200) return;
       ctx.save();
-      ctx.globalAlpha = fadeAlpha * 0.45;
-      drawUnifiedCard(ctx, wox, woy, '#4a5568', '+ 팀원 초대', '워크스페이스에 팀원 추가', false, false, false);
+      ctx.globalAlpha = fadeAlpha * 0.55;
+
+      const starR = 36;
+      const pulse = 1 + Math.sin(now * 1.5 + idx * Math.PI) * 0.06;
+      const rot = now * 0.15 + idx * 0.5;
+
+      // 별 글로우
+      const glowGrad = ctx.createRadialGradient(wox, woy, starR * 0.3, wox, woy, starR * 2.2);
+      glowGrad.addColorStop(0, 'rgba(100,180,255,0.12)');
+      glowGrad.addColorStop(1, 'rgba(100,180,255,0)');
+      ctx.fillStyle = glowGrad;
+      ctx.beginPath(); ctx.arc(wox, woy, starR * 2.2, 0, Math.PI * 2); ctx.fill();
+
+      // 별 본체 (3D 투명 유리)
+      _starPath(ctx, wox, woy, 5, starR * pulse, starR * 0.45 * pulse, rot);
+      const starGrad = ctx.createRadialGradient(wox - starR * 0.2, woy - starR * 0.3, 0, wox, woy, starR);
+      starGrad.addColorStop(0, 'rgba(180,220,255,0.35)');
+      starGrad.addColorStop(0.5, 'rgba(100,160,255,0.15)');
+      starGrad.addColorStop(1, 'rgba(60,100,200,0.05)');
+      ctx.fillStyle = starGrad;
+      ctx.fill();
+      // 별 테두리 (유리 반사)
+      _starPath(ctx, wox, woy, 5, starR * pulse, starR * 0.45 * pulse, rot);
+      ctx.strokeStyle = 'rgba(160,200,255,0.4)';
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+      // 스펙큘러 하이라이트
+      const specGrad = ctx.createRadialGradient(wox - starR * 0.25, woy - starR * 0.35, 0, wox, woy, starR * 0.6);
+      specGrad.addColorStop(0, 'rgba(255,255,255,0.45)');
+      specGrad.addColorStop(1, 'rgba(255,255,255,0)');
+      _starPath(ctx, wox, woy, 5, starR * pulse * 0.7, starR * 0.35 * pulse, rot);
+      ctx.fillStyle = specGrad;
+      ctx.fill();
+
+      // 라벨
+      ctx.font = "600 12px 'Inter',-apple-system,sans-serif";
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillStyle = 'rgba(180,210,255,0.8)';
+      ctx.fillText('+ 팀원 초대', wox, woy + starR + 16);
+      ctx.font = "400 9px 'JetBrains Mono',monospace";
+      ctx.fillStyle = 'rgba(140,170,220,0.5)';
+      ctx.fillText('워크스페이스에 추가', wox, woy + starR + 30);
+
       ctx.restore();
+
+      registerHitArea({
+        cx: wox, cy: woy, r: starR + 8,
+        obj: null,
+        data: { type: 'teamInvite' },
+      });
     });
     return;
   }
@@ -37,8 +92,6 @@ function _drawTeamClusters(ctx, txX, txY, W, H, scale) {
   data.members.forEach((m, i) => {
     const [wox, woy] = _TEAM_WORLD_POS[i] || [900 + i * 200, 0];
     const scx = wox * scale + txX, scy = woy * scale + txY;
-
-    // 화면 밖이면 스킵
     if (scx < -200 || scx > W + 200 || scy < -200 || scy > H + 200) return;
 
     const color = m.color || '#58a6ff';
@@ -49,10 +102,8 @@ function _drawTeamClusters(ctx, txX, txY, W, H, scale) {
     ctx.save();
     ctx.globalAlpha = fadeAlpha;
 
-    // ── 허브 카드 (월드 좌표) ──
     drawUnifiedCard(ctx, wox, woy, color, `👤 ${name}`, `${activeTasks}개 진행 · ${totalTasks}개 총`, activeTasks > 0, false, false);
 
-    // ── 미니 작업 카드 (최대 3개) ──
     const tasks = (m.tasks || []).slice(0, 3);
     tasks.forEach((task, ti) => {
       const tAngle = -Math.PI / 2 + (ti - (tasks.length - 1) / 2) * 0.65;
@@ -62,7 +113,6 @@ function _drawTeamClusters(ctx, txX, txY, W, H, scale) {
       const tColor = task.status === 'active' ? '#3fb950' : task.status === 'done' ? '#58a6ff' : '#6e7681';
       const tName  = (task.name || '작업').slice(0, 12) + ((task.name || '').length > 12 ? '…' : '');
 
-      // 연결선
       ctx.globalAlpha = fadeAlpha * 0.2;
       ctx.strokeStyle = color; ctx.lineWidth = 1;
       ctx.setLineDash([3, 3]);
@@ -73,7 +123,6 @@ function _drawTeamClusters(ctx, txX, txY, W, H, scale) {
       drawUnifiedCard(ctx, tx, ty, tColor, tName, task.status === 'active' ? '진행중' : '완료', task.status === 'active', false, false);
     });
 
-    // 히트 영역 (월드 좌표 → drawCompactProjectView 끝에서 스크린 좌표 변환)
     registerHitArea({
       cx: wox, cy: woy, r: 60,
       obj: null,
@@ -84,8 +133,167 @@ function _drawTeamClusters(ctx, txX, txY, W, H, scale) {
   });
 }
 
+// ─── 3D 행성 그리기 (스펙큘러 + 대기 + 터미네이터) ───────────────────────────
+function _draw3DPlanet(ctx, px, py, pR, pColor, isHover) {
+  ctx.save();
+
+  // 외부 대기 글로우
+  const atmoGrad = ctx.createRadialGradient(px, py, pR * 0.8, px, py, pR * 1.8);
+  atmoGrad.addColorStop(0, pColor + '20');
+  atmoGrad.addColorStop(1, pColor + '00');
+  ctx.fillStyle = atmoGrad;
+  ctx.beginPath(); ctx.arc(px, py, pR * 1.8, 0, Math.PI * 2); ctx.fill();
+
+  if (isHover) {
+    ctx.shadowColor = pColor; ctx.shadowBlur = 16;
+  }
+
+  // 베이스 구체 (어두운 면 포함)
+  const baseGrad = ctx.createLinearGradient(px - pR, py - pR, px + pR * 0.8, py + pR * 0.8);
+  baseGrad.addColorStop(0, _lighten(pColor, 0.2));
+  baseGrad.addColorStop(0.6, pColor);
+  baseGrad.addColorStop(1, _darken(pColor, 0.4));
+  ctx.fillStyle = baseGrad;
+  ctx.beginPath(); ctx.arc(px, py, pR, 0, Math.PI * 2); ctx.fill();
+
+  // 스펙큘러 하이라이트 (좌상단 광원)
+  const specGrad = ctx.createRadialGradient(
+    px - pR * 0.35, py - pR * 0.35, pR * 0.05,
+    px - pR * 0.1, py - pR * 0.1, pR * 0.85
+  );
+  specGrad.addColorStop(0, 'rgba(255,255,255,0.65)');
+  specGrad.addColorStop(0.35, 'rgba(255,255,255,0.15)');
+  specGrad.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = specGrad;
+  ctx.beginPath(); ctx.arc(px, py, pR, 0, Math.PI * 2); ctx.fill();
+
+  // 터미네이터 그림자 (우하단 어둡게)
+  const termGrad = ctx.createRadialGradient(
+    px + pR * 0.45, py + pR * 0.45, 0,
+    px + pR * 0.2, py + pR * 0.2, pR * 1.1
+  );
+  termGrad.addColorStop(0, 'rgba(0,0,0,0.35)');
+  termGrad.addColorStop(0.6, 'rgba(0,0,0,0.08)');
+  termGrad.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = termGrad;
+  ctx.beginPath(); ctx.arc(px, py, pR, 0, Math.PI * 2); ctx.fill();
+
+  // 대기 림 (가장자리 빛)
+  ctx.strokeStyle = isHover ? '#fff' : pColor + '50';
+  ctx.lineWidth = isHover ? 1.8 : 1.2;
+  ctx.beginPath(); ctx.arc(px, py, pR + 0.5, 0, Math.PI * 2); ctx.stroke();
+
+  ctx.restore();
+}
+
+// 색상 밝게/어둡게 유틸
+function _lighten(hex, amt) {
+  const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+  return '#' + [r,g,b].map(c => Math.min(255, Math.round(c + (255 - c) * amt)).toString(16).padStart(2,'0')).join('');
+}
+function _darken(hex, amt) {
+  const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+  return '#' + [r,g,b].map(c => Math.max(0, Math.round(c * (1 - amt))).toString(16).padStart(2,'0')).join('');
+}
+
+// ─── 3D 태양 그리기 (코어 + 코로나 + 표면 질감) ──────────────────────────────
+function _draw3DSun(ctx, cx, cy, R, color, isHover, isDrilled) {
+  ctx.save();
+
+  // 코로나 (외부 후광)
+  const coronaGrad = ctx.createRadialGradient(cx, cy, R * 0.4, cx, cy, R * 2.8);
+  coronaGrad.addColorStop(0, color + '30');
+  coronaGrad.addColorStop(0.4, color + '12');
+  coronaGrad.addColorStop(1, color + '00');
+  ctx.fillStyle = coronaGrad;
+  ctx.beginPath(); ctx.arc(cx, cy, R * 2.8, 0, Math.PI * 2); ctx.fill();
+
+  if (isHover || isDrilled) {
+    ctx.shadowColor = color; ctx.shadowBlur = 20;
+  }
+
+  // 태양 베이스 (중심 백열 → 외곽 색상)
+  const coreGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, R);
+  coreGrad.addColorStop(0, '#fff');
+  coreGrad.addColorStop(0.2, _lighten(color, 0.5));
+  coreGrad.addColorStop(0.6, color);
+  coreGrad.addColorStop(1, _darken(color, 0.2));
+  ctx.fillStyle = coreGrad;
+  ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.fill();
+
+  // 표면 질감 (미세한 밴드)
+  ctx.globalAlpha = 0.08;
+  for (let band = 0; band < 3; band++) {
+    const by = cy - R * 0.4 + band * R * 0.35;
+    const bGrad = ctx.createLinearGradient(cx - R, by, cx + R, by);
+    bGrad.addColorStop(0, 'transparent');
+    bGrad.addColorStop(0.3, 'rgba(255,255,255,0.3)');
+    bGrad.addColorStop(0.7, 'rgba(255,255,255,0.3)');
+    bGrad.addColorStop(1, 'transparent');
+    ctx.fillStyle = bGrad;
+    ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // 스펙큘러 하이라이트
+  const specGrad = ctx.createRadialGradient(cx - R * 0.3, cy - R * 0.3, 0, cx, cy, R * 0.7);
+  specGrad.addColorStop(0, 'rgba(255,255,255,0.5)');
+  specGrad.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = specGrad;
+  ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.fill();
+
+  // 테두리
+  ctx.strokeStyle = isHover || isDrilled ? '#fff' : color + 'a0';
+  ctx.lineWidth = isHover ? 2 : isDrilled ? 2.5 : 1;
+  ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.stroke();
+
+  ctx.restore();
+}
+
+// ─── 조작법 힌트 오버레이 ─────────────────────────────────────────────────────
+let _controlsHintAlpha = 1.0;
+let _controlsHintFadeStart = 0;
+function _drawControlsHint(ctx, W, H) {
+  // 첫 로드 후 8초간 표시 → 2초 페이드아웃
+  if (!_controlsHintFadeStart) _controlsHintFadeStart = performance.now();
+  const elapsed = (performance.now() - _controlsHintFadeStart) / 1000;
+  if (elapsed < 8) _controlsHintAlpha = 0.7;
+  else if (elapsed < 10) _controlsHintAlpha = 0.7 * (1 - (elapsed - 8) / 2);
+  else { _controlsHintAlpha = 0; return; }
+
+  ctx.save();
+  ctx.globalAlpha = _controlsHintAlpha;
+
+  const hints = [
+    '🖱 드래그: 이동',
+    '⚙ 스크롤: 확대/축소',
+    '👆 클릭: 프로젝트 상세',
+    '👆👆 더블클릭: 포커스',
+  ];
+  const lineH = 18;
+  const padX = 16, padY = 10;
+  const boxW = 180, boxH = hints.length * lineH + padY * 2;
+  const bx = W - boxW - 20, by = H - boxH - 20;
+
+  // 배경
+  ctx.fillStyle = 'rgba(2,6,23,0.75)';
+  roundRect(ctx, bx, by, boxW, boxH, 8); ctx.fill();
+  ctx.strokeStyle = 'rgba(100,116,139,0.3)';
+  ctx.lineWidth = 0.8;
+  roundRect(ctx, bx, by, boxW, boxH, 8); ctx.stroke();
+
+  // 텍스트
+  ctx.font = "400 11px 'Inter',-apple-system,sans-serif";
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#94a3b8';
+  hints.forEach((h, i) => {
+    ctx.fillText(h, bx + padX, by + padY + i * lineH + lineH / 2);
+  });
+
+  ctx.restore();
+}
+
 // ─── 1단계: 유니버스 뷰 (프로젝트=태양계, 세션=행성, 이벤트=위성) ─────────
-// ME 노드 중심, 프로젝트를 태양계로 방사형 배치, 각 태양계 안에 세션 행성이 궤도
 function drawCompactProjectView() {
   const projNames = Object.keys(_projectGroups);
   if (projNames.length === 0) return;
@@ -146,22 +354,19 @@ function drawCompactProjectView() {
     return { name: smartName.slice(0,24), icon: topCfg.icon, catBreakdown: topCats.slice(0,3).map(([k,v])=>{ const cfg=PROJECT_TYPES[k]||PROJECT_TYPES.general; return {key:k,label:cfg.label,icon:cfg.icon,count:v,color:cfg.color}; }), fileCount: allFiles.size, sessionCount: planets.length, techStack: topExts.join(' · ')||'' };
   }
 
-  // ── 레이아웃: 태양계 간 거리 계산 ─────────────────────────────────────────
+  // ── 레이아웃: 태양계 간 거리 (좁혀진 간격) ─────────────────────────────────
   const isDrillStage1 = _drillStage >= 1 && _drillProject;
   const baseAngle = -Math.PI / 2;
   const angleStep = (Math.PI * 2) / projects.length;
 
-  // 태양계 크기: 세션 수에 따라 궤도 반경 결정
-  const SUN_R = 32;                    // 태양(프로젝트) 반경
-  const ORBIT_BASE = 70;               // 최소 궤도 반경
-  const ORBIT_PER_PLANET = 18;         // 행성당 추가 궤도 반경
-  const SOLAR_SYSTEM_GAP = 60;         // 태양계 간 간격
+  const SUN_R = 28;
+  const ORBIT_BASE = 50;
+  const ORBIT_PER_PLANET = 12;
+  const SOLAR_SYSTEM_GAP = 25;
 
-  // 각 태양계의 실제 반경 계산
   const solarRadii = projects.map(p => ORBIT_BASE + Math.min(p.planets.length, 8) * ORBIT_PER_PLANET);
-  // 인접 태양계 간 겹침 방지를 위한 최소 거리
   const maxSolarR = Math.max(...solarRadii);
-  let CENTER_DIST = maxSolarR * 2 + SOLAR_SYSTEM_GAP;
+  let CENTER_DIST = maxSolarR + SUN_R + SOLAR_SYSTEM_GAP;
   if (projects.length > 1) {
     const sinHalf = Math.sin(angleStep / 2);
     if (sinHalf > 0) CENTER_DIST = Math.max(CENTER_DIST, (maxSolarR + SOLAR_SYSTEM_GAP / 2) / sinHalf);
@@ -182,39 +387,18 @@ function drawCompactProjectView() {
     }
   }
 
+  // 라벨 별칭 맵
+  const _aliases = (() => { try { return JSON.parse(localStorage.getItem('orbitLabelAliases') || '{}'); } catch { return {}; } })();
+
+  // 태양 스크린 좌표 수집 (ME→태양 연결선용)
+  const _sunScreenCoords = [];
+
   // ── 캔버스 월드 트랜스폼 적용 ──────────────────────────────────────────────
   ctx.save();
   ctx.translate(_txX, _txY);
   ctx.scale(_wScale, _wScale);
 
-  // ── ME 노드 (유니버스 중심) ────────────────────────────────────────────────
-  const meR2 = 36;
-  ctx.save();
-  // 글로우
-  const meGrad = ctx.createRadialGradient(0, 0, meR2 * 0.3, 0, 0, meR2 * 1.8);
-  meGrad.addColorStop(0, 'rgba(6,182,212,0.15)');
-  meGrad.addColorStop(1, 'rgba(6,182,212,0)');
-  ctx.fillStyle = meGrad;
-  ctx.beginPath(); ctx.arc(0, 0, meR2 * 1.8, 0, Math.PI * 2); ctx.fill();
-  // 코어
-  const meCoreGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, meR2);
-  meCoreGrad.addColorStop(0, 'rgba(6,182,212,0.9)');
-  meCoreGrad.addColorStop(0.7, 'rgba(6,182,212,0.4)');
-  meCoreGrad.addColorStop(1, 'rgba(6,182,212,0.1)');
-  ctx.fillStyle = meCoreGrad;
-  ctx.beginPath(); ctx.arc(0, 0, meR2, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = 'rgba(6,182,212,0.6)'; ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.arc(0, 0, meR2, 0, Math.PI * 2); ctx.stroke();
-  ctx.font = "700 13px 'Inter',-apple-system,sans-serif";
-  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillStyle = '#fff';
-  ctx.fillText('MY UNIVERSE', 0, 0);
-  ctx.restore();
-
-  // 라벨 별칭 맵
-  const _aliases = (() => { try { return JSON.parse(localStorage.getItem('orbitLabelAliases') || '{}'); } catch { return {}; } })();
-
-  // ── 태양계 렌더링 ─────────────────────────────────────────────────────────
+  // ── 태양계 렌더링 (ME 연결선 없이 — 나중에 스크린 좌표로 그림) ──────────────
   projects.forEach((proj, i) => {
     const angle = baseAngle + i * angleStep;
     const isThisDrilled = isDrillStage1 && _drillProject.name === proj.name;
@@ -227,57 +411,30 @@ function drawCompactProjectView() {
     const solarR = solarRadii[i];
     const numPlanets = Math.min(proj.planets.length, 12);
 
+    // 스크린 좌표 기록
+    _sunScreenCoords.push({ sx: sunCx * _wScale + _txX, sy: sunCy * _wScale + _txY, color });
+
     if (dimmed) ctx.globalAlpha = 0.2;
 
-    // ── ME → 태양계 연결선 (은하 링크) ──
-    ctx.save();
-    ctx.globalAlpha = (dimmed ? 0.05 : 0.12) * (ctx.globalAlpha || 1);
-    ctx.strokeStyle = color; ctx.lineWidth = 1;
-    ctx.setLineDash([6, 6]);
-    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(sunCx, sunCy); ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.restore();
-    if (dimmed) ctx.globalAlpha = 0.2;
+    // ── 태양 (3D 프로젝트 코어) ──
+    _draw3DSun(ctx, sunCx, sunCy, SUN_R, color, isHover, isThisDrilled);
 
-    // ── 태양 (프로젝트 코어) ──
-    ctx.save();
-    // 태양 글로우
-    const sunGlow = ctx.createRadialGradient(sunCx, sunCy, SUN_R * 0.2, sunCx, sunCy, SUN_R * 2.5);
-    sunGlow.addColorStop(0, color + '40');
-    sunGlow.addColorStop(0.5, color + '15');
-    sunGlow.addColorStop(1, color + '00');
-    ctx.fillStyle = sunGlow;
-    ctx.beginPath(); ctx.arc(sunCx, sunCy, SUN_R * 2.5, 0, Math.PI * 2); ctx.fill();
-    // 태양 코어
-    const sunCore = ctx.createRadialGradient(sunCx, sunCy, 0, sunCx, sunCy, SUN_R);
-    sunCore.addColorStop(0, '#fff');
-    sunCore.addColorStop(0.3, color);
-    sunCore.addColorStop(1, color + '80');
-    ctx.fillStyle = sunCore;
-    ctx.beginPath(); ctx.arc(sunCx, sunCy, SUN_R, 0, Math.PI * 2); ctx.fill();
-    // 태양 테두리
-    ctx.strokeStyle = isHover || isThisDrilled ? '#fff' : color;
-    ctx.lineWidth = isHover ? 2 : isThisDrilled ? 2.5 : 1;
-    ctx.beginPath(); ctx.arc(sunCx, sunCy, SUN_R, 0, Math.PI * 2); ctx.stroke();
-    ctx.restore();
-
-    // ── 태양 라벨 ──
+    // ── 태양 라벨 (큰 글씨) ──
     const projTitle = _aliases[proj.name] || `${info.icon} ${info.name}`;
     const projSub = `${info.sessionCount}세션 · ${info.fileCount}파일`;
     ctx.save();
-    ctx.font = "700 12px 'Inter',-apple-system,sans-serif";
+    ctx.font = "700 14px 'Inter',-apple-system,sans-serif";
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillStyle = '#fff';
     let clippedTitle = projTitle;
-    while (ctx.measureText(clippedTitle).width > SUN_R * 3.5 && clippedTitle.length > 1) clippedTitle = clippedTitle.slice(0, -1);
+    while (ctx.measureText(clippedTitle).width > SUN_R * 4 && clippedTitle.length > 1) clippedTitle = clippedTitle.slice(0, -1);
     if (clippedTitle !== projTitle) clippedTitle += '\u2026';
-    ctx.fillText(clippedTitle, sunCx, sunCy - 5);
-    ctx.font = "400 9px 'JetBrains Mono',monospace";
+    ctx.fillText(clippedTitle, sunCx, sunCy - 6);
+    ctx.font = "500 11px 'JetBrains Mono',monospace";
     ctx.fillStyle = '#94a3b8';
-    ctx.fillText(projSub, sunCx, sunCy + 8);
+    ctx.fillText(projSub, sunCx, sunCy + 10);
     ctx.restore();
 
-    // 카드 내 버튼 (편집·숨기기)
     if (!dimmed && isHover) drawCardIcons(ctx, sunCx, sunCy, proj.name, projTitle, isHover, _hitAreas);
 
     // 히트 영역 (태양)
@@ -294,7 +451,7 @@ function drawCompactProjectView() {
 
       // 궤도 링 (점선 원)
       ctx.save();
-      ctx.globalAlpha = dimmed ? 0.08 : 0.15;
+      ctx.globalAlpha = dimmed ? 0.08 : 0.18;
       ctx.strokeStyle = color; ctx.lineWidth = 0.8;
       ctx.setLineDash([3, 5]);
       ctx.beginPath(); ctx.arc(sunCx, sunCy, orbitR, 0, Math.PI * 2); ctx.stroke();
@@ -306,52 +463,41 @@ function drawCompactProjectView() {
       const maxShow = isThisDrilled ? Math.min(numPlanets, 12) : Math.min(numPlanets, 6);
       for (let pi = 0; pi < maxShow; pi++) {
         const planet = proj.planets[pi];
-        const pAngle = -Math.PI / 2 + pi * planetAngleStep + now * 0.05; // 느린 공전 애니메이션
+        const pAngle = -Math.PI / 2 + pi * planetAngleStep + now * 0.05;
         const px = sunCx + Math.cos(pAngle) * orbitR;
         const py = sunCy + Math.sin(pAngle) * orbitR;
         const evCnt = planet.userData.eventCount || 0;
-        const pR = Math.max(6, Math.min(14, 6 + evCnt * 0.3)); // 이벤트 수에 비례한 크기
+        const pR = Math.max(8, Math.min(16, 8 + evCnt * 0.3));
         const isSubHover = _hoveredHit?.obj === planet;
         const catKey = planet.userData.macroCat || 'general';
         const catCfg = PROJECT_TYPES[catKey] || PROJECT_TYPES.general;
         const pColor = catCfg.color || color;
 
-        // 행성 본체
-        ctx.save();
-        if (isSubHover) {
-          ctx.shadowColor = pColor; ctx.shadowBlur = 12;
-        }
-        const pGrad = ctx.createRadialGradient(px - pR * 0.3, py - pR * 0.3, 0, px, py, pR);
-        pGrad.addColorStop(0, '#fff');
-        pGrad.addColorStop(0.4, pColor);
-        pGrad.addColorStop(1, pColor + '60');
-        ctx.fillStyle = pGrad;
-        ctx.beginPath(); ctx.arc(px, py, pR, 0, Math.PI * 2); ctx.fill();
-        ctx.strokeStyle = isSubHover ? '#fff' : pColor + '80';
-        ctx.lineWidth = isSubHover ? 1.5 : 0.8;
-        ctx.beginPath(); ctx.arc(px, py, pR, 0, Math.PI * 2); ctx.stroke();
-        ctx.restore();
+        // 3D 행성 본체
+        _draw3DPlanet(ctx, px, py, pR, pColor, isSubHover);
 
-        // 행성 라벨 (드릴 시에만 또는 호버 시)
+        // 행성 라벨 (드릴 또는 호버, 큰 글씨)
         if (isThisDrilled || isSubHover) {
           const sesKey = planet.userData.clusterId || planet.userData.sessionId || '';
-          let sLabel = _aliases[sesKey] || normalizeLabel(planet.userData.intent || '', 18);
-          if (!sLabel) sLabel = deriveDisplayLabel(planet.userData, 18);
+          let sLabel = _aliases[sesKey] || normalizeLabel(planet.userData.intent || '', 20);
+          if (!sLabel) sLabel = deriveDisplayLabel(planet.userData, 20);
           if (sLabel) {
             ctx.save();
-            ctx.font = "500 9px 'Inter',-apple-system,sans-serif";
+            ctx.font = "600 11px 'Inter',-apple-system,sans-serif";
             ctx.textAlign = 'center';
-            // 배경 pill
             const tw = ctx.measureText(sLabel).width;
-            const pw = tw + 8, ph = 14;
-            ctx.fillStyle = 'rgba(2,6,23,0.85)';
-            roundRect(ctx, px - pw/2, py + pR + 3, pw, ph, 4); ctx.fill();
+            const pw = tw + 10, ph = 16;
+            ctx.fillStyle = 'rgba(2,6,23,0.88)';
+            roundRect(ctx, px - pw/2, py + pR + 4, pw, ph, 5); ctx.fill();
+            ctx.strokeStyle = pColor + '40';
+            ctx.lineWidth = 0.6;
+            roundRect(ctx, px - pw/2, py + pR + 4, pw, ph, 5); ctx.stroke();
             ctx.fillStyle = '#e2e8f0';
-            ctx.fillText(sLabel, px, py + pR + 12);
+            ctx.fillText(sLabel, px, py + pR + 14);
             if (evCnt > 0) {
-              ctx.font = "400 7px monospace";
+              ctx.font = "500 8px 'JetBrains Mono',monospace";
               ctx.fillStyle = '#6e7681';
-              ctx.fillText(`${evCnt}작업`, px, py + pR + 22);
+              ctx.fillText(`${evCnt}개 작업`, px, py + pR + 26);
             }
             ctx.restore();
           }
@@ -359,7 +505,7 @@ function drawCompactProjectView() {
 
         // 행성 히트 영역
         registerHitArea({
-          cx: px, cy: py, r: Math.max(pR + 4, 12),
+          cx: px, cy: py, r: Math.max(pR + 4, 14),
           obj: planet,
           data: { type: 'drillSession', intent: planet.userData.intent,
                   clusterId: planet.userData.clusterId,
@@ -370,13 +516,12 @@ function drawCompactProjectView() {
         });
       }
 
-      // 추가 행성 표시
       if (proj.planets.length > maxShow) {
         ctx.save();
         ctx.globalAlpha = 0.6;
-        ctx.font = '500 10px -apple-system,sans-serif';
+        ctx.font = '600 11px -apple-system,sans-serif';
         ctx.fillStyle = color; ctx.textAlign = 'center';
-        ctx.fillText(`+${proj.planets.length - maxShow}`, sunCx, sunCy + SUN_R + orbitR + 16);
+        ctx.fillText(`+${proj.planets.length - maxShow}`, sunCx, sunCy + SUN_R + orbitR + 18);
         ctx.restore();
       }
     }
@@ -387,8 +532,10 @@ function drawCompactProjectView() {
   // ── 팀원 클러스터 ──
   if (_wScale < 0.75) _drawTeamClusters(ctx, _txX, _txY, W, H, _wScale);
 
-  // ── 월드 트랜스폼 해제 + hitArea 스크린 변환 ──
+  // ── 월드 트랜스폼 해제 ──
   ctx.restore();
+
+  // ── hitArea 스크린 변환 ──
   _hitAreas.forEach(h => {
     h.cx = h.cx * _wScale + _txX;
     h.cy = h.cy * _wScale + _txY;
@@ -400,6 +547,81 @@ function drawCompactProjectView() {
     const bDrill = drillTypes.has(b.data?.type) ? 1 : 0;
     return aDrill - bDrill;
   });
+
+  // ── ME → 태양 연결선 (스크린 좌표, ME 고정) ─────────────────────────────────
+  const meCx = W / 2, meCy = H / 2;
+  ctx.save();
+  _sunScreenCoords.forEach(s => {
+    ctx.globalAlpha = 0.1;
+    ctx.strokeStyle = s.color; ctx.lineWidth = 1;
+    ctx.setLineDash([6, 6]);
+    ctx.beginPath(); ctx.moveTo(meCx, meCy); ctx.lineTo(s.sx, s.sy); ctx.stroke();
+    ctx.setLineDash([]);
+  });
+  ctx.restore();
+
+  // ── MY UNIVERSE 고정 HUD (항상 화면 중앙) ──────────────────────────────────
+  ctx.save();
+  const meR = 40;
+  const mePulse = 1 + Math.sin(now * 0.8) * 0.03;
+
+  // 외부 글로우 (넓은 범위)
+  const meOuterGlow = ctx.createRadialGradient(meCx, meCy, meR * 0.5, meCx, meCy, meR * 2.5 * mePulse);
+  meOuterGlow.addColorStop(0, 'rgba(6,182,212,0.12)');
+  meOuterGlow.addColorStop(0.5, 'rgba(6,182,212,0.04)');
+  meOuterGlow.addColorStop(1, 'rgba(6,182,212,0)');
+  ctx.fillStyle = meOuterGlow;
+  ctx.beginPath(); ctx.arc(meCx, meCy, meR * 2.5 * mePulse, 0, Math.PI * 2); ctx.fill();
+
+  // 코어 구체 (3D 느낌)
+  const meCoreGrad = ctx.createRadialGradient(meCx - meR * 0.2, meCy - meR * 0.25, 0, meCx, meCy, meR);
+  meCoreGrad.addColorStop(0, 'rgba(120,230,255,0.95)');
+  meCoreGrad.addColorStop(0.3, 'rgba(6,182,212,0.8)');
+  meCoreGrad.addColorStop(0.7, 'rgba(6,140,180,0.5)');
+  meCoreGrad.addColorStop(1, 'rgba(6,100,140,0.2)');
+  ctx.fillStyle = meCoreGrad;
+  ctx.beginPath(); ctx.arc(meCx, meCy, meR, 0, Math.PI * 2); ctx.fill();
+
+  // 스펙큘러 하이라이트
+  const meSpecGrad = ctx.createRadialGradient(meCx - meR * 0.3, meCy - meR * 0.3, 0, meCx, meCy, meR * 0.6);
+  meSpecGrad.addColorStop(0, 'rgba(255,255,255,0.55)');
+  meSpecGrad.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = meSpecGrad;
+  ctx.beginPath(); ctx.arc(meCx, meCy, meR, 0, Math.PI * 2); ctx.fill();
+
+  // 대기 림
+  ctx.strokeStyle = 'rgba(6,220,255,0.5)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(meCx, meCy, meR + 1, 0, Math.PI * 2); ctx.stroke();
+
+  // 궤도 링 장식 (ME 주변)
+  ctx.globalAlpha = 0.15;
+  ctx.strokeStyle = 'rgba(6,182,212,0.6)'; ctx.lineWidth = 0.5;
+  ctx.setLineDash([2, 4]);
+  ctx.beginPath(); ctx.arc(meCx, meCy, meR * 1.5, 0, Math.PI * 2); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.globalAlpha = 1;
+
+  // 텍스트
+  ctx.font = "700 14px 'Inter',-apple-system,sans-serif";
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#fff';
+  ctx.fillText('MY UNIVERSE', meCx, meCy - 2);
+  ctx.font = "400 9px 'JetBrains Mono',monospace";
+  ctx.fillStyle = 'rgba(148,163,184,0.8)';
+  ctx.fillText(`${projects.length} 프로젝트`, meCx, meCy + 14);
+
+  ctx.restore();
+
+  // ME 히트 영역 (스크린 좌표로 직접 등록)
+  registerHitArea({
+    cx: meCx, cy: meCy, r: meR + 5,
+    obj: null,
+    data: { type: 'meNode' },
+  });
+
+  // ── 조작법 힌트 ──
+  _drawControlsHint(ctx, W, H);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -423,7 +645,6 @@ function _drawPersonalPlanets() {
 
     const pxSize = isSelected ? 20 : isHovered ? 16 : Math.max(9, Math.min(14, scale * 12));
 
-    // Label determination — single source of truth: orbit3d-label-rules.js
     const text = deriveDisplayLabel(p.userData, 26);
     if (!text) return;
 
@@ -439,7 +660,6 @@ function _drawPersonalPlanets() {
     if (rectOverlaps(lx - 4, ly - 4, pw + 8, ph + 30)) return;
     reserveRect(lx - 4, ly - 4, pw + 8, ph + 30);
 
-    // 선택 강조
     if (isSelected) {
       _lctx.save();
       _lctx.shadowColor = hex; _lctx.shadowBlur = 10;
@@ -451,7 +671,6 @@ function _drawPersonalPlanets() {
       _lctx.globalAlpha = globalAlpha;
     }
 
-    // 배경 pill (다크 글래스)
     _lctx.save();
     _lctx.shadowColor = isSelected ? 'rgba(6,182,212,0.2)' : 'rgba(0,0,0,0.3)';
     _lctx.shadowBlur = isSelected ? 12 : 6; _lctx.shadowOffsetY = 1;
@@ -460,16 +679,13 @@ function _drawPersonalPlanets() {
     _lctx.shadowBlur = 0; _lctx.shadowOffsetY = 0;
     _lctx.restore();
 
-    // 테두리 (white/10)
     _lctx.strokeStyle = isSelected ? hex : isHovered ? 'rgba(6,182,212,0.35)' : 'rgba(255,255,255,0.10)';
     _lctx.lineWidth = isSelected ? 1.5 : isHovered ? 1 : 0.8;
     roundRect(_lctx, lx, ly, pw, ph, ph / 2); _lctx.stroke();
 
-    // 텍스트 (밝은 색)
     _lctx.fillStyle = isSelected ? '#e2e8f0' : isHovered ? '#cbd5e1' : '#94a3b8';
     _lctx.fillText(text, sc.x, ly + ph * 0.68);
 
-    // 이벤트 수 (선택/호버 시)
     if (evCnt > 0 && pxSize >= 13) {
       const sub = Math.max(9, pxSize * 0.5);
       _lctx.font = `500 ${sub}px 'JetBrains Mono','Fira Code',monospace`;
@@ -477,11 +693,10 @@ function _drawPersonalPlanets() {
       _lctx.fillText(`${evCnt}개 작업`, sc.x, ly + ph + sub + 1);
     }
 
-    // 히트 영역
     registerHitArea({
       cx: sc.x, cy: sc.y, r: Math.max(pw, ph) / 2 + 4,
       obj: p,
-      data: { type: 'session', intent: fullText, clusterId: p.userData.clusterId,
+      data: { type: 'session', intent: text, clusterId: p.userData.clusterId,
               sessionId: p.userData.sessionId, eventCount: evCnt, hueHex: hex },
     });
   });
@@ -490,13 +705,11 @@ function _drawPersonalPlanets() {
 }
 
 // ─── drawLabels ──────────────────────────────────────────────────────────────
-// ── 텍스트 겹침 방지 ──────────────────────────────────────────────────────
 const _usedRects = [];
-const LABEL_PADDING = 12; // 라벨 간 최소 간격
+const LABEL_PADDING = 12;
 
 function rectOverlaps(x, y, w, h) {
   for (const r of _usedRects) {
-    // 패딩을 포함한 엄격한 겹침 검사
     if (x < r.x + r.w + LABEL_PADDING &&
         x + w + LABEL_PADDING > r.x &&
         y < r.y + r.h + LABEL_PADDING &&
