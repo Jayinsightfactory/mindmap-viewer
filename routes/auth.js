@@ -88,12 +88,38 @@ function createRouter(deps) {
   });
 
   // ── 임시 디버그 (배포 확인 후 제거) ────────────────────────────────────
-  router.get('/auth/_debug-sync', (req, res) => {
-    const authDb = require('../src/auth').getDb();
+  router.get('/auth/_debug-sync', async (req, res) => {
+    const authMod = require('../src/auth');
+    const authDb = authMod.getDb();
     if (!authDb) return res.json({ error: 'no db' });
     const users = authDb.prepare('SELECT id, email, LENGTH(passwordHash) as pwLen FROM users').all();
     const tokens = authDb.prepare('SELECT token, userId, type FROM tokens LIMIT 10').all();
-    res.json({ users, tokens });
+
+    // PG 상태도 확인
+    let pgStatus = 'no pool';
+    let pgUsers = [];
+    try {
+      const { Pool } = require('pg');
+      if (process.env.DATABASE_URL) {
+        const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 1 });
+        const r = await pool.query('SELECT id, email, LENGTH(password_hash) as pw_len FROM orbit_auth_users');
+        pgUsers = r.rows;
+        pgStatus = 'connected';
+        pool.end();
+      } else {
+        pgStatus = 'no DATABASE_URL';
+      }
+    } catch (e) { pgStatus = 'error: ' + e.message; }
+
+    // 수동 sync 시도
+    let syncResult = 'skipped';
+    try {
+      await authMod.initFromPg();
+      const usersAfter = authDb.prepare('SELECT id, email, LENGTH(passwordHash) as pwLen FROM users').all();
+      syncResult = { synced: usersAfter.length, users: usersAfter };
+    } catch (e) { syncResult = 'error: ' + e.message; }
+
+    res.json({ sqlite: { users, tokens }, pg: { status: pgStatus, users: pgUsers }, syncResult });
   });
 
   // ── 로그아웃 ─────────────────────────────────────────────────────────────
