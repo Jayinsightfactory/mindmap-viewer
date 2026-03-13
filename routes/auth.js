@@ -87,49 +87,6 @@ function createRouter(deps) {
     });
   });
 
-  // ── 임시 디버그 (배포 확인 후 제거) ────────────────────────────────────
-  router.get('/auth/_debug-sync', async (req, res) => {
-    const authMod = require('../src/auth');
-    const authDb = authMod.getDb();
-    if (!authDb) return res.json({ error: 'no db' });
-    const users = authDb.prepare('SELECT id, email, LENGTH(passwordHash) as pwLen FROM users').all();
-    const tokens = authDb.prepare('SELECT token, userId, type FROM tokens LIMIT 10').all();
-
-    // 환경변수 진단
-    const envKeys = Object.keys(process.env).filter(k =>
-      /DATABASE|PG|POSTGRES|RAILWAY/i.test(k)
-    );
-    const envDiag = {};
-    for (const k of envKeys) envDiag[k] = process.env[k] ? `SET (${process.env[k].length} chars)` : 'EMPTY';
-    envDiag._DATABASE_URL_truthy = !!process.env.DATABASE_URL;
-    envDiag._NODE_ENV = process.env.NODE_ENV || 'unset';
-
-    // PG 직접 연결 시도 (하드코딩 URL)
-    const PG_URL = process.env.DATABASE_URL || process.env.DATABASE_PUBLIC_URL || '';
-    let pgStatus = 'no url';
-    let pgUsers = [];
-    try {
-      if (PG_URL) {
-        const { Pool } = require('pg');
-        const pool = new Pool({ connectionString: PG_URL, max: 1 });
-        const r = await pool.query('SELECT id, email, LENGTH(password_hash) as pw_len FROM orbit_auth_users');
-        pgUsers = r.rows;
-        pgStatus = 'connected via ' + (process.env.DATABASE_URL ? 'DATABASE_URL' : 'DATABASE_PUBLIC_URL');
-        pool.end();
-      }
-    } catch (e) { pgStatus = 'error: ' + e.message; }
-
-    // 수동 sync 시도
-    let syncResult = 'skipped';
-    try {
-      await authMod.initFromPg();
-      const usersAfter = authDb.prepare('SELECT id, email, LENGTH(passwordHash) as pwLen FROM users').all();
-      syncResult = { synced: usersAfter.length, users: usersAfter };
-    } catch (e) { syncResult = 'error: ' + e.message; }
-
-    res.json({ sqlite: { users, tokens }, env: envDiag, pg: { status: pgStatus, users: pgUsers }, syncResult });
-  });
-
   // ── 로그아웃 ─────────────────────────────────────────────────────────────
 
   /**
