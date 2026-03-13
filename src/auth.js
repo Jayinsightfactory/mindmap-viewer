@@ -632,26 +632,51 @@ async function initFromPg() {
     console.log(`[AUTH-PG] PG orbit_auth_users: ${pgUsers.length}명`);
     if (pgUsers.length === 0) return;
 
-    // 이메일 기반 동기화: PG 유저가 SQLite에 없으면 INSERT, 있으면 ID를 PG 기준으로 UPDATE
+    // FK 임시 해제 (id 변경 시 tokens FK 충돌 방지)
+    try { db.pragma('foreign_keys = OFF'); } catch {}
+
     let synced = 0;
-    const upsertUser = db.prepare(`
-      INSERT INTO users (id, email, name, passwordHash, plan, provider)
-      VALUES (?, ?, ?, ?, ?, ?)
-      ON CONFLICT(email) DO UPDATE SET id=excluded.id, name=excluded.name, passwordHash=CASE WHEN excluded.passwordHash != '' THEN excluded.passwordHash ELSE users.passwordHash END, plan=excluded.plan, provider=excluded.provider
-    `);
-    for (const u of pgUsers) {
-      try {
-        upsertUser.run(u.id, u.email, u.name || '', u.password_hash || '', u.plan || 'free', u.provider || 'local');
-        synced++;
-      } catch (e) {
-        // id 충돌 시: 기존 SQLite 유저의 ID를 PG 유저의 ID로 변경
+    const syncAll = db.transaction((users) => {
+      for (const u of users) {
         try {
-          db.prepare('UPDATE users SET id=? WHERE email=?').run(u.id, u.email);
-          db.prepare('UPDATE tokens SET userId=? WHERE userId IN (SELECT id FROM users WHERE email=?)').run(u.id, u.email);
+          const byEmail = db.prepare('SELECT id FROM users WHERE email = ?').get(u.email);
+          const byId = db.prepare('SELECT email FROM users WHERE id = ?').get(u.id);
+
+          if (byEmail && byEmail.id === u.id) {
+            // 동일 유저 — 비밀번호/이름만 갱신
+            db.prepare('UPDATE users SET passwordHash=?, name=?, plan=?, provider=? WHERE id=?')
+              .run(u.password_hash || '', u.name || '', u.plan || 'free', u.provider || 'local', u.id);
+            synced++;
+            continue;
+          }
+
+          // 충돌하는 기존 행 정리
+          if (byId && byId.email !== u.email) {
+            // PG id를 가진 다른 이메일 유저 삭제
+            db.prepare('DELETE FROM tokens WHERE userId = ?').run(u.id);
+            db.prepare('DELETE FROM users WHERE id = ?').run(u.id);
+            console.log(`[AUTH-PG] 충돌 ID 삭제: ${u.id} (기존 email: ${byId.email})`);
+          }
+          if (byEmail && byEmail.id !== u.id) {
+            // 같은 이메일, 다른 ID → 토큰 이관 후 삭제
+            const oldId = byEmail.id;
+            db.prepare('UPDATE tokens SET userId = ? WHERE userId = ?').run(u.id, oldId);
+            db.prepare('DELETE FROM users WHERE id = ?').run(oldId);
+            console.log(`[AUTH-PG] ID 교체: ${oldId} → ${u.id} (${u.email})`);
+          }
+
+          // PG 유저 삽입
+          db.prepare(`INSERT INTO users (id, email, name, passwordHash, plan, provider) VALUES (?, ?, ?, ?, ?, ?)`)
+            .run(u.id, u.email, u.name || '', u.password_hash || '', u.plan || 'free', u.provider || 'local');
           synced++;
-        } catch {}
+        } catch (e) {
+          console.warn(`[AUTH-PG] 유저 동기화 실패 (${u.email}):`, e.message);
+        }
       }
-    }
+    });
+    syncAll(pgUsers);
+
+    try { db.pragma('foreign_keys = ON'); } catch {}
 
     // PG 토큰 복원
     const { rows: tokens } = await _pgPool.query(
