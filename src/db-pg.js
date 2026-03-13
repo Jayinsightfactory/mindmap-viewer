@@ -16,8 +16,13 @@ let pool = null;
 let _tablesReady = null;
 
 function initDatabase() {
-  pool = new Pool({ connectionString: process.env.DATABASE_URL });
-  console.log('[DB] PostgreSQL 풀 생성 완료');
+  pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    max: 30,                        // 15유저 × 2 동시 쿼리 여유
+    idleTimeoutMillis: 10000,       // 유휴 연결 10초 후 반환
+    connectionTimeoutMillis: 5000,  // 연결 대기 5초 타임아웃
+  });
+  console.log('[DB] PostgreSQL 풀 생성 완료 (max=30)');
   // 테이블 생성 — _tablesReady Promise로 외부에서 await 가능
   _tablesReady = createTables()
     .then(() => console.log('[DB] PostgreSQL 테이블 초기화 완료'))

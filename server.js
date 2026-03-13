@@ -50,9 +50,17 @@ const fs           = require('fs');
 const path         = require('path');
 // rate-limit: 인메모리 구현 (express-rate-limit v8 Railway 프록시 호환 문제 대체)
 const _rlStore = new Map();
-setInterval(() => _rlStore.clear(), 15 * 60 * 1000); // 15분마다 리셋
+// 만료된 엔트리만 정리 (전체 리셋 대신 개별 만료 — 메모리 안정)
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of _rlStore) {
+    if (now > entry.resetAt) _rlStore.delete(key);
+  }
+}, 60 * 1000); // 1분마다 정리
 const rateLimit = ({ windowMs = 900000, max = 2000 } = {}) => (req, res, next) => {
-  const key = req.ip || 'unknown';
+  // 인증된 사용자는 토큰 기반 키 (같은 IP 공유 시 독립 카운트)
+  const authToken = (req.headers.authorization || '').replace('Bearer ', '').trim();
+  const key = authToken ? `user:${authToken.slice(0, 16)}` : (req.ip || 'unknown');
   const entry = _rlStore.get(key) || { count: 0, resetAt: Date.now() + windowMs };
   if (Date.now() > entry.resetAt) { entry.count = 0; entry.resetAt = Date.now() + windowMs; }
   if (++entry.count > max) return res.status(429).json({ error: 'Too many requests' });
@@ -867,6 +875,9 @@ app.post('/api/hook', (req, res) => {
       });
       for (const client of wss.clients) {
         if (client.readyState !== WebSocket.OPEN) continue;
+        // 데이터 격리: 같은 userId 또는 같은 채널의 클라이언트에게만 전송
+        const clientUserId = client._userId || 'local';
+        if (hookUserId && hookUserId !== 'local' && clientUserId !== hookUserId && clientUserId !== 'local') continue;
         try { client.send(msg); } catch {}
       }
     };

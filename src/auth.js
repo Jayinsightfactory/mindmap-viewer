@@ -33,6 +33,8 @@ try {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   db = new Database(dbPath);
   db.pragma('journal_mode = WAL');
+  db.pragma('busy_timeout = 5000');   // 동시 접근 시 5초 대기 (15유저 대응)
+  db.pragma('synchronous = NORMAL');  // 쓰기 성능 개선 (WAL 안전)
 } catch (e) {
   console.error('[AUTH] DB 초기화 실패:', e.message);
   db = null; // DB 없으면 인증 비활성화 (로컬 전용 모드)
