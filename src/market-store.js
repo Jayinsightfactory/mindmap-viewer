@@ -19,7 +19,9 @@ function initMarketTables() {
   const db = getDb();
   if (!db) return;
 
-  db.exec(`
+  // PG Pool 감지
+  if (!db.prepare) {
+    const sql = `
     -- 기여자 프로필
     CREATE TABLE IF NOT EXISTS contributors (
       id           TEXT PRIMARY KEY,
@@ -94,6 +96,58 @@ function initMarketTables() {
 
     CREATE INDEX IF NOT EXISTS idx_distributions_contributor ON revenue_distributions(contributor_id);
     CREATE INDEX IF NOT EXISTS idx_distributions_period      ON revenue_distributions(period);
+  `;
+    // PG: 여러 문장을 ;로 분리해서 개별 실행 (비동기, fire-and-forget)
+    const parts = sql.split(';').map(s => s.replace(/--[^\n]*/g, '').trim()).filter(Boolean);
+    (async () => {
+      for (const s of parts) {
+        try { await db.query(s); } catch (e) { /* 테이블 이미 존재 등 무시 */ }
+      }
+    })().catch(e => console.warn('[market-store] PG init warn:', e.message));
+    return;
+  }
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS contributors (
+      id TEXT PRIMARY KEY, user_id TEXT NOT NULL DEFAULT 'local',
+      name TEXT NOT NULL, type TEXT NOT NULL DEFAULT 'individual',
+      email TEXT, wallet TEXT, share_pct REAL NOT NULL DEFAULT 70.0,
+      status TEXT NOT NULL DEFAULT 'active', joined_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_contributors_user ON contributors(user_id);
+    CREATE TABLE IF NOT EXISTS marketplace_items (
+      id TEXT PRIMARY KEY, contributor_id TEXT NOT NULL, name TEXT NOT NULL,
+      description TEXT, category TEXT NOT NULL DEFAULT 'tool',
+      tags TEXT, version TEXT NOT NULL DEFAULT '1.0.0',
+      price_type TEXT NOT NULL DEFAULT 'free', price_usd REAL NOT NULL DEFAULT 0.0,
+      status TEXT NOT NULL DEFAULT 'active', download_count INTEGER NOT NULL DEFAULT 0,
+      use_count INTEGER NOT NULL DEFAULT 0, rating_sum REAL NOT NULL DEFAULT 0.0,
+      rating_count INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+      FOREIGN KEY (contributor_id) REFERENCES contributors(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_items_contributor ON marketplace_items(contributor_id);
+    CREATE INDEX IF NOT EXISTS idx_items_category ON marketplace_items(category);
+    CREATE INDEX IF NOT EXISTS idx_items_status ON marketplace_items(status);
+    CREATE TABLE IF NOT EXISTS usage_ledger (
+      id TEXT PRIMARY KEY, item_id TEXT NOT NULL, contributor_id TEXT NOT NULL,
+      user_id TEXT NOT NULL DEFAULT 'local', usage_date TEXT NOT NULL,
+      usage_count INTEGER NOT NULL DEFAULT 1, revenue_usd REAL NOT NULL DEFAULT 0.0,
+      FOREIGN KEY (item_id) REFERENCES marketplace_items(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_ledger_item ON usage_ledger(item_id);
+    CREATE INDEX IF NOT EXISTS idx_ledger_date ON usage_ledger(usage_date);
+    CREATE INDEX IF NOT EXISTS idx_ledger_contributor ON usage_ledger(contributor_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_ledger_unique ON usage_ledger(item_id, user_id, usage_date);
+    CREATE TABLE IF NOT EXISTS revenue_distributions (
+      id TEXT PRIMARY KEY, contributor_id TEXT NOT NULL, period TEXT NOT NULL,
+      total_usage INTEGER NOT NULL DEFAULT 0, gross_usd REAL NOT NULL DEFAULT 0.0,
+      share_pct REAL NOT NULL DEFAULT 70.0, net_usd REAL NOT NULL DEFAULT 0.0,
+      status TEXT NOT NULL DEFAULT 'pending', paid_at TEXT, created_at TEXT NOT NULL,
+      FOREIGN KEY (contributor_id) REFERENCES contributors(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_distributions_contributor ON revenue_distributions(contributor_id);
+    CREATE INDEX IF NOT EXISTS idx_distributions_period ON revenue_distributions(period);
   `);
 }
 

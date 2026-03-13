@@ -15,7 +15,10 @@ const { ulid } = require('ulid');
 
 // ── 테이블 생성 ─────────────────────────────────────────────────────────────
 function ensureCompanyTables(db) {
-  db.exec(`
+  // PG Pool 감지: prepare 메서드 없으면 PG
+  if (db && !db.prepare) {
+    // PG는 비동기 — 문장 단위로 분리해서 pool.query()로 실행
+    const stmts = `
     -- ─── 고객사 ──────────────────────────────────────────────────
     CREATE TABLE IF NOT EXISTS companies (
       id              TEXT PRIMARY KEY,
@@ -242,6 +245,131 @@ function ensureCompanyTables(db) {
       started_at      TEXT DEFAULT (datetime('now')),
       completed_at    TEXT DEFAULT '',
       status          TEXT DEFAULT 'active',
+      FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE
+    );
+  `.replace(/datetime\('now'\)/g, 'NOW()');
+    // PG: 여러 문장을 ;로 분리해서 개별 실행 (비동기, fire-and-forget)
+    const parts = stmts.split(';').map(s => s.replace(/--[^\n]*/g, '').trim()).filter(Boolean);
+    (async () => {
+      for (const s of parts) {
+        try { await db.query(s); } catch (e) { /* 테이블 이미 존재 등 무시 */ }
+      }
+    })().catch(e => console.warn('[company-ontology] PG init warn:', e.message));
+    return;
+  }
+  // SQLite 동기 실행
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS companies (
+      id TEXT PRIMARY KEY, name TEXT NOT NULL, industry TEXT DEFAULT '',
+      industry_code TEXT DEFAULT '', employee_count INTEGER DEFAULT 0,
+      revenue_range TEXT DEFAULT '', company_type TEXT DEFAULT 'B',
+      consultant_id TEXT DEFAULT '', status TEXT DEFAULT 'bootcamp',
+      address TEXT DEFAULT '', ceo_name TEXT DEFAULT '', phone TEXT DEFAULT '',
+      email TEXT DEFAULT '', website TEXT DEFAULT '', founded_year INTEGER DEFAULT 0,
+      fiscal_year_end TEXT DEFAULT '12', notes TEXT DEFAULT '',
+      scores_json TEXT DEFAULT '{}', metadata_json TEXT DEFAULT '{}',
+      created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS departments (
+      id TEXT PRIMARY KEY, company_id TEXT NOT NULL, name TEXT NOT NULL,
+      head_name TEXT DEFAULT '', head_count INTEGER DEFAULT 0,
+      budget_monthly REAL DEFAULT 0, key_systems TEXT DEFAULT '[]',
+      pain_points TEXT DEFAULT '[]', automation_score REAL DEFAULT 0,
+      efficiency_score REAL DEFAULT 0, notes TEXT DEFAULT '',
+      metadata_json TEXT DEFAULT '{}',
+      created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_dept_company ON departments(company_id);
+    CREATE TABLE IF NOT EXISTS employees (
+      id TEXT PRIMARY KEY, company_id TEXT NOT NULL, department_id TEXT DEFAULT '',
+      name TEXT NOT NULL, position TEXT DEFAULT '', role TEXT DEFAULT 'member',
+      email TEXT DEFAULT '', phone TEXT DEFAULT '', hire_date TEXT DEFAULT '',
+      skills TEXT DEFAULT '[]', ai_readiness REAL DEFAULT 0, workload_score REAL DEFAULT 0,
+      tracker_token TEXT DEFAULT '', tracker_active INTEGER DEFAULT 0,
+      last_seen_at TEXT DEFAULT '', metadata_json TEXT DEFAULT '{}',
+      created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_emp_company ON employees(company_id);
+    CREATE INDEX IF NOT EXISTS idx_emp_dept ON employees(department_id);
+    CREATE INDEX IF NOT EXISTS idx_emp_tracker ON employees(tracker_token);
+    CREATE TABLE IF NOT EXISTS processes (
+      id TEXT PRIMARY KEY, company_id TEXT NOT NULL, department_id TEXT DEFAULT '',
+      name TEXT NOT NULL, description TEXT DEFAULT '', category TEXT DEFAULT 'general',
+      frequency TEXT DEFAULT 'daily', avg_duration_min INTEGER DEFAULT 0,
+      involved_people INTEGER DEFAULT 1, current_tools TEXT DEFAULT '[]',
+      automation_potential REAL DEFAULT 0, automation_difficulty TEXT DEFAULT 'medium',
+      bottleneck_score REAL DEFAULT 0, estimated_savings_krw INTEGER DEFAULT 0,
+      estimated_savings_hrs REAL DEFAULT 0, priority_score REAL DEFAULT 0,
+      status TEXT DEFAULT 'active', notes TEXT DEFAULT '', metadata_json TEXT DEFAULT '{}',
+      created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_proc_company ON processes(company_id);
+    CREATE INDEX IF NOT EXISTS idx_proc_dept ON processes(department_id);
+    CREATE TABLE IF NOT EXISTS company_systems (
+      id TEXT PRIMARY KEY, company_id TEXT NOT NULL, name TEXT NOT NULL,
+      category TEXT DEFAULT 'other', vendor TEXT DEFAULT '',
+      monthly_cost REAL DEFAULT 0, user_count INTEGER DEFAULT 0,
+      integration_level TEXT DEFAULT 'none', satisfaction REAL DEFAULT 0,
+      data_export INTEGER DEFAULT 0, api_available INTEGER DEFAULT 0,
+      notes TEXT DEFAULT '', metadata_json TEXT DEFAULT '{}',
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_sys_company ON company_systems(company_id);
+    CREATE TABLE IF NOT EXISTS company_links (
+      id TEXT PRIMARY KEY, company_id TEXT NOT NULL, from_type TEXT NOT NULL,
+      from_id TEXT NOT NULL, to_type TEXT NOT NULL, to_id TEXT NOT NULL,
+      link_type TEXT NOT NULL, weight REAL DEFAULT 1.0, label TEXT DEFAULT '',
+      metadata_json TEXT DEFAULT '{}', created_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_link_company ON company_links(company_id);
+    CREATE INDEX IF NOT EXISTS idx_link_from ON company_links(from_type, from_id);
+    CREATE INDEX IF NOT EXISTS idx_link_to ON company_links(to_type, to_id);
+    CREATE TABLE IF NOT EXISTS diagnoses (
+      id TEXT PRIMARY KEY, company_id TEXT NOT NULL, stage TEXT DEFAULT 'bootcamp',
+      consultant_id TEXT DEFAULT '', scores_json TEXT DEFAULT '{}',
+      findings_json TEXT DEFAULT '[]', recommendations_json TEXT DEFAULT '[]',
+      roi_projection_json TEXT DEFAULT '{}', overall_score REAL DEFAULT 0,
+      overall_grade TEXT DEFAULT 'F', summary TEXT DEFAULT '',
+      diagnosed_at TEXT DEFAULT (datetime('now')), metadata_json TEXT DEFAULT '{}',
+      FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_diag_company ON diagnoses(company_id);
+    CREATE TABLE IF NOT EXISTS employee_activities (
+      id TEXT PRIMARY KEY, employee_id TEXT NOT NULL, company_id TEXT NOT NULL,
+      tracker_token TEXT NOT NULL, activity_type TEXT NOT NULL,
+      app_name TEXT DEFAULT '', window_title TEXT DEFAULT '', url TEXT DEFAULT '',
+      category TEXT DEFAULT 'other', duration_sec INTEGER DEFAULT 0,
+      keystrokes INTEGER DEFAULT 0, mouse_clicks INTEGER DEFAULT 0,
+      idle_sec INTEGER DEFAULT 0, extra_json TEXT DEFAULT '{}',
+      timestamp TEXT NOT NULL, created_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_ea_employee ON employee_activities(employee_id);
+    CREATE INDEX IF NOT EXISTS idx_ea_company ON employee_activities(company_id);
+    CREATE INDEX IF NOT EXISTS idx_ea_token ON employee_activities(tracker_token);
+    CREATE INDEX IF NOT EXISTS idx_ea_timestamp ON employee_activities(timestamp);
+    CREATE INDEX IF NOT EXISTS idx_ea_type ON employee_activities(activity_type);
+    CREATE TABLE IF NOT EXISTS benchmarks (
+      id TEXT PRIMARY KEY, industry TEXT NOT NULL, company_type TEXT DEFAULT 'B',
+      metric_name TEXT NOT NULL, avg_value REAL DEFAULT 0,
+      top_quartile REAL DEFAULT 0, bottom_quartile REAL DEFAULT 0,
+      sample_count INTEGER DEFAULT 0, updated_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_bench_unique ON benchmarks(industry, company_type, metric_name);
+    CREATE TABLE IF NOT EXISTS gdrive_backup_log (
+      id TEXT PRIMARY KEY, file_name TEXT NOT NULL, file_size INTEGER DEFAULT 0,
+      gdrive_id TEXT DEFAULT '', status TEXT DEFAULT 'pending', error TEXT DEFAULT '',
+      backed_up_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS bootcamp_sessions (
+      id TEXT PRIMARY KEY, company_id TEXT NOT NULL, consultant_id TEXT DEFAULT '',
+      stage TEXT DEFAULT 'upload', uploads_json TEXT DEFAULT '[]',
+      analysis_json TEXT DEFAULT '{}', findings_json TEXT DEFAULT '[]',
+      started_at TEXT DEFAULT (datetime('now')), completed_at TEXT DEFAULT '',
+      status TEXT DEFAULT 'active',
       FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE
     );
   `);
