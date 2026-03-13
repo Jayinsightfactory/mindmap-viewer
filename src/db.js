@@ -1169,6 +1169,7 @@ function updateWorkspaceActivityStrength(workspaceId, userId1, userId2, strength
 module.exports = {
   initDatabase,
   getDb,
+  waitForTables: async () => {}, // SQLite는 동기 초기화 — no-op
   insertEvent,
   getAllEvents,
   getEventsBySession,

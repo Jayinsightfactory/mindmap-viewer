@@ -1080,21 +1080,21 @@ try {
     console.warn('[DB Init] llm-settings 초기화 실패:', e.message);
   }
   
-  // 4) chat.js 초기화 (비동기)
+  // 4) chat.js 초기화 (비동기 — startServer에서 await)
   try {
     const chatRouter = require('./routes/chat');
     if (chatRouter.initChatTables) {
-      chatRouter.initChatTables().catch(e => console.warn('[DB Init] chat 비동기 초기화 실패:', e.message));
+      global._chatInitPromise = chatRouter.initChatTables().catch(e => console.warn('[DB Init] chat 비동기 초기화 실패:', e.message));
     }
   } catch (e) {
     console.warn('[DB Init] chat 초기화 실패:', e.message);
   }
-  
-  // 5) analytics.js 초기화 (비동기)
+
+  // 5) analytics.js 초기화 (비동기 — startServer에서 await)
   try {
     const analyticsRouter = require('./routes/analytics');
     if (analyticsRouter.initAnalyticsTables) {
-      analyticsRouter.initAnalyticsTables().catch(e => console.warn('[DB Init] analytics 비동기 초기화 실패:', e.message));
+      global._analyticsInitPromise = analyticsRouter.initAnalyticsTables().catch(e => console.warn('[DB Init] analytics 비동기 초기화 실패:', e.message));
     }
   } catch (e) {
     console.warn('[DB Init] analytics 초기화 실패:', e.message);
@@ -1702,6 +1702,13 @@ try {
 }
 // ─── 서버 시작 (PG auth 복원 후 listen) ────────────────────────────────────
 async function startServer() {
+  // PostgreSQL: 테이블 초기화 완료 대기 (재배포 시 경합 상태 방지)
+  if (process.env.DATABASE_URL && dbModule.waitForTables) {
+    await dbModule.waitForTables().catch(e => console.warn('[startup] PG 테이블 대기 실패:', e.message));
+  }
+  // 비동기 테이블 초기화 완료 대기 (chat, analytics)
+  if (global._chatInitPromise) await global._chatInitPromise;
+  if (global._analyticsInitPromise) await global._analyticsInitPromise;
   // Railway 재배포 후 SQLite가 비어있으면 PG에서 사용자/토큰 복원
   if (process.env.DATABASE_URL) {
     await authInitFromPg().catch(e => console.warn('[startup] auth PG 복원 실패:', e.message));

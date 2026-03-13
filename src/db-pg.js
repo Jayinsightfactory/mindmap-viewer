@@ -12,14 +12,26 @@ let pool = null;
 // ─── 초기화 ─────────────────────────────────────────
 // 동기 반환: pool을 즉시 반환하고 테이블 생성은 비동기로 처리
 // (Node.js v24+ unhandled rejection 크래시 방지)
+// 테이블 초기화 완료 대기용 Promise (server.js에서 await 가능)
+let _tablesReady = null;
+
 function initDatabase() {
   pool = new Pool({ connectionString: process.env.DATABASE_URL });
   console.log('[DB] PostgreSQL 풀 생성 완료');
-  // 테이블 생성 비동기 실행 — 실패해도 서버 프로세스는 유지
-  createTables()
+  // 테이블 생성 — _tablesReady Promise로 외부에서 await 가능
+  _tablesReady = createTables()
     .then(() => console.log('[DB] PostgreSQL 테이블 초기화 완료'))
-    .catch(e => console.warn('[DB] 테이블 초기화 경고 (재시도됨):', e.message));
+    .catch(e => {
+      console.warn('[DB] 테이블 초기화 경고:', e.message);
+      // 재시도 1회
+      return createTables().catch(e2 => console.error('[DB] 테이블 재시도 실패:', e2.message));
+    });
   return pool;
+}
+
+/** 테이블 초기화 완료까지 대기 (서버 시작 전 호출) */
+async function waitForTables() {
+  if (_tablesReady) await _tablesReady;
 }
 
 async function createTables() {
@@ -832,7 +844,7 @@ async function updateWorkspaceActivityStrength(workspaceId, userId1, userId2, st
 }
 
 module.exports = {
-  initDatabase, getDb,
+  initDatabase, getDb, waitForTables,
   insertEvent, getAllEvents, getEventsBySession, getEventsByType, searchEvents,
   getSessions, getFiles, getAnnotations, insertAnnotation, deleteAnnotation,
   rollbackToEvent, clearAll, getStats, upsertFile,

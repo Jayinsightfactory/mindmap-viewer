@@ -101,11 +101,12 @@ function createRouter(deps) {
           ? await getFullGraphForUser(user.id, req.query.session)
           : await getFullGraph(req.query.session, req.query.channel);
 
-        // local 이벤트가 남아있으면 귀속 시도 (로그인할 때마다 확인)
-        if (claimLocalEvents) {
+        // local 이벤트 귀속: 유저의 이벤트가 0개일 때만 (첫 로그인)
+        // → 다른 계정 로그인 시 이전 계정 데이터 가져가는 문제 방지
+        if (claimLocalEvents && graph.nodes.length === 0) {
           const claimed = await Promise.resolve(claimLocalEvents(user.id));
           if (claimed > 0) {
-            console.log(`[graph] ${user.id}: ${claimed}개 local 이벤트 귀속`);
+            console.log(`[graph] ${user.id}: 첫 로그인 — ${claimed}개 local 이벤트 귀속`);
             graph = getFullGraphForUser
               ? await getFullGraphForUser(user.id, req.query.session)
               : await getFullGraph(req.query.session, req.query.channel);
@@ -137,6 +138,15 @@ function createRouter(deps) {
   router.post('/claim-local-events', async (req, res) => {
     const user = getUserFromReq(req);
     if (!user || user.id === 'local') return res.status(401).json({ error: 'login required' });
+
+    // 안전장치: 유저가 이미 이벤트를 보유하면 claim 차단 (다른 계정 데이터 겹침 방지)
+    if (getEventsByUser) {
+      const existing = await Promise.resolve(getEventsByUser(user.id));
+      if (existing.length > 0) {
+        return res.json({ ok: true, claimed: 0, reason: 'user already has events' });
+      }
+    }
+
     const changed = claimLocalEvents ? await Promise.resolve(claimLocalEvents(user.id)) : 0;
     res.json({ ok: true, claimed: changed });
   });
