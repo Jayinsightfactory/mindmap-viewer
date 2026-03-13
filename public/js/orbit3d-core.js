@@ -45,9 +45,14 @@ window.scene = scene; // 전역 참조 할당
 // [extracted to orbit3d-drilldown.js]: _drillStage, _drillProject, _drillCategory, _drillTimelineEvent
 
 // ─── 2D 월드 네비게이션 (팀 탐색용) ─────────────────────────────────────────
-// 좌클릭 드래그 → 팬,  스크롤 → 줌 스케일,  팀원 클러스터 세계 좌표에 배치
+// 좌클릭 드래그 → 시점 회전,  스크롤 → 줌 스케일,  팀원 클러스터 세계 좌표에 배치
 let _worldPanX = 0, _worldPanY = 0, _worldScale = 1.0;
 window._worldPanX = 0; window._worldPanY = 0; window._worldScale = 1.0;
+
+// ── 시점 회전 (좌클릭 드래그 → 카메라 각도 변경) ────────────────────────────
+// viewYaw: 수평 회전, viewPitch: 수직 틸트 (0=위에서, ±1.2=옆에서)
+let _viewYaw = 0, _viewPitch = 0;
+window._viewYaw = 0; window._viewPitch = 0;
 
 // ── 자동 피트 줌: 부드러운 이징 애니메이션으로 목표 스케일로 이동 ────────────
 let _worldLocked = false; // 줌/팬 잠금
@@ -845,8 +850,8 @@ class OrbitCam {
       this._lx=e.clientX; this._ly=e.clientY;
       this._dragStartX = e.clientX; this._dragStartY = e.clientY;
       this._dragThresholdMet = false;
-      // hitTest — 히트 영역 위 클릭이면 패닝 차단
-      this._mouseOnHit = !!hitTest(e.clientX, e.clientY);
+      // 히트 영역 위 클릭이면 패닝 차단 (_hoveredHit은 매 프레임 갱신되어 정확)
+      this._mouseOnHit = !!(typeof _hoveredHit !== 'undefined' && _hoveredHit);
       if (e.button===2 || e.button===1 || (e.button===0 && e.shiftKey)) this._r=true;
       else if (e.button===0) this._d=true;
       this._dragging=true;
@@ -874,10 +879,12 @@ class OrbitCam {
       if (Math.sqrt(totalDx*totalDx + totalDy*totalDy) < DRAG_THRESH) return;
       this._dragThresholdMet = true;
     }
-    // 히트 영역 위에서 시작한 드래그 또는 잠금 상태 → 패닝 차단
+    // 히트 영역 위에서 시작한 드래그 또는 잠금 상태 → 차단
     if (this._d && this._dragThresholdMet && !this._mouseOnHit && !_worldLocked) {
-      _worldPanX += dx; _worldPanY += dy;
-      window._worldPanX = _worldPanX; window._worldPanY = _worldPanY;
+      // 좌클릭 드래그 → 시점 회전 (중심 고정, 보는 각도 변경)
+      _viewYaw += dx * 0.004;
+      _viewPitch = Math.max(-1.2, Math.min(1.2, _viewPitch - dy * 0.004));
+      window._viewYaw = _viewYaw; window._viewPitch = _viewPitch;
     } else if (this._r) {
       // 우클릭/Shift → 3D 배경 회전
       this.sph.θ -= dx*.003;
@@ -983,6 +990,9 @@ const controls   = new OrbitCam(camera, renderer.domElement);
     lockBtn.style.background = 'rgba(100,116,139,0.15)';
     _animateWorldPan(0, 0, 400);
     _animateWorldScale(1.0, 400);
+    // 시점 각도 리셋
+    _viewYaw = 0; _viewPitch = 0;
+    window._viewYaw = 0; window._viewPitch = 0;
   });
 
   container.appendChild(zoomInBtn);

@@ -212,7 +212,7 @@ function _drawControlsHint(ctx, W, H, _wScale) {
 
   const hints = [
     `🔭 ${zoomLabel} (×${_wScale.toFixed(1)})`,
-    '🖱 배경 드래그: 탐색 이동',
+    '🖱 배경 드래그: 시점 회전',
     '⚙ 스크롤: 줌인/줌아웃',
     '👆 클릭: 프로젝트 상세',
   ];
@@ -303,9 +303,9 @@ function drawCompactProjectView() {
   const angleStep = (Math.PI * 2) / projects.length;
 
   const SUN_R = 30;
-  const ORBIT_BASE = 50;
-  const ORBIT_PER_PLANET = 12;
-  const SOLAR_SYSTEM_GAP = 25;
+  const ORBIT_BASE = 65;
+  const ORBIT_PER_PLANET = 14;
+  const SOLAR_SYSTEM_GAP = 30;
 
   const solarRadii = projects.map(p => ORBIT_BASE + Math.min(p.planets.length, 8) * ORBIT_PER_PLANET);
   const maxSolarR = Math.max(...solarRadii);
@@ -333,10 +333,27 @@ function drawCompactProjectView() {
   const _aliases = (() => { try { return JSON.parse(localStorage.getItem('orbitLabelAliases') || '{}'); } catch { return {}; } })();
   const _sunScreenCoords = [];
 
+  // ── 시점 회전 (pseudo-3D perspective) ──────────────────────────────────────
+  const _vYaw = window._viewYaw || 0;
+  const _vPitch = window._viewPitch || 0;
+  const _cosY = Math.cos(_vYaw), _sinY = Math.sin(_vYaw);
+  const _cosP = Math.cos(_vPitch);
+
+  // 월드→스크린 변환 (시점 회전 포함)
+  function worldToScreen(wx, wy) {
+    const rx = wx * _cosY + wy * (-_sinY);
+    const ry = wx * _sinY * _cosP + wy * _cosY * _cosP;
+    return { x: rx * _wScale + _txX, y: ry * _wScale + _txY };
+  }
+
   // ── 월드 트랜스폼 ──────────────────────────────────────────────────────────
   ctx.save();
   ctx.translate(_txX, _txY);
   ctx.scale(_wScale, _wScale);
+  // 시점 회전 적용 (yaw + pitch)
+  if (_vYaw !== 0 || _vPitch !== 0) {
+    ctx.transform(_cosY, _sinY * _cosP, -_sinY, _cosY * _cosP, 0, 0);
+  }
 
   // ── 태양계 렌더링 ──────────────────────────────────────────────────────────
   projects.forEach((proj, i) => {
@@ -351,7 +368,8 @@ function drawCompactProjectView() {
     const solarR = solarRadii[i];
     const numPlanets = Math.min(proj.planets.length, 12);
 
-    _sunScreenCoords.push({ sx: sunCx * _wScale + _txX, sy: sunCy * _wScale + _txY, color });
+    const _sunSc = worldToScreen(sunCx, sunCy);
+    _sunScreenCoords.push({ sx: _sunSc.x, sy: _sunSc.y, color });
 
     if (dimmed) ctx.globalAlpha = 0.15;
 
@@ -407,7 +425,7 @@ function drawCompactProjectView() {
         const px = sunCx + Math.cos(pAngle) * orbitR;
         const py = sunCy + Math.sin(pAngle) * orbitR;
         const evCnt = planet.userData.eventCount || 0;
-        const pR = Math.max(10, Math.min(18, 10 + evCnt * 0.3));
+        const pR = Math.max(18, Math.min(28, 18 + evCnt * 0.3));
         const isSubHover = _hoveredHit?.obj === planet;
         const catKey = planet.userData.macroCat || 'general';
         const catCfg = PROJECT_TYPES[catKey] || PROJECT_TYPES.general;
@@ -419,30 +437,29 @@ function drawCompactProjectView() {
           hover: isSubHover, rotation: now * 0.2 + pi,
         });
 
-        // 행성 라벨 (항상 표시 — 짧은 텍스트)
+        // 행성 라벨 (구체 내부에 표시)
         const sesKey = planet.userData.clusterId || planet.userData.sessionId || '';
         let sLabel = _aliases[sesKey] || normalizeLabel(planet.userData.intent || '', 16);
         if (!sLabel) sLabel = deriveDisplayLabel(planet.userData, 16);
         if (sLabel) {
           ctx.save();
           const showFull = isThisDrilled || isSubHover;
-          const fontSize = showFull ? 12 : 10;
+          const fontSize = showFull ? 11 : 9;
           ctx.font = `${showFull ? '600' : '500'} ${fontSize}px 'Inter',-apple-system,sans-serif`;
-          ctx.textAlign = 'center';
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
 
-          // 텍스트 배경 (가독성)
-          const tw = ctx.measureText(sLabel).width;
-          const pw = tw + 8, ph = fontSize + 6;
-          ctx.fillStyle = 'rgba(2,6,23,0.75)';
-          roundRect(ctx, px - pw/2, py + pR + 3, pw, ph, 4); ctx.fill();
+          // 텍스트가 구체 안에 들어가도록 클리핑
+          const maxTextW = pR * 1.6;
+          while (ctx.measureText(sLabel).width > maxTextW && sLabel.length > 2) sLabel = sLabel.slice(0, -1);
+          if (ctx.measureText(sLabel).width > maxTextW) sLabel = sLabel.slice(0, -1) + '\u2026';
 
-          ctx.fillStyle = showFull ? '#fff' : '#cbd5e1';
-          ctx.fillText(sLabel, px, py + pR + 3 + ph * 0.6);
+          ctx.fillStyle = showFull ? '#fff' : '#e2e8f0';
+          ctx.fillText(sLabel, px, py - 1);
 
           if (showFull && evCnt > 0) {
-            ctx.font = "500 8px 'JetBrains Mono',monospace";
+            ctx.font = "500 7px 'JetBrains Mono',monospace";
             ctx.fillStyle = '#94a3b8';
-            ctx.fillText(`${evCnt}개 작업`, px, py + pR + ph + 10);
+            ctx.fillText(`${evCnt}`, px, py + fontSize * 0.7);
           }
           ctx.restore();
         }
@@ -477,11 +494,12 @@ function drawCompactProjectView() {
 
   ctx.restore();
 
-  // ── hitArea 스크린 변환 ──
+  // ── hitArea 스크린 변환 (시점 회전 포함) ──
   _hitAreas.forEach(h => {
-    h.cx = h.cx * _wScale + _txX;
-    h.cy = h.cy * _wScale + _txY;
-    h.r  = h.r  * _wScale;
+    const sc = worldToScreen(h.cx, h.cy);
+    h.cx = sc.x;
+    h.cy = sc.y;
+    h.r  = h.r * _wScale;
   });
   _hitAreas.sort((a, b) => {
     const drillTypes = new Set(['drillCategory', 'drillSession']);
