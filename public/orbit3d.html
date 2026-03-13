@@ -66,6 +66,7 @@
     <button class="ln-item" onclick="openSetupPanel()">⚙️ 설정</button>
     <button class="ln-item" id="ln-monitor-btn" onclick="toggleMonitor()">📹 AI 모니터</button>
     <button class="ln-item" id="ln-suggest-btn" onclick="toggleSuggestionPanel()">💡 AI 추천</button>
+    <button class="ln-item" onclick="openLearningDataPanel()">📊 학습 데이터</button>
     <button class="ln-item" onclick="toggleMgrPanel()">👔 관리자</button>
     <button class="ln-item" onclick="toggleTaskSidebar()">📋 할 일</button>
 
@@ -1022,6 +1023,34 @@ function viewZoom(dir) {
   <div class="ctrl-item"><b>휠</b> 줌인/아웃</div>
   <div class="ctrl-item"><b>클릭</b> 작업 상세보기</div>
   <div class="ctrl-item"><b>더블클릭</b> 행성 포커스</div>
+</div>
+
+<!-- ══ 학습 데이터 패널 ══════════════════════════════════════════════════ -->
+<div id="learning-data-panel" style="display:none;position:fixed;top:0;right:0;width:480px;height:100vh;background:rgba(2,6,23,0.97);border-left:1px solid #334155;z-index:800;overflow-y:auto;font-family:'Inter',-apple-system,sans-serif">
+  <div style="padding:20px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+      <h2 style="color:#e2e8f0;font-size:18px;margin:0">📊 내 학습 데이터</h2>
+      <button onclick="closeLearningDataPanel()" style="background:none;border:none;color:#94a3b8;font-size:20px;cursor:pointer">✕</button>
+    </div>
+    <!-- 데이터 요약 -->
+    <div id="ld-summary" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px"></div>
+    <!-- 탭 -->
+    <div style="display:flex;gap:4px;margin-bottom:16px;border-bottom:1px solid #334155;padding-bottom:8px">
+      <button class="ld-tab active" onclick="switchLdTab('insights',this)" style="background:rgba(6,182,212,0.15);color:#06b6d4;border:none;padding:6px 12px;border-radius:6px;font-size:12px;cursor:pointer">인사이트</button>
+      <button class="ld-tab" onclick="switchLdTab('patterns',this)" style="background:transparent;color:#94a3b8;border:none;padding:6px 12px;border-radius:6px;font-size:12px;cursor:pointer">패턴</button>
+      <button class="ld-tab" onclick="switchLdTab('suggestions',this)" style="background:transparent;color:#94a3b8;border:none;padding:6px 12px;border-radius:6px;font-size:12px;cursor:pointer">AI 추천</button>
+      <button class="ld-tab" onclick="switchLdTab('triggers',this)" style="background:transparent;color:#94a3b8;border:none;padding:6px 12px;border-radius:6px;font-size:12px;cursor:pointer">트리거</button>
+    </div>
+    <!-- 탭 내용 -->
+    <div id="ld-content" style="color:#cbd5e1;font-size:13px"></div>
+    <!-- 액션 버튼 -->
+    <div style="margin-top:24px;display:flex;flex-direction:column;gap:8px;border-top:1px solid #334155;padding-top:16px">
+      <button onclick="backupLearningToDrive()" style="width:100%;padding:10px;background:rgba(6,182,212,0.15);color:#06b6d4;border:1px solid rgba(6,182,212,0.3);border-radius:8px;font-size:13px;cursor:pointer">☁️ Google Drive에 학습 데이터 백업</button>
+      <button onclick="exportMyData()" style="width:100%;padding:10px;background:rgba(34,197,94,0.1);color:#22c55e;border:1px solid rgba(34,197,94,0.2);border-radius:8px;font-size:13px;cursor:pointer">📥 전체 데이터 내보내기 (JSON)</button>
+      <button onclick="deleteMyData()" style="width:100%;padding:10px;background:rgba(239,68,68,0.08);color:#ef4444;border:1px solid rgba(239,68,68,0.15);border-radius:8px;font-size:13px;cursor:pointer">🗑️ 내 데이터 전체 삭제</button>
+      <div id="ld-drive-status" style="font-size:11px;color:#64748b;text-align:center;margin-top:4px"></div>
+    </div>
+  </div>
 </div>
 
 <!-- 내 작업 사이드바 -->

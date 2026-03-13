@@ -1315,7 +1315,7 @@ const createGdriveRouter = require('./routes/gdrive');
 app.use('/api', createGdriveRouter({
   verifyToken,
   auth: { getValidGoogleToken, getOAuthTokens, saveOAuthTokens },
-  dbModule: { getAllEvents, getEventsByUser, getSessionsByUser, getSessions, insertEvent },
+  dbModule: { getAllEvents, getEventsByUser, getSessionsByUser, getSessions, insertEvent, getDb: dbModule.getDb },
   gdriveUserBackup,
 }));
 
@@ -1370,6 +1370,10 @@ app.use('/api', createIntelligenceRouter({ verifyToken, getEventsForUser, resolv
 
 // ─── Phase 5: AI 학습 + 맞춤 추천 ────────────────────────────────────────────
 app.use('/api', createLearningRouter({ verifyToken, getEventsForUser, resolveUserId }));
+
+// ─── 데이터 관리 (Export / Delete / Summary) ─────────────────────────────────
+const createDataManagementRouter = require('./routes/data-management');
+app.use('/api', createDataManagementRouter({ verifyToken, dbModule }));
 
 // ─── 데모 시드 (개발/미리보기용) ─────────────────────────────────────────────
 app.post('/api/demo/seed', (req, res) => {

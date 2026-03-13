@@ -2325,3 +2325,182 @@ async function openTrackerSettings() {
   alert('트래커 설정 준비 중입니다');
 }
 window.openTrackerSettings = openTrackerSettings;
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 학습 데이터 패널
+// ═══════════════════════════════════════════════════════════════════════════════
+let _ldData = null;
+
+async function openLearningDataPanel() {
+  const panel = document.getElementById('learning-data-panel');
+  if (!panel) return;
+  panel.style.display = 'block';
+  await loadLearningData();
+}
+window.openLearningDataPanel = openLearningDataPanel;
+
+function closeLearningDataPanel() {
+  const panel = document.getElementById('learning-data-panel');
+  if (panel) panel.style.display = 'none';
+}
+window.closeLearningDataPanel = closeLearningDataPanel;
+
+async function loadLearningData() {
+  const sumEl = document.getElementById('ld-summary');
+  const contEl = document.getElementById('ld-content');
+  const statusEl = document.getElementById('ld-drive-status');
+  if (!sumEl) return;
+  sumEl.innerHTML = '<div style="color:#64748b">로딩 중...</div>';
+
+  try {
+    // 데이터 요약 로드
+    const [sumRes, insRes, sugRes, trigRes, driveRes] = await Promise.allSettled([
+      fetch('/api/me/data-summary').then(r => r.json()),
+      fetch('/api/me/insights').then(r => r.json()),
+      fetch('/api/personal/suggestions').then(r => r.json()),
+      fetch('/api/personal/triggers').then(r => r.json()),
+      fetch('/api/gdrive/auth-status').then(r => r.json()),
+    ]);
+
+    const sum = sumRes.status === 'fulfilled' ? sumRes.value : {};
+    const insights = insRes.status === 'fulfilled' ? (insRes.value.insights || insRes.value || []) : [];
+    const suggestions = sugRes.status === 'fulfilled' ? (sugRes.value.suggestions || sugRes.value || []) : [];
+    const triggers = trigRes.status === 'fulfilled' ? (trigRes.value.triggers || trigRes.value || []) : [];
+
+    _ldData = { sum, insights, suggestions, triggers };
+
+    // 요약 카드
+    sumEl.innerHTML = [
+      mkCard('📊 이벤트', sum.eventCount || 0),
+      mkCard('🗓️ 세션', sum.sessionCount || 0),
+      mkCard('💡 인사이트', Array.isArray(insights) ? insights.length : 0),
+      mkCard('⚡ 트리거', Array.isArray(triggers) ? triggers.length : 0),
+    ].join('');
+
+    // Drive 상태
+    const driveOk = driveRes.status === 'fulfilled' && driveRes.value.authenticated;
+    if (statusEl) statusEl.textContent = driveOk
+      ? '✅ Google Drive 연결됨'
+      : '⚠️ Drive 미연결 — 로그인 후 백업 가능';
+
+    // 기본 탭
+    switchLdTab('insights');
+  } catch (e) {
+    sumEl.innerHTML = `<div style="color:#ef4444">데이터 로드 실패: ${e.message}</div>`;
+  }
+}
+
+function mkCard(label, value) {
+  return `<div style="background:rgba(51,65,85,0.4);border:1px solid #334155;border-radius:8px;padding:12px;text-align:center">
+    <div style="color:#94a3b8;font-size:11px;margin-bottom:4px">${label}</div>
+    <div style="color:#e2e8f0;font-size:22px;font-weight:700">${typeof value === 'number' ? value.toLocaleString() : value}</div>
+  </div>`;
+}
+
+function switchLdTab(tab, btn) {
+  // 탭 활성화
+  document.querySelectorAll('.ld-tab').forEach(b => {
+    b.style.background = 'transparent'; b.style.color = '#94a3b8';
+    b.classList.remove('active');
+  });
+  if (btn) { btn.style.background = 'rgba(6,182,212,0.15)'; btn.style.color = '#06b6d4'; btn.classList.add('active'); }
+
+  const el = document.getElementById('ld-content');
+  if (!el || !_ldData) return;
+
+  if (tab === 'insights') {
+    const items = Array.isArray(_ldData.insights) ? _ldData.insights.slice(0, 20) : [];
+    el.innerHTML = items.length === 0
+      ? '<div style="color:#64748b;padding:20px;text-align:center">아직 생성된 인사이트가 없습니다</div>'
+      : items.map(i => `<div style="background:rgba(51,65,85,0.3);border:1px solid #1e293b;border-radius:8px;padding:12px;margin-bottom:8px">
+          <div style="font-weight:600;color:#06b6d4;font-size:12px;margin-bottom:4px">${i.type || i.category || '인사이트'}</div>
+          <div style="color:#e2e8f0">${i.message || i.title || i.text || JSON.stringify(i).slice(0, 120)}</div>
+          ${i.evidence ? `<div style="color:#64748b;font-size:11px;margin-top:4px">${i.evidence}</div>` : ''}
+        </div>`).join('');
+  } else if (tab === 'patterns') {
+    el.innerHTML = '<div style="color:#64748b;padding:20px;text-align:center">패턴 분석은 충분한 데이터 수집 후 자동 생성됩니다</div>';
+    fetch('/api/learning/routines').then(r => r.json()).then(data => {
+      const routines = data.routines || data || [];
+      if (routines.length > 0) {
+        el.innerHTML = routines.map(r => `<div style="background:rgba(51,65,85,0.3);border:1px solid #1e293b;border-radius:8px;padding:12px;margin-bottom:8px">
+          <div style="font-weight:600;color:#a78bfa">${r.name || r.pattern || '패턴'}</div>
+          <div style="color:#cbd5e1;font-size:12px;margin-top:4px">${r.description || r.summary || ''}</div>
+        </div>`).join('');
+      }
+    }).catch(() => {});
+  } else if (tab === 'suggestions') {
+    const items = Array.isArray(_ldData.suggestions) ? _ldData.suggestions : [];
+    el.innerHTML = items.length === 0
+      ? '<div style="color:#64748b;padding:20px;text-align:center">아직 AI 추천이 없습니다</div>'
+      : items.map(s => `<div style="background:rgba(51,65,85,0.3);border:1px solid #1e293b;border-radius:8px;padding:12px;margin-bottom:8px">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <span style="font-weight:600;color:#22c55e">${s.title || s.type || '추천'}</span>
+            <span style="font-size:10px;color:#64748b;background:rgba(100,116,139,0.2);padding:2px 6px;border-radius:4px">${s.confidence ? Math.round(s.confidence * 100) + '%' : ''}</span>
+          </div>
+          <div style="color:#cbd5e1;font-size:12px;margin-top:4px">${s.description || ''}</div>
+        </div>`).join('');
+  } else if (tab === 'triggers') {
+    const items = Array.isArray(_ldData.triggers) ? _ldData.triggers : [];
+    el.innerHTML = items.length === 0
+      ? '<div style="color:#64748b;padding:20px;text-align:center">트리거 패턴이 아직 학습되지 않았습니다</div>'
+      : items.map(t => `<div style="background:rgba(51,65,85,0.3);border:1px solid #1e293b;border-radius:8px;padding:12px;margin-bottom:8px">
+          <div style="font-weight:600;color:#f59e0b">⚡ ${t.name || t.trigger || t.type || '트리거'}</div>
+          <div style="color:#cbd5e1;font-size:12px;margin-top:4px">${t.description || t.condition || ''}</div>
+        </div>`).join('');
+  }
+}
+window.switchLdTab = switchLdTab;
+
+async function backupLearningToDrive() {
+  const statusEl = document.getElementById('ld-drive-status');
+  if (statusEl) statusEl.textContent = '⏳ Drive 백업 중...';
+  try {
+    const res = await fetch('/api/gdrive/backup-learning', { method: 'POST' });
+    const data = await res.json();
+    if (data.fileId) {
+      if (statusEl) statusEl.textContent = `✅ 백업 완료: ${data.fileName}`;
+      showToast('학습 데이터가 Google Drive에 저장되었습니다');
+    } else {
+      if (statusEl) statusEl.textContent = `❌ ${data.error || '백업 실패'}`;
+    }
+  } catch (e) {
+    if (statusEl) statusEl.textContent = `❌ 오류: ${e.message}`;
+  }
+}
+window.backupLearningToDrive = backupLearningToDrive;
+
+async function exportMyData() {
+  try {
+    showToast('데이터 내보내기 준비 중...');
+    const res = await fetch('/api/me/export-data');
+    if (!res.ok) throw new Error('내보내기 실패');
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url;
+    a.download = `orbit-my-data-${new Date().toISOString().slice(0,10)}.json`;
+    a.click(); URL.revokeObjectURL(url);
+    showToast('데이터 다운로드 완료');
+  } catch (e) { showToast('내보내기 실패: ' + e.message); }
+}
+window.exportMyData = exportMyData;
+
+async function deleteMyData() {
+  if (!confirm('정말로 모든 데이터를 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.')) return;
+  if (!confirm('마지막 확인: 모든 이벤트, 세션, 북마크, 메모가 삭제됩니다.')) return;
+  try {
+    const res = await fetch('/api/me/delete-data', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirm: 'DELETE_ALL_MY_DATA' }),
+    });
+    const data = await res.json();
+    if (data.deleted) {
+      showToast('데이터 삭제 완료');
+      closeLearningDataPanel();
+      if (typeof loadData === 'function') loadData();
+    } else {
+      showToast('삭제 실패: ' + (data.error || ''));
+    }
+  } catch (e) { showToast('삭제 실패: ' + e.message); }
+}
+window.deleteMyData = deleteMyData;

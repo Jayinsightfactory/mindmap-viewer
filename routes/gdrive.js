@@ -5,14 +5,16 @@
  * 사용자별 Google Drive 백업 / 복원 / 동기화 API
  *
  * 엔드포인트:
- *   POST /api/gdrive/backup       — 즉시 백업 실행
- *   GET  /api/gdrive/backups      — 백업 목록 조회
- *   GET  /api/gdrive/status       — Drive 연결 상태
- *   GET  /api/gdrive/sync-check   — 다른 PC 백업 확인 (F3용)
- *   POST /api/gdrive/import       — 백업 가져오기 (F3용)
- *   GET  /api/gdrive/auth-url     — OAuth2 인증 URL 반환 (웹 인증용)
- *   GET  /api/gdrive/auth-callback— OAuth2 콜백 처리 (웹 인증용)
- *   GET  /api/gdrive/auth-status  — GDrive 인증 상태 확인
+ *   POST /api/gdrive/backup          — 즉시 백업 실행
+ *   GET  /api/gdrive/backups         — 백업 목록 조회
+ *   GET  /api/gdrive/status          — Drive 연결 상태
+ *   GET  /api/gdrive/sync-check      — 다른 PC 백업 확인 (F3용)
+ *   POST /api/gdrive/import          — 백업 가져오기 (F3용)
+ *   POST /api/gdrive/backup-learning — 학습 데이터 백업 (인사이트/패턴/트리거/신호)
+ *   GET  /api/gdrive/learning-data   — 학습 데이터 백업 목록 조회
+ *   GET  /api/gdrive/auth-url        — OAuth2 인증 URL 반환 (웹 인증용)
+ *   GET  /api/gdrive/auth-callback   — OAuth2 콜백 처리 (웹 인증용)
+ *   GET  /api/gdrive/auth-status     — GDrive 인증 상태 확인
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -142,6 +144,39 @@ function createGdriveRouter({ verifyToken, auth, dbModule, gdriveUserBackup }) {
     } catch (e) {
       console.error('[gdrive/import]', e.message);
       res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
+  // POST /api/gdrive/backup-learning — 학습 데이터 백업
+  router.post('/gdrive/backup-learning', async (req, res) => {
+    try {
+      const user = getUserFromReq(req);
+      if (!user || user.id === 'local') return res.status(401).json({ error: 'login required' });
+
+      const accessToken = await auth.getValidGoogleToken(user.id);
+      if (!accessToken) return res.status(400).json({ error: 'Google Drive 연결이 필요합니다. Google로 다시 로그인해주세요.' });
+
+      const result = await gdriveUserBackup.backupLearningData(user.id, accessToken, dbModule);
+      res.json({ ok: true, ...result });
+    } catch (e) {
+      console.error('[gdrive/backup-learning]', e.message);
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
+  // GET /api/gdrive/learning-data — 학습 데이터 백업 목록
+  router.get('/gdrive/learning-data', async (req, res) => {
+    try {
+      const user = getUserFromReq(req);
+      if (!user || user.id === 'local') return res.status(401).json({ error: 'login required' });
+
+      const accessToken = await auth.getValidGoogleToken(user.id);
+      if (!accessToken) return res.json({ backups: [], connected: false });
+
+      const backups = await gdriveUserBackup.listLearningBackups(accessToken);
+      res.json({ ok: true, backups, connected: true });
+    } catch (e) {
+      res.json({ ok: false, backups: [], error: e.message });
     }
   });
 

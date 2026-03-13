@@ -37,13 +37,17 @@ function appendInsight(insight) {
   fs.appendFileSync(INSIGHT_FILE, JSON.stringify(insight) + '\n', 'utf8');
 }
 
-function loadRecentInsights(limit = 50) {
+function loadRecentInsights(limit = 50, userId) {
   if (!fs.existsSync(INSIGHT_FILE)) return [];
   const lines = fs.readFileSync(INSIGHT_FILE, 'utf8')
     .split('\n')
-    .filter(Boolean)
-    .slice(-limit);
-  return lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+    .filter(Boolean);
+  let parsed = lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+  // userId 필터: 지정된 경우 해당 사용자의 인사이트만 반환
+  if (userId && userId !== 'local' && userId !== 'anonymous') {
+    parsed = parsed.filter(i => i.userId === userId || !i.userId);
+  }
+  return parsed.slice(-limit);
 }
 
 // ─── 패턴 분석 (규칙 기반) ───────────────────────────────────────────────────
@@ -311,77 +315,101 @@ JSON 배열 형식: [{"title":"...", "body":"...", "type":"claude_insight", "con
 // ─── 메인 실행 함수 ─────────────────────────────────────────────────────────
 
 /**
+ * 특정 사용자의 이벤트로 인사이트를 생성합니다.
+ * @param {object[]} events  - 사용자별 이벤트 배열
+ * @param {string}   userId  - 사용자 ID
+ * @param {{ saveSuggestion, broadcastAll }} deps
+ * @returns {Promise<object[]>}
+ */
+async function _runForUser(events, userId, { saveSuggestion, broadcastAll }) {
+  if (!events || events.length < 10) return [];
+
+  const stats = {
+    totalEvents:  events.length,
+    userId,
+    dateRange: {
+      from: events[0]?.timestamp,
+      to:   events[events.length - 1]?.timestamp,
+    },
+    typeBreakdown: events.reduce((acc, e) => {
+      acc[e.type] = (acc[e.type] || 0) + 1;
+      return acc;
+    }, {}),
+    sessionCount: new Set(events.map(e => e.sessionId || e.session_id)).size,
+    channelCount: new Set(events.map(e => e.channelId || e.channel_id)).size,
+  };
+
+  const ruleInsights = analyzeEvents(events);
+  const insights = await enrichWithLLM(ruleInsights, stats);
+  const timestamp = new Date().toISOString();
+
+  insights.forEach(insight => {
+    const record = {
+      ...insight,
+      userId,
+      timestamp,
+      runAt: timestamp,
+    };
+
+    appendInsight(record);
+
+    if (saveSuggestion) {
+      try {
+        saveSuggestion({
+          type:        insight.type,
+          title:       insight.title,
+          description: insight.body,
+          confidence:  insight.confidence || 0.7,
+          metadata:    JSON.stringify(insight.data || {}),
+        });
+      } catch {}
+    }
+  });
+
+  if (broadcastAll && insights.length > 0) {
+    broadcastAll({
+      type:     'new_insights',
+      userId,
+      insights: insights.map(i => ({ title: i.title, type: i.type, confidence: i.confidence })),
+      count:    insights.length,
+      timestamp,
+    });
+  }
+
+  return insights;
+}
+
+/**
  * 인사이트 분석을 1회 실행합니다.
+ * getAllEvents로 전체 이벤트를 가져온 뒤 user_id별로 그룹핑하여 분석합니다.
  *
  * @param {{ getAllEvents, saveSuggestion, broadcastAll }} deps
  * @returns {Promise<object[]>} 생성된 인사이트 배열
  */
 async function runOnce({ getAllEvents, saveSuggestion, broadcastAll }) {
   try {
-    const events = getAllEvents();
+    const events = await Promise.resolve(getAllEvents());
     if (!events || events.length < 10) {
       return [];
     }
 
-    // 통계 집계
-    const stats = {
-      totalEvents:  events.length,
-      dateRange: {
-        from: events[0]?.timestamp,
-        to:   events[events.length - 1]?.timestamp,
-      },
-      typeBreakdown: events.reduce((acc, e) => {
-        acc[e.type] = (acc[e.type] || 0) + 1;
-        return acc;
-      }, {}),
-      sessionCount: new Set(events.map(e => e.sessionId || e.session_id)).size,
-      channelCount: new Set(events.map(e => e.channelId || e.channel_id)).size,
-    };
-
-    // 규칙 기반 분석
-    const ruleInsights = analyzeEvents(events);
-
-    // LLM 보강 (Ollama / Claude / 규칙 기반 자동 선택)
-    const insights = await enrichWithLLM(ruleInsights, stats);
-
-    const timestamp = new Date().toISOString();
-
-    // 인사이트를 growth suggestion으로 저장
-    insights.forEach(insight => {
-      const record = {
-        ...insight,
-        timestamp,
-        runAt: timestamp,
-      };
-
-      appendInsight(record);
-
-      // 성장 엔진 DB에도 저장 (있으면)
-      if (saveSuggestion) {
-        try {
-          saveSuggestion({
-            type:        insight.type,
-            title:       insight.title,
-            description: insight.body,
-            confidence:  insight.confidence || 0.7,
-            metadata:    JSON.stringify(insight.data || {}),
-          });
-        } catch {}
-      }
-    });
-
-    // WebSocket으로 실시간 알림
-    if (broadcastAll && insights.length > 0) {
-      broadcastAll({
-        type:     'new_insights',
-        insights: insights.map(i => ({ title: i.title, type: i.type, confidence: i.confidence })),
-        count:    insights.length,
-        timestamp,
-      });
+    // user_id별 그룹핑
+    const userGroups = {};
+    for (const e of events) {
+      const uid = e.userId || e.user_id || 'local';
+      if (!userGroups[uid]) userGroups[uid] = [];
+      userGroups[uid].push(e);
     }
 
-    console.log(`[insight-engine] ${insights.length}개 인사이트 생성 (이벤트 ${events.length}개 분석)`);
-    return insights;
+    const allInsights = [];
+
+    for (const [userId, userEvents] of Object.entries(userGroups)) {
+      const insights = await _runForUser(userEvents, userId, { saveSuggestion, broadcastAll });
+      allInsights.push(...insights);
+    }
+
+    console.log(`[insight-engine] ${allInsights.length}개 인사이트 생성 (${Object.keys(userGroups).length}명, 이벤트 ${events.length}개)`);
+    return allInsights;
 
   } catch (err) {
     console.error('[insight-engine] 분석 오류:', err.message);
@@ -420,8 +448,8 @@ function stop() {
 }
 
 // ─── 인사이트 조회 ───────────────────────────────────────────────────────────
-function getInsights(limit = 50) {
-  return loadRecentInsights(limit);
+function getInsights(limit = 50, userId) {
+  return loadRecentInsights(limit, userId);
 }
 
 module.exports = { start, stop, runOnce, getInsights, analyzeEvents };
