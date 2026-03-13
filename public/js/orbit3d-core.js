@@ -50,19 +50,53 @@ let _worldPanX = 0, _worldPanY = 0, _worldScale = 1.0;
 window._worldPanX = 0; window._worldPanY = 0; window._worldScale = 1.0;
 
 // ── 자동 피트 줌: 부드러운 이징 애니메이션으로 목표 스케일로 이동 ────────────
+let _worldLocked = false; // 줌/팬 잠금
+window._worldLocked = false;
+
 function _animateWorldScale(targetScale, durationMs) {
   const start = _worldScale;
   const diff  = targetScale - start;
   const t0    = performance.now();
   function step(now) {
     const p = Math.min(1, (now - t0) / durationMs);
-    const eased = p < 0.5 ? 2*p*p : -1+(4-2*p)*p;  // ease-in-out quad
+    const eased = p < 0.5 ? 2*p*p : -1+(4-2*p)*p;
     _worldScale = start + diff * eased;
     window._worldScale = _worldScale;
     if (p < 1) requestAnimationFrame(step);
   }
   requestAnimationFrame(step);
 }
+
+// 팬 애니메이션 (세션 클릭 시 중심으로 이동)
+function _animateWorldPan(targetX, targetY, durationMs) {
+  const startX = _worldPanX, startY = _worldPanY;
+  const dxT = targetX - startX, dyT = targetY - startY;
+  const t0 = performance.now();
+  function step(now) {
+    const p = Math.min(1, (now - t0) / durationMs);
+    const eased = p < 0.5 ? 2*p*p : -1+(4-2*p)*p;
+    _worldPanX = startX + dxT * eased;
+    _worldPanY = startY + dyT * eased;
+    window._worldPanX = _worldPanX; window._worldPanY = _worldPanY;
+    if (p < 1) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+window._animateWorldPan = _animateWorldPan;
+window._animateWorldScale = _animateWorldScale;
+
+// 세션 클릭 → 해당 위치로 줌인 + 팬
+window.zoomToScreenPos = function(screenX, screenY, targetScale, duration) {
+  const W = innerWidth, H = innerHeight;
+  // 스크린 좌표 → 월드 좌표
+  const worldX = (screenX - W/2 - _worldPanX) / _worldScale;
+  const worldY = (screenY - H/2 - _worldPanY) / _worldScale;
+  // 새 팬: 월드 포인트가 화면 중심에 오도록
+  const newPanX = -worldX * targetScale;
+  const newPanY = -worldY * targetScale;
+  _animateWorldPan(newPanX, newPanY, duration || 500);
+  _animateWorldScale(targetScale, duration || 500);
+};
 
 // 노드 수 기반 자동 피트 (로드 시 호출)
 window.autoFitZoom = function(nodeCount) {
@@ -803,24 +837,25 @@ class OrbitCam {
     this.sph = { r:55, θ:0.3, φ:1.1 };                  // 컴팩트 뷰 기본 거리
     this._d = false; this._r = false; this._lx=0; this._ly=0;
     this._dragging = false; // 드래그 중 플래그 (자동전환 방지)
-    this._dragStartX = 0; this._dragStartY = 0; // 드래그 시작점
-    this._dragThresholdMet = false; // 6px threshold 충족 여부
+    this._dragStartX = 0; this._dragStartY = 0;
+    this._dragThresholdMet = false;
+    this._mouseOnHit = false; // 히트 영역 위에서 마우스다운 → 패닝 차단
     const DRAG_THRESH = 6;
     el.addEventListener('mousedown',  e => {
       this._lx=e.clientX; this._ly=e.clientY;
       this._dragStartX = e.clientX; this._dragStartY = e.clientY;
       this._dragThresholdMet = false;
-      // 우클릭 OR 중클릭 OR Shift+좌클릭 → 3D 회전
+      // hitTest — 히트 영역 위 클릭이면 패닝 차단
+      this._mouseOnHit = !!hitTest(e.clientX, e.clientY);
       if (e.button===2 || e.button===1 || (e.button===0 && e.shiftKey)) this._r=true;
       else if (e.button===0) this._d=true;
       this._dragging=true;
     });
     el.addEventListener('mousemove',  e => this._move(e, DRAG_THRESH));
-    el.addEventListener('mouseup',    () => { this._d=this._r=false; this._dragging=false; this._dragThresholdMet=false; });
+    el.addEventListener('mouseup',    () => { this._d=this._r=false; this._dragging=false; this._dragThresholdMet=false; this._mouseOnHit=false; });
     el.addEventListener('wheel', e => {
-      // 카드 선택 중(역피라미드 열림)엔 스크롤이 패널로만 전달
       if (typeof _selectedHit !== 'undefined' && _selectedHit) return;
-      // 2D 월드 스케일 줌 (줌아웃→팀→회사 유니버스)
+      if (_worldLocked) return; // 잠금 시 줌 차단
       const factor = e.deltaY > 0 ? 0.92 : 1.085;
       _worldScale = Math.max(0.08, Math.min(3.0, _worldScale * factor));
       window._worldScale = _worldScale;
@@ -836,11 +871,11 @@ class OrbitCam {
     if (this._d && !this._dragThresholdMet) {
       const totalDx = e.clientX - this._dragStartX;
       const totalDy = e.clientY - this._dragStartY;
-      if (Math.sqrt(totalDx*totalDx + totalDy*totalDy) < DRAG_THRESH) return; // 아직 클릭 범위
+      if (Math.sqrt(totalDx*totalDx + totalDy*totalDy) < DRAG_THRESH) return;
       this._dragThresholdMet = true;
     }
-    if (this._d && this._dragThresholdMet) {
-      // 좌클릭 드래그 → 2D 월드 팬 (배경 드래그로 탐색)
+    // 히트 영역 위에서 시작한 드래그 또는 잠금 상태 → 패닝 차단
+    if (this._d && this._dragThresholdMet && !this._mouseOnHit && !_worldLocked) {
       _worldPanX += dx; _worldPanY += dy;
       window._worldPanX = _worldPanX; window._worldPanY = _worldPanY;
     } else if (this._r) {
@@ -871,6 +906,92 @@ class OrbitCam {
 
 const _raycaster = new THREE.Raycaster();
 const controls   = new OrbitCam(camera, renderer.domElement);
+
+// ─── 줌 컨트롤 UI (DOM) ─────────────────────────────────────────────────────
+(function createZoomControls() {
+  const container = document.createElement('div');
+  container.id = 'zoom-controls';
+  Object.assign(container.style, {
+    position: 'fixed', right: '16px', bottom: '80px', zIndex: '500',
+    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px',
+    background: 'rgba(2,6,23,0.8)', borderRadius: '12px', padding: '8px 6px',
+    border: '1px solid rgba(100,116,139,0.25)', backdropFilter: 'blur(8px)',
+  });
+
+  function mkBtn(label, title, onClick) {
+    const btn = document.createElement('button');
+    btn.textContent = label; btn.title = title;
+    Object.assign(btn.style, {
+      width: '32px', height: '32px', border: 'none', borderRadius: '8px',
+      background: 'rgba(100,116,139,0.15)', color: '#cbd5e1', fontSize: '16px',
+      cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+      transition: 'background .15s',
+    });
+    btn.onmouseenter = () => btn.style.background = 'rgba(6,182,212,0.25)';
+    btn.onmouseleave = () => btn.style.background = _worldLocked && label === '🔒' ? 'rgba(6,182,212,0.3)' : 'rgba(100,116,139,0.15)';
+    btn.onclick = onClick;
+    return btn;
+  }
+
+  // 줌인
+  const zoomInBtn = mkBtn('+', '줌인', () => {
+    if (_worldLocked) return;
+    _animateWorldScale(Math.min(3.0, _worldScale * 1.3), 200);
+  });
+
+  // 줌아웃
+  const zoomOutBtn = mkBtn('−', '줌아웃', () => {
+    if (_worldLocked) return;
+    _animateWorldScale(Math.max(0.08, _worldScale * 0.7), 200);
+  });
+
+  // 슬라이더 (세로)
+  const slider = document.createElement('input');
+  slider.type = 'range'; slider.min = '8'; slider.max = '300'; slider.value = '100';
+  slider.title = '줌 레벨';
+  Object.assign(slider.style, {
+    width: '80px', height: '4px', margin: '4px 0',
+    transform: 'rotate(-90deg)', transformOrigin: 'center',
+    accentColor: '#06b6d4', cursor: 'pointer',
+  });
+  slider.oninput = () => {
+    if (_worldLocked) { slider.value = Math.round(_worldScale * 100); return; }
+    _worldScale = parseInt(slider.value) / 100;
+    window._worldScale = _worldScale;
+  };
+  // 슬라이더 업데이트 (매 프레임)
+  setInterval(() => { slider.value = Math.round(_worldScale * 100); }, 200);
+
+  // 슬라이더 컨테이너 (세로 공간 확보)
+  const sliderWrap = document.createElement('div');
+  Object.assign(sliderWrap.style, { width: '32px', height: '80px', display: 'flex', alignItems: 'center', justifyContent: 'center' });
+  sliderWrap.appendChild(slider);
+
+  // 잠금 버튼
+  const lockBtn = mkBtn('🔓', '줌/팬 잠금', () => {
+    _worldLocked = !_worldLocked;
+    window._worldLocked = _worldLocked;
+    lockBtn.textContent = _worldLocked ? '🔒' : '🔓';
+    lockBtn.title = _worldLocked ? '잠금 해제' : '줌/팬 잠금';
+    lockBtn.style.background = _worldLocked ? 'rgba(6,182,212,0.3)' : 'rgba(100,116,139,0.15)';
+  });
+
+  // 홈 (리셋)
+  const homeBtn = mkBtn('⌂', '초기 뷰', () => {
+    _worldLocked = false; window._worldLocked = false;
+    lockBtn.textContent = '🔓';
+    lockBtn.style.background = 'rgba(100,116,139,0.15)';
+    _animateWorldPan(0, 0, 400);
+    _animateWorldScale(1.0, 400);
+  });
+
+  container.appendChild(zoomInBtn);
+  container.appendChild(sliderWrap);
+  container.appendChild(zoomOutBtn);
+  container.appendChild(lockBtn);
+  container.appendChild(homeBtn);
+  document.body.appendChild(container);
+})();
 
 // ─── 씬 오브젝트 ──────────────────────────────────────────────────────────────
 // 행성/위성은 "보이지 않는 Three.js Object3D"로 위치만 관리

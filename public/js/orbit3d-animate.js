@@ -159,29 +159,31 @@ renderer.domElement.addEventListener('click', e => {
       return;
     }
 
-    // ── 세션 노드 클릭 → 해당 세션의 타임라인 표시 ─────────────────────────
+    // ── 세션 노드 클릭 → 줌인 + 이벤트 리스트 패널 ─────────────────────────
     if (isPersonal && (type === 'drillSession' || type === 'session')) {
       _selectedHit = hit;
-      // 드릴 모드에서 세션 클릭 시 → 해당 세션의 이벤트 타임라인 표시
-      if (_drillStage >= 1 && hit.data) {
-        const sessionId = hit.data.clusterId || hit.data.sessionId;
-        const entry = _sessionMap[sessionId];
-        if (entry?.events?.length) {
-          // 카테고리 정보 구성 (세션 단위 타임라인)
-          const sesLabel = hit.data.intent || '세션';
-          const sesCatData = {
-            catKey: hit.data.catKey || 'session',
-            catLabel: sesLabel.length > 20 ? sesLabel.slice(0, 19) + '…' : sesLabel,
-            catColor: hit.data.hueHex || hit.data.catColor || '#58a6ff',
-            catIcon: '',
-            sessionCount: 1,
-            events: entry.events,
-          };
-          _drillStage = 2;
-          _drillCategory = sesCatData;
-          showDrillTimeline(sesCatData);
-          lerpCameraTo(90, 0, 0, 0, 400);
-        }
+
+      // 해당 세션 화면 중심으로 줌인
+      if (typeof window.zoomToScreenPos === 'function') {
+        window.zoomToScreenPos(hit.cx, hit.cy, 1.8, 500);
+      }
+
+      const sessionId = hit.data.clusterId || hit.data.sessionId;
+      const entry = _sessionMap[sessionId];
+      if (entry?.events?.length) {
+        const sesLabel = hit.data.intent || '세션';
+        const sesCatData = {
+          catKey: hit.data.catKey || 'session',
+          catLabel: sesLabel.length > 20 ? sesLabel.slice(0, 19) + '…' : sesLabel,
+          catColor: hit.data.hueHex || hit.data.catColor || '#58a6ff',
+          catIcon: hit.data.catIcon || '',
+          sessionCount: 1,
+          events: entry.events,
+          planets: hit.data.planets,
+        };
+        _drillStage = 2;
+        _drillCategory = sesCatData;
+        showDrillTimeline(sesCatData);
       }
       return;
     }
