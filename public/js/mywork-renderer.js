@@ -391,15 +391,20 @@ function createCard(node, pos) {
   const color = _mwExtractColor(node.color);
   const count = (node.children || []).length;
 
-  // 서브1: 항목 수 or 유형/도메인
+  // 서브1: 항목 수 or 유형/도메인 (정규화)
   const sub1 = count > 0
     ? `하위 ${count}개 항목`
-    : (node.domain || node.type || node.eventType || '');
+    : _mwNormCat(node.domain || node.type || node.eventType || '');
 
-  // 서브2: 최근 활동명 (있을 때만)
-  const sub2 = node.latestActivity
-    ? String(node.latestActivity).slice(0, 38)
-    : (node.name && node.name !== node.topic ? String(node.name).slice(0, 38) : '');
+  // 서브2: 최근 활동명 (정규화, raw 값 방지)
+  let sub2 = '';
+  if (node.latestActivity) {
+    const la = String(node.latestActivity);
+    const normalized = _mwNormCat(la);
+    sub2 = (normalized !== la ? normalized : la).slice(0, 38);
+  } else if (node.name && node.name !== node.topic) {
+    sub2 = String(node.name).slice(0, 38);
+  }
 
   const tex = makeCardTexture(node.topic || node.name || '작업', sub1, sub2, color);
   const geo = new THREE.PlaneGeometry(CARD_W, CARD_H);
@@ -648,10 +653,12 @@ window.buildPlanetSystem = function(nodeList) {
       groupLabel = projName;
     } else if (firstMsg && firstMsg.length > 3) {
       groupLabel = firstMsg.slice(0, 35);
-    } else if (n.purposeLabel && n.purposeLabel !== n.type) {
+    } else if (n.purposeLabel && n.purposeLabel !== n.type && n.purposeLabel !== '기타') {
       groupLabel = n.purposeLabel;
     } else {
-      groupLabel = _mwNormCat(n.domain || n.type || '기타');
+      // 카테고리 정규화 + 의미 부여
+      const normCat = _mwNormCat(n.domain || n.type || '기타');
+      groupLabel = normCat;
     }
 
     // 같은 세션은 같은 그룹으로 묶기
@@ -704,10 +711,12 @@ window.buildPlanetSystem = function(nodeList) {
       if (rawLabel.includes(': ')) {
         childTopic = rawLabel.split(': ').slice(1).join(': ');
       } else if (_abstractSet.has(stripped.toLowerCase())) {
-        // fullContent에서 실제 내용 추출
+        // fullContent에서 실제 내용 추출 (JSON 쓰레기 필터링)
         const fc = String(n.fullContent || n.detail || n.description || n.summary || '')
-          .replace(/[{}"\\]/g, ' ').trim();
-        if (fc.length > 3) childTopic = fc.slice(0, 40);
+          .replace(/[{}"\\]/g, ' ').replace(/\s+/g, ' ').trim();
+        // JSON key:value 패턴이면 의미없는 데이터 → 스킵
+        const isJsonGarbage = /^\s*(type|category|timestamp|id)\s*:/i.test(fc);
+        if (fc.length > 3 && !isJsonGarbage) childTopic = fc.slice(0, 40);
       } else if (rawLabel.length > 2) {
         childTopic = rawLabel;
       }
@@ -722,8 +731,11 @@ window.buildPlanetSystem = function(nodeList) {
       children: _mwMakeDetailNodes(n, childColor),
       _raw:     n,
     });
-    if (!groupMap[key].latestActivity)
-      groupMap[key].latestActivity = n.label || n.topic || n.name || null;
+    // latestActivity도 정규화 (raw 값 방지)
+    if (!groupMap[key].latestActivity) {
+      const rawAct = n.label || n.topic || n.name || '';
+      groupMap[key].latestActivity = _mwNormCat(rawAct) !== rawAct ? _mwNormCat(rawAct) : rawAct;
+    }
   });
 
   const topNodes = Object.values(groupMap)
