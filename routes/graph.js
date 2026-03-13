@@ -101,11 +101,11 @@ function createRouter(deps) {
           ? await getFullGraphForUser(user.id, req.query.session)
           : await getFullGraph(req.query.session, req.query.channel);
 
-        // 유저 이벤트가 0건이면 local 이벤트 귀속 시도 (최초 로그인 시 한 번만)
-        if (graph.nodes.length === 0 && claimLocalEvents) {
+        // local 이벤트가 남아있으면 귀속 시도 (로그인할 때마다 확인)
+        if (claimLocalEvents) {
           const claimed = await Promise.resolve(claimLocalEvents(user.id));
           if (claimed > 0) {
-            console.log(`[graph] ${user.id}: ${claimed}개 local 이벤트 귀속 (최초 로그인)`);
+            console.log(`[graph] ${user.id}: ${claimed}개 local 이벤트 귀속`);
             graph = getFullGraphForUser
               ? await getFullGraphForUser(user.id, req.query.session)
               : await getFullGraph(req.query.session, req.query.channel);
