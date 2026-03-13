@@ -1081,48 +1081,6 @@ app.get('/api/tracker/status', async (req, res) => {
   }
 });
 
-// ── 디버그: PG 쿼리 직접 확인 (임시) ───────────────────────────────────────
-app.get('/api/_debug/pg-check', async (req, res) => {
-  try {
-    const authToken = (req.headers.authorization || '').replace('Bearer ', '').trim();
-    const user = _verifyToken(authToken);
-    if (!user) return res.status(401).json({ error: 'unauthorized' });
-    const userId = user.id;
-    const hasDbUrl = !!process.env.DATABASE_URL;
-    const dbUrlPrefix = process.env.DATABASE_URL ? process.env.DATABASE_URL.slice(0, 20) : 'NOT SET';
-    // getEventsByUser via db module
-    const events = getEventsByUser ? await Promise.resolve(getEventsByUser(userId)) : [];
-    // getStatsByUser via db module
-    const stats = getStatsByUser ? await Promise.resolve(getStatsByUser(userId)) : {};
-    // Direct PG query (if available)
-    let directCount = null;
-    if (hasDbUrl) {
-      try {
-        const { Pool } = require('pg');
-        const tmpPool = new Pool({ connectionString: process.env.DATABASE_URL, max: 1 });
-        const r = await tmpPool.query('SELECT COUNT(*) as c FROM events WHERE user_id=$1', [userId]);
-        directCount = parseInt(r.rows[0].c);
-        const allUsers = await tmpPool.query('SELECT user_id, COUNT(*) as c FROM events GROUP BY user_id');
-        await tmpPool.end();
-        res.json({
-          userId,
-          eventsFromModule: events.length,
-          statsFromModule: stats,
-          directPgCount: directCount,
-          allUserIds: allUsers.rows,
-          dbModuleType: process.env.DATABASE_URL ? 'pg' : 'sqlite',
-        });
-      } catch (e) {
-        res.json({ userId, eventsFromModule: events.length, statsFromModule: stats, directPgError: e.message });
-      }
-    } else {
-      res.json({ userId, eventsFromModule: events.length, statsFromModule: stats, dbModuleType: 'sqlite', hasDbUrl, dbUrlPrefix });
-    }
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
 // ── 토큰 등록 (로컬 PC에 ~/.orbit-config.json 저장) ─────────────────────────
 // 프론트엔드 _postLoginSync → 이 엔드포인트 호출 → save-turn.js가 토큰 사용
 app.post('/api/register-hook-token', (req, res) => {

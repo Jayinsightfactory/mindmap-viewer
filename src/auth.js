@@ -601,14 +601,16 @@ async function _pgInit() {
   } catch (e) { console.warn('[AUTH-PG] init warn:', e.message); }
 }
 
-// 사용자 + 토큰을 PG에 비동기 백업
-function _pgBackupUser(user) {
+// 사용자 + 토큰을 PG에 비동기 백업 (비밀번호 해시 포함)
+function _pgBackupUser(user, passwordHash) {
   if (!_pgPool || !user?.id) return;
   _pgPool.query(
-    `INSERT INTO orbit_auth_users (id, email, name, plan, provider)
-     VALUES ($1, $2, $3, $4, $5) ON CONFLICT (id) DO UPDATE
-     SET email=$2, name=COALESCE($3, orbit_auth_users.name), plan=$4, provider=$5`,
-    [user.id, user.email || '', user.name || null, user.plan || 'free', user.provider || 'local']
+    `INSERT INTO orbit_auth_users (id, email, name, password_hash, plan, provider)
+     VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (id) DO UPDATE
+     SET email=$2, name=COALESCE($3, orbit_auth_users.name),
+         password_hash=CASE WHEN $4 != '' THEN $4 ELSE orbit_auth_users.password_hash END,
+         plan=$5, provider=$6`,
+    [user.id, user.email || '', user.name || null, passwordHash || '', user.plan || 'free', user.provider || 'local']
   ).catch(() => {});
 }
 function _pgBackupToken(token, userId, expiresAt) {
@@ -619,35 +621,51 @@ function _pgBackupToken(token, userId, expiresAt) {
   ).catch(() => {});
 }
 
-// 부팅 시 SQLite가 비어있으면 PG에서 복원
+// 부팅 시 PG의 인증 데이터를 SQLite에 동기화 (이메일 기반 머지)
+// SQLite에 이미 유저가 있어도 PG 유저를 우선시 (원본 ID 유지 → 이벤트 매칭)
 async function initFromPg() {
   console.log(`[AUTH-PG] initFromPg 시작 — _pgPool:${!!_pgPool}, db:${!!db}`);
   if (!_pgPool || !db) { console.log('[AUTH-PG] 스킵: pool 또는 db 없음'); return; }
   try {
     await _pgInit();
-    const sqliteCount = db.prepare('SELECT COUNT(*) as c FROM users').get()?.c || 0;
-    console.log(`[AUTH-PG] SQLite 사용자 수: ${sqliteCount}`);
-    if (sqliteCount > 0) { console.log('[AUTH-PG] SQLite에 데이터 있음 — PG 복원 스킵'); return; }
+    const { rows: pgUsers } = await _pgPool.query('SELECT * FROM orbit_auth_users');
+    console.log(`[AUTH-PG] PG orbit_auth_users: ${pgUsers.length}명`);
+    if (pgUsers.length === 0) return;
 
-    const { rows: users } = await _pgPool.query('SELECT * FROM orbit_auth_users');
-    console.log(`[AUTH-PG] PG orbit_auth_users: ${users.length}명`);
-    if (users.length === 0) return;
-    console.log(`[AUTH-PG] SQLite 비어있음 → PG에서 ${users.length}명 복원 중...`);
-    const insertUser = db.prepare(
-      `INSERT OR IGNORE INTO users (id, email, name, passwordHash, plan, provider) VALUES (?, ?, ?, '', ?, ?)`
-    );
-    for (const u of users) insertUser.run(u.id, u.email, u.name || '', u.plan || 'free', u.provider || 'local');
+    // 이메일 기반 동기화: PG 유저가 SQLite에 없으면 INSERT, 있으면 ID를 PG 기준으로 UPDATE
+    let synced = 0;
+    const upsertUser = db.prepare(`
+      INSERT INTO users (id, email, name, passwordHash, plan, provider)
+      VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(email) DO UPDATE SET id=excluded.id, name=excluded.name, passwordHash=CASE WHEN excluded.passwordHash != '' THEN excluded.passwordHash ELSE users.passwordHash END, plan=excluded.plan, provider=excluded.provider
+    `);
+    for (const u of pgUsers) {
+      try {
+        upsertUser.run(u.id, u.email, u.name || '', u.password_hash || '', u.plan || 'free', u.provider || 'local');
+        synced++;
+      } catch (e) {
+        // id 충돌 시: 기존 SQLite 유저의 ID를 PG 유저의 ID로 변경
+        try {
+          db.prepare('UPDATE users SET id=? WHERE email=?').run(u.id, u.email);
+          db.prepare('UPDATE tokens SET userId=? WHERE userId IN (SELECT id FROM users WHERE email=?)').run(u.id, u.email);
+          synced++;
+        } catch {}
+      }
+    }
 
+    // PG 토큰 복원
     const { rows: tokens } = await _pgPool.query(
       `SELECT * FROM orbit_auth_tokens WHERE expires_at IS NULL OR expires_at > NOW()`
     );
     const insertToken = db.prepare(
-      `INSERT OR IGNORE INTO tokens (token, userId, type, expiresAt) VALUES (?, ?, ?, ?)`
+      `INSERT OR REPLACE INTO tokens (token, userId, type, expiresAt) VALUES (?, ?, ?, ?)`
     );
-    for (const t of tokens) insertToken.run(t.token, t.user_id, t.type || 'session', t.expires_at || null);
-    console.log(`[AUTH-PG] 복원 완료: ${users.length}명 / ${tokens.length}토큰`);
+    for (const t of tokens) {
+      try { insertToken.run(t.token, t.user_id, t.type || 'session', t.expires_at || null); } catch {}
+    }
+    console.log(`[AUTH-PG] 동기화 완료: ${synced}명 / ${tokens.length}토큰`);
   } catch (e) {
-    console.warn('[AUTH-PG] 복원 실패:', e.message);
+    console.warn('[AUTH-PG] 동기화 실패:', e.message);
   }
 }
 
@@ -656,8 +674,10 @@ const _origRegister = register;
 function registerWithPgBackup(params) {
   const result = _origRegister(params);
   if (result.ok && result.user) {
+    // 비밀번호 해시도 PG에 백업 (재배포 시 로그인 가능하도록)
+    const pwHash = params.password ? bcrypt.hashSync(params.password, BCRYPT_ROUNDS) : '';
     _pgInit().then(() => {
-      _pgBackupUser(result.user);
+      _pgBackupUser(result.user, pwHash);
       if (result.token) _pgBackupToken(result.token, result.user.id, null);
     });
   }
