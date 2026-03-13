@@ -87,6 +87,15 @@ function createRouter(deps) {
     });
   });
 
+  // ── 임시 디버그 (배포 확인 후 제거) ────────────────────────────────────
+  router.get('/auth/_debug-sync', (req, res) => {
+    const authDb = require('../src/auth').getDb();
+    if (!authDb) return res.json({ error: 'no db' });
+    const users = authDb.prepare('SELECT id, email, LENGTH(passwordHash) as pwLen FROM users').all();
+    const tokens = authDb.prepare('SELECT token, userId, type FROM tokens LIMIT 10').all();
+    res.json({ users, tokens });
+  });
+
   // ── 로그아웃 ─────────────────────────────────────────────────────────────
 
   /**
