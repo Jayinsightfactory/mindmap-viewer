@@ -1088,13 +1088,15 @@ app.get('/api/_debug/pg-check', async (req, res) => {
     const user = _verifyToken(authToken);
     if (!user) return res.status(401).json({ error: 'unauthorized' });
     const userId = user.id;
+    const hasDbUrl = !!process.env.DATABASE_URL;
+    const dbUrlPrefix = process.env.DATABASE_URL ? process.env.DATABASE_URL.slice(0, 20) : 'NOT SET';
     // getEventsByUser via db module
     const events = getEventsByUser ? await Promise.resolve(getEventsByUser(userId)) : [];
     // getStatsByUser via db module
     const stats = getStatsByUser ? await Promise.resolve(getStatsByUser(userId)) : {};
     // Direct PG query (if available)
     let directCount = null;
-    if (process.env.DATABASE_URL) {
+    if (hasDbUrl) {
       try {
         const { Pool } = require('pg');
         const tmpPool = new Pool({ connectionString: process.env.DATABASE_URL, max: 1 });
@@ -1114,7 +1116,7 @@ app.get('/api/_debug/pg-check', async (req, res) => {
         res.json({ userId, eventsFromModule: events.length, statsFromModule: stats, directPgError: e.message });
       }
     } else {
-      res.json({ userId, eventsFromModule: events.length, statsFromModule: stats, dbModuleType: 'sqlite' });
+      res.json({ userId, eventsFromModule: events.length, statsFromModule: stats, dbModuleType: 'sqlite', hasDbUrl, dbUrlPrefix });
     }
   } catch (e) {
     res.status(500).json({ error: e.message });
