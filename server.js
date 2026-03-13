@@ -332,7 +332,11 @@ const hookLimiter = rateLimit({
 });
 
 app.use('/api/hook', hookLimiter);
-app.use('/api/', apiLimiter);
+// 벌크 임포트는 rate limit 제외 (관리자 토큰 인증 필수)
+app.use('/api/', (req, res, next) => {
+  if (req.path === '/bulk-import') return next(); // skip apiLimiter
+  return apiLimiter(req, res, next);
+});
 
 // Stripe Webhook은 서명 검증을 위해 원본 바디(Buffer)가 필요 — JSON 파싱 전에 처리
 app.use('/api/payment/webhook', express.raw({ type: 'application/json' }));
@@ -846,6 +850,39 @@ app.post('/api/hook', (req, res) => {
     res.json({ success: true, received: events.length, leaksDetected: leaks.length });
   } catch (e) {
     console.error('[HOOK] 오류:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/**
+ * POST /api/bulk-import
+ * 대량 이벤트 임포트 (로컬→프로덕션 마이그레이션용)
+ * rate limit 제외, 관리자 토큰 필수
+ */
+app.post('/api/bulk-import', (req, res) => {
+  try {
+    const token = (req.headers.authorization || '').replace('Bearer ', '').trim();
+    const user = token ? verifyToken(token) : null;
+    if (!user) return res.status(401).json({ error: 'valid token required' });
+
+    const { events = [] } = req.body;
+    if (!Array.isArray(events) || events.length === 0) {
+      return res.status(400).json({ error: 'events array required' });
+    }
+
+    let imported = 0;
+    for (const event of events) {
+      try {
+        insertEvent(event);
+        imported++;
+      } catch (e) {
+        // 중복 무시 (ON CONFLICT DO NOTHING)
+      }
+    }
+
+    res.json({ ok: true, imported, total: events.length });
+  } catch (e) {
+    console.error('[BULK-IMPORT] 오류:', e.message);
     res.status(500).json({ error: e.message });
   }
 });
