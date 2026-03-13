@@ -621,13 +621,16 @@ function _pgBackupToken(token, userId, expiresAt) {
 
 // 부팅 시 SQLite가 비어있으면 PG에서 복원
 async function initFromPg() {
-  if (!_pgPool || !db) return;
+  console.log(`[AUTH-PG] initFromPg 시작 — _pgPool:${!!_pgPool}, db:${!!db}`);
+  if (!_pgPool || !db) { console.log('[AUTH-PG] 스킵: pool 또는 db 없음'); return; }
   try {
     await _pgInit();
     const sqliteCount = db.prepare('SELECT COUNT(*) as c FROM users').get()?.c || 0;
-    if (sqliteCount > 0) return; // 이미 데이터 있음
+    console.log(`[AUTH-PG] SQLite 사용자 수: ${sqliteCount}`);
+    if (sqliteCount > 0) { console.log('[AUTH-PG] SQLite에 데이터 있음 — PG 복원 스킵'); return; }
 
     const { rows: users } = await _pgPool.query('SELECT * FROM orbit_auth_users');
+    console.log(`[AUTH-PG] PG orbit_auth_users: ${users.length}명`);
     if (users.length === 0) return;
     console.log(`[AUTH-PG] SQLite 비어있음 → PG에서 ${users.length}명 복원 중...`);
     const insertUser = db.prepare(
