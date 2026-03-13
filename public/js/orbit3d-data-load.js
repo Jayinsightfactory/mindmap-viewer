@@ -102,7 +102,7 @@ async function _postLoginSync(token) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({ token }),
-    }).catch(() => {});
+    }).catch(e => console.warn('[hook-token] 등록 실패:', e.message));
 
     // 3) Google Drive 자동 백업 (Google 로그인 시)
     fetch('/api/gdrive/backup', {
@@ -110,7 +110,7 @@ async function _postLoginSync(token) {
       headers: { Authorization: `Bearer ${token}` },
     }).then(r => r.json()).then(d => {
       if (d.ok) console.log('[gdrive] 자동 백업 완료:', d.eventCount, '이벤트');
-    }).catch(() => {});
+    }).catch(e => console.warn('[gdrive] 백업 실패:', e.message));
 
     // 4) 다른 PC 동기화 확인 (F3)
     _checkSyncFromOtherPC(token);
@@ -402,7 +402,7 @@ function _startAutoBackup() {
       headers: { Authorization: `Bearer ${token}` },
     }).then(r => r.json()).then(d => {
       if (d.ok) console.log('[gdrive] 자동 백업:', d.eventCount, '이벤트');
-    }).catch(() => {});
+    }).catch(e => console.warn('[gdrive] 주기 백업 실패:', e.message));
   }, 5 * 60 * 1000);                                                            // 5분 간격
 }
 // 페이지 로드 시 로그인 상태면 자동 백업 시작

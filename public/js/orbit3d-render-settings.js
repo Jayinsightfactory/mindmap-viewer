@@ -178,7 +178,7 @@ function setDefaultLlmModel(provider, model) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ provider, apiKey: '(keep)', defaultModel: model }),
-  }).catch(() => {});
+  }).catch(e => console.warn('[llm] 기본 모델 설정 실패:', e.message));
 }
 window.setDefaultLlmModel = setDefaultLlmModel;
 
@@ -480,10 +480,7 @@ async function renderSetupPanel() {
   let trackerHost = '';
   let trackerEvents = 0;
   try {
-    const token = _getAuthToken();
-    const r = await fetch('/api/tracker/status', {
-      headers: token ? { 'Authorization': `Bearer ${token}` } : {},
-    });
+    const r = await _authFetch('/api/tracker/status');
     const d = await r.json();
     trackerOnline = d.online;
     trackerHost = d.hostname || '';
@@ -926,7 +923,7 @@ async function checkOnboardingState() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
           body: JSON.stringify({ hostname: navigator.userAgent.slice(0, 50), eventCount: 1 }),
-        }).catch(() => {});
+        }).catch(e => console.warn('[tracker] ping 실패:', e.message));
       }
     } catch {}
   }
@@ -1009,7 +1006,7 @@ function copyOnboardingCmd() {
   navigator.clipboard.writeText(code.textContent).then(() => {
     const btn = document.querySelector('.ob-copy-btn');
     if (btn) { btn.textContent = '✓ 복사됨'; setTimeout(() => { btn.textContent = '복사'; }, 2000); }
-  }).catch(() => {});
+  }).catch(e => console.warn('[clipboard] 복사 실패:', e.message));
 }
 
 function showOnboardingSkipWarning() {
@@ -1039,7 +1036,7 @@ function confirmOnboardingDone() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
       body: JSON.stringify({ hostname: navigator.userAgent.slice(0, 50), eventCount: 1 }),
-    }).catch(() => {});
+    }).catch(e => console.warn('[tracker] 설치완료 ping 실패:', e.message));
   }
   // 트래커 배지 새로고침
   if (typeof _initTrackerStatusBadge === 'function') _initTrackerStatusBadge();

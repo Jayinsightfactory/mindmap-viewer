@@ -30,7 +30,7 @@ async function loadAccountTab() {
 
 function doLogout() {
   localStorage.removeItem('orbit_token');
-  fetch('/api/auth/logout', { method: 'DELETE' }).catch(() => {});
+  fetch('/api/auth/logout', { method: 'DELETE' }).catch(e => console.warn('[auth] 로그아웃 실패:', e.message));
   document.getElementById('account-login').style.display = '';
   document.getElementById('account-profile').style.display = 'none';
 }

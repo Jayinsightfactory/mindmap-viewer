@@ -16,7 +16,7 @@ function showSuggestion(suggestion) {
 function dismissSuggestion() {
   document.getElementById('suggestion-toast').classList.remove('visible');
   if (_currentSuggestionId) {
-    fetch(`/api/learn/seen/${_currentSuggestionId}`, { method: 'POST' }).catch(() => {});
+    fetch(`/api/learn/seen/${_currentSuggestionId}`, { method: 'POST' }).catch(e => console.warn('[learn] seen 마킹 실패:', e.message));
   }
 }
 
@@ -153,7 +153,7 @@ function renderLoginState() {
       gBtn.title = 'Google OAuth 환경변수 미설정 (관리자 문의)';
       gBtn.onclick = null;
     }
-  }).catch(() => {});
+  }).catch(e => console.warn('[auth] OAuth 상태 확인 실패:', e.message));
 }
 
 function oauthLogin(provider) {
@@ -1055,7 +1055,7 @@ async function openMsgRoom(roomId, name) {
     const msgs = await res.json();
     renderMsgBubbles(Array.isArray(msgs) ? msgs : []);
     // 읽음 처리
-    fetch(`/api/chat/${roomId}/read`, { method: 'PUT', headers: { Authorization: `Bearer ${token}` } }).catch(() => {});
+    fetch(`/api/chat/${roomId}/read`, { method: 'PUT', headers: { Authorization: `Bearer ${token}` } }).catch(e => console.warn('[chat] 읽음 처리 실패:', e.message));
     // 방 목록 unread 배지 업데이트
     loadMsgRooms(_msgTab);
   } catch (_) {
@@ -1488,7 +1488,7 @@ window.fpFollowUser = fpFollowUser;
       headers:   { 'Content-Type': 'application/json' },
       body:      JSON.stringify({ events: batch }),
       keepalive: true,
-    }).catch(() => {});
+    }).catch(e => console.warn('[analytics] 배치 전송 실패:', e.message));
   }
 
   // 페이지 언로드 시 잔여 이벤트 즉시 전송
@@ -2427,7 +2427,7 @@ function switchLdTab(tab, btn) {
           <div style="color:#cbd5e1;font-size:12px;margin-top:4px">${r.description || r.summary || ''}</div>
         </div>`).join('');
       }
-    }).catch(() => {});
+    }).catch(e => console.warn('[learn] 루틴 데이터 로드 실패:', e.message));
   } else if (tab === 'suggestions') {
     const items = Array.isArray(_ldData.suggestions) ? _ldData.suggestions : [];
     el.innerHTML = items.length === 0

@@ -734,7 +734,7 @@ async function applyFreeSolution(sol) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: sol.id }),
-    }).catch(() => {});
+    }).catch(e => console.warn('[solution] 사용 기록 실패:', e.message));
   } catch (e) { showToast(`❌ ${e.message}`); }
 }
 window.applyFreeSolution = applyFreeSolution;

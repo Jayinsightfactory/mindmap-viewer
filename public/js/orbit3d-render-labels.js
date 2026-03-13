@@ -687,7 +687,7 @@ function updateZoomSummary() {
         lang: 'ko-KR',
         duration,
       }),
-    }).catch(() => {});
+    }).catch(e => console.warn('[speech] 음성 데이터 전송 실패:', e.message));
   }
 })();
 

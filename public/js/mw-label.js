@@ -85,13 +85,8 @@ const _MW_CAT_COLOR = {
   '📌 메모':       '#f0c674',
 };
 
-// 추상 라벨 Set — fullContent로 대체 필요한 값들
-const _MW_ABSTRACT_SET = new Set([
-  '명령 실행','파일 읽기','파일 수정','파일 작성','파일 탐색','파일 생성',
-  '코드 검색','웹 검색','하위 에이전트','에이전트 완료','작업','기타',
-  'idle','code','file','browser','terminal','design','document',
-  'meeting','test','deploy','research','planning','other','etc',
-]);
+// 추상 라벨 Set — orbit3d-label-rules.js의 ABSTRACT_LABEL_SET 참조 (단일 소스)
+// isInAbstractSet() 함수 사용 권장. 직접 Set 참조 필요시 ABSTRACT_LABEL_SET 사용.
 
 /**
  * raw 카테고리/이벤트 타입 → 한국어 이모지 라벨
@@ -148,9 +143,9 @@ function mwChildTopic(n) {
 
   // 3) label 가공 — 추상 라벨이면 fullContent 사용
   const rawLabel = n.label || n.topic || n.name || '';
-  const stripped = rawLabel.replace(/^[🔧📄✏️📝⚡🔍🌐🤖✅📌❌💬⏸]+\s*/u, '').trim();
+  const stripped = (typeof normalizeLabel === 'function') ? normalizeLabel(rawLabel) : rawLabel.replace(_EMOJI_PREFIX_RE, '').trim();
   if (rawLabel.includes(': ')) return rawLabel.split(': ').slice(1).join(': ');
-  if (_MW_ABSTRACT_SET.has(stripped.toLowerCase())) {
+  if ((typeof isInAbstractSet === 'function') ? isInAbstractSet(stripped) : ABSTRACT_LABEL_SET.has(stripped.toLowerCase())) {
     const fc = String(n.fullContent || n.detail || n.description || n.summary || '')
       .replace(/[{}"\\]/g, ' ').replace(/\s+/g, ' ').trim();
     // JSON key:value 패턴 → 의미없는 데이터 스킵

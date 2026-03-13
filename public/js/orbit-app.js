@@ -780,7 +780,7 @@ async function refreshInsights() {
   _insightCache = [];
   await loadInsights();
   // 서버 측 즉시 분석 트리거
-  fetch('/api/insights/run', { method: 'POST' }).catch(() => {});
+  fetch('/api/insights/run', { method: 'POST' }).catch(e => console.warn('[insights] 분석 트리거 실패:', e.message));
 }
 
 // ══════════════════════════════════════════════════════════
