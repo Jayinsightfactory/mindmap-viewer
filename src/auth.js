@@ -478,6 +478,69 @@ function getAdminInvites(adminEmail) {
   `).all();                                                           // 모든 초대 내역 조회
 }
 
+// ─── Identity Bridge: 원격 서버 ID로 로컬 유저 보장 ─────────────────────────────
+/**
+ * 특정 ID + 이메일로 로컬 유저를 보장합니다 (없으면 생성, 있으면 ID 통일).
+ * 프로덕션 ↔ 로컬 간 동일 ID를 유지하기 위해 사용.
+ * @param {string} canonicalId - 프로덕션에서 발급된 ID (canonical)
+ * @param {string} email       - 이메일 주소
+ * @param {string} [name]      - 표시 이름
+ * @returns {{ synced: boolean, oldId?: string }}
+ */
+function ensureCanonicalUser(canonicalId, email, name) {
+  if (!db || !canonicalId || !email) return { synced: false };
+  const normalEmail = email.toLowerCase().trim();
+
+  // 이미 같은 ID로 존재하면 OK
+  const existing = db.prepare('SELECT id FROM users WHERE id = ?').get(canonicalId);
+  if (existing) return { synced: true };
+
+  // 같은 이메일로 다른 ID가 있으면 → ID를 canonical로 변경
+  const byEmail = db.prepare('SELECT id FROM users WHERE email = ?').get(normalEmail);
+  if (byEmail && byEmail.id !== canonicalId) {
+    const oldId = byEmail.id;
+    // FK 제약 임시 해제 후 ID 마이그레이션
+    try { db.pragma('foreign_keys = OFF'); } catch {}
+    try {
+      db.prepare('UPDATE tokens SET userId = ? WHERE userId = ?').run(canonicalId, oldId);
+      db.prepare('UPDATE users SET id = ? WHERE email = ?').run(canonicalId, normalEmail);
+      try { db.prepare('UPDATE tracker_pings SET userId = ? WHERE userId = ?').run(canonicalId, oldId); } catch {}
+      try { db.prepare('UPDATE oauth_tokens SET userId = ? WHERE userId = ?').run(canonicalId, oldId); } catch {}
+      try { db.prepare('UPDATE sessions SET userId = ? WHERE userId = ?').run(canonicalId, oldId); } catch {}
+    } finally {
+      try { db.pragma('foreign_keys = ON'); } catch {}
+    }
+    console.log(`[AUTH] Identity bridge: ${oldId} → ${canonicalId} (${normalEmail})`);
+    return { synced: true, oldId };
+  }
+
+  // 둘 다 없으면 새로 생성
+  db.prepare(`
+    INSERT INTO users (id, email, name, passwordHash, provider)
+    VALUES (?, ?, ?, '', 'bridge')
+  `).run(canonicalId, normalEmail, name || normalEmail.split('@')[0]);
+  console.log(`[AUTH] Identity bridge: 새 유저 생성 ${canonicalId} (${normalEmail})`);
+  return { synced: true, created: true };
+}
+
+/**
+ * 이메일로 토큰을 검증합니다 (ID 불일치 시 fallback).
+ * @param {string} token
+ * @returns {User|null}
+ */
+function verifyTokenByEmail(token) {
+  if (!db || !token) return null;
+  const raw = token.replace('Bearer ', '').trim();
+  // 일반 검증 먼저
+  const direct = verifyToken(raw);
+  if (direct) return direct;
+  // 토큰은 있지만 user JOIN 실패 → 토큰만으로 userId 찾아서 email로 재조회
+  const tokenRow = db.prepare('SELECT userId FROM tokens WHERE token = ? AND (expiresAt IS NULL OR expiresAt > datetime(\'now\'))').get(raw);
+  if (!tokenRow) return null;
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(tokenRow.userId);
+  return user ? sanitizeUser(user) : null;
+}
+
 // ─── 사용자 검색 (팔로우 시스템용) ────────────────────────────────────────────
 /**
  * users 테이블에서 이메일·이름으로 사용자를 검색합니다.
@@ -611,7 +674,7 @@ function loginWithPgBackup(params) {
 
 module.exports = {
   register: registerWithPgBackup, login: loginWithPgBackup,
-  verifyToken, issueApiToken,
+  verifyToken, verifyTokenByEmail, issueApiToken,
   getUserById, getUserByEmail, upgradePlan, upsertOAuthUser,
   authMiddleware, optionalAuth,
   getDb: () => db,
@@ -620,5 +683,6 @@ module.exports = {
   searchUsers,
   inviteUser, isInvitedUser, getEffectivePlan, getAdminInvites,
   ADMIN_EMAILS,
+  ensureCanonicalUser,  // Identity Bridge
   initFromPg,   // server.js 시작 시 호출
 };

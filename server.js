@@ -288,6 +288,40 @@ if (db && db.pragma) {
   }
 }
 
+// ─── Identity Bridge: ~/.orbit-config.json → 로컬 auth DB 동기화 ──────────
+try {
+  const _os = require('os');
+  const _cfgPath = path.join(_os.homedir(), '.orbit-config.json');
+  if (fs.existsSync(_cfgPath)) {
+    const _cfg = JSON.parse(fs.readFileSync(_cfgPath, 'utf8'));
+    if (_cfg.userId && _cfg.email) {
+      const authMod = require('./src/auth');
+      if (authMod.ensureCanonicalUser) {
+        const result = authMod.ensureCanonicalUser(_cfg.userId, _cfg.email);
+        if (result.oldId) {
+          // main DB에서도 이전 ID → canonical ID로 마이그레이션
+          const mainDb = dbModule.getDb ? dbModule.getDb() : null;
+          if (mainDb && mainDb.prepare) {
+            const r1 = mainDb.prepare('UPDATE events SET user_id = ? WHERE user_id = ?').run(_cfg.userId, result.oldId);
+            const r2 = mainDb.prepare('UPDATE sessions SET user_id = ? WHERE user_id = ?').run(_cfg.userId, result.oldId);
+            const total = (r1.changes || 0) + (r2.changes || 0);
+            if (total > 0) console.log(`[identity-bridge] startup: ${result.oldId} → ${_cfg.userId}: ${total}개 레코드`);
+          }
+        }
+        // 토큰도 로컬 auth DB에 동기화 (config의 token이 없으면 생성)
+        if (_cfg.token) {
+          const authDb = authMod.getDb ? authMod.getDb() : null;
+          if (authDb) {
+            try {
+              authDb.prepare('INSERT OR IGNORE INTO tokens (token, userId, type) VALUES (?, ?, ?)').run(_cfg.token, _cfg.userId, 'api');
+            } catch {}
+          }
+        }
+      }
+    }
+  }
+} catch (e) { console.warn('[identity-bridge] startup 실패:', e.message); }
+
 const app    = express();
 app.set('trust proxy', 1);
 const server = http.createServer(app);
@@ -749,14 +783,24 @@ app.post('/api/hook', (req, res) => {
     // Authorization 헤더로 user_id 결정 (토큰 있으면 해당 유저, 없으면 'local')
     const hookToken = (req.headers.authorization || '').replace('Bearer ', '').trim()
                     || req.headers['x-api-token'] || '';
-    const hookUser  = hookToken ? verifyToken(hookToken) : null;
+    // 1차: 직접 검증, 2차: email fallback (ID 불일치 대비)
+    const _verifyFn = require('./src/auth').verifyTokenByEmail || verifyToken;
+    const hookUser  = hookToken ? _verifyFn(hookToken) : null;
     const hookUserId = hookUser ? hookUser.id : 'local';
+    // device_id: 클라이언트가 보낸 pcId 또는 IP (claim 시 디바이스 매칭용)
+    const deviceId = req.headers['x-device-id'] || req.body.pcId || req.ip || '';
 
     // DB 저장 (중복 방지) + JSONL 비동기 쓰기
     const jsonlLines = [];
     for (const event of events) {
       // user_id를 토큰에서 추출한 값으로 덮어쓰기 (프라이버시 격리)
-      if (hookUserId !== 'local') event.userId = hookUserId;
+      if (hookUserId !== 'local') {
+        event.userId = hookUserId;
+      } else if (deviceId) {
+        // local 이벤트에 device_id 기록 (나중에 claim 시 디바이스 매칭)
+        if (!event.metadata) event.metadata = {};
+        event.metadata._deviceId = deviceId;
+      }
       try { insertEvent(event); } catch (e) { console.error('[hook] insertEvent 실패:', e.message); }
       jsonlLines.push(JSON.stringify({
         id: event.id, type: event.type, source: event.source,
@@ -1023,7 +1067,8 @@ app.get('/api/tracker/status', async (req, res) => {
 app.post('/api/register-hook-token', (req, res) => {
   try {
     const authToken = (req.headers.authorization || '').replace('Bearer ', '').trim();
-    const user = verifyToken(authToken);
+    const _verifyFn = require('./src/auth').verifyTokenByEmail || verifyToken;
+    const user = _verifyFn(authToken);
     if (!user) return res.status(401).json({ ok: false, error: 'unauthorized' });
 
     const os = require('os');
@@ -1033,6 +1078,8 @@ app.post('/api/register-hook-token', (req, res) => {
     let cfg = {};
     try { cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf8')); } catch {}
 
+    const oldUserId = cfg.userId;  // 이전 ID 기록 (identity bridge용)
+
     const serverUrl = process.env.RAILWAY_PUBLIC_DOMAIN
       ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
       : `http://localhost:${PORT}`;
@@ -1040,13 +1087,35 @@ app.post('/api/register-hook-token', (req, res) => {
     cfg.token = authToken;
     cfg.userId = user.id;
     cfg.serverUrl = serverUrl;
+    cfg.email = user.email;  // email 저장 (identity 복원용)
     cfg.pcId = require('crypto').createHash('sha256')
       .update(`${os.hostname()}|${os.platform()}|${os.userInfo().username}`)
       .digest('hex').slice(0, 16);
 
     fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2));
-    console.log(`[register-hook-token] ${user.email} → ${cfgPath}`);
-    res.json({ ok: true, pcId: cfg.pcId });
+    console.log(`[register-hook-token] ${user.email} (${user.id}) → ${cfgPath}`);
+
+    // Identity Bridge: 이전 ID로 된 이벤트가 있으면 새 ID로 마이그레이션
+    let migrated = 0;
+    if (oldUserId && oldUserId !== user.id && oldUserId !== 'local') {
+      try {
+        const mainDb = dbModule.getDb ? dbModule.getDb() : null;
+        if (mainDb && mainDb.prepare) {
+          const r1 = mainDb.prepare('UPDATE events SET user_id = ? WHERE user_id = ?').run(user.id, oldUserId);
+          const r2 = mainDb.prepare('UPDATE sessions SET user_id = ? WHERE user_id = ?').run(user.id, oldUserId);
+          migrated = (r1.changes || 0) + (r2.changes || 0);
+          if (migrated > 0) console.log(`[identity-bridge] ${oldUserId} → ${user.id}: ${migrated}개 레코드 마이그레이션`);
+        }
+      } catch (e) { console.warn('[identity-bridge] 마이그레이션 실패:', e.message); }
+    }
+
+    // Identity Bridge: auth DB에서도 canonical ID 보장
+    try {
+      const { ensureCanonicalUser } = require('./src/auth');
+      if (ensureCanonicalUser) ensureCanonicalUser(user.id, user.email, user.name);
+    } catch {}
+
+    res.json({ ok: true, pcId: cfg.pcId, migrated });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
   }

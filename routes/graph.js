@@ -139,11 +139,12 @@ function createRouter(deps) {
     const user = getUserFromReq(req);
     if (!user || user.id === 'local') return res.status(401).json({ error: 'login required' });
 
-    // 안전장치: 유저가 이미 이벤트를 보유하면 claim 차단 (다른 계정 데이터 겹침 방지)
-    if (getEventsByUser) {
+    // 안전장치: 유저가 이미 이벤트를 보유하고 force=false면 차단
+    const force = req.body?.force === true;
+    if (!force && getEventsByUser) {
       const existing = await Promise.resolve(getEventsByUser(user.id));
       if (existing.length > 0) {
-        return res.json({ ok: true, claimed: 0, reason: 'user already has events' });
+        return res.json({ ok: true, claimed: 0, reason: 'user already has events (use force:true to override)' });
       }
     }
 

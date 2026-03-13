@@ -87,6 +87,44 @@ function createRouter(deps) {
     });
   });
 
+  // ── 로그아웃 ─────────────────────────────────────────────────────────────
+
+  /**
+   * DELETE /api/auth/logout
+   * 현재 토큰을 무효화하고 서버 사이드 세션을 정리합니다.
+   */
+  router.delete('/auth/logout', (req, res) => {
+    const token = (req.headers.authorization || '').replace('Bearer ', '').trim()
+                || req.query.token;
+    if (!token) return res.json({ ok: true });
+
+    // 토큰 삭제 (서버 사이드 무효화)
+    try {
+      const authDb = auth.getDb ? auth.getDb() : null;
+      if (authDb) {
+        authDb.prepare('DELETE FROM tokens WHERE token = ?').run(token);
+      }
+    } catch (e) {
+      console.warn('[auth/logout] 토큰 삭제 실패:', e.message);
+    }
+
+    // ~/.orbit-config.json에서 토큰 정리
+    try {
+      const os = require('os');
+      const fs = require('fs');
+      const path = require('path');
+      const cfgPath = path.join(os.homedir(), '.orbit-config.json');
+      const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
+      if (cfg.token === token) {
+        delete cfg.token;
+        delete cfg.userId;
+        fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2));
+      }
+    } catch {} // config 없으면 무시
+
+    res.json({ ok: true });
+  });
+
   // ── 관리자 초대 - 사용자 초대 ─────────────────────────────────────────────
 
   /**
