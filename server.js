@@ -1757,6 +1757,24 @@ app.get('/api/learned-insights/latest', (req, res) => {
   res.json({ ok: true, insight: data[0] || null });
 });
 
+// ── 학습 데이터 CSV 다운로드 API ─────────────────────────────────────────────
+app.get('/api/learning-data/csv', (req, res) => {
+  const fs = require('fs');
+  const csvPath = ollamaAnalyzer.getLearningCsvPath();
+  if (!fs.existsSync(csvPath)) return res.status(404).json({ ok: false, error: '학습 데이터 CSV 없음' });
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="orbit-learning-data.csv"');
+  fs.createReadStream(csvPath).pipe(res);
+});
+app.get('/api/session-classifications/csv', (req, res) => {
+  const fs = require('fs');
+  const csvPath = ollamaAnalyzer.getSessionCsvPath();
+  if (!fs.existsSync(csvPath)) return res.status(404).json({ ok: false, error: '세션 분류 CSV 없음' });
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="orbit-session-classifications.csv"');
+  fs.createReadStream(csvPath).pipe(res);
+});
+
 // ── 행동 데이터 동기화 API ─────────────────────────────────────────────────────
 // 브라우저의 orbit3d-behavior.js가 주기적으로 POST하는 행동 스냅샷 수신
 const _behaviorStore = new Map(); // userId → [{ ts, score, kps, cps, ... }]

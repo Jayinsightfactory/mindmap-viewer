@@ -299,11 +299,19 @@ function createRouter(deps) {
     // AI 분류 결과 (캐시에 있으면 즉시 반환, 없으면 비동기 분류 시작)
     let aiLabel = null;
     let aiCat   = null;
+    let aiProject = null;
+    let aiProjectGoal = null;
+    let aiDomain = null;
+    let aiPhase = null;
     if (_aiClassifier) {
       const cached = _aiClassifier.getSessionClassification(id);
       if (cached) {
         aiLabel = cached.purposeLabel;
         aiCat   = cached.macroCat;
+        aiProject = cached.project;
+        aiProjectGoal = cached.projectGoal;
+        aiDomain = cached.domain;
+        aiPhase = cached.phase;
       } else {
         // 비동기로 분류 시작 (다음 요청 시 캐시됨)
         _aiClassifier.classifySession(id, events).catch(() => {});
@@ -311,15 +319,19 @@ function createRouter(deps) {
     }
 
     res.json({
-      sessionId:   id,
+      sessionId:      id,
       projectDir,
       projectName,
-      firstMsg:    firstMsgText,
+      firstMsg:       firstMsgText,
       topFile,
-      autoTitle:   aiLabel || autoTitle,          // AI 라벨 우선
-      aiLabel,                                     // AI 생성 목적 라벨
-      aiCat,                                       // AI 매크로 카테고리
-      eventCount:  events.length,
+      autoTitle:      aiLabel || autoTitle,          // AI 라벨 우선
+      aiLabel,                                       // AI 생성 목적 라벨
+      aiCat,                                         // AI 매크로 카테고리
+      aiProject,                                     // 최상위 프로젝트명
+      aiProjectGoal,                                 // 프로젝트 내 목표
+      aiDomain,                                      // 도메인 (프론트/백엔드/...)
+      aiPhase,                                       // 단계 (기획/개발/배포/...)
+      eventCount:     events.length,
     });
   });
 
