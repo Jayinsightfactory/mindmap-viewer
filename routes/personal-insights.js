@@ -24,10 +24,9 @@ function createPersonalInsightsRouter({ getAllEvents, getStats, getSessions, get
   router.get('/me/insights', optionalAuth, (req, res) => {
     try {
       const limit = Math.min(parseInt(req.query.limit) || 20, 100);
-      const allInsights = typeof getInsights === 'function' ? getInsights(limit * 2) : [];
-
       // 사용자 필터 (user_id 파라미터 또는 인증 토큰)
       const userId = req.user?.id || req.query.userId || 'local';
+      const allInsights = typeof getInsights === 'function' ? getInsights(limit * 2, userId) : [];
 
       // 사용자별 이벤트 필터링 (없으면 전체 폴백)
       const events = getEventsForUser ? getEventsForUser(resolveUserId(req)) : getAllEvents();

@@ -1267,7 +1267,7 @@ app.use('/api', createPersonalInsightsRouter({
   getSessions,
   authMiddleware: require('./src/auth').authMiddleware,
   optionalAuth:   require('./src/auth').optionalAuth,
-  getInsights:    () => require('./src/insight-engine').getInsights(100),
+  getInsights:    (limit, userId) => require('./src/insight-engine').getInsights(limit || 100, userId),
 }));
 
 // ─── AI 토큰 비용 추적 ────────────────────────────────────────────────────────
@@ -1333,7 +1333,7 @@ app.use('/api', createMcpRouter({
   getAllEvents,
   getStats,
   getSessions,
-  getInsights:    () => require('./src/insight-engine').getInsights(50),
+  getInsights:    (limit, userId) => require('./src/insight-engine').getInsights(limit || 50, userId),
   getPatterns,
   getSuggestions,
   getOutcomes:    outcomeStore.getOutcomes,

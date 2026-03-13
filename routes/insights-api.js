@@ -18,10 +18,11 @@ module.exports = function createInsightsApiRouter(deps) {
   const _clientInsights = [];
   const MAX_CLIENT_INSIGHTS = 5000;
 
-// /api/insights — 최근 인사이트 조회
+// /api/insights — 최근 인사이트 조회 (userId 쿼리 파라미터로 필터링 가능)
 router.get('/api/insights', (req, res) => {
-  const limit = Math.min(parseInt(req.query.limit) || 50, 200);
-  res.json(insightEngine.getInsights(limit));
+  const limit  = Math.min(parseInt(req.query.limit) || 50, 200);
+  const userId = req.query.userId || undefined;
+  res.json(insightEngine.getInsights(limit, userId));
 });
 
 // /api/insights/run — 즉시 분석 실행 (POST)
