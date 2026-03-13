@@ -37,3 +37,4 @@ coverage/
 .idea/
 *.swp
 *.swo
+*.bak
