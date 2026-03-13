@@ -69,7 +69,7 @@ function clearScene() {
     _collabLines = [];
   }
   planetMeshes=[]; satelliteMeshes=[]; orbitRings=[]; connections=[]; labelSprites=[];
-  _nodeDataMap = {}; _hitAreas = []; _projectGroups = {};
+  _nodeDataMap = {}; clearHitAreas(); _projectGroups = {};
   _topicLinksBuilt = false; _topicLinks.length = 0; _topicLinksLastBuilt = 0;
 }
 

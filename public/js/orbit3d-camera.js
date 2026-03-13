@@ -378,7 +378,7 @@ function updateParallelOrbits(dt) {
 // ── 팀 모드 Canvas2D 라벨 (2-pass: 수집 → 겹침해소 → 드로우) ─────────────────
 function drawTeamLabels() {
   _lctx.clearRect(0, 0, innerWidth, innerHeight);
-  _hitAreas = [];
+  clearHitAreas();
 
   const lod = getLOD();
   const now = Date.now() / 1000; // seconds
@@ -844,7 +844,7 @@ function drawTeamLabels() {
 
     // 히트 영역 (해소된 위치 기준)
     if (type !== 'tool') {
-      _hitAreas.push({ cx, cy, r: hr + 4, data: node });
+      registerHitArea({ cx, cy, r: hr + 4, data: node });
     }
 
     // globalAlpha 복원

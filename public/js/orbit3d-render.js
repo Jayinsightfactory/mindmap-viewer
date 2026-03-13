@@ -61,53 +61,7 @@ function getLOD() {
   return 3;                 // 유니버스 뷰
 }
 
-// 거리 → 화면 픽셀 스케일
-function screenScale(worldPos) {
-  const dist = camera.position.distanceTo(worldPos);
-  const fovFactor = innerHeight / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)));
-  return fovFactor / Math.max(dist, 0.1);
-}
-
-// pill 경로
-function roundRect(ctx, x, y, w, h, r) {
-  ctx.beginPath();
-  ctx.moveTo(x+r, y); ctx.lineTo(x+w-r, y);
-  ctx.arcTo(x+w, y, x+w, y+r, r); ctx.lineTo(x+w, y+h-r);
-  ctx.arcTo(x+w, y+h, x+w-r, y+h, r); ctx.lineTo(x+r, y+h);
-  ctx.arcTo(x, y+h, x, y+h-r, r); ctx.lineTo(x, y+r);
-  ctx.arcTo(x, y, x+r, y, r); ctx.closePath();
-}
-
-// 3D 와이어프레임 그리드 헬퍼 (모든 카드/pill 공통)
-function drawWireframeGrid(ctx, x, y, w, h, r, color, alpha) {
-  ctx.save();
-  roundRect(ctx, x, y, w, h, r); ctx.clip();
-  ctx.strokeStyle = color; ctx.lineWidth = 0.5; ctx.globalAlpha = alpha;
-  const midX = x + w / 2, midY = y + h / 2;
-  // 수평 곡선
-  const hLines = Math.max(2, Math.round(h / 14));
-  for (let i = 1; i < hLines; i++) {
-    const t = i / hLines;
-    const gy = y + h * t;
-    const bulge = Math.sin(t * Math.PI) * Math.min(3, h * 0.06);
-    ctx.beginPath(); ctx.moveTo(x, gy);
-    ctx.quadraticCurveTo(midX, gy - bulge, x + w, gy); ctx.stroke();
-  }
-  // 수직 곡선
-  const vLines = Math.max(3, Math.round(w / 22));
-  for (let i = 1; i < vLines; i++) {
-    const t = i / vLines;
-    const gx = x + w * t;
-    const bulge = Math.sin(t * Math.PI) * Math.min(2, w * 0.03);
-    ctx.beginPath(); ctx.moveTo(gx, y);
-    ctx.quadraticCurveTo(gx + bulge, midY, gx, y + h); ctx.stroke();
-  }
-  ctx.restore();
-}
-
-// ── 통일 카드 상수 (모든 뷰 공통) ──────────────────────────────────────────
-const UNI_CARD_W = 180, UNI_CARD_H = 51;
-const UNI_CARD_R = 10, UNI_CARD_BAR = 5;
+// [extracted to orbit3d-card-texture.js]: screenScale, roundRect, drawWireframeGrid, UNI_CARD_W/H/R/BAR
 
 // ── 노드 숨기기 ────────────────────────────────────────────────────────────
 const _hiddenNodes = (() => { try { return JSON.parse(localStorage.getItem('orbitHiddenNodes') || '{}'); } catch { return {}; } })();
@@ -117,92 +71,7 @@ window._saveHiddenNodes = _saveHiddenNodes;
 window.unhideNode = function(key) { delete _hiddenNodes[key]; _saveHiddenNodes(); };
 window.getHiddenNodeList = function() { return Object.keys(_hiddenNodes).map(k => ({ key: k, label: _hiddenNodes[k] })); };
 
-// ── 통일 카드 그리기 (모든 뷰 공통) ──────────────────────────────────────────
-// 카드 내 버튼 히트 영역 등록 (편집·숨기기) — forEach 루프 내에서 호출
-function drawCardIcons(ctx, cx, cy, projKey, projLabel, isHover, hitAreas) {
-  if (!isHover) return;
-  const lx = cx - UNI_CARD_W / 2, ly = cy - UNI_CARD_H / 2;
-  // ✎ 편집: 우측 상단 내부
-  const eX = lx + UNI_CARD_W - 26, eY = ly + 4;
-  ctx.save();
-  ctx.fillStyle = 'rgba(31,111,235,0.85)';
-  roundRect(ctx, eX, eY, 20, 20, 5); ctx.fill();
-  ctx.fillStyle = '#fff'; ctx.font = '13px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText('✎', eX + 10, eY + 11);
-  ctx.restore();
-  if (hitAreas) hitAreas.push({ cx: eX + 10, cy: eY + 10, r: 12, data: { type: 'editNode', projKey, projLabel } });
-
-  // 👁 숨기기: 편집 버튼 왼쪽
-  const hX = eX - 24, hY = eY;
-  ctx.save();
-  ctx.fillStyle = 'rgba(51,65,85,0.85)';
-  roundRect(ctx, hX, hY, 20, 20, 5); ctx.fill();
-  ctx.fillStyle = '#94a3b8'; ctx.font = '13px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText('🙈', hX + 10, hY + 11);
-  ctx.restore();
-  if (hitAreas) hitAreas.push({ cx: hX + 10, cy: hY + 10, r: 12, data: { type: 'hideNode', projKey, projLabel } });
-}
-
-function drawUnifiedCard(ctx, cx, cy, color, title, sub, isActive, isHover, isDrilled) {
-  const lx = cx - UNI_CARD_W / 2, ly = cy - UNI_CARD_H / 2;
-  ctx.save();
-  ctx.shadowColor = isDrilled ? 'rgba(6,182,212,0.25)' : 'rgba(0,0,0,0.3)';
-  ctx.shadowBlur = isDrilled ? 16 : 10; ctx.shadowOffsetY = 2;
-  ctx.fillStyle = isDrilled ? 'rgba(6,182,212,0.12)' : isHover ? 'rgba(6,182,212,0.08)' : 'rgba(2,6,23,0.80)';
-  roundRect(ctx, lx, ly, UNI_CARD_W, UNI_CARD_H, UNI_CARD_R); ctx.fill();
-  ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
-  ctx.restore();
-
-  drawWireframeGrid(ctx, lx, ly, UNI_CARD_W, UNI_CARD_H, UNI_CARD_R, color, isDrilled ? 0.35 : isHover ? 0.28 : 0.18);
-
-  // 좌측 컬러 바
-  ctx.save();
-  ctx.beginPath();
-  ctx.moveTo(lx + UNI_CARD_R, ly); ctx.lineTo(lx + UNI_CARD_BAR + UNI_CARD_R, ly);
-  ctx.lineTo(lx + UNI_CARD_BAR + UNI_CARD_R, ly + UNI_CARD_H);
-  ctx.moveTo(lx + UNI_CARD_R, ly + UNI_CARD_H);
-  ctx.arcTo(lx, ly + UNI_CARD_H, lx, ly + UNI_CARD_H - UNI_CARD_R, UNI_CARD_R);
-  ctx.lineTo(lx, ly + UNI_CARD_R); ctx.arcTo(lx, ly, lx + UNI_CARD_R, ly, UNI_CARD_R);
-  ctx.closePath();
-  ctx.fillStyle = color; ctx.globalAlpha = 0.7; ctx.fill(); ctx.globalAlpha = 1;
-  ctx.restore();
-
-  ctx.strokeStyle = isDrilled ? color : isHover ? 'rgba(6,182,212,0.4)' : 'rgba(255,255,255,0.10)';
-  ctx.lineWidth = isDrilled ? 1.5 : isHover ? 1.2 : 0.8;
-  roundRect(ctx, lx, ly, UNI_CARD_W, UNI_CARD_H, UNI_CARD_R); ctx.stroke();
-
-  if (isActive) {
-    ctx.save();
-    ctx.fillStyle = '#22c55e'; ctx.shadowColor = '#22c55e'; ctx.shadowBlur = 6;
-    ctx.beginPath(); ctx.arc(lx + UNI_CARD_W - 8, ly + 8, 3.5, 0, Math.PI * 2); ctx.fill();
-    ctx.restore();
-  }
-
-  const textX = lx + UNI_CARD_BAR + UNI_CARD_R + 6;
-  const maxTextW = UNI_CARD_W - UNI_CARD_BAR - UNI_CARD_R - 16;
-  ctx.textAlign = 'left';
-  ctx.font = "600 14px 'Inter',-apple-system,sans-serif";
-  ctx.fillStyle = '#e2e8f0';
-  let clipped = title;
-  while (ctx.measureText(clipped).width > maxTextW && clipped.length > 1) clipped = clipped.slice(0, -1);
-  if (clipped !== title) clipped += '\u2026';
-  ctx.fillText(clipped, textX, ly + 21);
-
-  if (sub) {
-    ctx.font = "400 11px 'JetBrains Mono','Fira Code',monospace";
-    ctx.fillStyle = '#94a3b8';
-    let cs = sub;
-    while (ctx.measureText(cs).width > maxTextW && cs.length > 1) cs = cs.slice(0, -1);
-    if (cs !== sub) cs += '\u2026';
-    ctx.fillText(cs, textX, ly + 39);
-  }
-}
-
-// 3D → 화면 좌표
-function toScreen(worldPos) {
-  const v = worldPos.clone().project(camera);
-  return { x:(v.x+1)/2*innerWidth, y:(-v.y+1)/2*innerHeight, z:v.z };
-}
+// [extracted to orbit3d-card-texture.js]: drawCardIcons, drawUnifiedCard, toScreen
 
 // ─── 실시간 작업 빛 상태 ─────────────────────────────────────────────────────
 // WS 이벤트로 최근 활성화된 clusterId → 타임스탬프
@@ -273,20 +142,7 @@ function openFileInEditor(filePath) {
   if (typeof showToast === 'function') showToast(`📂 ${uri.split('/').pop()} 열기`, 2000);
 }
 
-// ─── 글로우 pill 헬퍼 ────────────────────────────────────────────────────────
-function drawGlow(ctx, cx, cy, r, hex, intensity) {
-  if (intensity <= 0.02) return;
-  const grad = ctx.createRadialGradient(cx, cy, r * 0.5, cx, cy, r * 2.8);
-  const alpha = (intensity * 0.55).toFixed(3);
-  grad.addColorStop(0, hex + Math.round(intensity * 200).toString(16).padStart(2,'0'));
-  grad.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.save();
-  ctx.fillStyle = grad;
-  ctx.beginPath();
-  ctx.arc(cx, cy, r * 2.8, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
-}
+// [extracted to orbit3d-card-texture.js]: drawGlow
 
 // ─── AI 인사이트 패널 ─────────────────────────────────────────────────────────
 
@@ -2572,101 +2428,8 @@ async function _applyExec() {
 window._regenExec  = _regenExec;
 window._applyExec  = _applyExec;
 
-// ─── 4단계 드릴다운 네비게이션 ─────────────────────────────────────────────
-function focusProject(projName) {
-  _focusedProject = projName;
-  _focusedCategory = null;
-  _drillStage = 1;
-  _drillProject = { name: projName };
-  _drillCategory = null;
-  _drillTimelineEvent = null;
-
-  const btn = document.getElementById('constellation-back-btn');
-  if (btn) btn.style.display = 'none';
-
-  // 드릴다운 시 카테고리 수에 맞게 자동 줌아웃 (카드가 한눈에 들어오게)
-  const grp = _projectGroups[projName];
-  if (grp && typeof autoFitDrilldown === 'function') {
-    const numCats = Object.keys(
-      (grp.planetMeshes || []).reduce((m, p) => { m[p.userData.macroCat || 'g'] = 1; return m; }, {})
-    ).length;
-    autoFitDrilldown(numCats);
-  }
-
-  lerpCameraTo(85, 0, 0, 0, 700);
-}
-window.focusProject = focusProject;
-
-function exitConstellationFocus() {
-  _focusedProject = null;
-  _drillStage = 0;
-  _drillProject = null;
-  _drillCategory = null;
-  _drillTimelineEvent = null;
-  closePanel();
-  lerpCameraTo(60, 0, 0, 0, 700);
-  const btn = document.getElementById('constellation-back-btn');
-  if (btn) btn.style.display = 'none';
-}
-window.exitConstellationFocus = exitConstellationFocus;
-
-// ── 카테고리 드릴 (2단계 → 3단계: 타임라인 패널) ───────────────────────────
-function drillToCategory(catData) {
-  _drillStage = 2;
-  _drillCategory = catData;
-  _focusedCategory = catData.catKey;
-
-  // 해당 카테고리의 모든 이벤트 수집
-  const allEvents = [];
-  (catData.planets || []).forEach(planet => {
-    const entry = _sessionMap[planet.userData.clusterId];
-    if (!entry) return;
-    for (const e of entry.events) {
-      allEvents.push({ ...e, clusterId: planet.userData.clusterId });
-    }
-  });
-  allEvents.sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0));
-  _drillCategory.events = allEvents;
-
-  lerpCameraTo(75, 0, 0, 0, 500);
-  showDrillTimeline(_drillCategory);
-}
-window.drillToCategory = drillToCategory;
-
-function drillToFileDetail(fileName, filePath) {
-  _drillStage = 3;
-  _drillTimelineEvent = { fileName, filePath };
-  showDrillFileDetail(fileName, filePath);
-}
-window.drillToFileDetail = drillToFileDetail;
-
-// ── 카테고리 포커스 (동적 프로젝트 타입 - 호환) ─────────────────────────────
-function focusCategoryView(catKey) {
-  _focusedCategory = catKey;
-  _focusedProject  = null;
-  const catCfg = PROJECT_TYPES[catKey] || PROJECT_TYPES.general;
-  const grp = _categoryGroups[catKey];
-  if (!grp || grp.planets.length === 0) return;
-  let tx = 0, tz = 0;
-  grp.planets.forEach(p => { tx += p.position.x; tz += p.position.z; });
-  tx /= grp.planets.length; tz /= grp.planets.length;
-  lerpCameraTo(35, tx, 0, tz, 700);
-}
-window.focusCategoryView = focusCategoryView;
-
-function exitCategoryFocus() {
-  _focusedCategory = null;
-  if (_drillStage >= 2) {
-    _drillStage = 1;
-    _drillCategory = null;
-    _drillTimelineEvent = null;
-    closePanel();
-    lerpCameraTo(70, 0, 0, 0, 500);
-  } else {
-    lerpCameraTo(55, 0, 0, 0, 700);
-  }
-}
-window.exitCategoryFocus = exitCategoryFocus;
+// [extracted to orbit3d-drilldown.js]: focusProject, exitConstellationFocus,
+// drillToCategory, drillToFileDetail, focusCategoryView, exitCategoryFocus
 
 // ─── 토픽 유사도 기반 글로잉 연결선 ──────────────────────────────────────────
 // 로컬 키워드 분석: Ollama 없이도 의미 있는 연결 추론
@@ -2963,7 +2726,7 @@ function drawConstellations() {
         _lctx.restore();
 
         // 히트 영역 (클릭으로 파일 열기)
-        _hitAreas.push({
+        registerHitArea({
           cx: bx + afW / 2, cy: badgeY + badgeH / 2,
           r: Math.max(afW, badgeH) / 2 + 4,
           obj: null,
@@ -2988,7 +2751,7 @@ function drawConstellations() {
     }
 
     // 히트 영역
-    _hitAreas.push({
+    registerHitArea({
       cx, cy,
       r: (Math.max(pw, ph) / 2) + 6,
       obj: null,
@@ -2997,569 +2760,7 @@ function drawConstellations() {
   });
 }
 
-// ─── 팀원 클러스터 렌더링 (월드 줌아웃 시 등장) ──────────────────────────────
-// 월드 좌표 오프셋에 각 팀원의 작업 허브를 그림
-// worldScale < 0.85 에서 서서히 등장 (페이드인)
-// 팀원 월드 오프셋 (px, scale=1.0 기준)
-// 줌아웃(scale≈0.5)에서 화면 가장자리에 등장하도록 설정
-const _TEAM_WORLD_POS = [
-  [ 480,    0], [-480,    0],
-  [ 240,  380], [-240,  380],
-  [ 240, -380], [-240, -380],
-  [ 520,  300], [-520,  300],
-];
-
-// ctx는 이미 월드 트랜스폼(translate+scale)이 적용된 상태로 호출됨
-// 모든 드로잉은 월드 좌표계, hitArea는 월드 좌표 (함수 끝에서 일괄 스크린 변환)
-function _drawTeamClusters(ctx, txX, txY, W, H, scale) {
-  const data = window._teamWorldData;
-
-  // 페이드인: scale 0.75→0.5 구간에서 0→1 알파
-  const fadeAlpha = Math.min(1, Math.max(0, (0.75 - scale) / 0.25));
-  if (fadeAlpha <= 0) return;
-
-  // 팀 데이터 없으면 초대 플레이스홀더 표시
-  if (!data?.members?.length) {
-    _TEAM_WORLD_POS.slice(0, 2).forEach(([wox, woy]) => {
-      const scx = wox * scale + txX, scy = woy * scale + txY;
-      if (scx < -200 || scx > W + 200 || scy < -200 || scy > H + 200) return;
-      ctx.save();
-      ctx.globalAlpha = fadeAlpha * 0.45;
-      drawUnifiedCard(ctx, wox, woy, '#4a5568', '+ 팀원 초대', '워크스페이스에 팀원 추가', false, false, false);
-      ctx.restore();
-    });
-    return;
-  }
-
-  data.members.forEach((m, i) => {
-    const [wox, woy] = _TEAM_WORLD_POS[i] || [900 + i * 200, 0];
-    const scx = wox * scale + txX, scy = woy * scale + txY;
-
-    // 화면 밖이면 스킵
-    if (scx < -200 || scx > W + 200 || scy < -200 || scy > H + 200) return;
-
-    const color = m.color || '#58a6ff';
-    const name  = m.name  || '팀원';
-    const activeTasks = (m.tasks || []).filter(t => t.status === 'active').length;
-    const totalTasks  = (m.tasks || []).length;
-
-    ctx.save();
-    ctx.globalAlpha = fadeAlpha;
-
-    // ── 허브 카드 (월드 좌표) ──
-    drawUnifiedCard(ctx, wox, woy, color, `👤 ${name}`, `${activeTasks}개 진행 · ${totalTasks}개 총`, activeTasks > 0, false, false);
-
-    // ── 미니 작업 카드 (최대 3개) ──
-    const tasks = (m.tasks || []).slice(0, 3);
-    tasks.forEach((task, ti) => {
-      const tAngle = -Math.PI / 2 + (ti - (tasks.length - 1) / 2) * 0.65;
-      const tDist  = 110;
-      const tx = wox + Math.cos(tAngle) * tDist;
-      const ty = woy + Math.sin(tAngle) * tDist;
-      const tColor = task.status === 'active' ? '#3fb950' : task.status === 'done' ? '#58a6ff' : '#6e7681';
-      const tName  = (task.name || '작업').slice(0, 12) + ((task.name || '').length > 12 ? '…' : '');
-
-      // 연결선
-      ctx.globalAlpha = fadeAlpha * 0.2;
-      ctx.strokeStyle = color; ctx.lineWidth = 1;
-      ctx.setLineDash([3, 3]);
-      ctx.beginPath(); ctx.moveTo(wox, woy); ctx.lineTo(tx, ty); ctx.stroke();
-      ctx.setLineDash([]);
-
-      ctx.globalAlpha = fadeAlpha * 0.85;
-      drawUnifiedCard(ctx, tx, ty, tColor, tName, task.status === 'active' ? '진행중' : '완료', task.status === 'active', false, false);
-    });
-
-    // 히트 영역 (월드 좌표 → drawCompactProjectView 끝에서 스크린 좌표 변환)
-    _hitAreas.push({
-      cx: wox, cy: woy, r: 60,
-      obj: null,
-      data: { type: 'teamMember', memberId: m.userId || m.id, memberName: name, color, member: m },
-    });
-
-    ctx.restore();
-  });
-}
-
-// ─── 1단계: 프로젝트 노드 뷰 (방사형 + 밝은 테마) ──────────────────────────
-// ME 노드 중심, 프로젝트를 원형 배치, 클릭 시 2단계 카테고리 링 전개
-function drawCompactProjectView() {
-  const projNames = Object.keys(_projectGroups);
-  if (projNames.length === 0) return;
-
-  const now = performance.now() / 1000;
-  const ctx = _lctx;
-
-  // ── 기준점: 2D 월드 팬 오프셋 기반 (좌클릭 드래그로 탐색) ────────────────
-  const W = _labelCanvas2d.width, H = _labelCanvas2d.height;
-  const _wPanX = window._worldPanX || 0;
-  const _wPanY = window._worldPanY || 0;
-  const _wScale = window._worldScale || 1.0;
-  // 월드 원점의 스크린 좌표 (드릴다운 시프트로 조정됨)
-  let _txX = W / 2 + _wPanX;
-  let _txY = H / 2 + _wPanY;
-
-  // ── 프로젝트별 정보 집계 ──────────────────────────────────────────────────
-  const projects = projNames.map(name => {
-    const grp = _projectGroups[name];
-    const planets = grp.planetMeshes || [];
-    const eventCount = planets.reduce((s, p) => s + (p.userData.eventCount || 0), 0);
-    const hasActive = (_activeFilesPerProject[name] || []).length > 0;
-    const typeCounts = {};
-    planets.forEach(p => {
-      const t = p.userData.macroCat || 'general';
-      typeCounts[t] = (typeCounts[t] || 0) + 1;
-    });
-    const mainType = Object.entries(typeCounts).sort((a,b) => b[1] - a[1])[0]?.[0] || 'general';
-    const typeCfg = PROJECT_TYPES[mainType] || PROJECT_TYPES.general;
-    return { name, planets, eventCount, hasActive, mainType, typeCfg, color: grp.color || typeCfg.color };
-  }).filter(p => p.eventCount > 0 && !_hiddenNodes[p.name]).sort((a,b) => b.eventCount - a.eventCount);
-
-  if (projects.length === 0) return;
-
-  // ── 스마트 프로젝트명 분석 ────────────────────────────────────────────────
-  function analyzeProject(proj) {
-    const planets = proj.planets || [];
-    const catCounts = {};
-    planets.forEach(p => {
-      const c = p.userData.macroCat || 'general';
-      catCounts[c] = (catCounts[c] || 0) + 1;
-    });
-    const topCats = Object.entries(catCounts).sort((a,b) => b[1] - a[1]);
-    const topCat = topCats[0]?.[0] || 'general';
-    const topCfg = PROJECT_TYPES[topCat] || PROJECT_TYPES.general;
-
-    const exts = {};
-    planets.forEach(p => {
-      const entry = _sessionMap[p.userData.clusterId];
-      if (!entry) return;
-      for (const e of entry.events) {
-        const f = (e.data?.filePath || e.data?.fileName || '');
-        const m = f.match(/\.([a-z]{1,6})$/i);
-        if (m) exts[m[1].toLowerCase()] = (exts[m[1].toLowerCase()] || 0) + 1;
-      }
-    });
-    const topExts = Object.entries(exts).sort((a,b) => b[1] - a[1]).slice(0, 3).map(([e]) => e);
-
-    const rawName = proj.name;
-    let smartName;
-    if (rawName && rawName !== '기타' && !/^세션-/.test(rawName)) {
-      smartName = rawName.split(/[-_]/).filter(s => s !== 'session')
-        .map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(' ');
-    } else {
-      const stack = topExts.length > 0 ? topExts.join('+').toUpperCase() : '';
-      smartName = stack ? `${stack} ${topCfg.label}` : topCfg.label + ' 프로젝트';
-    }
-
-    const allFiles = new Set();
-    planets.forEach(p => {
-      const entry = _sessionMap[p.userData.clusterId];
-      if (!entry) return;
-      for (const e of entry.events) {
-        const f = (e.data?.filePath || e.data?.fileName || '');
-        if (f) allFiles.add(f.split(/[\\/]/).pop());
-      }
-    });
-
-    return {
-      name: smartName.slice(0, 24),
-      icon: topCfg.icon,
-      catBreakdown: topCats.slice(0, 3).map(([k, v]) => {
-        const cfg = PROJECT_TYPES[k] || PROJECT_TYPES.general;
-        return { key: k, label: cfg.label, icon: cfg.icon, count: v, color: cfg.color };
-      }),
-      fileCount: allFiles.size,
-      sessionCount: planets.length,
-      techStack: topExts.join(' · ') || '',
-    };
-  }
-
-  // ── 레이아웃 계산 (드릴다운 시프트 포함, 드로잉 전) ─────────────────────
-  const meW = 130, meH = 48, meR = meH / 2;
-  const NODE_GAP = 6;
-  const LAYER_OFFSET = UNI_CARD_W + 8;
-  const isDrillStage1 = _drillStage >= 1 && _drillProject;
-  const baseAngle = -Math.PI / 2;
-  const angleStep = (Math.PI * 2) / projects.length;
-
-  function meEdgeDist(theta) {
-    const ax = Math.abs(Math.cos(theta)), ay = Math.abs(Math.sin(theta));
-    if (ax < 1e-6) return meH / 2;
-    if (ay < 1e-6) return meW / 2;
-    return Math.min(meW / 2 / ax, meH / 2 / ay);
-  }
-  function cardHalfDist(theta) {
-    const ax = Math.abs(Math.cos(theta)), ay = Math.abs(Math.sin(theta));
-    if (ax < 1e-6) return UNI_CARD_H / 2;
-    if (ay < 1e-6) return UNI_CARD_W / 2;
-    return Math.min(UNI_CARD_W / 2 / ax, UNI_CARD_H / 2 / ay);
-  }
-  const CARD_GAP_MIN = 10;
-  let _minRadius = 0;
-  if (projects.length > 1) {
-    const sinHalf = Math.sin(angleStep / 2);
-    if (sinHalf > 0) _minRadius = (UNI_CARD_W / 2 + CARD_GAP_MIN / 2) / sinHalf;
-  }
-  function getNodeDist(theta) {
-    return Math.max(meEdgeDist(theta) + NODE_GAP + cardHalfDist(theta), _minRadius);
-  }
-
-  // ── 드릴다운 시 월드 원점 이동 (드릴 방향 반대로 밀어 체인이 화면 안에 들어오게) ──
-  if (isDrillStage1) {
-    const drillIdx = projects.findIndex(p => p.name === _drillProject.name);
-    if (drillIdx >= 0) {
-      const drillAngle = baseAngle + drillIdx * angleStep;
-      const dX = Math.cos(drillAngle), dY = Math.sin(drillAngle);
-      // 화면 픽셀 기준 필요 전개 거리
-      const totalExpand = (getNodeDist(drillAngle) + 200 + (UNI_CARD_H + 8) * 2) * _wScale;
-      const SIDEBAR_W = 210, marginR = 40, marginT = 80, marginB = 60;
-      const availX = dX > 0 ? W - _txX - marginR : _txX - SIDEBAR_W;
-      const availY = dY > 0 ? H - _txY - marginB : _txY - marginT;
-      _txX -= dX * Math.max(0, Math.abs(dX) * totalExpand - availX);
-      _txY -= dY * Math.max(0, Math.abs(dY) * totalExpand - availY);
-    }
-  }
-
-  // ── 캔버스 월드 트랜스폼 적용 (이하 모든 드로잉이 월드 좌표계로 동작) ─────
-  // 효과: 줌아웃 시 카드 크기도 함께 축소 → 겹침 완전 방지
-  ctx.save();
-  ctx.translate(_txX, _txY);
-  ctx.scale(_wScale, _wScale);
-
-  // ── ME 노드 (월드 원점 = 0, 0) ─────────────────────────────────────────────
-  const meLx = -meW / 2, meLy = -meH / 2;
-  ctx.save();
-  ctx.fillStyle = 'rgba(2, 6, 23, 0.82)';
-  ctx.shadowColor = 'rgba(6,182,212,0.15)'; ctx.shadowBlur = 20; ctx.shadowOffsetY = 0;
-  roundRect(ctx, meLx, meLy, meW, meH, meR); ctx.fill();
-  ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
-  ctx.restore();
-  drawWireframeGrid(ctx, meLx, meLy, meW, meH, meR, 'rgba(6,182,212,1)', 0.22);
-  ctx.strokeStyle = 'rgba(6,182,212,0.5)'; ctx.lineWidth = 1.5;
-  roundRect(ctx, meLx, meLy, meW, meH, meR); ctx.stroke();
-  ctx.font = "700 16px 'Inter',-apple-system,sans-serif";
-  ctx.textAlign = 'center';
-  ctx.fillStyle = '#e2e8f0';
-  ctx.fillText('나의 작업', 0, 6);
-
-  // 라벨 별칭 맵 (인라인 편집 저장본)
-  const _aliases = (() => { try { return JSON.parse(localStorage.getItem('orbitLabelAliases') || '{}'); } catch { return {}; } })();
-
-  projects.forEach((proj, i) => {
-    // 360도 방사형: ME 박스 테두리에 밀착 (월드 좌표계, 트랜스폼이 스케일 적용)
-    const angle = baseAngle + i * angleStep;
-    const isThisDrilled = isDrillStage1 && _drillProject.name === proj.name;
-    const nodeDist = getNodeDist(angle);
-    const cx = Math.cos(angle) * nodeDist;
-    const cy = Math.sin(angle) * nodeDist;
-    const isHover = _hoveredHit?.data?.type === 'constellation' && _hoveredHit?.data?.projName === proj.name;
-    const color = proj.color;
-    const info = analyzeProject(proj);
-
-    // 비활성 프로젝트 흐리게
-    const dimmed = isDrillStage1 && !isThisDrilled;
-    if (dimmed) ctx.globalAlpha = 0.3;
-
-    // 라벨 별칭 적용
-    const projTitle = _aliases[proj.name] || `${info.icon} ${info.name}`;
-    const projSub = `${info.sessionCount}세션 · ${info.fileCount}파일`;
-
-    drawUnifiedCard(ctx, cx, cy, color, projTitle, projSub, proj.hasActive, isHover, isThisDrilled);
-
-    ctx.globalAlpha = 1;
-
-    // 카드 내 버튼 (편집·숨기기) — hover 시에만 표시
-    if (!dimmed) drawCardIcons(ctx, cx, cy, proj.name, projTitle, isHover, _hitAreas);
-
-    // ME → 프로젝트 연결선
-    {
-      ctx.save();
-      ctx.globalAlpha = dimmed ? 0.1 : 0.18;
-      ctx.strokeStyle = '#9ca3af'; ctx.lineWidth = 1;
-      ctx.setLineDash([4, 4]);
-      ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(cx, cy); ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.restore();
-    }
-
-    // 히트 영역 (카드 전체 — 버튼 히트 영역은 drawCardIcons에서 이미 추가)
-    _hitAreas.push({
-      cx, cy, r: Math.max(UNI_CARD_W, UNI_CARD_H) / 2 + 6,
-      obj: null,
-      data: { type: 'constellation', projName: proj.name, planetCount: proj.planets.length, color, info },
-    });
-
-    // ══ 2단계: 카테고리 + 세션 — outward 방향 순차 스택 ══════════════════════
-    if (isThisDrilled && proj.planets.length > 0) {
-      const catGroups = {};
-      proj.planets.forEach(planet => {
-        const cat = planet.userData.macroCat || 'general';
-        if (!catGroups[cat]) catGroups[cat] = [];
-        catGroups[cat].push(planet);
-      });
-      const sortedCats = Object.entries(catGroups).sort((a, b) => b[1].length - a[1].length);
-
-      // 프로젝트 → ME 방향 단위 벡터 (월드 원점 = 0,0)
-      const dx = cx, dy = cy;
-      const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-      const dirX = dx / dist, dirY = dy / dist;  // outward 방향
-      const perpX = -dirY, perpY = dirX;          // 수직(perp) 방향
-
-      // outward/perp 방향 카드 크기
-      const outwardStep = Math.abs(dirX) * UNI_CARD_W + Math.abs(dirY) * UNI_CARD_H;
-      const perpStep    = Math.abs(perpX) * UNI_CARD_W + Math.abs(perpY) * UNI_CARD_H;
-      const CARD_GAP = 8;
-
-      // ── 카테고리: 부채꼴(fan) 배치 — dirAngle 기준 ±각도로 균등 배분 ──────
-      const numCatsNow = sortedCats.length;
-      const dirAngle = Math.atan2(dirY, dirX);
-      const CAT_DIST = 200;  // 프로젝트 카드 → 카테고리 카드 거리 (월드 좌표, 트랜스폼이 스케일 적용)
-      // 비겹침 최소 각도: 카드 edge 간 간격 확보
-      const catAngleStep = Math.max(
-        2 * Math.asin(Math.min((UNI_CARD_W + CARD_GAP) / (2 * CAT_DIST), 1)),
-        Math.PI / 8  // 최소 22.5°
-      );
-      // 최대 halfSpan 150° 캡 — 8개 이상 카테고리에서 wrap-around 방지
-      const catHalfSpan = Math.min((numCatsNow - 1) / 2 * catAngleStep, Math.PI * 5 / 6);
-
-      sortedCats.forEach(([catKey, catPlanets], ci) => {
-        const cfg = PROJECT_TYPES[catKey] || PROJECT_TYPES.general;
-        // 카테고리 각도: dirAngle ± catHalfSpan에서 균등 배분
-        const catAngle = numCatsNow === 1 ? dirAngle : dirAngle - catHalfSpan + ci * catAngleStep;
-        const catDirX = Math.cos(catAngle), catDirY = Math.sin(catAngle);
-        const catCx = cx + catDirX * CAT_DIST;
-        const catCy = cy + catDirY * CAT_DIST;
-
-        const catSessionCount = catPlanets.length;
-        const isCatDrilled = _drillStage >= 2 && _drillCategory?.catKey === catKey;
-        const isCatHover = _hoveredHit?.data?.type === 'drillCategory' && _hoveredHit?.data?.catKey === catKey;
-        const catTitle = _aliases[catKey] || `${cfg.icon} ${cfg.label}`;
-        const catSub = `${catSessionCount} 세션`;
-
-        // 프로젝트 → 카테고리 연결선
-        ctx.save();
-        ctx.globalAlpha = 0.15;
-        ctx.strokeStyle = cfg.color; ctx.lineWidth = 1;
-        ctx.setLineDash([4, 4]);
-        ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(catCx, catCy); ctx.stroke();
-        ctx.setLineDash([]);
-        ctx.restore();
-
-        drawUnifiedCard(ctx, catCx, catCy, cfg.color, catTitle, catSub, false, isCatHover, isCatDrilled);
-
-        _hitAreas.push({
-          cx: catCx, cy: catCy, r: Math.max(UNI_CARD_W, UNI_CARD_H) / 2 + 4,
-          obj: null,
-          data: {
-            type: 'drillCategory', catKey,
-            catLabel: cfg.label, catColor: cfg.color, catIcon: cfg.icon,
-            projName: proj.name, planets: catPlanets, sessionCount: catSessionCount,
-          },
-        });
-
-        // ── 세션: 카테고리 카드 아래로 수직 정렬 — 모든 방향에서 겹침 없음 ──
-        const sesStep = UNI_CARD_H + CARD_GAP;  // 51px 고정 간격 (수직)
-        const maxShow = Math.min(catPlanets.length, 3);
-        for (let si = 0; si < maxShow; si++) {
-          const planet = catPlanets[si];
-          const sesOff = (si - (maxShow - 1) / 2) * sesStep;
-          const sx = catCx;                // 카테고리와 같은 X (수직 정렬)
-          const sy = catCy + sesOff;       // 수직으로만 분포
-
-          const evCnt = planet.userData.eventCount || 0;
-          const isSubHover = _hoveredHit?.obj === planet;
-          const sesKey = planet.userData.clusterId || planet.userData.sessionId || '';
-          let sLabel = _aliases[sesKey] || planet.userData.intent || '';
-          sLabel = sLabel.replace(/^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE00}-\u{FEFF}⚙️🔐🌐🗄🎨🧪🚀🐳📝📐🔧🌿💬]\s*/gu, '').trim();
-          if (!sLabel) sLabel = planet.userData.domain || '작업';
-          const sesSub = evCnt > 0 ? `${evCnt}개 작업` : '';
-
-          ctx.save();
-          ctx.globalAlpha = 0.12;
-          ctx.strokeStyle = cfg.color; ctx.lineWidth = 0.8;
-          ctx.setLineDash([3, 3]);
-          ctx.beginPath(); ctx.moveTo(catCx, catCy); ctx.lineTo(sx, sy); ctx.stroke();
-          ctx.setLineDash([]);
-          ctx.restore();
-
-          drawUnifiedCard(ctx, sx, sy, cfg.color, sLabel, sesSub, false, isSubHover, false);
-
-          _hitAreas.push({
-            cx: sx, cy: sy, r: Math.max(UNI_CARD_W, UNI_CARD_H) / 2 + 4,
-            obj: planet,
-            data: { type: 'drillSession', intent: planet.userData.intent,
-                    clusterId: planet.userData.clusterId,
-                    sessionId: planet.userData.sessionId,
-                    eventCount: evCnt, hueHex: cfg.color,
-                    catKey, catLabel: cfg.label, catColor: cfg.color, catIcon: cfg.icon,
-                    projName: proj.name, planets: catPlanets },
-          });
-        }
-
-        if (catPlanets.length > maxShow) {
-          const lastSesOff = ((maxShow - 1) - (maxShow - 1) / 2) * sesStep;
-          const mx = catCx;
-          const my = catCy + lastSesOff + sesStep / 2 + 10;  // 마지막 세션 아래
-          ctx.globalAlpha = 0.6;
-          ctx.font = '400 10px -apple-system,sans-serif';
-          ctx.fillStyle = cfg.color; ctx.textAlign = 'center';
-          ctx.fillText(`+${catPlanets.length - maxShow}개`, mx, my + 4);
-          ctx.globalAlpha = 1;
-        }
-      });
-    }
-  });
-
-  // ── 팀원 클러스터 (worldScale < 0.75에서 페이드인, 월드 좌표계에서 렌더링) ─
-  if (_wScale < 0.75) _drawTeamClusters(ctx, _txX, _txY, W, H, _wScale);
-
-  // ── 월드 트랜스폼 해제 + hitArea 스크린 좌표 변환 ──────────────────────────
-  ctx.restore();
-  _hitAreas.forEach(h => {
-    h.cx = h.cx * _wScale + _txX;
-    h.cy = h.cy * _wScale + _txY;
-    h.r  = h.r  * _wScale;
-  });
-
-  // ── hitArea 우선순위 정렬: 드릴 노드가 프로젝트 카드보다 위 (역순 루프 대응) ──
-  // constellation(프로젝트 카드)을 앞으로, drillCategory/drillSession을 뒤로 이동
-  // → hitTest는 배열 역순이므로 드릴 노드가 겹칠 때 우선 선택됨
-  _hitAreas.sort((a, b) => {
-    const drillTypes = new Set(['drillCategory', 'drillSession']);
-    const aDrill = drillTypes.has(a.data?.type) ? 1 : 0;
-    const bDrill = drillTypes.has(b.data?.type) ? 1 : 0;
-    return aDrill - bDrill;
-  });
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// 개인 모드 행성 라벨 (밝은 테마, 연결선 없음)
-// ═══════════════════════════════════════════════════════════════════════════════
-function _drawPersonalPlanets() {
-  const lod = getLOD();
-  const globalAlpha = lod === 3 ? 0.12 : 1;
-  _lctx.globalAlpha = globalAlpha;
-
-  planetMeshes.forEach(p => {
-    if (_focusedCategory && p.userData.macroCat !== _focusedCategory) return;
-    const sc = toScreen(p.position);
-    if (sc.z > 1) return;
-
-    const scale      = screenScale(p.position);
-    const hex        = p.userData.hueHex || '#58a6ff';
-    const evCnt      = p.userData.eventCount || 0;
-    const isHovered  = _hoveredHit?.obj === p;
-    const isSelected = _selectedHit?.obj === p;
-
-    const pxSize = isSelected ? 20 : isHovered ? 16 : Math.max(9, Math.min(14, scale * 12));
-
-    let fullText = p.userData.intent || '';
-    let text = '';
-    if (fullText) {
-      text = fullText.replace(/^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE00}-\u{FEFF}⚙️🔐🌐🗄🎨🧪🚀🐳📝📐🔧🌿💬]\s*/gu, '').trim();
-      if (/^\[.+?\]\s+/.test(text)) text = text.replace(/^\[.+?\]\s+/, '');
-      if (text.length > 24) text = text.slice(0, 23) + '…';
-    }
-    // ✅ 추상 카테고리 감지 → 실제 작업 내용(firstMsg/msgPreview)으로 교체
-    // "버그 수정", "기능 구현" 등은 아무 정보가 없으므로 실제 내용으로 대체
-    const _isAbstract = t => /^(기능\s*구현|버그\s*수정|코드\s*정리|테스트|배포|조사[\s/]분석|설정|검토|논의|기타|작업|명령\s*실행|파일\s*읽기|파일\s*수정|파일\s*작성|파일\s*탐색|파일\s*생성|코드\s*검색|웹\s*검색|웹\s*조회|하위\s*에이전트|에이전트\s*완료|할일\s*업데이트|사용자\s*질문|계획\s*수립\s*중|계획\s*확정|노트북\s*수정|시작|종료|세션|시간|유형|도메인|Tool|User|Assistant|Subagent|Event|File|Working|Notify|Done|Note|Bookmark)$/.test(t);
-    if (!text || _isAbstract(text)) {
-      const _specific = (p.userData.firstMsg || p.userData.msgPreview || '').replace(/[\n\r]/g, ' ').trim();
-      if (_specific.length > 3) text = _specific.slice(0, 26);
-    }
-    if (!text && p.userData.msgPreview) text = p.userData.msgPreview.slice(0, 24);
-    if (!text && p.userData.firstMsg) text = p.userData.firstMsg.slice(0, 24);
-    if (!text && p.userData.projectName && p.userData.projectName !== '기타') text = p.userData.projectName.slice(0, 16);
-    if (!text) {
-      const DS = { auth:'인증', api:'API', data:'데이터', ui:'UI', test:'테스트',
-        server:'서버', infra:'인프라', fix:'수정', git:'Git', chat:'대화', general:'작업', docs:'문서', design:'설계' };
-      text = DS[p.userData.domain] || '—';
-    }
-    if (!text) return;
-
-    _lctx.font = `600 ${pxSize}px -apple-system,'Segoe UI',sans-serif`;
-    _lctx.textAlign = 'center';
-
-    const tw = _lctx.measureText(text).width;
-    const pw = tw + 22;
-    const ph = pxSize + 10;
-    const lx = sc.x - pw / 2;
-    const ly = sc.y - ph / 2;
-
-    if (rectOverlaps(lx - 4, ly - 4, pw + 8, ph + 30)) return;
-    reserveRect(lx - 4, ly - 4, pw + 8, ph + 30);
-
-    // 선택 강조
-    if (isSelected) {
-      _lctx.save();
-      _lctx.shadowColor = hex; _lctx.shadowBlur = 10;
-      _lctx.strokeStyle = hex; _lctx.lineWidth = 2.5;
-      _lctx.globalAlpha = globalAlpha * 0.8;
-      roundRect(_lctx, lx - 2, ly - 2, pw + 4, ph + 4, (ph + 4) / 2);
-      _lctx.stroke(); _lctx.shadowBlur = 0;
-      _lctx.restore();
-      _lctx.globalAlpha = globalAlpha;
-    }
-
-    // 배경 pill (다크 글래스)
-    _lctx.save();
-    _lctx.shadowColor = isSelected ? 'rgba(6,182,212,0.2)' : 'rgba(0,0,0,0.3)';
-    _lctx.shadowBlur = isSelected ? 12 : 6; _lctx.shadowOffsetY = 1;
-    _lctx.fillStyle = isSelected ? 'rgba(6,182,212,0.12)' : 'rgba(2,6,23,0.78)';
-    roundRect(_lctx, lx, ly, pw, ph, ph / 2); _lctx.fill();
-    _lctx.shadowBlur = 0; _lctx.shadowOffsetY = 0;
-    _lctx.restore();
-
-    // 테두리 (white/10)
-    _lctx.strokeStyle = isSelected ? hex : isHovered ? 'rgba(6,182,212,0.35)' : 'rgba(255,255,255,0.10)';
-    _lctx.lineWidth = isSelected ? 1.5 : isHovered ? 1 : 0.8;
-    roundRect(_lctx, lx, ly, pw, ph, ph / 2); _lctx.stroke();
-
-    // 텍스트 (밝은 색)
-    _lctx.fillStyle = isSelected ? '#e2e8f0' : isHovered ? '#cbd5e1' : '#94a3b8';
-    _lctx.fillText(text, sc.x, ly + ph * 0.68);
-
-    // 이벤트 수 (선택/호버 시)
-    if (evCnt > 0 && pxSize >= 13) {
-      const sub = Math.max(9, pxSize * 0.5);
-      _lctx.font = `500 ${sub}px 'JetBrains Mono','Fira Code',monospace`;
-      _lctx.fillStyle = '#475569';
-      _lctx.fillText(`${evCnt}개 작업`, sc.x, ly + ph + sub + 1);
-    }
-
-    // 히트 영역
-    _hitAreas.push({
-      cx: sc.x, cy: sc.y, r: Math.max(pw, ph) / 2 + 4,
-      obj: p,
-      data: { type: 'session', intent: fullText, clusterId: p.userData.clusterId,
-              sessionId: p.userData.sessionId, eventCount: evCnt, hueHex: hex },
-    });
-  });
-
-  _lctx.globalAlpha = 1;
-}
-
-// ─── drawLabels ──────────────────────────────────────────────────────────────
-// ── 텍스트 겹침 방지 ──────────────────────────────────────────────────────
-const _usedRects = [];
-const LABEL_PADDING = 12; // 라벨 간 최소 간격
-
-function rectOverlaps(x, y, w, h) {
-  for (const r of _usedRects) {
-    // 패딩을 포함한 엄격한 겹침 검사
-    if (x < r.x + r.w + LABEL_PADDING &&
-        x + w + LABEL_PADDING > r.x &&
-        y < r.y + r.h + LABEL_PADDING &&
-        y + h + LABEL_PADDING > r.y) {
-      return true;
-    }
-  }
-  return false;
-}
-
-function reserveRect(x, y, w, h) {
-  _usedRects.push({ x, y, w, h });
-}
+// [extracted to orbit3d-layout.js]: _TEAM_WORLD_POS, _drawTeamClusters, drawCompactProjectView, _drawPersonalPlanets, _usedRects, LABEL_PADDING, rectOverlaps, reserveRect
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // 세션 상세 윈도우 — 데스크톱 창 스타일
@@ -3795,7 +2996,7 @@ function drawInvertedPyramid(planetObj, hitData) {
     ctx.fillStyle = '#94a3b8';
     ctx.fillText(ts, ex + evtCardW - 4, ey + ROW_H * 0.62);
 
-    _hitAreas.push({
+    registerHitArea({
       cx: ex + evtCardW / 2, cy: ey + ROW_H / 2, r: evtCardW / 2,
       obj: planetObj,
       data: { type: 'session', intent: label, clusterId, sessionId: planetObj.userData?.sessionId,
@@ -3853,7 +3054,7 @@ function drawInvertedPyramid(planetObj, hitData) {
       ctx.fillStyle = '#94a3b8';
       ctx.fillText(`${info.count}회`, fx + WIN_W - PAD * 2 - 8, fy + FILE_ROW_H * 0.62);
 
-      _hitAreas.push({
+      registerHitArea({
         cx: fx + (WIN_W - PAD * 2) / 2, cy: fy + FILE_ROW_H / 2, r: (WIN_W - PAD * 2) / 2,
         obj: planetObj,
         data: { type: 'file', intent: fname, fileLabel: fname, filename: fname,
@@ -3867,7 +3068,7 @@ function drawInvertedPyramid(planetObj, hitData) {
 
 function drawLabels() {
   _lctx.clearRect(0, 0, innerWidth, innerHeight);
-  _hitAreas = [];
+  clearHitAreas();
   _usedRects.length = 0; // 매 프레임 리셋
 
   const lod = getLOD();
@@ -4175,7 +3376,7 @@ function drawLabels() {
     }
 
     // 히트 영역
-    _hitAreas.push({
+    registerHitArea({
       cx: sc.x, cy: sc.y,
       r:  Math.max(pw, ph) / 2 + 4,
       obj: p,
@@ -4240,7 +3441,7 @@ function drawLabels() {
     _lctx.fillText(label, sc.x, ly + ph * 0.70);
 
     // 히트 영역
-    _hitAreas.push({
+    registerHitArea({
       cx: sc.x, cy: sc.y,
       r:  Math.max(pw, ph) / 2 + 3,
       obj: s,

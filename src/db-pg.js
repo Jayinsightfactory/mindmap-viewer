@@ -5,6 +5,7 @@
  */
 const { Pool } = require('pg');
 const { ulid } = require('ulid');
+const { createPgOps } = require('./db-user-ops');
 
 let pool = null;
 
@@ -559,47 +560,13 @@ function deserializeEvent(row) {
 
 function getDb() { return pool; }
 
-// ─── 사용자 격리 ────────────────────────────────────
-async function getEventsByUser(userId) {
-  const { rows } = await pool.query('SELECT * FROM events WHERE user_id=$1 ORDER BY timestamp ASC', [userId]);
-  return rows.map(deserializeEvent);
-}
-
-async function getSessionsByUser(userId) {
-  const { rows } = await pool.query('SELECT * FROM sessions WHERE user_id=$1 ORDER BY started_at DESC', [userId]);
-  return rows;
-}
-
-async function getStatsByUser(userId) {
-  const [e, s, f, t] = await Promise.all([
-    pool.query('SELECT COUNT(*) AS c FROM events WHERE user_id=$1', [userId]),
-    pool.query('SELECT COUNT(*) AS c FROM sessions WHERE user_id=$1', [userId]),
-    pool.query('SELECT COUNT(*) AS c FROM files'),
-    pool.query("SELECT COUNT(*) AS c FROM events WHERE user_id=$1 AND type LIKE 'tool.%'", [userId]),
-  ]);
-  return {
-    eventCount:   parseInt(e.rows[0].c),
-    sessionCount: parseInt(s.rows[0].c),
-    fileCount:    parseInt(f.rows[0].c),
-    toolCount:    parseInt(t.rows[0].c),
-    aiSourceStats: {},
-  };
-}
-
-async function claimLocalEvents(userId) {
-  try {
-    const result = await pool.query(
-      `UPDATE events SET user_id=$1 WHERE user_id='local' OR user_id='anonymous'`, [userId]
-    );
-    await pool.query(
-      `UPDATE sessions SET user_id=$1 WHERE user_id='local' OR user_id='anonymous'`, [userId]
-    );
-    return result.rowCount;
-  } catch (e) {
-    console.warn('[DB-PG] claimLocalEvents error:', e.message);
-    return 0;
-  }
-}
+// ─── 사용자 격리 (db-user-ops.js 공유 모듈 위임) ────
+// PG 어댑터: async 함수 반환 (기존 호출자 호환)
+const _userOps = createPgOps(() => pool, deserializeEvent);
+const getEventsByUser  = _userOps.getEventsByUser;
+const getSessionsByUser = _userOps.getSessionsByUser;
+const getStatsByUser   = _userOps.getStatsByUser;
+const claimLocalEvents = _userOps.claimLocalEvents;
 
 // ─── 기타 쿼리 ─────────────────────────────────────
 async function getEventsByChannel(channelId) {
@@ -639,40 +606,13 @@ async function getHiddenEventIds(userId = 'local') {
   return rows.map(r => r.event_id);
 }
 
-// ─── 노드 메모 CRUD ────────────────────────────────
-async function getNodeMemos(userId = 'local') {
-  const { rows } = await pool.query('SELECT * FROM node_memos WHERE user_id=$1 ORDER BY updated_at DESC', [userId]);
-  return rows;
-}
-
-async function upsertNodeMemo(id, eventId, userId, content) {
-  await pool.query(`
-    INSERT INTO node_memos (id, event_id, user_id, content, created_at, updated_at)
-    VALUES ($1,$2,$3,$4,NOW(),NOW())
-    ON CONFLICT (id) DO UPDATE SET content=$4, updated_at=NOW()
-  `, [id, eventId, userId || 'local', content]);
-}
-
-async function deleteNodeMemo(id) {
-  await pool.query('DELETE FROM node_memos WHERE id=$1', [id]);
-}
-
-// ─── 즐겨찾기 CRUD ─────────────────────────────────
-async function getBookmarks(userId = 'local') {
-  const { rows } = await pool.query('SELECT * FROM bookmarks WHERE user_id=$1 ORDER BY created_at DESC', [userId]);
-  return rows;
-}
-
-async function addBookmark(id, eventId, userId, label) {
-  await pool.query(
-    'INSERT INTO bookmarks (id, event_id, user_id, label) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING',
-    [id, eventId, userId || 'local', label || null]
-  );
-}
-
-async function removeBookmark(id) {
-  await pool.query('DELETE FROM bookmarks WHERE id=$1', [id]);
-}
+// ─── 노드 메모 / 즐겨찾기 (db-user-ops.js 공유 모듈 위임) ──
+const getNodeMemos   = _userOps.getNodeMemos;
+const upsertNodeMemo = _userOps.upsertNodeMemo;
+const deleteNodeMemo = _userOps.deleteNodeMemo;
+const getBookmarks   = _userOps.getBookmarks;
+const addBookmark    = _userOps.addBookmark;
+const removeBookmark = _userOps.removeBookmark;
 
 // ─── 트래커 핑 ─────────────────────────────────────
 async function touchTrackerPing(userId = 'local') {
@@ -688,29 +628,9 @@ async function getTrackerPing(userId = 'local') {
   return rows[0] || null;
 }
 
-// ─── 메시지 서비스 토큰 CRUD ───────────────────────
-async function saveServiceToken(userId, service, { accessToken, refreshToken, expiresAt }) {
-  await pool.query(`
-    INSERT INTO service_tokens (userId, service, accessToken, refreshToken, expiresAt, updatedAt)
-    VALUES ($1,$2,$3,$4,$5,NOW())
-    ON CONFLICT (userId, service) DO UPDATE SET
-      accessToken=EXCLUDED.accessToken,
-      refreshToken=EXCLUDED.refreshToken,
-      expiresAt=EXCLUDED.expiresAt,
-      isActive=1,
-      updatedAt=NOW()
-  `, [userId, service, accessToken, refreshToken, expiresAt]);
-}
-
-async function getServiceToken(userId, service) {
-  const { rows } = await pool.query(`
-    SELECT accessToken AS "accessToken", refreshToken AS "refreshToken",
-           expiresAt AS "expiresAt", isActive AS "isActive"
-    FROM service_tokens
-    WHERE userId=$1 AND service=$2 AND isActive=1
-  `, [userId, service]);
-  return rows[0] || null;
-}
+// ─── 메시지 서비스 토큰 CRUD (save/get은 db-user-ops.js 위임) ──
+const saveServiceToken = _userOps.saveServiceToken;
+const getServiceToken  = _userOps.getServiceToken;
 
 async function getUserServiceTokens(userId) {
   const { rows } = await pool.query(`

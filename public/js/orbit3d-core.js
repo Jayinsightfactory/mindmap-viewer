@@ -42,11 +42,7 @@ scene.background = new THREE.Color(0x020617);
 scene.fog = new THREE.FogExp2(0x020617, 0.0035);
 window.scene = scene; // 전역 참조 할당
 
-// ─── 4단계 드릴다운 상태 ──────────────────────────────────────────────────────
-let _drillStage = 0;              // 0=전체, 1=카테고리링, 2=타임라인, 3=파일상세
-let _drillProject = null;          // { name, planets[], info }
-let _drillCategory = null;         // { catKey, catLabel, catColor, planets[], events[] }
-let _drillTimelineEvent = null;    // { fileName, filePath }
+// [extracted to orbit3d-drilldown.js]: _drillStage, _drillProject, _drillCategory, _drillTimelineEvent
 
 // ─── 2D 월드 네비게이션 (팀 탐색용) ─────────────────────────────────────────
 // 좌클릭 드래그 → 팬,  스크롤 → 줌 스케일,  팀원 클러스터 세계 좌표에 배치
@@ -79,27 +75,7 @@ window.autoFitZoom = function(nodeCount) {
   if (target < _worldScale) _animateWorldScale(target, 500);
 };
 
-// 드릴다운 카테고리 수 기반 자동 피트 (프로젝트 클릭 시 호출)
-// 뷰포트 크기 기반 실제 픽셀 맞춤 줌아웃 적용
-window.autoFitDrilldown = function(numCats) {
-  // 드릴다운 체인의 월드 공간 최대 반경
-  // (ME→노드 ~170 + CAT_DIST 200 + 카드 절반 ~60 = 430)
-  const WORLD_EXTENT = 430;
-  const navW = getNavWidth();
-  const W = innerWidth - navW;
-  const H = innerHeight;
-  // 화면 중심에서 사용 가능한 픽셀 반경 (여백 80px)
-  const availPx = Math.min(W / 2, H / 2) - 80;
-  // 뷰포트 맞춤 스케일
-  const fitScale = Math.max(0.15, Math.min(1.0, availPx / WORLD_EXTENT));
-  // numCats 기반 보수적 추가 여유
-  const catTarget = numCats <= 2 ? 0.90 :
-                    numCats <= 4 ? 0.75 :
-                    numCats <= 6 ? 0.65 : 0.55;
-  // 둘 중 더 작은 값으로 줌아웃 (화면에 반드시 들어오게)
-  const target = Math.min(fitScale, catTarget);
-  _animateWorldScale(target, 400);
-};
+// [extracted to orbit3d-drilldown.js]: autoFitDrilldown
 
 const camera = new THREE.PerspectiveCamera(55, innerWidth/innerHeight, 0.1, 2000);
 camera.position.set(0, 25, 55);                       // 컴팩트 뷰에 맞는 초기 거리
@@ -697,31 +673,20 @@ async function loadSessionContext(sessionId) {
     if (!r.ok) return null;
     const ctx = await r.json();
     _sessionContextCache[sessionId] = ctx;
-    // 행성 라벨 즉시 업데이트
-    const _isMeaningful = t => t && !/^(세션\s|⚙️\s?작업\s?중|작업\s?중|\[.*\]\s*$)/.test(t);
-    // purpose-classifier 추상 카테고리 감지 ("버그 수정", "기능 구현" 등)
-    // → 실제 작업 내용(firstMsg)보다 정보량이 없으므로 표시 우선순위 하향
-    const _isAbstractCat = t => /^[🛠🔧♻️🧪🚀🔍⚙️👁💬📌]?\s*(기능\s*구현|버그\s*수정|코드\s*정리|테스트|배포[\s/]운영|조사[\s/]분석|설정[\s/]환경|검토[\s/]리뷰|논의[\s/]질문|기타|작업)$/.test((t || '').trim());
+    // 행성 라벨 즉시 업데이트 — label-rules.js (single source of truth)
     const planet = _sessionMap[sessionId]?.planet;
     if (planet) {
       // firstMsg를 항상 저장해둠 (drawLabels fallback용)
       if (ctx.firstMsg) planet.userData.firstMsg = ctx.firstMsg;
 
-      // ✅ 실제 작업 내용 우선순위:
-      //  1순위: firstMsg (실제 사용자 요청 — 가장 구체적)
-      //  2순위: autoTitle (내용 기반 자동 제목)
-      //  3순위: aiLabel (추상 카테고리 — 정보 없으면 폴백)
-      const specificLabel = (ctx.firstMsg && ctx.firstMsg.length > 4)
-        ? ctx.firstMsg.slice(0, 42).trim()
-        : (_isMeaningful(ctx.autoTitle) && !_isAbstractCat(ctx.autoTitle))
-          ? ctx.autoTitle
-          : null;
+      // deriveContextLabel: firstMsg > autoTitle(meaningful+non-abstract) > null
+      const specificLabel = deriveContextLabel(ctx);
 
       if (specificLabel) {
         planet.userData.intent = specificLabel;
-      } else if (ctx.aiLabel && _isMeaningful(ctx.aiLabel)) {
+      } else if (ctx.aiLabel && isMeaningfulLabel(ctx.aiLabel)) {
         planet.userData.intent = ctx.aiLabel;   // 추상 카테고리지만 없는 것보다 낫다
-      } else if (_isMeaningful(ctx.autoTitle)) {
+      } else if (isMeaningfulLabel(ctx.autoTitle)) {
         planet.userData.intent = ctx.autoTitle;
       }
       // AI 프로젝트 타입 업데이트 (새 타입 + 레거시 dev/research/ops 모두 허용)
@@ -911,8 +876,8 @@ let _nodeDataMap = {};  // uuid → data for interaction
 let orbitAnimOn = true;
 let _clock = 0;
 
-// 호버/클릭을 위한 2D 히트 영역 (Canvas 좌표)
-let _hitAreas = []; // { cx, cy, r, data }
+// 호버/클릭을 위한 2D 히트 영역 — orbit3d-canvas2d-hit.js 로 이동
+// _hitAreas, _hoveredHit, _selectedHit, hitTest(), updateRaycast() → canvas2d-hit.js
 
 // ── 프로젝트별 별자리 클러스터링 ─────────────────────────────────────────────
 let _projectGroups  = {};   // projectName → { planetMeshes:[], color:string }
