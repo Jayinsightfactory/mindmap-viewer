@@ -375,10 +375,10 @@ function createRouter({ getDb, verifyToken, searchUsers, getUserById, createNoti
     try {
       const like = `%${q}%`;
 
-      // ① 메인 DB의 registered_users + user_profiles에서 검색 (이메일 + 이름)
-      let mainRows = [];
+      // ① registered_users에서 검색
+      let regRows = [];
       try {
-        mainRows = await dbAll(`
+        regRows = await dbAll(`
           SELECT ru.user_id AS id, ru.name, up.headline,
                  COALESCE(up.avatar_url, ru.avatar_url) AS avatar_url,
                  ru.email, ru.provider, ru.plan,
@@ -389,19 +389,25 @@ function createRouter({ getDb, verifyToken, searchUsers, getUserById, createNoti
           WHERE ru.user_id != ? AND (ru.email LIKE ? OR ru.name LIKE ?)
           LIMIT 20
         `, [req.user.id, req.user.id, like, like]);
-      } catch (_) {
-        // registered_users 테이블 없으면 기존 user_profiles 검색 시도
-        try {
-          mainRows = await dbAll(`
-            SELECT up.user_id AS id, up.name, up.headline, up.avatar_url, NULL AS email,
-                   CASE WHEN uf.follower_id IS NOT NULL THEN 1 ELSE 0 END AS is_following
-            FROM user_profiles up
-            LEFT JOIN user_follows uf ON uf.follower_id = ? AND uf.following_id = up.user_id
-            WHERE up.user_id != ? AND (up.name LIKE ? OR up.headline LIKE ? OR up.bio LIKE ?)
-            LIMIT 20
-          `, [req.user.id, req.user.id, like, like, like]);
-        } catch (_) {}
-      }
+      } catch (_) {}
+
+      // ② user_profiles에서도 항상 검색 (name, headline, bio)
+      let profileRows = [];
+      try {
+        profileRows = await dbAll(`
+          SELECT up.user_id AS id, up.name, up.headline, up.avatar_url, NULL AS email,
+                 NULL AS provider, NULL AS plan,
+                 CASE WHEN uf.follower_id IS NOT NULL THEN 1 ELSE 0 END AS is_following
+          FROM user_profiles up
+          LEFT JOIN user_follows uf ON uf.follower_id = ? AND uf.following_id = up.user_id
+          WHERE up.user_id != ? AND (up.name LIKE ? OR up.headline LIKE ? OR up.bio LIKE ?)
+          LIMIT 20
+        `, [req.user.id, req.user.id, like, like, like]);
+      } catch (_) {}
+
+      // ③ 병합 (registered_users 우선, user_profiles에서 중복 제거)
+      const seenIds = new Set(regRows.map(r => r.id));
+      let mainRows = [...regRows, ...profileRows.filter(r => !seenIds.has(r.id))].slice(0, 20);
 
       // ② auth DB(users.db)에서 이메일·이름 검색 (searchUsers 함수 사용)
       let authRows = [];

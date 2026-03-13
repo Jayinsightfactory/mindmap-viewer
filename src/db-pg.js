@@ -172,6 +172,25 @@ async function createTables() {
     CREATE INDEX IF NOT EXISTS idx_mc_ws      ON multilevel_cache(workspace_id);
     CREATE INDEX IF NOT EXISTS idx_mc_expires ON multilevel_cache(expires_at);
 
+    -- 사용자 프로필 (LinkedIn 수준)
+    CREATE TABLE IF NOT EXISTS user_profiles (
+      user_id      TEXT PRIMARY KEY,
+      name         TEXT,
+      headline     TEXT,
+      company      TEXT,
+      location     TEXT,
+      bio          TEXT,
+      skills       TEXT DEFAULT '[]',
+      experiences  TEXT DEFAULT '[]',
+      education    TEXT DEFAULT '[]',
+      links        TEXT DEFAULT '{}',
+      avatar_url   TEXT,
+      is_public    INTEGER DEFAULT 1,
+      created_at   TIMESTAMPTZ DEFAULT NOW(),
+      updated_at   TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_up_user_id ON user_profiles(user_id);
+
     -- 노드 소프트 삭제 (숨김 처리)
     CREATE TABLE IF NOT EXISTS hidden_events (
       event_id TEXT NOT NULL,
