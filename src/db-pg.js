@@ -332,16 +332,20 @@ async function createTables() {
 
 // ─── 이벤트 CRUD ────────────────────────────────────
 async function insertEvent(event) {
+  // session_id NOT NULL 대응: 트래커 이벤트에 session_id 없을 수 있음
+  const sessionId = event.sessionId || `auto-${Date.now()}`;
   await pool.query(`
     INSERT INTO events (id, type, source, session_id, user_id, channel_id, parent_event_id, timestamp, data_json, metadata_json)
     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
     ON CONFLICT (id) DO NOTHING
   `, [
     event.id, event.type, event.source,
-    event.sessionId, event.userId, event.channelId,
-    event.parentEventId, event.timestamp,
-    event.data, event.metadata || {},
+    sessionId, event.userId || 'local', event.channelId || 'default',
+    event.parentEventId || null, event.timestamp,
+    event.data || {}, event.metadata || {},
   ]);
+  // sessionId를 이벤트에 반영 (upsertSession에서 사용)
+  event.sessionId = sessionId;
 
   await upsertSession(event);
 

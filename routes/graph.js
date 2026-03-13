@@ -155,38 +155,38 @@ function createRouter(deps) {
   // ── 노드 숨김 (소프트 삭제) ─────────────────────────────────────────────────
 
   /** POST /api/events/hide — 이벤트 숨김 */
-  router.post('/events/hide', (req, res) => {
+  router.post('/events/hide', async (req, res) => {
     const user = getUserFromReq(req);
     if (!user || user.id === 'local') return res.status(401).json({ error: 'login required' });
     const ids = req.body.eventIds;
     if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'eventIds required' });
-    const count = hideEvents(ids, user.id);
+    const count = await Promise.resolve(hideEvents(ids, user.id));
     res.json({ ok: true, hidden: count });
   });
 
   /** POST /api/events/unhide — 이벤트 복원 */
-  router.post('/events/unhide', (req, res) => {
+  router.post('/events/unhide', async (req, res) => {
     const user = getUserFromReq(req);
     if (!user || user.id === 'local') return res.status(401).json({ error: 'login required' });
     const ids = req.body.eventIds;
     if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'eventIds required' });
-    const count = unhideEvents(ids, user.id);
+    const count = await Promise.resolve(unhideEvents(ids, user.id));
     res.json({ ok: true, unhidden: count });
   });
 
   /** POST /api/events/unhide-all — 모든 숨긴 이벤트 복원 */
-  router.post('/events/unhide-all', (req, res) => {
+  router.post('/events/unhide-all', async (req, res) => {
     const user = getUserFromReq(req);
     if (!user || user.id === 'local') return res.status(401).json({ error: 'login required' });
-    const count = unhideAllEvents(user.id);
+    const count = await Promise.resolve(unhideAllEvents(user.id));
     res.json({ ok: true, unhidden: count });
   });
 
   /** GET /api/events/hidden — 숨긴 이벤트 ID 목록 */
-  router.get('/events/hidden', (req, res) => {
+  router.get('/events/hidden', async (req, res) => {
     const user = getUserFromReq(req);
     if (!user || user.id === 'local') return res.json({ eventIds: [] });
-    const ids = getHiddenEventIds(user.id);
+    const ids = await Promise.resolve(getHiddenEventIds(user.id));
     res.json({ eventIds: ids, count: ids.length });
   });
 
@@ -196,17 +196,17 @@ function createRouter(deps) {
    * GET /api/sessions
    * 로그인 시: 해당 유저의 세션만 반환
    */
-  router.get('/sessions', (req, res) => {
+  router.get('/sessions', async (req, res) => {
     const user = getUserFromReq(req);
     // ⚠️ 이전: || { id: 'local' } → getSessions() → 전체 세션 노출
     // 수정: 비로그인은 개발모드만 허용, 프로덕션은 빈 배열
     if (!user) {
-      if (process.env.AUTH_DISABLED === '1') return res.json(getSessions());
+      if (process.env.AUTH_DISABLED === '1') return res.json(await Promise.resolve(getSessions()));
       return res.json([]);
     }
     let sessions = (user.id !== 'local' && getSessionsByUser)
-      ? getSessionsByUser(user.id)
-      : getSessions();
+      ? await Promise.resolve(getSessionsByUser(user.id))
+      : await Promise.resolve(getSessions());
     // ⚠️ 이전: 0건이면 getSessions() 전체 반환 → 다른 유저 세션 노출
     // 수정: 0건이면 그냥 빈 배열 (데이터 없는 신규 유저가 타인 세션 보는 것 방지)
     // (local 이벤트 귀속은 /api/claim-local-events 또는 /api/graph에서 처리)
@@ -218,14 +218,14 @@ function createRouter(deps) {
    * 세션의 수동 타이틀을 설정합니다.
    * @body { title: string }
    */
-  router.put('/sessions/:id/title', (req, res) => {
+  router.put('/sessions/:id/title', async (req, res) => {
     const { id }    = req.params;
     const { title } = req.body;
     if (!title || typeof title !== 'string') {
       return res.status(400).json({ error: 'title 필드가 필요합니다.' });
     }
-    const result = updateSessionTitle(id, title.slice(0, 80));
-    if (result.changes === 0) {
+    const result = await Promise.resolve(updateSessionTitle(id, title.slice(0, 80)));
+    if ((result?.changes ?? result?.rowCount ?? 0) === 0) {
       return res.status(404).json({ error: '세션을 찾을 수 없습니다.' });
     }
     res.json({ success: true, sessionId: id, title });
@@ -235,9 +235,9 @@ function createRouter(deps) {
    * GET /api/sessions/:id/context
    * 세션의 첫 메시지 + projectDir 을 반환합니다. (orbit3d 자동 타이틀용)
    */
-  router.get('/sessions/:id/context', (req, res) => {
+  router.get('/sessions/:id/context', async (req, res) => {
     const { id } = req.params;
-    const events  = getEventsBySession(id);
+    const events  = await Promise.resolve(getEventsBySession(id));
 
     // projectDir — session.start 이벤트에서
     const sessStart = events.find(e => e.type === 'session.start');
@@ -338,12 +338,12 @@ function createRouter(deps) {
    * @query {string} [channel] - 채널 필터
    * @returns {object} { implement: 12, fix: 5, ... }
    */
-  router.get('/purposes/summary', (req, res) => {
+  router.get('/purposes/summary', async (req, res) => {
     const user = getUserFromReq(req);
     if (!user) return res.json({});
     // 사용자별 이벤트로 목적 분류
     const getEvFn = (user.id !== 'local' && getEventsByUser) ? () => getEventsByUser(user.id) : getAllEvents;
-    const events = _getEventsByQuery(req.query, getEvFn, getEventsBySession, getEventsByChannel);
+    const events = await _getEventsByQuery(req.query, getEvFn, getEventsBySession, getEventsByChannel);
     res.json(summarizePurposes(events));
   });
 
@@ -353,7 +353,7 @@ function createRouter(deps) {
    * @query {string} [session] - 세션 필터
    * @returns {PurposeWindow[]} 목적 윈도우 목록 (시간순)
    */
-  router.get('/purposes', (req, res) => {
+  router.get('/purposes', async (req, res) => {
     const user = getUserFromReq(req);
     if (!user) return res.json([]);
     // ⚠️ 'local' userId이면 getAllEvents → 전체 목적 분류 노출
@@ -361,7 +361,7 @@ function createRouter(deps) {
     const getEvFn = (user.id !== 'local' && getEventsByUser)
       ? () => getEventsByUser(user.id)
       : (process.env.AUTH_DISABLED === '1' ? getAllEvents : () => []);
-    const events = _getEventsByQuery(req.query, getEvFn, getEventsBySession, getEventsByChannel);
+    const events = await _getEventsByQuery(req.query, getEvFn, getEventsBySession, getEventsByChannel);
     res.json(classifyPurposes(events));
   });
 
@@ -372,14 +372,14 @@ function createRouter(deps) {
    * @query {string} q - 검색 키워드 (이벤트 내용, 파일명, 도구명 대상)
    * @returns {Event[]}
    */
-  router.get('/search', (req, res) => {
+  router.get('/search', async (req, res) => {
     const { searchEvents } = db;
     const q = req.query.q;
     if (!q) return res.json([]);
     const user = getUserFromReq(req);
     if (!user) return res.json([]);                                            // 비로그인: 빈 결과
     // 검색 결과에서 본인 데이터만 필터
-    const results = searchEvents(q);
+    const results = await Promise.resolve(searchEvents(q));
     if (user.id !== 'local') {
       return res.json(results.filter(e => e.userId === user.id || e.user_id === user.id));
     }
@@ -393,12 +393,12 @@ function createRouter(deps) {
    * Claude Code, Zoom, Calendar 등 다양한 소스에서 참여한 멤버를 통합하여 반환합니다.
    * @returns {Member[]} { name, channels, eventCount, sources, lastActive }[]
    */
-  router.get('/members', (req, res) => {
+  router.get('/members', async (req, res) => {
     const user = getUserFromReq(req);
     if (!user) return res.json([]);                                            // 비로그인: 빈 목록
     // 사용자별 이벤트·세션에서만 멤버 추출
-    const allEvents   = (user.id !== 'local' && getEventsByUser) ? getEventsByUser(user.id) : getAllEvents();
-    const allSessions = (user.id !== 'local' && getSessionsByUser) ? getSessionsByUser(user.id) : getSessions();
+    const allEvents   = (user.id !== 'local' && getEventsByUser) ? await Promise.resolve(getEventsByUser(user.id)) : await Promise.resolve(getAllEvents());
+    const allSessions = (user.id !== 'local' && getSessionsByUser) ? await Promise.resolve(getSessionsByUser(user.id)) : await Promise.resolve(getSessions());
 
     // memberName → 집계 정보 맵
     const memberMap = new Map();
@@ -440,7 +440,7 @@ function createRouter(deps) {
    * @query {string} [to]    - ISO 8601 종료 시간
    * @returns {{ overlay: { [name]: Graph }, timeRange: { from, to } }}
    */
-  router.get('/overlay', (req, res) => {
+  router.get('/overlay', async (req, res) => {
     const user = getUserFromReq(req);
     if (!user) return res.json({ overlay: {}, timeRange: {} });               // 비로그인: 빈 결과
     const { annotateEventsWithPurpose } = purposeClassifier;
@@ -451,7 +451,7 @@ function createRouter(deps) {
     const to   = req.query.to   ? new Date(req.query.to)   : null;
 
     // 사용자별 이벤트만 사용
-    const allEvents = (user.id !== 'local' && getEventsByUser) ? getEventsByUser(user.id) : getAllEvents();
+    const allEvents = (user.id !== 'local' && getEventsByUser) ? await Promise.resolve(getEventsByUser(user.id)) : await Promise.resolve(getAllEvents());
 
     // 시간 범위 필터
     const filtered = allEvents.filter(e => {
@@ -490,12 +490,12 @@ function createRouter(deps) {
   // ── 파일 / 통계 / 활동 점수 ────────────────────────────────────────────────
 
   /** GET /api/files → 파일 접근 통계 목록 (사용자별 격리) */
-  router.get('/files', (req, res) => {
+  router.get('/files', async (req, res) => {
     const user = getUserFromReq(req);
     if (!user) return res.json([]);                                            // 비로그인: 빈 목록
     // 사용자별 파일 필터링: 해당 유저 이벤트에서 참조된 파일만
     if (user.id !== 'local' && getEventsByUser) {
-      const userEvents = getEventsByUser(user.id);
+      const userEvents = await Promise.resolve(getEventsByUser(user.id));
       const fileMap = {};
       for (const e of userEvents) {
         const fp = e.data?.filePath || e.data?.fileName;
@@ -509,18 +509,18 @@ function createRouter(deps) {
       }
       return res.json(Object.values(fileMap));
     }
-    res.json(getFiles());
+    res.json(await Promise.resolve(getFiles()));
   });
 
   /** GET /api/stats → 이벤트/세션/파일 수 (사용자별 격리) */
-  router.get('/stats', (req, res) => {
+  router.get('/stats', async (req, res) => {
     const user = getUserFromReq(req);
     if (!user) return res.json({ events: 0, sessions: 0, files: 0 });         // 비로그인: 빈 통계
     // 사용자별 통계
     if (user.id !== 'local' && getStatsByUser) {
-      return res.json(getStatsByUser(user.id));
+      return res.json(await Promise.resolve(getStatsByUser(user.id)));
     }
-    res.json(getStats());
+    res.json(await Promise.resolve(getStats()));
   });
 
   /**
@@ -559,7 +559,7 @@ function createRouter(deps) {
    * GET /api/graph/nodeHistory?nodeId=xxx
    * 특정 노드의 작업 히스토리 타임라인 반환
    */
-  router.get('/graph/nodeHistory', (req, res) => {
+  router.get('/graph/nodeHistory', async (req, res) => {
     const user = getUserFromReq(req);
     if (!user) return res.status(401).json({ error: 'login required' });
 
@@ -568,7 +568,7 @@ function createRouter(deps) {
 
     try {
       // 모든 이벤트 가져오기
-      const events = getAllEvents ? getAllEvents() : [];
+      const events = getAllEvents ? await Promise.resolve(getAllEvents()) : [];
 
       // 노드 관련 이벤트 필터링
       const nodeEvents = events.filter(e => {
@@ -626,14 +626,14 @@ function createRouter(deps) {
    * @deprecated /api/graph 사용 권장
    * @returns {Event[]}
    */
-  router.get('/turns', (req, res) => {
+  router.get('/turns', async (req, res) => {
     const user = getUserFromReq(req);
     if (!user) return res.json([]);                                            // 비로그인: 빈 목록
     // 사용자별 이벤트만 반환
     if (user.id !== 'local' && getEventsByUser) {
-      return res.json(getEventsByUser(user.id));
+      return res.json(await Promise.resolve(getEventsByUser(user.id)));
     }
-    res.json(getAllEvents());
+    res.json(await Promise.resolve(getAllEvents()));
   });
 
   /**
@@ -734,11 +734,11 @@ function getEventIcon(action) {
 
   return iconMap[action] || '📌';
 }
-function _getEventsByQuery(query, getAllEvents, getEventsBySession, getEventsByChannel) {
-  if (query.channel && getEventsByChannel) return getEventsByChannel(query.channel);
-  if (query.channel) return getAllEvents().filter(e => e.channelId === query.channel);
-  if (query.session) return getEventsBySession(query.session);
-  return getAllEvents();
+async function _getEventsByQuery(query, getAllEvents, getEventsBySession, getEventsByChannel) {
+  if (query.channel && getEventsByChannel) return await Promise.resolve(getEventsByChannel(query.channel));
+  if (query.channel) return (await Promise.resolve(getAllEvents())).filter(e => e.channelId === query.channel);
+  if (query.session) return await Promise.resolve(getEventsBySession(query.session));
+  return await Promise.resolve(getAllEvents());
 }
 
 /**
