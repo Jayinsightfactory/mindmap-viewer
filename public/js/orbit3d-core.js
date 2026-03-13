@@ -803,32 +803,44 @@ class OrbitCam {
     this.sph = { r:55, θ:0.3, φ:1.1 };                  // 컴팩트 뷰 기본 거리
     this._d = false; this._r = false; this._lx=0; this._ly=0;
     this._dragging = false; // 드래그 중 플래그 (자동전환 방지)
+    this._dragStartX = 0; this._dragStartY = 0; // 드래그 시작점
+    this._dragThresholdMet = false; // 6px threshold 충족 여부
+    const DRAG_THRESH = 6;
     el.addEventListener('mousedown',  e => {
       this._lx=e.clientX; this._ly=e.clientY;
-      // 우클릭 OR 중클릭 OR Shift+좌클릭 → 패닝
+      this._dragStartX = e.clientX; this._dragStartY = e.clientY;
+      this._dragThresholdMet = false;
+      // 우클릭 OR 중클릭 OR Shift+좌클릭 → 3D 회전
       if (e.button===2 || e.button===1 || (e.button===0 && e.shiftKey)) this._r=true;
       else if (e.button===0) this._d=true;
       this._dragging=true;
     });
-    el.addEventListener('mousemove',  e => this._move(e));
-    el.addEventListener('mouseup',    () => { this._d=this._r=false; this._dragging=false; });
+    el.addEventListener('mousemove',  e => this._move(e, DRAG_THRESH));
+    el.addEventListener('mouseup',    () => { this._d=this._r=false; this._dragging=false; this._dragThresholdMet=false; });
     el.addEventListener('wheel', e => {
       // 카드 선택 중(역피라미드 열림)엔 스크롤이 패널로만 전달
       if (typeof _selectedHit !== 'undefined' && _selectedHit) return;
-      // 2D 월드 스케일 줌 (팀 탐색: 줌아웃→팀원 클러스터 등장)
+      // 2D 월드 스케일 줌 (줌아웃→팀→회사 유니버스)
       const factor = e.deltaY > 0 ? 0.92 : 1.085;
-      _worldScale = Math.max(0.15, Math.min(3.0, _worldScale * factor));
+      _worldScale = Math.max(0.08, Math.min(3.0, _worldScale * factor));
       window._worldScale = _worldScale;
     }, {passive:true});
     el.addEventListener('dblclick',   e => this._dbl(e));
     el.addEventListener('contextmenu',e => e.preventDefault());
     this._apply();
   }
-  _move(e) {
+  _move(e, DRAG_THRESH) {
     const dx=e.clientX-this._lx, dy=e.clientY-this._ly;
     this._lx=e.clientX; this._ly=e.clientY;
-    if (this._d) {
-      // 좌클릭 드래그 → 2D 월드 팬 (팀 탐색: 드래그로 이동)
+    // 드래그 threshold: 마우스다운 지점에서 6px 이상 움직여야 패닝 시작
+    if (this._d && !this._dragThresholdMet) {
+      const totalDx = e.clientX - this._dragStartX;
+      const totalDy = e.clientY - this._dragStartY;
+      if (Math.sqrt(totalDx*totalDx + totalDy*totalDy) < DRAG_THRESH) return; // 아직 클릭 범위
+      this._dragThresholdMet = true;
+    }
+    if (this._d && this._dragThresholdMet) {
+      // 좌클릭 드래그 → 2D 월드 팬 (배경 드래그로 탐색)
       _worldPanX += dx; _worldPanY += dy;
       window._worldPanX = _worldPanX; window._worldPanY = _worldPanY;
     } else if (this._r) {
