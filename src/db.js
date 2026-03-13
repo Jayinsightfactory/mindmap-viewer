@@ -447,6 +447,51 @@ function createTables() {
     );
     CREATE INDEX IF NOT EXISTS idx_mc_ws ON multilevel_cache(workspace_id);
     CREATE INDEX IF NOT EXISTS idx_mc_expires ON multilevel_cache(expires_at);
+
+    -- ─── 프로젝트 (세션 상위 그룹핑) ──────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS projects (
+      id           TEXT PRIMARY KEY,
+      user_id      TEXT NOT NULL,
+      name         TEXT NOT NULL,
+      description  TEXT DEFAULT '',
+      color        TEXT DEFAULT '#58a6ff',
+      icon         TEXT DEFAULT '📁',
+      status       TEXT DEFAULT 'active',
+      tags         TEXT DEFAULT '[]',
+      metadata_json TEXT DEFAULT '{}',
+      created_at   TEXT DEFAULT (datetime('now')),
+      updated_at   TEXT DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_projects_user ON projects(user_id);
+    CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(status);
+
+    -- ─── 세션↔프로젝트 매핑 ───────────────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS session_projects (
+      session_id   TEXT NOT NULL,
+      project_id   TEXT NOT NULL,
+      confidence   REAL DEFAULT 1.0,
+      assigned_by  TEXT DEFAULT 'manual',
+      assigned_at  TEXT DEFAULT (datetime('now')),
+      PRIMARY KEY (session_id, project_id),
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_sp_project ON session_projects(project_id);
+    CREATE INDEX IF NOT EXISTS idx_sp_session ON session_projects(session_id);
+
+    -- ─── 프로젝트 학습 기록 (의사결정/깨달음/방향전환) ────────────────────
+    CREATE TABLE IF NOT EXISTS project_learnings (
+      id           TEXT PRIMARY KEY,
+      project_id   TEXT NOT NULL,
+      user_id      TEXT NOT NULL,
+      type         TEXT NOT NULL DEFAULT 'insight',
+      title        TEXT NOT NULL,
+      content      TEXT DEFAULT '',
+      context_json TEXT DEFAULT '{}',
+      created_at   TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_pl_project ON project_learnings(project_id);
+    CREATE INDEX IF NOT EXISTS idx_pl_user ON project_learnings(user_id);
   `);
 }
 
@@ -1166,6 +1211,112 @@ function updateWorkspaceActivityStrength(workspaceId, userId1, userId2, strength
   `).run(strengthDelta, workspaceId, id1, id2);
 }
 
+// ─── 프로젝트 CRUD ───────────────────────────────────
+function getProjectsByUser(userId) {
+  return db.prepare(`
+    SELECT p.*, COUNT(sp.session_id) as session_count
+    FROM projects p
+    LEFT JOIN session_projects sp ON sp.project_id = p.id
+    WHERE p.user_id = ?
+    GROUP BY p.id
+    ORDER BY p.updated_at DESC
+  `).all(userId);
+}
+
+function getProjectById(projectId) {
+  return db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId);
+}
+
+function createProject(project) {
+  const { ulid: ulidFn } = require('ulid');
+  const id = project.id || `proj_${ulidFn()}`;
+  db.prepare(`
+    INSERT INTO projects (id, user_id, name, description, color, icon, status, tags, metadata_json)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    id, project.user_id, project.name,
+    project.description || '', project.color || '#58a6ff',
+    project.icon || '📁', project.status || 'active',
+    JSON.stringify(project.tags || []),
+    JSON.stringify(project.metadata || {})
+  );
+  return id;
+}
+
+function updateProject(projectId, updates) {
+  const fields = [];
+  const values = [];
+  if (updates.name !== undefined) { fields.push('name = ?'); values.push(updates.name); }
+  if (updates.description !== undefined) { fields.push('description = ?'); values.push(updates.description); }
+  if (updates.color !== undefined) { fields.push('color = ?'); values.push(updates.color); }
+  if (updates.icon !== undefined) { fields.push('icon = ?'); values.push(updates.icon); }
+  if (updates.status !== undefined) { fields.push('status = ?'); values.push(updates.status); }
+  if (updates.tags !== undefined) { fields.push('tags = ?'); values.push(JSON.stringify(updates.tags)); }
+  if (updates.metadata !== undefined) { fields.push('metadata_json = ?'); values.push(JSON.stringify(updates.metadata)); }
+  if (fields.length === 0) return;
+  fields.push("updated_at = datetime('now')");
+  values.push(projectId);
+  db.prepare(`UPDATE projects SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+}
+
+function deleteProject(projectId) {
+  db.prepare('DELETE FROM projects WHERE id = ?').run(projectId);
+}
+
+function assignSessionToProject(sessionId, projectId, confidence = 1.0, assignedBy = 'manual') {
+  db.prepare(`
+    INSERT OR REPLACE INTO session_projects (session_id, project_id, confidence, assigned_by)
+    VALUES (?, ?, ?, ?)
+  `).run(sessionId, projectId, confidence, assignedBy);
+}
+
+function removeSessionFromProject(sessionId, projectId) {
+  db.prepare('DELETE FROM session_projects WHERE session_id = ? AND project_id = ?').run(sessionId, projectId);
+}
+
+function getSessionsByProject(projectId) {
+  return db.prepare(`
+    SELECT s.*, sp.confidence, sp.assigned_by
+    FROM sessions s
+    JOIN session_projects sp ON sp.session_id = s.id
+    WHERE sp.project_id = ?
+    ORDER BY s.started_at DESC
+  `).all(projectId);
+}
+
+function getProjectBySession(sessionId) {
+  return db.prepare(`
+    SELECT p.*, sp.confidence, sp.assigned_by
+    FROM projects p
+    JOIN session_projects sp ON sp.project_id = p.id
+    WHERE sp.session_id = ?
+  `).all(sessionId);
+}
+
+function addProjectLearning(learning) {
+  const { ulid: ulidFn } = require('ulid');
+  const id = learning.id || `learn_${ulidFn()}`;
+  db.prepare(`
+    INSERT INTO project_learnings (id, project_id, user_id, type, title, content, context_json)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    id, learning.project_id, learning.user_id,
+    learning.type || 'insight', learning.title,
+    learning.content || '', JSON.stringify(learning.context || {})
+  );
+  return id;
+}
+
+function getProjectLearnings(projectId) {
+  return db.prepare(`
+    SELECT * FROM project_learnings WHERE project_id = ? ORDER BY created_at DESC
+  `).all(projectId);
+}
+
+function deleteProjectLearning(learningId) {
+  db.prepare('DELETE FROM project_learnings WHERE id = ?').run(learningId);
+}
+
 module.exports = {
   initDatabase,
   getDb,
@@ -1249,4 +1400,17 @@ module.exports = {
   getWorkspaceActivityByUser,
   getWorkspaceActivityAll,
   updateWorkspaceActivityStrength,
+  // 프로젝트 (세션 상위 그룹핑)
+  getProjectsByUser,
+  getProjectById,
+  createProject,
+  updateProject,
+  deleteProject,
+  assignSessionToProject,
+  removeSessionFromProject,
+  getSessionsByProject,
+  getProjectBySession,
+  addProjectLearning,
+  getProjectLearnings,
+  deleteProjectLearning,
 };

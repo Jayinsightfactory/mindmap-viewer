@@ -1432,6 +1432,10 @@ app.use('/api', createChatRouter({ getDb: dbModule.getDb, verifyToken, broadcast
 app.use('/api', createMarketplaceRouter({ verifyToken, dbModule }));
 app.use('/api', createRecommendationsRouter({ verifyToken, dbModule }));
 
+// ─── 프로젝트 (세션 상위 그룹핑) ───────────────────────────────────────────────
+const createProjectsRouter = require('./routes/projects');
+app.use('/api', createProjectsRouter({ verifyToken, dbModule }));
+
 // ─── Workspace (팀/회사 관리) ─────────────────────────────────────────────────────
 app.use('/api', createWorkspaceRouter({ getDb: dbModule.getDb, verifyToken, getUserById, ADMIN_EMAILS, createNotification }));
 

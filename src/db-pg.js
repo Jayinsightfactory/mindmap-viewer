@@ -329,6 +329,51 @@ async function createTables() {
     );
     CREATE INDEX IF NOT EXISTS idx_roi_inst ON solution_roi(installation_id);
     CREATE INDEX IF NOT EXISTS idx_roi_date ON solution_roi(date);
+
+    -- ─── 프로젝트 (세션 상위 그룹핑) ──────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS projects (
+      id           TEXT PRIMARY KEY,
+      user_id      TEXT NOT NULL,
+      name         TEXT NOT NULL,
+      description  TEXT DEFAULT '',
+      color        TEXT DEFAULT '#58a6ff',
+      icon         TEXT DEFAULT '📁',
+      status       TEXT DEFAULT 'active',
+      tags         JSONB DEFAULT '[]',
+      metadata_json JSONB DEFAULT '{}',
+      created_at   TIMESTAMPTZ DEFAULT NOW(),
+      updated_at   TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_projects_user ON projects(user_id);
+    CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(status);
+
+    -- ─── 세션↔프로젝트 매핑 ───────────────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS session_projects (
+      session_id   TEXT NOT NULL,
+      project_id   TEXT NOT NULL,
+      confidence   REAL DEFAULT 1.0,
+      assigned_by  TEXT DEFAULT 'manual',
+      assigned_at  TIMESTAMPTZ DEFAULT NOW(),
+      PRIMARY KEY (session_id, project_id),
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_sp_project ON session_projects(project_id);
+    CREATE INDEX IF NOT EXISTS idx_sp_session ON session_projects(session_id);
+
+    -- ─── 프로젝트 학습 기록 (의사결정/깨달음/방향전환) ────────────────────
+    CREATE TABLE IF NOT EXISTS project_learnings (
+      id           TEXT PRIMARY KEY,
+      project_id   TEXT NOT NULL,
+      user_id      TEXT NOT NULL,
+      type         TEXT NOT NULL DEFAULT 'insight',
+      title        TEXT NOT NULL,
+      content      TEXT DEFAULT '',
+      context_json JSONB DEFAULT '{}',
+      created_at   TIMESTAMPTZ DEFAULT NOW(),
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_pl_project ON project_learnings(project_id);
+    CREATE INDEX IF NOT EXISTS idx_pl_user ON project_learnings(user_id);
   `);
 }
 
@@ -854,6 +899,119 @@ async function updateWorkspaceActivityStrength(workspaceId, userId1, userId2, st
   `, [strengthDelta, workspaceId, id1, id2]);
 }
 
+// ─── 프로젝트 CRUD ───────────────────────────────────
+async function getProjectsByUser(userId) {
+  const { rows } = await pool.query(`
+    SELECT p.*, COUNT(sp.session_id)::int as session_count
+    FROM projects p
+    LEFT JOIN session_projects sp ON sp.project_id = p.id
+    WHERE p.user_id = $1
+    GROUP BY p.id
+    ORDER BY p.updated_at DESC
+  `, [userId]);
+  return rows;
+}
+
+async function getProjectById(projectId) {
+  const { rows } = await pool.query('SELECT * FROM projects WHERE id=$1', [projectId]);
+  return rows[0] || null;
+}
+
+async function createProject(project) {
+  const { ulid } = require('ulid');
+  const id = project.id || `proj_${ulid()}`;
+  await pool.query(`
+    INSERT INTO projects (id, user_id, name, description, color, icon, status, tags, metadata_json)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+  `, [
+    id, project.user_id, project.name,
+    project.description || '', project.color || '#58a6ff',
+    project.icon || '📁', project.status || 'active',
+    JSON.stringify(project.tags || []),
+    JSON.stringify(project.metadata || {})
+  ]);
+  return id;
+}
+
+async function updateProject(projectId, updates) {
+  const fields = [];
+  const values = [];
+  let idx = 0;
+  if (updates.name !== undefined) { fields.push(`name = $${++idx}`); values.push(updates.name); }
+  if (updates.description !== undefined) { fields.push(`description = $${++idx}`); values.push(updates.description); }
+  if (updates.color !== undefined) { fields.push(`color = $${++idx}`); values.push(updates.color); }
+  if (updates.icon !== undefined) { fields.push(`icon = $${++idx}`); values.push(updates.icon); }
+  if (updates.status !== undefined) { fields.push(`status = $${++idx}`); values.push(updates.status); }
+  if (updates.tags !== undefined) { fields.push(`tags = $${++idx}`); values.push(JSON.stringify(updates.tags)); }
+  if (updates.metadata !== undefined) { fields.push(`metadata_json = $${++idx}`); values.push(JSON.stringify(updates.metadata)); }
+  if (fields.length === 0) return;
+  fields.push('updated_at = NOW()');
+  values.push(projectId);
+  await pool.query(`UPDATE projects SET ${fields.join(', ')} WHERE id = $${++idx}`, values);
+}
+
+async function deleteProject(projectId) {
+  await pool.query('DELETE FROM projects WHERE id=$1', [projectId]);
+}
+
+async function assignSessionToProject(sessionId, projectId, confidence = 1.0, assignedBy = 'manual') {
+  await pool.query(`
+    INSERT INTO session_projects (session_id, project_id, confidence, assigned_by)
+    VALUES ($1,$2,$3,$4)
+    ON CONFLICT (session_id, project_id) DO UPDATE SET confidence=$3, assigned_by=$4, assigned_at=NOW()
+  `, [sessionId, projectId, confidence, assignedBy]);
+}
+
+async function removeSessionFromProject(sessionId, projectId) {
+  await pool.query('DELETE FROM session_projects WHERE session_id=$1 AND project_id=$2', [sessionId, projectId]);
+}
+
+async function getSessionsByProject(projectId) {
+  const { rows } = await pool.query(`
+    SELECT s.*, sp.confidence, sp.assigned_by
+    FROM sessions s
+    JOIN session_projects sp ON sp.session_id = s.id
+    WHERE sp.project_id = $1
+    ORDER BY s.started_at DESC
+  `, [projectId]);
+  return rows;
+}
+
+async function getProjectBySession(sessionId) {
+  const { rows } = await pool.query(`
+    SELECT p.*, sp.confidence, sp.assigned_by
+    FROM projects p
+    JOIN session_projects sp ON sp.project_id = p.id
+    WHERE sp.session_id = $1
+  `, [sessionId]);
+  return rows;
+}
+
+async function addProjectLearning(learning) {
+  const { ulid } = require('ulid');
+  const id = learning.id || `learn_${ulid()}`;
+  await pool.query(`
+    INSERT INTO project_learnings (id, project_id, user_id, type, title, content, context_json)
+    VALUES ($1,$2,$3,$4,$5,$6,$7)
+  `, [
+    id, learning.project_id, learning.user_id,
+    learning.type || 'insight', learning.title,
+    learning.content || '', JSON.stringify(learning.context || {})
+  ]);
+  return id;
+}
+
+async function getProjectLearnings(projectId) {
+  const { rows } = await pool.query(
+    'SELECT * FROM project_learnings WHERE project_id=$1 ORDER BY created_at DESC', [projectId]
+  );
+  return rows;
+}
+
+async function deleteProjectLearning(learningId) {
+  await pool.query('DELETE FROM project_learnings WHERE id=$1', [learningId]);
+}
+
 module.exports = {
   initDatabase, getDb, waitForTables,
   insertEvent, getAllEvents, getEventsBySession, getEventsByType, searchEvents,
@@ -890,4 +1048,17 @@ module.exports = {
   // 워크스페이스 활동
   saveWorkspaceActivity, getWorkspaceActivityByUser, getWorkspaceActivityAll,
   updateWorkspaceActivityStrength,
+  // 프로젝트 (세션 상위 그룹핑)
+  getProjectsByUser,
+  getProjectById,
+  createProject,
+  updateProject,
+  deleteProject,
+  assignSessionToProject,
+  removeSessionFromProject,
+  getSessionsByProject,
+  getProjectBySession,
+  addProjectLearning,
+  getProjectLearnings,
+  deleteProjectLearning,
 };
