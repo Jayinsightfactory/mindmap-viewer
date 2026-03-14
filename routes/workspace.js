@@ -192,6 +192,9 @@ function createWorkspaceRouter({ getDb, db: _dbLegacy, verifyToken, getUserById,
         workspaceId = first.workspace_id;
       }
 
+      // 멤버십 검증 (보안)
+      if (!(await isWsMember(req, workspaceId))) return res.status(403).json({ error: 'not member' });
+
       // 멤버 목록 (cross-DB JOIN 회피: 2단계 조회)
       const rawMembers = await dbAll(
         `SELECT user_id, role, team_name FROM workspace_members WHERE workspace_id = ? ORDER BY joined_at ASC`,
@@ -305,11 +308,20 @@ function createWorkspaceRouter({ getDb, db: _dbLegacy, verifyToken, getUserById,
         workspaceId = first.workspace_id;
       }
 
+      // 멤버십 검증 (보안)
+      if (!(await isWsMember(req, workspaceId))) return res.status(403).json({ error: 'not member' });
+
       const ws = await dbGet(`SELECT * FROM workspaces WHERE id = ?`, [workspaceId]);
       if (!ws) return res.status(404).json({ error: 'not found' });
 
+      // 팀 목록 (team_hierarchy 기반)
+      const teams = await dbAll(
+        `SELECT id, name, icon, color FROM team_hierarchy WHERE workspace_id = ? AND level_type = 'team' ORDER BY created_at`,
+        [workspaceId]
+      );
+
       const rawMembers2 = await dbAll(
-        `SELECT user_id, role, team_name FROM workspace_members WHERE workspace_id = ? ORDER BY team_name, joined_at`,
+        `SELECT user_id, role, team_name, team_hierarchy_id FROM workspace_members WHERE workspace_id = ? ORDER BY team_name, joined_at`,
         [workspaceId]
       );
       const members = rawMembers2.map(wm => {
@@ -321,32 +333,47 @@ function createWorkspaceRouter({ getDb, db: _dbLegacy, verifyToken, getUserById,
           avatar: u?.avatar || null,
           role: wm.role,
           team_name: wm.team_name,
+          team_hierarchy_id: wm.team_hierarchy_id,
         };
       });
 
-      // 팀 이름별로 그룹화
-      const teamsMap = {};
+      // 팀별 그룹화 (team_hierarchy 우선, fallback: team_name)
       const COLORS = ['#3fb950','#58a6ff','#bc8cff','#f0883e','#ff7b72'];
+      const teamsMap = {};
+
+      // team_hierarchy 기반 팀이 있으면 먼저 등록
+      teams.forEach(t => { teamsMap[t.id] = { name: t.name, icon: t.icon, color: t.color, members: [] }; });
+
       members.forEach((m, i) => {
-        const tn = m.team_name || '기본팀';
-        if (!teamsMap[tn]) teamsMap[tn] = [];
-        teamsMap[tn].push({
-          id: `c${i}`,
-          userId: m.id,
-          name: m.name || m.email.split('@')[0],
-          role: m.role === 'owner' ? '팀장' : '팀원',
-          color: COLORS[i % COLORS.length],
-          tasks: [],
-        });
+        const teamId = m.team_hierarchy_id;
+        if (teamId && teamsMap[teamId]) {
+          teamsMap[teamId].members.push({
+            id: `c${i}`, userId: m.id,
+            name: m.name || m.email.split('@')[0],
+            role: m.role === 'owner' ? '팀장' : '팀원',
+            color: COLORS[i % COLORS.length], tasks: [],
+          });
+        } else {
+          // fallback: team_name 기반
+          const tn = m.team_name || '미배정';
+          const key = `_name_${tn}`;
+          if (!teamsMap[key]) teamsMap[key] = { name: tn, icon: '👥', color: '#6e7681', members: [] };
+          teamsMap[key].members.push({
+            id: `c${i}`, userId: m.id,
+            name: m.name || m.email.split('@')[0],
+            role: m.role === 'owner' ? '팀장' : '팀원',
+            color: COLORS[i % COLORS.length], tasks: [],
+          });
+        }
       });
 
-      const departments = Object.entries(teamsMap).map(([name, mems], di) => ({
-        id: `dept${di}`,
-        name,
-        icon: '👥',
-        color: COLORS[di % COLORS.length],
-        members: mems,
-      }));
+      const departments = Object.entries(teamsMap).map(([key, team], di) => ({
+        id: key,
+        name: team.name,
+        icon: team.icon || '👥',
+        color: team.color || COLORS[di % COLORS.length],
+        members: team.members,
+      })).filter(d => d.members.length > 0);
 
       res.json({
         name: ws.company_name || ws.name,
@@ -394,15 +421,25 @@ function createWorkspaceRouter({ getDb, db: _dbLegacy, verifyToken, getUserById,
     }
   });
 
-  // ── 어드민 권한 체크 헬퍼 ──────────────────────────────────────────────────
-  function isWsAdmin(req, workspaceId) {
+  // ── 어드민 권한 체크 헬퍼 (async — PG 호환) ────────────────────────────────
+  async function isWsAdmin(req, workspaceId) {
     // 글로벌 어드민이면 무조건 true
     if (ADMIN_EMAILS && ADMIN_EMAILS.includes(req.user.email?.toLowerCase())) return true;
     // 워크스페이스 owner/admin이면 true
-    const member = db.prepare
-      ? db.prepare('SELECT role FROM workspace_members WHERE workspace_id = ? AND user_id = ?').get(workspaceId, req.user.id)
-      : null;
+    const member = await dbGet(
+      'SELECT role FROM workspace_members WHERE workspace_id = ? AND user_id = ?',
+      [workspaceId, req.user.id]
+    );
     return member && (member.role === 'owner' || member.role === 'admin');
+  }
+
+  // ── 멤버십 체크 헬퍼 (보안) ──────────────────────────────────────────────
+  async function isWsMember(req, workspaceId) {
+    const member = await dbGet(
+      'SELECT 1 FROM workspace_members WHERE workspace_id = ? AND user_id = ?',
+      [workspaceId, req.user.id]
+    );
+    return !!member;
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -438,7 +475,7 @@ function createWorkspaceRouter({ getDb, db: _dbLegacy, verifyToken, getUserById,
   router.post('/workspace/:id/invite', auth, async (req, res) => {
     try {
       const wsId = req.params.id;
-      if (!isWsAdmin(req, wsId)) return res.status(403).json({ error: 'admin only' });
+      if (!(await isWsAdmin(req, wsId))) return res.status(403).json({ error: 'admin only' });
 
       const { email, teamName, role } = req.body;
       if (!email) return res.status(400).json({ error: 'email required' });
@@ -478,7 +515,7 @@ function createWorkspaceRouter({ getDb, db: _dbLegacy, verifyToken, getUserById,
   router.delete('/workspace/:id/members/:userId', auth, async (req, res) => {
     try {
       const wsId = req.params.id;
-      if (!isWsAdmin(req, wsId)) return res.status(403).json({ error: 'admin only' });
+      if (!(await isWsAdmin(req, wsId))) return res.status(403).json({ error: 'admin only' });
       await dbRun(
         'DELETE FROM workspace_members WHERE workspace_id = ? AND user_id = ?',
         [wsId, req.params.userId]
@@ -494,7 +531,7 @@ function createWorkspaceRouter({ getDb, db: _dbLegacy, verifyToken, getUserById,
   router.patch('/workspace/:id/members/:userId/role', auth, async (req, res) => {
     try {
       const wsId = req.params.id;
-      if (!isWsAdmin(req, wsId)) return res.status(403).json({ error: 'admin only' });
+      if (!(await isWsAdmin(req, wsId))) return res.status(403).json({ error: 'admin only' });
       const { role } = req.body;
       if (!['admin', 'member'].includes(role)) return res.status(400).json({ error: 'invalid role' });
       await dbRun(
@@ -511,7 +548,7 @@ function createWorkspaceRouter({ getDb, db: _dbLegacy, verifyToken, getUserById,
   router.delete('/workspace/:id', auth, async (req, res) => {
     try {
       const wsId = req.params.id;
-      if (!isWsAdmin(req, wsId)) return res.status(403).json({ error: 'admin only' });
+      if (!(await isWsAdmin(req, wsId))) return res.status(403).json({ error: 'admin only' });
       await dbRun('DELETE FROM workspace_members WHERE workspace_id = ?', [wsId]);
       await dbRun('DELETE FROM workspaces WHERE id = ?', [wsId]);
       res.json({ ok: true });
@@ -524,7 +561,7 @@ function createWorkspaceRouter({ getDb, db: _dbLegacy, verifyToken, getUserById,
   router.post('/workspace/:id/regenerate-code', auth, async (req, res) => {
     try {
       const wsId = req.params.id;
-      if (!isWsAdmin(req, wsId)) return res.status(403).json({ error: 'admin only' });
+      if (!(await isWsAdmin(req, wsId))) return res.status(403).json({ error: 'admin only' });
       const newCode = genInviteCode();
       await dbRun('UPDATE workspaces SET invite_code = ? WHERE id = ?', [newCode, wsId]);
       res.json({ ok: true, inviteCode: newCode });
@@ -544,6 +581,182 @@ function createWorkspaceRouter({ getDb, db: _dbLegacy, verifyToken, getUserById,
          FROM workspaces w ORDER BY w.created_at DESC`
       );
       res.json(rows);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ═════════════════════════════════════════════════════════════════════════
+  // 팀 관리 CRUD (워크스페이스 생성자/admin만 가능)
+  // ═════════════════════════════════════════════════════════════════════════
+
+  // ── GET /api/workspace/:id/teams — 팀 목록 ────────────────────────────
+  router.get('/workspace/:id/teams', auth, async (req, res) => {
+    try {
+      const wsId = req.params.id;
+      if (!(await isWsMember(req, wsId))) return res.status(403).json({ error: 'not member' });
+
+      const teams = await dbAll(
+        `SELECT id, name, icon, color, created_at FROM team_hierarchy
+         WHERE workspace_id = ? AND level_type = 'team'
+         ORDER BY created_at`,
+        [wsId]
+      );
+
+      // 각 팀별 멤버 수 집계
+      const membersRaw = await dbAll(
+        `SELECT team_hierarchy_id, COUNT(*) AS cnt FROM workspace_members
+         WHERE workspace_id = ? AND team_hierarchy_id IS NOT NULL
+         GROUP BY team_hierarchy_id`,
+        [wsId]
+      );
+      const countMap = {};
+      membersRaw.forEach(r => { countMap[r.team_hierarchy_id] = parseInt(r.cnt); });
+
+      // 미배정 멤버 수
+      const unassigned = await dbGet(
+        `SELECT COUNT(*) AS cnt FROM workspace_members
+         WHERE workspace_id = ? AND (team_hierarchy_id IS NULL OR team_hierarchy_id = '')`,
+        [wsId]
+      );
+
+      const result = teams.map(t => ({
+        id: t.id,
+        name: t.name,
+        icon: t.icon || '👥',
+        color: t.color || '#58a6ff',
+        memberCount: countMap[t.id] || 0,
+        createdAt: t.created_at,
+      }));
+
+      res.json({ teams: result, unassignedCount: parseInt(unassigned?.cnt || 0) });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── POST /api/workspace/:id/teams — 팀 생성 ───────────────────────────
+  router.post('/workspace/:id/teams', auth, async (req, res) => {
+    try {
+      const wsId = req.params.id;
+      if (!(await isWsAdmin(req, wsId))) return res.status(403).json({ error: 'admin only' });
+
+      const { name, icon, color } = req.body;
+      if (!name) return res.status(400).json({ error: 'name required' });
+
+      const id = ulid();
+      await dbRun(
+        `INSERT INTO team_hierarchy (id, workspace_id, name, level_type, icon, color)
+         VALUES (?, ?, ?, 'team', ?, ?)`,
+        [id, wsId, name, icon || '👥', color || '#58a6ff']
+      );
+
+      res.json({ id, name, icon: icon || '👥', color: color || '#58a6ff', memberCount: 0 });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── PATCH /api/workspace/:id/teams/:teamId — 팀 수정 ──────────────────
+  router.patch('/workspace/:id/teams/:teamId', auth, async (req, res) => {
+    try {
+      const wsId = req.params.id;
+      if (!(await isWsAdmin(req, wsId))) return res.status(403).json({ error: 'admin only' });
+
+      const { name, icon, color } = req.body;
+      const sets = [];
+      const params = [];
+      if (name)  { sets.push('name = ?');  params.push(name); }
+      if (icon)  { sets.push('icon = ?');  params.push(icon); }
+      if (color) { sets.push('color = ?'); params.push(color); }
+      if (sets.length === 0) return res.status(400).json({ error: 'nothing to update' });
+
+      params.push(req.params.teamId, wsId);
+      await dbRun(
+        `UPDATE team_hierarchy SET ${sets.join(', ')} WHERE id = ? AND workspace_id = ?`,
+        params
+      );
+      res.json({ ok: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── DELETE /api/workspace/:id/teams/:teamId — 팀 삭제 ─────────────────
+  router.delete('/workspace/:id/teams/:teamId', auth, async (req, res) => {
+    try {
+      const wsId = req.params.id;
+      if (!(await isWsAdmin(req, wsId))) return res.status(403).json({ error: 'admin only' });
+
+      // 해당 팀 멤버 → 미배정으로 변경
+      await dbRun(
+        `UPDATE workspace_members SET team_hierarchy_id = NULL, team_name = '미배정'
+         WHERE workspace_id = ? AND team_hierarchy_id = ?`,
+        [wsId, req.params.teamId]
+      );
+      await dbRun(
+        `DELETE FROM team_hierarchy WHERE id = ? AND workspace_id = ?`,
+        [req.params.teamId, wsId]
+      );
+      res.json({ ok: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── PATCH /api/workspace/:id/members/:userId/team — 멤버 팀 배정 ──────
+  router.patch('/workspace/:id/members/:userId/team', auth, async (req, res) => {
+    try {
+      const wsId = req.params.id;
+      if (!(await isWsAdmin(req, wsId))) return res.status(403).json({ error: 'admin only' });
+
+      const { teamId } = req.body;  // null이면 미배정
+
+      if (teamId) {
+        // 팀 존재 확인
+        const team = await dbGet(
+          `SELECT id, name FROM team_hierarchy WHERE id = ? AND workspace_id = ?`,
+          [teamId, wsId]
+        );
+        if (!team) return res.status(404).json({ error: 'team not found' });
+
+        await dbRun(
+          `UPDATE workspace_members SET team_hierarchy_id = ?, team_name = ?
+           WHERE workspace_id = ? AND user_id = ?`,
+          [teamId, team.name, wsId, req.params.userId]
+        );
+      } else {
+        await dbRun(
+          `UPDATE workspace_members SET team_hierarchy_id = NULL, team_name = '미배정'
+           WHERE workspace_id = ? AND user_id = ?`,
+          [wsId, req.params.userId]
+        );
+      }
+      res.json({ ok: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── PATCH /api/workspace/:id/members/bulk-assign — 멤버 일괄 팀 배정 ──
+  router.patch('/workspace/:id/members/bulk-assign', auth, async (req, res) => {
+    try {
+      const wsId = req.params.id;
+      if (!(await isWsAdmin(req, wsId))) return res.status(403).json({ error: 'admin only' });
+
+      const { assignments } = req.body;  // [{ userId, teamId }]
+      if (!Array.isArray(assignments)) return res.status(400).json({ error: 'assignments array required' });
+
+      for (const { userId, teamId } of assignments) {
+        if (teamId) {
+          const team = await dbGet(
+            `SELECT name FROM team_hierarchy WHERE id = ? AND workspace_id = ?`,
+            [teamId, wsId]
+          );
+          if (team) {
+            await dbRun(
+              `UPDATE workspace_members SET team_hierarchy_id = ?, team_name = ?
+               WHERE workspace_id = ? AND user_id = ?`,
+              [teamId, team.name, wsId, userId]
+            );
+          }
+        } else {
+          await dbRun(
+            `UPDATE workspace_members SET team_hierarchy_id = NULL, team_name = '미배정'
+             WHERE workspace_id = ? AND user_id = ?`,
+            [wsId, userId]
+          );
+        }
+      }
+      res.json({ ok: true, count: assignments.length });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 

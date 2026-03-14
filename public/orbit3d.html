@@ -427,6 +427,146 @@
   </div>
 </div>
 
+<!-- ══ 팀 관리 모달 (워크스페이스 admin용) ═══════════════════════════════ -->
+<div id="team-mgmt-modal" style="display:none" class="popup-overlay" onclick="if(event.target===this)closePopup('team-mgmt-modal')">
+  <div class="popup-box" style="max-width:520px;max-height:80vh;overflow-y:auto">
+    <div class="popup-title" id="tm-title">⚙️ 팀 관리</div>
+    <div class="popup-sub" id="tm-sub">팀을 생성하고 멤버를 배정하세요</div>
+    <button class="popup-close" onclick="closePopup('team-mgmt-modal')">✕</button>
+
+    <!-- 팀 목록 -->
+    <div class="popup-section">팀 목록</div>
+    <div id="tm-team-list" style="margin-bottom:12px">
+      <div style="font-size:12px;color:#6e7681">불러오는 중…</div>
+    </div>
+
+    <!-- 팀 추가 -->
+    <div style="display:flex;gap:6px;margin-bottom:16px">
+      <input class="popup-input" id="tm-new-name" placeholder="새 팀 이름" maxlength="30" style="flex:1;margin-bottom:0">
+      <input class="popup-input" id="tm-new-color" type="color" value="#58a6ff" style="width:36px;padding:2px;margin-bottom:0;cursor:pointer">
+      <button class="popup-btn" onclick="tmCreateTeam()" style="white-space:nowrap;margin-bottom:0;padding:8px 14px">+ 추가</button>
+    </div>
+
+    <hr class="popup-divider">
+
+    <!-- 멤버 배정 -->
+    <div class="popup-section">멤버 배정</div>
+    <div id="tm-member-list" style="margin-bottom:12px">
+      <div style="font-size:12px;color:#6e7681">불러오는 중…</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── 팀 관리 UI 로직 ──────────────────────────────────────────────────────
+let _tmWsId = null;
+
+async function openTeamMgmt(wsId, wsName) {
+  _tmWsId = wsId;
+  document.getElementById('tm-title').textContent = `⚙️ ${wsName} — 팀 관리`;
+  document.getElementById('team-mgmt-modal').style.display = 'flex';
+  await Promise.all([tmLoadTeams(), tmLoadMembers()]);
+}
+
+async function tmLoadTeams() {
+  const el = document.getElementById('tm-team-list');
+  try {
+    const token = localStorage.getItem('orbit_token');
+    const r = await fetch(`/api/workspace/${_tmWsId}/teams`, { headers: { Authorization: `Bearer ${token}` } });
+    const data = await r.json();
+    if (!data.teams?.length) {
+      el.innerHTML = '<div style="font-size:12px;color:#6e7681;padding:8px">아직 팀이 없습니다. 팀을 추가하세요.</div>';
+      return;
+    }
+    el.innerHTML = data.teams.map(t => `
+      <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:rgba(255,255,255,.04);border-radius:8px;margin-bottom:4px">
+        <span style="width:12px;height:12px;border-radius:50%;background:${t.color};flex-shrink:0"></span>
+        <span style="flex:1;font-size:13px;color:#e6edf3">${t.icon} ${t.name}</span>
+        <span style="font-size:11px;color:#8b949e">${t.memberCount}명</span>
+        <button onclick="tmEditTeam('${t.id}','${t.name}')" style="background:none;border:none;color:#58a6ff;cursor:pointer;font-size:11px">수정</button>
+        <button onclick="tmDeleteTeam('${t.id}','${t.name}')" style="background:none;border:none;color:#ff7b72;cursor:pointer;font-size:11px">삭제</button>
+      </div>
+    `).join('') + (data.unassignedCount > 0 ? `<div style="font-size:11px;color:#f0883e;padding:4px 10px">⚠ 미배정 멤버 ${data.unassignedCount}명</div>` : '');
+  } catch (e) { el.innerHTML = `<div style="color:#ff7b72;font-size:12px">${e.message}</div>`; }
+}
+
+async function tmLoadMembers() {
+  const el = document.getElementById('tm-member-list');
+  try {
+    const token = localStorage.getItem('orbit_token');
+    const [mRes, tRes] = await Promise.all([
+      fetch(`/api/workspace/${_tmWsId}/members`, { headers: { Authorization: `Bearer ${token}` } }),
+      fetch(`/api/workspace/${_tmWsId}/teams`, { headers: { Authorization: `Bearer ${token}` } }),
+    ]);
+    const members = await mRes.json();
+    const tData = await tRes.json();
+    const teams = tData.teams || [];
+
+    const teamOpts = teams.map(t => `<option value="${t.id}">${t.icon} ${t.name}</option>`).join('');
+
+    el.innerHTML = members.map(m => `
+      <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:rgba(255,255,255,.03);border-radius:8px;margin-bottom:4px">
+        <span style="font-size:13px;color:#e6edf3;flex:1">${m.name} <span style="font-size:10px;color:#6e7681">${m.email}</span></span>
+        <span style="font-size:10px;color:#8b949e;min-width:40px">${m.role}</span>
+        <select onchange="tmAssignMember('${m.userId}',this.value)" style="background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:4px 6px;font-size:11px">
+          <option value="">미배정</option>
+          ${teamOpts}
+        </select>
+      </div>
+    `).join('');
+
+    // 현재 배정 상태 반영
+    const selects = el.querySelectorAll('select');
+    members.forEach((m, i) => {
+      const teamId = teams.find(t => t.name === m.teamName)?.id || '';
+      if (selects[i]) selects[i].value = teamId;
+    });
+  } catch (e) { el.innerHTML = `<div style="color:#ff7b72;font-size:12px">${e.message}</div>`; }
+}
+
+async function tmCreateTeam() {
+  const name = document.getElementById('tm-new-name').value.trim();
+  const color = document.getElementById('tm-new-color').value;
+  if (!name) return;
+  const token = localStorage.getItem('orbit_token');
+  await fetch(`/api/workspace/${_tmWsId}/teams`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ name, color }),
+  });
+  document.getElementById('tm-new-name').value = '';
+  await Promise.all([tmLoadTeams(), tmLoadMembers()]);
+}
+
+async function tmDeleteTeam(teamId, teamName) {
+  if (!confirm(`"${teamName}" 팀을 삭제하시겠습니까? 멤버는 미배정으로 변경됩니다.`)) return;
+  const token = localStorage.getItem('orbit_token');
+  await fetch(`/api/workspace/${_tmWsId}/teams/${teamId}`, {
+    method: 'DELETE', headers: { Authorization: `Bearer ${token}` },
+  });
+  await Promise.all([tmLoadTeams(), tmLoadMembers()]);
+}
+
+async function tmEditTeam(teamId, oldName) {
+  const newName = prompt('팀 이름 수정:', oldName);
+  if (!newName || newName === oldName) return;
+  const token = localStorage.getItem('orbit_token');
+  await fetch(`/api/workspace/${_tmWsId}/teams/${teamId}`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ name: newName }),
+  });
+  await Promise.all([tmLoadTeams(), tmLoadMembers()]);
+}
+
+async function tmAssignMember(userId, teamId) {
+  const token = localStorage.getItem('orbit_token');
+  await fetch(`/api/workspace/${_tmWsId}/members/${userId}/team`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ teamId: teamId || null }),
+  });
+  await tmLoadTeams();
+}
+</script>
+
 <!-- ⚡ 목적(Purpose) 타임라인 패널 (하단 슬라이딩) -->
 <div id="purpose-timeline">
   <div class="pt-hdr">

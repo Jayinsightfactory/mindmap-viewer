@@ -777,8 +777,11 @@ async function _loadMyWorkspaces() {
           <div class="ws-card-meta">${escHtml(ws.company_name||'')} · 멤버 ${ws.member_count||0}명</div>
           <div class="ws-card-role">${ws.role==='owner' ? '관리자' : '멤버 · '+escHtml(ws.team_name||'')}</div>
         </div>
-        <div style="font-size:11px;color:#3fb950;cursor:pointer" onclick="event.stopPropagation();_copyCode('${ws.invite_code||''}')">
-          ${ws.invite_code ? `초대코드<br><b style="font-size:14px;letter-spacing:2px">${ws.invite_code}</b>` : ''}
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+          ${(ws.role==='owner'||ws.role==='admin') ? `<button onclick="event.stopPropagation();openTeamMgmt('${ws.id}','${(ws.name||'').replace(/'/g,"\\'")}')" style="background:#1f6feb;color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;white-space:nowrap">⚙️ 팀 관리</button>` : ''}
+          <div style="font-size:11px;color:#3fb950;cursor:pointer" onclick="event.stopPropagation();_copyCode('${ws.invite_code||''}')">
+            ${ws.invite_code ? `<b style="font-size:12px;letter-spacing:1px">${ws.invite_code}</b>` : ''}
+          </div>
         </div>
       </div>`).join('');
   } catch (e) {
