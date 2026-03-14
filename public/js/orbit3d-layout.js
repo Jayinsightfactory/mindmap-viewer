@@ -170,12 +170,43 @@ function drawCompactProjectView() {
     };
   }
 
+  // ── 세션 텍스트 구조: "프로젝트명 — 작업 목적" ──────────────────────────────
+  function _buildSessionText(ud) {
+    if (!ud) return { title: '—', sub: '' };
+    // 프로젝트명
+    let projPart = '';
+    if (ud.projectName && ud.projectName !== '기타' && !/^세션-/.test(ud.projectName)) {
+      projPart = ud.projectName.split(/[-_]/).filter(s => s !== 'session')
+        .map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(' ');
+      if (projPart.length > 14) projPart = projPart.slice(0, 13) + '\u2026';
+    }
+    // 작업 목적 (intent → firstMsg → msgPreview → domain 폴백)
+    let purpose = '';
+    if (ud.intent) {
+      let t = (ud.intent || '').replace(/^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE00}-\u{FEFF}⚙️🔐🌐🗄🎨🧪🚀🐳📝📐🔧🌿💬]\s*/gu, '').trim();
+      if (/^\[.+?\]\s+/.test(t)) t = t.replace(/^\[.+?\]\s+/, '');
+      if (!isAbstractLabel(t)) purpose = t;
+    }
+    if (!purpose) {
+      const msg = (ud.firstMsg || ud.msgPreview || '').replace(/[\n\r]/g, ' ').trim();
+      if (msg.length > 3) purpose = msg;
+    }
+    if (!purpose) purpose = DOMAIN_SHORT[ud.domain] || '작업';
+    if (purpose.length > 20) purpose = purpose.slice(0, 19) + '\u2026';
+
+    // "프로젝트명 — 작업 목적" 조합
+    if (projPart) {
+      return { title: projPart, sub: purpose };
+    }
+    return { title: purpose, sub: '' };
+  }
+
   // ── 양파형 동심원 배치 (3D 월드 좌표 X-Z 평면) ────────────────────────────
   const isDrillStage1 = _drillStage >= 1 && _drillProject;
   const baseAngle = -Math.PI / 2;
-  const WORLD_NODE_SEP = 4;   // 노드 간 최소 월드 거리
-  const WORLD_RING_BASE = 8;  // 1번째 링 시작 반경
-  const WORLD_RING_GAP = 7;   // 링 간 간격
+  const WORLD_NODE_SEP = 6;   // 노드 간 최소 월드 거리 (큰 구체용)
+  const WORLD_RING_BASE = 12; // 1번째 링 시작 반경
+  const WORLD_RING_GAP = 10;  // 링 간 간격
 
   // 프로젝트를 링별로 분배 (5, 10, 15, 20…)
   const rings = [];
@@ -240,7 +271,7 @@ function drawCompactProjectView() {
   const meSc = toScreen(mePos);
   if (meSc.z <= 1) {
     const meScale = screenScale(mePos);
-    const meR = Math.max(40, Math.min(70, meScale * 9));
+    const meR = Math.max(50, Math.min(90, meScale * 12));
     _drawWireSphere(ctx, meSc.x, meSc.y, meR, '#06b6d4', {
       meridians: 3, parallels: 2, rotation: now * 0.15, glow: true,
     });
@@ -259,7 +290,7 @@ function drawCompactProjectView() {
     const color = proj.color;
     const info = analyzeProject(proj);
     const scale = screenScale(pos3d);
-    const nodeR = Math.max(28, Math.min(56, scale * 7));
+    const nodeR = Math.max(38, Math.min(72, scale * 10));
 
     if (dimmed) ctx.globalAlpha = 0.3;
 
@@ -318,7 +349,7 @@ function drawCompactProjectView() {
       // 카테고리: 프로젝트 외곽 방향 부채꼴 배치 (3D)
       const numCatsNow = sortedCats.length;
       const dirAngle = angle; // 프로젝트의 양파 배치 각도를 기준
-      const CAT_WORLD_DIST = 8;
+      const CAT_WORLD_DIST = 12;
       const catAngleStep = Math.max(Math.PI / 6, Math.PI * 2 / Math.max(numCatsNow * 3, 6));
       const catHalfSpan = Math.min((numCatsNow - 1) / 2 * catAngleStep, Math.PI * 5 / 6);
 
@@ -334,7 +365,7 @@ function drawCompactProjectView() {
         if (catSc.z > 1) return;
 
         const catScale = screenScale(catPos3d);
-        const catR = Math.max(24, Math.min(44, catScale * 6));
+        const catR = Math.max(32, Math.min(58, catScale * 8));
         const catSessionCount = catPlanets.length;
         const isCatDrilled = _drillStage >= 2 && _drillCategory?.catKey === catKey;
         const isCatHover = _hoveredHit?.data?.type === 'drillCategory' && _hoveredHit?.data?.catKey === catKey;
@@ -369,7 +400,7 @@ function drawCompactProjectView() {
 
         // ── 세션: 카테고리 아래 세로 배치 (소형 와이어프레임 구체) ────────────
         const maxShow = Math.min(catPlanets.length, 3);
-        const SES_WORLD_STEP = 3;
+        const SES_WORLD_STEP = 5;
         for (let si = 0; si < maxShow; si++) {
           const planet = catPlanets[si];
           const sesPos3d = new THREE.Vector3(
@@ -381,13 +412,20 @@ function drawCompactProjectView() {
           if (sesSc.z > 1) continue;
 
           const sesScale = screenScale(sesPos3d);
-          const sesR = Math.max(18, Math.min(32, sesScale * 4));
+          const sesR = Math.max(26, Math.min(46, sesScale * 6));
           const evCnt = planet.userData.eventCount || 0;
           const isSubHover = _hoveredHit?.obj === planet;
           const sesKey = planet.userData.clusterId || planet.userData.sessionId || '';
-          let sLabel = _aliases[sesKey] || normalizeLabel(planet.userData.intent || '', 22);
-          if (!sLabel) sLabel = deriveDisplayLabel(planet.userData, 22);
-          const sesSub = evCnt > 0 ? `${evCnt}개 작업` : '';
+          // "프로젝트명 — 작업 목적" 구조
+          let sLabel, sesSub;
+          if (_aliases[sesKey]) {
+            sLabel = _aliases[sesKey];
+            sesSub = evCnt > 0 ? `${evCnt}개 작업` : '';
+          } else {
+            const sesText = _buildSessionText(planet.userData);
+            sLabel = sesText.title;
+            sesSub = sesText.sub || (evCnt > 0 ? `${evCnt}개 작업` : '');
+          }
 
           // 연결선
           ctx.save();
