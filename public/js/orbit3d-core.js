@@ -285,8 +285,8 @@ function createWireNode(radius, color, opts = {}) {
   const dustCloud = new THREE.Points(dustGeo, dustMat);
   scene.add(dustCloud);
 
-  // 애니메이션 참조
-  window._corePlanet = { wireMesh, glowMesh, orbitMeshes, dustCloud };
+  // 애니메이션 참조 (구체 제거됨 — 궤도 링 + 먼지만 유지)
+  window._corePlanet = { orbitMeshes, dustCloud };
 })();
 
 // ─── 타입 → 색상 / 의미 매핑 ─────────────────────────────────────────────────
