@@ -60,7 +60,7 @@ function exitConstellationFocus() {
   _drillTimelineEvent = null;
   closePanel();
   // 원래 전체 뷰로 복귀 (카메라를 원점으로, 넓은 거리로)
-  lerpCameraTo(140, 0, 0, 0, 700);
+  lerpCameraTo(100, 0, 0, 0, 700);
   const btn = document.getElementById('constellation-back-btn');
   if (btn) btn.style.display = 'none';
 }
@@ -128,7 +128,7 @@ function exitCategoryFocus() {
     if (pPos) lerpCameraTo(35, pPos.x, 0, pPos.z, 500);
     else lerpCameraTo(45, 0, 0, 0, 500);
   } else {
-    lerpCameraTo(140, 0, 0, 0, 700);
+    lerpCameraTo(100, 0, 0, 0, 700);
   }
 }
 window.exitCategoryFocus = exitCategoryFocus;

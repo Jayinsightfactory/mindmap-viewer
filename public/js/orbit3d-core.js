@@ -46,8 +46,8 @@ window.scene = scene; // 전역 참조 할당
 
 // ─── 2D 월드 네비게이션 (팀 탐색용) ─────────────────────────────────────────
 // 좌클릭 드래그 → 팬,  스크롤 → 줌 스케일,  팀원 클러스터 세계 좌표에 배치
-let _worldPanX = 0, _worldPanY = 0, _worldScale = 80/140;  // 초기 카메라 r=140 기준
-window._worldPanX = 0; window._worldPanY = 0; window._worldScale = 80/140;
+let _worldPanX = 0, _worldPanY = 0, _worldScale = 0.8;
+window._worldPanX = 0; window._worldPanY = 0; window._worldScale = 0.8;
 
 // ── 자동 피트 줌: 부드러운 이징 애니메이션으로 목표 스케일로 이동 ────────────
 let _worldLocked = false;
@@ -132,10 +132,10 @@ window.autoFitZoom = function(nodeCount) {
   if (!nodeCount || _autoFitDone) return;
   _autoFitDone = true;
   // 노드 수에 따라 카메라 거리 결정 (멀수록 더 많은 노드 보임)
-  const targetR = nodeCount <= 3  ? 80  :
-                  nodeCount <= 6  ? 100 :
-                  nodeCount <= 12 ? 130 :
-                  nodeCount <= 20 ? 160 : 180;
+  const targetR = nodeCount <= 3  ? 60  :
+                  nodeCount <= 6  ? 80  :
+                  nodeCount <= 12 ? 100 :
+                  nodeCount <= 20 ? 120 : 140;
   // 카메라 거리 애니메이션
   if (typeof controls !== 'undefined' && controls.sph) {
     const startR = controls.sph.r;
@@ -170,7 +170,7 @@ function _checkZoomViewTransition(cameraR) {
 // [extracted to orbit3d-drilldown.js]: autoFitDrilldown
 
 const camera = new THREE.PerspectiveCamera(55, innerWidth/innerHeight, 0.1, 2000);
-camera.position.set(0, 70, 120);                       // 컴팩트 뷰에 맞는 초기 거리 (넓게)
+camera.position.set(0, 50, 90);                        // 컴팩트 뷰에 맞는 초기 거리
 camera.lookAt(0,0,0);
 window.camera = camera; // 전역 참조 할당
 
@@ -879,7 +879,7 @@ class OrbitCam {
   constructor(cam, el) {
     this.cam = cam; this.el = el;
     this.tgt = new THREE.Vector3();
-    this.sph = { r:140, θ:0.3, φ:1.1 };                  // 컴팩트 뷰 기본 거리 (넓게 시작)
+    this.sph = { r:100, θ:0.3, φ:1.1 };                  // 컴팩트 뷰 기본 거리 (넓게 시작)
     this._d = false; this._r = false; this._lx=0; this._ly=0;
     this._dragging = false; // 드래그 중 플래그 (자동전환 방지)
     this._dragStartX = 0; this._dragStartY = 0;
