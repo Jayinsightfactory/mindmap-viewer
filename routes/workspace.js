@@ -221,16 +221,25 @@ function createWorkspaceRouter({ getDb, db: _dbLegacy, verifyToken, getUserById,
           [m.id, since]
         );
 
-        // 최근 파일 활동
-        const recentFiles = await dbAll(
-          `SELECT DISTINCT json_extract(data_json, '$.filePath') AS fp
-           FROM events
-           WHERE user_id = ? AND timestamp > ?
-             AND type IN ('tool.end','file.write','file.edit')
-             AND json_extract(data_json, '$.filePath') IS NOT NULL
-           LIMIT 8`,
-          [m.id, since]
-        );
+        // 최근 파일 활동 (SQLite: json_extract / PG: jsonb ->>)
+        let recentFiles = [];
+        try {
+          const isPG = !_db()?.prepare;
+          const fileSql = isPG
+            ? `SELECT DISTINCT data_json::jsonb->>'filePath' AS fp
+               FROM events
+               WHERE user_id = $1 AND timestamp > $2
+                 AND type IN ('tool.end','file.write','file.edit')
+                 AND data_json::jsonb->>'filePath' IS NOT NULL
+               LIMIT 8`
+            : `SELECT DISTINCT json_extract(data_json, '$.filePath') AS fp
+               FROM events
+               WHERE user_id = ? AND timestamp > ?
+                 AND type IN ('tool.end','file.write','file.edit')
+                 AND json_extract(data_json, '$.filePath') IS NOT NULL
+               LIMIT 8`;
+          recentFiles = await dbAll(fileSql, [m.id, since]);
+        } catch (e) { recentFiles = []; }
 
         // tasks: 세션을 task로 변환
         const tasks = sessions.map(s => ({

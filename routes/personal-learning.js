@@ -127,6 +127,13 @@ module.exports = function createPersonalLearningRouter({ getDb, insertEvent, bro
   router.get('/personal/status', (req, res) => {
     try {
       const db  = getDb();
+      // PG 환경에서는 db.prepare 미지원 → 빈 기본값 반환
+      if (!db || typeof db.prepare !== 'function') {
+        return res.json({
+          today: { keyboardChunks: 0, keywordChars: 0, fileContents: 0, appActivities: 0 },
+          pendingSuggestions: 0, syncLevel: 0, syncConsented: false, lastSync: null,
+        });
+      }
       const day = new Date(Date.now() - 86400_000).toISOString();
 
       const keyboardChunks = db.prepare(
