@@ -2,7 +2,6 @@
  * routes/profile.js
  * ─────────────────────────────────────────────────────────────────────────────
  * Orbit AI 사용자 프로필 API (LinkedIn 수준)
- * SQLite + PostgreSQL 듀얼 DB 지원
  *
  * 엔드포인트:
  *   GET  /api/profile          - 내 프로필 조회 (인증 필요)
@@ -19,52 +18,16 @@ const router  = express.Router();
 
 /**
  * @param {object} deps
- * @param {Function} deps.getDb        - DB 인스턴스 (SQLite or PG Pool)
- * @param {Function} deps.verifyToken  - 토큰 검증 함수
+ * @param {Function} deps.getDb        - better-sqlite3 db 인스턴스
+ * @param {Function} deps.verifyToken  - JWT 검증 함수
  * @returns {express.Router}
  */
 function createRouter({ getDb, verifyToken }) {
 
-  // ── DB 헬퍼: SQLite sync / PG async 통일 ──────────────────────────────────
-  function _isPg(db) { return db && !db.prepare; }
-
-  function _pgSql(sql) {
-    let i = 0;
-    return sql.replace(/\?/g, () => `$${++i}`);
-  }
-
-  async function dbGet(sql, params = []) {
-    const db = getDb();
-    if (_isPg(db)) {
-      const r = await db.query(_pgSql(sql), params);
-      return r.rows[0] || null;
-    }
-    return db.prepare(sql).get(...params) || null;
-  }
-
-  async function dbRun(sql, params = []) {
-    const db = getDb();
-    if (_isPg(db)) return db.query(_pgSql(sql), params);
-    return db.prepare(sql).run(...params);
-  }
-
-  async function dbExec(sql) {
-    const db = getDb();
-    if (_isPg(db)) {
-      const stmts = sql.split(';').map(s => s.trim()).filter(Boolean);
-      for (const s of stmts) await db.query(s);
-      return;
-    }
-    return db.exec(sql);
-  }
-
   // ── DB 테이블 초기화 ──────────────────────────────────────────────────────
-  async function initProfileTable() {
+  function initProfileTable() {
     const db = getDb();
-    const isPg = _isPg(db);
-    const tsDefault = isPg ? 'TIMESTAMPTZ DEFAULT NOW()' : 'DATETIME DEFAULT CURRENT_TIMESTAMP';
-
-    await dbExec(`
+    db.exec(`
       CREATE TABLE IF NOT EXISTS user_profiles (
         user_id      TEXT PRIMARY KEY,
         name         TEXT,
@@ -78,14 +41,14 @@ function createRouter({ getDb, verifyToken }) {
         links        TEXT DEFAULT '{}',
         avatar_url   TEXT,
         is_public    INTEGER DEFAULT 1,
-        created_at   ${tsDefault},
-        updated_at   ${tsDefault}
+        created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at   DATETIME DEFAULT CURRENT_TIMESTAMP
       );
-      CREATE INDEX IF NOT EXISTS idx_up_user_id ON user_profiles(user_id)
+      CREATE INDEX IF NOT EXISTS idx_up_user_id ON user_profiles(user_id);
     `);
   }
 
-  initProfileTable().catch(e => console.warn('[profile] DB init warn:', e.message));
+  try { initProfileTable(); } catch (e) { console.warn('[profile] DB init warn:', e.message); }
 
   // ── 인증 미들웨어 ─────────────────────────────────────────────────────────
   function auth(req, res, next) {
@@ -99,12 +62,11 @@ function createRouter({ getDb, verifyToken }) {
   }
 
   // ── GET /api/profile/check ─────────────────────────────────────────────────
-  router.get('/profile/check', auth, async (req, res) => {
+  router.get('/profile/check', auth, (req, res) => {
     try {
-      const profile = await dbGet(
-        'SELECT user_id, name, headline FROM user_profiles WHERE user_id = ?',
-        [req.user.id]
-      );
+      const db      = getDb();
+      const profile = db.prepare('SELECT user_id, name, headline FROM user_profiles WHERE user_id = ?')
+                        .get(req.user.id);
       res.json({ exists: !!profile, hasHeadline: !!(profile?.headline) });
     } catch (e) {
       res.status(500).json({ error: e.message });
@@ -112,10 +74,12 @@ function createRouter({ getDb, verifyToken }) {
   });
 
   // ── GET /api/profile — 내 프로필 ──────────────────────────────────────────
-  router.get('/profile', auth, async (req, res) => {
+  router.get('/profile', auth, (req, res) => {
     try {
-      const profile = await dbGet('SELECT * FROM user_profiles WHERE user_id = ?', [req.user.id]);
+      const db      = getDb();
+      const profile = db.prepare('SELECT * FROM user_profiles WHERE user_id = ?').get(req.user.id);
       if (!profile) return res.json(null);
+      // JSON 파싱
       ['skills', 'experiences', 'education', 'links'].forEach(k => {
         try { profile[k] = JSON.parse(profile[k]); } catch (_) { profile[k] = k === 'links' ? {} : []; }
       });
@@ -126,12 +90,12 @@ function createRouter({ getDb, verifyToken }) {
   });
 
   // ── GET /api/profile/:userId — 공개 프로필 ────────────────────────────────
-  router.get('/profile/:userId', async (req, res) => {
+  router.get('/profile/:userId', (req, res) => {
     try {
-      const profile = await dbGet(
-        'SELECT * FROM user_profiles WHERE user_id = ? AND is_public = 1',
-        [req.params.userId]
-      );
+      const db      = getDb();
+      const profile = db.prepare(
+        'SELECT * FROM user_profiles WHERE user_id = ? AND is_public = 1'
+      ).get(req.params.userId);
       if (!profile) return res.status(404).json({ error: 'not found' });
       ['skills', 'experiences', 'education', 'links'].forEach(k => {
         try { profile[k] = JSON.parse(profile[k]); } catch (_) { profile[k] = k === 'links' ? {} : []; }
@@ -143,41 +107,36 @@ function createRouter({ getDb, verifyToken }) {
   });
 
   // ── POST /api/profile — 저장/업데이트 ────────────────────────────────────
-  router.post('/profile', auth, async (req, res) => {
+  router.post('/profile', auth, (req, res) => {
     try {
       const db = getDb();
-      const isPg = _isPg(db);
       const body = req.body || {};
       const {
         headline, company, location, bio,
         skills, experiences, education, links,
         avatar_url, is_public,
       } = body;
+      // displayName → name 호환 (프론트에서 displayName으로 보낼 수 있음)
       const name = body.name || body.displayName || '';
 
-      const nowExpr = isPg ? 'NOW()' : "datetime('now')";
-
-      const sql = isPg
-        ? `INSERT INTO user_profiles
-            (user_id, name, headline, company, location, bio, skills, experiences, education, links, avatar_url, is_public, updated_at)
-          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, NOW())
-          ON CONFLICT(user_id) DO UPDATE SET
-            name=EXCLUDED.name, headline=EXCLUDED.headline, company=EXCLUDED.company,
-            location=EXCLUDED.location, bio=EXCLUDED.bio, skills=EXCLUDED.skills,
-            experiences=EXCLUDED.experiences, education=EXCLUDED.education,
-            links=EXCLUDED.links, avatar_url=EXCLUDED.avatar_url,
-            is_public=EXCLUDED.is_public, updated_at=NOW()`
-        : `INSERT INTO user_profiles
-            (user_id, name, headline, company, location, bio, skills, experiences, education, links, avatar_url, is_public, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-          ON CONFLICT(user_id) DO UPDATE SET
-            name=excluded.name, headline=excluded.headline, company=excluded.company,
-            location=excluded.location, bio=excluded.bio, skills=excluded.skills,
-            experiences=excluded.experiences, education=excluded.education,
-            links=excluded.links, avatar_url=excluded.avatar_url,
-            is_public=excluded.is_public, updated_at=datetime('now')`;
-
-      const params = [
+      db.prepare(`
+        INSERT INTO user_profiles
+          (user_id, name, headline, company, location, bio, skills, experiences, education, links, avatar_url, is_public, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+        ON CONFLICT(user_id) DO UPDATE SET
+          name         = excluded.name,
+          headline     = excluded.headline,
+          company      = excluded.company,
+          location     = excluded.location,
+          bio          = excluded.bio,
+          skills       = excluded.skills,
+          experiences  = excluded.experiences,
+          education    = excluded.education,
+          links        = excluded.links,
+          avatar_url   = excluded.avatar_url,
+          is_public    = excluded.is_public,
+          updated_at   = datetime('now')
+      `).run(
         req.user.id,
         (name        || '').slice(0, 100),
         (headline    || '').slice(0, 200),
@@ -190,13 +149,7 @@ function createRouter({ getDb, verifyToken }) {
         JSON.stringify(links && typeof links === 'object' && !Array.isArray(links) ? links : {}),
         (avatar_url  || null),
         is_public !== false ? 1 : 0,
-      ];
-
-      if (isPg) {
-        await db.query(sql, params);
-      } else {
-        db.prepare(sql).run(...params);
-      }
+      );
 
       res.json({ ok: true });
     } catch (e) {

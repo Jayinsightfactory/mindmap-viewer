@@ -1432,10 +1432,6 @@ app.use('/api', createChatRouter({ getDb: dbModule.getDb, verifyToken, broadcast
 app.use('/api', createMarketplaceRouter({ verifyToken, dbModule }));
 app.use('/api', createRecommendationsRouter({ verifyToken, dbModule }));
 
-// ─── 프로젝트 (세션 상위 그룹핑) ───────────────────────────────────────────────
-const createProjectsRouter = require('./routes/projects');
-app.use('/api', createProjectsRouter({ verifyToken, dbModule }));
-
 // ─── Workspace (팀/회사 관리) ─────────────────────────────────────────────────────
 app.use('/api', createWorkspaceRouter({ getDb: dbModule.getDb, verifyToken, getUserById, ADMIN_EMAILS, createNotification }));
 
@@ -1755,24 +1751,6 @@ app.get('/api/learned-insights', (req, res) => {
 app.get('/api/learned-insights/latest', (req, res) => {
   const data = ollamaAnalyzer.getLearnedInsights(1);
   res.json({ ok: true, insight: data[0] || null });
-});
-
-// ── 학습 데이터 CSV 다운로드 API ─────────────────────────────────────────────
-app.get('/api/learning-data/csv', (req, res) => {
-  const fs = require('fs');
-  const csvPath = ollamaAnalyzer.getLearningCsvPath();
-  if (!fs.existsSync(csvPath)) return res.status(404).json({ ok: false, error: '학습 데이터 CSV 없음' });
-  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-  res.setHeader('Content-Disposition', 'attachment; filename="orbit-learning-data.csv"');
-  fs.createReadStream(csvPath).pipe(res);
-});
-app.get('/api/session-classifications/csv', (req, res) => {
-  const fs = require('fs');
-  const csvPath = ollamaAnalyzer.getSessionCsvPath();
-  if (!fs.existsSync(csvPath)) return res.status(404).json({ ok: false, error: '세션 분류 CSV 없음' });
-  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-  res.setHeader('Content-Disposition', 'attachment; filename="orbit-session-classifications.csv"');
-  fs.createReadStream(csvPath).pipe(res);
 });
 
 // ── 행동 데이터 동기화 API ─────────────────────────────────────────────────────

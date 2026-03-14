@@ -161,25 +161,18 @@ function createPgOps(getPool, deserializeEvent) {
   }
 
   async function claimLocalEvents(userId) {
-    const pool = getPool();
-    const client = await pool.connect();
     try {
-      // 트랜잭션으로 레이스 컨디션 방지 (15유저 동시 로그인 대응)
-      await client.query('BEGIN');
-      const result = await client.query(
+      const pool = getPool();
+      const result = await pool.query(
         "UPDATE events SET user_id=$1 WHERE user_id='local' OR user_id='anonymous'", [userId]
       );
-      await client.query(
+      await pool.query(
         "UPDATE sessions SET user_id=$1 WHERE user_id='local' OR user_id='anonymous'", [userId]
       );
-      await client.query('COMMIT');
       return result.rowCount;
     } catch (e) {
-      await client.query('ROLLBACK').catch(() => {});
       console.warn('[DB-PG] claimLocalEvents error:', e.message);
       return 0;
-    } finally {
-      client.release();
     }
   }
 

@@ -45,17 +45,12 @@ window.scene = scene; // 전역 참조 할당
 // [extracted to orbit3d-drilldown.js]: _drillStage, _drillProject, _drillCategory, _drillTimelineEvent
 
 // ─── 2D 월드 네비게이션 (팀 탐색용) ─────────────────────────────────────────
-// 좌클릭 드래그 → 시점 회전,  스크롤 → 줌 스케일,  팀원 클러스터 세계 좌표에 배치
+// 좌클릭 드래그 → 팬,  스크롤 → 줌 스케일,  팀원 클러스터 세계 좌표에 배치
 let _worldPanX = 0, _worldPanY = 0, _worldScale = 1.0;
 window._worldPanX = 0; window._worldPanY = 0; window._worldScale = 1.0;
 
-// ── 시점 회전 (좌클릭 드래그 → 카메라 각도 변경) ────────────────────────────
-// viewYaw: 수평 회전, viewPitch: 수직 틸트 (0=위에서, ±1.2=옆에서)
-let _viewYaw = 0, _viewPitch = 0;
-window._viewYaw = 0; window._viewPitch = 0;
-
 // ── 자동 피트 줌: 부드러운 이징 애니메이션으로 목표 스케일로 이동 ────────────
-let _worldLocked = false; // 줌/팬 잠금
+let _worldLocked = false;
 window._worldLocked = false;
 
 function _animateWorldScale(targetScale, durationMs) {
@@ -64,7 +59,7 @@ function _animateWorldScale(targetScale, durationMs) {
   const t0    = performance.now();
   function step(now) {
     const p = Math.min(1, (now - t0) / durationMs);
-    const eased = p < 0.5 ? 2*p*p : -1+(4-2*p)*p;
+    const eased = p < 0.5 ? 2*p*p : -1+(4-2*p)*p;  // ease-in-out quad
     _worldScale = start + diff * eased;
     window._worldScale = _worldScale;
     if (p < 1) requestAnimationFrame(step);
@@ -90,46 +85,18 @@ function _animateWorldPan(targetX, targetY, durationMs) {
 window._animateWorldPan = _animateWorldPan;
 window._animateWorldScale = _animateWorldScale;
 
-// 세션 클릭 → 해당 위치로 줌인 + 팬
+// 스크린 좌표 → 해당 위치 줌인 + 팬 (세션 클릭 시 사용)
 window.zoomToScreenPos = function(screenX, screenY, targetScale, duration) {
-  const W = innerWidth, H = innerHeight;
-  // 스크린 좌표 → 월드 좌표
+  const canvas = typeof _labelCanvas2d !== 'undefined' ? _labelCanvas2d : null;
+  const W = canvas ? canvas.width : innerWidth;
+  const H = canvas ? canvas.height : innerHeight;
   const worldX = (screenX - W/2 - _worldPanX) / _worldScale;
   const worldY = (screenY - H/2 - _worldPanY) / _worldScale;
-  // 새 팬: 월드 포인트가 화면 중심에 오도록
   const newPanX = -worldX * targetScale;
   const newPanY = -worldY * targetScale;
   _animateWorldPan(newPanX, newPanY, duration || 500);
   _animateWorldScale(targetScale, duration || 500);
 };
-
-// 노드 수 기반 자동 피트 (로드 시 1회만)
-let _autoFitDone = false;
-window.autoFitZoom = function(nodeCount) {
-  if (!nodeCount || _autoFitDone) return;
-  _autoFitDone = true;
-  const target = nodeCount <= 3  ? 1.1  :
-                 nodeCount <= 6  ? 0.95 :
-                 nodeCount <= 12 ? 0.80 :
-                 nodeCount <= 20 ? 0.65 : 0.50;
-  if (target < _worldScale) _animateWorldScale(target, 500);
-};
-
-// ── 시점 각도 애니메이션 ─────────────────────────────────────────────────────
-function _animateViewAngle(targetYaw, targetPitch, durationMs) {
-  const startY = _viewYaw, startP = _viewPitch;
-  const dY = targetYaw - startY, dP = targetPitch - startP;
-  const t0 = performance.now();
-  function step(now) {
-    const p = Math.min(1, (now - t0) / durationMs);
-    const eased = p < 0.5 ? 2*p*p : -1+(4-2*p)*p;
-    _viewYaw = startY + dY * eased;
-    _viewPitch = startP + dP * eased;
-    window._viewYaw = _viewYaw; window._viewPitch = _viewPitch;
-    if (p < 1) requestAnimationFrame(step);
-  }
-  requestAnimationFrame(step);
-}
 
 // ── 뷰 상태 스택 (단계별 뒤로가기) ─────────────────────────────────────────
 let _viewStateStack = [];
@@ -138,7 +105,6 @@ window.pushViewState = function() {
   _viewStateStack.push({
     panX: _worldPanX, panY: _worldPanY,
     scale: _worldScale,
-    yaw: _viewYaw, pitch: _viewPitch,
   });
 };
 
@@ -149,19 +115,29 @@ window.popViewState = function(animate) {
   if (animate) {
     _animateWorldPan(state.panX, state.panY, dur);
     _animateWorldScale(state.scale, dur);
-    _animateViewAngle(state.yaw, state.pitch, dur);
   } else {
     _worldPanX = state.panX; _worldPanY = state.panY;
     _worldScale = state.scale;
-    _viewYaw = state.yaw; _viewPitch = state.pitch;
     window._worldPanX = _worldPanX; window._worldPanY = _worldPanY;
     window._worldScale = _worldScale;
-    window._viewYaw = _viewYaw; window._viewPitch = _viewPitch;
   }
   return true;
 };
 
 window.clearViewStateStack = function() { _viewStateStack = []; };
+
+// 노드 수 기반 자동 피트 (로드 시 1회만)
+let _autoFitDone = false;
+window.autoFitZoom = function(nodeCount) {
+  if (!nodeCount || _autoFitDone) return;
+  _autoFitDone = true;
+  const target = nodeCount <= 3  ? 1.1  :
+                 nodeCount <= 6  ? 0.95 :
+                 nodeCount <= 12 ? 0.80 :
+                 nodeCount <= 20 ? 0.65 : 0.50;
+  // 현재보다 작을 때만 줌아웃 (이미 줌인돼 있으면 유지)
+  if (target < _worldScale) _animateWorldScale(target, 500);
+};
 
 // [extracted to orbit3d-drilldown.js]: autoFitDrilldown
 
@@ -893,14 +869,14 @@ class OrbitCam {
     this._dragging = false; // 드래그 중 플래그 (자동전환 방지)
     this._dragStartX = 0; this._dragStartY = 0;
     this._dragThresholdMet = false;
-    this._mouseOnHit = false; // 히트 영역 위에서 마우스다운 → 패닝 차단
+    this._mouseOnHit = false;
     const DRAG_THRESH = 6;
     el.addEventListener('mousedown',  e => {
       this._lx=e.clientX; this._ly=e.clientY;
       this._dragStartX = e.clientX; this._dragStartY = e.clientY;
       this._dragThresholdMet = false;
-      // 히트 영역 위 클릭이면 패닝 차단 (_hoveredHit은 매 프레임 갱신되어 정확)
       this._mouseOnHit = !!(typeof _hoveredHit !== 'undefined' && _hoveredHit);
+      // 우클릭 OR 중클릭 OR Shift+좌클릭 → 3D 회전
       if (e.button===2 || e.button===1 || (e.button===0 && e.shiftKey)) this._r=true;
       else if (e.button===0) this._d=true;
       this._dragging=true;
@@ -908,8 +884,10 @@ class OrbitCam {
     el.addEventListener('mousemove',  e => this._move(e, DRAG_THRESH));
     el.addEventListener('mouseup',    () => { this._d=this._r=false; this._dragging=false; this._dragThresholdMet=false; this._mouseOnHit=false; });
     el.addEventListener('wheel', e => {
+      // 카드 선택 중(역피라미드 열림)엔 스크롤이 패널로만 전달
       if (typeof _selectedHit !== 'undefined' && _selectedHit) return;
-      if (_worldLocked) return; // 잠금 시 줌 차단
+      if (_worldLocked) return;
+      // 2D 월드 스케일 줌 (팀 탐색: 줌아웃→팀원 클러스터 등장)
       const factor = e.deltaY > 0 ? 0.92 : 1.085;
       _worldScale = Math.max(0.08, Math.min(3.0, _worldScale * factor));
       window._worldScale = _worldScale;
@@ -921,19 +899,16 @@ class OrbitCam {
   _move(e, DRAG_THRESH) {
     const dx=e.clientX-this._lx, dy=e.clientY-this._ly;
     this._lx=e.clientX; this._ly=e.clientY;
-    // 드래그 threshold: 마우스다운 지점에서 6px 이상 움직여야 패닝 시작
     if (this._d && !this._dragThresholdMet) {
       const totalDx = e.clientX - this._dragStartX;
       const totalDy = e.clientY - this._dragStartY;
-      if (Math.sqrt(totalDx*totalDx + totalDy*totalDy) < DRAG_THRESH) return;
+      if (Math.sqrt(totalDx*totalDx + totalDy*totalDy) < (DRAG_THRESH || 6)) return;
       this._dragThresholdMet = true;
     }
-    // 히트 영역 위에서 시작한 드래그 또는 잠금 상태 → 차단
     if (this._d && this._dragThresholdMet && !this._mouseOnHit && !_worldLocked) {
-      // 좌클릭 드래그 → 시점 회전 (중심 고정, 보는 각도 변경)
-      _viewYaw += dx * 0.004;
-      _viewPitch = Math.max(-1.2, Math.min(1.2, _viewPitch - dy * 0.004));
-      window._viewYaw = _viewYaw; window._viewPitch = _viewPitch;
+      // 좌클릭 드래그 → 2D 월드 팬 (팀 탐색: 드래그로 이동)
+      _worldPanX += dx; _worldPanY += dy;
+      window._worldPanX = _worldPanX; window._worldPanY = _worldPanY;
     } else if (this._r) {
       // 우클릭/Shift → 3D 배경 회전
       this.sph.θ -= dx*.003;
@@ -962,94 +937,6 @@ class OrbitCam {
 
 const _raycaster = new THREE.Raycaster();
 const controls   = new OrbitCam(camera, renderer.domElement);
-
-// ─── 줌 컨트롤 UI (DOM) ─────────────────────────────────────────────────────
-(function createZoomControls() {
-  const container = document.createElement('div');
-  container.id = 'zoom-controls';
-  Object.assign(container.style, {
-    position: 'fixed', right: '16px', bottom: '80px', zIndex: '500',
-    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px',
-    background: 'rgba(2,6,23,0.8)', borderRadius: '12px', padding: '8px 6px',
-    border: '1px solid rgba(100,116,139,0.25)', backdropFilter: 'blur(8px)',
-  });
-
-  function mkBtn(label, title, onClick) {
-    const btn = document.createElement('button');
-    btn.textContent = label; btn.title = title;
-    Object.assign(btn.style, {
-      width: '32px', height: '32px', border: 'none', borderRadius: '8px',
-      background: 'rgba(100,116,139,0.15)', color: '#cbd5e1', fontSize: '16px',
-      cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-      transition: 'background .15s',
-    });
-    btn.onmouseenter = () => btn.style.background = 'rgba(6,182,212,0.25)';
-    btn.onmouseleave = () => btn.style.background = _worldLocked && label === '🔒' ? 'rgba(6,182,212,0.3)' : 'rgba(100,116,139,0.15)';
-    btn.onclick = onClick;
-    return btn;
-  }
-
-  // 줌인
-  const zoomInBtn = mkBtn('+', '줌인', () => {
-    if (_worldLocked) return;
-    _animateWorldScale(Math.min(3.0, _worldScale * 1.3), 200);
-  });
-
-  // 줌아웃
-  const zoomOutBtn = mkBtn('−', '줌아웃', () => {
-    if (_worldLocked) return;
-    _animateWorldScale(Math.max(0.08, _worldScale * 0.7), 200);
-  });
-
-  // 슬라이더 (세로)
-  const slider = document.createElement('input');
-  slider.type = 'range'; slider.min = '8'; slider.max = '300'; slider.value = '100';
-  slider.title = '줌 레벨';
-  Object.assign(slider.style, {
-    width: '80px', height: '4px', margin: '4px 0',
-    transform: 'rotate(-90deg)', transformOrigin: 'center',
-    accentColor: '#06b6d4', cursor: 'pointer',
-  });
-  slider.oninput = () => {
-    if (_worldLocked) { slider.value = Math.round(_worldScale * 100); return; }
-    _worldScale = parseInt(slider.value) / 100;
-    window._worldScale = _worldScale;
-  };
-  // 슬라이더 업데이트 (매 프레임)
-  setInterval(() => { slider.value = Math.round(_worldScale * 100); }, 200);
-
-  // 슬라이더 컨테이너 (세로 공간 확보)
-  const sliderWrap = document.createElement('div');
-  Object.assign(sliderWrap.style, { width: '32px', height: '80px', display: 'flex', alignItems: 'center', justifyContent: 'center' });
-  sliderWrap.appendChild(slider);
-
-  // 잠금 버튼
-  const lockBtn = mkBtn('🔓', '줌/팬 잠금', () => {
-    _worldLocked = !_worldLocked;
-    window._worldLocked = _worldLocked;
-    lockBtn.textContent = _worldLocked ? '🔒' : '🔓';
-    lockBtn.title = _worldLocked ? '잠금 해제' : '줌/팬 잠금';
-    lockBtn.style.background = _worldLocked ? 'rgba(6,182,212,0.3)' : 'rgba(100,116,139,0.15)';
-  });
-
-  // 홈 (리셋)
-  const homeBtn = mkBtn('⌂', '초기 뷰', () => {
-    _worldLocked = false; window._worldLocked = false;
-    lockBtn.textContent = '🔓';
-    lockBtn.style.background = 'rgba(100,116,139,0.15)';
-    _animateWorldPan(0, 0, 400);
-    _animateWorldScale(1.0, 400);
-    _animateViewAngle(0, 0, 400);
-    if (typeof window.clearViewStateStack === 'function') window.clearViewStateStack();
-  });
-
-  container.appendChild(zoomInBtn);
-  container.appendChild(sliderWrap);
-  container.appendChild(zoomOutBtn);
-  container.appendChild(lockBtn);
-  container.appendChild(homeBtn);
-  document.body.appendChild(container);
-})();
 
 // ─── 씬 오브젝트 ──────────────────────────────────────────────────────────────
 // 행성/위성은 "보이지 않는 Three.js Object3D"로 위치만 관리

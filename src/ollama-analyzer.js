@@ -148,107 +148,29 @@ async function runAnalysis() {
 }
 
 // ── 학습 데이터 자동 저장 (크롤링용) ──────────────────────────
-const path = require('path');
-const _learnedDataPath = path.join(__dirname, '..', 'data', 'learned-insights.jsonl');
-const _learningCsvPath = path.join(__dirname, '..', 'data', 'learning-data.csv');
-const _sessionCsvPath  = path.join(__dirname, '..', 'data', 'session-classifications.csv');
-
-function _ensureDataDir() {
-  const fs = require('fs');
-  const dir = path.join(__dirname, '..', 'data');
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-}
+const _learnedDataPath = require('path').join(__dirname, '..', 'data', 'learned-insights.jsonl');
 
 function _saveLearnedData(analysis, eventCount) {
   try {
     const fs = require('fs');
-    _ensureDataDir();
+    const dir = require('path').dirname(_learnedDataPath);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     const entry = {
-      ts:             new Date().toISOString(),
-      project:        analysis.project || null,
-      projectGoal:    analysis.projectGoal || null,
-      sessionPurpose: analysis.sessionPurpose || null,
-      phase:          analysis.phase || null,
-      progress:       analysis.progress || null,
-      domain:         analysis.domain || null,
-      summary:        analysis.summary || null,
-      skills:         analysis.skills || [],
-      suggestion:     analysis.suggestion || null,
-      insight:        analysis.insight || null,
-      macroCat:       analysis.macroCat || null,
-      events:         eventCount,
-      // 하위호환
-      goal:           analysis.goal || analysis.projectGoal || null,
-      focus:          analysis.focus || analysis.sessionPurpose || null,
-      type:           analysis.type || null,
+      ts:         new Date().toISOString(),
+      goal:       analysis.goal || null,
+      phase:      analysis.phase || null,
+      progress:   analysis.progress || null,
+      focus:      analysis.focus || null,
+      summary:    analysis.summary || null,
+      skills:     analysis.skills || [],
+      suggestion: analysis.suggestion || null,
+      type:       analysis.type || null,
+      events:     eventCount,
     };
     fs.appendFileSync(_learnedDataPath, JSON.stringify(entry) + '\n');
-
-    // CSV 자동 저장 (학습 피드백용)
-    _appendLearningCsv(entry);
   } catch (e) {
     console.error('[학습저장] 오류:', e.message);
   }
-}
-
-// ── CSV 자동 저장 (구글시트 호환) ──────────────────────────────
-function _appendLearningCsv(entry) {
-  try {
-    const fs = require('fs');
-    const needHeader = !fs.existsSync(_learningCsvPath) || fs.statSync(_learningCsvPath).size === 0;
-    const headers = 'timestamp,project,project_goal,session_purpose,phase,progress,domain,skills,suggestion,insight,summary,macro_cat,event_count';
-    const row = [
-      entry.ts,
-      _csvEscape(entry.project),
-      _csvEscape(entry.projectGoal),
-      _csvEscape(entry.sessionPurpose),
-      _csvEscape(entry.phase),
-      _csvEscape(entry.progress),
-      _csvEscape(entry.domain),
-      _csvEscape((entry.skills || []).join('|')),
-      _csvEscape(entry.suggestion),
-      _csvEscape(entry.insight),
-      _csvEscape(entry.summary),
-      _csvEscape(entry.macroCat),
-      entry.events || 0,
-    ].join(',');
-    fs.appendFileSync(_learningCsvPath, (needHeader ? headers + '\n' : '') + row + '\n');
-  } catch (e) {
-    console.error('[CSV저장] 오류:', e.message);
-  }
-}
-
-// ── 세션 분류 결과 CSV 자동 저장 ────────────────────────────────
-function _saveSessionClassification(sessionId, entry, eventCount, files, tools) {
-  try {
-    const fs = require('fs');
-    _ensureDataDir();
-    const needHeader = !fs.existsSync(_sessionCsvPath) || fs.statSync(_sessionCsvPath).size === 0;
-    const headers = 'timestamp,session_id,project,project_goal,purpose_label,macro_cat,domain,phase,files,tools,event_count';
-    const row = [
-      new Date().toISOString(),
-      sessionId,
-      _csvEscape(entry.project),
-      _csvEscape(entry.projectGoal),
-      _csvEscape(entry.purposeLabel),
-      _csvEscape(entry.macroCat),
-      _csvEscape(entry.domain),
-      _csvEscape(entry.phase),
-      _csvEscape((files || []).join('|')),
-      _csvEscape((tools || []).join('|')),
-      eventCount || 0,
-    ].join(',');
-    fs.appendFileSync(_sessionCsvPath, (needHeader ? headers + '\n' : '') + row + '\n');
-  } catch (e) {
-    console.error('[세션CSV] 오류:', e.message);
-  }
-}
-
-function _csvEscape(val) {
-  if (val == null) return '';
-  const s = String(val);
-  if (s.includes(',') || s.includes('"') || s.includes('\n')) return '"' + s.replace(/"/g, '""') + '"';
-  return s;
 }
 
 // ── 학습 데이터 조회 API용 ────────────────────────────────────
@@ -313,31 +235,23 @@ function buildPrompt(events) {
     }
   }).join('\n');
 
-  return `다음은 사용자의 최근 작업 내역입니다.
-이 사람이 "왜" 이 작업을 하는지, 어떤 프로젝트의 어떤 목표를 위한 것인지 분석하세요.
-단순히 "무엇을 했는지"가 아니라 "이 작업의 목적과 의미"를 파악하세요.
-
-예시:
-- 텔레그램 봇 + 구글시트 연동 → 프로젝트: "업무 자동화", 목표: "예약 관리 시스템 구축"
-- orbit3d-render.js 수정 → 프로젝트: "Orbit AI 플랫폼", 목표: "3D 시각화 엔진 개발"
-- payment.js + 구독 구현 → 프로젝트: "Orbit AI 플랫폼", 목표: "수익화 시스템 구축"
+  return `다음은 개발자의 최근 작업 내역입니다. 한국어로 분석해주세요.
 
 작업 내역 (최근 ${events.length}건):
 ${lines}
 
 아래 JSON 형식으로만 응답하세요 (설명 텍스트 없이 JSON만):
 {
-  "project": "최상위 프로젝트명 (예: Orbit AI 플랫폼, 업무 자동화 시스템)",
-  "projectGoal": "프로젝트 내 구체 목표 (예: 3D 시각화 엔진 개발, 예약 관리 자동화)",
-  "sessionPurpose": "이 세션의 구체적 목적 (예: 노드 레이아웃 최적화, 봇-시트 연동 구현)",
-  "phase": "기획|설계|개발|테스트|배포|운영|리서치",
+  "goal": "최종 목표 (15자 이내, 예: 로그인 시스템 구축)",
+  "phase": "현재 단계 (15자 이내, 예: OAuth API 연동 중)",
   "progress": "초기|진행중|마무리|완료",
-  "domain": "프론트엔드|백엔드|인프라|UI/UX|데이터|자동화|보안|문서|기획|기타",
-  "skills": ["기술1", "기술2", "기술3"],
-  "suggestion": "다음 추천 작업 (30자 이내)",
-  "insight": "이 작업에서 발견한 패턴이나 개선점 (50자 이내)",
+  "focus": "현재 작업 주제 (10자 이내)",
   "summary": "작업 요약 (50자 이내)",
-  "macroCat": "dev|research|ops|automation|design|planning"
+  "skills": ["기술1", "기술2"],
+  "suggestion": "다음 추천 작업 (30자 이내)",
+  "type": "code|debug|research|review|meeting",
+  "purposeLabel": "프로젝트명 - 구체적 작업목적 (20자 이내, 예: Orbit 플랫폼 - UI 라벨 개선)",
+  "macroCat": "dev|research|ops"
 }`;
 }
 
@@ -416,28 +330,17 @@ async function classifySession(sessionId, events) {
   const pd = startEv?.data?.projectDir || startEv?.data?.cwd || '';
   const projName = pd ? pd.replace(/\\/g, '/').split('/').filter(Boolean).pop() : '';
 
-  // 도구/타입 통계
-  const toolCounts = {};
-  events.forEach(e => { if (e.type === 'tool.end' && e.data?.toolName) toolCounts[e.data.toolName] = (toolCounts[e.data.toolName]||0)+1; });
-  const topTools = Object.entries(toolCounts).sort((a,b) => b[1]-a[1]).slice(0,5).map(([t,c]) => `${t}(${c})`);
+  const prompt = `다음 개발 세션의 목적을 분석하세요.
 
-  const prompt = `이 작업 세션이 "왜" 수행되었는지 분석하세요.
-단순히 "코드 수정"이 아니라, 어떤 프로젝트의 어떤 목표를 위한 것인지 파악하세요.
-
-프로젝트 디렉토리: ${projName || '(알 수 없음)'}
-사용자 지시: ${userMsgs.length ? userMsgs.join(' | ') : '(없음)'}
-수정 파일: ${topFiles.join(', ') || '(없음)'}
-사용 도구: ${topTools.join(', ') || '(없음)'}
+프로젝트: ${projName || '(알 수 없음)'}
+사용자 메시지: ${userMsgs.length ? userMsgs.join(' | ') : '(없음)'}
+편집 파일: ${topFiles.join(', ') || '(없음)'}
 이벤트 수: ${events.length}건
 
 JSON으로만 응답:
 {
-  "project": "최상위 프로젝트명 (예: Orbit AI 플랫폼)",
-  "projectGoal": "프로젝트 내 목표 (예: 3D 시각화 엔진 개발)",
-  "purposeLabel": "세션 목적 (20자 이내, 예: 노드 레이아웃 최적화)",
-  "macroCat": "dev|research|ops|automation|design|planning",
-  "domain": "프론트엔드|백엔드|인프라|UI/UX|데이터|자동화|보안|문서|기획",
-  "phase": "기획|설계|개발|테스트|배포|운영",
+  "purposeLabel": "[프로젝트명] 구체적 작업목적 (20자 이내, 예: [Orbit] UI 라벨 개선)",
+  "macroCat": "dev|research|ops",
   "goal": "최종 목표 (15자 이내)"
 }`;
 
@@ -472,20 +375,12 @@ JSON으로만 응답:
   }
 
   const entry = {
-    project:      result.project || projName || '프로젝트',
-    projectGoal:  result.projectGoal || result.goal || '',
     purposeLabel: result.purposeLabel || '작업',
     macroCat:     result.macroCat || 'dev',
-    domain:       result.domain || '',
-    phase:        result.phase || '',
     goal:         result.goal || '',
     ts:           Date.now(),
   };
   _sessionClassifyCache[sessionId] = entry;
-
-  // 세션 분류 결과 자동 저장 (학습 데이터)
-  _saveSessionClassification(sessionId, entry, events.length, topFiles, topTools);
-
   return entry;
 }
 
@@ -506,12 +401,4 @@ function getSessionClassification(sessionId) {
   return _sessionClassifyCache[sessionId] || null;
 }
 
-// ── 학습 CSV 데이터 조회 ─────────────────────────────────────
-function getLearningCsvPath() { return _learningCsvPath; }
-function getSessionCsvPath() { return _sessionCsvPath; }
-
-module.exports = {
-  init, addEvent, getLearnedInsights,
-  classifySession, classifySessionsBulk, getSessionClassification,
-  getLearningCsvPath, getSessionCsvPath,
-};
+module.exports = { init, addEvent, getLearnedInsights, classifySession, classifySessionsBulk, getSessionClassification };

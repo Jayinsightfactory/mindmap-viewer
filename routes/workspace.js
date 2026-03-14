@@ -33,31 +33,23 @@ function createWorkspaceRouter({ getDb, db: _dbLegacy, verifyToken, getUserById,
   }
 
   // ── 헬퍼: DB 쿼리 래퍼 (SQLite sync / PG async 통일) ─────────────────────
-  // PG용: ? → $1,$2,... 변환 + json_extract → ->> 변환
-  function _toPg(sql) {
-    let i = 0;
-    let s = sql.replace(/\?/g, () => `$${++i}`);
-    // json_extract(col, '$.key') → col->>'key'
-    s = s.replace(/json_extract\((\w+),\s*'\$\.(\w+)'\)/g, "$1->>'$2'");
-    return s;
-  }
   function dbGet(sql, params = []) {
     const db = _db();
     if (!db) throw new Error('Database not initialized');
     if (db.prepare) return db.prepare(sql).get(...params);          // SQLite
-    return db.query(_toPg(sql), params).then(r => r.rows[0]);      // PG
+    return db.query(sql, params).then(r => r.rows[0]);              // PG
   }
   function dbAll(sql, params = []) {
     const db = _db();
     if (!db) throw new Error('Database not initialized');
     if (db.prepare) return db.prepare(sql).all(...params);
-    return db.query(_toPg(sql), params).then(r => r.rows);
+    return db.query(sql, params).then(r => r.rows);
   }
   function dbRun(sql, params = []) {
     const db = _db();
     if (!db) throw new Error('Database not initialized');
     if (db.prepare) return db.prepare(sql).run(...params);
-    return db.query(_toPg(sql), params);
+    return db.query(sql, params);
   }
 
   // ── 인증 미들웨어 ─────────────────────────────────────────────────────────
@@ -389,13 +381,13 @@ function createWorkspaceRouter({ getDb, db: _dbLegacy, verifyToken, getUserById,
   });
 
   // ── 어드민 권한 체크 헬퍼 ──────────────────────────────────────────────────
-  async function isWsAdmin(req, workspaceId) {
+  function isWsAdmin(req, workspaceId) {
     // 글로벌 어드민이면 무조건 true
     if (ADMIN_EMAILS && ADMIN_EMAILS.includes(req.user.email?.toLowerCase())) return true;
     // 워크스페이스 owner/admin이면 true
-    const member = await Promise.resolve(
-      dbGet('SELECT role FROM workspace_members WHERE workspace_id = ? AND user_id = ?', [workspaceId, req.user.id])
-    );
+    const member = db.prepare
+      ? db.prepare('SELECT role FROM workspace_members WHERE workspace_id = ? AND user_id = ?').get(workspaceId, req.user.id)
+      : null;
     return member && (member.role === 'owner' || member.role === 'admin');
   }
 
@@ -432,7 +424,7 @@ function createWorkspaceRouter({ getDb, db: _dbLegacy, verifyToken, getUserById,
   router.post('/workspace/:id/invite', auth, async (req, res) => {
     try {
       const wsId = req.params.id;
-      if (!(await isWsAdmin(req, wsId))) return res.status(403).json({ error: 'admin only' });
+      if (!isWsAdmin(req, wsId)) return res.status(403).json({ error: 'admin only' });
 
       const { email, teamName, role } = req.body;
       if (!email) return res.status(400).json({ error: 'email required' });
@@ -472,7 +464,7 @@ function createWorkspaceRouter({ getDb, db: _dbLegacy, verifyToken, getUserById,
   router.delete('/workspace/:id/members/:userId', auth, async (req, res) => {
     try {
       const wsId = req.params.id;
-      if (!(await isWsAdmin(req, wsId))) return res.status(403).json({ error: 'admin only' });
+      if (!isWsAdmin(req, wsId)) return res.status(403).json({ error: 'admin only' });
       await dbRun(
         'DELETE FROM workspace_members WHERE workspace_id = ? AND user_id = ?',
         [wsId, req.params.userId]
@@ -488,7 +480,7 @@ function createWorkspaceRouter({ getDb, db: _dbLegacy, verifyToken, getUserById,
   router.patch('/workspace/:id/members/:userId/role', auth, async (req, res) => {
     try {
       const wsId = req.params.id;
-      if (!(await isWsAdmin(req, wsId))) return res.status(403).json({ error: 'admin only' });
+      if (!isWsAdmin(req, wsId)) return res.status(403).json({ error: 'admin only' });
       const { role } = req.body;
       if (!['admin', 'member'].includes(role)) return res.status(400).json({ error: 'invalid role' });
       await dbRun(
@@ -505,7 +497,7 @@ function createWorkspaceRouter({ getDb, db: _dbLegacy, verifyToken, getUserById,
   router.delete('/workspace/:id', auth, async (req, res) => {
     try {
       const wsId = req.params.id;
-      if (!(await isWsAdmin(req, wsId))) return res.status(403).json({ error: 'admin only' });
+      if (!isWsAdmin(req, wsId)) return res.status(403).json({ error: 'admin only' });
       await dbRun('DELETE FROM workspace_members WHERE workspace_id = ?', [wsId]);
       await dbRun('DELETE FROM workspaces WHERE id = ?', [wsId]);
       res.json({ ok: true });
@@ -518,7 +510,7 @@ function createWorkspaceRouter({ getDb, db: _dbLegacy, verifyToken, getUserById,
   router.post('/workspace/:id/regenerate-code', auth, async (req, res) => {
     try {
       const wsId = req.params.id;
-      if (!(await isWsAdmin(req, wsId))) return res.status(403).json({ error: 'admin only' });
+      if (!isWsAdmin(req, wsId)) return res.status(403).json({ error: 'admin only' });
       const newCode = genInviteCode();
       await dbRun('UPDATE workspaces SET invite_code = ? WHERE id = ?', [newCode, wsId]);
       res.json({ ok: true, inviteCode: newCode });

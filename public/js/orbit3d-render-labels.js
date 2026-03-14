@@ -37,29 +37,28 @@ function drawLabels() {
     }
   });
 
-  // 행성 위치 보간: 개인 모드에서는 2D 캔버스 뷰이므로 3D 위치 이동 스킵
-  if (!isPersonalMode) {
-    planetMeshes.forEach(p => {
-      const inFocusedCat  = focusedCat && p.userData.macroCat === focusedCat;
-      const inFocusedProj = focusedProj && p.userData.projectName === focusedProj;
-      const inSelectedProj = selectedProj && p.userData.projectName === selectedProj;
-      const targetExpanded = inFocusedCat || inFocusedProj || inSelectedProj;
+  // 행성 위치 보간: 다단계 계층별 확장 위치로 이동
+  planetMeshes.forEach(p => {
+    const inFocusedCat  = focusedCat && p.userData.macroCat === focusedCat;
+    const inFocusedProj = focusedProj && p.userData.projectName === focusedProj;
+    const inSelectedProj = selectedProj && p.userData.projectName === selectedProj;
+    const targetExpanded = inFocusedCat || inFocusedProj || inSelectedProj;
 
-      let target;
-      if (targetExpanded && p.userData._levelPositions) {
-        const currentLevel = p.userData._currentLevel || 0;
-        if (currentLevel === 0) {
-          target = p.userData._levelPositions.compact;
-        } else {
-          target = p.userData._levelPositions[`level${currentLevel}`] || p.userData._levelPositions.compact;
-        }
+    // 다단계 계층 지원: _currentLevel에 따라 적절한 위치 선택
+    let target;
+    if (targetExpanded && p.userData._levelPositions) {
+      const currentLevel = p.userData._currentLevel || 0;
+      if (currentLevel === 0) {
+        target = p.userData._levelPositions.compact;
       } else {
-        target = p.userData._compactPos;
+        target = p.userData._levelPositions[`level${currentLevel}`] || p.userData._levelPositions.compact;
       }
+    } else {
+      target = p.userData._compactPos;
+    }
 
-      if (target) p.position.lerp(target, 0.08);
-    });
-  }
+    if (target) p.position.lerp(target, 0.08);
+  });
 
   // 개인 모드: 프로젝트 노드 → 클릭 시 하위 세션 전개 (상세 패널 없음)
   if (isPersonalMode) {

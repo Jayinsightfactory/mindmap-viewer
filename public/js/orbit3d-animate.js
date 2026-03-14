@@ -161,35 +161,37 @@ renderer.domElement.addEventListener('click', e => {
       return;
     }
 
-    // ── 세션 노드 클릭 → 줌인 + 이벤트 리스트 패널 ─────────────────────────
+    // ── 세션 노드 클릭 → 줌인 + 이벤트 타임라인 표시 ─────────────────────────
     if (isPersonal && (type === 'drillSession' || type === 'session')) {
-      // 현재 뷰 상태 저장 (뒤로가기용)
       if (typeof window.pushViewState === 'function') window.pushViewState();
       _selectedHit = hit;
 
-      // 해당 세션 화면 중심으로 줌인 (현재 배율 유지하며 약간 확대)
+      // 해당 세션 화면 중심으로 줌인 (현재 배율 기준 약간 확대)
       if (typeof window.zoomToScreenPos === 'function') {
         const curScale = window._worldScale || 1.0;
         const targetZoom = Math.max(curScale, Math.min(curScale * 1.5, 2.0));
         window.zoomToScreenPos(hit.cx, hit.cy, targetZoom, 500);
       }
 
-      const sessionId = hit.data.clusterId || hit.data.sessionId;
-      const entry = _sessionMap[sessionId];
-      if (entry?.events?.length) {
-        const sesLabel = hit.data.intent || '세션';
-        const sesCatData = {
-          catKey: hit.data.catKey || 'session',
-          catLabel: sesLabel.length > 20 ? sesLabel.slice(0, 19) + '…' : sesLabel,
-          catColor: hit.data.hueHex || hit.data.catColor || '#58a6ff',
-          catIcon: hit.data.catIcon || '',
-          sessionCount: 1,
-          events: entry.events,
-          planets: hit.data.planets,
-        };
-        _drillStage = 2;
-        _drillCategory = sesCatData;
-        showDrillTimeline(sesCatData);
+      // 드릴 모드에서 세션 클릭 시 → 해당 세션의 이벤트 타임라인 표시
+      if (_drillStage >= 1 && hit.data) {
+        const sessionId = hit.data.clusterId || hit.data.sessionId;
+        const entry = _sessionMap[sessionId];
+        if (entry?.events?.length) {
+          // 카테고리 정보 구성 (세션 단위 타임라인)
+          const sesLabel = hit.data.intent || '세션';
+          const sesCatData = {
+            catKey: hit.data.catKey || 'session',
+            catLabel: sesLabel.length > 20 ? sesLabel.slice(0, 19) + '…' : sesLabel,
+            catColor: hit.data.hueHex || hit.data.catColor || '#58a6ff',
+            catIcon: '',
+            sessionCount: 1,
+            events: entry.events,
+          };
+          _drillStage = 2;
+          _drillCategory = sesCatData;
+          showDrillTimeline(sesCatData);
+        }
       }
       return;
     }
@@ -254,14 +256,13 @@ renderer.domElement.addEventListener('click', e => {
         if (_drillCategory) showDrillTimeline(_drillCategory);
         if (typeof window.popViewState === 'function') window.popViewState(true);
       } else if (_drillStage === 2) {
-        // 3단계 → 2단계: 타임라인 → 프로젝트 뷰 복귀
+        // 3단계 → 2단계: 패널 닫기, 카테고리 링 유지
         _drillStage = 1;
         _drillCategory = null;
         _focusedCategory = null;
         _drillTimelineEvent = null;
         _selectedHit = null;
         closePanel();
-        // 뷰 상태 복원 (세션 클릭 전으로)
         if (typeof window.popViewState === 'function') window.popViewState(true);
       } else if (_drillStage === 1 || _focusedProject) {
         // 2단계 → 1단계: 전체 뷰로
