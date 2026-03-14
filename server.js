@@ -1621,7 +1621,7 @@ const createSyncRouter = require('./routes/sync');
 app.use('/api', createSyncRouter({ getDb: dbModule.getDb, getAllEvents }));
 
 // ─── 회사 컨설팅 플랫폼 (Company Ontology + Diagnosis + Learning) ───────────
-companyOntology.ensureCompanyTables(dbModule.getDb());
+try { companyOntology.ensureCompanyTables(dbModule.getDb()); } catch (e) { console.warn('[DB Init] company-ontology 초기화 스킵:', e.message); }
 app.use('/api', createCompanyRouter({ getDb: dbModule.getDb, broadcastAll }));
 app.use('/api', createDiagnosisRouter({ getDb: dbModule.getDb, broadcastAll }));
 app.use('/api', createCompanyLearningRouter({ getDb: dbModule.getDb }));
@@ -1871,7 +1871,7 @@ async function startServer() {
   outcomeStore.initOutcomeTable();
 
   // 마켓 테이블 초기화 + 사용량 트래커 시작
-  marketStore.initMarketTables();
+  try { marketStore.initMarketTables(); } catch (e) { console.warn('[DB Init] market-store 초기화 스킵:', e.message); }
   usageTracker.start({ broadcastAll });
 
   // 인사이트 엔진 자동 시작 (INSIGHT_DISABLED=1 이면 스킵)
