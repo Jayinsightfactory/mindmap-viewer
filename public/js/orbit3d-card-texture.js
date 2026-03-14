@@ -264,28 +264,32 @@ function _drawWireSphere(ctx, cx, cy, R, color, opts) {
   ctx.restore();
 }
 
-// 와이어프레임 구체 아래 텍스트 라벨
+// 와이어프레임 구체 내부 텍스트 라벨
 function _drawSphereLabel(ctx, cx, cy, R, title, sub, color, dimmed) {
   ctx.save();
   if (dimmed) ctx.globalAlpha = 0.3;
   ctx.textAlign = 'center';
-  ctx.font = "600 12px 'Inter',-apple-system,sans-serif";
+  ctx.textBaseline = 'middle';
+
+  // 제목 (구체 중앙 약간 위)
+  const fontSize = Math.max(8, Math.min(13, R * 0.52));
+  ctx.font = `600 ${fontSize}px 'Inter',-apple-system,sans-serif`;
   ctx.fillStyle = '#e2e8f0';
+  const maxW = R * 1.6;
   let clipped = title;
-  if (ctx.measureText(clipped).width > 130) {
-    while (ctx.measureText(clipped).width > 126 && clipped.length > 1) clipped = clipped.slice(0, -1);
-    clipped += '\u2026';
-  }
-  ctx.fillText(clipped, cx, cy + R + 15);
+  while (ctx.measureText(clipped).width > maxW && clipped.length > 1) clipped = clipped.slice(0, -1);
+  if (clipped !== title) clipped += '\u2026';
+  ctx.fillText(clipped, cx, cy - (sub ? fontSize * 0.4 : 0));
+
+  // 부제 (구체 중앙 약간 아래)
   if (sub) {
-    ctx.font = "400 10px 'JetBrains Mono','Fira Code',monospace";
+    const subSize = Math.max(7, fontSize - 2);
+    ctx.font = `400 ${subSize}px 'JetBrains Mono','Fira Code',monospace`;
     ctx.fillStyle = '#94a3b8';
     let cs = sub;
-    if (ctx.measureText(cs).width > 130) {
-      while (ctx.measureText(cs).width > 126 && cs.length > 1) cs = cs.slice(0, -1);
-      cs += '\u2026';
-    }
-    ctx.fillText(cs, cx, cy + R + 28);
+    while (ctx.measureText(cs).width > maxW && cs.length > 1) cs = cs.slice(0, -1);
+    if (cs !== sub) cs += '\u2026';
+    ctx.fillText(cs, cx, cy + fontSize * 0.55);
   }
   ctx.restore();
 }

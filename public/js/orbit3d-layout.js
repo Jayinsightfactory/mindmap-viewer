@@ -200,6 +200,7 @@ function drawCompactProjectView() {
 
   // 프로젝트 → 3D 월드 좌표 + 스크린 좌표
   const projLayout = [];
+  if (!window._projWorldPositions) window._projWorldPositions = {};
   rings.forEach((ring, ri) => {
     const count = ring.length;
     const step = (Math.PI * 2) / count;
@@ -209,6 +210,8 @@ function drawCompactProjectView() {
       const pos3d = new THREE.Vector3(Math.cos(angle) * r, 0, Math.sin(angle) * r);
       const sc = toScreen(pos3d);
       projLayout.push({ proj, pos3d, sc, angle, dist: r, ringIdx: ri });
+      // 드릴다운 줌인용 월드 좌표 저장
+      window._projWorldPositions[proj.name] = pos3d;
     });
   });
 

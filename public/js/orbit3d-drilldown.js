@@ -41,16 +41,14 @@ function focusProject(projName) {
   const btn = document.getElementById('constellation-back-btn');
   if (btn) btn.style.display = 'none';
 
-  // 드릴다운 시 카테고리 수에 맞게 자동 줌아웃 (카드가 한눈에 들어오게)
-  const grp = _projectGroups[projName];
-  if (grp && typeof autoFitDrilldown === 'function') {
-    const numCats = Object.keys(
-      (grp.planetMeshes || []).reduce((m, p) => { m[p.userData.macroCat || 'g'] = 1; return m; }, {})
-    ).length;
-    autoFitDrilldown(numCats);
+  // 해당 프로젝트의 3D 월드 좌표로 카메라 줌인
+  const projPos = window._projWorldPositions?.[projName];
+  if (projPos) {
+    // 프로젝트 위치를 향해 줌인 (카메라 거리 35, 타겟 = 프로젝트 좌표)
+    lerpCameraTo(35, projPos.x, 0, projPos.z, 700);
+  } else {
+    lerpCameraTo(45, 0, 0, 0, 700);
   }
-
-  lerpCameraTo(85, 0, 0, 0, 700);
 }
 window.focusProject = focusProject;
 
@@ -61,7 +59,8 @@ function exitConstellationFocus() {
   _drillCategory = null;
   _drillTimelineEvent = null;
   closePanel();
-  lerpCameraTo(60, 0, 0, 0, 700);
+  // 원래 전체 뷰로 복귀 (카메라를 원점으로, 적당한 거리로)
+  lerpCameraTo(80, 0, 0, 0, 700);
   const btn = document.getElementById('constellation-back-btn');
   if (btn) btn.style.display = 'none';
 }
@@ -85,7 +84,13 @@ function drillToCategory(catData) {
   allEvents.sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0));
   _drillCategory.events = allEvents;
 
-  lerpCameraTo(75, 0, 0, 0, 500);
+  // 드릴 프로젝트 위치로 더 가까이 줌인
+  const dProjPos = window._projWorldPositions?.[catData.projName];
+  if (dProjPos) {
+    lerpCameraTo(25, dProjPos.x, 0, dProjPos.z, 500);
+  } else {
+    lerpCameraTo(35, 0, 0, 0, 500);
+  }
   showDrillTimeline(_drillCategory);
 }
 window.drillToCategory = drillToCategory;
@@ -118,9 +123,12 @@ function exitCategoryFocus() {
     _drillCategory = null;
     _drillTimelineEvent = null;
     closePanel();
-    lerpCameraTo(70, 0, 0, 0, 500);
+    // 프로젝트 줌 레벨로 복귀
+    const pPos = _drillProject?.name ? window._projWorldPositions?.[_drillProject.name] : null;
+    if (pPos) lerpCameraTo(35, pPos.x, 0, pPos.z, 500);
+    else lerpCameraTo(45, 0, 0, 0, 500);
   } else {
-    lerpCameraTo(55, 0, 0, 0, 700);
+    lerpCameraTo(80, 0, 0, 0, 700);
   }
 }
 window.exitCategoryFocus = exitCategoryFocus;
