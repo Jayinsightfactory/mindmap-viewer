@@ -313,94 +313,13 @@ function updateBillboard() {
 window._origBuildPlanetSystem = window.buildPlanetSystem;
 
 window.buildPlanetSystem = function(nodeList) {
-  const inTeam =
-    (typeof _teamMode     !== 'undefined' && _teamMode) ||
-    (typeof _companyMode  !== 'undefined' && _companyMode) ||
-    (typeof _parallelMode !== 'undefined' && _parallelMode);
-  if (inTeam) {
-    return typeof window._origBuildPlanetSystem === 'function'
-      ? window._origBuildPlanetSystem(nodeList) : undefined;
+  // 항상 원래 buildPlanetSystem 호출 → _projectGroups, planetMeshes 등 초기화
+  if (typeof window._origBuildPlanetSystem === 'function') {
+    window._origBuildPlanetSystem(nodeList);
   }
-
-  if (!window.scene) {
-    const w = setInterval(() => {
-      if (window.scene) { clearInterval(w); window.buildPlanetSystem(nodeList); }
-    }, 200);
-    return;
-  }
-
-  const _rmMode = window.RendererManager?.currentMode;
-  if (_rmMode && _rmMode !== 'personal') return;
-  if (window.RendererManager) {
-    window.RendererManager.cleanupMultilevel();
-  } else if (window.multiLevelRenderer) {
-    const mlr = window.multiLevelRenderer;
-    Object.values(mlr.nodeMeshes || {}).forEach(m => window.scene.remove(m));
-    mlr.nodeMeshes = {};
-    (mlr.connectionLines || []).forEach(l => window.scene.remove(l));
-    mlr.connectionLines = [];
-    if (typeof closeDrillPanel === 'function') closeDrillPanel();
-  }
-
-  if (MW.viewStack.length > 0) return;
-
-  MW.scene     = window.scene;
-  MW.viewStack = [];
-
-  // ── 세션(프로젝트) 기반 그룹화 ───────────────────────────────────────────
-  // 라벨/색상 결정은 mw-label.js 함수에 위임 (컨텍스트 없이 수정 가능)
-  const groupMap = {};
-  (nodeList || []).forEach(n => {
-    const sessionKey = n.sessionId || n.group || null;
-    const groupLabel = mwGroupLabel(n);   // ← mw-label.js
-    const key        = sessionKey || groupLabel;
-
-    if (!groupMap[key]) {
-      const catColor = mwGroupColor(n) || _mwExtractColor(n.color);  // ← mw-label.js / mw-card.js
-      groupMap[key] = {
-        topic:          groupLabel,
-        name:           groupLabel,
-        color:          catColor,
-        children:       [],
-        latestActivity: null,
-      };
-    }
-
-    const childColor = n.purposeColor || _mwExtractColor(n.color);
-    const childTopic = mwChildTopic(n);   // ← mw-label.js
-
-    groupMap[key].children.push({
-      topic:    childTopic,
-      name:     childTopic,
-      color:    childColor,
-      children: _mwMakeDetailNodes(n, childColor),
-      _raw:     n,
-    });
-
-    if (!groupMap[key].latestActivity) {
-      const rawAct = n.label || n.topic || n.name || '';
-      groupMap[key].latestActivity = mwLatestActivity(rawAct);  // ← mw-label.js
-    }
-  });
-
-  const topNodes = Object.values(groupMap)
-    .sort((a, b) => b.children.length - a.children.length)
-    .slice(0, LEVEL_CFG[0].maxCards);
-
-  renderView(topNodes, '내 작업', 0);
-
-  const cvs = (typeof renderer !== 'undefined' && renderer.domElement)
-    || document.getElementById('orbit-canvas')
-    || document.querySelector('canvas');
-  if (cvs && !cvs._mwClickBound) {
-    cvs.addEventListener('click', onMyWorkClick);
-    cvs._mwClickBound = true;
-  }
-
-  if (!window._mwBillboardRegistered) {
-    window._mwBillboardRegistered = true;
-    (function loop() { requestAnimationFrame(loop); updateBillboard(); })();
-  }
+  // 2D 카드 레이아웃(drawCompactProjectView)이 렌더링 담당
+  // 3D MW 카드 생성(renderView) 비활성화 — clearMyWork로 잔여 메시만 정리
+  clearMyWork();
 };
 
 // ─── 초기 로드 ────────────────────────────────────────────────────────────────
