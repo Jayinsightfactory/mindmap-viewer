@@ -33,23 +33,28 @@ function createWorkspaceRouter({ getDb, db: _dbLegacy, verifyToken, getUserById,
   }
 
   // ── 헬퍼: DB 쿼리 래퍼 (SQLite sync / PG async 통일) ─────────────────────
+  // PG용: ? → $1, $2, ... 변환
+  function _pgSql(sql) {
+    let i = 0;
+    return sql.replace(/\?/g, () => `$${++i}`);
+  }
   function dbGet(sql, params = []) {
     const db = _db();
     if (!db) throw new Error('Database not initialized');
     if (db.prepare) return db.prepare(sql).get(...params);          // SQLite
-    return db.query(sql, params).then(r => r.rows[0]);              // PG
+    return db.query(_pgSql(sql), params).then(r => r.rows[0]);     // PG
   }
   function dbAll(sql, params = []) {
     const db = _db();
     if (!db) throw new Error('Database not initialized');
     if (db.prepare) return db.prepare(sql).all(...params);
-    return db.query(sql, params).then(r => r.rows);
+    return db.query(_pgSql(sql), params).then(r => r.rows);
   }
   function dbRun(sql, params = []) {
     const db = _db();
     if (!db) throw new Error('Database not initialized');
     if (db.prepare) return db.prepare(sql).run(...params);
-    return db.query(sql, params);
+    return db.query(_pgSql(sql), params);
   }
 
   // ── 인증 미들웨어 ─────────────────────────────────────────────────────────
