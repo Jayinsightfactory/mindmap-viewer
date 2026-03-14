@@ -139,6 +139,27 @@ window.autoFitZoom = function(nodeCount) {
   if (target < _worldScale) _animateWorldScale(target, 500);
 };
 
+// ── 줌 레벨 뷰 전환 (개인 → 팀 → 전사) ──────────────────────────────────────
+let _zoomTransitionCooldown = 0;
+function _checkZoomViewTransition(cameraR) {
+  const now = Date.now();
+  if (now - _zoomTransitionCooldown < 1500) return; // 전환 후 1.5초 쿨다운
+  const isPersonal = !_teamMode && !_companyMode && !_parallelMode;
+  if (isPersonal && cameraR > 200) {
+    _zoomTransitionCooldown = now;
+    if (typeof loadTeamDemo === 'function') loadTeamDemo();
+  } else if (_teamMode && !_companyMode && cameraR > 380) {
+    _zoomTransitionCooldown = now;
+    if (typeof loadCompanyDemo === 'function') loadCompanyDemo();
+  } else if (_teamMode && !_companyMode && cameraR < 60) {
+    _zoomTransitionCooldown = now;
+    if (typeof setViewPersonal === 'function') setViewPersonal();
+  } else if (_companyMode && cameraR < 200) {
+    _zoomTransitionCooldown = now;
+    if (typeof loadTeamDemo === 'function') loadTeamDemo();
+  }
+}
+
 // [extracted to orbit3d-drilldown.js]: autoFitDrilldown
 
 const camera = new THREE.PerspectiveCamera(55, innerWidth/innerHeight, 0.1, 2000);
@@ -874,10 +895,15 @@ class OrbitCam {
       // 카드 선택 중(역피라미드 열림)엔 스크롤이 패널로만 전달
       if (typeof _selectedHit !== 'undefined' && _selectedHit) return;
       if (_worldLocked) return;
-      // 2D 월드 스케일 줌 (팀 탐색: 줌아웃→팀원 클러스터 등장)
-      const factor = e.deltaY > 0 ? 0.92 : 1.085;
-      _worldScale = Math.max(0.08, Math.min(3.0, _worldScale * factor));
+      // 3D 카메라 줌 (스크롤 → 카메라 거리 변경)
+      const factor = e.deltaY > 0 ? 1.08 : 0.92;
+      this.sph.r = Math.max(25, Math.min(500, this.sph.r * factor));
+      this._apply();
+      // _worldScale 호환 (팀 클러스터 등에서 참조)
+      _worldScale = 80 / this.sph.r;
       window._worldScale = _worldScale;
+      // ── 줌 레벨 뷰 전환 ──
+      _checkZoomViewTransition(this.sph.r);
     }, {passive:true});
     el.addEventListener('dblclick',   e => this._dbl(e));
     el.addEventListener('contextmenu',e => e.preventDefault());
@@ -892,12 +918,8 @@ class OrbitCam {
       if (Math.sqrt(totalDx*totalDx + totalDy*totalDy) < (DRAG_THRESH || 6)) return;
       this._dragThresholdMet = true;
     }
-    if (this._d && this._dragThresholdMet && !this._mouseOnHit && !_worldLocked) {
-      // 좌클릭 드래그 → 2D 월드 팬 (팀 탐색: 드래그로 이동)
-      _worldPanX += dx; _worldPanY += dy;
-      window._worldPanX = _worldPanX; window._worldPanY = _worldPanY;
-    } else if (this._r) {
-      // 우클릭/Shift → 3D 배경 회전
+    if ((this._d || this._r) && this._dragThresholdMet && !this._mouseOnHit && !_worldLocked) {
+      // 좌클릭/우클릭 드래그 → 3D 카메라 회전
       this.sph.θ -= dx*.003;
       this.sph.φ = Math.max(.05, Math.min(Math.PI-.05, this.sph.φ+dy*.003));
       this._apply();

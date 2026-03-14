@@ -45,7 +45,7 @@ async function loadData() {
     if (typeof autoFitZoom === 'function') autoFitZoom(nodes.length);
     if (typeof updateActiveFiles === 'function') updateActiveFiles();  // 활성 파일 갱신
     if (typeof _loadWorkspaceState === 'function') _loadWorkspaceState();
-    if (!_teamMode && !_companyMode && !_parallelMode && typeof controls !== 'undefined') controls.enabled = false;
+    // 개인 모드에서도 3D 카메라 회전 유지 (controls.enabled = true)
     // 팀원 월드 데이터 비동기 로드 (개인 뷰에서 줌아웃 시 표시용)
     loadTeamWorldData();
     document.getElementById('loading').style.display = 'none';

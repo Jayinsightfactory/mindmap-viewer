@@ -201,3 +201,91 @@ function drawGlow(ctx, cx, cy, r, hex, intensity) {
   ctx.fill();
   ctx.restore();
 }
+
+// ─── 3D 와이어프레임 구체 (세션/프로젝트 노드) ──────────────────────────────
+function _drawWireSphere(ctx, cx, cy, R, color, opts) {
+  const { alpha, lineW, meridians, parallels, glow, hover, drilled, rotation } = Object.assign(
+    { alpha: 0.35, lineW: 0.8, meridians: 3, parallels: 2, glow: true, hover: false, drilled: false, rotation: 0 },
+    opts || {}
+  );
+  ctx.save();
+
+  // 글로우 (외부 빛)
+  if (glow) {
+    const g = ctx.createRadialGradient(cx, cy, R * 0.5, cx, cy, R * 1.6);
+    g.addColorStop(0, color + (drilled ? '30' : '18'));
+    g.addColorStop(1, color + '00');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(cx, cy, R * 1.6, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // 미세 투명 채움 (유리 느낌)
+  ctx.globalAlpha = drilled ? 0.18 : hover ? 0.12 : 0.05;
+  ctx.fillStyle = color;
+  ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.fill();
+
+  // 적도 (외곽 원)
+  ctx.globalAlpha = alpha;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = drilled ? lineW * 2 : hover ? lineW * 1.8 : lineW;
+  ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.stroke();
+
+  // 경선 (세로 타원 — 회전 적용)
+  for (let m = 0; m < meridians; m++) {
+    const angle = (m / meridians) * Math.PI + rotation;
+    const scaleX = Math.abs(Math.cos(angle));
+    ctx.globalAlpha = alpha * 0.5;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, R * Math.max(scaleX, 0.08), R, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  // 위선 (가로 타원)
+  for (let p = 1; p <= parallels; p++) {
+    const lat = p / (parallels + 1);
+    const y = cy + R * (lat * 2 - 1) * 0.7;
+    const rX = R * Math.cos(Math.asin(lat * 2 - 1) * 0.7);
+    if (rX > 2) {
+      ctx.globalAlpha = alpha * 0.35;
+      ctx.beginPath();
+      ctx.ellipse(cx, y, rX, rX * 0.25, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+
+  // 드릴다운 선택 시 외곽 펄스
+  if (drilled) {
+    ctx.globalAlpha = 0.4 + 0.2 * Math.sin(performance.now() / 300);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(cx, cy, R + 4, 0, Math.PI * 2); ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+// 와이어프레임 구체 아래 텍스트 라벨
+function _drawSphereLabel(ctx, cx, cy, R, title, sub, color, dimmed) {
+  ctx.save();
+  if (dimmed) ctx.globalAlpha = 0.3;
+  ctx.textAlign = 'center';
+  ctx.font = "600 12px 'Inter',-apple-system,sans-serif";
+  ctx.fillStyle = '#e2e8f0';
+  let clipped = title;
+  if (ctx.measureText(clipped).width > 130) {
+    while (ctx.measureText(clipped).width > 126 && clipped.length > 1) clipped = clipped.slice(0, -1);
+    clipped += '\u2026';
+  }
+  ctx.fillText(clipped, cx, cy + R + 15);
+  if (sub) {
+    ctx.font = "400 10px 'JetBrains Mono','Fira Code',monospace";
+    ctx.fillStyle = '#94a3b8';
+    let cs = sub;
+    if (ctx.measureText(cs).width > 130) {
+      while (ctx.measureText(cs).width > 126 && cs.length > 1) cs = cs.slice(0, -1);
+      cs += '\u2026';
+    }
+    ctx.fillText(cs, cx, cy + R + 28);
+  }
+  ctx.restore();
+}
