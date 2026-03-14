@@ -233,21 +233,8 @@ function createWireNode(radius, color, opts = {}) {
 }
 
 // ─── 중앙 와이어프레임 행성 + 궤도 링 ─────────────────────────────────────────
+// 중앙 구체 제거 — 2D 카드("나의 작업")가 시각적 표현을 담당
 (function addWireframePlanet() {
-  // ── 와이어프레임 구 ────────────────────────────────────────────────────────
-  const sphereGeo = new THREE.IcosahedronGeometry(4.5, 1);
-  const wireframe = new THREE.WireframeGeometry(sphereGeo);
-  const wireMat   = new THREE.LineBasicMaterial({
-    color: 0x06b6d4, transparent: true, opacity: 0.25,
-    blending: THREE.AdditiveBlending,
-  });
-  const wireMesh = new THREE.LineSegments(wireframe, wireMat);
-  wireMesh.userData._isCorePlanet = true;
-  scene.add(wireMesh);
-
-  // ── 외곽 글로우 (와이어프레임) ──────────────────────────────────────────────
-  const glowMesh = createWireNode(5.2, 0x06b6d4, { wireOpacity: 0.04, glow: false, detail: 0 });
-  scene.add(glowMesh);
 
   // ── 궤도 링 3개 ───────────────────────────────────────────────────────────
   const orbitConfigs = [

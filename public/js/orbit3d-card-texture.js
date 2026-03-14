@@ -47,6 +47,9 @@ function drawWireframeGrid(ctx, x, y, w, h, r, color, alpha) {
 // ── 통일 카드 상수 (모든 뷰 공통) ──────────────────────────────────────────
 const UNI_CARD_W = 180, UNI_CARD_H = 51;
 const UNI_CARD_R = 10, UNI_CARD_BAR = 5;
+// ── 세부 세션용 소형 카드 상수 ───────────────────────────────────────────────
+const SMALL_CARD_W = 140, SMALL_CARD_H = 40;
+const SMALL_CARD_R = 8, SMALL_CARD_BAR = 4;
 
 // ── 통일 카드 그리기 (모든 뷰 공통) ──────────────────────────────────────────
 // 카드 내 버튼 히트 영역 등록 (편집·숨기기) — forEach 루프 내에서 호출
@@ -126,6 +129,55 @@ function drawUnifiedCard(ctx, cx, cy, color, title, sub, isActive, isHover, isDr
     while (ctx.measureText(cs).width > maxTextW && cs.length > 1) cs = cs.slice(0, -1);
     if (cs !== sub) cs += '\u2026';
     ctx.fillText(cs, textX, ly + 39);
+  }
+}
+
+// ── 소형 카드 (세부 세션용 — 프로젝트 카드보다 작게) ─────────────────────────
+function drawSmallCard(ctx, cx, cy, color, title, sub, isHover) {
+  const lx = cx - SMALL_CARD_W / 2, ly = cy - SMALL_CARD_H / 2;
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.25)';
+  ctx.shadowBlur = 6; ctx.shadowOffsetY = 1;
+  ctx.fillStyle = isHover ? 'rgba(6,182,212,0.08)' : 'rgba(2,6,23,0.75)';
+  roundRect(ctx, lx, ly, SMALL_CARD_W, SMALL_CARD_H, SMALL_CARD_R); ctx.fill();
+  ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+  ctx.restore();
+
+  drawWireframeGrid(ctx, lx, ly, SMALL_CARD_W, SMALL_CARD_H, SMALL_CARD_R, color, isHover ? 0.22 : 0.12);
+
+  // 좌측 컬러 바
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(lx + SMALL_CARD_R, ly); ctx.lineTo(lx + SMALL_CARD_BAR + SMALL_CARD_R, ly);
+  ctx.lineTo(lx + SMALL_CARD_BAR + SMALL_CARD_R, ly + SMALL_CARD_H);
+  ctx.moveTo(lx + SMALL_CARD_R, ly + SMALL_CARD_H);
+  ctx.arcTo(lx, ly + SMALL_CARD_H, lx, ly + SMALL_CARD_H - SMALL_CARD_R, SMALL_CARD_R);
+  ctx.lineTo(lx, ly + SMALL_CARD_R); ctx.arcTo(lx, ly, lx + SMALL_CARD_R, ly, SMALL_CARD_R);
+  ctx.closePath();
+  ctx.fillStyle = color; ctx.globalAlpha = 0.6; ctx.fill(); ctx.globalAlpha = 1;
+  ctx.restore();
+
+  ctx.strokeStyle = isHover ? 'rgba(6,182,212,0.4)' : 'rgba(255,255,255,0.08)';
+  ctx.lineWidth = isHover ? 1 : 0.6;
+  roundRect(ctx, lx, ly, SMALL_CARD_W, SMALL_CARD_H, SMALL_CARD_R); ctx.stroke();
+
+  const textX = lx + SMALL_CARD_BAR + SMALL_CARD_R + 5;
+  const maxTextW = SMALL_CARD_W - SMALL_CARD_BAR - SMALL_CARD_R - 12;
+  ctx.textAlign = 'left';
+  ctx.font = "500 12px 'Inter',-apple-system,sans-serif";
+  ctx.fillStyle = '#cbd5e1';
+  let clipped = title;
+  while (ctx.measureText(clipped).width > maxTextW && clipped.length > 1) clipped = clipped.slice(0, -1);
+  if (clipped !== title) clipped += '\u2026';
+  ctx.fillText(clipped, textX, ly + 17);
+
+  if (sub) {
+    ctx.font = "400 10px 'JetBrains Mono','Fira Code',monospace";
+    ctx.fillStyle = '#64748b';
+    let cs = sub;
+    while (ctx.measureText(cs).width > maxTextW && cs.length > 1) cs = cs.slice(0, -1);
+    if (cs !== sub) cs += '\u2026';
+    ctx.fillText(cs, textX, ly + 31);
   }
 }
 

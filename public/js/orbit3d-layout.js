@@ -178,7 +178,7 @@ function drawCompactProjectView() {
   }
 
   // ── 레이아웃 계산 (드릴다운 시프트 포함, 드로잉 전) ─────────────────────
-  const meW = 130, meH = 48, meR = meH / 2;
+  const meW = UNI_CARD_W, meH = UNI_CARD_H, meR = UNI_CARD_R;
   const NODE_GAP = 6;
   const LAYER_OFFSET = UNI_CARD_W + 8;
   const isDrillStage1 = _drillStage >= 1 && _drillProject;
@@ -223,21 +223,8 @@ function drawCompactProjectView() {
   ctx.translate(_txX, _txY);
   ctx.scale(_wScale, _wScale);
 
-  // ── ME 노드 (월드 원점 = 0, 0) ─────────────────────────────────────────────
-  const meLx = -meW / 2, meLy = -meH / 2;
-  ctx.save();
-  ctx.fillStyle = 'rgba(2, 6, 23, 0.82)';
-  ctx.shadowColor = 'rgba(6,182,212,0.15)'; ctx.shadowBlur = 20; ctx.shadowOffsetY = 0;
-  roundRect(ctx, meLx, meLy, meW, meH, meR); ctx.fill();
-  ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
-  ctx.restore();
-  drawWireframeGrid(ctx, meLx, meLy, meW, meH, meR, 'rgba(6,182,212,1)', 0.22);
-  ctx.strokeStyle = 'rgba(6,182,212,0.5)'; ctx.lineWidth = 1.5;
-  roundRect(ctx, meLx, meLy, meW, meH, meR); ctx.stroke();
-  ctx.font = "700 16px 'Inter',-apple-system,sans-serif";
-  ctx.textAlign = 'center';
-  ctx.fillStyle = '#e2e8f0';
-  ctx.fillText('나의 작업', 0, 6);
+  // ── ME 노드 (월드 원점 = 0, 0) — 프로젝트 카드와 동일 크기 ────────────────
+  drawUnifiedCard(ctx, 0, 0, '#06b6d4', '나의 작업', `${projects.length} 프로젝트`, false, false, false);
 
   // 라벨 별칭 맵 (인라인 편집 저장본)
   const _aliases = (() => { try { return JSON.parse(localStorage.getItem('orbitLabelAliases') || '{}'); } catch { return {}; } })();
@@ -354,22 +341,20 @@ function drawCompactProjectView() {
           },
         });
 
-        // ── 세션: 카테고리 카드 아래로 수직 정렬 — 카테고리 카드와 겹침 방지 ──
-        const sesStep = UNI_CARD_H + CARD_GAP;  // 51 + 8 = 59px 고정 간격
+        // ── 세션: 카테고리 카드 아래로 수직 정렬 (소형 카드) ──────────────────
+        const sesStep = SMALL_CARD_H + CARD_GAP;  // 40 + 8 = 48px 간격
         const maxShow = Math.min(catPlanets.length, 3);
-        // 카테고리 카드 아래쪽에서 시작 (catCy + UNI_CARD_H/2 + CARD_GAP)
-        const sesStartY = catCy + UNI_CARD_H / 2 + CARD_GAP + UNI_CARD_H / 2;
+        const sesStartY = catCy + UNI_CARD_H / 2 + CARD_GAP + SMALL_CARD_H / 2;
         for (let si = 0; si < maxShow; si++) {
           const planet = catPlanets[si];
-          const sx = catCx;                // 카테고리와 같은 X (수직 정렬)
-          const sy = sesStartY + si * sesStep;  // 카테고리 아래로 일렬 배치
+          const sx = catCx;
+          const sy = sesStartY + si * sesStep;
 
           const evCnt = planet.userData.eventCount || 0;
           const isSubHover = _hoveredHit?.obj === planet;
           const sesKey = planet.userData.clusterId || planet.userData.sessionId || '';
-          // Label — alias override or derive from userData (label-rules.js)
-          let sLabel = _aliases[sesKey] || normalizeLabel(planet.userData.intent || '', 26);
-          if (!sLabel) sLabel = deriveDisplayLabel(planet.userData, 26);
+          let sLabel = _aliases[sesKey] || normalizeLabel(planet.userData.intent || '', 22);
+          if (!sLabel) sLabel = deriveDisplayLabel(planet.userData, 22);
           const sesSub = evCnt > 0 ? `${evCnt}개 작업` : '';
 
           ctx.save();
@@ -380,10 +365,10 @@ function drawCompactProjectView() {
           ctx.setLineDash([]);
           ctx.restore();
 
-          drawUnifiedCard(ctx, sx, sy, cfg.color, sLabel, sesSub, false, isSubHover, false);
+          drawSmallCard(ctx, sx, sy, cfg.color, sLabel, sesSub, isSubHover);
 
           registerHitArea({
-            cx: sx, cy: sy, r: Math.max(UNI_CARD_W, UNI_CARD_H) / 2 + 4,
+            cx: sx, cy: sy, r: Math.max(SMALL_CARD_W, SMALL_CARD_H) / 2 + 4,
             obj: planet,
             data: { type: 'drillSession', intent: planet.userData.intent,
                     clusterId: planet.userData.clusterId,
@@ -396,7 +381,7 @@ function drawCompactProjectView() {
 
         if (catPlanets.length > maxShow) {
           const mx = catCx;
-          const my = sesStartY + (maxShow - 1) * sesStep + UNI_CARD_H / 2 + 10;  // 마지막 세션 아래
+          const my = sesStartY + (maxShow - 1) * sesStep + SMALL_CARD_H / 2 + 10;
           ctx.globalAlpha = 0.6;
           ctx.font = '400 10px -apple-system,sans-serif';
           ctx.fillStyle = cfg.color; ctx.textAlign = 'center';
