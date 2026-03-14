@@ -140,23 +140,14 @@ window.autoFitZoom = function(nodeCount) {
 };
 
 // ── 줌 레벨 뷰 전환 (개인 → 팀 → 전사) ──────────────────────────────────────
-let _zoomTransitionCooldown = 0;
+// 현재는 사이드바 버튼으로 전환, 줌 전환은 카메라 거리 제한으로 자연스럽게 처리
 function _checkZoomViewTransition(cameraR) {
-  const now = Date.now();
-  if (now - _zoomTransitionCooldown < 1500) return; // 전환 후 1.5초 쿨다운
-  const isPersonal = !_teamMode && !_companyMode && !_parallelMode;
-  if (isPersonal && cameraR > 200) {
-    _zoomTransitionCooldown = now;
-    if (typeof loadTeamDemo === 'function') loadTeamDemo();
-  } else if (_teamMode && !_companyMode && cameraR > 380) {
-    _zoomTransitionCooldown = now;
-    if (typeof loadCompanyDemo === 'function') loadCompanyDemo();
-  } else if (_teamMode && !_companyMode && cameraR < 60) {
-    _zoomTransitionCooldown = now;
-    if (typeof setViewPersonal === 'function') setViewPersonal();
-  } else if (_companyMode && cameraR < 200) {
-    _zoomTransitionCooldown = now;
-    if (typeof loadTeamDemo === 'function') loadTeamDemo();
+  // 줌 범위 외에서는 줌 레벨 표시만 업데이트 (자동 전환 비활성 — 씬 초기화로 화면 깜빡임 방지)
+  const zoomText = document.getElementById('ln-zoom-text');
+  if (zoomText) {
+    if (cameraR < 50) zoomText.textContent = '🔍 줌인';
+    else if (cameraR < 120) zoomText.textContent = '👤 내 화면';
+    else zoomText.textContent = '🌐 줌아웃';
   }
 }
 
@@ -897,7 +888,7 @@ class OrbitCam {
       if (_worldLocked) return;
       // 3D 카메라 줌 (스크롤 → 카메라 거리 변경)
       const factor = e.deltaY > 0 ? 1.08 : 0.92;
-      this.sph.r = Math.max(25, Math.min(500, this.sph.r * factor));
+      this.sph.r = Math.max(15, Math.min(250, this.sph.r * factor));
       this._apply();
       // _worldScale 호환 (팀 클러스터 등에서 참조)
       _worldScale = 80 / this.sph.r;

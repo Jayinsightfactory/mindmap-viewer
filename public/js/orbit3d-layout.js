@@ -173,9 +173,9 @@ function drawCompactProjectView() {
   // ── 양파형 동심원 배치 (3D 월드 좌표 X-Z 평면) ────────────────────────────
   const isDrillStage1 = _drillStage >= 1 && _drillProject;
   const baseAngle = -Math.PI / 2;
-  const WORLD_NODE_SEP = 5;   // 노드 간 최소 월드 거리
-  const WORLD_RING_BASE = 10; // 1번째 링 시작 반경
-  const WORLD_RING_GAP = 10;  // 링 간 간격
+  const WORLD_NODE_SEP = 4;   // 노드 간 최소 월드 거리
+  const WORLD_RING_BASE = 8;  // 1번째 링 시작 반경
+  const WORLD_RING_GAP = 7;   // 링 간 간격
 
   // 프로젝트를 링별로 분배 (5, 10, 15, 20…)
   const rings = [];
@@ -240,7 +240,7 @@ function drawCompactProjectView() {
   const meSc = toScreen(mePos);
   if (meSc.z <= 1) {
     const meScale = screenScale(mePos);
-    const meR = Math.max(22, Math.min(38, meScale * 4.5));
+    const meR = Math.max(40, Math.min(70, meScale * 9));
     _drawWireSphere(ctx, meSc.x, meSc.y, meR, '#06b6d4', {
       meridians: 3, parallels: 2, rotation: now * 0.15, glow: true,
     });
@@ -259,7 +259,7 @@ function drawCompactProjectView() {
     const color = proj.color;
     const info = analyzeProject(proj);
     const scale = screenScale(pos3d);
-    const nodeR = Math.max(14, Math.min(28, scale * 3.5));
+    const nodeR = Math.max(28, Math.min(56, scale * 7));
 
     if (dimmed) ctx.globalAlpha = 0.3;
 
@@ -318,7 +318,7 @@ function drawCompactProjectView() {
       // 카테고리: 프로젝트 외곽 방향 부채꼴 배치 (3D)
       const numCatsNow = sortedCats.length;
       const dirAngle = angle; // 프로젝트의 양파 배치 각도를 기준
-      const CAT_WORLD_DIST = 12;
+      const CAT_WORLD_DIST = 8;
       const catAngleStep = Math.max(Math.PI / 6, Math.PI * 2 / Math.max(numCatsNow * 3, 6));
       const catHalfSpan = Math.min((numCatsNow - 1) / 2 * catAngleStep, Math.PI * 5 / 6);
 
@@ -334,7 +334,7 @@ function drawCompactProjectView() {
         if (catSc.z > 1) return;
 
         const catScale = screenScale(catPos3d);
-        const catR = Math.max(12, Math.min(22, catScale * 3));
+        const catR = Math.max(24, Math.min(44, catScale * 6));
         const catSessionCount = catPlanets.length;
         const isCatDrilled = _drillStage >= 2 && _drillCategory?.catKey === catKey;
         const isCatHover = _hoveredHit?.data?.type === 'drillCategory' && _hoveredHit?.data?.catKey === catKey;
@@ -369,7 +369,7 @@ function drawCompactProjectView() {
 
         // ── 세션: 카테고리 아래 세로 배치 (소형 와이어프레임 구체) ────────────
         const maxShow = Math.min(catPlanets.length, 3);
-        const SES_WORLD_STEP = 5;
+        const SES_WORLD_STEP = 3;
         for (let si = 0; si < maxShow; si++) {
           const planet = catPlanets[si];
           const sesPos3d = new THREE.Vector3(
@@ -381,7 +381,7 @@ function drawCompactProjectView() {
           if (sesSc.z > 1) continue;
 
           const sesScale = screenScale(sesPos3d);
-          const sesR = Math.max(8, Math.min(14, sesScale * 2));
+          const sesR = Math.max(18, Math.min(32, sesScale * 4));
           const evCnt = planet.userData.eventCount || 0;
           const isSubHover = _hoveredHit?.obj === planet;
           const sesKey = planet.userData.clusterId || planet.userData.sessionId || '';
