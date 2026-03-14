@@ -458,7 +458,7 @@ function _drawPersonalPlanets() {
   const globalAlpha = lod === 3 ? 0.12 : 1;
   _lctx.globalAlpha = globalAlpha;
 
-  planetMeshes.forEach(p => {
+  (typeof planetMeshes !== 'undefined' ? planetMeshes : []).forEach(p => {
     if (_focusedCategory && p.userData.macroCat !== _focusedCategory) return;
     const sc = toScreen(p.position);
     if (sc.z > 1) return;
