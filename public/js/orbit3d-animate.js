@@ -619,13 +619,17 @@ function showPanel(data, obj) {
     const member = srcMembers.find(m => m.id === data.memberId);
     if (!member) return;
 
-    document.getElementById('ip-dot').style.background  = member.color;
-    document.getElementById('ip-type-text').textContent = '👤 팀원';
-    document.getElementById('ip-intent').textContent    = `${member.name}`;
+    const _ipDot = document.getElementById('ip-dot');
+    const _ipType = document.getElementById('ip-type-text');
+    const _ipIntent = document.getElementById('ip-intent');
+    if (_ipDot) _ipDot.style.background = member.color;
+    if (_ipType) _ipType.textContent = '👤 팀원';
+    if (_ipIntent) _ipIntent.textContent = `${member.name}`;
 
     const doneCount = member.tasks.filter(t => t.status === 'done').length;
     const activeCount = member.tasks.filter(t => t.status === 'active').length;
-    document.getElementById('ip-kv-list').innerHTML = [
+    const _ipKv = document.getElementById('ip-kv-list');
+    if (_ipKv) _ipKv.innerHTML = [
       ['역할',   member.role],
       ['진행 중', `${activeCount}개`],
       ['완료',   `${doneCount} / ${member.tasks.length}`],
@@ -764,7 +768,7 @@ function showPanel(data, obj) {
 
   } else if (data.type === 'goal') {
     // ── 팀/회사 목표 패널 ───────────────────────────────────────────────────
-    const sim = _activeSimData || TEAM_DEMO;
+    const sim = _activeSimData || (typeof TEAM_DEMO !== 'undefined' ? TEAM_DEMO : { name: '팀', goalColor: '#ffd700', members: [], company: {} });
     const goalColor = sim.goalColor || '#ffd700';
     const simMembers = _companyMode
       ? (sim.departments || []).flatMap(d => d.members || [])
@@ -779,8 +783,9 @@ function showPanel(data, obj) {
     const blockedTasks = simMembers.reduce((s, m) => s + m.tasks.filter(t => t.status === 'blocked').length, 0);
     const overallPct   = totalTasks > 0 ? Math.round(doneTasks / totalTasks * 100) : 0;
 
-    document.getElementById('ip-kv-list').innerHTML = [
-      _companyMode ? ['회사명', sim.name] : ['팀명', sim.name || TEAM_DEMO.name],
+    const _ipKv2 = document.getElementById('ip-kv-list');
+    if (_ipKv2) _ipKv2.innerHTML = [
+      _companyMode ? ['회사명', sim.name] : ['팀명', sim.name || (typeof TEAM_DEMO !== 'undefined' ? TEAM_DEMO.name : '팀')],
       ['조직', _companyMode ? `${(sim.departments||[]).length}개 부서` : (sim.company?.name || '')],
       ['전체 진행', `${overallPct}%`],
       [_companyMode ? '직원 수' : '팀원 수',  `${simMembers.length}명`],

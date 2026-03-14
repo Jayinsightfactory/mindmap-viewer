@@ -190,7 +190,8 @@ function memberTasksToFakeSessions(member) {
 }
 
 function drillDownToMember(memberNode) {
-  const memberData = TEAM_DEMO.members.find(m => m.id === memberNode.memberId);
+  const _tdm = (typeof TEAM_DEMO !== 'undefined' && TEAM_DEMO) ? TEAM_DEMO : { members: window._teamWorldData?.members || [] };
+  const memberData = _tdm.members.find(m => m.id === memberNode.memberId);
   if (!memberData) return;
   const fakeNodes = memberTasksToFakeSessions(memberData);
   _teamMode = false;
@@ -384,10 +385,17 @@ function drawTeamLabels() {
   const now = Date.now() / 1000; // seconds
 
   // ── LOD 2+ : 계층 오버레이 (Company / Universe) ──────────────────────────
+  // TEAM_DEMO → 실제 팀 데이터 폴백
+  const _td = (typeof TEAM_DEMO !== 'undefined' && TEAM_DEMO) ? TEAM_DEMO : {
+    name: window._teamWorldData?.name || '팀',
+    universe: { name: 'Orbit Universe', desc: '' },
+    company: { name: window._teamWorldData?.company?.name || 'Orbit', desc: window._teamWorldData?.company?.desc || '' },
+    members: window._teamWorldData?.members || [],
+  };
   if (lod >= 2 && _teamMode) {
     // LOD 3: 유니버스 뷰
     if (lod >= 3) {
-      const uv = TEAM_DEMO.universe;
+      const uv = _td.universe;
       _lctx.save();
       _lctx.textAlign = 'center';
       _lctx.textBaseline = 'middle';
@@ -402,7 +410,7 @@ function drawTeamLabels() {
       _lctx.fillText(uv.desc, innerWidth / 2, innerHeight / 2 - 12);
 
       // 회사 칩
-      const compName = TEAM_DEMO.company.name;
+      const compName = _td.company.name;
       _lctx.font = '600 13px -apple-system,sans-serif';
       const cw = _lctx.measureText(compName).width + 24;
       const cx = innerWidth / 2, cy = innerHeight / 2 + 16;
@@ -417,7 +425,7 @@ function drawTeamLabels() {
 
       _lctx.font = '400 11px -apple-system,sans-serif';
       _lctx.fillStyle = '#6e7681';
-      _lctx.fillText(TEAM_DEMO.company.desc, innerWidth / 2, innerHeight / 2 + 40);
+      _lctx.fillText(_td.company.desc, innerWidth / 2, innerHeight / 2 + 40);
       _lctx.restore();
     }
     // LOD 2: 회사 뷰 — 상단 브레드크럼
@@ -425,7 +433,7 @@ function drawTeamLabels() {
       _lctx.save();
       _lctx.textAlign = 'center';
       _lctx.textBaseline = 'middle';
-      const breadcrumb = `${TEAM_DEMO.universe.name}  ›  ${TEAM_DEMO.company.name}  ›  ${TEAM_DEMO.name}`;
+      const breadcrumb = `${_td.universe.name}  ›  ${_td.company.name}  ›  ${_td.name}`;
       _lctx.font = '400 12px -apple-system,sans-serif';
       const bw = _lctx.measureText(breadcrumb).width + 28;
       const bx = innerWidth / 2, by = 54;
