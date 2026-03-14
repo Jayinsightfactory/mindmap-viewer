@@ -184,7 +184,9 @@ function _mwFocusCamera(hubPos, ringRadius) {
 }
 
 // ─── 뷰 렌더링 ────────────────────────────────────────────────────────────────
+// 3D 카드 메시 비활성화 — 2D Canvas drawCompactProjectView()가 대체
 function renderView(nodes, hubLabel, levelIdx, hubPos) {
+  return; // 2D 카드 레이아웃 사용 (orbit3d-layout.js drawCompactProjectView)
   const li = Math.min(levelIdx || 0, LEVEL_CFG.length - 1);
   const hp = hubPos || { x: 0, y: 0, z: 0 };
 
