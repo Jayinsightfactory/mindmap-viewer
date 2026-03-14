@@ -2236,6 +2236,174 @@ function openHiddenNodePanel() {
 }
 window.openHiddenNodePanel = openHiddenNodePanel;
 
+// ── 프로젝트 표시 토글 패널 ──────────────────────────────────────────────────
+function openProjectTogglePanel() {
+  let panel = document.getElementById('project-toggle-panel');
+  if (!panel) {
+    panel = document.createElement('div');
+    panel.id = 'project-toggle-panel';
+    Object.assign(panel.style, {
+      position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
+      zIndex: '2000', background: '#0d1117', border: '1px solid rgba(99,102,241,0.4)',
+      borderRadius: '16px', padding: '24px', width: '380px', maxHeight: '520px',
+      overflowY: 'auto', boxShadow: '0 8px 40px rgba(0,0,0,0.7)', color: '#e2e8f0',
+    });
+    document.body.appendChild(panel);
+  }
+
+  const groups = window._projectGroups || {};
+  const hidden = window._hiddenNodes || {};
+  const allProjects = Object.keys(groups).filter(name => {
+    const grp = groups[name];
+    const planets = grp.planetMeshes || [];
+    return planets.reduce((s, p) => s + (p.userData.eventCount || 0), 0) > 0;
+  }).sort();
+
+  const visibleCount = allProjects.filter(n => !hidden[n]).length;
+  const hiddenCount = allProjects.length - visibleCount;
+
+  panel.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <span style="font-weight:700;font-size:15px">📍 프로젝트 표시 (${visibleCount}/${allProjects.length})</span>
+      <button onclick="document.getElementById('project-toggle-panel').remove()"
+        style="background:none;border:none;color:#94a3b8;font-size:20px;cursor:pointer;line-height:1">×</button>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:14px">
+      <button onclick="_projToggleAll(true)" style="
+        flex:1;background:rgba(34,197,94,0.15);border:1px solid rgba(34,197,94,0.4);color:#4ade80;
+        border-radius:8px;padding:6px 0;font-size:12px;cursor:pointer">✓ 모두 표시</button>
+      <button onclick="_projToggleAll(false)" style="
+        flex:1;background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.4);color:#f87171;
+        border-radius:8px;padding:6px 0;font-size:12px;cursor:pointer">✕ 모두 숨기기</button>
+    </div>
+    ${allProjects.length === 0
+      ? '<p style="color:#64748b;text-align:center;padding:20px 0">프로젝트가 없습니다</p>'
+      : allProjects.map(name => {
+        const isVisible = !hidden[name];
+        const grp = groups[name];
+        const planets = grp.planetMeshes || [];
+        const evCount = planets.reduce((s, p) => s + (p.userData.eventCount || 0), 0);
+        const color = grp.color || '#58a6ff';
+        return `
+        <div style="display:flex;align-items:center;padding:8px 10px;margin-bottom:6px;
+          background:rgba(255,255,255,0.03);border-radius:10px;border:1px solid rgba(255,255,255,0.06);
+          cursor:pointer;transition:background 0.15s"
+          onclick="_projToggleSingle('${escHtml(name)}')">
+          <div style="width:28px;height:28px;border-radius:6px;display:flex;align-items:center;justify-content:center;
+            margin-right:10px;flex-shrink:0;font-size:16px;
+            background:${isVisible ? 'rgba(34,197,94,0.2)' : 'rgba(100,116,139,0.2)'};
+            border:1px solid ${isVisible ? 'rgba(34,197,94,0.4)' : 'rgba(100,116,139,0.3)'}">
+            ${isVisible ? '✓' : ''}
+          </div>
+          <div style="flex:1;overflow:hidden">
+            <div style="font-size:13px;color:${isVisible ? '#e2e8f0' : '#64748b'};overflow:hidden;
+              text-overflow:ellipsis;white-space:nowrap">${escHtml(name)}</div>
+            <div style="font-size:11px;color:#64748b">${planets.length}세션 · ${evCount}이벤트</div>
+          </div>
+          <div style="width:8px;height:8px;border-radius:50%;background:${color};margin-left:8px;flex-shrink:0;
+            opacity:${isVisible ? '1' : '0.3'}"></div>
+        </div>`;
+      }).join('')}
+  `;
+}
+window.openProjectTogglePanel = openProjectTogglePanel;
+
+function _projToggleSingle(name) {
+  const hidden = window._hiddenNodes || {};
+  if (hidden[name]) {
+    delete hidden[name];
+  } else {
+    hidden[name] = name;
+  }
+  if (typeof window._saveHiddenNodes === 'function') window._saveHiddenNodes();
+  // 숨긴 노드 버튼 표시 업데이트
+  const hiddenBtn = document.getElementById('ln-hidden-btn');
+  if (hiddenBtn) hiddenBtn.style.display = Object.keys(hidden).length > 0 ? '' : 'none';
+  openProjectTogglePanel();
+}
+window._projToggleSingle = _projToggleSingle;
+
+function _projToggleAll(show) {
+  const hidden = window._hiddenNodes || {};
+  const groups = window._projectGroups || {};
+  if (show) {
+    Object.keys(hidden).forEach(k => delete hidden[k]);
+  } else {
+    Object.keys(groups).forEach(name => { hidden[name] = name; });
+  }
+  if (typeof window._saveHiddenNodes === 'function') window._saveHiddenNodes();
+  const hiddenBtn = document.getElementById('ln-hidden-btn');
+  if (hiddenBtn) hiddenBtn.style.display = Object.keys(hidden).length > 0 ? '' : 'none';
+  openProjectTogglePanel();
+}
+window._projToggleAll = _projToggleAll;
+
+// ── 팀원 세션 정보 패널 ──────────────────────────────────────────────────────
+function openTeamMemberPanel(hitData) {
+  const { memberName, color, member } = hitData;
+  if (!member) return;
+
+  let panel = document.getElementById('team-member-panel');
+  if (!panel) {
+    panel = document.createElement('div');
+    panel.id = 'team-member-panel';
+    Object.assign(panel.style, {
+      position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
+      zIndex: '2000', background: '#0d1117', border: `1px solid ${color}44`,
+      borderRadius: '16px', padding: '24px', width: '400px', maxHeight: '520px',
+      overflowY: 'auto', boxShadow: '0 8px 40px rgba(0,0,0,0.7)', color: '#e2e8f0',
+    });
+    document.body.appendChild(panel);
+  }
+
+  const tasks = member.tasks || [];
+  const activeTasks = tasks.filter(t => t.status === 'active');
+  const doneTasks = tasks.filter(t => t.status === 'done');
+  const role = member.role || '';
+
+  panel.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <div style="width:36px;height:36px;border-radius:50%;background:${color}33;border:2px solid ${color};
+          display:flex;align-items:center;justify-content:center;font-size:18px">👤</div>
+        <div>
+          <div style="font-weight:700;font-size:15px">${escHtml(memberName)}</div>
+          <div style="font-size:11px;color:#64748b">${escHtml(role)} · ${activeTasks.length}개 진행 · ${doneTasks.length}개 완료</div>
+        </div>
+      </div>
+      <button onclick="document.getElementById('team-member-panel').remove()"
+        style="background:none;border:none;color:#94a3b8;font-size:20px;cursor:pointer;line-height:1">×</button>
+    </div>
+    ${tasks.length === 0
+      ? '<p style="color:#64748b;text-align:center;padding:20px 0">활동 정보가 없습니다</p>'
+      : tasks.map(t => {
+        const statusColor = t.status === 'active' ? '#3fb950' : t.status === 'done' ? '#58a6ff' : '#6e7681';
+        const statusText = t.status === 'active' ? '진행중' : t.status === 'done' ? '완료' : '대기';
+        const pct = Math.round((t.progress || 0) * 100);
+        const subtasks = t.subtasks || [];
+        return `
+        <div style="padding:12px;margin-bottom:8px;background:rgba(255,255,255,0.03);
+          border-radius:10px;border:1px solid rgba(255,255,255,0.06)">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+            <span style="font-size:13px;font-weight:600;color:#e2e8f0">${escHtml(t.name)}</span>
+            <span style="font-size:11px;color:${statusColor};background:${statusColor}22;
+              padding:2px 8px;border-radius:10px">${statusText}</span>
+          </div>
+          <div style="height:4px;background:rgba(255,255,255,0.06);border-radius:2px;margin-bottom:6px">
+            <div style="height:100%;width:${pct}%;background:${statusColor};border-radius:2px"></div>
+          </div>
+          ${subtasks.length > 0 ? `
+            <div style="font-size:11px;color:#64748b;margin-top:4px">
+              ${subtasks.slice(0, 3).map(f => `<div style="padding:1px 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">📄 ${escHtml(f.split('/').pop())}</div>`).join('')}
+              ${subtasks.length > 3 ? `<div style="color:#475569">+${subtasks.length - 3}개 파일</div>` : ''}
+            </div>
+          ` : ''}
+        </div>`;
+      }).join('')}
+  `;
+}
+window.openTeamMemberPanel = openTeamMemberPanel;
+
 // ── 트래커 설치 배너 ────────────────────────────────────────────────
 async function updateTrackerBanner() {
   const profileView = document.getElementById('lm-profile-view');

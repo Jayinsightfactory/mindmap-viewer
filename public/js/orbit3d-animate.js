@@ -120,6 +120,12 @@ renderer.domElement.addEventListener('click', e => {
       return;
     }
 
+    // ── 팀원 클릭 → 세션 정보 패널 표시 ────────────────────────────────────
+    if (type === 'teamMember') {
+      if (typeof openTeamMemberPanel === 'function') openTeamMemberPanel(hit.data);
+      return;
+    }
+
     // ── 카테고리 카드 클릭 → 해당 카테고리 포커스 ──────────────────────────
     if (type === 'category') {
       if (_focusedCategory === hit.data.catKey) {

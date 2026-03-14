@@ -177,38 +177,64 @@ function drawCompactProjectView() {
     };
   }
 
-  // ── 레이아웃 계산 (드릴다운 시프트 포함, 드로잉 전) ─────────────────────
+  // ── 레이아웃 계산 (양파형 동심원 배치) ─────────────────────────────────────
   const meW = UNI_CARD_W, meH = UNI_CARD_H, meR = UNI_CARD_R;
-  const NODE_GAP = 6;
-  const LAYER_OFFSET = UNI_CARD_W + 8;
   const isDrillStage1 = _drillStage >= 1 && _drillProject;
   const baseAngle = -Math.PI / 2;
-  const angleStep = (Math.PI * 2) / projects.length;
 
-  // ── 균일 거리 배치: ME 노드 원형 취급 + 카드 대각선 반경 고정 ──
-  // 기존: 각도별 사각형 edge 계산 → 불균일 거리
-  // 수정: 모든 각도에서 동일 거리 (시각적 균일성 보장)
-  const ME_RADIUS = Math.max(meW, meH) / 2;            // ME 외접원
-  const CARD_RADIUS = Math.sqrt(UNI_CARD_W * UNI_CARD_W + UNI_CARD_H * UNI_CARD_H) / 2; // 카드 대각선/2
+  // ── 양파형 동심원 배치: 안쪽 링부터 5, 10, 15, 20개씩 채움 ──
+  const CARD_RADIUS = Math.sqrt(UNI_CARD_W * UNI_CARD_W + UNI_CARD_H * UNI_CARD_H) / 2;
+  const ME_RADIUS = Math.max(meW, meH) / 2;
+  const RING_GAP = 20; // 링 간 간격
   const CARD_GAP_MIN = 10;
-  let _minRadius = 0;
-  if (projects.length > 1) {
-    const sinHalf = Math.sin(angleStep / 2);
-    if (sinHalf > 0) _minRadius = (CARD_RADIUS + CARD_GAP_MIN / 2) / sinHalf;
-  }
-  const FIXED_NODE_DIST = Math.max(ME_RADIUS + NODE_GAP + CARD_RADIUS, _minRadius);
-  function getNodeDist(/* theta */) {
-    return FIXED_NODE_DIST;
+
+  // 프로젝트를 링별로 분배
+  const rings = [];
+  let placed = 0;
+  let ringIdx = 0;
+  while (placed < projects.length) {
+    const capacity = Math.min(5 + ringIdx * 5, projects.length - placed);
+    rings.push(projects.slice(placed, placed + capacity));
+    placed += capacity;
+    ringIdx++;
   }
 
-  // ── 드릴다운 시 월드 원점 이동 (드릴 방향 반대로 밀어 체인이 화면 안에 들어오게) ──
+  // 각 링의 반경 계산 (카드가 겹치지 않는 최소 반경)
+  const ringRadii = [];
+  let prevR = ME_RADIUS + CARD_RADIUS + RING_GAP;
+  rings.forEach((ring, ri) => {
+    const count = ring.length;
+    // 카드가 원주 위에서 겹치지 않는 최소 반경
+    const sinHalf = Math.sin(Math.PI / count);
+    const minR = sinHalf > 0 ? (CARD_RADIUS + CARD_GAP_MIN / 2) / sinHalf : prevR;
+    const ringR = Math.max(prevR, minR);
+    ringRadii.push(ringR);
+    prevR = ringR + CARD_RADIUS * 2 + RING_GAP;
+  });
+
+  // 프로젝트 → {ringIndex, angleInRing, dist} 매핑
+  const projLayout = [];
+  rings.forEach((ring, ri) => {
+    const count = ring.length;
+    const step = (Math.PI * 2) / count;
+    ring.forEach((proj, pi) => {
+      const angle = baseAngle + pi * step;
+      projLayout.push({ proj, angle, dist: ringRadii[ri], ringIdx: ri });
+    });
+  });
+
+  // getNodeDist는 이제 projLayout에서 참조
+  function getNodeDist(projIndex) {
+    return projLayout[projIndex]?.dist || ringRadii[0] || 200;
+  }
+
+  // ── 드릴다운 시 월드 원점 이동 ──
   if (isDrillStage1) {
-    const drillIdx = projects.findIndex(p => p.name === _drillProject.name);
+    const drillIdx = projLayout.findIndex(p => p.proj.name === _drillProject.name);
     if (drillIdx >= 0) {
-      const drillAngle = baseAngle + drillIdx * angleStep;
+      const { angle: drillAngle, dist: drillDist } = projLayout[drillIdx];
       const dX = Math.cos(drillAngle), dY = Math.sin(drillAngle);
-      // 화면 픽셀 기준 필요 전개 거리
-      const totalExpand = (getNodeDist(drillAngle) + 200 + (UNI_CARD_H + 8) * 2) * _wScale;
+      const totalExpand = (drillDist + 200 + (UNI_CARD_H + 8) * 2) * _wScale;
       const SIDEBAR_W = 210, marginR = 40, marginT = 80, marginB = 60;
       const availX = dX > 0 ? W - _txX - marginR : _txX - SIDEBAR_W;
       const availY = dY > 0 ? H - _txY - marginB : _txY - marginT;
@@ -223,19 +249,29 @@ function drawCompactProjectView() {
   ctx.translate(_txX, _txY);
   ctx.scale(_wScale, _wScale);
 
+  // ── 동심원 링 시각화 (양파형 가이드라인) ─────────────────────────────────
+  ringRadii.forEach((rr, ri) => {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(148,163,184,0.08)';
+    ctx.lineWidth = 0.8;
+    ctx.setLineDash([6, 6]);
+    ctx.beginPath();
+    ctx.arc(0, 0, rr, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+  });
+
   // ── ME 노드 (월드 원점 = 0, 0) — 프로젝트 카드와 동일 크기 ────────────────
   drawUnifiedCard(ctx, 0, 0, '#06b6d4', '나의 작업', `${projects.length} 프로젝트`, false, false, false);
 
   // 라벨 별칭 맵 (인라인 편집 저장본)
   const _aliases = (() => { try { return JSON.parse(localStorage.getItem('orbitLabelAliases') || '{}'); } catch { return {}; } })();
 
-  projects.forEach((proj, i) => {
-    // 360도 방사형: ME 박스 테두리에 밀착 (월드 좌표계, 트랜스폼이 스케일 적용)
-    const angle = baseAngle + i * angleStep;
+  projLayout.forEach(({ proj, angle, dist }, i) => {
     const isThisDrilled = isDrillStage1 && _drillProject.name === proj.name;
-    const nodeDist = getNodeDist(angle);
-    const cx = Math.cos(angle) * nodeDist;
-    const cy = Math.sin(angle) * nodeDist;
+    const cx = Math.cos(angle) * dist;
+    const cy = Math.sin(angle) * dist;
     const isHover = _hoveredHit?.data?.type === 'constellation' && _hoveredHit?.data?.projName === proj.name;
     const color = proj.color;
     const info = analyzeProject(proj);
