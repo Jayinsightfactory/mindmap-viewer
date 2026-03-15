@@ -1480,59 +1480,6 @@
   .msg-input-wrap input::placeholder { color:#6e7681; }
   .msg-send-btn { width:32px; height:32px; border-radius:50%; background:#1f6feb; border:none; color:#fff; cursor:pointer; font-size:16px; display:flex; align-items:center; justify-content:center; transition:.2s; flex-shrink:0; }
   .msg-send-btn:hover { background:#388bfd; }
-  /* ══ AI 어시스턴트 패널 ═══════════════════════════════════════ */
-  #assistant-panel {
-    position:fixed; right:0; top:0; bottom:0; width:420px;
-    background:rgba(13,17,23,0.98); border-left:1px solid #30363d;
-    z-index:420; display:flex; flex-direction:column;
-    transform:translateX(100%); transition:transform .3s ease;
-    backdrop-filter:blur(20px); box-shadow:-8px 0 32px rgba(0,0,0,.5);
-  }
-  #assistant-panel.open { transform:translateX(0); }
-
-  .ast-hdr { display:flex; align-items:center; padding:12px 14px; border-bottom:1px solid #21262d; gap:8px; flex-shrink:0; }
-  .ast-hdr-title { font-size:13px; font-weight:700; color:#58a6ff; flex:1; }
-  .ast-clear-btn { background:none; border:1px solid #30363d; color:#6e7681; cursor:pointer; font-size:10px; padding:3px 8px; border-radius:4px; }
-  .ast-clear-btn:hover { color:#e6edf3; border-color:#58a6ff; }
-
-  .ast-context { padding:8px 14px; background:rgba(31,111,235,0.08); border-bottom:1px solid #21262d; font-size:11px; color:#8b949e; flex-shrink:0; }
-  .ast-context span:first-child, .ast-context span:nth-child(3), .ast-context span:nth-child(5) { color:#58a6ff; font-weight:700; }
-  .ast-ctx-sep { margin:0 6px; opacity:.3; }
-
-  .ast-feedback-bar { padding:8px 14px; background:rgba(248,81,73,0.1); border-bottom:1px solid #f8514930; font-size:11px; color:#f85149; flex-shrink:0; }
-
-  .ast-messages { flex:1; overflow-y:auto; padding:12px 14px; display:flex; flex-direction:column; gap:8px; }
-  .ast-messages::-webkit-scrollbar { width:3px; }
-  .ast-messages::-webkit-scrollbar-thumb { background:#21262d; border-radius:2px; }
-
-  .ast-welcome { display:flex; flex-direction:column; align-items:center; gap:12px; padding:30px 10px; text-align:center; }
-  .ast-welcome-icon { width:48px; height:48px; border-radius:50%; background:linear-gradient(135deg,#1f6feb,#58a6ff); display:flex; align-items:center; justify-content:center; font-size:16px; font-weight:900; color:#fff; }
-  .ast-welcome-text { font-size:12px; color:#8b949e; line-height:1.7; }
-  .ast-suggestions { display:flex; flex-wrap:wrap; gap:6px; justify-content:center; margin-top:8px; }
-  .ast-suggest-btn { background:rgba(31,111,235,0.1); border:1px solid #1f6feb40; color:#58a6ff; font-size:11px; padding:6px 12px; border-radius:16px; cursor:pointer; transition:.2s; }
-  .ast-suggest-btn:hover { background:rgba(31,111,235,0.2); border-color:#58a6ff; }
-
-  .ast-msg { max-width:90%; padding:10px 14px; border-radius:12px; font-size:12px; line-height:1.7; word-break:break-word; }
-  .ast-msg.user { align-self:flex-end; background:#1f6feb; color:#fff; border-bottom-right-radius:3px; }
-  .ast-msg.assistant { align-self:flex-start; background:#161b22; border:1px solid #21262d; color:#e6edf3; border-bottom-left-radius:3px; }
-  .ast-msg.assistant pre { background:#0d1117; border:1px solid #30363d; border-radius:6px; padding:10px; margin:8px 0; overflow-x:auto; font-size:11px; line-height:1.5; }
-  .ast-msg.assistant code { font-family:'Fira Code','Consolas',monospace; font-size:11px; }
-  .ast-msg.assistant p { margin:4px 0; }
-  .ast-msg .ast-time { font-size:10px; opacity:.5; margin-top:4px; text-align:right; }
-  .ast-msg .ast-copy-btn { display:inline-block; font-size:10px; color:#58a6ff; cursor:pointer; margin-top:4px; background:none; border:none; padding:0; }
-  .ast-msg .ast-copy-btn:hover { text-decoration:underline; }
-
-  .ast-loading { align-self:flex-start; padding:10px 14px; color:#6e7681; font-size:12px; }
-  .ast-loading::after { content:'...'; animation:ast-dots 1.5s infinite; }
-  @keyframes ast-dots { 0%{content:'.'} 33%{content:'..'} 66%{content:'...'} }
-
-  .ast-input-wrap { padding:10px 12px; border-top:1px solid #21262d; display:flex; align-items:center; gap:8px; flex-shrink:0; }
-  .ast-input-wrap input { flex:1; background:#0d1117; border:1px solid #30363d; border-radius:20px; padding:8px 16px; color:#e6edf3; font-size:12px; outline:none; font-family:inherit; }
-  .ast-input-wrap input:focus { border-color:#58a6ff; }
-  .ast-input-wrap input::placeholder { color:#6e7681; }
-  .ast-send-btn { padding:6px 16px; border-radius:20px; background:#1f6feb; border:none; color:#fff; cursor:pointer; font-size:12px; font-weight:600; transition:.2s; flex-shrink:0; }
-  .ast-send-btn:hover { background:#388bfd; }
-
   /* 채널 생성 모달 (인라인) */
   #msg-create-modal { padding:12px; border-top:1px solid #21262d; display:none; }
   #msg-create-modal.open { display:block; }

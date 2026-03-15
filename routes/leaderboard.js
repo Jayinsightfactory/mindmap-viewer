@@ -128,10 +128,10 @@ function createLeaderboardRouter({ getAllEvents, getSessions, getEventsForUser, 
   const auth   = optionalAuth || noAuth;
 
   // ── 전체 랭킹 ─────────────────────────────────────────────────────────
-  router.get('/leaderboard', (req, res) => {
+  router.get('/leaderboard', async (req, res) => {
     const { limit = 20, period } = req.query;
     // 사용자별 이벤트 필터링 (없으면 전체 폴백)
-    let events = getEventsForUser ? getEventsForUser(resolveUserId(req)) : (getAllEvents ? getAllEvents() : []);
+    let events = getEventsForUser ? await getEventsForUser(resolveUserId(req)) : (getAllEvents ? getAllEvents() : []);
 
     // 기간 필터
     if (period === 'week')  events = events.filter(e => e.timestamp >= new Date(Date.now() - 7  * 86400000).toISOString());
@@ -157,10 +157,10 @@ function createLeaderboardRouter({ getAllEvents, getSessions, getEventsForUser, 
   });
 
   // ── 내 순위 ───────────────────────────────────────────────────────────
-  router.get('/leaderboard/me', auth, (req, res) => {
+  router.get('/leaderboard/me', auth, async (req, res) => {
     const userId   = req.user?.id || 'local';
     // 사용자별 이벤트 필터링 (없으면 전체 폴백)
-    const events   = getEventsForUser ? getEventsForUser(resolveUserId(req)) : (getAllEvents ? getAllEvents() : []);
+    const events   = getEventsForUser ? await getEventsForUser(resolveUserId(req)) : (getAllEvents ? getAllEvents() : []);
     const allStats = computeAllUserStats(events);
     const myStats  = allStats.find(s => s.userId === userId);
 
@@ -186,11 +186,12 @@ function createLeaderboardRouter({ getAllEvents, getSessions, getEventsForUser, 
   });
 
   // ── 이번 주 랭킹 ──────────────────────────────────────────────────────
-  router.get('/leaderboard/weekly', (req, res) => {
+  router.get('/leaderboard/weekly', async (req, res) => {
     const { limit = 10 } = req.query;
     const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString();
     // 사용자별 이벤트 필터링 (없으면 전체 폴백)
-    const events  = (getEventsForUser ? getEventsForUser(resolveUserId(req)) : (getAllEvents ? getAllEvents() : [])).filter(e => e.timestamp >= weekAgo);
+    const allEvents = getEventsForUser ? await getEventsForUser(resolveUserId(req)) : (getAllEvents ? getAllEvents() : []);
+    const events  = allEvents.filter(e => e.timestamp >= weekAgo);
 
     const allStats = computeAllUserStats(events);
     const weekly   = allStats.slice(0, Math.min(parseInt(limit) || 10, 50)).map((s, i) => ({
@@ -202,10 +203,10 @@ function createLeaderboardRouter({ getAllEvents, getSessions, getEventsForUser, 
   });
 
   // ── 도구별 사용 랭킹 ──────────────────────────────────────────────────
-  router.get('/leaderboard/tools', (req, res) => {
+  router.get('/leaderboard/tools', async (req, res) => {
     const { limit = 15 } = req.query;
     // 사용자별 이벤트 필터링 (없으면 전체 폴백)
-    const events = getEventsForUser ? getEventsForUser(resolveUserId(req)) : (getAllEvents ? getAllEvents() : []);
+    const events = getEventsForUser ? await getEventsForUser(resolveUserId(req)) : (getAllEvents ? getAllEvents() : []);
     const toolCounts = {};
 
     for (const ev of events) {
@@ -226,9 +227,9 @@ function createLeaderboardRouter({ getAllEvents, getSessions, getEventsForUser, 
   });
 
   // ── 연속 사용일 랭킹 ──────────────────────────────────────────────────
-  router.get('/leaderboard/streaks', (req, res) => {
+  router.get('/leaderboard/streaks', async (req, res) => {
     // 사용자별 이벤트 필터링 (없으면 전체 폴백)
-    const events   = getEventsForUser ? getEventsForUser(resolveUserId(req)) : (getAllEvents ? getAllEvents() : []);
+    const events   = getEventsForUser ? await getEventsForUser(resolveUserId(req)) : (getAllEvents ? getAllEvents() : []);
     const allStats = computeAllUserStats(events);
     const streaks  = allStats
       .filter(s => s.streak > 0)
@@ -248,9 +249,9 @@ function createLeaderboardRouter({ getAllEvents, getSessions, getEventsForUser, 
   });
 
   // ── 사용자 업적 ───────────────────────────────────────────────────────
-  router.get('/leaderboard/achievements/:userId', (req, res) => {
+  router.get('/leaderboard/achievements/:userId', async (req, res) => {
     // 사용자별 이벤트 필터링 (없으면 전체 폴백)
-    const events = getEventsForUser ? getEventsForUser(resolveUserId(req)) : (getAllEvents ? getAllEvents() : []);
+    const events = getEventsForUser ? await getEventsForUser(resolveUserId(req)) : (getAllEvents ? getAllEvents() : []);
     const stats  = computeUserStats(events, req.params.userId);
     const earned = getAchievements(stats);
     const locked = ACHIEVEMENTS

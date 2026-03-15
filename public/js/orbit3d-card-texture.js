@@ -264,76 +264,32 @@ function _drawWireSphere(ctx, cx, cy, R, color, opts) {
   ctx.restore();
 }
 
-// 텍스트를 maxChars 기준으로 줄바꿈 (단어 경계 우선, 없으면 강제)
-function _wrapText(text, maxChars) {
-  if (!text || text.length <= maxChars) return [text];
-  const lines = [];
-  let remaining = text;
-  while (remaining.length > 0) {
-    if (remaining.length <= maxChars) { lines.push(remaining); break; }
-    // 단어 경계 찾기
-    let breakAt = -1;
-    for (let i = maxChars; i >= Math.floor(maxChars * 0.5); i--) {
-      if (remaining[i] === ' ' || remaining[i] === '-' || remaining[i] === '·') {
-        breakAt = i; break;
-      }
-    }
-    if (breakAt < 0) breakAt = maxChars; // 강제 분할
-    lines.push(remaining.slice(0, breakAt).trim());
-    remaining = remaining.slice(breakAt).trim();
-    if (lines.length >= 3) { // 최대 3줄
-      if (remaining.length > 0) lines[lines.length - 1] += '\u2026';
-      break;
-    }
-  }
-  return lines;
-}
-
-// 와이어프레임 구체 내부 텍스트 라벨 (10자 줄바꿈, "프로젝트명 — 작업 목적" 구조)
+// 와이어프레임 구체 내부 텍스트 라벨
 function _drawSphereLabel(ctx, cx, cy, R, title, sub, color, dimmed) {
   ctx.save();
   if (dimmed) ctx.globalAlpha = 0.3;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
 
-  const MAX_CHARS = 10;  // 한 줄 최대 10자
-  const fontSize = Math.max(9, Math.min(15, R * 0.38));
-  const subSize = Math.max(7, fontSize - 2);
-  const lineH = fontSize * 1.2;
-  const subLineH = subSize * 1.2;
-
-  // 제목 줄바꿈 (프로젝트명)
-  const titleLines = _wrapText(title || '', MAX_CHARS);
-  // 부제 줄바꿈 (작업 목적 — 최대 2줄)
-  let subLines = [];
-  if (sub) {
-    subLines = _wrapText(sub, MAX_CHARS + 2);
-    if (subLines.length > 2) subLines = [subLines[0], subLines[1].replace(/\u2026?$/, '\u2026')];
-  }
-
-  // 전체 높이 계산 → 수직 중앙
-  const gap = (titleLines.length > 0 && subLines.length > 0) ? 2 : 0;
-  const totalH = titleLines.length * lineH + gap + subLines.length * subLineH;
-  let y = cy - totalH / 2 + lineH / 2;
-
-  // 제목 (프로젝트명 — 밝은 흰색, 볼드)
+  // 제목 (구체 중앙 약간 위)
+  const fontSize = Math.max(8, Math.min(13, R * 0.52));
   ctx.font = `600 ${fontSize}px 'Inter',-apple-system,sans-serif`;
   ctx.fillStyle = '#e2e8f0';
-  for (let i = 0; i < titleLines.length; i++) {
-    ctx.fillText(titleLines[i], cx, y);
-    y += lineH;
-  }
+  const maxW = R * 1.6;
+  let clipped = title;
+  while (ctx.measureText(clipped).width > maxW && clipped.length > 1) clipped = clipped.slice(0, -1);
+  if (clipped !== title) clipped += '\u2026';
+  ctx.fillText(clipped, cx, cy - (sub ? fontSize * 0.4 : 0));
 
-  // 부제 (작업 목적 — 연한 색, 모노스페이스)
-  if (subLines.length > 0) {
-    y += gap;
-    y -= lineH; y += subLineH / 2 + lineH / 2; // 간격 보정
+  // 부제 (구체 중앙 약간 아래)
+  if (sub) {
+    const subSize = Math.max(7, fontSize - 2);
     ctx.font = `400 ${subSize}px 'JetBrains Mono','Fira Code',monospace`;
     ctx.fillStyle = '#94a3b8';
-    for (let i = 0; i < subLines.length; i++) {
-      ctx.fillText(subLines[i], cx, y);
-      y += subLineH;
-    }
+    let cs = sub;
+    while (ctx.measureText(cs).width > maxW && cs.length > 1) cs = cs.slice(0, -1);
+    if (cs !== sub) cs += '\u2026';
+    ctx.fillText(cs, cx, cy + fontSize * 0.55);
   }
   ctx.restore();
 }

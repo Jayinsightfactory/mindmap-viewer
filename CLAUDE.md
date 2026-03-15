@@ -4,22 +4,6 @@
 > 모든 답변과 작업은 이 웹 서비스 기획/개발 관점에서 이루어져야 한다.
 > 일반적인 코딩 도움이 아니라, **제품 공동 기획자**로서 행동한다.
 
-> 모든 에이전트는 작업 전 이 문서를 읽고, 변경이 기획 의도에 맞는지 판단할 것.
-
-## 서비스 목적
-AI 작업 흐름을 3D 우주 뷰로 실시간 시각화하고, 데스크톱 에이전트·하네스 시스템으로 자동 수집·분석하는 플랫폼
-
-## 핵심 사용자
-AI 작업 흐름을 시각적으로 추적·분석하고 싶은 개발자 및 팀
-
-## 절대 깨지면 안 되는 것
-- orbit3d.html — Three.js 3D 우주 뷰 인터랙션 (클릭, 드래그, 줌)
-- JWT + Google OAuth2 로그인 흐름
-- Railway 배포 후 PostgreSQL 연결 (DATABASE_URL)
-- Claude Haiku API 챗봇 응답
-- Python 데스크톱 에이전트 (agent/) 수집 파이프라인
-- Chrome Extension ↔ 서버 통신
-
 ---
 
 ## 절대 규칙
@@ -221,56 +205,3 @@ Phase 5 ✅ AI 학습 → 맞춤 기획 (루틴/트리거/자동화/솔루션추
 ## 테스트 계정
 - **계정1**: 임재용 / dlaww@kicda.com / ID: MMDFB0XN5580E306A1
 - **계정2**: jaeyong lim / dlaww584@gmail.com / ID: MMHBBWQ83F0AE032DA
-
----
-
-## 영역 맵
-
-> 각 작업은 아래 영역 중 하나만 건드린다.
-> 영역을 넘어야 할 때는 리드에게 승인 요청.
-
-| 영역 | 경로 | 주의사항 |
-|------|------|----------|
-| 서버 진입점 | server.js | 미들웨어 순서 변경 금지 |
-| API 라우터 | routes/ | workspace, graph, chat, follow 등 |
-| DB 로컬 | src/db.js | SQLite 문법만 (`?` 플레이스홀더) |
-| DB 프로덕션 | src/db-pg.js | PostgreSQL 문법 (`$1`), 양쪽 동기화 필수 |
-| 백엔드 모듈 | src/ (68개) | AI엔진, 분석, 학습 등 — 파일 특정 후 수정 |
-| 인증 | src/auth 관련, JWT 미들웨어 | 리드 승인 없이 수정 금지 |
-| 3D 뷰 | public/orbit3d.html + 관련 JS | Canvas2D 레이어(라벨/히트영역) 분리 유지 |
-| 프론트 UI | public/ (27개 HTML + JS/CSS) | 페이지 특정 후 최소 수정 |
-| 데스크톱 에이전트 | agent/ (Python) | psutil 중복 실행 방지 유지 |
-| Chrome Extension | chrome-extension/ | manifest 권한 변경 주의 |
-| CLI | cli/ | gdrive-auth 등 |
-| SDK | sdk/ | 외부 연동 인터페이스 변경 금지 |
-| 데몬 | daemon/ | 백그라운드 서비스 안정성 최우선 |
-| 배포 설정 | railway.json, 환경변수 | — |
-
-> DB 스키마 변경 → 리드 승인 필수 (로컬/프로덕션 양쪽 영향)
-> src/db.js 수정 시 → src/db-pg.js 동기화 확인 (또는 그 반대)
-> `const db = process.env.DATABASE_URL ? require('./db-pg') : require('./db');` 패턴 절대 유지
-
----
-
-## 에이전트 운영 규칙
-
-- 리드: 현재 세션 모델 (Opus 권장)
-- 팀원 전원: Sonnet
-- task-logger: Haiku
-- 코드 수정 전 반드시 계획 승인
-- DB 스키마 / 인증 로직 변경 → 자동 차단, 사람 확인 요청
-- 완료한 팀원은 즉시 종료, 전체 완료 시 "팀 정리해줘"
-
----
-
-## 작업 이력
-
-> task-logger 에이전트가 자동 누적
-> 형식: - [날짜 시간] | [지시 요약] | [수정파일] | [✅/❌/⚠️] | [특이사항]
-
-
----
-
-## 반복 패턴 감지
-
-> task-logger가 동일 파일 3회↑ 수정, 동일 버그 재발, 동일 영역 연속 3회 감지 시 여기 기록 + 리드 보고

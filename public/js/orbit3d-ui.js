@@ -58,11 +58,6 @@ function zoomStep(dir) {
 
   // 줌아웃 시 뷰 전환 임계값 체크
   if (dir > 0) {
-    // 멤버 드릴다운 상태에서 줌아웃 → 원래 팀/전사 뷰로 복귀
-    if (inPersonal && window._drillDownSource && cur > 80) {
-      if (typeof returnFromMemberDrill === 'function') returnFromMemberDrill();
-      return;
-    }
     if (inPersonal && cur > 100 && typeof loadTeamDemo === 'function') {
       loadTeamDemo(); return;
     }
@@ -768,8 +763,7 @@ function updateZoomLOD() {
   // 뷰 모드 라벨
   const modeLabel = (typeof _parallelMode !== 'undefined' && _parallelMode) ? '⚡ AI 멀티뷰' :
                     (typeof _companyMode  !== 'undefined' && _companyMode)  ? '🏢 전사' :
-                    (typeof _teamMode     !== 'undefined' && _teamMode)     ? '👥 팀'   :
-                    window._drillDownSource ? `👤 ${window._drillDownMemberName || '팀원'}` : '👤 내 화면';
+                    (typeof _teamMode     !== 'undefined' && _teamMode)     ? '👥 팀'   : '👤 내 화면';
 
   const ztEl = document.getElementById('ln-zoom-text');
   const zhEl = document.getElementById('ln-zoom-hint');
@@ -783,11 +777,7 @@ function updateZoomLOD() {
                       !(typeof _companyMode !== 'undefined' && _companyMode) &&
                       !(typeof _parallelMode !== 'undefined' && _parallelMode);
 
-    if (inPersonal && window._drillDownSource && r > 70) {
-      const srcLabel = window._drillDownSource === 'company' ? '전사' : '팀';
-      zhEl.textContent = `🔍 줌아웃 → ${srcLabel} 복귀`;
-      zhEl.onclick = () => { if (typeof returnFromMemberDrill === 'function') returnFromMemberDrill(); };
-    } else if (inPersonal && r > 120) {
+    if (inPersonal && r > 120) {
       zhEl.textContent = '🔍 줌아웃 → 팀 전환';
       zhEl.onclick = () => loadTeamDemo();
     } else if (inTeam && r > 90) {
@@ -805,15 +795,7 @@ function updateZoomLOD() {
     const prevR = _lastLodR;
     _lastLodR = r;
 
-    // 멤버 드릴다운 → 줌아웃 시 원래 뷰로 자동 복귀
-    if (inPersonal && window._drillDownSource && r > 100 && prevR <= 100) {
-      clearTimeout(_zoomLodTimer);
-      _zoomLodTimer = setTimeout(() => {
-        if (controls.sph.r > 90 && window._drillDownSource) {
-          if (typeof returnFromMemberDrill === 'function') returnFromMemberDrill();
-        }
-      }, 500);
-    } else if (inPersonal && r > 140 && prevR <= 140 && !window._drillDownSource) {
+    if (inPersonal && r > 140 && prevR <= 140) {
       clearTimeout(_zoomLodTimer);
       _zoomLodTimer = setTimeout(() => {
         if (controls.sph.r > 130 && !(typeof _teamMode !== 'undefined' && _teamMode)) {

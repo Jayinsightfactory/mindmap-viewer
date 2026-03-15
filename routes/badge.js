@@ -128,9 +128,9 @@ function makeProfileCard({ username, events, sessions, savedHours, topTool, stre
 
 // ─── 통계 계산 ────────────────────────────────────────────────────────────────
 
-function computeBadgeData(getAllEvents, getSessions, userId) {
-  const events   = getAllEvents ? getAllEvents() : [];
-  const sessions = getSessions ? getSessions()  : [];
+async function computeBadgeData(getAllEvents, getSessions, userId) {
+  const events   = getAllEvents ? await getAllEvents() : [];
+  const sessions = getSessions ? await getSessions()  : [];
 
   // 이벤트 수
   const eventCount   = events.length;
@@ -175,7 +175,7 @@ function createBadgeRouter({ getAllEvents, getSessions, getEventsForUser, getSes
   const router = express.Router();
 
   // ── SVG 배지 ──────────────────────────────────────────────────────────
-  router.get('/badge/:userId/svg', (req, res) => {
+  router.get('/badge/:userId/svg', async (req, res) => {
     const { userId }  = req.params;
     const { style = 'flat', type = 'events', color } = req.query;
 
@@ -190,7 +190,7 @@ function createBadgeRouter({ getAllEvents, getSessions, getEventsForUser, getSes
     // 사용자별 이벤트/세션 필터링 (없으면 전체 폴백)
     const _getEv  = getEventsForUser ? () => getEventsForUser(resolveUserId(req)) : getAllEvents;
     const _getSes = getSessionsForUser ? () => getSessionsForUser(resolveUserId(req)) : getSessions;
-    const data     = computeBadgeData(_getEv, _getSes, userId);
+    const data     = await computeBadgeData(_getEv, _getSes, userId);
     const badgeColor = color || '#58a6ff';
 
     let label, value;
@@ -210,13 +210,13 @@ function createBadgeRouter({ getAllEvents, getSessions, getEventsForUser, getSes
   });
 
   // ── 프로필 카드 SVG ───────────────────────────────────────────────────
-  router.get('/badge/:userId/card', (req, res) => {
+  router.get('/badge/:userId/card', async (req, res) => {
     const { userId } = req.params;
     const { color }  = req.query;
     // 사용자별 이벤트/세션 필터링 (없으면 전체 폴백)
     const _getEv  = getEventsForUser ? () => getEventsForUser(resolveUserId(req)) : getAllEvents;
     const _getSes = getSessionsForUser ? () => getSessionsForUser(resolveUserId(req)) : getSessions;
-    const data  = computeBadgeData(_getEv, _getSes, userId);
+    const data  = await computeBadgeData(_getEv, _getSes, userId);
     const svg   = makeProfileCard({
       username:   userId,
       events:     data.eventCount,
@@ -234,11 +234,11 @@ function createBadgeRouter({ getAllEvents, getSessions, getEventsForUser, getSes
   });
 
   // ── JSON 데이터 ───────────────────────────────────────────────────────
-  router.get('/badge/:userId/json', (req, res) => {
+  router.get('/badge/:userId/json', async (req, res) => {
     // 사용자별 이벤트/세션 필터링 (없으면 전체 폴백)
     const _getEv  = getEventsForUser ? () => getEventsForUser(resolveUserId(req)) : getAllEvents;
     const _getSes = getSessionsForUser ? () => getSessionsForUser(resolveUserId(req)) : getSessions;
-    const data = computeBadgeData(_getEv, _getSes, req.params.userId);
+    const data = await computeBadgeData(_getEv, _getSes, req.params.userId);
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.json({
       ...data,
@@ -254,11 +254,11 @@ function createBadgeRouter({ getAllEvents, getSessions, getEventsForUser, getSes
   });
 
   // ── shields.io 호환 ───────────────────────────────────────────────────
-  router.get('/badge/:userId/shield', (req, res) => {
+  router.get('/badge/:userId/shield', async (req, res) => {
     // 사용자별 이벤트/세션 필터링 (없으면 전체 폴백)
     const _getEv  = getEventsForUser ? () => getEventsForUser(resolveUserId(req)) : getAllEvents;
     const _getSes = getSessionsForUser ? () => getSessionsForUser(resolveUserId(req)) : getSessions;
-    const data = computeBadgeData(_getEv, _getSes, req.params.userId);
+    const data = await computeBadgeData(_getEv, _getSes, req.params.userId);
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.json({
       schemaVersion: 1,
@@ -270,7 +270,7 @@ function createBadgeRouter({ getAllEvents, getSessions, getEventsForUser, getSes
   });
 
   // ── 배지 공개 설정 ────────────────────────────────────────────────────
-  router.post('/badge/:userId/publish', optionalAuth || ((req, res, next) => next()), (req, res) => {
+  router.post('/badge/:userId/publish', optionalAuth || ((req, res, next) => next()), async (req, res) => {
     const { userId }   = req.params;
     const { published = true, style = 'flat' } = req.body;
 
@@ -284,11 +284,11 @@ function createBadgeRouter({ getAllEvents, getSessions, getEventsForUser, getSes
   });
 
   // ── 전체 배지 통계 ────────────────────────────────────────────────────
-  router.get('/badge/stats', (req, res) => {
+  router.get('/badge/stats', async (req, res) => {
     // 사용자별 이벤트/세션 필터링 (없으면 전체 폴백)
     const _getEv  = getEventsForUser ? () => getEventsForUser(resolveUserId(req)) : getAllEvents;
     const _getSes = getSessionsForUser ? () => getSessionsForUser(resolveUserId(req)) : getSessions;
-    const data = computeBadgeData(_getEv, _getSes, 'all');
+    const data = await computeBadgeData(_getEv, _getSes, 'all');
     res.json({
       ...data,
       publishedBadges: badgePublishMap.size,

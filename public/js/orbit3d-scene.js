@@ -100,70 +100,32 @@ function buildPlanetSystem(nodeList) {
       : rawEvents;
     if (filtered.length === 0) continue;
 
-    // ── 프로젝트명 추출 (fullContent JSON 파싱 포함) ──────────────────
-    // session.start는 sessions에서 제외되므로, nodeList에서 직접 찾기
-    const startEv = nodeList.find(e => e.type === 'session.start' && (e.sessionId || '') === sid);
-    // data 필드 또는 fullContent JSON에서 projectDir 추출
-    let pd = startEv?.data?.projectDir || startEv?.data?.cwd || '';
-    if (!pd && startEv?.fullContent) {
-      try {
-        const fc = typeof startEv.fullContent === 'string' && startEv.fullContent.startsWith('{')
-          ? JSON.parse(startEv.fullContent) : null;
-        if (fc) pd = fc.projectDir || fc.cwd || '';
-      } catch {}
-    }
-    // 시스템 디렉토리 무시 (System32, Windows 등)
-    const SYS_DIRS = ['system32','windows','system','temp','tmp','appdata'];
-    const pdLast = pd.replace(/\\/g,'/').split('/').filter(Boolean).pop() || '';
-    if (SYS_DIRS.includes(pdLast.toLowerCase())) pd = '';
-
+    // ── 프로젝트명 추출 ─────────────────────────────────────────────────
+    const startEv = rawEvents.find(e => e.type === 'session.start');
+    const pd      = startEv?.data?.projectDir || startEv?.data?.cwd || '';
     let projName;
     if (pd) {
-      projName = pdLast;
-    }
-    // fullContent JSON에서 파일 경로 추출하여 프로젝트명 추론
-    if (!projName) {
+      // projectDir 있으면 마지막 폴더명
+      projName = pd.replace(/\\/g,'/').split('/').filter(Boolean).pop();
+    } else if (/^[0-9a-f]{8}-[0-9a-f]{4}/.test(sid)) {
+      // UUID 세션 → 가장 많이 등장한 파일의 디렉터리명으로 추론
       const fileCounts = {};
       rawEvents.forEach(e => {
-        // 1) data 필드에서 시도
-        let fp = (e.data?.filePath||e.data?.fileName||'').replace(/\\/g,'/');
-        // 2) fullContent JSON에서 시도
-        if (!fp && e.fullContent && typeof e.fullContent === 'string' && e.fullContent.startsWith('{')) {
-          try {
-            const fc = JSON.parse(e.fullContent);
-            fp = (fc.filePath || fc.fileName || '').replace(/\\/g,'/');
-          } catch {}
-        }
-        if (!fp) return;
-        // Users/username/ProjectName/ 패턴에서 프로젝트 폴더 추출
-        const parts = fp.split('/').filter(Boolean);
-        const usrIdx = parts.findIndex(p => /^(users|home)$/i.test(p));
-        if (usrIdx >= 0 && parts.length > usrIdx + 2) {
-          // Users/username/ProjectName → ProjectName
-          const dir = parts[usrIdx + 2];
-          if (dir && !/^(desktop|documents|downloads)$/i.test(dir)) {
-            fileCounts[dir] = (fileCounts[dir]||0) + 1;
-            return;
-          }
-        }
-        // 폴백: 마지막에서 2번째 디렉토리
-        const dir = parts.slice(-2,-1)[0];
-        if (dir && dir !== '.' && !/^(src|app|lib|public|routes|js)$/i.test(dir)) {
-          fileCounts[dir] = (fileCounts[dir]||0) + 1;
-        }
+        const fp = (e.data?.filePath||e.data?.fileName||'').replace(/\\/g,'/');
+        const dir = fp.split('/').filter(Boolean).slice(-2,-1)[0];
+        if (dir && dir !== '.') fileCounts[dir] = (fileCounts[dir]||0) + 1;
       });
       const topDir = Object.entries(fileCounts).sort((a,b)=>b[1]-a[1])[0]?.[0];
-      if (topDir) {
-        projName = topDir;
-      } else if (/^[0-9a-f]{8}-[0-9a-f]{4}/.test(sid)) {
-        projName = `세션-${sid.slice(0,6)}`;
-      } else {
-        const mSession = sid.match(/^session-([a-zA-Z][a-zA-Z0-9_-]*?)(?:-\d{10,})?$/);
-        if (mSession) { projName = mSession[1]; }
-        else if (/^wf\d+-\d/.test(sid)) { projName = '워크플로우'; }
-        else if (sid.length <= 24 && !/\d{8,}/.test(sid)) { projName = sid; }
-        else { projName = `세션-${sid.slice(0,6)}`; }
-      }
+      projName = topDir || `세션-${sid.slice(0,6)}`;
+    } else {
+      // session-{name}-{timestamp} → {name}
+      const mSession = sid.match(/^session-([a-zA-Z][a-zA-Z0-9_-]*?)(?:-\d{10,})?$/);
+      if (mSession) { projName = mSession[1]; }
+      // wf{N}-{timestamp} → 워크플로우
+      else if (/^wf\d+-\d/.test(sid)) { projName = '워크플로우'; }
+      // 짧고 숫자 없는 이름은 그대로
+      else if (sid.length <= 24 && !/\d{8,}/.test(sid)) { projName = sid; }
+      else { projName = sid.slice(0,12) + '…'; }
     }
 
     const clusters = clusterByIntent(sid, filtered);

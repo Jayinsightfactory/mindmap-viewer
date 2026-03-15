@@ -31,9 +31,9 @@ function createRouter(deps) {
   const { getAllEvents, getEventsByChannel } = db;
 
   // 사용자별 이벤트 조회 헬퍼
-  function _getUserEvents(req) {
+  async function _getUserEvents(req) {
     const uid = resolveUserId ? resolveUserId(req) : 'local';
-    return (getEventsForUser && uid !== 'local') ? getEventsForUser(uid) : getAllEvents();
+    return (getEventsForUser && uid !== 'local') ? await getEventsForUser(uid) : getAllEvents();
   }
   const { detectShadowAI, getApprovedSources, addApprovedSource, removeApprovedSource } = shadowAiDetector;
   const { queryAuditLog, verifyIntegrity, renderAuditHtml } = auditLog;
@@ -49,10 +49,10 @@ function createRouter(deps) {
    * @query {string} [hours]   - 탐색 시간 윈도우 (기본값: 168 = 7일)
    * @returns {{ findings: ShadowAiFinding[], checkedEvents: number, windowHours: number }}
    */
-  router.get('/shadow-ai', (req, res) => {
+  router.get('/shadow-ai', async (req, res) => {
     const { channel, hours } = req.query;
 
-    const userEvents = _getUserEvents(req);
+    const userEvents = await _getUserEvents(req);
     let events = channel
       ? (getEventsByChannel ? getEventsByChannel(channel) : userEvents.filter(e => e.channelId === channel))
       : userEvents;

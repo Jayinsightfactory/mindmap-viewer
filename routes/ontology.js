@@ -193,15 +193,15 @@ function createOntologyRouter({ getAllEvents, getFiles, optionalAuth, getEventsF
   const auth   = optionalAuth || noAuth;
 
   // 사용자별 이벤트 조회 헬퍼
-  function _getUserEvents(req) {
+  async function _getUserEvents(req) {
     const uid = resolveUserId ? resolveUserId(req) : 'local';
-    return (getEventsForUser && uid !== 'local') ? getEventsForUser(uid) : (getAllEvents ? getAllEvents() : []);
+    return (getEventsForUser && uid !== 'local') ? await getEventsForUser(uid) : (getAllEvents ? getAllEvents() : []);
   }
 
   // ── 전체 온톨로지 그래프 ──────────────────────────────────────────────
-  router.get('/ontology', (req, res) => {
+  router.get('/ontology', async (req, res) => {
     const { maxNodes = 200 } = req.query;
-    const events = _getUserEvents(req);
+    const events = await _getUserEvents(req);
     const { nodes, edges, summary } = buildOntologyGraph(events);
 
     // 이벤트 수 기준 상위 N개 파일만
@@ -218,8 +218,8 @@ function createOntologyRouter({ getAllEvents, getFiles, optionalAuth, getEventsF
   });
 
   // ── 파일 의존성 서브그래프 ────────────────────────────────────────────
-  router.get('/ontology/files', (req, res) => {
-    const events = _getUserEvents(req);
+  router.get('/ontology/files', async (req, res) => {
+    const events = await _getUserEvents(req);
     const { nodes, edges, summary } = buildOntologyGraph(events);
     const fileNodes  = nodes.filter(n => n.type === 'file');
     const fileEdges  = edges.filter(e => e.type === 'co-edited');
@@ -227,8 +227,8 @@ function createOntologyRouter({ getAllEvents, getFiles, optionalAuth, getEventsF
   });
 
   // ── 팀 오너십 맵 ──────────────────────────────────────────────────────
-  router.get('/ontology/ownership', (req, res) => {
-    const events = _getUserEvents(req);
+  router.get('/ontology/ownership', async (req, res) => {
+    const events = await _getUserEvents(req);
     const { nodes } = buildOntologyGraph(events);
     const fileNodes = nodes.filter(n => n.type === 'file');
 
@@ -269,9 +269,9 @@ function createOntologyRouter({ getAllEvents, getFiles, optionalAuth, getEventsF
   });
 
   // ── 파일별 AI 히스토리 ────────────────────────────────────────────────
-  router.get('/ontology/ai-history/:file', (req, res) => {
+  router.get('/ontology/ai-history/:file', async (req, res) => {
     const fileName = decodeURIComponent(req.params.file);
-    const events   = _getUserEvents(req).filter(ev => {
+    const events   = (await _getUserEvents(req)).filter(ev => {
       const dataStr = typeof ev.data === 'string' ? ev.data : JSON.stringify(ev.data || '');
       return dataStr.includes(fileName);
     }).slice(-100); // 최근 100개
@@ -298,15 +298,15 @@ function createOntologyRouter({ getAllEvents, getFiles, optionalAuth, getEventsF
   });
 
   // ── 핫스팟 ────────────────────────────────────────────────────────────
-  router.get('/ontology/hotspots', (req, res) => {
-    const events = _getUserEvents(req);
+  router.get('/ontology/hotspots', async (req, res) => {
+    const events = await _getUserEvents(req);
     const { nodes } = buildOntologyGraph(events);
     res.json({ hotspots: computeHotspots(nodes) });
   });
 
   // ── 클러스터 ──────────────────────────────────────────────────────────
-  router.get('/ontology/clusters', (req, res) => {
-    const events = _getUserEvents(req);
+  router.get('/ontology/clusters', async (req, res) => {
+    const events = await _getUserEvents(req);
     const { nodes, edges } = buildOntologyGraph(events);
     res.json({ clusters: clusterNodes(nodes, edges) });
   });
@@ -326,11 +326,11 @@ function createOntologyRouter({ getAllEvents, getFiles, optionalAuth, getEventsF
   });
 
   // ── 온톨로지 검색 ─────────────────────────────────────────────────────
-  router.get('/ontology/search', (req, res) => {
+  router.get('/ontology/search', async (req, res) => {
     const { q, type } = req.query;
     if (!q) return res.status(400).json({ error: 'q 파라미터가 필요합니다.' });
 
-    const events = _getUserEvents(req);
+    const events = await _getUserEvents(req);
     const { nodes } = buildOntologyGraph(events);
 
     const query   = q.toLowerCase();

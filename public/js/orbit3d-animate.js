@@ -144,9 +144,10 @@ renderer.domElement.addEventListener('click', e => {
       return;
     }
 
-    // ── 드릴 카테고리 클릭 → 세션 대시보드 (호환) ──────────────────────────
+    // ── 드릴 카테고리 클릭 → 3단계 타임라인 ────────────────────────────────
     if (type === 'drillCategory') {
       if (_drillStage >= 2 && _drillCategory?.catKey === hit.data.catKey) {
+        // 이미 같은 카테고리 → 닫기
         exitCategoryFocus();
       } else {
         drillToCategory(hit.data);
@@ -166,14 +167,37 @@ renderer.domElement.addEventListener('click', e => {
       return;
     }
 
-    // ── 세션 노드 클릭 → 세션 요약 대시보드 ─────────────────────────────────
+    // ── 세션 노드 클릭 → 줌인 + 이벤트 타임라인 표시 ─────────────────────────
     if (isPersonal && (type === 'drillSession' || type === 'session')) {
       if (typeof window.pushViewState === 'function') window.pushViewState();
       _selectedHit = hit;
 
-      // 드릴 모드에서 세션 클릭 시 → 요약 대시보드 표시
+      // 해당 세션 화면 중심으로 줌인 (현재 배율 기준 약간 확대)
+      if (typeof window.zoomToScreenPos === 'function') {
+        const curScale = window._worldScale || 1.0;
+        const targetZoom = Math.max(curScale, Math.min(curScale * 1.5, 2.0));
+        window.zoomToScreenPos(hit.cx, hit.cy, targetZoom, 500);
+      }
+
+      // 드릴 모드에서 세션 클릭 시 → 해당 세션의 이벤트 타임라인 표시
       if (_drillStage >= 1 && hit.data) {
-        drillToSession(hit.data);
+        const sessionId = hit.data.clusterId || hit.data.sessionId;
+        const entry = _sessionMap[sessionId];
+        if (entry?.events?.length) {
+          // 카테고리 정보 구성 (세션 단위 타임라인)
+          const sesLabel = hit.data.intent || '세션';
+          const sesCatData = {
+            catKey: hit.data.catKey || 'session',
+            catLabel: sesLabel.length > 20 ? sesLabel.slice(0, 19) + '…' : sesLabel,
+            catColor: hit.data.hueHex || hit.data.catColor || '#58a6ff',
+            catIcon: '',
+            sessionCount: 1,
+            events: entry.events,
+          };
+          _drillStage = 2;
+          _drillCategory = sesCatData;
+          showDrillTimeline(sesCatData);
+        }
       }
       return;
     }
@@ -186,15 +210,7 @@ renderer.domElement.addEventListener('click', e => {
           focusDept(hit.data);
         }
       } else if (type === 'member') {
-        if (_focusedMember === hit.data) {
-          drillDownToMember(hit.data);   // 더블클릭: 개인 뷰로 전환
-        } else {
-          focusMember(hit.data);
-        }
-      } else if (type === 'task') {
-        // 세션(task) 클릭 → 소속 멤버의 개인 뷰로 전환
-        const memberNode = _teamNodes.find(n => n.type === 'member' && n.memberId === hit.data.memberId);
-        if (memberNode) drillDownToMember(memberNode);
+        focusMember(hit.data);
       } else if (type === 'goal' && (_focusedMember || _focusedDept)) {
         unfocusDept();
       }
@@ -205,10 +221,6 @@ renderer.domElement.addEventListener('click', e => {
         } else {
           focusMember(hit.data);
         }
-      } else if (type === 'task') {
-        // 세션(task) 클릭 → 소속 멤버의 개인 뷰로 전환
-        const memberNode = _teamNodes.find(n => n.type === 'member' && n.memberId === hit.data.memberId);
-        if (memberNode) drillDownToMember(memberNode);
       } else if (_focusedMember && type === 'goal') {
         unfocusMember();
       }
@@ -244,15 +256,14 @@ renderer.domElement.addEventListener('click', e => {
     } else if (isPersonal) {
       // 개인 모드: 단계별 뒤로가기 + 뷰 상태 복원
       if (_drillStage === 3) {
-        // 파일상세 → 대시보드 복귀
+        // 4단계 → 3단계: 파일상세 → 타임라인 복귀
         _drillStage = 2;
         _drillTimelineEvent = null;
-        if (_drillSession) showSessionDashboard(_drillSession);
+        if (_drillCategory) showDrillTimeline(_drillCategory);
         if (typeof window.popViewState === 'function') window.popViewState(true);
       } else if (_drillStage === 2) {
-        // 대시보드 → 세션 링 유지
+        // 3단계 → 2단계: 패널 닫기, 카테고리 링 유지
         _drillStage = 1;
-        _drillSession = null;
         _drillCategory = null;
         _focusedCategory = null;
         _drillTimelineEvent = null;
@@ -272,9 +283,6 @@ renderer.domElement.addEventListener('click', e => {
         exitCategoryFocus();
         closePanel();
         if (typeof window.popViewState === 'function') window.popViewState(true);
-      } else if (window._drillDownSource) {
-        // 팀/전사에서 멤버 드릴다운 후 빈 공간 클릭 → 원래 뷰로 복귀
-        returnFromMemberDrill();
       }
     } else {
       _selectedHit = null;
@@ -611,17 +619,13 @@ function showPanel(data, obj) {
     const member = srcMembers.find(m => m.id === data.memberId);
     if (!member) return;
 
-    const _ipDot = document.getElementById('ip-dot');
-    const _ipType = document.getElementById('ip-type-text');
-    const _ipIntent = document.getElementById('ip-intent');
-    if (_ipDot) _ipDot.style.background = member.color;
-    if (_ipType) _ipType.textContent = '👤 팀원';
-    if (_ipIntent) _ipIntent.textContent = `${member.name}`;
+    document.getElementById('ip-dot').style.background  = member.color;
+    document.getElementById('ip-type-text').textContent = '👤 팀원';
+    document.getElementById('ip-intent').textContent    = `${member.name}`;
 
     const doneCount = member.tasks.filter(t => t.status === 'done').length;
     const activeCount = member.tasks.filter(t => t.status === 'active').length;
-    const _ipKv = document.getElementById('ip-kv-list');
-    if (_ipKv) _ipKv.innerHTML = [
+    document.getElementById('ip-kv-list').innerHTML = [
       ['역할',   member.role],
       ['진행 중', `${activeCount}개`],
       ['완료',   `${doneCount} / ${member.tasks.length}`],
@@ -760,7 +764,7 @@ function showPanel(data, obj) {
 
   } else if (data.type === 'goal') {
     // ── 팀/회사 목표 패널 ───────────────────────────────────────────────────
-    const sim = _activeSimData || (typeof TEAM_DEMO !== 'undefined' ? TEAM_DEMO : { name: '팀', goalColor: '#ffd700', members: [], company: {} });
+    const sim = _activeSimData || TEAM_DEMO;
     const goalColor = sim.goalColor || '#ffd700';
     const simMembers = _companyMode
       ? (sim.departments || []).flatMap(d => d.members || [])
@@ -775,9 +779,8 @@ function showPanel(data, obj) {
     const blockedTasks = simMembers.reduce((s, m) => s + m.tasks.filter(t => t.status === 'blocked').length, 0);
     const overallPct   = totalTasks > 0 ? Math.round(doneTasks / totalTasks * 100) : 0;
 
-    const _ipKv2 = document.getElementById('ip-kv-list');
-    if (_ipKv2) _ipKv2.innerHTML = [
-      _companyMode ? ['회사명', sim.name] : ['팀명', sim.name || (typeof TEAM_DEMO !== 'undefined' ? TEAM_DEMO.name : '팀')],
+    document.getElementById('ip-kv-list').innerHTML = [
+      _companyMode ? ['회사명', sim.name] : ['팀명', sim.name || TEAM_DEMO.name],
       ['조직', _companyMode ? `${(sim.departments||[]).length}개 부서` : (sim.company?.name || '')],
       ['전체 진행', `${overallPct}%`],
       [_companyMode ? '직원 수' : '팀원 수',  `${simMembers.length}명`],

@@ -501,7 +501,7 @@ function parseMgrQuery(text) {
   // 멤버 이름 매칭 → 포커스
   const members = (_activeSimData?.members) ||
     (_activeSimData?.departments || []).flatMap(d => d.members || []) ||
-    (typeof TEAM_DEMO !== 'undefined' ? TEAM_DEMO.members : []);
+    TEAM_DEMO.members;
   members.forEach(m => {
     if (t.includes(m.name)) {
       const node = _teamNodes?.find(n => n.type === 'member' && n.memberId === m.id);
@@ -522,7 +522,7 @@ function renderMgrBadges(memberId, cx, baseY) {
 
   const allMembers = (_activeSimData?.members) ||
     (_activeSimData?.departments || []).flatMap(d => d.members || []) ||
-    (typeof TEAM_DEMO !== 'undefined' ? TEAM_DEMO.members : []);
+    TEAM_DEMO.members;
   const mData = allMembers.find(m => m.id === memberId);
   if (!mData) return;
 

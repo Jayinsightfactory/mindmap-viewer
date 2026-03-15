@@ -180,10 +180,10 @@ function createRoiRouter({ getAllEvents, getSessions, getEventsForUser, getSessi
   const auth   = optionalAuth || noAuth;
 
   // ── ROI 대시보드 ──────────────────────────────────────────────────────
-  router.get('/roi/dashboard', (req, res) => {
+  router.get('/roi/dashboard', async (req, res) => {
     // 사용자별 이벤트/세션 필터링 (없으면 전체 폴백)
-    const events   = getEventsForUser ? getEventsForUser(resolveUserId(req)) : (getAllEvents ? getAllEvents() : []);
-    const sessions = getSessionsForUser ? getSessionsForUser(resolveUserId(req)) : (getSessions ? getSessions() : []);
+    const events   = getEventsForUser ? await getEventsForUser(resolveUserId(req)) : (getAllEvents ? getAllEvents() : []);
+    const sessions = getSessionsForUser ? await getSessionsForUser(resolveUserId(req)) : (getSessions ? getSessions() : []);
     const roi      = calcROI(events, sessions);
 
     // 등급 산정
@@ -199,7 +199,7 @@ function createRoiRouter({ getAllEvents, getSessions, getEventsForUser, getSessi
   });
 
   // ── 커스텀 파라미터 ROI 계산 ──────────────────────────────────────────
-  router.get('/roi/calculate', (req, res) => {
+  router.get('/roi/calculate', async (req, res) => {
     const {
       hourlyRateUsd, toolCostPerMonthUsd, teamSize,
       proficiency, overheadFactor,
@@ -213,17 +213,17 @@ function createRoiRouter({ getAllEvents, getSessions, getEventsForUser, getSessi
     if (overheadFactor)      params.overheadFactor      = parseFloat(overheadFactor);
 
     // 사용자별 이벤트/세션 필터링 (없으면 전체 폴백)
-    const events   = getEventsForUser ? getEventsForUser(resolveUserId(req)) : (getAllEvents ? getAllEvents() : []);
-    const sessions = getSessionsForUser ? getSessionsForUser(resolveUserId(req)) : (getSessions ? getSessions() : []);
+    const events   = getEventsForUser ? await getEventsForUser(resolveUserId(req)) : (getAllEvents ? getAllEvents() : []);
+    const sessions = getSessionsForUser ? await getSessionsForUser(resolveUserId(req)) : (getSessions ? getSessions() : []);
     const roi      = calcROI(events, sessions, params);
     res.json(roi);
   });
 
   // ── 절감 항목별 세부 내역 ─────────────────────────────────────────────
-  router.get('/roi/breakdown', (req, res) => {
+  router.get('/roi/breakdown', async (req, res) => {
     // 사용자별 이벤트/세션 필터링 (없으면 전체 폴백)
-    const events   = getEventsForUser ? getEventsForUser(resolveUserId(req)) : (getAllEvents ? getAllEvents() : []);
-    const sessions = getSessionsForUser ? getSessionsForUser(resolveUserId(req)) : (getSessions ? getSessions() : []);
+    const events   = getEventsForUser ? await getEventsForUser(resolveUserId(req)) : (getAllEvents ? getAllEvents() : []);
+    const sessions = getSessionsForUser ? await getSessionsForUser(resolveUserId(req)) : (getSessions ? getSessions() : []);
     const roi      = calcROI(events, sessions);
     res.json({
       breakdown:  roi.breakdown,
@@ -233,23 +233,23 @@ function createRoiRouter({ getAllEvents, getSessions, getEventsForUser, getSessi
   });
 
   // ── ROI 예측 ──────────────────────────────────────────────────────────
-  router.get('/roi/projection', (req, res) => {
+  router.get('/roi/projection', async (req, res) => {
     const { months = 12, hourlyRateUsd, toolCostPerMonthUsd } = req.query;
     const params = {};
     if (hourlyRateUsd)       params.hourlyRateUsd       = parseFloat(hourlyRateUsd);
     if (toolCostPerMonthUsd) params.toolCostPerMonthUsd = parseFloat(toolCostPerMonthUsd);
 
     // 사용자별 이벤트/세션 필터링 (없으면 전체 폴백)
-    const events   = getEventsForUser ? getEventsForUser(resolveUserId(req)) : (getAllEvents ? getAllEvents() : []);
-    const sessions = getSessionsForUser ? getSessionsForUser(resolveUserId(req)) : (getSessions ? getSessions() : []);
+    const events   = getEventsForUser ? await getEventsForUser(resolveUserId(req)) : (getAllEvents ? getAllEvents() : []);
+    const sessions = getSessionsForUser ? await getSessionsForUser(resolveUserId(req)) : (getSessions ? getSessions() : []);
     res.json(projectROI(events, sessions, Math.min(parseInt(months) || 12, 36), params));
   });
 
   // ── Before/After 비교 ─────────────────────────────────────────────────
-  router.get('/roi/comparison', (req, res) => {
+  router.get('/roi/comparison', async (req, res) => {
     // 사용자별 이벤트/세션 필터링 (없으면 전체 폴백)
-    const events   = getEventsForUser ? getEventsForUser(resolveUserId(req)) : (getAllEvents ? getAllEvents() : []);
-    const sessions = getSessionsForUser ? getSessionsForUser(resolveUserId(req)) : (getSessions ? getSessions() : []);
+    const events   = getEventsForUser ? await getEventsForUser(resolveUserId(req)) : (getAllEvents ? getAllEvents() : []);
+    const sessions = getSessionsForUser ? await getSessionsForUser(resolveUserId(req)) : (getSessions ? getSessions() : []);
 
     // 기간을 반으로 나눠 비교
     const sorted   = [...events].sort((a, b) => (a.timestamp || '').localeCompare(b.timestamp || ''));

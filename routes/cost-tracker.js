@@ -102,12 +102,13 @@ function createCostTrackerRouter({ getAllEvents, getSessions, getEventsForUser, 
   const router = express.Router();
 
   // ── 비용 대시보드 ────────────────────────────────────────────────────────
-  router.get('/costs/dashboard', optionalAuth, (req, res) => {
+  router.get('/costs/dashboard', optionalAuth, async (req, res) => {
     try {
       const days    = parseInt(req.query.days) || 30;
       const cutoff  = new Date(Date.now() - days * 86400000).toISOString();
       // 사용자별 이벤트 필터링 (getEventsForUser 없으면 전체 폴백)
-      const events  = (getEventsForUser ? getEventsForUser(resolveUserId(req)) : getAllEvents()).filter(e => e.timestamp >= cutoff);
+      const rawEvents = getEventsForUser ? await getEventsForUser(resolveUserId(req)) : getAllEvents();
+      const events  = rawEvents.filter(e => e.timestamp >= cutoff);
 
       let totalCost = 0;
       let totalInput = 0;
@@ -179,12 +180,12 @@ function createCostTrackerRouter({ getAllEvents, getSessions, getEventsForUser, 
   });
 
   // ── 세션별 비용 ──────────────────────────────────────────────────────────
-  router.get('/costs/by-session', optionalAuth, (req, res) => {
+  router.get('/costs/by-session', optionalAuth, async (req, res) => {
     try {
       const limit    = Math.min(parseInt(req.query.limit) || 20, 100);
       // 사용자별 이벤트/세션 필터링 (없으면 전체 폴백)
-      const events   = getEventsForUser ? getEventsForUser(resolveUserId(req)) : getAllEvents();
-      const sessions = getSessionsForUser ? getSessionsForUser(resolveUserId(req)) : (getSessions ? getSessions() : []);
+      const events   = getEventsForUser ? await getEventsForUser(resolveUserId(req)) : getAllEvents();
+      const sessions = getSessionsForUser ? await getSessionsForUser(resolveUserId(req)) : (getSessions ? getSessions() : []);
 
       const sessionCosts = {};
       for (const ev of events) {
@@ -221,10 +222,10 @@ function createCostTrackerRouter({ getAllEvents, getSessions, getEventsForUser, 
   });
 
   // ── 도구별 비용 ──────────────────────────────────────────────────────────
-  router.get('/costs/by-tool', optionalAuth, (req, res) => {
+  router.get('/costs/by-tool', optionalAuth, async (req, res) => {
     try {
       // 사용자별 이벤트 필터링 (없으면 전체 폴백)
-      const events = getEventsForUser ? getEventsForUser(resolveUserId(req)) : getAllEvents();
+      const events = getEventsForUser ? await getEventsForUser(resolveUserId(req)) : getAllEvents();
       const toolCosts = {};
 
       for (const ev of events) {
@@ -251,12 +252,13 @@ function createCostTrackerRouter({ getAllEvents, getSessions, getEventsForUser, 
   });
 
   // ── 날짜별 비용 추이 ─────────────────────────────────────────────────────
-  router.get('/costs/by-date', optionalAuth, (req, res) => {
+  router.get('/costs/by-date', optionalAuth, async (req, res) => {
     try {
       const days   = parseInt(req.query.days) || 30;
       const cutoff = new Date(Date.now() - days * 86400000).toISOString();
       // 사용자별 이벤트 필터링 (없으면 전체 폴백)
-      const events = (getEventsForUser ? getEventsForUser(resolveUserId(req)) : getAllEvents()).filter(e => e.timestamp >= cutoff);
+      const rawEvents = getEventsForUser ? await getEventsForUser(resolveUserId(req)) : getAllEvents();
+      const events = rawEvents.filter(e => e.timestamp >= cutoff);
 
       const daily = {};
       for (const ev of events) {
@@ -310,11 +312,12 @@ function createCostTrackerRouter({ getAllEvents, getSessions, getEventsForUser, 
   });
 
   // ── 현재 세션 비용 추정 ──────────────────────────────────────────────────
-  router.get('/costs/estimate', optionalAuth, (req, res) => {
+  router.get('/costs/estimate', optionalAuth, async (req, res) => {
     try {
       const sessionId = req.query.sessionId;
       // 사용자별 이벤트 필터링 (없으면 전체 폴백)
-      const events    = (getEventsForUser ? getEventsForUser(resolveUserId(req)) : getAllEvents()).filter(e => !sessionId || (e.sessionId || e.session_id) === sessionId);
+      const rawEvents = getEventsForUser ? await getEventsForUser(resolveUserId(req)) : getAllEvents();
+      const events    = rawEvents.filter(e => !sessionId || (e.sessionId || e.session_id) === sessionId);
       const today     = new Date().toISOString().slice(0, 10);
       const todayEvs  = events.filter(e => e.timestamp?.slice(0, 10) === today);
 

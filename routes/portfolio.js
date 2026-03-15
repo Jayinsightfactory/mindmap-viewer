@@ -322,22 +322,22 @@ function createRouter({ getAllEvents, getSessions, getStats, getFiles, optionalA
   const router = express.Router();
 
   // 사용자별 데이터 조회 헬퍼
-  function _ev(req) {
+  async function _ev(req) {
     const uid = resolveUserId ? resolveUserId(req) : 'local';
-    return (getEventsForUser && uid !== 'local') ? getEventsForUser(uid) : getAllEvents();
+    return (getEventsForUser && uid !== 'local') ? await getEventsForUser(uid) : getAllEvents();
   }
-  function _ses(req) {
+  async function _ses(req) {
     const uid = resolveUserId ? resolveUserId(req) : 'local';
-    return (getSessionsForUser && uid !== 'local') ? getSessionsForUser(uid) : getSessions();
+    return (getSessionsForUser && uid !== 'local') ? await getSessionsForUser(uid) : getSessions();
   }
 
   // ─── GET /api/portfolio/preview ────────────────────────────────────────────
   // HTML 미리보기 (브라우저 확인용)
-  router.get('/portfolio/preview', optionalAuth, (req, res) => {
+  router.get('/portfolio/preview', optionalAuth, async (req, res) => {
     try {
       const html = buildPortfolioHtml(
-        _ev(req),
-        _ses(req),
+        await _ev(req),
+        await _ses(req),
         getStats(),
         getFiles(),
       );
@@ -353,8 +353,8 @@ function createRouter({ getAllEvents, getSessions, getStats, getFiles, optionalA
   router.get('/portfolio/pdf', optionalAuth, async (req, res) => {
     try {
       const html = buildPortfolioHtml(
-        _ev(req),
-        _ses(req),
+        await _ev(req),
+        await _ses(req),
         getStats(),
         getFiles(),
       );

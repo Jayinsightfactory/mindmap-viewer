@@ -86,22 +86,6 @@ const PROVIDERS = {
     defaultModel: 'grok-3',
     description:  '실시간 웹 검색, xAI',
   },
-
-  // ── CLIProxyAPI (Claude Max 구독 프록시) ────────────────────────────────────
-  'max-proxy': {
-    icon:         '🟣',
-    name:         'Claude Max (Proxy)',
-    requiresKey:  false,
-    baseUrl:      process.env.PROXY_BASE_URL || 'http://localhost:8080/v1',
-    models: [
-      { id: 'claude-opus-4-5',          label: 'Opus 4.5',        tier: 'best'  },
-      { id: 'claude-sonnet-4-5',        label: 'Sonnet 4.5',      tier: 'smart' },
-      { id: 'claude-haiku-4-5-20251001',label: 'Haiku 4.5',       tier: 'fast'  },
-      { id: 'claude-sonnet-4-6',        label: 'Sonnet 4.6',      tier: 'smart' },
-    ],
-    defaultModel: 'claude-sonnet-4-5',
-    description:  'Claude Max 구독 프록시 (추가 비용 $0)',
-  },
 };
 
 /** tier 레이블 */

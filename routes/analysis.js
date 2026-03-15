@@ -39,9 +39,9 @@ function createRouter(deps) {
   const { getAllEvents, getEventsBySession, getEventsByChannel } = db;
 
   // 사용자별 이벤트 조회 헬퍼
-  function _getUserEvents(req) {
+  async function _getUserEvents(req) {
     const uid = resolveUserId ? resolveUserId(req) : 'local';
-    return (getEventsForUser && uid !== 'local') ? getEventsForUser(uid) : getAllEvents();
+    return (getEventsForUser && uid !== 'local') ? await getEventsForUser(uid) : getAllEvents();
   }
   const {
     generateReport,
@@ -264,11 +264,11 @@ function createRouter(deps) {
    * @query {string} [save]     - '1' 또는 디렉토리 경로 → ORBIT_CONTEXT.md 저장
    * @returns {Context | string}
    */
-  router.get('/context/bridge', (req, res) => {
+  router.get('/context/bridge', async (req, res) => {
     const { session, channel, format, save } = req.query;
 
     // 이벤트 소스 결정 (session > channel > 사용자별 전체)
-    const userEvents = _getUserEvents(req);
+    const userEvents = await _getUserEvents(req);
     let events = session
       ? getEventsBySession(session)
       : channel
@@ -302,10 +302,10 @@ function createRouter(deps) {
   });
 
   // ── 분석 요약 ────────────────────────────────────────────────────────────
-  router.get('/analysis/summary', (req, res) => {
+  router.get('/analysis/summary', async (req, res) => {
     try {
-      const events = _getUserEvents(req);
-      const sessions = db.getSessions ? db.getSessions() : [];
+      const events = await _getUserEvents(req);
+      const sessions = db.getSessions ? await db.getSessions() : [];
       const today = new Date().toISOString().slice(0, 10);
       const todaySessions = sessions.filter(s => (s.started_at || '').startsWith(today)).length;
       const distribution = {};
@@ -325,10 +325,10 @@ function createRouter(deps) {
    * @query {string} [hours]   - 탐색 시간 윈도우 (기본값: 24)
    * @returns {{ conflicts: Conflict[], checkedEvents: number, windowHours: number }}
    */
-  router.get('/conflicts', (req, res) => {
+  router.get('/conflicts', async (req, res) => {
     const { channel, hours } = req.query;
 
-    const userEvents = _getUserEvents(req);
+    const userEvents = await _getUserEvents(req);
     let events = channel
       ? (getEventsByChannel ? getEventsByChannel(channel) : userEvents.filter(e => e.channelId === channel))
       : userEvents;

@@ -47,6 +47,7 @@ const { Router } = require('express');
 module.exports = function createCompanyRouter({ getDb, broadcastAll }) {
   const router = Router();
   const ontology = require('../src/company-ontology');
+  const isPg = !!process.env.DATABASE_URL;
 
   function db() { return getDb(); }
 
@@ -56,7 +57,7 @@ module.exports = function createCompanyRouter({ getDb, broadcastAll }) {
 
   router.post('/company', (req, res) => {
     try {
-      ontology.ensureCompanyTables(db());
+      if (!isPg) ontology.ensureCompanyTables(db());
       const result = ontology.createCompany(db(), req.body);
       res.json({ ok: true, ...result });
     } catch (e) { res.status(500).json({ error: e.message }); }
@@ -64,7 +65,7 @@ module.exports = function createCompanyRouter({ getDb, broadcastAll }) {
 
   router.get('/company', (req, res) => {
     try {
-      ontology.ensureCompanyTables(db());
+      if (!isPg) ontology.ensureCompanyTables(db());
       const list = ontology.listCompanies(db(), {
         status: req.query.status, consultant_id: req.query.consultant_id,
         company_type: req.query.type, limit: parseInt(req.query.limit) || 50,
@@ -75,7 +76,7 @@ module.exports = function createCompanyRouter({ getDb, broadcastAll }) {
 
   router.get('/company/:id', (req, res) => {
     try {
-      ontology.ensureCompanyTables(db());
+      if (!isPg) ontology.ensureCompanyTables(db());
       const company = ontology.getCompany(db(), req.params.id);
       if (!company) return res.status(404).json({ error: 'not found' });
 
@@ -104,7 +105,7 @@ module.exports = function createCompanyRouter({ getDb, broadcastAll }) {
 
   router.get('/company/:id/graph', (req, res) => {
     try {
-      ontology.ensureCompanyTables(db());
+      if (!isPg) ontology.ensureCompanyTables(db());
       const graph = ontology.buildCompanyGraph(db(), req.params.id);
       if (!graph) return res.status(404).json({ error: 'company not found' });
       res.json(graph);
@@ -113,7 +114,7 @@ module.exports = function createCompanyRouter({ getDb, broadcastAll }) {
 
   router.get('/company/:id/stats', (req, res) => {
     try {
-      ontology.ensureCompanyTables(db());
+      if (!isPg) ontology.ensureCompanyTables(db());
       const since = req.query.since || new Date(Date.now() - 86400_000).toISOString();
       const stats = ontology.getActivityStats(db(), req.params.id, since);
       res.json(stats);
@@ -239,7 +240,7 @@ module.exports = function createCompanyRouter({ getDb, broadcastAll }) {
 
   router.post('/tracker/heartbeat', (req, res) => {
     try {
-      ontology.ensureCompanyTables(db());
+      if (!isPg) ontology.ensureCompanyTables(db());
       const { token, hostname, os_info, uptime } = req.body;
       if (!token) return res.status(400).json({ error: 'token required' });
 
@@ -260,7 +261,7 @@ module.exports = function createCompanyRouter({ getDb, broadcastAll }) {
   // 로컬에서 분석된 결과만 수신 (원본 키스트로크 절대 포함 안 됨)
   router.post('/tracker/activities', (req, res) => {
     try {
-      ontology.ensureCompanyTables(db());
+      if (!isPg) ontology.ensureCompanyTables(db());
       const { token, activities = [], analyzed } = req.body;
       if (!token) return res.status(400).json({ error: 'token required' });
 
@@ -341,7 +342,7 @@ module.exports = function createCompanyRouter({ getDb, broadcastAll }) {
   // 원본 키스트로크 내용은 절대 포함되지 않음
   router.post('/tracker/analyzed', (req, res) => {
     try {
-      ontology.ensureCompanyTables(db());
+      if (!isPg) ontology.ensureCompanyTables(db());
       const { token, period, activities, patterns, metrics, insights, summary } = req.body;
       if (!token) return res.status(400).json({ error: 'token required' });
 
@@ -431,7 +432,7 @@ module.exports = function createCompanyRouter({ getDb, broadcastAll }) {
 
   router.get('/tracker/config', (req, res) => {
     try {
-      ontology.ensureCompanyTables(db());
+      if (!isPg) ontology.ensureCompanyTables(db());
       const token = req.query.token;
       if (!token) return res.status(400).json({ error: 'token required' });
 
@@ -1018,7 +1019,7 @@ while ($true) {
 
   router.get('/benchmark/:industry', (req, res) => {
     try {
-      ontology.ensureCompanyTables(db());
+      if (!isPg) ontology.ensureCompanyTables(db());
       const benchmarks = ontology.getBenchmarks(db(), req.params.industry, req.query.type || 'B');
       res.json({ benchmarks, total: benchmarks.length });
     } catch (e) { res.status(500).json({ error: e.message }); }
