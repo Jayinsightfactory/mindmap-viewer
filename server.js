@@ -1496,6 +1496,14 @@ app.use('/api', createIntelligenceRouter({ verifyToken, getEventsForUser, resolv
 // ─── Phase 5: AI 학습 + 맞춤 추천 ────────────────────────────────────────────
 app.use('/api', createLearningRouter({ verifyToken, getEventsForUser, resolveUserId }));
 
+// ─── 데스크톱 에이전트 데이터 수신 ─────────────────────────────────────────
+const createAgentDataRouter = require('./routes/agent-data');
+app.use('/api/agent-data', createAgentDataRouter(dbModule));
+
+// ─── AI 어시스턴트 챗봇 (작업 자동화 + 스크립트 생성) ─────────────────────
+const createAssistantRouter = require('./routes/orbit-assistant');
+app.use('/api/assistant', createAssistantRouter({ verifyToken, dbModule }));
+
 // ─── 데이터 관리 (Export / Delete / Summary) ─────────────────────────────────
 const createDataManagementRouter = require('./routes/data-management');
 app.use('/api', createDataManagementRouter({ verifyToken, dbModule }));

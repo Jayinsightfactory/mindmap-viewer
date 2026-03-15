@@ -144,10 +144,9 @@ renderer.domElement.addEventListener('click', e => {
       return;
     }
 
-    // ── 드릴 카테고리 클릭 → 3단계 타임라인 ────────────────────────────────
+    // ── 드릴 카테고리 클릭 → 세션 대시보드 (호환) ──────────────────────────
     if (type === 'drillCategory') {
       if (_drillStage >= 2 && _drillCategory?.catKey === hit.data.catKey) {
-        // 이미 같은 카테고리 → 닫기
         exitCategoryFocus();
       } else {
         drillToCategory(hit.data);
@@ -167,37 +166,14 @@ renderer.domElement.addEventListener('click', e => {
       return;
     }
 
-    // ── 세션 노드 클릭 → 줌인 + 이벤트 타임라인 표시 ─────────────────────────
+    // ── 세션 노드 클릭 → 세션 요약 대시보드 ─────────────────────────────────
     if (isPersonal && (type === 'drillSession' || type === 'session')) {
       if (typeof window.pushViewState === 'function') window.pushViewState();
       _selectedHit = hit;
 
-      // 해당 세션 화면 중심으로 줌인 (현재 배율 기준 약간 확대)
-      if (typeof window.zoomToScreenPos === 'function') {
-        const curScale = window._worldScale || 1.0;
-        const targetZoom = Math.max(curScale, Math.min(curScale * 1.5, 2.0));
-        window.zoomToScreenPos(hit.cx, hit.cy, targetZoom, 500);
-      }
-
-      // 드릴 모드에서 세션 클릭 시 → 해당 세션의 이벤트 타임라인 표시
+      // 드릴 모드에서 세션 클릭 시 → 요약 대시보드 표시
       if (_drillStage >= 1 && hit.data) {
-        const sessionId = hit.data.clusterId || hit.data.sessionId;
-        const entry = _sessionMap[sessionId];
-        if (entry?.events?.length) {
-          // 카테고리 정보 구성 (세션 단위 타임라인)
-          const sesLabel = hit.data.intent || '세션';
-          const sesCatData = {
-            catKey: hit.data.catKey || 'session',
-            catLabel: sesLabel.length > 20 ? sesLabel.slice(0, 19) + '…' : sesLabel,
-            catColor: hit.data.hueHex || hit.data.catColor || '#58a6ff',
-            catIcon: '',
-            sessionCount: 1,
-            events: entry.events,
-          };
-          _drillStage = 2;
-          _drillCategory = sesCatData;
-          showDrillTimeline(sesCatData);
-        }
+        drillToSession(hit.data);
       }
       return;
     }
@@ -256,14 +232,15 @@ renderer.domElement.addEventListener('click', e => {
     } else if (isPersonal) {
       // 개인 모드: 단계별 뒤로가기 + 뷰 상태 복원
       if (_drillStage === 3) {
-        // 4단계 → 3단계: 파일상세 → 타임라인 복귀
+        // 파일상세 → 대시보드 복귀
         _drillStage = 2;
         _drillTimelineEvent = null;
-        if (_drillCategory) showDrillTimeline(_drillCategory);
+        if (_drillSession) showSessionDashboard(_drillSession);
         if (typeof window.popViewState === 'function') window.popViewState(true);
       } else if (_drillStage === 2) {
-        // 3단계 → 2단계: 패널 닫기, 카테고리 링 유지
+        // 대시보드 → 세션 링 유지
         _drillStage = 1;
+        _drillSession = null;
         _drillCategory = null;
         _focusedCategory = null;
         _drillTimelineEvent = null;

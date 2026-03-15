@@ -73,6 +73,7 @@
     <!-- 커뮤니티 -->
     <div class="ln-sep">커뮤니티</div>
     <button class="ln-item" id="ln-messenger-btn" onclick="toggleMessenger()">💬 채팅</button>
+    <button class="ln-item" id="ln-assistant-btn" onclick="toggleAssistant()">🤖 AI 어시스턴트</button>
     <button class="ln-item" onclick="openGuidePopup()">📖 가이드</button>
     <button class="ln-item" id="ln-following-btn" onclick="toggleFollowPanel()" style="display:none">👥 팔로우</button>
 
@@ -149,6 +150,51 @@
       <button class="msg-create-ok"     onclick="createChatChannel()">만들기</button>
       <button class="msg-create-cancel" onclick="toggleCreateModal(false)">취소</button>
     </div>
+  </div>
+</div>
+
+<!-- ══ AI 어시스턴트 챗봇 패널 ══════════════════════════════════════════════ -->
+<div id="assistant-panel">
+  <button class="panel-side-close" onclick="toggleAssistant()" title="닫기">&times;</button>
+  <div class="ast-hdr">
+    <span class="ast-hdr-title">AI 업무 자동화 어시스턴트</span>
+    <button class="ast-clear-btn" onclick="clearAssistantHistory()" title="대화 초기화">초기화</button>
+  </div>
+  <!-- 컨텍스트 요약 배너 -->
+  <div class="ast-context" id="ast-context-bar">
+    <span id="ast-ctx-tasks">-</span> 학습된 작업
+    <span class="ast-ctx-sep">|</span>
+    <span id="ast-ctx-auto">-</span> 자동화 가능
+    <span class="ast-ctx-sep">|</span>
+    <span id="ast-ctx-scripts">-</span> 생성된 스크립트
+  </div>
+  <!-- 미확인 피드백 알림 -->
+  <div class="ast-feedback-bar" id="ast-feedback-bar" style="display:none">
+    <span id="ast-feedback-text"></span>
+  </div>
+  <!-- 대화 영역 -->
+  <div class="ast-messages" id="ast-messages">
+    <div class="ast-welcome">
+      <div class="ast-welcome-icon">AI</div>
+      <div class="ast-welcome-text">
+        안녕하세요! 업무 자동화 어시스턴트입니다.<br>
+        데스크톱 에이전트가 수집한 작업 데이터를 기반으로<br>
+        <b>반복 업무 자동화</b>와 <b>Python 스크립트 생성</b>을 도와드립니다.
+      </div>
+      <div class="ast-suggestions" id="ast-suggestions">
+        <button class="ast-suggest-btn" onclick="sendAssistantMsg('어떤 업무를 자동화할 수 있어?')">어떤 업무를 자동화할 수 있어?</button>
+        <button class="ast-suggest-btn" onclick="sendAssistantMsg('Excel 반복 작업 자동화 스크립트 만들어줘')">Excel 자동화 스크립트</button>
+        <button class="ast-suggest-btn" onclick="sendAssistantMsg('내 업무 패턴 분석해줘')">업무 패턴 분석</button>
+        <button class="ast-suggest-btn" onclick="sendAssistantMsg('자동화로 절약 가능한 시간은?')">절약 가능 시간</button>
+      </div>
+    </div>
+  </div>
+  <!-- 입력창 -->
+  <div class="ast-input-wrap">
+    <input type="text" id="ast-input"
+      placeholder="자동화하고 싶은 업무를 설명하세요..."
+      onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendAssistantMsg();}">
+    <button class="ast-send-btn" onclick="sendAssistantMsg()">전송</button>
   </div>
 </div>
 
@@ -1366,15 +1412,15 @@ function viewZoom(dir) {
 
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script src="js/orbit3d-state.js?v=20260315-sphere3x"></script>
-<script src="js/orbit3d-renderer-manager.js?v=20260315-sphere3x"></script>
-<script src="js/orbit3d-vr.js?v=20260315-sphere3x"></script>
-<script src="js/orbit3d-core.js?v=20260315-sphere3x"></script>
-<script src="js/orbit3d-label-rules.js?v=20260315-sphere3x"></script>
-<script src="js/orbit3d-canvas2d-hit.js?v=20260315-sphere3x"></script>
-<script src="js/orbit3d-scene.js?v=20260315-sphere3x"></script>
-<script src="js/orbit3d-team.js?v=20260315-sphere3x"></script>
-<script src="js/orbit3d-parallel.js?v=20260315-sphere3x"></script>
+<script src="js/orbit3d-state.js?v=20260315-dashboard1"></script>
+<script src="js/orbit3d-renderer-manager.js?v=20260315-dashboard1"></script>
+<script src="js/orbit3d-vr.js?v=20260315-dashboard1"></script>
+<script src="js/orbit3d-core.js?v=20260315-dashboard1"></script>
+<script src="js/orbit3d-label-rules.js?v=20260315-dashboard1"></script>
+<script src="js/orbit3d-canvas2d-hit.js?v=20260315-dashboard1"></script>
+<script src="js/orbit3d-scene.js?v=20260315-dashboard1"></script>
+<script src="js/orbit3d-team.js?v=20260315-dashboard1"></script>
+<script src="js/orbit3d-parallel.js?v=20260315-dashboard1"></script>
 <!-- ═══ 구독 플랜 모달 ═══ -->
 <div id="pricing-overlay" onclick="if(event.target===this)closePricing()">
   <div id="pricing-modal">
@@ -1417,36 +1463,36 @@ function viewZoom(dir) {
 </div>
 <div id="desktop-windows"></div>
 
-<script src="js/orbit3d-card-texture.js?v=20260315-sphere3x"></script>
-<script src="js/orbit3d-layout.js?v=20260315-sphere3x"></script>
-<script src="js/orbit3d-drilldown.js?v=20260315-sphere3x"></script>
-<script src="js/orbit3d-camera.js?v=20260315-sphere3x"></script>
-<script src="js/orbit3d-animate.js?v=20260315-sphere3x"></script>
-<script src="js/orbit3d-render-canvas.js?v=20260315-sphere3x"></script>
-<script src="js/orbit3d-render-panels.js?v=20260315-sphere3x"></script>
-<script src="js/orbit3d-render-settings.js?v=20260315-sphere3x"></script>
-<script src="js/orbit3d-render-labels.js?v=20260315-sphere3x"></script>
-<script src="js/orbit3d-data-load.js?v=20260315-sphere3x"></script>
-<script src="js/orbit3d-ws.js?v=20260315-sphere3x"></script>
-<script src="js/orbit3d-company.js?v=20260315-sphere3x"></script>
-<script src="js/orbit3d-loop.js?v=20260315-sphere3x"></script>
-<script src="js/orbit3d-social.js?v=20260315-sphere3x"></script>
-<script src="js/orbit3d-ui.js?v=20260315-sphere3x"></script>
-<script src="js/orbit3d-ui-panels.js?v=20260315-sphere3x"></script>
-<script src="js/orbit3d-monitor.js?v=20260315-sphere3x"></script>
-<script src="js/orbit3d-behavior.js?v=20260315-sphere3x"></script>
-<script src="js/orbit3d-transitions.js?v=20260315-sphere3x"></script>
+<script src="js/orbit3d-card-texture.js?v=20260315-dashboard1"></script>
+<script src="js/orbit3d-layout.js?v=20260315-dashboard1"></script>
+<script src="js/orbit3d-drilldown.js?v=20260315-dashboard1"></script>
+<script src="js/orbit3d-camera.js?v=20260315-dashboard1"></script>
+<script src="js/orbit3d-animate.js?v=20260315-dashboard1"></script>
+<script src="js/orbit3d-render-canvas.js?v=20260315-dashboard1"></script>
+<script src="js/orbit3d-render-panels.js?v=20260315-dashboard1"></script>
+<script src="js/orbit3d-render-settings.js?v=20260315-dashboard1"></script>
+<script src="js/orbit3d-render-labels.js?v=20260315-dashboard1"></script>
+<script src="js/orbit3d-data-load.js?v=20260315-dashboard1"></script>
+<script src="js/orbit3d-ws.js?v=20260315-dashboard1"></script>
+<script src="js/orbit3d-company.js?v=20260315-dashboard1"></script>
+<script src="js/orbit3d-loop.js?v=20260315-dashboard1"></script>
+<script src="js/orbit3d-social.js?v=20260315-dashboard1"></script>
+<script src="js/orbit3d-ui.js?v=20260315-dashboard1"></script>
+<script src="js/orbit3d-ui-panels.js?v=20260315-dashboard1"></script>
+<script src="js/orbit3d-monitor.js?v=20260315-dashboard1"></script>
+<script src="js/orbit3d-behavior.js?v=20260315-dashboard1"></script>
+<script src="js/orbit3d-transitions.js?v=20260315-dashboard1"></script>
 <!-- 3D 선택 레이아웃 시스템 (마지막에 로드 - camera/scene/renderer 필요) -->
-<script src="js/orbit3d-selection.js?v=20260315-sphere3x"></script>
-<script src="js/orbit3d-interaction.js?v=20260315-sphere3x"></script>
+<script src="js/orbit3d-selection.js?v=20260315-dashboard1"></script>
+<script src="js/orbit3d-interaction.js?v=20260315-dashboard1"></script>
 <!-- 히스토리 팝업 시스템 -->
-<script src="js/orbit3d-history.js?v=20260315-sphere3x"></script>
+<script src="js/orbit3d-history.js?v=20260315-dashboard1"></script>
 <!-- My Work 렌더러 (3분할: label → card → core) -->
-<script src="js/mw-label.js?v=20260315-sphere3x"></script>
-<script src="js/mw-card.js?v=20260315-sphere3x"></script>
-<script src="js/mywork-renderer.js?v=20260315-sphere3x"></script>
+<script src="js/mw-label.js?v=20260315-dashboard1"></script>
+<script src="js/mw-card.js?v=20260315-dashboard1"></script>
+<script src="js/mywork-renderer.js?v=20260315-dashboard1"></script>
 <!-- 다계층 워크스페이스 노드 렌더러 -->
-<script src="js/orbit3d-multilevel-renderer.js?v=20260315-sphere3x"></script>
+<script src="js/orbit3d-multilevel-renderer.js?v=20260315-dashboard1"></script>
 
 <!-- 프로젝트 관리 패널 -->
 <div id="project-manager" style="display: none; position: fixed; bottom: 100px; left: 20px; z-index: 500; background: rgba(2, 6, 23, 0.95); border: 1px solid #334155; border-radius: 8px; padding: 15px; min-width: 250px; max-height: 400px; overflow-y: auto;">

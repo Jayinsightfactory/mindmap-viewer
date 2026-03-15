@@ -336,140 +336,92 @@ function drawCompactProjectView() {
       data: { type: 'constellation', projName: proj.name, planetCount: proj.planets.length, color, info },
     });
 
-    // ══ 2단계: 카테고리 + 세션 (드릴다운) ════════════════════════════════════
+    // ══ 2단계: 세션 직접 배치 (카테고리 생략) ═════════════════════════════════
     if (isThisDrilled && proj.planets.length > 0) {
-      const catGroups = {};
-      proj.planets.forEach(planet => {
-        const cat = planet.userData.macroCat || 'general';
-        if (!catGroups[cat]) catGroups[cat] = [];
-        catGroups[cat].push(planet);
-      });
-      const sortedCats = Object.entries(catGroups).sort((a, b) => b[1].length - a[1].length);
+      // 세션을 프로젝트 주변 부채꼴 배치 (3D)
+      const allSessions = proj.planets;
+      const numSes = allSessions.length;
+      const dirAngleSes = angle;
+      const SES_WORLD_DIST = 10;
+      const SES_WORLD_STEP = 6;
+      const sesAngleStep = Math.max(Math.PI / 8, Math.PI * 2 / Math.max(numSes * 2.5, 4));
+      const sesHalfSpan = Math.min((numSes - 1) / 2 * sesAngleStep, Math.PI * 5 / 6);
+      const maxShow = Math.min(numSes, 8);
 
-      // 카테고리: 프로젝트 외곽 방향 부채꼴 배치 (3D)
-      const numCatsNow = sortedCats.length;
-      const dirAngle = angle; // 프로젝트의 양파 배치 각도를 기준
-      const CAT_WORLD_DIST = 12;
-      const catAngleStep = Math.max(Math.PI / 6, Math.PI * 2 / Math.max(numCatsNow * 3, 6));
-      const catHalfSpan = Math.min((numCatsNow - 1) / 2 * catAngleStep, Math.PI * 5 / 6);
-
-      sortedCats.forEach(([catKey, catPlanets], ci) => {
-        const cfg = PROJECT_TYPES[catKey] || PROJECT_TYPES.general;
-        const catAngle = numCatsNow === 1 ? dirAngle : dirAngle - catHalfSpan + ci * catAngleStep;
-        const catPos3d = new THREE.Vector3(
-          pos3d.x + Math.cos(catAngle) * CAT_WORLD_DIST,
+      for (let si = 0; si < maxShow; si++) {
+        const planet = allSessions[si];
+        const sesAngle = numSes === 1 ? dirAngleSes : dirAngleSes - sesHalfSpan + si * sesAngleStep;
+        const sesDist = SES_WORLD_DIST + (si % 2) * 3; // 약간 엇갈림
+        const sesPos3d = new THREE.Vector3(
+          pos3d.x + Math.cos(sesAngle) * sesDist,
           0,
-          pos3d.z + Math.sin(catAngle) * CAT_WORLD_DIST,
+          pos3d.z + Math.sin(sesAngle) * sesDist,
         );
-        const catSc = toScreen(catPos3d);
-        if (catSc.z > 1) return;
+        const sesSc = toScreen(sesPos3d);
+        if (sesSc.z > 1) continue;
 
-        const catScale = screenScale(catPos3d);
-        const catR = Math.max(32, Math.min(58, catScale * 8));
-        const catSessionCount = catPlanets.length;
-        const isCatDrilled = _drillStage >= 2 && _drillCategory?.catKey === catKey;
-        const isCatHover = _hoveredHit?.data?.type === 'drillCategory' && _hoveredHit?.data?.catKey === catKey;
-        const catTitle = _aliases[catKey] || `${cfg.icon} ${cfg.label}`;
-        const catSub = `${catSessionCount} 세션`;
+        const sesScale = screenScale(sesPos3d);
+        const sesR = Math.max(28, Math.min(50, sesScale * 7));
+        const evCnt = planet.userData.eventCount || 0;
+        const isSubHover = _hoveredHit?.obj === planet;
+        const sesKey = planet.userData.clusterId || planet.userData.sessionId || '';
+        const sesCat = planet.userData.macroCat || 'general';
+        const sesCfg = PROJECT_TYPES[sesCat] || PROJECT_TYPES.general;
 
-        // 프로젝트 → 카테고리 연결선
+        // "프로젝트명 — 작업 목적" 구조
+        let sLabel, sesSub;
+        if (_aliases[sesKey]) {
+          sLabel = _aliases[sesKey];
+          sesSub = evCnt > 0 ? `${evCnt}개 작업` : '';
+        } else {
+          const sesText = _buildSessionText(planet.userData);
+          sLabel = sesText.title;
+          sesSub = sesText.sub || (evCnt > 0 ? `${evCnt}개 작업` : '');
+        }
+
+        // 프로젝트 → 세션 연결선
         ctx.save();
         ctx.globalAlpha = 0.15;
-        ctx.strokeStyle = cfg.color; ctx.lineWidth = 1;
-        ctx.setLineDash([4, 4]);
-        ctx.beginPath(); ctx.moveTo(sc.x, sc.y); ctx.lineTo(catSc.x, catSc.y); ctx.stroke();
+        ctx.strokeStyle = sesCfg.color; ctx.lineWidth = 0.8;
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath(); ctx.moveTo(sc.x, sc.y); ctx.lineTo(sesSc.x, sesSc.y); ctx.stroke();
         ctx.setLineDash([]);
         ctx.restore();
 
-        // 카테고리 와이어프레임 구체
-        _drawWireSphere(ctx, catSc.x, catSc.y, catR, cfg.color, {
-          meridians: 2, parallels: 1, glow: true, hover: isCatHover, drilled: isCatDrilled,
-          rotation: now * 0.25 + ci,
+        // 세션 와이어프레임 구체
+        _drawWireSphere(ctx, sesSc.x, sesSc.y, sesR, sesCfg.color, {
+          meridians: 1, parallels: 1, glow: true, hover: isSubHover,
+          rotation: now * 0.3 + si * 0.7,
         });
-        _drawSphereLabel(ctx, catSc.x, catSc.y, catR, catTitle, catSub, cfg.color, false);
+        _drawSphereLabel(ctx, sesSc.x, sesSc.y, sesR, sLabel, sesSub, sesCfg.color, false);
 
         registerHitArea({
-          cx: catSc.x, cy: catSc.y, r: catR + 4,
-          obj: null,
-          data: {
-            type: 'drillCategory', catKey,
-            catLabel: cfg.label, catColor: cfg.color, catIcon: cfg.icon,
-            projName: proj.name, planets: catPlanets, sessionCount: catSessionCount,
-          },
+          cx: sesSc.x, cy: sesSc.y, r: sesR + 4,
+          obj: planet,
+          data: { type: 'drillSession', intent: planet.userData.intent,
+                  clusterId: planet.userData.clusterId,
+                  sessionId: planet.userData.sessionId,
+                  eventCount: evCnt, hueHex: sesCfg.color,
+                  projName: proj.name, planet },
         });
+      }
 
-        // ── 세션: 카테고리 아래 세로 배치 (소형 와이어프레임 구체) ────────────
-        const maxShow = Math.min(catPlanets.length, 3);
-        const SES_WORLD_STEP = 5;
-        for (let si = 0; si < maxShow; si++) {
-          const planet = catPlanets[si];
-          const sesPos3d = new THREE.Vector3(
-            catPos3d.x + Math.cos(catAngle) * (SES_WORLD_STEP * (si + 1)),
-            0,
-            catPos3d.z + Math.sin(catAngle) * (SES_WORLD_STEP * (si + 1)),
-          );
-          const sesSc = toScreen(sesPos3d);
-          if (sesSc.z > 1) continue;
-
-          const sesScale = screenScale(sesPos3d);
-          const sesR = Math.max(26, Math.min(46, sesScale * 6));
-          const evCnt = planet.userData.eventCount || 0;
-          const isSubHover = _hoveredHit?.obj === planet;
-          const sesKey = planet.userData.clusterId || planet.userData.sessionId || '';
-          // "프로젝트명 — 작업 목적" 구조
-          let sLabel, sesSub;
-          if (_aliases[sesKey]) {
-            sLabel = _aliases[sesKey];
-            sesSub = evCnt > 0 ? `${evCnt}개 작업` : '';
-          } else {
-            const sesText = _buildSessionText(planet.userData);
-            sLabel = sesText.title;
-            sesSub = sesText.sub || (evCnt > 0 ? `${evCnt}개 작업` : '');
-          }
-
-          // 연결선
-          ctx.save();
-          ctx.globalAlpha = 0.12;
-          ctx.strokeStyle = cfg.color; ctx.lineWidth = 0.8;
-          ctx.setLineDash([3, 3]);
-          ctx.beginPath(); ctx.moveTo(catSc.x, catSc.y); ctx.lineTo(sesSc.x, sesSc.y); ctx.stroke();
-          ctx.setLineDash([]);
-          ctx.restore();
-
-          _drawWireSphere(ctx, sesSc.x, sesSc.y, sesR, cfg.color, {
-            meridians: 1, parallels: 1, glow: false, hover: isSubHover,
-            rotation: now * 0.3 + si,
-          });
-          _drawSphereLabel(ctx, sesSc.x, sesSc.y, sesR, sLabel, sesSub, cfg.color, false);
-
-          registerHitArea({
-            cx: sesSc.x, cy: sesSc.y, r: sesR + 4,
-            obj: planet,
-            data: { type: 'drillSession', intent: planet.userData.intent,
-                    clusterId: planet.userData.clusterId,
-                    sessionId: planet.userData.sessionId,
-                    eventCount: evCnt, hueHex: cfg.color,
-                    catKey, catLabel: cfg.label, catColor: cfg.color, catIcon: cfg.icon,
-                    projName: proj.name, planets: catPlanets },
-          });
+      if (numSes > maxShow) {
+        const moreAngle = dirAngleSes;
+        const morePos = new THREE.Vector3(
+          pos3d.x + Math.cos(moreAngle) * (SES_WORLD_DIST + 8),
+          0,
+          pos3d.z + Math.sin(moreAngle) * (SES_WORLD_DIST + 8),
+        );
+        const moreSc = toScreen(morePos);
+        if (moreSc.z <= 1) {
+          ctx.globalAlpha = 0.6;
+          ctx.font = '400 10px -apple-system,sans-serif';
+          ctx.fillStyle = color; ctx.textAlign = 'center';
+          ctx.fillText(`+${numSes - maxShow}개 세션`, moreSc.x, moreSc.y + 4);
+          ctx.globalAlpha = 1;
         }
-
-        if (catPlanets.length > maxShow) {
-          const morePos = new THREE.Vector3(
-            catPos3d.x + Math.cos(catAngle) * (SES_WORLD_STEP * (maxShow + 1)),
-            0,
-            catPos3d.z + Math.sin(catAngle) * (SES_WORLD_STEP * (maxShow + 1)),
-          );
-          const moreSc = toScreen(morePos);
-          if (moreSc.z <= 1) {
-            ctx.globalAlpha = 0.6;
-            ctx.font = '400 10px -apple-system,sans-serif';
-            ctx.fillStyle = cfg.color; ctx.textAlign = 'center';
-            ctx.fillText(`+${catPlanets.length - maxShow}개`, moreSc.x, moreSc.y + 4);
-            ctx.globalAlpha = 1;
-          }
-        }
-      });
+      }
     }
   });
 
