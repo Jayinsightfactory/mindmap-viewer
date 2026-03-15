@@ -190,6 +190,7 @@ function memberTasksToFakeSessions(member) {
 }
 
 function drillDownToMember(memberNode) {
+  if (typeof TEAM_DEMO === 'undefined' || !TEAM_DEMO?.members) return;
   const memberData = TEAM_DEMO.members.find(m => m.id === memberNode.memberId);
   if (!memberData) return;
   const fakeNodes = memberTasksToFakeSessions(memberData);
@@ -380,15 +381,14 @@ function drawTeamLabels() {
   _lctx.clearRect(0, 0, innerWidth, innerHeight);
   clearHitAreas();
 
-  // TEAM_DEMO 미로드 시 안전 종료
-  if (typeof TEAM_DEMO === 'undefined' || !TEAM_DEMO) return;
+  // 팀 노드 없으면 안전 종료
   if (!_teamNodes || _teamNodes.length === 0) return;
 
   const lod = getLOD();
   const now = Date.now() / 1000; // seconds
 
   // ── LOD 2+ : 계층 오버레이 (Company / Universe) ──────────────────────────
-  if (lod >= 2 && _teamMode && TEAM_DEMO.universe) {
+  if (lod >= 2 && _teamMode && typeof TEAM_DEMO !== 'undefined' && TEAM_DEMO?.universe) {
     // LOD 3: 유니버스 뷰
     if (lod >= 3) {
       const uv = TEAM_DEMO.universe;
