@@ -207,18 +207,19 @@ async function drillDownToMember(memberNode) {
   try { document.getElementById('team-mode-badge').style.display = 'none'; } catch {}
   try { document.querySelector('.tm-label').textContent = '👥 팀'; } catch {}
 
-  // 실제 유저 그래프 API 시도 (멤버 originalUserId가 있으면)
-  const realUserId = memberData?.originalUserId || memberData?.userId;
+  // 실제 유저 그래프 API 호출 (memberData.userId = 실제 유저 ID)
+  const realUserId = memberData?.userId || memberData?.originalUserId;
   if (realUserId) {
     try {
       const token = localStorage.getItem('orbit_token') || '';
-      const res = await fetch(`/api/overlay?userId=${realUserId}`, {
+      const res = await fetch(`/api/graph?memberId=${encodeURIComponent(realUserId)}`, {
         headers: token ? { 'Authorization': 'Bearer ' + token } : {},
       });
       if (res.ok) {
         const data = await res.json();
         if (data.nodes && data.nodes.length > 0) {
           buildPlanetSystem(data.nodes);
+          document.getElementById('h-hours').textContent = memberNode.label || memberData?.name || '';
           updateBreadcrumb('personal');
           window._drillDownSource = 'team';
           window._drillDownMemberId = memberNode.memberId;
@@ -227,7 +228,7 @@ async function drillDownToMember(memberNode) {
           return;
         }
       }
-    } catch {}
+    } catch (e) { console.warn('[drillDown] graph 실패:', e.message); }
   }
 
   // 폴백: 멤버 tasks → 가짜 세션

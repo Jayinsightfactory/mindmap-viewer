@@ -92,18 +92,20 @@ function createRouter(deps) {
         return res.json({ nodes: [], edges: [] });
       }
 
+      // memberId 파라미터: 팀뷰 드릴다운 시 다른 멤버의 그래프 조회
+      const targetUserId = req.query.memberId || user.id;
+
       let graph;
-      if (user.id === 'local') {
+      if (user.id === 'local' && !req.query.memberId) {
         graph = await getFullGraph(req.query.session, req.query.channel);
       } else {
-        // 로그인 유저: user_id 필터링 (본인 데이터만)
+        // 로그인 유저: user_id 필터링 (본인 또는 팀원 데이터)
         graph = getFullGraphForUser
-          ? await getFullGraphForUser(user.id, req.query.session)
+          ? await getFullGraphForUser(targetUserId, req.query.session)
           : await getFullGraph(req.query.session, req.query.channel);
 
-        // local 이벤트 귀속: 유저의 이벤트가 0개일 때만 (첫 로그인)
-        // → 다른 계정 로그인 시 이전 계정 데이터 가져가는 문제 방지
-        if (claimLocalEvents && graph.nodes.length === 0) {
+        // local 이벤트 귀속: 유저의 이벤트가 0개일 때만 (첫 로그인, 본인만)
+        if (claimLocalEvents && graph.nodes.length === 0 && targetUserId === user.id) {
           const claimed = await Promise.resolve(claimLocalEvents(user.id));
           if (claimed > 0) {
             console.log(`[graph] ${user.id}: 첫 로그인 — ${claimed}개 local 이벤트 귀속`);
