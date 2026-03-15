@@ -90,10 +90,11 @@ function createWorkspaceRouter({ getDb, db: _dbLegacy, verifyToken, getUserById,
          VALUES (?, ?, ?, ?, ?)`,
         [id, name, companyName, req.user.id, invite_code]
       );
+      const ownerTeam = (req.body.teamName || '관리팀').trim();
       await dbRun(
         `INSERT INTO workspace_members (workspace_id, user_id, role, team_name)
          VALUES (?, ?, 'owner', ?)`,
-        [id, req.user.id, name]
+        [id, req.user.id, ownerTeam]
       );
 
       res.json({ id, name, companyName, invite_code,

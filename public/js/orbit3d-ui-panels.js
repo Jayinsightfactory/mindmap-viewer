@@ -1237,9 +1237,20 @@ function _appendIncomingMsg(msg) {
   const myId  = _orbitUser?.id || '';
   const isMine = msg.sender_id === myId;
   const isBot  = msg.sender_id === 'orbit-bot' || msg.type === 'ai';
-  const cls    = isBot ? 'ai-bot' : isMine ? 'mine' : 'theirs';
+
+  // 내가 보낸 메시지는 낙관적 UI로 이미 표시됨 → 중복 방지
+  // 낙관적 버블의 opacity만 확정으로 변경
+  if (isMine && !isBot) {
+    const tmpBubbles = area.querySelectorAll('.msg-bubble.mine[style*="opacity"]');
+    if (tmpBubbles.length > 0) {
+      tmpBubbles[tmpBubbles.length - 1].style.removeProperty('opacity');
+    }
+    return;
+  }
+
+  const cls    = isBot ? 'ai-bot' : 'theirs';
   const time   = new Date(msg.created_at || Date.now()).toLocaleTimeString('ko', { hour:'2-digit', minute:'2-digit' });
-  const metaHtml = !isMine ? `<div class="msg-meta">${msg.sender_name || '?'}</div>` : '';
+  const metaHtml = `<div class="msg-meta">${msg.sender_name || '?'}</div>`;
 
   // AI 로딩 제거
   document.getElementById('ai-loading-msg')?.remove();
