@@ -388,7 +388,7 @@ function drawCompactProjectView() {
           if (sesSc.z > 1) continue;
 
           const sesScale = screenScale(sesPos3d);
-          const sesR = Math.max(18, Math.min(32, sesScale * 4));
+          const sesR = Math.max(28, Math.min(56, sesScale * 7)); // 프로젝트 구체와 동일 크기
           const evCnt = planet.userData.eventCount || 0;
           const isSubHover = _hoveredHit?.obj === planet;
           const sesKey = planet.userData.clusterId || planet.userData.sessionId || '';

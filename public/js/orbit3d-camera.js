@@ -492,8 +492,11 @@ function drawTeamLabels() {
     const txt = emoji ? `${emoji} ${displayLabel}` : `${prefix}${displayLabel}`;
     const _useUnified = ['goal','leader','infra','sharedProject','department',
       'member','hubProject','hq','external','prequest','presult'].includes(type);
-    const pw  = _useUnified ? UNI_CARD_W : _lctx.measureText(txt).width + pad;
-    const ph  = _useUnified ? UNI_CARD_H : pxSize + pad * 0.65;
+    // 구체 노드: 지름 기반 크기, pill 노드: 텍스트 기반
+    const _sphereR = type === 'goal' ? 50 : type === 'leader' || type === 'infra' ? 42
+      : type === 'member' ? 36 : type === 'department' ? 38 : 30;
+    const pw  = _useUnified ? _sphereR * 2 : _lctx.measureText(txt).width + pad;
+    const ph  = _useUnified ? _sphereR * 2 : pxSize + pad * 0.65;
     // priority: prequest=7, goal/leader=6, presult/department/infra/sharedProject=5, member/ptask/hq=4, skill/agent/hubProject/external=3, task/dept=2, tool=1
     const priority = type === 'prequest' ? 7
       : (type === 'goal' || type === 'leader') ? 6
@@ -754,13 +757,29 @@ function drawTeamLabels() {
       _lctx.beginPath(); _lctx.arc(cx, cy, pw * 1.5, 0, Math.PI * 2); _lctx.fill();
     }
 
-    // ── 통일 카드 vs pill 분기 ──────────────────────────────────────────────
+    // ── 와이어프레임 구체 vs pill 분기 ────────────────────────────────────────
     if (lr._useUnified) {
-      // 통일 카드 (drawUnifiedCard)
+      // 와이어프레임 구체 (개인뷰와 동일한 스타일)
       const nodeTitle = txt;
       const nodeSub = sublabel || '';
-      const nodeActive = isActive && type === 'task';
-      drawUnifiedCard(_lctx, cx, cy, color, nodeTitle, nodeSub, nodeActive, isSelected || isFocused, false);
+      const nodeR = type === 'goal' ? 50 : type === 'leader' || type === 'infra' ? 42
+        : type === 'member' ? (isFocused ? 46 : 36) : type === 'department' ? 38 : 30;
+      _drawWireSphere(_lctx, cx, cy, nodeR, color, {
+        meridians: type === 'goal' ? 3 : 2,
+        parallels: type === 'goal' ? 2 : 1,
+        glow: true,
+        hover: isSelected || isFocused,
+        drilled: isFocused,
+        rotation: now * 0.2 + (labels.indexOf(lr) || 0) * 0.5,
+      });
+      _drawSphereLabel(_lctx, cx, cy, nodeR, nodeTitle, nodeSub, color, false);
+      // 활성 표시 (task일 때)
+      if (isActive && type === 'task') {
+        _lctx.save();
+        _lctx.fillStyle = '#22c55e'; _lctx.shadowColor = '#22c55e'; _lctx.shadowBlur = 6;
+        _lctx.beginPath(); _lctx.arc(cx + nodeR - 4, cy - nodeR + 4, 3.5, 0, Math.PI * 2); _lctx.fill();
+        _lctx.restore();
+      }
     } else {
       // 기존 pill 렌더링 (소형 노드: task, skill, agent, tool, ptask, dept)
       roundRect(_lctx, x, y, pw, ph, ph * 0.5);
