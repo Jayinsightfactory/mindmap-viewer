@@ -189,8 +189,8 @@ function memberTasksToFakeSessions(member) {
   return nodes;
 }
 
-function drillDownToMember(memberNode) {
-  // 실제 데이터(_activeSimData) 또는 시뮬레이션(TEAM_DEMO)에서 멤버 찾기
+async function drillDownToMember(memberNode) {
+  // 실제 멤버 데이터 찾기
   const allMembers = (typeof _activeSimData !== 'undefined' && _activeSimData?.members)
     ? _activeSimData.members
     : (typeof _activeSimData !== 'undefined' && _activeSimData?.departments)
@@ -198,18 +198,44 @@ function drillDownToMember(memberNode) {
       : (typeof TEAM_DEMO !== 'undefined' && TEAM_DEMO?.members)
         ? TEAM_DEMO.members : [];
   const memberData = allMembers.find(m => m.id === memberNode.memberId);
-  if (!memberData) return;
-  const fakeNodes = memberTasksToFakeSessions(memberData);
+
   _teamMode = false;
   _companyMode = false;
   _teamNodes = [];
   _focusedMember = null;
   _focusedDept = null;
-  document.getElementById('team-mode-badge').style.display = 'none';
-  document.querySelector('.tm-label').textContent = '👥 팀 시뮬레이션';
-  buildPlanetSystem(fakeNodes);
+  try { document.getElementById('team-mode-badge').style.display = 'none'; } catch {}
+  try { document.querySelector('.tm-label').textContent = '👥 팀'; } catch {}
+
+  // 실제 유저 그래프 API 시도 (멤버 originalUserId가 있으면)
+  const realUserId = memberData?.originalUserId || memberData?.userId;
+  if (realUserId) {
+    try {
+      const token = localStorage.getItem('orbit_token') || '';
+      const res = await fetch(`/api/overlay?userId=${realUserId}`, {
+        headers: token ? { 'Authorization': 'Bearer ' + token } : {},
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.nodes && data.nodes.length > 0) {
+          buildPlanetSystem(data.nodes);
+          updateBreadcrumb('personal');
+          window._drillDownSource = 'team';
+          window._drillDownMemberId = memberNode.memberId;
+          window._drillDownMemberName = memberNode.label;
+          lerpCameraTo(40, 0, 0, 0);
+          return;
+        }
+      }
+    } catch {}
+  }
+
+  // 폴백: 멤버 tasks → 가짜 세션
+  if (memberData) {
+    const fakeNodes = memberTasksToFakeSessions(memberData);
+    buildPlanetSystem(fakeNodes);
+  }
   updateBreadcrumb('personal');
-  document.getElementById('h-hours').textContent = memberData.name;
   window._drillDownSource = 'team';
   window._drillDownMemberId = memberNode.memberId;
   window._drillDownMemberName = memberNode.label;
