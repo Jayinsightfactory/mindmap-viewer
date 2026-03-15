@@ -37,50 +37,87 @@ const AI_SOURCE_STYLES = {
 };
 
 // ─── 세션별 WHAT/RESULT 집계 ──────────────────────────
+// WHAT = "어떤 파일을 어떻게 했는지" (사람이 이해할 수 있는 행동)
+// RESULT = "결과가 뭔지" (커밋 메시지 또는 파일 변경 요약)
+const _ACTION_VERB = {
+  Write: '작성', Edit: '수정', Read: '분석', Grep: '검색', Glob: '탐색',
+  Bash: '실행', WebSearch: '웹조사', WebFetch: '참고', Task: '하위작업',
+};
+
 function computeSessionSummaries(events) {
   const sessionMap = {};
   for (const event of events) {
     const sid = event.sessionId;
     if (!sid) continue;
-    if (!sessionMap[sid]) sessionMap[sid] = { toolActions: {}, commits: [], lastAssistant: '' };
+    if (!sessionMap[sid]) sessionMap[sid] = {
+      editedFiles: {}, createdFiles: {}, readFiles: {},
+      commits: [], bashCmds: [], webSearches: 0,
+      writeCount: 0, editCount: 0,
+    };
     const s = sessionMap[sid];
 
-    // WHAT: tool.end 상위 액션 집계 (toolName: fileName)
     if (event.type === 'tool.end') {
       const toolName = event.data.toolName || '';
       const filePath = event.data.filePath || event.data.input?.file_path || event.data.files?.[0] || '';
       const fileName = filePath ? filePath.replace(/\\/g, '/').split('/').pop() : '';
-      const key = fileName ? `${toolName}: ${fileName}` : toolName;
-      if (key) s.toolActions[key] = (s.toolActions[key] || 0) + 1;
-    }
 
-    // RESULT: git.commit 메시지 수집
-    if (event.type === 'tool.end' && event.data.toolName === 'Bash') {
-      const cmd = String(event.data.inputPreview || event.data.input?.command || '');
-      const commitMatch = cmd.match(/git commit.*-m\s+["'](.+?)["']/i);
-      if (commitMatch) s.commits.push(commitMatch[1].slice(0, 40));
-    }
-
-    // RESULT: assistant.message 마지막 응답 (완료 시)
-    if (event.type === 'assistant.message') {
-      const content = (event.data.contentPreview || event.data.content || '').replace(/[\n\r]/g, ' ').trim();
-      if (content.length > 3) s.lastAssistant = content.slice(0, 50);
+      if (toolName === 'Edit' && fileName) {
+        s.editedFiles[fileName] = (s.editedFiles[fileName] || 0) + 1;
+        s.editCount++;
+      } else if (toolName === 'Write' && fileName) {
+        s.createdFiles[fileName] = (s.createdFiles[fileName] || 0) + 1;
+        s.writeCount++;
+      } else if (toolName === 'Read' && fileName) {
+        s.readFiles[fileName] = (s.readFiles[fileName] || 0) + 1;
+      } else if (toolName === 'WebSearch' || toolName === 'WebFetch') {
+        s.webSearches++;
+      } else if (toolName === 'Bash') {
+        const cmd = String(event.data.inputPreview || event.data.input?.command || '');
+        const commitMatch = cmd.match(/git commit.*-m\s+["'](.+?)["']/i);
+        if (commitMatch) s.commits.push(commitMatch[1].slice(0, 50));
+        else if (cmd.length > 3) s.bashCmds.push(cmd.slice(0, 30));
+      }
     }
   }
 
   const result = {};
   for (const [sid, s] of Object.entries(sessionMap)) {
-    // whatSummary: 상위 3개 액션
-    const topActions = Object.entries(s.toolActions)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 3)
-      .map(([k]) => k);
-    const whatSummary = topActions.join(', ');
+    // ── WHAT: 실제 행동 요약 ──
+    const parts = [];
+    const editFiles = Object.keys(s.editedFiles);
+    const createFiles = Object.keys(s.createdFiles);
+    if (editFiles.length > 0) {
+      parts.push(editFiles.slice(0, 2).join(', ') + ' 수정' + (editFiles.length > 2 ? ` 외 ${editFiles.length - 2}개` : ''));
+    }
+    if (createFiles.length > 0) {
+      parts.push(createFiles.slice(0, 2).join(', ') + ' 작성' + (createFiles.length > 2 ? ` 외 ${createFiles.length - 2}개` : ''));
+    }
+    if (s.webSearches > 0) parts.push(`웹 조사 ${s.webSearches}건`);
+    if (parts.length === 0) {
+      // 파일 수정 없으면 읽기 기반 요약
+      const readFiles = Object.keys(s.readFiles);
+      if (readFiles.length > 0) {
+        parts.push(readFiles.slice(0, 2).join(', ') + ' 분석');
+      }
+    }
+    const whatSummary = parts.join(', ') || '';
 
-    // resultSummary: commit 메시지 우선, 없으면 마지막 assistant 응답
-    const resultSummary = s.commits.length > 0
-      ? s.commits[s.commits.length - 1]
-      : s.lastAssistant || '';
+    // ── RESULT: 결과 요약 ──
+    let resultSummary = '';
+    if (s.commits.length > 0) {
+      // git commit 메시지가 최고 품질의 결과
+      resultSummary = s.commits[s.commits.length - 1];
+    } else {
+      // 커밋 없으면 변경 통계
+      const totalEdit = Object.keys(s.editedFiles).length;
+      const totalCreate = Object.keys(s.createdFiles).length;
+      if (totalEdit + totalCreate > 0) {
+        const r = [];
+        if (totalEdit > 0) r.push(`${totalEdit}개 파일 수정`);
+        if (totalCreate > 0) r.push(`${totalCreate}개 파일 생성`);
+        resultSummary = r.join(', ');
+      }
+    }
 
     result[sid] = { whatSummary, resultSummary };
   }

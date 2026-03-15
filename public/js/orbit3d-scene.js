@@ -292,38 +292,47 @@ function buildPlanetSystem(nodeList) {
     const _fmsg = rawEvents.find(e => e.type === 'user.message');
     planet.userData.firstMsg = (_fmsg?.data?.contentPreview || _fmsg?.data?.content || _fmsg?.label || '').slice(0, 40);
     planet.userData.msgPreview = pl.msgPreview || '';
-    // WHAT/RESULT 요약 (텍스트박스 3줄 표시용)
-    const _whatParts = [];
-    const _toolCounts = {};
-    rawEvents.forEach(e => {
-      if (e.type === 'tool.end' || e.whatSummary) {
-        const tn = e.data?.toolName || '';
-        const fp = e.data?.filePath || e.data?.input?.file_path || e.data?.files?.[0] || '';
-        const fn = fp ? fp.replace(/\\/g, '/').split('/').pop() : '';
-        const key = fn ? `${tn}: ${fn}` : tn;
-        if (key) _toolCounts[key] = (_toolCounts[key] || 0) + 1;
-      }
-    });
-    planet.userData.whatSummary = Object.entries(_toolCounts)
-      .sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k]) => k).join(', ')
-      || rawEvents[0]?.whatSummary || '';
-    // RESULT: git commit 또는 마지막 assistant 메시지
+    // WHAT/RESULT 요약 (텍스트박스 표시용 — 사람이 이해할 수 있는 행동+결과)
+    const _edited = {}, _created = {}, _read = {};
+    let _webCount = 0;
     const _commits = [];
-    let _lastAssist = '';
     rawEvents.forEach(e => {
-      if (e.type === 'tool.end' && e.data?.toolName === 'Bash') {
+      if (e.type !== 'tool.end') return;
+      const tn = e.data?.toolName || '';
+      const fp = e.data?.filePath || e.data?.input?.file_path || e.data?.files?.[0] || '';
+      const fn = fp ? fp.replace(/\\/g, '/').split('/').pop() : '';
+      if (tn === 'Edit' && fn) _edited[fn] = (_edited[fn] || 0) + 1;
+      else if (tn === 'Write' && fn) _created[fn] = (_created[fn] || 0) + 1;
+      else if (tn === 'Read' && fn) _read[fn] = (_read[fn] || 0) + 1;
+      else if (tn === 'WebSearch' || tn === 'WebFetch') _webCount++;
+      else if (tn === 'Bash') {
         const cmd = String(e.data.inputPreview || e.data.input?.command || '');
         const cm = cmd.match(/git commit.*-m\s+["'](.+?)["']/i);
-        if (cm) _commits.push(cm[1].slice(0, 40));
-      }
-      if (e.type === 'assistant.message') {
-        const c = (e.data?.contentPreview || e.data?.content || '').replace(/[\n\r]/g, ' ').trim();
-        if (c.length > 3) _lastAssist = c.slice(0, 50);
+        if (cm) _commits.push(cm[1].slice(0, 50));
       }
     });
-    planet.userData.resultSummary = _commits.length > 0
-      ? _commits[_commits.length - 1]
-      : (_lastAssist || rawEvents[0]?.resultSummary || '');
+    // WHAT: "server.js 수정, db-pg.js 작성" 식으로
+    const _wp = [];
+    const ef = Object.keys(_edited);
+    const cf = Object.keys(_created);
+    if (ef.length > 0) _wp.push(ef.slice(0,2).join(', ') + ' 수정' + (ef.length > 2 ? ` 외 ${ef.length-2}개` : ''));
+    if (cf.length > 0) _wp.push(cf.slice(0,2).join(', ') + ' 작성' + (cf.length > 2 ? ` 외 ${cf.length-2}개` : ''));
+    if (_webCount > 0) _wp.push(`웹 조사 ${_webCount}건`);
+    if (_wp.length === 0) {
+      const rf = Object.keys(_read);
+      if (rf.length > 0) _wp.push(rf.slice(0,2).join(', ') + ' 분석');
+    }
+    planet.userData.whatSummary = _wp.join(', ') || rawEvents[0]?.whatSummary || '';
+    // RESULT: 커밋 메시지 또는 파일 변경 통계
+    if (_commits.length > 0) {
+      planet.userData.resultSummary = _commits[_commits.length - 1];
+    } else {
+      const te = Object.keys(_edited).length, tc = Object.keys(_created).length;
+      const rp = [];
+      if (te > 0) rp.push(`${te}개 파일 수정`);
+      if (tc > 0) rp.push(`${tc}개 파일 생성`);
+      planet.userData.resultSummary = rp.join(', ') || rawEvents[0]?.resultSummary || '';
+    }
     scene.add(planet);
     planetMeshes.push(planet);
 
