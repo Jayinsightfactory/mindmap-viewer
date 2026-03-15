@@ -51,6 +51,16 @@ module.exports = function createCompanyRouter({ getDb, broadcastAll }) {
 
   function db() { return getDb(); }
 
+  // PG 모드에서는 company-ontology (SQLite 전용)를 사용할 수 없음
+  if (isPg) {
+    router.all('/company*', (req, res) => res.json({ companies: [], total: 0, message: 'Company ontology는 현재 로컬(SQLite) 모드에서만 사용 가능합니다.' }));
+    router.all('/department*', (req, res) => res.json({ departments: [], total: 0 }));
+    router.all('/employee*', (req, res) => res.json({ employees: [], total: 0 }));
+    router.all('/process*', (req, res) => res.json({ processes: [], total: 0 }));
+    router.all('/benchmark*', (req, res) => res.json({ benchmarks: [], total: 0 }));
+    return router;
+  }
+
   // ══════════════════════════════════════════════════════════════════════════
   // Company CRUD
   // ══════════════════════════════════════════════════════════════════════════
