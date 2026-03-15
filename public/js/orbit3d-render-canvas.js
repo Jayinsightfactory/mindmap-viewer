@@ -33,13 +33,9 @@ window.addEventListener('DOMContentLoaded', () => {
     if (btn) btn.style.display = '';
   }
 
-  // ── 뷰 모드 복원 ──────────────────────────────────────────────────────────
-  setTimeout(() => {
-    const savedView = localStorage.getItem('orbitViewMode');
-    if (savedView === 'team' && typeof loadTeamDemo === 'function') loadTeamDemo();
-    else if (savedView === 'company' && typeof loadCompanyDemo === 'function') loadCompanyDemo();
-    else if (savedView === 'parallel' && typeof loadParallelDemo === 'function') loadParallelDemo();
-  }, 800);
+  // ── 뷰 모드 복원 (개인 모드가 기본, 팀/전사는 명시적 전환만) ──────────────
+  // 이전 세션에서 팀/전사 모드였어도 개인 모드로 시작 (안정성)
+  localStorage.setItem('orbitViewMode', 'personal');
 }, { once: true });
 
 // ─── Escape: 드릴다운 복귀 ────────────────────────────────────────────────

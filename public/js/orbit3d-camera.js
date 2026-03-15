@@ -380,11 +380,15 @@ function drawTeamLabels() {
   _lctx.clearRect(0, 0, innerWidth, innerHeight);
   clearHitAreas();
 
+  // TEAM_DEMO 미로드 시 안전 종료
+  if (typeof TEAM_DEMO === 'undefined' || !TEAM_DEMO) return;
+  if (!_teamNodes || _teamNodes.length === 0) return;
+
   const lod = getLOD();
   const now = Date.now() / 1000; // seconds
 
   // ── LOD 2+ : 계층 오버레이 (Company / Universe) ──────────────────────────
-  if (lod >= 2 && _teamMode) {
+  if (lod >= 2 && _teamMode && TEAM_DEMO.universe) {
     // LOD 3: 유니버스 뷰
     if (lod >= 3) {
       const uv = TEAM_DEMO.universe;
