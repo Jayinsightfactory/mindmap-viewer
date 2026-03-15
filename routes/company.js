@@ -46,37 +46,27 @@ const { Router } = require('express');
 
 module.exports = function createCompanyRouter({ getDb, broadcastAll }) {
   const router = Router();
-  const ontology = require('../src/company-ontology');
   const isPg = !!process.env.DATABASE_URL;
+  const ontology = isPg ? require('../src/company-ontology-pg') : require('../src/company-ontology');
 
   function db() { return getDb(); }
-
-  // PG 모드에서는 company-ontology (SQLite 전용)를 사용할 수 없음
-  if (isPg) {
-    router.all('/company*', (req, res) => res.json({ companies: [], total: 0, message: 'Company ontology는 현재 로컬(SQLite) 모드에서만 사용 가능합니다.' }));
-    router.all('/department*', (req, res) => res.json({ departments: [], total: 0 }));
-    router.all('/employee*', (req, res) => res.json({ employees: [], total: 0 }));
-    router.all('/process*', (req, res) => res.json({ processes: [], total: 0 }));
-    router.all('/benchmark*', (req, res) => res.json({ benchmarks: [], total: 0 }));
-    return router;
-  }
 
   // ══════════════════════════════════════════════════════════════════════════
   // Company CRUD
   // ══════════════════════════════════════════════════════════════════════════
 
-  router.post('/company', (req, res) => {
+  router.post('/company', async (req, res) => {
     try {
-      if (!isPg) ontology.ensureCompanyTables(db());
-      const result = ontology.createCompany(db(), req.body);
+      await ontology.ensureCompanyTables(db());
+      const result = await ontology.createCompany(db(), req.body);
       res.json({ ok: true, ...result });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
-  router.get('/company', (req, res) => {
+  router.get('/company', async (req, res) => {
     try {
-      if (!isPg) ontology.ensureCompanyTables(db());
-      const list = ontology.listCompanies(db(), {
+      await ontology.ensureCompanyTables(db());
+      const list = await ontology.listCompanies(db(), {
         status: req.query.status, consultant_id: req.query.consultant_id,
         company_type: req.query.type, limit: parseInt(req.query.limit) || 50,
       });
@@ -84,49 +74,49 @@ module.exports = function createCompanyRouter({ getDb, broadcastAll }) {
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
-  router.get('/company/:id', (req, res) => {
+  router.get('/company/:id', async (req, res) => {
     try {
-      if (!isPg) ontology.ensureCompanyTables(db());
-      const company = ontology.getCompany(db(), req.params.id);
+      await ontology.ensureCompanyTables(db());
+      const company = await ontology.getCompany(db(), req.params.id);
       if (!company) return res.status(404).json({ error: 'not found' });
 
-      const departments = ontology.listDepartments(db(), req.params.id);
-      const employees = ontology.listEmployees(db(), req.params.id);
-      const processes = ontology.listProcesses(db(), req.params.id);
-      const systems = ontology.listSystems(db(), req.params.id);
+      const departments = await ontology.listDepartments(db(), req.params.id);
+      const employees = await ontology.listEmployees(db(), req.params.id);
+      const processes = await ontology.listProcesses(db(), req.params.id);
+      const systems = await ontology.listSystems(db(), req.params.id);
 
       res.json({ company, departments, employees, processes, systems });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
-  router.put('/company/:id', (req, res) => {
+  router.put('/company/:id', async (req, res) => {
     try {
-      ontology.updateCompany(db(), req.params.id, req.body);
+      await ontology.updateCompany(db(), req.params.id, req.body);
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
-  router.delete('/company/:id', (req, res) => {
+  router.delete('/company/:id', async (req, res) => {
     try {
-      ontology.deleteCompany(db(), req.params.id);
+      await ontology.deleteCompany(db(), req.params.id);
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
-  router.get('/company/:id/graph', (req, res) => {
+  router.get('/company/:id/graph', async (req, res) => {
     try {
-      if (!isPg) ontology.ensureCompanyTables(db());
-      const graph = ontology.buildCompanyGraph(db(), req.params.id);
+      await ontology.ensureCompanyTables(db());
+      const graph = await ontology.buildCompanyGraph(db(), req.params.id);
       if (!graph) return res.status(404).json({ error: 'company not found' });
       res.json(graph);
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
-  router.get('/company/:id/stats', (req, res) => {
+  router.get('/company/:id/stats', async (req, res) => {
     try {
-      if (!isPg) ontology.ensureCompanyTables(db());
+      await ontology.ensureCompanyTables(db());
       const since = req.query.since || new Date(Date.now() - 86400_000).toISOString();
-      const stats = ontology.getActivityStats(db(), req.params.id, since);
+      const stats = await ontology.getActivityStats(db(), req.params.id, since);
       res.json(stats);
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
@@ -135,30 +125,30 @@ module.exports = function createCompanyRouter({ getDb, broadcastAll }) {
   // Department
   // ══════════════════════════════════════════════════════════════════════════
 
-  router.post('/company/:id/department', (req, res) => {
+  router.post('/company/:id/department', async (req, res) => {
     try {
-      const result = ontology.createDepartment(db(), { ...req.body, company_id: req.params.id });
+      const result = await ontology.createDepartment(db(), { ...req.body, company_id: req.params.id });
       res.json({ ok: true, ...result });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
-  router.get('/company/:id/departments', (req, res) => {
+  router.get('/company/:id/departments', async (req, res) => {
     try {
-      const list = ontology.listDepartments(db(), req.params.id);
+      const list = await ontology.listDepartments(db(), req.params.id);
       res.json({ departments: list, total: list.length });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
-  router.put('/department/:id', (req, res) => {
+  router.put('/department/:id', async (req, res) => {
     try {
-      ontology.updateDepartment(db(), req.params.id, req.body);
+      await ontology.updateDepartment(db(), req.params.id, req.body);
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
-  router.delete('/department/:id', (req, res) => {
+  router.delete('/department/:id', async (req, res) => {
     try {
-      ontology.deleteDepartment(db(), req.params.id);
+      await ontology.deleteDepartment(db(), req.params.id);
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
@@ -167,31 +157,31 @@ module.exports = function createCompanyRouter({ getDb, broadcastAll }) {
   // Employee
   // ══════════════════════════════════════════════════════════════════════════
 
-  router.post('/company/:id/employee', (req, res) => {
+  router.post('/company/:id/employee', async (req, res) => {
     try {
-      const result = ontology.createEmployee(db(), { ...req.body, company_id: req.params.id });
+      const result = await ontology.createEmployee(db(), { ...req.body, company_id: req.params.id });
       // tracker_token 반환 — 이 토큰으로 트래커 설치 시 자동 연결
       res.json({ ok: true, ...result, installUrl: `/api/tracker/install-bat?token=${result.tracker_token}` });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
-  router.get('/company/:id/employees', (req, res) => {
+  router.get('/company/:id/employees', async (req, res) => {
     try {
-      const list = ontology.listEmployees(db(), req.params.id, req.query.department_id);
+      const list = await ontology.listEmployees(db(), req.params.id, req.query.department_id);
       res.json({ employees: list, total: list.length });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
-  router.put('/employee/:id', (req, res) => {
+  router.put('/employee/:id', async (req, res) => {
     try {
-      ontology.updateEmployee(db(), req.params.id, req.body);
+      await ontology.updateEmployee(db(), req.params.id, req.body);
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
-  router.get('/employee/:id/activities', (req, res) => {
+  router.get('/employee/:id/activities', async (req, res) => {
     try {
-      const activities = ontology.getActivities(db(), {
+      const activities = await ontology.getActivities(db(), {
         employee_id: req.params.id,
         since: req.query.since,
         limit: req.query.limit,
@@ -204,23 +194,23 @@ module.exports = function createCompanyRouter({ getDb, broadcastAll }) {
   // Process
   // ══════════════════════════════════════════════════════════════════════════
 
-  router.post('/company/:id/process', (req, res) => {
+  router.post('/company/:id/process', async (req, res) => {
     try {
-      const result = ontology.createProcess(db(), { ...req.body, company_id: req.params.id });
+      const result = await ontology.createProcess(db(), { ...req.body, company_id: req.params.id });
       res.json({ ok: true, ...result });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
-  router.get('/company/:id/processes', (req, res) => {
+  router.get('/company/:id/processes', async (req, res) => {
     try {
-      const list = ontology.listProcesses(db(), req.params.id, req.query.department_id);
+      const list = await ontology.listProcesses(db(), req.params.id, req.query.department_id);
       res.json({ processes: list, total: list.length });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
-  router.put('/process/:id', (req, res) => {
+  router.put('/process/:id', async (req, res) => {
     try {
-      ontology.updateProcess(db(), req.params.id, req.body);
+      await ontology.updateProcess(db(), req.params.id, req.body);
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
@@ -229,16 +219,16 @@ module.exports = function createCompanyRouter({ getDb, broadcastAll }) {
   // System
   // ══════════════════════════════════════════════════════════════════════════
 
-  router.post('/company/:id/system', (req, res) => {
+  router.post('/company/:id/system', async (req, res) => {
     try {
-      const result = ontology.createSystem(db(), { ...req.body, company_id: req.params.id });
+      const result = await ontology.createSystem(db(), { ...req.body, company_id: req.params.id });
       res.json({ ok: true, ...result });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
-  router.get('/company/:id/systems', (req, res) => {
+  router.get('/company/:id/systems', async (req, res) => {
     try {
-      const list = ontology.listSystems(db(), req.params.id);
+      const list = await ontology.listSystems(db(), req.params.id);
       res.json({ systems: list, total: list.length });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
@@ -248,17 +238,17 @@ module.exports = function createCompanyRouter({ getDb, broadcastAll }) {
   // 직원 PC에 설치된 트래커가 토큰만으로 데이터 전송
   // ══════════════════════════════════════════════════════════════════════════
 
-  router.post('/tracker/heartbeat', (req, res) => {
+  router.post('/tracker/heartbeat', async (req, res) => {
     try {
-      if (!isPg) ontology.ensureCompanyTables(db());
+      await ontology.ensureCompanyTables(db());
       const { token, hostname, os_info, uptime } = req.body;
       if (!token) return res.status(400).json({ error: 'token required' });
 
-      const emp = ontology.getEmployeeByToken(db(), token);
+      const emp = await ontology.getEmployeeByToken(db(), token);
       if (!emp) return res.status(404).json({ error: 'invalid token' });
 
       // 마지막 확인 시간 업데이트
-      ontology.updateEmployee(db(), emp.id, {
+      await ontology.updateEmployee(db(), emp.id, {
         tracker_active: 1,
         last_seen_at: new Date().toISOString(),
       });
@@ -269,13 +259,13 @@ module.exports = function createCompanyRouter({ getDb, broadcastAll }) {
 
   // POST /api/tracker/activities — 분석된 활동 데이터 수신
   // 로컬에서 분석된 결과만 수신 (원본 키스트로크 절대 포함 안 됨)
-  router.post('/tracker/activities', (req, res) => {
+  router.post('/tracker/activities', async (req, res) => {
     try {
-      if (!isPg) ontology.ensureCompanyTables(db());
+      await ontology.ensureCompanyTables(db());
       const { token, activities = [], analyzed } = req.body;
       if (!token) return res.status(400).json({ error: 'token required' });
 
-      const emp = ontology.getEmployeeByToken(db(), token);
+      const emp = await ontology.getEmployeeByToken(db(), token);
       if (!emp) return res.status(404).json({ error: 'invalid token' });
 
       // ── 분석된 데이터 형식으로 수신 (로컬 학습 결과) ──
@@ -292,7 +282,7 @@ module.exports = function createCompanyRouter({ getDb, broadcastAll }) {
 
       let count = 0;
       if (sanitized.length > 0) {
-        const result = ontology.insertActivitiesBatch(db(), sanitized);
+        const result = await ontology.insertActivitiesBatch(db(), sanitized);
         count = result.count;
       }
 
@@ -311,14 +301,14 @@ module.exports = function createCompanyRouter({ getDb, broadcastAll }) {
             summary: analyzed.summary || '',
             timestamp: new Date().toISOString(),
           };
-          ontology.insertActivitiesBatch(db(), [analysisRecord]);
+          await ontology.insertActivitiesBatch(db(), [analysisRecord]);
         } catch (analysisErr) {
           console.warn('[tracker/activities] 분석 결과 저장 실패:', analysisErr.message);
         }
       }
 
       // 마지막 확인 시간 업데이트
-      ontology.updateEmployee(db(), emp.id, {
+      await ontology.updateEmployee(db(), emp.id, {
         tracker_active: 1,
         last_seen_at: new Date().toISOString(),
       });
@@ -350,13 +340,13 @@ module.exports = function createCompanyRouter({ getDb, broadcastAll }) {
   // 트래커가 5분마다 로컬 분석 후 이 엔드포인트로 결과만 전송
   // 구조: { period, activities, patterns, metrics, insights, summary }
   // 원본 키스트로크 내용은 절대 포함되지 않음
-  router.post('/tracker/analyzed', (req, res) => {
+  router.post('/tracker/analyzed', async (req, res) => {
     try {
-      if (!isPg) ontology.ensureCompanyTables(db());
+      await ontology.ensureCompanyTables(db());
       const { token, period, activities, patterns, metrics, insights, summary } = req.body;
       if (!token) return res.status(400).json({ error: 'token required' });
 
-      const emp = ontology.getEmployeeByToken(db(), token);
+      const emp = await ontology.getEmployeeByToken(db(), token);
       if (!emp) return res.status(404).json({ error: 'invalid token' });
 
       // ── 분석 결과 저장 (원본 데이터 없음, 요약만) ──
@@ -400,10 +390,10 @@ module.exports = function createCompanyRouter({ getDb, broadcastAll }) {
         timestamp: new Date().toISOString(),
       };
 
-      ontology.insertActivitiesBatch(db(), [analysisRecord]);
+      await ontology.insertActivitiesBatch(db(), [analysisRecord]);
 
       // 마지막 확인 시간 업데이트
-      ontology.updateEmployee(db(), emp.id, {
+      await ontology.updateEmployee(db(), emp.id, {
         tracker_active: 1,
         last_seen_at: new Date().toISOString(),
       });
@@ -440,13 +430,13 @@ module.exports = function createCompanyRouter({ getDb, broadcastAll }) {
   // v2: 로컬 학습 아키텍처 — 원본 데이터 전송 안 함
   const TRACKER_VERSION = 2;
 
-  router.get('/tracker/config', (req, res) => {
+  router.get('/tracker/config', async (req, res) => {
     try {
-      if (!isPg) ontology.ensureCompanyTables(db());
+      await ontology.ensureCompanyTables(db());
       const token = req.query.token;
       if (!token) return res.status(400).json({ error: 'token required' });
 
-      const emp = ontology.getEmployeeByToken(db(), token);
+      const emp = await ontology.getEmployeeByToken(db(), token);
       if (!emp) return res.status(404).json({ error: 'invalid token' });
 
       res.json({
@@ -1027,10 +1017,10 @@ while ($true) {
 
   // ── 벤치마크 API ──────────────────────────────────────────────────────────
 
-  router.get('/benchmark/:industry', (req, res) => {
+  router.get('/benchmark/:industry', async (req, res) => {
     try {
-      if (!isPg) ontology.ensureCompanyTables(db());
-      const benchmarks = ontology.getBenchmarks(db(), req.params.industry, req.query.type || 'B');
+      await ontology.ensureCompanyTables(db());
+      const benchmarks = await ontology.getBenchmarks(db(), req.params.industry, req.query.type || 'B');
       res.json({ benchmarks, total: benchmarks.length });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
