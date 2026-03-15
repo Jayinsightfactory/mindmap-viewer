@@ -4,6 +4,20 @@
 // [orbit3d-render.js에서 분할]
 // ══════════════════════════════════════════════════════════════════════════════
 
+// ─── 패널 상호 배제: 오른쪽 패널 일괄 닫기 ──────────────────────────────────
+function closeAllRightPanels(except) {
+  const panels = ['messenger-panel', 'insight-panel', 'suggestion-panel', 'follow-panel', 'my-talent-panel', 'learning-data-panel'];
+  panels.forEach(id => {
+    if (id === except) return;
+    const el = document.getElementById(id);
+    if (el) {
+      el.style.display = 'none';
+      el.classList.remove('open');
+    }
+  });
+}
+window.closeAllRightPanels = closeAllRightPanels;
+
 // ─── AI 인사이트 패널 ─────────────────────────────────────────────────────────
 
 function escHtml(s) {
@@ -307,6 +321,7 @@ let _insightRefreshTimer = null;
 function toggleInsightPanel() {
   const panel  = document.getElementById('insight-panel');
   const isOpen = panel.classList.contains('open');
+  closeAllRightPanels('insight-panel');
   document.getElementById('info-panel')?.classList.remove('open');
   if (isOpen) {
     panel.classList.remove('open');
@@ -525,9 +540,9 @@ function toggleSuggestionPanel() {
   const panel = document.getElementById('suggestion-panel');
   const btn   = document.getElementById('ln-suggest-btn');
   _sgOpen = !_sgOpen;
+  closeAllRightPanels('suggestion-panel');
   panel.classList.toggle('open', _sgOpen);
   btn?.classList.toggle('active', _sgOpen);
-  document.getElementById('insight-panel')?.classList.remove('open');
   document.getElementById('info-panel')?.classList.remove('open');
   if (_sgOpen) loadSuggestions();
 }

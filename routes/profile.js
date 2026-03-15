@@ -18,37 +18,96 @@ const router  = express.Router();
 
 /**
  * @param {object} deps
- * @param {Function} deps.getDb        - better-sqlite3 db 인스턴스
+ * @param {Function} deps.getDb        - better-sqlite3 db 또는 pg Pool 인스턴스
  * @param {Function} deps.verifyToken  - JWT 검증 함수
  * @returns {express.Router}
  */
 function createRouter({ getDb, verifyToken }) {
 
-  // ── DB 테이블 초기화 ──────────────────────────────────────────────────────
-  function initProfileTable() {
-    const db = getDb();
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS user_profiles (
-        user_id      TEXT PRIMARY KEY,
-        name         TEXT,
-        headline     TEXT,
-        company      TEXT,
-        location     TEXT,
-        bio          TEXT,
-        skills       TEXT DEFAULT '[]',
-        experiences  TEXT DEFAULT '[]',
-        education    TEXT DEFAULT '[]',
-        links        TEXT DEFAULT '{}',
-        avatar_url   TEXT,
-        is_public    INTEGER DEFAULT 1,
-        created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at   DATETIME DEFAULT CURRENT_TIMESTAMP
-      );
-      CREATE INDEX IF NOT EXISTS idx_up_user_id ON user_profiles(user_id);
-    `);
+  const isPg = !!process.env.DATABASE_URL;
+
+  // ── DB 헬퍼 (PG / SQLite 듀얼) ──────────────────────────────────────────
+  async function dbRun(db, sql, params) {
+    if (isPg) {
+      let i = 1;
+      const pgSql = sql.replace(/\?/g, () => `$${i++}`);
+      await db.query(pgSql, params);
+    } else {
+      db.prepare(sql).run(...params);
+    }
   }
 
-  try { initProfileTable(); } catch (e) { console.warn('[profile] DB init warn:', e.message); }
+  async function dbGet(db, sql, params) {
+    if (isPg) {
+      let i = 1;
+      const pgSql = sql.replace(/\?/g, () => `$${i++}`);
+      const { rows } = await db.query(pgSql, params);
+      return rows[0] || null;
+    } else {
+      return db.prepare(sql).get(...params);
+    }
+  }
+
+  async function dbAll(db, sql, params) {
+    if (isPg) {
+      let i = 1;
+      const pgSql = sql.replace(/\?/g, () => `$${i++}`);
+      const { rows } = await db.query(pgSql, params);
+      return rows;
+    } else {
+      return db.prepare(sql).all(...params);
+    }
+  }
+
+  // ── DB 테이블 초기화 ──────────────────────────────────────────────────────
+  async function initProfileTable() {
+    const db = getDb();
+    if (isPg) {
+      await db.query(`
+        CREATE TABLE IF NOT EXISTS user_profiles (
+          user_id      TEXT PRIMARY KEY,
+          name         TEXT,
+          headline     TEXT,
+          company      TEXT,
+          location     TEXT,
+          bio          TEXT,
+          skills       TEXT DEFAULT '[]',
+          experiences  TEXT DEFAULT '[]',
+          education    TEXT DEFAULT '[]',
+          links        TEXT DEFAULT '{}',
+          avatar_url   TEXT,
+          is_public    INTEGER DEFAULT 1,
+          created_at   TIMESTAMP DEFAULT NOW(),
+          updated_at   TIMESTAMP DEFAULT NOW()
+        );
+      `);
+      await db.query(`
+        CREATE INDEX IF NOT EXISTS idx_up_user_id ON user_profiles(user_id);
+      `);
+    } else {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS user_profiles (
+          user_id      TEXT PRIMARY KEY,
+          name         TEXT,
+          headline     TEXT,
+          company      TEXT,
+          location     TEXT,
+          bio          TEXT,
+          skills       TEXT DEFAULT '[]',
+          experiences  TEXT DEFAULT '[]',
+          education    TEXT DEFAULT '[]',
+          links        TEXT DEFAULT '{}',
+          avatar_url   TEXT,
+          is_public    INTEGER DEFAULT 1,
+          created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at   DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_up_user_id ON user_profiles(user_id);
+      `);
+    }
+  }
+
+  initProfileTable().catch(e => console.warn('[profile] DB init warn:', e.message));
 
   // ── 인증 미들웨어 ─────────────────────────────────────────────────────────
   function auth(req, res, next) {
@@ -62,11 +121,12 @@ function createRouter({ getDb, verifyToken }) {
   }
 
   // ── GET /api/profile/check ─────────────────────────────────────────────────
-  router.get('/profile/check', auth, (req, res) => {
+  router.get('/profile/check', auth, async (req, res) => {
     try {
       const db      = getDb();
-      const profile = db.prepare('SELECT user_id, name, headline FROM user_profiles WHERE user_id = ?')
-                        .get(req.user.id);
+      const profile = await dbGet(db,
+        'SELECT user_id, name, headline FROM user_profiles WHERE user_id = ?',
+        [req.user.id]);
       res.json({ exists: !!profile, hasHeadline: !!(profile?.headline) });
     } catch (e) {
       res.status(500).json({ error: e.message });
@@ -74,10 +134,12 @@ function createRouter({ getDb, verifyToken }) {
   });
 
   // ── GET /api/profile — 내 프로필 ──────────────────────────────────────────
-  router.get('/profile', auth, (req, res) => {
+  router.get('/profile', auth, async (req, res) => {
     try {
       const db      = getDb();
-      const profile = db.prepare('SELECT * FROM user_profiles WHERE user_id = ?').get(req.user.id);
+      const profile = await dbGet(db,
+        'SELECT * FROM user_profiles WHERE user_id = ?',
+        [req.user.id]);
       if (!profile) return res.json(null);
       // JSON 파싱
       ['skills', 'experiences', 'education', 'links'].forEach(k => {
@@ -90,12 +152,12 @@ function createRouter({ getDb, verifyToken }) {
   });
 
   // ── GET /api/profile/:userId — 공개 프로필 ────────────────────────────────
-  router.get('/profile/:userId', (req, res) => {
+  router.get('/profile/:userId', async (req, res) => {
     try {
       const db      = getDb();
-      const profile = db.prepare(
-        'SELECT * FROM user_profiles WHERE user_id = ? AND is_public = 1'
-      ).get(req.params.userId);
+      const profile = await dbGet(db,
+        'SELECT * FROM user_profiles WHERE user_id = ? AND is_public = 1',
+        [req.params.userId]);
       if (!profile) return res.status(404).json({ error: 'not found' });
       ['skills', 'experiences', 'education', 'links'].forEach(k => {
         try { profile[k] = JSON.parse(profile[k]); } catch (_) { profile[k] = k === 'links' ? {} : []; }
@@ -107,7 +169,7 @@ function createRouter({ getDb, verifyToken }) {
   });
 
   // ── POST /api/profile — 저장/업데이트 ────────────────────────────────────
-  router.post('/profile', auth, (req, res) => {
+  router.post('/profile', auth, async (req, res) => {
     try {
       const db = getDb();
       const body = req.body || {};
@@ -119,24 +181,7 @@ function createRouter({ getDb, verifyToken }) {
       // displayName → name 호환 (프론트에서 displayName으로 보낼 수 있음)
       const name = body.name || body.displayName || '';
 
-      db.prepare(`
-        INSERT INTO user_profiles
-          (user_id, name, headline, company, location, bio, skills, experiences, education, links, avatar_url, is_public, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-        ON CONFLICT(user_id) DO UPDATE SET
-          name         = excluded.name,
-          headline     = excluded.headline,
-          company      = excluded.company,
-          location     = excluded.location,
-          bio          = excluded.bio,
-          skills       = excluded.skills,
-          experiences  = excluded.experiences,
-          education    = excluded.education,
-          links        = excluded.links,
-          avatar_url   = excluded.avatar_url,
-          is_public    = excluded.is_public,
-          updated_at   = datetime('now')
-      `).run(
+      const params = [
         req.user.id,
         (name        || '').slice(0, 100),
         (headline    || '').slice(0, 200),
@@ -149,7 +194,49 @@ function createRouter({ getDb, verifyToken }) {
         JSON.stringify(links && typeof links === 'object' && !Array.isArray(links) ? links : {}),
         (avatar_url  || null),
         is_public !== false ? 1 : 0,
-      );
+      ];
+
+      if (isPg) {
+        // PG: INSERT ... ON CONFLICT with NOW()
+        await db.query(`
+          INSERT INTO user_profiles
+            (user_id, name, headline, company, location, bio, skills, experiences, education, links, avatar_url, is_public, updated_at)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
+          ON CONFLICT(user_id) DO UPDATE SET
+            name         = EXCLUDED.name,
+            headline     = EXCLUDED.headline,
+            company      = EXCLUDED.company,
+            location     = EXCLUDED.location,
+            bio          = EXCLUDED.bio,
+            skills       = EXCLUDED.skills,
+            experiences  = EXCLUDED.experiences,
+            education    = EXCLUDED.education,
+            links        = EXCLUDED.links,
+            avatar_url   = EXCLUDED.avatar_url,
+            is_public    = EXCLUDED.is_public,
+            updated_at   = NOW()
+        `, params);
+      } else {
+        // SQLite: INSERT ... ON CONFLICT with datetime('now')
+        db.prepare(`
+          INSERT INTO user_profiles
+            (user_id, name, headline, company, location, bio, skills, experiences, education, links, avatar_url, is_public, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+          ON CONFLICT(user_id) DO UPDATE SET
+            name         = excluded.name,
+            headline     = excluded.headline,
+            company      = excluded.company,
+            location     = excluded.location,
+            bio          = excluded.bio,
+            skills       = excluded.skills,
+            experiences  = excluded.experiences,
+            education    = excluded.education,
+            links        = excluded.links,
+            avatar_url   = excluded.avatar_url,
+            is_public    = excluded.is_public,
+            updated_at   = datetime('now')
+        `).run(...params);
+      }
 
       res.json({ ok: true });
     } catch (e) {

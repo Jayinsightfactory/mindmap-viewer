@@ -575,16 +575,7 @@ let insightPanelOpen = false;
 let _insightCache    = [];
 let _insightLoading  = false;
 
-function toggleInsightPanel() {
-  insightPanelOpen = !insightPanelOpen;
-  const panel = document.getElementById('insight-panel');
-  const btn   = document.getElementById('insight-toggle');
-  panel.classList.toggle('open', insightPanelOpen);
-  btn.classList.toggle('active', insightPanelOpen);
-  if (insightPanelOpen && _insightCache.length === 0) {
-    loadInsights();
-  }
-}
+// toggleInsightPanel은 orbit3d-render-panels.js에서 정의됨 — 중복 제거됨
 
 async function loadInsights() {
   if (_insightLoading) return;
@@ -1856,7 +1847,6 @@ window.zoomOut           = zoomOut;
 window.tlApplyFilter     = tlApplyFilter;
 window.dismissToast       = dismissToast;
 window.loadData           = loadData;
-window.toggleInsightPanel = toggleInsightPanel;
 window.refreshInsights    = refreshInsights;
 
 // ── OAuth 토큰 수신 처리 ──

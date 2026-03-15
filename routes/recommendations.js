@@ -13,6 +13,40 @@
 
 const express = require('express');
 
+const isPg = !!process.env.DATABASE_URL;
+
+async function dbRun(db, sql, params = []) {
+  if (isPg) {
+    let i = 1;
+    const pgSql = sql.replace(/\?/g, () => `$${i++}`);
+    await db.query(pgSql, params);
+  } else {
+    db.prepare(sql).run(...params);
+  }
+}
+
+async function dbGet(db, sql, params = []) {
+  if (isPg) {
+    let i = 1;
+    const pgSql = sql.replace(/\?/g, () => `$${i++}`);
+    const { rows } = await db.query(pgSql, params);
+    return rows[0] || null;
+  } else {
+    return db.prepare(sql).get(...params);
+  }
+}
+
+async function dbAll(db, sql, params = []) {
+  if (isPg) {
+    let i = 1;
+    const pgSql = sql.replace(/\?/g, () => `$${i++}`);
+    const { rows } = await db.query(pgSql, params);
+    return rows;
+  } else {
+    return db.prepare(sql).all(...params);
+  }
+}
+
 function createRecommendationsRouter({ verifyToken, dbModule }) {
   const router = express.Router();
 
@@ -241,7 +275,7 @@ function createRecommendationsRouter({ verifyToken, dbModule }) {
    *   "recentProjects": ["Project A", "Project B"]
    * }
    */
-  router.post('/recommendations/analyze', authRequired, (req, res) => {
+  router.post('/recommendations/analyze', authRequired, async (req, res) => {
     try {
       const companyData = req.body;
       const { companyId, name, size, industry } = companyData;
@@ -261,16 +295,17 @@ function createRecommendationsRouter({ verifyToken, dbModule }) {
       // 분석 결과 저장
       const db = dbModule.getDb();
       if (db) {
-        db.prepare(`
+        const nowExpr = isPg ? 'NOW()' : "datetime('now')";
+        await dbRun(db, `
           INSERT INTO analysis_results (id, user_id, company_id, findings_json, recommendations_json, created_at)
-          VALUES (?, ?, ?, ?, ?, datetime('now'))
-        `).run(
+          VALUES (?, ?, ?, ?, ?, ${nowExpr})
+        `, [
           analysisId,
           req.user.id,
           companyId || name,
           JSON.stringify(findings),
           JSON.stringify(recommendations)
-        );
+        ]);
       }
 
       res.json({
@@ -313,16 +348,16 @@ function createRecommendationsRouter({ verifyToken, dbModule }) {
   /**
    * 분석 결과 조회
    */
-  router.get('/recommendations/:analysisId', authRequired, (req, res) => {
+  router.get('/recommendations/:analysisId', authRequired, async (req, res) => {
     try {
       const db = dbModule.getDb();
       let result = null;
 
       if (db) {
-        result = db.prepare(`
+        result = await dbGet(db, `
           SELECT * FROM analysis_results
           WHERE id = ? AND user_id = ?
-        `).get(req.params.analysisId, req.user.id);
+        `, [req.params.analysisId, req.user.id]);
       }
 
       if (!result) {
@@ -346,18 +381,18 @@ function createRecommendationsRouter({ verifyToken, dbModule }) {
   /**
    * 분석 이력 조회 (최신 10개)
    */
-  router.get('/recommendations/history', authRequired, (req, res) => {
+  router.get('/recommendations/history', authRequired, async (req, res) => {
     try {
       const db = dbModule.getDb();
       let results = [];
 
       if (db) {
-        results = db.prepare(`
+        results = await dbAll(db, `
           SELECT id, company_id, created_at FROM analysis_results
           WHERE user_id = ?
           ORDER BY created_at DESC
           LIMIT 10
-        `).all(req.user.id);
+        `, [req.user.id]);
       }
 
       res.json({

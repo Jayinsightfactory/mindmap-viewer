@@ -15,6 +15,40 @@
 const express = require('express');
 const router  = express.Router();
 
+const isPg = !!process.env.DATABASE_URL;
+
+async function dbRun(db, sql, params = []) {
+  if (isPg) {
+    let i = 1;
+    const pgSql = sql.replace(/\?/g, () => `$${i++}`);
+    await db.query(pgSql, params);
+  } else {
+    db.prepare(sql).run(...params);
+  }
+}
+
+async function dbGet(db, sql, params = []) {
+  if (isPg) {
+    let i = 1;
+    const pgSql = sql.replace(/\?/g, () => `$${i++}`);
+    const { rows } = await db.query(pgSql, params);
+    return rows[0] || null;
+  } else {
+    return db.prepare(sql).get(...params);
+  }
+}
+
+async function dbAll(db, sql, params = []) {
+  if (isPg) {
+    let i = 1;
+    const pgSql = sql.replace(/\?/g, () => `$${i++}`);
+    const { rows } = await db.query(pgSql, params);
+    return rows;
+  } else {
+    return db.prepare(sql).all(...params);
+  }
+}
+
 function createNotificationRouter({ getDb, verifyToken }) {
 
   function auth(req, res, next) {
@@ -28,12 +62,13 @@ function createNotificationRouter({ getDb, verifyToken }) {
   }
 
   // GET /api/notifications
-  router.get('/notifications', auth, (req, res) => {
+  router.get('/notifications', auth, async (req, res) => {
     try {
       const db = getDb();
-      const rows = db.prepare(
-        'SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 100'
-      ).all(req.user.id);
+      const rows = await dbAll(db,
+        'SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 100',
+        [req.user.id]
+      );
       rows.forEach(r => {
         try { r.data = JSON.parse(r.data_json || '{}'); } catch { r.data = {}; }
       });
@@ -44,12 +79,13 @@ function createNotificationRouter({ getDb, verifyToken }) {
   });
 
   // GET /api/notifications/unread-count
-  router.get('/notifications/unread-count', auth, (req, res) => {
+  router.get('/notifications/unread-count', auth, async (req, res) => {
     try {
       const db = getDb();
-      const row = db.prepare(
-        'SELECT COUNT(*) as cnt FROM notifications WHERE user_id = ? AND is_read = 0'
-      ).get(req.user.id);
+      const row = await dbGet(db,
+        'SELECT COUNT(*) as cnt FROM notifications WHERE user_id = ? AND is_read = 0',
+        [req.user.id]
+      );
       res.json({ count: row?.cnt || 0 });
     } catch (e) {
       res.status(500).json({ error: e.message });
@@ -57,11 +93,13 @@ function createNotificationRouter({ getDb, verifyToken }) {
   });
 
   // PUT /api/notifications/:id/read
-  router.put('/notifications/:id/read', auth, (req, res) => {
+  router.put('/notifications/:id/read', auth, async (req, res) => {
     try {
       const db = getDb();
-      db.prepare('UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ?')
-        .run(req.params.id, req.user.id);
+      await dbRun(db,
+        'UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ?',
+        [req.params.id, req.user.id]
+      );
       res.json({ ok: true });
     } catch (e) {
       res.status(500).json({ error: e.message });
@@ -69,10 +107,13 @@ function createNotificationRouter({ getDb, verifyToken }) {
   });
 
   // PUT /api/notifications/read-all
-  router.put('/notifications/read-all', auth, (req, res) => {
+  router.put('/notifications/read-all', auth, async (req, res) => {
     try {
       const db = getDb();
-      db.prepare('UPDATE notifications SET is_read = 1 WHERE user_id = ?').run(req.user.id);
+      await dbRun(db,
+        'UPDATE notifications SET is_read = 1 WHERE user_id = ?',
+        [req.user.id]
+      );
       res.json({ ok: true });
     } catch (e) {
       res.status(500).json({ error: e.message });
@@ -80,11 +121,13 @@ function createNotificationRouter({ getDb, verifyToken }) {
   });
 
   // DELETE /api/notifications/:id
-  router.delete('/notifications/:id', auth, (req, res) => {
+  router.delete('/notifications/:id', auth, async (req, res) => {
     try {
       const db = getDb();
-      db.prepare('DELETE FROM notifications WHERE id = ? AND user_id = ?')
-        .run(req.params.id, req.user.id);
+      await dbRun(db,
+        'DELETE FROM notifications WHERE id = ? AND user_id = ?',
+        [req.params.id, req.user.id]
+      );
       res.json({ ok: true });
     } catch (e) {
       res.status(500).json({ error: e.message });
@@ -95,13 +138,14 @@ function createNotificationRouter({ getDb, verifyToken }) {
 }
 
 // 알림 생성 유틸리티 (다른 라우터에서 사용)
-function createNotification(db, { userId, type, title, body, data } = {}) {
+async function createNotification(db, { userId, type, title, body, data } = {}) {
   if (!db || !userId || !type || !title) return null;
   const id = Date.now().toString(36) + Math.random().toString(36).slice(2);
   try {
-    db.prepare(
-      'INSERT INTO notifications (id, user_id, type, title, body, data_json) VALUES (?, ?, ?, ?, ?, ?)'
-    ).run(id, userId, type, title, body || '', JSON.stringify(data || {}));
+    await dbRun(db,
+      'INSERT INTO notifications (id, user_id, type, title, body, data_json) VALUES (?, ?, ?, ?, ?, ?)',
+      [id, userId, type, title, body || '', JSON.stringify(data || {})]
+    );
     return id;
   } catch (e) {
     console.warn('[notification] create error:', e.message);

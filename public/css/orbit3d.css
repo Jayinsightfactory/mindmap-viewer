@@ -622,7 +622,7 @@
 
     /* 내 능력 공개 패널 */
     #my-talent-panel {
-      position: fixed; left: 16px; bottom: 260px; z-index: 400;
+      position: fixed; left: 16px; bottom: 260px; z-index: 200;
       width: 300px; background: rgba(13,17,23,0.98);
       border: 1px solid #3fb950; border-radius: 14px;
       backdrop-filter: blur(16px); display: none; flex-direction: column;
@@ -1261,7 +1261,7 @@
 
   /* ── 프로필 등록 모달 ────────────────────────────────────────────────── */
   #profile-prompt-modal {
-    position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:1200;
+    position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:500;
     display:none; align-items:center; justify-content:center;
   }
   #profile-prompt-modal.open { display:flex; }
@@ -1408,7 +1408,7 @@
   #follow-panel {
     position:fixed; left:210px; top:60px; width:280px; max-height:80vh;
     overflow-y:auto; background:rgba(13,17,23,0.97); border:1px solid #30363d;
-    border-radius:12px; padding:14px; z-index:299; display:none;
+    border-radius:12px; padding:14px; z-index:200; display:none;
     backdrop-filter:blur(16px); box-shadow:0 8px 32px rgba(0,0,0,.5);
   }
   #follow-panel.open { display:block; }
@@ -1430,7 +1430,7 @@
   #messenger-panel {
     position: fixed; right: 0; top: 0; bottom: 0; width: 380px;
     background: rgba(13,17,23,0.98); border-left: 1px solid #30363d;
-    z-index: 410; display: flex; flex-direction: column;
+    z-index: 200; display: flex; flex-direction: column;
     transform: translateX(100%); transition: transform .3s ease;
     backdrop-filter: blur(20px); box-shadow: -8px 0 32px rgba(0,0,0,.5);
     overflow: visible;
@@ -1524,7 +1524,7 @@
     width: 300px; max-height: calc(100vh - 28px);
     background: rgba(255,255,255,0.97); border: 1px solid #e5e7eb;
     border-radius: 14px; backdrop-filter: blur(16px);
-    z-index: 9200; display: none; flex-direction: column;
+    z-index: 200; display: none; flex-direction: column;
     overflow: visible; box-shadow: 0 4px 24px rgba(0,0,0,.08);
     font-family: -apple-system,'Segoe UI',sans-serif;
   }
@@ -1949,7 +1949,7 @@
     width:320px; max-height:calc(100vh - 28px);
     background:rgba(13,17,23,0.97); border:1px solid #21262d;
     border-radius:14px; backdrop-filter:blur(16px);
-    z-index:9250; display:none; flex-direction:column;
+    z-index:200; display:none; flex-direction:column;
     overflow:hidden; box-shadow:0 8px 40px rgba(0,0,0,.7);
     font-family:-apple-system,'Segoe UI',sans-serif;
   }

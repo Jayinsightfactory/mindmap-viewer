@@ -670,6 +670,7 @@ function _msgToken() {
 
 // ── 패널 열기/닫기 ───────────────────────────────────────────────────────────
 function toggleMessenger() {
+  closeAllRightPanels('messenger-panel');
   const panel = document.getElementById('messenger-panel');
   const isOpen = panel.classList.toggle('open');
   if (isOpen) {
@@ -1299,6 +1300,7 @@ async function checkFollowStatus(userId, btn) {
 window.checkFollowStatus = checkFollowStatus;
 
 function toggleFollowPanel() {
+  closeAllRightPanels('follow-panel');
   const panel = document.getElementById('follow-panel');
   const isOpen = panel.classList.toggle('open');
   if (isOpen) loadFollowList(_followPanelTab);
