@@ -29,10 +29,13 @@ function acceptSuggestion() {
 window.dismissSuggestion = dismissSuggestion;
 window.acceptSuggestion  = acceptSuggestion;
 
-// 주기적으로 새 제안 확인 (30초마다)
+// 주기적으로 새 제안 확인 (60초마다, API 없으면 자동 중지)
+let _suggestionsAvailable = true;
 setInterval(async () => {
+  if (!_suggestionsAvailable) return;
   try {
     const res = await fetch('/api/learn/suggestions');
+    if (res.status === 404) { _suggestionsAvailable = false; return; }
     if (!res.ok) return;
     const list = await res.json();
     const unseen = list.find(s => !s.seen);
@@ -40,7 +43,7 @@ setInterval(async () => {
       showSuggestion(unseen);
     }
   } catch {}
-}, 30000);
+}, 60000);
 
 // ── 동의 모달 ────────────────────────────────────────────────────────────────
 function consentDecide(allow) {

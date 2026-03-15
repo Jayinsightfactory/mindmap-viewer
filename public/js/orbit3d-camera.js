@@ -190,8 +190,14 @@ function memberTasksToFakeSessions(member) {
 }
 
 function drillDownToMember(memberNode) {
-  if (typeof TEAM_DEMO === 'undefined' || !TEAM_DEMO?.members) return;
-  const memberData = TEAM_DEMO.members.find(m => m.id === memberNode.memberId);
+  // 실제 데이터(_activeSimData) 또는 시뮬레이션(TEAM_DEMO)에서 멤버 찾기
+  const allMembers = (typeof _activeSimData !== 'undefined' && _activeSimData?.members)
+    ? _activeSimData.members
+    : (typeof _activeSimData !== 'undefined' && _activeSimData?.departments)
+      ? _activeSimData.departments.flatMap(d => d.members || [])
+      : (typeof TEAM_DEMO !== 'undefined' && TEAM_DEMO?.members)
+        ? TEAM_DEMO.members : [];
+  const memberData = allMembers.find(m => m.id === memberNode.memberId);
   if (!memberData) return;
   const fakeNodes = memberTasksToFakeSessions(memberData);
   _teamMode = false;
