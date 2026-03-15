@@ -342,11 +342,11 @@ function drawCompactProjectView() {
       const allSessions = proj.planets;
       const numSes = allSessions.length;
       const dirAngleSes = angle;
-      const SES_WORLD_DIST = 10;
-      const SES_WORLD_STEP = 6;
-      const sesAngleStep = Math.max(Math.PI / 8, Math.PI * 2 / Math.max(numSes * 2.5, 4));
+      const SES_WORLD_DIST = 12;
+      const SES_WORLD_STEP = 7;
+      const sesAngleStep = Math.max(Math.PI / 10, Math.PI * 2 / Math.max(numSes * 2.2, 4));
       const sesHalfSpan = Math.min((numSes - 1) / 2 * sesAngleStep, Math.PI * 5 / 6);
-      const maxShow = Math.min(numSes, 8);
+      const maxShow = Math.min(numSes, 12);
 
       for (let si = 0; si < maxShow; si++) {
         const planet = allSessions[si];
@@ -409,17 +409,28 @@ function drawCompactProjectView() {
       if (numSes > maxShow) {
         const moreAngle = dirAngleSes;
         const morePos = new THREE.Vector3(
-          pos3d.x + Math.cos(moreAngle) * (SES_WORLD_DIST + 8),
+          pos3d.x + Math.cos(moreAngle) * (SES_WORLD_DIST + 10),
           0,
-          pos3d.z + Math.sin(moreAngle) * (SES_WORLD_DIST + 8),
+          pos3d.z + Math.sin(moreAngle) * (SES_WORLD_DIST + 10),
         );
         const moreSc = toScreen(morePos);
         if (moreSc.z <= 1) {
-          ctx.globalAlpha = 0.6;
-          ctx.font = '400 10px -apple-system,sans-serif';
-          ctx.fillStyle = color; ctx.textAlign = 'center';
-          ctx.fillText(`+${numSes - maxShow}개 세션`, moreSc.x, moreSc.y + 4);
-          ctx.globalAlpha = 1;
+          // "더보기" 배지 (pill 스타일)
+          ctx.save();
+          const moreTxt = `+${numSes - maxShow}개 세션`;
+          ctx.font = '500 11px -apple-system,sans-serif';
+          const moreTw = ctx.measureText(moreTxt).width + 16;
+          const moreTh = 22;
+          const moreLx = moreSc.x - moreTw / 2;
+          const moreLy = moreSc.y - moreTh / 2;
+          roundRect(ctx, moreLx, moreLy, moreTw, moreTh, moreTh / 2);
+          ctx.fillStyle = color + '22'; ctx.fill();
+          ctx.strokeStyle = color + '66'; ctx.lineWidth = 1;
+          roundRect(ctx, moreLx, moreLy, moreTw, moreTh, moreTh / 2); ctx.stroke();
+          ctx.globalAlpha = 0.8;
+          ctx.fillStyle = color; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText(moreTxt, moreSc.x, moreSc.y);
+          ctx.restore();
         }
       }
     }

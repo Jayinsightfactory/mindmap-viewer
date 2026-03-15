@@ -186,7 +186,15 @@ renderer.domElement.addEventListener('click', e => {
           focusDept(hit.data);
         }
       } else if (type === 'member') {
-        focusMember(hit.data);
+        if (_focusedMember === hit.data) {
+          drillDownToMember(hit.data);   // 더블클릭: 개인 뷰로 전환
+        } else {
+          focusMember(hit.data);
+        }
+      } else if (type === 'task') {
+        // 세션(task) 클릭 → 소속 멤버의 개인 뷰로 전환
+        const memberNode = _teamNodes.find(n => n.type === 'member' && n.memberId === hit.data.memberId);
+        if (memberNode) drillDownToMember(memberNode);
       } else if (type === 'goal' && (_focusedMember || _focusedDept)) {
         unfocusDept();
       }
@@ -197,6 +205,10 @@ renderer.domElement.addEventListener('click', e => {
         } else {
           focusMember(hit.data);
         }
+      } else if (type === 'task') {
+        // 세션(task) 클릭 → 소속 멤버의 개인 뷰로 전환
+        const memberNode = _teamNodes.find(n => n.type === 'member' && n.memberId === hit.data.memberId);
+        if (memberNode) drillDownToMember(memberNode);
       } else if (_focusedMember && type === 'goal') {
         unfocusMember();
       }
@@ -260,6 +272,9 @@ renderer.domElement.addEventListener('click', e => {
         exitCategoryFocus();
         closePanel();
         if (typeof window.popViewState === 'function') window.popViewState(true);
+      } else if (window._drillDownSource) {
+        // 팀/전사에서 멤버 드릴다운 후 빈 공간 클릭 → 원래 뷰로 복귀
+        returnFromMemberDrill();
       }
     } else {
       _selectedHit = null;

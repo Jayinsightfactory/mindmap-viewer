@@ -21,7 +21,7 @@ let _parallelMode  = false;   // Claude 병렬 태스크 3D 뷰 모드
 let _parallelDemoTimers = []; // 타이머 누수 방지용
 
 // ─── 팀 거리 설정값 ──────────────────────────────────────────────────────────
-const TEAM_CFG = { MEMBER_R: 40, TASK_R: 16, TOOL_R: 9 };
+const TEAM_CFG = { MEMBER_R: 40, TASK_R: 22, TOOL_R: 9 };
 
 // ─── 글로벌 접근 (디버깅 & 외부 스크립트) ────────────────────────────────────
 // 팀/회사 데이터와 노드 정보를 전역으로 노출 (직접 할당)
@@ -953,7 +953,7 @@ function buildCompanySystem(companyData) {
   const { name, goal, goalColor, departments } = companyData;
   const DEPT_R   = 72;
   const MBR_R    = 20;
-  const CTASK_R  = 9;
+  const CTASK_R  = 15;
   const SKILL_R  = 5;
   const AGENT_R  = 6;
 

@@ -190,10 +190,25 @@ function memberTasksToFakeSessions(member) {
 }
 
 function drillDownToMember(memberNode) {
-  const _tdm = (typeof TEAM_DEMO !== 'undefined' && TEAM_DEMO) ? TEAM_DEMO : { members: window._teamWorldData?.members || [] };
-  const memberData = _tdm.members.find(m => m.id === memberNode.memberId);
+  // Save previous mode for back navigation
+  const prevMode = _companyMode ? 'company' : _teamMode ? 'team' : 'personal';
+
+  // Search member data in team AND company structure (departments)
+  const _tdm = _activeSimData
+    || (typeof TEAM_DEMO !== 'undefined' && TEAM_DEMO)
+    || { members: window._teamWorldData?.members || [] };
+  let memberData = (_tdm.members || []).find(m => m.id === memberNode.memberId);
+  if (!memberData && _tdm.departments) {
+    for (const dept of _tdm.departments) {
+      memberData = (dept.members || []).find(m => m.id === memberNode.memberId);
+      if (memberData) break;
+    }
+  }
   if (!memberData) return;
-  const fakeNodes = memberTasksToFakeSessions(memberData);
+
+  const memberName = memberNode.label || memberData.name;
+
+  // 뷰 모드 전환 (즉시)
   _teamMode = false;
   _companyMode = false;
   _teamNodes = [];
@@ -201,14 +216,88 @@ function drillDownToMember(memberNode) {
   _focusedDept = null;
   document.getElementById('team-mode-badge').style.display = 'none';
   document.querySelector('.tm-label').textContent = '👥 팀 시뮬레이션';
-  buildPlanetSystem(fakeNodes);
-  updateBreadcrumb('personal');
-  document.getElementById('h-hours').textContent = memberData.name;
-  window._drillDownSource = 'team';
+
+  // Store drill-down source for back navigation
+  window._drillDownSource = prevMode;
   window._drillDownMemberId = memberNode.memberId;
-  window._drillDownMemberName = memberNode.label;
+  window._drillDownMemberName = memberName;
+
+  // 실제 세션 데이터 로드 시도 (userId 존재 시 API 호출)
+  const userId = memberData.userId || memberData.id;
+  _loadMemberGraph(userId, memberData, memberName, prevMode);
+}
+
+async function _loadMemberGraph(userId, memberData, memberName, prevMode) {
+  let nodes = null;
+
+  // API로 실제 그래프 데이터 가져오기
+  try {
+    const token = typeof _getAuthToken === 'function' ? _getAuthToken()
+      : (typeof _orbitUser !== 'undefined' ? _orbitUser?.token : null)
+      || JSON.parse(localStorage.getItem('orbitUser') || 'null')?.token;
+    if (token && userId) {
+      const res = await fetch(`/api/workspace/member-graph/${encodeURIComponent(userId)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const graph = await res.json();
+        if (graph.nodes && graph.nodes.length > 0) {
+          nodes = graph.nodes;
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('[drillDownToMember] API 실패, 폴백 사용:', e.message);
+  }
+
+  // API 실패 시 가짜 세션 폴백
+  if (!nodes) {
+    nodes = memberTasksToFakeSessions(memberData);
+  }
+
+  buildPlanetSystem(nodes);
+  document.getElementById('h-hours').textContent = memberName;
+
+  // Breadcrumb: [Team/Company] > [MemberName] with clickable back
+  const bc = document.getElementById('nav-breadcrumb');
+  const elTeam = document.getElementById('bc-team');
+  const elDept = document.getElementById('bc-dept');
+  const elMember = document.getElementById('bc-member');
+  const arrow2 = document.querySelector('.bc-arrow2');
+  const arrow3 = document.querySelector('.bc-arrow3');
+  bc.classList.add('visible');
+  elTeam.textContent = prevMode === 'company' ? '🏢 전사' : '👥 팀';
+  elTeam.className = 'bc-crumb clickable';
+  elTeam.style.display = '';
+  elTeam.onclick = () => returnFromMemberDrill();
+  if (arrow2) arrow2.style.display = 'none';
+  elDept.style.display = 'none';
+  if (arrow3) arrow3.style.display = '';
+  elMember.textContent = '👤 ' + (memberNode.label || memberData.name);
+  elMember.className = 'bc-crumb active';
+  elMember.style.display = '';
+
   lerpCameraTo(40, 0, 0, 0);
 }
+
+function returnFromMemberDrill() {
+  const source = window._drillDownSource;
+  window._drillDownSource = null;
+  window._drillDownMemberId = null;
+  window._drillDownMemberName = null;
+  // Reset drill-down state
+  if (typeof _drillStage !== 'undefined') {
+    _drillStage = 0; _drillSession = null; _drillCategory = null; _drillTimelineEvent = null;
+  }
+  _focusedProject = null; _focusedCategory = null;
+  if (typeof closePanel === 'function') closePanel();
+  if (source === 'company') {
+    loadCompanyDemo();
+  } else {
+    loadTeamDemo();
+  }
+}
+window.returnFromMemberDrill = returnFromMemberDrill;
 
 function unfocusMember() {
   _focusedMember = null;
@@ -499,9 +588,20 @@ function drawTeamLabels() {
     const displayLabel = node.displayLabel || _alias || label;
     const txt = emoji ? `${emoji} ${displayLabel}` : `${prefix}${displayLabel}`;
     const _useUnified = ['goal','leader','infra','sharedProject','department',
-      'member','hubProject','hq','external','prequest','presult'].includes(type);
-    const pw  = _useUnified ? UNI_CARD_W : _lctx.measureText(txt).width + pad;
-    const ph  = _useUnified ? UNI_CARD_H : pxSize + pad * 0.65;
+      'hubProject','hq','external','prequest','presult'].includes(type);
+    // 팀뷰 task/member → 개인뷰와 동일한 와이어프레임 구체 렌더링
+    const _useSphere = (type === 'task' || type === 'member');
+    let _sphereR = 0;
+    if (_useSphere && typeof screenScale === 'function') {
+      if (type === 'member') {
+        // 멤버 노드: 프로젝트 구체와 유사한 크기 (task보다 큼)
+        _sphereR = Math.max(34, Math.min(60, screenScale(node.pos) * 9));
+      } else {
+        _sphereR = Math.max(26, Math.min(48, screenScale(node.pos) * 7));
+      }
+    }
+    const pw  = _useSphere ? _sphereR * 2 : _useUnified ? UNI_CARD_W : _lctx.measureText(txt).width + pad;
+    const ph  = _useSphere ? _sphereR * 2 : _useUnified ? UNI_CARD_H : pxSize + pad * 0.65;
     // priority: prequest=7, goal/leader=6, presult/department/infra/sharedProject=5, member/ptask/hq=4, skill/agent/hubProject/external=3, task/dept=2, tool=1
     const priority = type === 'prequest' ? 7
       : (type === 'goal' || type === 'leader') ? 6
@@ -513,7 +613,7 @@ function drawTeamLabels() {
     labels.push({
       node, sc, type, label, sublabel, color, emoji, progress,
       taskStatus, memberId, isActive, isSelected, isFocused, prefix,
-      txt, pw, ph, pxSize, pad, weight, _useUnified,
+      txt, pw, ph, pxSize, pad, weight, _useUnified, _useSphere, _sphereR,
       x:  sc.x - pw * 0.5,
       y:  sc.y - ph * 0.5,
       ax: sc.x,
@@ -762,8 +862,22 @@ function drawTeamLabels() {
       _lctx.beginPath(); _lctx.arc(cx, cy, pw * 1.5, 0, Math.PI * 2); _lctx.fill();
     }
 
-    // ── 통일 카드 vs pill 분기 ──────────────────────────────────────────────
-    if (lr._useUnified) {
+    // ── 와이어프레임 구체 vs 통일 카드 vs pill 분기 ──────────────────────────
+    if (lr._useSphere && lr._sphereR > 0) {
+      // 팀뷰 task/member → 개인뷰 스타일 와이어프레임 구체
+      const sR = lr._sphereR;
+      const _alias = typeof _nodeAliases !== 'undefined' ? _nodeAliases[lr.label] : null;
+      const displayLabel = node.displayLabel || _alias || lr.label;
+      const isMemberSphere = (type === 'member');
+      const sphereTitle = displayLabel.length > 14 ? displayLabel.slice(0, 13) + '\u2026' : displayLabel;
+      _drawWireSphere(_lctx, cx, cy, sR, color, {
+        meridians: isMemberSphere ? 3 : 1,
+        parallels: isMemberSphere ? 2 : 1,
+        glow: true, hover: isSelected || isFocused,
+        rotation: now * (isMemberSphere ? 0.15 : 0.3) + (lr.memberId ? lr.memberId.charCodeAt(0) * 0.05 : 0) + labels.indexOf(lr) * 0.5,
+      });
+      _drawSphereLabel(_lctx, cx, cy, sR, sphereTitle, sublabel || '', color, false);
+    } else if (lr._useUnified) {
       // 통일 카드 (drawUnifiedCard)
       const nodeTitle = txt;
       const nodeSub = sublabel || '';

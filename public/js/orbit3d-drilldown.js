@@ -372,8 +372,15 @@ function showSessionDashboard(sesData) {
   // ── HTML 생성 ──
   let html = '<div style="display:flex;flex-direction:column;gap:0;max-height:calc(100vh - 140px);overflow-y:auto;padding:10px 14px 14px">';
 
-  // 뒤로가기 버튼
-  html += `<button onclick="exitCategoryFocus()" style="display:flex;align-items:center;gap:4px;background:none;border:1px solid #e1e4e8;border-radius:6px;padding:5px 10px;font-size:11px;color:#6b7280;cursor:pointer;margin-bottom:8px;font-family:inherit;transition:background .15s;width:fit-content" onmouseenter="this.style.background='#f3f4f6'" onmouseleave="this.style.background='transparent'">← 프로젝트로</button>`;
+  // 브레드크럼 내비게이션 (전체 > 프로젝트 > 세션)
+  const bcProjName = (sesData.projName || '프로젝트').slice(0, 18);
+  html += `<div style="display:flex;align-items:center;gap:0;margin-bottom:10px;font-size:11px;flex-wrap:wrap">
+    <span onclick="exitConstellationFocus()" style="color:#6b7280;cursor:pointer;padding:3px 6px;border-radius:4px;transition:background .12s" onmouseenter="this.style.background='#f3f4f6'" onmouseleave="this.style.background='transparent'">전체</span>
+    <span style="color:#d1d5db;margin:0 2px">›</span>
+    <span onclick="exitCategoryFocus()" style="color:#3b82f6;cursor:pointer;padding:3px 6px;border-radius:4px;transition:background .12s" onmouseenter="this.style.background='#eff6ff'" onmouseleave="this.style.background='transparent'">${escHtml(bcProjName)}</span>
+    <span style="color:#d1d5db;margin:0 2px">›</span>
+    <span style="color:#1f2937;font-weight:600;padding:3px 6px">세션</span>
+  </div>`;
 
   // ━━ Stats Row ━━
   const durationLabel = durationMin < 60 ? `${durationMin}분` : `${Math.floor(durationMin / 60)}시간 ${durationMin % 60}분`;
@@ -513,8 +520,17 @@ function _showFullTimeline() {
 
   let html = '<div style="display:flex;flex-direction:column;gap:0;max-height:calc(100vh - 140px);overflow-y:auto;padding:10px 14px 14px">';
 
-  // 뒤로가기 → 대시보드
-  html += `<button onclick="showSessionDashboard(_drillSession)" style="display:flex;align-items:center;gap:4px;background:none;border:1px solid #e1e4e8;border-radius:6px;padding:5px 10px;font-size:11px;color:#6b7280;cursor:pointer;margin-bottom:8px;font-family:inherit;transition:background .15s;width:fit-content" onmouseenter="this.style.background='#f3f4f6'" onmouseleave="this.style.background='transparent'">← 대시보드로</button>`;
+  // 브레드크럼 내비게이션 (전체 > 프로젝트 > 세션 > 타임라인)
+  const tlProjName = (sesData.projName || '프로젝트').slice(0, 16);
+  html += `<div style="display:flex;align-items:center;gap:0;margin-bottom:10px;font-size:11px;flex-wrap:wrap">
+    <span onclick="exitConstellationFocus()" style="color:#6b7280;cursor:pointer;padding:3px 6px;border-radius:4px;transition:background .12s" onmouseenter="this.style.background='#f3f4f6'" onmouseleave="this.style.background='transparent'">전체</span>
+    <span style="color:#d1d5db;margin:0 2px">›</span>
+    <span onclick="exitCategoryFocus()" style="color:#3b82f6;cursor:pointer;padding:3px 6px;border-radius:4px;transition:background .12s" onmouseenter="this.style.background='#eff6ff'" onmouseleave="this.style.background='transparent'">${escHtml(tlProjName)}</span>
+    <span style="color:#d1d5db;margin:0 2px">›</span>
+    <span onclick="showSessionDashboard(_drillSession)" style="color:#3b82f6;cursor:pointer;padding:3px 6px;border-radius:4px;transition:background .12s" onmouseenter="this.style.background='#eff6ff'" onmouseleave="this.style.background='transparent'">세션</span>
+    <span style="color:#d1d5db;margin:0 2px">›</span>
+    <span style="color:#1f2937;font-weight:600;padding:3px 6px">타임라인</span>
+  </div>`;
 
   // 중복 제거
   const deduped = _deduplicateEvents(events);
@@ -663,8 +679,17 @@ function showDrillFileDetail(fileName, filePath) {
 
   let html = '<div style="display:flex;flex-direction:column;gap:0;max-height:calc(100vh - 140px);overflow-y:auto;padding:10px 14px 14px">';
 
-  // 뒤로가기
-  html += `<button onclick="if(_drillSession){_drillStage=2;_drillTimelineEvent=null;showSessionDashboard(_drillSession)}" style="display:flex;align-items:center;gap:4px;background:none;border:1px solid #e1e4e8;border-radius:6px;padding:6px 10px;font-size:11px;color:#6b7280;cursor:pointer;margin-bottom:8px;font-family:inherit;transition:background .15s" onmouseenter="this.style.background='#f3f4f6'" onmouseleave="this.style.background='transparent'">← 대시보드로</button>`;
+  // 브레드크럼 내비게이션 (전체 > 프로젝트 > 세션 > 파일)
+  const fdProjName = (_drillSession?.projName || '프로젝트').slice(0, 14);
+  html += `<div style="display:flex;align-items:center;gap:0;margin-bottom:10px;font-size:11px;flex-wrap:wrap">
+    <span onclick="exitConstellationFocus()" style="color:#6b7280;cursor:pointer;padding:3px 6px;border-radius:4px;transition:background .12s" onmouseenter="this.style.background='#f3f4f6'" onmouseleave="this.style.background='transparent'">전체</span>
+    <span style="color:#d1d5db;margin:0 2px">›</span>
+    <span onclick="exitCategoryFocus()" style="color:#3b82f6;cursor:pointer;padding:3px 6px;border-radius:4px;transition:background .12s" onmouseenter="this.style.background='#eff6ff'" onmouseleave="this.style.background='transparent'">${escHtml(fdProjName)}</span>
+    <span style="color:#d1d5db;margin:0 2px">›</span>
+    <span onclick="if(_drillSession){_drillStage=2;_drillTimelineEvent=null;showSessionDashboard(_drillSession)}" style="color:#3b82f6;cursor:pointer;padding:3px 6px;border-radius:4px;transition:background .12s" onmouseenter="this.style.background='#eff6ff'" onmouseleave="this.style.background='transparent'">세션</span>
+    <span style="color:#d1d5db;margin:0 2px">›</span>
+    <span style="color:#1f2937;font-weight:600;padding:3px 6px">${escHtml(fileName.slice(0, 20))}</span>
+  </div>`;
 
   // 파일 정보 카드
   html += `<div style="background:#f8f9fa;border:1px solid #e5e7eb;border-radius:10px;padding:12px;margin-bottom:10px">

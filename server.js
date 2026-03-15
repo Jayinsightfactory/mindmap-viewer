@@ -1435,6 +1435,36 @@ app.use('/api', createRecommendationsRouter({ verifyToken, dbModule }));
 // ─── Workspace (팀/회사 관리) ─────────────────────────────────────────────────────
 app.use('/api', createWorkspaceRouter({ getDb: dbModule.getDb, verifyToken, getUserById, ADMIN_EMAILS, createNotification }));
 
+// ─── 멤버 그래프 조회 (팀뷰 드릴다운용 — 같은 워크스페이스 멤버의 세션 데이터) ──
+app.get('/api/workspace/member-graph/:userId', verifyToken, async (req, res) => {
+  try {
+    const targetUserId = req.params.userId;
+    const myId = req.user.id;
+    // 같은 워크스페이스에 속해있는지 확인
+    const db = dbModule.getDb();
+    const isPG = !db?.prepare;
+    const sql = isPG
+      ? `SELECT wm1.workspace_id FROM workspace_members wm1
+         JOIN workspace_members wm2 ON wm1.workspace_id = wm2.workspace_id
+         WHERE wm1.user_id = $1 AND wm2.user_id = $2 LIMIT 1`
+      : `SELECT wm1.workspace_id FROM workspace_members wm1
+         JOIN workspace_members wm2 ON wm1.workspace_id = wm2.workspace_id
+         WHERE wm1.user_id = ? AND wm2.user_id = ? LIMIT 1`;
+    const shared = isPG
+      ? (await db.query(sql, [myId, targetUserId])).rows[0]
+      : db.prepare(sql).get(myId, targetUserId);
+    if (!shared) return res.status(403).json({ error: 'not in same workspace' });
+    // 대상 사용자의 그래프 데이터 반환
+    const graph = getFullGraphForUser
+      ? await getFullGraphForUser(targetUserId)
+      : await getFullGraph();
+    res.json(graph);
+  } catch (e) {
+    console.error('[member-graph]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ─── Google Drive 사용자 백업 ────────────────────────────────────────────────
 const createGdriveRouter = require('./routes/gdrive');
 app.use('/api', createGdriveRouter({

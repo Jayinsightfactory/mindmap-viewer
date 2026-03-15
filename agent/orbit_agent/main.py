@@ -36,6 +36,7 @@ from .config import (
     PLATFORM, IS_WINDOWS, IS_MAC, IS_LINUX,
     CONFIG_DIR, LOG_DIR,
 )
+from .api_config import USE_MAX_PROXY, log_api_config
 
 # ── PID 파일 관리 (중복 실행 방지) ──────────────────────────
 PID_FILE = CONFIG_DIR / 'agent.pid'
@@ -159,6 +160,7 @@ class OrbitAgent:
 
         logger.info(f"Orbit AI Agent v{__version__} 시작 (PID: {os.getpid()})")
         logger.info(f"OS: {PLATFORM} | 설정: {CONFIG_DIR}")
+        log_api_config()
 
         self._running = True
 
@@ -290,7 +292,7 @@ class OrbitAgent:
     def _run_analysis(self):
         """Haiku로 수집 데이터 분석"""
         api_key = self.cfg.get('anthropic_api_key', '')
-        if not api_key:
+        if not api_key and not USE_MAX_PROXY:
             return
 
         try:
@@ -509,10 +511,11 @@ def main():
 
     # 설정 로드
     cfg = load_config()
-    if not cfg.get('api_token') and not cfg.get('anthropic_api_key'):
+    if not cfg.get('api_token') and not cfg.get('anthropic_api_key') and not USE_MAX_PROXY:
         if not is_daemon:
             print("  설정이 필요합니다. 먼저 실행:")
             print("     python -m orbit_agent --setup")
+            print("  또는 CLIProxyAPI 사용: USE_MAX_PROXY=true python -m orbit_agent")
         return
 
     # 에이전트 시작

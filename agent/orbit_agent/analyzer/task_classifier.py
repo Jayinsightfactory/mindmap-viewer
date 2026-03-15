@@ -154,16 +154,77 @@ def summarize_events_for_prompt(events, max_tokens=3000):
     return '\n'.join(lines)
 
 
-async def analyze_with_haiku(events, api_key):
-    """Haiku로 이벤트 배치 분석"""
-    if not api_key:
-        logger.warning("ANTHROPIC_API_KEY 미설정 — 분석 건너뜀")
-        return None
-
+async def _call_anthropic_direct(prompt, api_key, model):
+    """공식 Anthropic API 직접 호출"""
     try:
         import anthropic
     except ImportError:
         logger.error("anthropic 패키지 필요: pip install anthropic")
+        return None
+
+    client = anthropic.Anthropic(api_key=api_key)
+    response = client.messages.create(
+        model=model,
+        max_tokens=2000,
+        messages=[{"role": "user", "content": prompt}]
+    )
+    text = response.content[0].text
+    meta = {
+        'input_tokens': response.usage.input_tokens,
+        'output_tokens': response.usage.output_tokens,
+    }
+    return text, meta
+
+
+async def _call_proxy(prompt, base_url, model):
+    """CLIProxyAPI (OpenAI-compatible) 프록시 호출"""
+    import urllib.request
+    import urllib.error
+
+    url = f"{base_url.rstrip('/')}/chat/completions"
+    body = json.dumps({
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": 2000,
+        "temperature": 0.2,
+    }).encode('utf-8')
+
+    req = urllib.request.Request(url, data=body, headers={
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer dummy',
+    })
+
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            data = json.loads(resp.read().decode('utf-8'))
+    except urllib.error.URLError as e:
+        logger.error(f"프록시 연결 실패 ({url}): {e}")
+        logger.info("CLIProxyAPI가 실행 중인지 확인하세요 (기본: localhost:8080)")
+        return None
+
+    text = data.get('choices', [{}])[0].get('message', {}).get('content', '')
+    usage = data.get('usage', {})
+    meta = {
+        'input_tokens': usage.get('prompt_tokens', 0),
+        'output_tokens': usage.get('completion_tokens', 0),
+    }
+    return text, meta
+
+
+async def analyze_with_haiku(events, api_key=None):
+    """Haiku로 이벤트 배치 분석
+
+    api_key가 주어지면 기존 방식 (Anthropic 직접 호출).
+    USE_MAX_PROXY=true이면 CLIProxyAPI 프록시 경유 (api_key 불필요).
+    """
+    from ..api_config import (
+        USE_MAX_PROXY, API_BASE_URL, API_KEY, API_FORMAT,
+        ANALYSIS_MODEL,
+    )
+
+    # 프록시 모드가 아닐 때만 API 키 필요
+    if not USE_MAX_PROXY and not api_key:
+        logger.warning("ANTHROPIC_API_KEY 미설정 — 분석 건너뜀")
         return None
 
     # 사전 필터
@@ -176,14 +237,19 @@ async def analyze_with_haiku(events, api_key):
     prompt = build_analysis_prompt(summary)
 
     try:
-        client = anthropic.Anthropic(api_key=api_key)
-        response = client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=2000,
-            messages=[{"role": "user", "content": prompt}]
-        )
+        if USE_MAX_PROXY:
+            logger.debug(f"프록시 분석 호출: {API_BASE_URL} / {ANALYSIS_MODEL}")
+            result_tuple = await _call_proxy(prompt, API_BASE_URL, ANALYSIS_MODEL)
+        else:
+            logger.debug(f"Anthropic 직접 호출: {ANALYSIS_MODEL}")
+            result_tuple = await _call_anthropic_direct(
+                prompt, api_key or API_KEY, ANALYSIS_MODEL
+            )
 
-        text = response.content[0].text
+        if not result_tuple:
+            return None
+
+        text, meta = result_tuple
 
         # JSON 추출
         json_start = text.find('{')
@@ -193,8 +259,8 @@ async def analyze_with_haiku(events, api_key):
             result['_meta'] = {
                 'analyzed_at': datetime.utcnow().isoformat() + 'Z',
                 'events_count': len(filtered),
-                'input_tokens': response.usage.input_tokens,
-                'output_tokens': response.usage.output_tokens,
+                'api_mode': 'proxy' if USE_MAX_PROXY else 'direct',
+                **meta,
             }
             return result
 
