@@ -738,7 +738,8 @@ function setViewPersonal() {
   }
   if (typeof _teamMode !== 'undefined' && (_teamMode || _companyMode)) exitTeamMode();
   if (typeof _parallelMode !== 'undefined' && _parallelMode) exitParallelMode();
-  if (typeof controls !== 'undefined') controls.enabled = false;
+  localStorage.setItem('orbitViewMode', 'personal');
+  updateNavActiveState();
 }
 window.setViewPersonal = setViewPersonal;
 
