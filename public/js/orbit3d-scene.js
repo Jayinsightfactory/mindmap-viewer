@@ -292,6 +292,38 @@ function buildPlanetSystem(nodeList) {
     const _fmsg = rawEvents.find(e => e.type === 'user.message');
     planet.userData.firstMsg = (_fmsg?.data?.contentPreview || _fmsg?.data?.content || _fmsg?.label || '').slice(0, 40);
     planet.userData.msgPreview = pl.msgPreview || '';
+    // WHAT/RESULT 요약 (텍스트박스 3줄 표시용)
+    const _whatParts = [];
+    const _toolCounts = {};
+    rawEvents.forEach(e => {
+      if (e.type === 'tool.end' || e.whatSummary) {
+        const tn = e.data?.toolName || '';
+        const fp = e.data?.filePath || e.data?.input?.file_path || e.data?.files?.[0] || '';
+        const fn = fp ? fp.replace(/\\/g, '/').split('/').pop() : '';
+        const key = fn ? `${tn}: ${fn}` : tn;
+        if (key) _toolCounts[key] = (_toolCounts[key] || 0) + 1;
+      }
+    });
+    planet.userData.whatSummary = Object.entries(_toolCounts)
+      .sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k]) => k).join(', ')
+      || rawEvents[0]?.whatSummary || '';
+    // RESULT: git commit 또는 마지막 assistant 메시지
+    const _commits = [];
+    let _lastAssist = '';
+    rawEvents.forEach(e => {
+      if (e.type === 'tool.end' && e.data?.toolName === 'Bash') {
+        const cmd = String(e.data.inputPreview || e.data.input?.command || '');
+        const cm = cmd.match(/git commit.*-m\s+["'](.+?)["']/i);
+        if (cm) _commits.push(cm[1].slice(0, 40));
+      }
+      if (e.type === 'assistant.message') {
+        const c = (e.data?.contentPreview || e.data?.content || '').replace(/[\n\r]/g, ' ').trim();
+        if (c.length > 3) _lastAssist = c.slice(0, 50);
+      }
+    });
+    planet.userData.resultSummary = _commits.length > 0
+      ? _commits[_commits.length - 1]
+      : (_lastAssist || rawEvents[0]?.resultSummary || '');
     scene.add(planet);
     planetMeshes.push(planet);
 

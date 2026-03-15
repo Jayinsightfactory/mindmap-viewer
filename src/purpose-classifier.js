@@ -111,7 +111,46 @@ function scoreEvents(events) {
       }
     }
 
-    // 3. 파일 경로 신호
+    // 3. assistant.message 내용 키워드 분석 (가중치 0.5×)
+    if (event.type === 'assistant.message') {
+      const text = (event.data.content || event.data.contentPreview || '').toLowerCase();
+      for (const rule of KEYWORD_RULES) {
+        if (rule.re.test(text)) {
+          scores[rule.purpose] = (scores[rule.purpose] || 0) + rule.weight * 0.5;
+        }
+      }
+    }
+
+    // 4. git.commit 메시지 분석
+    if (event.type === 'tool.end' && event.data.toolName === 'Bash') {
+      const cmd = String(event.data.inputPreview || event.data.input?.command || '');
+      const commitMatch = cmd.match(/git commit.*-m\s+["'](.+?)["']/i);
+      if (commitMatch) {
+        const msg = commitMatch[1].toLowerCase();
+        if (/fix|bug|patch|hotfix/i.test(msg)) scores.fix += 3;
+        if (/feat|add|implement|new/i.test(msg)) scores.implement += 3;
+        if (/refactor|clean|simplify/i.test(msg)) scores.refactor += 3;
+        if (/test|spec/i.test(msg)) scores.test += 2;
+        if (/doc|readme/i.test(msg)) scores.review += 1;
+        if (/deploy|release|version/i.test(msg)) scores.deploy += 3;
+        if (/config|setup|env/i.test(msg)) scores.config += 2;
+      }
+    }
+
+    // 5. 도구 조합 패턴 (세션 수준에서 축적됨)
+    if (event.type === 'tool.end') {
+      const toolName = event.data.toolName || '';
+      // Read+Grep 조합 = 조사
+      if (toolName === 'Grep' || toolName === 'Read') {
+        scores.research = (scores.research || 0) + 0.5;
+      }
+      // Write+Edit+Bash 조합 = 구현
+      if (toolName === 'Write' || toolName === 'Edit') {
+        scores.implement = (scores.implement || 0) + 0.5;
+      }
+    }
+
+    // 6. 파일 경로 신호
     const filePath = event.data.filePath || event.data.files?.[0] || '';
     if (filePath) {
       for (const sig of FILE_PATH_SIGNALS) {

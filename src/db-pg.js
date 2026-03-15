@@ -71,8 +71,11 @@ async function createTables() {
       model_id TEXT,
       project_dir TEXT,
       event_count INTEGER DEFAULT 0,
-      status TEXT DEFAULT 'active'
+      status TEXT DEFAULT 'active',
+      title TEXT
     );
+
+    ALTER TABLE sessions ADD COLUMN IF NOT EXISTS title TEXT;
 
     CREATE TABLE IF NOT EXISTS files (
       path TEXT PRIMARY KEY,

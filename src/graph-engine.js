@@ -36,12 +36,66 @@ const AI_SOURCE_STYLES = {
   vscode:     { color: '#f85149', shape: 'ellipse', borderColor: '#da3633', icon: '🔴' },
 };
 
+// ─── 세션별 WHAT/RESULT 집계 ──────────────────────────
+function computeSessionSummaries(events) {
+  const sessionMap = {};
+  for (const event of events) {
+    const sid = event.sessionId;
+    if (!sid) continue;
+    if (!sessionMap[sid]) sessionMap[sid] = { toolActions: {}, commits: [], lastAssistant: '' };
+    const s = sessionMap[sid];
+
+    // WHAT: tool.end 상위 액션 집계 (toolName: fileName)
+    if (event.type === 'tool.end') {
+      const toolName = event.data.toolName || '';
+      const filePath = event.data.filePath || event.data.input?.file_path || event.data.files?.[0] || '';
+      const fileName = filePath ? filePath.replace(/\\/g, '/').split('/').pop() : '';
+      const key = fileName ? `${toolName}: ${fileName}` : toolName;
+      if (key) s.toolActions[key] = (s.toolActions[key] || 0) + 1;
+    }
+
+    // RESULT: git.commit 메시지 수집
+    if (event.type === 'tool.end' && event.data.toolName === 'Bash') {
+      const cmd = String(event.data.inputPreview || event.data.input?.command || '');
+      const commitMatch = cmd.match(/git commit.*-m\s+["'](.+?)["']/i);
+      if (commitMatch) s.commits.push(commitMatch[1].slice(0, 40));
+    }
+
+    // RESULT: assistant.message 마지막 응답 (완료 시)
+    if (event.type === 'assistant.message') {
+      const content = (event.data.contentPreview || event.data.content || '').replace(/[\n\r]/g, ' ').trim();
+      if (content.length > 3) s.lastAssistant = content.slice(0, 50);
+    }
+  }
+
+  const result = {};
+  for (const [sid, s] of Object.entries(sessionMap)) {
+    // whatSummary: 상위 3개 액션
+    const topActions = Object.entries(s.toolActions)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([k]) => k);
+    const whatSummary = topActions.join(', ');
+
+    // resultSummary: commit 메시지 우선, 없으면 마지막 assistant 응답
+    const resultSummary = s.commits.length > 0
+      ? s.commits[s.commits.length - 1]
+      : s.lastAssistant || '';
+
+    result[sid] = { whatSummary, resultSummary };
+  }
+  return result;
+}
+
 // ─── 이벤트 → 그래프 빌드 ──────────────────────────
 function buildGraph(events) {
   const nodes = [];
   const edges = [];
   const fileNodes = new Map(); // path → nodeId (파일 중복 제거)
   const nodeSet = new Set();
+
+  // 세션별 WHAT/RESULT 사전 계산
+  const sessionSummaries = computeSessionSummaries(events);
 
   for (const event of events) {
     const style = NODE_STYLES[event.type] || DEFAULT_STYLE;
@@ -113,6 +167,9 @@ function buildGraph(events) {
       msgPreview:   event.data?.inputPreview || event.data?.content?.slice?.(0, 50) || null,
       autoTitle:    event.autoTitle || null,
       domain:       event.domain   || null,
+      // 세션 요약 (WHY+WHAT+RESULT 텍스트박스용)
+      whatSummary:    sessionSummaries[event.sessionId]?.whatSummary || null,
+      resultSummary:  sessionSummaries[event.sessionId]?.resultSummary || null,
     };
 
     nodes.push(node);

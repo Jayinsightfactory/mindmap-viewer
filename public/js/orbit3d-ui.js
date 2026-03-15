@@ -777,6 +777,21 @@ function updateZoomLOD() {
                       !(typeof _companyMode !== 'undefined' && _companyMode) &&
                       !(typeof _parallelMode !== 'undefined' && _parallelMode);
 
+    // ── 카메라 거리 → 행성 레벨 자동 전환 (개인 모드만) ──
+    if (inPersonal && typeof planetMeshes !== 'undefined') {
+      let targetLevel = 0;
+      if (r < 50)       targetLevel = 0;  // compact
+      else if (r < 120) targetLevel = 1;  // personal work
+      else if (r < 200) targetLevel = 2;  // team project
+      else              targetLevel = 3;  // wider view
+
+      planetMeshes.forEach(p => {
+        if (p.userData._currentLevel !== targetLevel) {
+          p.userData._currentLevel = targetLevel;
+        }
+      });
+    }
+
     if (inPersonal && r > 120) {
       zhEl.textContent = '🔍 줌아웃 → 팀 전환';
       zhEl.onclick = () => loadTeamDemo();

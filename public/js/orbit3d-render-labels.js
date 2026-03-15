@@ -304,13 +304,32 @@ function drawLabels() {
       _lctx.textAlign = 'center';
     }
 
-    // ── 서브 정보 — 이벤트 수 (줌인 시만) ──────────────────────────────────
+    // ── 서브 정보 — 이벤트 수 + WHAT/RESULT (줌인 시만) ──────────────────
     if (evCnt > 0 && pxSize >= 13) {
       const sub = Math.max(9, pxSize * 0.5);
       _lctx.font = `500 ${sub}px -apple-system,sans-serif`;
-      const tagY = _ly + ph + sub + 1;
+      let tagY = _ly + ph + sub + 1;
       _lctx.fillStyle = hex + '88';
       _lctx.fillText(`${evCnt}개 작업`, sc.x, tagY);
+
+      // WHAT line (도구 액션 요약)
+      const whatLine = p.userData.whatSummary || '';
+      if (whatLine && pxSize >= 14) {
+        tagY += sub + 2;
+        _lctx.font = `400 ${Math.max(8, sub - 1)}px 'JetBrains Mono',monospace`;
+        _lctx.fillStyle = '#7dd3fc88';
+        let cw = whatLine.length > 30 ? whatLine.slice(0, 29) + '\u2026' : whatLine;
+        _lctx.fillText(cw, sc.x, tagY);
+      }
+      // RESULT line (커밋 메시지 또는 마지막 응답)
+      const resultLine = p.userData.resultSummary || '';
+      if (resultLine && pxSize >= 14) {
+        tagY += sub + 2;
+        _lctx.font = `400 ${Math.max(8, sub - 1)}px 'JetBrains Mono',monospace`;
+        _lctx.fillStyle = '#86efac88';
+        let cr = resultLine.length > 30 ? resultLine.slice(0, 29) + '\u2026' : resultLine;
+        _lctx.fillText(cr, sc.x, tagY);
+      }
     }
 
     // 히트 영역

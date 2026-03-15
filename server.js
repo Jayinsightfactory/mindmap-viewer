@@ -808,8 +808,11 @@ app.post('/api/hook', async (req, res) => {
     const jsonlLines = [];
     for (const event of events) {
       // user_id를 토큰에서 추출한 값으로 덮어쓰기 (프라이버시 격리)
+      // hookUserId === 'local'이어도 event.userId가 있으면 보존 (신규계정 이벤트 귀속)
       if (hookUserId !== 'local') {
         event.userId = hookUserId;
+      } else if (event.userId && event.userId !== 'local') {
+        // 이벤트 자체에 userId가 세팅되어 있으면 그대로 사용
       } else if (deviceId) {
         // local 이벤트에 device_id 기록 (나중에 claim 시 디바이스 매칭)
         if (!event.metadata) event.metadata = {};
@@ -829,6 +832,58 @@ app.post('/api/hook', async (req, res) => {
       fs.appendFile(CONV_FILE, jsonlLines.join('\n') + '\n', e => {
         if (e) console.error('[hook] JSONL 쓰기 실패:', e.message);
       });
+    }
+
+    // ── 세션 자동 제목 생성 (이벤트 3개 이상 쌓인 세션) ──────────────────
+    if (_isPg) {
+      const sessionIds = [...new Set(events.map(e => e.sessionId).filter(Boolean))];
+      for (const sid of sessionIds) {
+        try {
+          const sesEvents = await Promise.resolve(getEventsBySession(sid));
+          if (sesEvents.length >= 3) {
+            // 기존 title이 없는 세션만 자동 생성
+            const sessions = await Promise.resolve(getSessions());
+            const ses = sessions.find(s => s.id === sid);
+            if (!ses?.title) {
+              const sessStart = sesEvents.find(e => e.type === 'session.start');
+              const projDir = sessStart?.data?.projectDir || sessStart?.data?.cwd || '';
+              const projName = projDir ? projDir.replace(/\\/g, '/').split('/').filter(Boolean).pop() : null;
+              const firstMsg = sesEvents.find(e => e.type === 'user.message');
+              const firstMsgText = (firstMsg?.data?.contentPreview || firstMsg?.data?.content || '').slice(0, 30);
+              const fileCounts = {};
+              for (const e of sesEvents) {
+                const fp = (e.data?.filePath || e.data?.fileName || '').replace(/\\/g, '/').split('/').pop();
+                if (fp) fileCounts[fp] = (fileCounts[fp] || 0) + 1;
+              }
+              const topFile = Object.entries(fileCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+              // 도메인 추론
+              const domainRules = [
+                [/auth|login|oauth|jwt/, '인증'], [/route|api|endpoint/, 'API'],
+                [/db|database|model/, '데이터'], [/component|ui|css|style/, 'UI'],
+                [/test|spec/, '테스트'], [/deploy|ci|docker/, '배포'],
+              ];
+              let topDomain = null;
+              for (const e of sesEvents) {
+                const fp = (e.data?.filePath || '').toLowerCase();
+                for (const [re, label] of domainRules) {
+                  if (re.test(fp)) { topDomain = label; break; }
+                }
+                if (topDomain) break;
+              }
+              // 우선순위: [projectName] firstMsg > projectName > firstMsg > topFile > domain
+              let autoTitle;
+              if (projName && firstMsgText) autoTitle = `[${projName}] ${firstMsgText}`;
+              else if (projName) autoTitle = projName;
+              else if (firstMsgText) autoTitle = firstMsgText;
+              else if (topFile) autoTitle = topFile;
+              else if (topDomain) autoTitle = topDomain;
+              if (autoTitle) {
+                await Promise.resolve(updateSessionTitle(sid, autoTitle.slice(0, 80)));
+              }
+            }
+          }
+        } catch (e) { /* 자동 타이틀 실패는 무시 */ }
+      }
     }
 
     // ── 경량 stats (DB 집계만, 전체 이벤트 로드 없음) ────────────────────

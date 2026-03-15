@@ -280,10 +280,17 @@ function drawCompactProjectView() {
       ctx.restore();
     }
 
-    // 라벨
+    // 라벨 + WHAT/RESULT 요약
     const projTitle = _aliases[proj.name] || `${info.icon} ${info.name}`;
     const projSub = `${info.sessionCount}세션 · ${info.fileCount}파일`;
-    _drawSphereLabel(ctx, sc.x, sc.y, nodeR, projTitle, projSub, color, dimmed);
+    // 프로젝트 내 행성들의 WHAT/RESULT 집계
+    let projWhat = '', projResult = '';
+    for (const p of proj.planets) {
+      if (!projWhat && p.userData.whatSummary) projWhat = p.userData.whatSummary;
+      if (!projResult && p.userData.resultSummary) projResult = p.userData.resultSummary;
+      if (projWhat && projResult) break;
+    }
+    _drawSphereLabel(ctx, sc.x, sc.y, nodeR, projTitle, projSub, color, dimmed, projWhat, projResult);
 
     ctx.globalAlpha = 1;
 
@@ -402,7 +409,9 @@ function drawCompactProjectView() {
             meridians: 1, parallels: 1, glow: false, hover: isSubHover,
             rotation: now * 0.3 + si,
           });
-          _drawSphereLabel(ctx, sesSc.x, sesSc.y, sesR, sLabel, sesSub, cfg.color, false);
+          const sesWhat = planet.userData.whatSummary || '';
+          const sesResult = planet.userData.resultSummary || '';
+          _drawSphereLabel(ctx, sesSc.x, sesSc.y, sesR, sLabel, sesSub, cfg.color, false, sesWhat, sesResult);
 
           registerHitArea({
             cx: sesSc.x, cy: sesSc.y, r: sesR + 4,
