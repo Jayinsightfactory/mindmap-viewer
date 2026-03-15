@@ -2,14 +2,17 @@
  * routes/workspace.js
  * 워크스페이스(팀/회사) 관리 API
  *
- * POST /api/workspace/create       — 워크스페이스 생성 + 초대코드 발급
- * GET  /api/workspace/invite/:code — 초대코드 정보 조회 (로그인 전 공개)
- * POST /api/workspace/join         — 초대코드로 참여
- * GET  /api/workspace/my           — 내 워크스페이스 목록
- * GET  /api/workspace/team-view    — 팀뷰 데이터 (orbit3d.html 연동)
- * GET  /api/workspace/company-view — 회사뷰 데이터
- * PATCH /api/workspace/member/team — 내 팀 이름 변경
- * DELETE /api/workspace/leave      — 워크스페이스 나가기
+ * POST /api/workspace/create              — 워크스페이스 생성 + 초대코드 발급
+ * GET  /api/workspace/invite/:code        — 초대코드 정보 조회 (로그인 전 공개)
+ * POST /api/workspace/join                — 초대코드로 참여 (pending 상태)
+ * GET  /api/workspace/my                  — 내 워크스페이스 목록
+ * GET  /api/workspace/team-view           — 팀뷰 데이터 (orbit3d.html 연동)
+ * GET  /api/workspace/company-view        — 회사뷰 데이터
+ * PATCH /api/workspace/member/team        — 내 팀 이름 변경
+ * DELETE /api/workspace/leave             — 워크스페이스 나가기
+ * POST /api/workspace/:id/approve-member  — 멤버 승인 (owner/admin)
+ * POST /api/workspace/:id/reject-member   — 멤버 거절 (owner/admin)
+ * GET  /api/workspace/:id/pending-members — 대기 멤버 목록 (owner/admin)
  */
 
 'use strict';
@@ -92,8 +95,8 @@ function createWorkspaceRouter({ getDb, db: _dbLegacy, verifyToken, getUserById,
       );
       const ownerTeam = (req.body.teamName || '관리팀').trim();
       await dbRun(
-        `INSERT INTO workspace_members (workspace_id, user_id, role, team_name)
-         VALUES (?, ?, 'owner', ?)`,
+        `INSERT INTO workspace_members (workspace_id, user_id, role, team_name, status)
+         VALUES (?, ?, 'owner', ?, 'active')`,
         [id, req.user.id, ownerTeam]
       );
 
@@ -112,7 +115,7 @@ function createWorkspaceRouter({ getDb, db: _dbLegacy, verifyToken, getUserById,
     try {
       const ws = await dbGet(
         `SELECT w.id, w.name, w.company_name,
-                (SELECT COUNT(*) FROM workspace_members WHERE workspace_id = w.id) AS member_count
+                (SELECT COUNT(*) FROM workspace_members WHERE workspace_id = w.id AND (status = 'active' OR status IS NULL)) AS member_count
          FROM workspaces w WHERE w.invite_code = ?`,
         [req.params.code]
       );
@@ -133,24 +136,40 @@ function createWorkspaceRouter({ getDb, db: _dbLegacy, verifyToken, getUserById,
       if (!inviteCode) return res.status(400).json({ error: 'inviteCode required' });
 
       const ws = await dbGet(
-        `SELECT id, name, company_name FROM workspaces WHERE invite_code = ?`,
+        `SELECT id, name, company_name, owner_id FROM workspaces WHERE invite_code = ?`,
         [inviteCode]
       );
       if (!ws) return res.status(404).json({ error: 'invalid invite code' });
 
       const existing = await dbGet(
-        `SELECT 1 FROM workspace_members WHERE workspace_id = ? AND user_id = ?`,
+        `SELECT status FROM workspace_members WHERE workspace_id = ? AND user_id = ?`,
         [ws.id, req.user.id]
       );
-      if (existing) return res.json({ message: 'already joined', workspace: ws });
+      if (existing) {
+        if (existing.status === 'pending') return res.json({ message: 'pending_approval', workspace: ws });
+        return res.json({ message: 'already joined', workspace: ws });
+      }
 
       await dbRun(
-        `INSERT INTO workspace_members (workspace_id, user_id, role, team_name)
-         VALUES (?, ?, 'member', ?)`,
+        `INSERT INTO workspace_members (workspace_id, user_id, role, team_name, status)
+         VALUES (?, ?, 'member', ?, 'pending')`,
         [ws.id, req.user.id, teamName]
       );
 
-      res.json({ message: 'joined', workspace: ws });
+      // 워크스페이스 소유자에게 승인 요청 알림
+      if (typeof createNotification === 'function') {
+        const db = _db();
+        if (db) {
+          createNotification(db, {
+            userId: ws.owner_id, type: 'workspace_join_request',
+            title: '워크스페이스 참여 요청',
+            body: `${req.user.name || req.user.email || '새 사용자'}님이 "${ws.name}" 워크스페이스 참여를 요청했습니다.`,
+            data: { workspaceId: ws.id, requestUserId: req.user.id },
+          });
+        }
+      }
+
+      res.json({ message: 'pending_approval', workspace: ws });
     } catch (e) {
       res.status(500).json({ error: e.message });
     }
@@ -162,11 +181,12 @@ function createWorkspaceRouter({ getDb, db: _dbLegacy, verifyToken, getUserById,
   router.get('/workspace/my', auth, async (req, res) => {
     try {
       const rows = await dbAll(
-        `SELECT w.id, w.name, w.company_name, w.invite_code, wm.role, wm.team_name,
-                (SELECT COUNT(*) FROM workspace_members WHERE workspace_id = w.id) AS member_count
+        `SELECT w.id, w.name, w.company_name, w.invite_code, wm.role, wm.team_name, wm.status,
+                (SELECT COUNT(*) FROM workspace_members WHERE workspace_id = w.id AND (status = 'active' OR status IS NULL)) AS member_count,
+                (SELECT COUNT(*) FROM workspace_members WHERE workspace_id = w.id AND status = 'pending') AS pending_count
          FROM workspaces w
          JOIN workspace_members wm ON wm.workspace_id = w.id
-         WHERE wm.user_id = ?
+         WHERE wm.user_id = ? AND (wm.status = 'active' OR wm.status = 'pending' OR wm.status IS NULL)
          ORDER BY wm.joined_at DESC`,
         [req.user.id]
       );
@@ -193,9 +213,9 @@ function createWorkspaceRouter({ getDb, db: _dbLegacy, verifyToken, getUserById,
         workspaceId = first.workspace_id;
       }
 
-      // 멤버 목록 (cross-DB JOIN 회피: 2단계 조회)
+      // 멤버 목록 (cross-DB JOIN 회피: 2단계 조회) — active만
       const rawMembers = await dbAll(
-        `SELECT user_id, role, team_name FROM workspace_members WHERE workspace_id = ? ORDER BY joined_at ASC`,
+        `SELECT user_id, role, team_name FROM workspace_members WHERE workspace_id = ? AND (status = 'active' OR status IS NULL) ORDER BY joined_at ASC`,
         [workspaceId]
       );
       const members = rawMembers.map(wm => {
@@ -310,7 +330,7 @@ function createWorkspaceRouter({ getDb, db: _dbLegacy, verifyToken, getUserById,
       if (!ws) return res.status(404).json({ error: 'not found' });
 
       const rawMembers2 = await dbAll(
-        `SELECT user_id, role, team_name FROM workspace_members WHERE workspace_id = ? ORDER BY team_name, joined_at`,
+        `SELECT user_id, role, team_name FROM workspace_members WHERE workspace_id = ? AND (status = 'active' OR status IS NULL) ORDER BY team_name, joined_at`,
         [workspaceId]
       );
       const members = rawMembers2.map(wm => {
@@ -395,14 +415,15 @@ function createWorkspaceRouter({ getDb, db: _dbLegacy, verifyToken, getUserById,
     }
   });
 
-  // ── 어드민 권한 체크 헬퍼 ──────────────────────────────────────────────────
-  function isWsAdmin(req, workspaceId) {
+  // ── 어드민 권한 체크 헬퍼 (async — PG/SQLite 호환) ──────────────────────────
+  async function isWsAdmin(req, workspaceId) {
     // 글로벌 어드민이면 무조건 true
     if (ADMIN_EMAILS && ADMIN_EMAILS.includes(req.user.email?.toLowerCase())) return true;
     // 워크스페이스 owner/admin이면 true
-    const member = db.prepare
-      ? db.prepare('SELECT role FROM workspace_members WHERE workspace_id = ? AND user_id = ?').get(workspaceId, req.user.id)
-      : null;
+    const member = await dbGet(
+      'SELECT role FROM workspace_members WHERE workspace_id = ? AND user_id = ?',
+      [workspaceId, req.user.id]
+    );
     return member && (member.role === 'owner' || member.role === 'admin');
   }
 
@@ -411,9 +432,17 @@ function createWorkspaceRouter({ getDb, db: _dbLegacy, verifyToken, getUserById,
   // ─────────────────────────────────────────────────────────────────────────
   router.get('/workspace/:id/members', auth, async (req, res) => {
     try {
+      const wsId = req.params.id;
+      const isAdmin = await isWsAdmin(req, wsId);
+
+      // 어드민은 pending 포함 전체, 일반 멤버는 active만
+      const statusFilter = isAdmin
+        ? `AND (wm.status IN ('active','pending') OR wm.status IS NULL)`
+        : `AND (wm.status = 'active' OR wm.status IS NULL)`;
+
       const rows = await dbAll(
-        `SELECT user_id, role, team_name, joined_at FROM workspace_members WHERE workspace_id = ? ORDER BY joined_at`,
-        [req.params.id]
+        `SELECT user_id, role, team_name, joined_at, status FROM workspace_members wm WHERE wm.workspace_id = ? ${statusFilter} ORDER BY joined_at`,
+        [wsId]
       );
       const members = rows.map(wm => {
         const u = typeof getUserById === 'function' ? getUserById(wm.user_id) : null;
@@ -425,6 +454,7 @@ function createWorkspaceRouter({ getDb, db: _dbLegacy, verifyToken, getUserById,
           role: wm.role,
           teamName: wm.team_name,
           joinedAt: wm.joined_at,
+          status: wm.status || 'active',
           provider: u?.provider || 'local',
         };
       });
@@ -439,7 +469,7 @@ function createWorkspaceRouter({ getDb, db: _dbLegacy, verifyToken, getUserById,
   router.post('/workspace/:id/invite', auth, async (req, res) => {
     try {
       const wsId = req.params.id;
-      if (!isWsAdmin(req, wsId)) return res.status(403).json({ error: 'admin only' });
+      if (!(await isWsAdmin(req, wsId))) return res.status(403).json({ error: 'admin only' });
 
       const { email, teamName, role } = req.body;
       if (!email) return res.status(400).json({ error: 'email required' });
@@ -457,17 +487,20 @@ function createWorkspaceRouter({ getDb, db: _dbLegacy, verifyToken, getUserById,
       if (existing) return res.json({ message: 'already member' });
 
       await dbRun(
-        `INSERT INTO workspace_members (workspace_id, user_id, role, team_name) VALUES (?, ?, ?, ?)`,
+        `INSERT INTO workspace_members (workspace_id, user_id, role, team_name, status) VALUES (?, ?, ?, ?, 'active')`,
         [wsId, target.id, role || 'member', teamName || '팀 1']
       );
       // 초대 알림 생성
-      if (typeof createNotification === 'function' && db) {
-        createNotification(db, {
-          userId: target.id, type: 'workspace_invite',
-          title: '워크스페이스 초대',
-          body: `워크스페이스에 초대되었습니다.`,
-          data: { workspaceId: wsId },
-        });
+      if (typeof createNotification === 'function') {
+        const db = _db();
+        if (db) {
+          createNotification(db, {
+            userId: target.id, type: 'workspace_invite',
+            title: '워크스페이스 초대',
+            body: `워크스페이스에 초대되었습니다.`,
+            data: { workspaceId: wsId },
+          });
+        }
       }
       res.json({ ok: true, userId: target.id, name: target.name });
     } catch (e) { res.status(500).json({ error: e.message }); }
@@ -479,7 +512,7 @@ function createWorkspaceRouter({ getDb, db: _dbLegacy, verifyToken, getUserById,
   router.delete('/workspace/:id/members/:userId', auth, async (req, res) => {
     try {
       const wsId = req.params.id;
-      if (!isWsAdmin(req, wsId)) return res.status(403).json({ error: 'admin only' });
+      if (!(await isWsAdmin(req, wsId))) return res.status(403).json({ error: 'admin only' });
       await dbRun(
         'DELETE FROM workspace_members WHERE workspace_id = ? AND user_id = ?',
         [wsId, req.params.userId]
@@ -495,7 +528,7 @@ function createWorkspaceRouter({ getDb, db: _dbLegacy, verifyToken, getUserById,
   router.patch('/workspace/:id/members/:userId/role', auth, async (req, res) => {
     try {
       const wsId = req.params.id;
-      if (!isWsAdmin(req, wsId)) return res.status(403).json({ error: 'admin only' });
+      if (!(await isWsAdmin(req, wsId))) return res.status(403).json({ error: 'admin only' });
       const { role } = req.body;
       if (!['admin', 'member'].includes(role)) return res.status(400).json({ error: 'invalid role' });
       await dbRun(
@@ -507,12 +540,124 @@ function createWorkspaceRouter({ getDb, db: _dbLegacy, verifyToken, getUserById,
   });
 
   // ─────────────────────────────────────────────────────────────────────────
+  // POST /api/workspace/:id/approve-member
+  // body: { userId }  — owner/admin이 pending 멤버를 승인
+  // ─────────────────────────────────────────────────────────────────────────
+  router.post('/workspace/:id/approve-member', auth, async (req, res) => {
+    try {
+      const wsId = req.params.id;
+      if (!(await isWsAdmin(req, wsId))) return res.status(403).json({ error: 'admin only' });
+
+      const { userId } = req.body;
+      if (!userId) return res.status(400).json({ error: 'userId required' });
+
+      const member = await dbGet(
+        `SELECT status FROM workspace_members WHERE workspace_id = ? AND user_id = ?`,
+        [wsId, userId]
+      );
+      if (!member) return res.status(404).json({ error: 'member not found' });
+      if (member.status === 'active') return res.json({ message: 'already active' });
+
+      await dbRun(
+        `UPDATE workspace_members SET status = 'active' WHERE workspace_id = ? AND user_id = ?`,
+        [wsId, userId]
+      );
+
+      // 승인 알림
+      if (typeof createNotification === 'function') {
+        const db = _db();
+        const ws = await dbGet(`SELECT name FROM workspaces WHERE id = ?`, [wsId]);
+        if (db) {
+          createNotification(db, {
+            userId, type: 'workspace_approved',
+            title: '워크스페이스 참여 승인',
+            body: `"${ws?.name || '워크스페이스'}" 참여가 승인되었습니다.`,
+            data: { workspaceId: wsId },
+          });
+        }
+      }
+
+      res.json({ ok: true, message: 'approved' });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // POST /api/workspace/:id/reject-member
+  // body: { userId }  — owner/admin이 pending 멤버를 거절 (행 삭제)
+  // ─────────────────────────────────────────────────────────────────────────
+  router.post('/workspace/:id/reject-member', auth, async (req, res) => {
+    try {
+      const wsId = req.params.id;
+      if (!(await isWsAdmin(req, wsId))) return res.status(403).json({ error: 'admin only' });
+
+      const { userId } = req.body;
+      if (!userId) return res.status(400).json({ error: 'userId required' });
+
+      const member = await dbGet(
+        `SELECT status FROM workspace_members WHERE workspace_id = ? AND user_id = ?`,
+        [wsId, userId]
+      );
+      if (!member) return res.status(404).json({ error: 'member not found' });
+
+      await dbRun(
+        `DELETE FROM workspace_members WHERE workspace_id = ? AND user_id = ? AND status = 'pending'`,
+        [wsId, userId]
+      );
+
+      // 거절 알림
+      if (typeof createNotification === 'function') {
+        const db = _db();
+        const ws = await dbGet(`SELECT name FROM workspaces WHERE id = ?`, [wsId]);
+        if (db) {
+          createNotification(db, {
+            userId, type: 'workspace_rejected',
+            title: '워크스페이스 참여 거절',
+            body: `"${ws?.name || '워크스페이스'}" 참여 요청이 거절되었습니다.`,
+            data: { workspaceId: wsId },
+          });
+        }
+      }
+
+      res.json({ ok: true, message: 'rejected' });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // GET /api/workspace/:id/pending-members — 대기 중 멤버 목록 (owner/admin 전용)
+  // ─────────────────────────────────────────────────────────────────────────
+  router.get('/workspace/:id/pending-members', auth, async (req, res) => {
+    try {
+      const wsId = req.params.id;
+      if (!(await isWsAdmin(req, wsId))) return res.status(403).json({ error: 'admin only' });
+
+      const rows = await dbAll(
+        `SELECT user_id, role, team_name, joined_at FROM workspace_members WHERE workspace_id = ? AND status = 'pending' ORDER BY joined_at`,
+        [wsId]
+      );
+      const pending = rows.map(wm => {
+        const u = typeof getUserById === 'function' ? getUserById(wm.user_id) : null;
+        return {
+          userId: wm.user_id,
+          name: u?.name || '사용자',
+          email: u?.email || '',
+          avatar: u?.avatar || null,
+          role: wm.role,
+          teamName: wm.team_name,
+          joinedAt: wm.joined_at,
+          status: 'pending',
+        };
+      });
+      res.json(pending);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
   // DELETE /api/workspace/:id — 워크스페이스 삭제 (owner/admin만)
   // ─────────────────────────────────────────────────────────────────────────
   router.delete('/workspace/:id', auth, async (req, res) => {
     try {
       const wsId = req.params.id;
-      if (!isWsAdmin(req, wsId)) return res.status(403).json({ error: 'admin only' });
+      if (!(await isWsAdmin(req, wsId))) return res.status(403).json({ error: 'admin only' });
       await dbRun('DELETE FROM workspace_members WHERE workspace_id = ?', [wsId]);
       await dbRun('DELETE FROM workspaces WHERE id = ?', [wsId]);
       res.json({ ok: true });
@@ -525,7 +670,7 @@ function createWorkspaceRouter({ getDb, db: _dbLegacy, verifyToken, getUserById,
   router.post('/workspace/:id/regenerate-code', auth, async (req, res) => {
     try {
       const wsId = req.params.id;
-      if (!isWsAdmin(req, wsId)) return res.status(403).json({ error: 'admin only' });
+      if (!(await isWsAdmin(req, wsId))) return res.status(403).json({ error: 'admin only' });
       const newCode = genInviteCode();
       await dbRun('UPDATE workspaces SET invite_code = ? WHERE id = ?', [newCode, wsId]);
       res.json({ ok: true, inviteCode: newCode });
@@ -541,7 +686,8 @@ function createWorkspaceRouter({ getDb, db: _dbLegacy, verifyToken, getUserById,
         return res.status(403).json({ error: 'global admin only' });
       }
       const rows = await dbAll(
-        `SELECT w.*, (SELECT COUNT(*) FROM workspace_members WHERE workspace_id = w.id) AS member_count
+        `SELECT w.*, (SELECT COUNT(*) FROM workspace_members WHERE workspace_id = w.id AND (status = 'active' OR status IS NULL)) AS member_count,
+                (SELECT COUNT(*) FROM workspace_members WHERE workspace_id = w.id AND status = 'pending') AS pending_count
          FROM workspaces w ORDER BY w.created_at DESC`
       );
       res.json(rows);

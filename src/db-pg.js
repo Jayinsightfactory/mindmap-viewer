@@ -150,6 +150,7 @@ async function createTables() {
 
     ALTER TABLE workspace_members ADD COLUMN IF NOT EXISTS team_hierarchy_id TEXT;
     ALTER TABLE workspace_members ADD COLUMN IF NOT EXISTS department_id TEXT;
+    ALTER TABLE workspace_members ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'active';
 
     CREATE TABLE IF NOT EXISTS team_hierarchy (
       id           TEXT PRIMARY KEY,

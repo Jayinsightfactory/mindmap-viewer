@@ -278,16 +278,45 @@ function _drawSphereLabel(ctx, cx, cy, R, title, sub, color, dimmed, whatLine, r
   const hasWhat = showExtra && whatLine && whatLine.length > 0;
   const hasResult = showExtra && resultLine && resultLine.length > 0;
 
-  // 제목 (구체 중앙 약간 위)
+  // 제목 (구체 중앙 약간 위) — 길면 2줄로 분할
   ctx.font = `600 ${fontSize}px 'Inter',-apple-system,sans-serif`;
   ctx.fillStyle = '#e2e8f0';
-  let clipped = title.length > 20 ? title.slice(0, 19) + '\u2026' : title;
-  if (ctx.measureText(clipped).width > maxW) {
-    clipped = title.slice(0, Math.floor(maxW / fontSize * 1.2)) + '\u2026';
-  }
   const subOffset = sub ? fontSize * 0.4 : 0;
   const extraOffset = (hasWhat || hasResult) ? fontSize * 0.3 : 0;
-  ctx.fillText(clipped, cx, cy - subOffset - extraOffset);
+
+  if (ctx.measureText(title).width <= maxW) {
+    // 한 줄에 들어감
+    ctx.fillText(title, cx, cy - subOffset - extraOffset);
+  } else {
+    // 두 줄로 분할: 중간 공백에서 자르기
+    const mid = Math.floor(title.length / 2);
+    let splitIdx = -1;
+    for (let d = 0; d <= mid; d++) {
+      if (title[mid + d] === ' ') { splitIdx = mid + d; break; }
+      if (mid - d >= 0 && title[mid - d] === ' ') { splitIdx = mid - d; break; }
+    }
+    let line1, line2;
+    if (splitIdx > 0) {
+      line1 = title.slice(0, splitIdx);
+      line2 = title.slice(splitIdx + 1);
+    } else {
+      // 공백 없으면 글자 수로 반 분할
+      line1 = title.slice(0, mid);
+      line2 = title.slice(mid);
+    }
+    // 각 줄이 maxW 초과하면 잘라내기
+    if (ctx.measureText(line1).width > maxW) {
+      while (ctx.measureText(line1).width > maxW && line1.length > 1) line1 = line1.slice(0, -1);
+      line1 += '\u2026';
+    }
+    if (ctx.measureText(line2).width > maxW) {
+      while (ctx.measureText(line2).width > maxW && line2.length > 1) line2 = line2.slice(0, -1);
+      line2 += '\u2026';
+    }
+    const lineGap = fontSize * 0.55;
+    ctx.fillText(line1, cx, cy - subOffset - extraOffset - lineGap / 2);
+    ctx.fillText(line2, cx, cy - subOffset - extraOffset + lineGap / 2);
+  }
 
   // 부제 (구체 중앙 약간 아래)
   if (sub) {

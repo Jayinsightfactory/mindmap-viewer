@@ -46,6 +46,11 @@ document.addEventListener('keydown', e => {
     window._drillDownMemberId = null;
     window._drillDownMemberName = null;
     loadTeamDemo(); // 샘플 직접 호출 금지 → 로그인 검증 경유
+  } else if (window._drillDownSource === 'follower') {
+    window._drillDownSource = null;
+    window._drillDownMemberId = null;
+    window._drillDownMemberName = null;
+    if (typeof loadData === 'function') loadData(); // 내 데이터로 복귀
   }
 });
 setTimeout(resizeRendererToSidebar, 100); // fallback

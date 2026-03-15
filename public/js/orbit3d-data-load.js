@@ -34,6 +34,24 @@ async function loadTeamWorldData() {
 }
 window.loadTeamWorldData = loadTeamWorldData;
 
+// ── 팔로잉 데이터 로드 (개인 뷰 줌아웃 시 팔로잉 클러스터 표시용) ────────────
+async function loadFollowingData() {
+  const token = _getAuthToken();
+  if (!token) { window._followingData = null; return; }
+  try {
+    const res = await _authFetch('/api/follow/list');
+    if (!res.ok) return;
+    const data = await res.json();
+    // 배열이면 저장
+    if (Array.isArray(data) && data.length > 0) {
+      window._followingData = data;
+    } else {
+      window._followingData = null;
+    }
+  } catch { window._followingData = null; }
+}
+window.loadFollowingData = loadFollowingData;
+
 async function loadData() {
   document.getElementById('loading-msg').textContent = '서버에서 작업 데이터 가져오는 중…';
   try {
@@ -48,6 +66,8 @@ async function loadData() {
     // 개인 모드에서도 3D 카메라 회전 유지 (controls.enabled = true)
     // 팀원 월드 데이터 비동기 로드 (개인 뷰에서 줌아웃 시 표시용)
     loadTeamWorldData();
+    // 팔로잉 데이터 비동기 로드 (개인 뷰에서 줌아웃 시 표시용)
+    loadFollowingData();
     document.getElementById('loading').style.display = 'none';
 
     // 이벤트 없음 → 조건부 안내

@@ -328,6 +328,9 @@ function createTables() {
   try {
     db.exec(`ALTER TABLE workspace_members ADD COLUMN department_id TEXT`);
   } catch {}
+  try {
+    db.exec(`ALTER TABLE workspace_members ADD COLUMN status TEXT DEFAULT 'active'`);
+  } catch {}
 
   // ─── 결제/구독/알림 테이블 ───────────────────────────
   db.exec(`

@@ -126,6 +126,34 @@ renderer.domElement.addEventListener('click', e => {
       return;
     }
 
+    // ── 팔로잉 유저 클릭 → 해당 유저의 그래프 데이터 로드 ────────────────
+    if (type === 'follower') {
+      const userId = hit.data.userId;
+      const userName = hit.data.userName || '사용자';
+      if (!userId) return;
+      if (typeof showToast === 'function') showToast(`${userName}의 작업 데이터 불러오는 중...`, 'info');
+      _authFetch(`/api/graph?memberId=${encodeURIComponent(userId)}`)
+        .then(r => r.json())
+        .then(data => {
+          const nodes = data.nodes || [];
+          if (nodes.length === 0) {
+            if (typeof showToast === 'function') showToast(`${userName}의 공개 데이터가 없습니다`, 'warn');
+            return;
+          }
+          // 드릴다운 소스 기록 (Escape로 복귀용)
+          window._drillDownSource = 'follower';
+          window._drillDownMemberId = userId;
+          window._drillDownMemberName = userName;
+          if (typeof buildPlanetSystem === 'function') buildPlanetSystem(nodes);
+          if (typeof showToast === 'function') showToast(`${userName}의 작업 뷰 (Esc로 복귀)`, 'success');
+        })
+        .catch(e => {
+          console.warn('[follower-drilldown]', e.message);
+          if (typeof showToast === 'function') showToast('데이터 로드 실패: ' + e.message, 'error');
+        });
+      return;
+    }
+
     // ── 카테고리 카드 클릭 → 해당 카테고리 포커스 ──────────────────────────
     if (type === 'category') {
       if (_focusedCategory === hit.data.catKey) {

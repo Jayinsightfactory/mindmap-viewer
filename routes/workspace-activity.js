@@ -54,7 +54,7 @@ module.exports = function createWorkspaceActivityRouter() {
       // 1. 워크스페이스 멤버 목록 조회
       const members = db.prepare(`
         SELECT DISTINCT user_id FROM workspace_members
-        WHERE workspace_id = ?
+        WHERE workspace_id = ? AND (status = 'active' OR status IS NULL)
       `).all(workspaceId);
 
       if (members.length === 0) {

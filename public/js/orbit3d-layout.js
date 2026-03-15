@@ -12,6 +12,16 @@ const _TEAM_WORLD_POS = [
   [ 520,  300], [-520,  300],
 ];
 
+// 팔로잉 월드 오프셋 — 팀원보다 더 바깥 (scale≈0.4 에서 화면 가장자리)
+const _FOLLOW_WORLD_POS = [
+  [ 700,  150], [-700,  150],
+  [ 700, -150], [-700, -150],
+  [ 400,  560], [-400,  560],
+  [ 400, -560], [-400, -560],
+  [ 780,  420], [-780,  420],
+  [ 780, -420], [-780, -420],
+];
+
 // ctx는 이미 월드 트랜스폼(translate+scale)이 적용된 상태로 호출됨
 // 모든 드로잉은 월드 좌표계, hitArea는 월드 좌표 (함수 끝에서 일괄 스크린 변환)
 function _drawTeamClusters(ctx, txX, txY, W, H, scale) {
@@ -78,6 +88,61 @@ function _drawTeamClusters(ctx, txX, txY, W, H, scale) {
       cx: wox, cy: woy, r: 60,
       obj: null,
       data: { type: 'teamMember', memberId: m.userId || m.id, memberName: name, color, member: m },
+    });
+
+    ctx.restore();
+  });
+}
+
+// ─── 팔로잉 클러스터 렌더링 (월드 줌아웃 시 등장, 팀원 뒤쪽) ────────────────
+// ctx는 이미 월드 트랜스폼(translate+scale)이 적용된 상태로 호출됨
+function _drawFollowingClusters(ctx, txX, txY, W, H, scale) {
+  const fData = window._followingData;
+  if (!fData || !Array.isArray(fData) || fData.length === 0) return;
+
+  // 페이드인: scale 0.65→0.40 구간에서 0→1 알파 (팀원보다 더 줌아웃해야 표시)
+  const fadeAlpha = Math.min(1, Math.max(0, (0.65 - scale) / 0.25));
+  if (fadeAlpha <= 0) return;
+
+  const now = performance.now() / 1000;
+  const FOLLOW_COLOR = '#a78bfa'; // 보라색 — 팔로잉 구분용
+
+  fData.forEach((f, i) => {
+    const [wox, woy] = _FOLLOW_WORLD_POS[i] || [900 + i * 180, 200];
+    const scx = wox * scale + txX, scy = woy * scale + txY;
+
+    // 화면 밖이면 스킵
+    if (scx < -200 || scx > W + 200 || scy < -200 || scy > H + 200) return;
+
+    const color = FOLLOW_COLOR;
+    const name = f.name || f.email?.split('@')[0] || '사용자';
+    const headline = f.headline || '';
+    const sub = headline ? headline.slice(0, 20) : '팔로잉';
+
+    ctx.save();
+    ctx.globalAlpha = fadeAlpha;
+
+    // 와이어프레임 구체 (팀원의 drawUnifiedCard 대신 3D 스타일)
+    const isHover = _hoveredHit?.data?.type === 'follower' && _hoveredHit?.data?.userId === f.user_id;
+    const sphereR = 45;
+    _drawWireSphere(ctx, wox, woy, sphereR, color, {
+      alpha: 0.3, lineW: 0.8, meridians: 2, parallels: 1,
+      glow: true, hover: isHover, rotation: now * 0.12 + i * 0.7,
+    });
+    _drawSphereLabel(ctx, wox, woy, sphereR, name, sub, color, false);
+
+    // 히트 영역 (월드 좌표)
+    registerHitArea({
+      cx: wox, cy: woy, r: sphereR + 6,
+      obj: null,
+      data: {
+        type: 'follower',
+        userId: f.user_id,
+        userName: name,
+        headline,
+        color,
+        avatarUrl: f.avatar_url,
+      },
     });
 
     ctx.restore();
@@ -173,9 +238,9 @@ function drawCompactProjectView() {
   // ── 양파형 동심원 배치 (3D 월드 좌표 X-Z 평면) ────────────────────────────
   const isDrillStage1 = _drillStage >= 1 && _drillProject;
   const baseAngle = -Math.PI / 2;
-  const WORLD_NODE_SEP = 4;   // 노드 간 최소 월드 거리
-  const WORLD_RING_BASE = 8;  // 1번째 링 시작 반경
-  const WORLD_RING_GAP = 7;   // 링 간 간격
+  const WORLD_NODE_SEP = 6;   // 노드 간 최소 월드 거리
+  const WORLD_RING_BASE = 12; // 1번째 링 시작 반경
+  const WORLD_RING_GAP = 10;  // 링 간 간격
 
   // 프로젝트를 링별로 분배 (5, 10, 15, 20…)
   const rings = [];
@@ -282,7 +347,7 @@ function drawCompactProjectView() {
 
     // 라벨 + WHAT/RESULT 요약
     const projTitle = _aliases[proj.name] || `${info.icon} ${info.name}`;
-    const projSub = `${info.sessionCount}세션 · ${info.fileCount}파일`;
+    const projSub = '';
     // 프로젝트 내 행성들의 WHAT/RESULT 집계
     let projWhat = '', projResult = '';
     for (const p of proj.planets) {
@@ -394,7 +459,7 @@ function drawCompactProjectView() {
           const sesKey = planet.userData.clusterId || planet.userData.sessionId || '';
           let sLabel = _aliases[sesKey] || normalizeLabel(planet.userData.intent || '', 22);
           if (!sLabel) sLabel = deriveDisplayLabel(planet.userData, 22);
-          const sesSub = evCnt > 0 ? `${evCnt}개 작업` : '';
+          const sesSub = '';
 
           // 연결선
           ctx.save();
@@ -453,6 +518,8 @@ function drawCompactProjectView() {
     ctx.translate(_txX, _txY);
     ctx.scale(_wScale, _wScale);
     _drawTeamClusters(ctx, _txX, _txY, W, H, _wScale);
+    // 팔로잉 클러스터 (팀원보다 더 바깥에 표시)
+    _drawFollowingClusters(ctx, _txX, _txY, W, H, _wScale);
     ctx.restore();
   }
 
