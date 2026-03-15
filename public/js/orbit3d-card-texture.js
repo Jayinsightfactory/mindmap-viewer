@@ -264,7 +264,7 @@ function _drawWireSphere(ctx, cx, cy, R, color, opts) {
   ctx.restore();
 }
 
-// 와이어프레임 구체 내부 텍스트 라벨 (3줄: WHY + WHAT + RESULT)
+// 와이어프레임 구체 내부 텍스트 라벨 (WHY + WHAT + RESULT — 구체 크면만)
 function _drawSphereLabel(ctx, cx, cy, R, title, sub, color, dimmed, whatLine, resultLine) {
   ctx.save();
   if (dimmed) ctx.globalAlpha = 0.3;
@@ -273,57 +273,47 @@ function _drawSphereLabel(ctx, cx, cy, R, title, sub, color, dimmed, whatLine, r
 
   const fontSize = Math.max(8, Math.min(13, R * 0.52));
   const maxW = R * 1.6;
-  const hasWhat = whatLine && whatLine.length > 0;
-  const hasResult = resultLine && resultLine.length > 0;
-  const lineCount = 1 + (sub ? 1 : 0) + (hasWhat ? 1 : 0) + (hasResult ? 1 : 0);
+  // WHAT/RESULT는 구체가 충분히 클 때만 (R >= 35px, 줌인 상태)
+  const showExtra = R >= 35;
+  const hasWhat = showExtra && whatLine && whatLine.length > 0;
+  const hasResult = showExtra && resultLine && resultLine.length > 0;
 
-  // 세로 배치 기준점 계산
-  const lineH = fontSize * 1.1;
-  const totalH = lineCount * lineH;
-  let curY = cy - totalH / 2 + lineH * 0.5;
-
-  // Line 1: WHY — title (기존 mwGroupLabel 결과)
+  // 제목 (구체 중앙 약간 위)
   ctx.font = `600 ${fontSize}px 'Inter',-apple-system,sans-serif`;
   ctx.fillStyle = '#e2e8f0';
-  let clipped = title;
-  while (ctx.measureText(clipped).width > maxW && clipped.length > 1) clipped = clipped.slice(0, -1);
-  if (clipped !== title) clipped += '\u2026';
-  ctx.fillText(clipped, cx, curY);
-  curY += lineH;
+  let clipped = title.length > 20 ? title.slice(0, 19) + '\u2026' : title;
+  if (ctx.measureText(clipped).width > maxW) {
+    clipped = title.slice(0, Math.floor(maxW / fontSize * 1.2)) + '\u2026';
+  }
+  const subOffset = sub ? fontSize * 0.4 : 0;
+  const extraOffset = (hasWhat || hasResult) ? fontSize * 0.3 : 0;
+  ctx.fillText(clipped, cx, cy - subOffset - extraOffset);
 
-  // Line 2: sub (세션/파일 카운트)
+  // 부제 (구체 중앙 약간 아래)
   if (sub) {
     const subSize = Math.max(7, fontSize - 2);
     ctx.font = `400 ${subSize}px 'JetBrains Mono','Fira Code',monospace`;
     ctx.fillStyle = '#94a3b8';
-    let cs = sub;
-    while (ctx.measureText(cs).width > maxW && cs.length > 1) cs = cs.slice(0, -1);
-    if (cs !== sub) cs += '\u2026';
-    ctx.fillText(cs, cx, curY);
-    curY += lineH;
+    let cs = sub.length > 22 ? sub.slice(0, 21) + '\u2026' : sub;
+    ctx.fillText(cs, cx, cy + fontSize * 0.35 - extraOffset);
   }
 
-  // Line 3: WHAT — whatSummary (상위 도구 액션)
+  // WHAT (하늘색 — 줌인 시만)
   if (hasWhat) {
     const whatSize = Math.max(6, fontSize - 2);
     ctx.font = `400 ${whatSize}px 'JetBrains Mono','Fira Code',monospace`;
     ctx.fillStyle = '#7dd3fc';
-    let cw = whatLine;
-    while (ctx.measureText(cw).width > maxW && cw.length > 1) cw = cw.slice(0, -1);
-    if (cw !== whatLine) cw += '\u2026';
-    ctx.fillText(cw, cx, curY);
-    curY += lineH;
+    let cw = whatLine.length > 24 ? whatLine.slice(0, 23) + '\u2026' : whatLine;
+    ctx.fillText(cw, cx, cy + fontSize * 0.95);
   }
 
-  // Line 4: RESULT — resultSummary (커밋 메시지 또는 마지막 응답)
+  // RESULT (초록색 — 줌인 시만)
   if (hasResult) {
     const resSize = Math.max(6, fontSize - 2);
     ctx.font = `400 ${resSize}px 'JetBrains Mono','Fira Code',monospace`;
     ctx.fillStyle = '#86efac';
-    let cr = resultLine;
-    while (ctx.measureText(cr).width > maxW && cr.length > 1) cr = cr.slice(0, -1);
-    if (cr !== resultLine) cr += '\u2026';
-    ctx.fillText(cr, cx, curY);
+    let cr = resultLine.length > 24 ? resultLine.slice(0, 23) + '\u2026' : resultLine;
+    ctx.fillText(cr, cx, cy + fontSize * (hasWhat ? 1.75 : 0.95));
   }
 
   ctx.restore();

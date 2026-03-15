@@ -312,23 +312,22 @@ function drawLabels() {
       _lctx.fillStyle = hex + '88';
       _lctx.fillText(`${evCnt}개 작업`, sc.x, tagY);
 
-      // WHAT line (도구 액션 요약)
-      const whatLine = p.userData.whatSummary || '';
-      if (whatLine && pxSize >= 14) {
-        tagY += sub + 2;
-        _lctx.font = `400 ${Math.max(8, sub - 1)}px 'JetBrains Mono',monospace`;
-        _lctx.fillStyle = '#7dd3fc88';
-        let cw = whatLine.length > 30 ? whatLine.slice(0, 29) + '\u2026' : whatLine;
-        _lctx.fillText(cw, sc.x, tagY);
-      }
-      // RESULT line (커밋 메시지 또는 마지막 응답)
-      const resultLine = p.userData.resultSummary || '';
-      if (resultLine && pxSize >= 14) {
-        tagY += sub + 2;
-        _lctx.font = `400 ${Math.max(8, sub - 1)}px 'JetBrains Mono',monospace`;
-        _lctx.fillStyle = '#86efac88';
-        let cr = resultLine.length > 30 ? resultLine.slice(0, 29) + '\u2026' : resultLine;
-        _lctx.fillText(cr, sc.x, tagY);
+      // WHAT/RESULT는 충분히 줌인 시만 (pxSize >= 18 = 매우 가까이)
+      if (pxSize >= 18) {
+        const whatLine = p.userData.whatSummary || '';
+        if (whatLine) {
+          tagY += sub + 2;
+          _lctx.font = `400 ${Math.max(8, sub - 1)}px 'JetBrains Mono',monospace`;
+          _lctx.fillStyle = '#7dd3fc88';
+          _lctx.fillText(whatLine.slice(0, 28), sc.x, tagY);
+        }
+        const resultLine = p.userData.resultSummary || '';
+        if (resultLine) {
+          tagY += sub + 2;
+          _lctx.font = `400 ${Math.max(8, sub - 1)}px 'JetBrains Mono',monospace`;
+          _lctx.fillStyle = '#86efac88';
+          _lctx.fillText(resultLine.slice(0, 28), sc.x, tagY);
+        }
       }
     }
 

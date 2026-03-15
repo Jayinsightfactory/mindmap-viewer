@@ -778,18 +778,23 @@ function updateZoomLOD() {
                       !(typeof _parallelMode !== 'undefined' && _parallelMode);
 
     // ── 카메라 거리 → 행성 레벨 자동 전환 (개인 모드만) ──
-    if (inPersonal && typeof planetMeshes !== 'undefined') {
-      let targetLevel = 0;
-      if (r < 50)       targetLevel = 0;  // compact
-      else if (r < 120) targetLevel = 1;  // personal work
-      else if (r < 200) targetLevel = 2;  // team project
-      else              targetLevel = 3;  // wider view
-
-      planetMeshes.forEach(p => {
-        if (p.userData._currentLevel !== targetLevel) {
-          p.userData._currentLevel = targetLevel;
+    if (typeof planetMeshes !== 'undefined' && planetMeshes.length > 0) {
+      if (inPersonal) {
+        let targetLevel = 0;
+        if (r < 50)       targetLevel = 0;  // compact
+        else if (r < 120) targetLevel = 1;  // personal work
+        else              targetLevel = 2;  // wider view
+        for (let i = 0; i < planetMeshes.length; i++) {
+          planetMeshes[i].userData._currentLevel = targetLevel;
         }
-      });
+      } else {
+        // 팀/전사 모드 진입 시 레벨 리셋 (잔류값 방지)
+        for (let i = 0; i < planetMeshes.length; i++) {
+          if (planetMeshes[i].userData._currentLevel !== 0) {
+            planetMeshes[i].userData._currentLevel = 0;
+          }
+        }
+      }
     }
 
     if (inPersonal && r > 120) {
