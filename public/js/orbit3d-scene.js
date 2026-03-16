@@ -74,6 +74,10 @@ function clearScene() {
 }
 
 function buildPlanetSystem(nodeList) {
+  try { return _buildPlanetSystemInner(nodeList); }
+  catch (e) { console.error('[buildPlanetSystem] CRASH:', e.message, e.stack?.split('\n')[1]); }
+}
+function _buildPlanetSystemInner(nodeList) {
   clearScene();
   _allNodes = nodeList;
 
