@@ -436,9 +436,15 @@ function buildPlanetSystem(nodeList) {
     loadSessionContext(sid);
   });
 
-  document.getElementById('h-sessions').textContent = sessKeys.length;
-  document.getElementById('h-tasks').textContent    = totalTasks;
-  document.getElementById('h-hours').textContent    = totalHours.toFixed(0)+'h';
+  try {
+    const _hS = document.getElementById('h-sessions');
+    const _hT = document.getElementById('h-tasks');
+    const _hH = document.getElementById('h-hours');
+    if (_hS) _hS.textContent = sessKeys.length;
+    if (_hT) _hT.textContent = totalTasks;
+    if (_hH) _hH.textContent = totalHours.toFixed(0)+'h';
+  } catch {}
+
 
   // ── 프로젝트별 그룹화 빌드 ──────────────────────────────────────────────
   _projectGroups = {};
