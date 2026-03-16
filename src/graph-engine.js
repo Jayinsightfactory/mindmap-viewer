@@ -36,90 +36,390 @@ const AI_SOURCE_STYLES = {
   vscode:     { color: '#f85149', shape: 'ellipse', borderColor: '#da3633', icon: '🔴' },
 };
 
-// ─── 세션별 WHAT/RESULT 집계 ──────────────────────────
-// WHAT = "어떤 파일을 어떻게 했는지" (사람이 이해할 수 있는 행동)
-// RESULT = "결과가 뭔지" (커밋 메시지 또는 파일 변경 요약)
+// ─── 파일 역할 추론 맵 (경로/파일명 → 한국어 모듈 라벨) ──────────────────────
+const FILE_ROLE_MAP = [
+  [/auth|login|oauth|jwt|token|password|credential|signin|signup/i, '인증'],
+  [/route|router|api|endpoint|controller|handler/i, 'API'],
+  [/service|manager|provider|helper|util/i, '서비스 로직'],
+  [/component|widget|view|page|screen|activity|fragment/i, 'UI'],
+  [/model|schema|entity|dto|type/i, '데이터 모델'],
+  [/test|spec|mock|fixture|__test__/i, '테스트'],
+  [/config|setting|env|\.yml$|\.yaml$|\.gradle|\.toml$|\.properties$/i, '설정'],
+  [/style|css|scss|sass|theme|color|tailwind/i, '스타일'],
+  [/migration|seed|\.sql$/i, 'DB'],
+  [/deploy|docker|ci|cd|workflow|\.github/i, '배포'],
+  [/readme|doc|guide|tutorial|changelog/i, '문서'],
+  [/receiver|listener|observer|broadcast/i, '이벤트 수신기'],
+  [/middleware|interceptor|filter|guard/i, '미들웨어'],
+  [/store|reducer|state|context|redux|zustand|recoil/i, '상태관리'],
+  [/hook|use[A-Z]/i, '커스텀 훅'],
+  [/\.json$/i, '설정'],         // fallback for .json (package.json etc.)
+];
+
+// 파일 확장자 → 기술 스택 추론
+const EXT_TO_TECH = {
+  '.kt': 'Kotlin', '.java': 'Java', '.py': 'Python', '.rs': 'Rust', '.go': 'Go',
+  '.js': 'JavaScript', '.ts': 'TypeScript', '.jsx': 'React', '.tsx': 'React',
+  '.swift': 'Swift', '.dart': 'Dart', '.rb': 'Ruby', '.php': 'PHP',
+  '.html': 'HTML', '.css': 'CSS', '.scss': 'SCSS', '.vue': 'Vue',
+  '.gradle': 'Gradle', '.toml': 'TOML', '.yml': 'YAML', '.yaml': 'YAML',
+  '.sql': 'SQL', '.sh': 'Shell', '.bat': 'Batch', '.ps1': 'PowerShell',
+  '.md': 'Markdown', '.json': 'JSON', '.xml': 'XML',
+  '.c': 'C', '.cpp': 'C++', '.h': 'C/C++', '.cs': 'C#',
+};
+
+// 시스템 경로 세그먼트 (프로젝트명 추출 시 무시)
+const SYSTEM_PATH_SEGMENTS = new Set([
+  'users', 'home', 'usr', 'var', 'tmp', 'temp', 'opt', 'etc',
+  'windows', 'system32', 'program files', 'program files (x86)',
+  'appdata', 'local', 'roaming', 'library', 'application support',
+  'node_modules', '.git', '.gradle', 'build', 'dist', 'out', 'target',
+  'bin', 'obj', 'packages', '.pub-cache', '.m2', '.npm',
+  'src', 'main', 'java', 'kotlin', 'res', 'app',  // Android/JVM inner dirs
+  'c', 'd', 'e',  // drive letters
+  'documents', 'desktop', 'downloads',
+  'cloudStorage', 'googledrive', 'google drive',
+]);
+
+// 도구명 → 행동 동사
 const _ACTION_VERB = {
   Write: '작성', Edit: '수정', Read: '분석', Grep: '검색', Glob: '탐색',
   Bash: '실행', WebSearch: '웹조사', WebFetch: '참고', Task: '하위작업',
 };
 
+// 무시할 짧은/일반적 assistant 응답
+const _GENERIC_RESPONSES = /^(네|알겠습니다|확인했습니다|완료|understood|ok|sure|done|yes|알겠어요|넵|감사합니다|좋습니다|이해했습니다|물론입니다|그렇게 하겠습니다|알려드리겠습니다)[\.\!\s]*$/i;
+
+// AI 도구 사이트 감지 패턴
+const _AI_TOOL_PATTERNS = [
+  [/claude\.ai|anthropic/i, 'Claude'],
+  [/chatgpt|openai/i, 'ChatGPT'],
+  [/gemini|bard|google.*ai/i, 'Gemini'],
+  [/copilot|github.*copilot/i, 'Copilot'],
+  [/perplexity/i, 'Perplexity'],
+  [/cursor/i, 'Cursor'],
+  [/v0\.dev|vercel.*v0/i, 'v0'],
+  [/midjourney/i, 'Midjourney'],
+  [/notion.*ai/i, 'Notion AI'],
+];
+
+// ─── 파일 역할 추론 함수 ─────────────────────────────────
+function _inferFileRole(filePath) {
+  if (!filePath) return null;
+  const norm = filePath.replace(/\\/g, '/');
+  for (const [pattern, role] of FILE_ROLE_MAP) {
+    if (pattern.test(norm)) return role;
+  }
+  return null;
+}
+
+// ─── 파일 확장자에서 기술 스택 추론 ─────────────────────────
+function _inferTech(filePath) {
+  if (!filePath) return null;
+  const norm = filePath.replace(/\\/g, '/').toLowerCase();
+  for (const [ext, tech] of Object.entries(EXT_TO_TECH)) {
+    if (norm.endsWith(ext)) return tech;
+  }
+  return null;
+}
+
+// ─── 파일 경로에서 프로젝트명 추출 ─────────────────────────
+function _extractProjectName(filePath) {
+  if (!filePath) return null;
+  const segments = filePath.replace(/\\/g, '/').split('/').filter(Boolean);
+  // 뒤에서부터 탐색, 의미 있는 가장 깊은 디렉토리 찾기
+  // 마지막 세그먼트 = 파일명이므로 제외, 뒤에서 두 번째부터
+  let bestCandidate = null;
+  let bestDepth = -1;
+  for (let i = segments.length - 2; i >= 0; i--) {
+    const seg = segments[i];
+    const segLower = seg.toLowerCase();
+    if (SYSTEM_PATH_SEGMENTS.has(segLower)) continue;
+    if (segLower.startsWith('.')) continue; // hidden dirs
+    if (/^\d+$/.test(seg)) continue;       // pure numbers
+    // 첫 번째 non-system 디렉토리 (가장 깊은) = 프로젝트명
+    if (bestDepth === -1) {
+      bestCandidate = seg;
+      bestDepth = i;
+    }
+    // 더 깊은 것이 있으면 그게 프로젝트명 가능성 높음
+    // 그러나 너무 깊은 내부 폴더는 프로젝트명이 아님
+    // 적절한 후보: 깊이 2~5 사이
+    break;
+  }
+  return bestCandidate;
+}
+
+// ─── 시간 포맷 (duration) ─────────────────────────────────
+function _formatDuration(ms) {
+  if (!ms || ms <= 0) return '';
+  const totalMin = Math.floor(ms / 60000);
+  if (totalMin < 1) return '1분 미만';
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  if (h > 0 && m > 0) return `${h}h ${m}m`;
+  if (h > 0) return `${h}h`;
+  return `${m}m`;
+}
+
+// ─── 세션별 심층 분석 요약 ──────────────────────────────────
+// WHY(purpose) + WHAT(module-level) + RESULT + context
 function computeSessionSummaries(events) {
   const sessionMap = {};
+
   for (const event of events) {
     const sid = event.sessionId;
     if (!sid) continue;
     if (!sessionMap[sid]) sessionMap[sid] = {
-      editedFiles: {}, createdFiles: {}, readFiles: {},
-      commits: [], bashCmds: [], webSearches: 0,
-      writeCount: 0, editCount: 0,
+      // user.message tracking
+      userMessages: [],
+      // assistant.message tracking
+      assistantMessages: [],
+      // tool.end file tracking (full paths for deep analysis)
+      toolFiles: {},        // fullPath → { role, action, count, tech }
+      commits: [],          // git commit messages
+      bashCmds: [],         // non-git bash commands
+      webSearches: 0,
+      // keyboard.chunk tracking
+      activities: [],       // { activity, app, window, keywords }
+      // browser/extension tracking
+      browseSites: [],      // { site, title }
+      // git.commit events
+      gitCommits: [],       // commit messages from git.commit event type
+      // AI source tracking (from event.aiSource field)
+      aiSources: new Set(),
+      // timestamps for duration
+      firstTs: null,
+      lastTs: null,
     };
     const s = sessionMap[sid];
 
-    if (event.type === 'tool.end') {
-      const toolName = event.data.toolName || '';
-      const filePath = event.data.filePath || event.data.input?.file_path || event.data.files?.[0] || '';
-      const fileName = filePath ? filePath.replace(/\\/g, '/').split('/').pop() : '';
+    // ── 타임스탬프 추적 ──
+    const ts = event.timestamp ? new Date(event.timestamp).getTime() : 0;
+    if (ts > 0) {
+      if (!s.firstTs || ts < s.firstTs) s.firstTs = ts;
+      if (!s.lastTs || ts > s.lastTs) s.lastTs = ts;
+    }
 
-      if (toolName === 'Edit' && fileName) {
-        s.editedFiles[fileName] = (s.editedFiles[fileName] || 0) + 1;
-        s.editCount++;
-      } else if (toolName === 'Write' && fileName) {
-        s.createdFiles[fileName] = (s.createdFiles[fileName] || 0) + 1;
-        s.writeCount++;
-      } else if (toolName === 'Read' && fileName) {
-        s.readFiles[fileName] = (s.readFiles[fileName] || 0) + 1;
+    // ── AI 소스 수집 ──
+    if (event.aiSource) s.aiSources.add(event.aiSource);
+
+    // ── user.message → 의도(WHY) 추출 ──
+    if (event.type === 'user.message') {
+      const content = (event.data?.contentPreview || event.data?.content || '').replace(/[\n\r]+/g, ' ').trim();
+      if (content.length > 2) {
+        s.userMessages.push(content);
+      }
+    }
+
+    // ── assistant.message → 결과 요약 후보 ──
+    if (event.type === 'assistant.message') {
+      const content = (event.data?.contentPreview || event.data?.content || '').replace(/[\n\r]+/g, ' ').trim();
+      if (content.length > 5 && !_GENERIC_RESPONSES.test(content)) {
+        s.assistantMessages.push(content);
+      }
+    }
+
+    // ── tool.end → 파일/모듈 분석 ──
+    if (event.type === 'tool.end') {
+      const toolName = event.data?.toolName || '';
+      const filePath = event.data?.filePath || event.data?.input?.file_path || event.data?.files?.[0] || '';
+
+      if ((toolName === 'Edit' || toolName === 'Write' || toolName === 'Read') && filePath) {
+        const norm = filePath.replace(/\\/g, '/');
+        if (!s.toolFiles[norm]) {
+          s.toolFiles[norm] = {
+            role: _inferFileRole(norm),
+            tech: _inferTech(norm),
+            project: _extractProjectName(norm),
+            actions: {},
+          };
+        }
+        const action = _ACTION_VERB[toolName] || toolName;
+        s.toolFiles[norm].actions[action] = (s.toolFiles[norm].actions[action] || 0) + 1;
       } else if (toolName === 'WebSearch' || toolName === 'WebFetch') {
         s.webSearches++;
       } else if (toolName === 'Bash') {
-        const cmd = String(event.data.inputPreview || event.data.input?.command || '');
+        const cmd = String(event.data?.inputPreview || event.data?.input?.command || '');
         const commitMatch = cmd.match(/git commit.*-m\s+["'](.+?)["']/i);
-        if (commitMatch) s.commits.push(commitMatch[1].slice(0, 50));
-        else if (cmd.length > 3) s.bashCmds.push(cmd.slice(0, 30));
+        if (commitMatch) {
+          s.commits.push(commitMatch[1].slice(0, 80));
+        } else if (cmd.length > 3) {
+          s.bashCmds.push(cmd.slice(0, 40));
+        }
+      } else if (toolName === 'Grep' || toolName === 'Glob') {
+        // search commands: just count
+        if (filePath) {
+          const norm = filePath.replace(/\\/g, '/');
+          if (!s.toolFiles[norm]) {
+            s.toolFiles[norm] = {
+              role: _inferFileRole(norm),
+              tech: _inferTech(norm),
+              project: _extractProjectName(norm),
+              actions: {},
+            };
+          }
+          const action = _ACTION_VERB[toolName] || toolName;
+          s.toolFiles[norm].actions[action] = (s.toolFiles[norm].actions[action] || 0) + 1;
+        }
       }
+    }
+
+    // ── keyboard.chunk → 활동 분석 ──
+    if (event.type === 'keyboard.chunk') {
+      const d = event.data || {};
+      s.activities.push({
+        activity: d.activity || d.category || '',
+        app: d.app || '',
+        window: d.window || d.title || '',
+        keywords: d.keywords || d.text || '',
+      });
+    }
+
+    // ── browse/app_switch → 브라우저/AI 도구 감지 ──
+    if (event.type === 'browse' || event.type === 'app.activity' || event.type === 'app_switch') {
+      const d = event.data || {};
+      const site = d.site || d.url || d.app || '';
+      const title = d.title || d.window || '';
+      if (site || title) {
+        s.browseSites.push({ site, title });
+      }
+    }
+
+    // ── git.commit 이벤트 ──
+    if (event.type === 'git.commit') {
+      const msg = event.data?.message || event.data?.summary || event.data?.commitMessage || '';
+      if (msg) s.gitCommits.push(msg.slice(0, 80));
     }
   }
 
+  // ── 세션별 심층 요약 생성 ──────────────────────────────────
   const result = {};
   for (const [sid, s] of Object.entries(sessionMap)) {
-    // ── WHAT: 실제 행동 요약 ──
-    const parts = [];
-    const editFiles = Object.keys(s.editedFiles);
-    const createFiles = Object.keys(s.createdFiles);
-    if (editFiles.length > 0) {
-      parts.push(editFiles.slice(0, 2).join(', ') + ' 수정' + (editFiles.length > 2 ? ` 외 ${editFiles.length - 2}개` : ''));
+
+    // ── PURPOSE (WHY): 첫 user.message = 세션 목적 ──
+    let purpose = '';
+    if (s.userMessages.length > 0) {
+      // 첫 문장만 추출 (마침표/느낌표/물음표로 끊기)
+      const firstMsg = s.userMessages[0];
+      const sentenceMatch = firstMsg.match(/^(.+?[.!?。！？])\s/);
+      purpose = sentenceMatch ? sentenceMatch[1] : firstMsg;
+      if (purpose.length > 60) purpose = purpose.slice(0, 57) + '...';
     }
-    if (createFiles.length > 0) {
-      parts.push(createFiles.slice(0, 2).join(', ') + ' 작성' + (createFiles.length > 2 ? ` 외 ${createFiles.length - 2}개` : ''));
+
+    // ── WHAT: 모듈 단위 행동 요약 ──
+    // 파일들을 역할(모듈)별로 그룹화
+    const moduleGroups = {}; // role → { actions: {action: count}, count }
+    const allTechs = new Set();
+    const allProjects = {};  // projectName → count
+
+    for (const [fp, info] of Object.entries(s.toolFiles)) {
+      const role = info.role || '기타';
+      if (!moduleGroups[role]) moduleGroups[role] = { actions: {}, fileCount: 0 };
+      moduleGroups[role].fileCount++;
+      for (const [action, cnt] of Object.entries(info.actions)) {
+        moduleGroups[role].actions[action] = (moduleGroups[role].actions[action] || 0) + cnt;
+      }
+      if (info.tech) allTechs.add(info.tech);
+      if (info.project) allProjects[info.project] = (allProjects[info.project] || 0) + 1;
     }
-    if (s.webSearches > 0) parts.push(`웹 조사 ${s.webSearches}건`);
-    if (parts.length === 0) {
-      // 파일 수정 없으면 읽기 기반 요약
-      const readFiles = Object.keys(s.readFiles);
-      if (readFiles.length > 0) {
-        parts.push(readFiles.slice(0, 2).join(', ') + ' 분석');
+
+    // 모듈별 요약 (파일 수와 주된 행동)
+    const whatParts = [];
+    const sortedModules = Object.entries(moduleGroups)
+      .sort((a, b) => b[1].fileCount - a[1].fileCount);
+
+    for (const [role, group] of sortedModules) {
+      // 주된 행동 (가장 많은 액션)
+      const topAction = Object.entries(group.actions)
+        .sort((a, b) => b[1] - a[1])[0]?.[0] || '';
+      if (group.fileCount === 1) {
+        whatParts.push(`${role} ${topAction}`);
+      } else {
+        whatParts.push(`${role} ${group.fileCount}파일 ${topAction}`);
       }
     }
-    const whatSummary = parts.join(', ') || '';
+    if (s.webSearches > 0) whatParts.push(`웹 조사 ${s.webSearches}건`);
+    if (whatParts.length === 0 && s.bashCmds.length > 0) {
+      whatParts.push(`명령어 ${s.bashCmds.length}건 실행`);
+    }
+    const whatSummary = whatParts.slice(0, 3).join(', ');
 
     // ── RESULT: 결과 요약 ──
+    // 우선순위: git.commit 이벤트 > bash git commit > 마지막 assistant 요약
     let resultSummary = '';
-    if (s.commits.length > 0) {
-      // git commit 메시지가 최고 품질의 결과
+    if (s.gitCommits.length > 0) {
+      resultSummary = s.gitCommits[s.gitCommits.length - 1];
+    } else if (s.commits.length > 0) {
       resultSummary = s.commits[s.commits.length - 1];
+    } else if (s.assistantMessages.length > 0) {
+      // 마지막 assistant 메시지의 첫 문장
+      const lastAssistant = s.assistantMessages[s.assistantMessages.length - 1];
+      const sentenceMatch = lastAssistant.match(/^(.+?[.!?。！？])/);
+      resultSummary = sentenceMatch ? sentenceMatch[1] : lastAssistant;
+      if (resultSummary.length > 60) resultSummary = resultSummary.slice(0, 57) + '...';
     } else {
-      // 커밋 없으면 변경 통계
-      const totalEdit = Object.keys(s.editedFiles).length;
-      const totalCreate = Object.keys(s.createdFiles).length;
-      if (totalEdit + totalCreate > 0) {
-        const r = [];
-        if (totalEdit > 0) r.push(`${totalEdit}개 파일 수정`);
-        if (totalCreate > 0) r.push(`${totalCreate}개 파일 생성`);
-        resultSummary = r.join(', ');
+      // 변경 통계 fallback
+      const totalFiles = Object.keys(s.toolFiles).length;
+      if (totalFiles > 0) {
+        const writeCount = Object.values(s.toolFiles).filter(f =>
+          f.actions['작성'] || f.actions['Write']
+        ).length;
+        const editCount = Object.values(s.toolFiles).filter(f =>
+          f.actions['수정'] || f.actions['Edit']
+        ).length;
+        const rp = [];
+        if (editCount > 0) rp.push(`${editCount}개 파일 수정`);
+        if (writeCount > 0) rp.push(`${writeCount}개 파일 생성`);
+        resultSummary = rp.join(', ');
       }
     }
 
-    result[sid] = { whatSummary, resultSummary };
+    // ── 프로젝트명: 가장 많이 등장한 프로젝트 경로 ──
+    const projectName = Object.entries(allProjects)
+      .sort((a, b) => b[1] - a[1])[0]?.[0] || '';
+
+    // ── 기술 스택: 확장자에서 추론된 고유 기술들 ──
+    const techStack = [...allTechs].slice(0, 4).join(', ');
+
+    // ── 사용 앱: keyboard.chunk에서 ──
+    const appSet = new Set();
+    for (const act of s.activities) {
+      if (act.app) {
+        const appName = act.app.replace(/\.exe$/i, '').replace(/^com\.\w+\./i, '');
+        if (appName.length > 1 && appName.length < 30) appSet.add(appName);
+      }
+    }
+    const appsUsed = [...appSet].slice(0, 4).join(', ');
+
+    // ── AI 도구 감지: 브라우저/앱 + event.aiSource ──
+    const aiToolSet = new Set();
+    for (const browse of s.browseSites) {
+      const combined = `${browse.site} ${browse.title}`;
+      for (const [pattern, name] of _AI_TOOL_PATTERNS) {
+        if (pattern.test(combined)) { aiToolSet.add(name); break; }
+      }
+    }
+    // AI source (수집 단계에서 이미 set에 모음)
+    const _AI_SRC_LABEL = { claude: 'Claude', gemini: 'Gemini', openai: 'ChatGPT', perplexity: 'Perplexity', vscode: 'VS Code' };
+    for (const src of s.aiSources) {
+      if (_AI_SRC_LABEL[src]) aiToolSet.add(_AI_SRC_LABEL[src]);
+    }
+    const aiTools = [...aiToolSet].slice(0, 3).join(', ');
+
+    // ── 세션 지속 시간 ──
+    const duration = (s.firstTs && s.lastTs) ? _formatDuration(s.lastTs - s.firstTs) : '';
+
+    result[sid] = {
+      purpose,
+      whatSummary,
+      resultSummary,
+      projectName,
+      techStack,
+      appsUsed,
+      aiTools,
+      duration,
+    };
   }
   return result;
 }
@@ -204,9 +504,15 @@ function buildGraph(events) {
       msgPreview:   event.data?.inputPreview || event.data?.content?.slice?.(0, 50) || null,
       autoTitle:    event.autoTitle || null,
       domain:       event.domain   || null,
-      // 세션 요약 (WHY+WHAT+RESULT 텍스트박스용)
+      // 세션 요약 (WHY+WHAT+RESULT + 추가 컨텍스트)
+      purpose:        sessionSummaries[event.sessionId]?.purpose || null,
       whatSummary:    sessionSummaries[event.sessionId]?.whatSummary || null,
       resultSummary:  sessionSummaries[event.sessionId]?.resultSummary || null,
+      sessionProjectName: sessionSummaries[event.sessionId]?.projectName || null,
+      techStack:      sessionSummaries[event.sessionId]?.techStack || null,
+      appsUsed:       sessionSummaries[event.sessionId]?.appsUsed || null,
+      aiToolsUsed:    sessionSummaries[event.sessionId]?.aiTools || null,
+      sessionDuration: sessionSummaries[event.sessionId]?.duration || null,
     };
 
     nodes.push(node);

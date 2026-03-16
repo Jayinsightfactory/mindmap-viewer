@@ -264,8 +264,9 @@ function _drawWireSphere(ctx, cx, cy, R, color, opts) {
   ctx.restore();
 }
 
-// 와이어프레임 구체 내부 텍스트 라벨 (WHY + WHAT + RESULT — 구체 크면만)
-function _drawSphereLabel(ctx, cx, cy, R, title, sub, color, dimmed, whatLine, resultLine) {
+// 와이어프레임 구체 내부 텍스트 라벨 (PURPOSE + WHAT + RESULT — 3단계 심층 요약)
+// extraCtx (optional 11th param): { purpose, techStack, duration, appsUsed, aiTools }
+function _drawSphereLabel(ctx, cx, cy, R, title, sub, color, dimmed, whatLine, resultLine, extraCtx) {
   ctx.save();
   if (dimmed) ctx.globalAlpha = 0.3;
   ctx.textAlign = 'center';
@@ -273,38 +274,55 @@ function _drawSphereLabel(ctx, cx, cy, R, title, sub, color, dimmed, whatLine, r
 
   const fontSize = Math.max(8, Math.min(13, R * 0.52));
   const maxW = R * 1.6;
-  // WHAT/RESULT는 구체가 충분히 클 때만 (R >= 35px, 줌인 상태)
+  // 줌인 단계별 표시 (R >= 35: WHAT/RESULT, R >= 50: 추가 컨텍스트)
   const showExtra = R >= 35;
+  const showDeep  = R >= 50;
+  const ex = extraCtx || {};
+
+  // purpose가 있으면 제목 대신 purpose를 최우선 표시
+  const displayTitle = (ex.purpose && ex.purpose.length > 2) ? ex.purpose : title;
+  // purpose를 title로 쓰면 기존 title은 sub로 내림
+  const displaySub = (ex.purpose && ex.purpose.length > 2 && title !== ex.purpose) ? title : sub;
+
   const hasWhat = showExtra && whatLine && whatLine.length > 0;
   const hasResult = showExtra && resultLine && resultLine.length > 0;
+  // 3번째 줄: techStack + duration (둘 다 없으면 skip)
+  const line3Text = showDeep ? _buildLine3(ex) : '';
+  const hasLine3 = line3Text.length > 0;
 
-  // 제목 (구체 중앙 약간 위) — 길면 2줄로 분할
+  // 총 줄 수에 따른 수직 오프셋 계산
+  let totalLines = 1; // title always
+  if (displaySub) totalLines++;
+  if (hasWhat) totalLines++;
+  if (hasResult) totalLines++;
+  if (hasLine3) totalLines++;
+  const lineSpacing = fontSize * 0.78;
+  const blockHeight = totalLines * lineSpacing;
+  let curY = cy - blockHeight / 2 + lineSpacing / 2;
+
+  // ── Line 1: 제목 (purpose 또는 기존 title) — 길면 2줄 분할 ──
   ctx.font = `600 ${fontSize}px 'Inter',-apple-system,sans-serif`;
   ctx.fillStyle = '#e2e8f0';
-  const subOffset = sub ? fontSize * 0.4 : 0;
-  const extraOffset = (hasWhat || hasResult) ? fontSize * 0.3 : 0;
 
-  if (ctx.measureText(title).width <= maxW) {
-    // 한 줄에 들어감
-    ctx.fillText(title, cx, cy - subOffset - extraOffset);
+  if (ctx.measureText(displayTitle).width <= maxW) {
+    ctx.fillText(displayTitle, cx, curY);
+    curY += lineSpacing;
   } else {
-    // 두 줄로 분할: 중간 공백에서 자르기
-    const mid = Math.floor(title.length / 2);
+    // 두 줄로 분할
+    const mid = Math.floor(displayTitle.length / 2);
     let splitIdx = -1;
     for (let d = 0; d <= mid; d++) {
-      if (title[mid + d] === ' ') { splitIdx = mid + d; break; }
-      if (mid - d >= 0 && title[mid - d] === ' ') { splitIdx = mid - d; break; }
+      if (displayTitle[mid + d] === ' ') { splitIdx = mid + d; break; }
+      if (mid - d >= 0 && displayTitle[mid - d] === ' ') { splitIdx = mid - d; break; }
     }
     let line1, line2;
     if (splitIdx > 0) {
-      line1 = title.slice(0, splitIdx);
-      line2 = title.slice(splitIdx + 1);
+      line1 = displayTitle.slice(0, splitIdx);
+      line2 = displayTitle.slice(splitIdx + 1);
     } else {
-      // 공백 없으면 글자 수로 반 분할
-      line1 = title.slice(0, mid);
-      line2 = title.slice(mid);
+      line1 = displayTitle.slice(0, mid);
+      line2 = displayTitle.slice(mid);
     }
-    // 각 줄이 maxW 초과하면 잘라내기
     if (ctx.measureText(line1).width > maxW) {
       while (ctx.measureText(line1).width > maxW && line1.length > 1) line1 = line1.slice(0, -1);
       line1 += '\u2026';
@@ -313,37 +331,59 @@ function _drawSphereLabel(ctx, cx, cy, R, title, sub, color, dimmed, whatLine, r
       while (ctx.measureText(line2).width > maxW && line2.length > 1) line2 = line2.slice(0, -1);
       line2 += '\u2026';
     }
-    const lineGap = fontSize * 0.55;
-    ctx.fillText(line1, cx, cy - subOffset - extraOffset - lineGap / 2);
-    ctx.fillText(line2, cx, cy - subOffset - extraOffset + lineGap / 2);
+    const halfGap = fontSize * 0.28;
+    ctx.fillText(line1, cx, curY - halfGap);
+    ctx.fillText(line2, cx, curY + halfGap);
+    curY += lineSpacing;
   }
 
-  // 부제 (구체 중앙 약간 아래)
-  if (sub) {
+  // ── Line 1.5: 부제 (프로젝트명 등) ──
+  if (displaySub) {
     const subSize = Math.max(7, fontSize - 2);
     ctx.font = `400 ${subSize}px 'JetBrains Mono','Fira Code',monospace`;
     ctx.fillStyle = '#94a3b8';
-    let cs = sub.length > 22 ? sub.slice(0, 21) + '\u2026' : sub;
-    ctx.fillText(cs, cx, cy + fontSize * 0.35 - extraOffset);
+    let cs = displaySub.length > 24 ? displaySub.slice(0, 23) + '\u2026' : displaySub;
+    ctx.fillText(cs, cx, curY);
+    curY += lineSpacing * 0.85;
   }
 
-  // WHAT (하늘색 — 줌인 시만)
+  // ── Line 2: WHAT — 모듈 단위 행동 (하늘색) ──
   if (hasWhat) {
     const whatSize = Math.max(6, fontSize - 2);
     ctx.font = `400 ${whatSize}px 'JetBrains Mono','Fira Code',monospace`;
     ctx.fillStyle = '#7dd3fc';
-    let cw = whatLine.length > 24 ? whatLine.slice(0, 23) + '\u2026' : whatLine;
-    ctx.fillText(cw, cx, cy + fontSize * 0.95);
+    let cw = whatLine.length > 26 ? whatLine.slice(0, 25) + '\u2026' : whatLine;
+    ctx.fillText(cw, cx, curY);
+    curY += lineSpacing * 0.85;
   }
 
-  // RESULT (초록색 — 줌인 시만)
+  // ── Line 3: RESULT — 결과 요약 (초록색) ──
   if (hasResult) {
     const resSize = Math.max(6, fontSize - 2);
     ctx.font = `400 ${resSize}px 'JetBrains Mono','Fira Code',monospace`;
     ctx.fillStyle = '#86efac';
-    let cr = resultLine.length > 24 ? resultLine.slice(0, 23) + '\u2026' : resultLine;
-    ctx.fillText(cr, cx, cy + fontSize * (hasWhat ? 1.75 : 0.95));
+    let cr = resultLine.length > 26 ? resultLine.slice(0, 25) + '\u2026' : resultLine;
+    ctx.fillText(cr, cx, curY);
+    curY += lineSpacing * 0.85;
+  }
+
+  // ── Line 4: 추가 컨텍스트 (techStack + duration, 보라색 — 매우 줌인 시만) ──
+  if (hasLine3) {
+    const ctxSize = Math.max(6, fontSize - 3);
+    ctx.font = `400 ${ctxSize}px 'JetBrains Mono','Fira Code',monospace`;
+    ctx.fillStyle = '#c4b5fd';
+    let cl = line3Text.length > 28 ? line3Text.slice(0, 27) + '\u2026' : line3Text;
+    ctx.fillText(cl, cx, curY);
   }
 
   ctx.restore();
+}
+
+// 3번째 줄 텍스트 조합 (techStack + duration + aiTools)
+function _buildLine3(ex) {
+  const parts = [];
+  if (ex.techStack) parts.push(ex.techStack);
+  if (ex.duration) parts.push(ex.duration);
+  if (ex.aiTools && parts.length < 2) parts.push(ex.aiTools);
+  return parts.join(' \u00B7 '); // middle dot separator
 }

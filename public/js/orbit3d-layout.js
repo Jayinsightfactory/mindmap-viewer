@@ -345,17 +345,22 @@ function drawCompactProjectView() {
       ctx.restore();
     }
 
-    // 라벨 + WHAT/RESULT 요약
+    // 라벨 + 심층 세션 요약 (PURPOSE + WHAT + RESULT + 추가 컨텍스트)
     const projTitle = _aliases[proj.name] || `${info.icon} ${info.name}`;
     const projSub = '';
-    // 프로젝트 내 행성들의 WHAT/RESULT 집계
-    let projWhat = '', projResult = '';
+    // 프로젝트 내 행성들의 요약 집계
+    let projWhat = '', projResult = '', projPurpose = '', projTech = '', projDuration = '', projAiTools = '';
     for (const p of proj.planets) {
+      if (!projPurpose && p.userData.purpose) projPurpose = p.userData.purpose;
       if (!projWhat && p.userData.whatSummary) projWhat = p.userData.whatSummary;
       if (!projResult && p.userData.resultSummary) projResult = p.userData.resultSummary;
-      if (projWhat && projResult) break;
+      if (!projTech && p.userData.techStack) projTech = p.userData.techStack;
+      if (!projDuration && p.userData.sessionDuration) projDuration = p.userData.sessionDuration;
+      if (!projAiTools && p.userData.aiToolsUsed) projAiTools = p.userData.aiToolsUsed;
+      if (projWhat && projResult && projPurpose) break;
     }
-    _drawSphereLabel(ctx, sc.x, sc.y, nodeR, projTitle, projSub, color, dimmed, projWhat, projResult);
+    const projExtraCtx = { purpose: projPurpose, techStack: projTech, duration: projDuration, aiTools: projAiTools };
+    _drawSphereLabel(ctx, sc.x, sc.y, nodeR, projTitle, projSub, color, dimmed, projWhat, projResult, projExtraCtx);
 
     ctx.globalAlpha = 1;
 
@@ -476,7 +481,13 @@ function drawCompactProjectView() {
           });
           const sesWhat = planet.userData.whatSummary || '';
           const sesResult = planet.userData.resultSummary || '';
-          _drawSphereLabel(ctx, sesSc.x, sesSc.y, sesR, sLabel, sesSub, cfg.color, false, sesWhat, sesResult);
+          const sesExtraCtx = {
+            purpose: planet.userData.purpose || '',
+            techStack: planet.userData.techStack || '',
+            duration: planet.userData.sessionDuration || '',
+            aiTools: planet.userData.aiToolsUsed || '',
+          };
+          _drawSphereLabel(ctx, sesSc.x, sesSc.y, sesR, sLabel, sesSub, cfg.color, false, sesWhat, sesResult, sesExtraCtx);
 
           registerHitArea({
             cx: sesSc.x, cy: sesSc.y, r: sesR + 4,

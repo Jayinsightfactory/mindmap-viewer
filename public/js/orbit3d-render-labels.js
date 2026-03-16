@@ -304,29 +304,54 @@ function drawLabels() {
       _lctx.textAlign = 'center';
     }
 
-    // ── 서브 정보 — 이벤트 수 + WHAT/RESULT (줌인 시만) ──────────────────
+    // ── 서브 정보 — PURPOSE + WHAT/RESULT + 컨텍스트 (줌인 시만) ────────
     if (evCnt > 0 && pxSize >= 13) {
       const sub = Math.max(9, pxSize * 0.5);
       _lctx.font = `500 ${sub}px -apple-system,sans-serif`;
       let tagY = _ly + ph + sub + 1;
       _lctx.fillStyle = hex + '88';
-      _lctx.fillText(`${evCnt}개 작업`, sc.x, tagY);
+      // purpose가 있으면 이벤트 수 대신 purpose 표시
+      const purposeLine = p.userData.purpose || '';
+      if (purposeLine && pxSize >= 15) {
+        _lctx.fillStyle = '#fbbf2488';
+        _lctx.fillText(purposeLine.slice(0, 30), sc.x, tagY);
+        tagY += sub + 1;
+        _lctx.fillStyle = hex + '66';
+        _lctx.font = `400 ${Math.max(8, sub - 2)}px -apple-system,sans-serif`;
+        _lctx.fillText(`${evCnt}개 작업`, sc.x, tagY);
+      } else {
+        _lctx.fillText(`${evCnt}개 작업`, sc.x, tagY);
+      }
 
-      // WHAT/RESULT는 충분히 줌인 시만 (pxSize >= 18 = 매우 가까이)
+      // WHAT/RESULT/컨텍스트는 충분히 줌인 시만 (pxSize >= 18)
       if (pxSize >= 18) {
         const whatLine = p.userData.whatSummary || '';
         if (whatLine) {
           tagY += sub + 2;
           _lctx.font = `400 ${Math.max(8, sub - 1)}px 'JetBrains Mono',monospace`;
           _lctx.fillStyle = '#7dd3fc88';
-          _lctx.fillText(whatLine.slice(0, 28), sc.x, tagY);
+          _lctx.fillText(whatLine.slice(0, 30), sc.x, tagY);
         }
         const resultLine = p.userData.resultSummary || '';
         if (resultLine) {
           tagY += sub + 2;
           _lctx.font = `400 ${Math.max(8, sub - 1)}px 'JetBrains Mono',monospace`;
           _lctx.fillStyle = '#86efac88';
-          _lctx.fillText(resultLine.slice(0, 28), sc.x, tagY);
+          _lctx.fillText(resultLine.slice(0, 30), sc.x, tagY);
+        }
+        // 추가 컨텍스트: techStack + duration (pxSize >= 22 = 매우 가까이)
+        if (pxSize >= 22) {
+          const ctxParts = [];
+          if (p.userData.techStack) ctxParts.push(p.userData.techStack);
+          if (p.userData.sessionDuration) ctxParts.push(p.userData.sessionDuration);
+          if (p.userData.aiToolsUsed && ctxParts.length < 2) ctxParts.push(p.userData.aiToolsUsed);
+          const ctxLine = ctxParts.join(' \u00B7 ');
+          if (ctxLine) {
+            tagY += sub + 2;
+            _lctx.font = `400 ${Math.max(7, sub - 2)}px 'JetBrains Mono',monospace`;
+            _lctx.fillStyle = '#c4b5fd77';
+            _lctx.fillText(ctxLine.slice(0, 32), sc.x, tagY);
+          }
         }
       }
     }

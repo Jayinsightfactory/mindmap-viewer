@@ -100,31 +100,71 @@ function buildPlanetSystem(nodeList) {
       : rawEvents;
     if (filtered.length === 0) continue;
 
-    // ── 프로젝트명 추출 ─────────────────────────────────────────────────
+    // ── 프로젝트명 추출 (심층 경로 분석) ──────────────────────────────────
+    const _SYSTEM_SEGS = new Set([
+      'users','home','usr','var','tmp','temp','opt','etc',
+      'windows','system32','program files','program files (x86)',
+      'appdata','local','roaming','library','application support',
+      'node_modules','.git','.gradle','build','dist','out','target',
+      'bin','obj','packages','.pub-cache','.m2','.npm',
+      'src','main','java','kotlin','res','app',
+      'c','d','e','documents','desktop','downloads',
+      'cloudstorage','googledrive','google drive',
+    ]);
+
+    // 파일 경로에서 프로젝트명 추출 (가장 깊은 의미 있는 디렉토리)
+    function _smartProjectFromPath(filePath) {
+      if (!filePath) return null;
+      const segs = filePath.replace(/\\/g,'/').split('/').filter(Boolean);
+      // 파일명 제외 (마지막 세그먼트)
+      for (let i = segs.length - 2; i >= 0; i--) {
+        const seg = segs[i];
+        const low = seg.toLowerCase();
+        if (_SYSTEM_SEGS.has(low)) continue;
+        if (low.startsWith('.')) continue;
+        if (/^\d+$/.test(seg)) continue;
+        if (low.length < 2) continue;
+        // "내 드라이브" 같은 한국어 시스템 경로도 스킵
+        if (/^(내 드라이브|my drive|shared drives)$/i.test(seg)) continue;
+        return seg;
+      }
+      return null;
+    }
+
     const startEv = rawEvents.find(e => e.type === 'session.start');
     const pd      = startEv?.data?.projectDir || startEv?.data?.cwd || '';
     let projName;
     if (pd) {
-      projName = pd.replace(/\\/g,'/').split('/').filter(Boolean).pop();
+      // projectDir/cwd에서도 스마트 추출 시도
+      projName = _smartProjectFromPath(pd + '/dummy') || pd.replace(/\\/g,'/').split('/').filter(Boolean).pop();
     } else {
-      // 1순위: 첫 user.message 내용으로 프로젝트명 추론
+      // 1순위: 파일 경로 분석 — 모든 파일 경로에서 공통 프로젝트명 추출
+      const projCounts = {};
+      rawEvents.forEach(e => {
+        const fps = [
+          e.data?.filePath, e.data?.input?.file_path,
+          ...(e.data?.files || []),
+        ].filter(Boolean);
+        fps.forEach(fp => {
+          const proj = _smartProjectFromPath(fp);
+          if (proj) projCounts[proj] = (projCounts[proj] || 0) + 1;
+        });
+      });
+      const topProj = Object.entries(projCounts).sort((a,b) => b[1] - a[1])[0]?.[0];
+
+      // 2순위: 노드에 이미 주입된 sessionProjectName (graph-engine에서 계산)
+      const _nodeProj = rawEvents[0]?.sessionProjectName;
+
+      // 3순위: 첫 user.message
       const _firstUserMsg = rawEvents.find(e => e.type === 'user.message');
       const _msgText = (_firstUserMsg?.data?.contentPreview || _firstUserMsg?.data?.content || '').replace(/[\n\r]/g, ' ').trim();
 
-      // 2순위: 가장 많이 등장한 파일 디렉터리
-      const fileCounts = {};
-      rawEvents.forEach(e => {
-        const fp = (e.data?.filePath||e.data?.fileName||'').replace(/\\/g,'/');
-        const dir = fp.split('/').filter(Boolean).slice(-2,-1)[0];
-        if (dir && dir !== '.') fileCounts[dir] = (fileCounts[dir]||0) + 1;
-      });
-      const topDir = Object.entries(fileCounts).sort((a,b)=>b[1]-a[1])[0]?.[0];
-
-      if (_msgText.length > 3) {
-        // 첫 메시지가 있으면 그걸 프로젝트명으로 (30자 제한)
+      if (topProj) {
+        projName = topProj;
+      } else if (_nodeProj) {
+        projName = _nodeProj;
+      } else if (_msgText.length > 3) {
         projName = _msgText.slice(0, 30);
-      } else if (topDir) {
-        projName = topDir;
       } else if (/^session-([a-zA-Z][a-zA-Z0-9_-]*?)(?:-\d{10,})?$/.test(sid)) {
         projName = sid.match(/^session-([a-zA-Z][a-zA-Z0-9_-]*?)(?:-\d{10,})?$/)[1];
       } else if (/^wf\d+-\d/.test(sid)) {
@@ -302,46 +342,21 @@ function buildPlanetSystem(nodeList) {
     const _fmsg = rawEvents.find(e => e.type === 'user.message');
     planet.userData.firstMsg = (_fmsg?.data?.contentPreview || _fmsg?.data?.content || _fmsg?.label || '').slice(0, 40);
     planet.userData.msgPreview = pl.msgPreview || '';
-    // WHAT/RESULT 요약 (텍스트박스 표시용 — 사람이 이해할 수 있는 행동+결과)
-    const _edited = {}, _created = {}, _read = {};
-    let _webCount = 0;
-    const _commits = [];
-    rawEvents.forEach(e => {
-      if (e.type !== 'tool.end') return;
-      const tn = e.data?.toolName || '';
-      const fp = e.data?.filePath || e.data?.input?.file_path || e.data?.files?.[0] || '';
-      const fn = fp ? fp.replace(/\\/g, '/').split('/').pop() : '';
-      if (tn === 'Edit' && fn) _edited[fn] = (_edited[fn] || 0) + 1;
-      else if (tn === 'Write' && fn) _created[fn] = (_created[fn] || 0) + 1;
-      else if (tn === 'Read' && fn) _read[fn] = (_read[fn] || 0) + 1;
-      else if (tn === 'WebSearch' || tn === 'WebFetch') _webCount++;
-      else if (tn === 'Bash') {
-        const cmd = String(e.data.inputPreview || e.data.input?.command || '');
-        const cm = cmd.match(/git commit.*-m\s+["'](.+?)["']/i);
-        if (cm) _commits.push(cm[1].slice(0, 50));
-      }
-    });
-    // WHAT: "server.js 수정, db-pg.js 작성" 식으로
-    const _wp = [];
-    const ef = Object.keys(_edited);
-    const cf = Object.keys(_created);
-    if (ef.length > 0) _wp.push(ef.slice(0,2).join(', ') + ' 수정' + (ef.length > 2 ? ` 외 ${ef.length-2}개` : ''));
-    if (cf.length > 0) _wp.push(cf.slice(0,2).join(', ') + ' 작성' + (cf.length > 2 ? ` 외 ${cf.length-2}개` : ''));
-    if (_webCount > 0) _wp.push(`웹 조사 ${_webCount}건`);
-    if (_wp.length === 0) {
-      const rf = Object.keys(_read);
-      if (rf.length > 0) _wp.push(rf.slice(0,2).join(', ') + ' 분석');
-    }
-    planet.userData.whatSummary = _wp.join(', ') || rawEvents[0]?.whatSummary || '';
-    // RESULT: 커밋 메시지 또는 파일 변경 통계
-    if (_commits.length > 0) {
-      planet.userData.resultSummary = _commits[_commits.length - 1];
-    } else {
-      const te = Object.keys(_edited).length, tc = Object.keys(_created).length;
-      const rp = [];
-      if (te > 0) rp.push(`${te}개 파일 수정`);
-      if (tc > 0) rp.push(`${tc}개 파일 생성`);
-      planet.userData.resultSummary = rp.join(', ') || rawEvents[0]?.resultSummary || '';
+    // 세션 요약 (graph-engine.js computeSessionSummaries 에서 미리 계산됨)
+    // 노드에 이미 주입된 심층 분석 필드를 행성에 전파
+    const _firstNode = rawEvents[0];
+    planet.userData.purpose       = _firstNode?.purpose || '';
+    planet.userData.whatSummary   = _firstNode?.whatSummary || '';
+    planet.userData.resultSummary = _firstNode?.resultSummary || '';
+    planet.userData.techStack     = _firstNode?.techStack || '';
+    planet.userData.appsUsed      = _firstNode?.appsUsed || '';
+    planet.userData.aiToolsUsed   = _firstNode?.aiToolsUsed || '';
+    planet.userData.sessionDuration = _firstNode?.sessionDuration || '';
+    // 프로젝트명: session 분석 결과 > 기존 projName
+    if (_firstNode?.sessionProjectName && !projName.startsWith('작업')) {
+      // 기존 projName이 이미 의미 있으면 유지, 아니면 세션 분석 결과 사용
+    } else if (_firstNode?.sessionProjectName) {
+      planet.userData.projectName = _firstNode.sessionProjectName;
     }
     scene.add(planet);
     planetMeshes.push(planet);
