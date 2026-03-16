@@ -244,11 +244,8 @@ renderer.domElement.addEventListener('click', e => {
       }
     } else if (_teamMode) {
       if (type === 'member') {
-        if (_focusedMember === hit.data) {
-          drillDownToMember(hit.data);
-        } else {
-          focusMember(hit.data);
-        }
+        // 싱글클릭 → 바로 드릴다운 (프로젝트 세션 표시)
+        drillDownToMember(hit.data);
       } else if (_focusedMember && type === 'goal') {
         unfocusMember();
       }
