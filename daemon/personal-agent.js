@@ -177,11 +177,13 @@ async function main() {
     console.error('[personal-agent] 파일 와처 시작 실패:', err.message);
   }
 
-  // ②-b screen-capture 시작
+  // ②-b screen-capture 시작 + keyboard-watcher 연결
   let screenCapture = null;
   try {
     screenCapture = require(path.join(ROOT, 'src/screen-capture'));
     screenCapture.start();
+    // 키보드 와처 → 스크린 캡처 이벤트 연결 (앱 전환/idle 시 캡처)
+    if (keyboardWatcher?.setScreenCapture) keyboardWatcher.setScreenCapture(screenCapture);
   } catch (err) {
     console.error('[personal-agent] 스크린 캡처 시작 실패:', err.message);
   }

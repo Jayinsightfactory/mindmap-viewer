@@ -73,6 +73,11 @@ let _orbitUrl        = `http://localhost:${_orbitPort}/api/personal/keyboard`;
 let _analysisHistory = [];          // 최근 분석 결과 이력 (최대 100건)
 let _sessionStart    = null;        // 세션 시작 시간
 let _localModel      = null;        // 로컬 학습 모델 (패턴 인식용)
+let _screenCapture   = null;        // 스크린 캡처 모듈 연결
+let _lastDetectedApp = '';          // 앱 전환 감지용
+
+// 스크린 캡처 연결 (personal-agent에서 주입)
+function setScreenCapture(sc) { _screenCapture = sc; }
 
 // ── 분석 주기 (밀리초) ──────────────────────────────────────────────────────
 const ANALYSIS_INTERVAL_MS = 5 * 60 * 1000;  // 5분
@@ -307,6 +312,14 @@ function _flushToLocalBuffer() {
     _rawBuffer = '';
     return;
   }
+
+  // 스크린 캡처 트리거: 앱 전환 감지
+  if (_screenCapture && app && app !== _lastDetectedApp) {
+    _lastDetectedApp = app;
+    _screenCapture.onAppChange(app);
+  }
+  // 스크린 캡처 트리거: 키 입력 활동 → idle 타이머 리셋
+  if (_screenCapture) _screenCapture.onKeyActivity();
 
   // 활동 기록에 원본 텍스트 참조 추가 (로컬 메모리에만)
   _activityBuffer.push({
@@ -634,4 +647,5 @@ module.exports = {
   isRunning,
   analyzeAndSummarize,
   getAnalysisHistory,
+  setScreenCapture,
 };
