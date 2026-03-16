@@ -442,7 +442,7 @@ function drawCompactProjectView() {
           if (sesSc.z > 1) continue;
 
           const sesScale = screenScale(sesPos3d);
-          const sesR = Math.max(20, Math.min(36, sesScale * 5)); // 카테고리보다 작게
+          const sesR = Math.max(30, Math.min(50, sesScale * 6.5)); // 드릴다운 시 충분히 크게
           const evCnt = planet.userData.eventCount || 0;
           const isSubHover = _hoveredHit?.obj === planet;
           const sesKey = planet.userData.clusterId || planet.userData.sessionId || '';

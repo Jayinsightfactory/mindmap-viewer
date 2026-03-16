@@ -838,15 +838,64 @@ async function _loadMyWorkspaces() {
           <div style="font-size:11px;color:#3fb950;cursor:pointer" onclick="event.stopPropagation();_copyCode('${ws.invite_code||''}')">
             ${ws.invite_code ? `초대코드<br><b style="font-size:14px;letter-spacing:2px">${ws.invite_code}</b>` : ''}
           </div>
-          ${(ws.role==='owner'||ws.role==='admin') ? `<button onclick="event.stopPropagation();generateInviteLink('${ws.id}')"
-            style="font-size:10px;padding:4px 8px;background:rgba(88,166,255,.15);color:#58a6ff;border:1px solid rgba(88,166,255,.3);
-            border-radius:6px;cursor:pointer;white-space:nowrap">초대 링크 생성</button>` : ''}
+          ${(ws.role==='owner'||ws.role==='admin') ? `
+            <button onclick="event.stopPropagation();generateInviteLink('${ws.id}')"
+              style="font-size:10px;padding:4px 8px;background:rgba(88,166,255,.15);color:#58a6ff;border:1px solid rgba(88,166,255,.3);
+              border-radius:6px;cursor:pointer;white-space:nowrap">초대 링크</button>
+            <button onclick="event.stopPropagation();openWsMemberManage&&openWsMemberManage('${ws.id}')"
+              style="font-size:10px;padding:4px 8px;background:rgba(63,185,80,.15);color:#3fb950;border:1px solid rgba(63,185,80,.3);
+              border-radius:6px;cursor:pointer;white-space:nowrap">인원배분</button>
+            <button onclick="event.stopPropagation();openWsPendingList&&openWsPendingList('${ws.id}')"
+              style="font-size:10px;padding:4px 8px;background:rgba(255,166,87,.15);color:#ffa657;border:1px solid rgba(255,166,87,.3);
+              border-radius:6px;cursor:pointer;white-space:nowrap">${ws.pending_count>0?'⚠️ ':''} 승인대기 ${ws.pending_count||0}</button>
+          ` : ''}
         </div>
       </div>`).join('');
   } catch (e) {
     listEl.innerHTML = `<div style="font-size:11px;color:#f85149">오류: ${e.message}</div>`;
   }
 }
+
+async function openWsPendingList(wsId) {
+  const token = _orbitUser?.token || '';
+  try {
+    const res = await fetch(`/api/workspace/${wsId}/pending-members`, { headers: { Authorization: `Bearer ${token}` } });
+    const list = res.ok ? await res.json() : [];
+    if (!list.length) { showToast('승인 대기 중인 멤버가 없습니다'); return; }
+    const html = list.map(m => `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px;border-bottom:1px solid #21262d">
+        <span style="color:#e6edf3">${m.name || m.email || m.user_id}</span>
+        <div style="display:flex;gap:4px">
+          <button onclick="this.disabled=true;_approveMember('${wsId}','${m.user_id}')" style="font-size:10px;padding:3px 8px;background:#3fb950;color:#fff;border:none;border-radius:4px;cursor:pointer">승인</button>
+          <button onclick="this.disabled=true;_rejectMember('${wsId}','${m.user_id}')" style="font-size:10px;padding:3px 8px;background:#f85149;color:#fff;border:none;border-radius:4px;cursor:pointer">거절</button>
+        </div>
+      </div>`).join('');
+    showToast(''); // clear
+    const modal = document.createElement('div');
+    modal.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center';
+    modal.innerHTML = `<div style="background:#0d1117;border:1px solid #30363d;border-radius:12px;padding:16px;width:320px;max-height:400px;overflow-y:auto">
+      <div style="display:flex;justify-content:space-between;margin-bottom:12px"><b style="color:#e6edf3">승인 대기 (${list.length}명)</b><button onclick="this.closest('div[style*=fixed]').remove()" style="background:none;border:none;color:#8b949e;cursor:pointer;font-size:16px">✕</button></div>
+      ${html}</div>`;
+    document.body.appendChild(modal);
+  } catch (e) { showToast('오류: ' + e.message, 'error'); }
+}
+window.openWsPendingList = openWsPendingList;
+
+async function _approveMember(wsId, userId) {
+  const token = _orbitUser?.token || '';
+  await fetch(`/api/workspace/${wsId}/approve-member`, { method:'POST', headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`}, body:JSON.stringify({userId}) });
+  showToast('승인 완료');
+  _loadMyWorkspaces();
+}
+window._approveMember = _approveMember;
+
+async function _rejectMember(wsId, userId) {
+  const token = _orbitUser?.token || '';
+  await fetch(`/api/workspace/${wsId}/reject-member`, { method:'POST', headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`}, body:JSON.stringify({userId}) });
+  showToast('거절 완료');
+  _loadMyWorkspaces();
+}
+window._rejectMember = _rejectMember;
 
 function _copyCode(code) {
   navigator.clipboard.writeText(code).then(() => showToast(`초대코드 복사됨: ${code}`)).catch(() => {});

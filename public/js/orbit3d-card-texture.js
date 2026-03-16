@@ -272,21 +272,19 @@ function _drawSphereLabel(ctx, cx, cy, R, title, sub, color, dimmed, whatLine, r
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
 
-  const fontSize = Math.max(8, Math.min(13, R * 0.52));
-  const maxW = R * 1.6;
+  const fontSize = Math.max(7, Math.min(12, R * 0.45));
+  const maxW = R * 1.5; // 구체 지름의 75% (텍스트가 밖으로 안 나감)
   const ex = extraCtx || {};
 
-  // 구체 크기별 텍스트 제한 (겹침 방지)
-  // R < 25: 제목 1줄만
-  // R 25~40: 제목 + sub (2줄)
-  // R >= 40: 제목 + sub + WHAT 또는 RESULT (최대 3줄)
-  const maxLines = R < 25 ? 1 : R < 40 ? 2 : 3;
+  // 구체 높이 내 맞출 수 있는 줄 수 계산
+  const lineH = fontSize * 0.85;
+  const maxFitLines = Math.max(1, Math.floor((R * 1.4) / lineH)); // 구체 70% 영역
+  const maxLines = Math.min(maxFitLines, 3);
 
-  // 제목: purpose가 있으면 우선 사용
-  const displayTitle = (ex.purpose && ex.purpose.length > 2) ? ex.purpose : title;
-  const displaySub = maxLines >= 2 ? ((ex.purpose && ex.purpose.length > 2 && title !== ex.purpose) ? title : sub) : '';
+  const displayTitle = title; // 항상 기존 title 사용 (purpose 중복 제거)
+  const displaySub = maxLines >= 2 ? (sub || '') : '';
   const hasWhat = maxLines >= 3 && whatLine && whatLine.length > 0;
-  const hasResult = !hasWhat && maxLines >= 3 && resultLine && resultLine.length > 0; // WHAT 없을때만 RESULT
+  const hasResult = !hasWhat && maxLines >= 3 && resultLine && resultLine.length > 0;
 
   // 총 줄 수에 따른 수직 오프셋 계산
   let totalLines = 1;
