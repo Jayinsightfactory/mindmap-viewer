@@ -355,10 +355,9 @@ function _buildPlanetSystemInner(nodeList) {
     planet.userData.appsUsed      = _firstNode?.appsUsed || '';
     planet.userData.aiToolsUsed   = _firstNode?.aiToolsUsed || '';
     planet.userData.sessionDuration = _firstNode?.sessionDuration || '';
-    // 프로젝트명: session 분석 결과 > 기존 projName
-    if (_firstNode?.sessionProjectName && !projName.startsWith('작업')) {
-      // 기존 projName이 이미 의미 있으면 유지, 아니면 세션 분석 결과 사용
-    } else if (_firstNode?.sessionProjectName) {
+    // 프로젝트명: session 분석 결과로 보강
+    const _curProj = planet.userData.projectName || '';
+    if (_firstNode?.sessionProjectName && (_curProj === '작업 세션' || _curProj === '기본 작업' || !_curProj)) {
       planet.userData.projectName = _firstNode.sessionProjectName;
     }
     scene.add(planet);
