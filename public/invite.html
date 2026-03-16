@@ -18,10 +18,13 @@
   .invite-ws-name { font-size: 18px; font-weight: 600; color: #58a6ff; }
   .invite-company { font-size: 13px; color: #8b949e; margin-top: 4px; }
   .invite-members { font-size: 12px; color: #6e7681; margin-top: 8px; }
+  .invite-expiry { font-size: 13px; color: #f0883e; margin-top: 10px; font-weight: 600; }
+  .invite-expiry.expired { color: #f85149; }
   .invite-btn { display: inline-block; background: #238636; color: #fff; border: none;
                 border-radius: 8px; padding: 12px 32px; font-size: 15px; font-weight: 600;
                 cursor: pointer; text-decoration: none; transition: background .2s; }
   .invite-btn:hover { background: #2ea043; }
+  .invite-btn:disabled { background: #30363d; color: #6e7681; cursor: not-allowed; }
   .invite-err { color: #f85149; font-size: 13px; margin-top: 16px; }
   .invite-login { font-size: 12px; color: #8b949e; margin-top: 16px; }
   .invite-login a { color: #58a6ff; text-decoration: none; }
@@ -36,11 +39,12 @@
     <div class="invite-ws-name" id="ws-name"></div>
     <div class="invite-company" id="ws-company"></div>
     <div class="invite-members" id="ws-members"></div>
+    <div class="invite-expiry" id="ws-expiry" style="display:none"></div>
   </div>
   <div id="loading" style="font-size:13px;color:#8b949e">불러오는 중...</div>
   <div id="err" class="invite-err" style="display:none"></div>
   <div id="actions" style="display:none">
-    <button class="invite-btn" onclick="joinWorkspace()">참여하기</button>
+    <button class="invite-btn" id="join-btn" onclick="joinWorkspace()">참여하기</button>
   </div>
   <div class="invite-login">
     이미 계정이 있나요? <a href="/orbit3d.html">로그인하기</a>
@@ -48,18 +52,24 @@
 </div>
 <script>
 const code = location.pathname.split('/invite/')[1] || location.search.replace('?code=','');
+let _expiresAt = null;
+let _countdownTimer = null;
+
 if (!code) {
   document.getElementById('loading').style.display = 'none';
   document.getElementById('err').style.display = 'block';
   document.getElementById('err').textContent = '유효하지 않은 초대 링크입니다.';
 } else {
   fetch('/api/workspace/invite/' + code)
-    .then(r => r.json())
+    .then(r => {
+      if (r.status === 410) return r.json().then(d => { throw new Error(d.error || '만료된 코드'); });
+      return r.json();
+    })
     .then(d => {
       document.getElementById('loading').style.display = 'none';
       if (d.error) {
         document.getElementById('err').style.display = 'block';
-        document.getElementById('err').textContent = '유효하지 않은 초대코드입니다.';
+        document.getElementById('err').textContent = d.error || '유효하지 않은 초대코드입니다.';
         return;
       }
       document.getElementById('info').style.display = 'block';
@@ -67,18 +77,50 @@ if (!code) {
       document.getElementById('ws-company').textContent = d.company_name || '';
       document.getElementById('ws-members').textContent = (d.member_count || 0) + '명 참여 중';
       document.getElementById('actions').style.display = 'block';
+
+      // 만료형 코드: 남은 시간 표시
+      if (d.expires_at && d.type === 'timed') {
+        _expiresAt = new Date(d.expires_at);
+        const expiryEl = document.getElementById('ws-expiry');
+        expiryEl.style.display = 'block';
+        updateCountdown();
+        _countdownTimer = setInterval(updateCountdown, 1000);
+      }
     })
-    .catch(() => {
+    .catch(e => {
       document.getElementById('loading').style.display = 'none';
       document.getElementById('err').style.display = 'block';
-      document.getElementById('err').textContent = '서버 연결에 실패했습니다.';
+      document.getElementById('err').textContent = e.message || '서버 연결에 실패했습니다.';
     });
 }
+
+function updateCountdown() {
+  if (!_expiresAt) return;
+  const expiryEl = document.getElementById('ws-expiry');
+  const remaining = _expiresAt - new Date();
+  if (remaining <= 0) {
+    expiryEl.textContent = '초대 링크가 만료되었습니다';
+    expiryEl.classList.add('expired');
+    document.getElementById('join-btn').disabled = true;
+    document.getElementById('join-btn').textContent = '만료됨';
+    if (_countdownTimer) clearInterval(_countdownTimer);
+    return;
+  }
+  const mins = Math.floor(remaining / 60000);
+  const secs = Math.floor((remaining % 60000) / 1000);
+  expiryEl.textContent = `남은 시간: ${String(mins).padStart(2,'0')}:${String(secs).padStart(2,'0')}`;
+}
+
 function joinWorkspace() {
+  // 만료 체크
+  if (_expiresAt && _expiresAt < new Date()) {
+    alert('초대 링크가 만료되었습니다.');
+    return;
+  }
   const token = localStorage.getItem('orbit_token');
   if (!token) {
     localStorage.setItem('orbit_pending_invite', code);
-    location.href = '/orbit3d.html';
+    location.href = '/orbit3d.html?invite=' + code;
     return;
   }
   fetch('/api/workspace/join', {

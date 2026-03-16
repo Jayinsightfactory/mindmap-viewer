@@ -140,6 +140,14 @@ async function _postLoginSync(token) {
 
     // 6) 데이터 새로 로드
     setTimeout(() => loadData(), 500);
+
+    // 7) 대기 중인 초대코드 자동 참여
+    if (typeof window._pendingInviteJoin === 'function') {
+      setTimeout(() => {
+        window._pendingInviteJoin();
+        window._pendingInviteJoin = null;
+      }, 1000);
+    }
   } catch (e) {
     console.warn('[postLoginSync]', e.message);
     loadData();

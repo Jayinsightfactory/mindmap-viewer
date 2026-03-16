@@ -298,6 +298,59 @@ window.doLogoutMain = doLogoutMain;
   }
 })();
 
+// ── 초대 링크 자동 참여 처리 ───────────────────────────────────────────────
+// URL: /orbit3d.html?invite=CODE  또는 localStorage orbit_pending_invite
+(function handleInviteCode() {
+  const params = new URLSearchParams(window.location.search);
+  const inviteCode = params.get('invite') || localStorage.getItem('orbit_pending_invite');
+  if (!inviteCode) return;
+
+  // URL에서 invite 파라미터 제거
+  if (params.get('invite')) {
+    params.delete('invite');
+    const qs = params.toString();
+    window.history.replaceState({}, '', window.location.pathname + (qs ? '?' + qs : ''));
+  }
+
+  async function _tryAutoJoin() {
+    const token = localStorage.getItem('orbit_token');
+    if (!token) {
+      // 로그인 안 됨 → pending으로 저장, 로그인 후 재시도
+      localStorage.setItem('orbit_pending_invite', inviteCode);
+      return;
+    }
+    localStorage.removeItem('orbit_pending_invite');
+    try {
+      const res = await fetch('/api/workspace/join', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+        body: JSON.stringify({ inviteCode }),
+      });
+      const d = await res.json();
+      if (res.ok) {
+        if (d.message === 'already joined') {
+          showToast(`이미 "${d.workspace?.name || '워크스페이스'}"에 참여 중입니다`);
+        } else {
+          showToast(`"${d.workspace?.name || '워크스페이스'}" 참여 요청 완료! 관리자 승인을 기다려주세요.`);
+        }
+      } else {
+        showToast(d.error || '초대코드 참여 실패');
+      }
+    } catch (e) {
+      showToast('초대코드 참여 오류: ' + e.message);
+    }
+  }
+
+  // 로그인 상태면 즉시 시도, 아니면 로그인 후 시도하도록 저장
+  if (_orbitUser) {
+    setTimeout(_tryAutoJoin, 500);
+  } else {
+    localStorage.setItem('orbit_pending_invite', inviteCode);
+    // 로그인 성공 후 호출될 수 있도록 전역에 등록
+    window._pendingInviteJoin = _tryAutoJoin;
+  }
+})();
+
 // ── 결제 콜백 처리 (Toss 리다이렉트 후) ───────────────────────────────────
 (function handlePaymentCallback() {
   const params = new URLSearchParams(window.location.search);
@@ -781,8 +834,13 @@ async function _loadMyWorkspaces() {
           <div class="ws-card-meta">${escHtml(ws.company_name||'')} · 멤버 ${ws.member_count||0}명</div>
           <div class="ws-card-role">${ws.role==='owner' ? '관리자' : '멤버 · '+escHtml(ws.team_name||'')}</div>
         </div>
-        <div style="font-size:11px;color:#3fb950;cursor:pointer" onclick="event.stopPropagation();_copyCode('${ws.invite_code||''}')">
-          ${ws.invite_code ? `초대코드<br><b style="font-size:14px;letter-spacing:2px">${ws.invite_code}</b>` : ''}
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+          <div style="font-size:11px;color:#3fb950;cursor:pointer" onclick="event.stopPropagation();_copyCode('${ws.invite_code||''}')">
+            ${ws.invite_code ? `초대코드<br><b style="font-size:14px;letter-spacing:2px">${ws.invite_code}</b>` : ''}
+          </div>
+          ${(ws.role==='owner'||ws.role==='admin') ? `<button onclick="event.stopPropagation();generateInviteLink('${ws.id}')"
+            style="font-size:10px;padding:4px 8px;background:rgba(88,166,255,.15);color:#58a6ff;border:1px solid rgba(88,166,255,.3);
+            border-radius:6px;cursor:pointer;white-space:nowrap">초대 링크 생성</button>` : ''}
         </div>
       </div>`).join('');
   } catch (e) {
@@ -902,6 +960,125 @@ function copyInviteCode() {
   navigator.clipboard.writeText(code).then(() => showToast(`초대코드 복사됨: ${code}`)).catch(() => {});
 }
 window.copyInviteCode = copyInviteCode;
+
+// ── 만료형 초대 링크 생성 (admin/owner) ────────────────────────────────────
+let _inviteLinkTimer = null;
+async function generateInviteLink(workspaceId) {
+  if (!_orbitUser) { openLoginModal(); return; }
+  const token = _getToken();
+  if (!token) { showToast('로그인이 필요합니다'); return; }
+  try {
+    const res = await fetch(`/api/workspace/${workspaceId}/generate-invite`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ minutes: 10, maxUses: 0 }),
+    });
+    const data = await res.json();
+    if (!res.ok) { showToast(data.error || '초대 링크 생성 실패'); return; }
+
+    // 초대 링크 모달 표시
+    _showInviteLinkModal(data.link, data.code, data.expiresAt);
+  } catch (e) {
+    showToast('초대 링크 생성 오류: ' + e.message);
+  }
+}
+window.generateInviteLink = generateInviteLink;
+
+function _showInviteLinkModal(link, code, expiresAt) {
+  // 기존 모달 제거
+  let modal = document.getElementById('invite-link-modal');
+  if (modal) modal.remove();
+  if (_inviteLinkTimer) { clearInterval(_inviteLinkTimer); _inviteLinkTimer = null; }
+
+  modal = document.createElement('div');
+  modal.id = 'invite-link-modal';
+  Object.assign(modal.style, {
+    position: 'fixed', top: '0', left: '0', width: '100%', height: '100%',
+    background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center',
+    justifyContent: 'center', zIndex: '3000',
+  });
+  modal.onclick = (e) => { if (e.target === modal) { modal.remove(); if (_inviteLinkTimer) clearInterval(_inviteLinkTimer); } };
+
+  const expiryDate = new Date(expiresAt);
+
+  modal.innerHTML = `
+    <div style="background:#161b22;border:1px solid #30363d;border-radius:16px;padding:32px;
+                max-width:440px;width:90%;text-align:center;position:relative">
+      <button onclick="document.getElementById('invite-link-modal').remove()"
+        style="position:absolute;top:12px;right:16px;background:none;border:none;color:#8b949e;
+        font-size:20px;cursor:pointer;line-height:1">x</button>
+      <div style="font-size:24px;margin-bottom:8px">🔗</div>
+      <div style="font-size:18px;font-weight:700;color:#f0f6fc;margin-bottom:4px">초대 링크 생성 완료</div>
+      <div style="font-size:12px;color:#8b949e;margin-bottom:16px">카카오톡, 슬랙 등으로 공유하세요</div>
+
+      <div style="background:#0d1117;border:1px solid #30363d;border-radius:10px;padding:14px;
+                  margin-bottom:12px;word-break:break-all;font-size:13px;color:#58a6ff;
+                  cursor:pointer;user-select:all" id="invite-link-text"
+           onclick="_copyInviteLink()" title="클릭하여 복사">${link}</div>
+
+      <div style="display:flex;gap:8px;justify-content:center;margin-bottom:16px">
+        <button onclick="_copyInviteLink()"
+          style="padding:8px 20px;background:#238636;color:#fff;border:none;border-radius:8px;
+          font-size:13px;font-weight:600;cursor:pointer">복사</button>
+        <button onclick="_shareInviteLink()"
+          style="padding:8px 20px;background:rgba(88,166,255,.15);color:#58a6ff;border:1px solid rgba(88,166,255,.3);
+          border-radius:8px;font-size:13px;cursor:pointer">공유</button>
+      </div>
+
+      <div style="font-size:14px;color:#f0883e;font-weight:600" id="invite-countdown">
+        남은 시간: 10:00
+      </div>
+      <div style="font-size:11px;color:#6e7681;margin-top:4px">10분 후 자동 만료됩니다</div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  // 카운트다운
+  const countdownEl = modal.querySelector('#invite-countdown');
+  function updateInviteCountdown() {
+    const remaining = expiryDate - new Date();
+    if (remaining <= 0) {
+      countdownEl.textContent = '만료됨';
+      countdownEl.style.color = '#f85149';
+      if (_inviteLinkTimer) clearInterval(_inviteLinkTimer);
+      return;
+    }
+    const mins = Math.floor(remaining / 60000);
+    const secs = Math.floor((remaining % 60000) / 1000);
+    countdownEl.textContent = `남은 시간: ${String(mins).padStart(2,'0')}:${String(secs).padStart(2,'0')}`;
+  }
+  updateInviteCountdown();
+  _inviteLinkTimer = setInterval(updateInviteCountdown, 1000);
+
+  // 클립보드 복사 + 공유 함수를 전역에 노출
+  window._currentInviteLink = link;
+}
+
+function _copyInviteLink() {
+  const link = window._currentInviteLink;
+  if (!link) return;
+  navigator.clipboard.writeText(link)
+    .then(() => showToast('초대 링크가 복사되었습니다'))
+    .catch(() => {
+      // 폴백: 수동 복사
+      const el = document.getElementById('invite-link-text');
+      if (el) { const range = document.createRange(); range.selectNodeContents(el); window.getSelection().removeAllRanges(); window.getSelection().addRange(range); }
+      showToast('링크를 선택했습니다. Ctrl+C로 복사하세요');
+    });
+}
+window._copyInviteLink = _copyInviteLink;
+
+function _shareInviteLink() {
+  const link = window._currentInviteLink;
+  if (!link) return;
+  if (navigator.share) {
+    navigator.share({ title: 'Orbit AI 워크스페이스 초대', text: 'Orbit AI 워크스페이스에 참여하세요!', url: link })
+      .catch(() => _copyInviteLink());
+  } else {
+    _copyInviteLink();
+  }
+}
+window._shareInviteLink = _shareInviteLink;
 
 // ══ DM 미읽음 폴링 ═══════════════════════════════════════════════════════════
 let _dmUnreadCount = 0;

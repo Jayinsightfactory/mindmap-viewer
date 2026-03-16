@@ -390,6 +390,21 @@ function createTables() {
     CREATE INDEX IF NOT EXISTS idx_analysis_user ON analysis_results(user_id);
     CREATE INDEX IF NOT EXISTS idx_analysis_company ON analysis_results(company_id);
 
+    -- ─── 만료형 초대코드 (10분 유효) ───────────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS invite_codes (
+      code         TEXT PRIMARY KEY,
+      workspace_id TEXT NOT NULL,
+      created_by   TEXT NOT NULL,
+      created_at   TEXT DEFAULT (datetime('now')),
+      expires_at   TEXT NOT NULL,
+      used_by      TEXT,
+      max_uses     INTEGER DEFAULT 1,
+      use_count    INTEGER DEFAULT 0,
+      FOREIGN KEY (workspace_id) REFERENCES workspaces(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_ic_ws ON invite_codes(workspace_id);
+    CREATE INDEX IF NOT EXISTS idx_ic_expires ON invite_codes(expires_at);
+
     -- ─── 솔루션 설치 ROI 추적 ──────────────────────────────────────────────────
     CREATE TABLE IF NOT EXISTS solution_roi (
       id                TEXT PRIMARY KEY,

@@ -13,6 +13,7 @@
  * POST /api/workspace/:id/approve-member  — 멤버 승인 (owner/admin)
  * POST /api/workspace/:id/reject-member   — 멤버 거절 (owner/admin)
  * GET  /api/workspace/:id/pending-members — 대기 멤버 목록 (owner/admin)
+ * POST /api/workspace/:id/generate-invite — 만료형 초대링크 생성 (10분 TTL)
  */
 
 'use strict';
@@ -110,17 +111,48 @@ function createWorkspaceRouter({ getDb, db: _dbLegacy, verifyToken, getUserById,
 
   // ─────────────────────────────────────────────────────────────────────────
   // GET /api/workspace/invite/:code  (공개 — 로그인 불필요)
+  // 기존 영구 코드 + 만료형 invite_codes 모두 지원
   // ─────────────────────────────────────────────────────────────────────────
   router.get('/workspace/invite/:code', async (req, res) => {
     try {
+      const code = req.params.code;
+
+      // 1) 만료형 invite_codes 먼저 확인
+      const ic = await dbGet(
+        `SELECT ic.code, ic.workspace_id, ic.expires_at, ic.max_uses, ic.use_count,
+                w.id, w.name, w.company_name,
+                (SELECT COUNT(*) FROM workspace_members WHERE workspace_id = w.id AND (status = 'active' OR status IS NULL)) AS member_count
+         FROM invite_codes ic
+         JOIN workspaces w ON w.id = ic.workspace_id
+         WHERE ic.code = ?`,
+        [code]
+      );
+      if (ic) {
+        // 만료 체크
+        const expiresAt = new Date(ic.expires_at);
+        if (expiresAt < new Date()) {
+          return res.status(410).json({ error: '코드가 만료되었습니다', expired: true });
+        }
+        // 사용 횟수 체크
+        if (ic.max_uses > 0 && ic.use_count >= ic.max_uses) {
+          return res.status(410).json({ error: '초대코드 사용 횟수를 초과했습니다', exhausted: true });
+        }
+        return res.json({
+          id: ic.workspace_id, name: ic.name, company_name: ic.company_name,
+          member_count: ic.member_count,
+          expires_at: ic.expires_at, type: 'timed',
+        });
+      }
+
+      // 2) 기존 영구 초대코드 (workspaces.invite_code)
       const ws = await dbGet(
         `SELECT w.id, w.name, w.company_name,
                 (SELECT COUNT(*) FROM workspace_members WHERE workspace_id = w.id AND (status = 'active' OR status IS NULL)) AS member_count
          FROM workspaces w WHERE w.invite_code = ?`,
-        [req.params.code]
+        [code]
       );
       if (!ws) return res.status(404).json({ error: 'invalid invite code' });
-      res.json(ws);
+      res.json({ ...ws, type: 'permanent' });
     } catch (e) {
       res.status(500).json({ error: e.message });
     }
@@ -129,16 +161,47 @@ function createWorkspaceRouter({ getDb, db: _dbLegacy, verifyToken, getUserById,
   // ─────────────────────────────────────────────────────────────────────────
   // POST /api/workspace/join
   // body: { inviteCode, teamName }
+  // 만료형 invite_codes + 기존 영구 코드 모두 지원
   // ─────────────────────────────────────────────────────────────────────────
   router.post('/workspace/join', auth, async (req, res) => {
     try {
       const { inviteCode, teamName = '팀 1' } = req.body;
       if (!inviteCode) return res.status(400).json({ error: 'inviteCode required' });
 
-      const ws = await dbGet(
-        `SELECT id, name, company_name, owner_id FROM workspaces WHERE invite_code = ?`,
+      let ws = null;
+      let isTimedCode = false;
+
+      // 1) 만료형 invite_codes 먼저 확인
+      const ic = await dbGet(
+        `SELECT ic.code, ic.workspace_id, ic.expires_at, ic.max_uses, ic.use_count
+         FROM invite_codes ic WHERE ic.code = ?`,
         [inviteCode]
       );
+      if (ic) {
+        // 만료 체크
+        const expiresAt = new Date(ic.expires_at);
+        if (expiresAt < new Date()) {
+          return res.status(410).json({ error: '코드가 만료되었습니다' });
+        }
+        // 사용 횟수 체크
+        if (ic.max_uses > 0 && ic.use_count >= ic.max_uses) {
+          return res.status(410).json({ error: '초대코드 사용 횟수를 초과했습니다' });
+        }
+        ws = await dbGet(
+          `SELECT id, name, company_name, owner_id FROM workspaces WHERE id = ?`,
+          [ic.workspace_id]
+        );
+        isTimedCode = true;
+      }
+
+      // 2) 기존 영구 초대코드 (workspaces.invite_code)
+      if (!ws) {
+        ws = await dbGet(
+          `SELECT id, name, company_name, owner_id FROM workspaces WHERE invite_code = ?`,
+          [inviteCode]
+        );
+      }
+
       if (!ws) return res.status(404).json({ error: 'invalid invite code' });
 
       const existing = await dbGet(
@@ -155,6 +218,14 @@ function createWorkspaceRouter({ getDb, db: _dbLegacy, verifyToken, getUserById,
          VALUES (?, ?, 'member', ?, 'pending')`,
         [ws.id, req.user.id, teamName]
       );
+
+      // 만료형 코드 사용 카운트 증가
+      if (isTimedCode) {
+        await dbRun(
+          `UPDATE invite_codes SET use_count = use_count + 1, used_by = ? WHERE code = ?`,
+          [req.user.id, inviteCode]
+        );
+      }
 
       // 워크스페이스 소유자에게 승인 요청 알림
       if (typeof createNotification === 'function') {
@@ -675,6 +746,39 @@ function createWorkspaceRouter({ getDb, db: _dbLegacy, verifyToken, getUserById,
       await dbRun('UPDATE workspaces SET invite_code = ? WHERE id = ?', [newCode, wsId]);
       res.json({ ok: true, inviteCode: newCode });
     } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // POST /api/workspace/:id/generate-invite — 만료형 초대코드 생성 (admin/owner)
+  // 10분 유효, 8자 영숫자 코드 반환
+  // ─────────────────────────────────────────────────────────────────────────
+  router.post('/workspace/:id/generate-invite', auth, async (req, res) => {
+    try {
+      const wsId = req.params.id;
+      if (!(await isWsAdmin(req, wsId))) return res.status(403).json({ error: 'admin only' });
+
+      const code = genInviteCode();
+      const maxUses = req.body.maxUses || 0; // 0 = 무제한
+      const minutesTTL = Math.max(1, Math.min(60, parseInt(req.body.minutes) || 10)); // 1~60분
+      const expiresAt = new Date(Date.now() + minutesTTL * 60 * 1000).toISOString();
+
+      await dbRun(
+        `INSERT INTO invite_codes (code, workspace_id, created_by, expires_at, max_uses)
+         VALUES (?, ?, ?, ?, ?)`,
+        [code, wsId, req.user.id, expiresAt, maxUses]
+      );
+
+      const baseUrl = process.env.PUBLIC_URL || `https://sparkling-determination-production-c88b.up.railway.app`;
+      res.json({
+        code,
+        link: `${baseUrl}/invite/${code}`,
+        expiresAt,
+        maxUses,
+      });
+    } catch (e) {
+      console.error('[workspace/generate-invite]', e);
+      res.status(500).json({ error: e.message });
+    }
   });
 
   // ─────────────────────────────────────────────────────────────────────────
