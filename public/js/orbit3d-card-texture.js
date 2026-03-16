@@ -274,36 +274,25 @@ function _drawSphereLabel(ctx, cx, cy, R, title, sub, color, dimmed, whatLine, r
 
   const fontSize = Math.max(8, Math.min(13, R * 0.52));
   const maxW = R * 1.6;
-  // Small spheres (R < 35): only title + sub, skip WHAT/RESULT/context
-  const showExtra = R >= 35;
-  const showDeep  = R >= 50;
   const ex = extraCtx || {};
 
-  // purpose가 있으면 제목 대신 purpose를 최우선 표시
+  // 구체 크기별 텍스트 제한 (겹침 방지)
+  // R < 25: 제목 1줄만
+  // R 25~40: 제목 + sub (2줄)
+  // R >= 40: 제목 + sub + WHAT 또는 RESULT (최대 3줄)
+  const maxLines = R < 25 ? 1 : R < 40 ? 2 : 3;
+
+  // 제목: purpose가 있으면 우선 사용
   const displayTitle = (ex.purpose && ex.purpose.length > 2) ? ex.purpose : title;
-  // purpose를 title로 쓰면 기존 title은 sub로 내림
-  const displaySub = (ex.purpose && ex.purpose.length > 2 && title !== ex.purpose) ? title : sub;
-
-  // Track visible lines: title=1, sub=2, what=3, result=4, line3=5
-  // Cap at 3 visible lines max to prevent vertical overflow
-  const MAX_VISIBLE_LINES = 3;
-  let linesUsed = 1; // title always counts
-  if (displaySub) linesUsed++;
-
-  const hasWhat = showExtra && whatLine && whatLine.length > 0 && linesUsed < MAX_VISIBLE_LINES;
-  if (hasWhat) linesUsed++;
-  const hasResult = showExtra && resultLine && resultLine.length > 0 && linesUsed < MAX_VISIBLE_LINES;
-  if (hasResult) linesUsed++;
-  // 3번째 줄: techStack + duration (둘 다 없으면 skip)
-  const line3Text = (showDeep && linesUsed < MAX_VISIBLE_LINES) ? _buildLine3(ex) : '';
-  const hasLine3 = line3Text.length > 0;
+  const displaySub = maxLines >= 2 ? ((ex.purpose && ex.purpose.length > 2 && title !== ex.purpose) ? title : sub) : '';
+  const hasWhat = maxLines >= 3 && whatLine && whatLine.length > 0;
+  const hasResult = !hasWhat && maxLines >= 3 && resultLine && resultLine.length > 0; // WHAT 없을때만 RESULT
 
   // 총 줄 수에 따른 수직 오프셋 계산
-  let totalLines = 1; // title always
+  let totalLines = 1;
   if (displaySub) totalLines++;
   if (hasWhat) totalLines++;
   if (hasResult) totalLines++;
-  if (hasLine3) totalLines++;
   const lineSpacing = fontSize * 0.78;
   const blockHeight = totalLines * lineSpacing;
   let curY = cy - blockHeight / 2 + lineSpacing / 2;
@@ -375,14 +364,7 @@ function _drawSphereLabel(ctx, cx, cy, R, title, sub, color, dimmed, whatLine, r
     curY += lineSpacing * 0.85;
   }
 
-  // ── Line 4: 추가 컨텍스트 (techStack + duration, 보라색 — 매우 줌인 시만) ──
-  if (hasLine3) {
-    const ctxSize = Math.max(6, fontSize - 3);
-    ctx.font = `400 ${ctxSize}px 'JetBrains Mono','Fira Code',monospace`;
-    ctx.fillStyle = '#c4b5fd';
-    let cl = line3Text.length > 28 ? line3Text.slice(0, 27) + '\u2026' : line3Text;
-    ctx.fillText(cl, cx, curY);
-  }
+  // Line 4 제거됨 (3줄 제한으로 충분)
 
   ctx.restore();
 }

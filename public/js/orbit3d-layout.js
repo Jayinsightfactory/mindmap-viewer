@@ -394,10 +394,10 @@ function drawCompactProjectView() {
 
       // 카테고리: 프로젝트 외곽 방향 부채꼴 배치 (3D)
       const numCatsNow = sortedCats.length;
-      const dirAngle = angle; // 프로젝트의 양파 배치 각도를 기준
-      const CAT_WORLD_DIST = 12;
-      const catAngleStep = Math.max(Math.PI / 6, Math.PI * 2 / Math.max(numCatsNow * 3, 6));
-      const catHalfSpan = Math.min((numCatsNow - 1) / 2 * catAngleStep, Math.PI * 5 / 6);
+      const dirAngle = angle;
+      const CAT_WORLD_DIST = 14;
+      const catAngleStep = Math.max(Math.PI / 3, Math.PI * 2 / Math.max(numCatsNow * 2, 4)); // 60도 최소간격
+      const catHalfSpan = Math.min((numCatsNow - 1) / 2 * catAngleStep, Math.PI);
 
       sortedCats.forEach(([catKey, catPlanets], ci) => {
         const cfg = PROJECT_TYPES[catKey] || PROJECT_TYPES.general;
@@ -446,7 +446,7 @@ function drawCompactProjectView() {
 
         // ── 세션: 카테고리 아래 세로 배치 (소형 와이어프레임 구체) ────────────
         const maxShow = Math.min(catPlanets.length, 3);
-        const SES_WORLD_STEP = 5;
+        const SES_WORLD_STEP = 7;
         for (let si = 0; si < maxShow; si++) {
           const planet = catPlanets[si];
           const sesPos3d = new THREE.Vector3(
@@ -458,7 +458,7 @@ function drawCompactProjectView() {
           if (sesSc.z > 1) continue;
 
           const sesScale = screenScale(sesPos3d);
-          const sesR = Math.max(28, Math.min(56, sesScale * 7)); // 프로젝트 구체와 동일 크기
+          const sesR = Math.max(20, Math.min(36, sesScale * 5)); // 카테고리보다 작게
           const evCnt = planet.userData.eventCount || 0;
           const isSubHover = _hoveredHit?.obj === planet;
           const sesKey = planet.userData.clusterId || planet.userData.sessionId || '';
