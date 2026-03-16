@@ -61,6 +61,34 @@ function computeMultiLevelPositions(baseR, ring, cap, posInRing) {
   return positions;
 }
 
+// ─── 프로젝트명 추출 헬퍼 (파일 경로에서 의미있는 디렉터리 추출) ────────────────
+const _SYSTEM_SEGS = new Set([
+  'users','home','usr','var','tmp','temp','opt','etc',
+  'windows','system32','program files','program files (x86)',
+  'appdata','local','roaming','library','application support',
+  'node_modules','.git','.gradle','build','dist','out','target',
+  'bin','obj','packages','.pub-cache','.m2','.npm',
+  'src','main','java','kotlin','res','app',
+  'c','d','e','documents','desktop','downloads',
+  'cloudstorage','googledrive','google drive',
+]);
+
+function _smartProjectFromPath(filePath) {
+  if (!filePath) return null;
+  var segs = filePath.replace(/\\/g,'/').split('/').filter(Boolean);
+  for (var i = segs.length - 2; i >= 0; i--) {
+    var seg = segs[i];
+    var low = seg.toLowerCase();
+    if (_SYSTEM_SEGS.has(low)) continue;
+    if (low.startsWith('.')) continue;
+    if (/^\d+$/.test(seg)) continue;
+    if (low.length < 2) continue;
+    if (/^(내 드라이브|my drive|shared drives)$/i.test(seg)) continue;
+    return seg;
+  }
+  return null;
+}
+
 // ─── 씬 빌드 ──────────────────────────────────────────────────────────────────
 function clearScene() {
   [...planetMeshes, ...satelliteMeshes, ...orbitRings, ...connections].forEach(o => scene.remove(o));
@@ -105,35 +133,6 @@ function _buildPlanetSystemInner(nodeList) {
     if (filtered.length === 0) continue;
 
     // ── 프로젝트명 추출 (심층 경로 분석) ──────────────────────────────────
-    const _SYSTEM_SEGS = new Set([
-      'users','home','usr','var','tmp','temp','opt','etc',
-      'windows','system32','program files','program files (x86)',
-      'appdata','local','roaming','library','application support',
-      'node_modules','.git','.gradle','build','dist','out','target',
-      'bin','obj','packages','.pub-cache','.m2','.npm',
-      'src','main','java','kotlin','res','app',
-      'c','d','e','documents','desktop','downloads',
-      'cloudstorage','googledrive','google drive',
-    ]);
-
-    // 파일 경로에서 프로젝트명 추출 (가장 깊은 의미 있는 디렉토리)
-    function _smartProjectFromPath(filePath) {
-      if (!filePath) return null;
-      const segs = filePath.replace(/\\/g,'/').split('/').filter(Boolean);
-      // 파일명 제외 (마지막 세그먼트)
-      for (let i = segs.length - 2; i >= 0; i--) {
-        const seg = segs[i];
-        const low = seg.toLowerCase();
-        if (_SYSTEM_SEGS.has(low)) continue;
-        if (low.startsWith('.')) continue;
-        if (/^\d+$/.test(seg)) continue;
-        if (low.length < 2) continue;
-        // "내 드라이브" 같은 한국어 시스템 경로도 스킵
-        if (/^(내 드라이브|my drive|shared drives)$/i.test(seg)) continue;
-        return seg;
-      }
-      return null;
-    }
 
     const startEv = rawEvents.find(e => e.type === 'session.start');
     const pd      = startEv?.data?.projectDir || startEv?.data?.cwd || '';
