@@ -222,9 +222,10 @@ function drawCompactProjectView() {
   // ── 양파형 동심원 배치 (3D 월드 좌표 X-Z 평면) ────────────────────────────
   const isDrillStage1 = _drillStage >= 1 && _drillProject;
   const baseAngle = -Math.PI / 2;
-  const WORLD_NODE_SEP = 6;   // 노드 간 최소 월드 거리
-  const WORLD_RING_BASE = 12; // 1번째 링 시작 반경
-  const WORLD_RING_GAP = 10;  // 링 간 간격
+  const _scale = window._spacingScale || 1.0;
+  const WORLD_NODE_SEP = 6 * _scale;   // 노드 간 최소 월드 거리
+  const WORLD_RING_BASE = 12 * _scale; // 1번째 링 시작 반경
+  const WORLD_RING_GAP = 10 * _scale;  // 링 간 간격
 
   // 프로젝트를 링별로 분배 (5, 10, 15, 20…)
   const rings = [];
@@ -379,7 +380,7 @@ function drawCompactProjectView() {
       // 카테고리: 프로젝트 외곽 방향 부채꼴 배치 (3D)
       const numCatsNow = sortedCats.length;
       const dirAngle = angle;
-      const CAT_WORLD_DIST = 14;
+      const CAT_WORLD_DIST = 14 * _scale;
       const catAngleStep = Math.max(Math.PI / 3, Math.PI * 2 / Math.max(numCatsNow * 2, 4)); // 60도 최소간격
       const catHalfSpan = Math.min((numCatsNow - 1) / 2 * catAngleStep, Math.PI);
 
@@ -430,7 +431,7 @@ function drawCompactProjectView() {
 
         // ── 세션: 카테고리 아래 세로 배치 (소형 와이어프레임 구체) ────────────
         const maxShow = Math.min(catPlanets.length, 3);
-        const SES_WORLD_STEP = 7;
+        const SES_WORLD_STEP = 7 * _scale;
         for (let si = 0; si < maxShow; si++) {
           const planet = catPlanets[si];
           const sesPos3d = new THREE.Vector3(

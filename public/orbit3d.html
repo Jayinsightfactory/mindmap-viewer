@@ -56,6 +56,15 @@
       <span id="ln-zoom-hint"></span>
     </div>
 
+    <!-- 간격 조절 슬라이더 -->
+    <div style="padding:4px 12px;font-size:10px;color:#6e7681">
+      <label>간격 조절</label>
+      <input type="range" id="spacing-slider" min="50" max="200" value="100"
+        style="width:100%;accent-color:#06b6d4"
+        oninput="window._spacingScale = this.value / 100; document.getElementById('spacing-val').textContent = this.value + '%'">
+      <span id="spacing-val" style="float:right">100%</span>
+    </div>
+
     <!-- 프로필 카드 (로그인 시 표시) -->
     <div id="ln-profile-card">
       <div class="lnpc-headline" id="ln-pc-headline"></div>

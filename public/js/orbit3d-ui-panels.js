@@ -864,10 +864,10 @@ async function openWsPendingList(wsId) {
     if (!list.length) { showToast('승인 대기 중인 멤버가 없습니다'); return; }
     const html = list.map(m => `
       <div style="display:flex;align-items:center;justify-content:space-between;padding:8px;border-bottom:1px solid #21262d">
-        <span style="color:#e6edf3">${m.name || m.email || m.user_id}</span>
+        <div style="color:#e6edf3"><div>${escHtml(m.name || '사용자')}</div><div style="font-size:10px;color:#8b949e">${escHtml(m.email || m.userId || '')}</div></div>
         <div style="display:flex;gap:4px">
-          <button onclick="this.disabled=true;_approveMember('${wsId}','${m.user_id}')" style="font-size:10px;padding:3px 8px;background:#3fb950;color:#fff;border:none;border-radius:4px;cursor:pointer">승인</button>
-          <button onclick="this.disabled=true;_rejectMember('${wsId}','${m.user_id}')" style="font-size:10px;padding:3px 8px;background:#f85149;color:#fff;border:none;border-radius:4px;cursor:pointer">거절</button>
+          <button onclick="this.disabled=true;_approveMember('${wsId}','${m.userId}')" style="font-size:10px;padding:3px 8px;background:#3fb950;color:#fff;border:none;border-radius:4px;cursor:pointer">승인</button>
+          <button onclick="this.disabled=true;_rejectMember('${wsId}','${m.userId}')" style="font-size:10px;padding:3px 8px;background:#f85149;color:#fff;border:none;border-radius:4px;cursor:pointer">거절</button>
         </div>
       </div>`).join('');
     showToast(''); // clear
@@ -883,19 +883,103 @@ window.openWsPendingList = openWsPendingList;
 
 async function _approveMember(wsId, userId) {
   const token = _orbitUser?.token || '';
-  await fetch(`/api/workspace/${wsId}/approve-member`, { method:'POST', headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`}, body:JSON.stringify({userId}) });
-  showToast('승인 완료');
+  try {
+    const res = await fetch(`/api/workspace/${wsId}/approve-member`, { method:'POST', headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`}, body:JSON.stringify({userId}) });
+    const data = await res.json();
+    if (res.ok) {
+      showToast('승인 완료');
+    } else {
+      showToast('승인 실패: ' + (data.error || '알 수 없는 오류'), 'error');
+    }
+  } catch (e) { showToast('승인 오류: ' + e.message, 'error'); }
+  // 모달 닫기 + 목록 새로고침
+  document.querySelector('div[style*="position:fixed"][style*="z-index:9999"]')?.remove();
   _loadMyWorkspaces();
 }
 window._approveMember = _approveMember;
 
 async function _rejectMember(wsId, userId) {
   const token = _orbitUser?.token || '';
-  await fetch(`/api/workspace/${wsId}/reject-member`, { method:'POST', headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`}, body:JSON.stringify({userId}) });
-  showToast('거절 완료');
+  try {
+    const res = await fetch(`/api/workspace/${wsId}/reject-member`, { method:'POST', headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`}, body:JSON.stringify({userId}) });
+    const data = await res.json();
+    if (res.ok) {
+      showToast('거절 완료');
+    } else {
+      showToast('거절 실패: ' + (data.error || '알 수 없는 오류'), 'error');
+    }
+  } catch (e) { showToast('거절 오류: ' + e.message, 'error'); }
+  document.querySelector('div[style*="position:fixed"][style*="z-index:9999"]')?.remove();
   _loadMyWorkspaces();
 }
 window._rejectMember = _rejectMember;
+
+// ── 멤버 관리 (인원배분) 모달 ─────────────────────────────────────────────────
+async function openWsMemberManage(wsId) {
+  const token = _orbitUser?.token || '';
+  if (!token) { showToast('로그인이 필요합니다'); return; }
+  try {
+    const res = await fetch(`/api/workspace/${wsId}/members`, { headers: { Authorization: `Bearer ${token}` } });
+    const members = res.ok ? await res.json() : [];
+    if (!members.length) { showToast('멤버가 없습니다'); return; }
+
+    const html = members.map(m => `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 8px;border-bottom:1px solid #21262d">
+        <div style="flex:1">
+          <div style="color:#e6edf3;font-size:13px">${escHtml(m.name || '사용자')}</div>
+          <div style="color:#8b949e;font-size:10px">${escHtml(m.email || '')} ${m.status === 'pending' ? '<span style="color:#ffa657">(대기중)</span>' : ''}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <select data-user-id="${m.userId}" data-ws-id="${wsId}" class="ws-team-select"
+            style="font-size:11px;padding:3px 6px;background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:4px;cursor:pointer">
+            <option value="관리팀" ${m.teamName==='관리팀'?'selected':''}>${escHtml('관리팀')}</option>
+            <option value="개발팀" ${m.teamName==='개발팀'?'selected':''}>${escHtml('개발팀')}</option>
+            <option value="디자인팀" ${m.teamName==='디자인팀'?'selected':''}>${escHtml('디자인팀')}</option>
+            <option value="기획팀" ${m.teamName==='기획팀'?'selected':''}>${escHtml('기획팀')}</option>
+            <option value="팀 1" ${m.teamName==='팀 1'?'selected':''}>${escHtml('팀 1')}</option>
+            <option value="팀 2" ${m.teamName==='팀 2'?'selected':''}>${escHtml('팀 2')}</option>
+            ${m.teamName && !['관리팀','개발팀','디자인팀','기획팀','팀 1','팀 2'].includes(m.teamName) ? `<option value="${escHtml(m.teamName)}" selected>${escHtml(m.teamName)}</option>` : ''}
+          </select>
+          <span style="font-size:10px;color:${m.role==='owner'?'#ffd700':m.role==='admin'?'#58a6ff':'#8b949e'}">${m.role==='owner'?'소유자':m.role==='admin'?'관리자':'멤버'}</span>
+        </div>
+      </div>`).join('');
+
+    const modal = document.createElement('div');
+    modal.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center';
+    modal.innerHTML = `<div style="background:#0d1117;border:1px solid #30363d;border-radius:12px;padding:16px;width:380px;max-height:500px;overflow-y:auto">
+      <div style="display:flex;justify-content:space-between;margin-bottom:12px">
+        <b style="color:#e6edf3">인원 배분 (${members.length}명)</b>
+        <button onclick="this.closest('div[style*=fixed]').remove()" style="background:none;border:none;color:#8b949e;cursor:pointer;font-size:16px">&#10005;</button>
+      </div>
+      ${html}
+      <div style="margin-top:12px;text-align:right">
+        <button id="ws-member-save-btn" style="font-size:11px;padding:6px 14px;background:#238636;color:#fff;border:none;border-radius:6px;cursor:pointer">저장</button>
+      </div>
+    </div>`;
+    document.body.appendChild(modal);
+
+    // 저장 버튼: 변경된 팀 이름을 서버에 반영
+    modal.querySelector('#ws-member-save-btn').addEventListener('click', async () => {
+      const selects = modal.querySelectorAll('.ws-team-select');
+      for (const sel of selects) {
+        const uid = sel.dataset.userId;
+        const wid = sel.dataset.wsId;
+        const teamName = sel.value;
+        try {
+          await fetch('/api/workspace/member/team-admin', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ workspaceId: wid, userId: uid, teamName }),
+          });
+        } catch {}
+      }
+      showToast('팀 배분 저장됨');
+      modal.remove();
+      _loadMyWorkspaces();
+    });
+  } catch (e) { showToast('오류: ' + e.message, 'error'); }
+}
+window.openWsMemberManage = openWsMemberManage;
 
 function _copyCode(code) {
   navigator.clipboard.writeText(code).then(() => showToast(`초대코드 복사됨: ${code}`)).catch(() => {});
@@ -903,51 +987,23 @@ function _copyCode(code) {
 
 function _selectWorkspace(id, name) {
   closePopup('workspace-popup');
-  _currentWorkspaceId = id;
+  window._currentWorkspaceId = id;
   showToast(`'${name}' 워크스페이스 로딩 중...`);
 
-  const _launchWsMode = async () => {
-    try {
-      // ── 이전 렌더러 완전 정리 (충돌 방지) ─────────────────────────
-      if (window.RendererManager) {
-        window.RendererManager.switchTo('workspace');
-      } else {
-        // RendererManager 미로드 폴백: 직접 정리
-        if (typeof clearMyWork === 'function') clearMyWork();
-        if (typeof clearAllPlanets === 'function') clearAllPlanets();
-        if (typeof exitTeamMode === 'function') exitTeamMode();
-      }
+  // multilevel 렌더러 대신 팀 뷰로 직접 전환 (레거시 카드 방지)
+  if (window.RendererManager) {
+    window.RendererManager.switchTo('team');
+    if (window.RendererManager.cleanupMultilevel) window.RendererManager.cleanupMultilevel();
+  } else {
+    if (typeof clearMyWork === 'function') clearMyWork();
+    if (typeof clearAllPlanets === 'function') clearAllPlanets();
+    if (typeof exitTeamMode === 'function') exitTeamMode();
+  }
 
-      const mlr = window.multiLevelRenderer;
-      if (mlr && mlr.initWorkspaceMode && window.scene) {
-        mlr.workspaceId = id;
-        const data = await mlr.initWorkspaceMode(window.scene);
-        if (typeof openDrillPanel === 'function') {
-          openDrillPanel(
-            mlr.currentLevel || 0,
-            Object.keys(mlr.nodeMeshes || {}).length,
-            mlr.userRole,
-            mlr.permissions
-          );
-        }
-        showToast(`✅ '${name}' 워크스페이스 로드됨`);
-      } else {
-        loadTeamDemo();
-      }
-    } catch (e) {
-      console.warn('[selectWorkspace] 워크스페이스 모드 실패, 팀 데모로 전환:', e.message);
-      loadTeamDemo();
-    }
-  };
-
-  let waited = 0;
-  const _waitScene = setInterval(() => {
-    waited += 100;
-    if (window.scene || waited >= 2000) {
-      clearInterval(_waitScene);
-      _launchWsMode();
-    }
-  }, 100);
+  // 선택된 워크스페이스의 팀 뷰 로드
+  if (typeof loadTeamDemo === 'function') {
+    loadTeamDemo();
+  }
 }
 
 async function joinWorkspacePopup() {

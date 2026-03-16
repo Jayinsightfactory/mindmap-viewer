@@ -1107,7 +1107,9 @@ async function loadTeamDemo() {
   }
 
   try {
-    const res = await fetch('/api/workspace/team-view', { headers: { Authorization: `Bearer ${token}` } });
+    const _wsId = window._currentWorkspaceId || '';
+    const _tvUrl = _wsId ? `/api/workspace/team-view?workspaceId=${encodeURIComponent(_wsId)}` : '/api/workspace/team-view';
+    const res = await fetch(_tvUrl, { headers: { Authorization: `Bearer ${token}` } });
     if (res.ok) {
       const data = await res.json();
       if (data && data.leaderA && data.leaderB) {

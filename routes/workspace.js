@@ -481,6 +481,25 @@ function createWorkspaceRouter({ getDb, db: _dbLegacy, verifyToken, getUserById,
   });
 
   // ─────────────────────────────────────────────────────────────────────────
+  // PATCH /api/workspace/member/team-admin
+  // body: { workspaceId, userId, teamName } — owner/admin이 다른 멤버의 팀 변경
+  // ─────────────────────────────────────────────────────────────────────────
+  router.patch('/workspace/member/team-admin', auth, async (req, res) => {
+    try {
+      const { workspaceId, userId, teamName } = req.body;
+      if (!workspaceId || !userId || !teamName) return res.status(400).json({ error: 'workspaceId, userId, teamName required' });
+      if (!(await isWsAdmin(req, workspaceId))) return res.status(403).json({ error: 'admin only' });
+      await dbRun(
+        `UPDATE workspace_members SET team_name = ? WHERE workspace_id = ? AND user_id = ?`,
+        [teamName, workspaceId, userId]
+      );
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
   // DELETE /api/workspace/leave
   // body: { workspaceId }
   // ─────────────────────────────────────────────────────────────────────────
