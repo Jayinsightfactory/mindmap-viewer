@@ -360,20 +360,10 @@ app.use((req, res, next) => {
 // ─── 보안 미들웨어 ────────────────────────────────────────────────────────────
 // Helmet: X-Frame-Options, X-Content-Type, CSP 등 보안 헤더 자동 설정
 app.use(helmet({
-  contentSecurityPolicy: process.env.NODE_ENV === 'production' ? {
-    directives: {
-      defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "cdn.jsdelivr.net", "cdnjs.cloudflare.com", "unpkg.com", "accounts.google.com", "js.tosspayments.com"],
-      styleSrc: ["'self'", "'unsafe-inline'", "fonts.googleapis.com", "cdnjs.cloudflare.com"],
-      fontSrc: ["'self'", "fonts.gstatic.com", "cdnjs.cloudflare.com"],
-      imgSrc: ["'self'", "data:", "blob:", "*.googleusercontent.com", "*.github.com"],
-      connectSrc: ["'self'", "wss:", "ws:", "accounts.google.com", "api.github.com", "fonts.googleapis.com", "fonts.gstatic.com", "cdn.jsdelivr.net", "cdnjs.cloudflare.com", "unpkg.com", "js.tosspayments.com"],
-      frameSrc: ["'self'", "accounts.google.com"],
-    },
-  } : false,
-  crossOriginEmbedderPolicy: false,   // Three.js CDN 허용
-  crossOriginOpenerPolicy: false,     // MCP 브라우저 확장 탭 접근 허용 (개발)
-  crossOriginResourcePolicy: false,   // 외부 리소스 로드 허용 (개발)
+  contentSecurityPolicy: false,        // 외부 CDN 10+ (Three.js, Toss, Google 등) → 화이트리스트 비실용적
+  crossOriginEmbedderPolicy: false,
+  crossOriginOpenerPolicy: false,
+  crossOriginResourcePolicy: false,
 }));
 
 // Rate Limiting: API 남용 방지 (15분 당 최대 2000회)

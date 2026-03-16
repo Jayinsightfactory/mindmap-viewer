@@ -1,4 +1,4 @@
-const CACHE_NAME = 'orbit-ai-v1';
+const CACHE_NAME = 'orbit-ai-v2';
 const STATIC_ASSETS = [
   '/',
   '/orbit3d.html',
@@ -9,9 +9,7 @@ const STATIC_ASSETS = [
 // Install: cache static assets
 self.addEventListener('install', event => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => {
-      return cache.addAll(STATIC_ASSETS);
-    })
+    caches.open(CACHE_NAME).then(cache => cache.addAll(STATIC_ASSETS))
   );
   self.skipWaiting();
 });
@@ -19,32 +17,32 @@ self.addEventListener('install', event => {
 // Activate: clean old caches
 self.addEventListener('activate', event => {
   event.waitUntil(
-    caches.keys().then(keys => {
-      return Promise.all(
-        keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k))
-      );
-    })
+    caches.keys().then(keys =>
+      Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
+    )
   );
   self.clients.claim();
 });
 
-// Fetch: network first, cache fallback (for HTML/CSS)
-// API calls always go to network
+// Fetch: only handle same-origin GET requests
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
 
-  // API calls: always network
-  if (url.pathname.startsWith('/api/')) return;
+  // 외부 도메인: 바이패스 (CDN, 폰트, OAuth 등)
+  if (url.origin !== self.location.origin) return;
 
-  // WebSocket: skip
+  // API/WebSocket: 바이패스
+  if (url.pathname.startsWith('/api/')) return;
   if (event.request.url.startsWith('ws')) return;
 
-  // Static assets: network first, cache fallback
+  // POST 등: 바이패스
+  if (event.request.method !== 'GET') return;
+
+  // 동일 도메인 GET만: network first, cache fallback
   event.respondWith(
     fetch(event.request)
       .then(response => {
-        // Cache successful responses
-        if (response.ok && event.request.method === 'GET') {
+        if (response.ok) {
           const clone = response.clone();
           caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
         }
