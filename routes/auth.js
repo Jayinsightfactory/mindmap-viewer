@@ -21,6 +21,7 @@
 
 const express = require('express');
 const router  = express.Router();
+const { validateBody } = require('../src/validate');
 
 /**
  * @param {object} deps - 의존성 객체
@@ -58,6 +59,13 @@ function createRouter(deps) {
    * @returns {{ user: User, token: string } | { error: string }}
    */
   router.post('/auth/login', (req, res) => {
+    // 입력 검증
+    const vErr = validateBody(req.body, {
+      email:    { required: true, type: 'email' },
+      password: { required: true, type: 'string', minLength: 6 },
+    });
+    if (vErr) return res.status(400).json({ error: vErr });
+
     const result = authLogin(req.body);
     if (result.error) return res.status(401).json(result);
     res.json(result);

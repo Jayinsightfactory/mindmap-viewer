@@ -68,6 +68,7 @@ const rateLimit = ({ windowMs = 900000, max = 2000 } = {}) => (req, res, next) =
   next();
 };
 const helmet       = require('helmet');
+const { validateBody } = require('./src/validate');
 
 // ─── 의존성 로드 ─────────────────────────────────────────────────────────────
 // DATABASE_URL 있으면 PostgreSQL, 없으면 SQLite 자동 선택
@@ -338,10 +339,37 @@ app.set('trust proxy', 1);
 const server = http.createServer(app);
 const wss    = new WebSocket.Server({ server });
 
+// ─── CORS — 동일 도메인 + Railway 프로덕션 ──────────────────────────────────
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  const allowed = [
+    'https://sparkling-determination-production-c88b.up.railway.app',
+    'http://localhost:4747',
+  ];
+  if (!origin || allowed.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin || '*');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,x-api-token,x-device-id');
+  }
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
+
 // ─── 보안 미들웨어 ────────────────────────────────────────────────────────────
 // Helmet: X-Frame-Options, X-Content-Type, CSP 등 보안 헤더 자동 설정
 app.use(helmet({
-  contentSecurityPolicy: false,       // orbit.html 인라인 스크립트 허용 (개발 편의)
+  contentSecurityPolicy: process.env.NODE_ENV === 'production' ? {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "cdn.jsdelivr.net", "cdnjs.cloudflare.com", "unpkg.com", "accounts.google.com"],
+      styleSrc: ["'self'", "'unsafe-inline'", "fonts.googleapis.com"],
+      fontSrc: ["'self'", "fonts.gstatic.com"],
+      imgSrc: ["'self'", "data:", "blob:", "*.googleusercontent.com"],
+      connectSrc: ["'self'", "wss:", "ws:", "accounts.google.com", "api.github.com"],
+      frameSrc: ["'self'", "accounts.google.com"],
+    },
+  } : false,
   crossOriginEmbedderPolicy: false,   // Three.js CDN 허용
   crossOriginOpenerPolicy: false,     // MCP 브라우저 확장 탭 접근 허용 (개발)
   crossOriginResourcePolicy: false,   // 외부 리소스 로드 허용 (개발)
@@ -386,7 +414,33 @@ app.use('/api/', (req, res, next) => {
 // Stripe Webhook은 서명 검증을 위해 원본 바디(Buffer)가 필요 — JSON 파싱 전에 처리
 app.use('/api/payment/webhook', express.raw({ type: 'application/json' }));
 app.use(express.json({ limit: '10mb' }));
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, 'public'), {
+  maxAge: process.env.NODE_ENV === 'production' ? '1d' : 0,
+  etag: true,
+}));
+
+// ─── 로그인 브루트포스 방지 (15분 당 10회) ────────────────────────────────────
+const _loginStore = new Map();
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of _loginStore) {
+    if (now > entry.resetAt) _loginStore.delete(key);
+  }
+}, 60 * 1000);
+const loginLimiter = (req, res, next) => {
+  const key = `login:${req.body?.email || req.ip || 'unknown'}`;
+  const windowMs = 15 * 60 * 1000;
+  const max = 10;
+  const entry = _loginStore.get(key) || { count: 0, resetAt: Date.now() + windowMs };
+  if (Date.now() > entry.resetAt) { entry.count = 0; entry.resetAt = Date.now() + windowMs; }
+  if (++entry.count > max) {
+    return res.status(429).json({ error: '로그인 시도가 너무 많습니다. 15분 후 다시 시도해주세요.' });
+  }
+  _loginStore.set(key, entry);
+  next();
+};
+app.post('/api/auth/login', loginLimiter);
+app.post('/api/auth/register', loginLimiter);
 
 // ─── OAuth 초기화 ─────────────────────────────────────────────────────────────
 const session = require('express-session');
@@ -788,9 +842,15 @@ wss.on('connection', (ws, req) => {
  */
 app.post('/api/hook', async (req, res) => {
   try {
+    // 입력 검증: events 필드 필수 + 배열 타입
+    const vErr = validateBody(req.body, {
+      events: { required: true, type: 'array' },
+    });
+    if (vErr) return res.status(400).json({ error: vErr });
+
     const { events = [], channelId = 'default', memberName = 'Claude' } = req.body;
-    if (!Array.isArray(events) || events.length === 0) {
-      return res.status(400).json({ error: 'events 배열 필요' });
+    if (events.length === 0) {
+      return res.status(400).json({ error: 'events 배열이 비어있습니다' });
     }
 
     // Authorization 헤더로 user_id 결정 (토큰 있으면 해당 유저, 없으면 'local')
@@ -2031,3 +2091,26 @@ async function startServer() {
   });  // server.listen 콜백 끝
 }
 startServer();
+
+// ─── Graceful shutdown ──────────────────────────────────────────────────────
+function gracefulShutdown(signal) {
+  console.log(`[Server] ${signal} 수신 — 정상 종료 시작`);
+  if (server && server.close) {
+    server.close(() => {
+      console.log('[Server] HTTP 서버 종료');
+      // PG pool이 db-pg.js 내부에 있으므로 모듈 종료 함수 호출
+      if (dbModule.close) {
+        Promise.resolve(dbModule.close()).then(() => {
+          console.log('[Server] DB 연결 종료');
+          process.exit(0);
+        }).catch(() => process.exit(0));
+      } else {
+        process.exit(0);
+      }
+    });
+  }
+  // 10초 후 강제 종료
+  setTimeout(() => { console.warn('[Server] 강제 종료'); process.exit(1); }, 10000);
+}
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));

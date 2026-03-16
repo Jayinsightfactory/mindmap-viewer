@@ -21,6 +21,7 @@
 const express = require('express');
 const { ulid }  = require('ulid');
 const crypto    = require('crypto');
+const { validateBody } = require('../src/validate');
 
 function createWorkspaceRouter({ getDb, db: _dbLegacy, verifyToken, getUserById, ADMIN_EMAILS, createNotification }) {
   const router = express.Router();
@@ -83,8 +84,13 @@ function createWorkspaceRouter({ getDb, db: _dbLegacy, verifyToken, getUserById,
   // ─────────────────────────────────────────────────────────────────────────
   router.post('/workspace/create', auth, async (req, res) => {
     try {
+      // 입력 검증
+      const vErr = validateBody(req.body, {
+        name: { required: true, type: 'string', minLength: 1, maxLength: 50 },
+      });
+      if (vErr) return res.status(400).json({ error: vErr });
+
       const { name, companyName = '' } = req.body;
-      if (!name) return res.status(400).json({ error: 'name required' });
 
       const id          = ulid();
       const invite_code = genInviteCode();
@@ -165,8 +171,13 @@ function createWorkspaceRouter({ getDb, db: _dbLegacy, verifyToken, getUserById,
   // ─────────────────────────────────────────────────────────────────────────
   router.post('/workspace/join', auth, async (req, res) => {
     try {
+      // 입력 검증
+      const vErr = validateBody(req.body, {
+        inviteCode: { required: true, type: 'string', minLength: 4, maxLength: 20 },
+      });
+      if (vErr) return res.status(400).json({ error: vErr });
+
       const { inviteCode, teamName = '팀 1' } = req.body;
-      if (!inviteCode) return res.status(400).json({ error: 'inviteCode required' });
 
       let ws = null;
       let isTimedCode = false;
