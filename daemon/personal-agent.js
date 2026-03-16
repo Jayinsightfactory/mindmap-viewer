@@ -18,6 +18,16 @@ const path    = require('path');
 const fs      = require('fs');
 const os      = require('os');
 const http    = require('http');
+const https   = require('https');
+
+// ── 원격 서버 설정 (~/.orbit-config.json) ──────────────────────────────────
+const _orbitConfig = (() => {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(os.homedir(), '.orbit-config.json'), 'utf8'));
+  } catch { return {}; }
+})();
+const REMOTE_URL   = _orbitConfig.serverUrl || process.env.ORBIT_SERVER_URL || null;
+const REMOTE_TOKEN = _orbitConfig.token     || process.env.ORBIT_TOKEN      || '';
 
 // ── 설정 ─────────────────────────────────────────────────────────────────────
 const args     = process.argv.slice(2);
@@ -57,6 +67,23 @@ function waitForServer(retries = 10) {
       }
     };
     check();
+  });
+}
+
+// ── 원격 서버 헬스 체크 (비차단) ──────────────────────────────────────────────
+function checkRemoteServer() {
+  if (!REMOTE_URL) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    try {
+      const url = new URL('/api/personal/status', REMOTE_URL);
+      const mod = url.protocol === 'https:' ? https : http;
+      const req = mod.get(url.href, { timeout: 5000 }, (res) => {
+        res.resume();
+        resolve(res.statusCode < 500);
+      });
+      req.on('error', () => resolve(false));
+      req.on('timeout', () => { req.destroy(); resolve(false); });
+    } catch { resolve(false); }
   });
 }
 
@@ -117,13 +144,20 @@ async function runSuggestions() {
 // ── 메인 ─────────────────────────────────────────────────────────────────────
 async function main() {
   console.log(`[personal-agent] 시작 (PID: ${process.pid}, Orbit Port: ${PORT})`);
+  console.log(`[personal-agent] 원격 서버: ${REMOTE_URL || '(없음)'}`);
   writePid();
 
-  // Orbit 서버 대기
+  // Orbit 서버 대기 (localhost)
   const serverUp = await waitForServer();
   if (!serverUp) {
-    console.warn('[personal-agent] Orbit 서버에 연결할 수 없습니다. 계속 진행합니다.');
+    console.warn('[personal-agent] 로컬 Orbit 서버에 연결할 수 없습니다. 계속 진행합니다.');
   }
+
+  // 원격 서버 헬스 체크 (비차단 — 실패해도 계속)
+  checkRemoteServer().then(up => {
+    if (up) console.log('[personal-agent] 원격 서버 연결 확인됨');
+    else if (REMOTE_URL) console.warn('[personal-agent] 원격 서버에 연결할 수 없습니다. 로컬만 사용합니다.');
+  });
 
   // ① keyboard-watcher 시작
   let keyboardWatcher = null;
@@ -143,6 +177,15 @@ async function main() {
     console.error('[personal-agent] 파일 와처 시작 실패:', err.message);
   }
 
+  // ②-b screen-capture 시작
+  let screenCapture = null;
+  try {
+    screenCapture = require(path.join(ROOT, 'src/screen-capture'));
+    screenCapture.start();
+  } catch (err) {
+    console.error('[personal-agent] 스크린 캡처 시작 실패:', err.message);
+  }
+
   // ③ 10분마다 content-analyzer 실행 (Ollama 로컬 태깅)
   await runContentAnalysis();
   const contentTimer = setInterval(runContentAnalysis, 10 * 60 * 1000);
@@ -157,9 +200,11 @@ async function main() {
 
   // ── 상태 출력 ──────────────────────────────────────────────────────────────
   console.log(`[personal-agent] 실행 중`);
-  console.log(`  ⌨️  키보드 캡처: ${keyboardWatcher?.isRunning() ? 'ON' : 'OFF'}`);
-  console.log(`  📁 파일 와처:    ${fileLearner?.isRunning() ? 'ON' : 'OFF'}`);
-  console.log(`  💡 제안 엔진:    30분마다 실행`);
+  console.log(`  키보드 캡처:   ${keyboardWatcher?.isRunning() ? 'ON' : 'OFF'}`);
+  console.log(`  파일 와처:     ${fileLearner?.isRunning() ? 'ON' : 'OFF'}`);
+  console.log(`  스크린 캡처:   ${screenCapture ? 'ON (5분 간격)' : 'OFF'}`);
+  console.log(`  제안 엔진:     30분마다 실행`);
+  console.log(`  원격 서버:     ${REMOTE_URL || '(미설정)'}`);
   console.log(`  PID 파일: ${PID_FILE}`);
 
   // ── 종료 핸들러 ────────────────────────────────────────────────────────────
@@ -169,6 +214,7 @@ async function main() {
     clearInterval(suggestionTimer);
     try { keyboardWatcher?.stop(); } catch {}
     try { fileLearner?.stop(); } catch {}
+    try { screenCapture?.stop(); } catch {}
     removePid();
     process.exit(0);
   }

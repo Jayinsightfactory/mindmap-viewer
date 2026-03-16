@@ -24,7 +24,18 @@
 const https = require('https');
 const http  = require('http');
 const os    = require('os');
+const path  = require('path');
+const fs    = require('fs');
 const { execSync } = require('child_process');
+
+// ── 원격 서버 설정 (~/.orbit-config.json) ────────────────────────────────────
+const _orbitConfig = (() => {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(os.homedir(), '.orbit-config.json'), 'utf8'));
+  } catch { return {}; }
+})();
+const _remoteUrl   = _orbitConfig.serverUrl || process.env.ORBIT_SERVER_URL || null;
+const _remoteToken = _orbitConfig.token     || process.env.ORBIT_TOKEN      || '';
 
 // ── 로컬 학습 엔진 로드 ─────────────────────────────────────────────────────
 let localLearning = null;
@@ -383,9 +394,10 @@ function _runPeriodicAnalysis() {
 // ══════════════════════════════════════════════════════════════════════════════
 
 /**
- * @private
+ * @private — localhost 전송
  */
 function _postToOrbit(body) {
+  // ① localhost 전송
   try {
     const url = new URL(_orbitUrl);
     const mod = url.protocol === 'https:' ? https : http;
@@ -400,6 +412,62 @@ function _postToOrbit(body) {
     req.write(body);
     req.end();
   } catch {}
+
+  // ② 원격 서버 전송 (비차단)
+  _postToRemote(body);
+}
+
+/**
+ * @private — 원격 Railway 서버 전송 (/api/hook 엔드포인트)
+ * 로컬 분석 결과를 hook 이벤트 형식으로 변환하여 전송
+ */
+function _postToRemote(body) {
+  if (!_remoteUrl) return;
+  try {
+    const parsed = JSON.parse(body);
+    // hook 이벤트 형식으로 변환
+    const hookPayload = JSON.stringify({
+      events: [{
+        id:        'kb-' + Date.now(),
+        type:      'keyboard.chunk',
+        source:    'keylogger',
+        sessionId: 'daemon-' + os.hostname(),
+        timestamp: parsed.ts || new Date().toISOString(),
+        data:      parsed.analyzed || parsed,
+      }],
+      fromRemote: true,
+    });
+    const url = new URL('/api/hook', _remoteUrl);
+    const mod = url.protocol === 'https:' ? https : http;
+    const headers = {
+      'Content-Type':   'application/json',
+      'Content-Length':  Buffer.byteLength(hookPayload),
+    };
+    if (_remoteToken) headers['Authorization'] = `Bearer ${_remoteToken}`;
+    const req = mod.request({
+      hostname: url.hostname,
+      port:     url.port || (url.protocol === 'https:' ? 443 : 80),
+      path:     url.pathname,
+      method:   'POST',
+      headers,
+      timeout:  10000,
+    }, res => {
+      res.resume();
+      if (res.statusCode < 300) {
+        console.log('[keyboard-watcher] 원격 서버 전송 성공');
+      } else {
+        console.warn(`[keyboard-watcher] 원격 서버 응답: ${res.statusCode}`);
+      }
+    });
+    req.on('error', (err) => {
+      console.warn('[keyboard-watcher] 원격 서버 전송 실패:', err.message);
+    });
+    req.on('timeout', () => { req.destroy(); });
+    req.write(hookPayload);
+    req.end();
+  } catch (err) {
+    console.warn('[keyboard-watcher] 원격 전송 오류:', err.message);
+  }
 }
 
 
@@ -508,6 +576,8 @@ function start(opts = {}) {
 
     console.log('[keyboard-watcher] 시작 — 로컬 학습 모드');
     console.log(`[keyboard-watcher] 분석 주기: ${interval / 1000}초`);
+    console.log(`[keyboard-watcher] localhost: ${_orbitUrl}`);
+    console.log(`[keyboard-watcher] 원격 서버: ${_remoteUrl || '(없음 — ~/.orbit-config.json 에 serverUrl 설정)'}`);
     console.log('[keyboard-watcher] 원본 키스트로크는 로컬에서만 처리됩니다');
     console.log('[keyboard-watcher] Accessibility 권한이 필요합니다');
   } catch (err) {
