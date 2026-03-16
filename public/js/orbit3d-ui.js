@@ -731,11 +731,18 @@ window.toggleLeftNav = toggleLeftNav;
 
 function setViewPersonal() {
   // workspace → personal 전환 시 multilevel scene 정리
-  if (window.RendererManager) window.RendererManager.switchTo('personal');
-  else if (window.multiLevelRenderer) {
+  if (window.RendererManager) {
+    window.RendererManager.switchTo('personal');
+  } else if (window.multiLevelRenderer) {
     // RendererManager 미로드 폴백
     if (typeof closeDrillPanel === 'function') closeDrillPanel();
   }
+
+  // 강제 multilevel 잔여 오브젝트 정리 (RendererManager 경유 후에도 보험)
+  if (window.RendererManager && window.RendererManager.cleanupMultilevel) {
+    window.RendererManager.cleanupMultilevel();
+  }
+
   if (typeof _teamMode !== 'undefined' && (_teamMode || _companyMode)) exitTeamMode();
   if (typeof _parallelMode !== 'undefined' && _parallelMode) exitParallelMode();
   localStorage.setItem('orbitViewMode', 'personal');

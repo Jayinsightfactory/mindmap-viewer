@@ -207,6 +207,14 @@ async function drillDownToMember(memberNode) {
   try { document.getElementById('team-mode-badge').style.display = 'none'; } catch {}
   try { document.querySelector('.tm-label').textContent = '👥 팀'; } catch {}
 
+  // RendererManager 모드 라벨을 personal로 설정 (나중에 team 복귀 시 switchTo가 스킵되지 않도록)
+  if (window.RendererManager?.setModeLabel) window.RendererManager.setModeLabel('personal');
+
+  // 드릴다운 소스 먼저 설정 (breadcrumb에서 사용)
+  window._drillDownSource = 'team';
+  window._drillDownMemberId = memberNode.memberId;
+  window._drillDownMemberName = memberNode.label;
+
   // 실제 유저 그래프 API 호출 (memberData.userId = 실제 유저 ID)
   const realUserId = memberData?.userId || memberData?.originalUserId;
   if (realUserId) {
@@ -220,10 +228,7 @@ async function drillDownToMember(memberNode) {
         if (data.nodes && data.nodes.length > 0) {
           buildPlanetSystem(data.nodes);
           document.getElementById('h-hours').textContent = memberNode.label || memberData?.name || '';
-          updateBreadcrumb('personal');
-          window._drillDownSource = 'team';
-          window._drillDownMemberId = memberNode.memberId;
-          window._drillDownMemberName = memberNode.label;
+          _showDrillDownBreadcrumb(memberNode.label);
           lerpCameraTo(40, 0, 0, 0);
           return;
         }
@@ -236,11 +241,41 @@ async function drillDownToMember(memberNode) {
     const fakeNodes = memberTasksToFakeSessions(memberData);
     buildPlanetSystem(fakeNodes);
   }
-  updateBreadcrumb('personal');
-  window._drillDownSource = 'team';
-  window._drillDownMemberId = memberNode.memberId;
-  window._drillDownMemberName = memberNode.label;
+  _showDrillDownBreadcrumb(memberNode.label);
   lerpCameraTo(40, 0, 0, 0);
+}
+
+// 드릴다운 시 "← 팀" 복귀 브레드크럼 표시
+function _showDrillDownBreadcrumb(memberName) {
+  const bc = document.getElementById('nav-breadcrumb');
+  const elTeam   = document.getElementById('bc-team');
+  const elMember = document.getElementById('bc-member');
+  const arrow2   = document.querySelector('.bc-arrow2');
+  const arrow3   = document.querySelector('.bc-arrow3');
+  const elDept   = document.getElementById('bc-dept');
+
+  if (!bc) return;
+  bc.classList.add('visible');
+
+  // "← 팀" 클릭 시 팀 뷰로 복귀
+  elTeam.textContent = '← 팀';
+  elTeam.className = 'bc-crumb clickable';
+  elTeam.style.display = '';
+  elTeam.onclick = () => {
+    window._drillDownSource = null;
+    window._drillDownMemberId = null;
+    window._drillDownMemberName = null;
+    loadTeamDemo();
+  };
+
+  if (arrow2) arrow2.style.display = 'none';
+  if (elDept) elDept.style.display = 'none';
+  if (arrow3) arrow3.style.display = '';
+  if (elMember) {
+    elMember.textContent = memberName || '팀원';
+    elMember.className = 'bc-crumb active';
+    elMember.style.display = '';
+  }
 }
 
 function unfocusMember() {

@@ -68,6 +68,33 @@
       });
       mlr.connectionLines = [];
 
+      // billboard 콜백 해제
+      mlr._updateCardBillboard = null;
+
+      // 씬에 남은 multilevel 잔여 오브젝트 강제 제거
+      // (PlaneGeometry 카드, 카드 그룹, isNode/isCard 플래그)
+      if (sc) {
+        const toRemove = [];
+        sc.children.forEach(child => {
+          if (child.userData && (child.userData.isNode || child.userData.isCard || child.userData.nodeId)) {
+            toRemove.push(child);
+          }
+        });
+        toRemove.forEach(obj => {
+          sc.remove(obj);
+          obj.traverse(c => {
+            if (c.geometry)  c.geometry.dispose();
+            if (c.material) {
+              if (c.material.map) c.material.map.dispose();
+              if (c.material.dispose) c.material.dispose();
+            }
+          });
+        });
+        if (toRemove.length > 0) {
+          console.log(`[RendererManager] Multilevel 잔여 ${toRemove.length}개 오브젝트 강제 제거`);
+        }
+      }
+
       // 상태 초기화
       mlr.workspaceMode  = false;
       mlr.workspaceId    = null;
@@ -75,6 +102,7 @@
       mlr.userRole       = null;
       mlr.permissions    = null;
       mlr.selectedNodeId = null;
+      mlr.currentNodes   = [];
 
       // 드릴 패널 닫기
       if (typeof closeDrillPanel === 'function') closeDrillPanel();
@@ -158,6 +186,11 @@
     if (fn) fn();
   }
 
+  // ─── 모드 라벨만 변경 (cleanup 없이) — drill-down 등 내부 전환용 ──────────
+  function setModeLabel(mode) {
+    _currentMode = mode;
+  }
+
   // ─── nav 버튼 UI 업데이트 ───────────────────────────────────────────────────
   function _updateNavUI(mode) {
     try {
@@ -182,6 +215,7 @@
     cleanup,
     cleanupMultilevel: _cleanupMultilevel,
     cleanupMyWork:     _cleanupMyWork,
+    setModeLabel,
     get currentMode()  { return _currentMode; },
   };
 
