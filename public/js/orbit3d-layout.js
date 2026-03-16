@@ -297,6 +297,55 @@ function drawCompactProjectView() {
     _drawSphereLabel(ctx, meSc.x, meSc.y, meR, '나의 작업', `${projects.length} 프로젝트`, '#06b6d4', false);
   }
 
+  // ── 팔로워/팀원 구체 (3D 월드 — 프로젝트 링 바깥, 항상 표시) ──────────────
+  const _followData = window._followingData || [];
+  const _teamData = window._teamWorldData?.members || [];
+  const _socialNodes = [
+    ..._followData.map((f, i) => ({ name: f.name || f.email?.split('@')[0] || '사용자', sub: f.headline || '팔로잉', color: '#a78bfa', userId: f.user_id, type: 'follower', idx: i })),
+    ..._teamData.map((m, i) => ({ name: m.name || '팀원', sub: m.role || '팀', color: m.color || '#58a6ff', userId: m.userId || m.id, type: 'teamMember', idx: i + _followData.length })),
+  ];
+  // 중복 제거 (같은 userId)
+  const _seenIds = new Set();
+  const _uniqueSocial = _socialNodes.filter(n => { if (_seenIds.has(n.userId)) return false; _seenIds.add(n.userId); return true; });
+
+  if (_uniqueSocial.length > 0) {
+    const outerR = (ringRadii.length > 0 ? ringRadii[ringRadii.length - 1] : WORLD_RING_BASE) + WORLD_RING_GAP * 2;
+    const socialStep = (Math.PI * 2) / Math.max(_uniqueSocial.length, 3);
+    const socialStart = Math.PI / 4; // 45도 오프셋 (프로젝트와 안 겹치게)
+
+    _uniqueSocial.forEach((sn, si) => {
+      const angle = socialStart + si * socialStep;
+      const sPos = new THREE.Vector3(Math.cos(angle) * outerR, 0, Math.sin(angle) * outerR);
+      const sSc = toScreen(sPos);
+      if (sSc.z > 1) return;
+
+      const sScale = screenScale(sPos);
+      const sR = Math.max(30, Math.min(55, sScale * 7));
+
+      _drawWireSphere(ctx, sSc.x, sSc.y, sR, sn.color, {
+        meridians: 2, parallels: 1, glow: true, rotation: now * 0.12 + si * 0.5,
+      });
+      _drawSphereLabel(ctx, sSc.x, sSc.y, sR, sn.name, sn.sub, sn.color, false);
+
+      // ME → 팔로워 연결선
+      if (meSc.z <= 1) {
+        ctx.save();
+        ctx.globalAlpha = 0.12;
+        ctx.strokeStyle = sn.color; ctx.lineWidth = 1;
+        ctx.setLineDash([6, 6]);
+        ctx.beginPath(); ctx.moveTo(meSc.x, meSc.y); ctx.lineTo(sSc.x, sSc.y); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.restore();
+      }
+
+      registerHitArea({
+        cx: sSc.x, cy: sSc.y, r: sR + 6,
+        obj: null,
+        data: { type: sn.type, userId: sn.userId, userName: sn.name, color: sn.color, member: sn },
+      });
+    });
+  }
+
   // 라벨 별칭 맵
   const _aliases = (() => { try { return JSON.parse(localStorage.getItem('orbitLabelAliases') || '{}'); } catch { return {}; } })();
 
@@ -505,19 +554,8 @@ function drawCompactProjectView() {
     }
   });
 
-  // ── 팀원 클러스터 (줌아웃 시 페이드인) ────────────────────────────────────
-  const _wScale = window._worldScale || 1.0;
-  if (_wScale < 0.75) {
-    // 팀 클러스터는 스크린 좌표 기반이므로 별도 처리
-    const _txX = W / 2, _txY = H / 2;
-    ctx.save();
-    ctx.translate(_txX, _txY);
-    ctx.scale(_wScale, _wScale);
-    _drawTeamClusters(ctx, _txX, _txY, W, H, _wScale);
-    // 팔로잉 클러스터 (팀원보다 더 바깥에 표시)
-    _drawFollowingClusters(ctx, _txX, _txY, W, H, _wScale);
-    ctx.restore();
-  }
+  // 팔로워/팀원은 이제 3D 월드 구체로 항상 표시됨 (위 코드에서 처리)
+  // 줌아웃 전용 스크린 좌표 렌더링은 제거
 
   // ── hitArea 우선순위 정렬 ─────────────────────────────────────────────────
   _hitAreas.sort((a, b) => {
