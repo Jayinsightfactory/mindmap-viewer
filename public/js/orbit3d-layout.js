@@ -222,7 +222,13 @@ function drawCompactProjectView() {
   // ── 양파형 동심원 배치 (3D 월드 좌표 X-Z 평면) ────────────────────────────
   const isDrillStage1 = _drillStage >= 1 && _drillProject;
   const baseAngle = -Math.PI / 2;
-  const _scale = window._spacingScale || 1.0;
+  // 카메라 거리에 따라 간격 자동 조절 (r:50→50%, r:80→150%)
+  const _camR = (typeof controls !== 'undefined') ? controls.sph.r : 55;
+  const _autoScale = _camR <= 50 ? 0.5
+    : _camR >= 80 ? 1.5
+    : 0.5 + (_camR - 50) / 30 * 1.0; // 50~80 구간 선형 보간 (0.5→1.5)
+  const _manualScale = window._spacingScale || null;
+  const _scale = _manualScale !== null ? _manualScale : _autoScale;
   const WORLD_NODE_SEP = 6 * _scale;   // 노드 간 최소 월드 거리
   const WORLD_RING_BASE = 12 * _scale; // 1번째 링 시작 반경
   const WORLD_RING_GAP = 10 * _scale;  // 링 간 간격
