@@ -395,7 +395,7 @@ function drawCompactProjectView() {
       // 카테고리: 프로젝트 외곽 방향 부채꼴 배치 (3D)
       const numCatsNow = sortedCats.length;
       const dirAngle = angle; // 프로젝트의 양파 배치 각도를 기준
-      const CAT_WORLD_DIST = 8;
+      const CAT_WORLD_DIST = 12;
       const catAngleStep = Math.max(Math.PI / 6, Math.PI * 2 / Math.max(numCatsNow * 3, 6));
       const catHalfSpan = Math.min((numCatsNow - 1) / 2 * catAngleStep, Math.PI * 5 / 6);
 
@@ -446,7 +446,7 @@ function drawCompactProjectView() {
 
         // ── 세션: 카테고리 아래 세로 배치 (소형 와이어프레임 구체) ────────────
         const maxShow = Math.min(catPlanets.length, 3);
-        const SES_WORLD_STEP = 3;
+        const SES_WORLD_STEP = 5;
         for (let si = 0; si < maxShow; si++) {
           const planet = catPlanets[si];
           const sesPos3d = new THREE.Vector3(

@@ -298,13 +298,17 @@ function computeSessionSummaries(events) {
   for (const [sid, s] of Object.entries(sessionMap)) {
 
     // ── PURPOSE (WHY): 첫 user.message = 세션 목적 ──
+    // Skip CLI commands that aren't real user intent
+    const CLI_NOISE = /^(dangerously[-\s]?skip[-\s]?permission|--?[\w-]+|y|n|yes|no|exit|quit|\/\w+|npm |git |cd |ls |cat )$/i;
     let purpose = '';
     if (s.userMessages.length > 0) {
-      // 첫 문장만 추출 (마침표/느낌표/물음표로 끊기)
-      const firstMsg = s.userMessages[0];
-      const sentenceMatch = firstMsg.match(/^(.+?[.!?。！？])\s/);
-      purpose = sentenceMatch ? sentenceMatch[1] : firstMsg;
-      if (purpose.length > 60) purpose = purpose.slice(0, 57) + '...';
+      // 노이즈가 아닌 첫 번째 메시지 찾기
+      const firstMsg = s.userMessages.find(m => !CLI_NOISE.test(m.trim()));
+      if (firstMsg) {
+        const sentenceMatch = firstMsg.match(/^(.+?[.!?。！？])\s/);
+        purpose = sentenceMatch ? sentenceMatch[1] : firstMsg;
+        if (purpose.length > 60) purpose = purpose.slice(0, 57) + '...';
+      }
     }
 
     // ── WHAT: 모듈 단위 행동 요약 ──

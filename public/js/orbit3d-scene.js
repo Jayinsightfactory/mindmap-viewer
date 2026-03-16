@@ -133,6 +133,8 @@ function _buildPlanetSystemInner(nodeList) {
     if (filtered.length === 0) continue;
 
     // ── 프로젝트명 추출 (심층 경로 분석) ──────────────────────────────────
+    // CLI 노이즈 필터 (프로젝트명/세션 제목에 나오면 안 되는 CLI 옵션)
+    const _CLI_NOISE_RE = /^(dangerously[-\s]?skip[-\s]?permission|--?[\w-]+|y|n|yes|no|exit|quit|\/\w+|npm |git |cd |ls |cat )$/i;
 
     const startEv = rawEvents.find(e => e.type === 'session.start');
     const pd      = startEv?.data?.projectDir || startEv?.data?.cwd || '';
@@ -158,8 +160,12 @@ function _buildPlanetSystemInner(nodeList) {
       // 2순위: 노드에 이미 주입된 sessionProjectName (graph-engine에서 계산)
       const _nodeProj = rawEvents[0]?.sessionProjectName;
 
-      // 3순위: 첫 user.message
-      const _firstUserMsg = rawEvents.find(e => e.type === 'user.message');
+      // 3순위: 첫 user.message (CLI 노이즈 필터링)
+      const _firstUserMsg = rawEvents.find(e => {
+        if (e.type !== 'user.message') return false;
+        const txt = (e.data?.contentPreview || e.data?.content || '').replace(/[\n\r]/g, ' ').trim();
+        return txt.length > 3 && !_CLI_NOISE_RE.test(txt);
+      });
       const _msgText = (_firstUserMsg?.data?.contentPreview || _firstUserMsg?.data?.content || '').replace(/[\n\r]/g, ' ').trim();
 
       if (topProj) {
@@ -179,6 +185,10 @@ function _buildPlanetSystemInner(nodeList) {
       } else {
         projName = '작업 세션';
       }
+    }
+    // Final guard: if projName looks like CLI noise, fallback
+    if (_CLI_NOISE_RE.test((projName || '').trim())) {
+      projName = '작업 세션';
     }
 
     const clusters = clusterByIntent(sid, filtered);
@@ -349,12 +359,26 @@ function _buildPlanetSystemInner(nodeList) {
     // 노드에 이미 주입된 심층 분석 필드를 행성에 전파
     const _firstNode = rawEvents[0];
     planet.userData.purpose       = _firstNode?.purpose || '';
-    planet.userData.whatSummary   = _firstNode?.whatSummary || '';
-    planet.userData.resultSummary = _firstNode?.resultSummary || '';
     planet.userData.techStack     = _firstNode?.techStack || '';
     planet.userData.appsUsed      = _firstNode?.appsUsed || '';
     planet.userData.aiToolsUsed   = _firstNode?.aiToolsUsed || '';
     planet.userData.sessionDuration = _firstNode?.sessionDuration || '';
+
+    // WHAT/RESULT: 다중 클러스터 세션일 때 클러스터별 고유 요약 생성
+    // 같은 세션의 형제 클러스터끼리 동일 텍스트가 나오지 않도록 함
+    if (pl.isFullSession) {
+      // 세션 전체가 1개 행성 → 세션 레벨 요약 그대로
+      planet.userData.whatSummary   = _firstNode?.whatSummary || '';
+      planet.userData.resultSummary = _firstNode?.resultSummary || '';
+    } else {
+      // 다중 클러스터: 클러스터의 도메인 라벨을 WHAT에 사용하고
+      // 클러스터 내 첫 user.message를 RESULT 대신 표시
+      const clusterDomainLabel = pl.label || domain || '';
+      const clusterUserMsg = rawEvents.find(e => e.type === 'user.message');
+      const clusterMsgText = (clusterUserMsg?.data?.contentPreview || clusterUserMsg?.data?.content || '').replace(/[\n\r]+/g, ' ').trim();
+      planet.userData.whatSummary   = clusterDomainLabel;
+      planet.userData.resultSummary = clusterMsgText ? clusterMsgText.slice(0, 60) : '';
+    }
     // 프로젝트명: session 분석 결과로 보강
     const _curProj = planet.userData.projectName || '';
     if (_firstNode?.sessionProjectName && (_curProj === '작업 세션' || _curProj === '기본 작업' || !_curProj)) {

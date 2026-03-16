@@ -274,7 +274,7 @@ function _drawSphereLabel(ctx, cx, cy, R, title, sub, color, dimmed, whatLine, r
 
   const fontSize = Math.max(8, Math.min(13, R * 0.52));
   const maxW = R * 1.6;
-  // 줌인 단계별 표시 (R >= 35: WHAT/RESULT, R >= 50: 추가 컨텍스트)
+  // Small spheres (R < 35): only title + sub, skip WHAT/RESULT/context
   const showExtra = R >= 35;
   const showDeep  = R >= 50;
   const ex = extraCtx || {};
@@ -284,10 +284,18 @@ function _drawSphereLabel(ctx, cx, cy, R, title, sub, color, dimmed, whatLine, r
   // purpose를 title로 쓰면 기존 title은 sub로 내림
   const displaySub = (ex.purpose && ex.purpose.length > 2 && title !== ex.purpose) ? title : sub;
 
-  const hasWhat = showExtra && whatLine && whatLine.length > 0;
-  const hasResult = showExtra && resultLine && resultLine.length > 0;
+  // Track visible lines: title=1, sub=2, what=3, result=4, line3=5
+  // Cap at 3 visible lines max to prevent vertical overflow
+  const MAX_VISIBLE_LINES = 3;
+  let linesUsed = 1; // title always counts
+  if (displaySub) linesUsed++;
+
+  const hasWhat = showExtra && whatLine && whatLine.length > 0 && linesUsed < MAX_VISIBLE_LINES;
+  if (hasWhat) linesUsed++;
+  const hasResult = showExtra && resultLine && resultLine.length > 0 && linesUsed < MAX_VISIBLE_LINES;
+  if (hasResult) linesUsed++;
   // 3번째 줄: techStack + duration (둘 다 없으면 skip)
-  const line3Text = showDeep ? _buildLine3(ex) : '';
+  const line3Text = (showDeep && linesUsed < MAX_VISIBLE_LINES) ? _buildLine3(ex) : '';
   const hasLine3 = line3Text.length > 0;
 
   // 총 줄 수에 따른 수직 오프셋 계산
