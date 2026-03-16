@@ -1929,26 +1929,26 @@ function openWsMemberManage() {
         bodyEl.innerHTML = '<div style="padding:20px;text-align:center;color:#6e7681">멤버가 없습니다</div>';
         return;
       }
-      bodyEl.innerHTML = members.map(m => `
-        <div style="display:flex;align-items:center;gap:10px;padding:10px;border-bottom:1px solid #21262d">
-          <div style="width:32px;height:32px;border-radius:50%;background:#1f6feb22;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0">
-            ${m.role==='owner'?'👑':m.role==='admin'?'⚙':'👤'}
-          </div>
-          <div style="flex:1;min-width:0">
-            <div style="font-size:13px;color:#e6edf3;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${m.display_name||m.user_id?.slice(-8)||'멤버'}</div>
-            <div style="font-size:10px;color:#6e7681">${m.team_name||'팀 미배정'} · ${m.role||'member'}</div>
-          </div>
-          <select onchange="changeWsMemberTeam('${wsId}','${m.user_id}',this.value)" style="
-            padding:4px 6px;font-size:10px;background:#161b22;color:#8b949e;border:1px solid #30363d;
-            border-radius:6px;cursor:pointer;outline:none">
-            <option value="${m.team_name||''}" selected>${m.team_name||'팀 미배정'}</option>
-            <option value="개발팀">개발팀</option>
-            <option value="디자인팀">디자인팀</option>
-            <option value="기획팀">기획팀</option>
-            <option value="마케팅팀">마케팅팀</option>
-            <option value="운영팀">운영팀</option>
-          </select>
-        </div>`).join('');
+      const defaultTeams = ['팀 미배정','개발팀','디자인팀','기획팀','마케팅팀','운영팀'];
+      const allTeams = [...new Set([...defaultTeams, ...members.map(m => m.teamName).filter(Boolean)])];
+      bodyEl.innerHTML = members.map(m => {
+        const name = m.name || m.email?.split('@')[0] || '사용자';
+        const team = m.teamName || '팀 미배정';
+        const roleIcon = m.role==='owner'?'👑':m.role==='admin'?'🛡':'👤';
+        const roleLabel = m.role==='owner'?'소유자':m.role==='admin'?'관리자':'멤버';
+        const opts = allTeams.map(t =>
+          '<option value="'+t+'" style="background:#161b22;color:#e6edf3" '+(team===t?'selected':'')+'>'+t+'</option>'
+        ).join('');
+        return '<div style="display:flex;align-items:center;gap:10px;padding:12px 8px;border-bottom:1px solid #21262d">'
+          + '<div style="font-size:22px">'+roleIcon+'</div>'
+          + '<div style="flex:1;min-width:0">'
+          + '<div style="font-size:14px;color:#e6edf3;font-weight:600">'+name+'</div>'
+          + '<div style="font-size:11px;color:#8b949e">'+(m.email||'')+' · '+roleLabel+'</div>'
+          + '</div>'
+          + '<select onchange="changeWsMemberTeam(\''+wsId+'\',\''+m.userId+'\',this.value)" style="'
+          + 'font-size:12px;padding:5px 8px;background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:6px;cursor:pointer">'
+          + opts + '</select></div>';
+      }).join('');
     })
     .catch(e => {
       const bodyEl = document.getElementById('ws-mm-body');
@@ -1959,12 +1959,12 @@ window.openWsMemberManage = openWsMemberManage;
 
 function changeWsMemberTeam(wsId, userId, teamName) {
   const token = (typeof _orbitUser !== 'undefined' && _orbitUser?.token) || localStorage.getItem('orbit_token') || '';
-  fetch('/api/workspace/' + wsId + '/assign-team', {
-    method: 'POST',
+  fetch('/api/workspace/member/team-admin', {
+    method: 'PATCH',
     headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-    body: JSON.stringify({ userId, teamName })
+    body: JSON.stringify({ workspaceId: wsId, userId, teamName })
   }).then(r => r.json()).then(d => {
-    if (d.ok) showToast && showToast('팀 배정 변경됨: ' + teamName);
+    if (d.ok || d.success) showToast && showToast('팀 배정 변경됨: ' + teamName);
     else showToast && showToast(d.error || '팀 배정 실패');
   }).catch(e => showToast && showToast('오류: ' + e.message));
 }
