@@ -105,10 +105,13 @@ function buildPlanetSystem(nodeList) {
     const pd      = startEv?.data?.projectDir || startEv?.data?.cwd || '';
     let projName;
     if (pd) {
-      // projectDir 있으면 마지막 폴더명
       projName = pd.replace(/\\/g,'/').split('/').filter(Boolean).pop();
-    } else if (/^[0-9a-f]{8}-[0-9a-f]{4}/.test(sid)) {
-      // UUID 세션 → 가장 많이 등장한 파일의 디렉터리명으로 추론
+    } else {
+      // 1순위: 첫 user.message 내용으로 프로젝트명 추론
+      const _firstUserMsg = rawEvents.find(e => e.type === 'user.message');
+      const _msgText = (_firstUserMsg?.data?.contentPreview || _firstUserMsg?.data?.content || '').replace(/[\n\r]/g, ' ').trim();
+
+      // 2순위: 가장 많이 등장한 파일 디렉터리
       const fileCounts = {};
       rawEvents.forEach(e => {
         const fp = (e.data?.filePath||e.data?.fileName||'').replace(/\\/g,'/');
@@ -116,16 +119,23 @@ function buildPlanetSystem(nodeList) {
         if (dir && dir !== '.') fileCounts[dir] = (fileCounts[dir]||0) + 1;
       });
       const topDir = Object.entries(fileCounts).sort((a,b)=>b[1]-a[1])[0]?.[0];
-      projName = topDir || `세션-${sid.slice(0,6)}`;
-    } else {
-      // session-{name}-{timestamp} → {name}
-      const mSession = sid.match(/^session-([a-zA-Z][a-zA-Z0-9_-]*?)(?:-\d{10,})?$/);
-      if (mSession) { projName = mSession[1]; }
-      // wf{N}-{timestamp} → 워크플로우
-      else if (/^wf\d+-\d/.test(sid)) { projName = '워크플로우'; }
-      // 짧고 숫자 없는 이름은 그대로
-      else if (sid.length <= 24 && !/\d{8,}/.test(sid)) { projName = sid; }
-      else { projName = sid.slice(0,12) + '…'; }
+
+      if (_msgText.length > 3) {
+        // 첫 메시지가 있으면 그걸 프로젝트명으로 (30자 제한)
+        projName = _msgText.slice(0, 30);
+      } else if (topDir) {
+        projName = topDir;
+      } else if (/^session-([a-zA-Z][a-zA-Z0-9_-]*?)(?:-\d{10,})?$/.test(sid)) {
+        projName = sid.match(/^session-([a-zA-Z][a-zA-Z0-9_-]*?)(?:-\d{10,})?$/)[1];
+      } else if (/^wf\d+-\d/.test(sid)) {
+        projName = '워크플로우';
+      } else if (sid === 'default') {
+        projName = '기본 작업';
+      } else if (sid.length <= 24 && !/\d{8,}/.test(sid)) {
+        projName = sid;
+      } else {
+        projName = '작업 세션';
+      }
     }
 
     const clusters = clusterByIntent(sid, filtered);
