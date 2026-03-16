@@ -923,26 +923,30 @@ async function openWsMemberManage(wsId) {
     const members = res.ok ? await res.json() : [];
     if (!members.length) { showToast('멤버가 없습니다'); return; }
 
-    const html = members.map(m => `
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 8px;border-bottom:1px solid #21262d">
-        <div style="flex:1">
-          <div style="color:#e6edf3;font-size:13px">${escHtml(m.name || '사용자')}</div>
-          <div style="color:#8b949e;font-size:10px">${escHtml(m.email || '')} ${m.status === 'pending' ? '<span style="color:#ffa657">(대기중)</span>' : ''}</div>
+    // 팀 목록 수집 (기존 멤버 팀 + 기본 팀)
+    const defaultTeams = ['팀 미배정','개발팀','디자인팀','기획팀','마케팅팀','운영팀'];
+    const allTeams = [...new Set([...defaultTeams, ...members.map(m => m.teamName).filter(Boolean)])];
+
+    const html = members.map(m => {
+      const teamOptions = allTeams.map(t =>
+        `<option value="${escHtml(t)}" style="background:#161b22;color:#e6edf3" ${m.teamName===t?'selected':''}>${escHtml(t)}</option>`
+      ).join('');
+      const roleIcon = m.role==='owner' ? '👑' : m.role==='admin' ? '🛡' : '👤';
+      const roleColor = m.role==='owner' ? '#ffd700' : m.role==='admin' ? '#58a6ff' : '#8b949e';
+      return `
+      <div style="display:flex;align-items:center;gap:10px;padding:12px 8px;border-bottom:1px solid #21262d">
+        <div style="font-size:22px">${roleIcon}</div>
+        <div style="flex:1;min-width:0">
+          <div style="color:#e6edf3;font-size:14px;font-weight:600">${escHtml(m.name || m.email?.split('@')[0] || '사용자')}</div>
+          <div style="color:#8b949e;font-size:11px">${escHtml(m.email || '')} · <span style="color:${roleColor}">${m.role==='owner'?'소유자':m.role==='admin'?'관리자':'멤버'}</span></div>
         </div>
-        <div style="display:flex;align-items:center;gap:6px">
-          <select data-user-id="${m.userId}" data-ws-id="${wsId}" class="ws-team-select"
-            style="font-size:11px;padding:3px 6px;background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:4px;cursor:pointer">
-            <option value="관리팀" ${m.teamName==='관리팀'?'selected':''}>${escHtml('관리팀')}</option>
-            <option value="개발팀" ${m.teamName==='개발팀'?'selected':''}>${escHtml('개발팀')}</option>
-            <option value="디자인팀" ${m.teamName==='디자인팀'?'selected':''}>${escHtml('디자인팀')}</option>
-            <option value="기획팀" ${m.teamName==='기획팀'?'selected':''}>${escHtml('기획팀')}</option>
-            <option value="팀 1" ${m.teamName==='팀 1'?'selected':''}>${escHtml('팀 1')}</option>
-            <option value="팀 2" ${m.teamName==='팀 2'?'selected':''}>${escHtml('팀 2')}</option>
-            ${m.teamName && !['관리팀','개발팀','디자인팀','기획팀','팀 1','팀 2'].includes(m.teamName) ? `<option value="${escHtml(m.teamName)}" selected>${escHtml(m.teamName)}</option>` : ''}
-          </select>
-          <span style="font-size:10px;color:${m.role==='owner'?'#ffd700':m.role==='admin'?'#58a6ff':'#8b949e'}">${m.role==='owner'?'소유자':m.role==='admin'?'관리자':'멤버'}</span>
-        </div>
-      </div>`).join('');
+        <select data-user-id="${m.userId}" data-ws-id="${wsId}" class="ws-team-select"
+          style="font-size:12px;padding:5px 8px;background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:6px;cursor:pointer;
+          -webkit-appearance:none;appearance:none;background-image:url('data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2212%22 height=%2212%22><path d=%22M2 4l4 4 4-4%22 fill=%22%238b949e%22/></svg>');background-repeat:no-repeat;background-position:right 6px center;padding-right:22px">
+          ${teamOptions}
+        </select>
+      </div>`;
+    }).join('');
 
     const modal = document.createElement('div');
     modal.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center';
