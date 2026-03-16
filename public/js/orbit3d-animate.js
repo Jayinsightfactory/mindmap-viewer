@@ -120,9 +120,17 @@ renderer.domElement.addEventListener('click', e => {
       return;
     }
 
-    // ── 팀원 클릭 → 세션 정보 패널 표시 ────────────────────────────────────
+    // ── 팀원 클릭 → 드릴다운 (팀뷰 또는 개인뷰 줌아웃)
     if (type === 'teamMember') {
-      if (typeof openTeamMemberPanel === 'function') openTeamMemberPanel(hit.data);
+      // teamMember = 개인뷰 줌아웃 시 표시된 팀원/팔로워 구체
+      // memberId + userId로 드릴다운 시도
+      const tmUserId = hit.data.userId || hit.data.memberId;
+      const tmName = hit.data.userName || hit.data.memberName || '팀원';
+      if (tmUserId && typeof drillDownToMember === 'function') {
+        drillDownToMember({ memberId: hit.data.memberId, label: tmName, userId: tmUserId });
+      } else if (typeof openTeamMemberPanel === 'function') {
+        openTeamMemberPanel(hit.data);
+      }
       return;
     }
 

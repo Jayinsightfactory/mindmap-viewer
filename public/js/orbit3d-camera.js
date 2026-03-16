@@ -215,8 +215,8 @@ async function drillDownToMember(memberNode) {
   window._drillDownMemberId = memberNode.memberId;
   window._drillDownMemberName = memberNode.label;
 
-  // 실제 유저 그래프 API 호출 (memberData.userId = 실제 유저 ID)
-  const realUserId = memberData?.userId || memberData?.originalUserId;
+  // 실제 유저 그래프 API 호출
+  const realUserId = memberNode.userId || memberData?.userId || memberData?.originalUserId;
   if (realUserId) {
     try {
       const token = localStorage.getItem('orbit_token') || '';
