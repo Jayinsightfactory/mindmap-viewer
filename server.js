@@ -363,11 +363,11 @@ app.use(helmet({
   contentSecurityPolicy: process.env.NODE_ENV === 'production' ? {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "cdn.jsdelivr.net", "cdnjs.cloudflare.com", "unpkg.com", "accounts.google.com"],
-      styleSrc: ["'self'", "'unsafe-inline'", "fonts.googleapis.com"],
-      fontSrc: ["'self'", "fonts.gstatic.com"],
-      imgSrc: ["'self'", "data:", "blob:", "*.googleusercontent.com"],
-      connectSrc: ["'self'", "wss:", "ws:", "accounts.google.com", "api.github.com"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "cdn.jsdelivr.net", "cdnjs.cloudflare.com", "unpkg.com", "accounts.google.com", "js.tosspayments.com"],
+      styleSrc: ["'self'", "'unsafe-inline'", "fonts.googleapis.com", "cdnjs.cloudflare.com"],
+      fontSrc: ["'self'", "fonts.gstatic.com", "cdnjs.cloudflare.com"],
+      imgSrc: ["'self'", "data:", "blob:", "*.googleusercontent.com", "*.github.com"],
+      connectSrc: ["'self'", "wss:", "ws:", "accounts.google.com", "api.github.com", "fonts.googleapis.com", "fonts.gstatic.com", "cdn.jsdelivr.net", "cdnjs.cloudflare.com", "unpkg.com", "js.tosspayments.com"],
       frameSrc: ["'self'", "accounts.google.com"],
     },
   } : false,
