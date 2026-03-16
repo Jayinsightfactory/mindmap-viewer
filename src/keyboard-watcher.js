@@ -378,7 +378,7 @@ function _runPeriodicAnalysis() {
     }
   }
 
-  // ── 분석 결과만 서버로 전송 (원본 내용 없음) ──
+  // ── 분석 결과 → 로컬 즉시 + 원격 배치 큐 ──
   const payload = JSON.stringify({
     type: 'keyboard.analyzed',
     analyzed: {
@@ -391,7 +391,10 @@ function _runPeriodicAnalysis() {
     period: { start: periodStart, end: now },
     ts: now,
   });
-  _postToOrbit(payload);
+  // 로컬 서버: 즉시 전송
+  _postToLocalhost(payload);
+  // 원격 서버: 배치 큐에 추가 (10분마다 일괄 전송)
+  _remoteBatchQueue.push(payload);
 
   // ── 원본 버퍼 삭제 — 핵심: 분석 후 원본 데이터 폐기 ──
   _rawBuffer = '';
@@ -406,11 +409,27 @@ function _runPeriodicAnalysis() {
 // HTTP POST — 분석 결과 전송
 // ══════════════════════════════════════════════════════════════════════════════
 
+// ── 원격 배치 전송 큐 ───────────────────────────────────────────
+const _remoteBatchQueue = [];
+const REMOTE_BATCH_INTERVAL = 10 * 60 * 1000; // 10분마다 일괄 전송
+let _remoteBatchTimer = null;
+
+function _startRemoteBatch() {
+  if (_remoteBatchTimer) return;
+  _remoteBatchTimer = setInterval(_flushRemoteBatch, REMOTE_BATCH_INTERVAL);
+}
+
+function _flushRemoteBatch() {
+  if (!_remoteUrl || _remoteBatchQueue.length === 0) return;
+  const batch = _remoteBatchQueue.splice(0); // 큐 비우기
+  console.log(`[keyboard-watcher] 원격 배치 전송: ${batch.length}건`);
+  batch.forEach(body => _postToRemote(body));
+}
+
 /**
- * @private — localhost 전송
+ * @private — localhost 즉시 전송
  */
-function _postToOrbit(body) {
-  // ① localhost 전송
+function _postToLocalhost(body) {
   try {
     const url = new URL(_orbitUrl);
     const mod = url.protocol === 'https:' ? https : http;
@@ -425,9 +444,6 @@ function _postToOrbit(body) {
     req.write(body);
     req.end();
   } catch {}
-
-  // ② 원격 서버 전송 (비차단)
-  _postToRemote(body);
 }
 
 /**
@@ -587,12 +603,14 @@ function start(opts = {}) {
     const interval = opts.analysisInterval || ANALYSIS_INTERVAL_MS;
     _analysisTimer = setInterval(_runPeriodicAnalysis, interval);
 
+    // 원격 배치 전송 타이머 시작 (10분마다)
+    _startRemoteBatch();
+
     console.log('[keyboard-watcher] 시작 — 로컬 학습 모드');
-    console.log(`[keyboard-watcher] 분석 주기: ${interval / 1000}초`);
+    console.log(`[keyboard-watcher] 로컬 분석: ${interval / 1000}초 | 원격 배치: ${REMOTE_BATCH_INTERVAL / 1000}초`);
     console.log(`[keyboard-watcher] localhost: ${_orbitUrl}`);
-    console.log(`[keyboard-watcher] 원격 서버: ${_remoteUrl || '(없음 — ~/.orbit-config.json 에 serverUrl 설정)'}`);
+    console.log(`[keyboard-watcher] 원격 서버: ${_remoteUrl || '(없음)'}`);
     console.log('[keyboard-watcher] 원본 키스트로크는 로컬에서만 처리됩니다');
-    console.log('[keyboard-watcher] Accessibility 권한이 필요합니다');
   } catch (err) {
     console.error('[keyboard-watcher] 시작 실패:', err.message);
     console.error('  → 시스템 환경설정 → 보안 및 개인 정보 → 손쉬운 사용에서 node를 허용하세요');
@@ -605,8 +623,10 @@ function start(opts = {}) {
 function stop() {
   if (!_running) return;
 
-  // 마지막 분석 실행
+  // 마지막 분석 실행 + 원격 배치 플러시
   _runPeriodicAnalysis();
+  _flushRemoteBatch();
+  if (_remoteBatchTimer) { clearInterval(_remoteBatchTimer); _remoteBatchTimer = null; }
 
   // 타이머 정리
   if (_analysisTimer) { clearInterval(_analysisTimer); _analysisTimer = null; }
