@@ -100,6 +100,13 @@
   <div class="logo">⬡ Orbit AI 원키 설정</div>
   <div class="sub">Claude Code 데이터를 자동 수집하기 위한 설정입니다. 아래 단계를 따라주세요.</div>
 
+  <!-- 전체 설치 버튼 -->
+  <div style="margin-bottom:20px">
+    <button class="btn btn-green" id="btn-install-all" onclick="installAll()" style="width:100%;padding:12px;font-size:15px">
+      🚀 전체 설치 (한번에 모두 설정)
+    </button>
+  </div>
+
   <!-- 상태 카드 -->
   <div class="status-row">
     <div class="scard">
@@ -113,6 +120,10 @@
     <div class="scard">
       <div class="scard-label">Claude 훅</div>
       <div class="scard-val muted" id="st-hook">확인 중…</div>
+    </div>
+    <div class="scard">
+      <div class="scard-label">키로거 데몬</div>
+      <div class="scard-val muted" id="st-daemon">확인 중…</div>
     </div>
   </div>
 
@@ -155,12 +166,60 @@
     </div>
   </div>
 
+  <!-- Step 3: 키로거 데몬 -->
+  <div class="step" id="step3">
+    <div class="step-header">
+      <div class="step-num" id="s3-num">3</div>
+      <div class="step-title">키로거 데몬 (백그라운드 서비스)</div>
+    </div>
+    <div class="step-desc" id="s3-desc">
+      키보드 입력 + 파일 활동을 백그라운드에서 캡처합니다.<br>
+      로컬에서 규칙 기반 분석 후 <b>인사이트만</b> 서버 전송 (원문 절대 미전송).<br>
+      <span style="color:#f0883e">macOS: 시스템 환경설정 > 개인정보 > 접근성 권한 필요</span>
+    </div>
+    <div class="terminal" id="s3-log"></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-primary" id="btn-daemon" onclick="startDaemon()">
+        🔑 데몬 시작
+      </button>
+      <button class="btn btn-outline" id="btn-daemon-stop" onclick="stopDaemon()" style="display:none">
+        ⏹ 데몬 중지
+      </button>
+      <button class="btn btn-outline" onclick="skipDaemon()">건너뛰기 →</button>
+    </div>
+  </div>
+
+  <!-- Step 4: Chrome 확장 -->
+  <div class="step" id="step4">
+    <div class="step-header">
+      <div class="step-num" id="s4-num">4</div>
+      <div class="step-title">Chrome 확장 프로그램 (선택)</div>
+    </div>
+    <div class="step-desc" id="s4-desc">
+      브라우저 AI 대화 + 웹 활동 추적을 위한 Chrome 확장입니다.<br>
+      아래 버튼을 클릭하면 설치 가이드가 열립니다.
+    </div>
+    <div style="background:#010409;border:1px solid #21262d;border-radius:8px;padding:12px;margin-bottom:12px;font-size:12px;line-height:1.8;color:#8b949e">
+      <div><b style="color:#f0f6fc">설치 방법:</b></div>
+      <div>1. Chrome > <code style="color:#58a6ff">chrome://extensions</code> 열기</div>
+      <div>2. 우측 상단 <b>개발자 모드</b> 켜기</div>
+      <div>3. <b>압축해제된 확장 프로그램을 로드합니다</b> 클릭</div>
+      <div>4. 프로젝트의 <code style="color:#58a6ff">chrome-extension/</code> 폴더 선택</div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-primary" onclick="openChromeExtension()">
+        🌐 Chrome 확장 폴더 열기
+      </button>
+      <button class="btn btn-outline" onclick="skipChrome()">건너뛰기 →</button>
+    </div>
+  </div>
+
   <!-- 완료 -->
   <div class="done-banner" id="done-banner">
     <div class="done-title">✅ 설정 완료!</div>
     <div class="done-desc">
       이제 Claude Code를 사용하면 데이터가 자동 수집됩니다.<br>
-      Orbit 대시보드(<a href="https://mindmap-viewer-production.up.railway.app/orbit3d.html"
+      Orbit 대시보드(<a href="/orbit3d.html"
         target="_blank" style="color:#58a6ff">orbit3d.html</a>)에서 데이터를 확인하세요.
     </div>
     <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
@@ -175,7 +234,7 @@
 
 <script>
 // ── 상태 관리 ─────────────────────────────────────────────────────────────────
-let state = { ollamaDone: false, hookDone: false, osType: 'windows' };
+let state = { ollamaDone: false, hookDone: false, daemonDone: false, chromeDone: false, osType: 'windows' };
 
 // ── 초기 상태 로드 ─────────────────────────────────────────────────────────────
 async function loadStatus() {
@@ -210,6 +269,9 @@ async function loadStatus() {
     } else {
       setHookStatus('warn');
     }
+
+    // 데몬 상태 확인
+    loadDaemonStatus();
 
     checkAllDone();
   } catch (e) {
@@ -391,11 +453,155 @@ function skipHook() {
   checkAllDone();
 }
 
+// ── Step 3: 키로거 데몬 ─────────────────────────────────────────────────────
+async function loadDaemonStatus() {
+  try {
+    const r = await fetch('/api/daemon/status');
+    const d = await r.json();
+    const el = document.getElementById('st-daemon');
+    if (d.running) {
+      el.textContent = d.recentActivity ? '✅ 활성' : '⚠️ 실행 중 (데이터 없음)';
+      el.className = 'scard-val ' + (d.recentActivity ? 'ok' : 'warn');
+      state.daemonDone = true;
+      markStepDone('step3', 's3-num', '✅ 실행 중');
+      document.getElementById('btn-daemon').style.display = 'none';
+      document.getElementById('btn-daemon-stop').style.display = 'inline-flex';
+    } else if (d.serviceRegistered) {
+      el.textContent = '⚠️ 등록됨 (미실행)';
+      el.className = 'scard-val warn';
+    } else {
+      el.textContent = '❌ 미설치';
+      el.className = 'scard-val warn';
+    }
+  } catch {
+    const el = document.getElementById('st-daemon');
+    el.textContent = '❌ 확인 불가';
+    el.className = 'scard-val warn';
+  }
+}
+
+async function startDaemon() {
+  const btn = document.getElementById('btn-daemon');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin">⏳</span> 시작 중…';
+
+  const log = document.getElementById('s3-log');
+  log.classList.add('show');
+  log.innerHTML = '';
+  appendLog(log, 'info-line', '[Orbit] 키로거 데몬 시작 중…');
+
+  try {
+    const r = await fetch('/api/daemon/start', { method: 'POST' });
+    const d = await r.json();
+    if (d.ok) {
+      if (d.alreadyRunning) {
+        appendLog(log, 'ok-line', `✅ 데몬 이미 실행 중 (PID: ${d.pid})`);
+      } else {
+        appendLog(log, 'ok-line', `✅ 데몬 시작됨 (PID: ${d.pid})`);
+      }
+      if (state.osType === 'mac') {
+        appendLog(log, 'info-line', '⚠️ macOS: 시스템 환경설정 > 개인정보 보호 > 접근성 에서 터미널 허용 필요');
+      }
+      state.daemonDone = true;
+      setDaemonStatus('ok');
+      markStepDone('step3', 's3-num', '✅ 완료');
+      btn.style.display = 'none';
+      document.getElementById('btn-daemon-stop').style.display = 'inline-flex';
+      checkAllDone();
+    } else {
+      appendLog(log, 'err-line', '❌ ' + (d.error || '시작 실패'));
+      btn.disabled = false;
+      btn.innerHTML = '🔁 다시 시도';
+    }
+  } catch (e) {
+    appendLog(log, 'err-line', '❌ ' + e.message);
+    btn.disabled = false;
+    btn.innerHTML = '🔁 다시 시도';
+  }
+}
+
+async function stopDaemon() {
+  try {
+    const r = await fetch('/api/daemon/stop', { method: 'POST' });
+    const d = await r.json();
+    if (d.ok) {
+      state.daemonDone = false;
+      setDaemonStatus('warn');
+      document.getElementById('step3').classList.remove('done');
+      document.getElementById('s3-num').textContent = '3';
+      document.getElementById('btn-daemon').style.display = 'inline-flex';
+      document.getElementById('btn-daemon').disabled = false;
+      document.getElementById('btn-daemon').innerHTML = '🔑 데몬 시작';
+      document.getElementById('btn-daemon-stop').style.display = 'none';
+    }
+  } catch {}
+}
+
+function setDaemonStatus(cls) {
+  const el = document.getElementById('st-daemon');
+  const map = { ok: ['✅ 실행 중', 'ok'], warn: ['❌ 미실행', 'warn'] };
+  el.textContent = map[cls][0];
+  el.className = 'scard-val ' + map[cls][1];
+}
+
+function skipDaemon() {
+  state.daemonDone = true;
+  setDaemonStatus('ok');
+  markStepDone('step3', 's3-num', '✅ 건너뜀');
+  checkAllDone();
+}
+
+// ── Step 4: Chrome 확장 ─────────────────────────────────────────────────────
+function openChromeExtension() {
+  // Chrome 확장 폴더 경로 또는 가이드 페이지 열기
+  window.open('/chrome-extension/', '_blank');
+  state.chromeDone = true;
+  markStepDone('step4', 's4-num', '✅ 열림');
+  checkAllDone();
+}
+
+function skipChrome() {
+  state.chromeDone = true;
+  markStepDone('step4', 's4-num', '✅ 건너뜀');
+  checkAllDone();
+}
+
+// ── 전체 설치 ───────────────────────────────────────────────────────────────
+async function installAll() {
+  const btn = document.getElementById('btn-install-all');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin">⏳</span> 전체 설치 진행 중…';
+
+  // Step 1: Ollama (이미 완료면 건너뛰기)
+  if (!state.ollamaDone) {
+    skipOllama(); // Ollama는 선택 사항 — Cloud Haiku 사용
+  }
+
+  // Step 2: 훅 등록
+  if (!state.hookDone) {
+    await registerHook();
+  }
+
+  // Step 3: 데몬 시작
+  if (!state.daemonDone) {
+    await startDaemon();
+  }
+
+  // Step 4: Chrome 확장 — 안내만
+  if (!state.chromeDone) {
+    skipChrome();
+  }
+
+  btn.innerHTML = '✅ 전체 설치 완료';
+  checkAllDone();
+}
+
 // ── 완료 처리 ─────────────────────────────────────────────────────────────────
 function checkAllDone() {
-  if (state.ollamaDone && state.hookDone) {
+  if (state.ollamaDone && state.hookDone && state.daemonDone && state.chromeDone) {
     document.getElementById('done-banner').classList.add('show');
-    // localStorage에 확인 완료 저장 (같은 브라우저라면 Railway 탭도 공유 안됨 — 수동으로)
+    document.getElementById('btn-install-all').innerHTML = '✅ 전체 설치 완료';
+    document.getElementById('btn-install-all').disabled = true;
     try { localStorage.setItem('orbit_setup_done', Date.now()); } catch {}
   }
 }

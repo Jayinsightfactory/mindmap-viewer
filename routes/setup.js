@@ -524,6 +524,132 @@ module.exports = function createSetupRouter({ getAllEvents, getDb, port = 4747 }
     res.json({ ok: true, tracking: trackingEnabled });
   });
 
+  // ── 데몬 상태 확인 ─────────────────────────────────────────────────────────
+  // GET /api/daemon/status — 키로거 데몬이 최근 5분 이내 이벤트를 보냈는지 확인
+  router.get('/daemon/status', async (req, res) => {
+    try {
+      const pidFile = path.join(os.homedir(), '.orbit', 'personal-agent.pid');
+      let pid = null;
+      let processRunning = false;
+
+      // PID 파일 확인
+      if (fs.existsSync(pidFile)) {
+        pid = parseInt(fs.readFileSync(pidFile, 'utf-8').trim(), 10);
+        try {
+          process.kill(pid, 0); // 0 시그널 = 존재 여부만 확인
+          processRunning = true;
+        } catch {
+          processRunning = false;
+        }
+      }
+
+      // LaunchAgent/systemd 확인
+      let serviceRegistered = false;
+      const osType = detectOS();
+      if (osType === 'mac') {
+        const plistPath = path.join(os.homedir(), 'Library', 'LaunchAgents', 'com.orbit.daemon.plist');
+        serviceRegistered = fs.existsSync(plistPath);
+      } else if (osType === 'linux') {
+        const svcPath = path.join(os.homedir(), '.config', 'systemd', 'user', 'orbit-daemon.service');
+        serviceRegistered = fs.existsSync(svcPath);
+      } else {
+        // Windows: Task Scheduler 확인은 비용이 크므로 PID 파일 기반으로만
+        serviceRegistered = fs.existsSync(pidFile);
+      }
+
+      // 최근 이벤트 수신 확인 (5분 이내)
+      let recentActivity = false;
+      let lastEventTime = null;
+      try {
+        const events = getAllEvents(10);
+        const daemonEvent = events.find(e => {
+          const t = e.type || e.event_type || '';
+          return t.includes('keyboard') || t.includes('keylog') || t.includes('file_content') || t.includes('app_activity');
+        });
+        if (daemonEvent) {
+          lastEventTime = daemonEvent.ts || daemonEvent.timestamp || daemonEvent.created_at;
+          recentActivity = lastEventTime && (Date.now() - new Date(lastEventTime).getTime()) < 5 * 60 * 1000;
+        }
+      } catch {}
+
+      // 로그 파일 존재 확인
+      let logSize = 0;
+      try {
+        const logPath = '/tmp/orbit-daemon.log';
+        if (fs.existsSync(logPath)) {
+          logSize = fs.statSync(logPath).size;
+        }
+      } catch {}
+
+      res.json({
+        running: processRunning,
+        pid: processRunning ? pid : null,
+        serviceRegistered,
+        recentActivity,
+        lastEventTime,
+        logSize,
+        os: osType,
+        status: processRunning ? (recentActivity ? 'active' : 'running-no-data') : 'stopped',
+      });
+    } catch (e) {
+      res.status(500).json({ error: e.message, status: 'error' });
+    }
+  });
+
+  // POST /api/daemon/start — 데몬 수동 시작
+  router.post('/daemon/start', (req, res) => {
+    try {
+      const daemonScript = path.join(__dirname, '..', 'daemon', 'personal-agent.js');
+      if (!fs.existsSync(daemonScript)) {
+        return res.status(404).json({ ok: false, error: 'daemon/personal-agent.js not found' });
+      }
+
+      // 이미 실행 중인지 확인
+      const pidFile = path.join(os.homedir(), '.orbit', 'personal-agent.pid');
+      if (fs.existsSync(pidFile)) {
+        const pid = parseInt(fs.readFileSync(pidFile, 'utf-8').trim(), 10);
+        try {
+          process.kill(pid, 0);
+          return res.json({ ok: true, alreadyRunning: true, pid });
+        } catch {} // 프로세스 없음 — 재시작
+      }
+
+      const child = spawn('node', [daemonScript, '--port', String(port)], {
+        detached: true,
+        stdio: 'ignore',
+        cwd: path.join(__dirname, '..'),
+      });
+      child.unref();
+
+      res.json({ ok: true, pid: child.pid });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
+  // POST /api/daemon/stop — 데몬 수동 종료
+  router.post('/daemon/stop', (req, res) => {
+    try {
+      const pidFile = path.join(os.homedir(), '.orbit', 'personal-agent.pid');
+      if (!fs.existsSync(pidFile)) {
+        return res.json({ ok: true, wasRunning: false });
+      }
+      const pid = parseInt(fs.readFileSync(pidFile, 'utf-8').trim(), 10);
+      try {
+        process.kill(pid, 'SIGTERM');
+        // PID 파일 삭제
+        try { fs.unlinkSync(pidFile); } catch {}
+        return res.json({ ok: true, wasRunning: true, pid });
+      } catch {
+        // 프로세스가 이미 없음
+        try { fs.unlinkSync(pidFile); } catch {}
+        return res.json({ ok: true, wasRunning: false });
+      }
+    } catch (e) {
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
   // ── 커스텀 LLM 모델 추가 ─────────────────────────────────────────────────
   router.post('/setup/custom-model', (req, res) => {
     const { provider, modelId, modelLabel, tier = 'smart' } = req.body;

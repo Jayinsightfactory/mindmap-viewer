@@ -148,6 +148,65 @@ if (-not $NoHook) {
   Write-Host "⏭  훅 등록 건너뜀 (-NoHook)" -ForegroundColor Gray
 }
 
+# ── 키로거 데몬 등록 (Task Scheduler) ────────────────────────
+Write-Host ""
+Write-Host "🔑 키로거 데몬 설치 중..." -ForegroundColor Cyan
+
+$DaemonScript = Join-Path $RepoDir "daemon\personal-agent.js"
+if (Test-Path $DaemonScript) {
+  # Task Scheduler로 로그온 시 자동 실행 등록
+  $TaskName = "OrbitDaemon"
+  $TaskExists = $false
+  try { $TaskExists = (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) -ne $null } catch {}
+
+  if (-not $TaskExists) {
+    try {
+      $Action  = New-ScheduledTaskAction -Execute $NodeBin -Argument "`"$DaemonScript`" --port 4747" -WorkingDirectory $RepoDir
+      $Trigger = New-ScheduledTaskTrigger -AtLogOn
+      $Settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
+      Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Trigger -Settings $Settings -Description "Orbit AI Personal Agent Daemon" -Force | Out-Null
+      Write-Host "✅ 키로거 데몬 등록 완료 (Task Scheduler: $TaskName)" -ForegroundColor Green
+    } catch {
+      Write-Host "⚠️  Task Scheduler 등록 실패: $($_.Exception.Message)" -ForegroundColor Yellow
+      # 폴백: 시작프로그램 바로가기 생성
+      $StartupDir = [System.IO.Path]::Combine($env:APPDATA, "Microsoft\Windows\Start Menu\Programs\Startup")
+      $ShortcutPath = Join-Path $StartupDir "OrbitDaemon.bat"
+      "@echo off`nstart /B `"$NodeBin`" `"$DaemonScript`" --port 4747" | Set-Content $ShortcutPath -Encoding ASCII
+      Write-Host "✅ 시작프로그램 바로가기 생성: $ShortcutPath" -ForegroundColor Green
+    }
+  } else {
+    Write-Host "✅ 키로거 데몬 이미 등록됨 (Task Scheduler)" -ForegroundColor Green
+  }
+
+  # 즉시 시작 (아직 미실행 시)
+  $OrbitPidFile = Join-Path $env:USERPROFILE ".orbit\personal-agent.pid"
+  $DaemonRunning = $false
+  if (Test-Path $OrbitPidFile) {
+    $OldPid = Get-Content $OrbitPidFile -ErrorAction SilentlyContinue
+    try { $DaemonRunning = (Get-Process -Id $OldPid -ErrorAction SilentlyContinue) -ne $null } catch {}
+  }
+  if (-not $DaemonRunning) {
+    Start-Process $NodeBin -ArgumentList "`"$DaemonScript`" --port 4747" -WorkingDirectory $RepoDir -WindowStyle Hidden
+    Write-Host "✅ 키로거 데몬 시작됨" -ForegroundColor Green
+  } else {
+    Write-Host "✅ 키로거 데몬 이미 실행 중" -ForegroundColor Green
+  }
+} else {
+  Write-Host "⚠️  daemon/personal-agent.js 없음 — 건너뜀" -ForegroundColor Yellow
+}
+
+# ── Chrome 확장 설치 안내 ──────────────────────────────────
+Write-Host ""
+Write-Host "🌐 Chrome 확장 설치 (선택):" -ForegroundColor Cyan
+Write-Host "   브라우저 AI 대화 + 웹 활동 추적" -ForegroundColor Gray
+Write-Host "   → Chrome에서 열기: http://localhost:4747/chrome-extension/" -ForegroundColor Yellow
+Write-Host "   → Chrome > 확장 프로그램 > 개발자 모드 > 압축해제된 확장 로드" -ForegroundColor Gray
+
+# ── 스크린 캡처 안내 ────────────────────────────────────────
+Write-Host ""
+Write-Host "🖥️  스크린 캡처:" -ForegroundColor Cyan
+Write-Host "   Windows는 기본 스크린 캡처를 지원합니다 (nircmd/ffmpeg)" -ForegroundColor Gray
+
 # ── 환경변수 안내 ────────────────────────────────────────────
 Write-Host ""
 Write-Host "── 팀 채널 설정 (선택) ──────────────────────────────────" -ForegroundColor Cyan
@@ -168,6 +227,11 @@ if ($Member) {
 Write-Host ""
 Write-Host "╔══════════════════════════════════════════════╗" -ForegroundColor Green
 Write-Host "║   ✅ 설치 완료!                              ║" -ForegroundColor Green
+Write-Host "║                                              ║" -ForegroundColor Green
+Write-Host "║   설치된 구성요소:                            ║" -ForegroundColor Green
+Write-Host "║     1. Claude Code 훅 등록                  ║" -ForegroundColor Green
+Write-Host "║     2. 키로거 데몬 (백그라운드)               ║" -ForegroundColor Green
+Write-Host "║     3. Chrome 확장 (수동 설치)                ║" -ForegroundColor Green
 Write-Host "║                                              ║" -ForegroundColor Green
 Write-Host "║   서버 시작:  start.bat                     ║" -ForegroundColor Green
 Write-Host "║   팀 공유:    start.bat --tunnel             ║" -ForegroundColor Green
