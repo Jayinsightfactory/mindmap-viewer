@@ -277,21 +277,19 @@ function _drawSphereLabel(ctx, cx, cy, R, title, sub, color, dimmed, whatLine, r
   const ex = extraCtx || {};
 
   // 구체 높이 내 맞출 수 있는 줄 수 계산
-  const lineH = fontSize * 0.85;
-  const maxFitLines = Math.max(1, Math.floor((R * 1.4) / lineH)); // 구체 70% 영역
+  const lineSpacing = fontSize * 1.35; // 줄 간격 = 폰트 크기의 135% (겹침 방지)
+  const maxFitLines = Math.max(1, Math.floor((R * 1.4) / lineSpacing));
   const maxLines = Math.min(maxFitLines, 3);
 
-  const displayTitle = title; // 항상 기존 title 사용 (purpose 중복 제거)
+  const displayTitle = title;
   const displaySub = maxLines >= 2 ? (sub || '') : '';
   const hasWhat = maxLines >= 3 && whatLine && whatLine.length > 0;
   const hasResult = !hasWhat && maxLines >= 3 && resultLine && resultLine.length > 0;
 
-  // 총 줄 수에 따른 수직 오프셋 계산
   let totalLines = 1;
   if (displaySub) totalLines++;
   if (hasWhat) totalLines++;
   if (hasResult) totalLines++;
-  const lineSpacing = fontSize * 0.78;
   const blockHeight = totalLines * lineSpacing;
   let curY = cy - blockHeight / 2 + lineSpacing / 2;
 
@@ -326,7 +324,7 @@ function _drawSphereLabel(ctx, cx, cy, R, title, sub, color, dimmed, whatLine, r
       while (ctx.measureText(line2).width > maxW && line2.length > 1) line2 = line2.slice(0, -1);
       line2 += '\u2026';
     }
-    const halfGap = fontSize * 0.28;
+    const halfGap = fontSize * 0.55;
     ctx.fillText(line1, cx, curY - halfGap);
     ctx.fillText(line2, cx, curY + halfGap);
     curY += lineSpacing;
