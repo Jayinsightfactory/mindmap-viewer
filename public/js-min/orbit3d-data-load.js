@@ -1,0 +1,92 @@
+function _getAuthToken(){if(typeof _orbitUser<"u"&&_orbitUser?.token)return _orbitUser.token;try{return JSON.parse(localStorage.getItem("orbitUser")||"null")?.token||""}catch{return""}}function _authFetch(t,o={}){const e=_getAuthToken();return e&&(o.headers={...o.headers||{},Authorization:`Bearer ${e}`}),fetch(t,o)}async function loadTeamWorldData(){if(!_getAuthToken()){window._teamWorldData=null;return}try{const o=await _authFetch("/api/workspace/team-view");if(!o.ok)return;const e=await o.json();if(e?.members?.length){const n=(typeof _orbitUser<"u"?_orbitUser?.id:null)||JSON.parse(localStorage.getItem("orbitUser")||"null")?.id;e.members=e.members.filter(s=>s.userId!==n),window._teamWorldData=e}}catch{}}window.loadTeamWorldData=loadTeamWorldData;async function loadFollowingData(){if(!_getAuthToken()){window._followingData=null;return}try{const o=await _authFetch("/api/follow/list");if(!o.ok)return;const e=await o.json();Array.isArray(e)&&e.length>0?window._followingData=e:window._followingData=null}catch{window._followingData=null}}window.loadFollowingData=loadFollowingData;async function loadData(){document.getElementById("loading-msg").textContent="서버에서 작업 데이터 가져오는 중…";try{const e=(await(await _authFetch("/api/graph")).json()).nodes||[];if(buildPlanetSystem(e),typeof autoFitZoom=="function"&&autoFitZoom(e.length),typeof updateActiveFiles=="function"&&updateActiveFiles(),typeof _loadWorkspaceState=="function"&&_loadWorkspaceState(),loadTeamWorldData(),loadFollowingData(),document.getElementById("loading").style.display="none",e.length===0){if(new URLSearchParams(window.location.search).get("oauth_token"))return;if(_getAuthToken())try{const r=await(await _authFetch("/api/tracker/status")).json();if(r.online||r.eventCount>0)return}catch{}_showEmptyStateGuide()}else _hideEmptyStateGuide(),sessionStorage.removeItem("orbit_reload_retries")}catch(t){document.getElementById("loading").innerHTML=`<div style="color:#f85149;text-align:center">⚠ 서버 연결 실패<br><small style="color:#6e7681">${t.message}</small><br><br><a href="/" style="color:#58a6ff;font-size:13px">← 대시보드</a></div>`}}async function _postLoginSync(t){window._globalWs&&window._globalWs.readyState<=WebSocket.OPEN&&(window._globalWs.onclose=null,window._globalWs.close(),typeof connectWS=="function"&&setTimeout(connectWS,300));try{const e=await(await fetch("/api/claim-local-events",{method:"POST",headers:{Authorization:`Bearer ${t}`}})).json();e.claimed>0&&showToast(`${e.claimed}개 작업 내역을 내 계정에 연결했습니다`,"success"),fetch("/api/register-hook-token",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${t}`},body:JSON.stringify({token:t})}).catch(n=>console.warn("[hook-token] 등록 실패:",n.message)),fetch("/api/gdrive/backup",{method:"POST",headers:{Authorization:`Bearer ${t}`}}).then(n=>n.json()).then(n=>{n.ok&&console.log("[gdrive] 자동 백업 완료:",n.eventCount,"이벤트")}).catch(n=>console.warn("[gdrive] 백업 실패:",n.message)),_checkSyncFromOtherPC(t),typeof _startAutoBackup=="function"&&_startAutoBackup(),setTimeout(()=>loadData(),500),typeof window._pendingInviteJoin=="function"&&setTimeout(()=>{window._pendingInviteJoin(),window._pendingInviteJoin=null},1e3)}catch(o){console.warn("[postLoginSync]",o.message),loadData()}}async function _claimLocalEvents(){if(!_getAuthToken()){showToast("로그인 후 사용 가능합니다","warn");return}try{const e=await(await _authFetch("/api/claim-local-events",{method:"POST"})).json();e.ok?(showToast(`✅ ${e.claimed}개 이벤트를 내 계정으로 귀속했습니다`,"success"),setTimeout(()=>loadData(),800)):showToast("귀속 실패: "+(e.error||"알 수 없는 오류"),"error")}catch(o){showToast("귀속 오류: "+o.message,"error")}}const DATA_SOURCE_KEY="orbit_data_source",DATA_SOURCE_ACCOUNT_KEY="orbit_data_source_account";function _getDataSource(){return localStorage.getItem(DATA_SOURCE_KEY)}function _setDataSource(t,o){localStorage.setItem(DATA_SOURCE_KEY,t),o&&localStorage.setItem(DATA_SOURCE_ACCOUNT_KEY,o)}async function _showEmptyStateGuide(){if(_hideEmptyStateGuide(),!!!_getAuthToken()){typeof openLoginModal=="function"&&openLoginModal();return}let o=!1;try{o=(await(await fetch("/api/tracker/status",{headers:{Authorization:`Bearer ${_getAuthToken()}`}})).json()).online}catch{}if(o||localStorage.getItem("orbit_tracker_dismissed"))return;const e=_getAuthToken(),n=location.origin,s=/Mac/i.test(navigator.userAgent),r=s?`bash <(curl -sL '${n}/orbit-setup.sh${e?"?token="+encodeURIComponent(e):""}')`:`powershell -ExecutionPolicy Bypass -Command "irm '${n}/orbit-setup.ps1${e?"?token="+encodeURIComponent(e):""}' | iex"`,a=document.createElement("div");a.id="empty-state-guide",a.style.cssText=`
+    position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
+    background:rgba(13,17,23,0.97); border:1px solid #30363d;
+    border-radius:18px; padding:32px 36px; max-width:480px; text-align:center;
+    z-index:500; backdrop-filter:blur(20px);
+    box-shadow:0 16px 64px rgba(0,0,0,0.5);
+    font-family:-apple-system,'Segoe UI',sans-serif;
+    animation:fadeIn .4s ease;
+  `,a.innerHTML=`
+    <div style="font-size:42px;margin-bottom:12px">⬡</div>
+    <div style="font-size:18px;font-weight:700;color:#e6edf3;margin-bottom:8px">
+      Orbit 트래커 설치
+    </div>
+    <div style="font-size:13px;color:#8b949e;margin-bottom:20px;line-height:1.6">
+      로컬 PC에서 작업 데이터를 수집하려면<br>아래 명령어를 터미널에 붙여넣으세요.
+    </div>
+
+    <!-- OS 탭 -->
+    <div style="display:flex;gap:6px;justify-content:center;margin-bottom:12px">
+      <button id="esg-tab-${s?"mac":"win"}" onclick="document.getElementById('esg-cmd-mac').style.display='${s?"block":"none"}';document.getElementById('esg-cmd-win').style.display='${s?"none":"block"}';this.style.background='#1f6feb';document.getElementById('esg-tab-${s?"win":"mac"}').style.background='#21262d'"
+        style="background:#1f6feb;border:none;color:#fff;padding:5px 14px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer">${s?"macOS":"Windows"}</button>
+      <button id="esg-tab-${s?"win":"mac"}" onclick="document.getElementById('esg-cmd-win').style.display='${s?"block":"none"}';document.getElementById('esg-cmd-mac').style.display='${s?"none":"block"}';this.style.background='#1f6feb';document.getElementById('esg-tab-${s?"mac":"win"}').style.background='#21262d'"
+        style="background:#21262d;border:none;color:#8b949e;padding:5px 14px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer">${s?"Windows":"macOS"}</button>
+    </div>
+
+    <!-- macOS 명령어 -->
+    <div id="esg-cmd-mac" style="display:${s?"block":"none"};text-align:left;background:#010409;border:1px solid #21262d;border-radius:10px;padding:14px;position:relative;margin-bottom:14px">
+      <div style="font-size:10px;color:#6e7681;margin-bottom:6px">Terminal</div>
+      <code style="font-family:'Consolas','Courier New',monospace;font-size:12px;color:#3fb950;word-break:break-all;line-height:1.6;display:block;padding-right:44px">bash <(curl -sL '${n}/orbit-setup.sh${e?"?token="+encodeURIComponent(e):""}')</code>
+      <button onclick="(function(){
+        const cmd=\`bash <(curl -sL '${n}/orbit-setup.sh${e?"?token="+encodeURIComponent(e):""}')\`;
+        navigator.clipboard.writeText(cmd).then(()=>{const b=event.target;b.textContent='Copied';b.style.background='#238636';setTimeout(()=>{b.textContent='Copy';b.style.background='#1f6feb'},1500)}).catch(()=>prompt('Copy:',cmd))
+      })()"
+        style="position:absolute;top:12px;right:12px;background:#1f6feb;border:none;border-radius:6px;color:#fff;font-size:11px;font-weight:600;padding:4px 12px;cursor:pointer">Copy</button>
+    </div>
+
+    <!-- Windows 명령어 -->
+    <div id="esg-cmd-win" style="display:${s?"none":"block"};text-align:left;background:#010409;border:1px solid #21262d;border-radius:10px;padding:14px;position:relative;margin-bottom:14px">
+      <div style="font-size:10px;color:#6e7681;margin-bottom:6px">PowerShell (관리자)</div>
+      <code style="font-family:'Consolas','Courier New',monospace;font-size:12px;color:#3fb950;word-break:break-all;line-height:1.6;display:block;padding-right:44px">powershell -ExecutionPolicy Bypass -Command "irm '${n}/orbit-setup.ps1${e?"?token="+encodeURIComponent(e):""}' | iex"</code>
+      <button onclick="(function(){
+        const cmd='powershell -ExecutionPolicy Bypass -Command \\x22irm \\'${n}/orbit-setup.ps1${e?"?token="+encodeURIComponent(e):""}\\' | iex\\x22';
+        navigator.clipboard.writeText(cmd).then(()=>{const b=event.target;b.textContent='Copied';b.style.background='#238636';setTimeout(()=>{b.textContent='Copy';b.style.background='#1f6feb'},1500)}).catch(()=>prompt('Copy:',cmd))
+      })()"
+        style="position:absolute;top:12px;right:12px;background:#1f6feb;border:none;border-radius:6px;color:#fff;font-size:11px;font-weight:600;padding:4px 12px;cursor:pointer">Copy</button>
+    </div>
+
+    <div style="font-size:11px;color:#6e7681;line-height:1.6;margin-bottom:16px">
+      설치 후 자동으로 작업 데이터가 수집되며<br>이 화면에 실시간 시각화됩니다.
+    </div>
+
+    <button onclick="localStorage.setItem('orbit_tracker_dismissed','1');document.getElementById('empty-state-guide').remove()"
+      style="background:#21262d;border:1px solid #30363d;color:#e6edf3;
+      padding:8px 24px;border-radius:8px;cursor:pointer;font-size:13px">
+      닫기
+    </button>
+  `,document.body.appendChild(a)}function _getCurrentUserEmail(){try{const t=document.getElementById("lm-email-disp");return t?t.textContent.trim():""}catch{return""}}function _showEmptyStateStep2(){_showEmptyStateGuide()}function _resetDataSource(){localStorage.removeItem(DATA_SOURCE_KEY),localStorage.removeItem(DATA_SOURCE_ACCOUNT_KEY);const t=document.getElementById("empty-state-guide");t&&t.remove(),_showEmptyStateGuide()}function _setDataSourceFromSettings(t){const o=_getCurrentUserEmail();_setDataSource(t,o);const e=document.getElementById("sp-ds-cloud"),n=document.getElementById("sp-ds-local");e&&n&&(e.style.borderColor=t==="cloud"?"#1f6feb":"#30363d",e.style.background=t==="cloud"?"rgba(31,111,235,.15)":"#161b22",e.style.color=t==="cloud"?"#58a6ff":"#8b949e",n.style.borderColor=t==="local"?"#1f6feb":"#30363d",n.style.background=t==="local"?"rgba(31,111,235,.15)":"#161b22",n.style.color=t==="local"?"#58a6ff":"#8b949e"),showToast(t==="cloud"?"클라우드 동기화로 변경됨":"로컬 데이터 모드로 변경됨","success")}function _hideEmptyStateGuide(){const t=document.getElementById("empty-state-guide");t&&t.remove()}async function _checkSyncFromOtherPC(t){try{const e=await(await fetch("/api/gdrive/sync-check",{headers:{Authorization:`Bearer ${t}`}})).json();if(!e.hasBackup||e.samePC)return;const n=e.latestBackup,s=new Date(n.createdAt).toLocaleString(),r=Math.round((n.size||0)/1024),a=document.createElement("div");a.id="sync-import-modal",a.style.cssText=`
+      position:fixed;top:0;left:0;width:100%;height:100%;
+      background:rgba(0,0,0,0.7);z-index:9999;
+      display:flex;align-items:center;justify-content:center;
+      backdrop-filter:blur(8px);animation:fadeIn .3s ease;
+    `,a.innerHTML=`
+      <div style="background:#0d1117;border:1px solid #30363d;border-radius:16px;
+        padding:28px 32px;max-width:440px;width:90%;text-align:center;
+        box-shadow:0 16px 64px rgba(0,0,0,0.5);font-family:-apple-system,'Segoe UI',sans-serif;">
+        <div style="font-size:36px;margin-bottom:8px">☁️</div>
+        <div style="font-size:16px;font-weight:700;color:#e6edf3;margin-bottom:6px">
+          기존 작업 내역을 가져오시겠습니까?
+        </div>
+        <div style="font-size:12px;color:#8b949e;margin-bottom:16px;line-height:1.6">
+          다른 PC에서 백업된 데이터가 발견되었습니다.
+        </div>
+        <div style="background:#161b22;border:1px solid #21262d;border-radius:10px;
+          padding:12px;margin-bottom:16px;text-align:left;font-size:12px;color:#e6edf3;">
+          <div style="margin-bottom:4px"><span style="color:#8b949e">PC:</span> ${n.pcId}</div>
+          <div style="margin-bottom:4px"><span style="color:#8b949e">날짜:</span> ${s}</div>
+          <div><span style="color:#8b949e">크기:</span> ${r} KB</div>
+        </div>
+        <div style="display:flex;gap:10px;justify-content:center">
+          <button onclick="_importFromDrive('${n.fileId}','${t}')"
+            style="background:#238636;border:none;border-radius:8px;color:#fff;
+            padding:10px 24px;cursor:pointer;font-size:14px;font-weight:600">
+            가져오기
+          </button>
+          <button onclick="document.getElementById('sync-import-modal').remove()"
+            style="background:#21262d;border:1px solid #30363d;border-radius:8px;
+            color:#e6edf3;padding:10px 24px;cursor:pointer;font-size:14px">
+            새로 시작
+          </button>
+        </div>
+      </div>
+    `,document.body.appendChild(a)}catch(o){console.warn("[sync-check]",o.message)}}async function _importFromDrive(t,o){const e=document.getElementById("sync-import-modal");try{if(e){const r=e.querySelectorAll("button");r.forEach(a=>{a.disabled=!0,a.style.opacity="0.5"}),r[0].textContent="가져오는 중..."}const s=await(await fetch("/api/gdrive/import",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${o}`},body:JSON.stringify({fileId:t})})).json();e&&e.remove(),s.ok?(showToast(`${s.imported}개 이벤트를 가져왔습니다 (${s.skipped}개 중복 건너뜀)`,"success"),setTimeout(()=>loadData(),800)):showToast("가져오기 실패: "+(s.error||"알 수 없는 오류"),"error")}catch(n){e&&e.remove(),showToast("가져오기 오류: "+n.message,"error")}}let _autoBackupTimer=null;function _startAutoBackup(){_autoBackupTimer||(_autoBackupTimer=setInterval(()=>{const t=_getAuthToken();t&&fetch("/api/gdrive/backup",{method:"POST",headers:{Authorization:`Bearer ${t}`}}).then(o=>o.json()).then(o=>{o.ok&&console.log("[gdrive] 자동 백업:",o.eventCount,"이벤트")}).catch(o=>console.warn("[gdrive] 주기 백업 실패:",o.message))},300*1e3))}setTimeout(()=>{_getAuthToken()&&_startAutoBackup()},1e4);const _mgrCfg=(()=>{const t=localStorage.getItem("orbitMgrCfg"),o={fields:{progress:!0,deadline:!0,blocker:!0,taskCount:!1},highlight:null};return t?{...o,...JSON.parse(t)}:o})();function _saveMgrCfg(){localStorage.setItem("orbitMgrCfg",JSON.stringify(_mgrCfg))}function toggleMgrPanel(){const t=document.getElementById("mgr-btn"),e=document.getElementById("mgr-panel").classList.toggle("open");t.classList.toggle("open",e),e&&(typeof track=="function"&&track("view.panel_open",{panel:"mgr"}),updateMgrFieldUI())}function updateMgrFieldUI(){["progress","deadline","blocker","taskCount"].forEach(t=>{const o=document.getElementById(`mgrf-${t}`);o&&o.classList.toggle("on",!!_mgrCfg.fields[t])}),["all","blocker","deadline","low_progress"].forEach(t=>{const o=document.getElementById(`mgrf-chip-${t===null?"all":t}`);o&&o.classList.toggle("on",t===null?_mgrCfg.highlight===null:_mgrCfg.highlight===t)}),document.getElementById("mgrf-chip-all")?.classList.toggle("on",_mgrCfg.highlight===null)}function toggleMgrField(t){_mgrCfg.fields[t]=!_mgrCfg.fields[t],_saveMgrCfg(),updateMgrFieldUI()}function setMgrHighlight(t,o){_mgrCfg.highlight=t,_saveMgrCfg(),document.querySelectorAll(".mgr-filter-chip").forEach(e=>e.classList.remove("on")),o?.classList.add("on")}function submitMgrBot(){const t=document.getElementById("mgr-bot-input"),o=document.getElementById("mgr-bot-resp"),e=(t?.value||"").trim();if(!e)return;const n=parseMgrQuery(e);Object.entries(n.fields).forEach(([s,r])=>{r&&(_mgrCfg.fields[s]=!0)}),n.highlight!==void 0&&(_mgrCfg.highlight=n.highlight),_saveMgrCfg(),updateMgrFieldUI(),o&&(o.style.display="block",o.innerHTML=`🤖 ${n.response}`),t&&(t.value="")}function parseMgrQuery(t){const o=t,e={fields:{},highlight:void 0,response:""},n=[];return/진행률|진행|progress/i.test(o)&&(e.fields.progress=!0,n.push("진행률")),/마감|deadline|d-?day|디데이/i.test(o)&&(e.fields.deadline=!0,n.push("마감 D-Day")),/블로커|블록|막힌|blocker/i.test(o)&&(e.fields.blocker=!0,e.highlight="blocker",n.push("블로커")),/개수|건수|작업수/i.test(o)&&(e.fields.taskCount=!0,n.push("작업 수")),/이번주|7일|임박/i.test(o)&&(e.highlight="deadline",n.push("마감 임박 강조")),/낮은|저조|부진|slow/i.test(o)&&(e.highlight="low_progress",n.push("저조 강조")),/전체|모두|all/i.test(o)&&(e.highlight=null,n.push("전체 표시")),(_activeSimData?.members||(_activeSimData?.departments||[]).flatMap(r=>r.members||[])||TEAM_DEMO.members).forEach(r=>{if(o.includes(r.name)){const a=_teamNodes?.find(d=>d.type==="member"&&d.memberId===r.id);a&&(focusMember(a),n.push(`${r.name} 포커스`))}}),e.response=n.length>0?`${n.join(" · ")} 적용했습니다.`:'조건을 인식하지 못했습니다. "블로커 있는 사람", "이번주 마감 임박" 등으로 물어보세요.',e}function renderMgrBadges(t,o,e){const n=_mgrCfg.fields;if(!Object.values(n).some(i=>i))return;const r=(_activeSimData?.members||(_activeSimData?.departments||[]).flatMap(i=>i.members||[])||TEAM_DEMO.members).find(i=>i.id===t);if(!r)return;const a=r.tasks||[],d=a.filter(i=>i.status==="active"),y=a.filter(i=>i.status==="done"),x=new Date,c=[];if(n.progress&&d.length>0){const i=d.reduce((b,f)=>b+(f.progress||0),0)/d.length,l=Math.round(i*100),u=l>=70?"#3fb950":l>=40?"#f0883e":"#f85149",h=_mgrCfg.highlight==="low_progress"&&l<40;c.push({text:`${l}%`,color:u,flash:h})}if(n.blocker&&a.some(l=>l.blocker&&l.status!=="done")&&c.push({text:"⚠️ 블로커",color:"#f85149",flash:_mgrCfg.highlight==="blocker"}),n.taskCount&&c.push({text:`${y.length}/${a.length}`,color:"#58a6ff",flash:!1}),n.deadline){let i=1/0;if(d.forEach(l=>{if(!l.dueDate)return;const[u,h]=l.dueDate.split("-").map(Number),b=new Date(x.getFullYear(),u-1,h),f=Math.ceil((b-x)/864e5);f<i&&(i=f)}),i<1/0){const l=i<=3?"#f85149":i<=7?"#f0883e":"#6e7681",u=i<=0?"D-Day":`D-${i}`;c.push({text:u,color:l,flash:_mgrCfg.highlight==="deadline"&&i<=7})}}if(!c.length)return;_lctx.save(),_lctx.font="500 9px -apple-system,sans-serif",_lctx.textBaseline="middle",_lctx.textAlign="left";const p=15,w=4,k=Date.now()/1e3;c.forEach(i=>{i.w=_lctx.measureText(i.text).width+10});const v=c.reduce((i,l)=>i+l.w,0)+w*(c.length-1);let g=o-v/2;const m=e+20;c.forEach(i=>{const l=i.flash?.5+.5*Math.sin(k*4):1;_lctx.globalAlpha=l,roundRect(_lctx,g,m,i.w,p,p/2),_lctx.fillStyle=i.color+"22",_lctx.fill(),_lctx.strokeStyle=i.color+"70",_lctx.lineWidth=.8,roundRect(_lctx,g,m,i.w,p,p/2),_lctx.stroke(),_lctx.fillStyle=i.color,_lctx.fillText(i.text,g+5,m+p/2),g+=i.w+w}),_lctx.globalAlpha=1,_lctx.restore()}

@@ -27,16 +27,17 @@
 'use strict';
 
 require('dotenv').config();
+const logger = require('./src/logger');
 
 // ─── 전역 미처리 Promise 거부 안전망 (Node.js v24+ 크래시 방지) ────────────────
 process.on('unhandledRejection', (reason, promise) => {
-  console.warn('[Server] 미처리 Promise 거부 (무시됨):', reason?.message || reason);
+  logger.warn('미처리 Promise 거부 (무시됨): %s', reason?.message || reason);
 });
 process.on('uncaughtException', (err) => {
-  console.error('[Server] 처리되지 않은 예외:', err.message);
+  logger.error('처리되지 않은 예외: %s', err.message, { stack: err.stack });
   // OOM은 복구 불가 → Railway가 자동 재시작하도록 종료
   if (err.message && (err.message.includes('heap') || err.message.includes('memory'))) {
-    console.error('[Server] OOM 감지 — 프로세스 종료 (Railway 자동 재시작)');
+    logger.error('OOM 감지 — 프로세스 종료 (Railway 자동 재시작)');
     process.exit(1);
   }
   // 기타 예외는 계속 실행
@@ -285,7 +286,7 @@ if (!process.env.DATABASE_URL) {
 if (!fs.existsSync(SNAPSHOTS_DIR)) try { fs.mkdirSync(SNAPSHOTS_DIR, { recursive: true }); } catch {}
 
 const db = initDatabase();
-console.log('[DB] SQLite 초기화 완료');
+logger.db.info('SQLite 초기화 완료');
 
 // ─── SQLite 안정성 설정 (배포 시 동시 요청 안전) ────────────────────────────
 if (db && db.pragma) {
@@ -294,9 +295,9 @@ if (db && db.pragma) {
     db.pragma('busy_timeout = 5000');          // 5초 대기 (잠금 경쟁 해결)
     db.pragma('synchronous = NORMAL');         // 성능/안전 균형
     db.pragma('foreign_keys = ON');            // 외래키 제약 활성화
-    console.log('[DB] SQLite PRAGMAS 설정 완료 (WAL모드, busy_timeout=5000ms)');
+    logger.db.info('SQLite PRAGMAS 설정 완료 (WAL모드, busy_timeout=5000ms)');
   } catch (e) {
-    console.warn('[DB] PRAGMA 설정 실패:', e.message);
+    logger.db.warn('PRAGMA 설정 실패: %s', e.message);
   }
 }
 
@@ -414,6 +415,10 @@ app.use('/api/', (req, res, next) => {
 // Stripe Webhook은 서명 검증을 위해 원본 바디(Buffer)가 필요 — JSON 파싱 전에 처리
 app.use('/api/payment/webhook', express.raw({ type: 'application/json' }));
 app.use(express.json({ limit: '10mb' }));
+// 프로덕션: 압축된 JS 우선 사용
+if (process.env.NODE_ENV === 'production') {
+  app.use('/js', express.static(path.join(__dirname, 'public', 'js-min'), { maxAge: '7d', etag: true }));
+}
 app.use(express.static(path.join(__dirname, 'public'), {
   maxAge: process.env.NODE_ENV === 'production' ? '1d' : 0,
   etag: true,
@@ -650,7 +655,7 @@ wss.on('connection', (ws, req) => {
   const wsUser    = token ? _verifyToken(token) : null;              // 토큰 검증
   const wsUserId  = wsUser?.id || 'local';                           // 사용자 ID
   ws._userId = wsUserId;                                             // WS에 사용자 ID 저장
-  console.log(`[WS] 클라이언트 연결됨 (user: ${wsUserId})`);
+  logger.ws.info('클라이언트 연결됨 (user: %s)', wsUserId);
 
   // 초기 접속: 해당 사용자의 데이터만 전송
   try {
@@ -667,7 +672,7 @@ wss.on('connection', (ws, req) => {
       userConfig: getUserConfig(),
     }));
   } catch (e) {
-    console.error('[WS] init 오류:', e.message);
+    logger.ws.error('init 오류: %s', e.message);
   }
 
   ws.on('message', (raw) => {
@@ -805,7 +810,7 @@ wss.on('connection', (ws, req) => {
       }
 
     } catch (e) {
-      console.error('[WS] message 처리 오류:', e.message);
+      logger.ws.error('message 처리 오류: %s', e.message);
     }
   });
 
@@ -826,10 +831,10 @@ wss.on('connection', (ws, req) => {
       console.log(`[CHANNEL] "${memberName}" 퇴장 (#${channelId})`);
     }
     unsubscribeChatRooms(ws); // 채팅 방 구독 정리
-    console.log('[WS] 클라이언트 연결 종료');
+    logger.ws.info('클라이언트 연결 종료');
   });
 
-  ws.on('error', e => console.error('[WS] 에러:', e.message));
+  ws.on('error', e => logger.ws.error('에러: %s', e.message));
 });
 
 // ─── 이벤트 수신 훅 ──────────────────────────────────────────────────────────
@@ -1024,10 +1029,10 @@ app.post('/api/hook', async (req, res) => {
       } catch {}
     }
 
-    console.log(`[HOOK] ${events.length}개 이벤트 수신 (채널: #${channelId}, ${memberName})`);
+    logger.hook.info('%d개 이벤트 수신 (채널: #%s, %s)', events.length, channelId, memberName);
     res.json({ success: true, received: events.length, leaksDetected: leaks.length });
   } catch (e) {
-    console.error('[HOOK] 오류:', e.message);
+    logger.hook.error('오류: %s', e.message);
     res.status(500).json({ error: e.message });
   }
 });
@@ -1076,6 +1081,15 @@ app.get('/api/channels', (req, res) => {
     });
   });
   res.json(channels);
+});
+
+// 클라이언트 에러 수집 (Sentry 대체)
+app.post('/api/client-error', (req, res) => {
+  const { msg, src, line, col, ts } = req.body || {};
+  if (msg) {
+    console.warn(`[CLIENT-ERROR] ${msg} (${src}:${line}:${col})`);
+  }
+  res.json({ ok: true });
 });
 
 // 헬스체크 (Docker / Railway / Render 배포 플랫폼용)
@@ -1960,27 +1974,22 @@ async function startServer() {
   }
   server.listen(PORT, async () => {
   const stats = await Promise.resolve(getStats());
-  console.log(`\n⬡ Orbit AI v2.0.0`);
-  console.log(`   http://localhost:${PORT}`);
-  console.log(`   이벤트: ${stats?.eventCount ?? '?'}개 | 세션: ${stats?.sessionCount ?? '?'}개 | 파일: ${stats?.fileCount ?? '?'}개`);
-  console.log(`   감시 파일: ${CONV_FILE}`);
-  console.log(`   OAuth: [${enabledProviders.join(', ') || '미설정'}]`);
-  console.log(`   Git hooks 설치: curl http://localhost:${PORT}/api/git/install | bash`);
-  console.log(`   MCP 서버: http://localhost:${PORT}/api/mcp`);
-  console.log(`   마켓 2.0: http://localhost:${PORT}/api/market/leaderboard`);
-  console.log(`   타임라인: http://localhost:${PORT}/orbit-timeline.html`);
-  console.log(`   개인 인사이트: http://localhost:${PORT}/api/me/insights`);
-  console.log(`   비용 추적: http://localhost:${PORT}/api/costs/dashboard`);
-  console.log(`   웹훅 설정: http://localhost:${PORT}/api/webhooks/config`);
-  console.log(`   MCP 마켓: http://localhost:${PORT}/api/mcp-market/trending`);
-  console.log(`   배지: http://localhost:${PORT}/api/badge/local/svg`);
-  console.log(`   리더보드: http://localhost:${PORT}/api/leaderboard`);
-  console.log(`   ROI: http://localhost:${PORT}/api/roi/dashboard`);
-  console.log(`   인증서: http://localhost:${PORT}/api/certificate/local/score`);
-  console.log(`   포인트: http://localhost:${PORT}/api/points/balance`);
-  console.log(`   온톨로지: http://localhost:${PORT}/api/ontology`);
-  console.log(`   AI 분석: Haiku ${process.env.ANTHROPIC_API_KEY ? '✅' : '❌'} / Ollama 폴백`);
-  console.log(`   학습 데이터: http://localhost:${PORT}/api/learned-insights\n`);
+  logger.info(`Orbit AI v2.0.0 — http://localhost:${PORT}`, {
+    events: stats?.eventCount ?? '?',
+    sessions: stats?.sessionCount ?? '?',
+    files: stats?.fileCount ?? '?',
+    oauth: enabledProviders.join(', ') || '미설정',
+    anthropic: !!process.env.ANTHROPIC_API_KEY,
+  });
+  // 개발 환경에서는 엔드포인트 목록 출력 (프로덕션 JSON 로그에서는 위 메타에 포함)
+  if (process.env.NODE_ENV !== 'production') {
+    console.log(`   이벤트: ${stats?.eventCount ?? '?'}개 | 세션: ${stats?.sessionCount ?? '?'}개 | 파일: ${stats?.fileCount ?? '?'}개`);
+    console.log(`   감시 파일: ${CONV_FILE}`);
+    console.log(`   OAuth: [${enabledProviders.join(', ') || '미설정'}]`);
+    console.log(`   Git hooks 설치: curl http://localhost:${PORT}/api/git/install | bash`);
+    console.log(`   MCP 서버: http://localhost:${PORT}/api/mcp`);
+    console.log(`   학습 데이터: http://localhost:${PORT}/api/learned-insights\n`);
+  }
 
   // outcome 테이블 초기화 (기존 DB에 테이블 없으면 생성)
   outcomeStore.initOutcomeTable();
@@ -2094,14 +2103,14 @@ startServer();
 
 // ─── Graceful shutdown ──────────────────────────────────────────────────────
 function gracefulShutdown(signal) {
-  console.log(`[Server] ${signal} 수신 — 정상 종료 시작`);
+  logger.info('%s 수신 — 정상 종료 시작', signal);
   if (server && server.close) {
     server.close(() => {
-      console.log('[Server] HTTP 서버 종료');
+      logger.info('HTTP 서버 종료');
       // PG pool이 db-pg.js 내부에 있으므로 모듈 종료 함수 호출
       if (dbModule.close) {
         Promise.resolve(dbModule.close()).then(() => {
-          console.log('[Server] DB 연결 종료');
+          logger.info('DB 연결 종료');
           process.exit(0);
         }).catch(() => process.exit(0));
       } else {
@@ -2110,7 +2119,7 @@ function gracefulShutdown(signal) {
     });
   }
   // 10초 후 강제 종료
-  setTimeout(() => { console.warn('[Server] 강제 종료'); process.exit(1); }, 10000);
+  setTimeout(() => { logger.warn('강제 종료'); process.exit(1); }, 10000);
 }
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));

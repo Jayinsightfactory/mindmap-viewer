@@ -3,6 +3,7 @@
   "short_name": "Orbit",
   "description": "AI 작업 추적 3D 마인드맵",
   "start_url": "/orbit3d.html",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#f0f2f5",
   "theme_color": "#6C5CE7",

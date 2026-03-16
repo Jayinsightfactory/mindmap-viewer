@@ -1858,5 +1858,40 @@ window.updateDrillUI = function() {
 };
 </script>
 
+<script>
+// Global error tracking
+window.addEventListener('error', function(e) {
+  const err = { msg: e.message, src: e.filename, line: e.lineno, col: e.colno, ts: Date.now() };
+  if (!window._errLog) window._errLog = [];
+  window._errLog.push(err);
+  // Send to server (fire and forget, max 5 per session)
+  if (window._errLog.length <= 5) {
+    fetch('/api/client-error', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(err),
+    }).catch(() => {});
+  }
+});
+window.addEventListener('unhandledrejection', function(e) {
+  const err = { msg: 'Promise: ' + (e.reason?.message || String(e.reason)), ts: Date.now() };
+  if (!window._errLog) window._errLog = [];
+  window._errLog.push(err);
+  if (window._errLog.length <= 5) {
+    fetch('/api/client-error', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(err),
+    }).catch(() => {});
+  }
+});
+</script>
+
+<script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js').catch(() => {});
+}
+</script>
+
 </body>
 </html>
