@@ -14,12 +14,11 @@ const _TEAM_WORLD_POS = [
 
 // 팔로잉 월드 오프셋 — 팀원보다 더 바깥 (scale≈0.4 에서 화면 가장자리)
 const _FOLLOW_WORLD_POS = [
-  [ 700,  150], [-700,  150],
-  [ 700, -150], [-700, -150],
-  [ 400,  560], [-400,  560],
-  [ 400, -560], [-400, -560],
-  [ 780,  420], [-780,  420],
-  [ 780, -420], [-780, -420],
+  [ 550,  120], [-550,  120],
+  [ 550, -120], [-550, -120],
+  [ 350,  420], [-350,  420],
+  [ 350, -420], [-350, -420],
+  [ 600,  320], [-600,  320],
 ];
 
 // ctx는 이미 월드 트랜스폼(translate+scale)이 적용된 상태로 호출됨
@@ -59,29 +58,14 @@ function _drawTeamClusters(ctx, txX, txY, W, H, scale) {
     ctx.save();
     ctx.globalAlpha = fadeAlpha;
 
-    // ── 허브 카드 (월드 좌표) ──
-    drawUnifiedCard(ctx, wox, woy, color, `👤 ${name}`, `${activeTasks}개 진행 · ${totalTasks}개 총`, activeTasks > 0, false, false);
-
-    // ── 미니 작업 카드 (최대 3개) ──
-    const tasks = (m.tasks || []).slice(0, 3);
-    tasks.forEach((task, ti) => {
-      const tAngle = -Math.PI / 2 + (ti - (tasks.length - 1) / 2) * 0.65;
-      const tDist  = 110;
-      const tx = wox + Math.cos(tAngle) * tDist;
-      const ty = woy + Math.sin(tAngle) * tDist;
-      const tColor = task.status === 'active' ? '#3fb950' : task.status === 'done' ? '#58a6ff' : '#6e7681';
-      const tName  = (task.name || '작업').slice(0, 12) + ((task.name || '').length > 12 ? '…' : '');
-
-      // 연결선
-      ctx.globalAlpha = fadeAlpha * 0.2;
-      ctx.strokeStyle = color; ctx.lineWidth = 1;
-      ctx.setLineDash([3, 3]);
-      ctx.beginPath(); ctx.moveTo(wox, woy); ctx.lineTo(tx, ty); ctx.stroke();
-      ctx.setLineDash([]);
-
-      ctx.globalAlpha = fadeAlpha * 0.85;
-      drawUnifiedCard(ctx, tx, ty, tColor, tName, task.status === 'active' ? '진행중' : '완료', task.status === 'active', false, false);
+    // ── 팀원 와이어프레임 구체 ──
+    const now = performance.now() / 1000;
+    const sphereR = 55;
+    _drawWireSphere(ctx, wox, woy, sphereR, color, {
+      alpha: 0.3, lineW: 0.8, meridians: 2, parallels: 1,
+      glow: true, rotation: now * 0.15 + i * 0.5,
     });
+    _drawSphereLabel(ctx, wox, woy, sphereR, `👤 ${name}`, `${activeTasks}개 진행 · ${totalTasks}개`, color, false);
 
     // 히트 영역 (월드 좌표 → drawCompactProjectView 끝에서 스크린 좌표 변환)
     registerHitArea({
@@ -124,7 +108,7 @@ function _drawFollowingClusters(ctx, txX, txY, W, H, scale) {
 
     // 와이어프레임 구체 (팀원의 drawUnifiedCard 대신 3D 스타일)
     const isHover = _hoveredHit?.data?.type === 'follower' && _hoveredHit?.data?.userId === f.user_id;
-    const sphereR = 45;
+    const sphereR = 55;
     _drawWireSphere(ctx, wox, woy, sphereR, color, {
       alpha: 0.3, lineW: 0.8, meridians: 2, parallels: 1,
       glow: true, hover: isHover, rotation: now * 0.12 + i * 0.7,
@@ -359,8 +343,8 @@ function drawCompactProjectView() {
       if (!projAiTools && p.userData.aiToolsUsed) projAiTools = p.userData.aiToolsUsed;
       if (projWhat && projResult && projPurpose) break;
     }
-    const projExtraCtx = { purpose: projPurpose, techStack: projTech, duration: projDuration, aiTools: projAiTools };
-    _drawSphereLabel(ctx, sc.x, sc.y, nodeR, projTitle, projSub, color, dimmed, projWhat, projResult, projExtraCtx);
+    // 프로젝트 레벨: purpose 제외 (projTitle과 중복됨), 기술스택만 표시
+    _drawSphereLabel(ctx, sc.x, sc.y, nodeR, projTitle, projTech || '', color, dimmed, projWhat, '', null);
 
     ctx.globalAlpha = 1;
 
