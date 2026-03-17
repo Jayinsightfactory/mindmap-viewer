@@ -407,7 +407,8 @@ app.use('/api/payment/webhook', express.raw({ type: 'application/json' }));
 app.use(express.json({ limit: '10mb' }));
 // 프로덕션: 압축된 JS 우선 사용
 if (process.env.NODE_ENV === 'production') {
-  app.use('/js', express.static(path.join(__dirname, 'public', 'js-min'), { maxAge: '7d', etag: true }));
+  // 개발 단계: 원본 JS 사용 (minified에서 TDZ 에러 발생)
+  // app.use('/js', express.static(path.join(__dirname, 'public', 'js-min'), { maxAge: '7d', etag: true }));
 }
 app.use(express.static(path.join(__dirname, 'public'), {
   maxAge: process.env.NODE_ENV === 'production' ? '1d' : 0,
