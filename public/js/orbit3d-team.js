@@ -597,7 +597,7 @@ function buildTeamSystem(teamData) {
   }
 
   // 팀 미배정 멤버 제외 (owner/admin은 항상 표시)
-  const activeMembers = members.filter(m => m.role === 'owner' || m.role === 'admin' || (m.teamName && m.teamName !== '팀 미배정'));
+  const activeMembers = members.filter(m => m.wsRole === 'owner' || m.wsRole === 'admin' || (m.teamName && m.teamName !== '팀 미배정'));
 
   activeMembers.forEach((member, mi) => {
     const angle = (mi / activeMembers.length) * Math.PI * 2 - Math.PI / 2;
@@ -1181,7 +1181,8 @@ async function loadTeamDemo() {
         // 현재 사용자가 팀 미배정이면 팀뷰 차단 (단 owner/admin은 허용)
         const myId = _u?.userId || _u?.id;
         const myMember = data.members.find(m => m.userId === myId);
-        if (myMember && (myMember.teamName === '팀 미배정' || !myMember.teamName) && myMember.role !== 'owner' && myMember.role !== 'admin') {
+        const myWsRole = myMember?.wsRole || myMember?.role || '';
+        if (myMember && (myMember.teamName === '팀 미배정' || !myMember.teamName) && myWsRole !== 'owner' && myWsRole !== 'admin') {
           showToast('팀이 배정되지 않았습니다. 관리자에게 팀 배정을 요청하세요.', 4000);
           return;
         }
