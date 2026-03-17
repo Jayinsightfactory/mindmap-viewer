@@ -359,7 +359,10 @@ function drawCompactProjectView() {
     if (sc.z > 1) return; // 카메라 뒤
 
     const isThisDrilled = isDrillStage1 && _drillProject.name === proj.name;
-    const isHover = _hoveredHit?.data?.type === 'constellation' && _hoveredHit?.data?.projName === proj.name;
+    // 호버: 구체 또는 구체 안 버튼에 마우스 있을 때
+    const isHover = (_hoveredHit?.data?.type === 'constellation' && _hoveredHit?.data?.projName === proj.name)
+      || (_hoveredHit?.data?.type === 'editNode' && _hoveredHit?.data?.projKey === proj.name)
+      || (_hoveredHit?.data?.type === 'hideNode' && _hoveredHit?.data?.projKey === proj.name);
     const dimmed = isDrillStage1 && !isThisDrilled;
     const color = proj.color;
     const info = analyzeProject(proj);
