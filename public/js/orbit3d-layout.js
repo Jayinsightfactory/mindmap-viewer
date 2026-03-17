@@ -402,28 +402,30 @@ function drawCompactProjectView() {
     // 프로젝트 레벨: purpose 제외 (projTitle과 중복됨), 기술스택만 표시
     _drawSphereLabel(ctx, sc.x, sc.y, nodeR, projTitle, projTech || '', color, dimmed, projWhat, '', null);
 
-    // 호버 시 구체 하단에 숨기기/수정 버튼
+    // 호버 시 구체 안쪽 하단에 숨기기/수정 버튼
     if (isHover && nodeR > 25) {
-      const btnY = sc.y + nodeR + 8;
-      const btnSize = 14;
-      const btnGap = 4;
+      const btnY = sc.y + nodeR * 0.45; // 구체 안쪽 하단 (중심에서 45% 아래)
+      const btnSize = Math.max(12, nodeR * 0.3);
+      const btnGap = btnSize * 0.4;
       // 수정 버튼 (✎)
       ctx.save();
+      ctx.globalAlpha = 0.9;
       ctx.fillStyle = 'rgba(31,111,235,0.85)';
-      roundRect(ctx, sc.x - btnSize - btnGap/2, btnY, btnSize, btnSize, 4); ctx.fill();
-      ctx.fillStyle = '#fff'; ctx.font = `${btnSize-3}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText('✎', sc.x - btnGap/2, btnY + btnSize/2);
+      ctx.beginPath(); ctx.arc(sc.x - btnGap, btnY, btnSize/2, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.font = `${btnSize-2}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('✎', sc.x - btnGap, btnY);
       ctx.restore();
-      registerHitArea({ cx: sc.x - btnGap/2, cy: btnY + btnSize/2, r: btnSize/2 + 2,
+      registerHitArea({ cx: sc.x - btnGap, cy: btnY, r: btnSize/2 + 3,
         obj: null, data: { type: 'editNode', projKey: proj.name, projLabel: projTitle } });
-      // 숨기기 버튼 (🙈)
+      // 숨기기 버튼 (✕)
       ctx.save();
+      ctx.globalAlpha = 0.9;
       ctx.fillStyle = 'rgba(248,81,73,0.85)';
-      roundRect(ctx, sc.x + btnGap/2, btnY, btnSize, btnSize, 4); ctx.fill();
-      ctx.fillStyle = '#fff'; ctx.font = `${btnSize-3}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText('✕', sc.x + btnGap/2 + btnSize/2, btnY + btnSize/2);
+      ctx.beginPath(); ctx.arc(sc.x + btnGap, btnY, btnSize/2, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.font = `${btnSize-2}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('✕', sc.x + btnGap, btnY);
       ctx.restore();
-      registerHitArea({ cx: sc.x + btnGap/2 + btnSize/2, cy: btnY + btnSize/2, r: btnSize/2 + 2,
+      registerHitArea({ cx: sc.x + btnGap, cy: btnY, r: btnSize/2 + 3,
         obj: null, data: { type: 'hideNode', projKey: proj.name, projLabel: projTitle } });
     }
 
