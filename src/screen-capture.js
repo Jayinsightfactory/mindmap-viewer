@@ -26,17 +26,28 @@ const COOLTIME = {
   automation:  60 * 1000,      // 자동화 분석 대상 → 1분 (연속 캡처)
 };
 
-// 업무 앱 판별
-const WORK_APPS = {
+// 앱별 기본 가치 (윈도우 타이틀/키 입력으로 재판단됨)
+const APP_BASE = {
   high: new Set(['excel', 'powerpnt', 'word', 'code', 'rider', 'pycharm', 'intellij',
     'cursor', 'windsurf', 'figma', 'photoshop', 'illustrator', 'premiere',
     'autocad', 'solidworks', 'tableau', 'powerbi']),
-  normal: new Set(['chrome', 'firefox', 'edge', 'brave', 'whale', 'safari',
-    'outlook', 'thunderbird', 'slack', 'teams', 'notion', 'obsidian',
-    'terminal', 'iterm', 'cmd', 'powershell']),
-  idle: new Set(['explorer', 'finder', 'systempreferences', 'settings',
-    'calculator', 'photos', 'music', 'vlc', 'spotify']),
+  low: new Set(['calculator', 'photos', 'music', 'vlc', 'spotify', 'games']),
+  // 나머지 앱은 전부 "내용으로 판단" (카카오톡/크롬/슬랙/탐색기 등)
 };
+
+// 윈도우 타이틀에서 업무 키워드 감지
+const WORK_KEYWORDS = [
+  /매출|수익|이익|비용|예산|결산|회계|invoice|budget/i,
+  /계약|견적|발주|수주|납품|재고|물류|shipping/i,
+  /보고서|기획서|제안서|회의록|분석|report|proposal/i,
+  /프로젝트|일정|마감|deadline|task|이슈|issue/i,
+  /고객|클라이언트|거래처|client|customer/i,
+  /개발|코드|버그|배포|서버|API|데이터베이스/i,
+  /디자인|UI|UX|레이아웃|목업|mockup/i,
+  /채용|면접|인사|평가|교육|training/i,
+  /\.xlsx|\.pptx|\.docx|\.pdf|\.csv/i,
+  /jira|confluence|notion|asana|trello|linear/i,
+];
 
 // 자동화 가능 패턴 (반복 작업 감지)
 const AUTOMATION_PATTERNS = [
@@ -144,16 +155,25 @@ function _updateActivityLevel(app, windowTitle) {
     _automationScore = Math.max(0, _automationScore - 0.5);
   }
 
-  // 앱 기반 분류
-  if (WORK_APPS.high.has(appLow)) {
+  // 1단계: 윈도우 타이틀에 업무 키워드가 있는지 (앱 무관)
+  const titleHasWork = WORK_KEYWORDS.some(p => p.test(windowTitle || ''));
+
+  if (titleHasWork) {
+    // 업무 내용 감지 → 고가치 (카카오톡이든 크롬이든)
     _currentActivity = 'work_high';
-  } else if (WORK_APPS.normal.has(appLow)) {
-    _currentActivity = _keyActivityCount > 10 ? 'work_normal' : 'idle';
-  } else if (WORK_APPS.idle.has(appLow)) {
+  } else if (APP_BASE.high.has(appLow)) {
+    // 업무 전용 앱 (Excel/코딩 등)
+    _currentActivity = 'work_high';
+  } else if (APP_BASE.low.has(appLow)) {
+    // 비업무 앱 (계산기/음악 등)
     _currentActivity = 'idle';
+  } else if (_keyActivityCount > 15) {
+    // 키 입력 활발 → 뭔가 하고 있음
+    _currentActivity = 'work_normal';
+  } else if (_keyActivityCount > 5) {
+    _currentActivity = 'work_normal';
   } else {
-    // 알 수 없는 앱 — 키 입력량으로 판단
-    _currentActivity = _keyActivityCount > 20 ? 'work_normal' : 'idle';
+    _currentActivity = 'idle';
   }
 
   // 반복 앱 전환 감지 (같은 앱 2개를 번갈아 사용 = 복사/참조 작업)
