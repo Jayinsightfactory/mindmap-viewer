@@ -413,15 +413,16 @@ app.use(express.static(path.join(__dirname, 'public'), {
   maxAge: process.env.NODE_ENV === 'production' ? '1d' : 0,
   etag: true,
 }));
-// setup 스크립트 서빙 (/setup/install.ps1, /setup/orbit-start.sh 등)
+// setup 스크립트 서빙
 app.use('/setup', express.static(path.join(__dirname, 'setup'), {
   setHeaders: (res, filePath) => {
-    // .ps1, .sh 파일은 text/plain으로 (다운로드 대신 실행 가능)
     if (filePath.endsWith('.ps1') || filePath.endsWith('.sh')) {
       res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     }
   },
 }));
+// Chrome 확장 파일 서빙 (설치 스크립트에서 다운로드용)
+app.use('/chrome-extension', express.static(path.join(__dirname, 'chrome-extension')));
 
 // ─── 로그인 브루트포스 방지 (15분 당 10회) ────────────────────────────────────
 const _loginStore = new Map();
