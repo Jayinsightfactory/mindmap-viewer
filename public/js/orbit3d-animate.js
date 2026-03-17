@@ -534,32 +534,81 @@ function showPanel(data, obj) {
   if (data.type === 'session') {
     const hueHex = data.hueHex || '#58a6ff';
     document.getElementById('ip-dot').style.background  = hueHex;
-    document.getElementById('ip-type-text').textContent = '작업 클러스터';
-    document.getElementById('ip-intent').textContent    = data.intent || '';
+    document.getElementById('ip-type-text').textContent = '작업 세션';
 
-    // KV 목록
-    const ctx = _sessionContextCache[data.sessionId];
-    // ── 현재 활동 상세 표시 (app_switch/browse 이벤트 기반) ──────────────
     const _entry = _sessionMap[data.clusterId || data.sessionId];
     const _sEvs  = _entry?.events || [];
-    const _latestAct = [..._sEvs].reverse().find(e =>
-      e.type === 'app_switch' || e.type === 'browse' || e.type === 'browser_activity'
-    );
-    const _actDesc = _latestAct ? extractIntent(_latestAct) : null;
+    const ctx = _sessionContextCache[data.sessionId];
+
+    // ── 풍부한 세션 분석 ──
+    // 목적 (WHY)
+    const userMsgs = _sEvs.filter(e => e.type === 'user.message').map(e =>
+      (e.data?.contentPreview || e.data?.content || e.label || '').replace(/[\n\r]/g,' ').trim()
+    ).filter(s => s.length > 2);
+    const purpose = userMsgs[0] || ctx?.autoTitle || data.intent || '';
+
+    // 시간 범위
+    const timestamps = _sEvs.map(e => e.timestamp).filter(Boolean).sort();
+    const startTime = timestamps[0] ? new Date(timestamps[0]) : null;
+    const endTime = timestamps[timestamps.length-1] ? new Date(timestamps[timestamps.length-1]) : null;
+    const duration = startTime && endTime ? Math.round((endTime - startTime) / 60000) : 0;
+    const timeRange = startTime ? startTime.toLocaleString('ko-KR',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})
+      + (duration > 0 ? ` (${duration}분)` : '') : '-';
+
+    // 도구 사용 집계
+    const toolCounts = {};
+    _sEvs.filter(e => e.type === 'tool.end').forEach(e => {
+      const tn = e.data?.toolName || e.label?.match(/^(.+?)[\s:]/)?.[1] || '도구';
+      toolCounts[tn] = (toolCounts[tn]||0) + 1;
+    });
+    const topTools = Object.entries(toolCounts).sort((a,b)=>b[1]-a[1]).slice(0,5)
+      .map(([k,v]) => `${k} ×${v}`).join(', ');
+
+    // 핵심 파일 (수정된 파일 우선)
+    const fileCounts = {};
+    _sEvs.forEach(e => {
+      const fp = e.data?.filePath || e.data?.fileName || '';
+      if (fp) {
+        const fn = fp.replace(/\\/g,'/').split('/').pop();
+        if (fn && !fn.startsWith('.')) fileCounts[fn] = (fileCounts[fn]||0)+1;
+      }
+    });
+    const topFiles = Object.entries(fileCounts).sort((a,b)=>b[1]-a[1]).slice(0,6)
+      .map(([k,v]) => k).join(', ');
+
+    // AI 응답 마지막 줄 (결과)
+    const assistMsgs = _sEvs.filter(e => e.type === 'assistant.message')
+      .map(e => (e.data?.contentPreview || e.data?.content || e.label || '').replace(/[\n\r]/g,' ').trim())
+      .filter(s => s.length > 5);
+    const lastResult = assistMsgs.length > 0 ? assistMsgs[assistMsgs.length-1].slice(0,80) : '';
+
+    // 타입 분포
+    const typeCounts = {};
+    _sEvs.forEach(e => { typeCounts[e.type] = (typeCounts[e.type]||0)+1; });
+    const typeStr = Object.entries(typeCounts).sort((a,b)=>b[1]-a[1]).slice(0,4)
+      .map(([k,v]) => { const labels = {
+        'user.message':'💬질문','assistant.message':'🤖응답','tool.end':'🔧도구',
+        'file.write':'✏️파일쓰기','file.read':'📄파일읽기','notification':'🔔알림'
+      }; return `${labels[k]||k} ${v}`; }).join(' · ');
+
+    document.getElementById('ip-intent').textContent = purpose.slice(0,60) || '작업 세션';
 
     const kvData = [
-      ['작업 수',   `${data.eventCount}개`],
-      ['프로젝트',  ctx?.projectName || data.sessionId?.slice(-8) || '-'],
-      ['경로',      ctx?.projectDir?.replace(/\\/g,'/').split('/').slice(-2).join('/') || '-'],
+      ['⏱️ 시간',    timeRange],
+      ['📊 이벤트',  `${_sEvs.length}개 (${typeStr})`],
+      ['🔧 도구',    topTools || '-'],
+      ['📁 파일',    topFiles || '-'],
+      ['📂 프로젝트', ctx?.projectName || data.sessionId?.slice(0,12) || '-'],
     ];
-    if (_actDesc) kvData.push(['현재 활동', _actDesc]);
+    if (lastResult) kvData.push(['💡 결과', lastResult]);
+    if (userMsgs.length > 1) kvData.push(['💬 대화', `${userMsgs.length}건의 질문`]);
+
     document.getElementById('ip-kv-list').innerHTML = kvData.map(([k,v]) =>
       `<div class="ip-kv"><span class="k">${k}</span><span class="v">${v}</span></div>`
     ).join('');
 
-    const preview = ctx?.firstMsg || ctx?.autoTitle || '';
     const pv = document.getElementById('ip-preview');
-    if (preview) { pv.textContent = preview; pv.style.display = 'block'; }
+    if (purpose) { pv.textContent = purpose; pv.style.display = 'block'; }
     else { pv.style.display = 'none'; }
 
     if (!ctx && data.sessionId) {
