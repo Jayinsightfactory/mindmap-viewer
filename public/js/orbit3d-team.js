@@ -596,11 +596,9 @@ function buildTeamSystem(teamData) {
     orbitRings.push(rm); scene.add(rm);
   }
 
-  // 팀 미배정 멤버 제외 (owner/admin은 항상 표시)
-  const activeMembers = members.filter(m => m.wsRole === 'owner' || m.wsRole === 'admin' || (m.teamName && m.teamName !== '팀 미배정'));
-
-  activeMembers.forEach((member, mi) => {
-    const angle = (mi / activeMembers.length) * Math.PI * 2 - Math.PI / 2;
+  // 모든 멤버 표시 (개발 단계 — 필터링은 나중에)
+  members.forEach((member, mi) => {
+    const angle = (mi / members.length) * Math.PI * 2 - Math.PI / 2;
     const mx    = MEMBER_R * Math.cos(angle);
     const my    = 0;
     const mz    = MEMBER_R * Math.sin(angle);
@@ -1178,14 +1176,6 @@ async function loadTeamDemo() {
         return;
       }
       if (data && data.members && data.members.length > 0) {
-        // 현재 사용자가 팀 미배정이면 팀뷰 차단 (단 owner/admin은 허용)
-        const myId = _u?.userId || _u?.id;
-        const myMember = data.members.find(m => m.userId === myId);
-        const myWsRole = myMember?.wsRole || myMember?.role || '';
-        if (myMember && (myMember.teamName === '팀 미배정' || !myMember.teamName) && myWsRole !== 'owner' && myWsRole !== 'admin') {
-          showToast('팀이 배정되지 않았습니다. 관리자에게 팀 배정을 요청하세요.', 4000);
-          return;
-        }
         buildTeamSystem(data);
         updateBreadcrumb('team');
         document.querySelector('.tm-label').textContent = '👥 팀';
