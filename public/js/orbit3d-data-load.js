@@ -16,14 +16,12 @@ function _checkTrackerHealth() {
       const badge = document.getElementById('ctb-label');
 
       if (!d.online) {
-        // 트래커 오프라인
         if (!_trackerAlertShown) {
           _trackerAlertShown = true;
           _showTrackerAlert('offline', '트래커가 연결되지 않았습니다. 설정에서 설치 코드를 실행해주세요.');
         }
         if (badge) badge.textContent = 'Claude 오프라인';
       } else {
-        // 온라인이지만 최근 데이터 없음 (30분 이상)
         const lastEvent = d.lastEventAt ? new Date(d.lastEventAt) : null;
         const minsSince = lastEvent ? (Date.now() - lastEvent.getTime()) / 60000 : 999;
 
@@ -33,12 +31,14 @@ function _checkTrackerHealth() {
             _showTrackerAlert('stale', '데이터가 30분 이상 수신되지 않고 있습니다. 데몬이 중지되었을 수 있습니다.');
           }
         } else {
-          _trackerAlertShown = false; // 정상 → 알림 리셋
+          _trackerAlertShown = false;
           _hideTrackerAlert();
         }
-
         if (badge) badge.textContent = d.online ? 'Claude 트래킹 중' : 'Claude 오프라인';
       }
+
+      // 데몬 에러 이벤트 확인
+      _checkDaemonErrors();
     })
     .catch(() => {});
 }
@@ -49,12 +49,14 @@ function _showTrackerAlert(type, msg) {
   const alert = document.createElement('div');
   alert.id = 'tracker-alert';
   alert.style.cssText = 'position:fixed;top:60px;right:20px;z-index:9999;background:#0d1117;border:1px solid ' +
-    (type === 'offline' ? '#f85149' : '#d29922') + ';border-radius:10px;padding:12px 16px;max-width:320px;box-shadow:0 4px 12px rgba(0,0,0,.5)';
+    (type === 'offline' ? '#f85149' : type === 'error' ? '#f85149' : '#d29922') + ';border-radius:10px;padding:12px 16px;max-width:380px;box-shadow:0 4px 12px rgba(0,0,0,.5)';
+  const titles = { offline: '트래커 미연결', stale: '데이터 수신 중단', error: '데몬 에러 감지' };
+  const icons = { offline: '🔴', stale: '⚠️', error: '🛑' };
   alert.innerHTML = '<div style="display:flex;gap:8px;align-items:flex-start">' +
-    '<span style="font-size:18px">' + (type === 'offline' ? '🔴' : '⚠️') + '</span>' +
+    '<span style="font-size:18px">' + (icons[type] || '⚠️') + '</span>' +
     '<div><div style="color:#e6edf3;font-size:12px;font-weight:600;margin-bottom:4px">' +
-    (type === 'offline' ? '트래커 미연결' : '데이터 수신 중단') + '</div>' +
-    '<div style="color:#8b949e;font-size:11px;line-height:1.5">' + msg + '</div>' +
+    (titles[type] || '알림') + '</div>' +
+    '<div style="color:#8b949e;font-size:11px;line-height:1.5">' + msg + '</div>' + /* HTML 지원 */
     '<button onclick="openSetupPanel();_hideTrackerAlert()" style="margin-top:8px;font-size:11px;padding:4px 10px;' +
     'background:#1f6feb;color:#fff;border:none;border-radius:5px;cursor:pointer">설정 열기</button>' +
     '<button onclick="_hideTrackerAlert()" style="margin-top:8px;margin-left:4px;font-size:11px;padding:4px 10px;' +
@@ -66,6 +68,27 @@ function _showTrackerAlert(type, msg) {
 function _hideTrackerAlert() {
   const el = document.getElementById('tracker-alert');
   if (el) el.remove();
+}
+
+// 데몬 에러 확인
+function _checkDaemonErrors() {
+  _authFetch('/api/graph').then(r => r.json()).then(d => {
+    const errors = (d.nodes || []).filter(n =>
+      n.type === 'daemon.error' && n.timestamp > new Date(Date.now() - 3600000).toISOString()
+    );
+    if (errors.length > 0) {
+      const latest = errors[errors.length - 1];
+      const errData = latest.data || {};
+      const component = errData.component || latest.label || 'daemon';
+      const errMsg = errData.error || errData.detail || '';
+      const hostname = errData.hostname || '';
+      _showTrackerAlert('error',
+        '<b>' + hostname + '</b> 데몬 에러:<br>' +
+        '<code style="font-size:10px;color:#f85149;word-break:break-all">[' + component + '] ' + errMsg.slice(0, 120) + '</code><br>' +
+        '<span style="font-size:10px;color:#6e7681">PC 터미널에서 확인: cat ~/.orbit/daemon.log</span>'
+      );
+    }
+  }).catch(() => {});
 }
 
 // 5분마다 체크

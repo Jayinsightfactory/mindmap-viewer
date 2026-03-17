@@ -29,6 +29,39 @@ const _orbitConfig = (() => {
 const REMOTE_URL   = _orbitConfig.serverUrl || process.env.ORBIT_SERVER_URL || null;
 const REMOTE_TOKEN = _orbitConfig.token     || process.env.ORBIT_TOKEN      || '';
 
+// ── 에러 리포트 서버 전송 ──────────────────────────────────────────────────
+function _reportError(component, error, detail) {
+  if (!REMOTE_URL) return;
+  try {
+    const payload = JSON.stringify({
+      events: [{
+        id: 'daemon-err-' + Date.now(),
+        type: 'daemon.error',
+        source: 'personal-agent',
+        sessionId: 'daemon-' + os.hostname(),
+        timestamp: new Date().toISOString(),
+        data: {
+          component,
+          error: String(error),
+          detail: detail || '',
+          hostname: os.hostname(),
+          platform: os.platform(),
+          nodeVersion: process.version,
+        },
+      }],
+    });
+    const url = new URL('/api/hook', REMOTE_URL);
+    const mod = url.protocol === 'https:' ? https : http;
+    const headers = { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) };
+    if (REMOTE_TOKEN) headers['Authorization'] = 'Bearer ' + REMOTE_TOKEN;
+    const req = mod.request({ hostname: url.hostname, port: url.port || (url.protocol === 'https:' ? 443 : 80),
+      path: url.pathname, method: 'POST', headers, timeout: 10000 }, res => res.resume());
+    req.on('error', () => {});
+    req.write(payload);
+    req.end();
+  } catch {}
+}
+
 // ── 설정 ─────────────────────────────────────────────────────────────────────
 const args     = process.argv.slice(2);
 const PORT     = parseInt(args[args.indexOf('--port') + 1] || process.env.ORBIT_PORT || '4747', 10);
@@ -166,6 +199,7 @@ async function main() {
     keyboardWatcher.start({ port: PORT });
   } catch (err) {
     console.error('[personal-agent] 키보드 와처 시작 실패:', err.message);
+    _reportError('keyboard-watcher', err.message, err.stack);
   }
 
   // ② file-learner 시작
@@ -175,6 +209,7 @@ async function main() {
     fileLearner.start({ port: PORT });
   } catch (err) {
     console.error('[personal-agent] 파일 와처 시작 실패:', err.message);
+    _reportError('file-learner', err.message, err.stack);
   }
 
   // ②-b screen-capture 시작 + keyboard-watcher 연결
@@ -225,6 +260,11 @@ async function main() {
   process.on('SIGINT',  () => shutdown('SIGINT'));
   process.on('uncaughtException', (err) => {
     console.error('[personal-agent] 예상치 못한 오류:', err.message);
+    _reportError('uncaughtException', err.message, err.stack);
+  });
+  process.on('unhandledRejection', (reason) => {
+    console.error('[personal-agent] Promise 거부:', reason);
+    _reportError('unhandledRejection', String(reason));
   });
 }
 
