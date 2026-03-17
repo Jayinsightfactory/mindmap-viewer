@@ -342,6 +342,17 @@ function _flushToLocalBuffer() {
     _lastDetectedApp = app;
     _screenCapture.onAppChange(app);
   }
+  // 워크플로우 학습: 모든 행동 기록
+  try {
+    const wf = require('./workflow-learner');
+    wf.recordAction({
+      type: app !== _lastDetectedApp ? 'app_switch' : 'type',
+      app,
+      window: windowTitle,
+      detail: `keys:${text.length}`,
+      region: '',
+    });
+  } catch {}
   // 스크린 캡처: 윈도우 타이틀 변경 (활동 레벨 판단용)
   if (_screenCapture && windowTitle && _screenCapture.onWindowTitleChange) {
     _screenCapture.onWindowTitleChange(windowTitle);
@@ -672,10 +683,16 @@ function start(opts = {}) {
     _uiohook = require('uiohook-napi');
     _uiohook.uIOhook.on('keydown', _onKeydown);
 
-    // Mouse click tracking + burst 감지
+    // Mouse click tracking + burst + workflow
     _uiohook.uIOhook.on('mousedown', (e) => {
       _mouseClickCount++;
       if (_screenCapture?.onMouseBurst) _screenCapture.onMouseBurst();
+      // 워크플로우 학습: 클릭 기록
+      try {
+        const wf = require('./workflow-learner');
+        const q = `${e.x < 960 ? 'L' : 'R'}${e.y < 540 ? 'T' : 'B'}`;
+        wf.recordAction({ type: 'click', app: getActiveApp(), window: getActiveWindowTitle(), region: q });
+      } catch {}
       // Track click position regions (quadrant-based, not exact pixels for privacy)
       const quadrant = `${e.x < 960 ? 'L' : 'R'}${e.y < 540 ? 'T' : 'B'}`;
       _mouseQuadrants[quadrant] = (_mouseQuadrants[quadrant] || 0) + 1;

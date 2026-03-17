@@ -1170,6 +1170,34 @@ app.get('/api/install/status', async (req, res) => {
   } catch (e) { res.json({ installs: [], error: e.message }); }
 });
 
+// 워크플로우 학습 + 자동화 템플릿 조회
+app.get('/api/workflows', (req, res) => {
+  try {
+    const wf = require('./src/workflow-learner');
+    res.json(wf.getStatus());
+  } catch (e) { res.json({ error: e.message }); }
+});
+
+app.get('/api/workflows/templates', (req, res) => {
+  try {
+    const wf = require('./src/workflow-learner');
+    const data = wf.getWorkflows();
+    res.json({ templates: data.templates, patterns: data.patterns });
+  } catch (e) { res.json({ templates: [], patterns: [] }); }
+});
+
+app.post('/api/workflows/generate', (req, res) => {
+  try {
+    const { templateId } = req.body;
+    const wf = require('./src/workflow-learner');
+    const executor = require('./src/automation-executor');
+    const template = wf.getWorkflows().templates.find(t => t.id === templateId);
+    if (!template) return res.status(404).json({ error: 'template not found' });
+    const scripts = executor.generateAll(template);
+    res.json({ ok: true, scripts });
+  } catch (e) { res.json({ error: e.message }); }
+});
+
 // 앱별 사용 프로필 + 피드백 조회 (tool-profiler)
 app.get('/api/tool-profiles', (req, res) => {
   try {
