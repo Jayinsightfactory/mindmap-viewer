@@ -409,13 +409,36 @@ function _runPeriodicAnalysis() {
     }
   }
 
-  // ── 윈도우 타이틀 이력 추출 (최근 활동에서 앱별 대표 타이틀) ──
+  // ── 윈도우 타이틀 이력 추출 ──
   const windowHistory = {};
   _activityBuffer.forEach(a => {
     if (a.windowTitle && a.app) {
-      windowHistory[a.app] = a.windowTitle; // 앱별 마지막 윈도우 타이틀
+      windowHistory[a.app] = a.windowTitle;
     }
   });
+
+  // ── 앱별 프로필 업데이트 (tool-profiler) ──
+  try {
+    const profiler = require('./tool-profiler');
+    const appCounts = {};
+    _activityBuffer.forEach(a => {
+      if (!a.app) return;
+      if (!appCounts[a.app]) appCounts[a.app] = { keys: 0, windows: new Set() };
+      appCounts[a.app].keys += a.keystrokeMetrics?.totalKeys || 0;
+      if (a.windowTitle) appCounts[a.app].windows.add(a.windowTitle);
+    });
+    const curApp = getActiveApp();
+    Object.entries(appCounts).forEach(([app, data]) => {
+      profiler.recordActivity(app, {
+        keyCount: data.keys,
+        mouseClicks: _mouseClickCount,
+        durationMin: (ANALYSIS_INTERVAL_MS / 60000),
+        windowTitle: windowHistory[app] || '',
+        previousApp: curApp !== app ? curApp : '',
+      });
+    });
+  } catch {}
+
 
   // ── 분석 결과 → 로컬 즉시 + 원격 배치 큐 ──
   const payload = JSON.stringify({

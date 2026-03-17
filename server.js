@@ -1170,6 +1170,17 @@ app.get('/api/install/status', async (req, res) => {
   } catch (e) { res.json({ installs: [], error: e.message }); }
 });
 
+// 앱별 사용 프로필 + 피드백 조회 (tool-profiler)
+app.get('/api/tool-profiles', (req, res) => {
+  try {
+    const profiler = require('./src/tool-profiler');
+    res.json({
+      profiles: profiler.getAllProfiles(),
+      feedback: profiler.getRecentFeedback(20),
+    });
+  } catch (e) { res.json({ profiles: [], feedback: [], error: e.message }); }
+});
+
 // 트래커 상태 조회 (대시보드에서 연결 확인용)
 app.get('/api/tracker/status', async (req, res) => {
   try {

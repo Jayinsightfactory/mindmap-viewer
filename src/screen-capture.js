@@ -131,9 +131,17 @@ function _sendAnalysisToServer(result, trigger, filepath) {
 function ensureDir() { fs.mkdirSync(CAPTURE_DIR, { recursive: true }); }
 
 /**
- * 현재 활동 레벨에 맞는 쿨타임 반환
+ * 현재 활동 레벨에 맞는 쿨타임 반환 (tool-profiler 전략 우선)
  */
 function _getCurrentCooltime() {
+  // tool-profiler에서 앱별 맞춤 전략 확인
+  try {
+    const { getStrategy } = require('./tool-profiler');
+    const strategy = getStrategy(_lastActiveApp);
+    if (strategy && strategy.captureInterval) {
+      return strategy.captureInterval * 1000; // 초→밀리초
+    }
+  } catch {}
   return COOLTIME[_currentActivity] || COOLTIME.idle;
 }
 
@@ -229,6 +237,8 @@ function capture(trigger = 'manual') {
             console.log(`[screen-capture] AI: ${result.activity} — ${result.description}`);
             _lastAnalysis = result;
             _sendAnalysisToServer(result, trigger, filepath);
+            // tool-profiler에 Vision 인사이트 축적
+            try { require('./tool-profiler').recordVisionInsight(_lastActiveApp, result); } catch {}
             // 자동화 패턴 강화
             if (result.details && AUTOMATION_PATTERNS.some(p => p.test(result.details))) {
               _automationScore = Math.min(10, _automationScore + 3);
