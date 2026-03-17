@@ -48,12 +48,15 @@ let _currentSuggestionId=null;function showSuggestion(e){_currentSuggestionId=e.
         <span style="color:#cdd9e5">${i.userData?.intent||"세션"}</span>
         <span style="color:#58a6ff;font-size:10px">${i.userData?.satellites||0}개 작업</span>
       </div>`).join("")}}window.openStatsPopup=openStatsPopup;async function openWorkspacePopup(){if(!_orbitUser){openLoginModal();return}const e=document.getElementById("workspace-popup");e.style.display="flex",document.getElementById("ws-create-result").style.display="none",await _loadMyWorkspaces()}window.openWorkspacePopup=openWorkspacePopup;async function _loadMyWorkspaces(){const e=document.getElementById("ws-my-list");if(!e)return;const t=_orbitUser?.token||"";if(!t){e.innerHTML='<div style="font-size:12px;color:#6e7681">로그인이 필요합니다</div>';return}try{const n=await fetch("/api/workspace/my",{headers:{Authorization:`Bearer ${t}`}}),i=n.ok?await n.json():[];if(!i.length){e.innerHTML='<div style="font-size:12px;color:#6e7681;padding:8px 0">참여한 워크스페이스가 없습니다.<br>아래에서 만들거나 초대코드로 참여하세요.</div>';return}e.innerHTML=i.map(o=>`
-      <div class="ws-card" onclick="_selectWorkspace('${o.id}','${(o.name||"").replace(/'/g,"\\'")}')">
+      <div class="ws-card" style="cursor:default">
         <div class="ws-card-icon">${o.role==="owner"?"👑":"👤"}</div>
         <div class="ws-card-info">
           <div class="ws-card-name">${escHtml(o.name)}</div>
           <div class="ws-card-meta">${escHtml(o.company_name||"")} · 멤버 ${o.member_count||0}명</div>
           <div class="ws-card-role">${o.role==="owner"?"관리자":"멤버 · "+escHtml(o.team_name||"")}</div>
+          <button onclick="_selectWorkspace('${o.id}','${(o.name||"").replace(/'/g,"\\'")}')"
+            style="margin-top:6px;font-size:11px;padding:6px 14px;background:#1f6feb;color:#fff;border:none;
+            border-radius:6px;cursor:pointer;font-weight:600;width:100%">👥 팀뷰로 보기</button>
         </div>
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
           <div style="font-size:11px;color:#3fb950;cursor:pointer" onclick="event.stopPropagation();_copyCode('${o.invite_code||""}')">

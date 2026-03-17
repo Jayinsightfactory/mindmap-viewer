@@ -827,12 +827,15 @@ async function _loadMyWorkspaces() {
       return;
     }
     listEl.innerHTML = rows.map(ws => `
-      <div class="ws-card" onclick="_selectWorkspace('${ws.id}','${(ws.name||'').replace(/'/g,"\\'")}')">
+      <div class="ws-card" style="cursor:default">
         <div class="ws-card-icon">${ws.role==='owner' ? '👑' : '👤'}</div>
         <div class="ws-card-info">
           <div class="ws-card-name">${escHtml(ws.name)}</div>
           <div class="ws-card-meta">${escHtml(ws.company_name||'')} · 멤버 ${ws.member_count||0}명</div>
           <div class="ws-card-role">${ws.role==='owner' ? '관리자' : '멤버 · '+escHtml(ws.team_name||'')}</div>
+          <button onclick="_selectWorkspace('${ws.id}','${(ws.name||'').replace(/'/g,"\\'")}')"
+            style="margin-top:6px;font-size:11px;padding:6px 14px;background:#1f6feb;color:#fff;border:none;
+            border-radius:6px;cursor:pointer;font-weight:600;width:100%">👥 팀뷰로 보기</button>
         </div>
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
           <div style="font-size:11px;color:#3fb950;cursor:pointer" onclick="event.stopPropagation();_copyCode('${ws.invite_code||''}')">
