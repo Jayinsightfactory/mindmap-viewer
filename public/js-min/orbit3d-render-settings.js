@@ -161,7 +161,8 @@ Orbit 서버가 정상 시작됐나요?
         <div style="font-size:28px;flex-shrink:0">1️⃣</div>
         <div>
           <div style="font-size:12px;color:#e6edf3;font-weight:600;margin-bottom:4px">chrome://extensions 열기</div>
-          <div style="font-size:11px;color:#6e7681">Chrome 주소창에 입력 후 Enter</div>
+          <a href="#" onclick="navigator.clipboard.writeText('chrome://extensions');this.textContent='✅ 복사됨! 주소창에 붙여넣기';this.style.color='#3fb950';return false"
+            style="font-size:11px;color:#58a6ff;text-decoration:underline;cursor:pointer">클릭하여 주소 복사 → 주소창에 붙여넣기</a>
         </div>
       </div>
     </div>

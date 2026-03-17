@@ -53,10 +53,10 @@
     <div class="step-num">1</div>
     <h2>Chrome 확장 관리 페이지 열기</h2>
     <p>Chrome 주소창에 아래 주소를 입력하세요:</p>
-    <div class="copy-cmd" onclick="navigator.clipboard.writeText('chrome://extensions');this.style.borderColor='#3fb950';setTimeout(()=>this.style.borderColor='#30363d',1000)">
-      chrome://extensions
+    <div class="copy-cmd" onclick="navigator.clipboard.writeText('chrome://extensions');this.innerHTML='✅ 복사됨! Chrome 주소창에 붙여넣고 Enter';this.style.borderColor='#3fb950';this.style.color='#3fb950'">
+      chrome://extensions <span style="font-size:10px;color:#6e7681">← 클릭하여 복사</span>
     </div>
-    <p>또는 Chrome 메뉴 → 도구 더보기 → 확장 프로그램</p>
+    <p style="color:#d29922;font-size:11px">⚠️ 보안상 웹에서 직접 열 수 없습니다. 복사 후 주소창에 붙여넣으세요.</p>
   </div>
 
   <!-- Step 2 -->
