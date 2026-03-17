@@ -522,9 +522,9 @@ function drawTeamLabels() {
     const sc = toScreen(node.pos);
     if (sc.z > 1) continue;
     if (node.hidden) continue;
+    const { type, label, sublabel, color, emoji, progress, taskStatus, memberId } = node;
     // 개인뷰에서 숨긴 노드 → 팀뷰에서 task만 숨김 (member/goal/department는 유지)
     if (type === 'task' && (_hidden[node.label] || _hidden[node.sublabel])) continue;
-    const { type, label, sublabel, color, emoji, progress, taskStatus, memberId } = node;
     // 사용자 노드 밀도 설정 (_nodeDensity 슬라이더)
     if (type === 'tool'                          && _nodeDensity < 4) continue;
     if ((type === 'skill' || type === 'agent')   && _nodeDensity < 3) continue;

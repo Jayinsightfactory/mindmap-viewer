@@ -882,54 +882,80 @@ async function openWsPendingList(wsId) {
     const res = await fetch(`/api/workspace/${wsId}/pending-members`, { headers: { Authorization: `Bearer ${token}` } });
     const list = res.ok ? await res.json() : [];
     if (!list.length) { showToast('승인 대기 중인 멤버가 없습니다'); return; }
+    // 기존 모달 제거
+    document.getElementById('ws-pending-modal')?.remove();
     const html = list.map(m => `
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px;border-bottom:1px solid #21262d">
+      <div id="pending-row-${m.userId}" style="display:flex;align-items:center;justify-content:space-between;padding:8px;border-bottom:1px solid #21262d;transition:opacity .3s">
         <div style="color:#e6edf3"><div>${escHtml(m.name || '사용자')}</div><div style="font-size:10px;color:#8b949e">${escHtml(m.email || m.userId || '')}</div></div>
         <div style="display:flex;gap:4px">
-          <button onclick="this.disabled=true;_approveMember('${wsId}','${m.userId}')" style="font-size:10px;padding:3px 8px;background:#3fb950;color:#fff;border:none;border-radius:4px;cursor:pointer">승인</button>
-          <button onclick="this.disabled=true;_rejectMember('${wsId}','${m.userId}')" style="font-size:10px;padding:3px 8px;background:#f85149;color:#fff;border:none;border-radius:4px;cursor:pointer">거절</button>
+          <button onclick="this.disabled=true;_approveMember('${wsId}','${m.userId}',this)" style="font-size:10px;padding:3px 8px;background:#3fb950;color:#fff;border:none;border-radius:4px;cursor:pointer">승인</button>
+          <button onclick="this.disabled=true;_rejectMember('${wsId}','${m.userId}',this)" style="font-size:10px;padding:3px 8px;background:#f85149;color:#fff;border:none;border-radius:4px;cursor:pointer">거절</button>
         </div>
       </div>`).join('');
-    showToast(''); // clear
     const modal = document.createElement('div');
+    modal.id = 'ws-pending-modal';
     modal.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center';
+    modal.onclick = (e) => { if (e.target === modal) { modal.remove(); } };
     modal.innerHTML = `<div style="background:#0d1117;border:1px solid #30363d;border-radius:12px;padding:16px;width:320px;max-height:400px;overflow-y:auto">
-      <div style="display:flex;justify-content:space-between;margin-bottom:12px"><b style="color:#e6edf3">승인 대기 (${list.length}명)</b><button onclick="this.closest('div[style*=fixed]').remove()" style="background:none;border:none;color:#8b949e;cursor:pointer;font-size:16px">✕</button></div>
-      ${html}</div>`;
+      <div style="display:flex;justify-content:space-between;margin-bottom:12px"><b style="color:#e6edf3" id="ws-pending-title">승인 대기 (${list.length}명)</b><button onclick="document.getElementById('ws-pending-modal')?.remove()" style="background:none;border:none;color:#8b949e;cursor:pointer;font-size:16px">&#10005;</button></div>
+      <div id="ws-pending-list">${html}</div></div>`;
     document.body.appendChild(modal);
   } catch (e) { showToast('오류: ' + e.message, 'error'); }
 }
 window.openWsPendingList = openWsPendingList;
 
-async function _approveMember(wsId, userId) {
+async function _approveMember(wsId, userId, btnEl) {
   const token = _orbitUser?.token || '';
   try {
     const res = await fetch(`/api/workspace/${wsId}/approve-member`, { method:'POST', headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`}, body:JSON.stringify({userId}) });
     const data = await res.json();
     if (res.ok) {
       showToast('승인 완료');
+      // 행 즉시 페이드아웃 제거
+      const row = document.getElementById(`pending-row-${userId}`);
+      if (row) { row.style.opacity = '0'; setTimeout(() => row.remove(), 300); }
+      // 남은 행이 없으면 모달 닫기
+      setTimeout(() => {
+        const listEl = document.getElementById('ws-pending-list');
+        if (listEl && listEl.children.length === 0) {
+          document.getElementById('ws-pending-modal')?.remove();
+        } else if (listEl) {
+          const titleEl = document.getElementById('ws-pending-title');
+          if (titleEl) titleEl.textContent = `승인 대기 (${listEl.children.length}명)`;
+        }
+      }, 350);
     } else {
       showToast('승인 실패: ' + (data.error || '알 수 없는 오류'), 'error');
     }
   } catch (e) { showToast('승인 오류: ' + e.message, 'error'); }
-  // 모달 닫기 + 목록 새로고침
-  document.querySelector('div[style*="position:fixed"][style*="z-index:9999"]')?.remove();
   _loadMyWorkspaces();
 }
 window._approveMember = _approveMember;
 
-async function _rejectMember(wsId, userId) {
+async function _rejectMember(wsId, userId, btnEl) {
   const token = _orbitUser?.token || '';
   try {
     const res = await fetch(`/api/workspace/${wsId}/reject-member`, { method:'POST', headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`}, body:JSON.stringify({userId}) });
     const data = await res.json();
     if (res.ok) {
       showToast('거절 완료');
+      // 행 즉시 페이드아웃 제거
+      const row = document.getElementById(`pending-row-${userId}`);
+      if (row) { row.style.opacity = '0'; setTimeout(() => row.remove(), 300); }
+      // 남은 행이 없으면 모달 닫기
+      setTimeout(() => {
+        const listEl = document.getElementById('ws-pending-list');
+        if (listEl && listEl.children.length === 0) {
+          document.getElementById('ws-pending-modal')?.remove();
+        } else if (listEl) {
+          const titleEl = document.getElementById('ws-pending-title');
+          if (titleEl) titleEl.textContent = `승인 대기 (${listEl.children.length}명)`;
+        }
+      }, 350);
     } else {
       showToast('거절 실패: ' + (data.error || '알 수 없는 오류'), 'error');
     }
   } catch (e) { showToast('거절 오류: ' + e.message, 'error'); }
-  document.querySelector('div[style*="position:fixed"][style*="z-index:9999"]')?.remove();
   _loadMyWorkspaces();
 }
 window._rejectMember = _rejectMember;
@@ -968,12 +994,16 @@ async function openWsMemberManage(wsId) {
       </div>`;
     }).join('');
 
+    // 기존 모달 제거
+    document.getElementById('ws-member-modal')?.remove();
     const modal = document.createElement('div');
+    modal.id = 'ws-member-modal';
     modal.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center';
+    modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
     modal.innerHTML = `<div style="background:#0d1117;border:1px solid #30363d;border-radius:12px;padding:16px;width:380px;max-height:500px;overflow-y:auto">
       <div style="display:flex;justify-content:space-between;margin-bottom:12px">
         <b style="color:#e6edf3">인원 배분 (${members.length}명)</b>
-        <button onclick="this.closest('div[style*=fixed]').remove()" style="background:none;border:none;color:#8b949e;cursor:pointer;font-size:16px">&#10005;</button>
+        <button onclick="document.getElementById('ws-member-modal')?.remove()" style="background:none;border:none;color:#8b949e;cursor:pointer;font-size:16px">&#10005;</button>
       </div>
       ${html}
       <div style="margin-top:12px;text-align:right">
@@ -1008,15 +1038,17 @@ window.openWsMemberManage = openWsMemberManage;
 function _copyCode(code) {
   navigator.clipboard.writeText(code).then(() => showToast(`초대코드 복사됨: ${code}`)).catch(() => {});
 }
+window._copyCode = _copyCode;
 
 function _selectWorkspace(id, name) {
   closePopup('workspace-popup');
   window._currentWorkspaceId = id;
   showToast(`'${name}' 워크스페이스 로딩 중...`);
 
-  // multilevel 렌더러 대신 팀 뷰로 직접 전환 (레거시 카드 방지)
+  // 모드 라벨 리셋 → loadTeamDemo의 switchTo('team')이 스킵되지 않도록
   if (window.RendererManager) {
-    window.RendererManager.switchTo('team');
+    // 현재 모드 강제 리셋 (이미 team이어도 새 workspace 로드 보장)
+    window.RendererManager.setModeLabel(null);
     if (window.RendererManager.cleanupMultilevel) window.RendererManager.cleanupMultilevel();
   } else {
     if (typeof clearMyWork === 'function') clearMyWork();
@@ -1029,6 +1061,7 @@ function _selectWorkspace(id, name) {
     loadTeamDemo();
   }
 }
+window._selectWorkspace = _selectWorkspace;
 
 async function joinWorkspacePopup() {
   const code     = (document.getElementById('ws-join-code')?.value || '').trim().toUpperCase();
