@@ -562,6 +562,10 @@ window.buildEnterpriseSystem = buildEnterpriseSystem;
 
 // ── buildTeamSystem ──────────────────────────────────────────────────────────
 function buildTeamSystem(teamData) {
+  try { return _buildTeamSystemInner(teamData); }
+  catch(e) { console.error('[buildTeamSystem] CRASH:', e.message, e.stack?.split('\n')[1]); }
+}
+function _buildTeamSystemInner(teamData) {
   console.log('[orbit3d-team] buildTeamSystem called with team:', teamData?.name);
   clearScene();
   _teamNodes = [];
