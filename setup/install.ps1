@@ -148,6 +148,34 @@ if (-not $NoHook) {
   Write-Host "⏭  훅 등록 건너뜀 (-NoHook)" -ForegroundColor Gray
 }
 
+# ── 원격 서버 연결 설정 ────────────────────────────────────────
+Write-Host ""
+Write-Host "🌐 원격 서버 연결 설정..." -ForegroundColor Cyan
+$RemoteUrl = "https://sparkling-determination-production-c88b.up.railway.app"
+$OrbitConfigPath = "$env:USERPROFILE\.orbit-config.json"
+
+if (Test-Path $OrbitConfigPath) {
+  Write-Host "  이미 설정됨" -ForegroundColor Green
+} else {
+  Write-Host "  Orbit AI 웹에서 로그인 후 토큰을 입력하세요" -ForegroundColor Yellow
+  Write-Host "  (웹 → 설정 → API 토큰 복사, 또는 Enter로 건너뛰기)" -ForegroundColor Yellow
+  $UserToken = Read-Host "  토큰 입력"
+
+  if ([string]::IsNullOrWhiteSpace($UserToken)) {
+    Write-Host "  토큰 미입력 — 로컬 모드만 사용" -ForegroundColor Yellow
+    @{ serverUrl = $RemoteUrl; token = ""; userId = "local" } | ConvertTo-Json | Set-Content $OrbitConfigPath -Encoding UTF8
+  } else {
+    try {
+      $me = Invoke-RestMethod -Uri "$RemoteUrl/api/auth/me" -Headers @{ Authorization = "Bearer $UserToken" } -ErrorAction Stop
+      $uid = $me.id
+    } catch { $uid = "local" }
+    @{ serverUrl = $RemoteUrl; token = $UserToken; userId = $uid } | ConvertTo-Json | Set-Content $OrbitConfigPath -Encoding UTF8
+    Write-Host "  원격 서버 연결 완료 (userId: $uid)" -ForegroundColor Green
+  }
+}
+
+$env:ORBIT_SERVER_URL = $RemoteUrl
+
 # ── 키로거 데몬 등록 (Task Scheduler) ────────────────────────
 Write-Host ""
 Write-Host "🔑 키로거 데몬 설치 중..." -ForegroundColor Cyan

@@ -100,6 +100,46 @@ else
 fi
 
 SERVER_URL="http://localhost:4747"
+REMOTE_URL="https://sparkling-determination-production-c88b.up.railway.app"
+
+# ── [4.5/7] 원격 서버 설정 (~/.orbit-config.json) ──
+echo -e "\n${CYAN}[4.5/7] 원격 서버 연결 설정...${NC}"
+ORBIT_CONFIG="$HOME/.orbit-config.json"
+
+if [ -f "$ORBIT_CONFIG" ] && grep -q "serverUrl" "$ORBIT_CONFIG" 2>/dev/null; then
+  echo -e "${GREEN}  이미 설정됨${NC}"
+else
+  echo -e "${YELLOW}  Orbit AI 웹에서 로그인 후 토큰을 입력하세요${NC}"
+  echo -e "${YELLOW}  (웹 → 설정 → API 토큰 복사, 또는 Enter로 건너뛰기)${NC}"
+  echo -n "  토큰 입력: "
+  read -r USER_TOKEN
+
+  if [ -z "$USER_TOKEN" ]; then
+    echo -e "${YELLOW}  토큰 미입력 — 로컬 모드만 사용 (나중에 설정 가능)${NC}"
+    cat > "$ORBIT_CONFIG" << JSONEOF
+{
+  "serverUrl": "$REMOTE_URL",
+  "token": "",
+  "userId": "local"
+}
+JSONEOF
+  else
+    # 토큰으로 유저 정보 확인
+    USER_ID=$(curl -s -H "Authorization: Bearer $USER_TOKEN" "$REMOTE_URL/api/auth/me" 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('id','local'))" 2>/dev/null || echo "local")
+    cat > "$ORBIT_CONFIG" << JSONEOF
+{
+  "serverUrl": "$REMOTE_URL",
+  "token": "$USER_TOKEN",
+  "userId": "$USER_ID"
+}
+JSONEOF
+    echo -e "${GREEN}  원격 서버 연결 완료 (userId: $USER_ID)${NC}"
+  fi
+fi
+
+# save-turn.js 환경변수도 설정
+export ORBIT_SERVER_URL="$REMOTE_URL"
+export ORBIT_TOKEN=$(python3 -c "import json; print(json.load(open('$ORBIT_CONFIG')).get('token',''))" 2>/dev/null || echo "")
 
 # ── [5/7] 키로거 데몬 백그라운드 실행 ──
 echo -e "\n${CYAN}[5/7] 키로거 데몬 설치...${NC}"
