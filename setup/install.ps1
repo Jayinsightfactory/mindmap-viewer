@@ -132,22 +132,28 @@ if (Test-Path $DaemonScript) {
     Stop-Process -Id $oldPid -Force -ErrorAction SilentlyContinue
   }
 
-  # Task Scheduler 등록
+  # Task Scheduler 등록 (관리자 권한 필요 — 실패 시 Startup 폴더 폴백)
+  $taskOk = $false
   try {
     $TaskExists = Get-ScheduledTask -TaskName "OrbitDaemon" -ErrorAction SilentlyContinue
-    if ($TaskExists) { Unregister-ScheduledTask -TaskName "OrbitDaemon" -Confirm:$false }
+    if ($TaskExists) { Unregister-ScheduledTask -TaskName "OrbitDaemon" -Confirm:$false -ErrorAction Stop }
 
     $Action = New-ScheduledTaskAction -Execute $NodePath -Argument "`"$DaemonScript`""
     $Trigger = New-ScheduledTaskTrigger -AtLogOn
     $Settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
-    Register-ScheduledTask -TaskName "OrbitDaemon" -Action $Action -Trigger $Trigger -Settings $Settings -Description "Orbit AI Daemon" -RunLevel Limited -Force
+    Register-ScheduledTask -TaskName "OrbitDaemon" -Action $Action -Trigger $Trigger -Settings $Settings -Description "Orbit AI Daemon" -RunLevel Limited -Force -ErrorAction Stop
+    $taskOk = $true
     Write-Host "${GREEN}  Task Scheduler 등록 완료 (로그인 시 자동 시작)${NC}"
   } catch {
-    Write-Host "${YELLOW}  Task Scheduler 등록 실패 — Startup 폴더에 등록${NC}"
+    Write-Host "${YELLOW}  Task Scheduler 권한 부족 — Startup 폴더에 등록합니다${NC}"
+  }
+
+  if (-not $taskOk) {
     $StartupDir = [System.Environment]::GetFolderPath('Startup')
     $BatPath = "$StartupDir\orbit-daemon.bat"
-    "@echo off`nstart /min node `"$DaemonScript`"" | Set-Content $BatPath -Encoding ASCII
+    "@echo off`r`nstart /min `"OrbitDaemon`" node `"$DaemonScript`"" | Set-Content $BatPath -Encoding ASCII
     Write-Host "${GREEN}  Startup 폴더에 등록: $BatPath${NC}"
+    Write-Host "${GREEN}  (다음 로그인 시 자동 실행됩니다)${NC}"
   }
 
   # 즉시 시작
