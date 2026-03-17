@@ -848,13 +848,33 @@ async function _loadMyWorkspaces() {
             <button onclick="event.stopPropagation();openWsPendingList&&openWsPendingList('${ws.id}')"
               style="font-size:10px;padding:4px 8px;background:rgba(255,166,87,.15);color:#ffa657;border:1px solid rgba(255,166,87,.3);
               border-radius:6px;cursor:pointer;white-space:nowrap">${ws.pending_count>0?'⚠️ ':''} 승인대기 ${ws.pending_count||0}</button>
-          ` : ''}
+          ` : `
+            <button onclick="event.stopPropagation();_leaveWorkspace('${ws.id}','${escHtml(ws.name)}')"
+              style="font-size:10px;padding:4px 8px;background:rgba(248,81,73,.15);color:#f85149;border:1px solid rgba(248,81,73,.3);
+              border-radius:6px;cursor:pointer;white-space:nowrap">나가기</button>
+          `}
         </div>
       </div>`).join('');
   } catch (e) {
     listEl.innerHTML = `<div style="font-size:11px;color:#f85149">오류: ${e.message}</div>`;
   }
 }
+
+async function _leaveWorkspace(wsId, wsName) {
+  if (!confirm(`"${wsName}" 워크스페이스에서 나가시겠습니까?`)) return;
+  const token = _orbitUser?.token || '';
+  try {
+    const res = await fetch('/api/workspace/leave', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ workspaceId: wsId }),
+    });
+    const data = await res.json();
+    if (res.ok) { showToast('워크스페이스에서 나왔습니다'); _loadMyWorkspaces(); }
+    else showToast(data.error || '나가기 실패', 'error');
+  } catch (e) { showToast('오류: ' + e.message, 'error'); }
+}
+window._leaveWorkspace = _leaveWorkspace;
 
 async function openWsPendingList(wsId) {
   const token = _orbitUser?.token || '';
