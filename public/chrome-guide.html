@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Orbit AI — Chrome 확장 설치 가이드</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#0d1117; color:#e6edf3; font-family:-apple-system,'Segoe UI',sans-serif; min-height:100vh; }
+  .container { max-width:700px; margin:0 auto; padding:30px 20px 60px; }
+  h1 { font-size:24px; text-align:center; margin-bottom:8px; }
+  .sub { text-align:center; color:#8b949e; font-size:14px; margin-bottom:40px; }
+  .step { background:#161b22; border:1px solid #30363d; border-radius:16px; padding:24px; margin-bottom:24px; position:relative; }
+  .step-num { position:absolute; top:-14px; left:24px; background:#1f6feb; color:#fff; width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:14px; }
+  .step h2 { font-size:17px; margin-bottom:12px; padding-left:20px; }
+  .step p { color:#8b949e; font-size:13px; line-height:1.6; margin-bottom:12px; }
+  .mock-browser { background:#1c2128; border:1px solid #30363d; border-radius:10px; overflow:hidden; margin:12px 0; }
+  .mock-url { background:#0d1117; padding:8px 14px; display:flex; align-items:center; gap:8px; border-bottom:1px solid #30363d; }
+  .mock-url .dots { display:flex; gap:5px; }
+  .mock-url .dot { width:10px; height:10px; border-radius:50%; }
+  .mock-url .dot.r { background:#f85149; } .mock-url .dot.y { background:#d29922; } .mock-url .dot.g { background:#3fb950; }
+  .mock-url .url-bar { flex:1; background:#161b22; border:1px solid #30363d; border-radius:6px; padding:5px 10px; color:#58a6ff; font-size:12px; font-family:monospace; }
+  .mock-body { padding:20px; min-height:120px; }
+  .highlight-box { border:2px dashed #f85149; border-radius:8px; padding:10px 14px; margin:8px 0; position:relative; }
+  .highlight-box::after { content:'← 여기 클릭!'; position:absolute; right:-80px; top:50%; transform:translateY(-50%); color:#f85149; font-size:12px; font-weight:700; white-space:nowrap; }
+  .toggle { display:inline-flex; align-items:center; gap:6px; background:#0d1117; border:1px solid #30363d; border-radius:16px; padding:4px 12px; font-size:12px; }
+  .toggle .circle { width:18px; height:18px; border-radius:50%; background:#30363d; transition:.3s; }
+  .toggle.on .circle { background:#1f6feb; transform:translateX(14px); }
+  .btn-primary { display:inline-block; background:#238636; color:#fff; border:none; border-radius:8px; padding:10px 20px; font-size:14px; cursor:pointer; text-decoration:none; font-weight:600; }
+  .btn-primary:hover { background:#2ea043; }
+  .btn-outline { display:inline-block; background:transparent; color:#58a6ff; border:1px solid #30363d; border-radius:8px; padding:8px 16px; font-size:13px; cursor:pointer; text-decoration:none; }
+  .folder-icon { display:inline-flex; align-items:center; gap:6px; background:#1c2128; border:1px solid #30363d; border-radius:8px; padding:8px 14px; font-size:13px; margin:8px 0; }
+  .folder-icon .icon { font-size:24px; }
+  .arrow { text-align:center; font-size:28px; color:#30363d; margin:4px 0; }
+  .success { background:rgba(63,185,80,.1); border:1px solid #3fb950; border-radius:10px; padding:16px; text-align:center; margin-top:20px; }
+  .success h3 { color:#3fb950; margin-bottom:8px; }
+  .copy-cmd { background:#0d1117; border:1px solid #30363d; border-radius:8px; padding:10px 14px; font-family:'JetBrains Mono',monospace; font-size:12px; color:#79c0ff; cursor:pointer; position:relative; display:block; margin:8px 0; word-break:break-all; }
+  .copy-cmd:hover { border-color:#58a6ff; }
+  .copy-cmd::after { content:'클릭하여 복사'; position:absolute; right:8px; top:50%; transform:translateY(-50%); font-size:10px; color:#6e7681; font-family:-apple-system,sans-serif; }
+  .warning { background:rgba(210,153,34,.1); border:1px solid #d29922; border-radius:8px; padding:12px; font-size:12px; color:#d29922; margin:12px 0; }
+  @media (max-width:600px) {
+    .highlight-box::after { display:none; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>🧩 Chrome 확장 설치 가이드</h1>
+  <p class="sub">AI 대화 수집기 — ChatGPT, Claude, Gemini 대화를 자동 추적합니다</p>
+
+  <!-- Step 1 -->
+  <div class="step">
+    <div class="step-num">1</div>
+    <h2>Chrome 확장 관리 페이지 열기</h2>
+    <p>Chrome 주소창에 아래 주소를 입력하세요:</p>
+    <div class="copy-cmd" onclick="navigator.clipboard.writeText('chrome://extensions');this.style.borderColor='#3fb950';setTimeout(()=>this.style.borderColor='#30363d',1000)">
+      chrome://extensions
+    </div>
+    <p>또는 Chrome 메뉴 → 도구 더보기 → 확장 프로그램</p>
+  </div>
+
+  <!-- Step 2 -->
+  <div class="step">
+    <div class="step-num">2</div>
+    <h2>개발자 모드 켜기</h2>
+    <p>페이지 우측 상단의 <b>"개발자 모드"</b> 토글을 켜세요:</p>
+    <div class="mock-browser">
+      <div class="mock-url">
+        <div class="dots"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span></div>
+        <div class="url-bar">chrome://extensions</div>
+      </div>
+      <div class="mock-body" style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div style="font-size:18px;font-weight:700;color:#e6edf3">확장 프로그램</div>
+        <div class="highlight-box">
+          <div class="toggle on">
+            <span style="font-size:12px;color:#8b949e">개발자 모드</span>
+            <div class="circle"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 3 -->
+  <div class="step">
+    <div class="step-num">3</div>
+    <h2>"압축해제된 확장 프로그램을 로드합니다" 클릭</h2>
+    <p>개발자 모드를 켜면 상단에 3개 버튼이 나타납니다. 왼쪽 첫 번째 버튼을 클릭:</p>
+    <div class="mock-browser">
+      <div class="mock-body" style="display:flex;gap:10px;flex-wrap:wrap">
+        <div class="highlight-box" style="flex:none">
+          <button class="btn-outline" style="pointer-events:none">📂 압축해제된 확장 프로그램을 로드합니다</button>
+        </div>
+        <button class="btn-outline" style="opacity:.5;pointer-events:none">📦 확장 프로그램 압축</button>
+        <button class="btn-outline" style="opacity:.5;pointer-events:none">🔄 업데이트</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 4 -->
+  <div class="step">
+    <div class="step-num">4</div>
+    <h2>chrome-extension 폴더 선택</h2>
+    <p>파일 선택 창이 열리면, 설치된 Orbit 프로젝트의 <b>chrome-extension</b> 폴더를 선택:</p>
+    <div class="folder-icon">
+      <span class="icon">📁</span>
+      <span>mindmap-viewer / <b style="color:#58a6ff">chrome-extension</b></span>
+    </div>
+    <p>기본 경로:</p>
+    <div class="copy-cmd" onclick="navigator.clipboard.writeText(this.dataset.path);this.style.borderColor='#3fb950';setTimeout(()=>this.style.borderColor='#30363d',1000)" data-path="">
+      <span id="ext-path">~/mindmap-viewer/chrome-extension</span>
+    </div>
+    <div class="warning">
+      ⚠️ <b>chrome-extension</b> 폴더 자체를 선택하세요 (하위 파일이 아닌 폴더!)
+    </div>
+  </div>
+
+  <!-- Step 5 -->
+  <div class="step">
+    <div class="step-num">5</div>
+    <h2>설치 확인</h2>
+    <p>성공하면 확장 목록에 <b>"Orbit — AI 대화 수집기"</b>가 나타납니다:</p>
+    <div class="mock-browser">
+      <div class="mock-body">
+        <div style="display:flex;align-items:center;gap:12px;background:#0d1117;border-radius:10px;padding:14px">
+          <div style="width:44px;height:44px;border-radius:10px;background:linear-gradient(135deg,#06b6d4,#1f6feb);display:flex;align-items:center;justify-content:center;font-size:22px">🛸</div>
+          <div>
+            <div style="font-size:14px;font-weight:700">Orbit — AI 대화 수집기</div>
+            <div style="font-size:11px;color:#8b949e">v2.0.0 · ChatGPT, Claude, Gemini 대화 자동 수집</div>
+          </div>
+          <div style="margin-left:auto">
+            <div class="toggle on"><div class="circle"></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 6 -->
+  <div class="step">
+    <div class="step-num">6</div>
+    <h2>서버 연결 설정</h2>
+    <p>Chrome 우측 상단 퍼즐 아이콘 → Orbit 확장 클릭 → 팝업에서 서버 URL 확인:</p>
+    <div class="mock-browser" style="max-width:300px">
+      <div class="mock-body" style="text-align:center">
+        <div style="font-size:16px;font-weight:700;margin-bottom:8px">🛸 Orbit AI</div>
+        <div style="font-size:11px;color:#8b949e;margin-bottom:12px">AI 대화 자동 수집기</div>
+        <div style="background:#0d1117;border-radius:6px;padding:8px;font-size:10px;color:#58a6ff;word-break:break-all;text-align:left">
+          서버: sparkling-determination-production-c88b.up.railway.app
+        </div>
+        <div style="margin-top:10px;font-size:11px;color:#3fb950">● 연결됨</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Success -->
+  <div class="success">
+    <h3>✅ 설치 완료!</h3>
+    <p style="color:#8b949e;font-size:13px;margin-bottom:12px">
+      이제 ChatGPT, Claude, Gemini에서 대화하면 자동으로 Orbit에 기록됩니다.
+    </p>
+    <a href="/orbit3d.html" class="btn-primary">🚀 Orbit AI 열기</a>
+  </div>
+
+  <div style="text-align:center;margin-top:30px;color:#6e7681;font-size:11px">
+    문제가 있나요? <a href="https://github.com/dlaww-wq/mindmap-viewer/issues" style="color:#58a6ff">GitHub Issues</a>에서 도움받으세요
+  </div>
+</div>
+
+<script>
+  // OS별 경로 표시
+  const isWin = navigator.platform.includes('Win');
+  const isMac = navigator.platform.includes('Mac');
+  const pathEl = document.getElementById('ext-path');
+  const cmdEl = pathEl.parentElement;
+  if (isWin) {
+    pathEl.textContent = '%USERPROFILE%\\mindmap-viewer\\chrome-extension';
+    cmdEl.dataset.path = '%USERPROFILE%\\mindmap-viewer\\chrome-extension';
+  } else if (isMac) {
+    pathEl.textContent = '~/mindmap-viewer/chrome-extension';
+    cmdEl.dataset.path = '~/mindmap-viewer/chrome-extension';
+  } else {
+    pathEl.textContent = '~/mindmap-viewer/chrome-extension';
+    cmdEl.dataset.path = '~/mindmap-viewer/chrome-extension';
+  }
+</script>
+</body>
+</html>
