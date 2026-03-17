@@ -234,17 +234,26 @@ if ($hasExt) {
   Write-Host "  └─────────────────────────────────────────────────────┘"
   Write-Host ""
 
-  # 주소 자동 복사
+  # Step 1: 주소 복사
   "chrome://extensions" | Set-Clipboard -ErrorAction SilentlyContinue
-  Write-Host "  (chrome://extensions 가 클립보드에 복사되었습니다)"
   Write-Host ""
+  Write-Host "  >>> chrome://extensions 가 클립보드에 복사됨"
+  Write-Host "  >>> Chrome 주소창에 붙여넣기(Ctrl+V) 후 Enter"
+  Write-Host ""
+  Read-Host "  Step 1~2 완료했으면 Enter"
 
-  # 바로 열기 시도
-  $openNow = Read-Host "  Chrome 확장 페이지를 지금 열까요? (Y/n)"
-  if ($openNow -ne 'n' -and $openNow -ne 'N') {
-    try { Start-Process "chrome://extensions" -ErrorAction SilentlyContinue } catch {
-      try { Start-Process "msedge://extensions" -ErrorAction SilentlyContinue } catch {}
-    }
-  }
+  # Step 3: 폴더 경로 복사
+  $ExtPath | Set-Clipboard -ErrorAction SilentlyContinue
+  Write-Host ""
+  Write-Host "  >>> 폴더 경로가 클립보드에 복사됨"
+  Write-Host "  >>> '압축해제된 확장 로드' 클릭 후 경로 붙여넣기"
+  Write-Host ""
+  Read-Host "  Step 3~4 완료했으면 Enter"
+
+  Write-Host ""
+  Write-Host "  ✅ Chrome 확장 설치 완료!"
+  Write-Host ""
+  Write-Host "  Orbit AI 웹을 새로고침합니다..."
+  try { Start-Process "$REMOTE/orbit3d.html" -ErrorAction SilentlyContinue } catch {}
 }
 Write-Host ""
