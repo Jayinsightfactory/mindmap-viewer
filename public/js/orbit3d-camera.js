@@ -513,12 +513,17 @@ function drawTeamLabels() {
     }
   }
 
+  // ── 숨긴 노드 필터 (개인뷰 _hiddenNodes 연동) ──
+  const _hidden = (typeof _hiddenNodes !== 'undefined') ? _hiddenNodes : {};
+
   // ══ Pass 1: 모든 레이블 데이터 수집 (드로우 없음) ═══════════════════════
   const labels = [];
   for (const node of _teamNodes) {
     const sc = toScreen(node.pos);
     if (sc.z > 1) continue;
-    if (node.hidden) continue;  // 결과 노드 등 숨김 처리
+    if (node.hidden) continue;
+    // 개인뷰에서 숨긴 노드 → 팀뷰에서도 숨김
+    if (_hidden[node.label] || _hidden[node.sublabel]) continue;
     const { type, label, sublabel, color, emoji, progress, taskStatus, memberId } = node;
     // 사용자 노드 밀도 설정 (_nodeDensity 슬라이더)
     if (type === 'tool'                          && _nodeDensity < 4) continue;

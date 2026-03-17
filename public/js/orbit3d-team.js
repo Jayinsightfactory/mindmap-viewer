@@ -596,9 +596,11 @@ function buildTeamSystem(teamData) {
     orbitRings.push(rm); scene.add(rm);
   }
 
-  members.forEach((member, mi) => {
-    // 오각형 배치: 72° 간격, 상단(-90°)부터 시작
-    const angle = (mi / members.length) * Math.PI * 2 - Math.PI / 2;
+  // 팀 미배정 멤버 제외
+  const activeMembers = members.filter(m => m.role && m.role !== '팀 미배정' && m.teamName !== '팀 미배정');
+
+  activeMembers.forEach((member, mi) => {
+    const angle = (mi / activeMembers.length) * Math.PI * 2 - Math.PI / 2;
     const mx    = MEMBER_R * Math.cos(angle);
     const my    = 0;
     const mz    = MEMBER_R * Math.sin(angle);
@@ -1176,6 +1178,13 @@ async function loadTeamDemo() {
         return;
       }
       if (data && data.members && data.members.length > 0) {
+        // 현재 사용자가 팀 미배정이면 팀뷰 차단
+        const myId = _u?.userId || _u?.id;
+        const myMember = data.members.find(m => m.userId === myId);
+        if (myMember && (myMember.teamName === '팀 미배정' || !myMember.teamName)) {
+          showToast('팀이 배정되지 않았습니다. 관리자에게 팀 배정을 요청하세요.', 4000);
+          return;
+        }
         buildTeamSystem(data);
         updateBreadcrumb('team');
         document.querySelector('.tm-label').textContent = '👥 팀';
