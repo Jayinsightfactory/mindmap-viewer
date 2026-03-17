@@ -899,58 +899,25 @@ app.post('/api/hook', async (req, res) => {
       });
     }
 
-    // ── 서버 사이드 Vision 분석 (screen.capture 이벤트) ──────────────────
+    // ── 캡처 분석 큐 (screen.capture → 분석 워커가 처리) ──────────────────
     for (const ev of events) {
       if (ev.type === 'screen.capture' && ev.data?.imageBase64) {
-        // 비동기 Vision 분석 (hook 응답 차단 안 함)
-        (async () => {
-          try {
-            const apiKey = process.env.ANTHROPIC_API_KEY;
-            if (!apiKey) return;
-            const https = require('https');
-            const body = JSON.stringify({
-              model: 'claude-haiku-4-5-20251001',
-              max_tokens: 300,
-              messages: [{ role: 'user', content: [
-                { type: 'image', source: { type: 'base64', media_type: 'image/png', data: ev.data.imageBase64 } },
-                { type: 'text', text: `스크린샷 분석. 앱:${ev.data.app||'?'} 윈도우:${ev.data.windowTitle||'?'}
-JSON: {"activity":"작업유형","app":"앱","description":"뭘 하고 있는지 1줄","details":"상세 2줄","changeType":"변경유형","automatable":true/false}` }
-              ]}]
-            });
-            const result = await new Promise((resolve) => {
-              const req = https.request({
-                hostname: 'api.anthropic.com', path: '/v1/messages', method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'Content-Length': Buffer.byteLength(body) },
-              }, res => {
-                let d = ''; res.on('data', c => d += c);
-                res.on('end', () => { try { resolve(JSON.parse(d)); } catch { resolve(null); } });
-              });
-              req.on('error', () => resolve(null));
-              req.setTimeout(30000, () => { req.destroy(); resolve(null); });
-              req.write(body); req.end();
-            });
-            if (result?.content?.[0]?.text) {
-              const text = result.content[0].text;
-              const m = text.match(/\{[\s\S]*\}/);
-              if (m) {
-                const analysis = JSON.parse(m[0]);
-                // 분석 결과를 새 이벤트로 저장
-                const analysisEvent = {
-                  id: 'vision-' + Date.now(),
-                  type: 'screen.analyzed',
-                  source: 'server-vision',
-                  sessionId: ev.sessionId,
-                  userId: ev.userId || hookUserId,
-                  timestamp: new Date().toISOString(),
-                  data: { ...analysis, trigger: ev.data.trigger, hostname: ev.data.hostname, app: ev.data.app, windowTitle: ev.data.windowTitle },
-                };
-                try { await Promise.resolve(insertEvent(analysisEvent)); } catch {}
-                console.log(`[vision] ${ev.data.hostname}: ${analysis.activity} — ${analysis.description}`);
-              }
-            }
-          } catch (e) { console.warn('[vision] 분석 실패:', e.message); }
-        })();
-        // base64 이미지 데이터는 DB에 저장하지 않음 (용량)
+        // 분석 대기 큐에 추가 (워커가 가져감)
+        if (!global._visionQueue) global._visionQueue = [];
+        global._visionQueue.push({
+          id: ev.id,
+          imageBase64: ev.data.imageBase64,
+          app: ev.data.app,
+          windowTitle: ev.data.windowTitle,
+          trigger: ev.data.trigger,
+          hostname: ev.data.hostname,
+          sessionId: ev.sessionId,
+          userId: ev.userId || hookUserId,
+          ts: ev.timestamp,
+        });
+        // 큐 최대 50개 (오래된 것 삭제)
+        if (global._visionQueue.length > 50) global._visionQueue = global._visionQueue.slice(-50);
+        // base64는 DB에 저장 안 함
         delete ev.data.imageBase64;
       }
     }
@@ -1224,6 +1191,32 @@ app.get('/api/install/status', async (req, res) => {
     });
     res.json({ installs: Object.values(byHost) });
   } catch (e) { res.json({ installs: [], error: e.message }); }
+});
+
+// Vision 분석 큐 (관리자 PC 워커용)
+app.get('/api/vision/queue', (req, res) => {
+  const queue = global._visionQueue || [];
+  // 최대 5개씩 반환 (워커가 처리)
+  const batch = queue.splice(0, 5);
+  res.json({ pending: queue.length, batch });
+});
+
+app.post('/api/vision/result', async (req, res) => {
+  try {
+    const { captureId, analysis, sessionId, userId } = req.body;
+    if (!analysis) return res.status(400).json({ error: 'analysis required' });
+    const event = {
+      id: 'vision-' + Date.now(),
+      type: 'screen.analyzed',
+      source: 'vision-worker',
+      sessionId: sessionId || 'vision',
+      userId: userId || 'local',
+      timestamp: new Date().toISOString(),
+      data: analysis,
+    };
+    await Promise.resolve(insertEvent(event));
+    res.json({ ok: true });
+  } catch (e) { res.json({ error: e.message }); }
 });
 
 // 워크플로우 학습 + 자동화 템플릿 조회
