@@ -833,9 +833,14 @@ async function _loadMyWorkspaces() {
           <div class="ws-card-name">${escHtml(ws.name)}</div>
           <div class="ws-card-meta">${escHtml(ws.company_name||'')} · 멤버 ${ws.member_count||0}명</div>
           <div class="ws-card-role">${ws.role==='owner' ? '관리자' : '멤버 · '+escHtml(ws.team_name||'')}</div>
-          <button onclick="_selectWorkspace('${ws.id}','${(ws.name||'').replace(/'/g,"\\'")}')"
-            style="margin-top:6px;font-size:11px;padding:6px 14px;background:#1f6feb;color:#fff;border:none;
-            border-radius:6px;cursor:pointer;font-weight:600;width:100%">👥 팀뷰로 보기</button>
+          <div style="display:flex;gap:4px;margin-top:6px">
+            <button onclick="_selectWorkspace('${ws.id}','${(ws.name||'').replace(/'/g,"\\'")}')"
+              style="flex:1;font-size:11px;padding:6px 10px;background:#1f6feb;color:#fff;border:none;
+              border-radius:6px;cursor:pointer;font-weight:600">👥 팀뷰</button>
+            <button onclick="event.stopPropagation();_editWorkspace('${ws.id}','${escHtml(ws.name)}','${escHtml(ws.company_name||'')}')"
+              style="font-size:11px;padding:6px 10px;background:rgba(139,148,158,.15);color:#8b949e;border:1px solid #30363d;
+              border-radius:6px;cursor:pointer">✏️ 수정</button>
+          </div>
         </div>
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
           <div style="font-size:11px;color:#3fb950;cursor:pointer" onclick="event.stopPropagation();_copyCode('${ws.invite_code||''}')">
@@ -878,6 +883,49 @@ async function _leaveWorkspace(wsId, wsName) {
   } catch (e) { showToast('오류: ' + e.message, 'error'); }
 }
 window._leaveWorkspace = _leaveWorkspace;
+
+function _editWorkspace(wsId, name, company) {
+  const modal = document.createElement('div');
+  modal.id = 'ws-edit-modal';
+  modal.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center';
+  modal.onclick = e => { if (e.target === modal) modal.remove(); };
+  modal.innerHTML = `<div style="background:#0d1117;border:1px solid #30363d;border-radius:12px;padding:20px;width:340px">
+    <div style="display:flex;justify-content:space-between;margin-bottom:14px">
+      <b style="color:#e6edf3;font-size:14px">워크스페이스 수정</b>
+      <button onclick="document.getElementById('ws-edit-modal').remove()" style="background:none;border:none;color:#8b949e;cursor:pointer;font-size:16px">✕</button>
+    </div>
+    <label style="font-size:11px;color:#8b949e;display:block;margin-bottom:4px">워크스페이스 이름</label>
+    <input id="ws-edit-name" value="${name}" style="width:100%;padding:8px;background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:6px;font-size:13px;margin-bottom:10px;box-sizing:border-box">
+    <label style="font-size:11px;color:#8b949e;display:block;margin-bottom:4px">회사/조직명</label>
+    <input id="ws-edit-company" value="${company}" style="width:100%;padding:8px;background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:6px;font-size:13px;margin-bottom:14px;box-sizing:border-box">
+    <button onclick="_saveWorkspaceEdit('${wsId}')" style="width:100%;padding:8px;background:#238636;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">저장</button>
+  </div>`;
+  document.body.appendChild(modal);
+}
+window._editWorkspace = _editWorkspace;
+
+async function _saveWorkspaceEdit(wsId) {
+  const name = document.getElementById('ws-edit-name')?.value?.trim();
+  const company = document.getElementById('ws-edit-company')?.value?.trim();
+  if (!name) { showToast('이름을 입력하세요'); return; }
+  const token = _orbitUser?.token || '';
+  try {
+    const res = await fetch(`/api/workspace/${wsId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ name, companyName: company }),
+    });
+    if (res.ok) {
+      showToast('수정 완료');
+      document.getElementById('ws-edit-modal')?.remove();
+      _loadMyWorkspaces();
+    } else {
+      const d = await res.json();
+      showToast(d.error || '수정 실패', 'error');
+    }
+  } catch (e) { showToast('오류: ' + e.message, 'error'); }
+}
+window._saveWorkspaceEdit = _saveWorkspaceEdit;
 
 async function openWsPendingList(wsId) {
   const token = _orbitUser?.token || '';

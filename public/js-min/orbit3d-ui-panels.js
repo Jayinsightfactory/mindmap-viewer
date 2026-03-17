@@ -54,9 +54,14 @@ let _currentSuggestionId=null;function showSuggestion(e){_currentSuggestionId=e.
           <div class="ws-card-name">${escHtml(o.name)}</div>
           <div class="ws-card-meta">${escHtml(o.company_name||"")} · 멤버 ${o.member_count||0}명</div>
           <div class="ws-card-role">${o.role==="owner"?"관리자":"멤버 · "+escHtml(o.team_name||"")}</div>
-          <button onclick="_selectWorkspace('${o.id}','${(o.name||"").replace(/'/g,"\\'")}')"
-            style="margin-top:6px;font-size:11px;padding:6px 14px;background:#1f6feb;color:#fff;border:none;
-            border-radius:6px;cursor:pointer;font-weight:600;width:100%">👥 팀뷰로 보기</button>
+          <div style="display:flex;gap:4px;margin-top:6px">
+            <button onclick="_selectWorkspace('${o.id}','${(o.name||"").replace(/'/g,"\\'")}')"
+              style="flex:1;font-size:11px;padding:6px 10px;background:#1f6feb;color:#fff;border:none;
+              border-radius:6px;cursor:pointer;font-weight:600">👥 팀뷰</button>
+            <button onclick="event.stopPropagation();_editWorkspace('${o.id}','${escHtml(o.name)}','${escHtml(o.company_name||"")}')"
+              style="font-size:11px;padding:6px 10px;background:rgba(139,148,158,.15);color:#8b949e;border:1px solid #30363d;
+              border-radius:6px;cursor:pointer">✏️ 수정</button>
+          </div>
         </div>
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
           <div style="font-size:11px;color:#3fb950;cursor:pointer" onclick="event.stopPropagation();_copyCode('${o.invite_code||""}')">
@@ -78,7 +83,17 @@ let _currentSuggestionId=null;function showSuggestion(e){_currentSuggestionId=e.
               border-radius:6px;cursor:pointer;white-space:nowrap">나가기</button>
           `}
         </div>
-      </div>`).join("")}catch(n){e.innerHTML=`<div style="font-size:11px;color:#f85149">오류: ${n.message}</div>`}}async function _leaveWorkspace(e,t){if(!confirm(`"${t}" 워크스페이스에서 나가시겠습니까?`))return;const n=_orbitUser?.token||"";try{const i=await fetch("/api/workspace/leave",{method:"DELETE",headers:{"Content-Type":"application/json",Authorization:`Bearer ${n}`},body:JSON.stringify({workspaceId:e})}),o=await i.json();i.ok?(showToast("워크스페이스에서 나왔습니다"),_loadMyWorkspaces()):showToast(o.error||"나가기 실패","error")}catch(i){showToast("오류: "+i.message,"error")}}window._leaveWorkspace=_leaveWorkspace;async function openWsPendingList(e){const t=_orbitUser?.token||"";try{const n=await fetch(`/api/workspace/${e}/pending-members`,{headers:{Authorization:`Bearer ${t}`}}),i=n.ok?await n.json():[];if(!i.length){showToast("승인 대기 중인 멤버가 없습니다");return}document.getElementById("ws-pending-modal")?.remove();const o=i.map(a=>`
+      </div>`).join("")}catch(n){e.innerHTML=`<div style="font-size:11px;color:#f85149">오류: ${n.message}</div>`}}async function _leaveWorkspace(e,t){if(!confirm(`"${t}" 워크스페이스에서 나가시겠습니까?`))return;const n=_orbitUser?.token||"";try{const i=await fetch("/api/workspace/leave",{method:"DELETE",headers:{"Content-Type":"application/json",Authorization:`Bearer ${n}`},body:JSON.stringify({workspaceId:e})}),o=await i.json();i.ok?(showToast("워크스페이스에서 나왔습니다"),_loadMyWorkspaces()):showToast(o.error||"나가기 실패","error")}catch(i){showToast("오류: "+i.message,"error")}}window._leaveWorkspace=_leaveWorkspace;function _editWorkspace(e,t,n){const i=document.createElement("div");i.id="ws-edit-modal",i.style.cssText="position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center",i.onclick=o=>{o.target===i&&i.remove()},i.innerHTML=`<div style="background:#0d1117;border:1px solid #30363d;border-radius:12px;padding:20px;width:340px">
+    <div style="display:flex;justify-content:space-between;margin-bottom:14px">
+      <b style="color:#e6edf3;font-size:14px">워크스페이스 수정</b>
+      <button onclick="document.getElementById('ws-edit-modal').remove()" style="background:none;border:none;color:#8b949e;cursor:pointer;font-size:16px">✕</button>
+    </div>
+    <label style="font-size:11px;color:#8b949e;display:block;margin-bottom:4px">워크스페이스 이름</label>
+    <input id="ws-edit-name" value="${t}" style="width:100%;padding:8px;background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:6px;font-size:13px;margin-bottom:10px;box-sizing:border-box">
+    <label style="font-size:11px;color:#8b949e;display:block;margin-bottom:4px">회사/조직명</label>
+    <input id="ws-edit-company" value="${n}" style="width:100%;padding:8px;background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:6px;font-size:13px;margin-bottom:14px;box-sizing:border-box">
+    <button onclick="_saveWorkspaceEdit('${e}')" style="width:100%;padding:8px;background:#238636;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">저장</button>
+  </div>`,document.body.appendChild(i)}window._editWorkspace=_editWorkspace;async function _saveWorkspaceEdit(e){const t=document.getElementById("ws-edit-name")?.value?.trim(),n=document.getElementById("ws-edit-company")?.value?.trim();if(!t){showToast("이름을 입력하세요");return}const i=_orbitUser?.token||"";try{const o=await fetch(`/api/workspace/${e}`,{method:"PATCH",headers:{"Content-Type":"application/json",Authorization:`Bearer ${i}`},body:JSON.stringify({name:t,companyName:n})});if(o.ok)showToast("수정 완료"),document.getElementById("ws-edit-modal")?.remove(),_loadMyWorkspaces();else{const s=await o.json();showToast(s.error||"수정 실패","error")}}catch(o){showToast("오류: "+o.message,"error")}}window._saveWorkspaceEdit=_saveWorkspaceEdit;async function openWsPendingList(e){const t=_orbitUser?.token||"";try{const n=await fetch(`/api/workspace/${e}/pending-members`,{headers:{Authorization:`Bearer ${t}`}}),i=n.ok?await n.json():[];if(!i.length){showToast("승인 대기 중인 멤버가 없습니다");return}document.getElementById("ws-pending-modal")?.remove();const o=i.map(a=>`
       <div id="pending-row-${a.userId}" style="display:flex;align-items:center;justify-content:space-between;padding:8px;border-bottom:1px solid #21262d;transition:opacity .3s">
         <div style="color:#e6edf3"><div>${escHtml(a.name||"사용자")}</div><div style="font-size:10px;color:#8b949e">${escHtml(a.email||a.userId||"")}</div></div>
         <div style="display:flex;gap:4px">

@@ -469,6 +469,18 @@ function createWorkspaceRouter({ getDb, db: _dbLegacy, verifyToken, getUserById,
   // PATCH /api/workspace/member/team
   // body: { workspaceId, teamName }
   // ─────────────────────────────────────────────────────────────────────────
+  // PATCH /api/workspace/:id — 워크스페이스 이름/회사명 수정 (owner만)
+  router.patch('/workspace/:id', auth, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { name, companyName } = req.body;
+      if (!(await isWsAdmin(req, id))) return res.status(403).json({ error: 'owner/admin only' });
+      if (name) await dbRun('UPDATE workspaces SET name = ? WHERE id = ?', [name.slice(0, 40), id]);
+      if (companyName !== undefined) await dbRun('UPDATE workspaces SET company_name = ? WHERE id = ?', [companyName.slice(0, 40), id]);
+      res.json({ ok: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
   router.patch('/workspace/member/team', auth, async (req, res) => {
     try {
       const { workspaceId, teamName } = req.body;
