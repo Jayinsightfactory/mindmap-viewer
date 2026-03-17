@@ -593,19 +593,88 @@ function showPanel(data, obj) {
 
     document.getElementById('ip-intent').textContent = purpose.slice(0,60) || '작업 세션';
 
+    // ── 업무 타임라인 생성 (시간순으로 "뭘 했는지") ──
+    const FILE_ROLE = [
+      [/auth|login|oauth|jwt|token|password/i, '인증'],
+      [/route|router|api|endpoint|controller/i, 'API'],
+      [/service|manager|provider|helper/i, '서비스 로직'],
+      [/component|widget|view|page|screen|activity/i, 'UI'],
+      [/model|schema|entity|dto/i, '데이터 모델'],
+      [/test|spec|mock/i, '테스트'],
+      [/config|setting|env|gradle|toml|json$/i, '설정'],
+      [/style|css|scss|theme/i, '스타일'],
+      [/receiver|listener|handler/i, '이벤트 처리'],
+      [/deploy|docker|ci|cd/i, '배포'],
+      [/readme|doc|guide/i, '문서'],
+    ];
+    function getFileRole(fp) {
+      const fn = (fp||'').replace(/\\/g,'/').split('/').pop() || '';
+      for (const [re, label] of FILE_ROLE) { if (re.test(fn)) return label; }
+      const ext = fn.split('.').pop()?.toLowerCase();
+      const extMap = { js:'코드', ts:'코드', kt:'코드', py:'코드', html:'UI', css:'스타일', sql:'DB' };
+      return extMap[ext] || '파일';
+    }
+
+    // 시간순 업무 항목 추출
+    const timeline = [];
+    let lastAction = '';
+    _sEvs.forEach(e => {
+      const ts = e.timestamp ? new Date(e.timestamp) : null;
+      const time = ts ? ts.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'}) : '';
+
+      if (e.type === 'user.message') {
+        const msg = (e.data?.contentPreview || e.data?.content || e.label || '').replace(/[\n\r]/g,' ').trim();
+        if (msg.length > 2) timeline.push({ time, icon: '💬', text: msg.slice(0,50), type: 'ask' });
+      } else if (e.type === 'assistant.message') {
+        const msg = (e.data?.contentPreview || e.data?.content || e.label || '').replace(/[\n\r]/g,' ').trim();
+        if (msg.length > 5) {
+          const first = msg.split(/[.!?。]\s/)[0]?.slice(0,50) || msg.slice(0,50);
+          timeline.push({ time, icon: '🤖', text: first, type: 'answer' });
+        }
+      } else if (e.type === 'file.write') {
+        const fn = (e.data?.fileName || e.data?.filePath || e.label || '').replace(/\\/g,'/').split('/').pop();
+        const role = getFileRole(fn);
+        const action = `${role}: ${fn}`;
+        if (action !== lastAction) { timeline.push({ time, icon: '✏️', text: `${role} 작성 — ${fn}`, type: 'write' }); lastAction = action; }
+      } else if (e.type === 'tool.end') {
+        const tn = e.data?.toolName || '';
+        const fp = e.data?.filePath || e.data?.input?.file_path || '';
+        const fn = fp ? fp.replace(/\\/g,'/').split('/').pop() : '';
+        if (tn === 'Edit' && fn) {
+          const role = getFileRole(fn);
+          const action = `edit:${fn}`;
+          if (action !== lastAction) { timeline.push({ time, icon: '📝', text: `${role} 수정 — ${fn}`, type: 'edit' }); lastAction = action; }
+        } else if (tn === 'Bash') {
+          const cmd = (e.data?.inputPreview || e.data?.input?.command || '').trim().slice(0,40);
+          if (cmd && cmd !== lastAction) { timeline.push({ time, icon: '⚡', text: cmd, type: 'cmd' }); lastAction = cmd; }
+        } else if (tn === 'WebSearch') {
+          timeline.push({ time, icon: '🔍', text: '웹 조사', type: 'search' });
+        }
+      }
+    });
+
+    // 타임라인 HTML (최근 15건, 중복 제거)
+    const timelineHtml = timeline.slice(0,15).map(t => {
+      const color = t.type==='ask'?'#58a6ff':t.type==='answer'?'#3fb950':t.type==='write'?'#ffa657':t.type==='edit'?'#d29922':'#8b949e';
+      return `<div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid #21262d08;font-size:11px">
+        <span style="color:#6e7681;min-width:40px;flex-shrink:0">${t.time}</span>
+        <span>${t.icon}</span>
+        <span style="color:${color};flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.text}</span>
+      </div>`;
+    }).join('');
+
+    // 요약 + 타임라인
     const kvData = [
-      ['⏱️ 시간',    timeRange],
-      ['📊 이벤트',  `${_sEvs.length}개 (${typeStr})`],
-      ['🔧 도구',    topTools || '-'],
-      ['📁 파일',    topFiles || '-'],
-      ['📂 프로젝트', ctx?.projectName || data.sessionId?.slice(0,12) || '-'],
+      ['📂 프로젝트', ctx?.projectName || '-'],
+      ['⏱️ 시간', timeRange],
+      ['📁 핵심 파일', topFiles || '-'],
     ];
     if (lastResult) kvData.push(['💡 결과', lastResult]);
-    if (userMsgs.length > 1) kvData.push(['💬 대화', `${userMsgs.length}건의 질문`]);
 
-    document.getElementById('ip-kv-list').innerHTML = kvData.map(([k,v]) =>
-      `<div class="ip-kv"><span class="k">${k}</span><span class="v">${v}</span></div>`
-    ).join('');
+    document.getElementById('ip-kv-list').innerHTML =
+      kvData.map(([k,v]) => `<div class="ip-kv"><span class="k">${k}</span><span class="v">${v}</span></div>`).join('')
+      + `<div style="margin-top:10px;font-size:11px;color:#8b949e;font-weight:600;margin-bottom:6px">📋 작업 타임라인</div>`
+      + timelineHtml;
 
     const pv = document.getElementById('ip-preview');
     if (purpose) { pv.textContent = purpose; pv.style.display = 'block'; }
