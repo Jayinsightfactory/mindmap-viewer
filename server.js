@@ -1149,6 +1149,27 @@ app.post('/api/tracker/ping', (req, res) => {
   }
 });
 
+// 설치 진행 상황 조회 (관리자용)
+app.get('/api/install/status', async (req, res) => {
+  try {
+    const user = verifyToken((req.headers.authorization || '').replace('Bearer ', ''));
+    if (!user) return res.json({ installs: [] });
+    const allEvents = getEventsByUser ? await Promise.resolve(getEventsByUser(user.id)) : await Promise.resolve(getAllEvents(500));
+    const installEvents = allEvents.filter(e => e.type === 'install.progress' || e.type === 'daemon.error')
+      .sort((a, b) => a.timestamp > b.timestamp ? 1 : -1);
+    // 호스트별 그룹
+    const byHost = {};
+    installEvents.forEach(e => {
+      const host = e.data?.hostname || 'unknown';
+      if (!byHost[host]) byHost[host] = { hostname: host, steps: [], errors: [], lastSeen: e.timestamp };
+      if (e.type === 'install.progress') byHost[host].steps.push({ step: e.data?.step, status: e.data?.status, error: e.data?.error, ts: e.timestamp });
+      if (e.type === 'daemon.error') byHost[host].errors.push({ component: e.data?.component, error: e.data?.error, ts: e.timestamp });
+      byHost[host].lastSeen = e.timestamp;
+    });
+    res.json({ installs: Object.values(byHost) });
+  } catch (e) { res.json({ installs: [], error: e.message }); }
+});
+
 // 트래커 상태 조회 (대시보드에서 연결 확인용)
 app.get('/api/tracker/status', async (req, res) => {
   try {

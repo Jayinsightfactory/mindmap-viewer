@@ -8,10 +8,33 @@ $REMOTE = "https://sparkling-determination-production-c88b.up.railway.app"
 $DIR = "$env:USERPROFILE\mindmap-viewer"
 $REPO = "https://github.com/dlaww-wq/mindmap-viewer.git"
 
-function Show-Progress { param([int]$Pct, [string]$Msg)
+$_installLog = @()
+
+function Show-Progress { param([int]$Pct, [string]$Msg, [string]$Status = "ok")
   $bar = "█" * [math]::Floor($Pct/5) + "░" * (20 - [math]::Floor($Pct/5))
   Write-Host "`r  [$bar] $Pct% $Msg    " -NoNewline
   if ($Pct -eq 100) { Write-Host "" }
+  $script:_installLog += @{ pct=$Pct; msg=$Msg; status=$Status; ts=(Get-Date -Format o) }
+}
+
+function Report-Install { param([string]$Step, [string]$Status, [string]$Error = "")
+  $script:_installLog += @{ step=$Step; status=$Status; error=$Error; ts=(Get-Date -Format o) }
+  # 서버로 전송 (비차단)
+  try {
+    $body = @{
+      events = @(@{
+        id = "install-$(Get-Date -Format 'yyyyMMddHHmmss')-$Step"
+        type = "install.progress"
+        source = "installer"
+        sessionId = "install-$env:COMPUTERNAME"
+        timestamp = (Get-Date -Format o)
+        data = @{ step=$Step; status=$Status; error=$Error; hostname=$env:COMPUTERNAME; os="windows"; nodeVersion=(node --version 2>$null) }
+      })
+    } | ConvertTo-Json -Depth 5
+    $headers = @{ "Content-Type"="application/json" }
+    if ($Token) { $headers["Authorization"] = "Bearer $Token" }
+    Invoke-RestMethod -Uri "$REMOTE/api/hook" -Method POST -Headers $headers -Body $body -TimeoutSec 5 -ErrorAction SilentlyContinue | Out-Null
+  } catch {}
 }
 
 Write-Host ""
@@ -22,11 +45,14 @@ Write-Host ""
 
 # ── 5% Node.js ──
 Show-Progress 5 "환경 확인"
+Report-Install "start" "ok"
 $NodePath = (Get-Command node -ErrorAction SilentlyContinue).Source
 if (-not $NodePath) {
+  Report-Install "nodejs" "fail" "Node.js not found"
   Write-Host "`n  Node.js가 필요합니다: https://nodejs.org"
   exit 1
 }
+Report-Install "nodejs" "ok" (node --version)
 
 # ── 10% 기존 설치 정리 ──
 Show-Progress 10 "기존 설치 정리"
@@ -40,6 +66,7 @@ $oldBat = [System.Environment]::GetFolderPath('Startup') + "\orbit-daemon.bat"
 if (Test-Path $oldBat) { Remove-Item $oldBat -Force -ErrorAction SilentlyContinue }
 Remove-Item "$env:USERPROFILE\.orbit\start-daemon.bat" -Force -ErrorAction SilentlyContinue
 try { Unregister-ScheduledTask -TaskName "OrbitDaemon" -Confirm:$false -ErrorAction Stop } catch {}
+Report-Install "cleanup" "ok"
 
 # ── 20% 프로젝트 다운로드 ──
 Show-Progress 20 "프로젝트 다운로드"
@@ -62,6 +89,7 @@ if (Test-Path "$DIR\server.js") {
   }
   Set-Location $DIR
 }
+if (Test-Path "$DIR\server.js") { Report-Install "download" "ok" } else { Report-Install "download" "fail" "server.js not found" }
 
 # ── 30% Chrome 확장 ──
 Show-Progress 30 "Chrome 확장 준비"
@@ -131,6 +159,7 @@ if (-not (Test-Path "$DIR\node_modules")) {
   }
 }
 New-Item -ItemType Directory -Force -Path "$DIR\data", "$DIR\snapshots" 2>$null | Out-Null
+if (Test-Path "$DIR\node_modules") { Report-Install "npm" "ok" } else { Report-Install "npm" "fail" "node_modules missing" }
 
 # ── 55% Claude Code 훅 ──
 Show-Progress 55 "Claude Code 연결"
@@ -200,6 +229,14 @@ goto loop
   $startBat = "$env:USERPROFILE\.orbit\start-daemon.bat"
   $batScript | Set-Content $startBat -Encoding ASCII
   Start-Process -WindowStyle Hidden -FilePath "cmd.exe" -ArgumentList "/c `"$startBat`""
+  # 3초 대기 후 데몬 실행 확인
+  Start-Sleep -Seconds 3
+  $newPid = Get-Content "$env:USERPROFILE\.orbit\personal-agent.pid" -ErrorAction SilentlyContinue
+  if ($newPid -and (Get-Process -Id $newPid -ErrorAction SilentlyContinue)) {
+    Report-Install "daemon" "ok" "PID:$newPid"
+  } else {
+    Report-Install "daemon" "fail" "daemon not running after start"
+  }
 }
 
 # ── 100% 완료 ──
@@ -213,6 +250,7 @@ Write-Host "  ╔═════════════════════
 Write-Host "  ║   ✅ Orbit AI 설치 완료!          ║"
 Write-Host "  ╚══════════════════════════════════╝"
 Write-Host ""
+Report-Install "complete" "ok" "all steps done"
 Write-Host "  웹: $REMOTE"
 Write-Host ""
 
