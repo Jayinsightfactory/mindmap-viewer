@@ -2,6 +2,10 @@
 // Orbit AI — Animation, interaction, drilldown panels
 // ══════════════════════════════════════════════════════════════════════════════
 
+// CLI 노이즈 필터
+const _WU_NOISE = /^(dangerously[-\s]?skip|--?[\w-]+|y|n|yes|no|exit|quit|\/\w+)$/i;
+const _WU_GARBLED = /^[ㄱ-ㅎㅏ-ㅣ,.\[\];']{3,}$/; // 한글 깨진 입력
+
 // 의도 기반 업무 타임라인 생성 (공유 함수)
 function renderWorkUnits(events) {
   const workUnits = [];
@@ -10,7 +14,10 @@ function renderWorkUnits(events) {
   events.forEach(e => {
     if (e.type === 'user.message') {
       const msg = (e.data?.contentPreview || e.data?.content || e.label || '').replace(/[\n\r]/g,' ').trim();
-      if (msg.length > 2) {
+      // 노이즈/깨진 입력/중복 필터
+      if (msg.length > 2 && !_WU_NOISE.test(msg) && !_WU_GARBLED.test(msg)) {
+        // 직전과 같은 메시지면 스킵 (중복 이벤트)
+        if (currentUnit && currentUnit.intent === msg.slice(0,60)) return;
         if (currentUnit) workUnits.push(currentUnit);
         currentUnit = { intent: msg.slice(0,60), actions: [], result: '', files: new Set(), time: e.timestamp };
       }
@@ -18,18 +25,47 @@ function renderWorkUnits(events) {
       if (e.type === 'assistant.message') {
         const msg = (e.data?.contentPreview || e.data?.content || e.label || '').replace(/[\n\r]/g,' ').trim();
         if (msg.length > 5) currentUnit.result = msg.split(/[.!?。]\s/)[0]?.slice(0,60) || msg.slice(0,60);
-      } else if (e.type === 'file.write' || (e.type === 'tool.end' && (e.data?.toolName === 'Edit' || e.data?.toolName === 'Write'))) {
-        const fp = e.data?.filePath || e.data?.fileName || e.data?.input?.file_path || '';
-        const fn = fp ? fp.replace(/\\/g,'/').split('/').pop() : '';
+      } else if (e.type === 'file.write' || e.type === 'file.create') {
+        // label에서 파일명 추출: "✏️ settings.gradle.kts" → "settings.gradle.kts"
+        const fn = (e.label || '').replace(/^[✏️📝📄\s]+/, '').trim() || '';
         if (fn && !currentUnit.files.has(fn)) {
           currentUnit.files.add(fn);
-          currentUnit.actions.push({ type: e.data?.toolName === 'Edit' ? '수정' : '작성', file: fn });
+          currentUnit.actions.push({ type: '작성', file: fn });
         }
-      } else if (e.type === 'tool.end' && e.data?.toolName === 'Bash') {
-        const cmd = (e.data?.inputPreview || e.data?.input?.command || '').trim();
-        if (cmd.length > 3) currentUnit.actions.push({ type: '실행', file: cmd.slice(0,30) });
-      } else if (e.type === 'tool.end' && (e.data?.toolName === 'WebSearch' || e.data?.toolName === 'WebFetch')) {
-        currentUnit.actions.push({ type: '조사', file: '웹 검색' });
+      } else if (e.type === 'tool.end') {
+        // data가 null일 수 있음 — label과 fullContent에서 추출
+        const label = (e.label || '').trim();
+        const toolName = e.data?.toolName || label.split(':')[0]?.replace(/[⚡🔧❌\s]/g,'').trim() || '';
+
+        if (toolName === 'Edit' || label.startsWith('파일 수정')) {
+          const fn = label.split(':').slice(1).join(':').trim() || '';
+          if (fn && !currentUnit.files.has(fn)) {
+            currentUnit.files.add(fn);
+            currentUnit.actions.push({ type: '수정', file: fn });
+          }
+        } else if (toolName === 'Write' || label.startsWith('파일 작성')) {
+          const fn = label.split(':').slice(1).join(':').trim() || '';
+          if (fn && !currentUnit.files.has(fn)) {
+            currentUnit.files.add(fn);
+            currentUnit.actions.push({ type: '작성', file: fn });
+          }
+        } else if (toolName === 'Bash' || label.startsWith('명령 실행') || label.startsWith('명령어 실행')) {
+          const cmd = label.split(':').slice(1).join(':').trim().slice(0,30) || '';
+          if (cmd) currentUnit.actions.push({ type: '실행', file: cmd });
+        } else if (label.includes('웹 검색') || label.includes('웹 조사') || toolName === 'WebSearch') {
+          if (!currentUnit.actions.some(a => a.type === '조사')) {
+            currentUnit.actions.push({ type: '조사', file: '웹 검색' });
+          }
+        } else if (label.includes('페이지 분석') || toolName === 'WebFetch') {
+          const target = label.split(':').slice(1).join(':').trim() || '웹 페이지';
+          currentUnit.actions.push({ type: '참고', file: target.slice(0,25) });
+        }
+      } else if (e.type === 'file.read') {
+        const fn = (e.label || '').replace(/^[📄\s]+/, '').trim() || '';
+        if (fn && !currentUnit.files.has(fn)) {
+          currentUnit.files.add(fn);
+          currentUnit.actions.push({ type: '분석', file: fn });
+        }
       }
     }
   });
