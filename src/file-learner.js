@@ -185,9 +185,10 @@ function start(opts = {}) {
   }
 
   _watcher = chokidar.watch(validPaths, {
-    ignored:          /(^|[/\\])\./, // 숨김 파일 제외
+    ignored:          /(^|[/\\])\.|My Music|My Videos|My Pictures/, // 숨김 + Windows 특수폴더 제외
     persistent:       true,
     ignoreInitial:    true,
+    ignorePermissionErrors: true, // Windows EPERM 무시
     awaitWriteFinish: { stabilityThreshold: 500, pollInterval: 100 },
   });
 
