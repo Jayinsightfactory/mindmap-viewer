@@ -690,23 +690,24 @@ function buildTeamSystem(teamData) {
         const nodes = data.nodes || [];
         if (nodes.length === 0) return;
         // 세션별 그룹
-        const sessions = {};
+        // 프로젝트별 그룹 (projectName 기준)
+        const projects = {};
         nodes.forEach(n => {
           if (n.type === 'idle' || !n.sessionId) return;
-          if (!sessions[n.sessionId]) sessions[n.sessionId] = { count: 0, label: '' };
-          sessions[n.sessionId].count++;
-          if (n.type === 'user.message' && !sessions[n.sessionId].label) {
-            sessions[n.sessionId].label = (n.label || '').slice(0, 20);
-          }
+          const proj = n.projectName || n.autoTitle || '작업';
+          if (!projects[proj]) projects[proj] = { count: 0, whatSummary: '', techStack: '' };
+          projects[proj].count++;
+          if (n.whatSummary && !projects[proj].whatSummary) projects[proj].whatSummary = n.whatSummary;
+          if (n.techStack && !projects[proj].techStack) projects[proj].techStack = n.techStack;
         });
-        // 상위 3개 세션만 위성으로 표시
-        const topSessions = Object.entries(sessions)
-          .filter(([_, s]) => s.count > 2)
+        // 상위 3개 프로젝트만 위성으로 표시
+        const topProjects = Object.entries(projects)
+          .filter(([_, p]) => p.count > 2)
           .sort((a, b) => b[1].count - a[1].count)
           .slice(0, 3);
         const PROJ_R = TASK_R * 1.5;
-        topSessions.forEach(([sid, ses], si) => {
-          const sAngle = (si / Math.max(topSessions.length, 3)) * Math.PI * 2 + Math.PI / 4;
+        topProjects.forEach(([projName, proj], si) => {
+          const sAngle = (si / Math.max(topProjects.length, 3)) * Math.PI * 2 + Math.PI / 4;
           const sx = _mPos.x + PROJ_R * Math.cos(sAngle);
           const sz = _mPos.z + PROJ_R * Math.sin(sAngle);
           const sPos = new THREE.Vector3(sx, _mPos.y + 1, sz);
@@ -715,10 +716,10 @@ function buildTeamSystem(teamData) {
           sObj.userData = { isTeamTask: true, memberId: _mid, orbitR: PROJ_R, orbitAngle: sAngle, orbitSpeed: 0.02 + si * 0.005, orbitCenter: _mPos.clone() };
           scene.add(sObj);
           satelliteMeshes.push(sObj);
-          const sLabel = ses.label || `세션 (${ses.count}건)`;
           _teamNodes.push({
             type: 'task', pos: sPos.clone(), obj: sObj,
-            label: sLabel, color: _color, size: 'sm',
+            label: projName.slice(0, 18), sublabel: proj.whatSummary?.slice(0, 20) || `${proj.count}건`,
+            color: _color, size: 'sm',
             memberId: _mid, taskStatus: 'active',
           });
           // 연결선
