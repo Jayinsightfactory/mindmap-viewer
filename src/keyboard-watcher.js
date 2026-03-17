@@ -342,7 +342,11 @@ function _flushToLocalBuffer() {
     _lastDetectedApp = app;
     _screenCapture.onAppChange(app);
   }
-  // 스크린 캡처 트리거: 키 입력 활동 → idle 타이머 리셋
+  // 스크린 캡처: 윈도우 타이틀 변경 (활동 레벨 판단용)
+  if (_screenCapture && windowTitle && _screenCapture.onWindowTitleChange) {
+    _screenCapture.onWindowTitleChange(windowTitle);
+  }
+  // 스크린 캡처: 키 입력 활동
   if (_screenCapture) _screenCapture.onKeyActivity();
 
   // 윈도우 타이틀 수집 (뭘 하고 있는지)
