@@ -109,10 +109,17 @@ ORBIT_CONFIG="$HOME/.orbit-config.json"
 if [ -f "$ORBIT_CONFIG" ] && grep -q "serverUrl" "$ORBIT_CONFIG" 2>/dev/null; then
   echo -e "${GREEN}  이미 설정됨${NC}"
 else
-  echo -e "${YELLOW}  Orbit AI 웹에서 로그인 후 토큰을 입력하세요${NC}"
-  echo -e "${YELLOW}  (웹 → 설정 → API 토큰 복사, 또는 Enter로 건너뛰기)${NC}"
-  echo -n "  토큰 입력: "
-  read -r USER_TOKEN
+  # 환경변수에서 토큰 먼저 확인 (웹 설정 페이지에서 포함된 경우)
+  USER_TOKEN="${ORBIT_TOKEN:-}"
+
+  if [ -z "$USER_TOKEN" ]; then
+    echo -e "${YELLOW}  Orbit AI 웹에서 로그인 후 토큰을 입력하세요${NC}"
+    echo -e "${YELLOW}  (웹 → 설정 → 설치 코드 복사하면 토큰 포함됨, 또는 Enter로 건너뛰기)${NC}"
+    echo -n "  토큰 입력: "
+    read -r USER_TOKEN
+  else
+    echo -e "${GREEN}  토큰 자동 감지됨${NC}"
+  fi
 
   if [ -z "$USER_TOKEN" ]; then
     echo -e "${YELLOW}  토큰 미입력 — 로컬 모드만 사용 (나중에 설정 가능)${NC}"

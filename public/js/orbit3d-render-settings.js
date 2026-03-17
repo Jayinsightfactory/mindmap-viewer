@@ -522,11 +522,12 @@ async function renderSetupPanel() {
 
   // ── 설치 섹션 ─────────────────────────────────────────────────────────────
   const _token       = _getAuthToken();
-  const _setupScript = location.origin + '/orbit-setup.ps1' + (_token ? `?token=${encodeURIComponent(_token)}` : '');
-  const _setupSh     = location.origin + '/orbit-setup.sh'  + (_token ? `?token=${encodeURIComponent(_token)}` : '');
+  const _setupScript = location.origin + '/setup/install.ps1';
+  const _setupSh     = location.origin + '/setup/orbit-start.sh';
+  // 설치 명령어에 토큰 포함 — 사용자가 따로 입력 안 해도 자동 연동
   const _installCmd  = os === 'windows'
-    ? `irm '${_setupScript}' | iex`
-    : `bash <(curl -sL '${_setupSh}')`;
+    ? `$env:ORBIT_TOKEN='${_token||''}'; irm '${_setupScript}' | iex`
+    : `ORBIT_TOKEN='${_token||''}' bash <(curl -sL '${_setupSh}')`;
 
   const installSection = `
     <div class="sp-section">📦 설치 / 업데이트 <span style="font-size:9px;color:#6e7681;text-transform:none;font-weight:400">— 1~2분 소요</span></div>
@@ -571,6 +572,43 @@ async function renderSetupPanel() {
     </div>
   `;
 
+  // ── Chrome 확장 설치 가이드 ────────────────────────────────────────────────
+  const chromeSection = `
+    <div class="sp-section">🧩 Chrome 확장 (선택)</div>
+    <div style="font-size:12px;color:#8b949e;margin-bottom:8px">ChatGPT, Claude, Gemini 대화를 자동 수집합니다</div>
+    <div style="background:#161b22;border:1px solid #30363d;border-radius:10px;padding:14px;margin-bottom:8px">
+      <div style="display:flex;gap:12px;align-items:flex-start">
+        <div style="font-size:28px;flex-shrink:0">1️⃣</div>
+        <div>
+          <div style="font-size:12px;color:#e6edf3;font-weight:600;margin-bottom:4px">chrome://extensions 열기</div>
+          <div style="font-size:11px;color:#6e7681">Chrome 주소창에 입력 후 Enter</div>
+        </div>
+      </div>
+    </div>
+    <div style="background:#161b22;border:1px solid #30363d;border-radius:10px;padding:14px;margin-bottom:8px">
+      <div style="display:flex;gap:12px;align-items:flex-start">
+        <div style="font-size:28px;flex-shrink:0">2️⃣</div>
+        <div>
+          <div style="font-size:12px;color:#e6edf3;font-weight:600;margin-bottom:4px">우측 상단 "개발자 모드" 토글 ON</div>
+          <div style="display:inline-block;background:#0d1117;border:1px solid #1f6feb;border-radius:12px;padding:2px 10px;font-size:11px;color:#58a6ff;margin-top:4px">개발자 모드 🔵</div>
+        </div>
+      </div>
+    </div>
+    <div style="background:#161b22;border:1px solid #30363d;border-radius:10px;padding:14px;margin-bottom:8px">
+      <div style="display:flex;gap:12px;align-items:flex-start">
+        <div style="font-size:28px;flex-shrink:0">3️⃣</div>
+        <div>
+          <div style="font-size:12px;color:#e6edf3;font-weight:600;margin-bottom:4px">"압축해제된 확장 프로그램을 로드합니다" 클릭</div>
+          <div style="font-size:11px;color:#6e7681">→ <b>chrome-extension</b> 폴더 선택</div>
+          <div style="background:#0d1117;border:1px solid #21262d;border-radius:6px;padding:6px 10px;margin-top:6px;font-family:monospace;font-size:11px;color:#79c0ff;cursor:pointer"
+            onclick="navigator.clipboard.writeText('~/mindmap-viewer/chrome-extension');this.style.borderColor='#3fb950'"
+          >📁 ~/mindmap-viewer/chrome-extension <span style="color:#6e7681;font-size:9px">(클릭 복사)</span></div>
+        </div>
+      </div>
+    </div>
+    <a href="/chrome-guide.html" target="_blank" style="font-size:11px;color:#58a6ff;text-decoration:none">📖 자세한 가이드 보기 →</a>
+  `;
+
   // ── 데이터 소스 설정 ──────────────────────────────────────────────────────
   const _curSource = _getDataSource() || 'cloud';
   const _curAccount = localStorage.getItem(DATA_SOURCE_ACCOUNT_KEY) || '';
@@ -603,6 +641,7 @@ async function renderSetupPanel() {
   body.innerHTML = `
     <div class="sp-check-grid">${cards}</div>
     ${installSection}
+    ${chromeSection}
     ${dataSourceSection}
 
     <div class="sp-section" style="margin-top:12px">🧠 AI 개인 학습</div>
