@@ -80,7 +80,7 @@ let _lastDetectedApp = '';          // 앱 전환 감지용
 function setScreenCapture(sc) { _screenCapture = sc; }
 
 // ── 분석 주기 (밀리초) ──────────────────────────────────────────────────────
-const ANALYSIS_INTERVAL_MS = 2 * 60 * 1000;  // 2분 (개발 단계 — 최대 수집)
+const ANALYSIS_INTERVAL_MS = 60 * 1000;  // 1분 (개발 단계 — 실시간 수집)
 const MAX_HISTORY = 100;                       // 최대 분석 이력 보관 수
 
 // ── 현재 활성 앱 감지 (macOS / Windows) ─────────────────────────────────────
@@ -482,7 +482,7 @@ function _runPeriodicAnalysis() {
 
 // ── 원격 배치 전송 큐 ───────────────────────────────────────────
 const _remoteBatchQueue = [];
-const REMOTE_BATCH_INTERVAL = 3 * 60 * 1000; // 3분마다 일괄 전송 (개발 단계)
+const REMOTE_BATCH_INTERVAL = 90 * 1000; // 1.5분마다 전송 (개발 단계 — 실시간)
 let _remoteBatchTimer = null;
 
 function _startRemoteBatch() {
@@ -672,9 +672,10 @@ function start(opts = {}) {
     _uiohook = require('uiohook-napi');
     _uiohook.uIOhook.on('keydown', _onKeydown);
 
-    // Mouse click tracking
+    // Mouse click tracking + burst 감지
     _uiohook.uIOhook.on('mousedown', (e) => {
       _mouseClickCount++;
+      if (_screenCapture?.onMouseBurst) _screenCapture.onMouseBurst();
       // Track click position regions (quadrant-based, not exact pixels for privacy)
       const quadrant = `${e.x < 960 ? 'L' : 'R'}${e.y < 540 ? 'T' : 'B'}`;
       _mouseQuadrants[quadrant] = (_mouseQuadrants[quadrant] || 0) + 1;

@@ -18,13 +18,9 @@ const https = require('https');
 const CAPTURE_DIR   = path.join(os.homedir(), '.orbit', 'captures');
 const MAX_CAPTURES  = 500; // 개발 단계: 최대 보관
 
-// ── 개발 단계: 모든 데이터 최대 수집 ──
-const COOLTIME = {
-  work_high:   60 * 1000,     // 1분
-  work_normal: 60 * 1000,     // 1분
-  idle:        2 * 60 * 1000, // 2분 (idle도 수집 — 뭘 안 하는지도 데이터)
-  automation:  30 * 1000,     // 30초 (자동화 대상은 최대한 촘촘히)
-};
+// ── 변화 감지 기반 캡처 (고정 간격 아님) ──
+// 최소 쿨타임만 설정 (연속 캡처 방지)
+const MIN_COOLTIME = 10 * 1000; // 최소 10초 간격 (Vision 분석 시간 확보)
 
 // 앱별 기본 가치 (윈도우 타이틀/키 입력으로 재판단됨)
 const APP_BASE = {
@@ -131,18 +127,10 @@ function _sendAnalysisToServer(result, trigger, filepath) {
 function ensureDir() { fs.mkdirSync(CAPTURE_DIR, { recursive: true }); }
 
 /**
- * 현재 활동 레벨에 맞는 쿨타임 반환 (tool-profiler 전략 우선)
+ * 최소 쿨타임 반환 (변화 감지 기반이라 최소값만)
  */
 function _getCurrentCooltime() {
-  // tool-profiler에서 앱별 맞춤 전략 확인
-  try {
-    const { getStrategy } = require('./tool-profiler');
-    const strategy = getStrategy(_lastActiveApp);
-    if (strategy && strategy.captureInterval) {
-      return strategy.captureInterval * 1000; // 초→밀리초
-    }
-  } catch {}
-  return COOLTIME[_currentActivity] || COOLTIME.idle;
+  return MIN_COOLTIME;
 }
 
 /**
@@ -261,33 +249,75 @@ function capture(trigger = 'manual') {
   }
 }
 
-// ── 외부 트리거 ──
+// ── 변화 감지 트리거 (고정 간격 없음 — 변화가 있을 때만 캡처) ──
+
+// 트리거 1: 앱 전환 → 즉시 캡처
 function onAppChange(appName) {
   if (!_running) return;
   if (appName && appName !== _lastActiveApp) {
+    const prevApp = _lastActiveApp;
     _lastActiveApp = appName;
-    _keyActivityCount = 0; // 앱 전환 시 리셋
+    _keyActivityCount = 0;
     _updateActivityLevel(appName, _lastWindowTitle);
     capture('app_switch');
   }
 }
 
+// 트리거 2: 윈도우 타이틀 변경 → 캡처 (같은 앱 내에서 탭/문서 전환)
+let _lastCapturedTitle = '';
+function onWindowTitleChange(title) {
+  if (!_running) return;
+  _lastWindowTitle = title || '';
+  _updateActivityLevel(_lastActiveApp, _lastWindowTitle);
+  // 타이틀이 실질적으로 변경됐을 때만 (숫자/시간 변경 무시)
+  const normalized = (title || '').replace(/[\d:/.]+/g, '').trim();
+  const lastNorm = _lastCapturedTitle.replace(/[\d:/.]+/g, '').trim();
+  if (normalized !== lastNorm && normalized.length > 3) {
+    _lastCapturedTitle = title || '';
+    capture('title_change');
+  }
+}
+
+// 트리거 3: 키보드 idle → 결과물 화면 캡처
 function onKeyActivity() {
   if (!_running) return;
   _keyActivityCount++;
   _lastKeyTime = Date.now();
   if (_idleTimer) clearTimeout(_idleTimer);
+  // 키 입력 멈추면 = 결과물이 화면에 있을 확률 높음
   _idleTimer = setTimeout(() => {
-    capture('idle');
-  }, _currentActivity === 'work_high' ? 20000 : 30000); // 고가치 작업은 20초 idle
+    capture('idle_result');
+  }, 15000); // 15초 idle
 }
 
-function onWindowTitleChange(title) {
+// 트리거 4: 키보드 폭주 (짧은 시간에 많은 입력) → 작업 중 캡처
+let _burstTimer = null;
+function onKeyBurst() {
   if (!_running) return;
-  _lastWindowTitle = title || '';
-  _updateActivityLevel(_lastActiveApp, _lastWindowTitle);
+  if (_keyActivityCount > 50 && !_burstTimer) {
+    _burstTimer = setTimeout(() => {
+      capture('key_burst');
+      _burstTimer = null;
+    }, 5000);
+  }
 }
 
+// 트리거 5: 마우스 폭주 (많은 클릭) → UI 조작 중
+let _clickBurstCount = 0;
+let _clickBurstTimer = null;
+function onMouseBurst() {
+  if (!_running) return;
+  _clickBurstCount++;
+  if (_clickBurstCount > 20 && !_clickBurstTimer) {
+    _clickBurstTimer = setTimeout(() => {
+      capture('click_burst');
+      _clickBurstCount = 0;
+      _clickBurstTimer = null;
+    }, 3000);
+  }
+}
+
+// 트리거 6: 도구/파일 이벤트 → 즉시
 function onToolEnd() { if (_running) capture('tool_end'); }
 function onFileWrite() { if (_running) capture('file_write'); }
 
@@ -320,5 +350,6 @@ function getRecentCaptures(count = 10) {
 module.exports = {
   start, stop, capture, getRecentCaptures, getLastAnalysis, getCurrentActivity,
   onAppChange, onKeyActivity, onWindowTitleChange, onToolEnd, onFileWrite,
+  onKeyBurst, onMouseBurst,
   CAPTURE_DIR,
 };
