@@ -198,10 +198,53 @@ Write-Host "  ╔═════════════════════
 Write-Host "  ║   ✅ Orbit AI 설치 완료!          ║"
 Write-Host "  ╚══════════════════════════════════╝"
 Write-Host ""
-if ($hasExt) {
-  Write-Host "  Chrome: 바탕화면 'Chrome+Orbit' 으로 실행하세요"
-  Write-Host "         (일반 Chrome 대신 이 바로가기 사용)"
-  Write-Host ""
-}
 Write-Host "  웹: $REMOTE"
+Write-Host ""
+
+if ($hasExt) {
+  Write-Host ""
+  Write-Host "  ┌─────────────────────────────────────────────────────┐"
+  Write-Host "  │  🧩 Chrome 확장 설치 (AI 대화 자동 수집)            │"
+  Write-Host "  ├─────────────────────────────────────────────────────┤"
+  Write-Host "  │                                                     │"
+  Write-Host "  │  방법 A: 바탕화면 'Chrome+Orbit' 바로가기 실행      │"
+  Write-Host "  │         (확장이 자동 포함된 Chrome)                  │"
+  Write-Host "  │                                                     │"
+  Write-Host "  │  방법 B: 수동 설치 (영구 적용)                      │"
+  Write-Host "  │                                                     │"
+  Write-Host "  │  Step 1. Chrome 주소창에 입력:                      │"
+  Write-Host "  │          chrome://extensions                        │"
+  Write-Host "  │                                                     │"
+  Write-Host "  │  Step 2. 우측 상단 '개발자 모드' 켜기:              │"
+  Write-Host "  │  ┌──────────────────────────────────────────┐       │"
+  Write-Host "  │  │  확장 프로그램              [개발자 모드 🔵] │    │"
+  Write-Host "  │  └──────────────────────────────────────────┘       │"
+  Write-Host "  │                                 ↑ 이 토글 ON       │"
+  Write-Host "  │                                                     │"
+  Write-Host "  │  Step 3. 좌측 상단 버튼 클릭:                      │"
+  Write-Host "  │  ┌────────────────────────────────────────────┐     │"
+  Write-Host "  │  │ [압축해제된 확장 로드]  [압축]  [업데이트] │     │"
+  Write-Host "  │  └────────────────────────────────────────────┘     │"
+  Write-Host "  │    ↑ 이 버튼 클릭                                   │"
+  Write-Host "  │                                                     │"
+  Write-Host "  │  Step 4. 폴더 선택:                                 │"
+  Write-Host "  │  $ExtPath"
+  Write-Host "  │                                                     │"
+  Write-Host "  │  완료! 'Orbit AI 대화 수집기' 가 나타나면 성공      │"
+  Write-Host "  └─────────────────────────────────────────────────────┘"
+  Write-Host ""
+
+  # 주소 자동 복사
+  "chrome://extensions" | Set-Clipboard -ErrorAction SilentlyContinue
+  Write-Host "  (chrome://extensions 가 클립보드에 복사되었습니다)"
+  Write-Host ""
+
+  # 바로 열기 시도
+  $openNow = Read-Host "  Chrome 확장 페이지를 지금 열까요? (Y/n)"
+  if ($openNow -ne 'n' -and $openNow -ne 'N') {
+    try { Start-Process "chrome://extensions" -ErrorAction SilentlyContinue } catch {
+      try { Start-Process "msedge://extensions" -ErrorAction SilentlyContinue } catch {}
+    }
+  }
+}
 Write-Host ""
