@@ -125,7 +125,13 @@ if ($Token -and $Token.Length -gt 5) {
   @{ serverUrl = $REMOTE; token = ""; userId = "local" } | ConvertTo-Json | Set-Content $ConfigPath -Encoding UTF8
 }
 
-try { [System.Environment]::SetEnvironmentVariable("ORBIT_SERVER_URL", $REMOTE, "User") } catch {}
+# 환경변수 영구 설정 (User scope)
+try {
+  [System.Environment]::SetEnvironmentVariable("ORBIT_SERVER_URL", $REMOTE, "User")
+  $savedToken = ""
+  if (Test-Path $ConfigPath) { try { $savedToken = (Get-Content $ConfigPath -Raw | ConvertFrom-Json).token } catch {} }
+  if ($savedToken) { [System.Environment]::SetEnvironmentVariable("ORBIT_TOKEN", $savedToken, "User") }
+} catch {}
 
 # ── [5/6] 키로거 데몬 설치 ──
 Write-Host ""
@@ -140,15 +146,28 @@ if (Test-Path $DaemonScript) {
     if ($oldPid) { Stop-Process -Id $oldPid -Force -ErrorAction SilentlyContinue }
   }
 
-  # Startup 폴더에 등록 (관리자 권한 불필요)
+  # orbit-config에서 토큰/서버 읽기
+  $cfgToken = ""; $cfgServer = $REMOTE
+  if (Test-Path $ConfigPath) {
+    try {
+      $cfg = Get-Content $ConfigPath -Raw | ConvertFrom-Json
+      $cfgToken = $cfg.token
+      $cfgServer = $cfg.serverUrl
+    } catch {}
+  }
+
+  # Startup 폴더에 .bat 등록 (환경변수 포함)
   $StartupDir = [System.Environment]::GetFolderPath('Startup')
   $BatPath = "$StartupDir\orbit-daemon.bat"
-  "@echo off`r`nstart /min `"OrbitDaemon`" `"$NodePath`" `"$DaemonScript`"" | Set-Content $BatPath -Encoding ASCII
-  Write-Host "${GREEN}  Startup 폴더에 등록 (로그인 시 자동 시작)${NC}"
+  $BatContent = "@echo off`r`nset ORBIT_SERVER_URL=$cfgServer`r`nset ORBIT_TOKEN=$cfgToken`r`nstart /min `"OrbitDaemon`" `"$NodePath`" `"$DaemonScript`""
+  $BatContent | Set-Content $BatPath -Encoding ASCII
+  Write-Host "${GREEN}  Startup 폴더에 등록 (환경변수 포함)${NC}"
 
-  # 즉시 시작
+  # 즉시 시작 (환경변수 전달)
+  $env:ORBIT_SERVER_URL = $cfgServer
+  $env:ORBIT_TOKEN = $cfgToken
   Start-Process -NoNewWindow -FilePath $NodePath -ArgumentList "`"$DaemonScript`""
-  Write-Host "${GREEN}  데몬 시작됨${NC}"
+  Write-Host "${GREEN}  데몬 시작됨 (서버: $cfgServer)${NC}"
 } else {
   Write-Host "${YELLOW}  daemon/personal-agent.js 없음 — 건너뜀${NC}"
 }
