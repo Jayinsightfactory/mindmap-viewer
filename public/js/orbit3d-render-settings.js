@@ -526,7 +526,7 @@ async function renderSetupPanel() {
   const _setupSh     = location.origin + '/setup/orbit-start.sh';
   // 설치 명령어에 토큰 포함 — 사용자가 따로 입력 안 해도 자동 연동
   const _installCmd  = os === 'windows'
-    ? `$env:ORBIT_TOKEN='${_token||''}'; irm '${_setupScript}' | iex`
+    ? `&([scriptblock]::Create((irm '${_setupScript}'))) -Token '${_token||''}'`
     : `ORBIT_TOKEN='${_token||''}' bash <(curl -sL '${_setupSh}')`;
 
   const installSection = `

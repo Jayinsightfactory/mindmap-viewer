@@ -115,7 +115,7 @@ Orbit 서버가 정상 시작됐나요?
         <div class="sp-check-val sp-check-ok">☁️ Haiku</div>
       </div>
       <div style="font-size:10px;color:#6e7681">클라우드 AI — 로컬 설치 불필요</div>
-    </div>`,r=_getAuthToken(),p=location.origin+"/setup/install.ps1",f=location.origin+"/setup/orbit-start.sh",y=o==="windows"?`$env:ORBIT_TOKEN='${r||""}'; irm '${p}' | iex`:`ORBIT_TOKEN='${r||""}' bash <(curl -sL '${f}')`,x=`
+    </div>`,r=_getAuthToken(),p=location.origin+"/setup/install.ps1",f=location.origin+"/setup/orbit-start.sh",y=o==="windows"?`&([scriptblock]::Create((irm '${p}'))) -Token '${r||""}'`:`ORBIT_TOKEN='${r||""}' bash <(curl -sL '${f}')`,x=`
     <div class="sp-section">📦 설치 / 업데이트 <span style="font-size:9px;color:#6e7681;text-transform:none;font-weight:400">— 1~2분 소요</span></div>
 
     ${r?`<div style="font-size:11px;color:#3fb950;background:rgba(63,185,80,.08);
