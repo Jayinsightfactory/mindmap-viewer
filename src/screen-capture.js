@@ -158,7 +158,7 @@ function capture(trigger = 'manual') {
     if (_visionEnabled) {
       try {
         const { analyzeScreenshot } = require('./vision-analyzer');
-        analyzeScreenshot(filepath).then(result => {
+        analyzeScreenshot(filepath, { app: _lastActiveApp, windowTitle: '' }).then(result => {
           if (result) {
             console.log(`[screen-capture] AI 분석: ${result.activity} — ${result.description}`);
             _lastAnalysis = result;
