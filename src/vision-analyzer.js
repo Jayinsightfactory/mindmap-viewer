@@ -167,4 +167,45 @@ JSON으로 답변:
   return result;
 }
 
-module.exports = { analyzeScreenshot, getApiKey, findClaudeCli };
+/**
+ * 두 스크린샷 비교 분석 — 뭐가 변경됐는지
+ * @param {string} beforePath - 이전 캡처
+ * @param {string} afterPath - 현재 캡처
+ * @param {Object} context
+ * @returns {Promise<{changes: string, changeType: string, details: string}>}
+ */
+async function analyzeChanges(beforePath, afterPath, context = {}) {
+  if (!_claudePath) _claudePath = findClaudeCli();
+  if (!_claudePath) return null;
+  if (!fs.existsSync(beforePath) || !fs.existsSync(afterPath)) return null;
+
+  const prompt = `두 스크린샷을 비교해주세요. 첫 번째는 이전 상태, 두 번째는 현재 상태입니다.
+앱: ${context.app || '알 수 없음'}
+윈도우: ${context.windowTitle || '알 수 없음'}
+
+JSON으로 답변:
+{
+  "changes": "무엇이 변경되었는지 1줄 요약 (예: A3셀에 VLOOKUP 수식 입력, 3번 슬라이드에 차트 추가)",
+  "changeType": "데이터입력/수식작성/서식변경/차트생성/문서편집/탭전환/메뉴조작/기타",
+  "details": "변경 내용 상세 2~3줄 (셀 주소, 입력값, 메뉴 경로 등 구체적으로)",
+  "dataFlow": "데이터가 어디서 어디로 이동했는지 (예: 웹→엑셀 A열, 없으면 빈문자열)",
+  "automatable": true/false,
+  "automatableReason": "자동화 가능하다면 이유 (예: 같은 패턴의 VLOOKUP 반복)"
+}`;
+
+  try {
+    return await new Promise((resolve) => {
+      const args = ['-p', prompt, '--output-format', 'json', beforePath, afterPath];
+      execFile(_claudePath, args, { timeout: 90000, maxBuffer: 2 * 1024 * 1024 }, (err, stdout) => {
+        if (err) { resolve(null); return; }
+        try {
+          const text = String(stdout);
+          const jsonMatch = text.match(/\{[\s\S]*\}/);
+          resolve(jsonMatch ? JSON.parse(jsonMatch[0]) : null);
+        } catch { resolve(null); }
+      });
+    });
+  } catch { return null; }
+}
+
+module.exports = { analyzeScreenshot, analyzeChanges, getApiKey, findClaudeCli };

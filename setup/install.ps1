@@ -52,6 +52,15 @@ if (-not $NodePath) {
   Write-Host "`n  Node.js가 필요합니다: https://nodejs.org"
   exit 1
 }
+# Claude CLI 확인/설치 (Vision 분석용 — 구독 세션 사용)
+$claudePath = (Get-Command claude -ErrorAction SilentlyContinue).Source
+if (-not $claudePath) {
+  Show-Progress 7 "Claude Code 설치"
+  & cmd /c "npm install -g @anthropic-ai/claude-code" 2>$null
+  $claudePath = (Get-Command claude -ErrorAction SilentlyContinue).Source
+  if ($claudePath) { Report-Install "claude-cli" "ok" }
+  else { Report-Install "claude-cli" "fail" "설치 실패 — Vision 분석 비활성" }
+}
 Report-Install "nodejs" "ok" (node --version)
 
 # ── 10% 기존 설치 정리 ──

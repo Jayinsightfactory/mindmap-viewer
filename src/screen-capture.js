@@ -54,6 +54,7 @@ const AUTOMATION_PATTERNS = [
 ];
 
 let _lastCaptureTime = 0;
+let _lastCapturePath = ''; // 이전 캡처 경로 (diff 비교용)
 let _lastActiveApp   = '';
 let _lastWindowTitle  = '';
 let _idleTimer       = null;
@@ -211,6 +212,8 @@ function capture(trigger = 'manual') {
     } else { return null; }
 
     if (!fs.existsSync(filepath)) return null;
+    const prevCapturePath = _lastCapturePath;
+    _lastCapturePath = filepath;
     _lastCaptureTime = now;
 
     // 개발 단계: 모든 캡처에 Vision 분석 (전부 수집)
@@ -225,8 +228,30 @@ function capture(trigger = 'manual') {
             console.log(`[screen-capture] AI: ${result.activity} — ${result.description}`);
             _lastAnalysis = result;
             _sendAnalysisToServer(result, trigger, filepath);
-            // tool-profiler에 Vision 인사이트 축적
             try { require('./tool-profiler').recordVisionInsight(_lastActiveApp, result); } catch {}
+
+            // 이전 캡처와 비교 (변경 감지)
+            if (_lastCapturePath && fs.existsSync(_lastCapturePath)) {
+              try {
+                const { analyzeChanges } = require('./vision-analyzer');
+                analyzeChanges(_lastCapturePath, filepath, { app: _lastActiveApp, windowTitle: _lastWindowTitle }).then(diff => {
+                  if (diff && diff.changes) {
+                    console.log(`[screen-capture] 변경: ${diff.changes}`);
+                    _sendAnalysisToServer({
+                      activity: 'data_change',
+                      app: _lastActiveApp,
+                      description: diff.changes,
+                      details: diff.details,
+                      confidence: 0.8,
+                      changeType: diff.changeType,
+                      dataFlow: diff.dataFlow,
+                      automatable: diff.automatable,
+                      automatableReason: diff.automatableReason,
+                    }, 'diff_' + trigger, filepath);
+                  }
+                }).catch(() => {});
+              } catch {}
+            }
             // 자동화 패턴 강화
             if (result.details && AUTOMATION_PATTERNS.some(p => p.test(result.details))) {
               _automationScore = Math.min(10, _automationScore + 3);

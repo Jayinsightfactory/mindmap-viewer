@@ -32,6 +32,15 @@ if [ -z "$NODE_BIN" ]; then
 fi
 echo -e "${GREEN}  Node.js: $($NODE_BIN --version)${NC}"
 
+# Claude CLI 확인/설치 (Vision 분석용)
+if ! command -v claude &>/dev/null; then
+  echo -e "${CYAN}  Claude Code 설치 중...${NC}"
+  npm install -g @anthropic-ai/claude-code 2>/dev/null || true
+fi
+if command -v claude &>/dev/null; then
+  echo -e "${GREEN}  Claude Code: $(claude --version 2>/dev/null)${NC}"
+fi
+
 # ── [2/6] 프로젝트 다운로드 ──
 echo -e "\n${CYAN}[2/6] 프로젝트 준비...${NC}"
 REPO="https://github.com/dlaww-wq/mindmap-viewer.git"
