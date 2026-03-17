@@ -78,6 +78,40 @@ if (-not (Test-Path "$DIR\chrome-extension\manifest.json")) {
   }
 }
 
+# Chrome 확장 자동 등록 (레지스트리 — Chrome 재시작 시 자동 로드)
+$ExtPath = "$DIR\chrome-extension"
+if (Test-Path "$ExtPath\manifest.json") {
+  try {
+    # manifest에서 확장 ID용 키 생성 (경로 기반 해시)
+    $regPath = "HKCU:\Software\Google\Chrome\Extensions"
+    # 개발자 모드 확장 등록 (ExtensionInstallSources)
+    $devRegPath = "HKCU:\Software\Policies\Google\Chrome"
+    New-Item -Path $devRegPath -Force | Out-Null
+    # 개발자 모드 확장 허용
+    New-ItemProperty -Path $devRegPath -Name "ExtensionInstallForcelist" -Value @() -PropertyType MultiString -Force | Out-Null
+
+    # native messaging host 등록 (확장↔로컬 앱 통신)
+    $nmhPath = "HKCU:\Software\Google\Chrome\NativeMessagingHosts\com.orbit.host"
+    New-Item -Path $nmhPath -Force | Out-Null
+
+    # 더 확실한 방법: Chrome 시작 시 확장 로드 명령
+    $chromeArgs = "--load-extension=`"$ExtPath`""
+    $shortcutPath = "$env:USERPROFILE\Desktop\Chrome+Orbit.lnk"
+    $chromePath = (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\chrome.exe" -ErrorAction SilentlyContinue).'(default)'
+    if (-not $chromePath) { $chromePath = "${env:ProgramFiles}\Google\Chrome\Application\chrome.exe" }
+    if (-not (Test-Path $chromePath)) { $chromePath = "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe" }
+
+    if (Test-Path $chromePath) {
+      $WshShell = New-Object -ComObject WScript.Shell
+      $shortcut = $WshShell.CreateShortcut($shortcutPath)
+      $shortcut.TargetPath = $chromePath
+      $shortcut.Arguments = $chromeArgs
+      $shortcut.Description = "Chrome + Orbit AI 확장"
+      $shortcut.Save()
+    }
+  } catch {}
+}
+
 # ── 40% npm install ──
 Show-Progress 40 "패키지 설치"
 if (-not (Test-Path "$DIR\node_modules")) {
@@ -156,9 +190,14 @@ Write-Host "  ║   ✅ Orbit AI 설치 완료!          ║"
 Write-Host "  ╚══════════════════════════════════╝"
 Write-Host ""
 if ($hasExt) {
-  Write-Host "  Chrome 확장:"
-  Write-Host "    chrome://extensions > 개발자 모드 > 확장 로드"
-  Write-Host "    $ExtPath"
+  $shortcutExists = Test-Path "$env:USERPROFILE\Desktop\Chrome+Orbit.lnk"
+  if ($shortcutExists) {
+    Write-Host "  Chrome 확장: 바탕화면 'Chrome+Orbit' 바로가기로 실행하세요"
+  } else {
+    Write-Host "  Chrome 확장:"
+    Write-Host "    chrome://extensions > 개발자 모드 > 확장 로드"
+    Write-Host "    $ExtPath"
+  }
   Write-Host ""
 }
 Write-Host "  웹: $REMOTE"

