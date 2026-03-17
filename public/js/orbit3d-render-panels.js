@@ -480,6 +480,14 @@ function _ptShowDetail(p) {
     kvList.innerHTML = kvRows.map(([k,v]) =>
       `<div class="ip-kv"><span class="k">${k}</span><span class="v">${escHtml(String(v))}</span></div>`
     ).join('');
+
+    // 의도 기반 업무 타임라인 추가
+    const purposeEvents = p.eventIds ? (_allNodes || []).filter(n => p.eventIds.includes(n.id)) : [];
+    if (purposeEvents.length > 0 && typeof renderWorkUnits === 'function') {
+      kvList.innerHTML +=
+        '<div style="margin-top:10px;font-size:11px;color:#cdd9e5;font-weight:600;margin-bottom:4px">📋 작업 흐름</div>'
+        + renderWorkUnits(purposeEvents);
+    }
   }
 
   // 미리보기: 파일 목록 + 롤백 버튼

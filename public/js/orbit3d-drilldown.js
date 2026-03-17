@@ -153,109 +153,19 @@ function showDrillTimeline(catData) {
   const popBtn = panel.querySelector('.ip-pop-btn');
   if (popBtn) popBtn.style.display = 'none';
 
-  // 본문: 날짜별 그룹핑 타임라인
+  // 본문: 의도 기반 업무 타임라인 (공유 함수 사용)
   const events = catData.events || [];
-  const dateGroups = {};
-  events.forEach(e => {
-    const ts = e.timestamp ? new Date(e.timestamp) : null;
-    if (!ts) return;
-    const dateKey = ts.toLocaleDateString('ko-KR', { year: 'numeric', month: 'short', day: 'numeric' });
-    if (!dateGroups[dateKey]) dateGroups[dateKey] = [];
-    dateGroups[dateKey].push(e);
-  });
+  const workHtml = typeof renderWorkUnits === 'function' ? renderWorkUnits(events) : '';
 
   let html = '<div style="display:flex;flex-direction:column;gap:0;max-height:calc(100vh - 140px);overflow-y:auto;padding:10px 14px 14px">';
 
-  Object.entries(dateGroups).forEach(([dateKey, dayEvents]) => {
-    html += `<div style="position:sticky;top:0;z-index:2;background:rgba(255,255,255,0.95);backdrop-filter:blur(4px);padding:8px 0 4px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb;margin-bottom:4px">${dateKey}</div>`;
-
-    dayEvents.forEach(e => {
-      const cfg = typeCfg(e.type);
-      const hex = '#' + new THREE.Color(cfg.color).getHexString();
-      const ts = e.timestamp ? new Date(e.timestamp).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : '';
-      const fileName = (e.data?.filePath || e.data?.fileName || '').replace(/\\/g, '/').split('/').pop();
-      const filePath = e.data?.filePath || e.data?.fileName || '';
-
-      // ── 이벤트 상세 내용 추출 (타임라인에서 실제 내용 표시) ──
-      let d = e.data || {};
-      const fc = e.fullContent;
-      if (fc && typeof fc === 'string' && fc.startsWith('{')) {
-        try { d = { ...d, ...JSON.parse(fc) }; } catch {}
-      }
-      const t = e.type || '';
-      let typeLabel = '';   // 이벤트 종류 (짧은 라벨)
-      let detail = '';      // 실제 내용 (명령, 메시지 등)
-
-      if (t === 'user.message') {
-        typeLabel = '\u{1F4AC} 사용자 지시';
-        detail = d.contentPreview || d.content || '';
-      } else if (t === 'assistant.message' || t === 'assistant.response') {
-        typeLabel = '\u{1F916} AI 응답';
-        detail = d.contentPreview || d.content || '';
-      } else if (t === 'tool.end' || t === 'tool.start') {
-        const tool = d.toolName || '';
-        const TOOLS = { 'Write':'파일 작성', 'Edit':'파일 수정', 'Read':'파일 읽기',
-          'Bash':'명령 실행', 'Grep':'코드 검색', 'Glob':'파일 탐색',
-          'Task':'에이전트', 'WebFetch':'웹 조회' };
-        typeLabel = `\u{1F527} ${TOOLS[tool] || tool}`;
-        // 실제 내용: 명령어, 수정 내용, 파일경로 등
-        if (tool === 'Bash') {
-          detail = d.command || d.input || '';
-        } else if (tool === 'Edit') {
-          detail = fileName ? `${fileName}` : '';
-          if (d.old_string || d.new_string) detail += d.old_string ? ` — "${(d.old_string||'').slice(0,60)}…" → "${(d.new_string||'').slice(0,60)}…"` : '';
-        } else if (tool === 'Write') {
-          detail = d.filePath || fileName || '';
-        } else if (tool === 'Read') {
-          detail = d.filePath || fileName || '';
-        } else if (tool === 'Grep') {
-          detail = d.pattern ? `검색: "${d.pattern}"` : (d.query || '');
-        } else {
-          detail = d.filePath || d.input || fileName || '';
-        }
-      } else if (t === 'terminal.command') {
-        typeLabel = '\u26A1 터미널';
-        detail = d.command || '';
-      } else if (t === 'file.write' || t === 'file.create') {
-        typeLabel = '\u270F\uFE0F 파일 수정';
-        detail = d.filePath || d.fileName || '';
-      } else if (t === 'file.read') {
-        typeLabel = '\u{1F4C4} 파일 읽기';
-        detail = d.filePath || d.fileName || '';
-      } else if (t === 'git.commit') {
-        typeLabel = '\u{1F4E6} Git 커밋';
-        detail = d.message || '';
-      } else if (t.startsWith('vscode.')) {
-        typeLabel = '\u{1F4BB} VS Code';
-        detail = d.fileName || d.filePath || t.replace('vscode.', '');
-      } else {
-        typeLabel = cfg.icon ? `${cfg.icon} ${e.label || t}` : (e.label || t);
-        detail = d.contentPreview || d.content || d.command || '';
-      }
-
-      // detail이 비어있으면 extractIntent fallback 또는 label 사용
-      if (!detail) {
-        detail = (typeof extractIntent === 'function' ? extractIntent(e) : '') || e.label || '';
-        // extractIntent가 typeLabel과 같으면 중복 방지
-        if (detail === typeLabel || detail === t) detail = '';
-      }
-      // 상세 내용이 너무 길면 120자로 자르기 (하지만 충분히 보여줌)
-      if (detail.length > 120) detail = detail.slice(0, 117) + '…';
-
-      html += `<div class="drill-tl-item" onclick="${filePath ? `drillToFileDetail('${fileName.replace(/'/g, "\\'")}','${filePath.replace(/'/g, "\\'")}')` : ''}" style="display:flex;align-items:flex-start;gap:8px;padding:8px 6px;border-radius:8px;cursor:${filePath ? 'pointer' : 'default'};transition:background .12s;border-left:3px solid ${hex}" onmouseenter="this.style.background='rgba(0,0,0,0.03)'" onmouseleave="this.style.background='transparent'">
-        <span style="font-size:12px;flex-shrink:0;margin-top:1px">${cfg.icon || '·'}</span>
-        <div style="flex:1;min-width:0">
-          <div style="font-size:11px;color:#6b7280;font-weight:500;margin-bottom:2px">${escHtml(typeLabel)}</div>
-          ${detail ? `<div style="font-size:12px;color:#1a1a2e;line-height:1.4;word-break:break-all;white-space:pre-wrap;max-height:60px;overflow:hidden" title="${escHtml(detail)}">${escHtml(detail)}</div>` : ''}
-          ${fileName && !detail.includes(fileName) ? `<div style="font-size:10px;color:#9ca3af;margin-top:2px">\u{1F4C4} ${fileName}</div>` : ''}
-        </div>
-        <div style="font-size:10px;color:#9ca3af;flex-shrink:0;margin-top:2px">${ts}</div>
-      </div>`;
-    });
-  });
-
-  if (events.length === 0) {
+  if (workHtml) {
+    html += `<div style="font-size:11px;color:#cdd9e5;font-weight:600;margin-bottom:4px">📋 작업 흐름</div>`;
+    html += workHtml;
+  } else if (events.length === 0) {
     html += '<div style="padding:20px;text-align:center;color:#9ca3af;font-size:12px">이벤트 없음</div>';
+  } else {
+    html += '<div style="padding:20px;text-align:center;color:#9ca3af;font-size:12px">사용자 지시 없음</div>';
   }
 
   html += '</div>';

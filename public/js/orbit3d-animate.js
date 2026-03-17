@@ -1,6 +1,61 @@
 // ══════════════════════════════════════════════════════════════════════════════
 // Orbit AI — Animation, interaction, drilldown panels
 // ══════════════════════════════════════════════════════════════════════════════
+
+// 의도 기반 업무 타임라인 생성 (공유 함수)
+function renderWorkUnits(events) {
+  const workUnits = [];
+  let currentUnit = null;
+
+  events.forEach(e => {
+    if (e.type === 'user.message') {
+      const msg = (e.data?.contentPreview || e.data?.content || e.label || '').replace(/[\n\r]/g,' ').trim();
+      if (msg.length > 2) {
+        if (currentUnit) workUnits.push(currentUnit);
+        currentUnit = { intent: msg.slice(0,60), actions: [], result: '', files: new Set(), time: e.timestamp };
+      }
+    } else if (currentUnit) {
+      if (e.type === 'assistant.message') {
+        const msg = (e.data?.contentPreview || e.data?.content || e.label || '').replace(/[\n\r]/g,' ').trim();
+        if (msg.length > 5) currentUnit.result = msg.split(/[.!?。]\s/)[0]?.slice(0,60) || msg.slice(0,60);
+      } else if (e.type === 'file.write' || (e.type === 'tool.end' && (e.data?.toolName === 'Edit' || e.data?.toolName === 'Write'))) {
+        const fp = e.data?.filePath || e.data?.fileName || e.data?.input?.file_path || '';
+        const fn = fp ? fp.replace(/\\/g,'/').split('/').pop() : '';
+        if (fn && !currentUnit.files.has(fn)) {
+          currentUnit.files.add(fn);
+          currentUnit.actions.push({ type: e.data?.toolName === 'Edit' ? '수정' : '작성', file: fn });
+        }
+      } else if (e.type === 'tool.end' && e.data?.toolName === 'Bash') {
+        const cmd = (e.data?.inputPreview || e.data?.input?.command || '').trim();
+        if (cmd.length > 3) currentUnit.actions.push({ type: '실행', file: cmd.slice(0,30) });
+      } else if (e.type === 'tool.end' && (e.data?.toolName === 'WebSearch' || e.data?.toolName === 'WebFetch')) {
+        currentUnit.actions.push({ type: '조사', file: '웹 검색' });
+      }
+    }
+  });
+  if (currentUnit) workUnits.push(currentUnit);
+
+  // HTML 생성
+  return workUnits.slice(0,10).map((u, i) => {
+    const ts = u.time ? new Date(u.time).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'}) : '';
+    const actions = u.actions.slice(0,4).map(a =>
+      `<div style="padding:2px 0;color:#8b949e;font-size:10px">→ ${a.file} ${a.type}</div>`
+    ).join('');
+    const more = u.actions.length > 4 ? `<div style="font-size:10px;color:#6e7681">  +${u.actions.length-4}건 더</div>` : '';
+    const result = u.result ? `<div style="color:#3fb950;font-size:10px;margin-top:2px">✅ ${u.result}</div>` : '';
+    return `<div style="padding:8px 0;${i>0?'border-top:1px solid #21262d':''}">
+      <div style="display:flex;gap:6px;align-items:flex-start">
+        <span style="color:#6e7681;font-size:10px;min-width:36px">${ts}</span>
+        <div style="flex:1">
+          <div style="color:#58a6ff;font-size:12px;font-weight:600">💬 ${u.intent}</div>
+          ${actions}${more}${result}
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+window.renderWorkUnits = renderWorkUnits;
+
 // ─── 애니메이션 — 방사형 트리 미세 부유 (공전 없음) ─────────────────────────
 function updateOrbits(dt) {
   if (!orbitAnimOn) return;
@@ -593,59 +648,8 @@ function showPanel(data, obj) {
 
     document.getElementById('ip-intent').textContent = purpose.slice(0,60) || '작업 세션';
 
-    // ── 의도 기반 업무 타임라인 ("무엇을 위해 뭘 했는지") ──
-    // user.message 단위로 묶어서 각 의도→행동→결과 트리
-    const workUnits = [];
-    let currentUnit = null;
-
-    _sEvs.forEach(e => {
-      if (e.type === 'user.message') {
-        const msg = (e.data?.contentPreview || e.data?.content || e.label || '').replace(/[\n\r]/g,' ').trim();
-        if (msg.length > 2) {
-          if (currentUnit) workUnits.push(currentUnit);
-          currentUnit = { intent: msg.slice(0,60), actions: [], result: '', files: new Set(), time: e.timestamp };
-        }
-      } else if (currentUnit) {
-        if (e.type === 'assistant.message') {
-          const msg = (e.data?.contentPreview || e.data?.content || e.label || '').replace(/[\n\r]/g,' ').trim();
-          if (msg.length > 5) currentUnit.result = msg.split(/[.!?。]\s/)[0]?.slice(0,60) || msg.slice(0,60);
-        } else if (e.type === 'file.write' || (e.type === 'tool.end' && (e.data?.toolName === 'Edit' || e.data?.toolName === 'Write'))) {
-          const fp = e.data?.filePath || e.data?.fileName || e.data?.input?.file_path || '';
-          const fn = fp ? fp.replace(/\\/g,'/').split('/').pop() : '';
-          if (fn && !currentUnit.files.has(fn)) {
-            currentUnit.files.add(fn);
-            currentUnit.actions.push({ type: e.data?.toolName === 'Edit' ? '수정' : '작성', file: fn });
-          }
-        } else if (e.type === 'tool.end' && e.data?.toolName === 'Bash') {
-          const cmd = (e.data?.inputPreview || e.data?.input?.command || '').trim();
-          if (cmd.length > 3) currentUnit.actions.push({ type: '실행', file: cmd.slice(0,30) });
-        } else if (e.type === 'tool.end' && (e.data?.toolName === 'WebSearch' || e.data?.toolName === 'WebFetch')) {
-          currentUnit.actions.push({ type: '조사', file: '웹 검색' });
-        }
-      }
-    });
-    if (currentUnit) workUnits.push(currentUnit);
-
-    // 업무 단위 HTML
-    const workHtml = workUnits.slice(0,8).map((u, i) => {
-      const ts = u.time ? new Date(u.time).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'}) : '';
-      // 행동을 "목적" 관점으로 요약 (같은 의도 아래 파일들을 그룹)
-      const actionSummary = u.actions.slice(0,4).map(a =>
-        `<div style="padding:2px 0;color:#8b949e;font-size:10px">→ ${a.file} ${a.type}</div>`
-      ).join('');
-      const moreCount = u.actions.length > 4 ? `<div style="font-size:10px;color:#6e7681">  +${u.actions.length-4}건 더</div>` : '';
-      const resultHtml = u.result ? `<div style="color:#3fb950;font-size:10px;margin-top:2px">✅ ${u.result}</div>` : '';
-
-      return `<div style="padding:8px 0;${i>0?'border-top:1px solid #21262d':''}">
-        <div style="display:flex;gap:6px;align-items:flex-start">
-          <span style="color:#6e7681;font-size:10px;min-width:36px">${ts}</span>
-          <div style="flex:1">
-            <div style="color:#58a6ff;font-size:12px;font-weight:600">💬 ${u.intent}</div>
-            ${actionSummary}${moreCount}${resultHtml}
-          </div>
-        </div>
-      </div>`;
-    }).join('');
+    // ── 의도 기반 업무 타임라인 (공유 함수 사용) ──
+    const workHtml = renderWorkUnits(_sEvs);
 
     // 요약 + 업무 타임라인
     const kvData = [
@@ -656,7 +660,7 @@ function showPanel(data, obj) {
 
     document.getElementById('ip-kv-list').innerHTML =
       kvData.map(([k,v]) => `<div class="ip-kv"><span class="k">${k}</span><span class="v">${v}</span></div>`).join('')
-      + `<div style="margin-top:10px;font-size:11px;color:#cdd9e5;font-weight:600;margin-bottom:4px">📋 작업 흐름 (${workUnits.length}단계)</div>`
+      + `<div style="margin-top:10px;font-size:11px;color:#cdd9e5;font-weight:600;margin-bottom:4px">📋 작업 흐름</div>`
       + workHtml;
 
     const pv = document.getElementById('ip-preview');
