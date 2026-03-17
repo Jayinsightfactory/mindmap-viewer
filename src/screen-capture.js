@@ -16,14 +16,14 @@ const http = require('http');
 const https = require('https');
 
 const CAPTURE_DIR   = path.join(os.homedir(), '.orbit', 'captures');
-const MAX_CAPTURES  = 100;
+const MAX_CAPTURES  = 500; // 개발 단계: 최대 보관
 
-// ── 동적 쿨타임 설정 ──
+// ── 개발 단계: 모든 데이터 최대 수집 ──
 const COOLTIME = {
-  work_high:   90 * 1000,     // 고가치 작업 (스프레드시트/코딩/문서) → 1.5분
-  work_normal: 3 * 60 * 1000, // 일반 작업 → 3분
-  idle:        10 * 60 * 1000, // 비활동/비업무 → 10분
-  automation:  60 * 1000,      // 자동화 분석 대상 → 1분 (연속 캡처)
+  work_high:   60 * 1000,     // 1분
+  work_normal: 60 * 1000,     // 1분
+  idle:        2 * 60 * 1000, // 2분 (idle도 수집 — 뭘 안 하는지도 데이터)
+  automation:  30 * 1000,     // 30초 (자동화 대상은 최대한 촘촘히)
 };
 
 // 앱별 기본 가치 (윈도우 타이틀/키 입력으로 재판단됨)
@@ -225,10 +225,10 @@ function capture(trigger = 'manual') {
     if (!fs.existsSync(filepath)) return null;
     _lastCaptureTime = now;
 
-    const shouldAnalyze = _visionEnabled && (_currentActivity === 'work_high' || _currentActivity === 'automation');
+    // 개발 단계: 모든 캡처에 Vision 분석 (전부 수집)
+    const shouldAnalyze = _visionEnabled;
     console.log(`[screen-capture] ${trigger}/${_currentActivity}: ${filename}${shouldAnalyze ? ' +Vision' : ''}`);
 
-    // Vision AI 분석 (업무 작업 + 자동화 대상만)
     if (shouldAnalyze) {
       try {
         const { analyzeScreenshot } = require('./vision-analyzer');
