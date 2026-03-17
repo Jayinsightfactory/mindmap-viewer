@@ -402,6 +402,31 @@ function drawCompactProjectView() {
     // 프로젝트 레벨: purpose 제외 (projTitle과 중복됨), 기술스택만 표시
     _drawSphereLabel(ctx, sc.x, sc.y, nodeR, projTitle, projTech || '', color, dimmed, projWhat, '', null);
 
+    // 호버 시 구체 하단에 숨기기/수정 버튼
+    if (isHover && nodeR > 25) {
+      const btnY = sc.y + nodeR + 8;
+      const btnSize = 14;
+      const btnGap = 4;
+      // 수정 버튼 (✎)
+      ctx.save();
+      ctx.fillStyle = 'rgba(31,111,235,0.85)';
+      roundRect(ctx, sc.x - btnSize - btnGap/2, btnY, btnSize, btnSize, 4); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.font = `${btnSize-3}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('✎', sc.x - btnGap/2, btnY + btnSize/2);
+      ctx.restore();
+      registerHitArea({ cx: sc.x - btnGap/2, cy: btnY + btnSize/2, r: btnSize/2 + 2,
+        obj: null, data: { type: 'editNode', projKey: proj.name, projLabel: projTitle } });
+      // 숨기기 버튼 (🙈)
+      ctx.save();
+      ctx.fillStyle = 'rgba(248,81,73,0.85)';
+      roundRect(ctx, sc.x + btnGap/2, btnY, btnSize, btnSize, 4); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.font = `${btnSize-3}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('✕', sc.x + btnGap/2 + btnSize/2, btnY + btnSize/2);
+      ctx.restore();
+      registerHitArea({ cx: sc.x + btnGap/2 + btnSize/2, cy: btnY + btnSize/2, r: btnSize/2 + 2,
+        obj: null, data: { type: 'hideNode', projKey: proj.name, projLabel: projTitle } });
+    }
+
     ctx.globalAlpha = 1;
 
     // ME → 프로젝트 연결선

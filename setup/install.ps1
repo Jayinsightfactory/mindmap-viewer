@@ -43,10 +43,13 @@ if (-not (Test-Path "$DIR\chrome-extension\manifest.json")) {
   try {
     & git checkout -- chrome-extension/ 2>$null
     if (-not (Test-Path "$DIR\chrome-extension\manifest.json")) {
-      # git이 안 되면 직접 다운로드
-      New-Item -ItemType Directory -Force -Path "$DIR\chrome-extension" | Out-Null
-      @('manifest.json','background.js','content-ai.js','popup.html') | ForEach-Object {
-        try { Invoke-WebRequest -Uri "$REMOTE/chrome-extension/$_" -OutFile "$DIR\chrome-extension\$_" -ErrorAction Stop } catch {}
+      # git이 안 되면 직접 다운로드 (모든 파일 + icons)
+      New-Item -ItemType Directory -Force -Path "$DIR\chrome-extension\icons" | Out-Null
+      @('manifest.json','background.js','content-ai.js','popup.html','STORE_LISTING.md') | ForEach-Object {
+        try { Invoke-WebRequest -Uri "$REMOTE/chrome-extension/$_" -OutFile "$DIR\chrome-extension\$_" -ErrorAction SilentlyContinue } catch {}
+      }
+      @('icon.svg','icon16.png','icon48.png','icon128.png') | ForEach-Object {
+        try { Invoke-WebRequest -Uri "$REMOTE/chrome-extension/icons/$_" -OutFile "$DIR\chrome-extension\icons\$_" -ErrorAction SilentlyContinue } catch {}
       }
     }
     Write-Host "${GREEN}  chrome-extension 다운로드 완료${NC}"
