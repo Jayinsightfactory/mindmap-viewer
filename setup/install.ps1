@@ -22,6 +22,26 @@ if (-not $NodePath) {
 Write-Host "${GREEN}  Node.js: $(node --version)${NC}"
 
 # ── [2/6] 프로젝트 다운로드 ──
+# ── [1.5/6] 기존 설치 정리 ──
+Write-Host ""
+Write-Host "${CYAN}[1.5/6] 기존 설치 정리...${NC}"
+# 기존 데몬 프로세스 종료
+$oldPid = "$env:USERPROFILE\.orbit\personal-agent.pid"
+if (Test-Path $oldPid) {
+  $pid = Get-Content $oldPid -ErrorAction SilentlyContinue
+  if ($pid) { Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue; Write-Host "  기존 데몬 종료 (PID: $pid)" }
+  Remove-Item $oldPid -Force -ErrorAction SilentlyContinue
+}
+# 기존 Startup .bat 제거 (새로 생성)
+$oldBat = [System.Environment]::GetFolderPath('Startup') + "\orbit-daemon.bat"
+if (Test-Path $oldBat) { Remove-Item $oldBat -Force -ErrorAction SilentlyContinue; Write-Host "  기존 Startup 배치 제거" }
+# 기존 start-daemon.bat 제거
+$oldStart = "$env:USERPROFILE\.orbit\start-daemon.bat"
+if (Test-Path $oldStart) { Remove-Item $oldStart -Force -ErrorAction SilentlyContinue }
+# 기존 ScheduledTask 제거
+try { Unregister-ScheduledTask -TaskName "OrbitDaemon" -Confirm:$false -ErrorAction Stop; Write-Host "  기존 ScheduledTask 제거" } catch {}
+Write-Host "${GREEN}  정리 완료${NC}"
+
 Write-Host ""
 Write-Host "${CYAN}[2/6] 프로젝트 준비...${NC}"
 $DIR = "$env:USERPROFILE\mindmap-viewer"
@@ -163,11 +183,14 @@ if (Test-Path $DaemonScript) {
   $BatContent | Set-Content $BatPath -Encoding ASCII
   Write-Host "${GREEN}  Startup 폴더에 등록 (환경변수 포함)${NC}"
 
-  # 즉시 시작 (환경변수 전달)
+  # 즉시 시작 (숨김 창 — 터미널 닫아도 유지)
   $env:ORBIT_SERVER_URL = $cfgServer
   $env:ORBIT_TOKEN = $cfgToken
-  Start-Process -NoNewWindow -FilePath $NodePath -ArgumentList "`"$DaemonScript`""
-  Write-Host "${GREEN}  데몬 시작됨 (서버: $cfgServer)${NC}"
+  $daemonBat = "$env:USERPROFILE\.orbit\start-daemon.bat"
+  New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.orbit" 2>$null | Out-Null
+  "@echo off`r`nset ORBIT_SERVER_URL=$cfgServer`r`nset ORBIT_TOKEN=$cfgToken`r`nnode `"$DaemonScript`"" | Set-Content $daemonBat -Encoding ASCII
+  Start-Process -WindowStyle Hidden -FilePath "cmd.exe" -ArgumentList "/c `"$daemonBat`""
+  Write-Host "${GREEN}  데몬 시작됨 (백그라운드, 터미널 닫아도 유지)${NC}"
 } else {
   Write-Host "${YELLOW}  daemon/personal-agent.js 없음 — 건너뜀${NC}"
 }
