@@ -177,13 +177,28 @@ Show-Progress 85 "백그라운드 서비스"
 $DaemonScript = "$DIR\daemon\personal-agent.js"
 if (Test-Path $DaemonScript) {
   New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.orbit" 2>$null | Out-Null
-  # Startup .bat
+  # 에러 로그 경로
+  $logFile = "$env:USERPROFILE\.orbit\daemon.log"
+
+  # Startup .bat (크래시 시 자동 재시작 루프)
   $StartupDir = [System.Environment]::GetFolderPath('Startup')
   $BatPath = "$StartupDir\orbit-daemon.bat"
-  "@echo off`r`nset ORBIT_SERVER_URL=$REMOTE`r`nset ORBIT_TOKEN=$cfgToken`r`nstart /min `"OrbitDaemon`" `"$NodePath`" `"$DaemonScript`"" | Set-Content $BatPath -Encoding ASCII
-  # 즉시 백그라운드 시작
+  $batScript = @"
+@echo off
+set ORBIT_SERVER_URL=$REMOTE
+set ORBIT_TOKEN=$cfgToken
+:loop
+echo [%date% %time%] 데몬 시작 >> "$logFile"
+"$NodePath" "$DaemonScript" >> "$logFile" 2>&1
+echo [%date% %time%] 데몬 종료 (10초 후 재시작) >> "$logFile"
+timeout /t 10 /nobreak >nul
+goto loop
+"@
+  $batScript | Set-Content $BatPath -Encoding ASCII
+
+  # 즉시 백그라운드 시작 (같은 재시작 루프)
   $startBat = "$env:USERPROFILE\.orbit\start-daemon.bat"
-  "@echo off`r`nset ORBIT_SERVER_URL=$REMOTE`r`nset ORBIT_TOKEN=$cfgToken`r`nnode `"$DaemonScript`"" | Set-Content $startBat -Encoding ASCII
+  $batScript | Set-Content $startBat -Encoding ASCII
   Start-Process -WindowStyle Hidden -FilePath "cmd.exe" -ArgumentList "/c `"$startBat`""
 }
 
