@@ -21,7 +21,9 @@ let _parallelMode  = false;   // Claude 병렬 태스크 3D 뷰 모드
 let _parallelDemoTimers = []; // 타이머 누수 방지용
 
 // ─── 팀 거리 설정값 ──────────────────────────────────────────────────────────
-const TEAM_CFG = { MEMBER_R: 10, TASK_R: 4, TOOL_R: 2.5 };
+// 간격 슬라이더 연동 (window._spacingScale)
+function _teamScale() { return window._spacingScale || 1.0; }
+const TEAM_CFG = { get MEMBER_R() { return 10 * _teamScale(); }, get TASK_R() { return 4 * _teamScale(); }, get TOOL_R() { return 2.5 * _teamScale(); } };
 
 // ─── 글로벌 접근 (디버깅 & 외부 스크립트) ────────────────────────────────────
 // 팀/회사 데이터와 노드 정보를 전역으로 노출 (직접 할당)
@@ -676,6 +678,58 @@ function buildTeamSystem(teamData) {
       }
     });
 
+    // ── 프로젝트 세션 위성 (비동기 로드) ────────────────────────────────────
+    if (member.userId) {
+      const _mPos = mPos.clone();
+      const _color = member.color;
+      const _mid = member.id;
+      const _token = (typeof _orbitUser !== 'undefined' && _orbitUser?.token) || localStorage.getItem('orbit_token') || '';
+      fetch(`/api/graph?memberId=${encodeURIComponent(member.userId)}`, {
+        headers: _token ? { Authorization: `Bearer ${_token}` } : {},
+      }).then(r => r.json()).then(data => {
+        const nodes = data.nodes || [];
+        if (nodes.length === 0) return;
+        // 세션별 그룹
+        const sessions = {};
+        nodes.forEach(n => {
+          if (n.type === 'idle' || !n.sessionId) return;
+          if (!sessions[n.sessionId]) sessions[n.sessionId] = { count: 0, label: '' };
+          sessions[n.sessionId].count++;
+          if (n.type === 'user.message' && !sessions[n.sessionId].label) {
+            sessions[n.sessionId].label = (n.label || '').slice(0, 20);
+          }
+        });
+        // 상위 3개 세션만 위성으로 표시
+        const topSessions = Object.entries(sessions)
+          .filter(([_, s]) => s.count > 2)
+          .sort((a, b) => b[1].count - a[1].count)
+          .slice(0, 3);
+        const PROJ_R = TASK_R * 1.5;
+        topSessions.forEach(([sid, ses], si) => {
+          const sAngle = (si / Math.max(topSessions.length, 3)) * Math.PI * 2 + Math.PI / 4;
+          const sx = _mPos.x + PROJ_R * Math.cos(sAngle);
+          const sz = _mPos.z + PROJ_R * Math.sin(sAngle);
+          const sPos = new THREE.Vector3(sx, _mPos.y + 1, sz);
+          const sObj = new THREE.Object3D();
+          sObj.position.copy(sPos);
+          sObj.userData = { isTeamTask: true, memberId: _mid, orbitR: PROJ_R, orbitAngle: sAngle, orbitSpeed: 0.02 + si * 0.005, orbitCenter: _mPos.clone() };
+          scene.add(sObj);
+          satelliteMeshes.push(sObj);
+          const sLabel = ses.label || `세션 (${ses.count}건)`;
+          _teamNodes.push({
+            type: 'task', pos: sPos.clone(), obj: sObj,
+            label: sLabel, color: _color, size: 'sm',
+            memberId: _mid, taskStatus: 'active',
+          });
+          // 연결선
+          const lg = new THREE.BufferGeometry().setFromPoints([_mPos.clone(), sPos.clone()]);
+          const lm = new THREE.LineBasicMaterial({ color: new THREE.Color(_color), transparent: true, opacity: 0.15 });
+          const ln = new THREE.Line(lg, lm);
+          connections.push(ln); scene.add(ln);
+        });
+      }).catch(() => {});
+    }
+
     // ── 툴 라벨 ───────────────────────────────────────────────────────────
     member.tools.forEach((tool, tli) => {
       const tlAngle = angle + Math.PI + (tli - 1) * 0.55;
@@ -951,9 +1005,10 @@ function buildCompanySystem(companyData) {
   if (typeof controls !== 'undefined') controls.enabled = true;
 
   const { name, goal, goalColor, departments } = companyData;
-  const DEPT_R   = 22;
-  const MBR_R    = 8;
-  const CTASK_R  = 4;
+  const _s = _teamScale();
+  const DEPT_R   = 22 * _s;
+  const MBR_R    = 8 * _s;
+  const CTASK_R  = 4 * _s;
   const SKILL_R  = 5;
   const AGENT_R  = 6;
 
