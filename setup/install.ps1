@@ -29,10 +29,10 @@ $REPO = "https://github.com/dlaww-wq/mindmap-viewer.git"
 
 if (Test-Path "$DIR\server.js") {
   Set-Location $DIR
-  & git pull --quiet 2>$null
+  & cmd /c "git pull --quiet" 2>$null
   Write-Host "${GREEN}  기존 프로젝트 업데이트 완료${NC}"
 } else {
-  & git clone $REPO $DIR 2>$null
+  & cmd /c "git clone $REPO $DIR" 2>$null
   Set-Location $DIR
   Write-Host "${GREEN}  프로젝트 다운로드 완료${NC}"
 }
@@ -41,7 +41,7 @@ if (Test-Path "$DIR\server.js") {
 if (-not (Test-Path "$DIR\chrome-extension\manifest.json")) {
   Write-Host "${YELLOW}  chrome-extension 폴더 없음 — 다운로드 중...${NC}"
   try {
-    & git checkout -- chrome-extension/ 2>$null
+    & cmd /c "git checkout -- chrome-extension/" 2>$null
     if (-not (Test-Path "$DIR\chrome-extension\manifest.json")) {
       # git이 안 되면 직접 다운로드 (모든 파일 + icons)
       New-Item -ItemType Directory -Force -Path "$DIR\chrome-extension\icons" | Out-Null
@@ -60,7 +60,7 @@ if (-not (Test-Path "$DIR\chrome-extension\manifest.json")) {
 
 if (-not (Test-Path "node_modules")) {
   Write-Host "  npm install 중..."
-  & npm install --silent 2>$null
+  & cmd /c "npm install --silent" 2>$null
 }
 New-Item -ItemType Directory -Force -Path data, snapshots 2>$null | Out-Null
 Write-Host "${GREEN}  프로젝트 준비 완료: $DIR${NC}"
