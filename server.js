@@ -2045,22 +2045,34 @@ async function startServer() {
   companyCrawler.start({ db: dbModule.getDb(), broadcastAll });
 
   // Google Drive 사용자 자동 백업 (2시간마다)
-  setInterval(async () => {
+  // 2시간마다 Drive 백업 + Sheets 학습 데이터 내보내기 (자동)
+  async function _autoGdriveSync() {
     try {
       const users = getGoogleOAuthUsers();
       for (const u of users) {
         try {
           const token = await getValidGoogleToken(u.id);
-          if (token) {
-            await gdriveUserBackup.backupUserDataToDrive(u.id, token,
-              { getAllEvents, getEventsByUser, getSessionsByUser, getSessions, insertEvent });
+          if (!token) continue;
+          // JSON 백업
+          await gdriveUserBackup.backupUserDataToDrive(u.id, token,
+            { getAllEvents, getEventsByUser, getSessionsByUser, getSessions, insertEvent });
+          // Sheets 학습 데이터 자동 내보내기
+          try {
+            await gdriveUserBackup.exportLearningSheet(u.id, token,
+              { getAllEvents, getEventsByUser, getSessionsByUser, getSessions });
+            console.log(`[gdrive-auto] ${u.email} Sheets 내보내기 완료`);
+          } catch (e) {
+            console.warn(`[gdrive-auto] ${u.email} Sheets 실패:`, e.message);
           }
         } catch (e) {
           console.warn(`[gdrive-auto] ${u.email} 백업 실패:`, e.message);
         }
       }
     } catch {}
-  }, 2 * 60 * 60 * 1000); // 2시간
+  }
+  // 서버 시작 5분 후 첫 실행 + 이후 1시간마다
+  setTimeout(_autoGdriveSync, 5 * 60 * 1000);
+  setInterval(_autoGdriveSync, 1 * 60 * 60 * 1000);
 
   console.log(`   회사 진단: http://localhost:${PORT}/api/company`);
   console.log(`   컨설턴트: http://localhost:${PORT}/consultant.html`);
