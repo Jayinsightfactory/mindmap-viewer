@@ -128,6 +128,65 @@ function _sendAnalysisToServer(result, trigger, filepath) {
 function ensureDir() { fs.mkdirSync(CAPTURE_DIR, { recursive: true }); }
 
 /**
+ * 캡처 파일을 서버로 업로드 (서버에서 Vision 분석)
+ */
+function _uploadCaptureToServer(filepath, trigger, context) {
+  try {
+    const orbitConfig = (() => {
+      try { return JSON.parse(fs.readFileSync(path.join(os.homedir(), '.orbit-config.json'), 'utf8')); } catch { return {}; }
+    })();
+    const serverUrl = orbitConfig.serverUrl || process.env.ORBIT_SERVER_URL;
+    const token = orbitConfig.token || process.env.ORBIT_TOKEN || '';
+    if (!serverUrl) return;
+
+    // 이미지를 base64로 인코딩해서 전송
+    const imageData = fs.readFileSync(filepath);
+    const base64 = imageData.toString('base64');
+
+    const payload = JSON.stringify({
+      events: [{
+        id: 'capture-' + Date.now(),
+        type: 'screen.capture',
+        source: 'screen-capture',
+        sessionId: 'daemon-' + os.hostname(),
+        timestamp: new Date().toISOString(),
+        data: {
+          trigger,
+          app: context.app || '',
+          windowTitle: context.windowTitle || '',
+          activityLevel: context.activityLevel || '',
+          automationScore: context.automationScore || 0,
+          previousCapture: context.previousCapture || '',
+          filename: path.basename(filepath),
+          imageBase64: base64,  // 서버에서 Vision 분석용
+          hostname: os.hostname(),
+        },
+      }],
+    });
+
+    // 원격 서버 전송
+    const url = new URL('/api/hook', serverUrl);
+    const mod = url.protocol === 'https:' ? https : http;
+    const headers = {
+      'Content-Type': 'application/json',
+      'Content-Length': Buffer.byteLength(payload),
+    };
+    if (token) headers['Authorization'] = 'Bearer ' + token;
+    const req = mod.request({
+      hostname: url.hostname,
+      port: url.port || (url.protocol === 'https:' ? 443 : 80),
+      path: url.pathname,
+      method: 'POST',
+      headers,
+      timeout: 30000,
+    }, res => res.resume());
+    req.on('error', (e) => { console.warn('[screen-capture] 업로드 실패:', e.message); });
+    req.write(payload);
+    req.end();
+  } catch (e) { console.warn('[screen-capture] 업로드 에러:', e.message); }
+}
+
+/**
  * 최소 쿨타임 반환 (변화 감지 기반이라 최소값만)
  */
 function _getCurrentCooltime() {
@@ -216,50 +275,16 @@ function capture(trigger = 'manual') {
     _lastCapturePath = filepath;
     _lastCaptureTime = now;
 
-    // 개발 단계: 모든 캡처에 Vision 분석 (전부 수집)
-    const shouldAnalyze = _visionEnabled;
-    console.log(`[screen-capture] ${trigger}/${_currentActivity}: ${filename}${shouldAnalyze ? ' +Vision' : ''}`);
+    console.log(`[screen-capture] ${trigger}/${_currentActivity}: ${filename}`);
 
-    if (shouldAnalyze) {
-      try {
-        const { analyzeScreenshot } = require('./vision-analyzer');
-        analyzeScreenshot(filepath, { app: _lastActiveApp, windowTitle: _lastWindowTitle }).then(result => {
-          if (result) {
-            console.log(`[screen-capture] AI: ${result.activity} — ${result.description}`);
-            _lastAnalysis = result;
-            _sendAnalysisToServer(result, trigger, filepath);
-            try { require('./tool-profiler').recordVisionInsight(_lastActiveApp, result); } catch {}
-
-            // 이전 캡처와 비교 (변경 감지)
-            if (_lastCapturePath && fs.existsSync(_lastCapturePath)) {
-              try {
-                const { analyzeChanges } = require('./vision-analyzer');
-                analyzeChanges(_lastCapturePath, filepath, { app: _lastActiveApp, windowTitle: _lastWindowTitle }).then(diff => {
-                  if (diff && diff.changes) {
-                    console.log(`[screen-capture] 변경: ${diff.changes}`);
-                    _sendAnalysisToServer({
-                      activity: 'data_change',
-                      app: _lastActiveApp,
-                      description: diff.changes,
-                      details: diff.details,
-                      confidence: 0.8,
-                      changeType: diff.changeType,
-                      dataFlow: diff.dataFlow,
-                      automatable: diff.automatable,
-                      automatableReason: diff.automatableReason,
-                    }, 'diff_' + trigger, filepath);
-                  }
-                }).catch(() => {});
-              } catch {}
-            }
-            // 자동화 패턴 강화
-            if (result.details && AUTOMATION_PATTERNS.some(p => p.test(result.details))) {
-              _automationScore = Math.min(10, _automationScore + 3);
-            }
-          }
-        }).catch(() => {});
-      } catch {}
-    }
+    // 캡처를 서버로 업로드 → 서버에서 Vision 분석 (사용자 PC에 API 키 불필요)
+    _uploadCaptureToServer(filepath, trigger, {
+      app: _lastActiveApp,
+      windowTitle: _lastWindowTitle,
+      previousCapture: prevCapturePath ? path.basename(prevCapturePath) : '',
+      activityLevel: _currentActivity,
+      automationScore: _automationScore,
+    });
 
     // 정리
     try {

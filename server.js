@@ -899,6 +899,62 @@ app.post('/api/hook', async (req, res) => {
       });
     }
 
+    // ── 서버 사이드 Vision 분석 (screen.capture 이벤트) ──────────────────
+    for (const ev of events) {
+      if (ev.type === 'screen.capture' && ev.data?.imageBase64) {
+        // 비동기 Vision 분석 (hook 응답 차단 안 함)
+        (async () => {
+          try {
+            const apiKey = process.env.ANTHROPIC_API_KEY;
+            if (!apiKey) return;
+            const https = require('https');
+            const body = JSON.stringify({
+              model: 'claude-haiku-4-5-20251001',
+              max_tokens: 300,
+              messages: [{ role: 'user', content: [
+                { type: 'image', source: { type: 'base64', media_type: 'image/png', data: ev.data.imageBase64 } },
+                { type: 'text', text: `스크린샷 분석. 앱:${ev.data.app||'?'} 윈도우:${ev.data.windowTitle||'?'}
+JSON: {"activity":"작업유형","app":"앱","description":"뭘 하고 있는지 1줄","details":"상세 2줄","changeType":"변경유형","automatable":true/false}` }
+              ]}]
+            });
+            const result = await new Promise((resolve) => {
+              const req = https.request({
+                hostname: 'api.anthropic.com', path: '/v1/messages', method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'Content-Length': Buffer.byteLength(body) },
+              }, res => {
+                let d = ''; res.on('data', c => d += c);
+                res.on('end', () => { try { resolve(JSON.parse(d)); } catch { resolve(null); } });
+              });
+              req.on('error', () => resolve(null));
+              req.setTimeout(30000, () => { req.destroy(); resolve(null); });
+              req.write(body); req.end();
+            });
+            if (result?.content?.[0]?.text) {
+              const text = result.content[0].text;
+              const m = text.match(/\{[\s\S]*\}/);
+              if (m) {
+                const analysis = JSON.parse(m[0]);
+                // 분석 결과를 새 이벤트로 저장
+                const analysisEvent = {
+                  id: 'vision-' + Date.now(),
+                  type: 'screen.analyzed',
+                  source: 'server-vision',
+                  sessionId: ev.sessionId,
+                  userId: ev.userId || hookUserId,
+                  timestamp: new Date().toISOString(),
+                  data: { ...analysis, trigger: ev.data.trigger, hostname: ev.data.hostname, app: ev.data.app, windowTitle: ev.data.windowTitle },
+                };
+                try { await Promise.resolve(insertEvent(analysisEvent)); } catch {}
+                console.log(`[vision] ${ev.data.hostname}: ${analysis.activity} — ${analysis.description}`);
+              }
+            }
+          } catch (e) { console.warn('[vision] 분석 실패:', e.message); }
+        })();
+        // base64 이미지 데이터는 DB에 저장하지 않음 (용량)
+        delete ev.data.imageBase64;
+      }
+    }
+
     // ── 세션 자동 제목 생성 (이벤트 3개 이상 쌓인 세션) ──────────────────
     if (_isPg) {
       const sessionIds = [...new Set(events.map(e => e.sessionId).filter(Boolean))];
