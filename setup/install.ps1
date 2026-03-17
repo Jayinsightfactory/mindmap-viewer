@@ -307,6 +307,13 @@ if ($hasExt) {
   Write-Host "  ✅ Chrome 확장 설치 완료!"
   Write-Host ""
   Write-Host "  Orbit AI 웹을 새로고침합니다..."
-  try { Start-Process "$REMOTE/orbit3d.html" -ErrorAction SilentlyContinue } catch {}
+  # Chrome으로 열기 (없으면 기본 브라우저)
+  try {
+    if ($chromePath -and (Test-Path $chromePath)) {
+      Start-Process $chromePath -ArgumentList "$REMOTE/orbit3d.html" -ErrorAction SilentlyContinue
+    } else {
+      Start-Process "$REMOTE/orbit3d.html" -ErrorAction SilentlyContinue
+    }
+  } catch {}
 }
 Write-Host ""
