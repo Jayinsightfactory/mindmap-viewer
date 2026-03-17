@@ -101,6 +101,30 @@ function getActiveApp() {
   return '';
 }
 
+// 활성 윈도우 타이틀 가져오기 (뭘 하고 있는지 핵심 정보)
+function getActiveWindowTitle() {
+  try {
+    if (process.platform === 'darwin') {
+      const script = `
+        tell application "System Events"
+          set fp to first process where frontmost is true
+          tell fp to get name of front window
+        end tell`;
+      return execSync(`osascript -e '${script}'`, { timeout: 1000 }).toString().trim();
+    }
+    if (process.platform === 'win32') {
+      return execSync(
+        `powershell -NoProfile -Command "(Get-Process | Where-Object {$_.MainWindowHandle -eq [System.Diagnostics.Process]::GetCurrentProcess().MainWindowHandle} | Select-Object -First 1).MainWindowTitle; if(-not $?) { (Get-Process | Where-Object {$_.MainWindowHandle -ne 0 -and $_.Responding} | Sort-Object CPU -Descending | Select-Object -First 1).MainWindowTitle }"`,
+        { timeout: 1500 }
+      ).toString().trim();
+    }
+    if (process.platform === 'linux') {
+      return execSync('xdotool getactivewindow getwindowname 2>/dev/null || echo ""', { timeout: 1000 }).toString().trim();
+    }
+  } catch {}
+  return '';
+}
+
 // ── 비밀번호 앱 확인 ────────────────────────────────────────────────────────
 function isPasswordApp(appName) {
   return PASSWORD_APPS.some(p => appName.includes(p));
@@ -321,18 +345,21 @@ function _flushToLocalBuffer() {
   // 스크린 캡처 트리거: 키 입력 활동 → idle 타이머 리셋
   if (_screenCapture) _screenCapture.onKeyActivity();
 
-  // 활동 기록에 원본 텍스트 참조 추가 (로컬 메모리에만)
+  // 윈도우 타이틀 수집 (뭘 하고 있는지)
+  const windowTitle = getActiveWindowTitle();
+
+  // 활동 기록 (로컬 메모리에만)
   _activityBuffer.push({
     app,
+    windowTitle,
     category: classifyActivityLocal(app),
     timestamp: new Date().toISOString(),
-    // 메트릭만 기록 (원본은 _rawBuffer에서 분석 시 참조)
     keystrokeMetrics: {
       totalKeys: text.length,
       wordCount: text.split(/\s+/).filter(Boolean).length,
     },
     activity_type: 'active',
-    duration_sec: 3,  // flush 주기
+    duration_sec: 3,
   });
 
   // 원본 버퍼는 유지 (5분 분석 주기까지)
@@ -378,6 +405,14 @@ function _runPeriodicAnalysis() {
     }
   }
 
+  // ── 윈도우 타이틀 이력 추출 (최근 활동에서 앱별 대표 타이틀) ──
+  const windowHistory = {};
+  _activityBuffer.forEach(a => {
+    if (a.windowTitle && a.app) {
+      windowHistory[a.app] = a.windowTitle; // 앱별 마지막 윈도우 타이틀
+    }
+  });
+
   // ── 분석 결과 → 로컬 즉시 + 원격 배치 큐 ──
   const payload = JSON.stringify({
     type: 'keyboard.analyzed',
@@ -385,7 +420,12 @@ function _runPeriodicAnalysis() {
       activityType: analyzed.activityType,
       patterns: analyzed.patterns,
       metrics: analyzed.metrics,
-      appContext: analyzed.appContext,
+      appContext: {
+        ...(analyzed.appContext || {}),
+        currentApp: getActiveApp(),
+        currentWindow: getActiveWindowTitle(),
+        windowHistory, // { "chrome": "구글 검색 - Google", "excel": "매출분석.xlsx" }
+      },
       summary: analyzed.summary,
       mouseClicks: _mouseClickCount,
       mouseRegions: { ..._mouseQuadrants },
