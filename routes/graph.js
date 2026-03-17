@@ -15,6 +15,7 @@
  *   GET /api/files           - 파일 접근 통계
  *   GET /api/stats           - 전체 통계
  *   GET /api/activity        - 노드별 활동 점수
+ *   GET /api/patterns        - 작업 루틴 패턴 분석
  *   GET /api/turns           - 전체 이벤트 (레거시)
  *   GET /api/snapshots       - 스냅샷 목록
  *   POST /api/rollback/:id   - 특정 이벤트까지 롤백
@@ -543,6 +544,39 @@ function createRouter(deps) {
     } catch (e) {
       res.json({});
     }
+  });
+
+  // ── 작업 루틴 패턴 분석 ──────────────────────────────────────────────────────
+
+  /**
+   * GET /api/patterns
+   * 사용자의 작업 루틴 패턴을 분석하여 반환합니다.
+   * - 반복 작업 시퀀스, 시간대별 패턴, 도구 사용 빈도, 개선 제안
+   */
+  router.get('/patterns', async (req, res) => {
+    const user = getUserFromReq(req);
+    if (!user) return res.json({ patterns: null });
+
+    const { analyzePatterns, generateReport } = require('../src/routine-learner');
+
+    // Get all user events
+    const events = user.id !== 'local' && getEventsByUser
+      ? await Promise.resolve(getEventsByUser(user.id))
+      : await Promise.resolve(getAllEvents());
+
+    // Group by session
+    const sessions = {};
+    events.forEach(e => {
+      const sid = e.sessionId || 'default';
+      if (!sessions[sid]) sessions[sid] = [];
+      sessions[sid].push(e);
+    });
+
+    const sessionData = Object.entries(sessions).map(([id, evts]) => ({ sessionId: id, events: evts }));
+    const patterns = analyzePatterns(sessionData);
+    const report = generateReport(patterns);
+
+    res.json({ patterns, report });
   });
 
   // ── 스냅샷 / 롤백 / 초기화 ─────────────────────────────────────────────────

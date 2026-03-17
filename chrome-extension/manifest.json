@@ -2,7 +2,13 @@
   "manifest_version": 3,
   "name": "Orbit — AI 대화 수집기",
   "version": "2.0.0",
-  "description": "ChatGPT·Claude·Gemini 등 AI 대화를 로컬에 저장하고 개인 학습에 활용합니다. 원할 때만 공개.",
+  "description": "ChatGPT, Claude, Gemini 등 AI 대화를 자동 수집하여 3D 마인드맵으로 시각화합니다. 데이터는 로컬 우선 저장.",
+  "homepage_url": "https://github.com/dlaww-wq/mindmap-viewer",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
   "permissions": ["tabs", "storage", "alarms", "scripting"],
   "host_permissions": [
     "http://localhost/*",
@@ -38,6 +44,11 @@
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Orbit AI 대화 수집기"
+    "default_title": "Orbit AI 대화 수집기",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
   }
 }

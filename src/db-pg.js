@@ -26,6 +26,15 @@ function initDatabase() {
   // 테이블 생성 — _tablesReady Promise로 외부에서 await 가능
   _tablesReady = createTables()
     .then(() => console.log('[DB] PostgreSQL 테이블 초기화 완료'))
+    .then(async () => {
+      // 마이그레이션 실행 (migrations/ 폴더의 SQL 파일)
+      try {
+        const { runMigrations } = require('./migrate');
+        await runMigrations(pool);
+      } catch (e) {
+        console.warn('[DB] 마이그레이션 경고:', e.message);
+      }
+    })
     .catch(e => {
       console.warn('[DB] 테이블 초기화 경고:', e.message);
       // 재시도 1회

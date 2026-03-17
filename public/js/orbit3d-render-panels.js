@@ -108,15 +108,19 @@ let _insightTab = 'feed'; // 'feed' | 'purpose' | 'stats'
 
 function switchInsightTab(tab) {
   _insightTab = tab;
-  ['feed','purpose','stats'].forEach(t => {
-    document.getElementById(`ins-tab-${t}`).classList.toggle('active', t === tab);
+  ['feed','purpose','stats','routine'].forEach(t => {
+    const tabEl = document.getElementById(`ins-tab-${t}`);
+    if (tabEl) tabEl.classList.toggle('active', t === tab);
     const pane = document.getElementById(`ins-pane-${t}`);
-    if (t === tab) pane.style.display = 'flex';
-    else           pane.style.display = 'none';
+    if (pane) {
+      if (t === tab) pane.style.display = 'flex';
+      else           pane.style.display = 'none';
+    }
   });
   if      (tab === 'feed')    renderFeedTab();
   else if (tab === 'purpose') renderPurposeTab();
   else if (tab === 'stats')   renderStatsTab();
+  else if (tab === 'routine') renderRoutineTab();
 }
 window.switchInsightTab = switchInsightTab;
 
@@ -307,11 +311,169 @@ function renderStatsTab() {
     </div>`).join('');
 }
 
+// ─── 루틴 분석 탭 ───────────────────────────────────────────────────────────
+let _routineCache = null;
+let _routineLoading = false;
+
+async function renderRoutineTab() {
+  const el = document.getElementById('ins-routine-content');
+  if (!el) return;
+
+  // 로딩 중이면 스킵
+  if (_routineLoading) return;
+
+  // 캐시가 있으면 바로 렌더
+  if (_routineCache) {
+    _renderRoutineData(el, _routineCache);
+    return;
+  }
+
+  _routineLoading = true;
+  el.innerHTML = '<div style="text-align:center;padding:28px 0;color:#6e7681;font-size:12px">분석 중...</div>';
+
+  try {
+    const r = await fetch('/api/patterns');
+    const data = await r.json();
+    _routineCache = data;
+    _renderRoutineData(el, data);
+    // 5분 후 캐시 만료
+    setTimeout(() => { _routineCache = null; }, 300000);
+  } catch (e) {
+    el.innerHTML = `<div style="text-align:center;padding:20px 0;color:#f85149;font-size:11px">로드 실패: ${escHtml(e.message)}</div>`;
+  } finally {
+    _routineLoading = false;
+  }
+}
+window.renderRoutineTab = renderRoutineTab;
+
+function _renderRoutineData(el, data) {
+  if (!data.patterns) {
+    el.innerHTML = '<div style="text-align:center;padding:20px 0;color:#6e7681;font-size:12px">로그인이 필요합니다</div>';
+    return;
+  }
+
+  const p = data.patterns;
+  let html = '';
+
+  // ── 요약 헤더 ────────────────────────────────────────────────────────────
+  html += `<div style="background:rgba(37,99,235,.06);border:1px solid rgba(37,99,235,.2);border-radius:8px;padding:10px 12px;margin-bottom:10px">
+    <div style="font-size:12px;font-weight:700;color:#58a6ff;margin-bottom:4px">작업 루틴 분석</div>
+    <div style="font-size:11px;color:#8b949e">${p.totalSessions}개 세션 / ${p.totalWorkUnits}개 작업 단위</div>
+  </div>`;
+
+  // ── 반복 패턴 ────────────────────────────────────────────────────────────
+  if (p.routines && p.routines.length > 0) {
+    html += `<div class="ins-section-title" style="padding-left:0">반복 작업 패턴</div>`;
+    html += p.routines.slice(0, 5).map((r, i) => {
+      const steps = r.sequence.split('\u2192');
+      const stepsHtml = steps.map(s =>
+        `<span style="font-size:10px;background:rgba(63,185,80,.1);color:#3fb950;border-radius:4px;padding:2px 6px;white-space:nowrap">${escHtml(s.trim())}</span>`
+      ).join('<span style="color:#3d444d;font-size:9px;margin:0 2px">\u203A</span>');
+      return `<div style="background:#0d1117;border:1px solid #21262d;border-radius:8px;padding:8px 10px;margin-bottom:6px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <span style="font-size:11px;color:#e6edf3;font-weight:600">#${i+1}</span>
+          <span style="font-size:10px;color:#ffa657;font-weight:600">${r.count}회 반복</span>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;align-items:center;gap:3px">${stepsHtml}</div>
+      </div>`;
+    }).join('');
+  } else {
+    html += `<div style="background:#0d1117;border:1px solid #21262d;border-radius:8px;padding:12px;margin-bottom:10px;text-align:center">
+      <div style="font-size:11px;color:#6e7681">아직 반복 패턴이 감지되지 않았습니다</div>
+      <div style="font-size:10px;color:#3d444d;margin-top:4px">더 많은 작업 데이터가 쌓이면 자동으로 분석됩니다</div>
+    </div>`;
+  }
+
+  // ── 시간대별 패턴 ────────────────────────────────────────────────────────
+  const timeEntries = Object.entries(p.timePatterns || {}).sort((a, b) => b[1] - a[1]);
+  if (timeEntries.length > 0) {
+    const maxTime = timeEntries[0][1];
+    const TIME_ICONS = { '새벽': '🌙', '오전': '☀️', '오후': '🌤️', '저녁': '🌆' };
+    html += `<div class="ins-section-title" style="padding-left:0;margin-top:8px">시간대별 작업량</div>`;
+    html += timeEntries.map(([slot, count]) => {
+      const pct = Math.round(count / maxTime * 100);
+      return `<div style="display:flex;align-items:center;gap:8px;margin:4px 0">
+        <span style="font-size:12px;width:20px;text-align:center">${TIME_ICONS[slot] || ''}</span>
+        <span style="font-size:11px;color:#8b949e;width:28px;flex-shrink:0">${slot}</span>
+        <div style="flex:1;height:6px;background:#161b22;border-radius:3px;overflow:hidden">
+          <div style="width:${pct}%;height:100%;background:linear-gradient(90deg,#2563eb,#58a6ff);border-radius:3px"></div>
+        </div>
+        <span style="font-size:10px;color:#6e7681;width:30px;text-align:right">${count}건</span>
+      </div>`;
+    }).join('');
+  }
+
+  // ── 도구 사용 패턴 ───────────────────────────────────────────────────────
+  const toolEntries = Object.entries(p.toolPatterns || {}).sort((a, b) => b[1] - a[1]);
+  if (toolEntries.length > 0) {
+    const TOOL_META = {
+      edit:     { icon: '✏️', label: '편집',     color: '#ffa657' },
+      write:    { icon: '📝', label: '파일 생성', color: '#3fb950' },
+      bash:     { icon: '💻', label: '터미널',   color: '#bc78de' },
+      research: { icon: '🔍', label: '검색',     color: '#58a6ff' },
+    };
+    const maxTool = toolEntries[0][1];
+    html += `<div class="ins-section-title" style="padding-left:0;margin-top:8px">도구 사용 빈도</div>`;
+    html += toolEntries.map(([tool, count]) => {
+      const meta = TOOL_META[tool] || { icon: '🔧', label: tool, color: '#8b949e' };
+      const pct = Math.round(count / maxTool * 100);
+      return `<div style="display:flex;align-items:center;gap:8px;margin:4px 0">
+        <span style="font-size:12px;width:20px;text-align:center">${meta.icon}</span>
+        <span style="font-size:11px;color:#8b949e;width:52px;flex-shrink:0">${meta.label}</span>
+        <div style="flex:1;height:6px;background:#161b22;border-radius:3px;overflow:hidden">
+          <div style="width:${pct}%;height:100%;background:${meta.color};border-radius:3px"></div>
+        </div>
+        <span style="font-size:10px;color:#6e7681;width:30px;text-align:right">${count}회</span>
+      </div>`;
+    }).join('');
+  }
+
+  // ── 파일 역할 분포 ───────────────────────────────────────────────────────
+  const roleEntries = Object.entries(p.fileRolePatterns || {}).sort((a, b) => b[1] - a[1]);
+  if (roleEntries.length > 0) {
+    const ROLE_COLORS = {
+      '인증': '#f85149', 'API': '#58a6ff', '서비스': '#bc78de', 'UI': '#ffa657',
+      '모델': '#39d2c0', '테스트': '#3fb950', '설정': '#8b949e', '이벤트처리': '#ff9500',
+      '배포': '#d2a8ff', '코드': '#6e7681',
+    };
+    html += `<div class="ins-section-title" style="padding-left:0;margin-top:8px">파일 역할 분포</div>`;
+    html += `<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px">`;
+    html += roleEntries.slice(0, 8).map(([role, count]) => {
+      const color = ROLE_COLORS[role] || '#6e7681';
+      return `<span style="font-size:10px;background:${color}15;color:${color};border:1px solid ${color}33;border-radius:12px;padding:3px 8px">${role} ${count}</span>`;
+    }).join('');
+    html += `</div>`;
+  }
+
+  // ── 개선 제안 ────────────────────────────────────────────────────────────
+  if (p.suggestions && p.suggestions.length > 0) {
+    const SUG_ICONS = { routine: '🔄', time: '⏰', specialization: '🎯', tool: '🔧' };
+    html += `<div class="ins-section-title" style="padding-left:0;margin-top:8px">개선 제안</div>`;
+    html += p.suggestions.map(s => {
+      const icon = SUG_ICONS[s.type] || '💡';
+      return `<div style="background:rgba(255,166,87,.06);border:1px solid rgba(255,166,87,.2);border-left:3px solid #ffa657;border-radius:6px;padding:8px 10px;margin-bottom:6px">
+        <div style="font-size:11px;color:#e6edf3">${icon} ${escHtml(s.message)}</div>
+      </div>`;
+    }).join('');
+  }
+
+  // ── 새로고침 버튼 ────────────────────────────────────────────────────────
+  html += `<div style="text-align:center;margin-top:10px;padding-bottom:10px">
+    <button onclick="_routineCache=null;renderRoutineTab()"
+      style="background:none;border:1px solid #30363d;color:#8b949e;border-radius:6px;padding:5px 14px;cursor:pointer;font-size:11px;font-family:inherit">
+      ↺ 새로고침
+    </button>
+  </div>`;
+
+  el.innerHTML = html;
+}
+
 // ─── renderInsightPanel: 현재 활성 탭 렌더 ──────────────────────────────────
 function renderInsightPanel() {
   if      (_insightTab === 'feed')    renderFeedTab();
   else if (_insightTab === 'purpose') renderPurposeTab();
   else if (_insightTab === 'stats')   renderStatsTab();
+  else if (_insightTab === 'routine') renderRoutineTab();
 }
 window.renderInsightPanel = renderInsightPanel;
 

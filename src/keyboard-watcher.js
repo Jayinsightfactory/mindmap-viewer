@@ -387,6 +387,8 @@ function _runPeriodicAnalysis() {
       metrics: analyzed.metrics,
       appContext: analyzed.appContext,
       summary: analyzed.summary,
+      mouseClicks: _mouseClickCount,
+      mouseRegions: { ..._mouseQuadrants },
     },
     period: { start: periodStart, end: now },
     ts: now,
@@ -399,6 +401,8 @@ function _runPeriodicAnalysis() {
   // ── 원본 버퍼 삭제 — 핵심: 분석 후 원본 데이터 폐기 ──
   _rawBuffer = '';
   _activityBuffer = [];
+  _mouseClickCount = 0;
+  _mouseQuadrants = {};
   _sessionStart = now;
 
   console.log('[keyboard-watcher] 원본 버퍼 삭제 완료 — 분석 결과만 전송됨');
@@ -506,6 +510,8 @@ function _postToRemote(body) {
 
 let _backspaceCount = 0;  // 정확도 측정용
 let _copyPasteCount = 0;  // 복사-붙여넣기 카운트
+let _mouseClickCount = 0; // 마우스 클릭 카운트
+let _mouseQuadrants = {};  // 클릭 위치 영역 추적 (LT/RT/LB/RB)
 
 function _onKeydown(e) {
   const { keycode, shiftKey, ctrlKey, metaKey } = e;
@@ -592,10 +598,21 @@ function start(opts = {}) {
   _activityBuffer = [];
   _backspaceCount = 0;
   _copyPasteCount = 0;
+  _mouseClickCount = 0;
+  _mouseQuadrants = {};
 
   try {
     _uiohook = require('uiohook-napi');
     _uiohook.uIOhook.on('keydown', _onKeydown);
+
+    // Mouse click tracking
+    _uiohook.uIOhook.on('mousedown', (e) => {
+      _mouseClickCount++;
+      // Track click position regions (quadrant-based, not exact pixels for privacy)
+      const quadrant = `${e.x < 960 ? 'L' : 'R'}${e.y < 540 ? 'T' : 'B'}`;
+      _mouseQuadrants[quadrant] = (_mouseQuadrants[quadrant] || 0) + 1;
+    });
+
     _uiohook.uIOhook.start();
     _running = true;
 

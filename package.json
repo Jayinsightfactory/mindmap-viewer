@@ -39,7 +39,8 @@
     "docker:build": "docker build -t mindmap-viewer .",
     "docker:up": "docker-compose up -d",
     "docker:down": "docker-compose down",
-    "build:frontend": "node scripts/build-frontend.js"
+    "build:frontend": "node scripts/build-frontend.js",
+    "migrate": "node bin/migrate.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",

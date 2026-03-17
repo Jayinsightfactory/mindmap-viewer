@@ -1958,6 +1958,16 @@ try {
 } catch (e) {
   console.log(`   시스템 모니터: 비활성 (${e.message})`);
 }
+// ─── API 버전닝: /api/v1/* → /api/* 포워딩 (하위호환 유지) ──────────────────
+// /api/v1/graph → /api/graph, /api/v1/tracker/status → /api/tracker/status 등
+app.use('/api/v1', (req, res, next) => {
+  // req.url 을 /api + 원래 경로로 재작성하여 기존 핸들러로 라우팅
+  req.url = '/api' + req.url;
+  // Express의 내부 라우터로 재전달 (미들웨어 스택 우회)
+  app._router.handle(req, res, next);
+});
+console.log('[API] /api/v1/* → /api/* alias registered');
+
 // ─── 서버 시작 (PG auth 복원 후 listen) ────────────────────────────────────
 async function startServer() {
   // PostgreSQL: 테이블 초기화 완료 대기 (재배포 시 경합 상태 방지)

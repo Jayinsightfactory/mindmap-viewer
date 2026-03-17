@@ -202,6 +202,7 @@
     <div class="ins-tab active" id="ins-tab-feed"    onclick="switchInsightTab('feed')">⚡ 실시간</div>
     <div class="ins-tab"       id="ins-tab-purpose"  onclick="switchInsightTab('purpose')">🎯 목적</div>
     <div class="ins-tab"       id="ins-tab-stats"    onclick="switchInsightTab('stats')">📊 통계</div>
+    <div class="ins-tab"       id="ins-tab-routine"  onclick="switchInsightTab('routine')">🔄 루틴</div>
   </div>
 
   <!-- 탭 패널: 실시간 피드 -->
@@ -221,6 +222,13 @@
     <div id="ins-dist-list" class="ins-dist-list"></div>
     <div class="ins-section-title">🎯 인사이트</div>
     <div id="ins-kv-list"  class="ins-kv-list"></div>
+  </div>
+
+  <!-- 탭 패널: 루틴 분석 -->
+  <div id="ins-pane-routine" style="display:none;flex-direction:column;flex:1;min-height:0;overflow-y:auto;">
+    <div id="ins-routine-content" style="padding:10px 14px;">
+      <div style="text-align:center;padding:20px 0;color:#6e7681;font-size:12px">루틴 탭을 선택하면 분석이 시작됩니다</div>
+    </div>
   </div>
 </div>
 
