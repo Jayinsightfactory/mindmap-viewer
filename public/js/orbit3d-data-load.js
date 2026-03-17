@@ -1,6 +1,77 @@
 // ══════════════════════════════════════════════════════════════════════════════
 // Orbit AI — Data loading, auth, empty state, admin view
 // ══════════════════════════════════════════════════════════════════════════════
+
+// ── 트래커 상태 모니터링 (5분마다 체크 → 문제 시 알림) ──
+let _lastTrackerCheck = 0;
+let _trackerAlertShown = false;
+
+function _checkTrackerHealth() {
+  const token = _getAuthToken();
+  if (!token) return;
+
+  fetch('/api/tracker/status', { headers: { Authorization: 'Bearer ' + token } })
+    .then(r => r.json())
+    .then(d => {
+      const badge = document.getElementById('ctb-label');
+
+      if (!d.online) {
+        // 트래커 오프라인
+        if (!_trackerAlertShown) {
+          _trackerAlertShown = true;
+          _showTrackerAlert('offline', '트래커가 연결되지 않았습니다. 설정에서 설치 코드를 실행해주세요.');
+        }
+        if (badge) badge.textContent = 'Claude 오프라인';
+      } else {
+        // 온라인이지만 최근 데이터 없음 (30분 이상)
+        const lastEvent = d.lastEventAt ? new Date(d.lastEventAt) : null;
+        const minsSince = lastEvent ? (Date.now() - lastEvent.getTime()) / 60000 : 999;
+
+        if (minsSince > 30 && d.eventCount > 0) {
+          if (!_trackerAlertShown) {
+            _trackerAlertShown = true;
+            _showTrackerAlert('stale', '데이터가 30분 이상 수신되지 않고 있습니다. 데몬이 중지되었을 수 있습니다.');
+          }
+        } else {
+          _trackerAlertShown = false; // 정상 → 알림 리셋
+          _hideTrackerAlert();
+        }
+
+        if (badge) badge.textContent = d.online ? 'Claude 트래킹 중' : 'Claude 오프라인';
+      }
+    })
+    .catch(() => {});
+}
+
+function _showTrackerAlert(type, msg) {
+  // 기존 알림 제거
+  _hideTrackerAlert();
+  const alert = document.createElement('div');
+  alert.id = 'tracker-alert';
+  alert.style.cssText = 'position:fixed;top:60px;right:20px;z-index:9999;background:#0d1117;border:1px solid ' +
+    (type === 'offline' ? '#f85149' : '#d29922') + ';border-radius:10px;padding:12px 16px;max-width:320px;box-shadow:0 4px 12px rgba(0,0,0,.5)';
+  alert.innerHTML = '<div style="display:flex;gap:8px;align-items:flex-start">' +
+    '<span style="font-size:18px">' + (type === 'offline' ? '🔴' : '⚠️') + '</span>' +
+    '<div><div style="color:#e6edf3;font-size:12px;font-weight:600;margin-bottom:4px">' +
+    (type === 'offline' ? '트래커 미연결' : '데이터 수신 중단') + '</div>' +
+    '<div style="color:#8b949e;font-size:11px;line-height:1.5">' + msg + '</div>' +
+    '<button onclick="openSetupPanel();_hideTrackerAlert()" style="margin-top:8px;font-size:11px;padding:4px 10px;' +
+    'background:#1f6feb;color:#fff;border:none;border-radius:5px;cursor:pointer">설정 열기</button>' +
+    '<button onclick="_hideTrackerAlert()" style="margin-top:8px;margin-left:4px;font-size:11px;padding:4px 10px;' +
+    'background:none;color:#6e7681;border:1px solid #30363d;border-radius:5px;cursor:pointer">닫기</button>' +
+    '</div></div>';
+  document.body.appendChild(alert);
+}
+
+function _hideTrackerAlert() {
+  const el = document.getElementById('tracker-alert');
+  if (el) el.remove();
+}
+
+// 5분마다 체크
+setInterval(_checkTrackerHealth, 5 * 60 * 1000);
+// 로그인 30초 후 첫 체크
+setTimeout(_checkTrackerHealth, 30000);
 function _getAuthToken() {
   if (typeof _orbitUser !== 'undefined' && _orbitUser?.token) return _orbitUser.token;
   try { return JSON.parse(localStorage.getItem('orbitUser') || 'null')?.token || ''; } catch { return ''; }
