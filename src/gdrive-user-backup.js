@@ -400,6 +400,272 @@ async function listLearningBackups(accessToken) {
   }));
 }
 
+/**
+ * Google Sheets로 학습 데이터 내보내기
+ *
+ * Sheet 1: "작업 루틴" — 작업 단위별 타임라인
+ * Sheet 2: "반복 패턴" — 반복되는 작업 시퀀스
+ * Sheet 3: "시간대별 작업" — 시간대별 작업 수
+ * Sheet 4: "AI 제안" — 개선 제안 목록
+ */
+async function exportLearningSheet(userId, accessToken, dbModule) {
+  const { extractWorkUnits, analyzePatterns } = require('./routine-learner');
+
+  // ── 1. 사용자 이벤트 가져오기 ─────────────────────────────────────────────
+  const events = dbModule.getEventsByUser
+    ? await Promise.resolve(dbModule.getEventsByUser(userId))
+    : await Promise.resolve(dbModule.getAllEvents()).then(all => all.filter(e => e.userId === userId));
+
+  // 세션별로 그룹핑
+  const sessionMap = {};
+  events.forEach(e => {
+    const sid = e.sessionId || 'default';
+    if (!sessionMap[sid]) sessionMap[sid] = [];
+    sessionMap[sid].push(e);
+  });
+
+  const sessionData = Object.entries(sessionMap).map(([id, evts]) => ({ sessionId: id, events: evts }));
+  const patterns = analyzePatterns(sessionData);
+
+  // ── 2. Sheet 1: 작업 루틴 (work units per session) ────────────────────────
+  const sheet1Rows = [['날짜', '세션', '의도(WHY)', '행동(WHAT)', '결과(RESULT)', '시간', '프로젝트']];
+
+  for (const { sessionId, events: sessEvents } of sessionData) {
+    const units = extractWorkUnits(sessEvents);
+    for (const unit of units) {
+      const dt = unit.startTime ? new Date(unit.startTime) : null;
+      const dateStr = dt ? dt.toISOString().slice(0, 10) : '';
+      const timeStr = dt ? dt.toTimeString().slice(0, 5) : '';
+      const actions = unit.actions.map(a => {
+        if (a.type === 'edit' || a.type === 'write') return `${a.type}: ${a.file}`;
+        if (a.type === 'bash') return `bash: ${a.file}`;
+        return a.type;
+      }).join(', ');
+      const project = unit.files.length > 0 ? unit.files[0].split('/').slice(-2, -1)[0] || '' : '';
+      sheet1Rows.push([dateStr, sessionId.slice(0, 12), unit.intent || '', actions, unit.result || '', timeStr, project]);
+    }
+  }
+
+  // ── 3. Sheet 2: 반복 패턴 ─────────────────────────────────────────────────
+  const sheet2Rows = [['패턴', '반복 횟수', '설명']];
+  for (const r of (patterns.routines || [])) {
+    sheet2Rows.push([r.sequence, r.count, r.description || '']);
+  }
+  if (sheet2Rows.length === 1) sheet2Rows.push(['(패턴 없음)', 0, '더 많은 작업 데이터가 필요합니다']);
+
+  // ── 4. Sheet 3: 시간대별 작업 ─────────────────────────────────────────────
+  const sheet3Rows = [['시간대', '작업 수']];
+  const timeOrder = ['새벽', '오전', '오후', '저녁'];
+  for (const slot of timeOrder) {
+    if (patterns.timePatterns[slot] !== undefined) {
+      sheet3Rows.push([slot, patterns.timePatterns[slot]]);
+    }
+  }
+  if (sheet3Rows.length === 1) sheet3Rows.push(['(데이터 없음)', 0]);
+
+  // ── 5. Sheet 4: AI 제안 ───────────────────────────────────────────────────
+  const sheet4Rows = [['유형', '제안 내용']];
+  const TYPE_KR = { routine: '루틴', time: '시간', specialization: '전문화', tool: '도구' };
+  for (const s of (patterns.suggestions || [])) {
+    sheet4Rows.push([TYPE_KR[s.type] || s.type, s.message]);
+  }
+  if (sheet4Rows.length === 1) sheet4Rows.push(['(제안 없음)', '더 많은 작업 데이터가 필요합니다']);
+
+  // ── 6. Orbit AI 폴더 확보 ──────────────────────────────────────────────────
+  const folderId = await ensureOrbitFolder(accessToken);
+
+  // ── 7. 기존 시트 검색 (있으면 업데이트, 없으면 생성) ───────────────────────
+  const SHEET_NAME = 'Orbit AI 학습 데이터';
+  let spreadsheetId = null;
+
+  // Drive에서 기존 시트 검색
+  const searchUrl = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(
+    `name='${SHEET_NAME}' and '${folderId}' in parents and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false`
+  )}&fields=files(id,name)`;
+
+  const searchRes = await fetch(searchUrl, {
+    headers: { 'Authorization': `Bearer ${accessToken}` },
+    signal: AbortSignal.timeout(15000),
+  });
+  const searchData = await searchRes.json();
+
+  if (searchData.files?.length > 0) {
+    spreadsheetId = searchData.files[0].id;
+  }
+
+  // ── 8. 시트 생성 또는 기존 시트 클리어 ─────────────────────────────────────
+  if (!spreadsheetId) {
+    // 새 스프레드시트 생성
+    const createRes = await fetch('https://sheets.googleapis.com/v4/spreadsheets', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        properties: { title: SHEET_NAME },
+        sheets: [
+          { properties: { title: '작업 루틴', index: 0 } },
+          { properties: { title: '반복 패턴', index: 1 } },
+          { properties: { title: '시간대별 작업', index: 2 } },
+          { properties: { title: 'AI 제안', index: 3 } },
+        ],
+      }),
+      signal: AbortSignal.timeout(30000),
+    });
+
+    if (!createRes.ok) {
+      const errText = await createRes.text();
+      throw new Error(`Sheets create failed: ${createRes.status} ${errText}`);
+    }
+
+    const created = await createRes.json();
+    spreadsheetId = created.spreadsheetId;
+
+    // 생성된 시트를 Orbit AI 폴더로 이동
+    await fetch(`https://www.googleapis.com/drive/v3/files/${spreadsheetId}?addParents=${folderId}&removeParents=root&fields=id`, {
+      method: 'PATCH',
+      headers: { 'Authorization': `Bearer ${accessToken}` },
+      signal: AbortSignal.timeout(15000),
+    });
+  } else {
+    // 기존 시트의 탭 구조 확인 및 데이터 클리어
+    const metaRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties`, {
+      headers: { 'Authorization': `Bearer ${accessToken}` },
+      signal: AbortSignal.timeout(15000),
+    });
+    const meta = await metaRes.json();
+    const existingSheets = (meta.sheets || []).map(s => s.properties.title);
+    const requiredSheets = ['작업 루틴', '반복 패턴', '시간대별 작업', 'AI 제안'];
+
+    // 부족한 탭 추가
+    const requests = [];
+    for (const title of requiredSheets) {
+      if (!existingSheets.includes(title)) {
+        requests.push({ addSheet: { properties: { title } } });
+      }
+    }
+    if (requests.length > 0) {
+      await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ requests }),
+        signal: AbortSignal.timeout(15000),
+      });
+    }
+
+    // 기존 데이터 클리어
+    await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchClear`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        ranges: requiredSheets.map(s => `'${s}'`),
+      }),
+      signal: AbortSignal.timeout(15000),
+    });
+  }
+
+  // ── 9. 데이터 쓰기 (batchUpdate) ──────────────────────────────────────────
+  const updateRes = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchUpdate`,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        valueInputOption: 'USER_ENTERED',
+        data: [
+          { range: "'작업 루틴'!A1", values: sheet1Rows },
+          { range: "'반복 패턴'!A1", values: sheet2Rows },
+          { range: "'시간대별 작업'!A1", values: sheet3Rows },
+          { range: "'AI 제안'!A1", values: sheet4Rows },
+        ],
+      }),
+      signal: AbortSignal.timeout(60000),
+    }
+  );
+
+  if (!updateRes.ok) {
+    const errText = await updateRes.text();
+    throw new Error(`Sheets update failed: ${updateRes.status} ${errText}`);
+  }
+
+  // ── 10. 헤더 행 서식 (볼드 + 배경색) ──────────────────────────────────────
+  try {
+    const metaRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties`, {
+      headers: { 'Authorization': `Bearer ${accessToken}` },
+      signal: AbortSignal.timeout(15000),
+    });
+    const meta = await metaRes.json();
+    const sheetIds = {};
+    for (const s of (meta.sheets || [])) {
+      sheetIds[s.properties.title] = s.properties.sheetId;
+    }
+
+    const formatRequests = [];
+    for (const title of ['작업 루틴', '반복 패턴', '시간대별 작업', 'AI 제안']) {
+      const sid = sheetIds[title];
+      if (sid === undefined) continue;
+      formatRequests.push({
+        repeatCell: {
+          range: { sheetId: sid, startRowIndex: 0, endRowIndex: 1 },
+          cell: {
+            userEnteredFormat: {
+              backgroundColor: { red: 0.16, green: 0.38, blue: 0.87 },
+              textFormat: { bold: true, foregroundColor: { red: 1, green: 1, blue: 1 } },
+            },
+          },
+          fields: 'userEnteredFormat(backgroundColor,textFormat)',
+        },
+      });
+      // 열 자동 너비
+      formatRequests.push({
+        autoResizeDimensions: {
+          dimensions: { sheetId: sid, dimension: 'COLUMNS', startIndex: 0, endIndex: 10 },
+        },
+      });
+    }
+
+    if (formatRequests.length > 0) {
+      await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ requests: formatRequests }),
+        signal: AbortSignal.timeout(15000),
+      });
+    }
+  } catch (fmtErr) {
+    // 서식 적용 실패는 무시 (데이터는 이미 기록됨)
+    console.warn('[exportLearningSheet] 서식 적용 실패:', fmtErr.message);
+  }
+
+  const sheetUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}`;
+  console.log(`[gdrive-user-backup] Sheets export ${userId} → ${SHEET_NAME} (${sheet1Rows.length - 1} work units)`);
+
+  return {
+    spreadsheetId,
+    sheetUrl,
+    sheetName: SHEET_NAME,
+    stats: {
+      workUnits: sheet1Rows.length - 1,
+      routines: sheet2Rows.length - 1,
+      timeSlots: sheet3Rows.length - 1,
+      suggestions: sheet4Rows.length - 1,
+    },
+  };
+}
+
 module.exports = {
   getPcId,
   ensureOrbitFolder,
@@ -409,4 +675,5 @@ module.exports = {
   importBackupData,
   backupLearningData,
   listLearningBackups,
+  exportLearningSheet,
 };

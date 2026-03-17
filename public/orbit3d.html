@@ -1078,6 +1078,7 @@ function viewZoom(dir) {
     <!-- 액션 버튼 -->
     <div style="margin-top:24px;display:flex;flex-direction:column;gap:8px;border-top:1px solid #334155;padding-top:16px">
       <button onclick="backupLearningToDrive()" style="width:100%;padding:10px;background:rgba(6,182,212,0.15);color:#06b6d4;border:1px solid rgba(6,182,212,0.3);border-radius:8px;font-size:13px;cursor:pointer">☁️ Google Drive에 학습 데이터 백업</button>
+      <button onclick="exportLearningSheet()" style="width:100%;padding:10px;background:rgba(52,211,153,0.12);color:#34d399;border:1px solid rgba(52,211,153,0.25);border-radius:8px;font-size:13px;cursor:pointer">📊 Google Sheets로 내보내기</button>
       <button onclick="exportMyData()" style="width:100%;padding:10px;background:rgba(34,197,94,0.1);color:#22c55e;border:1px solid rgba(34,197,94,0.2);border-radius:8px;font-size:13px;cursor:pointer">📥 전체 데이터 내보내기 (JSON)</button>
       <button onclick="deleteMyData()" style="width:100%;padding:10px;background:rgba(239,68,68,0.08);color:#ef4444;border:1px solid rgba(239,68,68,0.15);border-radius:8px;font-size:13px;cursor:pointer">🗑️ 내 데이터 전체 삭제</button>
       <div id="ld-drive-status" style="font-size:11px;color:#64748b;text-align:center;margin-top:4px"></div>

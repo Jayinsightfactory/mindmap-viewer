@@ -2939,6 +2939,24 @@ async function backupLearningToDrive() {
 }
 window.backupLearningToDrive = backupLearningToDrive;
 
+async function exportLearningSheet() {
+  const statusEl = document.getElementById('ld-drive-status');
+  if (statusEl) statusEl.textContent = '⏳ Google Sheets 내보내기 중...';
+  try {
+    const res = await fetch('/api/gdrive/export-learning-sheet', { method: 'POST' });
+    const data = await res.json();
+    if (data.spreadsheetId) {
+      if (statusEl) statusEl.innerHTML = `✅ <a href="${data.sheetUrl}" target="_blank" style="color:#06b6d4;text-decoration:underline">시트 열기</a> (작업 ${data.stats.workUnits}건)`;
+      showToast('학습 데이터가 Google Sheets에 내보내기 되었습니다');
+    } else {
+      if (statusEl) statusEl.textContent = `❌ ${data.error || '내보내기 실패'}`;
+    }
+  } catch (e) {
+    if (statusEl) statusEl.textContent = `❌ 오류: ${e.message}`;
+  }
+}
+window.exportLearningSheet = exportLearningSheet;
+
 async function exportMyData() {
   try {
     showToast('데이터 내보내기 준비 중...');

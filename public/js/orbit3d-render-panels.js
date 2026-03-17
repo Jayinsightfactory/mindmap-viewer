@@ -457,11 +457,15 @@ function _renderRoutineData(el, data) {
     }).join('');
   }
 
-  // ── 새로고침 버튼 ────────────────────────────────────────────────────────
-  html += `<div style="text-align:center;margin-top:10px;padding-bottom:10px">
+  // ── 새로고침 + Sheets 내보내기 버튼 ──────────────────────────────────────
+  html += `<div style="display:flex;justify-content:center;gap:8px;margin-top:10px;padding-bottom:10px">
     <button onclick="_routineCache=null;renderRoutineTab()"
       style="background:none;border:1px solid #30363d;color:#8b949e;border-radius:6px;padding:5px 14px;cursor:pointer;font-size:11px;font-family:inherit">
       ↺ 새로고침
+    </button>
+    <button onclick="exportLearningSheet()"
+      style="background:rgba(52,211,153,0.1);border:1px solid rgba(52,211,153,0.25);color:#34d399;border-radius:6px;padding:5px 14px;cursor:pointer;font-size:11px;font-family:inherit">
+      📊 Sheets 내보내기
     </button>
   </div>`;
 

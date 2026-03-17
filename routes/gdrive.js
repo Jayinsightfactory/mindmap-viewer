@@ -12,6 +12,7 @@
  *   POST /api/gdrive/import          — 백업 가져오기 (F3용)
  *   POST /api/gdrive/backup-learning — 학습 데이터 백업 (인사이트/패턴/트리거/신호)
  *   GET  /api/gdrive/learning-data   — 학습 데이터 백업 목록 조회
+ *   POST /api/gdrive/export-learning-sheet — Google Sheets로 학습 데이터 내보내기
  *   GET  /api/gdrive/auth-url        — OAuth2 인증 URL 반환 (웹 인증용)
  *   GET  /api/gdrive/auth-callback   — OAuth2 콜백 처리 (웹 인증용)
  *   GET  /api/gdrive/auth-status     — GDrive 인증 상태 확인
@@ -26,7 +27,10 @@ const DATA_DIR = path.join(__dirname, '..', 'data');
 const TOKENS_PATH = path.join(DATA_DIR, 'gdrive-tokens.json');
 const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
-const OAUTH_SCOPES = ['https://www.googleapis.com/auth/drive.file'];
+const OAUTH_SCOPES = [
+  'https://www.googleapis.com/auth/drive.file',
+  'https://www.googleapis.com/auth/spreadsheets',
+];
 
 function createGdriveRouter({ verifyToken, auth, dbModule, gdriveUserBackup }) {
   const router = express.Router();
@@ -177,6 +181,23 @@ function createGdriveRouter({ verifyToken, auth, dbModule, gdriveUserBackup }) {
       res.json({ ok: true, backups, connected: true });
     } catch (e) {
       res.json({ ok: false, backups: [], error: e.message });
+    }
+  });
+
+  // POST /api/gdrive/export-learning-sheet — Google Sheets로 학습 데이터 내보내기
+  router.post('/gdrive/export-learning-sheet', async (req, res) => {
+    try {
+      const user = getUserFromReq(req);
+      if (!user || user.id === 'local') return res.status(401).json({ error: 'login required' });
+
+      const accessToken = await auth.getValidGoogleToken(user.id);
+      if (!accessToken) return res.status(400).json({ error: 'Google Drive 연결이 필요합니다. Google로 다시 로그인해주세요.' });
+
+      const result = await gdriveUserBackup.exportLearningSheet(user.id, accessToken, dbModule);
+      res.json({ ok: true, ...result });
+    } catch (e) {
+      console.error('[gdrive/export-learning-sheet]', e.message);
+      res.status(500).json({ ok: false, error: e.message });
     }
   });
 
