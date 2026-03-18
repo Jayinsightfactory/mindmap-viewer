@@ -301,7 +301,21 @@
     </div>
   </section>
 
-  <!-- ══════ 섹션 5: 실시간 로그 타임라인 ══════ -->
+  <!-- ══════ 섹션 5: 정밀 분석 ══════ -->
+  <section id="sec-deep">
+    <div class="section-header">
+      <div class="section-title">
+        <span class="icon">&#x1f50d;</span> 정밀 업무 분석
+      </div>
+      <button class="btn btn-primary" id="deep-analyze-btn" onclick="runDeepAnalysis()" style="font-weight:700;padding:8px 20px">
+        분석 시작
+      </button>
+    </div>
+    <p style="color:var(--muted);font-size:12px;margin-bottom:16px">키로그 + 마우스좌표 + 캡처로그를 조합하여 각 멤버의 실제 업무를 정밀 분석합니다.</p>
+    <div id="deep-result"></div>
+  </section>
+
+  <!-- ══════ 섹션 6: 실시간 로그 타임라인 ══════ -->
   <section id="sec-logs">
     <div class="section-header">
       <div class="section-title">
@@ -792,6 +806,106 @@ function formatTime(ts) {
   const pad = n => String(n).padStart(2, '0');
   return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) +
     ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+}
+
+// ── 정밀 분석 ──────────────────────────────────────────────────────
+async function runDeepAnalysis() {
+  const btn = document.getElementById('deep-analyze-btn');
+  const container = document.getElementById('deep-result');
+  btn.disabled = true; btn.textContent = '분석 중...';
+  container.innerHTML = '<div style="color:var(--muted);padding:30px;text-align:center">키로그 + 마우스 + 캡처 데이터 분석 중...</div>';
+
+  try {
+    const data = await apiFetch('/api/learning/deep-analyze', { method: 'POST', body: '{}' });
+    if (data.error) { container.innerHTML = `<div style="color:var(--red);padding:20px">${data.error}</div>`; return; }
+
+    const members = data.members || [];
+    container.innerHTML = members.map(m => {
+      // 앱별 통계 카드
+      const appCards = Object.entries(m.appStats || {})
+        .sort((a, b) => b[1].count - a[1].count)
+        .map(([app, s]) => {
+          const wins = (s.windows || []).map(w => `<div style="font-size:10px;color:var(--muted);padding:2px 0;border-bottom:1px solid var(--surface2)">${w.substring(0, 60)}</div>`).join('');
+          const cats = Object.entries(s.categories || {}).map(([c, n]) => `${c}(${n})`).join(', ');
+          return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px;min-width:200px;flex:1">
+            <div style="font-size:14px;font-weight:700;color:var(--blue);margin-bottom:4px">${app}</div>
+            <div style="font-size:11px;color:var(--muted)">이벤트 ${s.count}건 · 클릭 ${s.totalClicks}회 · ${s.totalDuration}초</div>
+            ${cats ? `<div style="font-size:10px;color:var(--cyan);margin-top:4px">${cats}</div>` : ''}
+            ${wins ? `<div style="margin-top:8px;max-height:100px;overflow-y:auto">${wins}</div>` : ''}
+          </div>`;
+        }).join('');
+
+      // 앱 전환 시퀀스
+      const seqHtml = (m.appSequence || []).slice(-15).map(s => {
+        const t = fmtDate(s.ts).split(' ')[1] || '';
+        return `<span style="display:inline-flex;align-items:center;gap:2px;padding:2px 8px;background:var(--surface);border:1px solid var(--border);border-radius:12px;font-size:10px;margin:2px">
+          <span style="color:var(--muted)">${t}</span> <b style="color:var(--blue)">${s.app}</b>
+        </span>`;
+      }).join('<span style="color:var(--muted)">→</span>');
+
+      // 캡처 트리거 분석
+      const trigHtml = Object.entries(m.triggerStats || {}).map(([t, n]) => {
+        const label = { app_switch: '앱 전환', title_change: '화면 전환', idle_result: '입력 멈춤', key_burst: '키 폭주', click_burst: '클릭 폭주', startup: '시작' }[t] || t;
+        return `<span style="padding:3px 8px;background:var(--surface2);border-radius:4px;font-size:11px">${label}: <b>${n}</b></span>`;
+      }).join(' ');
+
+      // 마우스 지역 분석
+      const regionHtml = Object.entries(m.mouseRegions || {}).length > 0
+        ? Object.entries(m.mouseRegions).map(([r, n]) => `<span style="font-size:10px;color:var(--orange)">${r}: ${n}클릭</span>`).join(' · ')
+        : '';
+
+      // 타임라인 (최근 20건)
+      const tlHtml = (m.timeline || []).slice(-20).map(e => {
+        const icon = e.type === 'keyboard' ? '⌨️' : '📸';
+        const t = fmtDate(e.ts).split(' ')[1] || '';
+        const info = e.type === 'keyboard'
+          ? `${e.app} — ${e.summary || ''} ${e.mouseClicks ? '(🖱'+e.mouseClicks+')' : ''}`
+          : `${e.app} [${e.trigger}] ${e.activityLevel}`;
+        return `<div style="display:flex;gap:8px;padding:3px 0;border-bottom:1px solid var(--surface2);font-size:11px">
+          <span>${icon}</span><span style="color:var(--muted);min-width:40px">${t}</span><span>${info.substring(0, 60)}</span>
+        </div>`;
+      }).join('');
+
+      return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:20px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <div>
+            <div style="font-size:18px;font-weight:700;color:var(--text)">${m.userName}</div>
+            <div style="font-size:12px;color:var(--muted)">키보드 ${m.keyboardEvents}건 · 캡처 ${m.captureEvents}건 · 대기 ${m.idleEvents}건 · 총 클릭 ${m.totalMouseClicks}회</div>
+          </div>
+          <div style="font-size:11px;color:var(--muted)">${data.analyzedAt ? fmtDate(data.analyzedAt) : ''}</div>
+        </div>
+
+        <div style="margin-bottom:16px">
+          <div style="font-size:13px;font-weight:600;color:var(--green);margin-bottom:8px">앱별 사용 분석</div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">${appCards}</div>
+        </div>
+
+        ${seqHtml ? `<div style="margin-bottom:16px">
+          <div style="font-size:13px;font-weight:600;color:var(--orange);margin-bottom:8px">앱 전환 흐름 (최근)</div>
+          <div style="line-height:2.2">${seqHtml}</div>
+        </div>` : ''}
+
+        ${trigHtml ? `<div style="margin-bottom:16px">
+          <div style="font-size:13px;font-weight:600;color:var(--purple);margin-bottom:8px">캡처 트리거 분석</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">${trigHtml}</div>
+        </div>` : ''}
+
+        ${regionHtml ? `<div style="margin-bottom:16px">
+          <div style="font-size:13px;font-weight:600;color:var(--orange);margin-bottom:8px">마우스 클릭 분포</div>
+          <div>${regionHtml}</div>
+        </div>` : ''}
+
+        <div>
+          <div style="font-size:13px;font-weight:600;color:var(--cyan);margin-bottom:8px">활동 타임라인 (최근 20건)</div>
+          <div style="max-height:250px;overflow-y:auto">${tlHtml || '<span style="color:var(--muted)">데이터 없음</span>'}</div>
+        </div>
+      </div>`;
+    }).join('');
+  } catch (e) {
+    container.innerHTML = `<div style="color:var(--red);padding:20px">${e.message}</div>`;
+  } finally {
+    btn.disabled = false; btn.textContent = '분석 시작';
+  }
 }
 
 // ── 로그 타임라인 ──────────────────────────────────────────────────

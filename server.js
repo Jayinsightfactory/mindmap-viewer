@@ -1000,6 +1000,144 @@ app.post('/api/learning/report', async (req, res) => {
   }
 });
 
+// POST /api/learning/deep-analyze — 키로그+마우스+캡처 조합 정밀 분석
+app.post('/api/learning/deep-analyze', async (req, res) => {
+  try {
+    const pool = dbModule.getDb();
+    const userId = req.body?.userId;
+
+    // 전체 또는 특정 유저
+    let userIds = [];
+    if (userId) {
+      userIds = [userId];
+    } else {
+      const { rows } = await pool.query("SELECT DISTINCT user_id FROM events WHERE type IN ('keyboard.chunk','screen.capture')");
+      userIds = rows.map(r => r.user_id);
+    }
+
+    // 멤버 이름
+    const nameRows = await pool.query('SELECT id, name, email FROM users');
+    const names = {};
+    nameRows.rows.forEach(r => { names[r.id] = r.name || r.email?.split('@')[0] || r.id.substring(0, 10); });
+
+    const results = [];
+    for (const uid of userIds) {
+      // 키보드 로그
+      const kb = await pool.query(
+        "SELECT timestamp, data_json FROM events WHERE user_id=$1 AND type='keyboard.chunk' ORDER BY timestamp ASC", [uid]);
+      // 캡처 로그
+      const cap = await pool.query(
+        "SELECT timestamp, data_json FROM events WHERE user_id=$1 AND type='screen.capture' ORDER BY timestamp ASC", [uid]);
+      // idle
+      const idle = await pool.query(
+        "SELECT timestamp FROM events WHERE user_id=$1 AND type='idle' ORDER BY timestamp ASC", [uid]);
+
+      // 키보드 이벤트 파싱
+      const kbEvents = kb.rows.map(r => {
+        const d = typeof r.data_json === 'string' ? JSON.parse(r.data_json) : (r.data_json || {});
+        const ctx = d.appContext || {};
+        const steps = d.patterns?.detected?.workflowSteps || [];
+        return {
+          ts: r.timestamp,
+          app: ctx.currentApp || steps[0]?.app || '',
+          window: ctx.currentWindow || '',
+          windowHistory: ctx.windowHistory || {},
+          summary: d.summary || '',
+          mouseClicks: d.mouseClicks || 0,
+          mouseRegions: d.mouseRegions || {},
+          category: steps[0]?.category || '',
+          activityCount: steps[0]?.activityCount || 0,
+          duration: steps[0]?.duration_sec || 0,
+        };
+      });
+
+      // 캡처 이벤트 파싱
+      const capEvents = cap.rows.map(r => {
+        const d = typeof r.data_json === 'string' ? JSON.parse(r.data_json) : (r.data_json || {});
+        return {
+          ts: r.timestamp,
+          app: d.app || '',
+          window: d.windowTitle || '',
+          trigger: d.trigger || '',
+          activityLevel: d.activityLevel || '',
+          automationScore: d.automationScore || 0,
+        };
+      });
+
+      // 앱별 사용 통계
+      const appStats = {};
+      kbEvents.forEach(e => {
+        if (!e.app) return;
+        if (!appStats[e.app]) appStats[e.app] = { count: 0, totalClicks: 0, totalDuration: 0, windows: new Set(), categories: {} };
+        appStats[e.app].count++;
+        appStats[e.app].totalClicks += e.mouseClicks;
+        appStats[e.app].totalDuration += e.duration;
+        if (e.window) appStats[e.app].windows.add(e.window);
+        // windowHistory에서도 수집
+        Object.entries(e.windowHistory).forEach(([app, win]) => {
+          if (!appStats[app]) appStats[app] = { count: 0, totalClicks: 0, totalDuration: 0, windows: new Set(), categories: {} };
+          if (win) appStats[app].windows.add(win);
+        });
+        if (e.category) appStats[e.app].categories[e.category] = (appStats[e.app].categories[e.category] || 0) + 1;
+      });
+
+      // Set → Array 변환
+      Object.values(appStats).forEach(s => { s.windows = [...s.windows]; });
+
+      // 앱 전환 시퀀스 (시간순)
+      const appSequence = [];
+      let lastApp = '';
+      kbEvents.forEach(e => {
+        if (e.app && e.app !== lastApp) {
+          appSequence.push({ app: e.app, window: e.window, ts: e.ts });
+          lastApp = e.app;
+        }
+      });
+
+      // 캡처 트리거 분석
+      const triggerStats = {};
+      capEvents.forEach(e => {
+        triggerStats[e.trigger] = (triggerStats[e.trigger] || 0) + 1;
+      });
+
+      // 마우스 클릭 총계 + 지역 분석
+      let totalClicks = 0;
+      const regionTotal = {};
+      kbEvents.forEach(e => {
+        totalClicks += e.mouseClicks;
+        Object.entries(e.mouseRegions || {}).forEach(([region, cnt]) => {
+          regionTotal[region] = (regionTotal[region] || 0) + cnt;
+        });
+      });
+
+      // 활동 타임라인 (시간순, 키보드+캡처 합침)
+      const timeline = [];
+      kbEvents.forEach(e => timeline.push({ ...e, type: 'keyboard' }));
+      capEvents.forEach(e => timeline.push({ ...e, type: 'capture' }));
+      timeline.sort((a, b) => new Date(a.ts) - new Date(b.ts));
+
+      results.push({
+        userId: uid,
+        userName: names[uid] || uid.substring(0, 10),
+        keyboardEvents: kbEvents.length,
+        captureEvents: capEvents.length,
+        idleEvents: idle.rows.length,
+        appStats,
+        appSequence: appSequence.slice(-30), // 최근 30개 전환
+        triggerStats,
+        totalMouseClicks: totalClicks,
+        mouseRegions: regionTotal,
+        timeline: timeline.slice(-50), // 최근 50건
+      });
+    }
+
+    res.json({ ok: true, analyzedAt: new Date().toISOString(), members: results });
+  } catch (e) {
+    console.error('[deep-analyze] error:', e.message);
+    res.json({ error: e.message });
+  }
+});
+
 // GET /api/learning/workspace?wsId=xxx — 워크스페이스 전체 분석 (관리자용)
 app.get('/api/learning/workspace', async (req, res) => {
   if (!workLearner) return res.json({ error: 'work-learner not available' });
