@@ -4,10 +4,12 @@
  * vision-worker.js — Google Drive 캡처 Vision 분석 워커
  *
  * Google Drive "Orbit AI Captures" 폴더의 스크린샷을
- * Claude Vision API로 분석하여 서버에 결과 전송.
+ * Claude로 분석하여 서버에 결과 전송.
  *
- * 실행: ANTHROPIC_API_KEY=sk-xxx node bin/vision-worker.js
- * 또는: ANTHROPIC_API_KEY 환경변수 설정 후 실행
+ * 모드 1 (CLI — Claude Max 구독자): node bin/vision-worker.js
+ * 모드 2 (API):                    ANTHROPIC_API_KEY=sk-xxx node bin/vision-worker.js
+ *
+ * CLI 모드는 API 키 없이 claude 명령어로 분석 (구독 포함)
  */
 
 const https = require('https');
@@ -17,8 +19,21 @@ const fs = require('fs');
 const os = require('os');
 const http = require('http');
 
+const { execFile, execSync } = require('child_process');
+
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY || '';
 const ORBIT_SERVER = process.env.ORBIT_SERVER_URL || 'https://sparkling-determination-production-c88b.up.railway.app';
+
+// Claude CLI 경로 감지
+const CLAUDE_CLI = (() => {
+  try {
+    return execSync(process.platform === 'win32' ? 'where claude' : 'which claude', { timeout: 3000 })
+      .toString().trim().split('\n')[0];
+  } catch { return null; }
+})();
+const USE_CLI = !ANTHROPIC_KEY && !!CLAUDE_CLI;
+const TEMP_DIR = path.join(os.tmpdir(), 'orbit-vision');
+try { fs.mkdirSync(TEMP_DIR, { recursive: true }); } catch {}
 const ORBIT_TOKEN = process.env.ORBIT_TOKEN || (() => {
   try { return JSON.parse(fs.readFileSync(path.join(os.homedir(), '.orbit-config.json'), 'utf8')).token || ''; }
   catch { return ''; }
@@ -100,9 +115,9 @@ async function findCaptures() {
   return caps;
 }
 
-// ── Claude Vision API 분석 ────────────────────────────────────────────────────
-async function visionAnalyze(base64, ctx) {
-  const prompt = `이 스크린샷을 분석해주세요. 호스트: ${ctx.hostname}, 파일: ${ctx.name}
+// ── 분석 프롬프트 ─────────────────────────────────────────────────────────────
+function _buildPrompt(ctx) {
+  return `이 스크린샷을 분석해주세요. 호스트: ${ctx.hostname}, 파일: ${ctx.name}
 
 JSON으로 응답:
 {
@@ -115,7 +130,32 @@ JSON으로 응답:
   "automationHint": "자동화 가능 부분",
   "workCategory": "전산처리|문서작업|커뮤니케이션|파일관리|웹검색|기타"
 }`;
+}
 
+function _parseResult(text) {
+  const m = (text || '').match(/\{[\s\S]*\}/);
+  if (m) { try { return JSON.parse(m[0]); } catch {} }
+  return { raw: (text || '').substring(0, 200) };
+}
+
+// ── Claude CLI 분석 (Max 구독 — API 키 불필요) ───────────────────────────────
+async function visionCli(base64, ctx) {
+  const tmpFile = path.join(TEMP_DIR, `cap-${Date.now()}.png`);
+  fs.writeFileSync(tmpFile, Buffer.from(base64, 'base64'));
+  const prompt = _buildPrompt(ctx);
+
+  return new Promise((resolve) => {
+    execFile(CLAUDE_CLI, ['-p', prompt, tmpFile], { timeout: 120000, maxBuffer: 2 * 1024 * 1024 }, (err, stdout) => {
+      try { fs.unlinkSync(tmpFile); } catch {}
+      if (err) { console.warn(`  CLI 분석 실패: ${err.message}`); resolve(null); return; }
+      resolve(_parseResult(String(stdout)));
+    });
+  });
+}
+
+// ── Claude API 분석 (API 키 사용) ─────────────────────────────────────────────
+async function visionApi(base64, ctx) {
+  const prompt = _buildPrompt(ctx);
   return new Promise((resolve, reject) => {
     const body = JSON.stringify({
       model: 'claude-sonnet-4-20250514', max_tokens: 1024,
@@ -129,14 +169,18 @@ JSON으로 응답:
     }, res => {
       let d=''; res.on('data', c=>d+=c);
       res.on('end', ()=>{
-        try {
-          const text = JSON.parse(d).content?.[0]?.text || '';
-          const m = text.match(/\{[\s\S]*\}/);
-          resolve(m ? JSON.parse(m[0]) : { raw:text.substring(0,200) });
-        } catch(e) { reject(e); }
+        try { resolve(_parseResult(JSON.parse(d).content?.[0]?.text)); }
+        catch(e) { reject(e); }
       });
     }); req.on('error', reject); req.write(body); req.end();
   });
+}
+
+// ── 통합 분석 함수 ────────────────────────────────────────────────────────────
+async function visionAnalyze(base64, ctx) {
+  if (USE_CLI) return visionCli(base64, ctx);
+  if (ANTHROPIC_KEY) return visionApi(base64, ctx);
+  throw new Error('Claude CLI 또는 ANTHROPIC_API_KEY 필요');
 }
 
 // ── 결과 서버 전송 ────────────────────────────────────────────────────────────
@@ -183,8 +227,15 @@ async function processBatch() {
 
 async function main() {
   console.log('[vision-worker] Google Drive → Claude Vision 분석 워커');
-  if (!ANTHROPIC_KEY) { console.error('ANTHROPIC_API_KEY 필요'); process.exit(1); }
+  if (!ANTHROPIC_KEY && !CLAUDE_CLI) {
+    console.error('Claude CLI 또는 ANTHROPIC_API_KEY 필요');
+    console.error('  방법 1: Claude Max 구독 → claude 명령어 설치');
+    console.error('  방법 2: ANTHROPIC_API_KEY=sk-xxx node bin/vision-worker.js');
+    process.exit(1);
+  }
   if (!(await loadGoogleConfig())) { console.error('Google Drive 설정 실패'); process.exit(1); }
+  console.log(`  모드: ${USE_CLI ? 'Claude CLI (Max 구독)' : 'API 키'}`);
+  if (CLAUDE_CLI) console.log(`  CLI: ${CLAUDE_CLI}`);
   console.log(`  서버: ${ORBIT_SERVER}`);
   console.log(`  폴링: ${POLL_INTERVAL/1000}초`);
   console.log(`  폴더: ${_gFolder}`);
