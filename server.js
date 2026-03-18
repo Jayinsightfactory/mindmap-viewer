@@ -865,14 +865,17 @@ const workLearner = (() => { try { return require('./src/work-learner'); } catch
 // GET /api/learning/analyze?userId=xxx — 개인 분석
 app.get('/api/learning/analyze', async (req, res) => {
   if (!workLearner) return res.json({ error: 'work-learner not available' });
-  const user = getUserFromReq(req);
-  if (!user) return res.status(401).json({ error: 'unauthorized' });
-  const targetId = req.query.userId || user.id;
   try {
+    const user = getUserFromReq(req);
+    const targetId = req.query.userId || user?.id || 'local';
+    console.log('[learning] analyze start:', targetId);
     const pool = dbModule.getDb();
+    if (!pool || !pool.query) return res.json({ error: 'DB pool not ready' });
     const result = await workLearner.analyzeUser(pool, targetId);
+    console.log('[learning] analyze done:', targetId, result?.eventCount || 0);
     res.json(result);
   } catch (e) {
+    console.error('[learning] analyze error:', e.message);
     res.json({ error: e.message });
   }
 });
