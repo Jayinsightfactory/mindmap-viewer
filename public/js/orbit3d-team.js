@@ -766,7 +766,7 @@ function _buildTeamSystemInner(teamData) {
 
     // ── 툴 라벨 ───────────────────────────────────────────────────────────
     member.tools.forEach((tool, tli) => {
-      const tlAngle = angle + Math.PI + (tli - 1) * 0.55;
+      const tlAngle = memberAngle + Math.PI + (tli - 1) * 0.55;
       const tx = mPos.x + TOOL_R * Math.cos(tlAngle);
       const ty = mPos.y + 3.5 + tli * 2.2;
       const tz = mPos.z + TOOL_R * Math.sin(tlAngle);
@@ -790,7 +790,7 @@ function _buildTeamSystemInner(teamData) {
     // ── 스킬 노드 ───────────────────────────────────────────────────────────
     const SKILL_R = TOOL_R * 0.65;
     (member.skills || []).forEach((sk, ski) => {
-      const skAngle = angle - Math.PI * 0.6 + ski * 0.8;
+      const skAngle = memberAngle - Math.PI * 0.6 + ski * 0.8;
       const skPos   = new THREE.Vector3(
         mPos.x + SKILL_R * Math.cos(skAngle),
         mPos.y - 4 - ski * 2.5,
@@ -806,7 +806,7 @@ function _buildTeamSystemInner(teamData) {
     // ── 에이전트 노드 ────────────────────────────────────────────────────────
     const AGENT_R = TOOL_R * 0.8;
     (member.agents || []).forEach((ag, agi) => {
-      const agAngle = angle + Math.PI * 0.6 + agi * 0.9;
+      const agAngle = memberAngle + Math.PI * 0.6 + agi * 0.9;
       const agPos   = new THREE.Vector3(
         mPos.x + AGENT_R * Math.cos(agAngle),
         mPos.y - 5 - agi * 2.8,
