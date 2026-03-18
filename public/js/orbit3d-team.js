@@ -653,6 +653,7 @@ function _buildTeamSystemInner(teamData) {
     const _myUserId = (typeof _orbitUser !== 'undefined' && _orbitUser?.id) || '';
 
     // 팀 멤버: 팀 중심 주위에 클러스터링
+    console.log(`[team] ${teamName}: ${teamMembers.length}명, center=(${teamCenter.x.toFixed(1)},${teamCenter.z.toFixed(1)}), CLUSTER_R=${CLUSTER_R}`);
     teamMembers.forEach((member, mi) => {
       const memberAngle = (mi / teamMembers.length) * Math.PI * 2;
       const mx = teamCenter.x + CLUSTER_R * Math.cos(memberAngle);
@@ -674,6 +675,7 @@ function _buildTeamSystemInner(teamData) {
       scene.add(mObj);
       planetMeshes.push(mObj);
 
+      console.log(`[team]   ${member.name} pos=(${mPos.x.toFixed(1)},${mPos.z.toFixed(1)}) angle=${(memberAngle*180/Math.PI).toFixed(0)}°`);
       const isMe = member.userId === _myUserId;
       _teamNodes.push({
         type: 'member', pos: mPos.clone(), obj: mObj,
@@ -683,8 +685,8 @@ function _buildTeamSystemInner(teamData) {
       });
 
     // ── 작업 위성 ─────────────────────────────────────────────────────────
-    member.tasks.forEach((task, ti) => {
-      const tAngle = (ti / member.tasks.length) * Math.PI * 2 + (mi * 1.26);
+    member.tasks.forEach((task, taskIdx) => {
+      const tAngle = (taskIdx / member.tasks.length) * Math.PI * 2 + (mi * 1.26);
       const tx = mPos.x + TASK_R * Math.cos(tAngle);
       const ty = mPos.y + TASK_R * 0.25 * Math.sin(tAngle + 1.0);
       const tz = mPos.z + TASK_R * Math.sin(tAngle);
@@ -696,7 +698,7 @@ function _buildTeamSystemInner(teamData) {
         isTeamTask: true, memberId: member.id,
         taskName: task.name, taskStatus: task.status, taskProgress: task.progress,
         color: STATUS_CFG[task.status]?.color || '#6e7681',
-        orbitR: TASK_R, orbitAngle: tAngle, orbitSpeed: 0.038 + mi * 0.004 + ti * 0.003,
+        orbitR: TASK_R, orbitAngle: tAngle, orbitSpeed: 0.038 + mi * 0.004 + taskIdx * 0.003,
         orbitCenter: mPos.clone(),
       };
       scene.add(tObj);
