@@ -396,7 +396,7 @@ async function upsertSession(event) {
       INSERT INTO sessions (id, user_id, channel_id, started_at, source, model_id, project_dir, event_count, status)
       VALUES ($1,$2,$3,$4,$5,$6,$7,1,'active')
       ON CONFLICT (id) DO UPDATE SET status='active'
-    `, [event.sessionId, event.userId, event.channelId, event.timestamp,
+    `, [event.sessionId, event.userId, event.channelId || 'default', event.timestamp,
         event.data.source || null, event.data.modelId || null, event.data.projectDir || null]);
   } else if (event.type === 'session.end') {
     await pool.query(`UPDATE sessions SET ended_at=$1, status='ended' WHERE id=$2`, [event.timestamp, event.sessionId]);
@@ -408,7 +408,7 @@ async function upsertSession(event) {
       await pool.query(`
         INSERT INTO sessions (id, user_id, channel_id, started_at, event_count, status)
         VALUES ($1,$2,$3,$4,1,'active')
-      `, [event.sessionId, event.userId, event.channelId, event.timestamp]);
+      `, [event.sessionId, event.userId, event.channelId || 'default', event.timestamp]);
     }
   }
 }
