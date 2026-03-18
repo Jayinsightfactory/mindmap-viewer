@@ -826,43 +826,53 @@ async function _loadMyWorkspaces() {
       listEl.innerHTML = '<div style="font-size:12px;color:#6e7681;padding:8px 0">참여한 워크스페이스가 없습니다.<br>아래에서 만들거나 초대코드로 참여하세요.</div>';
       return;
     }
-    listEl.innerHTML = rows.map(ws => `
-      <div class="ws-card" style="cursor:default">
-        <div class="ws-card-icon">${ws.role==='owner' ? '👑' : '👤'}</div>
-        <div class="ws-card-info">
-          <div class="ws-card-name">${escHtml(ws.name)}</div>
-          <div class="ws-card-meta">${escHtml(ws.company_name||'')} · 멤버 ${ws.member_count||0}명</div>
-          <div class="ws-card-role">${ws.role==='owner' ? '관리자' : '멤버 · '+escHtml(ws.team_name||'')}</div>
-          <div style="display:flex;gap:4px;margin-top:6px">
-            <button onclick="_selectWorkspace('${ws.id}','${(ws.name||'').replace(/'/g,"\\'")}')"
-              style="flex:1;font-size:11px;padding:6px 10px;background:#1f6feb;color:#fff;border:none;
-              border-radius:6px;cursor:pointer;font-weight:600">👥 팀뷰</button>
-            <button onclick="event.stopPropagation();_editWorkspace('${ws.id}','${escHtml(ws.name)}','${escHtml(ws.company_name||'')}')"
-              style="font-size:11px;padding:6px 10px;background:rgba(139,148,158,.15);color:#8b949e;border:1px solid #30363d;
-              border-radius:6px;cursor:pointer">✏️ 수정</button>
+    listEl.innerHTML = rows.map(ws => {
+      const isAdmin = ws.role==='owner' || ws.role==='admin';
+      const safeName = (ws.name||'').replace(/'/g,"\\'");
+      const pendingBadge = (ws.pending_count > 0) ? `<span style="background:#f85149;color:#fff;font-size:9px;padding:1px 5px;border-radius:8px;margin-left:4px">${ws.pending_count}</span>` : '';
+      return `
+      <div class="ws-card" style="cursor:default;flex-direction:column;gap:0">
+        <!-- 헤더: 이름 + 선택 버튼 -->
+        <div style="display:flex;align-items:center;gap:8px;padding-bottom:8px;border-bottom:1px solid #21262d;margin-bottom:8px">
+          <div style="font-size:20px">${ws.role==='owner' ? '👑' : '👤'}</div>
+          <div style="flex:1;min-width:0">
+            <div style="color:#e6edf3;font-size:14px;font-weight:700">${escHtml(ws.name)}</div>
+            <div style="color:#8b949e;font-size:11px">${escHtml(ws.company_name||'')} · ${ws.member_count||0}명 · ${ws.role==='owner'?'관리자':'멤버'}</div>
           </div>
+          <button onclick="_selectWorkspace('${ws.id}','${safeName}')"
+            style="font-size:12px;padding:6px 14px;background:#1f6feb;color:#fff;border:none;
+            border-radius:8px;cursor:pointer;font-weight:600;white-space:nowrap">팀 선택</button>
         </div>
-        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
-          <div style="font-size:11px;color:#3fb950;cursor:pointer" onclick="event.stopPropagation();_copyCode('${ws.invite_code||''}')">
-            ${ws.invite_code ? `초대코드<br><b style="font-size:14px;letter-spacing:2px">${ws.invite_code}</b>` : ''}
-          </div>
-          ${(ws.role==='owner'||ws.role==='admin') ? `
-            <button onclick="event.stopPropagation();generateInviteLink('${ws.id}')"
-              style="font-size:10px;padding:4px 8px;background:rgba(88,166,255,.15);color:#58a6ff;border:1px solid rgba(88,166,255,.3);
-              border-radius:6px;cursor:pointer;white-space:nowrap">초대 링크</button>
-            <button onclick="event.stopPropagation();openWsMemberManage&&openWsMemberManage('${ws.id}')"
-              style="font-size:10px;padding:4px 8px;background:rgba(63,185,80,.15);color:#3fb950;border:1px solid rgba(63,185,80,.3);
-              border-radius:6px;cursor:pointer;white-space:nowrap">인원배분</button>
-            <button onclick="event.stopPropagation();openWsPendingList&&openWsPendingList('${ws.id}')"
-              style="font-size:10px;padding:4px 8px;background:rgba(255,166,87,.15);color:#ffa657;border:1px solid rgba(255,166,87,.3);
-              border-radius:6px;cursor:pointer;white-space:nowrap">${ws.pending_count>0?'⚠️ ':''} 승인대기 ${ws.pending_count||0}</button>
+
+        <!-- 관리 버튼 row -->
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          ${isAdmin ? `
+          <button onclick="event.stopPropagation();generateInviteLink('${ws.id}')"
+            style="flex:1;font-size:11px;padding:6px 0;background:rgba(88,166,255,.1);color:#58a6ff;border:1px solid rgba(88,166,255,.25);
+            border-radius:6px;cursor:pointer;text-align:center">초대 링크</button>
+          <button onclick="event.stopPropagation();openWsMemberManage&&openWsMemberManage('${ws.id}')"
+            style="flex:1;font-size:11px;padding:6px 0;background:rgba(63,185,80,.1);color:#3fb950;border:1px solid rgba(63,185,80,.25);
+            border-radius:6px;cursor:pointer;text-align:center">인원배분</button>
+          <button onclick="event.stopPropagation();openWsPendingList&&openWsPendingList('${ws.id}')"
+            style="flex:1;font-size:11px;padding:6px 0;background:rgba(255,166,87,.1);color:#ffa657;border:1px solid rgba(255,166,87,.25);
+            border-radius:6px;cursor:pointer;text-align:center">승인대기${pendingBadge}</button>
+          <button onclick="event.stopPropagation();_editWorkspace('${ws.id}','${escHtml(ws.name)}','${escHtml(ws.company_name||'')}')"
+            style="font-size:11px;padding:6px 8px;background:rgba(139,148,158,.1);color:#8b949e;border:1px solid #30363d;
+            border-radius:6px;cursor:pointer">수정</button>
           ` : `
-            <button onclick="event.stopPropagation();_leaveWorkspace('${ws.id}','${escHtml(ws.name)}')"
-              style="font-size:10px;padding:4px 8px;background:rgba(248,81,73,.15);color:#f85149;border:1px solid rgba(248,81,73,.3);
-              border-radius:6px;cursor:pointer;white-space:nowrap">나가기</button>
+          <div style="flex:1;font-size:11px;color:#8b949e;padding:4px 0">팀: ${escHtml(ws.team_name||'미배정')}</div>
+          <button onclick="event.stopPropagation();_leaveWorkspace('${ws.id}','${escHtml(ws.name)}')"
+            style="font-size:11px;padding:6px 10px;background:rgba(248,81,73,.1);color:#f85149;border:1px solid rgba(248,81,73,.25);
+            border-radius:6px;cursor:pointer">나가기</button>
           `}
         </div>
-      </div>`).join('');
+
+        <!-- 초대코드 (작게) -->
+        ${ws.invite_code ? `<div style="margin-top:6px;font-size:10px;color:#6e7681;cursor:pointer" onclick="event.stopPropagation();_copyCode('${ws.invite_code}')">
+          초대코드: <b style="color:#3fb950;letter-spacing:1px">${ws.invite_code}</b> (클릭 복사)
+        </div>` : ''}
+      </div>`;
+    }).join('');
   } catch (e) {
     listEl.innerHTML = `<div style="font-size:11px;color:#f85149">오류: ${e.message}</div>`;
   }
