@@ -38,6 +38,102 @@ function Report-Install { param([string]$Step, [string]$Status, [string]$Error =
 }
 
 Write-Host ""
+
+# ═══════════════════════════════════════════════════════════════
+# 기존 설치 감지 → 업데이트 모드
+# ═══════════════════════════════════════════════════════════════
+if ((Test-Path "$DIR\server.js") -and (Test-Path "$DIR\node_modules")) {
+  Write-Host "  ╔══════════════════════════════════╗"
+  Write-Host "  ║   Orbit AI 업데이트 중...         ║"
+  Write-Host "  ╚══════════════════════════════════╝"
+  Write-Host ""
+
+  # 1. git pull
+  Show-Progress 20 "최신 코드 다운로드"
+  Set-Location $DIR
+  $pullResult = & cmd /c "git pull origin main --ff-only 2>&1"
+  Write-Host "  git: $pullResult"
+
+  # 2. package.json 변경 시 npm install
+  if ($pullResult -match "package.json") {
+    Show-Progress 50 "패키지 업데이트"
+    & cmd /c "npm install --silent" 2>$null
+  }
+
+  # 3. 기존 데몬 종료
+  Show-Progress 70 "데몬 재시작"
+  $pidFile = "$env:USERPROFILE\.orbit\personal-agent.pid"
+  if (Test-Path $pidFile) {
+    $old = Get-Content $pidFile -ErrorAction SilentlyContinue
+    if ($old) { Stop-Process -Id $old -Force -ErrorAction SilentlyContinue }
+  }
+  # node.exe 중 personal-agent 프로세스만 종료
+  Get-WmiObject Win32_Process -Filter "Name='node.exe'" -ErrorAction SilentlyContinue | ForEach-Object {
+    if ($_.CommandLine -match "personal-agent") { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+  }
+  Start-Sleep -Seconds 2
+
+  # 4. 설정 갱신 (토큰)
+  $ConfigPath = "$env:USERPROFILE\.orbit-config.json"
+  if ($Token -and $Token.Length -gt 5) {
+    try {
+      $existing = if (Test-Path $ConfigPath) { Get-Content $ConfigPath -Raw | ConvertFrom-Json } else { @{} }
+      $existing.token = $Token
+      $existing.serverUrl = $REMOTE
+      $existing | ConvertTo-Json | Set-Content $ConfigPath -Encoding UTF8
+    } catch {}
+  }
+
+  # 5. 데몬 재시작
+  $NodePath = (Get-Command node -ErrorAction SilentlyContinue).Source
+  $DaemonScript = "$DIR\daemon\personal-agent.js"
+  $logFile = "$env:USERPROFILE\.orbit\daemon.log"
+  $startBat = "$env:USERPROFILE\.orbit\start-daemon.bat"
+  $cfgToken = ""
+  try { $cfgToken = (Get-Content $ConfigPath -Raw | ConvertFrom-Json).token } catch {}
+
+  $batScript = @"
+@echo off
+set ORBIT_SERVER_URL=$REMOTE
+set ORBIT_TOKEN=$cfgToken
+:loop
+echo [%date% %time%] 데몬 시작 >> "$logFile"
+"$NodePath" "$DaemonScript" >> "$logFile" 2>&1
+echo [%date% %time%] 데몬 종료 (10초 후 재시작) >> "$logFile"
+timeout /t 10 /nobreak >nul
+goto loop
+"@
+  $batScript | Set-Content $startBat -Encoding ASCII
+  # Startup도 갱신
+  $StartupDir = [System.Environment]::GetFolderPath('Startup')
+  $batScript | Set-Content "$StartupDir\orbit-daemon.bat" -Encoding ASCII
+  Start-Process -WindowStyle Hidden -FilePath "cmd.exe" -ArgumentList "/c `"$startBat`""
+  Start-Sleep -Seconds 3
+
+  # 6. 확인
+  $newPid = Get-Content "$env:USERPROFILE\.orbit\personal-agent.pid" -ErrorAction SilentlyContinue
+  Show-Progress 100 "업데이트 완료!"
+  Report-Install "update" "ok" "pull+restart, PID:$newPid"
+
+  Write-Host ""
+  Write-Host "  ╔══════════════════════════════════╗"
+  Write-Host "  ║   ✅ 업데이트 완료!               ║"
+  Write-Host "  ╚══════════════════════════════════╝"
+  Write-Host ""
+  if ($pullResult -match "Already up to date") {
+    Write-Host "  코드: 이미 최신"
+  } else {
+    Write-Host "  코드: 업데이트 적용됨"
+  }
+  Write-Host "  데몬: PID $newPid"
+  Write-Host "  웹: $REMOTE"
+  Write-Host ""
+  exit 0
+}
+
+# ═══════════════════════════════════════════════════════════════
+# 신규 설치
+# ═══════════════════════════════════════════════════════════════
 Write-Host "  ╔══════════════════════════════════╗"
 Write-Host "  ║   Orbit AI 설치 중...             ║"
 Write-Host "  ╚══════════════════════════════════╝"

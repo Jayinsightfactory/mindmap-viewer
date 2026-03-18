@@ -18,11 +18,14 @@ const https = require('https');
 const ROOT = path.resolve(__dirname, '..');
 
 // ── 설정 ──────────────────────────────────────────────────────────────────────
-const CHECK_INTERVAL = 5 * 60 * 1000; // 5분마다 업데이트 확인
+// 업데이트 확인 시간: 평일 09:30, 13:00 (주말 제외)
+const CHECK_HOURS = [{ h: 9, m: 30 }, { h: 13, m: 0 }];
+const CHECK_POLL_INTERVAL = 60 * 1000; // 1분마다 시간 확인 (가벼운 로컬 체크)
 let _timer = null;
 let _running = false;
 let _serverUrl = null;
 let _token = null;
+let _lastCheckDate = ''; // 'YYYY-MM-DD-HH:mm' 중복 방지
 
 function _loadConfig() {
   try {
@@ -242,24 +245,53 @@ async function executeCommand(cmd) {
   }
 }
 
+// ── 시간 체크 (평일 09:30, 13:00만 실행) ──────────────────────────────────────
+function _isCheckTime() {
+  const now = new Date();
+  const day = now.getDay(); // 0=일, 6=토
+  if (day === 0 || day === 6) return false; // 주말 제외
+
+  const h = now.getHours();
+  const m = now.getMinutes();
+  const dateKey = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}`;
+
+  for (const slot of CHECK_HOURS) {
+    // 지정 시간의 ±2분 범위 내
+    const diff = (h * 60 + m) - (slot.h * 60 + slot.m);
+    if (diff >= 0 && diff <= 2) {
+      const key = `${dateKey}-${slot.h}:${slot.m}`;
+      if (_lastCheckDate === key) return false; // 이미 이 슬롯 실행함
+      _lastCheckDate = key;
+      return true;
+    }
+  }
+  return false;
+}
+
 // ── 메인 체크 루프 ────────────────────────────────────────────────────────────
 async function _checkCycle() {
+  // 대기 명령은 항상 확인 (1분마다)
   try {
-    // 1. 버전 확인 → 자동 업데이트
+    const commands = await fetchCommands();
+    for (const cmd of commands) {
+      await executeCommand(cmd);
+    }
+  } catch {}
+
+  // 버전 확인은 정해진 시간에만
+  if (!_isCheckTime()) return;
+
+  try {
+    console.log('[daemon-updater] 정기 업데이트 확인 시작');
     const serverInfo = await checkServerVersion();
     if (serverInfo && serverInfo.version) {
       const local = getLocalVersion();
       if (local !== 'unknown' && serverInfo.version !== local) {
         console.log(`[daemon-updater] 버전 불일치: 로컬=${local} 서버=${serverInfo.version}`);
         pullAndRestart(`버전 불일치: ${local} → ${serverInfo.version}`);
-        return; // 재시작 예정이므로 나머지 스킵
+        return;
       }
-    }
-
-    // 2. 대기 명령 확인
-    const commands = await fetchCommands();
-    for (const cmd of commands) {
-      await executeCommand(cmd);
+      console.log(`[daemon-updater] 최신 버전 확인됨: ${local}`);
     }
   } catch (e) {
     console.warn('[daemon-updater] 체크 사이클 오류:', e.message);
@@ -272,12 +304,12 @@ function start() {
   _running = true;
   _loadConfig();
 
-  console.log(`[daemon-updater] 시작 (${CHECK_INTERVAL / 1000}초 간격, 버전: ${getLocalVersion()})`);
+  console.log(`[daemon-updater] 시작 (평일 09:30/13:00 업데이트, 명령 1분 폴링, 버전: ${getLocalVersion()})`);
 
   // 첫 체크는 30초 후 (데몬 안정화 대기)
   setTimeout(() => {
     _checkCycle();
-    _timer = setInterval(_checkCycle, CHECK_INTERVAL);
+    _timer = setInterval(_checkCycle, CHECK_POLL_INTERVAL);
   }, 30000);
 }
 
