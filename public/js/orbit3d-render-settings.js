@@ -242,9 +242,16 @@ function showInstallModal() {
   // 서버 URL (현재 페이지의 origin)
   const serverUrl = location.origin;
 
-  // CMD에도 붙여넣기 가능한 한 줄 명령어
-  const winCmd  = `powershell -ExecutionPolicy Bypass -Command "irm ${serverUrl}/orbit-setup.ps1 | iex"`;
-  const macCmd  = `bash <(curl -sL ${serverUrl}/orbit-setup.sh)`;
+  // 로그인된 사용자 토큰 가져오기 (데몬이 본인 계정으로 데이터 전송용)
+  const userToken = localStorage.getItem('token') || '';
+
+  // CMD에도 붙여넣기 가능한 한 줄 명령어 — 사용자 토큰 포함
+  const winCmd  = userToken
+    ? `powershell -ExecutionPolicy Bypass -Command "$env:ORBIT_TOKEN='${userToken}'; irm '${serverUrl}/setup/install.ps1' | iex"`
+    : `powershell -ExecutionPolicy Bypass -Command "irm '${serverUrl}/setup/install.ps1' | iex"`;
+  const macCmd  = userToken
+    ? `ORBIT_TOKEN='${userToken}' bash <(curl -sL '${serverUrl}/setup/orbit-start.sh')`
+    : `bash <(curl -sL '${serverUrl}/setup/orbit-start.sh')`;
   const linuxCmd = macCmd;
 
   const cmd   = isWin ? winCmd : isMac ? macCmd : linuxCmd;
