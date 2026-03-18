@@ -625,18 +625,32 @@ function _buildTeamSystemInner(teamData) {
       ORBIT_R * Math.sin(teamAngle),
     );
 
-    // 팀 코어 (작은 와이어프레임)
+    // 팀 코어 (팀 중심 구체)
     const teamCore = createWireNode(3, new THREE.Color(teamColor), { wireOpacity: 0.3, glowOpacity: 0.1 });
     teamCore.position.copy(teamCenter);
     teamCore.userData = { isTeamCluster: true, teamName, orbitR: ORBIT_R, orbitAngle: teamAngle, orbitSpeed: 0.008 + ti * 0.002, orbitCenter: new THREE.Vector3(0, 0, 0) };
     scene.add(teamCore);
     planetMeshes.push(teamCore);
 
+    // 팀 클러스터 궤도 링 (멤버가 팀 중심 주위를 도는 원)
+    {
+      const ring = new THREE.RingGeometry(CLUSTER_R - 0.06, CLUSTER_R + 0.06, 96);
+      const ringM = new THREE.MeshBasicMaterial({ color: new THREE.Color(teamColor), transparent: true, opacity: 0.10, side: THREE.DoubleSide });
+      const rm = new THREE.Mesh(ring, ringM);
+      rm.position.copy(teamCenter);
+      rm.rotation.x = Math.PI / 2;
+      rm.userData = { isClusterRing: true, orbitR: ORBIT_R, orbitAngle: teamAngle, orbitSpeed: 0.008 + ti * 0.002, orbitCenter: new THREE.Vector3(0, 0, 0) };
+      orbitRings.push(rm); scene.add(rm);
+    }
+
     // 팀 라벨
     _teamNodes.push({
       type: 'department', pos: teamCenter.clone(), obj: teamCore,
       label: teamName, sublabel: `${teamMembers.length}명`, color: teamColor, size: 'md',
     });
+
+    // 현재 로그인 사용자 ID (me 표시용)
+    const _myUserId = (typeof _orbitUser !== 'undefined' && _orbitUser?.id) || '';
 
     // 팀 멤버: 팀 중심 주위에 클러스터링
     teamMembers.forEach((member, mi) => {
@@ -660,9 +674,11 @@ function _buildTeamSystemInner(teamData) {
       scene.add(mObj);
       planetMeshes.push(mObj);
 
+      const isMe = member.userId === _myUserId;
       _teamNodes.push({
         type: 'member', pos: mPos.clone(), obj: mObj,
-        label: member.name, sublabel: teamName, color: member.color, size: 'lg',
+        label: isMe ? `${member.name} (me)` : member.name,
+        sublabel: teamName, color: member.color, size: isMe ? 'xl' : 'lg',
         memberId: member.id,
       });
 
