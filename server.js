@@ -861,6 +861,53 @@ app.get('/api/daemon/drive-config', (req, res) => {
 
 // ─── 학습 분석 API ──────────────────────────────────────────────────────────
 const workLearner = (() => { try { return require('./src/work-learner'); } catch { return null; } })();
+const reportSheet = (() => { try { return require('./src/report-sheet'); } catch { return null; } })();
+
+// 리포트 시트 초기화
+if (reportSheet && process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
+  const enabled = reportSheet.init({
+    credentialsJson: process.env.GOOGLE_SERVICE_ACCOUNT_JSON,
+    folderId: process.env.GOOGLE_DRIVE_CAPTURES_FOLDER_ID,
+  });
+  if (enabled) console.log('[report-sheet] 초기화 완료');
+}
+
+// 정기 리포트 생성 (매일 09:00, 13:30, 18:00 KST)
+const REPORT_HOURS = [{ h: 0, m: 0 }, { h: 4, m: 30 }, { h: 9, m: 0 }]; // UTC (KST-9)
+let _lastReportKey = '';
+setInterval(async () => {
+  if (!workLearner || !reportSheet) return;
+  const now = new Date();
+  const h = now.getUTCHours();
+  const m = now.getUTCMinutes();
+  const day = now.getUTCDay();
+  if (day === 0 || day === 6) return; // 주말 제외
+
+  const match = REPORT_HOURS.find(s => h === s.h && m >= s.m && m <= s.m + 2);
+  if (!match) return;
+  const key = `${now.toISOString().slice(0, 10)}-${h}:${match.m}`;
+  if (_lastReportKey === key) return;
+  _lastReportKey = key;
+
+  console.log('[report] 정기 리포트 생성 시작');
+  try {
+    const pool = dbModule.getDb();
+    const { rows } = await pool.query("SELECT DISTINCT user_id FROM events WHERE type='keyboard.chunk'");
+    const userIds = rows.map(r => r.user_id).filter(Boolean);
+    if (userIds.length === 0) return;
+
+    // 멤버 이름 매핑
+    const nameRows = await pool.query('SELECT id, name, email FROM users');
+    const nameMap = {};
+    nameRows.rows.forEach(r => { nameMap[r.id] = r.name || r.email?.split('@')[0] || r.id.substring(0, 10); });
+
+    const result = await workLearner.analyzeWorkspace(pool, userIds);
+    const url = await reportSheet.writeReport(result, nameMap);
+    if (url) console.log('[report] 리포트 전송 완료:', url);
+  } catch (e) {
+    console.error('[report] 에러:', e.message);
+  }
+}, 60 * 1000); // 1분마다 체크
 
 // GET /api/learning/analyze?userId=xxx — 개인 분석
 app.get('/api/learning/analyze', async (req, res) => {
@@ -875,6 +922,27 @@ app.get('/api/learning/analyze', async (req, res) => {
     res.json(result);
   } catch (e) {
     console.error('[learning] error:', e.message);
+    res.json({ error: e.message });
+  }
+});
+
+// POST /api/learning/report — 즉시 리포트 생성 (수동)
+app.post('/api/learning/report', async (req, res) => {
+  if (!workLearner || !reportSheet) return res.json({ error: 'not available' });
+  try {
+    const pool = dbModule.getDb();
+    const { rows } = await pool.query("SELECT DISTINCT user_id FROM events WHERE type='keyboard.chunk'");
+    const userIds = rows.map(r => r.user_id).filter(Boolean);
+    if (userIds.length === 0) return res.json({ error: '데이터 없음' });
+
+    const nameRows = await pool.query('SELECT id, name, email FROM users');
+    const nameMap = {};
+    nameRows.rows.forEach(r => { nameMap[r.id] = r.name || r.email?.split('@')[0] || r.id.substring(0, 10); });
+
+    const result = await workLearner.analyzeWorkspace(pool, userIds);
+    const url = await reportSheet.writeReport(result, nameMap);
+    res.json({ ok: true, url, memberCount: result.members?.length || 0 });
+  } catch (e) {
     res.json({ error: e.message });
   }
 });
