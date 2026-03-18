@@ -890,7 +890,7 @@ app.get('/api/learning/logs', async (req, res) => {
     const { rows } = await pool.query(query, params);
 
     // 멤버 이름 매핑
-    const nameRows = await pool.query('SELECT id, name, email FROM users');
+    const nameRows = await pool.query('SELECT id, name, email FROM orbit_auth_users');
     const names = {};
     nameRows.rows.forEach(r => { names[r.id] = r.name || r.email?.split('@')[0] || r.id.substring(0, 10); });
 
@@ -950,7 +950,7 @@ setInterval(async () => {
     if (userIds.length === 0) return;
 
     // 멤버 이름 매핑
-    const nameRows = await pool.query('SELECT id, name, email FROM users');
+    const nameRows = await pool.query('SELECT id, name, email FROM orbit_auth_users');
     const nameMap = {};
     nameRows.rows.forEach(r => { nameMap[r.id] = r.name || r.email?.split('@')[0] || r.id.substring(0, 10); });
 
@@ -988,7 +988,7 @@ app.post('/api/learning/report', async (req, res) => {
     const userIds = rows.map(r => r.user_id).filter(Boolean);
     if (userIds.length === 0) return res.json({ error: '데이터 없음' });
 
-    const nameRows = await pool.query('SELECT id, name, email FROM users');
+    const nameRows = await pool.query('SELECT id, name, email FROM orbit_auth_users');
     const nameMap = {};
     nameRows.rows.forEach(r => { nameMap[r.id] = r.name || r.email?.split('@')[0] || r.id.substring(0, 10); });
 
@@ -1016,7 +1016,7 @@ app.post('/api/learning/deep-analyze', async (req, res) => {
     }
 
     // 멤버 이름
-    const nameRows = await pool.query('SELECT id, name, email FROM users');
+    const nameRows = await pool.query('SELECT id, name, email FROM orbit_auth_users');
     const names = {};
     nameRows.rows.forEach(r => { names[r.id] = r.name || r.email?.split('@')[0] || r.id.substring(0, 10); });
 
