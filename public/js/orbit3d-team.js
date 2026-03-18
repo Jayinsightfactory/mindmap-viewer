@@ -607,6 +607,15 @@ function _buildTeamSystemInner(teamData) {
     const teamR = BASE_R + ti * BASE_R * 0.8; // 팀별 궤도 반지름 (점점 바깥)
     const teamColor = TEAM_COLORS[ti % TEAM_COLORS.length];
 
+    // 팀별 원형 궤도 링
+    {
+      const ring = new THREE.RingGeometry(teamR - 0.08, teamR + 0.08, 128);
+      const ringM = new THREE.MeshBasicMaterial({ color: new THREE.Color(teamColor), transparent: true, opacity: 0.12, side: THREE.DoubleSide });
+      const rm = new THREE.Mesh(ring, ringM);
+      rm.rotation.x = Math.PI / 2;
+      orbitRings.push(rm); scene.add(rm);
+    }
+
     // 팀 라벨 노드 (궤도 위에 표시)
     const teamLabelPos = new THREE.Vector3(teamR + 1, 2, 0);
     _teamNodes.push({
