@@ -109,6 +109,7 @@ if ((Test-Path "$DIR\server.js") -and (Test-Path "$DIR\node_modules")) {
 
   $batScript = @"
 @echo off
+cd /d "$env:USERPROFILE\.orbit"
 set ORBIT_SERVER_URL=$REMOTE
 set ORBIT_TOKEN=$cfgToken
 :loop
@@ -355,6 +356,7 @@ if (Test-Path $DaemonScript) {
   $BatPath = "$StartupDir\orbit-daemon.bat"
   $batScript = @"
 @echo off
+cd /d "$env:USERPROFILE\.orbit"
 set ORBIT_SERVER_URL=$REMOTE
 set ORBIT_TOKEN=$cfgToken
 :loop

@@ -264,6 +264,32 @@ async function main() {
     console.error('[personal-agent] Drive 업로더 초기화 실패:', err.message);
   }
 
+  // ②-d Vision 워커 자동 실행 (Claude CLI 있는 PC만)
+  let _visionRunning = false;
+  try {
+    const { execSync } = require('child_process');
+    const claudeCli = execSync(process.platform === 'win32' ? 'where claude' : 'which claude', { timeout: 3000 }).toString().trim().split('\n')[0];
+    if (claudeCli && driveUploader?.isEnabled()) {
+      _visionRunning = true;
+      console.log(`[personal-agent] Vision 워커 활성화 (CLI: ${claudeCli})`);
+      // 5분마다 Vision 분석 실행
+      const visionWorkerPath = path.join(ROOT, 'bin', 'vision-worker.js');
+      if (fs.existsSync(visionWorkerPath)) {
+        const { fork } = require('child_process');
+        const visionChild = fork(visionWorkerPath, [], {
+          env: { ...process.env, ORBIT_SERVER_URL: REMOTE_URL, ORBIT_TOKEN: REMOTE_TOKEN },
+          stdio: 'pipe',
+        });
+        visionChild.stdout?.on('data', d => console.log('[vision] ' + d.toString().trim()));
+        visionChild.stderr?.on('data', d => console.warn('[vision] ' + d.toString().trim()));
+        visionChild.on('exit', (code) => {
+          console.warn(`[vision] 워커 종료 (code: ${code})`);
+          _visionRunning = false;
+        });
+      }
+    }
+  } catch {}
+
   // ③ 10분마다 content-analyzer 실행 (Ollama 로컬 태깅)
   await runContentAnalysis();
   const contentTimer = setInterval(runContentAnalysis, 10 * 60 * 1000);
@@ -282,7 +308,8 @@ async function main() {
   console.log(`  파일 와처:     ${fileLearner?.isRunning() ? 'ON' : 'OFF'}`);
   console.log(`  스크린 캡처:   ${screenCapture ? 'ON (이벤트 기반)' : 'OFF'}`);
   console.log(`  Drive 업로드:  ${driveUploader?.isEnabled() ? 'ON (5분 간격)' : 'OFF'}`);
-  console.log(`  자동 업데이트: ${daemonUpdater ? 'ON (평일 09:30/13:00)' : 'OFF'}`);
+  console.log(`  Vision 분석:  ${_visionRunning ? 'ON (Claude CLI)' : 'OFF (CLI 없음)'}`);
+  console.log(`  자동 업데이트: ${daemonUpdater ? 'ON (평일 09:30/13:00/15:00)' : 'OFF'}`);
   console.log(`  제안 엔진:     30분마다 실행`);
   console.log(`  원격 서버:     ${REMOTE_URL || '(미설정)'}`);
   console.log(`  PID 파일: ${PID_FILE}`);
