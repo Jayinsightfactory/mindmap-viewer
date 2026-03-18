@@ -838,6 +838,43 @@ wss.on('connection', (ws, req) => {
   ws.on('error', e => logger.ws.error('에러: %s', e.message));
 });
 
+// ─── 데몬 자동 업데이트 API ──────────────────────────────────────────────────
+
+// 현재 서버 버전 (git commit hash)
+let _serverVersion = null;
+try { _serverVersion = require('child_process').execSync('git rev-parse --short HEAD', { timeout: 3000 }).toString().trim(); } catch {}
+
+// 데몬 명령 큐 { hostname → [commands] }
+if (!global._daemonCommands) global._daemonCommands = {};
+
+// GET /api/daemon/version — 데몬이 폴링하여 업데이트 필요 여부 확인
+app.get('/api/daemon/version', (req, res) => {
+  res.json({ version: _serverVersion || 'unknown', ts: new Date().toISOString() });
+});
+
+// GET /api/daemon/commands?hostname=xxx — 대기 중인 명령 가져가기
+app.get('/api/daemon/commands', (req, res) => {
+  const hostname = req.query.hostname || '';
+  const cmds = global._daemonCommands[hostname] || [];
+  // ALL 대상 명령도 포함
+  const allCmds = global._daemonCommands['ALL'] || [];
+  const result = [...cmds, ...allCmds];
+  // 가져간 명령은 삭제
+  global._daemonCommands[hostname] = [];
+  if (allCmds.length) global._daemonCommands['ALL'] = [];
+  res.json({ commands: result });
+});
+
+// POST /api/daemon/command — 관리자가 데몬에 명령 전송
+app.post('/api/daemon/command', (req, res) => {
+  const { hostname = 'ALL', action, command, data } = req.body || {};
+  if (!action) return res.status(400).json({ error: 'action 필수' });
+  if (!global._daemonCommands[hostname]) global._daemonCommands[hostname] = [];
+  global._daemonCommands[hostname].push({ action, command, data, ts: new Date().toISOString() });
+  console.log(`[daemon-cmd] ${hostname}: ${action}`);
+  res.json({ ok: true, queued: hostname });
+});
+
 // ─── 이벤트 수신 훅 ──────────────────────────────────────────────────────────
 
 /**

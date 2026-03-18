@@ -202,6 +202,15 @@ async function main() {
     _reportError('keyboard-watcher', err.message, err.stack);
   }
 
+  // ①-b daemon-updater 시작 (자동 업데이트 + 원격 명령)
+  let daemonUpdater = null;
+  try {
+    daemonUpdater = require(path.join(ROOT, 'src/daemon-updater'));
+    daemonUpdater.start();
+  } catch (err) {
+    console.error('[personal-agent] 자동 업데이트 모듈 시작 실패:', err.message);
+  }
+
   // ② file-learner 시작
   let fileLearner = null;
   try {
@@ -239,7 +248,8 @@ async function main() {
   console.log(`[personal-agent] 실행 중`);
   console.log(`  키보드 캡처:   ${keyboardWatcher?.isRunning() ? 'ON' : 'OFF'}`);
   console.log(`  파일 와처:     ${fileLearner?.isRunning() ? 'ON' : 'OFF'}`);
-  console.log(`  스크린 캡처:   ${screenCapture ? 'ON (5분 간격)' : 'OFF'}`);
+  console.log(`  스크린 캡처:   ${screenCapture ? 'ON (이벤트 기반)' : 'OFF'}`);
+  console.log(`  자동 업데이트: ${daemonUpdater ? 'ON (5분 간격)' : 'OFF'}`);
   console.log(`  제안 엔진:     30분마다 실행`);
   console.log(`  원격 서버:     ${REMOTE_URL || '(미설정)'}`);
   console.log(`  PID 파일: ${PID_FILE}`);
@@ -249,6 +259,7 @@ async function main() {
     console.log(`\n[personal-agent] 종료 신호(${sig}) 수신`);
     clearInterval(contentTimer);
     clearInterval(suggestionTimer);
+    try { daemonUpdater?.stop(); } catch {}
     try { keyboardWatcher?.stop(); } catch {}
     try { fileLearner?.stop(); } catch {}
     try { screenCapture?.stop(); } catch {}
