@@ -491,10 +491,12 @@ async function _getCachedGraph(key, builder) {
   if (cached && Date.now() - cached.ts < GRAPH_CACHE_TTL) return cached.graph;
   const graph = await builder();
   _graphCache.set(key, { graph, ts: Date.now() });
-  // 캐시 엔트리 50개 초과 시 오래된 것 정리
-  if (_graphCache.size > 50) {
+  // 캐시 엔트리 10개 초과 시 전부 정리 (OOM 방지)
+  if (_graphCache.size > 10) {
     const now = Date.now();
-    for (const [k, v] of _graphCache) { if (now - v.ts > GRAPH_CACHE_TTL * 2) _graphCache.delete(k); }
+    for (const [k, v] of _graphCache) { if (now - v.ts > GRAPH_CACHE_TTL) _graphCache.delete(k); }
+    // 그래도 많으면 전부 삭제
+    if (_graphCache.size > 10) _graphCache.clear();
   }
   return graph;
 }
