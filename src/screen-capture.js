@@ -377,7 +377,7 @@ function start() {
   _lastCaptureTime = 0;
   _checkVisionEnabled();
   console.log(`[screen-capture] 지능형 캡처 시작 (저장: ${CAPTURE_DIR})`);
-  console.log(`[screen-capture] 쿨타임: 고가치=${COOLTIME.work_high/1000}s 일반=${COOLTIME.work_normal/1000}s idle=${COOLTIME.idle/1000}s 자동화=${COOLTIME.automation/1000}s`);
+  console.log(`[screen-capture] 최소 쿨타임: ${MIN_COOLTIME/1000}s (이벤트 기반 캡처)`);
   capture('startup');
 }
 

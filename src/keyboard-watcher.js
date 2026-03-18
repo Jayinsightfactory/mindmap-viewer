@@ -114,8 +114,8 @@ function getActiveWindowTitle() {
     }
     if (process.platform === 'win32') {
       return execSync(
-        `powershell -NoProfile -Command "(Get-Process | Where-Object {$_.MainWindowHandle -eq [System.Diagnostics.Process]::GetCurrentProcess().MainWindowHandle} | Select-Object -First 1).MainWindowTitle; if(-not $?) { (Get-Process | Where-Object {$_.MainWindowHandle -ne 0 -and $_.Responding} | Sort-Object CPU -Descending | Select-Object -First 1).MainWindowTitle }"`,
-        { timeout: 1500 }
+        `powershell -NoProfile -Command "Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class WinAPI { [DllImport(\\\"user32.dll\\\")] public static extern IntPtr GetForegroundWindow(); [DllImport(\\\"user32.dll\\\", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder text, int count); }'; $h=[WinAPI]::GetForegroundWindow(); $b=New-Object System.Text.StringBuilder 512; [void][WinAPI]::GetWindowText($h,$b,512); $b.ToString()"`,
+        { timeout: 3000 }
       ).toString().trim();
     }
     if (process.platform === 'linux') {
@@ -337,6 +337,9 @@ function _flushToLocalBuffer() {
     return;
   }
 
+  // 윈도우 타이틀 수집 (뭘 하고 있는지) — 다른 곳에서 참조하므로 먼저 선언
+  const windowTitle = getActiveWindowTitle();
+
   // 스크린 캡처 트리거: 앱 전환 감지
   if (_screenCapture && app && app !== _lastDetectedApp) {
     _lastDetectedApp = app;
@@ -359,9 +362,6 @@ function _flushToLocalBuffer() {
   }
   // 스크린 캡처: 키 입력 활동
   if (_screenCapture) _screenCapture.onKeyActivity();
-
-  // 윈도우 타이틀 수집 (뭘 하고 있는지)
-  const windowTitle = getActiveWindowTitle();
 
   // 활동 기록 (로컬 메모리에만)
   _activityBuffer.push({
