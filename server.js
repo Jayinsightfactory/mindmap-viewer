@@ -404,7 +404,7 @@ app.use('/api/', (req, res, next) => {
 
 // Stripe Webhook은 서명 검증을 위해 원본 바디(Buffer)가 필요 — JSON 파싱 전에 처리
 app.use('/api/payment/webhook', express.raw({ type: 'application/json' }));
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '2mb' }));
 // 프로덕션: 압축된 JS 우선 사용
 if (process.env.NODE_ENV === 'production') {
   // 개발 단계: 원본 JS 사용 (minified에서 TDZ 에러 발생)
@@ -940,11 +940,11 @@ app.post('/api/hook', async (req, res) => {
     // ── 캡처 분석 큐 (screen.capture → 분석 워커가 처리) ──────────────────
     for (const ev of events) {
       if (ev.type === 'screen.capture' && ev.data?.imageBase64) {
-        // 분석 대기 큐에 추가 (워커가 가져감)
+        // base64는 메모리에 보관하지 않음 (OOM 방지)
+        // 메타데이터만 큐에 저장, 워커가 필요 시 디스크에서 로드
         if (!global._visionQueue) global._visionQueue = [];
         global._visionQueue.push({
           id: ev.id,
-          imageBase64: ev.data.imageBase64,
           app: ev.data.app,
           windowTitle: ev.data.windowTitle,
           trigger: ev.data.trigger,
@@ -953,9 +953,8 @@ app.post('/api/hook', async (req, res) => {
           userId: ev.userId || hookUserId,
           ts: ev.timestamp,
         });
-        // 큐 최대 50개 (오래된 것 삭제)
-        if (global._visionQueue.length > 50) global._visionQueue = global._visionQueue.slice(-50);
-        // base64는 DB에 저장 안 함
+        if (global._visionQueue.length > 10) global._visionQueue = global._visionQueue.slice(-10);
+        // base64는 DB에도 메모리에도 저장 안 함
         delete ev.data.imageBase64;
       }
     }

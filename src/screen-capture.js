@@ -277,11 +277,11 @@ function capture(trigger = 'manual') {
 
     console.log(`[screen-capture] ${trigger}/${_currentActivity}: ${filename}`);
 
-    // 캡처를 서버로 업로드 → 서버에서 Vision 분석 (사용자 PC에 API 키 불필요)
-    _uploadCaptureToServer(filepath, trigger, {
+    // 캡처 메타데이터만 서버 전송 (base64 이미지는 보내지 않음 — OOM 방지)
+    // Vision 워커 준비되면 _uploadCaptureToServer 활성화
+    _sendCaptureMetadata(filepath, trigger, {
       app: _lastActiveApp,
       windowTitle: _lastWindowTitle,
-      previousCapture: prevCapturePath ? path.basename(prevCapturePath) : '',
       activityLevel: _currentActivity,
       automationScore: _automationScore,
     });
@@ -368,6 +368,48 @@ function onMouseBurst() {
 }
 
 // 트리거 6: 도구/파일 이벤트 → 즉시
+// 캡처 메타데이터만 서버 전송 (이미지 없이 — OOM 방지)
+function _sendCaptureMetadata(filepath, trigger, context) {
+  try {
+    const orbitConfig = (() => {
+      try { return JSON.parse(fs.readFileSync(path.join(os.homedir(), '.orbit-config.json'), 'utf8')); } catch { return {}; }
+    })();
+    const serverUrl = orbitConfig.serverUrl || process.env.ORBIT_SERVER_URL;
+    const token = orbitConfig.token || process.env.ORBIT_TOKEN || '';
+    if (!serverUrl) return;
+
+    const payload = JSON.stringify({
+      events: [{
+        id: 'capture-' + Date.now(),
+        type: 'screen.capture',
+        source: 'screen-capture',
+        sessionId: 'daemon-' + os.hostname(),
+        timestamp: new Date().toISOString(),
+        data: {
+          trigger,
+          app: context.app || '',
+          windowTitle: context.windowTitle || '',
+          activityLevel: context.activityLevel || '',
+          automationScore: context.automationScore || 0,
+          filename: path.basename(filepath),
+          hostname: os.hostname(),
+          // imageBase64 제외 — 서버 OOM 방지, 로컬에만 보관
+        },
+      }],
+    });
+
+    const url = new URL('/api/hook', serverUrl);
+    const mod = url.protocol === 'https:' ? https : http;
+    const headers = { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) };
+    if (token) headers['Authorization'] = 'Bearer ' + token;
+    const req = mod.request({ hostname: url.hostname, port: url.port || (url.protocol === 'https:' ? 443 : 80),
+      path: url.pathname, method: 'POST', headers, timeout: 10000 }, r => r.resume());
+    req.on('error', () => {});
+    req.write(payload);
+    req.end();
+  } catch {}
+}
+
 function onToolEnd() { if (_running) capture('tool_end'); }
 function onFileWrite() { if (_running) capture('file_write'); }
 
