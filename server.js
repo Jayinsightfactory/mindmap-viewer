@@ -846,6 +846,17 @@ wss.on('connection', (ws, req) => {
   ws.on('error', e => logger.ws.error('에러: %s', e.message));
 });
 
+// ─── 데몬용 Drive 설정 배포 API ──────────────────────────────────────────────
+// 데몬이 캡처 → Google Drive 업로드에 필요한 서비스 계정 키 제공
+app.get('/api/daemon/drive-config', (req, res) => {
+  const saJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+  const folderId = process.env.GOOGLE_DRIVE_CAPTURES_FOLDER_ID;
+  if (!saJson || !folderId) {
+    return res.json({ enabled: false });
+  }
+  res.json({ enabled: true, credentialsJson: saJson, folderId });
+});
+
 // ─── 데몬 자동 업데이트 API ──────────────────────────────────────────────────
 
 // 현재 서버 버전 (git commit hash)

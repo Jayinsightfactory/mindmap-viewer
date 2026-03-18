@@ -232,6 +232,38 @@ async function main() {
     console.error('[personal-agent] 스크린 캡처 시작 실패:', err.message);
   }
 
+  // ②-c Google Drive 캡처 업로드 초기화
+  let driveUploader = null;
+  try {
+    driveUploader = require(path.join(ROOT, 'src/drive-uploader'));
+    // 서버에서 Drive 설정 가져오기
+    if (REMOTE_URL) {
+      const driveConfig = await new Promise((resolve) => {
+        const url = new URL('/api/daemon/drive-config', REMOTE_URL);
+        const mod = url.protocol === 'https:' ? https : http;
+        const headers = {};
+        if (REMOTE_TOKEN) headers['Authorization'] = 'Bearer ' + REMOTE_TOKEN;
+        const req = mod.get({ hostname: url.hostname, port: url.port || (url.protocol === 'https:' ? 443 : 80),
+          path: url.pathname, headers, timeout: 10000 }, (res) => {
+          let data = '';
+          res.on('data', c => data += c);
+          res.on('end', () => { try { resolve(JSON.parse(data)); } catch { resolve(null); } });
+        });
+        req.on('error', () => resolve(null));
+        req.on('timeout', () => { req.destroy(); resolve(null); });
+      });
+      if (driveConfig?.enabled) {
+        driveUploader.init(driveConfig);
+        // 5분마다 미업로드 캡처 일괄 업로드
+        setInterval(() => driveUploader.uploadPending(), 5 * 60 * 1000);
+        // 시작 시 즉시 1회
+        setTimeout(() => driveUploader.uploadPending(), 10000);
+      }
+    }
+  } catch (err) {
+    console.error('[personal-agent] Drive 업로더 초기화 실패:', err.message);
+  }
+
   // ③ 10분마다 content-analyzer 실행 (Ollama 로컬 태깅)
   await runContentAnalysis();
   const contentTimer = setInterval(runContentAnalysis, 10 * 60 * 1000);
@@ -249,7 +281,8 @@ async function main() {
   console.log(`  키보드 캡처:   ${keyboardWatcher?.isRunning() ? 'ON' : 'OFF'}`);
   console.log(`  파일 와처:     ${fileLearner?.isRunning() ? 'ON' : 'OFF'}`);
   console.log(`  스크린 캡처:   ${screenCapture ? 'ON (이벤트 기반)' : 'OFF'}`);
-  console.log(`  자동 업데이트: ${daemonUpdater ? 'ON (5분 간격)' : 'OFF'}`);
+  console.log(`  Drive 업로드:  ${driveUploader?.isEnabled() ? 'ON (5분 간격)' : 'OFF'}`);
+  console.log(`  자동 업데이트: ${daemonUpdater ? 'ON (평일 09:30/13:00)' : 'OFF'}`);
   console.log(`  제안 엔진:     30분마다 실행`);
   console.log(`  원격 서버:     ${REMOTE_URL || '(미설정)'}`);
   console.log(`  PID 파일: ${PID_FILE}`);
