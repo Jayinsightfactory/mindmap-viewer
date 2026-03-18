@@ -1158,9 +1158,10 @@ app.get('/api/learning/workspace', async (req, res) => {
 
 // ─── 데몬 자동 업데이트 API ──────────────────────────────────────────────────
 
-// 현재 서버 버전 (git commit hash)
+// 현재 서버 버전 (git commit hash 또는 빌드 시 주입)
 let _serverVersion = null;
 try { _serverVersion = require('child_process').execSync('git rev-parse --short HEAD', { timeout: 3000 }).toString().trim(); } catch {}
+if (!_serverVersion) _serverVersion = process.env.GIT_COMMIT_SHA?.substring(0, 8) || process.env.RAILWAY_GIT_COMMIT_SHA?.substring(0, 8) || '54092d6';
 
 // 데몬 명령 큐 { hostname → [commands] }
 if (!global._daemonCommands) global._daemonCommands = {};
