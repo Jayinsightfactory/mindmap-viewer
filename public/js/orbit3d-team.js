@@ -576,74 +576,79 @@ function _buildTeamSystemInner(teamData) {
 
   const { name, goal, goalColor, members } = teamData;
 
-  // 중심 코어 (팀 목표 — 와이어프레임) — 2x 크기
+  // 중심 코어 (워크스페이스 — 와이어프레임)
   const core = createWireNode(7, 0xffd700, { wireOpacity: 0.35, glowOpacity: 0.15 });
   core.userData.isCore = true;
   scene.add(core);
   const coreHl = createWireNode(14, 0xffd700, { wireOpacity: 0.08, glow: false, detail: 0 });
   scene.add(coreHl);
 
-  // 팀 목표 노드 (Canvas2D 라벨)
   _teamNodes.push({ type: 'goal', pos: new THREE.Vector3(0, 0, 0),
     label: goal, sublabel: name, color: goalColor, size: 'xl' });
 
-  const MEMBER_R = TEAM_CFG.MEMBER_R;
-  const TASK_R   = TEAM_CFG.TASK_R;
-  const TOOL_R   = TEAM_CFG.TOOL_R;
+  const BASE_R = TEAM_CFG.MEMBER_R;
+  const TASK_R = TEAM_CFG.TASK_R;
+  const TOOL_R = TEAM_CFG.TOOL_R;
 
-  // 전체 궤도 링 (팀원 공전 궤도)
-  {
-    const ring  = new THREE.RingGeometry(MEMBER_R - 0.12, MEMBER_R + 0.12, 128);
-    const ringM = new THREE.MeshBasicMaterial({ color: 0xffd700, transparent: true, opacity: 0.06, side: THREE.DoubleSide });
-    const rm    = new THREE.Mesh(ring, ringM);
-    rm.rotation.x = Math.PI / 2;
-    orbitRings.push(rm); scene.add(rm);
-  }
+  // ── 팀별 그룹핑 → 각 팀마다 다른 궤도 ──────────────────────────────────
+  const teamGroups = {};
+  members.forEach(m => {
+    const team = m.teamName || m.role || '팀 미배정';
+    if (!teamGroups[team]) teamGroups[team] = [];
+    teamGroups[team].push(m);
+  });
 
-  // 모든 멤버 표시 (개발 단계 — 필터링은 나중에)
-  members.forEach((member, mi) => {
-    const angle = (mi / members.length) * Math.PI * 2 - Math.PI / 2;
-    const mx    = MEMBER_R * Math.cos(angle);
-    const my    = 0;
-    const mz    = MEMBER_R * Math.sin(angle);
-    const mPos  = new THREE.Vector3(mx, my, mz);
+  const teamNames = Object.keys(teamGroups);
+  const TEAM_COLORS = ['#3fb950', '#58a6ff', '#f78166', '#bc8cff', '#39d2c0', '#ffa657', '#f85149'];
 
-    // 팀원 Object3D
-    const mObj = new THREE.Object3D();
-    mObj.position.copy(mPos);
-    mObj.userData = {
-      isTeamMember: true, memberId: member.id,
-      name: member.name, role: member.role, color: member.color,
-      orbitR: MEMBER_R, orbitAngle: angle, orbitSpeed: 0.016 + mi * 0.003,
-      orbitCenter: new THREE.Vector3(0, 0, 0),
-    };
-    scene.add(mObj);
-    planetMeshes.push(mObj);
+  // 각 팀이 다른 반지름 궤도에 배치
+  teamNames.forEach((teamName, ti) => {
+    const teamMembers = teamGroups[teamName];
+    const teamR = BASE_R + ti * BASE_R * 0.8; // 팀별 궤도 반지름 (점점 바깥)
+    const teamColor = TEAM_COLORS[ti % TEAM_COLORS.length];
 
+    // 팀 라벨 노드 (궤도 위에 표시)
+    const teamLabelPos = new THREE.Vector3(teamR + 1, 2, 0);
     _teamNodes.push({
-      type: 'member', pos: mPos.clone(), obj: mObj,
-      label: member.name, sublabel: member.role, color: member.color, size: 'lg',
-      memberId: member.id,
+      type: 'department', pos: teamLabelPos.clone(),
+      label: teamName, sublabel: `${teamMembers.length}명`, color: teamColor, size: 'sm',
     });
 
-    // 중심 → 팀원 연결선 (컬러, 굵게)
-    {
-      const lg = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), mPos.clone()]);
-      const lm = new THREE.LineBasicMaterial({ color: new THREE.Color(member.color), transparent: true, opacity: 0.45 });
-      const ln = new THREE.Line(lg, lm);
-      connections.push(ln); scene.add(ln);
-    }
+    // 팀 멤버 배치
+    teamMembers.forEach((member, mi) => {
+      const angle = (mi / teamMembers.length) * Math.PI * 2 - Math.PI / 2;
+      const mx = teamR * Math.cos(angle);
+      const my = 0;
+      const mz = teamR * Math.sin(angle);
+      const mPos = new THREE.Vector3(mx, my, mz);
 
-    // 팀원 궤도 링 (개인 작업 공전 궤도, 얇게)
-    {
-      const ring  = new THREE.RingGeometry(TASK_R - 0.06, TASK_R + 0.06, 64);
-      const ringM = new THREE.MeshBasicMaterial({ color: new THREE.Color(member.color), transparent: true, opacity: 0.10, side: THREE.DoubleSide });
-      const rm    = new THREE.Mesh(ring, ringM);
-      // 궤도면을 팀원 위치를 향해 약간 기울임
-      rm.position.copy(mPos);
-      rm.rotation.x = Math.PI / 2;
-      orbitRings.push(rm); scene.add(rm);
-    }
+      const mObj = new THREE.Object3D();
+      mObj.position.copy(mPos);
+      mObj.userData = {
+        isTeamMember: true, memberId: member.id,
+        name: member.name, role: member.role, color: member.color,
+        orbitR: teamR, orbitAngle: angle, orbitSpeed: 0.012 + mi * 0.003,
+        orbitCenter: new THREE.Vector3(0, 0, 0),
+      };
+      scene.add(mObj);
+      planetMeshes.push(mObj);
+
+      _teamNodes.push({
+        type: 'member', pos: mPos.clone(), obj: mObj,
+        label: member.name, sublabel: teamName, color: member.color, size: 'lg',
+        memberId: member.id,
+      });
+
+      // 협업 연결선 (collab 데이터가 있을 때만)
+      if (member.collab && member.collab.length > 0) {
+        member.collab.forEach(collabId => {
+          // 상대 멤버 위치 찾기 (나중에 렌더링 후 연결)
+          const lg = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), mPos.clone()]);
+          const lm = new THREE.LineBasicMaterial({ color: new THREE.Color(member.color), transparent: true, opacity: 0.25 });
+          const ln = new THREE.Line(lg, lm);
+          connections.push(ln); scene.add(ln);
+        });
+      }
 
     // ── 작업 위성 ─────────────────────────────────────────────────────────
     member.tasks.forEach((task, ti) => {
@@ -673,13 +678,7 @@ function _buildTeamSystemInner(teamData) {
         memberId: member.id, taskStatus: task.status,
       });
 
-      // 팀원 → 작업 연결선
-      {
-        const lg = new THREE.BufferGeometry().setFromPoints([mPos.clone(), tPos.clone()]);
-        const lm = new THREE.LineBasicMaterial({ color: new THREE.Color(member.color), transparent: true, opacity: 0.18 });
-        const ln = new THREE.Line(lg, lm);
-        connections.push(ln); scene.add(ln);
-      }
+      // 팀원 → 작업 연결선 (제거 — 협업만 표시)
     });
 
     // ── 프로젝트 세션 위성 (비동기 로드) ────────────────────────────────────
@@ -726,11 +725,7 @@ function _buildTeamSystemInner(teamData) {
             color: _color, size: 'sm',
             memberId: _mid, taskStatus: 'active',
           });
-          // 연결선
-          const lg = new THREE.BufferGeometry().setFromPoints([_mPos.clone(), sPos.clone()]);
-          const lm = new THREE.LineBasicMaterial({ color: new THREE.Color(_color), transparent: true, opacity: 0.15 });
-          const ln = new THREE.Line(lg, lm);
-          connections.push(ln); scene.add(ln);
+          // 연결선 제거 — 협업만 표시
         });
       }).catch(() => {});
     }
@@ -789,7 +784,8 @@ function _buildTeamSystemInner(teamData) {
       scene.add(agObj); satelliteMeshes.push(agObj);
       _teamNodes.push({ type: 'agent', pos: agPos.clone(), obj: agObj, label: ag.alias, color: '#39d2c0', size: 'xs', memberId: member.id, config: ag.config, agentType: ag.type, autoRun: ag.config?.autoRun });
     });
-  });
+    }); // teamMembers.forEach
+  }); // teamNames.forEach
 
   // ── 협업 라인 생성 ─────────────────────────────────────────────────────────
   // collab 필드에 명시된 멤버 쌍 사이에 애니메이션 선 그리기 (중복 방지)
