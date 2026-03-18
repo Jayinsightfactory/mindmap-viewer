@@ -33,7 +33,7 @@ RUN mkdir -p data snapshots && chmod 755 data snapshots
 ENV NODE_ENV=production \
     PORT=4747 \
     AUTH_DISABLED=0 \
-    NODE_OPTIONS="--max-old-space-size=384"
+    NODE_OPTIONS="--max-old-space-size=512"
 
 EXPOSE 4747
 

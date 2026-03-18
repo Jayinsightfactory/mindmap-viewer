@@ -396,6 +396,14 @@ const hookLimiter = rateLimit({
 });
 
 app.use('/api/hook', hookLimiter);
+// /api/hook은 Content-Length 기반 사전 차단 (base64 이미지 OOM 방지)
+app.use('/api/hook', (req, res, next) => {
+  const cl = parseInt(req.headers['content-length'] || '0', 10);
+  if (cl > 500 * 1024) { // 500KB 이상이면 거부 (base64 이미지 포함 의심)
+    return res.status(413).json({ error: 'Payload too large — 이미지는 Drive로 업로드하세요' });
+  }
+  next();
+});
 // 벌크 임포트는 rate limit 제외 (관리자 토큰 인증 필수)
 app.use('/api/', (req, res, next) => {
   if (req.path === '/bulk-import') return next(); // skip apiLimiter
