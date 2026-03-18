@@ -301,7 +301,32 @@
     </div>
   </section>
 
-  <!-- ══════ 섹션 5: 리포트 생성 ══════ -->
+  <!-- ══════ 섹션 5: 실시간 로그 타임라인 ══════ -->
+  <section id="sec-logs">
+    <div class="section-header">
+      <div class="section-title">
+        <span class="icon">&#x1f4dd;</span> 실시간 활동 로그
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <select id="log-user-filter" onchange="loadLogs()" style="font-size:12px;padding:4px 8px;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:6px">
+          <option value="">전체 멤버</option>
+        </select>
+        <select id="log-type-filter" onchange="loadLogs()" style="font-size:12px;padding:4px 8px;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:6px">
+          <option value="">전체 타입</option>
+          <option value="keyboard.chunk">키보드</option>
+          <option value="screen.capture">캡처</option>
+          <option value="screen.analyzed">Vision 분석</option>
+          <option value="idle">대기</option>
+        </select>
+        <button class="btn btn-primary" onclick="loadLogs()" style="font-size:11px;padding:4px 10px">새로고침</button>
+      </div>
+    </div>
+    <div id="log-timeline" style="max-height:600px;overflow-y:auto">
+      <div style="color:var(--muted);padding:20px;text-align:center">로딩 중...</div>
+    </div>
+  </section>
+
+  <!-- ══════ 섹션 6: 리포트 생성 ══════ -->
   <section id="sec-report">
     <div class="section-header">
       <div class="section-title">
@@ -769,8 +794,92 @@ function formatTime(ts) {
     ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
 }
 
+// ── 로그 타임라인 ──────────────────────────────────────────────────
+async function loadLogs() {
+  const container = document.getElementById('log-timeline');
+  const userFilter = document.getElementById('log-user-filter').value;
+  const typeFilter = document.getElementById('log-type-filter').value;
+
+  container.innerHTML = '<div style="color:var(--muted);padding:20px;text-align:center">로딩 중...</div>';
+
+  try {
+    let url = '/api/learning/logs?limit=300';
+    if (userFilter) url += '&userId=' + encodeURIComponent(userFilter);
+    if (typeFilter) url += '&type=' + encodeURIComponent(typeFilter);
+    const data = await apiFetch(url);
+    const logs = data?.logs || [];
+
+    if (!logs.length) {
+      container.innerHTML = '<div style="color:var(--muted);padding:40px;text-align:center">로그가 없습니다</div>';
+      return;
+    }
+
+    const typeIcons = { 'keyboard.chunk': '⌨️', 'screen.capture': '📸', 'screen.analyzed': '🔍', 'idle': '💤' };
+    const typeColors = { 'keyboard.chunk': 'var(--blue)', 'screen.capture': 'var(--orange)', 'screen.analyzed': 'var(--green)', 'idle': 'var(--muted)' };
+
+    container.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:12px">
+      <thead><tr style="border-bottom:2px solid var(--border);text-align:left">
+        <th style="padding:8px 6px;color:var(--muted);width:40px"></th>
+        <th style="padding:8px 6px;color:var(--muted)">시간</th>
+        <th style="padding:8px 6px;color:var(--muted)">멤버</th>
+        <th style="padding:8px 6px;color:var(--muted)">앱</th>
+        <th style="padding:8px 6px;color:var(--muted)">윈도우 / 활동</th>
+        <th style="padding:8px 6px;color:var(--muted)">요약</th>
+      </tr></thead>
+      <tbody>${logs.map(log => {
+        const icon = typeIcons[log.type] || '📄';
+        const color = typeColors[log.type] || 'var(--muted)';
+        const time = fmtDate(log.timestamp);
+        const app = log.app || '-';
+        const title = log.windowTitle || log.visionScreen || log.trigger || '';
+        const summary = log.visionActivity || log.summary || (log.type === 'idle' ? '대기 중' : '');
+        const autoTag = log.visionAutomatable ? '<span style="background:var(--green);color:#000;font-size:9px;padding:1px 5px;border-radius:8px;margin-left:4px">자동화</span>' : '';
+
+        // windowHistory 표시
+        let whHtml = '';
+        if (log.windowHistory && Object.keys(log.windowHistory).length > 0) {
+          whHtml = Object.entries(log.windowHistory).map(([a,t]) =>
+            `<div style="font-size:10px;color:var(--muted);margin-top:2px">${a}: ${(t||'').substring(0,50)}</div>`
+          ).join('');
+        }
+
+        return `<tr style="border-bottom:1px solid var(--surface2);vertical-align:top" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">
+          <td style="padding:6px;text-align:center;font-size:14px">${icon}</td>
+          <td style="padding:6px;white-space:nowrap;color:var(--muted);font-size:11px">${time}</td>
+          <td style="padding:6px;color:${color};font-weight:600">${log.userName}</td>
+          <td style="padding:6px"><span style="background:var(--surface2);padding:2px 6px;border-radius:4px;font-size:11px">${app}</span></td>
+          <td style="padding:6px;max-width:250px;overflow:hidden;text-overflow:ellipsis">${title.substring(0,60)}${autoTag}${whHtml}</td>
+          <td style="padding:6px;color:var(--muted);font-size:11px">${summary.substring(0,40)}</td>
+        </tr>`;
+      }).join('')}</tbody></table>
+      <div style="padding:8px;text-align:center;color:var(--muted);font-size:11px">${logs.length}건 표시</div>`;
+  } catch (e) {
+    container.innerHTML = `<div style="color:var(--red);padding:20px;text-align:center">에러: ${e.message}</div>`;
+  }
+}
+
+// 멤버 필터 드롭다운 채우기
+async function populateLogFilters() {
+  try {
+    const ws = await apiFetch('/api/workspace/my');
+    if (!ws?.length) return;
+    const members = await apiFetch('/api/workspace/' + ws[0].id + '/members');
+    const sel = document.getElementById('log-user-filter');
+    (members || []).forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m.userId;
+      opt.textContent = m.name || m.email?.split('@')[0];
+      sel.appendChild(opt);
+    });
+  } catch {}
+}
+
 // ── 시작 ─────────────────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', loadAll);
+document.addEventListener('DOMContentLoaded', () => {
+  loadAll();
+  populateLogFilters();
+  loadLogs();
+});
 </script>
 
 </body>

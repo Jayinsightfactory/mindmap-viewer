@@ -872,6 +872,59 @@ if (reportSheet && process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
   if (enabled) console.log('[report-sheet] 초기화 완료');
 }
 
+// GET /api/learning/logs — 원시 이벤트 로그 조회 (관리자 대시보드용)
+app.get('/api/learning/logs', async (req, res) => {
+  try {
+    const pool = dbModule.getDb();
+    const limit = Math.min(parseInt(req.query.limit) || 200, 500);
+    const userId = req.query.userId || null;
+    const type = req.query.type || null;
+
+    let query = "SELECT id, type, user_id, timestamp, data_json FROM events WHERE type IN ('keyboard.chunk','screen.capture','screen.analyzed','idle')";
+    const params = [];
+    if (userId) { params.push(userId); query += ` AND user_id=$${params.length}`; }
+    if (type) { params.push(type); query += ` AND type=$${params.length}`; }
+    query += ` ORDER BY timestamp DESC LIMIT $${params.length + 1}`;
+    params.push(limit);
+
+    const { rows } = await pool.query(query, params);
+
+    // 멤버 이름 매핑
+    const nameRows = await pool.query('SELECT id, name, email FROM users');
+    const names = {};
+    nameRows.rows.forEach(r => { names[r.id] = r.name || r.email?.split('@')[0] || r.id.substring(0, 10); });
+
+    const logs = rows.map(r => {
+      let data = {};
+      try { data = typeof r.data_json === 'string' ? JSON.parse(r.data_json) : (r.data_json || {}); } catch {}
+      const ctx = data.appContext || {};
+      return {
+        id: r.id,
+        type: r.type,
+        userId: r.user_id,
+        userName: names[r.user_id] || r.user_id?.substring(0, 10),
+        timestamp: r.timestamp,
+        app: ctx.currentApp || data.app || '',
+        windowTitle: ctx.currentWindow || data.windowTitle || '',
+        windowHistory: ctx.windowHistory || {},
+        summary: data.summary || '',
+        trigger: data.trigger || '',
+        activityLevel: data.activityLevel || '',
+        mouseClicks: data.mouseClicks || 0,
+        // Vision 분석 결과
+        visionActivity: data.activity || '',
+        visionScreen: data.screen || '',
+        visionAutomatable: data.automatable || false,
+        visionHint: data.automationHint || '',
+      };
+    });
+
+    res.json({ logs, total: logs.length });
+  } catch (e) {
+    res.json({ error: e.message, logs: [] });
+  }
+});
+
 // 정기 리포트 생성 (매일 09:00, 13:30, 18:00 KST)
 const REPORT_HOURS = [{ h: 0, m: 0 }, { h: 4, m: 30 }, { h: 9, m: 0 }]; // UTC (KST-9)
 let _lastReportKey = '';
