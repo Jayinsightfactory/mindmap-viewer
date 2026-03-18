@@ -826,51 +826,52 @@ async function _loadMyWorkspaces() {
       listEl.innerHTML = '<div style="font-size:12px;color:#6e7681;padding:8px 0">참여한 워크스페이스가 없습니다.<br>아래에서 만들거나 초대코드로 참여하세요.</div>';
       return;
     }
+    const selectedWsId = window._currentWorkspaceId || '';
     listEl.innerHTML = rows.map(ws => {
       const isAdmin = ws.role==='owner' || ws.role==='admin';
       const safeName = (ws.name||'').replace(/'/g,"\\'");
+      const isSelected = ws.id === selectedWsId;
       const pendingBadge = (ws.pending_count > 0) ? `<span style="background:#f85149;color:#fff;font-size:9px;padding:1px 5px;border-radius:8px;margin-left:4px">${ws.pending_count}</span>` : '';
       return `
-      <div class="ws-card" style="cursor:default;flex-direction:column;gap:0">
+      <div class="ws-card" style="cursor:default;flex-direction:column;gap:0;${isSelected?'border-color:#1f6feb;':''}">
         <!-- 헤더: 이름 + 선택 버튼 -->
-        <div style="display:flex;align-items:center;gap:8px;padding-bottom:8px;border-bottom:1px solid #21262d;margin-bottom:8px">
-          <div style="font-size:20px">${ws.role==='owner' ? '👑' : '👤'}</div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <div style="font-size:18px">${ws.role==='owner' ? '👑' : '👤'}</div>
           <div style="flex:1;min-width:0">
             <div style="color:#e6edf3;font-size:14px;font-weight:700">${escHtml(ws.name)}</div>
-            <div style="color:#8b949e;font-size:11px">${escHtml(ws.company_name||'')} · ${ws.member_count||0}명 · ${ws.role==='owner'?'관리자':'멤버'}</div>
+            <div style="color:#8b949e;font-size:11px">${escHtml(ws.company_name||'')} · ${ws.member_count||0}명</div>
           </div>
-          <button onclick="_selectWorkspace('${ws.id}','${safeName}')"
-            style="font-size:12px;padding:6px 14px;background:#1f6feb;color:#fff;border:none;
-            border-radius:8px;cursor:pointer;font-weight:600;white-space:nowrap">팀 선택</button>
+          ${isSelected
+            ? `<span style="font-size:11px;padding:5px 12px;background:rgba(31,111,235,.2);color:#58a6ff;border:1px solid rgba(31,111,235,.4);border-radius:8px;font-weight:600">선택됨</span>`
+            : `<button onclick="_wsSelect('${ws.id}','${safeName}')"
+                style="font-size:11px;padding:5px 12px;background:#1f6feb;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600">팀 선택</button>`
+          }
         </div>
 
-        <!-- 관리 버튼 row -->
-        <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <!-- 관리 버튼: 선택된 워크스페이스만 표시 -->
+        ${isSelected ? `
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;padding-top:10px;border-top:1px solid #21262d">
           ${isAdmin ? `
           <button onclick="event.stopPropagation();generateInviteLink('${ws.id}')"
-            style="flex:1;font-size:11px;padding:6px 0;background:rgba(88,166,255,.1);color:#58a6ff;border:1px solid rgba(88,166,255,.25);
+            style="flex:1;font-size:11px;padding:7px 0;background:rgba(88,166,255,.1);color:#58a6ff;border:1px solid rgba(88,166,255,.25);
             border-radius:6px;cursor:pointer;text-align:center">초대 링크</button>
           <button onclick="event.stopPropagation();openWsMemberManage&&openWsMemberManage('${ws.id}')"
-            style="flex:1;font-size:11px;padding:6px 0;background:rgba(63,185,80,.1);color:#3fb950;border:1px solid rgba(63,185,80,.25);
+            style="flex:1;font-size:11px;padding:7px 0;background:rgba(63,185,80,.1);color:#3fb950;border:1px solid rgba(63,185,80,.25);
             border-radius:6px;cursor:pointer;text-align:center">인원배분</button>
           <button onclick="event.stopPropagation();openWsPendingList&&openWsPendingList('${ws.id}')"
-            style="flex:1;font-size:11px;padding:6px 0;background:rgba(255,166,87,.1);color:#ffa657;border:1px solid rgba(255,166,87,.25);
+            style="flex:1;font-size:11px;padding:7px 0;background:rgba(255,166,87,.1);color:#ffa657;border:1px solid rgba(255,166,87,.25);
             border-radius:6px;cursor:pointer;text-align:center">승인대기${pendingBadge}</button>
           <button onclick="event.stopPropagation();_editWorkspace('${ws.id}','${escHtml(ws.name)}','${escHtml(ws.company_name||'')}')"
-            style="font-size:11px;padding:6px 8px;background:rgba(139,148,158,.1);color:#8b949e;border:1px solid #30363d;
+            style="font-size:11px;padding:7px 8px;background:rgba(139,148,158,.1);color:#8b949e;border:1px solid #30363d;
             border-radius:6px;cursor:pointer">수정</button>
           ` : `
           <div style="flex:1;font-size:11px;color:#8b949e;padding:4px 0">팀: ${escHtml(ws.team_name||'미배정')}</div>
           <button onclick="event.stopPropagation();_leaveWorkspace('${ws.id}','${escHtml(ws.name)}')"
-            style="font-size:11px;padding:6px 10px;background:rgba(248,81,73,.1);color:#f85149;border:1px solid rgba(248,81,73,.25);
+            style="font-size:11px;padding:7px 10px;background:rgba(248,81,73,.1);color:#f85149;border:1px solid rgba(248,81,73,.25);
             border-radius:6px;cursor:pointer">나가기</button>
           `}
         </div>
-
-        <!-- 초대코드 (작게) -->
-        ${ws.invite_code ? `<div style="margin-top:6px;font-size:10px;color:#6e7681;cursor:pointer" onclick="event.stopPropagation();_copyCode('${ws.invite_code}')">
-          초대코드: <b style="color:#3fb950;letter-spacing:1px">${ws.invite_code}</b> (클릭 복사)
-        </div>` : ''}
+        ` : ''}
       </div>`;
     }).join('');
   } catch (e) {
@@ -1095,28 +1096,51 @@ async function openWsMemberManage(wsId) {
     </div>`;
     document.body.appendChild(modal);
 
-    // 팀 태그 렌더링
+    // 팀 태그 렌더링 (클릭하면 이름 수정, x로 삭제)
     function _renderTeamTags() {
       const container = modal.querySelector('#ws-team-tags');
       container.innerHTML = allTeams.map(t => {
         const isDeletable = t !== '팀 미배정';
-        return `<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 10px;background:rgba(31,111,235,.15);color:#58a6ff;border:1px solid rgba(31,111,235,.3);border-radius:12px;font-size:11px">
-          ${escHtml(t)}${isDeletable ? `<span class="ws-del-team" data-team="${escHtml(t)}" style="cursor:pointer;color:#f85149;font-size:13px;margin-left:2px">&times;</span>` : ''}
+        return `<span class="ws-team-tag" data-team="${escHtml(t)}" style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:rgba(31,111,235,.15);color:#58a6ff;border:1px solid rgba(31,111,235,.3);border-radius:12px;font-size:11px;cursor:pointer"
+          title="클릭하여 팀 이름 수정">
+          <span class="ws-team-name">${escHtml(t)}</span>${isDeletable ? `<span class="ws-del-team" data-team="${escHtml(t)}" style="cursor:pointer;color:#f85149;font-size:13px;margin-left:2px">&times;</span>` : ''}
         </span>`;
       }).join('');
+
+      // 팀 이름 클릭 → 수정
+      container.querySelectorAll('.ws-team-tag').forEach(tag => {
+        tag.querySelector('.ws-team-name').addEventListener('click', (e) => {
+          e.stopPropagation();
+          const oldName = tag.dataset.team;
+          if (oldName === '팀 미배정') return;
+          const newName = prompt('팀 이름 수정:', oldName);
+          if (!newName || newName.trim() === '' || newName === oldName) return;
+          const trimmed = newName.trim();
+          if (allTeams.includes(trimmed)) { showToast('이미 존재하는 팀입니다'); return; }
+          // 팀 이름 변경
+          const idx = allTeams.indexOf(oldName);
+          if (idx >= 0) allTeams[idx] = trimmed;
+          // 해당 팀 멤버도 변경
+          members.forEach(m => { if (m.teamName === oldName) m.teamName = trimmed; });
+          modal.querySelector('#ws-member-list').innerHTML = _buildMemberRows();
+          _bindSelectChange();
+          _renderTeamTags();
+          showToast(`'${oldName}' → '${trimmed}' 변경 (저장 버튼을 눌러야 적용됩니다)`);
+        });
+      });
+
       // 팀 삭제 이벤트
       container.querySelectorAll('.ws-del-team').forEach(btn => {
-        btn.addEventListener('click', () => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
           const teamName = btn.dataset.team;
-          // 해당 팀 멤버를 미배정으로 이동
+          if (!confirm(`'${teamName}' 팀을 삭제하시겠습니까?\n소속 멤버는 '팀 미배정'으로 이동됩니다.`)) return;
           modal.querySelectorAll('.ws-team-select').forEach(sel => {
             if (sel.value === teamName) sel.value = '팀 미배정';
           });
           allTeams = allTeams.filter(t => t !== teamName);
-          // 멤버 목록 드롭다운 갱신
           members.forEach(m => { if (m.teamName === teamName) m.teamName = '팀 미배정'; });
           modal.querySelector('#ws-member-list').innerHTML = _buildMemberRows();
-          // 드롭다운 변경 이벤트 재바인딩
           _bindSelectChange();
           _renderTeamTags();
         });
@@ -1194,6 +1218,14 @@ function _copyCode(code) {
   navigator.clipboard.writeText(code).then(() => showToast(`초대코드 복사됨: ${code}`)).catch(() => {});
 }
 window._copyCode = _copyCode;
+
+// 팀 선택 → 카드 확장 + 팀뷰 로드
+function _wsSelect(id, name) {
+  window._currentWorkspaceId = id;
+  _loadMyWorkspaces(); // 카드 재렌더링 (선택된 카드에 관리 버튼 표시)
+  _selectWorkspace(id, name); // 팀뷰 3D 로드
+}
+window._wsSelect = _wsSelect;
 
 function _selectWorkspace(id, name) {
   closePopup('workspace-popup');
