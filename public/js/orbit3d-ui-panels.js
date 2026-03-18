@@ -1021,64 +1021,158 @@ async function openWsMemberManage(wsId) {
     if (!members.length) { showToast('멤버가 없습니다'); return; }
 
     // 팀 목록 수집 (기존 멤버 팀 + 기본 팀)
-    const defaultTeams = ['팀 미배정','개발팀','디자인팀','기획팀','마케팅팀','운영팀'];
-    const allTeams = [...new Set([...defaultTeams, ...members.map(m => m.teamName).filter(Boolean)])];
+    const defaultTeams = ['팀 미배정'];
+    const existingTeams = members.map(m => m.teamName).filter(Boolean);
+    let allTeams = [...new Set([...defaultTeams, ...existingTeams])];
 
-    const html = members.map(m => {
-      const teamOptions = allTeams.map(t =>
-        `<option value="${escHtml(t)}" style="background:#161b22;color:#e6edf3" ${m.teamName===t?'selected':''}>${escHtml(t)}</option>`
-      ).join('');
-      const roleIcon = m.role==='owner' ? '👑' : m.role==='admin' ? '🛡' : '👤';
-      const roleColor = m.role==='owner' ? '#ffd700' : m.role==='admin' ? '#58a6ff' : '#8b949e';
-      return `
-      <div style="display:flex;align-items:center;gap:10px;padding:12px 8px;border-bottom:1px solid #21262d">
-        <div style="font-size:22px">${roleIcon}</div>
-        <div style="flex:1;min-width:0">
-          <div style="color:#e6edf3;font-size:14px;font-weight:600">${escHtml(m.name || m.email?.split('@')[0] || '사용자')}</div>
-          <div style="color:#8b949e;font-size:11px">${escHtml(m.email || '')} · <span style="color:${roleColor}">${m.role==='owner'?'소유자':m.role==='admin'?'관리자':'멤버'}</span></div>
-        </div>
-        <select data-user-id="${m.userId}" data-ws-id="${wsId}" class="ws-team-select"
-          style="font-size:12px;padding:5px 8px;background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:6px;cursor:pointer;
-          -webkit-appearance:none;appearance:none;background-image:url('data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2212%22 height=%2212%22><path d=%22M2 4l4 4 4-4%22 fill=%22%238b949e%22/></svg>');background-repeat:no-repeat;background-position:right 6px center;padding-right:22px">
-          ${teamOptions}
-        </select>
-      </div>`;
-    }).join('');
+    function _buildMemberRows() {
+      return members.map(m => {
+        const teamOptions = allTeams.map(t =>
+          `<option value="${escHtml(t)}" style="background:#161b22;color:#e6edf3" ${m.teamName===t?'selected':''}>${escHtml(t)}</option>`
+        ).join('');
+        const roleIcon = m.role==='owner' ? '👑' : m.role==='admin' ? '🛡' : '👤';
+        const roleColor = m.role==='owner' ? '#ffd700' : m.role==='admin' ? '#58a6ff' : '#8b949e';
+        return `
+        <div style="display:flex;align-items:center;gap:10px;padding:12px 8px;border-bottom:1px solid #21262d">
+          <div style="font-size:22px">${roleIcon}</div>
+          <div style="flex:1;min-width:0">
+            <div style="color:#e6edf3;font-size:14px;font-weight:600">${escHtml(m.name || m.email?.split('@')[0] || '사용자')}</div>
+            <div style="color:#8b949e;font-size:11px">${escHtml(m.email || '')} · <span style="color:${roleColor}">${m.role==='owner'?'소유자':m.role==='admin'?'관리자':'멤버'}</span></div>
+          </div>
+          <select data-user-id="${m.userId}" data-ws-id="${wsId}" class="ws-team-select"
+            style="font-size:12px;padding:5px 8px;background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:6px;cursor:pointer;
+            -webkit-appearance:none;appearance:none;background-image:url('data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2212%22 height=%2212%22><path d=%22M2 4l4 4 4-4%22 fill=%22%238b949e%22/></svg>');background-repeat:no-repeat;background-position:right 6px center;padding-right:22px">
+            ${teamOptions}
+          </select>
+        </div>`;
+      }).join('');
+    }
 
     // 기존 모달 제거
     document.getElementById('ws-member-modal')?.remove();
     const modal = document.createElement('div');
     modal.id = 'ws-member-modal';
     modal.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center';
-    modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
-    modal.innerHTML = `<div style="background:#0d1117;border:1px solid #30363d;border-radius:12px;padding:16px;width:380px;max-height:500px;overflow-y:auto">
-      <div style="display:flex;justify-content:space-between;margin-bottom:12px">
-        <b style="color:#e6edf3">인원 배분 (${members.length}명)</b>
-        <button onclick="document.getElementById('ws-member-modal')?.remove()" style="background:none;border:none;color:#8b949e;cursor:pointer;font-size:16px">&#10005;</button>
+    modal.innerHTML = `<div style="background:#0d1117;border:1px solid #30363d;border-radius:12px;padding:16px;width:400px;max-height:550px;overflow-y:auto">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <b style="color:#e6edf3;font-size:15px">인원 배분 (${members.length}명)</b>
       </div>
-      ${html}
-      <div style="margin-top:12px;text-align:right">
-        <button id="ws-member-save-btn" style="font-size:11px;padding:6px 14px;background:#238636;color:#fff;border:none;border-radius:6px;cursor:pointer">저장</button>
+
+      <!-- 팀 추가 영역 -->
+      <div style="display:flex;gap:6px;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid #21262d">
+        <input id="ws-new-team-input" type="text" placeholder="새 팀 이름 입력"
+          style="flex:1;font-size:12px;padding:6px 10px;background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:6px;outline:none">
+        <button id="ws-add-team-btn"
+          style="font-size:11px;padding:6px 12px;background:#1f6feb;color:#fff;border:none;border-radius:6px;cursor:pointer;white-space:nowrap">+ 팀 추가</button>
+      </div>
+
+      <!-- 현재 팀 목록 -->
+      <div id="ws-team-tags" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px">
+      </div>
+
+      <!-- 멤버 목록 -->
+      <div id="ws-member-list">
+        ${_buildMemberRows()}
+      </div>
+
+      <!-- 저장 버튼 -->
+      <div style="margin-top:16px;display:flex;justify-content:flex-end;gap:8px">
+        <button id="ws-member-cancel-btn"
+          style="font-size:12px;padding:8px 16px;background:#21262d;color:#8b949e;border:1px solid #30363d;border-radius:6px;cursor:pointer">취소</button>
+        <button id="ws-member-save-btn"
+          style="font-size:12px;padding:8px 20px;background:#238636;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600">저장</button>
       </div>
     </div>`;
     document.body.appendChild(modal);
 
+    // 팀 태그 렌더링
+    function _renderTeamTags() {
+      const container = modal.querySelector('#ws-team-tags');
+      container.innerHTML = allTeams.map(t => {
+        const isDeletable = t !== '팀 미배정';
+        return `<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 10px;background:rgba(31,111,235,.15);color:#58a6ff;border:1px solid rgba(31,111,235,.3);border-radius:12px;font-size:11px">
+          ${escHtml(t)}${isDeletable ? `<span class="ws-del-team" data-team="${escHtml(t)}" style="cursor:pointer;color:#f85149;font-size:13px;margin-left:2px">&times;</span>` : ''}
+        </span>`;
+      }).join('');
+      // 팀 삭제 이벤트
+      container.querySelectorAll('.ws-del-team').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const teamName = btn.dataset.team;
+          // 해당 팀 멤버를 미배정으로 이동
+          modal.querySelectorAll('.ws-team-select').forEach(sel => {
+            if (sel.value === teamName) sel.value = '팀 미배정';
+          });
+          allTeams = allTeams.filter(t => t !== teamName);
+          // 멤버 목록 드롭다운 갱신
+          members.forEach(m => { if (m.teamName === teamName) m.teamName = '팀 미배정'; });
+          modal.querySelector('#ws-member-list').innerHTML = _buildMemberRows();
+          // 드롭다운 변경 이벤트 재바인딩
+          _bindSelectChange();
+          _renderTeamTags();
+        });
+      });
+    }
+    _renderTeamTags();
+
+    // 드롭다운 변경 시 members 데이터 동기화
+    function _bindSelectChange() {
+      modal.querySelectorAll('.ws-team-select').forEach(sel => {
+        sel.addEventListener('change', () => {
+          const m = members.find(m => m.userId === sel.dataset.userId);
+          if (m) m.teamName = sel.value;
+        });
+      });
+    }
+    _bindSelectChange();
+
+    // 팀 추가 버튼
+    modal.querySelector('#ws-add-team-btn').addEventListener('click', () => {
+      const input = modal.querySelector('#ws-new-team-input');
+      const name = (input.value || '').trim();
+      if (!name) return;
+      if (allTeams.includes(name)) { showToast('이미 존재하는 팀입니다'); return; }
+      allTeams.push(name);
+      input.value = '';
+      // 멤버 드롭다운 갱신
+      modal.querySelector('#ws-member-list').innerHTML = _buildMemberRows();
+      _bindSelectChange();
+      _renderTeamTags();
+      showToast(`'${name}' 팀 추가됨`);
+    });
+    // Enter 키로도 팀 추가
+    modal.querySelector('#ws-new-team-input').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') modal.querySelector('#ws-add-team-btn').click();
+    });
+
+    // 취소 버튼
+    modal.querySelector('#ws-member-cancel-btn').addEventListener('click', () => modal.remove());
+
+    // 배경 클릭 시에도 닫기 (변경사항 경고)
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) modal.remove();
+    });
+
     // 저장 버튼: 변경된 팀 이름을 서버에 반영
     modal.querySelector('#ws-member-save-btn').addEventListener('click', async () => {
+      const btn = modal.querySelector('#ws-member-save-btn');
+      btn.textContent = '저장 중...';
+      btn.disabled = true;
       const selects = modal.querySelectorAll('.ws-team-select');
+      let saved = 0;
       for (const sel of selects) {
         const uid = sel.dataset.userId;
         const wid = sel.dataset.wsId;
         const teamName = sel.value;
         try {
-          await fetch('/api/workspace/member/team-admin', {
+          const r = await fetch('/api/workspace/member/team-admin', {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
             body: JSON.stringify({ workspaceId: wid, userId: uid, teamName }),
           });
+          if (r.ok) saved++;
         } catch {}
       }
-      showToast('팀 배분 저장됨');
+      showToast(`${saved}명 팀 배분 저장 완료`);
       modal.remove();
       _loadMyWorkspaces();
     });
