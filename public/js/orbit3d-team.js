@@ -600,8 +600,8 @@ function _buildTeamSystemInner(teamData) {
 
   const teamNames = Object.keys(teamGroups);
   const TEAM_COLORS = ['#3fb950', '#58a6ff', '#f78166', '#bc8cff', '#39d2c0', '#ffa657', '#f85149'];
-  const ORBIT_R = Math.max(BASE_R * 4, 20); // 팀 클러스터가 중심을 도는 궤도 반지름
-  const CLUSTER_R = Math.max(BASE_R * 2.5, 12); // 팀 내 멤버 궤도 반지름 (구체 완전 분리)
+  const ORBIT_R = Math.max(BASE_R * 6, 30); // 팀 클러스터 간 거리 (넓게)
+  const CLUSTER_R = Math.max(BASE_R * 1.2, 6); // 팀 내 멤버 궤도 (팀 중심에 밀착)
 
   // 중심 주위 공전 궤도 링 (하나)
   {
