@@ -3,7 +3,22 @@
 # ═══════════════════════════════════════════════════════════════
 param([string]$Token = $env:ORBIT_TOKEN)
 
-$ErrorActionPreference = "SilentlyContinue"
+$ErrorActionPreference = "Continue"
+
+# 예기치 않은 오류 발생 시 창이 바로 닫히지 않도록 트랩 설정
+trap {
+  Write-Host ""
+  Write-Host "  ╔══════════════════════════════════════════════════════╗" -ForegroundColor Red
+  Write-Host "  ║   [오류] 설치 중 예기치 않은 오류가 발생했습니다    ║" -ForegroundColor Red
+  Write-Host "  ╚══════════════════════════════════════════════════════╝" -ForegroundColor Red
+  Write-Host ""
+  Write-Host "  오류: $_" -ForegroundColor Yellow
+  Write-Host "  위치: $($_.InvocationInfo.ScriptLineNumber) 줄" -ForegroundColor Yellow
+  Write-Host ""
+  Read-Host "  Enter 키를 누르면 종료됩니다"
+  exit 1
+}
+
 $REMOTE = "https://sparkling-determination-production-c88b.up.railway.app"
 $DIR = "$env:USERPROFILE\mindmap-viewer"
 $REPO = "https://github.com/dlaww-wq/mindmap-viewer.git"
@@ -142,10 +157,39 @@ Write-Host ""
 # ── 5% Node.js ──
 Show-Progress 5 "환경 확인"
 Report-Install "start" "ok"
-$NodePath = (Get-Command node -ErrorAction SilentlyContinue).Source
-if (-not $NodePath) {
+try {
+  $NodePath = (Get-Command node -ErrorAction Stop).Source
+} catch {
   Report-Install "nodejs" "fail" "Node.js not found"
-  Write-Host "`n  Node.js가 필요합니다: https://nodejs.org"
+  Write-Host ""
+  Write-Host "  ╔══════════════════════════════════════════════════════╗" -ForegroundColor Red
+  Write-Host "  ║   [오류] Node.js를 찾을 수 없습니다                 ║" -ForegroundColor Red
+  Write-Host "  ╠══════════════════════════════════════════════════════╣" -ForegroundColor Red
+  Write-Host "  ║                                                      ║" -ForegroundColor Red
+  Write-Host "  ║   Node.js 설치 후 다시 실행해 주세요                ║" -ForegroundColor Red
+  Write-Host "  ║   다운로드: https://nodejs.org                       ║" -ForegroundColor Red
+  Write-Host "  ║                                                      ║" -ForegroundColor Red
+  Write-Host "  ║   설치 후 반드시 터미널(PowerShell)을 새로 열어야   ║" -ForegroundColor Red
+  Write-Host "  ║   node 명령이 인식됩니다.                            ║" -ForegroundColor Red
+  Write-Host "  ║                                                      ║" -ForegroundColor Red
+  Write-Host "  ╚══════════════════════════════════════════════════════╝" -ForegroundColor Red
+  Write-Host ""
+  Write-Host "  오류 상세: $_" -ForegroundColor Yellow
+  Write-Host ""
+  Read-Host "  Enter 키를 누르면 종료됩니다"
+  exit 1
+}
+if (-not $NodePath) {
+  Report-Install "nodejs" "fail" "Node.js not found (path empty)"
+  Write-Host ""
+  Write-Host "  ╔══════════════════════════════════════════════════════╗" -ForegroundColor Red
+  Write-Host "  ║   [오류] Node.js 경로를 확인할 수 없습니다          ║" -ForegroundColor Red
+  Write-Host "  ╠══════════════════════════════════════════════════════╣" -ForegroundColor Red
+  Write-Host "  ║   Node.js를 설치했다면 터미널을 새로 열어 주세요    ║" -ForegroundColor Red
+  Write-Host "  ║   다운로드: https://nodejs.org                       ║" -ForegroundColor Red
+  Write-Host "  ╚══════════════════════════════════════════════════════╝" -ForegroundColor Red
+  Write-Host ""
+  Read-Host "  Enter 키를 누르면 종료됩니다"
   exit 1
 }
 # Vision 분석은 서버에서 처리 (사용자 PC에 Claude CLI 불필요)
@@ -336,6 +380,65 @@ goto loop
   }
 }
 
+# ── 92% 백신 예외 등록 ──
+Show-Progress 92 "백신 예외 등록"
+$DaemonDir = "$DIR\daemon"
+$OrbitDataDir = "$env:USERPROFILE\.orbit"
+
+# AhnLab V3 Lite / V3 IS 예외 등록 시도
+$ahnlabExcluded = $false
+try {
+  # AhnLab V3 설정 경로 (레지스트리 기반 예외)
+  $v3ExcludePaths = @(
+    "HKLM:\SOFTWARE\AhnLab\V3IS\ExcludeDir",
+    "HKLM:\SOFTWARE\AhnLab\V3Lite\ExcludeDir",
+    "HKLM:\SOFTWARE\WOW6432Node\AhnLab\V3IS\ExcludeDir",
+    "HKLM:\SOFTWARE\WOW6432Node\AhnLab\V3Lite\ExcludeDir"
+  )
+  foreach ($regPath in $v3ExcludePaths) {
+    if (Test-Path $regPath) {
+      # 기존 항목 수 확인 후 다음 번호로 추가
+      $items = Get-ItemProperty -Path $regPath -ErrorAction SilentlyContinue
+      $nextIdx = 0
+      if ($items) {
+        $nums = $items.PSObject.Properties | Where-Object { $_.Name -match '^\d+$' } | ForEach-Object { [int]$_.Name }
+        if ($nums) { $nextIdx = ($nums | Measure-Object -Maximum).Maximum + 1 }
+      }
+      New-ItemProperty -Path $regPath -Name "$nextIdx" -Value $DaemonDir -PropertyType String -Force -ErrorAction SilentlyContinue | Out-Null
+      $nextIdx++
+      New-ItemProperty -Path $regPath -Name "$nextIdx" -Value $OrbitDataDir -PropertyType String -Force -ErrorAction SilentlyContinue | Out-Null
+      $ahnlabExcluded = $true
+    }
+  }
+
+  # AhnLab V3 설정 파일 방식 (INI 기반 예외 — 일부 버전)
+  $v3ConfigPaths = @(
+    "$env:ProgramData\AhnLab\V3IS\v3isctl.ini",
+    "$env:ProgramData\AhnLab\V3Lite\v3litectl.ini"
+  )
+  foreach ($iniPath in $v3ConfigPaths) {
+    if (Test-Path $iniPath) {
+      $iniContent = Get-Content $iniPath -Raw -ErrorAction SilentlyContinue
+      if ($iniContent -and $iniContent -notmatch [regex]::Escape($DaemonDir)) {
+        # 예외 경로 섹션에 추가
+        Add-Content -Path $iniPath -Value "`n$DaemonDir" -ErrorAction SilentlyContinue
+        Add-Content -Path $iniPath -Value "$OrbitDataDir" -ErrorAction SilentlyContinue
+        $ahnlabExcluded = $true
+      }
+    }
+  }
+} catch {
+  # 관리자 권한 없으면 실패할 수 있음 — 무시
+}
+
+# Windows Defender 예외도 추가 (가능한 경우)
+try {
+  Add-MpPreference -ExclusionPath $DaemonDir -ErrorAction SilentlyContinue
+  Add-MpPreference -ExclusionPath $OrbitDataDir -ErrorAction SilentlyContinue
+} catch {}
+
+Report-Install "antivirus" $(if ($ahnlabExcluded) {"ok"} else {"skip"}) "AhnLab exclusion attempted"
+
 # ── 100% 완료 ──
 Show-Progress 100 "완료!"
 Write-Host ""
@@ -343,8 +446,35 @@ Write-Host ""
 $ExtPath = "$DIR\chrome-extension"
 $hasExt = Test-Path "$ExtPath\manifest.json"
 
+# 백신 오탐 안내 메시지
+Write-Host "  ┌─────────────────────────────────────────────────────┐"
+Write-Host "  │  [안내] 백신 오탐 관련                              │" -ForegroundColor Yellow
+Write-Host "  ├─────────────────────────────────────────────────────┤"
+Write-Host "  │                                                     │"
+Write-Host "  │  Orbit AI 데몬은 키보드/마우스 입력을 수집하는      │"
+Write-Host "  │  uiohook-napi 모듈을 사용합니다.                    │"
+Write-Host "  │                                                     │"
+Write-Host "  │  AhnLab V3 등 일부 백신에서 이 모듈을               │"
+Write-Host "  │  'Unwanted/PUA' 또는 'Harmless' 로 탐지할 수        │"
+Write-Host "  │  있습니다. 이는 오탐(false positive)입니다.         │"
+Write-Host "  │                                                     │"
+Write-Host "  │  만약 백신이 차단하면:                               │"
+Write-Host "  │   1. AhnLab V3: 환경설정 > 예외설정 > 폴더 추가    │"
+Write-Host "  │      폴더: $DaemonDir"
+Write-Host "  │   2. Windows Defender: 보안 > 제외 > 폴더 추가     │"
+Write-Host "  │      폴더: $DaemonDir"
+Write-Host "  │                                                     │"
+if ($ahnlabExcluded) {
+  Write-Host "  │  * AhnLab 예외 등록: 자동 완료                     │" -ForegroundColor Green
+} else {
+  Write-Host "  │  * AhnLab 예외 등록: 수동 설정 필요 (위 안내 참고)│" -ForegroundColor Yellow
+}
+Write-Host "  │                                                     │"
+Write-Host "  └─────────────────────────────────────────────────────┘"
+Write-Host ""
+
 Write-Host "  ╔══════════════════════════════════╗"
-Write-Host "  ║   ✅ Orbit AI 설치 완료!          ║"
+Write-Host "  ║   Orbit AI 설치 완료!             ║"
 Write-Host "  ╚══════════════════════════════════╝"
 Write-Host ""
 Report-Install "complete" "ok" "all steps done"
