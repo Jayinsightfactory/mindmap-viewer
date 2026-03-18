@@ -273,7 +273,7 @@ function exitTeamMode() {
   _teamMode = false; _companyMode = false; _teamNodes = [];
   _focusedMember = null; _cameraLerp = null; _activeSimData = null;
   document.getElementById('team-mode-badge').style.display = 'none';
-  document.querySelector('.tm-label').textContent = '👥 팀 시뮬레이션';
+  document.querySelector('.tm-label').textContent = '👥 워크스페이스';
   updateBreadcrumb('personal');
   localStorage.setItem('orbitViewMode', 'personal');
   loadData();

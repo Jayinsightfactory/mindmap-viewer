@@ -844,7 +844,7 @@ async function _loadMyWorkspaces() {
           ${isSelected
             ? `<span style="font-size:11px;padding:5px 12px;background:rgba(31,111,235,.2);color:#58a6ff;border:1px solid rgba(31,111,235,.4);border-radius:8px;font-weight:600">선택됨</span>`
             : `<button onclick="_wsSelect('${ws.id}','${safeName}')"
-                style="font-size:11px;padding:5px 12px;background:#1f6feb;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600">팀 선택</button>`
+                style="font-size:11px;padding:5px 12px;background:#1f6feb;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600">워크스페이스</button>`
           }
         </div>
 
@@ -1219,11 +1219,11 @@ function _copyCode(code) {
 }
 window._copyCode = _copyCode;
 
-// 팀 선택 → 카드 확장 + 팀뷰 로드
+// 워크스페이스 선택 → 카드 확장 + 워크스페이스 뷰 로드
 function _wsSelect(id, name) {
   window._currentWorkspaceId = id;
   _loadMyWorkspaces(); // 카드 재렌더링 (선택된 카드에 관리 버튼 표시)
-  _selectWorkspace(id, name); // 팀뷰 3D 로드
+  _selectWorkspace(id, name); // 워크스페이스 3D 로드
 }
 window._wsSelect = _wsSelect;
 
