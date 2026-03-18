@@ -1,4 +1,4 @@
-const CACHE_NAME = 'orbit-ai-v2';
+const CACHE_NAME = 'orbit-ai-v3';
 const STATIC_ASSETS = [
   '/',
   '/orbit3d.html',
