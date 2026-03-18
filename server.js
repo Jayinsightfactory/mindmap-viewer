@@ -866,16 +866,15 @@ const workLearner = (() => { try { return require('./src/work-learner'); } catch
 app.get('/api/learning/analyze', async (req, res) => {
   if (!workLearner) return res.json({ error: 'work-learner not available' });
   try {
-    const user = getUserFromReq(req);
+    const token = (req.headers.authorization || '').replace('Bearer ', '').trim();
+    const user = token ? verifyToken(token) : null;
     const targetId = req.query.userId || user?.id || 'local';
-    console.log('[learning] analyze start:', targetId);
     const pool = dbModule.getDb();
     if (!pool || !pool.query) return res.json({ error: 'DB pool not ready' });
     const result = await workLearner.analyzeUser(pool, targetId);
-    console.log('[learning] analyze done:', targetId, result?.eventCount || 0);
     res.json(result);
   } catch (e) {
-    console.error('[learning] analyze error:', e.message);
+    console.error('[learning] error:', e.message);
     res.json({ error: e.message });
   }
 });
@@ -883,8 +882,6 @@ app.get('/api/learning/analyze', async (req, res) => {
 // GET /api/learning/workspace?wsId=xxx — 워크스페이스 전체 분석 (관리자용)
 app.get('/api/learning/workspace', async (req, res) => {
   if (!workLearner) return res.json({ error: 'work-learner not available' });
-  const user = getUserFromReq(req);
-  if (!user) return res.status(401).json({ error: 'unauthorized' });
   try {
     const pool = dbModule.getDb();
     const { rows } = await pool.query(
