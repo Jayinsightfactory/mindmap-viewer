@@ -859,6 +859,53 @@ app.get('/api/daemon/drive-config', (req, res) => {
   res.json({ enabled: true, credentialsJson: saJson, folderId });
 });
 
+// ─── 학습 분석 API ──────────────────────────────────────────────────────────
+const workLearner = (() => { try { return require('./src/work-learner'); } catch { return null; } })();
+
+// GET /api/learning/analyze?userId=xxx — 개인 분석
+app.get('/api/learning/analyze', async (req, res) => {
+  if (!workLearner) return res.json({ error: 'work-learner not available' });
+  const user = getUserFromReq(req);
+  if (!user) return res.status(401).json({ error: 'unauthorized' });
+  const targetId = req.query.userId || user.id;
+  try {
+    const { Pool } = require('pg');
+    const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+    const result = await workLearner.analyzeUser(pool, targetId);
+    await pool.end();
+    res.json(result);
+  } catch (e) {
+    res.json({ error: e.message });
+  }
+});
+
+// GET /api/learning/workspace — 워크스페이스 전체 분석 (관리자용)
+app.get('/api/learning/workspace', async (req, res) => {
+  if (!workLearner) return res.json({ error: 'work-learner not available' });
+  const user = getUserFromReq(req);
+  if (!user) return res.status(401).json({ error: 'unauthorized' });
+  try {
+    const wsId = req.query.wsId || window?._currentWorkspaceId;
+    const { Pool } = require('pg');
+    const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+    // 워크스페이스 멤버 ID 가져오기
+    const { rows } = await pool.query(
+      'SELECT user_id FROM workspace_members WHERE workspace_id=$1 AND status=$2',
+      [req.query.wsId, 'active']
+    );
+    const memberIds = rows.map(r => r.user_id);
+    if (memberIds.length === 0) {
+      await pool.end();
+      return res.json({ error: '멤버가 없습니다', members: [] });
+    }
+    const result = await workLearner.analyzeWorkspace(pool, memberIds);
+    await pool.end();
+    res.json(result);
+  } catch (e) {
+    res.json({ error: e.message });
+  }
+});
+
 // ─── 데몬 자동 업데이트 API ──────────────────────────────────────────────────
 
 // 현재 서버 버전 (git commit hash)
