@@ -438,7 +438,15 @@ function buildGraph(events) {
   // 세션별 WHAT/RESULT 사전 계산
   const sessionSummaries = computeSessionSummaries(events);
 
+  // 시스템/노이즈 이벤트 제외
+  const NOISE_TYPES = new Set([
+    'install.progress', 'daemon.update', 'daemon.error',
+    'screen.capture',   // 메타데이터만 — Vision 분석 후 screen.analyzed로 대체
+  ]);
+
   for (const event of events) {
+    if (NOISE_TYPES.has(event.type)) continue;
+
     const style = NODE_STYLES[event.type] || DEFAULT_STYLE;
     const nodeId = event.id;
 
