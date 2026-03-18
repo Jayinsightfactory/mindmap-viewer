@@ -359,6 +359,14 @@
 <script>
 'use strict';
 
+// ── 유틸 ──────────────────────────────────────────────────────────
+function fmtDate(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  const pad = n => String(n).padStart(2, '0');
+  return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+}
+
 // ── 인증 ──────────────────────────────────────────────────────────
 const TOKEN = localStorage.getItem('orbit_token');
 if (!TOKEN) { location.href = '/orbit3d.html'; }
