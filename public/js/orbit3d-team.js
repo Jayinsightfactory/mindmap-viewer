@@ -22,7 +22,7 @@ let _parallelDemoTimers = []; // 타이머 누수 방지용
 
 // ─── 팀 거리 설정값 ──────────────────────────────────────────────────────────
 // 간격 슬라이더 연동 (window._spacingScale)
-function _teamScale() { return window._spacingScale || 1.0; }
+function _teamScale() { return window._spacingScale || 0.5; } // 기본 50%
 const TEAM_CFG = { get MEMBER_R() { return 10 * _teamScale(); }, get TASK_R() { return 4 * _teamScale(); }, get TOOL_R() { return 2.5 * _teamScale(); } };
 
 // ─── 글로벌 접근 (디버깅 & 외부 스크립트) ────────────────────────────────────
@@ -576,11 +576,11 @@ function _buildTeamSystemInner(teamData) {
 
   const { name, goal, goalColor, members } = teamData;
 
-  // 중심 코어 (팀 목표 — 와이어프레임)
-  const core = createWireNode(3.5, 0xffd700, { wireOpacity: 0.35, glowOpacity: 0.15 });
+  // 중심 코어 (팀 목표 — 와이어프레임) — 2x 크기
+  const core = createWireNode(7, 0xffd700, { wireOpacity: 0.35, glowOpacity: 0.15 });
   core.userData.isCore = true;
   scene.add(core);
-  const coreHl = createWireNode(7, 0xffd700, { wireOpacity: 0.08, glow: false, detail: 0 });
+  const coreHl = createWireNode(14, 0xffd700, { wireOpacity: 0.08, glow: false, detail: 0 });
   scene.add(coreHl);
 
   // 팀 목표 노드 (Canvas2D 라벨)

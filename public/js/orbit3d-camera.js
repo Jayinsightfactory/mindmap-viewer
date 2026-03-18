@@ -839,8 +839,8 @@ function drawTeamLabels() {
       // 와이어프레임 구체 (개인뷰와 동일한 스타일)
       const nodeTitle = txt;
       const nodeSub = sublabel || '';
-      const nodeR = type === 'goal' ? 50 : type === 'leader' || type === 'infra' ? 42
-        : type === 'member' ? (isFocused ? 46 : 36) : type === 'department' ? 38 : 30;
+      const nodeR = type === 'goal' ? 100 : type === 'leader' || type === 'infra' ? 84
+        : type === 'member' ? (isFocused ? 92 : 72) : type === 'department' ? 76 : 60;
       _drawWireSphere(_lctx, cx, cy, nodeR, color, {
         meridians: type === 'goal' ? 3 : 2,
         parallels: type === 'goal' ? 2 : 1,

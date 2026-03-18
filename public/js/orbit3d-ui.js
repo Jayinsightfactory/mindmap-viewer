@@ -442,7 +442,7 @@ function autoFitView(nodes, padding = 1.35) {
     const d = Math.sqrt(p.x * p.x + p.z * p.z);
     if (d > maxDist) maxDist = d;
   }
-  const fitR = Math.max(30, maxDist * padding);
+  const fitR = Math.max(15, maxDist * padding);
   lerpCameraTo(fitR, 0, 0, 0, 800);
 }
 window.autoFitView = autoFitView;
