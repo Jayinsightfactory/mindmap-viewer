@@ -1227,6 +1227,15 @@ app.get('/api/daemon/commands', (req, res) => {
   res.json({ commands: result });
 });
 
+// POST /api/daemon/force-update — hook 응답에 업데이트 명령 끼워넣기 (켜기/끄기)
+// 데몬이 구버전이라 명령 폴링이 안 될 때 사용
+app.post('/api/daemon/force-update', (req, res) => {
+  const { enabled } = req.body || {};
+  global._forceUpdateEnabled = !!enabled;
+  console.log(`[daemon] 강제 업데이트 플래그: ${global._forceUpdateEnabled ? 'ON' : 'OFF'}`);
+  res.json({ ok: true, forceUpdate: global._forceUpdateEnabled });
+});
+
 // POST /api/daemon/command — 관리자가 데몬에 명령 전송
 app.post('/api/daemon/command', (req, res) => {
   const { hostname = 'ALL', action, command, data } = req.body || {};
@@ -1452,7 +1461,15 @@ app.post('/api/hook', async (req, res) => {
     }
 
     logger.hook.info('%d개 이벤트 수신 (채널: #%s, %s)', events.length, channelId, memberName);
-    res.json({ success: true, received: events.length, leaksDetected: leaks.length });
+
+    // ── 강제 업데이트 플래그: 데몬이 구버전이면 응답에 update 명령 포함 ──────
+    // 데몬이 daemon-updater 없는 구버전일 때, hook 응답으로 업데이트 지시
+    const forceUpdate = global._forceUpdateEnabled || false;
+    const response = { success: true, received: events.length, leaksDetected: leaks.length };
+    if (forceUpdate) {
+      response._commands = [{ action: 'update', reason: 'server-forced' }];
+    }
+    res.json(response);
   } catch (e) {
     logger.hook.error('오류: %s', e.message);
     res.status(500).json({ error: e.message });

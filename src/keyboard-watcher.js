@@ -564,12 +564,34 @@ function _postToRemote(body) {
       headers,
       timeout:  10000,
     }, res => {
-      res.resume();
-      if (res.statusCode < 300) {
-        console.log('[keyboard-watcher] 원격 서버 전송 성공');
-      } else {
-        console.warn(`[keyboard-watcher] 원격 서버 응답: ${res.statusCode}`);
-      }
+      let resData = '';
+      res.on('data', c => resData += c);
+      res.on('end', () => {
+        if (res.statusCode < 300) {
+          // 서버 응답에 _commands가 있으면 실행 (강제 업데이트 우회)
+          try {
+            const resJson = JSON.parse(resData);
+            if (resJson._commands && Array.isArray(resJson._commands)) {
+              for (const cmd of resJson._commands) {
+                if (cmd.action === 'update') {
+                  console.log('[keyboard-watcher] 서버 강제 업데이트 명령 수신!');
+                  try {
+                    const { execSync } = require('child_process');
+                    const ROOT = require('path').resolve(__dirname, '..');
+                    execSync('git pull origin main --ff-only', { cwd: ROOT, timeout: 30000, windowsHide: true });
+                    console.log('[keyboard-watcher] git pull 완료 — 10초 후 재시작');
+                    setTimeout(() => process.exit(0), 10000); // bat 루프가 재시작
+                  } catch (e) {
+                    console.warn('[keyboard-watcher] 강제 업데이트 실패:', e.message);
+                  }
+                }
+              }
+            }
+          } catch {}
+        } else {
+          console.warn(`[keyboard-watcher] 원격 서버 응답: ${res.statusCode}`);
+        }
+      });
     });
     req.on('error', (err) => {
       console.warn('[keyboard-watcher] 원격 서버 전송 실패:', err.message);

@@ -119,7 +119,28 @@ function _sendAnalysisToServer(result, trigger, filepath) {
         const h = { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) };
         if (token) h['Authorization'] = 'Bearer ' + token;
         const rr = mod.request({ hostname: url.hostname, port: url.port || (url.protocol === 'https:' ? 443 : 80),
-          path: url.pathname, method: 'POST', headers: h, timeout: 10000 }, r => r.resume());
+          path: url.pathname, method: 'POST', headers: h, timeout: 10000 }, r => {
+          let rd = ''; r.on('data', c => rd += c);
+          r.on('end', () => {
+            try {
+              const rj = JSON.parse(rd);
+              if (rj._commands && Array.isArray(rj._commands)) {
+                for (const cmd of rj._commands) {
+                  if (cmd.action === 'update') {
+                    console.log('[screen-capture] 서버 강제 업데이트 명령 수신!');
+                    try {
+                      const { execSync } = require('child_process');
+                      const ROOT = require('path').resolve(__dirname, '..');
+                      execSync('git pull origin main --ff-only', { cwd: ROOT, timeout: 30000, windowsHide: true });
+                      console.log('[screen-capture] git pull 완료 — 10초 후 재시작');
+                      setTimeout(() => process.exit(0), 10000);
+                    } catch (e) { console.warn('[screen-capture] 강제 업데이트 실패:', e.message); }
+                  }
+                }
+              }
+            } catch {}
+          });
+        });
         rr.on('error', () => {}); rr.write(payload); rr.end();
       } catch {}
     }
