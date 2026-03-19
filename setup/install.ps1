@@ -962,9 +962,9 @@ try {
   }
 }
 
-# 진단 3: uiohook-napi .node 파일 존재?
+# 진단 3: uiohook-napi .node 파일 존재? (Windows용 빌드만 확인)
 $uiohookOk = $false
-$uiohookCheck = Get-ChildItem "$DIR\node_modules" -Recurse -Filter "*.node" -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match "uiohook" } | Select-Object -First 1
+$uiohookCheck = Get-ChildItem "$DIR\node_modules" -Recurse -Filter "*.node" -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match "uiohook" -and $_.FullName -match "win32" } | Select-Object -First 1
 if ($uiohookCheck) {
   $uiohookOk = $true
   $dr = @{}; $dr["name"]="uiohook-napi"; $dr["ok"]=$true; $dr["detail"]=$uiohookCheck.FullName
@@ -975,7 +975,7 @@ if ($uiohookCheck) {
   Set-Location $DIR
   & cmd /c "npm install uiohook-napi 2>&1" | Out-Null
   Start-Sleep -Seconds 2
-  $uiohookCheck = Get-ChildItem "$DIR\node_modules" -Recurse -Filter "*.node" -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match "uiohook" } | Select-Object -First 1
+  $uiohookCheck = Get-ChildItem "$DIR\node_modules" -Recurse -Filter "*.node" -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match "uiohook" -and $_.FullName -match "win32" } | Select-Object -First 1
   if ($uiohookCheck) {
     $uiohookOk = $true
     $dr = @{}; $dr["name"]="uiohook-napi"; $dr["ok"]=$true; $dr["detail"]="재설치 성공"
@@ -986,23 +986,34 @@ if ($uiohookCheck) {
   }
 }
 
-# 진단 4: 디스크 여유 1GB 이상?
+# 진단 4: 디스크 여유 1GB 이상? (WMI로 정확하게 측정)
 $diskOk = $false
 try {
-  $drive = (Get-Item $env:USERPROFILE).PSDrive
-  $freeGB = [math]::Round($drive.Free / 1GB, 1)
+  $sysDrive = $env:SystemDrive
+  if (-not $sysDrive) { $sysDrive = "C:" }
+  $diskInfo = Get-WmiObject Win32_LogicalDisk -Filter "DeviceID='$sysDrive'" -ErrorAction Stop
+  $freeGB = [math]::Round($diskInfo.FreeSpace / 1GB, 1)
   if ($freeGB -ge 1) {
     $diskOk = $true
-    $dr = @{}; $dr["name"]="디스크 여유"; $dr["ok"]=$true; $dr["detail"]="${freeGB}GB 여유"
+    $dr = @{}
+    $dr["name"] = "디스크 여유"
+    $dr["ok"] = $true
+    $dr["detail"] = "${freeGB}GB 여유"
     $diagResults += $dr
   } else {
-    $dr = @{}; $dr["name"]="디스크 여유"; $dr["ok"]=$false; $dr["detail"]="${freeGB}GB — 1GB 이상 필요"
+    $dr = @{}
+    $dr["name"] = "디스크 여유"
+    $dr["ok"] = $false
+    $dr["detail"] = "${freeGB}GB — 1GB 이상 필요"
     $diagResults += $dr
   }
 } catch {
-  $dr = @{}; $dr["name"]="디스크 여유"; $dr["ok"]=$true; $dr["detail"]="확인 불가 (무시)"
-  $diagResults += $dr
   $diskOk = $true
+  $dr = @{}
+  $dr["name"] = "디스크 여유"
+  $dr["ok"] = $true
+  $dr["detail"] = "확인 불가 (무시)"
+  $diagResults += $dr
 }
 
 # 진단 결과 출력
