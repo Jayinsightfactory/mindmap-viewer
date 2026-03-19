@@ -58,30 +58,34 @@ $_installLog = @()
 
 # ── 유틸리티 함수 ──────────────────────────────────────────────
 
-function Show-Progress { param([int]$Pct, [string]$Msg, [string]$Status = "ok")
+function Show-Progress {
+  param([int]$Pct, [string]$Msg, [string]$SStatus = "ok")
   $bar = ([char]0x2588).ToString() * [math]::Floor($Pct/5) + ([char]0x2591).ToString() * (20 - [math]::Floor($Pct/5))
   Write-Host "`r  [$bar] $Pct% $Msg    " -NoNewline
   if ($Pct -eq 100) { Write-Host "" }
-  $script:_installLog += @{ pct=$Pct; msg=$Msg; status=$Status; ts=(Get-Date -Format o) }
+  $entry = New-Object PSObject -Property @{ pct=$Pct; msg=$Msg; status=$SStatus; ts=(Get-Date -Format o) }
+  $script:_installLog += $entry
 }
 
-function Report-Install { param([string]$Step, [string]$Status, [string]$Error = "")
-  $script:_installLog += @{ step=$Step; status=$Status; error=$Error; ts=(Get-Date -Format o) }
-  # 서버로 전송 (비차단)
+function Report-Install {
+  param([string]$RStep, [string]$RStatus, [string]$RError = "")
+  $entry = New-Object PSObject -Property @{ step=$RStep; status=$RStatus; error=$RError; ts=(Get-Date -Format o) }
+  $script:_installLog += $entry
   try {
-    $body = @{
-      events = @(@{
-        id = "install-$(Get-Date -Format 'yyyyMMddHHmmss')-$Step"
-        type = "install.progress"
-        source = "installer"
-        sessionId = "install-$env:COMPUTERNAME"
-        timestamp = (Get-Date -Format o)
-        data = @{ step=$Step; status=$Status; error=$Error; hostname=$env:COMPUTERNAME; os="windows"; nodeVersion=(node --version 2>$null) }
-      })
-    } | ConvertTo-Json -Depth 5
+    $evtData = New-Object PSObject -Property @{ step=$RStep; status=$RStatus; error=$RError; hostname=$env:COMPUTERNAME; os="windows"; nodeVersion=(node --version 2>$null) }
+    $evt = New-Object PSObject -Property @{
+      id = "install-$(Get-Date -Format 'yyyyMMddHHmmss')-$RStep"
+      type = "install.progress"
+      source = "installer"
+      sessionId = "install-$env:COMPUTERNAME"
+      timestamp = (Get-Date -Format o)
+      data = $evtData
+    }
+    $payload = New-Object PSObject -Property @{ events = @($evt) }
+    $jsonBody = $payload | ConvertTo-Json -Depth 5
     $headers = @{ "Content-Type"="application/json" }
     if ($Token) { $headers["Authorization"] = "Bearer $Token" }
-    Invoke-RestMethod -Uri "$REMOTE/api/hook" -Method POST -Headers $headers -Body $body -TimeoutSec 5 -ErrorAction SilentlyContinue | Out-Null
+    Invoke-RestMethod -Uri "$REMOTE/api/hook" -Method POST -Headers $headers -Body $jsonBody -TimeoutSec 5 -ErrorAction SilentlyContinue | Out-Null
   } catch {}
 }
 
