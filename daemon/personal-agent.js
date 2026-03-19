@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+// WScript 가드: Windows Script Host로 실행 방지
+if (typeof WScript !== 'undefined') { WScript.Echo('오류: 이 파일은 Node.js로 실행해야 합니다.\n\n해결방법:\n1. 시작 메뉴 > orbit-daemon.bat 확인\n2. 또는 PowerShell에서: node daemon\\personal-agent.js\n\n설치코드를 다시 실행하면 자동 해결됩니다.'); WScript.Quit(1); }
 'use strict';
 
 /**

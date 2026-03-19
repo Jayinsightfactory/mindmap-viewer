@@ -196,6 +196,35 @@ if (-not $NodePath) {
 # Vision 분석은 서버에서 처리 (사용자 PC에 Claude CLI 불필요)
 Report-Install "nodejs" "ok" (node --version)
 
+# ── 8% .js 파일 연결 수정 (WScript → Node.js) ──
+Show-Progress 8 ".js 파일 연결 확인"
+try {
+  # .js 파일이 WScript로 연결되어 있으면 Node.js로 변경
+  $jsAssoc = (cmd /c "assoc .js" 2>$null)
+  $jsFtype = (cmd /c "ftype JSFile" 2>$null)
+  if ($jsFtype -match "WScript" -or $jsFtype -match "wscript") {
+    # Node.js로 .js 파일 연결 변경 (현재 사용자만)
+    $nodeExe = (Get-Command node -ErrorAction SilentlyContinue).Source
+    if ($nodeExe) {
+      New-Item -Path "HKCU:\Software\Classes\.js" -Force -ErrorAction SilentlyContinue | Out-Null
+      Set-ItemProperty -Path "HKCU:\Software\Classes\.js" -Name "(default)" -Value "NodeJS.File" -ErrorAction SilentlyContinue
+      New-Item -Path "HKCU:\Software\Classes\NodeJS.File\shell\open\command" -Force -ErrorAction SilentlyContinue | Out-Null
+      Set-ItemProperty -Path "HKCU:\Software\Classes\NodeJS.File\shell\open\command" -Name "(default)" -Value "`"$nodeExe`" `"%1`" %*" -ErrorAction SilentlyContinue
+      Report-Install "js-assoc" "fixed" "WScript->Node.js"
+    }
+  }
+  # Startup 폴더에서 .js 직접 실행하는 항목 제거
+  $StartupDir = [System.Environment]::GetFolderPath('Startup')
+  Get-ChildItem "$StartupDir\*.js" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+  Get-ChildItem "$StartupDir\*.lnk" -ErrorAction SilentlyContinue | ForEach-Object {
+    try {
+      $shell = New-Object -ComObject WScript.Shell
+      $lnk = $shell.CreateShortcut($_.FullName)
+      if ($lnk.TargetPath -match "personal-agent\.js$") { Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue }
+    } catch {}
+  }
+} catch {}
+
 # ── 10% 기존 설치 정리 ──
 Show-Progress 10 "기존 설치 정리"
 $pidFile = "$env:USERPROFILE\.orbit\personal-agent.pid"
