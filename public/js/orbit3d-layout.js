@@ -303,7 +303,9 @@ function drawCompactProjectView() {
     _drawSphereLabel(ctx, meSc.x, meSc.y, meR, '나의 작업', `${projects.length} 프로젝트`, '#06b6d4', false);
   }
 
-  // ── 팔로워/팀원 구체 (3D 월드 — 프로젝트 링 바깥, 항상 표시) ──────────────
+  // ── 팔로워/팀원 구체 (팀/회사 모드에서만 표시) ──────────────────────────────
+  // 개인 모드에서는 자기 데이터만 표시 — 팔로워/팀원 구체 비활성화
+  if (window._teamMode || window._companyMode) {
   const _followData = window._followingData || [];
   const _teamData = window._teamWorldData?.members || [];
   const _socialNodes = [
@@ -351,6 +353,7 @@ function drawCompactProjectView() {
       });
     });
   }
+  } // end team/company mode guard
 
   // 라벨 별칭 맵
   const _aliases = (() => { try { return JSON.parse(localStorage.getItem('orbitLabelAliases') || '{}'); } catch { return {}; } })();

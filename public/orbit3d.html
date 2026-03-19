@@ -59,11 +59,11 @@
     <!-- 간격 조절 슬라이더 -->
     <div style="padding:4px 12px;font-size:10px;color:#6e7681">
       <label>간격 조절 <span id="spacing-mode" style="color:#06b6d4;font-size:9px">(자동)</span></label>
-      <input type="range" id="spacing-slider" min="50" max="200" value="100"
+      <input type="range" id="spacing-slider" min="50" max="200" value="150"
         style="width:100%;accent-color:#06b6d4"
-        oninput="window._spacingScale = this.value / 100; document.getElementById('spacing-val').textContent = this.value + '%'; document.getElementById('spacing-mode').textContent = '(수동)'; if(typeof applyTeamCfg==='function')applyTeamCfg();">
+        oninput="window._spacingScale = this.value / 100; document.getElementById('spacing-val').textContent = this.value + '%'; document.getElementById('spacing-mode').textContent = '(수동)';">
       <span id="spacing-val" style="float:right">자동</span>
-      <div style="margin-top:2px"><button onclick="window._spacingScale = null; document.getElementById('spacing-mode').textContent = '(자동)'; document.getElementById('spacing-val').textContent = '자동'; if(typeof applyTeamCfg==='function')applyTeamCfg();"
+      <div style="margin-top:2px"><button onclick="window._spacingScale = null; document.getElementById('spacing-mode').textContent = '(자동)'; document.getElementById('spacing-val').textContent = '자동';"
         style="font-size:9px;padding:2px 6px;background:none;color:#6e7681;border:1px solid #30363d;border-radius:4px;cursor:pointer">자동 복원</button></div>
     </div>
 

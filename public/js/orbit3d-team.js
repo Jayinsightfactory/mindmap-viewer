@@ -1,6 +1,9 @@
 // ══════════════════════════════════════════════════════════════════════════════
 // Orbit AI — Team/Company simulation, market effects, demo data
 // ══════════════════════════════════════════════════════════════════════════════
+// TODO: Remove "me" from personal view team members — the follower spheres
+//       shown in personal view are handled in a separate file (likely orbit3d.js
+//       or mywork-renderer.js via loadFollowingData). Needs separate fix there.
 // ─── 팀 시뮬레이션 모드 ───────────────────────────────────────────────────────
 // 핵심 레이아웃 원칙:
 //   🌟 중심 (0,0,0)   = 팀 목표 (가장 크게)
@@ -22,7 +25,7 @@ let _parallelDemoTimers = []; // 타이머 누수 방지용
 
 // ─── 팀 거리 설정값 ──────────────────────────────────────────────────────────
 // 간격 슬라이더 연동 (window._spacingScale)
-function _teamScale() { return window._spacingScale || 0.5; } // 기본 50%
+function _teamScale() { return window._spacingScale || 1.5; } // 기본 150%
 const TEAM_CFG = { get MEMBER_R() { return 10 * _teamScale(); }, get TASK_R() { return 4 * _teamScale(); }, get TOOL_R() { return 2.5 * _teamScale(); } };
 
 // ─── 글로벌 접근 (디버깅 & 외부 스크립트) ────────────────────────────────────
@@ -625,13 +628,6 @@ function _buildTeamSystemInner(teamData) {
       ORBIT_R * Math.sin(teamAngle),
     );
 
-    // 팀 코어 (팀 중심 구체)
-    const teamCore = createWireNode(3, new THREE.Color(teamColor), { wireOpacity: 0.3, glowOpacity: 0.1 });
-    teamCore.position.copy(teamCenter);
-    teamCore.userData = { isTeamCluster: true, teamName, orbitR: ORBIT_R, orbitAngle: teamAngle, orbitSpeed: 0.008 + ti * 0.002, orbitCenter: new THREE.Vector3(0, 0, 0) };
-    scene.add(teamCore);
-    planetMeshes.push(teamCore);
-
     // 팀 클러스터 궤도 링 (멤버가 팀 중심 주위를 도는 원)
     {
       const ring = new THREE.RingGeometry(CLUSTER_R - 0.06, CLUSTER_R + 0.06, 96);
@@ -643,17 +639,16 @@ function _buildTeamSystemInner(teamData) {
       orbitRings.push(rm); scene.add(rm);
     }
 
-    // 팀 라벨
+    // Team label (text only, no sphere)
     _teamNodes.push({
-      type: 'department', pos: teamCenter.clone(), obj: teamCore,
-      label: teamName, sublabel: `${teamMembers.length}명`, color: teamColor, size: 'md',
+      type: 'department', pos: new THREE.Vector3(teamCenter.x, 3, teamCenter.z),
+      label: teamName, color: teamColor, size: 'sm',
     });
 
     // 현재 로그인 사용자 ID (me 표시용)
     const _myUserId = (typeof _orbitUser !== 'undefined' && _orbitUser?.id) || '';
 
     // 팀 멤버: 팀 중심 주위에 클러스터링
-    console.log(`[team] ${teamName}: ${teamMembers.length}명, center=(${teamCenter.x.toFixed(1)},${teamCenter.z.toFixed(1)}), CLUSTER_R=${CLUSTER_R}`);
     teamMembers.forEach((member, mi) => {
       const memberAngle = (mi / teamMembers.length) * Math.PI * 2;
       const mx = teamCenter.x + CLUSTER_R * Math.cos(memberAngle);
@@ -675,7 +670,6 @@ function _buildTeamSystemInner(teamData) {
       scene.add(mObj);
       planetMeshes.push(mObj);
 
-      console.log(`[team]   ${member.name} pos=(${mPos.x.toFixed(1)},${mPos.z.toFixed(1)}) angle=${(memberAngle*180/Math.PI).toFixed(0)}°`);
       const isMe = member.userId === _myUserId;
       _teamNodes.push({
         type: 'member', pos: mPos.clone(), obj: mObj,
