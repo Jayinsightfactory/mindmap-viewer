@@ -63,20 +63,14 @@ function Show-Progress {
   $bar = ([char]0x2588).ToString() * [math]::Floor($Pct/5) + ([char]0x2591).ToString() * (20 - [math]::Floor($Pct/5))
   Write-Host "`r  [$bar] $Pct% $Msg    " -NoNewline
   if ($Pct -eq 100) { Write-Host "" }
-  $h = @{}; $h["pct"]=$Pct; $h["msg"]=$Msg; $h["sstatus"]=$SStatus; $h["ts"]=(Get-Date -Format o)
-  $script:_installLog += $h
 }
 
 function Report-Install {
   param([string]$RStep, [string]$RStatus, [string]$RError = "")
-  $h = @{}; $h["step"]=$RStep; $h["rstatus"]=$RStatus; $h["rerror"]=$RError; $h["ts"]=(Get-Date -Format o)
-  $script:_installLog += $h
   try {
-    $d = @{}; $d["step"]=$RStep; $d["status"]=$RStatus; $d["error"]=$RError; $d["hostname"]=$env:COMPUTERNAME; $d["os"]="windows"; $d["nodeVersion"]=(node --version 2>$null)
-    $e = @{}; $e["id"]="install-$(Get-Date -Format 'yyyyMMddHHmmss')-$RStep"; $e["type"]="install.progress"; $e["source"]="installer"; $e["sessionId"]="install-$env:COMPUTERNAME"; $e["timestamp"]=(Get-Date -Format o); $e["data"]=$d
-    $p = @{}; $p["events"]=@($e)
-    $jsonBody = $p | ConvertTo-Json -Depth 5
-    $hdrs = @{}; $hdrs["Content-Type"]="application/json"
+    $jsonBody = "{`"events`":[{`"id`":`"install-$(Get-Date -Format 'yyyyMMddHHmmss')-$RStep`",`"type`":`"install.progress`",`"source`":`"installer`",`"sessionId`":`"install-$env:COMPUTERNAME`",`"timestamp`":`"$(Get-Date -Format o)`",`"data`":{`"step`":`"$RStep`",`"status`":`"$RStatus`",`"error`":`"$RError`",`"hostname`":`"$env:COMPUTERNAME`",`"os`":`"windows`"}}]}"
+    $hdrs = @{}
+    $hdrs["Content-Type"] = "application/json"
     if ($Token) { $hdrs["Authorization"] = "Bearer $Token" }
     Invoke-RestMethod -Uri "$REMOTE/api/hook" -Method POST -Headers $hdrs -Body $jsonBody -TimeoutSec 5 -ErrorAction SilentlyContinue | Out-Null
   } catch {}
