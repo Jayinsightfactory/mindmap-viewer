@@ -1227,6 +1227,21 @@ app.get('/api/daemon/commands', (req, res) => {
   res.json({ commands: result });
 });
 
+// GET /api/daemon/events — daemon 관련 모든 이벤트 조회 (필터 없이)
+app.get('/api/daemon/events', async (req, res) => {
+  try {
+    const pool = dbModule.getDb();
+    const limit = Math.min(parseInt(req.query.limit) || 50, 500);
+    const { rows } = await pool.query(
+      "SELECT id, type, user_id, timestamp, data_json FROM events WHERE type LIKE 'daemon.%' OR type LIKE 'install.%' OR type LIKE 'bank.%' ORDER BY timestamp DESC LIMIT $1",
+      [limit]
+    );
+    res.json({ events: rows.map(r => ({ id: r.id, type: r.type, userId: r.user_id, ts: r.timestamp, data: r.data_json })), total: rows.length });
+  } catch (e) {
+    res.json({ error: e.message, events: [] });
+  }
+});
+
 // POST /api/daemon/force-update — hook 응답에 업데이트 명령 끼워넣기 (켜기/끄기)
 // 데몬이 구버전이라 명령 폴링이 안 될 때 사용
 app.post('/api/daemon/force-update', (req, res) => {
