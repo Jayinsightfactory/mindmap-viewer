@@ -193,6 +193,7 @@
     border-radius: 50%; animation: spin .6s linear infinite;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .4; } }
 
   .empty-state {
     text-align: center; padding: 40px 20px; color: var(--muted); font-size: 14px;
@@ -733,7 +734,13 @@
         <span class="icon">&#x1f9e0;</span> 업무 의도 분석
         <span class="badge badge-blue" id="intent-event-count" style="display:none"></span>
       </div>
-      <button class="btn btn-blue" id="intent-analyze-btn" onclick="runIntentAnalysis()">의도 분석 시작</button>
+      <div style="display:flex;align-items:center;gap:12px">
+        <button class="btn btn-blue" id="intent-analyze-btn" onclick="runIntentAnalysis()">의도 분석 시작</button>
+        <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);cursor:pointer;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:5px 12px">
+          <input type="checkbox" id="realtime-toggle" onchange="toggleRealtime(this.checked)" style="accent-color:var(--green)"> 실시간 모드 (10초)
+        </label>
+        <span id="realtime-indicator" style="display:none;font-size:11px;color:var(--green);animation:pulse 1.5s infinite">&#x1F7E2; LIVE</span>
+      </div>
     </div>
     <p style="color:var(--muted);font-size:12px;margin-bottom:16px;">
       학습 로그(screen.capture, keyboard.chunk, idle)를 기반으로 캡처 내용, 키로그 상세, 마우스 클릭을 분석하고
@@ -1431,6 +1438,21 @@ let _intentData = {};    // userId -> { userName, events, sessions, algoResults,
 let _currentIntentUid = null;
 let _currentIntentView = 'timeline';
 
+// ── 실시간 모드 (10초 자동 갱신) ─────────────────────────────────
+let _realtimeTimer = null;
+function toggleRealtime(on) {
+  const indicator = document.getElementById('realtime-indicator');
+  if (_realtimeTimer) { clearInterval(_realtimeTimer); _realtimeTimer = null; }
+  if (on) {
+    indicator.style.display = '';
+    // 즉시 1회 실행 후 10초마다 반복
+    runIntentAnalysis();
+    _realtimeTimer = setInterval(() => runIntentAnalysis(), 10000);
+  } else {
+    indicator.style.display = 'none';
+  }
+}
+
 // ── 분석 알고리즘 정의 ───────────────────────────────────────────
 const INTENT_ALGORITHMS = [
   {
@@ -1921,8 +1943,8 @@ function renderTimelineView(el, userData) {
   events.forEach((ev, idx) => {
     const ts = new Date(ev.timestamp || 0);
     const timeStr = ts.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    const typeBadge = ev.type === 'screen.capture' ? 'capture' : ev.type === 'keyboard.chunk' ? 'keyboard' : 'idle';
-    const typeLabel = ev.type === 'screen.capture' ? 'screen.capture' : ev.type === 'keyboard.chunk' ? 'keyboard.chunk' : ev.type || 'event';
+    const typeBadge = (ev.type === 'screen.capture' || ev.type === 'screen.analyzed') ? 'capture' : ev.type === 'keyboard.chunk' ? 'keyboard' : 'idle';
+    const typeLabel = ev.type === 'screen.analyzed' ? 'screen.analyzed' : ev.type === 'screen.capture' ? 'screen.capture' : ev.type === 'keyboard.chunk' ? 'keyboard.chunk' : ev.type || 'event';
     const isFlagged = (ev.mouseClicks || 0) >= 40;
     const prevEvent = idx > 0 ? events[idx - 1] : null;
 
@@ -1948,23 +1970,26 @@ function renderTimelineView(el, userData) {
     }
     html += '</div>';
 
-    // 캡처 분석 + 앱/창 정보
-    if (ev.type === 'screen.capture') {
+    // 캡처 분석 + 앱/창 정보 + Vision 결과
+    if (ev.type === 'screen.capture' || ev.type === 'screen.analyzed') {
       const hasVision = ev.visionActivity || ev.visionScreen;
       html += '<div style="display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:8px">';
       html += '<div class="capture-box' + (hasVision ? ' analyzed' : '') + '">';
-      html += hasVision ? '&#x1f4f7; Vision 분석 완료' : '&#x1f4f7; 캡처 분석 (Vision 미분석)';
+      html += hasVision ? '&#x1f4f7; &#x2705; Vision 분석 완료' : '&#x1f4f7; &#x23f3; 캡처 (Vision 미분석)';
       html += '</div>';
       html += '<div class="timeline-info-grid">';
       html += '<span class="info-label">앱:</span><span class="info-value">' + escHtml(ev.app || '-') + '</span>';
       html += '<span class="info-label">창:</span><span class="info-value" title="' + escAttr(ev.windowTitle || '') + '">' + escHtml(ev.windowTitle || '-') + '</span>';
       html += '</div></div>';
       if (hasVision) {
-        html += '<div style="font-size:11px;color:var(--green);margin-bottom:6px;padding:6px 10px;background:rgba(63,185,80,.06);border-radius:6px">';
-        if (ev.visionActivity) html += '<div>활동: ' + escHtml(ev.visionActivity) + '</div>';
-        if (ev.visionScreen) html += '<div>화면: ' + escHtml(ev.visionScreen) + '</div>';
-        if (ev.visionHint) html += '<div>힌트: ' + escHtml(ev.visionHint) + '</div>';
-        html += '</div>';
+        html += '<div style="font-size:11px;color:var(--green);margin-bottom:6px;padding:8px 12px;background:rgba(63,185,80,.06);border:1px solid rgba(63,185,80,.15);border-radius:8px">';
+        html += '<div style="font-weight:600;margin-bottom:4px;font-size:12px">&#x1f50d; 캡처 분석 결과</div>';
+        html += '<div style="display:grid;grid-template-columns:auto 1fr;gap:3px 10px">';
+        html += '<span style="color:var(--muted)">앱:</span><span>' + escHtml(ev.visionScreen || '-') + '</span>';
+        html += '<span style="color:var(--muted)">활동:</span><span>' + escHtml(ev.visionActivity || '-') + '</span>';
+        html += '<span style="color:var(--muted)">자동화:</span><span>' + (ev.visionAutomatable ? '<span style="color:var(--green);font-weight:600">가능</span>' : '<span style="color:var(--muted)">불가</span>') + '</span>';
+        if (ev.visionHint) html += '<span style="color:var(--muted)">힌트:</span><span>' + escHtml(ev.visionHint) + '</span>';
+        html += '</div></div>';
       }
     } else {
       html += '<div class="timeline-info-grid" style="margin-bottom:8px">';

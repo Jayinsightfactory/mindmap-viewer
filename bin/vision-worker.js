@@ -201,6 +201,113 @@ function sendToServer(cap, analysis) {
   });
 }
 
+// ── Google Sheets 저장 ──────────────────────────────────────────────────────
+let _sheetsId = null;
+
+async function _ensureVisionSheet(token) {
+  if (_sheetsId) return _sheetsId;
+
+  // 기존 "Vision 분석" 시트 검색
+  try {
+    const q = encodeURIComponent("name='Orbit AI Vision 분석' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false");
+    const search = await gApi('GET', `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)&orderBy=modifiedTime+desc&pageSize=1`, token);
+    if (search.files && search.files.length > 0) {
+      _sheetsId = search.files[0].id;
+      console.log(`[vision] 기존 Sheets 발견: ${_sheetsId}`);
+      return _sheetsId;
+    }
+  } catch {}
+
+  // 새 스프레드시트 생성 (Sheets API 스코프 토큰 필요)
+  const sheetsToken = await _getSheetsToken();
+  const result = await gApi('POST', 'https://sheets.googleapis.com/v4/spreadsheets', sheetsToken, {
+    properties: { title: 'Orbit AI Vision 분석' },
+    sheets: [{ properties: { title: 'Vision 분석', index: 0 } }],
+  });
+  _sheetsId = result.spreadsheetId;
+  console.log(`[vision] 새 Sheets 생성: ${_sheetsId}`);
+
+  // 폴더로 이동
+  if (_gFolder) {
+    try { await gApi('PATCH', `https://www.googleapis.com/drive/v3/files/${_sheetsId}?addParents=${_gFolder}&fields=id`, token); } catch {}
+  }
+
+  // dlaww@kicda.com에 공유
+  try {
+    await gApi('POST', `https://www.googleapis.com/drive/v3/files/${_sheetsId}/permissions`, sheetsToken, {
+      type: 'user', role: 'writer', emailAddress: 'dlaww@kicda.com',
+    });
+    console.log('[vision] Sheets 공유 완료: dlaww@kicda.com');
+  } catch (e) { console.warn('[vision] Sheets 공유 실패:', e.message); }
+
+  // 헤더 행 추가
+  try {
+    const hUrl = `https://sheets.googleapis.com/v4/spreadsheets/${_sheetsId}/values/${encodeURIComponent('Vision 분석!A1')}?valueInputOption=RAW`;
+    await gApi('PUT', hUrl, sheetsToken, {
+      range: 'Vision 분석!A1', majorDimension: 'ROWS',
+      values: [['시간', '호스트', '파일명', '앱', '화면', '활동', '자동화가능', '자동화힌트', '카테고리']],
+    });
+  } catch (e) { console.warn('[vision] 헤더 기록 실패:', e.message); }
+
+  return _sheetsId;
+}
+
+let _sheetsToken = null, _sheetsTokenExp = 0;
+
+async function _getSheetsToken() {
+  if (_sheetsToken && Date.now() < _sheetsTokenExp) return _sheetsToken;
+  const now = Math.floor(Date.now() / 1000);
+  const b64 = o => Buffer.from(JSON.stringify(o)).toString('base64url');
+  const unsigned = `${b64({ alg:'RS256', typ:'JWT' })}.${b64({
+    iss: _gCred.client_email,
+    scope: 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file',
+    aud: 'https://oauth2.googleapis.com/token',
+    iat: now, exp: now + 3600,
+  })}`;
+  const sign = crypto.createSign('RSA-SHA256'); sign.update(unsigned);
+  const jwt = `${unsigned}.${sign.sign(_gCred.private_key, 'base64url')}`;
+  const body = `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${jwt}`;
+  return new Promise((resolve, reject) => {
+    const req = https.request({ hostname:'oauth2.googleapis.com', path:'/token', method:'POST',
+      headers:{ 'Content-Type':'application/x-www-form-urlencoded', 'Content-Length':Buffer.byteLength(body) } }, res => {
+      let d=''; res.on('data', c=>d+=c); res.on('end', ()=>{
+        const p = JSON.parse(d); _sheetsToken = p.access_token; _sheetsTokenExp = Date.now() + 3500000; resolve(_sheetsToken);
+      });
+    }); req.on('error', reject); req.write(body); req.end();
+  });
+}
+
+async function saveToSheets(cap, analysis) {
+  try {
+    const driveToken = await gToken();
+    const sheetId = await _ensureVisionSheet(driveToken);
+    const sheetsToken = await _getSheetsToken();
+
+    const ts = cap.ts ? new Date(cap.ts).toLocaleString('ko-KR') : new Date().toLocaleString('ko-KR');
+    const row = [
+      ts,
+      cap.hostname || '',
+      cap.name || '',
+      analysis.app || '',
+      analysis.screen || '',
+      analysis.activity || '',
+      analysis.automatable ? '가능' : '불가',
+      analysis.automationHint || '',
+      analysis.workCategory || '',
+    ];
+
+    const appendUrl = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent('Vision 분석!A:I')}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`;
+    await gApi('POST', appendUrl, sheetsToken, {
+      range: 'Vision 분석!A:I', majorDimension: 'ROWS', values: [row],
+    });
+    console.log(`  → Sheets 저장 완료`);
+    return true;
+  } catch (e) {
+    console.warn(`  → Sheets 저장 실패: ${e.message}`);
+    return false;
+  }
+}
+
 // ── 메인 루프 ─────────────────────────────────────────────────────────────────
 async function processBatch() {
   try {
@@ -216,6 +323,7 @@ async function processBatch() {
         const result = await visionAnalyze(b64, cap);
         console.log(`  → ${result.app}: ${result.activity?.substring(0,50)}`);
         await sendToServer(cap, result);
+        await saveToSheets(cap, result);
         await gApi('PATCH', `https://www.googleapis.com/drive/v3/files/${cap.id}`, token, { description:`analyzed:${new Date().toISOString()}` });
         done++;
         await new Promise(r => setTimeout(r, 2000));
