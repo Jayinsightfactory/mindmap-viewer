@@ -24,8 +24,12 @@ function _checkTrackerHealth() {
       } else {
         const lastEvent = d.lastEventAt ? new Date(d.lastEventAt) : null;
         const minsSince = lastEvent ? (Date.now() - lastEvent.getTime()) / 60000 : 999;
+        // 워크스페이스 멤버 이벤트도 확인 (관리자는 본인 트래커가 없을 수 있음)
+        const wsLastEvent = d.workspaceLastEventAt ? new Date(d.workspaceLastEventAt) : null;
+        const wsMinsSince = wsLastEvent ? (Date.now() - wsLastEvent.getTime()) / 60000 : minsSince;
+        const effectiveMinsSince = Math.min(minsSince, wsMinsSince);
 
-        if (minsSince > 30 && d.eventCount > 0) {
+        if (effectiveMinsSince > 30 && d.eventCount > 0) {
           if (!_trackerAlertShown) {
             _trackerAlertShown = true;
             _showTrackerAlert('stale', '데이터가 30분 이상 수신되지 않고 있습니다. 데몬이 중지되었을 수 있습니다.');

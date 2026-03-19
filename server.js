@@ -1739,9 +1739,26 @@ app.get('/api/tracker/status', async (req, res) => {
         }
       }
     } catch {}
+
+    // 워크스페이스 전체 최신 이벤트 시간 (관리자용)
+    let wsLastEventAt = null;
+    let lastEventAt = ping?.last_ping || null;
+    try {
+      const pool = dbModule.getDb();
+      if (pool?.query) {
+        const { rows } = await pool.query("SELECT MAX(timestamp) as last_ts FROM events WHERE type IN ('screen.capture','keyboard.chunk') AND user_id != 'local' LIMIT 1");
+        if (rows[0]?.last_ts) wsLastEventAt = rows[0].last_ts;
+        // 본인 최신 이벤트
+        const { rows: userRows } = await pool.query("SELECT MAX(timestamp) as last_ts FROM events WHERE user_id = $1 LIMIT 1", [userId]);
+        if (userRows[0]?.last_ts) lastEventAt = userRows[0].last_ts;
+      }
+    } catch {}
+
     res.json({
       online:     !!isOnline,
       lastSeen:   ping?.last_ping || null,
+      lastEventAt,
+      workspaceLastEventAt: wsLastEventAt,
       hostname:   ping?.hostname || null,
       eventCount: userEventCount,
     });
