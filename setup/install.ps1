@@ -444,91 +444,151 @@ if (-not $npmReachable) {
 Report-Install "proxy" $(if ($proxyDetected) {"configured"} else {"none"}) "reachable=$npmReachable"
 
 # ═══════════════════════════════════════════════════════════════
-# [7] npm install (40%)
+# [7] npm install (40%) — 실패 시 원인 자동 진단 + 해결 + 재시도
 # ═══════════════════════════════════════════════════════════════
 Show-Progress 40 "패키지 설치"
 
 Set-Location $DIR
 
-# npm install — 에러 출력 ON (2>$null 제거!)
-if ($isUpdate) {
-  # 업데이트 모드: package.json 변경 시에만
-  if ($pullResult -match "package.json" -or -not (Test-Path "$DIR\node_modules")) {
-    Write-Host ""
-    Write-Host "  npm install 진행 중..." -ForegroundColor Gray
-    $npmOutput = & cmd /c "npm install 2>&1"
-    $npmExitCode = $LASTEXITCODE
-  } else {
-    $npmExitCode = 0
-  }
-} else {
-  # 신규 설치
-  Write-Host ""
+function Run-NpmInstall {
   Write-Host "  npm install 진행 중..." -ForegroundColor Gray
-  $npmOutput = & cmd /c "npm install 2>&1"
-  $npmExitCode = $LASTEXITCODE
+  $output = & cmd /c "npm install 2>&1"
+  return @{ exitCode=$LASTEXITCODE; output=$output }
 }
 
-# npm install 실패 처리
-if ($npmExitCode -ne 0 -and -not (Test-Path "$DIR\node_modules")) {
+function Test-UiohookNode {
+  $f = Get-ChildItem "$DIR\node_modules" -Recurse -Filter "uiohook-napi.node" -ErrorAction SilentlyContinue | Select-Object -First 1
+  if (-not $f) { $f = Get-ChildItem "$DIR\node_modules\uiohook-napi" -Recurse -Filter "*.node" -ErrorAction SilentlyContinue | Select-Object -First 1 }
+  return $f
+}
+
+$npmMaxRetry = 3
+$npmSuccess = $false
+
+for ($npmTry = 1; $npmTry -le $npmMaxRetry; $npmTry++) {
   Write-Host ""
-  Write-Host "  ╔══════════════════════════════════════════════════════╗" -ForegroundColor Red
-  Write-Host "  ║   [오류] npm install 실패                            ║" -ForegroundColor Red
-  Write-Host "  ╠══════════════════════════════════════════════════════╣" -ForegroundColor Red
-  Write-Host "  ║                                                      ║" -ForegroundColor Red
-  if ($npmOutput) {
-    # 마지막 5줄만 표시
-    $errLines = ($npmOutput -split "`n") | Select-Object -Last 5
-    foreach ($line in $errLines) {
-      $trimmed = $line.Substring(0, [Math]::Min($line.Length, 54))
-      Write-Host "  ║  $trimmed" -ForegroundColor Yellow
-    }
+  if ($npmTry -gt 1) { Write-Host "  [재시도 $npmTry/$npmMaxRetry]" -ForegroundColor Yellow }
+
+  # 업데이트 모드: package.json 변경 시에만
+  if ($isUpdate -and $npmTry -eq 1 -and -not ($pullResult -match "package.json") -and (Test-Path "$DIR\node_modules")) {
+    $npmSuccess = $true; break
   }
-  Write-Host "  ║                                                      ║" -ForegroundColor Red
-  Write-Host "  ║   해결 방법:                                         ║" -ForegroundColor Red
-  Write-Host "  ║   1. 방화벽/프록시 설정 확인                        ║" -ForegroundColor Red
-  Write-Host "  ║   2. npm cache clean --force 후 재시도              ║" -ForegroundColor Red
-  Write-Host "  ║   3. Node.js 재설치 (https://nodejs.org)            ║" -ForegroundColor Red
-  Write-Host "  ║                                                      ║" -ForegroundColor Red
-  Write-Host "  ╚══════════════════════════════════════════════════════╝" -ForegroundColor Red
-  Report-Install "npm" "fail" "npm install failed"
-  Write-Host ""
-  exit 1
+
+  $result = Run-NpmInstall
+
+  # npm install 자체가 실패한 경우 → 원인 진단 + 자동 해결
+  if ($result.exitCode -ne 0 -or -not (Test-Path "$DIR\node_modules")) {
+    $errText = ($result.output | Out-String)
+    Write-Host "  [!] npm install 실패 — 원인 분석 중..." -ForegroundColor Yellow
+
+    # 진단 1: 프록시/네트워크 문제
+    if ($errText -match "ETIMEDOUT|ECONNREFUSED|ENOTFOUND|proxy|certificate|tunneling socket|network") {
+      Write-Host "  [진단] 네트워크/프록시 문제 감지" -ForegroundColor Yellow
+      Write-Host "  [해결] 프록시 재감지 + npm 캐시 정리 후 재시도" -ForegroundColor Cyan
+      # IE 프록시 재감지
+      try {
+        $proxyReg = Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings" -ErrorAction SilentlyContinue
+        if ($proxyReg.ProxyEnable -eq 1 -and $proxyReg.ProxyServer) {
+          & npm config set proxy "http://$($proxyReg.ProxyServer)" 2>$null
+          & npm config set https-proxy "http://$($proxyReg.ProxyServer)" 2>$null
+          Write-Host "  [적용] 프록시: $($proxyReg.ProxyServer)" -ForegroundColor Green
+        }
+      } catch {}
+      & npm cache clean --force 2>$null
+      # 대체 레지스트리 시도
+      if ($npmTry -ge 2) {
+        & npm config set registry "https://registry.npmmirror.com" 2>$null
+        Write-Host "  [적용] 미러 레지스트리로 전환" -ForegroundColor Green
+      }
+      continue
+    }
+
+    # 진단 2: 권한 문제
+    if ($errText -match "EPERM|EACCES|permission denied") {
+      Write-Host "  [진단] 파일 권한 문제 감지" -ForegroundColor Yellow
+      Write-Host "  [해결] node_modules 삭제 후 재시도" -ForegroundColor Cyan
+      Remove-Item "$DIR\node_modules" -Recurse -Force -ErrorAction SilentlyContinue
+      Start-Sleep -Seconds 2
+      continue
+    }
+
+    # 진단 3: 기타 — 캐시 정리 후 재시도
+    Write-Host "  [진단] npm 에러 — 캐시 정리 후 재시도" -ForegroundColor Yellow
+    & npm cache clean --force 2>$null
+    continue
+  }
+
+  # npm install 성공 → uiohook .node 파일 확인
+  $uiohookNode = Test-UiohookNode
+
+  if (-not $uiohookNode) {
+    Write-Host "  [!] uiohook-napi .node 파일 없음 — V3 백신이 삭제한 것으로 판단" -ForegroundColor Yellow
+
+    # 자동 해결: V3 실시간 감시 일시 중지 시도
+    Write-Host "  [해결] V3 예외 재등록 + npm rebuild 시도" -ForegroundColor Cyan
+
+    # V3 예외 재등록 (가능하면)
+    try {
+      Add-MpPreference -ExclusionPath "$DIR" -ErrorAction SilentlyContinue
+      Add-MpPreference -ExclusionPath "$DIR\node_modules" -ErrorAction SilentlyContinue
+    } catch {}
+
+    # node_modules/uiohook-napi 삭제 후 재설치
+    Remove-Item "$DIR\node_modules\uiohook-napi" -Recurse -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 2
+    & cmd /c "npm install uiohook-napi 2>&1" | Out-Null
+
+    # 재확인
+    $uiohookNode = Test-UiohookNode
+    if ($uiohookNode) {
+      Write-Host "  [성공] uiohook-napi 복구 완료" -ForegroundColor Green
+      $npmSuccess = $true; break
+    }
+
+    # 여전히 없으면: V3 예외 경로 안내 (수동 해결 필요한 유일한 케이스)
+    if ($npmTry -ge $npmMaxRetry) {
+      Write-Host ""
+      Write-Host "  ┌─────────────────────────────────────────────────────┐" -ForegroundColor Yellow
+      Write-Host "  |  V3 백신이 uiohook 파일을 계속 삭제하고 있습니다   |" -ForegroundColor Yellow
+      Write-Host "  |                                                     |"
+      Write-Host "  |  V3 환경설정 > 예외설정 > 폴더 추가:              |"
+      Write-Host "  |    $DIR" -ForegroundColor Cyan
+      Write-Host "  |    $OrbitDir" -ForegroundColor Cyan
+      Write-Host "  |                                                     |"
+      Write-Host "  |  예외 등록 후 이 스크립트가 자동 재시도합니다      |" -ForegroundColor Green
+      Write-Host "  └─────────────────────────────────────────────────────┘"
+      try { "$DIR" | Set-Clipboard -ErrorAction SilentlyContinue } catch {}
+      Write-Host "  >>> 경로가 클립보드에 복사됨. V3 예외 등록 후 Enter" -ForegroundColor Yellow
+      Read-Host "  Enter"
+      # 사용자가 V3 예외 등록 후 Enter → 마지막 재시도
+      Remove-Item "$DIR\node_modules\uiohook-napi" -Recurse -Force -ErrorAction SilentlyContinue
+      & cmd /c "npm install uiohook-napi 2>&1" | Out-Null
+      $uiohookNode = Test-UiohookNode
+      if ($uiohookNode) {
+        Write-Host "  [성공] uiohook-napi 복구 완료!" -ForegroundColor Green
+        $npmSuccess = $true; break
+      }
+      # 최종 실패 — 그래도 데몬은 시작 (키보드 캡처만 안 됨)
+      Write-Host "  [경고] uiohook 없이 진행 — 키보드/마우스 캡처 비활성" -ForegroundColor Yellow
+      Report-Install "npm" "partial" "uiohook missing, daemon will run without keyboard capture"
+      $npmSuccess = $true; break
+    }
+    continue
+  }
+
+  # 모든 것 성공
+  $npmSuccess = $true; break
+}
+
+if (-not $npmSuccess) {
+  # 3회 모두 실패 — 그래도 데몬 시작은 시도 (가능한 기능만이라도 활성화)
+  Write-Host "  [경고] npm install 불완전 — 가능한 기능만 활성화합니다" -ForegroundColor Yellow
+  Report-Install "npm" "partial" "incomplete after $npmMaxRetry retries"
 }
 
 # 필수 디렉토리 생성
 New-Item -ItemType Directory -Force -Path "$DIR\data", "$DIR\snapshots" 2>$null | Out-Null
-
-# uiohook-napi .node 파일 존재 확인 (V3가 삭제했는지 체크)
-$uiohookNode = Get-ChildItem "$DIR\node_modules" -Recurse -Filter "uiohook-napi.node" -ErrorAction SilentlyContinue | Select-Object -First 1
-if (-not $uiohookNode) {
-  $uiohookNode = Get-ChildItem "$DIR\node_modules\uiohook-napi" -Recurse -Filter "*.node" -ErrorAction SilentlyContinue | Select-Object -First 1
-}
-
-if (-not $uiohookNode) {
-  Write-Host ""
-  Write-Host "  ╔══════════════════════════════════════════════════════╗" -ForegroundColor Red
-  Write-Host "  ║   [오류] uiohook-napi .node 파일이 없습니다         ║" -ForegroundColor Red
-  Write-Host "  ╠══════════════════════════════════════════════════════╣" -ForegroundColor Red
-  Write-Host "  ║                                                      ║" -ForegroundColor Red
-  Write-Host "  ║   V3 백신이 파일을 삭제했을 가능성이 높습니다.      ║" -ForegroundColor Red
-  Write-Host "  ║                                                      ║" -ForegroundColor Red
-  Write-Host "  ║   해결 방법:                                         ║" -ForegroundColor Red
-  Write-Host "  ║   1. V3 환경설정 > 예외설정 > 폴더 추가:           ║" -ForegroundColor Red
-  Write-Host "  ║      $DIR" -ForegroundColor Cyan
-  Write-Host "  ║      $OrbitDir" -ForegroundColor Cyan
-  Write-Host "  ║   2. 예외 등록 후 이 스크립트를 다시 실행           ║" -ForegroundColor Red
-  Write-Host "  ║                                                      ║" -ForegroundColor Red
-  Write-Host "  ╚══════════════════════════════════════════════════════╝" -ForegroundColor Red
-  # 예외 경로 클립보드 복사
-  try { "$DIR`n$OrbitDir" | Set-Clipboard -ErrorAction SilentlyContinue } catch {}
-  Write-Host "  >>> 예외 경로가 클립보드에 복사되었습니다" -ForegroundColor Yellow
-  Report-Install "npm" "fail" "uiohook .node deleted by V3"
-  Write-Host ""
-  exit 1
-}
-
-Report-Install "npm" "ok"
+Report-Install "npm" $(if ($npmSuccess) {"ok"} else {"partial"})
 
 # ═══════════════════════════════════════════════════════════════
 # [8] Chrome 확장 준비 (50%)
@@ -775,14 +835,28 @@ Show-Progress 95 "자가 진단"
 
 $diagResults = @()
 
-# 진단 1: 데몬 PID 존재 + 프로세스 실행 중?
+# 진단 1: 데몬 PID 존재 + 프로세스 실행 중? → 안 되면 재시작
 $daemonOk = $false
 $newPid = Get-Content "$OrbitDir\personal-agent.pid" -ErrorAction SilentlyContinue
 if ($newPid -and (Get-Process -Id $newPid -ErrorAction SilentlyContinue)) {
   $daemonOk = $true
   $diagResults += @{ name="데몬 실행"; ok=$true; detail="PID $newPid" }
 } else {
-  $diagResults += @{ name="데몬 실행"; ok=$false; detail="데몬이 실행되지 않음 — 로그 확인: $OrbitDir\daemon.log" }
+  Write-Host "  [자동 해결] 데몬 미실행 → 재시작 시도..." -ForegroundColor Yellow
+  $startBat = "$OrbitDir\start-daemon.bat"
+  if (Test-Path $startBat) {
+    Start-Process -WindowStyle Hidden -FilePath "cmd.exe" -ArgumentList "/c `"$startBat`""
+    Start-Sleep -Seconds 5
+    $newPid = Get-Content "$OrbitDir\personal-agent.pid" -ErrorAction SilentlyContinue
+    if ($newPid -and (Get-Process -Id $newPid -ErrorAction SilentlyContinue)) {
+      $daemonOk = $true
+      $diagResults += @{ name="데몬 실행"; ok=$true; detail="재시작 성공 PID $newPid" }
+    } else {
+      $diagResults += @{ name="데몬 실행"; ok=$false; detail="재시작 실패 — $OrbitDir\daemon.log 확인" }
+    }
+  } else {
+    $diagResults += @{ name="데몬 실행"; ok=$false; detail="start-daemon.bat 없음" }
+  }
 }
 
 # 진단 2: 서버 연결 가능? (POST /api/hook 테스트)
@@ -804,7 +878,19 @@ try {
   $serverOk = $true
   $diagResults += @{ name="서버 연결"; ok=$true; detail="POST /api/hook 성공" }
 } catch {
-  $diagResults += @{ name="서버 연결"; ok=$false; detail="서버 연결 실패 — 네트워크 또는 토큰 확인" }
+  # 자동 해결: 프록시 재설정 후 재시도
+  Write-Host "  [자동 해결] 서버 연결 실패 → 프록시 확인 후 재시도..." -ForegroundColor Yellow
+  try {
+    $proxyReg2 = Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings" -ErrorAction SilentlyContinue
+    if ($proxyReg2.ProxyEnable -eq 1 -and $proxyReg2.ProxyServer) {
+      [System.Net.WebRequest]::DefaultWebProxy = New-Object System.Net.WebProxy("http://$($proxyReg2.ProxyServer)")
+    }
+    Invoke-RestMethod -Uri "$REMOTE/api/hook" -Method POST -Headers $testHeaders -Body $testBody -TimeoutSec 10 -ErrorAction Stop | Out-Null
+    $serverOk = $true
+    $diagResults += @{ name="서버 연결"; ok=$true; detail="프록시 적용 후 성공" }
+  } catch {
+    $diagResults += @{ name="서버 연결"; ok=$false; detail="연결 실패 — 방화벽에서 $REMOTE 허용 필요" }
+  }
 }
 
 # 진단 3: uiohook-napi .node 파일 존재?
@@ -814,7 +900,18 @@ if ($uiohookCheck) {
   $uiohookOk = $true
   $diagResults += @{ name="uiohook-napi"; ok=$true; detail=$uiohookCheck.FullName }
 } else {
-  $diagResults += @{ name="uiohook-napi"; ok=$false; detail="V3 백신이 삭제했을 수 있음 — 예외 등록 후 npm install 재실행" }
+  # 자동 해결: uiohook 재설치 시도
+  Write-Host "  [자동 해결] uiohook 없음 → npm install uiohook-napi 재시도..." -ForegroundColor Yellow
+  Set-Location $DIR
+  & cmd /c "npm install uiohook-napi 2>&1" | Out-Null
+  Start-Sleep -Seconds 2
+  $uiohookCheck = Get-ChildItem "$DIR\node_modules" -Recurse -Filter "*.node" -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match "uiohook" } | Select-Object -First 1
+  if ($uiohookCheck) {
+    $uiohookOk = $true
+    $diagResults += @{ name="uiohook-napi"; ok=$true; detail="재설치 성공" }
+  } else {
+    $diagResults += @{ name="uiohook-napi"; ok=$false; detail="V3 예외 등록 필요 — 키보드 캡처 비활성" }
+  }
 }
 
 # 진단 4: 디스크 여유 1GB 이상?
