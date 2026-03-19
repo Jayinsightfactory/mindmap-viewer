@@ -1205,43 +1205,38 @@ app.get('/api/daemon/node-modules', (req, res) => {
   fs.createReadStream(_nmBundlePath).pipe(res);
 });
 
-// POST /api/daemon/run-vision — 대시보드에서 Vision 분석 1회 실행
-let _visionRunning = false;
+// === 분석 요청 큐 (맥미니 에이전트가 폴링해서 처리) ===
+// NOTE: API 키는 맥미니에서만 사용. 서버에서는 분석 안 함.
+if (!global._analysisQueue) global._analysisQueue = [];
+
+// POST /api/daemon/run-vision — 분석 요청을 큐에 추가 (맥미니가 실행)
 app.post('/api/daemon/run-vision', (req, res) => {
-  if (_visionRunning) return res.status(409).json({ error: 'Vision 워커가 이미 실행 중입니다' });
-  _visionRunning = true;
+  global._analysisQueue.push({ type: 'vision', ts: new Date().toISOString(), status: 'pending' });
+  res.json({ ok: true, queued: true, message: '맥미니 에이전트가 분석을 실행합니다' });
+});
 
+// GET /api/daemon/analysis-queue — 맥미니가 폴링하여 대기 중 작업 가져감
+app.get('/api/daemon/analysis-queue', (req, res) => {
+  const pending = global._analysisQueue.filter(q => q.status === 'pending');
+  // 가져간 항목은 processing으로 변경
+  pending.forEach(q => q.status = 'processing');
+  res.json({ tasks: pending });
+});
+
+// POST /api/daemon/analysis-result — 맥미니가 분석 결과 전송
+app.post('/api/daemon/analysis-result', async (req, res) => {
   try {
-    const { fork } = require('child_process');
-    const visionScript = path.join(__dirname, 'bin/vision-worker.js');
-
-    if (!fs.existsSync(visionScript)) {
-      _visionRunning = false;
-      return res.status(404).json({ error: 'vision-worker.js not found' });
-    }
-
-    const child = fork(visionScript, ['--once'], {
-      timeout: 120000,
-      silent: true,
-      env: { ...process.env },
-    });
-
-    let output = '';
-    child.stdout.on('data', d => output += d.toString());
-    child.stderr.on('data', d => output += d.toString());
-
-    child.on('close', (code) => {
-      _visionRunning = false;
-      const analyzed = (output.match(/\[vision\]/g) || []).length;
-      res.json({ ok: true, code, analyzed, output: output.substring(0, 500) });
-    });
-
-    child.on('error', (e) => {
-      _visionRunning = false;
-      res.status(500).json({ error: e.message });
-    });
+    const { type, result, error } = req.body || {};
+    const ts = new Date().toISOString();
+    // 큐에서 processing 항목을 완료 처리
+    const processing = global._analysisQueue.find(q => q.status === 'processing' && q.type === type);
+    if (processing) processing.status = error ? 'error' : 'done';
+    // 오래된 큐 항목 정리 (1시간 이상)
+    const cutoff = Date.now() - 60 * 60 * 1000;
+    global._analysisQueue = global._analysisQueue.filter(q => new Date(q.ts).getTime() > cutoff);
+    console.log(`[analysis-result] type=${type} error=${!!error} queue_size=${global._analysisQueue.length}`);
+    res.json({ ok: true, ts });
   } catch (e) {
-    _visionRunning = false;
     res.status(500).json({ error: e.message });
   }
 });
@@ -2587,7 +2582,7 @@ async function startServer() {
     sessions: stats?.sessionCount ?? '?',
     files: stats?.fileCount ?? '?',
     oauth: enabledProviders.join(', ') || '미설정',
-    anthropic: !!process.env.ANTHROPIC_API_KEY,
+    anthropic: '맥미니 전용', // NOTE: API 키는 맥미니에서만 사용. 서버에서는 분석 안 함.
   });
   // 개발 환경에서는 엔드포인트 목록 출력 (프로덕션 JSON 로그에서는 위 메타에 포함)
   if (process.env.NODE_ENV !== 'production') {
