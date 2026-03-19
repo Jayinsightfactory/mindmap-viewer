@@ -216,6 +216,143 @@
     border-color: var(--blue);
   }
 
+  /* ── 업무 의도 분석 섹션 ──────────────────────────────────── */
+  .intent-tabs {
+    display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px;
+  }
+  .intent-tab {
+    background: var(--surface2); border: 1px solid var(--border);
+    color: var(--muted); padding: 6px 16px; border-radius: 20px;
+    cursor: pointer; font-size: 13px; transition: all .15s;
+  }
+  .intent-tab:hover { border-color: var(--blue); color: var(--text); }
+  .intent-tab.active {
+    background: var(--blue); border-color: var(--blue);
+    color: #0d1117; font-weight: 600;
+  }
+  .session-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; margin-bottom: 10px; overflow: hidden;
+  }
+  .session-card.flagged {
+    border-color: rgba(248,81,73,.5);
+    background: linear-gradient(135deg, rgba(248,81,73,.06) 0%, var(--surface) 100%);
+  }
+  .session-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 16px; cursor: pointer; user-select: none;
+    transition: background .15s;
+  }
+  .session-header:hover { background: var(--surface2); }
+  .session-header .toggle-icon {
+    color: var(--muted); font-size: 12px; transition: transform .2s;
+  }
+  .session-header.open .toggle-icon { transform: rotate(90deg); }
+  .session-title {
+    display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0;
+  }
+  .session-time {
+    font-size: 11px; color: var(--muted); white-space: nowrap; flex-shrink: 0;
+  }
+  .session-intent {
+    font-size: 13px; font-weight: 500; color: var(--text);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .session-stats {
+    display: flex; gap: 10px; align-items: center; flex-shrink: 0; margin-left: 12px;
+  }
+  .session-stat {
+    font-size: 11px; color: var(--muted); white-space: nowrap;
+  }
+  .session-stat b { color: var(--text); }
+  .session-body {
+    display: none; padding: 0 16px 14px; border-top: 1px solid var(--border);
+  }
+  .session-body.open { display: block; padding-top: 12px; }
+  .session-events {
+    max-height: 300px; overflow-y: auto;
+  }
+  .session-event {
+    display: flex; gap: 8px; padding: 4px 0;
+    border-bottom: 1px solid rgba(48,54,61,.3); font-size: 11px;
+  }
+  .session-event:last-child { border-bottom: none; }
+  .session-event .ev-time { color: var(--muted); min-width: 42px; flex-shrink: 0; }
+  .session-event .ev-icon { flex-shrink: 0; }
+  .session-event .ev-detail { color: var(--text); flex: 1; min-width: 0; }
+  .flag-tag {
+    display: inline-block; padding: 2px 8px; border-radius: 4px;
+    font-size: 10px; font-weight: 600;
+  }
+  .flag-manual {
+    background: rgba(248,81,73,.15); color: var(--red);
+  }
+  .flag-repeat {
+    background: rgba(255,166,87,.15); color: var(--orange);
+  }
+  .flag-ok {
+    background: rgba(63,185,80,.1); color: var(--green);
+  }
+  .session-result {
+    margin-top: 8px; padding: 8px 12px;
+    background: var(--surface2); border-radius: 6px; font-size: 12px;
+  }
+
+  /* ── 알고리즘 목록 섹션 ──────────────────────────────────── */
+  .algo-list {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 12px;
+  }
+  .algo-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 16px;
+  }
+  .algo-card-header {
+    display: flex; align-items: center; gap: 10px; margin-bottom: 8px;
+  }
+  .algo-icon {
+    width: 32px; height: 32px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; flex-shrink: 0;
+  }
+  .algo-name { font-size: 14px; font-weight: 600; color: var(--text); }
+  .algo-desc { font-size: 12px; color: var(--muted); line-height: 1.5; }
+  .algo-stat {
+    margin-top: 10px; display: flex; gap: 12px; font-size: 11px;
+  }
+  .algo-stat span { color: var(--muted); }
+  .algo-stat b { color: var(--text); }
+
+  /* ── 캡처 타이밍 섹션 ────────────────────────────────────── */
+  .trigger-dist {
+    display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px;
+  }
+  .trigger-chip {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 12px 18px; text-align: center; min-width: 120px;
+  }
+  .trigger-chip .t-count {
+    font-size: 24px; font-weight: 700; color: var(--blue);
+  }
+  .trigger-chip .t-label {
+    font-size: 11px; color: var(--muted); margin-top: 2px;
+  }
+  .trigger-chip .t-pct {
+    font-size: 12px; color: var(--cyan); font-weight: 600;
+  }
+  .suggest-list {
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .suggest-item {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 12px 16px; display: flex; gap: 12px; align-items: flex-start;
+  }
+  .suggest-icon {
+    font-size: 18px; flex-shrink: 0; margin-top: 2px;
+  }
+  .suggest-text { font-size: 13px; color: var(--text); line-height: 1.5; }
+  .suggest-text .highlight { color: var(--orange); font-weight: 600; }
+
   /* ── 반응형 ─────────────────────────────────────────────── */
   @media (max-width: 768px) {
     header { padding: 12px 16px; flex-wrap: wrap; }
@@ -223,6 +360,8 @@
     .cards-grid { grid-template-columns: 1fr; }
     .hour-chart { height: 120px; }
     .section-header { flex-direction: column; align-items: flex-start; }
+    .algo-list { grid-template-columns: 1fr; }
+    .trigger-dist { flex-direction: column; }
   }
 </style>
 </head>
@@ -352,6 +491,49 @@
       <button class="btn btn-primary" id="report-btn" onclick="generateReport()">리포트 생성</button>
       <div id="report-result"></div>
     </div>
+  </section>
+
+  <!-- ══════ 섹션 7: 업무 의도 분석 ══════ -->
+  <section id="sec-intent">
+    <div class="section-header">
+      <div class="section-title">
+        <span class="icon">&#x1f9e0;</span> 업무 의도 분석
+      </div>
+      <button class="btn btn-blue" id="intent-analyze-btn" onclick="runIntentAnalysis()">의도 분석 시작</button>
+    </div>
+    <p style="color:var(--muted);font-size:12px;margin-bottom:16px;">
+      학습 로그(screen.capture, keyboard.chunk, idle)를 기반으로 세션을 자동 그룹핑하고, 업무 의도를 예측합니다.
+      불필요한 수작업과 자동화 대상을 자동 탐지합니다.
+    </p>
+    <div id="intent-tabs" class="intent-tabs"></div>
+    <div id="intent-content">
+      <div class="empty-state">위 버튼을 눌러 의도 분석을 시작하세요.</div>
+    </div>
+  </section>
+
+  <!-- ══════ 섹션 8: 분석 알고리즘 목록 ══════ -->
+  <section id="sec-algorithms">
+    <div class="section-header">
+      <div class="section-title">
+        <span class="icon">&#x2699;</span> 적용 중인 분석 알고리즘
+      </div>
+    </div>
+    <p style="color:var(--muted);font-size:12px;margin-bottom:16px;">현재 업무 의도 분석에 사용되는 패턴 매칭 알고리즘 목록입니다.</p>
+    <div id="algo-content" class="algo-list"></div>
+  </section>
+
+  <!-- ══════ 섹션 9: 캡처 타이밍 제안 ══════ -->
+  <section id="sec-capture-timing">
+    <div class="section-header">
+      <div class="section-title">
+        <span class="icon">&#x1f4f7;</span> 캡처 타이밍 분석 &amp; 제안
+      </div>
+    </div>
+    <p style="color:var(--muted);font-size:12px;margin-bottom:16px;">현재 캡처 트리거 분포를 분석하고 개선 방향을 제안합니다.</p>
+    <div id="trigger-dist-content" class="trigger-dist">
+      <div class="empty-state" style="width:100%">의도 분석 실행 후 표시됩니다.</div>
+    </div>
+    <div id="trigger-suggest-content" class="suggest-list" style="margin-top:16px;"></div>
   </section>
 
 </main>
@@ -994,6 +1176,655 @@ async function populateLogFilters() {
       sel.appendChild(opt);
     });
   } catch {}
+}
+
+// ══════════════════════════════════════════════════════════════════
+// ── 섹션 7: 업무 의도 분석 ─────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════
+
+let _intentData = {}; // userId -> { sessions, flags, triggerDist }
+
+// ── 분석 알고리즘 정의 ───────────────────────────────────────────
+const INTENT_ALGORITHMS = [
+  {
+    id: 'order_loop',
+    name: '주문 처리 루프 패턴',
+    icon: '&#x1f504;',
+    iconBg: 'rgba(88,166,255,.15)',
+    desc: '거래처 목록 → 신규주문 → 거래처 목록 반복 패턴을 감지합니다. nenova 시스템에서 주문 건별로 화면을 왕복하는 경우.',
+    detect(events) {
+      let count = 0;
+      for (let i = 2; i < events.length; i++) {
+        const t0 = (events[i-2].windowTitle || '').toLowerCase();
+        const t1 = (events[i-1].windowTitle || '').toLowerCase();
+        const t2 = (events[i].windowTitle || '').toLowerCase();
+        if ((t0.includes('거래처') || t0.includes('목록')) &&
+            (t1.includes('주문') || t1.includes('신규') || t1.includes('입력')) &&
+            (t2.includes('거래처') || t2.includes('목록'))) {
+          count++;
+        }
+      }
+      return count;
+    }
+  },
+  {
+    id: 'kakao_manual',
+    name: '카카오톡 참조 → 수동 입력 패턴',
+    icon: '&#x1f4ac;',
+    iconBg: 'rgba(255,166,87,.15)',
+    desc: '카카오톡에서 주문/요청을 확인 후 시스템에 수동 입력하는 패턴. 메신저와 업무 앱 사이 반복 전환을 감지합니다.',
+    detect(events) {
+      let count = 0;
+      for (let i = 1; i < events.length; i++) {
+        const prev = (events[i-1].app || '').toLowerCase();
+        const curr = (events[i].app || '').toLowerCase();
+        if ((prev.includes('kakao') || prev.includes('카카오')) &&
+            (curr.includes('nenova') || curr.includes('erp') || curr.includes('시스템'))) {
+          count++;
+        }
+      }
+      return count;
+    }
+  },
+  {
+    id: 'excel_ref',
+    name: '엑셀 발주서 참조 패턴',
+    icon: '&#x1f4ca;',
+    iconBg: 'rgba(63,185,80,.15)',
+    desc: 'Excel 파일(발주서/견적서)을 참고하면서 시스템에 데이터를 재입력하는 패턴. 복사-붙여넣기가 아닌 수동 전사를 감지합니다.',
+    detect(events) {
+      let count = 0;
+      for (let i = 1; i < events.length; i++) {
+        const prev = (events[i-1].app || '').toLowerCase();
+        const curr = (events[i].app || '').toLowerCase();
+        const prevTitle = (events[i-1].windowTitle || '').toLowerCase();
+        if ((prev.includes('excel') || prev.includes('엑셀') || prevTitle.includes('.xls')) &&
+            (curr.includes('nenova') || curr.includes('erp') || curr.includes('chrome'))) {
+          count++;
+        }
+      }
+      return count;
+    }
+  },
+  {
+    id: 'backlog_order',
+    name: '미처리 주문 소화 패턴',
+    icon: '&#x1f4c5;',
+    iconBg: 'rgba(248,81,73,.15)',
+    desc: 'windowTitle에 과거 날짜가 포함된 경우, 밀린 주문/업무를 소화하고 있을 가능성을 감지합니다.',
+    detect(events) {
+      let count = 0;
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      events.forEach(e => {
+        const title = e.windowTitle || '';
+        const dateMatch = title.match(/(\d{4})[-.\/](\d{1,2})[-.\/](\d{1,2})/);
+        if (dateMatch) {
+          const titleDate = new Date(dateMatch[1], parseInt(dateMatch[2])-1, dateMatch[3]);
+          if (titleDate < today && (today - titleDate) < 30 * 86400000) count++;
+        }
+      });
+      return count;
+    }
+  },
+  {
+    id: 'click_input_ratio',
+    name: '클릭-입력 비율 분석',
+    icon: '&#x1f5b1;',
+    iconBg: 'rgba(188,140,255,.15)',
+    desc: '마우스 클릭 대비 키보드 입력 비율을 분석합니다. 클릭이 많고 입력이 적으면 비효율적 UI 탐색을, 입력이 많고 클릭이 적으면 효율적 데이터 입력을 의미합니다.',
+    detect(events) {
+      let totalClicks = 0, totalWords = 0;
+      events.forEach(e => {
+        totalClicks += (e.mouseClicks || 0);
+        const summary = e.summary || '';
+        totalWords += summary.split(/\s+/).filter(Boolean).length;
+      });
+      return { clicks: totalClicks, words: totalWords, ratio: totalWords > 0 ? (totalClicks / totalWords).toFixed(1) : 'N/A' };
+    }
+  }
+];
+
+// ── 의도 분석 실행 ───────────────────────────────────────────────
+async function runIntentAnalysis() {
+  const btn = document.getElementById('intent-analyze-btn');
+  const tabsEl = document.getElementById('intent-tabs');
+  const contentEl = document.getElementById('intent-content');
+
+  btn.disabled = true;
+  btn.textContent = '분석 중...';
+  contentEl.innerHTML = '<div class="loading-state"><div class="spinner"></div> 학습 로그를 불러오고 분석 중...</div>';
+  tabsEl.innerHTML = '';
+
+  try {
+    const data = await apiFetch('/api/learning/logs?limit=500');
+    const logs = data?.logs || [];
+
+    if (!logs.length) {
+      contentEl.innerHTML = '<div class="empty-state">분석할 로그 데이터가 없습니다.</div>';
+      return;
+    }
+
+    // 사용자별 그룹핑
+    const byUser = {};
+    logs.forEach(log => {
+      const uid = log.userId || log.userName || 'unknown';
+      if (!byUser[uid]) byUser[uid] = { name: log.userName || uid, events: [] };
+      byUser[uid].events.push(log);
+    });
+
+    // 사용자별 세션 분석
+    _intentData = {};
+    Object.entries(byUser).forEach(([uid, userData]) => {
+      _intentData[uid] = analyzeUserIntent(uid, userData.name, userData.events);
+    });
+
+    // 탭 렌더링
+    const userIds = Object.keys(_intentData);
+    tabsEl.innerHTML = userIds.map((uid, i) => {
+      const d = _intentData[uid];
+      const flagCount = d.sessions.filter(s => s.flags.length > 0).length;
+      return `<div class="intent-tab ${i === 0 ? 'active' : ''}" data-uid="${escAttr(uid)}" onclick="switchIntentTab(this)">
+        ${escHtml(d.userName)}
+        <span style="font-size:11px;color:inherit;opacity:.7">(${d.sessions.length}세션${flagCount > 0 ? ', <span style=color:var(--red)>' + flagCount + ' 경고</span>' : ''})</span>
+      </div>`;
+    }).join('');
+
+    // 첫 사용자 표시
+    if (userIds.length > 0) {
+      renderIntentUser(userIds[0]);
+    }
+
+    // 알고리즘 섹션 렌더
+    renderAlgorithms(logs);
+
+    // 캡처 타이밍 섹션 렌더
+    renderCaptureTiming(logs);
+
+  } catch (err) {
+    contentEl.innerHTML = '<div class="error-msg">의도 분석 실패: ' + escHtml(err.message) + '</div>';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '의도 분석 시작';
+  }
+}
+
+// ── 사용자별 세션 분석 ───────────────────────────────────────────
+function analyzeUserIntent(uid, userName, events) {
+  // 시간순 정렬
+  events.sort((a, b) => new Date(a.timestamp || 0) - new Date(b.timestamp || 0));
+
+  // 세션 그룹핑: idle 이벤트 또는 5분 이상 간격으로 분리
+  const sessions = [];
+  let currentSession = null;
+  const SESSION_GAP_MS = 5 * 60 * 1000; // 5분
+
+  events.forEach(ev => {
+    const ts = new Date(ev.timestamp || 0).getTime();
+
+    if (ev.type === 'idle') {
+      // idle = 세션 경계
+      if (currentSession && currentSession.events.length > 0) {
+        currentSession.endTs = ts;
+        sessions.push(currentSession);
+      }
+      currentSession = null;
+      return;
+    }
+
+    if (!currentSession) {
+      currentSession = { startTs: ts, endTs: ts, events: [], mainTitle: '', apps: new Set() };
+    }
+
+    // 시간 간격이 크면 새 세션
+    if (ts - currentSession.endTs > SESSION_GAP_MS) {
+      if (currentSession.events.length > 0) {
+        sessions.push(currentSession);
+      }
+      currentSession = { startTs: ts, endTs: ts, events: [], mainTitle: '', apps: new Set() };
+    }
+
+    currentSession.endTs = ts;
+    currentSession.events.push(ev);
+
+    // 메인 윈도우 타이틀 추적 (가장 빈번한 것)
+    if (ev.windowTitle) currentSession.mainTitle = ev.windowTitle;
+    if (ev.app) currentSession.apps.add(ev.app);
+  });
+
+  if (currentSession && currentSession.events.length > 0) {
+    sessions.push(currentSession);
+  }
+
+  // 같은 windowTitle 연속 세션 병합
+  const mergedSessions = [];
+  sessions.forEach(s => {
+    const last = mergedSessions[mergedSessions.length - 1];
+    if (last && s.mainTitle && last.mainTitle === s.mainTitle &&
+        (s.startTs - last.endTs) < SESSION_GAP_MS * 2) {
+      last.endTs = s.endTs;
+      last.events.push(...s.events);
+      s.apps.forEach(a => last.apps.add(a));
+    } else {
+      mergedSessions.push(s);
+    }
+  });
+
+  // 각 세션에 의도 예측 + 플래그 추가
+  const triggerDist = {};
+  const analyzedSessions = mergedSessions.map(s => {
+    const totalClicks = s.events.reduce((sum, e) => sum + (e.mouseClicks || 0), 0);
+    const totalWords = s.events.reduce((sum, e) => {
+      const summary = e.summary || '';
+      return sum + summary.split(/\s+/).filter(Boolean).length;
+    }, 0);
+    const duration = Math.round((s.endTs - s.startTs) / 1000);
+    const apps = Array.from(s.apps);
+
+    // 트리거 분포 집계
+    s.events.forEach(e => {
+      if (e.trigger) {
+        triggerDist[e.trigger] = (triggerDist[e.trigger] || 0) + 1;
+      }
+    });
+
+    // 의도 예측
+    let intent = predictIntent(apps, s.mainTitle, s.events);
+
+    // 완료 여부 추정
+    let completion = 'unknown';
+    if (duration > 10 && totalClicks > 2) completion = 'likely_done';
+    if (duration < 5 && totalClicks < 2) completion = 'maybe_interrupted';
+    if (s.events.length >= 5 && totalClicks > 5) completion = 'done';
+
+    // 플래그
+    const flags = [];
+    if (totalClicks >= 40) {
+      flags.push({ type: 'manual', text: '수작업 의심 (클릭 ' + totalClicks + '회)' });
+    }
+
+    return {
+      startTs: s.startTs,
+      endTs: s.endTs,
+      duration,
+      mainTitle: s.mainTitle || '(제목 없음)',
+      apps,
+      events: s.events,
+      intent,
+      completion,
+      totalClicks,
+      totalWords,
+      flags,
+    };
+  });
+
+  // 반복 패턴 3회 이상 감지
+  const intentCounts = {};
+  analyzedSessions.forEach(s => {
+    if (s.intent) {
+      intentCounts[s.intent] = (intentCounts[s.intent] || 0) + 1;
+    }
+  });
+  Object.entries(intentCounts).forEach(([intent, count]) => {
+    if (count >= 3) {
+      analyzedSessions.forEach(s => {
+        if (s.intent === intent) {
+          s.flags.push({ type: 'repeat', text: '반복 패턴 (' + count + '회) — 자동화 대상' });
+        }
+      });
+    }
+  });
+
+  return { userName, sessions: analyzedSessions, triggerDist };
+}
+
+// ── 의도 예측 ────────────────────────────────────────────────────
+function predictIntent(apps, title, events) {
+  const appsLower = apps.map(a => a.toLowerCase());
+  const titleLower = (title || '').toLowerCase();
+
+  // 카카오톡 → 시스템 전환
+  if (appsLower.some(a => a.includes('kakao') || a.includes('카카오')) &&
+      appsLower.some(a => a.includes('nenova') || a.includes('erp'))) {
+    return '주문 수동 입력 (메신저 참조)';
+  }
+
+  // Excel → 시스템 전환
+  if (appsLower.some(a => a.includes('excel') || a.includes('엑셀')) &&
+      appsLower.some(a => a.includes('nenova') || a.includes('erp') || a.includes('chrome'))) {
+    return '발주서 재입력 (엑셀 참조)';
+  }
+
+  // 주문/거래처 관련 타이틀
+  if (titleLower.includes('주문') || titleLower.includes('거래처') || titleLower.includes('신규')) {
+    return '주문 처리';
+  }
+
+  // 재고/입고
+  if (titleLower.includes('재고') || titleLower.includes('입고') || titleLower.includes('출고')) {
+    return '재고 관리';
+  }
+
+  // 견적/발주
+  if (titleLower.includes('견적') || titleLower.includes('발주') || titleLower.includes('단가')) {
+    return '견적/발주 작업';
+  }
+
+  // Chrome 단독
+  if (appsLower.length === 1 && appsLower[0].includes('chrome')) {
+    return '웹 조회/검색';
+  }
+
+  // 카카오톡 단독
+  if (appsLower.length === 1 && (appsLower[0].includes('kakao') || appsLower[0].includes('카카오'))) {
+    return '메신저 커뮤니케이션';
+  }
+
+  // nenova 단독
+  if (appsLower.some(a => a.includes('nenova'))) {
+    return 'nenova 시스템 작업';
+  }
+
+  // Explorer
+  if (appsLower.some(a => a.includes('explorer') || a.includes('탐색기'))) {
+    return '파일 관리';
+  }
+
+  return '일반 업무';
+}
+
+// ── 탭 전환 ──────────────────────────────────────────────────────
+function switchIntentTab(el) {
+  document.querySelectorAll('.intent-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  renderIntentUser(el.dataset.uid);
+}
+
+// ── 사용자 의도 분석 렌더 ────────────────────────────────────────
+function renderIntentUser(uid) {
+  const contentEl = document.getElementById('intent-content');
+  const userData = _intentData[uid];
+  if (!userData) {
+    contentEl.innerHTML = '<div class="empty-state">데이터 없음</div>';
+    return;
+  }
+
+  const sessions = userData.sessions;
+  if (sessions.length === 0) {
+    contentEl.innerHTML = '<div class="empty-state">세션 데이터가 없습니다.</div>';
+    return;
+  }
+
+  // 요약 통계
+  const totalSessions = sessions.length;
+  const flaggedSessions = sessions.filter(s => s.flags.length > 0).length;
+  const totalClicks = sessions.reduce((sum, s) => sum + s.totalClicks, 0);
+  const totalDuration = sessions.reduce((sum, s) => sum + s.duration, 0);
+  const intentSummary = {};
+  sessions.forEach(s => {
+    intentSummary[s.intent] = (intentSummary[s.intent] || 0) + 1;
+  });
+
+  const summaryHtml = `
+    <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:20px;">
+      <div class="trigger-chip">
+        <div class="t-count">${totalSessions}</div>
+        <div class="t-label">총 세션</div>
+      </div>
+      <div class="trigger-chip">
+        <div class="t-count" style="color:var(--red)">${flaggedSessions}</div>
+        <div class="t-label">경고 세션</div>
+      </div>
+      <div class="trigger-chip">
+        <div class="t-count" style="color:var(--orange)">${totalClicks.toLocaleString()}</div>
+        <div class="t-label">총 클릭</div>
+      </div>
+      <div class="trigger-chip">
+        <div class="t-count" style="color:var(--green)">${formatDuration(totalDuration)}</div>
+        <div class="t-label">총 활동 시간</div>
+      </div>
+    </div>
+    <div style="margin-bottom:20px;">
+      <div style="font-size:13px;font-weight:600;color:var(--cyan);margin-bottom:8px;">의도별 분포</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        ${Object.entries(intentSummary).sort((a,b) => b[1]-a[1]).map(([intent, count]) =>
+          `<span style="padding:4px 12px;background:var(--surface);border:1px solid var(--border);border-radius:16px;font-size:12px;">
+            ${escHtml(intent)} <b style="color:var(--blue)">${count}</b>
+          </span>`
+        ).join('')}
+      </div>
+    </div>`;
+
+  // 세션 카드 (최신순)
+  const sessionsHtml = [...sessions].reverse().map((s, idx) => {
+    const isFlagged = s.flags.length > 0;
+    const startTime = formatTime(new Date(s.startTs).toISOString());
+    const endTime = new Date(s.endTs).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+    const sid = 'session-' + uid.replace(/[^a-zA-Z0-9]/g, '') + '-' + idx;
+
+    const flagTags = s.flags.map(f => {
+      const cls = f.type === 'manual' ? 'flag-manual' : f.type === 'repeat' ? 'flag-repeat' : 'flag-ok';
+      return `<span class="flag-tag ${cls}">${escHtml(f.text)}</span>`;
+    }).join(' ');
+
+    const completionBadge = s.completion === 'done' ? '<span class="badge badge-green">완료 추정</span>'
+      : s.completion === 'likely_done' ? '<span class="badge badge-blue">완료 가능</span>'
+      : s.completion === 'maybe_interrupted' ? '<span class="badge badge-orange">중단 의심</span>'
+      : '<span class="badge badge-muted">불명</span>';
+
+    const eventsHtml = s.events.slice(0, 50).map(e => {
+      const t = new Date(e.timestamp || 0).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+      const icon = e.type === 'keyboard.chunk' ? '&#x2328;' : e.type === 'screen.capture' ? '&#x1f4f7;' : '&#x1f4c4;';
+      const app = e.app || '';
+      const title = (e.windowTitle || e.summary || '').substring(0, 60);
+      const clicks = e.mouseClicks ? ' [' + e.mouseClicks + ' clicks]' : '';
+      const level = e.activityLevel ? ' (' + e.activityLevel + ')' : '';
+      return `<div class="session-event">
+        <span class="ev-time">${t}</span>
+        <span class="ev-icon">${icon}</span>
+        <span class="ev-detail"><b style="color:var(--blue)">${escHtml(app)}</b> ${escHtml(title)}${clicks}${level}</span>
+      </div>`;
+    }).join('');
+
+    return `
+      <div class="session-card ${isFlagged ? 'flagged' : ''}">
+        <div class="session-header" onclick="toggleSession('${sid}', this)">
+          <div class="session-title">
+            <span class="toggle-icon">&#x25B6;</span>
+            <span class="session-time">${startTime} ~ ${endTime}</span>
+            <span class="session-intent">${escHtml(s.intent)}</span>
+          </div>
+          <div class="session-stats">
+            ${completionBadge}
+            <span class="session-stat">&#x1f5b1; <b>${s.totalClicks}</b></span>
+            <span class="session-stat">&#x23f1; <b>${formatDuration(s.duration)}</b></span>
+            <span class="session-stat">&#x1f4dd; <b>${s.events.length}</b>건</span>
+          </div>
+        </div>
+        <div class="session-body" id="${sid}">
+          <div style="margin-bottom:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+            <span style="font-size:12px;color:var(--muted);">앱:</span>
+            ${s.apps.map(a => `<span style="padding:2px 8px;background:var(--surface2);border-radius:4px;font-size:11px">${escHtml(a)}</span>`).join('')}
+          </div>
+          ${flagTags ? '<div style="margin-bottom:8px;display:flex;gap:6px;flex-wrap:wrap;">' + flagTags + '</div>' : ''}
+          <div class="session-result">
+            <span style="color:var(--muted)">의도:</span> <b style="color:var(--cyan)">${escHtml(s.intent)}</b> &nbsp;|&nbsp;
+            <span style="color:var(--muted)">클릭:</span> <b>${s.totalClicks}</b> &nbsp;|&nbsp;
+            <span style="color:var(--muted)">입력량:</span> <b>${s.totalWords} 단어</b> &nbsp;|&nbsp;
+            <span style="color:var(--muted)">소요:</span> <b>${formatDuration(s.duration)}</b>
+          </div>
+          <div style="margin-top:10px;font-size:12px;font-weight:600;color:var(--muted);margin-bottom:6px;">이벤트 (${Math.min(s.events.length, 50)}/${s.events.length}건)</div>
+          <div class="session-events">${eventsHtml}</div>
+        </div>
+      </div>`;
+  }).join('');
+
+  contentEl.innerHTML = summaryHtml + sessionsHtml;
+}
+
+function toggleSession(id, headerEl) {
+  const body = document.getElementById(id);
+  if (!body) return;
+  const isOpen = body.classList.contains('open');
+  body.classList.toggle('open');
+  headerEl.classList.toggle('open');
+}
+
+function formatDuration(sec) {
+  if (sec < 60) return sec + '초';
+  if (sec < 3600) return Math.floor(sec / 60) + '분';
+  return Math.floor(sec / 3600) + '시간 ' + Math.floor((sec % 3600) / 60) + '분';
+}
+
+// ══════════════════════════════════════════════════════════════════
+// ── 섹션 8: 분석 알고리즘 렌더 ─────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════
+
+function renderAlgorithms(allLogs) {
+  const container = document.getElementById('algo-content');
+
+  // 모든 이벤트에서 알고리즘 감지 실행
+  container.innerHTML = INTENT_ALGORITHMS.map(algo => {
+    const result = algo.detect(allLogs);
+    let statHtml = '';
+    if (typeof result === 'object' && result !== null) {
+      statHtml = `<div class="algo-stat">
+        <span>클릭: <b>${result.clicks}</b></span>
+        <span>입력: <b>${result.words} 단어</b></span>
+        <span>비율: <b>${result.ratio}</b></span>
+      </div>`;
+    } else {
+      const count = result || 0;
+      const color = count > 5 ? 'var(--red)' : count > 0 ? 'var(--orange)' : 'var(--green)';
+      const label = count > 5 ? '다수 감지' : count > 0 ? '감지됨' : '미감지';
+      statHtml = `<div class="algo-stat">
+        <span>감지: <b style="color:${color}">${count}건</b></span>
+        <span>상태: <b style="color:${color}">${label}</b></span>
+      </div>`;
+    }
+
+    return `<div class="algo-card">
+      <div class="algo-card-header">
+        <div class="algo-icon" style="background:${algo.iconBg}">${algo.icon}</div>
+        <div class="algo-name">${escHtml(algo.name)}</div>
+      </div>
+      <div class="algo-desc">${escHtml(algo.desc)}</div>
+      ${statHtml}
+    </div>`;
+  }).join('');
+}
+
+// ══════════════════════════════════════════════════════════════════
+// ── 섹션 9: 캡처 타이밍 분석 & 제안 ────────────────────────────────
+// ══════════════════════════════════════════════════════════════════
+
+function renderCaptureTiming(allLogs) {
+  const distEl = document.getElementById('trigger-dist-content');
+  const suggestEl = document.getElementById('trigger-suggest-content');
+
+  // 트리거 분포 집계
+  const triggerCounts = {};
+  let totalCaptures = 0;
+
+  allLogs.forEach(log => {
+    if (log.type === 'screen.capture' && log.trigger) {
+      triggerCounts[log.trigger] = (triggerCounts[log.trigger] || 0) + 1;
+      totalCaptures++;
+    }
+  });
+
+  // 트리거 집계가 있으면 전체 _intentData에서도 수집
+  Object.values(_intentData).forEach(ud => {
+    Object.entries(ud.triggerDist || {}).forEach(([t, c]) => {
+      if (!triggerCounts[t]) {
+        triggerCounts[t] = c;
+        totalCaptures += c;
+      }
+    });
+  });
+
+  const triggerLabels = {
+    idle_result: '입력 멈춤',
+    title_change: '화면 전환',
+    click_burst: '클릭 폭주',
+    app_switch: '앱 전환',
+    key_burst: '키 폭주',
+    startup: '시작',
+    periodic: '주기적',
+  };
+
+  if (totalCaptures === 0) {
+    distEl.innerHTML = '<div class="empty-state" style="width:100%">캡처 트리거 데이터가 없습니다.</div>';
+    suggestEl.innerHTML = '';
+    return;
+  }
+
+  // 트리거 분포 칩
+  const sorted = Object.entries(triggerCounts).sort((a, b) => b[1] - a[1]);
+  distEl.innerHTML = sorted.map(([trigger, count]) => {
+    const pct = ((count / totalCaptures) * 100).toFixed(1);
+    const label = triggerLabels[trigger] || trigger;
+    return `<div class="trigger-chip">
+      <div class="t-count">${count}</div>
+      <div class="t-pct">${pct}%</div>
+      <div class="t-label">${escHtml(label)}</div>
+    </div>`;
+  }).join('');
+
+  // 개선 제안 생성
+  const suggestions = [];
+  const idleCount = triggerCounts['idle_result'] || 0;
+  const titleChangeCount = triggerCounts['title_change'] || 0;
+  const clickBurstCount = triggerCounts['click_burst'] || 0;
+  const appSwitchCount = triggerCounts['app_switch'] || 0;
+
+  if (idleCount / totalCaptures > 0.5) {
+    suggestions.push({
+      icon: '&#x26a0;',
+      text: '<span class="highlight">idle_result 트리거가 ' + Math.round(idleCount/totalCaptures*100) + '%</span>로 과반입니다. 사용자가 입력을 멈출 때만 캡처하면 실제 작업 중간 과정을 놓칩니다. <b>title_change 트리거 비율을 높이는 것</b>을 권장합니다.'
+    });
+  }
+
+  if (titleChangeCount / totalCaptures < 0.15 && totalCaptures > 10) {
+    suggestions.push({
+      icon: '&#x1f50d;',
+      text: '<span class="highlight">title_change 캡처가 부족합니다</span> (' + titleChangeCount + '건, ' + ((titleChangeCount/totalCaptures*100).toFixed(1)) + '%). 화면 전환 시 캡처는 업무 흐름 파악에 핵심입니다. 데몬 설정에서 title_change 감도를 높이세요.'
+    });
+  }
+
+  if (clickBurstCount / totalCaptures > 0.3) {
+    suggestions.push({
+      icon: '&#x1f5b1;',
+      text: '<span class="highlight">click_burst 트리거가 ' + Math.round(clickBurstCount/totalCaptures*100) + '%</span>로 높습니다. 반복 클릭이 잦은 업무 환경으로, 자동화 우선 대상입니다. 클릭 좌표와 함께 캡처하면 자동화 스크립트 생성에 활용 가능합니다.'
+    });
+  }
+
+  if (appSwitchCount < 5 && totalCaptures > 20) {
+    suggestions.push({
+      icon: '&#x1f504;',
+      text: '<span class="highlight">app_switch 캡처가 거의 없습니다</span> (' + appSwitchCount + '건). 앱 전환 시점은 업무 의도 파악의 핵심입니다. 데몬에서 앱 전환 감지 캡처를 활성화하세요.'
+    });
+  }
+
+  if (suggestions.length === 0) {
+    suggestions.push({
+      icon: '&#x2705;',
+      text: '현재 캡처 트리거 분포가 균형적입니다. 데이터가 더 쌓이면 더 정밀한 제안을 제공합니다.'
+    });
+  }
+
+  // 항상 추가하는 일반 제안
+  suggestions.push({
+    icon: '&#x1f4a1;',
+    text: '최적 캡처 전략: <span class="highlight">title_change(40%)</span> + <span class="highlight">idle_result(30%)</span> + <span class="highlight">click_burst(20%)</span> + <span class="highlight">app_switch(10%)</span>. 이 비율로 업무 흐름의 95% 이상을 커버할 수 있습니다.'
+  });
+
+  suggestEl.innerHTML = suggestions.map(s =>
+    `<div class="suggest-item">
+      <span class="suggest-icon">${s.icon}</span>
+      <div class="suggest-text">${s.text}</div>
+    </div>`
+  ).join('');
 }
 
 // ── 시작 ─────────────────────────────────────────────────────────
