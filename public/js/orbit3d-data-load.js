@@ -312,8 +312,9 @@ async function _showEmptyStateGuide() {
   const isMac = /Mac/i.test(navigator.userAgent);
 
   const installCmd = isMac
-    ? `bash <(curl -sL '${base}/orbit-setup.sh${t ? '?token='+encodeURIComponent(t) : ''}')`
-    : `powershell -ExecutionPolicy Bypass -Command "irm '${base}/orbit-setup.ps1${t ? '?token='+encodeURIComponent(t) : ''}' | iex"`;
+    ? `ORBIT_TOKEN='${t||''}' bash <(curl -sL '${base}/setup/orbit-start.sh')`
+    : `powershell -ExecutionPolicy Bypass -Command "& {$env:ORBIT_TOKEN='${t||''}'; iex (irm '${base}/setup/install.ps1')}"`;
+
 
   const el = document.createElement('div');
   el.id = 'empty-state-guide';
@@ -357,10 +358,10 @@ async function _showEmptyStateGuide() {
     <!-- Windows 명령어 -->
     <div id="esg-cmd-win" style="display:${isMac?'none':'block'};text-align:left;background:#010409;border:1px solid #21262d;border-radius:10px;padding:14px;position:relative;margin-bottom:14px">
       <div style="font-size:10px;color:#6e7681;margin-bottom:6px">PowerShell (관리자)</div>
-      <code style="font-family:'Consolas','Courier New',monospace;font-size:12px;color:#3fb950;word-break:break-all;line-height:1.6;display:block;padding-right:44px">powershell -ExecutionPolicy Bypass -Command "irm '${base}/orbit-setup.ps1${t ? '?token='+encodeURIComponent(t) : ''}' | iex"</code>
+      <code id="esg-win-cmd-text" style="font-family:'Consolas','Courier New',monospace;font-size:12px;color:#3fb950;word-break:break-all;line-height:1.6;display:block;padding-right:44px">powershell -ExecutionPolicy Bypass -Command "& {$env:ORBIT_TOKEN='${t||''}'; iex (irm '${base}/setup/install.ps1')}"</code>
       <button onclick="(function(){
-        const cmd='powershell -ExecutionPolicy Bypass -Command \\x22irm \\'${base}/orbit-setup.ps1${t ? '?token='+encodeURIComponent(t) : ''}\\' | iex\\x22';
-        navigator.clipboard.writeText(cmd).then(()=>{const b=event.target;b.textContent='Copied';b.style.background='#238636';setTimeout(()=>{b.textContent='Copy';b.style.background='#1f6feb'},1500)}).catch(()=>prompt('Copy:',cmd))
+        const el=document.getElementById('esg-win-cmd-text');
+        navigator.clipboard.writeText(el.textContent.trim()).then(()=>{const b=event.target;b.textContent='Copied';b.style.background='#238636';setTimeout(()=>{b.textContent='Copy';b.style.background='#1f6feb'},1500)}).catch(()=>prompt('Copy:',el.textContent.trim()))
       })()"
         style="position:absolute;top:12px;right:12px;background:#1f6feb;border:none;border-radius:6px;color:#fff;font-size:11px;font-weight:600;padding:4px 12px;cursor:pointer">Copy</button>
     </div>

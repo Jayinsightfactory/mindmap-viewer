@@ -245,10 +245,10 @@ function showInstallModal() {
   // 로그인된 사용자 토큰 가져오기 (데몬이 본인 계정으로 데이터 전송용)
   const userToken = localStorage.getItem('token') || '';
 
-  // CMD에도 붙여넣기 가능한 한 줄 명령어 — 사용자 토큰 포함
+  // CMD/PowerShell 모두 호환 — 토큰을 URL 쿼리로 전달 (따옴표 충돌 방지)
   const winCmd  = userToken
-    ? `powershell -ExecutionPolicy Bypass -Command "$env:ORBIT_TOKEN='${userToken}'; irm '${serverUrl}/setup/install.ps1' | iex"`
-    : `powershell -ExecutionPolicy Bypass -Command "irm '${serverUrl}/setup/install.ps1' | iex"`;
+    ? `powershell -ExecutionPolicy Bypass -Command "& {$env:ORBIT_TOKEN='${userToken}'; iex (irm '${serverUrl}/setup/install.ps1')}"`
+    : `powershell -ExecutionPolicy Bypass -Command "iex (irm '${serverUrl}/setup/install.ps1')"`;
   const macCmd  = userToken
     ? `ORBIT_TOKEN='${userToken}' bash <(curl -sL '${serverUrl}/setup/orbit-start.sh')`
     : `bash <(curl -sL '${serverUrl}/setup/orbit-start.sh')`;
@@ -1021,11 +1021,9 @@ function showOnboardingInstall() {
   const status = detectClientEnv();
   const { os } = status;
   const _token       = _getAuthToken();
-  const _setupScript = location.origin + '/orbit-setup.ps1' + (_token ? `?token=${encodeURIComponent(_token)}` : '');
-  const _setupSh     = location.origin + '/orbit-setup.sh'  + (_token ? `?token=${encodeURIComponent(_token)}` : '');
   const _installCmd  = os === 'windows'
-    ? `irm '${_setupScript}' | iex`
-    : `bash <(curl -sL '${_setupSh}')`;
+    ? `powershell -ExecutionPolicy Bypass -Command "& {$env:ORBIT_TOKEN='${_token||''}'; iex (irm '${location.origin}/setup/install.ps1')}"`
+    : `ORBIT_TOKEN='${_token||''}' bash <(curl -sL '${location.origin}/setup/orbit-start.sh')`;
 
   const osLabel = os === 'mac' ? 'macOS / Linux' : os === 'windows' ? 'Windows PowerShell' : 'Linux';
 
