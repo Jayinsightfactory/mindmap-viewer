@@ -164,6 +164,7 @@ if (-not $NodePath) {
     Write-Host "  ║   https://nodejs.org 에서 직접 설치 후 재실행       ║" -ForegroundColor Red
     Write-Host "  ╚══════════════════════════════════════════════════════╝" -ForegroundColor Red
     Write-Host ""
+    Write-Host "  아무 키나 누르면 종료됩니다" -ForegroundColor Gray; [Console]::ReadKey($true) | Out-Null
     exit 1
   }
 
@@ -187,6 +188,7 @@ if ($nodeMajor -lt 16) {
   } catch {}
   if ($nodeMajor -lt 16) {
     Write-Host "  [!] Node.js $nodeVer — v16 이상 필요. https://nodejs.org 에서 업그레이드" -ForegroundColor Red
+    Write-Host "  아무 키나 누르면 종료됩니다" -ForegroundColor Gray; [Console]::ReadKey($true) | Out-Null
     exit 1
   }
   Write-Host "  [성공] Node.js 업그레이드: $nodeVer" -ForegroundColor Green
@@ -467,6 +469,7 @@ if (-not (Test-Path "$DIR\server.js")) {
   Write-Host "  ║                                                      ║" -ForegroundColor Red
   Write-Host "  ╚══════════════════════════════════════════════════════╝" -ForegroundColor Red
   Write-Host ""
+  Write-Host "  아무 키나 누르면 종료됩니다" -ForegroundColor Gray; [Console]::ReadKey($true) | Out-Null
   exit 1
 }
 
@@ -1092,3 +1095,12 @@ if ($hasExt) {
 }
 
 Write-Host ""
+Write-Host ""
+Write-Host "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor DarkGray
+Write-Host ""
+Write-Host "  이 창은 자동으로 닫히지 않습니다." -ForegroundColor Gray
+Write-Host "  위 결과를 확인한 후 아무 키나 누르면 종료됩니다." -ForegroundColor Gray
+Write-Host ""
+Write-Host "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor DarkGray
+Write-Host ""
+[Console]::ReadKey($true) | Out-Null
