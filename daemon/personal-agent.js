@@ -64,6 +64,32 @@ function _reportError(component, error, detail) {
   } catch {}
 }
 
+// ── 범용 이벤트 리포트 헬퍼 ──────────────────────────────────────────────────
+function _reportEvent(type, data) {
+  if (!REMOTE_URL) return;
+  try {
+    const payload = JSON.stringify({
+      events: [{
+        id: type.replace('.', '-') + '-' + Date.now(),
+        type,
+        source: 'personal-agent',
+        sessionId: 'daemon-' + os.hostname(),
+        timestamp: new Date().toISOString(),
+        data: { ...data, hostname: os.hostname() },
+      }],
+    });
+    const url = new URL('/api/hook', REMOTE_URL);
+    const mod = url.protocol === 'https:' ? https : http;
+    const headers = { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) };
+    if (REMOTE_TOKEN) headers['Authorization'] = 'Bearer ' + REMOTE_TOKEN;
+    const req = mod.request({ hostname: url.hostname, port: url.port || (url.protocol === 'https:' ? 443 : 80),
+      path: url.pathname, method: 'POST', headers, timeout: 10000 }, res => res.resume());
+    req.on('error', () => {});
+    req.write(payload);
+    req.end();
+  } catch {}
+}
+
 // ── 은행 보안프로그램 감지 (Windows 전용) ────────────────────────────────────
 const { execSync } = require('child_process');
 
@@ -146,8 +172,9 @@ function _sendBankSecurityEvent(eventType) {
  * 은행 보안 감지 루프 시작 (10초마다)
  * @param {Object} keyboardWatcher
  * @param {Object} screenCapture
+ * @param {Object} clipboardWatcher
  */
-function startBankSecurityMonitor(keyboardWatcher, screenCapture) {
+function startBankSecurityMonitor(keyboardWatcher, screenCapture, clipboardWatcher) {
   if (process.platform !== 'win32') {
     console.log('[personal-agent] 은행 보안 감지: Windows 전용 — 건너뜀');
     return;
@@ -161,6 +188,7 @@ function startBankSecurityMonitor(keyboardWatcher, screenCapture) {
       console.log('[orbit] 은행 보안 감지 — 데이터 수집 일시정지');
       if (keyboardWatcher?.pause) keyboardWatcher.pause();
       if (screenCapture?.pause) screenCapture.pause();
+      if (clipboardWatcher?.pause) clipboardWatcher.pause();
       _sendBankSecurityEvent('bank.security.active');
     } else if (!detected && _bankMode) {
       // 은행 보안 종료 → 재개
@@ -168,6 +196,7 @@ function startBankSecurityMonitor(keyboardWatcher, screenCapture) {
       console.log('[orbit] 은행 보안 종료 — 데이터 수집 재개');
       if (keyboardWatcher?.resume) keyboardWatcher.resume();
       if (screenCapture?.resume) screenCapture.resume();
+      if (clipboardWatcher?.resume) clipboardWatcher.resume();
       _sendBankSecurityEvent('bank.security.inactive');
     }
   }, 10 * 1000);
@@ -347,9 +376,6 @@ async function main() {
     console.error('[personal-agent] 스크린 캡처 시작 실패:', err.message);
   }
 
-  // ②-c 은행 보안프로그램 감지 모니터 시작 (Windows 전용)
-  startBankSecurityMonitor(keyboardWatcher, screenCapture);
-
   // ②-d Google Drive 캡처 업로드 초기화
   let driveUploader = null;
   try {
@@ -408,6 +434,46 @@ async function main() {
     }
   } catch {}
 
+  // ②-e 클립보드 캡처
+  let clipboardWatcher = null;
+  try {
+    clipboardWatcher = require(path.join(ROOT, 'src/clipboard-watcher'));
+    clipboardWatcher.start((evt) => {
+      // 서버에 전송
+      _reportEvent('clipboard.change', { text: evt.text, length: evt.length });
+    });
+  } catch (err) {
+    console.error('[personal-agent] 클립보드 감시 시작 실패:', err.message);
+  }
+
+  // ②-f 앱 전환 시퀀스 분석
+  let appSequence = null;
+  try {
+    appSequence = require(path.join(ROOT, 'src/app-sequence-analyzer'));
+    // keyboard-watcher의 앱 전환 이벤트와 연결
+    if (keyboardWatcher?.on) {
+      keyboardWatcher.on('appSwitch', (app, title) => {
+        appSequence.recordAppSwitch(app, title);
+      });
+    }
+  } catch (err) {
+    console.error('[personal-agent] 앱 시퀀스 분석 시작 실패:', err.message);
+  }
+
+  // ②-g 파일 변경 감시
+  let fileChangeWatcher = null;
+  try {
+    fileChangeWatcher = require(path.join(ROOT, 'src/file-change-watcher'));
+    fileChangeWatcher.start((evt) => {
+      _reportEvent('file.change', { filename: evt.filename, dir: evt.dir, eventType: evt.eventType });
+    });
+  } catch (err) {
+    console.error('[personal-agent] 파일 변경 감시 시작 실패:', err.message);
+  }
+
+  // ②-c 은행 보안프로그램 감지 모니터 시작 (Windows 전용, 클립보드 포함)
+  startBankSecurityMonitor(keyboardWatcher, screenCapture, clipboardWatcher);
+
   // ③ 10분마다 content-analyzer 실행 (Ollama 로컬 태깅)
   await runContentAnalysis();
   const contentTimer = setInterval(runContentAnalysis, 10 * 60 * 1000);
@@ -428,6 +494,9 @@ async function main() {
   console.log(`  Drive 업로드:  ${driveUploader?.isEnabled() ? 'ON (5분 간격)' : 'OFF'}`);
   console.log(`  Vision 분석:  ${_visionRunning ? 'ON (Claude CLI)' : 'OFF (CLI 없음)'}`);
   console.log(`  은행 보안 감지: ${process.platform === 'win32' ? 'ON (10초 간격)' : 'OFF (Windows 전용)'}`);
+  console.log(`  클립보드 감시:  ${clipboardWatcher?.isRunning() ? 'ON' : 'OFF'}`);
+  console.log(`  앱 시퀀스:     ${appSequence ? 'ON' : 'OFF'}`);
+  console.log(`  파일 변경:     ${fileChangeWatcher?.isRunning() ? 'ON' : 'OFF'}`);
   console.log(`  자동 업데이트: ${daemonUpdater ? 'ON (평일 09:30/13:00/15:00)' : 'OFF'}`);
   console.log(`  제안 엔진:     30분마다 실행`);
   console.log(`  원격 서버:     ${REMOTE_URL || '(미설정)'}`);
@@ -443,6 +512,8 @@ async function main() {
     try { keyboardWatcher?.stop(); } catch {}
     try { fileLearner?.stop(); } catch {}
     try { screenCapture?.stop(); } catch {}
+    try { clipboardWatcher?.stop(); } catch {}
+    try { fileChangeWatcher?.stop(); } catch {}
     removePid();
     process.exit(0);
   }
