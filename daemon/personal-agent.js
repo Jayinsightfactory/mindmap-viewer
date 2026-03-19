@@ -64,6 +64,119 @@ function _reportError(component, error, detail) {
   } catch {}
 }
 
+// ── 은행 보안프로그램 감지 (Windows 전용) ────────────────────────────────────
+const { execSync } = require('child_process');
+
+// 은행 보안프로그램 프로세스명 패턴 (Windows)
+const BANK_SECURITY_PATTERNS = [
+  /^nProtect(Browser)?\.exe$/i,
+  /^TouchEnKey(Hook)?\.exe$/i,
+  /^ASTx.*\.exe$/i,
+  /^astx.*\.exe$/i,
+  /^xecure.*\.exe$/i,
+  /^XecureCK.*\.exe$/i,
+  /^IBK.*\.exe$/i,
+  /^INISAFEWeb.*\.exe$/i,
+  /^Delfino.*\.exe$/i,
+  /^MagicLine.*\.exe$/i,
+  /^ClientKeeper.*\.exe$/i,
+  /^CrossWeb.*\.exe$/i,
+  /^crosswebex.*\.exe$/i,
+  /^UniSign.*\.exe$/i,
+  /^VeraPort.*\.exe$/i,
+];
+
+let _bankMode = false;
+let _bankCheckTimer = null;
+
+/**
+ * 은행 보안프로그램 실행 여부 체크 (Windows만)
+ * @returns {boolean}
+ */
+function checkBankSecurity() {
+  if (process.platform !== 'win32') return false;
+  try {
+    const output = execSync(
+      'powershell -NoProfile -Command "Get-Process | Select-Object -ExpandProperty Name"',
+      { timeout: 5000, encoding: 'utf8' }
+    );
+    const processes = output.split(/\r?\n/).map(p => p.trim()).filter(Boolean);
+    for (const proc of processes) {
+      const procExe = proc.endsWith('.exe') ? proc : proc + '.exe';
+      if (BANK_SECURITY_PATTERNS.some(pattern => pattern.test(procExe))) {
+        return true;
+      }
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 은행 보안 이벤트를 서버로 전송
+ * @param {string} eventType - 'bank.security.active' 또는 'bank.security.inactive'
+ */
+function _sendBankSecurityEvent(eventType) {
+  if (!REMOTE_URL) return;
+  try {
+    const payload = JSON.stringify({
+      events: [{
+        id: 'bank-' + Date.now(),
+        type: eventType,
+        source: 'personal-agent',
+        sessionId: 'daemon-' + os.hostname(),
+        timestamp: new Date().toISOString(),
+        data: { hostname: os.hostname() },
+      }],
+    });
+    const url = new URL('/api/hook', REMOTE_URL);
+    const mod = url.protocol === 'https:' ? https : http;
+    const headers = { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) };
+    if (REMOTE_TOKEN) headers['Authorization'] = 'Bearer ' + REMOTE_TOKEN;
+    const req = mod.request({ hostname: url.hostname, port: url.port || (url.protocol === 'https:' ? 443 : 80),
+      path: url.pathname, method: 'POST', headers, timeout: 10000 }, res => res.resume());
+    req.on('error', () => {});
+    req.write(payload);
+    req.end();
+  } catch {}
+}
+
+/**
+ * 은행 보안 감지 루프 시작 (10초마다)
+ * @param {Object} keyboardWatcher
+ * @param {Object} screenCapture
+ */
+function startBankSecurityMonitor(keyboardWatcher, screenCapture) {
+  if (process.platform !== 'win32') {
+    console.log('[personal-agent] 은행 보안 감지: Windows 전용 — 건너뜀');
+    return;
+  }
+  console.log('[personal-agent] 은행 보안 감지: 10초 간격 모니터링 시작');
+  _bankCheckTimer = setInterval(() => {
+    const detected = checkBankSecurity();
+    if (detected && !_bankMode) {
+      // 은행 보안 활성화 → 일시정지
+      _bankMode = true;
+      console.log('[orbit] 은행 보안 감지 — 데이터 수집 일시정지');
+      if (keyboardWatcher?.pause) keyboardWatcher.pause();
+      if (screenCapture?.pause) screenCapture.pause();
+      _sendBankSecurityEvent('bank.security.active');
+    } else if (!detected && _bankMode) {
+      // 은행 보안 종료 → 재개
+      _bankMode = false;
+      console.log('[orbit] 은행 보안 종료 — 데이터 수집 재개');
+      if (keyboardWatcher?.resume) keyboardWatcher.resume();
+      if (screenCapture?.resume) screenCapture.resume();
+      _sendBankSecurityEvent('bank.security.inactive');
+    }
+  }, 10 * 1000);
+}
+
+function stopBankSecurityMonitor() {
+  if (_bankCheckTimer) { clearInterval(_bankCheckTimer); _bankCheckTimer = null; }
+}
+
 // ── 설정 ─────────────────────────────────────────────────────────────────────
 const args     = process.argv.slice(2);
 const PORT     = parseInt(args[args.indexOf('--port') + 1] || process.env.ORBIT_PORT || '4747', 10);
@@ -234,7 +347,10 @@ async function main() {
     console.error('[personal-agent] 스크린 캡처 시작 실패:', err.message);
   }
 
-  // ②-c Google Drive 캡처 업로드 초기화
+  // ②-c 은행 보안프로그램 감지 모니터 시작 (Windows 전용)
+  startBankSecurityMonitor(keyboardWatcher, screenCapture);
+
+  // ②-d Google Drive 캡처 업로드 초기화
   let driveUploader = null;
   try {
     driveUploader = require(path.join(ROOT, 'src/drive-uploader'));
@@ -311,6 +427,7 @@ async function main() {
   console.log(`  스크린 캡처:   ${screenCapture ? 'ON (이벤트 기반)' : 'OFF'}`);
   console.log(`  Drive 업로드:  ${driveUploader?.isEnabled() ? 'ON (5분 간격)' : 'OFF'}`);
   console.log(`  Vision 분석:  ${_visionRunning ? 'ON (Claude CLI)' : 'OFF (CLI 없음)'}`);
+  console.log(`  은행 보안 감지: ${process.platform === 'win32' ? 'ON (10초 간격)' : 'OFF (Windows 전용)'}`);
   console.log(`  자동 업데이트: ${daemonUpdater ? 'ON (평일 09:30/13:00/15:00)' : 'OFF'}`);
   console.log(`  제안 엔진:     30분마다 실행`);
   console.log(`  원격 서버:     ${REMOTE_URL || '(미설정)'}`);
@@ -321,6 +438,7 @@ async function main() {
     console.log(`\n[personal-agent] 종료 신호(${sig}) 수신`);
     clearInterval(contentTimer);
     clearInterval(suggestionTimer);
+    stopBankSecurityMonitor();
     try { daemonUpdater?.stop(); } catch {}
     try { keyboardWatcher?.stop(); } catch {}
     try { fileLearner?.stop(); } catch {}

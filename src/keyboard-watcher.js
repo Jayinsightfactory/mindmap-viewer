@@ -67,6 +67,7 @@ let _activityBuffer  = [];          // 활동 기록 버퍼 (분석 대기)
 let _flushTimer      = null;        // 3초 디바운스 타이머 (내부 활동 기록용)
 let _analysisTimer   = null;        // 5분 분석 주기 타이머
 let _running         = false;
+let _paused          = false;       // 은행 보안프로그램 감지 시 일시정지
 let _uiohook         = null;
 let _orbitPort       = parseInt(process.env.ORBIT_PORT || '4747', 10);
 let _orbitUrl        = `http://localhost:${_orbitPort}/api/personal/keyboard`;
@@ -592,6 +593,9 @@ let _mouseClickCount = 0; // 마우스 클릭 카운트
 let _mouseQuadrants = {};  // 클릭 위치 영역 추적 (LT/RT/LB/RB)
 
 function _onKeydown(e) {
+  // 은행 보안프로그램 일시정지 중이면 이벤트 무시
+  if (_paused) return;
+
   const { keycode, shiftKey, ctrlKey, metaKey } = e;
 
   // Ctrl+C / Cmd+C 감지 (복사)
@@ -685,6 +689,7 @@ function start(opts = {}) {
 
     // Mouse click tracking + burst + workflow
     _uiohook.uIOhook.on('mousedown', (e) => {
+      if (_paused) return; // 은행 보안 일시정지 중 무시
       _mouseClickCount++;
       if (_screenCapture?.onMouseBurst) _screenCapture.onMouseBurst();
       // 워크플로우 학습: 클릭 기록
@@ -759,6 +764,33 @@ function getAnalysisHistory(count = 10) {
   return _analysisHistory.slice(-count);
 }
 
+/**
+ * 일시정지 (은행 보안프로그램 감지 시)
+ * uiohook 자체는 중단하지 않고 이벤트 핸들러에서 무시
+ */
+function pause() {
+  if (_paused) return;
+  _paused = true;
+  // 현재 버퍼 내용 보호를 위해 flush
+  if (_rawBuffer) _flushToLocalBuffer();
+  console.log('[keyboard-watcher] 일시정지됨 (은행 보안)');
+}
+
+/**
+ * 재개 (은행 보안프로그램 종료 시)
+ */
+function resume() {
+  if (!_paused) return;
+  _paused = false;
+  console.log('[keyboard-watcher] 재개됨');
+}
+
+/**
+ * 일시정지 상태 확인
+ * @returns {boolean}
+ */
+function isPaused() { return _paused; }
+
 // ══════════════════════════════════════════════════════════════════════════════
 // 내보내기
 // ══════════════════════════════════════════════════════════════════════════════
@@ -770,4 +802,7 @@ module.exports = {
   analyzeAndSummarize,
   getAnalysisHistory,
   setScreenCapture,
+  pause,
+  resume,
+  isPaused,
 };

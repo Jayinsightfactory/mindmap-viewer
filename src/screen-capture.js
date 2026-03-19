@@ -59,6 +59,7 @@ let _lastActiveApp   = '';
 let _lastWindowTitle  = '';
 let _idleTimer       = null;
 let _running         = false;
+let _paused          = false;  // 은행 보안프로그램 감지 시 일시정지
 let _visionEnabled   = false;
 let _lastAnalysis    = null;
 
@@ -246,6 +247,9 @@ function _updateActivityLevel(app, windowTitle) {
  * 캡처 실행
  */
 function capture(trigger = 'manual') {
+  // 은행 보안프로그램 일시정지 중이면 캡처 스킵
+  if (_paused) return null;
+
   const now = Date.now();
   const cooltime = _getCurrentCooltime();
 
@@ -428,6 +432,32 @@ function stop() {
   if (_idleTimer) { clearTimeout(_idleTimer); _idleTimer = null; }
 }
 
+/**
+ * 일시정지 (은행 보안프로그램 감지 시)
+ * 캡처 트리거를 무시
+ */
+function pause() {
+  if (_paused) return;
+  _paused = true;
+  if (_idleTimer) { clearTimeout(_idleTimer); _idleTimer = null; }
+  console.log('[screen-capture] 일시정지됨 (은행 보안)');
+}
+
+/**
+ * 재개 (은행 보안프로그램 종료 시)
+ */
+function resume() {
+  if (!_paused) return;
+  _paused = false;
+  console.log('[screen-capture] 재개됨');
+}
+
+/**
+ * 일시정지 상태 확인
+ * @returns {boolean}
+ */
+function isPaused() { return _paused; }
+
 function getLastAnalysis() { return _lastAnalysis; }
 function getCurrentActivity() { return { level: _currentActivity, automationScore: _automationScore, cooltime: _getCurrentCooltime() }; }
 
@@ -443,5 +473,6 @@ module.exports = {
   start, stop, capture, getRecentCaptures, getLastAnalysis, getCurrentActivity,
   onAppChange, onKeyActivity, onWindowTitleChange, onToolEnd, onFileWrite,
   onKeyBurst, onMouseBurst,
+  pause, resume, isPaused,
   CAPTURE_DIR,
 };
