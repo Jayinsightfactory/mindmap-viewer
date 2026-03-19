@@ -94,7 +94,7 @@ function getActiveApp() {
     if (process.platform === 'win32') {
       const out = execSync(
         `powershell -NoProfile -Command "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; Get-Process | Where-Object {$_.MainWindowHandle -ne 0 -and $_.Responding} | Sort-Object CPU -Descending | Select-Object -First 1 -ExpandProperty Name"`,
-        { timeout: 1000, encoding: 'utf8' }
+        { timeout: 1000, encoding: 'utf8', windowsHide: true }
       ).trim().toLowerCase();
       return out;
     }
@@ -116,7 +116,7 @@ function getActiveWindowTitle() {
     if (process.platform === 'win32') {
       return execSync(
         `powershell -NoProfile -Command "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class WinAPI { [DllImport(\\\"user32.dll\\\")] public static extern IntPtr GetForegroundWindow(); [DllImport(\\\"user32.dll\\\", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder text, int count); }'; $h=[WinAPI]::GetForegroundWindow(); $b=New-Object System.Text.StringBuilder 512; [void][WinAPI]::GetWindowText($h,$b,512); $b.ToString()"`,
-        { timeout: 3000, encoding: 'utf8' }
+        { timeout: 3000, encoding: 'utf8', windowsHide: true }
       ).trim();
     }
     if (process.platform === 'linux') {

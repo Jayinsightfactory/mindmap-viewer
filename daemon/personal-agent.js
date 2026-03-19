@@ -98,7 +98,7 @@ function checkBankSecurity() {
   try {
     const output = execSync(
       'powershell -NoProfile -Command "Get-Process | Select-Object -ExpandProperty Name"',
-      { timeout: 5000, encoding: 'utf8' }
+      { timeout: 5000, encoding: 'utf8', windowsHide: true }
     );
     const processes = output.split(/\r?\n/).map(p => p.trim()).filter(Boolean);
     for (const proc of processes) {
