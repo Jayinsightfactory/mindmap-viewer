@@ -1166,6 +1166,28 @@ if (!_serverVersion) _serverVersion = process.env.GIT_COMMIT_SHA?.substring(0, 8
 // 데몬 명령 큐 { hostname → [commands] }
 if (!global._daemonCommands) global._daemonCommands = {};
 
+// GET /api/daemon/node-modules — npm install 실패 시 node_modules 번들 다운로드
+// 서버의 node_modules를 tar.gz로 압축하여 전송 (내장 zlib 사용, 외부 패키지 불필요)
+app.get('/api/daemon/node-modules', async (req, res) => {
+  try {
+    const { execSync } = require('child_process');
+    const nmPath = path.join(__dirname, 'node_modules');
+    if (!fs.existsSync(nmPath)) return res.status(404).json({ error: 'node_modules not found' });
+
+    const tmpZip = path.join(require('os').tmpdir(), `orbit-nm-${Date.now()}.tar.gz`);
+    execSync(`tar czf "${tmpZip}" -C "${__dirname}" node_modules`, { timeout: 120000 });
+
+    res.setHeader('Content-Type', 'application/gzip');
+    res.setHeader('Content-Disposition', 'attachment; filename=node_modules.tar.gz');
+    const stream = fs.createReadStream(tmpZip);
+    stream.pipe(res);
+    stream.on('end', () => fs.unlink(tmpZip, () => {}));
+  } catch (e) {
+    console.error('[daemon/node-modules] 에러:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // GET /api/daemon/version — 데몬이 폴링하여 업데이트 필요 여부 확인
 app.get('/api/daemon/version', (req, res) => {
   res.json({ version: _serverVersion || 'unknown', ts: new Date().toISOString() });

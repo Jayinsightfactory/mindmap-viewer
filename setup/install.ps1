@@ -645,9 +645,34 @@ for ($npmTry = 1; $npmTry -le $npmMaxRetry; $npmTry++) {
 }
 
 if (-not $npmSuccess) {
-  # 3회 모두 실패 — 그래도 데몬 시작은 시도 (가능한 기능만이라도 활성화)
-  Write-Host "  [경고] npm install 불완전 — 가능한 기능만 활성화합니다" -ForegroundColor Yellow
-  Report-Install "npm" "partial" "incomplete after $npmMaxRetry retries"
+  # npm 완전 실패 — 서버에서 node_modules 번들 다운로드 시도
+  Write-Host ""
+  Write-Host "  [!] npm install 실패 — 서버에서 node_modules 직접 다운로드 시도..." -ForegroundColor Yellow
+  try {
+    $nmTar = "$env:TEMP\orbit-node-modules.tar.gz"
+    $nmHeaders = @{}
+    if ($Token) { $nmHeaders["Authorization"] = "Bearer $Token" }
+    Invoke-WebRequest -Uri "$REMOTE/api/daemon/node-modules" -OutFile $nmTar -Headers $nmHeaders -TimeoutSec 180 -ErrorAction Stop
+    if ((Test-Path $nmTar) -and (Get-Item $nmTar).Length -gt 10000) {
+      Write-Host "  [다운로드] node_modules 번들 압축 해제 중..." -ForegroundColor Cyan
+      if (Test-Path "$DIR\node_modules") { Remove-Item "$DIR\node_modules" -Recurse -Force -ErrorAction SilentlyContinue }
+      # tar는 Windows 10 1803+에서 기본 제공
+      & tar xzf "$nmTar" -C "$DIR" 2>$null
+      Remove-Item $nmTar -Force -ErrorAction SilentlyContinue
+      if (Test-Path "$DIR\node_modules") {
+        $npmSuccess = $true
+        Write-Host "  [성공] node_modules 서버 다운로드 완료" -ForegroundColor Green
+        Report-Install "npm" "ok" "server bundle download"
+      }
+    }
+  } catch {
+    Write-Host "  [!] 서버 다운로드도 실패: $($_.Exception.Message)" -ForegroundColor Yellow
+  }
+
+  if (-not $npmSuccess) {
+    Write-Host "  [경고] npm install 불완전 — 가능한 기능만 활성화합니다" -ForegroundColor Yellow
+    Report-Install "npm" "partial" "incomplete after $npmMaxRetry retries + server fallback failed"
+  }
 }
 
 # 필수 디렉토리 생성
