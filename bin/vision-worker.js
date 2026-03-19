@@ -350,6 +350,13 @@ async function main() {
 
   const first = await processBatch();
   console.log(`[vision] 첫 배치: ${first}건`);
+
+  // --once 모드면 첫 배치만 실행하고 종료
+  if (process.argv.includes('--once')) {
+    console.log(`[vision] --once 모드: ${first}건 처리 후 종료`);
+    process.exit(0);
+  }
+
   setInterval(processBatch, POLL_INTERVAL);
 }
 

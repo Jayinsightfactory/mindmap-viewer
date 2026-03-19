@@ -580,6 +580,104 @@
   .suggest-text { font-size: 13px; color: var(--text); line-height: 1.5; }
   .suggest-text .highlight { color: var(--orange); font-weight: 600; }
 
+  /* ── 기획 구조 아키텍처 카드 ─────────────────────────────── */
+  .arch-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 24px; margin-bottom: 36px;
+  }
+  .arch-card-title {
+    font-size: 17px; font-weight: 700; color: var(--green);
+    margin-bottom: 20px; display: flex; align-items: center; gap: 10px;
+  }
+  .arch-card-title span { color: var(--muted); font-weight: 400; font-size: 13px; }
+
+  /* 다이어그램 영역 */
+  .arch-diagram {
+    display: grid;
+    grid-template-columns: 1fr 60px 1fr 60px 1fr;
+    gap: 12px; align-items: start; margin-bottom: 28px;
+  }
+  .arch-col {
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .arch-node {
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 12px 14px; text-align: center;
+    font-size: 13px; position: relative;
+  }
+  .arch-node.highlight {
+    border-color: var(--blue);
+    box-shadow: 0 0 12px rgba(88,166,255,.15);
+  }
+  .arch-node .arch-label {
+    font-weight: 600; color: var(--text); margin-bottom: 4px;
+  }
+  .arch-node .arch-desc {
+    font-size: 11px; color: var(--muted); line-height: 1.4;
+  }
+  .arch-arrow {
+    display: flex; align-items: center; justify-content: center;
+    color: var(--muted); font-size: 22px; padding-top: 20px;
+  }
+
+  /* 알고리즘 칩 */
+  .arch-algos {
+    margin-bottom: 24px;
+  }
+  .arch-algos-title {
+    font-size: 13px; font-weight: 600; color: var(--muted);
+    margin-bottom: 10px; letter-spacing: .5px;
+  }
+  .arch-algo-chips {
+    display: flex; flex-wrap: wrap; gap: 8px;
+  }
+  .arch-algo-chip {
+    background: rgba(63,185,80,.1); border: 1px solid rgba(63,185,80,.25);
+    color: var(--green); padding: 5px 14px; border-radius: 20px;
+    font-size: 12px; font-weight: 500;
+  }
+
+  /* 파이프라인 상태 */
+  .pipe-status {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 12px; margin-bottom: 20px;
+  }
+  .pipe-item {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 14px;
+  }
+  .pipe-dot {
+    width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+  }
+  .pipe-dot.on  { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .pipe-dot.off { background: var(--red);   box-shadow: 0 0 6px var(--red); }
+  .pipe-label { font-size: 13px; color: var(--muted); }
+  .pipe-value { margin-left: auto; font-size: 13px; font-weight: 600; color: var(--text); }
+
+  /* Vision 실행 버튼 */
+  .vision-action {
+    display: flex; align-items: center; gap: 14px;
+    padding-top: 16px; border-top: 1px solid var(--border);
+    margin-top: 4px;
+  }
+  .vision-btn {
+    background: linear-gradient(135deg, var(--purple), var(--blue));
+    border: none; color: #fff; padding: 10px 24px; border-radius: 8px;
+    cursor: pointer; font-size: 14px; font-weight: 600;
+    transition: all .2s; display: flex; align-items: center; gap: 8px;
+  }
+  .vision-btn:hover { opacity: .85; transform: translateY(-1px); }
+  .vision-btn:disabled {
+    opacity: .5; cursor: not-allowed; transform: none;
+  }
+  .vision-status {
+    font-size: 13px; color: var(--muted);
+  }
+  .vision-status.success { color: var(--green); }
+  .vision-status.error   { color: var(--red); }
+  .vision-status.running { color: var(--orange); animation: pulse 1.2s infinite; }
+
   /* ── 반응형 ─────────────────────────────────────────────── */
   @media (max-width: 768px) {
     header { padding: 12px 16px; flex-wrap: wrap; }
@@ -596,6 +694,10 @@
     .view-tabs { width: 100%; }
     .session-header { flex-direction: column; align-items: flex-start; }
     .session-stats { margin-left: 22px; }
+    .arch-diagram { grid-template-columns: 1fr; }
+    .arch-arrow { transform: rotate(90deg); padding: 0; }
+    .pipe-status { grid-template-columns: 1fr 1fr; }
+    .vision-action { flex-direction: column; align-items: flex-start; }
   }
 </style>
 </head>
@@ -612,6 +714,129 @@
 </header>
 
 <main>
+
+  <!-- ══════ 섹션 0: 기획 구조 아키텍처 ══════ -->
+  <div class="arch-card" id="sec-architecture">
+    <div class="arch-card-title">
+      Orbit AI — Company OS 분석 아키텍처
+      <span>시스템 전체 파이프라인</span>
+    </div>
+
+    <!-- ── 3열 다이어그램 ── -->
+    <div class="arch-diagram">
+      <!-- 좌: 데이터 수집 -->
+      <div class="arch-col">
+        <div class="arch-node highlight">
+          <div class="arch-label">직원 PC 데몬</div>
+          <div class="arch-desc">keyboard-watcher.js<br>screen-capture.js<br>drive-uploader.js</div>
+        </div>
+        <div class="arch-node">
+          <div class="arch-label">3중 결합</div>
+          <div class="arch-desc">키보드 + 마우스 + 스크린캡처</div>
+        </div>
+        <div class="arch-node">
+          <div class="arch-label">Google Drive</div>
+          <div class="arch-desc">캡처 이미지 자동 업로드 (5분 주기)</div>
+        </div>
+      </div>
+
+      <!-- 화살표 -->
+      <div class="arch-arrow">&rarr;</div>
+
+      <!-- 중: 분석 엔진 -->
+      <div class="arch-col">
+        <div class="arch-node highlight">
+          <div class="arch-label">서버 DB</div>
+          <div class="arch-desc">PostgreSQL (Railway)<br>이벤트 수집 + 세션 구성</div>
+        </div>
+        <div class="arch-node">
+          <div class="arch-label">Vision 분석</div>
+          <div class="arch-desc">Claude API<br>캡처 → 화면 해독 → 비고 생성</div>
+        </div>
+        <div class="arch-node">
+          <div class="arch-label">의도 예측 엔진</div>
+          <div class="arch-desc">결과 추측 + 불필요 업무 감지</div>
+        </div>
+      </div>
+
+      <!-- 화살표 -->
+      <div class="arch-arrow">&rarr;</div>
+
+      <!-- 우: 출력 -->
+      <div class="arch-col">
+        <div class="arch-node highlight">
+          <div class="arch-label">관리자 대시보드</div>
+          <div class="arch-desc">실시간 표시 + 정밀 분석 결과</div>
+        </div>
+        <div class="arch-node">
+          <div class="arch-label">Google Sheets</div>
+          <div class="arch-desc">09:00 / 13:30 / 18:00 자동 리포트</div>
+        </div>
+        <div class="arch-node">
+          <div class="arch-label">자동화 제안</div>
+          <div class="arch-desc">PAD / pyautogui / AHK 스크립트 생성</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── 분석 알고리즘 (계속 추가/진화) ── -->
+    <div class="arch-algos">
+      <div class="arch-algos-title">분석 알고리즘 (계속 추가/진화)</div>
+      <div class="arch-algo-chips">
+        <span class="arch-algo-chip">주문 처리 루프</span>
+        <span class="arch-algo-chip">카톡 참조 입력</span>
+        <span class="arch-algo-chip">엑셀 발주서 참조</span>
+        <span class="arch-algo-chip">미처리 주문 소화</span>
+        <span class="arch-algo-chip">클릭-입력 비율</span>
+        <span class="arch-algo-chip">캡처 타이밍 학습</span>
+      </div>
+    </div>
+
+    <!-- ── 파이프라인 상태 (실시간) ── -->
+    <div class="arch-algos">
+      <div class="arch-algos-title">파이프라인 상태 (실시간)</div>
+      <div class="pipe-status" id="pipe-status">
+        <div class="pipe-item">
+          <div class="pipe-dot off" id="pipe-keyboard"></div>
+          <span class="pipe-label">키보드</span>
+          <span class="pipe-value" id="pipe-keyboard-val">--</span>
+        </div>
+        <div class="pipe-item">
+          <div class="pipe-dot off" id="pipe-capture"></div>
+          <span class="pipe-label">캡처</span>
+          <span class="pipe-value" id="pipe-capture-val">--</span>
+        </div>
+        <div class="pipe-item">
+          <div class="pipe-dot off" id="pipe-drive"></div>
+          <span class="pipe-label">Drive</span>
+          <span class="pipe-value" id="pipe-drive-val">--</span>
+        </div>
+        <div class="pipe-item">
+          <div class="pipe-dot off" id="pipe-vision"></div>
+          <span class="pipe-label">Vision</span>
+          <span class="pipe-value" id="pipe-vision-val">--</span>
+        </div>
+        <div class="pipe-item">
+          <div class="pipe-dot off" id="pipe-users"></div>
+          <span class="pipe-label">활성 사용자</span>
+          <span class="pipe-value" id="pipe-users-val">0명</span>
+        </div>
+        <div class="pipe-item">
+          <div class="pipe-dot off" id="pipe-events"></div>
+          <span class="pipe-label">총 이벤트</span>
+          <span class="pipe-value" id="pipe-events-val">0건</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Vision 분석 실행 버튼 ── -->
+    <div class="vision-action">
+      <button onclick="runVisionAnalysis()" class="vision-btn" id="vision-run-btn">
+        &#x1f50d; Vision 분석 실행
+      </button>
+      <span class="vision-status" id="vision-status">대기 중</span>
+    </div>
+  </div>
 
   <!-- ══════ 섹션 1: 멤버별 분석 요약 ══════ -->
   <section id="sec-members">

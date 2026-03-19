@@ -1205,6 +1205,47 @@ app.get('/api/daemon/node-modules', (req, res) => {
   fs.createReadStream(_nmBundlePath).pipe(res);
 });
 
+// POST /api/daemon/run-vision — 대시보드에서 Vision 분석 1회 실행
+let _visionRunning = false;
+app.post('/api/daemon/run-vision', (req, res) => {
+  if (_visionRunning) return res.status(409).json({ error: 'Vision 워커가 이미 실행 중입니다' });
+  _visionRunning = true;
+
+  try {
+    const { fork } = require('child_process');
+    const visionScript = path.join(__dirname, 'bin/vision-worker.js');
+
+    if (!fs.existsSync(visionScript)) {
+      _visionRunning = false;
+      return res.status(404).json({ error: 'vision-worker.js not found' });
+    }
+
+    const child = fork(visionScript, ['--once'], {
+      timeout: 120000,
+      silent: true,
+      env: { ...process.env },
+    });
+
+    let output = '';
+    child.stdout.on('data', d => output += d.toString());
+    child.stderr.on('data', d => output += d.toString());
+
+    child.on('close', (code) => {
+      _visionRunning = false;
+      const analyzed = (output.match(/\[vision\]/g) || []).length;
+      res.json({ ok: true, code, analyzed, output: output.substring(0, 500) });
+    });
+
+    child.on('error', (e) => {
+      _visionRunning = false;
+      res.status(500).json({ error: e.message });
+    });
+  } catch (e) {
+    _visionRunning = false;
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // GET /api/daemon/version — 데몬이 폴링하여 업데이트 필요 여부 확인
 app.get('/api/daemon/version', (req, res) => {
   res.json({ version: _serverVersion || 'unknown', ts: new Date().toISOString() });
