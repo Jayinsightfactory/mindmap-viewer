@@ -1,1 +1,715 @@
-const _TEAM_WORLD_POS=[[480,0],[-480,0],[240,380],[-240,380],[240,-380],[-240,-380],[520,300],[-520,300]],_FOLLOW_WORLD_POS=[[550,120],[-550,120],[550,-120],[-550,-120],[350,420],[-350,420],[350,-420],[-350,-420],[600,320],[-600,320]];function _drawTeamClusters(r,y,e,b,T,p){const A=window._teamWorldData,P=Math.min(1,Math.max(0,(.75-p)/.25));if(!(P<=0)){if(!A?.members?.length){_TEAM_WORLD_POS.slice(0,2).forEach(([c,w])=>{const m=c*p+y,C=w*p+e;m<-200||m>b+200||C<-200||C>T+200||(r.save(),r.globalAlpha=P*.45,drawUnifiedCard(r,c,w,"#4a5568","+ 팀원 초대","워크스페이스에 팀원 추가",!1,!1,!1),r.restore())});return}A.members.forEach((c,w)=>{const[m,C]=_TEAM_WORLD_POS[w]||[900+w*200,0],u=m*p+y,d=C*p+e;if(u<-200||u>b+200||d<-200||d>T+200)return;const M=c.color||"#58a6ff",D=c.name||"팀원",L=(c.tasks||[]).filter(G=>G.status==="active").length,k=(c.tasks||[]).length;r.save(),r.globalAlpha=P;const B=performance.now()/1e3,H=55;_drawWireSphere(r,m,C,H,M,{alpha:.3,lineW:.8,meridians:2,parallels:1,glow:!0,rotation:B*.15+w*.5}),_drawSphereLabel(r,m,C,H,`👤 ${D}`,`${L}개 진행 · ${k}개`,M,!1),registerHitArea({cx:m,cy:C,r:60,obj:null,data:{type:"teamMember",memberId:c.userId||c.id,memberName:D,color:M,member:c}}),r.restore()})}}function _drawFollowingClusters(r,y,e,b,T,p){const A=window._followingData;if(!A||!Array.isArray(A)||A.length===0)return;const P=Math.min(1,Math.max(0,(.65-p)/.25));if(P<=0)return;const c=performance.now()/1e3,w="#a78bfa";A.forEach((m,C)=>{const[u,d]=_FOLLOW_WORLD_POS[C]||[900+C*180,200],M=u*p+y,D=d*p+e;if(M<-200||M>b+200||D<-200||D>T+200)return;const L=w,k=m.name||m.email?.split("@")[0]||"사용자",B=m.headline||"",H=B?B.slice(0,20):"팔로잉";r.save(),r.globalAlpha=P;const G=_hoveredHit?.data?.type==="follower"&&_hoveredHit?.data?.userId===m.user_id,U=55;_drawWireSphere(r,u,d,U,L,{alpha:.3,lineW:.8,meridians:2,parallels:1,glow:!0,hover:G,rotation:c*.12+C*.7}),_drawSphereLabel(r,u,d,U,k,H,L,!1),registerHitArea({cx:u,cy:d,r:U+6,obj:null,data:{type:"follower",userId:m.user_id,userName:k,headline:B,color:L,avatarUrl:m.avatar_url}}),r.restore()})}function drawCompactProjectView(){const r=Object.keys(_projectGroups);if(r.length===0)return;const y=performance.now()/1e3,e=_lctx,b=_labelCanvas2d.width,T=_labelCanvas2d.height,p=r.map(t=>{const o=_projectGroups[t],a=o.planetMeshes||[],s=a.reduce((_,x)=>_+(x.userData.eventCount||0),0),f=(_activeFilesPerProject[t]||[]).length>0,E={};a.forEach(_=>{const x=_.userData.macroCat||"general";E[x]=(E[x]||0)+1});const S=Object.entries(E).sort((_,x)=>x[1]-_[1])[0]?.[0]||"general",i=PROJECT_TYPES[S]||PROJECT_TYPES.general;return{name:t,planets:a,eventCount:s,hasActive:f,mainType:S,typeCfg:i,color:o.color||i.color}}).filter(t=>t.eventCount>0&&!_hiddenNodes[t.name]).sort((t,o)=>o.eventCount-t.eventCount);if(p.length===0)return;function A(t){const o=t.planets||[],a={};o.forEach(n=>{const h=n.userData.macroCat||"general";a[h]=(a[h]||0)+1});const s=Object.entries(a).sort((n,h)=>h[1]-n[1]),f=s[0]?.[0]||"general",E=PROJECT_TYPES[f]||PROJECT_TYPES.general,S={};o.forEach(n=>{const h=_sessionMap[n.userData.clusterId];if(h)for(const I of h.events){const J=(I.data?.filePath||I.data?.fileName||"").match(/\.([a-z]{1,6})$/i);J&&(S[J[1].toLowerCase()]=(S[J[1].toLowerCase()]||0)+1)}});const i=Object.entries(S).sort((n,h)=>h[1]-n[1]).slice(0,3).map(([n])=>n),_=t.name;let x;if(_&&_!=="기타"&&!/^세션-/.test(_))x=_.split(/[-_]/).filter(n=>n!=="session").map(n=>n.charAt(0).toUpperCase()+n.slice(1)).join(" ");else{const n=i.length>0?i.join("+").toUpperCase():"";x=n?`${n} ${E.label}`:E.label+" 프로젝트"}const V=new Set;return o.forEach(n=>{const h=_sessionMap[n.userData.clusterId];if(h)for(const I of h.events){const Q=I.data?.filePath||I.data?.fileName||"";Q&&V.add(Q.split(/[\\/]/).pop())}}),{name:x.slice(0,24),icon:E.icon,catBreakdown:s.slice(0,3).map(([n,h])=>{const I=PROJECT_TYPES[n]||PROJECT_TYPES.general;return{key:n,label:I.label,icon:I.icon,count:h,color:I.color}}),fileCount:V.size,sessionCount:o.length,techStack:i.join(" · ")||""}}const P=_drillStage>=1&&_drillProject,c=-Math.PI/2,w=typeof controls<"u"?controls.sph.r:55,m=w<=50?.5:w>=80?1.5:.5+(w-50)/30*1,C=window._spacingScale||null,u=C!==null?C:m,d=6*u,M=12*u,D=10*u,L=[];let k=0,B=0;for(;k<p.length;){const t=Math.min(5+B*5,p.length-k);L.push(p.slice(k,k+t)),k+=t,B++}const H=[];let G=M;L.forEach(t=>{const o=t.length,a=Math.sin(Math.PI/o),s=a>0?d/a:G,f=Math.max(G,s);H.push(f),G=f+D});const U=[];window._projWorldPositions||(window._projWorldPositions={}),L.forEach((t,o)=>{const a=t.length,s=Math.PI*2/a;t.forEach((f,E)=>{const S=c+E*s,i=H[o],_=new THREE.Vector3(Math.cos(S)*i,0,Math.sin(S)*i),x=toScreen(_);U.push({proj:f,pos3d:_,sc:x,angle:S,dist:i,ringIdx:o}),window._projWorldPositions[f.name]=_})}),H.forEach(t=>{e.save(),e.strokeStyle="rgba(148,163,184,0.08)",e.lineWidth=.8,e.setLineDash([6,6]),e.beginPath();const o=64;for(let a=0;a<=o;a++){const s=a/o*Math.PI*2,f=toScreen(new THREE.Vector3(Math.cos(s)*t,0,Math.sin(s)*t));f.z>1||(a===0?e.moveTo(f.x,f.y):e.lineTo(f.x,f.y))}e.stroke(),e.setLineDash([]),e.restore()});const le=new THREE.Vector3(0,0,0),O=toScreen(le);if(O.z<=1){const t=screenScale(le),o=Math.max(40,Math.min(70,t*9));_drawWireSphere(e,O.x,O.y,o,"#06b6d4",{meridians:3,parallels:2,rotation:y*.15,glow:!0}),_drawSphereLabel(e,O.x,O.y,o,"나의 작업",`${p.length} 프로젝트`,"#06b6d4",!1)}const ce=window._followingData||[],ge=window._teamWorldData?.members||[],ye=[...ce.map((t,o)=>({name:t.name||t.email?.split("@")[0]||"사용자",sub:t.headline||"팔로잉",color:"#a78bfa",userId:t.user_id,type:"follower",idx:o})),...ge.map((t,o)=>({name:t.name||"팀원",sub:t.role||"팀",color:t.color||"#58a6ff",userId:t.userId||t.id,type:"teamMember",idx:o+ce.length}))],ie=new Set,X=ye.filter(t=>ie.has(t.userId)?!1:(ie.add(t.userId),!0));if(X.length>0){const t=(H.length>0?H[H.length-1]:M)+D*2,o=Math.PI*2/Math.max(X.length,3),a=Math.PI/4;X.forEach((s,f)=>{const E=a+f*o,S=new THREE.Vector3(Math.cos(E)*t,0,Math.sin(E)*t),i=toScreen(S);if(i.z>1)return;const _=screenScale(S),x=Math.max(30,Math.min(55,_*7));_drawWireSphere(e,i.x,i.y,x,s.color,{meridians:2,parallels:1,glow:!0,rotation:y*.12+f*.5}),_drawSphereLabel(e,i.x,i.y,x,s.name,s.sub,s.color,!1),O.z<=1&&(e.save(),e.globalAlpha=.12,e.strokeStyle=s.color,e.lineWidth=1,e.setLineDash([6,6]),e.beginPath(),e.moveTo(O.x,O.y),e.lineTo(i.x,i.y),e.stroke(),e.setLineDash([]),e.restore()),registerHitArea({cx:i.x,cy:i.y,r:x+6,obj:null,data:{type:s.type,userId:s.userId,userName:s.name,color:s.color,member:s}})})}const ee=(()=>{try{return JSON.parse(localStorage.getItem("orbitLabelAliases")||"{}")}catch{return{}}})();U.forEach(({proj:t,pos3d:o,sc:a,angle:s,dist:f},E)=>{if(a.z>1)return;const S=P&&_drillProject.name===t.name,i=_hoveredHit?.data?.type==="constellation"&&_hoveredHit?.data?.projName===t.name||_hoveredHit?.data?.type==="editNode"&&_hoveredHit?.data?.projKey===t.name||_hoveredHit?.data?.type==="hideNode"&&_hoveredHit?.data?.projKey===t.name,_=P&&!S,x=t.color,V=A(t),n=screenScale(o),h=Math.max(28,Math.min(56,n*7));_&&(e.globalAlpha=.3),_drawWireSphere(e,a.x,a.y,h,x,{alpha:S?.5:.35,lineW:S?1.2:.8,meridians:2,parallels:1,glow:!0,hover:i,drilled:S,rotation:y*.2+E*.5}),t.hasActive&&(e.save(),e.fillStyle="#22c55e",e.shadowColor="#22c55e",e.shadowBlur=6,e.beginPath(),e.arc(a.x+h-4,a.y-h+4,3.5,0,Math.PI*2),e.fill(),e.restore());const I=ee[t.name]||`${V.icon} ${V.name}`,Q="";let J="",te="",ae="",oe="",he="",de="";for(const l of t.planets)if(!ae&&l.userData.purpose&&(ae=l.userData.purpose),!J&&l.userData.whatSummary&&(J=l.userData.whatSummary),!te&&l.userData.resultSummary&&(te=l.userData.resultSummary),!oe&&l.userData.techStack&&(oe=l.userData.techStack),!he&&l.userData.sessionDuration&&(he=l.userData.sessionDuration),!de&&l.userData.aiToolsUsed&&(de=l.userData.aiToolsUsed),J&&te&&ae)break;if(_drawSphereLabel(e,a.x,a.y,h,I,oe||"",x,_,J,"",null),i&&h>25){const l=a.y+h*.45,N=Math.max(12,h*.3),z=N*.4;e.save(),e.globalAlpha=.9,e.fillStyle="rgba(31,111,235,0.85)",e.beginPath(),e.arc(a.x-z,l,N/2,0,Math.PI*2),e.fill(),e.fillStyle="#fff",e.font=`${N-2}px sans-serif`,e.textAlign="center",e.textBaseline="middle",e.fillText("✎",a.x-z,l),e.restore(),registerHitArea({cx:a.x-z,cy:l,r:N/2+3,obj:null,data:{type:"editNode",projKey:t.name,projLabel:I}}),e.save(),e.globalAlpha=.9,e.fillStyle="rgba(248,81,73,0.85)",e.beginPath(),e.arc(a.x+z,l,N/2,0,Math.PI*2),e.fill(),e.fillStyle="#fff",e.font=`${N-2}px sans-serif`,e.textAlign="center",e.textBaseline="middle",e.fillText("✕",a.x+z,l),e.restore(),registerHitArea({cx:a.x+z,cy:l,r:N/2+3,obj:null,data:{type:"hideNode",projKey:t.name,projLabel:I}})}if(e.globalAlpha=1,O.z<=1&&(e.save(),e.globalAlpha=_?.1:.18,e.strokeStyle="#9ca3af",e.lineWidth=1,e.setLineDash([4,4]),e.beginPath(),e.moveTo(O.x,O.y),e.lineTo(a.x,a.y),e.stroke(),e.setLineDash([]),e.restore()),registerHitArea({cx:a.x,cy:a.y,r:h+6,obj:null,data:{type:"constellation",projName:t.name,planetCount:t.planets.length,color:x,info:V}}),S&&t.planets.length>0){const l={};t.planets.forEach(j=>{const R=j.userData.macroCat||"general";l[R]||(l[R]=[]),l[R].push(j)});const N=Object.entries(l).sort((j,R)=>R[1].length-j[1].length),z=N.length,ue=s,fe=14*u,pe=Math.max(Math.PI/3,Math.PI*2/Math.max(z*2,4)),Se=Math.min((z-1)/2*pe,Math.PI);N.forEach(([j,R],me)=>{const v=PROJECT_TYPES[j]||PROJECT_TYPES.general,F=z===1?ue:ue-Se+me*pe,K=new THREE.Vector3(o.x+Math.cos(F)*fe,0,o.z+Math.sin(F)*fe),W=toScreen(K);if(W.z>1)return;const be=screenScale(K),se=Math.max(24,Math.min(44,be*6)),_e=R.length,we=_drillStage>=2&&_drillCategory?.catKey===j,De=_hoveredHit?.data?.type==="drillCategory"&&_hoveredHit?.data?.catKey===j,ve=ee[j]||`${v.icon} ${v.label}`,Ce=`${_e} 세션`;e.save(),e.globalAlpha=.15,e.strokeStyle=v.color,e.lineWidth=1,e.setLineDash([4,4]),e.beginPath(),e.moveTo(a.x,a.y),e.lineTo(W.x,W.y),e.stroke(),e.setLineDash([]),e.restore(),_drawWireSphere(e,W.x,W.y,se,v.color,{meridians:2,parallels:1,glow:!0,hover:De,drilled:we,rotation:y*.25+me}),_drawSphereLabel(e,W.x,W.y,se,ve,Ce,v.color,!1),registerHitArea({cx:W.x,cy:W.y,r:se+4,obj:null,data:{type:"drillCategory",catKey:j,catLabel:v.label,catColor:v.color,catIcon:v.icon,projName:t.name,planets:R,sessionCount:_e}});const q=Math.min(R.length,3),Z=7*u;for(let Y=0;Y<q;Y++){const g=R[Y],xe=new THREE.Vector3(K.x+Math.cos(F)*(Z*(Y+1)),0,K.z+Math.sin(F)*(Z*(Y+1))),$=toScreen(xe);if($.z>1)continue;const Me=screenScale(xe),re=Math.max(30,Math.min(50,Me*6.5)),Te=g.userData.eventCount||0,Pe=_hoveredHit?.obj===g,Ee=g.userData.clusterId||g.userData.sessionId||"";let ne=ee[Ee]||normalizeLabel(g.userData.intent||"",22);ne||(ne=deriveDisplayLabel(g.userData,22));const Ae="";e.save(),e.globalAlpha=.12,e.strokeStyle=v.color,e.lineWidth=.8,e.setLineDash([3,3]),e.beginPath(),e.moveTo(W.x,W.y),e.lineTo($.x,$.y),e.stroke(),e.setLineDash([]),e.restore(),_drawWireSphere(e,$.x,$.y,re,v.color,{meridians:1,parallels:1,glow:!1,hover:Pe,rotation:y*.3+Y});const Ie=g.userData.whatSummary||"",Re=g.userData.resultSummary||"",Le={purpose:g.userData.purpose||"",techStack:g.userData.techStack||"",duration:g.userData.sessionDuration||"",aiTools:g.userData.aiToolsUsed||""};_drawSphereLabel(e,$.x,$.y,re,ne,Ae,v.color,!1,Ie,Re,Le),registerHitArea({cx:$.x,cy:$.y,r:re+4,obj:g,data:{type:"drillSession",intent:g.userData.intent,clusterId:g.userData.clusterId,sessionId:g.userData.sessionId,eventCount:Te,hueHex:v.color,catKey:j,catLabel:v.label,catColor:v.color,catIcon:v.icon,projName:t.name,planets:R}})}if(R.length>q){const Y=new THREE.Vector3(K.x+Math.cos(F)*(Z*(q+1)),0,K.z+Math.sin(F)*(Z*(q+1))),g=toScreen(Y);g.z<=1&&(e.globalAlpha=.6,e.font="400 10px -apple-system,sans-serif",e.fillStyle=v.color,e.textAlign="center",e.fillText(`+${R.length-q}개`,g.x,g.y+4),e.globalAlpha=1)}})}}),_hitAreas.sort((t,o)=>{const a=new Set(["drillCategory","drillSession"]),s=a.has(t.data?.type)?1:0,f=a.has(o.data?.type)?1:0;return s-f})}function _drawPersonalPlanets(){const y=getLOD()===3?.12:1;_lctx.globalAlpha=y,(typeof planetMeshes<"u"?planetMeshes:[]).forEach(e=>{if(_focusedCategory&&e.userData.macroCat!==_focusedCategory)return;const b=toScreen(e.position);if(b.z>1)return;const T=screenScale(e.position),p=e.userData.hueHex||"#58a6ff",A=e.userData.eventCount||0,P=_hoveredHit?.obj===e,c=_selectedHit?.obj===e,w=c?20:P?16:Math.max(9,Math.min(14,T*12)),m=deriveDisplayLabel(e.userData,26);if(!m)return;_lctx.font=`600 ${w}px -apple-system,'Segoe UI',sans-serif`,_lctx.textAlign="center";const u=_lctx.measureText(m).width+22,d=w+10,M=b.x-u/2,D=b.y-d/2;if(!rectOverlaps(M-4,D-4,u+8,d+30)){if(reserveRect(M-4,D-4,u+8,d+30),c&&(_lctx.save(),_lctx.shadowColor=p,_lctx.shadowBlur=10,_lctx.strokeStyle=p,_lctx.lineWidth=2.5,_lctx.globalAlpha=y*.8,roundRect(_lctx,M-2,D-2,u+4,d+4,(d+4)/2),_lctx.stroke(),_lctx.shadowBlur=0,_lctx.restore(),_lctx.globalAlpha=y),_lctx.save(),_lctx.shadowColor=c?"rgba(6,182,212,0.2)":"rgba(0,0,0,0.3)",_lctx.shadowBlur=c?12:6,_lctx.shadowOffsetY=1,_lctx.fillStyle=c?"rgba(6,182,212,0.12)":"rgba(2,6,23,0.78)",roundRect(_lctx,M,D,u,d,d/2),_lctx.fill(),_lctx.shadowBlur=0,_lctx.shadowOffsetY=0,_lctx.restore(),_lctx.strokeStyle=c?p:P?"rgba(6,182,212,0.35)":"rgba(255,255,255,0.10)",_lctx.lineWidth=c?1.5:P?1:.8,roundRect(_lctx,M,D,u,d,d/2),_lctx.stroke(),_lctx.fillStyle=c?"#e2e8f0":P?"#cbd5e1":"#94a3b8",_lctx.fillText(m,b.x,D+d*.68),A>0&&w>=13){const L=Math.max(9,w*.5);_lctx.font=`500 ${L}px 'JetBrains Mono','Fira Code',monospace`,_lctx.fillStyle="#475569",_lctx.fillText(`${A}개 작업`,b.x,D+d+L+1)}registerHitArea({cx:b.x,cy:b.y,r:Math.max(u,d)/2+4,obj:e,data:{type:"session",intent:fullText,clusterId:e.userData.clusterId,sessionId:e.userData.sessionId,eventCount:A,hueHex:p}})}}),_lctx.globalAlpha=1}const _usedRects=[],LABEL_PADDING=12;function rectOverlaps(r,y,e,b){for(const T of _usedRects)if(r<T.x+T.w+LABEL_PADDING&&r+e+LABEL_PADDING>T.x&&y<T.y+T.h+LABEL_PADDING&&y+b+LABEL_PADDING>T.y)return!0;return!1}function reserveRect(r,y,e,b){_usedRects.push({x:r,y,w:e,h:b})}
+/* orbit3d-layout.js — Layout & positioning logic (extracted from render) */
+
+// ─── 팀원 클러스터 렌더링 (월드 줌아웃 시 등장) ──────────────────────────────
+// 월드 좌표 오프셋에 각 팀원의 작업 허브를 그림
+// worldScale < 0.85 에서 서서히 등장 (페이드인)
+// 팀원 월드 오프셋 (px, scale=1.0 기준)
+// 줌아웃(scale≈0.5)에서 화면 가장자리에 등장하도록 설정
+const _TEAM_WORLD_POS = [
+  [ 480,    0], [-480,    0],
+  [ 240,  380], [-240,  380],
+  [ 240, -380], [-240, -380],
+  [ 520,  300], [-520,  300],
+];
+
+// 팔로잉 월드 오프셋 — 팀원보다 더 바깥 (scale≈0.4 에서 화면 가장자리)
+const _FOLLOW_WORLD_POS = [
+  [ 550,  120], [-550,  120],
+  [ 550, -120], [-550, -120],
+  [ 350,  420], [-350,  420],
+  [ 350, -420], [-350, -420],
+  [ 600,  320], [-600,  320],
+];
+
+// ctx는 이미 월드 트랜스폼(translate+scale)이 적용된 상태로 호출됨
+// 모든 드로잉은 월드 좌표계, hitArea는 월드 좌표 (함수 끝에서 일괄 스크린 변환)
+function _drawTeamClusters(ctx, txX, txY, W, H, scale) {
+  const data = window._teamWorldData;
+
+  // 페이드인: scale 0.75→0.5 구간에서 0→1 알파
+  const fadeAlpha = Math.min(1, Math.max(0, (0.75 - scale) / 0.25));
+  if (fadeAlpha <= 0) return;
+
+  // 팀 데이터 없으면 초대 플레이스홀더 표시
+  if (!data?.members?.length) {
+    _TEAM_WORLD_POS.slice(0, 2).forEach(([wox, woy]) => {
+      const scx = wox * scale + txX, scy = woy * scale + txY;
+      if (scx < -200 || scx > W + 200 || scy < -200 || scy > H + 200) return;
+      ctx.save();
+      ctx.globalAlpha = fadeAlpha * 0.45;
+      drawUnifiedCard(ctx, wox, woy, '#4a5568', '+ 팀원 초대', '워크스페이스에 팀원 추가', false, false, false);
+      ctx.restore();
+    });
+    return;
+  }
+
+  data.members.forEach((m, i) => {
+    const [wox, woy] = _TEAM_WORLD_POS[i] || [900 + i * 200, 0];
+    const scx = wox * scale + txX, scy = woy * scale + txY;
+
+    // 화면 밖이면 스킵
+    if (scx < -200 || scx > W + 200 || scy < -200 || scy > H + 200) return;
+
+    const color = m.color || '#58a6ff';
+    const name  = m.name  || '팀원';
+    const activeTasks = (m.tasks || []).filter(t => t.status === 'active').length;
+    const totalTasks  = (m.tasks || []).length;
+
+    ctx.save();
+    ctx.globalAlpha = fadeAlpha;
+
+    // ── 팀원 와이어프레임 구체 ──
+    const now = performance.now() / 1000;
+    const sphereR = 55;
+    _drawWireSphere(ctx, wox, woy, sphereR, color, {
+      alpha: 0.3, lineW: 0.8, meridians: 2, parallels: 1,
+      glow: true, rotation: now * 0.15 + i * 0.5,
+    });
+    _drawSphereLabel(ctx, wox, woy, sphereR, `👤 ${name}`, `${activeTasks}개 진행 · ${totalTasks}개`, color, false);
+
+    // 히트 영역 (월드 좌표 → drawCompactProjectView 끝에서 스크린 좌표 변환)
+    registerHitArea({
+      cx: wox, cy: woy, r: 60,
+      obj: null,
+      data: { type: 'teamMember', memberId: m.userId || m.id, memberName: name, color, member: m },
+    });
+
+    ctx.restore();
+  });
+}
+
+// ─── 팔로잉 클러스터 렌더링 (월드 줌아웃 시 등장, 팀원 뒤쪽) ────────────────
+// ctx는 이미 월드 트랜스폼(translate+scale)이 적용된 상태로 호출됨
+function _drawFollowingClusters(ctx, txX, txY, W, H, scale) {
+  const fData = window._followingData;
+  if (!fData || !Array.isArray(fData) || fData.length === 0) return;
+
+  // 페이드인: scale 0.65→0.40 구간에서 0→1 알파 (팀원보다 더 줌아웃해야 표시)
+  const fadeAlpha = Math.min(1, Math.max(0, (0.65 - scale) / 0.25));
+  if (fadeAlpha <= 0) return;
+
+  const now = performance.now() / 1000;
+  const FOLLOW_COLOR = '#a78bfa'; // 보라색 — 팔로잉 구분용
+
+  fData.forEach((f, i) => {
+    const [wox, woy] = _FOLLOW_WORLD_POS[i] || [900 + i * 180, 200];
+    const scx = wox * scale + txX, scy = woy * scale + txY;
+
+    // 화면 밖이면 스킵
+    if (scx < -200 || scx > W + 200 || scy < -200 || scy > H + 200) return;
+
+    const color = FOLLOW_COLOR;
+    const name = f.name || f.email?.split('@')[0] || '사용자';
+    const headline = f.headline || '';
+    const sub = headline ? headline.slice(0, 20) : '팔로잉';
+
+    ctx.save();
+    ctx.globalAlpha = fadeAlpha;
+
+    // 와이어프레임 구체 (팀원의 drawUnifiedCard 대신 3D 스타일)
+    const isHover = _hoveredHit?.data?.type === 'follower' && _hoveredHit?.data?.userId === f.user_id;
+    const sphereR = 55;
+    _drawWireSphere(ctx, wox, woy, sphereR, color, {
+      alpha: 0.3, lineW: 0.8, meridians: 2, parallels: 1,
+      glow: true, hover: isHover, rotation: now * 0.12 + i * 0.7,
+    });
+    _drawSphereLabel(ctx, wox, woy, sphereR, name, sub, color, false);
+
+    // 히트 영역 (월드 좌표)
+    registerHitArea({
+      cx: wox, cy: woy, r: sphereR + 6,
+      obj: null,
+      data: {
+        type: 'follower',
+        userId: f.user_id,
+        userName: name,
+        headline,
+        color,
+        avatarUrl: f.avatar_url,
+      },
+    });
+
+    ctx.restore();
+  });
+}
+
+// ─── 1단계: 프로젝트 노드 뷰 (3D 와이어프레임 구체 + 양파형 동심원) ─────────
+// ME 노드 중심, 프로젝트를 동심원 배치, 3D 카메라 회전으로 탐색
+// 클릭 시 2단계 카테고리 링 전개
+function drawCompactProjectView() {
+  const projNames = Object.keys(_projectGroups);
+  if (projNames.length === 0) return;
+
+  const now = performance.now() / 1000;
+  const ctx = _lctx;
+  const W = _labelCanvas2d.width, H = _labelCanvas2d.height;
+
+  // ── 프로젝트별 정보 집계 ──────────────────────────────────────────────────
+  const projects = projNames.map(name => {
+    const grp = _projectGroups[name];
+    const planets = grp.planetMeshes || [];
+    const eventCount = planets.reduce((s, p) => s + (p.userData.eventCount || 0), 0);
+    const hasActive = (_activeFilesPerProject[name] || []).length > 0;
+    const typeCounts = {};
+    planets.forEach(p => {
+      const t = p.userData.macroCat || 'general';
+      typeCounts[t] = (typeCounts[t] || 0) + 1;
+    });
+    const mainType = Object.entries(typeCounts).sort((a,b) => b[1] - a[1])[0]?.[0] || 'general';
+    const typeCfg = PROJECT_TYPES[mainType] || PROJECT_TYPES.general;
+    return { name, planets, eventCount, hasActive, mainType, typeCfg, color: grp.color || typeCfg.color };
+  }).filter(p => p.eventCount > 0 && !_hiddenNodes[p.name]).sort((a,b) => b.eventCount - a.eventCount);
+
+  if (projects.length === 0) return;
+
+  // ── 스마트 프로젝트명 분석 ────────────────────────────────────────────────
+  function analyzeProject(proj) {
+    const planets = proj.planets || [];
+    const catCounts = {};
+    planets.forEach(p => {
+      const c = p.userData.macroCat || 'general';
+      catCounts[c] = (catCounts[c] || 0) + 1;
+    });
+    const topCats = Object.entries(catCounts).sort((a,b) => b[1] - a[1]);
+    const topCat = topCats[0]?.[0] || 'general';
+    const topCfg = PROJECT_TYPES[topCat] || PROJECT_TYPES.general;
+
+    const exts = {};
+    planets.forEach(p => {
+      const entry = _sessionMap[p.userData.clusterId];
+      if (!entry) return;
+      for (const e of entry.events) {
+        const f = (e.data?.filePath || e.data?.fileName || '');
+        const m = f.match(/\.([a-z]{1,6})$/i);
+        if (m) exts[m[1].toLowerCase()] = (exts[m[1].toLowerCase()] || 0) + 1;
+      }
+    });
+    const topExts = Object.entries(exts).sort((a,b) => b[1] - a[1]).slice(0, 3).map(([e]) => e);
+
+    const rawName = proj.name;
+    let smartName;
+    if (rawName && rawName !== '기타' && !/^세션-/.test(rawName)) {
+      smartName = rawName.split(/[-_]/).filter(s => s !== 'session')
+        .map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(' ');
+    } else {
+      const stack = topExts.length > 0 ? topExts.join('+').toUpperCase() : '';
+      smartName = stack ? `${stack} ${topCfg.label}` : topCfg.label + ' 프로젝트';
+    }
+
+    const allFiles = new Set();
+    planets.forEach(p => {
+      const entry = _sessionMap[p.userData.clusterId];
+      if (!entry) return;
+      for (const e of entry.events) {
+        const f = (e.data?.filePath || e.data?.fileName || '');
+        if (f) allFiles.add(f.split(/[\\/]/).pop());
+      }
+    });
+
+    return {
+      name: smartName.slice(0, 24),
+      icon: topCfg.icon,
+      catBreakdown: topCats.slice(0, 3).map(([k, v]) => {
+        const cfg = PROJECT_TYPES[k] || PROJECT_TYPES.general;
+        return { key: k, label: cfg.label, icon: cfg.icon, count: v, color: cfg.color };
+      }),
+      fileCount: allFiles.size,
+      sessionCount: planets.length,
+      techStack: topExts.join(' · ') || '',
+    };
+  }
+
+  // ── 양파형 동심원 배치 (3D 월드 좌표 X-Z 평면) ────────────────────────────
+  const isDrillStage1 = _drillStage >= 1 && _drillProject;
+  const baseAngle = -Math.PI / 2;
+  // 카메라 거리에 따라 간격 자동 조절 (r:50→50%, r:80→150%)
+  const _camR = (typeof controls !== 'undefined') ? controls.sph.r : 55;
+  const _autoScale = _camR <= 50 ? 0.5
+    : _camR >= 80 ? 1.5
+    : 0.5 + (_camR - 50) / 30 * 1.0; // 50~80 구간 선형 보간 (0.5→1.5)
+  const _manualScale = window._spacingScale || null;
+  const _scale = _manualScale !== null ? _manualScale : _autoScale;
+  const WORLD_NODE_SEP = 6 * _scale;   // 노드 간 최소 월드 거리
+  const WORLD_RING_BASE = 12 * _scale; // 1번째 링 시작 반경
+  const WORLD_RING_GAP = 10 * _scale;  // 링 간 간격
+
+  // 프로젝트를 링별로 분배 (5, 10, 15, 20…)
+  const rings = [];
+  let placed = 0, rIdx = 0;
+  while (placed < projects.length) {
+    const capacity = Math.min(5 + rIdx * 5, projects.length - placed);
+    rings.push(projects.slice(placed, placed + capacity));
+    placed += capacity; rIdx++;
+  }
+
+  // 각 링 반경 (월드 단위)
+  const ringRadii = [];
+  let prevR = WORLD_RING_BASE;
+  rings.forEach((ring) => {
+    const count = ring.length;
+    const sinHalf = Math.sin(Math.PI / count);
+    const minR = sinHalf > 0 ? WORLD_NODE_SEP / sinHalf : prevR;
+    const ringR = Math.max(prevR, minR);
+    ringRadii.push(ringR);
+    prevR = ringR + WORLD_RING_GAP;
+  });
+
+  // 프로젝트 → 3D 월드 좌표 + 스크린 좌표
+  const projLayout = [];
+  if (!window._projWorldPositions) window._projWorldPositions = {};
+  rings.forEach((ring, ri) => {
+    const count = ring.length;
+    const step = (Math.PI * 2) / count;
+    ring.forEach((proj, pi) => {
+      const angle = baseAngle + pi * step;
+      const r = ringRadii[ri];
+      const pos3d = new THREE.Vector3(Math.cos(angle) * r, 0, Math.sin(angle) * r);
+      const sc = toScreen(pos3d);
+      projLayout.push({ proj, pos3d, sc, angle, dist: r, ringIdx: ri });
+      // 드릴다운 줌인용 월드 좌표 저장
+      window._projWorldPositions[proj.name] = pos3d;
+    });
+  });
+
+  // ── 동심원 가이드라인 (3D 투영) ──────────────────────────────────────────
+  ringRadii.forEach(rr => {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(148,163,184,0.08)';
+    ctx.lineWidth = 0.8;
+    ctx.setLineDash([6, 6]);
+    ctx.beginPath();
+    const RING_PTS = 64;
+    for (let i = 0; i <= RING_PTS; i++) {
+      const a = (i / RING_PTS) * Math.PI * 2;
+      const pt = toScreen(new THREE.Vector3(Math.cos(a) * rr, 0, Math.sin(a) * rr));
+      if (pt.z > 1) continue;
+      if (i === 0) ctx.moveTo(pt.x, pt.y);
+      else ctx.lineTo(pt.x, pt.y);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+  });
+
+  // ── ME 노드 (월드 원점 = 0,0,0) — 와이어프레임 구체 ───────────────────────
+  const mePos = new THREE.Vector3(0, 0, 0);
+  const meSc = toScreen(mePos);
+  if (meSc.z <= 1) {
+    const meScale = screenScale(mePos);
+    const meR = Math.max(40, Math.min(70, meScale * 9));
+    _drawWireSphere(ctx, meSc.x, meSc.y, meR, '#06b6d4', {
+      meridians: 3, parallels: 2, rotation: now * 0.15, glow: true,
+    });
+    _drawSphereLabel(ctx, meSc.x, meSc.y, meR, '나의 작업', `${projects.length} 프로젝트`, '#06b6d4', false);
+  }
+
+  // ── 팔로워/팀원 구체 (팀/회사 모드에서만 표시) ──────────────────────────────
+  // 개인 모드에서는 자기 데이터만 표시 — 팔로워/팀원 구체 비활성화
+  if (window._teamMode || window._companyMode) {
+  const _followData = window._followingData || [];
+  const _teamData = window._teamWorldData?.members || [];
+  const _socialNodes = [
+    ..._followData.map((f, i) => ({ name: f.name || f.email?.split('@')[0] || '사용자', sub: f.headline || '팔로잉', color: '#a78bfa', userId: f.user_id, type: 'follower', idx: i })),
+    ..._teamData.map((m, i) => ({ name: m.name || '팀원', sub: m.role || '팀', color: m.color || '#58a6ff', userId: m.userId || m.id, type: 'teamMember', idx: i + _followData.length })),
+  ];
+  // 중복 제거 (같은 userId)
+  const _seenIds = new Set();
+  const _uniqueSocial = _socialNodes.filter(n => { if (_seenIds.has(n.userId)) return false; _seenIds.add(n.userId); return true; });
+
+  if (_uniqueSocial.length > 0) {
+    const outerR = (ringRadii.length > 0 ? ringRadii[ringRadii.length - 1] : WORLD_RING_BASE) + WORLD_RING_GAP * 2;
+    const socialStep = (Math.PI * 2) / Math.max(_uniqueSocial.length, 3);
+    const socialStart = Math.PI / 4; // 45도 오프셋 (프로젝트와 안 겹치게)
+
+    _uniqueSocial.forEach((sn, si) => {
+      const angle = socialStart + si * socialStep;
+      const sPos = new THREE.Vector3(Math.cos(angle) * outerR, 0, Math.sin(angle) * outerR);
+      const sSc = toScreen(sPos);
+      if (sSc.z > 1) return;
+
+      const sScale = screenScale(sPos);
+      const sR = Math.max(30, Math.min(55, sScale * 7));
+
+      _drawWireSphere(ctx, sSc.x, sSc.y, sR, sn.color, {
+        meridians: 2, parallels: 1, glow: true, rotation: now * 0.12 + si * 0.5,
+      });
+      _drawSphereLabel(ctx, sSc.x, sSc.y, sR, sn.name, sn.sub, sn.color, false);
+
+      // ME → 팔로워 연결선
+      if (meSc.z <= 1) {
+        ctx.save();
+        ctx.globalAlpha = 0.12;
+        ctx.strokeStyle = sn.color; ctx.lineWidth = 1;
+        ctx.setLineDash([6, 6]);
+        ctx.beginPath(); ctx.moveTo(meSc.x, meSc.y); ctx.lineTo(sSc.x, sSc.y); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.restore();
+      }
+
+      registerHitArea({
+        cx: sSc.x, cy: sSc.y, r: sR + 6,
+        obj: null,
+        data: { type: sn.type, userId: sn.userId, userName: sn.name, color: sn.color, member: sn },
+      });
+    });
+  }
+  } // end team/company mode guard
+
+  // 라벨 별칭 맵
+  const _aliases = (() => { try { return JSON.parse(localStorage.getItem('orbitLabelAliases') || '{}'); } catch { return {}; } })();
+
+  projLayout.forEach(({ proj, pos3d, sc, angle, dist: wDist }, i) => {
+    if (sc.z > 1) return; // 카메라 뒤
+
+    const isThisDrilled = isDrillStage1 && _drillProject.name === proj.name;
+    // 호버: 구체 또는 구체 안 버튼에 마우스 있을 때
+    const isHover = (_hoveredHit?.data?.type === 'constellation' && _hoveredHit?.data?.projName === proj.name)
+      || (_hoveredHit?.data?.type === 'editNode' && _hoveredHit?.data?.projKey === proj.name)
+      || (_hoveredHit?.data?.type === 'hideNode' && _hoveredHit?.data?.projKey === proj.name);
+    const dimmed = isDrillStage1 && !isThisDrilled;
+    const color = proj.color;
+    const info = analyzeProject(proj);
+    const scale = screenScale(pos3d);
+    const nodeR = Math.max(28, Math.min(56, scale * 7));
+
+    if (dimmed) ctx.globalAlpha = 0.3;
+
+    // 와이어프레임 구체
+    _drawWireSphere(ctx, sc.x, sc.y, nodeR, color, {
+      alpha: isThisDrilled ? 0.5 : 0.35,
+      lineW: isThisDrilled ? 1.2 : 0.8,
+      meridians: 2, parallels: 1,
+      glow: true, hover: isHover, drilled: isThisDrilled,
+      rotation: now * 0.2 + i * 0.5,
+    });
+
+    // 활성 표시
+    if (proj.hasActive) {
+      ctx.save();
+      ctx.fillStyle = '#22c55e'; ctx.shadowColor = '#22c55e'; ctx.shadowBlur = 6;
+      ctx.beginPath(); ctx.arc(sc.x + nodeR - 4, sc.y - nodeR + 4, 3.5, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
+
+    // 라벨 + 심층 세션 요약 (PURPOSE + WHAT + RESULT + 추가 컨텍스트)
+    const projTitle = _aliases[proj.name] || `${info.icon} ${info.name}`;
+    const projSub = '';
+    // 프로젝트 내 행성들의 요약 집계
+    let projWhat = '', projResult = '', projPurpose = '', projTech = '', projDuration = '', projAiTools = '';
+    for (const p of proj.planets) {
+      if (!projPurpose && p.userData.purpose) projPurpose = p.userData.purpose;
+      if (!projWhat && p.userData.whatSummary) projWhat = p.userData.whatSummary;
+      if (!projResult && p.userData.resultSummary) projResult = p.userData.resultSummary;
+      if (!projTech && p.userData.techStack) projTech = p.userData.techStack;
+      if (!projDuration && p.userData.sessionDuration) projDuration = p.userData.sessionDuration;
+      if (!projAiTools && p.userData.aiToolsUsed) projAiTools = p.userData.aiToolsUsed;
+      if (projWhat && projResult && projPurpose) break;
+    }
+    // 프로젝트 레벨: purpose 제외 (projTitle과 중복됨), 기술스택만 표시
+    _drawSphereLabel(ctx, sc.x, sc.y, nodeR, projTitle, projTech || '', color, dimmed, projWhat, '', null);
+
+    // 호버 시 구체 안쪽 하단에 숨기기/수정 버튼
+    if (isHover && nodeR > 25) {
+      const btnY = sc.y + nodeR * 0.45; // 구체 안쪽 하단 (중심에서 45% 아래)
+      const btnSize = Math.max(12, nodeR * 0.3);
+      const btnGap = btnSize * 0.4;
+      // 수정 버튼 (✎)
+      ctx.save();
+      ctx.globalAlpha = 0.9;
+      ctx.fillStyle = 'rgba(31,111,235,0.85)';
+      ctx.beginPath(); ctx.arc(sc.x - btnGap, btnY, btnSize/2, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.font = `${btnSize-2}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('✎', sc.x - btnGap, btnY);
+      ctx.restore();
+      registerHitArea({ cx: sc.x - btnGap, cy: btnY, r: btnSize/2 + 3,
+        obj: null, data: { type: 'editNode', projKey: proj.name, projLabel: projTitle } });
+      // 숨기기 버튼 (✕)
+      ctx.save();
+      ctx.globalAlpha = 0.9;
+      ctx.fillStyle = 'rgba(248,81,73,0.85)';
+      ctx.beginPath(); ctx.arc(sc.x + btnGap, btnY, btnSize/2, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.font = `${btnSize-2}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('✕', sc.x + btnGap, btnY);
+      ctx.restore();
+      registerHitArea({ cx: sc.x + btnGap, cy: btnY, r: btnSize/2 + 3,
+        obj: null, data: { type: 'hideNode', projKey: proj.name, projLabel: projTitle } });
+    }
+
+    ctx.globalAlpha = 1;
+
+    // ME → 프로젝트 연결선
+    if (meSc.z <= 1) {
+      ctx.save();
+      ctx.globalAlpha = dimmed ? 0.1 : 0.18;
+      ctx.strokeStyle = '#9ca3af'; ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath(); ctx.moveTo(meSc.x, meSc.y); ctx.lineTo(sc.x, sc.y); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
+
+    // 히트 영역 (스크린 좌표 — 변환 불필요)
+    registerHitArea({
+      cx: sc.x, cy: sc.y, r: nodeR + 6,
+      obj: null,
+      data: { type: 'constellation', projName: proj.name, planetCount: proj.planets.length, color, info },
+    });
+
+    // ══ 2단계: 카테고리 + 세션 (드릴다운) ════════════════════════════════════
+    if (isThisDrilled && proj.planets.length > 0) {
+      const catGroups = {};
+      proj.planets.forEach(planet => {
+        const cat = planet.userData.macroCat || 'general';
+        if (!catGroups[cat]) catGroups[cat] = [];
+        catGroups[cat].push(planet);
+      });
+      const sortedCats = Object.entries(catGroups).sort((a, b) => b[1].length - a[1].length);
+
+      // 카테고리: 프로젝트 외곽 방향 부채꼴 배치 (3D)
+      const numCatsNow = sortedCats.length;
+      const dirAngle = angle;
+      const CAT_WORLD_DIST = 14 * _scale;
+      const catAngleStep = Math.max(Math.PI / 3, Math.PI * 2 / Math.max(numCatsNow * 2, 4)); // 60도 최소간격
+      const catHalfSpan = Math.min((numCatsNow - 1) / 2 * catAngleStep, Math.PI);
+
+      sortedCats.forEach(([catKey, catPlanets], ci) => {
+        const cfg = PROJECT_TYPES[catKey] || PROJECT_TYPES.general;
+        const catAngle = numCatsNow === 1 ? dirAngle : dirAngle - catHalfSpan + ci * catAngleStep;
+        const catPos3d = new THREE.Vector3(
+          pos3d.x + Math.cos(catAngle) * CAT_WORLD_DIST,
+          0,
+          pos3d.z + Math.sin(catAngle) * CAT_WORLD_DIST,
+        );
+        const catSc = toScreen(catPos3d);
+        if (catSc.z > 1) return;
+
+        const catScale = screenScale(catPos3d);
+        const catR = Math.max(24, Math.min(44, catScale * 6));
+        const catSessionCount = catPlanets.length;
+        const isCatDrilled = _drillStage >= 2 && _drillCategory?.catKey === catKey;
+        const isCatHover = _hoveredHit?.data?.type === 'drillCategory' && _hoveredHit?.data?.catKey === catKey;
+        const catTitle = _aliases[catKey] || `${cfg.icon} ${cfg.label}`;
+        const catSub = `${catSessionCount} 세션`;
+
+        // 프로젝트 → 카테고리 연결선
+        ctx.save();
+        ctx.globalAlpha = 0.15;
+        ctx.strokeStyle = cfg.color; ctx.lineWidth = 1;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath(); ctx.moveTo(sc.x, sc.y); ctx.lineTo(catSc.x, catSc.y); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.restore();
+
+        // 카테고리 와이어프레임 구체
+        _drawWireSphere(ctx, catSc.x, catSc.y, catR, cfg.color, {
+          meridians: 2, parallels: 1, glow: true, hover: isCatHover, drilled: isCatDrilled,
+          rotation: now * 0.25 + ci,
+        });
+        _drawSphereLabel(ctx, catSc.x, catSc.y, catR, catTitle, catSub, cfg.color, false);
+
+        registerHitArea({
+          cx: catSc.x, cy: catSc.y, r: catR + 4,
+          obj: null,
+          data: {
+            type: 'drillCategory', catKey,
+            catLabel: cfg.label, catColor: cfg.color, catIcon: cfg.icon,
+            projName: proj.name, planets: catPlanets, sessionCount: catSessionCount,
+          },
+        });
+
+        // ── 세션: 카테고리 아래 세로 배치 (소형 와이어프레임 구체) ────────────
+        const maxShow = Math.min(catPlanets.length, 3);
+        const SES_WORLD_STEP = 7 * _scale;
+        for (let si = 0; si < maxShow; si++) {
+          const planet = catPlanets[si];
+          const sesPos3d = new THREE.Vector3(
+            catPos3d.x + Math.cos(catAngle) * (SES_WORLD_STEP * (si + 1)),
+            0,
+            catPos3d.z + Math.sin(catAngle) * (SES_WORLD_STEP * (si + 1)),
+          );
+          const sesSc = toScreen(sesPos3d);
+          if (sesSc.z > 1) continue;
+
+          const sesScale = screenScale(sesPos3d);
+          const sesR = Math.max(30, Math.min(50, sesScale * 6.5)); // 드릴다운 시 충분히 크게
+          const evCnt = planet.userData.eventCount || 0;
+          const isSubHover = _hoveredHit?.obj === planet;
+          const sesKey = planet.userData.clusterId || planet.userData.sessionId || '';
+          let sLabel = _aliases[sesKey] || normalizeLabel(planet.userData.intent || '', 22);
+          if (!sLabel) sLabel = deriveDisplayLabel(planet.userData, 22);
+          const sesSub = '';
+
+          // 연결선
+          ctx.save();
+          ctx.globalAlpha = 0.12;
+          ctx.strokeStyle = cfg.color; ctx.lineWidth = 0.8;
+          ctx.setLineDash([3, 3]);
+          ctx.beginPath(); ctx.moveTo(catSc.x, catSc.y); ctx.lineTo(sesSc.x, sesSc.y); ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.restore();
+
+          _drawWireSphere(ctx, sesSc.x, sesSc.y, sesR, cfg.color, {
+            meridians: 1, parallels: 1, glow: false, hover: isSubHover,
+            rotation: now * 0.3 + si,
+          });
+          const sesWhat = planet.userData.whatSummary || '';
+          const sesResult = planet.userData.resultSummary || '';
+          const sesExtraCtx = {
+            purpose: planet.userData.purpose || '',
+            techStack: planet.userData.techStack || '',
+            duration: planet.userData.sessionDuration || '',
+            aiTools: planet.userData.aiToolsUsed || '',
+          };
+          _drawSphereLabel(ctx, sesSc.x, sesSc.y, sesR, sLabel, sesSub, cfg.color, false, sesWhat, sesResult, sesExtraCtx);
+
+          registerHitArea({
+            cx: sesSc.x, cy: sesSc.y, r: sesR + 4,
+            obj: planet,
+            data: { type: 'drillSession', intent: planet.userData.intent,
+                    clusterId: planet.userData.clusterId,
+                    sessionId: planet.userData.sessionId,
+                    eventCount: evCnt, hueHex: cfg.color,
+                    catKey, catLabel: cfg.label, catColor: cfg.color, catIcon: cfg.icon,
+                    projName: proj.name, planets: catPlanets },
+          });
+        }
+
+        if (catPlanets.length > maxShow) {
+          const morePos = new THREE.Vector3(
+            catPos3d.x + Math.cos(catAngle) * (SES_WORLD_STEP * (maxShow + 1)),
+            0,
+            catPos3d.z + Math.sin(catAngle) * (SES_WORLD_STEP * (maxShow + 1)),
+          );
+          const moreSc = toScreen(morePos);
+          if (moreSc.z <= 1) {
+            ctx.globalAlpha = 0.6;
+            ctx.font = '400 10px -apple-system,sans-serif';
+            ctx.fillStyle = cfg.color; ctx.textAlign = 'center';
+            ctx.fillText(`+${catPlanets.length - maxShow}개`, moreSc.x, moreSc.y + 4);
+            ctx.globalAlpha = 1;
+          }
+        }
+      });
+    }
+  });
+
+  // 팔로워/팀원은 이제 3D 월드 구체로 항상 표시됨 (위 코드에서 처리)
+  // 줌아웃 전용 스크린 좌표 렌더링은 제거
+
+  // ── hitArea 우선순위 정렬 ─────────────────────────────────────────────────
+  _hitAreas.sort((a, b) => {
+    const drillTypes = new Set(['drillCategory', 'drillSession']);
+    const aDrill = drillTypes.has(a.data?.type) ? 1 : 0;
+    const bDrill = drillTypes.has(b.data?.type) ? 1 : 0;
+    return aDrill - bDrill;
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 개인 모드 행성 라벨 (밝은 테마, 연결선 없음)
+// ═══════════════════════════════════════════════════════════════════════════════
+function _drawPersonalPlanets() {
+  const lod = getLOD();
+  const globalAlpha = lod === 3 ? 0.12 : 1;
+  _lctx.globalAlpha = globalAlpha;
+
+  (typeof planetMeshes !== 'undefined' ? planetMeshes : []).forEach(p => {
+    if (_focusedCategory && p.userData.macroCat !== _focusedCategory) return;
+    const sc = toScreen(p.position);
+    if (sc.z > 1) return;
+
+    const scale      = screenScale(p.position);
+    const hex        = p.userData.hueHex || '#58a6ff';
+    const evCnt      = p.userData.eventCount || 0;
+    const isHovered  = _hoveredHit?.obj === p;
+    const isSelected = _selectedHit?.obj === p;
+
+    const pxSize = isSelected ? 20 : isHovered ? 16 : Math.max(9, Math.min(14, scale * 12));
+
+    // Label determination — single source of truth: orbit3d-label-rules.js
+    const text = deriveDisplayLabel(p.userData, 26);
+    if (!text) return;
+
+    _lctx.font = `600 ${pxSize}px -apple-system,'Segoe UI',sans-serif`;
+    _lctx.textAlign = 'center';
+
+    const tw = _lctx.measureText(text).width;
+    const pw = tw + 22;
+    const ph = pxSize + 10;
+    const lx = sc.x - pw / 2;
+    const ly = sc.y - ph / 2;
+
+    if (rectOverlaps(lx - 4, ly - 4, pw + 8, ph + 30)) return;
+    reserveRect(lx - 4, ly - 4, pw + 8, ph + 30);
+
+    // 선택 강조
+    if (isSelected) {
+      _lctx.save();
+      _lctx.shadowColor = hex; _lctx.shadowBlur = 10;
+      _lctx.strokeStyle = hex; _lctx.lineWidth = 2.5;
+      _lctx.globalAlpha = globalAlpha * 0.8;
+      roundRect(_lctx, lx - 2, ly - 2, pw + 4, ph + 4, (ph + 4) / 2);
+      _lctx.stroke(); _lctx.shadowBlur = 0;
+      _lctx.restore();
+      _lctx.globalAlpha = globalAlpha;
+    }
+
+    // 배경 pill (다크 글래스)
+    _lctx.save();
+    _lctx.shadowColor = isSelected ? 'rgba(6,182,212,0.2)' : 'rgba(0,0,0,0.3)';
+    _lctx.shadowBlur = isSelected ? 12 : 6; _lctx.shadowOffsetY = 1;
+    _lctx.fillStyle = isSelected ? 'rgba(6,182,212,0.12)' : 'rgba(2,6,23,0.78)';
+    roundRect(_lctx, lx, ly, pw, ph, ph / 2); _lctx.fill();
+    _lctx.shadowBlur = 0; _lctx.shadowOffsetY = 0;
+    _lctx.restore();
+
+    // 테두리 (white/10)
+    _lctx.strokeStyle = isSelected ? hex : isHovered ? 'rgba(6,182,212,0.35)' : 'rgba(255,255,255,0.10)';
+    _lctx.lineWidth = isSelected ? 1.5 : isHovered ? 1 : 0.8;
+    roundRect(_lctx, lx, ly, pw, ph, ph / 2); _lctx.stroke();
+
+    // 텍스트 (밝은 색)
+    _lctx.fillStyle = isSelected ? '#e2e8f0' : isHovered ? '#cbd5e1' : '#94a3b8';
+    _lctx.fillText(text, sc.x, ly + ph * 0.68);
+
+    // 이벤트 수 (선택/호버 시)
+    if (evCnt > 0 && pxSize >= 13) {
+      const sub = Math.max(9, pxSize * 0.5);
+      _lctx.font = `500 ${sub}px 'JetBrains Mono','Fira Code',monospace`;
+      _lctx.fillStyle = '#475569';
+      _lctx.fillText(`${evCnt}개 작업`, sc.x, ly + ph + sub + 1);
+    }
+
+    // 히트 영역
+    registerHitArea({
+      cx: sc.x, cy: sc.y, r: Math.max(pw, ph) / 2 + 4,
+      obj: p,
+      data: { type: 'session', intent: fullText, clusterId: p.userData.clusterId,
+              sessionId: p.userData.sessionId, eventCount: evCnt, hueHex: hex },
+    });
+  });
+
+  _lctx.globalAlpha = 1;
+}
+
+// ─── drawLabels ──────────────────────────────────────────────────────────────
+// ── 텍스트 겹침 방지 ──────────────────────────────────────────────────────
+const _usedRects = [];
+const LABEL_PADDING = 12; // 라벨 간 최소 간격
+
+function rectOverlaps(x, y, w, h) {
+  for (const r of _usedRects) {
+    // 패딩을 포함한 엄격한 겹침 검사
+    if (x < r.x + r.w + LABEL_PADDING &&
+        x + w + LABEL_PADDING > r.x &&
+        y < r.y + r.h + LABEL_PADDING &&
+        y + h + LABEL_PADDING > r.y) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function reserveRect(x, y, w, h) {
+  _usedRects.push({ x, y, w, h });
+}
