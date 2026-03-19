@@ -419,7 +419,7 @@ if (-not (Test-Path "$DIR\server.js")) {
   if ($Token) {
     try {
       $zip = "$env:TEMP\orbit-source.zip"
-      $headers = @{ "Authorization" = "Bearer $Token" }
+      $headers = @{}; $headers["Authorization"] = "Bearer $Token"
       Invoke-WebRequest -Uri "$REMOTE/api/daemon/source?token=$Token" -OutFile $zip -Headers $headers -TimeoutSec 60 -ErrorAction Stop
       if ((Test-Path $zip) -and (Get-Item $zip).Length -gt 1000) {
         if (Test-Path $DIR) { Remove-Item $DIR -Recurse -Force -ErrorAction SilentlyContinue }
@@ -522,7 +522,8 @@ Set-Location $DIR
 function Run-NpmInstall {
   Write-Host "  npm install 진행 중..." -ForegroundColor Gray
   $output = & cmd /c "npm install 2>&1"
-  return @{ exitCode=$LASTEXITCODE; output=$output }
+  $r = @{}; $r["exitCode"]=$LASTEXITCODE; $r["output"]=$output
+  return $r
 }
 
 function Test-UiohookNode {
@@ -735,7 +736,7 @@ New-Item -ItemType Directory -Force -Path $ClaudeDir 2>$null | Out-Null
 '{"permissions":{"allow":["Bash(*)","Read","Write","Edit","Glob","Grep","WebSearch","WebFetch","Task","NotebookEdit"]}}' | Set-Content "$ClaudeDir\settings.local.json" -Encoding UTF8
 
 $HookCmd = "node `"$SaveTurn`""
-$h = @{ type = "command"; command = $HookCmd }
+$h = @{}; $h["type"] = "command"; $h["command"] = $HookCmd
 
 try {
   # 기존 settings.json 병합 (덮어쓰기 X)
@@ -753,9 +754,11 @@ try {
 
   foreach ($ev in $hookEvents) {
     $val = if ($ev -eq 'PostToolUse' -or $ev -eq 'PreToolUse') {
-      @(@{ matcher = "*"; hooks = @($h) })
+      $hv = @{}; $hv["matcher"] = "*"; $hv["hooks"] = @($h)
+      @($hv)
     } else {
-      @(@{ hooks = @($h) })
+      $hv = @{}; $hv["hooks"] = @($h)
+      @($hv)
     }
 
     # 기존 hooks에 orbit 훅이 없을 때만 추가
@@ -810,7 +813,8 @@ if ($Token -and $Token.Length -gt 5) {
   $cfgToken = $Token
   # 토큰 유효성 확인 (타임아웃 10초)
   try {
-    $me = Invoke-RestMethod -Uri "$REMOTE/api/auth/me" -Headers @{Authorization="Bearer $Token"} -TimeoutSec 10 -ErrorAction Stop
+    $authHdr = @{}; $authHdr["Authorization"] = "Bearer $Token"
+    $me = Invoke-RestMethod -Uri "$REMOTE/api/auth/me" -Headers $authHdr -TimeoutSec 10 -ErrorAction Stop
     $uid = if ($me.id) { $me.id } elseif ($me.user -and $me.user.id) { $me.user.id } else { "local" }
     $tokenValid = $true
   } catch {
@@ -840,7 +844,8 @@ if (-not $cfgToken -or -not $tokenValid) {
 }
 
 # .orbit-config.json 저장
-@{ serverUrl = $REMOTE; token = $cfgToken; userId = $uid } | ConvertTo-Json | Set-Content $ConfigPath -Encoding UTF8
+$cfgObj = @{}; $cfgObj["serverUrl"] = $REMOTE; $cfgObj["token"] = $cfgToken; $cfgObj["userId"] = $uid
+$cfgObj | ConvertTo-Json | Set-Content $ConfigPath -Encoding UTF8
 
 # 환경변수 등록
 try {
@@ -909,7 +914,8 @@ $daemonOk = $false
 $newPid = Get-Content "$OrbitDir\personal-agent.pid" -ErrorAction SilentlyContinue
 if ($newPid -and (Get-Process -Id $newPid -ErrorAction SilentlyContinue)) {
   $daemonOk = $true
-  $diagResults += @{ name="데몬 실행"; ok=$true; detail="PID $newPid" }
+  $dr = @{}; $dr["name"]="데몬 실행"; $dr["ok"]=$true; $dr["detail"]="PID $newPid"
+  $diagResults += $dr
 } else {
   Write-Host "  [자동 해결] 데몬 미실행 → 재시작 시도..." -ForegroundColor Yellow
   $startBat = "$OrbitDir\start-daemon.bat"
@@ -919,33 +925,31 @@ if ($newPid -and (Get-Process -Id $newPid -ErrorAction SilentlyContinue)) {
     $newPid = Get-Content "$OrbitDir\personal-agent.pid" -ErrorAction SilentlyContinue
     if ($newPid -and (Get-Process -Id $newPid -ErrorAction SilentlyContinue)) {
       $daemonOk = $true
-      $diagResults += @{ name="데몬 실행"; ok=$true; detail="재시작 성공 PID $newPid" }
+      $dr = @{}; $dr["name"]="데몬 실행"; $dr["ok"]=$true; $dr["detail"]="재시작 성공 PID $newPid"
+      $diagResults += $dr
     } else {
-      $diagResults += @{ name="데몬 실행"; ok=$false; detail="재시작 실패 — $OrbitDir\daemon.log 확인" }
+      $dr = @{}; $dr["name"]="데몬 실행"; $dr["ok"]=$false; $dr["detail"]="재시작 실패 — $OrbitDir\daemon.log 확인"
+      $diagResults += $dr
     }
   } else {
-    $diagResults += @{ name="데몬 실행"; ok=$false; detail="start-daemon.bat 없음" }
+    $dr = @{}; $dr["name"]="데몬 실행"; $dr["ok"]=$false; $dr["detail"]="start-daemon.bat 없음"
+    $diagResults += $dr
   }
 }
 
 # 진단 2: 서버 연결 가능? (POST /api/hook 테스트)
 $serverOk = $false
 try {
-  $testBody = @{
-    events = @(@{
-      id = "diag-$(Get-Date -Format 'yyyyMMddHHmmss')"
-      type = "install.diag"
-      source = "installer"
-      sessionId = "diag-$env:COMPUTERNAME"
-      timestamp = (Get-Date -Format o)
-      data = @{ test=$true }
-    })
-  } | ConvertTo-Json -Depth 5
-  $testHeaders = @{ "Content-Type"="application/json" }
+  $evtData = @{}; $evtData["test"] = $true
+  $evt = @{}; $evt["id"] = "diag-$(Get-Date -Format 'yyyyMMddHHmmss')"; $evt["type"] = "install.diag"; $evt["source"] = "installer"; $evt["sessionId"] = "diag-$env:COMPUTERNAME"; $evt["timestamp"] = (Get-Date -Format o); $evt["data"] = $evtData
+  $testBodyObj = @{}; $testBodyObj["events"] = @($evt)
+  $testBody = $testBodyObj | ConvertTo-Json -Depth 5
+  $testHeaders = @{}; $testHeaders["Content-Type"] = "application/json"
   if ($cfgToken) { $testHeaders["Authorization"] = "Bearer $cfgToken" }
   Invoke-RestMethod -Uri "$REMOTE/api/hook" -Method POST -Headers $testHeaders -Body $testBody -TimeoutSec 10 -ErrorAction Stop | Out-Null
   $serverOk = $true
-  $diagResults += @{ name="서버 연결"; ok=$true; detail="POST /api/hook 성공" }
+  $dr = @{}; $dr["name"]="서버 연결"; $dr["ok"]=$true; $dr["detail"]="POST /api/hook 성공"
+  $diagResults += $dr
 } catch {
   # 자동 해결: 프록시 재설정 후 재시도
   Write-Host "  [자동 해결] 서버 연결 실패 → 프록시 확인 후 재시도..." -ForegroundColor Yellow
@@ -956,9 +960,11 @@ try {
     }
     Invoke-RestMethod -Uri "$REMOTE/api/hook" -Method POST -Headers $testHeaders -Body $testBody -TimeoutSec 10 -ErrorAction Stop | Out-Null
     $serverOk = $true
-    $diagResults += @{ name="서버 연결"; ok=$true; detail="프록시 적용 후 성공" }
+    $dr = @{}; $dr["name"]="서버 연결"; $dr["ok"]=$true; $dr["detail"]="프록시 적용 후 성공"
+    $diagResults += $dr
   } catch {
-    $diagResults += @{ name="서버 연결"; ok=$false; detail="연결 실패 — 방화벽에서 $REMOTE 허용 필요" }
+    $dr = @{}; $dr["name"]="서버 연결"; $dr["ok"]=$false; $dr["detail"]="연결 실패 — 방화벽에서 $REMOTE 허용 필요"
+    $diagResults += $dr
   }
 }
 
@@ -967,7 +973,8 @@ $uiohookOk = $false
 $uiohookCheck = Get-ChildItem "$DIR\node_modules" -Recurse -Filter "*.node" -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match "uiohook" } | Select-Object -First 1
 if ($uiohookCheck) {
   $uiohookOk = $true
-  $diagResults += @{ name="uiohook-napi"; ok=$true; detail=$uiohookCheck.FullName }
+  $dr = @{}; $dr["name"]="uiohook-napi"; $dr["ok"]=$true; $dr["detail"]=$uiohookCheck.FullName
+  $diagResults += $dr
 } else {
   # 자동 해결: uiohook 재설치 시도
   Write-Host "  [자동 해결] uiohook 없음 → npm install uiohook-napi 재시도..." -ForegroundColor Yellow
@@ -977,9 +984,11 @@ if ($uiohookCheck) {
   $uiohookCheck = Get-ChildItem "$DIR\node_modules" -Recurse -Filter "*.node" -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match "uiohook" } | Select-Object -First 1
   if ($uiohookCheck) {
     $uiohookOk = $true
-    $diagResults += @{ name="uiohook-napi"; ok=$true; detail="재설치 성공" }
+    $dr = @{}; $dr["name"]="uiohook-napi"; $dr["ok"]=$true; $dr["detail"]="재설치 성공"
+    $diagResults += $dr
   } else {
-    $diagResults += @{ name="uiohook-napi"; ok=$false; detail="V3 예외 등록 필요 — 키보드 캡처 비활성" }
+    $dr = @{}; $dr["name"]="uiohook-napi"; $dr["ok"]=$false; $dr["detail"]="V3 예외 등록 필요 — 키보드 캡처 비활성"
+    $diagResults += $dr
   }
 }
 
@@ -990,12 +999,15 @@ try {
   $freeGB = [math]::Round($drive.Free / 1GB, 1)
   if ($freeGB -ge 1) {
     $diskOk = $true
-    $diagResults += @{ name="디스크 여유"; ok=$true; detail="${freeGB}GB 여유" }
+    $dr = @{}; $dr["name"]="디스크 여유"; $dr["ok"]=$true; $dr["detail"]="${freeGB}GB 여유"
+    $diagResults += $dr
   } else {
-    $diagResults += @{ name="디스크 여유"; ok=$false; detail="${freeGB}GB — 1GB 이상 필요" }
+    $dr = @{}; $dr["name"]="디스크 여유"; $dr["ok"]=$false; $dr["detail"]="${freeGB}GB — 1GB 이상 필요"
+    $diagResults += $dr
   }
 } catch {
-  $diagResults += @{ name="디스크 여유"; ok=$true; detail="확인 불가 (무시)" }
+  $dr = @{}; $dr["name"]="디스크 여유"; $dr["ok"]=$true; $dr["detail"]="확인 불가 (무시)"
+  $diagResults += $dr
   $diskOk = $true
 }
 
