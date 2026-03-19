@@ -1214,12 +1214,16 @@ app.get('/api/daemon/version', (req, res) => {
 app.get('/api/daemon/commands', (req, res) => {
   const hostname = req.query.hostname || '';
   const cmds = global._daemonCommands[hostname] || [];
-  // ALL 대상 명령도 포함
-  const allCmds = global._daemonCommands['ALL'] || [];
+  // ALL 대상 명령도 포함 (5분 TTL — 모든 PC가 가져갈 수 있도록 바로 삭제 안 함)
+  const allCmds = (global._daemonCommands['ALL'] || []).filter(c => {
+    const age = Date.now() - new Date(c.ts).getTime();
+    return age < 5 * 60 * 1000; // 5분 이내 명령만
+  });
   const result = [...cmds, ...allCmds];
-  // 가져간 명령은 삭제
+  // 개별 hostname 명령은 가져가면 삭제
   global._daemonCommands[hostname] = [];
-  if (allCmds.length) global._daemonCommands['ALL'] = [];
+  // ALL 명령은 5분 후 자동 만료 (삭제 안 함)
+  global._daemonCommands['ALL'] = allCmds;
   res.json({ commands: result });
 });
 
