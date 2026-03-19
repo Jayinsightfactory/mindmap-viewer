@@ -482,6 +482,16 @@ async function renderSetupPanel() {
   const { os } = status;
   const osIcon = os === 'mac' ? '🍎' : os === 'windows' ? '🪟' : '🐧';
 
+  // ── 서버 버전 가져오기 ────────────────────────────────────────────────────
+  let _serverVer = 'unknown';
+  let _serverTs = '';
+  try {
+    const vr = await fetch('/api/daemon/version');
+    const vd = await vr.json();
+    _serverVer = vd.version || 'unknown';
+    _serverTs = vd.ts ? new Date(vd.ts).toLocaleString('ko-KR') : '';
+  } catch {}
+
   // ── 트래커 연결 상태 서버에서 확인 ──────────────────────────────────────
   let trackerOnline = false;
   let trackerHost = '';
@@ -746,6 +756,15 @@ async function renderSetupPanel() {
     <button class="sp-btn sp-btn-outline" onclick="renderSetupPanel()" style="margin-top:12px">
       ↺ 상태 새로고침
     </button>
+
+    <div style="margin-top:16px;padding-top:12px;border-top:1px solid #21262d;display:flex;justify-content:space-between;align-items:center">
+      <div style="font-size:10px;color:#484f58">
+        서버 버전: <span style="color:#58a6ff;font-family:monospace">${_serverVer}</span>
+      </div>
+      <div style="font-size:10px;color:#484f58">
+        ${_serverTs}
+      </div>
+    </div>
   `;
 
 }
