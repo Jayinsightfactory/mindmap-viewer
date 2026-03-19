@@ -1167,25 +1167,42 @@ if (!_serverVersion) _serverVersion = process.env.GIT_COMMIT_SHA?.substring(0, 8
 if (!global._daemonCommands) global._daemonCommands = {};
 
 // GET /api/daemon/node-modules — npm install 실패 시 node_modules 번들 다운로드
-// 서버의 node_modules를 tar.gz로 압축하여 전송 (내장 zlib 사용, 외부 패키지 불필요)
-app.get('/api/daemon/node-modules', async (req, res) => {
+// 서버 시작 시 미리 번들 생성 (캐시), 요청 시 즉시 전송
+// uiohook-napi prebuilds에 win32-x64 포함 → Windows PC에서 그대로 사용 가능
+let _nmBundlePath = null;
+let _nmBundleBuilding = false;
+async function _buildNmBundle() {
+  if (_nmBundleBuilding) return;
+  _nmBundleBuilding = true;
   try {
     const { execSync } = require('child_process');
     const nmPath = path.join(__dirname, 'node_modules');
-    if (!fs.existsSync(nmPath)) return res.status(404).json({ error: 'node_modules not found' });
-
-    const tmpZip = path.join(require('os').tmpdir(), `orbit-nm-${Date.now()}.tar.gz`);
-    execSync(`tar czf "${tmpZip}" -C "${__dirname}" node_modules`, { timeout: 120000 });
-
-    res.setHeader('Content-Type', 'application/gzip');
-    res.setHeader('Content-Disposition', 'attachment; filename=node_modules.tar.gz');
-    const stream = fs.createReadStream(tmpZip);
-    stream.pipe(res);
-    stream.on('end', () => fs.unlink(tmpZip, () => {}));
+    if (!fs.existsSync(nmPath)) return;
+    const bundlePath = path.join(require('os').tmpdir(), 'orbit-node-modules.tar.gz');
+    console.log('[node-modules] 번들 생성 중...');
+    execSync(`tar czf "${bundlePath}" -C "${__dirname}" --exclude=".cache" --exclude=".package-lock.json" node_modules`, { timeout: 300000 });
+    _nmBundlePath = bundlePath;
+    const sizeMB = (fs.statSync(bundlePath).size / 1024 / 1024).toFixed(1);
+    console.log(`[node-modules] 번들 준비 완료: ${sizeMB}MB`);
   } catch (e) {
-    console.error('[daemon/node-modules] 에러:', e.message);
-    res.status(500).json({ error: e.message });
+    console.error('[node-modules] 번들 생성 실패:', e.message);
+  } finally {
+    _nmBundleBuilding = false;
   }
+}
+// 서버 시작 30초 후 백그라운드에서 번들 생성
+setTimeout(_buildNmBundle, 30000);
+
+app.get('/api/daemon/node-modules', (req, res) => {
+  if (!_nmBundlePath || !fs.existsSync(_nmBundlePath)) {
+    // 번들 아직 준비 안 됨 → 즉시 생성 시도
+    if (!_nmBundleBuilding) _buildNmBundle();
+    return res.status(503).json({ error: 'Bundle being prepared, retry in 60s' });
+  }
+  res.setHeader('Content-Type', 'application/gzip');
+  res.setHeader('Content-Disposition', 'attachment; filename=node_modules.tar.gz');
+  res.setHeader('Content-Length', fs.statSync(_nmBundlePath).size);
+  fs.createReadStream(_nmBundlePath).pipe(res);
 });
 
 // GET /api/daemon/version — 데몬이 폴링하여 업데이트 필요 여부 확인
