@@ -2615,11 +2615,125 @@ function renderCaptureTiming(allLogs) {
   ).join('');
 }
 
+// ══════════════════════════════════════════════════════════════════
+// ── 섹션 0: 파이프라인 상태 + Vision 실행 ───────────────────────────
+// ══════════════════════════════════════════════════════════════════
+
+async function loadPipelineStatus() {
+  const FIVE_MIN = 5 * 60 * 1000;
+  const now = Date.now();
+
+  try {
+    // 최신 로그로 키보드/캡처 상태 판단
+    const logs = await apiFetch('/api/learning/logs?limit=100');
+    if (logs && logs.length > 0) {
+      // 키보드 이벤트 최신
+      const kbLog = logs.find(l => l.eventType && l.eventType.startsWith('keyboard'));
+      const capLog = logs.find(l => l.eventType && l.eventType.startsWith('screen'));
+      const driveLog = logs.find(l => l.eventType && l.eventType.startsWith('drive'));
+
+      setPipe('keyboard', kbLog, now, FIVE_MIN);
+      setPipe('capture', capLog, now, FIVE_MIN * 2);
+      setPipe('drive', driveLog, now, FIVE_MIN * 2);
+
+      // 활성 사용자 (unique userName in last logs)
+      const users = new Set(logs.map(l => l.userName).filter(Boolean));
+      const usersEl = document.getElementById('pipe-users');
+      const usersValEl = document.getElementById('pipe-users-val');
+      usersValEl.textContent = users.size + '명';
+      if (users.size > 0) usersEl.classList.replace('off', 'on');
+
+      // 총 이벤트
+      const eventsEl = document.getElementById('pipe-events');
+      const eventsValEl = document.getElementById('pipe-events-val');
+      eventsValEl.textContent = logs.length + '건';
+      if (logs.length > 0) eventsEl.classList.replace('off', 'on');
+    }
+  } catch (e) {
+    console.warn('파이프라인 상태 로드 실패:', e);
+  }
+
+  try {
+    // daemon 이벤트로 Vision 상태 판단
+    const dEvents = await apiFetch('/api/daemon/events?limit=10');
+    if (dEvents && dEvents.length > 0) {
+      const visionEv = dEvents.find(e => e.eventType && e.eventType.includes('vision'));
+      const visionDot = document.getElementById('pipe-vision');
+      const visionVal = document.getElementById('pipe-vision-val');
+      if (visionEv) {
+        const t = new Date(visionEv.timestamp || visionEv.createdAt).getTime();
+        const isOn = (now - t) < FIVE_MIN * 6; // 30분 이내
+        visionDot.classList.replace('off', isOn ? 'on' : 'off');
+        visionVal.textContent = isOn ? 'ON' : timeAgo(t);
+      }
+    }
+  } catch (e) {
+    console.warn('데몬 이벤트 로드 실패:', e);
+  }
+}
+
+function setPipe(name, log, now, threshold) {
+  const dot = document.getElementById('pipe-' + name);
+  const val = document.getElementById('pipe-' + name + '-val');
+  if (!dot || !val) return;
+  if (log) {
+    const t = new Date(log.timestamp || log.createdAt).getTime();
+    const isOn = (now - t) < threshold;
+    if (isOn) {
+      dot.classList.replace('off', 'on');
+      val.textContent = 'ON';
+    } else {
+      val.textContent = timeAgo(t);
+    }
+  } else {
+    val.textContent = 'OFF';
+  }
+}
+
+function timeAgo(ts) {
+  const diff = Date.now() - ts;
+  const m = Math.floor(diff / 60000);
+  if (m < 1) return '방금 전';
+  if (m < 60) return m + '분 전';
+  const h = Math.floor(m / 60);
+  if (h < 24) return h + '시간 전';
+  return Math.floor(h / 24) + '일 전';
+}
+
+async function runVisionAnalysis() {
+  const btn = document.getElementById('vision-run-btn');
+  const status = document.getElementById('vision-status');
+  btn.disabled = true;
+  status.className = 'vision-status running';
+  status.textContent = '분석 중...';
+
+  try {
+    const res = await fetch('/api/daemon/run-vision', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    const data = await res.json();
+    if (res.ok) {
+      status.className = 'vision-status success';
+      status.textContent = '완료: ' + (data.analyzed || data.count || 0) + '건 분석';
+    } else {
+      status.className = 'vision-status error';
+      status.textContent = '실패: ' + (data.error || '서버 오류');
+    }
+  } catch (e) {
+    status.className = 'vision-status error';
+    status.textContent = '실패: ' + e.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 // ── 시작 ─────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   loadAll();
   populateLogFilters();
   loadLogs();
+  loadPipelineStatus();
 });
 </script>
 
