@@ -111,11 +111,14 @@ function _addLiveBranch(eventData) {
     }
   }
 
-  // 5초 후 데이터 전체 리로드하여 정식 노드로 대체
+  // 5초 후 데이터 전체 리로드 — 개인 모드에서만 (팀/전사 뷰 파괴 방지)
   clearTimeout(_liveBranchTimer);
   _liveBranchTimer = setTimeout(() => {
     _cleanupLiveBranches();
-    loadData();
+    const _mode = window.RendererManager?.currentMode;
+    if (_mode === 'personal') {
+      loadData();
+    }
   }, 5000);
 }
 

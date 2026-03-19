@@ -20,7 +20,7 @@
   'use strict';
 
   // ─── 내부 상태 ──────────────────────────────────────────────────────────────
-  let _currentMode = null;
+  let _currentMode = 'personal';  // 초기값 personal (null이면 모드 검사 실패)
   let _switching   = false;  // 전환 중 중복 호출 방지
 
   // ─── MyWork 렌더러 정리 ──────────────────────────────────────────────────────
