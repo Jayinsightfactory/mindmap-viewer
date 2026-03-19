@@ -75,18 +75,26 @@ if ((Test-Path "$DIR\server.js") -and (Test-Path "$DIR\node_modules")) {
     & cmd /c "npm install --silent" 2>$null
   }
 
-  # 3. 기존 데몬 종료
+  # 3. 기존 데몬 + 자식 프로세스 모두 종료 (파일 잠금 해제)
   Show-Progress 70 "데몬 재시작"
   $pidFile = "$env:USERPROFILE\.orbit\personal-agent.pid"
   if (Test-Path $pidFile) {
     $old = Get-Content $pidFile -ErrorAction SilentlyContinue
     if ($old) { Stop-Process -Id $old -Force -ErrorAction SilentlyContinue }
   }
-  # node.exe 중 personal-agent 프로세스만 종료
+  # mindmap-viewer 관련 모든 node.exe 종료 (keyboard-watcher, screen-capture 등 자식 포함)
   Get-WmiObject Win32_Process -Filter "Name='node.exe'" -ErrorAction SilentlyContinue | ForEach-Object {
-    if ($_.CommandLine -match "personal-agent") { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+    if ($_.CommandLine -match "mindmap-viewer|personal-agent|keyboard-watcher|screen-capture|drive-uploader|daemon-updater|orbit") {
+      Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+    }
   }
-  Start-Sleep -Seconds 2
+  # orbit-daemon.bat 실행 중인 cmd.exe 종료
+  Get-WmiObject Win32_Process -Filter "Name='cmd.exe'" -ErrorAction SilentlyContinue | ForEach-Object {
+    if ($_.CommandLine -match "orbit-daemon|start-daemon") {
+      Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+    }
+  }
+  Start-Sleep -Seconds 3
 
   # 4. 설정 갱신 (토큰)
   $ConfigPath = "$env:USERPROFILE\.orbit-config.json"
@@ -225,14 +233,54 @@ try {
   }
 } catch {}
 
-# ── 10% 기존 설치 정리 ──
-Show-Progress 10 "기존 설치 정리"
+# ── 10% 기존 설치 정리 (파일 잠금 해제 포함) ──
+Show-Progress 10 "기존 프로세스 종료"
+
+# 1) PID 파일로 메인 프로세스 종료
 $pidFile = "$env:USERPROFILE\.orbit\personal-agent.pid"
 if (Test-Path $pidFile) {
   $old = Get-Content $pidFile -ErrorAction SilentlyContinue
   if ($old) { Stop-Process -Id $old -Force -ErrorAction SilentlyContinue }
   Remove-Item $pidFile -Force -ErrorAction SilentlyContinue
 }
+
+# 2) mindmap-viewer 관련 모든 node.exe 프로세스 종료 (자식 포함)
+Get-WmiObject Win32_Process -Filter "Name='node.exe'" -ErrorAction SilentlyContinue | ForEach-Object {
+  if ($_.CommandLine -match "mindmap-viewer|personal-agent|keyboard-watcher|screen-capture|drive-uploader|daemon-updater|orbit") {
+    Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+  }
+}
+
+# 3) cmd.exe 중 orbit-daemon.bat 실행 중인 프로세스 종료
+Get-WmiObject Win32_Process -Filter "Name='cmd.exe'" -ErrorAction SilentlyContinue | ForEach-Object {
+  if ($_.CommandLine -match "orbit-daemon|start-daemon") {
+    Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+  }
+}
+
+# 4) 파일 잠금 해제 대기 (DLL, .node 파일 등)
+Start-Sleep -Seconds 3
+
+# 5) 잠긴 파일 강제 해제 시도 (uiohook-napi 등)
+$lockedDir = "$DIR\node_modules"
+if (Test-Path $lockedDir) {
+  try {
+    # 잠금 테스트: node_modules 내 .node 파일 접근 시도
+    $testFile = Get-ChildItem "$lockedDir" -Recurse -Filter "*.node" -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($testFile) {
+      try {
+        [System.IO.File]::Open($testFile.FullName, 'Open', 'ReadWrite', 'None').Close()
+      } catch {
+        # 여전히 잠겨있으면 모든 node.exe 강제 종료
+        Write-Host "  [!] 파일 잠금 감지 — 모든 Node.js 프로세스 종료 중..." -ForegroundColor Yellow
+        Get-Process -Name "node" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 3
+      }
+    }
+  } catch {}
+}
+
+# 6) Startup / 예약 작업 정리
 $oldBat = [System.Environment]::GetFolderPath('Startup') + "\orbit-daemon.bat"
 if (Test-Path $oldBat) { Remove-Item $oldBat -Force -ErrorAction SilentlyContinue }
 Remove-Item "$env:USERPROFILE\.orbit\start-daemon.bat" -Force -ErrorAction SilentlyContinue
