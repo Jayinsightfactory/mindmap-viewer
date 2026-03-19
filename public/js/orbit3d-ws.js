@@ -198,7 +198,7 @@ function connectWS() {
         // workspace/team/company 모드에서 loadData() → buildPlanetSystem() 호출 시
         // RendererManager.cleanupMultilevel()이 실행되어 워크스페이스 뷰가 파괴됨
         const _curMode = window.RendererManager?.currentMode;
-        if (!_curMode || _curMode === 'personal') {
+        if (_curMode === 'personal') {
           _debouncedLoadData();
         }
         // workspace/team/company 모드에서는 scene 파괴 없이 stats만 토스트로 표시
