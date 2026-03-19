@@ -6,6 +6,33 @@ param([string]$Token = $env:ORBIT_TOKEN)
 
 $ErrorActionPreference = "Continue"
 
+# ── 관리자 권한 자동 승격 ─────────────────────────────────────────────
+# 관리자가 아니면 자동으로 관리자 PowerShell로 재실행
+$_isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $_isAdmin) {
+  Write-Host "  [!] 관리자 권한 필요 — 자동 승격 중..." -ForegroundColor Yellow
+  $scriptPath = $MyInvocation.MyCommand.Path
+  $argList = "-ExecutionPolicy Bypass -File `"$scriptPath`""
+  if ($Token) { $argList += " -Token `"$Token`"" }
+  # 스크립트 파일이 없는 경우 (irm | iex 방식) — 임시 파일 저장 후 재실행
+  if (-not $scriptPath) {
+    $tempScript = "$env:TEMP\orbit-install.ps1"
+    # 현재 스크립트 내용을 임시 파일로 저장
+    $MyInvocation.MyCommand.ScriptBlock.ToString() | Set-Content $tempScript -Encoding UTF8
+    $argList = "-ExecutionPolicy Bypass -File `"$tempScript`""
+    if ($Token) { $argList += " -Token `"$Token`"" }
+  }
+  try {
+    Start-Process powershell.exe -Verb RunAs -ArgumentList $argList -Wait
+  } catch {
+    Write-Host "  [!] 관리자 승격 거부됨 — 일반 권한으로 진행합니다" -ForegroundColor Yellow
+    Write-Host "  [!] V3 예외/Node.js 자동설치 등 일부 기능 제한" -ForegroundColor Yellow
+    # 승격 실패해도 중단하지 않고 계속 진행 (가능한 만큼)
+    $global:_skipAdminFeatures = $true
+  }
+  if (-not $global:_skipAdminFeatures) { exit 0 }
+}
+
 # 예기치 않은 오류 발생 시 창이 바로 닫히지 않도록 트랩 설정
 trap {
   Write-Host ""
@@ -91,54 +118,81 @@ Write-Host ""
 Show-Progress 5 "환경 확인"
 Report-Install "start" "ok"
 
-try {
-  $NodePath = (Get-Command node -ErrorAction Stop).Source
-} catch {
-  Report-Install "nodejs" "fail" "Node.js not found"
-  Write-Host ""
-  Write-Host "  ╔══════════════════════════════════════════════════════╗" -ForegroundColor Red
-  Write-Host "  ║   [오류] Node.js를 찾을 수 없습니다                 ║" -ForegroundColor Red
-  Write-Host "  ╠══════════════════════════════════════════════════════╣" -ForegroundColor Red
-  Write-Host "  ║                                                      ║" -ForegroundColor Red
-  Write-Host "  ║   Node.js 설치 후 다시 실행해 주세요                ║" -ForegroundColor Red
-  Write-Host "  ║   다운로드: https://nodejs.org                       ║" -ForegroundColor Red
-  Write-Host "  ║                                                      ║" -ForegroundColor Red
-  Write-Host "  ║   설치 후 반드시 터미널(PowerShell)을 새로 열어야   ║" -ForegroundColor Red
-  Write-Host "  ║   node 명령이 인식됩니다.                            ║" -ForegroundColor Red
-  Write-Host "  ║                                                      ║" -ForegroundColor Red
-  Write-Host "  ╚══════════════════════════════════════════════════════╝" -ForegroundColor Red
-  Write-Host ""
-  exit 1
-}
+# Node.js 확인 — 없으면 자동 설치
+$NodePath = $null
+try { $NodePath = (Get-Command node -ErrorAction Stop).Source } catch {}
 
 if (-not $NodePath) {
-  Report-Install "nodejs" "fail" "Node.js not found (path empty)"
   Write-Host ""
-  Write-Host "  ╔══════════════════════════════════════════════════════╗" -ForegroundColor Red
-  Write-Host "  ║   [오류] Node.js 경로를 확인할 수 없습니다          ║" -ForegroundColor Red
-  Write-Host "  ╠══════════════════════════════════════════════════════╣" -ForegroundColor Red
-  Write-Host "  ║   Node.js를 설치했다면 터미널을 새로 열어 주세요    ║" -ForegroundColor Red
-  Write-Host "  ║   다운로드: https://nodejs.org                       ║" -ForegroundColor Red
-  Write-Host "  ╚══════════════════════════════════════════════════════╝" -ForegroundColor Red
-  Write-Host ""
-  exit 1
+  Write-Host "  [!] Node.js 미설치 — 자동 설치 시도..." -ForegroundColor Yellow
+  Report-Install "nodejs" "installing" "auto-install"
+
+  $nodeInstalled = $false
+
+  # 방법 1: winget (Windows 10 1709+, Windows 11)
+  try {
+    $winget = Get-Command winget -ErrorAction SilentlyContinue
+    if ($winget) {
+      Write-Host "  [설치] winget install Node.js..." -ForegroundColor Cyan
+      & winget install OpenJS.NodeJS.LTS --accept-package-agreements --accept-source-agreements --silent 2>$null
+      # PATH 갱신
+      $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
+      try { $NodePath = (Get-Command node -ErrorAction Stop).Source; $nodeInstalled = $true } catch {}
+    }
+  } catch {}
+
+  # 방법 2: 직접 다운로드 + 설치 (winget 없는 경우)
+  if (-not $nodeInstalled) {
+    try {
+      Write-Host "  [설치] Node.js LTS 직접 다운로드..." -ForegroundColor Cyan
+      $nodeUrl = "https://nodejs.org/dist/v20.18.0/node-v20.18.0-x64.msi"
+      $nodeMsi = "$env:TEMP\node-install.msi"
+      Invoke-WebRequest -Uri $nodeUrl -OutFile $nodeMsi -TimeoutSec 120 -ErrorAction Stop
+      Write-Host "  [설치] Node.js 설치 중 (1~2분)..." -ForegroundColor Cyan
+      Start-Process msiexec.exe -ArgumentList "/i `"$nodeMsi`" /qn /norestart" -Wait -ErrorAction Stop
+      Remove-Item $nodeMsi -Force -ErrorAction SilentlyContinue
+      # PATH 갱신
+      $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
+      try { $NodePath = (Get-Command node -ErrorAction Stop).Source; $nodeInstalled = $true } catch {}
+    } catch {
+      Write-Host "  [!] 다운로드 실패: $($_.Exception.Message)" -ForegroundColor Yellow
+    }
+  }
+
+  if (-not $nodeInstalled) {
+    Report-Install "nodejs" "fail" "auto-install failed"
+    Write-Host ""
+    Write-Host "  ╔══════════════════════════════════════════════════════╗" -ForegroundColor Red
+    Write-Host "  ║   [오류] Node.js 자동 설치 실패                      ║" -ForegroundColor Red
+    Write-Host "  ║   https://nodejs.org 에서 직접 설치 후 재실행       ║" -ForegroundColor Red
+    Write-Host "  ╚══════════════════════════════════════════════════════╝" -ForegroundColor Red
+    Write-Host ""
+    exit 1
+  }
+
+  Write-Host "  [성공] Node.js 설치 완료: $(node --version)" -ForegroundColor Green
 }
 
-# Node.js 버전 >= 16 체크
+# Node.js 버전 >= 16 체크 — 낮으면 자동 업그레이드 시도
 $nodeVer = (node --version 2>$null)
 $nodeMajor = 0
 if ($nodeVer -match 'v(\d+)') { $nodeMajor = [int]$Matches[1] }
 if ($nodeMajor -lt 16) {
-  Report-Install "nodejs" "fail" "Node.js version too old: $nodeVer"
-  Write-Host ""
-  Write-Host "  ╔══════════════════════════════════════════════════════╗" -ForegroundColor Red
-  Write-Host "  ║   [오류] Node.js 버전이 너무 낮습니다               ║" -ForegroundColor Red
-  Write-Host "  ╠══════════════════════════════════════════════════════╣" -ForegroundColor Red
-  Write-Host "  ║   현재: $nodeVer  (최소 v16 이상 필요)              ║" -ForegroundColor Red
-  Write-Host "  ║   다운로드: https://nodejs.org                       ║" -ForegroundColor Red
-  Write-Host "  ╚══════════════════════════════════════════════════════╝" -ForegroundColor Red
-  Write-Host ""
-  exit 1
+  Write-Host "  [!] Node.js $nodeVer 너무 낮음 — 업그레이드 시도..." -ForegroundColor Yellow
+  try {
+    $winget = Get-Command winget -ErrorAction SilentlyContinue
+    if ($winget) {
+      & winget upgrade OpenJS.NodeJS.LTS --accept-package-agreements --accept-source-agreements --silent 2>$null
+      $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
+      $nodeVer = (node --version 2>$null)
+      if ($nodeVer -match 'v(\d+)') { $nodeMajor = [int]$Matches[1] }
+    }
+  } catch {}
+  if ($nodeMajor -lt 16) {
+    Write-Host "  [!] Node.js $nodeVer — v16 이상 필요. https://nodejs.org 에서 업그레이드" -ForegroundColor Red
+    exit 1
+  }
+  Write-Host "  [성공] Node.js 업그레이드: $nodeVer" -ForegroundColor Green
 }
 
 Report-Install "nodejs" "ok" $nodeVer
@@ -318,6 +372,21 @@ Report-Install "cleanup" "ok"
 Show-Progress 25 "프로젝트 다운로드"
 
 $hasGit = $null -ne (Get-Command git -ErrorAction SilentlyContinue)
+
+# Git 없으면 자동 설치 시도
+if (-not $hasGit) {
+  Write-Host "  [!] Git 미설치 — 자동 설치 시도..." -ForegroundColor Yellow
+  try {
+    $winget = Get-Command winget -ErrorAction SilentlyContinue
+    if ($winget) {
+      & winget install Git.Git --accept-package-agreements --accept-source-agreements --silent 2>$null
+      $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
+      $hasGit = $null -ne (Get-Command git -ErrorAction SilentlyContinue)
+      if ($hasGit) { Write-Host "  [성공] Git 설치 완료" -ForegroundColor Green }
+    }
+  } catch {}
+  if (-not $hasGit) { Write-Host "  [!] Git 자동 설치 실패 — zip 다운로드로 진행" -ForegroundColor Yellow }
+}
 
 if (Test-Path "$DIR\.git") {
   # 기존 git 리포 → pull
