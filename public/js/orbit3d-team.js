@@ -740,15 +740,13 @@ function _buildTeamSystemInner(teamData) {
         // 앱별 활동 그룹 (fullContent에서 app 파싱)
         const projects = {};
         nodes.forEach(n => {
-          if (n.type === 'idle') return;
-          // fullContent JSON 파싱 → app, windowTitle 추출
+          // 캡처/Vision만 프로젝트로 (키보드/파일/클립보드 제외)
+          if (n.type !== 'screen.capture' && n.type !== 'screen.analyzed') return;
           let fc = {};
           try { if (n.fullContent && n.fullContent.startsWith('{')) fc = JSON.parse(n.fullContent); } catch {}
-          const rawApp = fc.app || n.projectName || n.autoTitle || '';
+          const app = fc.app || n.projectName || n.autoTitle || (fc.windowTitle ? fc.windowTitle.split(' - ').pop().trim() : '') || '';
           const title = fc.windowTitle || '';
           const activity = fc.activity || n.whatSummary || '';
-          // app이 빈 문자열이면 windowTitle에서 앱명 추출
-          const app = rawApp || (title ? title.split(' - ').pop().trim() || title.split(/\s+/)[0] : '') || n.label?.replace(/^[📸⌨️🔍💤📁📋🏦]\s*/, '').split(':')[0]?.trim() || '';
           if (!app) return;
           if (!projects[app]) projects[app] = { count: 0, whatSummary: '', techStack: '' };
           projects[app].count++;
