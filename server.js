@@ -2381,6 +2381,9 @@ app.use('/api/automation', require('./routes/automation-engine')({ getDb: dbModu
 // ─── Orbit OS (팔란티어 스타일 회사 OS 명령 구조) ─────────────────────────────
 app.use('/api/os', require('./routes/orbit-os')({ getDb: dbModule.getDb }));
 
+// ─── 회사 구조 분석 + 장기 트리거 모니터 ─────────────────────────────────────
+app.use('/api/company', require('./routes/company-structure')({ getDb: dbModule.getDb }));
+
 // ─── 데모 시드 (개발/미리보기용) ─────────────────────────────────────────────
 app.post('/api/demo/seed', (req, res) => {
   const token = (req.headers.authorization || '').replace('Bearer ', '') || req.query.token;
