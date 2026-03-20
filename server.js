@@ -2350,6 +2350,9 @@ app.use('/api/issues', require('./routes/issue-predictor')({ getDb: dbModule.get
 // ─── Data Archive (데이터 보존 모니터 + 아카이브) ─────────────────────────────
 app.use('/api/data', require('./routes/data-archive')({ getDb: dbModule.getDb }));
 
+// ─── Automation Engine (변수 대응 자동화) ──────────────────────────────────────
+app.use('/api/automation', require('./routes/automation-engine')({ getDb: dbModule.getDb }));
+
 // ─── 데모 시드 (개발/미리보기용) ─────────────────────────────────────────────
 app.post('/api/demo/seed', (req, res) => {
   const token = (req.headers.authorization || '').replace('Bearer ', '') || req.query.token;
