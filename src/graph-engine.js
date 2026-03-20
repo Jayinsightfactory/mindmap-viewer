@@ -845,7 +845,8 @@ function applyActivityVisualization(nodes) {
 // ─── 유틸 ───────────────────────────────────────────
 function truncate(str, len) {
   if (!str) return '';
-  str = str.replace(/\n/g, ' ').trim();
+  str = str.replace(/\n/g, ' ').replace(/[\ufffd�]+/g, '').trim();
+  if (!str) return '';
   return str.length > len ? str.substring(0, len) + '...' : str;
 }
 
