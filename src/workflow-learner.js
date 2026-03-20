@@ -394,7 +394,32 @@ function getWorkflows() {
 function runAnalysis() {
   _endSequence(); // 현재 시퀀스 마감
   _analyzePatterns();
+  _reportToServer(); // 서버에 패턴 전송
   return getStatus();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 서버 전송 — 워크플로우 패턴/템플릿을 서버에 주기적 업로드
+// ═══════════════════════════════════════════════════════════════
+
+let _reportCallback = null;
+
+function setReporter(callback) {
+  _reportCallback = callback;
+}
+
+function _reportToServer() {
+  if (!_reportCallback) return;
+  if (_workflows.patterns.length === 0 && _workflows.templates.length === 0) return;
+  try {
+    _reportCallback({
+      type: 'workflow.patterns',
+      patterns: _workflows.patterns.slice(-20),
+      templates: _workflows.templates.slice(-10),
+      sequenceCount: _workflows.sequences.length,
+      timestamp: new Date().toISOString(),
+    });
+  } catch {}
 }
 
 module.exports = {
@@ -402,4 +427,5 @@ module.exports = {
   getStatus,
   getWorkflows,
   runAnalysis,
+  setReporter,
 };

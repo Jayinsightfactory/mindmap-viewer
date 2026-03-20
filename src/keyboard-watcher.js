@@ -468,6 +468,7 @@ function _runPeriodicAnalysis() {
       summary: analyzed.summary,
       mouseClicks: _mouseClickCount,
       mouseRegions: { ..._mouseQuadrants },
+      mousePositions: _mouseClickPositions.slice(-50),
     },
     period: { start: periodStart, end: now },
     ts: now,
@@ -482,6 +483,7 @@ function _runPeriodicAnalysis() {
   _activityBuffer = [];
   _mouseClickCount = 0;
   _mouseQuadrants = {};
+  _mouseClickPositions = [];
   _sessionStart = now;
 
   console.log('[keyboard-watcher] 원본 버퍼 삭제 완료 — 분석 결과만 전송됨');
@@ -613,6 +615,7 @@ let _backspaceCount = 0;  // 정확도 측정용
 let _copyPasteCount = 0;  // 복사-붙여넣기 카운트
 let _mouseClickCount = 0; // 마우스 클릭 카운트
 let _mouseQuadrants = {};  // 클릭 위치 영역 추적 (LT/RT/LB/RB)
+let _mouseClickPositions = []; // 클릭 좌표 기록 [{x,y,t}] — 최근 200개
 
 function _onKeydown(e) {
   // 은행 보안프로그램 일시정지 중이면 이벤트 무시
@@ -704,6 +707,7 @@ function start(opts = {}) {
   _copyPasteCount = 0;
   _mouseClickCount = 0;
   _mouseQuadrants = {};
+  _mouseClickPositions = [];
 
   try {
     _uiohook = require('uiohook-napi');
@@ -713,14 +717,17 @@ function start(opts = {}) {
     _uiohook.uIOhook.on('mousedown', (e) => {
       if (_paused) return; // 은행 보안 일시정지 중 무시
       _mouseClickCount++;
+      // 클릭 좌표 기록 (최근 200개, 자동화 스크립트 생성용)
+      _mouseClickPositions.push({ x: e.x, y: e.y, t: Date.now() });
+      if (_mouseClickPositions.length > 200) _mouseClickPositions = _mouseClickPositions.slice(-200);
       if (_screenCapture?.onMouseBurst) _screenCapture.onMouseBurst();
-      // 워크플로우 학습: 클릭 기록
+      // 워크플로우 학습: 클릭 기록 (좌표 포함)
       try {
         const wf = require('./workflow-learner');
         const q = `${e.x < 960 ? 'L' : 'R'}${e.y < 540 ? 'T' : 'B'}`;
-        wf.recordAction({ type: 'click', app: getActiveApp(), window: getActiveWindowTitle(), region: q });
+        wf.recordAction({ type: 'click', app: getActiveApp(), window: getActiveWindowTitle(), region: q, x: e.x, y: e.y });
       } catch {}
-      // Track click position regions (quadrant-based, not exact pixels for privacy)
+      // Track click position regions (quadrant-based)
       const quadrant = `${e.x < 960 ? 'L' : 'R'}${e.y < 540 ? 'T' : 'B'}`;
       _mouseQuadrants[quadrant] = (_mouseQuadrants[quadrant] || 0) + 1;
     });
