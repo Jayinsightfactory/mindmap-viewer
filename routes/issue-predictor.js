@@ -21,7 +21,7 @@ router.get('/scan', async (req, res) => {
         MAX(timestamp) as last_seen
       FROM events
       WHERE type IN ('keyboard.chunk', 'screen.capture')
-        AND timestamp > NOW() - INTERVAL '24 hours'
+        AND timestamp::timestamptz > NOW() - INTERVAL '24 hours'
         AND (
           COALESCE(data_json->>'windowTitle', data_json->'appContext'->>'currentWindow') ~ '202[0-9]-[0-9]{2}-[0-9]{2}'
         )
@@ -57,7 +57,7 @@ router.get('/scan', async (req, res) => {
         COUNT(*) as visits
       FROM events
       WHERE type IN ('keyboard.chunk', 'screen.capture')
-        AND timestamp > NOW() - INTERVAL '24 hours'
+        AND timestamp::timestamptz > NOW() - INTERVAL '24 hours'
       GROUP BY user_id, win_title
       HAVING COUNT(*) >= 100
       ORDER BY visits DESC
@@ -83,7 +83,7 @@ router.get('/scan', async (req, res) => {
           LEAD(timestamp) OVER (PARTITION BY user_id ORDER BY timestamp) as next_ts
         FROM events
         WHERE type IN ('keyboard.chunk', 'screen.capture')
-          AND timestamp > NOW() - INTERVAL '24 hours'
+          AND timestamp::timestamptz > NOW() - INTERVAL '24 hours'
       )
       SELECT user_id, timestamp as gap_start, next_ts as gap_end,
         EXTRACT(EPOCH FROM (next_ts::timestamp - timestamp::timestamp))/60 as gap_minutes
@@ -116,7 +116,7 @@ router.get('/scan', async (req, res) => {
         COUNT(*) FILTER (WHERE type IN ('keyboard.chunk', 'screen.capture')) as active_count,
         COUNT(*) as total
       FROM events
-      WHERE timestamp > NOW() - INTERVAL '24 hours'
+      WHERE timestamp::timestamptz > NOW() - INTERVAL '24 hours'
         AND type IN ('idle', 'keyboard.chunk', 'screen.capture')
       GROUP BY user_id
       HAVING COUNT(*) FILTER (WHERE type = 'idle') > 0
@@ -147,7 +147,7 @@ router.get('/scan', async (req, res) => {
         COUNT(*) as total
       FROM events
       WHERE type IN ('keyboard.chunk', 'screen.capture')
-        AND timestamp > NOW() - INTERVAL '24 hours'
+        AND timestamp::timestamptz > NOW() - INTERVAL '24 hours'
       GROUP BY user_id
       HAVING COUNT(*) >= 20
     `);
@@ -173,10 +173,10 @@ router.get('/scan', async (req, res) => {
         (SELECT MIN(e2.timestamp) FROM events e2
          WHERE e2.user_id = e1.user_id
            AND e2.type IN ('keyboard.chunk', 'screen.capture')
-           AND e2.timestamp > e1.timestamp) as recovery_time
+           AND e2.timestamp::timestamptz > e1.timestamp::timestamptz) as recovery_time
       FROM events e1
       WHERE e1.type = 'bank.security.active'
-        AND e1.timestamp > NOW() - INTERVAL '48 hours'
+        AND e1.timestamp::timestamptz > NOW() - INTERVAL '48 hours'
       ORDER BY e1.timestamp DESC
     `);
 
@@ -216,7 +216,7 @@ router.get('/scan', async (req, res) => {
         ) as deduction_count
       FROM events
       WHERE type IN ('keyboard.chunk', 'screen.capture')
-        AND timestamp > NOW() - INTERVAL '24 hours'
+        AND timestamp::timestamptz > NOW() - INTERVAL '24 hours'
       GROUP BY user_id
       HAVING COUNT(*) FILTER (WHERE
         COALESCE(data_json->>'windowTitle', data_json->'appContext'->>'currentWindow') ~* '주문'
@@ -244,7 +244,7 @@ router.get('/scan', async (req, res) => {
         COUNT(*) FILTER (WHERE type = 'idle') as idle_count,
         COUNT(*) FILTER (WHERE type IN ('keyboard.chunk', 'screen.capture')) as active_count
       FROM events
-      WHERE timestamp > NOW() - INTERVAL '48 hours'
+      WHERE timestamp::timestamptz > NOW() - INTERVAL '48 hours'
       GROUP BY user_id
       HAVING COUNT(*) FILTER (WHERE type = 'idle') > 100
         AND COUNT(*) FILTER (WHERE type IN ('keyboard.chunk', 'screen.capture')) < 10
@@ -303,7 +303,7 @@ router.get('/user/:userId', async (req, res) => {
     const r1 = await db.query(`
       SELECT COALESCE(data_json->>'windowTitle', data_json->'appContext'->>'currentWindow') as win_title,
         COUNT(*) as visits FROM events
-      WHERE user_id = $1 AND type IN ('keyboard.chunk','screen.capture') AND timestamp > NOW() - INTERVAL '24 hours'
+      WHERE user_id = $1 AND type IN ('keyboard.chunk','screen.capture') AND timestamp::timestamptz > NOW() - INTERVAL '24 hours'
         AND COALESCE(data_json->>'windowTitle', data_json->'appContext'->>'currentWindow') ~ '202[0-9]-[0-9]{2}-[0-9]{2}'
       GROUP BY win_title HAVING COUNT(*) >= 3`, [userId]);
     for (const row of r1.rows) {
@@ -318,7 +318,7 @@ router.get('/user/:userId', async (req, res) => {
     const r4 = await db.query(`
       SELECT COUNT(*) FILTER (WHERE type='idle') as idle_count,
         COUNT(*) FILTER (WHERE type IN ('keyboard.chunk','screen.capture')) as active_count
-      FROM events WHERE user_id = $1 AND timestamp > NOW() - INTERVAL '24 hours'`, [userId]);
+      FROM events WHERE user_id = $1 AND timestamp::timestamptz > NOW() - INTERVAL '24 hours'`, [userId]);
     if (r4.rows[0]) {
       const ic = +r4.rows[0].idle_count, ac = +r4.rows[0].active_count;
       const ratio = (ic+ac) > 0 ? ic/(ic+ac) : 0;
