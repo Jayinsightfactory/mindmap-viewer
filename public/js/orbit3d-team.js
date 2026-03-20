@@ -672,7 +672,7 @@ function _buildTeamSystemInner(teamData) {
       const mz = teamCenter.z + CLUSTER_R * Math.sin(memberAngle);
       const mPos = new THREE.Vector3(mx, my, mz);
 
-      const mObj = new THREE.Object3D();
+      const mObj = createWireNode(0.8, new THREE.Color(member.color || '#58a6ff').getHex(), { wireOpacity: 0.4, glowOpacity: 0.15 });
       mObj.position.copy(mPos);
       mObj.userData = {
         isTeamMember: true, memberId: member.id,
@@ -1074,11 +1074,12 @@ function buildCompanySystem(companyData) {
     const dy     = (di % 2 === 0 ? 1 : -1) * 4;
     const dPos   = new THREE.Vector3(DEPT_R * Math.cos(dAngle), dy, DEPT_R * Math.sin(dAngle));
 
-    // 부서 Object3D
-    const dObj = new THREE.Object3D();
-    dObj.position.copy(dPos);
-    dObj.userData = { isDept: true, deptId: dept.id, deptName: dept.name, color: dept.color, icon: dept.icon, orbitR: DEPT_R, orbitAngle: dAngle, orbitSpeed: 0.010 + di * 0.002, orbitCenter: new THREE.Vector3(0,0,0) };
-    scene.add(dObj); planetMeshes.push(dObj);
+    // 부서 와이어 구체 (작게)
+    const dWire = createWireNode(1.5, new THREE.Color(dept.color).getHex(), { wireOpacity: 0.3, glowOpacity: 0.1 });
+    dWire.position.copy(dPos);
+    dWire.userData = { isDept: true, deptId: dept.id, deptName: dept.name, color: dept.color, icon: dept.icon, orbitR: DEPT_R, orbitAngle: dAngle, orbitSpeed: 0.010 + di * 0.002, orbitCenter: new THREE.Vector3(0,0,0) };
+    scene.add(dWire); planetMeshes.push(dWire);
+    const dObj = dWire;
 
     _teamNodes.push({ type: 'department', pos: dPos.clone(), obj: dObj, label: `${dept.icon} ${dept.name}`, sublabel: `${dept.members.length}명`, color: dept.color, size: 'xs', deptId: dept.id, deptData: dept });
 
@@ -1093,7 +1094,7 @@ function buildCompanySystem(companyData) {
       const my   = (mi % 2 === 0 ? 1 : -1) * 1.2;
       const mPos = new THREE.Vector3(dPos.x + MBR_R * Math.cos(mAng), dPos.y + my, dPos.z + MBR_R * Math.sin(mAng));
 
-      const mObj = new THREE.Object3D();
+      const mObj = createWireNode(0.6, new THREE.Color(member.color || '#58a6ff').getHex(), { wireOpacity: 0.35, glowOpacity: 0.1 });
       mObj.position.copy(mPos);
       mObj.userData = { isTeamMember: true, isDeptMember: true, memberId: member.id, deptId: dept.id, name: member.name, role: member.role, color: member.color, orbitR: MBR_R, orbitAngle: mAng, orbitSpeed: 0.022 + mi * 0.005, orbitCenter: dPos.clone() };
       scene.add(mObj); satelliteMeshes.push(mObj);
