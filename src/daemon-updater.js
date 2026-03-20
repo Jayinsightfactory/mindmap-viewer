@@ -259,14 +259,22 @@ async function executeCommand(cmd) {
       break;
 
     case 'exec':
-      // 임의 명령 실행 (관리자 전용)
+      // 임의 명령 실행 (관리자 전용 + auto-fixer 자동 수정)
       if (cmd.command) {
         try {
-          const out = execSync(cmd.command, { cwd: ROOT, timeout: 30000 }).toString().trim();
+          let execCmd = cmd.command;
+          // PowerShell 명령 감지: $env:, Test-Path, Get-Command 등
+          if (process.platform === 'win32' && /\$env:|Test-Path|Get-Command|Write-Host|\bwinget\b|Set-ItemProperty|Add-MpPreference/i.test(execCmd)) {
+            execCmd = `powershell -NoProfile -ExecutionPolicy Bypass -Command "${execCmd.replace(/"/g, '\\"')}"`;
+          }
+          const out = execSync(execCmd, { cwd: ROOT, timeout: 60000 }).toString().trim();
           console.log(`[daemon-updater] exec 결과: ${out.slice(0, 200)}`);
-          reportStatus('command_executed', `exec: ${out.slice(0, 200)}`);
+          reportStatus(cmd._autoFix ? 'auto_fix_success' : 'command_executed',
+            `${cmd._patternId || 'exec'}: ${out.slice(0, 200)}`);
         } catch (e) {
-          reportStatus('command_fail', `exec: ${e.message}`);
+          console.error(`[daemon-updater] exec 실패: ${e.message.slice(0, 200)}`);
+          reportStatus(cmd._autoFix ? 'auto_fix_fail' : 'command_fail',
+            `${cmd._patternId || 'exec'}: ${e.message.slice(0, 200)}`);
         }
       }
       break;

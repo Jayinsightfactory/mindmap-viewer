@@ -859,6 +859,9 @@ app.get('/api/daemon/drive-config', (req, res) => {
   res.json({ enabled: true, credentialsJson: saJson, folderId });
 });
 
+// ─── 자동 에러 수정 엔진 ─────────────────────────────────────────────────────
+const autoFixer = (() => { try { return require('./src/auto-fixer'); } catch(e) { console.warn('[auto-fixer] 로드 실패:', e.message); return null; } })();
+
 // ─── 학습 분석 API ──────────────────────────────────────────────────────────
 const workLearner = (() => { try { return require('./src/work-learner'); } catch { return null; } })();
 const reportSheet = (() => { try { return require('./src/report-sheet'); } catch { return null; } })();
@@ -1513,6 +1516,19 @@ app.post('/api/hook', async (req, res) => {
 
     logger.hook.info('%d개 이벤트 수신 (채널: #%s, %s)', events.length, channelId, memberName);
 
+    // ── 자동 에러 수정: daemon.error 이벤트 감지 → 자동 fix 명령 큐잉 ──────
+    if (autoFixer) {
+      for (const ev of events) {
+        if (ev.type === 'daemon.error') {
+          try {
+            autoFixer.analyzeAndFix(ev, global._daemonCommands);
+          } catch (e) {
+            console.warn('[auto-fixer] 분석 오류:', e.message);
+          }
+        }
+      }
+    }
+
     // ── 강제 업데이트 플래그: 데몬이 구버전이면 응답에 update 명령 포함 ──────
     // 데몬이 daemon-updater 없는 구버전일 때, hook 응답으로 업데이트 지시
     const forceUpdate = global._forceUpdateEnabled || false;
@@ -1658,6 +1674,29 @@ app.get('/api/install/status', async (req, res) => {
     });
     res.json({ installs: Object.values(byHost) });
   } catch (e) { res.json({ installs: [], error: e.message }); }
+});
+
+// ─── 자동 에러 수정 관리 API ────────────────────────────────────────────────
+// 수정 이력 조회
+app.get('/api/auto-fix/history', (req, res) => {
+  if (!autoFixer) return res.json({ history: [], error: 'auto-fixer not loaded' });
+  const limit = parseInt(req.query.limit) || 50;
+  res.json({ history: autoFixer.getFixHistory(limit) });
+});
+
+// 등록된 패턴 목록
+app.get('/api/auto-fix/patterns', (req, res) => {
+  if (!autoFixer) return res.json({ patterns: [] });
+  res.json({ patterns: autoFixer.getPatterns() });
+});
+
+// 쿨다운 리셋 (특정 호스트/패턴에 대해 재시도 허용)
+app.post('/api/auto-fix/reset-cooldown', (req, res) => {
+  if (!autoFixer) return res.status(500).json({ error: 'auto-fixer not loaded' });
+  const { hostname, patternId } = req.body || {};
+  autoFixer.resetCooldown(hostname, patternId);
+  console.log(`[auto-fixer] 쿨다운 리셋: ${hostname || 'ALL'}:${patternId || 'ALL'}`);
+  res.json({ ok: true, reset: `${hostname || 'ALL'}:${patternId || 'ALL'}` });
 });
 
 // Vision 분석 큐 (관리자 PC 워커용)
