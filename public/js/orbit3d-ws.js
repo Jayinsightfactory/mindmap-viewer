@@ -111,15 +111,10 @@ function _addLiveBranch(eventData) {
     }
   }
 
-  // 5초 후 데이터 전체 리로드 — 개인 모드 + 뷰 전환 중 아닐 때만
+  // 라이브 브랜치 정리만 (전체 리로드 안 함 — 깜빡임 방지)
   clearTimeout(_liveBranchTimer);
   _liveBranchTimer = setTimeout(() => {
     _cleanupLiveBranches();
-    const _mode = window.RendererManager?.currentMode;
-    const _transitioning = typeof window._isViewTransitioning === 'function' && window._isViewTransitioning();
-    if (_mode === 'personal' && !_transitioning) {
-      loadData();
-    }
   }, 5000);
 }
 
@@ -167,14 +162,19 @@ function connectWS() {
     ? `${proto}//${location.host}?token=${encodeURIComponent(token)}`
     : `${proto}//${location.host}`;
   const ws = window._globalWs = new WebSocket(wsUrl);
-  // ── loadData 디바운서: 0.8초 안에 연속 호출 합치기 ─────────────────────────
+  // ── loadData 디바운서: 30초 안에 연속 호출 합치기 (깜빡임 방지) ──────────
   let _loadDataTimer = null;
+  let _lastLoadDataTime = 0;
   function _debouncedLoadData() {
+    const now = Date.now();
+    // 마지막 로드 후 30초 이내면 스킵 (화면 깜빡임 방지)
+    if (now - _lastLoadDataTime < 30000) return;
     clearTimeout(_loadDataTimer);
     _loadDataTimer = setTimeout(() => {
       _loadDataTimer = null;
+      _lastLoadDataTime = Date.now();
       if (typeof loadData === 'function') loadData();
-    }, 800);
+    }, 5000);
   }
 
   ws.onmessage = ev => {
@@ -243,11 +243,11 @@ function connectWS() {
       if (m.type === 'keylog_insight' && m.insight) {
         showKeylogInsight(m.insight, m.timestamp);
       }
-      // 터미널·VS Code·AI대화 이벤트 → 그래프 업데이트 + 토스트
+      // 터미널·VS Code·AI대화 이벤트 → 토스트만 (전체 리로드 안 함)
       if (m.type === 'new_event' && m.event) {
         const et = m.event.type || '';
         if (et.startsWith('terminal.') || et.startsWith('vscode.') || et === 'ai_conversation_saved') {
-          loadData();
+          _debouncedLoadData();
           showActivityPulse(et, m.event.data);
         }
       }
