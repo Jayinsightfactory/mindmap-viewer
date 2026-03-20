@@ -443,31 +443,8 @@ async function main() {
     console.error('[personal-agent] Drive 업로더 초기화 실패:', err.message);
   }
 
-  // ②-d Vision 워커 자동 실행 (Claude CLI 있는 PC만)
+  // ②-d Vision 분석은 맥미니에서만 실행 (PC에서 실행 안 함 — cmd 창 방지)
   let _visionRunning = false;
-  try {
-    const { execSync } = require('child_process');
-    const claudeCli = execSync(process.platform === 'win32' ? 'where claude' : 'which claude', { timeout: 3000 }).toString().trim().split('\n')[0];
-    if (claudeCli && driveUploader?.isEnabled()) {
-      _visionRunning = true;
-      console.log(`[personal-agent] Vision 워커 활성화 (CLI: ${claudeCli})`);
-      // 5분마다 Vision 분석 실행
-      const visionWorkerPath = path.join(ROOT, 'bin', 'vision-worker.js');
-      if (fs.existsSync(visionWorkerPath)) {
-        const { fork } = require('child_process');
-        const visionChild = fork(visionWorkerPath, [], {
-          env: { ...process.env, ORBIT_SERVER_URL: REMOTE_URL, ORBIT_TOKEN: REMOTE_TOKEN },
-          stdio: 'pipe',
-        });
-        visionChild.stdout?.on('data', d => console.log('[vision] ' + d.toString().trim()));
-        visionChild.stderr?.on('data', d => console.warn('[vision] ' + d.toString().trim()));
-        visionChild.on('exit', (code) => {
-          console.warn(`[vision] 워커 종료 (code: ${code})`);
-          _visionRunning = false;
-        });
-      }
-    }
-  } catch {}
 
   // ②-e 클립보드 캡처
   let clipboardWatcher = null;
