@@ -704,7 +704,7 @@ function _buildTeamSystemInner(teamData) {
       const tPos = new THREE.Vector3(tx, ty, tz);
 
       const _taskColor = STATUS_CFG[task.status]?.color || '#6e7681';
-      const tObj = createWireNode(0.3, new THREE.Color(_taskColor).getHex(), { wireOpacity: 0.4, glowOpacity: 0.15 });
+      const tObj = createWireNode(0.5, new THREE.Color(_taskColor).getHex(), { wireOpacity: 0.5, glowOpacity: 0.2 });
       tObj.position.copy(tPos);
       tObj.userData = {
         isTeamTask: true, memberId: member.id,
@@ -758,14 +758,14 @@ function _buildTeamSystemInner(teamData) {
         const topProjects = Object.entries(projects)
           .sort((a, b) => b[1].count - a[1].count)
           .slice(0, 5);
-        const PROJ_R = TASK_R * 1.5;
+        const PROJ_R = Math.max(TASK_R * 0.8, 2);
         console.log(`[team-project] ${_mid}: ${topProjects.length}개 프로젝트 위성 생성`);
         topProjects.forEach(([projName, proj], si) => {
           const sAngle = (si / Math.max(topProjects.length, 3)) * Math.PI * 2 + Math.PI / 4;
           const sx = _mPos.x + PROJ_R * Math.cos(sAngle);
           const sz = _mPos.z + PROJ_R * Math.sin(sAngle);
           const sPos = new THREE.Vector3(sx, _mPos.y + 1, sz);
-          const sObj = createWireNode(0.4, new THREE.Color(_color || '#58a6ff').getHex(), { wireOpacity: 0.5, glowOpacity: 0.2 });
+          const sObj = createWireNode(0.6, new THREE.Color(_color || '#58a6ff').getHex(), { wireOpacity: 0.6, glowOpacity: 0.3 });
           sObj.position.copy(sPos);
           sObj.userData = { isTeamTask: true, memberId: _mid, orbitR: PROJ_R, orbitAngle: sAngle, orbitSpeed: 0.02 + si * 0.005, orbitCenter: _mPos.clone() };
           scene.add(sObj);
