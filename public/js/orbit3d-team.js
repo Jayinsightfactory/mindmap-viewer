@@ -584,8 +584,8 @@ function _buildTeamSystemInner(teamData) {
   const TOOL_R = TEAM_CFG.TOOL_R;
   const MEMBER_ORBIT = Math.max(BASE_R * 0.8, 5); // 멤버 궤도 (팀 구체 밀착)
 
-  // ── 가운데 팀 구체 (작게) ──────────────────────────────────────────────
-  const core = createWireNode(2, 0xffd700, { wireOpacity: 0.4, glowOpacity: 0.2 });
+  // ── 가운데 팀 구체 ──────────────────────────────────────────────
+  const core = createWireNode(1, 0xffd700, { wireOpacity: 0.4, glowOpacity: 0.2 });
   core.userData.isCore = true;
   scene.add(core);
 
@@ -1059,9 +1059,9 @@ function buildCompanySystem(companyData) {
   const AGENT_R  = 6;
 
   // 코어 (회사 목표 — 와이어프레임)
-  const core = createWireNode(4, 0xffd700, { wireOpacity: 0.35, glowOpacity: 0.15 });
+  const core = createWireNode(2, 0xffd700, { wireOpacity: 0.35, glowOpacity: 0.15 });
   core.userData.isCore = true; scene.add(core);
-  const coreHl = createWireNode(8, 0xffd700, { wireOpacity: 0.06, glow: false, detail: 0 });
+  const coreHl = createWireNode(4, 0xffd700, { wireOpacity: 0.06, glow: false, detail: 0 });
   scene.add(coreHl);
 
   _teamNodes.push({ type: 'goal', pos: new THREE.Vector3(0, 0, 0), label: goal, sublabel: name, color: goalColor || '#ffd700', size: 'xl' });
@@ -1080,7 +1080,7 @@ function buildCompanySystem(companyData) {
     dObj.userData = { isDept: true, deptId: dept.id, deptName: dept.name, color: dept.color, icon: dept.icon, orbitR: DEPT_R, orbitAngle: dAngle, orbitSpeed: 0.010 + di * 0.002, orbitCenter: new THREE.Vector3(0,0,0) };
     scene.add(dObj); planetMeshes.push(dObj);
 
-    _teamNodes.push({ type: 'department', pos: dPos.clone(), obj: dObj, label: `${dept.icon} ${dept.name}`, sublabel: `${dept.members.length}명`, color: dept.color, size: 'sm', deptId: dept.id, deptData: dept });
+    _teamNodes.push({ type: 'department', pos: dPos.clone(), obj: dObj, label: `${dept.icon} ${dept.name}`, sublabel: `${dept.members.length}명`, color: dept.color, size: 'xs', deptId: dept.id, deptData: dept });
 
     // 중심→부서 연결선
     { const lg = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), dPos.clone()]); const lm = new THREE.LineBasicMaterial({ color: new THREE.Color(dept.color), transparent: true, opacity: 0.35 }); connections.push(new THREE.Line(lg, lm)); scene.add(connections[connections.length-1]); }
@@ -1261,10 +1261,11 @@ async function loadCompanyDemo() {
   clearTimeout(window._zoomLodTimer);
   if (window.RendererManager) window.RendererManager.switchTo('company');
   if (typeof track === 'function') track('view.mode_switch', { from: 'team', to: 'company' });
-  // 전사뷰 전용 슬라이더
+  // 전사뷰 전용 슬라이더 + 카메라 기본값
   document.getElementById('spacing-personal').style.display = 'none';
   document.getElementById('spacing-team').style.display = 'none';
   document.getElementById('spacing-company').style.display = '';
+  if (typeof controls !== 'undefined' && controls.sph) controls.sph.r = 43;
   const _u = typeof _orbitUser !== 'undefined' ? _orbitUser : JSON.parse(localStorage.getItem('orbitUser') || 'null');
   const token = _u?.token;
 
