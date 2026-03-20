@@ -910,15 +910,19 @@ timeout /t 10 /nobreak >nul
 goto loop
 "@
 
-  # Startup 폴더에 저장
-  $StartupBat = "$StartupDir\orbit-daemon.bat"
-  [System.IO.File]::WriteAllText($StartupBat, $batContent, [System.Text.Encoding]::GetEncoding(437))
-
-  # ~/.orbit에도 저장
+  # ~/.orbit에 bat 저장
   $startBat = "$OrbitDir\start-daemon.bat"
   [System.IO.File]::WriteAllText($startBat, $batContent, [System.Text.Encoding]::GetEncoding(437))
 
-  # 즉시 백그라운드 시작
+  # Startup 폴더에 VBS 래퍼 (cmd 창 완전 숨김)
+  $vbsContent = "CreateObject(""WScript.Shell"").Run ""cmd /c """"$startBat"""""", 0, False"
+  $StartupVbs = "$StartupDir\orbit-daemon.vbs"
+  [System.IO.File]::WriteAllText($StartupVbs, $vbsContent, [System.Text.Encoding]::ASCII)
+  # 구버전 bat 파일 정리
+  $oldBat = "$StartupDir\orbit-daemon.bat"
+  if (Test-Path $oldBat) { Remove-Item $oldBat -Force -ErrorAction SilentlyContinue }
+
+  # 즉시 백그라운드 시작 (숨김)
   Start-Process -WindowStyle Hidden -FilePath "cmd.exe" -ArgumentList "/c `"$startBat`""
 
   # 5초 대기 후 PID 확인

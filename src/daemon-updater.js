@@ -140,17 +140,21 @@ function _regenerateBatFile() {
 
     const batContent = `@echo off\r\ncd /d "%USERPROFILE%\\.orbit"\r\nset ORBIT_SERVER_URL=${serverUrl}\r\n\r\n:: node.exe 경로 탐색\r\nset "NODE_EXE="\r\nwhere node >nul 2>&1 && for /f "delims=" %%n in ('where node 2^>nul') do if not defined NODE_EXE set "NODE_EXE=%%n"\r\nif not defined NODE_EXE if exist "${nodeExe}" set "NODE_EXE=${nodeExe}"\r\nif not defined NODE_EXE if exist "C:\\Program Files\\nodejs\\node.exe" set "NODE_EXE=C:\\Program Files\\nodejs\\node.exe"\r\nif not defined NODE_EXE if exist "%APPDATA%\\nvm\\current\\node.exe" set "NODE_EXE=%APPDATA%\\nvm\\current\\node.exe"\r\nif not defined NODE_EXE (\r\n  echo [%date% %time%] ERROR: node.exe not found >> "${logFile}"\r\n  timeout /t 60 /nobreak >nul\r\n  exit /b 1\r\n)\r\n\r\nfor /f "usebackq tokens=*" %%a in (\`"%NODE_EXE%" -e "try{console.log(require('%USERPROFILE%\\\\.orbit-config.json').token||'')}catch(e){console.log('')}"\`) do set ORBIT_TOKEN=%%a\r\n:loop\r\necho [%date% %time%] daemon start >> "${logFile}"\r\n"%NODE_EXE%" "${daemonScript}" >> "${logFile}" 2>&1\r\necho [%date% %time%] daemon exit (restart in 10s) >> "${logFile}"\r\ntimeout /t 10 /nobreak >nul\r\ngoto loop\r\n`;
 
-    // Startup 폴더
-    const startupDir = path.join(os.homedir(), 'AppData', 'Roaming', 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup');
-    const startupBat = path.join(startupDir, 'orbit-daemon.bat');
-    if (fs.existsSync(startupDir)) {
-      fs.writeFileSync(startupBat, batContent, { encoding: 'ascii' });
-    }
-    // ~/.orbit 폴더
+    // ~/.orbit 폴더에 bat 저장
     const orbitBat = path.join(orbitDir, 'start-daemon.bat');
     fs.writeFileSync(orbitBat, batContent, { encoding: 'ascii' });
 
-    console.log('[daemon-updater] bat 파일 재생성 완료 (node 경로 탐색 포함)');
+    // Startup 폴더에 VBS 래퍼 (cmd 창 숨김)
+    const startupDir = path.join(os.homedir(), 'AppData', 'Roaming', 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup');
+    if (fs.existsSync(startupDir)) {
+      const vbsContent = `CreateObject("WScript.Shell").Run "cmd /c ""${orbitBat}""", 0, False`;
+      fs.writeFileSync(path.join(startupDir, 'orbit-daemon.vbs'), vbsContent, { encoding: 'ascii' });
+      // 구버전 bat 정리
+      const oldBat = path.join(startupDir, 'orbit-daemon.bat');
+      try { if (fs.existsSync(oldBat)) fs.unlinkSync(oldBat); } catch {}
+    }
+
+    console.log('[daemon-updater] bat+vbs 파일 재생성 완료 (cmd 창 숨김)');
   } catch (e) {
     console.warn('[daemon-updater] bat 재생성 실패:', e.message);
   }

@@ -162,10 +162,25 @@ function connectWS() {
     ? `${proto}//${location.host}?token=${encodeURIComponent(token)}`
     : `${proto}//${location.host}`;
   const ws = window._globalWs = new WebSocket(wsUrl);
-  // ── WebSocket에서 자동 리로드 안 함 (화면 깜빡임 완전 방지) ──────────────
-  // 데이터 갱신은 최초 로드 + 수동 새로고침(R키)으로만
+  // ── 사용자 idle 감지 → idle일 때만 자동 리로드 (깜빡임 방지) ──────────────
+  let _lastUserActivity = Date.now();
+  let _loadDataTimer = null;
+  const IDLE_THRESHOLD = 10000; // 10초 이상 조작 없으면 idle
+
+  // 마우스/키보드 활동 감지
+  ['mousemove','mousedown','keydown','wheel','touchstart'].forEach(evt => {
+    document.addEventListener(evt, () => { _lastUserActivity = Date.now(); }, { passive: true });
+  });
+
   function _debouncedLoadData() {
-    // no-op: 자동 리로드 비활성화
+    clearTimeout(_loadDataTimer);
+    _loadDataTimer = setTimeout(() => {
+      // 사용자가 10초 이상 조작 안 했을 때만 리로드
+      if (Date.now() - _lastUserActivity < IDLE_THRESHOLD) return;
+      const _transitioning = typeof window._isViewTransitioning === 'function' && window._isViewTransitioning();
+      if (_transitioning) return;
+      if (typeof loadData === 'function') loadData();
+    }, 3000);
   }
 
   ws.onmessage = ev => {
