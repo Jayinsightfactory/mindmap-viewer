@@ -74,36 +74,22 @@
       <button class="lnpc-edit-btn" onclick="openProfileEditModal()">✏️ 프로필 편집</button>
     </div>
 
-    <!-- 마켓 -->
-    <div class="ln-sep">마켓</div>
-    <button class="ln-item" onclick="toggleTalentBoard()">📡 인재 마켓</button>
-    <button class="ln-item" onclick="openPricing()">💎 구독 플랜</button>
-
     <!-- 도구 -->
     <div class="ln-sep">도구</div>
-    <button class="ln-item" onclick="toggleFeatPanel()">📋 기능 목록</button>
-    <button class="ln-item" onclick="toggleInsightPanel()">📊 전체 인사이트</button>
-    <button class="ln-item" id="ln-purpose-btn" onclick="togglePurposeTimeline()">⚡ 목적 타임라인</button>
-    <button class="ln-item" onclick="openLlmPanel()">🤖 AI 설정</button>
-    <button class="ln-item" onclick="openSetupPanel()">⚙️ 설정</button>
-    <button class="ln-item" id="ln-monitor-btn" onclick="toggleMonitor()">📹 AI 모니터</button>
+    <button class="ln-item" onclick="toggleInsightPanel()">📊 인사이트</button>
     <button class="ln-item" id="ln-suggest-btn" onclick="toggleSuggestionPanel()">💡 AI 추천</button>
-    <button class="ln-item" onclick="openLearningDataPanel()">📊 학습 데이터</button>
-    <button class="ln-item" onclick="toggleMgrPanel()">👔 관리자</button>
     <button class="ln-item" onclick="toggleTaskSidebar()">📋 할 일</button>
 
     <!-- 커뮤니티 -->
     <div class="ln-sep">커뮤니티</div>
     <button class="ln-item" id="ln-messenger-btn" onclick="toggleMessenger()">💬 채팅</button>
-    <button class="ln-item" onclick="openGuidePopup()">📖 가이드</button>
-    <button class="ln-item" id="ln-following-btn" onclick="toggleFollowPanel()" style="display:none">👥 팔로우</button>
 
     <!-- 관리 -->
     <div class="ln-sep">관리</div>
-    <button class="ln-item" onclick="openStatsPopup()">📊 통계</button>
+    <button class="ln-item" onclick="toggleMgrPanel()">👔 관리자</button>
     <button class="ln-item" onclick="openWorkspacePopup()">👥 워크스페이스</button>
-    <button class="ln-item" onclick="openProjectTogglePanel()">📍 프로젝트 표시</button>
-    <button class="ln-item" id="ln-hidden-btn" onclick="openHiddenNodePanel()" style="display:none">🙈 숨긴 노드</button>
+    <button class="ln-item" onclick="openStatsPopup()">📊 통계</button>
+    <button class="ln-item" onclick="openSetupPanel()">⚙️ 설정</button>
     <button class="ln-item" onclick="openSetupPanel()">⚙️ 설정</button>
 
     <!-- 로그아웃 (로그인 시만 표시) -->
@@ -1312,7 +1298,6 @@ function viewZoom(dir) {
 <div id="desktop-taskbar">
   <div id="taskbar-items"></div>
   <div id="taskbar-right">
-    <button class="tb-icon-btn" onclick="openPricing()" title="구독 플랜">💎</button>
     <span id="taskbar-clock"></span>
   </div>
 </div>
