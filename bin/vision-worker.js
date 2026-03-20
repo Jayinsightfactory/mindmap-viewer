@@ -142,10 +142,12 @@ function _parseResult(text) {
 async function visionCli(base64, ctx) {
   const tmpFile = path.join(TEMP_DIR, `cap-${Date.now()}.png`);
   fs.writeFileSync(tmpFile, Buffer.from(base64, 'base64'));
-  const prompt = _buildPrompt(ctx);
+  // CLI는 프롬프트에 파일 경로를 포함하면 Read 도구로 이미지 인식
+  const prompt = `${tmpFile} ${_buildPrompt(ctx)}`;
 
   return new Promise((resolve) => {
-    execFile(CLAUDE_CLI, ['-p', prompt, tmpFile], { timeout: 120000, maxBuffer: 2 * 1024 * 1024 }, (err, stdout) => {
+    execFile(CLAUDE_CLI, ['-p', prompt, '--allowedTools', 'Read', '--add-dir', TEMP_DIR],
+      { timeout: 120000, maxBuffer: 2 * 1024 * 1024 }, (err, stdout) => {
       try { fs.unlinkSync(tmpFile); } catch {}
       if (err) { console.warn(`  CLI 분석 실패: ${err.message}`); resolve(null); return; }
       resolve(_parseResult(String(stdout)));
