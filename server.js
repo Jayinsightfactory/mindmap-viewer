@@ -1922,6 +1922,22 @@ app.post('/api/register-hook-token', (req, res) => {
   }
 });
 
+// ─── 관리자 전체 그래프 (워크스페이스 전체 이벤트 — admin-analysis.html용) ────
+app.get('/api/admin/graph', async (req, res) => {
+  try {
+    const token = (req.headers.authorization || '').replace('Bearer ', '');
+    const user = verifyToken(token);
+    if (!user) return res.status(401).json({ error: 'unauthorized' });
+    // 관리자 체크
+    const adminEmails = (process.env.ADMIN_EMAILS || 'dlaww@kicda.com').split(',').map(s => s.trim().toLowerCase());
+    if (!adminEmails.includes(user.email?.toLowerCase())) return res.status(403).json({ error: 'admin only' });
+    // 전체 이벤트 (최대 5000건)
+    const events = await Promise.resolve(getAllEvents(5000));
+    const graph = buildGraph(events);
+    res.json(graph);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ─── 어드민 CLI 토큰 발급 (이메일 기반, 비밀번호 불필요) ──────────────────────
 // Railway 환경에서만 동작 (ADMIN_EMAILS에 등록된 이메일만 허용)
 app.post('/api/admin/issue-token', (req, res) => {

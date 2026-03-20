@@ -1182,7 +1182,7 @@ function filterMembers() {
 // ── 그래프 데이터 (Vision 분석 이벤트) ────────────────────────────
 async function loadGraphData() {
   try {
-    const data = await apiFetch('/api/graph');
+    const data = await apiFetch('/api/admin/graph');
     if (!data || !data.nodes) {
       document.getElementById('vision-content').innerHTML =
         '<div class="empty-state">그래프 데이터가 없습니다.</div>';
@@ -1209,15 +1209,16 @@ let _visionData = [];
 function renderVisionTable() {
   const container = document.getElementById('vision-content');
   _visionData = G.graphNodes.map(n => {
-    const meta = n.meta || n.metadata || {};
+    const d = n.data || n.meta || n.metadata || {};
     return {
-      hostname: meta.hostname || n.hostname || '-',
+      hostname: d.hostname || n.hostname || '-',
       timestamp: n.timestamp || n.ts || '',
-      app: meta.app || meta.application || n.app || '-',
-      screen: meta.screen || meta.screenTitle || n.label || '-',
-      activity: meta.activity || meta.action || n.description || '-',
-      automatable: meta.automatable || meta.isAutomatable || false,
-      automationHint: meta.automationHint || meta.hint || '',
+      app: d.app || d.application || n.app || '-',
+      screen: d.screen || d.screenTitle || n.label || '-',
+      activity: d.activity || d.action || n.description || '-',
+      automatable: d.automatable || d.isAutomatable || false,
+      automationHint: d.automationHint || d.hint || '',
+      workCategory: d.workCategory || '',
     };
   });
 
