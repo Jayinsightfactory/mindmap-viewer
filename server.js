@@ -2347,6 +2347,9 @@ app.use('/api', createDataManagementRouter({ verifyToken, dbModule }));
 // ─── Issue Predictor Agent (실시간 이슈 감지 8개 규칙) ────────────────────────
 app.use('/api/issues', require('./routes/issue-predictor')({ getDb: dbModule.getDb }));
 
+// ─── Data Archive (데이터 보존 모니터 + 아카이브) ─────────────────────────────
+app.use('/api/data', require('./routes/data-archive')({ getDb: dbModule.getDb }));
+
 // ─── 데모 시드 (개발/미리보기용) ─────────────────────────────────────────────
 app.post('/api/demo/seed', (req, res) => {
   const token = (req.headers.authorization || '').replace('Bearer ', '') || req.query.token;
