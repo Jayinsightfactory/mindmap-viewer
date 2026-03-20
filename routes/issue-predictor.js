@@ -16,7 +16,7 @@ router.get('/scan', async (req, res) => {
     // Rule 1: 과거 주문 접근 (D-3 이상 날짜 윈도우)
     const pastOrders = await db.query(`
       SELECT user_id,
-        COALESCE(data_json->>'windowTitle', data_json->'appContext'->>'currentWindow') as window,
+        COALESCE(data_json->>'windowTitle', data_json->'appContext'->>'currentWindow') as win_title,
         COUNT(*) as visits,
         MAX(timestamp) as last_seen
       FROM events
@@ -25,13 +25,13 @@ router.get('/scan', async (req, res) => {
         AND (
           COALESCE(data_json->>'windowTitle', data_json->'appContext'->>'currentWindow') ~ '202[0-9]-[0-9]{2}-[0-9]{2}'
         )
-      GROUP BY user_id, window
+      GROUP BY user_id, win_title
       HAVING COUNT(*) >= 3
       ORDER BY visits DESC
     `);
 
     for (const row of pastOrders.rows) {
-      const dateMatch = row.window?.match(/(202\d-\d{2}-\d{2})/);
+      const dateMatch = row.win_title?.match(/(202\d-\d{2}-\d{2})/);
       if (dateMatch) {
         const orderDate = new Date(dateMatch[1]);
         const daysDiff = Math.floor((now - orderDate) / (1000*60*60*24));
@@ -40,8 +40,8 @@ router.get('/scan', async (req, res) => {
             rule: 'PAST_ORDER_ACCESS',
             severity: daysDiff >= 7 ? 'critical' : 'warning',
             userId: row.user_id,
-            detail: `${daysDiff}일 전 주문 "${row.window}" 에 ${row.visits}회 접근`,
-            window: row.window,
+            detail: `${daysDiff}일 전 주문 "${row.win_title}" 에 ${row.visits}회 접근`,
+            window: row.win_title,
             visits: parseInt(row.visits),
             daysDiff,
             lastSeen: row.last_seen,
@@ -53,24 +53,24 @@ router.get('/scan', async (req, res) => {
     // Rule 2: 반복 작업 감지 (동일 화면 100회+/일)
     const repetitive = await db.query(`
       SELECT user_id,
-        COALESCE(data_json->>'windowTitle', data_json->'appContext'->>'currentWindow') as window,
+        COALESCE(data_json->>'windowTitle', data_json->'appContext'->>'currentWindow') as win_title,
         COUNT(*) as visits
       FROM events
       WHERE type IN ('keyboard.chunk', 'screen.capture')
         AND timestamp > NOW() - INTERVAL '24 hours'
-      GROUP BY user_id, window
+      GROUP BY user_id, win_title
       HAVING COUNT(*) >= 100
       ORDER BY visits DESC
     `);
 
     for (const row of repetitive.rows) {
-      if (row.window) {
+      if (row.win_title) {
         issues.push({
           rule: 'REPETITIVE_WORK',
           severity: parseInt(row.visits) >= 200 ? 'critical' : 'warning',
           userId: row.user_id,
-          detail: `"${row.window}" 화면 ${row.visits}회 반복 — 자동화 기회`,
-          window: row.window,
+          detail: `"${row.win_title}" 화면 ${row.visits}회 반복 — 자동화 기회`,
+          window: row.win_title,
           visits: parseInt(row.visits),
         });
       }
@@ -301,16 +301,16 @@ router.get('/user/:userId', async (req, res) => {
 
     // Rule 1: 과거 주문
     const r1 = await db.query(`
-      SELECT COALESCE(data_json->>'windowTitle', data_json->'appContext'->>'currentWindow') as window,
+      SELECT COALESCE(data_json->>'windowTitle', data_json->'appContext'->>'currentWindow') as win_title,
         COUNT(*) as visits FROM events
       WHERE user_id = $1 AND type IN ('keyboard.chunk','screen.capture') AND timestamp > NOW() - INTERVAL '24 hours'
         AND COALESCE(data_json->>'windowTitle', data_json->'appContext'->>'currentWindow') ~ '202[0-9]-[0-9]{2}-[0-9]{2}'
-      GROUP BY window HAVING COUNT(*) >= 3`, [userId]);
+      GROUP BY win_title HAVING COUNT(*) >= 3`, [userId]);
     for (const row of r1.rows) {
-      const m = row.window?.match(/(202\d-\d{2}-\d{2})/);
+      const m = row.win_title?.match(/(202\d-\d{2}-\d{2})/);
       if (m) {
         const d = Math.floor((new Date() - new Date(m[1])) / 86400000);
-        if (d >= 3) issues.push({ rule: 'PAST_ORDER_ACCESS', severity: d>=7?'critical':'warning', detail: `${d}일 전 "${row.window}" ${row.visits}회`, visits: +row.visits });
+        if (d >= 3) issues.push({ rule: 'PAST_ORDER_ACCESS', severity: d>=7?'critical':'warning', detail: `${d}일 전 "${row.win_title}" ${row.visits}회`, visits: +row.visits });
       }
     }
 
