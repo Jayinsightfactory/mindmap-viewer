@@ -166,9 +166,10 @@ function pullAndRestart(reason) {
   reportStatus('update_start', reason);
 
   try {
-    // git pull
+    // git reset + pull (로컬 변경사항이 있어도 강제 업데이트)
+    try { execSync('git reset --hard HEAD', { cwd: ROOT, timeout: 10000, windowsHide: true, stdio: 'pipe' }); } catch {}
     const pullResult = execSync('git pull origin main --ff-only', {
-      cwd: ROOT, timeout: 30000,
+      cwd: ROOT, timeout: 30000, windowsHide: true, stdio: 'pipe',
     }).toString().trim();
     console.log(`[daemon-updater] git pull: ${pullResult}`);
 
