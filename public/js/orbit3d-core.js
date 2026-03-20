@@ -863,7 +863,7 @@ class OrbitCam {
   constructor(cam, el) {
     this.cam = cam; this.el = el;
     this.tgt = new THREE.Vector3();
-    this.sph = { r:55, θ:0.3, φ:1.1 };                  // 컴팩트 뷰 기본 거리
+    this.sph = { r:20, θ:0.3, φ:1.1 };                  // 컴팩트 뷰 기본 거리
     this._d = false; this._r = false; this._lx=0; this._ly=0;
     this._dragging = false; // 드래그 중 플래그 (자동전환 방지)
     this._dragStartX = 0; this._dragStartY = 0;

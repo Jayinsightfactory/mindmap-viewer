@@ -757,6 +757,11 @@ function setViewPersonal() {
   if (typeof _teamMode !== 'undefined' && (_teamMode || _companyMode)) exitTeamMode();
   if (typeof _parallelMode !== 'undefined' && _parallelMode) exitParallelMode();
   localStorage.setItem('orbitViewMode', 'personal');
+  // 슬라이더 전환
+  const sp = document.getElementById('spacing-personal');
+  const st = document.getElementById('spacing-team');
+  if (sp) sp.style.display = '';
+  if (st) st.style.display = 'none';
   updateNavActiveState();
 
   setTimeout(() => { _viewTransitionLock = false; }, 2000);

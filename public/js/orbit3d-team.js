@@ -25,7 +25,7 @@ let _parallelDemoTimers = []; // 타이머 누수 방지용
 
 // ─── 팀 거리 설정값 ──────────────────────────────────────────────────────────
 // 간격 슬라이더 연동 (window._spacingScale)
-function _teamScale() { return window._spacingScale || 1.5; } // 기본 150%
+function _teamScale() { return window._teamSpacingScale || window._spacingScale || 0.6; } // 기본 150%
 const TEAM_CFG = { get MEMBER_R() { return 10 * _teamScale(); }, get TASK_R() { return 4 * _teamScale(); }, get TOOL_R() { return 2.5 * _teamScale(); } };
 
 // ─── 글로벌 접근 (디버깅 & 외부 스크립트) ────────────────────────────────────
@@ -579,11 +579,11 @@ function _buildTeamSystemInner(teamData) {
 
   const { name, goal, goalColor, members } = teamData;
 
-  // 중심 코어 (워크스페이스 — 와이어프레임)
-  const core = createWireNode(7, 0xffd700, { wireOpacity: 0.35, glowOpacity: 0.15 });
+  // 중심 코어 (워크스페이스 — 작게)
+  const core = createWireNode(3, 0xffd700, { wireOpacity: 0.35, glowOpacity: 0.15 });
   core.userData.isCore = true;
   scene.add(core);
-  const coreHl = createWireNode(14, 0xffd700, { wireOpacity: 0.08, glow: false, detail: 0 });
+  const coreHl = createWireNode(6, 0xffd700, { wireOpacity: 0.08, glow: false, detail: 0 });
   scene.add(coreHl);
 
   _teamNodes.push({ type: 'goal', pos: new THREE.Vector3(0, 0, 0),
@@ -603,8 +603,8 @@ function _buildTeamSystemInner(teamData) {
 
   const teamNames = Object.keys(teamGroups);
   const TEAM_COLORS = ['#3fb950', '#58a6ff', '#f78166', '#bc8cff', '#39d2c0', '#ffa657', '#f85149'];
-  const ORBIT_R = Math.max(BASE_R * 6, 30); // 팀 클러스터 간 거리 (넓게)
-  const CLUSTER_R = Math.max(BASE_R * 1.2, 6); // 팀 내 멤버 궤도 (팀 중심에 밀착)
+  const ORBIT_R = Math.max(BASE_R * 4, 20); // 팀 클러스터 간 거리
+  const CLUSTER_R = Math.max(BASE_R * 0.6, 4); // 팀 내 멤버 궤도 (팀 구체에 밀착)
 
   // 중심 주위 공전 궤도 링 (하나)
   {
@@ -1190,6 +1190,12 @@ async function loadTeamDemo() {
   if (window.RendererManager) window.RendererManager.switchTo('team');
   else if (window.RendererManager?.cleanupMultilevel) window.RendererManager.cleanupMultilevel();
   if (typeof track === 'function') track('view.mode_switch', { from: 'personal', to: 'team' });
+  // 슬라이더 전환 (팀 전용)
+  const _sp = document.getElementById('spacing-personal');
+  const _st = document.getElementById('spacing-team');
+  if (_sp) _sp.style.display = 'none';
+  if (_st) _st.style.display = '';
+
   const _u = typeof _orbitUser !== 'undefined' ? _orbitUser : JSON.parse(localStorage.getItem('orbitUser') || 'null');
   const token = _u?.token;
 

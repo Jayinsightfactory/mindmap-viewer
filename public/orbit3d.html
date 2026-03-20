@@ -56,15 +56,21 @@
       <span id="ln-zoom-hint"></span>
     </div>
 
-    <!-- 간격 조절 슬라이더 -->
-    <div style="padding:4px 12px;font-size:10px;color:#6e7681">
-      <label>간격 조절 <span id="spacing-mode" style="color:#06b6d4;font-size:9px">(자동)</span></label>
-      <input type="range" id="spacing-slider" min="50" max="200" value="150"
+    <!-- 간격 조절 슬라이더 (개인) -->
+    <div id="spacing-personal" style="padding:4px 12px;font-size:10px;color:#6e7681">
+      <label>간격 조절</label>
+      <input type="range" id="spacing-slider" min="50" max="200" value="80"
         style="width:100%;accent-color:#06b6d4"
-        oninput="window._spacingScale = this.value / 100; document.getElementById('spacing-val').textContent = this.value + '%'; document.getElementById('spacing-mode').textContent = '(수동)';">
-      <span id="spacing-val" style="float:right">자동</span>
-      <div style="margin-top:2px"><button onclick="window._spacingScale = null; document.getElementById('spacing-mode').textContent = '(자동)'; document.getElementById('spacing-val').textContent = '자동';"
-        style="font-size:9px;padding:2px 6px;background:none;color:#6e7681;border:1px solid #30363d;border-radius:4px;cursor:pointer">자동 복원</button></div>
+        oninput="window._spacingScale = this.value / 100; document.getElementById('spacing-val').textContent = this.value + '%';">
+      <span id="spacing-val" style="float:right">80%</span>
+    </div>
+    <!-- 간격 조절 슬라이더 (팀뷰 전용) -->
+    <div id="spacing-team" style="padding:4px 12px;font-size:10px;color:#6e7681;display:none">
+      <label>팀 간격 조절</label>
+      <input type="range" id="team-spacing-slider" min="30" max="150" value="60"
+        style="width:100%;accent-color:#3fb950"
+        oninput="window._teamSpacingScale = this.value / 100; document.getElementById('team-spacing-val').textContent = this.value + '%'; if(typeof _activeSimData!=='undefined' && _activeSimData && typeof buildTeamSystem==='function') buildTeamSystem(_activeSimData);">
+      <span id="team-spacing-val" style="float:right">60%</span>
     </div>
 
     <!-- 프로필 카드 (로그인 시 표시) -->
