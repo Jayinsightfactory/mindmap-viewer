@@ -22,6 +22,13 @@ const NODE_STYLES = {
   'task.complete':       { shape: 'circle',  color: '#3fb950', icon: '✅', label: 'Done' },
   'annotation.add':      { shape: 'box',     color: '#f0c674', icon: '📌', label: 'Note' },
   'bookmark':            { shape: 'star',    color: '#ffd700', icon: '⭐', label: 'Bookmark' },
+  'keyboard.chunk':      { shape: 'dot',     color: '#58a6ff', icon: '⌨️', label: '입력' },
+  'screen.capture':      { shape: 'dot',     color: '#f0883e', icon: '📸', label: '캡처' },
+  'screen.analyzed':     { shape: 'circle',  color: '#3fb950', icon: '🔍', label: '분석' },
+  'idle':                { shape: 'dot',     color: '#484f58', icon: '💤', label: '대기' },
+  'file.change':         { shape: 'ellipse', color: '#d2a8ff', icon: '📁', label: '파일' },
+  'clipboard.change':    { shape: 'dot',     color: '#79c0ff', icon: '📋', label: '클립보드' },
+  'bank.security.active':{ shape: 'dot',     color: '#f85149', icon: '🏦', label: '은행보안' },
 };
 
 const DEFAULT_STYLE = { shape: 'dot', color: '#8b949e', icon: '?', label: 'Event' };
@@ -438,10 +445,9 @@ function buildGraph(events) {
   // 세션별 WHAT/RESULT 사전 계산
   const sessionSummaries = computeSessionSummaries(events);
 
-  // 시스템/노이즈 이벤트 제외
+  // 시스템/노이즈 이벤트 제외 (사용자 활동 이벤트는 모두 표시)
   const NOISE_TYPES = new Set([
-    'install.progress', 'daemon.update', 'daemon.error',
-    'screen.capture',   // 메타데이터만 — Vision 분석 후 screen.analyzed로 대체
+    'install.progress', 'install.diag', 'daemon.update', 'daemon.error',
   ]);
 
   for (const event of events) {
@@ -693,6 +699,30 @@ function buildLabel(event) {
       return `✅ ${truncate(d.taskName || '작업 완료', 22)}`;
     case 'annotation.add':
       return `📌 ${truncate(d.label || '메모', 22)}`;
+    case 'keyboard.chunk': {
+      const app = d.app || d.activeApp || '';
+      const title = d.windowTitle || '';
+      return `⌨️ ${truncate(app ? `${app}: ${title}` : title || '입력', 30)}`;
+    }
+    case 'screen.capture': {
+      const app = d.app || '';
+      const title = d.windowTitle || '';
+      const trigger = d.trigger || '';
+      return `📸 ${truncate(app ? `${app}: ${title}` : trigger || '캡처', 30)}`;
+    }
+    case 'screen.analyzed': {
+      const app = d.app || '';
+      const activity = d.activity || '';
+      return `🔍 ${truncate(app ? `${app}: ${activity}` : '분석', 30)}`;
+    }
+    case 'idle':
+      return '💤 대기';
+    case 'file.change':
+      return `📁 ${truncate(d.fileName || d.filePath || '파일 변경', 22)}`;
+    case 'clipboard.change':
+      return `📋 클립보드`;
+    case 'bank.security.active':
+      return '🏦 은행 보안 활성';
     default:
       // 알 수 없는 타입도 의미 있게
       return whoPrefix + (d.toolName || d.contentPreview || event.type).slice(0, 28);
