@@ -22,14 +22,20 @@ let _timer = null;
 let _lastCaptureTime = 0;
 let _lastWindowTitle = '';
 let _screenCapture = null;
+let _wheelAccum = 0;         // 휠 누적량
+let _wheelTimer = null;      // 휠 디바운스 타이머
+let _getActiveApp = null;    // 활성 앱 조회 함수
 
-const CAPTURE_COOLDOWN = 20000; // 20초 쿨다운
+const CAPTURE_COOLDOWN = 15000; // 15초 쿨다운
+const WHEEL_THRESHOLD = 3;     // 휠 3틱 이상이면 스크롤로 판단
+const WHEEL_DEBOUNCE = 800;    // 휠 멈춘 후 0.8초 대기 → 캡처
 const KAKAO_NAMES = ['kakaotalk', 'kakao', '카카오톡'];
 
-function start(screenCaptureModule) {
+function start(screenCaptureModule, getActiveAppFn) {
   _screenCapture = screenCaptureModule;
+  _getActiveApp = getActiveAppFn || null;
   _running = true;
-  console.log('[kakao-capture] 카카오톡 자동 캡처 시작');
+  console.log('[kakao-capture] 카카오톡 자동 캡처 시작 (휠 스크롤 감지 포함)');
 }
 
 /**
@@ -76,7 +82,38 @@ function onPeriodicCheck(activeApp) {
   }
 }
 
-function stop() { _running = false; }
+/**
+ * 마우스 휠 이벤트 — uiohook에서 호출
+ * 카카오톡 활성 중 스크롤 → 이전 메시지 확인 중 → 멈추면 캡처
+ */
+function onWheel() {
+  if (!_running || !_screenCapture) return;
+
+  // 현재 앱이 카카오톡인지 확인
+  const activeApp = _getActiveApp ? _getActiveApp() : '';
+  const isKakao = KAKAO_NAMES.some(k => (activeApp || '').toLowerCase().includes(k));
+  if (!isKakao) return;
+
+  _wheelAccum++;
+
+  // 휠 멈추면 캡처 (디바운스)
+  clearTimeout(_wheelTimer);
+  _wheelTimer = setTimeout(() => {
+    if (_wheelAccum >= WHEEL_THRESHOLD) {
+      const now = Date.now();
+      if (now - _lastCaptureTime >= CAPTURE_COOLDOWN) {
+        _lastCaptureTime = now;
+        if (typeof _screenCapture.capture === 'function') {
+          _screenCapture.capture('kakao_scroll');
+          console.log(`[kakao-capture] kakao_scroll: 휠 ${_wheelAccum}틱 후 캡처`);
+        }
+      }
+    }
+    _wheelAccum = 0;
+  }, WHEEL_DEBOUNCE);
+}
+
+function stop() { _running = false; clearTimeout(_wheelTimer); }
 function isRunning() { return _running; }
 
-module.exports = { start, onAppSwitch, onPeriodicCheck, stop, isRunning };
+module.exports = { start, onAppSwitch, onPeriodicCheck, onWheel, stop, isRunning };

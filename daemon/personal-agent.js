@@ -493,13 +493,18 @@ async function main() {
   let kakaoCapture = null;
   try {
     kakaoCapture = require(path.join(ROOT, 'src/kakao-capture'));
-    kakaoCapture.start(screenCapture);
+    kakaoCapture.start(screenCapture, keyboardWatcher?.getActiveApp?.bind(keyboardWatcher));
     // 앱 전환 시 카카오톡 캡처 트리거
     if (keyboardWatcher?.on) {
       keyboardWatcher.on('appSwitch', (app, title) => {
         if (kakaoCapture) kakaoCapture.onAppSwitch(app, title);
       });
     }
+    // uiohook 휠 이벤트 → 카카오톡 스크롤 캡처
+    try {
+      const uio = require('uiohook-napi');
+      uio.uIOhook.on('wheel', () => { if (kakaoCapture) kakaoCapture.onWheel(); });
+    } catch {}
     // 10초마다 활성 앱 체크 → 카카오톡이면 주기적 캡처
     setInterval(() => {
       if (kakaoCapture && keyboardWatcher?.getActiveApp) {
