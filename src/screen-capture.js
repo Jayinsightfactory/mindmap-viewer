@@ -302,14 +302,26 @@ function capture(trigger = 'manual') {
 
     console.log(`[screen-capture] ${trigger}/${_currentActivity}: ${filename}`);
 
-    // 캡처 메타데이터만 서버 전송 (base64 이미지는 보내지 않음 — OOM 방지)
-    // Vision 워커 준비되면 _uploadCaptureToServer 활성화
-    _sendCaptureMetadata(filepath, trigger, {
-      app: _lastActiveApp,
-      windowTitle: _lastWindowTitle,
-      activityLevel: _currentActivity,
-      automationScore: _automationScore,
-    });
+    // 매 5번째 캡처는 이미지 포함 전송 (서버에서 Haiku Vision 분석)
+    // 나머지는 메타데이터만 전송 (OOM 방지)
+    if (!global._captureCounter) global._captureCounter = 0;
+    global._captureCounter++;
+    if (global._captureCounter % 5 === 1) {
+      _uploadCaptureToServer(filepath, trigger, {
+        app: _lastActiveApp,
+        windowTitle: _lastWindowTitle,
+        activityLevel: _currentActivity,
+        automationScore: _automationScore,
+        previousCapture: prevCapturePath || '',
+      });
+    } else {
+      _sendCaptureMetadata(filepath, trigger, {
+        app: _lastActiveApp,
+        windowTitle: _lastWindowTitle,
+        activityLevel: _currentActivity,
+        automationScore: _automationScore,
+      });
+    }
 
     // 정리
     try {
