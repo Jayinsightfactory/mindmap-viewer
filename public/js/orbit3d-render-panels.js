@@ -32,75 +32,46 @@ function relTime(ts) {
   return `${Math.floor(diff/86400000)}일 전`;
 }
 
-function computeInsights() {
-  const cutoff = Date.now() - 3_600_000;
+// ── 서버 분석 데이터 캐시 (직원 PC 트래킹 기반) ──
+let _analysisCache = null;
+let _analysisCacheTs = 0;
 
-  // ① 최근 1시간 이벤트 피드 (최신순, 최대 20개)
+async function _fetchAnalysis() {
+  if (_analysisCache && Date.now() - _analysisCacheTs < 60000) return _analysisCache;
+  try {
+    const r = await _authFetch('/api/learning/analyze');
+    if (r.ok) { _analysisCache = await r.json(); _analysisCacheTs = Date.now(); }
+  } catch {}
+  return _analysisCache;
+}
+
+function computeInsights() {
+  // 로컬 노드 기반 실시간 피드 (기존 유지)
+  const cutoff = Date.now() - 3_600_000;
   const recentEvents = [..._allNodes]
     .filter(n => new Date(n.timestamp || n.created_at || 0) > cutoff)
     .sort((a,b) => new Date(b.timestamp || b.created_at || 0) - new Date(a.timestamp || a.created_at || 0))
     .slice(0, 20);
+  const total = _allNodes.length;
 
-  // ② 타입 카테고리 분포
-  const CAT_META = {
-    chat:  { label:'💬 대화', color:'#58a6ff' },
-    code:  { label:'⚡ 코드', color:'#3fb950' },
-    file:  { label:'📄 파일', color:'#ffa657' },
-    git:   { label:'🌿 Git',  color:'#39d2c0' },
-    error: { label:'❌ 오류', color:'#f85149' },
-  };
-  const catDist = {};
+  // 앱별 분포 (로컬 노드에서)
+  const appDist = {};
   _allNodes.forEach(n => {
-    const cat = typeCfg(n.type).cat || 'chat';
-    catDist[cat] = (catDist[cat]||0) + 1;
+    const app = n.data?.app || n.data?.activeApp || '';
+    if (app) appDist[app] = (appDist[app] || 0) + 1;
   });
-  const total = Math.max(_allNodes.length, 1);
-  const distRows = Object.entries(catDist)
-    .sort((a,b) => b[1]-a[1])
-    .map(([cat, cnt]) => ({
-      ...(CAT_META[cat] || { label:cat, color:'#8b949e' }),
-      pct: Math.round(cnt/total*100),
-    }));
+  const APP_COLORS = { explorer:'#f0883e', kakaotalk:'#ffe066', chrome:'#58a6ff', excel:'#3fb950', nenova:'#bc8cff' };
+  const distRows = Object.entries(appDist)
+    .sort((a,b) => b[1] - a[1]).slice(0, 6)
+    .map(([app, cnt]) => ({ label: app, color: APP_COLORS[app] || '#8b949e', pct: Math.round(cnt / Math.max(total, 1) * 100) }));
 
-  // ③ 도메인 분포 → 주요 도메인
-  const DOMAIN_LABELS = {
-    auth:'🔐 인증', api:'🌐 API', data:'🗄️ 데이터', ui:'🎨 UI',
-    test:'🧪 테스트', server:'🚀 서버', infra:'🐳 인프라', fix:'🔧 버그수정',
-    git:'🌿 Git', chat:'💬 대화', general:'⚙️ 일반',
-  };
-  const domainDist = {};
-  planetMeshes.forEach(p => {
-    const d = p.userData.domain || 'general';
-    domainDist[d] = (domainDist[d]||0) + 1;
-  });
-  const topDE = Object.entries(domainDist).sort((a,b)=>b[1]-a[1])[0];
-  const topDomainLabel = topDE && planetMeshes.length
-    ? `${DOMAIN_LABELS[topDE[0]]||topDE[0]} ${Math.round(topDE[1]/planetMeshes.length*100)}%`
-    : '—';
-
-  // ④ 오류율
-  const errCount = _allNodes.filter(n => n.type === 'tool.error').length;
-  const errRate  = (errCount / total * 100).toFixed(1);
-
-  // ⑤ Git 활동
-  const gitCount = _allNodes.filter(n => n.type === 'git.commit' || n.type === 'git.push').length;
-
-  // ⑥ 최다 파일
-  const fileDist = {};
-  _allNodes.forEach(n => {
-    const fp = ((n.data?.filePath || n.data?.fileName || '')).replace(/\\/g,'/');
-    const fn = fp.split('/').pop();
-    if (fn && fn.includes('.')) fileDist[fn] = (fileDist[fn]||0) + 1;
-  });
-  const topFile = Object.entries(fileDist).sort((a,b)=>b[1]-a[1])[0]?.[0] || '—';
-
-  return { recentEvents, distRows, topDomainLabel, errRate, gitCount, topFile, total };
+  return { recentEvents, distRows, total };
 }
 
 const _INS_TYPE_ICON = {
-  'user.message':'💬', 'assistant.message':'🤖', 'assistant.response':'🤖',
-  'tool.start':'⚡', 'tool.end':'✅', 'tool.error':'❌',
-  'file.read':'📄', 'file.write':'✏️', 'git.commit':'🌿', 'git.push':'🚀',
+  'keyboard.chunk':'⌨️', 'screen.capture':'📸', 'screen.analyzed':'🔍',
+  'idle':'💤', 'file.change':'📁', 'clipboard.change':'📋',
+  'bank.security.active':'🏦', 'tool.end':'✅', 'file.read':'📄', 'file.write':'✏️',
 };
 
 // ─── 탭 전환 ─────────────────────────────────────────────────────────────────
@@ -128,14 +99,18 @@ window.switchInsightTab = switchInsightTab;
 function renderFeedTab() {
   const ins = computeInsights();
   document.getElementById('ins-feed-list').innerHTML = ins.recentEvents.length
-    ? ins.recentEvents.map(n => `
-        <div class="ins-feed-item">
+    ? ins.recentEvents.map(n => {
+        const app = n.data?.app || n.data?.activeApp || '';
+        const title = n.data?.windowTitle || '';
+        const label = n.label || (app ? `${app}: ${title}` : n.type);
+        return `<div class="ins-feed-item">
           <span class="ins-feed-icon">${_INS_TYPE_ICON[n.type]||'·'}</span>
           <div class="ins-feed-body">
-            <div class="ins-feed-label" title="${escHtml(n.label||n.type)}">${escHtml((n.label||n.type).slice(0,42))}</div>
+            <div class="ins-feed-label" title="${escHtml(label)}">${escHtml(label.slice(0,42))}</div>
             <div class="ins-feed-time">${relTime(n.timestamp||n.created_at)}</div>
           </div>
-        </div>`).join('')
+        </div>`;
+      }).join('')
     : `<div style="padding:14px 4px;color:#6e7681;font-size:12px;">
          최근 1시간 이벤트 없음<br>
          <span style="font-size:10px;color:#3d444d">전체 ${ins.total.toLocaleString()}개 보유</span>
@@ -144,165 +119,85 @@ function renderFeedTab() {
     `총 ${ins.recentEvents.length}개 · 최근 1시간`;
 }
 
-// ─── 목적 카드 탭 ─────────────────────────────────────────────────────────────
-function buildPurposeCards() {
-  const groups = {};
-  _allNodes.forEach(n => {
-    const key = n.purposeLabel || n.data?.purposeLabel;
-    if (!key) return;
-    if (!groups[key]) groups[key] = [];
-    groups[key].push(n);
-  });
+// ─── 앱 사용 분석 탭 (서버 데이터 기반) ──────────────────────────────────────
+async function renderPurposeTab() {
+  const el = document.getElementById('ins-purpose-list');
+  el.innerHTML = '<div style="padding:14px;color:#6e7681;font-size:12px;text-align:center">분석 중...</div>';
 
-  return Object.entries(groups).map(([purposeLabel, events]) => {
-    // 시간순 정렬
-    events.sort((a,b) =>
-      new Date(a.timestamp||a.created_at||0) - new Date(b.timestamp||b.created_at||0));
-    const firstTs = events[0]?.timestamp || events[0]?.created_at;
-    const lastTs  = events[events.length-1]?.timestamp || events[events.length-1]?.created_at;
-
-    // ① 트리거 질문
-    const triggerEv = events.find(e => e.type === 'user.message');
-    const trigger   = (triggerEv?.label || triggerEv?.data?.text || '').trim();
-
-    // ② 에이전트 스텝 감지 (순서 보존, 중복 제거)
-    const agentSteps = [];
-    const seenStep   = new Set();
-    events.forEach(e => {
-      if (e.type !== 'tool.start') return;
-      const tname = e.data?.toolName || e.label || '';
-      const fpath = (e.data?.filePath || e.data?.fileName || '');
-      let step = null;
-      if      (/Glob|Grep/.test(tname) && !/Edit|Write/.test(tname)) step = { label:'Explore', icon:'🔍' };
-      else if (/^Read$/i.test(tname)   && !/Edit|Write/.test(tname)) step = { label:'탐색', icon:'📂' };
-      else if (/plan\.md/i.test(fpath) && /Write|Edit/.test(tname))  step = { label:'Plan', icon:'📋' };
-      else if (/Write|Edit/.test(tname))                              step = { label:'구현', icon:'⚡' };
-      else if (/Bash/i.test(tname)) {
-        const cmd = e.data?.command || '';
-        if      (/git\s+commit/i.test(cmd)) step = { label:'커밋', icon:'🌿' };
-        else if (/git\s+push/i.test(cmd))   step = { label:'푸시', icon:'🚀' };
-        else                                step = { label:'Bash', icon:'💻' };
-      }
-      if (step && !seenStep.has(step.label)) {
-        seenStep.add(step.label);
-        agentSteps.push(step);
-      }
-    });
-
-    // ③ 변경 파일 목록
-    const fileDist = {};
-    events.forEach(e => {
-      const fp = (e.data?.filePath || e.data?.fileName || '').replace(/\\/g, '/');
-      const fn = fp.split('/').pop();
-      if (!fn || !fn.includes('.')) return;
-      if (!fileDist[fn]) fileDist[fn] = { name: fn, write: 0 };
-      if (['file.write','tool.start'].includes(e.type) &&
-          /Write|Edit/.test(e.data?.toolName || '')) fileDist[fn].write++;
-    });
-
-    // ④ Git 커밋 해시 (마지막)
-    const commitEv  = [...events].reverse().find(e => e.type === 'git.commit');
-    const commitHash = commitEv?.data?.hash || commitEv?.data?.commitHash || '';
-
-    // ⑤ 상태 판정
-    const hasError = events.some(e => e.type === 'tool.error');
-    let statusIcon;
-    if      (hasError)        statusIcon = '❌';
-    else if (commitHash)      statusIcon = '✅';
-    else if (agentSteps.length) statusIcon = '⚡';
-    else                      statusIcon = '⏳';
-
-    return { purposeLabel, trigger, agentSteps,
-             files: Object.values(fileDist),
-             commitHash, hasError, statusIcon, firstTs, lastTs };
-  }).sort((a,b) => new Date(b.lastTs||0) - new Date(a.lastTs||0));
-}
-
-function renderPurposeTab() {
-  const cards = buildPurposeCards();
-  const el    = document.getElementById('ins-purpose-list');
-  if (!cards.length) {
-    el.innerHTML = `<div class="ins-purpose-empty">
-      📭 목적(purposeLabel) 데이터 없음<br>
-      <span style="font-size:10px;color:#3d444d;margin-top:6px;display:block;">
-        이벤트에 purposeLabel 필드가 있어야 합니다
-      </span>
-    </div>`;
+  const data = await _fetchAnalysis();
+  if (!data || data.status !== 'ok') {
+    el.innerHTML = '<div style="padding:14px;color:#6e7681;font-size:12px;text-align:center">분석 데이터 없음</div>';
     return;
   }
 
-  el.innerHTML = cards.map(c => {
-    // 스텝 HTML
-    const stepsHtml = c.agentSteps.length
-      ? c.agentSteps.map((s, i) =>
-          `${i > 0 ? '<span class="ins-pc-step-arrow">›</span>' : ''}
-           <span class="ins-pc-step ok">${s.icon} ${escHtml(s.label)}</span>`).join('')
-      : `<span style="font-size:10px;color:#3d444d">스텝 정보 없음</span>`;
+  const totalEv = (data.topApps || []).reduce((s, a) => s + a[1], 0) || 1;
+  const APP_COLORS = { explorer:'#f0883e', kakaotalk:'#ffe066', chrome:'#58a6ff', excel:'#3fb950', nenova:'#bc8cff' };
 
-    // 파일 HTML
-    const filesHtml = c.files.length
-      ? c.files.slice(0, 4).map(f =>
-          `<span class="ins-pc-file" title="${escHtml(f.name)}">
-            ${escHtml(f.name.slice(0, 20))}
-            ${f.write ? '<span class="ins-pc-diff">✏️</span>' : ''}
-           </span>`).join('')
-      : '';
-
-    // 액션 버튼 HTML — 롤백 버튼을 실행 패널로 연결
-    const rollbackPayload = c.commitHash ? JSON.stringify({
-      type: 'rollback', hash: c.commitHash,
-      projectDir: '', description: `${c.purposeLabel} 롤백 (${c.commitHash.slice(0,7)})`,
-    }).replace(/"/g, '&quot;') : '';
-    const actionsHtml = c.commitHash
-      ? `<div class="ins-pc-actions">
-           <div class="ins-pc-commit-btn" title="커밋 해시: ${escHtml(c.commitHash)}">
-             🌿 ${escHtml(c.commitHash.slice(0,7))}
-           </div>
-           <div class="ins-pc-rollback-btn"
-                onclick="openExecPanel(${rollbackPayload})">
-             ↩ 롤백 미리보기
-           </div>
-         </div>`
-      : '';
-
-    return `<div class="ins-purpose-card">
-      <div class="ins-pc-hdr">
-        <span class="ins-pc-status">${c.statusIcon}</span>
-        <span class="ins-pc-label" title="${escHtml(c.purposeLabel)}">
-          ${escHtml(c.purposeLabel.slice(0, 34))}${c.purposeLabel.length>34?'…':''}
-        </span>
-        <span class="ins-pc-time">${relTime(c.lastTs)}</span>
+  // 앱별 사용 카드
+  const appCards = (data.topApps || []).slice(0, 6).map(([app, cnt]) => {
+    const pct = Math.round(cnt / totalEv * 100);
+    const c = APP_COLORS[app] || '#8b949e';
+    return `<div style="padding:8px 0;border-bottom:1px solid #21262d">
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+        <span style="font-size:12px;color:#e6edf3">${escHtml(app)}</span>
+        <span style="font-size:11px;color:#8b949e">${cnt}건 (${pct}%)</span>
       </div>
-      ${c.trigger ? `<div class="ins-pc-trigger">💬 "${escHtml(c.trigger.slice(0,60))}${c.trigger.length>60?'…':''}"</div>` : ''}
-      <div class="ins-pc-steps">${stepsHtml}</div>
-      ${filesHtml ? `<div class="ins-pc-files">${filesHtml}</div>` : ''}
-      ${actionsHtml}
+      <div style="height:5px;background:#21262d;border-radius:3px;overflow:hidden">
+        <div style="height:100%;width:${pct}%;background:${c};border-radius:3px"></div>
+      </div>
     </div>`;
   }).join('');
+
+  // 카테고리 칩
+  const catChips = (data.topCategories || []).slice(0, 5).map(([cat, cnt]) => {
+    const pct = Math.round(cnt / totalEv * 100);
+    return `<span style="display:inline-block;padding:3px 8px;margin:2px;border-radius:10px;font-size:11px;background:#21262d;color:#e6edf3">${escHtml(cat)} ${pct}%</span>`;
+  }).join('');
+
+  // 인사이트
+  const insights = (data.insights || []).map(i => {
+    const icon = i.type === 'automation' ? '⚡' : i.type === 'focus' ? '🎯' : '💡';
+    return `<div style="padding:5px 0;font-size:11px;color:#cdd9e5">${icon} ${escHtml(i.text)}</div>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div style="padding:4px 0">
+      <div style="font-size:11px;color:#6e7681;margin-bottom:6px">앱 사용 분포</div>
+      ${appCards}
+    </div>
+    ${catChips ? `<div style="padding:8px 0"><div style="font-size:11px;color:#6e7681;margin-bottom:4px">작업 카테고리</div>${catChips}</div>` : ''}
+    ${insights ? `<div style="padding:8px 0;border-top:1px solid #21262d"><div style="font-size:11px;color:#6e7681;margin-bottom:4px">인사이트</div>${insights}</div>` : ''}
+    <div style="text-align:center;font-size:10px;color:#484f58;padding-top:6px">
+      이벤트 ${data.eventCount?.toLocaleString() || 0}건 · 세션 ${data.sessionCount || 0}개 · 자동화 ${data.automationScore || 0}/100
+    </div>
+  `;
 }
 window.renderPurposeTab = renderPurposeTab;
 
-// ─── 통계 탭 ─────────────────────────────────────────────────────────────────
+// ─── 통계 탭 (앱 분포 + 세션 요약) ─────────────────────────────────────────
 function renderStatsTab() {
   const ins = computeInsights();
-  document.getElementById('ins-dist-list').innerHTML = ins.distRows
-    .filter(r => r.pct > 0)
-    .map(r => `
+  document.getElementById('ins-dist-list').innerHTML = ins.distRows.length
+    ? ins.distRows.filter(r => r.pct > 0).map(r => `
       <div class="ins-dist-row">
-        <span class="ins-dist-label">${r.label}</span>
+        <span class="ins-dist-label">${escHtml(r.label)}</span>
         <div class="ins-dist-bg">
           <div class="ins-dist-fill" style="width:${r.pct}%;background:${r.color}"></div>
         </div>
         <span class="ins-dist-pct">${r.pct}%</span>
-      </div>`).join('');
+      </div>`).join('')
+    : '<div style="padding:8px;color:#6e7681;font-size:11px">앱 데이터 없음</div>';
 
-  const health = parseFloat(ins.errRate) < 5
-    ? '✅ 건강함' : parseFloat(ins.errRate) < 15 ? '⚠️ 주의' : '🔴 불안정';
+  // KV 리스트: 직원 트래킹 기반 요약
+  const captureCount = _allNodes.filter(n => n.type === 'screen.capture').length;
+  const keyboardCount = _allNodes.filter(n => n.type === 'keyboard.chunk').length;
+  const analyzedCount = _allNodes.filter(n => n.type === 'screen.analyzed').length;
+  const idleCount = _allNodes.filter(n => n.type === 'idle').length;
   document.getElementById('ins-kv-list').innerHTML = [
-    ['🔧 주요 도메인', ins.topDomainLabel],
-    ['⚠️ 오류율',     `${ins.errRate}% ${health}`],
-    ['🌿 Git 활동',   `${ins.gitCount}회`],
-    ['🏆 최다 파일',   ins.topFile],
+    ['📸 캡처',      `${captureCount}건`],
+    ['⌨️ 키보드',    `${keyboardCount}건`],
+    ['🔍 Vision 분석', `${analyzedCount}건`],
+    ['💤 대기',      `${idleCount}건`],
     ['📦 전체 이벤트', `${ins.total.toLocaleString()}개`],
   ].map(([k,v]) => `
     <div class="ins-kv-row">
@@ -311,38 +206,33 @@ function renderStatsTab() {
     </div>`).join('');
 }
 
-// ─── 루틴 분석 탭 ───────────────────────────────────────────────────────────
-let _routineCache = null;
-let _routineLoading = false;
-
+// ─── 최근 작업 세션 탭 ──────────────────────────────────────────────────────
 async function renderRoutineTab() {
   const el = document.getElementById('ins-routine-content');
   if (!el) return;
 
-  // 로딩 중이면 스킵
-  if (_routineLoading) return;
+  el.innerHTML = '<div style="text-align:center;padding:28px 0;color:#6e7681;font-size:12px">로딩 중...</div>';
 
-  // 캐시가 있으면 바로 렌더
-  if (_routineCache) {
-    _renderRoutineData(el, _routineCache);
+  const data = await _fetchAnalysis();
+  if (!data || !data.sessions?.length) {
+    el.innerHTML = '<div style="text-align:center;padding:20px 0;color:#6e7681;font-size:12px">세션 데이터 없음</div>';
     return;
   }
 
-  _routineLoading = true;
-  el.innerHTML = '<div style="text-align:center;padding:28px 0;color:#6e7681;font-size:12px">분석 중...</div>';
-
-  try {
-    const r = await fetch('/api/patterns');
-    const data = await r.json();
-    _routineCache = data;
-    _renderRoutineData(el, data);
-    // 5분 후 캐시 만료
-    setTimeout(() => { _routineCache = null; }, 300000);
-  } catch (e) {
-    el.innerHTML = `<div style="text-align:center;padding:20px 0;color:#f85149;font-size:11px">로드 실패: ${escHtml(e.message)}</div>`;
-  } finally {
-    _routineLoading = false;
-  }
+  el.innerHTML = data.sessions.slice(0, 8).map(s => {
+    const app = s.primaryApp || '';
+    const cat = s.primaryCategory || '';
+    const dur = s.durationMin ? `${s.durationMin}분` : '';
+    const wins = (s.uniqueWindows || []).slice(0, 2).join(', ');
+    return `<div style="padding:8px 0;border-bottom:1px solid #21262d">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <span style="font-size:12px;color:#58a6ff">${escHtml(app)}</span>
+        <span style="font-size:10px;color:#8b949e">${escHtml(dur)} · ${escHtml(cat)}</span>
+      </div>
+      ${wins ? `<div style="font-size:10px;color:#484f58;margin-top:2px">${escHtml(wins)}</div>` : ''}
+      <div style="font-size:10px;color:#3d444d;margin-top:2px">캡처 ${s.captureCount || 0}건 · 클릭 ${s.totalClicks || 0}회 · 이벤트 ${s.eventCount || 0}건</div>
+    </div>`;
+  }).join('');
 }
 window.renderRoutineTab = renderRoutineTab;
 
@@ -832,76 +722,63 @@ async function loadSuggestions() {
   const list   = document.getElementById('sg-list');
   const footer = document.getElementById('sg-footer');
   if (!list) return;
-  list.innerHTML = '<div class="sg-empty">불러오는 중…</div>';
+  list.innerHTML = '<div class="sg-empty">분석 중…</div>';
 
   try {
-    // 병렬 fetch: 행동신호 + 클라우드 무료솔루션 + 로컬 학습 데이터
-    const [sigRes, solRes, sugRes] = await Promise.allSettled([
-      fetch('/api/personal/signals?limit=10'),
-      fetch('/api/sync/free-solutions'),
-      fetch('/api/personal/suggestions?limit=50'),
-    ]);
-
-    const signals = sigRes.status === 'fulfilled'
-      ? ((await sigRes.value.json()).signals || []).filter(s => !s.acknowledged)
-      : [];
-    const freeSols = solRes.status === 'fulfilled'
-      ? ((await solRes.value.json()).solutions || [])
-      : [];
-    const localSugs = sugRes.status === 'fulfilled'
-      ? ((await sugRes.value.json()).suggestions || [])
-      : [];
-
-    const totalCount = signals.length + freeSols.length + localSugs.length;
-    if (footer) footer.textContent = [
-      signals.length   ? `⚠️ 신호 ${signals.length}개`   : '',
-      freeSols.length  ? `🎁 솔루션 ${freeSols.length}개` : '',
-      localSugs.length ? `📡 학습 ${localSugs.length}개`  : '',
-    ].filter(Boolean).join(' · ') || '데이터 없음';
-
-    if (!totalCount) {
-      list.innerHTML = `<div class="sg-empty">
-        아직 데이터가 없습니다.<br><br>
-        <span style="font-size:10px">orbit learn start 실행 후<br>
-        AI 작업을 하면 자동으로 학습됩니다</span>
-      </div>`;
+    const data = await _fetchAnalysis();
+    if (!data || data.status !== 'ok') {
+      list.innerHTML = '<div class="sg-empty">분석 데이터가 아직 없습니다.<br><br><span style="font-size:10px">PC에서 데이터가 수집되면 자동으로 분석됩니다</span></div>';
+      if (footer) footer.textContent = '';
       return;
     }
 
     let html = '';
+    const insights = data.insights || [];
+    const sessions = data.sessions || [];
 
-    // ── 섹션 0: 행동 이상 신호 (최우선 표시) ───────────────────────────────
-    if (signals.length) {
-      const highCount = signals.filter(s => s.severity === 'high').length;
-      html += `<div style="font-size:10px;color:#f85149;font-weight:600;
-                  padding:6px 0 4px;border-bottom:1px solid rgba(248,81,73,.25);
-                  margin-bottom:6px;display:flex;align-items:center;gap:6px">
-                 ⚠️ 행동 이상 신호 (${signals.length})
-                 ${highCount ? `<span style="background:#f85149;color:#fff;border-radius:8px;padding:1px 6px;font-size:9px">긴급 ${highCount}</span>` : ''}
-                 <span style="color:#6e7681;font-weight:normal;font-size:9px">내용 없이 타이핑 행동만 감지</span>
-               </div>`;
-      html += signals.map(_renderSignalCard).join('');
+    // ── 인사이트 기반 추천 ────────────────────────────────────────
+    if (insights.length) {
+      html += `<div style="font-size:10px;color:#3fb950;font-weight:600;padding:6px 0 4px;border-bottom:1px solid rgba(63,185,80,.25);margin-bottom:6px">💡 분석 인사이트 (${insights.length})</div>`;
+      html += insights.map(i => {
+        const icon = i.type === 'automation' ? '⚡' : i.type === 'focus' ? '🎯' : '💡';
+        const colors = { automation:'#ff9500', focus:'#58a6ff', info:'#3fb950' };
+        return `<div style="padding:8px 10px;margin-bottom:6px;background:#0d1117;border-radius:8px;border-left:2px solid ${colors[i.type]||'#8b949e'}">
+          <div style="font-size:12px;color:#cdd9e5">${icon} ${escHtml(i.text)}</div>
+        </div>`;
+      }).join('');
     }
 
-    // ── 섹션 1: 검증된 무료 솔루션 ────────────────────────────────────────
-    if (freeSols.length) {
-      html += `<div style="font-size:10px;color:#bc78de;font-weight:600;
-                  padding:6px 0 4px;border-bottom:1px solid rgba(138,87,222,.2);
-                  margin-bottom:6px;margin-top:${signals.length?'10px':'0'}">
-                 🎁 무료 솔루션 (${freeSols.length})</div>`;
-      html += freeSols.map(_renderFreeSolCard).join('');
-    }
+    // ── 자동화 가능성 ──────────────────────────────────────────
+    const score = data.automationScore || 0;
+    const scoreColor = score >= 60 ? '#3fb950' : score >= 30 ? '#ff9500' : '#f85149';
+    html += `<div style="padding:10px;margin:8px 0;background:#0d1117;border-radius:8px">
+      <div style="font-size:10px;color:#6e7681;margin-bottom:4px">자동화 가능성</div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <div style="flex:1;height:6px;background:#21262d;border-radius:3px;overflow:hidden">
+          <div style="height:100%;width:${score}%;background:${scoreColor};border-radius:3px"></div>
+        </div>
+        <span style="font-size:13px;font-weight:600;color:${scoreColor}">${score}/100</span>
+      </div>
+    </div>`;
 
-    // ── 섹션 2: 로컬 학습 중 데이터 ───────────────────────────────────────
-    if (localSugs.length) {
-      html += `<div style="font-size:10px;color:#8b949e;font-weight:600;
-                  padding:8px 0 4px;border-bottom:1px solid #30363d;
-                  margin-bottom:6px;margin-top:${freeSols.length?'10px':'0'}">
-                 📡 학습 중 (${localSugs.length}) — 검증 후 솔루션으로 등록됩니다</div>`;
-      html += localSugs.map(_renderLocalSugCard).join('');
+    // ── 주요 앱별 작업 요약 ──────────────────────────────────────
+    if (sessions.length) {
+      html += `<div style="font-size:10px;color:#8b949e;font-weight:600;padding:8px 0 4px;border-bottom:1px solid #30363d;margin-bottom:6px;margin-top:4px">🕐 최근 작업 세션 (${sessions.length})</div>`;
+      html += sessions.slice(0, 5).map(s => {
+        const app = s.primaryApp || '앱';
+        const cat = s.primaryCategory || '';
+        const dur = s.durationMin ? `${s.durationMin}분` : '';
+        return `<div style="padding:6px 10px;margin-bottom:4px;background:#0d1117;border-radius:6px">
+          <div style="display:flex;justify-content:space-between">
+            <span style="font-size:11px;color:#58a6ff">${escHtml(app)}</span>
+            <span style="font-size:10px;color:#6e7681">${escHtml(dur)} ${escHtml(cat)}</span>
+          </div>
+        </div>`;
+      }).join('');
     }
 
     list.innerHTML = html;
+    if (footer) footer.textContent = `이벤트 ${data.eventCount?.toLocaleString()||0}건 · 세션 ${data.sessionCount||0}개`;
   } catch (e) {
     list.innerHTML = `<div class="sg-empty">❌ ${escHtml(e.message)}</div>`;
   }

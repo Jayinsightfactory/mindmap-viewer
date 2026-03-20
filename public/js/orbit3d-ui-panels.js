@@ -759,47 +759,49 @@ window.openGuidePopup = openGuidePopup;
 async function openStatsPopup() {
   const popup = document.getElementById('stats-popup');
   popup.style.display = 'flex';
-  // 서버에서 통계 가져오기
+
+  // 서버 분석 데이터로 통계 표시
   try {
-    const r = await fetch('/api/analysis/summary');
+    const r = await _authFetch('/api/learning/analyze');
     const data = r.ok ? await r.json() : null;
-    if (data) {
-      document.getElementById('sc-sessions').textContent = data.totalSessions ?? '-';
-      document.getElementById('sc-events').textContent   = data.totalEvents   ?? '-';
-      document.getElementById('sc-today').textContent    = data.todaySessions ?? '-';
-      // 작업 유형 분포
-      const dist = data.distribution || [];
-      const maxV = Math.max(...dist.map(d => d.count), 1);
-      document.getElementById('stats-bar-list').innerHTML = dist.slice(0, 6).map(d => `
+
+    if (data && data.status === 'ok') {
+      document.getElementById('sc-sessions').textContent = data.sessionCount || 0;
+      document.getElementById('sc-events').textContent   = data.eventCount?.toLocaleString() || 0;
+      document.getElementById('sc-today').textContent    = (data.sessions || []).filter(s => {
+        return s.startTime && (Date.now() - new Date(s.startTime).getTime()) < 86400000;
+      }).length;
+
+      // 앱별 분포
+      const apps = data.topApps || [];
+      const maxV = Math.max(...apps.map(a => a[1]), 1);
+      const APP_COLORS = { explorer:'#f0883e', kakaotalk:'#ffe066', chrome:'#58a6ff', excel:'#3fb950', nenova:'#bc8cff' };
+      document.getElementById('stats-bar-list').innerHTML = apps.slice(0, 6).map(([app, cnt]) => `
         <div class="stat-bar-row">
-          <div class="stat-bar-label">${d.type || '기타'}</div>
-          <div class="stat-bar-track"><div class="stat-bar-fill" style="width:${Math.round(d.count/maxV*100)}%;background:${d.color||'#1f6feb'}"></div></div>
-          <div style="font-size:11px;color:#8b949e;width:30px;text-align:right">${d.count}</div>
+          <div class="stat-bar-label">${escHtml(app)}</div>
+          <div class="stat-bar-track"><div class="stat-bar-fill" style="width:${Math.round(cnt/maxV*100)}%;background:${APP_COLORS[app]||'#1f6feb'}"></div></div>
+          <div style="font-size:11px;color:#8b949e;width:40px;text-align:right">${cnt}</div>
         </div>`).join('');
+
       // 최근 세션
-      const sess = data.recentSessions || [];
+      const sess = data.sessions || [];
       document.getElementById('stats-recent-sessions').innerHTML = sess.slice(0, 5).map(s =>
         `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #21262d">
-          <span style="color:#cdd9e5">${s.label || s.title || '세션'}</span>
-          <span style="color:#484f58;font-size:10px">${s.ago || ''}</span>
+          <span style="color:#58a6ff">${escHtml(s.primaryApp || '작업')}</span>
+          <span style="color:#8b949e;font-size:10px">${s.durationMin ? s.durationMin+'분' : ''} ${escHtml(s.primaryCategory || '')}</span>
         </div>`).join('');
+    } else {
+      // 로컬 폴백
+      document.getElementById('sc-sessions').textContent = _allNodes?.length ? '—' : '0';
+      document.getElementById('sc-events').textContent   = _allNodes?.length || 0;
+      document.getElementById('sc-today').textContent    = '—';
+      document.getElementById('stats-bar-list').innerHTML = '<div style="font-size:11px;color:#6e7681;padding:8px 0">데이터 수집 중</div>';
+      document.getElementById('stats-recent-sessions').innerHTML = '';
     }
-  } catch (e) {
-    // 로컬 데이터로 폴백
-    const planets = _planets || [];
-    document.getElementById('sc-sessions').textContent = planets.length;
+  } catch {
+    document.getElementById('sc-sessions').textContent = _allNodes?.length ? '—' : '0';
     document.getElementById('sc-events').textContent   = _allNodes?.length || 0;
-    document.getElementById('sc-today').textContent    = planets.filter(p => {
-      const ts = p.userData?.lastTs;
-      return ts && (Date.now() - ts) < 86400000;
-    }).length;
-    document.getElementById('stats-bar-list').innerHTML =
-      '<div style="font-size:11px;color:#6e7681;padding:8px 0">로컬 데이터 기준 (서버 연결 필요)</div>';
-    document.getElementById('stats-recent-sessions').innerHTML = planets.slice(0, 5).map(p =>
-      `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #21262d">
-        <span style="color:#cdd9e5">${p.userData?.intent || '세션'}</span>
-        <span style="color:#58a6ff;font-size:10px">${p.userData?.satellites || 0}개 작업</span>
-      </div>`).join('');
+    document.getElementById('sc-today').textContent    = '—';
   }
 }
 window.openStatsPopup = openStatsPopup;

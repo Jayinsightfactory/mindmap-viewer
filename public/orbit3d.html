@@ -186,9 +186,9 @@
   <!-- 탭 바 -->
   <div class="ins-tabs">
     <div class="ins-tab active" id="ins-tab-feed"    onclick="switchInsightTab('feed')">⚡ 실시간</div>
-    <div class="ins-tab"       id="ins-tab-purpose"  onclick="switchInsightTab('purpose')">🎯 목적</div>
-    <div class="ins-tab"       id="ins-tab-stats"    onclick="switchInsightTab('stats')">📊 통계</div>
-    <div class="ins-tab"       id="ins-tab-routine"  onclick="switchInsightTab('routine')">🔄 루틴</div>
+    <div class="ins-tab"       id="ins-tab-purpose"  onclick="switchInsightTab('purpose')">📊 앱분석</div>
+    <div class="ins-tab"       id="ins-tab-stats"    onclick="switchInsightTab('stats')">📈 통계</div>
+    <div class="ins-tab"       id="ins-tab-routine"  onclick="switchInsightTab('routine')">🕐 세션</div>
   </div>
 
   <!-- 탭 패널: 실시간 피드 -->
@@ -385,7 +385,7 @@
 <!-- ══ 통계 팝업 ═══════════════════════════════════════════════════════════ -->
 <div id="stats-popup" style="display:none" class="popup-overlay" onclick="if(event.target===this)closePopup('stats-popup')">
   <div class="popup-box">
-    <div class="popup-title">📊 내 작업 통계</div>
+    <div class="popup-title">📊 내 업무 통계</div>
     <div class="popup-sub">지금까지의 AI 작업 현황을 한눈에</div>
     <button class="popup-close" onclick="closePopup('stats-popup')">✕</button>
     <div style="display:flex;gap:10px;margin-bottom:20px" id="stats-cards-row">
