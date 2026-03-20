@@ -162,10 +162,9 @@ async function loadData() {
     if (typeof updateActiveFiles === 'function') updateActiveFiles();  // 활성 파일 갱신
     if (typeof _loadWorkspaceState === 'function') _loadWorkspaceState();
     // 개인 모드에서도 3D 카메라 회전 유지 (controls.enabled = true)
-    // 팀원 월드 데이터 비동기 로드 (개인 뷰에서 줌아웃 시 표시용)
-    loadTeamWorldData();
-    // 팔로잉 데이터 비동기 로드 (개인 뷰에서 줌아웃 시 표시용)
-    loadFollowingData();
+    // loadTeamWorldData(); — 개인 뷰에서 다른 팀원 안 보임 (기획)
+    // 팔로잉/팀원 데이터 로드 제거 — 개인 뷰에서 다른 팀원 안 보임 (기획)
+    // loadFollowingData();
     document.getElementById('loading').style.display = 'none';
 
     // 이벤트 없음 → 조건부 안내

@@ -639,11 +639,63 @@ function _buildTeamSystemInner(teamData) {
       orbitRings.push(rm); scene.add(rm);
     }
 
-    // Team label (text only, no sphere)
+    // Team label
     _teamNodes.push({
       type: 'department', pos: new THREE.Vector3(teamCenter.x, 3, teamCenter.z),
       label: teamName, color: teamColor, size: 'sm',
     });
+
+    // ── 팀 공동 프로젝트 표시 (겹치는 앱 → 팀 구체 주위 위성) ──
+    const _teamCenter = teamCenter.clone();
+    const _teamColor = teamColor;
+    const _token2 = (typeof _orbitUser !== 'undefined' && _orbitUser?.token) || localStorage.getItem('orbit_token') || '';
+    // 팀원 전체 데이터를 모아서 겹치는 앱 찾기
+    Promise.all(teamMembers.filter(m => m.userId).map(m =>
+      fetch(`/api/graph?memberId=${encodeURIComponent(m.userId)}`, {
+        headers: _token2 ? { Authorization: `Bearer ${_token2}` } : {},
+      }).then(r => r.json()).then(d => ({ name: m.name, nodes: d.nodes || [] })).catch(() => ({ name: m.name, nodes: [] }))
+    )).then(results => {
+      // 멤버별 앱 사용
+      const memberApps = {};
+      results.forEach(r => {
+        const apps = {};
+        r.nodes.forEach(n => {
+          const app = n.data?.app || n.data?.activeApp || '';
+          if (app) apps[app] = (apps[app] || 0) + 1;
+        });
+        memberApps[r.name] = apps;
+      });
+      // 겹치는 앱 (2명 이상 사용)
+      const allApps = {};
+      Object.entries(memberApps).forEach(([name, apps]) => {
+        Object.keys(apps).forEach(app => {
+          if (!allApps[app]) allApps[app] = [];
+          allApps[app].push(name);
+        });
+      });
+      const shared = Object.entries(allApps).filter(([_, users]) => users.length >= 2)
+        .sort((a, b) => b[1].length - a[1].length).slice(0, 3);
+
+      // 팀 구체 주위에 공동 프로젝트 위성 배치
+      const SHARED_R = 2;
+      shared.forEach(([app, users], si) => {
+        const sAngle = (si / Math.max(shared.length, 3)) * Math.PI * 2;
+        const sPos = new THREE.Vector3(
+          _teamCenter.x + SHARED_R * Math.cos(sAngle),
+          _teamCenter.y + 1.5,
+          _teamCenter.z + SHARED_R * Math.sin(sAngle)
+        );
+        const sObj = new THREE.Object3D();
+        sObj.position.copy(sPos);
+        sObj.userData = { isTeamTask: true, orbitR: SHARED_R, orbitAngle: sAngle, orbitSpeed: 0.015 + si * 0.005, orbitCenter: _teamCenter.clone() };
+        scene.add(sObj); satelliteMeshes.push(sObj);
+        _teamNodes.push({
+          type: 'task', pos: sPos.clone(), obj: sObj,
+          label: `🤝 ${app}`, sublabel: users.join('+'),
+          color: _teamColor, size: 'sm', taskStatus: 'active',
+        });
+      });
+    }).catch(() => {});
 
     // 현재 로그인 사용자 ID (me 표시용)
     const _myUserId = (typeof _orbitUser !== 'undefined' && _orbitUser?.id) || '';
@@ -1218,6 +1270,13 @@ async function loadTeamDemo() {
         return;
       }
       if (data && data.members && data.members.length > 0) {
+        // 내 팀만 필터링 (팀뷰 = 소속 팀만 보기)
+        const _myId = _u?.id || '';
+        const _myMember = data.members.find(m => m.userId === _myId);
+        const _myTeam = _myMember?.teamName || _myMember?.role || '';
+        if (_myTeam) {
+          data.members = data.members.filter(m => (m.teamName || m.role || '') === _myTeam);
+        }
         buildTeamSystem(data);
         updateBreadcrumb('team');
         document.querySelector('.tm-label').textContent = '👥 팀';
@@ -1242,6 +1301,11 @@ async function loadCompanyDemo() {
   clearTimeout(window._zoomLodTimer);
   if (window.RendererManager) window.RendererManager.switchTo('company');
   if (typeof track === 'function') track('view.mode_switch', { from: 'team', to: 'company' });
+  // 전사뷰도 팀 간격 슬라이더 사용
+  const _sp2 = document.getElementById('spacing-personal');
+  const _st2 = document.getElementById('spacing-team');
+  if (_sp2) _sp2.style.display = 'none';
+  if (_st2) _st2.style.display = '';
   const _u = typeof _orbitUser !== 'undefined' ? _orbitUser : JSON.parse(localStorage.getItem('orbitUser') || 'null');
   const token = _u?.token;
 
