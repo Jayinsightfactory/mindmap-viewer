@@ -624,7 +624,10 @@ function _buildTeamSystemInner(teamData) {
       results.forEach(r => {
         const apps = {};
         r.nodes.forEach(n => {
-          const app = n.data?.app || n.data?.activeApp || '';
+          if (n.type === 'idle') return;
+          let fc = {};
+          try { if (n.fullContent && n.fullContent.startsWith('{')) fc = JSON.parse(n.fullContent); } catch {}
+          const app = fc.app || n.projectName || (fc.windowTitle ? fc.windowTitle.split(' - ').pop().trim() : '') || '';
           if (app) apps[app] = (apps[app] || 0) + 1;
         });
         memberApps[r.name] = apps;
@@ -741,9 +744,11 @@ function _buildTeamSystemInner(teamData) {
           // fullContent JSON 파싱 → app, windowTitle 추출
           let fc = {};
           try { if (n.fullContent && n.fullContent.startsWith('{')) fc = JSON.parse(n.fullContent); } catch {}
-          const app = fc.app || n.projectName || n.autoTitle || '';
+          const rawApp = fc.app || n.projectName || n.autoTitle || '';
           const title = fc.windowTitle || '';
           const activity = fc.activity || n.whatSummary || '';
+          // app이 빈 문자열이면 windowTitle에서 앱명 추출
+          const app = rawApp || (title ? title.split(' - ').pop().trim() || title.split(/\s+/)[0] : '') || n.label?.replace(/^[📸⌨️🔍💤📁📋🏦]\s*/, '').split(':')[0]?.trim() || '';
           if (!app) return;
           if (!projects[app]) projects[app] = { count: 0, whatSummary: '', techStack: '' };
           projects[app].count++;
