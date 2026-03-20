@@ -1938,6 +1938,52 @@ app.get('/api/admin/graph', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ─── 자동화 검증 API (rawInput + clipboard + vision 3중 대조) ─────────────────
+app.get('/api/admin/verify-automation', async (req, res) => {
+  try {
+    const token = (req.headers.authorization || '').replace('Bearer ', '');
+    const user = verifyToken(token);
+    if (!user) return res.status(401).json({ error: 'unauthorized' });
+    const adminEmails = (process.env.ADMIN_EMAILS || 'dlaww@kicda.com').split(',').map(s => s.trim().toLowerCase());
+    if (!adminEmails.includes(user.email?.toLowerCase())) return res.status(403).json({ error: 'admin only' });
+
+    const hours = parseInt(req.query.hours) || 24;
+    const events = await Promise.resolve(getAllEvents(5000));
+
+    // 시간 필터
+    const cutoff = new Date(Date.now() - hours * 3600000).toISOString();
+    const recent = events.filter(e => e.timestamp > cutoff);
+
+    // 3중 데이터 수집
+    const keyboards = recent.filter(e => e.type === 'keyboard.chunk').map(e => ({
+      userId: e.userId, ts: e.timestamp, hostname: e.data?.hostname,
+      app: e.data?.appContext?.currentApp, window: e.data?.appContext?.currentWindow,
+      rawInput: e.data?.rawInput || '', mouseClicks: e.data?.mouseClicks || 0,
+      mousePositions: e.data?.mousePositions || [],
+    }));
+
+    const clipboards = recent.filter(e => e.type === 'clipboard.change').map(e => ({
+      userId: e.userId, ts: e.timestamp, text: e.data?.text || '', sourceApp: e.data?.sourceApp || '',
+    }));
+
+    const visions = recent.filter(e => e.type === 'screen.analyzed').map(e => ({
+      userId: e.userId, ts: e.timestamp, hostname: e.data?.hostname,
+      app: e.data?.app, activity: e.data?.activity, automatable: e.data?.automatable,
+      screen: e.data?.screen, workCategory: e.data?.workCategory,
+    }));
+
+    const orders = recent.filter(e => e.type === 'order.detected').map(e => ({
+      userId: e.userId, ts: e.timestamp, items: e.data?.items || [], source: e.data?.source,
+    }));
+
+    res.json({
+      period: { hours, from: cutoff },
+      counts: { keyboard: keyboards.length, clipboard: clipboards.length, vision: visions.length, order: orders.length },
+      keyboards, clipboards, visions, orders,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ─── 어드민 CLI 토큰 발급 (이메일 기반, 비밀번호 불필요) ──────────────────────
 // Railway 환경에서만 동작 (ADMIN_EMAILS에 등록된 이메일만 허용)
 app.post('/api/admin/issue-token', (req, res) => {
