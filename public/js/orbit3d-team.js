@@ -652,7 +652,7 @@ function _buildTeamSystemInner(teamData) {
           _teamCenter.y + 1.5,
           _teamCenter.z + SHARED_R * Math.sin(sAngle)
         );
-        const sObj = new THREE.Object3D();
+        const sObj = createWireNode(0.5, new THREE.Color(_teamColor || '#ffd700').getHex(), { wireOpacity: 0.5, glowOpacity: 0.25 });
         sObj.position.copy(sPos);
         sObj.userData = { isTeamTask: true, orbitR: SHARED_R, orbitAngle: sAngle, orbitSpeed: 0.015 + si * 0.005, orbitCenter: _teamCenter.clone() };
         scene.add(sObj); satelliteMeshes.push(sObj);
@@ -703,12 +703,13 @@ function _buildTeamSystemInner(teamData) {
       const tz = mPos.z + TASK_R * Math.sin(tAngle);
       const tPos = new THREE.Vector3(tx, ty, tz);
 
-      const tObj = new THREE.Object3D();
+      const _taskColor = STATUS_CFG[task.status]?.color || '#6e7681';
+      const tObj = createWireNode(0.3, new THREE.Color(_taskColor).getHex(), { wireOpacity: 0.4, glowOpacity: 0.15 });
       tObj.position.copy(tPos);
       tObj.userData = {
         isTeamTask: true, memberId: member.id,
         taskName: task.name, taskStatus: task.status, taskProgress: task.progress,
-        color: STATUS_CFG[task.status]?.color || '#6e7681',
+        color: _taskColor,
         orbitR: TASK_R, orbitAngle: tAngle, orbitSpeed: 0.038 + mi * 0.004 + taskIdx * 0.003,
         orbitCenter: mPos.clone(),
       };
@@ -758,12 +759,13 @@ function _buildTeamSystemInner(teamData) {
           .sort((a, b) => b[1].count - a[1].count)
           .slice(0, 5);
         const PROJ_R = TASK_R * 1.5;
+        console.log(`[team-project] ${_mid}: ${topProjects.length}개 프로젝트 위성 생성`);
         topProjects.forEach(([projName, proj], si) => {
           const sAngle = (si / Math.max(topProjects.length, 3)) * Math.PI * 2 + Math.PI / 4;
           const sx = _mPos.x + PROJ_R * Math.cos(sAngle);
           const sz = _mPos.z + PROJ_R * Math.sin(sAngle);
           const sPos = new THREE.Vector3(sx, _mPos.y + 1, sz);
-          const sObj = new THREE.Object3D();
+          const sObj = createWireNode(0.4, new THREE.Color(_color || '#58a6ff').getHex(), { wireOpacity: 0.5, glowOpacity: 0.2 });
           sObj.position.copy(sPos);
           sObj.userData = { isTeamTask: true, memberId: _mid, orbitR: PROJ_R, orbitAngle: sAngle, orbitSpeed: 0.02 + si * 0.005, orbitCenter: _mPos.clone() };
           scene.add(sObj);
