@@ -662,29 +662,19 @@ async function renderSetupPanel() {
     <div class="sp-check-grid">${cards}</div>
     ${installSection}
 
-    ${_getAuthToken() ? `
-    <div class="sp-section" style="margin-top:12px">🔑 CLI 연동 토큰</div>
-    <div style="font-size:12px;color:#8b949e;margin-bottom:6px;line-height:1.5">
-      설치 스크립트 실행 후 <code style="color:#7ee787">~/.orbit-config.json</code>에<br>
-      아래 토큰을 넣으면 내 계정으로 이벤트가 저장됩니다.
-    </div>
-    <div style="background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:10px 12px;font-size:11px;font-family:monospace;color:#e6edf3;word-break:break-all;margin-bottom:6px">
-      ${JSON.stringify({ serverUrl: location.origin, token: _getAuthToken() }, null, 2).replace(/</g,'&lt;')}
-    </div>
-    <button class="sp-btn sp-btn-outline" style="font-size:11px;width:100%"
-      onclick="_copyCliConfig()">📋 ~/.orbit-config.json 내용 복사</button>
-    ` : ''}
-
     <button class="sp-btn sp-btn-outline" onclick="renderSetupPanel()" style="margin-top:12px">
       ↺ 상태 새로고침
     </button>
 
     <div style="margin-top:16px;padding-top:12px;border-top:1px solid #21262d">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:${_deployInfo?.recentChanges?.length ? '8' : '0'}px">
-        <div style="font-size:10px;color:#484f58">
-          서버: <span style="color:#58a6ff;font-family:monospace">${_serverVer}</span>
-          ${_deployInfo?.commitDate ? ` · <span style="color:#8b949e">${new Date(_deployInfo.commitDate).toLocaleString('ko-KR')}</span>` : ''}
+      <div style="margin-bottom:${_deployInfo?.recentChanges?.length ? '8' : '0'}px">
+        <div style="font-size:11px;color:#8b949e;margin-bottom:2px">
+          현재 배포 버전: <span style="color:#58a6ff;font-family:monospace;font-weight:600">${_serverVer}</span>
         </div>
+        ${_deployInfo?.commitDate ? `<div style="font-size:11px;color:#cdd9e5">
+          배포 시간: <span style="font-weight:600">${new Date(_deployInfo.commitDate).toLocaleString('ko-KR')}</span>
+        </div>` : ''}
+        ${_deployInfo?.commitMsg ? `<div style="font-size:10px;color:#6e7681;margin-top:2px">${escHtml(_deployInfo.commitMsg)}</div>` : ''}
       </div>
       ${_deployInfo?.recentChanges?.length ? `
         <div style="font-size:10px;color:#6e7681;margin-bottom:4px">최근 수정 내역</div>
