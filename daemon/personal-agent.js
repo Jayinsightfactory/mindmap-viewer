@@ -438,12 +438,30 @@ async function main() {
   let clipboardWatcher = null;
   try {
     clipboardWatcher = require(path.join(ROOT, 'src/clipboard-watcher'));
+    // 알고리즘 A: 카카오톡 주문 자동 감지
+    let orderDetector = null;
+    try {
+      orderDetector = require(path.join(ROOT, 'src/order-detector'));
+      orderDetector.init((order) => {
+        _reportEvent('order.detected', order);
+      });
+    } catch {}
+
     clipboardWatcher.start((evt) => {
-      // 서버에 전송
-      _reportEvent('clipboard.change', { text: evt.text, length: evt.length });
+      _reportEvent('clipboard.change', { text: evt.text, length: evt.length, sourceApp: evt.sourceApp });
+      // 주문 패턴 분석
+      if (orderDetector) orderDetector.analyzeClipboard(evt);
     });
   } catch (err) {
     console.error('[personal-agent] 클립보드 감시 시작 실패:', err.message);
+  }
+
+  // 알고리즘 C: 반복 실행 도구 바로가기 자동 생성
+  try {
+    const shortcutCreator = require(path.join(ROOT, 'src/shortcut-creator'));
+    shortcutCreator.checkAndCreateShortcuts();
+  } catch (err) {
+    console.warn('[personal-agent] 바로가기 생성 실패:', err.message);
   }
 
   // ②-f 앱 전환 시퀀스 분석
@@ -465,7 +483,15 @@ async function main() {
   try {
     fileChangeWatcher = require(path.join(ROOT, 'src/file-change-watcher'));
     fileChangeWatcher.start((evt) => {
-      _reportEvent('file.change', { filename: evt.filename, dir: evt.dir, eventType: evt.eventType });
+      _reportEvent('file.change', { filename: evt.filename, dir: evt.dir, eventType: evt.eventType, isExcel: evt.isExcel });
+      // 알고리즘 B: 발주서 엑셀 파일 감지 → 별도 이벤트
+      if (evt.isPurchaseOrder) {
+        _reportEvent('purchase.order.detected', {
+          filename: evt.filename, dir: evt.dir, fullPath: evt.fullPath,
+          hostname: os.hostname(), timestamp: evt.timestamp,
+        });
+        console.log(`[order-detect] 발주서 감지: ${evt.filename}`);
+      }
     });
   } catch (err) {
     console.error('[personal-agent] 파일 변경 감시 시작 실패:', err.message);

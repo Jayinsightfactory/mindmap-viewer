@@ -38,12 +38,18 @@ function start(onFileChange) {
         // 임시 파일, 시스템 파일 무시
         if (filename.startsWith('.') || filename.startsWith('~$') || filename.endsWith('.tmp')) return;
 
+        // 알고리즘 B: 발주서 엑셀 파일 감지
+        const isExcel = /\.(xlsx?|csv)$/i.test(filename);
+        const isPurchaseOrder = isExcel && /발주|출고|내역|매출|주문|재고/i.test(filename);
+
         const change = {
           type: 'file.change',
           eventType, // 'rename' or 'change'
           filename,
           dir: path.basename(dir),
           fullPath: path.join(dir, filename),
+          isExcel,
+          isPurchaseOrder,
           timestamp: new Date().toISOString(),
         };
 
