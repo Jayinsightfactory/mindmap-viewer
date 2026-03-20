@@ -111,12 +111,13 @@ function _addLiveBranch(eventData) {
     }
   }
 
-  // 5초 후 데이터 전체 리로드 — 개인 모드에서만 (팀/전사 뷰 파괴 방지)
+  // 5초 후 데이터 전체 리로드 — 개인 모드 + 뷰 전환 중 아닐 때만
   clearTimeout(_liveBranchTimer);
   _liveBranchTimer = setTimeout(() => {
     _cleanupLiveBranches();
     const _mode = window.RendererManager?.currentMode;
-    if (_mode === 'personal') {
+    const _transitioning = typeof window._isViewTransitioning === 'function' && window._isViewTransitioning();
+    if (_mode === 'personal' && !_transitioning) {
       loadData();
     }
   }, 5000);
@@ -197,11 +198,10 @@ function connectWS() {
           }
         }
 
-        // ⚠️ 충돌 방지: personal 모드일 때만 행성 시스템 재빌드
-        // workspace/team/company 모드에서 loadData() → buildPlanetSystem() 호출 시
-        // RendererManager.cleanupMultilevel()이 실행되어 워크스페이스 뷰가 파괴됨
+        // ⚠️ 충돌 방지: personal 모드 + 뷰 전환 중 아닐 때만 행성 시스템 재빌드
         const _curMode = window.RendererManager?.currentMode;
-        if (_curMode === 'personal') {
+        const _transitioning = typeof window._isViewTransitioning === 'function' && window._isViewTransitioning();
+        if (_curMode === 'personal' && !_transitioning) {
           _debouncedLoadData();
         }
         // workspace/team/company 모드에서는 scene 파괴 없이 stats만 토스트로 표시

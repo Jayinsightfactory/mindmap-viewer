@@ -711,6 +711,14 @@ let _lnCollapsed = false;
 let _lastLodR = 75;
 let _zoomLodTimer = null;
 let _memberDetailOpen = false;
+let _viewTransitionLock = false;  // 뷰 전환 중 재트리거 방지
+// 다른 JS 파일에서 접근 가능하도록 window에 연결
+window._zoomLodTimer = null;
+Object.defineProperty(window, '_viewTransitionLock', {
+  get() { return _viewTransitionLock; },
+  set(v) { _viewTransitionLock = v; },
+  configurable: true
+});
 
 function toggleLeftNav() {
   _lnCollapsed = !_lnCollapsed;
@@ -730,6 +738,9 @@ function toggleLeftNav() {
 window.toggleLeftNav = toggleLeftNav;
 
 function setViewPersonal() {
+  _viewTransitionLock = true;
+  clearTimeout(_zoomLodTimer);
+
   // workspace → personal 전환 시 multilevel scene 정리
   if (window.RendererManager) {
     window.RendererManager.switchTo('personal');
@@ -747,6 +758,8 @@ function setViewPersonal() {
   if (typeof _parallelMode !== 'undefined' && _parallelMode) exitParallelMode();
   localStorage.setItem('orbitViewMode', 'personal');
   updateNavActiveState();
+
+  setTimeout(() => { _viewTransitionLock = false; }, 2000);
 }
 window.setViewPersonal = setViewPersonal;
 
@@ -819,37 +832,47 @@ function updateZoomLOD() {
       zhEl.onclick = null;
     }
 
-    // ── 자동 뷰 전환: 줌 임계값 초과 시 즉시 전환 ──
+    // ── 자동 뷰 전환: 줌 임계값 초과 시 전환 (락으로 반복 방지) ──
     const prevR = _lastLodR;
     _lastLodR = r;
 
-    if (inPersonal && r > 140 && prevR <= 140) {
+    // 전환 중이면 자동 전환 스킵
+    if (_viewTransitionLock) {
+      clearTimeout(_zoomLodTimer);
+    } else if (inPersonal && r > 140 && prevR <= 140) {
       clearTimeout(_zoomLodTimer);
       _zoomLodTimer = setTimeout(() => {
+        if (_viewTransitionLock) return;
         if (controls.sph.r > 130 && !(typeof _teamMode !== 'undefined' && _teamMode)) {
+          _viewTransitionLock = true;
           if (typeof loadTeamDemo === 'function') loadTeamDemo();
+          setTimeout(() => { _viewTransitionLock = false; }, 2000);
         }
-      }, 500);
+      }, 800);
     } else if (inPersonal && r <= 130) {
       clearTimeout(_zoomLodTimer);
-    }
-    if (inTeam && r > 100 && prevR <= 100) {
+    } else if (inTeam && r > 100 && prevR <= 100) {
       clearTimeout(_zoomLodTimer);
       _zoomLodTimer = setTimeout(() => {
+        if (_viewTransitionLock) return;
         if (controls.sph.r > 95 && (typeof _teamMode !== 'undefined' && _teamMode)) {
+          _viewTransitionLock = true;
           if (typeof loadCompanyDemo === 'function') loadCompanyDemo();
+          setTimeout(() => { _viewTransitionLock = false; }, 2000);
         }
-      }, 500);
+      }, 800);
     } else if (inTeam && r <= 90) {
       clearTimeout(_zoomLodTimer);
-    }
-    if (inCompany && r < 75 && prevR >= 75) {
+    } else if (inCompany && r < 75 && prevR >= 75) {
       clearTimeout(_zoomLodTimer);
       _zoomLodTimer = setTimeout(() => {
+        if (_viewTransitionLock) return;
         if (controls.sph.r < 80 && (typeof _companyMode !== 'undefined' && _companyMode)) {
-          if (typeof exitTeamMode === 'function') { exitTeamMode(); setTimeout(() => loadTeamDemo(), 100); }
+          _viewTransitionLock = true;
+          if (typeof loadTeamDemo === 'function') loadTeamDemo();
+          setTimeout(() => { _viewTransitionLock = false; }, 2000);
         }
-      }, 500);
+      }, 800);
     } else if (inCompany && r >= 80) {
       clearTimeout(_zoomLodTimer);
     }
@@ -866,6 +889,7 @@ function updateZoomLOD() {
   updateNavActiveState();
 }
 window.updateZoomLOD = updateZoomLOD;
+window._isViewTransitioning = () => _viewTransitionLock;
 
 function showMemberDetail(member) {
   const panel = document.getElementById('member-detail-panel');

@@ -1178,6 +1178,10 @@ function buildCompanySystem(companyData) {
 }
 
 async function loadTeamDemo() {
+  // 뷰 전환 락 설정 (자동 줌 전환 + WebSocket loadData 방지)
+  if (typeof _viewTransitionLock !== 'undefined') _viewTransitionLock = true;
+  else window._viewTransitionLock = true;
+  clearTimeout(window._zoomLodTimer);
   // workspace → team 전환 시 multilevel scene 정리
   if (window.RendererManager) window.RendererManager.switchTo('team');
   else if (window.RendererManager?.cleanupMultilevel) window.RendererManager.cleanupMultilevel();
@@ -1216,10 +1220,16 @@ async function loadTeamDemo() {
   // 워크스페이스가 없으면 팝업 직접 열어줌
   if (typeof openWorkspacePopup === 'function') openWorkspacePopup();
   showToast('👥 팀원과 함께하려면 워크스페이스를 만들거나 참여하세요 👇', 4000);
+  // 뷰 전환 락 해제 (2초 후 — 애니메이션 완료 대기)
+  setTimeout(() => { if (typeof _viewTransitionLock !== 'undefined') _viewTransitionLock = false; else window._viewTransitionLock = false; }, 2000);
 }
 window.loadTeamDemo = loadTeamDemo;
 
 async function loadCompanyDemo() {
+  // 뷰 전환 락 설정
+  if (typeof _viewTransitionLock !== 'undefined') _viewTransitionLock = true;
+  else window._viewTransitionLock = true;
+  clearTimeout(window._zoomLodTimer);
   if (window.RendererManager) window.RendererManager.switchTo('company');
   if (typeof track === 'function') track('view.mode_switch', { from: 'team', to: 'company' });
   const _u = typeof _orbitUser !== 'undefined' ? _orbitUser : JSON.parse(localStorage.getItem('orbitUser') || 'null');
@@ -1254,6 +1264,8 @@ async function loadCompanyDemo() {
   // 워크스페이스가 없으면 팝업 직접 열어줌
   if (typeof openWorkspacePopup === 'function') openWorkspacePopup();
   showToast('🏢 전사 뷰는 워크스페이스 참여 후 사용 가능합니다 👇', 4000);
+  // 뷰 전환 락 해제
+  setTimeout(() => { if (typeof _viewTransitionLock !== 'undefined') _viewTransitionLock = false; else window._viewTransitionLock = false; }, 2000);
 }
 window.loadCompanyDemo = loadCompanyDemo;
 
