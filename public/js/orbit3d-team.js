@@ -720,22 +720,26 @@ function _buildTeamSystemInner(teamData) {
       }).then(r => r.json()).then(data => {
         const nodes = data.nodes || [];
         if (nodes.length === 0) return;
-        // 세션별 그룹
-        // 프로젝트별 그룹 (projectName 기준)
+        // 앱별 활동 그룹 (직원 PC 데이터 기반)
         const projects = {};
         nodes.forEach(n => {
-          if (n.type === 'idle' || !n.sessionId) return;
-          const proj = n.projectName || n.autoTitle || '작업';
-          if (!projects[proj]) projects[proj] = { count: 0, whatSummary: '', techStack: '' };
+          if (n.type === 'idle') return;
+          // 직원 PC: app + windowTitle / Claude Code: projectName
+          const app = n.data?.app || n.data?.activeApp || '';
+          const title = n.data?.windowTitle || '';
+          const proj = n.projectName || n.autoTitle || app || '작업';
+          if (!proj || proj === '작업') return;
+          if (!projects[proj]) projects[proj] = { count: 0, whatSummary: '', techStack: '', app: app };
           projects[proj].count++;
+          // Vision 분석 결과가 있으면 활동 설명으로
+          if (n.data?.activity && !projects[proj].whatSummary) projects[proj].whatSummary = n.data.activity;
           if (n.whatSummary && !projects[proj].whatSummary) projects[proj].whatSummary = n.whatSummary;
-          if (n.techStack && !projects[proj].techStack) projects[proj].techStack = n.techStack;
+          if (title && !projects[proj].techStack) projects[proj].techStack = title;
         });
-        // 상위 3개 프로젝트만 위성으로 표시
+        // 상위 5개 앱/프로젝트를 위성으로 표시
         const topProjects = Object.entries(projects)
-          .filter(([_, p]) => p.count > 2)
           .sort((a, b) => b[1].count - a[1].count)
-          .slice(0, 3);
+          .slice(0, 5);
         const PROJ_R = TASK_R * 1.5;
         topProjects.forEach(([projName, proj], si) => {
           const sAngle = (si / Math.max(topProjects.length, 3)) * Math.PI * 2 + Math.PI / 4;
@@ -749,7 +753,7 @@ function _buildTeamSystemInner(teamData) {
           satelliteMeshes.push(sObj);
           _teamNodes.push({
             type: 'task', pos: sPos.clone(), obj: sObj,
-            label: projName.slice(0, 18), sublabel: proj.whatSummary?.slice(0, 20) || `${proj.count}건`,
+            label: projName.slice(0, 18), sublabel: proj.whatSummary?.slice(0, 25) || proj.techStack?.slice(0, 25) || `${proj.count}건`,
             color: _color, size: 'sm',
             memberId: _mid, taskStatus: 'active',
           });
