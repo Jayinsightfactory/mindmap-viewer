@@ -838,6 +838,137 @@
     </div>
   </div>
 
+  <!-- ══════ KPI 카드 ══════ -->
+  <section id="sec-kpi">
+    <div class="section-header">
+      <div class="section-title"><span class="icon">&#x1f4ca;</span> 핵심 KPI</div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px" id="kpi-grid">
+      <div class="card" style="padding:16px;text-align:center">
+        <div style="font-size:28px;font-weight:700;color:#58a6ff" id="kpi-orders">--</div>
+        <div style="font-size:11px;color:#8b949e;margin-top:4px">일일 주문 처리</div>
+      </div>
+      <div class="card" style="padding:16px;text-align:center">
+        <div style="font-size:28px;font-weight:700;color:#3fb950" id="kpi-save-min">--</div>
+        <div style="font-size:11px;color:#8b949e;margin-top:4px">자동화 절약 가능 (분/일)</div>
+      </div>
+      <div class="card" style="padding:16px;text-align:center">
+        <div style="font-size:28px;font-weight:700;color:#f0883e" id="kpi-vision">--</div>
+        <div style="font-size:11px;color:#8b949e;margin-top:4px">Vision 분석 완료</div>
+      </div>
+      <div class="card" style="padding:16px;text-align:center">
+        <div style="font-size:28px;font-weight:700;color:#bc8cff" id="kpi-agents">--</div>
+        <div style="font-size:11px;color:#8b949e;margin-top:4px">활성 에이전트</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════ 업무 알고리즘 플로우차트 ══════ -->
+  <section id="sec-algorithm">
+    <div class="section-header">
+      <div class="section-title"><span class="icon">&#x1f9e0;</span> 업무 알고리즘 분석</div>
+    </div>
+    <div class="card" style="padding:0;overflow:hidden">
+      <!-- 탭 -->
+      <div style="display:flex;border-bottom:1px solid #21262d" id="algo-tabs">
+        <button onclick="switchAlgoTab('A')" class="algo-tab active" id="algo-tab-A" style="flex:1;padding:10px;background:none;border:none;color:#58a6ff;font-size:12px;font-weight:600;cursor:pointer;border-bottom:2px solid #58a6ff">알고리즘 A · 주문 루프</button>
+        <button onclick="switchAlgoTab('B')" class="algo-tab" id="algo-tab-B" style="flex:1;padding:10px;background:none;border:none;color:#8b949e;font-size:12px;cursor:pointer;border-bottom:2px solid transparent">알고리즘 B · 발주 대조</button>
+        <button onclick="switchAlgoTab('C')" class="algo-tab" id="algo-tab-C" style="flex:1;padding:10px;background:none;border:none;color:#8b949e;font-size:12px;cursor:pointer;border-bottom:2px solid transparent">알고리즘 C · 앱 실행</button>
+      </div>
+
+      <!-- 알고리즘 A: 조현욱 주문 루프 -->
+      <div id="algo-pane-A" style="padding:20px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+          <span style="background:#1f6feb;color:#fff;padding:2px 8px;border-radius:10px;font-size:11px">조현욱</span>
+          <span style="color:#8b949e;font-size:12px">일일 주문 입력 루프 · 하루 85+건 반복</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:0;flex-wrap:wrap">
+          <div style="background:rgba(31,111,235,0.1);border:1px solid #1f6feb;border-radius:8px;padding:10px 14px;font-size:12px;color:#58a6ff;text-align:center">
+            <div style="font-size:16px">💬</div>카카오톡<br><span style="font-size:10px;color:#6e7681">주문 수신</span>
+          </div>
+          <div style="color:#30363d;font-size:18px;padding:0 6px">→</div>
+          <div style="background:rgba(31,111,235,0.1);border:1px solid #1f6feb;border-radius:8px;padding:10px 14px;font-size:12px;color:#58a6ff;text-align:center">
+            <div style="font-size:16px">📋</div>복사<br><span style="font-size:10px;color:#6e7681">품종/수량</span>
+          </div>
+          <div style="color:#30363d;font-size:18px;padding:0 6px">→</div>
+          <div style="background:rgba(31,111,235,0.1);border:1px solid #1f6feb;border-radius:8px;padding:10px 14px;font-size:12px;color:#58a6ff;text-align:center">
+            <div style="font-size:16px">🖥️</div>nenova ERP<br><span style="font-size:10px;color:#6e7681">주문 입력</span>
+          </div>
+          <div style="color:#30363d;font-size:18px;padding:0 6px">→</div>
+          <div style="background:rgba(31,111,235,0.1);border:1px solid #1f6feb;border-radius:8px;padding:10px 14px;font-size:12px;color:#58a6ff;text-align:center">
+            <div style="font-size:16px">💾</div>저장<br><span style="font-size:10px;color:#6e7681">확인</span>
+          </div>
+          <div style="color:#f85149;font-size:14px;padding:0 8px;font-weight:700">↺ 반복</div>
+        </div>
+        <div style="margin-top:14px;padding:10px;background:#0d1117;border-radius:8px;border-left:3px solid #3fb950">
+          <div style="font-size:11px;color:#3fb950;font-weight:600;margin-bottom:4px">⚡ 자동화 제안</div>
+          <div style="font-size:12px;color:#cdd9e5">카카오톡 메시지 → 클립보드 감지 → nenova 자동 입력 (PAD/pyautogui)</div>
+          <div style="font-size:11px;color:#8b949e;margin-top:4px">예상 절감: 건당 3분 × 85건 = <b style="color:#3fb950">255분/일</b></div>
+        </div>
+      </div>
+
+      <!-- 알고리즘 B: 발주서 대조 -->
+      <div id="algo-pane-B" style="padding:20px;display:none">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+          <span style="background:#f0883e;color:#fff;padding:2px 8px;border-radius:10px;font-size:11px">영업팀</span>
+          <span style="color:#8b949e;font-size:12px">발주서 대조 + 차감 기록 · 8시간 시간차 위험</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:0;flex-wrap:wrap">
+          <div style="background:rgba(240,136,62,0.1);border:1px solid #f0883e;border-radius:8px;padding:10px 14px;font-size:12px;color:#f0883e;text-align:center">
+            <div style="font-size:16px">📄</div>발주서 수신<br><span style="font-size:10px;color:#6e7681">엑셀 파일</span>
+          </div>
+          <div style="color:#30363d;font-size:18px;padding:0 6px">→</div>
+          <div style="background:rgba(240,136,62,0.1);border:1px solid #f0883e;border-radius:8px;padding:10px 14px;font-size:12px;color:#f0883e;text-align:center">
+            <div style="font-size:16px">🔍</div>수동 대조<br><span style="font-size:10px;color:#6e7681">주문 vs 재고</span>
+          </div>
+          <div style="color:#30363d;font-size:18px;padding:0 6px">→</div>
+          <div style="background:rgba(240,136,62,0.1);border:1px solid #f0883e;border-radius:8px;padding:10px 14px;font-size:12px;color:#f0883e;text-align:center">
+            <div style="font-size:16px">✏️</div>차감 기록<br><span style="font-size:10px;color:#6e7681">수기 입력</span>
+          </div>
+          <div style="color:#30363d;font-size:18px;padding:0 6px">→</div>
+          <div style="background:rgba(248,81,73,0.15);border:1px solid #f85149;border-radius:8px;padding:10px 14px;font-size:12px;color:#f85149;text-align:center">
+            <div style="font-size:16px">⚠️</div>8시간 지연<br><span style="font-size:10px;color:#6e7681">위험 구간</span>
+          </div>
+        </div>
+        <div style="margin-top:14px;padding:10px;background:#0d1117;border-radius:8px;border-left:3px solid #f0883e">
+          <div style="font-size:11px;color:#f0883e;font-weight:600;margin-bottom:4px">⚠️ 병목 감지</div>
+          <div style="font-size:12px;color:#cdd9e5">발주→차감 사이 8시간 갭 → 재고 불일치 위험. 실시간 연동 필요</div>
+          <div style="font-size:11px;color:#8b949e;margin-top:4px">제안: Excel → nenova 자동 대조 스크립트 (PowerShell COM)</div>
+        </div>
+      </div>
+
+      <!-- 알고리즘 C: 강현우 앱 실행 루프 -->
+      <div id="algo-pane-C" style="padding:20px;display:none">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+          <span style="background:#f85149;color:#fff;padding:2px 8px;border-radius:10px;font-size:11px">강현우</span>
+          <span style="color:#8b949e;font-size:12px">매출마감 도구 실행 루프 · BAT 파일 부재로 매번 수동</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:0;flex-wrap:wrap">
+          <div style="background:rgba(248,81,73,0.1);border:1px solid #f85149;border-radius:8px;padding:10px 14px;font-size:12px;color:#f85149;text-align:center">
+            <div style="font-size:16px">🖥️</div>cmd 열기<br><span style="font-size:10px;color:#6e7681">매번 수동</span>
+          </div>
+          <div style="color:#30363d;font-size:18px;padding:0 6px">→</div>
+          <div style="background:rgba(248,81,73,0.1);border:1px solid #f85149;border-radius:8px;padding:10px 14px;font-size:12px;color:#f85149;text-align:center">
+            <div style="font-size:16px">📝</div>경로 입력<br><span style="font-size:10px;color:#6e7681">cd + python</span>
+          </div>
+          <div style="color:#30363d;font-size:18px;padding:0 6px">→</div>
+          <div style="background:rgba(248,81,73,0.1);border:1px solid #f85149;border-radius:8px;padding:10px 14px;font-size:12px;color:#f85149;text-align:center">
+            <div style="font-size:16px">🔧</div>매출마감 도구<br><span style="font-size:10px;color:#6e7681">localhost:5050</span>
+          </div>
+          <div style="color:#30363d;font-size:18px;padding:0 6px">→</div>
+          <div style="background:rgba(248,81,73,0.1);border:1px solid #f85149;border-radius:8px;padding:10px 14px;font-size:12px;color:#f85149;text-align:center">
+            <div style="font-size:16px">📊</div>데이터 업로드<br><span style="font-size:10px;color:#6e7681">Excel 파일</span>
+          </div>
+        </div>
+        <div style="margin-top:14px;padding:10px;background:#0d1117;border-radius:8px;border-left:3px solid #f85149">
+          <div style="font-size:11px;color:#f85149;font-weight:600;margin-bottom:4px">🔴 비효율 감지</div>
+          <div style="font-size:12px;color:#cdd9e5">BAT 파일 없이 매번 cmd → cd → python 수동 실행. Startup 등록으로 원클릭 해결 가능</div>
+          <div style="font-size:11px;color:#8b949e;margin-top:4px">제안: 바탕화면 바로가기 + 자동 실행 스크립트 생성</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- ══════ 섹션 1: 멤버별 분석 요약 ══════ -->
   <section id="sec-members">
     <div class="section-header">
@@ -2729,12 +2860,57 @@ async function runVisionAnalysis() {
   }
 }
 
+// ── 알고리즘 탭 전환 ──────────────────────────────────────────────
+function switchAlgoTab(id) {
+  ['A','B','C'].forEach(t => {
+    const tab = document.getElementById('algo-tab-' + t);
+    const pane = document.getElementById('algo-pane-' + t);
+    if (!tab || !pane) return;
+    const colors = { A:'#58a6ff', B:'#f0883e', C:'#f85149' };
+    if (t === id) {
+      tab.style.color = colors[t]; tab.style.borderBottom = '2px solid ' + colors[t]; tab.style.fontWeight = '600';
+      pane.style.display = 'block';
+    } else {
+      tab.style.color = '#8b949e'; tab.style.borderBottom = '2px solid transparent'; tab.style.fontWeight = 'normal';
+      pane.style.display = 'none';
+    }
+  });
+}
+
+// ── KPI 로드 ──────────────────────────────────────────────────────
+async function loadKPI() {
+  try {
+    const data = await apiFetch('/api/admin/graph');
+    if (!data?.nodes) return;
+    const nodes = data.nodes;
+    const captures = nodes.filter(n => n.type === 'screen.capture').length;
+    const analyzed = nodes.filter(n => n.type === 'screen.analyzed').length;
+    const keyboard = nodes.filter(n => n.type === 'keyboard.chunk').length;
+    const autoTrue = nodes.filter(n => n.type === 'screen.analyzed' && n.data?.automatable).length;
+
+    // 일일 주문 추정 (캡처 중 nenova 입력 비율)
+    const nenovaCaptures = nodes.filter(n => n.type === 'screen.capture' && (n.data?.app === 'explorer' || n.data?.windowTitle?.includes('주문'))).length;
+    document.getElementById('kpi-orders').textContent = nenovaCaptures > 0 ? nenovaCaptures + '+' : captures > 0 ? Math.round(captures / 10) + '+' : '--';
+
+    // 자동화 절약 추정 (자동화 가능 건 × 3분)
+    document.getElementById('kpi-save-min').textContent = autoTrue > 0 ? (autoTrue * 3) + '분' : '--';
+
+    // Vision 분석
+    document.getElementById('kpi-vision').textContent = analyzed + '건';
+
+    // 활성 에이전트 (고유 호스트 수)
+    const hosts = new Set(nodes.filter(n => n.data?.hostname).map(n => n.data.hostname));
+    document.getElementById('kpi-agents').textContent = hosts.size + '대';
+  } catch {}
+}
+
 // ── 시작 ─────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   loadAll();
   populateLogFilters();
   loadLogs();
   loadPipelineStatus();
+  loadKPI();
 });
 </script>
 
