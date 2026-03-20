@@ -579,74 +579,38 @@ function _buildTeamSystemInner(teamData) {
 
   const { name, goal, goalColor, members } = teamData;
 
-  // 중심 코어 (워크스페이스 — 작게)
-  const core = createWireNode(3, 0xffd700, { wireOpacity: 0.35, glowOpacity: 0.15 });
-  core.userData.isCore = true;
-  scene.add(core);
-  const coreHl = createWireNode(6, 0xffd700, { wireOpacity: 0.08, glow: false, detail: 0 });
-  scene.add(coreHl);
-
-  _teamNodes.push({ type: 'goal', pos: new THREE.Vector3(0, 0, 0),
-    label: goal, sublabel: name, color: goalColor, size: 'xl' });
-
   const BASE_R = TEAM_CFG.MEMBER_R;
   const TASK_R = TEAM_CFG.TASK_R;
   const TOOL_R = TEAM_CFG.TOOL_R;
+  const MEMBER_ORBIT = Math.max(BASE_R * 0.8, 5); // 멤버 궤도 (팀 구체 밀착)
 
-  // ── 팀별 그룹핑 ──────────────────────────────────────────────────────────
-  const teamGroups = {};
-  members.forEach(m => {
-    const team = m.teamName || m.role || '팀 미배정';
-    if (!teamGroups[team]) teamGroups[team] = [];
-    teamGroups[team].push(m);
-  });
+  // ── 가운데 팀 구체 (작게) ──────────────────────────────────────────────
+  const core = createWireNode(2, 0xffd700, { wireOpacity: 0.4, glowOpacity: 0.2 });
+  core.userData.isCore = true;
+  scene.add(core);
 
-  const teamNames = Object.keys(teamGroups);
-  const TEAM_COLORS = ['#3fb950', '#58a6ff', '#f78166', '#bc8cff', '#39d2c0', '#ffa657', '#f85149'];
-  const ORBIT_R = Math.max(BASE_R * 4, 20); // 팀 클러스터 간 거리
-  const CLUSTER_R = Math.max(BASE_R * 0.6, 4); // 팀 내 멤버 궤도 (팀 구체에 밀착)
+  // 팀 구체 라벨
+  const teamName = members[0]?.teamName || members[0]?.role || name || '팀';
+  _teamNodes.push({ type: 'goal', pos: new THREE.Vector3(0, 2, 0),
+    label: teamName, sublabel: `${members.length}명`, color: goalColor || '#ffd700', size: 'md' });
 
-  // 중심 주위 공전 궤도 링 (하나)
+  // 멤버 궤도 링
   {
-    const ring = new THREE.RingGeometry(ORBIT_R - 0.08, ORBIT_R + 0.08, 128);
-    const ringM = new THREE.MeshBasicMaterial({ color: 0xffd700, transparent: true, opacity: 0.06, side: THREE.DoubleSide });
+    const ring = new THREE.RingGeometry(MEMBER_ORBIT - 0.06, MEMBER_ORBIT + 0.06, 96);
+    const ringM = new THREE.MeshBasicMaterial({ color: 0x3fb950, transparent: true, opacity: 0.10, side: THREE.DoubleSide });
     const rm = new THREE.Mesh(ring, ringM);
     rm.rotation.x = Math.PI / 2;
     orbitRings.push(rm); scene.add(rm);
   }
 
-  // 각 팀 = 하나의 클러스터, 중심 궤도 위에 배치
-  teamNames.forEach((teamName, ti) => {
-    const teamMembers = teamGroups[teamName];
-    const teamColor = TEAM_COLORS[ti % TEAM_COLORS.length];
+  // 팀 = 1개 (소속 팀만 표시), 멤버들이 가운데 팀 구체 주위에 배치
+  const teamCenter = new THREE.Vector3(0, 0, 0);
+  const teamColor = '#3fb950';
+  const CLUSTER_R = MEMBER_ORBIT;
+  const teamMembers = members;
 
-    // 팀 클러스터 중심 위치 (궤도 위)
-    const teamAngle = (ti / teamNames.length) * Math.PI * 2 - Math.PI / 2;
-    const teamCenter = new THREE.Vector3(
-      ORBIT_R * Math.cos(teamAngle),
-      0,
-      ORBIT_R * Math.sin(teamAngle),
-    );
-
-    // 팀 클러스터 궤도 링 (멤버가 팀 중심 주위를 도는 원)
-    {
-      const ring = new THREE.RingGeometry(CLUSTER_R - 0.06, CLUSTER_R + 0.06, 96);
-      const ringM = new THREE.MeshBasicMaterial({ color: new THREE.Color(teamColor), transparent: true, opacity: 0.10, side: THREE.DoubleSide });
-      const rm = new THREE.Mesh(ring, ringM);
-      rm.position.copy(teamCenter);
-      rm.rotation.x = Math.PI / 2;
-      rm.userData = { isClusterRing: true, orbitR: ORBIT_R, orbitAngle: teamAngle, orbitSpeed: 0.008 + ti * 0.002, orbitCenter: new THREE.Vector3(0, 0, 0) };
-      orbitRings.push(rm); scene.add(rm);
-    }
-
-    // Team label
-    _teamNodes.push({
-      type: 'department', pos: new THREE.Vector3(teamCenter.x, 3, teamCenter.z),
-      label: teamName, color: teamColor, size: 'sm',
-    });
-
-    // ── 팀 공동 프로젝트 표시 (겹치는 앱 → 팀 구체 주위 위성) ──
-    const _teamCenter = teamCenter.clone();
+    // ── 팀 공동 프로젝트 표시 (겹치는 앱 → 가운데 팀 구체 주위 위성) ──
+    const _teamCenter = new THREE.Vector3(0, 0, 0);
     const _teamColor = teamColor;
     const _token2 = (typeof _orbitUser !== 'undefined' && _orbitUser?.token) || localStorage.getItem('orbit_token') || '';
     // 팀원 전체 데이터를 모아서 겹치는 앱 찾기
@@ -713,11 +677,9 @@ function _buildTeamSystemInner(teamData) {
       mObj.userData = {
         isTeamMember: true, memberId: member.id,
         name: member.name, role: member.role, color: member.color,
-        // 멤버는 팀 중심 주위를 공전
+        // 멤버는 가운데 팀 구체 주위를 공전
         orbitR: CLUSTER_R, orbitAngle: memberAngle, orbitSpeed: 0.02 + mi * 0.005,
-        orbitCenter: teamCenter.clone(),
-        // 팀 클러스터 전체도 중심 주위를 공전 (부모 궤도)
-        parentOrbitR: ORBIT_R, parentOrbitAngle: teamAngle, parentOrbitSpeed: 0.008 + ti * 0.002,
+        orbitCenter: new THREE.Vector3(0, 0, 0),
       };
       scene.add(mObj);
       planetMeshes.push(mObj);
@@ -869,7 +831,6 @@ function _buildTeamSystemInner(teamData) {
       _teamNodes.push({ type: 'agent', pos: agPos.clone(), obj: agObj, label: ag.alias, color: '#39d2c0', size: 'xs', memberId: member.id, config: ag.config, agentType: ag.type, autoRun: ag.config?.autoRun });
     });
     }); // teamMembers.forEach
-  }); // teamNames.forEach
 
   // ── 협업 라인 생성 ─────────────────────────────────────────────────────────
   // collab 필드에 명시된 멤버 쌍 사이에 애니메이션 선 그리기 (중복 방지)
