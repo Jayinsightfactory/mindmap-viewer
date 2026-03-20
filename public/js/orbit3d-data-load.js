@@ -186,12 +186,82 @@ async function loadData() {
     } else {
       _hideEmptyStateGuide();
       sessionStorage.removeItem('orbit_reload_retries');
+      // 개인 뷰 활동 분석 자동 로드
+      _loadActivityAnalysis();
     }
   } catch(e) {
     document.getElementById('loading').innerHTML =
       `<div style="color:#f85149;text-align:center">⚠ 서버 연결 실패<br><small style="color:#6e7681">${e.message}</small><br><br><a href="/" style="color:#58a6ff;font-size:13px">← 대시보드</a></div>`;
   }
 }
+
+// ── 개인 뷰 활동 분석 자동 로드 ─────────────────────────────────────────────────
+async function _loadActivityAnalysis() {
+  const panel = document.getElementById('activity-panel');
+  const content = document.getElementById('ap-content');
+  if (!panel || !content) return;
+
+  try {
+    const res = await _authFetch('/api/learning/analyze');
+    if (!res.ok) return;
+    const d = await res.json();
+    if (!d || d.status !== 'ok' || !d.eventCount) return;
+
+    // 앱 사용 바 차트
+    const totalEvents = (d.topApps || []).reduce((s, a) => s + a[1], 0) || 1;
+    const appBars = (d.topApps || []).slice(0, 5).map(([app, cnt]) => {
+      const pct = Math.round(cnt / totalEvents * 100);
+      const colors = { explorer: '#f0883e', kakaotalk: '#ffe066', chrome: '#58a6ff', excel: '#3fb950', nenova: '#bc8cff' };
+      const c = colors[app] || '#8b949e';
+      return `<div style="margin-bottom:6px">
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:2px"><span>${app}</span><span style="color:#8b949e">${pct}%</span></div>
+        <div style="height:6px;background:#21262d;border-radius:3px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${c};border-radius:3px"></div></div>
+      </div>`;
+    }).join('');
+
+    // 카테고리 칩
+    const catChips = (d.topCategories || []).slice(0, 5).map(([cat, cnt]) => {
+      const pct = Math.round(cnt / totalEvents * 100);
+      return `<span style="display:inline-block;padding:3px 8px;margin:2px;border-radius:10px;font-size:11px;background:#21262d;color:#e6edf3">${cat} ${pct}%</span>`;
+    }).join('');
+
+    // 인사이트
+    const insights = (d.insights || []).map(i => {
+      const icon = i.type === 'automation' ? '⚡' : i.type === 'focus' ? '🎯' : '💡';
+      return `<div style="padding:6px 0;border-bottom:1px solid #21262d;font-size:12px">${icon} ${i.text}</div>`;
+    }).join('');
+
+    // 최근 세션 (최대 3개)
+    const sessions = (d.sessions || []).slice(0, 3).map(s => {
+      const dur = s.durationMin ? `${s.durationMin}분` : '';
+      const app = s.primaryApp || '';
+      const cat = s.primaryCategory || '';
+      const wins = (s.uniqueWindows || []).slice(0, 2).join(', ');
+      return `<div style="padding:6px 0;border-bottom:1px solid #21262d;font-size:12px">
+        <span style="color:#58a6ff">${app}</span> <span style="color:#8b949e">${dur}</span> <span style="color:#6e7681">${cat}</span>
+        ${wins ? `<div style="color:#484f58;font-size:11px;margin-top:2px">${wins}</div>` : ''}
+      </div>`;
+    }).join('');
+
+    content.innerHTML = `
+      <div style="margin-bottom:14px">
+        <div style="color:#8b949e;font-size:11px;margin-bottom:8px">앱 사용 비율</div>
+        ${appBars}
+      </div>
+      <div style="margin-bottom:14px">
+        <div style="color:#8b949e;font-size:11px;margin-bottom:6px">작업 카테고리</div>
+        ${catChips}
+      </div>
+      ${insights ? `<div style="margin-bottom:14px"><div style="color:#8b949e;font-size:11px;margin-bottom:6px">분석 인사이트</div>${insights}</div>` : ''}
+      ${sessions ? `<div><div style="color:#8b949e;font-size:11px;margin-bottom:6px">최근 작업</div>${sessions}</div>` : ''}
+      <div style="margin-top:10px;text-align:center;color:#484f58;font-size:11px">이벤트 ${d.eventCount.toLocaleString()}건 · 세션 ${d.sessionCount}개 · 자동화 ${d.automationScore || 0}/100</div>
+    `;
+    panel.style.display = 'block';
+  } catch (e) {
+    console.warn('[activity-panel] 분석 로드 실패:', e.message);
+  }
+}
+window._loadActivityAnalysis = _loadActivityAnalysis;
 
 // ── 로그인 후 자동 동기화 ──────────────────────────────────────────────────────
 // 1) 기존 'local' 이벤트를 내 계정에 귀속

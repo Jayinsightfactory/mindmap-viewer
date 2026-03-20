@@ -744,6 +744,15 @@
   <div class="zs-sub" id="zs-sub"></div>
 </div>
 
+<!-- ── 활동 분석 요약 패널 (개인 뷰 자동 표시) ── -->
+<div id="activity-panel" style="display:none;position:fixed;bottom:80px;right:24px;z-index:200;width:340px;max-height:60vh;overflow-y:auto;background:rgba(13,17,23,0.95);border:1px solid #30363d;border-radius:12px;padding:16px;font-size:13px;color:#e6edf3;backdrop-filter:blur(10px)">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+    <span style="font-weight:600;font-size:14px">내 업무 분석</span>
+    <button onclick="document.getElementById('activity-panel').style.display='none'" style="background:none;border:none;color:#8b949e;cursor:pointer;font-size:16px">✕</button>
+  </div>
+  <div id="ap-content"><div style="color:#8b949e">분석 데이터 로딩 중...</div></div>
+</div>
+
 <!-- 화면 줌 조절 버튼 (우하단 고정) -->
 <div id="view-zoom-controls" style="position:fixed;bottom:24px;right:24px;z-index:200;display:flex;gap:6px;align-items:center">
   <button onclick="viewZoom(-1)" style="width:36px;height:36px;border-radius:8px;border:1px solid #30363d;background:rgba(13,17,23,0.9);color:#e6edf3;font-size:20px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center" title="축소">−</button>
