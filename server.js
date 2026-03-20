@@ -2283,7 +2283,7 @@ const createDataManagementRouter = require('./routes/data-management');
 app.use('/api', createDataManagementRouter({ verifyToken, dbModule }));
 
 // ─── Issue Predictor Agent (실시간 이슈 감지 8개 규칙) ────────────────────────
-app.use('/api/issues', require('./routes/issue-predictor'));
+app.use('/api/issues', require('./routes/issue-predictor')({ getDb: dbModule.getDb }));
 
 // ─── 데모 시드 (개발/미리보기용) ─────────────────────────────────────────────
 app.post('/api/demo/seed', (req, res) => {

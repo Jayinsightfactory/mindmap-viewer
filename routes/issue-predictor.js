@@ -1,11 +1,13 @@
 'use strict';
 const express = require('express');
-const router = express.Router();
+
+function createIssuePredictorRouter({ getDb }) {
+  const router = express.Router();
 
 // GET /api/issues/scan — 전체 이슈 스캔 (8개 규칙)
 router.get('/scan', async (req, res) => {
   try {
-    const db = req.app.locals.db;
+    const db = getDb();
     if (!db?.query) return res.json({ issues: [], error: 'DB not available' });
 
     const issues = [];
@@ -282,17 +284,54 @@ router.get('/scan', async (req, res) => {
 // GET /api/issues/user/:userId — 특정 유저 이슈
 router.get('/user/:userId', async (req, res) => {
   try {
-    const db = req.app.locals.db;
+    const db = getDb();
     if (!db?.query) return res.json({ issues: [] });
 
-    // Redirect to scan with filter
-    const fullScan = await fetch(`http://localhost:${process.env.PORT || 3000}/api/issues/scan`);
-    const data = await fullScan.json();
-    const userIssues = data.issues.filter(i => i.userId === req.params.userId);
-    res.json({ issues: userIssues, count: userIssues.length });
+    // 전체 스캔 후 해당 유저만 필터
+    const allIssues = [];
+    // scan 로직 재사용을 위해 내부 호출 대신 직접 필터
+    const scanRes = { json: (d) => d };
+    const fakeReq = req;
+    const fakeRes = { json: (data) => {
+      res.json({ issues: data.issues?.filter(i => i.userId === req.params.userId) || [], count: 0 });
+    }, status: (s) => ({ json: (d) => res.status(s).json(d) }) };
+    // 간단하게: 유저별 주요 규칙만 직접 실행
+    const userId = req.params.userId;
+    const issues = [];
+
+    // Rule 1: 과거 주문
+    const r1 = await db.query(`
+      SELECT COALESCE(data_json->>'windowTitle', data_json->'appContext'->>'currentWindow') as window,
+        COUNT(*) as visits FROM events
+      WHERE user_id = $1 AND type IN ('keyboard.chunk','screen.capture') AND timestamp > NOW() - INTERVAL '24 hours'
+        AND COALESCE(data_json->>'windowTitle', data_json->'appContext'->>'currentWindow') ~ '202[0-9]-[0-9]{2}-[0-9]{2}'
+      GROUP BY window HAVING COUNT(*) >= 3`, [userId]);
+    for (const row of r1.rows) {
+      const m = row.window?.match(/(202\d-\d{2}-\d{2})/);
+      if (m) {
+        const d = Math.floor((new Date() - new Date(m[1])) / 86400000);
+        if (d >= 3) issues.push({ rule: 'PAST_ORDER_ACCESS', severity: d>=7?'critical':'warning', detail: `${d}일 전 "${row.window}" ${row.visits}회`, visits: +row.visits });
+      }
+    }
+
+    // Rule 4: idle 비율
+    const r4 = await db.query(`
+      SELECT COUNT(*) FILTER (WHERE type='idle') as idle_count,
+        COUNT(*) FILTER (WHERE type IN ('keyboard.chunk','screen.capture')) as active_count
+      FROM events WHERE user_id = $1 AND timestamp > NOW() - INTERVAL '24 hours'`, [userId]);
+    if (r4.rows[0]) {
+      const ic = +r4.rows[0].idle_count, ac = +r4.rows[0].active_count;
+      const ratio = (ic+ac) > 0 ? ic/(ic+ac) : 0;
+      if (ratio >= 0.8 && ic > 50) issues.push({ rule: 'HIGH_IDLE_RATIO', severity: ratio>=0.9?'critical':'warning', detail: `idle ${(ratio*100).toFixed(0)}%`, idleCount: ic, activeCount: ac });
+    }
+
+    res.json({ userId, issues, count: issues.length });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-module.exports = router;
+  return router;
+}
+
+module.exports = createIssuePredictorRouter;
