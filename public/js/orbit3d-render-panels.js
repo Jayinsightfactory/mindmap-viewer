@@ -46,7 +46,8 @@ async function _fetchAnalysis() {
 }
 
 function computeInsights() {
-  // 로컬 노드 기반 실시간 피드 (기존 유지)
+  // 로컬 노드 기반 실시간 피드
+  if (typeof _allNodes === 'undefined' || !_allNodes) return { recentEvents: [], distRows: [], total: 0 };
   const cutoff = Date.now() - 3_600_000;
   const recentEvents = [..._allNodes]
     .filter(n => new Date(n.timestamp || n.created_at || 0) > cutoff)
