@@ -11,7 +11,7 @@ function closeAllRightPanels(except) {
     if (id === except) return;
     const el = document.getElementById(id);
     if (el) {
-      el.style.display = 'none';
+      el.style.display = '';
       el.classList.remove('open');
     }
   });
