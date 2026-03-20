@@ -162,19 +162,10 @@ function connectWS() {
     ? `${proto}//${location.host}?token=${encodeURIComponent(token)}`
     : `${proto}//${location.host}`;
   const ws = window._globalWs = new WebSocket(wsUrl);
-  // ── loadData 디바운서: 30초 안에 연속 호출 합치기 (깜빡임 방지) ──────────
-  let _loadDataTimer = null;
-  let _lastLoadDataTime = 0;
+  // ── WebSocket에서 자동 리로드 안 함 (화면 깜빡임 완전 방지) ──────────────
+  // 데이터 갱신은 최초 로드 + 수동 새로고침(R키)으로만
   function _debouncedLoadData() {
-    const now = Date.now();
-    // 마지막 로드 후 30초 이내면 스킵 (화면 깜빡임 방지)
-    if (now - _lastLoadDataTime < 30000) return;
-    clearTimeout(_loadDataTimer);
-    _loadDataTimer = setTimeout(() => {
-      _loadDataTimer = null;
-      _lastLoadDataTime = Date.now();
-      if (typeof loadData === 'function') loadData();
-    }, 5000);
+    // no-op: 자동 리로드 비활성화
   }
 
   ws.onmessage = ev => {
