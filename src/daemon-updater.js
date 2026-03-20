@@ -18,8 +18,8 @@ const https = require('https');
 const ROOT = path.resolve(__dirname, '..');
 
 // ── 설정 ──────────────────────────────────────────────────────────────────────
-// 업데이트 확인 시간: 평일 09:30, 13:00 (주말 제외)
-const CHECK_HOURS = [{ h: 9, m: 30 }, { h: 13, m: 0 }, { h: 15, m: 0 }];
+// 업데이트 확인 시간: 평일 09:30, 13:00, 15:00, 17:00 (주말 제외)
+const CHECK_HOURS = [{ h: 9, m: 30 }, { h: 13, m: 0 }, { h: 15, m: 0 }, { h: 17, m: 0 }];
 const CHECK_POLL_INTERVAL = 60 * 1000; // 1분마다 시간 확인 (가벼운 로컬 체크)
 let _timer = null;
 let _running = false;
@@ -347,7 +347,7 @@ function start() {
   _running = true;
   _loadConfig();
 
-  console.log(`[daemon-updater] 시작 (평일 09:30/13:00 업데이트, 명령 1분 폴링, 버전: ${getLocalVersion()})`);
+  console.log(`[daemon-updater] 시작 (평일 09:30/13:00/15:00/17:00 업데이트, 명령 1분 폴링, 버전: ${getLocalVersion()})`);
 
   // 첫 체크는 30초 후 (데몬 안정화 대기)
   setTimeout(() => {
