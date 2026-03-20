@@ -72,6 +72,14 @@
         oninput="window._teamSpacingScale = this.value / 100; document.getElementById('team-spacing-val').textContent = this.value + '%'; if(typeof _activeSimData!=='undefined' && _activeSimData && typeof buildTeamSystem==='function') buildTeamSystem(_activeSimData);">
       <span id="team-spacing-val" style="float:right">60%</span>
     </div>
+    <!-- 간격 조절 슬라이더 (전사뷰 전용) -->
+    <div id="spacing-company" style="padding:4px 12px;font-size:10px;color:#6e7681;display:none">
+      <label>전사 간격 조절</label>
+      <input type="range" id="company-spacing-slider" min="30" max="200" value="60"
+        style="width:100%;accent-color:#f0883e"
+        oninput="window._companySpacingScale = this.value / 100; document.getElementById('company-spacing-val').textContent = this.value + '%'; if(typeof _activeSimData!=='undefined' && _activeSimData && typeof buildCompanySystem==='function') buildCompanySystem(_activeSimData);">
+      <span id="company-spacing-val" style="float:right">60%</span>
+    </div>
 
     <!-- 프로필 카드 (로그인 시 표시) -->
     <div id="ln-profile-card">

@@ -758,10 +758,9 @@ function setViewPersonal() {
   if (typeof _parallelMode !== 'undefined' && _parallelMode) exitParallelMode();
   localStorage.setItem('orbitViewMode', 'personal');
   // 슬라이더 전환
-  const sp = document.getElementById('spacing-personal');
-  const st = document.getElementById('spacing-team');
-  if (sp) sp.style.display = '';
-  if (st) st.style.display = 'none';
+  document.getElementById('spacing-personal').style.display = '';
+  document.getElementById('spacing-team').style.display = 'none';
+  document.getElementById('spacing-company').style.display = 'none';
   updateNavActiveState();
 
   setTimeout(() => { _viewTransitionLock = false; }, 2000);

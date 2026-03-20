@@ -734,21 +734,21 @@ function _buildTeamSystemInner(teamData) {
       }).then(r => r.json()).then(data => {
         const nodes = data.nodes || [];
         if (nodes.length === 0) return;
-        // 앱별 활동 그룹 (직원 PC 데이터 기반)
+        // 앱별 활동 그룹 (fullContent에서 app 파싱)
         const projects = {};
         nodes.forEach(n => {
           if (n.type === 'idle') return;
-          // 직원 PC: app + windowTitle / Claude Code: projectName
-          const app = n.data?.app || n.data?.activeApp || '';
-          const title = n.data?.windowTitle || '';
-          const proj = n.projectName || n.autoTitle || app || '작업';
-          if (!proj || proj === '작업') return;
-          if (!projects[proj]) projects[proj] = { count: 0, whatSummary: '', techStack: '', app: app };
-          projects[proj].count++;
-          // Vision 분석 결과가 있으면 활동 설명으로
-          if (n.data?.activity && !projects[proj].whatSummary) projects[proj].whatSummary = n.data.activity;
-          if (n.whatSummary && !projects[proj].whatSummary) projects[proj].whatSummary = n.whatSummary;
-          if (title && !projects[proj].techStack) projects[proj].techStack = title;
+          // fullContent JSON 파싱 → app, windowTitle 추출
+          let fc = {};
+          try { if (n.fullContent && n.fullContent.startsWith('{')) fc = JSON.parse(n.fullContent); } catch {}
+          const app = fc.app || n.projectName || n.autoTitle || '';
+          const title = fc.windowTitle || '';
+          const activity = fc.activity || n.whatSummary || '';
+          if (!app) return;
+          if (!projects[app]) projects[app] = { count: 0, whatSummary: '', techStack: '' };
+          projects[app].count++;
+          if (activity && !projects[app].whatSummary) projects[app].whatSummary = activity;
+          if (title && !projects[app].techStack) projects[app].techStack = title;
         });
         // 상위 5개 앱/프로젝트를 위성으로 표시
         const topProjects = Object.entries(projects)
@@ -1051,7 +1051,7 @@ function buildCompanySystem(companyData) {
   if (typeof controls !== 'undefined') controls.enabled = true;
 
   const { name, goal, goalColor, departments } = companyData;
-  const _s = _teamScale();
+  const _s = window._companySpacingScale || _teamScale();
   const DEPT_R   = 22 * _s;
   const MBR_R    = 8 * _s;
   const CTASK_R  = 4 * _s;
@@ -1080,7 +1080,7 @@ function buildCompanySystem(companyData) {
     dObj.userData = { isDept: true, deptId: dept.id, deptName: dept.name, color: dept.color, icon: dept.icon, orbitR: DEPT_R, orbitAngle: dAngle, orbitSpeed: 0.010 + di * 0.002, orbitCenter: new THREE.Vector3(0,0,0) };
     scene.add(dObj); planetMeshes.push(dObj);
 
-    _teamNodes.push({ type: 'department', pos: dPos.clone(), obj: dObj, label: `${dept.icon} ${dept.name}`, sublabel: `${dept.members.length}명`, color: dept.color, size: 'lg', deptId: dept.id, deptData: dept });
+    _teamNodes.push({ type: 'department', pos: dPos.clone(), obj: dObj, label: `${dept.icon} ${dept.name}`, sublabel: `${dept.members.length}명`, color: dept.color, size: 'sm', deptId: dept.id, deptData: dept });
 
     // 중심→부서 연결선
     { const lg = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), dPos.clone()]); const lm = new THREE.LineBasicMaterial({ color: new THREE.Color(dept.color), transparent: true, opacity: 0.35 }); connections.push(new THREE.Line(lg, lm)); scene.add(connections[connections.length-1]); }
@@ -1204,10 +1204,9 @@ async function loadTeamDemo() {
   else if (window.RendererManager?.cleanupMultilevel) window.RendererManager.cleanupMultilevel();
   if (typeof track === 'function') track('view.mode_switch', { from: 'personal', to: 'team' });
   // 슬라이더 전환 (팀 전용)
-  const _sp = document.getElementById('spacing-personal');
-  const _st = document.getElementById('spacing-team');
-  if (_sp) _sp.style.display = 'none';
-  if (_st) _st.style.display = '';
+  document.getElementById('spacing-personal').style.display = 'none';
+  document.getElementById('spacing-team').style.display = '';
+  document.getElementById('spacing-company').style.display = 'none';
 
   const _u = typeof _orbitUser !== 'undefined' ? _orbitUser : JSON.parse(localStorage.getItem('orbitUser') || 'null');
   const token = _u?.token;
@@ -1262,11 +1261,10 @@ async function loadCompanyDemo() {
   clearTimeout(window._zoomLodTimer);
   if (window.RendererManager) window.RendererManager.switchTo('company');
   if (typeof track === 'function') track('view.mode_switch', { from: 'team', to: 'company' });
-  // 전사뷰도 팀 간격 슬라이더 사용
-  const _sp2 = document.getElementById('spacing-personal');
-  const _st2 = document.getElementById('spacing-team');
-  if (_sp2) _sp2.style.display = 'none';
-  if (_st2) _st2.style.display = '';
+  // 전사뷰 전용 슬라이더
+  document.getElementById('spacing-personal').style.display = 'none';
+  document.getElementById('spacing-team').style.display = 'none';
+  document.getElementById('spacing-company').style.display = '';
   const _u = typeof _orbitUser !== 'undefined' ? _orbitUser : JSON.parse(localStorage.getItem('orbitUser') || 'null');
   const token = _u?.token;
 
