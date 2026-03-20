@@ -172,6 +172,106 @@ function createDataArchiveRouter({ getDb }) {
     }
   });
 
+  // ═══════════════════════════════════════════════════════════════
+  // 자동 스케줄러 — 매일 04:00 KST (19:00 UTC) DB 용량 체크
+  // 80% 이상이면 자동 아카이브 (90일 이전 데이터 삭제)
+  // ═══════════════════════════════════════════════════════════════
+
+  const ARCHIVE_KEEP_DAYS = 90;     // 최근 90일은 무조건 보존
+  const ARCHIVE_THRESHOLD = 0.75;   // 75% 넘으면 아카이브 시작
+  const CHECK_INTERVAL = 6 * 60 * 60 * 1000; // 6시간마다 체크
+
+  async function _autoArchiveCheck() {
+    try {
+      const db = getDb();
+      if (!db?.query) return;
+
+      const sizeRes = await db.query(`SELECT pg_database_size('railway') as bytes`);
+      const dbBytes = parseInt(sizeRes.rows[0]?.bytes || 0);
+      const dbMB = dbBytes / 1024 / 1024;
+      const limitMB = 1024;
+      const usage = dbMB / limitMB;
+
+      console.log(`[data-archive] 자동 체크: ${Math.round(dbMB)}MB / ${limitMB}MB (${Math.round(usage * 100)}%)`);
+
+      if (usage < ARCHIVE_THRESHOLD) {
+        console.log(`[data-archive] 정상 범위 — 아카이브 불필요`);
+        return;
+      }
+
+      // 75% 이상: 노이즈 이벤트 먼저 삭제 (install.progress, daemon.update 등)
+      const noiseTypes = ['install.progress', 'install.diag', 'daemon.update', 'daemon.error'];
+      const noiseRes = await db.query(`
+        DELETE FROM events
+        WHERE type = ANY($1)
+          AND timestamp::timestamptz < NOW() - INTERVAL '7 days'
+        RETURNING id
+      `, [noiseTypes]);
+      const noiseDeleted = noiseRes.rowCount || 0;
+
+      if (noiseDeleted > 0) {
+        console.log(`[data-archive] 노이즈 삭제: ${noiseDeleted}건 (install/daemon 7일 이전)`);
+      }
+
+      // 다시 체크
+      const sizeRes2 = await db.query(`SELECT pg_database_size('railway') as bytes`);
+      const dbMB2 = parseInt(sizeRes2.rows[0]?.bytes || 0) / 1024 / 1024;
+      const usage2 = dbMB2 / limitMB;
+
+      if (usage2 < ARCHIVE_THRESHOLD) {
+        console.log(`[data-archive] 노이즈 삭제 후 정상 범위: ${Math.round(dbMB2)}MB (${Math.round(usage2 * 100)}%)`);
+        return;
+      }
+
+      // 여전히 75% 이상: idle 이벤트 삭제 (30일 이전)
+      const idleRes = await db.query(`
+        DELETE FROM events
+        WHERE type = 'idle'
+          AND timestamp::timestamptz < NOW() - INTERVAL '30 days'
+        RETURNING id
+      `);
+      const idleDeleted = idleRes.rowCount || 0;
+      if (idleDeleted > 0) {
+        console.log(`[data-archive] idle 삭제: ${idleDeleted}건 (30일 이전)`);
+      }
+
+      // 다시 체크
+      const sizeRes3 = await db.query(`SELECT pg_database_size('railway') as bytes`);
+      const dbMB3 = parseInt(sizeRes3.rows[0]?.bytes || 0) / 1024 / 1024;
+      const usage3 = dbMB3 / limitMB;
+
+      if (usage3 < ARCHIVE_THRESHOLD) {
+        console.log(`[data-archive] idle 삭제 후 정상: ${Math.round(dbMB3)}MB (${Math.round(usage3 * 100)}%)`);
+        return;
+      }
+
+      // 여전히 75% 이상: 90일 이전 데이터 삭제 (학습 데이터 보존 기간 초과분)
+      const archiveRes = await db.query(`
+        DELETE FROM events
+        WHERE timestamp::timestamptz < NOW() - INTERVAL '${ARCHIVE_KEEP_DAYS} days'
+        RETURNING id
+      `);
+      const archived = archiveRes.rowCount || 0;
+      console.log(`[data-archive] ${ARCHIVE_KEEP_DAYS}일 이전 아카이브: ${archived}건 삭제`);
+
+      // 최종 상태
+      const finalRes = await db.query(`SELECT pg_database_size('railway') as bytes`);
+      const finalMB = parseInt(finalRes.rows[0]?.bytes || 0) / 1024 / 1024;
+      console.log(`[data-archive] 최종: ${Math.round(finalMB)}MB (${Math.round(finalMB / limitMB * 100)}%)`);
+
+    } catch (err) {
+      console.error(`[data-archive] 자동 체크 에러:`, err.message);
+    }
+  }
+
+  // 서버 시작 5분 후 첫 체크, 이후 6시간마다
+  setTimeout(() => {
+    _autoArchiveCheck();
+    setInterval(_autoArchiveCheck, CHECK_INTERVAL);
+  }, 5 * 60 * 1000);
+
+  console.log('[data-archive] 자동 스케줄러 시작 (6시간마다 체크, 75% 이상 시 자동 정리)');
+
   return router;
 }
 
