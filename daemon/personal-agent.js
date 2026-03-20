@@ -478,6 +478,38 @@ async function main() {
     console.error('[personal-agent] 앱 시퀀스 분석 시작 실패:', err.message);
   }
 
+  // ②-h Excel COM 모니터 (Windows 전용)
+  let excelMonitor = null;
+  try {
+    excelMonitor = require(path.join(ROOT, 'src/excel-monitor'));
+    excelMonitor.start((evt) => {
+      _reportEvent('excel.activity', evt);
+    });
+  } catch (err) {
+    console.warn('[personal-agent] Excel 모니터 시작 실패:', err.message);
+  }
+
+  // ②-i 카카오톡 자동 캡처
+  let kakaoCapture = null;
+  try {
+    kakaoCapture = require(path.join(ROOT, 'src/kakao-capture'));
+    kakaoCapture.start(screenCapture);
+    // 앱 전환 시 카카오톡 캡처 트리거
+    if (keyboardWatcher?.on) {
+      keyboardWatcher.on('appSwitch', (app, title) => {
+        if (kakaoCapture) kakaoCapture.onAppSwitch(app, title);
+      });
+    }
+    // 10초마다 활성 앱 체크 → 카카오톡이면 주기적 캡처
+    setInterval(() => {
+      if (kakaoCapture && keyboardWatcher?.getActiveApp) {
+        kakaoCapture.onPeriodicCheck(keyboardWatcher.getActiveApp());
+      }
+    }, 10000);
+  } catch (err) {
+    console.warn('[personal-agent] 카카오톡 캡처 시작 실패:', err.message);
+  }
+
   // ②-g 파일 변경 감시
   let fileChangeWatcher = null;
   try {
@@ -498,7 +530,19 @@ async function main() {
   }
 
   // ②-c 은행 보안프로그램 감지 모니터 시작 (Windows 전용, 클립보드 포함)
+  // 은행 보안 감지에 Excel 모니터도 포함
+  const _origBankStart = startBankSecurityMonitor;
   startBankSecurityMonitor(keyboardWatcher, screenCapture, clipboardWatcher);
+  // Excel 모니터도 은행 보안 시 일시정지
+  if (excelMonitor) {
+    const origCheck = setInterval(() => {
+      if (_bankMode && excelMonitor.isRunning && !excelMonitor._bankPaused) {
+        excelMonitor.pause(); excelMonitor._bankPaused = true;
+      } else if (!_bankMode && excelMonitor._bankPaused) {
+        excelMonitor.resume(); excelMonitor._bankPaused = false;
+      }
+    }, 11000);
+  }
 
   // ③ 10분마다 content-analyzer 실행 (Ollama 로컬 태깅)
   await runContentAnalysis();
@@ -523,6 +567,8 @@ async function main() {
   console.log(`  클립보드 감시:  ${clipboardWatcher?.isRunning() ? 'ON' : 'OFF'}`);
   console.log(`  앱 시퀀스:     ${appSequence ? 'ON' : 'OFF'}`);
   console.log(`  파일 변경:     ${fileChangeWatcher?.isRunning() ? 'ON' : 'OFF'}`);
+  console.log(`  Excel 모니터:  ${excelMonitor?.isRunning() ? 'ON (10초 간격)' : 'OFF'}`);
+  console.log(`  카톡 캡처:     ${kakaoCapture?.isRunning() ? 'ON (20초 간격)' : 'OFF'}`);
   console.log(`  자동 업데이트: ${daemonUpdater ? 'ON (평일 09:30/13:00/15:00)' : 'OFF'}`);
   console.log(`  제안 엔진:     30분마다 실행`);
   console.log(`  원격 서버:     ${REMOTE_URL || '(미설정)'}`);

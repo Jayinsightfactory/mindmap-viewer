@@ -717,8 +717,8 @@ function start(opts = {}) {
     _uiohook.uIOhook.on('mousedown', (e) => {
       if (_paused) return; // 은행 보안 일시정지 중 무시
       _mouseClickCount++;
-      // 클릭 좌표 기록 (최근 200개, 자동화 스크립트 생성용)
-      _mouseClickPositions.push({ x: e.x, y: e.y, t: Date.now() });
+      // 클릭 좌표 기록 (최근 200개, 자동화 스크립트 생성용) — 앱/창 포함
+      _mouseClickPositions.push({ x: e.x, y: e.y, t: Date.now(), app: getActiveApp(), win: getActiveWindowTitle() });
       if (_mouseClickPositions.length > 200) _mouseClickPositions = _mouseClickPositions.slice(-200);
       if (_screenCapture?.onMouseBurst) _screenCapture.onMouseBurst();
       // 워크플로우 학습: 클릭 기록 (좌표 포함)
