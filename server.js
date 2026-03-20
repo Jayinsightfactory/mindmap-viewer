@@ -862,89 +862,9 @@ app.get('/api/daemon/drive-config', (req, res) => {
 // ─── 자동 에러 수정 엔진 ─────────────────────────────────────────────────────
 const autoFixer = (() => { try { return require('./src/auto-fixer'); } catch(e) { console.warn('[auto-fixer] 로드 실패:', e.message); return null; } })();
 
-// ─── Haiku Vision 자동 분석 (캡처 이미지 → 즉시 분석 → screen.analyzed 저장) ──
-let _visionAnalyzing = false;
-let _visionCount = 0;
-async function _analyzeCapture(base64, ctx) {
-  if (_visionAnalyzing) return; // 동시 분석 방지 (1건씩)
-  _visionAnalyzing = true;
-  try {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    const model = process.env.ANTHROPIC_MODEL || 'claude-haiku-4-5-20251001';
-    if (!apiKey) return;
-
-    const prompt = `이 스크린샷을 분석해주세요. 호스트: ${ctx.hostname || ''}, 앱: ${ctx.app || ''}, 창: ${ctx.windowTitle || ''}
-
-JSON으로 응답:
-{
-  "app": "프로그램명",
-  "screen": "화면명/메뉴명",
-  "elements": [{"type":"input|button|menu|table","label":"이름"}],
-  "activity": "사용자 작업 1줄 설명",
-  "dataVisible": "화면 데이터 종류 (개인정보 제외)",
-  "automatable": true/false,
-  "automationHint": "자동화 가능 부분",
-  "workCategory": "전산처리|문서작업|커뮤니케이션|파일관리|웹검색|기타"
-}`;
-
-    const body = JSON.stringify({
-      model, max_tokens: 1024,
-      messages: [{ role: 'user', content: [
-        { type: 'image', source: { type: 'base64', media_type: 'image/png', data: base64 } },
-        { type: 'text', text: prompt },
-      ]}],
-    });
-
-    const result = await new Promise((resolve, reject) => {
-      const https = require('https');
-      const req = https.request({
-        hostname: 'api.anthropic.com', path: '/v1/messages', method: 'POST', timeout: 60000,
-        headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'Content-Length': Buffer.byteLength(body) },
-      }, (res) => {
-        let d = ''; res.on('data', c => d += c);
-        res.on('end', () => { try { resolve(JSON.parse(d)); } catch (e) { reject(e); } });
-      });
-      req.on('error', reject);
-      req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
-      req.write(body);
-      req.end();
-    });
-
-    const text = result.content?.[0]?.text || '';
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    let analysis = {};
-    if (jsonMatch) { try { analysis = JSON.parse(jsonMatch[0]); } catch {} }
-
-    // screen.analyzed 이벤트 저장
-    const analyzedEvent = {
-      id: `vision-auto-${Date.now()}`,
-      type: 'screen.analyzed',
-      source: 'haiku-vision',
-      sessionId: ctx.sessionId,
-      userId: ctx.userId,
-      timestamp: ctx.ts || new Date().toISOString(),
-      data: {
-        hostname: ctx.hostname,
-        app: analysis.app || ctx.app,
-        screen: analysis.screen || '',
-        elements: analysis.elements || [],
-        activity: analysis.activity || '',
-        dataVisible: analysis.dataVisible || '',
-        automatable: analysis.automatable || false,
-        automationHint: analysis.automationHint || '',
-        workCategory: analysis.workCategory || '',
-        originalCaptureId: ctx.id,
-      },
-    };
-    await Promise.resolve(insertEvent(analyzedEvent));
-    _visionCount++;
-    console.log(`[vision-auto] #${_visionCount} ${ctx.hostname}: ${analysis.app} — ${(analysis.activity || '').slice(0, 50)}`);
-  } catch (e) {
-    console.warn('[vision-auto] 분석 오류:', e.message);
-  } finally {
-    _visionAnalyzing = false;
-  }
-}
+// ─── Vision 큐 (맥미니 CLI 워커가 폴링해서 분석) ──────────────────────────────
+// 이미지를 메모리 큐에 보관 (최대 20건, 오래된 것 자동 삭제)
+if (!global._visionImageQueue) global._visionImageQueue = [];
 
 // ─── 학습 분석 API ──────────────────────────────────────────────────────────
 const workLearner = (() => { try { return require('./src/work-learner'); } catch { return null; } })();
@@ -1446,19 +1366,26 @@ app.post('/api/hook', async (req, res) => {
       });
     }
 
-    // ── 캡처 Vision 분석 (screen.capture + imageBase64 → Haiku 즉시 분석) ──
+    // ── 캡처 Vision 큐 (screen.capture + imageBase64 → 맥미니 CLI 워커용) ──
     for (const ev of events) {
       if (ev.type === 'screen.capture' && ev.data?.imageBase64) {
-        const _imgBase64 = ev.data.imageBase64;
-        // base64는 DB에 저장 안 함 (OOM 방지)
+        // 이미지를 Vision 큐에 보관 (맥미니 워커가 폴링)
+        global._visionImageQueue.push({
+          id: ev.id,
+          imageBase64: ev.data.imageBase64,
+          app: ev.data.app || '',
+          windowTitle: ev.data.windowTitle || '',
+          trigger: ev.data.trigger || '',
+          hostname: ev.data.hostname || '',
+          sessionId: ev.sessionId,
+          userId: ev.userId || hookUserId,
+          ts: ev.timestamp,
+        });
+        // 최대 20건 유지 (메모리 관리)
+        while (global._visionImageQueue.length > 20) global._visionImageQueue.shift();
+        console.log(`[vision-queue] 이미지 큐잉: ${ev.data.hostname}/${ev.data.app} (큐: ${global._visionImageQueue.length}건)`);
+        // base64는 DB에 저장 안 함
         delete ev.data.imageBase64;
-
-        // Haiku API로 비동기 즉시 분석 (응답 차단 안 함)
-        if (process.env.ANTHROPIC_API_KEY) {
-          const _evCopy = { id: ev.id, userId: ev.userId || hookUserId, sessionId: ev.sessionId,
-            hostname: ev.data.hostname, app: ev.data.app, windowTitle: ev.data.windowTitle, ts: ev.timestamp };
-          setImmediate(() => _analyzeCapture(_imgBase64, _evCopy).catch(e => console.warn('[vision-auto] 분석 실패:', e.message)));
-        }
       }
     }
 
@@ -1777,11 +1704,11 @@ app.post('/api/auto-fix/reset-cooldown', (req, res) => {
   res.json({ ok: true, reset: `${hostname || 'ALL'}:${patternId || 'ALL'}` });
 });
 
-// Vision 분석 큐 (관리자 PC 워커용)
+// Vision 분석 큐 (맥미니 CLI 워커용 — 이미지 포함)
 app.get('/api/vision/queue', (req, res) => {
-  const queue = global._visionQueue || [];
-  // 최대 5개씩 반환 (워커가 처리)
-  const batch = queue.splice(0, 5);
+  const queue = global._visionImageQueue || [];
+  // 최대 3개씩 반환 (워커가 CLI로 분석)
+  const batch = queue.splice(0, 3);
   res.json({ pending: queue.length, batch });
 });
 

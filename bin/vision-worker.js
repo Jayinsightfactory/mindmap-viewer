@@ -333,31 +333,101 @@ async function processBatch() {
   } catch (e) { console.error('[vision] 에러:', e.message); return 0; }
 }
 
+// ── 서버 큐 모드: /api/vision/queue에서 이미지 가져와 CLI 분석 ───────────────
+async function processServerQueue() {
+  try {
+    const url = new URL('/api/vision/queue', ORBIT_SERVER);
+    const mod = url.protocol === 'https:' ? https : http;
+    const h = {}; if (ORBIT_TOKEN) h['Authorization'] = 'Bearer ' + ORBIT_TOKEN;
+
+    const queueData = await new Promise((resolve) => {
+      const req = mod.get({ hostname: url.hostname, port: url.port || 443, path: url.pathname, headers: h, timeout: 15000 }, (res) => {
+        let d = ''; res.on('data', c => d += c);
+        res.on('end', () => { try { resolve(JSON.parse(d)); } catch { resolve({ batch: [] }); } });
+      });
+      req.on('error', () => resolve({ batch: [] }));
+      req.end();
+    });
+
+    const batch = queueData.batch || [];
+    if (!batch.length) return 0;
+    console.log(`[vision-queue] 서버 큐에서 ${batch.length}건 수신 (대기: ${queueData.pending}건)`);
+
+    let done = 0;
+    for (const item of batch) {
+      try {
+        if (!item.imageBase64) { console.warn('  이미지 없음, 스킵'); continue; }
+        console.log(`[vision-queue] ${item.hostname}/${item.app}: ${item.windowTitle || ''}`);
+
+        const result = await visionAnalyze(item.imageBase64, {
+          hostname: item.hostname, name: item.app || 'capture',
+        });
+        if (!result) continue;
+
+        console.log(`  → ${result.app}: ${(result.activity || '').substring(0, 50)}`);
+
+        // screen.analyzed 이벤트로 서버에 전송
+        const payload = JSON.stringify({ events: [{
+          id: `vision-cli-${Date.now()}-${done}`, type: 'screen.analyzed', source: 'vision-cli-worker',
+          sessionId: item.sessionId, userId: item.userId,
+          timestamp: item.ts || new Date().toISOString(),
+          data: { hostname: item.hostname, app: result.app || item.app, screen: result.screen || '',
+            elements: result.elements || [], activity: result.activity || '',
+            dataVisible: result.dataVisible || '', automatable: result.automatable || false,
+            automationHint: result.automationHint || '', workCategory: result.workCategory || '',
+            originalCaptureId: item.id },
+        }] });
+
+        await new Promise(resolve => {
+          const sUrl = new URL('/api/hook', ORBIT_SERVER);
+          const sMod = sUrl.protocol === 'https:' ? https : http;
+          const sh = { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) };
+          if (ORBIT_TOKEN) sh['Authorization'] = 'Bearer ' + ORBIT_TOKEN;
+          const sr = sMod.request({ hostname: sUrl.hostname, port: sUrl.port || 443, path: sUrl.pathname, method: 'POST', headers: sh, timeout: 10000 },
+            r => { r.resume(); resolve(r.statusCode < 300); });
+          sr.on('error', () => resolve(false)); sr.write(payload); sr.end();
+        });
+
+        done++;
+        await new Promise(r => setTimeout(r, 2000)); // CLI 쿨다운
+      } catch (e) { console.warn(`  분석 실패: ${e.message}`); }
+    }
+    return done;
+  } catch (e) { console.error('[vision-queue] 에러:', e.message); return 0; }
+}
+
+// ── 메인 ─────────────────────────────────────────────────────────────────────
+const SERVER_QUEUE_MODE = process.argv.includes('--server-queue') || !process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+
 async function main() {
-  console.log('[vision-worker] Google Drive → Claude Vision 분석 워커');
+  console.log('[vision-worker] Claude Vision 분석 워커');
   if (!ANTHROPIC_KEY && !CLAUDE_CLI) {
     console.error('Claude CLI 또는 ANTHROPIC_API_KEY 필요');
     console.error('  방법 1: Claude Max 구독 → claude 명령어 설치');
     console.error('  방법 2: ANTHROPIC_API_KEY=sk-xxx node bin/vision-worker.js');
     process.exit(1);
   }
-  if (!(await loadGoogleConfig())) { console.error('Google Drive 설정 실패'); process.exit(1); }
   console.log(`  모드: ${USE_CLI ? 'Claude CLI (Max 구독)' : 'API 키'}`);
+  console.log(`  소스: ${SERVER_QUEUE_MODE ? '서버 큐 (/api/vision/queue)' : 'Google Drive'}`);
   if (CLAUDE_CLI) console.log(`  CLI: ${CLAUDE_CLI}`);
   console.log(`  서버: ${ORBIT_SERVER}`);
-  console.log(`  폴링: ${POLL_INTERVAL/1000}초`);
-  console.log(`  폴더: ${_gFolder}`);
+  console.log(`  폴링: ${(SERVER_QUEUE_MODE ? 30 : POLL_INTERVAL / 1000)}초`);
 
-  const first = await processBatch();
-  console.log(`[vision] 첫 배치: ${first}건`);
-
-  // --once 모드면 첫 배치만 실행하고 종료
-  if (process.argv.includes('--once')) {
-    console.log(`[vision] --once 모드: ${first}건 처리 후 종료`);
-    process.exit(0);
+  if (SERVER_QUEUE_MODE) {
+    // 서버 큐 모드: 30초마다 서버에서 이미지 가져와 CLI 분석
+    const first = await processServerQueue();
+    console.log(`[vision] 첫 배치: ${first}건`);
+    if (process.argv.includes('--once')) { process.exit(0); }
+    setInterval(processServerQueue, 30 * 1000);
+  } else {
+    // Google Drive 모드
+    if (!(await loadGoogleConfig())) { console.error('Google Drive 설정 실패'); process.exit(1); }
+    console.log(`  폴더: ${_gFolder}`);
+    const first = await processBatch();
+    console.log(`[vision] 첫 배치: ${first}건`);
+    if (process.argv.includes('--once')) { process.exit(0); }
+    setInterval(processBatch, POLL_INTERVAL);
   }
-
-  setInterval(processBatch, POLL_INTERVAL);
 }
 
 main().catch(e => { console.error(e.message); process.exit(1); });
