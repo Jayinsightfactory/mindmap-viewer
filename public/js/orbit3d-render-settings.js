@@ -485,11 +485,13 @@ async function renderSetupPanel() {
   // ── 서버 버전 가져오기 ────────────────────────────────────────────────────
   let _serverVer = 'unknown';
   let _serverTs = '';
+  let _deployInfo = null;
   try {
     const vr = await fetch('/api/daemon/version');
     const vd = await vr.json();
     _serverVer = vd.version || 'unknown';
     _serverTs = vd.ts ? new Date(vd.ts).toLocaleString('ko-KR') : '';
+    _deployInfo = vd.deploy || null;
   } catch {}
 
   // ── 트래커 연결 상태 서버에서 확인 ──────────────────────────────────────
@@ -757,13 +759,23 @@ async function renderSetupPanel() {
       ↺ 상태 새로고침
     </button>
 
-    <div style="margin-top:16px;padding-top:12px;border-top:1px solid #21262d;display:flex;justify-content:space-between;align-items:center">
-      <div style="font-size:10px;color:#484f58">
-        서버 버전: <span style="color:#58a6ff;font-family:monospace">${_serverVer}</span>
+    <div style="margin-top:16px;padding-top:12px;border-top:1px solid #21262d">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:${_deployInfo?.recentChanges?.length ? '8' : '0'}px">
+        <div style="font-size:10px;color:#484f58">
+          서버: <span style="color:#58a6ff;font-family:monospace">${_serverVer}</span>
+          ${_deployInfo?.commitDate ? ` · <span style="color:#8b949e">${new Date(_deployInfo.commitDate).toLocaleString('ko-KR')}</span>` : ''}
+        </div>
       </div>
-      <div style="font-size:10px;color:#484f58">
-        ${_serverTs}
-      </div>
+      ${_deployInfo?.recentChanges?.length ? `
+        <div style="font-size:10px;color:#6e7681;margin-bottom:4px">최근 수정 내역</div>
+        ${_deployInfo.recentChanges.map(c => `
+          <div style="font-size:10px;padding:3px 0;border-bottom:1px solid #161b22;display:flex;gap:6px">
+            <span style="color:#58a6ff;font-family:monospace;flex-shrink:0">${escHtml(c.hash)}</span>
+            <span style="color:#cdd9e5;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(c.msg)}</span>
+            <span style="color:#484f58;flex-shrink:0">${c.date ? new Date(c.date).toLocaleString('ko-KR', {month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}) : ''}</span>
+          </div>
+        `).join('')}
+      ` : ''}
     </div>
   `;
 
