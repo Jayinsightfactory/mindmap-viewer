@@ -205,35 +205,61 @@ router.get('/scan', async (req, res) => {
       }
     }
 
-    // Rule 7: 주문-차감 불일치 (주문 많은데 차감 적음)
+    // Rule 7: 주문-차감 불일치 (rawInput 기반 정밀 분류)
+    // 윈도우 타이틀 + rawInput 내용 + 클릭패턴으로 주문/차감 구분
     const orderDeduction = await db.query(`
       SELECT user_id,
+        -- 윈도우 기반 (기존)
         COUNT(*) FILTER (WHERE
           COALESCE(data_json->>'windowTitle', data_json->'appContext'->>'currentWindow') ~* '주문'
-        ) as order_count,
+        ) as win_order,
         COUNT(*) FILTER (WHERE
           COALESCE(data_json->>'windowTitle', data_json->'appContext'->>'currentWindow') ~* '차감'
-        ) as deduction_count
+        ) as win_deduction,
+        -- rawInput 기반 (신규): 숫자+코드 패턴 = 주문 입력, 재고/수량 문구 = 차감
+        COUNT(*) FILTER (WHERE
+          data_json->>'rawInput' IS NOT NULL
+          AND data_json->>'rawInput' ~ '[0-9]{2,}'
+          AND COALESCE(data_json->>'windowTitle', data_json->'appContext'->>'currentWindow') ~* '(주문|화훼 관리)'
+          AND (data_json->>'mouseClicks')::int > 15
+        ) as raw_order,
+        COUNT(*) FILTER (WHERE
+          data_json->>'rawInput' IS NOT NULL
+          AND (data_json->>'rawInput' ~* '(cnfrh|sodurtj|qnxkremf|차감|재고|수량|확인)'
+            OR COALESCE(data_json->>'windowTitle', data_json->'appContext'->>'currentWindow') ~* '차감')
+        ) as raw_deduction,
+        -- Excel 차감내역 파일 접근
+        COUNT(*) FILTER (WHERE
+          COALESCE(data_json->>'windowTitle', data_json->'appContext'->>'currentWindow') ~* '차감내역.*Excel'
+        ) as excel_deduction
       FROM events
-      WHERE type IN ('keyboard.chunk', 'screen.capture')
+      WHERE type = 'keyboard.chunk'
         AND timestamp::timestamptz > NOW() - INTERVAL '24 hours'
       GROUP BY user_id
       HAVING COUNT(*) FILTER (WHERE
         COALESCE(data_json->>'windowTitle', data_json->'appContext'->>'currentWindow') ~* '주문'
-      ) >= 10
+        OR (data_json->>'rawInput' IS NOT NULL AND (data_json->>'mouseClicks')::int > 15)
+      ) >= 5
     `);
 
     for (const row of orderDeduction.rows) {
-      const orderCount = parseInt(row.order_count);
-      const deductCount = parseInt(row.deduction_count);
-      if (orderCount > 0 && (deductCount === 0 || orderCount / Math.max(deductCount, 1) > 10)) {
+      // rawInput이 있으면 정밀 분류, 없으면 윈도우 기반 폴백
+      const orderCount = parseInt(row.raw_order) || parseInt(row.win_order);
+      const deductCount = parseInt(row.raw_deduction) + parseInt(row.excel_deduction) || parseInt(row.win_deduction);
+      const ratio = deductCount > 0 ? orderCount / deductCount : orderCount;
+
+      if (orderCount >= 10 && ratio > 5) {
+        const hasRawInput = parseInt(row.raw_order) > 0;
         issues.push({
           rule: 'ORDER_DEDUCTION_MISMATCH',
-          severity: deductCount === 0 ? 'critical' : 'warning',
+          severity: deductCount === 0 ? 'critical' : ratio > 20 ? 'warning' : 'info',
           userId: row.user_id,
-          detail: `주문 ${orderCount}건 vs 차감 ${deductCount}건 — 대조 누락 가능`,
+          detail: `주문 ${orderCount}건 vs 차감 ${deductCount}건 (비율 ${ratio.toFixed(0)}:1) — 대조 누락 가능`,
           orderCount,
           deductionCount: deductCount,
+          excelDeduction: parseInt(row.excel_deduction),
+          classifiedBy: hasRawInput ? 'rawInput+clicks' : 'windowTitle',
+          ratio: Math.round(ratio),
         });
       }
     }

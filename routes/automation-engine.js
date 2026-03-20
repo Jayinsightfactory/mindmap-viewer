@@ -252,6 +252,146 @@ function createAutomationEngine({ getDb }) {
   });
 
   // ═══════════════════════════════════════════════════════════════
+  // GET /api/automation/classify — rawInput 기반 작업 분류
+  // 실제 타이핑 내용으로 주문/차감/커뮤니케이션/데이터입력 구분
+  // ═══════════════════════════════════════════════════════════════
+  router.get('/classify', async (req, res) => {
+    try {
+      const db = getDb();
+      if (!db?.query) return res.json({ error: 'DB not available' });
+
+      const hours = parseInt(req.query.hours || '24');
+      const userId = req.query.userId;
+
+      let userFilter = '';
+      const params = [];
+      if (userId) { params.push(userId); userFilter = `AND user_id = $${params.length}`; }
+
+      const result = await db.query(`
+        SELECT user_id, timestamp,
+          data_json->'appContext'->>'currentWindow' as window,
+          data_json->>'rawInput' as raw_input,
+          data_json->>'summary' as summary,
+          (data_json->>'mouseClicks')::int as clicks,
+          data_json->'metrics'->>'totalChars' as chars
+        FROM events
+        WHERE type = 'keyboard.chunk'
+          AND data_json->>'rawInput' IS NOT NULL
+          AND LENGTH(data_json->>'rawInput') > 3
+          AND timestamp::timestamptz > NOW() - INTERVAL '${hours} hours'
+          ${userFilter}
+        ORDER BY timestamp
+      `, params);
+
+      const classified = [];
+      const stats = { order: 0, deduction: 0, excel_entry: 0, chat: 0, search: 0, other: 0 };
+
+      for (const row of result.rows) {
+        const raw = row.raw_input || '';
+        const win = (row.window || '').toLowerCase();
+        const clicks = parseInt(row.clicks) || 0;
+        const chars = parseInt(row.chars) || 0;
+
+        let workType = 'other';
+        let confidence = 0.5;
+        const signals = [];
+
+        // ── 주문 입력 판정 ──
+        // 신호: 주문 윈도우 + 숫자 포함 + 높은 클릭 + 짧은 입력
+        if (win.includes('주문') || win.includes('화훼 관리')) {
+          if (/\d{2,}/.test(raw) && clicks > 15) {
+            workType = 'order'; confidence = 0.95;
+            signals.push('주문윈도우+숫자코드+고클릭');
+          } else if (clicks > 10) {
+            workType = 'order'; confidence = 0.8;
+            signals.push('주문윈도우+클릭 탐색');
+          }
+        }
+
+        // ── 차감/재고 판정 ──
+        // 신호: 차감 윈도우 OR rawInput에 재고/수량 키워드 (두벌식)
+        if (workType === 'other') {
+          const deductionKeywords = /cnfrh|sodurtj|qnxkremf|차감|재고|수량|확인|ckawhg|입금/;
+          if (win.includes('차감') || deductionKeywords.test(raw)) {
+            workType = 'deduction'; confidence = 0.9;
+            signals.push('차감키워드 감지');
+          }
+        }
+
+        // ── Excel 데이터 입력 판정 ──
+        // 신호: Excel 윈도우 + 공백 없는 연속 타이핑 + 숫자 혼합
+        if (workType === 'other' && win.includes('excel')) {
+          const spaceRatio = (raw.match(/ /g) || []).length / raw.length;
+          const numRatio = (raw.match(/\d/g) || []).length / raw.length;
+          if (spaceRatio < 0.05 && raw.length > 10) {
+            workType = 'excel_entry'; confidence = 0.9;
+            signals.push('Excel+연속타이핑(공백없음)');
+          } else if (numRatio > 0.3) {
+            workType = 'excel_entry'; confidence = 0.85;
+            signals.push('Excel+숫자비율높음');
+          } else {
+            workType = 'excel_entry'; confidence = 0.7;
+            signals.push('Excel윈도우');
+          }
+        }
+
+        // ── 채팅/커뮤니케이션 판정 ──
+        // 신호: 카카오톡/네노바 윈도우 + 공백 있는 문장형 + 낮은 클릭
+        if (workType === 'other') {
+          const isChatWindow = /카카오톡|네노바|영업|현장|수입|태림|참좋은|경부선|수연|엘리아리/.test(win);
+          const spaceRatio = (raw.match(/ /g) || []).length / Math.max(raw.length, 1);
+          if (isChatWindow) {
+            if (spaceRatio > 0.05 || raw.length > 20) {
+              workType = 'chat'; confidence = 0.85;
+              signals.push('채팅윈도우+문장형');
+            } else {
+              workType = 'chat'; confidence = 0.7;
+              signals.push('채팅윈도우');
+            }
+          }
+        }
+
+        // ── 검색 판정 ──
+        if (workType === 'other' && (win.includes('chrome') || win.includes('edge') || win.includes('검색'))) {
+          workType = 'search'; confidence = 0.7;
+          signals.push('브라우저/검색윈도우');
+        }
+
+        stats[workType]++;
+        classified.push({
+          timestamp: row.timestamp,
+          userId: row.user_id,
+          window: row.window,
+          rawInput: raw.substring(0, 100),
+          workType,
+          confidence,
+          signals,
+          clicks,
+          chars: parseInt(row.chars) || 0,
+        });
+      }
+
+      // 유저별 집계
+      const byUser = {};
+      for (const c of classified) {
+        if (!byUser[c.userId]) byUser[c.userId] = { order: 0, deduction: 0, excel_entry: 0, chat: 0, search: 0, other: 0, total: 0 };
+        byUser[c.userId][c.workType]++;
+        byUser[c.userId].total++;
+      }
+
+      res.json({
+        totalClassified: classified.length,
+        stats,
+        byUser,
+        classified: classified.slice(0, 100), // 최근 100건
+        algorithm: 'rawInput+window+clicks v1',
+      });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════
   // POST /api/automation/learn — 이벤트에서 자동 학습
   // ═══════════════════════════════════════════════════════════════
   router.post('/learn', async (req, res) => {
