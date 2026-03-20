@@ -15,7 +15,7 @@ function _getActiveApp() {
     if (process.platform === 'win32') {
       return require('child_process').execSync(
         'powershell -NoProfile -Command "(Get-Process | Where-Object {$_.MainWindowHandle -ne 0} | Sort-Object CPU -Descending | Select-Object -First 1).ProcessName"',
-        { timeout: 1000, encoding: 'utf8', windowsHide: true }
+        { timeout: 1000, encoding: 'utf8', windowsHide: true, stdio: 'pipe' }
       ).trim();
     }
   } catch {}
@@ -34,7 +34,7 @@ function _check() {
     let text = '';
     if (process.platform === 'win32') {
       text = execSync('powershell -NoProfile -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-Clipboard"',
-        { timeout: 2000, encoding: 'utf8', windowsHide: true }).trim();
+        { timeout: 2000, encoding: 'utf8', windowsHide: true, stdio: 'pipe' }).trim();
     } else if (process.platform === 'darwin') {
       text = execSync('pbpaste', { timeout: 1000, encoding: 'utf8' }).trim();
     }

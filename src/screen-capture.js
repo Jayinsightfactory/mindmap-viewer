@@ -291,7 +291,7 @@ function capture(trigger = 'manual') {
       const escaped = filepath.replace(/\\/g, '\\\\');
       execSync(
         `powershell -NoProfile -c "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Screen]::PrimaryScreen | ForEach-Object { $bmp = New-Object System.Drawing.Bitmap($_.Bounds.Width, $_.Bounds.Height); $g = [System.Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($_.Bounds.Location, [System.Drawing.Point]::Empty, $_.Bounds.Size); $bmp.Save('${escaped}') }"`,
-        { timeout: 10000 }
+        { timeout: 10000, windowsHide: true, stdio: 'pipe' }
       );
     } else { return null; }
 

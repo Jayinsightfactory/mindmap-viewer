@@ -41,7 +41,7 @@ function _loadConfig() {
 // ── 현재 로컬 커밋 해시 ───────────────────────────────────────────────────────
 function getLocalVersion() {
   try {
-    return execSync('git rev-parse HEAD', { cwd: ROOT, timeout: 5000 }).toString().trim().slice(0, 8);
+    return execSync('git rev-parse HEAD', { cwd: ROOT, timeout: 5000, windowsHide: true, stdio: 'pipe' }).toString().trim().slice(0, 8);
   } catch { return 'unknown'; }
 }
 
@@ -180,13 +180,13 @@ function pullAndRestart(reason) {
 
     // npm install (package.json 변경 시)
     try {
-      const diffFiles = execSync('git diff HEAD~1 --name-only', { cwd: ROOT, timeout: 5000 }).toString();
+      const diffFiles = execSync('git diff HEAD~1 --name-only', { cwd: ROOT, timeout: 5000, windowsHide: true, stdio: 'pipe' }).toString();
       if (diffFiles.includes('package.json')) {
         console.log('[daemon-updater] package.json 변경 감지 → npm install');
         if (process.platform === 'win32') {
-          execSync('cmd /c "npm install --production"', { cwd: ROOT, timeout: 60000 });
+          execSync('cmd /c "npm install --production"', { cwd: ROOT, timeout: 60000, windowsHide: true, stdio: 'pipe' });
         } else {
-          execSync('npm install --production', { cwd: ROOT, timeout: 60000 });
+          execSync('npm install --production', { cwd: ROOT, timeout: 60000, windowsHide: true, stdio: 'pipe' });
         }
       }
     } catch (e) {
@@ -271,7 +271,7 @@ async function executeCommand(cmd) {
           if (process.platform === 'win32' && /\$env:|Test-Path|Get-Command|Write-Host|\bwinget\b|Set-ItemProperty|Add-MpPreference/i.test(execCmd)) {
             execCmd = `powershell -NoProfile -ExecutionPolicy Bypass -Command "${execCmd.replace(/"/g, '\\"')}"`;
           }
-          const out = execSync(execCmd, { cwd: ROOT, timeout: 60000 }).toString().trim();
+          const out = execSync(execCmd, { cwd: ROOT, timeout: 60000, windowsHide: true, stdio: 'pipe' }).toString().trim();
           console.log(`[daemon-updater] exec 결과: ${out.slice(0, 200)}`);
           reportStatus(cmd._autoFix ? 'auto_fix_success' : 'command_executed',
             `${cmd._patternId || 'exec'}: ${out.slice(0, 200)}`);
