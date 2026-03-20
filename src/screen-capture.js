@@ -209,10 +209,18 @@ function _uploadCaptureToServer(filepath, trigger, context) {
 }
 
 /**
- * 최소 쿨타임 반환 (변화 감지 기반이라 최소값만)
+ * 최소 쿨타임 반환 — 카카오톡/주문 앱 활성 시 단축
  */
 function _getCurrentCooltime() {
-  return MIN_COOLTIME;
+  const app = (_lastActiveApp || '').toLowerCase();
+  const win = (_lastWindowTitle || '').toLowerCase();
+  // 카카오톡 + 업무 채팅방: 쿨타임 5초 (채팅방 전환이 빈번)
+  if (app === 'kakaotalk' && /네노바|발주|주문|출고|거래처/.test(win)) return 5000;
+  // 카카오톡 일반: 7초
+  if (app === 'kakaotalk') return 7000;
+  // nenova ERP: 5초 (주문 입력 변화 빠름)
+  if (/주문|화훼.*관리|nenova/i.test(win)) return 5000;
+  return MIN_COOLTIME; // 기본 10초
 }
 
 /**

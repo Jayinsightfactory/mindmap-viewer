@@ -1405,6 +1405,31 @@ app.post('/api/hook', async (req, res) => {
       }
     }
 
+    // ── 클립보드 발주서 자동 파싱 → parsed_orders 저장 ──────────────────
+    if (_isPg) {
+      for (const ev of events) {
+        if (ev.type === 'clipboard.change' && ev.data?.orderFormat && ev.data?.parsedItems?.length > 0) {
+          try {
+            const pool = dbModule.getDb();
+            for (const item of ev.data.parsedItems) {
+              await pool.query(`
+                INSERT INTO parsed_orders (source_event_id, source_type, customer, product, quantity, unit, action, raw_text, confidence)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+              `, [
+                ev.id, ev.data.orderFormat,
+                item.customer || '', item.product || '',
+                item.qty || 0, item.unit || '단',
+                item.action || 'add',
+                (ev.data.text || '').substring(0, 500),
+                item.confidence || 0.9,
+              ]);
+            }
+            console.log(`[hook] 발주서 자동 파싱: ${ev.data.orderFormat}, ${ev.data.parsedItems.length}건 → parsed_orders`);
+          } catch (e) { console.error('[hook] parsed_orders 저장 실패:', e.message); }
+        }
+      }
+    }
+
     // ── 세션 자동 제목 생성 (이벤트 3개 이상 쌓인 세션) ──────────────────
     if (_isPg) {
       const sessionIds = [...new Set(events.map(e => e.sessionId).filter(Boolean))];
