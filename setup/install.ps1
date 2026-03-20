@@ -891,10 +891,23 @@ if (Test-Path $DaemonScript) {
 @echo off
 cd /d "%USERPROFILE%\.orbit"
 set ORBIT_SERVER_URL=$REMOTE
-for /f "usebackq tokens=*" %%a in (`node -e "try{console.log(require('%USERPROFILE%\\.orbit-config.json').token||'')}catch(e){console.log('')}"`) do set ORBIT_TOKEN=%%a
+
+:: node.exe 경로 탐색
+set "NODE_EXE="
+where node >nul 2>&1 && for /f "delims=" %%n in ('where node 2^>nul') do if not defined NODE_EXE set "NODE_EXE=%%n"
+if not defined NODE_EXE if exist "$NodePath" set "NODE_EXE=$NodePath"
+if not defined NODE_EXE if exist "C:\Program Files\nodejs\node.exe" set "NODE_EXE=C:\Program Files\nodejs\node.exe"
+if not defined NODE_EXE if exist "%APPDATA%\nvm\current\node.exe" set "NODE_EXE=%APPDATA%\nvm\current\node.exe"
+if not defined NODE_EXE (
+  echo [%date% %time%] ERROR: node.exe not found >> "$logFile"
+  timeout /t 60 /nobreak >nul
+  exit /b 1
+)
+
+for /f "usebackq tokens=*" %%a in (`"%NODE_EXE%" -e "try{console.log(require('%USERPROFILE%\\.orbit-config.json').token||'')}catch(e){console.log('')}"`) do set ORBIT_TOKEN=%%a
 :loop
 echo [%date% %time%] daemon start >> "$logFile"
-"$NodePath" "$DaemonScript" >> "$logFile" 2>&1
+"%NODE_EXE%" "$DaemonScript" >> "$logFile" 2>&1
 echo [%date% %time%] daemon exit (restart in 10s) >> "$logFile"
 timeout /t 10 /nobreak >nul
 goto loop

@@ -128,6 +128,34 @@ function reportStatus(status, detail) {
   } catch {}
 }
 
+// ── Windows bat 파일 재생성 (node 경로 탐색 포함) ─────────────────────────────
+function _regenerateBatFile() {
+  if (process.platform !== 'win32') return;
+  try {
+    const orbitDir = path.join(os.homedir(), '.orbit');
+    const logFile = path.join(orbitDir, 'daemon.log');
+    const daemonScript = path.join(ROOT, 'daemon', 'personal-agent.js');
+    const serverUrl = _serverUrl || process.env.ORBIT_SERVER_URL || '';
+    const nodeExe = process.execPath; // 현재 실행 중인 node 경로
+
+    const batContent = `@echo off\r\ncd /d "%USERPROFILE%\\.orbit"\r\nset ORBIT_SERVER_URL=${serverUrl}\r\n\r\n:: node.exe 경로 탐색\r\nset "NODE_EXE="\r\nwhere node >nul 2>&1 && for /f "delims=" %%n in ('where node 2^>nul') do if not defined NODE_EXE set "NODE_EXE=%%n"\r\nif not defined NODE_EXE if exist "${nodeExe}" set "NODE_EXE=${nodeExe}"\r\nif not defined NODE_EXE if exist "C:\\Program Files\\nodejs\\node.exe" set "NODE_EXE=C:\\Program Files\\nodejs\\node.exe"\r\nif not defined NODE_EXE if exist "%APPDATA%\\nvm\\current\\node.exe" set "NODE_EXE=%APPDATA%\\nvm\\current\\node.exe"\r\nif not defined NODE_EXE (\r\n  echo [%date% %time%] ERROR: node.exe not found >> "${logFile}"\r\n  timeout /t 60 /nobreak >nul\r\n  exit /b 1\r\n)\r\n\r\nfor /f "usebackq tokens=*" %%a in (\`"%NODE_EXE%" -e "try{console.log(require('%USERPROFILE%\\\\.orbit-config.json').token||'')}catch(e){console.log('')}"\`) do set ORBIT_TOKEN=%%a\r\n:loop\r\necho [%date% %time%] daemon start >> "${logFile}"\r\n"%NODE_EXE%" "${daemonScript}" >> "${logFile}" 2>&1\r\necho [%date% %time%] daemon exit (restart in 10s) >> "${logFile}"\r\ntimeout /t 10 /nobreak >nul\r\ngoto loop\r\n`;
+
+    // Startup 폴더
+    const startupDir = path.join(os.homedir(), 'AppData', 'Roaming', 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup');
+    const startupBat = path.join(startupDir, 'orbit-daemon.bat');
+    if (fs.existsSync(startupDir)) {
+      fs.writeFileSync(startupBat, batContent, { encoding: 'ascii' });
+    }
+    // ~/.orbit 폴더
+    const orbitBat = path.join(orbitDir, 'start-daemon.bat');
+    fs.writeFileSync(orbitBat, batContent, { encoding: 'ascii' });
+
+    console.log('[daemon-updater] bat 파일 재생성 완료 (node 경로 탐색 포함)');
+  } catch (e) {
+    console.warn('[daemon-updater] bat 재생성 실패:', e.message);
+  }
+}
+
 // ── git pull + 재시작 ─────────────────────────────────────────────────────────
 function pullAndRestart(reason) {
   console.log(`[daemon-updater] 업데이트 시작: ${reason}`);
@@ -162,6 +190,9 @@ function pullAndRestart(reason) {
     }
 
     reportStatus('update_success', pullResult);
+
+    // Windows bat 파일 재생성 (node 경로 탐색 로직 반영)
+    _regenerateBatFile();
 
     // 자기 자신 재시작
     console.log('[daemon-updater] 3초 후 재시작...');
