@@ -2396,6 +2396,9 @@ app.use('/api/company', require('./routes/company-structure')({ getDb: dbModule.
 // ─── 자가 진화 엔진 (성능 모니터 + 자동 개선 + 트렌드) ─────────────────────
 app.use('/api/evolve', require('./routes/self-evolve')({ getDb: dbModule.getDb }));
 
+// ─── 자율 탐색 + 아이디어 엔진 (2시간마다 새 패턴 발굴) ─────────────────────
+app.use('/api/ideas', require('./routes/idea-engine')({ getDb: dbModule.getDb }));
+
 // ─── 데모 시드 (개발/미리보기용) ─────────────────────────────────────────────
 app.post('/api/demo/seed', (req, res) => {
   const token = (req.headers.authorization || '').replace('Bearer ', '') || req.query.token;
