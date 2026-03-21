@@ -699,6 +699,34 @@
     .pipe-status { grid-template-columns: 1fr 1fr; }
     .vision-action { flex-direction: column; align-items: flex-start; }
   }
+
+  /* ── 페이지 탭 네비게이션 ──────────────────────────────── */
+  .page-tab-bar {
+    display: flex; align-items: center; gap: 0;
+    background: #161b22; border-bottom: 1px solid var(--border);
+    position: sticky; top: 49px; z-index: 99;
+    height: 40px; padding: 0 24px;
+  }
+  .page-tab {
+    background: none; border: none; color: var(--muted);
+    font-size: 13px; font-weight: 500; padding: 0 18px;
+    height: 40px; cursor: pointer; position: relative;
+    display: flex; align-items: center; gap: 6px;
+    transition: color .15s; white-space: nowrap;
+  }
+  .page-tab:hover { color: var(--text); }
+  .page-tab.active { color: var(--text); }
+  .page-tab.active::after {
+    content: ''; position: absolute; bottom: 0; left: 0; right: 0;
+    height: 2px; background: #58a6ff; border-radius: 2px 2px 0 0;
+  }
+  .page-tab-icon { font-size: 15px; }
+  .page-tab-panel { display: none; }
+  .page-tab-panel.active { display: block; }
+  .page-tab-panel iframe {
+    width: 100%; border: none; height: calc(100vh - 90px);
+    background: var(--bg);
+  }
 </style>
 </head>
 <body>
@@ -713,6 +741,21 @@
   </div>
 </header>
 
+<!-- ── 페이지 탭 바 ─────────────────────────────────────────────── -->
+<nav class="page-tab-bar">
+  <button class="page-tab active" data-tab="dashboard" onclick="switchPageTab('dashboard')">
+    <span class="page-tab-icon">📊</span> 대시보드
+  </button>
+  <button class="page-tab" data-tab="mindmap" onclick="switchPageTab('mindmap')">
+    <span class="page-tab-icon">🗺️</span> 마인드맵
+  </button>
+  <button class="page-tab" data-tab="filemap" onclick="switchPageTab('filemap')">
+    <span class="page-tab-icon">📁</span> 파일맵
+  </button>
+</nav>
+
+<!-- ── 탭 패널: 대시보드 (기존 내용) ── -->
+<div id="panel-dashboard" class="page-tab-panel active">
 <main>
 
   <!-- ══════ 섹션 0: 기획 구조 아키텍처 ══════ -->
@@ -1142,57 +1185,6 @@
       <div class="empty-state" style="width:100%">의도 분석 실행 후 표시됩니다.</div>
     </div>
     <div id="trigger-suggest-content" class="suggest-list" style="margin-top:16px;"></div>
-  </section>
-
-  <!-- ═══════════════════════════════════════════════════════════════ -->
-  <!-- 에이전트 팀 분석 결과 (서버 DB에 쌓인 분석 데이터 표시) -->
-  <!-- ═══════════════════════════════════════════════════════════════ -->
-  <section id="sec-agent-analysis" style="margin-top:24px;">
-    <div class="section-header">
-      <div class="section-title"><span class="icon">🤖</span> 에이전트 팀 분석 결과</div>
-      <button onclick="loadAgentAnalysis()" style="padding:6px 14px;border-radius:6px;background:var(--accent);color:#fff;border:none;cursor:pointer;font-size:12px;">새로고침</button>
-    </div>
-
-    <!-- OS 상태 -->
-    <div id="agent-os-status" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:16px;">
-      <div class="empty-state">로딩 중...</div>
-    </div>
-
-    <!-- 회사 구조 -->
-    <div style="margin-bottom:16px;">
-      <h4 style="margin:0 0 8px;font-size:13px;color:var(--muted);">🏢 회사 구조 (데이터 기반)</h4>
-      <div id="agent-structure" style="font-size:12px;"></div>
-    </div>
-
-    <!-- 이슈 감지 -->
-    <div style="margin-bottom:16px;">
-      <h4 style="margin:0 0 8px;font-size:13px;color:var(--muted);">🚨 이슈 감지</h4>
-      <div id="agent-issues" style="font-size:12px;"></div>
-    </div>
-
-    <!-- 자동화 엔진 -->
-    <div style="margin-bottom:16px;">
-      <h4 style="margin:0 0 8px;font-size:13px;color:var(--muted);">⚡ 자동화 엔진 + 마스터 DB</h4>
-      <div id="agent-automation" style="font-size:12px;"></div>
-    </div>
-
-    <!-- 트리거 모니터 -->
-    <div style="margin-bottom:16px;">
-      <h4 style="margin:0 0 8px;font-size:13px;color:var(--muted);">📡 트리거 모니터</h4>
-      <div id="agent-triggers" style="font-size:12px;"></div>
-    </div>
-
-    <!-- 학습 점수 -->
-    <div style="margin-bottom:16px;">
-      <h4 style="margin:0 0 8px;font-size:13px;color:var(--muted);">🧬 자가 진화 엔진</h4>
-      <div id="agent-evolve" style="font-size:12px;"></div>
-    </div>
-
-    <!-- 프로젝트 (고정작업 제외) -->
-    <div style="margin-bottom:16px;">
-      <h4 style="margin:0 0 8px;font-size:13px;color:var(--muted);">📂 진행 중 프로젝트 (고정작업 제외)</h4>
-      <div id="agent-projects" style="font-size:12px;"></div>
-    </div>
   </section>
 
 </main>
@@ -2955,194 +2947,6 @@ async function loadKPI() {
   } catch {}
 }
 
-// ── 에이전트 팀 분석 결과 로딩 ─────────────────────────────────────
-async function loadAgentAnalysis() {
-  try {
-    const [osRes, structRes, issuesRes, masterRes, triggersRes, evolveRes, projectsRes] = await Promise.all([
-      apiFetch('/api/os/status').catch(() => null),
-      apiFetch('/api/company/structure?days=7').catch(() => null),
-      apiFetch('/api/issues/scan').catch(() => null),
-      apiFetch('/api/automation/master').catch(() => null),
-      apiFetch('/api/company/triggers').catch(() => null),
-      apiFetch('/api/evolve/health').catch(() => null),
-      apiFetch('/api/os/projects?days=7').catch(() => null),
-    ]);
-
-    // OS 상태
-    if (osRes?.company) {
-      const c = osRes.company;
-      const o = osRes.operations || {};
-      const a = osRes.automation || {};
-      const db = osRes.database || {};
-      document.getElementById('agent-os-status').innerHTML = `
-        <div style="padding:12px;background:var(--card-bg);border-radius:8px;text-align:center;">
-          <div style="font-size:24px;font-weight:700;color:var(--accent);">${c.onlineMembers}/${c.totalMembers}</div>
-          <div style="font-size:11px;color:var(--muted);">온라인</div>
-        </div>
-        <div style="padding:12px;background:var(--card-bg);border-radius:8px;text-align:center;">
-          <div style="font-size:24px;font-weight:700;color:#3fb950;">${o.orders || 0}</div>
-          <div style="font-size:11px;color:var(--muted);">주문</div>
-        </div>
-        <div style="padding:12px;background:var(--card-bg);border-radius:8px;text-align:center;">
-          <div style="font-size:24px;font-weight:700;color:#d29922;">${o.purchases || 0}</div>
-          <div style="font-size:11px;color:var(--muted);">발주</div>
-        </div>
-        <div style="padding:12px;background:var(--card-bg);border-radius:8px;text-align:center;">
-          <div style="font-size:24px;font-weight:700;color:#58a6ff;">${a.automationRate || 0}%</div>
-          <div style="font-size:11px;color:var(--muted);">자동화율</div>
-        </div>
-        <div style="padding:12px;background:var(--card-bg);border-radius:8px;text-align:center;">
-          <div style="font-size:24px;font-weight:700;">${a.visionTotal || 0}</div>
-          <div style="font-size:11px;color:var(--muted);">Vision</div>
-        </div>
-        <div style="padding:12px;background:var(--card-bg);border-radius:8px;text-align:center;">
-          <div style="font-size:24px;font-weight:700;">${a.masterProducts || 0}</div>
-          <div style="font-size:11px;color:var(--muted);">품목</div>
-        </div>
-        <div style="padding:12px;background:var(--card-bg);border-radius:8px;text-align:center;">
-          <div style="font-size:24px;font-weight:700;">${db.sizeMB || 0}MB</div>
-          <div style="font-size:11px;color:var(--muted);">DB (${db.usagePct || 0}%)</div>
-        </div>
-        <div style="padding:12px;background:var(--card-bg);border-radius:8px;text-align:center;">
-          <div style="font-size:24px;font-weight:700;">${(db.totalEvents || 0).toLocaleString()}</div>
-          <div style="font-size:11px;color:var(--muted);">이벤트</div>
-        </div>
-      `;
-    }
-
-    // 회사 구조
-    if (structRes?.members) {
-      const statusIcon = s => s === 'active' ? '🟢' : s === 'low_activity' ? '🟡' : '⚫';
-      let html = '<table style="width:100%;border-collapse:collapse;font-size:12px;"><tr style="border-bottom:1px solid var(--border);"><th style="text-align:left;padding:4px;">상태</th><th>이름</th><th>역할</th><th>이벤트</th><th>주문</th><th>발주</th><th>Excel</th><th>채팅</th></tr>';
-      for (const m of structRes.members.slice(0, 10)) {
-        html += `<tr style="border-bottom:1px solid var(--border);">
-          <td style="padding:4px;">${statusIcon(m.status)}</td>
-          <td>${(m.name || '').substring(0, 8)}</td>
-          <td style="color:var(--accent);">${m.role}</td>
-          <td style="text-align:right;">${m.totalEvents.toLocaleString()}</td>
-          <td style="text-align:right;">${m.breakdown.order}</td>
-          <td style="text-align:right;">${m.breakdown.purchase}</td>
-          <td style="text-align:right;">${m.breakdown.excel}</td>
-          <td style="text-align:right;">${m.breakdown.communication}</td>
-        </tr>`;
-      }
-      html += '</table>';
-      // 병목
-      if (structRes.bottlenecks?.length) {
-        html += '<div style="margin-top:8px;">';
-        for (const b of structRes.bottlenecks.slice(0, 5)) {
-          const icon = b.severity === 'critical' ? '🔴' : '🟡';
-          html += `<div style="padding:4px 0;">${icon} ${b.detail}</div>`;
-        }
-        html += '</div>';
-      }
-      document.getElementById('agent-structure').innerHTML = html;
-    }
-
-    // 이슈
-    if (issuesRes?.issues) {
-      const s = issuesRes.summary || {};
-      let html = `<div style="margin-bottom:8px;font-weight:600;">총 ${s.total}건: 🔴${s.critical} 🟡${s.warning} ⚪${s.info}</div>`;
-      for (const i of issuesRes.issues.slice(0, 8)) {
-        const icon = i.severity === 'critical' ? '🔴' : i.severity === 'warning' ? '🟡' : '⚪';
-        html += `<div style="padding:3px 0;">${icon} <span style="color:var(--accent);font-size:11px;">[${i.rule}]</span> ${(i.detail || '').substring(0, 60)}</div>`;
-      }
-      if (s.total > 8) html += `<div style="color:var(--muted);padding-top:4px;">... +${s.total - 8}건</div>`;
-      document.getElementById('agent-issues').innerHTML = html;
-    }
-
-    // 자동화 마스터
-    if (masterRes?.products) {
-      const cats = {};
-      for (const p of masterRes.products.data || []) {
-        const c = p.category || 'unknown';
-        cats[c] = (cats[c] || 0) + 1;
-      }
-      let html = `<div style="margin-bottom:6px;">품목 <strong>${masterRes.products.count}</strong>건: `;
-      html += Object.entries(cats).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k}(${v})`).join(' · ');
-      html += `</div><div>거래처 <strong>${masterRes.customers.count}</strong>건 · 포맷 <strong>${masterRes.formats.count}</strong>종</div>`;
-      document.getElementById('agent-automation').innerHTML = html;
-    }
-
-    // 트리거
-    if (triggersRes?.triggers) {
-      let html = `<div style="margin-bottom:6px;">총 ${triggersRes.totalTriggers}건</div>`;
-      const warnings = triggersRes.triggers.filter(t => t.severity === 'warning');
-      for (const t of warnings) {
-        html += `<div style="padding:3px 0;">⚠️ <span style="color:var(--accent);font-size:11px;">[${t.type}]</span> ${(t.detail || '').substring(0, 55)}</div>`;
-      }
-      const infos = triggersRes.triggers.filter(t => t.severity === 'info').slice(0, 3);
-      for (const t of infos) {
-        html += `<div style="padding:3px 0;color:var(--muted);">ℹ️ ${(t.detail || '').substring(0, 55)}</div>`;
-      }
-      document.getElementById('agent-triggers').innerHTML = html;
-    }
-
-    // 진화 점수
-    if (evolveRes) {
-      const gradeColor = { A: '#3fb950', B: '#58a6ff', C: '#d29922', D: '#f85149' };
-      let html = `
-        <div style="display:flex;align-items:center;gap:16px;margin-bottom:8px;">
-          <div style="font-size:36px;font-weight:800;color:${gradeColor[evolveRes.scoreBand] || '#8b949e'};">${evolveRes.learningScore}</div>
-          <div>
-            <div style="font-size:18px;font-weight:600;">${evolveRes.scoreBand}등급</div>
-            <div style="font-size:11px;color:var(--muted);">학습 점수</div>
-          </div>
-        </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;">
-          <div>품목 분류율: <strong>${evolveRes.breakdown.masterClassified}%</strong></div>
-          <div>파싱 신뢰도: <strong>${evolveRes.breakdown.parseConfidence}%</strong></div>
-          <div>Vision 커버리지: <strong>${evolveRes.breakdown.visionCoverage}%</strong></div>
-          <div>rawInput 커버리지: <strong>${evolveRes.breakdown.rawInputCoverage}%</strong></div>
-        </div>`;
-      if (evolveRes.suggestions?.length) {
-        html += '<div style="margin-top:8px;">';
-        for (const s of evolveRes.suggestions) {
-          const icon = s.priority === 'critical' ? '🔴' : s.priority === 'high' ? '🟡' : 'ℹ️';
-          html += `<div style="padding:2px 0;">${icon} ${s.action}${s.detail ? ` — ${s.detail}` : ''}</div>`;
-        }
-        html += '</div>';
-      }
-      document.getElementById('agent-evolve').innerHTML = html;
-    }
-
-    // 프로젝트 (고정작업 제외)
-    if (projectsRes?.members) {
-      let html = `<div style="margin-bottom:8px;color:var(--muted);font-size:11px;">분석 ${projectsRes.analyzedDays}일 | 고정작업(매일 반복) 제외, 프로젝트/신규 업무만 표시</div>`;
-      for (const m of projectsRes.members) {
-        html += `<div style="margin-bottom:12px;padding:8px;background:var(--card-bg);border-radius:6px;">`;
-        html += `<div style="font-weight:600;margin-bottom:4px;">${(m.name || '').substring(0, 8)} <span style="color:var(--muted);font-size:11px;">(고정 ${m.routineFiltered}개 필터됨: ${m.routineExamples.map(r => r.substring(0, 15)).join(', ')})</span></div>`;
-        if (m.projects.length) {
-          html += '<div style="margin-bottom:4px;">';
-          for (const p of m.projects.slice(0, 6)) {
-            const bar = Math.min(100, p.total / 2);
-            html += `<div style="display:flex;align-items:center;gap:6px;padding:2px 0;">
-              <span style="color:#58a6ff;">★</span>
-              <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${p.window.substring(0, 35)}</span>
-              <div style="width:60px;height:6px;background:var(--border);border-radius:3px;"><div style="width:${bar}%;height:100%;background:#58a6ff;border-radius:3px;"></div></div>
-              <span style="font-size:11px;color:var(--muted);">${p.total}건 ${p.days}일</span>
-            </div>`;
-          }
-          html += '</div>';
-        }
-        if (m.newItems.length) {
-          html += '<div>';
-          for (const n of m.newItems.slice(0, 3)) {
-            html += `<div style="padding:2px 0;"><span style="color:#3fb950;">🆕</span> ${n.window.substring(0, 35)} <span style="font-size:11px;color:var(--muted);">${n.total}건</span></div>`;
-          }
-          html += '</div>';
-        }
-        html += '</div>';
-      }
-      document.getElementById('agent-projects').innerHTML = html;
-    }
-
-  } catch (e) {
-    console.error('loadAgentAnalysis error:', e);
-    document.getElementById('agent-os-status').innerHTML = '<div class="empty-state">에이전트 분석 로딩 실패</div>';
-  }
-}
-
 // ── 시작 ─────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   loadAll();
@@ -3150,8 +2954,45 @@ document.addEventListener('DOMContentLoaded', () => {
   loadLogs();
   loadPipelineStatus();
   loadKPI();
-  loadAgentAnalysis(); // 에이전트 팀 분석 결과 로딩
 });
+</script>
+</div><!-- /panel-dashboard -->
+
+<!-- ── 탭 패널: 마인드맵 ── -->
+<div id="panel-mindmap" class="page-tab-panel"></div>
+
+<!-- ── 탭 패널: 파일맵 ── -->
+<div id="panel-filemap" class="page-tab-panel"></div>
+
+<!-- ── 페이지 탭 전환 스크립트 ── -->
+<script>
+(function() {
+  const iframeMap = {
+    mindmap: '/mindmap.html',
+    filemap: '/project-map.html'
+  };
+  const loaded = {};
+
+  window.switchPageTab = function(tabId) {
+    // 탭 버튼 활성화
+    document.querySelectorAll('.page-tab').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.tab === tabId);
+    });
+    // 패널 전환
+    document.querySelectorAll('.page-tab-panel').forEach(panel => {
+      panel.classList.toggle('active', panel.id === 'panel-' + tabId);
+    });
+    // iframe 지연 로드 (최초 클릭 시)
+    if (iframeMap[tabId] && !loaded[tabId]) {
+      const panel = document.getElementById('panel-' + tabId);
+      const iframe = document.createElement('iframe');
+      iframe.src = iframeMap[tabId];
+      iframe.title = tabId;
+      panel.appendChild(iframe);
+      loaded[tabId] = true;
+    }
+  };
+})();
 </script>
 
 </body>
