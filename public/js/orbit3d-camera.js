@@ -528,7 +528,7 @@ function drawTeamLabels() {
     // 사용자 노드 밀도 설정 (_nodeDensity 슬라이더)
     if (type === 'tool'                          && _nodeDensity < 4) continue;
     if ((type === 'skill' || type === 'agent')   && _nodeDensity < 3) continue;
-    if (type === 'task'                          && _nodeDensity < 2) continue;
+    if (type === 'task' && !node.obj?.userData?.isTeamTask && _nodeDensity < 2) continue;
     // LOD 기반 — 줌 레벨로 계층 구분 (밀도 설정과 무관)
     if (lod >= 2 && type === 'member')           continue;
     if (lod >= 3 && type === 'department')       continue;
@@ -543,7 +543,7 @@ function drawTeamLabels() {
     if      (type === 'goal')         { pxSize = lod >= 2 ? 22 : 28; pad = lod >= 2 ? 14 : 20; }
     else if (type === 'department')   { pxSize = lod >= 2 ? 14 : 16; pad = lod >= 2 ? 10 : 13; }
     else if (type === 'member')       { pxSize = lod >= 2 ? 14 : isFocused ? 22 : 18; pad = lod >= 2 ? 10 : isFocused ? 18 : 15; }
-    else if (type === 'task')         { pxSize = lod >= 2 ? 9 : 12; pad = lod >= 2 ? 7 : 10; }
+    else if (type === 'task')         { const _isProjSat = node.obj?.userData?.isTeamTask; pxSize = lod >= 2 ? 9 : (_isProjSat ? 10 : 12); pad = lod >= 2 ? 7 : (_isProjSat ? 8 : 10); }
     else if (type === 'skill')        { pxSize = 9; pad = 7; }
     else if (type === 'agent')        { pxSize = 9; pad = 7; }
     else if (type === 'ptask')        { pxSize = 13; pad = 11; }
@@ -570,8 +570,8 @@ function drawTeamLabels() {
     const _useUnified = ['goal','leader','infra','sharedProject','department',
       'member','hubProject','hq','external','prequest','presult'].includes(type);
     // 구체 노드: 지름 기반 크기, pill 노드: 텍스트 기반
-    const _sphereR = type === 'goal' ? 50 : type === 'leader' || type === 'infra' ? 42
-      : type === 'member' ? 36 : type === 'department' ? 38 : 30;
+    const _sphereR = type === 'goal' ? 15 : type === 'leader' || type === 'infra' ? 42
+      : type === 'member' ? 18 : type === 'department' ? 38 : 30;
     const pw  = _useUnified ? _sphereR * 2 : _lctx.measureText(txt).width + pad;
     const ph  = _useUnified ? _sphereR * 2 : pxSize + pad * 0.65;
     // priority: prequest=7, goal/leader=6, presult/department/infra/sharedProject=5, member/ptask/hq=4, skill/agent/hubProject/external=3, task/dept=2, tool=1
@@ -839,8 +839,8 @@ function drawTeamLabels() {
       // 와이어프레임 구체 (개인뷰와 동일한 스타일)
       const nodeTitle = txt;
       const nodeSub = sublabel || '';
-      const nodeR = type === 'goal' ? 100 : type === 'leader' || type === 'infra' ? 84
-        : type === 'member' ? (isFocused ? 92 : 72) : type === 'department' ? 76 : 60;
+      const nodeR = type === 'goal' ? 30 : type === 'leader' || type === 'infra' ? 84
+        : type === 'member' ? (isFocused ? 46 : 36) : type === 'department' ? 76 : 60;
       _drawWireSphere(_lctx, cx, cy, nodeR, color, {
         meridians: type === 'goal' ? 3 : 2,
         parallels: type === 'goal' ? 2 : 1,
