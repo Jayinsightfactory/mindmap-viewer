@@ -2384,6 +2384,9 @@ app.use('/api/os', require('./routes/orbit-os')({ getDb: dbModule.getDb }));
 // ─── 회사 구조 분석 + 장기 트리거 모니터 ─────────────────────────────────────
 app.use('/api/company', require('./routes/company-structure')({ getDb: dbModule.getDb }));
 
+// ─── 자가 진화 엔진 (성능 모니터 + 자동 개선 + 트렌드) ─────────────────────
+app.use('/api/evolve', require('./routes/self-evolve')({ getDb: dbModule.getDb }));
+
 // ─── 데모 시드 (개발/미리보기용) ─────────────────────────────────────────────
 app.post('/api/demo/seed', (req, res) => {
   const token = (req.headers.authorization || '').replace('Bearer ', '') || req.query.token;
