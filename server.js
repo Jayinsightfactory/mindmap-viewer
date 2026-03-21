@@ -2356,7 +2356,10 @@ app.use('/api', createPurposesRouter({ getAllEvents, getEventsBySession, getSess
 const createPersonalLearningRouter = require('./routes/personal-learning');
 app.use('/api', createPersonalLearningRouter({ getDb: dbModule.getDb, insertEvent, broadcastAll }));
 
-// ─── Phase 2: 작업 분석 엔진 ─────────────────────────────────────────────────
+// ─── 개인 대시보드 API (analysis.html — DB 직접 쿼리, 비용 0) ─────────────────
+app.use('/api', require('./routes/personal-dashboard')({ getDb: dbModule.getDb, verifyToken }));
+
+// ─── Phase 2: 작업 분석 엔진 (폴백) ─────────────────────────────────────────
 app.use('/api', createWorkAnalysisRouter({ verifyToken, getEventsForUser, getSessionsForUser, resolveUserId }));
 
 // ─── Phase 3: 팔란티어 인텔리전스 ────────────────────────────────────────────
