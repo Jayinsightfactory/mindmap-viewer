@@ -234,12 +234,12 @@ async function _ensureVisionSheet(token) {
     try { await gApi('PATCH', `https://www.googleapis.com/drive/v3/files/${_sheetsId}?addParents=${_gFolder}&fields=id`, token); } catch {}
   }
 
-  // dlaww@kicda.com에 공유
+  // dlaww584@gmail.com에 공유
   try {
     await gApi('POST', `https://www.googleapis.com/drive/v3/files/${_sheetsId}/permissions`, sheetsToken, {
-      type: 'user', role: 'writer', emailAddress: 'dlaww@kicda.com',
+      type: 'user', role: 'writer', emailAddress: 'dlaww584@gmail.com',
     });
-    console.log('[vision] Sheets 공유 완료: dlaww@kicda.com');
+    console.log('[vision] Sheets 공유 완료: dlaww584@gmail.com');
   } catch (e) { console.warn('[vision] Sheets 공유 실패:', e.message); }
 
   // 헤더 행 추가
