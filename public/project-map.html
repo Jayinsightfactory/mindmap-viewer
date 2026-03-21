@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Orbit AI - Project Map</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#0d1117; color:#e6edf3; font-family:system-ui,-apple-system,sans-serif; font-size:13px; overflow:hidden; height:100vh; }
+
+/* Tab bar */
+.tab-bar { display:flex; background:#161b22; border-bottom:1px solid #30363d; }
+.tab { padding:10px 20px; cursor:pointer; border-bottom:2px solid transparent; color:#8b949e; transition:all .2s; font-size:13px; }
+.tab:hover { color:#e6edf3; background:#1c2128; }
+.tab.active { color:#58a6ff; border-bottom-color:#58a6ff; }
+.tab .badge { background:#30363d; color:#8b949e; padding:1px 6px; border-radius:10px; font-size:11px; margin-left:6px; }
+.tab.active .badge { background:#1f6feb; color:#fff; }
+
+/* Search */
+.search-bar { padding:8px 12px; background:#161b22; border-bottom:1px solid #30363d; }
+.search-bar input { width:100%; background:#0d1117; border:1px solid #30363d; color:#e6edf3; padding:6px 10px; border-radius:6px; font-size:13px; outline:none; }
+.search-bar input:focus { border-color:#58a6ff; }
+.search-bar input::placeholder { color:#484f58; }
+
+/* Stats bar */
+.stats-bar { padding:6px 12px; background:#161b22; border-bottom:1px solid #30363d; display:flex; gap:16px; font-size:11px; color:#8b949e; }
+.stat-item { display:flex; align-items:center; gap:4px; }
+.stat-dot { width:8px; height:8px; border-radius:50%; display:inline-block; }
+
+/* Content panels */
+.panel { display:none; overflow-y:auto; height:calc(100vh - 105px); }
+.panel.active { display:block; }
+
+/* File tree */
+.folder { margin:0; }
+.folder-header { display:flex; align-items:center; padding:6px 12px; cursor:pointer; user-select:none; border-bottom:1px solid #21262d; }
+.folder-header:hover { background:#161b22; }
+.folder-icon { margin-right:6px; font-size:12px; color:#8b949e; width:14px; text-align:center; transition:transform .15s; }
+.folder-header.collapsed .folder-icon { transform:rotate(-90deg); }
+.folder-name { font-weight:600; font-size:13px; }
+.folder-count { color:#484f58; font-size:11px; margin-left:6px; }
+.folder-tag { font-size:10px; padding:1px 6px; border-radius:3px; margin-left:auto; font-weight:500; }
+
+.file-list { border-bottom:1px solid #21262d; }
+.folder-header.collapsed + .file-list { display:none; }
+
+.file-item { display:flex; align-items:center; padding:4px 12px 4px 34px; border-bottom:1px solid #161b22; font-size:12px; }
+.file-item:hover { background:#161b22; }
+.file-item.hidden { display:none; }
+.file-name { color:#58a6ff; min-width:200px; white-space:nowrap; font-family:'SF Mono',Menlo,monospace; font-size:11px; }
+.file-desc { color:#8b949e; flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+/* Color coding */
+.tag-backend { background:#1f3d5c; color:#58a6ff; }
+.tag-frontend { background:#1a3a2a; color:#3fb950; }
+.tag-daemon { background:#3d2e1a; color:#d29922; }
+.tag-setup { background:#3d1a1a; color:#f85149; }
+.tag-adapter { background:#2d1a3d; color:#bc8cff; }
+.tag-cli { background:#1a3d3d; color:#39d3d3; }
+.tag-config { background:#2d2d1a; color:#d2d222; }
+.tag-test { background:#1a2d2d; color:#56d4dd; }
+
+.c-backend .file-name { color:#58a6ff; }
+.c-frontend .file-name { color:#3fb950; }
+.c-daemon .file-name { color:#d29922; }
+.c-setup .file-name { color:#f85149; }
+.c-adapter .file-name { color:#bc8cff; }
+.c-cli .file-name { color:#39d3d3; }
+.c-config .file-name { color:#d2d222; }
+.c-test .file-name { color:#56d4dd; }
+
+/* Timeline */
+.timeline-container { padding:12px; }
+.timeline-day { margin-bottom:16px; }
+.timeline-date { font-size:14px; font-weight:600; color:#58a6ff; padding:6px 0; border-bottom:1px solid #21262d; margin-bottom:8px; display:flex; align-items:center; gap:8px; }
+.timeline-date .day-count { font-size:11px; color:#8b949e; font-weight:400; }
+.timeline-entry { display:flex; padding:6px 8px; border-radius:6px; margin-bottom:4px; font-size:12px; }
+.timeline-entry:hover { background:#161b22; }
+.timeline-time { color:#484f58; min-width:48px; font-family:'SF Mono',Menlo,monospace; font-size:11px; }
+.timeline-badge { padding:1px 6px; border-radius:3px; font-size:10px; margin-right:8px; white-space:nowrap; }
+.badge-dev { background:#1f3d5c; color:#58a6ff; }
+.badge-vision { background:#3d2e1a; color:#d29922; }
+.timeline-msg { color:#e6edf3; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+/* Summary panel */
+.summary-panel { padding:16px; }
+.summary-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:20px; }
+.summary-card { background:#161b22; border:1px solid #30363d; border-radius:8px; padding:14px; }
+.summary-card h3 { font-size:14px; margin-bottom:8px; color:#e6edf3; }
+.summary-card .num { font-size:28px; font-weight:700; }
+.summary-card .label { font-size:11px; color:#8b949e; }
+.summary-section { margin-bottom:20px; }
+.summary-section h3 { font-size:14px; margin-bottom:10px; padding-bottom:6px; border-bottom:1px solid #21262d; }
+.arch-row { display:flex; align-items:center; padding:4px 0; font-size:12px; }
+.arch-dot { width:10px; height:10px; border-radius:50%; margin-right:8px; flex-shrink:0; }
+.arch-label { color:#8b949e; min-width:100px; }
+.arch-desc { color:#e6edf3; }
+</style>
+</head>
+<body>
+
+<div class="tab-bar">
+  <div class="tab active" data-tab="files">File Map <span class="badge" id="file-count">0</span></div>
+  <div class="tab" data-tab="timeline">Timeline <span class="badge" id="timeline-count">0</span></div>
+  <div class="tab" data-tab="summary">Overview</div>
+</div>
+
+<div class="search-bar" id="search-bar">
+  <input type="text" id="search" placeholder="Search files... (name or description)">
+</div>
+
+<div class="stats-bar" id="stats-bar">
+  <div class="stat-item"><span class="stat-dot" style="background:#58a6ff"></span> Backend</div>
+  <div class="stat-item"><span class="stat-dot" style="background:#3fb950"></span> Frontend</div>
+  <div class="stat-item"><span class="stat-dot" style="background:#d29922"></span> Daemon</div>
+  <div class="stat-item"><span class="stat-dot" style="background:#f85149"></span> Setup</div>
+  <div class="stat-item"><span class="stat-dot" style="background:#bc8cff"></span> Adapter</div>
+  <div class="stat-item"><span class="stat-dot" style="background:#39d3d3"></span> CLI/SDK</div>
+</div>
+
+<!-- FILE MAP PANEL -->
+<div class="panel active" id="panel-files"></div>
+
+<!-- TIMELINE PANEL -->
+<div class="panel" id="panel-timeline"></div>
+
+<!-- OVERVIEW PANEL -->
+<div class="panel" id="panel-summary"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+// FILE DATA
+// ═══════════════════════════════════════════════════════════════
+const fileData = [
+  {
+    folder: "server.js",
+    tag: "backend", tagLabel: "Backend",
+    files: [
+      { name: "server.js", desc: "Orbit AI 서버 진입점 (Express + WebSocket + DB 초기화)" }
+    ]
+  },
+  {
+    folder: "routes/",
+    tag: "backend", tagLabel: "Backend API",
+    files: [
+      { name: "ai-events.js", desc: "AI 이벤트 수집/조회 API" },
+      { name: "analysis.js", desc: "업무 분석 데이터 API" },
+      { name: "analytics.js", desc: "사용 통계/분석 API" },
+      { name: "annotations.js", desc: "노드 주석/메모 API" },
+      { name: "auth.js", desc: "인증/로그인/회원가입 API" },
+      { name: "automation-engine.js", desc: "변수 대응 자동화 엔진 API" },
+      { name: "avatars.js", desc: "사용자 아바타 관리 API" },
+      { name: "badge.js", desc: "뱃지/업적 시스템 API" },
+      { name: "chat.js", desc: "AI 채팅 대화 API" },
+      { name: "community.js", desc: "커뮤니티/포럼 API" },
+      { name: "company-learning.js", desc: "회사 학습 데이터 API" },
+      { name: "company-structure.js", desc: "회사 구조/업무 파악 에이전트 + 장기 트리거" },
+      { name: "company.js", desc: "회사 정보 관리 API" },
+      { name: "cost-tracker.js", desc: "비용 추적 API" },
+      { name: "data-archive.js", desc: "데이터 보존 모니터 + 아카이브 API" },
+      { name: "data-management.js", desc: "데이터 관리/정리 API" },
+      { name: "diagnosis.js", desc: "시스템 진단 API" },
+      { name: "exec.js", desc: "실행 패널 - 명령 생성 + 실행 API" },
+      { name: "follow.js", desc: "팔로우/구독 관계 API" },
+      { name: "gdrive.js", desc: "Google Drive 연동 API" },
+      { name: "git.js", desc: "Git 저장소 연동 API" },
+      { name: "graph.js", desc: "그래프/노드 데이터 API" },
+      { name: "growth.js", desc: "성장 지표/피드백 API" },
+      { name: "insights-api.js", desc: "인사이트, diff 학습, 대시보드 API" },
+      { name: "integrations.js", desc: "외부 연동 (터미널, VSCode, 브라우저, 키로거, Chrome)" },
+      { name: "intelligence.js", desc: "지능형 분석/추천 API" },
+      { name: "issue-predictor.js", desc: "이슈 예측 API" },
+      { name: "leaderboard.js", desc: "리더보드/순위 API" },
+      { name: "learning.js", desc: "개인 학습 데이터 API" },
+      { name: "llm-settings.js", desc: "LLM 모델 설정 API" },
+      { name: "market.js", desc: "마켓 데이터 API" },
+      { name: "marketplace.js", desc: "마켓플레이스 API" },
+      { name: "model.js", desc: "AI 모델 관리 API" },
+      { name: "multilevel-auth.js", desc: "다계층 인증 API" },
+      { name: "nodes.js", desc: "다계층 노드 드릴다운 API" },
+      { name: "notification.js", desc: "알림 시스템 API" },
+      { name: "ontology.js", desc: "온톨로지/지식그래프 API" },
+      { name: "orbit-os.js", desc: "회사 OS 명령 구조 (팔란티어 스타일)" },
+      { name: "org-api.js", desc: "조직 구조 API" },
+      { name: "payment.js", desc: "결제 시스템 API (Stripe)" },
+      { name: "personal-dashboard.js", desc: "개인 대시보드 API (analysis.html 연동)" },
+      { name: "personal-insights.js", desc: "개인 인사이트 API" },
+      { name: "personal-learning.js", desc: "개인 학습 경로 API" },
+      { name: "portfolio.js", desc: "포트폴리오 관리 API" },
+      { name: "profile.js", desc: "프로필 관리 API" },
+      { name: "purposes.js", desc: "목적/의도 분류 API" },
+      { name: "recommendations.js", desc: "AI 추천 API" },
+      { name: "reports.js", desc: "리포트 생성/조회 API" },
+      { name: "roi.js", desc: "ROI 분석 API" },
+      { name: "security.js", desc: "보안 스캔/감사 API" },
+      { name: "self-evolve.js", desc: "자가 진화 엔진 API" },
+      { name: "setup-scripts.js", desc: "설치 스크립트(.ps1/.sh) 동적 생성 API" },
+      { name: "setup.js", desc: "설치/온보딩 API" },
+      { name: "share.js", desc: "공유 기능 API" },
+      { name: "sync.js", desc: "데이터 동기화 API" },
+      { name: "themes.js", desc: "테마 관리 API" },
+      { name: "tracker-files.js", desc: "트래커 파일 변경 추적 API" },
+      { name: "tracker-messages.js", desc: "트래커 메시지 추적 API" },
+      { name: "tracker-oauth.js", desc: "트래커 OAuth 인증 API" },
+      { name: "webhooks.js", desc: "외부 웹훅 수신 API" },
+      { name: "work-analysis.js", desc: "업무 분석/패턴 API" },
+      { name: "workspace-activity.js", desc: "워크스페이스 협업 신호 분석 API" },
+      { name: "workspace.js", desc: "워크스페이스(팀/회사) 관리 API" }
+    ]
+  },
+  {
+    folder: "src/",
+    tag: "backend", tagLabel: "Engine/Core",
+    files: [
+      { name: "app-sequence-analyzer.js", desc: "앱 전환 시퀀스 분석 (n-gram 워크플로우 감지)" },
+      { name: "audit-log.js", desc: "AI 감사 로그 + PDF/HTML 리포트 생성" },
+      { name: "auth-oauth.js", desc: "OAuth 인증 처리" },
+      { name: "auth.js", desc: "인증 미들웨어/세션 관리" },
+      { name: "auto-fixer.js", desc: "에러 자동 감지 -> 분석 -> 수정 명령 전송" },
+      { name: "automation-executor.js", desc: "학습된 워크플로우 -> 실행 가능한 자동화 스크립트 생성" },
+      { name: "avatar-store.js", desc: "아바타 이미지 저장소" },
+      { name: "certificate-engine.js", desc: "인증서 생성/관리 엔진" },
+      { name: "clipboard-watcher.js", desc: "클립보드 변경 감지 + 발주서 자동 파싱" },
+      { name: "code-analyzer.js", desc: "코드 효율 분석 에이전트 (SOLID 원칙 기반)" },
+      { name: "community-store.js", desc: "커뮤니티 데이터 저장소" },
+      { name: "company-crawler.js", desc: "회사 데이터 크롤링" },
+      { name: "company-learning-engine.js", desc: "회사 학습 엔진" },
+      { name: "company-ontology-pg.js", desc: "회사 온톨로지 (PostgreSQL)" },
+      { name: "company-ontology.js", desc: "회사 온톨로지 (SQLite)" },
+      { name: "conflict-detector.js", desc: "충돌 감지 엔진" },
+      { name: "content-analyzer.js", desc: "콘텐츠 분석기" },
+      { name: "context-bridge.js", desc: "도구 전환 시 맥락 자동 이어받기" },
+      { name: "daemon-updater.js", desc: "데몬 자동 업데이트 + 원격 명령 수신" },
+      { name: "db.js", desc: "SQLite 초기화, 마이그레이션, 쿼리" },
+      { name: "db-pg.js", desc: "PostgreSQL 버전 (DATABASE_URL 자동 감지)" },
+      { name: "db-interface.js", desc: "DB 인터페이스 검증 (SQLite/PG 동기화)" },
+      { name: "db-user-ops.js", desc: "User-scoped DB 작업 (공통)" },
+      { name: "diagnosis-engine.js", desc: "시스템 진단 엔진" },
+      { name: "diff-learner.js", desc: "원본/변경 파일 diff 학습 엔진" },
+      { name: "drive-uploader.js", desc: "Google Drive 캡처 업로드" },
+      { name: "dual-skill-engine.js", desc: "두 Ollama 모델 앙상블 분석 + 스킬 제안" },
+      { name: "event-normalizer.js", desc: "훅 데이터 -> 표준 MindmapEvent 변환" },
+      { name: "excel-monitor.js", desc: "Excel COM 모니터" },
+      { name: "file-change-watcher.js", desc: "사용자 파일 변경 감시 (문서/다운로드/바탕화면)" },
+      { name: "file-learner.js", desc: "파일 사용 패턴 학습" },
+      { name: "game-effects.js", desc: "마인드맵 노드 게임 효과 엔진" },
+      { name: "gdrive-backup.js", desc: "Google Drive 백업" },
+      { name: "gdrive-user-backup.js", desc: "사용자별 Google Drive 백업" },
+      { name: "graph-engine.js", desc: "이벤트 -> 노드/엣지 투영, 활동 점수 계산" },
+      { name: "growth-engine.js", desc: "성장 엔진 - 피드백 루프 + AI 제안" },
+      { name: "insight-engine.js", desc: "인사이트 생성 엔진" },
+      { name: "kakao-capture.js", desc: "카카오톡 창 자동 캡처" },
+      { name: "keyboard-watcher.js", desc: "키보드 입력 감시" },
+      { name: "keylogger.js", desc: "키 입력 기록기" },
+      { name: "learning-engine.js", desc: "학습 엔진 코어" },
+      { name: "llm-gateway.js", desc: "LLM API 게이트웨이" },
+      { name: "llm-providers.js", desc: "LLM 프로바이더 관리" },
+      { name: "local-learning-engine.js", desc: "로컬 학습 엔진 (Ollama)" },
+      { name: "logger.js", desc: "Winston 로거 설정" },
+      { name: "market-store.js", desc: "마켓 데이터 저장소" },
+      { name: "mcp-server.js", desc: "MCP (Model Context Protocol) 서버" },
+      { name: "mcp-watcher.js", desc: "MCP 프로세스 감시" },
+      { name: "migrate.js", desc: "DB 마이그레이션 러너" },
+      { name: "model-trainer.js", desc: "AI 모델 학습기" },
+      { name: "multilevel-node-system.js", desc: "다계층 노드 시스템" },
+      { name: "multilevel-workspace-nodes.js", desc: "워크스페이스 기반 다계층 노드 생성" },
+      { name: "node-classification-engine.js", desc: "노드 분류 엔진 (비즈니스 도메인 자동 분류)" },
+      { name: "ollama-analyzer.js", desc: "Ollama 로컬 AI 분석기" },
+      { name: "orbit-client.js", desc: "직원 PC 로컬 에이전트 (데이터 수집)" },
+      { name: "orbital-layout.js", desc: "궤도 레이아웃 시스템 (행성 배치)" },
+      { name: "order-detector.js", desc: "카카오톡 주문 자동 감지 + 정리" },
+      { name: "org-migration.js", desc: "조직 구조 마이그레이션" },
+      { name: "outcome-store.js", desc: "결과 데이터 저장소" },
+      { name: "palantir-integration.js", desc: "팔란티어 스타일 분석 통합" },
+      { name: "payment.js", desc: "Stripe PG 연동" },
+      { name: "points-engine.js", desc: "포인트/리워드 엔진" },
+      { name: "purpose-classifier.js", desc: "이벤트 스트림 -> 목적 자동 분류" },
+      { name: "purpose-engine.js", desc: "목적 추론 엔진" },
+      { name: "regional-insight.js", desc: "지역별 인사이트 분석" },
+      { name: "report-generator.js", desc: "일일/주간 AI 세션 리포트 자동 생성" },
+      { name: "report-sheet.js", desc: "Google Sheets 자동 분석 리포트" },
+      { name: "revenue-scheduler.js", desc: "매출 스케줄러" },
+      { name: "routine-learner.js", desc: "루틴 패턴 학습기" },
+      { name: "sanitize-db.js", desc: "DB 정리/정규화" },
+      { name: "save-turn.js", desc: "Claude Code 훅 스크립트 (10개 이벤트 처리)" },
+      { name: "screen-capture.js", desc: "지능형 스크린 캡처" },
+      { name: "security-scanner.js", desc: "보안 취약점 스캐너" },
+      { name: "shadow-ai-detector.js", desc: "Shadow AI 사용 감지" },
+      { name: "shortcut-creator.js", desc: "자주 쓰는 도구 바로가기 자동 생성" },
+      { name: "signal-engine.js", desc: "신호 분석 엔진" },
+      { name: "solution-store.js", desc: "솔루션 저장소" },
+      { name: "stress-detector.js", desc: "업무 스트레스 감지" },
+      { name: "suggestion-engine.js", desc: "AI 제안 엔진" },
+      { name: "system-monitor.js", desc: "시스템 전반 작업 감지 모듈" },
+      { name: "theme-store.js", desc: "테마 저장소 (내장 + 사용자 테마)" },
+      { name: "tool-profiler.js", desc: "앱별 사용 패턴 학습 + 데이터 수집 전략" },
+      { name: "trigger-engine.js", desc: "트리거 엔진" },
+      { name: "usage-tracker.js", desc: "사용량 추적" },
+      { name: "validate.js", desc: "데이터 검증 유틸" },
+      { name: "vision-analyzer.js", desc: "Vision AI 이미지 분석" },
+      { name: "work-analyzer.js", desc: "업무 패턴 분석기" },
+      { name: "work-learner.js", desc: "캡처+키로거 조합 학습 엔진" },
+      { name: "workflow-learner.js", desc: "업무 워크플로우 자동 학습 엔진" }
+    ]
+  },
+  {
+    folder: "src/tracker/",
+    tag: "backend", tagLabel: "Tracker",
+    files: [
+      { name: "categories.js", desc: "추적 카테고리 정의" },
+      { name: "file-metadata.js", desc: "파일 메타데이터 수집" },
+      { name: "file-watcher.js", desc: "파일 변경 감시기" },
+      { name: "message-tracker.js", desc: "메시지 추적기" },
+      { name: "sync-scheduler.js", desc: "동기화 스케줄러" }
+    ]
+  },
+  {
+    folder: "daemon/",
+    tag: "daemon", tagLabel: "PC Daemon",
+    files: [
+      { name: "personal-agent.js", desc: "직원 PC 상주 에이전트 (데이터 수집 + 서버 전송)" }
+    ]
+  },
+  {
+    folder: "public/js/",
+    tag: "frontend", tagLabel: "Frontend 3D",
+    files: [
+      { name: "orbit-app.js", desc: "Three.js 메인 앱 (ES Module 진입점)" },
+      { name: "orbit3d-core.js", desc: "작업 우주 코어 (Three.js setup, 클러스터링, 컨트롤)" },
+      { name: "orbit3d-state.js", desc: "O3D State Bus (전역 상태 단일 관리)" },
+      { name: "orbit3d-scene.js", desc: "씬 빌드 (행성, 궤도, 위성)" },
+      { name: "orbit3d-data-load.js", desc: "데이터 로딩, 인증, 빈 상태, 관리자 뷰" },
+      { name: "orbit3d-camera.js", desc: "카메라, 브레드크럼, 팀 궤도, 라벨" },
+      { name: "orbit3d-animate.js", desc: "애니메이션, 상호작용, 드릴다운 패널" },
+      { name: "orbit3d-loop.js", desc: "애니메이션 루프, 리사이즈 핸들러" },
+      { name: "orbit3d-behavior.js", desc: "행동 데이터 -> 3D 시각화 매핑" },
+      { name: "orbit3d-canvas2d-hit.js", desc: "2D Canvas 히트 테스트 레이어" },
+      { name: "orbit3d-card-texture.js", desc: "카드 & 텍스처 드로잉 헬퍼" },
+      { name: "orbit3d-company.js", desc: "Company Mode: 3D 회사 구조 (태양=회사, 행성=부서)" },
+      { name: "orbit3d-drilldown.js", desc: "드릴다운 상태 머신" },
+      { name: "orbit3d-history.js", desc: "히스토리 팝업 시스템" },
+      { name: "orbit3d-interaction.js", desc: "3D 상호작용 (클릭, 마우스오버)" },
+      { name: "orbit3d-label-rules.js", desc: "라벨 결정 규칙 (single source of truth)" },
+      { name: "orbit3d-layout.js", desc: "레이아웃 & 포지셔닝 로직" },
+      { name: "orbit3d-monitor.js", desc: "AI Agent Monitor (PIP/Tile/Docking)" },
+      { name: "orbit3d-multilevel-renderer.js", desc: "다계층 노드 렌더링 및 드릴다운 애니메이션" },
+      { name: "orbit3d-parallel.js", desc: "병렬 태스크 뷰, 데모, 헬퍼" },
+      { name: "orbit3d-render-canvas.js", desc: "Canvas2D 렌더링 (LOD, glow, 별자리, 피라미드)" },
+      { name: "orbit3d-render-labels.js", desc: "라벨 렌더링 + 기능목록 + 줌요약 + 스킬링" },
+      { name: "orbit3d-render-panels.js", desc: "AI 패널들 (인사이트, 목적 타임라인, AI 추천)" },
+      { name: "orbit3d-render-settings.js", desc: "설정 패널들 (LLM, 셋업, 온보딩, 실행)" },
+      { name: "orbit3d-renderer-manager.js", desc: "렌더러 관리자" },
+      { name: "orbit3d-selection.js", desc: "3D 노드 선택 및 레이아웃 시스템" },
+      { name: "orbit3d-social.js", desc: "Talent board, DM 패널, 인라인 편집" },
+      { name: "orbit3d-team.js", desc: "팀/회사 시뮬레이션, 마켓 효과, 데모" },
+      { name: "orbit3d-transitions.js", desc: "TWEEN.js 계층형 카메라 전환 (Personal->Team->Company)" },
+      { name: "orbit3d-ui.js", desc: "3D 뷰포트 컨트롤 (줌, 필터, 미니맵, 사이드바)" },
+      { name: "orbit3d-ui-panels.js", desc: "UI 패널, 모달, 사이드바" },
+      { name: "orbit3d-vr.js", desc: "WebXR VR 버튼" },
+      { name: "orbit3d-ws.js", desc: "WebSocket, 실시간 토스트 (키로그, 활동, 스킬)" },
+      { name: "mywork-renderer.js", desc: "행성 시스템 코어 렌더러" },
+      { name: "mw-card.js", desc: "카드/허브 렌더링 전용 모듈" },
+      { name: "mw-label.js", desc: "노드 라벨 결정 전용 모듈" }
+    ]
+  },
+  {
+    folder: "public/*.html",
+    tag: "frontend", tagLabel: "Pages",
+    files: [
+      { name: "index.html", desc: "로그인/회원가입 페이지" },
+      { name: "orbit3d.html", desc: "메인 3D 마인드맵 뷰어" },
+      { name: "orbit.html", desc: "Orbit 대시보드" },
+      { name: "dashboard.html", desc: "통합 대시보드" },
+      { name: "analysis.html", desc: "개인 업무 분석 페이지" },
+      { name: "settings.html", desc: "설정 페이지" },
+      { name: "history.html", desc: "활동 히스토리" },
+      { name: "admin-analysis.html", desc: "관리자 분석 페이지" },
+      { name: "admin-analytics.html", desc: "관리자 통계 페이지" },
+      { name: "admin-workspace.html", desc: "관리자 워크스페이스" },
+      { name: "community.html", desc: "커뮤니티 페이지" },
+      { name: "consultant.html", desc: "컨설턴트 뷰" },
+      { name: "contributor-dashboard.html", desc: "기여자 대시보드" },
+      { name: "marketplace.html", desc: "마켓플레이스" },
+      { name: "solution-market.html", desc: "솔루션 마켓" },
+      { name: "theme-market.html", desc: "테마 마켓" },
+      { name: "team-dashboard.html", desc: "팀 대시보드" },
+      { name: "setup.html", desc: "설치 가이드 페이지" },
+      { name: "guide.html", desc: "사용 가이드" },
+      { name: "chrome-guide.html", desc: "Chrome 확장 가이드" },
+      { name: "orbit-features.html", desc: "기능 소개 페이지" },
+      { name: "orbit-timeline.html", desc: "타임라인 뷰" },
+      { name: "org-hierarchy.html", desc: "조직도 페이지" },
+      { name: "workspace-drilldown-demo.html", desc: "워크스페이스 드릴다운 데모" },
+      { name: "invite.html", desc: "초대 페이지" },
+      { name: "pricing.html", desc: "가격 정책 페이지" },
+      { name: "privacy.html", desc: "개인정보처리방침" },
+      { name: "terms.html", desc: "이용약관" },
+      { name: "legacy-2d.html", desc: "레거시 2D 마인드맵" }
+    ]
+  },
+  {
+    folder: "public/css/",
+    tag: "frontend", tagLabel: "Styles",
+    files: [
+      { name: "orbit.css", desc: "Orbit 대시보드 스타일" },
+      { name: "orbit3d.css", desc: "3D 뷰어 메인 스타일" },
+      { name: "settings.css", desc: "설정 페이지 스타일" },
+      { name: "legacy-2d.css", desc: "레거시 2D 뷰 스타일" }
+    ]
+  },
+  {
+    folder: "adapters/",
+    tag: "adapter", tagLabel: "Adapters",
+    files: [
+      { name: "adapter-claude.js", desc: "Claude API -> 표준 MindmapEvent 변환" },
+      { name: "adapter-gemini.js", desc: "Gemini API -> 표준 MindmapEvent 변환" },
+      { name: "adapter-openai.js", desc: "OpenAI API -> 표준 MindmapEvent 변환" },
+      { name: "adapter-perplexity.js", desc: "Perplexity API -> 표준 MindmapEvent 변환" },
+      { name: "adapter-vscode.js", desc: "VS Code 활동 -> 표준 MindmapEvent 변환" },
+      { name: "ai-adapter-base.js", desc: "멀티 AI 어댑터 공통 베이스" },
+      { name: "calendar-adapter.js", desc: "Google Calendar -> Orbit 연동" },
+      { name: "daily-work-adapter.js", desc: "중소기업 직원 일상 업무 추적 어댑터" },
+      { name: "notion-adapter.js", desc: "Notion -> Orbit 연동" },
+      { name: "slack-adapter.js", desc: "Slack/Discord -> Orbit 연동" },
+      { name: "webhook-server.js", desc: "Slack+Discord+Zoom 웹훅 통합 서버" },
+      { name: "zoom-adapter.js", desc: "Zoom -> Orbit 연동" },
+      { name: "ecosystem.config.js", desc: "PM2 ecosystem 설정 (전체 실행)" }
+    ]
+  },
+  {
+    folder: "bin/",
+    tag: "cli", tagLabel: "CLI Tools",
+    files: [
+      { name: "orbit.js", desc: "orbit CLI 메인 진입점" },
+      { name: "bulk-sync.js", desc: "대량 데이터 동기화" },
+      { name: "migrate.js", desc: "DB 마이그레이션 실행" },
+      { name: "sync-to-railway.js", desc: "Railway DB 동기화" },
+      { name: "vision-worker.js", desc: "Vision AI 워커 프로세스" }
+    ]
+  },
+  {
+    folder: "cli/",
+    tag: "cli", tagLabel: "CLI",
+    files: [
+      { name: "gdrive-auth.js", desc: "Google Drive OAuth 인증 CLI" }
+    ]
+  },
+  {
+    folder: "sdk/",
+    tag: "cli", tagLabel: "SDK",
+    files: [
+      { name: "orbit-agent.js", desc: "Orbit Agent SDK (봇/스크립트 이벤트 리포트)" }
+    ]
+  },
+  {
+    folder: "setup/",
+    tag: "setup", tagLabel: "Install Scripts",
+    files: [
+      { name: "install.ps1", desc: "Windows 설치 스크립트 (v2 - 데이터 수신 5대 문제 해결)" },
+      { name: "install.sh", desc: "macOS/Linux 자동 설치 스크립트" },
+      { name: "quick-setup.bat", desc: "Windows 빠른 설정 배치" },
+      { name: "orbit-start.ps1", desc: "Windows 원클릭 시작" },
+      { name: "orbit-start.sh", desc: "macOS/Linux 원클릭 시작" },
+      { name: "orbit-backup.ps1", desc: "작업 완료 후 백업 (Git + Drive) - Windows" },
+      { name: "orbit-backup.sh", desc: "작업 완료 후 백업 (Git + Drive) - Mac" },
+      { name: "mac-analyzer-setup.sh", desc: "Mac Mini 상시 분석 서버 원클릭 설정" },
+      { name: "setup-git-mac.sh", desc: "GitHub PAT 설정 (macOS)" },
+      { name: "export-config.ps1", desc: "Claude Code 환경 설정 내보내기" },
+      { name: "import-config.ps1", desc: "Claude Code 환경 설정 가져오기 + 셋업" },
+      { name: "uninstall.ps1", desc: "Windows 삭제 스크립트" }
+    ]
+  },
+  {
+    folder: "chrome-extension/",
+    tag: "frontend", tagLabel: "Extension",
+    files: [
+      { name: "manifest.json", desc: "Chrome 확장 매니페스트" },
+      { name: "background.js", desc: "Chrome 확장 백그라운드 서비스 워커" },
+      { name: "content-ai.js", desc: "AI 대화 캡처 콘텐츠 스크립트" },
+      { name: "popup.html", desc: "Chrome 확장 팝업 UI" }
+    ]
+  },
+  {
+    folder: "vscode-extension/",
+    tag: "frontend", tagLabel: "VS Code",
+    files: [
+      { name: "extension.js", desc: "VS Code 확장 메인" },
+      { name: "package.json", desc: "VS Code 확장 설정" }
+    ]
+  },
+  {
+    folder: "scripts/",
+    tag: "cli", tagLabel: "Build",
+    files: [
+      { name: "build-frontend.js", desc: "esbuild 프론트엔드 번들링" },
+      { name: "build-version.js", desc: "모든 스크립트 태그에 캐시 버스터 적용" },
+      { name: "validate.js", desc: "배포 전 검증 (DB 동기화, 캐시, 에러 핸들링)" }
+    ]
+  },
+  {
+    folder: "migrations/",
+    tag: "config", tagLabel: "DB Migration",
+    files: [
+      { name: "0001_initial_schema.sql", desc: "초기 DB 스키마" },
+      { name: "0002_workspace_status.sql", desc: "워크스페이스 상태 필드 추가" },
+      { name: "0003_invite_codes.sql", desc: "초대 코드 테이블" },
+      { name: "0004_sessions_title.sql", desc: "세션 타이틀 필드 추가" }
+    ]
+  },
+  {
+    folder: "tests/",
+    tag: "test", tagLabel: "Tests",
+    files: [
+      { name: "e2e-deploy-views.spec.js", desc: "E2E 배포 뷰 테스트 (Playwright)" },
+      { name: "unit/activity-scorer.test.js", desc: "활동 점수 유닛 테스트" },
+      { name: "unit/code-analyzer.test.js", desc: "코드 분석기 유닛 테스트" },
+      { name: "unit/event-normalizer.test.js", desc: "이벤트 정규화 유닛 테스트" },
+      { name: "unit/graph-engine.test.js", desc: "그래프 엔진 유닛 테스트" },
+      { name: "unit/multi-ai.test.js", desc: "멀티 AI 유닛 테스트" },
+      { name: "unit/security-scanner.test.js", desc: "보안 스캐너 유닛 테스트" }
+    ]
+  },
+  {
+    folder: "config files",
+    tag: "config", tagLabel: "Config",
+    files: [
+      { name: "package.json", desc: "Node.js 패키지 설정" },
+      { name: "Dockerfile", desc: "Docker 컨테이너 빌드 설정" },
+      { name: "docker-compose.yml", desc: "Docker Compose 멀티 서비스 설정" },
+      { name: "railway.json", desc: "Railway 배포 설정" },
+      { name: "render.yaml", desc: "Render 배포 설정" },
+      { name: "nginx/orbit.conf", desc: "Nginx 리버스 프록시 설정" },
+      { name: "playwright.config.js", desc: "Playwright 테스트 설정" },
+      { name: "mcp-config.example.json", desc: "MCP 설정 예제" },
+      { name: "deploy.sh", desc: "배포 스크립트" },
+      { name: "start.sh", desc: "서버 시작 스크립트" },
+      { name: "start.bat", desc: "Windows 시작 배치" },
+      { name: "start-local.bat", desc: "로컬 개발 시작 배치" }
+    ]
+  }
+];
+
+// ═══════════════════════════════════════════════════════════════
+// CONVERSATION DATA
+// ═══════════════════════════════════════════════════════════════
+const conversations = [
+  { date:"2026-03-20 01:13", src:"dev", msg:"에이전트 태스크 실행 (자동 분석)" },
+  { date:"2026-03-20 00:09", src:"dev", msg:"에이전트 태스크 실행 (자동 분석)" },
+  { date:"2026-03-20", src:"vision", msg:"Vision 분석 세션 294건 (스크린캡처 자동 분석)" },
+  { date:"2026-03-19 23:58", src:"dev", msg:"에이전트 태스크 실행 (자동 분석)" },
+  { date:"2026-03-19 02:14", src:"dev", msg:"메모리 관리 지침 설정 - \"말하면 메모리만, 실행하면 작업\"" },
+  { date:"2026-03-15 11:36", src:"dev", msg:"에이전트 태스크 실행" },
+  { date:"2026-03-13 02:01", src:"dev", msg:"Orbit 프로젝트 구조 파악" },
+  { date:"2026-03-13 01:46", src:"dev", msg:"컨텍스트 초과 방지 지침 설정 후 작업" },
+  { date:"2026-03-13 01:19", src:"dev", msg:"세션 초기화 후 이전 작업 이어서 진행" },
+  { date:"2026-03-13 01:12", src:"dev", msg:"세션 초기화 원인 분석 + 이전 작업 확인" },
+  { date:"2026-03-13 00:52", src:"dev", msg:"텍스트박스 크기 수정 내역 확인" },
+  { date:"2026-03-12 09:56", src:"dev", msg:"세션 초기화 후 기존 작업 복구" },
+  { date:"2026-03-08 10:19", src:"dev", msg:"작업 상태 확인" },
+  { date:"2026-03-07 11:20", src:"dev", msg:"모델 변경 (Sonnet)" },
+  { date:"2026-03-07 08:27", src:"dev", msg:"에이전트 라우트 분석 태스크" },
+  { date:"2026-03-07 04:43", src:"dev", msg:"Read workspace/follow 라우트 에이전트 완료" },
+  { date:"2026-03-06 14:57", src:"dev", msg:"워크스페이스 기능 버그 수정 + 버튼 겹침 조정" },
+  { date:"2026-03-06 10:12", src:"dev", msg:"레일웨이 배포" },
+  { date:"2026-03-06 09:47", src:"dev", msg:"대규모 기능 업그레이드 (AI 에이전트 모니터, 결제, 가이드, UI)" },
+  { date:"2026-03-05 15:44", src:"dev", msg:"3가지 구조 모두 구현 + 사용자 선택 UI" },
+  { date:"2026-03-05 15:08", src:"dev", msg:"조사/분석 결과 시각화 개선 요청" },
+  { date:"2026-03-05 12:38", src:"dev", msg:"Haiku 자체 제공으로 전체 기능 사용" },
+  { date:"2026-03-05 11:57", src:"dev", msg:"행성 자전 균형 조정 + 거리 최적화" },
+  { date:"2026-03-05 09:46", src:"dev", msg:"에이전트 태스크 실행" },
+  { date:"2026-03-05 05:42", src:"dev", msg:"태양 렌더링 버그 수정 (빨간 부분 + 클릭 반응)" },
+  { date:"2026-03-05 02:42", src:"dev", msg:"AI 구독 플랜 + 바탕화면 스타일 도구 관리 UI" },
+  { date:"2026-03-04 09:39", src:"dev", msg:"작업 완료 후 드라이브/깃 저장" },
+  { date:"2026-03-04 09:13", src:"dev", msg:"무설치 원격 구성 방법 논의" },
+  { date:"2026-03-04 00:48", src:"dev", msg:"에이전트 태스크 실행" },
+  { date:"2026-03-03 00:39", src:"dev", msg:"퍼미션 전체 허용 설정" },
+  { date:"2026-02-27 01:41", src:"dev", msg:"Claude Code 마인드맵 뷰어 경쟁 제품 조사 완료" },
+  { date:"2026-02-17 16:19", src:"dev", msg:"데이터->그래프 에이전트 설계 완료" }
+];
+
+// ═══════════════════════════════════════════════════════════════
+// RENDER FILE TREE
+// ═══════════════════════════════════════════════════════════════
+let totalFiles = 0;
+const panel = document.getElementById('panel-files');
+fileData.forEach((group, gi) => {
+  totalFiles += group.files.length;
+  const div = document.createElement('div');
+  div.className = 'folder';
+  div.innerHTML = `
+    <div class="folder-header" data-folder="${gi}">
+      <span class="folder-icon">&#9660;</span>
+      <span class="folder-name">${group.folder}</span>
+      <span class="folder-count">(${group.files.length})</span>
+      <span class="folder-tag tag-${group.tag}">${group.tagLabel}</span>
+    </div>
+    <div class="file-list">
+      ${group.files.map(f => `
+        <div class="file-item c-${group.tag}" data-search="${f.name.toLowerCase()} ${f.desc.toLowerCase()}">
+          <span class="file-name">${f.name}</span>
+          <span class="file-desc">${f.desc}</span>
+        </div>
+      `).join('')}
+    </div>
+  `;
+  panel.appendChild(div);
+});
+document.getElementById('file-count').textContent = totalFiles;
+
+// Folder toggle
+panel.addEventListener('click', e => {
+  const hdr = e.target.closest('.folder-header');
+  if (hdr) hdr.classList.toggle('collapsed');
+});
+
+// ═══════════════════════════════════════════════════════════════
+// RENDER TIMELINE
+// ═══════════════════════════════════════════════════════════════
+const tlPanel = document.getElementById('panel-timeline');
+document.getElementById('timeline-count').textContent = conversations.length;
+
+const grouped = {};
+conversations.forEach(c => {
+  const day = c.date.substring(0, 10);
+  if (!grouped[day]) grouped[day] = [];
+  grouped[day].push(c);
+});
+
+Object.keys(grouped).sort().reverse().forEach(day => {
+  const entries = grouped[day];
+  const dayDiv = document.createElement('div');
+  dayDiv.className = 'timeline-day';
+
+  const weekday = new Date(day + 'T12:00:00').toLocaleDateString('ko-KR', { weekday:'short' });
+  dayDiv.innerHTML = `
+    <div class="timeline-date">
+      ${day} (${weekday})
+      <span class="day-count">${entries.length}건</span>
+    </div>
+  `;
+
+  entries.forEach(c => {
+    const time = c.date.length > 10 ? c.date.substring(11, 16) : '--:--';
+    const badge = c.src === 'vision' ? 'badge-vision' : 'badge-dev';
+    const label = c.src === 'vision' ? 'Vision' : 'Dev';
+    const entryDiv = document.createElement('div');
+    entryDiv.className = 'timeline-entry';
+    entryDiv.innerHTML = `
+      <span class="timeline-time">${time}</span>
+      <span class="timeline-badge ${badge}">${label}</span>
+      <span class="timeline-msg">${c.msg}</span>
+    `;
+    dayDiv.appendChild(entryDiv);
+  });
+
+  tlPanel.appendChild(dayDiv);
+});
+
+// ═══════════════════════════════════════════════════════════════
+// RENDER OVERVIEW
+// ═══════════════════════════════════════════════════════════════
+const sumPanel = document.getElementById('panel-summary');
+sumPanel.innerHTML = `
+  <div class="summary-panel">
+    <div class="summary-grid">
+      <div class="summary-card">
+        <div class="num" style="color:#58a6ff">${totalFiles}</div>
+        <div class="label">Total Source Files</div>
+      </div>
+      <div class="summary-card">
+        <div class="num" style="color:#3fb950">${fileData.length}</div>
+        <div class="label">Modules / Folders</div>
+      </div>
+      <div class="summary-card">
+        <div class="num" style="color:#d29922">${conversations.length}</div>
+        <div class="label">Dev Conversations</div>
+      </div>
+      <div class="summary-card">
+        <div class="num" style="color:#f85149">294</div>
+        <div class="label">Vision Sessions</div>
+      </div>
+    </div>
+
+    <div class="summary-section">
+      <h3>Architecture</h3>
+      <div class="arch-row"><div class="arch-dot" style="background:#58a6ff"></div><div class="arch-label">Backend</div><div class="arch-desc">Express + WebSocket | SQLite (auth) + PostgreSQL (events)</div></div>
+      <div class="arch-row"><div class="arch-dot" style="background:#3fb950"></div><div class="arch-label">Frontend</div><div class="arch-desc">Three.js 3D (태양계 궤도) + Canvas2D + CSS2DRenderer</div></div>
+      <div class="arch-row"><div class="arch-dot" style="background:#d29922"></div><div class="arch-label">Daemon</div><div class="arch-desc">직원 PC 상주 에이전트 (키로거 + 스크린캡처 + 파일감시)</div></div>
+      <div class="arch-row"><div class="arch-dot" style="background:#bc8cff"></div><div class="arch-label">Adapters</div><div class="arch-desc">Claude, Gemini, OpenAI, Perplexity, Slack, Zoom, Notion</div></div>
+      <div class="arch-row"><div class="arch-dot" style="background:#f85149"></div><div class="arch-label">Setup</div><div class="arch-desc">Windows (.ps1/.bat) + macOS (.sh) 자동 설치/시작/백업</div></div>
+      <div class="arch-row"><div class="arch-dot" style="background:#39d3d3"></div><div class="arch-label">CLI/SDK</div><div class="arch-desc">orbit CLI + Agent SDK + Vision Worker + 빌드 스크립트</div></div>
+    </div>
+
+    <div class="summary-section">
+      <h3>Deploy</h3>
+      <div class="arch-row"><div class="arch-dot" style="background:#58a6ff"></div><div class="arch-label">Railway</div><div class="arch-desc">sparkling-determination (auto-deploy from GitHub main)</div></div>
+      <div class="arch-row"><div class="arch-dot" style="background:#3fb950"></div><div class="arch-label">URL</div><div class="arch-desc" style="font-family:monospace;font-size:11px">sparkling-determination-production-c88b.up.railway.app</div></div>
+      <div class="arch-row"><div class="arch-dot" style="background:#d29922"></div><div class="arch-label">DB</div><div class="arch-desc">PG internal: postgres-ck7a.railway.internal:5432</div></div>
+    </div>
+
+    <div class="summary-section">
+      <h3>Data Pipeline</h3>
+      <div style="font-size:12px;color:#8b949e;line-height:1.8">
+        <div>1. <span style="color:#d29922">PC Daemon</span> - 키로거 + 스크린캡처 + 파일감시 + 클립보드</div>
+        <div>2. <span style="color:#bc8cff">Adapters</span> - AI 대화/Slack/Zoom/Calendar 이벤트 수집</div>
+        <div>3. <span style="color:#58a6ff">Server</span> - 이벤트 정규화 -> 그래프 엔진 -> 노드/엣지 생성</div>
+        <div>4. <span style="color:#58a6ff">Learning</span> - 패턴 학습 -> 의도 파악 -> 자동화 제안</div>
+        <div>5. <span style="color:#3fb950">3D View</span> - 태양계 궤도 시각화 (Three.js)</div>
+      </div>
+    </div>
+
+    <div class="summary-section">
+      <h3>File Breakdown</h3>
+      ${fileData.map(g => `
+        <div class="arch-row">
+          <div class="arch-dot" style="background:${
+            g.tag==='backend'?'#58a6ff':g.tag==='frontend'?'#3fb950':g.tag==='daemon'?'#d29922':
+            g.tag==='setup'?'#f85149':g.tag==='adapter'?'#bc8cff':g.tag==='cli'?'#39d3d3':
+            g.tag==='config'?'#d2d222':'#56d4dd'}"></div>
+          <div class="arch-label">${g.folder}</div>
+          <div class="arch-desc">${g.files.length} files - ${g.tagLabel}</div>
+        </div>
+      `).join('')}
+    </div>
+  </div>
+`;
+
+// ═══════════════════════════════════════════════════════════════
+// TAB SWITCHING
+// ═══════════════════════════════════════════════════════════════
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('panel-' + tab.dataset.tab).classList.add('active');
+
+    const isFiles = tab.dataset.tab === 'files';
+    document.getElementById('search-bar').style.display = isFiles ? '' : 'none';
+    document.getElementById('stats-bar').style.display = isFiles ? '' : 'none';
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// SEARCH
+// ═══════════════════════════════════════════════════════════════
+document.getElementById('search').addEventListener('input', e => {
+  const q = e.target.value.toLowerCase().trim();
+  document.querySelectorAll('.file-item').forEach(item => {
+    if (!q) { item.classList.remove('hidden'); return; }
+    const match = item.dataset.search.includes(q);
+    item.classList.toggle('hidden', !match);
+  });
+  // Auto-expand folders with matches, collapse empty ones
+  document.querySelectorAll('.folder').forEach(folder => {
+    const hdr = folder.querySelector('.folder-header');
+    const visible = folder.querySelectorAll('.file-item:not(.hidden)').length;
+    if (q) {
+      hdr.classList.toggle('collapsed', visible === 0);
+    }
+  });
+});
+</script>
+</body>
+</html>
