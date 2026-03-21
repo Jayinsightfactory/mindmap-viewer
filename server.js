@@ -1167,19 +1167,25 @@ app.get('/api/learning/workspace', async (req, res) => {
 
 // 현재 서버 버전 + 배포 정보
 let _serverVersion = null;
-let _deployInfo = { commitMsg: '', commitDate: '', recentChanges: [] };
+const _serverStartTime = new Date().toISOString();
+let _deployInfo = { commitMsg: '', commitDate: _serverStartTime, recentChanges: [] };
 try {
   const { execSync } = require('child_process');
   _serverVersion = execSync('git rev-parse --short HEAD', { timeout: 3000 }).toString().trim();
   _deployInfo.commitMsg = execSync('git log -1 --format=%s', { timeout: 3000 }).toString().trim();
   _deployInfo.commitDate = execSync('git log -1 --format=%ci', { timeout: 3000 }).toString().trim();
-  // 최근 5개 커밋 요약
   _deployInfo.recentChanges = execSync('git log -5 --format=%h|%s|%ci', { timeout: 3000 })
     .toString().trim().split('\n').map(line => {
       const [hash, msg, date] = line.split('|');
       return { hash, msg, date };
     });
 } catch {}
+// git 없으면 Railway 환경변수에서 버전 + 서버 시작 시간을 배포 시간으로
+if (!_serverVersion) _serverVersion = process.env.RAILWAY_GIT_COMMIT_SHA?.substring(0, 8) || 'unknown';
+if (!_deployInfo.commitDate || _deployInfo.commitDate === _serverStartTime) {
+  _deployInfo.commitDate = _serverStartTime;
+  _deployInfo.commitMsg = '서버 시작: ' + new Date(_serverStartTime).toLocaleString('ko-KR');
+}
 if (!_serverVersion) _serverVersion = process.env.GIT_COMMIT_SHA?.substring(0, 8) || process.env.RAILWAY_GIT_COMMIT_SHA?.substring(0, 8) || '54092d6';
 
 // 데몬 명령 큐 { hostname → [commands] }

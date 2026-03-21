@@ -96,9 +96,9 @@ function _checkDaemonErrors() {
 }
 
 // 5분마다 체크
-setInterval(_checkTrackerHealth, 5 * 60 * 1000);
+// setInterval(_checkTrackerHealth, 5 * 60 * 1000);
 // 로그인 30초 후 첫 체크
-setTimeout(_checkTrackerHealth, 30000);
+// setTimeout(_checkTrackerHealth, 30000);
 function _getAuthToken() {
   if (typeof _orbitUser !== 'undefined' && _orbitUser?.token) return _orbitUser.token;
   try { return JSON.parse(localStorage.getItem('orbitUser') || 'null')?.token || ''; } catch { return ''; }
