@@ -1187,6 +1187,12 @@
       <h4 style="margin:0 0 8px;font-size:13px;color:var(--muted);">🧬 자가 진화 엔진</h4>
       <div id="agent-evolve" style="font-size:12px;"></div>
     </div>
+
+    <!-- 프로젝트 (고정작업 제외) -->
+    <div style="margin-bottom:16px;">
+      <h4 style="margin:0 0 8px;font-size:13px;color:var(--muted);">📂 진행 중 프로젝트 (고정작업 제외)</h4>
+      <div id="agent-projects" style="font-size:12px;"></div>
+    </div>
   </section>
 
 </main>
@@ -2952,13 +2958,14 @@ async function loadKPI() {
 // ── 에이전트 팀 분석 결과 로딩 ─────────────────────────────────────
 async function loadAgentAnalysis() {
   try {
-    const [osRes, structRes, issuesRes, masterRes, triggersRes, evolveRes] = await Promise.all([
+    const [osRes, structRes, issuesRes, masterRes, triggersRes, evolveRes, projectsRes] = await Promise.all([
       apiFetch('/api/os/status').catch(() => null),
       apiFetch('/api/company/structure?days=7').catch(() => null),
       apiFetch('/api/issues/scan').catch(() => null),
       apiFetch('/api/automation/master').catch(() => null),
       apiFetch('/api/company/triggers').catch(() => null),
       apiFetch('/api/evolve/health').catch(() => null),
+      apiFetch('/api/os/projects?days=7').catch(() => null),
     ]);
 
     // OS 상태
@@ -3097,6 +3104,37 @@ async function loadAgentAnalysis() {
         html += '</div>';
       }
       document.getElementById('agent-evolve').innerHTML = html;
+    }
+
+    // 프로젝트 (고정작업 제외)
+    if (projectsRes?.members) {
+      let html = `<div style="margin-bottom:8px;color:var(--muted);font-size:11px;">분석 ${projectsRes.analyzedDays}일 | 고정작업(매일 반복) 제외, 프로젝트/신규 업무만 표시</div>`;
+      for (const m of projectsRes.members) {
+        html += `<div style="margin-bottom:12px;padding:8px;background:var(--card-bg);border-radius:6px;">`;
+        html += `<div style="font-weight:600;margin-bottom:4px;">${(m.name || '').substring(0, 8)} <span style="color:var(--muted);font-size:11px;">(고정 ${m.routineFiltered}개 필터됨: ${m.routineExamples.map(r => r.substring(0, 15)).join(', ')})</span></div>`;
+        if (m.projects.length) {
+          html += '<div style="margin-bottom:4px;">';
+          for (const p of m.projects.slice(0, 6)) {
+            const bar = Math.min(100, p.total / 2);
+            html += `<div style="display:flex;align-items:center;gap:6px;padding:2px 0;">
+              <span style="color:#58a6ff;">★</span>
+              <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${p.window.substring(0, 35)}</span>
+              <div style="width:60px;height:6px;background:var(--border);border-radius:3px;"><div style="width:${bar}%;height:100%;background:#58a6ff;border-radius:3px;"></div></div>
+              <span style="font-size:11px;color:var(--muted);">${p.total}건 ${p.days}일</span>
+            </div>`;
+          }
+          html += '</div>';
+        }
+        if (m.newItems.length) {
+          html += '<div>';
+          for (const n of m.newItems.slice(0, 3)) {
+            html += `<div style="padding:2px 0;"><span style="color:#3fb950;">🆕</span> ${n.window.substring(0, 35)} <span style="font-size:11px;color:var(--muted);">${n.total}건</span></div>`;
+          }
+          html += '</div>';
+        }
+        html += '</div>';
+      }
+      document.getElementById('agent-projects').innerHTML = html;
     }
 
   } catch (e) {
