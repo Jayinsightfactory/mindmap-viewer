@@ -73,7 +73,10 @@ async function loadHistoryEvents(nodeId) {
 
   try {
     // API에서 이벤트 로드 (또는 더미 데이터 사용)
-    const response = await fetch(`/api/graph/nodeHistory?nodeId=${encodeURIComponent(nodeId)}`);
+    const _token = localStorage.getItem('orbit_token') || '';
+    const response = await fetch(`/api/graph/nodeHistory?nodeId=${encodeURIComponent(nodeId)}`, {
+      headers: _token ? { Authorization: `Bearer ${_token}` } : {},
+    });
     
     if (!response.ok) {
       throw new Error(`Failed to load history: ${response.status}`);
