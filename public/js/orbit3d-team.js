@@ -758,16 +758,20 @@ function _buildTeamSystemInner(teamData) {
         const topProjects = Object.entries(projects)
           .sort((a, b) => b[1].count - a[1].count)
           .slice(0, 5);
-        const PROJ_R = Math.max(TASK_R * 0.8, 2);
+        const PROJ_R = 1.5; // 멤버 주위 고정 거리
         console.log(`[team-project] ${_mid}: ${topProjects.length}개 프로젝트 위성 생성`);
         topProjects.forEach(([projName, proj], si) => {
-          const sAngle = (si / Math.max(topProjects.length, 3)) * Math.PI * 2 + Math.PI / 4;
-          const sx = _mPos.x + PROJ_R * Math.cos(sAngle);
-          const sz = _mPos.z + PROJ_R * Math.sin(sAngle);
-          const sPos = new THREE.Vector3(sx, _mPos.y + 1, sz);
+          const sAngle = (si / Math.max(topProjects.length, 3)) * Math.PI * 2;
+          const sPos = new THREE.Vector3(
+            _mPos.x + PROJ_R * Math.cos(sAngle),
+            _mPos.y + 0.5 + si * 0.3, // Y축으로 펼쳐서 겹침 방지
+            _mPos.z + PROJ_R * Math.sin(sAngle)
+          );
           const sObj = createWireNode(0.1, new THREE.Color(_color || '#58a6ff').getHex(), { wireOpacity: 0.6, glowOpacity: 0.3 });
           sObj.position.copy(sPos);
-          sObj.userData = { isTeamTask: true, memberId: _mid, orbitR: PROJ_R, orbitAngle: sAngle, orbitSpeed: 0.02 + si * 0.005, orbitCenter: _mPos.clone() };
+          // orbitCenter를 멤버 Object에 연결 (공전 따라감)
+          const memberObj = planetMeshes.find(p => p.userData?.memberId === _mid);
+          sObj.userData = { isTeamTask: true, memberId: _mid, orbitR: PROJ_R, orbitAngle: sAngle, orbitSpeed: 0.03 + si * 0.008, orbitCenter: memberObj ? memberObj.position : _mPos.clone() };
           scene.add(sObj);
           satelliteMeshes.push(sObj);
           _teamNodes.push({
