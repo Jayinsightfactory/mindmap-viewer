@@ -1,0 +1,849 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Orbit AI - Architecture Mindmap</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  background:#0d1117;
+  color:#e6edf3;
+  font-family:'Inter',system-ui,-apple-system,sans-serif;
+  overflow:hidden;
+  height:100vh;
+  cursor:grab;
+  user-select:none;
+}
+body.grabbing { cursor:grabbing; }
+
+/* Header */
+.header {
+  position:fixed; top:0; left:0; right:0; z-index:100;
+  background:rgba(13,17,23,0.92);
+  backdrop-filter:blur(12px);
+  border-bottom:1px solid #30363d;
+  padding:10px 20px;
+  display:flex; align-items:center; justify-content:space-between;
+}
+.header h1 {
+  font-size:15px; font-weight:600; color:#e6edf3;
+  display:flex; align-items:center; gap:8px;
+}
+.header h1 .logo { color:#58a6ff; font-size:18px; }
+.header-controls { display:flex; gap:8px; align-items:center; }
+.header-controls button {
+  background:#21262d; border:1px solid #30363d; color:#8b949e;
+  padding:5px 10px; border-radius:6px; font-size:12px; cursor:pointer;
+  transition:all .15s;
+}
+.header-controls button:hover { background:#30363d; color:#e6edf3; }
+.header-controls .zoom-label { color:#484f58; font-size:11px; min-width:40px; text-align:center; }
+
+/* Legend */
+.legend {
+  position:fixed; bottom:16px; left:16px; z-index:100;
+  background:rgba(22,27,34,0.95); border:1px solid #30363d; border-radius:10px;
+  padding:12px 16px; font-size:11px;
+}
+.legend-title { font-weight:600; margin-bottom:8px; color:#8b949e; font-size:10px; text-transform:uppercase; letter-spacing:1px; }
+.legend-item { display:flex; align-items:center; gap:8px; margin-bottom:4px; color:#8b949e; }
+.legend-dot { width:10px; height:10px; border-radius:3px; flex-shrink:0; }
+
+/* Canvas container */
+#canvas-container {
+  width:100vw; height:100vh;
+  overflow:hidden;
+  position:relative;
+}
+#world {
+  position:absolute;
+  transform-origin:0 0;
+  will-change:transform;
+}
+
+/* SVG connections */
+#connections {
+  position:absolute;
+  top:0; left:0;
+  pointer-events:none;
+  overflow:visible;
+}
+#connections path {
+  fill:none;
+  stroke-width:2;
+  stroke-linecap:round;
+}
+#connections .conn-line {
+  opacity:0.5;
+  transition:opacity .2s;
+}
+#connections .conn-line.highlight {
+  opacity:1;
+  stroke-width:2.5;
+}
+
+/* Animated dash */
+@keyframes dashFlow {
+  to { stroke-dashoffset: -20; }
+}
+#connections .conn-line {
+  stroke-dasharray:6,4;
+  animation:dashFlow 1.2s linear infinite;
+}
+
+/* Arrow markers */
+.arrow-marker { fill:#8b949e; }
+
+/* Node card */
+.node {
+  position:absolute;
+  width:180px;
+  background:#161b22;
+  border:1.5px solid #30363d;
+  border-radius:10px;
+  cursor:pointer;
+  transition:transform .2s, box-shadow .2s, border-color .2s;
+  overflow:visible;
+}
+.node:hover {
+  transform:scale(1.06);
+  z-index:50;
+  border-color:#58a6ff;
+  box-shadow:0 0 20px rgba(88,166,255,0.15), 0 8px 30px rgba(0,0,0,0.4);
+}
+.node.expanded {
+  z-index:60;
+  border-color:#58a6ff;
+  box-shadow:0 0 20px rgba(88,166,255,0.2), 0 8px 30px rgba(0,0,0,0.5);
+}
+
+.node-header {
+  display:flex; align-items:center; gap:8px;
+  padding:10px 12px;
+  border-bottom:1px solid transparent;
+}
+.node.expanded .node-header {
+  border-bottom-color:#21262d;
+}
+.node-icon {
+  width:28px; height:28px;
+  border-radius:7px;
+  display:flex; align-items:center; justify-content:center;
+  font-size:14px;
+  flex-shrink:0;
+}
+.node-info { flex:1; min-width:0; }
+.node-title {
+  font-size:12px; font-weight:600; color:#e6edf3;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.node-sub {
+  font-size:10px; color:#8b949e; margin-top:1px;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+
+/* Expanded file list */
+.node-files {
+  display:none;
+  padding:6px 10px 10px;
+  max-height:180px;
+  overflow-y:auto;
+}
+.node.expanded .node-files { display:block; }
+.node-file {
+  font-size:10px; color:#8b949e;
+  padding:3px 6px;
+  border-radius:4px;
+  margin-bottom:2px;
+  font-family:'SF Mono',Menlo,monospace;
+  transition:background .1s;
+}
+.node-file:hover { background:#21262d; color:#58a6ff; }
+
+/* Tooltip */
+.node-tooltip {
+  display:none;
+  position:absolute;
+  top:100%;
+  left:50%;
+  transform:translateX(-50%);
+  margin-top:8px;
+  background:#1c2128;
+  border:1px solid #30363d;
+  border-radius:8px;
+  padding:8px 12px;
+  font-size:10px;
+  color:#8b949e;
+  white-space:nowrap;
+  z-index:200;
+  pointer-events:none;
+  box-shadow:0 4px 16px rgba(0,0,0,0.4);
+}
+.node:hover .node-tooltip { display:block; }
+.node.expanded .node-tooltip { display:none; }
+
+/* Layer labels */
+.layer-label {
+  position:absolute;
+  font-size:10px;
+  font-weight:600;
+  text-transform:uppercase;
+  letter-spacing:2px;
+  color:#21262d;
+  pointer-events:none;
+}
+.layer-bg {
+  position:absolute;
+  border:1px dashed #1c2128;
+  border-radius:16px;
+  pointer-events:none;
+}
+
+/* Scrollbar */
+.node-files::-webkit-scrollbar { width:4px; }
+.node-files::-webkit-scrollbar-track { background:transparent; }
+.node-files::-webkit-scrollbar-thumb { background:#30363d; border-radius:2px; }
+
+/* Minimap */
+.minimap {
+  position:fixed; bottom:16px; right:16px; z-index:100;
+  width:180px; height:120px;
+  background:rgba(22,27,34,0.9);
+  border:1px solid #30363d; border-radius:8px;
+  overflow:hidden; cursor:pointer;
+}
+.minimap-viewport {
+  position:absolute;
+  border:1.5px solid #58a6ff;
+  background:rgba(88,166,255,0.08);
+  border-radius:2px;
+  pointer-events:none;
+}
+.minimap-dot {
+  position:absolute;
+  width:4px; height:3px;
+  border-radius:1px;
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1><span class="logo">&#9673;</span> Orbit AI Architecture</h1>
+  <div class="header-controls">
+    <button id="btn-reset" title="Reset view">Reset</button>
+    <button id="btn-zout">&#8722;</button>
+    <span class="zoom-label" id="zoom-label">100%</span>
+    <button id="btn-zin">&#43;</button>
+    <button id="btn-fit">Fit</button>
+  </div>
+</div>
+
+<div class="legend">
+  <div class="legend-title">Layers</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#f0883e"></div> Data Collection</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#58a6ff"></div> Server</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#3fb950"></div> Frontend Views</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#bc8cff"></div> Infrastructure</div>
+</div>
+
+<div id="canvas-container">
+  <div id="world">
+    <svg id="connections" width="3000" height="2000">
+      <defs>
+        <marker id="arrow-orange" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="8" markerHeight="6" orient="auto-start-reverse">
+          <path d="M0,0 L10,4 L0,8 Z" class="arrow-marker" fill="#f0883e"/>
+        </marker>
+        <marker id="arrow-blue" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="8" markerHeight="6" orient="auto-start-reverse">
+          <path d="M0,0 L10,4 L0,8 Z" class="arrow-marker" fill="#58a6ff"/>
+        </marker>
+        <marker id="arrow-green" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="8" markerHeight="6" orient="auto-start-reverse">
+          <path d="M0,0 L10,4 L0,8 Z" class="arrow-marker" fill="#3fb950"/>
+        </marker>
+        <marker id="arrow-purple" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="8" markerHeight="6" orient="auto-start-reverse">
+          <path d="M0,0 L10,4 L0,8 Z" class="arrow-marker" fill="#bc8cff"/>
+        </marker>
+        <marker id="arrow-red" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="8" markerHeight="6" orient="auto-start-reverse">
+          <path d="M0,0 L10,4 L0,8 Z" class="arrow-marker" fill="#f85149"/>
+        </marker>
+      </defs>
+    </svg>
+  </div>
+</div>
+
+<div class="minimap" id="minimap">
+  <div class="minimap-viewport" id="minimap-vp"></div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════════════
+// NODE DEFINITIONS
+// ══════════════════════════════════════════════════════════════
+const NODES = [
+  // --- Data Collection Layer ---
+  {
+    id:'daemon', title:'PC Daemon', sub:'personal-agent.js',
+    color:'#f0883e', icon:'&#128421;', layer:'collection',
+    x:100, y:160,
+    files:['keyboard-watcher.js','screen-capture.js','clipboard-watcher.js','mouse (keyboard-watcher)','excel-monitor.js','kakao-capture.js','file-change-watcher.js','drive-uploader.js'],
+    tooltip:'직원 PC 상주 에이전트 - 키보드/캡처/클립보드/마우스/엑셀/카카오'
+  },
+  {
+    id:'hook', title:'Event Hook', sub:'/api/hook',
+    color:'#f0883e', icon:'&#10132;', layer:'collection',
+    x:380, y:160,
+    files:['/api/hook (server.js)','event-normalizer.js','MindmapEvent 표준 변환'],
+    tooltip:'데몬 이벤트 수신 + 정규화 (MindmapEvent)'
+  },
+
+  // --- Server Layer ---
+  {
+    id:'server', title:'Server Core', sub:'server.js + PostgreSQL',
+    color:'#58a6ff', icon:'&#9881;', layer:'server',
+    x:660, y:160,
+    files:['server.js','db-pg.js (PostgreSQL)','db.js (SQLite auth)','routes/ (60+ API files)','graph.js','workspace.js','auth.js'],
+    tooltip:'Express + WebSocket + SQLite(auth) + PostgreSQL(events)'
+  },
+  {
+    id:'vision', title:'Vision Analysis', sub:'vision-worker.js',
+    color:'#3fb950', icon:'&#128065;', layer:'server',
+    x:660, y:360,
+    files:['bin/vision-worker.js','vision-analyzer.js','Claude Vision API','Google Drive captures','screen.analyzed results'],
+    tooltip:'Mac Mini CLI - 캡처 이미지 Claude Vision 분석'
+  },
+  {
+    id:'learner', title:'Learning Engine', sub:'work-learner.js',
+    color:'#bc8cff', icon:'&#129504;', layer:'server',
+    x:940, y:160,
+    files:['work-learner.js','graph-engine.js','learning-engine.js','workflow-learner.js','purpose-classifier.js','routine-learner.js','diff-learner.js'],
+    tooltip:'캡처+키로거 조합 학습, 패턴 감지, 의도 분류'
+  },
+  {
+    id:'fixer', title:'Auto Fixer', sub:'auto-fixer.js',
+    color:'#f85149', icon:'&#128295;', layer:'server',
+    x:380, y:360,
+    files:['auto-fixer.js','daemon-updater.js','에러 감지 -> 분석 -> 수정 명령 전송','설치 실패 자동 해결'],
+    tooltip:'에러 자동 감지 -> 분석 -> 수정 명령 -> PC 데몬에 전송'
+  },
+
+  // --- Frontend Layer ---
+  {
+    id:'personal', title:'Personal View', sub:'orbit3d-scene.js',
+    color:'#3fb950', icon:'&#127759;', layer:'frontend',
+    x:1220, y:80,
+    files:['orbit3d-scene.js','orbit3d-animate.js','orbit3d-behavior.js','orbit3d-render-panels.js','analysis.html','개인 활동 분석 패널'],
+    tooltip:'개인 3D 우주 뷰 - 내 업무 패턴/시간 배분 시각화'
+  },
+  {
+    id:'team', title:'Team View', sub:'orbit3d-team.js',
+    color:'#3fb950', icon:'&#127756;', layer:'frontend',
+    x:1220, y:230,
+    files:['orbit3d-team.js','orbit3d-company.js','orbit3d-selection.js','team-dashboard.html','프로젝트 위성 시각화'],
+    tooltip:'팀 시뮬레이션 - 멤버 클러스터 + 프로젝트 위성'
+  },
+  {
+    id:'company', title:'Company View', sub:'orbit3d-company.js',
+    color:'#3fb950', icon:'&#9728;', layer:'frontend',
+    x:1220, y:380,
+    files:['orbit3d-company.js','orbit3d-team.js (company mode)','태양=회사, 행성=부서','부서간 협업선'],
+    tooltip:'전사 태양계 뷰 - 회사=태양, 부서=행성, 팀=위성'
+  },
+  {
+    id:'admin', title:'Admin Dashboard', sub:'admin-analysis.html',
+    color:'#3fb950', icon:'&#128202;', layer:'frontend',
+    x:1220, y:530,
+    files:['admin-analysis.html','admin-analytics.html','admin-workspace.html','KPI 대시보드','알고리즘 설정','report-generator.js'],
+    tooltip:'관리자 대시보드 - KPI, 직원 분석, 자동화 관리'
+  },
+
+  // --- Infra Layer ---
+  {
+    id:'railway', title:'Railway Deploy', sub:'Auto Deploy',
+    color:'#bc8cff', icon:'&#128640;', layer:'infra',
+    x:660, y:560,
+    files:['railway.json','Dockerfile','GitHub main -> 자동배포','환경변수 관리','힙: 768MB'],
+    tooltip:'Railway 자동 배포 - GitHub main push -> sparkling-determination'
+  },
+  {
+    id:'gdrive', title:'Google Drive', sub:'Capture Storage',
+    color:'#bc8cff', icon:'&#128193;', layer:'infra',
+    x:380, y:560,
+    files:['drive-uploader.js','gdrive-backup.js','캡처 저장 (~/.orbit/captures/)','Vision 원본 이미지','5분마다 자동 업로드'],
+    tooltip:'Google Drive - 캡처 이미지 저장 + 백업 (5분 주기)'
+  },
+  {
+    id:'updater', title:'Auto Updater', sub:'daemon-updater.js',
+    color:'#bc8cff', icon:'&#128260;', layer:'infra',
+    x:100, y:360,
+    files:['daemon-updater.js','09:30 / 13:00 / 15:00 / 17:00','원격 명령 수신','자동 재시작','install.ps1 v2'],
+    tooltip:'평일 4회 자동 업데이트 (09:30/13:00/15:00/17:00)'
+  }
+];
+
+// ══════════════════════════════════════════════════════════════
+// CONNECTION DEFINITIONS
+// ══════════════════════════════════════════════════════════════
+const CONNECTIONS = [
+  // Data flow
+  { from:'daemon', to:'hook', color:'#f0883e', marker:'arrow-orange' },
+  { from:'hook', to:'server', color:'#f0883e', marker:'arrow-orange' },
+
+  // Server processing
+  { from:'server', to:'vision', color:'#58a6ff', marker:'arrow-blue' },
+  { from:'server', to:'learner', color:'#58a6ff', marker:'arrow-blue' },
+  { from:'vision', to:'learner', color:'#3fb950', marker:'arrow-green' },
+
+  // Learning -> Views
+  { from:'learner', to:'personal', color:'#bc8cff', marker:'arrow-purple' },
+  { from:'learner', to:'team', color:'#bc8cff', marker:'arrow-purple' },
+  { from:'learner', to:'company', color:'#bc8cff', marker:'arrow-purple' },
+  { from:'learner', to:'admin', color:'#bc8cff', marker:'arrow-purple' },
+
+  // Auto-fix loop
+  { from:'server', to:'fixer', color:'#f85149', marker:'arrow-red' },
+  { from:'fixer', to:'daemon', color:'#f85149', marker:'arrow-red' },
+
+  // Infra
+  { from:'railway', to:'server', color:'#bc8cff', marker:'arrow-purple' },
+  { from:'gdrive', to:'vision', color:'#bc8cff', marker:'arrow-purple' },
+  { from:'daemon', to:'gdrive', color:'#f0883e', marker:'arrow-orange' },
+  { from:'updater', to:'daemon', color:'#bc8cff', marker:'arrow-purple' },
+  { from:'server', to:'updater', color:'#58a6ff', marker:'arrow-blue' },
+];
+
+// ══════════════════════════════════════════════════════════════
+// LAYER BACKGROUNDS
+// ══════════════════════════════════════════════════════════════
+const LAYERS = [
+  { id:'collection', label:'DATA COLLECTION', x:60, y:100, w:570, h:130, color:'#f0883e' },
+  { id:'server', label:'SERVER & PROCESSING', x:340, y:100, w:700, h:330, color:'#58a6ff' },
+  { id:'frontend', label:'FRONTEND VIEWS', x:1170, y:30, w:240, h:570, color:'#3fb950' },
+  { id:'infra', label:'INFRASTRUCTURE', x:60, y:300, w:700, h:330, color:'#bc8cff' },
+];
+
+// ══════════════════════════════════════════════════════════════
+// STATE
+// ══════════════════════════════════════════════════════════════
+let pan = { x:0, y:0 };
+let zoom = 1;
+let dragging = false;
+let dragStart = { x:0, y:0 };
+let panStart = { x:0, y:0 };
+let expandedNode = null;
+
+const world = document.getElementById('world');
+const svg = document.getElementById('connections');
+const container = document.getElementById('canvas-container');
+
+// ══════════════════════════════════════════════════════════════
+// RENDER LAYER BACKGROUNDS
+// ══════════════════════════════════════════════════════════════
+LAYERS.forEach(layer => {
+  const bg = document.createElement('div');
+  bg.className = 'layer-bg';
+  bg.style.cssText = `left:${layer.x}px;top:${layer.y}px;width:${layer.w}px;height:${layer.h}px;border-color:${layer.color}22;background:${layer.color}05;`;
+  world.appendChild(bg);
+
+  const lbl = document.createElement('div');
+  lbl.className = 'layer-label';
+  lbl.style.cssText = `left:${layer.x+12}px;top:${layer.y+8}px;color:${layer.color}30;`;
+  lbl.textContent = layer.label;
+  world.appendChild(lbl);
+});
+
+// ══════════════════════════════════════════════════════════════
+// RENDER NODES
+// ══════════════════════════════════════════════════════════════
+const nodeElements = {};
+
+NODES.forEach(node => {
+  const el = document.createElement('div');
+  el.className = 'node';
+  el.id = 'node-' + node.id;
+  el.style.left = node.x + 'px';
+  el.style.top = node.y + 'px';
+  el.style.borderColor = node.color + '55';
+
+  const filesHtml = node.files.map(f => `<div class="node-file">${f}</div>`).join('');
+
+  el.innerHTML = `
+    <div class="node-header">
+      <div class="node-icon" style="background:${node.color}18;color:${node.color}">${node.icon}</div>
+      <div class="node-info">
+        <div class="node-title">${node.title}</div>
+        <div class="node-sub">${node.sub}</div>
+      </div>
+    </div>
+    <div class="node-files">${filesHtml}</div>
+    <div class="node-tooltip">${node.tooltip}</div>
+  `;
+
+  el.addEventListener('click', e => {
+    e.stopPropagation();
+    toggleNode(node.id, el);
+  });
+
+  // Hover highlight connections
+  el.addEventListener('mouseenter', () => highlightConnections(node.id, true));
+  el.addEventListener('mouseleave', () => highlightConnections(node.id, false));
+
+  world.appendChild(el);
+  nodeElements[node.id] = el;
+});
+
+function toggleNode(id, el) {
+  if (expandedNode === id) {
+    el.classList.remove('expanded');
+    expandedNode = null;
+  } else {
+    if (expandedNode) {
+      const prev = document.getElementById('node-' + expandedNode);
+      if (prev) prev.classList.remove('expanded');
+    }
+    el.classList.add('expanded');
+    expandedNode = id;
+  }
+  // Redraw connections after expand/collapse
+  requestAnimationFrame(drawConnections);
+}
+
+// ══════════════════════════════════════════════════════════════
+// DRAW SVG CONNECTIONS
+// ══════════════════════════════════════════════════════════════
+function getNodeCenter(id) {
+  const el = nodeElements[id];
+  if (!el) return { x:0, y:0 };
+  const rect = el.getBoundingClientRect();
+  const worldRect = world.getBoundingClientRect();
+  return {
+    x:(rect.left + rect.width/2 - worldRect.left) / zoom,
+    y:(rect.top + rect.height/2 - worldRect.top) / zoom,
+  };
+}
+
+function getNodePort(fromId, toId) {
+  const fEl = nodeElements[fromId];
+  const tEl = nodeElements[toId];
+  if (!fEl || !tEl) return { fx:0, fy:0, tx:0, ty:0 };
+
+  const fr = fEl.getBoundingClientRect();
+  const tr = tEl.getBoundingClientRect();
+  const wr = world.getBoundingClientRect();
+
+  const fCx = (fr.left + fr.width/2 - wr.left) / zoom;
+  const fCy = (fr.top + fr.height/2 - wr.top) / zoom;
+  const tCx = (tr.left + tr.width/2 - wr.left) / zoom;
+  const tCy = (tr.top + tr.height/2 - wr.top) / zoom;
+
+  const fw = fr.width / zoom;
+  const fh = fr.height / zoom;
+  const tw = tr.width / zoom;
+  const th = tr.height / zoom;
+
+  // Determine exit/enter sides
+  const dx = tCx - fCx;
+  const dy = tCy - fCy;
+
+  let fx, fy, tx, ty;
+
+  if (Math.abs(dx) > Math.abs(dy)) {
+    // Horizontal dominant
+    if (dx > 0) {
+      fx = fCx + fw/2; fy = fCy;
+      tx = tCx - tw/2; ty = tCy;
+    } else {
+      fx = fCx - fw/2; fy = fCy;
+      tx = tCx + tw/2; ty = tCy;
+    }
+  } else {
+    // Vertical dominant
+    if (dy > 0) {
+      fx = fCx; fy = fCy + fh/2;
+      tx = tCx; ty = tCy - th/2;
+    } else {
+      fx = fCx; fy = fCy - fh/2;
+      tx = tCx; ty = tCy + th/2;
+    }
+  }
+
+  return { fx, fy, tx, ty };
+}
+
+function drawConnections() {
+  // Clear existing paths
+  const existing = svg.querySelectorAll('.conn-line');
+  existing.forEach(p => p.remove());
+
+  CONNECTIONS.forEach(conn => {
+    const { fx, fy, tx, ty } = getNodePort(conn.from, conn.to);
+
+    // Bezier curve
+    const dx = tx - fx;
+    const dy = ty - fy;
+    let cx1, cy1, cx2, cy2;
+
+    if (Math.abs(dx) > Math.abs(dy)) {
+      cx1 = fx + dx * 0.4; cy1 = fy;
+      cx2 = fx + dx * 0.6; cy2 = ty;
+    } else {
+      cx1 = fx; cy1 = fy + dy * 0.4;
+      cx2 = tx; cy2 = fy + dy * 0.6;
+    }
+
+    const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+    path.setAttribute('d', `M${fx},${fy} C${cx1},${cy1} ${cx2},${cy2} ${tx},${ty}`);
+    path.setAttribute('stroke', conn.color);
+    path.setAttribute('marker-end', `url(#${conn.marker})`);
+    path.setAttribute('class', 'conn-line');
+    path.setAttribute('data-from', conn.from);
+    path.setAttribute('data-to', conn.to);
+    svg.appendChild(path);
+  });
+}
+
+function highlightConnections(nodeId, highlight) {
+  svg.querySelectorAll('.conn-line').forEach(p => {
+    const from = p.getAttribute('data-from');
+    const to = p.getAttribute('data-to');
+    if (from === nodeId || to === nodeId) {
+      p.classList.toggle('highlight', highlight);
+    }
+  });
+}
+
+// ══════════════════════════════════════════════════════════════
+// PAN & ZOOM
+// ══════════════════════════════════════════════════════════════
+function applyTransform() {
+  world.style.transform = `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`;
+  document.getElementById('zoom-label').textContent = Math.round(zoom * 100) + '%';
+  drawConnections();
+  updateMinimap();
+}
+
+// Mouse drag to pan
+container.addEventListener('mousedown', e => {
+  if (e.target.closest('.node')) return;
+  dragging = true;
+  dragStart = { x:e.clientX, y:e.clientY };
+  panStart = { x:pan.x, y:pan.y };
+  document.body.classList.add('grabbing');
+});
+
+window.addEventListener('mousemove', e => {
+  if (!dragging) return;
+  pan.x = panStart.x + (e.clientX - dragStart.x);
+  pan.y = panStart.y + (e.clientY - dragStart.y);
+  applyTransform();
+});
+
+window.addEventListener('mouseup', () => {
+  dragging = false;
+  document.body.classList.remove('grabbing');
+});
+
+// Wheel zoom
+container.addEventListener('wheel', e => {
+  e.preventDefault();
+  const delta = e.deltaY > 0 ? -0.08 : 0.08;
+  const newZoom = Math.min(3, Math.max(0.2, zoom + delta));
+
+  // Zoom toward cursor
+  const rect = container.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+
+  const ratio = newZoom / zoom;
+  pan.x = mx - ratio * (mx - pan.x);
+  pan.y = my - ratio * (my - pan.y);
+  zoom = newZoom;
+
+  applyTransform();
+}, { passive:false });
+
+// Touch support
+let touchDist = 0;
+let touchMid = { x:0, y:0 };
+
+container.addEventListener('touchstart', e => {
+  if (e.touches.length === 1) {
+    dragging = true;
+    dragStart = { x:e.touches[0].clientX, y:e.touches[0].clientY };
+    panStart = { x:pan.x, y:pan.y };
+  } else if (e.touches.length === 2) {
+    dragging = false;
+    const dx = e.touches[1].clientX - e.touches[0].clientX;
+    const dy = e.touches[1].clientY - e.touches[0].clientY;
+    touchDist = Math.sqrt(dx*dx + dy*dy);
+    touchMid = { x:(e.touches[0].clientX+e.touches[1].clientX)/2, y:(e.touches[0].clientY+e.touches[1].clientY)/2 };
+  }
+}, { passive:false });
+
+container.addEventListener('touchmove', e => {
+  e.preventDefault();
+  if (e.touches.length === 1 && dragging) {
+    pan.x = panStart.x + (e.touches[0].clientX - dragStart.x);
+    pan.y = panStart.y + (e.touches[0].clientY - dragStart.y);
+    applyTransform();
+  } else if (e.touches.length === 2) {
+    const dx = e.touches[1].clientX - e.touches[0].clientX;
+    const dy = e.touches[1].clientY - e.touches[0].clientY;
+    const newDist = Math.sqrt(dx*dx + dy*dy);
+    const scale = newDist / touchDist;
+    const newZoom = Math.min(3, Math.max(0.2, zoom * scale));
+
+    const rect = container.getBoundingClientRect();
+    const mx = touchMid.x - rect.left;
+    const my = touchMid.y - rect.top;
+    const ratio = newZoom / zoom;
+    pan.x = mx - ratio * (mx - pan.x);
+    pan.y = my - ratio * (my - pan.y);
+    zoom = newZoom;
+    touchDist = newDist;
+    applyTransform();
+  }
+}, { passive:false });
+
+container.addEventListener('touchend', () => { dragging = false; });
+
+// Buttons
+document.getElementById('btn-zin').addEventListener('click', () => {
+  zoom = Math.min(3, zoom + 0.15);
+  applyTransform();
+});
+document.getElementById('btn-zout').addEventListener('click', () => {
+  zoom = Math.max(0.2, zoom - 0.15);
+  applyTransform();
+});
+document.getElementById('btn-fit').addEventListener('click', fitView);
+document.getElementById('btn-reset').addEventListener('click', () => {
+  zoom = 1; pan = { x:0, y:0 };
+  if (expandedNode) {
+    const prev = document.getElementById('node-' + expandedNode);
+    if (prev) prev.classList.remove('expanded');
+    expandedNode = null;
+  }
+  applyTransform();
+});
+
+// Click blank to close expanded
+container.addEventListener('click', e => {
+  if (!e.target.closest('.node') && expandedNode) {
+    const prev = document.getElementById('node-' + expandedNode);
+    if (prev) prev.classList.remove('expanded');
+    expandedNode = null;
+    drawConnections();
+  }
+});
+
+function fitView() {
+  const cw = container.clientWidth;
+  const ch = container.clientHeight;
+
+  let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
+  NODES.forEach(n => {
+    if (n.x < minX) minX = n.x;
+    if (n.y < minY) minY = n.y;
+    if (n.x + 180 > maxX) maxX = n.x + 180;
+    if (n.y + 80 > maxY) maxY = n.y + 80;
+  });
+
+  const ww = maxX - minX + 100;
+  const wh = maxY - minY + 100;
+  zoom = Math.min(cw / ww, (ch - 50) / wh, 1.5);
+  zoom = Math.max(0.3, zoom);
+  pan.x = (cw - ww * zoom) / 2 - minX * zoom + 50 * zoom;
+  pan.y = (ch - wh * zoom) / 2 - minY * zoom + 50 * zoom + 25;
+  applyTransform();
+}
+
+// ══════════════════════════════════════════════════════════════
+// MINIMAP
+// ══════════════════════════════════════════════════════════════
+const minimap = document.getElementById('minimap');
+const minimapVP = document.getElementById('minimap-vp');
+
+function updateMinimap() {
+  const mmW = 180, mmH = 120;
+  let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
+  NODES.forEach(n => {
+    if (n.x < minX) minX = n.x;
+    if (n.y < minY) minY = n.y;
+    if (n.x+180 > maxX) maxX = n.x+180;
+    if (n.y+80 > maxY) maxY = n.y+80;
+  });
+  const pad = 40;
+  minX -= pad; minY -= pad; maxX += pad; maxY += pad;
+  const ww = maxX - minX;
+  const wh = maxY - minY;
+  const scale = Math.min(mmW/ww, mmH/wh);
+
+  // Clear old dots
+  minimap.querySelectorAll('.minimap-dot').forEach(d => d.remove());
+
+  NODES.forEach(n => {
+    const dot = document.createElement('div');
+    dot.className = 'minimap-dot';
+    dot.style.left = ((n.x - minX) * scale) + 'px';
+    dot.style.top = ((n.y - minY) * scale) + 'px';
+    dot.style.width = (180 * scale) + 'px';
+    dot.style.height = (80 * scale) + 'px';
+    dot.style.background = n.color;
+    dot.style.borderRadius = (3*scale) + 'px';
+    minimap.appendChild(dot);
+  });
+
+  // Viewport rect
+  const cw = container.clientWidth;
+  const ch = container.clientHeight;
+  const vpX = (-pan.x / zoom - minX) * scale;
+  const vpY = (-pan.y / zoom - minY) * scale;
+  const vpW = (cw / zoom) * scale;
+  const vpH = (ch / zoom) * scale;
+  minimapVP.style.left = vpX + 'px';
+  minimapVP.style.top = vpY + 'px';
+  minimapVP.style.width = vpW + 'px';
+  minimapVP.style.height = vpH + 'px';
+}
+
+// Click minimap to navigate
+minimap.addEventListener('click', e => {
+  const rect = minimap.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  const mmW = 180, mmH = 120;
+
+  let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
+  NODES.forEach(n => {
+    if (n.x < minX) minX = n.x;
+    if (n.y < minY) minY = n.y;
+    if (n.x+180 > maxX) maxX = n.x+180;
+    if (n.y+80 > maxY) maxY = n.y+80;
+  });
+  const pad = 40;
+  minX -= pad; minY -= pad; maxX += pad; maxY += pad;
+  const ww = maxX - minX;
+  const wh = maxY - minY;
+  const scale = Math.min(mmW/ww, mmH/wh);
+
+  const worldX = mx / scale + minX;
+  const worldY = my / scale + minY;
+  const cw = container.clientWidth;
+  const ch = container.clientHeight;
+
+  pan.x = cw/2 - worldX * zoom;
+  pan.y = ch/2 - worldY * zoom;
+  applyTransform();
+});
+
+// ══════════════════════════════════════════════════════════════
+// INIT
+// ══════════════════════════════════════════════════════════════
+window.addEventListener('resize', () => { drawConnections(); updateMinimap(); });
+
+// Initial fit
+setTimeout(() => { fitView(); }, 50);
+</script>
+</body>
+</html>
