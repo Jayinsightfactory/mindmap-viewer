@@ -4,7 +4,7 @@
  *
  * 서비스 계정으로 Google Sheets 생성/업데이트.
  * 정해진 시간에 work-learner 분석 결과를 시트에 기록.
- * dlaww@kicda.com에 자동 공유.
+ * dlaww584@gmail.com에 자동 공유.
  */
 
 const https = require('https');
@@ -16,7 +16,7 @@ let _spreadsheetId = null; // 한 번 생성 후 재사용
 let _accessToken = null;
 let _tokenExpiry = 0;
 
-const SHARE_EMAIL = 'dlaww@kicda.com';
+const SHARE_EMAIL = 'dlaww584@gmail.com';
 
 // ── 초기화 ──────────────────────────────────────────────────────────────────
 function init(config) {
@@ -104,7 +104,7 @@ async function _createSpreadsheet(token) {
     } catch {}
   }
 
-  // dlaww@kicda.com에 공유 (편집자)
+  // dlaww584@gmail.com에 공유 (편집자)
   try {
     await _httpsJson('POST', `https://www.googleapis.com/drive/v3/files/${_spreadsheetId}/permissions`, token, {
       type: 'user', role: 'writer', emailAddress: SHARE_EMAIL,

@@ -271,5 +271,5 @@ Phase 6 ⬜ 회사 OS (실시간 대시보드/KPI/병목감지/의사결정)
 - 단계별 설명보다 실행 우선
 
 ## 테스트 계정
-- **관리자**: 임재용 / dlaww@kicda.com / orbit2024 / ID: MMONWUCHC96FB6029B
+- **관리자**: 임재용 / dlaww584@gmail.com / orbit2024 / ID: MMONWUCHC96FB6029B
 - **테스트**: jaeyong lim / dlaww584@gmail.com / orbit2024 / ID: MMOMY4OB91D6574436

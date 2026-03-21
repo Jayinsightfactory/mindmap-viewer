@@ -393,7 +393,7 @@ function getGoogleOAuthUsers() {
 // ─── 관리자 초대 시스템 ──────────────────────────────────────────────────────
 
 /** 관리자 이메일 목록 (환경변수 또는 기본값) */
-const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || 'dlaww@kicda.com').split(',').map(s => s.trim());
+const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || 'dlaww584@gmail.com').split(',').map(s => s.trim());
 
 /**
  * 관리자가 사용자를 초대합니다.
