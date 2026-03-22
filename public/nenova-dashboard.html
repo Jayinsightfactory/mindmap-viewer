@@ -654,11 +654,41 @@ async function api(path, opts) {
       const text = await res.text();
       throw new Error(text || res.statusText);
     }
-    return await res.json();
+    const d = await res.json();
+    if (!d) return null;
+    // 서버 에러 체크
+    if (d.ok === false) { console.warn('API error:', d.error); return null; }
+    // { ok, items: [...] } → [...] 자동 변환
+    if (d.items && Array.isArray(d.items)) return d.items;
+    // { ok, dashboard: {...} } → {...} 자동 변환
+    if (d.dashboard) return d.dashboard;
+    // { ok, weekly: {...} } → {...}
+    if (d.weekly) return d.weekly;
+    // { ok, ... } 에서 ok 제거하고 반환
+    if (d.ok === true) { const { ok, ...rest } = d; return rest; }
+    return d;
   } catch (e) {
     console.warn('API error:', path, e.message);
     return null;
   }
+}
+
+// nenova 필드 정규화
+function norm(row) {
+  if (!row) return row;
+  return {
+    ...row,
+    OrderKey: row.OrderKey || row.OrderMasterKey || '',
+    OrderDate: row.OrderDate || (row.OrderDtm ? row.OrderDtm.split('T')[0] : ''),
+    WeekNumber: row.WeekNumber || row.OrderWeek || '',
+    CustomerName: row.CustomerName || row.CustName || '',
+    ItemCount: row.ItemCount || row.detailCount || row.itemCount || 0,
+    TotalBoxes: row.TotalBoxes || row.totalBox || 0,
+    TotalUnits: row.TotalUnits || row.totalBunch || 0,
+    Manager: row.Manager || row.CreateID || '',
+    ShipmentKey: row.ShipmentKey || '',
+    Confirmed: row.Confirmed || row.isFix || false,
+  };
 }
 
 function showDBError() {
@@ -892,16 +922,20 @@ async function loadOrders() {
     api('/orders/summary' + qs)
   ]);
 
-  // Summary
+  // Summary — API가 summary 배열로 오면 합산
   if (summary) {
+    const arr = summary.summary || (Array.isArray(summary) ? summary : [summary]);
+    const totalOrders = arr.reduce((s,r) => s + (r.orderCount||0), 0) || summary.totalOrders || ordersData.length;
+    const totalItems = arr.reduce((s,r) => s + (r.lineCount||0), 0) || summary.totalItems || 0;
+    const totalBoxes = Math.round(arr.reduce((s,r) => s + (r.totalBox||0), 0)) || summary.totalBoxes || 0;
     document.getElementById('orderSummary').innerHTML = `
-      <div class="summary-card"><div class="s-label">총 주문</div><div class="s-val">${fmt(summary.totalOrders)}</div></div>
-      <div class="summary-card"><div class="s-label">총 품목</div><div class="s-val">${fmt(summary.totalItems)}</div></div>
-      <div class="summary-card"><div class="s-label">총 박스</div><div class="s-val">${fmt(summary.totalBoxes)}</div></div>
+      <div class="summary-card"><div class="s-label">총 주문</div><div class="s-val">${fmt(totalOrders)}</div></div>
+      <div class="summary-card"><div class="s-label">총 품목</div><div class="s-val">${fmt(totalItems)}</div></div>
+      <div class="summary-card"><div class="s-label">총 박스</div><div class="s-val">${fmt(totalBoxes)}</div></div>
     `;
   }
 
-  ordersData = (data && Array.isArray(data)) ? data : [];
+  ordersData = (data && Array.isArray(data)) ? data.map(norm) : [];
   ordersTotal = ordersData.length;
   ordersPage = 1;
   renderOrdersPage();

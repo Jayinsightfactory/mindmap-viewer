@@ -300,86 +300,74 @@ module.exports = function createNenovaDbRouter({ getDb }) {
         const r = pool.request();
 
         // 병렬로 KPI 쿼리 실행
-        const [orders, shipments, products, customers, recentOrders, recentShipments] = await Promise.all([
-          // 총 주문 수 (삭제 제외)
+        const [orders, shipments, products, customers, recentOrders, recentShipments, byCountry, byFlower, weeklyOrders] = await Promise.all([
           r.query(`
-            SELECT
-              COUNT(*) AS totalOrders,
-              COUNT(DISTINCT CustKey) AS orderCustomers,
-              MAX(OrderDtm) AS lastOrderDate
-            FROM OrderMaster
-            WHERE ISNULL(isDeleted, 0) = 0
+            SELECT COUNT(*) AS totalOrders, COUNT(DISTINCT CustKey) AS orderCustomers, MAX(OrderDtm) AS lastOrderDate
+            FROM OrderMaster WHERE ISNULL(isDeleted, 0) = 0
           `),
-
-          // 총 출하 수 (삭제 제외)
           pool.request().query(`
-            SELECT
-              COUNT(*) AS totalShipments,
-              SUM(CASE WHEN ISNULL(isDeleted, 0) = 1 THEN 1 ELSE 0 END) AS activeShipments,
-              COUNT(DISTINCT CustKey) AS shipCustomers
-            FROM ShipmentMaster
-            WHERE ISNULL(isDeleted, 0) = 0
+            SELECT COUNT(*) AS totalShipments, COUNT(DISTINCT CustKey) AS shipCustomers
+            FROM ShipmentMaster WHERE ISNULL(isDeleted, 0) = 0
           `),
-
-          // 상품 수
+          pool.request().query(`SELECT COUNT(*) AS totalProducts FROM Product`),
+          pool.request().query(`SELECT COUNT(*) AS totalCustomers FROM Customer`),
           pool.request().query(`
-            SELECT COUNT(*) AS totalProducts FROM Product
+            SELECT TOP 5 om.OrderMasterKey AS OrderKey, CONVERT(varchar, om.OrderDtm, 23) AS OrderDate, om.OrderWeek,
+              c.CustName AS CustomerName,
+              (SELECT ISNULL(SUM(od.BoxQuantity),0) FROM OrderDetail od WHERE od.OrderMasterKey = om.OrderMasterKey AND ISNULL(od.isDeleted,0)=0) AS TotalBoxes
+            FROM OrderMaster om LEFT JOIN Customer c ON om.CustKey = c.CustKey
+            WHERE ISNULL(om.isDeleted, 0) = 0 ORDER BY om.CreateDtm DESC
           `),
-
-          // 거래처 수
           pool.request().query(`
-            SELECT COUNT(*) AS totalCustomers FROM Customer
+            SELECT TOP 5 sm.ShipmentKey, sm.OrderWeek AS WeekNumber, c.CustName AS CustomerName,
+              ISNULL(sm.isFix, 0) AS Confirmed
+            FROM ShipmentMaster sm LEFT JOIN Customer c ON sm.CustKey = c.CustKey
+            WHERE ISNULL(sm.isDeleted, 0) = 0 ORDER BY sm.CreateDtm DESC
           `),
-
-          // 최근 주문 (이번 년도)
+          // 국가별 주문량
           pool.request().query(`
-            SELECT TOP 5
-              om.OrderMasterKey, om.OrderDtm, om.OrderWeek, om.OrderCode,
-              c.CustName,
-              (SELECT COUNT(*) FROM OrderDetail od WHERE od.OrderMasterKey = om.OrderMasterKey AND ISNULL(od.isDeleted, 0) = 0) AS itemCount
+            SELECT TOP 10 p.CounName AS country, SUM(od.BoxQuantity) AS total
+            FROM OrderDetail od
+            JOIN Product p ON od.ProdKey = p.ProdKey
+            JOIN OrderMaster om ON od.OrderMasterKey = om.OrderMasterKey
+            WHERE ISNULL(om.isDeleted,0)=0 AND ISNULL(od.isDeleted,0)=0 AND om.OrderYear = '2026'
+            GROUP BY p.CounName ORDER BY total DESC
+          `),
+          // 꽃 종류별 주문량
+          pool.request().query(`
+            SELECT TOP 8 p.FlowerName AS flower, SUM(od.BoxQuantity) AS total
+            FROM OrderDetail od
+            JOIN Product p ON od.ProdKey = p.ProdKey
+            JOIN OrderMaster om ON od.OrderMasterKey = om.OrderMasterKey
+            WHERE ISNULL(om.isDeleted,0)=0 AND ISNULL(od.isDeleted,0)=0 AND om.OrderYear = '2026'
+            GROUP BY p.FlowerName ORDER BY total DESC
+          `),
+          // 이번주 주문 건수
+          pool.request().query(`
+            SELECT COUNT(*) AS cnt, MAX(om.OrderWeek) AS weekLabel
             FROM OrderMaster om
-            LEFT JOIN Customer c ON om.CustKey = c.CustKey
-            WHERE ISNULL(om.isDeleted, 0) = 0
-            ORDER BY om.CreateDtm DESC
-          `),
-
-          // 최근 출하 (이번 년도)
-          pool.request().query(`
-            SELECT TOP 5
-              sm.ShipmentKey, sm.OrderYear, sm.OrderWeek, sm.OrderYearWeek,
-              c.CustName,
-              ISNULL(sm.isFix, 0) AS isFix, sm.EstimateName,
-              (SELECT COUNT(*) FROM ShipmentDetail sd WHERE sd.ShipmentKey = sm.ShipmentKey) AS itemCount
-            FROM ShipmentMaster sm
-            LEFT JOIN Customer c ON sm.CustKey = c.CustKey
-            WHERE ISNULL(sm.isDeleted, 0) = 0
-            ORDER BY sm.CreateDtm DESC
+            WHERE ISNULL(om.isDeleted,0)=0 AND om.OrderYear = '2026'
+              AND om.OrderWeek = (SELECT TOP 1 OrderWeek FROM OrderMaster WHERE OrderYear='2026' AND ISNULL(isDeleted,0)=0 ORDER BY CreateDtm DESC)
           `),
         ]);
 
+        const wk = weeklyOrders.recordset[0] || {};
         return {
-          orders: {
-            total: orders.recordset[0].totalOrders,
-            customers: orders.recordset[0].orderCustomers,
-            lastDate: orders.recordset[0].lastOrderDate,
-          },
-          shipments: {
-            total: shipments.recordset[0].totalShipments,
-            confirmed: shipments.recordset[0].activeShipments,
-            customers: shipments.recordset[0].shipCustomers,
-          },
-          products: {
-            total: products.recordset[0].totalProducts,
-          },
-          customers: {
-            total: customers.recordset[0].totalCustomers,
-          },
+          totalProducts: products.recordset[0].totalProducts,
+          totalCustomers: customers.recordset[0].totalCustomers,
+          weeklyOrders: wk.cnt || 0,
+          weeklyShipments: shipments.recordset[0].totalShipments,
+          weekLabel: wk.weekLabel || '',
+          totalOrders: orders.recordset[0].totalOrders,
+          totalShipments: shipments.recordset[0].totalShipments,
+          byCountry: byCountry.recordset,
+          byFlower: byFlower.recordset,
           recentOrders: recentOrders.recordset,
           recentShipments: recentShipments.recordset,
         };
       });
 
-      res.json({ ok: true, dashboard: result });
+      res.json({ ok: true, ...result });
     } catch (err) {
       handleError(res, err, 'dashboard');
     }
@@ -444,7 +432,22 @@ module.exports = function createNenovaDbRouter({ getDb }) {
         };
       });
 
-      res.json({ ok: true, weekly: result });
+      // 프론트엔드 기대: 배열 [{week, orders, shipments}]
+      const merged = (result.orderTrend || []).map(o => ({
+        week: parseInt(o.WeekNo) || 0,
+        orders: o.orderCount || 0,
+        shipments: 0,
+        totalBox: o.totalBox || 0,
+      }));
+      // 출하 데이터 병합
+      for (const s of (result.shipmentTrend || [])) {
+        const wk = parseInt(s.WeekNo) || 0;
+        const found = merged.find(m => m.week === wk);
+        if (found) found.shipments = s.shipCount || 0;
+        else merged.push({ week: wk, orders: 0, shipments: s.shipCount || 0, totalBox: 0 });
+      }
+      merged.sort((a, b) => a.week - b.week);
+      res.json(merged);
     } catch (err) {
       handleError(res, err, 'dashboard/weekly');
     }
