@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Orbit OS</title>
+<style>
+:root { --bg: #0d1117; --card: #161b22; --border: #30363d; --text: #e6edf3; --muted: #8b949e; --accent: #58a6ff; --green: #3fb950; --yellow: #d29922; --red: #f85149; --purple: #bc8cff; }
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; font-size:13px; }
+.top-bar { display:flex; align-items:center; justify-content:space-between; padding:12px 24px; background:var(--card); border-bottom:1px solid var(--border); position:sticky; top:0; z-index:100; }
+.top-bar h1 { font-size:16px; font-weight:700; }
+.top-bar h1 span { color:var(--accent); }
+.top-bar .meta { color:var(--muted); font-size:11px; }
+.tabs { display:flex; gap:2px; padding:8px 24px; background:var(--card); border-bottom:1px solid var(--border); overflow-x:auto; }
+.tab { padding:8px 16px; border-radius:6px 6px 0 0; cursor:pointer; color:var(--muted); font-size:12px; white-space:nowrap; }
+.tab.active { background:var(--bg); color:var(--accent); font-weight:600; }
+.tab:hover { color:var(--text); }
+main { padding:16px 24px; max-width:1400px; margin:0 auto; }
+.grid { display:grid; gap:12px; margin-bottom:16px; }
+.grid-4 { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.grid-3 { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+.grid-2 { grid-template-columns: 1fr 1fr; }
+.card { background:var(--card); border:1px solid var(--border); border-radius:8px; padding:14px; }
+.card h3 { font-size:12px; color:var(--muted); margin-bottom:8px; text-transform:uppercase; letter-spacing:0.5px; }
+.kpi { text-align:center; }
+.kpi .num { font-size:28px; font-weight:800; line-height:1.2; }
+.kpi .label { font-size:11px; color:var(--muted); margin-top:2px; }
+.green { color:var(--green); }
+.yellow { color:var(--yellow); }
+.red { color:var(--red); }
+.blue { color:var(--accent); }
+.purple { color:var(--purple); }
+table { width:100%; border-collapse:collapse; font-size:12px; }
+th { text-align:left; padding:6px 8px; border-bottom:2px solid var(--border); color:var(--muted); font-weight:600; }
+td { padding:6px 8px; border-bottom:1px solid var(--border); }
+tr:hover { background:rgba(88,166,255,0.05); }
+.bar { height:6px; border-radius:3px; background:var(--border); overflow:hidden; }
+.bar-fill { height:100%; border-radius:3px; transition:width 0.5s; }
+.tag { display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; margin:2px; }
+.tag-green { background:rgba(63,185,80,0.15); color:var(--green); }
+.tag-yellow { background:rgba(210,153,34,0.15); color:var(--yellow); }
+.tag-red { background:rgba(248,81,73,0.15); color:var(--red); }
+.tag-blue { background:rgba(88,166,255,0.15); color:var(--accent); }
+.section { margin-bottom:20px; }
+.section-title { font-size:14px; font-weight:700; margin-bottom:10px; display:flex; align-items:center; gap:8px; }
+.empty { color:var(--muted); font-style:italic; padding:20px; text-align:center; }
+.panel { display:none; }
+.panel.active { display:block; }
+.pulse-dot { width:8px; height:8px; border-radius:50%; display:inline-block; }
+.pulse-online { background:var(--green); animation:pulse 2s infinite; }
+.pulse-recent { background:var(--yellow); }
+.pulse-offline { background:var(--muted); }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+.idea-card { padding:10px; margin-bottom:8px; background:rgba(88,166,255,0.05); border-left:3px solid var(--accent); border-radius:4px; }
+.capability-bar { display:flex; align-items:center; gap:8px; padding:4px 0; }
+.score-badge { display:inline-flex; align-items:center; justify-content:center; width:48px; height:48px; border-radius:50%; font-size:20px; font-weight:800; }
+</style>
+</head>
+<body>
+
+<div class="top-bar">
+  <h1>🌐 <span>Orbit</span> OS</h1>
+  <div style="display:flex;align-items:center;gap:16px;">
+    <span id="os-clock" class="meta"></span>
+    <button onclick="refreshAll()" style="padding:4px 12px;border-radius:4px;background:var(--accent);color:#fff;border:none;cursor:pointer;font-size:11px;">새로고침</button>
+  </div>
+</div>
+
+<div class="tabs">
+  <div class="tab active" onclick="showPanel('overview')">📊 전체 현황</div>
+  <div class="tab" onclick="showPanel('members')">👥 직원 분석</div>
+  <div class="tab" onclick="showPanel('projects')">📂 프로젝트</div>
+  <div class="tab" onclick="showPanel('think')">🧠 사고 엔진</div>
+  <div class="tab" onclick="showPanel('issues')">🚨 이슈</div>
+  <div class="tab" onclick="showPanel('ideas')">💡 아이디어</div>
+</div>
+
+<main>
+  <!-- 전체 현황 -->
+  <div id="panel-overview" class="panel active">
+    <div id="kpi-grid" class="grid grid-4"></div>
+    <div class="grid grid-2">
+      <div class="card"><h3>📡 실시간 펄스</h3><div id="pulse-content"></div></div>
+      <div class="card"><h3>📈 일별 추이</h3><div id="trend-content"></div></div>
+    </div>
+    <div class="card" style="margin-top:12px;"><h3>⚡ 자동화 현황</h3><div id="auto-content"></div></div>
+  </div>
+
+  <!-- 직원 분석 -->
+  <div id="panel-members" class="panel">
+    <div class="card"><h3>🏢 회사 구조 (데이터 기반)</h3><div id="struct-content"></div></div>
+    <div class="card" style="margin-top:12px;"><h3>📡 트리거 모니터</h3><div id="trigger-content"></div></div>
+  </div>
+
+  <!-- 프로젝트 -->
+  <div id="panel-projects" class="panel">
+    <div class="card"><h3>📂 진행 중 프로젝트 (고정작업 제외)</h3><div id="project-content"></div></div>
+  </div>
+
+  <!-- 사고 엔진 -->
+  <div id="panel-think" class="panel">
+    <div class="grid grid-3">
+      <div class="card"><h3>🧠 사고 엔진 상태</h3><div id="think-status"></div></div>
+      <div class="card"><h3>🎯 예측 정확도</h3><div id="think-accuracy"></div></div>
+      <div class="card"><h3>🧬 학습 점수</h3><div id="evolve-score"></div></div>
+    </div>
+    <div class="card" style="margin-top:12px;"><h3>🔮 전이 확률 TOP 규칙</h3><div id="think-transitions"></div></div>
+    <div class="card" style="margin-top:12px;"><h3>🚀 확장 가능성</h3><div id="think-caps"></div></div>
+  </div>
+
+  <!-- 이슈 -->
+  <div id="panel-issues" class="panel">
+    <div id="issues-summary" class="grid grid-3" style="margin-bottom:12px;"></div>
+    <div class="card"><h3>🚨 감지된 이슈</h3><div id="issues-list"></div></div>
+  </div>
+
+  <!-- 아이디어 -->
+  <div id="panel-ideas" class="panel">
+    <div style="display:flex;gap:8px;margin-bottom:12px;">
+      <button onclick="runExplore()" style="padding:6px 14px;border-radius:6px;background:var(--accent);color:#fff;border:none;cursor:pointer;font-size:12px;">🔍 탐색 실행</button>
+      <button onclick="runThink()" style="padding:6px 14px;border-radius:6px;background:var(--purple);color:#fff;border:none;cursor:pointer;font-size:12px;">🧠 사고 루프</button>
+    </div>
+    <div class="card"><h3>💡 에이전트가 발견한 아이디어</h3><div id="ideas-list"></div></div>
+  </div>
+</main>
+
+<script>
+'use strict';
+const TOKEN = localStorage.getItem('orbit_token');
+const H = { 'Authorization': 'Bearer ' + (TOKEN || ''), 'Content-Type': 'application/json' };
+async function api(url, opts) { try { const r = await fetch(url, { headers: H, ...opts }); return r.ok ? r.json() : {}; } catch { return {}; } }
+
+// 시계
+setInterval(() => { document.getElementById('os-clock').textContent = new Date().toLocaleString('ko-KR'); }, 1000);
+
+// 탭 전환
+function showPanel(name) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('panel-' + name).classList.add('active');
+  event.target.classList.add('active');
+}
+
+// ── 전체 현황 ──
+async function loadOverview() {
+  const os = await api('/api/os/status');
+  const c = os.company || {}; const o = os.operations || {}; const a = os.automation || {}; const db = os.database || {};
+
+  document.getElementById('kpi-grid').innerHTML = `
+    <div class="card kpi"><div class="num ${c.onlineMembers > 0 ? 'green' : 'red'}">${c.onlineMembers || 0}<small>/${c.totalMembers || 0}</small></div><div class="label">온라인</div></div>
+    <div class="card kpi"><div class="num blue">${(o.orders || 0).toLocaleString()}</div><div class="label">주문</div></div>
+    <div class="card kpi"><div class="num yellow">${o.purchases || 0}</div><div class="label">발주</div></div>
+    <div class="card kpi"><div class="num green">${a.automationRate || 0}%</div><div class="label">자동화율</div></div>
+    <div class="card kpi"><div class="num purple">${a.visionTotal || 0}</div><div class="label">Vision</div></div>
+    <div class="card kpi"><div class="num">${a.masterProducts || 0}</div><div class="label">품목 DB</div></div>
+    <div class="card kpi"><div class="num">${db.sizeMB || 0}<small>MB</small></div><div class="label">DB ${db.usagePct || 0}%</div></div>
+    <div class="card kpi"><div class="num">${(db.totalEvents || 0).toLocaleString()}</div><div class="label">이벤트</div></div>
+  `;
+
+  // 펄스
+  const pulse = await api('/api/os/pulse');
+  const pp = pulse.pulse || {};
+  let ph = `<div style="font-size:12px;margin-bottom:8px;">활동 ${pulse.activeUsers || 0}명</div>`;
+  for (const [uid, v] of Object.entries(pp)) {
+    ph += `<div style="display:flex;align-items:center;gap:8px;padding:4px 0;">
+      <span class="pulse-dot pulse-online"></span>
+      <strong>${(v.name || '').substring(0, 8)}</strong>
+      <span style="color:var(--muted);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${(v.currentWindow || '').substring(0, 35)}</span>
+      <span class="tag tag-blue">${v.eventsLast3min}건/3분</span>
+    </div>`;
+  }
+  if (!Object.keys(pp).length) ph += '<div class="empty">현재 활동 중인 직원 없음</div>';
+  document.getElementById('pulse-content').innerHTML = ph;
+
+  // 트렌드
+  const trend = await api('/api/evolve/trend');
+  let th = '';
+  for (const d of (trend.daily || [])) {
+    const day = String(d.day || '').substring(5, 10);
+    const w = Math.min(100, d.events / 100);
+    th += `<div style="display:flex;align-items:center;gap:8px;padding:3px 0;">
+      <span style="width:50px;color:var(--muted);">${day}</span>
+      <div class="bar" style="flex:1;"><div class="bar-fill" style="width:${w}%;background:var(--accent);"></div></div>
+      <span style="width:50px;text-align:right;">${d.events.toLocaleString()}</span>
+    </div>`;
+  }
+  document.getElementById('trend-content').innerHTML = th || '<div class="empty">데이터 없음</div>';
+
+  // 자동화
+  let ah = `<div style="display:flex;gap:16px;flex-wrap:wrap;">
+    <span>품목 <strong>${a.masterProducts || 0}</strong></span>
+    <span>거래처 <strong>${a.masterCustomers || 0}</strong></span>
+    <span>파싱 주문 <strong>${a.parsedOrdersTotal || 0}</strong></span>
+    <span>오늘 파싱 <strong>${a.parsedToday || 0}</strong></span>
+  </div>`;
+  document.getElementById('auto-content').innerHTML = ah;
+}
+
+// ── 직원 분석 ──
+async function loadMembers() {
+  const s = await api('/api/company/structure?days=7');
+  const icon = st => st === 'active' ? '<span class="pulse-dot pulse-online"></span>' : st === 'low_activity' ? '<span class="pulse-dot pulse-recent"></span>' : '<span class="pulse-dot pulse-offline"></span>';
+  let h = '<table><tr><th></th><th>이름</th><th>역할</th><th>이벤트</th><th>주문</th><th>발주</th><th>Excel</th><th>채팅</th><th>개발</th></tr>';
+  for (const m of (s.members || [])) {
+    h += `<tr>${['', icon(m.status), (m.name||'').substring(0,8), `<span class="tag tag-blue">${m.role}</span>`, m.totalEvents.toLocaleString(), m.breakdown.order, m.breakdown.purchase, m.breakdown.excel, m.breakdown.communication, m.breakdown.development].map((v,i) => i===0?'':`<td>${v}</td>`).join('')}</tr>`;
+  }
+  h += '</table>';
+  if (s.bottlenecks?.length) {
+    h += '<div style="margin-top:12px;">';
+    for (const b of s.bottlenecks.slice(0, 5)) h += `<div class="tag ${b.severity==='critical'?'tag-red':'tag-yellow'}" style="display:block;margin:4px 0;">${b.severity==='critical'?'🔴':'🟡'} ${b.detail}</div>`;
+    h += '</div>';
+  }
+  document.getElementById('struct-content').innerHTML = h;
+
+  const t = await api('/api/company/triggers');
+  let th = '';
+  for (const tr of (t.triggers || []).slice(0, 10)) {
+    const ic = tr.severity === 'warning' ? '⚠️' : 'ℹ️';
+    th += `<div style="padding:4px 0;">${ic} <span class="tag tag-blue">${tr.type}</span> ${(tr.detail||'').substring(0,55)}</div>`;
+  }
+  document.getElementById('trigger-content').innerHTML = th || '<div class="empty">트리거 없음</div>';
+}
+
+// ── 프로젝트 ──
+async function loadProjects() {
+  const p = await api('/api/os/projects?days=7');
+  let h = `<div style="color:var(--muted);font-size:11px;margin-bottom:12px;">분석 ${p.analyzedDays || 0}일 | 고정작업(매일 반복) 자동 필터, 프로젝트/신규만 표시</div>`;
+  for (const m of (p.members || [])) {
+    h += `<div style="margin-bottom:16px;"><div style="font-weight:700;margin-bottom:6px;">${(m.name||'').substring(0,8)} <span style="color:var(--muted);font-size:11px;font-weight:400;">고정 ${m.routineFiltered}개 필터 (${m.routineExamples.map(r=>r.substring(0,12)).join(', ')})</span></div>`;
+    for (const pr of (m.projects || []).slice(0, 6)) {
+      const w = Math.min(100, pr.total / 2);
+      h += `<div style="display:flex;align-items:center;gap:6px;padding:3px 0;">
+        <span style="color:var(--accent);">★</span>
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${pr.window.substring(0,35)}</span>
+        <div class="bar" style="width:80px;"><div class="bar-fill" style="width:${w}%;background:var(--accent);"></div></div>
+        <span style="color:var(--muted);font-size:11px;width:60px;text-align:right;">${pr.total}건 ${pr.days}일</span>
+      </div>`;
+    }
+    for (const n of (m.newItems || []).slice(0, 3)) {
+      h += `<div style="padding:3px 0;"><span style="color:var(--green);">🆕</span> ${n.window.substring(0,35)} <span style="color:var(--muted);font-size:11px;">${n.total}건</span></div>`;
+    }
+    h += '</div>';
+  }
+  document.getElementById('project-content').innerHTML = h || '<div class="empty">프로젝트 데이터 없음</div>';
+}
+
+// ── 사고 엔진 ──
+async function loadThink() {
+  const [status, accuracy, evolve, trans, caps] = await Promise.all([
+    api('/api/think/status'), api('/api/think/accuracy'), api('/api/evolve/health'),
+    api('/api/think/transitions'), api('/api/think/capabilities'),
+  ]);
+
+  // 상태
+  const tm = status.transitionModel || {};
+  const km = status.kakaoMessages || {};
+  document.getElementById('think-status').innerHTML = `
+    <div style="padding:4px 0;">전이 규칙: <strong>${tm.rules || 0}</strong>건 (${tm.users || 0}명)</div>
+    <div style="padding:4px 0;">카톡 저장: <strong>${km.total || 0}</strong>건 (${km.chatrooms || 0}방)</div>
+    <div style="padding:4px 0;">24h 사고: <strong>${status.thinkingActivity?.last24h || 0}</strong>회</div>
+  `;
+
+  // 정확도
+  const a = accuracy;
+  const accColor = (a.accuracy||0) >= 70 ? 'green' : (a.accuracy||0) >= 40 ? 'yellow' : 'red';
+  document.getElementById('think-accuracy').innerHTML = `
+    <div style="text-align:center;">
+      <div class="score-badge" style="background:rgba(${accColor==='green'?'63,185,80':accColor==='yellow'?'210,153,34':'248,81,73'},0.15);color:var(--${accColor});margin:0 auto;">${a.accuracy || 0}%</div>
+      <div style="margin-top:8px;color:var(--muted);">총 ${a.total || 0}건 (정답 ${a.correct || 0})</div>
+    </div>
+  `;
+
+  // 학습 점수
+  const e = evolve;
+  const sc = e.learningScore || 0;
+  const band = e.scoreBand || '-';
+  const bandColor = band === 'A' ? 'green' : band === 'B' ? 'blue' : band === 'C' ? 'yellow' : 'red';
+  document.getElementById('evolve-score').innerHTML = `
+    <div style="text-align:center;">
+      <div class="score-badge" style="background:rgba(${bandColor==='green'?'63,185,80':bandColor==='blue'?'88,166,255':bandColor==='yellow'?'210,153,34':'248,81,73'},0.15);color:var(--${bandColor});margin:0 auto;">${band}</div>
+      <div style="font-size:24px;font-weight:700;margin-top:4px;">${sc}/100</div>
+    </div>
+    ${(e.suggestions||[]).slice(0,3).map(s => `<div style="padding:2px 0;font-size:11px;color:var(--muted);">• ${s.action}</div>`).join('')}
+  `;
+
+  // 전이 규칙
+  let th = '<table><tr><th>현재 화면</th><th>→</th><th>다음 행동</th><th>확률</th><th>관찰</th></tr>';
+  for (const t of (trans.transitions || []).slice(0, 15)) {
+    const pct = Math.round(t.probability * 100);
+    const color = pct >= 70 ? 'green' : pct >= 40 ? 'yellow' : 'muted';
+    th += `<tr><td>${(t.from_state||'').substring(0,22)}</td><td>→</td><td>${(t.to_state||'').substring(0,22)}</td><td><span class="${color}">${pct}%</span></td><td>${t.count}회</td></tr>`;
+  }
+  th += '</table>';
+  document.getElementById('think-transitions').innerHTML = th;
+
+  // 확장 가능성
+  let ch = '';
+  for (const c of (caps.capabilities || [])) {
+    const pct = Math.round(c.feasibility * 100);
+    const color = pct >= 80 ? 'green' : pct >= 50 ? 'yellow' : 'muted';
+    ch += `<div class="capability-bar">
+      <span class="tag tag-${pct>=80?'green':pct>=50?'yellow':'blue'}">${pct}%</span>
+      <div style="flex:1;">
+        <div>${c.newCapability.substring(0,55)}</div>
+        <div style="color:var(--muted);font-size:11px;">현재: ${c.currentData.substring(0,30)} | 필요: ${c.additionalNeeded.substring(0,30)}</div>
+      </div>
+    </div>`;
+  }
+  document.getElementById('think-caps').innerHTML = ch || '<div class="empty">데이터 축적 중</div>';
+}
+
+// ── 이슈 ──
+async function loadIssues() {
+  const d = await api('/api/issues/scan');
+  const s = d.summary || {};
+  document.getElementById('issues-summary').innerHTML = `
+    <div class="card kpi"><div class="num red">${s.critical || 0}</div><div class="label">Critical</div></div>
+    <div class="card kpi"><div class="num yellow">${s.warning || 0}</div><div class="label">Warning</div></div>
+    <div class="card kpi"><div class="num">${s.info || 0}</div><div class="label">Info</div></div>
+  `;
+  let h = '';
+  for (const i of (d.issues || [])) {
+    const ic = i.severity === 'critical' ? '🔴' : i.severity === 'warning' ? '🟡' : '⚪';
+    h += `<div style="padding:6px 0;border-bottom:1px solid var(--border);display:flex;gap:8px;">
+      <span>${ic}</span>
+      <span class="tag tag-${i.severity==='critical'?'red':i.severity==='warning'?'yellow':'blue'}" style="font-size:10px;">${i.rule}</span>
+      <span style="flex:1;">${(i.detail||'').substring(0,60)}</span>
+    </div>`;
+  }
+  document.getElementById('issues-list').innerHTML = h || '<div class="empty">이슈 없음</div>';
+}
+
+// ── 아이디어 ──
+async function loadIdeas() {
+  const d = await api('/api/ideas');
+  const ideas = (d.ideas || []).slice(0, 20);
+  let h = `<div style="margin-bottom:8px;color:var(--muted);">총 ${d.total || 0}건</div>`;
+  for (const i of ideas) {
+    const conf = Math.round((i.confidence || 0) * 100);
+    h += `<div class="idea-card">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <span class="tag tag-blue">${i.type}</span>
+        <span style="font-size:11px;color:var(--muted);">신뢰도 ${conf}% | ${i.status}</span>
+      </div>
+      <div style="font-weight:600;margin:6px 0;">${(i.title||'').substring(0,70)}</div>
+      <div style="color:var(--muted);font-size:11px;">${(i.hypothesis||'').substring(0,80)}</div>
+    </div>`;
+  }
+  document.getElementById('ideas-list').innerHTML = h || '<div class="empty">탐색을 실행하세요</div>';
+}
+
+async function runExplore() {
+  document.getElementById('ideas-list').innerHTML = '<div class="empty">탐색 중...</div>';
+  await api('/api/ideas/explore', { method: 'POST' });
+  loadIdeas();
+}
+async function runThink() {
+  await api('/api/think/run', { method: 'POST' });
+  loadThink();
+}
+
+// ── 전체 로드 ──
+async function refreshAll() {
+  await Promise.all([loadOverview(), loadMembers(), loadProjects(), loadThink(), loadIssues(), loadIdeas()]);
+}
+document.addEventListener('DOMContentLoaded', refreshAll);
+// 5분마다 자동 갱신
+setInterval(refreshAll, 5 * 60 * 1000);
+</script>
+</body>
+</html>
