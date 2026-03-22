@@ -794,9 +794,7 @@ function drawTeamLabels() {
       const bdA = type === 'skill' ? 0.80 : type === 'agent' ? 0.80 : type === 'dept' ? 0.50 : isActive ? 0.85 : 0.42;
       _lctx.strokeStyle = color + Math.round(bdA * 255).toString(16).padStart(2, '0');
       _lctx.lineWidth = type === 'skill' ? 1.4 : type === 'agent' ? 1.4 : isActive ? 1.8 : 1;
-      if (type === 'skill') { // _lctx.setLineDash([3, 3]); // _lctx.lineDashOffset = -now * 10; }
       roundRect(_lctx, x, y, pw, ph, ph * 0.5); _lctx.stroke();
-      if (type === 'skill') { // _lctx.setLineDash([]); }
       if (type === 'agent') {
         _lctx.globalAlpha = 0.4; _lctx.lineWidth = 0.8;
         roundRect(_lctx, x - 2, y - 2, pw + 4, ph + 4, (ph + 4) * 0.5); _lctx.stroke(); _lctx.globalAlpha = 1;
