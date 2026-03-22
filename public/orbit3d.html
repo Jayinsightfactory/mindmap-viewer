@@ -104,6 +104,7 @@
     <button class="ln-item" onclick="openWorkspacePopup()">👥 워크스페이스</button>
     <button class="ln-item" onclick="openStatsPopup()">📊 통계</button>
     <button class="ln-item" onclick="openSetupPanel()">⚙️ 설정</button>
+    <button class="ln-item" onclick="if(confirm('캐시를 초기화하고 새로고침합니다.')){caches.keys().then(k=>Promise.all(k.map(n=>caches.delete(n)))).then(()=>{localStorage.removeItem('orbit_cache_ver');location.reload(true)}).catch(()=>location.reload(true))}">🔄 캐시 초기화</button>
 
     <!-- 로그아웃 (로그인 시만 표시) -->
     <button class="ln-item ln-logout" id="ln-logout-btn" onclick="doLogoutMain()" style="display:none">🚪 로그아웃</button>
