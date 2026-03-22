@@ -395,53 +395,48 @@ function updateParallelOrbits(dt) {
 
 // ── 팀 모드 Canvas2D 라벨 (2-pass: 수집 → 겹침해소 → 드로우) ─────────────────
 function drawTeamLabels() {
-  _lctx.clearRect(0, 0, innerWidth, innerHeight);
-  clearHitAreas();
+  const cvs = document.getElementById('label-canvas-2d');
+  if (!cvs) return;
+  const ctx = cvs.getContext('2d');
+  ctx.clearRect(0, 0, cvs.width, cvs.height);
+  if (typeof clearHitAreas === 'function') clearHitAreas();
   if (!_teamNodes || _teamNodes.length === 0) return;
 
-  const cam = getCamera();
+  const cam = window.camera;
   if (!cam) return;
 
   _teamNodes.forEach(n => {
     if (!n.pos) return;
     const v = n.pos.clone();
-    // 공전 중인 obj가 있으면 실제 위치 사용
     if (n.obj && n.obj.position) v.copy(n.obj.position);
     v.project(cam);
-    if (v.z > 1) return; // 카메라 뒤
+    if (v.z > 1) return;
 
-    const cx = (v.x * 0.5 + 0.5) * innerWidth;
-    const cy = (-v.y * 0.5 + 0.5) * innerHeight;
-    if (cx < -100 || cx > innerWidth + 100 || cy < -100 || cy > innerHeight + 100) return;
+    const cx = (v.x * 0.5 + 0.5) * cvs.width;
+    const cy = (-v.y * 0.5 + 0.5) * cvs.height;
+    if (cx < -100 || cx > cvs.width + 100 || cy < -100 || cy > cvs.height + 100) return;
 
     const alpha = Math.max(0.3, Math.min(1, 1 - v.z * 0.8));
-    _lctx.globalAlpha = alpha;
+    ctx.globalAlpha = alpha;
 
-    // 크기 결정
     const sizes = { xl: 16, lg: 14, md: 13, sm: 11, xs: 10 };
     const fontSize = sizes[n.size] || 13;
-    const color = n.color || '#e6edf3';
 
-    // 라벨 텍스트
-    _lctx.font = `600 ${fontSize}px system-ui, -apple-system, sans-serif`;
-    _lctx.textAlign = 'center';
-    _lctx.fillStyle = color;
-    _lctx.shadowColor = 'rgba(0,0,0,0.8)';
-    _lctx.shadowBlur = 4;
-    _lctx.fillText(n.label || '', cx, cy);
-    _lctx.shadowBlur = 0;
+    ctx.font = `600 ${fontSize}px system-ui, -apple-system, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.fillStyle = n.color || '#e6edf3';
+    ctx.shadowColor = 'rgba(0,0,0,0.8)';
+    ctx.shadowBlur = 4;
+    ctx.fillText(n.label || '', cx, cy);
+    ctx.shadowBlur = 0;
 
-    // sublabel
     if (n.sublabel) {
-      _lctx.font = `400 ${Math.max(fontSize - 3, 9)}px system-ui, sans-serif`;
-      _lctx.fillStyle = '#8b949e';
-      _lctx.fillText(n.sublabel, cx, cy + fontSize + 2);
+      ctx.font = `400 ${Math.max(fontSize - 3, 9)}px system-ui, sans-serif`;
+      ctx.fillStyle = '#8b949e';
+      ctx.fillText(n.sublabel, cx, cy + fontSize + 2);
     }
 
-    // 히트 영역 등록
-    registerHitArea(cx - 40, cy - fontSize, 80, fontSize + 20, n);
-
-    _lctx.globalAlpha = 1.0;
+    ctx.globalAlpha = 1.0;
   });
 }
 
