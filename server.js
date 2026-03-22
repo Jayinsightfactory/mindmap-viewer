@@ -2411,6 +2411,9 @@ app.use('/api/pad', require('./routes/pad-connector')({ getDb: dbModule.getDb })
 // ─── nenova SQL Server 직접 연결 (전산 데이터 실시간 조회 + 동기화) ──────────
 app.use('/api/nenova', require('./routes/nenova-db')({ getDb: dbModule.getDb }));
 
+// ─── nenova ↔ Orbit 교차 분석 (데이터 검증 + 사용 패턴 + OS 설계) ───────────
+app.use('/api/cross', require('./routes/nenova-cross-analysis')({ getDb: dbModule.getDb }));
+
 // ─── 데모 시드 (개발/미리보기용) ─────────────────────────────────────────────
 app.post('/api/demo/seed', (req, res) => {
   const token = (req.headers.authorization || '').replace('Bearer ', '') || req.query.token;

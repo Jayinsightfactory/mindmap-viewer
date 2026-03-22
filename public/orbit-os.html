@@ -190,6 +190,16 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
     <span class="nav-badge nav-badge-dev">DEV</span>
   </div>
 
+  <div class="sidebar-section">전산 연계</div>
+  <div class="nav-item" data-page="nenova-db" data-link="/nenova-dashboard.html">
+    <span class="nav-icon">🌸</span><span class="nav-label">전산 DB</span>
+    <span class="nav-badge nav-badge-live">LIVE</span>
+  </div>
+  <div class="nav-item" data-page="cross-analysis">
+    <span class="nav-icon">🔗</span><span class="nav-label">교차 분석</span>
+    <span class="nav-badge nav-badge-live">LIVE</span>
+  </div>
+
   <div class="sidebar-section">시스템</div>
   <div class="nav-item" data-page="conversations" data-link="/conversation-dashboard.html">
     <span class="nav-icon">📊</span><span class="nav-label">대화 이력</span>
@@ -624,6 +634,63 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
   </div>
 </div>
 
+<!-- ────────────── PAGE: 교차 분석 ────────────── -->
+<div class="page" id="page-cross-analysis">
+  <div class="page-header">🔗 전산 DB ↔ Orbit 교차 분석</div>
+  <div class="card">
+    <div class="card-title">📊 데이터 일치 검증</div>
+    <p style="color:var(--muted);font-size:12px;margin-bottom:12px;">Orbit이 수집한 데이터와 nenova 전산 DB의 실제 데이터를 교차 검증합니다.</p>
+    <div class="grid-3" id="verify-summary" style="margin-bottom:12px;">
+      <div class="stat-box"><div class="stat-val" id="v-products">-</div><div class="stat-label">상품 일치율</div></div>
+      <div class="stat-box"><div class="stat-val" id="v-customers">-</div><div class="stat-label">거래처 일치율</div></div>
+      <div class="stat-box"><div class="stat-val" id="v-orders">-</div><div class="stat-label">주문 매칭율</div></div>
+    </div>
+    <div class="btn-group">
+      <button class="btn btn-primary" onclick="crossVerify()">검증 실행</button>
+      <button class="btn" onclick="crossVerifyDetail('products')">상품 상세</button>
+      <button class="btn" onclick="crossVerifyDetail('customers')">거래처 상세</button>
+      <button class="btn" onclick="crossVerifyDetail('orders')">주문 상세</button>
+    </div>
+    <div class="result-area" id="result-verify"></div>
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-title">🖥 직원 사용 패턴</div>
+      <p style="color:var(--muted);font-size:12px;margin-bottom:12px;">전산 프로그램에서 어떤 화면/기능을 주로 사용하는지 분석합니다.</p>
+      <div class="btn-group">
+        <button class="btn btn-primary" onclick="crossUsage('screens')">화면별 사용</button>
+        <button class="btn" onclick="crossUsage('features')">기능별 빈도</button>
+        <button class="btn" onclick="crossUsage('timeline')">시간대별</button>
+        <button class="btn" onclick="crossUsage('efficiency')">작업 효율</button>
+        <button class="btn" onclick="crossUsage('needs')">필요 기능 TOP</button>
+      </div>
+      <div class="result-area" id="result-usage"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">🔄 데이터 흐름</div>
+      <p style="color:var(--muted);font-size:12px;margin-bottom:12px;">카톡 → 클립보드 → 파서 → 전산 DB 전체 흐름을 추적합니다.</p>
+      <div class="btn-group">
+        <button class="btn btn-primary" onclick="crossFlow('order-entry')">주문 입력 흐름</button>
+        <button class="btn" onclick="crossFlow('daily')">오늘 흐름</button>
+        <button class="btn" onclick="crossFlow('gaps')">누락 감지</button>
+      </div>
+      <div class="result-area" id="result-flow"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">🎯 Orbit OS 설계 인사이트</div>
+    <p style="color:var(--muted);font-size:12px;margin-bottom:12px;">사용 빈도 × 소요 시간 기반으로 기능 우선순위와 자동화 기회를 추천합니다.</p>
+    <div class="btn-group">
+      <button class="btn btn-primary" onclick="crossInsight('priority')">기능 우선순위</button>
+      <button class="btn btn-green" onclick="crossInsight('automation')">자동화 기회</button>
+      <button class="btn" onclick="crossInsight('report')">종합 리포트</button>
+    </div>
+    <div class="result-area" id="result-insights"></div>
+  </div>
+</div>
+
 <!-- ────────────── PAGE: 터미널 ────────────── -->
 <div class="page" id="page-terminal">
   <div class="page-header">⚙️ 터미널</div>
@@ -774,6 +841,81 @@ async function extractKakao(){
   showResult('result-kakao','추출 중...');
   const d = await api('/api/think/extract-kakao',{method:'POST'});
   showResult('result-kakao',`스캔: ${d.scanned}건\n추출: ${d.extracted}건`);
+}
+
+/* ═══════════════════════ CROSS ANALYSIS ═══════════════════════ */
+async function crossVerify(){
+  showResult('result-verify','검증 중...');
+  const d = await api('/api/cross/verify/summary');
+  if(d.error){showResult('result-verify','에러: '+d.error);return;}
+  document.getElementById('v-products').textContent = (d.products?.matchRate||0)+'%';
+  document.getElementById('v-customers').textContent = (d.customers?.matchRate||0)+'%';
+  document.getElementById('v-orders').textContent = (d.orders?.matchRate||0)+'%';
+  let t = `━━ 데이터 일치 검증 결과 ━━\n\n`;
+  t += `상품: ${d.products?.matched||0}/${d.products?.total||0} 일치 (${d.products?.matchRate||0}%)\n`;
+  t += `거래처: ${d.customers?.matched||0}/${d.customers?.total||0} 일치 (${d.customers?.matchRate||0}%)\n`;
+  t += `주문: ${d.orders?.matched||0}/${d.orders?.total||0} 매칭 (${d.orders?.matchRate||0}%)\n`;
+  if(d.mismatches?.length) t+=`\n⚠ 불일치 ${d.mismatches.length}건:\n`+(d.mismatches||[]).slice(0,5).map(m=>`  - ${m.type}: ${m.detail}`).join('\n');
+  showResult('result-verify',t);
+}
+async function crossVerifyDetail(type){
+  showResult('result-verify','조회 중...');
+  const d = await api('/api/cross/verify/'+type);
+  showResult('result-verify',JSON.stringify(d,null,2));
+}
+async function crossUsage(type){
+  showResult('result-usage','분석 중...');
+  const d = await api('/api/cross/usage/'+type);
+  if(d.error){showResult('result-usage','에러: '+d.error);return;}
+  if(type==='screens'){
+    let t='━━ 화면별 사용 빈도 ━━\n\n';
+    (d.screens||[]).slice(0,15).forEach((s,i)=>{t+=`${i+1}. ${s.screen||s.windowTitle} — ${s.count}회 (${s.users||'?'}명)\n`;});
+    showResult('result-usage',t);
+  } else if(type==='needs'){
+    let t='━━ 필요 기능 TOP 10 ━━\n\n';
+    (d.needs||d.features||[]).slice(0,10).forEach((n,i)=>{t+=`${i+1}. ${n.feature||n.name} — 사용 ${n.usage||n.count}회, 소요 ${n.avgTime||'?'}\n   추천: ${n.recommendation||'-'}\n`;});
+    showResult('result-usage',t);
+  } else {
+    showResult('result-usage',JSON.stringify(d,null,2));
+  }
+}
+async function crossFlow(type){
+  showResult('result-flow','추적 중...');
+  const d = await api('/api/cross/flow/'+type);
+  if(d.error){showResult('result-flow','에러: '+d.error);return;}
+  if(type==='order-entry'){
+    let t='━━ 주문 입력 흐름 ━━\n\n';
+    const f=d.flow||d;
+    t+=`카톡 메시지: ${f.kakao||0}건\n  ↓ (감지율 ${f.kakaoToClip||'?'}%)\n`;
+    t+=`클립보드 감지: ${f.clipboard||0}건\n  ↓ (파싱율 ${f.clipToParsed||'?'}%)\n`;
+    t+=`파서 처리: ${f.parsed||0}건\n  ↓ (등록율 ${f.parsedToDb||'?'}%)\n`;
+    t+=`전산 DB 등록: ${f.dbInserted||0}건\n\n`;
+    t+=`전체 전환율: ${f.overallRate||'?'}%`;
+    if(f.gaps?.length) t+=`\n\n⚠ 누락 구간:\n`+f.gaps.map(g=>`  - ${g}`).join('\n');
+    showResult('result-flow',t);
+  } else {
+    showResult('result-flow',JSON.stringify(d,null,2));
+  }
+}
+async function crossInsight(type){
+  showResult('result-insights','분석 중...');
+  const d = await api('/api/cross/insights/'+type);
+  if(d.error){showResult('result-insights','에러: '+d.error);return;}
+  if(type==='priority'){
+    let t='━━ 기능 우선순위 (사용빈도 × 소요시간) ━━\n\n';
+    (d.priorities||[]).slice(0,10).forEach((p,i)=>{
+      t+=`${i+1}. ${p.feature} — 사용 ${p.usage}회, 평균 ${p.avgTime}\n   점수: ${p.score}, 추천: ${p.recommendation}\n\n`;
+    });
+    showResult('result-insights',t);
+  } else if(type==='automation'){
+    let t='━━ 자동화 기회 발견 ━━\n\n';
+    (d.opportunities||[]).slice(0,10).forEach((o,i)=>{
+      t+=`${i+1}. ${o.task} — 일 ${o.dailyCount}건, 건당 ${o.timePerItem}\n   절약 예상: ${o.savingsPerDay}\n   방법: ${o.method}\n\n`;
+    });
+    showResult('result-insights',t);
+  } else {
+    showResult('result-insights',JSON.stringify(d,null,2));
+  }
 }
 
 /* ═══════════════════════ PROCESS DETAIL ═══════════════════════ */
