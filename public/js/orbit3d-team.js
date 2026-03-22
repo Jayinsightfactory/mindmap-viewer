@@ -619,7 +619,7 @@ function _buildTeamSystemInner(teamData) {
         headers: _token2 ? { Authorization: `Bearer ${_token2}` } : {},
       }).then(r => r.json()).then(d => ({ name: m.name, nodes: d.nodes || [] })).catch(() => ({ name: m.name, nodes: [] }))
     )).then(results => {
-      // 멤버별 앱 사용
+      if (_companyMode) return; // 뷰 바뀌었으면 무시
       const memberApps = {};
       results.forEach(r => {
         const apps = {};
@@ -736,6 +736,8 @@ function _buildTeamSystemInner(teamData) {
       fetch(`/api/graph?memberId=${encodeURIComponent(member.userId)}`, {
         headers: _token ? { Authorization: `Bearer ${_token}` } : {},
       }).then(r => r.json()).then(data => {
+        // 뷰가 바뀌었으면 위성 추가 안 함
+        if (_companyMode) return;
         const nodes = data.nodes || [];
         if (nodes.length === 0) return;
         // 앱별 활동 그룹 (fullContent에서 app 파싱)
