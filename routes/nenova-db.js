@@ -299,7 +299,7 @@ module.exports = function createNenovaDbRouter({ getDb }) {
           pool.request().query(`
             SELECT
               COUNT(*) AS totalShipments,
-              SUM(CASE WHEN ISNULL(isConfirm, 0) = 1 THEN 1 ELSE 0 END) AS confirmedShipments,
+              SUM(CASE WHEN ISNULL(isDeleted, 0) = 1 THEN 1 ELSE 0 END) AS activeShipments,
               COUNT(DISTINCT CustKey) AS shipCustomers
             FROM ShipmentMaster
             WHERE ISNULL(isDeleted, 0) = 0
@@ -332,7 +332,7 @@ module.exports = function createNenovaDbRouter({ getDb }) {
             SELECT TOP 5
               sm.ShipmentKey, sm.ShipYear, sm.ShipWeek, sm.ShipNo,
               c.CustName,
-              ISNULL(sm.isConfirm, 0) AS isConfirm,
+              ISNULL(sm.isDeleted, 0) AS isConfirm,
               (SELECT COUNT(*) FROM ShipmentDetail sd WHERE sd.ShipmentKey = sm.ShipmentKey) AS itemCount
             FROM ShipmentMaster sm
             LEFT JOIN Customer c ON sm.CustKey = c.CustKey
@@ -349,7 +349,7 @@ module.exports = function createNenovaDbRouter({ getDb }) {
           },
           shipments: {
             total: shipments.recordset[0].totalShipments,
-            confirmed: shipments.recordset[0].confirmedShipments,
+            confirmed: shipments.recordset[0].activeShipments,
             customers: shipments.recordset[0].shipCustomers,
           },
           products: {
@@ -1047,9 +1047,9 @@ module.exports = function createNenovaDbRouter({ getDb }) {
           where.push('sm.CustKey = @custKey');
         }
         if (confirmed === 'true') {
-          where.push('ISNULL(sm.isConfirm, 0) = 1');
+          where.push('ISNULL(sm.isDeleted, 0) = 1');
         } else if (confirmed === 'false') {
-          where.push('ISNULL(sm.isConfirm, 0) = 0');
+          where.push('ISNULL(sm.isDeleted, 0) = 0');
         }
 
         const whereClause = 'WHERE ' + where.join(' AND ');
@@ -1073,7 +1073,7 @@ module.exports = function createNenovaDbRouter({ getDb }) {
             sm.ShipNo,
             sm.CustKey,
             sm.Descr,
-            ISNULL(sm.isConfirm, 0) AS isConfirm,
+            ISNULL(sm.isDeleted, 0) AS isConfirm,
             sm.CreateID,
             sm.CreateDtm,
             c.CustName,
@@ -1382,7 +1382,7 @@ module.exports = function createNenovaDbRouter({ getDb }) {
             .query(`
               SELECT TOP 10
                 sm.ShipmentKey, sm.ShipYear, sm.ShipWeek, sm.ShipNo,
-                ISNULL(sm.isConfirm, 0) AS isConfirm,
+                ISNULL(sm.isDeleted, 0) AS isConfirm,
                 (SELECT SUM(ISNULL(sd.Amount, 0)) FROM ShipmentDetail sd WHERE sd.ShipmentKey = sm.ShipmentKey) AS totalAmount
               FROM ShipmentMaster sm
               WHERE sm.CustKey = @key AND ISNULL(sm.isDeleted, 0) = 0
