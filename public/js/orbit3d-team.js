@@ -153,7 +153,7 @@ function drawEffect_burst(ctx, cx, cy, r, color, now) {
 }
 const EFFECT_FNS = { neon: drawEffect_neon, matrix: drawEffect_matrix, dna: drawEffect_dna, beam: drawEffect_beam, holo: drawEffect_holo, burst: drawEffect_burst };
 
-let _nodeDensity  = 1;  // 1=멤버만 2=+태스크 3=+스킬/에이전트 4=모두
+let _nodeDensity  = 2;  // 1=멤버만 2=+태스크/프로젝트 3=+스킬/에이전트 4=모두
 let _distDebounce = null;
 
 function updateDist(key, input) {
@@ -1076,7 +1076,7 @@ function buildCompanySystem(companyData) {
   _teamNodes.push({ type: 'goal', pos: new THREE.Vector3(0, 0, 0), label: goal, sublabel: name, color: goalColor || '#ffd700', size: 'xl' });
 
   // 부서 궤도 링
-  { const r = new THREE.Mesh(new THREE.RingGeometry(DEPT_R - 0.15, DEPT_R + 0.15, 128), new THREE.MeshBasicMaterial({ color: 0xffd700, transparent: true, opacity: 0.04, side: THREE.DoubleSide })); r.rotation.x = Math.PI / 2; orbitRings.push(r); scene.add(r); }
+  //   { const r = new THREE.Mesh(new THREE.RingGeometry(DEPT_R - 0.15, DEPT_R + 0.15, 128), new THREE.MeshBasicMaterial({ color: 0xffd700, transparent: true, opacity: 0.04, side: THREE.DoubleSide })); r.rotation.x = Math.PI / 2; orbitRings.push(r); scene.add(r); }
 
   departments.forEach((dept, di) => {
     const dAngle = (di / departments.length) * Math.PI * 2 - Math.PI / 2;
@@ -1092,11 +1092,11 @@ function buildCompanySystem(companyData) {
 
     _teamNodes.push({ type: 'department', pos: dPos.clone(), obj: dObj, label: `${dept.icon} ${dept.name}`, sublabel: `${dept.members.length}명`, color: dept.color, size: 'xs', deptId: dept.id, deptData: dept });
 
-    // 중심→부서 연결선
-    { const lg = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), dPos.clone()]); const lm = new THREE.LineBasicMaterial({ color: new THREE.Color(dept.color), transparent: true, opacity: 0.35 }); connections.push(new THREE.Line(lg, lm)); scene.add(connections[connections.length-1]); }
+    // 중심→부서 연결선 (제거)
+  //     { const lg = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), dPos.clone()]); const lm = new THREE.LineBasicMaterial({ color: new THREE.Color(dept.color), transparent: true, opacity: 0.35 }); connections.push(new THREE.Line(lg, lm)); scene.add(connections[connections.length-1]); }
 
-    // 부서 궤도 링 (팀원)
-    { const r = new THREE.Mesh(new THREE.RingGeometry(MBR_R - 0.06, MBR_R + 0.06, 64), new THREE.MeshBasicMaterial({ color: new THREE.Color(dept.color), transparent: true, opacity: 0.08, side: THREE.DoubleSide })); r.position.copy(dPos); r.rotation.x = Math.PI / 2; orbitRings.push(r); scene.add(r); }
+    // 부서 궤도 링 팀원 (제거)
+  //     { const r = new THREE.Mesh(new THREE.RingGeometry(MBR_R - 0.06, MBR_R + 0.06, 64), new THREE.MeshBasicMaterial({ color: new THREE.Color(dept.color), transparent: true, opacity: 0.08, side: THREE.DoubleSide })); r.position.copy(dPos); r.rotation.x = Math.PI / 2; orbitRings.push(r); scene.add(r); }
 
     dept.members.forEach((member, mi) => {
       const mAng = (mi / dept.members.length) * Math.PI * 2 + (di * 1.1);
@@ -1110,8 +1110,8 @@ function buildCompanySystem(companyData) {
 
       _teamNodes.push({ type: 'member', pos: mPos.clone(), obj: mObj, label: member.name, sublabel: member.role, color: member.color, size: 'md', memberId: member.id, deptId: dept.id });
 
-      // 부서→팀원 연결선
-      { const lg = new THREE.BufferGeometry().setFromPoints([dPos.clone(), mPos.clone()]); const lm = new THREE.LineBasicMaterial({ color: new THREE.Color(member.color), transparent: true, opacity: 0.3 }); connections.push(new THREE.Line(lg, lm)); scene.add(connections[connections.length-1]); }
+      // 부서→팀원 연결선 (제거)
+      //       { const lg = new THREE.BufferGeometry().setFromPoints([dPos.clone(), mPos.clone()]); const lm = new THREE.LineBasicMaterial({ color: new THREE.Color(member.color), transparent: true, opacity: 0.3 }); connections.push(new THREE.Line(lg, lm)); scene.add(connections[connections.length-1]); }
 
       // 작업 위성
       member.tasks.forEach((task, ti) => {
@@ -1122,7 +1122,7 @@ function buildCompanySystem(companyData) {
         scene.add(tObj); satelliteMeshes.push(tObj);
         const sc = STATUS_CFG[task.status] || STATUS_CFG.pending;
         _teamNodes.push({ type: 'task', pos: tPos.clone(), obj: tObj, label: task.name, emoji: sc.emoji, color: sc.color, progress: task.progress, size: 'xs', memberId: member.id, deptId: dept.id, taskStatus: task.status });
-        { const lg = new THREE.BufferGeometry().setFromPoints([mPos.clone(), tPos.clone()]); const lm = new THREE.LineBasicMaterial({ color: new THREE.Color(member.color), transparent: true, opacity: 0.14 }); connections.push(new THREE.Line(lg, lm)); scene.add(connections[connections.length-1]); }
+        //         { const lg = new THREE.BufferGeometry().setFromPoints([mPos.clone(), tPos.clone()]); const lm = new THREE.LineBasicMaterial({ color: new THREE.Color(member.color), transparent: true, opacity: 0.14 }); connections.push(new THREE.Line(lg, lm)); scene.add(connections[connections.length-1]); }
       });
 
       // 스킬 위성
@@ -1213,10 +1213,11 @@ async function loadTeamDemo() {
   if (window.RendererManager) window.RendererManager.switchTo('team');
   else if (window.RendererManager?.cleanupMultilevel) window.RendererManager.cleanupMultilevel();
   if (typeof track === 'function') track('view.mode_switch', { from: 'personal', to: 'team' });
-  // 슬라이더 전환 (팀 전용)
+  // 슬라이더 전환 (팀 전용) + 카메라 r=15
   document.getElementById('spacing-personal').style.display = 'none';
   document.getElementById('spacing-team').style.display = '';
   document.getElementById('spacing-company').style.display = 'none';
+  if (typeof controls !== 'undefined' && controls.sph) controls.sph.r = 15;
 
   const _u = typeof _orbitUser !== 'undefined' ? _orbitUser : JSON.parse(localStorage.getItem('orbitUser') || 'null');
   const token = _u?.token;
@@ -1275,7 +1276,7 @@ async function loadCompanyDemo() {
   document.getElementById('spacing-personal').style.display = 'none';
   document.getElementById('spacing-team').style.display = 'none';
   document.getElementById('spacing-company').style.display = '';
-  if (typeof controls !== 'undefined' && controls.sph) controls.sph.r = 43;
+  if (typeof controls !== 'undefined' && controls.sph) controls.sph.r = 15;
   const _u = typeof _orbitUser !== 'undefined' ? _orbitUser : JSON.parse(localStorage.getItem('orbitUser') || 'null');
   const token = _u?.token;
 
