@@ -20,13 +20,13 @@ function _orbitAnimLoop(now) {
     pulseSun();
     updateRaycast();
     _labelCanvas2d.style.opacity = '1';
-    drawTeamLabels();
+    drawLabels();
   } else if (_parallelMode) {
     updateParallelOrbits(dt);
     pulseSun();
     updateRaycast();
     _labelCanvas2d.style.opacity = '1';
-    drawTeamLabels();
+    drawLabels();
   } else {
     updateOrbits(dt);
     pulseSun();
