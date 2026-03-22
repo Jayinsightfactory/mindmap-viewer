@@ -114,6 +114,102 @@ main{max-width:1200px;margin:0 auto;padding:20px 24px;}
   <div style="text-align:center;margin-top:10px;color:var(--muted);font-size:11px;">↺ 2시간마다 사고 루프가 자동으로 전체 사이클 실행</div>
 </div>
 
+<!-- ═══ 업무별 자동화 상세 프로세스 ═══ -->
+<div class="section-title">🔧 업무별 자동화 프로세스 상세</div>
+
+<div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap;">
+  <button class="btn btn-primary" onclick="showProcess('order')">📋 주문 등록</button>
+  <button class="btn" onclick="showProcess('deduction')">📊 차감 대조</button>
+  <button class="btn" onclick="showProcess('change')">🔄 변경사항</button>
+  <button class="btn" onclick="showProcess('shipping')">🚚 출고 관리</button>
+  <button class="btn" onclick="showProcess('closing')">💰 매출 마감</button>
+  <button class="btn" onclick="showProcess('defect')">⚠️ 불량 처리</button>
+</div>
+
+<div class="card" style="margin-bottom:20px;padding:20px;" id="process-detail">
+  <div id="process-content">
+    <!-- 기본: 주문 등록 -->
+    <div style="font-weight:700;font-size:14px;margin-bottom:14px;">📋 주문 등록 자동화</div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+      <div>
+        <div style="font-weight:600;color:var(--red);margin-bottom:8px;">현재 (수동) — 건당 2~3분</div>
+        <div style="font-size:12px;line-height:2;padding:10px;background:rgba(248,81,73,0.05);border-radius:6px;">
+          1. 카카오톡 거래처방에서 주문 메시지 확인<br>
+          2. 품목명/수량 눈으로 파악<br>
+          3. nenova ERP "신규 주문 등록" 화면 열기<br>
+          4. 고객명 입력 → 품목 검색 → 수량 입력 → 저장<br>
+          5. 다음 거래처 카톡방으로 이동<br>
+          6. 하루 554회 반복
+        </div>
+      </div>
+      <div>
+        <div style="font-weight:600;color:var(--green);margin-bottom:8px;">자동화 후 — 건당 ~3초</div>
+        <div style="font-size:12px;line-height:2;padding:10px;background:rgba(63,185,80,0.05);border-radius:6px;">
+          1. 카톡 화면 캡처 → Vision OCR 자동 읽기<br>
+          2. 클립보드 감지 → 7종 파서 자동 구조화<br>
+          3. 마스터 DB 매칭 (145품목+24거래처)<br>
+          4. PAD/pyautogui가 nenova에 자동 입력<br>
+          5. Vision 캡처로 입력 결과 자동 검증<br>
+          6. 불일치 시 알림 → 수동 확인
+        </div>
+      </div>
+    </div>
+
+    <div style="font-weight:600;margin-bottom:8px;">사용 프로그램 + 기술</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">
+      <span class="tag tag-tool">clipboard-watcher.js</span>
+      <span class="tag tag-tool">Vision OCR (Claude CLI)</span>
+      <span class="tag tag-tool">마스터 DB (PostgreSQL)</span>
+      <span class="tag tag-tool">PAD (Power Automate Desktop)</span>
+      <span class="tag tag-tool">pyautogui (좌표 532건 학습)</span>
+      <span class="tag tag-tool">rawInput 검증</span>
+    </div>
+
+    <div style="font-weight:600;margin-bottom:8px;">자동화 플로우</div>
+    <div style="display:flex;align-items:center;gap:0;flex-wrap:wrap;font-size:11px;">
+      <div style="padding:8px 12px;background:rgba(88,166,255,0.1);border-radius:6px;text-align:center;">
+        <div>📱 카톡 메시지</div>
+        <div style="color:var(--muted);">"Catherine:30"</div>
+      </div>
+      <div style="color:var(--accent);padding:0 4px;">→</div>
+      <div style="padding:8px 12px;background:rgba(188,140,255,0.1);border-radius:6px;text-align:center;">
+        <div>📋 클립보드 감지</div>
+        <div style="color:var(--muted);">2초마다 체크</div>
+      </div>
+      <div style="color:var(--accent);padding:0 4px;">→</div>
+      <div style="padding:8px 12px;background:rgba(63,185,80,0.1);border-radius:6px;text-align:center;">
+        <div>🔍 MEL 파서</div>
+        <div style="color:var(--muted);">정확도 100%</div>
+      </div>
+      <div style="color:var(--accent);padding:0 4px;">→</div>
+      <div style="padding:8px 12px;background:rgba(210,153,34,0.1);border-radius:6px;text-align:center;">
+        <div>🗄 마스터 매칭</div>
+        <div style="color:var(--muted);">Catherine→캐더린</div>
+      </div>
+      <div style="color:var(--accent);padding:0 4px;">→</div>
+      <div style="padding:8px 12px;background:rgba(248,81,73,0.1);border-radius:6px;text-align:center;">
+        <div>🖥 PAD 입력</div>
+        <div style="color:var(--muted);">nenova 자동</div>
+      </div>
+      <div style="color:var(--accent);padding:0 4px;">→</div>
+      <div style="padding:8px 12px;background:rgba(63,185,80,0.1);border-radius:6px;text-align:center;">
+        <div>✅ Vision 검증</div>
+        <div style="color:var(--muted);">화면값 대조</div>
+      </div>
+    </div>
+
+    <div style="margin-top:14px;padding:10px;background:var(--bg);border-radius:6px;font-size:12px;">
+      <div style="font-weight:600;margin-bottom:4px;">📊 현재 상태</div>
+      <div>• 파서: <span style="color:var(--green);">LIVE</span> (7종 포맷, 정확도 90~100%)</div>
+      <div>• 마스터 DB: <span style="color:var(--green);">LIVE</span> (145품목 자동학습)</div>
+      <div>• PAD 자동입력: <span style="color:var(--yellow);">DEV</span> (설계 완료, UI 셀렉터 테스트 필요)</div>
+      <div>• Vision 검증: <span style="color:var(--green);">LIVE</span> (297건 분석, 83% 자동화 판정)</div>
+      <div style="margin-top:6px;font-weight:600;">예상 절약: <span style="color:var(--green);">일 170분 (2.8시간)</span></div>
+    </div>
+  </div>
+</div>
+
 <div class="section-title">⚡ 자동화 프로그램</div>
 <div class="programs">
 
@@ -414,6 +510,71 @@ async function extractKakao(){
   show('result-kakao','추출 중...');
   const d=await api('/api/think/extract-kakao',{method:'POST'});
   show('result-kakao',`스캔: ${d.scanned}건\n추출: ${d.extracted}건`);
+}
+
+// ═══ 업무별 자동화 프로세스 상세 ═══
+const PROCESSES = {
+  order: `<div style="font-weight:700;font-size:14px;margin-bottom:14px;">📋 주문 등록 자동화</div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+<div><div style="font-weight:600;color:var(--red);margin-bottom:8px;">현재 (수동) — 건당 2~3분</div><div style="font-size:12px;line-height:2;padding:10px;background:rgba(248,81,73,0.05);border-radius:6px;">1. 카톡 거래처방에서 주문 메시지 확인<br>2. 품목명/수량 눈으로 파악<br>3. nenova "신규 주문 등록" 화면 열기<br>4. 고객명→품목 검색→수량 입력→저장<br>5. 다음 거래처 이동, 하루 554회</div></div>
+<div><div style="font-weight:600;color:var(--green);margin-bottom:8px;">자동화 — 건당 ~3초</div><div style="font-size:12px;line-height:2;padding:10px;background:rgba(63,185,80,0.05);border-radius:6px;">1. 카톡 캡처→Vision OCR 자동 읽기<br>2. 클립보드 감지→7종 파서 구조화<br>3. 마스터 DB 매칭 (145품목)<br>4. PAD가 nenova에 자동 입력<br>5. Vision으로 결과 자동 검증</div></div></div>
+<div style="font-weight:600;margin-bottom:6px;">사용 프로그램</div>
+<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px;"><span class="tag tag-tool">clipboard-watcher.js</span><span class="tag tag-tool">Vision OCR</span><span class="tag tag-tool">마스터 DB</span><span class="tag tag-tool">PAD</span><span class="tag tag-tool">pyautogui</span></div>
+<div style="padding:10px;background:var(--bg);border-radius:6px;font-size:12px;">파서: <span style="color:var(--green)">LIVE</span> | PAD 입력: <span style="color:var(--yellow)">DEV</span> | 예상 절약: <strong style="color:var(--green)">일 170분</strong></div>`,
+
+  deduction: `<div style="font-weight:700;font-size:14px;margin-bottom:14px;">📊 차감 대조 자동화</div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+<div><div style="font-weight:600;color:var(--red);margin-bottom:8px;">현재 (수동)</div><div style="font-size:12px;line-height:2;padding:10px;background:rgba(248,81,73,0.05);border-radius:6px;">1. 오전에 주문 입력 (09~15시)<br>2. 오후에 차감내역 Excel 열기 (17~18시)<br>3. 8시간 전 주문을 기억에 의존해 대조<br>4. 발주서 Excel ↔ nenova ↔ 차감 Excel 3중 수작업<br>5. 누락/오류 발생 가능</div></div>
+<div><div style="font-weight:600;color:var(--green);margin-bottom:8px;">자동화</div><div style="font-size:12px;line-height:2;padding:10px;background:rgba(63,185,80,0.05);border-radius:6px;">1. 주문 등록 즉시 차감내역 자동 업데이트<br>2. openpyxl로 Excel 자동 읽기/쓰기<br>3. 발주서 수량 vs 등록 수량 자동 비교<br>4. 불일치 즉시 알림 (이슈 감지기 Rule 7)<br>5. rawInput 기반 주문/차감 정밀 분류</div></div></div>
+<div style="font-weight:600;margin-bottom:6px;">사용 프로그램</div>
+<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px;"><span class="tag tag-tool">openpyxl</span><span class="tag tag-tool">rawInput 분류기</span><span class="tag tag-tool">이슈 감지 Rule 7</span><span class="tag tag-tool">parsed_orders</span></div>
+<div style="font-weight:600;margin-bottom:6px;">플로우</div>
+<div style="font-size:11px;line-height:2;">nenova 주문 저장 → parsed_orders 자동 기록 → openpyxl이 발주서 Excel 읽기 → 수량 비교 → 차감내역 Excel 자동 갱신 → 불일치 시 이슈 알림</div>
+<div style="margin-top:10px;padding:10px;background:var(--bg);border-radius:6px;font-size:12px;">rawInput 분류: <span style="color:var(--green)">LIVE</span> (주문19:차감15 정밀 분리) | Excel 자동화: <span style="color:var(--yellow)">DEV</span> | 예상 절약: <strong style="color:var(--green)">일 40분</strong></div>`,
+
+  change: `<div style="font-weight:700;font-size:14px;margin-bottom:14px;">🔄 변경사항 자동 처리</div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+<div><div style="font-weight:600;color:var(--red);margin-bottom:8px;">현재 (수동)</div><div style="font-size:12px;line-height:2;padding:10px;background:rgba(248,81,73,0.05);border-radius:6px;">1. 카톡 "변경사항" 메시지 확인<br>2. 메모장에 수동으로 정리<br>3. 품목별 취소/추가 분류<br>4. nenova에서 기존 주문 수정<br>5. 차감내역도 수동 수정<br>6. 실제 캡처: 1,450자 변경 메시지</div></div>
+<div><div style="font-weight:600;color:var(--green);margin-bottom:8px;">자동화</div><div style="font-size:12px;line-height:2;padding:10px;background:rgba(63,185,80,0.05);border-radius:6px;">1. 카톡 "취소/추가" 키워드 자동 감지<br>2. change_order 파서가 자동 구조화<br>3. {거래처, 품목, 수량, 액션} JSON 생성<br>4. nenova 주문 자동 수정<br>5. 차감내역 Excel 연동 자동 갱신<br>6. 시뮬레이션: 17건 구조화, 정합성 ✅</div></div></div>
+<div style="font-weight:600;margin-bottom:6px;">사용 프로그램</div>
+<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px;"><span class="tag tag-tool">change_order 파서</span><span class="tag tag-tool">마스터 DB 매칭</span><span class="tag tag-tool">parsed_orders</span><span class="tag tag-tool">openpyxl</span></div>
+<div style="font-size:11px;line-height:2;">카톡 메시지: "대구회경 릭센드 10단 취소 / 영남소재 10단 추가"<br>→ 파서: {customer:"대구회경", product:"릭센드", qty:10, action:"cancel"}<br>→ 자동으로 기존 주문에서 차감 + 새 주문 추가</div>
+<div style="margin-top:10px;padding:10px;background:var(--bg);border-radius:6px;font-size:12px;">파서: <span style="color:var(--green)">LIVE</span> (정확도 90%) | 자동 수정: <span style="color:var(--yellow)">DEV</span> | 예상 절약: <strong style="color:var(--green)">일 60분</strong></div>`,
+
+  shipping: `<div style="font-weight:700;font-size:14px;margin-bottom:14px;">🚚 출고 관리 자동화</div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+<div><div style="font-weight:600;color:var(--red);margin-bottom:8px;">현재 (수동)</div><div style="font-size:12px;line-height:2;padding:10px;background:rgba(248,81,73,0.05);border-radius:6px;">1. Excel에서 출고 내역서 수동 작성<br>2. 차수별(12차,13차) 파일 분류<br>3. 거래처별 수량 수동 기입<br>4. 카톡으로 "출고 내역서입니다" 수동 전송<br>5. 변경 시 파일 수정 → 재전송</div></div>
+<div><div style="font-weight:600;color:var(--green);margin-bottom:8px;">자동화</div><div style="font-size:12px;line-height:2;padding:10px;background:rgba(63,185,80,0.05);border-radius:6px;">1. parsed_orders에서 출고 데이터 자동 집계<br>2. openpyxl로 출고 내역서 Excel 자동 생성<br>3. 거래처별/차수별 자동 분류<br>4. 템플릿 메시지 자동 생성 → 카톡 전송 준비<br>5. 변경 시 자동 재생성</div></div></div>
+<div style="font-weight:600;margin-bottom:6px;">사용 프로그램</div>
+<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px;"><span class="tag tag-tool">shipping 파서</span><span class="tag tag-tool">openpyxl</span><span class="tag tag-tool">템플릿 엔진</span><span class="tag tag-tool">카톡 전송 (PAD)</span></div>
+<div style="font-size:11px;">클립보드: "참좋은원예 3월 22일 출고 카네이션 7박스 노비아1 돈셀2 크리미아1..."<br>→ 파서: 거래처+날짜+품종별 수량 자동 구조화 → Excel 자동 생성</div>
+<div style="margin-top:10px;padding:10px;background:var(--bg);border-radius:6px;font-size:12px;">파서: <span style="color:var(--green)">LIVE</span> (정확도 95%) | Excel 생성: <span style="color:var(--yellow)">DEV</span> | 예상 절약: <strong style="color:var(--green)">일 30분</strong></div>`,
+
+  closing: `<div style="font-weight:700;font-size:14px;margin-bottom:14px;">💰 매출 마감 자동화</div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+<div><div style="font-weight:600;color:var(--red);margin-bottom:8px;">현재 (수동) — 강현우</div><div style="font-size:12px;line-height:2;padding:10px;background:rgba(248,81,73,0.05);border-radius:6px;">1. Claude AI에 app.py 수정 요청<br>2. ZIP 다운로드 → 압축 해제<br>3. 메모장에서 실행 명령 복사 → PowerShell<br>4. TypeError 발생 → Claude에 재질문<br>5. 8~10회 반복 / 세션<br>6. 피벗캐시 불일치 수동 진단</div></div>
+<div><div style="font-weight:600;color:var(--green);margin-bottom:8px;">자동화</div><div style="font-size:12px;line-height:2;padding:10px;background:rgba(63,185,80,0.05);border-radius:6px;">1. NENOVA SALES CLOSING TOOL (localhost:5050)<br>2. 파일 4종 자동 업로드 (경로 고정)<br>3. 연도/월 자동 설정 → 변환 실행<br>4. Task Scheduler로 월 1회 무인 실행<br>5. BAT 파일 원클릭 실행 (수동 복사 제거)<br>6. 결과 자동 검증 + 이메일 보고</div></div></div>
+<div style="font-weight:600;margin-bottom:6px;">사용 프로그램</div>
+<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px;"><span class="tag tag-tool">app.py (Python)</span><span class="tag tag-tool">Task Scheduler</span><span class="tag tag-tool">BAT 파일</span><span class="tag tag-tool">SALES CLOSING TOOL</span></div>
+<div style="margin-top:10px;padding:10px;background:var(--bg);border-radius:6px;font-size:12px;">도구: <span style="color:var(--green)">LIVE</span> (localhost:5050) | 무인 실행: <span style="color:var(--muted)">PLAN</span> | 예상 절약: <strong style="color:var(--green)">월 60분</strong></div>`,
+
+  defect: `<div style="font-weight:700;font-size:14px;margin-bottom:14px;">⚠️ 불량 처리 자동화</div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+<div><div style="font-weight:600;color:var(--red);margin-bottom:8px;">현재 (수동)</div><div style="font-size:12px;line-height:2;padding:10px;background:rgba(248,81,73,0.05);border-radius:6px;">1. 카톡 "불량 공유방"에서 불량 보고 수신<br>2. 파손 내역 수동 확인 (돈셀2파손, 문라이트2파손...)<br>3. 차감내역 Excel에서 수동 차감<br>4. 공급사(콜롬비아/중국)에 수동 클레임<br>5. 재발주 여부 수동 판단</div></div>
+<div><div style="font-weight:600;color:var(--green);margin-bottom:8px;">자동화</div><div style="font-size:12px;line-height:2;padding:10px;background:rgba(63,185,80,0.05);border-radius:6px;">1. 카톡 "불량/파손" 키워드 자동 감지<br>2. damage_report 파서: 품목+수량 자동 구조화<br>3. 차감내역 자동 반영 (openpyxl)<br>4. 공급사별 불량률 자동 집계<br>5. 임계치 초과 시 관리자 자동 알림<br>6. 재발주 필요량 자동 계산</div></div></div>
+<div style="font-weight:600;margin-bottom:6px;">사용 프로그램</div>
+<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px;"><span class="tag tag-tool">damage_report 파서</span><span class="tag tag-tool">이슈 감지기</span><span class="tag tag-tool">openpyxl</span><span class="tag tag-tool">마스터 DB (공급사별 집계)</span></div>
+<div style="font-size:11px;">클립보드: "돈셀 2 파손 / 문라이트 2 파손 / 사가 9 파손"<br>→ 파서: [{product:"돈셀",qty:2,type:"damage"}, ...]<br>→ 차감내역 자동 반영 + 공급사 불량률 집계</div>
+<div style="margin-top:10px;padding:10px;background:var(--bg);border-radius:6px;font-size:12px;">키워드 감지: <span style="color:var(--green)">LIVE</span> | 파서: <span style="color:var(--yellow)">DEV</span> | 자동 집계: <span style="color:var(--muted)">PLAN</span> | 예상 절약: <strong style="color:var(--green)">건당 10분</strong></div>`,
+};
+
+function showProcess(key) {
+  document.getElementById('process-content').innerHTML = PROCESSES[key] || '<div class="empty">준비 중</div>';
+  // 버튼 활성화 표시
+  document.querySelectorAll('#process-detail').forEach(el => {
+    el.previousElementSibling?.querySelectorAll('.btn').forEach(b => b.classList.remove('btn-primary'));
+  });
+  event.target.classList.add('btn-primary');
 }
 
 // ═══ 상단 시각화: Before/After + 운영현황 + 절약효과 ═══
