@@ -3,60 +3,219 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Orbit OS — Programs</title>
+<title>Orbit OS</title>
 <style>
-:root{--bg:#0d1117;--card:#161b22;--border:#30363d;--text:#e6edf3;--muted:#8b949e;--accent:#58a6ff;--green:#3fb950;--yellow:#d29922;--red:#f85149;--purple:#bc8cff;}
+:root{--bg:#0d1117;--card:#161b22;--border:#30363d;--text:#e6edf3;--muted:#8b949e;--accent:#58a6ff;--green:#3fb950;--yellow:#d29922;--red:#f85149;--purple:#bc8cff;--sidebar-w:220px;--topbar-h:48px;}
 *{margin:0;padding:0;box-sizing:border-box;}
-body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:13px;}
-.top{display:flex;align-items:center;justify-content:space-between;padding:14px 24px;background:var(--card);border-bottom:1px solid var(--border);}
-.top h1{font-size:17px;font-weight:700;} .top h1 span{color:var(--accent);}
-.top a{color:var(--muted);font-size:12px;text-decoration:none;} .top a:hover{color:var(--accent);}
-main{max-width:1200px;margin:0 auto;padding:20px 24px;}
-.section-title{font-size:15px;font-weight:700;margin:24px 0 12px;display:flex;align-items:center;gap:8px;}
-.programs{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px;}
-.prog{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:18px;position:relative;transition:border-color 0.2s;}
-.prog:hover{border-color:var(--accent);}
-.prog-header{display:flex;align-items:center;gap:10px;margin-bottom:10px;}
-.prog-icon{font-size:28px;width:44px;height:44px;display:flex;align-items:center;justify-content:center;background:rgba(88,166,255,0.1);border-radius:10px;}
-.prog-name{font-size:14px;font-weight:700;}
-.prog-desc{color:var(--muted);font-size:11px;}
-.status{position:absolute;top:14px;right:14px;padding:3px 10px;border-radius:12px;font-size:10px;font-weight:600;}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:13px;overflow:hidden;height:100vh;}
+::-webkit-scrollbar{width:6px;}
+::-webkit-scrollbar-track{background:var(--bg);}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
+::-webkit-scrollbar-thumb:hover{background:var(--muted);}
+
+/* ── Top Bar ── */
+.topbar{position:fixed;top:0;left:0;right:0;height:var(--topbar-h);background:var(--card);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 20px;z-index:100;}
+.topbar-brand{display:flex;align-items:center;gap:10px;font-size:15px;font-weight:700;}
+.topbar-brand span{color:var(--accent);}
+.topbar-indicators{display:flex;gap:16px;align-items:center;}
+.indicator{display:flex;flex-direction:column;align-items:center;gap:1px;}
+.indicator-val{font-size:14px;font-weight:700;}
+.indicator-label{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;}
+.topbar-links{display:flex;gap:12px;}
+.topbar-links a{color:var(--muted);font-size:11px;text-decoration:none;} .topbar-links a:hover{color:var(--accent);}
+
+/* ── Sidebar ── */
+.sidebar{position:fixed;top:var(--topbar-h);left:0;bottom:0;width:var(--sidebar-w);background:var(--card);border-right:1px solid var(--border);overflow-y:auto;z-index:90;display:flex;flex-direction:column;}
+.sidebar-section{padding:12px 0 4px 16px;font-size:9px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 16px;cursor:pointer;font-size:12.5px;color:var(--muted);transition:all 0.15s;border-left:3px solid transparent;user-select:none;}
+.nav-item:hover{color:var(--text);background:rgba(88,166,255,0.05);}
+.nav-item.active{color:var(--accent);background:rgba(88,166,255,0.08);border-left-color:var(--accent);}
+.nav-icon{font-size:16px;width:22px;text-align:center;flex-shrink:0;}
+.nav-label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.nav-badge{margin-left:auto;padding:1px 6px;border-radius:8px;font-size:9px;font-weight:700;}
+.nav-badge-live{background:rgba(63,185,80,0.15);color:var(--green);}
+.nav-badge-dev{background:rgba(210,153,34,0.15);color:var(--yellow);}
+.sidebar-footer{margin-top:auto;padding:12px 16px;border-top:1px solid var(--border);font-size:10px;color:var(--muted);line-height:1.6;}
+
+/* ── Main Content ── */
+.main{position:fixed;top:var(--topbar-h);left:var(--sidebar-w);right:0;bottom:0;overflow-y:auto;padding:24px;}
+.page{display:none;}
+.page.active{display:block;}
+
+/* ── Cards and Layout ── */
+.card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:20px;margin-bottom:16px;}
+.card-title{font-size:14px;font-weight:700;margin-bottom:14px;display:flex;align-items:center;gap:8px;}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;}
+@media(max-width:900px){.grid-2,.grid-3{grid-template-columns:1fr;}}
+
+/* ── Status tags ── */
+.status{padding:3px 10px;border-radius:12px;font-size:10px;font-weight:600;display:inline-block;}
 .status-live{background:rgba(63,185,80,0.15);color:var(--green);}
 .status-dev{background:rgba(210,153,34,0.15);color:var(--yellow);}
 .status-plan{background:rgba(139,148,158,0.15);color:var(--muted);}
-.status-test{background:rgba(188,140,255,0.15);color:var(--purple);}
-.prog-body{margin:10px 0;font-size:12px;line-height:1.6;}
-.prog-body li{margin:2px 0;padding-left:4px;}
-.prog-actions{display:flex;gap:6px;margin-top:12px;flex-wrap:wrap;}
-.btn{padding:6px 14px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text);cursor:pointer;font-size:11px;transition:all 0.2s;}
+.tag{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;margin:2px;}
+.tag-tool{background:rgba(88,166,255,0.1);color:var(--accent);}
+
+/* ── Buttons ── */
+.btn{padding:7px 16px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text);cursor:pointer;font-size:11px;transition:all 0.15s;white-space:nowrap;}
 .btn:hover{border-color:var(--accent);color:var(--accent);}
 .btn-primary{background:var(--accent);color:#fff;border-color:var(--accent);}
 .btn-primary:hover{background:#4493e6;}
 .btn-green{background:var(--green);color:#fff;border-color:var(--green);}
-.result{margin-top:10px;padding:10px;background:var(--bg);border-radius:6px;font-size:11px;white-space:pre-wrap;display:none;max-height:200px;overflow-y:auto;}
-.divider{height:1px;background:var(--border);margin:8px 0;}
-.tag{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;margin:2px;}
-.tag-tool{background:rgba(88,166,255,0.1);color:var(--accent);}
+.btn-green:hover{background:#2ea043;}
+.btn-red{background:var(--red);color:#fff;border-color:var(--red);}
+.btn-group{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px;}
+
+/* ── Result area ── */
+.result-area{margin-top:12px;padding:12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;font-family:'SF Mono',Consolas,'Liberation Mono',Menlo,monospace;font-size:11px;white-space:pre-wrap;max-height:320px;overflow-y:auto;line-height:1.6;display:none;}
+.result-area.visible{display:block;}
+
+/* ── Stat box ── */
+.stat-box{padding:12px;background:var(--bg);border-radius:8px;text-align:center;}
+.stat-val{font-size:22px;font-weight:700;}
+.stat-label{font-size:10px;color:var(--muted);margin-top:2px;}
+
+/* ── Flow nodes ── */
+.flow-row{display:flex;align-items:center;gap:0;flex-wrap:wrap;justify-content:center;}
+.flow-node{padding:10px 16px;border-radius:8px;text-align:center;font-size:11px;min-width:100px;}
+.flow-node-icon{font-size:20px;}
+.flow-node-title{font-weight:600;}
+.flow-node-desc{color:var(--muted);}
+.flow-arrow{color:var(--accent);font-size:18px;padding:0 4px;}
+
+/* ── Process detail ── */
+.process-tabs{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap;}
+.process-tabs .btn.active-tab{background:var(--accent);color:#fff;border-color:var(--accent);}
+
+/* ── Section headers in pages ── */
+.page-header{font-size:18px;font-weight:700;margin-bottom:18px;display:flex;align-items:center;gap:10px;padding-bottom:12px;border-bottom:1px solid var(--border);}
+.page-desc{color:var(--muted);font-size:12px;margin-bottom:18px;line-height:1.6;}
+
+/* ── Terminal ── */
+.terminal-container{background:#0a0e14;border:1px solid var(--border);border-radius:10px;overflow:hidden;height:calc(100vh - var(--topbar-h) - 120px);display:flex;flex-direction:column;}
+.terminal-header{background:var(--card);padding:8px 16px;font-size:11px;color:var(--muted);border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;}
+.terminal-output{flex:1;overflow-y:auto;padding:16px;font-family:'SF Mono',Consolas,'Liberation Mono',Menlo,monospace;font-size:12px;line-height:1.7;white-space:pre-wrap;}
+.terminal-input-row{display:flex;align-items:center;padding:10px 16px;border-top:1px solid var(--border);background:rgba(13,17,23,0.6);}
+.terminal-prompt{color:var(--green);font-family:'SF Mono',Consolas,monospace;font-size:12px;margin-right:8px;white-space:nowrap;}
+.terminal-input{flex:1;background:transparent;border:none;color:var(--text);font-family:'SF Mono',Consolas,monospace;font-size:12px;outline:none;}
+.term-info{color:var(--accent);}
+.term-success{color:var(--green);}
+.term-error{color:var(--red);}
+.term-warn{color:var(--yellow);}
+.term-muted{color:var(--muted);}
+
+/* ── Engine page layout ── */
+.engine-info{display:grid;grid-template-columns:2fr 1fr;gap:16px;}
+@media(max-width:900px){.engine-info{grid-template-columns:1fr;}}
+.engine-status{display:flex;gap:8px;align-items:center;margin-bottom:8px;}
 </style>
 </head>
 <body>
 
-<div class="top">
-  <h1>🌐 <span>Orbit</span> OS — Programs</h1>
-  <a href="/admin-analysis.html">← 대시보드로 돌아가기</a>
+<!-- ═══════════════════════ TOP BAR ═══════════════════════ -->
+<div class="topbar">
+  <div class="topbar-brand">
+    <span style="font-size:20px;">🌐</span> <span>Orbit</span> OS
+    <span style="font-size:10px;color:var(--muted);font-weight:400;margin-left:4px;">v2.0</span>
+  </div>
+  <div class="topbar-indicators">
+    <div class="indicator">
+      <div class="indicator-val" id="top-online" style="color:var(--green);">-</div>
+      <div class="indicator-label">온라인</div>
+    </div>
+    <div class="indicator">
+      <div class="indicator-val" id="top-events" style="color:var(--accent);">-</div>
+      <div class="indicator-label">이벤트</div>
+    </div>
+    <div class="indicator">
+      <div class="indicator-val" id="top-db" style="color:var(--yellow);">-</div>
+      <div class="indicator-label">DB</div>
+    </div>
+    <div class="indicator">
+      <div class="indicator-val" id="top-auto" style="color:var(--purple);">-</div>
+      <div class="indicator-label">자동화율</div>
+    </div>
+    <div class="indicator">
+      <div class="indicator-val" id="top-issues" style="color:var(--text);">-</div>
+      <div class="indicator-label">이슈</div>
+    </div>
+  </div>
+  <div class="topbar-links">
+    <a href="/admin-analysis.html">관리자 대시보드</a>
+    <a href="/">3D 뷰</a>
+  </div>
 </div>
 
-<main>
+<!-- ═══════════════════════ SIDEBAR ═══════════════════════ -->
+<div class="sidebar">
+  <div class="sidebar-section">메인</div>
+  <div class="nav-item active" data-page="dashboard">
+    <span class="nav-icon">📊</span><span class="nav-label">대시보드</span>
+  </div>
 
-<!-- ═══ OS 기대 효과 + 운영 현황 시각화 ═══ -->
-<div class="section-title">🎯 Orbit OS 도입 효과</div>
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px;">
+  <div class="sidebar-section">엔진</div>
+  <div class="nav-item" data-page="think">
+    <span class="nav-icon">🧠</span><span class="nav-label">사고 엔진</span>
+    <span class="nav-badge nav-badge-live">LIVE</span>
+  </div>
+  <div class="nav-item" data-page="ideas">
+    <span class="nav-icon">💡</span><span class="nav-label">아이디어</span>
+    <span class="nav-badge nav-badge-live">LIVE</span>
+  </div>
+  <div class="nav-item" data-page="issues">
+    <span class="nav-icon">🚨</span><span class="nav-label">이슈 감지</span>
+    <span class="nav-badge nav-badge-live">LIVE</span>
+  </div>
+  <div class="nav-item" data-page="evolve">
+    <span class="nav-icon">🧬</span><span class="nav-label">자가 진화</span>
+    <span class="nav-badge nav-badge-live">LIVE</span>
+  </div>
 
-  <!-- 왼쪽: Before → After -->
-  <div class="card" style="padding:20px;">
-    <div style="font-weight:700;margin-bottom:14px;font-size:14px;">Before → After</div>
-    <div id="before-after">
-      <div style="display:flex;gap:12px;margin-bottom:10px;">
+  <div class="sidebar-section">도구</div>
+  <div class="nav-item" data-page="parser">
+    <span class="nav-icon">📋</span><span class="nav-label">자동 파서</span>
+    <span class="nav-badge nav-badge-live">LIVE</span>
+  </div>
+  <div class="nav-item" data-page="projects">
+    <span class="nav-icon">📂</span><span class="nav-label">프로젝트</span>
+    <span class="nav-badge nav-badge-live">LIVE</span>
+  </div>
+  <div class="nav-item" data-page="kakao">
+    <span class="nav-icon">💬</span><span class="nav-label">카카오톡</span>
+    <span class="nav-badge nav-badge-dev">DEV</span>
+  </div>
+  <div class="nav-item" data-page="pad">
+    <span class="nav-icon">🖥</span><span class="nav-label">PAD 연동</span>
+    <span class="nav-badge nav-badge-dev">DEV</span>
+  </div>
+
+  <div class="sidebar-section">시스템</div>
+  <div class="nav-item" data-page="conversations" data-link="/conversation-dashboard.html">
+    <span class="nav-icon">📊</span><span class="nav-label">대화 이력</span>
+  </div>
+  <div class="nav-item" data-page="terminal">
+    <span class="nav-icon">⚙️</span><span class="nav-label">터미널</span>
+  </div>
+
+  <div class="sidebar-footer">
+    Orbit OS v2.0<br>
+    <span id="sidebar-time"></span>
+  </div>
+</div>
+
+<!-- ═══════════════════════ MAIN CONTENT ═══════════════════════ -->
+<div class="main">
+
+<!-- ────────────── PAGE: 대시보드 ────────────── -->
+<div class="page active" id="page-dashboard">
+  <div class="page-header">📊 대시보드</div>
+
+  <!-- Before/After + 운영현황 -->
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-title">Before → After</div>
+      <div style="display:flex;gap:12px;">
         <div style="flex:1;padding:12px;background:rgba(248,81,73,0.08);border-radius:8px;border-left:3px solid var(--red);">
           <div style="font-weight:600;color:var(--red);margin-bottom:6px;">Before (수동)</div>
           <div id="ba-before" style="font-size:12px;line-height:1.8;color:var(--muted);">로딩...</div>
@@ -67,452 +226,557 @@ main{max-width:1200px;margin:0 auto;padding:20px 24px;}
         </div>
       </div>
     </div>
-  </div>
-
-  <!-- 오른쪽: 실시간 운영 현황 -->
-  <div class="card" style="padding:20px;">
-    <div style="font-weight:700;margin-bottom:14px;font-size:14px;">📡 실시간 운영 현황</div>
-    <div id="ops-status">로딩...</div>
-  </div>
-</div>
-
-<!-- 절약 효과 바 -->
-<div class="card" style="margin-bottom:20px;padding:20px;">
-  <div style="font-weight:700;margin-bottom:14px;font-size:14px;">⏱ 자동화 시 일일 절약 예상</div>
-  <div id="savings-bars"></div>
-  <div id="savings-total" style="margin-top:12px;font-size:16px;font-weight:700;text-align:right;"></div>
-</div>
-
-<!-- 운영 플로우차트 -->
-<div class="card" style="margin-bottom:20px;padding:20px;">
-  <div style="font-weight:700;margin-bottom:14px;font-size:14px;">🔄 OS 운영 플로우</div>
-  <div style="display:flex;align-items:center;gap:0;flex-wrap:wrap;justify-content:center;" id="flow-chart">
-    <div style="padding:10px 16px;background:rgba(88,166,255,0.1);border-radius:8px;text-align:center;font-size:11px;min-width:100px;">
-      <div style="font-size:20px;">📱</div><div style="font-weight:600;">카카오톡</div><div style="color:var(--muted);">주문 수신</div>
-    </div>
-    <div style="color:var(--accent);font-size:18px;padding:0 4px;">→</div>
-    <div style="padding:10px 16px;background:rgba(188,140,255,0.1);border-radius:8px;text-align:center;font-size:11px;min-width:100px;">
-      <div style="font-size:20px;">🧠</div><div style="font-weight:600;">사고 엔진</div><div style="color:var(--muted);">패턴 인식</div>
-    </div>
-    <div style="color:var(--accent);font-size:18px;padding:0 4px;">→</div>
-    <div style="padding:10px 16px;background:rgba(63,185,80,0.1);border-radius:8px;text-align:center;font-size:11px;min-width:100px;">
-      <div style="font-size:20px;">📋</div><div style="font-weight:600;">자동 파서</div><div style="color:var(--muted);">데이터 구조화</div>
-    </div>
-    <div style="color:var(--accent);font-size:18px;padding:0 4px;">→</div>
-    <div style="padding:10px 16px;background:rgba(210,153,34,0.1);border-radius:8px;text-align:center;font-size:11px;min-width:100px;">
-      <div style="font-size:20px;">🖥</div><div style="font-weight:600;">자동 입력</div><div style="color:var(--muted);">ERP / Excel</div>
-    </div>
-    <div style="color:var(--accent);font-size:18px;padding:0 4px;">→</div>
-    <div style="padding:10px 16px;background:rgba(248,81,73,0.1);border-radius:8px;text-align:center;font-size:11px;min-width:100px;">
-      <div style="font-size:20px;">✅</div><div style="font-weight:600;">검증</div><div style="color:var(--muted);">Vision 대조</div>
-    </div>
-    <div style="color:var(--accent);font-size:18px;padding:0 4px;">→</div>
-    <div style="padding:10px 16px;background:rgba(88,166,255,0.1);border-radius:8px;text-align:center;font-size:11px;min-width:100px;">
-      <div style="font-size:20px;">📊</div><div style="font-weight:600;">대시보드</div><div style="color:var(--muted);">관리자 확인</div>
+    <div class="card">
+      <div class="card-title">📡 실시간 운영 현황</div>
+      <div id="ops-status">로딩...</div>
     </div>
   </div>
-  <div style="text-align:center;margin-top:10px;color:var(--muted);font-size:11px;">↺ 2시간마다 사고 루프가 자동으로 전체 사이클 실행</div>
+
+  <!-- 절약 효과 바 -->
+  <div class="card">
+    <div class="card-title">⏱ 자동화 시 일일 절약 예상</div>
+    <div id="savings-bars"></div>
+    <div id="savings-total" style="margin-top:12px;font-size:16px;font-weight:700;text-align:right;"></div>
+  </div>
+
+  <!-- 운영 플로우 -->
+  <div class="card">
+    <div class="card-title">🔄 OS 운영 플로우</div>
+    <div class="flow-row" id="flow-chart">
+      <div class="flow-node" style="background:rgba(88,166,255,0.1);">
+        <div class="flow-node-icon">📱</div><div class="flow-node-title">카카오톡</div><div class="flow-node-desc">주문 수신</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-node" style="background:rgba(188,140,255,0.1);">
+        <div class="flow-node-icon">🧠</div><div class="flow-node-title">사고 엔진</div><div class="flow-node-desc">패턴 인식</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-node" style="background:rgba(63,185,80,0.1);">
+        <div class="flow-node-icon">📋</div><div class="flow-node-title">자동 파서</div><div class="flow-node-desc">데이터 구조화</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-node" style="background:rgba(210,153,34,0.1);">
+        <div class="flow-node-icon">🖥</div><div class="flow-node-title">자동 입력</div><div class="flow-node-desc">ERP / Excel</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-node" style="background:rgba(248,81,73,0.1);">
+        <div class="flow-node-icon">✅</div><div class="flow-node-title">검증</div><div class="flow-node-desc">Vision 대조</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-node" style="background:rgba(88,166,255,0.1);">
+        <div class="flow-node-icon">📊</div><div class="flow-node-title">대시보드</div><div class="flow-node-desc">관리자 확인</div>
+      </div>
+    </div>
+    <div style="text-align:center;margin-top:10px;color:var(--muted);font-size:11px;">↺ 2시간마다 사고 루프가 자동으로 전체 사이클 실행</div>
+    <div id="flow-caps"></div>
+  </div>
+
+  <!-- 업무별 프로세스 -->
+  <div class="card">
+    <div class="card-title">🔧 업무별 자동화 프로세스 상세</div>
+    <div class="process-tabs" id="process-tabs">
+      <button class="btn active-tab" onclick="showProcess('order',this)">📋 주문 등록</button>
+      <button class="btn" onclick="showProcess('deduction',this)">📊 차감 대조</button>
+      <button class="btn" onclick="showProcess('change',this)">🔄 변경사항</button>
+      <button class="btn" onclick="showProcess('shipping',this)">🚚 출고 관리</button>
+      <button class="btn" onclick="showProcess('closing',this)">💰 매출 마감</button>
+      <button class="btn" onclick="showProcess('defect',this)">⚠️ 불량 처리</button>
+    </div>
+    <div id="process-content"></div>
+  </div>
 </div>
 
-<!-- ═══ 업무별 자동화 상세 프로세스 ═══ -->
-<div class="section-title">🔧 업무별 자동화 프로세스 상세</div>
-
-<div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap;">
-  <button class="btn btn-primary" onclick="showProcess('order')">📋 주문 등록</button>
-  <button class="btn" onclick="showProcess('deduction')">📊 차감 대조</button>
-  <button class="btn" onclick="showProcess('change')">🔄 변경사항</button>
-  <button class="btn" onclick="showProcess('shipping')">🚚 출고 관리</button>
-  <button class="btn" onclick="showProcess('closing')">💰 매출 마감</button>
-  <button class="btn" onclick="showProcess('defect')">⚠️ 불량 처리</button>
-</div>
-
-<div class="card" style="margin-bottom:20px;padding:20px;" id="process-detail">
-  <div id="process-content">
-    <!-- 기본: 주문 등록 -->
-    <div style="font-weight:700;font-size:14px;margin-bottom:14px;">📋 주문 등록 자동화</div>
-
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
-      <div>
-        <div style="font-weight:600;color:var(--red);margin-bottom:8px;">현재 (수동) — 건당 2~3분</div>
-        <div style="font-size:12px;line-height:2;padding:10px;background:rgba(248,81,73,0.05);border-radius:6px;">
-          1. 카카오톡 거래처방에서 주문 메시지 확인<br>
-          2. 품목명/수량 눈으로 파악<br>
-          3. nenova ERP "신규 주문 등록" 화면 열기<br>
-          4. 고객명 입력 → 품목 검색 → 수량 입력 → 저장<br>
-          5. 다음 거래처 카톡방으로 이동<br>
-          6. 하루 554회 반복
+<!-- ────────────── PAGE: 사고 엔진 ────────────── -->
+<div class="page" id="page-think">
+  <div class="page-header">🧠 사고 엔진 <span class="status status-live">LIVE</span></div>
+  <div class="page-desc">전이 확률 + 행동 예측 + 자동 사고 루프. 모든 직원의 [상황]→[행동]→[결과] 패턴 학습. 2시간마다 자동 탐색 + 예측 검증.</div>
+  <div class="engine-info">
+    <div>
+      <div class="card">
+        <div class="card-title">엔진 제어</div>
+        <div style="margin-bottom:12px;">
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            <span class="tag tag-tool">/api/think/*</span>
+            <span class="tag tag-tool">transition_model</span>
+          </div>
+        </div>
+        <div class="btn-group">
+          <button class="btn btn-primary" onclick="runThinkLoop()">사고 루프 실행</button>
+          <button class="btn" onclick="showTransitions()">전이 규칙 보기</button>
+          <button class="btn" onclick="showCapabilities()">확장 가능성</button>
+          <button class="btn" onclick="thinkStatus()">상태 조회</button>
+        </div>
+        <div class="result-area" id="result-think"></div>
+      </div>
+    </div>
+    <div>
+      <div class="card">
+        <div class="card-title">사고 엔진 상태</div>
+        <div id="think-status-box">
+          <div class="stat-box" style="margin-bottom:8px;">
+            <div class="stat-val" id="think-rules" style="color:var(--accent);">-</div>
+            <div class="stat-label">전이 규칙</div>
+          </div>
+          <div class="stat-box" style="margin-bottom:8px;">
+            <div class="stat-val" id="think-loop" style="color:var(--green);">-</div>
+            <div class="stat-label">마지막 루프</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-val" id="think-caps" style="color:var(--purple);">-</div>
+            <div class="stat-label">확장 가능성</div>
+          </div>
         </div>
       </div>
-      <div>
-        <div style="font-weight:600;color:var(--green);margin-bottom:8px;">자동화 후 — 건당 ~3초</div>
-        <div style="font-size:12px;line-height:2;padding:10px;background:rgba(63,185,80,0.05);border-radius:6px;">
-          1. 카톡 화면 캡처 → Vision OCR 자동 읽기<br>
-          2. 클립보드 감지 → 7종 파서 자동 구조화<br>
-          3. 마스터 DB 매칭 (145품목+24거래처)<br>
-          4. PAD/pyautogui가 nenova에 자동 입력<br>
-          5. Vision 캡처로 입력 결과 자동 검증<br>
-          6. 불일치 시 알림 → 수동 확인
-        </div>
-      </div>
-    </div>
-
-    <div style="font-weight:600;margin-bottom:8px;">사용 프로그램 + 기술</div>
-    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">
-      <span class="tag tag-tool">clipboard-watcher.js</span>
-      <span class="tag tag-tool">Vision OCR (Claude CLI)</span>
-      <span class="tag tag-tool">마스터 DB (PostgreSQL)</span>
-      <span class="tag tag-tool">PAD (Power Automate Desktop)</span>
-      <span class="tag tag-tool">pyautogui (좌표 532건 학습)</span>
-      <span class="tag tag-tool">rawInput 검증</span>
-    </div>
-
-    <div style="font-weight:600;margin-bottom:8px;">자동화 플로우</div>
-    <div style="display:flex;align-items:center;gap:0;flex-wrap:wrap;font-size:11px;">
-      <div style="padding:8px 12px;background:rgba(88,166,255,0.1);border-radius:6px;text-align:center;">
-        <div>📱 카톡 메시지</div>
-        <div style="color:var(--muted);">"Catherine:30"</div>
-      </div>
-      <div style="color:var(--accent);padding:0 4px;">→</div>
-      <div style="padding:8px 12px;background:rgba(188,140,255,0.1);border-radius:6px;text-align:center;">
-        <div>📋 클립보드 감지</div>
-        <div style="color:var(--muted);">2초마다 체크</div>
-      </div>
-      <div style="color:var(--accent);padding:0 4px;">→</div>
-      <div style="padding:8px 12px;background:rgba(63,185,80,0.1);border-radius:6px;text-align:center;">
-        <div>🔍 MEL 파서</div>
-        <div style="color:var(--muted);">정확도 100%</div>
-      </div>
-      <div style="color:var(--accent);padding:0 4px;">→</div>
-      <div style="padding:8px 12px;background:rgba(210,153,34,0.1);border-radius:6px;text-align:center;">
-        <div>🗄 마스터 매칭</div>
-        <div style="color:var(--muted);">Catherine→캐더린</div>
-      </div>
-      <div style="color:var(--accent);padding:0 4px;">→</div>
-      <div style="padding:8px 12px;background:rgba(248,81,73,0.1);border-radius:6px;text-align:center;">
-        <div>🖥 PAD 입력</div>
-        <div style="color:var(--muted);">nenova 자동</div>
-      </div>
-      <div style="color:var(--accent);padding:0 4px;">→</div>
-      <div style="padding:8px 12px;background:rgba(63,185,80,0.1);border-radius:6px;text-align:center;">
-        <div>✅ Vision 검증</div>
-        <div style="color:var(--muted);">화면값 대조</div>
-      </div>
-    </div>
-
-    <div style="margin-top:14px;padding:10px;background:var(--bg);border-radius:6px;font-size:12px;">
-      <div style="font-weight:600;margin-bottom:4px;">📊 현재 상태</div>
-      <div>• 파서: <span style="color:var(--green);">LIVE</span> (7종 포맷, 정확도 90~100%)</div>
-      <div>• 마스터 DB: <span style="color:var(--green);">LIVE</span> (145품목 자동학습)</div>
-      <div>• PAD 자동입력: <span style="color:var(--yellow);">DEV</span> (설계 완료, UI 셀렉터 테스트 필요)</div>
-      <div>• Vision 검증: <span style="color:var(--green);">LIVE</span> (297건 분석, 83% 자동화 판정)</div>
-      <div style="margin-top:6px;font-weight:600;">예상 절약: <span style="color:var(--green);">일 170분 (2.8시간)</span></div>
     </div>
   </div>
 </div>
 
-<div class="section-title">⚡ 자동화 프로그램</div>
-<div class="programs">
-
-  <!-- 주문 자동 파서 -->
-  <div class="prog">
-    <span class="status status-live">LIVE</span>
-    <div class="prog-header">
-      <div class="prog-icon">📋</div>
-      <div><div class="prog-name">주문 자동 파서</div><div class="prog-desc">클립보드 발주서 → 구조화 JSON</div></div>
+<!-- ────────────── PAGE: 아이디어 ────────────── -->
+<div class="page" id="page-ideas">
+  <div class="page-header">💡 아이디어 탐색기 <span class="status status-live">LIVE</span></div>
+  <div class="page-desc">에이전트가 스스로 패턴 발견 + 가설 + 검증. 8종 탐색: 야근/품목공유/앱전환/파일반복/Vision미활용/거래처상관/주말근무/미거래품목</div>
+  <div class="engine-info">
+    <div>
+      <div class="card">
+        <div class="card-title">탐색 제어</div>
+        <div style="margin-bottom:12px;">
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            <span class="tag tag-tool">/api/ideas/*</span>
+            <span class="tag tag-tool">agent_ideas</span>
+          </div>
+        </div>
+        <div class="btn-group">
+          <button class="btn btn-primary" onclick="runExplore()">탐색 실행</button>
+          <button class="btn" onclick="showIdeas()">아이디어 목록</button>
+        </div>
+        <div class="result-area" id="result-ideas"></div>
+      </div>
     </div>
-    <div class="prog-body">
-      <div>7개 포맷 자동 감지: MEL / ROSE / 변경 / 재고 / 출고 / 발주 / 테이블</div>
-      <div class="divider"></div>
-      <div><span class="tag tag-tool">clipboard-watcher.js</span> <span class="tag tag-tool">/api/automation/parse</span></div>
+    <div>
+      <div class="card">
+        <div class="card-title">탐색 현황</div>
+        <div id="ideas-status-box">
+          <div class="stat-box" style="margin-bottom:8px;">
+            <div class="stat-val" id="ideas-total" style="color:var(--accent);">-</div>
+            <div class="stat-label">총 아이디어</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-val" id="ideas-types" style="color:var(--purple);">8</div>
+            <div class="stat-label">탐색 유형</div>
+          </div>
+        </div>
+      </div>
     </div>
-    <div class="prog-actions">
-      <button class="btn btn-primary" onclick="testParse()">테스트 실행</button>
-      <button class="btn" onclick="showMaster()">마스터 DB 보기</button>
-    </div>
-    <div class="result" id="result-parse"></div>
   </div>
+</div>
 
-  <!-- 사고 엔진 -->
-  <div class="prog">
-    <span class="status status-live">LIVE</span>
-    <div class="prog-header">
-      <div class="prog-icon">🧠</div>
-      <div><div class="prog-name">사고 엔진</div><div class="prog-desc">전이 확률 + 행동 예측 + 자동 사고 루프</div></div>
+<!-- ────────────── PAGE: 이슈 감지 ────────────── -->
+<div class="page" id="page-issues">
+  <div class="page-header">🚨 이슈 감지기 <span class="status status-live">LIVE</span></div>
+  <div class="page-desc">8규칙 실시간 이슈 스캔: 과거주문 / 반복작업 / 근무공백 / idle / 비업무 / 은행보안 / 주문차감 / 미식별</div>
+  <div class="engine-info">
+    <div>
+      <div class="card">
+        <div class="card-title">스캔 제어</div>
+        <div style="margin-bottom:12px;">
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            <span class="tag tag-tool">/api/issues/scan</span>
+          </div>
+        </div>
+        <div class="btn-group">
+          <button class="btn btn-primary" onclick="runIssueScan()">스캔 실행</button>
+        </div>
+        <div class="result-area" id="result-issues"></div>
+      </div>
     </div>
-    <div class="prog-body">
-      <div>모든 직원의 [상황]→[행동]→[결과] 패턴 학습</div>
-      <div>2시간마다 자동 탐색 + 예측 검증</div>
-      <div class="divider"></div>
-      <div><span class="tag tag-tool">/api/think/*</span> <span class="tag tag-tool">transition_model</span></div>
+    <div>
+      <div class="card">
+        <div class="card-title">이슈 현황</div>
+        <div id="issues-status-box">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+            <div class="stat-box">
+              <div class="stat-val" id="issues-critical" style="color:var(--red);">-</div>
+              <div class="stat-label">Critical</div>
+            </div>
+            <div class="stat-box">
+              <div class="stat-val" id="issues-warning" style="color:var(--yellow);">-</div>
+              <div class="stat-label">Warning</div>
+            </div>
+            <div class="stat-box">
+              <div class="stat-val" id="issues-info" style="color:var(--muted);">-</div>
+              <div class="stat-label">Info</div>
+            </div>
+            <div class="stat-box">
+              <div class="stat-val" id="issues-total" style="color:var(--accent);">-</div>
+              <div class="stat-label">총 이슈</div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
-    <div class="prog-actions">
-      <button class="btn btn-primary" onclick="runThinkLoop()">사고 루프 실행</button>
-      <button class="btn" onclick="showTransitions()">전이 규칙 보기</button>
-      <button class="btn" onclick="showCapabilities()">확장 가능성</button>
-    </div>
-    <div class="result" id="result-think"></div>
   </div>
+</div>
 
-  <!-- 아이디어 탐색기 -->
-  <div class="prog">
-    <span class="status status-live">LIVE</span>
-    <div class="prog-header">
-      <div class="prog-icon">💡</div>
-      <div><div class="prog-name">아이디어 탐색기</div><div class="prog-desc">에이전트가 스스로 패턴 발견 + 가설 + 검증</div></div>
+<!-- ────────────── PAGE: 자가 진화 ────────────── -->
+<div class="page" id="page-evolve">
+  <div class="page-header">🧬 자가 진화 엔진 <span class="status status-live">LIVE</span></div>
+  <div class="page-desc">미분류 정리 + 노이즈 제거 + 학습 점수. 6시간마다: unknown→카테고리 분류, 중복 병합, Vision 누락 감지.</div>
+  <div class="engine-info">
+    <div>
+      <div class="card">
+        <div class="card-title">진화 제어</div>
+        <div style="margin-bottom:12px;">
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            <span class="tag tag-tool">/api/evolve/*</span>
+          </div>
+        </div>
+        <div class="btn-group">
+          <button class="btn btn-primary" onclick="runImprove()">개선 실행</button>
+          <button class="btn" onclick="showHealth()">학습 점수</button>
+        </div>
+        <div class="result-area" id="result-evolve"></div>
+      </div>
     </div>
-    <div class="prog-body">
-      <div>8종 탐색: 야근/품목공유/앱전환/파일반복/Vision미활용/거래처상관/주말근무/미거래품목</div>
-      <div class="divider"></div>
-      <div><span class="tag tag-tool">/api/ideas/*</span> <span class="tag tag-tool">agent_ideas</span></div>
+    <div>
+      <div class="card">
+        <div class="card-title">학습 현황</div>
+        <div id="evolve-status-box">
+          <div class="stat-box" style="margin-bottom:8px;">
+            <div class="stat-val" id="evolve-score" style="color:var(--green);">-</div>
+            <div class="stat-label">학습 점수</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-val" id="evolve-band" style="color:var(--purple);">-</div>
+            <div class="stat-label">등급</div>
+          </div>
+        </div>
+      </div>
     </div>
-    <div class="prog-actions">
-      <button class="btn btn-primary" onclick="runExplore()">탐색 실행</button>
-      <button class="btn" onclick="showIdeas()">아이디어 목록</button>
-    </div>
-    <div class="result" id="result-ideas"></div>
   </div>
+</div>
 
-  <!-- 이슈 감지기 -->
-  <div class="prog">
-    <span class="status status-live">LIVE</span>
-    <div class="prog-header">
-      <div class="prog-icon">🚨</div>
-      <div><div class="prog-name">이슈 감지기</div><div class="prog-desc">8규칙 실시간 이슈 스캔</div></div>
+<!-- ────────────── PAGE: 자동 파서 ────────────── -->
+<div class="page" id="page-parser">
+  <div class="page-header">📋 주문 자동 파서 <span class="status status-live">LIVE</span></div>
+  <div class="page-desc">클립보드 발주서 → 구조화 JSON. 7개 포맷 자동 감지: MEL / ROSE / 변경 / 재고 / 출고 / 발주 / 테이블</div>
+  <div class="engine-info">
+    <div>
+      <div class="card">
+        <div class="card-title">파서 제어</div>
+        <div style="margin-bottom:12px;">
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            <span class="tag tag-tool">clipboard-watcher.js</span>
+            <span class="tag tag-tool">/api/automation/parse</span>
+          </div>
+        </div>
+        <div style="margin-bottom:12px;">
+          <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;">테스트 텍스트 입력:</label>
+          <textarea id="parse-input" style="width:100%;height:60px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:8px;font-size:11px;font-family:inherit;resize:vertical;" placeholder="[MEL] ROSE CHINA / Catherine : 30, Pride : 30, Cream cup : 20">[MEL] ROSE CHINA / Catherine : 30, Pride : 30, Cream cup : 20</textarea>
+        </div>
+        <div class="btn-group">
+          <button class="btn btn-primary" onclick="testParse()">테스트 실행</button>
+          <button class="btn" onclick="showMaster()">마스터 DB 보기</button>
+        </div>
+        <div class="result-area" id="result-parse"></div>
+      </div>
     </div>
-    <div class="prog-body">
-      <div>과거주문 / 반복작업 / 근무공백 / idle / 비업무 / 은행보안 / 주문차감 / 미식별</div>
-      <div class="divider"></div>
-      <div><span class="tag tag-tool">/api/issues/scan</span></div>
+    <div>
+      <div class="card">
+        <div class="card-title">파서 현황</div>
+        <div id="parser-status-box">
+          <div class="stat-box" style="margin-bottom:8px;">
+            <div class="stat-val" style="color:var(--green);">7</div>
+            <div class="stat-label">포맷 유형</div>
+          </div>
+          <div class="stat-box" style="margin-bottom:8px;">
+            <div class="stat-val" id="parser-products" style="color:var(--accent);">-</div>
+            <div class="stat-label">품목</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-val" id="parser-customers" style="color:var(--purple);">-</div>
+            <div class="stat-label">거래처</div>
+          </div>
+        </div>
+      </div>
     </div>
-    <div class="prog-actions">
-      <button class="btn btn-primary" onclick="runIssueScan()">스캔 실행</button>
-    </div>
-    <div class="result" id="result-issues"></div>
   </div>
+</div>
 
-  <!-- 자가 진화 -->
-  <div class="prog">
-    <span class="status status-live">LIVE</span>
-    <div class="prog-header">
-      <div class="prog-icon">🧬</div>
-      <div><div class="prog-name">자가 진화 엔진</div><div class="prog-desc">미분류 정리 + 노이즈 제거 + 학습 점수</div></div>
+<!-- ────────────── PAGE: 프로젝트 ────────────── -->
+<div class="page" id="page-projects">
+  <div class="page-header">📂 프로젝트 필터 <span class="status status-live">LIVE</span></div>
+  <div class="page-desc">고정작업 제외, 진행 중 업무만 표시. 70%+ 매일 등장=고정(필터), 2일+ 8회+=프로젝트(★), 최근2일=신규(🆕)</div>
+  <div class="card">
+    <div class="card-title">프로젝트 조회</div>
+    <div style="margin-bottom:12px;">
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        <span class="tag tag-tool">/api/os/projects</span>
+      </div>
     </div>
-    <div class="prog-body">
-      <div>6시간마다: unknown→카테고리 분류, 중복 병합, Vision 누락 감지</div>
-      <div class="divider"></div>
-      <div><span class="tag tag-tool">/api/evolve/*</span></div>
-    </div>
-    <div class="prog-actions">
-      <button class="btn btn-primary" onclick="runImprove()">개선 실행</button>
-      <button class="btn" onclick="showHealth()">학습 점수</button>
-    </div>
-    <div class="result" id="result-evolve"></div>
-  </div>
-
-  <!-- 프로젝트 필터 -->
-  <div class="prog">
-    <span class="status status-live">LIVE</span>
-    <div class="prog-header">
-      <div class="prog-icon">📂</div>
-      <div><div class="prog-name">프로젝트 필터</div><div class="prog-desc">고정작업 제외, 진행 중 업무만 표시</div></div>
-    </div>
-    <div class="prog-body">
-      <div>70%+ 매일 등장=고정(필터), 2일+ 8회+=프로젝트(★), 최근2일=신규(🆕)</div>
-      <div class="divider"></div>
-      <div><span class="tag tag-tool">/api/os/projects</span></div>
-    </div>
-    <div class="prog-actions">
+    <div class="btn-group" style="margin-top:0;margin-bottom:12px;">
       <button class="btn btn-primary" onclick="showProjects()">프로젝트 보기</button>
     </div>
-    <div class="result" id="result-projects"></div>
+    <div class="result-area" id="result-projects"></div>
   </div>
-
 </div>
 
-<div class="section-title">🔧 개발 중 프로그램</div>
-<div class="programs">
-
-  <!-- 카카오톡 대화 수집기 -->
-  <div class="prog">
-    <span class="status status-dev">DEV</span>
-    <div class="prog-header">
-      <div class="prog-icon">💬</div>
-      <div><div class="prog-name">카카오톡 대화 수집기</div><div class="prog-desc">API 없이 카톡 대화 저장 + 분석</div></div>
+<!-- ────────────── PAGE: 카카오톡 ────────────── -->
+<div class="page" id="page-kakao">
+  <div class="page-header">💬 카카오톡 대화 수집기 <span class="status status-dev">DEV</span></div>
+  <div class="page-desc">API 없이 카톡 대화 저장 + 분석</div>
+  <div class="engine-info">
+    <div>
+      <div class="card">
+        <div class="card-title">수집 방법</div>
+        <div style="font-size:12px;line-height:2;margin-bottom:12px;">
+          <div style="padding:8px;background:rgba(63,185,80,0.05);border-radius:6px;margin-bottom:6px;">
+            <span style="color:var(--green);font-weight:600;">방법 A: Vision OCR</span> — 캡처→대화 추출 (구현됨)
+          </div>
+          <div style="padding:8px;background:rgba(210,153,34,0.05);border-radius:6px;margin-bottom:6px;">
+            <span style="color:var(--yellow);font-weight:600;">방법 B: 로컬 DB</span> — chat.db AES 복호화 (연구 중)
+          </div>
+          <div style="padding:8px;background:rgba(139,148,158,0.05);border-radius:6px;">
+            <span style="color:var(--muted);font-weight:600;">방법 C: 어드민 계정</span> — 모든 채팅방 백업 (기획)
+          </div>
+        </div>
+        <div style="margin-bottom:12px;">
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            <span class="tag tag-tool">/api/think/extract-kakao</span>
+            <span class="tag tag-tool">kakao_messages</span>
+          </div>
+        </div>
+        <div class="btn-group">
+          <button class="btn btn-primary" onclick="extractKakao()">Vision 추출 실행</button>
+        </div>
+        <div class="result-area" id="result-kakao"></div>
+      </div>
     </div>
-    <div class="prog-body">
-      <div>방법 A: Vision OCR (캡처→대화 추출) — 구현됨</div>
-      <div>방법 B: 로컬 DB (chat.db AES 복호화) — 연구 중</div>
-      <div>방법 C: 어드민 카톡 계정 (모든 채팅방 백업) — 기획</div>
-      <div class="divider"></div>
-      <div><span class="tag tag-tool">/api/think/extract-kakao</span> <span class="tag tag-tool">kakao_messages</span></div>
-    </div>
-    <div class="prog-actions">
-      <button class="btn btn-primary" onclick="extractKakao()">Vision 추출</button>
-    </div>
-    <div class="result" id="result-kakao"></div>
-  </div>
-
-  <!-- Excel 자동 입력기 -->
-  <div class="prog">
-    <span class="status status-dev">DEV</span>
-    <div class="prog-header">
-      <div class="prog-icon">📊</div>
-      <div><div class="prog-name">Excel 자동 입력기</div><div class="prog-desc">파서 결과 → Excel 셀 자동 입력</div></div>
-    </div>
-    <div class="prog-body">
-      <div>openpyxl: 발주서/차감내역/물량표 자동 생성</div>
-      <div>win32com: Excel COM 제어 (실시간 셀 입력)</div>
-      <div>시뮬레이션: 태림12차 발주서 → 차감내역 자동 생성 테스트 완료</div>
-      <div class="divider"></div>
-      <div><span class="tag tag-tool">orbit-auto.py --target=excel</span></div>
-    </div>
-    <div class="prog-actions">
-      <button class="btn" disabled>CLI 테스트 (준비 중)</button>
-    </div>
-  </div>
-
-  <!-- nenova ERP 자동화 -->
-  <div class="prog">
-    <span class="status status-dev">DEV</span>
-    <div class="prog-header">
-      <div class="prog-icon">🖥</div>
-      <div><div class="prog-name">nenova ERP 자동화</div><div class="prog-desc">주문등록 화면 자동 입력</div></div>
-    </div>
-    <div class="prog-body">
-      <div>PAD (Power Automate Desktop): UI 셀렉터 방식 — 1순위</div>
-      <div>pyautogui: 좌표 클릭 방식 — 2순위 (마우스 좌표 532건 학습)</div>
-      <div>pywinauto: Win32 UI Automation — 3순위</div>
-      <div class="divider"></div>
-      <div><span class="tag tag-tool">orbit-auto.py --target=nenova</span></div>
-    </div>
-    <div class="prog-actions">
-      <button class="btn" disabled>PAD 플로우 (준비 중)</button>
+    <div>
+      <div class="card">
+        <div class="card-title">수집 현황</div>
+        <div class="stat-box" style="margin-bottom:8px;">
+          <div class="stat-val" id="kakao-count" style="color:var(--accent);">-</div>
+          <div class="stat-label">수집 메시지</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-val" style="color:var(--yellow);">A</div>
+          <div class="stat-label">활성 방법</div>
+        </div>
+      </div>
     </div>
   </div>
-
 </div>
 
-<div class="section-title">📋 기획 중 프로그램</div>
-<div class="programs">
-
-  <div class="prog">
-    <span class="status status-plan">PLAN</span>
-    <div class="prog-header">
-      <div class="prog-icon">📱</div>
-      <div><div class="prog-name">카톡 주문 자동 감지</div><div class="prog-desc">카톡 메시지에서 주문 자동 인식 → ERP 입력 트리거</div></div>
+<!-- ────────────── PAGE: PAD 연동 ────────────── -->
+<div class="page" id="page-pad">
+  <div class="page-header">🖥 PAD / 자동 입력 연동 <span class="status status-dev">DEV</span></div>
+  <div class="page-desc">파서 결과 → nenova ERP / Excel 자동 입력</div>
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-title">🖥 nenova ERP 자동화</div>
+      <div style="font-size:12px;line-height:2;margin-bottom:12px;">
+        <div><strong>PAD (Power Automate Desktop)</strong>: UI 셀렉터 방식 — 1순위</div>
+        <div><strong>pyautogui</strong>: 좌표 클릭 방식 — 2순위 (마우스 좌표 532건 학습)</div>
+        <div><strong>pywinauto</strong>: Win32 UI Automation — 3순위</div>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">
+        <span class="tag tag-tool">orbit-auto.py --target=nenova</span>
+      </div>
+      <div style="padding:10px;background:var(--bg);border-radius:6px;font-size:12px;">
+        PAD 자동입력: <span style="color:var(--yellow);">DEV</span> (설계 완료, UI 셀렉터 테스트 필요)
+      </div>
     </div>
-    <div class="prog-body">카톡 대화 수집 50건+ 쌓이면 주문 키워드 패턴 학습 시작</div>
-  </div>
-
-  <div class="prog">
-    <span class="status status-plan">PLAN</span>
-    <div class="prog-header">
-      <div class="prog-icon">📈</div>
-      <div><div class="prog-name">거래처 주문 예측</div><div class="prog-desc">거래처별 주문 이력 → 다음 주문 품목/수량/시기 예측</div></div>
+    <div class="card">
+      <div class="card-title">📊 Excel 자동 입력기</div>
+      <div style="font-size:12px;line-height:2;margin-bottom:12px;">
+        <div><strong>openpyxl</strong>: 발주서/차감내역/물량표 자동 생성</div>
+        <div><strong>win32com</strong>: Excel COM 제어 (실시간 셀 입력)</div>
+        <div>시뮬레이션: 태림12차 발주서 → 차감내역 자동 생성 테스트 완료</div>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">
+        <span class="tag tag-tool">orbit-auto.py --target=excel</span>
+      </div>
+      <div style="padding:10px;background:var(--bg);border-radius:6px;font-size:12px;">
+        Excel 자동화: <span style="color:var(--yellow);">DEV</span> (시뮬레이션 완료)
+      </div>
     </div>
-    <div class="prog-body">거래처별 주문 이력 30건+ 필요. 현재 22곳 등록, 데이터 축적 중</div>
   </div>
-
-  <div class="prog">
-    <span class="status status-plan">PLAN</span>
-    <div class="prog-header">
-      <div class="prog-icon">🤖</div>
-      <div><div class="prog-name">전체 워크플로우 자동화</div><div class="prog-desc">카톡→주문→차감→출고→보고 원클릭</div></div>
+  <div class="card">
+    <div class="card-title">📋 기획 중</div>
+    <div class="grid-2" style="gap:10px;">
+      <div style="padding:12px;background:var(--bg);border-radius:8px;">
+        <div style="font-weight:600;margin-bottom:4px;">📱 카톡 주문 자동 감지</div>
+        <div style="font-size:11px;color:var(--muted);">카톡 메시지에서 주문 자동 인식 → ERP 입력 트리거. 카톡 대화 수집 50건+ 쌓이면 주문 키워드 패턴 학습 시작</div>
+      </div>
+      <div style="padding:12px;background:var(--bg);border-radius:8px;">
+        <div style="font-weight:600;margin-bottom:4px;">📈 거래처 주문 예측</div>
+        <div style="font-size:11px;color:var(--muted);">거래처별 주문 이력 → 다음 주문 품목/수량/시기 예측. 거래처별 주문 이력 30건+ 필요. 현재 22곳 등록</div>
+      </div>
+      <div style="padding:12px;background:var(--bg);border-radius:8px;">
+        <div style="font-weight:600;margin-bottom:4px;">🤖 전체 워크플로우 자동화</div>
+        <div style="font-size:11px;color:var(--muted);">카톡→주문→차감→출고→보고 원클릭. 전이 규칙 70%+ 체인 3단계 연결 필요. 현재 118건 학습됨</div>
+      </div>
+      <div style="padding:12px;background:var(--bg);border-radius:8px;">
+        <div style="font-weight:600;margin-bottom:4px;">📝 일일 자동 리포트</div>
+        <div style="font-size:11px;color:var(--muted);">18:00 KST 자동 요약 → 관리자 카톡 전송. OS status + issues + projects 집계</div>
+      </div>
     </div>
-    <div class="prog-body">전이 규칙 70%+ 체인 3단계 연결 필요. 현재 118건 학습됨</div>
   </div>
-
-  <div class="prog">
-    <span class="status status-plan">PLAN</span>
-    <div class="prog-header">
-      <div class="prog-icon">📝</div>
-      <div><div class="prog-name">일일 자동 리포트</div><div class="prog-desc">18:00 KST 자동 요약 → 관리자 카톡 전송</div></div>
-    </div>
-    <div class="prog-body">OS status + issues + projects 집계 → 텍스트 요약 자동 생성</div>
-  </div>
-
 </div>
 
-</main>
+<!-- ────────────── PAGE: 터미널 ────────────── -->
+<div class="page" id="page-terminal">
+  <div class="page-header">⚙️ 터미널</div>
+  <div class="terminal-container">
+    <div class="terminal-header">
+      <span>Orbit OS Terminal v2.0</span>
+      <span id="terminal-status" style="color:var(--green);">● 연결됨</span>
+    </div>
+    <div class="terminal-output" id="terminal-output"></div>
+    <div class="terminal-input-row">
+      <span class="terminal-prompt">orbit&gt;</span>
+      <input type="text" class="terminal-input" id="terminal-input" placeholder="명령어를 입력하세요... (help 입력)" autocomplete="off" spellcheck="false">
+    </div>
+  </div>
+</div>
+
+</div><!-- /.main -->
 
 <script>
+/* ═══════════════════════ CORE ═══════════════════════ */
 const TOKEN = localStorage.getItem('orbit_token');
 const H = {'Authorization':'Bearer '+(TOKEN||''),'Content-Type':'application/json'};
 async function api(url,opts){try{const r=await fetch(url,{headers:H,...opts});return r.ok?r.json():{};}catch{return {};}}
 
-function show(id,text){const el=document.getElementById(id);el.style.display='block';el.textContent=typeof text==='string'?text:JSON.stringify(text,null,2);}
+function showResult(id, text){
+  const el = document.getElementById(id);
+  el.classList.add('visible');
+  el.textContent = typeof text === 'string' ? text : JSON.stringify(text, null, 2);
+}
 
+/* ═══════════════════════ NAVIGATION ═══════════════════════ */
+const navItems = document.querySelectorAll('.nav-item');
+const pages = document.querySelectorAll('.page');
+
+navItems.forEach(item => {
+  item.addEventListener('click', () => {
+    const link = item.getAttribute('data-link');
+    if (link) { window.location.href = link; return; }
+    const pageId = item.getAttribute('data-page');
+    navItems.forEach(n => n.classList.remove('active'));
+    item.classList.add('active');
+    pages.forEach(p => p.classList.remove('active'));
+    const target = document.getElementById('page-' + pageId);
+    if (target) target.classList.add('active');
+  });
+});
+
+/* ═══════════════════════ SIDEBAR CLOCK ═══════════════════════ */
+function updateClock(){
+  const now = new Date();
+  const kst = new Date(now.getTime() + (9*60*60*1000 - now.getTimezoneOffset()*60*1000));
+  document.getElementById('sidebar-time').textContent = kst.toLocaleString('ko-KR',{timeZone:'Asia/Seoul'});
+}
+updateClock();
+setInterval(updateClock, 1000);
+
+/* ═══════════════════════ API FUNCTIONS ═══════════════════════ */
 async function testParse(){
-  show('result-parse','테스트 중...');
-  const d=await api('/api/automation/parse',{method:'POST',body:JSON.stringify({text:'[MEL] ROSE CHINA / Catherine : 30, Pride : 30, Cream cup : 20'})});
-  show('result-parse',`포맷: ${d.formatType}\n품목: ${d.stats?.totalItems}건, 신뢰도: ${d.stats?.avgConfidence}\n\n${(d.orders||[]).map(o=>`  ${o.product} x${o.quantity} (${o.origin})`).join('\n')}`);
-}
-async function showMaster(){
-  show('result-parse','로딩...');
-  const d=await api('/api/automation/master');
-  show('result-parse',`품목: ${d.products?.count}건\n거래처: ${d.customers?.count}건\n포맷: ${d.formats?.count}종`);
-}
-async function runThinkLoop(){
-  show('result-think','사고 루프 실행 중...');
-  const d=await api('/api/think/run',{method:'POST'});
-  const r=d.results||{};
-  show('result-think',`학습: ${r.learn}\n검증: ${r.verify}\n카톡: ${r.kakao}\n확장: ${(r.capabilities||[]).join(', ')||'없음'}`);
-}
-async function showTransitions(){
-  show('result-think','로딩...');
-  const d=await api('/api/think/transitions');
-  show('result-think',`전이 규칙: ${d.count}건\n\n${(d.transitions||[]).slice(0,10).map(t=>`${t.from_state?.substring(0,20)} → ${t.to_state?.substring(0,20)} | ${Math.round(t.probability*100)}%`).join('\n')}`);
-}
-async function showCapabilities(){
-  show('result-think','로딩...');
-  const d=await api('/api/think/capabilities');
-  show('result-think',(d.capabilities||[]).map(c=>`[${Math.round(c.feasibility*100)}%] ${c.newCapability}\n  현재: ${c.currentData}\n  필요: ${c.additionalNeeded}`).join('\n\n'));
-}
-async function runExplore(){
-  show('result-ideas','탐색 중...');
-  const d=await api('/api/ideas/explore',{method:'POST'});
-  show('result-ideas',`발견: ${d.explored}개, 저장: ${d.saved}개\n\n${(d.ideas||[]).slice(0,5).map(i=>`[${i.type}] ${i.title}`).join('\n')}`);
-}
-async function showIdeas(){
-  show('result-ideas','로딩...');
-  const d=await api('/api/ideas');
-  show('result-ideas',`총: ${d.total}건\n\n${(d.ideas||[]).slice(0,10).map(i=>`[${i.status}] ${i.title}`).join('\n')}`);
-}
-async function runIssueScan(){
-  show('result-issues','스캔 중...');
-  const d=await api('/api/issues/scan');
-  const s=d.summary||{};
-  show('result-issues',`총 ${s.total}건: 🔴${s.critical} 🟡${s.warning} ⚪${s.info}\n\n${(d.issues||[]).slice(0,8).map(i=>`${i.severity==='critical'?'🔴':i.severity==='warning'?'🟡':'⚪'} [${i.rule}] ${i.detail?.substring(0,55)}`).join('\n')}`);
-}
-async function runImprove(){
-  show('result-evolve','개선 실행 중...');
-  const d=await api('/api/evolve/improve',{method:'POST'});
-  show('result-evolve',`처리: ${d.totalActions}건\n점수: ${d.learningScoreAfter}\n\n${(d.improvements||[]).map(i=>`✅ ${i.detail}`).join('\n')}\n\n${d.message}`);
-}
-async function showHealth(){
-  show('result-evolve','로딩...');
-  const d=await api('/api/evolve/health');
-  show('result-evolve',`학습 점수: ${d.learningScore}/100 (${d.scoreBand})\n\n품목분류: ${d.breakdown?.masterClassified}%\n파싱신뢰: ${d.breakdown?.parseConfidence}%\nVision: ${d.breakdown?.visionCoverage}%\nrawInput: ${d.breakdown?.rawInputCoverage}%\n\n${(d.suggestions||[]).map(s=>`[${s.priority}] ${s.action}`).join('\n')}`);
-}
-async function showProjects(){
-  show('result-projects','로딩...');
-  const d=await api('/api/os/projects?days=7');
-  let t=`분석: ${d.analyzedDays}일\n\n`;
-  for(const m of (d.members||[])){
-    t+=`━ ${m.name} (고정 ${m.routineFiltered}개 필터)\n`;
-    for(const p of (m.projects||[]).slice(0,4)) t+=`  ★ ${p.window?.substring(0,30)} ${p.total}건\n`;
-    for(const n of (m.newItems||[]).slice(0,3)) t+=`  🆕 ${n.window?.substring(0,30)} ${n.total}건\n`;
-    t+='\n';
-  }
-  show('result-projects',t);
-}
-async function extractKakao(){
-  show('result-kakao','추출 중...');
-  const d=await api('/api/think/extract-kakao',{method:'POST'});
-  show('result-kakao',`스캔: ${d.scanned}건\n추출: ${d.extracted}건`);
+  showResult('result-parse','테스트 중...');
+  const text = document.getElementById('parse-input').value;
+  const d = await api('/api/automation/parse',{method:'POST',body:JSON.stringify({text})});
+  showResult('result-parse',`포맷: ${d.formatType}\n품목: ${d.stats?.totalItems}건, 신뢰도: ${d.stats?.avgConfidence}\n\n${(d.orders||[]).map(o=>`  ${o.product} x${o.quantity} (${o.origin})`).join('\n')}`);
 }
 
-// ═══ 업무별 자동화 프로세스 상세 ═══
+async function showMaster(){
+  showResult('result-parse','로딩...');
+  const d = await api('/api/automation/master');
+  showResult('result-parse',`품목: ${d.products?.count}건\n거래처: ${d.customers?.count}건\n포맷: ${d.formats?.count}종`);
+}
+
+async function runThinkLoop(){
+  showResult('result-think','사고 루프 실행 중...');
+  const d = await api('/api/think/run',{method:'POST'});
+  const r = d.results||{};
+  showResult('result-think',`학습: ${r.learn}\n검증: ${r.verify}\n카톡: ${r.kakao}\n확장: ${(r.capabilities||[]).join(', ')||'없음'}`);
+}
+
+async function showTransitions(){
+  showResult('result-think','로딩...');
+  const d = await api('/api/think/transitions');
+  showResult('result-think',`전이 규칙: ${d.count}건\n\n${(d.transitions||[]).slice(0,10).map(t=>`${t.from_state?.substring(0,20)} → ${t.to_state?.substring(0,20)} | ${Math.round(t.probability*100)}%`).join('\n')}`);
+}
+
+async function showCapabilities(){
+  showResult('result-think','로딩...');
+  const d = await api('/api/think/capabilities');
+  showResult('result-think',(d.capabilities||[]).map(c=>`[${Math.round(c.feasibility*100)}%] ${c.newCapability}\n  현재: ${c.currentData}\n  필요: ${c.additionalNeeded}`).join('\n\n'));
+}
+
+async function thinkStatus(){
+  showResult('result-think','로딩...');
+  const d = await api('/api/think/status');
+  showResult('result-think', JSON.stringify(d, null, 2));
+}
+
+async function runExplore(){
+  showResult('result-ideas','탐색 중...');
+  const d = await api('/api/ideas/explore',{method:'POST'});
+  showResult('result-ideas',`발견: ${d.explored}개, 저장: ${d.saved}개\n\n${(d.ideas||[]).slice(0,5).map(i=>`[${i.type}] ${i.title}`).join('\n')}`);
+}
+
+async function showIdeas(){
+  showResult('result-ideas','로딩...');
+  const d = await api('/api/ideas');
+  showResult('result-ideas',`총: ${d.total}건\n\n${(d.ideas||[]).slice(0,10).map(i=>`[${i.status}] ${i.title}`).join('\n')}`);
+}
+
+async function runIssueScan(){
+  showResult('result-issues','스캔 중...');
+  const d = await api('/api/issues/scan');
+  const s = d.summary||{};
+  showResult('result-issues',`총 ${s.total}건: 🔴${s.critical} 🟡${s.warning} ⚪${s.info}\n\n${(d.issues||[]).slice(0,8).map(i=>`${i.severity==='critical'?'🔴':i.severity==='warning'?'🟡':'⚪'} [${i.rule}] ${i.detail?.substring(0,55)}`).join('\n')}`);
+  // Update sidebar stats
+  document.getElementById('issues-critical').textContent = s.critical || 0;
+  document.getElementById('issues-warning').textContent = s.warning || 0;
+  document.getElementById('issues-info').textContent = s.info || 0;
+  document.getElementById('issues-total').textContent = s.total || 0;
+}
+
+async function runImprove(){
+  showResult('result-evolve','개선 실행 중...');
+  const d = await api('/api/evolve/improve',{method:'POST'});
+  showResult('result-evolve',`처리: ${d.totalActions}건\n점수: ${d.learningScoreAfter}\n\n${(d.improvements||[]).map(i=>`✅ ${i.detail}`).join('\n')}\n\n${d.message}`);
+}
+
+async function showHealth(){
+  showResult('result-evolve','로딩...');
+  const d = await api('/api/evolve/health');
+  showResult('result-evolve',`학습 점수: ${d.learningScore}/100 (${d.scoreBand})\n\n품목분류: ${d.breakdown?.masterClassified}%\n파싱신뢰: ${d.breakdown?.parseConfidence}%\nVision: ${d.breakdown?.visionCoverage}%\nrawInput: ${d.breakdown?.rawInputCoverage}%\n\n${(d.suggestions||[]).map(s=>`[${s.priority}] ${s.action}`).join('\n')}`);
+  document.getElementById('evolve-score').textContent = d.learningScore || '-';
+  document.getElementById('evolve-band').textContent = d.scoreBand || '-';
+}
+
+async function showProjects(){
+  showResult('result-projects','로딩...');
+  const d = await api('/api/os/projects?days=7');
+  let t = `분석: ${d.analyzedDays}일\n\n`;
+  for (const m of (d.members||[])){
+    t += `━ ${m.name} (고정 ${m.routineFiltered}개 필터)\n`;
+    for (const p of (m.projects||[]).slice(0,4)) t += `  ★ ${p.window?.substring(0,30)} ${p.total}건\n`;
+    for (const n of (m.newItems||[]).slice(0,3)) t += `  🆕 ${n.window?.substring(0,30)} ${n.total}건\n`;
+    t += '\n';
+  }
+  showResult('result-projects', t);
+}
+
+async function extractKakao(){
+  showResult('result-kakao','추출 중...');
+  const d = await api('/api/think/extract-kakao',{method:'POST'});
+  showResult('result-kakao',`스캔: ${d.scanned}건\n추출: ${d.extracted}건`);
+}
+
+/* ═══════════════════════ PROCESS DETAIL ═══════════════════════ */
 const PROCESSES = {
   order: `<div style="font-weight:700;font-size:14px;margin-bottom:14px;">📋 주문 등록 자동화</div>
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
@@ -520,7 +784,28 @@ const PROCESSES = {
 <div><div style="font-weight:600;color:var(--green);margin-bottom:8px;">자동화 — 건당 ~3초</div><div style="font-size:12px;line-height:2;padding:10px;background:rgba(63,185,80,0.05);border-radius:6px;">1. 카톡 캡처→Vision OCR 자동 읽기<br>2. 클립보드 감지→7종 파서 구조화<br>3. 마스터 DB 매칭 (145품목)<br>4. PAD가 nenova에 자동 입력<br>5. Vision으로 결과 자동 검증</div></div></div>
 <div style="font-weight:600;margin-bottom:6px;">사용 프로그램</div>
 <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px;"><span class="tag tag-tool">clipboard-watcher.js</span><span class="tag tag-tool">Vision OCR</span><span class="tag tag-tool">마스터 DB</span><span class="tag tag-tool">PAD</span><span class="tag tag-tool">pyautogui</span></div>
-<div style="padding:10px;background:var(--bg);border-radius:6px;font-size:12px;">파서: <span style="color:var(--green)">LIVE</span> | PAD 입력: <span style="color:var(--yellow)">DEV</span> | 예상 절약: <strong style="color:var(--green)">일 170분</strong></div>`,
+<div style="font-weight:600;margin-bottom:6px;">자동화 플로우</div>
+<div class="flow-row" style="justify-content:flex-start;gap:0;">
+  <div class="flow-node" style="background:rgba(88,166,255,0.1);padding:8px 12px;min-width:auto;"><div>📱 카톡 메시지</div><div style="color:var(--muted);font-size:10px;">"Catherine:30"</div></div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-node" style="background:rgba(188,140,255,0.1);padding:8px 12px;min-width:auto;"><div>📋 클립보드 감지</div><div style="color:var(--muted);font-size:10px;">2초마다 체크</div></div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-node" style="background:rgba(63,185,80,0.1);padding:8px 12px;min-width:auto;"><div>🔍 MEL 파서</div><div style="color:var(--muted);font-size:10px;">정확도 100%</div></div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-node" style="background:rgba(210,153,34,0.1);padding:8px 12px;min-width:auto;"><div>🗄 마스터 매칭</div><div style="color:var(--muted);font-size:10px;">Catherine→캐더린</div></div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-node" style="background:rgba(248,81,73,0.1);padding:8px 12px;min-width:auto;"><div>🖥 PAD 입력</div><div style="color:var(--muted);font-size:10px;">nenova 자동</div></div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-node" style="background:rgba(63,185,80,0.1);padding:8px 12px;min-width:auto;"><div>✅ Vision 검증</div><div style="color:var(--muted);font-size:10px;">화면값 대조</div></div>
+</div>
+<div style="margin-top:14px;padding:10px;background:var(--bg);border-radius:6px;font-size:12px;">
+  <div style="font-weight:600;margin-bottom:4px;">📊 현재 상태</div>
+  <div>• 파서: <span style="color:var(--green);">LIVE</span> (7종 포맷, 정확도 90~100%)</div>
+  <div>• 마스터 DB: <span style="color:var(--green);">LIVE</span> (145품목 자동학습)</div>
+  <div>• PAD 자동입력: <span style="color:var(--yellow);">DEV</span> (설계 완료, UI 셀렉터 테스트 필요)</div>
+  <div>• Vision 검증: <span style="color:var(--green);">LIVE</span> (297건 분석, 83% 자동화 판정)</div>
+  <div style="margin-top:6px;font-weight:600;">예상 절약: <span style="color:var(--green);">일 170분 (2.8시간)</span></div>
+</div>`,
 
   deduction: `<div style="font-weight:700;font-size:14px;margin-bottom:14px;">📊 차감 대조 자동화</div>
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
@@ -565,19 +850,16 @@ const PROCESSES = {
 <div style="font-weight:600;margin-bottom:6px;">사용 프로그램</div>
 <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px;"><span class="tag tag-tool">damage_report 파서</span><span class="tag tag-tool">이슈 감지기</span><span class="tag tag-tool">openpyxl</span><span class="tag tag-tool">마스터 DB (공급사별 집계)</span></div>
 <div style="font-size:11px;">클립보드: "돈셀 2 파손 / 문라이트 2 파손 / 사가 9 파손"<br>→ 파서: [{product:"돈셀",qty:2,type:"damage"}, ...]<br>→ 차감내역 자동 반영 + 공급사 불량률 집계</div>
-<div style="margin-top:10px;padding:10px;background:var(--bg);border-radius:6px;font-size:12px;">키워드 감지: <span style="color:var(--green)">LIVE</span> | 파서: <span style="color:var(--yellow)">DEV</span> | 자동 집계: <span style="color:var(--muted)">PLAN</span> | 예상 절약: <strong style="color:var(--green)">건당 10분</strong></div>`,
+<div style="margin-top:10px;padding:10px;background:var(--bg);border-radius:6px;font-size:12px;">키워드 감지: <span style="color:var(--green)">LIVE</span> | 파서: <span style="color:var(--yellow)">DEV</span> | 자동 집계: <span style="color:var(--muted)">PLAN</span> | 예상 절약: <strong style="color:var(--green)">건당 10분</strong></div>`
 };
 
-function showProcess(key) {
-  document.getElementById('process-content').innerHTML = PROCESSES[key] || '<div class="empty">준비 중</div>';
-  // 버튼 활성화 표시
-  document.querySelectorAll('#process-detail').forEach(el => {
-    el.previousElementSibling?.querySelectorAll('.btn').forEach(b => b.classList.remove('btn-primary'));
-  });
-  event.target.classList.add('btn-primary');
+function showProcess(key, btn) {
+  document.getElementById('process-content').innerHTML = PROCESSES[key] || '<div style="color:var(--muted);">준비 중</div>';
+  document.querySelectorAll('#process-tabs .btn').forEach(b => b.classList.remove('active-tab'));
+  if (btn) btn.classList.add('active-tab');
 }
 
-// ═══ 상단 시각화: Before/After + 운영현황 + 절약효과 ═══
+/* ═══════════════════════ LOAD OS VISUALS (Dashboard) ═══════════════════════ */
 async function loadOSVisuals(){
   try {
     const [os, struct, issues, evolve, caps, think] = await Promise.all([
@@ -591,11 +873,18 @@ async function loadOSVisuals(){
     const c = os.company||{};
     const db = os.database||{};
     const members = struct.members||[];
-    const topMember = members[0]||{};
     const iss = issues.summary||{};
     const tm = think.transitionModel||{};
 
-    // Before / After
+    // ── Top bar indicators ──
+    document.getElementById('top-online').textContent = `${c.onlineMembers||0}/${c.totalMembers||0}`;
+    document.getElementById('top-events').textContent = (db.totalEvents||0).toLocaleString();
+    document.getElementById('top-db').textContent = `${db.sizeMB||0}MB`;
+    document.getElementById('top-auto').textContent = `${a.automationRate||0}%`;
+    document.getElementById('top-issues').textContent = iss.total||0;
+    document.getElementById('top-issues').style.color = (iss.critical > 0) ? 'var(--red)' : 'var(--green)';
+
+    // ── Before / After ──
     document.getElementById('ba-before').innerHTML = `
       ● 카톡 주문 → 수동 입력 (건당 2~3분)<br>
       ● Excel 발주서 ↔ ERP 대조 (수동)<br>
@@ -615,7 +904,7 @@ async function loadOSVisuals(){
       <div style="margin-top:8px;font-weight:600;color:var(--green);">일 ~7시간 절약 예상</div>
     `;
 
-    // 운영 현황
+    // ── 운영 현황 ──
     document.getElementById('ops-status').innerHTML = `
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
         <div style="padding:8px;background:var(--bg);border-radius:6px;">
@@ -646,13 +935,13 @@ async function loadOSVisuals(){
       <div style="margin-top:8px;font-size:11px;color:var(--muted);">DB: ${db.sizeMB||0}MB / ${db.limitMB||0}MB (${db.usagePct||0}%)</div>
     `;
 
-    // 절약 효과 바
+    // ── 절약 효과 바 ──
     const savings = [
       {name:'카톡→주문 자동입력', min:170, color:'var(--accent)', who:'조현욱'},
       {name:'카톡→Excel 전사', min:120, color:'var(--green)', who:'박성수'},
       {name:'변경사항 자동 파싱', min:60, color:'var(--purple)', who:'전원'},
       {name:'차감내역 자동 대조', min:40, color:'var(--yellow)', who:'조현욱'},
-      {name:'출고 내역서 자동화', min:30, color:'var(--cyan,#39d2c0)', who:'wbk'},
+      {name:'출고 내역서 자동화', min:30, color:'#39d2c0', who:'wbk'},
     ];
     const maxMin = Math.max(...savings.map(s=>s.min));
     let bh = '';
@@ -670,10 +959,9 @@ async function loadOSVisuals(){
     const totalMin = savings.reduce((s,x)=>s+x.min,0);
     document.getElementById('savings-total').innerHTML = `<span style="color:var(--green);">총 일일 절약: ${totalMin}분 (${(totalMin/60).toFixed(1)}시간)</span> <span style="color:var(--muted);font-size:12px;">/ 5인 기준</span>`;
 
-    // 확장 가능성 top 3
+    // ── 확장 가능성 TOP 3 ──
     const topCaps = (caps.capabilities||[]).slice(0,3);
     if (topCaps.length) {
-      const fc = document.getElementById('flow-chart');
       let capHtml = '<div style="width:100%;margin-top:14px;padding-top:12px;border-top:1px solid var(--border);">';
       capHtml += '<div style="font-size:11px;color:var(--muted);margin-bottom:6px;">🚀 사고 엔진이 발견한 확장 가능성 TOP 3:</div>';
       for (const cap of topCaps) {
@@ -681,12 +969,310 @@ async function loadOSVisuals(){
         capHtml += `<div style="padding:3px 0;font-size:11px;"><span style="color:${pct>=80?'var(--green)':pct>=50?'var(--yellow)':'var(--muted)'};">[${pct}%]</span> ${cap.newCapability.substring(0,55)}</div>`;
       }
       capHtml += '</div>';
-      fc.insertAdjacentHTML('afterend', capHtml);
+      document.getElementById('flow-caps').innerHTML = capHtml;
     }
+
+    // ── Update engine page side panels ──
+    document.getElementById('think-rules').textContent = tm.rules || 0;
+    document.getElementById('think-loop').textContent = think.lastLoop ? new Date(think.lastLoop).toLocaleTimeString('ko-KR') : '-';
+    document.getElementById('think-caps').textContent = topCaps.length;
+    document.getElementById('evolve-score').textContent = evolve.learningScore || '-';
+    document.getElementById('evolve-band').textContent = evolve.scoreBand || '-';
+    document.getElementById('issues-critical').textContent = iss.critical || 0;
+    document.getElementById('issues-warning').textContent = iss.warning || 0;
+    document.getElementById('issues-info').textContent = iss.info || 0;
+    document.getElementById('issues-total').textContent = iss.total || 0;
+
+    // parser status
+    const master = await api('/api/automation/master');
+    document.getElementById('parser-products').textContent = master.products?.count || '-';
+    document.getElementById('parser-customers').textContent = master.customers?.count || '-';
+
+    // ideas count
+    const ideasData = await api('/api/ideas');
+    document.getElementById('ideas-total').textContent = ideasData.total || '-';
+
   } catch(e) { console.error('loadOSVisuals', e); }
 }
 
-document.addEventListener('DOMContentLoaded', loadOSVisuals);
+/* ═══════════════════════ TERMINAL ═══════════════════════ */
+const termOutput = document.getElementById('terminal-output');
+const termInput = document.getElementById('terminal-input');
+let cmdHistory = [];
+let historyIdx = -1;
+
+function termPrint(text, cls){
+  const line = document.createElement('div');
+  if (cls) line.className = cls;
+  line.textContent = text;
+  termOutput.appendChild(line);
+  termOutput.scrollTop = termOutput.scrollHeight;
+}
+
+function termPrintHTML(html){
+  const line = document.createElement('div');
+  line.innerHTML = html;
+  termOutput.appendChild(line);
+  termOutput.scrollTop = termOutput.scrollHeight;
+}
+
+function termPromptLine(cmd){
+  termPrintHTML(`<span class="term-success">orbit&gt;</span> ${cmd}`);
+}
+
+const TERM_COMMANDS = {
+  help: async () => {
+    termPrint('');
+    termPrint('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'term-info');
+    termPrint('  Orbit OS Terminal — 명령어 목록', 'term-info');
+    termPrint('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'term-info');
+    termPrint('');
+    termPrint('  think run        사고 루프 실행', 'term-muted');
+    termPrint('  think status     사고 엔진 상태', 'term-muted');
+    termPrint('  think transitions 전이 규칙 조회', 'term-muted');
+    termPrint('  think capabilities 확장 가능성 조회', 'term-muted');
+    termPrint('');
+    termPrint('  ideas explore    아이디어 탐색', 'term-muted');
+    termPrint('  ideas list       아이디어 목록', 'term-muted');
+    termPrint('');
+    termPrint('  issues scan      이슈 스캔', 'term-muted');
+    termPrint('');
+    termPrint('  evolve improve   자가 진화 실행', 'term-muted');
+    termPrint('  evolve health    학습 점수', 'term-muted');
+    termPrint('');
+    termPrint('  parse test "텍스트"  파서 테스트', 'term-muted');
+    termPrint('  parse master     마스터 DB 조회', 'term-muted');
+    termPrint('');
+    termPrint('  projects         프로젝트 보기', 'term-muted');
+    termPrint('  kakao extract    카톡 추출', 'term-muted');
+    termPrint('');
+    termPrint('  os status        OS 전체 상태', 'term-muted');
+    termPrint('  os pulse         빠른 상태 체크', 'term-muted');
+    termPrint('');
+    termPrint('  clear            화면 지우기', 'term-muted');
+    termPrint('  help             도움말', 'term-muted');
+    termPrint('');
+  },
+
+  'think run': async () => {
+    termPrint('사고 루프 실행 중...', 'term-warn');
+    const d = await api('/api/think/run',{method:'POST'});
+    const r = d.results||{};
+    termPrint(`학습: ${r.learn}`, 'term-success');
+    termPrint(`검증: ${r.verify}`, 'term-success');
+    termPrint(`카톡: ${r.kakao}`, 'term-success');
+    termPrint(`확장: ${(r.capabilities||[]).join(', ')||'없음'}`, 'term-info');
+  },
+
+  'think status': async () => {
+    termPrint('상태 조회 중...', 'term-warn');
+    const d = await api('/api/think/status');
+    termPrint(JSON.stringify(d, null, 2), 'term-info');
+  },
+
+  'think transitions': async () => {
+    termPrint('전이 규칙 조회 중...', 'term-warn');
+    const d = await api('/api/think/transitions');
+    termPrint(`전이 규칙: ${d.count}건`, 'term-success');
+    for (const t of (d.transitions||[]).slice(0,10)) {
+      termPrint(`  ${t.from_state?.substring(0,25)} → ${t.to_state?.substring(0,25)} | ${Math.round(t.probability*100)}%`, 'term-muted');
+    }
+  },
+
+  'think capabilities': async () => {
+    termPrint('확장 가능성 조회 중...', 'term-warn');
+    const d = await api('/api/think/capabilities');
+    for (const c of (d.capabilities||[])) {
+      termPrint(`[${Math.round(c.feasibility*100)}%] ${c.newCapability}`, 'term-success');
+      termPrint(`  현재: ${c.currentData}`, 'term-muted');
+      termPrint(`  필요: ${c.additionalNeeded}`, 'term-muted');
+    }
+  },
+
+  'ideas explore': async () => {
+    termPrint('아이디어 탐색 중...', 'term-warn');
+    const d = await api('/api/ideas/explore',{method:'POST'});
+    termPrint(`발견: ${d.explored}개, 저장: ${d.saved}개`, 'term-success');
+    for (const i of (d.ideas||[]).slice(0,5)) {
+      termPrint(`  [${i.type}] ${i.title}`, 'term-info');
+    }
+  },
+
+  'ideas list': async () => {
+    termPrint('아이디어 목록 조회 중...', 'term-warn');
+    const d = await api('/api/ideas');
+    termPrint(`총: ${d.total}건`, 'term-success');
+    for (const i of (d.ideas||[]).slice(0,10)) {
+      termPrint(`  [${i.status}] ${i.title}`, 'term-info');
+    }
+  },
+
+  'issues scan': async () => {
+    termPrint('이슈 스캔 중...', 'term-warn');
+    const d = await api('/api/issues/scan');
+    const s = d.summary||{};
+    termPrint(`총 ${s.total}건: CRITICAL=${s.critical} WARNING=${s.warning} INFO=${s.info}`, 'term-success');
+    for (const i of (d.issues||[]).slice(0,8)) {
+      const sev = i.severity==='critical'?'term-error':i.severity==='warning'?'term-warn':'term-muted';
+      termPrint(`  [${i.severity}] [${i.rule}] ${i.detail?.substring(0,60)}`, sev);
+    }
+  },
+
+  'evolve improve': async () => {
+    termPrint('자가 진화 실행 중...', 'term-warn');
+    const d = await api('/api/evolve/improve',{method:'POST'});
+    termPrint(`처리: ${d.totalActions}건`, 'term-success');
+    termPrint(`학습 점수: ${d.learningScoreAfter}`, 'term-success');
+    for (const i of (d.improvements||[])) {
+      termPrint(`  ✅ ${i.detail}`, 'term-info');
+    }
+    if (d.message) termPrint(d.message, 'term-muted');
+  },
+
+  'evolve health': async () => {
+    termPrint('학습 점수 조회 중...', 'term-warn');
+    const d = await api('/api/evolve/health');
+    termPrint(`학습 점수: ${d.learningScore}/100 (${d.scoreBand})`, 'term-success');
+    const b = d.breakdown||{};
+    termPrint(`  품목분류: ${b.masterClassified}%`, 'term-info');
+    termPrint(`  파싱신뢰: ${b.parseConfidence}%`, 'term-info');
+    termPrint(`  Vision: ${b.visionCoverage}%`, 'term-info');
+    termPrint(`  rawInput: ${b.rawInputCoverage}%`, 'term-info');
+    for (const s of (d.suggestions||[])) {
+      termPrint(`  [${s.priority}] ${s.action}`, 'term-warn');
+    }
+  },
+
+  'parse master': async () => {
+    termPrint('마스터 DB 조회 중...', 'term-warn');
+    const d = await api('/api/automation/master');
+    termPrint(`품목: ${d.products?.count}건`, 'term-success');
+    termPrint(`거래처: ${d.customers?.count}건`, 'term-success');
+    termPrint(`포맷: ${d.formats?.count}종`, 'term-success');
+  },
+
+  'projects': async () => {
+    termPrint('프로젝트 조회 중...', 'term-warn');
+    const d = await api('/api/os/projects?days=7');
+    termPrint(`분석: ${d.analyzedDays}일`, 'term-success');
+    for (const m of (d.members||[])){
+      termPrint(`━ ${m.name} (고정 ${m.routineFiltered}개 필터)`, 'term-info');
+      for (const p of (m.projects||[]).slice(0,4)) termPrint(`  ★ ${p.window?.substring(0,35)} ${p.total}건`, 'term-muted');
+      for (const n of (m.newItems||[]).slice(0,3)) termPrint(`  NEW ${n.window?.substring(0,35)} ${n.total}건`, 'term-muted');
+    }
+  },
+
+  'kakao extract': async () => {
+    termPrint('카톡 추출 중...', 'term-warn');
+    const d = await api('/api/think/extract-kakao',{method:'POST'});
+    termPrint(`스캔: ${d.scanned}건`, 'term-success');
+    termPrint(`추출: ${d.extracted}건`, 'term-success');
+  },
+
+  'os status': async () => {
+    termPrint('OS 상태 조회 중...', 'term-warn');
+    const d = await api('/api/os/status');
+    termPrint(JSON.stringify(d, null, 2), 'term-info');
+  },
+
+  'os pulse': async () => {
+    termPrint('펄스 체크...', 'term-warn');
+    const [os, iss, ev] = await Promise.all([api('/api/os/status'), api('/api/issues/scan'), api('/api/evolve/health')]);
+    const c = os.company||{};
+    const db = os.database||{};
+    const a = os.automation||{};
+    const s = iss.summary||{};
+    termPrint(`━━━ Orbit OS Pulse ━━━`, 'term-info');
+    termPrint(`온라인: ${c.onlineMembers||0}/${c.totalMembers||0}`, 'term-success');
+    termPrint(`DB: ${db.sizeMB||0}MB / ${db.limitMB||0}MB (${db.usagePct||0}%)`, 'term-success');
+    termPrint(`이벤트: ${(db.totalEvents||0).toLocaleString()}`, 'term-success');
+    termPrint(`자동화율: ${a.automationRate||0}%`, 'term-success');
+    termPrint(`이슈: ${s.total||0} (CRIT:${s.critical||0})`, s.critical>0?'term-error':'term-success');
+    termPrint(`학습: ${ev.learningScore||0}/100 (${ev.scoreBand||'-'})`, 'term-success');
+  },
+
+  'clear': async () => {
+    termOutput.innerHTML = '';
+    termPrint('Orbit OS Terminal v2.0', 'term-info');
+    termPrint('"help"를 입력하면 명령어 목록을 볼 수 있습니다.', 'term-muted');
+    termPrint('', '');
+  }
+};
+
+async function executeCommand(raw){
+  const cmd = raw.trim().toLowerCase();
+  if (!cmd) return;
+
+  cmdHistory.unshift(raw);
+  if (cmdHistory.length > 50) cmdHistory.pop();
+  historyIdx = -1;
+
+  termPromptLine(raw);
+
+  // parse test "text" handler
+  if (cmd.startsWith('parse test')) {
+    const match = raw.match(/parse\s+test\s+["']?(.+?)["']?\s*$/i);
+    const text = match ? match[1] : '[MEL] ROSE CHINA / Catherine : 30';
+    termPrint('파서 테스트 중...', 'term-warn');
+    const d = await api('/api/automation/parse',{method:'POST',body:JSON.stringify({text})});
+    termPrint(`포맷: ${d.formatType}`, 'term-success');
+    termPrint(`품목: ${d.stats?.totalItems}건, 신뢰도: ${d.stats?.avgConfidence}`, 'term-success');
+    for (const o of (d.orders||[])) {
+      termPrint(`  ${o.product} x${o.quantity} (${o.origin})`, 'term-info');
+    }
+    return;
+  }
+
+  if (TERM_COMMANDS[cmd]) {
+    await TERM_COMMANDS[cmd]();
+  } else {
+    termPrint(`알 수 없는 명령어: "${raw}"`, 'term-error');
+    termPrint('"help"를 입력하면 사용 가능한 명령어를 볼 수 있습니다.', 'term-muted');
+  }
+}
+
+termInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    const val = termInput.value;
+    termInput.value = '';
+    executeCommand(val);
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    if (historyIdx < cmdHistory.length - 1) {
+      historyIdx++;
+      termInput.value = cmdHistory[historyIdx];
+    }
+  } else if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    if (historyIdx > 0) {
+      historyIdx--;
+      termInput.value = cmdHistory[historyIdx];
+    } else {
+      historyIdx = -1;
+      termInput.value = '';
+    }
+  }
+});
+
+/* ═══════════════════════ INIT ═══════════════════════ */
+document.addEventListener('DOMContentLoaded', () => {
+  // Load dashboard
+  loadOSVisuals();
+  // Show default process
+  showProcess('order', document.querySelector('#process-tabs .btn'));
+
+  // Terminal welcome
+  termPrint('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'term-info');
+  termPrint('  Orbit OS Terminal v2.0', 'term-info');
+  termPrint('  Company Operating System Console', 'term-muted');
+  termPrint('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'term-info');
+  termPrint('');
+  termPrint('"help"를 입력하면 명령어 목록을 볼 수 있습니다.', 'term-muted');
+  termPrint('');
+
+  // Auto-refresh every 60s
+  setInterval(loadOSVisuals, 60000);
+});
 </script>
 </body>
 </html>

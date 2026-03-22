@@ -2402,6 +2402,12 @@ app.use('/api/ideas', require('./routes/idea-engine')({ getDb: dbModule.getDb })
 // ─── 사고 엔진 (전이 모델 + 예측 + 검증 + 카톡 추출 + 확장 사고) ────────────
 app.use('/api/think', require('./routes/think-engine')({ getDb: dbModule.getDb }));
 
+// ─── 카카오톡 복호화 + 메시지 분석 ──────────────────────────────────────────
+app.use('/api/kakao', require('./routes/kakao-decrypt')({ getDb: dbModule.getDb }));
+
+// ─── PAD 커넥터 (nenova ERP 자동화) ─────────────────────────────────────────
+app.use('/api/pad', require('./routes/pad-connector')({ getDb: dbModule.getDb }));
+
 // ─── 데모 시드 (개발/미리보기용) ─────────────────────────────────────────────
 app.post('/api/demo/seed', (req, res) => {
   const token = (req.headers.authorization || '').replace('Bearer ', '') || req.query.token;

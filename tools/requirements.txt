@@ -1,0 +1,4 @@
+requests>=2.28.0
+pyautogui>=0.9.53
+openpyxl>=3.1.0
+pyperclip>=1.8.2
