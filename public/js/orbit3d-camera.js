@@ -520,7 +520,7 @@ function drawTeamLabels() {
       'member','hubProject','hq','external','prequest','presult'].includes(type);
     // 구체 노드: 지름 기반 크기, pill 노드: 텍스트 기반
     const _sphereR = type === 'goal' ? 15 : type === 'leader' || type === 'infra' ? 42
-      : type === 'member' ? 18 : type === 'department' ? 38 : 30;
+      : type === 'member' ? 14 : type === 'department' ? 38 : 30;
     const pw  = _useUnified ? _sphereR * 2 : _lctx.measureText(txt).width + pad;
     const ph  = _useUnified ? _sphereR * 2 : pxSize + pad * 0.65;
     // priority: prequest=7, goal/leader=6, presult/department/infra/sharedProject=5, member/ptask/hq=4, skill/agent/hubProject/external=3, task/dept=2, tool=1
@@ -789,7 +789,7 @@ function drawTeamLabels() {
       const nodeTitle = txt;
       const nodeSub = sublabel || '';
       const nodeR = type === 'goal' ? 30 : type === 'leader' || type === 'infra' ? 84
-        : type === 'member' ? (isFocused ? 46 : 36) : type === 'department' ? 76 : 60;
+        : type === 'member' ? (isFocused ? 36 : 28) : type === 'department' ? 76 : 60;
       _drawWireSphere(_lctx, cx, cy, nodeR, color, {
         meridians: type === 'goal' ? 3 : 2,
         parallels: type === 'goal' ? 2 : 1,
