@@ -590,7 +590,8 @@ async function _importFromDrive(fileId, token) {
 let _autoBackupTimer = null;
 function _startAutoBackup() {
   if (_autoBackupTimer) return;                                                  // 이미 실행 중
-  _autoBackupTimer = setInterval(() => {
+  _autoBackupTimer = null; // 비활성화
+  if (false) setInterval(() => {
     const token = _getAuthToken();
     if (!token) return;                                                          // 비로그인 시 스킵
     fetch('/api/gdrive/backup', {
