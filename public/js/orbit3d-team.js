@@ -652,7 +652,7 @@ function _buildTeamSystemInner(teamData) {
           _teamCenter.y + 1.5,
           _teamCenter.z + SHARED_R * Math.sin(sAngle)
         );
-        const sObj = createWireNode(0.08, new THREE.Color(_teamColor || '#ffd700').getHex(), { visible: true, wireOpacity: 0.5, glowOpacity: 0.25 });
+        const sObj = new THREE.Object3D();
         sObj.position.copy(sPos);
         sObj.userData = { isTeamTask: true, orbitR: SHARED_R, orbitAngle: sAngle, orbitSpeed: 0.015 + si * 0.005, orbitCenter: _teamCenter.clone() };
         scene.add(sObj); satelliteMeshes.push(sObj);
@@ -704,7 +704,7 @@ function _buildTeamSystemInner(teamData) {
       const tPos = new THREE.Vector3(tx, ty, tz);
 
       const _taskColor = STATUS_CFG[task.status]?.color || '#6e7681';
-      const tObj = createWireNode(0.08, new THREE.Color(_taskColor).getHex(), { visible: true, wireOpacity: 0.5, glowOpacity: 0.2 });
+      const tObj = new THREE.Object3D();
       tObj.position.copy(tPos);
       tObj.userData = {
         isTeamTask: true, memberId: member.id,
@@ -767,7 +767,7 @@ function _buildTeamSystemInner(teamData) {
             _mPos.y + 0.5 + si * 0.3, // Y축으로 펼쳐서 겹침 방지
             _mPos.z + PROJ_R * Math.sin(sAngle)
           );
-          const sObj = createWireNode(0.1, new THREE.Color(_color || '#58a6ff').getHex(), { visible: true, wireOpacity: 0.6, glowOpacity: 0.3 });
+          const sObj = new THREE.Object3D();
           sObj.position.copy(sPos);
           // orbitCenter를 멤버 Object에 연결 (공전 따라감)
           const memberObj = planetMeshes.find(p => p.userData?.memberId === _mid);
