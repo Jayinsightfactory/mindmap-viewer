@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Orbit AI — 대화 이력</title>
+<style>
+:root{--bg:#0d1117;--card:#161b22;--border:#30363d;--text:#e6edf3;--muted:#8b949e;--accent:#58a6ff;--green:#3fb950;--purple:#bc8cff;}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:13px;}
+.top{display:flex;align-items:center;justify-content:space-between;padding:14px 24px;background:var(--card);border-bottom:1px solid var(--border);}
+.top h1{font-size:17px;font-weight:700;} .top h1 span{color:var(--purple);}
+.top a{color:var(--muted);font-size:12px;text-decoration:none;}
+main{max-width:900px;margin:0 auto;padding:20px 24px;}
+.session-card{background:var(--card);border:1px solid var(--border);border-radius:8px;margin-bottom:12px;cursor:pointer;transition:border-color 0.2s;}
+.session-card:hover{border-color:var(--accent);}
+.session-header{padding:14px 16px;display:flex;justify-content:space-between;align-items:center;}
+.session-title{font-weight:600;font-size:14px;}
+.session-meta{color:var(--muted);font-size:11px;}
+.session-body{display:none;padding:0 16px 14px;border-top:1px solid var(--border);}
+.session-body.open{display:block;}
+.msg{padding:10px 0;border-bottom:1px solid rgba(48,54,61,0.5);}
+.msg:last-child{border-bottom:none;}
+.msg-user{color:var(--accent);font-weight:600;font-size:11px;margin-bottom:4px;}
+.msg-assistant{color:var(--green);font-weight:600;font-size:11px;margin-bottom:4px;}
+.msg-text{font-size:12px;line-height:1.6;white-space:pre-wrap;max-height:300px;overflow-y:auto;}
+.filter{display:flex;gap:8px;margin-bottom:16px;align-items:center;}
+.filter select,.filter input{padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:12px;}
+.tag{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;}
+.tag-session{background:rgba(88,166,255,0.1);color:var(--accent);}
+.tag-count{background:rgba(63,185,80,0.1);color:var(--green);}
+.loading{text-align:center;padding:40px;color:var(--muted);}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <h1>💬 <span>Claude Code</span> 대화 이력</h1>
+  <div style="display:flex;gap:12px;">
+    <a href="/admin-analysis.html">← 대시보드</a>
+    <a href="/orbit-os.html">🌐 OS</a>
+  </div>
+</div>
+
+<main>
+  <div class="filter">
+    <select id="filter-type" onchange="loadHistory()">
+      <option value="all">전체</option>
+      <option value="user">사용자 메시지만</option>
+      <option value="assistant">AI 응답만</option>
+    </select>
+    <input type="text" id="filter-search" placeholder="검색..." onkeyup="if(event.key==='Enter')loadHistory()">
+    <select id="filter-days" onchange="loadHistory()">
+      <option value="3">최근 3일</option>
+      <option value="7" selected>최근 7일</option>
+      <option value="30">최근 30일</option>
+    </select>
+    <button onclick="loadHistory()" style="padding:6px 12px;border-radius:6px;background:var(--accent);color:#fff;border:none;cursor:pointer;font-size:11px;">조회</button>
+  </div>
+
+  <div id="content"><div class="loading">로딩 중...</div></div>
+</main>
+
+<script>
+const TOKEN = localStorage.getItem('orbit_token');
+const H = {'Authorization':'Bearer '+(TOKEN||''),'Content-Type':'application/json'};
+
+async function loadHistory() {
+  const type = document.getElementById('filter-type').value;
+  const search = document.getElementById('filter-search').value;
+  const days = document.getElementById('filter-days').value;
+
+  document.getElementById('content').innerHTML = '<div class="loading">로딩 중...</div>';
+
+  try {
+    // 세션 목록 가져오기
+    const sessRes = await fetch('/api/sessions', { headers: H });
+    const sessions = sessRes.ok ? await sessRes.json() : [];
+
+    // 이벤트 가져오기 (user.message + assistant.message)
+    let eventTypes = 'user.message';
+    if (type === 'all') eventTypes = 'user.message';
+    if (type === 'assistant') eventTypes = 'assistant.message';
+
+    const evRes = await fetch(`/api/data/export?days=${days}&type=${eventTypes}`, { headers: H });
+    const evData = evRes.ok ? await evRes.json() : { data: [] };
+
+    // assistant 메시지도 함께
+    let allEvents = evData.data || [];
+    if (type === 'all') {
+      const aRes = await fetch(`/api/data/export?days=${days}&type=assistant.message`, { headers: H });
+      const aData = aRes.ok ? await aRes.json() : { data: [] };
+      allEvents = [...allEvents, ...(aData.data || [])];
+      allEvents.sort((a, b) => (a.timestamp || '').localeCompare(b.timestamp || ''));
+    }
+
+    // 검색 필터
+    if (search) {
+      allEvents = allEvents.filter(e => {
+        const dj = typeof e.data_json === 'string' ? JSON.parse(e.data_json) : (e.data_json || {});
+        const text = dj.content || dj.contentPreview || dj.message || '';
+        return text.toLowerCase().includes(search.toLowerCase());
+      });
+    }
+
+    // 세션별 그룹핑
+    const bySession = {};
+    for (const e of allEvents) {
+      const sid = e.session_id || 'unknown';
+      if (!bySession[sid]) bySession[sid] = { messages: [], firstTs: e.timestamp, lastTs: e.timestamp };
+      bySession[sid].messages.push(e);
+      if (e.timestamp > bySession[sid].lastTs) bySession[sid].lastTs = e.timestamp;
+      if (e.timestamp < bySession[sid].firstTs) bySession[sid].firstTs = e.timestamp;
+    }
+
+    // 세션 메타 매칭
+    const sessionMeta = {};
+    for (const s of (Array.isArray(sessions) ? sessions : [])) {
+      sessionMeta[s.id] = s;
+    }
+
+    // 렌더링
+    let html = '';
+    const sortedSessions = Object.entries(bySession).sort((a, b) => (b[1].lastTs || '').localeCompare(a[1].lastTs || ''));
+
+    if (sortedSessions.length === 0) {
+      html = '<div class="loading">대화 이력이 없습니다.</div>';
+    }
+
+    for (const [sid, data] of sortedSessions) {
+      const meta = sessionMeta[sid] || {};
+      const title = meta.title || sid.substring(0, 12);
+      const count = data.messages.length;
+      const firstDate = new Date(data.firstTs).toLocaleString('ko-KR');
+      const lastDate = new Date(data.lastTs).toLocaleString('ko-KR');
+
+      html += `<div class="session-card" onclick="this.querySelector('.session-body').classList.toggle('open')">
+        <div class="session-header">
+          <div>
+            <div class="session-title">${title}</div>
+            <div class="session-meta">${firstDate} ~ ${lastDate}</div>
+          </div>
+          <div>
+            <span class="tag tag-count">${count}건</span>
+            <span class="tag tag-session">${sid.substring(0, 8)}</span>
+          </div>
+        </div>
+        <div class="session-body">`;
+
+      for (const msg of data.messages.slice(0, 50)) {
+        const dj = typeof msg.data_json === 'string' ? JSON.parse(msg.data_json) : (msg.data_json || {});
+        const text = dj.content || dj.contentPreview || dj.message || JSON.stringify(dj).substring(0, 200);
+        const isUser = msg.type === 'user.message';
+        const time = new Date(msg.timestamp).toLocaleTimeString('ko-KR');
+
+        html += `<div class="msg">
+          <div class="${isUser ? 'msg-user' : 'msg-assistant'}">${isUser ? '👤 사용자' : '🤖 AI'} · ${time}</div>
+          <div class="msg-text">${escapeHtml(text.substring(0, 500))}${text.length > 500 ? '...' : ''}</div>
+        </div>`;
+      }
+
+      if (data.messages.length > 50) {
+        html += `<div style="padding:10px;color:var(--muted);text-align:center;">+${data.messages.length - 50}건 더...</div>`;
+      }
+
+      html += '</div></div>';
+    }
+
+    document.getElementById('content').innerHTML = html;
+  } catch (err) {
+    document.getElementById('content').innerHTML = `<div class="loading">에러: ${err.message}</div>`;
+  }
+}
+
+function escapeHtml(text) {
+  return text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+document.addEventListener('DOMContentLoaded', loadHistory);
+</script>
+</body>
+</html>
