@@ -2399,6 +2399,9 @@ app.use('/api/evolve', require('./routes/self-evolve')({ getDb: dbModule.getDb }
 // ─── 자율 탐색 + 아이디어 엔진 (2시간마다 새 패턴 발굴) ─────────────────────
 app.use('/api/ideas', require('./routes/idea-engine')({ getDb: dbModule.getDb }));
 
+// ─── 사고 엔진 (전이 모델 + 예측 + 검증 + 카톡 추출 + 확장 사고) ────────────
+app.use('/api/think', require('./routes/think-engine')({ getDb: dbModule.getDb }));
+
 // ─── 데모 시드 (개발/미리보기용) ─────────────────────────────────────────────
 app.post('/api/demo/seed', (req, res) => {
   const token = (req.headers.authorization || '').replace('Bearer ', '') || req.query.token;
