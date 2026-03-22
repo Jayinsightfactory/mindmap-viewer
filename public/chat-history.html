@@ -134,8 +134,8 @@ async function loadHistory() {
       const firstDate = new Date(data.firstTs).toLocaleString('ko-KR');
       const lastDate = new Date(data.lastTs).toLocaleString('ko-KR');
 
-      html += `<div class="session-card" onclick="this.querySelector('.session-body').classList.toggle('open')">
-        <div class="session-header">
+      html += `<div class="session-card">
+        <div class="session-header" onclick="const b=this.nextElementSibling;b.classList.toggle('open');">
           <div>
             <div class="session-title">${title}</div>
             <div class="session-meta">${firstDate} ~ ${lastDate}</div>
