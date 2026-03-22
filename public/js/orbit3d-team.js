@@ -1215,7 +1215,10 @@ async function loadTeamDemo() {
   document.getElementById('spacing-personal').style.display = 'none';
   document.getElementById('spacing-team').style.display = '';
   document.getElementById('spacing-company').style.display = 'none';
-  if (typeof controls !== 'undefined' && controls.sph) controls.sph.r = 15;
+  if (typeof controls !== 'undefined' && controls.sph) {
+    controls.sph.r = 15;
+    controls.sph.θ = 0.8; // 위에서 내려다보는 각도
+  }
 
   const _u = typeof _orbitUser !== 'undefined' ? _orbitUser : JSON.parse(localStorage.getItem('orbitUser') || 'null');
   const token = _u?.token;
@@ -1274,7 +1277,10 @@ async function loadCompanyDemo() {
   document.getElementById('spacing-personal').style.display = 'none';
   document.getElementById('spacing-team').style.display = 'none';
   document.getElementById('spacing-company').style.display = '';
-  if (typeof controls !== 'undefined' && controls.sph) controls.sph.r = 15;
+  if (typeof controls !== 'undefined' && controls.sph) {
+    controls.sph.r = 15;
+    controls.sph.θ = 0.8; // 위에서 내려다보는 각도
+  }
   const _u = typeof _orbitUser !== 'undefined' ? _orbitUser : JSON.parse(localStorage.getItem('orbitUser') || 'null');
   const token = _u?.token;
 
