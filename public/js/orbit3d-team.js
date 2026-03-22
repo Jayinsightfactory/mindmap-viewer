@@ -654,7 +654,7 @@ function _buildTeamSystemInner(teamData) {
         );
         const sObj = new THREE.Object3D();
         sObj.position.copy(sPos);
-        sObj.userData = { isTeamTask: true, orbitR: SHARED_R, orbitAngle: sAngle, orbitSpeed: 0.015 + si * 0.005, orbitCenter: _teamCenter.clone() };
+        sObj.userData = { isTeamTask: true, orbitR: SHARED_R, orbitAngle: sAngle, orbitSpeed: 0, orbitCenter: _teamCenter.clone() };
         scene.add(sObj); satelliteMeshes.push(sObj);
         _teamNodes.push({
           type: 'task', pos: sPos.clone(), obj: sObj,
@@ -680,8 +680,8 @@ function _buildTeamSystemInner(teamData) {
       mObj.userData = {
         isTeamMember: true, memberId: member.id,
         name: member.name, role: member.role, color: member.color,
-        // 멤버는 가운데 팀 구체 주위를 공전
-        orbitR: CLUSTER_R, orbitAngle: memberAngle, orbitSpeed: 0.02 + mi * 0.005,
+        // 멤버는 가운데 팀 구체 주위에 고정 배치 (공전 없음)
+        orbitR: CLUSTER_R, orbitAngle: memberAngle, orbitSpeed: 0,
         orbitCenter: new THREE.Vector3(0, 0, 0),
       };
       scene.add(mObj);
@@ -695,37 +695,9 @@ function _buildTeamSystemInner(teamData) {
         memberId: member.id,
       });
 
-    // ── 작업 위성 ─────────────────────────────────────────────────────────
-    member.tasks.forEach((task, taskIdx) => {
-      const tAngle = (taskIdx / member.tasks.length) * Math.PI * 2 + (mi * 1.26);
-      const tx = mPos.x + TASK_R * Math.cos(tAngle);
-      const ty = mPos.y + TASK_R * 0.25 * Math.sin(tAngle + 1.0);
-      const tz = mPos.z + TASK_R * Math.sin(tAngle);
-      const tPos = new THREE.Vector3(tx, ty, tz);
-
-      const _taskColor = STATUS_CFG[task.status]?.color || '#6e7681';
-      const tObj = new THREE.Object3D();
-      tObj.position.copy(tPos);
-      tObj.userData = {
-        isTeamTask: true, memberId: member.id,
-        taskName: task.name, taskStatus: task.status, taskProgress: task.progress,
-        color: _taskColor,
-        orbitR: TASK_R, orbitAngle: tAngle, orbitSpeed: 0.038 + mi * 0.004 + taskIdx * 0.003,
-        orbitCenter: mPos.clone(),
-      };
-      scene.add(tObj);
-      satelliteMeshes.push(tObj);
-
-      const sc = STATUS_CFG[task.status] || STATUS_CFG.pending;
-      _teamNodes.push({
-        type: 'task', pos: tPos.clone(), obj: tObj,
-        label: task.name, emoji: sc.emoji, color: sc.color,
-        progress: task.progress, size: 'sm',
-        memberId: member.id, taskStatus: task.status,
-      });
-
-      // 팀원 → 작업 연결선 (제거 — 협업만 표시)
-    });
+    // ── 더미 작업 위성 제거됨 ──────────────────────────────────────────────
+    // member.tasks는 서버에서 오는 더미 데이터("작업 중" 등)이므로 표시하지 않음.
+    // 프로젝트 위성(실제 데이터 기반)은 아래 fetch /api/graph 블록에서 생성됨.
 
     // ── 프로젝트 세션 위성 (비동기 로드) ────────────────────────────────────
     if (member.userId) {
@@ -771,7 +743,7 @@ function _buildTeamSystemInner(teamData) {
           sObj.position.copy(sPos);
           // orbitCenter를 멤버 Object에 연결 (공전 따라감)
           const memberObj = planetMeshes.find(p => p.userData?.memberId === _mid);
-          sObj.userData = { isTeamTask: true, memberId: _mid, orbitR: PROJ_R, orbitAngle: sAngle, orbitSpeed: 0.03 + si * 0.008, orbitCenter: memberObj ? memberObj.position : _mPos.clone() };
+          sObj.userData = { isTeamTask: true, memberId: _mid, orbitR: PROJ_R, orbitAngle: sAngle, orbitSpeed: 0, orbitCenter: memberObj ? memberObj.position : _mPos.clone() };
           scene.add(sObj);
           satelliteMeshes.push(sObj);
           _teamNodes.push({
@@ -869,7 +841,7 @@ function _buildTeamSystemInner(teamData) {
 
   // HUD 업데이트
   document.getElementById('h-sessions').textContent = members.length;
-  document.getElementById('h-tasks').textContent    = members.reduce((s, m) => s + m.tasks.length, 0);
+  document.getElementById('h-tasks').textContent    = _teamNodes.filter(n => n.type === 'task').length;
   document.getElementById('h-hours').textContent    = '팀';
   document.getElementById('team-mode-badge').style.display = 'flex';
 

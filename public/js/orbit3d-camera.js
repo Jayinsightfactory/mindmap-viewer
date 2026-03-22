@@ -369,60 +369,9 @@ function updateTeamOrbits(dt) {
     return;
   }
 
-  // ── 팀 모드 공전 ─────────────────────────────────────────────────────────
-  planetMeshes.forEach(p => {
-    if (!p.userData.isTeamMember) return;
-    const { orbitR, orbitAngle, orbitSpeed } = p.userData;
-    const a  = orbitAngle + _clock * orbitSpeed;
-    const mi = parseInt(p.userData.memberId.replace('m', '') || 0);
-    const ny = 0;
-    p.position.set(orbitR * Math.cos(a), ny, orbitR * Math.sin(a));
-    const tn = _teamNodes.find(n => n.obj === p);
-    if (tn) tn.pos.copy(p.position);
-  });
-
-  // 작업/툴/스킬/에이전트 위성 공전
-  satelliteMeshes.forEach(s => {
-    const parent = planetMeshes.find(p => p.userData.memberId === s.userData.memberId);
-    if (!parent) return;
-    const center = parent.position;
-
-    if (s.userData.isTeamTask) {
-      const { orbitR, orbitAngle, orbitSpeed } = s.userData;
-      const a = orbitAngle + _clock * orbitSpeed;
-      s.position.set(center.x + orbitR * Math.cos(a), center.y + orbitR * 0.25 * Math.sin(a + 1.0), center.z + orbitR * Math.sin(a));
-    } else if (s.userData.isTeamTool || s.userData.isTeamSkill || s.userData.isTeamAgent) {
-      const { relAngle, relY, relR } = s.userData;
-      s.position.set(center.x + relR * Math.cos(relAngle), center.y + relY, center.z + relR * Math.sin(relAngle));
-    }
-    const tn = _teamNodes.find(n => n.obj === s);
-    if (tn) tn.pos.copy(s.position);
-  });
-
-  // 연결선 업데이트 (index 방식 — 팀 시뮬)
-  let connIdx = 0;
-  planetMeshes.forEach(p => {
-    if (!p.userData.isTeamMember) return;
-    if (connections[connIdx]) {
-      connections[connIdx].geometry.setFromPoints([new THREE.Vector3(0, 0, 0), p.position.clone()]);
-      connections[connIdx].geometry.attributes.position.needsUpdate = true;
-    }
-    connIdx++;
-    satelliteMeshes.filter(s => s.userData.isTeamTask && s.userData.memberId === p.userData.memberId).forEach(s => {
-      if (connections[connIdx]) {
-        connections[connIdx].geometry.setFromPoints([p.position.clone(), s.position.clone()]);
-        connections[connIdx].geometry.attributes.position.needsUpdate = true;
-      }
-      connIdx++;
-    });
-  });
-
-  let ringIdx = 1;
-  planetMeshes.forEach(p => {
-    if (!p.userData.isTeamMember) return;
-    if (orbitRings[ringIdx]) orbitRings[ringIdx].position.copy(p.position);
-    ringIdx++;
-  });
+  // ── 팀 모드: 공전 비활성화 (고정 위치) ──────────────────────────────────
+  // 멤버와 위성은 buildTeamSystem에서 배치한 고정 위치를 유지한다.
+  // 공전 애니메이션 없음 — 위치 업데이트 불필요.
 }
 
 // ── 병렬 태스크 궤도 업데이트 ─────────────────────────────────────────────────
