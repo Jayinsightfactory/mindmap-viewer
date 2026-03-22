@@ -572,7 +572,7 @@ function drawTeamLabels() {
     // 구체 노드: 지름 기반 크기, pill 노드: 텍스트 기반
     const _sphereR = type === 'goal' ? 22 : type === 'leader' || type === 'infra' ? 20
       : type === 'member' ? 16 : type === 'department' ? 18 : 14;
-    const pw  = _useUnified ? _sphereR * 2 : _lctx.measureText(txt).width + pad;
+    const pw  = _useUnified ? _sphereR * 2 : Math.min(_lctx.measureText(txt).width + pad, 120);
     const ph  = _useUnified ? _sphereR * 2 : pxSize + pad * 0.65;
     // priority: prequest=7, goal/leader=6, presult/department/infra/sharedProject=5, member/ptask/hq=4, skill/agent/hubProject/external=3, task/dept=2, tool=1
     const priority = type === 'prequest' ? 7

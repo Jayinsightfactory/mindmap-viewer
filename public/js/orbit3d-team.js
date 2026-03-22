@@ -675,7 +675,7 @@ function _buildTeamSystemInner(teamData) {
       const mz = teamCenter.z + CLUSTER_R * Math.sin(memberAngle);
       const mPos = new THREE.Vector3(mx, my, mz);
 
-      const mObj = createWireNode(0.15, new THREE.Color(member.color || '#58a6ff').getHex(), { visible: true, wireOpacity: 0.5, glowOpacity: 0.2 });
+      const mObj = new THREE.Object3D();
       mObj.position.copy(mPos);
       mObj.userData = {
         isTeamMember: true, memberId: member.id,
