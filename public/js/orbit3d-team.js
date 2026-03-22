@@ -1076,7 +1076,7 @@ function buildCompanySystem(companyData) {
   _teamNodes.push({ type: 'goal', pos: new THREE.Vector3(0, 0, 0), label: goal, sublabel: name, color: goalColor || '#ffd700', size: 'xl' });
 
   // 부서 궤도 링
-  //   { const r = new THREE.Mesh(new THREE.RingGeometry(DEPT_R - 0.15, DEPT_R + 0.15, 128), new THREE.MeshBasicMaterial({ color: 0xffd700, transparent: true, opacity: 0.04, side: THREE.DoubleSide })); r.rotation.x = Math.PI / 2; orbitRings.push(r); scene.add(r); }
+  { const r = new THREE.Mesh(new THREE.RingGeometry(DEPT_R - 0.08, DEPT_R + 0.08, 128), new THREE.MeshBasicMaterial({ color: 0xffd700, transparent: true, opacity: 0.06, side: THREE.DoubleSide })); r.rotation.x = Math.PI / 2; orbitRings.push(r); scene.add(r); }
 
   departments.forEach((dept, di) => {
     const dAngle = (di / departments.length) * Math.PI * 2 - Math.PI / 2;
@@ -1092,11 +1092,11 @@ function buildCompanySystem(companyData) {
 
     _teamNodes.push({ type: 'department', pos: dPos.clone(), obj: dObj, label: `${dept.icon} ${dept.name}`, sublabel: `${dept.members.length}명`, color: dept.color, size: 'xs', deptId: dept.id, deptData: dept });
 
-    // 중심→부서 연결선 (제거)
-  //     { const lg = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), dPos.clone()]); const lm = new THREE.LineBasicMaterial({ color: new THREE.Color(dept.color), transparent: true, opacity: 0.35 }); connections.push(new THREE.Line(lg, lm)); scene.add(connections[connections.length-1]); }
+    // 중심→부서 연결선
+    { const lg = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), dPos.clone()]); const lm = new THREE.LineBasicMaterial({ color: new THREE.Color(dept.color), transparent: true, opacity: 0.15 }); connections.push(new THREE.Line(lg, lm)); scene.add(connections[connections.length-1]); }
 
-    // 부서 궤도 링 팀원 (제거)
-  //     { const r = new THREE.Mesh(new THREE.RingGeometry(MBR_R - 0.06, MBR_R + 0.06, 64), new THREE.MeshBasicMaterial({ color: new THREE.Color(dept.color), transparent: true, opacity: 0.08, side: THREE.DoubleSide })); r.position.copy(dPos); r.rotation.x = Math.PI / 2; orbitRings.push(r); scene.add(r); }
+    // 부서 내 팀원 궤도 링
+    { const r = new THREE.Mesh(new THREE.RingGeometry(MBR_R - 0.04, MBR_R + 0.04, 64), new THREE.MeshBasicMaterial({ color: new THREE.Color(dept.color), transparent: true, opacity: 0.05, side: THREE.DoubleSide })); r.position.copy(dPos); r.rotation.x = Math.PI / 2; orbitRings.push(r); scene.add(r); }
 
     dept.members.forEach((member, mi) => {
       const mAng = (mi / dept.members.length) * Math.PI * 2 + (di * 1.1);
@@ -1110,8 +1110,8 @@ function buildCompanySystem(companyData) {
 
       _teamNodes.push({ type: 'member', pos: mPos.clone(), obj: mObj, label: member.name, sublabel: member.role, color: member.color, size: 'md', memberId: member.id, deptId: dept.id });
 
-      // 부서→팀원 연결선 (제거)
-      //       { const lg = new THREE.BufferGeometry().setFromPoints([dPos.clone(), mPos.clone()]); const lm = new THREE.LineBasicMaterial({ color: new THREE.Color(member.color), transparent: true, opacity: 0.3 }); connections.push(new THREE.Line(lg, lm)); scene.add(connections[connections.length-1]); }
+      // 부서→팀원 연결선
+      { const lg = new THREE.BufferGeometry().setFromPoints([dPos.clone(), mPos.clone()]); const lm = new THREE.LineBasicMaterial({ color: new THREE.Color(member.color), transparent: true, opacity: 0.1 }); connections.push(new THREE.Line(lg, lm)); scene.add(connections[connections.length-1]); }
 
       // 작업 위성
       member.tasks.forEach((task, ti) => {
