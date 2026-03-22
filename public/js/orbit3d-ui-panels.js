@@ -30,7 +30,7 @@ window.dismissSuggestion = dismissSuggestion;
 window.acceptSuggestion  = acceptSuggestion;
 
 // 주기적으로 새 제안 확인 (60초마다, API 없으면 자동 중지)
-let _suggestionsAvailable = true;
+let _suggestionsAvailable = false; // 비활성화 — API 미구현
 setInterval(async () => {
   if (!_suggestionsAvailable) return;
   try {
