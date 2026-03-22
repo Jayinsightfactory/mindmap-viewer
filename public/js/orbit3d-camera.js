@@ -395,48 +395,507 @@ function updateParallelOrbits(dt) {
 
 // ── 팀 모드 Canvas2D 라벨 (2-pass: 수집 → 겹침해소 → 드로우) ─────────────────
 function drawTeamLabels() {
-  const ctx = window._lctx;
-  const cvs = window._labelCanvas2d;
-  if (!ctx || !cvs) return;
-  ctx.clearRect(0, 0, cvs.width, cvs.height);
-  if (typeof clearHitAreas === 'function') clearHitAreas();
+  _lctx.clearRect(0, 0, innerWidth, innerHeight);
+  clearHitAreas();
+
+  // 팀 노드 없으면 안전 종료
   if (!_teamNodes || _teamNodes.length === 0) return;
 
-  const cam = window.camera;
-  if (!cam) return;
+  const lod = getLOD();
+  const now = Date.now() / 1000; // seconds
 
-  _teamNodes.forEach(n => {
-    if (!n.pos) return;
-    const v = n.pos.clone();
-    if (n.obj && n.obj.position) v.copy(n.obj.position);
-    v.project(cam);
-    if (v.z > 1) return;
+  // ── LOD 2+ : 계층 오버레이 (Company / Universe) ──────────────────────────
+  if (lod >= 2 && _teamMode && typeof TEAM_DEMO !== 'undefined' && TEAM_DEMO?.universe) {
+    // LOD 3: 유니버스 뷰
+    if (lod >= 3) {
+      const uv = TEAM_DEMO.universe;
+      _lctx.save();
+      _lctx.textAlign = 'center';
+      _lctx.textBaseline = 'middle';
 
-    const cx = (v.x * 0.5 + 0.5) * cvs.width;
-    const cy = (-v.y * 0.5 + 0.5) * cvs.height;
-    if (cx < -100 || cx > cvs.width + 100 || cy < -100 || cy > cvs.height + 100) return;
+      // 우주 타이틀
+      _lctx.font = '700 26px -apple-system,sans-serif';
+      _lctx.fillStyle = '#ffd70088';
+      _lctx.fillText(uv.name, innerWidth / 2, innerHeight / 2 - 36);
 
-    const alpha = Math.max(0.3, Math.min(1, 1 - v.z * 0.8));
-    ctx.globalAlpha = alpha;
+      _lctx.font = '400 14px -apple-system,sans-serif';
+      _lctx.fillStyle = '#8b949e';
+      _lctx.fillText(uv.desc, innerWidth / 2, innerHeight / 2 - 12);
 
-    const sizes = { xl: 16, lg: 14, md: 13, sm: 11, xs: 10 };
-    const fontSize = sizes[n.size] || 13;
+      // 회사 칩
+      const compName = TEAM_DEMO.company.name;
+      _lctx.font = '600 13px -apple-system,sans-serif';
+      const cw = _lctx.measureText(compName).width + 24;
+      const cx = innerWidth / 2, cy = innerHeight / 2 + 16;
+      roundRect(_lctx, cx - cw/2, cy - 12, cw, 24, 12);
+      _lctx.fillStyle = 'rgba(88,166,255,0.12)';
+      _lctx.fill();
+      _lctx.strokeStyle = '#58a6ff50';
+      _lctx.lineWidth = 1;
+      _lctx.stroke();
+      _lctx.fillStyle = '#79c0ff';
+      _lctx.fillText(compName, cx, cy + 1);
 
-    ctx.font = `600 ${fontSize}px system-ui, -apple-system, sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.fillStyle = n.color || '#e6edf3';
-    ctx.shadowColor = 'rgba(0,0,0,0.8)';
-    ctx.shadowBlur = 4;
-    ctx.fillText(n.label || '', cx, cy);
-    ctx.shadowBlur = 0;
+      _lctx.font = '400 11px -apple-system,sans-serif';
+      _lctx.fillStyle = '#6e7681';
+      _lctx.fillText(TEAM_DEMO.company.desc, innerWidth / 2, innerHeight / 2 + 40);
+      _lctx.restore();
+    }
+    // LOD 2: 회사 뷰 — 상단 브레드크럼
+    else if (lod === 2) {
+      _lctx.save();
+      _lctx.textAlign = 'center';
+      _lctx.textBaseline = 'middle';
+      const breadcrumb = `${TEAM_DEMO.universe.name}  ›  ${TEAM_DEMO.company.name}  ›  ${TEAM_DEMO.name}`;
+      _lctx.font = '400 12px -apple-system,sans-serif';
+      const bw = _lctx.measureText(breadcrumb).width + 28;
+      const bx = innerWidth / 2, by = 54;
+      roundRect(_lctx, bx - bw/2, by - 12, bw, 24, 12);
+      _lctx.fillStyle = 'rgba(13,17,23,0.85)';
+      _lctx.fill();
+      _lctx.strokeStyle = '#21262d';
+      _lctx.lineWidth = 1;
+      _lctx.stroke();
+      _lctx.fillStyle = '#6e7681';
+      _lctx.fillText(breadcrumb, bx, by + 1);
+      _lctx.restore();
+    }
+  }
 
-    if (n.sublabel) {
-      ctx.font = `400 ${Math.max(fontSize - 3, 9)}px system-ui, sans-serif`;
-      ctx.fillStyle = '#8b949e';
-      ctx.fillText(n.sublabel, cx, cy + fontSize + 2);
+  // ── 숨긴 노드 필터 (개인뷰 _hiddenNodes 연동) ──
+  const _hidden = (typeof _hiddenNodes !== 'undefined') ? _hiddenNodes : {};
+
+  // ══ Pass 1: 모든 레이블 데이터 수집 (드로우 없음) ═══════════════════════
+  const labels = [];
+  for (const node of _teamNodes) {
+    const sc = toScreen(node.pos);
+    if (sc.z > 1) continue;
+    if (node.hidden) continue;
+    const { type, label, sublabel, color, emoji, progress, taskStatus, memberId } = node;
+    // 개인뷰에서 숨긴 노드 → 팀뷰에서 task만 숨김 (member/goal/department는 유지)
+    if (type === 'task' && (_hidden[node.label] || _hidden[node.sublabel])) continue;
+    // 사용자 노드 밀도 설정 (_nodeDensity 슬라이더)
+    if (type === 'tool'                          && _nodeDensity < 4) continue;
+    if ((type === 'skill' || type === 'agent')   && _nodeDensity < 3) continue;
+    if (type === 'task' && !node.obj?.userData?.isTeamTask && _nodeDensity < 2) continue;
+    // LOD 기반 — 줌 레벨로 계층 구분 (밀도 설정과 무관)
+    if (lod >= 2 && type === 'member')           continue;
+    if (lod >= 3 && type === 'department')       continue;
+    // 노드 필터 적용
+    if (typeof nodeMatchesFilter === 'function' && !nodeMatchesFilter(node)) continue;
+
+    const isActive   = taskStatus === 'active';
+    const isSelected = _selectedHit?.data === node;
+    const isFocused  = _focusedMember === node;
+
+    let pxSize, pad;
+    if      (type === 'goal')         { pxSize = lod >= 2 ? 22 : 28; pad = lod >= 2 ? 14 : 20; }
+    else if (type === 'department')   { pxSize = lod >= 2 ? 14 : 16; pad = lod >= 2 ? 10 : 13; }
+    else if (type === 'member')       { pxSize = lod >= 2 ? 14 : isFocused ? 22 : 18; pad = lod >= 2 ? 10 : isFocused ? 18 : 15; }
+    else if (type === 'task')         { const _isProjSat = node.obj?.userData?.isTeamTask; pxSize = lod >= 2 ? 9 : (_isProjSat ? 10 : 12); pad = lod >= 2 ? 7 : (_isProjSat ? 8 : 10); }
+    else if (type === 'skill')        { pxSize = 9; pad = 7; }
+    else if (type === 'agent')        { pxSize = 9; pad = 7; }
+    else if (type === 'ptask')        { pxSize = 13; pad = 11; }
+    else if (type === 'prequest')     { pxSize = 16; pad = 14; }
+    else if (type === 'presult')      { pxSize = 15; pad = 13; }
+    // ── Multi-hub / Enterprise new node types ──────────────────────────────
+    else if (type === 'leader')       { pxSize = 20; pad = 16; }   // 리더 (대형)
+    else if (type === 'sharedProject'){ pxSize = 16; pad = 13; }   // 공동 프로젝트
+    else if (type === 'hubProject')   { pxSize = 13; pad = 10; }   // 허브 프로젝트
+    else if (type === 'infra')        { pxSize = 18; pad = 14; }   // 인프라 (대형)
+    else if (type === 'hq')           { pxSize = 14; pad = 11; }   // HQ
+    else if (type === 'dept')         { pxSize = 12; pad = 9;  }   // 부서 라벨
+    else if (type === 'external')     { pxSize = 13; pad = 10; }   // 외주 파트너
+    else                              { pxSize = 10; pad = 7; }
+
+    const weight = (type === 'goal' || type === 'leader' || type === 'infra' || type === 'member' || type === 'department' || type === 'sharedProject' || type === 'prequest' || type === 'presult') ? '700' : '500';
+    _lctx.font = `${weight} ${pxSize}px -apple-system,'Segoe UI',sans-serif`;
+    // skill: ⚡ 아이콘, agent: 🤖 아이콘 prefix
+    const prefix = type === 'skill' ? '⚡ ' : type === 'agent' ? '🤖 ' : '';
+    // 별명 우선 적용 (사용자 지정 표시명 — 3D 뷰 pill에 반영)
+    const _alias = typeof _nodeAliases !== 'undefined' ? _nodeAliases[label] : null;
+    const displayLabel = node.displayLabel || _alias || label;
+    const txt = emoji ? `${emoji} ${displayLabel}` : `${prefix}${displayLabel}`;
+    const _useUnified = ['goal','leader','infra','sharedProject','department',
+      'member','hubProject','hq','external','prequest','presult'].includes(type);
+    // 구체 노드: 지름 기반 크기, pill 노드: 텍스트 기반
+    const _sphereR = type === 'goal' ? 10 : type === 'leader' || type === 'infra' ? 16
+      : type === 'member' ? 14 : type === 'department' ? 38 : 30;
+    const pw  = _useUnified ? _sphereR * 2 : _lctx.measureText(txt).width + pad;
+    const ph  = _useUnified ? _sphereR * 2 : pxSize + pad * 0.65;
+    // priority: prequest=7, goal/leader=6, presult/department/infra/sharedProject=5, member/ptask/hq=4, skill/agent/hubProject/external=3, task/dept=2, tool=1
+    const priority = type === 'prequest' ? 7
+      : (type === 'goal' || type === 'leader') ? 6
+      : (type === 'presult' || type === 'department' || type === 'infra' || type === 'sharedProject') ? 5
+      : (type === 'member' || type === 'ptask' || type === 'hq') ? 4
+      : (type === 'skill' || type === 'agent' || type === 'hubProject' || type === 'external') ? 3
+      : (type === 'task' || type === 'dept') ? 2 : 1;
+
+    labels.push({
+      node, sc, type, label, sublabel, color, emoji, progress,
+      taskStatus, memberId, isActive, isSelected, isFocused, prefix,
+      txt, pw, ph, pxSize, pad, weight, _useUnified,
+      x:  sc.x - pw * 0.5,
+      y:  sc.y - ph * 0.5,
+      ax: sc.x,
+      ay: sc.y,
+      priority,
+    });
+  }
+
+  // ══ Pass 2: 겹침 해소 (LOD3 유니버스 뷰 제외) ════════════════════════════
+  if (lod < 3 && labels.length > 1) {
+    resolveOverlaps(labels);
+  }
+
+  // ══ Pass 3: 활성 이펙트 먼저 그리기 (앵커 위치 기준) ════════════════════
+  for (const lr of labels) {
+    const { ax, ay, color, pw, ph, type, node } = lr;
+    const hr = Math.max(pw, ph) * 0.5;
+
+    // 마켓 이펙트 (모든 노드 타입 — _nodeEffects 기반)
+    const nodeEffectId = _nodeEffects[node.label];
+    if (nodeEffectId && EFFECT_FNS[nodeEffectId]) {
+      EFFECT_FNS[nodeEffectId](_lctx, ax, ay, hr, color, now);
     }
 
-    ctx.globalAlpha = 1.0;
-  });
+    // skill 노드 이펙트: 보라색 회전 대시 링
+    if (type === 'skill') {
+      _lctx.save();
+      _lctx.translate(ax, ay);
+      _lctx.rotate(now * 1.2);
+      _lctx.globalAlpha = 0.7;
+      _lctx.strokeStyle = '#d2a8ff';
+      _lctx.lineWidth   = 1.5;
+      _lctx.setLineDash([4, 4]);
+      _lctx.lineDashOffset = -now * 15;
+      _lctx.beginPath();
+      _lctx.arc(0, 0, hr + 4, 0, Math.PI * 2);
+      _lctx.stroke();
+      _lctx.setLineDash([]);
+      _lctx.restore();
+    }
+
+    // agent 노드 이펙트: 청록 펄스 링 + autoRun 빛
+    if (type === 'agent') {
+      const pulse = (Math.sin(now * 3) + 1) * 0.5;
+      _lctx.save();
+      _lctx.globalAlpha = 0.15 + pulse * 0.35;
+      _lctx.strokeStyle = '#39d2c0';
+      _lctx.lineWidth   = 2;
+      _lctx.shadowColor = '#39d2c0';
+      _lctx.shadowBlur  = 8 + pulse * 6;
+      _lctx.beginPath();
+      _lctx.arc(ax, ay, hr + 4 + pulse * 3, 0, Math.PI * 2);
+      _lctx.stroke();
+      _lctx.shadowBlur = 0;
+      _lctx.restore();
+    }
+
+    if (!lr.isActive || type !== 'task') continue;
+
+    // 펄스 링 3개
+    for (let i = 0; i < 3; i++) {
+      const phase = (i / 3) * Math.PI * 2;
+      const pulse = (Math.sin(now * 2.5 + phase) + 1) * 0.5;
+      const ringR = hr + 6 + pulse * 16;
+      _lctx.save();
+      _lctx.globalAlpha = (1 - pulse) * 0.55;
+      _lctx.strokeStyle = color;
+      _lctx.lineWidth   = 1.5 - i * 0.3;
+      _lctx.beginPath();
+      _lctx.arc(ax, ay, ringR, 0, Math.PI * 2);
+      _lctx.stroke();
+      _lctx.restore();
+    }
+    // 회전 대시 테두리
+    _lctx.save();
+    _lctx.translate(ax, ay);
+    _lctx.rotate(now * 1.8);
+    _lctx.globalAlpha = 0.75;
+    _lctx.strokeStyle = color;
+    _lctx.lineWidth   = 2;
+    _lctx.setLineDash([5, 5]);
+    _lctx.lineDashOffset = -now * 20;
+    _lctx.beginPath();
+    _lctx.arc(0, 0, hr + 5, 0, Math.PI * 2);
+    _lctx.stroke();
+    _lctx.setLineDash([]);
+    _lctx.restore();
+    // 파티클 4개
+    for (let i = 0; i < 4; i++) {
+      const pa = now * 2.2 + (i * Math.PI * 0.5);
+      _lctx.save();
+      _lctx.globalAlpha = 0.9;
+      _lctx.fillStyle   = color;
+      _lctx.shadowColor = color;
+      _lctx.shadowBlur  = 6;
+      _lctx.beginPath();
+      _lctx.arc(ax + (hr + 14) * Math.cos(pa), ay + (hr + 14) * Math.sin(pa), 2.5, 0, Math.PI * 2);
+      _lctx.fill();
+      _lctx.restore();
+    }
+    // 외부 글로우
+    const gr = _lctx.createRadialGradient(ax, ay, hr, ax, ay, hr + 28);
+    gr.addColorStop(0, color + '44');
+    gr.addColorStop(1, 'rgba(0,0,0,0)');
+    _lctx.fillStyle = gr;
+    _lctx.beginPath();
+    _lctx.arc(ax, ay, hr + 28, 0, Math.PI * 2);
+    _lctx.fill();
+  }
+
+  // ══ Pass 4: 리더 라인 (레이블이 앵커에서 멀어진 경우) ════════════════════
+  for (const lr of labels) {
+    if (lr.type === 'tool') continue;
+    const cx = lr.x + lr.pw * 0.5;
+    const cy = lr.y + lr.ph * 0.5;
+    const dx = cx - lr.ax, dy = cy - lr.ay;
+    const disp = Math.sqrt(dx * dx + dy * dy);
+    if (disp > 14) {
+      _lctx.save();
+      _lctx.strokeStyle = lr.color + '55';
+      _lctx.lineWidth   = 0.8;
+      _lctx.setLineDash([3, 4]);
+      _lctx.globalAlpha = Math.min(disp / 40, 0.7);
+      _lctx.beginPath();
+      _lctx.moveTo(lr.ax, lr.ay);
+      _lctx.lineTo(cx, cy);
+      _lctx.stroke();
+      _lctx.setLineDash([]);
+      _lctx.restore();
+    }
+  }
+
+  // ══ Pass 5: 레이블 드로우 (해소된 위치 기준) ════════════════════════════
+  for (const lr of labels) {
+    const { x, y, pw, ph, type, color, txt, pxSize, pad, weight,
+            sublabel, progress, isActive, isSelected, isFocused,
+            node, memberId, ax, ay } = lr;
+    const cx = x + pw * 0.5;  // 해소된 center x
+    const cy = y + ph * 0.5;  // 해소된 center y
+    const hr = Math.max(pw, ph) * 0.5;
+
+    // ── 포커스 페이드: 포커스된 팀원과 관계없는 노드는 흐리게 ──────────────
+    let nodeFade = 1.0;
+    if (_focusedMember) {
+      const focusId = _focusedMember.memberId;
+      const isRelated =
+        type === 'goal' ||                          // 목표 노드는 항상 표시
+        memberId === focusId ||                     // 포커스된 팀원 본인
+        (_collabLines || []).some(cl =>             // 협업 연결된 팀원
+          (cl.fromNode?.memberId === focusId && cl.toNode?.memberId === memberId) ||
+          (cl.toNode?.memberId   === focusId && cl.fromNode?.memberId === memberId)
+        );
+      nodeFade = isRelated ? 1.0 : 0.10;
+    }
+    if (nodeFade < 1.0) {
+      _lctx.globalAlpha = nodeFade;
+    }
+
+    // 포커스 팀원 링
+    if (isFocused && type === 'member') {
+      const rp = (Math.sin(now * 3) + 1) * 0.5;
+      _lctx.save();
+      _lctx.globalAlpha = 0.35 + rp * 0.25;
+      _lctx.strokeStyle = color;
+      _lctx.lineWidth   = 3;
+      _lctx.shadowColor = color;
+      _lctx.shadowBlur  = 16;
+      _lctx.beginPath();
+      _lctx.arc(cx, cy, hr + 10, 0, Math.PI * 2);
+      _lctx.stroke();
+      _lctx.restore();
+    }
+
+    // "나" 배지 — 내 멤버 노드 강조
+    const isMe = type === 'member' && _myMemberId && memberId === _myMemberId;
+    if (isMe) {
+      // 초록 글로우 링
+      const mePulse = (Math.sin(now * 2.5) + 1) * 0.5;
+      _lctx.save();
+      _lctx.globalAlpha = 0.4 + mePulse * 0.3;
+      _lctx.strokeStyle = '#3fb950';
+      _lctx.lineWidth   = 2.5;
+      _lctx.shadowColor = '#3fb950';
+      _lctx.shadowBlur  = 14 + mePulse * 8;
+      _lctx.setLineDash([5, 4]);
+      _lctx.lineDashOffset = -now * 14;
+      _lctx.beginPath();
+      _lctx.arc(cx, cy, hr + 13, 0, Math.PI * 2);
+      _lctx.stroke();
+      _lctx.setLineDash([]);
+      _lctx.restore();
+      // "나" 칩
+      _lctx.save();
+      _lctx.font = '700 9px -apple-system,sans-serif';
+      _lctx.fillStyle = '#3fb950';
+      _lctx.textAlign = 'center'; _lctx.textBaseline = 'middle';
+      const chipW = 22, chipH = 14;
+      roundRect(_lctx, cx - chipW/2, y - chipH - 2, chipW, chipH, 7);
+      _lctx.fillStyle = 'rgba(63,185,80,0.2)'; _lctx.fill();
+      _lctx.strokeStyle = '#3fb95080'; _lctx.lineWidth = 1;
+      roundRect(_lctx, cx - chipW/2, y - chipH - 2, chipW, chipH, 7); _lctx.stroke();
+      _lctx.fillStyle = '#3fb950';
+      _lctx.fillText('나', cx, y - chipH/2 - 2);
+      _lctx.restore();
+    }
+
+    // 포커스 부서 링 (회사 모드)
+    if (_focusedDept && type === 'department' && node.deptId === _focusedDept.deptId) {
+      const rp2 = (Math.sin(now * 2) + 1) * 0.5;
+      _lctx.save();
+      _lctx.globalAlpha = 0.30 + rp2 * 0.20;
+      _lctx.strokeStyle = color;
+      _lctx.lineWidth   = 2.5;
+      _lctx.shadowColor = color;
+      _lctx.shadowBlur  = 18;
+      _lctx.setLineDash([6, 4]);
+      _lctx.beginPath();
+      _lctx.arc(cx, cy, hr + 12, 0, Math.PI * 2);
+      _lctx.stroke();
+      _lctx.setLineDash([]);
+      _lctx.restore();
+    }
+
+    // ── external 파트너: 다이아몬드 테두리 오버레이 ───────────────────────
+    if (type === 'external') {
+      const dSize = Math.max(pw, ph) * 0.65 + 10;
+      _lctx.save();
+      _lctx.translate(cx, cy);
+      _lctx.rotate(Math.PI / 4);
+      _lctx.strokeStyle = color;
+      _lctx.lineWidth = 1.5;
+      _lctx.globalAlpha = 0.65;
+      _lctx.setLineDash([4, 3]);
+      _lctx.strokeRect(-dSize / 2, -dSize / 2, dSize, dSize);
+      _lctx.setLineDash([]);
+      _lctx.restore();
+    }
+
+    // ── leader / infra / sharedProject: 글로우 링 ─────────────────────────
+    if (type === 'leader' || type === 'infra' || type === 'sharedProject') {
+      const gp = (Math.sin(now * 1.4 + (type === 'infra' ? 1 : 0)) + 1) * 0.5;
+      const gr = _lctx.createRadialGradient(cx, cy, pw * 0.3, cx, cy, pw * 1.5);
+      gr.addColorStop(0, color + Math.round((0.12 + gp * 0.08) * 255).toString(16).padStart(2, '0'));
+      gr.addColorStop(1, 'rgba(0,0,0,0)');
+      _lctx.fillStyle = gr;
+      _lctx.beginPath(); _lctx.arc(cx, cy, pw * 1.5, 0, Math.PI * 2); _lctx.fill();
+    }
+
+    // ── 와이어프레임 구체 vs pill 분기 ────────────────────────────────────────
+    if (lr._useUnified) {
+      // 와이어프레임 구체 (개인뷰와 동일한 스타일)
+      const nodeTitle = txt;
+      const nodeSub = sublabel || '';
+      const nodeR = type === 'goal' ? 18 : type === 'leader' || type === 'infra' ? 28
+        : type === 'member' ? (isFocused ? 24 : 18) : type === 'department' ? 22 : 16;
+      _drawWireSphere(_lctx, cx, cy, nodeR, color, {
+        meridians: type === 'goal' ? 3 : 2,
+        parallels: type === 'goal' ? 2 : 1,
+        glow: true,
+        hover: isSelected || isFocused,
+        drilled: isFocused,
+        rotation: now * 0.2 + (labels.indexOf(lr) || 0) * 0.5,
+      });
+      _drawSphereLabel(_lctx, cx, cy, nodeR, nodeTitle, nodeSub, color, false);
+      // 활성 표시 (task일 때)
+      if (isActive && type === 'task') {
+        _lctx.save();
+        _lctx.fillStyle = '#22c55e'; _lctx.shadowColor = '#22c55e'; _lctx.shadowBlur = 6;
+        _lctx.beginPath(); _lctx.arc(cx + nodeR - 4, cy - nodeR + 4, 3.5, 0, Math.PI * 2); _lctx.fill();
+        _lctx.restore();
+      }
+    } else {
+      // 기존 pill 렌더링 (소형 노드: task, skill, agent, tool, ptask, dept)
+      roundRect(_lctx, x, y, pw, ph, ph * 0.5);
+      const bgA = type === 'skill' ? 0.18 : type === 'agent' ? 0.18 : type === 'dept' ? 0.10 : 0.10;
+      _lctx.fillStyle = color + Math.round(bgA * 255).toString(16).padStart(2, '0');
+      _lctx.fill();
+      drawWireframeGrid(_lctx, x, y, pw, ph, ph * 0.5, color, isActive ? 0.28 : 0.18);
+
+      const bdA = type === 'skill' ? 0.80 : type === 'agent' ? 0.80 : type === 'dept' ? 0.50 : isActive ? 0.85 : 0.42;
+      _lctx.strokeStyle = color + Math.round(bdA * 255).toString(16).padStart(2, '0');
+      _lctx.lineWidth = type === 'skill' ? 1.4 : type === 'agent' ? 1.4 : isActive ? 1.8 : 1;
+      if (type === 'skill') { _lctx.setLineDash([3, 3]); _lctx.lineDashOffset = -now * 10; }
+      roundRect(_lctx, x, y, pw, ph, ph * 0.5); _lctx.stroke();
+      if (type === 'skill') { _lctx.setLineDash([]); }
+      if (type === 'agent') {
+        _lctx.globalAlpha = 0.4; _lctx.lineWidth = 0.8;
+        roundRect(_lctx, x - 2, y - 2, pw + 4, ph + 4, (ph + 4) * 0.5); _lctx.stroke(); _lctx.globalAlpha = 1;
+      }
+
+      // pill 텍스트
+      _lctx.font = `${weight} ${pxSize}px -apple-system,'Segoe UI',sans-serif`;
+      _lctx.fillStyle = type === 'tool' ? color + 'bb' : type === 'skill' ? '#e2c9ff' : type === 'agent' ? '#8ff0ea' : (isSelected ? '#ffffff' : color);
+      _lctx.textAlign = 'center'; _lctx.textBaseline = 'middle';
+      if (isActive && type === 'task') { _lctx.shadowColor = color; _lctx.shadowBlur = 8; }
+      if (type === 'skill') { _lctx.shadowColor = '#d2a8ff'; _lctx.shadowBlur = 4; }
+      if (type === 'agent') { _lctx.shadowColor = '#39d2c0'; _lctx.shadowBlur = 4; }
+      _lctx.fillText(txt, cx, cy);
+      _lctx.shadowBlur = 0;
+    }
+
+    // 관리자 뱃지 (member 노드, LOD1 이하)
+    if (type === 'member' && lod <= 1 && memberId) {
+      renderMgrBadges(memberId, cx, y + ph);
+    }
+
+    // 진행률 바 (task, lod ≤ 1)
+    if (type === 'task' && typeof progress === 'number' && lod <= 1) {
+      const barW = pw - 6;
+      const barY = y + ph + 6;
+      _lctx.globalAlpha = 0.45;
+      roundRect(_lctx, cx - barW * 0.5, barY, barW, 3, 1.5);
+      _lctx.fillStyle = '#21262d'; _lctx.fill();
+      if (progress > 0) {
+        roundRect(_lctx, cx - barW * 0.5, barY, barW * progress, 3, 1.5);
+        _lctx.fillStyle = color; _lctx.fill();
+        if (isActive) {
+          _lctx.globalAlpha = 0.6;
+          _lctx.fillStyle   = '#ffffff';
+          _lctx.fillRect(cx - barW * 0.5 + barW * progress - 2, barY, 2, 3);
+        }
+      }
+      _lctx.globalAlpha = 1;
+    }
+
+    // 포커스 팀원 — 작업 미니 뱃지
+    if (type === 'member' && isFocused && lod === 0) {
+      const srcMembers = _companyMode
+        ? (_activeSimData?.departments || []).flatMap(d => d.members || [])
+        : (_activeSimData?.members || []);
+      const member = srcMembers.find(m => m.id === memberId);
+      if (member) {
+        let bOff = ph * 0.5 + 14;
+        member.tasks.slice(0, 3).forEach(t => {
+          const sc2 = STATUS_CFG[t.status] || STATUS_CFG.pending;
+          _lctx.font = `500 10px -apple-system,sans-serif`;
+          const tl2  = `${sc2.emoji} ${t.name.slice(0, 12)}${t.name.length > 12 ? '…' : ''}`;
+          const tw2  = _lctx.measureText(tl2).width + 12;
+          const tx2  = cx - tw2 * 0.5;
+          const ty2  = cy + bOff;
+          roundRect(_lctx, tx2, ty2, tw2, 16, 8);
+          _lctx.fillStyle = sc2.color + '18'; _lctx.fill();
+          _lctx.strokeStyle = sc2.color + '60'; _lctx.lineWidth = 0.8;
+          roundRect(_lctx, tx2, ty2, tw2, 16, 8); _lctx.stroke();
+          _lctx.fillStyle = sc2.color;
+          _lctx.textAlign = 'center'; _lctx.textBaseline = 'middle';
+          _lctx.fillText(tl2, cx, ty2 + 8);
+          bOff += 20;
+        });
+      }
+    }
+
+    // 히트 영역 (해소된 위치 기준)
+    if (type !== 'tool') {
+      registerHitArea({ cx, cy, r: hr + 4, data: node });
+    }
+
+    // globalAlpha 복원
+    if (nodeFade < 1.0) {
+      _lctx.globalAlpha = 1.0;
+    }
+  }
 }
 
