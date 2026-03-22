@@ -346,9 +346,9 @@ module.exports = function createNenovaDbRouter({ getDb }) {
           // 최근 출하 (이번 년도)
           pool.request().query(`
             SELECT TOP 5
-              sm.ShipmentKey, sm.ShipYear, sm.ShipWeek, sm.ShipNo,
+              sm.ShipmentKey, sm.OrderYear, sm.OrderWeek, sm.OrderYearWeek,
               c.CustName,
-              ISNULL(sm.isDeleted, 0) AS isConfirm,
+              ISNULL(sm.isFix, 0) AS isFix, sm.EstimateName,
               (SELECT COUNT(*) FROM ShipmentDetail sd WHERE sd.ShipmentKey = sm.ShipmentKey) AS itemCount
             FROM ShipmentMaster sm
             LEFT JOIN Customer c ON sm.CustKey = c.CustKey
@@ -421,8 +421,8 @@ module.exports = function createNenovaDbRouter({ getDb }) {
           .input('year', sql.Int, year)
           .query(`
             SELECT
-              sm.ShipYear,
-              sm.ShipWeek,
+              sm.OrderYear,
+              sm.OrderWeek,
               COUNT(DISTINCT sm.ShipmentKey) AS shipCount,
               COUNT(DISTINCT sm.CustKey) AS custCount,
               SUM(ISNULL(sd.BoxQuantity, 0)) AS totalBox,
@@ -432,9 +432,9 @@ module.exports = function createNenovaDbRouter({ getDb }) {
             FROM ShipmentMaster sm
             LEFT JOIN ShipmentDetail sd ON sm.ShipmentKey = sd.ShipmentKey
             WHERE ISNULL(sm.isDeleted, 0) = 0
-              AND sm.ShipYear = @year
-            GROUP BY sm.ShipYear, sm.ShipWeek
-            ORDER BY sm.ShipWeek DESC
+              AND sm.OrderYear = @year
+            GROUP BY sm.OrderYear, sm.OrderWeek
+            ORDER BY sm.OrderWeek DESC
             OFFSET 0 ROWS FETCH NEXT ${weeks} ROWS ONLY
           `);
 
@@ -1052,11 +1052,11 @@ module.exports = function createNenovaDbRouter({ getDb }) {
 
         if (year) {
           r.input('year', sql.Int, parseInt(year));
-          where.push('sm.ShipYear = @year');
+          where.push('sm.OrderYear = @year');
         }
         if (week) {
           r.input('week', sql.NVarChar, week);
-          where.push('sm.ShipWeek = @week');
+          where.push('sm.OrderWeek = @week');
         }
         if (custKey) {
           r.input('custKey', sql.Int, parseInt(custKey));
@@ -1084,12 +1084,12 @@ module.exports = function createNenovaDbRouter({ getDb }) {
         const data = await r2.query(`
           SELECT
             sm.ShipmentKey,
-            sm.ShipYear,
-            sm.ShipWeek,
-            sm.ShipNo,
+            sm.OrderYear,
+            sm.OrderWeek,
+            sm.OrderYearWeek,
             sm.CustKey,
-            sm.Descr,
-            ISNULL(sm.isDeleted, 0) AS isConfirm,
+            sm.EstimateName,
+            ISNULL(sm.isFix, 0) AS isFix,
             sm.CreateID,
             sm.CreateDtm,
             c.CustName,
@@ -1132,7 +1132,7 @@ module.exports = function createNenovaDbRouter({ getDb }) {
         let weekFilter = '';
         if (week) {
           r.input('week', sql.NVarChar, week);
-          weekFilter = 'AND sm.ShipWeek = @week';
+          weekFilter = 'AND sm.OrderWeek = @week';
         }
 
         // 그룹 기준
@@ -1170,7 +1170,7 @@ module.exports = function createNenovaDbRouter({ getDb }) {
           JOIN Product p ON sd.ProdKey = p.ProdKey
           LEFT JOIN Customer c ON sd.CustKey = c.CustKey
           WHERE ISNULL(sm.isDeleted, 0) = 0
-            AND sm.ShipYear = @year
+            AND sm.OrderYear = @year
             ${weekFilter}
           GROUP BY ${groupCol}
           ORDER BY totalAmount DESC
@@ -1194,7 +1194,7 @@ module.exports = function createNenovaDbRouter({ getDb }) {
           FROM ShipmentDetail sd
           JOIN ShipmentMaster sm ON sd.ShipmentKey = sm.ShipmentKey
           WHERE ISNULL(sm.isDeleted, 0) = 0
-            AND sm.ShipYear = @year
+            AND sm.OrderYear = @year
             ${weekFilter}
         `);
 
@@ -1397,8 +1397,8 @@ module.exports = function createNenovaDbRouter({ getDb }) {
             .input('key', sql.Int, custKey)
             .query(`
               SELECT TOP 10
-                sm.ShipmentKey, sm.ShipYear, sm.ShipWeek, sm.ShipNo,
-                ISNULL(sm.isDeleted, 0) AS isConfirm,
+                sm.ShipmentKey, sm.OrderYear, sm.OrderWeek, sm.OrderYearWeek,
+                ISNULL(sm.isFix, 0) AS isFix,
                 (SELECT SUM(ISNULL(sd.Amount, 0)) FROM ShipmentDetail sd WHERE sd.ShipmentKey = sm.ShipmentKey) AS totalAmount
               FROM ShipmentMaster sm
               WHERE sm.CustKey = @key AND ISNULL(sm.isDeleted, 0) = 0
@@ -1649,7 +1649,7 @@ module.exports = function createNenovaDbRouter({ getDb }) {
             groupName = 'customer';
             break;
           case 'week':
-            groupCol = 'sm.ShipWeek';
+            groupCol = 'sm.OrderWeek';
             groupName = 'week';
             break;
           case 'country':
@@ -1680,7 +1680,7 @@ module.exports = function createNenovaDbRouter({ getDb }) {
           JOIN Product p ON sd.ProdKey = p.ProdKey
           LEFT JOIN Customer c ON sd.CustKey = c.CustKey
           WHERE ISNULL(sm.isDeleted, 0) = 0
-            AND sm.ShipYear = @year
+            AND sm.OrderYear = @year
           GROUP BY ${groupCol}
           ORDER BY revenue DESC
         `);
@@ -1703,7 +1703,7 @@ module.exports = function createNenovaDbRouter({ getDb }) {
           FROM ShipmentDetail sd
           JOIN ShipmentMaster sm ON sd.ShipmentKey = sm.ShipmentKey
           WHERE ISNULL(sm.isDeleted, 0) = 0
-            AND sm.ShipYear = @year
+            AND sm.OrderYear = @year
         `);
 
         return {
@@ -1756,7 +1756,7 @@ module.exports = function createNenovaDbRouter({ getDb }) {
           .input('year', sql.Int, targetYear)
           .query(`
             SELECT
-              sm.ShipWeek AS weekNo,
+              sm.OrderWeek AS weekNo,
               COUNT(DISTINCT sm.ShipmentKey) AS shipCount,
               COUNT(DISTINCT sm.CustKey) AS custCount,
               SUM(ISNULL(sd.BoxQuantity, 0)) AS totalBox,
@@ -1767,9 +1767,9 @@ module.exports = function createNenovaDbRouter({ getDb }) {
             FROM ShipmentMaster sm
             LEFT JOIN ShipmentDetail sd ON sm.ShipmentKey = sd.ShipmentKey
             WHERE ISNULL(sm.isDeleted, 0) = 0
-              AND sm.ShipYear = @year
-            GROUP BY sm.ShipWeek
-            ORDER BY sm.ShipWeek DESC
+              AND sm.OrderYear = @year
+            GROUP BY sm.OrderWeek
+            ORDER BY sm.OrderWeek DESC
             OFFSET 0 ROWS FETCH NEXT ${weeks} ROWS ONLY
           `);
 
@@ -1797,12 +1797,12 @@ module.exports = function createNenovaDbRouter({ getDb }) {
             ) o
             FULL OUTER JOIN (
               SELECT
-                sm.ShipWeek AS weekNo,
+                sm.OrderWeek AS weekNo,
                 SUM(ISNULL(sd.BoxQuantity, 0)) AS shippedBox
               FROM ShipmentMaster sm
               LEFT JOIN ShipmentDetail sd ON sm.ShipmentKey = sd.ShipmentKey
-              WHERE ISNULL(sm.isDeleted, 0) = 0 AND sm.ShipYear = @year
-              GROUP BY sm.ShipWeek
+              WHERE ISNULL(sm.isDeleted, 0) = 0 AND sm.OrderYear = @year
+              GROUP BY sm.OrderWeek
             ) s ON o.weekNo = s.weekNo
             ORDER BY weekNo DESC
             OFFSET 0 ROWS FETCH NEXT ${weeks} ROWS ONLY
@@ -1849,7 +1849,7 @@ module.exports = function createNenovaDbRouter({ getDb }) {
             JOIN ShipmentMaster sm ON sd.ShipmentKey = sm.ShipmentKey
             LEFT JOIN Customer c ON sd.CustKey = c.CustKey
             WHERE ISNULL(sm.isDeleted, 0) = 0
-              AND sm.ShipYear = @year
+              AND sm.OrderYear = @year
             GROUP BY c.CustKey, c.CustName
             ORDER BY revenue DESC
           `);
@@ -1894,7 +1894,7 @@ module.exports = function createNenovaDbRouter({ getDb }) {
             JOIN ShipmentMaster sm ON sd.ShipmentKey = sm.ShipmentKey
             JOIN Product p ON sd.ProdKey = p.ProdKey
             WHERE ISNULL(sm.isDeleted, 0) = 0
-              AND sm.ShipYear = @year
+              AND sm.OrderYear = @year
             GROUP BY p.FlowerName
             ORDER BY revenue DESC
           `);
@@ -1915,7 +1915,7 @@ module.exports = function createNenovaDbRouter({ getDb }) {
             JOIN ShipmentMaster sm ON sd.ShipmentKey = sm.ShipmentKey
             JOIN Product p ON sd.ProdKey = p.ProdKey
             WHERE ISNULL(sm.isDeleted, 0) = 0
-              AND sm.ShipYear = @year
+              AND sm.OrderYear = @year
             GROUP BY p.CounName
             ORDER BY revenue DESC
           `);
