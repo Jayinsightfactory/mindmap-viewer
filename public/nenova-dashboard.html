@@ -1,0 +1,1571 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Orbit AI — nenova 전산</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #0d1117; --surface: #161b22; --surface2: #21262d;
+  --border: #30363d; --text: #e6edf3; --muted: #8b949e;
+  --green: #3fb950; --blue: #58a6ff; --red: #f85149;
+  --orange: #ffa657; --purple: #bc8cff; --cyan: #39d2c0;
+}
+body {
+  background: var(--bg); color: var(--text);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  min-height: 100vh; line-height: 1.5;
+}
+a { color: var(--blue); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* ── Header ─────────────────────────────────────────── */
+header {
+  background: var(--surface); border-bottom: 1px solid var(--border);
+  padding: 14px 28px; display: flex; align-items: center; gap: 16px;
+  position: sticky; top: 0; z-index: 200;
+}
+.logo { font-size: 18px; font-weight: 700; color: var(--green); white-space: nowrap; }
+.logo span { color: var(--blue); font-weight: 400; }
+.header-right { margin-left: auto; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.header-back { color: var(--muted); font-size: 13px; white-space: nowrap; }
+.header-back:hover { color: var(--blue); }
+.conn-dot {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--muted); margin-right: 6px; vertical-align: middle;
+}
+.conn-dot.ok { background: var(--green); box-shadow: 0 0 6px var(--green); }
+.conn-dot.err { background: var(--red); box-shadow: 0 0 6px var(--red); }
+.conn-status { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.btn {
+  background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+  padding: 7px 16px; border-radius: 6px; cursor: pointer; font-size: 13px;
+  transition: all .15s; display: inline-flex; align-items: center; gap: 6px;
+}
+.btn:hover { background: var(--border); }
+.btn-sm { padding: 4px 12px; font-size: 12px; }
+.btn-primary { background: var(--green); border-color: var(--green); color: #0d1117; font-weight: 600; }
+.btn-primary:hover { opacity: .85; }
+.btn-blue { background: var(--blue); border-color: var(--blue); color: #0d1117; font-weight: 600; }
+.btn-blue:hover { opacity: .85; }
+
+/* ── Tabs ────────────────────────────────────────────── */
+.tab-bar {
+  background: var(--surface); border-bottom: 1px solid var(--border);
+  display: flex; overflow-x: auto; padding: 0 24px;
+  position: sticky; top: 55px; z-index: 190;
+}
+.tab-bar::-webkit-scrollbar { height: 0; }
+.tab-item {
+  padding: 12px 20px; font-size: 13px; color: var(--muted);
+  cursor: pointer; border-bottom: 2px solid transparent;
+  white-space: nowrap; transition: all .15s; user-select: none;
+}
+.tab-item:hover { color: var(--text); }
+.tab-item.active { color: var(--blue); border-bottom-color: var(--blue); font-weight: 600; }
+
+/* ── Main ────────────────────────────────────────────── */
+main { max-width: 1440px; margin: 0 auto; padding: 24px; }
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+
+/* ── KPI Cards ───────────────────────────────────────── */
+.kpi-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; margin-bottom: 24px; }
+.kpi-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; padding: 18px 20px; position: relative; overflow: hidden;
+}
+.kpi-label { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+.kpi-value { font-size: 28px; font-weight: 700; line-height: 1.1; }
+.kpi-sub { font-size: 12px; color: var(--muted); margin-top: 6px; }
+.kpi-icon {
+  position: absolute; right: 16px; top: 16px; font-size: 28px; opacity: .15;
+}
+
+/* ── Cards / Sections ────────────────────────────────── */
+.card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; padding: 20px; margin-bottom: 16px;
+}
+.card-title { font-size: 14px; font-weight: 600; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+.section-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 16px; gap: 12px; flex-wrap: wrap;
+}
+.section-title { font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+
+/* ── Charts Row ──────────────────────────────────────── */
+.charts-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; margin-bottom: 24px; }
+
+/* ── Horizontal Bar Chart ────────────────────────────── */
+.hbar-list { display: flex; flex-direction: column; gap: 8px; }
+.hbar-item { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+.hbar-label { width: 80px; text-align: right; color: var(--muted); flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hbar-track { flex: 1; height: 22px; background: var(--surface2); border-radius: 4px; overflow: hidden; position: relative; }
+.hbar-fill { height: 100%; border-radius: 4px; transition: width .6s ease; min-width: 2px; }
+.hbar-val { width: 50px; font-size: 12px; font-weight: 600; flex-shrink: 0; }
+
+/* ── Donut Chart (conic-gradient) ────────────────────── */
+.donut-wrap { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; }
+.donut {
+  width: 140px; height: 140px; border-radius: 50%; position: relative; flex-shrink: 0;
+}
+.donut-hole {
+  position: absolute; top: 20px; left: 20px; right: 20px; bottom: 20px;
+  background: var(--surface); border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; font-weight: 700;
+}
+.donut-legend { display: flex; flex-direction: column; gap: 6px; }
+.donut-legend-item { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.donut-legend-dot { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+
+/* ── Bar Chart (vertical) ────────────────────────────── */
+.vbar-chart { display: flex; align-items: flex-end; gap: 6px; height: 160px; padding-top: 10px; }
+.vbar-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; height: 100%; }
+.vbar-area { flex: 1; display: flex; align-items: flex-end; justify-content: center; width: 100%; }
+.vbar {
+  width: 100%; max-width: 32px; border-radius: 4px 4px 0 0; min-height: 2px;
+  transition: height .5s ease; cursor: pointer; position: relative;
+}
+.vbar:hover { opacity: .8; }
+.vbar-label { font-size: 10px; color: var(--muted); margin-top: 4px; text-align: center; flex-shrink: 0; }
+.vbar-tooltip {
+  position: absolute; top: -24px; left: 50%; transform: translateX(-50%);
+  background: var(--surface2); border: 1px solid var(--border);
+  padding: 2px 8px; border-radius: 4px; font-size: 11px; white-space: nowrap;
+  pointer-events: none; opacity: 0; transition: opacity .15s; z-index: 10;
+}
+.vbar:hover .vbar-tooltip { opacity: 1; }
+
+/* ── Tables ──────────────────────────────────────────── */
+.table-wrap { overflow-x: auto; border-radius: 12px; border: 1px solid var(--border); }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th {
+  background: var(--surface2); color: var(--muted); font-weight: 500;
+  font-size: 11px; text-transform: uppercase; letter-spacing: .5px;
+  padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border);
+  white-space: nowrap; position: sticky; top: 0; z-index: 5;
+}
+td {
+  padding: 10px 14px; border-bottom: 1px solid var(--border);
+  vertical-align: middle; background: var(--surface);
+}
+tr:last-child td { border-bottom: none; }
+tr.clickable { cursor: pointer; }
+tr.clickable:hover td { background: rgba(88,166,255,.06); }
+.expand-row td { background: var(--surface2); padding: 14px 20px; }
+.expand-row table td { background: var(--surface); }
+
+/* ── Filters ─────────────────────────────────────────── */
+.filter-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+.filter-bar select, .filter-bar input {
+  background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+  padding: 7px 14px; border-radius: 6px; font-size: 13px; outline: none;
+}
+.filter-bar select:focus, .filter-bar input:focus { border-color: var(--blue); }
+.filter-bar input::placeholder { color: var(--muted); }
+.search-input { min-width: 200px; }
+
+/* ── Badges ──────────────────────────────────────────── */
+.badge {
+  display: inline-block; padding: 2px 10px; border-radius: 20px;
+  font-size: 11px; font-weight: 600; white-space: nowrap;
+}
+.badge-green  { background: rgba(63,185,80,.15);  color: var(--green); }
+.badge-blue   { background: rgba(88,166,255,.15); color: var(--blue); }
+.badge-orange { background: rgba(255,166,87,.15); color: var(--orange); }
+.badge-red    { background: rgba(248,81,73,.15);  color: var(--red); }
+.badge-muted  { background: rgba(139,148,158,.15); color: var(--muted); }
+.badge-purple { background: rgba(188,140,255,.15); color: var(--purple); }
+.badge-cyan   { background: rgba(57,210,192,.15); color: var(--cyan); }
+
+/* ── Stock colors ────────────────────────────────────── */
+.stock-red { color: var(--red); font-weight: 700; }
+.stock-yellow { color: var(--orange); font-weight: 600; }
+.stock-green { color: var(--green); }
+
+/* ── Skeleton Loading ────────────────────────────────── */
+.skeleton {
+  background: linear-gradient(90deg, var(--surface2) 25%, var(--border) 50%, var(--surface2) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 6px;
+}
+@keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+.skel-line { height: 14px; margin-bottom: 10px; }
+.skel-block { height: 80px; margin-bottom: 14px; }
+
+/* ── Pivot Table ─────────────────────────────────────── */
+.pivot-table { font-size: 12px; }
+.pivot-table th { font-size: 11px; padding: 8px 10px; }
+.pivot-table td { padding: 6px 10px; font-size: 12px; text-align: center; }
+.pivot-table td:first-child, .pivot-table th:first-child { text-align: left; }
+.pivot-row-group { cursor: pointer; }
+.pivot-row-group:hover td { background: rgba(88,166,255,.06); }
+.pivot-toggle { display: inline-block; width: 16px; transition: transform .2s; }
+.pivot-toggle.collapsed { transform: rotate(-90deg); }
+.pivot-child { display: none; }
+.pivot-child.visible { display: table-row; }
+.pivot-child td:first-child { padding-left: 28px; }
+.pivot-grandchild td:first-child { padding-left: 48px; }
+.pivot-sum { font-weight: 700; color: var(--blue); }
+
+/* ── Alert Box ───────────────────────────────────────── */
+.alert-box {
+  background: rgba(248,81,73,.08); border: 1px solid rgba(248,81,73,.3);
+  border-radius: 10px; padding: 16px 20px; margin-bottom: 16px;
+}
+.alert-box .alert-title { font-size: 14px; font-weight: 600; color: var(--red); margin-bottom: 8px; }
+.alert-item { display: flex; align-items: center; gap: 10px; padding: 4px 0; font-size: 13px; }
+
+/* ── Info Box (DB not connected) ─────────────────────── */
+.info-box {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; padding: 40px; text-align: center; margin: 40px 0;
+}
+.info-box .info-icon { font-size: 48px; margin-bottom: 16px; opacity: .5; }
+.info-box .info-title { font-size: 18px; font-weight: 600; margin-bottom: 10px; }
+.info-box .info-desc { font-size: 14px; color: var(--muted); line-height: 1.7; max-width: 560px; margin: 0 auto; }
+.info-box code {
+  background: var(--surface2); padding: 2px 8px; border-radius: 4px;
+  font-family: 'SF Mono', Consolas, monospace; font-size: 13px; color: var(--orange);
+}
+
+/* ── Pagination ──────────────────────────────────────── */
+.pagination { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 16px; }
+.page-btn {
+  background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+  padding: 5px 12px; border-radius: 6px; cursor: pointer; font-size: 12px;
+}
+.page-btn:hover { background: var(--border); }
+.page-btn.active { background: var(--blue); border-color: var(--blue); color: #0d1117; font-weight: 600; }
+.page-btn:disabled { opacity: .4; cursor: not-allowed; }
+.page-info { font-size: 12px; color: var(--muted); }
+
+/* ── Summary Cards ───────────────────────────────────── */
+.summary-row { display: flex; gap: 14px; margin-bottom: 16px; flex-wrap: wrap; }
+.summary-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; padding: 14px 18px; flex: 1; min-width: 140px;
+}
+.summary-card .s-label { font-size: 11px; color: var(--muted); }
+.summary-card .s-val { font-size: 22px; font-weight: 700; margin-top: 4px; }
+
+/* ── Recent items ────────────────────────────────────── */
+.recent-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 800px) { .recent-grid { grid-template-columns: 1fr; } }
+
+/* ── Product card view ───────────────────────────────── */
+.product-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+.product-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; padding: 16px; cursor: pointer; transition: border-color .15s;
+}
+.product-card:hover { border-color: var(--blue); }
+.product-card .p-name { font-size: 14px; font-weight: 600; margin-bottom: 8px; }
+.product-card .p-meta { font-size: 12px; color: var(--muted); display: flex; gap: 12px; margin-bottom: 8px; }
+.product-card .p-stock { font-size: 13px; }
+
+/* ── Right Panel (AI Chat) ───────────────────────────── */
+.right-panel {
+  position: fixed; right: -380px; top: 0; bottom: 0; width: 380px;
+  background: var(--surface); border-left: 1px solid var(--border);
+  z-index: 300; transition: right .3s ease; display: flex; flex-direction: column;
+}
+.right-panel.open { right: 0; }
+.right-panel-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,.5);
+  z-index: 290; display: none;
+}
+.right-panel-overlay.open { display: block; }
+.rp-header {
+  padding: 16px 20px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.rp-header h3 { font-size: 15px; font-weight: 600; }
+.rp-close { background: none; border: none; color: var(--muted); font-size: 20px; cursor: pointer; }
+.rp-body { flex: 1; overflow-y: auto; padding: 20px; }
+.rp-placeholder {
+  text-align: center; padding: 40px 20px; color: var(--muted); font-size: 13px;
+}
+.rp-quick-btns { display: flex; flex-direction: column; gap: 8px; margin-top: 20px; }
+.rp-quick-btn {
+  background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+  padding: 10px 14px; border-radius: 8px; cursor: pointer; font-size: 13px;
+  text-align: left; transition: border-color .15s;
+}
+.rp-quick-btn:hover { border-color: var(--blue); }
+.rp-footer { padding: 16px 20px; border-top: 1px solid var(--border); }
+.rp-input-wrap { display: flex; gap: 8px; }
+.rp-input {
+  flex: 1; background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+  padding: 10px 14px; border-radius: 8px; font-size: 13px; outline: none;
+}
+.rp-input:focus { border-color: var(--blue); }
+
+/* ── Toggle Switch ───────────────────────────────────── */
+.toggle-wrap { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.toggle {
+  width: 36px; height: 20px; background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 10px; cursor: pointer; position: relative; transition: background .2s;
+}
+.toggle.on { background: var(--green); border-color: var(--green); }
+.toggle::after {
+  content: ''; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px;
+  background: var(--text); border-radius: 50%; transition: transform .2s;
+}
+.toggle.on::after { transform: translateX(16px); }
+
+/* ── Detail Modal ────────────────────────────────────── */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,.6);
+  z-index: 400; display: none; align-items: center; justify-content: center;
+}
+.modal-overlay.open { display: flex; }
+.modal {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 14px; width: 90%; max-width: 700px; max-height: 80vh;
+  overflow-y: auto; padding: 28px;
+}
+.modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+.modal-header h3 { font-size: 17px; font-weight: 600; }
+.modal-close { background: none; border: none; color: var(--muted); font-size: 22px; cursor: pointer; }
+
+/* ── Responsive ──────────────────────────────────────── */
+@media (max-width: 768px) {
+  header { padding: 12px 16px; gap: 10px; }
+  main { padding: 16px; }
+  .kpi-grid { grid-template-columns: 1fr 1fr; }
+  .charts-row { grid-template-columns: 1fr; }
+  .filter-bar { flex-direction: column; align-items: stretch; }
+  .filter-bar select, .filter-bar input { width: 100%; }
+  .recent-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 480px) {
+  .kpi-grid { grid-template-columns: 1fr; }
+  .tab-item { padding: 10px 14px; font-size: 12px; }
+}
+</style>
+</head>
+<body>
+
+<!-- ═══ HEADER ═══ -->
+<header>
+  <div class="logo">Orbit AI <span>— nenova 전산</span></div>
+  <div class="header-right">
+    <span class="conn-status" id="connStatus"><span class="conn-dot" id="connDot"></span>연결 확인중...</span>
+    <div class="toggle-wrap">
+      <span>자동새로고침</span>
+      <div class="toggle on" id="autoRefreshToggle" onclick="toggleAutoRefresh()"></div>
+    </div>
+    <button class="btn btn-sm" onclick="openAIPanel()">AI 챗봇</button>
+    <a href="/admin-analysis.html" class="header-back">← 관리자 대시보드</a>
+    <a href="/orbit-os.html" class="header-back">Orbit OS</a>
+  </div>
+</header>
+
+<!-- ═══ TAB BAR ═══ -->
+<nav class="tab-bar">
+  <div class="tab-item active" data-tab="overview" onclick="switchTab('overview')">개요</div>
+  <div class="tab-item" data-tab="orders" onclick="switchTab('orders')">주문</div>
+  <div class="tab-item" data-tab="shipments" onclick="switchTab('shipments')">출하</div>
+  <div class="tab-item" data-tab="products" onclick="switchTab('products')">상품</div>
+  <div class="tab-item" data-tab="customers" onclick="switchTab('customers')">거래처</div>
+  <div class="tab-item" data-tab="pivot" onclick="switchTab('pivot')">피벗 통계</div>
+  <div class="tab-item" data-tab="analysis" onclick="switchTab('analysis')">분석</div>
+</nav>
+
+<!-- ═══ MAIN ═══ -->
+<main>
+
+  <!-- DB Error fallback (hidden by default) -->
+  <div id="dbErrorBox" style="display:none;">
+    <div class="info-box">
+      <div class="info-icon">&#128274;</div>
+      <div class="info-title">nenova SQL Server 연결 실패</div>
+      <div class="info-desc">
+        nenova 데이터베이스에 연결할 수 없습니다.<br><br>
+        서버의 <code>.env</code> 파일에 다음 환경변수가 설정되어 있는지 확인해주세요:<br><br>
+        <code>NENOVA_DB_HOST</code> — SQL Server 호스트<br>
+        <code>NENOVA_DB_USER</code> — DB 사용자<br>
+        <code>NENOVA_DB_PASSWORD</code> — DB 비밀번호<br>
+        <code>NENOVA_DB_NAME</code> — 데이터베이스 이름<br><br>
+        설정 후 서버를 재시작하면 자동으로 연결됩니다.
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ TAB 1: 개요 ═══ -->
+  <div class="tab-content active" id="tab-overview">
+    <div class="kpi-grid" id="kpiGrid">
+      <div class="kpi-card"><div class="kpi-icon">&#128230;</div><div class="kpi-label">총 상품수</div><div class="kpi-value" id="kpiProducts">-</div></div>
+      <div class="kpi-card"><div class="kpi-icon">&#127970;</div><div class="kpi-label">총 거래처수</div><div class="kpi-value" id="kpiCustomers">-</div></div>
+      <div class="kpi-card"><div class="kpi-icon">&#128196;</div><div class="kpi-label">이번주 주문건수</div><div class="kpi-value" id="kpiOrders">-</div><div class="kpi-sub" id="kpiOrdersSub"></div></div>
+      <div class="kpi-card"><div class="kpi-icon">&#128666;</div><div class="kpi-label">이번주 출하건수</div><div class="kpi-value" id="kpiShipments">-</div><div class="kpi-sub" id="kpiShipmentsSub"></div></div>
+    </div>
+
+    <div class="charts-row">
+      <div class="card">
+        <div class="card-title">&#127758; 국가별 주문량</div>
+        <div id="chartCountry" class="hbar-list"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">&#127801; 꽃 종류별 비율</div>
+        <div class="donut-wrap" id="chartFlower"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">&#128200; 주차별 주문 추이 (최근 8주)</div>
+        <div class="vbar-chart" id="chartWeekly"></div>
+      </div>
+    </div>
+
+    <div id="lowStockAlert"></div>
+
+    <div class="recent-grid">
+      <div class="card">
+        <div class="card-title">&#128196; 최근 주문 5건</div>
+        <div id="recentOrders"><div class="skeleton skel-block"></div></div>
+      </div>
+      <div class="card">
+        <div class="card-title">&#128666; 최근 출하 5건</div>
+        <div id="recentShipments"><div class="skeleton skel-block"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ TAB 2: 주문 ═══ -->
+  <div class="tab-content" id="tab-orders">
+    <div class="section-header">
+      <div class="section-title">&#128196; 주문 목록</div>
+      <button class="btn btn-sm" onclick="exportCSV('orders')">CSV 내보내기</button>
+    </div>
+    <div class="filter-bar">
+      <select id="orderYear" onchange="loadOrders()"><option value="">년도 전체</option></select>
+      <select id="orderWeek" onchange="loadOrders()"><option value="">주차 전체</option></select>
+      <select id="orderCust" onchange="loadOrders()"><option value="">거래처 전체</option></select>
+    </div>
+    <div class="summary-row" id="orderSummary"></div>
+    <div class="table-wrap"><table id="ordersTable">
+      <thead><tr><th>주문번호</th><th>일자</th><th>주차</th><th>거래처</th><th>품목수</th><th>박스합계</th><th>단합계</th><th>담당자</th></tr></thead>
+      <tbody id="ordersBody"><tr><td colspan="8"><div class="skeleton skel-line"></div></td></tr></tbody>
+    </table></div>
+    <div class="pagination" id="ordersPagination"></div>
+  </div>
+
+  <!-- ═══ TAB 3: 출하 ═══ -->
+  <div class="tab-content" id="tab-shipments">
+    <div class="section-header">
+      <div class="section-title">&#128666; 출하 목록</div>
+      <button class="btn btn-sm" onclick="exportCSV('shipments')">CSV 내보내기</button>
+    </div>
+    <div class="filter-bar">
+      <select id="shipYear" onchange="loadShipments()"><option value="">년도 전체</option></select>
+      <select id="shipWeek" onchange="loadShipments()"><option value="">주차 전체</option></select>
+      <select id="shipConfirmed" onchange="loadShipments()">
+        <option value="">확정여부 전체</option>
+        <option value="true">확정</option>
+        <option value="false">미확정</option>
+      </select>
+    </div>
+    <div class="table-wrap"><table id="shipmentsTable">
+      <thead><tr><th>출하번호</th><th>년도</th><th>주차</th><th>거래처</th><th>설명</th><th>확정여부</th></tr></thead>
+      <tbody id="shipmentsBody"><tr><td colspan="6"><div class="skeleton skel-line"></div></td></tr></tbody>
+    </table></div>
+    <div class="pagination" id="shipmentsPagination"></div>
+  </div>
+
+  <!-- ═══ TAB 4: 상품 ═══ -->
+  <div class="tab-content" id="tab-products">
+    <div class="section-header">
+      <div class="section-title">&#128230; 상품 목록</div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button class="btn btn-sm" id="viewToggleBtn" onclick="toggleProductView()">카드뷰</button>
+        <button class="btn btn-sm" onclick="exportCSV('products')">CSV 내보내기</button>
+      </div>
+    </div>
+    <div class="filter-bar">
+      <select id="prodCountry" onchange="loadProducts()"><option value="">국가 전체</option></select>
+      <select id="prodFlower" onchange="loadProducts()"><option value="">꽃 종류 전체</option></select>
+      <input type="text" class="search-input" id="prodSearch" placeholder="상품명 검색..." oninput="debounce(loadProducts, 400)()">
+    </div>
+    <div id="productsContainer"></div>
+    <div class="pagination" id="productsPagination"></div>
+  </div>
+
+  <!-- ═══ TAB 5: 거래처 ═══ -->
+  <div class="tab-content" id="tab-customers">
+    <div class="section-header">
+      <div class="section-title">&#127970; 거래처 목록</div>
+      <button class="btn btn-sm" onclick="exportCSV('customers')">CSV 내보내기</button>
+    </div>
+    <div class="filter-bar">
+      <input type="text" class="search-input" id="custSearch" placeholder="거래처명 검색..." oninput="debounce(loadCustomers, 400)()">
+    </div>
+    <div class="table-wrap"><table id="customersTable">
+      <thead><tr><th>거래처명</th><th>코드</th><th>지역</th><th>담당자</th><th>최근주문</th><th>총주문량</th></tr></thead>
+      <tbody id="customersBody"><tr><td colspan="6"><div class="skeleton skel-line"></div></td></tr></tbody>
+    </table></div>
+    <div class="pagination" id="customersPagination"></div>
+  </div>
+
+  <!-- ═══ TAB 6: 피벗 통계 ═══ -->
+  <div class="tab-content" id="tab-pivot">
+    <div class="section-header">
+      <div class="section-title">&#128202; 피벗 통계 — 국가/꽃종류/품목 x 거래처</div>
+      <button class="btn btn-sm" onclick="exportCSV('pivot')">CSV 내보내기</button>
+    </div>
+    <div class="filter-bar">
+      <select id="pivotYear" onchange="loadPivot()"><option value="">년도 전체</option></select>
+      <select id="pivotWeek" onchange="loadPivot()"><option value="">주차 전체</option></select>
+    </div>
+    <div class="table-wrap" id="pivotContainer" style="max-height:70vh;overflow:auto;">
+      <div style="padding:20px;"><div class="skeleton skel-block"></div></div>
+    </div>
+  </div>
+
+  <!-- ═══ TAB 7: 분석 ═══ -->
+  <div class="tab-content" id="tab-analysis">
+    <div class="section-header">
+      <div class="section-title">&#128202; 종합 분석</div>
+    </div>
+
+    <div class="charts-row">
+      <div class="card">
+        <div class="card-title">&#127758; 국가별 매출</div>
+        <div id="analysisByCountry" class="hbar-list"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">&#127801; 꽃 종류별 매출</div>
+        <div id="analysisByFlower" class="hbar-list"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">&#127970; 거래처별 매출</div>
+        <div id="analysisByCust" class="hbar-list"></div>
+      </div>
+    </div>
+
+    <div class="charts-row">
+      <div class="card">
+        <div class="card-title">&#128200; 주차별 주문 vs 출하 추이</div>
+        <div id="analysisTrend" class="vbar-chart" style="height:200px;"></div>
+        <div id="analysisTrendLegend" style="display:flex;gap:16px;margin-top:8px;font-size:11px;color:var(--muted);justify-content:center;"></div>
+      </div>
+    </div>
+
+    <div class="charts-row">
+      <div class="card">
+        <div class="card-title">&#127942; 거래처 순위 Top 10</div>
+        <div id="rankCustomers" class="hbar-list"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">&#127942; 품목 순위 Top 10</div>
+        <div id="rankProducts" class="hbar-list"></div>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<!-- ═══ RIGHT PANEL (AI Chat) ═══ -->
+<div class="right-panel-overlay" id="rpOverlay" onclick="closeAIPanel()"></div>
+<div class="right-panel" id="rpPanel">
+  <div class="rp-header">
+    <h3>AI 분석 챗봇</h3>
+    <button class="rp-close" onclick="closeAIPanel()">&times;</button>
+  </div>
+  <div class="rp-body">
+    <div class="rp-placeholder">
+      <div style="font-size:36px;margin-bottom:12px;opacity:.4;">&#129302;</div>
+      <div>MCP 연동 준비중입니다.<br>아래 빠른 질문을 사용하거나<br>직접 질문을 입력하세요.</div>
+    </div>
+    <div class="rp-quick-btns">
+      <button class="rp-quick-btn" onclick="aiQuickQ('이번주 주문 요약해줘')">이번주 주문 요약</button>
+      <button class="rp-quick-btn" onclick="aiQuickQ('재고 부족 품목 알려줘')">재고 부족 품목</button>
+      <button class="rp-quick-btn" onclick="aiQuickQ('콜롬비아 카네이션 현황')">콜롬비아 카네이션 현황</button>
+      <button class="rp-quick-btn" onclick="aiQuickQ('이번주 top 거래처는?')">이번주 Top 거래처</button>
+    </div>
+    <div id="aiMessages" style="margin-top:20px;"></div>
+  </div>
+  <div class="rp-footer">
+    <div class="rp-input-wrap">
+      <input class="rp-input" id="aiInput" placeholder="질문을 입력하세요..." onkeydown="if(event.key==='Enter')aiSend()">
+      <button class="btn btn-blue btn-sm" onclick="aiSend()">전송</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ DETAIL MODAL ═══ -->
+<div class="modal-overlay" id="detailModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="modalTitle">상세</h3>
+      <button class="modal-close" onclick="closeModal()">&times;</button>
+    </div>
+    <div id="modalBody"></div>
+  </div>
+</div>
+
+<script>
+/* ══════════════════════════════════════════════════════════
+   ORBIT AI — NENOVA DASHBOARD
+   ══════════════════════════════════════════════════════════ */
+
+const TOKEN = localStorage.getItem('orbit_token');
+const H = { 'Authorization': 'Bearer ' + (TOKEN || ''), 'Content-Type': 'application/json' };
+const API = '/api/nenova';
+
+let autoRefresh = true;
+let refreshTimer = null;
+let dbConnected = false;
+let productViewMode = 'table'; // 'table' or 'card'
+
+// ── Cached data ──
+let cachedCountries = [];
+let cachedFlowers = [];
+let cachedCustomerList = [];
+
+// ── Pagination state ──
+const PAGE_SIZE = 200;
+let ordersPage = 1, ordersTotal = 0, ordersData = [];
+let shipmentsPage = 1, shipmentsTotal = 0, shipmentsData = [];
+let productsPage = 1, productsTotal = 0, productsData = [];
+let customersPage = 1, customersTotal = 0, customersAllData = [];
+
+// ══════════════════════════════════════════════════════════
+//  UTILITIES
+// ══════════════════════════════════════════════════════════
+
+function fmt(n) {
+  if (n == null) return '-';
+  return Number(n).toLocaleString('ko-KR');
+}
+
+function debounce(fn, ms) {
+  let t;
+  return function() { clearTimeout(t); t = setTimeout(fn, ms); };
+}
+
+async function api(path, opts) {
+  try {
+    const res = await fetch(API + path, { headers: H, ...opts });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(text || res.statusText);
+    }
+    return await res.json();
+  } catch (e) {
+    console.warn('API error:', path, e.message);
+    return null;
+  }
+}
+
+function showDBError() {
+  document.getElementById('dbErrorBox').style.display = 'block';
+  document.querySelectorAll('.tab-content').forEach(el => el.style.display = 'none');
+}
+
+function hideDBError() {
+  document.getElementById('dbErrorBox').style.display = 'none';
+}
+
+const COLORS = ['#58a6ff','#3fb950','#ffa657','#f85149','#bc8cff','#39d2c0','#f778ba','#79c0ff','#d2a8ff','#a5d6ff'];
+
+function getColor(i) { return COLORS[i % COLORS.length]; }
+
+function skeleton(id) {
+  const el = document.getElementById(id);
+  if (el) el.innerHTML = '<div class="skeleton skel-block"></div>';
+}
+
+// ══════════════════════════════════════════════════════════
+//  TAB SWITCHING
+// ══════════════════════════════════════════════════════════
+
+function switchTab(tab) {
+  document.querySelectorAll('.tab-item').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.toggle('active', t.id === 'tab-' + tab));
+  // lazy load
+  if (tab === 'orders' && !ordersData.length) loadOrders();
+  if (tab === 'shipments' && !shipmentsData.length) loadShipments();
+  if (tab === 'products' && !productsData.length) loadProducts();
+  if (tab === 'customers' && !customersAllData.length) loadCustomers();
+  if (tab === 'pivot') loadPivot();
+  if (tab === 'analysis') loadAnalysis();
+}
+
+// ══════════════════════════════════════════════════════════
+//  CONNECTION CHECK
+// ══════════════════════════════════════════════════════════
+
+async function checkConnection() {
+  const data = await api('/connection');
+  const dot = document.getElementById('connDot');
+  const stat = document.getElementById('connStatus');
+  if (data && data.connected) {
+    dbConnected = true;
+    dot.className = 'conn-dot ok';
+    stat.innerHTML = '<span class="conn-dot ok"></span>DB 연결됨';
+    hideDBError();
+    return true;
+  } else {
+    dbConnected = false;
+    dot.className = 'conn-dot err';
+    stat.innerHTML = '<span class="conn-dot err"></span>DB 연결 실패';
+    showDBError();
+    return false;
+  }
+}
+
+// ══════════════════════════════════════════════════════════
+//  AUTO REFRESH
+// ══════════════════════════════════════════════════════════
+
+function toggleAutoRefresh() {
+  autoRefresh = !autoRefresh;
+  document.getElementById('autoRefreshToggle').classList.toggle('on', autoRefresh);
+  if (autoRefresh) startAutoRefresh();
+  else clearInterval(refreshTimer);
+}
+
+function startAutoRefresh() {
+  clearInterval(refreshTimer);
+  if (autoRefresh) {
+    refreshTimer = setInterval(() => {
+      const activeTab = document.querySelector('.tab-item.active');
+      if (activeTab) {
+        const tab = activeTab.dataset.tab;
+        if (tab === 'overview') loadOverview();
+        else if (tab === 'orders') loadOrders();
+        else if (tab === 'shipments') loadShipments();
+        else if (tab === 'products') loadProducts();
+        else if (tab === 'customers') loadCustomers();
+        else if (tab === 'pivot') loadPivot();
+        else if (tab === 'analysis') loadAnalysis();
+      }
+    }, 60000);
+  }
+}
+
+// ══════════════════════════════════════════════════════════
+//  LOAD FILTERS (Countries, Flowers, Customers)
+// ══════════════════════════════════════════════════════════
+
+async function loadFilters() {
+  const [countries, flowers, custs] = await Promise.all([
+    api('/countries'),
+    api('/flowers'),
+    api('/customers?limit=9999')
+  ]);
+
+  if (countries && Array.isArray(countries)) {
+    cachedCountries = countries;
+    populateSelect('prodCountry', countries.map(c => ({ value: c, label: c })));
+  }
+  if (flowers && Array.isArray(flowers)) {
+    cachedFlowers = flowers;
+    populateSelect('prodFlower', flowers.map(f => ({ value: f, label: f })));
+  }
+  if (custs && Array.isArray(custs)) {
+    cachedCustomerList = custs;
+    const custOpts = custs.map(c => ({ value: c.CustomerKey || c.customerKey || c.key, label: c.CustomerName || c.customerName || c.name || c.key }));
+    populateSelect('orderCust', custOpts);
+  }
+
+  // Year selects (2020-2027)
+  const currentYear = new Date().getFullYear();
+  const yearOpts = [];
+  for (let y = currentYear + 1; y >= 2020; y--) yearOpts.push({ value: y, label: y + '년' });
+  ['orderYear', 'shipYear', 'pivotYear'].forEach(id => populateSelect(id, yearOpts));
+
+  // Week selects (1-53)
+  const weekOpts = [];
+  for (let w = 1; w <= 53; w++) weekOpts.push({ value: w, label: w + '주차' });
+  ['orderWeek', 'shipWeek', 'pivotWeek'].forEach(id => populateSelect(id, weekOpts));
+}
+
+function populateSelect(id, options) {
+  const sel = document.getElementById(id);
+  if (!sel) return;
+  const first = sel.options[0];
+  sel.innerHTML = '';
+  sel.appendChild(first);
+  options.forEach(o => {
+    const opt = document.createElement('option');
+    opt.value = o.value;
+    opt.textContent = o.label;
+    sel.appendChild(opt);
+  });
+}
+
+// ══════════════════════════════════════════════════════════
+//  TAB 1: OVERVIEW
+// ══════════════════════════════════════════════════════════
+
+async function loadOverview() {
+  const [dash, weekly, lowStock, recentOrd, recentShip] = await Promise.all([
+    api('/dashboard'),
+    api('/dashboard/weekly'),
+    api('/products/stock?low=true'),
+    api('/orders?limit=5'),
+    api('/shipments?limit=5')
+  ]);
+
+  // KPI
+  if (dash) {
+    document.getElementById('kpiProducts').textContent = fmt(dash.totalProducts);
+    document.getElementById('kpiCustomers').textContent = fmt(dash.totalCustomers);
+    document.getElementById('kpiOrders').textContent = fmt(dash.weeklyOrders);
+    document.getElementById('kpiOrdersSub').textContent = dash.weekLabel || '';
+    document.getElementById('kpiShipments').textContent = fmt(dash.weeklyShipments);
+    document.getElementById('kpiShipmentsSub').textContent = dash.weekLabel || '';
+
+    // Country chart
+    if (dash.byCountry && dash.byCountry.length) {
+      renderHBar('chartCountry', dash.byCountry.map(c => ({
+        label: c.country || c.Country || '기타',
+        value: c.total || c.quantity || 0
+      })));
+    }
+
+    // Flower donut
+    if (dash.byFlower && dash.byFlower.length) {
+      renderDonut('chartFlower', dash.byFlower.map(f => ({
+        label: f.flower || f.FlowerType || '기타',
+        value: f.total || f.quantity || 0
+      })));
+    }
+  }
+
+  // Weekly trend
+  if (weekly && Array.isArray(weekly) && weekly.length) {
+    const last8 = weekly.slice(-8);
+    renderVBar('chartWeekly', last8.map(w => ({
+      label: w.week + '주',
+      value: w.orders || w.total || 0
+    })), var_blue());
+  }
+
+  // Low stock alert
+  if (lowStock && Array.isArray(lowStock) && lowStock.length) {
+    const el = document.getElementById('lowStockAlert');
+    el.innerHTML = `<div class="alert-box"><div class="alert-title">&#9888; 재고 부족 알림 (5박스 이하)</div>
+      ${lowStock.map(p => `<div class="alert-item"><span class="badge badge-red">${fmt(p.stock || p.Stock || 0)}박스</span><span>${p.name || p.ProductName || '-'}</span><span style="color:var(--muted);font-size:12px;">${p.country || p.Country || ''} / ${p.flower || p.FlowerType || ''}</span></div>`).join('')}
+    </div>`;
+  }
+
+  // Recent orders
+  if (recentOrd && Array.isArray(recentOrd)) {
+    const rows = recentOrd.slice(0, 5);
+    document.getElementById('recentOrders').innerHTML = rows.length
+      ? `<table><thead><tr><th>주문번호</th><th>일자</th><th>거래처</th><th>박스</th></tr></thead><tbody>${rows.map(r => `<tr><td>${r.OrderKey || r.orderKey || '-'}</td><td>${r.OrderDate || r.orderDate || '-'}</td><td>${r.CustomerName || r.customerName || '-'}</td><td>${fmt(r.TotalBoxes || r.totalBoxes)}</td></tr>`).join('')}</tbody></table>`
+      : '<div style="color:var(--muted);font-size:13px;padding:12px;">데이터 없음</div>';
+  }
+
+  // Recent shipments
+  if (recentShip && Array.isArray(recentShip)) {
+    const rows = recentShip.slice(0, 5);
+    document.getElementById('recentShipments').innerHTML = rows.length
+      ? `<table><thead><tr><th>출하번호</th><th>주차</th><th>거래처</th><th>확정</th></tr></thead><tbody>${rows.map(r => `<tr><td>${r.ShipmentKey || r.shipmentKey || '-'}</td><td>${r.WeekNumber || r.weekNumber || '-'}</td><td>${r.CustomerName || r.customerName || '-'}</td><td>${(r.Confirmed || r.confirmed) ? '<span class="badge badge-green">확정</span>' : '<span class="badge badge-muted">미확정</span>'}</td></tr>`).join('')}</tbody></table>`
+      : '<div style="color:var(--muted);font-size:13px;padding:12px;">데이터 없음</div>';
+  }
+}
+
+function var_blue() { return getComputedStyle(document.documentElement).getPropertyValue('--blue').trim() || '#58a6ff'; }
+
+// ══════════════════════════════════════════════════════════
+//  TAB 2: ORDERS
+// ══════════════════════════════════════════════════════════
+
+async function loadOrders() {
+  const year = document.getElementById('orderYear').value;
+  const week = document.getElementById('orderWeek').value;
+  const cust = document.getElementById('orderCust').value;
+  let qs = '?limit=9999';
+  if (year) qs += '&year=' + year;
+  if (week) qs += '&week=' + week;
+  if (cust) qs += '&custKey=' + encodeURIComponent(cust);
+
+  const [data, summary] = await Promise.all([
+    api('/orders' + qs),
+    api('/orders/summary' + qs)
+  ]);
+
+  // Summary
+  if (summary) {
+    document.getElementById('orderSummary').innerHTML = `
+      <div class="summary-card"><div class="s-label">총 주문</div><div class="s-val">${fmt(summary.totalOrders)}</div></div>
+      <div class="summary-card"><div class="s-label">총 품목</div><div class="s-val">${fmt(summary.totalItems)}</div></div>
+      <div class="summary-card"><div class="s-label">총 박스</div><div class="s-val">${fmt(summary.totalBoxes)}</div></div>
+    `;
+  }
+
+  ordersData = (data && Array.isArray(data)) ? data : [];
+  ordersTotal = ordersData.length;
+  ordersPage = 1;
+  renderOrdersPage();
+}
+
+function renderOrdersPage() {
+  const start = (ordersPage - 1) * PAGE_SIZE;
+  const page = ordersData.slice(start, start + PAGE_SIZE);
+  const tbody = document.getElementById('ordersBody');
+
+  if (!page.length) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:20px;">데이터 없음</td></tr>';
+    document.getElementById('ordersPagination').innerHTML = '';
+    return;
+  }
+
+  tbody.innerHTML = page.map((r, i) => {
+    const key = r.OrderKey || r.orderKey || r.key || '';
+    return `<tr class="clickable" onclick="toggleOrderDetail(this, '${key}')" data-idx="${start + i}">
+      <td>${key}</td>
+      <td>${r.OrderDate || r.orderDate || '-'}</td>
+      <td>${r.WeekNumber || r.weekNumber || '-'}</td>
+      <td>${r.CustomerName || r.customerName || '-'}</td>
+      <td>${fmt(r.ItemCount || r.itemCount)}</td>
+      <td>${fmt(r.TotalBoxes || r.totalBoxes)}</td>
+      <td>${fmt(r.TotalUnits || r.totalUnits)}</td>
+      <td>${r.Manager || r.manager || '-'}</td>
+    </tr>`;
+  }).join('');
+
+  renderPagination('ordersPagination', ordersTotal, ordersPage, p => { ordersPage = p; renderOrdersPage(); });
+}
+
+async function toggleOrderDetail(row, key) {
+  const next = row.nextElementSibling;
+  if (next && next.classList.contains('expand-row')) {
+    next.remove();
+    return;
+  }
+  // Remove any existing expand
+  document.querySelectorAll('#ordersBody .expand-row').forEach(e => e.remove());
+
+  const detail = await api('/orders/' + encodeURIComponent(key));
+  if (!detail) return;
+
+  const items = detail.items || detail.details || [];
+  const tr = document.createElement('tr');
+  tr.className = 'expand-row';
+  tr.innerHTML = `<td colspan="8">
+    <div style="font-size:13px;font-weight:600;margin-bottom:8px;">주문 상세 — ${key}</div>
+    <table><thead><tr><th>품목</th><th>국가</th><th>꽃종류</th><th>박스수량</th><th>단수량</th></tr></thead>
+    <tbody>${items.map(it => `<tr>
+      <td>${it.ProductName || it.productName || '-'}</td>
+      <td>${it.Country || it.country || '-'}</td>
+      <td>${it.FlowerType || it.flowerType || '-'}</td>
+      <td>${fmt(it.BoxQuantity || it.boxQuantity)}</td>
+      <td>${fmt(it.UnitQuantity || it.unitQuantity)}</td>
+    </tr>`).join('')}</tbody></table>
+  </td>`;
+  row.after(tr);
+}
+
+// ══════════════════════════════════════════════════════════
+//  TAB 3: SHIPMENTS
+// ══════════════════════════════════════════════════════════
+
+async function loadShipments() {
+  const year = document.getElementById('shipYear').value;
+  const week = document.getElementById('shipWeek').value;
+  const confirmed = document.getElementById('shipConfirmed').value;
+  let qs = '?limit=9999';
+  if (year) qs += '&year=' + year;
+  if (week) qs += '&week=' + week;
+  if (confirmed) qs += '&confirmed=' + confirmed;
+
+  const data = await api('/shipments' + qs);
+  shipmentsData = (data && Array.isArray(data)) ? data : [];
+  shipmentsTotal = shipmentsData.length;
+  shipmentsPage = 1;
+  renderShipmentsPage();
+}
+
+function renderShipmentsPage() {
+  const start = (shipmentsPage - 1) * PAGE_SIZE;
+  const page = shipmentsData.slice(start, start + PAGE_SIZE);
+  const tbody = document.getElementById('shipmentsBody');
+
+  if (!page.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:20px;">데이터 없음</td></tr>';
+    document.getElementById('shipmentsPagination').innerHTML = '';
+    return;
+  }
+
+  tbody.innerHTML = page.map(r => {
+    const key = r.ShipmentKey || r.shipmentKey || r.key || '';
+    const conf = r.Confirmed || r.confirmed;
+    return `<tr class="clickable" onclick="toggleShipmentDetail(this, '${key}')">
+      <td>${key}</td>
+      <td>${r.Year || r.year || '-'}</td>
+      <td>${r.WeekNumber || r.weekNumber || '-'}</td>
+      <td>${r.CustomerName || r.customerName || '-'}</td>
+      <td>${r.Description || r.description || '-'}</td>
+      <td>${conf ? '<span class="badge badge-green">확정</span>' : '<span class="badge badge-muted">미확정</span>'}</td>
+    </tr>`;
+  }).join('');
+
+  renderPagination('shipmentsPagination', shipmentsTotal, shipmentsPage, p => { shipmentsPage = p; renderShipmentsPage(); });
+}
+
+async function toggleShipmentDetail(row, key) {
+  const next = row.nextElementSibling;
+  if (next && next.classList.contains('expand-row')) {
+    next.remove();
+    return;
+  }
+  document.querySelectorAll('#shipmentsBody .expand-row').forEach(e => e.remove());
+
+  const detail = await api('/shipments/' + encodeURIComponent(key));
+  if (!detail) return;
+
+  const items = detail.items || detail.details || [];
+  const tr = document.createElement('tr');
+  tr.className = 'expand-row';
+  tr.innerHTML = `<td colspan="6">
+    <div style="font-size:13px;font-weight:600;margin-bottom:8px;">출하 상세 — ${key}</div>
+    <table><thead><tr><th>품목</th><th>국가</th><th>꽃종류</th><th>박스수량</th><th>단수량</th></tr></thead>
+    <tbody>${items.map(it => `<tr>
+      <td>${it.ProductName || it.productName || '-'}</td>
+      <td>${it.Country || it.country || '-'}</td>
+      <td>${it.FlowerType || it.flowerType || '-'}</td>
+      <td>${fmt(it.BoxQuantity || it.boxQuantity)}</td>
+      <td>${fmt(it.UnitQuantity || it.unitQuantity)}</td>
+    </tr>`).join('')}</tbody></table>
+  </td>`;
+  row.after(tr);
+}
+
+// ══════════════════════════════════════════════════════════
+//  TAB 4: PRODUCTS
+// ══════════════════════════════════════════════════════════
+
+async function loadProducts() {
+  const country = document.getElementById('prodCountry').value;
+  const flower = document.getElementById('prodFlower').value;
+  const search = document.getElementById('prodSearch').value;
+  let qs = '?limit=9999';
+  if (country) qs += '&country=' + encodeURIComponent(country);
+  if (flower) qs += '&flower=' + encodeURIComponent(flower);
+  if (search) qs += '&search=' + encodeURIComponent(search);
+
+  const data = await api('/products' + qs);
+  productsData = (data && Array.isArray(data)) ? data : [];
+  productsTotal = productsData.length;
+  productsPage = 1;
+  renderProductsPage();
+}
+
+function renderProductsPage() {
+  const start = (productsPage - 1) * PAGE_SIZE;
+  const page = productsData.slice(start, start + PAGE_SIZE);
+  const container = document.getElementById('productsContainer');
+
+  if (!page.length) {
+    container.innerHTML = '<div style="text-align:center;color:var(--muted);padding:40px;">데이터 없음</div>';
+    document.getElementById('productsPagination').innerHTML = '';
+    return;
+  }
+
+  if (productViewMode === 'card') {
+    container.innerHTML = `<div class="product-grid">${page.map(p => {
+      const stock = p.Stock || p.stock || 0;
+      const stockClass = stock <= 5 ? 'stock-red' : stock <= 15 ? 'stock-yellow' : 'stock-green';
+      const name = p.ProductName || p.productName || p.name || '-';
+      const key = p.ProductKey || p.productKey || p.key || '';
+      return `<div class="product-card" onclick="showProductDetail('${key}')">
+        <div class="p-name">${name}</div>
+        <div class="p-meta"><span>${p.Country || p.country || '-'}</span><span>${p.FlowerType || p.flowerType || '-'}</span></div>
+        <div class="p-stock ${stockClass}">재고: ${fmt(stock)} 박스</div>
+      </div>`;
+    }).join('')}</div>`;
+  } else {
+    container.innerHTML = `<div class="table-wrap"><table>
+      <thead><tr><th>상품명</th><th>국가</th><th>꽃종류</th><th>재고</th></tr></thead>
+      <tbody>${page.map(p => {
+        const stock = p.Stock || p.stock || 0;
+        const stockClass = stock <= 5 ? 'stock-red' : stock <= 15 ? 'stock-yellow' : 'stock-green';
+        const name = p.ProductName || p.productName || p.name || '-';
+        const key = p.ProductKey || p.productKey || p.key || '';
+        return `<tr class="clickable" onclick="showProductDetail('${key}')">
+          <td>${name}</td>
+          <td>${p.Country || p.country || '-'}</td>
+          <td>${p.FlowerType || p.flowerType || '-'}</td>
+          <td class="${stockClass}">${fmt(stock)} 박스</td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table></div>`;
+  }
+
+  renderPagination('productsPagination', productsTotal, productsPage, p => { productsPage = p; renderProductsPage(); });
+}
+
+function toggleProductView() {
+  productViewMode = productViewMode === 'table' ? 'card' : 'table';
+  document.getElementById('viewToggleBtn').textContent = productViewMode === 'table' ? '카드뷰' : '테이블뷰';
+  renderProductsPage();
+}
+
+async function showProductDetail(key) {
+  if (!key) return;
+  const data = await api('/products?search=' + encodeURIComponent(key));
+  const p = (data && Array.isArray(data) && data.length) ? data[0] : null;
+  if (!p) return;
+
+  const stock = p.Stock || p.stock || 0;
+  const stockClass = stock <= 5 ? 'stock-red' : stock <= 15 ? 'stock-yellow' : 'stock-green';
+
+  document.getElementById('modalTitle').textContent = p.ProductName || p.productName || p.name || '상품 상세';
+  document.getElementById('modalBody').innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px;">
+      <div><span style="color:var(--muted);font-size:12px;">국가</span><div style="font-size:15px;">${p.Country || p.country || '-'}</div></div>
+      <div><span style="color:var(--muted);font-size:12px;">꽃 종류</span><div style="font-size:15px;">${p.FlowerType || p.flowerType || '-'}</div></div>
+      <div><span style="color:var(--muted);font-size:12px;">재고</span><div class="${stockClass}" style="font-size:15px;">${fmt(stock)} 박스</div></div>
+      <div><span style="color:var(--muted);font-size:12px;">상품코드</span><div style="font-size:15px;">${key}</div></div>
+    </div>
+    <div style="color:var(--muted);font-size:13px;">주문/출하 이력은 주문, 출하 탭에서 확인할 수 있습니다.</div>
+  `;
+  document.getElementById('detailModal').classList.add('open');
+}
+
+// ══════════════════════════════════════════════════════════
+//  TAB 5: CUSTOMERS
+// ══════════════════════════════════════════════════════════
+
+async function loadCustomers() {
+  const search = document.getElementById('custSearch').value;
+  let qs = '?limit=9999';
+  if (search) qs += '&search=' + encodeURIComponent(search);
+
+  const data = await api('/customers' + qs);
+  customersAllData = (data && Array.isArray(data)) ? data : [];
+  customersTotal = customersAllData.length;
+  customersPage = 1;
+  renderCustomersPage();
+}
+
+function renderCustomersPage() {
+  const start = (customersPage - 1) * PAGE_SIZE;
+  const page = customersAllData.slice(start, start + PAGE_SIZE);
+  const tbody = document.getElementById('customersBody');
+
+  if (!page.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:20px;">데이터 없음</td></tr>';
+    document.getElementById('customersPagination').innerHTML = '';
+    return;
+  }
+
+  tbody.innerHTML = page.map(c => {
+    const key = c.CustomerKey || c.customerKey || c.key || '';
+    const name = c.CustomerName || c.customerName || c.name || '-';
+    return `<tr class="clickable" onclick="showCustomerDetail('${key}')">
+      <td>${name}</td>
+      <td>${c.CustomerCode || c.customerCode || c.code || '-'}</td>
+      <td>${c.Region || c.region || '-'}</td>
+      <td>${c.Manager || c.manager || '-'}</td>
+      <td>${c.LastOrderDate || c.lastOrderDate || '-'}</td>
+      <td>${fmt(c.TotalOrders || c.totalOrders)}</td>
+    </tr>`;
+  }).join('');
+
+  renderPagination('customersPagination', customersTotal, customersPage, p => { customersPage = p; renderCustomersPage(); });
+}
+
+async function showCustomerDetail(key) {
+  if (!key) return;
+  const data = await api('/customers/' + encodeURIComponent(key));
+  if (!data) return;
+
+  const c = data;
+  const name = c.CustomerName || c.customerName || c.name || '거래처 상세';
+  const orders = c.recentOrders || [];
+  const products = c.topProducts || [];
+
+  document.getElementById('modalTitle').textContent = name;
+  document.getElementById('modalBody').innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px;">
+      <div><span style="color:var(--muted);font-size:12px;">거래처코드</span><div>${c.CustomerCode || c.customerCode || c.code || '-'}</div></div>
+      <div><span style="color:var(--muted);font-size:12px;">지역</span><div>${c.Region || c.region || '-'}</div></div>
+      <div><span style="color:var(--muted);font-size:12px;">담당자</span><div>${c.Manager || c.manager || '-'}</div></div>
+      <div><span style="color:var(--muted);font-size:12px;">총 주문량</span><div>${fmt(c.TotalOrders || c.totalOrders)}</div></div>
+    </div>
+    ${orders.length ? `<div style="margin-top:16px;"><div style="font-size:13px;font-weight:600;margin-bottom:8px;">최근 주문</div>
+      <table><thead><tr><th>주문번호</th><th>일자</th><th>박스합계</th></tr></thead>
+      <tbody>${orders.map(o => `<tr><td>${o.OrderKey || o.orderKey || '-'}</td><td>${o.OrderDate || o.orderDate || '-'}</td><td>${fmt(o.TotalBoxes || o.totalBoxes)}</td></tr>`).join('')}</tbody></table>
+    </div>` : ''}
+    ${products.length ? `<div style="margin-top:16px;"><div style="font-size:13px;font-weight:600;margin-bottom:8px;">주요 품목</div>
+      <table><thead><tr><th>품목</th><th>주문수량</th></tr></thead>
+      <tbody>${products.map(p => `<tr><td>${p.ProductName || p.productName || '-'}</td><td>${fmt(p.TotalQuantity || p.totalQuantity)}</td></tr>`).join('')}</tbody></table>
+    </div>` : ''}
+  `;
+  document.getElementById('detailModal').classList.add('open');
+}
+
+// ══════════════════════════════════════════════════════════
+//  TAB 6: PIVOT
+// ══════════════════════════════════════════════════════════
+
+async function loadPivot() {
+  const year = document.getElementById('pivotYear').value;
+  const week = document.getElementById('pivotWeek').value;
+  let qs = '';
+  const params = [];
+  if (year) params.push('year=' + year);
+  if (week) params.push('week=' + week);
+  if (params.length) qs = '?' + params.join('&');
+
+  const data = await api('/orders/pivot' + qs);
+  if (!data) {
+    document.getElementById('pivotContainer').innerHTML = '<div style="padding:20px;color:var(--muted);text-align:center;">피벗 데이터를 불러올 수 없습니다.</div>';
+    return;
+  }
+
+  const customers = data.customers || [];
+  const rows = data.rows || [];
+
+  if (!customers.length || !rows.length) {
+    document.getElementById('pivotContainer').innerHTML = '<div style="padding:20px;color:var(--muted);text-align:center;">해당 기간의 데이터가 없습니다.</div>';
+    return;
+  }
+
+  let html = '<table class="pivot-table"><thead><tr><th style="min-width:200px;">국가 / 꽃종류 / 품목</th>';
+  customers.forEach(c => { html += `<th style="min-width:80px;">${c}</th>`; });
+  html += '<th style="min-width:80px;">합계</th></tr></thead><tbody>';
+
+  rows.forEach((country, ci) => {
+    const countryId = 'pc_' + ci;
+    // Country row
+    html += `<tr class="pivot-row-group" onclick="togglePivotGroup('${countryId}')">
+      <td><span class="pivot-toggle" id="tog_${countryId}">&#9660;</span> <strong>${country.name || '-'}</strong></td>`;
+    customers.forEach((_, j) => { html += `<td class="pivot-sum">${fmt(country.totals ? country.totals[j] : 0)}</td>`; });
+    html += `<td class="pivot-sum">${fmt(country.grandTotal || 0)}</td></tr>`;
+
+    // Flower children
+    if (country.children) {
+      country.children.forEach((flower, fi) => {
+        const flowerId = countryId + '_f' + fi;
+        html += `<tr class="pivot-child pivot-row-group" data-parent="${countryId}" onclick="event.stopPropagation();togglePivotGroup('${flowerId}')">
+          <td style="padding-left:28px;"><span class="pivot-toggle" id="tog_${flowerId}">&#9660;</span> ${flower.name || '-'}</td>`;
+        customers.forEach((_, j) => { html += `<td style="font-weight:600;">${fmt(flower.totals ? flower.totals[j] : 0)}</td>`; });
+        html += `<td style="font-weight:600;">${fmt(flower.grandTotal || 0)}</td></tr>`;
+
+        // Product grandchildren
+        if (flower.children) {
+          flower.children.forEach(prod => {
+            html += `<tr class="pivot-child pivot-grandchild" data-parent="${flowerId}">
+              <td style="padding-left:48px;">${prod.name || '-'}</td>`;
+            customers.forEach((_, j) => { html += `<td>${fmt(prod.values ? prod.values[j] : 0)}</td>`; });
+            html += `<td>${fmt(prod.grandTotal || 0)}</td></tr>`;
+          });
+        }
+      });
+    }
+  });
+
+  html += '</tbody></table>';
+  document.getElementById('pivotContainer').innerHTML = html;
+}
+
+function togglePivotGroup(id) {
+  const children = document.querySelectorAll(`[data-parent="${id}"]`);
+  const tog = document.getElementById('tog_' + id);
+  const isCollapsed = tog && tog.classList.contains('collapsed');
+
+  if (isCollapsed) {
+    tog.classList.remove('collapsed');
+    children.forEach(c => c.classList.add('visible'));
+  } else {
+    if (tog) tog.classList.add('collapsed');
+    children.forEach(c => {
+      c.classList.remove('visible');
+      // Also collapse sub-children
+      const subId = c.querySelector('.pivot-toggle');
+      if (subId) {
+        subId.classList.add('collapsed');
+        const subParent = subId.id.replace('tog_', '');
+        document.querySelectorAll(`[data-parent="${subParent}"]`).forEach(sc => sc.classList.remove('visible'));
+      }
+    });
+  }
+}
+
+// ══════════════════════════════════════════════════════════
+//  TAB 7: ANALYSIS
+// ══════════════════════════════════════════════════════════
+
+async function loadAnalysis() {
+  const [sales, trends, ranking] = await Promise.all([
+    api('/analysis/sales'),
+    api('/analysis/trends'),
+    api('/analysis/ranking')
+  ]);
+
+  // Sales by category
+  if (sales) {
+    if (sales.byCountry) renderHBar('analysisByCountry', sales.byCountry.map(c => ({ label: c.country || c.name || '-', value: c.total || 0 })));
+    if (sales.byFlower) renderHBar('analysisByFlower', sales.byFlower.map(f => ({ label: f.flower || f.name || '-', value: f.total || 0 })));
+    if (sales.byCustomer) renderHBar('analysisByCust', sales.byCustomer.slice(0, 10).map(c => ({ label: c.customer || c.name || '-', value: c.total || 0 })));
+  }
+
+  // Trends — dual bar
+  if (trends && Array.isArray(trends) && trends.length) {
+    const chartEl = document.getElementById('analysisTrend');
+    const max = Math.max(...trends.map(t => Math.max(t.orders || 0, t.shipments || 0)), 1);
+    chartEl.innerHTML = trends.slice(-12).map(t => {
+      const oh = Math.round(((t.orders || 0) / max) * 100);
+      const sh = Math.round(((t.shipments || 0) / max) * 100);
+      return `<div class="vbar-wrap">
+        <div class="vbar-area" style="gap:2px;">
+          <div class="vbar" style="height:${oh}%;background:var(--blue);max-width:14px;"><div class="vbar-tooltip">주문 ${fmt(t.orders)}</div></div>
+          <div class="vbar" style="height:${sh}%;background:var(--green);max-width:14px;"><div class="vbar-tooltip">출하 ${fmt(t.shipments)}</div></div>
+        </div>
+        <div class="vbar-label">${t.week || ''}주</div>
+      </div>`;
+    }).join('');
+    document.getElementById('analysisTrendLegend').innerHTML = '<span><span style="display:inline-block;width:10px;height:10px;background:var(--blue);border-radius:2px;margin-right:4px;"></span>주문</span><span><span style="display:inline-block;width:10px;height:10px;background:var(--green);border-radius:2px;margin-right:4px;"></span>출하</span>';
+  }
+
+  // Rankings
+  if (ranking) {
+    if (ranking.topCustomers) renderHBar('rankCustomers', ranking.topCustomers.slice(0, 10).map(c => ({ label: c.customer || c.name || '-', value: c.total || 0 })));
+    if (ranking.topProducts) renderHBar('rankProducts', ranking.topProducts.slice(0, 10).map(p => ({ label: p.product || p.name || '-', value: p.total || 0 })));
+  }
+}
+
+// ══════════════════════════════════════════════════════════
+//  CHART RENDERERS
+// ══════════════════════════════════════════════════════════
+
+function renderHBar(containerId, items) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  if (!items.length) { el.innerHTML = '<div style="color:var(--muted);font-size:13px;">데이터 없음</div>'; return; }
+
+  const max = Math.max(...items.map(i => i.value), 1);
+  el.innerHTML = items.map((item, idx) => {
+    const pct = Math.round((item.value / max) * 100);
+    const color = getColor(idx);
+    return `<div class="hbar-item">
+      <div class="hbar-label" title="${item.label}">${item.label}</div>
+      <div class="hbar-track"><div class="hbar-fill" style="width:${pct}%;background:${color};"></div></div>
+      <div class="hbar-val">${fmt(item.value)}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderDonut(containerId, items) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  if (!items.length) { el.innerHTML = '<div style="color:var(--muted);font-size:13px;">데이터 없음</div>'; return; }
+
+  const total = items.reduce((s, i) => s + i.value, 0) || 1;
+  let gradParts = [];
+  let acc = 0;
+  items.forEach((item, idx) => {
+    const pct = (item.value / total) * 100;
+    const color = getColor(idx);
+    gradParts.push(`${color} ${acc}% ${acc + pct}%`);
+    acc += pct;
+  });
+
+  const legend = items.map((item, idx) => {
+    const pct = Math.round((item.value / total) * 100);
+    return `<div class="donut-legend-item"><div class="donut-legend-dot" style="background:${getColor(idx)};"></div><span>${item.label} (${pct}%)</span></div>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div class="donut" style="background:conic-gradient(${gradParts.join(',')});">
+      <div class="donut-hole">${fmt(total)}</div>
+    </div>
+    <div class="donut-legend">${legend}</div>
+  `;
+}
+
+function renderVBar(containerId, items, color) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  if (!items.length) { el.innerHTML = '<div style="color:var(--muted);font-size:13px;">데이터 없음</div>'; return; }
+
+  const max = Math.max(...items.map(i => i.value), 1);
+  el.innerHTML = items.map((item, idx) => {
+    const pct = Math.round((item.value / max) * 100);
+    const c = color || getColor(idx);
+    return `<div class="vbar-wrap">
+      <div class="vbar-area"><div class="vbar" style="height:${pct}%;background:${c};"><div class="vbar-tooltip">${fmt(item.value)}</div></div></div>
+      <div class="vbar-label">${item.label}</div>
+    </div>`;
+  }).join('');
+}
+
+// ══════════════════════════════════════════════════════════
+//  PAGINATION
+// ══════════════════════════════════════════════════════════
+
+function renderPagination(containerId, total, currentPage, onPage) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  const totalPages = Math.ceil(total / PAGE_SIZE);
+  if (totalPages <= 1) { el.innerHTML = `<span class="page-info">총 ${fmt(total)}건</span>`; return; }
+
+  let html = `<button class="page-btn" ${currentPage <= 1 ? 'disabled' : ''} onclick="void(0)">&#9664;</button>`;
+
+  const start = Math.max(1, currentPage - 3);
+  const end = Math.min(totalPages, currentPage + 3);
+
+  if (start > 1) html += `<button class="page-btn" data-p="1">1</button>`;
+  if (start > 2) html += `<span class="page-info">...</span>`;
+
+  for (let p = start; p <= end; p++) {
+    html += `<button class="page-btn ${p === currentPage ? 'active' : ''}" data-p="${p}">${p}</button>`;
+  }
+
+  if (end < totalPages - 1) html += `<span class="page-info">...</span>`;
+  if (end < totalPages) html += `<button class="page-btn" data-p="${totalPages}">${totalPages}</button>`;
+
+  html += `<button class="page-btn" ${currentPage >= totalPages ? 'disabled' : ''} onclick="void(0)">&#9654;</button>`;
+  html += `<span class="page-info">총 ${fmt(total)}건</span>`;
+
+  el.innerHTML = html;
+
+  // Bind events
+  el.querySelectorAll('.page-btn[data-p]').forEach(btn => {
+    btn.addEventListener('click', () => onPage(parseInt(btn.dataset.p)));
+  });
+  // Prev/Next
+  const btns = el.querySelectorAll('.page-btn');
+  if (btns[0] && currentPage > 1) btns[0].addEventListener('click', () => onPage(currentPage - 1));
+  const last = btns[btns.length - 2]; // second to last is next button (last is total text)
+  // Actually fix: next button
+  const allBtns = Array.from(el.querySelectorAll('.page-btn'));
+  const prevBtn = allBtns[0];
+  const nextBtn = allBtns[allBtns.length - 1];
+  if (prevBtn && !prevBtn.dataset.p) prevBtn.addEventListener('click', () => { if (currentPage > 1) onPage(currentPage - 1); });
+  if (nextBtn && !nextBtn.dataset.p) nextBtn.addEventListener('click', () => { if (currentPage < totalPages) onPage(currentPage + 1); });
+}
+
+// ══════════════════════════════════════════════════════════
+//  CSV EXPORT
+// ══════════════════════════════════════════════════════════
+
+function exportCSV(type) {
+  let rows = [];
+  let filename = 'nenova_' + type + '_' + new Date().toISOString().slice(0,10) + '.csv';
+
+  if (type === 'orders') {
+    rows.push(['주문번호','일자','주차','거래처','품목수','박스합계','단합계','담당자']);
+    ordersData.forEach(r => rows.push([
+      r.OrderKey || r.orderKey || '', r.OrderDate || r.orderDate || '', r.WeekNumber || r.weekNumber || '',
+      r.CustomerName || r.customerName || '', r.ItemCount || r.itemCount || '', r.TotalBoxes || r.totalBoxes || '',
+      r.TotalUnits || r.totalUnits || '', r.Manager || r.manager || ''
+    ]));
+  } else if (type === 'shipments') {
+    rows.push(['출하번호','년도','주차','거래처','설명','확정여부']);
+    shipmentsData.forEach(r => rows.push([
+      r.ShipmentKey || r.shipmentKey || '', r.Year || r.year || '', r.WeekNumber || r.weekNumber || '',
+      r.CustomerName || r.customerName || '', r.Description || r.description || '', (r.Confirmed || r.confirmed) ? '확정' : '미확정'
+    ]));
+  } else if (type === 'products') {
+    rows.push(['상품명','국가','꽃종류','재고']);
+    productsData.forEach(r => rows.push([
+      r.ProductName || r.productName || r.name || '', r.Country || r.country || '',
+      r.FlowerType || r.flowerType || '', r.Stock || r.stock || 0
+    ]));
+  } else if (type === 'customers') {
+    rows.push(['거래처명','코드','지역','담당자','최근주문','총주문량']);
+    customersAllData.forEach(r => rows.push([
+      r.CustomerName || r.customerName || r.name || '', r.CustomerCode || r.customerCode || r.code || '',
+      r.Region || r.region || '', r.Manager || r.manager || '',
+      r.LastOrderDate || r.lastOrderDate || '', r.TotalOrders || r.totalOrders || ''
+    ]));
+  } else if (type === 'pivot') {
+    // Export visible pivot table
+    const table = document.querySelector('#pivotContainer table');
+    if (table) {
+      table.querySelectorAll('tr').forEach(tr => {
+        const cells = [];
+        tr.querySelectorAll('th, td').forEach(td => cells.push(td.textContent.trim()));
+        rows.push(cells);
+      });
+    }
+  }
+
+  if (rows.length <= 1) { alert('내보낼 데이터가 없습니다.'); return; }
+
+  // BOM for Korean Excel
+  const bom = '\uFEFF';
+  const csv = bom + rows.map(r => r.map(c => '"' + String(c).replace(/"/g, '""') + '"').join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ══════════════════════════════════════════════════════════
+//  RIGHT PANEL (AI Chat)
+// ══════════════════════════════════════════════════════════
+
+function openAIPanel() {
+  document.getElementById('rpPanel').classList.add('open');
+  document.getElementById('rpOverlay').classList.add('open');
+}
+
+function closeAIPanel() {
+  document.getElementById('rpPanel').classList.remove('open');
+  document.getElementById('rpOverlay').classList.remove('open');
+}
+
+function aiQuickQ(q) {
+  const msgEl = document.getElementById('aiMessages');
+  msgEl.innerHTML += `<div style="margin-bottom:12px;">
+    <div style="font-size:12px;color:var(--blue);margin-bottom:4px;">질문</div>
+    <div style="background:var(--surface2);padding:10px 14px;border-radius:8px;font-size:13px;">${q}</div>
+  </div>
+  <div style="margin-bottom:12px;">
+    <div style="font-size:12px;color:var(--green);margin-bottom:4px;">AI</div>
+    <div style="background:var(--surface2);padding:10px 14px;border-radius:8px;font-size:13px;color:var(--muted);">MCP 연동이 완료되면 답변을 제공합니다. 현재는 대시보드의 각 탭에서 직접 데이터를 확인해주세요.</div>
+  </div>`;
+  msgEl.scrollTop = msgEl.scrollHeight;
+}
+
+function aiSend() {
+  const input = document.getElementById('aiInput');
+  const q = input.value.trim();
+  if (!q) return;
+  input.value = '';
+  aiQuickQ(q);
+}
+
+// ══════════════════════════════════════════════════════════
+//  MODAL
+// ══════════════════════════════════════════════════════════
+
+function closeModal() {
+  document.getElementById('detailModal').classList.remove('open');
+}
+
+document.getElementById('detailModal').addEventListener('click', function(e) {
+  if (e.target === this) closeModal();
+});
+
+// ══════════════════════════════════════════════════════════
+//  INIT
+// ══════════════════════════════════════════════════════════
+
+async function init() {
+  const connected = await checkConnection();
+  if (!connected) return;
+
+  await loadFilters();
+  await loadOverview();
+  startAutoRefresh();
+}
+
+init();
+
+</script>
+</body>
+</html>

@@ -71,6 +71,7 @@
     "@anthropic-ai/sdk": "^0.39.0",
     "html-pdf-node": "^1.0.8",
     "node-fetch": "^2.7.0",
+    "mssql": "^11.0.1",
     "pg": "^8.13.0",
     "uiohook-napi": "^1.5.4"
   },

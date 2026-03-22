@@ -2408,6 +2408,9 @@ app.use('/api/kakao', require('./routes/kakao-decrypt')({ getDb: dbModule.getDb 
 // ─── PAD 커넥터 (nenova ERP 자동화) ─────────────────────────────────────────
 app.use('/api/pad', require('./routes/pad-connector')({ getDb: dbModule.getDb }));
 
+// ─── nenova SQL Server 직접 연결 (전산 데이터 실시간 조회 + 동기화) ──────────
+app.use('/api/nenova', require('./routes/nenova-db')({ getDb: dbModule.getDb }));
+
 // ─── 데모 시드 (개발/미리보기용) ─────────────────────────────────────────────
 app.post('/api/demo/seed', (req, res) => {
   const token = (req.headers.authorization || '').replace('Bearer ', '') || req.query.token;
