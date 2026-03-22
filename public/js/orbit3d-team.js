@@ -1047,8 +1047,7 @@ function buildCompanySystem(companyData) {
 
   _teamNodes.push({ type: 'goal', pos: new THREE.Vector3(0, 0, 0), label: goal, sublabel: name, color: goalColor || '#ffd700', size: 'xl' });
 
-  // 부서 궤도 링
-  { const r = new THREE.Mesh(new THREE.RingGeometry(DEPT_R - 0.15, DEPT_R + 0.15, 128), new THREE.MeshBasicMaterial({ color: 0xffd700, transparent: true, opacity: 0.04, side: THREE.DoubleSide })); r.rotation.x = Math.PI / 2; orbitRings.push(r); scene.add(r); }
+  // 궤도 링 제거 — 개인뷰와 통일
 
   departments.forEach((dept, di) => {
     const dAngle = (di / departments.length) * Math.PI * 2 - Math.PI / 2;
@@ -1064,11 +1063,7 @@ function buildCompanySystem(companyData) {
 
     _teamNodes.push({ type: 'department', pos: dPos.clone(), obj: dObj, label: `${dept.icon} ${dept.name}`, sublabel: `${dept.members.length}명`, color: dept.color, size: 'xs', deptId: dept.id, deptData: dept });
 
-    // 중심→부서 연결선
-    { const lg = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), dPos.clone()]); const lm = new THREE.LineBasicMaterial({ color: new THREE.Color(dept.color), transparent: true, opacity: 0.35 }); connections.push(new THREE.Line(lg, lm)); scene.add(connections[connections.length-1]); }
-
-    // 부서 궤도 링 (팀원)
-    { const r = new THREE.Mesh(new THREE.RingGeometry(MBR_R - 0.06, MBR_R + 0.06, 64), new THREE.MeshBasicMaterial({ color: new THREE.Color(dept.color), transparent: true, opacity: 0.08, side: THREE.DoubleSide })); r.position.copy(dPos); r.rotation.x = Math.PI / 2; orbitRings.push(r); scene.add(r); }
+    // 연결선/궤도링 제거 — 개인뷰와 통일
 
     dept.members.forEach((member, mi) => {
       const mAng = (mi / dept.members.length) * Math.PI * 2 + (di * 1.1);
@@ -1082,8 +1077,7 @@ function buildCompanySystem(companyData) {
 
       _teamNodes.push({ type: 'member', pos: mPos.clone(), obj: mObj, label: member.name, sublabel: member.role, color: member.color, size: 'md', memberId: member.id, deptId: dept.id });
 
-      // 부서→팀원 연결선
-      { const lg = new THREE.BufferGeometry().setFromPoints([dPos.clone(), mPos.clone()]); const lm = new THREE.LineBasicMaterial({ color: new THREE.Color(member.color), transparent: true, opacity: 0.3 }); connections.push(new THREE.Line(lg, lm)); scene.add(connections[connections.length-1]); }
+      // 연결선 제거 — 개인뷰와 통일
 
       // 작업 위성
       member.tasks.forEach((task, ti) => {
@@ -1119,49 +1113,9 @@ function buildCompanySystem(companyData) {
     });
   });
 
-  // ── 크로스-부서 협업 라인 (불타오르는 이펙트) ───────────────────────────────
+  // 크로스부서 협업 라인 제거 — 개인뷰와 통일
   _collabLines.forEach(l => { scene.remove(l.line); if(l.outerLine) scene.remove(l.outerLine); });
   _collabLines = [];
-  const crossDrawn = new Set();
-  departments.forEach(dept => {
-    (dept.members || []).forEach(member => {
-      const mNode = _teamNodes.find(n => n.type === 'member' && n.memberId === member.id);
-      if (!mNode) return;
-      (member.collab || []).forEach(targetId => {
-        const pairKey = [member.id, targetId].sort().join('-');
-        if (crossDrawn.has(pairKey)) return;
-        crossDrawn.add(pairKey);
-        const targetNode = _teamNodes.find(n => n.type === 'member' && n.memberId === targetId);
-        if (!targetNode) return;
-        const isCrossDept = mNode.deptId !== targetNode.deptId;
-
-        // 외곽 글로우 (굵음, 낮은 투명도, 덧셈 블렌딩)
-        const outerGeo = new THREE.BufferGeometry().setFromPoints([mNode.pos.clone(), targetNode.pos.clone()]);
-        const outerMat = new THREE.LineBasicMaterial({
-          color: isCrossDept ? 0xff6e00 : 0x39d2c0,
-          transparent: true, opacity: isCrossDept ? 0.35 : 0.25,
-          blending: isCrossDept ? THREE.AdditiveBlending : THREE.NormalBlending,
-        });
-        const outerLine = new THREE.Line(outerGeo, outerMat);
-        scene.add(outerLine);
-
-        // 내부 코어 라인
-        const lg = new THREE.BufferGeometry().setFromPoints([mNode.pos.clone(), targetNode.pos.clone()]);
-        const lm = new THREE.LineBasicMaterial({
-          color: isCrossDept ? 0xffcc44 : 0x39d2c0,
-          transparent: true, opacity: isCrossDept ? 0.75 : 0.55,
-          blending: isCrossDept ? THREE.AdditiveBlending : THREE.NormalBlending,
-        });
-        const ln = new THREE.Line(lg, lm);
-        scene.add(ln);
-        _collabLines.push({
-          line: ln, mat: lm, outerLine, outerMat,
-          phase: Math.random() * Math.PI * 2,
-          fromNode: mNode, toNode: targetNode, crossDept: isCrossDept,
-        });
-      });
-    });
-  });
 
   const totalMembers = departments.reduce((s, d) => s + d.members.length, 0);
   const totalTasks   = departments.reduce((s, d) => s + d.members.reduce((ss, m) => ss + m.tasks.length, 0), 0);
