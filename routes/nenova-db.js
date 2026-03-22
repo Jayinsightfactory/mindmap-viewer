@@ -270,6 +270,22 @@ module.exports = function createNenovaDbRouter({ getDb }) {
     }
   });
 
+  /**
+   * GET /api/nenova/schema/:table — 테이블 컬럼 구조 조회
+   */
+  router.get('/schema/:table', async (req, res) => {
+    try {
+      const pool = await getPool();
+      const table = req.params.table.replace(/[^a-zA-Z0-9_가-힣]/g, '');
+      const result = await pool.request()
+        .input('tableName', sql.NVarChar, table)
+        .query(`SELECT c.name AS column_name, tp.name AS data_type, c.max_length, c.is_nullable
+                FROM sys.columns c JOIN sys.types tp ON c.user_type_id = tp.user_type_id
+                WHERE c.object_id = OBJECT_ID(@tableName) ORDER BY c.column_id`);
+      res.json({ ok: true, table, columns: result.recordset });
+    } catch (err) { res.json({ ok: false, error: err.message }); }
+  });
+
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   //                           대시보드
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
