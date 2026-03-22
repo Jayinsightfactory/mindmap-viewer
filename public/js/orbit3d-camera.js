@@ -610,82 +610,8 @@ function drawTeamLabels() {
       EFFECT_FNS[nodeEffectId](_lctx, ax, ay, hr, color, now);
     }
 
-    // skill 노드 이펙트: 보라색 회전 대시 링
-    if (type === 'skill') {
-      _lctx.save();
-      _lctx.translate(ax, ay);
-      _lctx.rotate(now * 1.2);
-      _lctx.globalAlpha = 0.7;
-      _lctx.strokeStyle = '#d2a8ff';
-      _lctx.lineWidth   = 1.5;
-      _lctx.setLineDash([4, 4]);
-      _lctx.lineDashOffset = -now * 15;
-      _lctx.beginPath();
-      _lctx.arc(0, 0, hr + 4, 0, Math.PI * 2);
-      _lctx.stroke();
-      _lctx.setLineDash([]);
-      _lctx.restore();
-    }
-
-    // agent 노드 이펙트: 청록 펄스 링 + autoRun 빛
-    if (type === 'agent') {
-      const pulse = (Math.sin(now * 3) + 1) * 0.5;
-      _lctx.save();
-      _lctx.globalAlpha = 0.15 + pulse * 0.35;
-      _lctx.strokeStyle = '#39d2c0';
-      _lctx.lineWidth   = 2;
-      _lctx.shadowColor = '#39d2c0';
-      _lctx.shadowBlur  = 8 + pulse * 6;
-      _lctx.beginPath();
-      _lctx.arc(ax, ay, hr + 4 + pulse * 3, 0, Math.PI * 2);
-      _lctx.stroke();
-      _lctx.shadowBlur = 0;
-      _lctx.restore();
-    }
-
+    // 이펙트 제거됨 (회전링/펄스/파티클)
     if (!lr.isActive || type !== 'task') continue;
-
-    // 펄스 링 3개
-    for (let i = 0; i < 3; i++) {
-      const phase = (i / 3) * Math.PI * 2;
-      const pulse = (Math.sin(now * 2.5 + phase) + 1) * 0.5;
-      const ringR = hr + 6 + pulse * 16;
-      _lctx.save();
-      _lctx.globalAlpha = (1 - pulse) * 0.55;
-      _lctx.strokeStyle = color;
-      _lctx.lineWidth   = 1.5 - i * 0.3;
-      _lctx.beginPath();
-      _lctx.arc(ax, ay, ringR, 0, Math.PI * 2);
-      _lctx.stroke();
-      _lctx.restore();
-    }
-    // 회전 대시 테두리
-    _lctx.save();
-    _lctx.translate(ax, ay);
-    _lctx.rotate(now * 1.8);
-    _lctx.globalAlpha = 0.75;
-    _lctx.strokeStyle = color;
-    _lctx.lineWidth   = 2;
-    _lctx.setLineDash([5, 5]);
-    _lctx.lineDashOffset = -now * 20;
-    _lctx.beginPath();
-    _lctx.arc(0, 0, hr + 5, 0, Math.PI * 2);
-    _lctx.stroke();
-    _lctx.setLineDash([]);
-    _lctx.restore();
-    // 파티클 4개
-    for (let i = 0; i < 4; i++) {
-      const pa = now * 2.2 + (i * Math.PI * 0.5);
-      _lctx.save();
-      _lctx.globalAlpha = 0.9;
-      _lctx.fillStyle   = color;
-      _lctx.shadowColor = color;
-      _lctx.shadowBlur  = 6;
-      _lctx.beginPath();
-      _lctx.arc(ax + (hr + 14) * Math.cos(pa), ay + (hr + 14) * Math.sin(pa), 2.5, 0, Math.PI * 2);
-      _lctx.fill();
-      _lctx.restore();
-    }
     // 외부 글로우
     const gr = _lctx.createRadialGradient(ax, ay, hr, ax, ay, hr + 28);
     gr.addColorStop(0, color + '44');
@@ -707,13 +633,13 @@ function drawTeamLabels() {
       _lctx.save();
       _lctx.strokeStyle = lr.color + '55';
       _lctx.lineWidth   = 0.8;
-      _lctx.setLineDash([3, 4]);
+      // _lctx.setLineDash([3, 4]);
       _lctx.globalAlpha = Math.min(disp / 40, 0.7);
       _lctx.beginPath();
       _lctx.moveTo(lr.ax, lr.ay);
       _lctx.lineTo(cx, cy);
       _lctx.stroke();
-      _lctx.setLineDash([]);
+      // _lctx.setLineDash([]);
       _lctx.restore();
     }
   }
@@ -770,12 +696,12 @@ function drawTeamLabels() {
       _lctx.lineWidth   = 2.5;
       _lctx.shadowColor = '#3fb950';
       _lctx.shadowBlur  = 14 + mePulse * 8;
-      _lctx.setLineDash([5, 4]);
-      _lctx.lineDashOffset = -now * 14;
+      // _lctx.setLineDash([5, 4]);
+      // _lctx.lineDashOffset = -now * 14;
       _lctx.beginPath();
       _lctx.arc(cx, cy, hr + 13, 0, Math.PI * 2);
       _lctx.stroke();
-      _lctx.setLineDash([]);
+      // _lctx.setLineDash([]);
       _lctx.restore();
       // "나" 칩
       _lctx.save();
@@ -801,11 +727,11 @@ function drawTeamLabels() {
       _lctx.lineWidth   = 2.5;
       _lctx.shadowColor = color;
       _lctx.shadowBlur  = 18;
-      _lctx.setLineDash([6, 4]);
+      // _lctx.setLineDash([6, 4]);
       _lctx.beginPath();
       _lctx.arc(cx, cy, hr + 12, 0, Math.PI * 2);
       _lctx.stroke();
-      _lctx.setLineDash([]);
+      // _lctx.setLineDash([]);
       _lctx.restore();
     }
 
@@ -818,9 +744,9 @@ function drawTeamLabels() {
       _lctx.strokeStyle = color;
       _lctx.lineWidth = 1.5;
       _lctx.globalAlpha = 0.65;
-      _lctx.setLineDash([4, 3]);
+      // _lctx.setLineDash([4, 3]);
       _lctx.strokeRect(-dSize / 2, -dSize / 2, dSize, dSize);
-      _lctx.setLineDash([]);
+      // _lctx.setLineDash([]);
       _lctx.restore();
     }
 
@@ -868,9 +794,9 @@ function drawTeamLabels() {
       const bdA = type === 'skill' ? 0.80 : type === 'agent' ? 0.80 : type === 'dept' ? 0.50 : isActive ? 0.85 : 0.42;
       _lctx.strokeStyle = color + Math.round(bdA * 255).toString(16).padStart(2, '0');
       _lctx.lineWidth = type === 'skill' ? 1.4 : type === 'agent' ? 1.4 : isActive ? 1.8 : 1;
-      if (type === 'skill') { _lctx.setLineDash([3, 3]); _lctx.lineDashOffset = -now * 10; }
+      if (type === 'skill') { // _lctx.setLineDash([3, 3]); // _lctx.lineDashOffset = -now * 10; }
       roundRect(_lctx, x, y, pw, ph, ph * 0.5); _lctx.stroke();
-      if (type === 'skill') { _lctx.setLineDash([]); }
+      if (type === 'skill') { // _lctx.setLineDash([]); }
       if (type === 'agent') {
         _lctx.globalAlpha = 0.4; _lctx.lineWidth = 0.8;
         roundRect(_lctx, x - 2, y - 2, pw + 4, ph + 4, (ph + 4) * 0.5); _lctx.stroke(); _lctx.globalAlpha = 1;
