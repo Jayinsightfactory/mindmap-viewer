@@ -395,9 +395,9 @@ function updateParallelOrbits(dt) {
 
 // ── 팀 모드 Canvas2D 라벨 (2-pass: 수집 → 겹침해소 → 드로우) ─────────────────
 function drawTeamLabels() {
-  const cvs = document.getElementById('label-canvas-2d');
-  if (!cvs) return;
-  const ctx = cvs.getContext('2d');
+  const ctx = window._lctx;
+  const cvs = window._labelCanvas2d;
+  if (!ctx || !cvs) return;
   ctx.clearRect(0, 0, cvs.width, cvs.height);
   if (typeof clearHitAreas === 'function') clearHitAreas();
   if (!_teamNodes || _teamNodes.length === 0) return;
