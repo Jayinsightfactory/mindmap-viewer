@@ -2,7 +2,12 @@
 /**
  * routes/nenova-db.js
  * ─────────────────────────────────────────────────────────────────────────────
- * nenova SQL Server 직접 연결 — 전산 데이터 실시간 조회 + Orbit AI 동기화
+ * nenova SQL Server 직접 연결 — 전산 데이터 실시간 조회 전용 (읽기만!)
+ *
+ * ⚠️ 절대 규칙: nenova SQL Server에는 SELECT만 실행한다.
+ *   INSERT / UPDATE / DELETE / ALTER / DROP 절대 금지!
+ *   기존 화훼관리 프로그램 DB에 문제가 생길 수 있음.
+ *   쓰기 작업은 Orbit PostgreSQL에만 수행한다.
  *
  * nenova1_nenova 데이터베이스 (SQL Server 2016)에 읽기 전용 접속하여
  * 상품, 주문, 출하, 거래처, 재고, 견적, 매출 분석 API 제공
@@ -98,6 +103,21 @@ let _poolPromise = null;
 let _lastError = null;
 
 /**
+ * SQL Server 쿼리 안전 검증 — SELECT만 허용
+ * nenova DB에는 절대 쓰기 금지 (기존 전산 프로그램 보호)
+ */
+function validateReadOnly(query) {
+  const normalized = query.replace(/--.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '').trim().toUpperCase();
+  const forbidden = ['INSERT', 'UPDATE', 'DELETE', 'DROP', 'ALTER', 'CREATE', 'TRUNCATE', 'EXEC', 'EXECUTE', 'MERGE'];
+  for (const keyword of forbidden) {
+    // 쿼리 시작이 금지 키워드인지 확인
+    if (normalized.startsWith(keyword)) {
+      throw new Error(`[보안] nenova DB에 ${keyword} 쿼리 실행 금지! 읽기 전용입니다.`);
+    }
+  }
+}
+
+/**
  * SQL Server 커넥션 풀 반환 (lazy init)
  */
 async function getPool() {
@@ -142,12 +162,25 @@ async function getPool() {
 }
 
 /**
- * 안전하게 쿼리 실행 — 실패 시 에러 반환
+ * 안전하게 쿼리 실행 — 읽기 전용 검증 + 실패 시 에러 반환
+ * nenova SQL Server에는 SELECT만 허용 (기존 전산 프로그램 DB 보호)
  */
 async function safeQuery(queryFn) {
   try {
     const pool = await getPool();
-    return await queryFn(pool);
+    // pool.request().query()를 래핑하여 쓰기 쿼리 차단
+    const originalRequest = pool.request.bind(pool);
+    const safePool = Object.create(pool);
+    safePool.request = function() {
+      const req = originalRequest();
+      const originalQuery = req.query.bind(req);
+      req.query = function(queryStr) {
+        validateReadOnly(queryStr);
+        return originalQuery(queryStr);
+      };
+      return req;
+    };
+    return await queryFn(safePool);
   } catch (err) {
     _lastError = err.message;
     throw err;
