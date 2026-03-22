@@ -211,6 +211,27 @@ scene.add(bottomLight);
   scene.add(stars);
   // 별 회전 (애니메이션 루프에서 참조)
   window._starField = stars;
+
+  // 근거리 우주 먼지 (r=5~80, 팀/전사뷰에서도 보임)
+  const nearCount = 600;
+  const nearPos = new Float32Array(nearCount * 3);
+  const nearCol = new Float32Array(nearCount * 3);
+  for (let i = 0; i < nearCount; i++) {
+    const r = 5 + Math.random() * 75;
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+    nearPos[i*3]   = r * Math.sin(phi) * Math.cos(theta);
+    nearPos[i*3+1] = r * Math.sin(phi) * Math.sin(theta);
+    nearPos[i*3+2] = r * Math.cos(phi);
+    const c = starColors[Math.floor(Math.random() * starColors.length)];
+    const bright = 0.15 + Math.random() * 0.4;
+    nearCol[i*3] = c[0] * bright; nearCol[i*3+1] = c[1] * bright; nearCol[i*3+2] = c[2] * bright;
+  }
+  const nearGeo = new THREE.BufferGeometry();
+  nearGeo.setAttribute('position', new THREE.BufferAttribute(nearPos, 3));
+  nearGeo.setAttribute('color', new THREE.BufferAttribute(nearCol, 3));
+  const nearMat = new THREE.PointsMaterial({ size: 0.3, vertexColors: true, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false });
+  scene.add(new THREE.Points(nearGeo, nearMat));
 })();
 
 // ─── 와이어프레임 노드 헬퍼 (전역) ──────────────────────────────────────────
