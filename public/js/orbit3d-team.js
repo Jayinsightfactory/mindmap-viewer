@@ -1080,8 +1080,7 @@ function buildCompanySystem(companyData) {
 
   departments.forEach((dept, di) => {
     const dAngle = (di / departments.length) * Math.PI * 2 - Math.PI / 2;
-    const dy     = (di % 2 === 0 ? 1 : -1) * 4;
-    const dPos   = new THREE.Vector3(DEPT_R * Math.cos(dAngle), dy, DEPT_R * Math.sin(dAngle));
+    const dPos   = new THREE.Vector3(DEPT_R * Math.cos(dAngle), 0, DEPT_R * Math.sin(dAngle));
 
     // 부서 와이어 구체 (작게)
     const dWire = new THREE.Object3D();
@@ -1100,8 +1099,7 @@ function buildCompanySystem(companyData) {
 
     dept.members.forEach((member, mi) => {
       const mAng = (mi / dept.members.length) * Math.PI * 2 + (di * 1.1);
-      const my   = (mi % 2 === 0 ? 1 : -1) * 1.2;
-      const mPos = new THREE.Vector3(dPos.x + MBR_R * Math.cos(mAng), dPos.y + my, dPos.z + MBR_R * Math.sin(mAng));
+      const mPos = new THREE.Vector3(dPos.x + MBR_R * Math.cos(mAng), 0, dPos.z + MBR_R * Math.sin(mAng));
 
       const mObj = new THREE.Object3D();
       mObj.position.copy(mPos);
