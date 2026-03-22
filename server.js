@@ -371,7 +371,7 @@ const _rlOpts = { validate: { xForwardedForHeader: false, trustProxy: false, ip:
 const apiLimiter = rateLimit({
   ..._rlOpts,
   windowMs: 15 * 60 * 1000,
-  max: 2000,
+  max: 10000,
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: (req) => req.ip || req.socket?.remoteAddress || 'unknown',
