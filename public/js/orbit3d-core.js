@@ -729,8 +729,14 @@ function clusterByIntent(sessionId, events) {
 // ─── 세션 컨텍스트 캐시 (비동기 로드) ────────────────────────────────────────
 const _sessionContextCache = {};   // sessionId → { autoTitle, projectName, firstMsg, topFile }
 
+let _sessionFetchQueue = 0;
+const MAX_CONCURRENT_SESSION_FETCH = 3;
+
 async function loadSessionContext(sessionId) {
   if (_sessionContextCache[sessionId]) return _sessionContextCache[sessionId];
+  // 동시 요청 제한 (브라우저 리소스 고갈 방지)
+  if (_sessionFetchQueue >= MAX_CONCURRENT_SESSION_FETCH) return null;
+  _sessionFetchQueue++;
   try {
     const r = await fetch(`/api/sessions/${sessionId}/context`);
     if (!r.ok) return null;
@@ -774,7 +780,7 @@ async function loadSessionContext(sessionId) {
       }
     }
     return ctx;
-  } catch { return null; }
+  } catch { return null; } finally { _sessionFetchQueue--; }
 }
 
 // 세션의 대표 의도 (로컬 이벤트 기반 — 비동기 컨텍스트 로드 전 임시값)
