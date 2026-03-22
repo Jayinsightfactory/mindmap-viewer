@@ -585,7 +585,7 @@ function _buildTeamSystemInner(teamData) {
   const MEMBER_ORBIT = Math.max(BASE_R * 0.8, 5); // 멤버 궤도 (팀 구체 밀착)
 
   // ── 가운데 팀 구체 ──────────────────────────────────────────────
-  const core = new THREE.Object3D();
+  const core = createWireNode(0.05, 0xffd700, { visible: true, wireOpacity: 0.4, glowOpacity: 0.2 });
   core.userData.isCore = true;
   scene.add(core);
 
@@ -652,9 +652,9 @@ function _buildTeamSystemInner(teamData) {
           _teamCenter.y + 1.5,
           _teamCenter.z + SHARED_R * Math.sin(sAngle)
         );
-        const sObj = new THREE.Object3D();
+        const sObj = createWireNode(0.08, new THREE.Color(_teamColor || '#ffd700').getHex(), { visible: true, wireOpacity: 0.5, glowOpacity: 0.25 });
         sObj.position.copy(sPos);
-        sObj.userData = { isTeamTask: true, orbitR: SHARED_R, orbitAngle: sAngle, orbitSpeed: 0, orbitCenter: _teamCenter.clone() };
+        sObj.userData = { isTeamTask: true, orbitR: SHARED_R, orbitAngle: sAngle, orbitSpeed: 0.015 + si * 0.005, orbitCenter: _teamCenter.clone() };
         scene.add(sObj); satelliteMeshes.push(sObj);
         _teamNodes.push({
           type: 'task', pos: sPos.clone(), obj: sObj,
@@ -675,13 +675,13 @@ function _buildTeamSystemInner(teamData) {
       const mz = teamCenter.z + CLUSTER_R * Math.sin(memberAngle);
       const mPos = new THREE.Vector3(mx, my, mz);
 
-      const mObj = new THREE.Object3D();
+      const mObj = createWireNode(0.15, new THREE.Color(member.color || '#58a6ff').getHex(), { visible: true, wireOpacity: 0.5, glowOpacity: 0.2 });
       mObj.position.copy(mPos);
       mObj.userData = {
         isTeamMember: true, memberId: member.id,
         name: member.name, role: member.role, color: member.color,
-        // 멤버는 가운데 팀 구체 주위에 고정 배치 (공전 없음)
-        orbitR: CLUSTER_R, orbitAngle: memberAngle, orbitSpeed: 0,
+        // 멤버는 가운데 팀 구체 주위를 공전
+        orbitR: CLUSTER_R, orbitAngle: memberAngle, orbitSpeed: 0.02 + mi * 0.005,
         orbitCenter: new THREE.Vector3(0, 0, 0),
       };
       scene.add(mObj);
@@ -695,9 +695,37 @@ function _buildTeamSystemInner(teamData) {
         memberId: member.id,
       });
 
-    // ── 더미 작업 위성 제거됨 ──────────────────────────────────────────────
-    // member.tasks는 서버에서 오는 더미 데이터("작업 중" 등)이므로 표시하지 않음.
-    // 프로젝트 위성(실제 데이터 기반)은 아래 fetch /api/graph 블록에서 생성됨.
+    // ── 작업 위성 ─────────────────────────────────────────────────────────
+    member.tasks.forEach((task, taskIdx) => {
+      const tAngle = (taskIdx / member.tasks.length) * Math.PI * 2 + (mi * 1.26);
+      const tx = mPos.x + TASK_R * Math.cos(tAngle);
+      const ty = mPos.y + TASK_R * 0.25 * Math.sin(tAngle + 1.0);
+      const tz = mPos.z + TASK_R * Math.sin(tAngle);
+      const tPos = new THREE.Vector3(tx, ty, tz);
+
+      const _taskColor = STATUS_CFG[task.status]?.color || '#6e7681';
+      const tObj = createWireNode(0.08, new THREE.Color(_taskColor).getHex(), { visible: true, wireOpacity: 0.5, glowOpacity: 0.2 });
+      tObj.position.copy(tPos);
+      tObj.userData = {
+        isTeamTask: true, memberId: member.id,
+        taskName: task.name, taskStatus: task.status, taskProgress: task.progress,
+        color: _taskColor,
+        orbitR: TASK_R, orbitAngle: tAngle, orbitSpeed: 0.038 + mi * 0.004 + taskIdx * 0.003,
+        orbitCenter: mPos.clone(),
+      };
+      scene.add(tObj);
+      satelliteMeshes.push(tObj);
+
+      const sc = STATUS_CFG[task.status] || STATUS_CFG.pending;
+      _teamNodes.push({
+        type: 'task', pos: tPos.clone(), obj: tObj,
+        label: task.name, emoji: sc.emoji, color: sc.color,
+        progress: task.progress, size: 'sm',
+        memberId: member.id, taskStatus: task.status,
+      });
+
+      // 팀원 → 작업 연결선 (제거 — 협업만 표시)
+    });
 
     // ── 프로젝트 세션 위성 (비동기 로드) ────────────────────────────────────
     if (member.userId) {
@@ -739,16 +767,16 @@ function _buildTeamSystemInner(teamData) {
             _mPos.y + 0.5 + si * 0.3, // Y축으로 펼쳐서 겹침 방지
             _mPos.z + PROJ_R * Math.sin(sAngle)
           );
-          const sObj = new THREE.Object3D();
+          const sObj = createWireNode(0.1, new THREE.Color(_color || '#58a6ff').getHex(), { visible: true, wireOpacity: 0.6, glowOpacity: 0.3 });
           sObj.position.copy(sPos);
           // orbitCenter를 멤버 Object에 연결 (공전 따라감)
           const memberObj = planetMeshes.find(p => p.userData?.memberId === _mid);
-          sObj.userData = { isTeamTask: true, memberId: _mid, orbitR: PROJ_R, orbitAngle: sAngle, orbitSpeed: 0, orbitCenter: memberObj ? memberObj.position : _mPos.clone() };
+          sObj.userData = { isTeamTask: true, memberId: _mid, orbitR: PROJ_R, orbitAngle: sAngle, orbitSpeed: 0.03 + si * 0.008, orbitCenter: memberObj ? memberObj.position : _mPos.clone() };
           scene.add(sObj);
           satelliteMeshes.push(sObj);
           _teamNodes.push({
             type: 'task', pos: sPos.clone(), obj: sObj,
-            label: projName.slice(0, 18), sublabel: proj.count + '건',
+            label: projName.slice(0, 18), sublabel: proj.whatSummary?.slice(0, 25) || proj.techStack?.slice(0, 25) || `${proj.count}건`,
             color: _color, size: 'sm',
             memberId: _mid, taskStatus: 'active',
           });
@@ -841,7 +869,7 @@ function _buildTeamSystemInner(teamData) {
 
   // HUD 업데이트
   document.getElementById('h-sessions').textContent = members.length;
-  document.getElementById('h-tasks').textContent    = _teamNodes.filter(n => n.type === 'task').length;
+  document.getElementById('h-tasks').textContent    = members.reduce((s, m) => s + m.tasks.length, 0);
   document.getElementById('h-hours').textContent    = '팀';
   document.getElementById('team-mode-badge').style.display = 'flex';
 
@@ -1040,14 +1068,15 @@ function buildCompanySystem(companyData) {
   const AGENT_R  = 6;
 
   // 코어 (회사 목표 — 와이어프레임)
-  const core = new THREE.Object3D();
+  const core = createWireNode(0.1, 0xffd700, { visible: true, wireOpacity: 0.35, glowOpacity: 0.15 });
   core.userData.isCore = true; scene.add(core);
-  const coreHl = new THREE.Object3D();
+  const coreHl = createWireNode(0.2, 0xffd700, { visible: true, wireOpacity: 0.06, glow: false, detail: 0 });
   scene.add(coreHl);
 
   _teamNodes.push({ type: 'goal', pos: new THREE.Vector3(0, 0, 0), label: goal, sublabel: name, color: goalColor || '#ffd700', size: 'xl' });
 
-  // 궤도 링 제거 — 개인뷰와 통일
+  // 부서 궤도 링
+  { const r = new THREE.Mesh(new THREE.RingGeometry(DEPT_R - 0.15, DEPT_R + 0.15, 128), new THREE.MeshBasicMaterial({ color: 0xffd700, transparent: true, opacity: 0.04, side: THREE.DoubleSide })); r.rotation.x = Math.PI / 2; orbitRings.push(r); scene.add(r); }
 
   departments.forEach((dept, di) => {
     const dAngle = (di / departments.length) * Math.PI * 2 - Math.PI / 2;
@@ -1055,7 +1084,7 @@ function buildCompanySystem(companyData) {
     const dPos   = new THREE.Vector3(DEPT_R * Math.cos(dAngle), dy, DEPT_R * Math.sin(dAngle));
 
     // 부서 와이어 구체 (작게)
-    const dWire = new THREE.Object3D();
+    const dWire = createWireNode(0.08, new THREE.Color(dept.color).getHex(), { visible: true, wireOpacity: 0.3, glowOpacity: 0.1 });
     dWire.position.copy(dPos);
     dWire.userData = { isDept: true, deptId: dept.id, deptName: dept.name, color: dept.color, icon: dept.icon, orbitR: DEPT_R, orbitAngle: dAngle, orbitSpeed: 0.010 + di * 0.002, orbitCenter: new THREE.Vector3(0,0,0) };
     scene.add(dWire); planetMeshes.push(dWire);
@@ -1063,21 +1092,26 @@ function buildCompanySystem(companyData) {
 
     _teamNodes.push({ type: 'department', pos: dPos.clone(), obj: dObj, label: `${dept.icon} ${dept.name}`, sublabel: `${dept.members.length}명`, color: dept.color, size: 'xs', deptId: dept.id, deptData: dept });
 
-    // 연결선/궤도링 제거 — 개인뷰와 통일
+    // 중심→부서 연결선
+    { const lg = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), dPos.clone()]); const lm = new THREE.LineBasicMaterial({ color: new THREE.Color(dept.color), transparent: true, opacity: 0.35 }); connections.push(new THREE.Line(lg, lm)); scene.add(connections[connections.length-1]); }
+
+    // 부서 궤도 링 (팀원)
+    { const r = new THREE.Mesh(new THREE.RingGeometry(MBR_R - 0.06, MBR_R + 0.06, 64), new THREE.MeshBasicMaterial({ color: new THREE.Color(dept.color), transparent: true, opacity: 0.08, side: THREE.DoubleSide })); r.position.copy(dPos); r.rotation.x = Math.PI / 2; orbitRings.push(r); scene.add(r); }
 
     dept.members.forEach((member, mi) => {
       const mAng = (mi / dept.members.length) * Math.PI * 2 + (di * 1.1);
       const my   = (mi % 2 === 0 ? 1 : -1) * 1.2;
       const mPos = new THREE.Vector3(dPos.x + MBR_R * Math.cos(mAng), dPos.y + my, dPos.z + MBR_R * Math.sin(mAng));
 
-      const mObj = new THREE.Object3D();
+      const mObj = createWireNode(0.12, new THREE.Color(member.color || '#58a6ff').getHex(), { visible: true, wireOpacity: 0.35, glowOpacity: 0.1 });
       mObj.position.copy(mPos);
       mObj.userData = { isTeamMember: true, isDeptMember: true, memberId: member.id, deptId: dept.id, name: member.name, role: member.role, color: member.color, orbitR: MBR_R, orbitAngle: mAng, orbitSpeed: 0.022 + mi * 0.005, orbitCenter: dPos.clone() };
       scene.add(mObj); satelliteMeshes.push(mObj);
 
       _teamNodes.push({ type: 'member', pos: mPos.clone(), obj: mObj, label: member.name, sublabel: member.role, color: member.color, size: 'md', memberId: member.id, deptId: dept.id });
 
-      // 연결선 제거 — 개인뷰와 통일
+      // 부서→팀원 연결선
+      { const lg = new THREE.BufferGeometry().setFromPoints([dPos.clone(), mPos.clone()]); const lm = new THREE.LineBasicMaterial({ color: new THREE.Color(member.color), transparent: true, opacity: 0.3 }); connections.push(new THREE.Line(lg, lm)); scene.add(connections[connections.length-1]); }
 
       // 작업 위성
       member.tasks.forEach((task, ti) => {
@@ -1113,9 +1147,49 @@ function buildCompanySystem(companyData) {
     });
   });
 
-  // 크로스부서 협업 라인 제거 — 개인뷰와 통일
+  // ── 크로스-부서 협업 라인 (불타오르는 이펙트) ───────────────────────────────
   _collabLines.forEach(l => { scene.remove(l.line); if(l.outerLine) scene.remove(l.outerLine); });
   _collabLines = [];
+  const crossDrawn = new Set();
+  departments.forEach(dept => {
+    (dept.members || []).forEach(member => {
+      const mNode = _teamNodes.find(n => n.type === 'member' && n.memberId === member.id);
+      if (!mNode) return;
+      (member.collab || []).forEach(targetId => {
+        const pairKey = [member.id, targetId].sort().join('-');
+        if (crossDrawn.has(pairKey)) return;
+        crossDrawn.add(pairKey);
+        const targetNode = _teamNodes.find(n => n.type === 'member' && n.memberId === targetId);
+        if (!targetNode) return;
+        const isCrossDept = mNode.deptId !== targetNode.deptId;
+
+        // 외곽 글로우 (굵음, 낮은 투명도, 덧셈 블렌딩)
+        const outerGeo = new THREE.BufferGeometry().setFromPoints([mNode.pos.clone(), targetNode.pos.clone()]);
+        const outerMat = new THREE.LineBasicMaterial({
+          color: isCrossDept ? 0xff6e00 : 0x39d2c0,
+          transparent: true, opacity: isCrossDept ? 0.35 : 0.25,
+          blending: isCrossDept ? THREE.AdditiveBlending : THREE.NormalBlending,
+        });
+        const outerLine = new THREE.Line(outerGeo, outerMat);
+        scene.add(outerLine);
+
+        // 내부 코어 라인
+        const lg = new THREE.BufferGeometry().setFromPoints([mNode.pos.clone(), targetNode.pos.clone()]);
+        const lm = new THREE.LineBasicMaterial({
+          color: isCrossDept ? 0xffcc44 : 0x39d2c0,
+          transparent: true, opacity: isCrossDept ? 0.75 : 0.55,
+          blending: isCrossDept ? THREE.AdditiveBlending : THREE.NormalBlending,
+        });
+        const ln = new THREE.Line(lg, lm);
+        scene.add(ln);
+        _collabLines.push({
+          line: ln, mat: lm, outerLine, outerMat,
+          phase: Math.random() * Math.PI * 2,
+          fromNode: mNode, toNode: targetNode, crossDept: isCrossDept,
+        });
+      });
+    });
+  });
 
   const totalMembers = departments.reduce((s, d) => s + d.members.length, 0);
   const totalTasks   = departments.reduce((s, d) => s + d.members.reduce((ss, m) => ss + m.tasks.length, 0), 0);

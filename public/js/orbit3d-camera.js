@@ -369,9 +369,60 @@ function updateTeamOrbits(dt) {
     return;
   }
 
-  // ── 팀 모드: 공전 비활성화 (고정 위치) ──────────────────────────────────
-  // 멤버와 위성은 buildTeamSystem에서 배치한 고정 위치를 유지한다.
-  // 공전 애니메이션 없음 — 위치 업데이트 불필요.
+  // ── 팀 모드 공전 ─────────────────────────────────────────────────────────
+  planetMeshes.forEach(p => {
+    if (!p.userData.isTeamMember) return;
+    const { orbitR, orbitAngle, orbitSpeed } = p.userData;
+    const a  = orbitAngle + _clock * orbitSpeed;
+    const mi = parseInt(p.userData.memberId.replace('m', '') || 0);
+    const ny = 0;
+    p.position.set(orbitR * Math.cos(a), ny, orbitR * Math.sin(a));
+    const tn = _teamNodes.find(n => n.obj === p);
+    if (tn) tn.pos.copy(p.position);
+  });
+
+  // 작업/툴/스킬/에이전트 위성 공전
+  satelliteMeshes.forEach(s => {
+    const parent = planetMeshes.find(p => p.userData.memberId === s.userData.memberId);
+    if (!parent) return;
+    const center = parent.position;
+
+    if (s.userData.isTeamTask) {
+      const { orbitR, orbitAngle, orbitSpeed } = s.userData;
+      const a = orbitAngle + _clock * orbitSpeed;
+      s.position.set(center.x + orbitR * Math.cos(a), center.y + orbitR * 0.25 * Math.sin(a + 1.0), center.z + orbitR * Math.sin(a));
+    } else if (s.userData.isTeamTool || s.userData.isTeamSkill || s.userData.isTeamAgent) {
+      const { relAngle, relY, relR } = s.userData;
+      s.position.set(center.x + relR * Math.cos(relAngle), center.y + relY, center.z + relR * Math.sin(relAngle));
+    }
+    const tn = _teamNodes.find(n => n.obj === s);
+    if (tn) tn.pos.copy(s.position);
+  });
+
+  // 연결선 업데이트 (index 방식 — 팀 시뮬)
+  let connIdx = 0;
+  planetMeshes.forEach(p => {
+    if (!p.userData.isTeamMember) return;
+    if (connections[connIdx]) {
+      connections[connIdx].geometry.setFromPoints([new THREE.Vector3(0, 0, 0), p.position.clone()]);
+      connections[connIdx].geometry.attributes.position.needsUpdate = true;
+    }
+    connIdx++;
+    satelliteMeshes.filter(s => s.userData.isTeamTask && s.userData.memberId === p.userData.memberId).forEach(s => {
+      if (connections[connIdx]) {
+        connections[connIdx].geometry.setFromPoints([p.position.clone(), s.position.clone()]);
+        connections[connIdx].geometry.attributes.position.needsUpdate = true;
+      }
+      connIdx++;
+    });
+  });
+
+  let ringIdx = 1;
+  planetMeshes.forEach(p => {
+    if (!p.userData.isTeamMember) return;
+    if (orbitRings[ringIdx]) orbitRings[ringIdx].position.copy(p.position);
+    ringIdx++;
+  });
 }
 
 // ── 병렬 태스크 궤도 업데이트 ─────────────────────────────────────────────────
@@ -477,7 +528,7 @@ function drawTeamLabels() {
     // 사용자 노드 밀도 설정 (_nodeDensity 슬라이더)
     if (type === 'tool'                          && _nodeDensity < 4) continue;
     if ((type === 'skill' || type === 'agent')   && _nodeDensity < 3) continue;
-    if (type === 'task' && !node.obj?.userData?.isTeamTask && _nodeDensity < 2) continue;
+    if (type === 'task'                          && _nodeDensity < 2) continue;
     // LOD 기반 — 줌 레벨로 계층 구분 (밀도 설정과 무관)
     if (lod >= 2 && type === 'member')           continue;
     if (lod >= 3 && type === 'department')       continue;
@@ -492,7 +543,7 @@ function drawTeamLabels() {
     if      (type === 'goal')         { pxSize = lod >= 2 ? 22 : 28; pad = lod >= 2 ? 14 : 20; }
     else if (type === 'department')   { pxSize = lod >= 2 ? 14 : 16; pad = lod >= 2 ? 10 : 13; }
     else if (type === 'member')       { pxSize = lod >= 2 ? 14 : isFocused ? 22 : 18; pad = lod >= 2 ? 10 : isFocused ? 18 : 15; }
-    else if (type === 'task')         { const _isProjSat = node.obj?.userData?.isTeamTask; pxSize = lod >= 2 ? 9 : (_isProjSat ? 10 : 12); pad = lod >= 2 ? 7 : (_isProjSat ? 8 : 10); }
+    else if (type === 'task')         { pxSize = lod >= 2 ? 9 : 12; pad = lod >= 2 ? 7 : 10; }
     else if (type === 'skill')        { pxSize = 9; pad = 7; }
     else if (type === 'agent')        { pxSize = 9; pad = 7; }
     else if (type === 'ptask')        { pxSize = 13; pad = 11; }
@@ -519,8 +570,8 @@ function drawTeamLabels() {
     const _useUnified = ['goal','leader','infra','sharedProject','department',
       'member','hubProject','hq','external','prequest','presult'].includes(type);
     // 구체 노드: 지름 기반 크기, pill 노드: 텍스트 기반
-    const _sphereR = type === 'goal' ? 10 : type === 'leader' || type === 'infra' ? 16
-      : type === 'member' ? 14 : type === 'department' ? 38 : 30;
+    const _sphereR = type === 'goal' ? 22 : type === 'leader' || type === 'infra' ? 20
+      : type === 'member' ? 16 : type === 'department' ? 18 : 14;
     const pw  = _useUnified ? _sphereR * 2 : _lctx.measureText(txt).width + pad;
     const ph  = _useUnified ? _sphereR * 2 : pxSize + pad * 0.65;
     // priority: prequest=7, goal/leader=6, presult/department/infra/sharedProject=5, member/ptask/hq=4, skill/agent/hubProject/external=3, task/dept=2, tool=1
@@ -788,8 +839,8 @@ function drawTeamLabels() {
       // 와이어프레임 구체 (개인뷰와 동일한 스타일)
       const nodeTitle = txt;
       const nodeSub = sublabel || '';
-      const nodeR = type === 'goal' ? 18 : type === 'leader' || type === 'infra' ? 28
-        : type === 'member' ? (isFocused ? 24 : 18) : type === 'department' ? 22 : 16;
+      const nodeR = type === 'goal' ? 40 : type === 'leader' || type === 'infra' ? 35
+        : type === 'member' ? (isFocused ? 38 : 30) : type === 'department' ? 32 : 24;
       _drawWireSphere(_lctx, cx, cy, nodeR, color, {
         meridians: type === 'goal' ? 3 : 2,
         parallels: type === 'goal' ? 2 : 1,
