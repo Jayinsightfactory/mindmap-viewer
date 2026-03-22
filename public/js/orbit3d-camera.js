@@ -842,8 +842,8 @@ function drawTeamLabels() {
       const nodeR = type === 'goal' ? 40 : type === 'leader' || type === 'infra' ? 35
         : type === 'member' ? (isFocused ? 38 : 30) : type === 'department' ? 32 : 24;
       _drawWireSphere(_lctx, cx, cy, nodeR, color, {
-        meridians: type === 'goal' ? 3 : 2,
-        parallels: type === 'goal' ? 2 : 1,
+        meridians: 0,
+        parallels: 0,
         glow: true,
         hover: isSelected || isFocused,
         drilled: isFocused,
