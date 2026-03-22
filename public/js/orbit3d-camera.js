@@ -847,7 +847,7 @@ function drawTeamLabels() {
         glow: true,
         hover: isSelected || isFocused,
         drilled: isFocused,
-        rotation: now * 0.2 + (labels.indexOf(lr) || 0) * 0.5,
+        rotation: 0,
       });
       _drawSphereLabel(_lctx, cx, cy, nodeR, nodeTitle, nodeSub, color, false);
       // 활성 표시 (task일 때)
