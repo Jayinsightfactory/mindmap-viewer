@@ -45,20 +45,13 @@ function unregisterInteractive(obj) {
   if (obj.userData) delete obj.userData._interactive;
 }
 
-/**
- * 드래그 vs 클릭 구분 — 마우스 이동 5px 이상이면 드래그로 판단
- */
-let _mouseDownPos = null;
-document.addEventListener('mousedown', (e) => { _mouseDownPos = { x: e.clientX, y: e.clientY }; });
-
 document.addEventListener('click', (event) => {
-  // 드래그 체크: mousedown → click 사이 이동 거리
-  if (_mouseDownPos) {
+  // 드래그 체크 (animate.js의 _mouseDownPos 사용)
+  if (typeof _mouseDownPos !== 'undefined' && _mouseDownPos) {
     const dx = Math.abs(event.clientX - _mouseDownPos.x);
     const dy = Math.abs(event.clientY - _mouseDownPos.y);
-    if (dx > 5 || dy > 5) { _mouseDownPos = null; return; } // 드래그 → 무시
+    if (dx > 5 || dy > 5) return;
   }
-  _mouseDownPos = null;
 
   ensureRaycaster();
   const cam = getCamera();
