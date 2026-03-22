@@ -147,7 +147,13 @@ async function loadHistory() {
         </div>
         <div class="session-body">`;
 
-      for (const msg of data.messages.slice(0, 50)) {
+      const PAGE = 50;
+      const totalMsgs = data.messages.length;
+      const containerId = 'msgs-' + sid.replace(/[^a-zA-Z0-9]/g,'').substring(0,16);
+      _msgCache[sid] = data.messages; // 전체 메시지 캐시
+
+      html += `<div id="${containerId}">`;
+      for (const msg of data.messages.slice(0, PAGE)) {
         const dj = typeof msg.data_json === 'string' ? JSON.parse(msg.data_json) : (msg.data_json || {});
         const text = dj.content || dj.contentPreview || dj.message || JSON.stringify(dj).substring(0, 200);
         const isUser = msg.type === 'user.message';
@@ -158,9 +164,11 @@ async function loadHistory() {
           <div class="msg-text">${escapeHtml(text.substring(0, 500))}${text.length > 500 ? '...' : ''}</div>
         </div>`;
       }
+      html += `</div>`;
 
-      if (data.messages.length > 50) {
-        html += `<div style="padding:10px;color:var(--muted);text-align:center;">+${data.messages.length - 50}건 더...</div>`;
+      if (totalMsgs > PAGE) {
+        // 나머지 메시지를 숨겨진 데이터로 저장, 더보기 클릭 시 렌더링
+        html += `<button class="btn" style="width:100%;margin-top:8px;padding:10px;text-align:center;" onclick="loadMore(this,'${containerId}',${JSON.stringify(sid)})">📄 +${totalMsgs - PAGE}건 더보기 (전체 ${totalMsgs}건)</button>`;
       }
 
       html += '</div></div>';
@@ -169,6 +177,42 @@ async function loadHistory() {
     document.getElementById('content').innerHTML = html;
   } catch (err) {
     document.getElementById('content').innerHTML = `<div class="loading">에러: ${err.message}</div>`;
+  }
+}
+
+// 세션별 전체 메시지 캐시
+const _msgCache = {};
+
+function loadMore(btn, containerId, sid) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  const cached = _msgCache[sid];
+  if (!cached) { btn.textContent = '데이터 없음'; return; }
+
+  const current = container.querySelectorAll('.msg').length;
+  const BATCH = 100;
+  const next = cached.slice(current, current + BATCH);
+
+  let html = '';
+  for (const msg of next) {
+    const dj = typeof msg.data_json === 'string' ? JSON.parse(msg.data_json) : (msg.data_json || {});
+    const text = dj.content || dj.contentPreview || dj.message || JSON.stringify(dj).substring(0, 200);
+    const isUser = msg.type === 'user.message';
+    const time = new Date(msg.timestamp).toLocaleTimeString('ko-KR');
+    html += `<div class="msg">
+      <div class="${isUser ? 'msg-user' : 'msg-assistant'}">${isUser ? '👤 사용자' : '🤖 AI'} · ${time}</div>
+      <div class="msg-text">${escapeHtml(text.substring(0, 500))}${text.length > 500 ? '...' : ''}</div>
+    </div>`;
+  }
+  container.insertAdjacentHTML('beforeend', html);
+
+  const remaining = cached.length - current - next.length;
+  if (remaining > 0) {
+    btn.textContent = `📄 +${remaining}건 더보기 (${current + next.length}/${cached.length}건 표시)`;
+  } else {
+    btn.textContent = `✅ 전체 ${cached.length}건 표시 완료`;
+    btn.disabled = true;
+    btn.style.opacity = '0.5';
   }
 }
 
