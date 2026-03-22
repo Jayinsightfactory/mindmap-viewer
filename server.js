@@ -2414,6 +2414,9 @@ app.use('/api/nenova', require('./routes/nenova-db')({ getDb: dbModule.getDb }))
 // ─── nenova ↔ Orbit 교차 분석 (데이터 검증 + 사용 패턴 + OS 설계) ───────────
 app.use('/api/cross', require('./routes/nenova-cross-analysis')({ getDb: dbModule.getDb }));
 
+// ─── 활동 분류 엔진 (raw 윈도우 타이틀 → 목적 기반 분류, API 호출 없음) ─────
+app.use('/api/activity', require('./routes/activity-classifier')({ getDb: dbModule.getDb }));
+
 // ─── 데모 시드 (개발/미리보기용) ─────────────────────────────────────────────
 app.post('/api/demo/seed', (req, res) => {
   const token = (req.headers.authorization || '').replace('Bearer ', '') || req.query.token;
