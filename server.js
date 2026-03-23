@@ -2452,6 +2452,12 @@ app.use('/api/vision', require('./routes/vision-learning')({ getDb: dbModule.get
 // ─── Claude 작업 세션 이력 (Git 커밋 + 세션 메모리 + 타임라인) ────────────────
 app.use('/api/sessions', require('./routes/work-sessions')({ getDb: dbModule.getDb }));
 
+// ─── 데이터 디지타이저 (비구조화 데이터 발견 + 디지털화 제안) ─────────────────
+app.use('/api/digitize', require('./routes/data-digitizer')({ getDb: dbModule.getDb }));
+
+// ─── 비즈니스 인텔리전스 (회사 비즈니스 브레인 — 건강도/분석/예측/리포트) ────
+app.use('/api/bi', require('./routes/business-intelligence')({ getDb: dbModule.getDb }));
+
 // ─── 데모 시드 (개발/미리보기용) ─────────────────────────────────────────────
 app.post('/api/demo/seed', (req, res) => {
   const token = (req.headers.authorization || '').replace('Bearer ', '') || req.query.token;
