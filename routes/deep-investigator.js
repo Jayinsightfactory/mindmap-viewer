@@ -911,21 +911,24 @@ function createDeepInvestigator({ getDb }) {
 
       // Q6: 같은 화면 반복 접근 (비효율 또는 확인 습관)
       const q6Result = await db.query(`
-        WITH bounce AS (
+        WITH step1 AS (
           SELECT user_id,
             COALESCE(data_json->>'windowTitle', data_json->'appContext'->>'currentWindow') as win,
             LEAD(COALESCE(data_json->>'windowTitle', data_json->'appContext'->>'currentWindow'))
               OVER (PARTITION BY user_id ORDER BY timestamp) as next_win,
-            LEAD(LEAD(COALESCE(data_json->>'windowTitle', data_json->'appContext'->>'currentWindow'))
-              OVER (PARTITION BY user_id ORDER BY timestamp))
-              OVER (PARTITION BY user_id ORDER BY timestamp) as after_next_win
+            timestamp
           FROM events
           WHERE type IN ('keyboard.chunk', 'screen.capture')
             AND timestamp::timestamptz > NOW() - ($1 || ' days')::INTERVAL
+        ),
+        step2 AS (
+          SELECT user_id, win, next_win,
+            LEAD(next_win) OVER (PARTITION BY user_id ORDER BY timestamp) as after_next_win
+          FROM step1
         )
         SELECT user_id, win, COUNT(*) as bounces
-        FROM bounce
-        WHERE win = after_next_win AND win != next_win
+        FROM step2
+        WHERE win = after_next_win AND win != next_win AND win IS NOT NULL
         GROUP BY user_id, win
         HAVING COUNT(*) >= 10
         ORDER BY bounces DESC
