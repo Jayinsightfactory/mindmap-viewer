@@ -93,7 +93,7 @@ const {
 
 // ─── 사용자별 데이터 격리 헬퍼 ──────────────────────────────────────────────
 // 로그인 유저 → 본인 이벤트만, 비로그인/로컬 → 개발모드만 전체
-const MAX_EVENTS_LOAD = 2000; // 메모리 절약: 최대 로드 이벤트 수
+const MAX_EVENTS_LOAD = 500; // 메모리 절약: OOM 방지 (768MB 힙 제한)
 const { verifyToken: _verifyToken } = require('./src/auth');
 // ⚠️ 크로스-유저 격리: AUTH_DISABLED=1(개발)만 'local' userId에 전체 데이터 허용
 const _IS_DEV = process.env.AUTH_DISABLED === '1';
@@ -1429,7 +1429,7 @@ app.post('/api/hook', async (req, res) => {
           ts: ev.timestamp,
         });
         // 최대 20건 유지 (메모리 관리)
-        while (global._visionImageQueue.length > 20) global._visionImageQueue.shift();
+        while (global._visionImageQueue.length > 5) global._visionImageQueue.shift();
         console.log(`[vision-queue] 이미지 큐잉: ${ev.data.hostname}/${ev.data.app} (큐: ${global._visionImageQueue.length}건)`);
         // base64는 DB에 저장 안 함
         delete ev.data.imageBase64;
@@ -1991,7 +1991,7 @@ app.get('/api/admin/graph', async (req, res) => {
     const adminEmails = (process.env.ADMIN_EMAILS || 'dlaww584@gmail.com').split(',').map(s => s.trim().toLowerCase());
     if (!adminEmails.includes(user.email?.toLowerCase())) return res.status(403).json({ error: 'admin only' });
     // 전체 이벤트 (최대 5000건)
-    const events = await Promise.resolve(getAllEvents(5000));
+    const events = await Promise.resolve(getAllEvents(500));
     const graph = buildGraph(events);
     res.json(graph);
   } catch (e) { console.error('[admin/raw-graph] error:', e.message); res.status(500).json({ error: 'Internal server error' }); }
@@ -2007,7 +2007,7 @@ app.get('/api/admin/verify-automation', async (req, res) => {
     if (!adminEmails.includes(user.email?.toLowerCase())) return res.status(403).json({ error: 'admin only' });
 
     const hours = parseInt(req.query.hours) || 24;
-    const events = await Promise.resolve(getAllEvents(5000));
+    const events = await Promise.resolve(getAllEvents(500));
 
     // 시간 필터
     const cutoff = new Date(Date.now() - hours * 3600000).toISOString();
