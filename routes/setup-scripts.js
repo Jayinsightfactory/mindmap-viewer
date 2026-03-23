@@ -90,12 +90,14 @@ if ($nodeCmd) {
 # BAT + VBS 래퍼 생성 (CMD 창 완전 숨김)
 $orbitBat = "$ORBIT\\start-daemon.bat"
 $orbitVbs = "$ORBIT\\start-daemon.vbs"
-Set-Content -Path $orbitBat -Value "@echo off`ncd /d `"$ORBIT`"`n`"$nodeExe`" daemon\\personal-agent.js" -Encoding ASCII
-Set-Content -Path $orbitVbs -Value "CreateObject(`"WScript.Shell`").Run `"cmd /c `"`"`"$orbitBat`"`"`"`", 0, False" -Encoding ASCII
+$batContent = "@echo off" + [char]13 + [char]10 + "cd /d ""$ORBIT""" + [char]13 + [char]10 + """$nodeExe"" daemon\\personal-agent.js"
+Set-Content -Path $orbitBat -Value $batContent -Encoding ASCII
+$vbsContent = "CreateObject(""WScript.Shell"").Run ""cmd /c """"" + $orbitBat + """"""", 0, False"
+Set-Content -Path $orbitVbs -Value $vbsContent -Encoding ASCII
 
 # Startup 폴더에 VBS 복사 (로그인 시 자동 시작, CMD 창 없음)
-$startupDir = [System.IO.Path]::Combine([Environment]::GetFolderPath('Startup'), '')
-Copy-Item $orbitVbs -Destination "$($startupDir)orbit-daemon.vbs" -Force -ErrorAction SilentlyContinue
+$startupFolder = [Environment]::GetFolderPath('Startup')
+Copy-Item $orbitVbs -Destination "$startupFolder\\orbit-daemon.vbs" -Force -ErrorAction SilentlyContinue
 
 # 지금 바로 시작
 Start-Process "wscript.exe" -ArgumentList $orbitVbs -WindowStyle Hidden -ErrorAction SilentlyContinue
