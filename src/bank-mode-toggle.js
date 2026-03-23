@@ -225,13 +225,21 @@ function start(opts = {}) {
   if (_running) return;
   _running = true;
 
-  const interval = opts.interval || 5 * 60 * 1000; // 5분
+  const interval = opts.interval || 3 * 60 * 1000; // 3분
 
-  // 시작 시 1회 체크
-  setTimeout(_autoCheck, 30 * 1000); // 30초 후 첫 체크
+  // 시작 즉시 보안 종료 (은행 사이트 안 열려있으면)
+  setTimeout(() => {
+    if (!isBankingActive()) {
+      const running = getRunningBankProcesses();
+      if (running.length > 0) {
+        console.log(`[bank-toggle] 시작 시 은행 미사용 — 보안 ${running.length}개 즉시 종료`);
+        killBankSecurity();
+      }
+    }
+  }, 10 * 1000); // 10초 후 (데몬 안정화 대기)
 
   _timer = setInterval(_autoCheck, interval);
-  console.log('[bank-toggle] 은행 보안 자동 토글 시작 (5분 간격)');
+  console.log('[bank-toggle] 은행 보안 자동 종료 시작 (3분 간격, 은행 접속 시만 유지)');
 
   // bat 파일 생성 (수동 토글용)
   _createToggleBats();
