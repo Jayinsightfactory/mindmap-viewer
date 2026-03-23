@@ -452,17 +452,31 @@ function _runPeriodicAnalysis() {
   } catch {}
 
 
+  // ── 타이핑 속도 계산 (chars/min) ──
+  let typingSpeed = 0;
+  if (_typingTimestamps.length >= 2) {
+    const tsSpan = _typingTimestamps[_typingTimestamps.length - 1] - _typingTimestamps[0];
+    if (tsSpan > 0) typingSpeed = Math.round((_typingTimestamps.length / (tsSpan / 60000)) * 10) / 10;
+  }
+
+  // ── 현재 활성 앱/윈도우 (최상위 필드로 포함 — 서버 저장 보장) ──
+  const currentApp = getActiveApp();
+  const currentWindow = getActiveWindowTitle();
+
   // ── 분석 결과 → 로컬 즉시 + 원격 배치 큐 ──
   const payload = JSON.stringify({
     type: 'keyboard.analyzed',
     analyzed: {
+      // ── 최상위 windowTitle/app (서버 data_json에서 직접 접근 가능) ──
+      windowTitle: currentWindow,
+      app: currentApp,
       activityType: analyzed.activityType,
       patterns: analyzed.patterns,
       metrics: analyzed.metrics,
       appContext: {
         ...(analyzed.appContext || {}),
-        currentApp: getActiveApp(),
-        currentWindow: getActiveWindowTitle(),
+        currentApp,
+        currentWindow,
         windowHistory, // { "chrome": "구글 검색 - Google", "excel": "매출분석.xlsx" }
       },
       summary: analyzed.summary,
@@ -479,6 +493,16 @@ function _runPeriodicAnalysis() {
         totalChars: analyzed.metrics.totalChars,
         symbolRatio: analyzed.metrics.symbolRatio,
       },
+      // ── 타이핑 패턴 메트릭 (자동화 학습용) ──
+      typingPatterns: {
+        charsPerMin: typingSpeed,
+        tabCount: _tabCount,           // 필드 이동 횟수 → 데이터 입력 지표
+        enterCount: _enterCount,       // Enter 횟수 → 폼 제출/행 입력 지표
+        copyCount: _copyCount,         // Ctrl+C 횟수
+        pasteCount: _pasteCount,       // Ctrl+V 횟수
+        backspaceCount: _backspaceCount, // 수정 횟수 → 정확도 역추정
+        copyPasteRatio: _copyCount > 0 ? Math.round(_pasteCount / _copyCount * 100) / 100 : 0,
+      },
     },
     period: { start: periodStart, end: now },
     ts: now,
@@ -494,6 +518,12 @@ function _runPeriodicAnalysis() {
   _mouseClickCount = 0;
   _mouseQuadrants = {};
   _mouseClickPositions = [];
+  _tabCount = 0;
+  _enterCount = 0;
+  _copyCount = 0;
+  _pasteCount = 0;
+  _backspaceCount = 0;
+  _typingTimestamps = [];
   _sessionStart = now;
 
   console.log('[keyboard-watcher] 분석 완료 — 통계만 전송됨 (원본 텍스트 제외)');
@@ -623,9 +653,14 @@ function _postToRemote(body) {
 
 let _backspaceCount = 0;  // 정확도 측정용
 let _copyPasteCount = 0;  // 복사-붙여넣기 카운트
+let _copyCount = 0;       // Ctrl+C 횟수 (별도 추적)
+let _pasteCount = 0;      // Ctrl+V 횟수 (별도 추적)
+let _tabCount = 0;        // Tab 키 횟수 (데이터 입력 감지)
+let _enterCount = 0;      // Enter 키 횟수 (폼 제출/데이터 입력 감지)
 let _mouseClickCount = 0; // 마우스 클릭 카운트
 let _mouseQuadrants = {};  // 클릭 위치 영역 추적 (LT/RT/LB/RB)
 let _mouseClickPositions = []; // 클릭 좌표 기록 [{x,y,t}] — 최근 200개
+let _typingTimestamps = []; // 타이핑 속도 계산용 타임스탬프 (최근 100개)
 
 function _onKeydown(e) {
   // 은행 보안프로그램 일시정지 중이면 이벤트 무시
@@ -636,17 +671,38 @@ function _onKeydown(e) {
   // Ctrl+C / Cmd+C 감지 (복사)
   if ((ctrlKey || metaKey) && keycode === 46) {
     _copyPasteCount++;
+    _copyCount++;
     return;
   }
 
   // Ctrl+V / Cmd+V 감지 (붙여넣기)
   if ((ctrlKey || metaKey) && keycode === 47) {
     _copyPasteCount++;
+    _pasteCount++;
+    return;
+  }
+
+  // Ctrl+S / Cmd+S 감지 (파일 저장 → workflow-learner에 기록)
+  if ((ctrlKey || metaKey) && keycode === 31) {
+    try {
+      const wf = require('./workflow-learner');
+      wf.recordFileSave(getActiveApp(), getActiveWindowTitle());
+      wf.recordAction({ type: 'shortcut', app: getActiveApp(), window: getActiveWindowTitle(), detail: 'ctrl+s' });
+    } catch {}
+    if (_screenCapture) _screenCapture.onFileWrite();
+    return;
+  }
+
+  // Tab 키 감지 (데이터 입력/필드 이동 지표)
+  if (keycode === 15) {
+    _tabCount++;
+    _rawBuffer += '\t';
     return;
   }
 
   // Enter → 내부 flush (로컬 활동 기록에 추가, 서버 전송 아님)
   if (keycode === 13) {
+    _enterCount++;
     _rawBuffer += '\n';
     _flushToLocalBuffer();
     return;
@@ -667,6 +723,11 @@ function _onKeydown(e) {
   if (!char) return;
 
   _rawBuffer += char;
+
+  // 타이핑 속도 추적 (최근 100개 타임스탬프)
+  const now = Date.now();
+  _typingTimestamps.push(now);
+  if (_typingTimestamps.length > 100) _typingTimestamps = _typingTimestamps.slice(-100);
 
   // 3초 디바운스 → 로컬 활동 기록
   if (_flushTimer) clearTimeout(_flushTimer);
@@ -715,9 +776,14 @@ function start(opts = {}) {
   _activityBuffer = [];
   _backspaceCount = 0;
   _copyPasteCount = 0;
+  _copyCount = 0;
+  _pasteCount = 0;
+  _tabCount = 0;
+  _enterCount = 0;
   _mouseClickCount = 0;
   _mouseQuadrants = {};
   _mouseClickPositions = [];
+  _typingTimestamps = [];
 
   try {
     _uiohook = require('uiohook-napi');
@@ -760,7 +826,29 @@ function start(opts = {}) {
   } catch (err) {
     console.error('[keyboard-watcher] 시작 실패:', err.message);
     console.error('  → 시스템 환경설정 → 보안 및 개인 정보 → 손쉬운 사용에서 node를 허용하세요');
+    _reportDaemonError('keyboard-watcher', err.message);
   }
+}
+
+// ── daemon.error 서버 전송 (auto-fixer 연동) ──
+function _reportDaemonError(component, error) {
+  const url = _remoteUrl;
+  if (!url) return;
+  try {
+    const hostname = require('os').hostname();
+    const body = JSON.stringify({ events: [{
+      id: 'daemon-err-' + Date.now(), type: 'daemon.error', source: component,
+      sessionId: 'daemon-' + hostname, timestamp: new Date().toISOString(),
+      data: { component, error: String(error), hostname, platform: process.platform, nodeVersion: process.version },
+    }] });
+    const u = new URL(url + '/api/hook');
+    const mod = u.protocol === 'https:' ? https : http;
+    const req = mod.request({ hostname: u.hostname, port: u.port, path: u.pathname, method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+    }, r => r.resume());
+    req.on('error', () => {});
+    req.write(body); req.end();
+  } catch {}
 }
 
 /**

@@ -62,6 +62,7 @@ let _running         = false;
 let _paused          = false;  // 은행 보안프로그램 감지 시 일시정지
 let _visionEnabled   = false;
 let _lastAnalysis    = null;
+let _screenResolution = null;  // 화면 해상도 캐시
 
 // ── 활동 상태 추적 (키로거에서 업데이트) ──
 let _currentActivity = 'idle';     // high / normal / idle / automation
@@ -69,6 +70,29 @@ let _keyActivityCount = 0;         // 최근 키 입력 횟수
 let _lastKeyTime = 0;
 let _recentApps = [];              // 최근 앱 이력 (반복 패턴 감지용)
 let _automationScore = 0;          // 자동화 가능성 점수
+
+/**
+ * 화면 해상도 감지 (시작 시 1회 + 캐시)
+ */
+function _detectScreenResolution() {
+  if (_screenResolution) return _screenResolution;
+  try {
+    if (process.platform === 'win32') {
+      const out = execSync(
+        'powershell -NoProfile -Command "[System.Windows.Forms.Screen]::PrimaryScreen.Bounds | ForEach-Object { \\"$($_.Width)x$($_.Height)\\" }"',
+        { timeout: 3000, encoding: 'utf8', windowsHide: true, stdio: 'pipe' }
+      ).trim();
+      _screenResolution = out || 'unknown';
+    } else if (process.platform === 'darwin') {
+      const out = execSync('system_profiler SPDisplaysDataType 2>/dev/null | grep Resolution', { timeout: 3000, encoding: 'utf8' }).trim();
+      const m = out.match(/(\d+)\s*x\s*(\d+)/);
+      _screenResolution = m ? `${m[1]}x${m[2]}` : 'unknown';
+    } else {
+      _screenResolution = 'unknown';
+    }
+  } catch { _screenResolution = 'unknown'; }
+  return _screenResolution;
+}
 
 function _checkVisionEnabled() {
   try {
@@ -174,10 +198,12 @@ function _uploadCaptureToServer(filepath, trigger, context) {
         timestamp: new Date().toISOString(),
         data: {
           trigger,
+          triggerReason: _getTriggerDescription(trigger),
           app: context.app || '',
           windowTitle: context.windowTitle || '',
           activityLevel: context.activityLevel || '',
           automationScore: context.automationScore || 0,
+          screenResolution: _detectScreenResolution(),
           previousCapture: context.previousCapture || '',
           filename: path.basename(filepath),
           imageBase64: base64,  // 서버에서 Vision 분석용
@@ -432,10 +458,12 @@ function _sendCaptureMetadata(filepath, trigger, context) {
         timestamp: new Date().toISOString(),
         data: {
           trigger,
+          triggerReason: _getTriggerDescription(trigger),
           app: context.app || '',
           windowTitle: context.windowTitle || '',
           activityLevel: context.activityLevel || '',
           automationScore: context.automationScore || 0,
+          screenResolution: _detectScreenResolution(),
           filename: path.basename(filepath),
           hostname: os.hostname(),
           // imageBase64 제외 — 서버 OOM 방지, 로컬에만 보관
@@ -455,6 +483,24 @@ function _sendCaptureMetadata(filepath, trigger, context) {
   } catch {}
 }
 
+/**
+ * 트리거 유형을 사람이 읽을 수 있는 설명으로 변환
+ */
+function _getTriggerDescription(trigger) {
+  const descriptions = {
+    startup: '데몬 시작 시 초기 캡처',
+    app_switch: '앱 전환 감지',
+    title_change: '윈도우 타이틀 변경 (탭/문서 전환)',
+    idle_result: '키 입력 후 15초 대기 (결과물 화면)',
+    key_burst: '키보드 폭주 (50키 이상 연속 입력)',
+    click_burst: '마우스 폭주 (20클릭 이상)',
+    tool_end: '도구/명령 완료',
+    file_write: '파일 저장 감지',
+    manual: '수동 캡처',
+  };
+  return descriptions[trigger] || trigger;
+}
+
 function onToolEnd() { if (_running) capture('tool_end'); }
 function onFileWrite() { if (_running) capture('file_write'); }
 
@@ -463,7 +509,8 @@ function start() {
   _running = true;
   _lastCaptureTime = 0;
   _checkVisionEnabled();
-  console.log(`[screen-capture] 지능형 캡처 시작 (저장: ${CAPTURE_DIR})`);
+  _detectScreenResolution();
+  console.log(`[screen-capture] 지능형 캡처 시작 (저장: ${CAPTURE_DIR}, 해상도: ${_screenResolution || 'detecting'})`);
   console.log(`[screen-capture] 최소 쿨타임: ${MIN_COOLTIME/1000}s (이벤트 기반 캡처)`);
   capture('startup');
 }

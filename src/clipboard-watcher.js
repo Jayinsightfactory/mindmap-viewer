@@ -9,6 +9,9 @@ let _lastClipboard = '';
 let _timer = null;
 let _paused = false;
 let _callback = null;
+let _clipboardFreqByApp = {};  // 앱별 클립보드 변경 횟수
+let _lastCopyApp = '';         // 마지막 복사가 발생한 앱
+let _lastCopyTime = 0;        // 마지막 복사 시간
 
 function _getActiveApp() {
   try {
@@ -18,22 +21,51 @@ function _getActiveApp() {
         { timeout: 1000, encoding: 'utf8', windowsHide: true, stdio: 'pipe' }
       ).trim();
     }
+    if (process.platform === 'darwin') {
+      const script = 'tell application "System Events" to get name of first process where frontmost is true';
+      return require('child_process').execSync(`osascript -e '${script}'`, { timeout: 1000, encoding: 'utf8' }).trim();
+    }
   } catch {}
   return '';
 }
 
-// ── 발주서/주문 포맷 자동 감지 ──
+function _getActiveWindowTitle() {
+  try {
+    if (process.platform === 'win32') {
+      return require('child_process').execSync(
+        'powershell -NoProfile -Command "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; Add-Type -TypeDefinition \'using System; using System.Runtime.InteropServices; public class WinAPI { [DllImport(\\\"user32.dll\\\")] public static extern IntPtr GetForegroundWindow(); [DllImport(\\\"user32.dll\\\", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder text, int count); }\'; $h=[WinAPI]::GetForegroundWindow(); $b=New-Object System.Text.StringBuilder 512; [void][WinAPI]::GetWindowText($h,$b,512); $b.ToString()"',
+        { timeout: 3000, encoding: 'utf8', windowsHide: true, stdio: 'pipe' }
+      ).trim();
+    }
+    if (process.platform === 'darwin') {
+      const script = 'tell application "System Events" to tell (first process where frontmost is true) to get name of front window';
+      return require('child_process').execSync(`osascript -e '${script}'`, { timeout: 1000, encoding: 'utf8' }).trim();
+    }
+  } catch {}
+  return '';
+}
+
+// ── 발주서/주문 포맷 자동 감지 (confidence 포함) ──
 function _detectOrderFormat(text) {
-  if (/\[MEL\]/.test(text)) return 'mel_order';
-  if (/^ROSE\s*\//.test(text)) return 'rose_order';
-  if (/(취소|추가)/.test(text) && /\d+\s*(단|박스)/.test(text)) return 'change_order';
-  if (/창고보관/.test(text)) return 'inventory';
-  if (/출고일자|출고\s/.test(text) && /\t/.test(text)) return 'shipping';
-  if (/발주서/.test(text)) return 'purchase_memo';
-  if (/파손/.test(text) && /\d+/.test(text)) return 'damage_report';
+  if (/\[MEL\]/.test(text)) return { format: 'mel_order', confidence: 0.95 };
+  if (/^ROSE\s*\//.test(text)) return { format: 'rose_order', confidence: 0.95 };
+  if (/(취소|추가)/.test(text) && /\d+\s*(단|박스)/.test(text)) return { format: 'change_order', confidence: 0.9 };
+  if (/창고보관/.test(text)) return { format: 'inventory', confidence: 0.85 };
+  if (/출고일자|출고\s/.test(text) && /\t/.test(text)) return { format: 'shipping', confidence: 0.9 };
+  if (/발주서/.test(text)) return { format: 'purchase_memo', confidence: 0.85 };
+  if (/파손/.test(text) && /\d+/.test(text)) return { format: 'damage_report', confidence: 0.8 };
+  // 가격/금액 포함 테이블 (견적서, 정산서)
+  if (/\t/.test(text) && /[\d,]+원|₩[\d,]+|\$[\d,.]+/.test(text)) return { format: 'price_table', confidence: 0.8 };
+  // 전화번호/주소 포함 (고객 정보)
+  if (/\d{2,3}-\d{3,4}-\d{4}/.test(text) && text.split('\n').length >= 2) return { format: 'contact_info', confidence: 0.75 };
   // 탭 구분 품목+수량 테이블 (Excel에서 복사)
-  if (/\t/.test(text) && /\d+/.test(text) && text.split('\n').length >= 3) return 'table_data';
+  if (/\t/.test(text) && /\d+/.test(text) && text.split('\n').length >= 3) return { format: 'table_data', confidence: 0.7 };
   return null;
+}
+
+// 하위 호환: 이전 format string만 반환하던 코드와 호환
+function _getOrderFormatString(detected) {
+  return detected ? detected.format : null;
 }
 
 // ── 간이 파서: 클립보드 텍스트 → 주문 아이템 추출 ──
@@ -90,23 +122,51 @@ function _check() {
       const prev = _lastClipboard;
       _lastClipboard = text;
       if (_callback && prev) {
-        const orderFormat = _detectOrderFormat(text);
+        const orderDetected = _detectOrderFormat(text);
+        const orderFormat = _getOrderFormatString(orderDetected);
         const parsed = orderFormat ? _quickParse(text, orderFormat) : [];
+
+        // 활성 앱/윈도우 컨텍스트 수집
+        const sourceApp = _getActiveApp();
+        const sourceWindow = _getActiveWindowTitle();
+
+        // 앱별 클립보드 변경 빈도 추적
+        if (sourceApp) {
+          _clipboardFreqByApp[sourceApp] = (_clipboardFreqByApp[sourceApp] || 0) + 1;
+        }
+
+        // 복사→붙여넣기 시퀀스 추적
+        const now = Date.now();
+        const copyPasteGap = _lastCopyTime > 0 ? now - _lastCopyTime : null;
+        const copySourceApp = _lastCopyApp;
+        _lastCopyApp = sourceApp;
+        _lastCopyTime = now;
 
         _callback({
           type: 'clipboard.change',
           text: text.substring(0, 2000), // 확대: 500→2000자 (발주서 전체 포함)
           length: text.length,
-          sourceApp: _getActiveApp(),
+          sourceApp,
+          // ── 윈도우 컨텍스트 (어떤 화면에서 복사했는지) ──
+          windowTitle: sourceWindow,
+          // ── 복사→붙여넣기 시퀀스 ──
+          copySequence: copySourceApp && copySourceApp !== sourceApp ? {
+            fromApp: copySourceApp,
+            toApp: sourceApp,
+            gapMs: copyPasteGap,
+          } : undefined,
+          // ── 앱별 클립보드 사용 빈도 ──
+          clipboardFreqByApp: { ..._clipboardFreqByApp },
           // ── 발주서 자동 감지 결과 ──
           orderFormat: orderFormat, // null이면 비주문
+          orderConfidence: orderDetected ? orderDetected.confidence : undefined,
           parsedItems: parsed.length > 0 ? parsed : undefined,
           parsedCount: parsed.length || undefined,
           timestamp: new Date().toISOString(),
         });
 
         if (orderFormat) {
-          console.log(`[clipboard-watcher] 발주서 감지: ${orderFormat}, ${parsed.length}건 파싱`);
+          console.log(`[clipboard-watcher] 발주서 감지: ${orderFormat} (신뢰도: ${orderDetected.confidence}), ${parsed.length}건 파싱, 앱: ${sourceApp}/${sourceWindow}`);
         }
       }
     }

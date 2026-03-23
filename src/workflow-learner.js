@@ -25,6 +25,16 @@ let _workflows = { sequences: [], patterns: [], templates: [] };
 let _currentSequence = null;
 let _actionBuffer = [];
 
+// ── 앱 세션 추적 (앱별 사용 시간 계산) ──
+let _appSessions = {};  // { appName: { startTs, totalMs, switchCount } }
+let _currentAppSession = null;  // { app, startTs }
+
+// ── 앱 전환 시퀀스 추적 ──
+let _appSwitchSequence = [];  // [{ from, to, ts }] — 최근 50개
+
+// ── 파일 활동 추적 ──
+let _fileActivities = [];  // [{ path, action, app, ts }] — 최근 100개
+
 function _loadWorkflows() {
   try { _workflows = JSON.parse(fs.readFileSync(WORKFLOWS_PATH, 'utf8')); } catch { _workflows = { sequences: [], patterns: [], templates: [] }; }
 }
@@ -48,7 +58,7 @@ _loadWorkflows();
 function recordAction(action) {
   const entry = {
     ts: Date.now(),
-    type: action.type,         // app_switch, click, type, scroll, shortcut, copy, paste, wait, screen_change
+    type: action.type,         // app_switch, click, type, scroll, shortcut, copy, paste, wait, screen_change, file_open, file_save
     app: action.app || '',
     window: action.window || '',
     detail: action.detail || '',  // 클릭 위치, 입력 내용 요약, 단축키 등
@@ -63,6 +73,16 @@ function recordAction(action) {
   try {
     fs.appendFileSync(ACTIONS_PATH, JSON.stringify(entry) + '\n');
   } catch {}
+
+  // ── 앱 세션 추적 (사용 시간 계산) ──
+  if (entry.app && entry.type === 'app_switch') {
+    _trackAppSession(entry.app, entry.ts);
+  }
+
+  // ── 파일 활동 감지 (윈도우 타이틀에서 파일 경로 추출) ──
+  if (entry.window) {
+    _detectFileActivity(entry.window, entry.app, entry.ts);
+  }
 
   // 시퀀스 관리
   if (!_currentSequence) {
@@ -83,6 +103,60 @@ function recordAction(action) {
   // 100개 행동마다 패턴 분석
   if (_actionBuffer.length % 100 === 0) {
     _analyzePatterns();
+  }
+}
+
+/**
+ * 앱 세션 추적 — 앱 전환 시 이전 앱 시간 기록
+ */
+function _trackAppSession(newApp, ts) {
+  // 이전 앱 세션 종료
+  if (_currentAppSession && _currentAppSession.app !== newApp) {
+    const prevApp = _currentAppSession.app;
+    const duration = ts - _currentAppSession.startTs;
+    if (!_appSessions[prevApp]) _appSessions[prevApp] = { totalMs: 0, switchCount: 0 };
+    _appSessions[prevApp].totalMs += duration;
+    _appSessions[prevApp].switchCount++;
+
+    // 앱 전환 시퀀스 기록
+    _appSwitchSequence.push({ from: prevApp, to: newApp, ts });
+    if (_appSwitchSequence.length > 50) _appSwitchSequence = _appSwitchSequence.slice(-50);
+  }
+  // 새 앱 세션 시작
+  _currentAppSession = { app: newApp, startTs: ts };
+}
+
+/**
+ * 윈도우 타이틀에서 파일 활동 감지
+ * Excel: "매출분석.xlsx - Excel"
+ * Word: "보고서.docx - Word"
+ * 탐색기: "C:\Users\..."
+ */
+const _filePatterns = [
+  /([^\\\/:*?"<>|]+\.xlsx?)(?:\s*[-–—]\s|$)/i,
+  /([^\\\/:*?"<>|]+\.docx?)(?:\s*[-–—]\s|$)/i,
+  /([^\\\/:*?"<>|]+\.pptx?)(?:\s*[-–—]\s|$)/i,
+  /([^\\\/:*?"<>|]+\.pdf)(?:\s*[-–—]\s|$)/i,
+  /([^\\\/:*?"<>|]+\.csv)(?:\s*[-–—]\s|$)/i,
+  /([^\\\/:*?"<>|]+\.hwp)(?:\s*[-–—]\s|$)/i,
+  /([^\\\/:*?"<>|]+\.txt)(?:\s*[-–—]\s|$)/i,
+];
+let _lastDetectedFile = '';
+
+function _detectFileActivity(windowTitle, app, ts) {
+  for (const pattern of _filePatterns) {
+    const m = windowTitle.match(pattern);
+    if (m && m[1]) {
+      const fileName = m[1].trim();
+      if (fileName !== _lastDetectedFile) {
+        _lastDetectedFile = fileName;
+        const activity = { file: fileName, app, ts: new Date(ts).toISOString(), action: 'open' };
+        _fileActivities.push(activity);
+        if (_fileActivities.length > 100) _fileActivities = _fileActivities.slice(-100);
+        // 저장 감지는 Ctrl+S 이벤트에서 처리 (shortcut type)
+      }
+      break;
+    }
   }
 }
 
@@ -358,6 +432,15 @@ function _getAutomationType(step) {
  * 현재 학습 상태 반환
  */
 function getStatus() {
+  // 앱별 세션 시간 계산 (분 단위)
+  const appDurations = {};
+  Object.entries(_appSessions).forEach(([app, data]) => {
+    appDurations[app] = {
+      totalMin: Math.round(data.totalMs / 60000 * 10) / 10,
+      switchCount: data.switchCount,
+    };
+  });
+
   return {
     totalActions: _actionBuffer.length,
     totalSequences: _workflows.sequences.length,
@@ -378,6 +461,10 @@ function getStatus() {
       status: t.status,
       repeatCount: t.repeatCount,
     })),
+    // ── 새 추적 데이터 ──
+    appDurations,  // 앱별 사용 시간
+    recentAppSwitches: _appSwitchSequence.slice(-10),  // 최근 앱 전환 이력
+    recentFiles: _fileActivities.slice(-10),  // 최근 파일 활동
   };
 }
 
@@ -410,22 +497,65 @@ function setReporter(callback) {
 
 function _reportToServer() {
   if (!_reportCallback) return;
-  if (_workflows.patterns.length === 0 && _workflows.templates.length === 0) return;
+  if (_workflows.patterns.length === 0 && _workflows.templates.length === 0 && _fileActivities.length === 0) return;
   try {
+    // 앱별 세션 시간 (분 단위)
+    const appDurations = {};
+    Object.entries(_appSessions).forEach(([app, data]) => {
+      appDurations[app] = { totalMin: Math.round(data.totalMs / 60000 * 10) / 10, switchCount: data.switchCount };
+    });
+
     _reportCallback({
       type: 'workflow.patterns',
       patterns: _workflows.patterns.slice(-20),
       templates: _workflows.templates.slice(-10),
       sequenceCount: _workflows.sequences.length,
+      // ── 새 데이터 ──
+      appDurations,
+      appSwitchSequence: _appSwitchSequence.slice(-20),
+      fileActivities: _fileActivities.slice(-20),
       timestamp: new Date().toISOString(),
     });
   } catch {}
 }
 
+/**
+ * 파일 저장 이벤트 기록 (Ctrl+S 감지 시 keyboard-watcher에서 호출)
+ */
+function recordFileSave(app, windowTitle) {
+  if (!windowTitle) return;
+  for (const pattern of _filePatterns) {
+    const m = windowTitle.match(pattern);
+    if (m && m[1]) {
+      const activity = { file: m[1].trim(), app, ts: new Date().toISOString(), action: 'save' };
+      _fileActivities.push(activity);
+      if (_fileActivities.length > 100) _fileActivities = _fileActivities.slice(-100);
+      break;
+    }
+  }
+}
+
+/**
+ * 앱 전환 시퀀스 반환
+ */
+function getAppSwitchSequence() {
+  return _appSwitchSequence.slice(-50);
+}
+
+/**
+ * 파일 활동 이력 반환
+ */
+function getFileActivities() {
+  return _fileActivities.slice(-100);
+}
+
 module.exports = {
   recordAction,
+  recordFileSave,
   getStatus,
   getWorkflows,
   runAnalysis,
   setReporter,
+  getAppSwitchSequence,
+  getFileActivities,
 };
