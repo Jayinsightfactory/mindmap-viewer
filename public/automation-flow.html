@@ -129,6 +129,51 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
 .node-tooltip-title{font-weight:700;margin-bottom:4px;display:flex;align-items:center;gap:6px;}
 .node-tooltip-desc{color:var(--muted);line-height:1.4;}
 
+/* ── Screen Mockups ── */
+.screen-mock {
+  background: #1a1f27;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  margin-top: 10px;
+  overflow: hidden;
+  font-size: 11px;
+}
+.screen-mock-title {
+  background: #21262d;
+  padding: 4px 10px;
+  font-size: 10px;
+  color: #8b949e;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.screen-mock-title .dots {
+  display: flex;
+  gap: 4px;
+}
+.screen-mock-title .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.screen-mock-body {
+  padding: 10px;
+  font-family: 'SF Mono', Consolas, monospace;
+  line-height: 1.6;
+  max-height: 200px;
+  overflow-y: auto;
+}
+.mock-row {
+  display: flex;
+  gap: 8px;
+  padding: 2px 0;
+  border-bottom: 1px solid rgba(48,54,61,0.3);
+}
+.mock-label { color: #8b949e; min-width: 60px; }
+.mock-value { color: #e6edf3; }
+.mock-highlight { color: #3fb950; font-weight: 600; }
+.mock-warn { color: #ffa657; }
+
 @media(max-width:900px){
   .right-panel{position:fixed;right:0;top:calc(var(--topbar-h)+50px);bottom:40px;z-index:95;width:100%!important;}
   .right-panel.collapsed{width:0!important;}
@@ -237,6 +282,24 @@ const WORKFLOWS = {
         inputs: [],
         outputs: [{name:'text',type:'string'},{name:'room',type:'string'},{name:'sender',type:'string'},{name:'timestamp',type:'Date'}],
         sampleData: '실제 캡처: 설연주 → 카톡 "호남소재" 거래처방\n전이 규칙: 호남소재 → 신규 주문 등록 (7회, 100%)',
+        screenMock: `<div class="screen-mock">
+  <div class="screen-mock-title">
+    <div class="dots"><div class="dot" style="background:#ffa657"></div><div class="dot" style="background:#3fb950"></div></div>
+    카카오톡 — 호남소재 + 네노바
+  </div>
+  <div class="screen-mock-body">
+    <div style="color:#58a6ff;font-weight:600;margin-bottom:6px;">호남소재 거래처</div>
+    <div style="background:rgba(88,166,255,0.08);padding:8px;border-radius:6px;margin-bottom:4px;">
+      <div style="font-size:10px;color:#8b949e;">14:32</div>
+      <div>[MEL] ROSE CHINA / Catherine : 30,</div>
+      <div>Pride : 20, Doncel : 15</div>
+    </div>
+    <div style="background:rgba(88,166,255,0.08);padding:8px;border-radius:6px;">
+      <div style="font-size:10px;color:#8b949e;">14:35</div>
+      <div>Novia : 25, Crimea : 10</div>
+    </div>
+  </div>
+</div>`,
         test: { api: '/api/activity/classify?hours=24&limit=10', method: 'GET', defaultBody: '', formatResult: d => { const evts=d.events||[]; const kakao=evts.filter(e=>(e.classification?.app||'').includes('kakao')); return `최근 카톡 활동: ${kakao.length}건\n${kakao.slice(0,5).map(e=>`  ${e.timestamp?.slice(11,16)} ${e.classification?.label||'?'}`).join('\n')}`; } }
       },
       {
@@ -255,6 +318,20 @@ const WORKFLOWS = {
         inputs: [{name:'raw_text',type:'string'},{name:'format_type',type:'string'}],
         outputs: [{name:'orders[]',type:'Array<{product,quantity,customer}>'},{name:'confidence',type:'number'},{name:'formatType',type:'string'}],
         sampleData: '실제 테스트 결과:\n포맷: mel_order\n품목: 7건, 신뢰도: 100%\n---\n캐더린: 30단 (CHINA 장미)\n프라이드: 20단 (CHINA 장미)\n돈셀: 15박스 (콜롬비아 카네이션)\n노비아: 25박스 (콜롬비아 카네이션)\n크리미아: 10박스 (콜롬비아 카네이션)\n문라이트: 20박스 (콜롬비아 카네이션)\nBernard: 15단 (콜롬비아 카네이션)',
+        screenMock: `<div class="screen-mock">
+  <div class="screen-mock-title">
+    <div class="dots"><div class="dot" style="background:#bc8cff"></div></div>
+    파서 결과 — mel_order (신뢰도 100%)
+  </div>
+  <div class="screen-mock-body">
+    <div class="mock-row"><span class="mock-label">포맷</span><span class="mock-value mock-highlight">mel_order</span></div>
+    <div class="mock-row"><span class="mock-label">품목 1</span><span class="mock-value">캐더린(Catherine) × <span class="mock-highlight">30단</span> [CHINA 장미]</span></div>
+    <div class="mock-row"><span class="mock-label">품목 2</span><span class="mock-value">프라이드(Pride) × <span class="mock-highlight">20단</span> [CHINA 장미]</span></div>
+    <div class="mock-row"><span class="mock-label">품목 3</span><span class="mock-value">돈셀(Doncel) × <span class="mock-highlight">15박스</span> [콜롬비아 카네이션]</span></div>
+    <div class="mock-row"><span class="mock-label">품목 4</span><span class="mock-value">노비아(Novia) × <span class="mock-highlight">25박스</span> [콜롬비아 카네이션]</span></div>
+    <div class="mock-row"><span class="mock-label">품목 5</span><span class="mock-value">크리미아(Crimea) × <span class="mock-highlight">10박스</span> [콜롬비아 카네이션]</span></div>
+  </div>
+</div>`,
         test: { api: '/api/automation/parse', method: 'POST', defaultBody: JSON.stringify({text:'[MEL] ROSE CHINA / Catherine : 30, Pride : 20, Doncel : 15, Novia : 25, Crimea : 10, Moon Light : 20, Bernard : 15'},null,2), formatResult: d => { let r=`포맷: ${d.formatType||'-'}\n품목: ${d.stats?.totalItems||d.orders?.length||0}건\n신뢰도: ${Math.round((d.stats?.avgConfidence||d.confidence||0)*100)}%`; if(d.orders?.length){r+='\n━━━━━━━━━━━━━━━━';d.orders.forEach(o=>{r+=`\n✅ ${o.product}(${o.product_en||'-'}): ${o.quantity}${o.unit||'개'} [${o.origin||o.category||'-'}]`;})} return r; } }
       },
       {
@@ -264,6 +341,20 @@ const WORKFLOWS = {
         inputs: [{name:'orders[]',type:'Array'},{name:'product_name',type:'string'}],
         outputs: [{name:'matched_orders[]',type:'Array'},{name:'prodKeys[]',type:'number[]'},{name:'match_rate',type:'number'}],
         sampleData: '실제 nenova ProdKey 매칭:\nCatherine → [2851] 케서린 ✅\nPride → [2744] 프라우드 ✅\nDoncel → [2306] 돈셀 ✅\nNovia → [2515] MIx Box ✅\nCrimea → [2309] 크리미아 ✅\n\n동기화: 3,140/3,035 (103%)',
+        screenMock: `<div class="screen-mock">
+  <div class="screen-mock-title">
+    <div class="dots"><div class="dot" style="background:#3fb950"></div></div>
+    nenova DB 매칭 — 3,035 상품
+  </div>
+  <div class="screen-mock-body">
+    <div class="mock-row"><span class="mock-label">Catherine</span><span class="mock-value">\u2192 <span class="mock-highlight">[2851]</span> [MEL] ROSE CHINA / 케서린</span></div>
+    <div class="mock-row"><span class="mock-label">Pride</span><span class="mock-value">\u2192 <span class="mock-highlight">[2744]</span> [MEL] ROSE CHINA / 프라우드</span></div>
+    <div class="mock-row"><span class="mock-label">Doncel</span><span class="mock-value">\u2192 <span class="mock-highlight">[2306]</span> Carnation CHINA / 돈셀</span></div>
+    <div class="mock-row"><span class="mock-label">Novia</span><span class="mock-value">\u2192 <span class="mock-highlight">[2515]</span> CARNATION MIx Box A</span></div>
+    <div class="mock-row"><span class="mock-label">Crimea</span><span class="mock-value">\u2192 <span class="mock-highlight">[2309]</span> Carnation CHINA / 크리미아</span></div>
+    <div style="margin-top:6px;color:#3fb950;font-weight:600;">\u2713 5/5 매칭 완료 (100%)</div>
+  </div>
+</div>`,
         test: { api: '/api/nenova/products?search=Catherine&limit=5', method: 'GET', defaultBody: '', formatResult: d => { const items=d.items||d.products||d||[]; if(Array.isArray(items)&&items.length){return '━━ nenova 매칭 결과 ━━\n'+items.map(i=>`✅ [ProdKey:${i.ProdKey||i.id}] ${i.ProdName||i.name}\n   꽃: ${i.FlowerName||'-'} | 국가: ${i.CounName||'-'}`).join('\n\n');} return '매칭 결과 없음'; } }
       },
       {
@@ -273,6 +364,27 @@ const WORKFLOWS = {
         inputs: [{name:'matched_orders[]',type:'Array'},{name:'prodKeys[]',type:'number[]'}],
         outputs: [{name:'success',type:'boolean'},{name:'screenshot',type:'Buffer'},{name:'entry_count',type:'number'}],
         sampleData: 'Vision 학습 완료:\n• 2,032개 UI 요소 학습\n• 247개 화면 인식\n• nenova 12개 핵심 화면 파악\n\n드라이런 명령 전송됨:\norbit-auto.py --target=nenova --test',
+        screenMock: `<div class="screen-mock">
+  <div class="screen-mock-title">
+    <div class="dots"><div class="dot" style="background:#ffa657"></div></div>
+    화훼 관리 프로그램 v1.0.13 — 신규 주문 등록
+  </div>
+  <div class="screen-mock-body" style="background:#0d1117;">
+    <div style="border:1px solid #30363d;padding:6px;margin-bottom:4px;">
+      <div class="mock-row"><span class="mock-label">거래처</span><span class="mock-value" style="background:#21262d;padding:2px 8px;border-radius:3px;">호남소재 (CL52)</span></div>
+      <div class="mock-row"><span class="mock-label">주문주차</span><span class="mock-value" style="background:#21262d;padding:2px 8px;border-radius:3px;">13-02</span></div>
+    </div>
+    <table style="width:100%;border-collapse:collapse;font-size:10px;">
+      <tr style="background:#21262d;"><th style="padding:3px 6px;text-align:left;">품목</th><th>박스</th><th>단</th><th>줄기</th></tr>
+      <tr><td style="padding:3px 6px;">케서린 (Catherine)</td><td style="text-align:center;color:#3fb950;">2</td><td style="text-align:center;">30</td><td style="text-align:center;">600</td></tr>
+      <tr><td style="padding:3px 6px;">프라우드 (Pride)</td><td style="text-align:center;color:#3fb950;">1</td><td style="text-align:center;">20</td><td style="text-align:center;">400</td></tr>
+      <tr><td style="padding:3px 6px;">돈셀 (Doncel)</td><td style="text-align:center;color:#3fb950;">1</td><td style="text-align:center;">15</td><td style="text-align:center;">300</td></tr>
+    </table>
+    <div style="margin-top:6px;text-align:right;">
+      <span style="padding:3px 12px;background:#3fb950;color:#000;border-radius:4px;font-size:10px;font-weight:600;">저장</span>
+    </div>
+  </div>
+</div>`,
         test: { api: '/api/pad/flow/generate', method: 'POST', defaultBody: JSON.stringify({action:'order_entry',customer:'호남소재',product:'Catherine',quantity:30,prodKey:2851},null,2), formatResult: d => d.flow ? `PAD 플로우 생성 완료\n━━━━━━━━━━━━━━━━\n단계: ${d.flow.steps?.length||d.flow.stepCount||0}단계\n1. FocusWindow: nenova\n2. Click: 신규주문 버튼\n3. SetText: 고객명 = 호남소재\n4. SetText: 품목 = Catherine\n5. SetText: 수량 = 30\n6. Click: 저장\n7. Screenshot: 검증` : `상태: ${d.status||d.message||JSON.stringify(d).slice(0,100)}` }
       },
       {
@@ -281,6 +393,22 @@ const WORKFLOWS = {
         desc: '입력 완료 후 화면 캡처 → Claude Vision으로 데이터 대조. 불일치 발견시 알림',
         inputs: [{name:'screenshot',type:'Buffer'},{name:'expected_data',type:'object'}],
         outputs: [{name:'verified',type:'boolean'},{name:'mismatches[]',type:'Array'},{name:'confidence',type:'number'}],
+        screenMock: `<div class="screen-mock">
+  <div class="screen-mock-title">
+    <div class="dots"><div class="dot" style="background:#39d2c0"></div></div>
+    Vision 검증 — 입력 결과 대조
+  </div>
+  <div class="screen-mock-body">
+    <div class="mock-row"><span class="mock-label">화면</span><span class="mock-value">신규 주문 등록 (저장 완료)</span></div>
+    <div class="mock-row"><span class="mock-label">캡처</span><span class="mock-value">주문#4040 | 호남소재 | 13-02</span></div>
+    <div style="margin-top:6px;border-top:1px solid #30363d;padding-top:6px;">
+      <div class="mock-row"><span class="mock-label">케서린 30</span><span class="mock-value mock-highlight">\u2713 DB 일치</span></div>
+      <div class="mock-row"><span class="mock-label">프라이드 20</span><span class="mock-value mock-highlight">\u2713 DB 일치</span></div>
+      <div class="mock-row"><span class="mock-label">돈셀 15</span><span class="mock-value mock-highlight">\u2713 DB 일치</span></div>
+    </div>
+    <div style="margin-top:6px;color:#3fb950;font-weight:600;">\u2713 검증 완료 — 3건 모두 일치</div>
+  </div>
+</div>`,
         test: { api: '/api/vision/learning-status', method: 'GET', defaultBody: '', formatResult: d => `UI 요소: ${d.elements||d.totalElements||'-'}개\n화면: ${d.screens||d.totalScreens||'-'}개\n학습률: ${d.learningRate||d.rate||'-'}%` }
       }
     ],
@@ -322,6 +450,21 @@ const WORKFLOWS = {
         desc: '주문 수량 vs 출고 수량 비교, 차이(diff) 계산',
         inputs: [{name:'ordered_qty',type:'number'},{name:'shipped_qty',type:'number'},{name:'product',type:'string'}],
         outputs: [{name:'diff',type:'number'},{name:'match',type:'boolean'},{name:'details[]',type:'Array'}],
+        screenMock: `<div class="screen-mock">
+  <div class="screen-mock-title">
+    <div class="dots"><div class="dot" style="background:#58a6ff"></div></div>
+    차감 대조 — 12차 차감내역.xlsx
+  </div>
+  <div class="screen-mock-body">
+    <table style="width:100%;border-collapse:collapse;font-size:10px;">
+      <tr style="background:#21262d;"><th style="padding:3px 6px;text-align:left;">거래처</th><th>주문</th><th>출하</th><th>차이</th></tr>
+      <tr><td style="padding:3px 6px;">호남소재</td><td style="text-align:center;">30</td><td style="text-align:center;">30</td><td style="text-align:center;color:#3fb950;">0</td></tr>
+      <tr><td style="padding:3px 6px;">태림</td><td style="text-align:center;">25</td><td style="text-align:center;">23</td><td style="text-align:center;color:#f85149;">-2</td></tr>
+      <tr><td style="padding:3px 6px;">미카엘</td><td style="text-align:center;">15</td><td style="text-align:center;">15</td><td style="text-align:center;color:#3fb950;">0</td></tr>
+    </table>
+    <div style="margin-top:6px;color:#ffa657;">\u26A0 태림: 2박스 차이 \u2192 이슈 감지기 전달</div>
+  </div>
+</div>`,
         test: { api: '/api/nenova/orders/summary', method: 'GET', defaultBody: '', formatResult: d => `비교 엔진: 활성\n처리 건수: ${d.comparedCount||d.count||'-'}건` }
       },
       {
@@ -363,6 +506,26 @@ const WORKFLOWS = {
         desc: '변경 메시지를 {거래처, 품목, 수량, 액션} 구조로 파싱',
         inputs: [{name:'raw_text',type:'string'},{name:'action_type',type:'string'}],
         outputs: [{name:'customer',type:'string'},{name:'product',type:'string'},{name:'quantity',type:'number'},{name:'action',type:'"cancel"|"add"'}],
+        screenMock: `<div class="screen-mock">
+  <div class="screen-mock-title">
+    <div class="dots"><div class="dot" style="background:#bc8cff"></div></div>
+    변경 주문 파서 — change_order
+  </div>
+  <div class="screen-mock-body">
+    <div style="background:rgba(248,81,73,0.08);padding:6px;border-radius:4px;margin-bottom:4px;">
+      <div style="color:#f85149;">\u274C 취소</div>
+      <div>대구회경 / 릭센드 10단</div>
+    </div>
+    <div style="background:rgba(63,185,80,0.08);padding:6px;border-radius:4px;margin-bottom:4px;">
+      <div style="color:#3fb950;">\u271A 추가</div>
+      <div>영남소재 / 프라이드 10단</div>
+    </div>
+    <div style="background:rgba(63,185,80,0.08);padding:6px;border-radius:4px;">
+      <div style="color:#3fb950;">\u271A 추가</div>
+      <div>태림 / 문라이트 5단</div>
+    </div>
+  </div>
+</div>`,
         test: { api: '/api/automation/parse', method: 'POST', defaultBody: JSON.stringify({text:'대구회경 릭센드 10단 취소 / 영남소재 프라이드 10단 추가'},null,2), formatResult: d => { let r=`포맷: ${d.formatType||'change_order'}`; if(d.orders?.length){d.orders.forEach(o=>{r+=`\n${o.customer||'-'} / ${o.product||o.name}: ${o.quantity}개 (${o.action||'변경'})`;});} return r; } }
       },
       {
@@ -817,6 +980,14 @@ function openPanel(node) {
     html += `<div class="panel-section">
       <div class="panel-section-title">&#x1F4CA; 실제 데이터</div>
       <div style="font-size:11px;line-height:1.6;padding:10px;background:rgba(63,185,80,0.06);border:1px solid rgba(63,185,80,0.2);border-radius:6px;white-space:pre-wrap;font-family:'SF Mono',Consolas,monospace;">${node.sampleData}</div>
+    </div>`;
+  }
+
+  // 화면 예시 (screenMock)
+  if (node.screenMock) {
+    html += `<div class="panel-section">
+      <div class="panel-section-title">&#x1F4F8; 화면 예시 (실제 데이터)</div>
+      ${node.screenMock}
     </div>`;
   }
 
