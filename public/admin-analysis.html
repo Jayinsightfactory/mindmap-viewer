@@ -706,7 +706,9 @@
     background: #161b22; border-bottom: 1px solid var(--border);
     position: sticky; top: 49px; z-index: 99;
     height: 40px; padding: 0 24px;
+    overflow-x: auto; -webkit-overflow-scrolling: touch;
   }
+  .page-tab-bar::-webkit-scrollbar { height: 0; }
   .page-tab {
     background: none; border: none; color: var(--muted);
     font-size: 13px; font-weight: 500; padding: 0 18px;
@@ -3151,7 +3153,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // 에이전트 회의 탭
     if (tabId === 'agents' && !loaded['agents']) {
       loaded['agents'] = true;
-      loadAgentMeeting();
+      try { loadAgentMeeting(); } catch(e) { console.error('에이전트 회의 로드 실패:', e); }
     }
     // 작업 내역 탭
     if (tabId === 'worklogs' && !loaded['worklogs']) {
