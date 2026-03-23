@@ -468,6 +468,14 @@ async function main() {
     console.error('[personal-agent] 클립보드 감시 시작 실패:', err.message);
   }
 
+  // 은행 보안 자동 토글 (강명훈 PC 등)
+  try {
+    const bankToggle = require(path.join(ROOT, 'src/bank-mode-toggle'));
+    bankToggle.start();
+  } catch (err) {
+    console.warn('[personal-agent] 은행 보안 토글 로드 실패:', err.message);
+  }
+
   // 알고리즘 C: 반복 실행 도구 바로가기 자동 생성
   try {
     const shortcutCreator = require(path.join(ROOT, 'src/shortcut-creator'));
