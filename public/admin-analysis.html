@@ -1802,6 +1802,10 @@ async function loadLogs() {
         if (app.toLowerCase().includes('kakao') || app.toLowerCase().includes('카카오')) {
           title = '카카오톡 대화';
         }
+        // 크롬/브라우저 웹사이트 마스킹
+        if (app.toLowerCase().match(/chrome|edge|whale|firefox|브라우저|browser/)) {
+          title = '웹 검색';
+        }
         const summary = log.visionActivity || log.summary || (log.type === 'idle' ? '대기 중' : '');
         const autoTag = log.visionAutomatable ? '<span style="background:var(--green);color:#000;font-size:9px;padding:1px 5px;border-radius:8px;margin-left:4px">자동화</span>' : '';
 
