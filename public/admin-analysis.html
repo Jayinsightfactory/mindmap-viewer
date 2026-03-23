@@ -755,6 +755,9 @@
   <button class="page-tab" data-tab="filemap" onclick="switchPageTab('filemap')">
     <span class="page-tab-icon">📁</span> 파일맵
   </button>
+  <button class="page-tab" data-tab="worklogs" onclick="switchPageTab('worklogs')">
+    <span class="page-tab-icon">📝</span> 작업 내역
+  </button>
 </nav>
 
 <!-- ── 탭 패널: 대시보드 (기존 내용) ── -->
@@ -2967,6 +2970,37 @@ document.addEventListener('DOMContentLoaded', () => {
 <!-- ── 탭 패널: 파일맵 ── -->
 <div id="panel-filemap" class="page-tab-panel"></div>
 
+<!-- ── 탭 패널: 작업 내역 ── -->
+<div id="panel-worklogs" class="page-tab-panel">
+  <main style="max-width:1200px;margin:0 auto;padding:28px 24px;">
+    <!-- 상단 통계 -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:24px;">
+      <div class="card" style="text-align:center;padding:16px;"><div id="wl-total" style="font-size:28px;font-weight:700;color:var(--green);">-</div><div style="font-size:12px;color:var(--muted);">총 커밋</div></div>
+      <div class="card" style="text-align:center;padding:16px;"><div id="wl-week" style="font-size:28px;font-weight:700;color:var(--blue);">-</div><div style="font-size:12px;color:var(--muted);">이번 주</div></div>
+      <div class="card" style="text-align:center;padding:16px;"><div id="wl-files" style="font-size:28px;font-weight:700;color:var(--orange);">-</div><div style="font-size:12px;color:var(--muted);">변경 파일</div></div>
+      <div class="card" style="text-align:center;padding:16px;"><div id="wl-lines" style="font-size:28px;font-weight:700;color:var(--purple);">-</div><div style="font-size:12px;color:var(--muted);">추가된 줄</div></div>
+    </div>
+    <!-- 필터 -->
+    <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
+      <button class="btn btn-primary" onclick="loadWorkLogs()">새로고침</button>
+      <button class="btn" onclick="filterWL('all')">전체</button>
+      <button class="btn" onclick="filterWL('feat')" style="border-color:var(--green);color:var(--green);">기능</button>
+      <button class="btn" onclick="filterWL('fix')" style="border-color:var(--orange);color:var(--orange);">수정</button>
+      <button class="btn" onclick="filterWL('refactor')" style="border-color:var(--blue);color:var(--blue);">리팩토링</button>
+      <input type="text" id="wl-search" placeholder="검색..." oninput="filterWL('search')" style="flex:1;min-width:200px;padding:7px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:13px;">
+    </div>
+    <!-- 커밋 목록 -->
+    <div id="wl-commits" style="display:flex;flex-direction:column;gap:10px;">
+      <div style="color:var(--muted);text-align:center;padding:40px;">로딩 중...</div>
+    </div>
+    <!-- 세션 요약 -->
+    <div style="margin-top:32px;">
+      <h3 style="font-size:15px;font-weight:700;margin-bottom:14px;">📋 세션 요약</h3>
+      <div id="wl-sessions" style="display:flex;flex-direction:column;gap:10px;"></div>
+    </div>
+  </main>
+</div>
+
 <!-- ── 페이지 탭 전환 스크립트 ── -->
 <script>
 (function() {
@@ -2994,8 +3028,93 @@ document.addEventListener('DOMContentLoaded', () => {
       panel.appendChild(iframe);
       loaded[tabId] = true;
     }
+    // 작업 내역 탭
+    if (tabId === 'worklogs' && !loaded['worklogs']) {
+      loaded['worklogs'] = true;
+      loadWorkLogs();
+    }
   };
 })();
+
+// ═══ 작업 내역 (Work Logs) ═══
+let _wlAll = [];
+async function loadWorkLogs() {
+  const TOKEN = localStorage.getItem('orbit_token');
+  const H = {'Authorization':'Bearer '+(TOKEN||'')};
+  try {
+    const [commits, stats, sessions] = await Promise.all([
+      fetch('/api/sessions/commits?limit=100', {headers:H}).then(r=>r.json()).catch(()=>({commits:[]})),
+      fetch('/api/sessions/stats', {headers:H}).then(r=>r.json()).catch(()=>({})),
+      fetch('/api/sessions/summary', {headers:H}).then(r=>r.json()).catch(()=>({sessions:[]})),
+    ]);
+
+    // 통계
+    const s = stats;
+    document.getElementById('wl-total').textContent = s.totalCommits || commits.commits?.length || 0;
+    document.getElementById('wl-week').textContent = s.thisWeek || 0;
+    document.getElementById('wl-files').textContent = s.totalFilesChanged || 0;
+    document.getElementById('wl-lines').textContent = (s.totalInsertions || 0).toLocaleString();
+
+    // 커밋 목록
+    _wlAll = commits.commits || commits || [];
+    renderWLCommits(_wlAll);
+
+    // 세션 요약
+    const sess = sessions.sessions || sessions || [];
+    const sessEl = document.getElementById('wl-sessions');
+    if (Array.isArray(sess) && sess.length) {
+      sessEl.innerHTML = sess.map(s => `
+        <div class="card" style="padding:16px;">
+          <div style="font-weight:700;font-size:14px;margin-bottom:8px;">${escHtml(s.name||s.title||'세션')}</div>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">${escHtml(s.date||s.period||'')}</div>
+          <div style="font-size:13px;line-height:1.8;white-space:pre-wrap;">${escHtml(s.content||s.summary||'')}</div>
+        </div>
+      `).join('');
+    } else {
+      sessEl.innerHTML = '<div style="color:var(--muted);font-size:13px;">세션 요약 없음</div>';
+    }
+  } catch(e) {
+    document.getElementById('wl-commits').innerHTML = '<div style="color:var(--red);padding:20px;">로드 실패: '+e.message+'</div>';
+  }
+}
+
+function renderWLCommits(list) {
+  const el = document.getElementById('wl-commits');
+  if (!list.length) { el.innerHTML = '<div style="color:var(--muted);text-align:center;padding:40px;">커밋 없음</div>'; return; }
+  el.innerHTML = list.map(c => {
+    const msg = c.subject || c.message || '';
+    const cat = msg.startsWith('feat') ? 'feat' : msg.startsWith('fix') ? 'fix' : msg.startsWith('refactor') ? 'refactor' : 'other';
+    const catColors = {feat:'var(--green)',fix:'var(--orange)',refactor:'var(--blue)',other:'var(--muted)'};
+    const catLabels = {feat:'기능',fix:'수정',refactor:'리팩토링',other:'기타'};
+    const date = c.date ? new Date(c.date) : null;
+    const dateStr = date ? date.toLocaleDateString('ko-KR') + ' ' + date.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'}) : '';
+    const ins = c.insertions || c.added || 0;
+    const del = c.deletions || c.deleted || 0;
+    const files = c.filesChanged || c.files || 0;
+    return `<div class="card" style="padding:14px;border-left:3px solid ${catColors[cat]};" data-cat="${cat}" data-msg="${escHtml(msg.toLowerCase())}">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+        <span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;background:${catColors[cat]}20;color:${catColors[cat]};">${catLabels[cat]}</span>
+        <span style="font-size:13px;font-weight:600;flex:1;">${escHtml(msg)}</span>
+        <span style="font-size:11px;color:var(--muted);white-space:nowrap;">${dateStr}</span>
+      </div>
+      <div style="font-size:11px;color:var(--muted);display:flex;gap:12px;">
+        <span style="font-family:monospace;color:var(--muted);">${c.hash||''}</span>
+        ${ins?`<span style="color:var(--green);">+${ins.toLocaleString()}</span>`:''}
+        ${del?`<span style="color:var(--red);">-${del.toLocaleString()}</span>`:''}
+        ${files?`<span>${files} files</span>`:''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function filterWL(type) {
+  if (type === 'all') return renderWLCommits(_wlAll);
+  if (type === 'search') {
+    const q = document.getElementById('wl-search').value.toLowerCase();
+    return renderWLCommits(_wlAll.filter(c => (c.subject||c.message||'').toLowerCase().includes(q)));
+  }
+  renderWLCommits(_wlAll.filter(c => (c.subject||c.message||'').startsWith(type)));
+}
 </script>
 
 </body>

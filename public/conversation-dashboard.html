@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Orbit AI — 대화 이력</title>
+<title>Orbit AI — 작업 내역</title>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
@@ -24,7 +24,6 @@ body {
   background: var(--bg); color: var(--text);
   font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   min-height: 100vh; line-height: 1.5; font-size: 14px;
-  overflow: hidden;
 }
 a { color: var(--blue); text-decoration: none; }
 a:hover { text-decoration: underline; }
@@ -41,1362 +40,555 @@ header {
 .header-back { color: var(--muted); font-size: 12px; white-space: nowrap; }
 .header-back:hover { color: var(--blue); }
 
-/* ── 버튼 ───────────────────────────────────────────────── */
-.btn {
-  background: var(--surface2); border: 1px solid var(--border); color: var(--text);
-  padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 12px;
-  transition: all .15s; white-space: nowrap;
+/* ── 검색/필터 바 ─────────────────────────────────────── */
+.toolbar {
+  background: var(--surface); border-bottom: 1px solid var(--border);
+  padding: 10px 24px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
 }
-.btn:hover { background: var(--border); }
-.btn-primary { background: var(--green); border-color: var(--green); color: #0d1117; font-weight: 600; }
-.btn-primary:hover { opacity: .85; }
-.btn-blue { background: var(--blue); border-color: var(--blue); color: #0d1117; font-weight: 600; }
-.btn-blue:hover { opacity: .85; }
-.btn-orange { background: var(--orange); border-color: var(--orange); color: #0d1117; font-weight: 600; }
-.btn-orange:hover { opacity: .85; }
-.btn-sm { padding: 4px 10px; font-size: 11px; }
-
-/* ── 배지 ───────────────────────────────────────────────── */
-.badge {
-  display: inline-block; padding: 2px 8px; border-radius: 12px;
-  font-size: 10px; font-weight: 600; white-space: nowrap;
-}
-.badge-green  { background: rgba(63,185,80,.15);  color: var(--green); }
-.badge-blue   { background: rgba(88,166,255,.15); color: var(--blue); }
-.badge-orange { background: rgba(255,166,87,.15); color: var(--orange); }
-.badge-red    { background: rgba(248,81,73,.15);  color: var(--red); }
-.badge-purple { background: rgba(188,140,255,.15); color: var(--purple); }
-.badge-muted  { background: rgba(139,148,158,.15); color: var(--muted); }
-
-/* ── 통계 카드 바 ───────────────────────────────────────── */
-.stats-bar {
-  display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;
-  padding: 16px 24px; border-bottom: 1px solid var(--border);
-  background: var(--surface);
-}
-.stat-card {
-  background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
-  padding: 14px 16px; display: flex; flex-direction: column; gap: 4px;
-}
-.stat-card .label { font-size: 11px; color: var(--muted); }
-.stat-card .value { font-size: 22px; font-weight: 700; }
-.stat-card .sub { font-size: 11px; color: var(--muted); }
-.stat-card.green .value { color: var(--green); }
-.stat-card.blue .value  { color: var(--blue); }
-.stat-card.orange .value{ color: var(--orange); }
-.stat-card.purple .value{ color: var(--purple); }
-
-/* ── 메인 레이아웃 ──────────────────────────────────────── */
-.main-layout {
-  display: flex; height: calc(100vh - 130px); overflow: hidden;
-}
-
-/* ── 좌측 패널 (채팅방 목록) ────────────────────────────── */
-.left-panel {
-  width: 30%; min-width: 260px; max-width: 380px;
-  border-right: 1px solid var(--border);
-  display: flex; flex-direction: column; background: var(--surface);
-}
-.left-panel-header {
-  padding: 12px 14px; border-bottom: 1px solid var(--border);
-  display: flex; flex-direction: column; gap: 8px;
-}
-.left-panel-header .title-row {
-  display: flex; align-items: center; justify-content: space-between;
-}
-.left-panel-header .title-row h3 { font-size: 14px; font-weight: 600; }
 .search-box {
-  width: 100%; padding: 7px 10px; border-radius: 6px;
-  border: 1px solid var(--border); background: var(--bg); color: var(--text);
-  font-size: 12px; outline: none;
+  background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+  padding: 6px 12px; border-radius: 6px; font-size: 13px; width: 260px;
+  outline: none;
 }
 .search-box:focus { border-color: var(--blue); }
-.sort-row { display: flex; gap: 4px; }
-.sort-btn {
-  flex: 1; padding: 4px; border: 1px solid var(--border); background: var(--bg);
-  color: var(--muted); font-size: 10px; cursor: pointer; border-radius: 4px;
-  transition: all .15s; text-align: center;
-}
-.sort-btn.active { color: var(--blue); border-color: var(--blue); background: rgba(88,166,255,.08); }
-
-.chatroom-list {
-  flex: 1; overflow-y: auto; padding: 4px 0;
-}
-.chatroom-item {
-  padding: 10px 14px; cursor: pointer; border-bottom: 1px solid rgba(48,54,61,.4);
-  transition: background .12s; display: flex; align-items: center; gap: 10px;
-}
-.chatroom-item:hover { background: var(--surface2); }
-.chatroom-item.active { background: rgba(88,166,255,.08); border-left: 3px solid var(--blue); }
-.chatroom-icon {
-  width: 36px; height: 36px; border-radius: 50%; background: var(--surface2);
-  display: flex; align-items: center; justify-content: center;
-  font-size: 16px; flex-shrink: 0; border: 1px solid var(--border);
-}
-.chatroom-info { flex: 1; min-width: 0; }
-.chatroom-name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.chatroom-preview { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
-.chatroom-meta { text-align: right; flex-shrink: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
-.chatroom-time { font-size: 10px; color: var(--muted); }
-.chatroom-count {
-  background: var(--green); color: #0d1117; font-size: 10px; font-weight: 700;
-  padding: 1px 6px; border-radius: 10px; min-width: 18px; text-align: center;
-}
-
-/* ── 우측 메인 패널 (메시지 뷰) ─────────────────────────── */
-.right-panel {
-  flex: 1; display: flex; flex-direction: column; min-width: 0;
-}
-.msg-panel-header {
-  padding: 12px 18px; border-bottom: 1px solid var(--border);
-  display: flex; align-items: center; justify-content: space-between;
-  background: var(--surface); flex-shrink: 0;
-}
-.msg-panel-header .room-title { font-size: 15px; font-weight: 600; }
-.msg-panel-header .room-sub { font-size: 11px; color: var(--muted); margin-left: 8px; }
-
-.msg-container {
-  flex: 1; overflow-y: auto; padding: 16px 20px; background: var(--bg);
-  scroll-behavior: smooth;
-}
-
-/* ── 날짜 구분선 ────────────────────────────────────────── */
-.date-divider {
-  display: flex; align-items: center; gap: 12px; margin: 20px 0 12px;
-}
-.date-divider::before, .date-divider::after {
-  content: ''; flex: 1; height: 1px; background: var(--border);
-}
-.date-divider span {
-  font-size: 11px; color: var(--muted); white-space: nowrap; padding: 2px 10px;
-  background: var(--surface2); border-radius: 10px;
-}
-
-/* ── 메시지 버블 ────────────────────────────────────────── */
-.msg-group { margin-bottom: 14px; }
-.msg-sender {
-  font-size: 11px; font-weight: 600; color: var(--blue); margin-bottom: 3px;
-  padding-left: 2px;
-}
-.msg-bubble {
-  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
-  padding: 9px 14px; max-width: 75%; font-size: 13px; line-height: 1.6;
-  word-break: break-word; cursor: pointer; transition: border-color .15s;
-  position: relative;
-}
-.msg-bubble:hover { border-color: var(--blue); }
-.msg-bubble .msg-time {
-  font-size: 10px; color: var(--muted); margin-top: 4px; text-align: right;
-}
-.msg-bubble.order-detected { border-left: 3px solid var(--green); }
-.msg-bubble .highlight-order { color: var(--green); font-weight: 600; }
-.msg-bubble .highlight-product { color: var(--blue); font-weight: 600; }
-.msg-bubble .highlight-customer { color: var(--orange); font-weight: 600; }
-
-/* ── 메시지 상세 모달 ───────────────────────────────────── */
-.msg-detail-overlay {
-  position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 500;
-  display: none; align-items: center; justify-content: center;
-}
-.msg-detail-overlay.open { display: flex; }
-.msg-detail {
-  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
-  padding: 24px; max-width: 520px; width: 90%; max-height: 80vh; overflow-y: auto;
-}
-.msg-detail h3 { font-size: 15px; margin-bottom: 14px; }
-.msg-detail .detail-row { margin-bottom: 10px; }
-.msg-detail .detail-label { font-size: 11px; color: var(--muted); margin-bottom: 2px; }
-.msg-detail .detail-value { font-size: 13px; }
-.msg-detail .close-btn {
-  position: absolute; top: 12px; right: 16px; background: none; border: none;
-  color: var(--muted); font-size: 18px; cursor: pointer;
-}
-
-/* ── 없음 상태 ──────────────────────────────────────────── */
-.empty-state {
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  height: 100%; color: var(--muted); gap: 8px; padding: 40px;
-}
-.empty-state .icon { font-size: 40px; opacity: .4; }
-.empty-state .text { font-size: 14px; }
-.empty-state .sub { font-size: 12px; }
-
-/* ── 하단 툴바 ──────────────────────────────────────────── */
-.bottom-toolbar {
-  padding: 10px 18px; border-top: 1px solid var(--border);
-  background: var(--surface); display: flex; align-items: center; gap: 10px;
-  flex-wrap: wrap; flex-shrink: 0;
-}
-.date-filter { display: flex; gap: 4px; }
-.date-btn {
-  padding: 5px 10px; border: 1px solid var(--border); background: var(--bg);
-  color: var(--muted); font-size: 11px; cursor: pointer; border-radius: 4px;
+.search-box::placeholder { color: var(--muted); }
+.filter-btn {
+  background: var(--surface2); border: 1px solid var(--border); color: var(--muted);
+  padding: 5px 12px; border-radius: 14px; cursor: pointer; font-size: 12px;
   transition: all .15s;
 }
-.date-btn.active { color: var(--blue); border-color: var(--blue); background: rgba(88,166,255,.08); }
-.toolbar-search {
-  flex: 1; min-width: 120px; padding: 6px 10px; border-radius: 6px;
-  border: 1px solid var(--border); background: var(--bg); color: var(--text);
-  font-size: 12px; outline: none;
-}
-.toolbar-search:focus { border-color: var(--blue); }
-.toggle-wrap {
-  display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); cursor: pointer;
-}
-.toggle-switch {
-  width: 32px; height: 18px; border-radius: 9px; background: var(--border);
-  position: relative; transition: background .2s; cursor: pointer;
-}
-.toggle-switch.on { background: var(--green); }
-.toggle-switch::after {
-  content: ''; position: absolute; top: 2px; left: 2px;
-  width: 14px; height: 14px; border-radius: 50%; background: #fff;
-  transition: transform .2s;
-}
-.toggle-switch.on::after { transform: translateX(14px); }
+.filter-btn:hover { border-color: var(--blue); color: var(--text); }
+.filter-btn.active { border-color: var(--blue); color: var(--blue); background: rgba(88,166,255,0.1); }
+.toolbar-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.refresh-label { color: var(--muted); font-size: 11px; }
 
-/* ── 우측 슬라이드 패널 (분석 결과) ─────────────────────── */
-.analysis-panel {
-  position: fixed; top: 0; right: -420px; width: 400px; height: 100vh;
-  background: var(--surface); border-left: 1px solid var(--border);
-  z-index: 300; transition: right .3s ease; display: flex; flex-direction: column;
-  box-shadow: -4px 0 20px rgba(0,0,0,.4);
+/* ── 통계 카드 ────────────────────────────────────────── */
+.stats-bar {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;
+  padding: 16px 24px;
 }
-.analysis-panel.open { right: 0; }
-.analysis-header {
-  padding: 16px 18px; border-bottom: 1px solid var(--border);
-  display: flex; align-items: center; justify-content: space-between;
+.stat-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; padding: 16px 20px;
 }
-.analysis-header h3 { font-size: 15px; font-weight: 600; }
-.analysis-close {
-  background: none; border: none; color: var(--muted); font-size: 18px;
-  cursor: pointer; padding: 4px;
-}
-.analysis-body { flex: 1; overflow-y: auto; padding: 14px; }
-.analysis-footer {
-  padding: 12px 18px; border-top: 1px solid var(--border);
-  display: flex; gap: 8px;
-}
-.candidate-card {
-  background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
-  padding: 14px; margin-bottom: 10px;
-}
-.candidate-card .cand-header {
-  display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;
-}
-.candidate-card .cand-customer { font-size: 14px; font-weight: 600; color: var(--orange); }
-.candidate-card .cand-confidence {
-  font-size: 11px; padding: 2px 8px; border-radius: 10px;
-}
-.conf-high { background: rgba(63,185,80,.15); color: var(--green); }
-.conf-mid  { background: rgba(255,166,87,.15); color: var(--orange); }
-.conf-low  { background: rgba(248,81,73,.15); color: var(--red); }
-.candidate-card .cand-products { margin-top: 6px; }
-.candidate-card .cand-product-row {
-  display: flex; justify-content: space-between; font-size: 12px;
-  padding: 3px 0; border-bottom: 1px solid rgba(48,54,61,.3);
-}
-.candidate-card .cand-product-name { color: var(--blue); }
-.candidate-card .cand-product-qty { color: var(--text); }
-.candidate-card .cand-actions { margin-top: 10px; display: flex; gap: 6px; }
+.stat-card .label { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+.stat-card .value { font-size: 26px; font-weight: 700; }
+.stat-card .sub { font-size: 11px; color: var(--muted); margin-top: 4px; }
 
-/* ── 로딩 ───────────────────────────────────────────────── */
-.spinner {
-  width: 24px; height: 24px; border: 3px solid var(--border);
-  border-top-color: var(--blue); border-radius: 50%;
-  animation: spin .8s linear infinite;
+/* ── 메인 레이아웃 ────────────────────────────────────── */
+.main-layout {
+  display: grid; grid-template-columns: 280px 1fr; gap: 0;
+  height: calc(100vh - 200px); overflow: hidden;
+}
+
+/* ── 날짜 사이드바 ────────────────────────────────────── */
+.date-sidebar {
+  border-right: 1px solid var(--border); overflow-y: auto;
+  padding: 12px 0;
+}
+.date-sidebar::-webkit-scrollbar { width: 4px; }
+.date-sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+.date-item {
+  padding: 10px 20px; cursor: pointer;
+  display: flex; justify-content: space-between; align-items: center;
+  transition: background .1s; border-left: 3px solid transparent;
+}
+.date-item:hover { background: var(--surface); }
+.date-item.active { background: var(--surface); border-left-color: var(--blue); }
+.date-item .day { font-size: 13px; font-weight: 600; }
+.date-item .weekday { font-size: 11px; color: var(--muted); margin-left: 6px; }
+.date-item .count {
+  background: var(--surface2); color: var(--muted); font-size: 11px;
+  padding: 2px 8px; border-radius: 10px; min-width: 26px; text-align: center;
+}
+.date-item.active .count { background: var(--blue); color: #fff; }
+.date-all {
+  padding: 10px 20px; cursor: pointer; color: var(--muted); font-size: 12px;
+  border-bottom: 1px solid var(--border); margin-bottom: 4px;
+}
+.date-all:hover { color: var(--blue); }
+.date-all.active { color: var(--blue); font-weight: 600; }
+
+/* ── 커밋 목록 ────────────────────────────────────────── */
+.commit-panel {
+  overflow-y: auto; padding: 16px 24px;
+}
+.commit-panel::-webkit-scrollbar { width: 6px; }
+.commit-panel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+.commit-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; padding: 14px 18px; margin-bottom: 10px;
+  cursor: pointer; transition: border-color .15s;
+}
+.commit-card:hover { border-color: var(--muted); }
+.commit-card.expanded { border-color: var(--blue); }
+
+.commit-header {
+  display: flex; align-items: flex-start; gap: 10px;
+}
+.commit-badge {
+  font-size: 11px; font-weight: 600; padding: 2px 8px;
+  border-radius: 4px; white-space: nowrap; flex-shrink: 0;
+  line-height: 1.6;
+}
+.commit-subject {
+  font-size: 14px; font-weight: 600; flex: 1;
+  word-break: break-word;
+}
+.commit-time {
+  font-size: 11px; color: var(--muted); white-space: nowrap; flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.commit-meta {
+  display: flex; align-items: center; gap: 12px;
+  margin-top: 8px; font-size: 12px; color: var(--muted);
+}
+.commit-meta .additions { color: var(--green); }
+.commit-meta .deletions { color: var(--red); }
+.commit-meta .hash {
+  font-family: 'SF Mono', Consolas, monospace;
+  background: var(--surface2); padding: 1px 6px; border-radius: 4px;
+  font-size: 11px;
+}
+
+.commit-files {
+  margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border);
+  display: none;
+}
+.commit-card.expanded .commit-files { display: block; }
+
+.file-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 3px 0; font-size: 12px;
+  font-family: 'SF Mono', Consolas, monospace;
+}
+.file-status {
+  font-size: 10px; padding: 1px 6px; border-radius: 3px;
+  font-weight: 600; min-width: 32px; text-align: center;
+}
+.file-status.A { background: rgba(63,185,80,0.15); color: var(--green); }
+.file-status.M { background: rgba(88,166,255,0.15); color: var(--blue); }
+.file-status.D { background: rgba(248,81,73,0.15); color: var(--red); }
+
+.commit-body {
+  margin-top: 8px; font-size: 12px; color: var(--muted);
+  white-space: pre-wrap; line-height: 1.6;
+}
+
+/* ── 세션 요약 섹션 ───────────────────────────────────── */
+.session-section {
+  padding: 20px 24px; border-top: 1px solid var(--border);
+}
+.session-section h2 {
+  font-size: 16px; font-weight: 700; margin-bottom: 14px;
+  color: var(--purple);
+}
+.session-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  gap: 14px;
+}
+.session-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; padding: 16px 20px;
+}
+.session-card .title { font-size: 14px; font-weight: 600; margin-bottom: 6px; color: var(--cyan); }
+.session-card .desc { font-size: 12px; color: var(--muted); margin-bottom: 10px; }
+.session-card .sections { font-size: 12px; line-height: 1.7; }
+.session-card .sections li { color: var(--text); margin-left: 16px; }
+.session-card .metrics {
+  margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border);
+  font-size: 11px; color: var(--muted); white-space: pre-wrap;
+}
+
+/* ── 빈 상태 ──────────────────────────────────────────── */
+.empty-state {
+  text-align: center; padding: 60px 20px; color: var(--muted);
+}
+.empty-state .icon { font-size: 36px; margin-bottom: 12px; opacity: .5; }
+.empty-state .msg { font-size: 14px; }
+
+/* ── 로딩 ─────────────────────────────────────────────── */
+.loading {
+  text-align: center; padding: 40px; color: var(--muted); font-size: 13px;
+}
+.loading::after {
+  content: ''; display: inline-block; width: 16px; height: 16px;
+  border: 2px solid var(--border); border-top-color: var(--blue);
+  border-radius: 50%; animation: spin 0.8s linear infinite;
+  margin-left: 8px; vertical-align: middle;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
-.loading-center {
-  display: flex; flex-direction: column; align-items: center;
-  justify-content: center; gap: 10px; height: 100%; color: var(--muted);
-}
 
-/* ── 검색 오버레이 (Ctrl+K) ─────────────────────────────── */
-.search-overlay {
-  position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 600;
-  display: none; align-items: flex-start; justify-content: center; padding-top: 15vh;
+/* ── 반응형 ───────────────────────────────────────────── */
+@media (max-width: 900px) {
+  .stats-bar { grid-template-columns: repeat(2, 1fr); }
+  .main-layout { grid-template-columns: 1fr; height: auto; }
+  .date-sidebar { display: none; }
+  .session-grid { grid-template-columns: 1fr; }
 }
-.search-overlay.open { display: flex; }
-.search-dialog {
-  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
-  width: 520px; max-width: 90%; box-shadow: 0 8px 30px rgba(0,0,0,.5);
+@media (max-width: 600px) {
+  .stats-bar { grid-template-columns: 1fr; }
+  header { padding: 10px 14px; }
+  .toolbar { padding: 8px 14px; }
+  .commit-panel { padding: 12px 14px; }
 }
-.search-dialog input {
-  width: 100%; padding: 14px 18px; border: none; background: transparent;
-  color: var(--text); font-size: 15px; outline: none;
-  border-bottom: 1px solid var(--border);
-}
-.search-dialog .search-results {
-  max-height: 300px; overflow-y: auto; padding: 6px 0;
-}
-.search-dialog .search-result-item {
-  padding: 8px 18px; cursor: pointer; font-size: 13px;
-  display: flex; align-items: center; gap: 8px;
-}
-.search-dialog .search-result-item:hover { background: var(--surface2); }
-.search-dialog .search-result-item .sr-room { color: var(--muted); font-size: 11px; }
-.search-dialog .search-result-item .sr-text { flex: 1; }
-.search-hint { padding: 10px 18px; font-size: 11px; color: var(--muted); border-top: 1px solid var(--border); }
-
-/* ── 반응형 ─────────────────────────────────────────────── */
-@media (max-width: 768px) {
-  .stats-bar { grid-template-columns: repeat(2, 1fr); padding: 10px 14px; gap: 8px; }
-  .stat-card { padding: 10px 12px; }
-  .stat-card .value { font-size: 18px; }
-  .left-panel { width: 100%; max-width: 100%; position: absolute; z-index: 150; height: calc(100vh - 130px); }
-  .left-panel.hidden-mobile { display: none; }
-  .right-panel { width: 100%; }
-  .msg-bubble { max-width: 90%; }
-  .analysis-panel { width: 100%; right: -100%; }
-  .mobile-toggle {
-    display: flex !important; padding: 8px; background: var(--surface2);
-    border: 1px solid var(--border); border-radius: 6px; color: var(--text);
-    cursor: pointer; font-size: 13px; align-items: center; gap: 4px;
-  }
-  .bottom-toolbar { gap: 6px; padding: 8px 12px; }
-}
-@media (min-width: 769px) {
-  .mobile-toggle { display: none !important; }
-}
-
-/* ── 스크롤바 커스텀 ────────────────────────────────────── */
-::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: var(--muted); }
 </style>
 </head>
 <body>
 
-<!-- ═══════════ 헤더 ═══════════ -->
+<!-- ── 헤더 ──────────────────────────────────────────── -->
 <header>
-  <div class="logo">Orbit AI <span>- 대화 이력</span></div>
-  <button class="mobile-toggle" onclick="toggleLeftPanel()">채팅방 목록</button>
+  <div class="logo">Orbit AI <span>/ 작업 내역</span></div>
   <div class="header-right">
-    <a href="/admin-analysis.html" class="header-back">분석 대시보드</a>
-    <a href="/orbit-os.html" class="header-back">Orbit OS</a>
+    <a class="header-back" href="/admin-analysis.html">Admin Dashboard</a>
+    <a class="header-back" href="/orbit-os.html">Orbit OS</a>
   </div>
 </header>
 
-<!-- ═══════════ 통계 바 ═══════════ -->
-<div class="stats-bar">
-  <div class="stat-card green">
-    <div class="label">전체 메시지 수</div>
-    <div class="value" id="stat-total">-</div>
-    <div class="sub" id="stat-total-sub"></div>
-  </div>
-  <div class="stat-card blue">
-    <div class="label">채팅방 수</div>
-    <div class="value" id="stat-rooms">-</div>
-    <div class="sub" id="stat-rooms-sub"></div>
-  </div>
-  <div class="stat-card orange">
-    <div class="label">주문 감지 수</div>
-    <div class="value" id="stat-orders">-</div>
-    <div class="sub">주문 키워드 포함 메시지</div>
-  </div>
-  <div class="stat-card purple">
-    <div class="label">오늘 수집</div>
-    <div class="value" id="stat-today">-</div>
-    <div class="sub" id="stat-today-sub"></div>
+<!-- ── 검색/필터 바 ──────────────────────────────────── -->
+<div class="toolbar">
+  <input class="search-box" id="searchInput" type="text" placeholder="커밋 메시지 검색...">
+  <button class="filter-btn active" data-cat="all">전체</button>
+  <button class="filter-btn" data-cat="feat">신규 기능</button>
+  <button class="filter-btn" data-cat="fix">버그 수정</button>
+  <button class="filter-btn" data-cat="refactor">리팩토링</button>
+  <button class="filter-btn" data-cat="security">보안</button>
+  <button class="filter-btn" data-cat="other">기타</button>
+  <div class="toolbar-right">
+    <span class="refresh-label" id="refreshLabel">자동 새로고침: 60초</span>
   </div>
 </div>
 
-<!-- ═══════════ 메인 레이아웃 ═══════════ -->
+<!-- ── 통계 카드 ─────────────────────────────────────── -->
+<div class="stats-bar" id="statsBar">
+  <div class="stat-card">
+    <div class="label">총 커밋</div>
+    <div class="value" id="statTotal">-</div>
+    <div class="sub" id="statCategories"></div>
+  </div>
+  <div class="stat-card">
+    <div class="label">이번 주 커밋</div>
+    <div class="value" id="statWeek">-</div>
+    <div class="sub">이번 주 작업량</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">변경된 파일</div>
+    <div class="value" id="statFiles">-</div>
+    <div class="sub">고유 파일 수</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">추가된 줄</div>
+    <div class="value" id="statInsertions">-</div>
+    <div class="sub" id="statDeletions"></div>
+  </div>
+</div>
+
+<!-- ── 메인 레이아웃 ─────────────────────────────────── -->
 <div class="main-layout">
-
-  <!-- 좌측: 채팅방 목록 -->
-  <div class="left-panel" id="leftPanel">
-    <div class="left-panel-header">
-      <div class="title-row">
-        <h3>채팅방</h3>
-        <span class="badge badge-blue" id="roomCountBadge">0</span>
-      </div>
-      <input class="search-box" id="chatroomSearch" type="text" placeholder="채팅방 검색..." oninput="filterChatrooms()">
-      <div class="sort-row">
-        <button class="sort-btn active" data-sort="recent" onclick="sortChatrooms('recent',this)">최근순</button>
-        <button class="sort-btn" data-sort="count" onclick="sortChatrooms('count',this)">메시지순</button>
-      </div>
-    </div>
-    <div class="chatroom-list" id="chatroomList">
-      <div class="loading-center"><div class="spinner"></div><span>로딩 중...</span></div>
-    </div>
+  <!-- 날짜 사이드바 -->
+  <div class="date-sidebar" id="dateSidebar">
+    <div class="date-all active" id="dateAll">전체 날짜</div>
+    <div id="dateList"></div>
   </div>
 
-  <!-- 우측: 메시지 뷰 -->
-  <div class="right-panel">
-    <div class="msg-panel-header">
-      <div style="display:flex;align-items:center;">
-        <span class="room-title" id="currentRoomTitle">전체 메시지</span>
-        <span class="room-sub" id="currentRoomSub"></span>
-      </div>
-      <div style="display:flex;align-items:center;gap:8px;">
-        <span class="badge badge-muted" id="msgCountBadge">0건</span>
-        <button class="btn btn-sm" onclick="scrollToBottom()">맨 아래</button>
-      </div>
-    </div>
-
-    <div class="msg-container" id="msgContainer">
-      <div class="empty-state">
-        <div class="icon">&#x1F4AC;</div>
-        <div class="text">채팅방을 선택하세요</div>
-        <div class="sub">좌측에서 채팅방을 클릭하면 대화 내용이 표시됩니다</div>
-      </div>
-    </div>
-
-    <!-- 하단 툴바 -->
-    <div class="bottom-toolbar">
-      <div class="date-filter">
-        <button class="date-btn" data-range="today" onclick="setDateRange('today',this)">오늘</button>
-        <button class="date-btn" data-range="week" onclick="setDateRange('week',this)">이번주</button>
-        <button class="date-btn" data-range="month" onclick="setDateRange('month',this)">이번달</button>
-        <button class="date-btn active" data-range="all" onclick="setDateRange('all',this)">전체</button>
-      </div>
-      <input class="toolbar-search" id="keywordSearch" type="text" placeholder="키워드 검색... (Ctrl+K)">
-      <div class="toggle-wrap" onclick="toggleOrderOnly()">
-        <div class="toggle-switch" id="orderToggle"></div>
-        <span>주문만</span>
-      </div>
-      <button class="btn btn-primary btn-sm" onclick="runAnalysis()">분석 실행</button>
-      <button class="btn btn-sm" onclick="exportCSV()">CSV 내보내기</button>
-    </div>
+  <!-- 커밋 타임라인 -->
+  <div class="commit-panel" id="commitPanel">
+    <div class="loading">커밋 이력 불러오는 중</div>
   </div>
 </div>
 
-<!-- ═══════════ 분석 슬라이드 패널 ═══════════ -->
-<div class="analysis-panel" id="analysisPanel">
-  <div class="analysis-header">
-    <h3>주문 감지 결과</h3>
-    <button class="analysis-close" onclick="closeAnalysis()">&times;</button>
-  </div>
-  <div class="analysis-body" id="analysisBody">
-    <div class="loading-center"><div class="spinner"></div><span>분석 중...</span></div>
-  </div>
-  <div class="analysis-footer">
-    <button class="btn btn-primary" onclick="sendAllToParse()" style="flex:1;">전체 파서로 전송</button>
-    <button class="btn" onclick="closeAnalysis()">닫기</button>
-  </div>
+<!-- ── 세션 요약 ─────────────────────────────────────── -->
+<div class="session-section" id="sessionSection" style="display:none;">
+  <h2>Claude 작업 세션 요약</h2>
+  <div class="session-grid" id="sessionGrid"></div>
 </div>
-
-<!-- ═══════════ 메시지 상세 모달 ═══════════ -->
-<div class="msg-detail-overlay" id="msgDetailOverlay" onclick="closeMsgDetail(event)">
-  <div class="msg-detail" id="msgDetail" onclick="event.stopPropagation()">
-    <h3>메시지 상세</h3>
-    <div id="msgDetailContent"></div>
-    <div style="margin-top:16px;display:flex;gap:8px;">
-      <button class="btn btn-sm" onclick="closeMsgDetail()">닫기</button>
-    </div>
-  </div>
-</div>
-
-<!-- ═══════════ 검색 오버레이 (Ctrl+K) ═══════════ -->
-<div class="search-overlay" id="searchOverlay" onclick="closeSearchOverlay(event)">
-  <div class="search-dialog" onclick="event.stopPropagation()">
-    <input type="text" id="globalSearchInput" placeholder="메시지 검색..." oninput="globalSearch(this.value)">
-    <div class="search-results" id="globalSearchResults"></div>
-    <div class="search-hint">Esc 닫기 &middot; Enter 검색 &middot; 채팅방/메시지 내용 통합 검색</div>
-  </div>
-</div>
-
 
 <script>
-/* ══════════════════════════════════════════════════════════════
-   Orbit AI — 대화 이력 대시보드
-   ══════════════════════════════════════════════════════════════ */
+(function() {
+  'use strict';
 
-const TOKEN = localStorage.getItem('orbit_token');
-const H = { 'Authorization': 'Bearer ' + (TOKEN || ''), 'Content-Type': 'application/json' };
+  // ── 인증 토큰 ──────────────────────────────────────────
+  const TOKEN = localStorage.getItem('token') || new URLSearchParams(location.search).get('token') || '';
 
-// 주문 관련 키워드
-const ORDER_KEYWORDS = [
-  '주문', '발주', '출고', '수량', '단가', '배송', '납품', '견적',
-  '카네이션', '장미', '국화', '백합', '튤립', '해바라기', '안개꽃',
-  '거베라', '수국', '프리지아', '리시안', '스톡', '델피늄',
-  '스프레이', '미니장미', '박스', '본', '단', '속', '송이',
-  '입금', '결제', '계좌', '택배', '화환', '바구니', '꽃다발'
-];
-
-// 상태
-let state = {
-  chatrooms: [],
-  filteredRooms: [],
-  messages: [],
-  allMessages: [],
-  selectedRoom: null,
-  dateRange: 'all',
-  orderOnly: false,
-  sortBy: 'recent',
-  currentOffset: 0,
-  pageSize: 200,
-  hasMore: true,
-  loading: false,
-  refreshTimer: null,
-  productNames: [],
-  customerNames: []
-};
-
-/* ── 초기화 ────────────────────────────────────────────── */
-document.addEventListener('DOMContentLoaded', () => {
-  init();
-});
-
-async function init() {
-  loadStats();
-  loadChatrooms();
-  loadMasterData();
-
-  // 자동 새로고침 (30초)
-  state.refreshTimer = setInterval(() => {
-    loadStats();
-    if (state.selectedRoom) {
-      checkNewMessages();
-    }
-  }, 30000);
-
-  // Ctrl+K 단축키
-  document.addEventListener('keydown', (e) => {
-    if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
-      e.preventDefault();
-      openSearchOverlay();
-    }
-    if (e.key === 'Escape') {
-      closeSearchOverlay();
-      closeMsgDetail();
-      closeAnalysis();
-    }
-  });
-
-  // 키워드 검색 Enter
-  document.getElementById('keywordSearch').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      loadMessages(state.selectedRoom);
-    }
-  });
-}
-
-/* ── 통계 로드 ─────────────────────────────────────────── */
-async function loadStats() {
-  try {
-    const res = await fetch('/api/think/status', { headers: H });
-    if (!res.ok) throw new Error('통계 로드 실패');
-    const data = await res.json();
-
-    const kakao = data.kakaoMessages || {};
-    document.getElementById('stat-total').textContent = formatNum(kakao.total || 0);
-    document.getElementById('stat-total-sub').textContent = '전체 누적';
-    document.getElementById('stat-rooms').textContent = formatNum(kakao.chatrooms || 0);
-    document.getElementById('stat-rooms-sub').textContent = '활성 채팅방';
-
-    // 주문 감지 수 / 오늘 수집은 별도 조회
-    loadOrderStats();
-    loadTodayStats();
-  } catch (err) {
-    console.warn('Stats load error:', err);
+  function headers() {
+    return TOKEN ? { 'Authorization': 'Bearer ' + TOKEN } : {};
   }
-}
 
-async function loadOrderStats() {
-  try {
-    const res = await fetch('/api/kakao/messages?keyword=' + encodeURIComponent('주문') + '&limit=1&offset=0', { headers: H });
-    if (res.ok) {
-      const data = await res.json();
-      document.getElementById('stat-orders').textContent = formatNum(data.total || 0);
-    }
-  } catch (e) {
-    // 엔드포인트 미존재시 fallback: 전체 메시지에서 필터
-    document.getElementById('stat-orders').textContent = '-';
+  async function api(url) {
+    const res = await fetch(url, { headers: headers() });
+    if (!res.ok) throw new Error(res.statusText);
+    return res.json();
   }
-}
 
-async function loadTodayStats() {
-  try {
-    const today = new Date().toISOString().split('T')[0];
-    const res = await fetch('/api/kakao/messages?from=' + today + '&limit=1&offset=0', { headers: H });
-    if (res.ok) {
-      const data = await res.json();
-      document.getElementById('stat-today').textContent = formatNum(data.total || 0);
-      document.getElementById('stat-today-sub').textContent = today;
-    }
-  } catch (e) {
-    document.getElementById('stat-today').textContent = '-';
+  // ── 상태 ───────────────────────────────────────────────
+  let allCommits = [];
+  let timeline = {};
+  let dates = [];
+  let activeDate = null;   // null = 전체
+  let activeCategory = 'all';
+  let searchTerm = '';
+
+  // ── 시간 포맷 ──────────────────────────────────────────
+  const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
+  function formatDate(dateStr) {
+    const d = new Date(dateStr);
+    return d.getFullYear() + '-' +
+      String(d.getMonth() + 1).padStart(2, '0') + '-' +
+      String(d.getDate()).padStart(2, '0');
   }
-}
-
-/* ── 마스터 데이터 (제품/고객 이름) ────────────────────── */
-async function loadMasterData() {
-  try {
-    const [prodRes, custRes] = await Promise.allSettled([
-      fetch('/api/kakao/products', { headers: H }),
-      fetch('/api/kakao/customers', { headers: H })
-    ]);
-    if (prodRes.status === 'fulfilled' && prodRes.value.ok) {
-      const d = await prodRes.value.json();
-      state.productNames = (d.products || d || []).map(p => p.name || p.product_name || '').filter(Boolean);
-    }
-    if (custRes.status === 'fulfilled' && custRes.value.ok) {
-      const d = await custRes.value.json();
-      state.customerNames = (d.customers || d || []).map(c => c.name || c.customer_name || '').filter(Boolean);
-    }
-  } catch (e) {
-    // 마스터 데이터 없으면 하이라이트만 안 됨
+  function timeAgo(dateStr) {
+    const diff = Date.now() - new Date(dateStr).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return '방금';
+    if (mins < 60) return mins + '분 전';
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return hours + '시간 전';
+    const days = Math.floor(hours / 24);
+    if (days < 7) return days + '일 전';
+    return formatDate(dateStr);
   }
-}
-
-/* ── 채팅방 목록 로드 ──────────────────────────────────── */
-async function loadChatrooms() {
-  const listEl = document.getElementById('chatroomList');
-  try {
-    const res = await fetch('/api/kakao/chatrooms', { headers: H });
-    if (!res.ok) {
-      // fallback: think/status에서 얻은 정보로 대체
-      const fallback = await fetchChatroomsFallback();
-      state.chatrooms = fallback;
-    } else {
-      const data = await res.json();
-      state.chatrooms = Array.isArray(data) ? data : (data.chatrooms || []);
-    }
-
-    state.filteredRooms = [...state.chatrooms];
-    sortChatroomsData();
-    renderChatrooms();
-    document.getElementById('roomCountBadge').textContent = state.chatrooms.length;
-  } catch (err) {
-    listEl.innerHTML = '<div class="loading-center"><span style="color:var(--red);">채팅방 로드 실패</span><span style="font-size:11px;color:var(--muted);">' + escapeHtml(err.message) + '</span></div>';
+  function dayLabel(dateStr) {
+    const d = new Date(dateStr + 'T00:00:00');
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    const diff = (today - d) / 86400000;
+    if (diff === 0) return '오늘';
+    if (diff === 1) return '어제';
+    return (d.getMonth() + 1) + '/' + d.getDate() + ' (' + WEEKDAYS[d.getDay()] + ')';
   }
-}
 
-async function fetchChatroomsFallback() {
-  // 직접 메시지에서 chatroom 목록 추출 시도
-  try {
-    const res = await fetch('/api/kakao/messages?limit=500&offset=0', { headers: H });
-    if (!res.ok) return [];
-    const data = await res.json();
-    const msgs = data.messages || data || [];
-    const roomMap = {};
-    msgs.forEach(m => {
-      const room = m.chatroom || '(알 수 없음)';
-      if (!roomMap[room]) {
-        roomMap[room] = { chatroom: room, message_count: 0, last_message: '', last_time: '' };
+  // ── 숫자 포맷 ──────────────────────────────────────────
+  function fmtNum(n) {
+    if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
+    return String(n);
+  }
+
+  // ── 통계 로드 ──────────────────────────────────────────
+  async function loadStats() {
+    try {
+      const data = await api('/api/sessions/stats');
+      if (!data.ok) return;
+      document.getElementById('statTotal').textContent = fmtNum(data.totalCommits);
+      document.getElementById('statWeek').textContent = fmtNum(data.weekCommits);
+      document.getElementById('statFiles').textContent = fmtNum(data.totalFiles);
+      document.getElementById('statInsertions').textContent = '+' + fmtNum(data.totalInsertions);
+      document.getElementById('statDeletions').textContent = '-' + fmtNum(data.totalDeletions) + ' 줄 삭제';
+
+      // 카테고리 요약
+      if (data.categories && data.categories.length) {
+        const catText = data.categories
+          .sort((a, b) => b.count - a.count)
+          .slice(0, 4)
+          .map(c => c.label + ' ' + c.count)
+          .join(' / ');
+        document.getElementById('statCategories').textContent = catText;
       }
-      roomMap[room].message_count++;
-      if (!roomMap[room].last_time || m.created_at > roomMap[room].last_time) {
-        roomMap[room].last_time = m.created_at;
-        roomMap[room].last_message = (m.message || '').substring(0, 50);
+    } catch (e) {
+      console.warn('Stats load failed:', e);
+    }
+  }
+
+  // ── 타임라인 로드 ──────────────────────────────────────
+  async function loadTimeline() {
+    try {
+      const data = await api('/api/sessions/timeline?limit=200');
+      if (!data.ok) return;
+      timeline = data.timeline;
+      dates = data.dates;
+
+      // 모든 커밋 평탄화
+      allCommits = [];
+      for (const d of dates) {
+        for (const c of timeline[d]) {
+          allCommits.push(c);
+        }
       }
-    });
-    return Object.values(roomMap);
-  } catch (e) { return []; }
-}
 
-function renderChatrooms() {
-  const listEl = document.getElementById('chatroomList');
-  if (state.filteredRooms.length === 0) {
-    listEl.innerHTML = '<div class="empty-state" style="padding:30px;"><div class="text">채팅방 없음</div></div>';
-    return;
+      renderDateSidebar();
+      renderCommits();
+    } catch (e) {
+      console.warn('Timeline load failed:', e);
+      document.getElementById('commitPanel').innerHTML =
+        '<div class="empty-state"><div class="icon">!</div><div class="msg">커밋 이력을 불러올 수 없습니다</div></div>';
+    }
   }
 
-  let html = '';
-  // "전체" 항목
-  html += `<div class="chatroom-item ${!state.selectedRoom ? 'active' : ''}" onclick="selectRoom(null)">
-    <div class="chatroom-icon" style="background:rgba(88,166,255,.12);color:var(--blue);">&#x1F4CB;</div>
-    <div class="chatroom-info">
-      <div class="chatroom-name">전체 메시지</div>
-      <div class="chatroom-preview">모든 채팅방의 메시지</div>
-    </div>
-  </div>`;
+  // ── 세션 요약 로드 ─────────────────────────────────────
+  async function loadSessions() {
+    try {
+      const data = await api('/api/sessions/summary');
+      if (!data.ok || !data.summaries || data.summaries.length === 0) return;
 
-  state.filteredRooms.forEach(room => {
-    const name = room.chatroom || room.name || '(이름 없음)';
-    const count = room.message_count || room.count || 0;
-    const lastMsg = (room.last_message || room.preview || '').substring(0, 40);
-    const lastTime = room.last_time || room.last_at || '';
-    const timeStr = lastTime ? formatTime(lastTime) : '';
-    const isActive = state.selectedRoom === name;
-    const initial = name.charAt(0);
+      const section = document.getElementById('sessionSection');
+      const grid = document.getElementById('sessionGrid');
+      section.style.display = '';
 
-    html += `<div class="chatroom-item ${isActive ? 'active' : ''}" onclick="selectRoom('${escapeAttr(name)}')">
-      <div class="chatroom-icon">${escapeHtml(initial)}</div>
-      <div class="chatroom-info">
-        <div class="chatroom-name">${escapeHtml(name)}</div>
-        <div class="chatroom-preview">${escapeHtml(lastMsg)}</div>
-      </div>
-      <div class="chatroom-meta">
-        <span class="chatroom-time">${timeStr}</span>
-        ${count > 0 ? '<span class="chatroom-count">' + formatNum(count) + '</span>' : ''}
-      </div>
-    </div>`;
-  });
-
-  listEl.innerHTML = html;
-}
-
-function filterChatrooms() {
-  const q = (document.getElementById('chatroomSearch').value || '').toLowerCase().trim();
-  if (!q) {
-    state.filteredRooms = [...state.chatrooms];
-  } else {
-    state.filteredRooms = state.chatrooms.filter(r =>
-      ((r.chatroom || r.name || '')).toLowerCase().includes(q)
-    );
+      grid.innerHTML = data.summaries.map(s => {
+        const sectionsHtml = s.sections && s.sections.length
+          ? '<ul class="sections">' + s.sections.map(sec => '<li>' + esc(sec) + '</li>').join('') + '</ul>'
+          : '';
+        const metricsHtml = s.metrics
+          ? '<div class="metrics">' + esc(s.metrics) + '</div>'
+          : '';
+        return `
+          <div class="session-card">
+            <div class="title">${esc(s.name)}</div>
+            <div class="desc">${esc(s.description)}</div>
+            ${sectionsHtml}
+            ${metricsHtml}
+          </div>`;
+      }).join('');
+    } catch (e) {
+      console.warn('Session summary load failed:', e);
+    }
   }
-  sortChatroomsData();
-  renderChatrooms();
-}
 
-function sortChatrooms(by, btn) {
-  document.querySelectorAll('.sort-btn').forEach(b => b.classList.remove('active'));
-  if (btn) btn.classList.add('active');
-  state.sortBy = by;
-  sortChatroomsData();
-  renderChatrooms();
-}
+  // ── 날짜 사이드바 렌더링 ───────────────────────────────
+  function renderDateSidebar() {
+    const list = document.getElementById('dateList');
+    list.innerHTML = dates.map(d => {
+      const count = timeline[d] ? timeline[d].length : 0;
+      const label = dayLabel(d);
+      const active = activeDate === d ? ' active' : '';
+      return `<div class="date-item${active}" data-date="${d}">
+        <div><span class="day">${label}</span></div>
+        <span class="count">${count}</span>
+      </div>`;
+    }).join('');
 
-function sortChatroomsData() {
-  if (state.sortBy === 'count') {
-    state.filteredRooms.sort((a, b) => (b.message_count || b.count || 0) - (a.message_count || a.count || 0));
-  } else {
-    state.filteredRooms.sort((a, b) => {
-      const ta = a.last_time || a.last_at || '';
-      const tb = b.last_time || b.last_at || '';
-      return tb.localeCompare(ta);
-    });
+    // "전체" 버튼 상태
+    const allBtn = document.getElementById('dateAll');
+    allBtn.className = 'date-all' + (activeDate === null ? ' active' : '');
   }
-}
 
-function selectRoom(roomName) {
-  state.selectedRoom = roomName;
-  state.currentOffset = 0;
-  state.hasMore = true;
-  renderChatrooms();
-  loadMessages(roomName);
+  // ── 커밋 렌더링 ────────────────────────────────────────
+  function renderCommits() {
+    const panel = document.getElementById('commitPanel');
+    let filtered = activeDate && timeline[activeDate]
+      ? timeline[activeDate]
+      : allCommits;
 
-  // 모바일: 좌측 패널 숨기기
-  if (window.innerWidth <= 768) {
-    document.getElementById('leftPanel').classList.add('hidden-mobile');
-  }
-}
-
-function toggleLeftPanel() {
-  document.getElementById('leftPanel').classList.toggle('hidden-mobile');
-}
-
-/* ── 메시지 로드 ───────────────────────────────────────── */
-async function loadMessages(roomName) {
-  if (state.loading) return;
-  state.loading = true;
-
-  const container = document.getElementById('msgContainer');
-  container.innerHTML = '<div class="loading-center"><div class="spinner"></div><span>메시지 로딩 중...</span></div>';
-
-  const title = roomName || '전체 메시지';
-  document.getElementById('currentRoomTitle').textContent = title;
-
-  try {
-    const params = buildQueryParams(roomName, 0);
-    const res = await fetch('/api/kakao/messages?' + params, { headers: H });
-
-    if (!res.ok) {
-      // Fallback: think engine에서 직접 kakao_messages 조회 시도
-      const fallback = await loadMessagesFallback(roomName);
-      state.allMessages = fallback;
-    } else {
-      const data = await res.json();
-      state.allMessages = data.messages || data || [];
-      if (data.total !== undefined) {
-        document.getElementById('msgCountBadge').textContent = formatNum(data.total) + '건';
-      }
+    // 카테고리 필터
+    if (activeCategory !== 'all') {
+      filtered = filtered.filter(c => c.category.key === activeCategory);
     }
 
-    applyFilters();
-    renderMessages();
-    scrollToBottom();
-  } catch (err) {
-    container.innerHTML = '<div class="empty-state"><div class="text" style="color:var(--red);">메시지 로드 실패</div><div class="sub">' + escapeHtml(err.message) + '</div></div>';
-  } finally {
-    state.loading = false;
-  }
-}
-
-async function loadMessagesFallback(roomName) {
-  // 직접 DB 조회가 안 되면 빈 배열 반환
-  return [];
-}
-
-function buildQueryParams(roomName, offset) {
-  const params = new URLSearchParams();
-  if (roomName) params.set('chatroom', roomName);
-
-  const keyword = document.getElementById('keywordSearch').value.trim();
-  if (keyword) params.set('keyword', keyword);
-
-  const { from, to } = getDateRange();
-  if (from) params.set('from', from);
-  if (to) params.set('to', to);
-
-  params.set('limit', state.pageSize);
-  params.set('offset', offset || 0);
-
-  return params.toString();
-}
-
-function getDateRange() {
-  const now = new Date();
-  let from = '', to = '';
-
-  switch (state.dateRange) {
-    case 'today':
-      from = now.toISOString().split('T')[0];
-      break;
-    case 'week': {
-      const d = new Date(now);
-      d.setDate(d.getDate() - d.getDay());
-      from = d.toISOString().split('T')[0];
-      break;
-    }
-    case 'month':
-      from = now.toISOString().substring(0, 7) + '-01';
-      break;
-    case 'all':
-    default:
-      break;
-  }
-
-  return { from, to };
-}
-
-function applyFilters() {
-  let msgs = [...state.allMessages];
-
-  // 주문만 보기
-  if (state.orderOnly) {
-    msgs = msgs.filter(m => isOrderMessage(m.message || ''));
-  }
-
-  state.messages = msgs;
-  document.getElementById('currentRoomSub').textContent =
-    state.messages.length + '건' + (state.orderOnly ? ' (주문 필터)' : '');
-}
-
-function isOrderMessage(text) {
-  const t = text.toLowerCase();
-  return ORDER_KEYWORDS.some(kw => t.includes(kw.toLowerCase()));
-}
-
-/* ── 메시지 렌더링 ─────────────────────────────────────── */
-function renderMessages() {
-  const container = document.getElementById('msgContainer');
-
-  if (state.messages.length === 0) {
-    container.innerHTML = '<div class="empty-state"><div class="icon">&#x1F4AD;</div><div class="text">메시지가 없습니다</div><div class="sub">선택한 조건에 해당하는 메시지가 없습니다</div></div>';
-    document.getElementById('msgCountBadge').textContent = '0건';
-    return;
-  }
-
-  document.getElementById('msgCountBadge').textContent = formatNum(state.messages.length) + '건';
-
-  // 날짜별 그룹핑
-  const groups = groupByDate(state.messages);
-  let html = '';
-
-  // 가상 스크롤: 최대 500개만 렌더 (성능)
-  let totalRendered = 0;
-  const MAX_RENDER = 500;
-
-  for (const [date, msgs] of Object.entries(groups)) {
-    if (totalRendered >= MAX_RENDER) {
-      html += '<div class="date-divider"><span>... 더 많은 메시지가 있습니다 (' + (state.messages.length - totalRendered) + '건 생략)</span></div>';
-      break;
+    // 검색 필터
+    if (searchTerm) {
+      const term = searchTerm.toLowerCase();
+      filtered = filtered.filter(c =>
+        c.subject.toLowerCase().includes(term) ||
+        (c.body && c.body.toLowerCase().includes(term)) ||
+        c.files.some(f => f.toLowerCase().includes(term))
+      );
     }
 
-    html += '<div class="date-divider"><span>' + escapeHtml(date) + '</span></div>';
-
-    let lastSender = '';
-    msgs.forEach((m, idx) => {
-      if (totalRendered >= MAX_RENDER) return;
-      totalRendered++;
-
-      const sender = m.sender || m.user_id || '알 수 없음';
-      const message = m.message || '';
-      const time = m.created_at ? formatMessageTime(m.created_at) : '';
-      const isOrder = isOrderMessage(message);
-      const showSender = sender !== lastSender;
-      lastSender = sender;
-
-      const highlighted = highlightMessage(message);
-
-      html += '<div class="msg-group">';
-      if (showSender) {
-        html += '<div class="msg-sender">' + escapeHtml(sender) + '</div>';
-      }
-      html += '<div class="msg-bubble' + (isOrder ? ' order-detected' : '') + '" onclick="showMsgDetail(' + escapeAttr(JSON.stringify({
-        id: m.id,
-        sender: sender,
-        message: message,
-        chatroom: m.chatroom || '',
-        created_at: m.created_at || '',
-        vision_event_id: m.vision_event_id || '',
-        user_id: m.user_id || ''
-      })) + ')">';
-      html += '<div>' + highlighted + '</div>';
-      html += '<div class="msg-time">' + time + '</div>';
-      html += '</div></div>';
-    });
-  }
-
-  container.innerHTML = html;
-}
-
-function groupByDate(messages) {
-  const groups = {};
-  messages.forEach(m => {
-    const date = m.created_at ? formatDate(m.created_at) : '날짜 없음';
-    if (!groups[date]) groups[date] = [];
-    groups[date].push(m);
-  });
-  return groups;
-}
-
-function highlightMessage(text) {
-  let html = escapeHtml(text);
-
-  // 주문 키워드 하이라이트 (녹색)
-  ORDER_KEYWORDS.forEach(kw => {
-    const regex = new RegExp('(' + escapeRegex(escapeHtml(kw)) + ')', 'gi');
-    html = html.replace(regex, '<span class="highlight-order">$1</span>');
-  });
-
-  // 제품명 하이라이트 (파란색)
-  state.productNames.forEach(name => {
-    if (name.length < 2) return;
-    const regex = new RegExp('(' + escapeRegex(escapeHtml(name)) + ')', 'gi');
-    html = html.replace(regex, '<span class="highlight-product">$1</span>');
-  });
-
-  // 고객명 하이라이트 (주황색)
-  state.customerNames.forEach(name => {
-    if (name.length < 2) return;
-    const regex = new RegExp('(' + escapeRegex(escapeHtml(name)) + ')', 'gi');
-    html = html.replace(regex, '<span class="highlight-customer">$1</span>');
-  });
-
-  return html;
-}
-
-/* ── 메시지 상세 모달 ──────────────────────────────────── */
-function showMsgDetail(msgData) {
-  let data;
-  try { data = typeof msgData === 'string' ? JSON.parse(msgData) : msgData; } catch (e) { return; }
-
-  const content = document.getElementById('msgDetailContent');
-  content.innerHTML = `
-    <div class="detail-row"><div class="detail-label">보낸 사람</div><div class="detail-value">${escapeHtml(data.sender || '')}</div></div>
-    <div class="detail-row"><div class="detail-label">채팅방</div><div class="detail-value">${escapeHtml(data.chatroom || '')}</div></div>
-    <div class="detail-row"><div class="detail-label">시간</div><div class="detail-value">${data.created_at ? new Date(data.created_at).toLocaleString('ko-KR') : '-'}</div></div>
-    <div class="detail-row"><div class="detail-label">메시지</div><div class="detail-value" style="background:var(--bg);padding:10px;border-radius:6px;margin-top:4px;line-height:1.7;white-space:pre-wrap;">${escapeHtml(data.message || '')}</div></div>
-    <div class="detail-row"><div class="detail-label">User ID</div><div class="detail-value" style="color:var(--muted);font-size:11px;">${escapeHtml(data.user_id || '-')}</div></div>
-    <div class="detail-row"><div class="detail-label">Vision Event ID</div><div class="detail-value" style="color:var(--muted);font-size:11px;">${escapeHtml(data.vision_event_id || '-')}</div></div>
-    ${isOrderMessage(data.message || '') ? '<div style="margin-top:10px;"><span class="badge badge-green">주문 관련 메시지</span></div>' : ''}
-  `;
-
-  document.getElementById('msgDetailOverlay').classList.add('open');
-}
-
-function closeMsgDetail(event) {
-  if (event && event.target !== event.currentTarget) return;
-  document.getElementById('msgDetailOverlay').classList.remove('open');
-}
-
-/* ── 날짜 범위 필터 ────────────────────────────────────── */
-function setDateRange(range, btn) {
-  document.querySelectorAll('.date-btn').forEach(b => b.classList.remove('active'));
-  if (btn) btn.classList.add('active');
-  state.dateRange = range;
-  state.currentOffset = 0;
-  loadMessages(state.selectedRoom);
-}
-
-/* ── 주문만 보기 토글 ──────────────────────────────────── */
-function toggleOrderOnly() {
-  state.orderOnly = !state.orderOnly;
-  const toggle = document.getElementById('orderToggle');
-  toggle.classList.toggle('on', state.orderOnly);
-  applyFilters();
-  renderMessages();
-}
-
-/* ── 새 메시지 확인 ────────────────────────────────────── */
-async function checkNewMessages() {
-  try {
-    const params = buildQueryParams(state.selectedRoom, 0);
-    const res = await fetch('/api/kakao/messages?' + params + '&limit=10', { headers: H });
-    if (!res.ok) return;
-    const data = await res.json();
-    const newMsgs = data.messages || data || [];
-
-    if (newMsgs.length > 0 && state.allMessages.length > 0) {
-      const lastId = state.allMessages[state.allMessages.length - 1]?.id;
-      const freshMsgs = newMsgs.filter(m => m.id > lastId);
-      if (freshMsgs.length > 0) {
-        state.allMessages.push(...freshMsgs);
-        applyFilters();
-        renderMessages();
-        scrollToBottom();
-      }
-    }
-  } catch (e) { /* silent */ }
-}
-
-/* ── 분석 실행 ─────────────────────────────────────────── */
-async function runAnalysis() {
-  document.getElementById('analysisPanel').classList.add('open');
-  document.getElementById('analysisBody').innerHTML = '<div class="loading-center"><div class="spinner"></div><span>분석 중...</span></div>';
-
-  try {
-    const res = await fetch('/api/kakao/analyze', {
-      method: 'POST',
-      headers: H,
-      body: JSON.stringify({ chatroom: state.selectedRoom || null })
-    });
-
-    if (!res.ok) {
-      // Fallback: 로컬에서 간이 분석
-      const candidates = localAnalyze();
-      renderAnalysisResults(candidates);
+    if (filtered.length === 0) {
+      panel.innerHTML = '<div class="empty-state"><div class="icon">--</div><div class="msg">해당 조건의 커밋이 없습니다</div></div>';
       return;
     }
 
-    const data = await res.json();
-    const candidates = data.candidates || data.orders || data.results || [];
-    renderAnalysisResults(candidates);
-  } catch (err) {
-    // 엔드포인트 없으면 로컬 분석
-    const candidates = localAnalyze();
-    renderAnalysisResults(candidates);
+    panel.innerHTML = filtered.map(c => {
+      const badgeStyle = `background:${c.category.color}22; color:${c.category.color}; border:1px solid ${c.category.color}44`;
+      const filesHtml = c.fileDetails && c.fileDetails.length
+        ? c.fileDetails.map(f =>
+          `<div class="file-item">
+            <span class="file-status ${f.status}">${f.statusLabel}</span>
+            <span>${esc(f.file)}</span>
+          </div>`
+        ).join('')
+        : c.files.map(f =>
+          `<div class="file-item"><span>${esc(f)}</span></div>`
+        ).join('');
+
+      const bodyHtml = c.body
+        ? `<div class="commit-body">${esc(c.body)}</div>`
+        : '';
+
+      return `
+        <div class="commit-card" data-hash="${c.hash}">
+          <div class="commit-header">
+            <span class="commit-badge" style="${badgeStyle}">${esc(c.category.label)}</span>
+            <span class="commit-subject">${esc(c.subject)}</span>
+            <span class="commit-time">${timeAgo(c.date)}</span>
+          </div>
+          <div class="commit-meta">
+            <span class="additions">+${fmtNum(c.insertions)}줄</span>
+            <span class="deletions">-${fmtNum(c.deletions)}줄</span>
+            <span>${c.filesChanged} files</span>
+            <span class="hash">${c.hash}</span>
+          </div>
+          <div class="commit-files">
+            ${filesHtml}
+            ${bodyHtml}
+          </div>
+        </div>`;
+    }).join('');
   }
-}
 
-function localAnalyze() {
-  // 간이 주문 분석: 주문 키워드가 포함된 메시지에서 패턴 추출
-  const orderMsgs = state.allMessages.filter(m => isOrderMessage(m.message || ''));
-  const candidates = [];
-  const patterns = [
-    /([가-힣a-zA-Z]+)\s*[:\-]?\s*(\d+)\s*(본|단|속|박스|개|송이|set)?/g,
-    /(\d+)\s*(본|단|속|박스|개|송이|set)\s*([가-힣a-zA-Z]+)/g
-  ];
+  // ── 이벤트 바인딩 ──────────────────────────────────────
 
-  orderMsgs.forEach(m => {
-    const text = m.message || '';
-    const products = [];
-
-    patterns.forEach(pattern => {
-      const regex = new RegExp(pattern.source, pattern.flags);
-      let match;
-      while ((match = regex.exec(text)) !== null) {
-        const name = match[1] || match[3] || '';
-        const qty = match[2] || match[1] || '';
-        if (name && qty && !isNaN(parseInt(qty))) {
-          products.push({ name: name, qty: parseInt(qty), unit: match[3] || match[2] || '개' });
-        }
-      }
-    });
-
-    if (products.length > 0) {
-      candidates.push({
-        customer: m.sender || m.chatroom || '알 수 없음',
-        products: products,
-        confidence: products.length > 2 ? 0.9 : products.length > 1 ? 0.7 : 0.5,
-        source_message: text.substring(0, 100),
-        chatroom: m.chatroom || '',
-        created_at: m.created_at || ''
-      });
+  // 날짜 선택
+  document.getElementById('dateSidebar').addEventListener('click', e => {
+    const item = e.target.closest('.date-item');
+    const allBtn = e.target.closest('.date-all');
+    if (item) {
+      activeDate = item.dataset.date;
+      renderDateSidebar();
+      renderCommits();
+    } else if (allBtn) {
+      activeDate = null;
+      renderDateSidebar();
+      renderCommits();
     }
   });
 
-  return candidates;
-}
-
-function renderAnalysisResults(candidates) {
-  const body = document.getElementById('analysisBody');
-
-  if (candidates.length === 0) {
-    body.innerHTML = '<div class="empty-state" style="height:auto;padding:40px;"><div class="text">감지된 주문 없음</div><div class="sub">주문 패턴이 포함된 메시지가 없습니다</div></div>';
-    return;
-  }
-
-  let html = '<div style="margin-bottom:10px;font-size:12px;color:var(--muted);">감지된 주문 후보: ' + candidates.length + '건</div>';
-
-  candidates.forEach((c, i) => {
-    const confPct = Math.round((c.confidence || 0) * 100);
-    const confClass = confPct >= 80 ? 'conf-high' : confPct >= 50 ? 'conf-mid' : 'conf-low';
-
-    html += '<div class="candidate-card">';
-    html += '<div class="cand-header">';
-    html += '<span class="cand-customer">' + escapeHtml(c.customer || '알 수 없음') + '</span>';
-    html += '<span class="cand-confidence ' + confClass + '">' + confPct + '%</span>';
-    html += '</div>';
-
-    if (c.chatroom) {
-      html += '<div style="font-size:11px;color:var(--muted);margin-bottom:6px;">' + escapeHtml(c.chatroom) + '</div>';
-    }
-
-    if (c.products && c.products.length > 0) {
-      html += '<div class="cand-products">';
-      c.products.forEach(p => {
-        html += '<div class="cand-product-row">';
-        html += '<span class="cand-product-name">' + escapeHtml(p.name || '') + '</span>';
-        html += '<span class="cand-product-qty">' + (p.qty || '') + ' ' + escapeHtml(p.unit || '') + '</span>';
-        html += '</div>';
-      });
-      html += '</div>';
-    }
-
-    if (c.source_message) {
-      html += '<div style="margin-top:8px;padding:6px 8px;background:var(--bg);border-radius:4px;font-size:11px;color:var(--muted);line-height:1.5;">' + escapeHtml(c.source_message) + '</div>';
-    }
-
-    html += '<div class="cand-actions">';
-    html += '<button class="btn btn-primary btn-sm" onclick="sendToParse(' + i + ')">파서로 전송</button>';
-    html += '</div>';
-    html += '</div>';
+  // 커밋 카드 확장/축소
+  document.getElementById('commitPanel').addEventListener('click', e => {
+    const card = e.target.closest('.commit-card');
+    if (card) card.classList.toggle('expanded');
   });
 
-  body.innerHTML = html;
-  body._candidates = candidates;
-}
-
-async function sendToParse(index) {
-  const body = document.getElementById('analysisBody');
-  const candidates = body._candidates || [];
-  const c = candidates[index];
-  if (!c) return;
-
-  try {
-    const res = await fetch('/api/automation/parse', {
-      method: 'POST',
-      headers: H,
-      body: JSON.stringify({
-        type: 'kakao_order',
-        customer: c.customer,
-        products: c.products,
-        source: 'conversation-dashboard',
-        chatroom: c.chatroom
-      })
-    });
-
-    if (res.ok) {
-      alert('파서로 전송 완료');
-    } else {
-      alert('전송 실패: ' + (await res.text()));
-    }
-  } catch (err) {
-    alert('전송 오류: ' + err.message);
-  }
-}
-
-async function sendAllToParse() {
-  const body = document.getElementById('analysisBody');
-  const candidates = body._candidates || [];
-  if (candidates.length === 0) { alert('전송할 데이터가 없습니다.'); return; }
-
-  if (!confirm(candidates.length + '건을 파서로 전송하시겠습니까?')) return;
-
-  let success = 0;
-  for (let i = 0; i < candidates.length; i++) {
-    try {
-      const c = candidates[i];
-      const res = await fetch('/api/automation/parse', {
-        method: 'POST',
-        headers: H,
-        body: JSON.stringify({
-          type: 'kakao_order',
-          customer: c.customer,
-          products: c.products,
-          source: 'conversation-dashboard',
-          chatroom: c.chatroom
-        })
-      });
-      if (res.ok) success++;
-    } catch (e) { /* skip */ }
-  }
-
-  alert('전송 완료: ' + success + '/' + candidates.length + '건');
-}
-
-function closeAnalysis() {
-  document.getElementById('analysisPanel').classList.remove('open');
-}
-
-/* ── CSV 내보내기 ──────────────────────────────────────── */
-function exportCSV() {
-  if (state.messages.length === 0) { alert('내보낼 메시지가 없습니다.'); return; }
-
-  const BOM = '\uFEFF';
-  let csv = BOM + '시간,채팅방,보낸사람,메시지,주문여부\n';
-
-  state.messages.forEach(m => {
-    const time = m.created_at ? new Date(m.created_at).toLocaleString('ko-KR') : '';
-    const room = (m.chatroom || '').replace(/"/g, '""');
-    const sender = (m.sender || m.user_id || '').replace(/"/g, '""');
-    const msg = (m.message || '').replace(/"/g, '""').replace(/\n/g, ' ');
-    const isOrder = isOrderMessage(m.message || '') ? 'Y' : 'N';
-    csv += '"' + time + '","' + room + '","' + sender + '","' + msg + '","' + isOrder + '"\n';
+  // 카테고리 필터
+  document.querySelector('.toolbar').addEventListener('click', e => {
+    const btn = e.target.closest('.filter-btn');
+    if (!btn) return;
+    activeCategory = btn.dataset.cat;
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    renderCommits();
   });
 
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'kakao_messages_' + new Date().toISOString().split('T')[0] + '.csv';
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-/* ── 글로벌 검색 (Ctrl+K) ─────────────────────────────── */
-function openSearchOverlay() {
-  document.getElementById('searchOverlay').classList.add('open');
-  setTimeout(() => document.getElementById('globalSearchInput').focus(), 100);
-}
-
-function closeSearchOverlay(event) {
-  if (event && event.target !== event.currentTarget) return;
-  document.getElementById('searchOverlay').classList.remove('open');
-  document.getElementById('globalSearchInput').value = '';
-  document.getElementById('globalSearchResults').innerHTML = '';
-}
-
-let _searchTimeout = null;
-async function globalSearch(query) {
-  clearTimeout(_searchTimeout);
-  const results = document.getElementById('globalSearchResults');
-
-  if (!query || query.length < 2) {
-    results.innerHTML = '';
-    return;
-  }
-
-  _searchTimeout = setTimeout(async () => {
-    try {
-      const res = await fetch('/api/kakao/messages?keyword=' + encodeURIComponent(query) + '&limit=20&offset=0', { headers: H });
-      if (!res.ok) {
-        // fallback: 현재 로드된 메시지에서 검색
-        const found = state.allMessages.filter(m => (m.message || '').toLowerCase().includes(query.toLowerCase()));
-        renderSearchResults(found.slice(0, 20), query);
-        return;
-      }
-      const data = await res.json();
-      const msgs = data.messages || data || [];
-      renderSearchResults(msgs, query);
-    } catch (e) {
-      const found = state.allMessages.filter(m => (m.message || '').toLowerCase().includes(query.toLowerCase()));
-      renderSearchResults(found.slice(0, 20), query);
-    }
-  }, 300);
-}
-
-function renderSearchResults(msgs, query) {
-  const results = document.getElementById('globalSearchResults');
-  if (msgs.length === 0) {
-    results.innerHTML = '<div style="padding:14px 18px;color:var(--muted);font-size:13px;">결과 없음</div>';
-    return;
-  }
-
-  let html = '';
-  msgs.forEach(m => {
-    const text = (m.message || '').substring(0, 80);
-    const room = m.chatroom || '';
-    html += '<div class="search-result-item" onclick="jumpToMessage(\'' + escapeAttr(room) + '\')">';
-    html += '<span class="sr-room">' + escapeHtml(room) + '</span>';
-    html += '<span class="sr-text">' + highlightSearchTerm(escapeHtml(text), query) + '</span>';
-    html += '</div>';
+  // 검색
+  let searchTimer;
+  document.getElementById('searchInput').addEventListener('input', e => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => {
+      searchTerm = e.target.value.trim();
+      renderCommits();
+    }, 250);
   });
-  results.innerHTML = html;
-}
 
-function highlightSearchTerm(html, term) {
-  if (!term) return html;
-  const regex = new RegExp('(' + escapeRegex(escapeHtml(term)) + ')', 'gi');
-  return html.replace(regex, '<span style="color:var(--green);font-weight:600;">$1</span>');
-}
-
-function jumpToMessage(chatroom) {
-  closeSearchOverlay();
-  if (chatroom) {
-    selectRoom(chatroom);
+  // ── HTML 이스케이프 ────────────────────────────────────
+  function esc(str) {
+    if (!str) return '';
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
-  // 키워드를 검색창에 넣고 필터 적용
-  const q = document.getElementById('globalSearchInput').value;
-  if (q) {
-    document.getElementById('keywordSearch').value = q;
-    loadMessages(chatroom || state.selectedRoom);
-  }
-}
 
-/* ── 유틸리티 ──────────────────────────────────────────── */
-function scrollToBottom() {
-  const container = document.getElementById('msgContainer');
-  setTimeout(() => { container.scrollTop = container.scrollHeight; }, 50);
-}
+  // ── 초기 로드 ──────────────────────────────────────────
+  loadStats();
+  loadTimeline();
+  loadSessions();
 
-function formatNum(n) {
-  if (n === undefined || n === null) return '-';
-  return Number(n).toLocaleString('ko-KR');
-}
+  // ── 자동 새로고침 (60초) ───────────────────────────────
+  setInterval(() => {
+    loadStats();
+    loadTimeline();
+  }, 60000);
 
-function formatDate(dateStr) {
-  try {
-    const d = new Date(dateStr);
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    const weekdays = ['일', '월', '화', '수', '목', '금', '토'];
-    return y + '.' + m + '.' + day + ' (' + weekdays[d.getDay()] + ')';
-  } catch (e) { return dateStr; }
-}
-
-function formatTime(dateStr) {
-  try {
-    const d = new Date(dateStr);
-    const now = new Date();
-    const diff = now - d;
-
-    if (diff < 60000) return '방금';
-    if (diff < 3600000) return Math.floor(diff / 60000) + '분 전';
-    if (diff < 86400000) return Math.floor(diff / 3600000) + '시간 전';
-    if (diff < 604800000) return Math.floor(diff / 86400000) + '일 전';
-
-    return (d.getMonth() + 1) + '/' + d.getDate();
-  } catch (e) { return ''; }
-}
-
-function formatMessageTime(dateStr) {
-  try {
-    const d = new Date(dateStr);
-    const h = d.getHours();
-    const m = String(d.getMinutes()).padStart(2, '0');
-    const ampm = h < 12 ? '오전' : '오후';
-    const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
-    return ampm + ' ' + h12 + ':' + m;
-  } catch (e) { return ''; }
-}
-
-function escapeHtml(str) {
-  if (!str) return '';
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#x27;');
-}
-
-function escapeAttr(str) {
-  return escapeHtml(str);
-}
-
-function escapeRegex(str) {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
+})();
 </script>
 </body>
 </html>

@@ -2449,6 +2449,9 @@ app.use('/api/activity', require('./routes/activity-classifier')({ getDb: dbModu
 // ─── Vision UI 학습 엔진 (화면 세그먼트 + UI 요소 학습 + 클릭 매칭) ──────────
 app.use('/api/vision', require('./routes/vision-learning')({ getDb: dbModule.getDb }));
 
+// ─── Claude 작업 세션 이력 (Git 커밋 + 세션 메모리 + 타임라인) ────────────────
+app.use('/api/sessions', require('./routes/work-sessions')({ getDb: dbModule.getDb }));
+
 // ─── 데모 시드 (개발/미리보기용) ─────────────────────────────────────────────
 app.post('/api/demo/seed', (req, res) => {
   const token = (req.headers.authorization || '').replace('Bearer ', '') || req.query.token;
