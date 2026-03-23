@@ -1957,64 +1957,30 @@ module.exports = function createNenovaDbRouter({ getDb }) {
   async function ensureSyncTables() {
     const db = getOrbitDb();
 
-    await db.query(`
-      CREATE TABLE IF NOT EXISTS master_products (
-        id SERIAL PRIMARY KEY,
-        nenova_key INT UNIQUE,
-        name TEXT NOT NULL,
-        flower_name TEXT,
-        country TEXT,
-        category TEXT,
-        region TEXT,
-        source TEXT DEFAULT 'nenova',
-        synced_at TIMESTAMPTZ DEFAULT NOW(),
-        created_at TIMESTAMPTZ DEFAULT NOW(),
-        updated_at TIMESTAMPTZ DEFAULT NOW(),
-        UNIQUE(name, flower_name, country)
-      )
-    `);
+    // 기존 테이블에 nenova_key 컬럼 추가 (이미 있으면 무시)
+    try { await db.query(`ALTER TABLE master_products ADD COLUMN IF NOT EXISTS nenova_key INT`); } catch {}
+    try { await db.query(`ALTER TABLE master_products ADD COLUMN IF NOT EXISTS flower_name TEXT`); } catch {}
+    try { await db.query(`ALTER TABLE master_products ADD COLUMN IF NOT EXISTS country TEXT`); } catch {}
+    try { await db.query(`ALTER TABLE master_products ADD COLUMN IF NOT EXISTS synced_at TIMESTAMPTZ`); } catch {}
+    try { await db.query(`ALTER TABLE master_products ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ`); } catch {}
 
-    await db.query(`
-      CREATE TABLE IF NOT EXISTS master_customers (
-        id SERIAL PRIMARY KEY,
-        nenova_key INT UNIQUE,
-        name TEXT NOT NULL UNIQUE,
-        region TEXT,
-        contact TEXT,
-        source TEXT DEFAULT 'nenova',
-        synced_at TIMESTAMPTZ DEFAULT NOW(),
-        created_at TIMESTAMPTZ DEFAULT NOW(),
-        updated_at TIMESTAMPTZ DEFAULT NOW()
-      )
-    `);
+    try { await db.query(`ALTER TABLE master_customers ADD COLUMN IF NOT EXISTS nenova_key INT`); } catch {}
+    try { await db.query(`ALTER TABLE master_customers ADD COLUMN IF NOT EXISTS contact TEXT`); } catch {}
+    try { await db.query(`ALTER TABLE master_customers ADD COLUMN IF NOT EXISTS synced_at TIMESTAMPTZ`); } catch {}
+    try { await db.query(`ALTER TABLE master_customers ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ`); } catch {}
 
-    await db.query(`
-      CREATE TABLE IF NOT EXISTS parsed_orders (
-        id SERIAL PRIMARY KEY,
-        source_event_id TEXT,
-        source_type TEXT DEFAULT 'nenova_sync',
-        nenova_order_key INT,
-        nenova_detail_key INT,
-        customer TEXT,
-        product TEXT,
-        quantity REAL DEFAULT 0,
-        unit TEXT DEFAULT 'box',
-        action TEXT DEFAULT 'order',
-        raw_text TEXT,
-        confidence REAL DEFAULT 1.0,
-        order_week TEXT,
-        order_year INT,
-        order_date TIMESTAMPTZ,
-        synced_at TIMESTAMPTZ DEFAULT NOW(),
-        created_at TIMESTAMPTZ DEFAULT NOW()
-      )
-    `);
+    // parsed_orders에도 nenova 키 컬럼 추가
+    try { await db.query(`ALTER TABLE parsed_orders ADD COLUMN IF NOT EXISTS nenova_order_key INT`); } catch {}
+    try { await db.query(`ALTER TABLE parsed_orders ADD COLUMN IF NOT EXISTS nenova_detail_key INT`); } catch {}
+    try { await db.query(`ALTER TABLE parsed_orders ADD COLUMN IF NOT EXISTS order_week TEXT`); } catch {}
+    try { await db.query(`ALTER TABLE parsed_orders ADD COLUMN IF NOT EXISTS order_year INT`); } catch {}
+    try { await db.query(`ALTER TABLE parsed_orders ADD COLUMN IF NOT EXISTS order_date TIMESTAMPTZ`); } catch {}
+    try { await db.query(`ALTER TABLE parsed_orders ADD COLUMN IF NOT EXISTS synced_at TIMESTAMPTZ`); } catch {}
 
-    // 인덱스
-    await db.query(`CREATE INDEX IF NOT EXISTS idx_mp_nenova_key ON master_products(nenova_key)`);
-    await db.query(`CREATE INDEX IF NOT EXISTS idx_mc_nenova_key ON master_customers(nenova_key)`);
-    await db.query(`CREATE INDEX IF NOT EXISTS idx_po_nenova_order ON parsed_orders(nenova_order_key)`);
-    await db.query(`CREATE INDEX IF NOT EXISTS idx_po_customer ON parsed_orders(customer)`);
+    // 인덱스 (실패해도 무시)
+    try { await db.query(`CREATE INDEX IF NOT EXISTS idx_mp_nenova_key ON master_products(nenova_key)`); } catch {}
+    try { await db.query(`CREATE INDEX IF NOT EXISTS idx_mc_nenova_key ON master_customers(nenova_key)`); } catch {}
+    try { await db.query(`CREATE INDEX IF NOT EXISTS idx_po_nenova_order ON parsed_orders(nenova_order_key)`); } catch {}
   }
 
   // 초기화 시도 (실패해도 서버 시작에 영향 없음)
@@ -2047,22 +2013,22 @@ module.exports = function createNenovaDbRouter({ getDb }) {
 
       for (const prod of nenovaProducts) {
         try {
-          const result = await orbitDb.query(`
-            INSERT INTO master_products (nenova_key, name, flower_name, country, category, source, synced_at)
-            VALUES ($1, $2, $3, $4, $5, 'nenova', NOW())
-            ON CONFLICT (nenova_key) DO UPDATE SET
-              name = EXCLUDED.name,
-              flower_name = EXCLUDED.flower_name,
-              country = EXCLUDED.country,
-              synced_at = NOW(),
-              updated_at = NOW()
-          `, [
-            prod.ProdKey,
-            prod.ProdName || '',
-            prod.FlowerName || '',
-            prod.CounName || '',
-            prod.FlowerName || '',  // category = flower 분류
-          ]);
+          // 기존 name으로 매칭 시도, 없으면 INSERT
+          const existing = await orbitDb.query(`SELECT id FROM master_products WHERE name = $1 LIMIT 1`, [prod.ProdName || '']);
+          let result;
+          if (existing.rows.length > 0) {
+            result = await orbitDb.query(`
+              UPDATE master_products SET nenova_key=$1, flower_name=$2, country=$3, category=$4, origin=$3, source='nenova', synced_at=NOW(), updated_at=NOW()
+              WHERE name=$5
+            `, [prod.ProdKey, prod.FlowerName||'', prod.CounName||'', prod.FlowerName||'', prod.ProdName||'']);
+            updated++;
+          } else {
+            result = await orbitDb.query(`
+              INSERT INTO master_products (nenova_key, name, name_en, flower_name, country, category, origin, source, first_seen, last_seen, seen_count, synced_at)
+              VALUES ($1, $2, $2, $3, $4, $5, $4, 'nenova', NOW(), NOW(), 1, NOW())
+              ON CONFLICT DO NOTHING
+            `, [prod.ProdKey, prod.ProdName||'', prod.FlowerName||'', prod.CounName||'', prod.FlowerName||'']);
+          }
 
           if (result.rowCount > 0) {
             // ON CONFLICT에서 UPDATE 실행됨 → 업데이트
@@ -2107,19 +2073,19 @@ module.exports = function createNenovaDbRouter({ getDb }) {
 
       let synced = 0, errors = 0;
 
+      let updated = 0;
       for (const cust of nenovaCustomers) {
         try {
-          await orbitDb.query(`
-            INSERT INTO master_customers (nenova_key, name, source, synced_at)
-            VALUES ($1, $2, 'nenova', NOW())
-            ON CONFLICT (nenova_key) DO UPDATE SET
-              name = EXCLUDED.name,
-              synced_at = NOW(),
-              updated_at = NOW()
-          `, [
-            cust.CustKey,
-            cust.CustName || '',
-          ]);
+          const existing = await orbitDb.query(`SELECT id FROM master_customers WHERE name = $1 LIMIT 1`, [cust.CustName || '']);
+          if (existing.rows.length > 0) {
+            await orbitDb.query(`UPDATE master_customers SET nenova_key=$1, source='nenova', synced_at=NOW(), updated_at=NOW() WHERE name=$2`,
+              [cust.CustKey, cust.CustName||'']);
+            updated++;
+          } else {
+            await orbitDb.query(`INSERT INTO master_customers (nenova_key, name, source, first_seen, last_seen, seen_count, synced_at)
+              VALUES ($1, $2, 'nenova', NOW(), NOW(), 1, NOW()) ON CONFLICT DO NOTHING`,
+              [cust.CustKey, cust.CustName||'']);
+          }
           synced++;
         } catch (e) {
           errors++;
