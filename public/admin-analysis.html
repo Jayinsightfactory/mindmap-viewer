@@ -1797,16 +1797,21 @@ async function loadLogs() {
         const color = typeColors[log.type] || 'var(--muted)';
         const time = fmtDate(log.timestamp);
         const app = log.app || '-';
-        const title = log.windowTitle || log.visionScreen || log.trigger || '';
+        let title = log.windowTitle || log.visionScreen || log.trigger || '';
+        // 카톡 방이름 마스킹 — 학습은 하되 로그에는 안 보이게
+        if (app.toLowerCase().includes('kakao') || app.toLowerCase().includes('카카오')) {
+          title = '카카오톡 대화';
+        }
         const summary = log.visionActivity || log.summary || (log.type === 'idle' ? '대기 중' : '');
         const autoTag = log.visionAutomatable ? '<span style="background:var(--green);color:#000;font-size:9px;padding:1px 5px;border-radius:8px;margin-left:4px">자동화</span>' : '';
 
         // windowHistory 표시
         let whHtml = '';
         if (log.windowHistory && Object.keys(log.windowHistory).length > 0) {
-          whHtml = Object.entries(log.windowHistory).map(([a,t]) =>
-            `<div style="font-size:10px;color:var(--muted);margin-top:2px">${a}: ${(t||'').substring(0,50)}</div>`
-          ).join('');
+          whHtml = Object.entries(log.windowHistory).map(([a,t]) => {
+            const masked = a.toLowerCase().includes('kakao') ? '카카오톡 대화' : (t||'').substring(0,50);
+            return `<div style="font-size:10px;color:var(--muted);margin-top:2px">${a}: ${masked}</div>`;
+          }).join('');
         }
 
         return `<tr style="border-bottom:1px solid var(--surface2);vertical-align:top" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">
