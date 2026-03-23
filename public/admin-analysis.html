@@ -762,6 +762,9 @@
   <button class="page-tab" data-tab="automation" onclick="switchPageTab('automation')">
     <span class="page-tab-icon">⚡</span> 자동화 플로우
   </button>
+  <button class="page-tab" data-tab="agents" onclick="switchPageTab('agents')">
+    <span class="page-tab-icon">🤖</span> 에이전트 회의
+  </button>
 </nav>
 
 <!-- ── 탭 패널: 대시보드 (기존 내용) ── -->
@@ -3024,6 +3027,59 @@ document.addEventListener('DOMContentLoaded', () => {
 <!-- ── 탭 패널: 자동화 플로우 ── -->
 <div id="panel-automation" class="page-tab-panel"></div>
 
+<!-- ── 탭 패널: 에이전트 회의 ── -->
+<div id="panel-agents" class="page-tab-panel">
+  <main style="max-width:1440px;margin:0 auto;padding:28px 24px;">
+    <!-- 상단 요약 카드 -->
+    <div id="agent-summary" style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:24px;">
+      <div class="card" style="text-align:center;padding:16px;">
+        <div id="ag-total" style="font-size:28px;font-weight:700;color:var(--green);">-</div>
+        <div style="font-size:12px;color:var(--muted);">총 에이전트</div>
+      </div>
+      <div class="card" style="text-align:center;padding:16px;">
+        <div id="ag-score" style="font-size:28px;font-weight:700;color:var(--blue);">-</div>
+        <div style="font-size:12px;color:var(--muted);">학습 점수</div>
+      </div>
+      <div class="card" style="text-align:center;padding:16px;">
+        <div id="ag-issues" style="font-size:28px;font-weight:700;color:var(--red);">-</div>
+        <div style="font-size:12px;color:var(--muted);">이슈</div>
+      </div>
+      <div class="card" style="text-align:center;padding:16px;">
+        <div id="ag-actions" style="font-size:28px;font-weight:700;color:var(--orange);">-</div>
+        <div style="font-size:12px;color:var(--muted);">액션 대기</div>
+      </div>
+    </div>
+
+    <!-- 회의 헤더 -->
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span style="font-size:18px;">🤖</span>
+        <span style="font-size:16px;font-weight:700;">에이전트 회의록</span>
+        <span class="badge badge-green" id="ag-live-badge">LIVE</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span id="ag-last-update" style="font-size:11px;color:var(--muted);"></span>
+        <button class="btn" onclick="loadAgentMeeting()">새로고침</button>
+      </div>
+    </div>
+
+    <!-- 에이전트 토론 카드 그리드 -->
+    <div id="agent-cards" class="cards-grid" style="margin-bottom:32px;">
+      <div style="color:var(--muted);text-align:center;padding:60px;grid-column:1/-1;">에이전트 데이터 로딩 중...</div>
+    </div>
+
+    <!-- 즉시 실행 가능한 액션 TOP 5 -->
+    <div class="card" style="padding:24px;">
+      <div style="font-size:15px;font-weight:700;margin-bottom:16px;display:flex;align-items:center;gap:8px;">
+        <span>🎯</span> 즉시 실행 가능한 액션 TOP 5
+      </div>
+      <div id="agent-actions" style="display:flex;flex-direction:column;gap:10px;">
+        <div style="color:var(--muted);font-size:13px;">로딩 중...</div>
+      </div>
+    </div>
+  </main>
+</div>
+
 <!-- ── 탭 패널: 작업 내역 ── -->
 <div id="panel-worklogs" class="page-tab-panel">
   <main style="max-width:1200px;margin:0 auto;padding:28px 24px;">
@@ -3092,6 +3148,11 @@ document.addEventListener('DOMContentLoaded', () => {
       panel.appendChild(iframe);
       loaded[tabId] = true;
     }
+    // 에이전트 회의 탭
+    if (tabId === 'agents' && !loaded['agents']) {
+      loaded['agents'] = true;
+      loadAgentMeeting();
+    }
     // 작업 내역 탭
     if (tabId === 'worklogs' && !loaded['worklogs']) {
       loaded['worklogs'] = true;
@@ -3099,6 +3160,292 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   };
 })();
+
+// ═══ 에이전트 회의 (Agent Meeting) ═══
+let _agentRefreshTimer = null;
+
+async function loadAgentMeeting() {
+  const TOKEN = localStorage.getItem('orbit_token');
+  const H = { 'Authorization': 'Bearer ' + (TOKEN || ''), 'Content-Type': 'application/json' };
+
+  const agentAPIs = [
+    { name: '사고 엔진', icon: '🧠', api: '/api/think/status', color: '#bc8cff' },
+    { name: 'Vision 학습', icon: '🔍', api: '/api/vision/learning-status', color: '#39d2c0' },
+    { name: '아이디어', icon: '💡', api: '/api/ideas', color: '#ffa657' },
+    { name: '이슈 감지', icon: '🚨', api: '/api/issues/scan', color: '#f85149' },
+    { name: '자가 진화', icon: '🧬', api: '/api/evolve/health', color: '#3fb950' },
+    { name: '활동 분류', icon: '🏷️', api: '/api/activity/purposes?hours=24', color: '#58a6ff' },
+    { name: '교차 분석', icon: '🔗', api: '/api/cross/verify/summary', color: '#d29922' },
+    { name: 'BI 건강도', icon: '📈', api: '/api/bi/health', color: '#f778ba' },
+    { name: '데이터 갭', icon: '📊', api: '/api/digitize/gaps', color: '#8b949e' },
+    { name: '자동화', icon: '⚡', api: '/api/cross/insights/automation', color: '#ffa657' },
+  ];
+
+  // 모든 에이전트 API 병렬 호출
+  const results = await Promise.all(
+    agentAPIs.map(agent =>
+      fetch(agent.api, { headers: H })
+        .then(r => r.ok ? r.json() : null)
+        .catch(() => null)
+    )
+  );
+
+  // 각 에이전트별 토론 데이터 생성
+  const agentDiscussions = agentAPIs.map((agent, i) => {
+    const data = results[i] || {};
+    let findings = '', proposals = [], requests = [], status = 'LIVE';
+
+    switch (agent.name) {
+      case '사고 엔진': {
+        const rules = data.transitionModel?.rules || 0;
+        const users = data.transitionModel?.users || 0;
+        findings = '전이 규칙 ' + rules + '건, ' + users + '명 학습';
+        proposals = [
+          '전이 체인 3단계 연결 (A→B→C 업무 흐름)',
+          '시간대별 가중치 전이 모델 (오전 vs 오후)',
+          '역방향 추론 (결과 → 원인 역추적)',
+        ];
+        requests = ['Vision: 저장 버튼 클릭 감지 요청', '교차분석: nenova 입력값 검증 협업'];
+        break;
+      }
+      case 'Vision 학습': {
+        findings = 'UI 요소 ' + (data.elements || 0) + '개, 화면 ' + (data.screens || 0) + '개, 앱 ' + (data.apps?.length || 0) + '개';
+        proposals = [
+          '영역별 OCR (6분할 → 데이터 영역 숫자 추출)',
+          '화면 지문 해시 (중복 분석 90% 감소)',
+          '변화 감지 (이전 캡처 diff → 변한 부분만 OCR)',
+          '마우스 좌표 ↔ UI 요소 실시간 매칭',
+        ];
+        requests = ['사고 엔진: 저장 클릭 시점 입력값 대조해라'];
+        break;
+      }
+      case '아이디어': {
+        const ideas = Array.isArray(data) ? data : (data.ideas || []);
+        findings = '아이디어 ' + ideas.length + '건 수집됨';
+        proposals = ideas.slice(0, 3).map(function(idea) {
+          return typeof idea === 'string' ? idea : (idea.title || idea.description || JSON.stringify(idea));
+        });
+        if (!proposals.length) proposals = ['데이터 수집 중...'];
+        requests = [];
+        break;
+      }
+      case '이슈 감지': {
+        const s = data.summary || {};
+        findings = '총 ' + (s.total || 0) + '건 (critical ' + (s.critical || 0) + ', warning ' + (s.warning || 0) + ')';
+        proposals = [
+          'SAME_WORK_REPEAT: 30분+ 같은 화면 정체',
+          'COPY_PASTE_OVERLOAD: 복붙 50회+/시간',
+          'ERROR_RETRY_LOOP: Ctrl+Z 10회+ 반복',
+          'CUSTOMER_COMPLAINT: 불량 키워드 급증',
+          'WEEKEND_WORK: 주말 근무 감지',
+        ];
+        requests = [];
+        break;
+      }
+      case '자가 진화': {
+        const ver = data.version || '-';
+        const hp = data.health || data.score || '-';
+        findings = '버전 ' + ver + ', 건강도 ' + hp;
+        proposals = [
+          '에이전트 자동 최적화 사이클 활성화',
+          '비효율 알고리즘 자동 교체',
+          '학습 모델 자동 재훈련 스케줄',
+        ];
+        requests = [];
+        break;
+      }
+      case '활동 분류': {
+        const purposes = data.purposes || data.categories || [];
+        const total = Array.isArray(purposes) ? purposes.length : 0;
+        findings = '24시간 내 활동 목적 ' + total + '건 분류';
+        proposals = [
+          '목적 기반 시간 배분 최적화',
+          '비생산 활동 자동 태깅',
+          '프로젝트별 활동 자동 그룹핑',
+        ];
+        requests = ['사고 엔진: 목적별 전이 패턴 분석 요청'];
+        break;
+      }
+      case '교차 분석': {
+        const verified = data.verified || 0;
+        const conflicts = data.conflicts || 0;
+        findings = '검증 ' + verified + '건, 충돌 ' + conflicts + '건';
+        proposals = [
+          '키로거 ↔ Vision 교차 검증 자동화',
+          '입력 데이터 ↔ 화면 데이터 일치율 리포트',
+          '시간대별 교차 분석 히트맵',
+        ];
+        requests = ['Vision: 입력 필드 위치 좌표 공유 요청'];
+        break;
+      }
+      case 'BI 건강도': {
+        findings = '회사 점수 ' + (data.score || '-') + '/100 (' + (data.grade || '-') + ')';
+        proposals = [
+          'nenova Estimate에서 매출 직접 계산',
+          '전주/전월 대비 상대 비교 모델',
+          '복합 알림 (야근+주문증가 = 거래처 이슈)',
+        ];
+        requests = ['디지타이저: 매출/미수금 데이터 확보해줘'];
+        break;
+      }
+      case '데이터 갭': {
+        const s = data.summary || {};
+        findings = '커버리지 ' + (s.overall_coverage || 0) + '% (' + (s.fully_digitized || 0) + '확보/' + (s.missing || 0) + '누락)';
+        proposals = [
+          'nenova Estimate → 매출 자동 추출 (지금 가능)',
+          '거래처 거래 빈도 계산 (지금 가능)',
+          '직원 효율 = 화면 체류시간 ÷ 입력 건수',
+          '공급 리드타임 = 주문일 → 출하일 차이',
+        ];
+        requests = ['사장님: 이카운트 API, 은행 데이터, 매입가 필요'];
+        break;
+      }
+      case '자동화': {
+        const orders = data.volume?.nenovaDailyOrders || 0;
+        findings = '일 ' + orders + '건 주문, 즉시 자동화 2건 가능';
+        proposals = [
+          '즉시: 클립보드→파서→parsed_orders 자동 저장',
+          '즉시: 매출 마감 BAT+Task Scheduler',
+          '1~2주 후: nenova 주문 자동 입력 (드라이런→실행)',
+          '1~2주 후: Excel 차감내역 자동 생성',
+        ];
+        requests = [];
+        break;
+      }
+      default:
+        findings = '데이터 수집 중...';
+        proposals = [];
+        requests = [];
+    }
+
+    if (!results[i]) status = 'OFFLINE';
+
+    return { ...agent, findings: findings, proposals: proposals, requests: requests, status: status, raw: data };
+  });
+
+  // ── 요약 카드 업데이트 ──
+  const liveCount = agentDiscussions.filter(function(a) { return a.status === 'LIVE'; }).length;
+  document.getElementById('ag-total').textContent = agentAPIs.length;
+  document.getElementById('ag-total').style.color = 'var(--green)';
+
+  // 학습 점수: BI score 또는 live 비율
+  const biAgent = agentDiscussions.find(function(a) { return a.name === 'BI 건강도'; });
+  const biScore = biAgent?.raw?.score || Math.round(liveCount / agentAPIs.length * 100);
+  document.getElementById('ag-score').textContent = biScore;
+
+  // 이슈 수
+  const issueAgent = agentDiscussions.find(function(a) { return a.name === '이슈 감지'; });
+  const issueCount = issueAgent?.raw?.summary?.total || 0;
+  document.getElementById('ag-issues').textContent = issueCount;
+
+  // 액션 대기 수
+  document.getElementById('ag-actions').textContent = 5;
+
+  // 마지막 업데이트 시간
+  document.getElementById('ag-last-update').textContent = '마지막 갱신: ' + new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+  // ── 에이전트 카드 렌더링 ──
+  const cardsEl = document.getElementById('agent-cards');
+  cardsEl.innerHTML = agentDiscussions.map(function(agent) {
+    const statusDot = agent.status === 'LIVE'
+      ? '<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;color:var(--green);"><span style="width:6px;height:6px;border-radius:50%;background:var(--green);display:inline-block;"></span> LIVE</span>'
+      : '<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;color:var(--muted);"><span style="width:6px;height:6px;border-radius:50%;background:var(--muted);display:inline-block;"></span> OFFLINE</span>';
+
+    const proposalHtml = agent.proposals.length
+      ? agent.proposals.map(function(p, idx) { return '<div style="font-size:12px;color:var(--text);padding:3px 0;">' + (idx + 1) + '. ' + escHtml(p) + '</div>'; }).join('')
+      : '<div style="font-size:12px;color:var(--muted);">데이터 수집 중...</div>';
+
+    const requestHtml = agent.requests.length
+      ? agent.requests.map(function(r) { return '<div style="font-size:12px;color:var(--cyan);padding:2px 0;">→ ' + escHtml(r) + '</div>'; }).join('')
+      : '';
+
+    return '<div class="card" style="padding:20px;border-top:3px solid ' + agent.color + ';">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">' +
+        '<div style="display:flex;align-items:center;gap:8px;">' +
+          '<span style="font-size:20px;">' + agent.icon + '</span>' +
+          '<span style="font-size:14px;font-weight:700;">' + escHtml(agent.name) + '</span>' +
+        '</div>' +
+        statusDot +
+      '</div>' +
+      '<div style="margin-bottom:12px;">' +
+        '<div style="font-size:11px;color:var(--muted);font-weight:600;margin-bottom:4px;">현재 상태</div>' +
+        '<div style="font-size:13px;color:var(--text);padding:8px 12px;background:var(--surface2);border-radius:6px;">' + escHtml(agent.findings) + '</div>' +
+      '</div>' +
+      '<div style="margin-bottom:12px;">' +
+        '<div style="font-size:11px;color:var(--muted);font-weight:600;margin-bottom:4px;">개선 제안</div>' +
+        proposalHtml +
+      '</div>' +
+      (requestHtml ? '<div style="margin-bottom:12px;"><div style="font-size:11px;color:var(--muted);font-weight:600;margin-bottom:4px;">다른 에이전트에게</div>' + requestHtml + '</div>' : '') +
+      '<div style="display:flex;gap:8px;margin-top:10px;">' +
+        '<button class="btn" style="font-size:11px;padding:4px 12px;" onclick="alert(\'상세 구현 예정\')">상세 보기</button>' +
+        '<button class="btn btn-primary" style="font-size:11px;padding:4px 12px;" onclick="alert(\'실행 구현 예정\')">실행</button>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+
+  // ── 즉시 실행 액션 TOP 5 ──
+  const actionsEl = document.getElementById('agent-actions');
+  const actionItems = [
+    { rank: 1, label: 'nenova Estimate 매출 추출', btnLabel: '실행', btnClass: 'btn btn-primary', api: '/api/nenova/sync/orders', method: 'POST' },
+    { rank: 2, label: '클립보드 파싱 자동 저장', btnLabel: '적용됨', btnClass: 'btn', api: null },
+    { rank: 3, label: '전이 체인 3단계', btnLabel: '계획', btnClass: 'btn', api: null },
+    { rank: 4, label: '마우스-UI 매칭 활성화', btnLabel: '계획', btnClass: 'btn', api: null },
+    { rank: 5, label: '화면 지문 해시', btnLabel: '계획', btnClass: 'btn', api: null },
+  ];
+
+  actionsEl.innerHTML = actionItems.map(function(item) {
+    const btnAction = item.api
+      ? ' onclick="executeAgentAction(\'' + item.api + '\', \'' + item.method + '\', this)"'
+      : ' disabled style="opacity:0.6;cursor:default;"';
+    return '<div style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--surface2);border-radius:8px;">' +
+      '<span style="font-size:16px;font-weight:700;color:var(--orange);min-width:24px;">' + item.rank + '.</span>' +
+      '<span style="flex:1;font-size:13px;font-weight:500;">' + escHtml(item.label) + '</span>' +
+      '<button class="' + item.btnClass + '" style="font-size:11px;padding:4px 14px;"' + btnAction + '>' + item.btnLabel + '</button>' +
+    '</div>';
+  }).join('');
+
+  // 자동 갱신 타이머 (120초)
+  if (_agentRefreshTimer) clearInterval(_agentRefreshTimer);
+  _agentRefreshTimer = setInterval(function() {
+    const panel = document.getElementById('panel-agents');
+    if (panel && panel.classList.contains('active')) {
+      loadAgentMeeting();
+    } else {
+      clearInterval(_agentRefreshTimer);
+      _agentRefreshTimer = null;
+    }
+  }, 120000);
+}
+
+async function executeAgentAction(apiUrl, method, btn) {
+  const TOKEN = localStorage.getItem('orbit_token');
+  const H = { 'Authorization': 'Bearer ' + (TOKEN || ''), 'Content-Type': 'application/json' };
+  const origText = btn.textContent;
+  btn.textContent = '실행 중...';
+  btn.disabled = true;
+  try {
+    const resp = await fetch(apiUrl, { method: method || 'POST', headers: H });
+    if (resp.ok) {
+      btn.textContent = '완료';
+      btn.style.background = 'var(--green)';
+      btn.style.borderColor = 'var(--green)';
+    } else {
+      btn.textContent = '실패';
+      btn.style.background = 'var(--red)';
+      btn.style.borderColor = 'var(--red)';
+    }
+  } catch (e) {
+    btn.textContent = '오류';
+    btn.style.background = 'var(--red)';
+    btn.style.borderColor = 'var(--red)';
+  }
+  setTimeout(function() {
+    btn.textContent = origText;
+    btn.disabled = false;
+    btn.style.background = '';
+    btn.style.borderColor = '';
+  }, 3000);
+}
 
 // ═══ 작업 내역 (Work Logs) ═══
 let _wlAll = [];
