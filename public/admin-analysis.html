@@ -759,6 +759,9 @@
   <button class="page-tab" data-tab="worklogs" onclick="switchPageTab('worklogs')">
     <span class="page-tab-icon">📝</span> 작업 내역
   </button>
+  <button class="page-tab" data-tab="automation" onclick="switchPageTab('automation')">
+    <span class="page-tab-icon">⚡</span> 자동화 플로우
+  </button>
 </nav>
 
 <!-- ── 탭 패널: 대시보드 (기존 내용) ── -->
@@ -2971,6 +2974,9 @@ document.addEventListener('DOMContentLoaded', () => {
 <!-- ── 탭 패널: 파일맵 ── -->
 <div id="panel-filemap" class="page-tab-panel"></div>
 
+<!-- ── 탭 패널: 자동화 플로우 ── -->
+<div id="panel-automation" class="page-tab-panel"></div>
+
 <!-- ── 탭 패널: 작업 내역 ── -->
 <div id="panel-worklogs" class="page-tab-panel">
   <main style="max-width:1200px;margin:0 auto;padding:28px 24px;">
@@ -3016,7 +3022,8 @@ document.addEventListener('DOMContentLoaded', () => {
 (function() {
   const iframeMap = {
     mindmap: '/mindmap.html',
-    filemap: '/project-map.html'
+    filemap: '/project-map.html',
+    automation: '/automation-flow.html'
   };
   const loaded = {};
 
