@@ -364,24 +364,7 @@ app.use((req, res, next) => {
 // ─── 보안 미들웨어 ────────────────────────────────────────────────────────────
 // Helmet: X-Frame-Options, X-Content-Type, CSP 등 보안 헤더 자동 설정
 app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'",
-        "https://cdn.jsdelivr.net", "https://cdnjs.cloudflare.com",
-        "https://unpkg.com", "https://accounts.google.com",
-        "https://js.tosspayments.com"],
-      styleSrc: ["'self'", "'unsafe-inline'",
-        "https://cdn.jsdelivr.net", "https://cdnjs.cloudflare.com",
-        "https://fonts.googleapis.com", "https://unpkg.com"],
-      fontSrc: ["'self'", "https://fonts.gstatic.com", "https://cdn.jsdelivr.net", "https://cdnjs.cloudflare.com"],
-      imgSrc: ["'self'", "data:", "blob:", "https:"],
-      connectSrc: ["'self'", "wss:", "ws:", "https:"],
-      frameSrc: ["'self'", "https://accounts.google.com", "https://js.tosspayments.com"],
-      objectSrc: ["'none'"],
-      baseUri: ["'self'"],
-    },
-  },
+  contentSecurityPolicy: false, // CSP 비활성화 (Google OAuth 호환)
   crossOriginEmbedderPolicy: false,
   crossOriginOpenerPolicy: false,
   crossOriginResourcePolicy: false,
