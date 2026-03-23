@@ -324,5 +324,130 @@ module.exports = function workSessionsRoute(/* { getDb } */) {
     }
   });
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // GET /api/sessions/conversations — Claude 대화 기록 (프로젝트별 분류)
+  // ═══════════════════════════════════════════════════════════════════════════
+  const CONV_FILE = path.join(__dirname, '..', '..', 'orbit', 'src', 'conversation.jsonl');
+
+  router.get('/conversations', async (req, res) => {
+    try {
+      if (!fs.existsSync(CONV_FILE)) {
+        return res.json({ ok: true, sessions: [], total: 0, message: 'conversation.jsonl 없음' });
+      }
+
+      const lines = fs.readFileSync(CONV_FILE, 'utf-8').split('\n').filter(Boolean);
+      const sessMap = {};
+
+      for (const line of lines) {
+        try {
+          const ev = JSON.parse(line);
+          const sid = ev.sessionId;
+          if (!sid) continue;
+
+          if (!sessMap[sid]) {
+            sessMap[sid] = {
+              sessionId: sid,
+              startTime: ev.ts || null,
+              endTime: ev.ts || null,
+              messages: [],
+              tools: [],
+              files: [],
+              subagents: 0,
+              project: '미분류',
+            };
+          }
+          const s = sessMap[sid];
+          if (ev.ts) {
+            if (!s.startTime || ev.ts < s.startTime) s.startTime = ev.ts;
+            if (!s.endTime || ev.ts > s.endTime) s.endTime = ev.ts;
+          }
+
+          if (ev.type === 'user.message' && ev.data?.contentPreview) {
+            s.messages.push({ role: 'user', text: ev.data.contentPreview.substring(0, 200), ts: ev.ts });
+          }
+          if (ev.type === 'assistant.message' && ev.data?.contentPreview) {
+            s.messages.push({ role: 'assistant', text: ev.data.contentPreview.substring(0, 200), ts: ev.ts });
+          }
+          if (ev.type === 'file.write' && ev.data?.filePath) {
+            const fp = ev.data.filePath.replace(/.*mindmap-viewer\//, '');
+            if (!s.files.includes(fp)) s.files.push(fp);
+          }
+          if (ev.type === 'file.read' && ev.data?.filePath) {
+            const fp = ev.data.filePath.replace(/.*mindmap-viewer\//, '');
+            if (!s.files.includes(fp) && s.files.length < 20) s.files.push(fp);
+          }
+          if (ev.type === 'tool.end' && ev.data?.toolName) {
+            if (!s.tools.includes(ev.data.toolName)) s.tools.push(ev.data.toolName);
+          }
+          if (ev.type === 'subagent.start') s.subagents++;
+        } catch {}
+      }
+
+      // 프로젝트 분류
+      const sessions = Object.values(sessMap).map(s => {
+        // 첫 번째 사용자 메시지 + 파일 경로로 프로젝트 추정
+        const allText = s.messages.map(m => m.text).join(' ') + ' ' + s.files.join(' ');
+        const t = allText.toLowerCase();
+
+        if (t.includes('사고') || t.includes('think') || t.includes('예측')) s.project = '사고 엔진';
+        else if (t.includes('nenova') || t.includes('전산') || t.includes('sql server')) s.project = 'nenova 전산';
+        else if (t.includes('3d') || t.includes('three') || t.includes('orbit3d') || t.includes('구체')) s.project = '3D UI';
+        else if (t.includes('daemon') || t.includes('데몬') || t.includes('설치') || t.includes('updater')) s.project = '데몬/설치';
+        else if (t.includes('vision') || t.includes('캡처') || t.includes('분석')) s.project = 'Vision 분석';
+        else if (t.includes('카카오') || t.includes('카톡') || t.includes('kakao')) s.project = '카카오톡';
+        else if (t.includes('pad') || t.includes('자동화') || t.includes('pyautogui')) s.project = '자동화';
+        else if (t.includes('대시보드') || t.includes('dashboard') || t.includes('admin')) s.project = '대시보드';
+        else if (t.includes('workspace') || t.includes('워크스페이스')) s.project = '워크스페이스';
+        else if (t.includes('graph') || t.includes('마인드맵')) s.project = '그래프/마인드맵';
+        else if (t.includes('auth') || t.includes('로그인') || t.includes('oauth')) s.project = '인증';
+        else if (t.includes('report') || t.includes('리포트') || t.includes('sheets')) s.project = '리포트';
+        else if (s.files.some(f => f.includes('route'))) s.project = 'API 개발';
+        else s.project = '기타';
+
+        return {
+          sessionId: s.sessionId,
+          project: s.project,
+          startTime: s.startTime,
+          endTime: s.endTime,
+          duration: s.startTime && s.endTime ? Math.round((new Date(s.endTime) - new Date(s.startTime)) / 60000) : 0,
+          messageCount: s.messages.length,
+          firstMessage: s.messages[0]?.text || '',
+          fileCount: s.files.length,
+          files: s.files.slice(0, 10),
+          tools: s.tools,
+          subagents: s.subagents,
+        };
+      });
+
+      // 최신순 정렬
+      sessions.sort((a, b) => (b.startTime || '').localeCompare(a.startTime || ''));
+
+      // 프로젝트별 집계
+      const projects = {};
+      for (const s of sessions) {
+        if (!projects[s.project]) projects[s.project] = { name: s.project, sessionCount: 0, totalMessages: 0, totalFiles: 0 };
+        projects[s.project].sessionCount++;
+        projects[s.project].totalMessages += s.messageCount;
+        projects[s.project].totalFiles += s.fileCount;
+      }
+
+      const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+      const project = req.query.project;
+      let filtered = sessions;
+      if (project && project !== '전체') {
+        filtered = sessions.filter(s => s.project === project);
+      }
+
+      res.json({
+        ok: true,
+        total: sessions.length,
+        projects: Object.values(projects).sort((a, b) => b.sessionCount - a.sessionCount),
+        sessions: filtered.slice(0, limit),
+      });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
   return router;
 };

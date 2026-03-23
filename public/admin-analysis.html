@@ -723,6 +723,7 @@
   .page-tab-icon { font-size: 15px; }
   .page-tab-panel { display: none; }
   .page-tab-panel.active { display: block; }
+  .conv-detail.show { display: block !important; }
   .page-tab-panel iframe {
     width: 100%; border: none; height: calc(100vh - 90px);
     background: var(--bg);
@@ -2993,6 +2994,15 @@ document.addEventListener('DOMContentLoaded', () => {
     <div id="wl-commits" style="display:flex;flex-direction:column;gap:10px;">
       <div style="color:var(--muted);text-align:center;padding:40px;">로딩 중...</div>
     </div>
+    <!-- Claude 대화 기록 (프로젝트별) -->
+    <div style="margin-top:32px;">
+      <h3 style="font-size:15px;font-weight:700;margin-bottom:14px;">💬 Claude 작업 대화 기록</h3>
+      <!-- 프로젝트 필터 -->
+      <div id="wl-project-filter" style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap;"></div>
+      <!-- 대화 세션 목록 -->
+      <div id="wl-conversations" style="display:flex;flex-direction:column;gap:10px;"></div>
+    </div>
+
     <!-- 세션 요약 -->
     <div style="margin-top:32px;">
       <h3 style="font-size:15px;font-weight:700;margin-bottom:14px;">📋 세션 요약</h3>
@@ -3073,6 +3083,8 @@ async function loadWorkLogs() {
     } else {
       sessEl.innerHTML = '<div style="color:var(--muted);font-size:13px;">세션 요약 없음</div>';
     }
+    // 대화 기록도 로드
+    loadConversations();
   } catch(e) {
     document.getElementById('wl-commits').innerHTML = '<div style="color:var(--red);padding:20px;">로드 실패: '+e.message+'</div>';
   }
@@ -3105,6 +3117,62 @@ function renderWLCommits(list) {
       </div>
     </div>`;
   }).join('');
+}
+
+// Claude 대화 기록 로드
+let _convAll = [];
+async function loadConversations() {
+  const TOKEN = localStorage.getItem('orbit_token');
+  const H = {'Authorization':'Bearer '+(TOKEN||'')};
+  try {
+    const data = await fetch('/api/sessions/conversations?limit=100', {headers:H}).then(r=>r.json()).catch(()=>({sessions:[],projects:[]}));
+    _convAll = data.sessions || [];
+    const projects = data.projects || [];
+
+    // 프로젝트 필터 버튼
+    const filterEl = document.getElementById('wl-project-filter');
+    const projColors = {'사고 엔진':'var(--purple)','nenova 전산':'var(--green)','3D UI':'var(--blue)','데몬/설치':'var(--orange)','Vision 분석':'var(--cyan)','카카오톡':'var(--orange)','자동화':'var(--green)','대시보드':'var(--blue)','기타':'var(--muted)'};
+    filterEl.innerHTML = `<button class="btn btn-primary" onclick="filterConv('전체')">전체 (${data.total||0})</button>` +
+      projects.map(p => `<button class="btn" onclick="filterConv('${escHtml(p.name)}')" style="border-color:${projColors[p.name]||'var(--border)'};color:${projColors[p.name]||'var(--text)'};">${escHtml(p.name)} (${p.sessionCount})</button>`).join('');
+
+    renderConversations(_convAll);
+  } catch(e) {
+    document.getElementById('wl-conversations').innerHTML = '<div style="color:var(--red);">로드 실패: '+e.message+'</div>';
+  }
+}
+
+function renderConversations(list) {
+  const el = document.getElementById('wl-conversations');
+  if (!list.length) { el.innerHTML = '<div style="color:var(--muted);text-align:center;padding:30px;">대화 기록 없음</div>'; return; }
+  el.innerHTML = list.slice(0, 50).map(s => {
+    const projColors = {'사고 엔진':'var(--purple)','nenova 전산':'var(--green)','3D UI':'var(--blue)','데몬/설치':'var(--orange)','Vision 분석':'var(--cyan)','카카오톡':'var(--orange)','자동화':'var(--green)','대시보드':'var(--blue)'};
+    const color = projColors[s.project] || 'var(--muted)';
+    const date = s.startTime ? new Date(s.startTime) : null;
+    const dateStr = date ? date.toLocaleDateString('ko-KR') + ' ' + date.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'}) : '';
+    const durStr = s.duration > 60 ? Math.round(s.duration/60)+'시간' : s.duration+'분';
+    return `<div class="card" style="padding:14px;border-left:3px solid ${color};cursor:pointer;" onclick="this.querySelector('.conv-detail').classList.toggle('show')">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+        <span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;background:${color}20;color:${color};">${escHtml(s.project)}</span>
+        <span style="font-size:13px;font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(s.firstMessage||'(대화 없음)')}</span>
+        <span style="font-size:11px;color:var(--muted);white-space:nowrap;">${dateStr}</span>
+      </div>
+      <div style="font-size:11px;color:var(--muted);display:flex;gap:12px;">
+        <span>💬 ${s.messageCount}건</span>
+        <span>📄 ${s.fileCount}파일</span>
+        <span>⏱ ${durStr}</span>
+        ${s.subagents?`<span>🤖 에이전트 ${s.subagents}개</span>`:''}
+      </div>
+      <div class="conv-detail" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--border);font-size:12px;">
+        ${s.files.length?`<div style="margin-bottom:6px;"><strong>변경 파일:</strong></div>${s.files.map(f=>`<div style="color:var(--muted);font-family:monospace;font-size:11px;">  ${escHtml(f)}</div>`).join('')}`:''}
+        ${s.tools.length?`<div style="margin-top:6px;"><strong>사용 도구:</strong> ${s.tools.map(t=>`<span style="padding:1px 6px;background:var(--surface2);border-radius:8px;font-size:10px;margin:1px;">${escHtml(t)}</span>`).join(' ')}</div>`:''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function filterConv(project) {
+  if (project === '전체') return renderConversations(_convAll);
+  renderConversations(_convAll.filter(s => s.project === project));
 }
 
 function filterWL(type) {
