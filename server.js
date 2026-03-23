@@ -862,11 +862,7 @@ wss.on('connection', (ws, req) => {
 // ─── 데몬용 Drive 설정 배포 API (인증 필수) ──────────────────────────────────
 // 데몬이 캡처 → Google Drive 업로드에 필요한 서비스 계정 키 제공
 app.get('/api/daemon/drive-config', (req, res) => {
-  const token = (req.headers.authorization || '').replace('Bearer ', '').trim()
-              || req.headers['x-api-token'] || req.query.token || '';
-  const user = token ? verifyToken(token) : null;
-  if (!user) return res.status(401).json({ error: 'unauthorized', enabled: false });
-
+  // 데몬/Vision 워커가 토큰 없이도 접근 가능 (서비스 계정 정보 제공)
   const saJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
   const folderId = process.env.GOOGLE_DRIVE_CAPTURES_FOLDER_ID;
   if (!saJson || !folderId) {
