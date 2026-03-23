@@ -186,11 +186,17 @@ async function visionAnalyze(base64, ctx) {
 }
 
 // ── 결과 서버 전송 ────────────────────────────────────────────────────────────
-function sendToServer(cap, analysis) {
+function sendToServer(cap, analysis, base64Thumbnail) {
+  const eventData = { fileId:cap.id, filename:cap.name, hostname:cap.hostname, ...analysis };
+  // 썸네일 포함 (100KB 이하로 리사이즈 — 원본의 처음 부분)
+  if (base64Thumbnail) {
+    // base64 이미지의 앞 100KB만 전송 (썸네일 용도)
+    eventData.thumbnail = base64Thumbnail.substring(0, 100000);
+  }
   const payload = JSON.stringify({ events:[{
     id:`vision-${Date.now()}-${cap.id.substring(0,6)}`, type:'screen.analyzed', source:'vision-worker',
     sessionId:`daemon-${cap.hostname}`, timestamp:cap.ts || new Date().toISOString(),
-    data:{ fileId:cap.id, filename:cap.name, hostname:cap.hostname, ...analysis },
+    data: eventData,
   }] });
   return new Promise(resolve => {
     const url = new URL('/api/hook', ORBIT_SERVER);
@@ -324,7 +330,7 @@ async function processBatch() {
         const b64 = await gDownload(cap.id, token);
         const result = await visionAnalyze(b64, cap);
         console.log(`  → ${result.app}: ${result.activity?.substring(0,50)}`);
-        await sendToServer(cap, result);
+        await sendToServer(cap, result, b64);
         await saveToSheets(cap, result);
         await gApi('PATCH', `https://www.googleapis.com/drive/v3/files/${cap.id}`, token, { description:`analyzed:${new Date().toISOString()}` });
         done++;

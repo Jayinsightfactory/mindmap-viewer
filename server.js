@@ -1786,6 +1786,44 @@ app.get('/api/vision/queue', (req, res) => {
   res.json({ pending: queue.length, batch });
 });
 
+// 캡처 썸네일 이미지 제공 (screen.analyzed 이벤트의 thumbnail 필드)
+app.get('/api/vision/thumbnail/:eventId', async (req, res) => {
+  try {
+    const db = dbModule.getDb();
+    if (!db?.query) return res.status(503).send('DB not available');
+    const result = await db.query(
+      `SELECT data_json->>'thumbnail' as thumb FROM events WHERE id = $1 AND type = 'screen.analyzed' LIMIT 1`,
+      [req.params.eventId]
+    );
+    const thumb = result.rows[0]?.thumb;
+    if (!thumb) return res.status(404).json({ error: 'thumbnail not found' });
+    const buf = Buffer.from(thumb, 'base64');
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.send(buf);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 최근 캡처 썸네일 목록
+app.get('/api/vision/thumbnails', async (req, res) => {
+  try {
+    const db = dbModule.getDb();
+    if (!db?.query) return res.status(503).json({ error: 'DB not available' });
+    const limit = Math.min(parseInt(req.query.limit) || 20, 50);
+    const result = await db.query(
+      `SELECT id, user_id, timestamp,
+        data_json->>'app' as app, data_json->>'activity' as activity, data_json->>'screen' as screen,
+        CASE WHEN data_json->>'thumbnail' IS NOT NULL THEN true ELSE false END as has_thumbnail
+       FROM events WHERE type = 'screen.analyzed' AND data_json->>'thumbnail' IS NOT NULL
+       ORDER BY timestamp DESC LIMIT $1`,
+      [limit]
+    );
+    res.json({ count: result.rows.length, thumbnails: result.rows.map(r => ({
+      ...r, thumbnailUrl: `/api/vision/thumbnail/${r.id}`
+    })) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.post('/api/vision/result', async (req, res) => {
   try {
     const { captureId, analysis, sessionId, userId } = req.body;
