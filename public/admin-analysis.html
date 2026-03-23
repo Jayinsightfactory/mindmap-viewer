@@ -1097,30 +1097,7 @@
     <div id="deep-result"></div>
   </section>
 
-  <!-- ══════ 섹션 6: 실시간 로그 타임라인 ══════ -->
-  <section id="sec-logs">
-    <div class="section-header">
-      <div class="section-title">
-        <span class="icon">&#x1f4dd;</span> 실시간 활동 로그
-      </div>
-      <div style="display:flex;gap:8px;align-items:center">
-        <select id="log-user-filter" onchange="loadLogs()" style="font-size:12px;padding:4px 8px;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:6px">
-          <option value="">전체 멤버</option>
-        </select>
-        <select id="log-type-filter" onchange="loadLogs()" style="font-size:12px;padding:4px 8px;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:6px">
-          <option value="">전체 타입</option>
-          <option value="keyboard.chunk">키보드</option>
-          <option value="screen.capture">캡처</option>
-          <option value="screen.analyzed">Vision 분석</option>
-          <option value="idle">대기</option>
-        </select>
-        <button class="btn btn-primary" onclick="loadLogs()" style="font-size:11px;padding:4px 10px">새로고침</button>
-      </div>
-    </div>
-    <div id="log-timeline" style="max-height:600px;overflow-y:auto">
-      <div style="color:var(--muted);padding:20px;text-align:center">로딩 중...</div>
-    </div>
-  </section>
+  <!-- 실시간 로그: 별도 로컬 서버로 이동됨 (localhost:4848/logs.html) -->
 
   <!-- ══════ 섹션 6: 리포트 생성 ══════ -->
   <section id="sec-report">
