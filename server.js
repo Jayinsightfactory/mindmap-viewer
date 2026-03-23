@@ -2458,6 +2458,9 @@ app.use('/api/digitize', require('./routes/data-digitizer')({ getDb: dbModule.ge
 // ─── 비즈니스 인텔리전스 (회사 비즈니스 브레인 — 건강도/분석/예측/리포트) ────
 app.use('/api/bi', require('./routes/business-intelligence')({ getDb: dbModule.getDb }));
 
+// ─── 깊은 조사 에이전트 (오분류 재분석 + 숨겨진 업무 흐름 + 현실적 자동화 판단) ──
+app.use('/api/investigate', require('./routes/deep-investigator')({ getDb: dbModule.getDb }));
+
 // ─── 데모 시드 (개발/미리보기용) ─────────────────────────────────────────────
 app.post('/api/demo/seed', (req, res) => {
   const token = (req.headers.authorization || '').replace('Bearer ', '') || req.query.token;
