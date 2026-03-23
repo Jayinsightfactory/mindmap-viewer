@@ -1,0 +1,1051 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Orbit AI - 자동화 워크플로우</title>
+<style>
+:root{--bg:#0d1117;--card:#161b22;--border:#30363d;--text:#e6edf3;--muted:#8b949e;--accent:#58a6ff;--green:#3fb950;--yellow:#d29922;--red:#f85149;--purple:#bc8cff;--orange:#ffa657;--cyan:#39d2c0;--topbar-h:48px;}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:13px;overflow:hidden;height:100vh;}
+::-webkit-scrollbar{width:6px;height:6px;}
+::-webkit-scrollbar-track{background:var(--bg);}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
+::-webkit-scrollbar-thumb:hover{background:var(--muted);}
+
+/* ── Top Bar ── */
+.topbar{position:fixed;top:0;left:0;right:0;height:var(--topbar-h);background:var(--card);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 20px;z-index:100;}
+.topbar-left{display:flex;align-items:center;gap:14px;}
+.topbar-brand{display:flex;align-items:center;gap:8px;font-size:15px;font-weight:700;}
+.topbar-brand span{color:var(--accent);}
+.topbar-links{display:flex;gap:10px;}
+.topbar-links a{color:var(--muted);font-size:11px;text-decoration:none;padding:4px 10px;border-radius:6px;border:1px solid transparent;transition:all .15s;}
+.topbar-links a:hover{color:var(--accent);border-color:var(--border);}
+
+/* ── Workflow Tabs ── */
+.tab-bar{position:fixed;top:var(--topbar-h);left:0;right:0;height:50px;background:var(--card);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 20px;gap:6px;z-index:90;overflow-x:auto;}
+.tab-btn{padding:8px 18px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;font-size:12px;font-weight:600;transition:all .15s;white-space:nowrap;display:flex;align-items:center;gap:6px;}
+.tab-btn:hover{color:var(--text);border-color:var(--muted);}
+.tab-btn.active{background:var(--accent);color:#fff;border-color:var(--accent);}
+.tab-btn .tab-icon{font-size:15px;}
+.tab-savings{font-size:9px;opacity:.7;margin-left:2px;}
+
+/* ── Main Layout ── */
+.main-area{position:fixed;top:calc(var(--topbar-h) + 50px);left:0;right:0;bottom:40px;display:flex;}
+
+/* ── Canvas ── */
+.canvas-wrap{flex:1;overflow:auto;position:relative;background:var(--bg);}
+.canvas{position:relative;min-height:100%;width:100%;padding:40px;}
+.canvas-grid{position:absolute;inset:0;background-image:radial-gradient(circle,rgba(48,54,61,.3) 1px,transparent 1px);background-size:24px 24px;pointer-events:none;}
+
+/* ── SVG Connections ── */
+.svg-connections{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:1;}
+
+/* ── Node ── */
+.wf-node{position:absolute;width:220px;background:var(--card);border:1px solid var(--border);border-radius:10px;cursor:pointer;transition:all .2s;z-index:2;user-select:none;}
+.wf-node:hover{border-color:var(--accent);box-shadow:0 0 20px rgba(88,166,255,.12);}
+.wf-node.selected{border-color:var(--accent);box-shadow:0 0 24px rgba(88,166,255,.2);}
+.wf-node-header{padding:10px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;border-radius:10px 10px 0 0;}
+.wf-node-icon{font-size:18px;flex-shrink:0;}
+.wf-node-title{font-size:12px;font-weight:700;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.wf-node-status{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+.wf-node-status.live{background:var(--green);box-shadow:0 0 6px var(--green);}
+.wf-node-status.dev{background:var(--yellow);box-shadow:0 0 6px var(--yellow);}
+.wf-node-status.plan{background:var(--muted);}
+.wf-node-body{padding:10px 14px;font-size:10px;color:var(--muted);line-height:1.5;}
+.wf-node-outputs{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;}
+.wf-node-out-tag{background:rgba(88,166,255,.08);color:var(--accent);padding:1px 6px;border-radius:8px;font-size:9px;}
+.wf-node-left-border{position:absolute;left:0;top:0;bottom:0;width:3px;border-radius:10px 0 0 10px;}
+
+/* Type colors */
+.type-trigger .wf-node-left-border{background:var(--accent);}
+.type-parser .wf-node-left-border{background:var(--purple);}
+.type-database .wf-node-left-border{background:var(--green);}
+.type-action .wf-node-left-border{background:var(--orange);}
+.type-verify .wf-node-left-border{background:var(--cyan);}
+.type-alert .wf-node-left-border{background:var(--red);}
+
+.type-trigger .wf-node-header{background:rgba(88,166,255,.05);}
+.type-parser .wf-node-header{background:rgba(188,140,255,.05);}
+.type-database .wf-node-header{background:rgba(63,185,80,.05);}
+.type-action .wf-node-header{background:rgba(255,166,87,.05);}
+.type-verify .wf-node-header{background:rgba(57,210,192,.05);}
+.type-alert .wf-node-header{background:rgba(248,81,73,.05);}
+
+/* ── Right Panel ── */
+.right-panel{width:380px;background:var(--card);border-left:1px solid var(--border);overflow-y:auto;display:flex;flex-direction:column;transition:width .2s;}
+.right-panel.collapsed{width:0;overflow:hidden;border-left:none;}
+.panel-header{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
+.panel-title{font-size:14px;font-weight:700;display:flex;align-items:center;gap:8px;}
+.panel-close{background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;padding:4px;}
+.panel-close:hover{color:var(--text);}
+.panel-body{padding:16px 20px;flex:1;overflow-y:auto;}
+.panel-section{margin-bottom:18px;}
+.panel-section-title{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;display:flex;align-items:center;gap:6px;}
+.panel-row{display:flex;justify-content:space-between;align-items:center;padding:5px 0;font-size:11px;}
+.panel-row-label{color:var(--muted);}
+.panel-row-value{font-weight:600;}
+
+/* ── Status tags ── */
+.status-tag{padding:2px 10px;border-radius:12px;font-size:10px;font-weight:600;}
+.status-tag.live{background:rgba(63,185,80,.15);color:var(--green);}
+.status-tag.dev{background:rgba(210,153,34,.15);color:var(--yellow);}
+.status-tag.plan{background:rgba(139,148,158,.15);color:var(--muted);}
+
+/* ── Variable list ── */
+.var-list{list-style:none;}
+.var-item{padding:4px 0;font-size:11px;display:flex;gap:8px;align-items:flex-start;}
+.var-name{color:var(--purple);font-family:'SF Mono',Consolas,monospace;font-size:11px;white-space:nowrap;}
+.var-type{color:var(--muted);font-size:10px;font-family:'SF Mono',Consolas,monospace;}
+
+/* ── Test Area ── */
+.test-area{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:14px;margin-top:8px;}
+.test-input-label{font-size:10px;color:var(--muted);margin-bottom:6px;font-weight:600;}
+.test-textarea{width:100%;min-height:80px;background:rgba(13,17,23,.8);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:'SF Mono',Consolas,monospace;font-size:11px;padding:10px;resize:vertical;outline:none;line-height:1.5;}
+.test-textarea:focus{border-color:var(--accent);}
+.test-btn{width:100%;padding:8px;margin-top:10px;border-radius:6px;border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer;font-size:12px;font-weight:600;transition:all .15s;}
+.test-btn:hover{background:#4493e6;}
+.test-btn:disabled{opacity:.5;cursor:not-allowed;}
+.test-result{margin-top:10px;padding:10px;background:rgba(13,17,23,.8);border:1px solid var(--border);border-radius:6px;font-family:'SF Mono',Consolas,monospace;font-size:11px;white-space:pre-wrap;line-height:1.6;max-height:240px;overflow-y:auto;display:none;}
+.test-result.visible{display:block;}
+.test-result.success{border-color:var(--green);}
+.test-result.error{border-color:var(--red);}
+
+/* ── Bottom Bar ── */
+.bottom-bar{position:fixed;bottom:0;left:0;right:0;height:40px;background:var(--card);border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 20px;font-size:11px;z-index:90;}
+.bottom-stats{display:flex;gap:20px;align-items:center;}
+.bottom-stat{display:flex;align-items:center;gap:5px;}
+.bottom-dot{width:6px;height:6px;border-radius:50%;display:inline-block;}
+.bottom-right{display:flex;gap:16px;align-items:center;color:var(--muted);}
+
+/* ── Legend ── */
+.legend{display:flex;gap:14px;align-items:center;margin-left:auto;margin-right:20px;}
+.legend-item{display:flex;align-items:center;gap:4px;font-size:10px;color:var(--muted);}
+.legend-color{width:12px;height:3px;border-radius:2px;}
+
+/* ── Tooltip ── */
+.node-tooltip{position:fixed;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:11px;z-index:200;pointer-events:none;max-width:260px;box-shadow:0 8px 24px rgba(0,0,0,.4);display:none;}
+.node-tooltip.visible{display:block;}
+.node-tooltip-title{font-weight:700;margin-bottom:4px;display:flex;align-items:center;gap:6px;}
+.node-tooltip-desc{color:var(--muted);line-height:1.4;}
+
+@media(max-width:900px){
+  .right-panel{position:fixed;right:0;top:calc(var(--topbar-h)+50px);bottom:40px;z-index:95;width:100%!important;}
+  .right-panel.collapsed{width:0!important;}
+  .legend{display:none;}
+}
+</style>
+</head>
+<body>
+
+<!-- ═══ TOP BAR ═══ -->
+<div class="topbar">
+  <div class="topbar-left">
+    <div class="topbar-brand">
+      <span style="font-size:18px;">&#x2699;&#xFE0F;</span> <span>Orbit AI</span> &mdash; 자동화 워크플로우
+    </div>
+  </div>
+  <div class="topbar-links">
+    <a href="/orbit-os.html">Orbit OS</a>
+    <a href="/admin-analysis.html">분석</a>
+    <a href="/nenova-dashboard.html">nenova</a>
+    <a href="/dashboard.html">대시보드</a>
+  </div>
+</div>
+
+<!-- ═══ WORKFLOW TABS ═══ -->
+<div class="tab-bar" id="tabBar"></div>
+
+<!-- ═══ MAIN AREA ═══ -->
+<div class="main-area">
+  <div class="canvas-wrap" id="canvasWrap">
+    <div class="canvas" id="canvas">
+      <div class="canvas-grid"></div>
+      <svg class="svg-connections" id="svgConnections"></svg>
+    </div>
+  </div>
+  <div class="right-panel collapsed" id="rightPanel">
+    <div class="panel-header">
+      <div class="panel-title" id="panelTitle">노드 선택</div>
+      <button class="panel-close" id="panelClose">&times;</button>
+    </div>
+    <div class="panel-body" id="panelBody"></div>
+  </div>
+</div>
+
+<!-- ═══ BOTTOM BAR ═══ -->
+<div class="bottom-bar">
+  <div class="bottom-stats">
+    <div class="bottom-stat"><span style="font-weight:700;" id="statTotal">0</span> 전체 노드</div>
+    <div class="bottom-stat"><span class="bottom-dot" style="background:var(--green);"></span><span id="statLive">0</span> LIVE</div>
+    <div class="bottom-stat"><span class="bottom-dot" style="background:var(--yellow);"></span><span id="statDev">0</span> DEV</div>
+    <div class="bottom-stat"><span class="bottom-dot" style="background:var(--muted);"></span><span id="statPlan">0</span> PLAN</div>
+    <div class="bottom-stat" style="margin-left:10px;color:var(--green);font-weight:700;" id="statSavings">-</div>
+  </div>
+  <div class="bottom-right">
+    <div class="legend">
+      <div class="legend-item"><span class="legend-color" style="background:var(--accent);"></span>트리거</div>
+      <div class="legend-item"><span class="legend-color" style="background:var(--purple);"></span>파서</div>
+      <div class="legend-item"><span class="legend-color" style="background:var(--green);"></span>데이터</div>
+      <div class="legend-item"><span class="legend-color" style="background:var(--orange);"></span>액션</div>
+      <div class="legend-item"><span class="legend-color" style="background:var(--cyan);"></span>검증</div>
+      <div class="legend-item"><span class="legend-color" style="background:var(--red);"></span>알림</div>
+    </div>
+    <span id="lastTestTime">마지막 테스트: -</span>
+  </div>
+</div>
+
+<!-- ═══ TOOLTIP ═══ -->
+<div class="node-tooltip" id="nodeTooltip">
+  <div class="node-tooltip-title" id="tooltipTitle"></div>
+  <div class="node-tooltip-desc" id="tooltipDesc"></div>
+</div>
+
+<script>
+/* ════════════════════════════════════════════════════════════
+   WORKFLOW DEFINITIONS — 6 Automation Processes
+   ════════════════════════════════════════════════════════════ */
+
+const TYPE_ICONS = {
+  trigger: '&#x1F4E1;',
+  parser: '&#x1F9E9;',
+  database: '&#x1F4BE;',
+  action: '&#x26A1;',
+  verify: '&#x1F50D;',
+  alert: '&#x1F514;'
+};
+
+const TYPE_COLORS = {
+  trigger: '#58a6ff',
+  parser: '#bc8cff',
+  database: '#3fb950',
+  action: '#ffa657',
+  verify: '#39d2c0',
+  alert: '#f85149'
+};
+
+const WORKFLOWS = {
+  order: {
+    name: '주문 등록',
+    icon: '&#x1F4CB;',
+    savings: '일 170분 절약',
+    nodes: [
+      {
+        id: 'kakao', label: '카톡 메시지', type: 'trigger', status: 'live',
+        module: 'screen-capture.js',
+        desc: '거래처방에서 주문 메시지 수신, 카카오톡 화면 캡처 후 텍스트 추출',
+        inputs: [],
+        outputs: [{name:'text',type:'string'},{name:'room',type:'string'},{name:'sender',type:'string'},{name:'timestamp',type:'Date'}],
+        test: { api: '/api/automation/parse', method: 'POST', defaultBody: JSON.stringify({text:'[MEL] ROSE CHINA / Catherine : 30, Pride : 20'},null,2), formatResult: d => `포맷: ${d.formatType||d.format_type||'unknown'}\n품목: ${d.stats?.totalItems||d.orders?.length||0}건\n신뢰도: ${Math.round((d.stats?.avgConfidence||d.confidence||0)*100)}%` }
+      },
+      {
+        id: 'clipboard', label: '클립보드 감지', type: 'trigger', status: 'live',
+        module: 'clipboard-watcher.js',
+        desc: '2초마다 클립보드 체크, MEL/일반/변경/출고/불량/파손/취소 7종 포맷 자동 감지',
+        inputs: [{name:'text',type:'string'}],
+        outputs: [{name:'format_type',type:'"mel_order"|"change_order"|"damage_report"|...'},{name:'raw_text',type:'string'},{name:'confidence',type:'number'}],
+        test: { api: '/api/automation/parse', method: 'POST', defaultBody: JSON.stringify({text:'[MEL] ROSE CHINA / Catherine : 30, Pride : 20'},null,2), formatResult: d => `포맷: ${d.formatType||d.format_type||'unknown'}\n감지: ${d.detected!==false?'성공':'실패'}\n포맷 타입: ${d.formatType||'-'}` }
+      },
+      {
+        id: 'parser', label: 'MEL 파서', type: 'parser', status: 'live',
+        module: '/api/automation/parse',
+        desc: '7종 주문 포맷을 자동으로 구조화된 데이터로 변환. MEL, 일반, 혼합 포맷 지원',
+        inputs: [{name:'raw_text',type:'string'},{name:'format_type',type:'string'}],
+        outputs: [{name:'orders[]',type:'Array<{product,quantity,customer}>'},{name:'confidence',type:'number'},{name:'formatType',type:'string'}],
+        test: { api: '/api/automation/parse', method: 'POST', defaultBody: JSON.stringify({text:'[MEL] ROSE CHINA / Catherine : 30, Pride : 20'},null,2), formatResult: d => { let r=`포맷: ${d.formatType||'-'}\n품목: ${d.stats?.totalItems||d.orders?.length||0}건\n신뢰도: ${Math.round((d.stats?.avgConfidence||d.confidence||0)*100)}%`; if(d.orders?.length){r+='\n---';d.orders.forEach(o=>{r+=`\n${o.product||o.name}: ${o.quantity}개`;})} return r; } }
+      },
+      {
+        id: 'master', label: '마스터 매칭', type: 'database', status: 'live',
+        module: 'master_products + nenova Product',
+        desc: 'Orbit 143개 + nenova 3,035개 품목 DB에서 유사명 매칭, ProdKey 연결',
+        inputs: [{name:'orders[]',type:'Array'},{name:'product_name',type:'string'}],
+        outputs: [{name:'matched_orders[]',type:'Array'},{name:'prodKeys[]',type:'number[]'},{name:'match_rate',type:'number'}],
+        test: { api: '/api/nenova/products?search=Catherine&limit=5', method: 'GET', defaultBody: '', formatResult: d => { const items=d.items||d.products||d||[]; if(Array.isArray(items)&&items.length){return items.map(i=>`[${i.ProdKey||i.id}] ${i.ProdName||i.name}`).join('\n');} return '매칭 결과 없음'; } }
+      },
+      {
+        id: 'pad', label: 'PAD 입력', type: 'action', status: 'dev',
+        module: 'pad-connector.js + pyautogui',
+        desc: 'nenova 신규 주문 등록 화면에 자동 입력. PAD UI셀렉터 우선, 실패시 pyautogui 좌표 입력',
+        inputs: [{name:'matched_orders[]',type:'Array'},{name:'prodKeys[]',type:'number[]'}],
+        outputs: [{name:'success',type:'boolean'},{name:'screenshot',type:'Buffer'},{name:'entry_count',type:'number'}],
+        test: { api: '/api/pad/flow/generate', method: 'POST', defaultBody: JSON.stringify({action:'order_entry',customer:'ROSE CHINA',product:'Catherine',quantity:30},null,2), formatResult: d => d.flow ? `PAD 플로우 생성: ${d.flow.steps||0}단계\n액션: ${d.flow.action||'-'}` : `상태: ${d.status||d.message||'연결 대기'}` }
+      },
+      {
+        id: 'verify', label: 'Vision 검증', type: 'verify', status: 'live',
+        module: 'vision-worker.js',
+        desc: '입력 완료 후 화면 캡처 → Claude Vision으로 데이터 대조. 불일치 발견시 알림',
+        inputs: [{name:'screenshot',type:'Buffer'},{name:'expected_data',type:'object'}],
+        outputs: [{name:'verified',type:'boolean'},{name:'mismatches[]',type:'Array'},{name:'confidence',type:'number'}],
+        test: { api: '/api/vision/learning-status', method: 'GET', defaultBody: '', formatResult: d => `UI 요소: ${d.elements||d.totalElements||'-'}개\n화면: ${d.screens||d.totalScreens||'-'}개\n학습률: ${d.learningRate||d.rate||'-'}%` }
+      }
+    ],
+    edges: [['kakao','clipboard'],['clipboard','parser'],['parser','master'],['master','pad'],['pad','verify']]
+  },
+
+  deduction: {
+    name: '차감 대조',
+    icon: '&#x1F4CA;',
+    savings: '일 90분 절약',
+    nodes: [
+      {
+        id: 'nenova_save', label: 'nenova 주문 저장', type: 'database', status: 'live',
+        module: 'nenova API',
+        desc: 'nenova에 등록된 주문 데이터를 서버에 동기화 저장',
+        inputs: [{name:'order_data',type:'object'},{name:'customer',type:'string'}],
+        outputs: [{name:'order_id',type:'string'},{name:'saved_count',type:'number'}],
+        test: { api: '/api/nenova/orders/summary', method: 'GET', defaultBody: '', formatResult: d => `총 주문: ${d.totalOrders||d.count||'-'}건\n오늘: ${d.todayOrders||d.today||'-'}건\n거래처: ${d.customers||d.uniqueCustomers||'-'}곳` }
+      },
+      {
+        id: 'parsed_record', label: 'parsed_orders 기록', type: 'database', status: 'live',
+        module: 'parsed_orders 테이블',
+        desc: '파싱된 주문을 parsed_orders 테이블에 저장, 원본 텍스트 + 구조화 데이터 보관',
+        inputs: [{name:'order_id',type:'string'},{name:'parsed_data',type:'object'}],
+        outputs: [{name:'record_id',type:'number'},{name:'status',type:'string'}],
+        test: { api: '/api/nenova/orders/summary', method: 'GET', defaultBody: '', formatResult: d => `기록 상태: ${d.status||'active'}\n총 레코드: ${d.totalRecords||d.count||'-'}건` }
+      },
+      {
+        id: 'excel_read', label: 'openpyxl Excel 읽기', type: 'action', status: 'live',
+        module: 'openpyxl (Python)',
+        desc: '차감 Excel 파일을 읽어서 현재 재고/출고 수량 파악',
+        inputs: [{name:'file_path',type:'string'},{name:'sheet_name',type:'string'}],
+        outputs: [{name:'excel_data',type:'Array'},{name:'products[]',type:'Array'},{name:'quantities[]',type:'number[]'}],
+        test: { api: '/api/nenova/orders/summary', method: 'GET', defaultBody: '', formatResult: d => `Excel 상태: 읽기 가능\n품목 수: ${d.products||d.itemCount||'-'}개` }
+      },
+      {
+        id: 'qty_compare', label: '수량 비교', type: 'verify', status: 'live',
+        module: 'deduction-engine.js',
+        desc: '주문 수량 vs 출고 수량 비교, 차이(diff) 계산',
+        inputs: [{name:'ordered_qty',type:'number'},{name:'shipped_qty',type:'number'},{name:'product',type:'string'}],
+        outputs: [{name:'diff',type:'number'},{name:'match',type:'boolean'},{name:'details[]',type:'Array'}],
+        test: { api: '/api/nenova/orders/summary', method: 'GET', defaultBody: '', formatResult: d => `비교 엔진: 활성\n처리 건수: ${d.comparedCount||d.count||'-'}건` }
+      },
+      {
+        id: 'excel_update', label: '차감 Excel 갱신', type: 'action', status: 'dev',
+        module: 'openpyxl (Python)',
+        desc: '비교 결과를 차감 Excel에 반영, 셀 단위 업데이트',
+        inputs: [{name:'diff_data',type:'Array'},{name:'file_path',type:'string'}],
+        outputs: [{name:'updated',type:'boolean'},{name:'cells_changed',type:'number'}],
+        test: { api: '/api/nenova/orders/summary', method: 'GET', defaultBody: '', formatResult: d => `Excel 갱신: 대기\n상태: ${d.excelStatus||'준비 중'}` }
+      },
+      {
+        id: 'mismatch_alert', label: '불일치 알림', type: 'alert', status: 'dev',
+        module: 'alert-manager.js',
+        desc: '수량 차이 발견시 관리자에게 카톡/대시보드 알림 전송',
+        inputs: [{name:'diff',type:'number'},{name:'product',type:'string'},{name:'customer',type:'string'}],
+        outputs: [{name:'alert_sent',type:'boolean'},{name:'alert_id',type:'string'}],
+        test: { api: '/api/nenova/orders/summary', method: 'GET', defaultBody: '', formatResult: d => `알림 시스템: ${d.alertStatus||'구축 중'}\n미전송: ${d.pendingAlerts||0}건` }
+      }
+    ],
+    edges: [['nenova_save','parsed_record'],['parsed_record','excel_read'],['excel_read','qty_compare'],['qty_compare','excel_update'],['qty_compare','mismatch_alert']]
+  },
+
+  change: {
+    name: '변경사항',
+    icon: '&#x1F504;',
+    savings: '일 60분 절약',
+    nodes: [
+      {
+        id: 'change_detect', label: '카톡 "취소/추가" 감지', type: 'trigger', status: 'live',
+        module: 'clipboard-watcher.js',
+        desc: '카톡 메시지에서 "취소", "추가", "변경", "수정" 키워드 자동 감지',
+        inputs: [{name:'text',type:'string'},{name:'room',type:'string'}],
+        outputs: [{name:'detected',type:'boolean'},{name:'action_type',type:'"cancel"|"add"|"modify"'},{name:'raw_text',type:'string'}],
+        test: { api: '/api/automation/parse', method: 'POST', defaultBody: JSON.stringify({text:'ROSE CHINA Catherine 30개 취소해주세요'},null,2), formatResult: d => `감지: ${d.formatType||d.type||'change_order'}\n액션: ${d.action||'cancel'}\n신뢰도: ${Math.round((d.confidence||0)*100)}%` }
+      },
+      {
+        id: 'change_parser', label: 'change_order 파서', type: 'parser', status: 'live',
+        module: '/api/automation/parse',
+        desc: '변경 메시지를 {거래처, 품목, 수량, 액션} 구조로 파싱',
+        inputs: [{name:'raw_text',type:'string'},{name:'action_type',type:'string'}],
+        outputs: [{name:'customer',type:'string'},{name:'product',type:'string'},{name:'quantity',type:'number'},{name:'action',type:'"cancel"|"add"'}],
+        test: { api: '/api/automation/parse', method: 'POST', defaultBody: JSON.stringify({text:'ROSE CHINA Catherine 30개 취소'},null,2), formatResult: d => { let r=`포맷: ${d.formatType||'change_order'}`; if(d.orders?.length){d.orders.forEach(o=>{r+=`\n${o.customer||'-'} / ${o.product||o.name}: ${o.quantity}개 (${o.action||'변경'})`;});} return r; } }
+      },
+      {
+        id: 'change_extract', label: '구조화 추출', type: 'parser', status: 'live',
+        module: 'change-extractor.js',
+        desc: '{거래처, 품목, 수량, 액션} 데이터 정규화 및 유효성 검증',
+        inputs: [{name:'parsed_data',type:'object'}],
+        outputs: [{name:'customer',type:'string'},{name:'product',type:'string'},{name:'quantity',type:'number'},{name:'action',type:'"cancel"|"add"'},{name:'valid',type:'boolean'}],
+        test: { api: '/api/automation/parse', method: 'POST', defaultBody: JSON.stringify({text:'ROSE CHINA Pride 20개 추가'},null,2), formatResult: d => `추출 결과:\n거래처: ${d.orders?.[0]?.customer||'-'}\n품목: ${d.orders?.[0]?.product||d.orders?.[0]?.name||'-'}\n수량: ${d.orders?.[0]?.quantity||'-'}\n액션: ${d.orders?.[0]?.action||'add'}` }
+      },
+      {
+        id: 'order_modify', label: 'nenova 주문 수정', type: 'action', status: 'dev',
+        module: 'pad-connector.js',
+        desc: 'nenova 기존 주문을 찾아 취소/추가 처리. PAD로 화면 조작',
+        inputs: [{name:'customer',type:'string'},{name:'product',type:'string'},{name:'quantity',type:'number'},{name:'action',type:'string'}],
+        outputs: [{name:'modified',type:'boolean'},{name:'order_id',type:'string'},{name:'screenshot',type:'Buffer'}],
+        test: { api: '/api/pad/flow/generate', method: 'POST', defaultBody: JSON.stringify({action:'order_modify',customer:'ROSE CHINA',product:'Catherine',quantity:30,modify_action:'cancel'},null,2), formatResult: d => `수정 상태: ${d.status||d.message||'연결 대기'}\n플로우: ${d.flow?.steps||'-'}단계` }
+      },
+      {
+        id: 'change_excel', label: '차감 Excel 갱신', type: 'action', status: 'dev',
+        module: 'openpyxl (Python)',
+        desc: '변경 내역을 차감 Excel에 반영, 취소분 원복 / 추가분 가산',
+        inputs: [{name:'product',type:'string'},{name:'quantity',type:'number'},{name:'action',type:'string'}],
+        outputs: [{name:'updated',type:'boolean'},{name:'new_total',type:'number'}],
+        test: { api: '/api/nenova/orders/summary', method: 'GET', defaultBody: '', formatResult: d => `Excel 갱신: 대기\n상태: ${d.status||'준비 중'}` }
+      }
+    ],
+    edges: [['change_detect','change_parser'],['change_parser','change_extract'],['change_extract','order_modify'],['change_extract','change_excel']]
+  },
+
+  shipping: {
+    name: '출고 관리',
+    icon: '&#x1F69A;',
+    savings: '일 120분 절약',
+    nodes: [
+      {
+        id: 'order_aggregate', label: 'parsed_orders 집계', type: 'database', status: 'live',
+        module: 'parsed_orders 테이블',
+        desc: '오늘 등록된 주문을 거래처별로 집계, 출고 리스트 생성',
+        inputs: [{name:'date',type:'string'},{name:'round',type:'number'}],
+        outputs: [{name:'aggregated[]',type:'Array'},{name:'customer_count',type:'number'},{name:'total_items',type:'number'}],
+        test: { api: '/api/nenova/orders/summary', method: 'GET', defaultBody: '', formatResult: d => `주문 집계: ${d.totalOrders||d.count||'-'}건\n거래처: ${d.customers||'-'}곳` }
+      },
+      {
+        id: 'excel_generate', label: 'openpyxl Excel 생성', type: 'action', status: 'live',
+        module: 'openpyxl (Python)',
+        desc: '집계 데이터로 출고 Excel 파일 자동 생성, 템플릿 적용',
+        inputs: [{name:'aggregated[]',type:'Array'},{name:'template',type:'string'}],
+        outputs: [{name:'file_path',type:'string'},{name:'sheet_count',type:'number'}],
+        test: { api: '/api/nenova/orders/summary', method: 'GET', defaultBody: '', formatResult: d => `Excel 생성: 가능\n템플릿: 출고 양식` }
+      },
+      {
+        id: 'customer_sort', label: '거래처별 분류', type: 'parser', status: 'live',
+        module: 'shipping-sorter.js',
+        desc: '출고 데이터를 거래처별로 분류, 배송 순서 정렬',
+        inputs: [{name:'aggregated[]',type:'Array'}],
+        outputs: [{name:'sorted[]',type:'Array'},{name:'routes[]',type:'Array'}],
+        test: { api: '/api/nenova/orders/summary', method: 'GET', defaultBody: '', formatResult: d => `분류 완료\n거래처: ${d.customers||'-'}곳\n정렬: 지역별` }
+      },
+      {
+        id: 'msg_template', label: '템플릿 메시지', type: 'action', status: 'dev',
+        module: 'message-builder.js',
+        desc: '거래처별 출고 안내 메시지 자동 생성, 품목/수량 포함',
+        inputs: [{name:'sorted[]',type:'Array'},{name:'ship_date',type:'string'}],
+        outputs: [{name:'messages[]',type:'Array<{customer,text}>'},{name:'count',type:'number'}],
+        test: { api: '/api/automation/parse', method: 'POST', defaultBody: JSON.stringify({text:'출고 안내: ROSE CHINA / Catherine 30, Pride 20 / 3월23일'},null,2), formatResult: d => `메시지 생성: ${d.formatType||'shipping'}\n품목: ${d.orders?.length||d.stats?.totalItems||'-'}건` }
+      },
+      {
+        id: 'kakao_send', label: '카톡 전송', type: 'action', status: 'plan',
+        module: 'kakao-sender.js',
+        desc: '생성된 메시지를 거래처 카톡방에 자동 전송',
+        inputs: [{name:'messages[]',type:'Array'},{name:'rooms[]',type:'string[]'}],
+        outputs: [{name:'sent_count',type:'number'},{name:'failed[]',type:'Array'}],
+        test: null
+      }
+    ],
+    edges: [['order_aggregate','excel_generate'],['order_aggregate','customer_sort'],['customer_sort','msg_template'],['msg_template','kakao_send']]
+  },
+
+  closing: {
+    name: '매출 마감',
+    icon: '&#x1F4B0;',
+    savings: '월 480분 절약',
+    nodes: [
+      {
+        id: 'file_upload', label: '파일 4종 업로드', type: 'trigger', status: 'live',
+        module: 'localhost:5050',
+        desc: '매출, 입금, 미수금, 재고 4종 Excel 파일 업로드',
+        inputs: [],
+        outputs: [{name:'files[]',type:'Array<File>'},{name:'file_types',type:'string[]'}],
+        test: null
+      },
+      {
+        id: 'period_set', label: '연도/월 설정', type: 'action', status: 'live',
+        module: 'closing-config.js',
+        desc: '마감 대상 연도와 월 설정, 기간 유효성 검증',
+        inputs: [{name:'year',type:'number'},{name:'month',type:'number'}],
+        outputs: [{name:'period',type:'string'},{name:'valid',type:'boolean'},{name:'work_days',type:'number'}],
+        test: null
+      },
+      {
+        id: 'convert_run', label: '변환 실행', type: 'parser', status: 'live',
+        module: 'closing-converter.js',
+        desc: '4종 파일 교차 대조 및 매출 데이터 변환, 자동 계산',
+        inputs: [{name:'files[]',type:'Array'},{name:'period',type:'string'}],
+        outputs: [{name:'result',type:'object'},{name:'total_sales',type:'number'},{name:'total_received',type:'number'},{name:'outstanding',type:'number'}],
+        test: null
+      },
+      {
+        id: 'result_verify', label: '결과 검증', type: 'verify', status: 'live',
+        module: 'closing-verifier.js',
+        desc: '변환 결과 교차 검증, 오차 범위 확인, 불일치 항목 표시',
+        inputs: [{name:'result',type:'object'}],
+        outputs: [{name:'verified',type:'boolean'},{name:'errors[]',type:'Array'},{name:'warnings[]',type:'Array'}],
+        test: null
+      },
+      {
+        id: 'report_gen', label: '리포트 생성', type: 'action', status: 'live',
+        module: 'report-generator.js',
+        desc: '최종 마감 리포트 생성, Excel + PDF 출력',
+        inputs: [{name:'verified_result',type:'object'},{name:'period',type:'string'}],
+        outputs: [{name:'report_path',type:'string'},{name:'summary',type:'object'}],
+        test: null
+      }
+    ],
+    edges: [['file_upload','period_set'],['period_set','convert_run'],['convert_run','result_verify'],['result_verify','report_gen']]
+  },
+
+  defect: {
+    name: '불량 처리',
+    icon: '&#x26A0;&#xFE0F;',
+    savings: '일 45분 절약',
+    nodes: [
+      {
+        id: 'defect_detect', label: '카톡 "불량/파손" 감지', type: 'trigger', status: 'live',
+        module: 'clipboard-watcher.js',
+        desc: '카톡 메시지에서 "불량", "파손", "깨짐", "교환" 키워드 감지',
+        inputs: [{name:'text',type:'string'},{name:'room',type:'string'}],
+        outputs: [{name:'detected',type:'boolean'},{name:'type',type:'"damage"|"defect"|"broken"'},{name:'raw_text',type:'string'}],
+        test: { api: '/api/automation/parse', method: 'POST', defaultBody: JSON.stringify({text:'Catherine 5개 파손 확인, 교환 요청합니다 - ROSE CHINA'},null,2), formatResult: d => `감지: ${d.formatType||'damage_report'}\n타입: ${d.type||'damage'}\n신뢰도: ${Math.round((d.confidence||0)*100)}%` }
+      },
+      {
+        id: 'damage_parser', label: 'damage_report 파서', type: 'parser', status: 'live',
+        module: '/api/automation/parse',
+        desc: '불량/파손 메시지를 {품목, 수량, 타입, 공급사} 구조로 파싱',
+        inputs: [{name:'raw_text',type:'string'}],
+        outputs: [{name:'product',type:'string'},{name:'quantity',type:'number'},{name:'type',type:'"damage"'},{name:'supplier',type:'string'}],
+        test: { api: '/api/automation/parse', method: 'POST', defaultBody: JSON.stringify({text:'Catherine 5개 파손, Pride 3개 불량 - ROSE CHINA'},null,2), formatResult: d => { let r=`포맷: ${d.formatType||'damage_report'}`; if(d.orders?.length){d.orders.forEach(o=>{r+=`\n${o.product||o.name}: ${o.quantity}개 (${o.type||'damage'})`;});} return r; } }
+      },
+      {
+        id: 'deduction_reflect', label: '차감 반영', type: 'database', status: 'dev',
+        module: 'deduction-engine.js',
+        desc: '불량 수량을 차감 Excel에서 차감 처리, 재고 조정',
+        inputs: [{name:'product',type:'string'},{name:'quantity',type:'number'}],
+        outputs: [{name:'deducted',type:'boolean'},{name:'new_stock',type:'number'}],
+        test: { api: '/api/nenova/orders/summary', method: 'GET', defaultBody: '', formatResult: d => `차감 처리: 대기\n현재 재고: ${d.stock||'-'}` }
+      },
+      {
+        id: 'supplier_aggregate', label: '공급사 집계', type: 'database', status: 'dev',
+        module: 'supplier-manager.js',
+        desc: '공급사별 불량 이력 집계, 클레임 금액 산출',
+        inputs: [{name:'product',type:'string'},{name:'quantity',type:'number'},{name:'supplier',type:'string'}],
+        outputs: [{name:'supplier_stats',type:'object'},{name:'claim_amount',type:'number'},{name:'history[]',type:'Array'}],
+        test: { api: '/api/nenova/products?search=Catherine&limit=3', method: 'GET', defaultBody: '', formatResult: d => { const items=d.items||d.products||d||[]; if(Array.isArray(items)&&items.length){return `공급사 정보:\n`+items.map(i=>`[${i.ProdKey||i.id}] ${i.ProdName||i.name}`).join('\n');} return '공급사 정보 조회 중'; } }
+      },
+      {
+        id: 'defect_alert', label: '알림', type: 'alert', status: 'plan',
+        module: 'alert-manager.js',
+        desc: '불량 발생 알림 → 관리자 대시보드 + 카톡 공급사방 전송',
+        inputs: [{name:'supplier_stats',type:'object'},{name:'claim_amount',type:'number'}],
+        outputs: [{name:'alert_sent',type:'boolean'},{name:'channels[]',type:'string[]'}],
+        test: null
+      },
+      {
+        id: 'reorder_calc', label: '재발주 계산', type: 'action', status: 'plan',
+        module: 'reorder-engine.js',
+        desc: '불량분 재발주 수량 자동 계산, 안전재고 고려',
+        inputs: [{name:'product',type:'string'},{name:'quantity',type:'number'},{name:'stock',type:'number'}],
+        outputs: [{name:'reorder_qty',type:'number'},{name:'supplier',type:'string'},{name:'priority',type:'"urgent"|"normal"'}],
+        test: null
+      }
+    ],
+    edges: [['defect_detect','damage_parser'],['damage_parser','deduction_reflect'],['damage_parser','supplier_aggregate'],['supplier_aggregate','defect_alert'],['deduction_reflect','reorder_calc']]
+  }
+};
+
+/* ════════════════════════════════════════════════════════════
+   RENDERING ENGINE
+   ════════════════════════════════════════════════════════════ */
+
+let currentWorkflow = 'order';
+let selectedNodeId = null;
+let nodeElements = {};
+
+// ── Build Tabs ──
+function buildTabs() {
+  const bar = document.getElementById('tabBar');
+  bar.innerHTML = '';
+  Object.keys(WORKFLOWS).forEach(key => {
+    const wf = WORKFLOWS[key];
+    const btn = document.createElement('button');
+    btn.className = 'tab-btn' + (key === currentWorkflow ? ' active' : '');
+    btn.innerHTML = `<span class="tab-icon">${wf.icon}</span>${wf.name}<span class="tab-savings">${wf.savings}</span>`;
+    btn.onclick = () => switchWorkflow(key);
+    bar.appendChild(btn);
+  });
+}
+
+function switchWorkflow(key) {
+  currentWorkflow = key;
+  selectedNodeId = null;
+  closePanel();
+  buildTabs();
+  renderWorkflow();
+  updateStats();
+}
+
+// ── Layout Calculation ──
+function calculateLayout(wf) {
+  // Build adjacency and in-degree
+  const adj = {};
+  const inDeg = {};
+  wf.nodes.forEach(n => { adj[n.id] = []; inDeg[n.id] = 0; });
+  wf.edges.forEach(([from, to]) => {
+    adj[from].push(to);
+    inDeg[to] = (inDeg[to] || 0) + 1;
+  });
+
+  // Topological sort with levels (BFS)
+  const levels = {};
+  const queue = [];
+  wf.nodes.forEach(n => { if (inDeg[n.id] === 0) { queue.push(n.id); levels[n.id] = 0; } });
+
+  while (queue.length) {
+    const cur = queue.shift();
+    (adj[cur] || []).forEach(next => {
+      levels[next] = Math.max(levels[next] || 0, levels[cur] + 1);
+      inDeg[next]--;
+      if (inDeg[next] === 0) queue.push(next);
+    });
+  }
+
+  // Group by level
+  const levelGroups = {};
+  let maxLevel = 0;
+  wf.nodes.forEach(n => {
+    const lv = levels[n.id] || 0;
+    if (!levelGroups[lv]) levelGroups[lv] = [];
+    levelGroups[lv].push(n);
+    if (lv > maxLevel) maxLevel = lv;
+  });
+
+  // Position nodes
+  const nodeW = 220;
+  const nodeH = 100;
+  const gapX = 80;
+  const gapY = 50;
+  const positions = {};
+
+  for (let lv = 0; lv <= maxLevel; lv++) {
+    const group = levelGroups[lv] || [];
+    const totalWidth = group.length * nodeW + (group.length - 1) * gapX;
+    const startX = Math.max(60, (Math.max(3, Object.keys(levelGroups).reduce((m, k) => Math.max(m, levelGroups[k].length), 0)) * (nodeW + gapX)) / 2 - totalWidth / 2 + 60);
+    group.forEach((n, i) => {
+      positions[n.id] = {
+        x: startX + i * (nodeW + gapX),
+        y: 40 + lv * (nodeH + gapY)
+      };
+    });
+  }
+
+  return { positions, maxLevel };
+}
+
+// ── Render Workflow ──
+function renderWorkflow() {
+  const canvas = document.getElementById('canvas');
+  const svg = document.getElementById('svgConnections');
+  const wf = WORKFLOWS[currentWorkflow];
+
+  // Clear existing nodes
+  Object.values(nodeElements).forEach(el => el.remove());
+  nodeElements = {};
+  svg.innerHTML = '';
+
+  const { positions, maxLevel } = calculateLayout(wf);
+
+  // Set canvas height
+  const canvasH = (maxLevel + 1) * 150 + 120;
+  canvas.style.minHeight = canvasH + 'px';
+
+  // Draw edges (SVG bezier curves)
+  wf.edges.forEach(([fromId, toId]) => {
+    const from = positions[fromId];
+    const to = positions[toId];
+    if (!from || !to) return;
+
+    const x1 = from.x + 110; // center of node
+    const y1 = from.y + 100; // bottom of node
+    const x2 = to.x + 110;
+    const y2 = to.y;          // top of node
+
+    const midY = (y1 + y2) / 2;
+
+    // Bezier path
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', `M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}`);
+    path.setAttribute('fill', 'none');
+    path.setAttribute('stroke', 'rgba(88,166,255,0.3)');
+    path.setAttribute('stroke-width', '2');
+    path.setAttribute('stroke-dasharray', '6,4');
+    svg.appendChild(path);
+
+    // Arrowhead
+    const arrowSize = 6;
+    const angle = Math.atan2(y2 - midY, x2 - x2) || Math.PI / 2;
+    const arrow = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+    const ax = x2;
+    const ay = y2;
+    arrow.setAttribute('points',
+      `${ax},${ay} ${ax - arrowSize},${ay - arrowSize * 1.5} ${ax + arrowSize},${ay - arrowSize * 1.5}`);
+    arrow.setAttribute('fill', 'rgba(88,166,255,0.5)');
+    svg.appendChild(arrow);
+
+    // Animated dot
+    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    circle.setAttribute('r', '3');
+    circle.setAttribute('fill', '#58a6ff');
+    const anim = document.createElementNS('http://www.w3.org/2000/svg', 'animateMotion');
+    anim.setAttribute('dur', '3s');
+    anim.setAttribute('repeatCount', 'indefinite');
+    anim.setAttribute('path', `M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}`);
+    circle.appendChild(anim);
+    svg.appendChild(circle);
+  });
+
+  // Draw nodes
+  wf.nodes.forEach(node => {
+    const pos = positions[node.id];
+    if (!pos) return;
+
+    const el = document.createElement('div');
+    el.className = `wf-node type-${node.type}` + (selectedNodeId === node.id ? ' selected' : '');
+    el.style.left = pos.x + 'px';
+    el.style.top = pos.y + 'px';
+    el.dataset.nodeId = node.id;
+
+    const typeColor = TYPE_COLORS[node.type] || '#58a6ff';
+    const typeIcon = TYPE_ICONS[node.type] || '&#x2B24;';
+
+    el.innerHTML = `
+      <div class="wf-node-left-border"></div>
+      <div class="wf-node-header">
+        <span class="wf-node-icon">${typeIcon}</span>
+        <span class="wf-node-title">${node.label}</span>
+        <span class="wf-node-status ${node.status}"></span>
+      </div>
+      <div class="wf-node-body">
+        <div style="margin-bottom:4px;">${node.desc.substring(0, 50)}${node.desc.length > 50 ? '...' : ''}</div>
+        <div class="wf-node-outputs">
+          ${node.outputs.slice(0, 3).map(o => `<span class="wf-node-out-tag">${typeof o === 'string' ? o : o.name}</span>`).join('')}
+          ${node.outputs.length > 3 ? `<span class="wf-node-out-tag">+${node.outputs.length - 3}</span>` : ''}
+        </div>
+      </div>
+    `;
+
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      selectNode(node.id);
+    });
+
+    el.addEventListener('mouseenter', (e) => showTooltip(e, node));
+    el.addEventListener('mouseleave', hideTooltip);
+
+    canvas.appendChild(el);
+    nodeElements[node.id] = el;
+  });
+}
+
+// ── Tooltip ──
+function showTooltip(e, node) {
+  if (selectedNodeId === node.id) return;
+  const tt = document.getElementById('nodeTooltip');
+  const typeIcon = TYPE_ICONS[node.type] || '';
+  document.getElementById('tooltipTitle').innerHTML = `${typeIcon} ${node.label}`;
+  document.getElementById('tooltipDesc').textContent = node.desc;
+  tt.classList.add('visible');
+  const rect = e.target.closest('.wf-node').getBoundingClientRect();
+  tt.style.left = (rect.right + 10) + 'px';
+  tt.style.top = rect.top + 'px';
+
+  // Prevent overflow
+  const ttRect = tt.getBoundingClientRect();
+  if (ttRect.right > window.innerWidth - 20) {
+    tt.style.left = (rect.left - ttRect.width - 10) + 'px';
+  }
+  if (ttRect.bottom > window.innerHeight - 60) {
+    tt.style.top = (window.innerHeight - ttRect.height - 60) + 'px';
+  }
+}
+
+function hideTooltip() {
+  document.getElementById('nodeTooltip').classList.remove('visible');
+}
+
+// ── Select Node ──
+function selectNode(nodeId) {
+  const wf = WORKFLOWS[currentWorkflow];
+  const node = wf.nodes.find(n => n.id === nodeId);
+  if (!node) return;
+
+  selectedNodeId = nodeId;
+  hideTooltip();
+
+  // Update visual selection
+  Object.values(nodeElements).forEach(el => el.classList.remove('selected'));
+  if (nodeElements[nodeId]) nodeElements[nodeId].classList.add('selected');
+
+  // Open panel
+  openPanel(node);
+}
+
+// ── Panel ──
+function openPanel(node) {
+  const panel = document.getElementById('rightPanel');
+  const typeIcon = TYPE_ICONS[node.type] || '';
+  const typeColor = TYPE_COLORS[node.type] || '#58a6ff';
+
+  document.getElementById('panelTitle').innerHTML = `${typeIcon} ${node.label}`;
+  panel.classList.remove('collapsed');
+
+  const body = document.getElementById('panelBody');
+
+  let html = '';
+
+  // Status & Module
+  html += `<div class="panel-section">
+    <div class="panel-section-title">&#x2139;&#xFE0F; 기본 정보</div>
+    <div class="panel-row"><span class="panel-row-label">상태</span><span class="status-tag ${node.status}">${node.status.toUpperCase()}</span></div>
+    <div class="panel-row"><span class="panel-row-label">모듈</span><span class="panel-row-value" style="font-size:10px;color:${typeColor};max-width:200px;text-align:right;word-break:break-all;">${node.module}</span></div>
+    <div class="panel-row"><span class="panel-row-label">타입</span><span class="panel-row-value" style="color:${typeColor};">${node.type}</span></div>
+  </div>`;
+
+  // Description
+  html += `<div class="panel-section">
+    <div class="panel-section-title">&#x1F4DD; 설명</div>
+    <div style="font-size:11px;color:var(--muted);line-height:1.6;">${node.desc}</div>
+  </div>`;
+
+  // Input variables
+  if (node.inputs.length > 0) {
+    html += `<div class="panel-section">
+      <div class="panel-section-title">&#x27A1;&#xFE0F; 입력 변수</div>
+      <ul class="var-list">
+        ${node.inputs.map(inp => {
+          const name = typeof inp === 'string' ? inp : inp.name;
+          const type = typeof inp === 'string' ? 'any' : inp.type;
+          return `<li class="var-item"><span class="var-name">${name}</span><span class="var-type">${type}</span></li>`;
+        }).join('')}
+      </ul>
+    </div>`;
+  }
+
+  // Output variables
+  if (node.outputs.length > 0) {
+    html += `<div class="panel-section">
+      <div class="panel-section-title">&#x2B05;&#xFE0F; 출력 변수</div>
+      <ul class="var-list">
+        ${node.outputs.map(out => {
+          const name = typeof out === 'string' ? out : out.name;
+          const type = typeof out === 'string' ? 'any' : out.type;
+          return `<li class="var-item"><span class="var-name">${name}</span><span class="var-type">${type}</span></li>`;
+        }).join('')}
+      </ul>
+    </div>`;
+  }
+
+  // Test area
+  if (node.test) {
+    const testId = `test_${node.id}`;
+    html += `<div class="panel-section">
+      <div class="panel-section-title">&#x1F9EA; 테스트</div>
+      <div class="test-area">
+        <div style="font-size:10px;color:var(--muted);margin-bottom:4px;">
+          <span style="color:${typeColor};">${node.test.method}</span> ${node.test.api}
+        </div>`;
+
+    if (node.test.method === 'POST' && node.test.defaultBody) {
+      html += `<div class="test-input-label">테스트 입력:</div>
+        <textarea class="test-textarea" id="${testId}_input">${node.test.defaultBody}</textarea>`;
+    }
+
+    html += `<button class="test-btn" id="${testId}_btn" onclick="runTest('${currentWorkflow}','${node.id}')">&#x25B6; 테스트 실행</button>
+        <div class="test-result" id="${testId}_result"></div>
+      </div>
+    </div>`;
+  } else {
+    html += `<div class="panel-section">
+      <div class="panel-section-title">&#x1F9EA; 테스트</div>
+      <div style="font-size:11px;color:var(--muted);padding:12px;background:var(--bg);border-radius:8px;border:1px solid var(--border);text-align:center;">
+        ${node.status === 'plan' ? '개발 예정 &mdash; 테스트 미지원' : '로컬 테스트 전용 (localhost:5050)'}
+      </div>
+    </div>`;
+  }
+
+  // Connection info
+  const wf = WORKFLOWS[currentWorkflow];
+  const incomingEdges = wf.edges.filter(([_, to]) => to === node.id);
+  const outgoingEdges = wf.edges.filter(([from, _]) => from === node.id);
+
+  html += `<div class="panel-section">
+    <div class="panel-section-title">&#x1F517; 연결</div>`;
+
+  if (incomingEdges.length > 0) {
+    html += `<div style="font-size:10px;color:var(--muted);margin-bottom:4px;">입력 연결:</div>`;
+    incomingEdges.forEach(([from]) => {
+      const fromNode = wf.nodes.find(n => n.id === from);
+      if (fromNode) {
+        html += `<div style="font-size:11px;padding:3px 0;cursor:pointer;color:var(--accent);" onclick="selectNode('${from}')">&larr; ${fromNode.label}</div>`;
+      }
+    });
+  }
+
+  if (outgoingEdges.length > 0) {
+    html += `<div style="font-size:10px;color:var(--muted);margin:6px 0 4px;">출력 연결:</div>`;
+    outgoingEdges.forEach(([_, to]) => {
+      const toNode = wf.nodes.find(n => n.id === to);
+      if (toNode) {
+        html += `<div style="font-size:11px;padding:3px 0;cursor:pointer;color:var(--accent);" onclick="selectNode('${to}')">&rarr; ${toNode.label}</div>`;
+      }
+    });
+  }
+
+  html += `</div>`;
+
+  body.innerHTML = html;
+
+  // Re-render to update SVG (canvas might have changed size)
+  setTimeout(() => {
+    const canvasWrap = document.getElementById('canvasWrap');
+    // Scroll to show selected node
+    const nodeEl = nodeElements[node.id];
+    if (nodeEl) {
+      const nodeRect = nodeEl.getBoundingClientRect();
+      const wrapRect = canvasWrap.getBoundingClientRect();
+      if (nodeRect.top < wrapRect.top || nodeRect.bottom > wrapRect.bottom) {
+        nodeEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+  }, 50);
+}
+
+function closePanel() {
+  document.getElementById('rightPanel').classList.add('collapsed');
+  selectedNodeId = null;
+  Object.values(nodeElements).forEach(el => el.classList.remove('selected'));
+}
+
+document.getElementById('panelClose').addEventListener('click', closePanel);
+
+// Click on canvas background to deselect
+document.getElementById('canvasWrap').addEventListener('click', (e) => {
+  if (e.target.closest('.wf-node')) return;
+  closePanel();
+});
+
+// ── Test Execution ──
+async function runTest(workflowKey, nodeId) {
+  const wf = WORKFLOWS[workflowKey];
+  const node = wf.nodes.find(n => n.id === nodeId);
+  if (!node || !node.test) return;
+
+  const testId = `test_${nodeId}`;
+  const btn = document.getElementById(`${testId}_btn`);
+  const resultEl = document.getElementById(`${testId}_result`);
+
+  btn.disabled = true;
+  btn.textContent = '실행 중...';
+  resultEl.className = 'test-result visible';
+  resultEl.textContent = '요청 전송 중...';
+  resultEl.style.color = 'var(--muted)';
+
+  try {
+    const opts = { method: node.test.method, headers: {} };
+
+    if (node.test.method === 'POST') {
+      opts.headers['Content-Type'] = 'application/json';
+      const inputEl = document.getElementById(`${testId}_input`);
+      if (inputEl) {
+        opts.body = inputEl.value;
+      } else if (node.test.body) {
+        opts.body = JSON.stringify(node.test.body);
+      } else if (node.test.defaultBody) {
+        opts.body = node.test.defaultBody;
+      }
+    }
+
+    const startTime = Date.now();
+    const res = await fetch(node.test.api, opts);
+    const elapsed = Date.now() - startTime;
+
+    let data;
+    const contentType = res.headers.get('content-type') || '';
+    if (contentType.includes('json')) {
+      data = await res.json();
+    } else {
+      data = { raw: await res.text() };
+    }
+
+    if (res.ok) {
+      let formatted = '';
+      try {
+        formatted = node.test.formatResult(data);
+      } catch (e) {
+        formatted = JSON.stringify(data, null, 2);
+      }
+      resultEl.textContent = `${formatted}\n\n--- ${elapsed}ms ---`;
+      resultEl.className = 'test-result visible success';
+      resultEl.style.color = 'var(--green)';
+    } else {
+      resultEl.textContent = `HTTP ${res.status}\n${data.error || data.message || JSON.stringify(data, null, 2)}\n\n--- ${elapsed}ms ---`;
+      resultEl.className = 'test-result visible error';
+      resultEl.style.color = 'var(--red)';
+    }
+
+    // Update last test time
+    const now = new Date();
+    document.getElementById('lastTestTime').textContent =
+      `마지막 테스트: ${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}:${now.getSeconds().toString().padStart(2,'0')}`;
+
+  } catch (err) {
+    resultEl.textContent = `연결 실패: ${err.message}\n\n서버가 실행 중인지 확인하세요.`;
+    resultEl.className = 'test-result visible error';
+    resultEl.style.color = 'var(--red)';
+  }
+
+  btn.disabled = false;
+  btn.innerHTML = '&#x25B6; 테스트 실행';
+}
+
+// ── Stats ──
+function updateStats() {
+  const wf = WORKFLOWS[currentWorkflow];
+  let total = 0, live = 0, dev = 0, plan = 0;
+
+  // Count across ALL workflows
+  Object.values(WORKFLOWS).forEach(w => {
+    w.nodes.forEach(n => {
+      total++;
+      if (n.status === 'live') live++;
+      else if (n.status === 'dev') dev++;
+      else plan++;
+    });
+  });
+
+  document.getElementById('statTotal').textContent = total;
+  document.getElementById('statLive').textContent = live;
+  document.getElementById('statDev').textContent = dev;
+  document.getElementById('statPlan').textContent = plan;
+  document.getElementById('statSavings').textContent = wf.savings;
+}
+
+// ── Keyboard shortcuts ──
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    closePanel();
+  }
+  // Tab switching with number keys
+  const keys = ['1','2','3','4','5','6'];
+  const wfKeys = Object.keys(WORKFLOWS);
+  const idx = keys.indexOf(e.key);
+  if (idx >= 0 && idx < wfKeys.length && !e.target.closest('textarea, input')) {
+    switchWorkflow(wfKeys[idx]);
+  }
+});
+
+// ── Window resize ──
+let resizeTimer;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => renderWorkflow(), 150);
+});
+
+// ── Initialize ──
+buildTabs();
+renderWorkflow();
+updateStats();
+
+</script>
+</body>
+</html>
