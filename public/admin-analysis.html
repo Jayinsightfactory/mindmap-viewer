@@ -1197,7 +1197,68 @@ async function apiFetch(url, opts = {}) {
   const res = await fetch(url, { headers: AUTH_HEADERS, ...opts });
   if (res.status === 401) { location.href = '/orbit3d.html'; return null; }
   if (!res.ok) throw new Error('HTTP ' + res.status);
-  return res.json();
+  const data = await res.json();
+  return filterPersonal(data);
+}
+
+// ── 개인 데이터 필터 (학습은 서버에서, 화면에는 안 보임) ──
+const PERSONAL_APPS = /youtube|instagram|facebook|tiktok|twitter|netflix|coupang|11번가|gmarket|auction|naver\s*(카페|블로그|웹툰|뉴스|쇼핑)|daum|toss|당근|배민|요기요/i;
+const PERSONAL_SITES = /shopping|game|music|video|movie|news\.naver|blog|cafe\.naver|webtoon|comic/i;
+
+function isPersonalEvent(event) {
+  const app = (event.app || event.currentApp || '').toLowerCase();
+  const win = (event.windowTitle || event.currentWindow || event.title || '').toLowerCase();
+
+  // 카카오톡 — 업무 채팅방 아닌 것 (거래처/네노바 포함이면 업무)
+  if (app.includes('kakao') || app.includes('카카오')) {
+    const workPatterns = /네노바|nenova|영업|수입|불량|견적|발주|출고|거래처|물량/i;
+    if (!workPatterns.test(win)) return true;
+  }
+
+  // 개인 앱
+  if (PERSONAL_APPS.test(app) || PERSONAL_APPS.test(win)) return true;
+
+  // 브라우저 개인 사이트
+  if (/chrome|edge|whale|firefox/i.test(app)) {
+    if (PERSONAL_SITES.test(win)) return true;
+    // 업무 사이트가 아닌 경우 (화훼/nenova/orbit/claude/holex/주문 등이 아니면)
+    const workSites = /orbit|claude|holex|nenova|화훼|주문|발주|매출|거래처|naver\s*works|github|railway/i;
+    if (win && !workSites.test(win) && !win.includes('검색')) {
+      // 명확하게 개인이라고 판단하기 어려우면 통과
+    }
+  }
+
+  return false;
+}
+
+function filterPersonal(data) {
+  if (!data) return data;
+  // 배열이면 개인 이벤트 제거
+  if (Array.isArray(data)) {
+    return data.filter(item => !isPersonalEvent(item));
+  }
+  // 객체 안의 events/logs/items 배열 필터
+  if (data.events) data.events = data.events.filter(e => !isPersonalEvent(e));
+  if (data.logs) data.logs = data.logs.filter(e => !isPersonalEvent(e));
+  if (data.items) data.items = data.items.filter(e => !isPersonalEvent(e));
+  // pulse.currentWork에서 개인 제거
+  if (data.currentWork) {
+    for (const uid in data.currentWork) {
+      const w = (data.currentWork[uid] || '').toLowerCase();
+      if (PERSONAL_APPS.test(w) || PERSONAL_SITES.test(w)) {
+        data.currentWork[uid] = '업무 중';
+      }
+    }
+  }
+  // company.members에서 currentWindow 개인 마스킹
+  if (data.company?.members) {
+    data.company.members.forEach(m => {
+      if (m.currentWindow && isPersonalEvent({ windowTitle: m.currentWindow, app: m.currentApp })) {
+        m.currentWindow = '업무 중';
+      }
+    });
+  }
+  return data;
 }
 
 // ── 전역 상태 ─────────────────────────────────────────────────────
