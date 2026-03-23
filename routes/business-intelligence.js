@@ -282,13 +282,13 @@ module.exports = function createBusinessIntelligenceRouter({ getDb }) {
       // ── 1) 매출 안정성 ──
       const weeklyOrders = await nenovaQuery(`
         SELECT
-          DATEPART(ISO_WEEK, om.OrderDate) as wk,
+          DATEPART(ISO_WEEK, om.OrderDtm) as wk,
           COUNT(*) as order_cnt,
           COUNT(DISTINCT od.CustKey) as cust_cnt
         FROM OrderMaster om
         JOIN OrderDetail od ON om.OrderKey = od.OrderKey
-        WHERE om.OrderDate >= DATEADD(WEEK, -8, GETDATE())
-        GROUP BY DATEPART(ISO_WEEK, om.OrderDate)
+        WHERE om.OrderDtm >= DATEADD(WEEK, -8, GETDATE())
+        GROUP BY DATEPART(ISO_WEEK, om.OrderDtm)
         ORDER BY wk
       `);
       if (weeklyOrders.length >= 3) {
@@ -348,7 +348,7 @@ module.exports = function createBusinessIntelligenceRouter({ getDb }) {
         SELECT COUNT(*) as total, SUM(CASE WHEN Qty > 0 THEN 1 ELSE 0 END) as in_stock,
                SUM(CASE WHEN Qty <= 0 THEN 1 ELSE 0 END) as out_of_stock,
                SUM(CASE WHEN Qty > 100 THEN 1 ELSE 0 END) as overstock
-        FROM StockMaster
+        FROM ProductStock
       `);
       if (stockStatus.length > 0) {
         const s = stockStatus[0];
@@ -418,11 +418,11 @@ module.exports = function createBusinessIntelligenceRouter({ getDb }) {
       // ── 7) 성장 궤적 ──
       const growthData = await nenovaQuery(`
         SELECT
-          YEAR(om.OrderDate) as yr, MONTH(om.OrderDate) as mo,
+          YEAR(om.OrderDtm) as yr, MONTH(om.OrderDtm) as mo,
           COUNT(*) as order_cnt
         FROM OrderMaster om
-        WHERE om.OrderDate >= DATEADD(YEAR, -1, GETDATE())
-        GROUP BY YEAR(om.OrderDate), MONTH(om.OrderDate)
+        WHERE om.OrderDtm >= DATEADD(YEAR, -1, GETDATE())
+        GROUP BY YEAR(om.OrderDtm), MONTH(om.OrderDtm)
         ORDER BY yr, mo
       `);
       if (growthData.length >= 4) {
@@ -516,7 +516,7 @@ module.exports = function createBusinessIntelligenceRouter({ getDb }) {
         SELECT COUNT(*) as cnt, COUNT(DISTINCT od.CustKey) as cust_cnt
         FROM OrderMaster om
         JOIN OrderDetail od ON om.OrderKey = od.OrderKey
-        WHERE CONVERT(DATE, om.OrderDate) = CONVERT(DATE, GETDATE())
+        WHERE CONVERT(DATE, om.OrderDtm) = CONVERT(DATE, GETDATE())
       `);
 
       // 이번 주 주문 vs 지난 주
@@ -551,11 +551,11 @@ module.exports = function createBusinessIntelligenceRouter({ getDb }) {
 
       // 재고 부족 품목
       const lowStockItems = await nenovaQuery(`
-        SELECT TOP 5 p.ProdName, sm.Qty
-        FROM StockMaster sm
+        SELECT TOP 5 p.ProdName, sm.BoxQuantity
+        FROM ProductStock sm
         JOIN Product p ON sm.ProdKey = p.ProdKey
-        WHERE sm.Qty > 0 AND sm.Qty <= 5
-        ORDER BY sm.Qty ASC
+        WHERE sm.BoxQuantity > 0 AND sm.BoxQuantity <= 5
+        ORDER BY sm.BoxQuantity ASC
       `);
 
       const weekChange = lastWeekOrders > 0
@@ -747,11 +747,11 @@ module.exports = function createBusinessIntelligenceRouter({ getDb }) {
 
       // ── 재고 알림 ──
       const criticalStock = await nenovaQuery(`
-        SELECT TOP 10 p.ProdName, sm.Qty
-        FROM StockMaster sm
+        SELECT TOP 10 p.ProdName, sm.BoxQuantity
+        FROM ProductStock sm
         JOIN Product p ON sm.ProdKey = p.ProdKey
-        WHERE sm.Qty > 0 AND sm.Qty <= 5
-        ORDER BY sm.Qty ASC
+        WHERE sm.BoxQuantity > 0 AND sm.BoxQuantity <= 5
+        ORDER BY sm.BoxQuantity ASC
       `);
       for (const item of criticalStock) {
         const qty = parseInt(item.Qty);
@@ -766,11 +766,11 @@ module.exports = function createBusinessIntelligenceRouter({ getDb }) {
 
       // 과다 재고
       const overstockItems = await nenovaQuery(`
-        SELECT TOP 5 p.ProdName, sm.Qty
-        FROM StockMaster sm
+        SELECT TOP 5 p.ProdName, sm.BoxQuantity
+        FROM ProductStock sm
         JOIN Product p ON sm.ProdKey = p.ProdKey
-        WHERE sm.Qty > 50
-        ORDER BY sm.Qty DESC
+        WHERE sm.BoxQuantity > 50
+        ORDER BY sm.BoxQuantity DESC
       `);
       for (const item of overstockItems) {
         alerts.push({
@@ -892,16 +892,16 @@ module.exports = function createBusinessIntelligenceRouter({ getDb }) {
 
       // 주간별 주문 추이
       const weeklyTrend = await nenovaQuery(`
-        SELECT DATEPART(ISO_WEEK, om.OrderDate) as week_num,
-          MIN(CONVERT(VARCHAR, om.OrderDate, 23)) as week_start,
+        SELECT DATEPART(ISO_WEEK, om.OrderDtm) as week_num,
+          MIN(CONVERT(VARCHAR, om.OrderDtm, 23)) as week_start,
           COUNT(DISTINCT om.OrderKey) as order_count,
           COUNT(od.DetailKey) as detail_count,
           COUNT(DISTINCT od.CustKey) as customer_count,
           COUNT(DISTINCT od.ProdKey) as product_count
         FROM OrderMaster om
         JOIN OrderDetail od ON om.OrderKey = od.OrderKey
-        WHERE om.OrderDate >= DATEADD(MONTH, -${months}, GETDATE())
-        GROUP BY DATEPART(ISO_WEEK, om.OrderDate)
+        WHERE om.OrderDtm >= DATEADD(MONTH, -${months}, GETDATE())
+        GROUP BY DATEPART(ISO_WEEK, om.OrderDtm)
         ORDER BY week_num
       `);
 
@@ -918,14 +918,14 @@ module.exports = function createBusinessIntelligenceRouter({ getDb }) {
 
       // 월별 추이
       const monthlyTrend = await nenovaQuery(`
-        SELECT YEAR(om.OrderDate) as yr, MONTH(om.OrderDate) as mo,
+        SELECT YEAR(om.OrderDtm) as yr, MONTH(om.OrderDtm) as mo,
           COUNT(DISTINCT om.OrderKey) as orders,
           COUNT(od.DetailKey) as details,
           COUNT(DISTINCT od.CustKey) as customers
         FROM OrderMaster om
         JOIN OrderDetail od ON om.OrderKey = od.OrderKey
-        WHERE om.OrderDate >= DATEADD(MONTH, -${months}, GETDATE())
-        GROUP BY YEAR(om.OrderDate), MONTH(om.OrderDate)
+        WHERE om.OrderDtm >= DATEADD(MONTH, -${months}, GETDATE())
+        GROUP BY YEAR(om.OrderDtm), MONTH(om.OrderDtm)
         ORDER BY yr, mo
       `);
 
@@ -1135,15 +1135,15 @@ module.exports = function createBusinessIntelligenceRouter({ getDb }) {
 
       // 재고 리스크
       const inventoryRisk = await nenovaQuery(`
-        SELECT p.ProdName, sm.Qty,
-          CASE WHEN sm.Qty <= 2 THEN 'critical'
-               WHEN sm.Qty <= 5 THEN 'low'
-               WHEN sm.Qty > 50 THEN 'overstock'
+        SELECT p.ProdName, sm.BoxQuantity,
+          CASE WHEN sm.BoxQuantity <= 2 THEN 'critical'
+               WHEN sm.BoxQuantity <= 5 THEN 'low'
+               WHEN sm.BoxQuantity > 50 THEN 'overstock'
                ELSE 'normal' END as risk_level
-        FROM StockMaster sm
+        FROM ProductStock sm
         JOIN Product p ON sm.ProdKey = p.ProdKey
-        WHERE sm.Qty > 0
-        ORDER BY sm.Qty ASC
+        WHERE sm.BoxQuantity > 0
+        ORDER BY sm.BoxQuantity ASC
       `);
 
       const riskSummary = {
@@ -1427,11 +1427,11 @@ module.exports = function createBusinessIntelligenceRouter({ getDb }) {
     try {
       // 최근 8주 주간 주문량
       const weeklyHistory = await nenovaQuery(`
-        SELECT DATEPART(ISO_WEEK, om.OrderDate) as wk,
+        SELECT DATEPART(ISO_WEEK, om.OrderDtm) as wk,
           COUNT(*) as cnt
         FROM OrderMaster om
-        WHERE om.OrderDate >= DATEADD(WEEK, -8, GETDATE())
-        GROUP BY DATEPART(ISO_WEEK, om.OrderDate)
+        WHERE om.OrderDtm >= DATEADD(WEEK, -8, GETDATE())
+        GROUP BY DATEPART(ISO_WEEK, om.OrderDtm)
         ORDER BY wk
       `);
 
@@ -1467,11 +1467,11 @@ module.exports = function createBusinessIntelligenceRouter({ getDb }) {
 
       // 재고 소진 예측
       const inventoryAlert = await nenovaQuery(`
-        SELECT p.ProdName, sm.Qty
-        FROM StockMaster sm
+        SELECT p.ProdName, sm.BoxQuantity
+        FROM ProductStock sm
         JOIN Product p ON sm.ProdKey = p.ProdKey
-        WHERE sm.Qty > 0 AND sm.Qty <= 15
-        ORDER BY sm.Qty ASC
+        WHERE sm.BoxQuantity > 0 AND sm.BoxQuantity <= 15
+        ORDER BY sm.BoxQuantity ASC
       `);
 
       // 최근 4주 품목별 평균 주문으로 소진 예측
@@ -1622,7 +1622,7 @@ module.exports = function createBusinessIntelligenceRouter({ getDb }) {
       });
 
       // 5. 재고 리스크
-      const criticalItems = await nenovaCount(`SELECT COUNT(*) as cnt FROM StockMaster WHERE Qty > 0 AND Qty <= 3`);
+      const criticalItems = await nenovaCount(`SELECT COUNT(*) as cnt FROM ProductStock WHERE Qty > 0 AND Qty <= 3`);
       if (criticalItems > 0) {
         risks.push({
           id: 'inventory-shortage',
@@ -1801,10 +1801,10 @@ module.exports = function createBusinessIntelligenceRouter({ getDb }) {
 
       // 2. 재고 확인
       const criticalStock = await nenovaQuery(`
-        SELECT TOP 3 p.ProdName, sm.Qty
-        FROM StockMaster sm JOIN Product p ON sm.ProdKey = p.ProdKey
-        WHERE sm.Qty > 0 AND sm.Qty <= 3
-        ORDER BY sm.Qty ASC
+        SELECT TOP 3 p.ProdName, sm.BoxQuantity
+        FROM ProductStock sm JOIN Product p ON sm.ProdKey = p.ProdKey
+        WHERE sm.BoxQuantity > 0 AND sm.BoxQuantity <= 3
+        ORDER BY sm.BoxQuantity ASC
       `);
       if (criticalStock.length > 0) {
         actions.push({
@@ -1907,14 +1907,14 @@ module.exports = function createBusinessIntelligenceRouter({ getDb }) {
         SELECT COUNT(DISTINCT om.OrderKey) as orders, COUNT(od.DetailKey) as details,
           COUNT(DISTINCT od.CustKey) as customers, COUNT(DISTINCT od.ProdKey) as products
         FROM OrderMaster om JOIN OrderDetail od ON om.OrderKey = od.OrderKey
-        WHERE CONVERT(DATE, om.OrderDate) = '${targetDate}'
+        WHERE CONVERT(DATE, om.OrderDtm) = '${targetDate}'
       `);
 
       // 전일 비교
       const ordersYesterday = await nenovaQuery(`
         SELECT COUNT(DISTINCT om.OrderKey) as orders
         FROM OrderMaster om
-        WHERE CONVERT(DATE, om.OrderDate) = DATEADD(DAY, -1, '${targetDate}')
+        WHERE CONVERT(DATE, om.OrderDtm) = DATEADD(DAY, -1, '${targetDate}')
       `);
 
       // 직원 활동
@@ -1935,7 +1935,7 @@ module.exports = function createBusinessIntelligenceRouter({ getDb }) {
           SUM(CASE WHEN Qty <= 0 THEN 1 ELSE 0 END) as empty,
           SUM(CASE WHEN Qty > 0 AND Qty <= 5 THEN 1 ELSE 0 END) as low,
           SUM(CASE WHEN Qty > 50 THEN 1 ELSE 0 END) as over
-        FROM StockMaster
+        FROM ProductStock
       `);
 
       const todayData = ordersToday[0] || {};
@@ -2000,7 +2000,7 @@ module.exports = function createBusinessIntelligenceRouter({ getDb }) {
         SELECT COUNT(DISTINCT om.OrderKey) as orders, COUNT(od.DetailKey) as details,
           COUNT(DISTINCT od.CustKey) as customers, COUNT(DISTINCT od.ProdKey) as products
         FROM OrderMaster om JOIN OrderDetail od ON om.OrderKey = od.OrderKey
-        WHERE DATEPART(ISO_WEEK, om.OrderDate) = ${week} AND YEAR(om.OrderDate) = ${year}
+        WHERE DATEPART(ISO_WEEK, om.OrderDtm) = ${week} AND YEAR(om.OrderDtm) = ${year}
       `);
 
       // 지난 주 비교
@@ -2012,12 +2012,12 @@ module.exports = function createBusinessIntelligenceRouter({ getDb }) {
 
       // 일별 분포
       const dailyBreakdown = await nenovaQuery(`
-        SELECT CONVERT(VARCHAR, om.OrderDate, 23) as dt,
-          DATENAME(dw, om.OrderDate) as dow,
+        SELECT CONVERT(VARCHAR, om.OrderDtm, 23) as dt,
+          DATENAME(dw, om.OrderDtm) as dow,
           COUNT(*) as cnt
         FROM OrderMaster om
-        WHERE DATEPART(ISO_WEEK, om.OrderDate) = ${week} AND YEAR(om.OrderDate) = ${year}
-        GROUP BY CONVERT(VARCHAR, om.OrderDate, 23), DATENAME(dw, om.OrderDate)
+        WHERE DATEPART(ISO_WEEK, om.OrderDtm) = ${week} AND YEAR(om.OrderDtm) = ${year}
+        GROUP BY CONVERT(VARCHAR, om.OrderDtm, 23), DATENAME(dw, om.OrderDtm)
         ORDER BY dt
       `);
 
@@ -2026,7 +2026,7 @@ module.exports = function createBusinessIntelligenceRouter({ getDb }) {
         SELECT TOP 5 c.CustName, COUNT(*) as cnt
         FROM OrderDetail od JOIN Customer c ON od.CustKey = c.CustKey
         JOIN OrderMaster om ON od.OrderKey = om.OrderKey
-        WHERE DATEPART(ISO_WEEK, om.OrderDate) = ${week} AND YEAR(om.OrderDate) = ${year}
+        WHERE DATEPART(ISO_WEEK, om.OrderDtm) = ${week} AND YEAR(om.OrderDtm) = ${year}
         GROUP BY c.CustName ORDER BY cnt DESC
       `);
 
@@ -2035,7 +2035,7 @@ module.exports = function createBusinessIntelligenceRouter({ getDb }) {
         SELECT TOP 5 p.ProdName, COUNT(*) as cnt
         FROM OrderDetail od JOIN Product p ON od.ProdKey = p.ProdKey
         JOIN OrderMaster om ON od.OrderKey = om.OrderKey
-        WHERE DATEPART(ISO_WEEK, om.OrderDate) = ${week} AND YEAR(om.OrderDate) = ${year}
+        WHERE DATEPART(ISO_WEEK, om.OrderDtm) = ${week} AND YEAR(om.OrderDtm) = ${year}
         GROUP BY p.ProdName ORDER BY cnt DESC
       `);
 

@@ -350,7 +350,7 @@ module.exports = function createDataDigitizerRouter({ getDb }) {
         const nenovaCustomers = await nenovaSafeCount('SELECT COUNT(*) as cnt FROM Customer');
         const nenovaOrders = await nenovaSafeCount('SELECT COUNT(*) as cnt FROM OrderMaster');
         const nenovaOrderDetails = await nenovaSafeCount('SELECT COUNT(*) as cnt FROM OrderDetail');
-        const nenovaShipments = await nenovaSafeCount('SELECT COUNT(*) as cnt FROM ShipmentDate');
+        const nenovaShipments = await nenovaSafeCount('SELECT COUNT(*) as cnt FROM ShipmentMaster WHERE ISNULL(isDeleted,0)=0');
         const nenovaEstimates = await nenovaSafeCount('SELECT COUNT(*) as cnt FROM Estimate');
         const nenovaStocks = await nenovaSafeCount('SELECT COUNT(*) as cnt FROM StockMaster');
 
@@ -705,7 +705,7 @@ module.exports = function createDataDigitizerRouter({ getDb }) {
           if (item === '일별 매출') {
             // nenova에서 주문 데이터가 매출 역할
             const cnt = await nenovaSafeCount(
-              `SELECT COUNT(*) as cnt FROM OrderMaster WHERE DATEDIFF(DAY, OrderDate, GETDATE()) < 30`
+              `SELECT COUNT(*) as cnt FROM OrderMaster WHERE OrderDtm > DATEADD(DAY, -30, GETDATE()) AND ISNULL(isDeleted,0)=0`
             );
             return { exists: cnt > 0, count: cnt, source: 'nenova OrderMaster', note: '주문 기준 매출 (실제 정산 데이터 아님)' };
           }
@@ -725,12 +725,12 @@ module.exports = function createDataDigitizerRouter({ getDb }) {
         }
         case '재고': {
           if (item === '실시간 재고') {
-            const cnt = await nenovaSafeCount('SELECT COUNT(*) as cnt FROM StockMaster WHERE Qty > 0');
+            const cnt = await nenovaSafeCount('SELECT COUNT(*) as cnt FROM ProductStock WHERE BoxQuantity > 0');
             return { exists: cnt > 0, count: cnt, source: 'nenova StockMaster', note: cnt > 0 ? '재고 데이터 존재' : '재고 데이터 미입력' };
           }
           if (item === '입고 예정') {
             const cnt = await nenovaSafeCount(
-              `SELECT COUNT(*) as cnt FROM ShipmentDate WHERE ShipDate > GETDATE()`
+              `SELECT COUNT(*) as cnt FROM ShipmentDetail WHERE ShipmentDtm > GETDATE()`
             );
             return { exists: cnt > 0, count: cnt, source: 'nenova ShipmentDate', note: '출하 예정일 기반' };
           }
@@ -748,12 +748,12 @@ module.exports = function createDataDigitizerRouter({ getDb }) {
         case '주문': {
           if (item === '일별 주문량') {
             const cnt = await nenovaSafeCount(
-              `SELECT COUNT(*) as cnt FROM OrderMaster WHERE DATEDIFF(DAY, OrderDate, GETDATE()) < 7`
+              `SELECT COUNT(*) as cnt FROM OrderMaster WHERE OrderDtm > DATEADD(DAY, -7, GETDATE()) AND ISNULL(isDeleted,0)=0`
             );
             return { exists: cnt > 0, count: cnt, source: 'nenova OrderMaster' };
           }
           if (item === '거래처별 주문 패턴') {
-            const cnt = await nenovaSafeCount('SELECT COUNT(DISTINCT CustKey) as cnt FROM OrderDetail');
+            const cnt = await nenovaSafeCount('SELECT COUNT(DISTINCT om.CustKey) as cnt FROM OrderMaster om WHERE ISNULL(om.isDeleted,0)=0');
             return { exists: cnt > 0, count: cnt, source: 'nenova OrderDetail', note: '패턴 분석은 Orbit BI에서' };
           }
           if (item === '주문→출하 리드타임') {
@@ -775,7 +775,7 @@ module.exports = function createDataDigitizerRouter({ getDb }) {
             return { exists: false, partial: false, source: '없음', note: '결제/입금 데이터 미연동', gap_severity: 'high' };
           }
           if (item === '거래 빈도') {
-            const cnt = await nenovaSafeCount('SELECT COUNT(DISTINCT CustKey) as cnt FROM OrderDetail');
+            const cnt = await nenovaSafeCount('SELECT COUNT(DISTINCT om.CustKey) as cnt FROM OrderMaster om WHERE ISNULL(om.isDeleted,0)=0');
             return { exists: cnt > 0, count: cnt, source: 'nenova OrderDetail' };
           }
           if (item === '불만/클레임') {
