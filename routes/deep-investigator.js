@@ -793,19 +793,23 @@ function createDeepInvestigator({ getDb }) {
 
       // Q2: 거래처별 처리 시간 차이
       const q2Result = await db.query(`
-        SELECT user_id,
-          COALESCE(data_json->>'windowTitle', data_json->'appContext'->>'currentWindow') as win,
-          COUNT(*) as visits,
-          AVG(EXTRACT(EPOCH FROM
-            (LEAD(timestamp::timestamptz) OVER (PARTITION BY user_id ORDER BY timestamp) - timestamp::timestamptz)
-          )) as avg_stay
-        FROM events
-        WHERE type IN ('keyboard.chunk', 'screen.capture')
-          AND timestamp::timestamptz > NOW() - ($1 || ' days')::INTERVAL
-          AND (
-            COALESCE(data_json->>'windowTitle', data_json->'appContext'->>'currentWindow') ILIKE '%주문%'
-            OR COALESCE(data_json->>'windowTitle', data_json->'appContext'->>'currentWindow') ILIKE '%신규%'
-          )
+        WITH ordered AS (
+          SELECT user_id,
+            COALESCE(data_json->>'windowTitle', data_json->'appContext'->>'currentWindow') as win,
+            timestamp::timestamptz as ts,
+            LEAD(timestamp::timestamptz) OVER (PARTITION BY user_id ORDER BY timestamp) as next_ts
+          FROM events
+          WHERE type IN ('keyboard.chunk', 'screen.capture')
+            AND timestamp::timestamptz > NOW() - ($1 || ' days')::INTERVAL
+            AND (
+              COALESCE(data_json->>'windowTitle', data_json->'appContext'->>'currentWindow') ILIKE '%주문%'
+              OR COALESCE(data_json->>'windowTitle', data_json->'appContext'->>'currentWindow') ILIKE '%신규%'
+            )
+        )
+        SELECT user_id, win, COUNT(*) as visits,
+          AVG(EXTRACT(EPOCH FROM (next_ts - ts))) as avg_stay
+        FROM ordered
+        WHERE next_ts IS NOT NULL
         GROUP BY user_id, win
         HAVING COUNT(*) >= 5
         ORDER BY avg_stay DESC NULLS LAST

@@ -2945,7 +2945,7 @@ async function runVisionAnalysis() {
   status.textContent = '분석 중...';
 
   try {
-    const res = await fetch('/api/daemon/run-vision', {
+    const res = await fetch('/api/vision/auto-learn', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' }
     });
