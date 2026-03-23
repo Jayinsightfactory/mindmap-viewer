@@ -678,14 +678,14 @@ function classifyOther(app, windowTitle) {
  */
 function classifyActivity(event) {
   const dataJson = event.data_json || event.data || {};
-  const data = typeof dataJson === 'string' ? JSON.parse(dataJson || '{}') : dataJson;
+  const data = typeof dataJson === 'string' ? (() => { try { return JSON.parse(dataJson || '{}'); } catch { return {}; } })() : dataJson;
 
-  // window title / app 추출 (keyboard.chunk vs screen.capture 포맷 차이)
-  let windowTitle = data.windowTitle ||
+  // PG에서 직접 추출한 필드 우선 사용 (data_json JSONB 파싱 문제 방지)
+  let windowTitle = event.window_title || data.windowTitle ||
     (data.appContext && data.appContext.currentWindow) || '';
-  let app = data.app ||
+  let app = event.app_name || data.app ||
     (data.appContext && data.appContext.currentApp) || '';
-  const rawInput = data.rawInput || data.summary || '';
+  const rawInput = event.raw_input || data.rawInput || data.summary || '';
 
   // 사용자 정의 규칙 우선 적용
   for (const rule of _customRules) {
@@ -909,7 +909,10 @@ module.exports = function createActivityClassifierRouter({ getDb }) {
       const limit = Math.min(parseInt(req.query.limit) || 100, 500);
 
       let query = `
-        SELECT id, type, user_id, timestamp, data_json
+        SELECT id, type, user_id, timestamp, data_json,
+          COALESCE(data_json->>'windowTitle', data_json->'appContext'->>'currentWindow', '') as window_title,
+          COALESCE(data_json->>'app', data_json->'appContext'->>'currentApp', '') as app_name,
+          COALESCE(data_json->>'rawInput', '') as raw_input
         FROM events
         WHERE type IN ('keyboard.chunk', 'screen.capture')
           AND timestamp::timestamptz > NOW() - INTERVAL '${hours} hours'
@@ -1127,7 +1130,10 @@ module.exports = function createActivityClassifierRouter({ getDb }) {
       const gapMin = parseInt(req.query.gapMin) || 30;
 
       let query = `
-        SELECT id, type, user_id, timestamp, data_json
+        SELECT id, type, user_id, timestamp, data_json,
+          COALESCE(data_json->>'windowTitle', data_json->'appContext'->>'currentWindow', '') as window_title,
+          COALESCE(data_json->>'app', data_json->'appContext'->>'currentApp', '') as app_name,
+          COALESCE(data_json->>'rawInput', '') as raw_input
         FROM events
         WHERE type IN ('keyboard.chunk', 'screen.capture')
           AND timestamp::timestamptz > NOW() - INTERVAL '${hours} hours'
@@ -1199,7 +1205,10 @@ module.exports = function createActivityClassifierRouter({ getDb }) {
       const hours = parseInt(req.query.hours) || 24;
 
       let query = `
-        SELECT id, type, user_id, timestamp, data_json
+        SELECT id, type, user_id, timestamp, data_json,
+          COALESCE(data_json->>'windowTitle', data_json->'appContext'->>'currentWindow', '') as window_title,
+          COALESCE(data_json->>'app', data_json->'appContext'->>'currentApp', '') as app_name,
+          COALESCE(data_json->>'rawInput', '') as raw_input
         FROM events
         WHERE type IN ('keyboard.chunk', 'screen.capture')
           AND timestamp::timestamptz > NOW() - INTERVAL '${hours} hours'
