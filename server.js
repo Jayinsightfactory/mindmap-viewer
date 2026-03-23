@@ -347,8 +347,12 @@ app.use((req, res, next) => {
     'https://sparkling-determination-production-c88b.up.railway.app',
     'http://localhost:4747',
   ];
+  // origin이 있으면 허용 목록 확인, 없으면 same-origin 또는 non-browser 요청 (허용하되 * 반환 안 함)
+  if (origin && allowed.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  }
+  // origin 없는 요청(same-origin/데몬)도 CORS 헤더 설정 (단, Allow-Origin은 설정하지 않음)
   if (!origin || allowed.includes(origin)) {
-    res.setHeader('Access-Control-Allow-Origin', origin || '*');
     res.setHeader('Access-Control-Allow-Credentials', 'true');
     res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,x-api-token,x-device-id');
@@ -360,7 +364,24 @@ app.use((req, res, next) => {
 // ─── 보안 미들웨어 ────────────────────────────────────────────────────────────
 // Helmet: X-Frame-Options, X-Content-Type, CSP 등 보안 헤더 자동 설정
 app.use(helmet({
-  contentSecurityPolicy: false,        // 외부 CDN 10+ (Three.js, Toss, Google 등) → 화이트리스트 비실용적
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'",
+        "https://cdn.jsdelivr.net", "https://cdnjs.cloudflare.com",
+        "https://unpkg.com", "https://accounts.google.com",
+        "https://js.tosspayments.com"],
+      styleSrc: ["'self'", "'unsafe-inline'",
+        "https://cdn.jsdelivr.net", "https://cdnjs.cloudflare.com",
+        "https://fonts.googleapis.com", "https://unpkg.com"],
+      fontSrc: ["'self'", "https://fonts.gstatic.com", "https://cdn.jsdelivr.net", "https://cdnjs.cloudflare.com"],
+      imgSrc: ["'self'", "data:", "blob:", "https:"],
+      connectSrc: ["'self'", "wss:", "ws:", "https:"],
+      frameSrc: ["'self'", "https://accounts.google.com", "https://js.tosspayments.com"],
+      objectSrc: ["'none'"],
+      baseUri: ["'self'"],
+    },
+  },
   crossOriginEmbedderPolicy: false,
   crossOriginOpenerPolicy: false,
   crossOriginResourcePolicy: false,
@@ -458,8 +479,15 @@ app.post('/api/auth/register', loginLimiter);
 
 // ─── OAuth 초기화 ─────────────────────────────────────────────────────────────
 const session = require('express-session');
+const _sessionSecret = (() => {
+  if (process.env.SESSION_SECRET) return process.env.SESSION_SECRET;
+  const crypto = require('crypto');
+  const fallback = crypto.randomBytes(32).toString('hex');
+  console.warn('[SECURITY] SESSION_SECRET 환경변수가 설정되지 않았습니다. 랜덤 시크릿 사용 중 — 프로덕션에서는 반드시 설정하세요.');
+  return fallback;
+})();
 app.use(session({
-  secret:            process.env.SESSION_SECRET || 'orbit-session-' + Math.random(),
+  secret:            _sessionSecret,
   resave:            false,
   saveUninitialized: false,
   cookie: { secure: process.env.NODE_ENV === 'production', maxAge: 10 * 60 * 1000 },
@@ -848,9 +876,14 @@ wss.on('connection', (ws, req) => {
   ws.on('error', e => logger.ws.error('에러: %s', e.message));
 });
 
-// ─── 데몬용 Drive 설정 배포 API ──────────────────────────────────────────────
+// ─── 데몬용 Drive 설정 배포 API (인증 필수) ──────────────────────────────────
 // 데몬이 캡처 → Google Drive 업로드에 필요한 서비스 계정 키 제공
 app.get('/api/daemon/drive-config', (req, res) => {
+  const token = (req.headers.authorization || '').replace('Bearer ', '').trim()
+              || req.headers['x-api-token'] || req.query.token || '';
+  const user = token ? verifyToken(token) : null;
+  if (!user) return res.status(401).json({ error: 'unauthorized', enabled: false });
+
   const saJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
   const folderId = process.env.GOOGLE_DRIVE_CAPTURES_FOLDER_ID;
   if (!saJson || !folderId) {
@@ -928,7 +961,8 @@ app.get('/api/learning/logs', async (req, res) => {
 
     res.json({ logs, total: logs.length });
   } catch (e) {
-    res.json({ error: e.message, logs: [] });
+    console.error('[learning/logs] error:', e.message);
+    res.status(500).json({ error: 'Internal server error', logs: [] });
   }
 });
 
@@ -982,7 +1016,7 @@ app.get('/api/learning/analyze', async (req, res) => {
     res.json(result);
   } catch (e) {
     console.error('[learning] error:', e.message);
-    res.json({ error: e.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -1003,7 +1037,8 @@ app.post('/api/learning/report', async (req, res) => {
     const url = await reportSheet.writeReport(result, nameMap);
     res.json({ ok: true, url, memberCount: result.members?.length || 0 });
   } catch (e) {
-    res.json({ error: e.message });
+    console.error('[learning/report] error:', e.message);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -1141,7 +1176,7 @@ app.post('/api/learning/deep-analyze', async (req, res) => {
     res.json({ ok: true, analyzedAt: new Date().toISOString(), members: results });
   } catch (e) {
     console.error('[deep-analyze] error:', e.message);
-    res.json({ error: e.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -1159,7 +1194,8 @@ app.get('/api/learning/workspace', async (req, res) => {
     const result = await workLearner.analyzeWorkspace(pool, memberIds);
     res.json(result);
   } catch (e) {
-    res.json({ error: e.message });
+    console.error('[learning/workspace] error:', e.message);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -1262,7 +1298,8 @@ app.post('/api/daemon/analysis-result', async (req, res) => {
     console.log(`[analysis-result] type=${type} error=${!!error} queue_size=${global._analysisQueue.length}`);
     res.json({ ok: true, ts });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error('[analysis-result] error:', e.message);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -1303,7 +1340,8 @@ app.get('/api/daemon/events', async (req, res) => {
     );
     res.json({ events: rows.map(r => ({ id: r.id, type: r.type, userId: r.user_id, ts: r.timestamp, data: r.data_json })), total: rows.length });
   } catch (e) {
-    res.json({ error: e.message, events: [] });
+    console.error('[daemon/logs] error:', e.message);
+    res.status(500).json({ error: 'Internal server error', events: [] });
   }
 });
 
@@ -1316,13 +1354,19 @@ app.post('/api/daemon/force-update', (req, res) => {
   res.json({ ok: true, forceUpdate: global._forceUpdateEnabled });
 });
 
-// POST /api/daemon/command — 관리자가 데몬에 명령 전송
+// POST /api/daemon/command — 관리자가 데몬에 명령 전송 (인증 필수)
 app.post('/api/daemon/command', (req, res) => {
+  const token = (req.headers.authorization || '').replace('Bearer ', '');
+  const user = verifyToken(token);
+  if (!user) return res.status(401).json({ error: 'unauthorized' });
+  const adminEmails = (process.env.ADMIN_EMAILS || 'dlaww584@gmail.com').split(',').map(s => s.trim().toLowerCase());
+  if (!adminEmails.includes(user.email?.toLowerCase())) return res.status(403).json({ error: 'admin only' });
+
   const { hostname = 'ALL', action, command, data } = req.body || {};
   if (!action) return res.status(400).json({ error: 'action 필수' });
   if (!global._daemonCommands[hostname]) global._daemonCommands[hostname] = [];
   global._daemonCommands[hostname].push({ action, command, data, ts: new Date().toISOString() });
-  console.log(`[daemon-cmd] ${hostname}: ${action}`);
+  console.log(`[daemon-cmd] ${hostname}: ${action} (by ${user.email})`);
   res.json({ ok: true, queued: hostname });
 });
 
@@ -1362,11 +1406,9 @@ app.post('/api/hook', async (req, res) => {
     const jsonlLines = [];
     for (const event of events) {
       // user_id를 토큰에서 추출한 값으로 덮어쓰기 (프라이버시 격리)
-      // hookUserId === 'local'이어도 event.userId가 있으면 보존 (신규계정 이벤트 귀속)
+      // 보안: 항상 서버 검증된 userId 사용 (클라이언트 입력 무시)
       if (hookUserId !== 'local') {
-        event.userId = hookUserId;
-      } else if (event.userId && event.userId !== 'local') {
-        // 이벤트 자체에 userId가 세팅되어 있으면 그대로 사용
+        event.userId = hookUserId; // 서버 검증된 userId만 사용
       } else if (deviceId) {
         // local 이벤트에 device_id 기록 (나중에 claim 시 디바이스 매칭)
         if (!event.metadata) event.metadata = {};
@@ -1591,7 +1633,7 @@ app.post('/api/hook', async (req, res) => {
     res.json(response);
   } catch (e) {
     logger.hook.error('오류: %s', e.message);
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -1624,7 +1666,7 @@ app.post('/api/bulk-import', (req, res) => {
     res.json({ ok: true, imported, total: events.length });
   } catch (e) {
     console.error('[BULK-IMPORT] 오류:', e.message);
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -1665,7 +1707,8 @@ app.get('/health', (req, res) => {
       timestamp: new Date().toISOString(),
     });
   } catch (e) {
-    res.status(500).json({ status: 'error', error: e.message });
+    console.error('[health] error:', e.message);
+    res.status(500).json({ status: 'error', error: 'Internal server error' });
   }
 });
 
@@ -1703,7 +1746,8 @@ app.post('/api/tracker/ping', (req, res) => {
 
     res.json({ ok: true });
   } catch (e) {
-    res.status(500).json({ ok: false, error: e.message });
+    console.error('[tracker/ping] error:', e.message);
+    res.status(500).json({ ok: false, error: 'Internal server error' });
   }
 });
 
@@ -1725,7 +1769,7 @@ app.get('/api/install/status', async (req, res) => {
       byHost[host].lastSeen = e.timestamp;
     });
     res.json({ installs: Object.values(byHost) });
-  } catch (e) { res.json({ installs: [], error: e.message }); }
+  } catch (e) { console.error('[install/status] error:', e.message); res.json({ installs: [] }); }
 });
 
 // ─── 자동 에러 수정 관리 API ────────────────────────────────────────────────
@@ -1774,7 +1818,7 @@ app.post('/api/vision/result', async (req, res) => {
     };
     await Promise.resolve(insertEvent(event));
     res.json({ ok: true });
-  } catch (e) { res.json({ error: e.message }); }
+  } catch (e) { console.error('[vision-result] error:', e.message); res.status(500).json({ error: 'Internal server error' }); }
 });
 
 // 워크플로우 학습 + 자동화 템플릿 조회
@@ -1782,7 +1826,7 @@ app.get('/api/workflows', (req, res) => {
   try {
     const wf = require('./src/workflow-learner');
     res.json(wf.getStatus());
-  } catch (e) { res.json({ error: e.message }); }
+  } catch (e) { console.error('[workflows] error:', e.message); res.status(500).json({ error: 'Internal server error' }); }
 });
 
 app.get('/api/workflows/templates', (req, res) => {
@@ -1802,7 +1846,7 @@ app.post('/api/workflows/generate', (req, res) => {
     if (!template) return res.status(404).json({ error: 'template not found' });
     const scripts = executor.generateAll(template);
     res.json({ ok: true, scripts });
-  } catch (e) { res.json({ error: e.message }); }
+  } catch (e) { console.error('[workflows/generate] error:', e.message); res.status(500).json({ error: 'Internal server error' }); }
 });
 
 // 앱별 사용 프로필 + 피드백 조회 (tool-profiler)
@@ -1813,7 +1857,7 @@ app.get('/api/tool-profiles', (req, res) => {
       profiles: profiler.getAllProfiles(),
       feedback: profiler.getRecentFeedback(20),
     });
-  } catch (e) { res.json({ profiles: [], feedback: [], error: e.message }); }
+  } catch (e) { console.error('[tool-profiles] error:', e.message); res.json({ profiles: [], feedback: [] }); }
 });
 
 // 트래커 상태 조회 (대시보드에서 연결 확인용)
@@ -1949,7 +1993,8 @@ app.post('/api/register-hook-token', (req, res) => {
 
     res.json({ ok: true, pcId: cfg.pcId, migrated });
   } catch (e) {
-    res.status(500).json({ ok: false, error: e.message });
+    console.error('[daemon/migrate-config] error:', e.message);
+    res.status(500).json({ ok: false, error: 'Internal server error' });
   }
 });
 
@@ -1966,7 +2011,7 @@ app.get('/api/admin/graph', async (req, res) => {
     const events = await Promise.resolve(getAllEvents(5000));
     const graph = buildGraph(events);
     res.json(graph);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { console.error('[admin/raw-graph] error:', e.message); res.status(500).json({ error: 'Internal server error' }); }
 });
 
 // ─── 자동화 검증 API (rawInput + clipboard + vision 3중 대조) ─────────────────
@@ -2012,7 +2057,7 @@ app.get('/api/admin/verify-automation', async (req, res) => {
       counts: { keyboard: keyboards.length, clipboard: clipboards.length, vision: visions.length, order: orders.length },
       keyboards, clipboards, visions, orders,
     });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { console.error('[admin/verify-automation] error:', e.message); res.status(500).json({ error: 'Internal server error' }); }
 });
 
 // ─── 어드민 CLI 토큰 발급 (이메일 기반, 비밀번호 불필요) ──────────────────────
@@ -2113,6 +2158,7 @@ app.use('/api', createGraphRouter({
   graphEngine: { buildGraph, computeActivityScores, applyActivityVisualization },
   CONV_FILE, SNAPSHOTS_DIR,
   verifyToken,
+  getDb: () => dbModule.getDb(),
 }));
 
 app.use('/api', createAnnotationsRouter({
@@ -2489,7 +2535,8 @@ app.post('/api/demo/seed', (req, res) => {
     broadcastAll({ type: 'refresh' });
     res.json({ ok: true, eventCount: events.length, sessions: sessions.length });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error('[demo/generate] error:', e.message);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -2504,7 +2551,8 @@ app.post('/api/demo/clear', (req, res) => {
     broadcastAll({ type: 'refresh' });
     res.json({ ok: true, deleted: deleted.changes });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error('[demo/clear] error:', e.message);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -2703,7 +2751,8 @@ app.post('/api/behavior/sync', (req, res) => {
 
     res.json({ ok: true, uid, score, buffered: arr.length });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error('[behavior/ingest] error:', e.message);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

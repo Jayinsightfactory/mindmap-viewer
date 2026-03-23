@@ -5,10 +5,10 @@
  * ─────────────────────────────────────────────────────────────────────────────
  * 글로벌 키보드 캡처 (uiohook-napi) — 로컬 학습 아키텍처
  *
- * 핵심 원칙: "로컬에서 학습 → 분석 결과 + 원본 텍스트 전송"
- * - 원본 키스트로크를 rawInput으로 서버에 전송 (학습/시뮬레이션 검증용)
+ * 핵심 원칙: "로컬에서 학습 → 분석 결과(통계만) 전송"
+ * - 원본 키스트로크는 로컬에서만 분석 후 폐기 (서버 전송 안 함)
  * - 5분마다 로컬 분석 실행 후 서버 전송
- * - 서버에는 분석 메트릭 + 원본 텍스트(최대 2000자) 전송
+ * - 서버에는 분석 메트릭 + rawStats(단어수/줄수/패턴) 전송 (rawInput 제거)
  * - 비밀번호 앱 활성 시 자동 중단
  * - macOS Accessibility 권한 필요
  *
@@ -469,8 +469,16 @@ function _runPeriodicAnalysis() {
       mouseClicks: _mouseClickCount,
       mouseRegions: { ..._mouseQuadrants },
       mousePositions: _mouseClickPositions.slice(-50),
-      // ── 원본 입력 텍스트 (학습용) ──
-      rawInput: _rawBuffer.substring(0, 2000), // 최대 2000자, 학습/시뮬레이션 검증용
+      // ── 원본 입력 텍스트 제거 (보안) ──
+      // rawInput: 원본 텍스트 전송 안 함 (개인정보 보호)
+      rawInput: undefined,
+      rawStats: {
+        wordCount: analyzed.metrics.wordCount,
+        lineCount: analyzed.metrics.lineCount,
+        avgWordLen: analyzed.metrics.avgWordLength,
+        totalChars: analyzed.metrics.totalChars,
+        symbolRatio: analyzed.metrics.symbolRatio,
+      },
     },
     period: { start: periodStart, end: now },
     ts: now,
@@ -488,7 +496,7 @@ function _runPeriodicAnalysis() {
   _mouseClickPositions = [];
   _sessionStart = now;
 
-  console.log('[keyboard-watcher] 분석 완료 — 원본 텍스트 포함 전송됨 (학습용)');
+  console.log('[keyboard-watcher] 분석 완료 — 통계만 전송됨 (원본 텍스트 제외)');
 }
 
 

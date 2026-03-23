@@ -49,7 +49,7 @@ const router   = express.Router();
 function createRouter(deps) {
   const {
     getFullGraph, getFullGraphForUser, broadcastAll, broadcastToChannel,
-    db, purposeClassifier, CONV_FILE, SNAPSHOTS_DIR, verifyToken,
+    db, purposeClassifier, CONV_FILE, SNAPSHOTS_DIR, verifyToken, getDb,
   } = deps;
 
   const {
@@ -74,6 +74,42 @@ function createRouter(deps) {
     return verifyToken ? verifyToken(token) : null;           // 비로그인 → null (빈 화면)
   }
 
+  // ── 워크스페이스 멤버 검증 헬퍼 ──────────────────────────────────────────────
+  // 두 userId가 같은 워크스페이스에 속하는지 확인
+  async function isSameWorkspace(userId, targetUserId) {
+    if (!getDb) return true; // getDb 미주입 시 허용 (개발 호환)
+    try {
+      const dbInst = getDb();
+      if (!dbInst) return true;
+      // PG (pool.query) vs SQLite (db.prepare) 분기
+      if (dbInst.query) {
+        const { rows } = await dbInst.query(
+          `SELECT 1 FROM workspace_members wm1
+           JOIN workspace_members wm2 ON wm1.workspace_id = wm2.workspace_id
+           WHERE wm1.user_id = $1 AND wm2.user_id = $2
+           AND (wm1.status = 'active' OR wm1.status IS NULL)
+           AND (wm2.status = 'active' OR wm2.status IS NULL)
+           LIMIT 1`,
+          [userId, targetUserId]
+        );
+        return rows.length > 0;
+      } else if (dbInst.prepare) {
+        const row = dbInst.prepare(
+          `SELECT 1 FROM workspace_members wm1
+           JOIN workspace_members wm2 ON wm1.workspace_id = wm2.workspace_id
+           WHERE wm1.user_id = ? AND wm2.user_id = ?
+           AND (wm1.status = 'active' OR wm1.status IS NULL)
+           AND (wm2.status = 'active' OR wm2.status IS NULL)
+           LIMIT 1`
+        ).get(userId, targetUserId);
+        return !!row;
+      }
+    } catch (e) {
+      console.warn('[graph] workspace membership check failed:', e.message);
+    }
+    return true; // DB 오류 시 허용 (가용성 우선)
+  }
+
   // ── 그래프 ────────────────────────────────────────────────────────────────
 
   /**
@@ -95,6 +131,14 @@ function createRouter(deps) {
 
       // memberId 파라미터: 팀뷰 드릴다운 시 다른 멤버의 그래프 조회
       const targetUserId = req.query.memberId || user.id;
+
+      // 보안: 다른 멤버의 데이터 조회 시 같은 워크스페이스에 속하는지 검증
+      if (req.query.memberId && user.id !== 'local' && req.query.memberId !== user.id) {
+        const allowed = await isSameWorkspace(user.id, req.query.memberId);
+        if (!allowed) {
+          return res.status(403).json({ nodes: [], edges: [], error: 'not in same workspace' });
+        }
+      }
 
       let graph;
       if (user.id === 'local' && !req.query.memberId) {
@@ -652,7 +696,7 @@ function createRouter(deps) {
       res.json(historyEvents);
     } catch (error) {
       console.error('[nodeHistory] 오류:', error.message);
-      res.status(500).json({ error: error.message });
+      res.status(500).json({ error: 'Internal server error' });
     }
   });
 
@@ -693,7 +737,7 @@ function createRouter(deps) {
       res.json({ success: true, remaining: remaining.length });
     } catch (e) {
       console.error('[ROLLBACK] 오류:', e.message);
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: 'Internal server error' });
     }
   });
 
@@ -712,7 +756,7 @@ function createRouter(deps) {
       res.json({ success: true });
     } catch (e) {
       console.error('[CLEAR] 오류:', e.message);
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: 'Internal server error' });
     }
   });
 
