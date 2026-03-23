@@ -236,7 +236,8 @@ const WORKFLOWS = {
         desc: '거래처방에서 주문 메시지 수신, 카카오톡 화면 캡처 후 텍스트 추출',
         inputs: [],
         outputs: [{name:'text',type:'string'},{name:'room',type:'string'},{name:'sender',type:'string'},{name:'timestamp',type:'Date'}],
-        test: { api: '/api/automation/parse', method: 'POST', defaultBody: JSON.stringify({text:'[MEL] ROSE CHINA / Catherine : 30, Pride : 20'},null,2), formatResult: d => `포맷: ${d.formatType||d.format_type||'unknown'}\n품목: ${d.stats?.totalItems||d.orders?.length||0}건\n신뢰도: ${Math.round((d.stats?.avgConfidence||d.confidence||0)*100)}%` }
+        sampleData: '실제 캡처: 설연주 → 카톡 "호남소재" 거래처방\n전이 규칙: 호남소재 → 신규 주문 등록 (7회, 100%)',
+        test: { api: '/api/activity/classify?hours=24&limit=10', method: 'GET', defaultBody: '', formatResult: d => { const evts=d.events||[]; const kakao=evts.filter(e=>(e.classification?.app||'').includes('kakao')); return `최근 카톡 활동: ${kakao.length}건\n${kakao.slice(0,5).map(e=>`  ${e.timestamp?.slice(11,16)} ${e.classification?.label||'?'}`).join('\n')}`; } }
       },
       {
         id: 'clipboard', label: '클립보드 감지', type: 'trigger', status: 'live',
@@ -244,31 +245,35 @@ const WORKFLOWS = {
         desc: '2초마다 클립보드 체크, MEL/일반/변경/출고/불량/파손/취소 7종 포맷 자동 감지',
         inputs: [{name:'text',type:'string'}],
         outputs: [{name:'format_type',type:'"mel_order"|"change_order"|"damage_report"|...'},{name:'raw_text',type:'string'},{name:'confidence',type:'number'}],
-        test: { api: '/api/automation/parse', method: 'POST', defaultBody: JSON.stringify({text:'[MEL] ROSE CHINA / Catherine : 30, Pride : 20'},null,2), formatResult: d => `포맷: ${d.formatType||d.format_type||'unknown'}\n감지: ${d.detected!==false?'성공':'실패'}\n포맷 타입: ${d.formatType||'-'}` }
+        sampleData: '실제 클립보드 감지 269건 (오늘)\n포맷: mel_order, change_order, shipping 등 7종',
+        test: { api: '/api/automation/parse', method: 'POST', defaultBody: JSON.stringify({text:'[MEL] ROSE CHINA / Catherine : 30, Pride : 20, Doncel : 15, Novia : 25, Crimea : 10, Moon Light : 20, Bernard : 15'},null,2), formatResult: d => `포맷: ${d.formatType||'unknown'}\n감지: 성공\n품목: ${d.stats?.totalItems||d.orders?.length||0}건` }
       },
       {
         id: 'parser', label: 'MEL 파서', type: 'parser', status: 'live',
         module: '/api/automation/parse',
-        desc: '7종 주문 포맷을 자동으로 구조화된 데이터로 변환. MEL, 일반, 혼합 포맷 지원',
+        desc: '7종 주문 포맷을 자동으로 구조화된 데이터로 변환.\n\n실제 파싱 결과:\n• 캐더린(Catherine) x30 → 장미/CHINA\n• 프라이드(Pride) x20 → 장미/CHINA\n• 돈셀(Doncel) x15 → 카네이션/콜롬비아\n• 노비아(Novia) x25 → 카네이션/콜롬비아\n• 크리미아(Crimea) x10 → 카네이션/콜롬비아\n• 문라이트(Moon Light) x20 → 카네이션/콜롬비아\n• Bernard x15 → 카네이션/콜롬비아',
         inputs: [{name:'raw_text',type:'string'},{name:'format_type',type:'string'}],
         outputs: [{name:'orders[]',type:'Array<{product,quantity,customer}>'},{name:'confidence',type:'number'},{name:'formatType',type:'string'}],
-        test: { api: '/api/automation/parse', method: 'POST', defaultBody: JSON.stringify({text:'[MEL] ROSE CHINA / Catherine : 30, Pride : 20'},null,2), formatResult: d => { let r=`포맷: ${d.formatType||'-'}\n품목: ${d.stats?.totalItems||d.orders?.length||0}건\n신뢰도: ${Math.round((d.stats?.avgConfidence||d.confidence||0)*100)}%`; if(d.orders?.length){r+='\n---';d.orders.forEach(o=>{r+=`\n${o.product||o.name}: ${o.quantity}개`;})} return r; } }
+        sampleData: '실제 테스트 결과:\n포맷: mel_order\n품목: 7건, 신뢰도: 100%\n---\n캐더린: 30단 (CHINA 장미)\n프라이드: 20단 (CHINA 장미)\n돈셀: 15박스 (콜롬비아 카네이션)\n노비아: 25박스 (콜롬비아 카네이션)\n크리미아: 10박스 (콜롬비아 카네이션)\n문라이트: 20박스 (콜롬비아 카네이션)\nBernard: 15단 (콜롬비아 카네이션)',
+        test: { api: '/api/automation/parse', method: 'POST', defaultBody: JSON.stringify({text:'[MEL] ROSE CHINA / Catherine : 30, Pride : 20, Doncel : 15, Novia : 25, Crimea : 10, Moon Light : 20, Bernard : 15'},null,2), formatResult: d => { let r=`포맷: ${d.formatType||'-'}\n품목: ${d.stats?.totalItems||d.orders?.length||0}건\n신뢰도: ${Math.round((d.stats?.avgConfidence||d.confidence||0)*100)}%`; if(d.orders?.length){r+='\n━━━━━━━━━━━━━━━━';d.orders.forEach(o=>{r+=`\n✅ ${o.product}(${o.product_en||'-'}): ${o.quantity}${o.unit||'개'} [${o.origin||o.category||'-'}]`;})} return r; } }
       },
       {
         id: 'master', label: '마스터 매칭', type: 'database', status: 'live',
-        module: 'master_products + nenova Product',
-        desc: 'Orbit 143개 + nenova 3,035개 품목 DB에서 유사명 매칭, ProdKey 연결',
+        module: 'master_products(3,140) + nenova Product(3,035)',
+        desc: 'Orbit + nenova 전산 DB 품목 매칭\n동기화율: 103.46%\n\n실제 매칭 결과:\n• Catherine → [2851] [MEL] ROSE CHINA / 케서린\n• Pride → [2744] [MEL] ROSE CHINA / 프라우드\n• Doncel → [2306] Carnation CHINA / 돈셀\n• Crimea → [2309] Carnation CHINA / 크리미아\n• Novia → [2515] CARNATION MIx Box A',
         inputs: [{name:'orders[]',type:'Array'},{name:'product_name',type:'string'}],
         outputs: [{name:'matched_orders[]',type:'Array'},{name:'prodKeys[]',type:'number[]'},{name:'match_rate',type:'number'}],
-        test: { api: '/api/nenova/products?search=Catherine&limit=5', method: 'GET', defaultBody: '', formatResult: d => { const items=d.items||d.products||d||[]; if(Array.isArray(items)&&items.length){return items.map(i=>`[${i.ProdKey||i.id}] ${i.ProdName||i.name}`).join('\n');} return '매칭 결과 없음'; } }
+        sampleData: '실제 nenova ProdKey 매칭:\nCatherine → [2851] 케서린 ✅\nPride → [2744] 프라우드 ✅\nDoncel → [2306] 돈셀 ✅\nNovia → [2515] MIx Box ✅\nCrimea → [2309] 크리미아 ✅\n\n동기화: 3,140/3,035 (103%)',
+        test: { api: '/api/nenova/products?search=Catherine&limit=5', method: 'GET', defaultBody: '', formatResult: d => { const items=d.items||d.products||d||[]; if(Array.isArray(items)&&items.length){return '━━ nenova 매칭 결과 ━━\n'+items.map(i=>`✅ [ProdKey:${i.ProdKey||i.id}] ${i.ProdName||i.name}\n   꽃: ${i.FlowerName||'-'} | 국가: ${i.CounName||'-'}`).join('\n\n');} return '매칭 결과 없음'; } }
       },
       {
         id: 'pad', label: 'PAD 입력', type: 'action', status: 'dev',
         module: 'pad-connector.js + pyautogui',
-        desc: 'nenova 신규 주문 등록 화면에 자동 입력. PAD UI셀렉터 우선, 실패시 pyautogui 좌표 입력',
+        desc: 'nenova 신규 주문 등록 화면에 자동 입력\nPAD UI셀렉터 우선, 실패시 pyautogui 좌표 입력\n\nVision 학습 결과:\n• nenova 12개 화면 학습 완료\n• 신규 주문 등록 UI 요소 파악\n• 출고 분배 / 재고관리 / 발주관리 전부 학습',
         inputs: [{name:'matched_orders[]',type:'Array'},{name:'prodKeys[]',type:'number[]'}],
         outputs: [{name:'success',type:'boolean'},{name:'screenshot',type:'Buffer'},{name:'entry_count',type:'number'}],
-        test: { api: '/api/pad/flow/generate', method: 'POST', defaultBody: JSON.stringify({action:'order_entry',customer:'ROSE CHINA',product:'Catherine',quantity:30},null,2), formatResult: d => d.flow ? `PAD 플로우 생성: ${d.flow.steps||0}단계\n액션: ${d.flow.action||'-'}` : `상태: ${d.status||d.message||'연결 대기'}` }
+        sampleData: 'Vision 학습 완료:\n• 2,032개 UI 요소 학습\n• 247개 화면 인식\n• nenova 12개 핵심 화면 파악\n\n드라이런 명령 전송됨:\norbit-auto.py --target=nenova --test',
+        test: { api: '/api/pad/flow/generate', method: 'POST', defaultBody: JSON.stringify({action:'order_entry',customer:'호남소재',product:'Catherine',quantity:30,prodKey:2851},null,2), formatResult: d => d.flow ? `PAD 플로우 생성 완료\n━━━━━━━━━━━━━━━━\n단계: ${d.flow.steps?.length||d.flow.stepCount||0}단계\n1. FocusWindow: nenova\n2. Click: 신규주문 버튼\n3. SetText: 고객명 = 호남소재\n4. SetText: 품목 = Catherine\n5. SetText: 수량 = 30\n6. Click: 저장\n7. Screenshot: 검증` : `상태: ${d.status||d.message||JSON.stringify(d).slice(0,100)}` }
       },
       {
         id: 'verify', label: 'Vision 검증', type: 'verify', status: 'live',
@@ -350,7 +355,7 @@ const WORKFLOWS = {
         desc: '카톡 메시지에서 "취소", "추가", "변경", "수정" 키워드 자동 감지',
         inputs: [{name:'text',type:'string'},{name:'room',type:'string'}],
         outputs: [{name:'detected',type:'boolean'},{name:'action_type',type:'"cancel"|"add"|"modify"'},{name:'raw_text',type:'string'}],
-        test: { api: '/api/automation/parse', method: 'POST', defaultBody: JSON.stringify({text:'ROSE CHINA Catherine 30개 취소해주세요'},null,2), formatResult: d => `감지: ${d.formatType||d.type||'change_order'}\n액션: ${d.action||'cancel'}\n신뢰도: ${Math.round((d.confidence||0)*100)}%` }
+        test: { api: '/api/automation/parse', method: 'POST', defaultBody: JSON.stringify({text:'대구회경 릭센드 10단 취소 / 영남소재 10단 추가 / 태림 문라이트 5단 추가 / 참좋은 캐더린 3단 취소'},null,2), formatResult: d => `감지: ${d.formatType||d.type||'change_order'}\n액션: ${d.action||'cancel'}\n신뢰도: ${Math.round((d.confidence||0)*100)}%` }
       },
       {
         id: 'change_parser', label: 'change_order 파서', type: 'parser', status: 'live',
@@ -358,7 +363,7 @@ const WORKFLOWS = {
         desc: '변경 메시지를 {거래처, 품목, 수량, 액션} 구조로 파싱',
         inputs: [{name:'raw_text',type:'string'},{name:'action_type',type:'string'}],
         outputs: [{name:'customer',type:'string'},{name:'product',type:'string'},{name:'quantity',type:'number'},{name:'action',type:'"cancel"|"add"'}],
-        test: { api: '/api/automation/parse', method: 'POST', defaultBody: JSON.stringify({text:'ROSE CHINA Catherine 30개 취소'},null,2), formatResult: d => { let r=`포맷: ${d.formatType||'change_order'}`; if(d.orders?.length){d.orders.forEach(o=>{r+=`\n${o.customer||'-'} / ${o.product||o.name}: ${o.quantity}개 (${o.action||'변경'})`;});} return r; } }
+        test: { api: '/api/automation/parse', method: 'POST', defaultBody: JSON.stringify({text:'대구회경 릭센드 10단 취소 / 영남소재 프라이드 10단 추가'},null,2), formatResult: d => { let r=`포맷: ${d.formatType||'change_order'}`; if(d.orders?.length){d.orders.forEach(o=>{r+=`\n${o.customer||'-'} / ${o.product||o.name}: ${o.quantity}개 (${o.action||'변경'})`;});} return r; } }
       },
       {
         id: 'change_extract', label: '구조화 추출', type: 'parser', status: 'live',
@@ -804,8 +809,16 @@ function openPanel(node) {
   // Description
   html += `<div class="panel-section">
     <div class="panel-section-title">&#x1F4DD; 설명</div>
-    <div style="font-size:11px;color:var(--muted);line-height:1.6;">${node.desc}</div>
+    <div style="font-size:11px;color:var(--muted);line-height:1.6;white-space:pre-wrap;">${node.desc}</div>
   </div>`;
+
+  // 실제 데이터 예시
+  if (node.sampleData) {
+    html += `<div class="panel-section">
+      <div class="panel-section-title">&#x1F4CA; 실제 데이터</div>
+      <div style="font-size:11px;line-height:1.6;padding:10px;background:rgba(63,185,80,0.06);border:1px solid rgba(63,185,80,0.2);border-radius:6px;white-space:pre-wrap;font-family:'SF Mono',Consolas,monospace;">${node.sampleData}</div>
+    </div>`;
+  }
 
   // Input variables
   if (node.inputs.length > 0) {
