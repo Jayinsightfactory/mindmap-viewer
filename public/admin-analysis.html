@@ -1800,7 +1800,7 @@ async function loadLogs() {
         let title = log.windowTitle || log.visionScreen || log.trigger || '';
         // 카톡 방이름 마스킹 — 학습은 하되 로그에는 안 보이게
         if (app.toLowerCase().includes('kakao') || app.toLowerCase().includes('카카오')) {
-          title = '카카오톡 대화';
+          title = '대화';
         }
         // 크롬/브라우저 웹사이트 마스킹
         if (app.toLowerCase().match(/chrome|edge|whale|firefox|브라우저|browser/)) {
@@ -1813,7 +1813,7 @@ async function loadLogs() {
         let whHtml = '';
         if (log.windowHistory && Object.keys(log.windowHistory).length > 0) {
           whHtml = Object.entries(log.windowHistory).map(([a,t]) => {
-            const masked = a.toLowerCase().includes('kakao') ? '카카오톡 대화' : (t||'').substring(0,50);
+            const masked = a.toLowerCase().includes('kakao') ? '대화' : (t||'').substring(0,50);
             return `<div style="font-size:10px;color:var(--muted);margin-top:2px">${a}: ${masked}</div>`;
           }).join('');
         }
