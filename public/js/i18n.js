@@ -1,160 +1,231 @@
-// i18n.js — Orbit AI 다국어 지원 (한국어/스페인어)
+// i18n.js — Orbit AI 다국어 지원 (한국어 ↔ 스페인어)
+// HTML 수정 없이 페이지 내 한국어 텍스트를 자동으로 찾아서 번역
 (function() {
-  const TRANSLATIONS = {
-    // Common UI
-    'dashboard': { ko: '대시보드', es: 'Panel' },
-    'settings': { ko: '설정', es: 'Configuración' },
-    'login': { ko: '로그인', es: 'Iniciar sesión' },
-    'logout': { ko: '로그아웃', es: 'Cerrar sesión' },
-    'save': { ko: '저장', es: 'Guardar' },
-    'cancel': { ko: '취소', es: 'Cancelar' },
-    'search': { ko: '검색', es: 'Buscar' },
-    'loading': { ko: '로딩 중...', es: 'Cargando...' },
-    'refresh': { ko: '새로고침', es: 'Actualizar' },
-    'back': { ko: '뒤로', es: 'Volver' },
-    'close': { ko: '닫기', es: 'Cerrar' },
-    'confirm': { ko: '확인', es: 'Confirmar' },
-    'delete': { ko: '삭제', es: 'Eliminar' },
-    'edit': { ko: '수정', es: 'Editar' },
-    'add': { ko: '추가', es: 'Añadir' },
-    'name': { ko: '이름', es: 'Nombre' },
-    'email': { ko: '이메일', es: 'Correo' },
-    'password': { ko: '비밀번호', es: 'Contraseña' },
-    'profile': { ko: '프로필', es: 'Perfil' },
-    'workspace': { ko: '워크스페이스', es: 'Espacio de trabajo' },
-    'team': { ko: '팀', es: 'Equipo' },
-    'member': { ko: '멤버', es: 'Miembro' },
-    'members': { ko: '멤버', es: 'Miembros' },
-    'invite': { ko: '초대', es: 'Invitar' },
-    'invite_code': { ko: '초대 코드', es: 'Código de invitación' },
-    'join': { ko: '참여', es: 'Unirse' },
-    'create': { ko: '생성', es: 'Crear' },
-    'status': { ko: '상태', es: 'Estado' },
-    'online': { ko: '온라인', es: 'En línea' },
-    'offline': { ko: '오프라인', es: 'Desconectado' },
-    'active': { ko: '활성', es: 'Activo' },
-    'pending': { ko: '대기', es: 'Pendiente' },
+  // 한국어 → 스페인어 매핑 (정확한 문자열 매칭)
+  const KO_ES = {
+    // 공통 UI
+    '대시보드': 'Panel',
+    '설정': 'Configuración',
+    '로그인': 'Iniciar sesión',
+    '로그아웃': 'Cerrar sesión',
+    '저장': 'Guardar',
+    '취소': 'Cancelar',
+    '검색': 'Buscar',
+    '검색...': 'Buscar...',
+    '로딩 중...': 'Cargando...',
+    '로딩...': 'Cargando...',
+    '새로고침': 'Actualizar',
+    '뒤로': 'Volver',
+    '닫기': 'Cerrar',
+    '확인': 'Confirmar',
+    '삭제': 'Eliminar',
+    '수정': 'Editar',
+    '추가': 'Añadir',
+    '이름': 'Nombre',
+    '이메일': 'Correo',
+    '비밀번호': 'Contraseña',
+    '프로필': 'Perfil',
+    '계정': 'Cuenta',
+    '알림': 'Notificaciones',
+    '언어': 'Idioma',
+    '테마': 'Tema',
+    '전체': 'Todo',
+    '없음': 'Ninguno',
 
-    // 3D View
-    'my_view': { ko: '내 화면', es: 'Mi vista' },
-    'team_view': { ko: '팀 뷰', es: 'Vista de equipo' },
-    'company_view': { ko: '전사 뷰', es: 'Vista empresa' },
-    'my_analysis': { ko: '내 업무 분석', es: 'Mi análisis' },
-    'sessions': { ko: '세션', es: 'Sesiones' },
-    'projects': { ko: '프로젝트', es: 'Proyectos' },
-    'files': { ko: '파일', es: 'Archivos' },
-    'events': { ko: '이벤트', es: 'Eventos' },
+    // 네비게이션
+    '내 화면': 'Mi vista',
+    '팀 뷰': 'Vista equipo',
+    '전사 뷰': 'Vista empresa',
+    '내 업무 분석': 'Mi análisis',
+    '3D 뷰로 돌아가기': 'Volver a vista 3D',
+    '← 대시보드': '← Panel',
+    '← 대시보드로 돌아가기': '← Volver al panel',
 
-    // Work categories
-    'work': { ko: '업무', es: 'Trabajo' },
-    'personal': { ko: '개인', es: 'Personal' },
-    'communication': { ko: '소통', es: 'Comunicación' },
-    'document': { ko: '문서', es: 'Documento' },
-    'data_entry': { ko: '데이터 입력', es: 'Entrada de datos' },
-    'analysis': { ko: '분석', es: 'Análisis' },
+    // 워크스페이스
+    '워크스페이스': 'Espacio de trabajo',
+    '워크스페이스 설정': 'Config. espacio',
+    '팀': 'Equipo',
+    '멤버': 'Miembro',
+    '멤버 초대': 'Invitar miembro',
+    '초대': 'Invitar',
+    '초대 코드': 'Código de invitación',
+    '초대코드': 'Código',
+    '참여': 'Unirse',
+    '생성': 'Crear',
+    '관리자': 'Administrador',
+    '소유자': 'Propietario',
 
-    // Features page
-    'features': { ko: '기능', es: 'Funciones' },
-    'ai_tracking': { ko: 'AI 작업 추적', es: 'Seguimiento de trabajo IA' },
-    'realtime_sync': { ko: '실시간 동기화', es: 'Sincronización en tiempo real' },
-    'privacy': { ko: '개인정보 보호', es: 'Privacidad' },
-    'terms': { ko: '이용약관', es: 'Términos de uso' },
+    // 상태
+    '상태': 'Estado',
+    '온라인': 'En línea',
+    '오프라인': 'Desconectado',
+    '활성': 'Activo',
+    '대기': 'Pendiente',
+    '대기 중': 'En espera',
 
-    // Guide
-    'guide': { ko: '가이드', es: 'Guía' },
-    'installation': { ko: '설치', es: 'Instalación' },
-    'getting_started': { ko: '시작하기', es: 'Comenzar' },
+    // 업무 카테고리
+    '업무': 'Trabajo',
+    '개인': 'Personal',
+    '소통': 'Comunicación',
+    '문서': 'Documento',
+    '분석': 'Análisis',
 
-    // Settings
-    'language': { ko: '언어', es: 'Idioma' },
-    'theme': { ko: '테마', es: 'Tema' },
-    'notifications': { ko: '알림', es: 'Notificaciones' },
-    'account': { ko: '계정', es: 'Cuenta' },
+    // 3D 뷰
+    '세션': 'Sesiones',
+    '프로젝트': 'Proyectos',
+    '파일': 'Archivos',
+    '이벤트': 'Eventos',
+    '작업 우주': 'Universo de trabajo',
 
-    // Marketplace
-    'marketplace': { ko: '마켓플레이스', es: 'Marketplace' },
-    'install': { ko: '설치', es: 'Instalar' },
+    // 페이지 제목
+    '기능': 'Funciones',
+    '가이드': 'Guía',
+    '시작하기': 'Comenzar',
+    '설치': 'Instalar',
+    '마켓플레이스': 'Marketplace',
+    '개인정보 보호': 'Privacidad',
+    '이용약관': 'Términos',
+    '타임라인': 'Línea de tiempo',
+    '조직': 'Organización',
+    '부서': 'Departamento',
+    '역할': 'Rol',
+    '대화 이력': 'Historial de chat',
+    '작업 내역': 'Historial de trabajo',
 
-    // Timeline
-    'timeline': { ko: '타임라인', es: 'Línea de tiempo' },
-    'today': { ko: '오늘', es: 'Hoy' },
-    'this_week': { ko: '이번 주', es: 'Esta semana' },
-    'this_month': { ko: '이번 달', es: 'Este mes' },
+    // 날짜
+    '오늘': 'Hoy',
+    '이번 주': 'Esta semana',
+    '이번 달': 'Este mes',
 
-    // Organization
-    'organization': { ko: '조직', es: 'Organización' },
-    'department': { ko: '부서', es: 'Departamento' },
-    'role': { ko: '역할', es: 'Rol' },
-    'manager': { ko: '관리자', es: 'Administrador' },
-    'owner': { ko: '소유자', es: 'Propietario' },
+    // Orbit 고유
+    '트래커 설치': 'Instalar rastreador',
+    '설치 코드 복사': 'Copiar código',
+    '데이터 없음': 'Sin datos',
 
-    // Orbit specific
-    'orbit_ai': { ko: 'Orbit AI', es: 'Orbit AI' },
-    'work_universe': { ko: '작업 우주', es: 'Universo de trabajo' },
-    'install_tracker': { ko: '트래커 설치', es: 'Instalar rastreador' },
-    'copy_code': { ko: '설치 코드 복사', es: 'Copiar código' },
-    'workspace_settings': { ko: '워크스페이스 설정', es: 'Config. espacio' },
-    'invite_member': { ko: '멤버 초대', es: 'Invitar miembro' },
-    'no_data': { ko: '데이터 없음', es: 'Sin datos' },
-    'view_3d': { ko: '3D 뷰', es: 'Vista 3D' },
-    'chat_history': { ko: '대화 이력', es: 'Historial de chat' },
-    'work_analysis': { ko: '업무 분석', es: 'Análisis de trabajo' },
+    // 에러
+    '서버 연결 실패': 'Error de conexión',
+    '데이터 로드 실패': 'Error al cargar datos',
+    '오류': 'Error',
+    '실패': 'Error',
+    '성공': 'Éxito',
+
+    // 분석
+    '업무 분석 대시보드': 'Panel de análisis',
+    '분석 결과': 'Resultados',
+    '요약': 'Resumen',
+    '상세': 'Detalle',
+    '리포트': 'Informe',
+
+    // 기타
+    'Claude 오프라인': 'Claude sin conexión',
+    'Claude 온라인': 'Claude en línea',
+    '복사': 'Copiar',
+    '붙여넣기': 'Pegar',
+    '다운로드': 'Descargar',
+    '업로드': 'Subir',
+    '전송': 'Enviar',
+    '완료': 'Completado',
+    '진행 중': 'En progreso',
+    '준비 중': 'Preparando',
   };
 
-  // Get/set language
+  // 역방향 매핑 생성 (스페인어 → 한국어)
+  const ES_KO = {};
+  for (const [ko, es] of Object.entries(KO_ES)) {
+    ES_KO[es] = ko;
+  }
+
   function getLang() { return localStorage.getItem('orbit_lang') || 'ko'; }
-  function setLang(lang) { localStorage.setItem('orbit_lang', lang); translatePage(); }
 
-  // Translate function
-  function t(key) {
-    const lang = getLang();
-    const entry = TRANSLATIONS[key];
-    if (!entry) return key;
-    return entry[lang] || entry['ko'] || key;
+  function setLang(lang) {
+    const prev = getLang();
+    localStorage.setItem('orbit_lang', lang);
+    if (prev !== lang) translatePage(prev, lang);
+    updateButton();
   }
 
-  // Translate all elements with data-i18n attribute
-  function translatePage() {
-    const lang = getLang();
-    document.querySelectorAll('[data-i18n]').forEach(el => {
-      const key = el.getAttribute('data-i18n');
-      const entry = TRANSLATIONS[key];
-      if (entry) {
-        el.textContent = entry[lang] || entry['ko'];
+  // 페이지 내 모든 텍스트 노드를 순회하며 번역
+  function translatePage(fromLang, toLang) {
+    const map = toLang === 'es' ? KO_ES : ES_KO;
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
+
+    while (walker.nextNode()) {
+      const node = walker.currentNode;
+      let text = node.textContent;
+      if (!text || !text.trim()) continue;
+
+      let changed = false;
+      for (const [from, to] of Object.entries(map)) {
+        if (text.includes(from)) {
+          text = text.split(from).join(to);
+          changed = true;
+        }
       }
-    });
-    // Also translate placeholders
-    document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
-      const key = el.getAttribute('data-i18n-placeholder');
-      const entry = TRANSLATIONS[key];
-      if (entry) {
-        el.placeholder = entry[lang] || entry['ko'];
+      if (changed) node.textContent = text;
+    }
+
+    // placeholder, title, aria-label도 번역
+    document.querySelectorAll('input[placeholder], textarea[placeholder]').forEach(el => {
+      let ph = el.placeholder;
+      for (const [from, to] of Object.entries(map)) {
+        if (ph.includes(from)) ph = ph.split(from).join(to);
       }
+      el.placeholder = ph;
     });
-    // Update toggle button
+
+    document.querySelectorAll('[title]').forEach(el => {
+      let t = el.title;
+      for (const [from, to] of Object.entries(map)) {
+        if (t.includes(from)) t = t.split(from).join(to);
+      }
+      el.title = t;
+    });
+  }
+
+  function updateButton() {
     const btn = document.getElementById('lang-toggle');
-    if (btn) btn.textContent = lang === 'ko' ? '\uD83C\uDDEA\uD83C\uDDF8 ES' : '\uD83C\uDDF0\uD83C\uDDF7 KO';
+    if (btn) btn.textContent = getLang() === 'ko' ? '🇪🇸 ES' : '🇰🇷 KO';
   }
 
-  // Create toggle button
   function createToggle() {
+    if (document.getElementById('lang-toggle')) return;
     const btn = document.createElement('button');
     btn.id = 'lang-toggle';
-    btn.textContent = getLang() === 'ko' ? '\uD83C\uDDEA\uD83C\uDDF8 ES' : '\uD83C\uDDF0\uD83C\uDDF7 KO';
     btn.style.cssText = 'position:fixed;bottom:16px;right:16px;z-index:9999;padding:6px 14px;border-radius:20px;border:1px solid #30363d;background:#161b22;color:#e6edf3;font-size:12px;cursor:pointer;font-weight:600;transition:all .2s;';
-    btn.onmouseover = function() { btn.style.borderColor = '#58a6ff'; };
-    btn.onmouseout = function() { btn.style.borderColor = '#30363d'; };
-    btn.onclick = function() { setLang(getLang() === 'ko' ? 'es' : 'ko'); };
+    btn.onmouseover = () => btn.style.borderColor = '#58a6ff';
+    btn.onmouseout = () => btn.style.borderColor = '#30363d';
+    btn.onclick = () => setLang(getLang() === 'ko' ? 'es' : 'ko');
     document.body.appendChild(btn);
+    updateButton();
   }
 
-  // Export
-  window.i18n = { t: t, getLang: getLang, setLang: setLang, translatePage: translatePage, TRANSLATIONS: TRANSLATIONS };
+  // t() 함수 — 프로그래밍용
+  function t(key) {
+    if (getLang() === 'es') return KO_ES[key] || key;
+    return key;
+  }
 
-  // Auto-init
+  window.i18n = { t, getLang, setLang, translatePage: () => {
+    const lang = getLang();
+    if (lang === 'es') translatePage('ko', 'es');
+  }, KO_ES, ES_KO };
+
+  // 초기화
+  function init() {
+    createToggle();
+    if (getLang() === 'es') translatePage('ko', 'es');
+  }
+
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', function() { createToggle(); translatePage(); });
+    document.addEventListener('DOMContentLoaded', init);
   } else {
-    createToggle(); translatePage();
+    init();
+  }
+
+  // 동적 콘텐츠 대응 — 1초마다 새 텍스트 번역 (가벼움)
+  if (getLang() === 'es') {
+    setInterval(() => {
+      if (getLang() === 'es') translatePage('ko', 'es');
+    }, 3000);
   }
 })();
