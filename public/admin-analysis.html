@@ -1409,21 +1409,42 @@ function filterMembers() {
 // ── 그래프 데이터 (Vision 분석 이벤트) ────────────────────────────
 async function loadGraphData() {
   try {
-    const data = await apiFetch('/api/admin/graph');
-    if (!data || !data.nodes) {
-      document.getElementById('vision-content').innerHTML =
-        '<div class="empty-state">그래프 데이터가 없습니다.</div>';
-      return;
-    }
+    // Vision 학습 데이터 + 활동 분류 데이터 활용
+    const [visionStatus, screens, activity] = await Promise.all([
+      fetch('/api/vision/learning-status', {headers:AUTH_HEADERS}).then(r=>r.json()).catch(()=>({})),
+      fetch('/api/vision/screens', {headers:AUTH_HEADERS}).then(r=>r.json()).catch(()=>({screens:[]})),
+      fetch('/api/activity/classify?hours=168&limit=200', {headers:AUTH_HEADERS}).then(r=>r.json()).catch(()=>({events:[]})),
+    ]);
 
-    // screen.analyzed 타입 이벤트 필터링
-    G.graphNodes = (data.nodes || []).filter(n => {
-      const t = (n.type || '').toLowerCase();
-      return t === 'screen.analyzed' || t === 'screen_analyzed' || t.includes('screen');
-    });
+    // Vision 화면을 그래프 노드로 변환
+    const screenList = screens.screens || screens.data || [];
+    G.graphNodes = screenList.map(s => ({
+      type: 'screen.analyzed',
+      timestamp: s.created_at || s.last_seen || '',
+      hostname: '',
+      data: {
+        app: s.app_name || s.app || '',
+        screen: s.screen_name || s.screen || '',
+        activity: s.description || s.screen_name || '',
+        automatable: false,
+        workCategory: '',
+      }
+    }));
 
     renderVisionTable();
     extractPatterns();
+
+    // Vision 요약 표시
+    const container = document.getElementById('vision-content');
+    if (G.graphNodes.length === 0 && visionStatus.elements > 0) {
+      container.innerHTML = `<div style="padding:16px;color:var(--muted);">
+        <div style="font-size:14px;font-weight:600;margin-bottom:8px;">Vision 학습 현황</div>
+        <div>UI 요소: <strong style="color:var(--green)">${visionStatus.elements||0}</strong>개</div>
+        <div>화면: <strong style="color:var(--blue)">${visionStatus.screens||0}</strong>개</div>
+        <div>앱: <strong>${(visionStatus.apps||[]).length}</strong>개</div>
+        <div style="margin-top:8px;font-size:11px;">캡처 이미지 분석은 Vision 워커가 상시 처리 중입니다.</div>
+      </div>`;
+    }
   } catch (err) {
     document.getElementById('vision-content').innerHTML =
       '<div class="error-msg">Vision 데이터 로드 실패: ' + escHtml(err.message) + '</div>';
@@ -2121,12 +2142,37 @@ async function runIntentAnalysis() {
   viewTabsEl.style.display = 'none';
 
   try {
-    const data = await apiFetch('/api/learning/logs?limit=500');
-    const logs = data?.logs || [];
+    // activity-classifier + investigate 결과 활용
+    const [classifyData, investigateData] = await Promise.all([
+      fetch('/api/activity/classify?hours=168&limit=500', {headers:AUTH_HEADERS}).then(r=>r.json()).catch(()=>({events:[]})),
+      fetch('/api/investigate/reclassify?days=14', {headers:AUTH_HEADERS}).then(r=>r.json()).catch(()=>({stats:{}})),
+    ]);
+
+    // 분류된 이벤트를 로그 형식으로 변환
+    const classified = classifyData.events || [];
+    const logs = classified.map(e => ({
+      userId: e.userId || '',
+      userName: e.userId ? e.userId.substring(0,8) : '',
+      timestamp: e.timestamp,
+      type: e.type,
+      app: e.classification?.app || '',
+      windowTitle: e.classification?.label || '',
+      visionActivity: e.classification?.purpose || '',
+      workCategory: e.classification?.category || '',
+      _classification: e.classification,
+    }));
 
     if (!logs.length) {
-      contentEl.innerHTML = '<div class="empty-state">분석할 로그 데이터가 없습니다.</div>';
+      contentEl.innerHTML = '<div class="empty-state">분석할 데이터가 없습니다. 직원 PC에서 이벤트가 수집되면 여기에 표시됩니다.</div>';
       return;
+    }
+
+    // 재분류 정보 표시
+    const reStats = investigateData.stats || {};
+    if (reStats.reclassifiedToWork > 0) {
+      contentEl.innerHTML = `<div style="padding:10px;background:rgba(63,185,80,0.08);border:1px solid rgba(63,185,80,0.2);border-radius:8px;margin-bottom:12px;font-size:12px;">
+        🔄 탐구형 에이전트 발견: 기존 "개인" ${reStats.totalPersonal}건 중 <strong style="color:var(--green)">${reStats.reclassifiedToWork}건이 실제 업무</strong> (조정 업무율: ${reStats.adjustedWorkRate})
+      </div>`;
     }
 
     eventCountEl.textContent = logs.length + '건';
