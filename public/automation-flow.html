@@ -248,7 +248,7 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
 
 <script>
 /* ════════════════════════════════════════════════════════════
-   WORKFLOW DEFINITIONS — 6 Automation Processes
+   WORKFLOW DEFINITIONS — 15 Automation Processes
    ════════════════════════════════════════════════════════════ */
 
 const TYPE_ICONS = {
@@ -709,6 +709,585 @@ const WORKFLOWS = {
       }
     ],
     edges: [['defect_detect','damage_parser'],['damage_parser','deduction_reflect'],['damage_parser','supplier_aggregate'],['supplier_aggregate','defect_alert'],['deduction_reflect','reorder_calc']]
+  },
+
+  purchase: {
+    name: '발주 작업',
+    icon: '&#x1F4E6;',
+    savings: '일 60분 절약',
+    nodes: [
+      {
+        id: 'po_excel', label: '발주서 Excel 확인', type: 'trigger', status: 'dev',
+        module: 'openpyxl (Python)',
+        desc: '공급사별 발주서 Excel 파일 수신 확인. 콜롬비아/중국/인도 등 국가별 발주 물량표 자동 인식',
+        inputs: [],
+        outputs: [{name:'file_path',type:'string'},{name:'supplier',type:'string'},{name:'items[]',type:'Array'}],
+        sampleData: '발주서 수신:\n콜롬비아 카네이션 발주서.xlsx\n품목: Doncel, Novia, Crimea, Moon Light\n공급사: MEL FLOWERS',
+        screenMock: `<div class="screen-mock">
+  <div class="screen-mock-title">
+    <div class="dots"><div class="dot" style="background:#58a6ff"></div></div>
+    발주서 Excel — 콜롬비아 카네이션 물량표
+  </div>
+  <div class="screen-mock-body">
+    <table style="width:100%;border-collapse:collapse;font-size:10px;">
+      <tr style="background:#21262d;"><th style="padding:3px 6px;text-align:left;">품목</th><th>ProdKey</th><th>박스</th><th>단가</th></tr>
+      <tr><td style="padding:3px 6px;">Doncel (돈셀)</td><td style="text-align:center;color:#bc8cff;">2306</td><td style="text-align:center;color:#3fb950;">40</td><td style="text-align:center;">$4.20</td></tr>
+      <tr><td style="padding:3px 6px;">Novia (노비아)</td><td style="text-align:center;color:#bc8cff;">389</td><td style="text-align:center;color:#3fb950;">35</td><td style="text-align:center;">$3.80</td></tr>
+      <tr><td style="padding:3px 6px;">Crimea (크리미아)</td><td style="text-align:center;color:#bc8cff;">2309</td><td style="text-align:center;color:#3fb950;">25</td><td style="text-align:center;">$4.00</td></tr>
+      <tr><td style="padding:3px 6px;">Catherine (케서린)</td><td style="text-align:center;color:#bc8cff;">2851</td><td style="text-align:center;color:#3fb950;">50</td><td style="text-align:center;">$5.10</td></tr>
+    </table>
+    <div style="margin-top:6px;color:#ffa657;">총 150박스 | MEL FLOWERS</div>
+  </div>
+</div>`,
+        test: { api: '/api/nenova/orders?limit=3', method: 'GET', defaultBody: '', formatResult: d => { const items=d.items||d.orders||d||[]; if(Array.isArray(items)&&items.length){return '━━ 발주 데이터 ━━\n'+items.slice(0,3).map(i=>`[${i.OrderKey||i.id||'-'}] ${i.ProdName||i.product||'-'} / ${i.CustName||i.customer||'-'} / 수량: ${i.Qty||i.quantity||'-'}`).join('\n');} return `발주 데이터: ${JSON.stringify(d).slice(0,100)}`; } }
+      },
+      {
+        id: 'po_nenova', label: '전산 발주관리', type: 'database', status: 'dev',
+        module: 'nenova API — 발주관리',
+        desc: 'nenova 전산 발주관리 화면에서 기존 발주 조회 및 신규 발주 입력',
+        inputs: [{name:'items[]',type:'Array'},{name:'supplier',type:'string'}],
+        outputs: [{name:'po_id',type:'string'},{name:'registered',type:'boolean'},{name:'count',type:'number'}],
+        test: { api: '/api/nenova/orders?limit=3', method: 'GET', defaultBody: '', formatResult: d => { const items=d.items||d.orders||d||[]; return `전산 발주: ${Array.isArray(items)?items.length:'-'}건 조회`; } }
+      },
+      {
+        id: 'po_supplier', label: '거래처 확인', type: 'verify', status: 'dev',
+        module: 'supplier-manager.js',
+        desc: '발주 대상 거래처(공급사) 정보 확인, 계약 단가 및 거래 이력 조회',
+        inputs: [{name:'supplier',type:'string'}],
+        outputs: [{name:'supplier_info',type:'object'},{name:'contract_price',type:'number'},{name:'valid',type:'boolean'}],
+        test: null
+      },
+      {
+        id: 'po_compare', label: '물량 비교', type: 'verify', status: 'dev',
+        module: 'deduction-engine.js',
+        desc: 'Excel 발주 물량 vs 전산 등록 물량 대조, 누락/과다 발주 확인',
+        inputs: [{name:'excel_items',type:'Array'},{name:'nenova_items',type:'Array'}],
+        outputs: [{name:'match',type:'boolean'},{name:'diff[]',type:'Array'},{name:'missing[]',type:'Array'}],
+        test: null
+      },
+      {
+        id: 'po_confirm', label: '발주 확정', type: 'action', status: 'plan',
+        module: 'pad-connector.js',
+        desc: '물량 비교 완료 후 nenova에서 발주 확정 처리. PAD로 확정 버튼 클릭',
+        inputs: [{name:'po_id',type:'string'},{name:'match',type:'boolean'}],
+        outputs: [{name:'confirmed',type:'boolean'},{name:'screenshot',type:'Buffer'}],
+        test: null
+      }
+    ],
+    edges: [['po_excel','po_nenova'],['po_nenova','po_supplier'],['po_supplier','po_compare'],['po_compare','po_confirm']]
+  },
+
+  customer_comm: {
+    name: '거래처 소통',
+    icon: '&#x1F4AC;',
+    savings: '일 90분 절약',
+    nodes: [
+      {
+        id: 'cc_kakao', label: '카톡 거래처방', type: 'trigger', status: 'live',
+        module: 'screen-capture.js',
+        desc: '카카오톡 거래처방 메시지 수신 감지. 호남소재, 태림, 미카엘, 참좋은, 대구회경 등 주요 거래처방 모니터링',
+        inputs: [],
+        outputs: [{name:'text',type:'string'},{name:'room',type:'string'},{name:'sender',type:'string'},{name:'timestamp',type:'Date'}],
+        sampleData: '거래처방 모니터링:\n호남소재+네노바, 태림+네노바, 미카엘+네노바\n참좋은+네노바, 대구회경+네노바\n\n일 평균 수신: 약 120건',
+        test: { api: '/api/activity/classify?hours=24&limit=10', method: 'GET', defaultBody: '', formatResult: d => { const evts=d.events||[]; const kakao=evts.filter(e=>(e.classification?.app||'').includes('kakao')); return `거래처 소통 이벤트:\n전체: ${evts.length}건\n카톡: ${kakao.length}건\n${kakao.slice(0,5).map(e=>`  ${e.timestamp?.slice(11,16)} ${e.classification?.label||'?'}`).join('\n')}`; } }
+      },
+      {
+        id: 'cc_classify', label: '메시지 분류', type: 'parser', status: 'dev',
+        module: 'message-classifier.js',
+        desc: '거래처 메시지를 4종으로 자동 분류:\n• 주문 — "[MEL] ROSE..." 패턴\n• 견적 — "단가", "견적" 키워드\n• 클레임 — "불량", "파손" 키워드\n• 일반 — 위 외 모든 메시지',
+        inputs: [{name:'text',type:'string'},{name:'room',type:'string'}],
+        outputs: [{name:'category',type:'"order"|"estimate"|"claim"|"general"'},{name:'confidence',type:'number'},{name:'keywords[]',type:'string[]'}],
+        screenMock: `<div class="screen-mock">
+  <div class="screen-mock-title">
+    <div class="dots"><div class="dot" style="background:#bc8cff"></div></div>
+    메시지 분류 엔진
+  </div>
+  <div class="screen-mock-body">
+    <div style="background:rgba(88,166,255,0.08);padding:6px;border-radius:4px;margin-bottom:4px;">
+      <div style="color:#58a6ff;font-size:10px;">주문 (ORDER)</div>
+      <div>"[MEL] ROSE CHINA / Catherine : 30, Pride : 20"</div>
+      <div style="color:#3fb950;font-size:10px;">→ order workflow 트리거</div>
+    </div>
+    <div style="background:rgba(210,153,34,0.08);padding:6px;border-radius:4px;margin-bottom:4px;">
+      <div style="color:#d29922;font-size:10px;">견적 (ESTIMATE)</div>
+      <div>"Catherine 단가 확인 부탁드립니다"</div>
+      <div style="color:#3fb950;font-size:10px;">→ estimate workflow 트리거</div>
+    </div>
+    <div style="background:rgba(248,81,73,0.08);padding:6px;border-radius:4px;margin-bottom:4px;">
+      <div style="color:#f85149;font-size:10px;">클레임 (CLAIM)</div>
+      <div>"Catherine 5개 파손 확인"</div>
+      <div style="color:#3fb950;font-size:10px;">→ claim workflow 트리거</div>
+    </div>
+    <div style="background:rgba(139,148,158,0.08);padding:6px;border-radius:4px;">
+      <div style="color:#8b949e;font-size:10px;">일반 (GENERAL)</div>
+      <div>"내일 배송 일정 확인해주세요"</div>
+      <div style="color:#8b949e;font-size:10px;">→ 기록만</div>
+    </div>
+  </div>
+</div>`,
+        test: { api: '/api/activity/classify?hours=24&limit=10', method: 'GET', defaultBody: '', formatResult: d => { const evts=d.events||[]; return `분류 결과: ${evts.length}건 분석\n${evts.slice(0,5).map(e=>`  [${e.classification?.category||e.classification?.label||'?'}] ${(e.classification?.app||'').slice(0,20)}`).join('\n')}`; } }
+      },
+      {
+        id: 'cc_trigger', label: '워크플로우 트리거', type: 'action', status: 'plan',
+        module: 'workflow-router.js',
+        desc: '분류 결과에 따라 해당 워크플로우 자동 실행:\n• order → 주문 등록 워크플로우\n• estimate → 견적서 작성 워크플로우\n• claim → 클레임 접수 워크플로우',
+        inputs: [{name:'category',type:'string'},{name:'text',type:'string'},{name:'room',type:'string'}],
+        outputs: [{name:'triggered_workflow',type:'string'},{name:'trigger_id',type:'string'}],
+        test: null
+      },
+      {
+        id: 'cc_record', label: '결과 기록', type: 'database', status: 'plan',
+        module: 'comm-logger.js',
+        desc: '소통 내역 및 트리거 결과를 DB에 기록. 거래처별 소통 이력 관리',
+        inputs: [{name:'category',type:'string'},{name:'triggered_workflow',type:'string'},{name:'result',type:'object'}],
+        outputs: [{name:'log_id',type:'string'},{name:'saved',type:'boolean'}],
+        test: null
+      }
+    ],
+    edges: [['cc_kakao','cc_classify'],['cc_classify','cc_trigger'],['cc_trigger','cc_record']]
+  },
+
+  estimate: {
+    name: '견적서 작성',
+    icon: '&#x1F4DD;',
+    savings: '일 30분 절약',
+    nodes: [
+      {
+        id: 'est_request', label: '거래처 요청', type: 'trigger', status: 'dev',
+        module: 'message-classifier.js',
+        desc: '거래처 카톡방에서 견적/단가 요청 메시지 감지. "견적", "단가", "가격" 키워드 매칭',
+        inputs: [],
+        outputs: [{name:'customer',type:'string'},{name:'products[]',type:'string[]'},{name:'text',type:'string'}],
+        sampleData: '견적 요청 감지:\n"호남소재" 방에서 "Catherine, Pride 단가 확인"\n→ 견적서 작성 워크플로우 트리거',
+        test: { api: '/api/nenova/estimates?limit=3', method: 'GET', defaultBody: '', formatResult: d => { const items=d.items||d.estimates||d||[]; if(Array.isArray(items)&&items.length){return '━━ 견적 데이터 ━━\n'+items.slice(0,3).map(i=>`[${i.EstKey||i.id||'-'}] ${i.CustName||i.customer||'-'} / ${i.ProdName||i.product||'-'} / 단가: ${i.Price||i.price||'-'}`).join('\n');} return `견적 데이터: ${JSON.stringify(d).slice(0,100)}`; } }
+      },
+      {
+        id: 'est_nenova', label: '전산 견적서관리', type: 'database', status: 'dev',
+        module: 'nenova API — 견적서관리',
+        desc: 'nenova 견적서관리 화면에서 기존 견적 조회 및 신규 견적서 작성',
+        inputs: [{name:'customer',type:'string'},{name:'products[]',type:'string[]'}],
+        outputs: [{name:'est_id',type:'string'},{name:'existing[]',type:'Array'}],
+        screenMock: `<div class="screen-mock">
+  <div class="screen-mock-title">
+    <div class="dots"><div class="dot" style="background:#3fb950"></div></div>
+    nenova 견적서 — 호남소재
+  </div>
+  <div class="screen-mock-body">
+    <div class="mock-row"><span class="mock-label">거래처</span><span class="mock-value">호남소재 (CL52)</span></div>
+    <div class="mock-row"><span class="mock-label">견적일</span><span class="mock-value">2026-03-24</span></div>
+    <table style="width:100%;border-collapse:collapse;font-size:10px;margin-top:6px;">
+      <tr style="background:#21262d;"><th style="padding:3px 6px;text-align:left;">품목</th><th>ProdKey</th><th>단가</th><th>수량</th><th>금액</th></tr>
+      <tr><td style="padding:3px 6px;">Catherine (케서린)</td><td style="text-align:center;">2851</td><td style="text-align:center;">5,100</td><td style="text-align:center;">30</td><td style="text-align:center;color:#3fb950;">153,000</td></tr>
+      <tr><td style="padding:3px 6px;">Pride (프라이드)</td><td style="text-align:center;">2744</td><td style="text-align:center;">4,800</td><td style="text-align:center;">20</td><td style="text-align:center;color:#3fb950;">96,000</td></tr>
+      <tr><td style="padding:3px 6px;">Doncel (돈셀)</td><td style="text-align:center;">2306</td><td style="text-align:center;">4,200</td><td style="text-align:center;">15</td><td style="text-align:center;color:#3fb950;">63,000</td></tr>
+    </table>
+    <div style="margin-top:6px;text-align:right;color:#3fb950;font-weight:600;">합계: 312,000원</div>
+  </div>
+</div>`,
+        test: { api: '/api/nenova/estimates?limit=3', method: 'GET', defaultBody: '', formatResult: d => { const items=d.items||d.estimates||d||[]; return `견적서 조회: ${Array.isArray(items)?items.length:'-'}건`; } }
+      },
+      {
+        id: 'est_price', label: '품목/단가 조회', type: 'database', status: 'dev',
+        module: 'nenova Product + CustomerProdCost',
+        desc: '요청 품목의 현재 단가 및 거래처별 특별 단가 조회. ProdKey 기반 매칭',
+        inputs: [{name:'products[]',type:'string[]'},{name:'customer',type:'string'}],
+        outputs: [{name:'prices[]',type:'Array<{product,price,special_price}>'},{name:'currency',type:'string'}],
+        test: { api: '/api/nenova/products?search=Catherine&limit=3', method: 'GET', defaultBody: '', formatResult: d => { const items=d.items||d.products||d||[]; if(Array.isArray(items)&&items.length){return '━━ 단가 조회 ━━\n'+items.map(i=>`[${i.ProdKey||i.id}] ${i.ProdName||i.name} | 단가: ${i.Price||i.UnitPrice||'-'}`).join('\n');} return '단가 정보 없음'; } }
+      },
+      {
+        id: 'est_generate', label: '견적서 생성', type: 'action', status: 'plan',
+        module: 'estimate-builder.js',
+        desc: '품목/단가 기반으로 견적서 자동 생성. Excel 또는 PDF 포맷',
+        inputs: [{name:'customer',type:'string'},{name:'prices[]',type:'Array'}],
+        outputs: [{name:'file_path',type:'string'},{name:'total_amount',type:'number'}],
+        test: null
+      },
+      {
+        id: 'est_send', label: '거래처 전송', type: 'action', status: 'plan',
+        module: 'kakao-sender.js',
+        desc: '생성된 견적서를 거래처 카톡방으로 자동 전송',
+        inputs: [{name:'file_path',type:'string'},{name:'customer',type:'string'}],
+        outputs: [{name:'sent',type:'boolean'},{name:'channel',type:'string'}],
+        test: null
+      }
+    ],
+    edges: [['est_request','est_nenova'],['est_nenova','est_price'],['est_price','est_generate'],['est_generate','est_send']]
+  },
+
+  pricing: {
+    name: '단가 관리',
+    icon: '&#x1F4B2;',
+    savings: '주 30분 절약',
+    nodes: [
+      {
+        id: 'pr_detect', label: '단가 변동 감지', type: 'trigger', status: 'plan',
+        module: 'price-monitor.js',
+        desc: '공급사 단가 변동 자동 감지. 환율 변동, 시즌별 가격 변화 추적',
+        inputs: [],
+        outputs: [{name:'product',type:'string'},{name:'old_price',type:'number'},{name:'new_price',type:'number'},{name:'change_rate',type:'number'}],
+        sampleData: '단가 변동 감지:\nCatherine: 5,100 → 5,300 (+3.9%)\nDoncel: 4,200 → 4,000 (-4.8%)\n환율 기반 자동 조정',
+        test: null
+      },
+      {
+        id: 'pr_query', label: 'CustomerProdCost 조회', type: 'database', status: 'plan',
+        module: 'nenova API — CustomerProdCost',
+        desc: '거래처별 품목 단가 테이블 조회. 특별 단가, 계약 단가 확인',
+        inputs: [{name:'product',type:'string'},{name:'customer',type:'string'}],
+        outputs: [{name:'cost_data',type:'object'},{name:'special_prices[]',type:'Array'}],
+        test: { api: '/api/nenova/customers/:key/products', method: 'GET', defaultBody: '', formatResult: d => { const items=d.items||d.products||d||[]; return `거래처 단가: ${Array.isArray(items)?items.length:'-'}건 조회`; } }
+      },
+      {
+        id: 'pr_history', label: '변동 히스토리', type: 'database', status: 'plan',
+        module: 'price-history.js',
+        desc: '단가 변동 이력 기록 및 조회. 월별/분기별 추세 분석',
+        inputs: [{name:'product',type:'string'},{name:'period',type:'string'}],
+        outputs: [{name:'history[]',type:'Array'},{name:'trend',type:'"up"|"down"|"stable"'}],
+        test: null
+      },
+      {
+        id: 'pr_notify', label: '거래처 알림', type: 'alert', status: 'plan',
+        module: 'alert-manager.js',
+        desc: '단가 변동 사항을 해당 거래처에 알림. 카톡/이메일 전송',
+        inputs: [{name:'customer',type:'string'},{name:'changes[]',type:'Array'}],
+        outputs: [{name:'notified',type:'boolean'},{name:'channels[]',type:'string[]'}],
+        test: null
+      },
+      {
+        id: 'pr_approve', label: '승인', type: 'action', status: 'plan',
+        module: 'approval-engine.js',
+        desc: '관리자 승인 후 단가 변경 확정. nenova CustomerProdCost 업데이트',
+        inputs: [{name:'changes[]',type:'Array'},{name:'approved',type:'boolean'}],
+        outputs: [{name:'updated',type:'boolean'},{name:'effective_date',type:'string'}],
+        test: null
+      }
+    ],
+    edges: [['pr_detect','pr_query'],['pr_query','pr_history'],['pr_history','pr_notify'],['pr_notify','pr_approve']]
+  },
+
+  claim: {
+    name: '클레임 처리',
+    icon: '&#x1F6A8;',
+    savings: '건당 10분 절약',
+    nodes: [
+      {
+        id: 'cl_kakao', label: '카톡 불량방 수신', type: 'trigger', status: 'live',
+        module: 'screen-capture.js',
+        desc: '카카오톡 불량 공유방 메시지 수신 감지.\n"개인카톡→불량공유방" 전이 패턴 4,109회 발견.\n불량/파손/교환 키워드 자동 감지',
+        inputs: [],
+        outputs: [{name:'text',type:'string'},{name:'room',type:'string'},{name:'images[]',type:'Array'},{name:'timestamp',type:'Date'}],
+        sampleData: '패턴 분석 결과:\n"개인카톡→불량공유방" 4,109회 (최다 전이)\n\n불량 접수 키워드:\n파손, 불량, 깨짐, 교환, 변색, 시들음',
+        screenMock: `<div class="screen-mock">
+  <div class="screen-mock-title">
+    <div class="dots"><div class="dot" style="background:#f85149"></div><div class="dot" style="background:#ffa657"></div></div>
+    카카오톡 — 불량 공유방
+  </div>
+  <div class="screen-mock-body">
+    <div style="color:#f85149;font-weight:600;margin-bottom:6px;">불량 공유방</div>
+    <div style="background:rgba(248,81,73,0.08);padding:8px;border-radius:6px;margin-bottom:4px;">
+      <div style="font-size:10px;color:#8b949e;">박성수 15:42</div>
+      <div>호남소재 Catherine 5박스 파손</div>
+      <div style="color:#8b949e;font-size:10px;">[사진 3장 첨부]</div>
+    </div>
+    <div style="background:rgba(248,81,73,0.08);padding:8px;border-radius:6px;margin-bottom:4px;">
+      <div style="font-size:10px;color:#8b949e;">강현우 15:45</div>
+      <div>태림 Pride 3단 변색 확인</div>
+      <div style="color:#8b949e;font-size:10px;">[사진 1장 첨부]</div>
+    </div>
+    <div style="background:rgba(63,185,80,0.08);padding:8px;border-radius:6px;">
+      <div style="font-size:10px;color:#8b949e;">설연주 15:48</div>
+      <div>호남소재 Catherine 차감 처리 완료</div>
+    </div>
+  </div>
+</div>`,
+        test: { api: '/api/activity/classify?hours=24&limit=10', method: 'GET', defaultBody: '', formatResult: d => { const evts=d.events||[]; return `최근 이벤트: ${evts.length}건\n클레임 관련:\n${evts.filter(e=>(e.classification?.label||'').includes('불량')||(e.classification?.label||'').includes('카톡')).slice(0,3).map(e=>`  ${e.timestamp?.slice(11,16)} ${e.classification?.label||'?'}`).join('\n')||'  감지 대기 중'}`; } }
+      },
+      {
+        id: 'cl_parser', label: '불량 파서', type: 'parser', status: 'dev',
+        module: '/api/automation/parse',
+        desc: '불량 메시지를 {거래처, 품목, 수량, 불량유형, 공급사} 구조로 파싱.\n사진 첨부 시 Vision 분석 연동',
+        inputs: [{name:'text',type:'string'},{name:'images[]',type:'Array'}],
+        outputs: [{name:'customer',type:'string'},{name:'product',type:'string'},{name:'quantity',type:'number'},{name:'defect_type',type:'"damage"|"discolor"|"wilt"'},{name:'supplier',type:'string'}],
+        test: { api: '/api/automation/parse', method: 'POST', defaultBody: JSON.stringify({text:'호남소재 Catherine 5박스 파손, 태림 Pride 3단 변색'},null,2), formatResult: d => { let r=`포맷: ${d.formatType||'damage_report'}`; if(d.orders?.length){d.orders.forEach(o=>{r+=`\n${o.customer||'-'} / ${o.product||o.name}: ${o.quantity}개 (${o.type||'damage'})`;});} return r; } }
+      },
+      {
+        id: 'cl_photo', label: '사진 확인 (사람)', type: 'verify', status: 'plan',
+        module: 'vision-worker.js + 수동확인',
+        desc: '불량 사진을 Vision으로 1차 분석 후, 관리자가 최종 확인.\n파손 정도, 교환 가능 여부 판단',
+        inputs: [{name:'images[]',type:'Array'},{name:'defect_type',type:'string'}],
+        outputs: [{name:'confirmed',type:'boolean'},{name:'severity',type:'"minor"|"major"|"critical"'},{name:'action',type:'"exchange"|"refund"|"reject"'}],
+        test: null
+      },
+      {
+        id: 'cl_deduction', label: '차감 반영', type: 'database', status: 'dev',
+        module: 'deduction-engine.js',
+        desc: '확인된 불량 수량을 차감 Excel 및 nenova에 반영',
+        inputs: [{name:'customer',type:'string'},{name:'product',type:'string'},{name:'quantity',type:'number'}],
+        outputs: [{name:'deducted',type:'boolean'},{name:'new_balance',type:'number'}],
+        screenMock: `<div class="screen-mock">
+  <div class="screen-mock-title">
+    <div class="dots"><div class="dot" style="background:#3fb950"></div></div>
+    차감 반영 — 불량 처리
+  </div>
+  <div class="screen-mock-body">
+    <table style="width:100%;border-collapse:collapse;font-size:10px;">
+      <tr style="background:#21262d;"><th style="padding:3px 6px;text-align:left;">거래처</th><th>품목</th><th>불량</th><th>차감</th><th>상태</th></tr>
+      <tr><td style="padding:3px 6px;">호남소재</td><td>Catherine</td><td style="text-align:center;color:#f85149;">5</td><td style="text-align:center;color:#ffa657;">-5</td><td style="text-align:center;color:#3fb950;">완료</td></tr>
+      <tr><td style="padding:3px 6px;">태림</td><td>Pride</td><td style="text-align:center;color:#f85149;">3</td><td style="text-align:center;color:#ffa657;">-3</td><td style="text-align:center;color:#3fb950;">완료</td></tr>
+    </table>
+    <div style="margin-top:6px;color:#3fb950;">차감 반영 완료 — 2건</div>
+  </div>
+</div>`,
+        test: { api: '/api/nenova/orders/summary', method: 'GET', defaultBody: '', formatResult: d => `차감 상태: 처리 대기\n현재: ${d.count||d.totalOrders||'-'}건` }
+      },
+      {
+        id: 'cl_supplier', label: '공급사 클레임', type: 'alert', status: 'plan',
+        module: 'supplier-claim.js',
+        desc: '공급사에 클레임 접수. 불량 사진 + 수량 + 금액 포함 메시지 전송',
+        inputs: [{name:'supplier',type:'string'},{name:'product',type:'string'},{name:'quantity',type:'number'},{name:'images[]',type:'Array'}],
+        outputs: [{name:'claim_sent',type:'boolean'},{name:'claim_id',type:'string'}],
+        test: null
+      },
+      {
+        id: 'cl_reorder', label: '재발주 판단', type: 'action', status: 'plan',
+        module: 'reorder-engine.js',
+        desc: '불량분에 대한 재발주 필요 여부 판단. 재고 수준, 긴급도 고려',
+        inputs: [{name:'product',type:'string'},{name:'quantity',type:'number'},{name:'severity',type:'string'}],
+        outputs: [{name:'reorder_needed',type:'boolean'},{name:'reorder_qty',type:'number'},{name:'priority',type:'"urgent"|"normal"'}],
+        test: null
+      }
+    ],
+    edges: [['cl_kakao','cl_parser'],['cl_parser','cl_photo'],['cl_photo','cl_deduction'],['cl_deduction','cl_supplier'],['cl_deduction','cl_reorder']]
+  },
+
+  report: {
+    name: '매출 보고서',
+    icon: '&#x1F4CA;',
+    savings: '월 120분 절약',
+    nodes: [
+      {
+        id: 'rp_aggregate', label: 'Estimate 데이터 집계', type: 'database', status: 'dev',
+        module: 'nenova API — Estimate',
+        desc: 'nenova Estimate 테이블에서 기간별 매출 데이터 집계. 국가별/꽃별/거래처별 분류',
+        inputs: [{name:'period',type:'string'},{name:'group_by',type:'"country"|"flower"|"customer"'}],
+        outputs: [{name:'sales_data[]',type:'Array'},{name:'total_sales',type:'number'},{name:'count',type:'number'}],
+        sampleData: '매출 집계:\n2026-03 기준\n국가별: CHINA 45%, 콜롬비아 35%, 인도 20%\n꽃별: 장미 60%, 카네이션 30%, 기타 10%\n거래처: 호남소재 #1, 태림 #2, 참좋은 #3',
+        test: { api: '/api/nenova/analysis/sales', method: 'GET', defaultBody: '', formatResult: d => { if(d.sales||d.data||d.items){const items=d.sales||d.data||d.items||[]; return `━━ 매출 분석 ━━\n총 매출: ${d.totalSales||d.total||'-'}\n건수: ${Array.isArray(items)?items.length:'-'}건\n${Array.isArray(items)?items.slice(0,5).map(i=>`  ${i.name||i.product||i.category||'-'}: ${i.amount||i.sales||i.total||'-'}`).join('\n'):''}`;}return `매출 데이터: ${JSON.stringify(d).slice(0,120)}`; } }
+      },
+      {
+        id: 'rp_format', label: '보고서 포맷 생성', type: 'parser', status: 'dev',
+        module: 'report-formatter.js',
+        desc: '집계 데이터를 보고서 양식으로 포맷팅. 국가별/꽃별 매출표, 차트 데이터 생성',
+        inputs: [{name:'sales_data[]',type:'Array'},{name:'period',type:'string'}],
+        outputs: [{name:'report_data',type:'object'},{name:'charts[]',type:'Array'},{name:'summary',type:'string'}],
+        screenMock: `<div class="screen-mock">
+  <div class="screen-mock-title">
+    <div class="dots"><div class="dot" style="background:#bc8cff"></div></div>
+    매출 보고서 — 2026년 3월
+  </div>
+  <div class="screen-mock-body">
+    <div style="font-weight:600;margin-bottom:6px;color:#58a6ff;">국가별 매출</div>
+    <table style="width:100%;border-collapse:collapse;font-size:10px;">
+      <tr style="background:#21262d;"><th style="padding:3px 6px;text-align:left;">국가</th><th>매출</th><th>비중</th></tr>
+      <tr><td style="padding:3px 6px;">CHINA</td><td style="text-align:center;color:#3fb950;">12,450,000</td><td style="text-align:center;">45%</td></tr>
+      <tr><td style="padding:3px 6px;">콜롬비아</td><td style="text-align:center;color:#3fb950;">9,660,000</td><td style="text-align:center;">35%</td></tr>
+      <tr><td style="padding:3px 6px;">인도</td><td style="text-align:center;color:#3fb950;">5,520,000</td><td style="text-align:center;">20%</td></tr>
+    </table>
+    <div style="font-weight:600;margin:8px 0 6px;color:#58a6ff;">꽃별 매출</div>
+    <table style="width:100%;border-collapse:collapse;font-size:10px;">
+      <tr style="background:#21262d;"><th style="padding:3px 6px;text-align:left;">품목</th><th>매출</th><th>비중</th></tr>
+      <tr><td style="padding:3px 6px;">장미 (Rose)</td><td style="text-align:center;color:#3fb950;">16,590,000</td><td style="text-align:center;">60%</td></tr>
+      <tr><td style="padding:3px 6px;">카네이션 (Carnation)</td><td style="text-align:center;color:#3fb950;">8,295,000</td><td style="text-align:center;">30%</td></tr>
+    </table>
+    <div style="margin-top:6px;text-align:right;color:#3fb950;font-weight:600;">총 매출: 27,630,000원</div>
+  </div>
+</div>`,
+        test: { api: '/api/nenova/analysis/sales', method: 'GET', defaultBody: '', formatResult: d => `보고서 포맷: 생성 가능\n데이터: ${JSON.stringify(d).slice(0,80)}` }
+      },
+      {
+        id: 'rp_export', label: 'Excel/Sheets 출력', type: 'action', status: 'dev',
+        module: 'openpyxl + Google Sheets API',
+        desc: '보고서를 Excel 파일 및 Google Sheets로 출력. 차트 포함',
+        inputs: [{name:'report_data',type:'object'},{name:'format',type:'"excel"|"sheets"'}],
+        outputs: [{name:'file_path',type:'string'},{name:'sheet_url',type:'string'}],
+        test: null
+      },
+      {
+        id: 'rp_send', label: '관리자 전송', type: 'alert', status: 'plan',
+        module: 'alert-manager.js',
+        desc: '생성된 보고서를 관리자에게 자동 전송. 카톡/이메일 채널',
+        inputs: [{name:'file_path',type:'string'},{name:'summary',type:'string'}],
+        outputs: [{name:'sent',type:'boolean'},{name:'channels[]',type:'string[]'}],
+        test: null
+      }
+    ],
+    edges: [['rp_aggregate','rp_format'],['rp_format','rp_export'],['rp_export','rp_send']]
+  },
+
+  tracking: {
+    name: '배송 추적',
+    icon: '&#x1F4CD;',
+    savings: '건당 5분 절약',
+    nodes: [
+      {
+        id: 'tr_register', label: '출하 등록', type: 'trigger', status: 'plan',
+        module: 'nenova API — ShipmentDetail',
+        desc: 'nenova에서 출하 등록 완료 시 배송 추적 시작. 운송장 번호 연동',
+        inputs: [],
+        outputs: [{name:'shipment_id',type:'string'},{name:'customer',type:'string'},{name:'items[]',type:'Array'},{name:'tracking_no',type:'string'}],
+        sampleData: '출하 등록:\n호남소재 → Catherine 30, Pride 20\n태림 → Doncel 15, Novia 25\n운송: 한진택배',
+        test: null
+      },
+      {
+        id: 'tr_status', label: '운송 상태 입력', type: 'action', status: 'plan',
+        module: 'tracking-manager.js',
+        desc: '운송 상태 업데이트: 출발 → 이동중 → 허브 → 배송중 → 도착',
+        inputs: [{name:'shipment_id',type:'string'},{name:'status',type:'"departed"|"in_transit"|"hub"|"delivering"|"arrived"'}],
+        outputs: [{name:'updated',type:'boolean'},{name:'current_status',type:'string'},{name:'eta',type:'Date'}],
+        test: null
+      },
+      {
+        id: 'tr_confirm', label: '도착 확인', type: 'verify', status: 'plan',
+        module: 'tracking-manager.js',
+        desc: '거래처 도착 확인. 수량 대조 및 상태 점검',
+        inputs: [{name:'shipment_id',type:'string'},{name:'received_qty',type:'number'}],
+        outputs: [{name:'confirmed',type:'boolean'},{name:'discrepancy',type:'boolean'},{name:'notes',type:'string'}],
+        test: null
+      },
+      {
+        id: 'tr_notify', label: '거래처 알림', type: 'alert', status: 'plan',
+        module: 'kakao-sender.js',
+        desc: '배송 상태 변경 시 거래처에 자동 알림. 도착 예정 시간 포함',
+        inputs: [{name:'customer',type:'string'},{name:'status',type:'string'},{name:'eta',type:'Date'}],
+        outputs: [{name:'notified',type:'boolean'},{name:'channel',type:'string'}],
+        test: null
+      }
+    ],
+    edges: [['tr_register','tr_status'],['tr_status','tr_confirm'],['tr_confirm','tr_notify']]
+  },
+
+  shipping_doc: {
+    name: '출고내역서',
+    icon: '&#x1F4C4;',
+    savings: '일 40분 절약',
+    nodes: [
+      {
+        id: 'sd_aggregate', label: 'ShipmentDetail 집계', type: 'database', status: 'dev',
+        module: 'nenova API — ShipmentDetail',
+        desc: 'nenova ShipmentDetail 테이블에서 출고 데이터 집계. 거래처별/품목별 분류',
+        inputs: [{name:'date',type:'string'},{name:'round',type:'number'}],
+        outputs: [{name:'shipments[]',type:'Array'},{name:'customer_count',type:'number'},{name:'total_qty',type:'number'}],
+        sampleData: '출고 집계:\n호남소재: Catherine 30, Pride 20\n태림: Doncel 15, Crimea 10\n미카엘: Novia 25\n참좋은: Catherine 20, Doncel 10\n대구회경: Pride 15',
+        test: { api: '/api/nenova/shipments?limit=3', method: 'GET', defaultBody: '', formatResult: d => { const items=d.items||d.shipments||d||[]; if(Array.isArray(items)&&items.length){return '━━ 출고 데이터 ━━\n'+items.slice(0,3).map(i=>`[${i.ShipKey||i.id||'-'}] ${i.CustName||i.customer||'-'} / ${i.ProdName||i.product||'-'} / 수량: ${i.Qty||i.quantity||'-'}`).join('\n');} return `출고 데이터: ${JSON.stringify(d).slice(0,100)}`; } }
+      },
+      {
+        id: 'sd_sort', label: '거래처별 분류', type: 'parser', status: 'dev',
+        module: 'shipping-sorter.js',
+        desc: '출고 데이터를 거래처별로 그룹핑. 각 거래처 출고내역서에 포함될 품목 정리',
+        inputs: [{name:'shipments[]',type:'Array'}],
+        outputs: [{name:'grouped[]',type:'Array<{customer,items[]}>'},{name:'customer_count',type:'number'}],
+        test: { api: '/api/nenova/shipments?limit=3', method: 'GET', defaultBody: '', formatResult: d => { const items=d.items||d.shipments||d||[]; return `거래처 분류: ${Array.isArray(items)?items.length:'-'}건`; } }
+      },
+      {
+        id: 'sd_excel', label: 'Excel 자동 생성', type: 'action', status: 'dev',
+        module: 'openpyxl (Python)',
+        desc: '거래처별 출고내역서 Excel 파일 자동 생성. 양식 템플릿 적용, 합계 자동 계산',
+        inputs: [{name:'grouped[]',type:'Array'},{name:'template',type:'string'}],
+        outputs: [{name:'files[]',type:'Array<{customer,path}>'},{name:'total_files',type:'number'}],
+        screenMock: `<div class="screen-mock">
+  <div class="screen-mock-title">
+    <div class="dots"><div class="dot" style="background:#ffa657"></div></div>
+    출고내역서 — 호남소재 (2026-03-24)
+  </div>
+  <div class="screen-mock-body">
+    <div class="mock-row"><span class="mock-label">거래처</span><span class="mock-value">호남소재 (CL52)</span></div>
+    <div class="mock-row"><span class="mock-label">출고일</span><span class="mock-value">2026-03-24</span></div>
+    <table style="width:100%;border-collapse:collapse;font-size:10px;margin-top:6px;">
+      <tr style="background:#21262d;"><th style="padding:3px 6px;text-align:left;">품목</th><th>ProdKey</th><th>박스</th><th>단</th><th>금액</th></tr>
+      <tr><td style="padding:3px 6px;">Catherine (케서린)</td><td style="text-align:center;">2851</td><td style="text-align:center;">2</td><td style="text-align:center;">30</td><td style="text-align:center;color:#3fb950;">153,000</td></tr>
+      <tr><td style="padding:3px 6px;">Pride (프라이드)</td><td style="text-align:center;">2744</td><td style="text-align:center;">1</td><td style="text-align:center;">20</td><td style="text-align:center;color:#3fb950;">96,000</td></tr>
+      <tr><td style="padding:3px 6px;">Doncel (돈셀)</td><td style="text-align:center;">2306</td><td style="text-align:center;">1</td><td style="text-align:center;">15</td><td style="text-align:center;color:#3fb950;">63,000</td></tr>
+    </table>
+    <div style="margin-top:6px;text-align:right;color:#3fb950;font-weight:600;">합계: 312,000원 (3품목)</div>
+  </div>
+</div>`,
+        test: null
+      },
+      {
+        id: 'sd_send', label: '카톡 전송', type: 'action', status: 'plan',
+        module: 'kakao-sender.js',
+        desc: '생성된 출고내역서를 각 거래처 카톡방에 자동 전송',
+        inputs: [{name:'files[]',type:'Array'},{name:'rooms[]',type:'string[]'}],
+        outputs: [{name:'sent_count',type:'number'},{name:'failed[]',type:'Array'}],
+        test: null
+      }
+    ],
+    edges: [['sd_aggregate','sd_sort'],['sd_sort','sd_excel'],['sd_excel','sd_send']]
+  },
+
+  product_mgmt: {
+    name: '품목 관리',
+    icon: '&#x1F33A;',
+    savings: '건당 3분 절약',
+    nodes: [
+      {
+        id: 'pm_search', label: 'Holex 검색', type: 'trigger', status: 'dev',
+        module: 'holex-connector.js',
+        desc: 'Holex(국제 화훼 거래소) 시스템에서 품목 검색. 신규 품종, 가격, 가용 물량 확인',
+        inputs: [{name:'keyword',type:'string'},{name:'flower_type',type:'string'}],
+        outputs: [{name:'results[]',type:'Array'},{name:'count',type:'number'}],
+        sampleData: 'Holex 검색: "Rose"\n결과: Catherine, Pride, Doncel...\n총 352건 검색됨',
+        test: { api: '/api/nenova/products?search=Rose&limit=3', method: 'GET', defaultBody: '', formatResult: d => { const items=d.items||d.products||d||[]; if(Array.isArray(items)&&items.length){return '━━ 품목 검색 ━━\n'+items.map(i=>`[${i.ProdKey||i.id}] ${i.ProdName||i.name}\n   꽃: ${i.FlowerName||'-'} | 국가: ${i.CounName||'-'}`).join('\n\n');} return '검색 결과 없음'; } }
+      },
+      {
+        id: 'pm_check', label: '품목 확인', type: 'verify', status: 'dev',
+        module: 'product-matcher.js',
+        desc: 'Holex 검색 결과와 nenova 기존 품목 대조. 중복 여부 확인, ProdKey 매칭',
+        inputs: [{name:'results[]',type:'Array'}],
+        outputs: [{name:'existing[]',type:'Array'},{name:'new_items[]',type:'Array'},{name:'match_rate',type:'number'}],
+        test: { api: '/api/nenova/products?search=Rose&limit=3', method: 'GET', defaultBody: '', formatResult: d => { const items=d.items||d.products||d||[]; return `기존 품목: ${Array.isArray(items)?items.length:'-'}건 확인`; } }
+      },
+      {
+        id: 'pm_nenova', label: '전산 품목관리', type: 'database', status: 'dev',
+        module: 'nenova API — Product',
+        desc: 'nenova 품목관리 화면에서 신규 품목 등록 또는 기존 품목 수정',
+        inputs: [{name:'new_items[]',type:'Array'}],
+        outputs: [{name:'registered[]',type:'Array'},{name:'prodKeys[]',type:'number[]'}],
+        screenMock: `<div class="screen-mock">
+  <div class="screen-mock-title">
+    <div class="dots"><div class="dot" style="background:#3fb950"></div></div>
+    nenova 품목관리 — 신규 등록
+  </div>
+  <div class="screen-mock-body">
+    <table style="width:100%;border-collapse:collapse;font-size:10px;">
+      <tr style="background:#21262d;"><th style="padding:3px 6px;text-align:left;">ProdKey</th><th>품목명</th><th>꽃종류</th><th>국가</th><th>상태</th></tr>
+      <tr><td style="padding:3px 6px;color:#bc8cff;">2851</td><td>Catherine (케서린)</td><td>Rose</td><td>CHINA</td><td style="color:#3fb950;">등록</td></tr>
+      <tr><td style="padding:3px 6px;color:#bc8cff;">2744</td><td>Pride (프라우드)</td><td>Rose</td><td>CHINA</td><td style="color:#3fb950;">등록</td></tr>
+      <tr><td style="padding:3px 6px;color:#bc8cff;">2306</td><td>Doncel (돈셀)</td><td>Carnation</td><td>콜롬비아</td><td style="color:#3fb950;">등록</td></tr>
+      <tr><td style="padding:3px 6px;color:#bc8cff;">NEW</td><td>Royal Pink</td><td>Rose</td><td>에콰도르</td><td style="color:#ffa657;">신규</td></tr>
+    </table>
+    <div style="margin-top:6px;color:#3fb950;">기존 3건 확인 + 신규 1건 등록 대기</div>
+  </div>
+</div>`,
+        test: { api: '/api/nenova/products?search=Rose&limit=3', method: 'GET', defaultBody: '', formatResult: d => { const items=d.items||d.products||d||[]; return `품목관리: ${Array.isArray(items)?items.length:'-'}건 조회`; } }
+      },
+      {
+        id: 'pm_register', label: '신규 등록', type: 'action', status: 'plan',
+        module: 'pad-connector.js',
+        desc: 'nenova에 신규 품목 등록. PAD로 품목관리 화면 자동 입력',
+        inputs: [{name:'new_items[]',type:'Array'}],
+        outputs: [{name:'registered',type:'boolean'},{name:'prodKeys[]',type:'number[]'},{name:'screenshot',type:'Buffer'}],
+        test: null
+      },
+      {
+        id: 'pm_sync', label: '마스터 동기화', type: 'database', status: 'dev',
+        module: 'master_products 동기화',
+        desc: 'nenova Product 테이블과 Orbit master_products 동기화. 3,140 ↔ 3,035 매칭',
+        inputs: [{name:'prodKeys[]',type:'number[]'}],
+        outputs: [{name:'synced',type:'boolean'},{name:'total_master',type:'number'},{name:'total_nenova',type:'number'},{name:'sync_rate',type:'number'}],
+        test: { api: '/api/nenova/products?search=Rose&limit=3', method: 'GET', defaultBody: '', formatResult: d => { const items=d.items||d.products||d||[]; return `마스터 동기화\nnneova: ${Array.isArray(items)?items.length:'-'}건\n동기화율: 103.46%`; } }
+      }
+    ],
+    edges: [['pm_search','pm_check'],['pm_check','pm_nenova'],['pm_nenova','pm_register'],['pm_register','pm_sync']]
   }
 };
 
@@ -1209,8 +1788,8 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     closePanel();
   }
-  // Tab switching with number keys
-  const keys = ['1','2','3','4','5','6'];
+  // Tab switching with number keys (1-9, 0=10, q=11, w=12, e=13, r=14, t=15)
+  const keys = ['1','2','3','4','5','6','7','8','9','0','q','w','e','r','t'];
   const wfKeys = Object.keys(WORKFLOWS);
   const idx = keys.indexOf(e.key);
   if (idx >= 0 && idx < wfKeys.length && !e.target.closest('textarea, input')) {
