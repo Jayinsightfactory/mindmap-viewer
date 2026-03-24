@@ -1516,11 +1516,11 @@ function createDeepInvestigator({ getDb }) {
     }
   }
 
-  // 서버 시작 15분 후 첫 실행, 이후 4시간마다
+  // 자동 조사: 서버 시작 30분 후 첫 실행, 이후 6시간마다 (메모리 절약)
   setTimeout(() => {
     _runInvestigation();
-    _investigationTimer = setInterval(_runInvestigation, 4 * 60 * 60 * 1000);
-  }, 15 * 60 * 1000);
+    _investigationTimer = setInterval(_runInvestigation, 6 * 60 * 60 * 1000);
+  }, 30 * 60 * 1000);
 
 
   // ═══════════════════════════════════════════════════════════════════════

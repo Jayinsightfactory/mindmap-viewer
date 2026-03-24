@@ -409,10 +409,10 @@ function createIdeaEngine({ getDb }) {
 
   setTimeout(() => {
     _autoExplore();
-    setInterval(_autoExplore, 2 * 60 * 60 * 1000);
-  }, 8 * 60 * 1000);
+    setInterval(_autoExplore, 4 * 60 * 60 * 1000);
+  }, 20 * 60 * 1000);
 
-  console.log('[idea-engine] 자율 탐색 엔진 시작 (2시간마다 새 아이디어 발굴)');
+  console.log('[idea-engine] 자율 탐색 엔진 시작 (4시간마다 새 아이디어 발굴)');
 
   return router;
 }

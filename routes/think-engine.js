@@ -660,11 +660,11 @@ function createThinkEngine({ getDb }) {
     }
   }
 
-  // 서버 시작 5분 후 첫 실행, 이후 2시간마다
+  // 서버 시작 10분 후 첫 실행, 이후 3시간마다 (메모리 절약)
   setTimeout(() => {
     _autoThink();
-    setInterval(_autoThink, 2 * 60 * 60 * 1000);
-  }, 5 * 60 * 1000);
+    setInterval(_autoThink, 3 * 60 * 60 * 1000);
+  }, 10 * 60 * 1000);
 
   console.log('[think-engine] 🧠 사고 엔진 시작 (2시간마다 학습+예측+검증+추출)');
 

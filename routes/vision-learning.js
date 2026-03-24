@@ -1274,11 +1274,11 @@ JSON 응답 형식:
     }
   }
 
-  // 10분 후 첫 실행, 이후 2시간 간격
+  // 25분 후 첫 실행, 이후 4시간 간격 (메모리 절약)
   setTimeout(() => {
     _runAutoLearn();
-    _autoLearnInterval = setInterval(_runAutoLearn, 2 * 60 * 60 * 1000);
-  }, 10 * 60 * 1000);
+    _autoLearnInterval = setInterval(_runAutoLearn, 4 * 60 * 60 * 1000);
+  }, 25 * 60 * 1000);
 
   return router;
 };
