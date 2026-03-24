@@ -27,7 +27,7 @@
     "node": ">=18.0.0"
   },
   "scripts": {
-    "start": "node --max-old-space-size=720 server.js",
+    "start": "node server.js",
     "dev": "node server.js",
     "client": "node src/orbit-client.js",
     "test": "jest",
