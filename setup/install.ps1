@@ -896,16 +896,16 @@ if not defined NODE_EXE if exist "$NodePath" set "NODE_EXE=$NodePath"
 if not defined NODE_EXE if exist "C:\Program Files\nodejs\node.exe" set "NODE_EXE=C:\Program Files\nodejs\node.exe"
 if not defined NODE_EXE if exist "%APPDATA%\nvm\current\node.exe" set "NODE_EXE=%APPDATA%\nvm\current\node.exe"
 if not defined NODE_EXE (
-  echo [%date% %time%] ERROR: node.exe not found >> "$logFile"
+  echo [%date% %time%] ERROR: node.exe not found >> "%USERPROFILE%\.orbit\daemon.log"
   timeout /t 60 /nobreak >nul
   exit /b 1
 )
 
 for /f "usebackq tokens=*" %%a in (`"%NODE_EXE%" -e "try{console.log(require('%USERPROFILE%\\.orbit-config.json').token||'')}catch(e){console.log('')}"`) do set ORBIT_TOKEN=%%a
 :loop
-echo [%date% %time%] daemon start >> "$logFile"
-"%NODE_EXE%" "$DaemonScript" >> "$logFile" 2>&1
-echo [%date% %time%] daemon exit (restart in 10s) >> "$logFile"
+echo [%date% %time%] daemon start >> "%USERPROFILE%\.orbit\daemon.log"
+"%NODE_EXE%" "%USERPROFILE%\mindmap-viewer\daemon\personal-agent.js" >> "%USERPROFILE%\.orbit\daemon.log" 2>&1
+echo [%date% %time%] daemon exit (restart in 10s) >> "%USERPROFILE%\.orbit\daemon.log"
 timeout /t 10 /nobreak >nul
 goto loop
 "@
