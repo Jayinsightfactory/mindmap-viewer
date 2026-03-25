@@ -13,7 +13,7 @@
  */
 const express = require('express');
 
-function createIdeaEngine({ getDb }) {
+function createIdeaEngine({ getDb, ragCore }) {
   const router = express.Router();
 
   // ═══════════════════════════════════════════════════════════════
@@ -411,6 +411,34 @@ function createIdeaEngine({ getDb }) {
     _autoExplore();
     setInterval(_autoExplore, 4 * 60 * 60 * 1000);
   }, 20 * 60 * 1000);
+
+  // ── RAG 기반 아이디어 탐색 ─────────────────────────────────────────────
+  // GET /api/ideas/rag-discover?userId=&topic=
+  router.get('/rag-discover', async (req, res) => {
+    try {
+      if (!ragCore) return res.json({ error: 'RAG 미초기화' });
+      const { userId, topic } = req.query;
+      const query = topic || '자동화 기회 반복 패턴';
+
+      // RAG 검색: 자동화 가능한 패턴 + Vision 결과
+      const eventDocs = await ragCore.search({
+        query, userId, sourceType: 'event', days: 14, limit: 15,
+      });
+      const visionDocs = await ragCore.search({
+        query: '자동화 가능 Vision', userId, sourceType: 'event', days: 30, limit: 5,
+      });
+
+      res.json({
+        ok: true,
+        topic: query,
+        eventContext: eventDocs.slice(0, 10),
+        visionContext: visionDocs.slice(0, 5),
+        totalDocs: eventDocs.length + visionDocs.length,
+      });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
 
   console.log('[idea-engine] 자율 탐색 엔진 시작 (4시간마다 새 아이디어 발굴)');
 

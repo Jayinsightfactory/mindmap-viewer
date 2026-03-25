@@ -186,7 +186,7 @@ function getISOWeek(date) {
 // 라우터 팩토리
 // ═══════════════════════════════════════════════════════════════════════════
 
-module.exports = function createBusinessIntelligenceRouter({ getDb }) {
+module.exports = function createBusinessIntelligenceRouter({ getDb, ragCore }) {
   const router = express.Router();
 
   function getOrbitDb() {
@@ -2089,6 +2089,27 @@ module.exports = function createBusinessIntelligenceRouter({ getDb }) {
     }
   });
 
+
+  // ── RAG 기반 BI 질의 ───────────────────────────────────────────────────
+  // POST /api/bi/rag-ask — 자연어 BI 질문 + RAG 컨텍스트
+  router.post('/rag-ask', async (req, res) => {
+    try {
+      if (!ragCore) return res.json({ error: 'RAG 미초기화' });
+      const { question, userId } = req.body || {};
+      if (!question) return res.status(400).json({ error: 'question 필수' });
+
+      const result = await ragCore.query({
+        agent: 'business-intelligence',
+        question,
+        userId,
+        searchOpts: { days: 30, limit: 15 },
+      });
+
+      res.json({ ok: true, ...result });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
 
   return router;
 };

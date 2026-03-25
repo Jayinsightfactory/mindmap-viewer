@@ -15,7 +15,7 @@
  */
 const express = require('express');
 
-function createThinkEngine({ getDb }) {
+function createThinkEngine({ getDb, ragCore }) {
   const router = express.Router();
 
   // ── 테이블 초기화 ──
@@ -666,7 +666,48 @@ function createThinkEngine({ getDb }) {
     setInterval(_autoThink, 3 * 60 * 60 * 1000);
   }, 10 * 60 * 1000);
 
-  console.log('[think-engine] 🧠 사고 엔진 시작 (2시간마다 학습+예측+검증+추출)');
+  // ── RAG 증강 예측 ───────────────────────────────────────────────────────
+  // GET /api/think/rag-predict?userId=&currentState=
+  router.get('/rag-predict', async (req, res) => {
+    try {
+      if (!ragCore) return res.json({ error: 'RAG 미초기화' });
+      const { userId, currentState } = req.query;
+      if (!currentState) return res.status(400).json({ error: 'currentState 필수' });
+
+      // 1. 유사 과거 맥락 검색
+      const context = await ragCore.searchSimilarContext({
+        currentState, userId, days: 14, limit: 10,
+      });
+
+      // 2. DB 전이 모델 예측과 결합
+      const db = getDb();
+      let dbPrediction = null;
+      if (db?.query) {
+        const { rows } = await db.query(
+          `SELECT to_state, probability FROM transition_model
+           WHERE user_id = $1 AND from_state ILIKE $2
+           ORDER BY probability DESC LIMIT 3`,
+          [userId || '%', `%${currentState.slice(0, 30)}%`]
+        ).catch(() => ({ rows: [] }));
+        if (rows.length) dbPrediction = rows;
+      }
+
+      res.json({
+        ok: true,
+        currentState,
+        ragContext: context.slice(0, 5),
+        dbPrediction,
+        combined: {
+          confidence: dbPrediction ? 0.7 : 0.3,
+          source: dbPrediction ? 'transition_model + RAG' : 'RAG only',
+        },
+      });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  console.log('[think-engine] 사고 엔진 시작 (2시간마다 학습+예측+검증+추출)');
 
   return router;
 }

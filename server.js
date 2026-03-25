@@ -2520,10 +2520,10 @@ app.use('/api/company', require('./routes/company-structure')({ getDb: dbModule.
 app.use('/api/evolve', require('./routes/self-evolve')({ getDb: dbModule.getDb }));
 
 // ─── 자율 탐색 + 아이디어 엔진 (2시간마다 새 패턴 발굴) ─────────────────────
-app.use('/api/ideas', require('./routes/idea-engine')({ getDb: dbModule.getDb }));
+app.use('/api/ideas', require('./routes/idea-engine')({ getDb: dbModule.getDb, ragCore }));
 
 // ─── 사고 엔진 (전이 모델 + 예측 + 검증 + 카톡 추출 + 확장 사고) ────────────
-app.use('/api/think', require('./routes/think-engine')({ getDb: dbModule.getDb }));
+app.use('/api/think', require('./routes/think-engine')({ getDb: dbModule.getDb, ragCore }));
 
 // ─── 카카오톡 복호화 + 메시지 분석 ──────────────────────────────────────────
 app.use('/api/kakao', require('./routes/kakao-decrypt')({ getDb: dbModule.getDb }));
@@ -2553,10 +2553,10 @@ app.use('/api/sessions', require('./routes/work-sessions')({ getDb: dbModule.get
 app.use('/api/digitize', require('./routes/data-digitizer')({ getDb: dbModule.getDb }));
 
 // ─── 비즈니스 인텔리전스 (회사 비즈니스 브레인 — 건강도/분석/예측/리포트) ────
-app.use('/api/bi', require('./routes/business-intelligence')({ getDb: dbModule.getDb }));
+app.use('/api/bi', require('./routes/business-intelligence')({ getDb: dbModule.getDb, ragCore }));
 
 // ─── 깊은 조사 에이전트 (오분류 재분석 + 숨겨진 업무 흐름 + 현실적 자동화 판단) ──
-app.use('/api/investigate', require('./routes/deep-investigator')({ getDb: dbModule.getDb }));
+app.use('/api/investigate', require('./routes/deep-investigator')({ getDb: dbModule.getDb, ragCore }));
 
 // ─── 데모 시드 (개발/미리보기용) ─────────────────────────────────────────────
 app.post('/api/demo/seed', (req, res) => {

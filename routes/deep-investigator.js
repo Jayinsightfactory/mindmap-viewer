@@ -197,7 +197,7 @@ function calcReclassifyConfidence(gapSeconds, nextIsWork) {
 }
 
 
-function createDeepInvestigator({ getDb }) {
+function createDeepInvestigator({ getDb, ragCore }) {
   const router = express.Router();
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -1913,6 +1913,40 @@ function createDeepInvestigator({ getDb }) {
     return `${app} 작업`;
   }
 
+
+  // ── RAG 기반 맥락 조사 ─────────────────────────────────────────────────
+  // GET /api/investigate/rag-context?eventId=&userId=
+  router.get('/rag-context', async (req, res) => {
+    try {
+      if (!ragCore) return res.json({ error: 'RAG 미초기화' });
+      const { eventId, userId, query: q } = req.query;
+      const db = getDb();
+
+      let searchQuery = q || '';
+      // eventId가 있으면 해당 이벤트의 윈도우 타이틀로 검색
+      if (eventId && db?.query) {
+        const { rows } = await db.query(
+          `SELECT data_json->>'windowTitle' as win FROM events WHERE id = $1`, [eventId]
+        ).catch(() => ({ rows: [] }));
+        if (rows[0]?.win) searchQuery = rows[0].win;
+      }
+
+      if (!searchQuery) return res.status(400).json({ error: 'query 또는 eventId 필수' });
+
+      const docs = await ragCore.searchSimilarContext({
+        currentState: searchQuery, userId, days: 30, limit: 15,
+      });
+
+      res.json({
+        ok: true,
+        query: searchQuery,
+        context: docs,
+        count: docs.length,
+      });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
 
   return router;
 }
