@@ -26,8 +26,13 @@
 
 'use strict';
 
+// ── 즉시 진단 출력 (Railway 크래시 디버깅) ──
+console.log('[BOOT] server.js 로딩 시작', new Date().toISOString());
+console.log('[BOOT] Node', process.version, 'PORT=', process.env.PORT);
+
 require('dotenv').config();
 const logger = require('./src/logger');
+console.log('[BOOT] logger 로드 완료');
 
 // ─── 전역 미처리 Promise 거부 안전망 (Node.js v24+ 크래시 방지) ────────────────
 process.on('unhandledRejection', (reason, promise) => {
@@ -3143,7 +3148,8 @@ async function startServer() {
   }
   });  // server.listen 콜백 끝
 }
-startServer();
+console.log('[BOOT] startServer() 호출');
+startServer().catch(e => { console.error('[BOOT] startServer 실패:', e.message, e.stack); process.exit(1); });
 
 // ─── Graceful shutdown ──────────────────────────────────────────────────────
 function gracefulShutdown(signal) {
