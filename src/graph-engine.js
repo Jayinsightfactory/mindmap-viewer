@@ -762,33 +762,112 @@ function buildLabel(event) {
     case 'annotation.add':
       return `📌 ${truncate(d.label || '메모', 22)}`;
     case 'keyboard.chunk': {
-      const app = d.app || d.activeApp || '';
       const title = d.windowTitle || '';
-      return `⌨️ ${truncate(app ? `${app}: ${title}` : title || '입력', 30)}`;
+      const wfLabel = _classifyWorkLabel(title, d);
+      return wfLabel || `⌨️ ${truncate(title || '입력', 30)}`;
     }
     case 'screen.capture': {
-      const app = d.app || '';
       const title = d.windowTitle || '';
-      const trigger = d.trigger || '';
-      return `📸 ${truncate(app ? `${app}: ${title}` : trigger || '캡처', 30)}`;
+      const wfLabel = _classifyWorkLabel(title, d);
+      return wfLabel || `📸 ${truncate(title || d.trigger || '캡처', 30)}`;
     }
     case 'screen.analyzed': {
-      const app = d.app || '';
       const activity = d.activity || '';
-      return `🔍 ${truncate(app ? `${app}: ${activity}` : '분석', 30)}`;
+      const title = d.windowTitle || '';
+      const wfLabel = _classifyWorkLabel(title, d);
+      return wfLabel || `🔍 ${truncate(activity || title || '분석', 30)}`;
     }
     case 'idle':
       return '💤 대기';
     case 'file.change':
       return `📁 ${truncate(d.fileName || d.filePath || '파일 변경', 22)}`;
-    case 'clipboard.change':
+    case 'clipboard.change': {
+      const text = (d.text || '').slice(0, 50);
+      if (text.includes('[MEL]') || text.match(/\w+\s*:\s*\d+/)) return `📋 주문 데이터 복사`;
+      if (text.includes('불량') || text.includes('파손')) return `📋 불량 데이터 복사`;
+      if (text.includes('발주')) return `📋 발주 데이터 복사`;
       return `📋 클립보드`;
+    }
     case 'bank.security.active':
       return '🏦 은행 보안 활성';
+    case 'bank-safe.activity':
+      return '🏦 은행 보안 감지';
     default:
       // 알 수 없는 타입도 의미 있게
       return whoPrefix + (d.toolName || d.contentPreview || event.type).slice(0, 28);
   }
+}
+
+/**
+ * windowTitle → 업무 워크플로우 라벨 변환
+ * "화훼 관리 프로그램" → "📋 주문 등록"
+ * "호남소재" (카톡방) → "💬 호남소재 거래처 소통"
+ * "피벗2 - Excel" → "📊 차감/정산 작업"
+ */
+function _classifyWorkLabel(windowTitle, data) {
+  if (!windowTitle) return null;
+  const t = windowTitle.toLowerCase();
+  const app = (data?.app || '').toLowerCase();
+
+  // ── nenova 화면 (가장 구체적) ──
+  if (t.includes('신규 주문') || t.includes('주문 등록') || t.includes('주문등록'))
+    return '📋 주문 등록';
+  if (t.includes('불량') || t.includes('검역'))
+    return '⚠️ 불량/검역 등록';
+  if (t.includes('출고') && !t.includes('내역'))
+    return '🚚 출고 처리';
+  if (t.includes('출고내역') || t.includes('출고 내역'))
+    return '📑 출고내역서 작성';
+  if (t.includes('견적') && !t.includes('검색'))
+    return '📄 견적서 작성';
+  if (t.includes('거래처') && !t.includes('카톡'))
+    return '🏢 거래처 관리';
+  if (t.includes('발주'))
+    return '🛒 발주 작업';
+  if (t.includes('매출') || t.includes('마감') || t.includes('판매현황'))
+    return '📈 매출 마감/정산';
+  if (t.includes('재고'))
+    return '📦 재고 확인';
+  if (t.includes('단가') || t.includes('가격'))
+    return '💰 단가 관리';
+  if (t.includes('화훼 관리') || t.includes('화훼관리') || t.includes('nenova'))
+    return '🖥️ nenova 전산 작업';
+
+  // ── Excel (업무 문맥) ──
+  if (t.includes('excel') || t.includes('.xlsx') || t.includes('.xls')) {
+    if (t.includes('물량')) return '📊 물량표 작업';
+    if (t.includes('발주')) return '🛒 발주서 작성 (Excel)';
+    if (t.includes('피벗') || t.includes('차감')) return '📊 차감 대조 (Excel)';
+    if (t.includes('견적')) return '📄 견적서 작성 (Excel)';
+    return '📊 Excel 데이터 작업';
+  }
+
+  // ── 카카오톡 (거래처/업무 단톡방) ──
+  if (app === 'kakaotalk' || t.includes('카카오') || t.includes('kakao')) {
+    // 업무 단톡방 이름 추출
+    if (t.includes('수입') && t.includes('불량')) return '💬 불량 공유방 소통';
+    if (t.includes('영업')) return '💬 영업팀 소통';
+    if (t.includes('현장')) return '💬 현장 소통';
+    if (t.includes('견적')) return '💬 견적 요청 소통';
+    if (t.includes('발주') || t.includes('재고')) return '💬 발주/재고 확인 소통';
+    // 거래처 이름이 포함된 단톡방
+    const roomName = windowTitle.replace(/카카오톡|kakao/gi, '').trim();
+    if (roomName && roomName.length > 1 && roomName !== '카카오톡')
+      return `💬 ${truncate(roomName, 15)} 소통`;
+    return '💬 카카오톡 소통';
+  }
+
+  // ── 브라우저 (업무 관련) ──
+  if (t.includes('chrome') || t.includes('edge')) {
+    if (t.includes('네이버 지도') || t.includes('카페'))
+      return null; // 개인 활동은 원래 라벨 유지
+    if (t.includes('거래처') || t.includes('채권'))
+      return '🌐 거래처 조회 (웹)';
+    if (t.includes('claude') || t.includes('gemini'))
+      return '🤖 AI 도구 사용';
+  }
+
+  return null; // 분류 안 되면 원래 라벨 사용
 }
 
 // 경로에서 파일명만 추출
