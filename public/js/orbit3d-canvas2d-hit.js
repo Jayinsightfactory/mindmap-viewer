@@ -85,7 +85,7 @@ function updateRaycast() {
         const _cW = hit.pw || UNI_CARD_W;
         const _cH = hit.ph || UNI_CARD_H;
         _editIconEl.style.left = (hit.cx + (_cW / 2 - 26) * _s) + 'px';
-        _editIconEl.style.top  = (hit.cy + (-_cH / 2 + 4) * _s) + 'px';
+        _editIconEl.style.top  = (hit.cy + (-_cH / 2 + 15) * _s) + 'px';
       }
     }
   } else {
