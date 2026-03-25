@@ -571,8 +571,10 @@ function drawTeamLabels() {
     // member: 텍스트에 맞는 동적 카드 크기
     const _sphereR = type === 'goal' ? 22 : type === 'leader' || type === 'infra' ? 20
       : type === 'member' ? 16 : type === 'department' ? 18 : 14;
-    const _mW = type === 'member' ? Math.max(110, _lctx.measureText(txt).width + 28) : _sphereR * 2;
-    const _mH = type === 'member' ? 44 : _sphereR * 2;
+    const _mW = _useUnified
+      ? Math.max(type === 'member' ? 110 : 90, _lctx.measureText(txt).width + 28)
+      : _sphereR * 2;
+    const _mH = type === 'member' ? 44 : _useUnified ? 40 : _sphereR * 2;
     const pw  = _useUnified ? _mW : Math.min(_lctx.measureText(txt).width + pad, 120);
     const ph  = _useUnified ? _mH : pxSize + pad * 0.65;
     // priority: prequest=7, goal/leader=6, presult/department/infra/sharedProject=5, member/ptask/hq=4, skill/agent/hubProject/external=3, task/dept=2, tool=1
@@ -853,7 +855,7 @@ function drawTeamLabels() {
 
     // 히트 영역 (해소된 위치 기준)
     if (type !== 'tool') {
-      registerHitArea({ cx, cy, r: hr + 4, data: node });
+      registerHitArea({ cx, cy, r: hr + 4, pw, ph, data: node });
     }
 
     // globalAlpha 복원
