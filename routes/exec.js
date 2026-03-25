@@ -15,8 +15,9 @@ const crypto              = require('crypto');
 const path                = require('path');
 const { generate }        = require('../src/llm-gateway');
 
-// 승인 대기 중인 명령 임시 저장 (메모리)
+// 승인 대기 중인 명령 임시 저장 (메모리, 최대 100건)
 const pendingCmds = new Map(); // id → { type, hash, projectDir, cmds, createdAt }
+const _PENDING_MAX = 100;
 
 // ── 유틸 ──────────────────────────────────────────────────────────────────────
 
@@ -143,11 +144,15 @@ module.exports = function createExecRouter({ getAllEvents, broadcastAll, getDb }
         return res.status(400).json({ error: `지원하지 않는 type: ${type}` });
       }
 
-      // pending 저장
+      // pending 저장 (상한 초과 시 가장 오래된 것 제거)
+      if (pendingCmds.size >= _PENDING_MAX) {
+        const oldest = pendingCmds.keys().next().value;
+        pendingCmds.delete(oldest);
+      }
       pendingCmds.set(id, { id, type, hash, projectDir: safeDir, cmds, createdAt: Date.now() });
 
-      // 5분 후 만료
-      setTimeout(() => pendingCmds.delete(id), 5 * 60 * 1000);
+      // 2분 후 만료 (메모리 절약)
+      setTimeout(() => pendingCmds.delete(id), 2 * 60 * 1000);
 
       return res.json({ id, mode: provider, status: 'preview', preview, cmds });
 

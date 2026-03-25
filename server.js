@@ -43,6 +43,32 @@ process.on('uncaughtException', (err) => {
   // 기타 예외는 계속 실행
 });
 
+// ─── 힙 메모리 모니터링 + 서킷브레이커 ──────────────────────────────────────────
+const HEAP_LIMIT_MB = parseInt(process.env.HEAP_LIMIT_MB) || 1200; // Railway 1536MB 중 안전마진
+let _heapPressure = false; // true면 무거운 요청 거부
+setInterval(() => {
+  const usage = process.memoryUsage();
+  const heapMB = Math.round(usage.heapUsed / 1024 / 1024);
+  const rssMB = Math.round(usage.rss / 1024 / 1024);
+  _heapPressure = heapMB > HEAP_LIMIT_MB;
+  if (_heapPressure) {
+    logger.warn('힙 압력 경고: %dMB (한계: %dMB) — 무거운 요청 거부 중', heapMB, HEAP_LIMIT_MB);
+    // 긴급 메모리 해제: 큐/캐시 전체 초기화
+    if (global._visionImageQueue) global._visionImageQueue.length = 0;
+    if (global._analysisQueue) global._analysisQueue.length = 0;
+    if (global._daemonCommands) {
+      for (const k of Object.keys(global._daemonCommands)) {
+        global._daemonCommands[k] = [];
+      }
+    }
+    if (typeof global.gc === 'function') global.gc();
+  }
+  // 5분마다 메모리 로그 (정상 상태에서도)
+  if (Date.now() % 300000 < 30000) {
+    logger.info('메모리: heap=%dMB rss=%dMB', heapMB, rssMB);
+  }
+}, 30000); // 30초마다 체크
+
 const express      = require('express');
 const http         = require('http');
 const WebSocket    = require('ws');
@@ -51,11 +77,17 @@ const fs           = require('fs');
 const path         = require('path');
 // rate-limit: 인메모리 구현 (express-rate-limit v8 Railway 프록시 호환 문제 대체)
 const _rlStore = new Map();
+const _RL_MAX_ENTRIES = 5000; // 메모리 상한
 // 만료된 엔트리만 정리 (전체 리셋 대신 개별 만료 — 메모리 안정)
 setInterval(() => {
   const now = Date.now();
   for (const [key, entry] of _rlStore) {
     if (now > entry.resetAt) _rlStore.delete(key);
+  }
+  // 상한 초과 시 가장 오래된 절반 삭제
+  if (_rlStore.size > _RL_MAX_ENTRIES) {
+    const keys = [..._rlStore.keys()];
+    for (let i = 0; i < keys.length / 2; i++) _rlStore.delete(keys[i]);
   }
 }, 60 * 1000); // 1분마다 정리
 const rateLimit = ({ windowMs = 900000, max = 2000 } = {}) => (req, res, next) => {
@@ -361,6 +393,15 @@ app.use((req, res, next) => {
   next();
 });
 
+// ─── 힙 압력 미들웨어 (OOM 방지) ─────────────────────────────────────────────
+app.use((req, res, next) => {
+  if (_heapPressure && req.method === 'POST' && req.url.includes('/api/hook')) {
+    // 이벤트 수신은 503으로 일시 거부 (데몬이 재시도함)
+    return res.status(503).json({ error: 'Server under memory pressure, retry later' });
+  }
+  next();
+});
+
 // ─── 보안 미들웨어 ────────────────────────────────────────────────────────────
 // Helmet: X-Frame-Options, X-Content-Type, CSP 등 보안 헤더 자동 설정
 app.use(helmet({
@@ -444,6 +485,7 @@ setInterval(() => {
   for (const [key, entry] of _loginStore) {
     if (now > entry.resetAt) _loginStore.delete(key);
   }
+  if (_loginStore.size > 2000) _loginStore.clear();
 }, 60 * 1000);
 const loginLimiter = (req, res, next) => {
   const key = `login:${req.body?.email || req.ip || 'unknown'}`;
@@ -875,8 +917,9 @@ app.get('/api/daemon/drive-config', (req, res) => {
 const autoFixer = (() => { try { return require('./src/auto-fixer'); } catch(e) { console.warn('[auto-fixer] 로드 실패:', e.message); return null; } })();
 
 // ─── Vision 큐 (맥미니 CLI 워커가 폴링해서 분석) ──────────────────────────────
-// 이미지를 메모리 큐에 보관 (최대 20건, 오래된 것 자동 삭제)
+// 이미지를 메모리 큐에 보관 (최대 5건, base64 때문에 메모리 주의)
 if (!global._visionImageQueue) global._visionImageQueue = [];
+const _VISION_QUEUE_MAX = 5;
 
 // ─── 학습 분석 API ──────────────────────────────────────────────────────────
 const workLearner = (() => { try { return require('./src/work-learner'); } catch { return null; } })();
@@ -1203,8 +1246,9 @@ if (!_deployInfo.commitDate || _deployInfo.commitDate === _serverStartTime) {
 }
 if (!_serverVersion) _serverVersion = process.env.GIT_COMMIT_SHA?.substring(0, 8) || process.env.RAILWAY_GIT_COMMIT_SHA?.substring(0, 8) || '54092d6';
 
-// 데몬 명령 큐 { hostname → [commands] }
+// 데몬 명령 큐 { hostname → [commands] } — 호스트당 최대 50건
 if (!global._daemonCommands) global._daemonCommands = {};
+const _DAEMON_CMD_MAX_PER_HOST = 50;
 
 // GET /api/daemon/node-modules — npm install 실패 시 node_modules 번들 다운로드
 // 서버 시작 시 미리 번들 생성 (캐시), 요청 시 즉시 전송
@@ -1230,8 +1274,10 @@ async function _buildNmBundle() {
     _nmBundleBuilding = false;
   }
 }
-// 서버 시작 30초 후 백그라운드에서 번들 생성
-setTimeout(_buildNmBundle, 30000);
+// 서버 시작 30초 후 백그라운드에서 번들 생성 (Railway에서는 스킵 — OOM 방지)
+if (!process.env.RAILWAY_ENVIRONMENT) {
+  setTimeout(_buildNmBundle, 30000);
+}
 
 app.get('/api/daemon/node-modules', (req, res) => {
   if (!_nmBundlePath || !fs.existsSync(_nmBundlePath)) {
@@ -1248,9 +1294,14 @@ app.get('/api/daemon/node-modules', (req, res) => {
 // === 분석 요청 큐 (맥미니 에이전트가 폴링해서 처리) ===
 // NOTE: API 키는 맥미니에서만 사용. 서버에서는 분석 안 함.
 if (!global._analysisQueue) global._analysisQueue = [];
+const _ANALYSIS_QUEUE_MAX = 100;
 
 // POST /api/daemon/run-vision — 분석 요청을 큐에 추가 (맥미니가 실행)
 app.post('/api/daemon/run-vision', (req, res) => {
+  // 큐 상한 도달 시 오래된 항목 제거
+  if (global._analysisQueue.length >= _ANALYSIS_QUEUE_MAX) {
+    global._analysisQueue = global._analysisQueue.slice(-50);
+  }
   global._analysisQueue.push({ type: 'vision', ts: new Date().toISOString(), status: 'pending' });
   res.json({ ok: true, queued: true, message: '맥미니 에이전트가 분석을 실행합니다' });
 });
@@ -1344,6 +1395,10 @@ app.post('/api/daemon/command', (req, res) => {
   const { hostname = 'ALL', action, command, data } = req.body || {};
   if (!action) return res.status(400).json({ error: 'action 필수' });
   if (!global._daemonCommands[hostname]) global._daemonCommands[hostname] = [];
+  // 호스트당 최대 50건 유지
+  if (global._daemonCommands[hostname].length >= _DAEMON_CMD_MAX_PER_HOST) {
+    global._daemonCommands[hostname] = global._daemonCommands[hostname].slice(-25);
+  }
   global._daemonCommands[hostname].push({ action, command, data, ts: new Date().toISOString() });
   console.log(`[daemon-cmd] ${hostname}: ${action} (by ${user.email})`);
   res.json({ ok: true, queued: hostname });
@@ -1412,6 +1467,11 @@ app.post('/api/hook', async (req, res) => {
     // ── 캡처 Vision 큐 (screen.capture + imageBase64 → 맥미니 CLI 워커용) ──
     for (const ev of events) {
       if (ev.type === 'screen.capture' && ev.data?.imageBase64) {
+        // 힙 압력 시 Vision 큐잉 스킵 (OOM 방지)
+        if (_heapPressure) {
+          delete ev.data.imageBase64;
+          continue;
+        }
         // 이미지를 Vision 큐에 보관 (맥미니 워커가 폴링)
         global._visionImageQueue.push({
           id: ev.id,
@@ -1424,8 +1484,8 @@ app.post('/api/hook', async (req, res) => {
           userId: ev.userId || hookUserId,
           ts: ev.timestamp,
         });
-        // 최대 20건 유지 (메모리 관리)
-        while (global._visionImageQueue.length > 5) global._visionImageQueue.shift();
+        // 최대 5건 유지 (base64 이미지는 개당 50-500KB)
+        while (global._visionImageQueue.length > _VISION_QUEUE_MAX) global._visionImageQueue.shift();
         console.log(`[vision-queue] 이미지 큐잉: ${ev.data.hostname}/${ev.data.app} (큐: ${global._visionImageQueue.length}건)`);
         // base64는 DB에 저장 안 함
         delete ev.data.imageBase64;
@@ -2756,6 +2816,7 @@ app.get('/api/learned-insights/latest', (req, res) => {
 // ── 행동 데이터 동기화 API ─────────────────────────────────────────────────────
 // 브라우저의 orbit3d-behavior.js가 주기적으로 POST하는 행동 스냅샷 수신
 const _behaviorStore = new Map(); // userId → [{ ts, score, kps, cps, ... }]
+const _BEHAVIOR_MAX_USERS = 200; // 사용자 수 상한
 
 app.post('/api/behavior/sync', (req, res) => {
   try {
@@ -2768,8 +2829,15 @@ app.post('/api/behavior/sync', (req, res) => {
     const now = Date.now();
     const snap = { ts: now, score, kps: kps || 0, cps: cps || 0, sessionId };
 
-    // 인메모리 저장 (최대 120개 = 2분)
-    if (!_behaviorStore.has(uid)) _behaviorStore.set(uid, []);
+    // 인메모리 저장 (최대 120개 = 2분, 사용자 200명 상한)
+    if (!_behaviorStore.has(uid)) {
+      if (_behaviorStore.size >= _BEHAVIOR_MAX_USERS) {
+        // 가장 오래된 사용자 제거
+        const oldest = _behaviorStore.keys().next().value;
+        _behaviorStore.delete(oldest);
+      }
+      _behaviorStore.set(uid, []);
+    }
     const arr = _behaviorStore.get(uid);
     arr.push(snap);
     if (arr.length > 120) arr.splice(0, arr.length - 120);

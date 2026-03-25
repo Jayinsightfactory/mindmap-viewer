@@ -44,6 +44,7 @@ const PERSONAL_APP_PATTERNS = [
 // ═══════════════════════════════════════════════════════════════════════════
 // 인메모리 캐시 — 조사 결과 + 가설 저장
 // ═══════════════════════════════════════════════════════════════════════════
+const _CACHE_ARRAY_MAX = 100; // 배열당 최대 항목 수
 let _investigationCache = {
   lastRun: null,
   reclassified: [],
@@ -52,6 +53,14 @@ let _investigationCache = {
   hypotheses: [],
   automationAssessments: [],
 };
+// 캐시 배열 크기 제한 함수
+function _trimInvestigationCache() {
+  for (const key of ['reclassified', 'workflows', 'questions', 'hypotheses', 'automationAssessments']) {
+    if (_investigationCache[key]?.length > _CACHE_ARRAY_MAX) {
+      _investigationCache[key] = _investigationCache[key].slice(-_CACHE_ARRAY_MAX);
+    }
+  }
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 헬퍼 함수
@@ -1509,6 +1518,7 @@ function createDeepInvestigator({ getDb }) {
       }
 
       _investigationCache.lastRun = new Date().toISOString();
+      _trimInvestigationCache(); // 메모리 상한 적용
       const elapsed = Date.now() - startTime;
       console.log(`[deep-investigator] 자동 조사 완료 (${elapsed}ms)`);
     } catch (e) {

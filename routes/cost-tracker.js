@@ -53,8 +53,9 @@ const ESTIMATED_TOKENS = {
   'tool.error':     { input: 50,  output: 50  },
 };
 
-// ── 인메모리 비용 레저 (서버 재시작 시 초기화) ──────────────────────────────
+// ── 인메모리 비용 레저 (서버 재시작 시 초기화, 최대 5000건) ──────────────────────────────
 const costLedger = new Map(); // eventId → { sessionId, model, inputTokens, outputTokens, costUsd, ts }
+const _COST_LEDGER_MAX = 5000;
 
 /**
  * 모델명에서 가격 조회 (부분 매칭 지원)
@@ -300,6 +301,11 @@ function createCostTrackerRouter({ getAllEvents, getSessions, getEventsForUser, 
       const outTok  = parseInt(outputTokens) || 0;
       const costUsd = ((inTok * prices.input) + (outTok * prices.output)) / 1000;
 
+      // 상한 초과 시 오래된 절반 제거
+      if (costLedger.size >= _COST_LEDGER_MAX) {
+        const keys = [...costLedger.keys()];
+        for (let i = 0; i < keys.length / 2; i++) costLedger.delete(keys[i]);
+      }
       costLedger.set(eventId, {
         eventId, sessionId, modelId: model, inputTokens: inTok, outputTokens: outTok, costUsd,
         isEstimated: false, recordedAt: new Date().toISOString(),
