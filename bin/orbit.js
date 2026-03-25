@@ -337,6 +337,126 @@ LSP 검증 + 테스트 실행 + 최종 보고까지 포함한다.
 }
 
 // ─── orbit help ────────────────────────────────────
+// ─── 자동화 워크플로우 (Orbit OS CLI) ────────────────
+function cmdAutomation(args) {
+  const sub = args[0] || 'status';
+  const cfg = loadConfig();
+  const serverUrl = cfg.serverUrl || `http://localhost:${cfg.port || DEFAULT_PORT}`;
+  const token = cfg.token || '';
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  function apiGet(path) {
+    return new Promise((resolve, reject) => {
+      const url = new URL(path, serverUrl);
+      const mod = url.protocol === 'https:' ? require('https') : http;
+      mod.get(url.href, { headers }, res => {
+        let data = '';
+        res.on('data', c => data += c);
+        res.on('end', () => { try { resolve(JSON.parse(data)); } catch { resolve({ raw: data }); } });
+      }).on('error', reject);
+    });
+  }
+
+  function apiPost(path, body) {
+    return new Promise((resolve, reject) => {
+      const url = new URL(path, serverUrl);
+      const mod = url.protocol === 'https:' ? require('https') : http;
+      const bodyStr = JSON.stringify(body || {});
+      const req = mod.request(url.href, {
+        method: 'POST', headers: { ...headers, 'Content-Length': Buffer.byteLength(bodyStr) },
+      }, res => {
+        let data = '';
+        res.on('data', c => data += c);
+        res.on('end', () => { try { resolve(JSON.parse(data)); } catch { resolve({ raw: data }); } });
+      });
+      req.on('error', reject);
+      req.write(bodyStr);
+      req.end();
+    });
+  }
+
+  (async () => {
+    try {
+      if (sub === 'status') {
+        const d = await apiGet('/api/automation/workflows');
+        const wfs = d.workflows || [];
+        const live = wfs.filter(w => w.status === 'live').length;
+        const dev = wfs.filter(w => w.status === 'dev').length;
+        const plan = wfs.filter(w => w.status === 'plan').length;
+        log(`워크플로우 현황`);
+        ok(`총 ${wfs.length}개 | Live: ${GREEN}${live}${RESET} | Dev: ${YELLOW}${dev}${RESET} | Plan: ${plan}`);
+        ok(`일일 절약: ${d.totalSavingsMin || 0}분`);
+
+      } else if (sub === 'list' || sub === 'ls') {
+        const statusFilter = args.includes('--live') ? 'live' : (args.includes('--dev') ? 'dev' : null);
+        const d = await apiGet(`/api/automation/workflows${statusFilter ? `?status=${statusFilter}` : ''}`);
+        const wfs = d.workflows || [];
+        if (args.includes('--json')) {
+          console.log(JSON.stringify(wfs, null, 2));
+          return;
+        }
+        console.log('ID'.padEnd(18) + ' ' + '이름'.padEnd(10) + ' ' + '상태'.padEnd(6) + ' ' + '절약'.padEnd(10) + ' 설명');
+        console.log('─'.repeat(70));
+        for (const w of wfs) {
+          const st = { live: `${GREEN}live${RESET}`, dev: `${YELLOW}dev${RESET}`, plan: 'plan' }[w.status] || '?';
+          console.log(`${w.id.padEnd(18)} ${w.name.padEnd(10)} ${st.padEnd(14)} ${(w.savingsLabel||'').padEnd(10)} ${(w.desc||'').slice(0,30)}`);
+        }
+
+      } else if (sub === 'test') {
+        const wfId = args[1];
+        if (!wfId) { err('워크플로우 ID 필요: orbit automation test order'); return; }
+        log(`테스트: ${wfId}`);
+        const d = await apiPost(`/api/automation/workflows/${wfId}/test`);
+        if (d.ok) {
+          ok(`${wfId}: ${d.elapsedMs}ms`);
+          if (d.parseResult) {
+            console.log(`  포맷: ${d.parseResult.formatType} | 품목: ${d.parseResult.items}건 | 신뢰도: ${Math.round((d.parseResult.confidence||0)*100)}%`);
+          }
+          if (d.master) {
+            console.log(`  상품: ${d.master.products}개 | 거래처: ${d.master.customers}개`);
+          }
+        } else {
+          err(`${wfId}: ${d.error || '실패'}`);
+        }
+
+      } else if (sub === 'test-all') {
+        log('전체 워크플로우 배치 테스트...');
+        const d = await apiPost('/api/automation/workflows/test-all');
+        const results = d.results || [];
+        for (const r of results) {
+          const icon = r.pass ? `${GREEN}✓${RESET}` : `${RED}✗${RESET}`;
+          const st = { live: `${GREEN}live${RESET}`, dev: `${YELLOW}dev${RESET}`, plan: 'plan' }[r.status] || '?';
+          console.log(`  ${icon} ${r.id.padEnd(18)} ${(r.name||'').padEnd(10)} ${st}`);
+        }
+        console.log(`\n  통과: ${GREEN}${d.passed}${RESET}/${d.totalWorkflows} | 소요: ${d.totalElapsedMs}ms`);
+
+      } else if (sub === 'parse') {
+        const text = args.slice(1).join(' ');
+        if (!text) { err('텍스트 필요: orbit automation parse "[MEL] ROSE..."'); return; }
+        const d = await apiPost('/api/automation/parse', { text });
+        if (args.includes('--json')) {
+          console.log(JSON.stringify(d, null, 2));
+        } else {
+          console.log(`포맷: ${d.formatType || d.type || '?'}`);
+          console.log(`품목: ${d.stats?.totalItems || d.orders?.length || 0}건`);
+          console.log(`신뢰도: ${Math.round((d.stats?.avgConfidence || d.confidence || 0) * 100)}%`);
+        }
+
+      } else {
+        log('orbit automation <command>');
+        console.log('  status     워크플로우 현황');
+        console.log('  list       목록 (--live, --dev, --json)');
+        console.log('  test <ID>  단일 테스트');
+        console.log('  test-all   전체 배치 테스트');
+        console.log('  parse "텍스트"  파서 테스트');
+      }
+    } catch (e) {
+      err(`자동화 명령 실패: ${e.message}`);
+    }
+  })();
+}
+
 function cmdHelp() {
   console.log(`
 ${BOLD}${CYAN}⬡ Orbit ${VERSION}${RESET}
@@ -371,6 +491,13 @@ ${BOLD}설정${RESET}
   ${CYAN}whoami${RESET}            현재 계정 확인
   ${CYAN}config [k] [v]${RESET}    설정 보기/변경
   ${CYAN}remote [url]${RESET}      원격 URL 설정
+
+${BOLD}자동화 (Orbit OS)${RESET}
+  ${CYAN}automation status${RESET}          워크플로우 전체 현황
+  ${CYAN}automation list [--live]${RESET}   워크플로우 목록
+  ${CYAN}automation test <ID>${RESET}       단일 워크플로우 테스트
+  ${CYAN}automation test-all${RESET}        전체 15개 배치 테스트
+  ${CYAN}automation parse "텍스트"${RESET}   파서 테스트
 
 ${BOLD}분석 (Phase 2-5)${RESET}
   ${CYAN}analysis [dash|cap|learn]${RESET}  작업 분석 대시보드
@@ -964,7 +1091,8 @@ switch (cmd) {
   case 'remote':    cmdRemote(cleanArgs);   break;
   case 'sync':      cmdSync();              break;
   case 'deploy':    cmdDeploy(cleanArgs);   break;
-  case 'analysis':  cmdAnalysis(cleanArgs); break;
-  case 'analyze':   cmdAnalysis(cleanArgs); break;
-  case 'help': default: cmdHelp();          break;
+  case 'analysis':    cmdAnalysis(cleanArgs); break;
+  case 'analyze':     cmdAnalysis(cleanArgs); break;
+  case 'automation':  cmdAutomation(cleanArgs); break;
+  case 'help': default: cmdHelp();            break;
 }

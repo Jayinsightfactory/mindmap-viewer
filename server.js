@@ -2509,6 +2509,9 @@ app.use('/api/data', require('./routes/data-archive')({ getDb: dbModule.getDb })
 
 // ─── Automation Engine (변수 대응 자동화) ──────────────────────────────────────
 app.use('/api/automation', require('./routes/automation-engine')({ getDb: dbModule.getDb }));
+// ─── 워크플로우 레지스트리 API (CLI/Orbit OS 공용) ───────────────────────────
+const { createWorkflowRegistry } = require('./routes/automation-engine');
+app.use('/api/automation', createWorkflowRegistry({ getDb: dbModule.getDb }));
 
 // ─── Orbit OS (팔란티어 스타일 회사 OS 명령 구조) ─────────────────────────────
 app.use('/api/os', require('./routes/orbit-os')({ getDb: dbModule.getDb }));

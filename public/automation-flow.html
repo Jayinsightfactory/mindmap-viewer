@@ -1809,104 +1809,203 @@ window.addEventListener('resize', () => {
 function downloadTestTool() {
   const serverUrl = window.location.origin;
   const script = `#!/usr/bin/env python3
-# ============================================================
-# Orbit AI 자동화 테스트 도구 (orbit-test.py)
-# ============================================================
-# 사용법:
-#   python orbit-test.py --status          서버 상태 확인
-#   python orbit-test.py --parse "텍스트"   파서 테스트 (7종)
-#   python orbit-test.py --test-order       주문 시뮬레이션
-#   python orbit-test.py --workflows        워크플로우 목록
-#   python orbit-test.py --run WF_ID        워크플로우 실행
+# ═══════════════════════════════════════════════════════════════
+# Orbit AI 자동화 테스트 도구 v2 (orbit-test.py)
+# ═══════════════════════════════════════════════════════════════
+# CLI 사용법:
+#   orbit-test.py status                    서버 + 워크플로우 상태
+#   orbit-test.py workflows [--status live] 워크플로우 목록
+#   orbit-test.py test ORDER               단일 워크플로우 테스트
+#   orbit-test.py test-all                  전체 15개 배치 테스트
+#   orbit-test.py parse "텍스트"            파서 테스트 (7종)
+#   orbit-test.py run ORDER --data '{}'     워크플로우 실행
 #
-# 의존성: pip install requests
+# 인증:  orbit-test.py login EMAIL PASSWORD
+# JSON:  orbit-test.py workflows --json     (파이프 호환)
+#
+# Orbit OS CLI 연동:
+#   orbit automation status    ← 이 스크립트와 동일 API 사용
+#   orbit automation test-all  ← 동일 엔드포인트
+#
 # 서버: ${serverUrl}
-# ============================================================
+# 의존성: pip install requests
+# ═══════════════════════════════════════════════════════════════
 
-import requests, json, sys, argparse
+import requests, json, sys, os, argparse, time
 
-SERVER = "${serverUrl}"
+SERVER = os.environ.get("ORBIT_SERVER", "${serverUrl}")
+TOKEN_FILE = os.path.expanduser("~/.orbit-token")
 
-def check_status():
-    """서버 상태 확인"""
+def _headers():
+    token = ""
+    if os.path.exists(TOKEN_FILE):
+        token = open(TOKEN_FILE).read().strip()
+    h = {"Content-Type": "application/json"}
+    if token:
+        h["Authorization"] = f"Bearer {token}"
+    return h
+
+def _get(path, params=None):
+    r = requests.get(f"{SERVER}{path}", headers=_headers(), params=params, timeout=15)
+    return r.json()
+
+def _post(path, data=None):
+    r = requests.post(f"{SERVER}{path}", headers=_headers(), json=data or {}, timeout=30)
+    return r.json()
+
+# ── 명령어 ──────────────────────────────────────────────────
+
+def cmd_login(email, password):
+    """로그인 → 토큰 저장"""
+    d = _post("/api/auth/login", {"email": email, "password": password})
+    if d.get("ok") and d.get("token"):
+        with open(TOKEN_FILE, "w") as f:
+            f.write(d["token"])
+        print(f"✅ 로그인 성공: {d.get('user',{}).get('name',email)}")
+        print(f"   토큰 저장: {TOKEN_FILE}")
+    else:
+        print(f"❌ 로그인 실패: {d.get('error','unknown')}")
+        sys.exit(1)
+
+def cmd_status():
+    """서버 + 워크플로우 상태"""
     try:
-        r = requests.get(f"{SERVER}/api/health", timeout=10)
-        data = r.json()
-        print(f"[OK] 서버 상태: {r.status_code}")
-        print(f"  - 버전: {data.get('version', 'unknown')}")
-        print(f"  - uptime: {data.get('uptime', 'N/A')}")
-        print(f"  - DB: {data.get('db', 'N/A')}")
+        h = _get("/health")
+        print(f"── 서버 ──")
+        print(f"  상태: ✅ 정상 (v{h.get('version','?')})")
+        print(f"  DB: {h.get('db','?')}")
+        print(f"  이벤트: {h.get('events','?')}건")
     except Exception as e:
-        print(f"[ERROR] 서버 연결 실패: {e}")
-
-def test_parse(text):
-    """파서 테스트 (7종: 주문/배송/정산/문의/재고/보고/일정)"""
+        print(f"  상태: ❌ {e}")
+        return
     try:
-        r = requests.post(f"{SERVER}/api/automation/parse", json={"text": text}, timeout=15)
-        data = r.json()
-        print(f"[파서 결과] 타입: {data.get('type', '알 수 없음')}")
-        print(f"  - 신뢰도: {data.get('confidence', 0):.1%}")
-        print(f"  - 추출 데이터:")
-        for k, v in data.get('extracted', {}).items():
-            print(f"    {k}: {v}")
-    except Exception as e:
-        print(f"[ERROR] 파서 테스트 실패: {e}")
+        w = _get("/api/automation/workflows")
+        wfs = w.get("workflows", [])
+        live = len([x for x in wfs if x["status"] == "live"])
+        dev = len([x for x in wfs if x["status"] == "dev"])
+        plan = len([x for x in wfs if x["status"] == "plan"])
+        print(f"── 워크플로우 ({len(wfs)}개) ──")
+        print(f"  Live: {live}  Dev: {dev}  Plan: {plan}")
+        print(f"  절약: 일 {w.get('totalSavingsMin',0)}분")
+    except:
+        pass
 
-def test_order():
-    """주문 시뮬레이션"""
-    sample = "김철수 / 서울시 강남구 / 010-1234-5678 / 상품A 3개 / 카드결제"
-    print(f"[시뮬레이션] 주문 텍스트: {sample}")
-    test_parse(sample)
-
-def list_workflows():
+def cmd_workflows(status_filter=None, as_json=False):
     """워크플로우 목록"""
-    try:
-        r = requests.get(f"{SERVER}/api/automation/workflows", timeout=10)
-        data = r.json()
-        wfs = data.get('workflows', [])
-        print(f"[워크플로우] 총 {len(wfs)}개")
-        for wf in wfs:
-            status = wf.get('status', '?')
-            print(f"  [{status}] {wf.get('id', '?')}: {wf.get('name', '?')} - {wf.get('description', '')}")
-    except Exception as e:
-        print(f"[ERROR] 워크플로우 조회 실패: {e}")
+    params = {}
+    if status_filter:
+        params["status"] = status_filter
+    d = _get("/api/automation/workflows", params)
+    wfs = d.get("workflows", [])
+    if as_json:
+        print(json.dumps(wfs, ensure_ascii=False, indent=2))
+        return
+    print(f"{'ID':18s} {'이름':12s} {'상태':6s} {'절약':10s} {'단계':20s}")
+    print("─" * 70)
+    for w in wfs:
+        st = {"live":"🟢","dev":"🟡","plan":"⚪"}.get(w["status"],"?")
+        steps = " → ".join(w.get("steps",[])) or w.get("desc","")
+        print(f"{w['id']:18s} {w['name']:12s} {st} {w.get('savingsLabel',''):10s} {steps[:20]}")
 
-def run_workflow(wf_id):
+def cmd_test(wf_id, as_json=False):
+    """단일 워크플로우 테스트"""
+    d = _post(f"/api/automation/workflows/{wf_id}/test")
+    if as_json:
+        print(json.dumps(d, ensure_ascii=False, indent=2))
+        return
+    if d.get("ok"):
+        print(f"✅ {wf_id}: {d.get('elapsedMs',0)}ms")
+        if "parseResult" in d:
+            p = d["parseResult"]
+            print(f"   포맷: {p.get('formatType','?')} | 품목: {p.get('items',0)}건 | 신뢰도: {p.get('confidence',0):.0%}")
+        if "master" in d:
+            m = d["master"]
+            print(f"   상품: {m.get('products',0)}개 | 거래처: {m.get('customers',0)}개")
+    else:
+        print(f"❌ {wf_id}: {d.get('error','실패')}")
+
+def cmd_test_all(as_json=False):
+    """전체 배치 테스트"""
+    d = _post("/api/automation/workflows/test-all")
+    results = d.get("results", [])
+    if as_json:
+        print(json.dumps(d, ensure_ascii=False, indent=2))
+        return
+    print(f"═══ 전체 테스트 ({d.get('totalWorkflows',0)}개) ═══")
+    for r in results:
+        icon = "✅" if r.get("pass") else "❌"
+        st = {"live":"🟢","dev":"🟡","plan":"⚪"}.get(r.get("status",""),"?")
+        print(f"  {icon} {r['id']:18s} {r['name']:10s} {st} {r.get('elapsedMs',0):>4d}ms")
+    print(f"───")
+    print(f"  통과: {d.get('passed',0)}/{d.get('totalWorkflows',0)} | 소요: {d.get('totalElapsedMs',0)}ms")
+
+def cmd_parse(text, as_json=False):
+    """파서 테스트"""
+    d = _post("/api/automation/parse", {"text": text})
+    if as_json:
+        print(json.dumps(d, ensure_ascii=False, indent=2))
+        return
+    print(f"포맷: {d.get('formatType',d.get('type','?'))}")
+    print(f"품목: {d.get('stats',{}).get('totalItems',d.get('orders',{}) if isinstance(d.get('orders'),int) else len(d.get('orders',[]))) or 0}건")
+    conf = d.get('stats',{}).get('avgConfidence', d.get('confidence',0))
+    print(f"신뢰도: {float(conf or 0):.0%}")
+
+def cmd_run(wf_id, data_str=None):
     """워크플로우 실행"""
-    try:
-        r = requests.post(f"{SERVER}/api/automation/workflows/{wf_id}/run", json={}, timeout=30)
-        data = r.json()
-        print(f"[실행] 워크플로우 {wf_id}: {data.get('status', 'unknown')}")
-        if 'result' in data:
-            print(f"  결과: {json.dumps(data['result'], ensure_ascii=False, indent=2)}")
-    except Exception as e:
-        print(f"[ERROR] 워크플로우 실행 실패: {e}")
+    data = json.loads(data_str) if data_str else {}
+    d = _post(f"/api/automation/workflows/{wf_id}/test", {"testData": data})
+    print(json.dumps(d, ensure_ascii=False, indent=2))
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Orbit AI 자동화 테스트 도구")
-    parser.add_argument("--status", action="store_true", help="서버 상태 확인")
-    parser.add_argument("--parse", type=str, help="텍스트 파서 테스트")
-    parser.add_argument("--test-order", action="store_true", help="주문 시뮬레이션")
-    parser.add_argument("--workflows", action="store_true", help="워크플로우 목록")
-    parser.add_argument("--run", type=str, help="워크플로우 실행 (ID)")
+    p = argparse.ArgumentParser(
+        description="Orbit AI 자동화 테스트 도구 v2",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""예시:
+  %(prog)s login dlaww@kicda.com orbit2024
+  %(prog)s status
+  %(prog)s workflows --status live
+  %(prog)s test order
+  %(prog)s test-all
+  %(prog)s parse "[MEL] ROSE CHINA / Catherine : 30"
+  %(prog)s test-all --json | jq '.results[] | .id'""")
 
-    args = parser.parse_args()
+    sub = p.add_subparsers(dest="cmd")
 
-    if args.status:
-        check_status()
-    elif args.parse:
-        test_parse(args.parse)
-    elif args.test_order:
-        test_order()
-    elif args.workflows:
-        list_workflows()
-    elif args.run:
-        run_workflow(args.run)
-    else:
-        parser.print_help()
-        print("\\n# 빠른 시작:")
-        print("  python orbit-test.py --status")
-        print("  python orbit-test.py --parse \\"김철수 주문 3건\\"")
+    sub.add_parser("status", help="서버 + 워크플로우 상태")
+
+    sp = sub.add_parser("login", help="로그인")
+    sp.add_argument("email")
+    sp.add_argument("password")
+
+    sp = sub.add_parser("workflows", help="워크플로우 목록")
+    sp.add_argument("--status", type=str, help="필터 (live/dev/plan)")
+    sp.add_argument("--json", action="store_true")
+
+    sp = sub.add_parser("test", help="단일 워크플로우 테스트")
+    sp.add_argument("wf_id", help="워크플로우 ID (order, shipping, ...)")
+    sp.add_argument("--json", action="store_true")
+
+    sp = sub.add_parser("test-all", help="전체 15개 배치 테스트")
+    sp.add_argument("--json", action="store_true")
+
+    sp = sub.add_parser("parse", help="파서 테스트")
+    sp.add_argument("text", help="테스트 텍스트")
+    sp.add_argument("--json", action="store_true")
+
+    sp = sub.add_parser("run", help="워크플로우 실행")
+    sp.add_argument("wf_id")
+    sp.add_argument("--data", type=str, default="{}")
+
+    args = p.parse_args()
+
+    if args.cmd == "status": cmd_status()
+    elif args.cmd == "login": cmd_login(args.email, args.password)
+    elif args.cmd == "workflows": cmd_workflows(args.status, getattr(args,"json",False))
+    elif args.cmd == "test": cmd_test(args.wf_id, getattr(args,"json",False))
+    elif args.cmd == "test_all" or args.cmd == "test-all": cmd_test_all(getattr(args,"json",False))
+    elif args.cmd == "parse": cmd_parse(args.text, getattr(args,"json",False))
+    elif args.cmd == "run": cmd_run(args.wf_id, args.data)
+    else: p.print_help()
 `;
   const blob = new Blob([script], { type: 'text/x-python' });
   const a = document.createElement('a');

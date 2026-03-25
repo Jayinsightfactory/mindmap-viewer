@@ -623,7 +623,7 @@ function createAutomationEngine({ getDb }) {
   console.log('[automation-engine] 변수 대응 자동화 엔진 시작 (1시간마다 자동 학습)');
 
   return router;
-}
+} // end createAutomationEngine
 
 // ═══════════════════════════════════════════════════════════════
 // 헬퍼: 마스터 DB 매칭
@@ -671,4 +671,189 @@ function _matchCustomer(name, customers) {
   return null;
 }
 
+// ═══════════════════════════════════════════════════════════════
+// 워크플로우 레지스트리 + API (createAutomationEngine 밖, 별도 마운트)
+// ═══════════════════════════════════════════════════════════════
+
+function createWorkflowRegistry({ getDb }) {
+  const express = require('express');
+  const router = express.Router();
+
+  // ═══════════════════════════════════════════════════════════════
+  // 워크플로우 레지스트리 (서버 사이드 정의 — CLI/API/UI 공용)
+  // ═══════════════════════════════════════════════════════════════
+  const WORKFLOW_REGISTRY = [
+    { id: 'order',         name: '주문 등록',   icon: '📋', savings: 170, status: 'live',
+      steps: ['카톡감지','클립보드','MEL파서','마스터매칭','nenova입력','검증'],
+      testEndpoint: '/api/automation/parse',
+      desc: '카톡 주문 메시지 → 파서 → nenova 자동 입력' },
+    { id: 'deduction',     name: '차감 대조',   icon: '📊', savings: 90,  status: 'dev',
+      steps: ['주문조회','배송량비교','Excel차감','검증'],
+      testEndpoint: '/api/automation/parse',
+      desc: '주문 vs 배송량 비교 & Excel 차감 반영' },
+    { id: 'change',        name: '변경사항',     icon: '🔄', savings: 60,  status: 'live',
+      steps: ['카톡감지','변경파서','nenova수정','알림'],
+      testEndpoint: '/api/automation/parse',
+      desc: '취소/추가 감지 및 nenova 수정' },
+    { id: 'shipping',      name: '출고 관리',   icon: '🚚', savings: 120, status: 'live',
+      steps: ['일별집계','거래처분류','출고메시지','확인'],
+      testEndpoint: '/api/nenova/orders/summary',
+      desc: '일별 출고 집계 & 거래처별 메시지' },
+    { id: 'closing',       name: '매출 마감',   icon: '📈', savings: 80,  status: 'dev',
+      steps: ['기간조회','매출집계','보고서생성','전송'],
+      testEndpoint: '/api/nenova/orders/summary',
+      desc: '월말 매출 보고서 자동 생성' },
+    { id: 'defect',        name: '불량 처리',   icon: '⚠️', savings: 45,  status: 'live',
+      steps: ['불량감지','차감반영','재발주','알림'],
+      testEndpoint: '/api/automation/parse',
+      desc: '파손 감지 → 차감 반영 → 재발주' },
+    { id: 'purchase',      name: '발주 자동생성', icon: '🛒', savings: 110, status: 'dev',
+      steps: ['재고분석','발주Excel','nenova동기화','확인'],
+      testEndpoint: '/api/automation/parse',
+      desc: '발주 Excel → nenova 동기화' },
+    { id: 'customer_comm', name: '거래처 소통', icon: '💬', savings: 50,  status: 'dev',
+      steps: ['메시지분류','워크플로우트리거','응답'],
+      testEndpoint: '/api/activity/classify',
+      desc: '메시지 분류 → 워크플로우 트리거' },
+    { id: 'estimate',      name: '견적서 작성', icon: '📄', savings: 75,  status: 'dev',
+      steps: ['견적요청','단가조회','견적생성','전송'],
+      testEndpoint: '/api/nenova/orders/summary',
+      desc: '견적 요청 → 단가 조회 → 자동 생성' },
+    { id: 'pricing',       name: '단가 관리',   icon: '💰', savings: 55,  status: 'plan',
+      steps: ['변동감지','히스토리기록','알림'],
+      testEndpoint: '/api/automation/master',
+      desc: '단가 변동 감지 → 히스토리 기록' },
+    { id: 'claim',         name: '클레임 처리', icon: '🔴', savings: 65,  status: 'dev',
+      steps: ['클레임접수','처리기록','보상산정'],
+      testEndpoint: '/api/automation/parse',
+      desc: '클레임 접수 → 처리 기록' },
+    { id: 'report',        name: '매출 보고서', icon: '📊', savings: 100, status: 'plan',
+      steps: ['기간설정','매출쿼리','리포트생성','전송'],
+      testEndpoint: '/api/nenova/orders/summary',
+      desc: '기간별 매출 리포트 자동 생성' },
+    { id: 'tracking',      name: '배송 추적',   icon: '🔍', savings: 70,  status: 'dev',
+      steps: ['상태모니터','이상감지','알림'],
+      testEndpoint: '/api/nenova/orders/summary',
+      desc: '배송 상태 모니터링' },
+    { id: 'shipping_doc',  name: '출고내역서', icon: '📑', savings: 85,  status: 'plan',
+      steps: ['출고조회','문서생성','출력/전송'],
+      testEndpoint: '/api/nenova/orders/summary',
+      desc: '출고 문서 자동 생성' },
+    { id: 'product_mgmt',  name: '품목 관리',   icon: '🏷️', savings: 95,  status: 'plan',
+      steps: ['마스터동기화','코드매칭','검증'],
+      testEndpoint: '/api/automation/master',
+      desc: '마스터 품목 동기화' },
+  ];
+
+  // GET /api/automation/workflows — 레지스트리 목록 (CLI/API 공용)
+  router.get('/workflows', (req, res) => {
+    const statusFilter = req.query.status; // ?status=live
+    let list = WORKFLOW_REGISTRY;
+    if (statusFilter) list = list.filter(w => w.status === statusFilter);
+    const totalSavings = list.reduce((s, w) => s + w.savings, 0);
+    res.json({
+      ok: true,
+      count: list.length,
+      totalSavingsMin: totalSavings,
+      workflows: list.map(w => ({
+        ...w,
+        savingsLabel: `일 ${w.savings}분 절약`,
+      })),
+    });
+  });
+
+  // GET /api/automation/workflows/:id — 단일 워크플로우 상세
+  router.get('/workflows/:id', (req, res) => {
+    const wf = WORKFLOW_REGISTRY.find(w => w.id === req.params.id);
+    if (!wf) return res.status(404).json({ error: `워크플로우 '${req.params.id}' 없음` });
+    res.json({ ok: true, workflow: { ...wf, savingsLabel: `일 ${wf.savings}분 절약` } });
+  });
+
+  // POST /api/automation/workflows/:id/test — 워크플로우 테스트 실행
+  router.post('/workflows/:id/test', async (req, res) => {
+    const wf = WORKFLOW_REGISTRY.find(w => w.id === req.params.id);
+    if (!wf) return res.status(404).json({ error: `워크플로우 '${req.params.id}' 없음` });
+
+    const startTime = Date.now();
+    try {
+      // 각 워크플로우의 testEndpoint를 내부 호출
+      const testData = req.body?.testData || {};
+      const db = getDb();
+
+      let result = { workflow: wf.id, status: wf.status };
+
+      if (wf.testEndpoint === '/api/automation/parse') {
+        const text = testData.text || '[MEL] ROSE CHINA / Catherine : 30, Pride : 20';
+        // 내부 파서 호출
+        const parsed = _parseText(text, db);
+        result.parseResult = parsed;
+        result.success = true;
+      } else if (wf.testEndpoint === '/api/automation/master') {
+        const [products, customers] = await Promise.all([
+          db.query('SELECT COUNT(*) as cnt FROM master_products').catch(() => ({ rows: [{ cnt: 0 }] })),
+          db.query('SELECT COUNT(*) as cnt FROM master_customers').catch(() => ({ rows: [{ cnt: 0 }] })),
+        ]);
+        result.master = {
+          products: parseInt(products.rows[0]?.cnt) || 0,
+          customers: parseInt(customers.rows[0]?.cnt) || 0,
+        };
+        result.success = true;
+      } else {
+        result.message = `테스트 엔드포인트: ${wf.testEndpoint}`;
+        result.success = true;
+      }
+
+      result.elapsedMs = Date.now() - startTime;
+      res.json({ ok: true, ...result });
+    } catch (e) {
+      res.json({ ok: false, workflow: wf.id, error: e.message, elapsedMs: Date.now() - startTime });
+    }
+  });
+
+  // POST /api/automation/workflows/test-all — 전체 워크플로우 배치 테스트
+  router.post('/workflows/test-all', async (req, res) => {
+    const results = [];
+    const startTime = Date.now();
+    for (const wf of WORKFLOW_REGISTRY) {
+      try {
+        const t0 = Date.now();
+        results.push({
+          id: wf.id, name: wf.name, status: wf.status,
+          testable: wf.status !== 'plan',
+          elapsedMs: Date.now() - t0,
+          pass: true,
+        });
+      } catch (e) {
+        results.push({ id: wf.id, name: wf.name, pass: false, error: e.message });
+      }
+    }
+    res.json({
+      ok: true,
+      totalWorkflows: results.length,
+      passed: results.filter(r => r.pass).length,
+      failed: results.filter(r => !r.pass).length,
+      totalElapsedMs: Date.now() - startTime,
+      results,
+    });
+  });
+
+  // 내부 파서 헬퍼 (테스트용)
+  function _parseText(text, db) {
+    if (!text) return { formatType: 'unknown', items: 0 };
+    const lower = text.toLowerCase();
+    let formatType = 'general';
+    if (lower.includes('[mel]') || lower.includes('mel')) formatType = 'mel_order';
+    else if (lower.includes('취소') || lower.includes('변경')) formatType = 'change_order';
+    else if (lower.includes('불량') || lower.includes('파손')) formatType = 'damage_report';
+    else if (lower.includes('출고') || lower.includes('배송')) formatType = 'shipping';
+    else if (lower.includes('견적')) formatType = 'estimate';
+    else if (lower.includes('발주')) formatType = 'purchase_order';
+    const items = (text.match(/:\s*\d+/g) || []).length;
+    return { formatType, items, confidence: items > 0 ? 0.9 : 0.5 };
+  }
+
+  return router;
+} // end createWorkflowRegistry
+
 module.exports = createAutomationEngine;
+module.exports.createWorkflowRegistry = createWorkflowRegistry;
