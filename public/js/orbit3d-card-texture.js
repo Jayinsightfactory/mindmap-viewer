@@ -82,26 +82,16 @@ function drawUnifiedCard(ctx, cx, cy, color, title, sub, isActive, isHover, isDr
   ctx.save();
   ctx.shadowColor = isDrilled ? 'rgba(6,182,212,0.25)' : 'rgba(0,0,0,0.3)';
   ctx.shadowBlur = isDrilled ? 16 : 10; ctx.shadowOffsetY = 2;
-  ctx.fillStyle = isDrilled ? 'rgba(6,182,212,0.12)' : isHover ? 'rgba(6,182,212,0.08)' : 'rgba(2,6,23,0.80)';
+  ctx.fillStyle = 'rgba(2,6,23,0.80)';
   roundRect(ctx, lx, ly, UNI_CARD_W, UNI_CARD_H, UNI_CARD_R); ctx.fill();
   ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
   ctx.restore();
 
-  drawWireframeGrid(ctx, lx, ly, UNI_CARD_W, UNI_CARD_H, UNI_CARD_R, color, isDrilled ? 0.35 : isHover ? 0.28 : 0.18);
+  drawWireframeGrid(ctx, lx, ly, UNI_CARD_W, UNI_CARD_H, UNI_CARD_R, color, isDrilled ? 0.40 : isHover ? 0.32 : 0.22);
 
-  // 좌측 컬러 바
-  ctx.save();
-  ctx.beginPath();
-  ctx.moveTo(lx + UNI_CARD_R, ly); ctx.lineTo(lx + UNI_CARD_BAR + UNI_CARD_R, ly);
-  ctx.lineTo(lx + UNI_CARD_BAR + UNI_CARD_R, ly + UNI_CARD_H);
-  ctx.moveTo(lx + UNI_CARD_R, ly + UNI_CARD_H);
-  ctx.arcTo(lx, ly + UNI_CARD_H, lx, ly + UNI_CARD_H - UNI_CARD_R, UNI_CARD_R);
-  ctx.lineTo(lx, ly + UNI_CARD_R); ctx.arcTo(lx, ly, lx + UNI_CARD_R, ly, UNI_CARD_R);
-  ctx.closePath();
-  ctx.fillStyle = color; ctx.globalAlpha = 0.7; ctx.fill(); ctx.globalAlpha = 1;
-  ctx.restore();
+  // 좌측 컬러 바 제거
 
-  ctx.strokeStyle = isDrilled ? color : isHover ? 'rgba(6,182,212,0.4)' : 'rgba(255,255,255,0.10)';
+  ctx.strokeStyle = isHover ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.07)';
   ctx.lineWidth = isDrilled ? 1.5 : isHover ? 1.2 : 0.8;
   roundRect(ctx, lx, ly, UNI_CARD_W, UNI_CARD_H, UNI_CARD_R); ctx.stroke();
 
@@ -112,8 +102,8 @@ function drawUnifiedCard(ctx, cx, cy, color, title, sub, isActive, isHover, isDr
     ctx.restore();
   }
 
-  const textX = lx + UNI_CARD_BAR + UNI_CARD_R + 6;
-  const maxTextW = UNI_CARD_W - UNI_CARD_BAR - UNI_CARD_R - 16;
+  const textX = lx + UNI_CARD_R + 8;
+  const maxTextW = UNI_CARD_W - UNI_CARD_R * 2 - 16;
   ctx.textAlign = 'left';
   ctx.font = "600 14px 'Inter',-apple-system,sans-serif";
   ctx.fillStyle = '#e2e8f0';

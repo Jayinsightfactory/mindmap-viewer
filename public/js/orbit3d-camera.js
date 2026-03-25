@@ -286,7 +286,7 @@ function unfocusMember() {
       const dPos = _focusedDept.pos;
       lerpCameraTo(45, dPos.x, dPos.y, dPos.z);
     } else {
-      lerpCameraTo(100, 0, 0, 0);
+      lerpCameraTo(15, 0, 0, 0);
     }
   } else {
     lerpCameraTo(75, 0, 0, 0);
@@ -307,7 +307,7 @@ function focusDept(deptNode) {
 function unfocusDept() {
   _focusedDept = null;
   _focusedMember = null;
-  lerpCameraTo(100, 0, 0, 0, 800);
+  lerpCameraTo(15, 0, 0, 0, 800);
   updateBreadcrumb(_companyMode ? 'company' : 'team');
 }
 
@@ -322,8 +322,8 @@ function updateTeamOrbits(dt) {
       if (!p.userData.isDept) return;
       const { orbitR, orbitAngle, orbitSpeed } = p.userData;
       const a  = orbitAngle + _clock * orbitSpeed;
-      const dy = (parseInt(p.userData.deptId.replace('d','')) % 2 === 0) ? 4 : -4;
-      p.position.set(orbitR * Math.cos(a), dy, orbitR * Math.sin(a));
+      const dz = (parseInt(p.userData.deptId.replace('d','')) % 2 === 0) ? 4 : -4;
+      p.position.set(orbitR * Math.cos(a), orbitR * Math.sin(a), dz);
       const tn = _teamNodes.find(n => n.obj === p);
       if (tn) tn.pos.copy(p.position);
     });
@@ -335,16 +335,16 @@ function updateTeamOrbits(dt) {
         const { orbitR, orbitAngle, orbitSpeed } = s.userData;
         const a = orbitAngle + _clock * orbitSpeed;
         const mi = parseInt((s.userData.memberId || 'c00').replace(/[^0-9]/g,'')) % 2;
-        s.position.set(deptP.position.x + orbitR * Math.cos(a), deptP.position.y + (mi ? 1.2 : -1.2), deptP.position.z + orbitR * Math.sin(a));
+        s.position.set(deptP.position.x + orbitR * Math.cos(a), deptP.position.y + orbitR * Math.sin(a), deptP.position.z + (mi ? 1.2 : -1.2));
       } else if ((s.userData.isTeamTask || s.userData.isTeamTool || s.userData.isTeamSkill || s.userData.isTeamAgent) && memberP) {
         const center = memberP.position;
         if (s.userData.isTeamTask) {
           const { orbitR, orbitAngle, orbitSpeed } = s.userData;
           const a = orbitAngle + _clock * orbitSpeed;
-          s.position.set(center.x + orbitR * Math.cos(a), center.y + orbitR * 0.3 * Math.sin(a + 0.8), center.z + orbitR * Math.sin(a));
+          s.position.set(center.x + orbitR * Math.cos(a), center.y + orbitR * Math.sin(a), center.z + orbitR * 0.3 * Math.sin(a + 0.8));
         } else {
           const { relAngle, relY, relR } = s.userData;
-          s.position.set(center.x + relR * Math.cos(relAngle), center.y + relY, center.z + relR * Math.sin(relAngle));
+          s.position.set(center.x + relR * Math.cos(relAngle), center.y + relR * Math.sin(relAngle), center.z + relY);
         }
       }
       const tn = _teamNodes.find(n => n.obj === s);
@@ -375,8 +375,7 @@ function updateTeamOrbits(dt) {
     const { orbitR, orbitAngle, orbitSpeed } = p.userData;
     const a  = orbitAngle + _clock * orbitSpeed;
     const mi = parseInt(p.userData.memberId.replace('m', '') || 0);
-    const ny = 0;
-    p.position.set(orbitR * Math.cos(a), ny, orbitR * Math.sin(a));
+    p.position.set(orbitR * Math.cos(a), orbitR * Math.sin(a), 0);
     const tn = _teamNodes.find(n => n.obj === p);
     if (tn) tn.pos.copy(p.position);
   });
@@ -390,7 +389,7 @@ function updateTeamOrbits(dt) {
     if (s.userData.isTeamTask) {
       const { orbitR, orbitAngle, orbitSpeed } = s.userData;
       const a = orbitAngle + _clock * orbitSpeed;
-      s.position.set(center.x + orbitR * Math.cos(a), center.y + orbitR * 0.25 * Math.sin(a + 1.0), center.z + orbitR * Math.sin(a));
+      s.position.set(center.x + orbitR * Math.cos(a), center.y + orbitR * Math.sin(a), center.z + orbitR * 0.3 * Math.sin(a + 0.8));
     } else if (s.userData.isTeamTool || s.userData.isTeamSkill || s.userData.isTeamAgent) {
       const { relAngle, relY, relR } = s.userData;
       s.position.set(center.x + relR * Math.cos(relAngle), center.y + relY, center.z + relR * Math.sin(relAngle));
@@ -750,32 +749,9 @@ function drawTeamLabels() {
       _lctx.restore();
     }
 
-    // ── leader / infra / sharedProject: 글로우 링 ─────────────────────────
-    if (type === 'leader' || type === 'infra' || type === 'sharedProject') {
-      const gp = (Math.sin(now * 1.4 + (type === 'infra' ? 1 : 0)) + 1) * 0.5;
-      const gr = _lctx.createRadialGradient(cx, cy, pw * 0.3, cx, cy, pw * 1.5);
-      gr.addColorStop(0, color + Math.round((0.12 + gp * 0.08) * 255).toString(16).padStart(2, '0'));
-      gr.addColorStop(1, 'rgba(0,0,0,0)');
-      _lctx.fillStyle = gr;
-      _lctx.beginPath(); _lctx.arc(cx, cy, pw * 1.5, 0, Math.PI * 2); _lctx.fill();
-    }
-
-    // ── 와이어프레임 구체 vs pill 분기 ────────────────────────────────────────
+    // ── 와이어프레임 구체 → 카드 렌더링 (글로우 구체 제거) ───────────────────
     if (lr._useUnified) {
-      // 와이어프레임 구체 (개인뷰와 동일한 스타일)
-      const nodeTitle = txt;
-      const nodeSub = sublabel || '';
-      const nodeR = type === 'goal' ? 40 : type === 'leader' || type === 'infra' ? 35
-        : type === 'member' ? (isFocused ? 38 : 30) : type === 'department' ? 32 : 24;
-      _drawWireSphere(_lctx, cx, cy, nodeR, color, {
-        meridians: 0,
-        parallels: 0,
-        glow: true,
-        hover: isSelected || isFocused,
-        drilled: isFocused,
-        rotation: 0,
-      });
-      _drawSphereLabel(_lctx, cx, cy, nodeR, nodeTitle, nodeSub, color, false);
+      drawUnifiedCard(_lctx, cx, cy, color, txt, sublabel || '', isActive, isSelected, isFocused);
       // 활성 표시 (task일 때)
       if (isActive && type === 'task') {
         _lctx.save();
@@ -784,16 +760,14 @@ function drawTeamLabels() {
         _lctx.restore();
       }
     } else {
-      // 기존 pill 렌더링 (소형 노드: task, skill, agent, tool, ptask, dept)
+      // pill 렌더링 — 배경/테두리 색상 제거, 그리드만 색상 유지
       roundRect(_lctx, x, y, pw, ph, ph * 0.5);
-      const bgA = type === 'skill' ? 0.18 : type === 'agent' ? 0.18 : type === 'dept' ? 0.10 : 0.10;
-      _lctx.fillStyle = color + Math.round(bgA * 255).toString(16).padStart(2, '0');
+      _lctx.fillStyle = 'rgba(2,6,23,0.72)';
       _lctx.fill();
-      drawWireframeGrid(_lctx, x, y, pw, ph, ph * 0.5, color, isActive ? 0.28 : 0.18);
+      drawWireframeGrid(_lctx, x, y, pw, ph, ph * 0.5, color, isActive ? 0.32 : 0.20);
 
-      const bdA = type === 'skill' ? 0.80 : type === 'agent' ? 0.80 : type === 'dept' ? 0.50 : isActive ? 0.85 : 0.42;
-      _lctx.strokeStyle = color + Math.round(bdA * 255).toString(16).padStart(2, '0');
-      _lctx.lineWidth = type === 'skill' ? 1.4 : type === 'agent' ? 1.4 : isActive ? 1.8 : 1;
+      _lctx.strokeStyle = 'rgba(255,255,255,0.08)';
+      _lctx.lineWidth = 0.8;
       roundRect(_lctx, x, y, pw, ph, ph * 0.5); _lctx.stroke();
       if (type === 'agent') {
         _lctx.globalAlpha = 0.4; _lctx.lineWidth = 0.8;
@@ -802,7 +776,7 @@ function drawTeamLabels() {
 
       // pill 텍스트
       _lctx.font = `${weight} ${pxSize}px -apple-system,'Segoe UI',sans-serif`;
-      _lctx.fillStyle = type === 'tool' ? color + 'bb' : type === 'skill' ? '#e2c9ff' : type === 'agent' ? '#8ff0ea' : (isSelected ? '#ffffff' : color);
+      _lctx.fillStyle = type === 'skill' ? '#e2c9ff' : type === 'agent' ? '#8ff0ea' : (isSelected ? '#ffffff' : '#c9d1d9');
       _lctx.textAlign = 'center'; _lctx.textBaseline = 'middle';
       if (isActive && type === 'task') { _lctx.shadowColor = color; _lctx.shadowBlur = 8; }
       if (type === 'skill') { _lctx.shadowColor = '#d2a8ff'; _lctx.shadowBlur = 4; }
