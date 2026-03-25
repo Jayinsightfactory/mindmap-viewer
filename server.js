@@ -39,6 +39,7 @@ process.on('unhandledRejection', (reason, promise) => {
   logger.warn('미처리 Promise 거부 (무시됨): %s', reason?.message || reason);
 });
 process.on('uncaughtException', (err) => {
+  console.error('[UNCAUGHT]', err.message, err.stack);
   logger.error('처리되지 않은 예외: %s', err.message, { stack: err.stack });
   // OOM은 복구 불가 → Railway가 자동 재시작하도록 종료
   if (err.message && (err.message.includes('heap') || err.message.includes('memory'))) {
