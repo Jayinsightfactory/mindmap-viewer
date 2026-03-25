@@ -80,12 +80,13 @@ function updateRaycast() {
       // 편집 아이콘: constellation 노드는 canvas 내부 버튼으로 처리 — 그 외 노드만 div 아이콘 표시
       if (!_editingNode && (data.label || data.intent || data.projName || data.catLabel) && data.type !== 'constellation') {
         _editIconEl.style.display = 'block';
-        // 카드 내부 우측 상단에 배치 — 실제 카드 크기(pw/ph) 반영
+        // 카드 내부 우측 상단에 배치 — canvas rect 오프셋 + 실제 카드 크기(pw/ph) 반영
         const _s = window._worldScale || 1.0;
         const _cW = hit.pw || UNI_CARD_W;
         const _cH = hit.ph || UNI_CARD_H;
-        _editIconEl.style.left = (hit.cx + (_cW / 2 - 26) * _s) + 'px';
-        _editIconEl.style.top  = (hit.cy + (-_cH / 2 + 15) * _s) + 'px';
+        const _cr = _labelCanvas2d.getBoundingClientRect();
+        _editIconEl.style.left = (_cr.left + hit.cx + (_cW / 2 - 26) * _s) + 'px';
+        _editIconEl.style.top  = (_cr.top  + hit.cy + (-_cH / 2 + 15) * _s) + 'px';
       }
     }
   } else {
