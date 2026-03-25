@@ -79,18 +79,74 @@ function isPersonalWindow(title) {
   return PERSONAL_APP_PATTERNS.some(pat => pat.test(title));
 }
 
-/** 윈도우 타이틀에서 앱명 추출 */
-function extractAppName(title) {
-  if (!title) return 'unknown';
+/** 윈도우 타이틀 + 데몬 app 필드 결합 앱 분류 (정확도 향상) */
+function extractAppName(title, daemonApp) {
+  if (!title) return daemonApp || 'unknown';
   const lower = title.toLowerCase();
-  if (lower.includes('kakao') || lower.includes('카카오')) return 'kakaotalk';
-  if (lower.includes('nenova') || lower.includes('네노바') || lower.includes('화훼관리')) return 'nenova';
-  if (lower.includes('excel') || lower.includes('.xlsx') || lower.includes('.xls')) return 'excel';
-  if (lower.includes('chrome') || lower.includes('edge') || lower.includes('firefox')) return 'browser';
+
+  // ── nenova 판별 (윈도우 타이틀 기반 — 데몬 app 필드보다 우선) ──
+  // nenova 직접 키워드
+  if (lower.includes('nenova') || lower.includes('네노바') || lower.includes('화훼') || lower.includes('화훼관리')) return 'nenova';
+  // nenova 고유 윈도우 (데몬이 kakaotalk/explorer로 잘못 분류하는 것들)
+  const nenovaWindows = [
+    '신규 주문', '주문 등록', '주문등록', '주문 조회', '주문조회',
+    '불량', '검역', '출고', '출하', '거래처', '품목',
+    '매출마감', '매출 마감', '재고', '단가', '발주',
+    '현장', '추가취소', '판매현황', '배송', '클레임',
+    '견적서', '견적 조회', '출고내역',
+  ];
+  if (nenovaWindows.some(kw => lower.includes(kw.toLowerCase()))) return 'nenova';
+
+  // ── Excel ──
+  if (lower.includes('excel') || lower.includes('.xlsx') || lower.includes('.xls') || lower.includes('.csv')) return 'excel';
+
+  // ── 카카오톡 (실제 채팅 윈도우만) ──
+  if (lower.includes('kakao') || lower.includes('카카오') || lower.includes('카톡')) return 'kakaotalk';
+
+  // ── 브라우저 ──
+  if (lower.includes('chrome') || lower.includes('edge') || lower.includes('firefox') || lower.includes('brave')) return 'browser';
+
+  // ── 기타 앱 ──
   if (lower.includes('explorer') || lower.includes('탐색기')) return 'explorer';
-  if (lower.includes('메모장') || lower.includes('notepad')) return 'notepad';
-  if (lower.includes('powershell') || lower.includes('cmd') || lower.includes('터미널')) return 'terminal';
+  if (lower.includes('메모장') || lower.includes('notepad') || lower.includes('스티커 메모')) return 'notepad';
+  if (lower.includes('powershell') || lower.includes('cmd') || lower.includes('터미널') || lower.includes('terminal')) return 'terminal';
+  if (lower.includes('인쇄') || lower.includes('print')) return 'print';
+
+  // 데몬 app 필드 폴백 (windowTitle로 판별 실패 시)
+  if (daemonApp && daemonApp !== 'unknown') return daemonApp;
   return 'other';
+}
+
+/** 워크플로우 카테고리 분류 (15개 업무 흐름 매핑) */
+const WORKFLOW_CATEGORIES = [
+  { id: 'order',         name: '주문 등록',   keywords: ['주문', '신규 주문', '주문등록', '주문 등록', '주문 조회'] },
+  { id: 'deduction',     name: '차감 대조',   keywords: ['차감', '대조', '수량 비교'] },
+  { id: 'change',        name: '변경사항',     keywords: ['변경', '취소', '추가취소', '수정'] },
+  { id: 'shipping',      name: '출고 관리',   keywords: ['출고', '출하', '배송'] },
+  { id: 'closing',       name: '매출 마감',   keywords: ['매출마감', '매출 마감', '마감', '판매현황'] },
+  { id: 'defect',        name: '불량 처리',   keywords: ['불량', '검역', '파손', '클레임'] },
+  { id: 'purchase',      name: '발주 작업',   keywords: ['발주', '발주내역'] },
+  { id: 'customer_comm', name: '거래처 소통', keywords: ['거래처', '네노바 영업', '영업방'] },
+  { id: 'estimate',      name: '견적서 작성', keywords: ['견적', '견적서', '견적조회'] },
+  { id: 'pricing',       name: '단가 관리',   keywords: ['단가', '가격'] },
+  { id: 'claim',         name: '클레임',       keywords: ['클레임', '반품'] },
+  { id: 'report',        name: '매출 보고서', keywords: ['보고서', '리포트', '집계'] },
+  { id: 'tracking',      name: '배송 추적',   keywords: ['배송', '운송', '택배'] },
+  { id: 'shipping_doc',  name: '출고내역서', keywords: ['출고내역', '내역서'] },
+  { id: 'product_mgmt',  name: '품목 관리',   keywords: ['품목', '상품', '마스터'] },
+];
+
+function classifyWorkflowCategory(steps) {
+  const allText = steps.map(s => (s.window || '').toLowerCase()).join(' ');
+  const matched = [];
+  for (const cat of WORKFLOW_CATEGORIES) {
+    const hits = cat.keywords.filter(kw => allText.includes(kw.toLowerCase()));
+    if (hits.length > 0) {
+      matched.push({ ...cat, hits: hits.length, confidence: Math.min(0.5 + hits.length * 0.2, 1.0) });
+    }
+  }
+  matched.sort((a, b) => b.hits - a.hits);
+  return matched.length > 0 ? matched[0] : null;
 }
 
 /** 이벤트에서 windowTitle 추출 (data_json 구조 대응) */
@@ -515,7 +571,7 @@ function createDeepInvestigator({ getDb }) {
         const dedupedSteps = [];
         let lastApp = null;
         for (let i = 0; i < windows.length; i++) {
-          const appName = extractAppName(windows[i] || apps[i]);
+          const appName = extractAppName(windows[i], apps[i]);
           if (appName !== lastApp) {
             dedupedSteps.push({
               app: appName,
@@ -559,12 +615,11 @@ function createDeepInvestigator({ getDb }) {
         }
       }
 
-      // 반복되는 패턴만 추출 (2회+)
+      // ── 2단계: 반복 패턴 + 단발 패턴 모두 수집 ──
+      // 반복 2회+ 는 confirmed, 1회는 detected
       const workflows = [];
       for (const [patternKey, pattern] of patternMap) {
-        if (pattern.frequency < 2) continue;
-
-        const avgDuration = Math.round(pattern.totalDuration / pattern.frequency);
+        const avgDuration = Math.round(pattern.totalDuration / Math.max(pattern.frequency, 1));
         const steps = pattern.steps.map(s => ({
           ...s,
           reclassified: s.classified === '개인' && pattern.hasPersonalInChain
@@ -575,11 +630,16 @@ function createDeepInvestigator({ getDb }) {
         // 자동화 가능성 평가
         const automatable = _assessWorkflowAutomation(steps, pattern.frequency);
 
+        // 워크플로우 카테고리 매핑 (15개 정의된 업무 흐름)
+        const category = classifyWorkflowCategory(steps);
+
         workflows.push({
           name: _generateWorkflowName(steps),
           pattern: patternKey,
+          category: category ? { id: category.id, name: category.name, confidence: category.confidence } : null,
           userId: pattern.userId,
           frequency: pattern.frequency,
+          status: pattern.frequency >= 3 ? 'confirmed' : pattern.frequency >= 2 ? 'detected' : 'observed',
           avgDuration: avgDuration > 60 ? `${Math.round(avgDuration / 60)}분` : `${avgDuration}초`,
           steps,
           hasHiddenWork: pattern.hasPersonalInChain,
@@ -591,6 +651,19 @@ function createDeepInvestigator({ getDb }) {
       // 빈도 내림차순 정렬
       workflows.sort((a, b) => b.frequency - a.frequency);
 
+      // ── 3단계: 카테고리별 집계 (15개 업무 흐름 현황) ──
+      const categoryStats = {};
+      for (const cat of WORKFLOW_CATEGORIES) {
+        const matched = workflows.filter(w => w.category?.id === cat.id);
+        categoryStats[cat.id] = {
+          name: cat.name,
+          discovered: matched.length,
+          totalFrequency: matched.reduce((s, w) => s + w.frequency, 0),
+          confirmed: matched.filter(w => w.status === 'confirmed').length,
+          topPattern: matched[0]?.pattern || null,
+        };
+      }
+
       // 캐시 업데이트
       _investigationCache.workflows = workflows.slice(0, 50);
 
@@ -599,11 +672,14 @@ function createDeepInvestigator({ getDb }) {
         period: `${days}일`,
         totalChainsAnalyzed: chainsResult.rows.length,
         uniquePatterns: patternMap.size,
-        workflows: workflows.slice(0, 30),
+        workflows: workflows.slice(0, 50),
+        categoryStats,
         summary: {
           totalWorkflows: workflows.length,
+          confirmedWorkflows: workflows.filter(w => w.status === 'confirmed').length,
           withHiddenWork: workflows.filter(w => w.hasHiddenWork).length,
           automatable: workflows.filter(w => w.automatable.feasible).length,
+          categorized: workflows.filter(w => w.category).length,
           topWorkflow: workflows[0]?.name || 'none',
         },
       });
