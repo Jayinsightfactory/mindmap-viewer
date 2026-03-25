@@ -237,6 +237,7 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
       <div class="legend-item"><span class="legend-color" style="background:var(--red);"></span>알림</div>
     </div>
     <span id="lastTestTime">마지막 테스트: -</span>
+    <button onclick="downloadTestTool()" style="background:var(--purple);color:#fff;border:1px solid var(--purple);padding:4px 14px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;margin-left:10px;transition:opacity .15s;" onmouseover="this.style.opacity='0.8'" onmouseout="this.style.opacity='1'">&#128229; 테스트 툴 다운로드</button>
   </div>
 </div>
 
@@ -1803,6 +1804,119 @@ window.addEventListener('resize', () => {
   clearTimeout(resizeTimer);
   resizeTimer = setTimeout(() => renderWorkflow(), 150);
 });
+
+// ── Test Tool Download ──
+function downloadTestTool() {
+  const serverUrl = window.location.origin;
+  const script = `#!/usr/bin/env python3
+# ============================================================
+# Orbit AI 자동화 테스트 도구 (orbit-test.py)
+# ============================================================
+# 사용법:
+#   python orbit-test.py --status          서버 상태 확인
+#   python orbit-test.py --parse "텍스트"   파서 테스트 (7종)
+#   python orbit-test.py --test-order       주문 시뮬레이션
+#   python orbit-test.py --workflows        워크플로우 목록
+#   python orbit-test.py --run WF_ID        워크플로우 실행
+#
+# 의존성: pip install requests
+# 서버: ${serverUrl}
+# ============================================================
+
+import requests, json, sys, argparse
+
+SERVER = "${serverUrl}"
+
+def check_status():
+    """서버 상태 확인"""
+    try:
+        r = requests.get(f"{SERVER}/api/health", timeout=10)
+        data = r.json()
+        print(f"[OK] 서버 상태: {r.status_code}")
+        print(f"  - 버전: {data.get('version', 'unknown')}")
+        print(f"  - uptime: {data.get('uptime', 'N/A')}")
+        print(f"  - DB: {data.get('db', 'N/A')}")
+    except Exception as e:
+        print(f"[ERROR] 서버 연결 실패: {e}")
+
+def test_parse(text):
+    """파서 테스트 (7종: 주문/배송/정산/문의/재고/보고/일정)"""
+    try:
+        r = requests.post(f"{SERVER}/api/automation/parse", json={"text": text}, timeout=15)
+        data = r.json()
+        print(f"[파서 결과] 타입: {data.get('type', '알 수 없음')}")
+        print(f"  - 신뢰도: {data.get('confidence', 0):.1%}")
+        print(f"  - 추출 데이터:")
+        for k, v in data.get('extracted', {}).items():
+            print(f"    {k}: {v}")
+    except Exception as e:
+        print(f"[ERROR] 파서 테스트 실패: {e}")
+
+def test_order():
+    """주문 시뮬레이션"""
+    sample = "김철수 / 서울시 강남구 / 010-1234-5678 / 상품A 3개 / 카드결제"
+    print(f"[시뮬레이션] 주문 텍스트: {sample}")
+    test_parse(sample)
+
+def list_workflows():
+    """워크플로우 목록"""
+    try:
+        r = requests.get(f"{SERVER}/api/automation/workflows", timeout=10)
+        data = r.json()
+        wfs = data.get('workflows', [])
+        print(f"[워크플로우] 총 {len(wfs)}개")
+        for wf in wfs:
+            status = wf.get('status', '?')
+            print(f"  [{status}] {wf.get('id', '?')}: {wf.get('name', '?')} - {wf.get('description', '')}")
+    except Exception as e:
+        print(f"[ERROR] 워크플로우 조회 실패: {e}")
+
+def run_workflow(wf_id):
+    """워크플로우 실행"""
+    try:
+        r = requests.post(f"{SERVER}/api/automation/workflows/{wf_id}/run", json={}, timeout=30)
+        data = r.json()
+        print(f"[실행] 워크플로우 {wf_id}: {data.get('status', 'unknown')}")
+        if 'result' in data:
+            print(f"  결과: {json.dumps(data['result'], ensure_ascii=False, indent=2)}")
+    except Exception as e:
+        print(f"[ERROR] 워크플로우 실행 실패: {e}")
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Orbit AI 자동화 테스트 도구")
+    parser.add_argument("--status", action="store_true", help="서버 상태 확인")
+    parser.add_argument("--parse", type=str, help="텍스트 파서 테스트")
+    parser.add_argument("--test-order", action="store_true", help="주문 시뮬레이션")
+    parser.add_argument("--workflows", action="store_true", help="워크플로우 목록")
+    parser.add_argument("--run", type=str, help="워크플로우 실행 (ID)")
+
+    args = parser.parse_args()
+
+    if args.status:
+        check_status()
+    elif args.parse:
+        test_parse(args.parse)
+    elif args.test_order:
+        test_order()
+    elif args.workflows:
+        list_workflows()
+    elif args.run:
+        run_workflow(args.run)
+    else:
+        parser.print_help()
+        print("\\n# 빠른 시작:")
+        print("  python orbit-test.py --status")
+        print("  python orbit-test.py --parse \\"김철수 주문 3건\\"")
+`;
+  const blob = new Blob([script], { type: 'text/x-python' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'orbit-test.py';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(a.href);
+}
 
 // ── Initialize ──
 buildTabs();

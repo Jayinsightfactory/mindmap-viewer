@@ -242,15 +242,17 @@ body.grabbing { cursor:grabbing; }
 
 <div class="legend">
   <div class="legend-title">Layers</div>
-  <div class="legend-item"><div class="legend-dot" style="background:#f0883e"></div> Data Collection</div>
-  <div class="legend-item"><div class="legend-dot" style="background:#58a6ff"></div> Server</div>
-  <div class="legend-item"><div class="legend-dot" style="background:#3fb950"></div> Frontend Views</div>
-  <div class="legend-item"><div class="legend-dot" style="background:#bc8cff"></div> Infrastructure</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#f0883e"></div> Data Collection (7)</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#58a6ff"></div> Analysis Engines (7)</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#d29922"></div> Business Intelligence (4)</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#f85149"></div> Automation (5)</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#3fb950"></div> Frontend (7)</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#bc8cff"></div> Infrastructure (6)</div>
 </div>
 
 <div id="canvas-container">
   <div id="world">
-    <svg id="connections" width="3000" height="2000">
+    <svg id="connections" width="3000" height="3000">
       <defs>
         <marker id="arrow-orange" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="8" markerHeight="6" orient="auto-start-reverse">
           <path d="M0,0 L10,4 L0,8 Z" class="arrow-marker" fill="#f0883e"/>
@@ -267,6 +269,9 @@ body.grabbing { cursor:grabbing; }
         <marker id="arrow-red" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="8" markerHeight="6" orient="auto-start-reverse">
           <path d="M0,0 L10,4 L0,8 Z" class="arrow-marker" fill="#f85149"/>
         </marker>
+        <marker id="arrow-yellow" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="8" markerHeight="6" orient="auto-start-reverse">
+          <path d="M0,0 L10,4 L0,8 Z" class="arrow-marker" fill="#d29922"/>
+        </marker>
       </defs>
     </svg>
   </div>
@@ -281,103 +286,268 @@ body.grabbing { cursor:grabbing; }
 // NODE DEFINITIONS
 // ══════════════════════════════════════════════════════════════
 const NODES = [
-  // --- Data Collection Layer ---
+  // ── Layer 1: DATA COLLECTION (데몬 7개) ──
   {
-    id:'daemon', title:'PC Daemon', sub:'personal-agent.js',
-    color:'#f0883e', icon:'&#128421;', layer:'collection',
-    x:100, y:160,
-    files:['keyboard-watcher.js','screen-capture.js','clipboard-watcher.js','mouse (keyboard-watcher)','excel-monitor.js','kakao-capture.js','file-change-watcher.js','drive-uploader.js'],
-    tooltip:'직원 PC 상주 에이전트 - 키보드/캡처/클립보드/마우스/엑셀/카카오'
+    id:'kb-watcher', title:'Keyboard Watcher', sub:'keyboard-watcher.js',
+    color:'#f0883e', icon:'&#9000;', layer:'collection',
+    x:60, y:100,
+    files:['keyboard-watcher.js','키보드 입력 감지','타이핑 패턴 분석','앱/윈도우 타이틀','마우스 좌표'],
+    tooltip:'키보드 입력 + 타이핑 패턴 + 마우스 좌표 수집'
   },
   {
-    id:'hook', title:'Event Hook', sub:'/api/hook',
-    color:'#f0883e', icon:'&#10132;', layer:'collection',
-    x:380, y:160,
-    files:['/api/hook (server.js)','event-normalizer.js','MindmapEvent 표준 변환'],
-    tooltip:'데몬 이벤트 수신 + 정규화 (MindmapEvent)'
+    id:'screen-cap', title:'Screen Capture', sub:'screen-capture.js',
+    color:'#f0883e', icon:'&#128247;', layer:'collection',
+    x:260, y:100,
+    files:['screen-capture.js','이벤트 기반 캡처','해상도 감지','~/.orbit/captures/'],
+    tooltip:'이벤트 기반 스크린 캡처 + 해상도 감지'
+  },
+  {
+    id:'clip-watcher', title:'Clipboard Watcher', sub:'clipboard-watcher.js',
+    color:'#f0883e', icon:'&#128203;', layer:'collection',
+    x:460, y:100,
+    files:['clipboard-watcher.js','7종 포맷 감지','텍스트/이미지/HTML/파일'],
+    tooltip:'클립보드 7종 포맷 감지 (텍스트/이미지/HTML/파일 등)'
+  },
+  {
+    id:'drive-up', title:'Drive Uploader', sub:'drive-uploader.js',
+    color:'#f0883e', icon:'&#9729;', layer:'collection',
+    x:660, y:100,
+    files:['drive-uploader.js','Google Drive 업로드','5분마다 자동','캡처 이미지 전송'],
+    tooltip:'캡처 이미지 Google Drive 자동 업로드 (5분 주기)'
+  },
+  {
+    id:'bank-safe', title:'Bank Safe Collector', sub:'bank-safe-collector.js',
+    color:'#f0883e', icon:'&#127974;', layer:'collection',
+    x:860, y:100,
+    files:['bank-safe-collector.js','WMI 폴백','프로세스 감지','보안 환경 대응'],
+    tooltip:'은행 보안 환경 WMI 폴백 수집'
+  },
+  {
+    id:'bank-toggle', title:'Bank Mode Toggle', sub:'bank-mode-toggle.js',
+    color:'#f0883e', icon:'&#128274;', layer:'collection',
+    x:1060, y:100,
+    files:['bank-mode-toggle.js','은행 보안 on/off','보안 프로그램 감지'],
+    tooltip:'은행 보안 프로그램 on/off 자동 토글'
+  },
+  {
+    id:'wf-learner', title:'Workflow Learner', sub:'workflow-learner.js',
+    color:'#f0883e', icon:'&#128196;', layer:'collection',
+    x:1260, y:100,
+    files:['workflow-learner.js','파일 활동 감지','작업 흐름 학습'],
+    tooltip:'파일 활동 감지 + 작업 흐름 학습'
   },
 
-  // --- Server Layer ---
+  // ── Layer 2: ANALYSIS ENGINES (분석 에이전트 7개) ──
   {
-    id:'server', title:'Server Core', sub:'server.js + PostgreSQL',
-    color:'#58a6ff', icon:'&#9881;', layer:'server',
-    x:660, y:160,
-    files:['server.js','db-pg.js (PostgreSQL)','db.js (SQLite auth)','routes/ (60+ API files)','graph.js','workspace.js','auth.js'],
-    tooltip:'Express + WebSocket + SQLite(auth) + PostgreSQL(events)'
+    id:'think-engine', title:'Think Engine', sub:'think-engine.js',
+    color:'#58a6ff', icon:'&#129504;', layer:'analysis',
+    x:60, y:300,
+    files:['think-engine.js','전이 확률 계산','다음 행동 예측','의도 파악'],
+    tooltip:'전이 확률 기반 행동 예측 + 의도 파악 엔진'
   },
   {
-    id:'vision', title:'Vision Analysis', sub:'vision-worker.js',
-    color:'#3fb950', icon:'&#128065;', layer:'server',
-    x:660, y:360,
-    files:['bin/vision-worker.js','vision-analyzer.js','Claude Vision API','Google Drive captures','screen.analyzed results'],
-    tooltip:'Mac Mini CLI - 캡처 이미지 Claude Vision 분석'
+    id:'idea-engine', title:'Idea Engine', sub:'idea-engine.js',
+    color:'#58a6ff', icon:'&#128161;', layer:'analysis',
+    x:260, y:300,
+    files:['idea-engine.js','패턴 발견','아이디어 생성','개선 제안'],
+    tooltip:'데이터 패턴 발견 + 개선 아이디어 생성'
   },
   {
-    id:'learner', title:'Learning Engine', sub:'work-learner.js',
-    color:'#bc8cff', icon:'&#129504;', layer:'server',
-    x:940, y:160,
-    files:['work-learner.js','graph-engine.js','learning-engine.js','workflow-learner.js','purpose-classifier.js','routine-learner.js','diff-learner.js'],
-    tooltip:'캡처+키로거 조합 학습, 패턴 감지, 의도 분류'
+    id:'issue-pred', title:'Issue Predictor', sub:'issue-predictor.js',
+    color:'#58a6ff', icon:'&#9888;', layer:'analysis',
+    x:460, y:300,
+    files:['issue-predictor.js','이슈 감지','사전 경고','장애 예측'],
+    tooltip:'이슈 사전 감지 + 장애 예측 경고'
   },
   {
-    id:'fixer', title:'Auto Fixer', sub:'auto-fixer.js',
-    color:'#f85149', icon:'&#128295;', layer:'server',
-    x:380, y:360,
-    files:['auto-fixer.js','daemon-updater.js','에러 감지 -> 분석 -> 수정 명령 전송','설치 실패 자동 해결'],
-    tooltip:'에러 자동 감지 -> 분석 -> 수정 명령 -> PC 데몬에 전송'
+    id:'self-evolve', title:'Self Evolve', sub:'self-evolve.js',
+    color:'#58a6ff', icon:'&#128300;', layer:'analysis',
+    x:660, y:300,
+    files:['self-evolve.js','자가 진화','알고리즘 개선','성능 최적화'],
+    tooltip:'분석 알고리즘 자가 진화 + 성능 최적화'
+  },
+  {
+    id:'activity-cls', title:'Activity Classifier', sub:'activity-classifier.js',
+    color:'#58a6ff', icon:'&#128200;', layer:'analysis',
+    x:860, y:300,
+    files:['activity-classifier.js','22카테고리 분류','업무/비업무 구분','시간대별 분석'],
+    tooltip:'활동 22카테고리 자동 분류'
+  },
+  {
+    id:'vision-learn', title:'Vision Learning', sub:'vision-learning.js',
+    color:'#58a6ff', icon:'&#128065;', layer:'analysis',
+    x:1060, y:300,
+    files:['vision-learning.js','UI 학습 2,736요소','화면 인식','앱별 패턴'],
+    tooltip:'캡처 이미지 Vision AI 학습 (2,736 UI 요소)'
+  },
+  {
+    id:'deep-invest', title:'Deep Investigator', sub:'deep-investigator.js',
+    color:'#58a6ff', icon:'&#128269;', layer:'analysis',
+    x:1260, y:300,
+    files:['deep-investigator.js','맥락 분석','질문 생성','심층 조사'],
+    tooltip:'맥락 분석 + 심층 질문 생성 엔진'
   },
 
-  // --- Frontend Layer ---
+  // ── Layer 3: BUSINESS INTELLIGENCE (경영 에이전트 4개) ──
   {
-    id:'personal', title:'Personal View', sub:'orbit3d-scene.js',
+    id:'biz-intel', title:'Business Intelligence', sub:'business-intelligence.js',
+    color:'#d29922', icon:'&#128200;', layer:'business',
+    x:160, y:500,
+    files:['business-intelligence.js','건강도 0-100','KPI 산출','경영 지표'],
+    tooltip:'조직 건강도 0-100 점수 + KPI 산출'
+  },
+  {
+    id:'data-digit', title:'Data Digitizer', sub:'data-digitizer.js',
+    color:'#d29922', icon:'&#128190;', layer:'business',
+    x:460, y:500,
+    files:['data-digitizer.js','데이터 갭 34항목','디지털화 진단','미전산 발견'],
+    tooltip:'데이터 갭 34항목 진단 + 디지털화 제안'
+  },
+  {
+    id:'erp-anal', title:'ERP Analyzer', sub:'erp-analyzer.js',
+    color:'#d29922', icon:'&#128187;', layer:'business',
+    x:760, y:500,
+    files:['erp-analyzer.js','전산 19기능 분석','nenova 연동','업무 효율 측정'],
+    tooltip:'전산 시스템(nenova) 19기능 분석'
+  },
+  {
+    id:'cross-anal', title:'Cross Analysis', sub:'nenova-cross-analysis.js',
+    color:'#d29922', icon:'&#128279;', layer:'business',
+    x:1060, y:500,
+    files:['nenova-cross-analysis.js','교차 분석','팀간 비교','병목 발견'],
+    tooltip:'멤버/팀간 교차 분석 + 병목 발견'
+  },
+
+  // ── Layer 4: AUTOMATION (자동화 5개) ──
+  {
+    id:'auto-engine', title:'Automation Engine', sub:'automation-engine.js',
+    color:'#f85149', icon:'&#9881;', layer:'automation',
+    x:60, y:680,
+    files:['automation-engine.js','7종 파서','주문/배송/정산','텍스트 구조화'],
+    tooltip:'7종 파서 엔진 (주문/배송/정산/문의/재고/보고/일정)'
+  },
+  {
+    id:'pad-conn', title:'PAD Connector', sub:'pad-connector.js',
+    color:'#f85149', icon:'&#128296;', layer:'automation',
+    x:310, y:680,
+    files:['pad-connector.js','PAD 연동','pyautogui 좌표','UI 자동화'],
+    tooltip:'Power Automate Desktop + pyautogui 연동'
+  },
+  {
+    id:'kakao-dec', title:'Kakao Decrypt', sub:'kakao-decrypt.js',
+    color:'#f85149', icon:'&#128172;', layer:'automation',
+    x:560, y:680,
+    files:['kakao-decrypt.js','카톡 복호화','메시지 파싱','주문 추출'],
+    tooltip:'카카오톡 메시지 복호화 + 주문 정보 추출'
+  },
+  {
+    id:'nenova-db', title:'Nenova DB', sub:'nenova-db.js',
+    color:'#f85149', icon:'&#128451;', layer:'automation',
+    x:810, y:680,
+    files:['nenova-db.js','SQL Server 읽기전용','전산 데이터 조회','실시간 쿼리'],
+    tooltip:'nenova SQL Server 읽기전용 실시간 쿼리'
+  },
+  {
+    id:'orbit-auto', title:'Orbit Auto', sub:'orbit-auto.py',
+    color:'#f85149', icon:'&#128295;', layer:'automation',
+    x:1060, y:680,
+    files:['orbit-auto.py','CLI 테스트 도구','파서 검증','시뮬레이션'],
+    tooltip:'CLI 자동화 테스트 도구 (파서 검증/시뮬레이션)'
+  },
+
+  // ── Layer 5: FRONTEND (웹 7개) ──
+  {
+    id:'orbit3d', title:'3D Universe', sub:'orbit3d.html',
     color:'#3fb950', icon:'&#127759;', layer:'frontend',
-    x:1220, y:80,
-    files:['orbit3d-scene.js','orbit3d-animate.js','orbit3d-behavior.js','orbit3d-render-panels.js','analysis.html','개인 활동 분석 패널'],
-    tooltip:'개인 3D 우주 뷰 - 내 업무 패턴/시간 배분 시각화'
+    x:60, y:860,
+    files:['orbit3d.html','Three.js 3D 우주 뷰','태양계 방식','팀 클러스터'],
+    tooltip:'3D 우주 뷰 - Three.js 와이어프레임 구체'
   },
   {
-    id:'team', title:'Team View', sub:'orbit3d-team.js',
-    color:'#3fb950', icon:'&#127756;', layer:'frontend',
-    x:1220, y:230,
-    files:['orbit3d-team.js','orbit3d-company.js','orbit3d-selection.js','team-dashboard.html','프로젝트 위성 시각화'],
-    tooltip:'팀 시뮬레이션 - 멤버 클러스터 + 프로젝트 위성'
-  },
-  {
-    id:'company', title:'Company View', sub:'orbit3d-company.js',
-    color:'#3fb950', icon:'&#9728;', layer:'frontend',
-    x:1220, y:380,
-    files:['orbit3d-company.js','orbit3d-team.js (company mode)','태양=회사, 행성=부서','부서간 협업선'],
-    tooltip:'전사 태양계 뷰 - 회사=태양, 부서=행성, 팀=위성'
-  },
-  {
-    id:'admin', title:'Admin Dashboard', sub:'admin-analysis.html',
+    id:'admin-dash', title:'Admin Dashboard', sub:'admin-analysis.html',
     color:'#3fb950', icon:'&#128202;', layer:'frontend',
-    x:1220, y:530,
-    files:['admin-analysis.html','admin-analytics.html','admin-workspace.html','KPI 대시보드','알고리즘 설정','report-generator.js'],
-    tooltip:'관리자 대시보드 - KPI, 직원 분석, 자동화 관리'
+    x:260, y:860,
+    files:['admin-analysis.html','관리자 대시보드','6탭 구성','의도 분석'],
+    tooltip:'관리자 대시보드 - 6탭 (멤버/패턴/정밀/리포트/의도/알고리즘)'
+  },
+  {
+    id:'orbit-os', title:'Orbit OS Console', sub:'orbit-os.html',
+    color:'#3fb950', icon:'&#128421;', layer:'frontend',
+    x:460, y:860,
+    files:['orbit-os.html','OS 콘솔','19메뉴','시스템 관리'],
+    tooltip:'OS 콘솔 - 19메뉴 시스템 관리'
+  },
+  {
+    id:'nenova-dash', title:'Nenova Dashboard', sub:'nenova-dashboard.html',
+    color:'#3fb950', icon:'&#128187;', layer:'frontend',
+    x:660, y:860,
+    files:['nenova-dashboard.html','전산 대시보드','7탭','ERP 현황'],
+    tooltip:'nenova 전산 대시보드 - 7탭 ERP 현황'
+  },
+  {
+    id:'auto-flow', title:'Automation Flow', sub:'automation-flow.html',
+    color:'#3fb950', icon:'&#9889;', layer:'frontend',
+    x:860, y:860,
+    files:['automation-flow.html','워크플로우 15개','비주얼 편집기','실행 로그'],
+    tooltip:'자동화 워크플로우 15개 비주얼 편집기'
+  },
+  {
+    id:'conv-dash', title:'Conversation', sub:'conversation-dashboard.html',
+    color:'#3fb950', icon:'&#128172;', layer:'frontend',
+    x:1060, y:860,
+    files:['conversation-dashboard.html','작업 내역','대화 로그','히스토리'],
+    tooltip:'작업 내역 + 대화 히스토리 대시보드'
+  },
+  {
+    id:'log-server', title:'Log Server', sub:'localhost:4848',
+    color:'#3fb950', icon:'&#128196;', layer:'frontend',
+    x:1260, y:860,
+    files:['log-server.js','localhost:4848','실시간 로그','로컬 전용'],
+    tooltip:'로컬 로그 서버 (localhost:4848)'
   },
 
-  // --- Infra Layer ---
+  // ── Layer 6: INFRASTRUCTURE ──
   {
     id:'railway', title:'Railway Deploy', sub:'Auto Deploy',
     color:'#bc8cff', icon:'&#128640;', layer:'infra',
-    x:660, y:560,
-    files:['railway.json','Dockerfile','GitHub main -> 자동배포','환경변수 관리','힙: 768MB'],
-    tooltip:'Railway 자동 배포 - GitHub main push -> sparkling-determination'
+    x:60, y:1040,
+    files:['railway.json','GitHub main -> 자동배포','힙: 768MB','sparkling-determination'],
+    tooltip:'Railway 자동 배포 - GitHub main push'
   },
   {
-    id:'gdrive', title:'Google Drive', sub:'Capture Storage',
+    id:'pg-db', title:'PostgreSQL', sub:'이벤트 48,097건',
+    color:'#bc8cff', icon:'&#128451;', layer:'infra',
+    x:310, y:1040,
+    files:['db-pg.js','PostgreSQL','이벤트 48,097건','gondola.proxy.rlwy.net'],
+    tooltip:'PostgreSQL 이벤트 DB (48,097건)'
+  },
+  {
+    id:'sql-server', title:'SQL Server', sub:'nenova 읽기전용',
+    color:'#bc8cff', icon:'&#128190;', layer:'infra',
+    x:560, y:1040,
+    files:['nenova-db.js','SQL Server','읽기전용 연결','전산 데이터'],
+    tooltip:'nenova SQL Server 읽기전용 연결'
+  },
+  {
+    id:'gdrive', title:'Google Drive', sub:'캡처 업로드',
     color:'#bc8cff', icon:'&#128193;', layer:'infra',
-    x:380, y:560,
-    files:['drive-uploader.js','gdrive-backup.js','캡처 저장 (~/.orbit/captures/)','Vision 원본 이미지','5분마다 자동 업로드'],
-    tooltip:'Google Drive - 캡처 이미지 저장 + 백업 (5분 주기)'
+    x:810, y:1040,
+    files:['drive-uploader.js','캡처 저장','Vision 원본','5분 자동 업로드'],
+    tooltip:'Google Drive - 캡처 이미지 저장 + Vision 원본'
   },
   {
-    id:'updater', title:'Auto Updater', sub:'daemon-updater.js',
-    color:'#bc8cff', icon:'&#128260;', layer:'infra',
-    x:100, y:360,
-    files:['daemon-updater.js','09:30 / 13:00 / 15:00 / 17:00','원격 명령 수신','자동 재시작','install.ps1 v2'],
-    tooltip:'평일 4회 자동 업데이트 (09:30/13:00/15:00/17:00)'
+    id:'vision-worker', title:'Vision Worker', sub:'맥미니 상시',
+    color:'#bc8cff', icon:'&#128065;', layer:'infra',
+    x:1060, y:1040,
+    files:['bin/vision-worker.js','맥미니 상시 실행','Claude Vision API','캡처 분석'],
+    tooltip:'맥미니 상시 Vision 워커 - Claude Vision API'
+  },
+  {
+    id:'auto-fixer', title:'Auto Fixer', sub:'에러 자동 수정',
+    color:'#bc8cff', icon:'&#128295;', layer:'infra',
+    x:1310, y:1040,
+    files:['auto-fixer.js','에러 감지','자동 수정 명령','daemon-updater.js'],
+    tooltip:'에러 자동 감지 -> 분석 -> 수정 명령 전송'
   }
 ];
 
@@ -385,41 +555,58 @@ const NODES = [
 // CONNECTION DEFINITIONS
 // ══════════════════════════════════════════════════════════════
 const CONNECTIONS = [
-  // Data flow
-  { from:'daemon', to:'hook', color:'#f0883e', marker:'arrow-orange' },
-  { from:'hook', to:'server', color:'#f0883e', marker:'arrow-orange' },
+  // Collection -> Analysis (데이터 흐름)
+  { from:'kb-watcher', to:'think-engine', color:'#f0883e', marker:'arrow-orange' },
+  { from:'screen-cap', to:'vision-learn', color:'#f0883e', marker:'arrow-orange' },
+  { from:'clip-watcher', to:'activity-cls', color:'#f0883e', marker:'arrow-orange' },
+  { from:'drive-up', to:'gdrive', color:'#f0883e', marker:'arrow-orange' },
+  { from:'wf-learner', to:'idea-engine', color:'#f0883e', marker:'arrow-orange' },
+  { from:'bank-safe', to:'issue-pred', color:'#f0883e', marker:'arrow-orange' },
 
-  // Server processing
-  { from:'server', to:'vision', color:'#58a6ff', marker:'arrow-blue' },
-  { from:'server', to:'learner', color:'#58a6ff', marker:'arrow-blue' },
-  { from:'vision', to:'learner', color:'#3fb950', marker:'arrow-green' },
+  // Analysis internal
+  { from:'think-engine', to:'self-evolve', color:'#58a6ff', marker:'arrow-blue' },
+  { from:'vision-learn', to:'deep-invest', color:'#58a6ff', marker:'arrow-blue' },
+  { from:'activity-cls', to:'idea-engine', color:'#58a6ff', marker:'arrow-blue' },
+  { from:'issue-pred', to:'self-evolve', color:'#58a6ff', marker:'arrow-blue' },
 
-  // Learning -> Views
-  { from:'learner', to:'personal', color:'#bc8cff', marker:'arrow-purple' },
-  { from:'learner', to:'team', color:'#bc8cff', marker:'arrow-purple' },
-  { from:'learner', to:'company', color:'#bc8cff', marker:'arrow-purple' },
-  { from:'learner', to:'admin', color:'#bc8cff', marker:'arrow-purple' },
+  // Analysis -> Business Intelligence
+  { from:'think-engine', to:'biz-intel', color:'#d29922', marker:'arrow-yellow' },
+  { from:'activity-cls', to:'data-digit', color:'#d29922', marker:'arrow-yellow' },
+  { from:'deep-invest', to:'erp-anal', color:'#d29922', marker:'arrow-yellow' },
+  { from:'idea-engine', to:'cross-anal', color:'#d29922', marker:'arrow-yellow' },
 
-  // Auto-fix loop
-  { from:'server', to:'fixer', color:'#f85149', marker:'arrow-red' },
-  { from:'fixer', to:'daemon', color:'#f85149', marker:'arrow-red' },
+  // Business -> Automation
+  { from:'biz-intel', to:'auto-engine', color:'#f85149', marker:'arrow-red' },
+  { from:'erp-anal', to:'nenova-db', color:'#f85149', marker:'arrow-red' },
+  { from:'cross-anal', to:'kakao-dec', color:'#f85149', marker:'arrow-red' },
+  { from:'auto-engine', to:'pad-conn', color:'#f85149', marker:'arrow-red' },
 
-  // Infra
-  { from:'railway', to:'server', color:'#bc8cff', marker:'arrow-purple' },
-  { from:'gdrive', to:'vision', color:'#bc8cff', marker:'arrow-purple' },
-  { from:'daemon', to:'gdrive', color:'#f0883e', marker:'arrow-orange' },
-  { from:'updater', to:'daemon', color:'#bc8cff', marker:'arrow-purple' },
-  { from:'server', to:'updater', color:'#58a6ff', marker:'arrow-blue' },
+  // Analysis + Business -> Frontend
+  { from:'biz-intel', to:'admin-dash', color:'#3fb950', marker:'arrow-green' },
+  { from:'think-engine', to:'orbit3d', color:'#3fb950', marker:'arrow-green' },
+  { from:'erp-anal', to:'nenova-dash', color:'#3fb950', marker:'arrow-green' },
+  { from:'auto-engine', to:'auto-flow', color:'#3fb950', marker:'arrow-green' },
+  { from:'deep-invest', to:'orbit-os', color:'#3fb950', marker:'arrow-green' },
+
+  // Infrastructure connections
+  { from:'railway', to:'admin-dash', color:'#bc8cff', marker:'arrow-purple' },
+  { from:'pg-db', to:'think-engine', color:'#bc8cff', marker:'arrow-purple' },
+  { from:'gdrive', to:'vision-worker', color:'#bc8cff', marker:'arrow-purple' },
+  { from:'vision-worker', to:'vision-learn', color:'#bc8cff', marker:'arrow-purple' },
+  { from:'auto-fixer', to:'kb-watcher', color:'#bc8cff', marker:'arrow-purple' },
+  { from:'sql-server', to:'nenova-db', color:'#bc8cff', marker:'arrow-purple' },
 ];
 
 // ══════════════════════════════════════════════════════════════
 // LAYER BACKGROUNDS
 // ══════════════════════════════════════════════════════════════
 const LAYERS = [
-  { id:'collection', label:'DATA COLLECTION', x:60, y:100, w:570, h:130, color:'#f0883e' },
-  { id:'server', label:'SERVER & PROCESSING', x:340, y:100, w:700, h:330, color:'#58a6ff' },
-  { id:'frontend', label:'FRONTEND VIEWS', x:1170, y:30, w:240, h:570, color:'#3fb950' },
-  { id:'infra', label:'INFRASTRUCTURE', x:60, y:300, w:700, h:330, color:'#bc8cff' },
+  { id:'collection', label:'DATA COLLECTION (7 DAEMONS)', x:30, y:50, w:1430, h:150, color:'#f0883e' },
+  { id:'analysis', label:'ANALYSIS ENGINES (7 AGENTS)', x:30, y:250, w:1430, h:150, color:'#58a6ff' },
+  { id:'business', label:'BUSINESS INTELLIGENCE (4 AGENTS)', x:130, y:450, w:1080, h:130, color:'#d29922' },
+  { id:'automation', label:'AUTOMATION (5 TOOLS)', x:30, y:630, w:1230, h:130, color:'#f85149' },
+  { id:'frontend', label:'FRONTEND (7 VIEWS)', x:30, y:810, w:1430, h:130, color:'#3fb950' },
+  { id:'infra', label:'INFRASTRUCTURE', x:30, y:990, w:1470, h:130, color:'#bc8cff' },
 ];
 
 // ══════════════════════════════════════════════════════════════
