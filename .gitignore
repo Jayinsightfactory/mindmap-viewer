@@ -38,3 +38,6 @@ coverage/
 *.swp
 *.swo
 *.bak
+test-screenshots/
+test-results/
+Dockerfile.bak
