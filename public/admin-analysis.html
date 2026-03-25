@@ -749,9 +749,9 @@
 
 <!-- ── 페이지 탭 바 ─────────────────────────────────────────────── -->
 <nav class="page-tab-bar">
-  <button class="page-tab active" data-tab="dashboard" onclick="switchPageTab('dashboard')">
-    <span class="page-tab-icon">📊</span> 대시보드
-  </button>
+  <a href="http://localhost:4848" target="_blank" class="page-tab" style="text-decoration:none;">
+    <span class="page-tab-icon">📊</span> 대시보드 ↗
+  </a>
   <button class="page-tab" data-tab="mindmap" onclick="switchPageTab('mindmap')">
     <span class="page-tab-icon">🗺️</span> 마인드맵
   </button>
@@ -769,8 +769,8 @@
   </button>
 </nav>
 
-<!-- ── 탭 패널: 대시보드 (기존 내용) ── -->
-<div id="panel-dashboard" class="page-tab-panel active">
+<!-- ── 탭 패널: 대시보드 (localhost:4848로 이동됨) ── -->
+<div id="panel-dashboard" class="page-tab-panel" style="display:none !important;">
 <main>
 
   <!-- ══════ 섹션 0: 기획 구조 아키텍처 ══════ -->
@@ -3054,11 +3054,8 @@ async function loadKPI() {
 
 // ── 시작 ─────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
-  loadAll();
-  populateLogFilters();
-  loadLogs();
-  loadPipelineStatus();
-  loadKPI();
+  // 대시보드 → localhost:4848로 이동됨, 마인드맵을 기본 탭으로
+  switchPageTab('worklogs');
 });
 </script>
 </div><!-- /panel-dashboard -->
