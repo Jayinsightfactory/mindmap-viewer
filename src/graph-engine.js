@@ -613,32 +613,43 @@ function buildGraph(events) {
   }
 
   // ── 시간순 엣지 생성 (parentEventId 없는 데몬 이벤트 연결) ──
-  // 같은 사용자의 연속 이벤트를 앱 전환 기반으로 연결
+  // 같은 그룹(사용자)의 연속 이벤트를 앱 전환 기반으로 연결
   if (edges.length === 0 && nodes.length > 1) {
-    // 사용자별 노드 그룹핑
-    const userNodes = {};
+    const groupNodes = {};
     for (const n of nodes) {
       if (n.eventType === 'file') continue;
-      const uid = n.userId || 'local';
-      if (!userNodes[uid]) userNodes[uid] = [];
-      userNodes[uid].push(n);
+      // group 필드 사용 (daemon-이재만 등), 없으면 userId 폴백
+      const gid = n.group || n.userId || 'local';
+      if (!groupNodes[gid]) groupNodes[gid] = [];
+      groupNodes[gid].push(n);
     }
 
-    for (const uid of Object.keys(userNodes)) {
-      const sorted = userNodes[uid].sort((a, b) =>
+    for (const gid of Object.keys(groupNodes)) {
+      const sorted = groupNodes[gid].sort((a, b) =>
         new Date(a.timestamp || 0) - new Date(b.timestamp || 0)
       );
 
+      // 노드 수 제한 (메모리 절약 — 그룹당 최대 500개 엣지)
+      const maxEdges = 500;
+      let edgeCount = 0;
       let prevNode = null;
       let prevApp = null;
       for (const n of sorted) {
-        if (!prevNode) { prevNode = n; prevApp = n.appsUsed || n.label; continue; }
+        if (edgeCount >= maxEdges) break;
+        if (!prevNode) {
+          prevNode = n;
+          prevApp = (n.appsUsed || n.label || '').split(',')[0].trim();
+          continue;
+        }
 
-        // 5분 이내 연속 이벤트만 연결
         const gap = new Date(n.timestamp) - new Date(prevNode.timestamp);
-        if (gap > 5 * 60 * 1000) { prevNode = n; prevApp = n.appsUsed || n.label; continue; }
+        if (gap > 5 * 60 * 1000) {
+          prevNode = n;
+          prevApp = (n.appsUsed || n.label || '').split(',')[0].trim();
+          continue;
+        }
 
-        const curApp = n.appsUsed || n.label;
+        const curApp = (n.appsUsed || n.label || '').split(',')[0].trim();
         const isAppSwitch = curApp !== prevApp;
 
         edges.push({
@@ -656,6 +667,7 @@ function buildGraph(events) {
           smooth: { type: 'continuous', roundness: 0.1 },
         });
 
+        edgeCount++;
         prevNode = n;
         prevApp = curApp;
       }
