@@ -612,6 +612,56 @@ function buildGraph(events) {
     }
   }
 
+  // ── 시간순 엣지 생성 (parentEventId 없는 데몬 이벤트 연결) ──
+  // 같은 사용자의 연속 이벤트를 앱 전환 기반으로 연결
+  if (edges.length === 0 && nodes.length > 1) {
+    // 사용자별 노드 그룹핑
+    const userNodes = {};
+    for (const n of nodes) {
+      if (n.eventType === 'file') continue;
+      const uid = n.userId || 'local';
+      if (!userNodes[uid]) userNodes[uid] = [];
+      userNodes[uid].push(n);
+    }
+
+    for (const uid of Object.keys(userNodes)) {
+      const sorted = userNodes[uid].sort((a, b) =>
+        new Date(a.timestamp || 0) - new Date(b.timestamp || 0)
+      );
+
+      let prevNode = null;
+      let prevApp = null;
+      for (const n of sorted) {
+        if (!prevNode) { prevNode = n; prevApp = n.appsUsed || n.label; continue; }
+
+        // 5분 이내 연속 이벤트만 연결
+        const gap = new Date(n.timestamp) - new Date(prevNode.timestamp);
+        if (gap > 5 * 60 * 1000) { prevNode = n; prevApp = n.appsUsed || n.label; continue; }
+
+        const curApp = n.appsUsed || n.label;
+        const isAppSwitch = curApp !== prevApp;
+
+        edges.push({
+          id: `e_seq_${prevNode.id}_${n.id}`,
+          from: prevNode.id,
+          to: n.id,
+          width: isAppSwitch ? 2 : 1,
+          color: {
+            color: isAppSwitch ? '#58a6ff44' : '#30363d44',
+            highlight: isAppSwitch ? '#58a6ff' : '#8b949e',
+            hover: '#58a6ff88',
+          },
+          dashes: !isAppSwitch,
+          arrows: { to: { enabled: true, scaleFactor: 0.3 } },
+          smooth: { type: 'continuous', roundness: 0.1 },
+        });
+
+        prevNode = n;
+        prevApp = curApp;
+      }
+    }
+  }
+
   return { nodes, edges };
 }
 

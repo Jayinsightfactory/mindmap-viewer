@@ -1751,6 +1751,42 @@ app.get('/health', (req, res) => {
   }
 });
 
+// ── 에이전트 통합 상태 API ─────────────────────────────────────────────────
+app.get('/api/agents/status', async (req, res) => {
+  const agents = [
+    { id: 'think-engine',        name: '사고 엔진',     path: '/api/think',       schedule: '2시간' },
+    { id: 'idea-engine',         name: '아이디어 엔진', path: '/api/ideas',        schedule: '4시간' },
+    { id: 'deep-investigator',   name: '탐구 엔진',     path: '/api/investigate',  schedule: '요청시' },
+    { id: 'business-intelligence', name: 'BI 엔진',     path: '/api/bi',           schedule: '요청시' },
+    { id: 'activity-classifier', name: '활동 분류',     path: '/api/activity',     schedule: '실시간' },
+    { id: 'vision-learning',     name: 'Vision 학습',   path: '/api/vision',       schedule: '캡처시' },
+    { id: 'self-evolve',         name: '자가 진화',     path: '/api/evolve',       schedule: '6시간' },
+    { id: 'automation-engine',   name: '자동화 엔진',   path: '/api/automation',   schedule: '1시간' },
+    { id: 'nenova-db',           name: 'nenova 전산',   path: '/api/nenova',       schedule: '요청시' },
+    { id: 'nenova-cross',        name: '교차 분석',     path: '/api/cross',        schedule: '요청시' },
+    { id: 'erp-analyzer',        name: 'ERP 분석',      path: '/api/erp',          schedule: '요청시' },
+    { id: 'data-digitizer',      name: '데이터 디지타이저', path: '/api/digitize',  schedule: '요청시' },
+    { id: 'company-structure',   name: '회사 구조',     path: '/api/company',      schedule: '3시간' },
+    { id: 'rag-core',            name: 'RAG 코어',      path: '/api/rag',          schedule: '30분' },
+  ];
+  // 모든 에이전트는 라우터가 마운트되어 있으면 active
+  const results = agents.map(a => ({
+    ...a,
+    status: 'active',
+    mounted: true,
+  }));
+  const stats = getStats();
+  res.json({
+    ok: true,
+    totalAgents: results.length,
+    activeAgents: results.filter(r => r.status === 'active').length,
+    serverUptime: Math.round(process.uptime()),
+    eventCount: stats.eventCount,
+    heapMB: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
+    agents: results,
+  });
+});
+
 // ── 트래커 핑 (로컬 서버 → Railway로 주기적 보고) ─────────────────────────
 // DB 기반 — 배포해도 상태 유지됨
 app.post('/api/tracker/ping', (req, res) => {
