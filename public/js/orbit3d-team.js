@@ -599,7 +599,7 @@ function _buildTeamSystemInner(teamData) {
     const ring = new THREE.RingGeometry(MEMBER_ORBIT - 0.06, MEMBER_ORBIT + 0.06, 96);
     const ringM = new THREE.MeshBasicMaterial({ color: 0x3fb950, transparent: true, opacity: 0.10, side: THREE.DoubleSide });
     const rm = new THREE.Mesh(ring, ringM);
-    // XY 평면 — rotation 없음
+    rm.rotation.x = Math.PI / 2; // XZ 수평 평면
     orbitRings.push(rm); scene.add(rm);
   }
 
@@ -671,8 +671,8 @@ function _buildTeamSystemInner(teamData) {
     teamMembers.forEach((member, mi) => {
       const memberAngle = (mi / teamMembers.length) * Math.PI * 2;
       const mx = teamCenter.x + CLUSTER_R * Math.cos(memberAngle);
-      const my = CLUSTER_R * Math.sin(memberAngle);
-      const mz = (mi % 2 === 0 ? 1 : -1) * 1.5;
+      const my = 0;
+      const mz = teamCenter.z + CLUSTER_R * Math.sin(memberAngle);
       const mPos = new THREE.Vector3(mx, my, mz);
 
       const mObj = new THREE.Object3D();
@@ -699,8 +699,8 @@ function _buildTeamSystemInner(teamData) {
     member.tasks.forEach((task, taskIdx) => {
       const tAngle = (taskIdx / member.tasks.length) * Math.PI * 2 + (mi * 1.26);
       const tx = mPos.x + TASK_R * Math.cos(tAngle);
-      const ty = mPos.y + TASK_R * Math.sin(tAngle);
-      const tz = mPos.z + TASK_R * 0.3 * Math.sin(tAngle + 0.8);
+      const ty = mPos.y + TASK_R * 0.25 * Math.sin(tAngle + 1.0);
+      const tz = mPos.z + TASK_R * Math.sin(tAngle);
       const tPos = new THREE.Vector3(tx, ty, tz);
 
       const _taskColor = STATUS_CFG[task.status]?.color || '#6e7681';
@@ -1075,13 +1075,13 @@ function buildCompanySystem(companyData) {
 
   _teamNodes.push({ type: 'goal', pos: new THREE.Vector3(0, 0, 0), label: goal, sublabel: name, color: goalColor || '#ffd700', size: 'xl' });
 
-  // 부서 궤도 링 (XY 평면)
-  { const r = new THREE.Mesh(new THREE.RingGeometry(DEPT_R - 0.15, DEPT_R + 0.15, 128), new THREE.MeshBasicMaterial({ color: 0xffd700, transparent: true, opacity: 0.04, side: THREE.DoubleSide })); orbitRings.push(r); scene.add(r); }
+  // 부서 궤도 링 (XZ 수평 평면)
+  { const r = new THREE.Mesh(new THREE.RingGeometry(DEPT_R - 0.15, DEPT_R + 0.15, 128), new THREE.MeshBasicMaterial({ color: 0xffd700, transparent: true, opacity: 0.06, side: THREE.DoubleSide })); r.rotation.x = Math.PI / 2; orbitRings.push(r); scene.add(r); }
 
   departments.forEach((dept, di) => {
     const dAngle = (di / departments.length) * Math.PI * 2 - Math.PI / 2;
-    const dz = (di % 2 === 0 ? 1 : -1) * 4;
-    const dPos   = new THREE.Vector3(DEPT_R * Math.cos(dAngle), DEPT_R * Math.sin(dAngle), dz);
+    const dy = (di % 2 === 0 ? 1 : -1) * 4;
+    const dPos   = new THREE.Vector3(DEPT_R * Math.cos(dAngle), dy, DEPT_R * Math.sin(dAngle));
 
     // 부서 와이어 구체 (작게)
     const dWire = new THREE.Object3D();
@@ -1095,13 +1095,13 @@ function buildCompanySystem(companyData) {
     // 중심→부서 연결선
     { const lg = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), dPos.clone()]); const lm = new THREE.LineBasicMaterial({ color: new THREE.Color(dept.color), transparent: true, opacity: 0.15 }); connections.push(new THREE.Line(lg, lm)); scene.add(connections[connections.length-1]); }
 
-    // 부서 궤도 링 (팀원, XY 평면)
-    { const r = new THREE.Mesh(new THREE.RingGeometry(MBR_R - 0.06, MBR_R + 0.06, 64), new THREE.MeshBasicMaterial({ color: new THREE.Color(dept.color), transparent: true, opacity: 0.08, side: THREE.DoubleSide })); r.position.copy(dPos); orbitRings.push(r); scene.add(r); }
+    // 팀원 궤도 링 (XZ 수평 평면)
+    { const r = new THREE.Mesh(new THREE.RingGeometry(MBR_R - 0.06, MBR_R + 0.06, 64), new THREE.MeshBasicMaterial({ color: new THREE.Color(dept.color), transparent: true, opacity: 0.08, side: THREE.DoubleSide })); r.position.copy(dPos); r.rotation.x = Math.PI / 2; orbitRings.push(r); scene.add(r); }
 
     dept.members.forEach((member, mi) => {
       const mAng = (mi / dept.members.length) * Math.PI * 2 + (di * 1.1);
-      const mz = (mi % 2 === 0 ? 1 : -1) * 1.2;
-      const mPos = new THREE.Vector3(dPos.x + MBR_R * Math.cos(mAng), dPos.y + MBR_R * Math.sin(mAng), dPos.z + mz);
+      const my = (mi % 2 === 0 ? 1 : -1) * 1.2;
+      const mPos = new THREE.Vector3(dPos.x + MBR_R * Math.cos(mAng), dPos.y + my, dPos.z + MBR_R * Math.sin(mAng));
 
       const mObj = new THREE.Object3D();
       mObj.position.copy(mPos);
@@ -1116,7 +1116,7 @@ function buildCompanySystem(companyData) {
       // 작업 위성
       member.tasks.forEach((task, ti) => {
         const tAng = (ti / member.tasks.length) * Math.PI * 2 + (mi * 1.3 + di * 0.8);
-        const tPos = new THREE.Vector3(mPos.x + CTASK_R * Math.cos(tAng), mPos.y + CTASK_R * Math.sin(tAng), mPos.z + CTASK_R * 0.3 * Math.sin(tAng + 0.8));
+        const tPos = new THREE.Vector3(mPos.x + CTASK_R * Math.cos(tAng), mPos.y + CTASK_R * 0.3 * Math.sin(tAng + 0.8), mPos.z + CTASK_R * Math.sin(tAng));
         const tObj = new THREE.Object3D(); tObj.position.copy(tPos);
         tObj.userData = { isTeamTask: true, memberId: member.id, deptId: dept.id, taskName: task.name, taskStatus: task.status, taskProgress: task.progress, color: STATUS_CFG[task.status]?.color || '#6e7681', orbitR: CTASK_R, orbitAngle: tAng, orbitSpeed: 0.05 + ti * 0.01, orbitCenter: mPos.clone() };
         scene.add(tObj); satelliteMeshes.push(tObj);

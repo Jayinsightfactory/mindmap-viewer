@@ -77,40 +77,42 @@ function drawCardIcons(ctx, cx, cy, projKey, projLabel, isHover, hitAreas) {
   if (hitAreas) hitAreas.push({ cx: hX + 10, cy: hY + 10, r: 12, data: { type: 'hideNode', projKey, projLabel } });
 }
 
-function drawUnifiedCard(ctx, cx, cy, color, title, sub, isActive, isHover, isDrilled) {
-  const lx = cx - UNI_CARD_W / 2, ly = cy - UNI_CARD_H / 2;
+function drawUnifiedCard(ctx, cx, cy, color, title, sub, isActive, isHover, isDrilled, cardW, cardH) {
+  const W = cardW || UNI_CARD_W, H = cardH || UNI_CARD_H;
+  const lx = cx - W / 2, ly = cy - H / 2;
   ctx.save();
   ctx.shadowColor = isDrilled ? 'rgba(6,182,212,0.25)' : 'rgba(0,0,0,0.3)';
   ctx.shadowBlur = isDrilled ? 16 : 10; ctx.shadowOffsetY = 2;
-  ctx.fillStyle = 'rgba(2,6,23,0.80)';
-  roundRect(ctx, lx, ly, UNI_CARD_W, UNI_CARD_H, UNI_CARD_R); ctx.fill();
+  ctx.fillStyle = 'rgba(2,6,23,0.85)';
+  roundRect(ctx, lx, ly, W, H, UNI_CARD_R); ctx.fill();
+  // 미묘한 색상 배경 오버레이
+  ctx.fillStyle = color + '12';
+  roundRect(ctx, lx, ly, W, H, UNI_CARD_R); ctx.fill();
   ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
   ctx.restore();
 
-  drawWireframeGrid(ctx, lx, ly, UNI_CARD_W, UNI_CARD_H, UNI_CARD_R, color, isDrilled ? 0.40 : isHover ? 0.32 : 0.22);
+  drawWireframeGrid(ctx, lx, ly, W, H, UNI_CARD_R, color, isDrilled ? 0.50 : isHover ? 0.40 : 0.30);
 
-  // 좌측 컬러 바 제거
-
-  ctx.strokeStyle = isHover ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.07)';
-  ctx.lineWidth = isDrilled ? 1.5 : isHover ? 1.2 : 0.8;
-  roundRect(ctx, lx, ly, UNI_CARD_W, UNI_CARD_H, UNI_CARD_R); ctx.stroke();
+  ctx.strokeStyle = isHover ? color + '55' : isDrilled ? color + '70' : 'rgba(255,255,255,0.14)';
+  ctx.lineWidth = isDrilled ? 1.5 : isHover ? 1.2 : 0.9;
+  roundRect(ctx, lx, ly, W, H, UNI_CARD_R); ctx.stroke();
 
   if (isActive) {
     ctx.save();
     ctx.fillStyle = '#22c55e'; ctx.shadowColor = '#22c55e'; ctx.shadowBlur = 6;
-    ctx.beginPath(); ctx.arc(lx + UNI_CARD_W - 8, ly + 8, 3.5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(lx + W - 8, ly + 8, 3.5, 0, Math.PI * 2); ctx.fill();
     ctx.restore();
   }
 
   const textX = lx + UNI_CARD_R + 8;
-  const maxTextW = UNI_CARD_W - UNI_CARD_R * 2 - 16;
+  const maxTextW = W - UNI_CARD_R * 2 - 16;
   ctx.textAlign = 'left';
   ctx.font = "600 14px 'Inter',-apple-system,sans-serif";
   ctx.fillStyle = '#e2e8f0';
   let clipped = title;
   while (ctx.measureText(clipped).width > maxTextW && clipped.length > 1) clipped = clipped.slice(0, -1);
   if (clipped !== title) clipped += '\u2026';
-  ctx.fillText(clipped, textX, ly + 21);
+  ctx.fillText(clipped, textX, ly + Math.max(18, H * 0.42));
 
   if (sub) {
     ctx.font = "400 11px 'JetBrains Mono','Fira Code',monospace";
@@ -118,7 +120,7 @@ function drawUnifiedCard(ctx, cx, cy, color, title, sub, isActive, isHover, isDr
     let cs = sub;
     while (ctx.measureText(cs).width > maxTextW && cs.length > 1) cs = cs.slice(0, -1);
     if (cs !== sub) cs += '\u2026';
-    ctx.fillText(cs, textX, ly + 39);
+    ctx.fillText(cs, textX, ly + Math.max(32, H * 0.72));
   }
 }
 

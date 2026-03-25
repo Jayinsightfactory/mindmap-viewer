@@ -445,34 +445,25 @@ function createWorkspaceRouter({ getDb, db: _dbLegacy, verifyToken, getUserById,
         });
       });
 
-      // 멤버별 최근 24시간 세션 → tasks 채우기
+      // 멤버별 최근 24시간 세션 → tasks 채우기 (PostgreSQL 호환: json_extract 미사용)
       const since2 = new Date(Date.now() - 86400000).toISOString();
       for (const dept of Object.values(teamsMap)) {
         for (const m of dept) {
-          const sessions2 = await dbAll(
-            `SELECT id, title, started_at, ended_at, project_dir, event_count
-             FROM sessions
-             WHERE user_id = ? AND started_at > ?
-             ORDER BY started_at DESC LIMIT 5`,
-            [m.userId, since2]
-          );
-          const recentFiles2 = await dbAll(
-            `SELECT DISTINCT json_extract(data_json, '$.filePath') AS fp
-             FROM events
-             WHERE user_id = ? AND timestamp > ?
-               AND type IN ('tool.end','file.write','file.edit')
-               AND json_extract(data_json, '$.filePath') IS NOT NULL
-             LIMIT 6`,
-            [m.userId, since2]
-          );
-          m.tasks = sessions2.map(s => ({
-            name: s.title || s.project_dir?.split('/').pop() || '작업 중',
-            status: s.ended_at ? 'done' : 'active',
-            progress: s.ended_at ? 1.0 : 0.5,
-            subtasks: recentFiles2.map(f => f.fp).filter(Boolean).slice(0, 4),
-            completedSubtasks: s.ended_at ? recentFiles2.length : 0,
-            dueDate: '', blocker: false,
-          }));
+          try {
+            const sessions2 = await dbAll(
+              `SELECT id, title, started_at, ended_at, project_dir, event_count
+               FROM sessions
+               WHERE user_id = ? AND started_at > ?
+               ORDER BY started_at DESC LIMIT 5`,
+              [m.userId, since2]
+            );
+            m.tasks = sessions2.map(s => ({
+              name: s.title || s.project_dir?.split('/').pop() || '작업 중',
+              status: s.ended_at ? 'done' : 'active',
+              progress: s.ended_at ? 1.0 : 0.5,
+              subtasks: [], dueDate: '', blocker: false,
+            }));
+          } catch { m.tasks = []; }
           if (m.tasks.length === 0) {
             m.tasks.push({ name: '대기 중', status: 'pending', progress: 0, subtasks: [], completedSubtasks: 0 });
           }

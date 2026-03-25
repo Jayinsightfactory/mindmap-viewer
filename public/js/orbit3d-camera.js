@@ -322,8 +322,8 @@ function updateTeamOrbits(dt) {
       if (!p.userData.isDept) return;
       const { orbitR, orbitAngle, orbitSpeed } = p.userData;
       const a  = orbitAngle + _clock * orbitSpeed;
-      const dz = (parseInt(p.userData.deptId.replace('d','')) % 2 === 0) ? 4 : -4;
-      p.position.set(orbitR * Math.cos(a), orbitR * Math.sin(a), dz);
+      const dy = (parseInt(p.userData.deptId.replace('d','')) % 2 === 0) ? 4 : -4;
+      p.position.set(orbitR * Math.cos(a), dy, orbitR * Math.sin(a));
       const tn = _teamNodes.find(n => n.obj === p);
       if (tn) tn.pos.copy(p.position);
     });
@@ -335,16 +335,16 @@ function updateTeamOrbits(dt) {
         const { orbitR, orbitAngle, orbitSpeed } = s.userData;
         const a = orbitAngle + _clock * orbitSpeed;
         const mi = parseInt((s.userData.memberId || 'c00').replace(/[^0-9]/g,'')) % 2;
-        s.position.set(deptP.position.x + orbitR * Math.cos(a), deptP.position.y + orbitR * Math.sin(a), deptP.position.z + (mi ? 1.2 : -1.2));
+        s.position.set(deptP.position.x + orbitR * Math.cos(a), deptP.position.y + (mi ? 1.2 : -1.2), deptP.position.z + orbitR * Math.sin(a));
       } else if ((s.userData.isTeamTask || s.userData.isTeamTool || s.userData.isTeamSkill || s.userData.isTeamAgent) && memberP) {
         const center = memberP.position;
         if (s.userData.isTeamTask) {
           const { orbitR, orbitAngle, orbitSpeed } = s.userData;
           const a = orbitAngle + _clock * orbitSpeed;
-          s.position.set(center.x + orbitR * Math.cos(a), center.y + orbitR * Math.sin(a), center.z + orbitR * 0.3 * Math.sin(a + 0.8));
+          s.position.set(center.x + orbitR * Math.cos(a), center.y + orbitR * 0.3 * Math.sin(a + 0.8), center.z + orbitR * Math.sin(a));
         } else {
           const { relAngle, relY, relR } = s.userData;
-          s.position.set(center.x + relR * Math.cos(relAngle), center.y + relR * Math.sin(relAngle), center.z + relY);
+          s.position.set(center.x + relR * Math.cos(relAngle), center.y + relY, center.z + relR * Math.sin(relAngle));
         }
       }
       const tn = _teamNodes.find(n => n.obj === s);
@@ -375,7 +375,7 @@ function updateTeamOrbits(dt) {
     const { orbitR, orbitAngle, orbitSpeed } = p.userData;
     const a  = orbitAngle + _clock * orbitSpeed;
     const mi = parseInt(p.userData.memberId.replace('m', '') || 0);
-    p.position.set(orbitR * Math.cos(a), orbitR * Math.sin(a), 0);
+    p.position.set(orbitR * Math.cos(a), 0, orbitR * Math.sin(a));
     const tn = _teamNodes.find(n => n.obj === p);
     if (tn) tn.pos.copy(p.position);
   });
@@ -389,7 +389,7 @@ function updateTeamOrbits(dt) {
     if (s.userData.isTeamTask) {
       const { orbitR, orbitAngle, orbitSpeed } = s.userData;
       const a = orbitAngle + _clock * orbitSpeed;
-      s.position.set(center.x + orbitR * Math.cos(a), center.y + orbitR * Math.sin(a), center.z + orbitR * 0.3 * Math.sin(a + 0.8));
+      s.position.set(center.x + orbitR * Math.cos(a), center.y + orbitR * 0.25 * Math.sin(a + 1.0), center.z + orbitR * Math.sin(a));
     } else if (s.userData.isTeamTool || s.userData.isTeamSkill || s.userData.isTeamAgent) {
       const { relAngle, relY, relR } = s.userData;
       s.position.set(center.x + relR * Math.cos(relAngle), center.y + relY, center.z + relR * Math.sin(relAngle));
@@ -568,11 +568,13 @@ function drawTeamLabels() {
     const txt = emoji ? `${emoji} ${displayLabel}` : `${prefix}${displayLabel}`;
     const _useUnified = ['goal','leader','infra','sharedProject','department',
       'member','hubProject','hq','external','prequest','presult'].includes(type);
-    // 구체 노드: 지름 기반 크기, pill 노드: 텍스트 기반
+    // member: 텍스트에 맞는 동적 카드 크기
     const _sphereR = type === 'goal' ? 22 : type === 'leader' || type === 'infra' ? 20
       : type === 'member' ? 16 : type === 'department' ? 18 : 14;
-    const pw  = _useUnified ? _sphereR * 2 : Math.min(_lctx.measureText(txt).width + pad, 120);
-    const ph  = _useUnified ? _sphereR * 2 : pxSize + pad * 0.65;
+    const _mW = type === 'member' ? Math.max(110, _lctx.measureText(txt).width + 28) : _sphereR * 2;
+    const _mH = type === 'member' ? 44 : _sphereR * 2;
+    const pw  = _useUnified ? _mW : Math.min(_lctx.measureText(txt).width + pad, 120);
+    const ph  = _useUnified ? _mH : pxSize + pad * 0.65;
     // priority: prequest=7, goal/leader=6, presult/department/infra/sharedProject=5, member/ptask/hq=4, skill/agent/hubProject/external=3, task/dept=2, tool=1
     const priority = type === 'prequest' ? 7
       : (type === 'goal' || type === 'leader') ? 6
@@ -609,16 +611,7 @@ function drawTeamLabels() {
       EFFECT_FNS[nodeEffectId](_lctx, ax, ay, hr, color, now);
     }
 
-    // 이펙트 제거됨 (회전링/펄스/파티클)
-    if (!lr.isActive || type !== 'task') continue;
-    // 외부 글로우
-    const gr = _lctx.createRadialGradient(ax, ay, hr, ax, ay, hr + 28);
-    gr.addColorStop(0, color + '44');
-    gr.addColorStop(1, 'rgba(0,0,0,0)');
-    _lctx.fillStyle = gr;
-    _lctx.beginPath();
-    _lctx.arc(ax, ay, hr + 28, 0, Math.PI * 2);
-    _lctx.fill();
+    // 글로우 제거됨
   }
 
   // ══ Pass 4: 리더 라인 (레이블이 앵커에서 멀어진 경우) ════════════════════
@@ -749,14 +742,36 @@ function drawTeamLabels() {
       _lctx.restore();
     }
 
+    // ── ptask: 타원 3D그리드 ────────────────────────────────────────────────
+    if (type === 'ptask') {
+      const eW = pw + 22, eH = ph + 12;
+      _lctx.save();
+      _lctx.beginPath();
+      _lctx.ellipse(cx, cy, eW / 2, eH / 2, 0, 0, Math.PI * 2);
+      _lctx.fillStyle = 'rgba(2,6,23,0.75)';
+      _lctx.fill();
+      _lctx.fillStyle = color + '12';
+      _lctx.beginPath(); _lctx.ellipse(cx, cy, eW/2, eH/2, 0, 0, Math.PI*2); _lctx.fill();
+      drawWireframeGrid(_lctx, cx - eW/2, cy - eH/2, eW, eH, eH/2, color, isActive ? 0.42 : 0.28);
+      _lctx.beginPath(); _lctx.ellipse(cx, cy, eW/2, eH/2, 0, 0, Math.PI*2);
+      _lctx.strokeStyle = color + '55'; _lctx.lineWidth = 1.0; _lctx.stroke();
+      _lctx.font = `${weight} ${pxSize}px -apple-system,'Segoe UI',sans-serif`;
+      _lctx.fillStyle = isSelected ? '#ffffff' : '#c9d1d9';
+      _lctx.textAlign = 'center'; _lctx.textBaseline = 'middle';
+      _lctx.fillText(txt, cx, cy);
+      _lctx.restore();
+      _lctx.globalAlpha = 1;
+      continue;
+    }
+
     // ── 와이어프레임 구체 → 카드 렌더링 (글로우 구체 제거) ───────────────────
     if (lr._useUnified) {
-      drawUnifiedCard(_lctx, cx, cy, color, txt, sublabel || '', isActive, isSelected, isFocused);
-      // 활성 표시 (task일 때)
-      if (isActive && type === 'task') {
+      drawUnifiedCard(_lctx, cx, cy, color, txt, sublabel || '', isActive, isSelected, isFocused, pw, ph);
+      // 활성 표시 (isActive일 때)
+      if (isActive) {
         _lctx.save();
         _lctx.fillStyle = '#22c55e'; _lctx.shadowColor = '#22c55e'; _lctx.shadowBlur = 6;
-        _lctx.beginPath(); _lctx.arc(cx + nodeR - 4, cy - nodeR + 4, 3.5, 0, Math.PI * 2); _lctx.fill();
+        _lctx.beginPath(); _lctx.arc(cx + pw * 0.5 - 4, cy - ph * 0.5 + 4, 3.5, 0, Math.PI * 2); _lctx.fill();
         _lctx.restore();
       }
     } else {
