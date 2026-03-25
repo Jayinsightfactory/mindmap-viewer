@@ -2784,22 +2784,29 @@ setInterval(() => {
 }, 30000);
 
 // ─── RAG 코어 엔진 ───────────────────────────────────────────────────────────
-const ragCore = require('./src/rag-core');
+let ragCore = null;
+try {
+  ragCore = require('./src/rag-core');
+} catch (e) {
+  console.warn('[rag-core] 모듈 로드 실패:', e.message);
+}
 
-// RAG 초기화 (PG 사용 시)
-if (process.env.DATABASE_URL) {
-  const _ragDb = dbModule.getDb();
-  ragCore.init(_ragDb).then(() => {
-    // 서버 시작 2분 후 첫 인덱싱, 이후 30분마다
-    setTimeout(() => ragCore.autoIndex({
-      getRecentEvents: (limit) => _ragDb.query(`SELECT * FROM events ORDER BY timestamp DESC LIMIT $1`, [limit]).then(r => r.rows),
-    }), 2 * 60 * 1000);
-    setInterval(() => ragCore.autoIndex({
-      getRecentEvents: (limit) => _ragDb.query(`SELECT * FROM events ORDER BY timestamp DESC LIMIT $1`, [limit]).then(r => r.rows),
-    }), 30 * 60 * 1000);
-    // 90일 이상 오래된 RAG 문서 정리 (매일)
-    setInterval(() => ragCore.cleanup({ maxAgeDays: 90 }), 24 * 60 * 60 * 1000);
-  }).catch(e => console.warn('[rag-core] 초기화 실패:', e.message));
+// RAG 초기화 (PG 사용 시, 서버 시작 후 지연 실행)
+if (ragCore && process.env.DATABASE_URL) {
+  // 서버 시작 1분 후 초기화 (시작 속도 우선)
+  setTimeout(() => {
+    const _ragDb = dbModule.getDb();
+    ragCore.init(_ragDb).then(() => {
+      // 첫 인덱싱 2분 후, 이후 30분마다
+      setTimeout(() => ragCore.autoIndex({
+        getRecentEvents: (limit) => _ragDb.query(`SELECT * FROM events ORDER BY timestamp DESC LIMIT $1`, [limit]).then(r => r.rows),
+      }), 2 * 60 * 1000);
+      setInterval(() => ragCore.autoIndex({
+        getRecentEvents: (limit) => _ragDb.query(`SELECT * FROM events ORDER BY timestamp DESC LIMIT $1`, [limit]).then(r => r.rows),
+      }), 30 * 60 * 1000);
+      setInterval(() => ragCore.cleanup({ maxAgeDays: 90 }), 24 * 60 * 60 * 1000);
+    }).catch(e => console.warn('[rag-core] 초기화 실패:', e.message));
+  }, 60 * 1000);
 }
 
 // RAG API 엔드포인트
