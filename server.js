@@ -2525,6 +2525,14 @@ app.use('/api/company', require('./routes/company-structure')({ getDb: dbModule.
 // ─── 자가 진화 엔진 (성능 모니터 + 자동 개선 + 트렌드) ─────────────────────
 app.use('/api/evolve', require('./routes/self-evolve')({ getDb: dbModule.getDb }));
 
+// ─── RAG 코어 엔진 (에이전트 마운트 전에 선언) ──────────────────────────────
+let ragCore = null;
+try {
+  ragCore = require('./src/rag-core');
+} catch (e) {
+  console.warn('[rag-core] 모듈 로드 실패:', e.message);
+}
+
 // ─── 자율 탐색 + 아이디어 엔진 (2시간마다 새 패턴 발굴) ─────────────────────
 app.use('/api/ideas', require('./routes/idea-engine')({ getDb: dbModule.getDb, ragCore }));
 
@@ -2789,21 +2797,11 @@ setInterval(() => {
   }
 }, 30000);
 
-// ─── RAG 코어 엔진 ───────────────────────────────────────────────────────────
-let ragCore = null;
-try {
-  ragCore = require('./src/rag-core');
-} catch (e) {
-  console.warn('[rag-core] 모듈 로드 실패:', e.message);
-}
-
-// RAG 초기화 (PG 사용 시, 서버 시작 후 지연 실행)
+// ─── RAG 초기화 (PG 사용 시, 서버 시작 후 지연 실행) ─────────────────────────
 if (ragCore && process.env.DATABASE_URL) {
-  // 서버 시작 1분 후 초기화 (시작 속도 우선)
   setTimeout(() => {
     const _ragDb = dbModule.getDb();
     ragCore.init(_ragDb).then(() => {
-      // 첫 인덱싱 2분 후, 이후 30분마다
       setTimeout(() => ragCore.autoIndex({
         getRecentEvents: (limit) => _ragDb.query(`SELECT * FROM events ORDER BY timestamp DESC LIMIT $1`, [limit]).then(r => r.rows),
       }), 2 * 60 * 1000);
@@ -2814,6 +2812,7 @@ if (ragCore && process.env.DATABASE_URL) {
     }).catch(e => console.warn('[rag-core] 초기화 실패:', e.message));
   }, 60 * 1000);
 }
+
 
 // RAG API 엔드포인트
 app.get('/api/rag/search', async (req, res) => {
