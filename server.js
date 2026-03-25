@@ -2783,6 +2783,81 @@ setInterval(() => {
   }
 }, 30000);
 
+// ─── RAG 코어 엔진 ───────────────────────────────────────────────────────────
+const ragCore = require('./src/rag-core');
+
+// RAG 초기화 (PG 사용 시)
+if (process.env.DATABASE_URL) {
+  const _ragDb = dbModule.getDb();
+  ragCore.init(_ragDb).then(() => {
+    // 서버 시작 2분 후 첫 인덱싱, 이후 30분마다
+    setTimeout(() => ragCore.autoIndex({
+      getRecentEvents: (limit) => _ragDb.query(`SELECT * FROM events ORDER BY timestamp DESC LIMIT $1`, [limit]).then(r => r.rows),
+    }), 2 * 60 * 1000);
+    setInterval(() => ragCore.autoIndex({
+      getRecentEvents: (limit) => _ragDb.query(`SELECT * FROM events ORDER BY timestamp DESC LIMIT $1`, [limit]).then(r => r.rows),
+    }), 30 * 60 * 1000);
+    // 90일 이상 오래된 RAG 문서 정리 (매일)
+    setInterval(() => ragCore.cleanup({ maxAgeDays: 90 }), 24 * 60 * 60 * 1000);
+  }).catch(e => console.warn('[rag-core] 초기화 실패:', e.message));
+}
+
+// RAG API 엔드포인트
+app.get('/api/rag/search', async (req, res) => {
+  try {
+    const { q, userId, sourceType, app: appFilter, days, limit } = req.query;
+    if (!q) return res.status(400).json({ error: 'q 필수' });
+    const results = await ragCore.search({
+      query: q, userId, sourceType, app: appFilter,
+      days: days ? parseInt(days) : undefined,
+      limit: limit ? parseInt(limit) : 10,
+    });
+    res.json({ ok: true, count: results.length, results });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/rag/context', async (req, res) => {
+  try {
+    const { currentState, userId, days, limit } = req.query;
+    if (!currentState) return res.status(400).json({ error: 'currentState 필수' });
+    const results = await ragCore.searchSimilarContext({
+      currentState, userId,
+      days: days ? parseInt(days) : 7,
+      limit: limit ? parseInt(limit) : 10,
+    });
+    res.json({ ok: true, count: results.length, results });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/rag/query', async (req, res) => {
+  try {
+    const { agent, question, userId, searchOpts, llmOpts } = req.body || {};
+    if (!question) return res.status(400).json({ error: 'question 필수' });
+    const result = await ragCore.query({
+      agent: agent || 'default',
+      question, userId,
+      searchOpts: searchOpts || {},
+      llmOpts: llmOpts || {},
+    });
+    res.json({ ok: true, ...result });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/rag/stats', async (req, res) => {
+  try {
+    const stats = await ragCore.getStats();
+    res.json({ ok: true, ...stats });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ─── 인사이트 엔진 ────────────────────────────────────────────────────────────
 const insightEngine = require('./src/insight-engine');
 
