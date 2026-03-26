@@ -395,11 +395,14 @@ function drawCompactProjectView() {
     const projTitle = _aliases[proj.name] || `${info.icon} ${info.name}`;
     const projSub = '';
     // 프로젝트 내 행성들의 요약 집계
+    // "기타 활동" 같은 제네릭 fallback 라벨은 분석 없음으로 처리
+    const _GENERIC_LABELS = new Set(['기타 활동', '기타', '기타활동', '일반 활동', '일반']);
+    const _isSpecific = v => v && !_GENERIC_LABELS.has(v.trim());
     let projWhat = '', projResult = '', projPurpose = '', projTech = '', projDuration = '', projAiTools = '';
     for (const p of proj.planets) {
-      if (!projPurpose && p.userData.purpose) projPurpose = p.userData.purpose;
-      if (!projWhat && p.userData.whatSummary) projWhat = p.userData.whatSummary;
-      if (!projResult && p.userData.resultSummary) projResult = p.userData.resultSummary;
+      if (!projPurpose && _isSpecific(p.userData.purpose)) projPurpose = p.userData.purpose;
+      if (!projWhat && _isSpecific(p.userData.whatSummary)) projWhat = p.userData.whatSummary;
+      if (!projResult && _isSpecific(p.userData.resultSummary)) projResult = p.userData.resultSummary;
       if (!projTech && p.userData.techStack) projTech = p.userData.techStack;
       if (!projDuration && p.userData.sessionDuration) projDuration = p.userData.sessionDuration;
       if (!projAiTools && p.userData.aiToolsUsed) projAiTools = p.userData.aiToolsUsed;
