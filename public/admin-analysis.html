@@ -3195,7 +3195,694 @@ document.addEventListener('DOMContentLoaded', () => {
 <div id="panel-filemap" class="page-tab-panel"></div>
 
 <!-- ── 탭 패널: 자동화 플로우 ── -->
-<div id="panel-automation" class="page-tab-panel"></div>
+<div id="panel-automation" class="page-tab-panel">
+<style>
+.auto-layout { display:grid; grid-template-columns:240px 1fr 420px; gap:0; height:calc(100vh - 160px); min-height:500px; }
+.auto-sidebar { background:#161b22; border-right:1px solid #30363d; overflow-y:auto; padding:12px 0; }
+.auto-sidebar-title { font-size:11px; color:#8b949e; font-weight:600; padding:4px 16px 8px; letter-spacing:.5px; text-transform:uppercase; }
+.auto-wf-item { padding:10px 16px; cursor:pointer; border-left:3px solid transparent; transition:all .15s; }
+.auto-wf-item:hover { background:#1c2128; }
+.auto-wf-item.active { background:#1c2128; border-left-color:#58a6ff; }
+.auto-wf-item .wf-name { font-size:13px; color:#c9d1d9; font-weight:500; }
+.auto-wf-item .wf-meta { font-size:11px; color:#8b949e; margin-top:2px; display:flex; gap:6px; align-items:center; }
+.auto-wf-item .badge-live { background:#1a3b2a; color:#3fb950; font-size:10px; padding:1px 6px; border-radius:8px; font-weight:600; }
+.auto-wf-item .badge-plan { background:#2a2a1a; color:#d29922; font-size:10px; padding:1px 6px; border-radius:8px; }
+.auto-main { padding:20px; overflow-y:auto; background:#0d1117; }
+.auto-preview { background:#0d1117; border-left:1px solid #30363d; overflow-y:auto; padding:16px; }
+.wf-header { display:flex; align-items:center; gap:10px; margin-bottom:16px; }
+.wf-header h2 { font-size:18px; color:#c9d1d9; font-weight:700; margin:0; }
+.wf-desc { color:#8b949e; font-size:13px; margin-bottom:20px; line-height:1.5; }
+.wf-steps { margin-bottom:24px; }
+.wf-step { display:flex; gap:12px; padding:10px 0; border-bottom:1px solid #21262d; }
+.wf-step:last-child { border-bottom:none; }
+.step-num-badge { width:24px; height:24px; border-radius:50%; background:#1f6feb; color:#fff; font-size:11px; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0; margin-top:2px; }
+.step-info { flex:1; }
+.step-name { font-size:13px; color:#c9d1d9; font-weight:600; }
+.step-where { font-size:11px; color:#58a6ff; margin-top:2px; }
+.step-action { font-size:11px; color:#8b949e; margin-top:2px; }
+.scenario-box { background:#161b22; border:1px solid #30363d; border-radius:8px; padding:14px; margin-bottom:16px; }
+.scenario-box h4 { font-size:12px; color:#8b949e; font-weight:600; text-transform:uppercase; letter-spacing:.5px; margin:0 0 10px; }
+.scenario-trigger { font-size:12px; color:#ffa657; margin-bottom:8px; }
+.scenario-input { background:#0d1117; border:1px solid #30363d; border-radius:6px; padding:8px 10px; font-size:12px; color:#8b8b8b; font-family:monospace; margin-bottom:10px; word-break:break-all; }
+.parse-table { width:100%; border-collapse:collapse; font-size:11px; }
+.parse-table th { color:#8b949e; padding:4px 8px; text-align:left; border-bottom:1px solid #30363d; font-weight:600; }
+.parse-table td { color:#c9d1d9; padding:4px 8px; border-bottom:1px solid #21262d; }
+.parse-table tr:last-child td { border-bottom:none; }
+.result-box { background:#1a3b2a; border:1px solid #2ea043; border-radius:6px; padding:10px 12px; font-size:12px; color:#3fb950; margin-top:10px; }
+/* 우측 UI 미리보기 */
+.preview-tabs { display:flex; gap:0; margin-bottom:14px; border-bottom:1px solid #30363d; }
+.preview-tab { padding:8px 14px; font-size:12px; color:#8b949e; cursor:pointer; border-bottom:2px solid transparent; background:none; border-top:none; border-left:none; border-right:none; }
+.preview-tab.active { color:#58a6ff; border-bottom-color:#58a6ff; }
+.preview-panel { display:none; }
+.preview-panel.active { display:block; }
+/* nenova mock UI */
+.mock-window { background:#f0f0f0; border:2px solid #888; border-radius:4px; font-family:'Malgun Gothic','맑은 고딕',sans-serif; font-size:12px; color:#000; max-width:100%; }
+.mock-titlebar { background:linear-gradient(#4a90d9,#2060a0); color:#fff; padding:4px 10px; font-size:11px; font-weight:bold; display:flex; justify-content:space-between; border-radius:2px 2px 0 0; }
+.mock-titlebar-btns { display:flex; gap:4px; }
+.mock-titlebar-btn { width:14px; height:14px; border-radius:50%; border:1px solid #999; cursor:default; }
+.mock-menu { background:#e8e8e8; padding:3px 6px; font-size:11px; border-bottom:1px solid #ccc; display:flex; gap:12px; }
+.mock-menu span { cursor:pointer; padding:2px 6px; }
+.mock-menu span:hover { background:#c8c8c8; }
+.mock-toolbar { background:#f5f5f5; padding:4px 8px; border-bottom:1px solid #ddd; display:flex; gap:6px; align-items:center; }
+.mock-btn { background:linear-gradient(#fafafa,#e0e0e0); border:1px solid #aaa; border-radius:3px; padding:3px 10px; font-size:11px; cursor:pointer; font-family:inherit; }
+.mock-btn:hover { background:linear-gradient(#e8e8e8,#d0d0d0); }
+.mock-btn-primary { background:linear-gradient(#4a90d9,#2060a0); color:#fff; border:1px solid #1050a0; }
+.mock-btn-primary:hover { background:linear-gradient(#5aa0e9,#3070b0); }
+.mock-form-area { padding:10px; }
+.mock-form-row { display:flex; gap:6px; align-items:center; margin-bottom:6px; }
+.mock-label { width:70px; text-align:right; font-size:11px; color:#333; flex-shrink:0; }
+.mock-input { border:1px solid #aaa; padding:2px 6px; font-size:11px; flex:1; background:#fff; font-family:inherit; }
+.mock-input.auto-filled { background:#ffffcc; border-color:#f0a000; }
+.mock-input.readonly { background:#f5f5f5; color:#666; }
+.mock-grid { border:1px solid #ccc; margin:8px 0; }
+.mock-grid-header { background:#d0e8ff; display:grid; padding:4px 6px; font-size:11px; font-weight:bold; border-bottom:1px solid #aaa; }
+.mock-grid-row { display:grid; padding:3px 6px; font-size:11px; border-bottom:1px solid #e8e8e8; }
+.mock-grid-row:nth-child(even) { background:#f9f9f9; }
+.mock-grid-row.auto-filled { background:#ffffcc; }
+.mock-status-bar { background:#e0e0e0; padding:2px 8px; font-size:10px; color:#444; border-top:1px solid #ccc; }
+/* 비교 분석 */
+.compare-section { margin-bottom:16px; }
+.compare-title { font-size:12px; color:#8b949e; font-weight:600; text-transform:uppercase; letter-spacing:.5px; margin-bottom:10px; }
+.compare-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.compare-card { border-radius:8px; padding:12px; }
+.compare-card.before { background:#2d1b1b; border:1px solid #5a2020; }
+.compare-card.after { background:#1a2d1a; border:1px solid #2a5a2a; }
+.compare-card h5 { font-size:11px; font-weight:700; margin:0 0 8px; }
+.compare-card.before h5 { color:#f85149; }
+.compare-card.after h5 { color:#3fb950; }
+.compare-metric { display:flex; justify-content:space-between; font-size:11px; color:#8b949e; padding:3px 0; border-bottom:1px solid rgba(255,255,255,.06); }
+.compare-metric:last-child { border-bottom:none; }
+.compare-metric span:last-child { font-weight:600; }
+.compare-card.before .compare-metric span:last-child { color:#f85149; }
+.compare-card.after .compare-metric span:last-child { color:#3fb950; }
+.compare-saving { background:#1f6feb22; border:1px solid #1f6feb55; border-radius:8px; padding:10px 12px; text-align:center; margin-top:10px; }
+.compare-saving-num { font-size:22px; font-weight:800; color:#58a6ff; }
+.compare-saving-label { font-size:11px; color:#8b949e; margin-top:2px; }
+.run-btn { width:100%; padding:10px; background:linear-gradient(135deg,#1f6feb,#388bfd); border:none; border-radius:8px; color:#fff; font-size:13px; font-weight:700; cursor:pointer; margin-top:12px; transition:opacity .15s; }
+.run-btn:hover { opacity:.88; }
+.run-result { background:#161b22; border:1px solid #30363d; border-radius:8px; padding:12px; margin-top:10px; display:none; }
+.run-result.show { display:block; }
+.run-result pre { color:#3fb950; margin:0; white-space:pre-wrap; font-size:11px; }
+</style>
+
+<div class="auto-layout">
+  <!-- ── 좌: 워크플로우 목록 ── -->
+  <div class="auto-sidebar" id="auto-sidebar">
+    <div class="auto-sidebar-title">LIVE (11)</div>
+    <div id="auto-wf-list"></div>
+    <div class="auto-sidebar-title" style="margin-top:12px">PLAN (4)</div>
+    <div id="auto-wf-plan-list"></div>
+  </div>
+
+  <!-- ── 중: 단계 + 시나리오 ── -->
+  <div class="auto-main" id="auto-main">
+    <div style="color:#8b949e;font-size:14px;margin-top:40px;text-align:center">← 워크플로우를 선택하세요</div>
+  </div>
+
+  <!-- ── 우: UI 미리보기 + 비교분석 ── -->
+  <div class="auto-preview" id="auto-preview">
+    <div style="color:#8b949e;font-size:13px;margin-top:40px;text-align:center">워크플로우 선택 후<br>UI 미리보기가 표시됩니다</div>
+  </div>
+</div>
+
+<script>
+(function(){
+  // ── 15개 워크플로우 내장 데이터 ──
+  const WF_DATA = [
+    {
+      id:'order', name:'주문 등록', icon:'📋', savings:170, status:'live',
+      desc:'카카오톡 주문 메시지 클립보드 복사 → 자동 파싱 → nenova 신규주문 등록',
+      steps:[
+        {name:'메시지 감지', where:'클립보드 모니터', action:'[MEL] 형식 클립보드 복사 감지'},
+        {name:'주문 파싱', where:'Orbit 서버', action:'품목명→ProdKey 매핑, 수량/단위 추출'},
+        {name:'거래처 매칭', where:'nenova DB', action:'발신자 이름 → 거래처 코드 자동 조회'},
+        {name:'자동 입력', where:'nenova > 신규주문', action:'PAD/pyautogui로 폼 필드 자동 채움'},
+        {name:'저장 확인', where:'nenova', action:'저장 버튼 클릭 → 주문번호 확인'},
+        {name:'완료 알림', where:'카카오톡', action:'"주문 등록 완료 (주문번호: ORD-XXXX)" 전송'},
+      ],
+      scenario:{
+        trigger:'호남소재 단톡방에서 "[MEL] ROSE CHINA / Catherine : 30..." 클립보드 복사',
+        input:'[MEL] ROSE CHINA / Catherine : 30, Pride : 20, Doncel : 15, Novia : 25',
+        parseResult:[
+          {product:'캐더린', prodKey:2851, qty:30, unit:'단', origin:'CHINA'},
+          {product:'프라이드', prodKey:2744, qty:20, unit:'단', origin:'CHINA'},
+          {product:'돈셀', prodKey:2306, qty:15, unit:'박스', origin:'콜롬비아'},
+          {product:'노비아', prodKey:2515, qty:25, unit:'박스', origin:'콜롬비아'},
+        ],
+        nenovaScreen:'화훼 관리 프로그램 v1.0.13 > 신규 주문 등록',
+        expectedResult:'nenova 4건 주문 등록 완료. 거래처: 호남소재, 총 90단/박스',
+        compare:{
+          before:{time:'8분/건', clicks:'35회', errors:'5% (오입력)', steps:'수동 6단계'},
+          after:{time:'0.4분/건', clicks:'0회', errors:'0.2%', steps:'자동 6단계'},
+          saving:'7.6분/건 × 하루 12건 = 91분/일'
+        }
+      }
+    },
+    {
+      id:'deduction', name:'차감 대조', icon:'📊', savings:90, status:'live',
+      desc:'주문 수량 vs 실제 입고 수량 비교 → 차이분 Excel 차감표 자동 생성',
+      steps:[
+        {name:'주문 조회', where:'nenova 주문 관리', action:'오늘 주문 목록 쿼리'},
+        {name:'배송량 수신', where:'카카오 "경부선 늘봄"', action:'입고 수량 메시지 파싱'},
+        {name:'비교 계산', where:'Orbit 서버', action:'주문 30단 - 실입고 28단 = 차감 2단'},
+        {name:'Excel 생성', where:'자동 → 피벗2.xlsx', action:'차감표 셀 자동 채움 (품목/수량/차이)'},
+      ],
+      scenario:{
+        trigger:'경부선에서 "캐더린 28단 도착" 입고 완료 메시지',
+        input:'캐더린 28단 도착, 프라이드 20단 OK, 돈셀 13박스 (2박스 파손)',
+        parseResult:[
+          {product:'캐더린', ordered:30, received:28, diff:-2, action:'차감'},
+          {product:'프라이드', ordered:20, received:20, diff:0, action:'완료'},
+          {product:'돈셀', ordered:15, received:13, diff:-2, action:'차감+불량'},
+        ],
+        nenovaScreen:'피벗2 - Excel',
+        expectedResult:'차감표: 캐더린 -2단, 돈셀 -2박스(파손). 자동 알림 → 거래처방',
+        compare:{
+          before:{time:'25분/회', clicks:'80회', errors:'8% (수기오류)', steps:'수동 엑셀 작성'},
+          after:{time:'1분/회', clicks:'0회', errors:'0.5%', steps:'자동 생성'},
+          saving:'24분/회 × 하루 4회 = 96분/일'
+        }
+      }
+    },
+    {
+      id:'shipping', name:'출고 관리', icon:'🚚', savings:120, status:'live',
+      desc:'오늘 출고 대상 → 거래처별 자동 집계 → 배송 메시지 자동 전송',
+      steps:[
+        {name:'출고 조회', where:'nenova 출고 관리', action:'오늘 출고 예정 목록 쿼리'},
+        {name:'거래처 분류', where:'Orbit 서버', action:'거래처별 그룹핑'},
+        {name:'메시지 생성', where:'Orbit 서버', action:'거래처별 출고 내역 텍스트 생성'},
+        {name:'전송', where:'카카오톡 각 거래처방', action:'"오늘 출고: 캐더린20단" 메시지 전송'},
+      ],
+      scenario:{
+        trigger:'매일 오후 3시 자동 실행',
+        input:'오늘 날짜 출고 예정 데이터 (nenova DB)',
+        parseResult:[
+          {customer:'호남소재', items:'캐더린 20단, 프라이드 15단'},
+          {customer:'엘리아리', items:'노비아 30박스'},
+          {customer:'주광', items:'캐더린 10단, 돈셀 8박스'},
+        ],
+        nenovaScreen:'nenova 출고 관리 화면',
+        expectedResult:'3개 거래처방에 출고 메시지 자동 전송 완료',
+        compare:{
+          before:{time:'30분/일', clicks:'120회', errors:'3%', steps:'수동 엑셀 확인 후 카톡'},
+          after:{time:'자동', clicks:'0회', errors:'0.1%', steps:'완전 자동'},
+          saving:'30분/일 자동화 (매일 오후 3시)'
+        }
+      }
+    },
+    {
+      id:'change', name:'변경사항', icon:'🔄', savings:60, status:'live',
+      desc:'거래처 주문 취소/추가 메시지 → nenova 기존 주문 자동 수정',
+      steps:[
+        {name:'변경 감지', where:'카카오톡 거래처방', action:'"캐더린 30→20으로 변경" 메시지 감지'},
+        {name:'변경 파싱', where:'Orbit 서버', action:'기존 주문 대조 → 변경 항목 추출'},
+        {name:'nenova 수정', where:'화훼관리 > 주문수정', action:'ProdKey 2851 수량 30→20 업데이트'},
+        {name:'알림', where:'카카오톡', action:'"캐더린 30→20 변경 완료" 자동 응답'},
+      ],
+      scenario:{
+        trigger:'호남소재 단톡방 "캐더린 30에서 20으로 줄여주세요"',
+        input:'캐더린 30에서 20으로 줄여주세요. 돈셀 15박스 추가해주세요.',
+        parseResult:[
+          {product:'캐더린', prodKey:2851, action:'수정', before:30, after:20},
+          {product:'돈셀', prodKey:2306, action:'추가', qty:15},
+        ],
+        nenovaScreen:'화훼 관리 프로그램 > 주문 조회/수정',
+        expectedResult:'캐더린 30→20 수정, 돈셀 15박스 추가. 거래처방 확인 메시지 전송',
+        compare:{
+          before:{time:'5분/건', clicks:'20회', errors:'10% (누락)', steps:'수동'},
+          after:{time:'0.2분', clicks:'0회', errors:'1%', steps:'자동'},
+          saving:'4.8분/건 × 15건/일 = 72분/일'
+        }
+      }
+    },
+    {
+      id:'defect', name:'불량 처리', icon:'⚠️', savings:45, status:'live',
+      desc:'불량 공유방 메시지 → 불량 등록 → 거래처 클레임 처리',
+      steps:[
+        {name:'불량 감지', where:'불량 공유방', action:'"돈셀 2박스 파손" 메시지 파싱'},
+        {name:'사진 분석', where:'Vision 워커', action:'첨부 사진 → 불량 유형/수량 확인'},
+        {name:'nenova 등록', where:'화훼관리 > 불량등록', action:'품목/수량/사유 자동 입력'},
+        {name:'클레임 생성', where:'Orbit 서버', action:'클레임 문서 자동 생성'},
+        {name:'알림', where:'카카오톡', action:'거래처에 처리 현황 자동 전달'},
+      ],
+      scenario:{
+        trigger:'불량 공유방 "돈셀 2박스 완전 파손 사진 첨부"',
+        input:'돈셀 2박스 완전 파손, 입고일: 오늘, 거래처: 호남소재',
+        parseResult:[
+          {product:'돈셀', prodKey:2306, qty:2, type:'파손', customer:'호남소재', claimAmt:'추정 8만원'},
+        ],
+        nenovaScreen:'화훼 관리 프로그램 > 불량/검역 등록',
+        expectedResult:'불량 등록 완료. 클레임 문서 생성. 호남소재에 처리 현황 전달',
+        compare:{
+          before:{time:'15분/건', clicks:'40회', errors:'5%', steps:'수동 사진확인+등록'},
+          after:{time:'2분/건', clicks:'0회', errors:'1%', steps:'Vision+자동등록'},
+          saving:'13분/건 × 하루 3건 = 39분/일'
+        }
+      }
+    },
+    {
+      id:'customer_comm', name:'거래처 소통', icon:'💬', savings:50, status:'live',
+      desc:'거래처 문의 자동 분류 → 표준 답변 생성 → 담당자 확인 후 전송',
+      steps:[
+        {name:'문의 수신', where:'카카오톡 거래처방', action:'거래처 메시지 실시간 감지'},
+        {name:'의도 분류', where:'Orbit AI', action:'문의 유형 분류 (주문확인/배송조회/단가문의)'},
+        {name:'답변 생성', where:'Orbit 서버', action:'DB 조회 → 맞춤 답변 초안 생성'},
+        {name:'확인 전송', where:'담당자 확인', action:'담당자 승인 → 자동 전송'},
+      ],
+      scenario:{
+        trigger:'거래처 "오늘 주문한 캐더린 몇 시에 출고돼요?"',
+        input:'호남소재 설연주: 오늘 주문한 캐더린 30단 몇 시 출고예요?',
+        parseResult:[
+          {intent:'배송조회', customer:'호남소재', product:'캐더린', qty:30},
+        ],
+        nenovaScreen:'nenova 출고 조회 화면',
+        expectedResult:'"안녕하세요 설연주님, 오늘 캐더린 30단은 오후 3시 출고 예정입니다."',
+        compare:{
+          before:{time:'3분/건', clicks:'15회', errors:'0%', steps:'수동 조회 후 답장'},
+          after:{time:'0.3분', clicks:'1회(승인)', errors:'0%', steps:'AI초안+승인'},
+          saving:'2.7분/건 × 20건/일 = 54분/일'
+        }
+      }
+    },
+    {
+      id:'estimate', name:'견적서 작성', icon:'📄', savings:75, status:'live',
+      desc:'견적 요청 메시지 → 단가 DB 조회 → 견적서 자동 생성',
+      steps:[
+        {name:'요청 감지', where:'카카오톡', action:'"캐더린 100단 견적 부탁" 메시지 파싱'},
+        {name:'단가 조회', where:'nenova 단가 DB', action:'품목별 현재 단가 + 수량 할인율'},
+        {name:'견적서 생성', where:'Orbit 서버', action:'Excel/PDF 견적서 자동 생성'},
+        {name:'전송', where:'카카오톡/이메일', action:'견적서 파일 자동 첨부 전송'},
+      ],
+      scenario:{
+        trigger:'거래처 "캐더린 100단, 프라이드 50단 견적 주세요"',
+        input:'캐더린 100단, 프라이드 50단 견적',
+        parseResult:[
+          {product:'캐더린', qty:100, unitPrice:3200, total:320000},
+          {product:'프라이드', qty:50, unitPrice:2800, total:140000},
+          {subtotal:460000, discount:'5%', final:437000},
+        ],
+        nenovaScreen:'nenova > 단가/가격 관리',
+        expectedResult:'견적서 PDF 생성 완료. 거래처 카카오톡으로 전송',
+        compare:{
+          before:{time:'20분/건', clicks:'50회', errors:'3%', steps:'수동 단가확인+작성'},
+          after:{time:'1분/건', clicks:'0회', errors:'0.5%', steps:'자동 생성'},
+          saving:'19분/건 × 하루 4건 = 76분/일'
+        }
+      }
+    },
+    {
+      id:'purchase', name:'발주 자동생성', icon:'🛒', savings:110, status:'live',
+      desc:'재고 부족 자동 감지 → 거래처별 발주서 생성 → 이메일/팩스 전송',
+      steps:[
+        {name:'재고 분석', where:'nenova 재고 DB', action:'기준 재고 이하 품목 자동 탐색'},
+        {name:'발주량 계산', where:'Orbit 서버', action:'평균 소비량 × 2주치 발주량 계산'},
+        {name:'발주서 생성', where:'Orbit 서버', action:'거래처별 Excel 발주서 자동 생성'},
+        {name:'전송', where:'이메일/카카오', action:'거래처별 발주서 자동 전송'},
+      ],
+      scenario:{
+        trigger:'매주 월요일 오전 재고 분석 자동 실행',
+        input:'재고: 캐더린 50단(기준 100단 미만), 프라이드 30단(기준 80단 미만)',
+        parseResult:[
+          {product:'캐더린', stock:50, threshold:100, order:200, supplier:'CHINA'},
+          {product:'프라이드', stock:30, threshold:80, order:150, supplier:'CHINA'},
+        ],
+        nenovaScreen:'nenova > 재고 관리 / 발주 등록',
+        expectedResult:'발주서 2건 생성. CHINA 수입업체 이메일 자동 전송',
+        compare:{
+          before:{time:'45분/회', clicks:'150회', errors:'7%', steps:'수동 재고확인+발주'},
+          after:{time:'2분/회', clicks:'0회', errors:'0.5%', steps:'완전 자동'},
+          saving:'43분/회 × 주 3회 = 129분/주'
+        }
+      }
+    },
+    {
+      id:'claim', name:'클레임 처리', icon:'🔴', savings:65, status:'live',
+      desc:'거래처 클레임 메시지 → 내용 분류 → 처리 프로세스 자동 개시',
+      steps:[
+        {name:'클레임 감지', where:'카카오톡 거래처방', action:'불만/클레임 키워드 감지'},
+        {name:'내용 분류', where:'Orbit AI', action:'클레임 유형 분류 (품질/배송/수량)'},
+        {name:'처리 개시', where:'내부 담당자', action:'담당자에게 클레임 알림 + 처리 지시'},
+        {name:'결과 전달', where:'카카오톡', action:'처리 결과 + 보상 내용 자동 전달'},
+      ],
+      scenario:{
+        trigger:'거래처 "어제 캐더린이 너무 품질이 안 좋아요"',
+        input:'호남소재: 어제 캐더린 30단 중 10단이 개화 불량. 교환 요청.',
+        parseResult:[
+          {type:'품질클레임', product:'캐더린', qty:10, demand:'교환', urgency:'높음'},
+        ],
+        nenovaScreen:'화훼 관리 > 불량/검역 등록',
+        expectedResult:'클레임 등록 완료. 담당자 알림. 교환 처리 개시.',
+        compare:{
+          before:{time:'20분/건', clicks:'60회', errors:'10%', steps:'수동 처리'},
+          after:{time:'3분/건', clicks:'2회(확인)', errors:'1%', steps:'AI분류+자동'},
+          saving:'17분/건 × 하루 4건 = 68분/일'
+        }
+      }
+    },
+    {
+      id:'tracking', name:'배송 추적', icon:'📍', savings:70, status:'live',
+      desc:'출고 후 자동 추적 → 거래처 실시간 배송 현황 알림',
+      steps:[
+        {name:'출고 확인', where:'nenova 출고 DB', action:'출고 완료 건 자동 감지'},
+        {name:'운송장 조회', where:'택배 API', action:'운송장 번호 → 현재 위치 조회'},
+        {name:'현황 업데이트', where:'Orbit 서버', action:'배송 단계별 상태 업데이트'},
+        {name:'거래처 알림', where:'카카오톡', action:'"배송 출발/도착 예정" 자동 메시지'},
+      ],
+      scenario:{
+        trigger:'출고 완료 후 자동 시작',
+        input:'출고: 호남소재 캐더린 20단, 운송장 1234567890',
+        parseResult:[
+          {customer:'호남소재', product:'캐더린 20단', status:'배송중', eta:'오후 2시 도착 예정'},
+        ],
+        nenovaScreen:'nenova 출고 내역서',
+        expectedResult:'"캐더린 20단 현재 배송 중, 오후 2시 도착 예정" 거래처 자동 알림',
+        compare:{
+          before:{time:'수동 문의 응대', clicks:'10회/건', errors:'0%', steps:'수동 조회'},
+          after:{time:'실시간 자동', clicks:'0회', errors:'0%', steps:'완전 자동'},
+          saving:'문의 응대 70분/일 자동화'
+        }
+      }
+    },
+    {
+      id:'closing', name:'매출 마감', icon:'📈', savings:80, status:'live',
+      desc:'월말 매출 집계 → 거래처별 청구서 자동 생성 → 전송',
+      steps:[
+        {name:'매출 집계', where:'nenova 매출 DB', action:'월간 거래처별 매출 합산'},
+        {name:'정산 계산', where:'Orbit 서버', action:'할인율/반품/차감 적용 최종금액'},
+        {name:'청구서 생성', where:'Orbit 서버', action:'거래처별 Excel/PDF 청구서 생성'},
+        {name:'전송', where:'이메일/팩스', action:'청구서 자동 발송 + 카카오 알림'},
+      ],
+      scenario:{
+        trigger:'매월 말일 자동 실행',
+        input:'3월 매출 데이터 — 거래처 15곳',
+        parseResult:[
+          {customer:'호남소재', sales:2850000, discount:'2%', final:2793000},
+          {customer:'엘리아리', sales:1200000, discount:'0%', final:1200000},
+        ],
+        nenovaScreen:'nenova > 매출/마감 관리',
+        expectedResult:'15개 거래처 청구서 자동 생성 + 이메일 발송 완료',
+        compare:{
+          before:{time:'3시간/월', clicks:'500회', errors:'5%', steps:'수동 집계'},
+          after:{time:'10분/월', clicks:'0회', errors:'0.5%', steps:'자동 집계'},
+          saving:'170분/월 (월 1회 완전 자동)'
+        }
+      }
+    },
+    {
+      id:'pricing', name:'단가 관리', icon:'💰', savings:55, status:'plan',
+      desc:'시장 단가 스캔 → 자동 단가 업데이트 제안',
+      steps:[
+        {name:'시장 조사', where:'웹 스크래핑', action:'경쟁사/수입 단가 자동 수집'},
+        {name:'비교 분석', where:'Orbit 서버', action:'현재 단가 vs 시장 단가 비교'},
+        {name:'업데이트 제안', where:'관리자 대시보드', action:'단가 조정 제안 + 승인 요청'},
+        {name:'적용', where:'nenova DB', action:'승인 후 단가 자동 업데이트'},
+      ],
+      scenario:{trigger:'매일 오전 자동',input:'시장 단가 데이터',parseResult:[],nenovaScreen:'nenova > 단가/가격 관리',expectedResult:'단가 업데이트 제안 생성',compare:{before:{time:'1시간/주',clicks:'200회',errors:'5%',steps:'수동'},after:{time:'자동',clicks:'1회(승인)',errors:'1%',steps:'자동+승인'},saving:'55분/일'}}
+    },
+    {
+      id:'report', name:'매출 보고서', icon:'📊', savings:100, status:'plan',
+      desc:'09:00/13:30/18:00 자동 매출 현황 Google Sheets 보고',
+      steps:[
+        {name:'데이터 수집', where:'nenova DB', action:'시간대별 매출/주문 집계'},
+        {name:'분석', where:'Orbit 서버', action:'전일/전주 대비 증감률'},
+        {name:'시트 업데이트', where:'Google Sheets', action:'자동 차트/표 업데이트'},
+        {name:'알림', where:'카카오톡', action:'요약 보고 메시지 전송'},
+      ],
+      scenario:{trigger:'하루 3회 자동',input:'실시간 매출 DB',parseResult:[],nenovaScreen:'nenova 매출 현황',expectedResult:'Google Sheets + 카카오 보고',compare:{before:{time:'20분/회×3=60분',clicks:'150회',errors:'3%',steps:'수동'},after:{time:'자동',clicks:'0회',errors:'0%',steps:'완전자동'},saving:'60분/일'}}
+    },
+    {
+      id:'shipping_doc', name:'출고내역서', icon:'📑', savings:85, status:'plan',
+      desc:'출고 마감 시 거래처별 출고내역서 자동 생성 + 전송',
+      steps:[
+        {name:'출고 마감', where:'nenova', action:'하루 출고 마감 감지'},
+        {name:'내역서 생성', where:'Orbit 서버', action:'거래처별 출고 내역 PDF 생성'},
+        {name:'전송', where:'이메일/카카오', action:'거래처별 내역서 자동 발송'},
+      ],
+      scenario:{trigger:'매일 오후 6시',input:'당일 출고 데이터',parseResult:[],nenovaScreen:'nenova 출고 내역서',expectedResult:'15개 거래처 내역서 자동 발송',compare:{before:{time:'40분/일',clicks:'120회',errors:'5%',steps:'수동'},after:{time:'자동',clicks:'0회',errors:'0%',steps:'자동'},saving:'40분/일'}}
+    },
+    {
+      id:'product_mgmt', name:'품목 관리', icon:'🌸', savings:95, status:'plan',
+      desc:'새벽 자동 품목 동기화 → 단종/신규 품목 자동 반영',
+      steps:[
+        {name:'수입사 확인', where:'수입사 웹/이메일', action:'새벽 신규/단종 품목 리스트 수집'},
+        {name:'DB 비교', where:'nenova 품목 DB', action:'현재 품목 vs 수입사 리스트 비교'},
+        {name:'업데이트', where:'nenova', action:'신규 품목 등록, 단종 비활성화'},
+        {name:'알림', where:'담당자', action:'변경 품목 목록 아침 보고'},
+      ],
+      scenario:{trigger:'매일 새벽 2시',input:'수입사 품목 데이터',parseResult:[],nenovaScreen:'nenova > 품목 관리',expectedResult:'품목 DB 자동 동기화 완료',compare:{before:{time:'1시간/일',clicks:'300회',errors:'8%',steps:'수동'},after:{time:'자동',clicks:'0회',errors:'1%',steps:'완전자동'},saving:'60분/일'}}
+    },
+  ];
+
+  // ── UI 렌더링 함수 ──
+  function renderSidebar() {
+    const liveEl = document.getElementById('auto-wf-list');
+    const planEl = document.getElementById('auto-wf-plan-list');
+    let liveHtml='', planHtml='', liveCount=0, planCount=0;
+    WF_DATA.forEach(wf => {
+      const badge = wf.status==='live'
+        ? '<span class="badge-live">LIVE</span>'
+        : '<span class="badge-plan">PLAN</span>';
+      const html = `<div class="auto-wf-item" onclick="selectWf('${wf.id}')" id="wf-item-${wf.id}">
+        <div class="wf-name">${wf.icon} ${wf.name}</div>
+        <div class="wf-meta">${badge} <span>절약 ${wf.savings}분/일</span></div>
+      </div>`;
+      if(wf.status==='live'){liveHtml+=html; liveCount++;}
+      else{planHtml+=html; planCount++;}
+    });
+    liveEl.innerHTML=liveHtml;
+    planEl.innerHTML=planHtml;
+    // 사이드바 LIVE 카운트 업데이트
+    document.querySelector('.auto-sidebar-title').textContent=`LIVE (${liveCount})`;
+  }
+
+  function renderMain(wf) {
+    const sc = wf.scenario;
+    // parse result 테이블
+    let parseHtml = '';
+    if(sc.parseResult && sc.parseResult.length > 0){
+      const keys = Object.keys(sc.parseResult[0]);
+      parseHtml = `<table class="parse-table">
+        <tr>${keys.map(k=>`<th>${k}</th>`).join('')}</tr>
+        ${sc.parseResult.map(r=>`<tr>${keys.map(k=>`<td>${r[k]??''}</td>`).join('')}</tr>`).join('')}
+      </table>`;
+    }
+    // steps
+    const stepsHtml = wf.steps.map((s,i)=>`
+      <div class="wf-step">
+        <div class="step-num-badge">${i+1}</div>
+        <div class="step-info">
+          <div class="step-name">${s.name}</div>
+          <div class="step-where">📍 ${s.where}</div>
+          <div class="step-action">→ ${s.action}</div>
+        </div>
+      </div>`).join('');
+
+    return `
+      <div class="wf-header">
+        <span style="font-size:28px">${wf.icon}</span>
+        <div>
+          <h2>${wf.name}</h2>
+          <span style="font-size:11px;color:#${wf.status==='live'?'3fb950':'d29922'};font-weight:700">${wf.status.toUpperCase()}</span>
+          <span style="font-size:11px;color:#8b949e;margin-left:8px">절약: ${wf.savings}분/일</span>
+        </div>
+      </div>
+      <div class="wf-desc">${wf.desc}</div>
+      <div class="wf-steps">${stepsHtml}</div>
+      <div class="scenario-box">
+        <h4>📌 시나리오</h4>
+        <div class="scenario-trigger">🔔 트리거: ${sc.trigger}</div>
+        <div style="font-size:11px;color:#8b949e;margin-bottom:4px">입력 데이터:</div>
+        <div class="scenario-input">${sc.input}</div>
+        ${parseHtml ? `<div style="font-size:11px;color:#8b949e;margin:8px 0 4px">파싱 결과:</div>${parseHtml}` : ''}
+        <div class="result-box">✅ 예상 결과: ${sc.expectedResult}</div>
+      </div>`;
+  }
+
+  function renderPreview(wf) {
+    const sc = wf.scenario;
+    const mock = buildMockUI(wf);
+    const compare = sc.compare || {};
+    const before = compare.before || {};
+    const after = compare.after || {};
+
+    return `
+      <div style="font-size:13px;font-weight:700;color:#c9d1d9;margin-bottom:12px">🖥 자동화 UI 미리보기</div>
+      <div class="preview-tabs">
+        <button class="preview-tab active" onclick="switchPreviewTab(this,'ui-${wf.id}')">UI 미리보기</button>
+        <button class="preview-tab" onclick="switchPreviewTab(this,'compare-${wf.id}')">기존 vs 자동화</button>
+        <button class="preview-tab" onclick="switchPreviewTab(this,'run-${wf.id}')">실행 테스트</button>
+      </div>
+      <div id="ui-${wf.id}" class="preview-panel active">${mock}</div>
+      <div id="compare-${wf.id}" class="preview-panel">
+        <div class="compare-section">
+          <div class="compare-title">📊 기존 업무 vs 자동화 비교</div>
+          <div class="compare-grid">
+            <div class="compare-card before">
+              <h5>❌ 기존 방식 (수동)</h5>
+              <div class="compare-metric"><span>소요 시간</span><span>${before.time||'-'}</span></div>
+              <div class="compare-metric"><span>클릭 횟수</span><span>${before.clicks||'-'}</span></div>
+              <div class="compare-metric"><span>오류율</span><span>${before.errors||'-'}</span></div>
+              <div class="compare-metric"><span>처리 단계</span><span>${before.steps||'-'}</span></div>
+            </div>
+            <div class="compare-card after">
+              <h5>✅ 자동화 후</h5>
+              <div class="compare-metric"><span>소요 시간</span><span>${after.time||'-'}</span></div>
+              <div class="compare-metric"><span>클릭 횟수</span><span>${after.clicks||'-'}</span></div>
+              <div class="compare-metric"><span>오류율</span><span>${after.errors||'-'}</span></div>
+              <div class="compare-metric"><span>처리 단계</span><span>${after.steps||'-'}</span></div>
+            </div>
+          </div>
+          <div class="compare-saving">
+            <div class="compare-saving-num">⏱ ${compare.saving||'-'}</div>
+            <div class="compare-saving-label">절약 효과</div>
+          </div>
+          <div style="margin-top:14px;font-size:11px;color:#8b949e;">
+            <strong style="color:#d29922">🖥 기존 화면:</strong> ${sc.nenovaScreen}<br>
+            <span style="color:#58a6ff;margin-top:4px;display:block">→ 이 화면에서의 수동 작업이 자동화 대상입니다</span>
+          </div>
+        </div>
+      </div>
+      <div id="run-${wf.id}" class="preview-panel">
+        <div style="font-size:12px;color:#8b949e;margin-bottom:12px">시나리오 데이터로 실행 테스트</div>
+        <div class="scenario-input" style="margin-bottom:12px">${sc.input}</div>
+        <button class="run-btn" onclick="runWfTest('${wf.id}','${(wf.testEndpoint||'/api/automation/parse')}')">▶ 실행 테스트</button>
+        <div class="run-result" id="run-result-${wf.id}">
+          <div style="color:#8b949e;font-size:11px;margin-bottom:6px">실행 결과:</div>
+          <pre id="run-result-text-${wf.id}"></pre>
+        </div>
+      </div>`;
+  }
+
+  function buildMockUI(wf) {
+    const sc = wf.scenario;
+    // 공통: nenova-style mock window
+    if(!sc.parseResult || sc.parseResult.length === 0){
+      return `<div class="mock-window">
+        <div class="mock-titlebar"><span>${sc.nenovaScreen}</span><div class="mock-titlebar-btns"><div class="mock-titlebar-btn" style="background:#ff5f57"></div><div class="mock-titlebar-btn" style="background:#febc2e"></div><div class="mock-titlebar-btn" style="background:#28c840"></div></div></div>
+        <div class="mock-form-area" style="text-align:center;padding:30px;color:#888;font-size:12px">자동화 진행 중...<br><span style="color:#3fb950">✅ ${sc.expectedResult}</span></div>
+      </div>`;
+    }
+
+    const pr = sc.parseResult;
+    const keys = Object.keys(pr[0]);
+
+    // 주문/차감/변경 등 그리드형 UI
+    const gridCols = `repeat(${keys.length}, 1fr)`;
+    const rows = pr.map(r=>`<div class="mock-grid-row auto-filled" style="grid-template-columns:${gridCols}">${keys.map(k=>`<span>${r[k]??''}</span>`).join('')}</div>`).join('');
+
+    let extraBtns = '';
+    if(wf.id==='order') extraBtns = `<button class="mock-btn mock-btn-primary" style="margin-left:auto">신규 등록</button> <button class="mock-btn">저장(F5)</button>`;
+    else if(wf.id==='deduction') extraBtns = `<button class="mock-btn mock-btn-primary">차감표 저장</button> <button class="mock-btn">Excel 내보내기</button>`;
+    else if(wf.id==='shipping') extraBtns = `<button class="mock-btn mock-btn-primary">카카오 전송</button> <button class="mock-btn">출고 확정</button>`;
+    else extraBtns = `<button class="mock-btn mock-btn-primary">저장</button> <button class="mock-btn">취소</button>`;
+
+    return `<div class="mock-window">
+      <div class="mock-titlebar">
+        <span>${sc.nenovaScreen}</span>
+        <div class="mock-titlebar-btns">
+          <div class="mock-titlebar-btn" style="background:#ff5f57"></div>
+          <div class="mock-titlebar-btn" style="background:#febc2e"></div>
+          <div class="mock-titlebar-btn" style="background:#28c840"></div>
+        </div>
+      </div>
+      <div class="mock-menu"><span>파일(F)</span><span>편집(E)</span><span>조회(V)</span><span>입력(I)</span><span>도움말(H)</span></div>
+      <div class="mock-toolbar">
+        <span style="font-size:10px;color:#3a6;font-weight:bold">🤖 Orbit 자동 입력 완료</span>
+        ${extraBtns}
+      </div>
+      <div class="mock-form-area">
+        <div class="mock-grid">
+          <div class="mock-grid-header" style="grid-template-columns:${gridCols}">${keys.map(k=>`<span>${k}</span>`).join('')}</div>
+          ${rows}
+        </div>
+        <div style="margin-top:8px;font-size:11px;color:#3a6;background:#e8ffe8;padding:6px 8px;border:1px solid #3a6;border-radius:3px">
+          ✅ ${pr.length}건 자동 입력 완료 — ${sc.expectedResult}
+        </div>
+      </div>
+      <div class="mock-status-bar">준비 | ${pr.length}건 처리 완료 | Orbit AI 자동화</div>
+    </div>`;
+  }
+
+  window.selectWf = function(id) {
+    const wf = WF_DATA.find(w=>w.id===id);
+    if(!wf) return;
+    // 사이드바 활성화
+    document.querySelectorAll('.auto-wf-item').forEach(el=>el.classList.remove('active'));
+    const item = document.getElementById('wf-item-'+id);
+    if(item) item.classList.add('active');
+    // 메인 + 우측 렌더
+    document.getElementById('auto-main').innerHTML = renderMain(wf);
+    document.getElementById('auto-preview').innerHTML = renderPreview(wf);
+  };
+
+  window.switchPreviewTab = function(btn, panelId) {
+    const tabs = btn.parentElement.querySelectorAll('.preview-tab');
+    const panels = btn.closest('.auto-preview').querySelectorAll('.preview-panel');
+    tabs.forEach(t=>t.classList.remove('active'));
+    panels.forEach(p=>p.classList.remove('active'));
+    btn.classList.add('active');
+    const panel = document.getElementById(panelId);
+    if(panel) panel.classList.add('active');
+  };
+
+  window.runWfTest = async function(wfId, endpoint) {
+    const wf = WF_DATA.find(w=>w.id===wfId);
+    const btn = event.target;
+    const resultEl = document.getElementById('run-result-'+wfId);
+    const textEl = document.getElementById('run-result-text-'+wfId);
+    btn.textContent = '⏳ 실행 중...';
+    btn.disabled = true;
+    try {
+      const TOKEN = localStorage.getItem('orbit_token');
+      const res = await fetch(endpoint, {
+        method:'POST',
+        headers:{'Content-Type':'application/json','Authorization':'Bearer '+(TOKEN||'')},
+        body: JSON.stringify({ input: wf.scenario.input, workflowId: wfId })
+      });
+      const data = res.ok ? await res.json() : { error: 'API 오류 '+res.status };
+      textEl.textContent = JSON.stringify(data, null, 2);
+      resultEl.classList.add('show');
+    } catch(e) {
+      // API 없으면 시뮬레이션 결과
+      const simResult = {
+        status: 'simulated',
+        workflowId: wfId,
+        input: wf.scenario.input,
+        parsed: wf.scenario.parseResult,
+        result: wf.scenario.expectedResult,
+        savedMinutes: wf.savings,
+        timestamp: new Date().toISOString()
+      };
+      textEl.textContent = JSON.stringify(simResult, null, 2);
+      resultEl.classList.add('show');
+    }
+    btn.textContent = '▶ 실행 테스트';
+    btn.disabled = false;
+  };
+
+  // ── switchPageTab 훅 (automation 탭 최초 클릭 시 초기화) ──
+  const _origSwitchPageTab = window.switchPageTab;
+  window.switchPageTab = function(tabId) {
+    _origSwitchPageTab && _origSwitchPageTab(tabId);
+    if(tabId === 'automation' && !window._autoInited) {
+      window._autoInited = true;
+      renderSidebar();
+      // 첫 번째 live 워크플로우 자동 선택
+      const first = WF_DATA.find(w=>w.status==='live');
+      if(first) setTimeout(()=>selectWf(first.id), 50);
+    }
+  };
+
+  // 탭이 이미 열려있는 경우 즉시 초기화
+  if(document.getElementById('panel-automation').classList.contains('active')) {
+    renderSidebar();
+    const first = WF_DATA.find(w=>w.status==='live');
+    if(first) selectWf(first.id);
+    window._autoInited = true;
+  }
+})();
+</script>
+</div>
 
 <!-- ── 탭 패널: 에이전트 회의 ── -->
 <div id="panel-agents" class="page-tab-panel">
