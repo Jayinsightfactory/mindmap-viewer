@@ -572,7 +572,7 @@ function drawTeamLabels() {
     const _sphereR = type === 'goal' ? 22 : type === 'leader' || type === 'infra' ? 20
       : type === 'member' ? 16 : type === 'department' ? 18 : 14;
     const _mW = _useUnified
-      ? Math.max(type === 'member' ? 110 : 90, _lctx.measureText(txt).width + 28)
+      ? Math.max(type === 'member' ? 110 : 90, _lctx.measureText(txt).width + 44)
       : _sphereR * 2;
     const _mH = type === 'member' ? 44 : _useUnified ? 40 : _sphereR * 2;
     const pw  = _useUnified ? _mW : Math.min(_lctx.measureText(txt).width + pad, 120);
