@@ -109,6 +109,97 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
 .engine-info{display:grid;grid-template-columns:2fr 1fr;gap:16px;}
 @media(max-width:900px){.engine-info{grid-template-columns:1fr;}}
 .engine-status{display:flex;gap:8px;align-items:center;margin-bottom:8px;}
+
+/* ── Automation / Agents pages ── */
+#page-automation{margin:-24px;height:calc(100vh - var(--topbar-h));overflow:hidden;padding:0;}
+.aol{display:grid;grid-template-columns:210px 1fr 370px;height:100%;}
+.ao-sb{background:var(--card);border-right:1px solid var(--border);overflow-y:auto;}
+.ao-mn{background:var(--bg);overflow-y:auto;padding:20px;}
+.ao-pv{background:var(--bg);border-left:1px solid var(--border);overflow-y:auto;padding:14px;}
+.ao-sec{font-size:9px;font-weight:700;color:var(--muted);padding:8px 14px 4px;letter-spacing:.8px;text-transform:uppercase;}
+.ao-item{padding:8px 14px;cursor:pointer;border-left:3px solid transparent;transition:all .15s;}
+.ao-item:hover{background:rgba(88,166,255,.05);}
+.ao-item.active{background:rgba(88,166,255,.08);border-left-color:var(--accent);}
+.ao-item .wn{font-size:12px;color:var(--text);font-weight:500;}
+.ao-item .wm{font-size:10px;color:var(--muted);margin-top:2px;display:flex;gap:5px;align-items:center;}
+.ao-blv{background:rgba(63,185,80,.15);color:var(--green);font-size:9px;padding:1px 5px;border-radius:7px;font-weight:700;}
+.ao-bpl{background:rgba(210,153,34,.15);color:var(--yellow);font-size:9px;padding:1px 5px;border-radius:7px;}
+.wfs-list{margin-bottom:16px;}
+.wfs-row{display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);}
+.wfs-row:last-child{border-bottom:none;}
+.wfs-num{width:20px;height:20px;border-radius:50%;background:var(--accent);color:#fff;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px;}
+.wfs-body{flex:1;}
+.wfs-n{font-size:12.5px;font-weight:600;}
+.wfs-w{font-size:11px;color:var(--accent);margin-top:2px;}
+.wfs-a{font-size:11px;color:var(--muted);margin-top:1px;}
+.scen-b{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:11px;margin-bottom:12px;}
+.scen-b h4{font-size:9px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin:0 0 7px;}
+.scen-tr{font-size:11px;color:#ffa657;margin-bottom:5px;}
+.scen-in{background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:6px 8px;font-size:10px;color:var(--muted);font-family:monospace;margin-bottom:7px;word-break:break-all;}
+.aopt{width:100%;border-collapse:collapse;font-size:10px;}
+.aopt th{color:var(--muted);padding:3px 6px;text-align:left;border-bottom:1px solid var(--border);font-weight:600;}
+.aopt td{color:var(--text);padding:3px 6px;border-bottom:1px solid rgba(255,255,255,.04);}
+.res-ok{background:rgba(63,185,80,.1);border:1px solid rgba(63,185,80,.3);border-radius:5px;padding:7px 9px;font-size:11px;color:var(--green);margin-top:7px;}
+.pv-tabs{display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:11px;}
+.pv-tab{padding:7px 10px;font-size:11px;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;background:none;border-top:none;border-left:none;border-right:none;}
+.pv-tab.active{color:var(--accent);border-bottom-color:var(--accent);}
+.pv-pane{display:none;}
+.pv-pane.active{display:block;}
+.mw{background:#f0f0f0;border:2px solid #888;border-radius:3px;font-family:'Malgun Gothic','맑은 고딕',sans-serif;font-size:11px;color:#000;max-width:100%;}
+.mw-tb{background:linear-gradient(#4a90d9,#2060a0);color:#fff;padding:4px 10px;font-size:10px;font-weight:700;display:flex;justify-content:space-between;border-radius:2px 2px 0 0;}
+.mw-tb-btns{display:flex;gap:3px;}
+.mw-tb-btn{width:11px;height:11px;border-radius:50%;border:1px solid #999;}
+.mw-menu{background:#e8e8e8;padding:2px 6px;font-size:10px;border-bottom:1px solid #ccc;display:flex;gap:10px;}
+.mw-menu span{cursor:pointer;padding:2px 5px;} .mw-menu span:hover{background:#c8c8c8;}
+.mw-tb2{background:#f5f5f5;padding:3px 7px;border-bottom:1px solid #ddd;display:flex;gap:5px;align-items:center;}
+.mw-b{background:linear-gradient(#fafafa,#e0e0e0);border:1px solid #aaa;border-radius:2px;padding:2px 8px;font-size:10px;cursor:pointer;font-family:inherit;}
+.mw-b:hover{background:linear-gradient(#e0e0e0,#c8c8c8);}
+.mw-bp{background:linear-gradient(#4a90d9,#2060a0);color:#fff;border-color:#1050a0;}
+.mw-bp:hover{background:linear-gradient(#5aa0e9,#3070b0);}
+.mw-form{padding:9px;}
+.mw-row{display:flex;gap:5px;align-items:center;margin-bottom:5px;}
+.mw-lbl{width:60px;text-align:right;font-size:10px;color:#333;flex-shrink:0;}
+.mw-inp{border:1px solid #aaa;padding:2px 5px;font-size:10px;flex:1;background:#fff;font-family:inherit;}
+.mw-inp.af{background:#ffffcc;border-color:#f0a000;}
+.mw-inp.ro{background:#f5f5f5;color:#666;}
+.mw-grid{border:1px solid #ccc;margin:5px 0;}
+.mw-gh{background:#d0e8ff;display:grid;padding:3px 5px;font-size:10px;font-weight:700;border-bottom:1px solid #aaa;}
+.mw-gr{display:grid;padding:2px 5px;font-size:10px;border-bottom:1px solid #e8e8e8;}
+.mw-gr:nth-child(even){background:#f9f9f9;}
+.mw-gr.af{background:#ffffcc;}
+.mw-sb{background:#e0e0e0;padding:2px 7px;font-size:9px;color:#444;border-top:1px solid #ccc;}
+.cmp-g{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;}
+.cmp-c{border-radius:7px;padding:10px;}
+.cmp-bf{background:#2d1b1b;border:1px solid #5a2020;}
+.cmp-af{background:#1a2d1a;border:1px solid #2a5a2a;}
+.cmp-c h5{font-size:10px;font-weight:700;margin:0 0 6px;}
+.cmp-bf h5{color:var(--red);}
+.cmp-af h5{color:var(--green);}
+.cmp-r{display:flex;justify-content:space-between;font-size:10px;color:var(--muted);padding:2px 0;border-bottom:1px solid rgba(255,255,255,.05);}
+.cmp-r:last-child{border-bottom:none;}
+.cmp-r span:last-child{font-weight:600;}
+.cmp-bf .cmp-r span:last-child{color:var(--red);}
+.cmp-af .cmp-r span:last-child{color:var(--green);}
+.cmp-sv{background:rgba(31,111,235,.12);border:1px solid rgba(31,111,235,.3);border-radius:7px;padding:8px;text-align:center;margin-top:6px;}
+.cmp-sv-n{font-size:17px;font-weight:800;color:var(--accent);}
+.sql-blk{background:#0a0e14;border:1px solid var(--border);border-radius:7px;padding:10px;margin-bottom:8px;font-family:'SF Mono',Consolas,monospace;font-size:10.5px;line-height:1.7;white-space:pre-wrap;overflow-x:auto;}
+.sql-blk .kw{color:#ff7b72;}
+.sql-blk .tb{color:#ffa657;}
+.sql-blk .cm{color:#8b949e;}
+.wf-test-btn{width:100%;padding:8px;background:linear-gradient(135deg,var(--accent),#388bfd);border:none;border-radius:7px;color:#fff;font-size:12px;font-weight:700;cursor:pointer;margin-top:8px;transition:opacity .15s;}
+.wf-test-btn:hover{opacity:.87;}
+.wf-test-res{background:var(--card);border:1px solid var(--border);border-radius:7px;padding:10px;margin-top:8px;display:none;}
+.wf-test-res.show{display:block;}
+.wf-test-res pre{color:var(--green);margin:0;white-space:pre-wrap;font-size:10px;}
+.ag-grid2{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
+@media(max-width:1400px){.ag-grid2{grid-template-columns:repeat(2,1fr);}}
+.ag-card2{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px;transition:border-color .15s;}
+.ag-card2:hover{border-color:var(--accent);}
+.ag-icon2{font-size:20px;margin-bottom:5px;}
+.ag-name2{font-size:13px;font-weight:700;margin-bottom:2px;}
+.ag-api2{font-size:10px;color:var(--accent);margin-bottom:5px;font-family:monospace;}
+.ag-desc2{font-size:11px;color:var(--muted);line-height:1.5;margin-bottom:6px;}
+.ag-ft2{display:flex;align-items:center;gap:8px;margin-top:7px;padding-top:7px;border-top:1px solid var(--border);}
 </style>
 </head>
 <body>
@@ -226,6 +317,16 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
   <div class="nav-item" data-page="cross-analysis">
     <span class="nav-icon">🔗</span><span class="nav-label">교차 분석</span>
     <span class="nav-badge nav-badge-live">LIVE</span>
+  </div>
+
+  <div class="sidebar-section">자동화</div>
+  <div class="nav-item" data-page="automation">
+    <span class="nav-icon">⚡</span><span class="nav-label">워크플로우</span>
+    <span class="nav-badge nav-badge-live">11 LIVE</span>
+  </div>
+  <div class="nav-item" data-page="agents">
+    <span class="nav-icon">🤖</span><span class="nav-label">에이전트 현황</span>
+    <span class="nav-badge" style="background:rgba(188,140,255,.15);color:var(--purple);">15개</span>
   </div>
 
   <div class="sidebar-section">시스템</div>
@@ -735,6 +836,53 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
       <span class="terminal-prompt">orbit&gt;</span>
       <input type="text" class="terminal-input" id="terminal-input" placeholder="명령어를 입력하세요... (help 입력)" autocomplete="off" spellcheck="false">
     </div>
+  </div>
+</div>
+
+<!-- ────────────── PAGE: 자동화 워크플로우 ────────────── -->
+<div class="page" id="page-automation">
+<div class="aol">
+  <!-- 좌: 워크플로우 목록 -->
+  <div class="ao-sb" id="ao-sidebar">
+    <div style="padding:10px 14px 8px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);">
+      <span style="font-size:13px;font-weight:700;">⚡ 워크플로우</span>
+      <button class="btn" style="font-size:10px;padding:3px 7px;" onclick="aoRunAll()">전체 테스트</button>
+    </div>
+    <div class="ao-sec">LIVE</div>
+    <div id="ao-live"><div style="padding:12px 14px;font-size:11px;color:var(--muted);">로딩 중...</div></div>
+    <div class="ao-sec" style="margin-top:6px;">PLAN</div>
+    <div id="ao-plan"></div>
+    <div style="padding:12px 14px;border-top:1px solid var(--border);margin-top:10px;">
+      <div style="font-size:10px;color:var(--muted);margin-bottom:3px;">LIVE 절약 합산</div>
+      <div id="ao-total-savings" style="font-size:20px;font-weight:800;color:var(--green);">-분/일</div>
+    </div>
+  </div>
+  <!-- 중: 단계 + 시나리오 -->
+  <div class="ao-mn" id="ao-main">
+    <div style="color:var(--muted);font-size:14px;margin-top:60px;text-align:center;">← 워크플로우를 선택하세요</div>
+  </div>
+  <!-- 우: UI 미리보기 / 비교 / SQL / 에이전트 -->
+  <div class="ao-pv" id="ao-preview">
+    <div style="color:var(--muted);font-size:12px;margin-top:60px;text-align:center;">워크플로우 선택 후<br>상세 정보가 표시됩니다</div>
+  </div>
+</div>
+</div>
+
+<!-- ────────────── PAGE: 에이전트 현황 ────────────── -->
+<div class="page" id="page-agents">
+  <div class="page-header">🤖 에이전트 현황 <span class="status status-live">15개 운영</span></div>
+  <div class="grid-3" style="margin-bottom:16px;">
+    <div class="stat-box"><div class="stat-val" style="color:var(--green);">15</div><div class="stat-label">총 에이전트</div></div>
+    <div class="stat-box"><div class="stat-val" id="ag-live-count" style="color:var(--green);">-</div><div class="stat-label">LIVE 에이전트</div></div>
+    <div class="stat-box"><div class="stat-val" id="ag-status-ok" style="color:var(--accent);">-</div><div class="stat-label">상태 확인 가능</div></div>
+  </div>
+  <div class="btn-group" style="margin-bottom:16px;">
+    <button class="btn btn-primary" onclick="aoTestAllAgents()">전체 상태 확인</button>
+    <button class="btn" onclick="aoLoadAgentGrid()">새로고침</button>
+  </div>
+  <div class="result-area" id="result-agents" style="margin-bottom:16px;"></div>
+  <div class="ag-grid2" id="ao-agents-grid">
+    <div style="grid-column:1/-1;color:var(--muted);text-align:center;padding:20px;">로딩 중...</div>
   </div>
 </div>
 
@@ -1446,6 +1594,344 @@ document.addEventListener('DOMContentLoaded', () => {
   // Auto-refresh every 60s
   setInterval(loadOSVisuals, 60000);
 });
+
+/* ═══════════════════════ AUTOMATION + AGENTS ═══════════════════════ */
+(function(){
+
+/* ── SQL 쿼리 맵 (워크플로우별 실행 쿼리) ── */
+const AO_SQL = {
+  order:[
+    {t:'품목 매칭',s:`SELECT name, name_en, code, origin, unit\nFROM master_products\nWHERE name_en ILIKE $1 OR name ILIKE $1\nORDER BY category, name LIMIT 10;`},
+    {t:'거래처 조회',s:`SELECT name, code, kakao_room, region\nFROM master_customers\nWHERE kakao_room = $1 OR name ILIKE $2;`},
+    {t:'주문 저장',s:`INSERT INTO parsed_orders\n  (type, customer_code, product_code, quantity, unit, raw_input, created_at)\nVALUES ('order', $1, $2, $3, $4, $5, NOW());`},
+  ],
+  deduction:[
+    {t:'오늘 주문 조회',s:`SELECT po.id, mp.name AS product, mc.name AS customer,\n  po.quantity AS ordered, po.unit\nFROM parsed_orders po\nJOIN master_products mp ON po.product_code = mp.code\nJOIN master_customers mc ON po.customer_code = mc.code\nWHERE DATE(po.created_at) = CURRENT_DATE AND po.type = 'order'\nORDER BY po.created_at;`},
+    {t:'차감 처리',s:`UPDATE parsed_orders\nSET quantity = quantity - $1, updated_at = NOW()\nWHERE id = $2 AND type = 'order';`},
+  ],
+  shipping:[
+    {t:'출고 목록',s:`SELECT mc.name AS customer, mc.kakao_room,\n  array_agg(mp.name || ' ' || po.quantity || po.unit) AS items\nFROM parsed_orders po\nJOIN master_products mp ON po.product_code = mp.code\nJOIN master_customers mc ON po.customer_code = mc.code\nWHERE DATE(po.created_at) = CURRENT_DATE AND po.type = 'shipping'\nGROUP BY mc.code, mc.name, mc.kakao_room;`},
+  ],
+  change:[
+    {t:'기존 주문 조회',s:`SELECT id, product_code, quantity, unit\nFROM parsed_orders\nWHERE customer_code = $1 AND type = 'order'\n  AND DATE(created_at) = CURRENT_DATE;`},
+    {t:'수량 수정',s:`UPDATE parsed_orders SET quantity = $1, updated_at = NOW()\nWHERE id = $2;`},
+  ],
+  defect:[
+    {t:'품목 확인',s:`SELECT name, name_en, code, origin\nFROM master_products WHERE code = $1;`},
+    {t:'불량 등록',s:`INSERT INTO orbit_events (user_id, type, data, ts)\nVALUES ($1, 'defect.report',\n  jsonb_build_object('product_code',$2,'qty',$3,'reason',$4),\n  NOW());`},
+  ],
+  purchase:[{t:'마스터 DB 조회',s:`SELECT name, name_en, code, category, origin, unit\nFROM master_products ORDER BY category, name;\n\nSELECT name, code, region, kakao_room\nFROM master_customers ORDER BY region;`}],
+  customer_comm:[{t:'소통 이력',s:`SELECT data->>'intent' AS intent, count(*) AS cnt\nFROM orbit_events\nWHERE type = 'kakao.message'\n  AND ts > NOW() - INTERVAL '7 days'\nGROUP BY intent ORDER BY cnt DESC;`}],
+  estimate:[{t:'단가 조회',s:`SELECT mp.name, mp.code, mp.unit,\n  (SELECT ph.unit_price FROM price_history ph\n   WHERE ph.product_code = mp.code\n   ORDER BY ph.updated_at DESC LIMIT 1) AS unit_price\nFROM master_products mp WHERE mp.code = ANY($1::text[]);`}],
+  closing:[{t:'월간 매출 집계',s:`SELECT mc.name AS customer,\n  SUM(po.quantity * COALESCE(ph.unit_price,0)) AS revenue,\n  COUNT(*) AS order_count\nFROM parsed_orders po\nJOIN master_customers mc ON po.customer_code = mc.code\nLEFT JOIN price_history ph ON po.product_code = ph.product_code\nWHERE DATE_TRUNC('month', po.created_at) = DATE_TRUNC('month', NOW())\n  AND po.type = 'order'\nGROUP BY mc.code, mc.name ORDER BY revenue DESC;`}],
+  pricing:[{t:'단가 변동 감지',s:`SELECT mp.name,\n  ph.unit_price AS new_price,\n  LAG(ph.unit_price) OVER (PARTITION BY ph.product_code ORDER BY ph.updated_at) AS prev_price\nFROM price_history ph\nJOIN master_products mp ON ph.product_code = mp.code\nWHERE ph.updated_at > NOW() - INTERVAL '1 day'\nORDER BY ph.updated_at DESC;`}],
+  claim:[{t:'클레임 등록',s:`INSERT INTO orbit_events (user_id, type, data, ts)\nVALUES ($1, 'claim.report',\n  jsonb_build_object('product',$2,'qty',$3,'type',$4,'reason',$5),\n  NOW());`}],
+  report:[{t:'기간별 집계',s:`SELECT mp.category, SUM(po.quantity) AS total_qty,\n  COUNT(DISTINCT po.customer_code) AS customers\nFROM parsed_orders po\nJOIN master_products mp ON po.product_code = mp.code\nWHERE po.created_at BETWEEN $1 AND $2 AND po.type = 'order'\nGROUP BY mp.category ORDER BY total_qty DESC;`}],
+  tracking:[{t:'출고 추적',s:`SELECT mc.name AS customer, mc.kakao_room,\n  array_agg(mp.name || ' ' || po.quantity || po.unit) AS items,\n  MAX(po.created_at) AS shipped_at\nFROM parsed_orders po\nJOIN master_customers mc ON po.customer_code = mc.code\nJOIN master_products mp ON po.product_code = mp.code\nWHERE DATE(po.created_at) = CURRENT_DATE AND po.type = 'shipping'\nGROUP BY mc.code, mc.name, mc.kakao_room;`}],
+  shipping_doc:[{t:'출고내역서',s:`SELECT mc.name, mp.name AS product,\n  po.quantity, po.unit,\n  COALESCE(ph.unit_price,0) AS unit_price,\n  po.quantity * COALESCE(ph.unit_price,0) AS line_total\nFROM parsed_orders po\nJOIN master_customers mc ON po.customer_code = mc.code\nJOIN master_products mp ON po.product_code = mp.code\nLEFT JOIN price_history ph ON po.product_code = ph.product_code\nWHERE po.customer_code = $1\n  AND DATE(po.created_at) = CURRENT_DATE;`}],
+  product_mgmt:[{t:'품목 동기화',s:`SELECT mp.name, mp.name_en, mp.code,\n  CASE WHEN np.ProdKey IS NOT NULL THEN 'MATCHED' ELSE 'UNMATCHED' END AS sync\nFROM master_products mp\nLEFT JOIN nenova_products np ON mp.code::text = np.ProdKey::text\nORDER BY sync, mp.name;`}],
+};
+
+/* ── 워크플로우별 참여 에이전트 맵 ── */
+const AO_WF_AGENTS = {
+  order:['automation-engine','activity-classifier','vision-learning'],
+  deduction:['automation-engine','data-digitizer'],
+  shipping:['automation-engine','nenova-db'],
+  change:['automation-engine','think-engine'],
+  defect:['automation-engine','vision-learning','issue-predictor'],
+  purchase:['automation-engine','nenova-db','data-digitizer'],
+  customer_comm:['activity-classifier','think-engine','automation-engine'],
+  estimate:['automation-engine','nenova-db','data-digitizer'],
+  closing:['automation-engine','business-intelligence','nenova-db'],
+  pricing:['automation-engine','business-intelligence','nenova-db'],
+  claim:['automation-engine','issue-predictor','vision-learning'],
+  report:['automation-engine','business-intelligence'],
+  tracking:['automation-engine','think-engine'],
+  shipping_doc:['automation-engine','data-digitizer'],
+  product_mgmt:['automation-engine','nenova-cross','erp-analyzer'],
+};
+
+/* ── 15개 에이전트 정의 ── */
+window.AO_AGENTS = [
+  {icon:'🧠',name:'think-engine',api:'/api/think',status:'live',desc:'전이 확률+행동 예측+자동 사고 루프. 2시간마다 전체 사이클.'},
+  {icon:'💡',name:'idea-engine',api:'/api/ideas',status:'live',desc:'8종 패턴 탐색: 야근/앱전환/파일반복/거래처상관/미거래품목.'},
+  {icon:'🚨',name:'issue-predictor',api:'/api/issues',status:'live',desc:'8규칙 이슈 스캔: 과거주문/반복작업/근무공백/은행보안.'},
+  {icon:'🧬',name:'self-evolve',api:'/api/evolve',status:'live',desc:'unknown 분류+중복 병합+학습 점수. 6시간마다 자동 실행.'},
+  {icon:'🏷️',name:'activity-classifier',api:'/api/activity',status:'live',desc:'업무 이벤트 → 목적/카테고리 자동 분류. 의도 예측.'},
+  {icon:'👁️',name:'vision-learning',api:'/api/vision',status:'live',desc:'스크린 캡처 → Claude Vision 분석. 자동화 지점 특정.'},
+  {icon:'🔎',name:'deep-investigator',api:'/api/investigate',status:'live',desc:'데이터 기반 질문 생성+조사+인사이트 도출.'},
+  {icon:'📈',name:'business-intelligence',api:'/api/bi',status:'live',desc:'회사 건강도 스코어. 매출/효율/위험 지표 종합.'},
+  {icon:'📊',name:'data-digitizer',api:'/api/digitize',status:'live',desc:'수기/종이/이미지 데이터 → 디지털화. 갭 분석.'},
+  {icon:'🖥️',name:'erp-analyzer',api:'/api/erp',status:'dev',desc:'nenova ERP 기능 역공학+UI 패턴 분석+자동화 가이드.'},
+  {icon:'⚡',name:'automation-engine',api:'/api/automation',status:'live',desc:'15개 워크플로우 레지스트리+파서+마스터 DB 관리.'},
+  {icon:'🏢',name:'company-structure',api:'/api/company',status:'live',desc:'팀/멤버 구조 분석. 업무 분포+협업 패턴.'},
+  {icon:'🌸',name:'nenova-db',api:'/api/nenova',status:'live',desc:'nenova 전산 DB 읽기. 주문/출하/재고/거래처 43테이블.'},
+  {icon:'🔗',name:'nenova-cross',api:'/api/cross',status:'live',desc:'Orbit↔nenova 교차 분석. 데이터 일치율+사용 패턴.'},
+  {icon:'📚',name:'rag-core',api:'/api/rag',status:'live',desc:'RAG 검색 엔진. 문서+이벤트+지식 기반 답변 생성.'},
+];
+
+let _aoWfs = [];
+
+/* ── SQL 하이라이트 ── */
+function _sqlHL(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/\b(SELECT|FROM|WHERE|INSERT|INTO|UPDATE|SET|VALUES|JOIN|LEFT|ORDER|GROUP|BY|AND|OR|LIMIT|DISTINCT|COALESCE|INTERVAL|PARTITION|OVER|LAG|COUNT|SUM|MAX|DATE_TRUNC|DATE|ARRAY_AGG|NOW)\b/g,'<span class="kw">$1</span>')
+    .replace(/\b(master_products|master_customers|master_formats|parsed_orders|orbit_events|price_history|nenova_products)\b/g,'<span class="tb">$1</span>');
+}
+
+/* ── 자동화 페이지 초기화 ── */
+window.initAutomation = async function() {
+  if (window._aoInited) return;
+  window._aoInited = true;
+  const d = await api('/api/automation/workflows');
+  _aoWfs = d.workflows || [];
+  const liveEl = document.getElementById('ao-live');
+  const planEl = document.getElementById('ao-plan');
+  const savEl  = document.getElementById('ao-total-savings');
+  if (!liveEl) { window._aoInited = false; return; }
+  const live = _aoWfs.filter(w=>w.status==='live');
+  const plan = _aoWfs.filter(w=>w.status==='plan');
+  if (savEl) savEl.textContent = live.reduce((s,w)=>s+(w.savings||0),0) + '분/일';
+  liveEl.innerHTML = live.map(w=>`<div class="ao-item" id="ao-item-${w.id}" onclick="aoSelect('${w.id}')"><div class="wn">${w.icon||'⚡'} ${w.name}</div><div class="wm"><span class="ao-blv">LIVE</span><span>${w.savings}분 절약</span></div></div>`).join('');
+  planEl.innerHTML = plan.map(w=>`<div class="ao-item" id="ao-item-${w.id}" onclick="aoSelect('${w.id}')"><div class="wn">${w.icon||'📋'} ${w.name}</div><div class="wm"><span class="ao-bpl">PLAN</span><span>${w.savings}분 절약</span></div></div>`).join('');
+  if (live.length > 0) setTimeout(()=>aoSelect(live[0].id), 80);
+};
+
+/* ── 워크플로우 선택 ── */
+window.aoSelect = function(id) {
+  const wf = _aoWfs.find(w=>w.id===id);
+  if (!wf) return;
+  document.querySelectorAll('.ao-item').forEach(el=>el.classList.remove('active'));
+  const item = document.getElementById('ao-item-'+id);
+  if (item) item.classList.add('active');
+  document.getElementById('ao-main').innerHTML = _aoMainHTML(wf);
+  document.getElementById('ao-preview').innerHTML = _aoPrevHTML(wf);
+};
+
+/* ── 메인 패널 렌더 ── */
+function _aoMainHTML(wf) {
+  const sc = wf.scenario || {};
+  const steps = (wf.steps||[]).map((s,i)=>`<div class="wfs-row"><div class="wfs-num">${i+1}</div><div class="wfs-body"><div class="wfs-n">${s.name}</div><div class="wfs-w">${s.where||''}</div><div class="wfs-a">${s.action||''}</div></div></div>`).join('');
+  let prTable = '';
+  if (Array.isArray(sc.parseResult) && sc.parseResult.length > 0) {
+    const ks = Object.keys(sc.parseResult[0]);
+    prTable = `<div class="scen-b"><h4>파싱 결과</h4><table class="aopt"><thead><tr>${ks.map(k=>`<th>${k}</th>`).join('')}</tr></thead><tbody>${sc.parseResult.map(r=>`<tr>${ks.map(k=>`<td>${r[k]??''}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+  } else if (sc.parseResult && typeof sc.parseResult === 'object') {
+    prTable = `<div class="scen-b"><h4>파싱 결과</h4><div class="scen-in">${JSON.stringify(sc.parseResult,null,2)}</div></div>`;
+  }
+  return `
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+      <span style="font-size:22px;">${wf.icon||'⚡'}</span>
+      <div style="flex:1;">
+        <div style="font-size:18px;font-weight:700;">${wf.name}</div>
+        <div style="font-size:12px;color:var(--muted);">${wf.desc||''}</div>
+      </div>
+      <span class="status ${wf.status==='live'?'status-live':wf.status==='dev'?'status-dev':'status-plan'}">${(wf.status||'').toUpperCase()}</span>
+    </div>
+    <div style="font-size:10px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:7px;">자동화 단계</div>
+    <div class="wfs-list">${steps}</div>
+    <div style="font-size:10px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin:16px 0 7px;">시나리오</div>
+    ${sc.trigger?`<div class="scen-b"><h4>트리거</h4><div class="scen-tr">🔔 ${sc.trigger}</div></div>`:''}
+    ${sc.input?`<div class="scen-b"><h4>입력 예시</h4><div class="scen-in">${sc.input}</div></div>`:''}
+    ${prTable}
+    ${sc.expectedResult?`<div class="res-ok">✅ ${sc.expectedResult}</div>`:''}
+    <button class="wf-test-btn" onclick="aoRunTest('${wf.id}')">▶ 실행 테스트 (/api/automation/workflows/${wf.id}/test)</button>
+    <div class="wf-test-res" id="ao-test-${wf.id}"><pre id="ao-test-txt-${wf.id}"></pre></div>
+  `;
+}
+
+/* ── 우측 미리보기 패널 렌더 ── */
+function _aoPrevHTML(wf) {
+  const sc = wf.scenario || {};
+  const sqlBlocks = (AO_SQL[wf.id] || [{t:'기본 조회',s:'SELECT * FROM master_products LIMIT 5;'}])
+    .map(b=>`<div style="margin-bottom:10px;"><div style="font-size:10px;font-weight:600;color:var(--muted);margin-bottom:4px;">${b.t}</div><div class="sql-blk">${_sqlHL(b.s)}</div></div>`).join('');
+  const agHtml = (AO_WF_AGENTS[wf.id]||['automation-engine']).map(a=>{
+    const ag = (window.AO_AGENTS||[]).find(x=>x.name===a)||{icon:'🤖',name:a,api:'/api/'+a};
+    return `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);"><span style="font-size:15px;">${ag.icon}</span><div><div style="font-size:12px;font-weight:600;">${ag.name}</div><div style="font-size:10px;color:var(--accent);font-family:monospace;">${ag.api}/*</div></div></div>`;
+  }).join('');
+  const cmp = sc.compare || {};
+  const cmpHtml = cmp.before && Object.keys(cmp.before).length
+    ? `<div class="cmp-g">
+        <div class="cmp-c cmp-bf"><h5>⛔ Before (수동)</h5>${Object.entries(cmp.before).map(([k,v])=>`<div class="cmp-r"><span>${k}</span><span>${v}</span></div>`).join('')}</div>
+        <div class="cmp-c cmp-af"><h5>✅ After (자동화)</h5>${Object.entries(cmp.after||{}).map(([k,v])=>`<div class="cmp-r"><span>${k}</span><span>${v}</span></div>`).join('')}</div>
+       </div>
+       <div class="cmp-sv"><div class="cmp-sv-n">⏱ ${cmp.saving||wf.savings+'분/일'}</div><div style="font-size:10px;color:var(--muted);margin-top:2px;">예상 절약</div></div>`
+    : `<div style="color:var(--muted);font-size:11px;text-align:center;padding:16px;">비교 데이터 없음<br><span style="font-size:12px;color:var(--green);font-weight:700;">절약: ${wf.savings}분/일</span></div>`;
+  const mockHtml = _aoMockUI(wf);
+  return `
+    <div style="font-size:13px;font-weight:700;margin-bottom:11px;">${wf.icon||'⚡'} ${wf.name}</div>
+    <div class="pv-tabs">
+      <button class="pv-tab active" onclick="aoPvTab(this,'ao-pv-ui-${wf.id}')">UI</button>
+      <button class="pv-tab" onclick="aoPvTab(this,'ao-pv-cmp-${wf.id}')">비교</button>
+      <button class="pv-tab" onclick="aoPvTab(this,'ao-pv-sql-${wf.id}')">SQL</button>
+      <button class="pv-tab" onclick="aoPvTab(this,'ao-pv-ag-${wf.id}')">에이전트</button>
+    </div>
+    <div class="pv-pane active" id="ao-pv-ui-${wf.id}">${mockHtml}</div>
+    <div class="pv-pane" id="ao-pv-cmp-${wf.id}">${cmpHtml}</div>
+    <div class="pv-pane" id="ao-pv-sql-${wf.id}">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:8px;">이 워크플로우에서 실행되는 SQL 쿼리입니다.</div>
+      ${sqlBlocks}
+      <button class="btn" style="width:100%;font-size:11px;margin-top:4px;" onclick="aoRunQuery('${wf.id}')">▶ 마스터 DB 쿼리 실행</button>
+      <div class="wf-test-res" id="ao-sql-res-${wf.id}"><pre id="ao-sql-txt-${wf.id}"></pre></div>
+    </div>
+    <div class="pv-pane" id="ao-pv-ag-${wf.id}">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:8px;">참여 에이전트:</div>
+      ${agHtml}
+    </div>
+  `;
+}
+
+/* ── Mock UI 빌더 ── */
+function _aoMockUI(wf) {
+  const sc = wf.scenario || {};
+  const pr = Array.isArray(sc.parseResult) ? sc.parseResult : [];
+  const nf = sc.nenovaFields || {거래처:'호남소재',품목:'캐더린',수량:'30',단위:'단'};
+  const formRows = Object.entries(nf).slice(0,4).map(([k,v])=>
+    `<div class="mw-row"><span class="mw-lbl">${k}</span><input class="mw-inp af" value="${v}" /></div>`
+  ).join('');
+  let gridHtml = '';
+  if (pr.length > 0) {
+    const ks = Object.keys(pr[0]);
+    const cols = `repeat(${Math.min(ks.length,5)},1fr)`;
+    gridHtml = `<div class="mw-grid">
+      <div class="mw-gh" style="grid-template-columns:${cols};">${ks.slice(0,5).map(k=>`<span>${k}</span>`).join('')}</div>
+      ${pr.map(r=>`<div class="mw-gr af" style="grid-template-columns:${cols};">${ks.slice(0,5).map(k=>`<span>${String(r[k]??'').substring(0,12)}</span>`).join('')}</div>`).join('')}
+    </div>`;
+  }
+  return `<div class="mw">
+    <div class="mw-tb"><span style="font-size:9px;">${sc.nenovaScreen||wf.name}</span><div class="mw-tb-btns"><div class="mw-tb-btn" style="background:#f44;"></div><div class="mw-tb-btn" style="background:#fa0;"></div><div class="mw-tb-btn" style="background:#4f4;"></div></div></div>
+    <div class="mw-menu"><span>파일</span><span>편집</span><span>보기</span><span>도구</span><span>도움말</span></div>
+    <div class="mw-tb2">
+      <button class="mw-b mw-bp" onclick="aoMockSave('${wf.id}',this)">💾 저장</button>
+      <button class="mw-b" onclick="aoMockKakao('${wf.id}',this)">💬 카카오전송</button>
+      <button class="mw-b" onclick="aoMockExcel('${wf.id}',this)">📊 Excel</button>
+    </div>
+    <div class="mw-form">${formRows}${gridHtml}</div>
+    <div class="mw-sb" id="ao-mock-sb-${wf.id}">준비 | Orbit AI 자동화 연결됨</div>
+  </div>`;
+}
+
+/* ── 버튼 핸들러들 ── */
+window.aoPvTab = function(btn, panelId) {
+  const pv = btn.closest('#ao-preview') || btn.closest('[id^="ao-pv"]')?.closest('.ao-pv');
+  if (!pv) return;
+  pv.querySelectorAll('.pv-tab').forEach(t=>t.classList.remove('active'));
+  pv.querySelectorAll('.pv-pane').forEach(p=>p.classList.remove('active'));
+  btn.classList.add('active');
+  const panel = document.getElementById(panelId);
+  if (panel) panel.classList.add('active');
+};
+
+window.aoRunTest = async function(id) {
+  const resEl = document.getElementById('ao-test-'+id);
+  const txtEl = document.getElementById('ao-test-txt-'+id);
+  const btn = event.target;
+  if (!resEl||!txtEl) return;
+  btn.textContent = '⏳ 실행 중...'; btn.disabled = true;
+  const d = await api('/api/automation/workflows/'+id+'/test', {method:'POST',body:JSON.stringify({})});
+  txtEl.textContent = JSON.stringify(d, null, 2);
+  resEl.classList.add('show');
+  btn.textContent = '▶ 실행 테스트 (/api/automation/workflows/'+id+'/test)'; btn.disabled = false;
+};
+
+window.aoRunQuery = async function(id) {
+  const resEl = document.getElementById('ao-sql-res-'+id);
+  const txtEl = document.getElementById('ao-sql-txt-'+id);
+  if (!resEl||!txtEl) return;
+  const d = await api('/api/automation/master');
+  txtEl.textContent = `마스터 DB 현황:\n품목: ${d.products?.count||0}건\n거래처: ${d.customers?.count||0}건\n포맷: ${d.formats?.count||0}종`;
+  resEl.classList.add('show');
+};
+
+window.aoRunAll = async function() {
+  const d = await api('/api/automation/workflows/test-all', {method:'POST'});
+  alert(`전체 테스트: ${d.totalWorkflows||0}개\n통과: ${d.passed||0}개 / 실패: ${d.failed||0}개\n소요: ${d.totalElapsedMs||0}ms`);
+};
+
+window.aoMockSave = async function(wfId, btn) {
+  const sb = document.getElementById('ao-mock-sb-'+wfId);
+  btn.textContent = '⏳'; btn.disabled = true;
+  const d = await api('/api/automation/workflows/'+wfId+'/test', {method:'POST'});
+  if (sb) sb.textContent = d.ok ? `✅ 저장 완료 (${d.elapsedMs||0}ms) | 워크플로우: ${wfId}` : '⚠️ 저장 실패: '+JSON.stringify(d);
+  btn.textContent = '💾 저장'; btn.disabled = false;
+};
+
+window.aoMockKakao = function(wfId, btn) {
+  const sb = document.getElementById('ao-mock-sb-'+wfId);
+  btn.textContent = '⏳'; btn.disabled = true;
+  setTimeout(()=>{
+    if (sb) sb.textContent = '💬 카카오톡 전송 시뮬레이션 완료 (실제: PAD/pyautogui 연동 예정)';
+    btn.textContent = '💬 카카오전송'; btn.disabled = false;
+  }, 600);
+};
+
+window.aoMockExcel = async function(wfId, btn) {
+  const sb = document.getElementById('ao-mock-sb-'+wfId);
+  btn.textContent = '⏳'; btn.disabled = true;
+  const d = await api('/api/automation/master');
+  if (sb) sb.textContent = `📊 Excel 생성 시뮬레이션 | 기준: 품목 ${d.products?.count||0}건, 거래처 ${d.customers?.count||0}건`;
+  btn.textContent = '📊 Excel'; btn.disabled = false;
+};
+
+/* ── 에이전트 그리드 ── */
+window.aoLoadAgentGrid = function() {
+  const grid = document.getElementById('ao-agents-grid');
+  if (!grid) return;
+  const agents = window.AO_AGENTS || [];
+  let liveCount = 0;
+  grid.innerHTML = agents.map(ag=>{
+    if (ag.status==='live') liveCount++;
+    return `<div class="ag-card2">
+      <div class="ag-icon2">${ag.icon}</div>
+      <div class="ag-name2">${ag.name}</div>
+      <div class="ag-api2">${ag.api}/*</div>
+      <div class="ag-desc2">${ag.desc}</div>
+      <div class="ag-ft2">
+        <span class="status ${ag.status==='live'?'status-live':ag.status==='dev'?'status-dev':'status-plan'}">${ag.status.toUpperCase()}</span>
+        <button class="btn" style="font-size:10px;padding:3px 7px;margin-left:auto;" onclick="aoTestAgent('${ag.api}',this)">테스트</button>
+      </div>
+    </div>`;
+  }).join('');
+  const lcEl = document.getElementById('ag-live-count');
+  const okEl = document.getElementById('ag-status-ok');
+  if (lcEl) lcEl.textContent = liveCount;
+  if (okEl) okEl.textContent = agents.length;
+};
+
+window.aoTestAllAgents = async function() {
+  showResult('result-agents', '에이전트 상태 확인 중...');
+  const results = [];
+  for (const ag of (window.AO_AGENTS||[])) {
+    try {
+      const t0 = Date.now();
+      const d = await api(ag.api+'/status').catch(()=>api(ag.api));
+      const ok = d && Object.keys(d).length > 0;
+      results.push(`${ok?'✅':'⚠️'} ${ag.name} (${Date.now()-t0}ms) — ${ag.status.toUpperCase()}`);
+    } catch(e) {
+      results.push(`❌ ${ag.name}: 응답 없음`);
+    }
+  }
+  showResult('result-agents', results.join('\n'));
+};
+
+window.aoTestAgent = async function(apiBase, btn) {
+  btn.textContent = '⏳'; btn.disabled = true;
+  const d = await api(apiBase+'/status').catch(()=>api(apiBase));
+  btn.textContent = (d && Object.keys(d).length > 0) ? '✅ OK' : '⚠️ 응답';
+  setTimeout(()=>{ btn.textContent = '테스트'; btn.disabled = false; }, 2500);
+};
+
+/* ── 이벤트 위임 (nav 클릭 → 초기화) ── */
+document.addEventListener('click', function(e) {
+  if (e.target.closest('.nav-item[data-page="automation"]')) setTimeout(initAutomation, 60);
+  if (e.target.closest('.nav-item[data-page="agents"]')) setTimeout(aoLoadAgentGrid, 60);
+});
+
+document.addEventListener('DOMContentLoaded', function() {
+  aoLoadAgentGrid();
+});
+
+})();
 </script>
 </body>
 </html>
