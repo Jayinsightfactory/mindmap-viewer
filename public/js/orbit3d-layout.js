@@ -395,7 +395,7 @@ function drawCompactProjectView() {
     // 분석 데이터 없고 별명도 없으면 구체 자체를 숨김 (텍스트 없는 구체 제거)
     const _hasAnalysis = projWhat || projPurpose || projResult || projTech;
     const _hasAlias    = !!_aliases[proj.name];
-    if (!_hasAnalysis && !_hasAlias) continue; // 분석 안 됐으면 구체+텍스트 모두 숨김
+    if (!_hasAnalysis && !_hasAlias) return; // forEach 안 → return으로 스킵 (분석 안 됐으면 구체+텍스트 모두 숨김)
 
     if (dimmed) ctx.globalAlpha = 0.3;
 
