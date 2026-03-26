@@ -405,8 +405,13 @@ function drawCompactProjectView() {
       if (!projAiTools && p.userData.aiToolsUsed) projAiTools = p.userData.aiToolsUsed;
       if (projWhat && projResult && projPurpose) break;
     }
-    // 프로젝트 레벨: purpose 제외 (projTitle과 중복됨), 기술스택만 표시
-    _drawSphereLabel(ctx, sc.x, sc.y, nodeR, projTitle, projTech || '', color, dimmed, projWhat, '', null);
+    // 프로젝트 레벨: 분석 데이터(whatSummary/purpose/techStack)가 있거나 사용자 별명이 설정된 경우만 표시
+    // 분석이 안 된 경우 텍스트 없이 구체만 표시 (분석 완료 후 자동 표시)
+    const _hasAnalysis = projWhat || projPurpose || projResult || projTech;
+    const _hasAlias    = !!_aliases[proj.name];
+    if (_hasAnalysis || _hasAlias) {
+      _drawSphereLabel(ctx, sc.x, sc.y, nodeR, projTitle, projTech || '', color, dimmed, projWhat, '', null);
+    }
 
     // 호버 시 구체 안쪽 하단에 숨기기/수정 버튼
     if (isHover && nodeR > 25) {
