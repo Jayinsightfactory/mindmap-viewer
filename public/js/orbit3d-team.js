@@ -14,6 +14,7 @@
 let _teamMode  = false;
 const _VIEW_MODE_KEY = 'orbitViewMode'; // 뷰 모드 저장 키
 let _teamNodes = [];  // { type, pos, label, sublabel, color, size, emoji, progress, memberId, taskStatus, obj }
+let _teamBuildId = 0; // 비동기 콜백 스탈 방지용 세대 카운터
 let _focusedMember = null;  // 현재 포커스된 팀원 노드
 let _cameraLerp    = null;  // { startR, endR, startTx/y/z, endTx/y/z, startPhi, endPhi, duration, elapsed }
 let _companyMode   = false;  // 회사 시뮬레이션 모드
@@ -572,6 +573,7 @@ function _buildTeamSystemInner(teamData) {
   console.log('[orbit3d-team] buildTeamSystem called with team:', teamData?.name);
   clearScene();
   _teamNodes = [];
+  _teamBuildId++;            // 이전 비동기 콜백 무효화
   _teamMode  = true;
   _companyMode = false;
   _activeSimData = teamData;
@@ -613,6 +615,7 @@ function _buildTeamSystemInner(teamData) {
     const _teamCenter = new THREE.Vector3(0, 0, 0);
     const _teamColor = teamColor;
     const _token2 = (typeof _orbitUser !== 'undefined' && _orbitUser?.token) || localStorage.getItem('orbit_token') || '';
+    const _sharedBuildId = _teamBuildId; // 스탈 방지용 빌드 ID
     // 팀원 전체 데이터를 모아서 겹치는 앱 찾기
     Promise.all(teamMembers.filter(m => m.userId).map(m =>
       fetch(`/api/graph?memberId=${encodeURIComponent(m.userId)}`, {
@@ -620,6 +623,7 @@ function _buildTeamSystemInner(teamData) {
       }).then(r => r.json()).then(d => ({ name: m.name, nodes: d.nodes || [] })).catch(() => ({ name: m.name, nodes: [] }))
     )).then(results => {
       if (_companyMode) return; // 뷰 바뀌었으면 무시
+      if (_teamBuildId !== _sharedBuildId) return; // 새 빌드 시작됐으면 무시
       const memberApps = {};
       results.forEach(r => {
         const apps = {};
@@ -732,12 +736,14 @@ function _buildTeamSystemInner(teamData) {
       const _mPos = mPos.clone();
       const _color = member.color;
       const _mid = member.id;
+      const _myBuildId = _teamBuildId; // 현재 빌드 ID 캡처
       const _token = (typeof _orbitUser !== 'undefined' && _orbitUser?.token) || localStorage.getItem('orbit_token') || '';
       fetch(`/api/graph?memberId=${encodeURIComponent(member.userId)}`, {
         headers: _token ? { Authorization: `Bearer ${_token}` } : {},
       }).then(r => r.json()).then(data => {
-        // 뷰가 바뀌었으면 위성 추가 안 함
+        // 뷰가 바뀌었거나 새 빌드가 시작됐으면 위성 추가 안 함 (스탈 콜백 방지)
         if (_companyMode) return;
+        if (_teamBuildId !== _myBuildId) return;
         const nodes = data.nodes || [];
         if (nodes.length === 0) return;
         // 앱별 활동 그룹 (fullContent에서 app 파싱)
@@ -760,13 +766,13 @@ function _buildTeamSystemInner(teamData) {
         const topProjects = Object.entries(projects)
           .sort((a, b) => b[1].count - a[1].count)
           .slice(0, 5);
-        const PROJ_R = 1.5; // 멤버 주위 고정 거리
-        console.log(`[team-project] ${_mid}: ${topProjects.length}개 프로젝트 위성 생성`);
-        topProjects.forEach(([projName, proj], si) => {
-          const sAngle = (si / Math.max(topProjects.length, 3)) * Math.PI * 2;
+        const PROJ_R = 2.5; // 멤버 주위 거리 (1.5→2.5 겹침 방지)
+        const total = Math.max(topProjects.length, 1);
+        topProjects.slice(0, 3).forEach(([projName, proj], si) => { // 최대 3개로 제한
+          const sAngle = (si / total) * Math.PI * 2;
           const sPos = new THREE.Vector3(
             _mPos.x + PROJ_R * Math.cos(sAngle),
-            _mPos.y + 0.5 + si * 0.3, // Y축으로 펼쳐서 겹침 방지
+            _mPos.y + 1.0 + si * 0.8, // Y축 간격 0.3→0.8
             _mPos.z + PROJ_R * Math.sin(sAngle)
           );
           const sObj = new THREE.Object3D();
@@ -776,11 +782,11 @@ function _buildTeamSystemInner(teamData) {
           satelliteMeshes.push(sObj);
           _teamNodes.push({
             type: 'task', pos: sPos.clone(), obj: sObj,
-            label: (proj.whatSummary || projName).slice(0, 20), sublabel: proj.whatSummary ? projName.slice(0, 20) : (`${proj.count}건`),
+            label: (proj.whatSummary || projName).slice(0, 20),
+            sublabel: proj.whatSummary ? projName.slice(0, 20) : `${proj.count}건`,
             color: _color, size: 'sm',
             memberId: _mid, taskStatus: 'active',
           });
-          // 연결선 제거 — 협업만 표시
         });
       }).catch(() => {});
     }
@@ -1054,6 +1060,7 @@ function getStatusEmoji(status) {
 function buildCompanySystem(companyData) {
   clearScene();
   _teamNodes = [];
+  _teamBuildId++; // 이전 비동기 콜백 무효화
   _teamMode  = true;
   _companyMode = true;
   _activeSimData = companyData;
