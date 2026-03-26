@@ -70,6 +70,11 @@ function updateRaycast() {
       else if (data.type === 'task')  ttMeta = `${data.emoji || ''} ${Math.round((data.progress||0)*100)}% 완료`;
       else if (data.type === 'goal')  ttMeta = '🎯 팀 목표';
       else if (data.type === 'file')  ttMeta = `📄 ${data.filename || ''}  ×${data.count || 1}`;
+      else if (data.type === 'constellation') {
+        // 구체 메인텍스트 = 분석결과, 툴팁에 프로젝트명 표시
+        ttIntent = data.projWhat || data.label || '';
+        ttMeta   = data.label ? `${data.label} · ${data.eventCount ? data.eventCount + '개 작업' : '클릭하여 열기'}` : (data.eventCount ? `세션 • ${data.eventCount}개 작업` : '세션');
+      }
       else ttMeta = data.eventCount ? `세션 • ${data.eventCount}개 작업` : '세션';
       document.getElementById('tt-intent').textContent = ttIntent;
       document.getElementById('tt-meta').textContent   = ttMeta;

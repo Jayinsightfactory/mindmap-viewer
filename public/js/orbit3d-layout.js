@@ -413,7 +413,11 @@ function drawCompactProjectView() {
     const _hasAnalysis = projWhat || projPurpose || projResult || projTech;
     const _hasAlias    = !!_aliases[proj.name];
     if (_hasAnalysis || _hasAlias) {
-      _drawSphereLabel(ctx, sc.x, sc.y, nodeR, projTitle, projTech || '', color, dimmed, projWhat, '', null);
+      // 구체 메인텍스트: 분석 결과(projWhat) 우선 표시 — 프로젝트명(Daemon 이재만 등)은 숨김
+      // 별명이 설정된 경우 별명을 메인으로 표시
+      const _sphereMain = _hasAlias ? projTitle : (projWhat || projPurpose || projTitle);
+      const _sphereSub  = projTech || '';
+      _drawSphereLabel(ctx, sc.x, sc.y, nodeR, _sphereMain, _sphereSub, color, dimmed, '', '', null);
     }
 
     // 호버 시 구체 안쪽 하단에 숨기기/수정 버튼
@@ -457,10 +461,11 @@ function drawCompactProjectView() {
     }
 
     // 히트 영역 (스크린 좌표 — 변환 불필요)
+    // label = 프로젝트명(Daemon 이재만 등) → 툴팁/클릭 시 표시
     registerHitArea({
       cx: sc.x, cy: sc.y, r: nodeR + 6,
       obj: null,
-      data: { type: 'constellation', projName: proj.name, planetCount: proj.planets.length, color, info },
+      data: { type: 'constellation', projName: proj.name, label: projTitle, projWhat, eventCount: proj.eventCount, planetCount: proj.planets.length, color, info },
     });
 
     // ══ 2단계: 카테고리 + 세션 (드릴다운) ════════════════════════════════════
