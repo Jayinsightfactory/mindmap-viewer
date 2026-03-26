@@ -275,10 +275,12 @@ function computeSessionSummaries(events) {
     // ── keyboard.chunk → 활동 분석 ──
     if (event.type === 'keyboard.chunk') {
       const d = event.data || {};
+      // 신버전 데몬: app/windowTitle이 patterns.detected.workflowSteps 안에 있음
+      const step = d.patterns?.detected?.workflowSteps?.[0] || {};
       s.activities.push({
-        activity: d.activity || d.category || '',
-        app: d.app || '',
-        window: d.window || d.title || '',
+        activity: d.activity || d.category || d.summary || step.category || '',
+        app: d.app || step.app || '',
+        window: d.windowTitle || d.window || d.title || step.window || '',
         keywords: d.keywords || d.text || '',
       });
     }
@@ -762,9 +764,15 @@ function buildLabel(event) {
     case 'annotation.add':
       return `📌 ${truncate(d.label || '메모', 22)}`;
     case 'keyboard.chunk': {
-      const title = d.windowTitle || '';
-      const wfLabel = _classifyWorkLabel(title, d);
-      return wfLabel || `⌨️ ${truncate(title || '입력', 30)}`;
+      // 신버전 데몬: app/window가 patterns.detected.workflowSteps 안에 있음
+      const step = d.patterns?.detected?.workflowSteps?.[0] || {};
+      const title = d.windowTitle || step.window || '';
+      const app = d.app || step.app || '';
+      const summary = d.summary || d.patterns?.detected?.summary || '';
+      const wfLabel = _classifyWorkLabel(title, { ...d, app });
+      if (wfLabel) return wfLabel;
+      if (app) return `⌨️ ${truncate(app, 25)} 입력`;
+      return `⌨️ ${truncate(summary || title || '입력', 30)}`;
     }
     case 'screen.capture': {
       const title = d.windowTitle || '';

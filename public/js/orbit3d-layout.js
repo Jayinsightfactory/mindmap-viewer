@@ -372,31 +372,6 @@ function drawCompactProjectView() {
     const scale = screenScale(pos3d);
     const nodeR = Math.max(28, Math.min(56, scale * 7));
 
-    // 라벨 + 심층 세션 요약 (PURPOSE + WHAT + RESULT + 추가 컨텍스트)
-    const projTitle = _aliases[proj.name] || `${info.icon} ${info.name}`;
-    const projSub = '';
-    // 프로젝트 내 행성들의 요약 집계
-    // "기타 활동" 같은 제네릭 fallback 라벨은 분석 없음으로 처리
-    const _GENERIC_LABELS = new Set(['기타 활동', '기타', '기타활동', '일반 활동', '일반']);
-    const _isSpecific = v => v && !_GENERIC_LABELS.has(v.trim());
-    let projWhat = '', projResult = '', projPurpose = '', projTech = '', projDuration = '', projAiTools = '';
-    const _allWhat = []; const _whatSeen = new Set(); // 전체 고유 분석 결과 (툴팁용)
-    for (const p of proj.planets) {
-      if (!projPurpose && _isSpecific(p.userData.purpose)) projPurpose = p.userData.purpose;
-      if (!projResult && _isSpecific(p.userData.resultSummary)) projResult = p.userData.resultSummary;
-      if (!projTech && p.userData.techStack) projTech = p.userData.techStack;
-      if (!projDuration && p.userData.sessionDuration) projDuration = p.userData.sessionDuration;
-      if (!projAiTools && p.userData.aiToolsUsed) projAiTools = p.userData.aiToolsUsed;
-      // 고유 whatSummary 수집 (최대 5개) — 순서 유지, 중복 제거
-      const w = p.userData.whatSummary;
-      if (_isSpecific(w) && !_whatSeen.has(w)) { _whatSeen.add(w); _allWhat.push(w); }
-    }
-    projWhat = _allWhat[0] || '';
-    // 분석 데이터 없고 별명도 없으면 구체 자체를 숨김 (텍스트 없는 구체 제거)
-    const _hasAnalysis = projWhat || projPurpose || projResult || projTech;
-    const _hasAlias    = !!_aliases[proj.name];
-    if (!_hasAnalysis && !_hasAlias) return; // forEach 안 → return으로 스킵 (분석 안 됐으면 구체+텍스트 모두 숨김)
-
     if (dimmed) ctx.globalAlpha = 0.3;
 
     // 와이어프레임 구체
@@ -416,13 +391,22 @@ function drawCompactProjectView() {
       ctx.restore();
     }
 
-    if (_hasAnalysis || _hasAlias) {
-      // 구체 메인텍스트: 분석 결과(projWhat) 우선 표시 — 프로젝트명(Daemon 이재만 등)은 숨김
-      // 별명이 설정된 경우 별명을 메인으로 표시
-      const _sphereMain = _hasAlias ? projTitle : (projWhat || projPurpose || projTitle);
-      const _sphereSub  = projTech || '';
-      _drawSphereLabel(ctx, sc.x, sc.y, nodeR, _sphereMain, _sphereSub, color, dimmed, '', '', null);
+    // 라벨 + 심층 세션 요약 (PURPOSE + WHAT + RESULT + 추가 컨텍스트)
+    const projTitle = _aliases[proj.name] || `${info.icon} ${info.name}`;
+    const projSub = '';
+    // 프로젝트 내 행성들의 요약 집계
+    let projWhat = '', projResult = '', projPurpose = '', projTech = '', projDuration = '', projAiTools = '';
+    for (const p of proj.planets) {
+      if (!projPurpose && p.userData.purpose) projPurpose = p.userData.purpose;
+      if (!projWhat && p.userData.whatSummary) projWhat = p.userData.whatSummary;
+      if (!projResult && p.userData.resultSummary) projResult = p.userData.resultSummary;
+      if (!projTech && p.userData.techStack) projTech = p.userData.techStack;
+      if (!projDuration && p.userData.sessionDuration) projDuration = p.userData.sessionDuration;
+      if (!projAiTools && p.userData.aiToolsUsed) projAiTools = p.userData.aiToolsUsed;
+      if (projWhat && projResult && projPurpose) break;
     }
+    // 프로젝트 레벨: purpose 제외 (projTitle과 중복됨), 기술스택만 표시
+    _drawSphereLabel(ctx, sc.x, sc.y, nodeR, projTitle, projTech || '', color, dimmed, projWhat, '', null);
 
     // 호버 시 구체 안쪽 하단에 숨기기/수정 버튼
     if (isHover && nodeR > 25) {
@@ -465,11 +449,10 @@ function drawCompactProjectView() {
     }
 
     // 히트 영역 (스크린 좌표 — 변환 불필요)
-    // label = 프로젝트명(Daemon 이재만 등) → 툴팁/클릭 시 표시
     registerHitArea({
       cx: sc.x, cy: sc.y, r: nodeR + 6,
       obj: null,
-      data: { type: 'constellation', projName: proj.name, label: projTitle, projWhat, allWhat: _allWhat, eventCount: proj.eventCount, planetCount: proj.planets.length, color, info },
+      data: { type: 'constellation', projName: proj.name, planetCount: proj.planets.length, color, info },
     });
 
     // ══ 2단계: 카테고리 + 세션 (드릴다운) ════════════════════════════════════

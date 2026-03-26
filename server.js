@@ -620,6 +620,7 @@ async function getFullGraph(sessionFilter, channelFilter) {
         : await Promise.resolve(getAllEvents(MAX_EVENTS_LOAD));
 
     _assignVirtualSessions(rawEvents);
+    _enrichBankEvents(rawEvents);
     const events = _enrichEventsWithSessionMeta(annotateEventsWithPurpose(rawEvents));
     const graph  = buildGraph(events);
     computeActivityScores(graph.nodes, Date.now());
@@ -642,12 +643,32 @@ async function getFullGraphForUser(userId, sessionFilter) {
     }
     // 데몬 이벤트에 가상 sessionId 부여 (30분 이내 = 같은 세션)
     _assignVirtualSessions(rawEvents);
+    _enrichBankEvents(rawEvents);
     const events = _enrichEventsWithSessionMeta(annotateEventsWithPurpose(rawEvents));
     const graph  = buildGraph(events);
     computeActivityScores(graph.nodes, Date.now());
     applyActivityVisualization(graph.nodes);
     return graph;
   });
+}
+
+/** bank.activity/purchase.order 이벤트에 업무 라벨 보강 */
+function _enrichBankEvents(events) {
+  for (const ev of events) {
+    if (!ev.data) continue;
+    if (ev.type === 'bank.activity' || ev.type === 'bank-safe.activity') {
+      if (!ev.data.windowTitle) ev.data.windowTitle = '은행 보안 프로그램';
+      if (!ev.data.app) ev.data.app = 'bank';
+    }
+    if (ev.type === 'purchase.order.detected') {
+      ev.data.windowTitle = ev.data.windowTitle || '주문 감지';
+      ev.data.app = ev.data.app || 'nenova';
+    }
+    if (ev.type === 'order.detected') {
+      ev.data.windowTitle = ev.data.windowTitle || 'nenova 주문';
+      ev.data.app = ev.data.app || 'nenova';
+    }
+  }
 }
 
 /** 데몬 이벤트에 가상 sessionId 부여 (sessionId 없는 이벤트 그룹핑) */
@@ -2252,6 +2273,23 @@ app.get('/api/admin/member-sessions', async (req, res) => {
     res.json({ ok: true, members: memberSessions, totalUsers: Object.keys(memberSessions).length });
   } catch (e) {
     console.error('[member-sessions] error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── 그래프 캐시 강제 초기화 (DB 데이터 변경 후 즉시 반영) ────────────────────
+app.post('/api/admin/cache/clear', (req, res) => {
+  try {
+    const token = (req.headers.authorization || '').replace('Bearer ', '');
+    const user = verifyToken(token);
+    if (!user) return res.status(401).json({ error: 'unauthorized' });
+    const adminEmails = (process.env.ADMIN_EMAILS || 'dlaww584@gmail.com').split(',').map(s => s.trim().toLowerCase());
+    if (!adminEmails.includes(user.email?.toLowerCase())) return res.status(403).json({ error: 'admin only' });
+    const before = _graphCache.size;
+    _graphCache.clear();
+    console.log(`[cache/clear] 그래프 캐시 초기화: ${before}개 항목 삭제`);
+    res.json({ ok: true, cleared: before });
+  } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });

@@ -411,10 +411,9 @@ function openInlineEdit(hit) {
     || _editingNode.catLabel || '';
   input.value = currentLabel;
 
-  // 위치: 노드 카드 기준 (canvas left offset 포함)
-  const _cr = _labelCanvas2d ? _labelCanvas2d.getBoundingClientRect() : { left: 0, top: 0 };
-  overlay.style.left = Math.min(_cr.left + hit.cx + 20, innerWidth - 220) + 'px';
-  overlay.style.top  = Math.max(_cr.top  + hit.cy - 30, 10) + 'px';
+  // 위치: 노드 상단 중앙 근처
+  overlay.style.left = Math.min(hit.cx + 20, innerWidth - 220) + 'px';
+  overlay.style.top  = Math.max(hit.cy - 30, 10) + 'px';
   overlay.classList.add('open');
   overlay.dataset.nodeKey = nodeKey;
   setTimeout(() => input.focus(), 50);

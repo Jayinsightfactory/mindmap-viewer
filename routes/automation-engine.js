@@ -712,7 +712,7 @@ function createWorkflowRegistry({ getDb }) {
       },
     },
     {
-      id: 'deduction', name: '차감 대조', icon: '📊', savings: 90, status: 'dev',
+      id: 'deduction', name: '차감 대조', icon: '📊', savings: 90, status: 'live',
       testEndpoint: '/api/automation/parse',
       desc: '주문 수량 vs 실제 배송 수량 비교 → 차이분 Excel 차감표 자동 생성',
       steps: [
@@ -799,7 +799,7 @@ function createWorkflowRegistry({ getDb }) {
       },
     },
     {
-      id: 'purchase', name: '발주 자동생성', icon: '🛒', savings: 110, status: 'dev',
+      id: 'purchase', name: '발주 자동생성', icon: '🛒', savings: 110, status: 'live',
       testEndpoint: '/api/automation/parse',
       desc: '재고 분석 → 발주 필요 품목 → Excel 발주서 → nenova 동기화',
       steps: [
@@ -820,7 +820,7 @@ function createWorkflowRegistry({ getDb }) {
       },
     },
     {
-      id: 'customer_comm', name: '거래처 소통', icon: '💬', savings: 50, status: 'dev',
+      id: 'customer_comm', name: '거래처 소통', icon: '💬', savings: 50, status: 'live',
       testEndpoint: '/api/activity/classify',
       desc: '거래처 메시지 자동 분류 → 해당 워크플로우 트리거',
       steps: [
@@ -836,7 +836,7 @@ function createWorkflowRegistry({ getDb }) {
       },
     },
     {
-      id: 'estimate', name: '견적서 작성', icon: '📄', savings: 75, status: 'dev',
+      id: 'estimate', name: '견적서 작성', icon: '📄', savings: 75, status: 'live',
       testEndpoint: '/api/nenova/orders/summary',
       desc: '견적 요청 → nenova 단가 조회 → 견적서 PDF 자동 생성',
       steps: [
@@ -856,7 +856,7 @@ function createWorkflowRegistry({ getDb }) {
       },
     },
     {
-      id: 'closing', name: '매출 마감', icon: '📈', savings: 80, status: 'dev',
+      id: 'closing', name: '매출 마감', icon: '📈', savings: 80, status: 'live',
       testEndpoint: '/api/nenova/orders/summary',
       desc: '월말 매출 자동 집계 → 거래처별 정산 보고서 생성',
       steps: [
@@ -895,7 +895,7 @@ function createWorkflowRegistry({ getDb }) {
       },
     },
     {
-      id: 'claim', name: '클레임 처리', icon: '🔴', savings: 65, status: 'dev',
+      id: 'claim', name: '클레임 처리', icon: '🔴', savings: 65, status: 'live',
       testEndpoint: '/api/automation/parse',
       desc: '거래처 클레임 접수 → 처리 기록 → 보상 산정',
       steps: [
@@ -929,7 +929,7 @@ function createWorkflowRegistry({ getDb }) {
       },
     },
     {
-      id: 'tracking', name: '배송 추적', icon: '🔍', savings: 70, status: 'dev',
+      id: 'tracking', name: '배송 추적', icon: '🔍', savings: 70, status: 'live',
       testEndpoint: '/api/nenova/orders/summary',
       desc: '출고 후 배송 상태 모니터링 → 이상 시 알림',
       steps: [
