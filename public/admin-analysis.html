@@ -761,7 +761,7 @@
   <button class="page-tab" data-tab="worklogs" onclick="switchPageTab('worklogs')">
     <span class="page-tab-icon">📝</span> 작업 내역
   </button>
-  <button class="page-tab" data-tab="automation" onclick="switchPageTab('automation')">
+  <button class="page-tab" data-tab="automation" onclick="switchPageTab('automation');window._initAuto&&window._initAuto()">
     <span class="page-tab-icon">⚡</span> 자동화 플로우
   </button>
   <button class="page-tab" data-tab="agents" onclick="switchPageTab('agents')">
@@ -3860,17 +3860,13 @@ document.addEventListener('DOMContentLoaded', () => {
     btn.disabled = false;
   };
 
-  // ── switchPageTab 훅 (automation 탭 최초 클릭 시 초기화) ──
-  const _origSwitchPageTab = window.switchPageTab;
-  window.switchPageTab = function(tabId) {
-    _origSwitchPageTab && _origSwitchPageTab(tabId);
-    if(tabId === 'automation' && !window._autoInited) {
-      window._autoInited = true;
-      renderSidebar();
-      // 첫 번째 live 워크플로우 자동 선택
-      const first = WF_DATA.find(w=>w.status==='live');
-      if(first) setTimeout(()=>selectWf(first.id), 50);
-    }
+  // ── 탭 초기화 함수 (버튼 onclick에서 직접 호출) ──
+  window._initAuto = function() {
+    if(window._autoInited) return;
+    window._autoInited = true;
+    renderSidebar();
+    const first = WF_DATA.find(w=>w.status==='live');
+    if(first) setTimeout(()=>selectWf(first.id), 50);
   };
 
   // 탭이 이미 열려있는 경우 즉시 초기화
