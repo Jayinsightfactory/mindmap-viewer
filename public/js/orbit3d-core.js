@@ -582,6 +582,46 @@ function buildFileSatellites(events) {
 // ─── 목적 기반 클러스터링 ─────────────────────────────────────────────────────
 // 세션이 1개여도 이벤트를 "목적/의도 도메인"으로 묶어 복수 행성으로 표시
 function clusterByIntent(sessionId, events) {
+  // ── 0. 서버 라벨 기반 클러스터 (데몬 이벤트 — 업무 워크플로우 라벨) ────────
+  // 서버 graph-engine에서 📋 주문 등록, 💬 호남소재 소통 등으로 분류된 라벨 활용
+  const workLabels = {};
+  for (const ev of events) {
+    const lbl = ev.label || '';
+    // 서버가 분류한 업무 라벨 (업무 이모지로 시작 — 📸⌨️💤🏦 등 원시 라벨 제외)
+    const isWorkLabel = lbl.startsWith('📋') || lbl.startsWith('⚠') || lbl.startsWith('🚚') ||
+      lbl.startsWith('📄') || lbl.startsWith('🛒') || lbl.startsWith('📈') || lbl.startsWith('💬') ||
+      lbl.startsWith('🖥') || lbl.startsWith('📊') || lbl.startsWith('🤖') || lbl.startsWith('🌐') ||
+      lbl.startsWith('📦') || lbl.startsWith('💰') || lbl.startsWith('📑');
+    if (lbl && isWorkLabel) {
+      if (!workLabels[lbl]) workLabels[lbl] = { events: [], icon: lbl.slice(0, 2) };
+      workLabels[lbl].events.push(ev);
+    }
+  }
+  const workKeys = Object.keys(workLabels);
+  if (workKeys.length > 0) {
+    // 업무 라벨이 하나라도 있으면 업무별 클러스터 생성
+    const clusters = workKeys.map(key => ({
+      clusterId:  `${sessionId}__${key}`,
+      sessionId,
+      domain:     'work',
+      label:      key,
+      icon:       workLabels[key].icon,
+      msgPreview: '',
+      events:     workLabels[key].events,
+    }));
+    // 미분류 이벤트(⌨️ 입력, 💤 대기 등)는 '기타' 클러스터로
+    const classified = new Set(clusters.flatMap(c => c.events));
+    const unclassified = events.filter(e => !classified.has(e));
+    if (unclassified.length > 0) {
+      clusters.push({
+        clusterId: `${sessionId}__기타`, sessionId,
+        domain: 'general', label: '기타 활동', icon: '·',
+        msgPreview: '', events: unclassified,
+      });
+    }
+    return clusters.sort((a, b) => b.events.length - a.events.length);
+  }
+
   // ── 1. purposeLabel이 있으면 최우선 활용 ──────────────────────────────────
   const hasPurpose = events.some(e => e.purposeLabel);
 
