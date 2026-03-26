@@ -44,7 +44,7 @@ process.on('uncaughtException', (err) => {
 });
 
 // ─── 힙 메모리 모니터링 + 서킷브레이커 ──────────────────────────────────────────
-const HEAP_LIMIT_MB = parseInt(process.env.HEAP_LIMIT_MB) || 1200; // Railway 1536MB 중 안전마진
+const HEAP_LIMIT_MB = parseInt(process.env.HEAP_LIMIT_MB) || 580; // Railway 768MB 힙 기준 안전마진
 let _heapPressure = false; // true면 무거운 요청 거부
 setInterval(() => {
   const usage = process.memoryUsage();
@@ -125,7 +125,7 @@ const {
 
 // ─── 사용자별 데이터 격리 헬퍼 ──────────────────────────────────────────────
 // 로그인 유저 → 본인 이벤트만, 비로그인/로컬 → 개발모드만 전체
-const MAX_EVENTS_LOAD = 500; // 메모리 절약: OOM 방지 (768MB 힙 제한)
+const MAX_EVENTS_LOAD = 200; // 메모리 절약: OOM 방지 (768MB 힙 제한)
 const { verifyToken: _verifyToken } = require('./src/auth');
 // ⚠️ 크로스-유저 격리: AUTH_DISABLED=1(개발)만 'local' userId에 전체 데이터 허용
 const _IS_DEV = process.env.AUTH_DISABLED === '1';
@@ -538,7 +538,7 @@ app.use(oauthPassport.session());
  */
 // ── 그래프 캐시 (5초 TTL) ─ 매 요청마다 전체 재빌드 방지 ──
 const _graphCache = new Map();
-const GRAPH_CACHE_TTL = 5000;
+const GRAPH_CACHE_TTL = 60000; // 60초 캐시 (OOM 방지)
 async function _getCachedGraph(key, builder) {
   const cached = _graphCache.get(key);
   if (cached && Date.now() - cached.ts < GRAPH_CACHE_TTL) return cached.graph;
@@ -2147,10 +2147,113 @@ app.get('/api/admin/graph', async (req, res) => {
     const adminEmails = (process.env.ADMIN_EMAILS || 'dlaww584@gmail.com').split(',').map(s => s.trim().toLowerCase());
     if (!adminEmails.includes(user.email?.toLowerCase())) return res.status(403).json({ error: 'admin only' });
     // 전체 이벤트 (최대 5000건)
-    const events = await Promise.resolve(getAllEvents(500));
+    const events = await Promise.resolve(getAllEvents(200));
     const graph = buildGraph(events);
+    // OOM 방지: 응답 크기 제한
+    if (graph.nodes && graph.nodes.length > 500) graph.nodes = graph.nodes.slice(-500);
+    if (graph.edges && graph.edges.length > 1000) graph.edges = graph.edges.slice(-1000);
     res.json(graph);
   } catch (e) { console.error('[admin/raw-graph] error:', e.message); res.status(500).json({ error: 'Internal server error' }); }
+});
+
+// ─── 멤버별 세션 요약 API (관리자용) ─────────────────────────────────────────
+app.get('/api/admin/member-sessions', async (req, res) => {
+  try {
+    const token = (req.headers.authorization || '').replace('Bearer ', '');
+    const user = verifyToken(token);
+    if (!user) return res.status(401).json({ error: 'unauthorized' });
+    const adminEmails = (process.env.ADMIN_EMAILS || 'dlaww584@gmail.com').split(',').map(s => s.trim().toLowerCase());
+    if (!adminEmails.includes(user.email?.toLowerCase())) return res.status(403).json({ error: 'admin only' });
+
+    const events = await Promise.resolve(getAllEvents(200));
+
+    // 사용자별 그룹핑
+    const byUser = {};
+    for (const ev of events) {
+      const uid = ev.userId || ev.data?.userId || 'local';
+      if (!byUser[uid]) byUser[uid] = [];
+      byUser[uid].push(ev);
+    }
+
+    // 업무 라벨 분류 함수
+    function classifyWork(windowTitle, app) {
+      if (!windowTitle && !app) return null;
+      const t = (windowTitle || '').toLowerCase();
+      const a = (app || '').toLowerCase();
+      if (t.includes('신규주문') || t.includes('주문등록') || t.includes('new order')) return '📋 주문 등록';
+      if (t.includes('출하') || t.includes('출고') || t.includes('배송')) return '🚚 출하/배송 처리';
+      if (t.includes('재고') || t.includes('inventory')) return '📦 재고 확인';
+      if (t.includes('호남소재') || t.includes('거래처') || t.includes('업체')) return '💬 거래처 소통';
+      if (t.includes('주문현황') || t.includes('물량') || t.includes('피벗')) return '📊 물량/현황 분석';
+      if (t.includes('정산') || t.includes('세금계산서') || t.includes('invoice')) return '💰 정산 처리';
+      if (a.includes('kakaotalk') || a.includes('카카오')) return '💬 카카오 소통';
+      if (a.includes('nenova') || t.includes('nenova')) return '📋 nenova 업무';
+      if (a.includes('explorer') || t.includes('탐색기')) return '📁 파일 관리';
+      if (a.includes('excel') || a.includes('엑셀') || t.includes('.xlsx') || t.includes('.xls')) return '📊 엑셀 작업';
+      if (a.includes('chrome') || a.includes('edge') || a.includes('firefox')) return '🌐 웹 검색/업무';
+      return null;
+    }
+
+    // 각 사용자의 세션 요약 생성
+    const memberSessions = {};
+    for (const [uid, userEvents] of Object.entries(byUser)) {
+      // 시간순 정렬
+      userEvents.sort((a, b) => new Date(a.timestamp || 0) - new Date(b.timestamp || 0));
+
+      // 30분 기준 세션 분리
+      const sessions = [];
+      let currentSession = null;
+      const SESSION_GAP = 30 * 60 * 1000;
+
+      for (const ev of userEvents) {
+        const ts = new Date(ev.timestamp || 0).getTime();
+        const d = ev.data || {};
+
+        if (!currentSession || (ts - currentSession.lastTs) > SESSION_GAP) {
+          if (currentSession) sessions.push(currentSession);
+          currentSession = {
+            id: `sess-${uid}-${ts}`,
+            userId: uid,
+            startTime: ev.timestamp,
+            lastTs: ts,
+            events: [],
+            workLabels: {},
+            apps: {},
+          };
+        }
+
+        currentSession.lastTs = ts;
+        currentSession.events.push(ev);
+
+        // 업무 라벨 집계
+        const label = classifyWork(d.windowTitle, d.app);
+        if (label) currentSession.workLabels[label] = (currentSession.workLabels[label] || 0) + 1;
+        if (d.app) currentSession.apps[d.app] = (currentSession.apps[d.app] || 0) + 1;
+      }
+      if (currentSession) sessions.push(currentSession);
+
+      // 세션 요약 (상위 라벨만)
+      memberSessions[uid] = sessions.map(s => {
+        const topLabel = Object.entries(s.workLabels).sort((a,b) => b[1]-a[1])[0];
+        const topApp = Object.entries(s.apps).sort((a,b) => b[1]-a[1])[0];
+        return {
+          id: s.id,
+          userId: s.userId,
+          startTime: s.startTime,
+          eventCount: s.events.length,
+          label: topLabel ? topLabel[0] : (topApp ? `🖥 ${topApp[0]}` : '📌 기타 작업'),
+          apps: Object.keys(s.apps).slice(0, 3),
+          workLabels: s.workLabels,
+          duration: Math.round((s.lastTs - new Date(s.startTime).getTime()) / 60000),
+        };
+      });
+    }
+
+    res.json({ ok: true, members: memberSessions, totalUsers: Object.keys(memberSessions).length });
+  } catch (e) {
+    console.error('[member-sessions] error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ─── 자동화 검증 API (rawInput + clipboard + vision 3중 대조) ─────────────────

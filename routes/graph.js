@@ -171,6 +171,15 @@ function createRouter(deps) {
         }
       }
 
+      // OOM 방지: 응답 크기 제한 (노드 500개, 엣지 1000개)
+      if (graph.nodes && graph.nodes.length > 500) {
+        graph.nodes = graph.nodes.slice(-500);
+        const nodeIds = new Set(graph.nodes.map(n => n.id));
+        if (graph.edges) graph.edges = graph.edges.filter(e => nodeIds.has(e.source) && nodeIds.has(e.target));
+      }
+      if (graph.edges && graph.edges.length > 1000) {
+        graph.edges = graph.edges.slice(-1000);
+      }
       res.json(graph);
     } catch (e) {
       console.error('[graph] 오류:', e.message);

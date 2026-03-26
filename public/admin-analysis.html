@@ -1033,12 +1033,21 @@
       <div class="section-title">
         <span class="icon">&#x1f465;</span> 멤버별 분석 요약
       </div>
-      <div class="filter-bar">
+      <div class="filter-bar" style="display:flex;gap:8px;align-items:center;">
         <input type="text" id="member-search" placeholder="멤버 검색..." oninput="filterMembers()">
+        <button class="btn btn-primary" onclick="loadMemberSessions()" style="white-space:nowrap;padding:6px 14px;font-size:13px;">세션 분석</button>
       </div>
     </div>
     <div id="members-grid" class="cards-grid">
       <div class="loading-state"><div class="spinner"></div> 멤버 데이터를 불러오는 중...</div>
+    </div>
+    <!-- 세션 분석 결과 패널 -->
+    <div id="member-sessions-panel" style="display:none;margin-top:20px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <div style="font-size:14px;font-weight:600;color:var(--text);">&#x1F4CB; 업무 세션 분석</div>
+        <button onclick="document.getElementById('member-sessions-panel').style.display='none'" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:18px;">&times;</button>
+      </div>
+      <div id="member-sessions-content"></div>
     </div>
   </section>
 
@@ -1400,6 +1409,125 @@ function filterMembers() {
     const email = (card.dataset.email || '').toLowerCase();
     card.style.display = (!q || name.includes(q) || email.includes(q)) ? '' : 'none';
   });
+}
+
+// ── 멤버 세션 분석 ───────────────────────────────────────────────
+async function loadMemberSessions() {
+  const panel = document.getElementById('member-sessions-panel');
+  const content = document.getElementById('member-sessions-content');
+  panel.style.display = 'block';
+  content.innerHTML = '<div class="loading-state"><div class="spinner"></div> 세션 분석 중...</div>';
+
+  try {
+    const data = await apiFetch('/api/admin/member-sessions');
+    if (!data || !data.ok) {
+      content.innerHTML = '<div class="empty-state">세션 데이터를 불러올 수 없습니다.</div>';
+      return;
+    }
+
+    const members = data.members || {};
+    const LABEL_COLORS = {
+      '📋': '#3b82f6',  // 파랑 - 주문/nenova
+      '🚚': '#22c55e',  // 초록 - 출하
+      '📦': '#f59e0b',  // 주황 - 재고
+      '💬': '#eab308',  // 노랑 - 소통
+      '📊': '#a855f7',  // 보라 - 분석/엑셀
+      '💰': '#ec4899',  // 핑크 - 정산
+      '🌐': '#06b6d4',  // 시안 - 웹
+      '📁': '#78716c',  // 회색 - 파일
+      '🖥': '#6b7280',  // 회색 - 기타앱
+      '📌': '#9ca3af',  // 연회색 - 기타
+    };
+
+    function getLabelColor(label) {
+      for (const [emoji, color] of Object.entries(LABEL_COLORS)) {
+        if (label.startsWith(emoji)) return color;
+      }
+      return '#6b7280';
+    }
+
+    function formatTime(isoStr) {
+      if (!isoStr) return '-';
+      const d = new Date(isoStr);
+      return d.toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+    }
+
+    // 알려진 멤버 이름 매핑 (userId → 표시 이름)
+    const KNOWN_MEMBERS = {
+      'MMONWUCHC96FB6029B': '임재용',
+      'MMOMY4OB91D6574436': 'jaeyong lim',
+      'local': 'local',
+    };
+    function getMemberName(uid) {
+      if (KNOWN_MEMBERS[uid]) return KNOWN_MEMBERS[uid];
+      // G.members에서 찾기
+      const found = (G.members || []).find(m => m.userId === uid);
+      if (found) return found.name || found.email?.split('@')[0] || uid.substring(0, 10);
+      return uid.substring(0, 12) + '...';
+    }
+
+    const uids = Object.keys(members);
+    if (uids.length === 0) {
+      content.innerHTML = '<div class="empty-state">분석된 세션이 없습니다. 데몬 이벤트가 수집되면 표시됩니다.</div>';
+      return;
+    }
+
+    let html = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px;">`;
+
+    for (const uid of uids) {
+      const sessions = members[uid] || [];
+      const memberName = getMemberName(uid);
+      const totalEvents = sessions.reduce((s, x) => s + x.eventCount, 0);
+
+      // 가장 많이 한 업무 라벨 집계
+      const allLabels = {};
+      sessions.forEach(s => {
+        Object.entries(s.workLabels || {}).forEach(([k, v]) => {
+          allLabels[k] = (allLabels[k] || 0) + v;
+        });
+      });
+      const topLabels = Object.entries(allLabels).sort((a,b) => b[1]-a[1]).slice(0, 3);
+
+      html += `
+        <div class="card" style="padding:16px;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;">
+            <div>
+              <div style="font-weight:700;font-size:15px;color:var(--text);">${escHtml(memberName)}</div>
+              <div style="font-size:11px;color:var(--muted);margin-top:2px;">${escHtml(uid.substring(0,14))}${uid.length > 14 ? '...' : ''}</div>
+            </div>
+            <div style="text-align:right;">
+              <div style="font-size:20px;font-weight:700;color:var(--blue);">${sessions.length}</div>
+              <div style="font-size:10px;color:var(--muted);">세션</div>
+            </div>
+          </div>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">이벤트 ${totalEvents.toLocaleString()}건</div>
+          <div style="margin-bottom:12px;">
+            ${topLabels.length === 0
+              ? '<span style="font-size:12px;color:var(--muted);">분류된 업무 없음</span>'
+              : topLabels.map(([label, cnt]) => `
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+                  <span style="font-size:12px;color:${getLabelColor(label)};font-weight:500;">${escHtml(label)}</span>
+                  <span style="font-size:11px;color:var(--muted);">${cnt}회</span>
+                </div>`).join('')}
+          </div>
+          <div style="border-top:1px solid var(--border);padding-top:10px;">
+            <div style="font-size:11px;color:var(--muted);margin-bottom:6px;">최근 세션</div>
+            ${sessions.slice(-3).reverse().map(s => `
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;">
+                <span style="font-size:11px;color:${getLabelColor(s.label)};">${escHtml(s.label)}</span>
+                <span style="font-size:10px;color:var(--muted);">${formatTime(s.startTime)} · ${s.duration}분</span>
+              </div>`).join('')}
+          </div>
+        </div>`;
+    }
+
+    html += `</div>`;
+    html += `<div style="font-size:11px;color:var(--muted);margin-top:12px;text-align:right;">총 ${uids.length}명 · 30분 간격 세션 분리 기준</div>`;
+    content.innerHTML = html;
+
+  } catch (e) {
+    content.innerHTML = `<div class="empty-state" style="color:var(--red);">오류: ${escHtml(e.message)}</div>`;
+  }
 }
 
 // ── 그래프 데이터 (Vision 분석 이벤트) ────────────────────────────
