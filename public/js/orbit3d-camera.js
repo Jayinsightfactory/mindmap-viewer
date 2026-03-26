@@ -118,7 +118,7 @@ function updateCameraLerp(dt) {
 
 // ─── 레이블 겹침 해소 (AABB 스프링 시뮬레이션) ───────────────────────────────
 // labels: [{ x, y, pw, ph, ax, ay, priority }]  x/y = 현재 top-left, ax/ay = 앵커 center
-function resolveOverlaps(labels, iters = 30, gap = 8) {
+function resolveOverlaps(labels, iters = 60, gap = 12) {
   for (let it = 0; it < iters; it++) {
     // 1단계: 겹치는 쌍 찾아 최소 관통 축으로 밀어냄
     for (let i = 0; i < labels.length; i++) {

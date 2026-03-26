@@ -782,8 +782,8 @@ function _buildTeamSystemInner(teamData) {
           satelliteMeshes.push(sObj);
           _teamNodes.push({
             type: 'task', pos: sPos.clone(), obj: sObj,
-            label: (proj.whatSummary || projName).slice(0, 20),
-            sublabel: proj.whatSummary ? projName.slice(0, 20) : `${proj.count}건`,
+            label: (proj.whatSummary || projName).slice(0, 13),
+            sublabel: proj.whatSummary ? projName.slice(0, 13) : `${proj.count}건`,
             color: _color, size: 'sm',
             memberId: _mid, taskStatus: 'active',
           });
