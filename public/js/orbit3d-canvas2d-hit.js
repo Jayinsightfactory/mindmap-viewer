@@ -71,9 +71,9 @@ function updateRaycast() {
       else if (data.type === 'goal')  ttMeta = '🎯 팀 목표';
       else if (data.type === 'file')  ttMeta = `📄 ${data.filename || ''}  ×${data.count || 1}`;
       else if (data.type === 'constellation') {
-        // 구체 메인텍스트 = 분석결과, 툴팁에 프로젝트명 표시
-        ttIntent = data.projWhat || data.label || '';
-        ttMeta   = data.label ? `${data.label} · ${data.eventCount ? data.eventCount + '개 작업' : '클릭하여 열기'}` : (data.eventCount ? `세션 • ${data.eventCount}개 작업` : '세션');
+        // 분석 결과만 표시 — 내부 프로젝트명(Daemon 이재만 등)은 노출 안 함
+        ttIntent = data.projWhat || '';
+        ttMeta   = data.eventCount ? `${data.eventCount}개 작업` : '클릭하여 열기';
       }
       else ttMeta = data.eventCount ? `세션 • ${data.eventCount}개 작업` : '세션';
       document.getElementById('tt-intent').textContent = ttIntent;
