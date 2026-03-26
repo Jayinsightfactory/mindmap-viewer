@@ -372,25 +372,6 @@ function drawCompactProjectView() {
     const scale = screenScale(pos3d);
     const nodeR = Math.max(28, Math.min(56, scale * 7));
 
-    if (dimmed) ctx.globalAlpha = 0.3;
-
-    // 와이어프레임 구체
-    _drawWireSphere(ctx, sc.x, sc.y, nodeR, color, {
-      alpha: isThisDrilled ? 0.5 : 0.35,
-      lineW: isThisDrilled ? 1.2 : 0.8,
-      meridians: 2, parallels: 1,
-      glow: true, hover: isHover, drilled: isThisDrilled,
-      rotation: now * 0.2 + i * 0.5,
-    });
-
-    // 활성 표시
-    if (proj.hasActive) {
-      ctx.save();
-      ctx.fillStyle = '#22c55e'; ctx.shadowColor = '#22c55e'; ctx.shadowBlur = 6;
-      ctx.beginPath(); ctx.arc(sc.x + nodeR - 4, sc.y - nodeR + 4, 3.5, 0, Math.PI * 2); ctx.fill();
-      ctx.restore();
-    }
-
     // 라벨 + 심층 세션 요약 (PURPOSE + WHAT + RESULT + 추가 컨텍스트)
     const projTitle = _aliases[proj.name] || `${info.icon} ${info.name}`;
     const projSub = '';
@@ -411,10 +392,30 @@ function drawCompactProjectView() {
       if (_isSpecific(w) && !_whatSeen.has(w)) { _whatSeen.add(w); _allWhat.push(w); }
     }
     projWhat = _allWhat[0] || '';
-    // 프로젝트 레벨: 분석 데이터(whatSummary/purpose/techStack)가 있거나 사용자 별명이 설정된 경우만 표시
-    // 분석이 안 된 경우 텍스트 없이 구체만 표시 (분석 완료 후 자동 표시)
+    // 분석 데이터 없고 별명도 없으면 구체 자체를 숨김 (텍스트 없는 구체 제거)
     const _hasAnalysis = projWhat || projPurpose || projResult || projTech;
     const _hasAlias    = !!_aliases[proj.name];
+    if (!_hasAnalysis && !_hasAlias) continue; // 분석 안 됐으면 구체+텍스트 모두 숨김
+
+    if (dimmed) ctx.globalAlpha = 0.3;
+
+    // 와이어프레임 구체
+    _drawWireSphere(ctx, sc.x, sc.y, nodeR, color, {
+      alpha: isThisDrilled ? 0.5 : 0.35,
+      lineW: isThisDrilled ? 1.2 : 0.8,
+      meridians: 2, parallels: 1,
+      glow: true, hover: isHover, drilled: isThisDrilled,
+      rotation: now * 0.2 + i * 0.5,
+    });
+
+    // 활성 표시
+    if (proj.hasActive) {
+      ctx.save();
+      ctx.fillStyle = '#22c55e'; ctx.shadowColor = '#22c55e'; ctx.shadowBlur = 6;
+      ctx.beginPath(); ctx.arc(sc.x + nodeR - 4, sc.y - nodeR + 4, 3.5, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
+
     if (_hasAnalysis || _hasAlias) {
       // 구체 메인텍스트: 분석 결과(projWhat) 우선 표시 — 프로젝트명(Daemon 이재만 등)은 숨김
       // 별명이 설정된 경우 별명을 메인으로 표시

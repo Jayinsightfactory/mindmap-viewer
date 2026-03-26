@@ -562,10 +562,24 @@ function drawTeamLabels() {
     _lctx.font = `${weight} ${pxSize}px -apple-system,'Segoe UI',sans-serif`;
     // skill: ⚡ 아이콘, agent: 🤖 아이콘 prefix
     const prefix = type === 'skill' ? '⚡ ' : type === 'agent' ? '🤖 ' : '';
+    // ptask "대기 중" — 분석 데이터 없는 플레이스홀더, 숨김
+    if (type === 'ptask' && label === '대기 중') continue;
+
+    // task 노드 (비협업): sublabel(Vision분석) 없거나 깨진 경우 숨김, 있으면 분석결과를 메인 텍스트로
+    // 협업 노드(🤝 prefix)는 그대로 유지
+    const _isCollabTask = type === 'task' && label.startsWith('🤝');
+    if (type === 'task' && !_isCollabTask) {
+      // 깨진 텍스트 감지: 브레일 문자, ? 연속, 4자 미만
+      const _isGarbled = s => !s || s.length < 4 || /[\u2800-\u28FF]/.test(s) || /^\d+건$/.test(s.trim());
+      if (_isGarbled(sublabel)) continue; // Vision 분석 없으면 숨김
+    }
+
     // 별명 우선 적용 (사용자 지정 표시명 — 3D 뷰 pill에 반영)
     const _alias = typeof _nodeAliases !== 'undefined' ? _nodeAliases[label] : null;
     const displayLabel = node.displayLabel || _alias || label;
-    const txt = emoji ? `${emoji} ${displayLabel}` : `${prefix}${displayLabel}`;
+    // task 비협업: sublabel(Vision분석)을 메인 텍스트로 (app 이름 대신)
+    const _taskDisplayTxt = (type === 'task' && !_isCollabTask && sublabel) ? sublabel.trim().slice(0, 22) : null;
+    const txt = _taskDisplayTxt || (emoji ? `${emoji} ${displayLabel}` : `${prefix}${displayLabel}`);
     const _useUnified = ['goal','leader','infra','sharedProject','department',
       'member','hubProject','hq','external','prequest','presult'].includes(type);
     // member: 텍스트에 맞는 동적 카드 크기
