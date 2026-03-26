@@ -399,15 +399,18 @@ function drawCompactProjectView() {
     const _GENERIC_LABELS = new Set(['기타 활동', '기타', '기타활동', '일반 활동', '일반']);
     const _isSpecific = v => v && !_GENERIC_LABELS.has(v.trim());
     let projWhat = '', projResult = '', projPurpose = '', projTech = '', projDuration = '', projAiTools = '';
+    const _allWhat = []; const _whatSeen = new Set(); // 전체 고유 분석 결과 (툴팁용)
     for (const p of proj.planets) {
       if (!projPurpose && _isSpecific(p.userData.purpose)) projPurpose = p.userData.purpose;
-      if (!projWhat && _isSpecific(p.userData.whatSummary)) projWhat = p.userData.whatSummary;
       if (!projResult && _isSpecific(p.userData.resultSummary)) projResult = p.userData.resultSummary;
       if (!projTech && p.userData.techStack) projTech = p.userData.techStack;
       if (!projDuration && p.userData.sessionDuration) projDuration = p.userData.sessionDuration;
       if (!projAiTools && p.userData.aiToolsUsed) projAiTools = p.userData.aiToolsUsed;
-      if (projWhat && projResult && projPurpose) break;
+      // 고유 whatSummary 수집 (최대 5개) — 순서 유지, 중복 제거
+      const w = p.userData.whatSummary;
+      if (_isSpecific(w) && !_whatSeen.has(w)) { _whatSeen.add(w); _allWhat.push(w); }
     }
+    projWhat = _allWhat[0] || '';
     // 프로젝트 레벨: 분석 데이터(whatSummary/purpose/techStack)가 있거나 사용자 별명이 설정된 경우만 표시
     // 분석이 안 된 경우 텍스트 없이 구체만 표시 (분석 완료 후 자동 표시)
     const _hasAnalysis = projWhat || projPurpose || projResult || projTech;
@@ -465,7 +468,7 @@ function drawCompactProjectView() {
     registerHitArea({
       cx: sc.x, cy: sc.y, r: nodeR + 6,
       obj: null,
-      data: { type: 'constellation', projName: proj.name, label: projTitle, projWhat, eventCount: proj.eventCount, planetCount: proj.planets.length, color, info },
+      data: { type: 'constellation', projName: proj.name, label: projTitle, projWhat, allWhat: _allWhat, eventCount: proj.eventCount, planetCount: proj.planets.length, color, info },
     });
 
     // ══ 2단계: 카테고리 + 세션 (드릴다운) ════════════════════════════════════
