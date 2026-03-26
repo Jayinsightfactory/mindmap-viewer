@@ -619,6 +619,7 @@ async function getFullGraph(sessionFilter, channelFilter) {
             : (await Promise.resolve(getAllEvents(MAX_EVENTS_LOAD))).filter(e => e.channelId === channelFilter))
         : await Promise.resolve(getAllEvents(MAX_EVENTS_LOAD));
 
+    _assignVirtualSessions(rawEvents);
     const events = _enrichEventsWithSessionMeta(annotateEventsWithPurpose(rawEvents));
     const graph  = buildGraph(events);
     computeActivityScores(graph.nodes, Date.now());
@@ -639,12 +640,37 @@ async function getFullGraphForUser(userId, sessionFilter) {
         ? await Promise.resolve(getEventsByUser(userId))
         : (await Promise.resolve(getAllEvents(MAX_EVENTS_LOAD))).filter(e => e.userId === userId);
     }
+    // 데몬 이벤트에 가상 sessionId 부여 (30분 이내 = 같은 세션)
+    _assignVirtualSessions(rawEvents);
     const events = _enrichEventsWithSessionMeta(annotateEventsWithPurpose(rawEvents));
     const graph  = buildGraph(events);
     computeActivityScores(graph.nodes, Date.now());
     applyActivityVisualization(graph.nodes);
     return graph;
   });
+}
+
+/** 데몬 이벤트에 가상 sessionId 부여 (sessionId 없는 이벤트 그룹핑) */
+function _assignVirtualSessions(events) {
+  let currentSessionId = null;
+  let lastTs = 0;
+  const SESSION_GAP = 30 * 60 * 1000; // 30분
+
+  // 시간순 정렬
+  events.sort((a, b) => new Date(a.timestamp || 0) - new Date(b.timestamp || 0));
+
+  for (const ev of events) {
+    if (ev.sessionId) continue; // 이미 있으면 스킵
+
+    const ts = new Date(ev.timestamp || 0).getTime();
+    if (!currentSessionId || (ts - lastTs) > SESSION_GAP) {
+      // 새 가상 세션 생성
+      const dateStr = new Date(ts).toISOString().slice(0, 10).replace(/-/g, '');
+      currentSessionId = `daemon-${ev.userId || 'unknown'}-${dateStr}-${Math.random().toString(36).slice(2, 6)}`;
+    }
+    ev.sessionId = currentSessionId;
+    lastTs = ts;
+  }
 }
 
 // ─── 브로드캐스트 ────────────────────────────────────────────────────────────
