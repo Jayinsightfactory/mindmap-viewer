@@ -130,8 +130,11 @@ function createSqliteOps(getDb, deserializeEvent) {
 function createPgOps(getPool, deserializeEvent) {
 
   async function getEventsByUser(userId) {
+    // user_id 컬럼 또는 data_json 내 userId 필드로 매칭 (데몬 토큰 미전송 이벤트 호환)
     const { rows } = await getPool().query(
-      'SELECT * FROM events WHERE user_id=$1 ORDER BY timestamp ASC', [userId]
+      `SELECT * FROM events
+       WHERE user_id = $1 OR data_json->>'userId' = $1
+       ORDER BY timestamp ASC`, [userId]
     );
     return rows.map(deserializeEvent);
   }
