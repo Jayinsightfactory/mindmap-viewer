@@ -205,8 +205,13 @@ function analyzeTimeDistribution(events) {
 
 // ── 전체 멤버 분석 실행 ───────────────────────────────────────────────────
 async function analyzeUser(pool, userId) {
+  // LIMIT + 최근 30일만 — 무제한 스캔 시 OOM (Bad Gateway 근본 원인)
   const { rows } = await pool.query(
-    "SELECT id, type, timestamp, data_json FROM events WHERE user_id=$1 AND type IN ('keyboard.chunk','screen.capture','idle') ORDER BY timestamp ASC",
+    `SELECT id, type, timestamp, data_json FROM events
+     WHERE user_id=$1
+       AND type IN ('keyboard.chunk','screen.capture','idle')
+       AND timestamp > NOW() - INTERVAL '30 days'
+     ORDER BY timestamp DESC LIMIT 5000`,
     [userId]
   );
 

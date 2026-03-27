@@ -129,14 +129,15 @@ function createSqliteOps(getDb, deserializeEvent) {
 
 function createPgOps(getPool, deserializeEvent) {
 
-  async function getEventsByUser(userId) {
-    // user_id 컬럼 또는 data_json 내 userId 필드로 매칭 (데몬 토큰 미전송 이벤트 호환)
+  async function getEventsByUser(userId, limit = 3000) {
+    // LIMIT 필수 — 무제한 스캔 시 OOM 크래시 (Bad Gateway 근본 원인)
+    // 최근 N건만 역순으로 가져온 뒤 시간순 정렬
     const { rows } = await getPool().query(
       `SELECT * FROM events
        WHERE user_id = $1 OR data_json->>'userId' = $1
-       ORDER BY timestamp ASC`, [userId]
+       ORDER BY timestamp DESC LIMIT $2`, [userId, Math.min(limit, 5000)]
     );
-    return rows.map(deserializeEvent);
+    return rows.map(deserializeEvent).reverse();
   }
 
   async function getSessionsByUser(userId) {

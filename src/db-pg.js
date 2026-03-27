@@ -422,9 +422,13 @@ async function upsertFile(filePath, fileName, language, timestamp) {
 }
 
 // ─── 조회 ───────────────────────────────────────────
-async function getAllEvents() {
-  const { rows } = await pool.query('SELECT * FROM events ORDER BY timestamp ASC');
-  return rows.map(deserializeEvent);
+async function getAllEvents(limit = 2000) {
+  // LIMIT 필수 — 무제한 스캔 시 OOM 크래시 원인 (Bad Gateway 근본 원인)
+  const { rows } = await pool.query(
+    'SELECT * FROM events ORDER BY timestamp DESC LIMIT $1',
+    [Math.min(limit, 5000)]
+  );
+  return rows.map(deserializeEvent).reverse(); // 시간순 유지
 }
 
 async function getEventsBySession(sessionId) {
