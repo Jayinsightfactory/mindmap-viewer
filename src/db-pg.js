@@ -421,14 +421,30 @@ async function upsertFile(filePath, fileName, language, timestamp) {
   `, [filePath, fileName, language, timestamp]);
 }
 
+// ─── 동시 쿼리 세마포어 (OOM 방지) ─────────────────
+let _heavyQueryRunning = 0;
+const MAX_CONCURRENT_HEAVY = 2;
+
 // ─── 조회 ───────────────────────────────────────────
-async function getAllEvents(limit = 2000) {
-  // LIMIT 필수 — 무제한 스캔 시 OOM 크래시 원인 (Bad Gateway 근본 원인)
-  const { rows } = await pool.query(
-    'SELECT * FROM events ORDER BY timestamp DESC LIMIT $1',
-    [Math.min(limit, 5000)]
-  );
-  return rows.map(deserializeEvent).reverse(); // 시간순 유지
+async function getAllEvents(limit = 300) {
+  // LIMIT + screen.capture/analyzed 제외 (base64 썸네일 포함 → OOM 주범)
+  // 동시 2개 초과 시 대기 없이 빈 배열 반환 (서버 보호)
+  if (_heavyQueryRunning >= MAX_CONCURRENT_HEAVY) {
+    console.warn('[DB] getAllEvents 동시 요청 초과 — 스킵');
+    return [];
+  }
+  _heavyQueryRunning++;
+  try {
+    const { rows } = await pool.query(
+      `SELECT * FROM events
+       WHERE type NOT IN ('screen.capture','screen.analyzed')
+       ORDER BY timestamp DESC LIMIT $1`,
+      [Math.min(limit, 1000)]
+    );
+    return rows.map(deserializeEvent).reverse();
+  } finally {
+    _heavyQueryRunning--;
+  }
 }
 
 async function getEventsBySession(sessionId) {
@@ -437,8 +453,8 @@ async function getEventsBySession(sessionId) {
 }
 
 async function getEventsByType(type) {
-  const { rows } = await pool.query('SELECT * FROM events WHERE type=$1 ORDER BY timestamp ASC', [type]);
-  return rows.map(deserializeEvent);
+  const { rows } = await pool.query('SELECT * FROM events WHERE type=$1 ORDER BY timestamp DESC LIMIT 500', [type]);
+  return rows.map(deserializeEvent).reverse();
 }
 
 async function searchEvents(query) {
@@ -452,12 +468,12 @@ async function searchEvents(query) {
 }
 
 async function getSessions() {
-  const { rows } = await pool.query('SELECT * FROM sessions ORDER BY started_at DESC');
+  const { rows } = await pool.query('SELECT * FROM sessions ORDER BY started_at DESC LIMIT 1000');
   return rows;
 }
 
 async function getFiles() {
-  const { rows } = await pool.query('SELECT * FROM files ORDER BY access_count DESC');
+  const { rows } = await pool.query('SELECT * FROM files ORDER BY access_count DESC LIMIT 500');
   return rows;
 }
 

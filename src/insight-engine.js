@@ -432,8 +432,11 @@ function start({ getAllEvents, saveSuggestion, broadcastAll, intervalMs }) {
   const interval = intervalMs || CRON_INTERVAL_MS;
   console.log(`[insight-engine] 시작 — ${interval / 1000 / 60}분 주기`);
 
-  // 즉시 1회 실행 후 주기 반복
-  runOnce({ getAllEvents, saveSuggestion, broadcastAll });
+  // 서버 안정화 90초 후 첫 실행 (즉시 실행 시 startup OOM 유발)
+  const _initTimer = setTimeout(() => {
+    runOnce({ getAllEvents, saveSuggestion, broadcastAll });
+  }, 90_000);
+  if (_initTimer.unref) _initTimer.unref();
   _cronInterval = setInterval(() => {
     runOnce({ getAllEvents, saveSuggestion, broadcastAll });
   }, interval);
