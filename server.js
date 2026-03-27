@@ -2717,6 +2717,68 @@ app.use('/api/issues', require('./routes/issue-predictor')({ getDb: dbModule.get
 // ─── Data Archive (데이터 보존 모니터 + 아카이브) ─────────────────────────────
 app.use('/api/data', require('./routes/data-archive')({ getDb: dbModule.getDb }));
 
+// ─── Event Archiver (용량 초과 시 Drive 아카이브 + DB 삭제) ──────────────────
+const eventArchiver = (() => { try { return require('./src/event-archiver'); } catch(e) { console.warn('[archiver] 로드 실패:', e.message); return null; } })();
+
+if (eventArchiver && process.env.DATABASE_URL) {
+  // 매일 새벽 3시 UTC (KST 12:00) 자동 체크
+  const _archiveCron = setInterval(async () => {
+    const now = new Date();
+    if (now.getUTCHours() !== 18 || now.getUTCMinutes() > 5) return; // 03:00 KST
+    try {
+      const pool = dbModule.getDb();
+      await eventArchiver.checkAndArchive(pool);
+    } catch (e) {
+      console.error('[archiver] 스케줄 오류:', e.message);
+    }
+  }, 60 * 1000); // 1분마다 시각 체크
+
+  // 수동 트리거 API (관리자 전용)
+  app.post('/api/archive/run', async (req, res) => {
+    const authHeader = req.headers.authorization || '';
+    const token = authHeader.replace('Bearer ', '').trim();
+    const adminEmails = (process.env.ADMIN_EMAILS || 'dlaww584@gmail.com').split(',').map(s => s.trim());
+    let isAdmin = false;
+    try {
+      const { verifyToken: vt } = require('./src/auth');
+      const decoded = await vt(token);
+      isAdmin = adminEmails.includes(decoded?.email) || adminEmails.includes(decoded?.id);
+    } catch {}
+    if (!isAdmin) return res.status(403).json({ error: 'admin only' });
+
+    try {
+      const pool = dbModule.getDb();
+      const result = await eventArchiver.checkAndArchive(pool);
+      res.json({ ok: true, result });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // 테이블 상태 조회 API
+  app.get('/api/archive/stats', async (req, res) => {
+    try {
+      const pool = dbModule.getDb();
+      const stats = await eventArchiver.getTableStats(pool);
+      const { rows: archLogs } = await pool.query(
+        `SELECT user_id, archived_at, from_date, to_date, row_count, drive_file, summary
+         FROM archive_log ORDER BY archived_at DESC LIMIT 20`
+      ).catch(() => ({ rows: [] }));
+      res.json({
+        current: stats,
+        threshold: eventArchiver.THRESHOLD,
+        keepDays: eventArchiver.KEEP_DAYS,
+        needsArchive: stats.rows >= eventArchiver.THRESHOLD,
+        recentLogs: archLogs,
+      });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  console.log(`[archiver] 등록 완료 (임계값: ${eventArchiver.THRESHOLD.toLocaleString()}행, 보존: ${eventArchiver.KEEP_DAYS}일)`);
+}
+
 // ─── Automation Engine (변수 대응 자동화) ──────────────────────────────────────
 app.use('/api/automation', require('./routes/automation-engine')({ getDb: dbModule.getDb }));
 // ─── 워크플로우 레지스트리 API (CLI/Orbit OS 공용) ───────────────────────────
