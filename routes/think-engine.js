@@ -11,7 +11,7 @@
  *   3. 결과값 예측 + Vision 검증
  *   4. 카카오톡 대화 자동 저장 (Vision OCR)
  *   5. 확장 사고 ("이 데이터가 있으면 이것도 가능")
- *   6. 사고 루프 (2시간마다 자동 탐색+테스트+디벨롭)
+ *   6. 사고 루프 (자동 탐색+테스트+디벨롭)
  */
 const express = require('express');
 
@@ -51,12 +51,17 @@ function createThinkEngine({ getDb, ragCore }) {
         id SERIAL PRIMARY KEY,
         user_id TEXT,
         chatroom TEXT,
-        sender TEXT,
-        message TEXT,
-        vision_event_id TEXT,
+        messages JSONB,
+        capture_event_id TEXT,
         created_at TIMESTAMPTZ DEFAULT NOW()
       )
     `);
+    // 기존 테이블에 새 컬럼 추가 (마이그레이션)
+    await db.query(`ALTER TABLE kakao_messages ADD COLUMN IF NOT EXISTS messages JSONB`).catch(() => {});
+    await db.query(`ALTER TABLE kakao_messages ADD COLUMN IF NOT EXISTS capture_event_id TEXT`).catch(() => {});
+    // 기존 vision_event_id → capture_event_id 데이터 복사
+    await db.query(`UPDATE kakao_messages SET capture_event_id = vision_event_id WHERE capture_event_id IS NULL AND vision_event_id IS NOT NULL`).catch(() => {});
+
     await db.query(`
       CREATE TABLE IF NOT EXISTS think_log (
         id SERIAL PRIMARY KEY,
@@ -65,6 +70,17 @@ function createThinkEngine({ getDb, ragCore }) {
         result TEXT,
         detail JSONB,
         created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS capability_ideas (
+        id SERIAL PRIMARY KEY,
+        source TEXT UNIQUE,
+        current_data TEXT,
+        additional_needed TEXT,
+        new_capability TEXT,
+        feasibility REAL DEFAULT 0,
+        discovered_at TIMESTAMPTZ DEFAULT NOW()
       )
     `);
   }
@@ -78,11 +94,12 @@ function createThinkEngine({ getDb, ragCore }) {
       if (!db?.query) return res.json({ error: 'DB not available' });
       await _ensureTables(db);
 
-      const [transRes, predRes, kakaoRes, logRes] = await Promise.all([
+      const [transRes, predRes, kakaoRes, logRes, capRes] = await Promise.all([
         db.query('SELECT COUNT(*) as cnt, COUNT(DISTINCT user_id) as users FROM transition_model'),
         db.query(`SELECT COUNT(*) as total, COUNT(*) FILTER (WHERE correct=true) as correct FROM predictions`),
         db.query('SELECT COUNT(*) as cnt, COUNT(DISTINCT chatroom) as rooms FROM kakao_messages'),
         db.query('SELECT COUNT(*) as cnt FROM think_log WHERE created_at > NOW() - INTERVAL \'24 hours\''),
+        db.query('SELECT COUNT(*) as cnt FROM capability_ideas'),
       ]);
 
       const t = transRes.rows[0] || {};
@@ -92,10 +109,11 @@ function createThinkEngine({ getDb, ragCore }) {
       const correct = parseInt(p.correct) || 0;
 
       res.json({
-        engine: 'think-engine v1',
+        engine: 'think-engine v2',
         transitionModel: { rules: parseInt(t.cnt) || 0, users: parseInt(t.users) || 0 },
         predictions: { total, correct, accuracy: total > 0 ? Math.round(correct / total * 100) : 0 },
         kakaoMessages: { total: parseInt(k.cnt) || 0, chatrooms: parseInt(k.rooms) || 0 },
+        capabilityIdeas: { total: parseInt(capRes.rows[0]?.cnt) || 0 },
         thinkingActivity: { last24h: parseInt(logRes.rows[0]?.cnt) || 0 },
       });
     } catch (err) { res.status(500).json({ error: err.message }); }
@@ -297,7 +315,7 @@ function createThinkEngine({ getDb, ragCore }) {
         WHERE type = 'screen.analyzed'
           AND (data_json->>'app' ILIKE '%kakao%' OR data_json->>'activity' ILIKE '%카카오톡%' OR data_json->>'activity' ILIKE '%카톡%')
           AND timestamp::timestamptz > NOW() - INTERVAL '24 hours'
-          AND id NOT IN (SELECT COALESCE(vision_event_id, '') FROM kakao_messages)
+          AND id NOT IN (SELECT COALESCE(capture_event_id, '') FROM kakao_messages WHERE capture_event_id IS NOT NULL)
         ORDER BY timestamp DESC
         LIMIT 20
       `);
@@ -305,16 +323,15 @@ function createThinkEngine({ getDb, ragCore }) {
       let extracted = 0;
       for (const v of visionRes.rows) {
         const activity = v.activity || '';
-        const dataVisible = v.data_visible || '';
         const chatroom = v.chatroom || v.app || '';
 
-        // Vision activity에서 대화 내용 추출 시도
-        // 패턴: "~에게 ~메시지", "~요청", "~확인" 등
         if (activity.length > 20) {
+          // messages JSONB 배열로 저장
+          const messages = [{ sender: 'unknown', message: activity.substring(0, 500), time: v.timestamp }];
           await db.query(`
-            INSERT INTO kakao_messages (user_id, chatroom, message, vision_event_id, created_at)
-            VALUES ($1, $2, $3, $4, $5::timestamptz)
-          `, [v.user_id, chatroom, activity.substring(0, 500), v.id, v.timestamp]);
+            INSERT INTO kakao_messages (user_id, chatroom, messages, capture_event_id, created_at)
+            VALUES ($1, $2, $3::jsonb, $4, $5::timestamptz)
+          `, [v.user_id, chatroom, JSON.stringify(messages), v.id, v.timestamp]);
           extracted++;
         }
       }
@@ -326,99 +343,29 @@ function createThinkEngine({ getDb, ragCore }) {
   });
 
   // ═══════════════════════════════════════════════════════════════
-  // GET /api/think/capabilities — 확장 가능성 추론
+  // GET /api/think/capabilities — 확장 가능성 조회 (DB 기반)
   // ═══════════════════════════════════════════════════════════════
   router.get('/capabilities', async (req, res) => {
     try {
       const db = getDb();
       if (!db?.query) return res.json({ error: 'DB not available' });
+      await _ensureTables(db);
 
-      const capabilities = [];
+      // DB에서 capability_ideas 조회
+      const stored = await db.query(
+        `SELECT * FROM capability_ideas ORDER BY feasibility DESC, discovered_at DESC LIMIT 50`
+      );
 
-      // 1. 마우스 좌표 → UI 자동화 가능성
-      const mouseRes = await db.query(`
-        SELECT user_id, COUNT(*) as cnt
-        FROM events
-        WHERE type = 'keyboard.chunk'
-          AND data_json->>'mousePositions' IS NOT NULL
-          AND jsonb_array_length(data_json->'mousePositions') > 0
-        GROUP BY user_id
-      `);
-      for (const r of mouseRes.rows) {
-        const cnt = parseInt(r.cnt);
-        if (cnt >= 30) {
-          capabilities.push({
-            currentData: `마우스 좌표 ${cnt}건 수집됨`,
-            additionalNeeded: '같은 버튼 클릭 좌표 클러스터링',
-            newCapability: 'nenova UI 버튼 위치 자동 학습 → pyautogui 클릭 좌표 자동 설정',
-            feasibility: cnt >= 100 ? 0.9 : 0.6,
-          });
-        }
+      // DB가 비어있으면 즉시 탐지 후 저장
+      if (stored.rows.length === 0) {
+        await _detectCapabilities(db);
+        const fresh = await db.query(
+          `SELECT * FROM capability_ideas ORDER BY feasibility DESC LIMIT 50`
+        );
+        return res.json({ total: fresh.rows.length, capabilities: fresh.rows });
       }
 
-      // 2. rawInput → 입력 패턴 템플릿 가능성
-      const rawRes = await db.query(`
-        SELECT COUNT(*) as cnt FROM events
-        WHERE type = 'keyboard.chunk' AND data_json->>'rawInput' IS NOT NULL AND LENGTH(data_json->>'rawInput') > 10
-      `);
-      const rawCnt = parseInt(rawRes.rows[0]?.cnt) || 0;
-      if (rawCnt >= 50) {
-        capabilities.push({
-          currentData: `rawInput ${rawCnt}건`,
-          additionalNeeded: '반복 입력 패턴 클러스터링',
-          newCapability: '자주 입력하는 품목명/수량 자동완성 또는 템플릿',
-          feasibility: rawCnt >= 200 ? 0.85 : 0.5,
-        });
-      }
-
-      // 3. Vision → 화면 구조 학습 가능성
-      const visionCnt = await db.query(`SELECT COUNT(*) as cnt FROM events WHERE type='screen.analyzed'`);
-      const vc = parseInt(visionCnt.rows[0]?.cnt) || 0;
-      if (vc >= 100) {
-        capabilities.push({
-          currentData: `Vision 분석 ${vc}건`,
-          additionalNeeded: '같은 앱 화면을 UI 요소 단위로 분류',
-          newCapability: 'nenova/Excel 화면 구조 자동 학습 → UI 요소 셀렉터 자동 생성',
-          feasibility: vc >= 300 ? 0.8 : 0.5,
-        });
-      }
-
-      // 4. 카카오톡 대화 → 주문 자동 감지 가능성
-      const kakaoCnt = await db.query(`SELECT COUNT(*) as cnt FROM kakao_messages`);
-      const kc = parseInt(kakaoCnt.rows[0]?.cnt) || 0;
-      capabilities.push({
-        currentData: `카카오톡 대화 ${kc}건 저장`,
-        additionalNeeded: kc < 50 ? '대화 데이터 50건+ 필요' : '주문 키워드 패턴 학습',
-        newCapability: '카톡 메시지에서 자동 주문 감지 → 자동 입력 트리거',
-        feasibility: kc >= 100 ? 0.8 : kc >= 30 ? 0.5 : 0.2,
-      });
-
-      // 5. 전이 확률 → 워크플로우 자동화 가능성
-      const transCnt = await db.query(`SELECT COUNT(*) as cnt FROM transition_model WHERE probability > 0.7`);
-      const tc = parseInt(transCnt.rows[0]?.cnt) || 0;
-      if (tc >= 5) {
-        capabilities.push({
-          currentData: `확률 70%+ 전이 규칙 ${tc}건`,
-          additionalNeeded: '전이 체인 3단계+ 연결',
-          newCapability: '카톡→주문→차감 전체 워크플로우 원클릭 자동화',
-          feasibility: tc >= 20 ? 0.85 : 0.5,
-        });
-      }
-
-      // 6. 거래처 패턴 → 주문 예측 가능성
-      const custRes = await db.query(`SELECT COUNT(DISTINCT name) as cnt FROM master_customers`);
-      const cc = parseInt(custRes.rows[0]?.cnt) || 0;
-      capabilities.push({
-        currentData: `거래처 ${cc}곳 등록`,
-        additionalNeeded: '거래처별 주문 이력 30건+',
-        newCapability: '거래처별 다음 주문 예측 (품목+수량+시기)',
-        feasibility: cc >= 15 ? 0.6 : 0.3,
-      });
-
-      res.json({
-        total: capabilities.length,
-        capabilities: capabilities.sort((a, b) => b.feasibility - a.feasibility),
-      });
+      res.json({ total: stored.rows.length, capabilities: stored.rows });
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
 
@@ -494,36 +441,29 @@ function createThinkEngine({ getDb, ragCore }) {
       }
       results.verify = `${vTotal}건 검증, ${vCorrect}건 정답`;
 
-      // Phase 3: 카카오톡 대화 추출
+      // Phase 3: 카카오톡 대화 추출 (JSONB 배열 형식)
       const visionKakao = await db.query(`
         SELECT id, user_id, timestamp, data_json->>'activity' as activity, data_json->>'app' as app
         FROM events WHERE type='screen.analyzed'
           AND (data_json->>'app' ILIKE '%kakao%' OR data_json->>'activity' ILIKE '%카카오톡%')
           AND timestamp::timestamptz > NOW()-INTERVAL '6 hours'
-          AND id NOT IN (SELECT COALESCE(vision_event_id,'') FROM kakao_messages)
+          AND id NOT IN (SELECT COALESCE(capture_event_id,'') FROM kakao_messages WHERE capture_event_id IS NOT NULL)
         LIMIT 20
       `);
       let kakaoSaved = 0;
       for (const v of visionKakao.rows) {
         if ((v.activity || '').length > 20) {
-          await db.query(`INSERT INTO kakao_messages (user_id,chatroom,message,vision_event_id,created_at) VALUES ($1,$2,$3,$4,$5::timestamptz)`,
-            [v.user_id, v.app || '', (v.activity||'').substring(0,500), v.id, v.timestamp]);
+          const msgs = [{ sender: 'unknown', message: (v.activity||'').substring(0,500), time: v.timestamp }];
+          await db.query(`INSERT INTO kakao_messages (user_id,chatroom,messages,capture_event_id,created_at) VALUES ($1,$2,$3::jsonb,$4,$5::timestamptz)`,
+            [v.user_id, v.app||'', JSON.stringify(msgs), v.id, v.timestamp]);
           kakaoSaved++;
         }
       }
       results.kakao = `${kakaoSaved}건 추출`;
 
-      // Phase 4: 확장 사고 (새 가능성 발견)
-      const newCaps = [];
-      const mouseTotal = await db.query(`SELECT COUNT(*) as c FROM events WHERE type='keyboard.chunk' AND data_json->>'mousePositions' IS NOT NULL AND jsonb_array_length(data_json->'mousePositions')>0`);
-      if (parseInt(mouseTotal.rows[0]?.c) >= 50) {
-        newCaps.push('마우스 좌표 50건+ → UI 버튼 위치 학습 가능');
-      }
-      const rawTotal = await db.query(`SELECT COUNT(*) as c FROM events WHERE type='keyboard.chunk' AND data_json->>'rawInput' IS NOT NULL AND LENGTH(data_json->>'rawInput')>10`);
-      if (parseInt(rawTotal.rows[0]?.c) >= 100) {
-        newCaps.push('rawInput 100건+ → 입력 패턴 템플릿 생성 가능');
-      }
-      results.capabilities = newCaps;
+      // Phase 4: 확장 사고 (새 가능성 발견 + DB 저장)
+      const newCaps = await _detectCapabilities(db);
+      results.capabilities = `${newCaps}건 발견`;
 
       await _log(db, 'think_loop', 'full_run', JSON.stringify(results));
 
@@ -587,18 +527,63 @@ function createThinkEngine({ getDb, ragCore }) {
     } catch {}
   }
 
+  // ── 확장 사고: 가능성 탐지 후 capability_ideas에 upsert (source 기준) ──
+  async function _detectCapabilities(db) {
+    const upsert = (source, current_data, additional_needed, new_capability, feasibility) =>
+      db.query(`
+        INSERT INTO capability_ideas (source, current_data, additional_needed, new_capability, feasibility, discovered_at)
+        VALUES ($1, $2, $3, $4, $5, NOW())
+        ON CONFLICT (source) DO UPDATE SET
+          current_data = EXCLUDED.current_data,
+          feasibility = EXCLUDED.feasibility,
+          discovered_at = NOW()
+      `, [source, current_data, additional_needed, new_capability, feasibility]).catch(() => {});
+
+    // 1. 마우스 좌표 → UI 자동화
+    const mouseRes = await db.query(`SELECT COUNT(*) as c FROM events WHERE type='keyboard.chunk' AND data_json->>'mousePositions' IS NOT NULL AND jsonb_array_length(data_json->'mousePositions')>0`);
+    const mouseCnt = parseInt(mouseRes.rows[0]?.c) || 0;
+    await upsert('mouse_coords', `마우스 좌표 ${mouseCnt}건`, '같은 버튼 클릭 좌표 클러스터링', 'nenova UI 버튼 위치 자동 학습 → pyautogui 클릭 좌표 자동 설정', mouseCnt >= 100 ? 0.9 : mouseCnt >= 30 ? 0.6 : 0.1);
+
+    // 2. rawInput → 입력 패턴 템플릿
+    const rawRes = await db.query(`SELECT COUNT(*) as c FROM events WHERE type='keyboard.chunk' AND data_json->>'rawInput' IS NOT NULL AND LENGTH(data_json->>'rawInput')>10`);
+    const rawCnt = parseInt(rawRes.rows[0]?.c) || 0;
+    await upsert('raw_input', `rawInput ${rawCnt}건`, '반복 입력 패턴 클러스터링', '자주 입력하는 품목명/수량 자동완성 또는 템플릿', rawCnt >= 200 ? 0.85 : rawCnt >= 50 ? 0.5 : 0.1);
+
+    // 3. Vision → 화면 구조 학습
+    const vcRes = await db.query(`SELECT COUNT(*) as c FROM events WHERE type='screen.analyzed'`);
+    const vc = parseInt(vcRes.rows[0]?.c) || 0;
+    await upsert('vision', `Vision 분석 ${vc}건`, '같은 앱 화면을 UI 요소 단위로 분류', 'nenova/Excel 화면 구조 자동 학습 → UI 요소 셀렉터 자동 생성', vc >= 300 ? 0.8 : vc >= 100 ? 0.5 : 0.1);
+
+    // 4. 카카오톡 대화 → 주문 자동 감지
+    const kcRes = await db.query(`SELECT COUNT(*) as c FROM kakao_messages`);
+    const kc = parseInt(kcRes.rows[0]?.c) || 0;
+    await upsert('kakao', `카카오톡 대화 ${kc}건`, kc < 50 ? '대화 데이터 50건+ 필요' : '주문 키워드 패턴 학습', '카톡 메시지에서 자동 주문 감지 → 자동 입력 트리거', kc >= 100 ? 0.8 : kc >= 30 ? 0.5 : 0.2);
+
+    // 5. 전이 확률 → 워크플로우 자동화
+    const tcRes = await db.query(`SELECT COUNT(*) as c FROM transition_model WHERE probability > 0.7`);
+    const tc = parseInt(tcRes.rows[0]?.c) || 0;
+    await upsert('transitions', `확률 70%+ 전이 규칙 ${tc}건`, '전이 체인 3단계+ 연결', '카톡→주문→차감 전체 워크플로우 원클릭 자동화', tc >= 20 ? 0.85 : tc >= 5 ? 0.5 : 0.1);
+
+    // 6. 거래처 패턴 → 주문 예측
+    const ccRes = await db.query(`SELECT COUNT(DISTINCT name) as c FROM master_customers`).catch(() => ({ rows: [{ c: 0 }] }));
+    const cc = parseInt(ccRes.rows[0]?.c) || 0;
+    await upsert('customers', `거래처 ${cc}곳`, '거래처별 주문 이력 30건+', '거래처별 다음 주문 예측 (품목+수량+시기)', cc >= 15 ? 0.6 : 0.3);
+
+    return 6; // 항상 6개 소스 갱신
+  }
+
   // ═══════════════════════════════════════════════════════════════
-  // 자동 사고 루프 — 2시간마다
+  // 자동 사고 루프 — 3개 주기로 분리
+  //   전이 모델: 30분마다
+  //   정확도 검증: 1시간마다
+  //   확장 사고: 2시간마다
   // ═══════════════════════════════════════════════════════════════
-  async function _autoThink() {
+  async function _autoLearnTransitions() {
     try {
       const db = getDb();
       if (!db?.query) return;
       await _ensureTables(db);
 
-      console.log('[think-engine] 🧠 사고 루프 시작...');
-
-      // 1. 전이 모델 학습
       const trans = await db.query(`
         WITH o AS (
           SELECT user_id,
@@ -606,7 +591,7 @@ function createThinkEngine({ getDb, ragCore }) {
             LAG(COALESCE(data_json->>'windowTitle',data_json->'appContext'->>'currentWindow')) OVER (PARTITION BY user_id ORDER BY timestamp) as ps,
             timestamp, LAG(timestamp) OVER (PARTITION BY user_id ORDER BY timestamp) as pt
           FROM events WHERE type IN ('keyboard.chunk','screen.capture')
-            AND timestamp::timestamptz > NOW()-INTERVAL '6 hours' AND user_id NOT IN ('MMOLABXL2066516519')
+            AND timestamp::timestamptz > NOW()-INTERVAL '2 hours' AND user_id NOT IN ('MMOLABXL2066516519')
         )
         SELECT user_id,ps,s,COUNT(*) as c,AVG(EXTRACT(EPOCH FROM (timestamp::timestamptz-pt::timestamptz))) as a
         FROM o WHERE s IS NOT NULL AND ps IS NOT NULL AND s!=ps AND LENGTH(s)>3 AND LENGTH(ps)>3
@@ -623,26 +608,37 @@ function createThinkEngine({ getDb, ragCore }) {
           [r.user_id,r.ps,r.s,+p.toFixed(3),parseInt(r.c),+parseFloat(r.a||0).toFixed(1)]);
         lc++;
       }
+      if (lc > 0) console.log(`[think-engine] 전이 모델 학습 ${lc}건`);
+    } catch (err) {
+      console.error('[think-engine] 전이 학습 에러:', err.message);
+    }
+  }
 
-      // 2. 카카오톡 대화 추출
+  async function _autoVerifyAccuracy() {
+    try {
+      const db = getDb();
+      if (!db?.query) return;
+
+      // 카카오톡 추출
       const vk = await db.query(`
         SELECT id,user_id,timestamp,data_json->>'activity' as a,data_json->>'app' as app
         FROM events WHERE type='screen.analyzed'
           AND (data_json->>'app' ILIKE '%kakao%' OR data_json->>'activity' ILIKE '%카카오톡%')
-          AND timestamp::timestamptz > NOW()-INTERVAL '6 hours'
-          AND id NOT IN (SELECT COALESCE(vision_event_id,'') FROM kakao_messages)
+          AND timestamp::timestamptz > NOW()-INTERVAL '2 hours'
+          AND id NOT IN (SELECT COALESCE(capture_event_id,'') FROM kakao_messages WHERE capture_event_id IS NOT NULL)
         LIMIT 20
       `);
       let kc = 0;
       for (const v of vk.rows) {
         if ((v.a||'').length>20) {
-          await db.query(`INSERT INTO kakao_messages (user_id,chatroom,message,vision_event_id,created_at) VALUES ($1,$2,$3,$4,$5::timestamptz)`,
-            [v.user_id,v.app||'',(v.a||'').substring(0,500),v.id,v.timestamp]);
+          const msgs = [{ sender: 'unknown', message: (v.a||'').substring(0,500), time: v.timestamp }];
+          await db.query(`INSERT INTO kakao_messages (user_id,chatroom,messages,capture_event_id,created_at) VALUES ($1,$2,$3::jsonb,$4,$5::timestamptz)`,
+            [v.user_id,v.app||'',JSON.stringify(msgs),v.id,v.timestamp]);
           kc++;
         }
       }
 
-      // 3. 예측 검증
+      // 예측 검증
       const uv = await db.query(`SELECT id,user_id,predicted_action,created_at FROM predictions WHERE correct IS NULL AND created_at>NOW()-INTERVAL '4 hours' LIMIT 20`);
       let vc=0,vv=0;
       for (const p of uv.rows) {
@@ -653,18 +649,31 @@ function createThinkEngine({ getDb, ragCore }) {
         }
       }
 
-      await _log(db, 'auto_think', 'cycle', `학습:${lc} 카톡:${kc} 검증:${vv}(정답:${vc})`);
-      console.log(`[think-engine] 🧠 완료: 학습 ${lc}건, 카톡 ${kc}건, 검증 ${vv}건(정답 ${vc})`);
+      await _log(db, 'auto_verify', 'cycle', `카톡:${kc} 검증:${vv}(정답:${vc})`);
+      if (kc > 0 || vv > 0) console.log(`[think-engine] 카톡 ${kc}건 추출, 검증 ${vv}건(정답 ${vc})`);
     } catch (err) {
-      console.error('[think-engine] 에러:', err.message);
+      console.error('[think-engine] 검증 에러:', err.message);
     }
   }
 
-  // 서버 시작 10분 후 첫 실행, 이후 3시간마다 (메모리 절약)
-  setTimeout(() => {
-    _autoThink();
-    setInterval(_autoThink, 3 * 60 * 60 * 1000);
-  }, 10 * 60 * 1000);
+  async function _autoDetectCapabilities() {
+    try {
+      const db = getDb();
+      if (!db?.query) return;
+      await _ensureTables(db);
+
+      const n = await _detectCapabilities(db);
+      await _log(db, 'auto_capabilities', 'cycle', `${n}건 갱신`);
+      console.log(`[think-engine] 확장 사고 ${n}건 capability_ideas 갱신`);
+    } catch (err) {
+      console.error('[think-engine] 확장 사고 에러:', err.message);
+    }
+  }
+
+  // 서버 시작 후 각 주기별 스케줄
+  setTimeout(() => { _autoLearnTransitions(); setInterval(_autoLearnTransitions, 30 * 60 * 1000); }, 10 * 60 * 1000);
+  setTimeout(() => { _autoVerifyAccuracy();  setInterval(_autoVerifyAccuracy,  60 * 60 * 1000); }, 15 * 60 * 1000);
+  setTimeout(() => { _autoDetectCapabilities(); setInterval(_autoDetectCapabilities, 2 * 60 * 60 * 1000); }, 20 * 60 * 1000);
 
   // ── RAG 증강 예측 ───────────────────────────────────────────────────────
   // GET /api/think/rag-predict?userId=&currentState=
@@ -707,7 +716,7 @@ function createThinkEngine({ getDb, ragCore }) {
     }
   });
 
-  console.log('[think-engine] 사고 엔진 시작 (2시간마다 학습+예측+검증+추출)');
+  console.log('[think-engine] 사고 엔진 v2 시작 (전이:30분 / 검증:1시간 / 확장사고:2시간)');
 
   return router;
 }
