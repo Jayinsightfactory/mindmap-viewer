@@ -2302,6 +2302,58 @@ module.exports = function createNenovaDbRouter({ getDb }) {
     res.json({ ok: true, synced, errors, total: customers.length });
   });
 
+  // POST /api/nenova/import/orders  { orders: [{OrderMasterKey, OrderDetailKey, ...}] }
+  router.post('/import/orders', async (req, res) => {
+    const adminSecret = process.env.ADMIN_SECRET;
+    const secretHeader = req.headers['x-admin-secret'] || req.query.adminSecret;
+    if (!adminSecret || secretHeader !== adminSecret) return res.status(403).json({ error: 'forbidden' });
+
+    const { orders = [] } = req.body || {};
+    if (!Array.isArray(orders) || orders.length === 0) return res.status(400).json({ error: 'orders array required' });
+
+    const db = getOrbitDb();
+    await ensureSyncTables();
+    let synced = 0, skipped = 0, errors = 0;
+
+    for (const o of orders) {
+      try {
+        const existing = await db.query(
+          'SELECT id FROM parsed_orders WHERE nenova_detail_key = $1',
+          [o.OrderDetailKey]
+        );
+        if (existing.rows.length > 0) { skipped++; continue; }
+
+        await db.query(`
+          INSERT INTO parsed_orders
+            (source_type, nenova_order_key, nenova_detail_key, customer, product,
+             quantity, unit, action, raw_text, confidence, order_week, order_year, order_date, synced_at)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW())
+        `, [
+          'nenova_sync',
+          o.OrderMasterKey,
+          o.OrderDetailKey,
+          o.CustName || '',
+          `${o.ProdName || ''} (${o.FlowerName || ''}, ${o.CounName || ''})`,
+          o.BoxQuantity || 0,
+          'box',
+          'order',
+          `주문코드: ${o.OrderCode || ''}, Box: ${o.BoxQuantity || 0}, Bunch: ${o.BunchQuantity || 0}, Steam: ${o.SteamQuantity || 0}`,
+          1.0,
+          o.OrderWeek || '',
+          o.OrderYear || 0,
+          o.OrderDtm || null,
+        ]);
+        synced++;
+      } catch (e) {
+        errors++;
+        if (errors <= 3) console.error(`[nenova-db] import/orders 오류 (DetailKey=${o.OrderDetailKey}):`, e.message);
+      }
+    }
+
+    console.log(`[nenova-db] import/orders: ${synced}건 신규, ${skipped}건 건너뜀, ${errors}건 오류 / total ${orders.length}`);
+    res.json({ ok: true, synced, skipped, errors, total: orders.length });
+  });
+
   // ── 라우터 반환 ──
   return router;
 };
