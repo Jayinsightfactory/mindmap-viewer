@@ -1057,7 +1057,7 @@ setInterval(async () => {
     const pool = dbModule.getDb();
     // 최근 7일 활성 사용자만 — 전체 스캔 방지 (OOM 근본 원인)
     const { rows } = await pool.query(
-      "SELECT DISTINCT user_id FROM events WHERE type='keyboard.chunk' AND timestamp > NOW() - INTERVAL '7 days'"
+      "SELECT DISTINCT user_id FROM events WHERE type='keyboard.chunk' AND timestamp::TIMESTAMPTZ > NOW() - INTERVAL '7 days'"
     );
     const userIds = rows.map(r => r.user_id).filter(Boolean);
     if (userIds.length === 0) return;
@@ -1098,7 +1098,7 @@ app.post('/api/learning/report', async (req, res) => {
   try {
     const pool = dbModule.getDb();
     const { rows } = await pool.query(
-      "SELECT DISTINCT user_id FROM events WHERE type='keyboard.chunk' AND timestamp > NOW() - INTERVAL '7 days'"
+      "SELECT DISTINCT user_id FROM events WHERE type='keyboard.chunk' AND timestamp::TIMESTAMPTZ > NOW() - INTERVAL '7 days'"
     );
     const userIds = rows.map(r => r.user_id).filter(Boolean);
     if (userIds.length === 0) return res.json({ error: '데이터 없음' });
@@ -1128,7 +1128,7 @@ app.post('/api/learning/deep-analyze', async (req, res) => {
       userIds = [userId];
     } else {
       const { rows } = await pool.query(
-        "SELECT DISTINCT user_id FROM events WHERE type IN ('keyboard.chunk','screen.capture') AND timestamp > NOW() - INTERVAL '7 days'"
+        "SELECT DISTINCT user_id FROM events WHERE type IN ('keyboard.chunk','screen.capture') AND timestamp::TIMESTAMPTZ > NOW() - INTERVAL '7 days'"
       );
       userIds = rows.map(r => r.user_id);
     }
@@ -1142,13 +1142,13 @@ app.post('/api/learning/deep-analyze', async (req, res) => {
     for (const uid of userIds) {
       // 키보드 로그 (최근 7일, 최대 3000건)
       const kb = await pool.query(
-        "SELECT timestamp, data_json FROM events WHERE user_id=$1 AND type='keyboard.chunk' AND timestamp > NOW() - INTERVAL '7 days' ORDER BY timestamp DESC LIMIT 3000", [uid]);
+        "SELECT timestamp, data_json FROM events WHERE user_id=$1 AND type='keyboard.chunk' AND timestamp::TIMESTAMPTZ > NOW() - INTERVAL '7 days' ORDER BY timestamp DESC LIMIT 3000", [uid]);
       // 캡처 로그 (최근 7일, 최대 1000건)
       const cap = await pool.query(
-        "SELECT timestamp, data_json FROM events WHERE user_id=$1 AND type='screen.capture' AND timestamp > NOW() - INTERVAL '7 days' ORDER BY timestamp DESC LIMIT 1000", [uid]);
+        "SELECT timestamp, data_json FROM events WHERE user_id=$1 AND type='screen.capture' AND timestamp::TIMESTAMPTZ > NOW() - INTERVAL '7 days' ORDER BY timestamp DESC LIMIT 1000", [uid]);
       // idle (최근 7일)
       const idle = await pool.query(
-        "SELECT timestamp FROM events WHERE user_id=$1 AND type='idle' AND timestamp > NOW() - INTERVAL '7 days' ORDER BY timestamp DESC LIMIT 1000", [uid]);
+        "SELECT timestamp FROM events WHERE user_id=$1 AND type='idle' AND timestamp::TIMESTAMPTZ > NOW() - INTERVAL '7 days' ORDER BY timestamp DESC LIMIT 1000", [uid]);
 
       // 키보드 이벤트 파싱
       const kbEvents = kb.rows.map(r => {

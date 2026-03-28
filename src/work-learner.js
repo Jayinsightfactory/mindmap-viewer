@@ -210,7 +210,7 @@ async function analyzeUser(pool, userId) {
     `SELECT id, type, timestamp, data_json FROM events
      WHERE user_id=$1
        AND type IN ('keyboard.chunk','screen.capture','idle')
-       AND timestamp > NOW() - INTERVAL '30 days'
+       AND timestamp::TIMESTAMPTZ > NOW() - INTERVAL '30 days'
      ORDER BY timestamp DESC LIMIT 5000`,
     [userId]
   );
