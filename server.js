@@ -1087,8 +1087,8 @@ app.get('/api/learning/analyze', async (req, res) => {
     const result = await workLearner.analyzeUser(pool, targetId);
     res.json(result);
   } catch (e) {
-    console.error('[learning] error:', e.message);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error('[learning] error:', e.message, e.stack);
+    res.status(500).json({ error: e.message });
   }
 });
 
@@ -1251,8 +1251,8 @@ app.post('/api/learning/deep-analyze', async (req, res) => {
 
     res.json({ ok: true, analyzedAt: new Date().toISOString(), members: results });
   } catch (e) {
-    console.error('[deep-analyze] error:', e.message);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error('[deep-analyze] error:', e.message, e.stack);
+    res.status(500).json({ error: e.message });
   }
 });
 
