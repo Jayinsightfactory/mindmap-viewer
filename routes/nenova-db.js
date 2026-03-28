@@ -194,6 +194,23 @@ async function safeQuery(queryFn) {
 module.exports = function createNenovaDbRouter({ getDb }) {
   const router = express.Router();
 
+  // sync 엔드포인트 인증 미들웨어 (관리자만)
+  const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || 'dlaww584@gmail.com').split(',').map(s => s.trim().toLowerCase());
+  router.use('/sync', (req, res, next) => {
+    const token = (req.headers.authorization || '').replace('Bearer ', '').trim();
+    if (!token) return res.status(401).json({ error: 'unauthorized' });
+    try {
+      const { verifyToken } = require('../src/auth');
+      const user = verifyToken(token);
+      if (!user || !ADMIN_EMAILS.includes((user.email || '').toLowerCase())) {
+        return res.status(403).json({ error: 'admin only' });
+      }
+      next();
+    } catch(e) {
+      return res.status(401).json({ error: 'invalid token' });
+    }
+  });
+
   // ── 공통 에러 핸들러 ──
   function handleError(res, err, context) {
     console.error(`[nenova-db] ${context}:`, err.message);
