@@ -602,23 +602,29 @@ async function _pgInit() {
 }
 
 // 사용자 + 토큰을 PG에 비동기 백업 (비밀번호 해시 포함)
-function _pgBackupUser(user, passwordHash) {
+async function _pgBackupUser(user, passwordHash) {
   if (!_pgPool || !user?.id) return;
-  _pgPool.query(
-    `INSERT INTO orbit_auth_users (id, email, name, password_hash, plan, provider)
-     VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (id) DO UPDATE
-     SET email=$2, name=COALESCE($3, orbit_auth_users.name),
-         password_hash=CASE WHEN $4 != '' THEN $4 ELSE orbit_auth_users.password_hash END,
-         plan=$5, provider=$6`,
-    [user.id, user.email || '', user.name || null, passwordHash || '', user.plan || 'free', user.provider || 'local']
-  ).catch(() => {});
+  try {
+    await _pgInit(); // 테이블 보장
+    await _pgPool.query(
+      `INSERT INTO orbit_auth_users (id, email, name, password_hash, plan, provider)
+       VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (id) DO UPDATE
+       SET email=$2, name=COALESCE($3, orbit_auth_users.name),
+           password_hash=CASE WHEN $4 != '' THEN $4 ELSE orbit_auth_users.password_hash END,
+           plan=$5, provider=$6`,
+      [user.id, user.email || '', user.name || null, passwordHash || '', user.plan || 'free', user.provider || 'local']
+    );
+  } catch (e) { console.warn('[AUTH-PG] user backup failed:', e.message); }
 }
-function _pgBackupToken(token, userId, expiresAt) {
+async function _pgBackupToken(token, userId, expiresAt) {
   if (!_pgPool || !token) return;
-  _pgPool.query(
-    `INSERT INTO orbit_auth_tokens (token, user_id, expires_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
-    [token, userId, expiresAt || null]
-  ).catch(() => {});
+  try {
+    await _pgInit(); // 테이블 보장
+    await _pgPool.query(
+      `INSERT INTO orbit_auth_tokens (token, user_id, expires_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+      [token, userId, expiresAt || null]
+    );
+  } catch (e) { console.warn('[AUTH-PG] token backup failed:', e.message); }
 }
 
 // 부팅 시 PG의 인증 데이터를 SQLite에 동기화 (이메일 기반 머지)
@@ -710,4 +716,6 @@ module.exports = {
   ADMIN_EMAILS,
   ensureCanonicalUser,  // Identity Bridge
   initFromPg,   // server.js 시작 시 호출
+  pgBackupUser: _pgBackupUser,   // create-employee-token에서 await용
+  pgBackupToken: _pgBackupToken, // create-employee-token에서 await용
 };

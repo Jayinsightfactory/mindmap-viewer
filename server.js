@@ -2368,14 +2368,14 @@ app.post('/api/admin/issue-token', (req, res) => {
 // ─── 직원 설치 토큰 생성 (ADMIN_SECRET 방식, Google 계정 불필요) ──────────────
 // POST /api/admin/create-employee-token
 // { secret, name, pcId } → 직원용 설치코드 즉시 발급
-app.post('/api/admin/create-employee-token', (req, res) => {
+app.post('/api/admin/create-employee-token', async (req, res) => {
   const { secret, name, pcId } = req.body || {};
   const adminSecret = process.env.ADMIN_SECRET;
   if (!adminSecret) return res.status(503).json({ error: 'ADMIN_SECRET not configured' });
   if (secret !== adminSecret) return res.status(403).json({ error: 'forbidden' });
   if (!name) return res.status(400).json({ error: 'name required' });
 
-  const { register: _reg, getUserByEmail: _getUser } = require('./src/auth');
+  const { register: _reg, getUserByEmail: _getUser, pgBackupUser, pgBackupToken } = require('./src/auth');
   const slug  = name.toLowerCase().replace(/\s+/g, '.').replace(/[^a-z0-9.가-힣]/g, '');
   const email = pcId ? `${slug}.${pcId.slice(0,8)}@orbit.local` : `${slug}@orbit.local`;
 
@@ -2386,6 +2386,13 @@ app.post('/api/admin/create-employee-token', (req, res) => {
     user = result.user;
   }
   const apiToken = issueApiToken(user.id);
+
+  // PG 백업 명시적으로 await — 재배포 후 토큰 유효성 보장
+  await Promise.all([
+    pgBackupUser(user, ''),
+    pgBackupToken(apiToken, user.id, null),
+  ]).catch(e => console.warn('[create-employee-token] PG backup warn:', e.message));
+
   const serverUrl = process.env.RAILWAY_PUBLIC_DOMAIN
     ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
     : `http://localhost:${PORT}`;
