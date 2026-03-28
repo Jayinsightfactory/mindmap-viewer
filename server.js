@@ -2365,6 +2365,34 @@ app.post('/api/admin/issue-token', (req, res) => {
   res.json({ ok: true, userId: user.id, token, email: user.email, name: user.name });
 });
 
+// ─── 직원 설치 토큰 생성 (ADMIN_SECRET 방식, Google 계정 불필요) ──────────────
+// POST /api/admin/create-employee-token
+// { secret, name, pcId } → 직원용 설치코드 즉시 발급
+app.post('/api/admin/create-employee-token', (req, res) => {
+  const { secret, name, pcId } = req.body || {};
+  const adminSecret = process.env.ADMIN_SECRET;
+  if (!adminSecret) return res.status(503).json({ error: 'ADMIN_SECRET not configured' });
+  if (secret !== adminSecret) return res.status(403).json({ error: 'forbidden' });
+  if (!name) return res.status(400).json({ error: 'name required' });
+
+  const { register: _reg, getUserByEmail: _getUser } = require('./src/auth');
+  const slug  = name.toLowerCase().replace(/\s+/g, '.').replace(/[^a-z0-9.가-힣]/g, '');
+  const email = pcId ? `${slug}.${pcId.slice(0,8)}@orbit.local` : `${slug}@orbit.local`;
+
+  let user = _getUser(email);
+  if (!user) {
+    const result = _reg({ email, name, password: require('crypto').randomBytes(16).toString('hex') });
+    if (!result.ok) return res.status(500).json({ error: result.error || 'registration failed' });
+    user = result.user;
+  }
+  const apiToken = issueApiToken(user.id);
+  const serverUrl = process.env.RAILWAY_PUBLIC_DOMAIN
+    ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+    : `http://localhost:${PORT}`;
+  const installCmd = `irm "${serverUrl}/api/setup/install-script?os=windows&token=${apiToken}&memberName=${encodeURIComponent(name)}&serverUrl=${encodeURIComponent(serverUrl)}" | iex`;
+  res.json({ ok: true, userId: user.id, email, name: user.name, token: apiToken, installCmd });
+});
+
 // ─── 라우터 의존성 조립 + 마운트 ─────────────────────────────────────────────
 // 각 라우터는 createRouter(deps) 패턴으로 의존성을 주입받습니다.
 // deps 에 mock 객체를 주입하면 테스트 시 DB 없이 단위 테스트 가능합니다.
