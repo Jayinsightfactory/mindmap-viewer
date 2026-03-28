@@ -2314,7 +2314,7 @@ module.exports = function createNenovaDbRouter({ getDb }) {
 
     const db = getOrbitDb();
     await ensureSyncTables();
-    let synced = 0, skipped = 0, errors = 0, firstError = null;
+    let synced = 0, skipped = 0, errors = 0;
 
     for (const o of orders) {
       try {
@@ -2349,12 +2349,11 @@ module.exports = function createNenovaDbRouter({ getDb }) {
       } catch (e) {
         errors++;
         if (errors <= 3) console.error(`[nenova-db] import/orders 오류 (DetailKey=${o.OrderDetailKey}):`, e.message);
-        if (errors === 1) firstError = e.message;
       }
     }
 
     console.log(`[nenova-db] import/orders: ${synced}건 신규, ${skipped}건 건너뜀, ${errors}건 오류 / total ${orders.length}`);
-    res.json({ ok: true, synced, skipped, errors, total: orders.length, ...(firstError ? { firstError } : {}) });
+    res.json({ ok: true, synced, skipped, errors, total: orders.length });
   });
 
   // ── 라우터 반환 ──
