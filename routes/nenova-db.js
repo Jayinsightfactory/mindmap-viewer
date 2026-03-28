@@ -197,6 +197,11 @@ module.exports = function createNenovaDbRouter({ getDb }) {
   // sync 엔드포인트 인증 미들웨어 (관리자만)
   const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || 'dlaww584@gmail.com').split(',').map(s => s.trim().toLowerCase());
   router.use('/sync', (req, res, next) => {
+    // ADMIN_SECRET 헤더로도 인증 허용 (CLI/자동화용)
+    const adminSecret = process.env.ADMIN_SECRET;
+    const secretHeader = req.headers['x-admin-secret'] || req.query.adminSecret;
+    if (adminSecret && secretHeader === adminSecret) return next();
+
     const token = (req.headers.authorization || '').replace('Bearer ', '').trim();
     if (!token) return res.status(401).json({ error: 'unauthorized' });
     try {
