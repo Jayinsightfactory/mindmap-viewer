@@ -2244,6 +2244,64 @@ module.exports = function createNenovaDbRouter({ getDb }) {
     }
   });
 
+  // ── 외부 PUSH import (로컬 PC → Railway: 내부망 우회) ──────────────────────
+  // POST /api/nenova/import/products  { products: [{ProdKey, ProdName, FlowerName, CounName}] }
+  router.post('/import/products', async (req, res) => {
+    const adminSecret = process.env.ADMIN_SECRET;
+    const secretHeader = req.headers['x-admin-secret'] || req.query.adminSecret;
+    if (!adminSecret || secretHeader !== adminSecret) return res.status(403).json({ error: 'forbidden' });
+
+    const { products = [] } = req.body || {};
+    if (!Array.isArray(products) || products.length === 0) return res.status(400).json({ error: 'products array required' });
+
+    const db = getOrbitDb();
+    await ensureSyncTables();
+    let synced = 0, errors = 0;
+
+    for (const p of products) {
+      try {
+        await db.query(`
+          INSERT INTO master_products (nenova_key, name, name_en, flower_name, country, category, origin, source, first_seen, last_seen, seen_count, synced_at)
+          VALUES ($1,$2,$2,$3,$4,$5,$4,'nenova',NOW(),NOW(),1,NOW())
+          ON CONFLICT (name) DO UPDATE SET
+            nenova_key=EXCLUDED.nenova_key, flower_name=EXCLUDED.flower_name,
+            country=EXCLUDED.country, category=EXCLUDED.category, origin=EXCLUDED.origin,
+            source='nenova', last_seen=NOW(), seen_count=master_products.seen_count+1, synced_at=NOW(), updated_at=NOW()
+        `, [p.ProdKey||'', p.ProdName||'', p.FlowerName||'', p.CounName||'', p.FlowerName||'']);
+        synced++;
+      } catch (e) { errors++; }
+    }
+    res.json({ ok: true, synced, errors, total: products.length });
+  });
+
+  // POST /api/nenova/import/customers  { customers: [{CustKey, CustName}] }
+  router.post('/import/customers', async (req, res) => {
+    const adminSecret = process.env.ADMIN_SECRET;
+    const secretHeader = req.headers['x-admin-secret'] || req.query.adminSecret;
+    if (!adminSecret || secretHeader !== adminSecret) return res.status(403).json({ error: 'forbidden' });
+
+    const { customers = [] } = req.body || {};
+    if (!Array.isArray(customers) || customers.length === 0) return res.status(400).json({ error: 'customers array required' });
+
+    const db = getOrbitDb();
+    await ensureSyncTables();
+    let synced = 0, errors = 0;
+
+    for (const c of customers) {
+      try {
+        await db.query(`
+          INSERT INTO master_customers (nenova_key, name, source, first_seen, last_seen, seen_count, synced_at)
+          VALUES ($1,$2,'nenova',NOW(),NOW(),1,NOW())
+          ON CONFLICT (name) DO UPDATE SET
+            nenova_key=EXCLUDED.nenova_key, source='nenova',
+            last_seen=NOW(), seen_count=master_customers.seen_count+1, synced_at=NOW(), updated_at=NOW()
+        `, [c.CustKey||'', c.CustName||'']);
+        synced++;
+      } catch (e) { errors++; }
+    }
+    res.json({ ok: true, synced, errors, total: customers.length });
+  });
+
   // ── 라우터 반환 ──
   return router;
 };
