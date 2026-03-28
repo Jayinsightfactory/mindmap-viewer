@@ -448,7 +448,12 @@ async function getAllEvents(limit = 300) {
 }
 
 async function getEventsBySession(sessionId) {
-  const { rows } = await pool.query('SELECT * FROM events WHERE session_id=$1 ORDER BY timestamp ASC', [sessionId]);
+  const { rows } = await pool.query('SELECT * FROM events WHERE session_id=$1 ORDER BY timestamp ASC LIMIT 2000', [sessionId]);
+  return rows.map(deserializeEvent);
+}
+
+async function getEventsByChannel(channelId) {
+  const { rows } = await pool.query('SELECT * FROM events WHERE channel_id=$1 ORDER BY timestamp ASC LIMIT 2000', [channelId]);
   return rows.map(deserializeEvent);
 }
 
@@ -478,7 +483,7 @@ async function getFiles() {
 }
 
 async function getAnnotations() {
-  const { rows } = await pool.query('SELECT * FROM annotations ORDER BY created_at ASC');
+  const { rows } = await pool.query('SELECT * FROM annotations ORDER BY created_at ASC LIMIT 500');
   return rows;
 }
 
@@ -496,7 +501,7 @@ async function deleteAnnotation(id) {
 
 // ─── 사용자 라벨 ─────────────────────────────────────
 async function getUserLabels() {
-  const { rows } = await pool.query('SELECT * FROM user_labels');
+  const { rows } = await pool.query('SELECT * FROM user_labels LIMIT 1000');
   return rows;
 }
 
@@ -514,12 +519,22 @@ async function deleteUserLabel(eventId) {
 
 // ─── 사용자 카테고리 ──────────────────────────────────
 async function getUserCategories() {
-  const { rows: cats } = await pool.query('SELECT * FROM user_categories ORDER BY sort_order ASC');
-  for (const cat of cats) {
-    const { rows: mappings } = await pool.query('SELECT event_type FROM category_mappings WHERE category_id=$1', [cat.id]);
-    cat.mappedTypes = mappings.map(m => m.event_type);
+  const { rows } = await pool.query(`
+    SELECT uc.*, cm.event_type
+    FROM user_categories uc
+    LEFT JOIN category_mappings cm ON cm.category_id = uc.id
+    ORDER BY uc.sort_order ASC
+    LIMIT 500
+  `);
+  const catMap = new Map();
+  for (const row of rows) {
+    if (!catMap.has(row.id)) {
+      catMap.set(row.id, { ...row, mappedTypes: [] });
+      delete catMap.get(row.id).event_type;
+    }
+    if (row.event_type) catMap.get(row.id).mappedTypes.push(row.event_type);
   }
-  return cats;
+  return Array.from(catMap.values());
 }
 
 async function upsertUserCategory(category) {
@@ -544,7 +559,7 @@ async function deleteUserCategory(id) {
 
 // ─── 도구 라벨 매핑 ───────────────────────────────────
 async function getToolLabelMappings() {
-  const { rows } = await pool.query('SELECT * FROM tool_label_mappings');
+  const { rows } = await pool.query('SELECT * FROM tool_label_mappings LIMIT 500');
   return rows;
 }
 
@@ -902,7 +917,7 @@ async function updateWorkspaceActivityStrength(workspaceId, userId1, userId2, st
 
 module.exports = {
   initDatabase, getDb, waitForTables,
-  insertEvent, getAllEvents, getEventsBySession, getEventsByType, searchEvents,
+  insertEvent, getAllEvents, getEventsBySession, getEventsByChannel, getEventsByType, searchEvents,
   getSessions, getFiles, getAnnotations, insertAnnotation, deleteAnnotation,
   rollbackToEvent, clearAll, getStats, upsertFile,
   getUserLabels, setUserLabel, deleteUserLabel,

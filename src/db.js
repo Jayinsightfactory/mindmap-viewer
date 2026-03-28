@@ -660,13 +660,9 @@ function upsertFile(filePath, fileName, language, timestamp) {
 }
 
 // ─── 조회 ───────────────────────────────────────────
-function getAllEvents(limit) {
-  if (limit) {
-    return db.prepare('SELECT * FROM events ORDER BY timestamp DESC LIMIT ?').all(limit)
-      .map(deserializeEvent).reverse();
-  }
-  return db.prepare('SELECT * FROM events ORDER BY timestamp ASC').all()
-    .map(deserializeEvent);
+function getAllEvents(limit = 300) {
+  return db.prepare('SELECT * FROM events ORDER BY timestamp DESC LIMIT ?').all(limit)
+    .map(deserializeEvent).reverse();
 }
 
 function getEventsBySession(sessionId) {
@@ -675,7 +671,7 @@ function getEventsBySession(sessionId) {
 }
 
 function getEventsByChannel(channelId) {
-  return db.prepare('SELECT * FROM events WHERE channel_id = ? ORDER BY timestamp ASC').all(channelId)
+  return db.prepare('SELECT * FROM events WHERE channel_id = ? ORDER BY timestamp ASC LIMIT 2000').all(channelId)
     .map(deserializeEvent);
 }
 
