@@ -1429,12 +1429,21 @@ app.get('/api/daemon/events', async (req, res) => {
   }
 });
 
-// POST /api/daemon/force-update — hook 응답에 업데이트 명령 끼워넣기 (켜기/끄기)
-// 데몬이 구버전이라 명령 폴링이 안 될 때 사용
+// POST /api/daemon/force-update — 모든 데몬에 즉시 업데이트 명령 전송
+// admin secret 인증 — commands 큐(daemon-updater용) + hook 응답(구버전용) 동시 처리
 app.post('/api/daemon/force-update', (req, res) => {
   const { enabled } = req.body || {};
   global._forceUpdateEnabled = !!enabled;
   console.log(`[daemon] 강제 업데이트 플래그: ${global._forceUpdateEnabled ? 'ON' : 'OFF'}`);
+
+  // daemon-updater가 있는 최신 데몬은 commands 큐에서 바로 수신 (1분 내)
+  if (global._forceUpdateEnabled) {
+    if (!global._daemonCommands) global._daemonCommands = {};
+    if (!global._daemonCommands['ALL']) global._daemonCommands['ALL'] = [];
+    global._daemonCommands['ALL'].push({ action: 'update', reason: 'admin-force', ts: new Date().toISOString() });
+    console.log('[daemon] ALL 호스트 update 명령 큐 추가');
+  }
+
   res.json({ ok: true, forceUpdate: global._forceUpdateEnabled });
 });
 
