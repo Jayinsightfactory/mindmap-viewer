@@ -2202,10 +2202,11 @@ module.exports = function createNenovaDbRouter({ getDb }) {
           // parsed_orders 형식으로 변환
           await orbitDb.query(`
             INSERT INTO parsed_orders
-              (source_type, nenova_order_key, nenova_detail_key, customer, product, quantity, unit, action, raw_text, confidence, order_week, order_year, order_date, synced_at)
+              (source_event_id, source_type, nenova_order_key, nenova_detail_key, customer, product, quantity, unit, action, raw_text, confidence, order_week, order_year, order_date, synced_at)
             VALUES
-              ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
+              ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW())
           `, [
+            `nenova_order_${order.OrderDetailKey}`,
             'nenova_sync',
             order.OrderMasterKey,
             order.OrderDetailKey,
@@ -2325,10 +2326,11 @@ module.exports = function createNenovaDbRouter({ getDb }) {
 
         await db.query(`
           INSERT INTO parsed_orders
-            (source_type, nenova_order_key, nenova_detail_key, customer, product,
+            (source_event_id, source_type, nenova_order_key, nenova_detail_key, customer, product,
              quantity, unit, action, raw_text, confidence, order_week, order_year, order_date, synced_at)
-          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW())
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NOW())
         `, [
+          `nenova_order_${o.OrderDetailKey}`,
           'nenova_sync',
           o.OrderMasterKey,
           o.OrderDetailKey,
