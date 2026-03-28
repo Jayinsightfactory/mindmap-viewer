@@ -18,15 +18,15 @@ module.exports = function createInsightsApiRouter(deps) {
   const _clientInsights = [];
   const MAX_CLIENT_INSIGHTS = 5000;
 
-// /api/insights — 최근 인사이트 조회 (userId 쿼리 파라미터로 필터링 가능)
-router.get('/api/insights', (req, res) => {
+// /insights — 최근 인사이트 조회 (userId 쿼리 파라미터로 필터링 가능)
+router.get('/insights', (req, res) => {
   const limit  = Math.min(parseInt(req.query.limit) || 50, 200);
   const userId = req.query.userId || undefined;
   res.json(insightEngine.getInsights(limit, userId));
 });
 
-// /api/insights/run — 즉시 분석 실행 (POST)
-router.post('/api/insights/run', async (req, res) => {
+// /insights/run — 즉시 분석 실행 (POST)
+router.post('/insights/run', async (req, res) => {
   const { analyzeAndSuggest: saveSuggestion } = require('./src/growth-engine');
   const results = await insightEngine.runOnce({ getAllEvents, saveSuggestion, broadcastAll });
   res.json({ ok: true, count: results.length, insights: results });
@@ -34,10 +34,10 @@ router.post('/api/insights/run', async (req, res) => {
 
 
 // ── Diff 학습 API ────────────────────────────────────────────────────────────
-router.get('/api/learn/stats',       (req, res) => res.json(diffLearner.getStats()));
-router.get('/api/learn/suggestions', (req, res) => res.json(diffLearner.getSuggestions()));
-router.post('/api/learn/seen/:id',   (req, res) => { diffLearner.markSeen(req.params.id); res.json({ ok: true }); });
-router.post('/api/learn/file',       async (req, res) => {
+router.get('/learn/stats',       (req, res) => res.json(diffLearner.getStats()));
+router.get('/learn/suggestions', (req, res) => res.json(diffLearner.getSuggestions()));
+router.post('/learn/seen/:id',   (req, res) => { diffLearner.markSeen(req.params.id); res.json({ ok: true }); });
+router.post('/learn/file',       async (req, res) => {
   const { filePath, action } = req.body;
   if (!filePath) return res.status(400).json({ error: 'filePath required' });
   if (action === 'before') { diffLearner.snapshot(filePath); return res.json({ ok: true }); }
@@ -45,18 +45,7 @@ router.post('/api/learn/file',       async (req, res) => {
   res.json({ ok: true, entry });
 });
 
-router.get('/api/learn/stats',       (req, res) => res.json(diffLearner.getStats()));
-router.get('/api/learn/suggestions', (req, res) => res.json(diffLearner.getSuggestions()));
-router.post('/api/learn/seen/:id',   (req, res) => { diffLearner.markSeen(req.params.id); res.json({ ok: true }); });
-router.post('/api/learn/file',       async (req, res) => {
-  const { filePath, action } = req.body;
-  if (!filePath) return res.status(400).json({ error: 'filePath required' });
-  if (action === 'before') { diffLearner.snapshot(filePath); return res.json({ ok: true }); }
-  const entry = await diffLearner.learn(filePath);
-  res.json({ ok: true, entry });
-});
-
-router.post('/api/insights/client', (req, res) => {
+router.post('/insights/client', (req, res) => {
   const { insights } = req.body;
   if (!Array.isArray(insights) || insights.length === 0) {
     return res.status(400).json({ error: 'insights array required' });
@@ -130,7 +119,7 @@ router.post('/api/insights/client', (req, res) => {
   res.json({ ok: true, received: received.length, suggestions: newSuggestions.length });
 });
 
-router.get('/api/insights/feedback', (req, res) => {
+router.get('/insights/feedback', (req, res) => {
   const { clientId } = req.query;
   if (!clientId) return res.status(400).json({ error: 'clientId required' });
   const suggestions = dualSkillEngine.getFeedback(clientId);
@@ -138,7 +127,7 @@ router.get('/api/insights/feedback', (req, res) => {
 });
 
 // ── 제안 수락 ─────────────────────────────────────────────────────────────────
-router.post('/api/insights/feedback/apply', (req, res) => {
+router.post('/insights/feedback/apply', (req, res) => {
   const { clientId, suggestionId } = req.body;
   if (!clientId || !suggestionId) return res.status(400).json({ error: 'clientId, suggestionId required' });
   const suggestion = dualSkillEngine.acceptSuggestion(clientId, suggestionId);
@@ -147,7 +136,7 @@ router.post('/api/insights/feedback/apply', (req, res) => {
 });
 
 // ── 패턴 통계 (디버그/대시보드) ──────────────────────────────────────────────
-router.get('/api/insights/patterns', (req, res) => {
+router.get('/insights/patterns', (req, res) => {
   const { clientId } = req.query;
   if (!clientId) {
     // 전체 제안 (대시보드용)
@@ -159,7 +148,7 @@ router.get('/api/insights/patterns', (req, res) => {
 });
 
 // /api/insights/dashboard — 집계 대시보드
-router.get('/api/insights/dashboard', (req, res) => {
+router.get('/insights/dashboard', (req, res) => {
   const limit  = Math.min(parseInt(req.query.limit) || 100, 1000);
   const recent = _clientInsights.slice(0, limit);
 

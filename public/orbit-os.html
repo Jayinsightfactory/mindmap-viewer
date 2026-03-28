@@ -1254,7 +1254,8 @@ function termKey(e) {
   else {
     const res = fn();
     if (res && typeof res.then === 'function') {
-      res.then(r => { out.textContent += r + '\n'; out.scrollTop = out.scrollHeight; });
+      res.then(r => { out.textContent += (r || '') + '\n'; out.scrollTop = out.scrollHeight; })
+         .catch(e => { out.textContent += `오류: ${e.message}\n`; out.scrollTop = out.scrollHeight; });
     } else {
       out.textContent += (res || '') + '\n';
     }
