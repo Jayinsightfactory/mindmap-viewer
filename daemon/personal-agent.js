@@ -94,22 +94,46 @@ function _reportEvent(type, data) {
 const { execSync } = require('child_process');
 
 // 은행 보안프로그램 프로세스명 패턴 (Windows)
+// 업데이트 기준: 실제 은행 설치 페이지 확인 (2026-03-29)
 const BANK_SECURITY_PATTERNS = [
-  /^nProtect(Browser)?\.exe$/i,
-  /^TouchEnKey(Hook)?\.exe$/i,
-  /^ASTx.*\.exe$/i,
+  // ── 키보드 보안 ──────────────────────────────────────────────
+  /^TouchEn(Nx)?Key(Hook)?.*\.exe$/i,   // TouchEnNxKey.exe / TouchEnKey.exe / TouchEnNxKeyHook.exe
+  /^nProtect(KeyCrypt|Browser)?.*\.exe$/i, // nProtect.exe / nProtectKeyCrypt.exe / npkcrypt.exe
+  /^npkcrypt.*\.exe$/i,
+  /^ASTx.*\.exe$/i,                     // ASTx.exe / astx64.exe (AhnLab 키보드보안)
   /^astx.*\.exe$/i,
-  /^xecure.*\.exe$/i,
-  /^XecureCK.*\.exe$/i,
-  /^IBK.*\.exe$/i,
-  /^INISAFEWeb.*\.exe$/i,
-  /^Delfino.*\.exe$/i,
-  /^MagicLine.*\.exe$/i,
-  /^ClientKeeper.*\.exe$/i,
+  /^KeySharp.*\.exe$/i,
+  /^KDefense.*\.exe$/i,
+
+  // ── AhnLab Safe Transaction (필수 설치 — 해킹방지) ──────────
+  /^ASDSvc.*\.exe$/i,                   // ASDSvc.exe ← 주 서비스 프로세스 (핵심)
+  /^ast\.exe$/i,                        // ast.exe
+  /^V3LTray.*\.exe$/i,                  // V3LTray.exe (AhnLab 트레이)
+  /^V3Lite.*\.exe$/i,
+
+  // ── INISAFE CrossWeb EX (공동인증서 보안) ────────────────────
+  /^INISAFE(CrossWeb|Web).*\.exe$/i,    // INISAFECrossWebEX.exe / INISAFEWeb.exe
   /^CrossWeb.*\.exe$/i,
   /^crosswebex.*\.exe$/i,
-  /^UniSign.*\.exe$/i,
+
+  // ── 인증/전자서명 ────────────────────────────────────────────
+  /^Delfino.*\.exe$/i,
+  /^MagicLine.*\.exe$/i,
   /^VeraPort.*\.exe$/i,
+  /^veraport.*\.exe$/i,
+  /^UniSign.*\.exe$/i,
+  /^XecureWeb.*\.exe$/i,
+  /^XecureCK.*\.exe$/i,
+  /^xecure.*\.exe$/i,
+
+  // ── 기타 ────────────────────────────────────────────────────
+  /^IBK.*\.exe$/i,
+  /^ClientKeeper.*\.exe$/i,
+  /^IPInsideAgent.*\.exe$/i,
+  /^IPInsideLWS.*\.exe$/i,
+  /^nProtect Netizen.*\.exe$/i,
+  /^npupdate.*\.exe$/i,
+  /^NPAgent.*\.exe$/i,
 ];
 
 let _bankMode = false;

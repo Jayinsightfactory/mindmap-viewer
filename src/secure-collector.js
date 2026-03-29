@@ -116,32 +116,56 @@ function _ensurePs1() {
 }
 
 function _getActiveWindow() {
+  // ── 1차: P/Invoke (GetForegroundWindow) — 은행 보안에 차단 안 됨 ──
+  //    TouchEn nxKey / AhnLab Safe Transaction / INISAFE CrossWeb 모두
+  //    powershell.exe + user32.dll P/Invoke 호출은 허용 (키보드 훅만 차단)
   try {
     const ps1 = _ensurePs1();
     const raw = execSync(
       `powershell -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "${ps1}"`,
       PS_OPTS
     ).trim();
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    return {
-      title:  (parsed.title  || '').trim(),
-      proc:   (parsed.proc   || '').trim(),
-      pid:    parsed.pid    || 0,
-      idleMs: parsed.idleMs || 0,
-    };
-  } catch {
-    // 폴백: WMI Get-Process 방식 (Add-Type 없이)
-    try {
-      const raw = execSync(
-        `${PS} "(Get-Process | Where-Object {$_.MainWindowHandle -ne 0} | Sort-Object CPU -Desc | Select-Object -First 1 | Select-Object ProcessName, MainWindowTitle | ConvertTo-Json -Compress)"`,
-        PS_OPTS
-      ).trim();
-      if (!raw) return null;
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed.proc || parsed.title) {
+        return {
+          title:  (parsed.title  || '').trim(),
+          proc:   (parsed.proc   || '').trim(),
+          pid:    parsed.pid    || 0,
+          idleMs: parsed.idleMs || 0,
+          method: 'pinvoke',
+        };
+      }
+    }
+  } catch {}
+
+  // ── 2차 폴백: WMI Get-Process (Add-Type 없이, 더 가벼움) ──
+  try {
+    const raw = execSync(
+      `${PS} "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; $p=Get-Process | Where-Object {$_.MainWindowTitle -ne ''} | Sort-Object CPU -Desc | Select-Object -First 1; if($p){($p | Select-Object ProcessName,MainWindowTitle | ConvertTo-Json -Compress)}else{'null'}"`,
+      { ...PS_OPTS, timeout: 4000 }
+    ).trim();
+    if (raw && raw !== 'null') {
       const p = JSON.parse(raw);
-      return { title: p.MainWindowTitle || '', proc: p.ProcessName || '', pid: 0, idleMs: 0 };
-    } catch { return null; }
-  }
+      return { title: p.MainWindowTitle || '', proc: p.ProcessName || '', pid: 0, idleMs: 0, method: 'wmi' };
+    }
+  } catch {}
+
+  // ── 3차 폴백: tasklist (가장 가벼움, 창 제목 없음) ──
+  try {
+    const raw = execSync('tasklist /FO CSV /NH /FI "STATUS eq Running"', { ...PS_OPTS, timeout: 3000 }).trim();
+    if (raw) {
+      const lines = raw.split('\n').filter(Boolean);
+      // CPU 기준 정렬 불가 — 첫 번째 GUI 프로세스 반환
+      const match = lines.find(l => !l.includes('System') && !l.includes('svchost'));
+      if (match) {
+        const m = match.match(/"([^"]+)"/);
+        return { title: '', proc: m ? m[1].replace('.exe','') : '', pid: 0, idleMs: 0, method: 'tasklist' };
+      }
+    }
+  } catch {}
+
+  return null;
 }
 
 
