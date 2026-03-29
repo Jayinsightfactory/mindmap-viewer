@@ -28,6 +28,8 @@
 
 require('dotenv').config();
 const logger = require('./src/logger');
+const env    = require('./config/environment');
+const memMgr = require('./services/memory-manager');
 
 // ─── 전역 미처리 Promise 거부 안전망 (Node.js v24+ 크래시 방지) ────────────────
 process.on('unhandledRejection', (reason, promise) => {
@@ -44,30 +46,8 @@ process.on('uncaughtException', (err) => {
 });
 
 // ─── 힙 메모리 모니터링 + 서킷브레이커 ──────────────────────────────────────────
-const HEAP_LIMIT_MB = parseInt(process.env.HEAP_LIMIT_MB) || 580; // Railway 768MB 힙 기준 안전마진
-let _heapPressure = false; // true면 무거운 요청 거부
-setInterval(() => {
-  const usage = process.memoryUsage();
-  const heapMB = Math.round(usage.heapUsed / 1024 / 1024);
-  const rssMB = Math.round(usage.rss / 1024 / 1024);
-  _heapPressure = heapMB > HEAP_LIMIT_MB;
-  if (_heapPressure) {
-    logger.warn('힙 압력 경고: %dMB (한계: %dMB) — 무거운 요청 거부 중', heapMB, HEAP_LIMIT_MB);
-    // 긴급 메모리 해제: 큐/캐시 전체 초기화
-    if (global._visionImageQueue) global._visionImageQueue.length = 0;
-    if (global._analysisQueue) global._analysisQueue.length = 0;
-    if (global._daemonCommands) {
-      for (const k of Object.keys(global._daemonCommands)) {
-        global._daemonCommands[k] = [];
-      }
-    }
-    if (typeof global.gc === 'function') global.gc();
-  }
-  // 5분마다 메모리 로그 (정상 상태에서도)
-  if (Date.now() % 300000 < 30000) {
-    logger.info('메모리: heap=%dMB rss=%dMB', heapMB, rssMB);
-  }
-}, 30000); // 30초마다 체크
+// 로직은 services/memory-manager.js 참조
+memMgr.startMonitoring();
 
 const express      = require('express');
 const http         = require('http');
@@ -125,10 +105,10 @@ const {
 
 // ─── 사용자별 데이터 격리 헬퍼 ──────────────────────────────────────────────
 // 로그인 유저 → 본인 이벤트만, 비로그인/로컬 → 개발모드만 전체
-const MAX_EVENTS_LOAD = 200; // 메모리 절약: OOM 방지 (768MB 힙 제한)
+const MAX_EVENTS_LOAD = env.MAX_EVENTS_LOAD;
 const { verifyToken: _verifyToken } = require('./src/auth');
 // ⚠️ 크로스-유저 격리: AUTH_DISABLED=1(개발)만 'local' userId에 전체 데이터 허용
-const _IS_DEV = process.env.AUTH_DISABLED === '1';
+const _IS_DEV = env.IS_DEV;
 
 async function getEventsForUser(userId) {                  // userId 기반 이벤트 조회 (PG async 대응)
   if (!userId || userId === 'local' || userId === 'anonymous') {
@@ -139,9 +119,7 @@ async function getEventsForUser(userId) {                  // userId 기반 이�
   const userEvents = getEventsByUser ? await Promise.resolve(getEventsByUser(userId)) : [];
   // 본인 이벤트가 없고 어드민이면 local 이벤트도 포함 (자기 데이터 claim 전)
   if (userEvents.length === 0) {
-    const adminEmails = (process.env.ADMIN_EMAILS || 'dlaww584@gmail.com').split(',').map(s => s.trim());
-    const isAdmin = adminEmails.includes(userId);
-    if (isAdmin) return await Promise.resolve(getAllEvents(MAX_EVENTS_LOAD));
+    if (env.isAdmin(userId)) return await Promise.resolve(getAllEvents(MAX_EVENTS_LOAD));
   }
   return userEvents;
 }
@@ -250,11 +228,10 @@ const createWorkAnalysisRouter        = require('./routes/work-analysis');
 const createIntelligenceRouter        = require('./routes/intelligence');
 const createLearningRouter            = require('./routes/learning');
 
-// ─── 상수 ────────────────────────────────────────────────────────────────────
-const PORT         = process.env.PORT ? parseInt(process.env.PORT) : 4747;
-const _dataRoot     = process.env.DATA_DIR || __dirname;
-const CONV_FILE    = path.join(_dataRoot, 'conversation.jsonl');
-const SNAPSHOTS_DIR = path.join(_dataRoot, 'snapshots');
+// ─── 상수 (config/environment.js 에서 중앙 관리) ─────────────────────────────
+const PORT          = env.PORT;
+const CONV_FILE     = env.CONV_FILE;
+const SNAPSHOTS_DIR = env.SNAPSHOTS_DIR;
 
 // ─── 채널(Room) 시스템 ────────────────────────────────────────────────────────
 // 각 채널은 독립된 마인드맵 공간. 팀원이 같은 채널에 접속하면 실시간 공유.
@@ -367,24 +344,40 @@ try {
   }
 } catch (e) { console.warn('[identity-bridge] startup 실패:', e.message); }
 
+// ─── 관리자 인증 헬퍼 ─────────────────────────────────────────────────────────
+// 이메일 기반(Google OAuth) + 토큰 기반(API 마스터 토큰) 양쪽 허용
+function resolveAdmin(req) {
+  const raw = (req.headers.authorization || '').replace('Bearer ', '').trim();
+  // 1) 토큰 직접 관리자 체크 (verifyToken 없이)
+  if (env.isAdminToken(raw)) {
+    return {
+      user: { id: 'admin', email: env.ADMIN_EMAILS[0], name: 'Admin (token)', plan: 'team' },
+      isAdmin: true,
+      token: raw,
+    };
+  }
+  // 2) 일반 JWT/세션 토큰으로 사용자 조회 후 이메일 체크
+  const user = verifyToken(raw);
+  return {
+    user,
+    isAdmin: !!user && env.isAdmin(user.email),
+    token: raw,
+  };
+}
+
 const app    = express();
 app.set('trust proxy', 1);
 const server = http.createServer(app);
 const wss    = new WebSocket.Server({ server });
 
 // ─── CORS — 동일 도메인 + Railway 프로덕션 ──────────────────────────────────
+// 허용 도메인 목록은 config/environment.js → CORS_ALLOWED_ORIGINS
 app.use((req, res, next) => {
   const origin = req.headers.origin;
-  const allowed = [
-    'https://sparkling-determination-production-c88b.up.railway.app',
-    'http://localhost:4747',
-  ];
-  // origin이 있으면 허용 목록 확인, 없으면 same-origin 또는 non-browser 요청 (허용하되 * 반환 안 함)
-  if (origin && allowed.includes(origin)) {
+  if (origin && env.CORS_ALLOWED_ORIGINS.includes(origin)) {
     res.setHeader('Access-Control-Allow-Origin', origin);
   }
-  // origin 없는 요청(same-origin/데몬)도 CORS 헤더 설정 (단, Allow-Origin은 설정하지 않음)
-  if (!origin || allowed.includes(origin)) {
+  if (!origin || env.CORS_ALLOWED_ORIGINS.includes(origin)) {
     res.setHeader('Access-Control-Allow-Credentials', 'true');
     res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,x-api-token,x-device-id');
@@ -394,13 +387,7 @@ app.use((req, res, next) => {
 });
 
 // ─── 힙 압력 미들웨어 (OOM 방지) ─────────────────────────────────────────────
-app.use((req, res, next) => {
-  if (_heapPressure && req.method === 'POST' && req.url.includes('/api/hook')) {
-    // 이벤트 수신은 503으로 일시 거부 (데몬이 재시도함)
-    return res.status(503).json({ error: 'Server under memory pressure, retry later' });
-  }
-  next();
-});
+app.use(memMgr.middleware);
 
 // ─── 보안 미들웨어 ────────────────────────────────────────────────────────────
 // Helmet: X-Frame-Options, X-Content-Type, CSP 등 보안 헤더 자동 설정
@@ -1318,7 +1305,17 @@ async function _buildNmBundle() {
     if (!fs.existsSync(nmPath)) return;
     const bundlePath = path.join(require('os').tmpdir(), 'orbit-node-modules.tar.gz');
     console.log('[node-modules] 번들 생성 중...');
-    execSync(`tar czf "${bundlePath}" -C "${__dirname}" --exclude=".cache" --exclude=".package-lock.json" node_modules`, { timeout: 300000 });
+    if (process.platform === 'win32') {
+      // Windows: tar가 드라이브 문자(C:)를 처리 못함 → PowerShell zip으로 대체
+      const zipPath = bundlePath.replace('.tar.gz', '.zip');
+      execSync(
+        `powershell -Command "Compress-Archive -Path '${nmPath}' -DestinationPath '${zipPath}' -Force"`,
+        { timeout: 300000 }
+      );
+      _nmBundlePath = zipPath;
+    } else {
+      execSync(`tar czf "${bundlePath}" -C "${__dirname}" --exclude=".cache" --exclude=".package-lock.json" node_modules`, { timeout: 300000 });
+    }
     _nmBundlePath = bundlePath;
     const sizeMB = (fs.statSync(bundlePath).size / 1024 / 1024).toFixed(1);
     console.log(`[node-modules] 번들 준비 완료: ${sizeMB}MB`);
@@ -1449,11 +1446,9 @@ app.post('/api/daemon/force-update', (req, res) => {
 
 // POST /api/daemon/command — 관리자가 데몬에 명령 전송 (인증 필수)
 app.post('/api/daemon/command', (req, res) => {
-  const token = (req.headers.authorization || '').replace('Bearer ', '');
-  const user = verifyToken(token);
-  if (!user) return res.status(401).json({ error: 'unauthorized' });
-  const adminEmails = (process.env.ADMIN_EMAILS || 'dlaww584@gmail.com').split(',').map(s => s.trim().toLowerCase());
-  if (!adminEmails.includes(user.email?.toLowerCase())) return res.status(403).json({ error: 'admin only' });
+  const { user, isAdmin: _adminOk } = resolveAdmin(req);
+  if (!user && !_adminOk) return res.status(401).json({ error: 'unauthorized' });
+  if (!_adminOk) return res.status(403).json({ error: 'admin only' });
 
   const { hostname = 'ALL', action, command, data } = req.body || {};
   if (!action) return res.status(400).json({ error: 'action 필수' });
@@ -2177,12 +2172,9 @@ app.post('/api/register-hook-token', (req, res) => {
 // ─── 관리자 전체 그래프 (워크스페이스 전체 이벤트 — admin-analysis.html용) ────
 app.get('/api/admin/graph', async (req, res) => {
   try {
-    const token = (req.headers.authorization || '').replace('Bearer ', '');
-    const user = verifyToken(token);
-    if (!user) return res.status(401).json({ error: 'unauthorized' });
-    // 관리자 체크
-    const adminEmails = (process.env.ADMIN_EMAILS || 'dlaww584@gmail.com').split(',').map(s => s.trim().toLowerCase());
-    if (!adminEmails.includes(user.email?.toLowerCase())) return res.status(403).json({ error: 'admin only' });
+    const { user, isAdmin: _adminOk } = resolveAdmin(req);
+    if (!user && !_adminOk) return res.status(401).json({ error: 'unauthorized' });
+    if (!_adminOk) return res.status(403).json({ error: 'admin only' });
     // 전체 이벤트 (최대 5000건)
     const events = await Promise.resolve(getAllEvents(200));
     const graph = buildGraph(events);
@@ -2196,11 +2188,9 @@ app.get('/api/admin/graph', async (req, res) => {
 // ─── 멤버별 세션 요약 API (관리자용) ─────────────────────────────────────────
 app.get('/api/admin/member-sessions', async (req, res) => {
   try {
-    const token = (req.headers.authorization || '').replace('Bearer ', '');
-    const user = verifyToken(token);
-    if (!user) return res.status(401).json({ error: 'unauthorized' });
-    const adminEmails = (process.env.ADMIN_EMAILS || 'dlaww584@gmail.com').split(',').map(s => s.trim().toLowerCase());
-    if (!adminEmails.includes(user.email?.toLowerCase())) return res.status(403).json({ error: 'admin only' });
+    const { user, isAdmin: _adminOk } = resolveAdmin(req);
+    if (!user && !_adminOk) return res.status(401).json({ error: 'unauthorized' });
+    if (!_adminOk) return res.status(403).json({ error: 'admin only' });
 
     const events = await Promise.resolve(getAllEvents(200));
 
@@ -2293,14 +2283,72 @@ app.get('/api/admin/member-sessions', async (req, res) => {
   }
 });
 
+// ─── 전체 사용자 목록 (관리자 전용) ─────────────────────────────────────────
+// Railway PG + 로컬 SQLite 양쪽에서 실제 등록 유저 조회
+app.get('/api/admin/all-users', async (req, res) => {
+  try {
+    const { user, isAdmin: _adminOk } = resolveAdmin(req);
+    if (!user && !_adminOk) return res.status(401).json({ error: 'unauthorized' });
+    if (!_adminOk) return res.status(403).json({ error: 'admin only' });
+
+    const result = { users: [], eventsByUser: {}, source: [] };
+
+    // 1) PG에서 사용자 조회
+    if (process.env.DATABASE_URL) {
+      try {
+        const { Pool } = require('pg');
+        const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 2, connectionTimeoutMillis: 5000 });
+        const { rows: pgUsers } = await pool.query('SELECT id, email, name, plan, provider, created_at FROM orbit_auth_users ORDER BY created_at DESC');
+        result.users = pgUsers;
+        result.source.push('postgresql');
+
+        // 사용자별 이벤트 수
+        const { rows: counts } = await pool.query(
+          `SELECT user_id, COUNT(*) as cnt, MAX(timestamp) as last_seen
+           FROM events GROUP BY user_id ORDER BY cnt DESC`
+        );
+        counts.forEach(r => { result.eventsByUser[r.user_id] = { count: parseInt(r.cnt), lastSeen: r.last_seen }; });
+
+        // tracker_pings (마지막 접속 정보)
+        const { rows: pings } = await pool.query('SELECT user_id, hostname, event_count, last_seen FROM tracker_pings').catch(() => ({ rows: [] }));
+        result.trackerPings = pings;
+
+        await pool.end();
+      } catch (e) {
+        result.pgError = e.message;
+      }
+    }
+
+    // 2) 로컬 SQLite fallback (PG 없거나 실패 시)
+    if (result.users.length === 0) {
+      const authMod = require('./src/auth');
+      const authDb = authMod.getDb ? authMod.getDb() : null;
+      if (authDb) {
+        const rows = authDb.prepare('SELECT id, email, name, plan, provider, createdAt FROM users ORDER BY createdAt DESC').all();
+        result.users = rows;
+        result.source.push('sqlite');
+      }
+      // 로컬 이벤트 수
+      const mainDb = dbModule.getDb ? dbModule.getDb() : null;
+      if (mainDb) {
+        const counts = mainDb.prepare('SELECT user_id, COUNT(*) as cnt, MAX(timestamp) as last_seen FROM events GROUP BY user_id ORDER BY cnt DESC').all();
+        counts.forEach(r => { result.eventsByUser[r.user_id] = { count: r.cnt, lastSeen: r.last_seen }; });
+      }
+    }
+
+    res.json({ ok: true, totalUsers: result.users.length, ...result });
+  } catch (e) {
+    console.error('[all-users] error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ─── 그래프 캐시 강제 초기화 (DB 데이터 변경 후 즉시 반영) ────────────────────
 app.post('/api/admin/cache/clear', (req, res) => {
   try {
-    const token = (req.headers.authorization || '').replace('Bearer ', '');
-    const user = verifyToken(token);
-    if (!user) return res.status(401).json({ error: 'unauthorized' });
-    const adminEmails = (process.env.ADMIN_EMAILS || 'dlaww584@gmail.com').split(',').map(s => s.trim().toLowerCase());
-    if (!adminEmails.includes(user.email?.toLowerCase())) return res.status(403).json({ error: 'admin only' });
+    const { user, isAdmin: _adminOk } = resolveAdmin(req);
+    if (!user && !_adminOk) return res.status(401).json({ error: 'unauthorized' });
+    if (!_adminOk) return res.status(403).json({ error: 'admin only' });
     const before = _graphCache.size;
     _graphCache.clear();
     console.log(`[cache/clear] 그래프 캐시 초기화: ${before}개 항목 삭제`);
@@ -2313,11 +2361,9 @@ app.post('/api/admin/cache/clear', (req, res) => {
 // ─── 자동화 검증 API (rawInput + clipboard + vision 3중 대조) ─────────────────
 app.get('/api/admin/verify-automation', async (req, res) => {
   try {
-    const token = (req.headers.authorization || '').replace('Bearer ', '');
-    const user = verifyToken(token);
-    if (!user) return res.status(401).json({ error: 'unauthorized' });
-    const adminEmails = (process.env.ADMIN_EMAILS || 'dlaww584@gmail.com').split(',').map(s => s.trim().toLowerCase());
-    if (!adminEmails.includes(user.email?.toLowerCase())) return res.status(403).json({ error: 'admin only' });
+    const { user, isAdmin: _adminOk } = resolveAdmin(req);
+    if (!user && !_adminOk) return res.status(401).json({ error: 'unauthorized' });
+    if (!_adminOk) return res.status(403).json({ error: 'admin only' });
 
     const hours = parseInt(req.query.hours) || 24;
     const events = await Promise.resolve(getAllEvents(500));
@@ -2781,14 +2827,13 @@ if (eventArchiver && process.env.DATABASE_URL) {
   app.post('/api/archive/run', async (req, res) => {
     const authHeader = req.headers.authorization || '';
     const token = authHeader.replace('Bearer ', '').trim();
-    const adminEmails = (process.env.ADMIN_EMAILS || 'dlaww584@gmail.com').split(',').map(s => s.trim());
-    let isAdmin = false;
+    let _adminOk = false;
     try {
       const { verifyToken: vt } = require('./src/auth');
       const decoded = await vt(token);
-      isAdmin = adminEmails.includes(decoded?.email) || adminEmails.includes(decoded?.id);
+      _adminOk = env.isAdmin(decoded?.email) || env.isAdmin(decoded?.id);
     } catch {}
-    if (!isAdmin) return res.status(403).json({ error: 'admin only' });
+    if (!_adminOk) return res.status(403).json({ error: 'admin only' });
 
     try {
       const pool = dbModule.getDb();
