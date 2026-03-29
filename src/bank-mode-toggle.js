@@ -166,14 +166,24 @@ function killBankSecurity() {
  */
 function enableBankMode() {
   // 은행 사이트 접속하면 보안 프로그램이 자동으로 다시 설치/실행됨
-  // 여기서는 상태만 전환하고, bank-safe-collector로 전환
+  // 여기서는 상태만 전환하고, bank-safe 모듈들로 전환
   _bankMode = true;
-  console.log('[bank-toggle] 은행 모드 활성화 — bank-safe-collector 전환');
+  console.log('[bank-toggle] 은행 모드 활성화 — bank-safe 모듈 전환');
 
+  // 기존 collector (WMI/PowerShell 쿼리)
   try {
     const bankSafe = require('./bank-safe-collector');
     if (!bankSafe.isRunning()) {
       bankSafe.start({ interval: 3 * 60 * 1000 });
+    }
+  } catch {}
+
+  // ★ 강화 모듈 (GetForegroundWindow + UI Automation + 시스템 메트릭)
+  try {
+    const enhanced = require('./bank-safe-enhanced');
+    if (!enhanced.isRunning()) {
+      console.log('[bank-toggle] bank-safe-enhanced 시작 (스크린샷 대체 수집)');
+      enhanced.start();
     }
   } catch {}
 }
