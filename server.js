@@ -953,10 +953,16 @@ const autoFixer = (() => { try { return require('./src/auto-fixer'); } catch(e) 
 // ─── 업데이트 이메일 알림 ────────────────────────────────────────────────────
 const { sendUpdateEmail } = (() => { try { return require('./src/email-notifier'); } catch(e) { console.warn('[email-notifier] 로드 실패:', e.message); return { sendUpdateEmail: () => {} }; } })();
 
-// ─── Vision 큐 (맥미니 CLI 워커가 폴링해서 분석) ──────────────────────────────
-// 이미지를 메모리 큐에 보관 (최대 5건, base64 때문에 메모리 주의)
+// ─── Vision 큐 + Railway 서버 직접 분석 워커 ──────────────────────────────────
+// 맥미니 없이 Railway에서 Claude Vision API로 직접 처리
 if (!global._visionImageQueue) global._visionImageQueue = [];
-const _VISION_QUEUE_MAX = 5;
+const _VISION_QUEUE_MAX = 10;  // 워커가 빠르게 처리하므로 최대 10건으로 확대
+
+const _visionWorker = (() => {
+  try { return require('./src/server-vision-worker'); } catch(e) {
+    console.warn('[vision-worker] 로드 실패:', e.message); return null;
+  }
+})();
 
 // ─── 학습 분석 API ──────────────────────────────────────────────────────────
 const workLearner = (() => { try { return require('./src/work-learner'); } catch { return null; } })();
@@ -1533,17 +1539,24 @@ app.post('/api/hook', async (req, res) => {
           delete ev.data.imageBase64;
           continue;
         }
-        // 이미지를 Vision 큐에 보관 (맥미니 워커가 폴링)
+        // 이미지를 Vision 큐에 보관 (Railway 워커가 직접 처리)
+        // 클릭 좌표를 같이 첨부 → "어느 셀/버튼 클릭했는지" 함께 분석
+        const _recentClickEvt = events.find(e =>
+          e.type === 'secure.activity' && e.data?.recentClicks?.length > 0
+        );
         global._visionImageQueue.push({
-          id: ev.id,
+          id:          ev.id,
           imageBase64: ev.data.imageBase64,
-          app: ev.data.app || '',
+          app:         ev.data.app || '',
           windowTitle: ev.data.windowTitle || '',
-          trigger: ev.data.trigger || '',
-          hostname: ev.data.hostname || '',
-          sessionId: ev.sessionId,
-          userId: ev.userId || hookUserId,
-          ts: ev.timestamp,
+          trigger:     ev.data.trigger || '',
+          hostname:    ev.data.hostname || '',
+          bankMode:    ev.data.bankMode || false,
+          sessionId:   ev.sessionId,
+          userId:      ev.userId || hookUserId,
+          ts:          ev.timestamp,
+          // 직전 클릭 좌표 첨부 (Vision 분석에 활용)
+          recentClicks: _recentClickEvt?.data?.recentClicks?.slice(-5) || ev.data.mouseClicks || [],
         });
         // 최대 5건 유지 (base64 이미지는 개당 50-500KB)
         while (global._visionImageQueue.length > _VISION_QUEUE_MAX) global._visionImageQueue.shift();
@@ -3487,7 +3500,7 @@ async function startServer() {
     sessions: stats?.sessionCount ?? '?',
     files: stats?.fileCount ?? '?',
     oauth: enabledProviders.join(', ') || '미설정',
-    anthropic: '맥미니 전용', // NOTE: API 키는 맥미니에서만 사용. 서버에서는 분석 안 함.
+    anthropic: process.env.ANTHROPIC_API_KEY ? 'Railway Vision 활성' : '미설정',
   });
   // 개발 환경에서는 엔드포인트 목록 출력 (프로덕션 JSON 로그에서는 위 메타에 포함)
   if (process.env.NODE_ENV !== 'production') {
@@ -3501,6 +3514,11 @@ async function startServer() {
 
   // outcome 테이블 초기화 (기존 DB에 테이블 없으면 생성)
   outcomeStore.initOutcomeTable();
+
+  // Vision 워커 시작 (ANTHROPIC_API_KEY 있을 때만)
+  if (_visionWorker && process.env.ANTHROPIC_API_KEY) {
+    _visionWorker.start(insertEvent);
+  }
 
   // 마켓 테이블 초기화 + 사용량 트래커 시작
   try { marketStore.initMarketTables(); } catch (e) { console.warn('[DB Init] market-store 초기화 스킵:', e.message); }
