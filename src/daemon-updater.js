@@ -223,6 +223,7 @@ function _restartSelf() {
     cwd: ROOT,
     detached: true,
     stdio: 'ignore',
+    windowsHide: true,
     env: { ...process.env },
   });
   child.unref();
