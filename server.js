@@ -3419,6 +3419,57 @@ async function startServer() {
   if (process.env.DATABASE_URL) {
     await authInitFromPg().catch(e => console.warn('[startup] auth PG 복원 실패:', e.message));
   }
+  // 관리자 토큰 자동 부트스트랩 (Railway 재시작 시 ADMIN_TOKENS 복원)
+  // ~/.orbit-config.json 또는 ADMIN_TOKENS 환경변수에서 로드됨 (environment.js가 처리)
+  // 추가로: PG orbit_auth_tokens에서 관리자 이메일 계정의 토큰들을 ADMIN_TOKENS에 등록
+  try {
+    const _adminBootstrap = async () => {
+      const authMod = require('./src/auth');
+      for (const adminEmail of env.ADMIN_EMAILS) {
+        const adminUser = authMod.getUserByEmail ? authMod.getUserByEmail(adminEmail) : null;
+        if (adminUser) {
+          const authDb = authMod.getDb ? authMod.getDb() : null;
+          if (authDb) {
+            const tokens = authDb.prepare('SELECT token FROM tokens WHERE userId = ?').all(adminUser.id);
+            tokens.forEach(({ token }) => {
+              if (!env.ADMIN_TOKENS.includes(token)) {
+                env.ADMIN_TOKENS.push(token);
+                console.log(`[startup] 관리자 토큰 복원: ${adminEmail} (${token.slice(0,8)}...)`);
+              }
+            });
+          }
+        }
+      }
+      // ADMIN_TOKENS 환경변수에 있는 토큰도 관리자 사용자와 연결 보장
+      for (const tok of env.ADMIN_TOKENS) {
+        const user = verifyToken(tok);
+        if (!user) {
+          // 토큰이 auth DB에 없으면 관리자 계정으로 등록
+          const adminEmail = env.ADMIN_EMAILS[0];
+          let adminUser = authMod.getUserByEmail ? authMod.getUserByEmail(adminEmail) : null;
+          if (!adminUser) {
+            const result = authMod.register ? authMod.register({
+              email: adminEmail, name: 'Admin', password: require('crypto').randomBytes(24).toString('hex')
+            }) : { ok: false };
+            if (result.ok) adminUser = result.user;
+          }
+          if (adminUser) {
+            const authDb = authMod.getDb ? authMod.getDb() : null;
+            if (authDb) {
+              try {
+                authDb.prepare('INSERT OR IGNORE INTO tokens (token, userId, type) VALUES (?, ?, ?)').run(tok, adminUser.id, 'api');
+                const { pgBackupToken, pgBackupUser } = authMod;
+                if (pgBackupUser) await pgBackupUser(adminUser, '').catch(() => {});
+                if (pgBackupToken) await pgBackupToken(tok, adminUser.id, null).catch(() => {});
+                console.log(`[startup] ADMIN_TOKEN → auth DB 등록: ${adminEmail}`);
+              } catch {}
+            }
+          }
+        }
+      }
+    };
+    await _adminBootstrap();
+  } catch (e) { console.warn('[startup] admin bootstrap 실패:', e.message); }
   server.listen(PORT, async () => {
   const stats = await Promise.resolve(getStats());
   logger.info(`Orbit AI v2.0.0 — http://localhost:${PORT}`, {
