@@ -12,9 +12,9 @@
 let nodemailer;
 try { nodemailer = require('nodemailer'); } catch { nodemailer = null; }
 
-const FROM  = process.env.NOTIFY_EMAIL_USER || 'dlaww@naver.com';
-const TO    = process.env.NOTIFY_EMAIL_TO   || 'dlaww@naver.com';
-const PASS  = process.env.NOTIFY_EMAIL_PASS || '';
+const FROM  = process.env.NOTIFY_EMAIL_USER || process.env.notify_email_user || 'dlaww@naver.com';
+const TO    = process.env.NOTIFY_EMAIL_TO   || process.env.notify_email_to   || 'dlaww@naver.com';
+const PASS  = process.env.NOTIFY_EMAIL_PASS || process.env.notify_email_pass || '';
 
 // 마지막 발송 시각 추적 (동일 호스트 5분 내 중복 발송 방지)
 const _lastSent = {};  // { hostname: timestamp }
