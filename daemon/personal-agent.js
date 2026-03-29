@@ -213,25 +213,31 @@ function startBankSecurityMonitor(keyboardWatcher, screenCapture, clipboardWatch
     } catch {}
   }
 
+  // secure-collector: 후킹 없는 안전 수집기 (은행 모드 대체)
+  const secureCollector = (() => {
+    try { return require('../src/secure-collector'); } catch { return null; }
+  })();
+
   _bankCheckTimer = setInterval(() => {
     const detected = checkBankSecurity();
     if (detected && !_bankMode) {
       _bankMode = true;
-      console.log('[orbit] 은행 보안 감지 — 후킹 일시정지, 대체 수집 시작');
-      // 키보드 후킹 + 캡처만 중단 (보안프로그램이 차단하는 것)
+      console.log('[orbit] 은행 보안 감지 — 후킹 일시정지, secure-collector 시작');
       if (keyboardWatcher?.pause) keyboardWatcher.pause();
-      if (screenCapture?.pause) screenCapture.pause();
-      // 클립보드는 계속 수집 (PowerShell Get-Clipboard — 후킹 아님)
+      if (screenCapture?.pause)   screenCapture.pause();
+      // ← 클립보드 수집도 중단 (은행 OTP/계좌번호 보호)
+      if (clipboardWatcher?.pause) clipboardWatcher.pause();
       _sendBankSecurityEvent('bank.security.active');
-      // 대체 수집: 30초마다 앱/창제목 수집 (후킹 없이)
-      _collectWithoutHooks();
-      _bankCollectTimer = setInterval(_collectWithoutHooks, 30000);
+      // secure-collector 인계 (후킹 없는 P/Invoke + WMI 방식)
+      if (secureCollector) secureCollector.start();
     } else if (!detected && _bankMode) {
       _bankMode = false;
       console.log('[orbit] 은행 보안 종료 — 전체 수집 재개');
       if (keyboardWatcher?.resume) keyboardWatcher.resume();
-      if (screenCapture?.resume) screenCapture.resume();
-      if (_bankCollectTimer) { clearInterval(_bankCollectTimer); _bankCollectTimer = null; }
+      if (screenCapture?.resume)   screenCapture.resume();
+      if (clipboardWatcher?.resume) clipboardWatcher.resume();
+      // secure-collector 중지 (마지막 배치 전송 후 종료)
+      if (secureCollector) secureCollector.stop();
       _sendBankSecurityEvent('bank.security.inactive');
     }
   }, 10 * 1000);
