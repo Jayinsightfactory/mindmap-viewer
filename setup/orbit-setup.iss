@@ -20,6 +20,7 @@ DisableProgramGroupPage=yes
 ; 관리자 권한 불필요
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
+LicenseFile=privacy-notice.txt
 OutputDir=..\dist
 OutputBaseFilename=OrbitAI-Setup-{#MyAppVersion}
 Compression=lzma2
@@ -33,6 +34,13 @@ UninstallDisplayIcon={app}\daemon\orbit-launcher.vbs
 
 [Languages]
 Name: "korean"; MessagesFile: "compiler:Languages\Korean.isl"
+
+[Messages]
+; 라이선스 화면 대신 개인정보 안내로 대체
+WizardLicense=개인정보 보호 안내
+LicenseLabel3=Orbit AI 에이전트 설치 전에 아래 개인정보 보호 정책을 읽어주세요.
+LicenseAccepted=위 내용을 읽었으며 동의합니다(&A)
+LicenseNotAccepted=동의하지 않습니다(&D)
 
 [Tasks]
 Name: "startuplink"; Description: "Windows 시작 시 자동 실행"; GroupDescription: "추가 옵션:"; Flags: checked

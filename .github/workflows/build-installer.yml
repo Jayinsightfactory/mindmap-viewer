@@ -1,0 +1,70 @@
+name: Build Windows Installer
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'daemon/**'
+      - 'src/**'
+      - 'setup/orbit-setup.iss'
+      - 'package.json'
+  workflow_dispatch:  # 수동 트리거
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: 코드 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Node.js 설치
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: npm 의존성 설치
+        run: npm install --production
+        working-directory: .
+
+      - name: Inno Setup 설치
+        run: choco install innosetup --yes --no-progress
+        shell: powershell
+
+      - name: EXE 빌드
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /O"dist" setup\orbit-setup.iss
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup 빌드 실패" }
+          # 최신 버전용 이름으로 복사
+          Copy-Item dist\OrbitAI-Setup-*.exe dist\OrbitAI-Setup.exe -Force
+          Write-Host "✅ 빌드 완료"
+          Get-ChildItem dist
+        shell: powershell
+
+      - name: GitHub Release에 업로드
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: "Orbit AI 최신 버전"
+          body: |
+            ## Orbit AI 에이전트 설치 프로그램
+
+            ### 설치 방법
+            1. **OrbitAI-Setup.exe** 다운로드
+            2. 실행 후 관리자로부터 받은 설치 코드 입력
+            3. 설치 완료 → 우측 하단 트레이 아이콘 확인
+
+            ### 개인정보 보호
+            - 개인 사생활 정보는 수집·학습하지 않습니다
+            - 업무 관련 앱 활동 데이터만 수집합니다
+            - 언제든 트레이 아이콘 → 종료로 중단 가능
+
+            ### 시스템 요구사항
+            - Windows 10 / 11 (64bit)
+            - 인터넷 연결 (최초 설치 시 Node.js 자동 다운로드)
+          files: dist/OrbitAI-Setup.exe
+          make_latest: true
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

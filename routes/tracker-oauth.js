@@ -163,55 +163,157 @@ function createRouter(deps) {
       // 4. 일회용 설치 토큰 생성
       const installToken = createInstallToken(userId, tokens, sessionToken);
 
-      // 5. 설치 가이드 HTML 반환 (터미널 명령어 제시)
+      // 5. 설치 가이드 HTML 반환
+      const RAILWAY_URL = 'https://sparkling-determination-production-c88b.up.railway.app';
+      const GITHUB_REPO = 'dlaww-wq/mindmap-viewer';
+      const EXE_DOWNLOAD_URL = `https://github.com/${GITHUB_REPO}/releases/latest/download/OrbitAI-Setup.exe`;
+
       res.send(`
         <!DOCTYPE html>
         <html lang="ko">
         <head>
           <meta charset="UTF-8">
           <meta name="viewport" content="width=device-width, initial-scale=1">
-          <title>Orbit Tracker 설치</title>
+          <title>Orbit AI 설치</title>
           <style>
-            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-                   background: #020617; color: #e2e8f0; padding: 40px; }
-            .container { max-width: 800px; margin: 0 auto; }
-            h1 { color: #06b6d4; margin-bottom: 20px; }
-            .step { background: #0a0f1e; padding: 20px; margin: 20px 0; border-radius: 8px; border-left: 4px solid #06b6d4; }
-            .cmd { background: #1e293b; padding: 16px; border-radius: 6px; font-family: 'Courier New';
-                   word-break: break-all; margin: 10px 0; }
-            .btn { background: #06b6d4; color: #020617; padding: 10px 20px; border: none;
-                   border-radius: 6px; cursor: pointer; font-weight: bold; }
-            .btn:hover { background: #00d9ff; }
+            * { box-sizing: border-box; margin: 0; padding: 0; }
+            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Pretendard, sans-serif;
+                   background: #020617; color: #e2e8f0; padding: 32px 20px; line-height: 1.6; }
+            .container { max-width: 680px; margin: 0 auto; }
+            .logo { font-size: 28px; font-weight: 800; color: #06b6d4; margin-bottom: 8px; }
+            .subtitle { color: #94a3b8; margin-bottom: 32px; font-size: 15px; }
+            .card { background: #0a0f1e; border: 1px solid #1e293b; border-radius: 12px;
+                    padding: 24px; margin-bottom: 20px; }
+            .card-title { font-size: 13px; font-weight: 700; color: #64748b;
+                          text-transform: uppercase; letter-spacing: .08em; margin-bottom: 16px; }
+            /* EXE 다운로드 버튼 */
+            .btn-download { display: flex; align-items: center; gap: 12px;
+                            background: #06b6d4; color: #020617; border: none;
+                            border-radius: 10px; padding: 16px 24px; font-size: 16px;
+                            font-weight: 700; cursor: pointer; width: 100%;
+                            text-decoration: none; transition: background .15s; }
+            .btn-download:hover { background: #22d3ee; }
+            .btn-download .icon { font-size: 24px; }
+            .btn-download .meta { text-align: left; }
+            .btn-download .meta small { display: block; font-weight: 400; font-size: 12px;
+                                        opacity: .75; margin-top: 2px; }
+            /* 설치코드 */
+            .token-box { background: #1e293b; border-radius: 8px; padding: 14px 16px;
+                         font-family: 'Courier New', monospace; font-size: 14px;
+                         letter-spacing: .04em; color: #7dd3fc; word-break: break-all;
+                         position: relative; margin-top: 12px; border: 1px solid #334155; }
+            .token-copy { position: absolute; top: 10px; right: 10px;
+                          background: #334155; border: none; border-radius: 6px;
+                          color: #94a3b8; padding: 4px 10px; font-size: 12px;
+                          cursor: pointer; }
+            .token-copy:hover { background: #475569; color: #e2e8f0; }
+            /* PowerShell 대안 */
+            .cmd-box { background: #0f172a; border-radius: 8px; padding: 12px 14px;
+                       font-family: 'Courier New', monospace; font-size: 12px;
+                       color: #94a3b8; word-break: break-all; margin-top: 10px;
+                       border: 1px solid #1e293b; }
+            /* 개인정보 안내 */
+            .privacy-box { background: #052e16; border: 1px solid #166534;
+                           border-radius: 10px; padding: 18px 20px; margin-bottom: 20px; }
+            .privacy-box .p-title { color: #4ade80; font-weight: 700; margin-bottom: 10px; }
+            .privacy-box ul { color: #86efac; font-size: 14px; padding-left: 20px; }
+            .privacy-box ul li { margin-bottom: 6px; }
+            .privacy-box .p-note { color: #6ee7b7; font-size: 13px; margin-top: 10px;
+                                   border-top: 1px solid #166534; padding-top: 10px; }
+            /* steps */
+            .steps { counter-reset: step; display: flex; flex-direction: column; gap: 14px; }
+            .step { display: flex; gap: 14px; align-items: flex-start; }
+            .step-num { background: #1e293b; border-radius: 50%; width: 28px; height: 28px;
+                        display: flex; align-items: center; justify-content: center;
+                        font-size: 13px; font-weight: 700; color: #06b6d4; flex-shrink: 0; }
+            .step-body { flex: 1; font-size: 14px; color: #cbd5e1; padding-top: 4px; }
+            .step-body strong { color: #e2e8f0; }
+            .back { display: inline-block; margin-top: 24px; color: #475569; font-size: 14px;
+                    text-decoration: none; }
+            .back:hover { color: #94a3b8; }
           </style>
         </head>
         <body>
           <div class="container">
-            <h1>✅ Google Drive 연동 완료!</h1>
+            <div class="logo">⬡ Orbit AI</div>
+            <div class="subtitle">업무 자동화 에이전트 설치 안내</div>
 
-            <div class="step">
-              <h2>Step 1: 터미널 열기</h2>
-              <p>macOS/Linux: Terminal 또는 iTerm2</p>
-              <p>Windows: PowerShell (관리자 권한)</p>
+            <!-- 개인정보 보호 안내 -->
+            <div class="privacy-box">
+              <div class="p-title">🔒 개인정보 보호 안내</div>
+              <ul>
+                <li>업무 관련 앱 활동 데이터만 수집합니다 (업무 효율화 목적)</li>
+                <li><strong>개인 사생활 정보는 수집·학습하지 않습니다</strong></li>
+                <li>개인 채팅 내용, 개인 이메일, 개인 파일은 분석 대상이 아닙니다</li>
+                <li>수집된 데이터는 회사 내부 서버에만 저장되며 외부 공유 없음</li>
+                <li>언제든 트레이 아이콘 우클릭 → 종료로 수집 중단 가능</li>
+              </ul>
+              <div class="p-note">⚙️ 수집 항목: 업무 앱 전환 패턴 · 작업 내용 요약 · 유휴 시간 · 카카오 업무 메시지</div>
             </div>
 
-            <div class="step">
-              <h2>Step 2: 다음 명령어 복사하여 실행</h2>
-              <div class="cmd">curl -fsSL https://orbit3d-production.up.railway.app/installer/${installToken} | bash</div>
-              <button class="btn" onclick="copyCmd()">복사하기</button>
+            <!-- 다운로드 섹션 -->
+            <div class="card">
+              <div class="card-title">1단계 — 설치 프로그램 다운로드</div>
+              <a class="btn-download" href="${EXE_DOWNLOAD_URL}" download>
+                <span class="icon">⬇</span>
+                <span class="meta">
+                  OrbitAI-Setup.exe 다운로드
+                  <small>Windows 10/11 · 관리자 권한 불필요 · 약 15MB</small>
+                </span>
+              </a>
             </div>
 
-            <div class="step">
-              <h2>완료!</h2>
-              <p>설치가 완료되면 Orbit에서 추적 상태를 확인할 수 있습니다.</p>
-              <p><a href="/" style="color: #06b6d4; text-decoration: none;">← 돌아가기</a></p>
+            <!-- 설치코드 섹션 -->
+            <div class="card">
+              <div class="card-title">2단계 — 설치 코드 입력</div>
+              <p style="font-size:14px;color:#94a3b8;margin-bottom:4px;">설치 프로그램 실행 후 아래 코드를 입력하세요. <strong style="color:#fbbf24">10분 이내 사용</strong></p>
+              <div class="token-box">
+                ${installToken}
+                <button class="token-copy" onclick="copyToken()">복사</button>
+              </div>
             </div>
+
+            <!-- 설치 순서 -->
+            <div class="card">
+              <div class="card-title">설치 순서</div>
+              <div class="steps">
+                <div class="step">
+                  <div class="step-num">1</div>
+                  <div class="step-body"><strong>OrbitAI-Setup.exe</strong> 다운로드 후 실행</div>
+                </div>
+                <div class="step">
+                  <div class="step-num">2</div>
+                  <div class="step-body">설치 진행 → <strong>설치 코드 입력</strong> 화면에서 위 코드 붙여넣기</div>
+                </div>
+                <div class="step">
+                  <div class="step-num">3</div>
+                  <div class="step-body">설치 완료 → 화면 우측 하단 트레이에 <strong>Orbit AI 아이콘</strong> 표시</div>
+                </div>
+                <div class="step">
+                  <div class="step-num">4</div>
+                  <div class="step-body">PC 재시작 후에도 <strong>자동 실행</strong>됩니다</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- PowerShell 대안 (접기) -->
+            <details style="margin-bottom:16px;">
+              <summary style="cursor:pointer;color:#475569;font-size:13px;padding:8px 0;">
+                PowerShell 명령어로 설치하기 (고급)
+              </summary>
+              <div class="cmd-box">irm ${RAILWAY_URL}/installer/${installToken} | iex</div>
+              <p style="font-size:12px;color:#475569;margin-top:6px;">PowerShell을 관리자 권한으로 실행 후 위 명령어를 붙여넣기 하세요.</p>
+            </details>
+
+            <a href="/" class="back">← 돌아가기</a>
           </div>
 
           <script>
-            function copyCmd() {
-              const cmd = 'curl -fsSL https://orbit3d-production.up.railway.app/installer/${installToken} | bash';
-              navigator.clipboard.writeText(cmd).then(() => {
-                alert('복사되었습니다!');
+            function copyToken() {
+              navigator.clipboard.writeText('${installToken}').then(() => {
+                const btn = document.querySelector('.token-copy');
+                btn.textContent = '✓ 복사됨';
+                setTimeout(() => btn.textContent = '복사', 2000);
               });
             }
           </script>
