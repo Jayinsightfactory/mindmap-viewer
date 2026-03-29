@@ -953,16 +953,10 @@ const autoFixer = (() => { try { return require('./src/auto-fixer'); } catch(e) 
 // ─── 업데이트 이메일 알림 ────────────────────────────────────────────────────
 const { sendUpdateEmail } = (() => { try { return require('./src/email-notifier'); } catch(e) { console.warn('[email-notifier] 로드 실패:', e.message); return { sendUpdateEmail: () => {} }; } })();
 
-// ─── Vision 큐 + Railway 서버 직접 분석 워커 ──────────────────────────────────
-// 맥미니 없이 Railway에서 Claude Vision API로 직접 처리
+// ─── Vision 큐 (맥미니 CLI 워커가 폴링해서 분석) ──────────────────────────────
+// Vision 분석은 맥미니 전용 — Railway에서는 큐잉만 함
 if (!global._visionImageQueue) global._visionImageQueue = [];
-const _VISION_QUEUE_MAX = 10;  // 워커가 빠르게 처리하므로 최대 10건으로 확대
-
-const _visionWorker = (() => {
-  try { return require('./src/server-vision-worker'); } catch(e) {
-    console.warn('[vision-worker] 로드 실패:', e.message); return null;
-  }
-})();
+const _VISION_QUEUE_MAX = 10;
 
 // ─── 학습 분석 API ──────────────────────────────────────────────────────────
 const workLearner = (() => { try { return require('./src/work-learner'); } catch { return null; } })();
@@ -3500,7 +3494,7 @@ async function startServer() {
     sessions: stats?.sessionCount ?? '?',
     files: stats?.fileCount ?? '?',
     oauth: enabledProviders.join(', ') || '미설정',
-    anthropic: process.env.ANTHROPIC_API_KEY ? 'Railway Vision 활성' : '미설정',
+    anthropic: '맥미니 전용',
   });
   // 개발 환경에서는 엔드포인트 목록 출력 (프로덕션 JSON 로그에서는 위 메타에 포함)
   if (process.env.NODE_ENV !== 'production') {
@@ -3514,11 +3508,6 @@ async function startServer() {
 
   // outcome 테이블 초기화 (기존 DB에 테이블 없으면 생성)
   outcomeStore.initOutcomeTable();
-
-  // Vision 워커 시작 (ANTHROPIC_API_KEY 있을 때만)
-  if (_visionWorker && process.env.ANTHROPIC_API_KEY) {
-    _visionWorker.start(insertEvent);
-  }
 
   // 마켓 테이블 초기화 + 사용량 트래커 시작
   try { marketStore.initMarketTables(); } catch (e) { console.warn('[DB Init] market-store 초기화 스킵:', e.message); }
