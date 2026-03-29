@@ -950,6 +950,9 @@ app.get('/api/daemon/drive-config', (req, res) => {
 // ─── 자동 에러 수정 엔진 ─────────────────────────────────────────────────────
 const autoFixer = (() => { try { return require('./src/auto-fixer'); } catch(e) { console.warn('[auto-fixer] 로드 실패:', e.message); return null; } })();
 
+// ─── 업데이트 이메일 알림 ────────────────────────────────────────────────────
+const { sendUpdateEmail } = (() => { try { return require('./src/email-notifier'); } catch(e) { console.warn('[email-notifier] 로드 실패:', e.message); return { sendUpdateEmail: () => {} }; } })();
+
 // ─── Vision 큐 (맥미니 CLI 워커가 폴링해서 분석) ──────────────────────────────
 // 이미지를 메모리 큐에 보관 (최대 5건, base64 때문에 메모리 주의)
 if (!global._visionImageQueue) global._visionImageQueue = [];
@@ -1717,6 +1720,13 @@ app.post('/api/hook', async (req, res) => {
             console.warn('[auto-fixer] 분석 오류:', e.message);
           }
         }
+      }
+    }
+
+    // ── 업데이트 결과 이메일 알림 (daemon.update 이벤트) ──────────────────
+    for (const ev of events) {
+      if (ev.type === 'daemon.update') {
+        sendUpdateEmail(ev).catch(e => console.warn('[email-notifier] 오류:', e.message));
       }
     }
 
