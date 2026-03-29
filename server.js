@@ -2455,6 +2455,58 @@ app.post('/api/admin/create-employee-token', async (req, res) => {
   res.json({ ok: true, userId: user.id, email, name: user.name, token: apiToken, installCmd });
 });
 
+// ─── 관리자 부트스트랩 (Railway 초기 설정용) ─────────────────────────────────
+// 토큰 기반으로 관리자 권한 등록 — Railway 환경변수 없이 최초 1회 설정 가능
+// 사용법: POST /api/admin/bootstrap { token, proof }
+//   proof = SHA256(token + BOOTSTRAP_SALT)
+//   BOOTSTRAP_SALT = "orbit-admin-2026" (고정값)
+app.post('/api/admin/bootstrap', async (req, res) => {
+  try {
+    const { token: targetToken, email: targetEmail = env.ADMIN_EMAILS[0], proof } = req.body || {};
+    if (!targetToken || !proof) return res.status(400).json({ error: 'token, proof 필수' });
+
+    // proof 검증: SHA256(targetToken + salt)
+    const SALT = 'orbit-admin-2026';
+    const expected = require('crypto').createHash('sha256').update(targetToken + SALT).digest('hex');
+    if (proof !== expected) return res.status(403).json({ error: '잘못된 proof' });
+
+    // 1) 로컬 ADMIN_TOKENS에 추가 (런타임 한정)
+    if (!env.ADMIN_TOKENS.includes(targetToken)) env.ADMIN_TOKENS.push(targetToken);
+
+    // 2) auth DB에 관리자 사용자 등록 + 토큰 연결
+    const { register: _reg, getUserByEmail: _getUser, pgBackupUser, pgBackupToken } = require('./src/auth');
+    let adminUser = _getUser(targetEmail);
+    if (!adminUser) {
+      const result = _reg({
+        email: targetEmail,
+        name: 'Admin (bootstrap)',
+        password: require('crypto').randomBytes(24).toString('hex'),
+      });
+      if (!result.ok) return res.status(500).json({ error: result.error });
+      adminUser = result.user;
+    }
+
+    // 토큰을 이 admin 사용자와 연결
+    const authMod = require('./src/auth');
+    const authDb = authMod.getDb ? authMod.getDb() : null;
+    if (authDb) {
+      authDb.prepare('INSERT OR REPLACE INTO tokens (token, userId, type) VALUES (?, ?, ?)').run(targetToken, adminUser.id, 'api');
+    }
+
+    // 3) PG 백업
+    await Promise.all([
+      pgBackupUser && pgBackupUser(adminUser, ''),
+      pgBackupToken && pgBackupToken(targetToken, adminUser.id, null),
+    ]).catch(() => {});
+
+    console.log(`[bootstrap] 관리자 토큰 등록 완료: ${targetEmail} (${adminUser.id})`);
+    res.json({ ok: true, userId: adminUser.id, email: adminUser.email, message: '관리자 권한 부여 완료' });
+  } catch (e) {
+    console.error('[bootstrap] error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ─── 라우터 의존성 조립 + 마운트 ─────────────────────────────────────────────
 // 각 라우터는 createRouter(deps) 패턴으로 의존성을 주입받습니다.
 // deps 에 mock 객체를 주입하면 테스트 시 DB 없이 단위 테스트 가능합니다.
