@@ -1065,6 +1065,85 @@ app.get('/api/learning/logs', async (req, res) => {
   }
 });
 
+// ─── 캡처 타이밍 학습 에이전트 ───────────────────────────────────────────────
+
+const captureTimingLearner = (() => {
+  try { return require('./src/capture-timing-learner'); } catch { return null; }
+})();
+
+// POST /api/learning/capture-timing — 수동 분석 실행 (관리자)
+app.post('/api/learning/capture-timing', async (req, res) => {
+  if (!captureTimingLearner) return res.status(503).json({ error: 'capture-timing-learner 미로드' });
+  try {
+    const pool = dbModule.getDb();
+    const results = await captureTimingLearner.runForAllPCs(pool, async (hostname, action, data) => {
+      // daemon command queue에 전송
+      if (!global._daemonCommands) global._daemonCommands = {};
+      if (!global._daemonCommands[hostname]) global._daemonCommands[hostname] = [];
+      global._daemonCommands[hostname].push({ action, data, ts: new Date().toISOString() });
+      // PG에도 저장 (Railway 재배포 후 복원용)
+      try {
+        pool.query(
+          `INSERT INTO orbit_daemon_commands (hostname, action, command, data_json, ts) VALUES ($1,$2,$3,$4,NOW())`,
+          [hostname, action, null, JSON.stringify(data)]
+        ).catch(() => {});
+      } catch {}
+    });
+    res.json({ ok: true, results });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/learning/capture-timing — 최근 분석 결과 조회 (관리자)
+app.get('/api/learning/capture-timing', async (req, res) => {
+  if (!captureTimingLearner) return res.status(503).json({ error: 'capture-timing-learner 미로드' });
+  try {
+    const pool = dbModule.getDb();
+    // 수신된 capture-config 명령 현황
+    const { rows } = await pool.query(
+      `SELECT hostname, data_json, ts, consumed_at
+       FROM orbit_daemon_commands
+       WHERE action = 'capture-config'
+       ORDER BY ts DESC LIMIT 20`
+    );
+    res.json({ configs: rows.map(r => ({ hostname: r.hostname, config: r.data_json, ts: r.ts, delivered: !!r.consumed_at })) });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// 캡처 타이밍 학습: 매일 14:00 UTC (23:00 KST) 자동 실행
+const _CAPTURE_TIMING_HOUR_UTC = 14;
+let _lastCaptureLearnerKey = '';
+setInterval(async () => {
+  if (!captureTimingLearner) return;
+  const now = new Date();
+  const h = now.getUTCHours();
+  const m = now.getUTCMinutes();
+  if (h !== _CAPTURE_TIMING_HOUR_UTC || m > 2) return;
+  const key = `${now.toISOString().slice(0, 10)}-capture`;
+  if (_lastCaptureLearnerKey === key) return;
+  _lastCaptureLearnerKey = key;
+
+  console.log('[capture-timing-learner] 야간 자동 분석 시작 (23:00 KST)');
+  try {
+    const pool = dbModule.getDb();
+    await captureTimingLearner.runForAllPCs(pool, async (hostname, action, data) => {
+      if (!global._daemonCommands) global._daemonCommands = {};
+      if (!global._daemonCommands[hostname]) global._daemonCommands[hostname] = [];
+      global._daemonCommands[hostname].push({ action, data, ts: new Date().toISOString() });
+      pool.query(
+        `INSERT INTO orbit_daemon_commands (hostname, action, command, data_json, ts) VALUES ($1,$2,$3,$4,NOW())`,
+        [hostname, action, null, JSON.stringify(data)]
+      ).catch(() => {});
+    });
+    console.log('[capture-timing-learner] 완료 — 각 PC 다음 폴링 시 수신');
+  } catch (e) {
+    console.warn('[capture-timing-learner] 오류:', e.message);
+  }
+}, 60 * 1000);
+
 // 정기 리포트 생성 (매일 09:00, 13:30, 18:00 KST)
 const REPORT_HOURS = [{ h: 0, m: 0 }, { h: 4, m: 30 }, { h: 9, m: 0 }]; // UTC (KST-9)
 let _lastReportKey = '';

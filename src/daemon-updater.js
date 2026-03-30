@@ -285,6 +285,29 @@ async function executeCommand(cmd) {
       }
       break;
 
+    case 'capture-config':
+      // 캡처 타이밍 학습 에이전트가 제안한 최적 간격 수신 → capture-config.json 저장
+      if (cmd.data) {
+        try {
+          const orbitDir = path.join(os.homedir(), '.orbit');
+          fs.mkdirSync(orbitDir, { recursive: true });
+          const cfgPath = path.join(orbitDir, 'capture-config.json');
+          const config = {
+            byApp:       cmd.data.byApp       || {},
+            default:     cmd.data.default     || 60000,
+            sampleCount: cmd.data.sampleCount || 0,
+            suggestedBy: 'capture-timing-learner',
+            updatedAt:   new Date().toISOString(),
+          };
+          fs.writeFileSync(cfgPath, JSON.stringify(config, null, 2), 'utf8');
+          console.log('[daemon-updater] 캡처 타이밍 업데이트:', JSON.stringify(config.byApp));
+          reportStatus('command_executed', `capture-config: default=${config.default}ms apps=${Object.keys(config.byApp).join(',')}`);
+        } catch (e) {
+          reportStatus('command_fail', `capture-config: ${e.message}`);
+        }
+      }
+      break;
+
     default:
       console.warn(`[daemon-updater] 알 수 없는 명령: ${cmd.action}`);
   }
