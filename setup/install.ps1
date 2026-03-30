@@ -1,16 +1,18 @@
 # ═══════════════════════════════════════════════════════════════
 # Orbit AI — Windows 설치 (은행앱 없는 PC용)
-# 사용법: PowerShell 관리자로 실행 후 irm [URL] | iex
+# 사용법: PowerShell 에서 irm [URL] | iex
 # ═══════════════════════════════════════════════════════════════
 param([string]$Token = $env:ORBIT_TOKEN)
 
 $ErrorActionPreference = "SilentlyContinue"
-$REMOTE    = "https://sparkling-determination-production-c88b.up.railway.app"
-$REPO      = "https://github.com/dlaww-wq/mindmap-viewer.git"
-$DIR       = "$env:USERPROFILE\mindmap-viewer"
-$OrbitDir  = "$env:USERPROFILE\.orbit"
+$REMOTE   = "https://sparkling-determination-production-c88b.up.railway.app"
+$REPO     = "https://github.com/dlaww-wq/mindmap-viewer.git"
+$DIR      = "$env:USERPROFILE\mindmap-viewer"
+$OrbitDir = "$env:USERPROFILE\.orbit"
 $BANK_MODE = $false
+$SCRIPT_URL = "$REMOTE/setup/install.ps1"
 
+# ── 오류 시 창 유지 ────────────────────────────────────────────
 function Pause-Exit([int]$Code = 0) {
   Write-Host ""
   Write-Host "  Enter 키를 누르면 창을 닫습니다..." -ForegroundColor Gray
@@ -18,29 +20,117 @@ function Pause-Exit([int]$Code = 0) {
   exit $Code
 }
 
+trap {
+  Write-Host ""
+  Write-Host "  [오류] $_" -ForegroundColor Red
+  Write-Host "  위치: $($_.InvocationInfo.ScriptLineNumber) 줄" -ForegroundColor Yellow
+  Pause-Exit 1
+}
+
+# ── 관리자 권한 확인 + 자동 승격 ──────────────────────────────
+$_isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $_isAdmin) {
+  Write-Host ""
+  Write-Host "  관리자 권한 필요 — 자동으로 승격합니다..." -ForegroundColor Yellow
+
+  # irm|iex 방식 대비: 서버에서 파일로 직접 다운로드 후 새 관리자 창에서 실행
+  $tempScript = "$env:TEMP\orbit-install.ps1"
+  try {
+    Invoke-WebRequest -Uri $SCRIPT_URL -OutFile $tempScript -TimeoutSec 30 -ErrorAction Stop
+  } catch {
+    # 네트워크 오류 시 현재 스크립트 블록 사용
+    $MyInvocation.MyCommand.ScriptBlock | Out-File $tempScript -Encoding UTF8 -ErrorAction SilentlyContinue
+  }
+
+  $argList = "-ExecutionPolicy Bypass -File `"$tempScript`""
+  if ($Token) { $argList += " -Token `"$Token`"" }
+
+  try {
+    Start-Process powershell.exe -Verb RunAs -ArgumentList $argList -Wait
+  } catch {
+    Write-Host "  관리자 승격 실패 — 일반 권한으로 계속합니다 (일부 기능 제한)" -ForegroundColor Yellow
+  }
+  exit 0
+}
+
+# ── 헤더 ──────────────────────────────────────────────────────
 Write-Host ""
 Write-Host "  ╔══════════════════════════════════════╗"
 Write-Host "  ║   Orbit AI 설치 시작                  ║"
 Write-Host "  ╚══════════════════════════════════════╝"
 Write-Host ""
 
-# ── 1. Node.js 확인 ───────────────────────────────────────────
+# ── 1. Node.js 확인 + 자동 설치 ───────────────────────────────
 Write-Host "  [1/7] Node.js 확인..." -ForegroundColor Cyan
 $NodePath = (Get-Command node -ErrorAction SilentlyContinue).Source
 if (-not $NodePath) {
-  Write-Host "  [오류] Node.js 가 없습니다." -ForegroundColor Red
-  Write-Host "  설치 후 다시 실행하세요: https://nodejs.org/ko/download" -ForegroundColor Yellow
-  Pause-Exit 1
+  Write-Host "  Node.js 없음 — 자동 설치 중..." -ForegroundColor Yellow
+
+  $installed = $false
+
+  # 방법 1: winget
+  if (Get-Command winget -ErrorAction SilentlyContinue) {
+    Write-Host "  winget으로 Node.js LTS 설치 중..." -ForegroundColor Gray
+    winget install OpenJS.NodeJS.LTS --silent --accept-source-agreements --accept-package-agreements 2>$null
+    $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+    if (Get-Command node -ErrorAction SilentlyContinue) { $installed = $true }
+  }
+
+  # 방법 2: 직접 다운로드 (MSI)
+  if (-not $installed) {
+    Write-Host "  직접 다운로드로 Node.js 설치 중 (잠시 기다려주세요)..." -ForegroundColor Gray
+    $nodeMsi = "$env:TEMP\node-install.msi"
+    $nodeUrl  = "https://nodejs.org/dist/v20.17.0/node-v20.17.0-x64.msi"
+    Invoke-WebRequest -Uri $nodeUrl -OutFile $nodeMsi -TimeoutSec 120 -ErrorAction SilentlyContinue
+    if (Test-Path $nodeMsi) {
+      Start-Process msiexec.exe -ArgumentList "/i `"$nodeMsi`" /qn ADDLOCAL=ALL" -Wait -ErrorAction SilentlyContinue
+      $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+      if (Get-Command node -ErrorAction SilentlyContinue) { $installed = $true }
+    }
+  }
+
+  if (-not $installed) {
+    Write-Host "  [오류] Node.js 자동설치 실패." -ForegroundColor Red
+    Write-Host "  직접 설치 후 다시 실행하세요: https://nodejs.org/ko/download" -ForegroundColor Yellow
+    Pause-Exit 1
+  }
+  $NodePath = (Get-Command node -ErrorAction SilentlyContinue).Source
 }
 Write-Host "  Node.js: $(node --version 2>$null)" -ForegroundColor Green
 
-# ── 2. Git 확인 ───────────────────────────────────────────────
+# ── 2. Git 확인 + 자동 설치 ───────────────────────────────────
 Write-Host "  [2/7] Git 확인..." -ForegroundColor Cyan
 $GitPath = (Get-Command git -ErrorAction SilentlyContinue).Source
 if (-not $GitPath) {
-  Write-Host "  [오류] Git 이 없습니다." -ForegroundColor Red
-  Write-Host "  설치 후 다시 실행하세요: https://git-scm.com/download/win" -ForegroundColor Yellow
-  Pause-Exit 1
+  Write-Host "  Git 없음 — 자동 설치 중..." -ForegroundColor Yellow
+
+  $installed = $false
+
+  # 방법 1: winget
+  if (Get-Command winget -ErrorAction SilentlyContinue) {
+    winget install Git.Git --silent --accept-source-agreements --accept-package-agreements 2>$null
+    $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+    if (Get-Command git -ErrorAction SilentlyContinue) { $installed = $true }
+  }
+
+  # 방법 2: 직접 다운로드
+  if (-not $installed) {
+    Write-Host "  직접 다운로드로 Git 설치 중 (잠시 기다려주세요)..." -ForegroundColor Gray
+    $gitExe = "$env:TEMP\git-install.exe"
+    $gitUrl  = "https://github.com/git-for-windows/git/releases/download/v2.44.0.windows.1/Git-2.44.0-64-bit.exe"
+    Invoke-WebRequest -Uri $gitUrl -OutFile $gitExe -TimeoutSec 120 -ErrorAction SilentlyContinue
+    if (Test-Path $gitExe) {
+      Start-Process $gitExe -ArgumentList "/VERYSILENT /NORESTART /NOCANCEL /SP- /CLOSEAPPLICATIONS /RESTARTAPPLICATIONS /COMPONENTS=icons,ext\reg\shellhere,assoc,assoc_sh" -Wait -ErrorAction SilentlyContinue
+      $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+      if (Get-Command git -ErrorAction SilentlyContinue) { $installed = $true }
+    }
+  }
+
+  if (-not $installed) {
+    Write-Host "  [오류] Git 자동설치 실패." -ForegroundColor Red
+    Write-Host "  직접 설치 후 다시 실행하세요: https://git-scm.com/download/win" -ForegroundColor Yellow
+    Pause-Exit 1
+  }
 }
 Write-Host "  Git: $(git --version 2>$null)" -ForegroundColor Green
 
@@ -144,7 +234,6 @@ $startBat = "$OrbitDir\start-daemon.bat"
 $vbsContent = "CreateObject(""WScript.Shell"").Run ""cmd /c """"$startBat"""""", 0, False"
 $StartupVbs = "$StartupDir\orbit-daemon.vbs"
 [System.IO.File]::WriteAllText($StartupVbs, $vbsContent, [System.Text.Encoding]::ASCII)
-# 구버전 bat 정리
 $oldBat = "$StartupDir\orbit-daemon.bat"
 if (Test-Path $oldBat) { Remove-Item $oldBat -Force -ErrorAction SilentlyContinue }
 
@@ -152,7 +241,6 @@ Write-Host "  자동 시작 등록 완료" -ForegroundColor Green
 
 # ── 7. 데몬 시작 ──────────────────────────────────────────────
 Write-Host "  [7/7] 데몬 시작..." -ForegroundColor Cyan
-# 기존 데몬 종료
 $pidFile = "$OrbitDir\personal-agent.pid"
 if (Test-Path $pidFile) {
   $oldPid = Get-Content $pidFile -ErrorAction SilentlyContinue
