@@ -349,7 +349,7 @@ function start() {
   _running = true;
   _loadConfig();
 
-  console.log(`[daemon-updater] 시작 (평일 09:30/13:00/15:00/17:00 업데이트, 명령 1분 폴링, 버전: ${getLocalVersion()})`);
+  // 업데이터 시작
 
   // 첫 체크는 30초 후 (데몬 안정화 대기)
   setTimeout(() => {

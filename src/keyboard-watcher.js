@@ -818,11 +818,7 @@ function start(opts = {}) {
     // 원격 배치 전송 타이머 시작 (10분마다)
     _startRemoteBatch();
 
-    console.log('[keyboard-watcher] 시작 — 로컬 학습 모드');
-    console.log(`[keyboard-watcher] 로컬 분석: ${interval / 1000}초 | 원격 배치: ${REMOTE_BATCH_INTERVAL / 1000}초`);
-    console.log(`[keyboard-watcher] localhost: ${_orbitUrl}`);
-    console.log(`[keyboard-watcher] 원격 서버: ${_remoteUrl || '(없음)'}`);
-    console.log('[keyboard-watcher] 원본 키스트로크는 로컬에서만 처리됩니다');
+    // 시작 완료 (로그 최소화)
   } catch (err) {
     console.error('[keyboard-watcher] 시작 실패:', err.message);
     console.error('  → 시스템 환경설정 → 보안 및 개인 정보 → 손쉬운 사용에서 node를 허용하세요');

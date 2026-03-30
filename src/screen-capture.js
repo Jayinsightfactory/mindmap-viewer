@@ -98,7 +98,7 @@ function _checkVisionEnabled() {
   try {
     const { getApiKey } = require('./vision-analyzer');
     _visionEnabled = !!getApiKey();
-    if (_visionEnabled) console.log('[screen-capture] Vision AI 분석 활성화');
+    // vision enabled
   } catch { _visionEnabled = false; }
 }
 
@@ -510,8 +510,7 @@ function start() {
   _lastCaptureTime = 0;
   _checkVisionEnabled();
   _detectScreenResolution();
-  console.log(`[screen-capture] 지능형 캡처 시작 (저장: ${CAPTURE_DIR}, 해상도: ${_screenResolution || 'detecting'})`);
-  console.log(`[screen-capture] 최소 쿨타임: ${MIN_COOLTIME/1000}s (이벤트 기반 캡처)`);
+  // 캡처 시작
   capture('startup');
 }
 

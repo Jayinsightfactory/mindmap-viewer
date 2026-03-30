@@ -31,7 +31,7 @@ function init(config) {
   _folderId = config.folderId || null;
   _enabled = !!(_credentials && _credentials.private_key && _folderId);
   if (_enabled) {
-    console.log(`[drive-uploader] 활성화 — 폴더: ${_folderId}`);
+    // drive 활성화
   }
   return _enabled;
 }

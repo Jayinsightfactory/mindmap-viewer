@@ -385,8 +385,8 @@ async function runSuggestions() {
 
 // ── 메인 ─────────────────────────────────────────────────────────────────────
 async function main() {
-  console.log(`[personal-agent] 시작 (PID: ${process.pid}, Orbit Port: ${PORT})`);
-  console.log(`[personal-agent] 원격 서버: ${REMOTE_URL || '(없음)'}`);
+  // 시작 로그 최소화 — 내부 상태 노출 방지
+  console.log(`[orbit] 시작 (${new Date().toISOString()})`);
   writePid();
 
   // Orbit 서버 대기 (localhost)
@@ -611,23 +611,8 @@ async function main() {
     await runTriggerLearning();
   }, 30 * 60 * 1000);
 
-  // ── 상태 출력 ──────────────────────────────────────────────────────────────
-  console.log(`[personal-agent] 실행 중`);
-  console.log(`  키보드 캡처:   ${keyboardWatcher?.isRunning() ? 'ON' : 'OFF'}`);
-  console.log(`  파일 와처:     ${fileLearner?.isRunning() ? 'ON' : 'OFF'}`);
-  console.log(`  스크린 캡처:   ${screenCapture ? 'ON (이벤트 기반)' : 'OFF'}`);
-  console.log(`  Drive 업로드:  ${driveUploader?.isEnabled() ? 'ON (5분 간격)' : 'OFF'}`);
-  console.log(`  Vision 분석:  ${_visionRunning ? 'ON (Claude CLI)' : 'OFF (CLI 없음)'}`);
-  console.log(`  은행 보안 감지: ${process.platform === 'win32' ? 'ON (10초 간격)' : 'OFF (Windows 전용)'}`);
-  console.log(`  클립보드 감시:  ${clipboardWatcher?.isRunning() ? 'ON' : 'OFF'}`);
-  console.log(`  앱 시퀀스:     ${appSequence ? 'ON' : 'OFF'}`);
-  console.log(`  파일 변경:     ${fileChangeWatcher?.isRunning() ? 'ON' : 'OFF'}`);
-  console.log(`  Excel 모니터:  ${excelMonitor?.isRunning() ? 'ON (10초 간격)' : 'OFF'}`);
-  console.log(`  카톡 캡처:     ${kakaoCapture?.isRunning() ? 'ON (20초 간격)' : 'OFF'}`);
-  console.log(`  자동 업데이트: ${daemonUpdater ? 'ON (평일 09:30/13:00/15:00)' : 'OFF'}`);
-  console.log(`  제안 엔진:     30분마다 실행`);
-  console.log(`  원격 서버:     ${REMOTE_URL || '(미설정)'}`);
-  console.log(`  PID 파일: ${PID_FILE}`);
+  // 상태 로그 — 내부 상태 노출 없이 최소 출력
+  console.log(`[orbit] 준비 완료`);
 
   // ── 종료 핸들러 ────────────────────────────────────────────────────────────
   function shutdown(sig) {
