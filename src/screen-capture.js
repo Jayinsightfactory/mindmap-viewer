@@ -20,7 +20,33 @@ const MAX_CAPTURES  = 500; // 개발 단계: 최대 보관
 
 // ── 변화 감지 기반 캡처 (고정 간격 아님) ──
 // 최소 쿨타임만 설정 (연속 캡처 방지)
-const MIN_COOLTIME = 60 * 1000; // 최소 60초 간격 (PC 성능 보호)
+// ── 학습 에이전트 제안 캡처 간격 (~/.orbit/capture-config.json) ──────────────
+// 학습 에이전트가 사용자 패턴 분석 후 최적 간격을 여기에 기록
+// 파일 없으면 기본값 사용. 5분마다 재로드.
+const CAPTURE_CONFIG_PATH = path.join(os.homedir(), '.orbit', 'capture-config.json');
+const DEFAULT_COOLTIME = 60 * 1000; // 데이터 미학습 시 기본값: 60초
+let _captureConfig = null;
+let _captureConfigLoadedAt = 0;
+
+function _loadCaptureConfig() {
+  if (Date.now() - _captureConfigLoadedAt < 5 * 60 * 1000) return; // 5분 캐시
+  try {
+    _captureConfig = JSON.parse(fs.readFileSync(CAPTURE_CONFIG_PATH, 'utf8'));
+    _captureConfigLoadedAt = Date.now();
+  } catch { _captureConfig = null; }
+}
+
+function _getLearnedCooltime(app, windowTitle) {
+  _loadCaptureConfig();
+  if (!_captureConfig) return null;
+  // 앱별 제안값 (학습 에이전트가 { byApp: { excel: 120000, kakaotalk: 45000 }, default: 60000 } 형태로 저장)
+  const appLow = (app || '').toLowerCase();
+  if (_captureConfig.byApp?.[appLow]) return _captureConfig.byApp[appLow];
+  if (_captureConfig.default) return _captureConfig.default;
+  return null;
+}
+
+const MIN_COOLTIME = DEFAULT_COOLTIME;
 
 // 앱별 기본 가치 (윈도우 타이틀/키 입력으로 재판단됨)
 const APP_BASE = {
@@ -240,13 +266,13 @@ function _uploadCaptureToServer(filepath, trigger, context) {
 function _getCurrentCooltime() {
   const app = (_lastActiveApp || '').toLowerCase();
   const win = (_lastWindowTitle || '').toLowerCase();
-  // 카카오톡 + 업무 채팅방: 쿨타임 30초 (PC 성능 보호)
-  if (app === 'kakaotalk' && /네노바|발주|주문|출고|거래처/.test(win)) return 30000;
-  // 카카오톡 일반: 45초
-  if (app === 'kakaotalk') return 45000;
-  // nenova ERP: 30초 (주문 입력 변화 빠름)
-  if (/주문|화훼.*관리|nenova/i.test(win)) return 30000;
-  return MIN_COOLTIME; // 기본 60초
+
+  // 1순위: 학습 에이전트 제안값 (capture-config.json)
+  const learned = _getLearnedCooltime(app, win);
+  if (learned) return learned;
+
+  // 2순위: 기본 fallback (학습 전 초기값)
+  return MIN_COOLTIME; // 60초
 }
 
 /**

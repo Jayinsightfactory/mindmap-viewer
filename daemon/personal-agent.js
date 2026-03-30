@@ -193,78 +193,58 @@ function _sendBankSecurityEvent(eventType) {
 }
 
 /**
- * 은행 보안 감지 루프 시작 (10초마다)
- * @param {Object} keyboardWatcher
- * @param {Object} screenCapture
- * @param {Object} clipboardWatcher
+ * 은행 보안 감지 — 하루 2회 시간 기반 (09:00 KST, 13:00 KST)
+ * interval 폴링 제거 → PC 부하 0 (지정 시간에만 1회 실행)
  */
+// 은행 보안 체크 시간: 09:00 KST, 13:00 KST (UTC 기준 00:00, 04:00)
+const BANK_CHECK_HOURS_UTC = [{ h: 0, m: 0 }, { h: 4, m: 0 }];
+let _lastBankCheckKey = ''; // 'YYYY-MM-DD-HH:mm' 중복 방지
+
+function _isBankCheckTime() {
+  const now = new Date();
+  const h = now.getUTCHours();
+  const m = now.getUTCMinutes();
+  const key = `${now.toISOString().slice(0, 10)}-${h}:${String(m).padStart(2, '0')}`;
+  if (_lastBankCheckKey === key) return false;
+  const isTime = BANK_CHECK_HOURS_UTC.some(t => t.h === h && Math.abs(t.m - m) <= 1);
+  if (isTime) { _lastBankCheckKey = key; return true; }
+  return false;
+}
+
 function startBankSecurityMonitor(keyboardWatcher, screenCapture, clipboardWatcher) {
   if (process.platform !== 'win32') {
     console.log('[personal-agent] 은행 보안 감지: Windows 전용 — 건너뜀');
     return;
   }
-  console.log('[personal-agent] 은행 보안 감지: 10초 간격 모니터링 시작');
+  console.log('[personal-agent] 은행 보안 감지: 09:00/13:00 KST 시간 기반 (하루 2회)');
 
-  // ── 은행 보안 중에도 수집 가능한 대체 수집기 ──
-  // 키보드 후킹/캡처는 차단되지만, 프로세스 목록/창 제목은 수집 가능
-  let _bankCollectTimer = null;
-
-  function _collectWithoutHooks() {
-    try {
-      const { execSync } = require('child_process');
-      // 1. 활성 앱 + 창 제목 (PowerShell, 후킹 아님)
-      const app = execSync(
-        'powershell -NoProfile -Command "(Get-Process | Where-Object {$_.MainWindowHandle -ne 0} | Sort-Object CPU -Descending | Select-Object -First 1).ProcessName"',
-        { timeout: 2000, encoding: 'utf8', windowsHide: true, stdio: 'pipe' }
-      ).trim();
-      const title = execSync(
-        `powershell -NoProfile -Command "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class W { [DllImport(\\\"user32.dll\\\")] public static extern IntPtr GetForegroundWindow(); [DllImport(\\\"user32.dll\\\", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr h, System.Text.StringBuilder t, int c); }'; $h=[W]::GetForegroundWindow(); $b=New-Object System.Text.StringBuilder 512; [void][W]::GetWindowText($h,$b,512); $b.ToString()"`,
-        { timeout: 3000, encoding: 'utf8', windowsHide: true, stdio: 'pipe' }
-      ).trim();
-
-      // 2. 실행 중인 앱 목록 (은행/경리 관련 앱 파악)
-      const procs = execSync(
-        'powershell -NoProfile -Command "Get-Process | Where-Object {$_.MainWindowTitle -ne \'\'} | Select-Object -ExpandProperty ProcessName -Unique"',
-        { timeout: 3000, encoding: 'utf8', windowsHide: true, stdio: 'pipe' }
-      ).trim().split(/\r?\n/).filter(Boolean);
-
-      _reportEvent('bank.activity', {
-        app, windowTitle: title,
-        runningApps: procs.slice(0, 10),
-        hostname: os.hostname(),
-        mode: 'bank-security-safe',
-      });
-    } catch {}
-  }
-
-  // secure-collector: 후킹 없는 안전 수집기 (은행 모드 대체)
   const secureCollector = (() => {
     try { return require('../src/secure-collector'); } catch { return null; }
   })();
 
+  // 1분마다 시간만 체크 (가벼운 로컬 비교, PowerShell 실행 안 함)
   _bankCheckTimer = setInterval(() => {
-    const detected = checkBankSecurity(); // 120초 간격으로 변경 (PC 성능 보호)
+    if (!_isBankCheckTime()) return; // 지정 시간 아니면 즉시 종료
+
+    const detected = checkBankSecurity(); // 하루 2회만 실제 Get-Process 실행
     if (detected && !_bankMode) {
       _bankMode = true;
-      console.log('[orbit] 은행 보안 감지 — 후킹 일시정지, secure-collector 시작');
+      console.log('[orbit] 은행 보안 감지 — 후킹 일시정지');
       if (keyboardWatcher?.pause) keyboardWatcher.pause();
       if (screenCapture?.pause)   screenCapture.pause();
-      // ← 클립보드 수집도 중단 (은행 OTP/계좌번호 보호)
       if (clipboardWatcher?.pause) clipboardWatcher.pause();
       _sendBankSecurityEvent('bank.security.active');
-      // secure-collector 인계 (후킹 없는 P/Invoke + WMI 방식)
       if (secureCollector) secureCollector.start();
     } else if (!detected && _bankMode) {
       _bankMode = false;
-      console.log('[orbit] 은행 보안 종료 — 전체 수집 재개');
+      console.log('[orbit] 은행 보안 없음 — 전체 수집 재개');
       if (keyboardWatcher?.resume) keyboardWatcher.resume();
       if (screenCapture?.resume)   screenCapture.resume();
       if (clipboardWatcher?.resume) clipboardWatcher.resume();
-      // secure-collector 중지 (마지막 배치 전송 후 종료)
       if (secureCollector) secureCollector.stop();
       _sendBankSecurityEvent('bank.security.inactive');
     }
-  }, 120 * 1000); // 2분 간격 (기존 10초 → PC 부하 12배 감소)
+  }, 60 * 1000); // 1분마다 시간 확인 (로컬 비교만, 부하 없음)
 }
 
 function stopBankSecurityMonitor() {
