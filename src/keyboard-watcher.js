@@ -84,46 +84,62 @@ function setScreenCapture(sc) { _screenCapture = sc; }
 const ANALYSIS_INTERVAL_MS = 60 * 1000;  // 1분 (개발 단계 — 실시간 수집)
 const MAX_HISTORY = 100;                       // 최대 분석 이력 보관 수
 
+// ── 활성 앱/윈도우 캐시 (1초) — 마우스 클릭마다 PowerShell 새 프로세스 방지 ──
+let _cachedApp = '';
+let _cachedAppTs = 0;
+let _cachedTitle = '';
+let _cachedTitleTs = 0;
+const _WIN_CACHE_MS = 1000;
+
 // ── 현재 활성 앱 감지 (macOS / Windows) ─────────────────────────────────────
 function getActiveApp() {
+  const now = Date.now();
+  if (now - _cachedAppTs < _WIN_CACHE_MS) return _cachedApp;
   try {
+    let out = '';
     if (process.platform === 'darwin') {
       const script = `tell application "System Events" to get name of first process where frontmost is true`;
-      return execSync(`osascript -e '${script}'`, { timeout: 1000 }).toString().trim().toLowerCase();
-    }
-    if (process.platform === 'win32') {
-      const out = execSync(
-        `powershell -NoProfile -Command "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; Get-Process | Where-Object {$_.MainWindowHandle -ne 0 -and $_.Responding} | Sort-Object CPU -Descending | Select-Object -First 1 -ExpandProperty Name"`,
-        { timeout: 1000, encoding: 'utf8', windowsHide: true, stdio: 'pipe' }
+      out = execSync(`osascript -e '${script}'`, { timeout: 1000 }).toString().trim().toLowerCase();
+    } else if (process.platform === 'win32') {
+      out = execSync(
+        `powershell -NoProfile -WindowStyle Hidden -NonInteractive -Command "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; (Get-Process | Where-Object {$_.MainWindowHandle -ne 0 -and $_.Responding} | Sort-Object -Property CPU -Descending | Select-Object -First 1).Name"`,
+        { timeout: 1500, encoding: 'utf8', windowsHide: true, stdio: 'pipe' }
       ).trim().toLowerCase();
-      return out;
     }
+    _cachedApp = out;
+    _cachedAppTs = now;
+    return out;
   } catch {}
-  return '';
+  return _cachedApp;
 }
 
-// 활성 윈도우 타이틀 가져오기 (뭘 하고 있는지 핵심 정보)
+// ── 활성 윈도우 타이틀 (C# 컴파일 제거 → Get-Process 네이티브 사용) ──────────
 function getActiveWindowTitle() {
+  const now = Date.now();
+  if (now - _cachedTitleTs < _WIN_CACHE_MS) return _cachedTitle;
   try {
+    let out = '';
     if (process.platform === 'darwin') {
       const script = `
         tell application "System Events"
           set fp to first process where frontmost is true
           tell fp to get name of front window
         end tell`;
-      return execSync(`osascript -e '${script}'`, { timeout: 1000 }).toString().trim();
-    }
-    if (process.platform === 'win32') {
-      return execSync(
-        `powershell -NoProfile -Command "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class WinAPI { [DllImport(\\\"user32.dll\\\")] public static extern IntPtr GetForegroundWindow(); [DllImport(\\\"user32.dll\\\", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder text, int count); }'; $h=[WinAPI]::GetForegroundWindow(); $b=New-Object System.Text.StringBuilder 512; [void][WinAPI]::GetWindowText($h,$b,512); $b.ToString()"`,
-        { timeout: 3000, encoding: 'utf8', windowsHide: true, stdio: 'pipe' }
+      out = execSync(`osascript -e '${script}'`, { timeout: 1000 }).toString().trim();
+    } else if (process.platform === 'win32') {
+      // C# Add-Type 컴파일 제거 → PowerShell 네이티브 MainWindowTitle 사용 (빠름, CMD 창 없음)
+      out = execSync(
+        `powershell -NoProfile -WindowStyle Hidden -NonInteractive -Command "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; (Get-Process | Where-Object {$_.MainWindowHandle -ne 0 -and $_.Responding -and $_.MainWindowTitle -ne ''} | Sort-Object -Property CPU -Descending | Select-Object -First 1).MainWindowTitle"`,
+        { timeout: 1500, encoding: 'utf8', windowsHide: true, stdio: 'pipe' }
       ).trim();
+    } else if (process.platform === 'linux') {
+      out = execSync('xdotool getactivewindow getwindowname 2>/dev/null || echo ""', { timeout: 1000 }).toString().trim();
     }
-    if (process.platform === 'linux') {
-      return execSync('xdotool getactivewindow getwindowname 2>/dev/null || echo ""', { timeout: 1000 }).toString().trim();
-    }
+    _cachedTitle = out;
+    _cachedTitleTs = now;
+    return out;
   } catch {}
-  return '';
+  return _cachedTitle;
 }
 
 // ── 비밀번호 앱 확인 ────────────────────────────────────────────────────────

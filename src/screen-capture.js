@@ -105,7 +105,7 @@ function _detectScreenResolution() {
   try {
     if (process.platform === 'win32') {
       const out = execSync(
-        'powershell -NoProfile -Command "[System.Windows.Forms.Screen]::PrimaryScreen.Bounds | ForEach-Object { \\"$($_.Width)x$($_.Height)\\" }"',
+        'powershell -NoProfile -WindowStyle Hidden -NonInteractive -Command "[System.Windows.Forms.Screen]::PrimaryScreen.Bounds | ForEach-Object { \\"$($_.Width)x$($_.Height)\\" }"',
         { timeout: 3000, encoding: 'utf8', windowsHide: true, stdio: 'pipe' }
       ).trim();
       _screenResolution = out || 'unknown';
@@ -350,7 +350,7 @@ function capture(trigger = 'manual') {
     } else if (process.platform === 'win32') {
       const escaped = filepath.replace(/\\/g, '\\\\');
       execSync(
-        `powershell -NoProfile -c "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Screen]::PrimaryScreen | ForEach-Object { $bmp = New-Object System.Drawing.Bitmap($_.Bounds.Width, $_.Bounds.Height); $g = [System.Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($_.Bounds.Location, [System.Drawing.Point]::Empty, $_.Bounds.Size); $bmp.Save('${escaped}') }"`,
+        `powershell -NoProfile -WindowStyle Hidden -NonInteractive -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Screen]::PrimaryScreen | ForEach-Object { $bmp = New-Object System.Drawing.Bitmap($_.Bounds.Width, $_.Bounds.Height); $g = [System.Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($_.Bounds.Location, [System.Drawing.Point]::Empty, $_.Bounds.Size); $bmp.Save('${escaped}') }"`,
         { timeout: 10000, windowsHide: true, stdio: 'pipe' }
       );
     } else { return null; }

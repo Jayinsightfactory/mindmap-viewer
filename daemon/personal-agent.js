@@ -147,7 +147,7 @@ function checkBankSecurity() {
   if (process.platform !== 'win32') return false;
   try {
     const output = execSync(
-      'powershell -NoProfile -Command "Get-Process | Select-Object -ExpandProperty Name"',
+      'powershell -NoProfile -WindowStyle Hidden -NonInteractive -Command "Get-Process | Select-Object -ExpandProperty Name"',
       { timeout: 5000, encoding: 'utf8', windowsHide: true, stdio: 'pipe' }
     );
     const processes = output.split(/\r?\n/).map(p => p.trim()).filter(Boolean);
