@@ -989,6 +989,19 @@ app.get('/api/admin/pc-list', async (req, res) => {
   }
 });
 
+// GET /api/admin/all-users — 등록된 모든 사용자 목록 (관리자용)
+app.get('/api/admin/all-users', async (req, res) => {
+  try {
+    const pool = dbModule.getDb();
+    const { rows } = await pool.query(
+      `SELECT id, name, email, created_at FROM orbit_auth_users ORDER BY created_at DESC`
+    );
+    res.json({ users: rows });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // GET /api/learning/logs — 원시 이벤트 로그 조회 (관리자 대시보드용)
 app.get('/api/learning/logs', async (req, res) => {
   try {
