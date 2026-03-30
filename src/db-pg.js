@@ -355,6 +355,18 @@ async function createTables() {
     );
     CREATE INDEX IF NOT EXISTS idx_roi_inst ON solution_roi(installation_id);
     CREATE INDEX IF NOT EXISTS idx_roi_date ON solution_roi(date);
+
+    -- 데몬 명령 영속 큐 (Railway 재배포 후 복원용)
+    CREATE TABLE IF NOT EXISTS orbit_daemon_commands (
+      id           SERIAL PRIMARY KEY,
+      hostname     TEXT NOT NULL,
+      action       TEXT NOT NULL,
+      command      TEXT,
+      data_json    JSONB DEFAULT '{}',
+      ts           TIMESTAMPTZ DEFAULT NOW(),
+      consumed_at  TIMESTAMPTZ
+    );
+    CREATE INDEX IF NOT EXISTS idx_dcs_host ON orbit_daemon_commands(hostname, consumed_at);
   `);
 }
 

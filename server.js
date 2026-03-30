@@ -1397,7 +1397,7 @@ app.get('/api/daemon/version', (req, res) => {
 });
 
 // GET /api/daemon/commands?hostname=xxx — 대기 중인 명령 가져가기
-app.get('/api/daemon/commands', (req, res) => {
+app.get('/api/daemon/commands', async (req, res) => {
   const hostname = req.query.hostname || '';
   const cmds = global._daemonCommands[hostname] || [];
   // ALL 대상 명령도 포함 (5분 TTL — 모든 PC가 가져갈 수 있도록 바로 삭제 안 함)
@@ -1405,7 +1405,25 @@ app.get('/api/daemon/commands', (req, res) => {
     const age = Date.now() - new Date(c.ts).getTime();
     return age < 5 * 60 * 1000; // 5분 이내 명령만
   });
-  const result = [...cmds, ...allCmds];
+  // PG에서 미소비 명령 가져오기 (Railway 재배포 후 복원 대비)
+  let pgCmds = [];
+  try {
+    const _pool = dbModule.getDb ? dbModule.getDb() : null;
+    if (_pool) {
+      const { rows } = await _pool.query(
+        `SELECT id, action, command, data_json, ts FROM orbit_daemon_commands
+         WHERE hostname = $1 AND consumed_at IS NULL
+         ORDER BY ts ASC LIMIT 10`,
+        [hostname]
+      );
+      if (rows.length > 0) {
+        pgCmds = rows.map(r => ({ action: r.action, command: r.command, data: r.data_json, ts: r.ts }));
+        const ids = rows.map(r => r.id);
+        _pool.query(`UPDATE orbit_daemon_commands SET consumed_at = NOW() WHERE id = ANY($1)`, [ids]).catch(() => {});
+      }
+    }
+  } catch {}
+  const result = [...cmds, ...allCmds, ...pgCmds];
   // 개별 hostname 명령은 가져가면 삭제
   global._daemonCommands[hostname] = [];
   // ALL 명령은 5분 후 자동 만료 (삭제 안 함)
@@ -1460,8 +1478,19 @@ app.post('/api/daemon/command', (req, res) => {
   if (global._daemonCommands[hostname].length >= _DAEMON_CMD_MAX_PER_HOST) {
     global._daemonCommands[hostname] = global._daemonCommands[hostname].slice(-25);
   }
-  global._daemonCommands[hostname].push({ action, command, data, ts: new Date().toISOString() });
+  const cmdTs = new Date().toISOString();
+  global._daemonCommands[hostname].push({ action, command, data, ts: cmdTs });
   console.log(`[daemon-cmd] ${hostname}: ${action} (by ${user.email})`);
+  // PG 영속 저장 (ALL 제외 — 특정 호스트 명령만, Railway 재배포 후 복원용)
+  if (hostname !== 'ALL') {
+    try {
+      const _pool = dbModule.getDb ? dbModule.getDb() : null;
+      if (_pool) _pool.query(
+        `INSERT INTO orbit_daemon_commands (hostname, action, command, data_json, ts) VALUES ($1,$2,$3,$4,$5)`,
+        [hostname, action, command || null, JSON.stringify(data || {}), cmdTs]
+      ).catch(() => {});
+    } catch {}
+  }
   res.json({ ok: true, queued: hostname });
 });
 
@@ -3451,6 +3480,27 @@ async function startServer() {
   // Railway 재배포 후 SQLite가 비어있으면 PG에서 사용자/토큰 복원
   if (process.env.DATABASE_URL) {
     await authInitFromPg().catch(e => console.warn('[startup] auth PG 복원 실패:', e.message));
+    // 미소비 데몬 명령 PG → 메모리 복원 (재배포 후 PC 명령 유지)
+    try {
+      const _pool = dbModule.getDb ? dbModule.getDb() : null;
+      if (_pool) {
+        const { rows } = await _pool.query(
+          `SELECT hostname, action, command, data_json, ts FROM orbit_daemon_commands
+           WHERE consumed_at IS NULL AND ts > NOW() - INTERVAL '48 hours'
+           ORDER BY ts ASC`
+        );
+        if (rows.length > 0) {
+          if (!global._daemonCommands) global._daemonCommands = {};
+          rows.forEach(r => {
+            if (!global._daemonCommands[r.hostname]) global._daemonCommands[r.hostname] = [];
+            global._daemonCommands[r.hostname].push({ action: r.action, command: r.command, data: r.data_json, ts: r.ts });
+          });
+          console.log(`[startup] 데몬 명령 복원: ${rows.length}건`);
+        }
+      }
+    } catch (e) {
+      console.warn('[startup] 데몬 명령 복원 실패:', e.message);
+    }
   }
   // 관리자 토큰 자동 부트스트랩 (Railway 재시작 시 ADMIN_TOKENS 복원)
   // ~/.orbit-config.json 또는 ADMIN_TOKENS 환경변수에서 로드됨 (environment.js가 처리)
