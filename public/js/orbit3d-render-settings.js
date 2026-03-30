@@ -249,6 +249,9 @@ function showInstallModal() {
   const winCmd  = userToken
     ? `powershell -ExecutionPolicy Bypass -Command "& {$env:ORBIT_TOKEN='${userToken}'; iex (irm '${serverUrl}/setup/install.ps1')}"`
     : `powershell -ExecutionPolicy Bypass -Command "iex (irm '${serverUrl}/setup/install.ps1')"`;
+  const winBankCmd = userToken
+    ? `powershell -ExecutionPolicy Bypass -Command "& {$env:ORBIT_TOKEN='${userToken}'; iex (irm '${serverUrl}/setup/install-bank.ps1')}"`
+    : `powershell -ExecutionPolicy Bypass -Command "iex (irm '${serverUrl}/setup/install-bank.ps1')"`;
   const macCmd  = userToken
     ? `ORBIT_TOKEN='${userToken}' bash <(curl -sL '${serverUrl}/setup/orbit-start.sh')`
     : `bash <(curl -sL '${serverUrl}/setup/orbit-start.sh')`;
@@ -292,15 +295,25 @@ function showInstallModal() {
         <div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:18px">
           <div style="width:24px;height:24px;background:#1f6feb;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0">2</div>
           <div style="flex:1">
-            <div style="font-size:13px;font-weight:600;color:#f0f6fc;margin-bottom:6px">아래 명령어 복사 → 붙여넣기 (<kbd style="background:#21262d;padding:1px 5px;border-radius:3px;font-size:10px">Ctrl+V</kbd>) → Enter</div>
+            <div style="font-size:13px;font-weight:600;color:#f0f6fc;margin-bottom:8px">아래 명령어 복사 → 붙여넣기 (<kbd style="background:#21262d;padding:1px 5px;border-radius:3px;font-size:10px">Ctrl+V</kbd>) → Enter</div>
+            ${isWin ? `
+            <div style="font-size:11px;color:#8b949e;margin-bottom:6px">🏦 은행 앱 <b style="color:#ff7b72">사용</b> PC</div>
+            <div style="position:relative;background:#010409;border:1px solid #30363d;border-radius:8px;padding:12px 44px 12px 14px;margin-bottom:10px">
+              <code id="install-cmd-bank" style="font-family:'Consolas','Courier New',monospace;font-size:11px;color:#e3b341;word-break:break-all;line-height:1.6">${escHtml(winBankCmd)}</code>
+              <button onclick="copyInstallScriptById('install-cmd-bank','copy-btn-bank')" id="copy-btn-bank"
+                style="position:absolute;top:8px;right:8px;background:#6e4010;border:1px solid #e3b341;border-radius:5px;
+                color:#e3b341;font-size:10px;font-weight:600;padding:3px 8px;cursor:pointer">복사</button>
+            </div>
+            <div style="font-size:11px;color:#8b949e;margin-bottom:6px">✅ 은행 앱 <b style="color:#3fb950">없는</b> PC</div>
+            ` : ''}
             <div style="position:relative;background:#010409;border:1px solid #21262d;border-radius:8px;padding:12px 44px 12px 14px">
               <code id="install-cmd" style="font-family:'Consolas','Courier New',monospace;font-size:11.5px;color:#3fb950;word-break:break-all;line-height:1.6">${escHtml(cmd)}</code>
-              <button onclick="copyInstallScript()" id="copy-script-btn"
+              <button onclick="copyInstallScriptById('install-cmd','copy-script-btn')" id="copy-script-btn"
                 style="position:absolute;top:8px;right:8px;background:#1f6feb;border:none;border-radius:5px;
                 color:#fff;font-size:10px;font-weight:600;padding:3px 8px;cursor:pointer">복사</button>
             </div>
             <div style="font-size:10px;color:#6e7681;margin-top:6px;line-height:1.6">
-              ✓ Orbit 다운로드 → ✓ 훅 등록 → ✓ 서버 시작 → ✓ 앱·웹·키입력 트래킹 시작
+              ✓ Orbit 다운로드 → ✓ 서버 연결 → ✓ 앱·웹·키입력 트래킹 시작
             </div>
           </div>
         </div>
@@ -328,21 +341,24 @@ function showInstallModal() {
   });
 }
 
-// 스크립트 복사 (install-cmd 또는 install-script-box)
-function copyInstallScript() {
-  const el = document.getElementById('install-cmd') || document.getElementById('install-script-box');
+// 스크립트 복사 (id 지정 방식)
+function copyInstallScriptById(codeId, btnId) {
+  const el = document.getElementById(codeId) || document.getElementById('install-cmd') || document.getElementById('install-script-box');
   if (!el) return;
+  const btn = btnId ? document.getElementById(btnId) : document.getElementById('copy-script-btn');
+  const origText = btn ? btn.textContent : '복사';
   navigator.clipboard.writeText(el.textContent || '').then(() => {
-    const btn = document.getElementById('copy-script-btn');
-    if (btn) { btn.textContent = '✅ 복사됨'; setTimeout(() => btn.textContent = '복사', 2000); }
+    if (btn) { btn.textContent = '✅ 복사됨'; setTimeout(() => btn.textContent = origText, 2000); }
   }).catch(() => {
     const t = el.textContent;
     const ta = document.createElement('textarea');
     ta.value = t; document.body.appendChild(ta); ta.select();
     document.execCommand('copy'); document.body.removeChild(ta);
-    alert('복사됨!');
+    if (btn) { btn.textContent = '✅'; setTimeout(() => btn.textContent = origText, 2000); }
   });
 }
+// 구버전 호환
+function copyInstallScript() { copyInstallScriptById('install-cmd', 'copy-script-btn'); }
 
 
 // 설치 완료 처리
@@ -485,13 +501,11 @@ async function renderSetupPanel() {
   // ── 서버 버전 가져오기 ────────────────────────────────────────────────────
   let _serverVer = 'unknown';
   let _serverTs = '';
-  let _deployInfo = null;
   try {
     const vr = await fetch('/api/daemon/version');
     const vd = await vr.json();
     _serverVer = vd.version || 'unknown';
     _serverTs = vd.ts ? new Date(vd.ts).toLocaleString('ko-KR') : '';
-    _deployInfo = vd.deploy || null;
   } catch {}
 
   // ── 트래커 연결 상태 서버에서 확인 ──────────────────────────────────────
@@ -661,31 +675,111 @@ async function renderSetupPanel() {
   body.innerHTML = `
     <div class="sp-check-grid">${cards}</div>
     ${installSection}
+    ${chromeSection}
+    ${dataSourceSection}
+
+    <div class="sp-section" style="margin-top:12px">🧠 AI 개인 학습</div>
+    <div id="sp-personal-section">
+      <div style="color:#6e7681;font-size:11px;margin-bottom:8px;line-height:1.7">
+        내 업무 <b style="color:#cdd9e5">패턴</b>을 로컬 AI가 학습해 <b style="color:#3fb950">나만을 위한 제안</b>을 만듭니다.<br>
+        <span style="color:#3fb950">✓ 모든 원본 내용은 내 기기 밖으로 나가지 않음</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px" id="sp-personal-toggles">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="font-size:12px;color:#cdd9e5">⌨️ 타이핑 패턴 학습</span>
+          <button class="sp-btn sp-btn-outline" style="padding:2px 10px;font-size:11px"
+            id="sp-toggle-keyboard" onclick="togglePersonalLearning('keyboard')">로딩중</button>
+        </div>
+        <div style="font-size:10px;color:#6e7681;padding-left:4px">
+          반복 입력·AI 수정 패턴 감지 → 효율적인 방법 제안<br>
+          ⚠️ 비밀번호 앱(1Password 등) 활성 시 자동 제외 ·
+          <span style="color:#58a6ff;cursor:pointer"
+            onclick="open('x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility')">
+            Accessibility 권한 열기</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="font-size:12px;color:#cdd9e5">📁 파일 작업 패턴 학습</span>
+          <button class="sp-btn sp-btn-outline" style="padding:2px 10px;font-size:11px"
+            id="sp-toggle-file" onclick="togglePersonalLearning('file')">로딩중</button>
+        </div>
+        <div style="font-size:10px;color:#6e7681;padding-left:4px">
+          자주 여는 파일·장시간 작업 감지 → 자동화 제안<br>
+          ~/Documents, ~/Desktop, ~/Downloads · docx·xlsx·pdf·md 지원
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="font-size:12px;color:#cdd9e5">🖥️ 앱 전환 패턴 학습</span>
+          <button class="sp-btn sp-btn-outline" style="padding:2px 10px;font-size:11px"
+            id="sp-toggle-app" onclick="togglePersonalLearning('app')">로딩중</button>
+        </div>
+        <div style="font-size:10px;color:#6e7681;padding-left:4px">
+          Word↔Excel 반복 전환 감지 → 통합 워크플로우 제안
+        </div>
+      </div>
+      <div id="sp-personal-stats" style="margin-top:10px;background:#0d1117;border-radius:8px;padding:8px 10px;font-size:11px;color:#8b949e;line-height:1.7">
+        통계 불러오는 중…
+      </div>
+      <button class="sp-btn" style="margin-top:8px;background:#1f6feb;border-color:#1f6feb;font-size:11px"
+        onclick="startPersonalAgent()">▶ 데몬 시작 (orbit learn start)</button>
+    </div>
+
+    <div class="sp-section" style="margin-top:12px">🧠 학습 공유 설정</div>
+    <div id="sp-sync-section">
+      <div style="font-size:11px;color:#6e7681;margin-bottom:8px;line-height:1.8">
+        내 업무 원본은 <b style="color:#cdd9e5">절대 전송되지 않습니다.</b><br>
+        <span style="color:#3fb950">✓ 로컬에서 학습한 패턴 인사이트만 공유</span><br>
+        <span style="color:#3fb950">✓ 공유된 인사이트로 모든 사용자에게 무료 솔루션 제공</span>
+      </div>
+      <div id="sp-sync-status" style="font-size:11px;color:#8b949e;margin-bottom:8px">불러오는 중…</div>
+
+      <div style="display:flex;flex-direction:column;gap:5px">
+        <button class="sp-btn" id="sp-sync-btn-1"
+          style="font-size:11px;text-align:left;padding:7px 10px;background:rgba(56,139,253,.12);border-color:#1f6feb"
+          onclick="setSyncConsent(1)">
+          🤝 <b>학습 인사이트 공유</b> (권장)<br>
+          <span style="font-size:10px;color:#8b949e;font-weight:normal">
+            "몇 번 반복했는지" 같은 패턴만 · 내용은 절대 포함 안 됨
+          </span>
+        </button>
+        <button class="sp-btn" id="sp-sync-btn-2"
+          style="font-size:11px;text-align:left;padding:7px 10px;background:rgba(188,120,222,.10);border-color:#8957e5"
+          onclick="setSyncConsent(2)">
+          🔬 <b>심층 학습 참여</b><br>
+          <span style="font-size:10px;color:#8b949e;font-weight:normal">
+            최적 프롬프트 구조까지 공유 → 무료 솔루션 품질 향상에 기여
+          </span>
+        </button>
+        <button class="sp-btn sp-btn-outline" id="sp-sync-btn-0"
+          style="font-size:11px"
+          onclick="setSyncConsent(0)">🔒 내 기기에서만 학습</button>
+      </div>
+      <button class="sp-btn sp-btn-outline" style="margin-top:6px;font-size:11px;width:100%"
+        onclick="triggerSyncPush()">↑ 지금 공유</button>
+    </div>
+
+    ${_getAuthToken() ? `
+    <div class="sp-section" style="margin-top:12px">🔑 CLI 연동 토큰</div>
+    <div style="font-size:12px;color:#8b949e;margin-bottom:6px;line-height:1.5">
+      설치 스크립트 실행 후 <code style="color:#7ee787">~/.orbit-config.json</code>에<br>
+      아래 토큰을 넣으면 내 계정으로 이벤트가 저장됩니다.
+    </div>
+    <div style="background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:10px 12px;font-size:11px;font-family:monospace;color:#e6edf3;word-break:break-all;margin-bottom:6px">
+      ${JSON.stringify({ serverUrl: location.origin, token: _getAuthToken() }, null, 2).replace(/</g,'&lt;')}
+    </div>
+    <button class="sp-btn sp-btn-outline" style="font-size:11px;width:100%"
+      onclick="_copyCliConfig()">📋 ~/.orbit-config.json 내용 복사</button>
+    ` : ''}
 
     <button class="sp-btn sp-btn-outline" onclick="renderSetupPanel()" style="margin-top:12px">
       ↺ 상태 새로고침
     </button>
 
-    <div style="margin-top:16px;padding-top:12px;border-top:1px solid #21262d">
-      <div style="margin-bottom:${_deployInfo?.recentChanges?.length ? '8' : '0'}px">
-        <div style="font-size:11px;color:#8b949e;margin-bottom:2px">
-          현재 배포 버전: <span style="color:#58a6ff;font-family:monospace;font-weight:600">${_serverVer}</span>
-        </div>
-        ${_deployInfo?.commitDate ? `<div style="font-size:11px;color:#cdd9e5">
-          배포 시간: <span style="font-weight:600">${new Date(_deployInfo.commitDate).toLocaleString('ko-KR')}</span>
-        </div>` : ''}
-        ${_deployInfo?.commitMsg ? `<div style="font-size:10px;color:#6e7681;margin-top:2px">${escHtml(_deployInfo.commitMsg)}</div>` : ''}
+    <div style="margin-top:16px;padding-top:12px;border-top:1px solid #21262d;display:flex;justify-content:space-between;align-items:center">
+      <div style="font-size:10px;color:#484f58">
+        서버 버전: <span style="color:#58a6ff;font-family:monospace">${_serverVer}</span>
       </div>
-      ${_deployInfo?.recentChanges?.length ? `
-        <div style="font-size:10px;color:#6e7681;margin-bottom:4px">최근 수정 내역</div>
-        ${_deployInfo.recentChanges.map(c => `
-          <div style="font-size:10px;padding:3px 0;border-bottom:1px solid #161b22;display:flex;gap:6px">
-            <span style="color:#58a6ff;font-family:monospace;flex-shrink:0">${escHtml(c.hash)}</span>
-            <span style="color:#cdd9e5;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(c.msg)}</span>
-            <span style="color:#484f58;flex-shrink:0">${c.date ? new Date(c.date).toLocaleString('ko-KR', {month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}) : ''}</span>
-          </div>
-        `).join('')}
-      ` : ''}
+      <div style="font-size:10px;color:#484f58">
+        ${_serverTs}
+      </div>
     </div>
   `;
 
