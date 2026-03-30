@@ -166,18 +166,23 @@ function pullAndRestart(reason) {
   reportStatus('update_start', reason);
 
   try {
-    // git reset + pull (로컬 변경사항이 있어도 강제 업데이트)
-    try { execSync('git reset --hard HEAD', { cwd: ROOT, timeout: 10000, windowsHide: true, stdio: 'pipe' }); } catch {}
-    const pullResult = execSync('git pull origin main --ff-only', {
-      cwd: ROOT, timeout: 30000, windowsHide: true, stdio: 'pipe',
-    }).toString().trim();
-    console.log(`[daemon-updater] git pull: ${pullResult}`);
+    // git fetch + reset --hard (ff-only 실패 / history diverge 상황에서도 강제 업데이트)
+    execSync('git fetch origin', { cwd: ROOT, timeout: 30000, windowsHide: true, stdio: 'pipe' });
+    const localVer = getLocalVersion();
+    const remoteVer = (() => {
+      try { return execSync('git rev-parse origin/main', { cwd: ROOT, timeout: 5000, windowsHide: true, stdio: 'pipe' }).toString().trim().slice(0, 8); } catch { return null; }
+    })();
 
-    if (pullResult.includes('Already up to date')) {
+    if (remoteVer && localVer === remoteVer) {
       console.log('[daemon-updater] 이미 최신 — 재시작 불필요');
       reportStatus('update_skip', 'Already up to date');
       return false;
     }
+
+    const pullResult = execSync('git reset --hard origin/main', {
+      cwd: ROOT, timeout: 15000, windowsHide: true, stdio: 'pipe',
+    }).toString().trim();
+    console.log(`[daemon-updater] git reset --hard origin/main: ${pullResult}`);
 
     // npm install (package.json 변경 시)
     try {
