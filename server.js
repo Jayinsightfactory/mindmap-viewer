@@ -971,18 +971,45 @@ if (reportSheet && process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
   if (enabled) console.log('[report-sheet] 초기화 완료');
 }
 
+// GET /api/admin/pc-list — 이벤트 DB에 있는 모든 고유 PC 호스트명 목록
+app.get('/api/admin/pc-list', async (req, res) => {
+  try {
+    const pool = dbModule.getDb();
+    const { rows } = await pool.query(
+      `SELECT DISTINCT data_json->>'hostname' AS hostname, user_id,
+              MIN(timestamp) AS first_seen, MAX(timestamp) AS last_seen, COUNT(*) AS event_count
+       FROM events
+       WHERE data_json->>'hostname' IS NOT NULL
+       GROUP BY data_json->>'hostname', user_id
+       ORDER BY last_seen DESC`
+    );
+    res.json({ pcs: rows });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // GET /api/learning/logs — 원시 이벤트 로그 조회 (관리자 대시보드용)
 app.get('/api/learning/logs', async (req, res) => {
   try {
     const pool = dbModule.getDb();
-    const limit = Math.min(parseInt(req.query.limit) || 200, 500);
+    const limit = Math.min(parseInt(req.query.limit) || 200, 2000);
     const userId = req.query.userId || null;
     const type = req.query.type || null;
+    const from = req.query.from || null;   // ISO date string (e.g. 2026-03-23)
+    const to = req.query.to || null;       // ISO date string
+    const pc = req.query.pc || null;       // hostname filter
 
-    let query = "SELECT id, type, user_id, timestamp, data_json FROM events WHERE type IN ('keyboard.chunk','screen.capture','screen.analyzed','idle')";
+    const allTypes = req.query.allTypes === '1';
+    let query = allTypes
+      ? "SELECT id, type, user_id, timestamp, data_json FROM events WHERE 1=1"
+      : "SELECT id, type, user_id, timestamp, data_json FROM events WHERE type IN ('keyboard.chunk','screen.capture','screen.analyzed','idle')";
     const params = [];
     if (userId) { params.push(userId); query += ` AND user_id=$${params.length}`; }
     if (type) { params.push(type); query += ` AND type=$${params.length}`; }
+    if (from) { params.push(from); query += ` AND timestamp >= $${params.length}`; }
+    if (to) { params.push(to); query += ` AND timestamp <= $${params.length}`; }
+    if (pc) { params.push(pc); query += ` AND data_json->>'hostname' ILIKE $${params.length}`; }
     query += ` ORDER BY timestamp DESC LIMIT $${params.length + 1}`;
     params.push(limit);
 
