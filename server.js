@@ -2609,7 +2609,10 @@ app.get('/api/admin/diag-token', async (req, res) => {
 // ─── 직원 설치 토큰 생성 (ADMIN_SECRET 방식, Google 계정 불필요) ──────────────
 // POST /api/admin/create-employee-token
 // { secret, name, pcId } → 직원용 설치코드 즉시 발급
+// DISABLED — use OAuth login flow
 app.post('/api/admin/create-employee-token', async (req, res) => {
+  return res.status(410).json({ error: 'disabled — use OAuth login flow' });
+  /* DISABLED
   const { secret, name, pcId } = req.body || {};
   const adminSecret = process.env.ADMIN_SECRET;
   if (!adminSecret) return res.status(503).json({ error: 'ADMIN_SECRET not configured' });
@@ -2639,6 +2642,88 @@ app.post('/api/admin/create-employee-token', async (req, res) => {
     : `http://localhost:${PORT}`;
   const installCmd = `irm "${serverUrl}/api/setup/install-script?os=windows&token=${apiToken}&memberName=${encodeURIComponent(name)}&serverUrl=${encodeURIComponent(serverUrl)}" | iex`;
   res.json({ ok: true, userId: user.id, email, name: user.name, token: apiToken, installCmd });
+  */
+});
+
+// ─── 관리자: 사용자 삭제 ──────────────────────────────────────────────────────
+// DELETE /api/admin/delete-user
+// body: { email } 또는 { userId }
+// 인증: ADMIN_EMAILS(Bearer 토큰) 또는 body.secret = ADMIN_SECRET
+app.delete('/api/admin/delete-user', async (req, res) => {
+  try {
+    // 인증 확인: resolveAdmin 또는 ADMIN_SECRET body 파라미터
+    const { user: _adminUser, isAdmin: _adminOk } = resolveAdmin(req);
+    const _secretOk = process.env.ADMIN_SECRET && (req.body || {}).secret === process.env.ADMIN_SECRET;
+    if (!_secretOk && !_adminOk) {
+      if (!_adminUser) return res.status(401).json({ error: 'unauthorized' });
+      return res.status(403).json({ error: 'admin only' });
+    }
+
+    const { email, userId } = req.body || {};
+    if (!email && !userId) return res.status(400).json({ error: 'email 또는 userId 필수' });
+
+    // ── SQLite (auth DB) ──────────────────────────────────────────────────────
+    const authMod = require('./src/auth');
+    const authDb = authMod.getDb ? authMod.getDb() : null;
+
+    let targetUserId = userId || null;
+
+    if (authDb) {
+      // email → userId 조회
+      if (!targetUserId && email) {
+        const row = authDb.prepare('SELECT id FROM users WHERE email = ?').get(email);
+        if (row) targetUserId = row.id;
+      }
+      if (targetUserId) {
+        authDb.prepare('DELETE FROM tokens WHERE userId = ?').run(targetUserId);
+        authDb.prepare('DELETE FROM users WHERE id = ?').run(targetUserId);
+      } else if (email) {
+        // userId를 못 찾아도 email로 직접 삭제 시도
+        authDb.prepare('DELETE FROM users WHERE email = ?').run(email);
+      }
+    }
+
+    // ── SQLite (main events DB) ───────────────────────────────────────────────
+    if (targetUserId && dbModule && typeof dbModule.getDb === 'function') {
+      const mainDb = dbModule.getDb();
+      if (mainDb && typeof mainDb.prepare === 'function') {
+        mainDb.prepare('DELETE FROM events WHERE user_id = ?').run(targetUserId);
+        try { mainDb.prepare('DELETE FROM nodes WHERE user_id = ?').run(targetUserId); } catch (_) {}
+        try { mainDb.prepare('DELETE FROM edges WHERE user_id = ?').run(targetUserId); } catch (_) {}
+      }
+    }
+
+    // ── PostgreSQL ────────────────────────────────────────────────────────────
+    if (process.env.DATABASE_URL) {
+      const pgMod = require('./src/db-pg');
+      const pgPool = pgMod.getDb ? pgMod.getDb() : null;
+      if (pgPool && typeof pgPool.query === 'function') {
+        // email → userId 조회 (PG)
+        if (!targetUserId && email) {
+          const { rows } = await pgPool.query(
+            'SELECT id FROM orbit_auth_users WHERE email = $1 LIMIT 1', [email]
+          );
+          if (rows.length > 0) targetUserId = rows[0].id;
+        }
+
+        if (targetUserId) {
+          await pgPool.query('DELETE FROM orbit_auth_tokens WHERE user_id = $1', [targetUserId]);
+          await pgPool.query('DELETE FROM orbit_auth_users WHERE id = $1', [targetUserId]);
+          await pgPool.query('DELETE FROM events WHERE user_id = $1', [targetUserId]);
+          await pgPool.query('DELETE FROM nodes WHERE user_id = $1', [targetUserId]).catch(() => {});
+          await pgPool.query('DELETE FROM edges WHERE user_id = $1', [targetUserId]).catch(() => {});
+        } else if (email) {
+          await pgPool.query('DELETE FROM orbit_auth_users WHERE email = $1', [email]);
+        }
+      }
+    }
+
+    console.log(`[admin/delete-user] 삭제 완료 — userId=${targetUserId} email=${email}`);
+    res.json({ ok: true, deletedUserId: targetUserId, email: email || null });
+  } catch (err) {
+    console.error('[admin/delete-user] error:', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ─── 관리자 부트스트랩 (Railway 초기 설정용) ─────────────────────────────────

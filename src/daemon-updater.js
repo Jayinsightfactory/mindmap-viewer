@@ -224,12 +224,16 @@ function _restartSelf() {
   console.log('[daemon-updater] 재시작:', agentPath);
 
   // 새 프로세스 생성 (detached — 부모 종료돼도 살아남음)
+  // Bug #1 fix: 재시작 전 환경변수에 토큰/서버URL 주입 (업데이트 후 토큰 유지)
+  const spawnEnv = { ...process.env };
+  if (_token) spawnEnv.ORBIT_TOKEN = _token;
+  if (_serverUrl) spawnEnv.ORBIT_SERVER_URL = _serverUrl;
   const child = spawn(process.execPath, [agentPath], {
     cwd: ROOT,
     detached: true,
     stdio: 'ignore',
     windowsHide: true,
-    env: { ...process.env },
+    env: spawnEnv,
   });
   child.unref();
 
@@ -261,6 +265,9 @@ async function executeCommand(cmd) {
           })();
           const merged = { ...existing, ...cmd.data };
           fs.writeFileSync(cfgPath, JSON.stringify(merged, null, 2), 'utf8');
+          // Bug #3 fix: 파일 저장 후 메모리 변수도 갱신 (특히 token 변경 시)
+          if (merged.token) _token = merged.token;
+          if (merged.serverUrl) _serverUrl = merged.serverUrl;
           console.log('[daemon-updater] 설정 업데이트:', Object.keys(cmd.data).join(', '));
           reportStatus('command_executed', `config: ${Object.keys(cmd.data).join(', ')}`);
         } catch (e) {
