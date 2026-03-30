@@ -2440,6 +2440,19 @@ app.post('/api/admin/issue-token', (req, res) => {
   res.json({ ok: true, userId: user.id, token, email: user.email, name: user.name });
 });
 
+// ─── 임시 진단 엔드포인트 (verifyToken 디버그용) ─────────────────────────────
+app.get('/api/admin/diag-token', async (req, res) => {
+  const { secret } = req.query;
+  if (secret !== process.env.ADMIN_SECRET) return res.status(403).json({ error: 'forbidden' });
+  const token = (req.headers.authorization || '').replace('Bearer ', '').trim();
+  const authMod = require('./src/auth');
+  const directResult = authMod.verifyToken ? authMod.verifyToken(token) : 'no verifyToken';
+  const asyncResult = authMod.verifyTokenAsync ? await authMod.verifyTokenAsync(token) : 'no verifyTokenAsync';
+  const authDb = authMod.getDb ? authMod.getDb() : null;
+  const dbHasToken = authDb ? !!authDb.prepare('SELECT 1 FROM tokens WHERE token=?').get(token) : null;
+  res.json({ token: token.slice(0, 20) + '...', directResult: directResult ? { id: directResult.id } : null, asyncResult: asyncResult ? { id: asyncResult.id } : null, dbHasToken });
+});
+
 // ─── 직원 설치 토큰 생성 (ADMIN_SECRET 방식, Google 계정 불필요) ──────────────
 // POST /api/admin/create-employee-token
 // { secret, name, pcId } → 직원용 설치코드 즉시 발급
