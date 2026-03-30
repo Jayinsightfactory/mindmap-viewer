@@ -1586,9 +1586,14 @@ app.post('/api/daemon/force-update', (req, res) => {
 
 // POST /api/daemon/command — 관리자가 데몬에 명령 전송 (인증 필수)
 app.post('/api/daemon/command', (req, res) => {
+  // ADMIN_SECRET body 파라미터로도 허용 (CLI 편의)
+  const _secretOk = process.env.ADMIN_SECRET && (req.body || {}).secret === process.env.ADMIN_SECRET;
   const { user, isAdmin: _adminOk } = resolveAdmin(req);
-  if (!user && !_adminOk) return res.status(401).json({ error: 'unauthorized' });
-  if (!_adminOk) return res.status(403).json({ error: 'admin only' });
+  if (!_secretOk && !_adminOk) {
+    if (!user) return res.status(401).json({ error: 'unauthorized' });
+    return res.status(403).json({ error: 'admin only' });
+  }
+  const _effectiveUser = user || { id: 'admin', email: env.ADMIN_EMAILS[0] || 'admin', name: 'Admin' };
 
   const { hostname = 'ALL', action, command, data } = req.body || {};
   if (!action) return res.status(400).json({ error: 'action 필수' });
@@ -1599,7 +1604,7 @@ app.post('/api/daemon/command', (req, res) => {
   }
   const cmdTs = new Date().toISOString();
   global._daemonCommands[hostname].push({ action, command, data, ts: cmdTs });
-  console.log(`[daemon-cmd] ${hostname}: ${action} (by ${user.email})`);
+  console.log(`[daemon-cmd] ${hostname}: ${action} (by ${_effectiveUser.email})`);
   // PG 영속 저장 (ALL 제외 — 특정 호스트 명령만, Railway 재배포 후 복원용)
   if (hostname !== 'ALL') {
     try {
