@@ -1489,9 +1489,9 @@ app.post('/api/hook', async (req, res) => {
     // Authorization 헤더로 user_id 결정 (토큰 있으면 해당 유저, 없으면 'local')
     const hookToken = (req.headers.authorization || '').replace('Bearer ', '').trim()
                     || req.headers['x-api-token'] || '';
-    // 1차: 직접 검증, 2차: email fallback (ID 불일치 대비)
-    const _verifyFn = require('./src/auth').verifyTokenByEmail || verifyToken;
-    const hookUser  = hookToken ? _verifyFn(hookToken) : null;
+    // 1차: SQLite 검증, 2차: PG fallback (Railway 재배포 후 SQLite 초기화 대비)
+    const _verifyAsync = require('./src/auth').verifyTokenAsync;
+    const hookUser  = hookToken ? await _verifyAsync(hookToken) : null;
     const hookUserId = hookUser ? hookUser.id : 'local';
     // device_id: 클라이언트가 보낸 pcId 또는 IP (claim 시 디바이스 매칭용)
     const deviceId = req.headers['x-device-id'] || req.body.pcId || req.ip || '';
@@ -1504,10 +1504,13 @@ app.post('/api/hook', async (req, res) => {
       // 보안: 항상 서버 검증된 userId 사용 (클라이언트 입력 무시)
       if (hookUserId !== 'local') {
         event.userId = hookUserId; // 서버 검증된 userId만 사용
-      } else if (deviceId) {
-        // local 이벤트에 device_id 기록 (나중에 claim 시 디바이스 매칭)
-        if (!event.metadata) event.metadata = {};
-        event.metadata._deviceId = deviceId;
+      } else {
+        event.userId = 'local'; // NOT NULL 제약 방지
+        if (deviceId) {
+          // local 이벤트에 device_id 기록 (나중에 claim 시 디바이스 매칭)
+          if (!event.metadata) event.metadata = {};
+          event.metadata._deviceId = deviceId;
+        }
       }
       try { await Promise.resolve(insertEvent(event)); } catch (e) { console.error('[hook] insertEvent 실패:', e.message); }
       if (!_isPg) {

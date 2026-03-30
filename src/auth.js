@@ -538,9 +538,51 @@ function verifyTokenByEmail(token) {
   if (direct) return direct;
   // 토큰은 있지만 user JOIN 실패 → 토큰만으로 userId 찾아서 email로 재조회
   const tokenRow = db.prepare('SELECT userId FROM tokens WHERE token = ? AND (expiresAt IS NULL OR expiresAt > datetime(\'now\'))').get(raw);
-  if (!tokenRow) return null;
+  if (!tokenRow) {
+    // SQLite에 없음 → PG 직접 조회 후 SQLite 복원 (비동기, 다음 요청부터 캐시됨)
+    _verifyTokenFromPg(raw).catch(() => {});
+    return null;
+  }
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(tokenRow.userId);
   return user ? sanitizeUser(user) : null;
+}
+
+// PG에서 토큰 직접 조회 후 SQLite 복원 (비동기)
+// - await 버전: hook 핸들러에서 직접 await 사용 가능
+// - fire-and-forget 버전: 다음 요청부터 캐시됨
+async function _verifyTokenFromPg(raw) {
+  if (!_pgPool) return null;
+  try {
+    const { rows } = await _pgPool.query(
+      `SELECT t.token, t.user_id, t.type, t.expires_at,
+              u.id, u.email, u.name, u.password_hash, u.plan, u.provider
+       FROM orbit_auth_tokens t
+       JOIN orbit_auth_users u ON t.user_id = u.id
+       WHERE t.token = $1 AND (t.expires_at IS NULL OR t.expires_at > NOW())`,
+      [raw]
+    );
+    if (!rows.length) return null;
+    const r = rows[0];
+    // SQLite에 유저 + 토큰 복원
+    if (db) {
+      try {
+        db.prepare(`INSERT OR IGNORE INTO users (id, email, name, passwordHash, plan, provider) VALUES (?,?,?,?,?,?)`)
+          .run(r.id, r.email, r.name || '', r.password_hash || '', r.plan || 'free', r.provider || 'local');
+        db.prepare(`INSERT OR IGNORE INTO tokens (token, userId, type, expiresAt) VALUES (?,?,?,?)`)
+          .run(r.token, r.user_id, r.type || 'api', r.expires_at || null);
+      } catch {}
+    }
+    return { id: r.id, email: r.email, name: r.name, plan: r.plan, provider: r.provider };
+  } catch { return null; }
+}
+
+// hook 핸들러 전용 async 검증 (SQLite → PG fallback)
+async function verifyTokenAsync(token) {
+  if (!token) return null;
+  const raw = token.replace('Bearer ', '').trim();
+  const direct = verifyToken(raw);
+  if (direct) return direct;
+  return _verifyTokenFromPg(raw);
 }
 
 // ─── 사용자 검색 (팔로우 시스템용) ────────────────────────────────────────────
@@ -716,6 +758,7 @@ module.exports = {
   ADMIN_EMAILS,
   ensureCanonicalUser,  // Identity Bridge
   initFromPg,   // server.js 시작 시 호출
+  verifyTokenAsync, // hook 핸들러 전용 (SQLite → PG fallback)
   pgBackupUser: _pgBackupUser,   // create-employee-token에서 await용
   pgBackupToken: _pgBackupToken, // create-employee-token에서 await용
 };
