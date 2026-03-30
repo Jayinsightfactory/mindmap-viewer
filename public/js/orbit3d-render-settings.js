@@ -245,6 +245,9 @@ function showInstallModal() {
   // 로그인된 사용자 토큰 가져오기 (데몬이 본인 계정으로 데이터 전송용)
   const userToken = localStorage.getItem('token') || '';
 
+  // EXE 다운로드 URL (GitHub Releases latest)
+  const exeUrl = 'https://github.com/dlaww-wq/mindmap-viewer/releases/latest/download/OrbitAI-Setup.exe';
+
   // CMD/PowerShell 모두 호환 — 토큰을 URL 쿼리로 전달 (따옴표 충돌 방지)
   const winCmd  = userToken
     ? `powershell -ExecutionPolicy Bypass -Command "& {$env:ORBIT_TOKEN='${userToken}'; iex (irm '${serverUrl}/setup/install.ps1')}"`
@@ -278,25 +281,39 @@ function showInstallModal() {
       </div>
       <div style="padding:20px">
 
-        <!-- 단계 1 -->
+        ${isWin ? `
+        <!-- Windows EXE 방법 (권장) -->
         <div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:18px">
           <div style="width:24px;height:24px;background:#1f6feb;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0">1</div>
           <div style="flex:1">
-            <div style="font-size:13px;font-weight:600;color:#f0f6fc;margin-bottom:4px">${label} 열기</div>
-            <div style="font-size:11px;color:#8b949e;line-height:1.6">
-              ${isWin
-                ? '<kbd style="background:#21262d;padding:2px 6px;border-radius:3px">Win + R</kbd> → <b style="color:#cdd9e5">powershell</b> 입력 → Enter'
-                : '<kbd style="background:#21262d;padding:2px 6px;border-radius:3px">Spotlight</kbd> → Terminal 검색 → Enter'}
-            </div>
+            <div style="font-size:13px;font-weight:600;color:#f0f6fc;margin-bottom:6px">설치 프로그램 다운로드</div>
+            <a href="${exeUrl}" download style="display:inline-flex;align-items:center;gap:7px;padding:9px 18px;background:#1f6feb;border-radius:8px;color:#fff;font-size:13px;font-weight:600;text-decoration:none">
+              ⬇ OrbitAI-Setup.exe 다운로드
+            </a>
+            <div style="font-size:10px;color:#6e7681;margin-top:6px">Windows 10/11 64bit · 관리자 권한 불필요</div>
           </div>
         </div>
 
-        <!-- 단계 2 -->
         <div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:18px">
           <div style="width:24px;height:24px;background:#1f6feb;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0">2</div>
           <div style="flex:1">
-            <div style="font-size:13px;font-weight:600;color:#f0f6fc;margin-bottom:8px">아래 명령어 복사 → 붙여넣기 (<kbd style="background:#21262d;padding:1px 5px;border-radius:3px;font-size:10px">Ctrl+V</kbd>) → Enter</div>
-            ${isWin ? `
+            <div style="font-size:13px;font-weight:600;color:#f0f6fc;margin-bottom:6px">EXE 실행 → 설치 코드 입력</div>
+            ${userToken ? `
+            <div style="font-size:11px;color:#8b949e;margin-bottom:6px">설치 중 코드 입력 창에 아래 코드를 붙여넣으세요</div>
+            <div style="position:relative;background:#010409;border:1px solid #21262d;border-radius:8px;padding:10px 50px 10px 14px">
+              <code id="install-token-code" style="font-family:'Consolas','Courier New',monospace;font-size:12px;color:#3fb950;word-break:break-all">${escHtml(userToken)}</code>
+              <button onclick="copyInstallScriptById('install-token-code','copy-token-btn')" id="copy-token-btn"
+                style="position:absolute;top:7px;right:8px;background:#1f6feb;border:none;border-radius:5px;
+                color:#fff;font-size:10px;font-weight:600;padding:3px 8px;cursor:pointer">복사</button>
+            </div>
+            ` : '<div style="font-size:11px;color:#8b949e">코드 없이도 설치 가능 (나중에 설정에서 입력)</div>'}
+          </div>
+        </div>
+
+        <!-- 구분선 + PowerShell 방법 -->
+        <details style="margin-bottom:18px">
+          <summary style="font-size:11px;color:#6e7681;cursor:pointer;padding:4px 0">PowerShell 명령어로 설치 (고급)</summary>
+          <div style="margin-top:10px">
             <div style="font-size:11px;color:#8b949e;margin-bottom:6px">🏦 은행 앱 <b style="color:#ff7b72">사용</b> PC</div>
             <div style="position:relative;background:#010409;border:1px solid #30363d;border-radius:8px;padding:12px 44px 12px 14px;margin-bottom:10px">
               <code id="install-cmd-bank" style="font-family:'Consolas','Courier New',monospace;font-size:11px;color:#e3b341;word-break:break-all;line-height:1.6">${escHtml(winBankCmd)}</code>
@@ -305,22 +322,42 @@ function showInstallModal() {
                 color:#e3b341;font-size:10px;font-weight:600;padding:3px 8px;cursor:pointer">복사</button>
             </div>
             <div style="font-size:11px;color:#8b949e;margin-bottom:6px">✅ 은행 앱 <b style="color:#3fb950">없는</b> PC</div>
-            ` : ''}
             <div style="position:relative;background:#010409;border:1px solid #21262d;border-radius:8px;padding:12px 44px 12px 14px">
               <code id="install-cmd" style="font-family:'Consolas','Courier New',monospace;font-size:11.5px;color:#3fb950;word-break:break-all;line-height:1.6">${escHtml(cmd)}</code>
               <button onclick="copyInstallScriptById('install-cmd','copy-script-btn')" id="copy-script-btn"
                 style="position:absolute;top:8px;right:8px;background:#1f6feb;border:none;border-radius:5px;
                 color:#fff;font-size:10px;font-weight:600;padding:3px 8px;cursor:pointer">복사</button>
             </div>
-            <div style="font-size:10px;color:#6e7681;margin-top:6px;line-height:1.6">
-              ✓ Orbit 다운로드 → ✓ 서버 연결 → ✓ 앱·웹·키입력 트래킹 시작
+          </div>
+        </details>
+        ` : `
+        <!-- macOS/Linux -->
+        <div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:18px">
+          <div style="width:24px;height:24px;background:#1f6feb;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0">1</div>
+          <div style="flex:1">
+            <div style="font-size:13px;font-weight:600;color:#f0f6fc;margin-bottom:4px">${label} 열기</div>
+            <div style="font-size:11px;color:#8b949e;line-height:1.6">
+              <kbd style="background:#21262d;padding:2px 6px;border-radius:3px">Spotlight</kbd> → Terminal 검색 → Enter
             </div>
           </div>
         </div>
+        <div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:18px">
+          <div style="width:24px;height:24px;background:#1f6feb;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0">2</div>
+          <div style="flex:1">
+            <div style="font-size:13px;font-weight:600;color:#f0f6fc;margin-bottom:8px">아래 명령어 복사 → 붙여넣기 → Enter</div>
+            <div style="position:relative;background:#010409;border:1px solid #21262d;border-radius:8px;padding:12px 44px 12px 14px">
+              <code id="install-cmd" style="font-family:'Consolas','Courier New',monospace;font-size:11.5px;color:#3fb950;word-break:break-all;line-height:1.6">${escHtml(cmd)}</code>
+              <button onclick="copyInstallScriptById('install-cmd','copy-script-btn')" id="copy-script-btn"
+                style="position:absolute;top:8px;right:8px;background:#1f6feb;border:none;border-radius:5px;
+                color:#fff;font-size:10px;font-weight:600;padding:3px 8px;cursor:pointer">복사</button>
+            </div>
+          </div>
+        </div>
+        `}
 
-        <!-- 단계 3 -->
+        <!-- 완료 -->
         <div style="display:flex;gap:10px;align-items:flex-start">
-          <div style="width:24px;height:24px;background:#238636;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0">3</div>
+          <div style="width:24px;height:24px;background:#238636;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0">${isWin ? '3' : '3'}</div>
           <div style="flex:1">
             <div style="font-size:13px;font-weight:600;color:#f0f6fc;margin-bottom:4px">설치 완료 후 → 아래 버튼 클릭</div>
             <button onclick="markSetupDone()" style="padding:8px 18px;background:#238636;border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:600;cursor:pointer">
