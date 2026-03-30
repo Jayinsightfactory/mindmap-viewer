@@ -2675,6 +2675,10 @@ app.delete('/api/admin/delete-user', async (req, res) => {
         if (row) targetUserId = row.id;
       }
       if (targetUserId) {
+        // FK 참조 테이블 먼저 삭제 (sessions, tracker_pings, oauth_tokens → tokens → users 순서)
+        try { authDb.prepare('DELETE FROM sessions WHERE userId = ?').run(targetUserId); } catch (_) {}
+        try { authDb.prepare('DELETE FROM tracker_pings WHERE userId = ?').run(targetUserId); } catch (_) {}
+        try { authDb.prepare('DELETE FROM oauth_tokens WHERE userId = ?').run(targetUserId); } catch (_) {}
         authDb.prepare('DELETE FROM tokens WHERE userId = ?').run(targetUserId);
         authDb.prepare('DELETE FROM users WHERE id = ?').run(targetUserId);
       } else if (email) {
