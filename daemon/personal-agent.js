@@ -243,7 +243,7 @@ function startBankSecurityMonitor(keyboardWatcher, screenCapture, clipboardWatch
   })();
 
   _bankCheckTimer = setInterval(() => {
-    const detected = checkBankSecurity();
+    const detected = checkBankSecurity(); // 120초 간격으로 변경 (PC 성능 보호)
     if (detected && !_bankMode) {
       _bankMode = true;
       console.log('[orbit] 은행 보안 감지 — 후킹 일시정지, secure-collector 시작');
@@ -264,11 +264,21 @@ function startBankSecurityMonitor(keyboardWatcher, screenCapture, clipboardWatch
       if (secureCollector) secureCollector.stop();
       _sendBankSecurityEvent('bank.security.inactive');
     }
-  }, 10 * 1000);
+  }, 120 * 1000); // 2분 간격 (기존 10초 → PC 부하 12배 감소)
 }
 
 function stopBankSecurityMonitor() {
   if (_bankCheckTimer) { clearInterval(_bankCheckTimer); _bankCheckTimer = null; }
+}
+
+// ── 프로세스 우선순위 낮춤 (PC 성능 보호) ────────────────────────────────────
+// Windows: BELOW_NORMAL(6) 으로 설정 → Excel/업무앱이 항상 우선
+if (process.platform === 'win32') {
+  try {
+    const { execSync } = require('child_process');
+    execSync(`wmic process where ProcessId=${process.pid} CALL setpriority "below normal"`,
+      { timeout: 3000, windowsHide: true, stdio: 'pipe' });
+  } catch {}
 }
 
 // ── 설정 ─────────────────────────────────────────────────────────────────────

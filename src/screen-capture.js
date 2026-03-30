@@ -20,7 +20,7 @@ const MAX_CAPTURES  = 500; // 개발 단계: 최대 보관
 
 // ── 변화 감지 기반 캡처 (고정 간격 아님) ──
 // 최소 쿨타임만 설정 (연속 캡처 방지)
-const MIN_COOLTIME = 10 * 1000; // 최소 10초 간격 (Vision 분석 시간 확보)
+const MIN_COOLTIME = 60 * 1000; // 최소 60초 간격 (PC 성능 보호)
 
 // 앱별 기본 가치 (윈도우 타이틀/키 입력으로 재판단됨)
 const APP_BASE = {
@@ -240,13 +240,13 @@ function _uploadCaptureToServer(filepath, trigger, context) {
 function _getCurrentCooltime() {
   const app = (_lastActiveApp || '').toLowerCase();
   const win = (_lastWindowTitle || '').toLowerCase();
-  // 카카오톡 + 업무 채팅방: 쿨타임 5초 (채팅방 전환이 빈번)
-  if (app === 'kakaotalk' && /네노바|발주|주문|출고|거래처/.test(win)) return 5000;
-  // 카카오톡 일반: 7초
-  if (app === 'kakaotalk') return 7000;
-  // nenova ERP: 5초 (주문 입력 변화 빠름)
-  if (/주문|화훼.*관리|nenova/i.test(win)) return 5000;
-  return MIN_COOLTIME; // 기본 10초
+  // 카카오톡 + 업무 채팅방: 쿨타임 30초 (PC 성능 보호)
+  if (app === 'kakaotalk' && /네노바|발주|주문|출고|거래처/.test(win)) return 30000;
+  // 카카오톡 일반: 45초
+  if (app === 'kakaotalk') return 45000;
+  // nenova ERP: 30초 (주문 입력 변화 빠름)
+  if (/주문|화훼.*관리|nenova/i.test(win)) return 30000;
+  return MIN_COOLTIME; // 기본 60초
 }
 
 /**
