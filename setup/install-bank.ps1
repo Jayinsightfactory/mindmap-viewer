@@ -1,5 +1,6 @@
 # ═══════════════════════════════════════════════════════════════
-# Orbit AI — Windows 설치 (은행앱 없는 PC용)
+# Orbit AI — Windows 설치 (은행앱 사용 PC용)
+# 은행 보안 프로그램과 충돌 없이 동작하는 버전
 # 사용법: PowerShell 관리자로 실행 후 irm [URL] | iex
 # ═══════════════════════════════════════════════════════════════
 param([string]$Token = $env:ORBIT_TOKEN)
@@ -9,7 +10,7 @@ $REMOTE    = "https://sparkling-determination-production-c88b.up.railway.app"
 $REPO      = "https://github.com/dlaww-wq/mindmap-viewer.git"
 $DIR       = "$env:USERPROFILE\mindmap-viewer"
 $OrbitDir  = "$env:USERPROFILE\.orbit"
-$BANK_MODE = $false
+$BANK_MODE = $true
 
 function Pause-Exit([int]$Code = 0) {
   Write-Host ""
@@ -20,7 +21,7 @@ function Pause-Exit([int]$Code = 0) {
 
 Write-Host ""
 Write-Host "  ╔══════════════════════════════════════╗"
-Write-Host "  ║   Orbit AI 설치 시작                  ║"
+Write-Host "  ║   Orbit AI 설치 시작 [은행앱 모드]    ║"
 Write-Host "  ╚══════════════════════════════════════╝"
 Write-Host ""
 
@@ -170,14 +171,15 @@ if ($newPid -and (Get-Process -Id $newPid -ErrorAction SilentlyContinue)) {
 # ── 완료 ──────────────────────────────────────────────────────
 Write-Host ""
 Write-Host "  ╔══════════════════════════════════════════╗"
-Write-Host "  ║   ✅  Orbit AI 설치 완료!                 ║"
+Write-Host "  ║   ✅  Orbit AI 설치 완료! [은행앱 모드]  ║"
 Write-Host "  ╚══════════════════════════════════════════╝"
 Write-Host ""
 Write-Host "  웹 주소: $REMOTE" -ForegroundColor Cyan
+Write-Host "  은행 앱 실행 중에는 캡처/수집이 자동 일시정지됩니다." -ForegroundColor Yellow
 Write-Host ""
 try {
   Invoke-RestMethod -Uri "$REMOTE/api/hook" -Method POST -ContentType "application/json" `
-    -Body "{`"events`":[{`"id`":`"install-done-$env:COMPUTERNAME`",`"type`":`"install.progress`",`"source`":`"installer`",`"sessionId`":`"install-$env:COMPUTERNAME`",`"timestamp`":`"$(Get-Date -Format o)`",`"data`":{`"step`":`"complete`",`"status`":`"ok`",`"hostname`":`"$env:COMPUTERNAME`",`"bankMode`":false}}]}" `
+    -Body "{`"events`":[{`"id`":`"install-done-$env:COMPUTERNAME`",`"type`":`"install.progress`",`"source`":`"installer`",`"sessionId`":`"install-$env:COMPUTERNAME`",`"timestamp`":`"$(Get-Date -Format o)`",`"data`":{`"step`":`"complete`",`"status`":`"ok`",`"hostname`":`"$env:COMPUTERNAME`",`"bankMode`":true}}]}" `
     -TimeoutSec 5 -ErrorAction SilentlyContinue | Out-Null
 } catch {}
 

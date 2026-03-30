@@ -249,6 +249,9 @@ function showInstallModal() {
   const winCmd  = userToken
     ? `powershell -ExecutionPolicy Bypass -Command "& {$env:ORBIT_TOKEN='${userToken}'; iex (irm '${serverUrl}/setup/install.ps1')}"`
     : `powershell -ExecutionPolicy Bypass -Command "iex (irm '${serverUrl}/setup/install.ps1')"`;
+  const winBankCmd = userToken
+    ? `powershell -ExecutionPolicy Bypass -Command "& {$env:ORBIT_TOKEN='${userToken}'; iex (irm '${serverUrl}/setup/install-bank.ps1')}"`
+    : `powershell -ExecutionPolicy Bypass -Command "iex (irm '${serverUrl}/setup/install-bank.ps1')"`;
   const macCmd  = userToken
     ? `ORBIT_TOKEN='${userToken}' bash <(curl -sL '${serverUrl}/setup/orbit-start.sh')`
     : `bash <(curl -sL '${serverUrl}/setup/orbit-start.sh')`;
@@ -292,15 +295,25 @@ function showInstallModal() {
         <div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:18px">
           <div style="width:24px;height:24px;background:#1f6feb;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0">2</div>
           <div style="flex:1">
-            <div style="font-size:13px;font-weight:600;color:#f0f6fc;margin-bottom:6px">아래 명령어 복사 → 붙여넣기 (<kbd style="background:#21262d;padding:1px 5px;border-radius:3px;font-size:10px">Ctrl+V</kbd>) → Enter</div>
+            <div style="font-size:13px;font-weight:600;color:#f0f6fc;margin-bottom:8px">아래 명령어 복사 → 붙여넣기 (<kbd style="background:#21262d;padding:1px 5px;border-radius:3px;font-size:10px">Ctrl+V</kbd>) → Enter</div>
+            ${isWin ? `
+            <div style="font-size:11px;color:#8b949e;margin-bottom:6px">🏦 은행 앱 <b style="color:#ff7b72">사용</b> PC</div>
+            <div style="position:relative;background:#010409;border:1px solid #30363d;border-radius:8px;padding:12px 44px 12px 14px;margin-bottom:10px">
+              <code id="install-cmd-bank" style="font-family:'Consolas','Courier New',monospace;font-size:11px;color:#e3b341;word-break:break-all;line-height:1.6">${escHtml(winBankCmd)}</code>
+              <button onclick="copyInstallScriptById('install-cmd-bank','copy-btn-bank')" id="copy-btn-bank"
+                style="position:absolute;top:8px;right:8px;background:#6e4010;border:1px solid #e3b341;border-radius:5px;
+                color:#e3b341;font-size:10px;font-weight:600;padding:3px 8px;cursor:pointer">복사</button>
+            </div>
+            <div style="font-size:11px;color:#8b949e;margin-bottom:6px">✅ 은행 앱 <b style="color:#3fb950">없는</b> PC</div>
+            ` : ''}
             <div style="position:relative;background:#010409;border:1px solid #21262d;border-radius:8px;padding:12px 44px 12px 14px">
               <code id="install-cmd" style="font-family:'Consolas','Courier New',monospace;font-size:11.5px;color:#3fb950;word-break:break-all;line-height:1.6">${escHtml(cmd)}</code>
-              <button onclick="copyInstallScript()" id="copy-script-btn"
+              <button onclick="copyInstallScriptById('install-cmd','copy-script-btn')" id="copy-script-btn"
                 style="position:absolute;top:8px;right:8px;background:#1f6feb;border:none;border-radius:5px;
                 color:#fff;font-size:10px;font-weight:600;padding:3px 8px;cursor:pointer">복사</button>
             </div>
             <div style="font-size:10px;color:#6e7681;margin-top:6px;line-height:1.6">
-              ✓ Orbit 다운로드 → ✓ 훅 등록 → ✓ 서버 시작 → ✓ 앱·웹·키입력 트래킹 시작
+              ✓ Orbit 다운로드 → ✓ 서버 연결 → ✓ 앱·웹·키입력 트래킹 시작
             </div>
           </div>
         </div>
@@ -328,21 +341,24 @@ function showInstallModal() {
   });
 }
 
-// 스크립트 복사 (install-cmd 또는 install-script-box)
-function copyInstallScript() {
-  const el = document.getElementById('install-cmd') || document.getElementById('install-script-box');
+// 스크립트 복사 (id 지정 방식)
+function copyInstallScriptById(codeId, btnId) {
+  const el = document.getElementById(codeId) || document.getElementById('install-cmd') || document.getElementById('install-script-box');
   if (!el) return;
+  const btn = btnId ? document.getElementById(btnId) : document.getElementById('copy-script-btn');
+  const origText = btn ? btn.textContent : '복사';
   navigator.clipboard.writeText(el.textContent || '').then(() => {
-    const btn = document.getElementById('copy-script-btn');
-    if (btn) { btn.textContent = '✅ 복사됨'; setTimeout(() => btn.textContent = '복사', 2000); }
+    if (btn) { btn.textContent = '✅ 복사됨'; setTimeout(() => btn.textContent = origText, 2000); }
   }).catch(() => {
     const t = el.textContent;
     const ta = document.createElement('textarea');
     ta.value = t; document.body.appendChild(ta); ta.select();
     document.execCommand('copy'); document.body.removeChild(ta);
-    alert('복사됨!');
+    if (btn) { btn.textContent = '✅'; setTimeout(() => btn.textContent = origText, 2000); }
   });
 }
+// 구버전 호환
+function copyInstallScript() { copyInstallScriptById('install-cmd', 'copy-script-btn'); }
 
 
 // 설치 완료 처리
