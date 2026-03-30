@@ -582,13 +582,14 @@ async function renderSetupPanel() {
       <div style="font-size:10px;color:#6e7681">클라우드 AI — 로컬 설치 불필요</div>
     </div>`;
 
-  const cards = [
-    { label:'OS', val: `${osIcon} ${os}`, cls:'sp-check-neutral' },
-  ].map(c => `
-    <div class="sp-check-card">
-      <div class="sp-check-label">${c.label}</div>
-      <div class="sp-check-val ${c.cls}">${escHtml(c.val)}</div>
-    </div>`).join('') + trackerCard + aiCard;
+  // OS 선택 카드 — 클릭으로 Windows/Mac 전환 가능
+  const osCard = `<div class="sp-check-card" style="cursor:pointer;user-select:none" onclick="window._toggleSetupOS()">
+      <div class="sp-check-label">OS</div>
+      <div class="sp-check-val sp-check-neutral" id="sp-os-val">${osIcon} ${os}</div>
+      <div style="font-size:8px;color:#484f58;margin-left:4px">클릭 전환</div>
+    </div>`;
+
+  const cards = osCard + trackerCard + aiCard;
 
   // ── 설치 섹션 ─────────────────────────────────────────────────────────────
   const _token       = _getAuthToken();
@@ -613,9 +614,21 @@ async function renderSetupPanel() {
          </div>`
     }
 
+    <div id="sp-exe-download" style="display:${os === 'windows' ? 'block' : 'none'};margin-bottom:10px">
+      <a href="https://github.com/dlaww-wq/mindmap-viewer/releases/latest/download/OrbitAI-Setup.exe"
+        download style="display:inline-flex;align-items:center;gap:7px;padding:9px 18px;
+        background:#1f6feb;border-radius:8px;color:#fff;font-size:12px;font-weight:600;
+        text-decoration:none;width:100%;justify-content:center;box-sizing:border-box">
+        ⬇ OrbitAI-Setup.exe 다운로드 (권장)
+      </a>
+      <div style="font-size:10px;color:#6e7681;margin-top:4px;text-align:center">
+        Windows 10/11 64bit · 관리자 권한 불필요
+      </div>
+    </div>
+
     <div style="background:#010409;border:1px solid #21262d;border-radius:8px;
       padding:10px 12px;margin-bottom:8px;position:relative">
-      <div style="font-size:10px;color:#6e7681;margin-bottom:5px">
+      <div id="sp-install-os-label" style="font-size:10px;color:#6e7681;margin-bottom:5px">
         ${os === 'windows' ? '🪟 PowerShell (Win+R → powershell → Enter)' : '🖥️ 터미널'}
       </div>
       <code id="sp-install-inline-cmd"
@@ -823,6 +836,41 @@ async function renderSetupPanel() {
 }
 
 window.renderSetupPanel = renderSetupPanel;
+
+// ── OS 토글 — 설정 패널에서 Windows/Mac 수동 전환 ─────────────────────────────
+let _overrideOS = null;
+window._toggleSetupOS = function() {
+  const osList = ['windows', 'mac', 'linux'];
+  const currentOS = _overrideOS || (_setupStatus ? _setupStatus.os : 'mac');
+  const idx = osList.indexOf(currentOS);
+  _overrideOS = osList[(idx + 1) % osList.length];
+
+  const osIcons = { windows: '🪟', mac: '🍎', linux: '🐧' };
+  const osEl = document.getElementById('sp-os-val');
+  if (osEl) osEl.textContent = `${osIcons[_overrideOS]} ${_overrideOS}`;
+
+  // 설치 코드 + exe 다운로드 업데이트
+  const _token = _getAuthToken();
+  const base = location.origin;
+  const _setupScript = base + '/setup/install.ps1';
+  const _setupSh = base + '/setup/orbit-start.sh';
+
+  const newCmd = _overrideOS === 'windows'
+    ? `&([scriptblock]::Create((irm '${_setupScript}'))) -Token '${_token||''}'`
+    : `ORBIT_TOKEN='${_token||''}' bash <(curl -sL '${_setupSh}')`;
+
+  const cmdEl = document.getElementById('sp-install-inline-cmd');
+  if (cmdEl) cmdEl.textContent = newCmd;
+
+  const labelEl = document.getElementById('sp-install-os-label');
+  if (labelEl) labelEl.textContent = _overrideOS === 'windows'
+    ? '🪟 PowerShell (Win+R → powershell → Enter)'
+    : '🖥️ 터미널';
+
+  // exe 다운로드 섹션 표시/숨김
+  const exeSec = document.getElementById('sp-exe-download');
+  if (exeSec) exeSec.style.display = _overrideOS === 'windows' ? 'block' : 'none';
+};
 
 // CLI 연동 설정 클립보드 복사
 function _copyCliConfig() {
