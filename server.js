@@ -2711,11 +2711,22 @@ app.delete('/api/admin/delete-user', async (req, res) => {
         }
 
         if (targetUserId) {
+          // user_id 참조하는 모든 테이블 먼저 삭제 (FK 순서)
+          const userTables = [
+            'events', 'sessions', 'files', 'annotations',
+            'user_labels', 'user_categories', 'tool_label_mappings',
+            'workspace_members', 'workspace_activity',
+            'multilevel_cache', 'user_profiles', 'hidden_events',
+            'node_memos', 'bookmarks', 'tracker_pings', 'service_tokens',
+            'payments', 'subscriptions', 'notifications',
+            'solution_installations', 'analysis_results',
+            'orbit_daemon_commands', 'nodes', 'edges',
+          ];
+          for (const tbl of userTables) {
+            await pgPool.query(`DELETE FROM ${tbl} WHERE user_id = $1`, [targetUserId]).catch(() => {});
+          }
           await pgPool.query('DELETE FROM orbit_auth_tokens WHERE user_id = $1', [targetUserId]);
           await pgPool.query('DELETE FROM orbit_auth_users WHERE id = $1', [targetUserId]);
-          await pgPool.query('DELETE FROM events WHERE user_id = $1', [targetUserId]);
-          await pgPool.query('DELETE FROM nodes WHERE user_id = $1', [targetUserId]).catch(() => {});
-          await pgPool.query('DELETE FROM edges WHERE user_id = $1', [targetUserId]).catch(() => {});
         } else if (email) {
           await pgPool.query('DELETE FROM orbit_auth_users WHERE email = $1', [email]);
         }
