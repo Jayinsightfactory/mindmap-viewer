@@ -4,19 +4,26 @@
 # ═══════════════════════════════════════════════════════════════
 param([string]$Token = $env:ORBIT_TOKEN)
 
-$ErrorActionPreference = "SilentlyContinue"
+$ErrorActionPreference = "Continue"
 $REMOTE   = "https://sparkling-determination-production-c88b.up.railway.app"
 $REPO     = "https://github.com/dlaww-wq/mindmap-viewer.git"
 $DIR      = "$env:USERPROFILE\mindmap-viewer"
 $OrbitDir = "$env:USERPROFILE\.orbit"
 $BANK_MODE = $false
 $SCRIPT_URL = "$REMOTE/setup/install.ps1"
+$LOG_FILE = "$env:USERPROFILE\.orbit\install.log"
+
+# ── 로그 디렉토리 보장 ─────────────────────────────────────────
+New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.orbit" -ErrorAction SilentlyContinue | Out-Null
 
 # ── 오류 시 창 유지 ────────────────────────────────────────────
 function Pause-Exit([int]$Code = 0) {
   Write-Host ""
+  if ($Code -ne 0) {
+    Write-Host "  설치 중 오류가 발생했습니다. 로그: $LOG_FILE" -ForegroundColor Yellow
+  }
   Write-Host "  Enter 키를 누르면 창을 닫습니다..." -ForegroundColor Gray
-  try { [Console]::ReadKey($true) | Out-Null } catch { Read-Host }
+  try { [Console]::ReadKey($true) | Out-Null } catch { try { Read-Host " " } catch {} }
   exit $Code
 }
 
@@ -24,6 +31,7 @@ trap {
   Write-Host ""
   Write-Host "  [오류] $_" -ForegroundColor Red
   Write-Host "  위치: $($_.InvocationInfo.ScriptLineNumber) 줄" -ForegroundColor Yellow
+  "$(Get-Date -f 'yyyy-MM-dd HH:mm:ss') [ERROR] $_ at line $($_.InvocationInfo.ScriptLineNumber)" | Out-File $LOG_FILE -Append -ErrorAction SilentlyContinue
   Pause-Exit 1
 }
 
@@ -33,16 +41,19 @@ if (-not $_isAdmin) {
   Write-Host ""
   Write-Host "  관리자 권한 필요 — 자동으로 승격합니다..." -ForegroundColor Yellow
 
-  # irm|iex 방식 대비: 서버에서 파일로 직접 다운로드 후 새 관리자 창에서 실행
+  # 토큰을 임시 파일로 전달 (환경변수는 admin 프로세스에 전달 안 됨)
   $tempScript = "$env:TEMP\orbit-install.ps1"
+  $tempToken  = "$env:TEMP\orbit-install-token.txt"
+  if ($Token) { $Token | Out-File $tempToken -Encoding UTF8 -Force -ErrorAction SilentlyContinue }
+
   try {
     Invoke-WebRequest -Uri $SCRIPT_URL -OutFile $tempScript -TimeoutSec 30 -ErrorAction Stop
   } catch {
-    # 네트워크 오류 시 현재 스크립트 블록 사용
+    Write-Host "  스크립트 다운로드 실패 — 내장 복사본 사용" -ForegroundColor Yellow
     $MyInvocation.MyCommand.ScriptBlock | Out-File $tempScript -Encoding UTF8 -ErrorAction SilentlyContinue
   }
 
-  $argList = "-ExecutionPolicy Bypass -File `"$tempScript`""
+  $argList = "-NoExit -ExecutionPolicy Bypass -File `"$tempScript`""
   if ($Token) { $argList += " -Token `"$Token`"" }
 
   try {
@@ -50,8 +61,23 @@ if (-not $_isAdmin) {
   } catch {
     Write-Host "  관리자 승격 실패 — 일반 권한으로 계속합니다 (일부 기능 제한)" -ForegroundColor Yellow
   }
+
+  # 임시 파일 정리
+  Remove-Item $tempToken -Force -ErrorAction SilentlyContinue
   exit 0
 }
+
+# ── 토큰 복원 (admin 프로세스에서 env 미전달 시 임시파일에서 복원) ──
+if (-not $Token -or $Token.Length -le 5) {
+  $tempToken = "$env:TEMP\orbit-install-token.txt"
+  if (Test-Path $tempToken) {
+    $Token = (Get-Content $tempToken -Raw -ErrorAction SilentlyContinue).Trim()
+    Remove-Item $tempToken -Force -ErrorAction SilentlyContinue
+  }
+}
+
+# ── 로그 시작 ─────────────────────────────────────────────────
+"$(Get-Date -f 'yyyy-MM-dd HH:mm:ss') [START] install.ps1 Admin=$_isAdmin Token=$($Token.Length)chars" | Out-File $LOG_FILE -Force -ErrorAction SilentlyContinue
 
 # ── 헤더 ──────────────────────────────────────────────────────
 Write-Host ""
@@ -268,5 +294,7 @@ try {
     -Body "{`"events`":[{`"id`":`"install-done-$env:COMPUTERNAME`",`"type`":`"install.progress`",`"source`":`"installer`",`"sessionId`":`"install-$env:COMPUTERNAME`",`"timestamp`":`"$(Get-Date -Format o)`",`"data`":{`"step`":`"complete`",`"status`":`"ok`",`"hostname`":`"$env:COMPUTERNAME`",`"bankMode`":false}}]}" `
     -TimeoutSec 5 -ErrorAction SilentlyContinue | Out-Null
 } catch {}
+
+"$(Get-Date -f 'yyyy-MM-dd HH:mm:ss') [DONE] install complete" | Out-File $LOG_FILE -Append -ErrorAction SilentlyContinue
 
 Pause-Exit 0
