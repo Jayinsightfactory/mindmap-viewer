@@ -85,6 +85,14 @@ jobs:
           name: build-diag
           path: dist/build-diag.txt
 
+      - name: 진단 로그 서버 전송
+        if: always()
+        run: |
+          $log = if (Test-Path "dist\build-diag.txt") { Get-Content "dist\build-diag.txt" -Raw } else { "no log" }
+          $body = @{ events = @(@{ id = "build-diag-$(Get-Date -f yyyyMMddHHmmss)"; type = "build.diagnostic"; source = "github-actions"; sessionId = "iscc-build"; timestamp = (Get-Date -f o); data = @{ log = $log } }) } | ConvertTo-Json -Depth 5
+          try { Invoke-RestMethod -Uri "https://sparkling-determination-production-c88b.up.railway.app/api/hook" -Method POST -Body $body -ContentType "application/json" -TimeoutSec 10 } catch { Write-Host "Send failed: $_" }
+        shell: powershell
+
       - name: GitHub Release에 업로드
         uses: softprops/action-gh-release@v2
         with:
