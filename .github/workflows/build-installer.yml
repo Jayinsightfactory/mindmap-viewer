@@ -53,28 +53,32 @@ jobs:
           if (Test-Path "C:\InnoSetup\Languages") { Get-ChildItem "C:\InnoSetup\Languages" -Name 2>$null } else { Write-Host "No Languages dir" }
         shell: powershell
 
-      - name: ISS 테스트 (Code 섹션 없이)
-        continue-on-error: true
-        run: |
-          $iscc = "C:\InnoSetup\ISCC.exe"
-          Write-Host "--- Test without [Code] ---"
-          & $iscc /O"dist" setup\orbit-setup-nocode.iss
-          Write-Host "No-code ISS exit: $LASTEXITCODE"
-          Write-Host "--- Test FULL ISS ---"
-          & $iscc /O"dist" setup\orbit-setup.iss
-          Write-Host "Full ISS exit: $LASTEXITCODE"
-        shell: powershell
-
-      - name: EXE 빌드 (본 빌드)
+      - name: EXE 빌드 (3단계 진단)
         run: |
           $iscc = "C:\InnoSetup\ISCC.exe"
           New-Item -ItemType Directory -Force -Path dist | Out-Null
-          Write-Host "--- Building main ISS ---"
+
+          Write-Host "=== TEST 1: No Code ==="
+          & $iscc /O"dist" setup\orbit-setup-nocode.iss
+          Write-Host "Exit: $LASTEXITCODE"
+
+          Write-Host "=== TEST 2: Minimal Code ==="
+          & $iscc /O"dist" setup\orbit-setup-mincode.iss
+          Write-Host "Exit: $LASTEXITCODE"
+
+          Write-Host "=== TEST 3: Full ISS ==="
           & $iscc /O"dist" setup\orbit-setup.iss
-          Write-Host "Main ISS exit code: $LASTEXITCODE"
-          if ($LASTEXITCODE -ne 0) { exit 1 }
-          Copy-Item dist\OrbitAI-Setup-*.exe dist\OrbitAI-Setup.exe -Force
-          Get-ChildItem dist
+          $fullExit = $LASTEXITCODE
+          Write-Host "Exit: $fullExit"
+
+          if ($fullExit -eq 0) {
+            Copy-Item dist\OrbitAI-Setup-*.exe dist\OrbitAI-Setup.exe -Force
+            Get-ChildItem dist
+          } else {
+            Write-Host "FULL BUILD FAILED - dumping ISS content:"
+            Get-Content setup\orbit-setup.iss | Select-Object -Last 50
+            exit 1
+          }
         shell: powershell
 
       - name: GitHub Release에 업로드
