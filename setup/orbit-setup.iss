@@ -84,10 +84,10 @@ procedure CreateTokenPage;
 var
   Lbl: TLabel;
 begin
-  TokenPage := CreateCustomPage(wpSelectDir, 'Install Code', 'Enter the install code from your admin.');
+  TokenPage := CreateCustomPage(wpSelectDir, '설치 코드 입력', '관리자로부터 받은 설치 코드를 입력하세요.');
   Lbl := TLabel.Create(WizardForm);
   Lbl.Parent := TokenPage.Surface;
-  Lbl.Caption := 'Install Code:';
+  Lbl.Caption := '설치 코드:';
   Lbl.Left := 0;
   Lbl.Top := 10;
   TokenEdit := TEdit.Create(WizardForm);
