@@ -28,48 +28,26 @@ jobs:
         run: npm install --production
         working-directory: .
 
-      - name: Inno Setup 설치
-        run: choco install innosetup --yes --no-progress
-        shell: powershell
-
-      - name: ISCC 경로 탐색
-        id: find-iscc
+      - name: Inno Setup 설치 (직접 다운로드)
         run: |
-          Write-Host "=== 전체 ISCC 탐색 ==="
-          # 1. choco shim
-          $shimPath = (Get-Command ISCC -ErrorAction SilentlyContinue)
-          if ($shimPath) { Write-Host "Get-Command: $($shimPath.Source)" }
-          # 2. 알려진 경로들
-          @("C:\Program Files (x86)\Inno Setup 6", "C:\Program Files\Inno Setup 6",
-            "C:\ProgramData\chocolatey\lib\innosetup\tools",
-            "C:\ProgramData\chocolatey\bin") | ForEach-Object {
-            Write-Host "Check: $_"
-            if (Test-Path $_) { Get-ChildItem $_ -Name | Select-Object -First 10 }
-          }
-          # 3. 전체 디스크 검색 (C:\Program Files* + C:\ProgramData)
-          Write-Host "=== 와일드카드 검색 ==="
-          Get-ChildItem "C:\Program Files*" -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -like '*Inno*' } | ForEach-Object { Write-Host "Found dir: $($_.FullName)" }
-          Get-ChildItem "C:\ProgramData\chocolatey\lib\innosetup" -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq 'ISCC.exe' } | ForEach-Object { Write-Host "Found: $($_.FullName)" }
-          # 4. where.exe
-          where.exe ISCC 2>&1
-          where.exe iscc 2>&1
-          # 최종 경로 결정
-          $iscc = $null
-          if ($shimPath) { $iscc = $shimPath.Source }
-          if (-not $iscc) {
-            $found = Get-ChildItem "C:\" -Recurse -Filter "ISCC.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($found) { $iscc = $found.FullName; Write-Host "Disk search found: $iscc" }
-          }
-          if (-not $iscc) { Write-Host "ERROR: ISCC.exe not found anywhere"; exit 1 }
-          Write-Host "Using ISCC: $iscc"
-          "ISCC_PATH=$iscc" | Out-File -Append $env:GITHUB_OUTPUT
+          $url = "https://jrsoftware.org/download.php/is.exe"
+          $installer = "$env:TEMP\innosetup.exe"
+          Write-Host "Downloading Inno Setup..."
+          Invoke-WebRequest -Uri $url -OutFile $installer -UseBasicParsing
+          Write-Host "Installing Inno Setup silently..."
+          Start-Process -FilePath $installer -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR=C:\InnoSetup" -Wait -NoNewWindow
+          Write-Host "=== Installed files ==="
+          Get-ChildItem "C:\InnoSetup" -Name | Select-Object -First 15
+          if (Test-Path "C:\InnoSetup\ISCC.exe") { Write-Host "✅ ISCC.exe found" } else { throw "ISCC.exe not found after install" }
+          $langDir = "C:\InnoSetup\Languages"
+          if (Test-Path $langDir) { Get-ChildItem $langDir -Name } else { Write-Host "⚠ Languages dir not found" }
         shell: powershell
 
       - name: EXE 빌드
         run: |
-          $iscc = "${{ steps.find-iscc.outputs.ISCC_PATH }}"
+          $iscc = "C:\InnoSetup\ISCC.exe"
           New-Item -ItemType Directory -Force -Path dist | Out-Null
-          Write-Host "=== ISCC: $iscc ==="
+          Write-Host "=== ISCC 빌드 시작 ==="
           & $iscc /O"dist" setup\orbit-setup.iss 2>&1
           $exitCode = $LASTEXITCODE
           Write-Host "=== Exit code: $exitCode ==="
