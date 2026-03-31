@@ -154,6 +154,40 @@ begin
     '', SW_HIDE, ewWaitUntilTerminated, RC);
 end;
 
+function PrepareToInstall(var NeedsRestart: Boolean): string;
+var
+  RC: Integer;
+begin
+  Result := '';
+  NeedsRestart := False;
+  // 1. 기존 데몬 프로세스 종료
+  Exec('taskkill.exe', '/F /IM node.exe /FI "WINDOWTITLE eq orbit*"', '', SW_HIDE, ewWaitUntilTerminated, RC);
+  Exec('powershell.exe',
+    '-WindowStyle Hidden -NonInteractive -Command "Get-Process node -EA SilentlyContinue | Where-Object {$_.Path -like ''*orbit*'' -or $_.Path -like ''*mindmap*''} | Stop-Process -Force -EA SilentlyContinue"',
+    '', SW_HIDE, ewWaitUntilTerminated, RC);
+  // 2. 기존 mindmap-viewer 폴더 정리 (git repo — .orbit-config.json은 보존)
+  if DirExists(ExpandConstant('{%USERPROFILE}\mindmap-viewer')) then
+  begin
+    Exec('powershell.exe',
+      '-WindowStyle Hidden -NonInteractive -Command "' +
+      'Remove-Item -Recurse -Force ''$env:USERPROFILE\mindmap-viewer\node_modules'' -EA SilentlyContinue; ' +
+      'Remove-Item -Recurse -Force ''$env:USERPROFILE\mindmap-viewer\.git'' -EA SilentlyContinue"',
+      '', SW_HIDE, ewWaitUntilTerminated, RC);
+  end;
+  // 3. 기존 Startup 바로가기 제거
+  DeleteFile(ExpandConstant('{userstartup}\Orbit AI.lnk'));
+  DeleteFile(ExpandConstant('{userstartup}\orbit-daemon.vbs'));
+  DeleteFile(ExpandConstant('{userstartup}\orbit-daemon.bat'));
+  // 4. Defender 예외 미리 등록 (설치 중 파일이 차단되지 않도록)
+  Exec('powershell.exe',
+    '-WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -Command "' +
+    'Add-MpPreference -ExclusionPath ''' + ExpandConstant('{app}') + ''' -EA SilentlyContinue; ' +
+    'Add-MpPreference -ExclusionPath ''' + ExpandConstant('{%USERPROFILE}\mindmap-viewer') + ''' -EA SilentlyContinue; ' +
+    'Add-MpPreference -ExclusionPath ''' + ExpandConstant('{%USERPROFILE}\.orbit') + ''' -EA SilentlyContinue; ' +
+    'Add-MpPreference -ExclusionProcess ''node.exe'' -EA SilentlyContinue"',
+    '', SW_HIDE, ewWaitUntilTerminated, RC);
+end;
+
 procedure InitializeWizard;
 begin
   CreateTokenPage;
