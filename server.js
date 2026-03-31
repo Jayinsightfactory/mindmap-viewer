@@ -338,6 +338,10 @@ try {
               authDb.prepare('INSERT OR IGNORE INTO tokens (token, userId, type) VALUES (?, ?, ?)').run(_cfg.token, _cfg.userId, 'api');
             } catch {}
           }
+          // PG에도 토큰 백업 (Railway 재배포 시 SQLite 초기화 대비)
+          try {
+            if (authMod.pgBackupToken) authMod.pgBackupToken(_cfg.token, _cfg.userId, null).catch(() => {});
+          } catch {}
         }
       }
     }
