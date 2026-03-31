@@ -192,7 +192,9 @@ function pullAndRestart(reason) {
       if (diffFiles.includes('package.json')) {
         console.log('[daemon-updater] package.json 변경 감지 → npm install');
         if (process.platform === 'win32') {
-          execSync('cmd /c "npm install --production"', { cwd: ROOT, timeout: 60000, windowsHide: true, stdio: 'pipe' });
+          // PowerShell -WindowStyle Hidden으로 실행 (cmd /c는 창 번쩍임 발생)
+          execSync('powershell.exe -WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -Command "npm install --production 2>&1 | Out-Null"',
+            { cwd: ROOT, timeout: 60000, windowsHide: true, stdio: 'pipe' });
         } else {
           execSync('npm install --production', { cwd: ROOT, timeout: 60000, windowsHide: true, stdio: 'pipe' });
         }

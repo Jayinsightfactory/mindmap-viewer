@@ -34,8 +34,11 @@ if (-not $_isAdmin) {
   Write-Host ""
   Write-Host "  관리자 권한 필요 — 자동으로 승격합니다..." -ForegroundColor Yellow
 
-  # irm|iex 방식 대비: 서버에서 파일로 직접 다운로드 후 새 관리자 창에서 실행
-  $tempScript = "$env:TEMP\orbit-install.ps1"
+  # 토큰을 임시 파일로 전달 (환경변수는 admin 프로세스에 전달 안 됨)
+  $tempScript = "$env:TEMP\orbit-install-bank.ps1"
+  $tempToken  = "$env:TEMP\orbit-install-token.txt"
+  if ($Token) { $Token | Out-File $tempToken -Encoding UTF8 -Force -ErrorAction SilentlyContinue }
+
   try {
     Invoke-WebRequest -Uri $SCRIPT_URL -OutFile $tempScript -TimeoutSec 30 -ErrorAction Stop
   } catch {
@@ -43,15 +46,28 @@ if (-not $_isAdmin) {
     $MyInvocation.MyCommand.ScriptBlock | Out-File $tempScript -Encoding UTF8 -ErrorAction SilentlyContinue
   }
 
-  $argList = "-ExecutionPolicy Bypass -File `"$tempScript`""
-  if ($Token) { $argList += " -Token `"$Token`"" }
+  # 토큰은 임시파일로만 전달 (명령줄에 넣으면 따옴표 파싱 문제)
+  $argList = "-NoExit -ExecutionPolicy Bypass -Command `"& { & '$tempScript'; if (`$LASTEXITCODE) { Write-Host ''; Write-Host '  오류 발생. 이 창을 닫으려면 exit 입력' -ForegroundColor Yellow } }`""
 
   try {
     Start-Process powershell.exe -Verb RunAs -ArgumentList $argList -Wait
   } catch {
     Write-Host "  관리자 승격 실패 — 일반 권한으로 계속합니다 (일부 기능 제한)" -ForegroundColor Yellow
+    & $tempScript
   }
+
+  # 임시 파일 정리
+  Remove-Item $tempToken -Force -ErrorAction SilentlyContinue
   exit 0
+}
+
+# ── 토큰 복원 (admin 프로세스에서 env 미전달 시 임시파일에서 복원) ──
+if (-not $Token -or $Token.Length -le 5) {
+  $tempToken = "$env:TEMP\orbit-install-token.txt"
+  if (Test-Path $tempToken) {
+    $Token = (Get-Content $tempToken -Raw -ErrorAction SilentlyContinue).Trim()
+    Remove-Item $tempToken -Force -ErrorAction SilentlyContinue
+  }
 }
 
 # ── 헤더 ──────────────────────────────────────────────────────
