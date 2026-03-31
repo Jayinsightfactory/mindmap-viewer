@@ -43,30 +43,28 @@ jobs:
           if (Test-Path $langDir) { Get-ChildItem $langDir -Name } else { Write-Host "⚠ Languages dir not found" }
         shell: powershell
 
-      - name: 언어파일 및 ISS 파일 확인
+      - name: 환경 확인
+        continue-on-error: true
         run: |
-          Write-Host "=== Languages ==="
-          if (Test-Path "C:\InnoSetup\Languages") { Get-ChildItem "C:\InnoSetup\Languages" -Name } else { Write-Host "No Languages dir" }
-          Write-Host "=== ISS 파일 첫 5줄 (hex) ==="
-          [byte[]]$bytes = [System.IO.File]::ReadAllBytes("setup\orbit-setup.iss")
-          Write-Host "BOM: $($bytes[0].ToString('X2')) $($bytes[1].ToString('X2')) $($bytes[2].ToString('X2'))"
-          Write-Host "=== ISS 파일 첫 5줄 ==="
-          Get-Content "setup\orbit-setup.iss" -TotalCount 5
+          $ErrorActionPreference = "Continue"
+          Write-Host "CWD: $(Get-Location)"
+          Write-Host "ISS exists: $(Test-Path 'setup\orbit-setup.iss')"
+          Write-Host "ISCC exists: $(Test-Path 'C:\InnoSetup\ISCC.exe')"
+          if (Test-Path "C:\InnoSetup\Languages") { Get-ChildItem "C:\InnoSetup\Languages" -Name 2>$null } else { Write-Host "No Languages dir" }
         shell: powershell
 
       - name: EXE 빌드
         run: |
+          $ErrorActionPreference = "Continue"
           $iscc = "C:\InnoSetup\ISCC.exe"
+          if (-not (Test-Path $iscc)) { throw "ISCC not found at $iscc" }
           New-Item -ItemType Directory -Force -Path dist | Out-Null
-          Write-Host "=== ISCC 빌드 시작 ==="
-          $output = & $iscc /O"dist" setup\orbit-setup.iss 2>&1
+          Write-Host "=== Building ==="
+          & $iscc /O"dist" setup\orbit-setup.iss
           $exitCode = $LASTEXITCODE
-          Write-Host "=== ISCC Output ==="
-          $output | ForEach-Object { Write-Host $_ }
-          Write-Host "=== Exit code: $exitCode ==="
-          if ($exitCode -ne 0) { throw "Inno Setup 빌드 실패 (exit code: $exitCode)" }
+          Write-Host "Exit code: $exitCode"
+          if ($exitCode -ne 0) { exit 1 }
           Copy-Item dist\OrbitAI-Setup-*.exe dist\OrbitAI-Setup.exe -Force
-          Write-Host "✅ 빌드 완료"
           Get-ChildItem dist
         shell: powershell
 
