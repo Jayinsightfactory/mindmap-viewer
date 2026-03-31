@@ -43,13 +43,26 @@ jobs:
           if (Test-Path $langDir) { Get-ChildItem $langDir -Name } else { Write-Host "⚠ Languages dir not found" }
         shell: powershell
 
+      - name: 언어파일 및 ISS 파일 확인
+        run: |
+          Write-Host "=== Languages ==="
+          if (Test-Path "C:\InnoSetup\Languages") { Get-ChildItem "C:\InnoSetup\Languages" -Name } else { Write-Host "No Languages dir" }
+          Write-Host "=== ISS 파일 첫 5줄 (hex) ==="
+          [byte[]]$bytes = [System.IO.File]::ReadAllBytes("setup\orbit-setup.iss")
+          Write-Host "BOM: $($bytes[0].ToString('X2')) $($bytes[1].ToString('X2')) $($bytes[2].ToString('X2'))"
+          Write-Host "=== ISS 파일 첫 5줄 ==="
+          Get-Content "setup\orbit-setup.iss" -TotalCount 5
+        shell: powershell
+
       - name: EXE 빌드
         run: |
           $iscc = "C:\InnoSetup\ISCC.exe"
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           Write-Host "=== ISCC 빌드 시작 ==="
-          & $iscc /O"dist" setup\orbit-setup.iss 2>&1
+          $output = & $iscc /O"dist" setup\orbit-setup.iss 2>&1
           $exitCode = $LASTEXITCODE
+          Write-Host "=== ISCC Output ==="
+          $output | ForEach-Object { Write-Host $_ }
           Write-Host "=== Exit code: $exitCode ==="
           if ($exitCode -ne 0) { throw "Inno Setup 빌드 실패 (exit code: $exitCode)" }
           Copy-Item dist\OrbitAI-Setup-*.exe dist\OrbitAI-Setup.exe -Force
