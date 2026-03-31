@@ -59,14 +59,19 @@ jobs:
           $iscc = "C:\InnoSetup\ISCC.exe"
           if (-not (Test-Path $iscc)) { throw "ISCC not found at $iscc" }
           New-Item -ItemType Directory -Force -Path dist | Out-Null
-          Write-Host "=== Building ==="
-          & $iscc /O"dist" setup\orbit-setup.iss
+          & $iscc /O"dist" setup\orbit-setup.iss 2>&1 | Tee-Object -FilePath "dist\iscc-output.txt"
           $exitCode = $LASTEXITCODE
-          Write-Host "Exit code: $exitCode"
           if ($exitCode -ne 0) { exit 1 }
           Copy-Item dist\OrbitAI-Setup-*.exe dist\OrbitAI-Setup.exe -Force
           Get-ChildItem dist
         shell: powershell
+
+      - name: 빌드 로그 업로드 (실패 시)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: dist/iscc-output.txt
 
       - name: GitHub Release에 업로드
         uses: softprops/action-gh-release@v2
