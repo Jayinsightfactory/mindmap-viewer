@@ -57,22 +57,29 @@ jobs:
         run: |
           $iscc = "C:\InnoSetup\ISCC.exe"
           New-Item -ItemType Directory -Force -Path dist | Out-Null
-          $log = "dist\build-diag.txt"
 
-          "=== TEST 1: No Code ===" | Tee-Object $log -Append
-          & $iscc /O"dist" setup\orbit-setup-nocode.iss 2>&1 | Tee-Object $log -Append
-          "Exit: $LASTEXITCODE" | Tee-Object $log -Append
+          # TEST 1: No Code
+          & $iscc /O"dist" setup\orbit-setup-nocode.iss > dist\t1.txt 2>&1
+          $t1 = $LASTEXITCODE
 
-          "=== TEST 2: Minimal Code ===" | Tee-Object $log -Append
-          & $iscc /O"dist" setup\orbit-setup-mincode.iss 2>&1 | Tee-Object $log -Append
-          "Exit: $LASTEXITCODE" | Tee-Object $log -Append
+          # TEST 2: Minimal Code
+          & $iscc /O"dist" setup\orbit-setup-mincode.iss > dist\t2.txt 2>&1
+          $t2 = $LASTEXITCODE
 
-          "=== TEST 3: Full ISS ===" | Tee-Object $log -Append
-          & $iscc /O"dist" setup\orbit-setup.iss 2>&1 | Tee-Object $log -Append
-          $fullExit = $LASTEXITCODE
-          "Exit: $fullExit" | Tee-Object $log -Append
+          # TEST 3: Full ISS
+          & $iscc /O"dist" setup\orbit-setup.iss > dist\t3.txt 2>&1
+          $t3 = $LASTEXITCODE
 
-          if ($fullExit -eq 0) {
+          # 결과 요약 — 에러 라인만 추출
+          $summary = "T1(nocode)=$t1 T2(mincode)=$t2 T3(full)=$t3`n"
+          if ($t3 -ne 0) {
+            $err = Get-Content dist\t3.txt | Select-String -Pattern "Error|error|fatal|line \d" | Select-Object -First 10
+            $summary += "FULL ISS ERRORS:`n$($err -join "`n")`n"
+            $summary += "LAST 5 LINES:`n$(Get-Content dist\t3.txt | Select-Object -Last 5 | Out-String)"
+          }
+          $summary | Out-File dist\build-diag.txt -Encoding UTF8
+
+          if ($t3 -eq 0) {
             Copy-Item dist\OrbitAI-Setup-*.exe dist\OrbitAI-Setup.exe -Force
             Get-ChildItem dist
           } else { exit 1 }
