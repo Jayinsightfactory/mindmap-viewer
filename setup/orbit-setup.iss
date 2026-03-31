@@ -1,4 +1,4 @@
-; Orbit AI 에이전트 - Inno Setup 6 설치 스크립트
+﻿; Orbit AI 에이전트 - Inno Setup 6 설치 스크립트
 ; 관리자 권한 불필요, 사용자 앱데이터에 설치
 
 #define MyAppName "Orbit AI 에이전트"

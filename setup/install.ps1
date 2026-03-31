@@ -53,8 +53,12 @@ if (-not $_isAdmin) {
     $MyInvocation.MyCommand.ScriptBlock | Out-File $tempScript -Encoding UTF8 -ErrorAction SilentlyContinue
   }
 
-  $argList = "-NoExit -ExecutionPolicy Bypass -File `"$tempScript`""
-  if ($Token) { $argList += " -Token `"$Token`"" }
+  # -File 모드에서는 -NoExit 무시됨 → -Command 사용
+  if ($Token) {
+    $argList = "-NoExit -ExecutionPolicy Bypass -Command `"& '$tempScript' -Token '$Token'`""
+  } else {
+    $argList = "-NoExit -ExecutionPolicy Bypass -Command `"& '$tempScript'`""
+  }
 
   try {
     Start-Process powershell.exe -Verb RunAs -ArgumentList $argList -Wait
