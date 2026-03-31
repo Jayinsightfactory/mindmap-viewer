@@ -43,7 +43,7 @@ LicenseAccepted=위 내용을 읽었으며 동의합니다(&A)
 LicenseNotAccepted=동의하지 않습니다(&D)
 
 [Tasks]
-Name: "startuplink"; Description: "Windows 시작 시 자동 실행"; GroupDescription: "추가 옵션:"; Flags: checked
+Name: "startuplink"; Description: "Windows Startup"; GroupDescription: "Options:"
 
 [Files]
 ; daemon 폴더
