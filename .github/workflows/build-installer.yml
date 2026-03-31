@@ -85,8 +85,8 @@ jobs:
       - name: GitHub Release에 업로드
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: latest
-          name: "Orbit AI 최신 버전"
+          tag_name: v2.0.0
+          name: "Orbit AI v2.0.0"
           body: |
             ## Orbit AI 에이전트 설치 프로그램
 
