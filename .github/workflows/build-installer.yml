@@ -6,8 +6,9 @@ on:
     paths:
       - 'daemon/**'
       - 'src/**'
-      - 'setup/orbit-setup.iss'
+      - 'setup/**'
       - 'package.json'
+      - '.github/workflows/build-installer.yml'
   workflow_dispatch:  # 수동 트리거
 
 jobs:
