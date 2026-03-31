@@ -145,51 +145,42 @@ begin
   end;
 end;
 
-// ── Node.js 다운로드 및 압축 해제 ─────────────────────────────────────────────
+// ── Node.js 다운로드 및 압축 해제 (PowerShell 사용) ──────────────────────────
 procedure DownloadNodeJS;
 var
-  NodeUrl: string;
-  NodeZipPath: string;
   NodeDestDir: string;
   ResultCode: Integer;
-  DownloadSize: Int64;
+  PSCmd: string;
 begin
-  NodeUrl := 'https://nodejs.org/dist/v22.14.0/node-v22.14.0-win-x64.zip';
-  NodeZipPath := ExpandConstant('{tmp}\node-v22.14.0-win-x64.zip');
   NodeDestDir := ExpandConstant('{app}\node');
-
-  Log('Node.js 다운로드 시작: ' + NodeUrl);
-
-  // 다운로드 (4번째 파라미터: 콜백=nil, 반환: Int64 바이트 수)
-  DownloadSize := DownloadTemporaryFile(NodeUrl, 'node-v22.14.0-win-x64.zip', '', nil);
-  if DownloadSize = 0 then
-  begin
-    MsgBox('Node.js 다운로드 실패. 네트워크 연결을 확인하세요.' + #13#10 +
-           '설치 후 수동으로 node.exe를 ' + NodeDestDir + '에 복사하세요.',
-           mbError, MB_OK);
-    Exit;
-  end;
-
-  Log('Node.js 다운로드 완료 (' + IntToStr(DownloadSize) + ' bytes)');
-
-  // PowerShell로 압축 해제
   ForceDirectories(NodeDestDir);
-  Exec('powershell.exe',
-    '-WindowStyle Hidden -Command "Expand-Archive -Force -Path ''' + NodeZipPath + ''' -DestinationPath ''' + NodeDestDir + '''"',
-    '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+
+  Log('Node.js 다운로드 + 설치 시작 (PowerShell)');
+
+  // PowerShell 단일 명령으로 다운로드 + 압축해제 + 정리
+  PSCmd := '-WindowStyle Hidden -ExecutionPolicy Bypass -Command "' +
+    '$ErrorActionPreference=''Stop''; ' +
+    '$url=''https://nodejs.org/dist/v22.14.0/node-v22.14.0-win-x64.zip''; ' +
+    '$zip=Join-Path $env:TEMP ''node-v22.zip''; ' +
+    '$dest=''' + NodeDestDir + '''; ' +
+    'Write-Host ''Downloading Node.js...''; ' +
+    '[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; ' +
+    '(New-Object Net.WebClient).DownloadFile($url,$zip); ' +
+    'Write-Host ''Extracting...''; ' +
+    'Expand-Archive -Force $zip $dest; ' +
+    '$sub=Get-ChildItem $dest -Directory|Select-Object -First 1; ' +
+    'if($sub){Copy-Item -Recurse -Force (Join-Path $sub.FullName ''*'') $dest; Remove-Item -Recurse -Force $sub.FullName}; ' +
+    'Remove-Item $zip -Force -ErrorAction SilentlyContinue; ' +
+    'Write-Host ''Node.js installed''"';
+
+  Exec('powershell.exe', PSCmd, '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
 
   if ResultCode <> 0 then
   begin
-    Log('압축 해제 실패, ResultCode=' + IntToStr(ResultCode));
+    MsgBox('Node.js 다운로드 실패 (코드: ' + IntToStr(ResultCode) + ').' + #13#10 +
+           '네트워크 연결을 확인하세요.', mbError, MB_OK);
     Exit;
   end;
-
-  // 압축 해제된 폴더에서 node.exe를 {app}\node\ 루트로 이동
-  Exec('powershell.exe',
-    '-WindowStyle Hidden -Command "' +
-    '$src = (Get-ChildItem ''' + NodeDestDir + ''' -Directory | Select-Object -First 1).FullName; ' +
-    'if ($src) { Copy-Item -Recurse -Force (Join-Path $src ''*'') ''' + NodeDestDir + '''; Remove-Item -Recurse -Force $src }"',
-    '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
 
   Log('Node.js 설치 완료');
 end;
