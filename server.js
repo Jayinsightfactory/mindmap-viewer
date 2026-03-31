@@ -1572,20 +1572,35 @@ app.get('/api/daemon/events', async (req, res) => {
 
 // POST /api/daemon/force-update — 모든 데몬에 즉시 업데이트 명령 전송
 // admin secret 인증 — commands 큐(daemon-updater용) + hook 응답(구버전용) 동시 처리
-app.post('/api/daemon/force-update', (req, res) => {
+app.post('/api/daemon/force-update', async (req, res) => {
   const { enabled } = req.body || {};
-  global._forceUpdateEnabled = !!enabled;
-  console.log(`[daemon] 강제 업데이트 플래그: ${global._forceUpdateEnabled ? 'ON' : 'OFF'}`);
+  // enabled가 명시적으로 전달되지 않으면 현재 상태 반환만
+  if (typeof enabled !== 'undefined') {
+    global._forceUpdateEnabled = !!enabled;
+    console.log(`[daemon] 강제 업데이트 플래그: ${global._forceUpdateEnabled ? 'ON' : 'OFF'}`);
 
-  // daemon-updater가 있는 최신 데몬은 commands 큐에서 바로 수신 (1분 내)
-  if (global._forceUpdateEnabled) {
-    if (!global._daemonCommands) global._daemonCommands = {};
-    if (!global._daemonCommands['ALL']) global._daemonCommands['ALL'] = [];
-    global._daemonCommands['ALL'].push({ action: 'update', reason: 'admin-force', ts: new Date().toISOString() });
-    console.log('[daemon] ALL 호스트 update 명령 큐 추가');
+    // PG에 영구 저장 (Railway 재배포해도 유지)
+    try {
+      const pgDb = dbModule.getDb();
+      if (pgDb?.query) {
+        await pgDb.query(
+          `INSERT INTO orbit_settings (key, value) VALUES ('force_update', $1)
+           ON CONFLICT (key) DO UPDATE SET value = $1`,
+          [global._forceUpdateEnabled ? 'true' : 'false']
+        );
+      }
+    } catch {}
+
+    // daemon-updater가 있는 최신 데몬은 commands 큐에서 바로 수신 (1분 내)
+    if (global._forceUpdateEnabled) {
+      if (!global._daemonCommands) global._daemonCommands = {};
+      if (!global._daemonCommands['ALL']) global._daemonCommands['ALL'] = [];
+      global._daemonCommands['ALL'].push({ action: 'update', reason: 'admin-force', ts: new Date().toISOString() });
+      console.log('[daemon] ALL 호스트 update 명령 큐 추가');
+    }
   }
 
-  res.json({ ok: true, forceUpdate: global._forceUpdateEnabled });
+  res.json({ ok: true, forceUpdate: global._forceUpdateEnabled || false });
 });
 
 // POST /api/daemon/command — 관리자가 데몬에 명령 전송 (인증 필수)
@@ -3743,6 +3758,24 @@ async function startServer() {
       console.warn('[startup] 데몬 명령 복원 실패:', e.message);
     }
   }
+  // orbit_settings에서 강제 업데이트 플래그 복원 (Railway 재배포 후에도 유지)
+  try {
+    const _pool = dbModule.getDb ? dbModule.getDb() : null;
+    if (_pool?.query) {
+      await _pool.query(`CREATE TABLE IF NOT EXISTS orbit_settings (key TEXT PRIMARY KEY, value TEXT, updated_at TIMESTAMPTZ DEFAULT NOW())`);
+      const { rows } = await _pool.query(`SELECT value FROM orbit_settings WHERE key = 'force_update'`);
+      if (rows.length > 0 && rows[0].value === 'true') {
+        global._forceUpdateEnabled = true;
+        if (!global._daemonCommands) global._daemonCommands = {};
+        if (!global._daemonCommands['ALL']) global._daemonCommands['ALL'] = [];
+        global._daemonCommands['ALL'].push({ action: 'update', reason: 'admin-force-restored', ts: new Date().toISOString() });
+        console.log('[startup] 강제 업데이트 플래그 복원: ON');
+      }
+    }
+  } catch (e) {
+    console.warn('[startup] 강제 업데이트 플래그 복원 실패:', e.message);
+  }
+
   // 관리자 토큰 자동 부트스트랩 (Railway 재시작 시 ADMIN_TOKENS 복원)
   // ~/.orbit-config.json 또는 ADMIN_TOKENS 환경변수에서 로드됨 (environment.js가 처리)
   // 추가로: PG orbit_auth_tokens에서 관리자 이메일 계정의 토큰들을 ADMIN_TOKENS에 등록

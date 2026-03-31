@@ -558,21 +558,17 @@ async function renderSetupPanel() {
   } catch {}
 
   // ── 상태 카드 ─────────────────────────────────────────────────────────────
-  const trackerCard = trackerOnline
-    ? `<div class="sp-check-card" style="flex-direction:column;align-items:flex-start;gap:4px">
-        <div style="display:flex;width:100%;align-items:center">
-          <div class="sp-check-label">트래커</div>
-          <div class="sp-check-val sp-check-ok">🟢 연결됨</div>
-        </div>
-        <div style="font-size:10px;color:#6e7681">${trackerHost ? trackerHost + ' · ' : ''}${trackerEvents}개 이벤트</div>
-      </div>`
-    : `<div class="sp-check-card" style="flex-direction:column;align-items:flex-start;gap:4px">
-        <div style="display:flex;width:100%;align-items:center">
-          <div class="sp-check-label">트래커</div>
-          <div class="sp-check-val sp-check-warn">🔴 미연결</div>
-        </div>
-        <div style="font-size:10px;color:#6e7681">아래 설치 명령어를 PC에서 실행하세요</div>
-      </div>`;
+  const trackerCard = `<div class="sp-check-card" style="flex-direction:column;align-items:flex-start;gap:4px;cursor:pointer"
+      onclick="renderSetupPanel()">
+      <div style="display:flex;width:100%;align-items:center">
+        <div class="sp-check-label">트래커</div>
+        <div class="sp-check-val ${trackerOnline ? 'sp-check-ok' : 'sp-check-warn'}">${trackerOnline ? '🟢 연결됨' : '🔴 미연결'}</div>
+        <div style="font-size:8px;color:#484f58;margin-left:auto">🔄 새로고침</div>
+      </div>
+      <div style="font-size:10px;color:#6e7681">${trackerOnline
+        ? (trackerHost ? trackerHost + ' · ' : '') + trackerEvents + '개 이벤트'
+        : '설치 후 여기를 클릭하여 연결 확인'}</div>
+    </div>`;
 
   const aiCard = `<div class="sp-check-card" style="flex-direction:column;align-items:flex-start;gap:4px">
       <div style="display:flex;width:100%;align-items:center">
