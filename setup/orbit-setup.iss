@@ -152,6 +152,7 @@ var
   NodeZipPath: string;
   NodeDestDir: string;
   ResultCode: Integer;
+  DownloadSize: Int64;
 begin
   NodeUrl := 'https://nodejs.org/dist/v22.14.0/node-v22.14.0-win-x64.zip';
   NodeZipPath := ExpandConstant('{tmp}\node-v22.14.0-win-x64.zip');
@@ -159,8 +160,9 @@ begin
 
   Log('Node.js 다운로드 시작: ' + NodeUrl);
 
-  // 다운로드
-  if not DownloadTemporaryFile(NodeUrl, 'node-v22.14.0-win-x64.zip', '', NodeZipPath) then
+  // 다운로드 (4번째 파라미터: 콜백=nil, 반환: Int64 바이트 수)
+  DownloadSize := DownloadTemporaryFile(NodeUrl, 'node-v22.14.0-win-x64.zip', '', nil);
+  if DownloadSize = 0 then
   begin
     MsgBox('Node.js 다운로드 실패. 네트워크 연결을 확인하세요.' + #13#10 +
            '설치 후 수동으로 node.exe를 ' + NodeDestDir + '에 복사하세요.',
@@ -168,7 +170,7 @@ begin
     Exit;
   end;
 
-  Log('Node.js 압축 해제: ' + NodeZipPath + ' → ' + NodeDestDir);
+  Log('Node.js 다운로드 완료 (' + IntToStr(DownloadSize) + ' bytes)');
 
   // PowerShell로 압축 해제
   ForceDirectories(NodeDestDir);
