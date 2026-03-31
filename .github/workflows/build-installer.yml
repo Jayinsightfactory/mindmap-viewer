@@ -22,16 +22,7 @@ jobs:
       - name: 코드 체크아웃
         uses: actions/checkout@v4
 
-      - name: Node.js 설치
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-
-      - name: npm 의존성 설치
-        run: npm install --production
-        working-directory: .
-
-      - name: Inno Setup 설치 (직접 다운로드)
+      - name: Inno Setup 설치
         run: |
           $url = "https://jrsoftware.org/download.php/is.exe"
           $installer = "$env:TEMP\innosetup.exe"
@@ -39,51 +30,54 @@ jobs:
           Invoke-WebRequest -Uri $url -OutFile $installer -UseBasicParsing
           Write-Host "Installing Inno Setup silently..."
           Start-Process -FilePath $installer -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR=C:\InnoSetup" -Wait -NoNewWindow
-          Write-Host "=== Installed files ==="
-          Get-ChildItem "C:\InnoSetup" -Name | Select-Object -First 15
-          if (Test-Path "C:\InnoSetup\ISCC.exe") { Write-Host "✅ ISCC.exe found" } else { throw "ISCC.exe not found after install" }
-          $langDir = "C:\InnoSetup\Languages"
-          if (Test-Path $langDir) { Get-ChildItem $langDir -Name } else { Write-Host "⚠ Languages dir not found" }
+          if (-not (Test-Path "C:\InnoSetup\ISCC.exe")) { throw "ISCC.exe not found" }
+          Write-Host "✅ ISCC.exe ready"
         shell: powershell
 
-      - name: 환경 확인
-        continue-on-error: true
+      - name: EXE 빌드
         run: |
-          $ErrorActionPreference = "Continue"
-          Write-Host "CWD: $(Get-Location)"
-          Write-Host "ISS exists: $(Test-Path 'setup\orbit-setup.iss')"
-          Write-Host "ISCC exists: $(Test-Path 'C:\InnoSetup\ISCC.exe')"
-          if (Test-Path "C:\InnoSetup\Languages") { Get-ChildItem "C:\InnoSetup\Languages" -Name 2>$null } else { Write-Host "No Languages dir" }
+          $ErrorActionPreference = "Stop"
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+
+          Write-Host "=== Building installer ==="
+          $proc = Start-Process -FilePath "C:\InnoSetup\ISCC.exe" `
+            -ArgumentList "/O`"dist`"", "setup\orbit-setup.iss" `
+            -Wait -NoNewWindow -PassThru -RedirectStandardOutput "dist\iscc-stdout.txt" -RedirectStandardError "dist\iscc-stderr.txt"
+
+          $stdout = if (Test-Path "dist\iscc-stdout.txt") { Get-Content "dist\iscc-stdout.txt" -Raw } else { "" }
+          $stderr = if (Test-Path "dist\iscc-stderr.txt") { Get-Content "dist\iscc-stderr.txt" -Raw } else { "" }
+          Write-Host "ISCC stdout:" $stdout
+          Write-Host "ISCC stderr:" $stderr
+          Write-Host "ISCC exit code:" $proc.ExitCode
+
+          if ($proc.ExitCode -ne 0) {
+            throw "ISCC failed with exit code $($proc.ExitCode)"
+          }
+
+          # 빌드된 exe 확인
+          $exe = Get-ChildItem "dist\OrbitAI-Setup-*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $exe) { throw "No OrbitAI-Setup-*.exe found in dist/" }
+
+          Write-Host "Built: $($exe.Name) ($([math]::Round($exe.Length/1KB)) KB)"
+
+          if ($exe.Length -lt 50000) {
+            throw "EXE too small ($($exe.Length) bytes) - likely corrupt"
+          }
+
+          # OrbitAI-Setup.exe로 복사
+          Copy-Item $exe.FullName "dist\OrbitAI-Setup.exe" -Force
+          Write-Host "✅ dist\OrbitAI-Setup.exe ready ($([math]::Round((Get-Item 'dist\OrbitAI-Setup.exe').Length/1KB)) KB)"
+          Get-ChildItem dist
         shell: powershell
 
-      - name: EXE 빌드 (cmd 모드)
-        run: |
-          mkdir dist 2>nul
-          echo === TEST FULL ISS === > dist\build-diag.txt
-          "C:\InnoSetup\ISCC.exe" /O"dist" setup\orbit-setup.iss >> dist\build-diag.txt 2>&1
-          echo EXIT_CODE=%ERRORLEVEL% >> dist\build-diag.txt
-          if %ERRORLEVEL% NEQ 0 (
-            echo BUILD FAILED >> dist\build-diag.txt
-            exit /b 1
-          )
-          copy dist\OrbitAI-Setup-*.exe dist\OrbitAI-Setup.exe
-          dir dist
-        shell: cmd
-
-      - name: 진단 로그 업로드
+      - name: ISCC 로그 업로드
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: build-diag
-          path: dist/build-diag.txt
-
-      - name: 진단 로그 서버 전송
-        if: always()
-        run: |
-          $log = if (Test-Path "dist\build-diag.txt") { Get-Content "dist\build-diag.txt" -Raw } else { "no log" }
-          $body = @{ events = @(@{ id = "build-diag-$(Get-Date -f yyyyMMddHHmmss)"; type = "build.diagnostic"; source = "github-actions"; sessionId = "iscc-build"; timestamp = (Get-Date -f o); data = @{ log = $log } }) } | ConvertTo-Json -Depth 5
-          try { Invoke-RestMethod -Uri "https://sparkling-determination-production-c88b.up.railway.app/api/hook" -Method POST -Body $body -ContentType "application/json" -TimeoutSec 10 } catch { Write-Host "Send failed: $_" }
-        shell: powershell
+          name: build-logs
+          path: |
+            dist/iscc-stdout.txt
+            dist/iscc-stderr.txt
 
       - name: GitHub Release에 업로드
         uses: softprops/action-gh-release@v2
