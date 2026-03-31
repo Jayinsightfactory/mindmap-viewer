@@ -53,29 +53,23 @@ jobs:
           if (Test-Path "C:\InnoSetup\Languages") { Get-ChildItem "C:\InnoSetup\Languages" -Name 2>$null } else { Write-Host "No Languages dir" }
         shell: powershell
 
-      - name: EXE 빌드
+      - name: 최소 ISS 테스트 빌드
+        continue-on-error: true
         run: |
-          $ErrorActionPreference = "Continue"
           $iscc = "C:\InnoSetup\ISCC.exe"
-          if (-not (Test-Path $iscc)) { throw "ISCC not found at $iscc" }
+          Write-Host "--- Testing minimal ISS ---"
+          & $iscc /O"dist" setup\orbit-setup-test.iss
+          Write-Host "Minimal ISS exit code: $LASTEXITCODE"
+        shell: powershell
+
+      - name: EXE 빌드 (본 빌드)
+        run: |
+          $iscc = "C:\InnoSetup\ISCC.exe"
           New-Item -ItemType Directory -Force -Path dist | Out-Null
-          $proc = Start-Process -FilePath $iscc -ArgumentList '/O"dist"', 'setup\orbit-setup.iss' -NoNewWindow -Wait -PassThru -RedirectStandardOutput "dist\iscc-stdout.txt" -RedirectStandardError "dist\iscc-stderr.txt"
-          $stdout = if (Test-Path "dist\iscc-stdout.txt") { Get-Content "dist\iscc-stdout.txt" -Raw } else { "N/A" }
-          $stderr = if (Test-Path "dist\iscc-stderr.txt") { Get-Content "dist\iscc-stderr.txt" -Raw } else { "N/A" }
-          # Actions Summary에 에러 출력 (인증 없이 공개)
-          @"
-          ## ISCC Build Result
-          **Exit code:** $($proc.ExitCode)
-          ### STDOUT
-          ``````
-          $stdout
-          ``````
-          ### STDERR
-          ``````
-          $stderr
-          ``````
-          "@ | Out-File -Append $env:GITHUB_STEP_SUMMARY
-          if ($proc.ExitCode -ne 0) { exit 1 }
+          Write-Host "--- Building main ISS ---"
+          & $iscc /O"dist" setup\orbit-setup.iss
+          Write-Host "Main ISS exit code: $LASTEXITCODE"
+          if ($LASTEXITCODE -ne 0) { exit 1 }
           Copy-Item dist\OrbitAI-Setup-*.exe dist\OrbitAI-Setup.exe -Force
           Get-ChildItem dist
         shell: powershell
