@@ -11,6 +11,9 @@ on:
       - '.github/workflows/build-installer.yml'
   workflow_dispatch:  # 수동 트리거
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest
