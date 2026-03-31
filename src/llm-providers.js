@@ -28,7 +28,7 @@ const PROVIDERS = {
     models: [
       { id: 'claude-opus-4-5',          label: 'Opus 4.5',        tier: 'best'  },
       { id: 'claude-sonnet-4-5',        label: 'Sonnet 4.5',      tier: 'smart' },
-      { id: 'claude-haiku-3-5',         label: 'Haiku 3.5',       tier: 'fast'  },
+      { id: 'claude-3-5-haiku-20241022',         label: 'Haiku 3.5',       tier: 'fast'  },
       { id: 'claude-opus-4-0',          label: 'Opus 4',          tier: 'best'  },
       { id: 'claude-sonnet-4-0',        label: 'Sonnet 4',        tier: 'smart' },
     ],

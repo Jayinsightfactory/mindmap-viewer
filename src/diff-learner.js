@@ -164,7 +164,7 @@ JSON으로 응답: {"pattern": "...", "suggestion": "...", "automatable": true/f
 
     const text = await generate({
       provider: 'anthropic',
-      model:    'claude-haiku-3-5',
+      model:    'claude-3-5-haiku-20241022',
       prompt,
       apiKey,
     });

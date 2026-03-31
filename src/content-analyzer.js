@@ -7,7 +7,7 @@
  * 원칙:
  *   - 원본 텍스트는 로컬 DB에만 저장
  *   - 클라우드로는 태그(메타데이터)만 전송
- *   - Cloud Haiku (claude-haiku-3-5) 사용 — Ollama 불필요
+ *   - Cloud Haiku (claude-3-5-haiku-20241022) 사용 — Ollama 불필요
  *
  * 출력 태그 구조:
  * {
@@ -53,7 +53,7 @@ async function analyzeText(text) {
   try {
     const resp = await generate({
       provider: 'anthropic',
-      model:    'claude-haiku-3-5',
+      model:    'claude-3-5-haiku-20241022',
       prompt:   `${SYSTEM_PROMPT}\n\n분석할 텍스트:\n"${sanitized}"`,
       apiKey,
     });
