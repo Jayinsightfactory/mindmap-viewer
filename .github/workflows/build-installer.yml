@@ -53,33 +53,37 @@ jobs:
           if (Test-Path "C:\InnoSetup\Languages") { Get-ChildItem "C:\InnoSetup\Languages" -Name 2>$null } else { Write-Host "No Languages dir" }
         shell: powershell
 
-      - name: EXE 빌드 (3단계 진단)
+      - name: EXE 빌드 (진단 모드)
         run: |
           $iscc = "C:\InnoSetup\ISCC.exe"
           New-Item -ItemType Directory -Force -Path dist | Out-Null
+          $log = "dist\build-diag.txt"
 
-          Write-Host "=== TEST 1: No Code ==="
-          & $iscc /O"dist" setup\orbit-setup-nocode.iss
-          Write-Host "Exit: $LASTEXITCODE"
+          "=== TEST 1: No Code ===" | Tee-Object $log -Append
+          & $iscc /O"dist" setup\orbit-setup-nocode.iss 2>&1 | Tee-Object $log -Append
+          "Exit: $LASTEXITCODE" | Tee-Object $log -Append
 
-          Write-Host "=== TEST 2: Minimal Code ==="
-          & $iscc /O"dist" setup\orbit-setup-mincode.iss
-          Write-Host "Exit: $LASTEXITCODE"
+          "=== TEST 2: Minimal Code ===" | Tee-Object $log -Append
+          & $iscc /O"dist" setup\orbit-setup-mincode.iss 2>&1 | Tee-Object $log -Append
+          "Exit: $LASTEXITCODE" | Tee-Object $log -Append
 
-          Write-Host "=== TEST 3: Full ISS ==="
-          & $iscc /O"dist" setup\orbit-setup.iss
+          "=== TEST 3: Full ISS ===" | Tee-Object $log -Append
+          & $iscc /O"dist" setup\orbit-setup.iss 2>&1 | Tee-Object $log -Append
           $fullExit = $LASTEXITCODE
-          Write-Host "Exit: $fullExit"
+          "Exit: $fullExit" | Tee-Object $log -Append
 
           if ($fullExit -eq 0) {
             Copy-Item dist\OrbitAI-Setup-*.exe dist\OrbitAI-Setup.exe -Force
             Get-ChildItem dist
-          } else {
-            Write-Host "FULL BUILD FAILED - dumping ISS content:"
-            Get-Content setup\orbit-setup.iss | Select-Object -Last 50
-            exit 1
-          }
+          } else { exit 1 }
         shell: powershell
+
+      - name: 진단 로그 업로드
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-diag
+          path: dist/build-diag.txt
 
       - name: GitHub Release에 업로드
         uses: softprops/action-gh-release@v2
