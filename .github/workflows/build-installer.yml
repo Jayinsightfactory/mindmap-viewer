@@ -31,11 +31,22 @@ jobs:
         run: choco install innosetup --yes --no-progress
         shell: powershell
 
+      - name: Inno Setup 버전 및 언어파일 확인
+        run: |
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (Test-Path $iscc) { & $iscc /? 2>&1 | Select-Object -First 3 } else { Write-Host "ISCC not found at default path"; Get-ChildItem "C:\Program Files (x86)\Inno Setup*" -ErrorAction SilentlyContinue }
+          $langDir = "C:\Program Files (x86)\Inno Setup 6\Languages"
+          if (Test-Path $langDir) { Get-ChildItem $langDir -Name } else { Write-Host "Languages dir not found" }
+        shell: powershell
+
       - name: EXE 빌드
         run: |
           New-Item -ItemType Directory -Force -Path dist | Out-Null
-          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /O"dist" setup\orbit-setup.iss
-          if ($LASTEXITCODE -ne 0) { throw "Inno Setup 빌드 실패" }
+          Write-Host "=== ISCC 빌드 시작 ==="
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /O"dist" /V9 setup\orbit-setup.iss 2>&1
+          $exitCode = $LASTEXITCODE
+          Write-Host "=== ISCC exit code: $exitCode ==="
+          if ($exitCode -ne 0) { throw "Inno Setup 빌드 실패 (exit code: $exitCode)" }
           # 최신 버전용 이름으로 복사
           Copy-Item dist\OrbitAI-Setup-*.exe dist\OrbitAI-Setup.exe -Force
           Write-Host "✅ 빌드 완료"
