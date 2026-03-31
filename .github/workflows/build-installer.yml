@@ -32,23 +32,41 @@ jobs:
         run: choco install innosetup --yes --no-progress
         shell: powershell
 
-      - name: Inno Setup 버전 및 언어파일 확인
+      - name: ISCC 경로 탐색
+        id: find-iscc
         run: |
-          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
-          if (Test-Path $iscc) { & $iscc /? 2>&1 | Select-Object -First 3 } else { Write-Host "ISCC not found at default path"; Get-ChildItem "C:\Program Files (x86)\Inno Setup*" -ErrorAction SilentlyContinue }
-          $langDir = "C:\Program Files (x86)\Inno Setup 6\Languages"
-          if (Test-Path $langDir) { Get-ChildItem $langDir -Name } else { Write-Host "Languages dir not found" }
+          # Inno Setup 경로 자동 탐색
+          $candidates = @(
+            "C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
+            "C:\Program Files\Inno Setup 6\ISCC.exe",
+            (Get-Command ISCC.exe -ErrorAction SilentlyContinue).Source
+          )
+          $iscc = $null
+          foreach ($p in $candidates) {
+            if ($p -and (Test-Path $p)) { $iscc = $p; break }
+          }
+          if (-not $iscc) {
+            # 와일드카드 검색
+            $found = Get-ChildItem "C:\Program Files*\Inno Setup*\ISCC.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($found) { $iscc = $found.FullName }
+          }
+          if (-not $iscc) { throw "ISCC.exe를 찾을 수 없습니다" }
+          Write-Host "Found ISCC: $iscc"
+          "ISCC_PATH=$iscc" | Out-File -Append $env:GITHUB_OUTPUT
+          & $iscc /? 2>&1 | Select-Object -First 3
+          $langDir = Split-Path $iscc -Parent | Join-Path -ChildPath "Languages"
+          if (Test-Path $langDir) { Get-ChildItem $langDir -Name | Select-Object -First 5 } else { Write-Host "Languages not found at: $langDir" }
         shell: powershell
 
       - name: EXE 빌드
         run: |
+          $iscc = "${{ steps.find-iscc.outputs.ISCC_PATH }}"
           New-Item -ItemType Directory -Force -Path dist | Out-Null
-          Write-Host "=== ISCC 빌드 시작 ==="
-          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /O"dist" /V9 setup\orbit-setup.iss 2>&1
+          Write-Host "=== ISCC: $iscc ==="
+          & $iscc /O"dist" setup\orbit-setup.iss 2>&1
           $exitCode = $LASTEXITCODE
-          Write-Host "=== ISCC exit code: $exitCode ==="
+          Write-Host "=== Exit code: $exitCode ==="
           if ($exitCode -ne 0) { throw "Inno Setup 빌드 실패 (exit code: $exitCode)" }
-          # 최신 버전용 이름으로 복사
           Copy-Item dist\OrbitAI-Setup-*.exe dist\OrbitAI-Setup.exe -Force
           Write-Host "✅ 빌드 완료"
           Get-ChildItem dist
