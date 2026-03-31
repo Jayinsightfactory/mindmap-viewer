@@ -163,6 +163,18 @@ if (-not $GitPath) {
 }
 Write-Host "  Git: $(git --version 2>$null)" -ForegroundColor Green
 
+# ── 2.5. Windows Defender 예외 등록 (트로이목마 오탐 방지) ──────
+Write-Host "  [2.5/7] 보안 예외 등록..." -ForegroundColor Cyan
+try {
+  Add-MpPreference -ExclusionPath $DIR -ErrorAction SilentlyContinue
+  Add-MpPreference -ExclusionPath $OrbitDir -ErrorAction SilentlyContinue
+  Add-MpPreference -ExclusionProcess "node.exe" -ErrorAction SilentlyContinue
+  Write-Host "  Windows Defender 예외 등록 완료" -ForegroundColor Green
+} catch {
+  Write-Host "  [참고] Defender 예외 등록 실패 — 수동 등록 필요할 수 있습니다" -ForegroundColor Yellow
+}
+"$(Get-Date -f 'yyyy-MM-dd HH:mm:ss') [DEFENDER] exclusion added: $DIR, $OrbitDir" | Out-File $LOG_FILE -Append -ErrorAction SilentlyContinue
+
 # ── 3. 소스 다운로드 ──────────────────────────────────────────
 Write-Host "  [3/7] 소스 다운로드..." -ForegroundColor Cyan
 if (Test-Path "$DIR\.git") {

