@@ -53,13 +53,16 @@ jobs:
           if (Test-Path "C:\InnoSetup\Languages") { Get-ChildItem "C:\InnoSetup\Languages" -Name 2>$null } else { Write-Host "No Languages dir" }
         shell: powershell
 
-      - name: 최소 ISS 테스트 빌드
+      - name: ISS 테스트 (Code 섹션 없이)
         continue-on-error: true
         run: |
           $iscc = "C:\InnoSetup\ISCC.exe"
-          Write-Host "--- Testing minimal ISS ---"
-          & $iscc /O"dist" setup\orbit-setup-test.iss
-          Write-Host "Minimal ISS exit code: $LASTEXITCODE"
+          Write-Host "--- Test without [Code] ---"
+          & $iscc /O"dist" setup\orbit-setup-nocode.iss
+          Write-Host "No-code ISS exit: $LASTEXITCODE"
+          Write-Host "--- Test FULL ISS ---"
+          & $iscc /O"dist" setup\orbit-setup.iss
+          Write-Host "Full ISS exit: $LASTEXITCODE"
         shell: powershell
 
       - name: EXE 빌드 (본 빌드)
