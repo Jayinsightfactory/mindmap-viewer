@@ -72,7 +72,7 @@ Filename: "powershell.exe"; Parameters: "-WindowStyle Hidden -Command ""Get-Proc
 ; 시작 프로그램 바로가기 제거
 Type: files; Name: "{userstartup}\Orbit AI.lnk"
 ; 설정 파일 (선택적 - 남겨두는 경우가 많으나 여기선 제거)
-; Type: files; Name: "{userprofile}\.orbit-config.json"
+; Type: files; Name: "{%USERPROFILE}\.orbit-config.json"
 
 [Code]
 var
@@ -132,7 +132,7 @@ begin
     '  "token": "' + Token + '",' + #13#10 +
     '  "serverUrl": "https://sparkling-determination-production-c88b.up.railway.app",' + #13#10 +
     '  "installedAt": "' + GetDateTimeString('yyyy/mm/dd hh:nn:ss', '-', ':') + '"' + #13#10 + '}';
-  SaveStringToFile(ExpandConstant('{userprofile}\.orbit-config.json'), S, False);
+  SaveStringToFile(ExpandConstant('{%USERPROFILE}\.orbit-config.json'), S, False);
 end;
 
 procedure DownloadNodeJS;

@@ -53,17 +53,16 @@ if (-not $_isAdmin) {
     $MyInvocation.MyCommand.ScriptBlock | Out-File $tempScript -Encoding UTF8 -ErrorAction SilentlyContinue
   }
 
-  # -File 모드에서는 -NoExit 무시됨 → -Command 사용
-  if ($Token) {
-    $argList = "-NoExit -ExecutionPolicy Bypass -Command `"& '$tempScript' -Token '$Token'`""
-  } else {
-    $argList = "-NoExit -ExecutionPolicy Bypass -Command `"& '$tempScript'`""
-  }
+  # 토큰은 임시파일로만 전달 (명령줄에 넣으면 따옴표 파싱 문제)
+  # -Command 에서 & {} 블록으로 감싸서 오류 시에도 창 유지
+  $argList = "-NoExit -ExecutionPolicy Bypass -Command `"& { & '$tempScript'; if (`$LASTEXITCODE) { Write-Host ''; Write-Host '  오류 발생. 이 창을 닫으려면 exit 입력' -ForegroundColor Yellow } }`""
 
   try {
     Start-Process powershell.exe -Verb RunAs -ArgumentList $argList -Wait
   } catch {
     Write-Host "  관리자 승격 실패 — 일반 권한으로 계속합니다 (일부 기능 제한)" -ForegroundColor Yellow
+    # 승격 실패 시 현재 창에서 직접 실행
+    & $tempScript
   }
 
   # 임시 파일 정리
