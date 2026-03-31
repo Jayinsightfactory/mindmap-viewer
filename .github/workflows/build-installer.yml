@@ -59,9 +59,14 @@ jobs:
           $iscc = "C:\InnoSetup\ISCC.exe"
           if (-not (Test-Path $iscc)) { throw "ISCC not found at $iscc" }
           New-Item -ItemType Directory -Force -Path dist | Out-Null
-          & $iscc /O"dist" setup\orbit-setup.iss 2>&1 | Tee-Object -FilePath "dist\iscc-output.txt"
-          $exitCode = $LASTEXITCODE
-          if ($exitCode -ne 0) { exit 1 }
+          # ISCC 실행 — stdout/stderr 모두 캡처 후 출력
+          $proc = Start-Process -FilePath $iscc -ArgumentList '/O"dist"', 'setup\orbit-setup.iss' -NoNewWindow -Wait -PassThru -RedirectStandardOutput "dist\iscc-stdout.txt" -RedirectStandardError "dist\iscc-stderr.txt"
+          Write-Host "=== STDOUT ==="
+          if (Test-Path "dist\iscc-stdout.txt") { Get-Content "dist\iscc-stdout.txt" }
+          Write-Host "=== STDERR ==="
+          if (Test-Path "dist\iscc-stderr.txt") { Get-Content "dist\iscc-stderr.txt" }
+          Write-Host "=== Exit code: $($proc.ExitCode) ==="
+          if ($proc.ExitCode -ne 0) { exit 1 }
           Copy-Item dist\OrbitAI-Setup-*.exe dist\OrbitAI-Setup.exe -Force
           Get-ChildItem dist
         shell: powershell
@@ -71,7 +76,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: build-log
-          path: dist/iscc-output.txt
+          path: |
+            dist/iscc-stdout.txt
+            dist/iscc-stderr.txt
 
       - name: GitHub Release에 업로드
         uses: softprops/action-gh-release@v2
