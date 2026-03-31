@@ -624,6 +624,26 @@ async function renderSetupPanel() {
       <div style="font-size:10px;color:#6e7681;margin-top:4px;text-align:center">
         Windows 10/11 64bit · 관리자 권한 불필요
       </div>
+      ${_token ? `
+      <div style="margin-top:8px;background:#010409;border:1px solid #21262d;border-radius:8px;padding:10px 12px;position:relative">
+        <div style="font-size:10px;color:#6e7681;margin-bottom:5px">🔑 설치 코드 — EXE 실행 후 입력창에 붙여넣기</div>
+        <code id="sp-install-token-only"
+          style="font-family:'Consolas','Courier New',monospace;font-size:12px;
+          color:#e3b341;word-break:break-all;line-height:1.6;display:block;
+          padding-right:52px">${escHtml(_token)}</code>
+        <button onclick="(function(){
+          const el=document.getElementById('sp-install-token-only');
+          navigator.clipboard.writeText(el.textContent.trim()).then(()=>{
+            const b=document.getElementById('sp-token-copy-btn');
+            b.textContent='✅';b.style.background='#238636';
+            setTimeout(()=>{b.textContent='복사';b.style.background='#6e4010';},2000);
+          }).catch(()=>prompt('복사:',el.textContent.trim()));
+        })()" id="sp-token-copy-btn"
+          style="position:absolute;top:8px;right:8px;background:#6e4010;border:1px solid #e3b341;
+          border-radius:5px;color:#e3b341;font-size:10px;font-weight:600;
+          padding:3px 8px;cursor:pointer">복사</button>
+      </div>
+      ` : ''}
     </div>
 
     <div style="background:#010409;border:1px solid #21262d;border-radius:8px;
