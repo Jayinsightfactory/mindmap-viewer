@@ -33,7 +33,7 @@ UninstallDisplayName={#MyAppName}
 UninstallDisplayIcon={app}\daemon\orbit-launcher.vbs
 
 [Languages]
-Name: "korean"; MessagesFile: "compiler:Languages\Korean.isl"
+Name: "default"; MessagesFile: "compiler:Default.isl"
 
 [Messages]
 ; 라이선스 화면 대신 개인정보 안내로 대체
