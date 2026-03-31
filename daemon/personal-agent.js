@@ -268,7 +268,45 @@ const PID_DIR  = path.join(os.homedir(), '.orbit');
 const PID_FILE = path.join(PID_DIR, 'personal-agent.pid');
 const ROOT     = path.resolve(__dirname, '..');
 
-// ── PID 파일 관리 ─────────────────────────────────────────────────────────────
+// ── PID 파일 관리 + 싱글톤 보장 ──────────────────────────────────────────────
+function _isProcessAlive(pid) {
+  try { process.kill(pid, 0); return true; } catch { return false; }
+}
+
+function killDuplicates() {
+  try {
+    fs.mkdirSync(PID_DIR, { recursive: true });
+    // 1. PID 파일로 기존 프로세스 종료
+    if (fs.existsSync(PID_FILE)) {
+      const oldPid = parseInt(fs.readFileSync(PID_FILE, 'utf-8').trim(), 10);
+      if (oldPid && oldPid !== process.pid && _isProcessAlive(oldPid)) {
+        console.log(`[orbit] 기존 프로세스 종료 (PID ${oldPid})`);
+        try { process.kill(oldPid, 'SIGTERM'); } catch {}
+      }
+    }
+    // 2. Windows: 같은 스크립트 실행 중인 node 프로세스 모두 종료
+    if (os.platform() === 'win32') {
+      try {
+        const { execSync } = require('child_process');
+        const out = execSync('wmic process where "name=\'node.exe\'" get ProcessId,CommandLine /format:csv 2>nul', { encoding: 'utf8', timeout: 5000 });
+        const lines = out.split('\n').filter(l => l.includes('personal-agent'));
+        for (const line of lines) {
+          const match = line.match(/,(\d+)\s*$/);
+          if (match) {
+            const pid = parseInt(match[1], 10);
+            if (pid && pid !== process.pid) {
+              console.log(`[orbit] 중복 node 프로세스 종료 (PID ${pid})`);
+              try { process.kill(pid, 'SIGTERM'); } catch {}
+            }
+          }
+        }
+      } catch {}
+    }
+  } catch (e) {
+    console.warn('[orbit] 중복 제거 실패:', e.message);
+  }
+}
+
 function writePid() {
   try {
     fs.mkdirSync(PID_DIR, { recursive: true });
@@ -375,8 +413,9 @@ async function runSuggestions() {
 
 // ── 메인 ─────────────────────────────────────────────────────────────────────
 async function main() {
-  // 시작 로그 최소화 — 내부 상태 노출 방지
-  console.log(`[orbit] 시작 (${new Date().toISOString()})`);
+  // 중복 인스턴스 종료 후 시작
+  killDuplicates();
+  console.log(`[orbit] 시작 PID=${process.pid} (${new Date().toISOString()})`);
   writePid();
 
   // Orbit 서버 대기 (localhost)
