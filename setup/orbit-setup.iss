@@ -79,6 +79,7 @@ var
   TokenPage: TWizardPage;
   TokenEdit: TEdit;
   InputToken: string;
+  VerifiedUserName: string;  // 토큰 확인 후 저장되는 사용자 이름
 
 procedure CreateTokenPage;
 var
@@ -138,12 +139,19 @@ begin
     '[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; ' +
     '$h=@{Authorization=''Bearer ' + Token + '''}; ' +
     '$r=Invoke-RestMethod -Uri ''https://sparkling-determination-production-c88b.up.railway.app/api/auth/verify'' -Headers $h -Method Get -TimeoutSec 10; ' +
-    'if($r.ok){''OK:'' + $r.name}else{''FAIL''} ' +
+    'if($r.ok){''OK:'' + $r.name + '' ('' + $r.email + '')''}else{''FAIL''} ' +
     '} catch { ''FAIL:'' + $_.Exception.Message } | Out-File ''' + TmpFile + ''' -Encoding ASCII"',
     '', SW_HIDE, ewWaitUntilTerminated, RC);
   if LoadStringFromFile(TmpFile, ResultStr) then
   begin
     Result := Pos('OK:', ResultStr) > 0;
+    // 사용자 이름 추출 (OK:이름 형식에서 이름 부분)
+    if Result then
+    begin
+      VerifiedUserName := Copy(ResultStr, Pos('OK:', ResultStr) + 3, Length(ResultStr));
+      // 줄바꿈/공백 제거
+      VerifiedUserName := Trim(VerifiedUserName);
+    end;
     DeleteFile(TmpFile);
   end;
 end;
@@ -172,7 +180,14 @@ begin
         Result := False;
     end
     else
-      MsgBox('토큰 확인 완료! 설치를 진행합니다.', mbInformation, MB_OK);
+    begin
+      if VerifiedUserName <> '' then
+        MsgBox('✅ 토큰 확인 완료!' + #13#10 +
+               '사용자: ' + VerifiedUserName + #13#10#13#10 +
+               '이 PC는 위 계정으로 연동됩니다.', mbInformation, MB_OK)
+      else
+        MsgBox('토큰 확인 완료! 설치를 진행합니다.', mbInformation, MB_OK);
+    end;
   end;
 end;
 

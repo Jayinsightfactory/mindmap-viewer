@@ -212,17 +212,30 @@ Write-Host "  [5/7] 설정 저장..." -ForegroundColor Cyan
 New-Item -ItemType Directory -Force -Path $OrbitDir | Out-Null
 New-Item -ItemType Directory -Force -Path "$DIR\data", "$DIR\snapshots" -ErrorAction SilentlyContinue | Out-Null
 
-$cfgToken = ""; $uid = "local"
+$cfgToken = ""; $uid = "local"; $userName = ""; $userEmail = ""
 if ($Token -and $Token.Length -gt 5) {
   $cfgToken = $Token
   try {
     $me = Invoke-RestMethod -Uri "$REMOTE/api/auth/me" -Headers @{Authorization="Bearer $Token"} -TimeoutSec 5 -ErrorAction Stop
-    $uid = if ($me.id) { $me.id } elseif ($me.user.id) { $me.user.id } else { "local" }
-  } catch {}
+    $meUser = if ($me.user) { $me.user } else { $me }
+    $uid       = if ($meUser.id)    { $meUser.id }    else { "local" }
+    $userName  = if ($meUser.name)  { $meUser.name }  else { "" }
+    $userEmail = if ($meUser.email) { $meUser.email } else { "" }
+    if ($userName) {
+      Write-Host ""
+      Write-Host "  ✅ 토큰 확인 완료: $userName ($userEmail)" -ForegroundColor Green
+      Write-Host ""
+    }
+  } catch {
+    Write-Host "  [참고] 토큰 서버 확인 실패 — 로컬 저장 후 계속 진행" -ForegroundColor Yellow
+  }
 } elseif (Test-Path "$env:USERPROFILE\.orbit-config.json") {
   try {
     $old = Get-Content "$env:USERPROFILE\.orbit-config.json" -Raw | ConvertFrom-Json
     $cfgToken = $old.token; $uid = $old.userId
+    if ($uid -and $uid -ne "local") {
+      Write-Host "  기존 설정 유지: userId=$uid" -ForegroundColor Gray
+    }
   } catch {}
 }
 

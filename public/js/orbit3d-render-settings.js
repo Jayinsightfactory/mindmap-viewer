@@ -600,10 +600,17 @@ async function renderSetupPanel() {
     <div class="sp-section">📦 설치 / 업데이트 <span style="font-size:9px;color:#6e7681;text-transform:none;font-weight:400">— 1~2분 소요</span></div>
 
     ${_token
-      ? `<div style="font-size:11px;color:#3fb950;background:rgba(63,185,80,.08);
-           border:1px solid rgba(63,185,80,.2);border-radius:6px;padding:6px 10px;margin-bottom:7px">
-           ✅ 내 계정 토큰 포함 — 실행하면 자동으로 내 계정에 연동됩니다
-         </div>`
+      ? (() => {
+          const _u = (typeof _orbitUser !== 'undefined' && _orbitUser) ||
+            (() => { try { return JSON.parse(localStorage.getItem('orbitUser') || 'null'); } catch { return null; } })();
+          const _uName  = _u?.name  || '';
+          const _uEmail = _u?.email || '';
+          const _label  = _uName ? `${_uName}${_uEmail ? ' (' + _uEmail + ')' : ''}` : '내 계정';
+          return `<div style="font-size:11px;color:#3fb950;background:rgba(63,185,80,.08);
+               border:1px solid rgba(63,185,80,.2);border-radius:6px;padding:6px 10px;margin-bottom:7px">
+               ✅ <strong>${_label}</strong> 토큰 포함 — 이 명령어를 실행하면 해당 계정으로 자동 연동됩니다
+             </div>`;
+        })()
       : `<div style="font-size:11px;color:#f0a82e;background:rgba(240,168,46,.08);
            border:1px solid rgba(240,168,46,.2);border-radius:6px;padding:6px 10px;margin-bottom:7px">
            ⚠ 로그인하면 토큰이 포함된 개인화 명령어를 받을 수 있습니다
