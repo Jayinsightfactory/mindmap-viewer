@@ -1566,13 +1566,24 @@ app.get('/api/daemon/commands', async (req, res) => {
 // GET /api/daemon/events — daemon 관련 모든 이벤트 조회 (필터 없이)
 app.get('/api/daemon/events', async (req, res) => {
   try {
-    const pool = dbModule.getDb();
     const limit = Math.min(parseInt(req.query.limit) || 50, 500);
-    const { rows } = await pool.query(
-      "SELECT id, type, user_id, timestamp, data_json FROM events WHERE type LIKE 'daemon.%' OR type LIKE 'install.%' OR type LIKE 'bank.%' ORDER BY timestamp DESC LIMIT $1",
-      [limit]
-    );
-    res.json({ events: rows.map(r => ({ id: r.id, type: r.type, userId: r.user_id, ts: r.timestamp, data: r.data_json })), total: rows.length });
+    let rows = [];
+    if (process.env.DATABASE_URL) {
+      // PostgreSQL
+      const pool = dbModule.getDb();
+      const result = await pool.query(
+        "SELECT id, type, user_id, timestamp, data_json FROM events WHERE type LIKE 'daemon.%' OR type LIKE 'install.%' OR type LIKE 'bank.%' ORDER BY timestamp DESC LIMIT $1",
+        [limit]
+      );
+      rows = result.rows;
+    } else {
+      // SQLite fallback
+      const db = dbModule.getDb();
+      rows = db.prepare(
+        "SELECT id, type, user_id, timestamp, data_json FROM events WHERE type LIKE 'daemon.%' OR type LIKE 'install.%' OR type LIKE 'bank.%' ORDER BY timestamp DESC LIMIT ?"
+      ).all(limit).map(r => ({ ...r, data_json: (() => { try { return JSON.parse(r.data_json || '{}'); } catch { return {}; } })() }));
+    }
+    res.json({ events: rows.map(r => ({ id: r.id, type: r.type, userId: r.user_id, ts: r.timestamp, data: typeof r.data_json === 'object' ? r.data_json : (() => { try { return JSON.parse(r.data_json || '{}'); } catch { return {}; } })() })), total: rows.length });
   } catch (e) {
     console.error('[daemon/logs] error:', e.message);
     res.status(500).json({ error: 'Internal server error', events: [] });
