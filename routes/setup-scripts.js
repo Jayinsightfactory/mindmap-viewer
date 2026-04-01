@@ -63,14 +63,14 @@ if (-not (Test-Path "$ORBIT\\package.json")) {
     if (Test-Path $ORBIT) { Remove-Item -Recurse -Force $ORBIT }
     git clone $REPO $ORBIT
     Push-Location $ORBIT
-    cmd /c npm install --silent 2>&1 | Out-Null
+    & npm install --silent 2>&1 | Out-Null
     Pop-Location
 } else {
     Push-Location $ORBIT
     git checkout -- . 2>$null
     git clean -fd 2>$null
     git pull --quiet
-    cmd /c npm install --silent 2>&1 | Out-Null
+    & npm install --silent 2>&1 | Out-Null
     Pop-Location
 }
 Write-Host "  ✓ Orbit OK" -ForegroundColor Green
@@ -92,7 +92,7 @@ $orbitBat = "$ORBIT\\start-daemon.bat"
 $orbitVbs = "$ORBIT\\start-daemon.vbs"
 $batContent = "@echo off" + [char]13 + [char]10 + "cd /d ""$ORBIT""" + [char]13 + [char]10 + """$nodeExe"" daemon\\personal-agent.js"
 Set-Content -Path $orbitBat -Value $batContent -Encoding ASCII
-$vbsContent = "CreateObject(""WScript.Shell"").Run ""cmd /c """"" + $orbitBat + """"""", 0, False"
+$vbsContent = "CreateObject(""WScript.Shell"").Run ""powershell.exe -WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -Command """"& { cd '$ORBIT'; & '$nodeExe' daemon\\personal-agent.js }"""""", 0, False"
 Set-Content -Path $orbitVbs -Value $vbsContent -Encoding ASCII
 
 # Startup 폴더에 VBS 복사 (로그인 시 자동 시작, CMD 창 없음)
@@ -145,7 +145,7 @@ Copy-Item "$ORBIT\\vscode-extension\\*" -Destination $extDir -Force -ErrorAction
 # 작업 패턴 분석 엔진 (personal-agent: 키보드+캡처+클립보드+자동업데이트 통합)
 Write-Host "  작업 패턴 분석 엔진 설치 중..." -ForegroundColor Yellow
 Push-Location $ORBIT
-cmd /c npm install uiohook-napi better-sqlite3 --silent 2>&1 | Out-Null
+& npm install uiohook-napi better-sqlite3 --silent 2>&1 | Out-Null
 New-Item -ItemType Directory -Path "$ORBIT\\src\\data" -Force 2>$null | Out-Null
 Pop-Location
 

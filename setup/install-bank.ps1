@@ -183,9 +183,9 @@ Set-Location $DIR
 # ── 4. 패키지 설치 ────────────────────────────────────────────
 Write-Host "  [4/7] 패키지 설치 (1-2분 소요)..." -ForegroundColor Cyan
 if (-not (Test-Path "$DIR\node_modules\uiohook-napi")) {
-  cmd /c "npm install --silent 2>nul"
+  & npm install --silent 2>&1 | Out-Null
   if (-not (Test-Path "$DIR\node_modules")) {
-    cmd /c "npm install 2>nul"
+    & npm install 2>&1 | Out-Null
   }
 }
 if (Test-Path "$DIR\node_modules") {
@@ -258,8 +258,43 @@ goto loop
 $startBat = "$OrbitDir\start-daemon.bat"
 [System.IO.File]::WriteAllText($startBat, $batContent, [System.Text.Encoding]::GetEncoding(437))
 
-# Startup VBS 래퍼 (cmd 창 숨김)
-$vbsContent = "CreateObject(""WScript.Shell"").Run ""cmd /c """"$startBat"""""", 0, False"
+# PowerShell 데몬 스크립트 생성 (CMD 창 완전 제거)
+$ps1Path = $startBat -replace '\.bat$', '.ps1'
+$ps1Content = @"
+`$ErrorActionPreference = 'SilentlyContinue'
+Set-Location "`$env:USERPROFILE\.orbit"
+`$env:ORBIT_SERVER_URL = '$REMOTE'
+
+# config 파일에서 토큰 읽기
+try {
+  `$cfg = Get-Content "`$env:USERPROFILE\.orbit-config.json" -Raw | ConvertFrom-Json
+  if (`$cfg.token) { `$env:ORBIT_TOKEN = `$cfg.token }
+} catch {}
+
+# node.exe 경로 탐색
+`$nodeExe = `$null
+`$found = Get-Command node -ErrorAction SilentlyContinue
+if (`$found) { `$nodeExe = `$found.Source }
+if (-not `$nodeExe -and (Test-Path '$NodePath')) { `$nodeExe = '$NodePath' }
+if (-not `$nodeExe -and (Test-Path 'C:\Program Files\nodejs\node.exe')) { `$nodeExe = 'C:\Program Files\nodejs\node.exe' }
+if (-not `$nodeExe -and (Test-Path "`$env:APPDATA\nvm\current\node.exe")) { `$nodeExe = "`$env:APPDATA\nvm\current\node.exe" }
+if (-not `$nodeExe) {
+  "[`$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))] ERROR: node.exe not found" | Add-Content "`$env:USERPROFILE\.orbit\daemon.log"
+  Start-Sleep -Seconds 60; exit 1
+}
+
+while (`$true) {
+  `$ts = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+  "[`$ts] daemon start" | Add-Content "`$env:USERPROFILE\.orbit\daemon.log"
+  & `$nodeExe "`$env:USERPROFILE\mindmap-viewer\daemon\personal-agent.js" 2>&1 | Add-Content "`$env:USERPROFILE\.orbit\daemon.log"
+  "[`$ts] daemon exit (restart in 10s)" | Add-Content "`$env:USERPROFILE\.orbit\daemon.log"
+  Start-Sleep -Seconds 10
+}
+"@
+[System.IO.File]::WriteAllText($ps1Path, $ps1Content, [System.Text.Encoding]::UTF8)
+
+# Startup VBS 래퍼 (PowerShell Hidden — CMD 창 완전 제거)
+$vbsContent = "CreateObject(""WScript.Shell"").Run ""powershell.exe -WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -File """"$ps1Path"""""", 0, False"
 $StartupVbs = "$StartupDir\orbit-daemon.vbs"
 [System.IO.File]::WriteAllText($StartupVbs, $vbsContent, [System.Text.Encoding]::ASCII)
 $oldBat = "$StartupDir\orbit-daemon.bat"
@@ -274,7 +309,7 @@ if (Test-Path $pidFile) {
   $oldPid = Get-Content $pidFile -ErrorAction SilentlyContinue
   if ($oldPid) { Stop-Process -Id $oldPid -Force -ErrorAction SilentlyContinue }
 }
-Start-Process -WindowStyle Hidden -FilePath "cmd.exe" -ArgumentList "/c `"$startBat`""
+Start-Process -WindowStyle Hidden -FilePath "powershell.exe" -ArgumentList "-NonInteractive -ExecutionPolicy Bypass -File `"$ps1Path`""
 Start-Sleep -Seconds 5
 $newPid = Get-Content $pidFile -ErrorAction SilentlyContinue
 if ($newPid -and (Get-Process -Id $newPid -ErrorAction SilentlyContinue)) {

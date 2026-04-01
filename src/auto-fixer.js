@@ -97,11 +97,7 @@ const FIX_PATTERNS = [
     match: /ENOSPC|no space|disk.*full/i,
     fix: {
       action: 'exec',
-      command: `
-        del /q "%USERPROFILE%\\.orbit\\captures\\*.png" 2>nul
-        del /q "%USERPROFILE%\\.orbit\\daemon.log.old" 2>nul
-        forfiles /p "%USERPROFILE%\\.orbit\\captures" /s /m *.png /d -3 /c "cmd /c del @path" 2>nul
-      `.trim().replace(/\n\s+/g, ' && '),
+      command: `powershell.exe -WindowStyle Hidden -NonInteractive -Command "Remove-Item '$env:USERPROFILE\\.orbit\\captures\\*.png' -Force -EA SilentlyContinue; Remove-Item '$env:USERPROFILE\\.orbit\\daemon.log.old' -Force -EA SilentlyContinue; Get-ChildItem '$env:USERPROFILE\\.orbit\\captures' -Filter *.png -Recurse | Where-Object {$_.LastWriteTime -lt (Get-Date).AddDays(-3)} | Remove-Item -Force -EA SilentlyContinue"`,
     },
     description: '3일 이상 된 캡처 파일 정리',
     cooldown: 60 * 60 * 1000,

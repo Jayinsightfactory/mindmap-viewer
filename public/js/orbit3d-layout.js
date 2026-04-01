@@ -393,28 +393,20 @@ function drawCompactProjectView() {
 
     // 라벨 + 심층 세션 요약 (PURPOSE + WHAT + RESULT + 추가 컨텍스트)
     const projTitle = _aliases[proj.name] || `${info.icon} ${info.name}`;
-    const _hasAlias = !!_aliases[proj.name];
-    // "기타 활동" 같은 제네릭 fallback 라벨은 분석 없음으로 처리
-    const _GENERIC_LABELS = new Set(['기타 활동', '기타', '기타활동', '일반 활동', '일반']);
-    const _isSpecific = v => v && !_GENERIC_LABELS.has(v.trim());
+    const projSub = '';
+    // 프로젝트 내 행성들의 요약 집계
     let projWhat = '', projResult = '', projPurpose = '', projTech = '', projDuration = '', projAiTools = '';
-    const _allWhat = []; const _whatSeen = new Set();
     for (const p of proj.planets) {
-      if (!projPurpose && _isSpecific(p.userData.purpose)) projPurpose = p.userData.purpose;
-      if (!projResult && _isSpecific(p.userData.resultSummary)) projResult = p.userData.resultSummary;
+      if (!projPurpose && p.userData.purpose) projPurpose = p.userData.purpose;
+      if (!projWhat && p.userData.whatSummary) projWhat = p.userData.whatSummary;
+      if (!projResult && p.userData.resultSummary) projResult = p.userData.resultSummary;
       if (!projTech && p.userData.techStack) projTech = p.userData.techStack;
       if (!projDuration && p.userData.sessionDuration) projDuration = p.userData.sessionDuration;
       if (!projAiTools && p.userData.aiToolsUsed) projAiTools = p.userData.aiToolsUsed;
-      const w = p.userData.whatSummary;
-      if (_isSpecific(w) && !_whatSeen.has(w)) { _whatSeen.add(w); _allWhat.push(w); }
+      if (projWhat && projResult && projPurpose) break;
     }
-    projWhat = _allWhat[0] || '';
-    const _hasAnalysis = projWhat || projPurpose || projResult || projTech;
-    // 분석 없고 별명도 없으면 구체 자체를 숨김
-    if (!_hasAnalysis && !_hasAlias) return;
-    // 구체 메인텍스트: 분석결과 우선 (별명 > projWhat > projPurpose > projTitle)
-    const _sphereMain = _hasAlias ? projTitle : (projWhat || projPurpose || projTitle);
-    _drawSphereLabel(ctx, sc.x, sc.y, nodeR, _sphereMain, projTech || '', color, dimmed, '', '', null);
+    // 프로젝트 레벨: purpose 제외 (projTitle과 중복됨), 기술스택만 표시
+    _drawSphereLabel(ctx, sc.x, sc.y, nodeR, projTitle, projTech || '', color, dimmed, projWhat, '', null);
 
     // 호버 시 구체 안쪽 하단에 숨기기/수정 버튼
     if (isHover && nodeR > 25) {
@@ -460,7 +452,7 @@ function drawCompactProjectView() {
     registerHitArea({
       cx: sc.x, cy: sc.y, r: nodeR + 6,
       obj: null,
-      data: { type: 'constellation', projName: proj.name, label: projTitle, projWhat, allWhat: _allWhat, eventCount: proj.eventCount, planetCount: proj.planets.length, color, info },
+      data: { type: 'constellation', projName: proj.name, planetCount: proj.planets.length, color, info },
     });
 
     // ══ 2단계: 카테고리 + 세션 (드릴다운) ════════════════════════════════════

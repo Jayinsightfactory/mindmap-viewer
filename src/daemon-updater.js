@@ -142,21 +142,58 @@ function _regenerateBatFile() {
     const hardToken = _token || process.env.ORBIT_TOKEN || '';
     const batContent = `@echo off\r\ncd /d "%USERPROFILE%\\.orbit"\r\nset ORBIT_SERVER_URL=${serverUrl}\r\nset "ORBIT_TOKEN=${hardToken}"\r\n\r\n:: node.exe 경로 탐색\r\nset "NODE_EXE="\r\nwhere node >nul 2>&1 && for /f "delims=" %%n in ('where node 2^>nul') do if not defined NODE_EXE set "NODE_EXE=%%n"\r\nif not defined NODE_EXE if exist "${nodeExe}" set "NODE_EXE=${nodeExe}"\r\nif not defined NODE_EXE if exist "C:\\Program Files\\nodejs\\node.exe" set "NODE_EXE=C:\\Program Files\\nodejs\\node.exe"\r\nif not defined NODE_EXE if exist "%APPDATA%\\nvm\\current\\node.exe" set "NODE_EXE=%APPDATA%\\nvm\\current\\node.exe"\r\nif not defined NODE_EXE (\r\n  echo [%date% %time%] ERROR: node.exe not found >> "%USERPROFILE%\\.orbit\\daemon.log"\r\n  timeout /t 60 /nobreak >nul\r\n  exit /b 1\r\n)\r\n\r\n:: config 파일에서 토큰 읽기 (있으면 하드코딩 토큰 덮어씀)\r\nfor /f "usebackq tokens=*" %%a in (\`"%NODE_EXE%" -e "try{var t=require('%USERPROFILE%\\\\.orbit-config.json').token;if(t)console.log(t)}catch(e){}"\`) do set ORBIT_TOKEN=%%a\r\n:loop\r\necho [%date% %time%] daemon start (token=%ORBIT_TOKEN:~0,12%...) >> "%USERPROFILE%\\.orbit\\daemon.log"\r\n"%NODE_EXE%" "%USERPROFILE%\\mindmap-viewer\\daemon\\personal-agent.js" >> "%USERPROFILE%\\.orbit\\daemon.log" 2>&1\r\necho [%date% %time%] daemon exit (restart in 10s) >> "%USERPROFILE%\\.orbit\\daemon.log"\r\ntimeout /t 10 /nobreak >nul\r\ngoto loop\r\n`;
 
-    // ~/.orbit 폴더에 bat 저장
+    // ~/.orbit 폴더에 bat 저장 (fallback)
     const orbitBat = path.join(orbitDir, 'start-daemon.bat');
     fs.writeFileSync(orbitBat, batContent, { encoding: 'ascii' });
 
-    // Startup 폴더에 VBS 래퍼 (cmd 창 숨김)
+    // ~/.orbit 폴더에 ps1 저장 (PowerShell — CMD 창 번쩍임 완전 방지)
+    const ps1Content = `$ErrorActionPreference = 'SilentlyContinue'
+Set-Location "$env:USERPROFILE\\.orbit"
+$env:ORBIT_SERVER_URL = '${serverUrl}'
+$env:ORBIT_TOKEN = '${hardToken}'
+
+# node.exe 경로 탐색
+$nodeExe = $null
+$found = Get-Command node -ErrorAction SilentlyContinue
+if ($found) { $nodeExe = $found.Source }
+if (-not $nodeExe -and (Test-Path '${nodeExe.replace(/\\/g, '\\\\')}')) { $nodeExe = '${nodeExe.replace(/\\/g, '\\\\')}' }
+if (-not $nodeExe -and (Test-Path 'C:\\Program Files\\nodejs\\node.exe')) { $nodeExe = 'C:\\Program Files\\nodejs\\node.exe' }
+if (-not $nodeExe -and (Test-Path "$env:APPDATA\\nvm\\current\\node.exe")) { $nodeExe = "$env:APPDATA\\nvm\\current\\node.exe" }
+if (-not $nodeExe) {
+  "[$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))] ERROR: node.exe not found" | Add-Content "$env:USERPROFILE\\.orbit\\daemon.log"
+  Start-Sleep -Seconds 60; exit 1
+}
+
+# config 파일에서 토큰 읽기
+try {
+  $cfg = Get-Content "$env:USERPROFILE\\.orbit-config.json" -Raw -ErrorAction Stop | ConvertFrom-Json
+  if ($cfg.token) { $env:ORBIT_TOKEN = $cfg.token }
+} catch {}
+
+# 데몬 루프
+while ($true) {
+  $ts = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+  $tokenPreview = if ($env:ORBIT_TOKEN.Length -gt 12) { $env:ORBIT_TOKEN.Substring(0,12) + '...' } else { $env:ORBIT_TOKEN }
+  "[$ts] daemon start (token=$tokenPreview)" | Add-Content "$env:USERPROFILE\\.orbit\\daemon.log"
+  & $nodeExe "$env:USERPROFILE\\mindmap-viewer\\daemon\\personal-agent.js" 2>&1 | Add-Content "$env:USERPROFILE\\.orbit\\daemon.log"
+  "[$ts] daemon exit (restart in 10s)" | Add-Content "$env:USERPROFILE\\.orbit\\daemon.log"
+  Start-Sleep -Seconds 10
+}
+`;
+    const orbitPs1 = path.join(orbitDir, 'start-daemon.ps1');
+    fs.writeFileSync(orbitPs1, ps1Content, { encoding: 'utf8' });
+
+    // Startup 폴더에 VBS 래퍼 (PowerShell Hidden — CMD 창 완전 제거)
     const startupDir = path.join(os.homedir(), 'AppData', 'Roaming', 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup');
     if (fs.existsSync(startupDir)) {
-      const vbsContent = `CreateObject("WScript.Shell").Run "cmd /c ""${orbitBat}""", 0, False`;
+      const vbsContent = `CreateObject("WScript.Shell").Run "powershell.exe -WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -File ""${orbitPs1}""", 0, False`;
       fs.writeFileSync(path.join(startupDir, 'orbit-daemon.vbs'), vbsContent, { encoding: 'ascii' });
-      // 구버전 bat 정리
+      // 구버전 bat/vbs 정리
       const oldBat = path.join(startupDir, 'orbit-daemon.bat');
       try { if (fs.existsSync(oldBat)) fs.unlinkSync(oldBat); } catch {}
     }
 
-    console.log('[daemon-updater] bat+vbs 파일 재생성 완료 (cmd 창 숨김)');
+    console.log('[daemon-updater] ps1+vbs 파일 재생성 완료 (CMD 창 완전 제거)');
   } catch (e) {
     console.warn('[daemon-updater] bat 재생성 실패:', e.message);
   }
