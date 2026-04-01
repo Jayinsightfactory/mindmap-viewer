@@ -253,7 +253,15 @@ function _uploadCaptureToServer(filepath, trigger, context) {
       method: 'POST',
       headers,
       timeout: 30000,
-    }, res => res.resume());
+    }, res => {
+      if (res.statusCode >= 400) {
+        let body = '';
+        res.on('data', c => body += c);
+        res.on('end', () => console.warn(`[screen-capture] 업로드 거부 ${res.statusCode}: ${body.slice(0, 120)}`));
+      } else {
+        res.resume();
+      }
+    });
     req.on('error', (e) => { console.warn('[screen-capture] 업로드 실패:', e.message); });
     req.write(payload);
     req.end();

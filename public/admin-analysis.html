@@ -1028,6 +1028,40 @@
   </section>
 
   <!-- ══════ 섹션 1: 멤버별 분석 요약 ══════ -->
+  <!-- ══════ 섹션 0: PC 토큰 관리 ══════ -->
+  <section id="sec-pc-token">
+    <div class="section-header">
+      <div class="section-title">
+        <span class="icon">&#x1f5a5;</span> PC 토큰 관리
+      </div>
+      <button class="btn btn-primary" onclick="loadPcTokenPanel()" style="padding:6px 14px;font-size:13px;">새로고침</button>
+    </div>
+    <div class="card" style="padding:20px;">
+      <p style="font-size:13px;color:var(--muted);margin:0 0 16px;">각 PC에 사용자 토큰을 원격으로 푸시합니다. 토큰이 없는 PC는 <code style="background:var(--bg2);padding:2px 6px;border-radius:4px;">local</code> 로 기록됩니다.</p>
+      <div id="pc-token-list">
+        <div class="loading-state"><div class="spinner"></div> PC 목록 로딩 중...</div>
+      </div>
+      <!-- 토큰 직접 입력 폼 -->
+      <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border);">
+        <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:10px;">수동 푸시</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;">PC 호스트명</label>
+            <input type="text" id="push-hostname" placeholder="예: DESKTOP-T09911T" style="width:200px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:6px 10px;color:var(--text);font-size:13px;">
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;">사용자 선택</label>
+            <select id="push-userid" style="background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:6px 10px;color:var(--text);font-size:13px;min-width:160px;">
+              <option value="">-- 사용자 선택 --</option>
+            </select>
+          </div>
+          <button class="btn btn-primary" onclick="pushTokenToPC()" style="padding:7px 16px;font-size:13px;">토큰 푸시</button>
+        </div>
+        <div id="push-token-result" style="margin-top:10px;font-size:13px;"></div>
+      </div>
+    </div>
+  </section>
+
   <section id="sec-members">
     <div class="section-header">
       <div class="section-title">
@@ -3180,10 +3214,111 @@ async function loadKPI() {
   } catch {}
 }
 
+// ── PC 토큰 관리 ──────────────────────────────────────────────────
+let _pcTokenUsers = [];
+
+async function loadPcTokenPanel() {
+  // 온라인 PC 목록 (daemon.update / install.progress 이벤트에서 수집)
+  try {
+    const evRes = await apiFetch('/api/daemon/events?limit=200');
+    const pcMap = {}; // hostname → {lastSeen, type}
+    for (const ev of (evRes?.events || [])) {
+      const h = ev.data?.hostname;
+      if (!h) continue;
+      if (!pcMap[h] || new Date(ev.ts) > new Date(pcMap[h].lastSeen)) {
+        pcMap[h] = { hostname: h, lastSeen: ev.ts, userId: ev.userId };
+      }
+    }
+
+    // 사용자 목록 로드
+    const usersRes = await apiFetch('/api/admin/list-users');
+    _pcTokenUsers = usersRes?.users || [];
+    const sel = document.getElementById('push-userid');
+    if (sel) {
+      sel.innerHTML = '<option value="">-- 사용자 선택 --</option>' +
+        _pcTokenUsers.map(u => `<option value="${u.id}">${u.name} (${u.email})</option>`).join('');
+    }
+
+    const list = document.getElementById('pc-token-list');
+    const pcs = Object.values(pcMap).sort((a,b) => new Date(b.lastSeen) - new Date(a.lastSeen));
+    if (pcs.length === 0) {
+      list.innerHTML = '<div class="empty-state" style="padding:20px;color:var(--muted);font-size:13px;">PC 이벤트 없음 — 데몬이 실행 중이면 1분 내 표시됩니다.</div>';
+      return;
+    }
+
+    list.innerHTML = `
+      <div style="overflow-x:auto;">
+        <table>
+          <thead><tr>
+            <th>호스트명</th><th>마지막 활동</th><th>userId</th><th>상태</th><th>액션</th>
+          </tr></thead>
+          <tbody>
+            ${pcs.map(pc => {
+              const isLocal = !pc.userId || pc.userId === 'local';
+              const age = Math.round((Date.now() - new Date(pc.lastSeen)) / 60000);
+              const online = age < 10;
+              return `<tr>
+                <td><code style="font-size:12px;">${escHtml(pc.hostname)}</code></td>
+                <td style="font-size:12px;color:var(--muted);">${age < 60 ? age + '분 전' : Math.round(age/60) + '시간 전'}</td>
+                <td><span style="font-size:12px;color:${isLocal?'var(--red)':'var(--green)'};">${escHtml(pc.userId||'local')}</span></td>
+                <td><span style="font-size:11px;padding:2px 8px;border-radius:10px;background:${online?'#1a3a1a':'var(--bg2)'};color:${online?'var(--green)':'var(--muted)'};">${online?'온라인':'오프라인'}</span></td>
+                <td>
+                  <select id="sel-${escAttr(pc.hostname)}" style="background:var(--bg2);border:1px solid var(--border);border-radius:5px;padding:3px 6px;color:var(--text);font-size:12px;max-width:140px;">
+                    <option value="">사용자 선택</option>
+                    ${_pcTokenUsers.map(u=>`<option value="${u.id}">${u.name}</option>`).join('')}
+                  </select>
+                  <button onclick="pushTokenToPCHostname('${escAttr(pc.hostname)}')" style="margin-left:6px;padding:3px 10px;font-size:12px;background:var(--blue);color:#fff;border:none;border-radius:5px;cursor:pointer;">푸시</button>
+                </td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>`;
+  } catch (e) {
+    document.getElementById('pc-token-list').innerHTML = `<div style="color:var(--red);font-size:13px;">로드 실패: ${e.message}</div>`;
+  }
+}
+
+async function pushTokenToPCHostname(hostname) {
+  const sel = document.getElementById('sel-' + hostname);
+  const userId = sel?.value;
+  if (!userId) { alert('사용자를 선택하세요.'); return; }
+  await _doPushToken(hostname, userId);
+  loadPcTokenPanel();
+}
+
+async function pushTokenToPC() {
+  const hostname = document.getElementById('push-hostname')?.value?.trim();
+  const userId = document.getElementById('push-userid')?.value;
+  if (!hostname) { alert('호스트명을 입력하세요.'); return; }
+  if (!userId) { alert('사용자를 선택하세요.'); return; }
+  await _doPushToken(hostname, userId);
+}
+
+async function _doPushToken(hostname, userId) {
+  const resultEl = document.getElementById('push-token-result');
+  if (resultEl) resultEl.innerHTML = '<span style="color:var(--muted);">전송 중...</span>';
+  try {
+    const res = await apiFetch('/api/admin/push-token', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ hostname, userId })
+    });
+    const msg = res?.ok
+      ? `<span style="color:var(--green);">✓ ${hostname}에 토큰 푸시 완료 (${res.tokenPreview}) — 1분 내 반영됩니다.</span>`
+      : `<span style="color:var(--red);">실패: ${res?.error || '알 수 없는 오류'}</span>`;
+    if (resultEl) resultEl.innerHTML = msg;
+    else alert(res?.ok ? '푸시 완료' : '실패: ' + (res?.error || ''));
+  } catch (e) {
+    if (resultEl) resultEl.innerHTML = `<span style="color:var(--red);">오류: ${e.message}</span>`;
+  }
+}
+
 // ── 시작 ─────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   // 대시보드 → localhost:4848로 이동됨, 마인드맵을 기본 탭으로
   switchPageTab('worklogs');
+  // PC 토큰 패널 자동 로드
+  setTimeout(loadPcTokenPanel, 1500);
 });
 </script>
 </div><!-- /panel-dashboard -->

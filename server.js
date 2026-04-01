@@ -432,11 +432,12 @@ const hookLimiter = rateLimit({
 });
 
 app.use('/api/hook', hookLimiter);
-// /api/hook은 Content-Length 기반 사전 차단 (base64 이미지 OOM 방지)
+// /api/hook은 Content-Length 기반 사전 차단 (극단적 대용량 방지)
+// screen.capture + base64 이미지 포함 요청을 위해 2MB까지 허용 (Vision 큐잉)
 app.use('/api/hook', (req, res, next) => {
   const cl = parseInt(req.headers['content-length'] || '0', 10);
-  if (cl > 500 * 1024) { // 500KB 이상이면 거부 (base64 이미지 포함 의심)
-    return res.status(413).json({ error: 'Payload too large — 이미지는 Drive로 업로드하세요' });
+  if (cl > 2 * 1024 * 1024) { // 2MB 초과만 거부 (express.json limit과 동일)
+    return res.status(413).json({ error: 'Payload too large (max 2MB)' });
   }
   next();
 });
@@ -961,6 +962,14 @@ const { sendUpdateEmail } = (() => { try { return require('./src/email-notifier'
 // Vision 분석은 맥미니 전용 — Railway에서는 큐잉만 함
 if (!global._visionImageQueue) global._visionImageQueue = [];
 const _VISION_QUEUE_MAX = 10;
+
+// 힙 압력 모니터링 (768MB 힙에서 600MB 초과 시 Vision 큐잉 잠시 중단)
+let _heapPressure = false;
+setInterval(() => {
+  const heapMB = process.memoryUsage().heapUsed / 1024 / 1024;
+  _heapPressure = heapMB > 600;
+  if (_heapPressure) console.warn(`[heap] 압력 감지: ${Math.round(heapMB)}MB — Vision 큐잉 일시 중단`);
+}, 30000);
 
 // ─── 학습 분석 API ──────────────────────────────────────────────────────────
 const workLearner = (() => { try { return require('./src/work-learner'); } catch { return null; } })();
@@ -1635,6 +1644,98 @@ app.post('/api/daemon/command', (req, res) => {
     } catch {}
   }
   res.json({ ok: true, queued: hostname });
+});
+
+// POST /api/admin/push-token — PC에 사용자 토큰을 원격으로 푸시
+// { hostname, userId } → 해당 PC의 .orbit-config.json에 token 업데이트 명령 전송
+app.post('/api/admin/push-token', async (req, res) => {
+  const { user, isAdmin: _adminOk } = resolveAdmin(req);
+  const _secretOk = process.env.ADMIN_SECRET && (req.body || {}).secret === process.env.ADMIN_SECRET;
+  if (!_secretOk && !_adminOk) {
+    if (!user) return res.status(401).json({ error: 'unauthorized' });
+    return res.status(403).json({ error: 'admin only' });
+  }
+
+  const { hostname, userId, token: directToken } = req.body || {};
+  if (!hostname) return res.status(400).json({ error: 'hostname 필수' });
+  if (!userId && !directToken) return res.status(400).json({ error: 'userId 또는 token 필수' });
+
+  let tokenToSend = directToken;
+
+  if (!tokenToSend && userId) {
+    // 사용자의 기존 토큰 조회 (SQLite)
+    const { verifyToken: _vt, issueApiToken: _issue } = require('./src/auth');
+    const _db = (() => { try { return require('./src/db'); } catch { return null; } })();
+    if (_db?.getDb) {
+      const _sqlite = _db.getDb();
+      const row = _sqlite?.prepare?.('SELECT token FROM tokens WHERE userId = ? AND (expiresAt IS NULL OR expiresAt > datetime(\'now\')) ORDER BY rowid DESC LIMIT 1')?.get?.(userId);
+      tokenToSend = row?.token;
+    }
+    // SQLite에 없으면 PG에서 조회
+    if (!tokenToSend) {
+      try {
+        const pgDb = dbModule.getDb();
+        const { rows } = await pgDb.query(
+          `SELECT token FROM orbit_auth_tokens WHERE user_id = $1 AND (expires_at IS NULL OR expires_at > NOW()) ORDER BY created_at DESC LIMIT 1`,
+          [userId]
+        );
+        if (rows.length > 0) tokenToSend = rows[0].token;
+      } catch {}
+    }
+    // 그래도 없으면 새 토큰 발급
+    if (!tokenToSend) {
+      const { issueApiToken: _issue } = require('./src/auth');
+      tokenToSend = _issue(userId);
+    }
+  }
+
+  if (!tokenToSend) return res.status(500).json({ error: '토큰 조회/발급 실패' });
+
+  // config 명령으로 PC에 토큰 전달
+  if (!global._daemonCommands) global._daemonCommands = {};
+  if (!global._daemonCommands[hostname]) global._daemonCommands[hostname] = [];
+  const cmdTs = new Date().toISOString();
+  const cmdData = { token: tokenToSend, serverUrl: process.env.SERVER_URL || 'https://sparkling-determination-production-c88b.up.railway.app' };
+  global._daemonCommands[hostname].push({ action: 'config', data: cmdData, ts: cmdTs });
+  // 이후 restart 명령도 전달 (토큰 즉시 반영)
+  global._daemonCommands[hostname].push({ action: 'restart', ts: cmdTs });
+
+  // PG 영속 저장
+  try {
+    const _pool = dbModule.getDb ? dbModule.getDb() : null;
+    if (_pool) {
+      await _pool.query(
+        `INSERT INTO orbit_daemon_commands (hostname, action, command, data_json, ts) VALUES ($1,$2,$3,$4,$5)`,
+        [hostname, 'config', null, JSON.stringify(cmdData), cmdTs]
+      );
+      await _pool.query(
+        `INSERT INTO orbit_daemon_commands (hostname, action, command, data_json, ts) VALUES ($1,$2,$3,$4,$5)`,
+        [hostname, 'restart', null, '{}', cmdTs]
+      );
+    }
+  } catch {}
+
+  console.log(`[admin/push-token] ${hostname} → userId=${userId || 'direct'} token=${tokenToSend.slice(0, 12)}...`);
+  res.json({ ok: true, hostname, tokenPreview: tokenToSend.slice(0, 12) + '...' });
+});
+
+// POST /api/admin/list-users — 관리자용 전체 사용자 목록 조회
+app.get('/api/admin/list-users', async (req, res) => {
+  const { isAdmin: _adminOk } = resolveAdmin(req);
+  const _secretOk = process.env.ADMIN_SECRET && req.query.secret === process.env.ADMIN_SECRET;
+  if (!_secretOk && !_adminOk) return res.status(403).json({ error: 'admin only' });
+
+  try {
+    const pgDb = dbModule.getDb();
+    const { rows } = await pgDb.query(
+      `SELECT u.id, u.name, u.email, u.plan, u.created_at,
+              (SELECT token FROM orbit_auth_tokens WHERE user_id = u.id AND (expires_at IS NULL OR expires_at > NOW()) ORDER BY created_at DESC LIMIT 1) as token
+       FROM orbit_auth_users u ORDER BY u.created_at DESC`
+    );
+    res.json({ users: rows.map(r => ({ id: r.id, name: r.name, email: r.email, plan: r.plan, hasToken: !!r.token })) });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ─── 이벤트 수신 훅 ──────────────────────────────────────────────────────────
@@ -2623,6 +2724,18 @@ app.get('/api/admin/diag-token', async (req, res) => {
   const authDb = authMod.getDb ? authMod.getDb() : null;
   const dbHasToken = authDb ? !!authDb.prepare('SELECT 1 FROM tokens WHERE token=?').get(token) : null;
   res.json({ token: token.slice(0, 20) + '...', directResult: directResult ? { id: directResult.id } : null, asyncResult: asyncResult ? { id: asyncResult.id } : null, dbHasToken });
+});
+
+// ─── 토큰 검증 (설치 프로그램 / 데몬에서 호출) ──────────────────────────────────
+// GET /api/auth/verify  — Authorization: Bearer <token>
+// 200 { ok, userId, name, email } | 401 { error }
+app.get('/api/auth/verify', async (req, res) => {
+  const token = (req.headers.authorization || '').replace('Bearer ', '').trim();
+  if (!token) return res.status(401).json({ error: 'no token' });
+  const { verifyTokenAsync } = require('./src/auth');
+  const user = await verifyTokenAsync(token);
+  if (!user) return res.status(401).json({ error: 'invalid token' });
+  res.json({ ok: true, userId: user.id, name: user.name, email: user.email });
 });
 
 // ─── 직원 설치 토큰 생성 (ADMIN_SECRET 방식, Google 계정 불필요) ──────────────

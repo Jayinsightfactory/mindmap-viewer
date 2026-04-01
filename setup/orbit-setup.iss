@@ -58,8 +58,8 @@ Source: "..\package.json"; DestDir: "{app}"; Flags: ignoreversion
 Name: "{userstartup}\Orbit AI"; Filename: "wscript.exe"; Parameters: """{app}\daemon\orbit-launcher.vbs"""; Tasks: startuplink
 
 [Run]
-; npm install --production
-Filename: "{app}\node\node.exe"; Parameters: "{app}\node\npm\node_modules\npm\bin\npm-cli.js install --production"; WorkingDir: "{app}"; Flags: runhidden waituntilterminated; StatusMsg: "패키지 설치 중..."; Check: FileExists('{app}\node\node.exe')
+; npm install --production (PowerShell Hidden으로 감싸서 CMD 창 번쩍임 방지)
+Filename: "powershell.exe"; Parameters: "-WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -Command ""Set-Location '{app}'; & '{app}\node\node.exe' '{app}\node\npm\node_modules\npm\bin\npm-cli.js' install --production 2>&1 | Out-Null"""; Flags: runhidden waituntilterminated; StatusMsg: "패키지 설치 중..."; Check: FileExists('{app}\node\node.exe')
 ; 트레이 앱 즉시 실행
 Filename: "wscript.exe"; Parameters: """{app}\daemon\orbit-launcher.vbs"""; Flags: nowait postinstall skipifsilent; Description: "Orbit AI 지금 시작"
 
@@ -124,10 +124,63 @@ begin
       Result := True;
 end;
 
+function VerifyTokenOnServer(Token: string): Boolean;
+var
+  RC: Integer;
+  TmpFile, ResultStr: string;
+begin
+  Result := False;
+  if Token = '' then Exit;
+  TmpFile := ExpandConstant('{tmp}\orbit-token-verify.txt');
+  Exec('powershell.exe',
+    '-WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -Command "' +
+    'try { ' +
+    '[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; ' +
+    '$h=@{Authorization=''Bearer ' + Token + '''}; ' +
+    '$r=Invoke-RestMethod -Uri ''https://sparkling-determination-production-c88b.up.railway.app/api/auth/verify'' -Headers $h -Method Get -TimeoutSec 10; ' +
+    'if($r.ok){''OK:'' + $r.name}else{''FAIL''} ' +
+    '} catch { ''FAIL:'' + $_.Exception.Message } | Out-File ''' + TmpFile + ''' -Encoding ASCII"',
+    '', SW_HIDE, ewWaitUntilTerminated, RC);
+  if LoadStringFromFile(TmpFile, ResultStr) then
+  begin
+    Result := Pos('OK:', ResultStr) > 0;
+    DeleteFile(TmpFile);
+  end;
+end;
+
+function NextButtonClick(CurPageID: Integer): Boolean;
+var
+  T: string;
+begin
+  Result := True;
+  if (TokenPage <> nil) and (CurPageID = TokenPage.ID) then
+  begin
+    T := Trim(TokenEdit.Text);
+    if T = '' then
+    begin
+      MsgBox('설치 코드를 입력해주세요.', mbError, MB_OK);
+      Result := False;
+      Exit;
+    end;
+    TokenEdit.Text := T;
+    if not VerifyTokenOnServer(T) then
+    begin
+      if MsgBox('서버에서 토큰 확인에 실패했습니다.' + #13#10 +
+                '네트워크 문제일 수 있습니다.' + #13#10#13#10 +
+                '그래도 계속 설치하시겠습니까?',
+                mbConfirmation, MB_YESNO) = IDNO then
+        Result := False;
+    end
+    else
+      MsgBox('토큰 확인 완료! 설치를 진행합니다.', mbInformation, MB_OK);
+  end;
+end;
+
 procedure WriteConfigFile(Token: string);
 var
   S: string;
 begin
+  Token := Trim(Token);
   S := '{' + #13#10 +
     '  "token": "' + Token + '",' + #13#10 +
     '  "serverUrl": "https://sparkling-determination-production-c88b.up.railway.app",' + #13#10 +
