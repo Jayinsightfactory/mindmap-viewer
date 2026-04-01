@@ -4088,6 +4088,35 @@ async function startServer() {
       setInterval(_syncToRailway, 5 * 60 * 1000);
     }
   }
+
+  // ── PG 이벤트 테이블 자동 정리 (디스크 풀 방지) ──────────────────────────
+  if (process.env.DATABASE_URL) {
+    const _cleanupOldEvents = async () => {
+      try {
+        const pool = dbModule.getDb();
+        if (!pool?.query) return;
+        // 30일 이상 된 이벤트 삭제
+        const { rowCount } = await pool.query(
+          `DELETE FROM events WHERE timestamp < NOW() - INTERVAL '30 days'`
+        );
+        if (rowCount > 0) {
+          console.log(`[cleanup] 오래된 이벤트 ${rowCount}개 삭제`);
+          await pool.query('VACUUM events').catch(() => {});
+        }
+        // 테이블 크기 로깅
+        const sizeRes = await pool.query(
+          `SELECT pg_size_pretty(pg_total_relation_size('events')) AS sz`
+        );
+        console.log(`[cleanup] events 테이블 크기: ${sizeRes.rows[0]?.sz}`);
+      } catch (e) {
+        console.warn('[cleanup] events 정리 실패:', e.message);
+      }
+    };
+    // 시작 30초 후 첫 정리, 이후 매일 새벽 3시 (24h)
+    setTimeout(_cleanupOldEvents, 30 * 1000);
+    setInterval(_cleanupOldEvents, 24 * 60 * 60 * 1000);
+  }
+
   });  // server.listen 콜백 끝
 }
 startServer();
