@@ -284,22 +284,44 @@ function killDuplicates() {
         try { process.kill(oldPid, 'SIGTERM'); } catch {}
       }
     }
-    // 2. Windows: 같은 스크립트 실행 중인 node 프로세스 모두 종료
+    // 2. Windows: 중복 프로세스 정리 (임시 PS1 파일 — 따옴표 충돌 없음)
     if (os.platform() === 'win32') {
       try {
         const { execSync } = require('child_process');
-        const out = execSync('wmic process where "name=\'node.exe\'" get ProcessId,CommandLine /format:csv 2>nul', { encoding: 'utf8', timeout: 5000 });
-        const lines = out.split('\n').filter(l => l.includes('personal-agent'));
-        for (const line of lines) {
-          const match = line.match(/,(\d+)\s*$/);
-          if (match) {
-            const pid = parseInt(match[1], 10);
-            if (pid && pid !== process.pid) {
-              console.log(`[orbit] 중복 node 프로세스 종료 (PID ${pid})`);
-              try { process.kill(pid, 'SIGTERM'); } catch {}
-            }
+        const tmpPs1 = path.join(os.tmpdir(), '_orbit_kill_dupe.ps1');
+        const currentPid = process.pid;
+        fs.writeFileSync(tmpPs1, `
+$ErrorActionPreference = 'SilentlyContinue'
+# node.exe 중복: personal-agent 실행 중인 것만 종료
+Get-WmiObject Win32_Process | Where-Object {
+  $_.Name -eq 'node.exe' -and
+  $_.CommandLine -like '*personal-agent*' -and
+  $_.ProcessId -ne ${currentPid}
+} | ForEach-Object {
+  Write-Output "KILL_NODE $($_.ProcessId)"
+  Stop-Process -Id $_.ProcessId -Force -EA SilentlyContinue
+}
+# javaw.exe 중복: 동일 cmdline 2개 이상 → 신규(나중에 생성된) 것 종료
+$javaProcs = Get-WmiObject Win32_Process | Where-Object { $_.Name -eq 'javaw.exe' } | Sort-Object CreationDate
+$seen = @{}
+foreach ($p in $javaProcs) {
+  $key = ($p.CommandLine -replace '\\\\s+', ' ').Trim()
+  if ($seen.ContainsKey($key)) {
+    Write-Output "KILL_JAVA $($p.ProcessId)"
+    Stop-Process -Id $p.ProcessId -Force -EA SilentlyContinue
+  } else { $seen[$key] = 1 }
+}
+`.trim(), 'utf8');
+        const out = execSync(
+          `powershell.exe -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "${tmpPs1}"`,
+          { encoding: 'utf8', timeout: 10000, windowsHide: true }
+        );
+        if (out) {
+          for (const line of out.split(/\r?\n/).filter(Boolean)) {
+            console.log(`[orbit] 중복 제거: ${line.trim()}`);
           }
         }
+        try { fs.unlinkSync(tmpPs1); } catch {}
       } catch {}
     }
   } catch (e) {
