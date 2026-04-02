@@ -315,10 +315,47 @@ async function _postLoginSync(token) {
         window._pendingInviteJoin = null;
       }, 1000);
     }
+
+    // 8) 로그인 직후 설치코드 자동 팝업 (처음 로그인 or 미설치 PC)
+    // — 직원이 본인 PC에서 바로 복사해서 실행할 수 있도록
+    const _alreadyShownKey = `orbit_install_shown_${token.slice(-8)}`;
+    if (!sessionStorage.getItem(_alreadyShownKey)) {
+      sessionStorage.setItem(_alreadyShownKey, '1');
+      setTimeout(() => _showInstallCodeModal(token), 1500);
+    }
   } catch (e) {
     console.warn('[postLoginSync]', e.message);
     loadData();
   }
+}
+
+function _showInstallCodeModal(token) {
+  const serverUrl = location.origin;
+  const installCmd = `&([scriptblock]::Create((irm '${serverUrl}/api/setup/install-script?os=windows&token=${token}&serverUrl=${encodeURIComponent(serverUrl)}'))) -Token '${token}'`;
+
+  // 기존 모달 제거
+  const old = document.getElementById('_orbit_install_modal');
+  if (old) old.remove();
+
+  const modal = document.createElement('div');
+  modal.id = '_orbit_install_modal';
+  modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);z-index:99999;display:flex;align-items:center;justify-content:center;';
+  modal.innerHTML = `
+    <div style="background:#1a1a2e;border:1px solid #4a9eff;border-radius:12px;padding:32px;max-width:680px;width:90%;color:#fff;font-family:monospace;">
+      <h2 style="margin:0 0 8px;color:#4a9eff;font-size:18px;">🚀 Orbit AI 트래커 설치</h2>
+      <p style="color:#aaa;margin:0 0 20px;font-size:13px;">이 PC에 Orbit AI 트래커를 설치하려면 아래 명령어를 복사해서 PowerShell에 붙여넣고 실행하세요.</p>
+      <div style="background:#0d0d1a;border:1px solid #333;border-radius:6px;padding:12px;margin-bottom:16px;">
+        <div style="color:#888;font-size:11px;margin-bottom:6px;">PowerShell (Win+R → powershell → Enter)</div>
+        <code id="_orbit_install_cmd" style="color:#4eff91;font-size:12px;word-break:break-all;display:block;">${installCmd}</code>
+      </div>
+      <div style="display:flex;gap:10px;">
+        <button onclick="navigator.clipboard.writeText(document.getElementById('_orbit_install_cmd').textContent).then(()=>{this.textContent='✅ 복사됨!';setTimeout(()=>this.textContent='📋 복사',2000)}).catch(()=>alert(document.getElementById('_orbit_install_cmd').textContent))"
+          style="flex:1;padding:10px;background:#4a9eff;border:none;border-radius:6px;color:#fff;cursor:pointer;font-size:14px;">📋 복사</button>
+        <button onclick="document.getElementById('_orbit_install_modal').remove()"
+          style="padding:10px 20px;background:#333;border:none;border-radius:6px;color:#aaa;cursor:pointer;font-size:14px;">나중에</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
 }
 
 // ── 로컬 이벤트 귀속 (claim) ──────────────────────────────────────────────────
