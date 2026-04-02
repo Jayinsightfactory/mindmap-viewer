@@ -1743,7 +1743,16 @@ app.get('/api/admin/list-users', async (req, res) => {
               (SELECT token FROM orbit_auth_tokens WHERE user_id = u.id AND (expires_at IS NULL OR expires_at > NOW()) ORDER BY created_at DESC LIMIT 1) as token
        FROM orbit_auth_users u ORDER BY u.created_at DESC`
     );
-    res.json({ users: rows.map(r => ({ id: r.id, name: r.name, email: r.email, plan: r.plan, hasToken: !!r.token })) });
+    res.json({ users: rows.map(r => ({
+      id: r.id,
+      name: r.name,
+      email: r.email,
+      plan: r.plan,
+      pgSaved: true,          // PG에 계정 존재 여부 (이 API 자체가 PG 조회)
+      hasToken: !!r.token,    // 유효 토큰 존재 여부
+      tokenPreview: r.token ? r.token.slice(0, 16) + '...' : null,
+      createdAt: r.created_at,
+    })) });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

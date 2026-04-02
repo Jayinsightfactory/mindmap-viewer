@@ -270,6 +270,15 @@ function createOAuthRouter({ passport, enabledProviders, insertToken, CLIENT_ORI
       passport.authenticate('google', { session: false, failureRedirect: `${origin}/?oauth_error=google_failed` }),
       async (req, res) => {
         const token = await insertToken(req.user.id);
+        // PG 저장 확인 (실패 시 재시도)
+        try {
+          const { pgBackupToken, pgBackupUser } = require('./auth');
+          await pgBackupUser(req.user, '');
+          await pgBackupToken(token, req.user.id, null);
+          console.log(`[OAuth/Google] PG 저장 완료: ${req.user.email} (${req.user.id})`);
+        } catch (e) {
+          console.error(`[OAuth/Google] PG 저장 실패: ${req.user.email} — ${e.message}`);
+        }
         res.redirect(`${clientPage}?oauth_token=${token}&provider=google`);
       }
     );
