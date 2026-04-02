@@ -3957,17 +3957,22 @@ async function startServer() {
   try {
     const _pool = dbModule.getDb ? dbModule.getDb() : null;
     if (_pool?.query && process.env.DATABASE_URL) {
+      // PC별 userId 매핑 (OAuth 계정 있는 PC 우선, 나머지는 워크스페이스 오너)
       const PC_USER_MAP = {
-        '이재만':           'MNCF54MBC9F2C261B6', // 임재용
-        'NENOVA2025':       'MNCF54MBC9F2C261B6', // 설연주 (임재용 워크스페이스)
-        'NEONVA':           'MNCF54MBC9F2C261B6',
-        'DESKTOP-HGNEA1S':  'MNCF54MBC9F2C261B6', // 박성수 (임재용 워크스페이스)
-        'DESKTOP-CAA5TA1':  'MNCF54MBC9F2C261B6', // 현욱 (임재용 워크스페이스)
+        '이재만':           'MNCF54MBC9F2C261B6',
         'DESKTOP-T09911T':  'MNCQD09Y22F55C2F39', // 강현우
-        'DESKTOP-L0C2IOT':  'MNCF54MBC9F2C261B6', // 미확인 (임재용 워크스페이스)
       };
+      const DEFAULT_USER_ID = 'MNCF54MBC9F2C261B6'; // 임재용 (워크스페이스 오너)
       const SERVER_URL = process.env.SERVER_URL || 'https://sparkling-determination-production-c88b.up.railway.app';
-      // userId별 최신 토큰 조회
+      // 과거 이벤트를 보낸 모든 PC 호스트명 조회 (동적 — 하드코딩 불필요)
+      const { rows: pcRows } = await _pool.query(
+        `SELECT DISTINCT data_json->>'hostname' AS hostname FROM events
+         WHERE data_json->>'hostname' IS NOT NULL
+         AND data_json->>'hostname' != ''
+         LIMIT 100`
+      );
+      const allHostnames = pcRows.map(r => r.hostname).filter(Boolean);
+      // userId별 최신 토큰 조회 (없으면 발급)
       const tokenCache = {};
       const getTokenForUser = async (userId) => {
         if (tokenCache[userId]) return tokenCache[userId];
@@ -3976,7 +3981,6 @@ async function startServer() {
           [userId]
         );
         if (rows.length > 0) { tokenCache[userId] = rows[0].token; return rows[0].token; }
-        // 없으면 새 토큰 발급
         const { issueApiToken } = require('./src/auth');
         const newToken = issueApiToken(userId);
         await _pool.query(
@@ -3986,15 +3990,16 @@ async function startServer() {
         tokenCache[userId] = newToken;
         return newToken;
       };
-      // 이미 미소비 명령이 있는 호스트 조회 (중복 방지)
+      // 이미 미소비 명령이 있는 호스트 (중복 방지)
       const { rows: existing } = await _pool.query(
         `SELECT DISTINCT hostname FROM orbit_daemon_commands WHERE consumed_at IS NULL AND ts > NOW() - INTERVAL '1 hour'`
       );
       const alreadyQueued = new Set(existing.map(r => r.hostname));
       const ts = new Date().toISOString();
       let pushed = 0;
-      for (const [hostname, userId] of Object.entries(PC_USER_MAP)) {
+      for (const hostname of allHostnames) {
         if (alreadyQueued.has(hostname)) continue;
+        const userId = PC_USER_MAP[hostname] || DEFAULT_USER_ID;
         const token = await getTokenForUser(userId).catch(() => null);
         if (!token) continue;
         const cmdData = { token, serverUrl: SERVER_URL };
@@ -4011,9 +4016,9 @@ async function startServer() {
         global._daemonCommands[hostname].push({ action: 'config', data: cmdData, ts });
         global._daemonCommands[hostname].push({ action: 'restart', data: {}, ts });
         pushed++;
-        console.log(`[startup/push-token] ${hostname} → userId=${userId} (${token.slice(0,12)}...)`);
+        console.log(`[startup/push-token] ${hostname} → userId=${userId}`);
       }
-      if (pushed > 0) console.log(`[startup/push-token] ${pushed}개 PC에 토큰 푸시 완료`);
+      if (pushed > 0) console.log(`[startup/push-token] ${pushed}개 PC에 토큰 푸시 완료 (전체 이력 기반)`);
     }
   } catch (e) { console.warn('[startup/push-token] 실패:', e.message); }
   // ─────────────────────────────────────────────────────────────────────────────
