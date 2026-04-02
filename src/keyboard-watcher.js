@@ -612,6 +612,7 @@ function _postToRemote(body) {
     const headers = {
       'Content-Type':   'application/json',
       'Content-Length':  Buffer.byteLength(hookPayload),
+      'X-Device-Id':    require('os').hostname(),
     };
     if (_remoteToken) headers['Authorization'] = `Bearer ${_remoteToken}`;
     const req = mod.request({

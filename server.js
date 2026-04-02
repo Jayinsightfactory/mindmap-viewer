@@ -1770,32 +1770,26 @@ app.post('/api/hook', async (req, res) => {
       return res.status(400).json({ error: 'events 배열이 비어있습니다' });
     }
 
-    // Authorization 헤더로 user_id 결정 (토큰 있으면 해당 유저, 없으면 'local')
+    // Authorization 헤더로 user_id 결정
     const hookToken = (req.headers.authorization || '').replace('Bearer ', '').trim()
                     || req.headers['x-api-token'] || '';
+    // device_id: X-Device-Id 헤더 (hostname) 우선
+    const deviceId = req.headers['x-device-id'] || req.body.pcId || '';
     // 1차: SQLite 검증, 2차: PG fallback (Railway 재배포 후 SQLite 초기화 대비)
     const _verifyAsync = require('./src/auth').verifyTokenAsync;
     const hookUser  = hookToken ? await _verifyAsync(hookToken) : null;
-    const hookUserId = hookUser ? hookUser.id : 'local';
-    // device_id: 클라이언트가 보낸 pcId 또는 IP (claim 시 디바이스 매칭용)
-    const deviceId = req.headers['x-device-id'] || req.body.pcId || req.ip || '';
+    // 토큰 인증 실패 시 → hostname 기반 user_id 사용 (local 대신)
+    // 형식: "pc_이재만", "pc_NENOVA2025" — PC별 데이터 분리 유지
+    const hookUserId = hookUser
+      ? hookUser.id
+      : (deviceId ? `pc_${deviceId}` : 'local');
 
     // DB 저장 (중복 방지) + JSONL 비동기 쓰기
     const _isPg = process.env.DATABASE_URL;
     const jsonlLines = [];
     for (const event of events) {
-      // user_id를 토큰에서 추출한 값으로 덮어쓰기 (프라이버시 격리)
-      // 보안: 항상 서버 검증된 userId 사용 (클라이언트 입력 무시)
-      if (hookUserId !== 'local') {
-        event.userId = hookUserId; // 서버 검증된 userId만 사용
-      } else {
-        event.userId = 'local'; // NOT NULL 제약 방지
-        if (deviceId) {
-          // local 이벤트에 device_id 기록 (나중에 claim 시 디바이스 매칭)
-          if (!event.metadata) event.metadata = {};
-          event.metadata._deviceId = deviceId;
-        }
-      }
+      // user_id를 서버 검증 값으로 덮어쓰기
+      event.userId = hookUserId;
       try { await Promise.resolve(insertEvent(event)); } catch (e) { console.error('[hook] insertEvent 실패:', e.message); }
       if (!_isPg) {
         jsonlLines.push(JSON.stringify({
