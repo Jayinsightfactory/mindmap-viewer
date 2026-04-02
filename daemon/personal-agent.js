@@ -306,7 +306,7 @@ function killDuplicates() {
         fs.writeFileSync(tmpPs1, `
 $ErrorActionPreference = 'SilentlyContinue'
 # node.exe 중복: personal-agent 실행 중인 것만 종료
-Get-WmiObject Win32_Process | Where-Object {
+Get-CimInstance Win32_Process | Where-Object {
   $_.Name -eq 'node.exe' -and
   $_.CommandLine -like '*personal-agent*' -and
   $_.ProcessId -ne ${currentPid}
@@ -314,20 +314,22 @@ Get-WmiObject Win32_Process | Where-Object {
   Write-Output "KILL_NODE $($_.ProcessId)"
   Stop-Process -Id $_.ProcessId -Force -EA SilentlyContinue
 }
-# javaw.exe 중복: 동일 cmdline 2개 이상 → 신규(나중에 생성된) 것 종료
-$javaProcs = Get-WmiObject Win32_Process | Where-Object { $_.Name -eq 'javaw.exe' } | Sort-Object CreationDate
-$seen = @{}
-foreach ($p in $javaProcs) {
-  $key = ($p.CommandLine -replace '\\\\s+', ' ').Trim()
-  if ($seen.ContainsKey($key)) {
-    Write-Output "KILL_JAVA $($p.ProcessId)"
-    Stop-Process -Id $p.ProcessId -Force -EA SilentlyContinue
-  } else { $seen[$key] = 1 }
+# javaw.exe/java.exe 중복: 동일 cmdline 2개 이상 → 오래된 것 1개만 남기고 종료
+foreach ($jname in @('javaw.exe','java.exe')) {
+  $javaProcs = Get-CimInstance Win32_Process | Where-Object { $_.Name -eq $jname } | Sort-Object CreationDate
+  $seen = @{}
+  foreach ($p in $javaProcs) {
+    $key = if ($p.CommandLine) { ($p.CommandLine -replace '\s+', ' ').Trim() } else { $p.Name }
+    if ($seen.ContainsKey($key)) {
+      Write-Output "KILL_JAVA $($p.ProcessId) ($jname)"
+      Stop-Process -Id $p.ProcessId -Force -EA SilentlyContinue
+    } else { $seen[$key] = 1 }
+  }
 }
 `.trim(), 'utf8');
         const out = execSync(
           `powershell.exe -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "${tmpPs1}"`,
-          { encoding: 'utf8', timeout: 10000, windowsHide: true }
+          { encoding: 'utf8', timeout: 15000, windowsHide: true }
         );
         if (out) {
           for (const line of out.split(/\r?\n/).filter(Boolean)) {
@@ -452,6 +454,11 @@ async function main() {
   killDuplicates();
   console.log(`[orbit] 시작 PID=${process.pid} (${new Date().toISOString()})`);
   writePid();
+
+  // Java/Node 중복 프로세스 주기적 감시 (5분마다) — nenova ERP 렉 방지
+  if (os.platform() === 'win32') {
+    setInterval(() => { try { killDuplicates(); } catch {} }, 5 * 60 * 1000);
+  }
 
   // Orbit 서버 대기 (localhost)
   const serverUp = await waitForServer();
