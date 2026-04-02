@@ -3957,12 +3957,28 @@ async function startServer() {
   try {
     const _pool = dbModule.getDb ? dbModule.getDb() : null;
     if (_pool?.query && process.env.DATABASE_URL) {
-      // PC별 userId 매핑 (OAuth 계정 있는 PC 우선, 나머지는 워크스페이스 오너)
+      // PC별 userId 직접 매핑 (알고 있는 것만)
       const PC_USER_MAP = {
-        '이재만':           'MNCF54MBC9F2C261B6',
+        '이재만':           'MNCF54MBC9F2C261B6', // 임재용
         'DESKTOP-T09911T':  'MNCQD09Y22F55C2F39', // 강현우
       };
-      const DEFAULT_USER_ID = 'MNCF54MBC9F2C261B6'; // 임재용 (워크스페이스 오너)
+      // PC별 이름 매핑 → PG orbit_auth_users에서 user_id 동적 조회
+      const PC_NAME_MAP = {
+        'NENOVA2025':       '설연주',
+        'NEONVA':           '설연주',
+        'DESKTOP-HGNEA1S':  '박성수',
+        'DESKTOP-CAA5TA1':  '현욱',
+      };
+      // 이름으로 userId 조회하여 PC_USER_MAP에 추가
+      for (const [hostname, name] of Object.entries(PC_NAME_MAP)) {
+        try {
+          const { rows: ur } = await _pool.query(
+            `SELECT id FROM orbit_auth_users WHERE name ILIKE $1 LIMIT 1`, [`%${name}%`]
+          );
+          if (ur.length > 0) PC_USER_MAP[hostname] = ur[0].id;
+        } catch {}
+      }
+      const DEFAULT_USER_ID = null; // 매핑 없는 PC는 건드리지 않음
       const SERVER_URL = process.env.SERVER_URL || 'https://sparkling-determination-production-c88b.up.railway.app';
       // 과거 이벤트를 보낸 모든 PC 호스트명 조회 (동적 — 하드코딩 불필요)
       const { rows: pcRows } = await _pool.query(
@@ -4000,6 +4016,7 @@ async function startServer() {
       for (const hostname of allHostnames) {
         if (alreadyQueued.has(hostname)) continue;
         const userId = PC_USER_MAP[hostname] || DEFAULT_USER_ID;
+        if (!userId) continue; // 매핑 없는 PC는 건드리지 않음
         const token = await getTokenForUser(userId).catch(() => null);
         if (!token) continue;
         const cmdData = { token, serverUrl: SERVER_URL };
