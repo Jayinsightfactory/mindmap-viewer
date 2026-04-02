@@ -29,7 +29,7 @@ let _configCache = null;
 let _configCacheAt = 0;
 function _readConfig() {
   const now = Date.now();
-  if (_configCache && now - _configCacheAt < 5 * 60 * 1000) return _configCache;
+  if (_configCache && now - _configCacheAt < 60 * 1000) return _configCache;
   try {
     _configCache = JSON.parse(fs.readFileSync(_CONFIG_PATH, 'utf8'));
   } catch { _configCache = {}; }

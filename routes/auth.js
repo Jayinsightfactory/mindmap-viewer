@@ -80,9 +80,26 @@ function createRouter(deps) {
    * @query  {string} [token]         - 액세스 토큰 (헤더 대체)
    * @returns {{ user: User } | { error: 'unauthorized' }}
    */
-  router.get('/auth/me', (req, res) => {
-    const token = req.headers.authorization || req.query.token;
-    const user  = verifyToken(token);
+  router.get('/auth/me', async (req, res) => {
+    const rawToken = (req.headers.authorization || req.query.token || '').replace('Bearer ', '').trim();
+    // 1차: SQLite (빠름), 2차: PG fallback (Railway 재배포 후 SQLite 초기화 대비)
+    let user = verifyToken(rawToken);
+    if (!user) {
+      try {
+        const authSrc = require('../src/auth');
+        user = await authSrc.verifyTokenAsync(rawToken);
+        // PG에서 찾았으면 → 이 토큰을 PG에도 확실히 저장 (이미 있으면 ON CONFLICT DO NOTHING)
+        if (user && authSrc.pgBackupToken) {
+          authSrc.pgBackupToken(rawToken, user.id, null).catch(() => {});
+        }
+      } catch {}
+    } else {
+      // SQLite에서 찾았어도 PG에 백업 보장 (설치코드 표시 시점에 PG 동기화)
+      try {
+        const authSrc = require('../src/auth');
+        if (authSrc.pgBackupToken) authSrc.pgBackupToken(rawToken, user.id, null).catch(() => {});
+      } catch {}
+    }
     if (!user) return res.status(401).json({ error: 'unauthorized' });
 
     // 관리자 초대 여부에 따른 실효 플랜 계산
