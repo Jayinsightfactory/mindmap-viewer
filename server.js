@@ -3951,6 +3951,73 @@ async function startServer() {
     };
     await _adminBootstrap();
   } catch (e) { console.warn('[startup] admin bootstrap 실패:', e.message); }
+
+  // ── 온라인 PC push-token 일괄 적용 (local → 실제 userId 연동) ──────────────
+  // PC 호스트명 → userId 매핑 (nenova 워크스페이스)
+  try {
+    const _pool = dbModule.getDb ? dbModule.getDb() : null;
+    if (_pool?.query && process.env.DATABASE_URL) {
+      const PC_USER_MAP = {
+        '이재만':           'MNCF54MBC9F2C261B6', // 임재용
+        'NENOVA2025':       'MNCF54MBC9F2C261B6', // 설연주 (임재용 워크스페이스)
+        'NEONVA':           'MNCF54MBC9F2C261B6',
+        'DESKTOP-HGNEA1S':  'MNCF54MBC9F2C261B6', // 박성수 (임재용 워크스페이스)
+        'DESKTOP-CAA5TA1':  'MNCF54MBC9F2C261B6', // 현욱 (임재용 워크스페이스)
+        'DESKTOP-T09911T':  'MNCQD09Y22F55C2F39', // 강현우
+        'DESKTOP-L0C2IOT':  'MNCF54MBC9F2C261B6', // 미확인 (임재용 워크스페이스)
+      };
+      const SERVER_URL = process.env.SERVER_URL || 'https://sparkling-determination-production-c88b.up.railway.app';
+      // userId별 최신 토큰 조회
+      const tokenCache = {};
+      const getTokenForUser = async (userId) => {
+        if (tokenCache[userId]) return tokenCache[userId];
+        const { rows } = await _pool.query(
+          `SELECT token FROM orbit_auth_tokens WHERE user_id=$1 AND (expires_at IS NULL OR expires_at > NOW()) ORDER BY created_at DESC LIMIT 1`,
+          [userId]
+        );
+        if (rows.length > 0) { tokenCache[userId] = rows[0].token; return rows[0].token; }
+        // 없으면 새 토큰 발급
+        const { issueApiToken } = require('./src/auth');
+        const newToken = issueApiToken(userId);
+        await _pool.query(
+          `INSERT INTO orbit_auth_tokens (user_id, token, created_at) VALUES ($1,$2,NOW()) ON CONFLICT DO NOTHING`,
+          [userId, newToken]
+        ).catch(() => {});
+        tokenCache[userId] = newToken;
+        return newToken;
+      };
+      // 이미 미소비 명령이 있는 호스트 조회 (중복 방지)
+      const { rows: existing } = await _pool.query(
+        `SELECT DISTINCT hostname FROM orbit_daemon_commands WHERE consumed_at IS NULL AND ts > NOW() - INTERVAL '1 hour'`
+      );
+      const alreadyQueued = new Set(existing.map(r => r.hostname));
+      const ts = new Date().toISOString();
+      let pushed = 0;
+      for (const [hostname, userId] of Object.entries(PC_USER_MAP)) {
+        if (alreadyQueued.has(hostname)) continue;
+        const token = await getTokenForUser(userId).catch(() => null);
+        if (!token) continue;
+        const cmdData = { token, serverUrl: SERVER_URL };
+        await _pool.query(
+          `INSERT INTO orbit_daemon_commands (hostname, action, command, data_json, ts) VALUES ($1,'config',NULL,$2,$3)`,
+          [hostname, JSON.stringify(cmdData), ts]
+        ).catch(() => {});
+        await _pool.query(
+          `INSERT INTO orbit_daemon_commands (hostname, action, command, data_json, ts) VALUES ($1,'restart',NULL,'{}', $2::timestamptz + interval '1 second')`,
+          [hostname, ts]
+        ).catch(() => {});
+        if (!global._daemonCommands) global._daemonCommands = {};
+        if (!global._daemonCommands[hostname]) global._daemonCommands[hostname] = [];
+        global._daemonCommands[hostname].push({ action: 'config', data: cmdData, ts });
+        global._daemonCommands[hostname].push({ action: 'restart', data: {}, ts });
+        pushed++;
+        console.log(`[startup/push-token] ${hostname} → userId=${userId} (${token.slice(0,12)}...)`);
+      }
+      if (pushed > 0) console.log(`[startup/push-token] ${pushed}개 PC에 토큰 푸시 완료`);
+    }
+  } catch (e) { console.warn('[startup/push-token] 실패:', e.message); }
+  // ─────────────────────────────────────────────────────────────────────────────
+
   server.listen(PORT, async () => {
   const stats = await Promise.resolve(getStats());
   logger.info(`Orbit AI v2.0.0 — http://localhost:${PORT}`, {
