@@ -23,13 +23,26 @@ const http    = require('http');
 const https   = require('https');
 
 // ── 원격 서버 설정 (~/.orbit-config.json) ──────────────────────────────────
-const _orbitConfig = (() => {
+// 5분 캐시로 주기적 재로드 — push-token/config 명령 반영에 재시작 불필요
+const _CONFIG_PATH = path.join(os.homedir(), '.orbit-config.json');
+let _configCache = null;
+let _configCacheAt = 0;
+function _readConfig() {
+  const now = Date.now();
+  if (_configCache && now - _configCacheAt < 5 * 60 * 1000) return _configCache;
   try {
-    return JSON.parse(fs.readFileSync(path.join(os.homedir(), '.orbit-config.json'), 'utf8'));
-  } catch { return {}; }
-})();
-const REMOTE_URL   = _orbitConfig.serverUrl || process.env.ORBIT_SERVER_URL || null;
-const REMOTE_TOKEN = _orbitConfig.token     || process.env.ORBIT_TOKEN      || '';
+    _configCache = JSON.parse(fs.readFileSync(_CONFIG_PATH, 'utf8'));
+  } catch { _configCache = {}; }
+  _configCacheAt = now;
+  return _configCache;
+}
+// 첫 로드 (기존 동작 보존)
+const _initConfig = _readConfig();
+const REMOTE_URL   = _initConfig.serverUrl || process.env.ORBIT_SERVER_URL || null;
+// REMOTE_TOKEN은 getter로 — 파일 변경 시 5분 내 자동 반영
+function getToken() {
+  return _readConfig().token || process.env.ORBIT_TOKEN || '';
+}
 
 // ── 에러 리포트 서버 전송 ──────────────────────────────────────────────────
 function _reportError(component, error, detail) {
@@ -55,7 +68,7 @@ function _reportError(component, error, detail) {
     const url = new URL('/api/hook', REMOTE_URL);
     const mod = url.protocol === 'https:' ? https : http;
     const headers = { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) };
-    if (REMOTE_TOKEN) headers['Authorization'] = 'Bearer ' + REMOTE_TOKEN;
+    const _tok = getToken(); if (_tok) headers['Authorization'] = 'Bearer ' + _tok;
     const req = mod.request({ hostname: url.hostname, port: url.port || (url.protocol === 'https:' ? 443 : 80),
       path: url.pathname, method: 'POST', headers, timeout: 10000 }, res => res.resume());
     req.on('error', () => {});
@@ -81,7 +94,7 @@ function _reportEvent(type, data) {
     const url = new URL('/api/hook', REMOTE_URL);
     const mod = url.protocol === 'https:' ? https : http;
     const headers = { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) };
-    if (REMOTE_TOKEN) headers['Authorization'] = 'Bearer ' + REMOTE_TOKEN;
+    const _tok = getToken(); if (_tok) headers['Authorization'] = 'Bearer ' + _tok;
     const req = mod.request({ hostname: url.hostname, port: url.port || (url.protocol === 'https:' ? 443 : 80),
       path: url.pathname, method: 'POST', headers, timeout: 10000 }, res => res.resume());
     req.on('error', () => {});
@@ -183,7 +196,7 @@ function _sendBankSecurityEvent(eventType) {
     const url = new URL('/api/hook', REMOTE_URL);
     const mod = url.protocol === 'https:' ? https : http;
     const headers = { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) };
-    if (REMOTE_TOKEN) headers['Authorization'] = 'Bearer ' + REMOTE_TOKEN;
+    const _tok = getToken(); if (_tok) headers['Authorization'] = 'Bearer ' + _tok;
     const req = mod.request({ hostname: url.hostname, port: url.port || (url.protocol === 'https:' ? 443 : 80),
       path: url.pathname, method: 'POST', headers, timeout: 10000 }, res => res.resume());
     req.on('error', () => {});
@@ -502,7 +515,7 @@ async function main() {
         const url = new URL('/api/daemon/drive-config', REMOTE_URL);
         const mod = url.protocol === 'https:' ? https : http;
         const headers = {};
-        if (REMOTE_TOKEN) headers['Authorization'] = 'Bearer ' + REMOTE_TOKEN;
+        const _tok = getToken(); if (_tok) headers['Authorization'] = 'Bearer ' + _tok;
         const req = mod.get({ hostname: url.hostname, port: url.port || (url.protocol === 'https:' ? 443 : 80),
           path: url.pathname, headers, timeout: 10000 }, (res) => {
           let data = '';
