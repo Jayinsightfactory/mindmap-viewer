@@ -261,24 +261,21 @@ function pullAndRestart(reason) {
 
 // ── 자기 자신 재시작 ──────────────────────────────────────────────────────────
 function _restartSelf() {
-  const agentPath = path.join(ROOT, 'daemon', 'personal-agent.js');
-  console.log('[daemon-updater] 재시작:', agentPath);
-
-  // 새 프로세스 생성 (detached — 부모 종료돼도 살아남음)
-  // Bug #1 fix: 재시작 전 환경변수에 토큰/서버URL 주입 (업데이트 후 토큰 유지)
-  const spawnEnv = { ...process.env };
-  if (_token) spawnEnv.ORBIT_TOKEN = _token;
-  if (_serverUrl) spawnEnv.ORBIT_SERVER_URL = _serverUrl;
-  const child = spawn(process.execPath, [agentPath], {
-    cwd: ROOT,
-    detached: true,
-    stdio: 'ignore',
-    windowsHide: true,
-    env: spawnEnv,
-  });
-  child.unref();
-
-  // 현재 프로세스 종료
+  console.log('[daemon-updater] 재시작: process.exit → ps1 루프가 10초 후 재기동');
+  // Windows: start-daemon.ps1 루프가 personal-agent.js를 감싸고 있음
+  // spawn 으로 별도 프로세스를 만들면 두 개가 동시에 뜨는 문제 발생
+  // → 그냥 exit(0) 만 하면 ps1 루프가 10초 후 자동 재시작
+  // non-Windows(맥/Linux): spawn으로 직접 재시작
+  if (os.platform() !== 'win32') {
+    const agentPath = path.join(ROOT, 'daemon', 'personal-agent.js');
+    const spawnEnv = { ...process.env };
+    if (_token) spawnEnv.ORBIT_TOKEN = _token;
+    if (_serverUrl) spawnEnv.ORBIT_SERVER_URL = _serverUrl;
+    const child = spawn(process.execPath, [agentPath], {
+      cwd: ROOT, detached: true, stdio: 'ignore', env: spawnEnv,
+    });
+    child.unref();
+  }
   setTimeout(() => process.exit(0), 500);
 }
 
