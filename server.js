@@ -3909,6 +3909,29 @@ async function startServer() {
   try {
     const _adminBootstrap = async () => {
       const authMod = require('./src/auth');
+
+      // PG에서 직접 관리자 이메일 계정의 토큰을 ADMIN_TOKENS에 복원 (SQLite 의존 제거)
+      try {
+        const pgDb = dbModule.getDb();
+        for (const adminEmail of env.ADMIN_EMAILS) {
+          const { rows } = await pgDb.query(
+            `SELECT t.token FROM orbit_auth_tokens t
+             JOIN orbit_auth_users u ON t.user_id = u.id
+             WHERE u.email = $1 AND (t.expires_at IS NULL OR t.expires_at > NOW())`,
+            [adminEmail.toLowerCase()]
+          );
+          rows.forEach(({ token }) => {
+            if (!env.ADMIN_TOKENS.includes(token)) {
+              env.ADMIN_TOKENS.push(token);
+              console.log(`[startup] PG→ADMIN_TOKENS 복원: ${adminEmail} (${token.slice(0,8)}...)`);
+            }
+          });
+        }
+      } catch (pgErr) {
+        console.warn('[startup] PG admin 토큰 복원 실패:', pgErr.message);
+      }
+
+      // SQLite에서도 보조 복원 (로컬 개발 환경 대비)
       for (const adminEmail of env.ADMIN_EMAILS) {
         const adminUser = authMod.getUserByEmail ? authMod.getUserByEmail(adminEmail) : null;
         if (adminUser) {
@@ -3918,7 +3941,7 @@ async function startServer() {
             tokens.forEach(({ token }) => {
               if (!env.ADMIN_TOKENS.includes(token)) {
                 env.ADMIN_TOKENS.push(token);
-                console.log(`[startup] 관리자 토큰 복원: ${adminEmail} (${token.slice(0,8)}...)`);
+                console.log(`[startup] SQLite→ADMIN_TOKENS 복원: ${adminEmail} (${token.slice(0,8)}...)`);
               }
             });
           }
