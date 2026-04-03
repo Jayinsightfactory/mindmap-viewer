@@ -211,15 +211,20 @@ function verifyToken(token) {
 }
 
 // ─── API 토큰 발급 ────────────────────────────
-function issueApiToken(userId) {
+async function issueApiToken(userId) {
   if (!db) return null;
   const token = generateToken();
   db.prepare(`
     INSERT INTO tokens (token, userId, type)
     VALUES (?, ?, 'api')
   `).run(token, userId);
-  // OAuth 토큰도 PG에 백업 (Railway 재시작 시 복원용)
-  _pgBackupToken(token, userId, null);
+  // PG에 반드시 저장 (Railway 재배포 후 SQLite 초기화 대비) — await 보장
+  try {
+    await _pgBackupToken(token, userId, null);
+  } catch {
+    // 실패 시 1회 재시도
+    setTimeout(() => _pgBackupToken(token, userId, null).catch(() => {}), 3000);
+  }
   return token;
 }
 

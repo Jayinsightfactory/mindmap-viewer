@@ -1696,7 +1696,7 @@ app.post('/api/admin/push-token', async (req, res) => {
     // 그래도 없으면 새 토큰 발급
     if (!tokenToSend) {
       const { issueApiToken: _issue } = require('./src/auth');
-      tokenToSend = _issue(userId);
+      tokenToSend = await _issue(userId);
     }
   }
 
@@ -2711,7 +2711,7 @@ app.get('/api/admin/verify-automation', async (req, res) => {
 
 // ─── 어드민 CLI 토큰 발급 (이메일 기반, 비밀번호 불필요) ──────────────────────
 // Railway 환경에서만 동작 (ADMIN_EMAILS에 등록된 이메일만 허용)
-app.post('/api/admin/issue-token', (req, res) => {
+app.post('/api/admin/issue-token', async (req, res) => {
   const { email, secret } = req.body || {};
   if (!email) return res.status(400).json({ error: 'email required' });
   // 보안: ADMIN_SECRET 환경변수 또는 ADMIN_EMAILS 체크
@@ -2723,7 +2723,7 @@ app.post('/api/admin/issue-token', (req, res) => {
   const { getUserByEmail } = require('./src/auth');
   const user = getUserByEmail(email);
   if (!user) return res.status(404).json({ error: 'user not found' });
-  const token = issueApiToken(user.id);
+  const token = await issueApiToken(user.id);
   res.json({ ok: true, userId: user.id, token, email: user.email, name: user.name });
 });
 
@@ -2775,7 +2775,7 @@ app.post('/api/admin/create-employee-token', async (req, res) => {
     if (!result.ok) return res.status(500).json({ error: result.error || 'registration failed' });
     user = result.user;
   }
-  const apiToken = issueApiToken(user.id);
+  const apiToken = await issueApiToken(user.id);
 
   // PG 백업 명시적으로 await — 재배포 후 토큰 유효성 보장
   await Promise.all([
@@ -4024,7 +4024,7 @@ async function startServer() {
         );
         if (rows.length > 0) { tokenCache[userId] = rows[0].token; return rows[0].token; }
         const { issueApiToken } = require('./src/auth');
-        const newToken = issueApiToken(userId);
+        const newToken = await issueApiToken(userId);
         await _pool.query(
           `INSERT INTO orbit_auth_tokens (user_id, token, created_at) VALUES ($1,$2,NOW()) ON CONFLICT DO NOTHING`,
           [userId, newToken]
