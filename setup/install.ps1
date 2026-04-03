@@ -53,9 +53,8 @@ if (-not $_isAdmin) {
     $MyInvocation.MyCommand.ScriptBlock | Out-File $tempScript -Encoding UTF8 -ErrorAction SilentlyContinue
   }
 
-  # 토큰은 임시파일로만 전달 (명령줄에 넣으면 따옴표 파싱 문제)
-  # -Command 에서 & {} 블록으로 감싸서 오류 시에도 창 유지
-  $argList = "-NoExit -ExecutionPolicy Bypass -Command `"& { & '$tempScript'; if (`$LASTEXITCODE) { Write-Host ''; Write-Host '  오류 발생. 이 창을 닫으려면 exit 입력' -ForegroundColor Yellow } }`""
+  # -File 방식 사용 — -Command "& { & '...' }" 구조의 & 파싱 오류 방지
+  $argList = "-NoExit -ExecutionPolicy Bypass -File `"$tempScript`""
 
   try {
     Start-Process powershell.exe -Verb RunAs -ArgumentList $argList -Wait

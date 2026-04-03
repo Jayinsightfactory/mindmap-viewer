@@ -331,8 +331,9 @@ async function _postLoginSync(token) {
 
 function _showInstallCodeModal(token) {
   const serverUrl = location.origin;
-  // install.ps1 직접 호출 — JSON API 경유하면 [scriptblock]::Create 파싱 오류 발생
-  const installCmd = `powershell -ExecutionPolicy Bypass -WindowStyle Hidden -Command "& {$env:ORBIT_TOKEN='${token}'; iex (irm '${serverUrl}/setup/install.ps1')}"`;
+  // [scriptblock]::Create + -Token 파라미터 방식
+  // → $env:ORBIT_TOKEN 확장 문제 없음, PS1 파일 직접 실행, & 오류 없음
+  const installCmd = `&([scriptblock]::Create((irm '${serverUrl}/setup/install.ps1'))) -Token '${token}'`;
 
 
   // 기존 모달 제거
