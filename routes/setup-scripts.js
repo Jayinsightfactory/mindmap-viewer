@@ -17,7 +17,7 @@ router.get('/orbit-setup.ps1', (req, res) => {
     : `http://localhost:${port}`;
   const userToken = (req.query.token || '').replace(/[^a-zA-Z0-9._\-]/g, '');
 
-  const script = `# ⬡ Orbit AI 원키 설치 스크립트
+  const script = `# Orbit AI 원키 설치 스크립트
 # AI 분석은 클라우드(Haiku)로 처리 — Ollama 설치 불필요
 
 # 스크립트 내 실행 권한 허용
@@ -27,7 +27,7 @@ $ORBIT = "$env:USERPROFILE\\orbit"
 $REPO  = "${REPO}"
 
 Write-Host ""
-Write-Host "⬡ Orbit AI 설치 시작..." -ForegroundColor Cyan
+Write-Host "Orbit AI 설치 시작..." -ForegroundColor Cyan
 Write-Host ""
 Write-Host "  🔒 수집된 데이터는 외부로 전송되지 않습니다." -ForegroundColor DarkCyan
 Write-Host "  AI가 작업 패턴을 학습하여 업무 효율 피드백을 제공합니다." -ForegroundColor DarkCyan
@@ -118,7 +118,7 @@ $psProfile = $PROFILE.CurrentUserAllHosts
 if (-not (Test-Path $psProfile)) { New-Item -ItemType File -Path $psProfile -Force | Out-Null }
 $hookBlock = @'
 
-# ⬡ Orbit AI 터미널 훅
+# Orbit AI 터미널 훅
 $Global:OrbitLastCmd = $null
 Set-PSReadLineOption -AddToHistoryHandler {
     param([string]$cmd)
@@ -235,13 +235,13 @@ router.get('/orbit-setup.sh', (req, res) => {
   const userToken = (req.query.token || '').replace(/[^a-zA-Z0-9._\-]/g, '');
 
   const script = `#!/bin/bash
-# ⬡ Orbit AI 원키 설치 스크립트 (macOS/Linux)
+# Orbit AI 원키 설치 스크립트 (macOS/Linux)
 # AI 분석은 클라우드(Haiku)로 처리 — Ollama 설치 불필요
 
 set -e
 ORBIT="$HOME/orbit"
 echo ""
-echo "⬡ Orbit AI 설치 시작..."
+echo "Orbit AI 설치 시작..."
 echo ""
 echo "  🔒 수집된 데이터는 외부로 전송되지 않습니다."
 echo "  AI가 작업 패턴을 학습하여 업무 효율 피드백을 제공합니다."
@@ -308,7 +308,7 @@ echo '{"serverUrl":"'"${serverUrl}"'","token":"'"$ORBIT_TOKEN"'"}' > ~/.orbit-co
 # 터미널 워크플로우 학습
 echo "  터미널 워크플로우 연동 중..."
 ORBIT_HOOK_CODE='
-# ⬡ Orbit AI 터미널 훅
+# Orbit AI 터미널 훅
 _orbit_send_cmd() {
   local cmd="$1"
   [ -z "$cmd" ] && return

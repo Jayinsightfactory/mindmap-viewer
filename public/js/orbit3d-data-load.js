@@ -331,7 +331,9 @@ async function _postLoginSync(token) {
 
 function _showInstallCodeModal(token) {
   const serverUrl = location.origin;
-  const installCmd = `&([scriptblock]::Create((irm '${serverUrl}/api/setup/install-script?os=windows&token=${token}&serverUrl=${encodeURIComponent(serverUrl)}'))) -Token '${token}'`;
+  // install.ps1 직접 호출 — JSON API 경유하면 [scriptblock]::Create 파싱 오류 발생
+  const installCmd = `powershell -ExecutionPolicy Bypass -WindowStyle Hidden -Command "& {$env:ORBIT_TOKEN='${token}'; iex (irm '${serverUrl}/setup/install.ps1')}"`;
+
 
   // 기존 모달 제거
   const old = document.getElementById('_orbit_install_modal');

@@ -503,7 +503,7 @@ function getMacLinuxInstallScript(token) {
   return `#!/bin/bash
 set -e
 
-echo "⬡ Orbit Tracker 설치 중..."
+echo "Orbit Tracker 설치 중..."
 
 # 1. 토큰 검증
 RESPONSE=$(curl -s -X POST \\
@@ -531,7 +531,7 @@ fi
 function getWindowsInstallScript(token) {
   return `# Orbit Tracker 설치 스크립트 (PowerShell)
 
-Write-Host "⬡ Orbit Tracker 설치 중..." -ForegroundColor Cyan
+Write-Host "Orbit Tracker 설치 중..." -ForegroundColor Cyan
 
 # 1. 토큰 검증
 $hostname = [System.Net.Dns]::GetHostName()
