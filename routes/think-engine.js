@@ -18,6 +18,22 @@ const express = require('express');
 function createThinkEngine({ getDb, ragCore }) {
   const router = express.Router();
 
+  function _normalizeState(raw) {
+    if (!raw || raw.length < 2) return null;
+    const s = raw
+      .toLowerCase()
+      .replace(/[-_|•·]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .replace(/\d{5,}/g, '#')
+      .replace(/[()[\]{}]/g, '')
+      .trim()
+      .slice(0, 80);
+    if (s.length < 3) return null;
+    const noise = ['untitled', 'desktop', 'taskbar', '시작', 'start menu', 'program manager'];
+    if (noise.includes(s)) return null;
+    return s;
+  }
+
   // ── 테이블 초기화 ──
   async function _ensureTables(db) {
     await db.query(`
@@ -471,6 +487,53 @@ function createThinkEngine({ getDb, ragCore }) {
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
 
+  // GET /api/think/chain-predict/:userId — 3단계 전이 체인 예측
+  router.get('/chain-predict/:userId', async (req, res) => {
+    try {
+      const db = getDb();
+      if (!db?.query) return res.json({ error: 'DB not available' });
+      const userId = req.params.userId;
+      const steps = Math.min(parseInt(req.query.steps || '3'), 5);
+
+      const curRes = await db.query(
+        `SELECT COALESCE(data_json->>'windowTitle', data_json->'appContext'->>'currentWindow') as state
+         FROM events WHERE user_id = $1 AND type IN ('keyboard.chunk','screen.capture')
+         ORDER BY timestamp DESC LIMIT 1`,
+        [userId]
+      );
+      if (!curRes.rows.length) return res.json({ error: '최근 활동 없음' });
+
+      const startState = _normalizeState(curRes.rows[0].state);
+      if (!startState) return res.json({ error: '상태 인식 불가' });
+
+      const chain = [{ state: startState, probability: 1.0, step: 0 }];
+      let currentStates = [{ state: startState, prob: 1.0 }];
+
+      for (let step = 1; step <= steps; step++) {
+        const nextStates = [];
+        for (const { state, prob } of currentStates) {
+          const { rows } = await db.query(
+            `SELECT to_state, probability FROM transition_model
+             WHERE user_id = $1 AND from_state = $2
+             ORDER BY probability DESC LIMIT 2`,
+            [userId, state]
+          ).catch(() => ({ rows: [] }));
+          for (const r of rows) {
+            const ns = _normalizeState(r.to_state);
+            if (ns) nextStates.push({ state: ns, prob: +(prob * r.probability).toFixed(3) });
+          }
+        }
+        if (!nextStates.length) break;
+        nextStates.sort((a, b) => b.prob - a.prob);
+        const top = nextStates.slice(0, 2);
+        for (const ns of top) chain.push({ state: ns.state, probability: ns.prob, step });
+        currentStates = top;
+      }
+
+      res.json({ userId, startState, chain, steps, generatedAt: new Date().toISOString() });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+  });
+
   // ═══════════════════════════════════════════════════════════════
   // GET /api/think/transitions — 전이 확률 테이블 조회
   // ═══════════════════════════════════════════════════════════════
@@ -513,9 +576,25 @@ function createThinkEngine({ getDb, ragCore }) {
       const total = parseInt(r.total) || 0;
       const correct = parseInt(r.correct) || 0;
 
+      const trendRes = await db.query(`
+        SELECT DATE(created_at) as day,
+          COUNT(*) as total,
+          COUNT(*) FILTER (WHERE correct = true) as correct_cnt
+        FROM predictions
+        WHERE created_at > NOW() - INTERVAL '7 days'
+        GROUP BY DATE(created_at)
+        ORDER BY day DESC
+      `).catch(() => ({ rows: [] }));
+      const trend = trendRes.rows.map(r => ({
+        day: r.day,
+        accuracy: parseInt(r.total) > 0 ? Math.round(parseInt(r.correct_cnt) / parseInt(r.total) * 100) : 0,
+        total: parseInt(r.total),
+      }));
+
       res.json({
         total, correct, wrong: parseInt(r.wrong) || 0, pending: parseInt(r.pending) || 0,
         accuracy: total > 0 ? Math.round(correct / Math.max(total - parseInt(r.pending || 0), 1) * 100) : 0,
+        trend,
       });
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
@@ -599,13 +678,22 @@ function createThinkEngine({ getDb, ragCore }) {
         GROUP BY user_id,ps,s HAVING COUNT(*)>=2
       `);
       const ut = {};
-      for (const r of trans.rows) { const k=`${r.user_id}:${r.ps}`; ut[k]=(ut[k]||0)+parseInt(r.c); }
+      for (const r of trans.rows) {
+        const fs = _normalizeState(r.ps);
+        if (!fs) continue;
+        const k = `${r.user_id}:${fs}`;
+        ut[k] = (ut[k] || 0) + parseInt(r.c);
+      }
       let lc = 0;
       for (const r of trans.rows) {
-        const k=`${r.user_id}:${r.ps}`, p=parseInt(r.c)/(ut[k]||1);
+        const fromS = _normalizeState(r.ps);
+        const toS   = _normalizeState(r.s);
+        if (!fromS || !toS || fromS === toS) continue;
+        const k = `${r.user_id}:${fromS}`;
+        const p = parseInt(r.c) / (ut[k] || 1);
         await db.query(`INSERT INTO transition_model (user_id,from_state,to_state,probability,count,avg_seconds,updated_at)
           VALUES ($1,$2,$3,$4,$5,$6,NOW()) ON CONFLICT (user_id,from_state,to_state) DO UPDATE SET probability=$4,count=$5,avg_seconds=$6,updated_at=NOW()`,
-          [r.user_id,r.ps,r.s,+p.toFixed(3),parseInt(r.c),+parseFloat(r.a||0).toFixed(1)]);
+          [r.user_id, fromS, toS, +p.toFixed(3), parseInt(r.c), +parseFloat(r.a||0).toFixed(1)]);
         lc++;
       }
       if (lc > 0) console.log(`[think-engine] 전이 모델 학습 ${lc}건`);

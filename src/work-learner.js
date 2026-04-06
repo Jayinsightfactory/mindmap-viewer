@@ -21,6 +21,18 @@ const WORK_CATEGORIES = {
   '디자인':     { apps: ['figma', 'photoshop', 'illustrator'], keywords: ['디자인', '레이아웃'] },
 };
 
+function normalizeWindowTitle(title) {
+  if (!title) return '';
+  return title
+    .toLowerCase()
+    .replace(/[-_|•·]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/\d{5,}/g, '#')        // 주문번호 등 5자리 이상 숫자 마스킹
+    .replace(/[()[\]{}]/g, '')
+    .trim()
+    .slice(0, 60);
+}
+
 // ── 이벤트 → 업무 세션 그룹핑 ─────────────────────────────────────────────
 function groupIntoWorkSessions(events, gapMinutes = 5) {
   const sorted = events
@@ -57,13 +69,13 @@ function extractContext(event) {
     const wh = ctx.windowHistory || {};
     const summary = data.summary || '';
     const mouseClicks = data.mouseClicks || 0;
-    return { app: app.toLowerCase(), window, windowHistory: wh, summary, mouseClicks, type: 'keyboard' };
+    return { app: app.toLowerCase(), window: normalizeWindowTitle(window), windowHistory: wh, summary, mouseClicks, type: 'keyboard' };
   }
 
   if (event.type === 'screen.capture') {
     return {
       app: (data.app || '').toLowerCase(),
-      window: data.windowTitle || '',
+      window: normalizeWindowTitle(data.windowTitle || ''),
       trigger: data.trigger || '',
       activityLevel: data.activityLevel || '',
       type: 'capture',
@@ -276,6 +288,8 @@ async function analyzeUser(pool, userId) {
     automationScore,
     sessions: sessionAnalyses.slice(0, 10), // 최근 10개 세션
     insights: _generateInsights(sessionAnalyses, patterns, categoryTotals, appTotals, automationScore),
+    rawInputPatterns: _extractRawInputPatterns(events),
+    mouseHotspots: _clusterMouseClicks(events),
   };
 }
 
@@ -340,4 +354,66 @@ async function analyzeWorkspace(pool, memberIds) {
   return { members: results, teamInsights, analyzedAt: new Date().toISOString() };
 }
 
-module.exports = { analyzeUser, analyzeWorkspace, groupIntoWorkSessions, classifyActivity, detectPatterns };
+function _extractRawInputPatterns(events) {
+  const inputs = events
+    .filter(e => e.type === 'keyboard.chunk' && typeof e.data?.rawInput === 'string' && e.data.rawInput.trim().length > 3)
+    .map(e => e.data.rawInput.trim().slice(0, 100));
+
+  if (inputs.length < 5) return { count: inputs.length, patterns: [], topInputs: [] };
+
+  const freq = {};
+  for (const input of inputs) {
+    const normalized = input.replace(/\d+/g, '#').trim();
+    freq[normalized] = (freq[normalized] || 0) + 1;
+  }
+
+  const patterns = Object.entries(freq)
+    .filter(([_, c]) => c >= 2)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10)
+    .map(([pattern, count]) => ({
+      pattern,
+      count,
+      automatable: count >= 3,
+      suggestion: count >= 3 ? `"${pattern}" 자동완성 또는 단축키 등록 가능` : null,
+    }));
+
+  return { count: inputs.length, patterns, topInputs: inputs.slice(0, 5) };
+}
+
+function _clusterMouseClicks(events) {
+  const clicks = [];
+  for (const e of events) {
+    if (e.type !== 'keyboard.chunk') continue;
+    const positions = e.data?.mousePositions;
+    if (!Array.isArray(positions)) continue;
+    for (const pos of positions) {
+      if (pos && typeof pos.x === 'number' && typeof pos.y === 'number') {
+        clicks.push({ x: pos.x, y: pos.y });
+      }
+    }
+  }
+
+  if (clicks.length < 10) return { clickCount: clicks.length, hotspots: [] };
+
+  const grid = {};
+  for (const { x, y } of clicks) {
+    const gx = Math.round(x / 50) * 50;
+    const gy = Math.round(y / 50) * 50;
+    const key = `${gx},${gy}`;
+    grid[key] = (grid[key] || 0) + 1;
+  }
+
+  const hotspots = Object.entries(grid)
+    .filter(([_, c]) => c >= 3)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8)
+    .map(([key, count]) => {
+      const [x, y] = key.split(',').map(Number);
+      return { x, y, count, automatable: count >= 5 };
+    });
+
+  return { clickCount: clicks.length, hotspots };
+}
+
+module.exports = { analyzeUser, analyzeWorkspace, groupIntoWorkSessions, classifyActivity, detectPatterns, normalizeWindowTitle, _extractRawInputPatterns, _clusterMouseClicks };

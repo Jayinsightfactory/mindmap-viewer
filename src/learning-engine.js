@@ -416,6 +416,19 @@ function compileLearningSheet(events, routines, triggers, automationAreas, capab
     });
   }
 
+  // 반복작업 상세 (automationAreas 있을 경우)
+  const repWork = (automationAreas?.areas || automationAreas) || [];
+  for (const area of repWork.slice(0, 5)) {
+    if (area.description || area.type) {
+      entries.push({
+        category: '반복작업',
+        key: area.description || area.type,
+        value: area.estimatedTimeSavedMin ? `주 ${area.estimatedTimeSavedMin}분 절약 가능` : '절약 가능',
+        insight: area.automationScript || '자동화 스크립트 작성 권장',
+      });
+    }
+  }
+
   return entries;
 }
 
@@ -435,10 +448,12 @@ function calcActivePeriod(events) {
  * @returns {{ recommendations, totalSavingsPerWeek }}
  */
 function generatePersonalRecommendations(learningProfile) {
-  const { automationAreas, routines, triggers } = learningProfile;
-  const recommendations = (automationAreas?.recommendations || []).map(r => ({
-    ...r,
-    personalFit: calculatePersonalFit(r, routines, triggers),
+  const { automationAreas, routines, triggers, patterns, learningData } = learningProfile;
+  const profile = { patterns, triggers, automationAreas: automationAreas?.areas, learningData, routines };
+  const recommendations = (automationAreas?.recommendations || []).map(sol => ({
+    ...sol,
+    personalFit: calculatePersonalFit(sol, profile),
+    estimatedSavingsPerWeek: _estimateSavingsFromData(sol, profile),
   }));
 
   recommendations.sort((a, b) => b.personalFit - a.personalFit);
@@ -448,22 +463,53 @@ function generatePersonalRecommendations(learningProfile) {
   return { recommendations, totalSavingsPerWeek };
 }
 
-function calculatePersonalFit(solution, routines, triggers) {
-  let fit = 50; // 기본
+function calculatePersonalFit(solution, profile) {
+  const { patterns, triggers, automationAreas, learningData } = profile;
 
-  // 자동화 가능 트리거가 있으면 +
-  const autoTriggers = (triggers || []).filter(t => t.automatable);
-  if (autoTriggers.length > 0) fit += 10;
+  let fit = 40;
 
-  // 루틴이 강하면 자동화 효과 큼
-  const strongRoutines = (routines || []).filter(r => r.confidence > 0.7);
-  if (strongRoutines.length > 2) fit += 15;
+  // 1. 트리거 매칭
+  const matchedTriggers = (triggers || []).filter(t =>
+    (solution.trigger_keywords || solution.tags || []).some(k =>
+      (t.trigger || t.action || '').toLowerCase().includes(k.toLowerCase())
+    )
+  );
+  fit += Math.min(matchedTriggers.length * 12, 24);
 
-  // 난이도별 조정
-  if (solution.difficulty === 'easy') fit += 10;
-  if (solution.difficulty === 'hard') fit -= 5;
+  // 2. 반복 패턴 강도
+  const strongRoutines = (patterns?.weeklyPatterns || []).filter(p => (p.intensity || 0) > 60);
+  if (strongRoutines.length >= 3) fit += 15;
+  else if (strongRoutines.length >= 1) fit += 8;
 
-  return Math.min(100, Math.max(0, fit));
+  // 3. 자동화 영역 일치
+  const matchedAreas = (automationAreas || []).filter(a =>
+    (solution.tags || []).some(tag =>
+      (a.type || '').includes(tag) || (a.description || '').toLowerCase().includes((solution.name || '').toLowerCase())
+    )
+  );
+  fit += Math.min(matchedAreas.length * 8, 16);
+
+  // 4. 데이터 풍부도
+  const dataEntries = (learningData || []).length;
+  if (dataEntries >= 20) fit += 5;
+
+  // 5. 난이도 조정
+  if (solution.difficulty === 'hard' && dataEntries < 10) fit -= 10;
+  if (solution.difficulty === 'easy') fit += 5;
+
+  return Math.min(Math.max(Math.round(fit), 0), 100);
+}
+
+function _estimateSavingsFromData(solution, profile) {
+  const matchedArea = (profile.automationAreas || []).find(a =>
+    (solution.tags || []).some(tag => (a.type || '').includes(tag))
+  );
+  if (matchedArea?.estimatedTimeSavedMin) {
+    const base = solution.estimatedSavingsPerWeek || 60;
+    const dataRatio = Math.min((matchedArea.estimatedTimeSavedMin * 4) / base, 2.0); // 주간 환산
+    return Math.round(base * Math.max(dataRatio, 0.5));
+  }
+  return solution.estimatedSavingsPerWeek || 60;
 }
 
 
