@@ -183,17 +183,34 @@ while ($true) {
     const orbitPs1 = path.join(orbitDir, 'start-daemon.ps1');
     fs.writeFileSync(orbitPs1, ps1Content, { encoding: 'utf8' });
 
-    // Startup 폴더에 VBS 래퍼 (PowerShell Hidden — CMD 창 완전 제거)
-    const startupDir = path.join(os.homedir(), 'AppData', 'Roaming', 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup');
-    if (fs.existsSync(startupDir)) {
-      const vbsContent = `CreateObject("WScript.Shell").Run "powershell.exe -WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -File ""${orbitPs1}""", 0, False`;
-      fs.writeFileSync(path.join(startupDir, 'orbit-daemon.vbs'), vbsContent, { encoding: 'ascii' });
-      // 구버전 bat/vbs 정리
-      const oldBat = path.join(startupDir, 'orbit-daemon.bat');
-      try { if (fs.existsSync(oldBat)) fs.unlinkSync(oldBat); } catch {}
+    // Task Scheduler 갱신 (primary — VBS보다 안정적, ps1 경로가 같으므로 재등록만 하면 됨)
+    if (os.platform() === 'win32') {
+      try {
+        const ps1Escaped = orbitPs1.replace(/'/g, "''");
+        const registerCmd = `powershell.exe -WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -Command "` +
+          `$a=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument '-WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -File \\'${ps1Escaped}\\'';` +
+          `$t=New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME;` +
+          `$s=New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -StartWhenAvailable $true;` +
+          `Register-ScheduledTask -TaskName OrbitDaemon -Action $a -Trigger $t -Settings $s -Force -RunLevel Highest -ErrorAction SilentlyContinue | Out-Null"`;
+        execSync(registerCmd, { timeout: 15000, windowsHide: true, stdio: 'pipe' });
+        console.log('[daemon-updater] Task Scheduler 갱신 완료');
+        // 기존 VBS 정리 (Task Scheduler 성공 시 불필요)
+        const startupDir = path.join(os.homedir(), 'AppData', 'Roaming', 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup');
+        ['orbit-daemon.vbs', 'orbit-daemon.bat'].forEach(f => {
+          try { const fp = path.join(startupDir, f); if (fs.existsSync(fp)) fs.unlinkSync(fp); } catch {}
+        });
+      } catch (e) {
+        console.warn('[daemon-updater] Task Scheduler 갱신 실패, VBS fallback:', e.message);
+        // Fallback: Startup 폴더 VBS
+        const startupDir = path.join(os.homedir(), 'AppData', 'Roaming', 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup');
+        if (fs.existsSync(startupDir)) {
+          const vbsContent = `CreateObject("WScript.Shell").Run "powershell.exe -WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -File ""${orbitPs1}""", 0, False`;
+          fs.writeFileSync(path.join(startupDir, 'orbit-daemon.vbs'), vbsContent, { encoding: 'ascii' });
+        }
+      }
     }
 
-    console.log('[daemon-updater] ps1+vbs 파일 재생성 완료 (CMD 창 완전 제거)');
+    console.log('[daemon-updater] ps1 재생성 + startup 갱신 완료');
   } catch (e) {
     console.warn('[daemon-updater] bat 재생성 실패:', e.message);
   }

@@ -402,13 +402,40 @@ while (`$true) {
 [System.IO.File]::WriteAllText($ps1Path, $ps1Content, [System.Text.Encoding]::UTF8)
 
 $ps1Path = $startBat -replace '\.bat$', '.ps1'
-$vbsContent = "CreateObject(""WScript.Shell"").Run ""powershell.exe -WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -File """"$ps1Path"""""", 0, False"
-$StartupVbs = "$StartupDir\orbit-daemon.vbs"
-[System.IO.File]::WriteAllText($StartupVbs, $vbsContent, [System.Text.Encoding]::ASCII)
+
+# Task Scheduler (primary — more reliable than Startup folder VBS)
+$taskRegistered = $false
+try {
+  $taskName = "OrbitDaemon"
+  $action   = New-ScheduledTaskAction -Execute "powershell.exe" `
+    -Argument "-WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -File `"$ps1Path`""
+  $trigger  = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+  $settings = New-ScheduledTaskSettingsSet `
+    -ExecutionTimeLimit ([System.TimeSpan]::Zero) `
+    -RestartCount 3 `
+    -RestartInterval (New-TimeSpan -Minutes 1) `
+    -StartWhenAvailable $true
+  Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger `
+    -Settings $settings -Force -RunLevel Highest -ErrorAction Stop 2>$null | Out-Null
+  $taskRegistered = $true
+  Write-Host "  Task Scheduler registered (primary)" -ForegroundColor Green
+} catch {
+  Write-Host "  Task Scheduler failed, using Startup folder (fallback)..." -ForegroundColor Yellow
+}
+
+# Startup folder VBS (fallback — used only if Task Scheduler fails)
+if (-not $taskRegistered) {
+  $vbsContent = "CreateObject(""WScript.Shell"").Run ""powershell.exe -WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -File """"$ps1Path"""""", 0, False"
+  $StartupVbs = "$StartupDir\orbit-daemon.vbs"
+  [System.IO.File]::WriteAllText($StartupVbs, $vbsContent, [System.Text.Encoding]::ASCII)
+  Write-Host "  Startup folder registered (fallback)" -ForegroundColor Yellow
+} else {
+  # Task Scheduler 성공 시 기존 VBS/BAT 정리 (충돌 방지)
+  $StartupVbs = "$StartupDir\orbit-daemon.vbs"
+  if (Test-Path $StartupVbs) { Remove-Item $StartupVbs -Force -ErrorAction SilentlyContinue }
+}
 $oldBat = "$StartupDir\orbit-daemon.bat"
 if (Test-Path $oldBat) { Remove-Item $oldBat -Force -ErrorAction SilentlyContinue }
-
-Write-Host "  Startup registered" -ForegroundColor Green
 
 # Step 7: Kill old daemon + Start new one
 Write-Host "  [7/7] Starting daemon..." -ForegroundColor Cyan
