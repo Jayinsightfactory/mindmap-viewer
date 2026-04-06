@@ -660,13 +660,19 @@ async function _pgBackupUser(user, passwordHash) {
 }
 async function _pgBackupToken(token, userId, expiresAt) {
   if (!_pgPool || !token) return;
-  try {
-    await _pgInit(); // 테이블 보장
-    await _pgPool.query(
-      `INSERT INTO orbit_auth_tokens (token, user_id, expires_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
-      [token, userId, expiresAt || null]
-    );
-  } catch (e) { console.warn('[AUTH-PG] token backup failed:', e.message); }
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      await _pgInit();
+      await _pgPool.query(
+        `INSERT INTO orbit_auth_tokens (token, user_id, expires_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+        [token, userId, expiresAt || null]
+      );
+      return; // 성공
+    } catch (e) {
+      console.warn(`[AUTH-PG] token backup attempt ${attempt}/3 failed:`, e.message);
+      if (attempt < 3) await new Promise(r => setTimeout(r, 1000 * attempt));
+    }
+  }
 }
 
 // 부팅 시 PG의 인증 데이터를 SQLite에 동기화 (이메일 기반 머지)
@@ -712,6 +718,21 @@ async function initFromPg() {
       try { insertToken.run(t.token, t.user_id, t.type || 'session', t.expires_at || null); } catch {}
     }
     console.log(`[AUTH-PG] 동기화 완료: ${synced}명 / ${tokens.length}토큰`);
+
+    // 5분마다 SQLite 토큰 전체를 PG에 동기화 (Railway 재배포 전 백업 보장)
+    if (!global._tokenSyncScheduled) {
+      global._tokenSyncScheduled = true;
+      setInterval(async () => {
+        if (!_pgPool || !db) return;
+        try {
+          const allToks = db.prepare("SELECT token, userId FROM tokens WHERE type='api'").all();
+          for (const t of allToks) {
+            _pgBackupToken(t.token, t.userId, null).catch(() => {});
+          }
+          if (allToks.length > 0) console.log(`[AUTH-PG] 주기적 토큰 동기화: ${allToks.length}개`);
+        } catch {}
+      }, 5 * 60 * 1000);
+    }
   } catch (e) {
     console.warn('[AUTH-PG] 동기화 실패:', e.message);
   }

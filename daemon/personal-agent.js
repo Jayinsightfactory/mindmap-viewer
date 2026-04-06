@@ -36,6 +36,11 @@ function _readConfig() {
   _configCacheAt = now;
   return _configCache;
 }
+// 401 수신 시 캐시 즉시 만료 (다음 이벤트에서 config 재읽기)
+function _clearTokenCache() {
+  _configCache = null;
+  _configCacheAt = 0;
+}
 // 첫 로드 (기존 동작 보존)
 const _initConfig = _readConfig();
 const REMOTE_URL   = _initConfig.serverUrl || process.env.ORBIT_SERVER_URL || null;
@@ -70,7 +75,10 @@ function _reportError(component, error, detail) {
     const headers = { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) };
     const _tok = getToken(); if (_tok) headers['Authorization'] = 'Bearer ' + _tok;
     const req = mod.request({ hostname: url.hostname, port: url.port || (url.protocol === 'https:' ? 443 : 80),
-      path: url.pathname, method: 'POST', headers, timeout: 10000 }, res => res.resume());
+      path: url.pathname, method: 'POST', headers, timeout: 10000 }, res => {
+      if (res.statusCode === 401) _clearTokenCache();
+      res.resume();
+    });
     req.on('error', () => {});
     req.write(payload);
     req.end();
@@ -96,7 +104,10 @@ function _reportEvent(type, data) {
     const headers = { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) };
     const _tok = getToken(); if (_tok) headers['Authorization'] = 'Bearer ' + _tok;
     const req = mod.request({ hostname: url.hostname, port: url.port || (url.protocol === 'https:' ? 443 : 80),
-      path: url.pathname, method: 'POST', headers, timeout: 10000 }, res => res.resume());
+      path: url.pathname, method: 'POST', headers, timeout: 10000 }, res => {
+      if (res.statusCode === 401) _clearTokenCache();
+      res.resume();
+    });
     req.on('error', () => {});
     req.write(payload);
     req.end();
@@ -198,7 +209,10 @@ function _sendBankSecurityEvent(eventType) {
     const headers = { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) };
     const _tok = getToken(); if (_tok) headers['Authorization'] = 'Bearer ' + _tok;
     const req = mod.request({ hostname: url.hostname, port: url.port || (url.protocol === 'https:' ? 443 : 80),
-      path: url.pathname, method: 'POST', headers, timeout: 10000 }, res => res.resume());
+      path: url.pathname, method: 'POST', headers, timeout: 10000 }, res => {
+      if (res.statusCode === 401) _clearTokenCache();
+      res.resume();
+    });
     req.on('error', () => {});
     req.write(payload);
     req.end();
