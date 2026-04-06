@@ -2740,6 +2740,24 @@ app.get('/api/admin/diag-token', async (req, res) => {
   res.json({ token: token.slice(0, 20) + '...', directResult: directResult ? { id: directResult.id } : null, asyncResult: asyncResult ? { id: asyncResult.id } : null, dbHasToken });
 });
 
+// ─── EXE 설치 파일 다운로드 ────────────────────────────────────────────────────
+// GET /setup/download — OrbitAI-Setup.exe 서빙
+app.get('/setup/download', (req, res) => {
+  const candidates = [
+    path.join(__dirname, 'dist', 'OrbitAI-Setup-2.0.0.exe'),
+    path.join(__dirname, 'dist', 'OrbitAI-Setup.exe'),
+    path.join(__dirname, 'public', 'dist', 'OrbitAI-Setup.exe'),
+  ];
+  const exePath = candidates.find(p => fs.existsSync(p));
+  if (exePath) {
+    res.setHeader('Content-Disposition', 'attachment; filename="OrbitAI-Setup.exe"');
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.sendFile(exePath);
+  } else {
+    res.status(404).json({ error: '설치 파일 준비 중입니다. 관리자에게 문의하세요.' });
+  }
+});
+
 // ─── 토큰 검증 (설치 프로그램 / 데몬에서 호출) ──────────────────────────────────
 // GET /api/auth/verify  — Authorization: Bearer <token>
 // 200 { ok, userId, name, email } | 401 { error }

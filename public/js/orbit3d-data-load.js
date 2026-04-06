@@ -331,10 +331,7 @@ async function _postLoginSync(token) {
 
 function _showInstallCodeModal(token) {
   const serverUrl = location.origin;
-  // [scriptblock]::Create + -Token 파라미터 방식
-  // → $env:ORBIT_TOKEN 확장 문제 없음, PS1 파일 직접 실행, & 오류 없음
-  const installCmd = `&([scriptblock]::Create((irm '${serverUrl}/setup/install.ps1'))) -Token '${token}'`;
-
+  const downloadUrl = `${serverUrl}/setup/download`;
 
   // 기존 모달 제거
   const old = document.getElementById('_orbit_install_modal');
@@ -342,21 +339,38 @@ function _showInstallCodeModal(token) {
 
   const modal = document.createElement('div');
   modal.id = '_orbit_install_modal';
-  modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);z-index:99999;display:flex;align-items:center;justify-content:center;';
+  modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.88);z-index:99999;display:flex;align-items:center;justify-content:center;';
   modal.innerHTML = `
-    <div style="background:#1a1a2e;border:1px solid #4a9eff;border-radius:12px;padding:32px;max-width:680px;width:90%;color:#fff;font-family:monospace;">
-      <h2 style="margin:0 0 8px;color:#4a9eff;font-size:18px;">🚀 Orbit AI 트래커 설치</h2>
-      <p style="color:#aaa;margin:0 0 20px;font-size:13px;">이 PC에 Orbit AI 트래커를 설치하려면 아래 명령어를 복사해서 PowerShell에 붙여넣고 실행하세요.</p>
-      <div style="background:#0d0d1a;border:1px solid #333;border-radius:6px;padding:12px;margin-bottom:16px;">
-        <div style="color:#888;font-size:11px;margin-bottom:6px;">PowerShell (Win+R → powershell → Enter)</div>
-        <code id="_orbit_install_cmd" style="color:#4eff91;font-size:12px;word-break:break-all;display:block;">${installCmd}</code>
+    <div style="background:#1a1a2e;border:1px solid #4a9eff;border-radius:14px;padding:32px;max-width:520px;width:92%;color:#fff;font-family:-apple-system,'Segoe UI',sans-serif;">
+      <div style="font-size:32px;margin-bottom:8px;">🖥️</div>
+      <h2 style="margin:0 0 6px;color:#4a9eff;font-size:18px;font-weight:700;">Orbit AI 트래커 설치</h2>
+      <p style="color:#888;margin:0 0 22px;font-size:13px;line-height:1.6;">설치 파일을 받아서 실행하고, 설치 코드를 입력하면 자동으로 완료됩니다.</p>
+
+      <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:20px;">
+        <div style="display:flex;align-items:center;gap:10px;background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:12px 16px;">
+          <span style="background:#238636;color:#fff;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;">1</span>
+          <span style="font-size:13px;color:#e6edf3;">설치 파일 다운로드</span>
+          <a href="${downloadUrl}" download style="margin-left:auto;background:#1f6feb;color:#fff;text-decoration:none;padding:6px 14px;border-radius:6px;font-size:12px;font-weight:600;">⬇ 다운로드</a>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:10px;background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:12px 16px;">
+          <span style="background:#238636;color:#fff;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;margin-top:1px;">2</span>
+          <div style="flex:1;">
+            <div style="font-size:13px;color:#e6edf3;margin-bottom:8px;">설치 중 <b>설치 코드</b> 입력</div>
+            <div style="background:#010409;border:1px solid #21262d;border-radius:6px;padding:8px 10px;display:flex;align-items:center;gap:8px;">
+              <code id="_orbit_install_token" style="color:#4eff91;font-size:11px;word-break:break-all;flex:1;">${token}</code>
+              <button onclick="navigator.clipboard.writeText('${token}').then(()=>{this.textContent='✅';setTimeout(()=>this.textContent='복사',1800)}).catch(()=>{})"
+                style="background:#1f6feb;border:none;border-radius:4px;color:#fff;font-size:11px;padding:4px 10px;cursor:pointer;flex-shrink:0;">복사</button>
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:12px 16px;">
+          <span style="background:#238636;color:#fff;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;">3</span>
+          <span style="font-size:13px;color:#e6edf3;">설치 완료 → 자동으로 데이터 수집 시작</span>
+        </div>
       </div>
-      <div style="display:flex;gap:10px;">
-        <button onclick="navigator.clipboard.writeText(document.getElementById('_orbit_install_cmd').textContent).then(()=>{this.textContent='✅ 복사됨!';setTimeout(()=>this.textContent='📋 복사',2000)}).catch(()=>alert(document.getElementById('_orbit_install_cmd').textContent))"
-          style="flex:1;padding:10px;background:#4a9eff;border:none;border-radius:6px;color:#fff;cursor:pointer;font-size:14px;">📋 복사</button>
-        <button onclick="document.getElementById('_orbit_install_modal').remove()"
-          style="padding:10px 20px;background:#333;border:none;border-radius:6px;color:#aaa;cursor:pointer;font-size:14px;">나중에</button>
-      </div>
+
+      <button onclick="document.getElementById('_orbit_install_modal').remove()"
+        style="width:100%;padding:10px;background:#21262d;border:1px solid #30363d;border-radius:8px;color:#8b949e;cursor:pointer;font-size:13px;">나중에</button>
     </div>`;
   document.body.appendChild(modal);
 }
@@ -424,63 +438,71 @@ async function _showEmptyStateGuide() {
   const base = location.origin;
   const isMac = /Mac/i.test(navigator.userAgent);
 
-  const installCmd = isMac
-    ? `ORBIT_TOKEN='${t||''}' bash <(curl -sL '${base}/setup/orbit-start.sh')`
-    : `powershell -ExecutionPolicy Bypass -Command "& {$env:ORBIT_TOKEN='${t||''}'; iex (irm '${base}/setup/install.ps1')}"`;
-
+  const macCmd = `ORBIT_TOKEN='${t||''}' bash <(curl -sL '${base}/setup/orbit-start.sh')`;
+  const downloadUrl = `${base}/setup/download`;
 
   const el = document.createElement('div');
   el.id = 'empty-state-guide';
   el.style.cssText = `
     position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
     background:rgba(13,17,23,0.97); border:1px solid #30363d;
-    border-radius:18px; padding:32px 36px; max-width:480px; text-align:center;
+    border-radius:18px; padding:28px 32px; max-width:500px; width:92%; text-align:center;
     z-index:500; backdrop-filter:blur(20px);
     box-shadow:0 16px 64px rgba(0,0,0,0.5);
     font-family:-apple-system,'Segoe UI',sans-serif;
     animation:fadeIn .4s ease;
   `;
   el.innerHTML = `
-    <div style="font-size:42px;margin-bottom:12px">⬡</div>
-    <div style="font-size:18px;font-weight:700;color:#e6edf3;margin-bottom:8px">
-      Orbit 트래커 설치
-    </div>
-    <div style="font-size:13px;color:#8b949e;margin-bottom:20px;line-height:1.6">
-      로컬 PC에서 작업 데이터를 수집하려면<br>아래 명령어를 터미널에 붙여넣으세요.
+    <div style="font-size:38px;margin-bottom:10px">🖥️</div>
+    <div style="font-size:17px;font-weight:700;color:#e6edf3;margin-bottom:6px">Orbit 트래커 설치</div>
+    <div style="font-size:12px;color:#8b949e;margin-bottom:18px;line-height:1.6">
+      PC에서 작업 데이터를 수집하려면 트래커를 설치하세요.
     </div>
 
     <!-- OS 탭 -->
-    <div style="display:flex;gap:6px;justify-content:center;margin-bottom:12px">
-      <button id="esg-tab-${isMac?'mac':'win'}" onclick="document.getElementById('esg-cmd-mac').style.display='${isMac?'block':'none'}';document.getElementById('esg-cmd-win').style.display='${isMac?'none':'block'}';this.style.background='#1f6feb';document.getElementById('esg-tab-${isMac?'win':'mac'}').style.background='#21262d'"
+    <div style="display:flex;gap:6px;justify-content:center;margin-bottom:14px">
+      <button id="esg-tab-${isMac?'mac':'win'}" onclick="document.getElementById('esg-panel-mac').style.display='${isMac?'block':'none'}';document.getElementById('esg-panel-win').style.display='${isMac?'none':'block'}';this.style.background='#1f6feb';document.getElementById('esg-tab-${isMac?'win':'mac'}').style.background='#21262d'"
         style="background:#1f6feb;border:none;color:#fff;padding:5px 14px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer">${isMac?'macOS':'Windows'}</button>
-      <button id="esg-tab-${isMac?'win':'mac'}" onclick="document.getElementById('esg-cmd-win').style.display='${isMac?'block':'none'}';document.getElementById('esg-cmd-mac').style.display='${isMac?'none':'block'}';this.style.background='#1f6feb';document.getElementById('esg-tab-${isMac?'mac':'win'}').style.background='#21262d'"
+      <button id="esg-tab-${isMac?'win':'mac'}" onclick="document.getElementById('esg-panel-win').style.display='${isMac?'block':'none'}';document.getElementById('esg-panel-mac').style.display='${isMac?'none':'block'}';this.style.background='#1f6feb';document.getElementById('esg-tab-${isMac?'mac':'win'}').style.background='#21262d'"
         style="background:#21262d;border:none;color:#8b949e;padding:5px 14px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer">${isMac?'Windows':'macOS'}</button>
     </div>
 
-    <!-- macOS 명령어 -->
-    <div id="esg-cmd-mac" style="display:${isMac?'block':'none'};text-align:left;background:#010409;border:1px solid #21262d;border-radius:10px;padding:14px;position:relative;margin-bottom:14px">
+    <!-- Windows EXE 패널 -->
+    <div id="esg-panel-win" style="display:${isMac?'none':'block'};text-align:left;margin-bottom:14px">
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <div style="display:flex;align-items:center;gap:8px;background:#0d1117;border:1px solid #21262d;border-radius:8px;padding:10px 14px;">
+          <span style="background:#238636;color:#fff;border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;">1</span>
+          <span style="font-size:12px;color:#e6edf3;flex:1;">설치 파일 다운로드</span>
+          <a href="${downloadUrl}" download style="background:#1f6feb;color:#fff;text-decoration:none;padding:5px 12px;border-radius:5px;font-size:11px;font-weight:600;">⬇ EXE 받기</a>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:8px;background:#0d1117;border:1px solid #21262d;border-radius:8px;padding:10px 14px;">
+          <span style="background:#238636;color:#fff;border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;margin-top:1px;">2</span>
+          <div style="flex:1;">
+            <div style="font-size:12px;color:#e6edf3;margin-bottom:6px;">설치 중 <b>설치 코드</b> 입력</div>
+            <div style="background:#010409;border:1px solid #30363d;border-radius:5px;padding:6px 8px;display:flex;align-items:center;gap:6px;">
+              <code style="color:#4eff91;font-size:10px;word-break:break-all;flex:1;">${t||''}</code>
+              <button onclick="navigator.clipboard.writeText('${t||''}').then(()=>{this.textContent='✅';setTimeout(()=>this.textContent='복사',1800)})"
+                style="background:#1f6feb;border:none;border-radius:4px;color:#fff;font-size:10px;padding:3px 8px;cursor:pointer;flex-shrink:0;">복사</button>
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;background:#0d1117;border:1px solid #21262d;border-radius:8px;padding:10px 14px;">
+          <span style="background:#238636;color:#fff;border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;">3</span>
+          <span style="font-size:12px;color:#e6edf3;">완료 → 자동으로 데이터 수집 시작</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- macOS 패널 -->
+    <div id="esg-panel-mac" style="display:${isMac?'block':'none'};text-align:left;background:#010409;border:1px solid #21262d;border-radius:8px;padding:12px;position:relative;margin-bottom:14px">
       <div style="font-size:10px;color:#6e7681;margin-bottom:6px">Terminal</div>
-      <code style="font-family:'Consolas','Courier New',monospace;font-size:12px;color:#3fb950;word-break:break-all;line-height:1.6;display:block;padding-right:44px">bash <(curl -sL '${base}/orbit-setup.sh${t ? '?token='+encodeURIComponent(t) : ''}')</code>
-      <button onclick="(function(){
-        const cmd=\`bash <(curl -sL '${base}/orbit-setup.sh${t ? '?token='+encodeURIComponent(t) : ''}')\`;
-        navigator.clipboard.writeText(cmd).then(()=>{const b=event.target;b.textContent='Copied';b.style.background='#238636';setTimeout(()=>{b.textContent='Copy';b.style.background='#1f6feb'},1500)}).catch(()=>prompt('Copy:',cmd))
-      })()"
-        style="position:absolute;top:12px;right:12px;background:#1f6feb;border:none;border-radius:6px;color:#fff;font-size:11px;font-weight:600;padding:4px 12px;cursor:pointer">Copy</button>
+      <code id="esg-mac-cmd" style="font-family:'Consolas','Courier New',monospace;font-size:11px;color:#3fb950;word-break:break-all;line-height:1.6;display:block;padding-right:50px">${macCmd}</code>
+      <button onclick="navigator.clipboard.writeText(document.getElementById('esg-mac-cmd').textContent).then(()=>{this.textContent='Copied';this.style.background='#238636';setTimeout(()=>{this.textContent='Copy';this.style.background='#1f6feb'},1500)})"
+        style="position:absolute;top:10px;right:10px;background:#1f6feb;border:none;border-radius:5px;color:#fff;font-size:10px;font-weight:600;padding:4px 10px;cursor:pointer">Copy</button>
     </div>
 
-    <!-- Windows 명령어 -->
-    <div id="esg-cmd-win" style="display:${isMac?'none':'block'};text-align:left;background:#010409;border:1px solid #21262d;border-radius:10px;padding:14px;position:relative;margin-bottom:14px">
-      <div style="font-size:10px;color:#6e7681;margin-bottom:6px">PowerShell (관리자)</div>
-      <code id="esg-win-cmd-text" style="font-family:'Consolas','Courier New',monospace;font-size:12px;color:#3fb950;word-break:break-all;line-height:1.6;display:block;padding-right:44px">powershell -ExecutionPolicy Bypass -Command "& {$env:ORBIT_TOKEN='${t||''}'; iex (irm '${base}/setup/install.ps1')}"</code>
-      <button onclick="(function(){
-        const el=document.getElementById('esg-win-cmd-text');
-        navigator.clipboard.writeText(el.textContent.trim()).then(()=>{const b=event.target;b.textContent='Copied';b.style.background='#238636';setTimeout(()=>{b.textContent='Copy';b.style.background='#1f6feb'},1500)}).catch(()=>prompt('Copy:',el.textContent.trim()))
-      })()"
-        style="position:absolute;top:12px;right:12px;background:#1f6feb;border:none;border-radius:6px;color:#fff;font-size:11px;font-weight:600;padding:4px 12px;cursor:pointer">Copy</button>
-    </div>
-
-    <div style="font-size:11px;color:#6e7681;line-height:1.6;margin-bottom:16px">
-      설치 후 자동으로 작업 데이터가 수집되며<br>이 화면에 실시간 시각화됩니다.
+    <div style="font-size:11px;color:#6e7681;line-height:1.6;margin-bottom:14px">
+      설치 후 자동으로 작업 데이터가 수집되며 이 화면에 시각화됩니다.
     </div>
 
     <button onclick="localStorage.setItem('orbit_tracker_dismissed','1');document.getElementById('empty-state-guide').remove()"

