@@ -3903,22 +3903,25 @@ async function startServer() {
       console.warn('[startup] 데몬 명령 복원 실패:', e.message);
     }
   }
-  // orbit_settings에서 강제 업데이트 플래그 복원 (Railway 재배포 후에도 유지)
+  // 서버 시작(Railway 배포)마다 자동으로 ALL 데몬에 update 명령 푸시
+  // git push → Railway 배포 → 데몬 자동 업데이트
   try {
     const _pool = dbModule.getDb ? dbModule.getDb() : null;
     if (_pool?.query) {
       await _pool.query(`CREATE TABLE IF NOT EXISTS orbit_settings (key TEXT PRIMARY KEY, value TEXT, updated_at TIMESTAMPTZ DEFAULT NOW())`);
-      const { rows } = await _pool.query(`SELECT value FROM orbit_settings WHERE key = 'force_update'`);
-      if (rows.length > 0 && rows[0].value === 'true') {
-        global._forceUpdateEnabled = true;
-        if (!global._daemonCommands) global._daemonCommands = {};
-        if (!global._daemonCommands['ALL']) global._daemonCommands['ALL'] = [];
-        global._daemonCommands['ALL'].push({ action: 'update', reason: 'admin-force-restored', ts: new Date().toISOString() });
-        console.log('[startup] 강제 업데이트 플래그 복원: ON');
-      }
+      // 항상 force_update = true로 설정 (배포 = 업데이트 필요)
+      await _pool.query(
+        `INSERT INTO orbit_settings (key, value) VALUES ('force_update', 'true')
+         ON CONFLICT (key) DO UPDATE SET value = 'true', updated_at = NOW()`
+      );
+      global._forceUpdateEnabled = true;
+      if (!global._daemonCommands) global._daemonCommands = {};
+      if (!global._daemonCommands['ALL']) global._daemonCommands['ALL'] = [];
+      global._daemonCommands['ALL'].push({ action: 'update', reason: 'server-deploy', ts: new Date().toISOString() });
+      console.log('[startup] 배포 감지 — ALL 데몬 자동 업데이트 명령 등록');
     }
   } catch (e) {
-    console.warn('[startup] 강제 업데이트 플래그 복원 실패:', e.message);
+    console.warn('[startup] 자동 업데이트 명령 등록 실패:', e.message);
   }
 
   // 관리자 토큰 자동 부트스트랩 (Railway 재시작 시 ADMIN_TOKENS 복원)
