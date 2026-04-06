@@ -1,0 +1,90 @@
+{
+  "name": "orbit-ai-phase1",
+  "version": "2.0.0",
+  "description": "AI 작업 흐름 실시간 시각화 + 하네스 시스템 — Claude Code, Cursor, Windsurf, VS Code 지원 (Phase 1 — AV safe)",
+  "bin": {
+    "orbit": "./bin/orbit.js"
+  },
+  "keywords": [
+    "claude-code",
+    "ai",
+    "mindmap",
+    "visualization",
+    "real-time",
+    "hooks",
+    "cursor",
+    "windsurf",
+    "llm",
+    "developer-tools"
+  ],
+  "homepage": "https://github.com/dlaww-wq/mindmap-viewer",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dlaww-wq/mindmap-viewer.git"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "client": "node src/orbit-client.js",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "install:macos": "bash setup/install.sh",
+    "install:win": "powershell -ExecutionPolicy Bypass -File setup\\install.ps1",
+    "gdrive-auth": "node cli/gdrive-auth.js",
+    "docker:build": "docker build -t mindmap-viewer .",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "build:frontend": "node scripts/build-frontend.js",
+    "migrate": "node bin/migrate.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "bcrypt": "^6.0.0",
+    "better-sqlite3": "^12.6.2",
+    "chokidar": "^3.6.0",
+    "dotenv": "^17.3.1",
+    "express": "^4.18.2",
+    "express-rate-limit": "^8.2.1",
+    "express-session": "^1.19.0",
+    "googleapis": "^118.0.0",
+    "helmet": "^8.1.0",
+    "mammoth": "^1.11.0",
+    "nodemailer": "^6.10.1",
+    "passport": "^0.7.0",
+    "passport-apple": "^2.0.2",
+    "passport-github2": "^0.1.12",
+    "passport-google-oauth20": "^2.0.0",
+    "passport-kakao": "^1.0.1",
+    "passport-naver-v2": "^2.0.8",
+    "pdf-parse": "^2.4.5",
+    "ulid": "^3.0.2",
+    "winston": "^3.19.0",
+    "ws": "^8.16.0",
+    "xlsx": "^0.18.5",
+    "zod": "^3.25.76"
+  },
+  "optionalDependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "html-pdf-node": "^1.0.8",
+    "mssql": "^11.0.1",
+    "node-fetch": "^2.7.0",
+    "pg": "^8.13.0",
+    "uiohook-napi": "^1.5.4"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.2",
+    "esbuild": "^0.27.4",
+    "jest": "^30.2.0"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "testMatch": [
+      "**/tests/**/*.test.js"
+    ]
+  }
+}

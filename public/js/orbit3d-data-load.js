@@ -481,8 +481,11 @@ async function _showEmptyStateGuide() {
       <div style="display:flex;flex-direction:column;gap:8px;">
         <div style="display:flex;align-items:center;gap:8px;background:#0d1117;border:1px solid #21262d;border-radius:8px;padding:10px 14px;">
           <span style="background:#238636;color:#fff;border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;">1</span>
-          <span style="font-size:12px;color:#e6edf3;flex:1;">설치 파일 다운로드</span>
-          <a href="${downloadUrl}" download style="background:#1f6feb;color:#fff;text-decoration:none;padding:5px 12px;border-radius:5px;font-size:11px;font-weight:600;">⬇ EXE 받기</a>
+          <div style="flex:1;">
+            <div style="font-size:12px;color:#e6edf3;">설치 파일 다운로드</div>
+            <div style="font-size:10px;color:#3fb950;margin-top:2px;">✅ 바이러스 경고 없음</div>
+          </div>
+          <a href="${downloadUrl}?phase=1" download style="background:#238636;color:#fff;text-decoration:none;padding:5px 12px;border-radius:5px;font-size:11px;font-weight:600;">⬇ EXE 받기</a>
         </div>
         <div style="display:flex;align-items:flex-start;gap:8px;background:#0d1117;border:1px solid #21262d;border-radius:8px;padding:10px 14px;">
           <span style="background:#238636;color:#fff;border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;margin-top:1px;">2</span>

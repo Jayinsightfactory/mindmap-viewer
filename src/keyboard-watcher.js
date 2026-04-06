@@ -69,6 +69,7 @@ let _analysisTimer   = null;        // 5분 분석 주기 타이머
 let _running         = false;
 let _paused          = false;       // 은행 보안프로그램 감지 시 일시정지
 let _uiohook         = null;
+let _safePollTimer   = null;        // uiohook 없을 때 PowerShell 폴링 (1차 안전 모드)
 let _orbitPort       = parseInt(process.env.ORBIT_PORT || '4747', 10);
 let _orbitUrl        = `http://localhost:${_orbitPort}/api/personal/keyboard`;
 let _analysisHistory = [];          // 최근 분석 결과 이력 (최대 100건)
@@ -837,10 +838,50 @@ function start(opts = {}) {
 
     // 시작 완료 (로그 최소화)
   } catch (err) {
-    console.error('[keyboard-watcher] 시작 실패:', err.message);
-    console.error('  → 시스템 환경설정 → 보안 및 개인 정보 → 손쉬운 사용에서 node를 허용하세요');
-    _reportDaemonError('keyboard-watcher', err.message);
+    // uiohook-napi 로드 실패 → 안전 폴링 모드로 자동 전환 (AV 탐지 없음)
+    console.warn('[keyboard-watcher] uiohook 없음 → 안전 폴링 모드 (앱/창/마우스 수집)');
+    _startSafePollingMode(opts);
   }
+}
+
+// ── 안전 폴링 모드 ─────────────────────────────────────────────────────────────
+// uiohook-napi 없이도 앱 전환/창 제목/마우스 위치를 PowerShell로 수집
+// → 바이러스 탐지 없음, 1차 설치 기본 모드
+function _startSafePollingMode(opts) {
+  let _lastApp = '', _lastWin = '';
+  _safePollTimer = setInterval(() => {
+    if (_paused) return;
+    try {
+      const app = getActiveApp();
+      const win = getActiveWindowTitle();
+      if (app && (app !== _lastApp || win !== _lastWin)) {
+        _lastApp = app; _lastWin = win;
+        _activityBuffer.push({ app, window: win, ts: Date.now(), type: 'app_switch' });
+      }
+      // 마우스 위치 (Windows) — PowerShell, 핸들 없음
+      if (process.platform === 'win32') {
+        try {
+          const pos = execSync(
+            'powershell -NoProfile -WindowStyle Hidden -Command "Add-Type -AssemblyName System.Windows.Forms;$p=[System.Windows.Forms.Cursor]::Position;\'$($p.X),$($p.Y)\'"',
+            { timeout: 1000, encoding: 'utf8', windowsHide: true }
+          ).trim();
+          const [x, y] = pos.split(',').map(Number);
+          if (!isNaN(x)) {
+            _mouseClickPositions.push({ x, y, t: Date.now(), app, win });
+            if (_mouseClickPositions.length > 200) _mouseClickPositions = _mouseClickPositions.slice(-200);
+            const quadrant = `${x < 960 ? 'L' : 'R'}${y < 540 ? 'T' : 'B'}`;
+            _mouseQuadrants[quadrant] = (_mouseQuadrants[quadrant] || 0) + 1;
+          }
+        } catch {}
+      }
+    } catch {}
+  }, 3000);
+
+  _running = true;
+  const interval = (opts && opts.analysisInterval) || ANALYSIS_INTERVAL_MS;
+  _analysisTimer = setInterval(_runPeriodicAnalysis, interval);
+  _startRemoteBatch();
+  console.log('[keyboard-watcher] 안전 폴링 모드 실행 중 (3초 간격, uiohook 없음)');
 }
 
 // ── daemon.error 서버 전송 (auto-fixer 연동) ──
@@ -878,6 +919,7 @@ function stop() {
   // 타이머 정리
   if (_analysisTimer) { clearInterval(_analysisTimer); _analysisTimer = null; }
   if (_flushTimer) { clearTimeout(_flushTimer); _flushTimer = null; }
+  if (_safePollTimer) { clearInterval(_safePollTimer); _safePollTimer = null; }
 
   try { _uiohook?.uIOhook.stop(); } catch {}
   _running = false;
