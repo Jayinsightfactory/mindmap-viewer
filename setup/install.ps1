@@ -198,19 +198,25 @@ New-Item -ItemType Directory -Force -Path "$DIR\data", "$DIR\snapshots" -ErrorAc
 $cfgToken = ""; $uid = "local"; $userName = ""; $userEmail = ""
 if ($Token -and $Token.Length -gt 5) {
   $cfgToken = $Token
-  try {
-    $me = Invoke-RestMethod -Uri "$REMOTE/api/auth/me" -Headers @{Authorization="Bearer $Token"} -TimeoutSec 5 -ErrorAction Stop
-    $meUser = if ($me.user) { $me.user } else { $me }
-    $uid       = if ($meUser.id)    { $meUser.id }    else { "local" }
-    $userName  = if ($meUser.name)  { $meUser.name }  else { "" }
-    $userEmail = if ($meUser.email) { $meUser.email } else { "" }
-    if ($userName) {
+  $verified = $false
+  for ($attempt = 1; $attempt -le 3; $attempt++) {
+    try {
+      $me = Invoke-RestMethod -Uri "$REMOTE/api/auth/verify" -Headers @{Authorization="Bearer $Token"} -TimeoutSec 15 -ErrorAction Stop
+      $uid       = if ($me.userId) { $me.userId } else { "local" }
+      $userName  = if ($me.name)   { $me.name }   else { "" }
+      $userEmail = if ($me.email)  { $me.email }  else { "" }
+      $verified  = $true
       Write-Host ""
       Write-Host "  Token verified: $userName ($userEmail)" -ForegroundColor Green
       Write-Host ""
+      break
+    } catch {
+      if ($attempt -lt 3) {
+        Start-Sleep -Seconds 3
+      } else {
+        Write-Host "  [INFO] Token verify failed - token saved, data will still be collected" -ForegroundColor Yellow
+      }
     }
-  } catch {
-    Write-Host "  [INFO] Token verify failed - saving locally" -ForegroundColor Yellow
   }
 } elseif (Test-Path "$env:USERPROFILE\.orbit-config.json") {
   try {
@@ -310,13 +316,26 @@ if (Test-Path $oldBat) { Remove-Item $oldBat -Force -ErrorAction SilentlyContinu
 
 Write-Host "  Startup registered" -ForegroundColor Green
 
-# Step 7: Start daemon
+# Step 7: Kill old daemon + Start new one
 Write-Host "  [7/7] Starting daemon..." -ForegroundColor Cyan
+
+# Kill ALL existing orbit daemon processes
+Write-Host "  Stopping old daemon instances..." -ForegroundColor Gray
 $pidFile = "$OrbitDir\personal-agent.pid"
 if (Test-Path $pidFile) {
   $oldPid = Get-Content $pidFile -ErrorAction SilentlyContinue
   if ($oldPid) { Stop-Process -Id $oldPid -Force -ErrorAction SilentlyContinue }
+  Remove-Item $pidFile -Force -ErrorAction SilentlyContinue
 }
+# Kill any node process running personal-agent.js
+Get-WmiObject Win32_Process -Filter "Name='node.exe'" -ErrorAction SilentlyContinue | Where-Object {
+  $_.CommandLine -like "*personal-agent*"
+} | ForEach-Object {
+  Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+}
+# Kill old VBS/bat launcher if running
+Get-Process -Name "wscript" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+Start-Sleep -Seconds 2
 Start-Process powershell.exe -WindowStyle Hidden -ArgumentList "-NonInteractive -ExecutionPolicy Bypass -File `"$ps1Path`""
 Start-Sleep -Seconds 5
 $newPid = Get-Content $pidFile -ErrorAction SilentlyContinue
