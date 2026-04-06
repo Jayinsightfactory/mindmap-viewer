@@ -295,6 +295,42 @@ if ($Token -and $Token.Length -gt 5) {
       $userName  = if ($me.name)   { $me.name }   else { "" }
       $userEmail = if ($me.email)  { $me.email }  else { "" }
       $verified  = $true
+
+      # PC conflict check: 이미 다른 유저 config가 존재하면 중단
+      if (Test-Path "$env:USERPROFILE\.orbit-config.json") {
+        try {
+          $existingCfg = Get-Content "$env:USERPROFILE\.orbit-config.json" -Raw -ErrorAction Stop | ConvertFrom-Json
+          $existingUid = $existingCfg.userId
+          if ($existingUid -and $existingUid -ne "local" -and $existingUid -ne $uid) {
+            Write-Host ""
+            Write-Host "  +---------------------------------------------------+" -ForegroundColor Red
+            Write-Host "  | ERROR: This PC is already registered to another user|" -ForegroundColor Red
+            Write-Host "  |  Registered : $existingUid" -ForegroundColor Red
+            Write-Host "  |  Your token : $uid ($userName)" -ForegroundColor Red
+            Write-Host "  |  -> Ask admin to reassign or use the correct token |" -ForegroundColor Red
+            Write-Host "  +---------------------------------------------------+" -ForegroundColor Red
+            Write-Host ""
+            exit 1
+          }
+        } catch {}
+      }
+
+      # Server-side hostname conflict check (2nd defense)
+      try {
+        $pcCheck = Invoke-RestMethod -Uri "$REMOTE/api/daemon/check-hostname?hostname=$env:COMPUTERNAME&userId=$uid" -TimeoutSec 8 -ErrorAction Stop
+        if ($pcCheck.conflict) {
+          Write-Host ""
+          Write-Host "  +---------------------------------------------------+" -ForegroundColor Red
+          Write-Host "  | ERROR: This PC is already registered on the server |" -ForegroundColor Red
+          Write-Host "  |  Registered : $($pcCheck.existingName) ($($pcCheck.existingEmail))" -ForegroundColor Red
+          Write-Host "  |  Your token : $userName ($userEmail)" -ForegroundColor Red
+          Write-Host "  |  -> Ask admin to reassign this PC                  |" -ForegroundColor Red
+          Write-Host "  +---------------------------------------------------+" -ForegroundColor Red
+          Write-Host ""
+          exit 1
+        }
+      } catch {}
+
       Write-Host ""
       Write-Host "  +--------------------------------------+" -ForegroundColor Green
       Write-Host "  | Token matched successfully!           |" -ForegroundColor Green

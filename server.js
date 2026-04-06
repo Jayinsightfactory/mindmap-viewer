@@ -1590,6 +1590,35 @@ app.get('/api/daemon/events', async (req, res) => {
   }
 });
 
+// GET /api/daemon/check-hostname — PC가 이미 다른 유저에 등록됐는지 확인 (설치 전 충돌 방지)
+app.get('/api/daemon/check-hostname', async (req, res) => {
+  const { hostname, userId } = req.query;
+  if (!hostname) return res.status(400).json({ error: 'hostname required' });
+  try {
+    const pool = dbModule.getDb();
+    if (pool?.query) {
+      // tracker_pings에서 hostname으로 기존 owner 조회
+      const { rows } = await pool.query(
+        `SELECT tp.user_id, u.name, u.email
+         FROM tracker_pings tp
+         LEFT JOIN orbit_auth_users u ON u.id = tp.user_id
+         WHERE tp.hostname = $1 AND tp.user_id != 'local'
+         ORDER BY tp.last_seen DESC LIMIT 1`,
+        [hostname]
+      );
+      if (rows.length > 0 && rows[0].user_id !== userId) {
+        return res.json({
+          conflict: true,
+          existingUserId: rows[0].user_id,
+          existingName: rows[0].name || rows[0].user_id,
+          existingEmail: rows[0].email || '',
+        });
+      }
+    }
+  } catch {}
+  res.json({ conflict: false });
+});
+
 // POST /api/daemon/force-update — 모든 데몬에 즉시 업데이트 명령 전송
 // admin secret 인증 — commands 큐(daemon-updater용) + hook 응답(구버전용) 동시 처리
 app.post('/api/daemon/force-update', async (req, res) => {
@@ -1992,15 +2021,40 @@ app.post('/api/hook', async (req, res) => {
 
     // ── 트래커 핑 자동 갱신 (hook 이벤트 수신 → 온라인 표시) ──────────────
     if (hookUserId && hookUserId !== 'local') {
+      const hookHostname = deviceId || events.find(e => e.data?.hostname)?.data?.hostname || '';
+      // PC-유저 충돌 감지: 같은 hostname이 다른 userId로 이미 등록된 경우 경고
+      if (hookHostname) {
+        try {
+          const _pool = dbModule.getDb();
+          if (_pool?.query) {
+            const { rows: existingPing } = await _pool.query(
+              `SELECT user_id FROM tracker_pings WHERE hostname = $1 AND user_id != $2 AND user_id != 'local' LIMIT 1`,
+              [hookHostname, hookUserId]
+            );
+            if (existingPing.length > 0) {
+              console.warn(`[hook] PC conflict: hostname=${hookHostname} was userId=${existingPing[0].user_id}, now userId=${hookUserId}`);
+              // 관리자에게 알림 이벤트 기록
+              try {
+                await Promise.resolve(insertEvent({
+                  id: `conflict_${Date.now()}`, type: 'daemon.pc_conflict',
+                  userId: hookUserId,
+                  data: { hostname: hookHostname, previousUserId: existingPing[0].user_id, newUserId: hookUserId },
+                  timestamp: new Date().toISOString(),
+                }));
+              } catch {}
+            }
+          }
+        } catch {}
+      }
       try {
         const authDb = require('./src/auth').getDb();
         if (authDb) {
           authDb.prepare(`
             INSERT INTO tracker_pings (userId, hostname, eventCount, lastSeen)
             VALUES (?, ?, ?, ?)
-            ON CONFLICT(userId) DO UPDATE SET eventCount=eventCount+?, lastSeen=?
-          `).run(hookUserId, '', events.length, Date.now(),
-                 events.length, Date.now());
+            ON CONFLICT(userId) DO UPDATE SET hostname=?, eventCount=eventCount+?, lastSeen=?
+          `).run(hookUserId, hookHostname, events.length, Date.now(),
+                 hookHostname, events.length, Date.now());
         }
       } catch {}
     }
