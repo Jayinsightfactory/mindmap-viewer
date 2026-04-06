@@ -369,6 +369,15 @@ function _showInstallCodeModal(token) {
         </div>
       </div>
 
+      <div style="background:#1a1200;border:1px solid #4a3800;border-radius:8px;padding:10px 14px;margin-bottom:14px;">
+        <div style="font-size:11px;color:#e3a000;font-weight:600;margin-bottom:4px;">⚠️ 바이러스 경고가 뜨면?</div>
+        <div style="font-size:11px;color:#c9a227;line-height:1.7;">
+          SmartScreen: <b>"추가 정보" → "실행"</b> 클릭<br>
+          백신 차단: 임시로 실시간 감시 끄고 설치 후 다시 켜기<br>
+          <span style="color:#888;">(Orbit AI는 업무 분석 도구로 악성코드가 아닙니다)</span>
+        </div>
+      </div>
+
       <button onclick="document.getElementById('_orbit_install_modal').remove()"
         style="width:100%;padding:10px;background:#21262d;border:1px solid #30363d;border-radius:8px;color:#8b949e;cursor:pointer;font-size:13px;">나중에</button>
     </div>`;
@@ -490,6 +499,12 @@ async function _showEmptyStateGuide() {
           <span style="background:#238636;color:#fff;border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;">3</span>
           <span style="font-size:12px;color:#e6edf3;">완료 → 자동으로 데이터 수집 시작</span>
         </div>
+      </div>
+    </div>
+
+      <div style="background:#1a1200;border:1px solid #4a3800;border-radius:6px;padding:8px 12px;margin-top:8px;">
+        <div style="font-size:10px;color:#e3a000;font-weight:600;margin-bottom:3px;">⚠️ 바이러스 경고가 뜨면</div>
+        <div style="font-size:10px;color:#c9a227;line-height:1.7;">SmartScreen → <b>추가 정보 → 실행</b> | 백신 차단 → 실시간 감시 잠시 끄고 설치</div>
       </div>
     </div>
 

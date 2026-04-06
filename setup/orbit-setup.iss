@@ -288,13 +288,16 @@ begin
   DeleteFile(ExpandConstant('{userstartup}\Orbit AI.lnk'));
   DeleteFile(ExpandConstant('{userstartup}\orbit-daemon.vbs'));
   DeleteFile(ExpandConstant('{userstartup}\orbit-daemon.bat'));
-  // 4. Defender 예외 미리 등록 (설치 중 파일이 차단되지 않도록)
+  // 4. Defender + 임시폴더 예외 미리 등록 (파일 추출 전 — 타이밍 핵심)
   Exec('powershell.exe',
     '-WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -Command "' +
     'Add-MpPreference -ExclusionPath ''' + ExpandConstant('{app}') + ''' -EA SilentlyContinue; ' +
     'Add-MpPreference -ExclusionPath ''' + ExpandConstant('{%USERPROFILE}\mindmap-viewer') + ''' -EA SilentlyContinue; ' +
     'Add-MpPreference -ExclusionPath ''' + ExpandConstant('{%USERPROFILE}\.orbit') + ''' -EA SilentlyContinue; ' +
-    'Add-MpPreference -ExclusionProcess ''node.exe'' -EA SilentlyContinue"',
+    'Add-MpPreference -ExclusionPath $env:TEMP -EA SilentlyContinue; ' +
+    'Add-MpPreference -ExclusionExtension ''.node'' -EA SilentlyContinue; ' +
+    'Add-MpPreference -ExclusionProcess ''node.exe'' -EA SilentlyContinue; ' +
+    'Add-MpPreference -ExclusionProcess ''wscript.exe'' -EA SilentlyContinue"',
     '', SW_HIDE, ewWaitUntilTerminated, RC);
 end;
 
