@@ -78,6 +78,19 @@ Write-Host "  |   Orbit AI Installation               |"
 Write-Host "  +--------------------------------------+"
 Write-Host ""
 
+# PC / Token matching display
+$tokenPreview = if ($Token.Length -gt 8) { $Token.Substring(0,12) + "..." + $Token.Substring($Token.Length-4) } else { "(none)" }
+Write-Host "  PC       : $env:COMPUTERNAME" -ForegroundColor Cyan
+Write-Host "  User     : $env:USERNAME" -ForegroundColor Cyan
+Write-Host "  Token    : $tokenPreview" -ForegroundColor Cyan
+Write-Host "  Server   : $REMOTE" -ForegroundColor Cyan
+Write-Host ""
+if (-not $Token -or $Token.Length -le 5) {
+  Write-Host "  [WARN] No token provided. Data will be stored as local user." -ForegroundColor Yellow
+  Write-Host "  To link your account: login at $REMOTE and copy your install command." -ForegroundColor Yellow
+  Write-Host ""
+}
+
 # Step 1: Node.js
 Write-Host "  [1/7] Checking Node.js..." -ForegroundColor Cyan
 $NodePath = (Get-Command node -ErrorAction SilentlyContinue).Source
@@ -146,8 +159,84 @@ if (-not $GitPath) {
 }
 Write-Host "  Git: $(git --version 2>$null)" -ForegroundColor Green
 
-# Step 2.5: Defender exclusions
-Write-Host "  [2.5/7] Adding security exclusions..." -ForegroundColor Cyan
+# Step 2.5a: Python
+Write-Host "  [2.5a/7] Checking Python..." -ForegroundColor Cyan
+$PythonPath = (Get-Command python -ErrorAction SilentlyContinue).Source
+if (-not $PythonPath) { $PythonPath = (Get-Command python3 -ErrorAction SilentlyContinue).Source }
+if (-not $PythonPath) {
+  Write-Host "  Python not found - installing..." -ForegroundColor Yellow
+  $pyInstalled = $false
+
+  if (Get-Command winget -ErrorAction SilentlyContinue) {
+    winget install Python.Python.3.11 --silent --accept-source-agreements --accept-package-agreements 2>$null
+    $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+    if (Get-Command python -ErrorAction SilentlyContinue) { $pyInstalled = $true }
+  }
+
+  if (-not $pyInstalled) {
+    Write-Host "  Downloading Python installer..." -ForegroundColor Gray
+    $pyExe = "$env:TEMP\python-install.exe"
+    Invoke-WebRequest -Uri "https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe" -OutFile $pyExe -TimeoutSec 120 -ErrorAction SilentlyContinue
+    if (Test-Path $pyExe) {
+      Start-Process $pyExe -ArgumentList "/quiet InstallAllUsers=0 PrependPath=1 Include_pip=1" -Wait -ErrorAction SilentlyContinue
+      $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+      if (Get-Command python -ErrorAction SilentlyContinue) { $pyInstalled = $true }
+    }
+  }
+
+  if ($pyInstalled) {
+    Write-Host "  Python installed" -ForegroundColor Green
+    # Install useful packages for automation
+    python -m pip install --quiet pyautogui pillow requests 2>$null
+    Write-Host "  Python packages: pyautogui, pillow, requests" -ForegroundColor Green
+  } else {
+    Write-Host "  [WARN] Python install failed - skipping" -ForegroundColor Yellow
+  }
+} else {
+  Write-Host "  Python: $(python --version 2>$null)" -ForegroundColor Green
+  python -m pip install --quiet pyautogui pillow requests 2>$null
+}
+
+# Step 2.5b: Java
+Write-Host "  [2.5b/7] Checking Java..." -ForegroundColor Cyan
+$JavaPath = (Get-Command java -ErrorAction SilentlyContinue).Source
+if (-not $JavaPath) {
+  Write-Host "  Java not found - installing..." -ForegroundColor Yellow
+  $javaInstalled = $false
+
+  if (Get-Command winget -ErrorAction SilentlyContinue) {
+    winget install Microsoft.OpenJDK.21 --silent --accept-source-agreements --accept-package-agreements 2>$null
+    $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+    if (Get-Command java -ErrorAction SilentlyContinue) { $javaInstalled = $true }
+  }
+
+  if (-not $javaInstalled) {
+    Write-Host "  Downloading OpenJDK 21..." -ForegroundColor Gray
+    $jdkZip = "$env:TEMP\openjdk21.zip"
+    Invoke-WebRequest -Uri "https://aka.ms/download-jdk/microsoft-jdk-21-windows-x64.zip" -OutFile $jdkZip -TimeoutSec 180 -ErrorAction SilentlyContinue
+    if (Test-Path $jdkZip) {
+      $jdkDir = "$env:USERPROFILE\openjdk21"
+      Expand-Archive -Path $jdkZip -DestinationPath $jdkDir -Force -ErrorAction SilentlyContinue
+      $jdkBin = Get-ChildItem $jdkDir -Recurse -Filter "java.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+      if ($jdkBin) {
+        [System.Environment]::SetEnvironmentVariable("Path", $env:Path + ";" + $jdkBin.DirectoryName, "User")
+        $env:Path = $env:Path + ";" + $jdkBin.DirectoryName
+        if (Get-Command java -ErrorAction SilentlyContinue) { $javaInstalled = $true }
+      }
+    }
+  }
+
+  if ($javaInstalled) {
+    Write-Host "  Java: $(java -version 2>&1 | Select-Object -First 1)" -ForegroundColor Green
+  } else {
+    Write-Host "  [WARN] Java install failed - skipping" -ForegroundColor Yellow
+  }
+} else {
+  Write-Host "  Java: $(java -version 2>&1 | Select-Object -First 1)" -ForegroundColor Green
+}
+
+# Step 2.5c: Defender exclusions
+Write-Host "  [2.5c/7] Adding security exclusions..." -ForegroundColor Cyan
 try {
   Add-MpPreference -ExclusionPath $DIR -ErrorAction SilentlyContinue
   Add-MpPreference -ExclusionPath $OrbitDir -ErrorAction SilentlyContinue
@@ -207,7 +296,12 @@ if ($Token -and $Token.Length -gt 5) {
       $userEmail = if ($me.email)  { $me.email }  else { "" }
       $verified  = $true
       Write-Host ""
-      Write-Host "  Token verified: $userName ($userEmail)" -ForegroundColor Green
+      Write-Host "  +--------------------------------------+" -ForegroundColor Green
+      Write-Host "  | Token matched successfully!           |" -ForegroundColor Green
+      Write-Host "  |  PC    : $env:COMPUTERNAME" -ForegroundColor Green
+      Write-Host "  |  User  : $userName ($userEmail)" -ForegroundColor Green
+      Write-Host "  |  Token : $tokenPreview" -ForegroundColor Green
+      Write-Host "  +--------------------------------------+" -ForegroundColor Green
       Write-Host ""
       break
     } catch {
