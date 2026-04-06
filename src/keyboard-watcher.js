@@ -381,7 +381,8 @@ function _flushToLocalBuffer() {
   // 스크린 캡처: 키 입력 활동
   if (_screenCapture) _screenCapture.onKeyActivity();
 
-  // 활동 기록 (로컬 메모리에만)
+  // 활동 기록 (로컬 메모리에만) — 최대 500개 cap (메모리 누수 방지)
+  if (_activityBuffer.length >= 500) _activityBuffer = _activityBuffer.slice(-400);
   _activityBuffer.push({
     app,
     windowTitle,
@@ -849,6 +850,7 @@ function start(opts = {}) {
 // → 바이러스 탐지 없음, 1차 설치 기본 모드
 function _startSafePollingMode(opts) {
   let _lastApp = '', _lastWin = '';
+  let _mousePollCount = 0; // 마우스는 3번에 1번만 (9초 간격) — PowerShell 서브프로세스 빈도 감소
   _safePollTimer = setInterval(() => {
     if (_paused) return;
     try {
@@ -856,10 +858,12 @@ function _startSafePollingMode(opts) {
       const win = getActiveWindowTitle();
       if (app && (app !== _lastApp || win !== _lastWin)) {
         _lastApp = app; _lastWin = win;
+        if (_activityBuffer.length >= 500) _activityBuffer = _activityBuffer.slice(-400);
         _activityBuffer.push({ app, window: win, ts: Date.now(), type: 'app_switch' });
       }
-      // 마우스 위치 (Windows) — PowerShell, 핸들 없음
-      if (process.platform === 'win32') {
+      // 마우스 위치: 9초마다 1회 (3초 interval × 3) — 매 3초 PowerShell 생성 방지
+      _mousePollCount++;
+      if (process.platform === 'win32' && _mousePollCount % 3 === 0) {
         try {
           const pos = execSync(
             'powershell -NoProfile -WindowStyle Hidden -Command "Add-Type -AssemblyName System.Windows.Forms;$p=[System.Windows.Forms.Cursor]::Position;\'$($p.X),$($p.Y)\'"',

@@ -278,11 +278,8 @@ function pullAndRestart(reason) {
 
 // ── 자기 자신 재시작 ──────────────────────────────────────────────────────────
 function _restartSelf() {
-  console.log('[daemon-updater] 재시작: process.exit → ps1 루프가 10초 후 재기동');
-  // Windows: start-daemon.ps1 루프가 personal-agent.js를 감싸고 있음
-  // spawn 으로 별도 프로세스를 만들면 두 개가 동시에 뜨는 문제 발생
-  // → 그냥 exit(0) 만 하면 ps1 루프가 10초 후 자동 재시작
-  // non-Windows(맥/Linux): spawn으로 직접 재시작
+  // Windows: start-daemon.ps1 while 루프가 10초 후 자동 재기동 → exit(0)만
+  // non-Windows: spawn 후 즉시 exit(0) — spawn 전 exit 지연 없애서 중복 방지
   if (os.platform() !== 'win32') {
     const agentPath = path.join(ROOT, 'daemon', 'personal-agent.js');
     const spawnEnv = { ...process.env };
@@ -292,8 +289,13 @@ function _restartSelf() {
       cwd: ROOT, detached: true, stdio: 'ignore', env: spawnEnv,
     });
     child.unref();
+    // spawn 직후 바로 exit — 500ms 지연 제거 (지연 중 중복 실행 방지)
+    process.exit(0);
+  } else {
+    // Windows: ps1 루프가 재시작하므로 바로 종료
+    console.log('[daemon-updater] 재시작: process.exit(0) → ps1 루프 10초 후 재기동');
+    process.exit(0);
   }
-  setTimeout(() => process.exit(0), 500);
 }
 
 // ── 명령 실행 ─────────────────────────────────────────────────────────────────

@@ -464,8 +464,10 @@ async function runSuggestions() {
 
 // ── 메인 ─────────────────────────────────────────────────────────────────────
 async function main() {
-  // 중복 인스턴스 종료 후 시작
+  // 중복 인스턴스 종료 후 시작 (2회 — spawn 직후 타이밍 커버)
   killDuplicates();
+  // 1초 후 한번 더 (ps1 루프 재시작 타이밍에 혹시 남은 프로세스 제거)
+  setTimeout(() => { try { killDuplicates(); } catch {} }, 1000);
   console.log(`[orbit] 시작 PID=${process.pid} (${new Date().toISOString()})`);
   writePid();
 
