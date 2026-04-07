@@ -963,12 +963,25 @@ const { sendUpdateEmail } = (() => { try { return require('./src/email-notifier'
 if (!global._visionImageQueue) global._visionImageQueue = [];
 const _VISION_QUEUE_MAX = 10;
 
-// 힙 압력 모니터링 (768MB 힙에서 600MB 초과 시 Vision 큐잉 잠시 중단)
+// 힙 압력 모니터링 (460MB 힙 기준 — Railway Hobby 512MB 내 안정 운영)
 let _heapPressure = false;
 setInterval(() => {
   const heapMB = process.memoryUsage().heapUsed / 1024 / 1024;
-  _heapPressure = heapMB > 600;
-  if (_heapPressure) console.warn(`[heap] 압력 감지: ${Math.round(heapMB)}MB — Vision 큐잉 일시 중단`);
+  _heapPressure = heapMB > 350;
+  if (heapMB > 400) {
+    console.warn(`[heap] 압력 감지: ${Math.round(heapMB)}MB — GC 강제 실행`);
+    if (global.gc) global.gc();
+  }
+  if (heapMB > 440) {
+    console.error(`[heap] 위험: ${Math.round(heapMB)}MB — 캐시 정리 후 GC`);
+    // 오래된 daemon commands 정리
+    if (global._daemonCommands) {
+      Object.keys(global._daemonCommands).forEach(k => {
+        if (global._daemonCommands[k].length > 10) global._daemonCommands[k] = global._daemonCommands[k].slice(-5);
+      });
+    }
+    if (global.gc) global.gc();
+  }
 }, 30000);
 
 // ─── 학습 분석 API ──────────────────────────────────────────────────────────
@@ -3794,18 +3807,13 @@ setInterval(() => {
 }, 30000);
 
 // ─── RAG 초기화 (PG 사용 시, 서버 시작 후 지연 실행) ─────────────────────────
+// autoIndex 자동 실행 비활성화 — OOM 방지 (API 호출 시에만 on-demand 실행)
 if (ragCore && process.env.DATABASE_URL) {
   setTimeout(() => {
     const _ragDb = dbModule.getDb();
-    ragCore.init(_ragDb).then(() => {
-      setTimeout(() => ragCore.autoIndex({
-        getRecentEvents: (limit) => _ragDb.query(`SELECT * FROM events ORDER BY timestamp DESC LIMIT $1`, [limit]).then(r => r.rows),
-      }), 15 * 60 * 1000);
-      setInterval(() => ragCore.autoIndex({
-        getRecentEvents: (limit) => _ragDb.query(`SELECT * FROM events ORDER BY timestamp DESC LIMIT $1`, [limit]).then(r => r.rows),
-      }), 60 * 60 * 1000);
-      setInterval(() => ragCore.cleanup({ maxAgeDays: 90 }), 24 * 60 * 60 * 1000);
-    }).catch(e => console.warn('[rag-core] 초기화 실패:', e.message));
+    ragCore.init(_ragDb).catch(e => console.warn('[rag-core] 초기화 실패:', e.message));
+    // autoIndex/cleanup 타이머 제거 — 메모리 안정성 우선
+    console.log('[rag-core] 초기화 완료 (autoIndex 자동 실행 비활성화)');
   }, 60 * 1000);
 }
 
