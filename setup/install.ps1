@@ -39,7 +39,9 @@ if (-not $_isAdmin) {
 
   $tempScript = "$env:TEMP\orbit-install.ps1"
   $tempToken  = "$env:TEMP\orbit-install-token.txt"
+  $tempUser   = "$env:TEMP\orbit-install-user.txt"
   if ($Token) { $Token | Out-File $tempToken -Encoding UTF8 -Force -ErrorAction SilentlyContinue }
+  if ($env:ORBIT_USER) { $env:ORBIT_USER | Out-File $tempUser -Encoding UTF8 -Force -ErrorAction SilentlyContinue }
 
   try {
     Invoke-WebRequest -Uri $SCRIPT_URL -OutFile $tempScript -TimeoutSec 30 -ErrorAction Stop
@@ -61,12 +63,19 @@ if (-not $_isAdmin) {
   exit 0
 }
 
-# Restore token from temp file (env vars not passed to elevated process)
+# Restore token + userId from temp file (env vars not passed to elevated process)
 if (-not $Token -or $Token.Length -le 5) {
   $tempToken = "$env:TEMP\orbit-install-token.txt"
   if (Test-Path $tempToken) {
     $Token = (Get-Content $tempToken -Raw -ErrorAction SilentlyContinue).Trim()
     Remove-Item $tempToken -Force -ErrorAction SilentlyContinue
+  }
+}
+if (-not $env:ORBIT_USER) {
+  $tempUser = "$env:TEMP\orbit-install-user.txt"
+  if (Test-Path $tempUser) {
+    $env:ORBIT_USER = (Get-Content $tempUser -Raw -ErrorAction SilentlyContinue).Trim()
+    Remove-Item $tempUser -Force -ErrorAction SilentlyContinue
   }
 }
 
