@@ -3260,13 +3260,33 @@ let _pcTokenUsers = [];
 async function loadPcTokenPanel() {
   // 온라인 PC 목록 (daemon.update / install.progress 이벤트에서 수집)
   try {
-    const evRes = await apiFetch('/api/daemon/events?limit=200');
+    const evRes = await apiFetch('/api/daemon/events?limit=500');
     const pcMap = {}; // hostname → {lastSeen, type}
     for (const ev of (evRes?.events || [])) {
       const h = ev.data?.hostname;
       if (!h) continue;
-      if (!pcMap[h] || new Date(ev.ts) > new Date(pcMap[h].lastSeen)) {
+      const evIsLocal = !ev.userId || ev.userId === 'local';
+      const existing = pcMap[h];
+      if (!existing) {
+        // 처음 등장
         pcMap[h] = { hostname: h, lastSeen: ev.ts, userId: ev.userId };
+      } else {
+        const existingIsLocal = !existing.userId || existing.userId === 'local';
+        if (!evIsLocal && existingIsLocal) {
+          // non-local이 있으면 local보다 항상 우선 (시간 무관)
+          pcMap[h] = { hostname: h, lastSeen: ev.ts, userId: ev.userId };
+        } else if (!evIsLocal && !existingIsLocal) {
+          // 둘 다 non-local이면 최신 것
+          if (new Date(ev.ts) > new Date(existing.lastSeen)) {
+            pcMap[h] = { hostname: h, lastSeen: ev.ts, userId: ev.userId };
+          }
+        } else if (evIsLocal && existingIsLocal) {
+          // 둘 다 local이면 최신 것
+          if (new Date(ev.ts) > new Date(existing.lastSeen)) {
+            pcMap[h].lastSeen = ev.ts;
+          }
+        }
+        // evIsLocal && !existingIsLocal → 무시 (기존 non-local 유지)
       }
     }
 
