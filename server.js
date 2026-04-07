@@ -1124,6 +1124,48 @@ app.post('/api/admin/workspace-add-member', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// POST /api/admin/setup-nenova — nenova 워크스페이스 PG 재생성 (일회성)
+app.post('/api/admin/setup-nenova', async (req, res) => {
+  try {
+    const pool = dbModule.getDb();
+    const ownerId = 'MNH03H73690BB2CD82'; // jaeyong lim (dlaww584@gmail.com)
+    const wsId = 'WS-NENOVA-2026';
+    // 워크스페이스 생성 (이미 있으면 skip)
+    await pool.query(
+      `INSERT INTO workspaces (id, name, company_name, owner_id, invite_code, created_at)
+       VALUES ($1, 'nenova', 'nenova', $2, 'NENOVA01', NOW())
+       ON CONFLICT (id) DO NOTHING`,
+      [wsId, ownerId]
+    );
+    // 멤버 추가 (PG all-users 기반)
+    const members = [
+      { id: 'MNH03H73690BB2CD82', role: 'owner',  team: '관리자' },      // jaeyong lim
+      { id: 'MNIAFICB3DC88DCB34', role: 'member', team: '영업지원팀' },  // 설연주
+      { id: 'MNMR8568CC8950F81D', role: 'member', team: '영업지원팀' },  // hoon J (훈제이)
+      { id: 'MNMRVD11EDCCF6E7CE', role: 'member', team: '영업지원팀' },  // wbk
+      { id: 'MNMR52IIBE1A1E37A2', role: 'member', team: '영업팀' },      // 박성수
+      { id: 'MNMS93EB30F11EF433', role: 'member', team: '영업팀' },      // 현욱(ᄏᄏ)
+      { id: 'MNMRX6SR07F5FF7C0C', role: 'member', team: '영업지원팀' },  // 강현우
+      { id: 'MNMSAQJD78E544A631', role: 'member', team: '영업지원팀' },  // 강명훈
+    ];
+    for (const m of members) {
+      await pool.query(
+        `INSERT INTO workspace_members (workspace_id, user_id, role, team_name, status, joined_at)
+         VALUES ($1,$2,$3,$4,'active',NOW())
+         ON CONFLICT (workspace_id, user_id) DO UPDATE SET status='active', role=$3, team_name=$4`,
+        [wsId, m.id, m.role, m.team]
+      ).catch(() => {});
+    }
+    // 결과 확인
+    const { rows } = await pool.query(
+      `SELECT wm.user_id, wm.role, wm.team_name, wm.status, u.name
+       FROM workspace_members wm LEFT JOIN orbit_auth_users u ON u.id=wm.user_id
+       WHERE wm.workspace_id=$1`, [wsId]
+    );
+    res.json({ ok: true, workspaceId: wsId, members: rows });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // GET /api/learning/logs — 원시 이벤트 로그 조회 (관리자 대시보드용)
 app.get('/api/learning/logs', async (req, res) => {
   try {
