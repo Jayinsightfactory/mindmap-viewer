@@ -353,22 +353,38 @@ if ($Token -and $Token.Length -gt 5) {
       if ($attempt -lt 3) {
         Start-Sleep -Seconds 3
       } else {
-        Write-Host "  [WARN] Token verify failed: $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Host "  [WARN] Server verify failed ($($_.Exception.Message)) - trying fallback..." -ForegroundColor Yellow
         # Fallback: userId from environment variable (included in install command)
         $envUserId = $env:ORBIT_USER
         if ($envUserId -and $envUserId.Length -gt 5) {
           $uid = $envUserId
-          Write-Host "  [INFO] Using userId from install command: $uid" -ForegroundColor Yellow
           # Claim token on server (register token-userId mapping)
+          $claimOk = $false
           try {
-            Invoke-RestMethod -Uri "$REMOTE/api/daemon/claim-token" -Method POST `
+            $claimRes = Invoke-RestMethod -Uri "$REMOTE/api/daemon/claim-token" -Method POST `
               -ContentType "application/json" `
               -Body "{`"token`":`"$Token`",`"userId`":`"$uid`"}" `
-              -TimeoutSec 10 -ErrorAction Stop | Out-Null
-            Write-Host "  [INFO] Token claimed on server" -ForegroundColor Green
+              -TimeoutSec 10 -ErrorAction Stop
+            $userName  = if ($claimRes.name)  { $claimRes.name }  else { $uid }
+            $userEmail = if ($claimRes.email) { $claimRes.email } else { "" }
+            $claimOk = $true
           } catch {}
+
+          if ($claimOk) {
+            Write-Host ""
+            Write-Host "  +--------------------------------------+" -ForegroundColor Green
+            Write-Host "  | Token matched successfully! (offline) |" -ForegroundColor Green
+            Write-Host "  |  PC    : $env:COMPUTERNAME" -ForegroundColor Green
+            Write-Host "  |  User  : $userName ($userEmail)" -ForegroundColor Green
+            Write-Host "  |  Token : $tokenPreview" -ForegroundColor Green
+            Write-Host "  +--------------------------------------+" -ForegroundColor Green
+            Write-Host ""
+          } else {
+            Write-Host "  [INFO] Claim failed - admin will push token remotely" -ForegroundColor Yellow
+            Write-Host "  [INFO] Daemon will start and wait for token push from admin" -ForegroundColor Yellow
+          }
         } else {
-          Write-Host "  [INFO] No userId in command - open browser and re-run install code" -ForegroundColor Yellow
+          Write-Host "  [INFO] No userId in command - admin can push token by hostname: $env:COMPUTERNAME" -ForegroundColor Yellow
         }
       }
     }
