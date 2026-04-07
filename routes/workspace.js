@@ -584,8 +584,23 @@ function createWorkspaceRouter({ getDb, db: _dbLegacy, verifyToken, getUserById,
         `SELECT user_id, role, team_name, joined_at, status FROM workspace_members wm WHERE wm.workspace_id = ? ${statusFilter} ORDER BY joined_at`,
         [wsId]
       );
+      // PG orbit_auth_users에서 이름/이메일 일괄 조회 (OAuth 사용자 지원)
+      const userIds = rows.map(r => r.user_id);
+      let pgUserMap = {};
+      try {
+        const db = _db();
+        if (db && db.query && userIds.length > 0) {
+          const { rows: pgUsers } = await db.query(
+            `SELECT id, name, email, provider FROM orbit_auth_users WHERE id = ANY($1)`,
+            [userIds]
+          );
+          pgUsers.forEach(u => { pgUserMap[u.id] = u; });
+        }
+      } catch {}
       const members = rows.map(wm => {
-        const u = typeof getUserById === 'function' ? getUserById(wm.user_id) : null;
+        const sqlu = typeof getUserById === 'function' ? getUserById(wm.user_id) : null;
+        const pgu  = pgUserMap[wm.user_id];
+        const u    = sqlu?.name ? sqlu : (pgu || sqlu);
         return {
           userId: wm.user_id,
           name: u?.name || '사용자',

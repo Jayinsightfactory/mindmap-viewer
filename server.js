@@ -1083,6 +1083,47 @@ app.get('/api/admin/all-users', async (req, res) => {
   }
 });
 
+// GET /api/admin/workspaces — 모든 워크스페이스 + 멤버 현황
+app.get('/api/admin/workspaces', async (req, res) => {
+  try {
+    const pool = dbModule.getDb();
+    const { rows: ws } = await pool.query(
+      `SELECT w.id, w.name, w.owner_id, w.invite_code, w.created_at,
+              COUNT(wm.user_id) FILTER (WHERE wm.status='active') AS active_count
+       FROM workspaces w
+       LEFT JOIN workspace_members wm ON wm.workspace_id = w.id
+       GROUP BY w.id ORDER BY w.created_at DESC`
+    );
+    const result = await Promise.all(ws.map(async w => {
+      const { rows: members } = await pool.query(
+        `SELECT wm.user_id, wm.role, wm.team_name, wm.status, u.name, u.email
+         FROM workspace_members wm
+         LEFT JOIN orbit_auth_users u ON u.id = wm.user_id
+         WHERE wm.workspace_id = $1 ORDER BY wm.joined_at`, [w.id]
+      );
+      return { ...w, members };
+    }));
+    res.json({ workspaces: result });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/admin/workspace-add-member — 사용자를 워크스페이스에 직접 추가
+app.post('/api/admin/workspace-add-member', async (req, res) => {
+  try {
+    const { workspaceId, userId, role = 'member', teamName = '' } = req.body || {};
+    if (!workspaceId || !userId) return res.status(400).json({ error: 'workspaceId, userId 필수' });
+    const pool = dbModule.getDb();
+    // 이미 있으면 active로 업데이트
+    const { rowCount } = await pool.query(
+      `INSERT INTO workspace_members (workspace_id, user_id, role, team_name, status, joined_at)
+       VALUES ($1,$2,$3,$4,'active',NOW())
+       ON CONFLICT (workspace_id, user_id) DO UPDATE SET status='active', role=$3, team_name=$4`,
+      [workspaceId, userId, role, teamName]
+    );
+    res.json({ ok: true, message: `${userId} → ${workspaceId} 추가 완료` });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // GET /api/learning/logs — 원시 이벤트 로그 조회 (관리자 대시보드용)
 app.get('/api/learning/logs', async (req, res) => {
   try {
