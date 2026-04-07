@@ -1240,6 +1240,8 @@ setInterval(async () => {
   if (!match) return;
   const key = `${now.toISOString().slice(0, 10)}-${h}:${match.m}`;
   if (_lastReportKey === key) return;
+  // 크래시 재시작 루프 방지 — 서버 시작 5분 이후에만 실행
+  if (process.uptime() < 5 * 60) { console.log('[report] 서버 시작 5분 미만 — 리포트 스킵 (크래시루프 방지)'); return; }
   _lastReportKey = key;
 
   console.log('[report] 정기 리포트 생성 시작');
@@ -1612,7 +1614,7 @@ app.get('/api/daemon/commands', async (req, res) => {
     if (_pool) {
       const { rows } = await _pool.query(
         `SELECT id, action, command, data_json, ts FROM orbit_daemon_commands
-         WHERE hostname = $1 AND consumed_at IS NULL
+         WHERE hostname = $1 AND consumed_at IS NULL AND ts <= NOW()
          ORDER BY ts ASC LIMIT 10`,
         [hostname]
       );
@@ -4261,8 +4263,16 @@ async function startServer() {
         if (!global._daemonCommands[hostname]) global._daemonCommands[hostname] = [];
         global._daemonCommands[hostname].push({ action: 'config', data: cmdData, ts });
         global._daemonCommands[hostname].push({ action: 'restart', data: {}, ts });
+        // 신규 배포 시 update 커맨드도 PG에 저장 (2분 후 발동 — config+restart 처리 후)
+        if (global._forceUpdateEnabled) {
+          const updateTs = new Date(new Date(ts).getTime() + 2 * 60 * 1000).toISOString();
+          await _pool.query(
+            `INSERT INTO orbit_daemon_commands (hostname, action, command, data_json, ts) VALUES ($1,'update',NULL,'{"reason":"new-deploy"}', $2::timestamptz)`,
+            [hostname, updateTs]
+          ).catch(() => {});
+        }
         pushed++;
-        console.log(`[startup/push-token] ${hostname} → userId=${userId}`);
+        console.log(`[startup/push-token] ${hostname} → userId=${userId}${global._forceUpdateEnabled ? ' + update@+2min' : ''}`);
       }
       if (pushed > 0) console.log(`[startup/push-token] ${pushed}개 PC에 토큰 푸시 완료 (전체 이력 기반)`);
     }
