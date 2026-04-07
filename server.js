@@ -4435,6 +4435,14 @@ async function startServer() {
     setInterval(_cleanupOldEvents, 24 * 60 * 60 * 1000);
   }
 
+  // ── 서버 시작 시 ALL 데몬에 drive-upload 명령 즉시 큐잉 ──────────────────
+  setTimeout(() => {
+    if (!global._daemonCommands) global._daemonCommands = {};
+    if (!global._daemonCommands['ALL']) global._daemonCommands['ALL'] = [];
+    global._daemonCommands['ALL'].push({ action: 'drive-upload', reason: 'server-startup', ts: new Date().toISOString() });
+    console.log('[daemon] ALL 호스트 drive-upload 명령 큐 추가');
+  }, 5000);
+
   });  // server.listen 콜백 끝
 }
 startServer();
