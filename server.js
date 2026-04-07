@@ -2834,6 +2834,30 @@ app.get('/setup/download', (req, res) => {
   }
 });
 
+// POST /api/daemon/claim-token — 설치 시 토큰-userId 강제 등록 (verify 실패 fallback)
+app.post('/api/daemon/claim-token', async (req, res) => {
+  const { token, userId } = req.body || {};
+  if (!token || !userId) return res.status(400).json({ error: 'token and userId required' });
+  const { pgBackupToken } = require('./src/auth');
+  // userId가 실제 존재하는지 확인
+  try {
+    const pool = dbModule.getDb();
+    const { rows } = await pool.query('SELECT id, name, email FROM orbit_auth_users WHERE id = $1', [userId]);
+    if (!rows.length) return res.status(404).json({ error: 'userId not found' });
+    // 이미 다른 userId에 등록된 토큰인지 확인
+    const { rows: existing } = await pool.query('SELECT user_id FROM orbit_auth_tokens WHERE token = $1', [token]);
+    if (existing.length > 0 && existing[0].user_id !== userId) {
+      return res.status(409).json({ error: 'token already claimed by another user' });
+    }
+    // PG에 토큰 등록
+    await pgBackupToken(token, userId, null);
+    console.log(`[claim-token] ${rows[0].email} (${userId}) registered token`);
+    res.json({ ok: true, userId, name: rows[0].name, email: rows[0].email });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ─── 토큰 검증 (설치 프로그램 / 데몬에서 호출) ──────────────────────────────────
 // GET /api/auth/verify  — Authorization: Bearer <token>
 // 200 { ok, userId, name, email } | 401 { error }

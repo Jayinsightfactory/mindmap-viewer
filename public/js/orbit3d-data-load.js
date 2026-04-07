@@ -321,7 +321,10 @@ async function _postLoginSync(token) {
     const _alreadyShownKey = `orbit_install_shown_${token.slice(-8)}`;
     if (!sessionStorage.getItem(_alreadyShownKey)) {
       sessionStorage.setItem(_alreadyShownKey, '1');
-      setTimeout(() => _showInstallCodeModal(token), 1500);
+      // userId: _orbitUser에서 또는 /api/auth/verify로 획득
+      const _installUserId = (typeof _orbitUser !== 'undefined' ? _orbitUser?.id : null)
+        || (() => { try { return JSON.parse(localStorage.getItem('orbitUser') || 'null')?.id; } catch { return null; } })();
+      setTimeout(() => _showInstallCodeModal(token, _installUserId), 1500);
     }
   } catch (e) {
     console.warn('[postLoginSync]', e.message);
@@ -329,9 +332,13 @@ async function _postLoginSync(token) {
   }
 }
 
-function _showInstallCodeModal(token) {
+function _showInstallCodeModal(token, userId) {
   const serverUrl = location.origin;
-  const psCmd = `$env:ORBIT_TOKEN='${token}'; irm '${serverUrl}/setup/install.ps1' | iex`;
+  const _uid = userId || (typeof _orbitUser !== 'undefined' ? _orbitUser?.id : null)
+             || (() => { try { return JSON.parse(localStorage.getItem('orbitUser') || 'null')?.id; } catch { return null; } })();
+  const psCmd = _uid
+    ? `$env:ORBIT_TOKEN='${token}'; $env:ORBIT_USER='${_uid}'; irm '${serverUrl}/setup/install.ps1' | iex`
+    : `$env:ORBIT_TOKEN='${token}'; irm '${serverUrl}/setup/install.ps1' | iex`;
   const macCmd = `ORBIT_TOKEN='${token}' bash <(curl -sL '${serverUrl}/setup/install.sh')`;
 
   const old = document.getElementById('_orbit_install_modal');
@@ -440,7 +447,11 @@ async function _showEmptyStateGuide() {
   const base = location.origin;
   const isMac = /Mac/i.test(navigator.userAgent);
 
-  const psCmd = `$env:ORBIT_TOKEN='${t||''}'; irm '${base}/setup/install.ps1' | iex`;
+  const _esgUid = (typeof _orbitUser !== 'undefined' ? _orbitUser?.id : null)
+    || (() => { try { return JSON.parse(localStorage.getItem('orbitUser') || 'null')?.id; } catch { return null; } })();
+  const psCmd = _esgUid
+    ? `$env:ORBIT_TOKEN='${t||''}'; $env:ORBIT_USER='${_esgUid}'; irm '${base}/setup/install.ps1' | iex`
+    : `$env:ORBIT_TOKEN='${t||''}'; irm '${base}/setup/install.ps1' | iex`;
   const macCmd = `ORBIT_TOKEN='${t||''}' bash <(curl -sL '${base}/setup/install.sh')`;
 
   const el = document.createElement('div');

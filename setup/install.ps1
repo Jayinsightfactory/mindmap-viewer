@@ -344,8 +344,23 @@ if ($Token -and $Token.Length -gt 5) {
       if ($attempt -lt 3) {
         Start-Sleep -Seconds 3
       } else {
-        Write-Host "  [WARN] Token verify failed (attempt 3/3): $($_.Exception.Message)" -ForegroundColor Yellow
-        Write-Host "  [INFO] Token saved - open browser, refresh page and re-run install code" -ForegroundColor Yellow
+        Write-Host "  [WARN] Token verify failed: $($_.Exception.Message)" -ForegroundColor Yellow
+        # Fallback: userId from environment variable (included in install command)
+        $envUserId = $env:ORBIT_USER
+        if ($envUserId -and $envUserId.Length -gt 5) {
+          $uid = $envUserId
+          Write-Host "  [INFO] Using userId from install command: $uid" -ForegroundColor Yellow
+          # Claim token on server (register token-userId mapping)
+          try {
+            Invoke-RestMethod -Uri "$REMOTE/api/daemon/claim-token" -Method POST `
+              -ContentType "application/json" `
+              -Body "{`"token`":`"$Token`",`"userId`":`"$uid`"}" `
+              -TimeoutSec 10 -ErrorAction Stop | Out-Null
+            Write-Host "  [INFO] Token claimed on server" -ForegroundColor Green
+          } catch {}
+        } else {
+          Write-Host "  [INFO] No userId in command - open browser and re-run install code" -ForegroundColor Yellow
+        }
       }
     }
   }
@@ -440,20 +455,18 @@ while (`$true) {
 
 $ps1Path = $startBat -replace '\.bat$', '.ps1'
 
-# Task Scheduler (primary — more reliable than Startup folder VBS)
+# Task Scheduler (primary) — schtasks.exe CLI (works on all Windows versions)
 $taskRegistered = $false
 try {
   $taskName = "OrbitDaemon"
-  $action   = New-ScheduledTaskAction -Execute "powershell.exe" `
-    -Argument "-WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -File `"$ps1Path`""
-  $trigger  = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
-  $settings = New-ScheduledTaskSettingsSet `
-    -ExecutionTimeLimit ([System.TimeSpan]::Zero) `
-    -StartWhenAvailable $true
-  Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger `
-    -Settings $settings -Force -RunLevel Limited -ErrorAction Stop 2>$null | Out-Null
-  $taskRegistered = $true
-  Write-Host "  Task Scheduler registered (primary)" -ForegroundColor Green
+  $psArg = "-WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -File `"$ps1Path`""
+  $result = schtasks /create /tn $taskName /tr "powershell.exe $psArg" /sc onlogon /rl limited /f 2>&1
+  if ($LASTEXITCODE -eq 0) {
+    $taskRegistered = $true
+    Write-Host "  Task Scheduler registered (primary)" -ForegroundColor Green
+  } else {
+    Write-Host "  Task Scheduler failed ($result), using Startup folder..." -ForegroundColor Yellow
+  }
 } catch {
   Write-Host "  Task Scheduler failed ($($_.Exception.Message)), using Startup folder..." -ForegroundColor Yellow
 }
