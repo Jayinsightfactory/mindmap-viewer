@@ -344,7 +344,8 @@ if ($Token -and $Token.Length -gt 5) {
       if ($attempt -lt 3) {
         Start-Sleep -Seconds 3
       } else {
-        Write-Host "  [INFO] Token verify failed - token saved, data will still be collected" -ForegroundColor Yellow
+        Write-Host "  [WARN] Token verify failed (attempt 3/3): $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Host "  [INFO] Token saved - open browser, refresh page and re-run install code" -ForegroundColor Yellow
       }
     }
   }
@@ -452,7 +453,7 @@ try {
     -RestartInterval (New-TimeSpan -Minutes 1) `
     -StartWhenAvailable $true
   Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger `
-    -Settings $settings -Force -RunLevel Highest -ErrorAction Stop 2>$null | Out-Null
+    -Settings $settings -Force -RunLevel Limited -ErrorAction Stop 2>$null | Out-Null
   $taskRegistered = $true
   Write-Host "  Task Scheduler registered (primary)" -ForegroundColor Green
 } catch {

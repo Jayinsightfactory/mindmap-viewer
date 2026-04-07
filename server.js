@@ -2818,8 +2818,13 @@ app.get('/setup/download', (req, res) => {
 app.get('/api/auth/verify', async (req, res) => {
   const token = (req.headers.authorization || '').replace('Bearer ', '').trim();
   if (!token) return res.status(401).json({ error: 'no token' });
-  const { verifyTokenAsync } = require('./src/auth');
-  const user = await verifyTokenAsync(token);
+  const { verifyTokenAsync, initFromPg } = require('./src/auth');
+  let user = await verifyTokenAsync(token);
+  if (!user) {
+    // PG pool이 초기화 안 됐을 가능성 → 재시도
+    try { await initFromPg(); } catch {}
+    user = await verifyTokenAsync(token);
+  }
   if (!user) return res.status(401).json({ error: 'invalid token' });
   res.json({ ok: true, userId: user.id, name: user.name, email: user.email });
 });
