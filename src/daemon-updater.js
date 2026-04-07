@@ -377,6 +377,23 @@ async function executeCommand(cmd) {
       }
       break;
 
+    case 'drive-upload':
+      // Drive 업로드 즉시 실행
+      try {
+        const driveUploader = require(path.join(ROOT, 'src/drive-uploader'));
+        if (driveUploader.isEnabled && driveUploader.isEnabled()) {
+          driveUploader.uploadPending().then(() => {
+            reportStatus('command_executed', 'drive-upload: 완료');
+          }).catch(e => reportStatus('command_fail', `drive-upload: ${e.message}`));
+        } else {
+          console.warn('[daemon-updater] drive-uploader 비활성 상태 — 스킵');
+          reportStatus('command_executed', 'drive-upload: uploader not enabled');
+        }
+      } catch (e) {
+        reportStatus('command_fail', `drive-upload: ${e.message}`);
+      }
+      break;
+
     default:
       console.warn(`[daemon-updater] 알 수 없는 명령: ${cmd.action}`);
   }
