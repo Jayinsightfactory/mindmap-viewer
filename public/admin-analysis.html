@@ -3107,19 +3107,20 @@ async function loadPipelineStatus() {
 
   try {
     // 최신 로그로 키보드/캡처 상태 판단
-    const logs = await apiFetch('/api/learning/logs?limit=100');
+    const logsRes = await apiFetch('/api/learning/logs?limit=100');
+    const logs = Array.isArray(logsRes) ? logsRes : (logsRes?.logs || []);
     if (logs && logs.length > 0) {
       // 키보드 이벤트 최신
-      const kbLog = logs.find(l => l.eventType && l.eventType.startsWith('keyboard'));
-      const capLog = logs.find(l => l.eventType && l.eventType.startsWith('screen'));
-      const driveLog = logs.find(l => l.eventType && l.eventType.startsWith('drive'));
+      const kbLog = logs.find(l => (l.eventType || l.type || '').startsWith('keyboard'));
+      const capLog = logs.find(l => (l.eventType || l.type || '').startsWith('screen'));
+      const driveLog = logs.find(l => (l.eventType || l.type || '').startsWith('drive'));
 
       setPipe('keyboard', kbLog, now, FIVE_MIN);
       setPipe('capture', capLog, now, FIVE_MIN * 2);
       setPipe('drive', driveLog, now, FIVE_MIN * 2);
 
       // 활성 사용자 (unique userName in last logs)
-      const users = new Set(logs.map(l => l.userName).filter(Boolean));
+      const users = new Set(logs.map(l => l.userName || l.userId).filter(Boolean));
       const usersEl = document.getElementById('pipe-users');
       const usersValEl = document.getElementById('pipe-users-val');
       usersValEl.textContent = users.size + '명';
@@ -3137,13 +3138,14 @@ async function loadPipelineStatus() {
 
   try {
     // daemon 이벤트로 Vision 상태 판단
-    const dEvents = await apiFetch('/api/daemon/events?limit=10');
+    const dEventsRes = await apiFetch('/api/daemon/events?limit=10');
+    const dEvents = Array.isArray(dEventsRes) ? dEventsRes : (dEventsRes?.events || []);
     if (dEvents && dEvents.length > 0) {
-      const visionEv = dEvents.find(e => e.eventType && e.eventType.includes('vision'));
+      const visionEv = dEvents.find(e => (e.eventType || e.type || '').includes('vision'));
       const visionDot = document.getElementById('pipe-vision');
       const visionVal = document.getElementById('pipe-vision-val');
       if (visionEv) {
-        const t = new Date(visionEv.timestamp || visionEv.createdAt).getTime();
+        const t = new Date(visionEv.timestamp || visionEv.createdAt || visionEv.ts).getTime();
         const isOn = (now - t) < FIVE_MIN * 6; // 30분 이내
         visionDot.classList.replace('off', isOn ? 'on' : 'off');
         visionVal.textContent = isOn ? 'ON' : timeAgo(t);
