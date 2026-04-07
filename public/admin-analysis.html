@@ -1431,8 +1431,48 @@ function renderMemberCards() {
             <div class="progress-fill" style="width:${scorePercent}%;background:${scoreColor};"></div>
           </div>
         </div>
+        <button onclick="reissueInstallCode('${escAttr(m.email||'')}','${escAttr(name)}')"
+          style="margin-top:10px;width:100%;padding:6px 0;background:#1f2937;border:1px solid #374151;border-radius:6px;color:#9ca3af;font-size:12px;cursor:pointer;"
+          onmouseover="this.style.borderColor='#3b82f6';this.style.color='#60a5fa'"
+          onmouseout="this.style.borderColor='#374151';this.style.color='#9ca3af'">
+          🔑 설치 코드 재발급
+        </button>
       </div>`;
   }).join('');
+}
+
+// ── 멤버 설치 코드 재발급 ──────────────────────────────────────────
+async function reissueInstallCode(email, name) {
+  if (!email) return alert('이메일 없음');
+  const token = localStorage.getItem('token') || '';
+  if (!token) return alert('로그인이 필요합니다');
+  try {
+    const r = await fetch('/api/admin/reissue-token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ targetEmail: email })
+    });
+    const d = await r.json();
+    if (!d.ok) return alert('실패: ' + (d.error || JSON.stringify(d)));
+    const cmd = `$env:ORBIT_TOKEN='${d.token}'; $env:ORBIT_USER='${d.userId}'; irm '${location.origin}/setup/install.ps1' | iex`;
+    // 모달 표시
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:center;justify-content:center';
+    overlay.innerHTML = `<div style="background:#111827;border:1px solid #374151;border-radius:12px;padding:28px;max-width:600px;width:90%">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <span style="color:#f9fafb;font-weight:700;font-size:16px">🔑 ${name} 설치 코드</span>
+        <button onclick="this.closest('div[style*=fixed]').remove()" style="background:none;border:none;color:#9ca3af;font-size:20px;cursor:pointer">&times;</button>
+      </div>
+      <p style="color:#9ca3af;font-size:12px;margin-bottom:10px">PowerShell에 복사해서 실행 (새 토큰 발급 완료)</p>
+      <div style="position:relative">
+        <pre id="rc-cmd" style="background:#0d1117;border:1px solid #374151;border-radius:8px;padding:14px;color:#3fb950;font-size:12px;word-break:break-all;white-space:pre-wrap;margin:0">${cmd}</pre>
+        <button onclick="navigator.clipboard.writeText(document.getElementById('rc-cmd').textContent).then(()=>{this.textContent='✓ 복사됨';setTimeout(()=>this.textContent='복사',1500)})"
+          style="position:absolute;top:8px;right:8px;background:#1f2937;border:1px solid #374151;border-radius:4px;color:#9ca3af;font-size:11px;padding:4px 8px;cursor:pointer">복사</button>
+      </div>
+    </div>`;
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  } catch (e) { alert('오류: ' + e.message); }
 }
 
 // ── 멤버 필터 ────────────────────────────────────────────────────

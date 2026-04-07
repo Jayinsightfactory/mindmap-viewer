@@ -506,12 +506,36 @@ Get-WmiObject Win32_Process -Filter "Name='node.exe'" -ErrorAction SilentlyConti
 Get-Process -Name "wscript" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 Start-Sleep -Seconds 2
 Start-Process powershell.exe -WindowStyle Hidden -ArgumentList "-NonInteractive -ExecutionPolicy Bypass -File `"$ps1Path`""
-Start-Sleep -Seconds 5
-$newPid = Get-Content $pidFile -ErrorAction SilentlyContinue
+# Wait up to 15s for PID file
+$waited = 0
+while ($waited -lt 15) {
+  Start-Sleep -Seconds 3; $waited += 3
+  $newPid = Get-Content $pidFile -ErrorAction SilentlyContinue
+  if ($newPid -and (Get-Process -Id $newPid -ErrorAction SilentlyContinue)) { break }
+}
 if ($newPid -and (Get-Process -Id $newPid -ErrorAction SilentlyContinue)) {
   Write-Host "  Daemon running (PID: $newPid)" -ForegroundColor Green
 } else {
-  Write-Host "  [WARN] Daemon start unconfirmed - will auto-start on reboot" -ForegroundColor Yellow
+  # Fallback: start node directly
+  $nodeExe2 = (Get-Command node -ErrorAction SilentlyContinue)?.Source
+  if (-not $nodeExe2) { $nodeExe2 = $NODE_EXE }
+  if ($nodeExe2 -and (Test-Path $nodeExe2)) {
+    $pinfo = New-Object System.Diagnostics.ProcessStartInfo
+    $pinfo.FileName = $nodeExe2
+    $pinfo.Arguments = "`"$DaemonScript`""
+    $pinfo.WorkingDirectory = $DIR
+    $pinfo.UseShellExecute = $false
+    $pinfo.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
+    $pinfo.EnvironmentVariables["ORBIT_TOKEN"] = $cfgToken
+    $pinfo.EnvironmentVariables["ORBIT_USER"]  = $uid
+    $proc = [System.Diagnostics.Process]::Start($pinfo)
+    Start-Sleep -Seconds 5
+    $newPid = Get-Content $pidFile -ErrorAction SilentlyContinue
+    if ($newPid) { Write-Host "  Daemon running (PID: $newPid)" -ForegroundColor Green }
+    else { Write-Host "  [WARN] Daemon will auto-start on next login (Task Scheduler registered)" -ForegroundColor Yellow }
+  } else {
+    Write-Host "  [WARN] Daemon will auto-start on next login (Task Scheduler registered)" -ForegroundColor Yellow
+  }
 }
 
 Write-Host ""
