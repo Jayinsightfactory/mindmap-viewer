@@ -4,7 +4,7 @@
     "builder": "NIXPACKS"
   },
   "deploy": {
-    "startCommand": "node --max-old-space-size=640 --expose-gc server.js",
+    "startCommand": "node --max-old-space-size=460 --expose-gc server.js",
     "healthcheckPath": "/health",
     "healthcheckTimeout": 120,
     "restartPolicyType": "ON_FAILURE",
