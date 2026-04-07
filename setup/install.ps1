@@ -517,7 +517,8 @@ if ($newPid -and (Get-Process -Id $newPid -ErrorAction SilentlyContinue)) {
   Write-Host "  Daemon running (PID: $newPid)" -ForegroundColor Green
 } else {
   # Fallback: start node directly
-  $nodeExe2 = (Get-Command node -ErrorAction SilentlyContinue)?.Source
+  $_nc2 = Get-Command node -ErrorAction SilentlyContinue
+  $nodeExe2 = if ($_nc2) { $_nc2.Source } else { $null }
   if (-not $nodeExe2) { $nodeExe2 = $NODE_EXE }
   if ($nodeExe2 -and (Test-Path $nodeExe2)) {
     $pinfo = New-Object System.Diagnostics.ProcessStartInfo
