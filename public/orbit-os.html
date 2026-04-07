@@ -1364,46 +1364,63 @@ async function runCrossValidation() {
 const WS_ID = 'WS-NENOVA-2026';
 async function loadLiveMembers() {
   try {
-    // 1) 워크스페이스 멤버 목록
-    const members = await fetch(BASE + '/api/workspace/' + WS_ID + '/members').then(r => r.json()).catch(() => []);
-    if (!Array.isArray(members) || members.length === 0) return;
+    // 1) 관리자 API로 워크스페이스 멤버 목록 (인증 불필요)
+    const wsData = await fetch(BASE + '/api/admin/workspaces').then(r => r.json()).catch(() => ({}));
+    const ws = (wsData.workspaces || []).find(w => w.id === WS_ID);
+    const rawMembers = ws?.members || [];
+    if (rawMembers.length === 0) return;
 
     // 2) 각 멤버 최근 이벤트 분석 (병렬)
-    const analyses = await Promise.all(members.map(m =>
-      fetch(BASE + '/api/learning/analyze?userId=' + encodeURIComponent(m.userId))
+    const analyses = await Promise.all(rawMembers.map(m =>
+      fetch(BASE + '/api/learning/analyze?userId=' + encodeURIComponent(m.user_id))
         .then(r => r.json()).catch(() => ({}))
     ));
 
     // 3) MEMBERS 배열 구성
-    MEMBERS = members.map((m, i) => {
+    MEMBERS = rawMembers.map((m, i) => {
       const a = analyses[i] || {};
-      const topApp = (a.topApps || [])[0]?.app || '';
+      // topApps가 [[app, min], ...] 배열 형식
+      const topAppsArr = Array.isArray(a.topApps) ? a.topApps.map(x => Array.isArray(x) ? {app:x[0], minutes:x[1]} : x) : [];
+      const topApp = topAppsArr[0]?.app || '';
       const summary = a.sessions?.[0]?.title || a.insights?.[0] || topApp || '데이터 없음';
-      const kakaoMin = (a.topApps || []).find(x => /kakao/i.test(x.app))?.minutes || 0;
-      const erpMin   = (a.topApps || []).find(x => /nenova|erp/i.test(x.app))?.minutes || 0;
+      const kakaoMin = topAppsArr.find(x => /kakao/i.test(x.app))?.minutes || 0;
+      const erpMin   = topAppsArr.find(x => /nenova|erp/i.test(x.app))?.minutes || 0;
       const recentMin = a.sessions?.length > 0
         ? Math.round((Date.now() - new Date(a.sessions[0].startTime || 0)) / 60000)
         : 9999;
       let status = 'idle';
-      if (recentMin < 30) {
+      if (recentMin < 60) {
         status = /kakao/i.test(topApp) ? 'kakao' : 'active';
       }
       return {
-        id: m.userId,
+        id: m.user_id,
         name: m.name || '사용자',
-        team: m.teamName || m.role || '—',
+        team: m.team_name || m.role || '—',
         emoji: m.role === 'owner' ? '👔' : '👤',
         status,
         activity: summary,
         kakao: kakaoMin,
         erp: erpMin,
+        eventCount: a.eventCount || 0,
         warn: kakaoMin > erpMin * 3,
       };
     });
 
     renderMemberCards();
+
+    // KPI 업데이트
+    const activeCount  = MEMBERS.filter(m => m.status !== 'idle').length;
+    const kakaoCount   = MEMBERS.filter(m => m.status === 'kakao').length;
+    const erpCount     = MEMBERS.filter(m => m.erp > 0).length;
     const kpi = document.getElementById('kpi-members');
-    if (kpi) kpi.textContent = MEMBERS.filter(m => m.status !== 'idle').length + '/' + MEMBERS.length;
+    if (kpi) kpi.textContent = activeCount + '/' + MEMBERS.length;
+    const nowActive = document.getElementById('now-active');
+    if (nowActive) nowActive.textContent = activeCount;
+    const nowKakao = document.getElementById('now-kakao');
+    if (nowKakao) nowKakao.textContent = kakaoCount;
+    const nowErp = document.getElementById('now-erp');
+    if (nowErp) nowErp.textContent = erpCount;
+
     document.getElementById('sb-updated').textContent = '마지막: ' + new Date().toLocaleTimeString('ko-KR');
   } catch (e) {
     console.warn('[orbit-os] 멤버 로드 실패:', e.message);
