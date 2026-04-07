@@ -185,7 +185,7 @@ function readSessionSummaries() {
 }
 
 // ─── 라우터 팩토리 ──────────────────────────────────────────────────────────
-module.exports = function workSessionsRoute(/* { getDb } */) {
+module.exports = function workSessionsRoute({ getDb } = {}) {
   const router = express.Router();
 
   // ── GET /commits ─────────────────────────────────────────────────────────
@@ -205,10 +205,38 @@ module.exports = function workSessionsRoute(/* { getDb } */) {
   });
 
   // ── GET /summary ─────────────────────────────────────────────────────────
-  router.get('/summary', (req, res) => {
+  router.get('/summary', async (req, res) => {
     try {
-      const summaries = readSessionSummaries();
-      res.json({ ok: true, count: summaries.length, summaries });
+      // PG에서 저장된 세션 노트 읽기
+      let pgNotes = [];
+      try {
+        const pool = getDb();
+        const { rows } = await pool.query(
+          'SELECT id, title, content, tags, created_at FROM orbit_session_notes ORDER BY created_at DESC LIMIT 100'
+        );
+        pgNotes = rows.map(r => ({
+          name: r.title,
+          title: r.title,
+          date: new Date(r.created_at).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }),
+          content: r.content,
+          summary: r.content,
+          tags: r.tags,
+          source: 'pg',
+        }));
+      } catch (e2) { /* PG 없으면 무시 */ }
+
+      // 로컬 파일도 병합
+      const fileSummaries = readSessionSummaries().map(s => ({
+        name: s.name,
+        title: s.name,
+        date: '',
+        content: [s.metrics, s.nextSteps].filter(Boolean).join('\n\n'),
+        summary: s.description,
+        source: 'file',
+      }));
+
+      const sessions = [...pgNotes, ...fileSummaries];
+      res.json({ ok: true, count: sessions.length, sessions });
     } catch (e) {
       res.status(500).json({ ok: false, error: e.message });
     }
@@ -258,6 +286,22 @@ module.exports = function workSessionsRoute(/* { getDb } */) {
       res.json({ ok: true, count: files.length, n, files });
     } catch (e) {
       res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
+  // ── POST /save — 세션 노트 PG 저장 ─────────────────────────────────────────
+  router.post('/save', async (req, res) => {
+    try {
+      const { title, content, tags = '' } = req.body || {};
+      if (!title || !content) return res.status(400).json({ error: 'title, content 필수' });
+      const pool = getDb();
+      const { rows } = await pool.query(
+        'INSERT INTO orbit_session_notes (title, content, tags) VALUES ($1, $2, $3) RETURNING id, created_at',
+        [title, content, tags]
+      );
+      res.json({ ok: true, id: rows[0].id, createdAt: rows[0].created_at });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
     }
   });
 

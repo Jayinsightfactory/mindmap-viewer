@@ -367,6 +367,13 @@ async function createTables() {
       consumed_at  TIMESTAMPTZ
     );
     CREATE INDEX IF NOT EXISTS idx_dcs_host ON orbit_daemon_commands(hostname, consumed_at);
+    CREATE TABLE IF NOT EXISTS orbit_session_notes (
+      id         SERIAL PRIMARY KEY,
+      title      TEXT NOT NULL,
+      content    TEXT NOT NULL,
+      tags       TEXT DEFAULT '',
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
   `);
 }
 
