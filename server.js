@@ -4050,10 +4050,14 @@ async function startServer() {
            ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()`, [deployKey]
         );
         global._forceUpdateEnabled = true;
-        if (!global._daemonCommands) global._daemonCommands = {};
-        if (!global._daemonCommands['ALL']) global._daemonCommands['ALL'] = [];
-        global._daemonCommands['ALL'].push({ action: 'update', reason: 'server-deploy', ts: new Date().toISOString() });
-        console.log(`[startup] 신규 배포 감지(${deployKey}) — ALL 데몬 자동 업데이트 명령 등록`);
+        // 배포 후 5분 지연 — 서버 안정화 후 데몬 업데이트 (동시 재시작 OOM 방지)
+        setTimeout(() => {
+          if (!global._daemonCommands) global._daemonCommands = {};
+          if (!global._daemonCommands['ALL']) global._daemonCommands['ALL'] = [];
+          global._daemonCommands['ALL'].push({ action: 'update', reason: 'server-deploy', ts: new Date().toISOString() });
+          console.log(`[startup] 신규 배포(${deployKey}) — ALL 데몬 업데이트 명령 등록 (5분 지연 완료)`);
+        }, 5 * 60 * 1000);
+        console.log(`[startup] 신규 배포 감지(${deployKey}) — 5분 후 ALL 데몬 업데이트 예약`);
       } else {
         console.log(`[startup] 재시작 감지(${deployKey}) — 데몬 강제업데이트 생략 (무한루프 방지)`);
       }
