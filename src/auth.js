@@ -614,16 +614,28 @@ function searchUsers(query, excludeId, limit = 20) {
 }
 
 // ─── PostgreSQL 백업 / 복원 (Railway 재배포 시 users.db 유실 대비) ─────────────
-// DATABASE_URL이 있을 때만 활성화: 토큰/사용자를 PG에도 저장, 부팅 시 복원
+// db-pg.js의 검증된 pool을 우선 사용. 없으면 독립 pool 생성 (fallback)
 let _pgPool = null;
-if (process.env.DATABASE_URL) {
+function _initPgPool() {
+  if (_pgPool) return;
   try {
-    const { Pool } = require('pg');
-    _pgPool = new Pool({ connectionString: process.env.DATABASE_URL, max: 3 });
-  } catch { /* pg 없으면 무시 */ }
+    // db-pg.js가 이미 초기화한 pool 재사용 (Railway에서 안정적으로 작동함)
+    const dbPg = require('./db-pg');
+    const shared = dbPg.getDb ? dbPg.getDb() : null;
+    if (shared) { _pgPool = shared; return; }
+  } catch {}
+  // fallback: 독립 pool 생성
+  if (process.env.DATABASE_URL) {
+    try {
+      const { Pool } = require('pg');
+      _pgPool = new Pool({ connectionString: process.env.DATABASE_URL, max: 3 });
+    } catch {}
+  }
 }
+_initPgPool();
 
 async function _pgInit() {
+  if (!_pgPool) _initPgPool();
   if (!_pgPool) return;
   try {
     await _pgPool.query(`
