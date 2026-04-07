@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Orbit — 직원 작업 로그</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0d1117;color:#cdd9e5;font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;min-height:100vh}
+.top{display:flex;align-items:center;gap:12px;padding:12px 20px;background:#161b22;border-bottom:1px solid #30363d;flex-wrap:wrap}
+.top-logo{font-size:15px;font-weight:700;color:#58a6ff;white-space:nowrap}
+.top-logo span{color:#6e7681;font-weight:400}
+select,input{background:#21262d;color:#cdd9e5;border:1px solid #30363d;border-radius:6px;padding:5px 10px;font-size:12px;outline:none}
+select:focus,input:focus{border-color:#58a6ff}
+button{background:#21262d;color:#cdd9e5;border:1px solid #30363d;border-radius:6px;padding:5px 12px;cursor:pointer;font-size:12px}
+button:hover{background:#30363d}
+button.primary{background:#1f6feb;border-color:#1f6feb;color:#fff}
+button.primary:hover{background:#388bfd}
+.badge{display:inline-block;padding:2px 7px;border-radius:10px;font-size:11px;font-weight:600}
+.badge-kb{background:#1f3a5f;color:#79c0ff}
+.badge-sc{background:#3d2b00;color:#ffa657}
+.badge-va{background:#1a3a2a;color:#56d364}
+.badge-idle{background:#21262d;color:#6e7681}
+.badge-dm{background:#3d1f5a;color:#d2a8ff}
+.layout{display:flex;height:calc(100vh - 52px)}
+.sidebar{width:200px;min-width:160px;background:#161b22;border-right:1px solid #30363d;overflow-y:auto;flex-shrink:0}
+.sidebar-title{padding:10px 14px 6px;font-size:11px;color:#6e7681;font-weight:600;text-transform:uppercase;letter-spacing:.5px}
+.member-item{padding:8px 14px;cursor:pointer;display:flex;align-items:center;gap:8px;border-left:3px solid transparent;transition:all .15s}
+.member-item:hover{background:#21262d}
+.member-item.active{background:#1f3a5f;border-left-color:#58a6ff;color:#79c0ff}
+.member-av{width:26px;height:26px;border-radius:50%;background:#21262d;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0}
+.member-info{overflow:hidden}
+.member-name{font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.member-team{font-size:10px;color:#6e7681}
+.content{flex:1;overflow:hidden;display:flex;flex-direction:column}
+.toolbar{display:flex;align-items:center;gap:8px;padding:10px 16px;background:#161b22;border-bottom:1px solid #30363d;flex-wrap:wrap}
+.toolbar label{font-size:11px;color:#8b949e}
+.logs-area{flex:1;overflow-y:auto;padding:12px 16px}
+.log-day{margin-bottom:16px}
+.day-header{font-size:11px;color:#8b949e;font-weight:600;padding:4px 0 8px;border-bottom:1px solid #21262d;margin-bottom:8px;position:sticky;top:0;background:#0d1117;z-index:1}
+.log-row{display:flex;gap:10px;padding:6px 8px;border-radius:6px;margin-bottom:2px;border:1px solid transparent;transition:background .1s;cursor:default}
+.log-row:hover{background:#161b22;border-color:#30363d}
+.log-time{color:#6e7681;font-size:11px;min-width:52px;padding-top:2px;flex-shrink:0}
+.log-body{flex:1;min-width:0}
+.log-app{font-weight:600;color:#e6edf3;margin-bottom:2px;font-size:12px}
+.log-title{color:#8b949e;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:2px}
+.log-summary{color:#cdd9e5;font-size:12px;line-height:1.5}
+.log-meta{display:flex;gap:6px;margin-top:3px;flex-wrap:wrap;align-items:center}
+.meta-chip{font-size:10px;color:#6e7681;background:#21262d;border-radius:4px;padding:1px 5px}
+.empty{padding:40px;text-align:center;color:#6e7681}
+.loading{padding:40px;text-align:center;color:#8b949e}
+.stat-bar{display:flex;gap:20px;padding:8px 16px;background:#0d1117;border-bottom:1px solid #21262d;font-size:11px;color:#8b949e;flex-wrap:wrap}
+.stat-item strong{color:#e6edf3}
+.vision-box{background:#1a2a1a;border:1px solid #2d4a2d;border-radius:6px;padding:6px 10px;margin-top:4px;font-size:11px;color:#56d364}
+.vision-box span{color:#8b949e}
+.scroll-top{position:fixed;bottom:20px;right:20px;background:#21262d;border:1px solid #30363d;border-radius:50%;width:36px;height:36px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:16px;display:none}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <div class="top-logo">Orbit <span>— 직원 작업 로그</span></div>
+  <input type="date" id="dateFrom" />
+  <span style="color:#6e7681;font-size:11px">~</span>
+  <input type="date" id="dateTo" />
+  <select id="typeFilter">
+    <option value="">전체 유형</option>
+    <option value="keyboard.chunk">⌨️ 키보드</option>
+    <option value="screen.analyzed">🔍 Vision 분석</option>
+    <option value="screen.capture">📸 스크린 캡처</option>
+    <option value="idle">💤 유휴</option>
+  </select>
+  <input type="text" id="keywordFilter" placeholder="앱/창 검색..." style="width:140px"/>
+  <button class="primary" onclick="loadLogs()">🔍 조회</button>
+  <button onclick="loadLogs(true)">전체 새로고침</button>
+  <span id="status-txt" style="color:#6e7681;font-size:11px;margin-left:4px"></span>
+</div>
+
+<div class="layout">
+  <!-- 사이드바: 멤버 목록 -->
+  <div class="sidebar">
+    <div class="sidebar-title">직원 (8명)</div>
+    <div id="member-list">
+      <div style="padding:12px 14px;color:#6e7681;font-size:11px">로딩 중...</div>
+    </div>
+  </div>
+
+  <!-- 메인 콘텐츠 -->
+  <div class="content">
+    <div class="stat-bar" id="stat-bar">
+      <span>직원을 선택하세요</span>
+    </div>
+    <div class="toolbar">
+      <label>표시:</label>
+      <select id="limitSel">
+        <option value="100">최근 100개</option>
+        <option value="300" selected>최근 300개</option>
+        <option value="500">최근 500개</option>
+        <option value="1000">최근 1000개</option>
+      </select>
+      <label style="margin-left:8px">정렬:</label>
+      <select id="sortSel" onchange="re_render()">
+        <option value="desc">최신순</option>
+        <option value="asc">오래된순</option>
+      </select>
+      <button onclick="exportCSV()" style="margin-left:auto">📥 CSV 내보내기</button>
+    </div>
+    <div class="logs-area" id="logs-area">
+      <div class="empty">← 좌측에서 직원을 선택하세요</div>
+    </div>
+  </div>
+</div>
+
+<script>
+const WS_ID = 'WS-NENOVA-2026';
+let allMembers = [];
+let selectedMember = null;
+let rawLogs = [];
+
+// ── 날짜 기본값: 오늘 ─────────────────────────────────────────────────────────
+(function() {
+  const today = new Date();
+  const fmt = d => d.toISOString().slice(0,10);
+  const week = new Date(today); week.setDate(today.getDate() - 7);
+  document.getElementById('dateFrom').value = fmt(week);
+  document.getElementById('dateTo').value   = fmt(today);
+})();
+
+// ── 멤버 로드 ─────────────────────────────────────────────────────────────────
+async function loadMembers() {
+  try {
+    const data = await fetch('/api/workspace/' + WS_ID + '/members').then(r => r.json());
+    allMembers = Array.isArray(data) ? data.filter(m => m.status === 'active') : [];
+    renderMemberList();
+    // 첫 번째 멤버 자동 선택
+    if (allMembers.length > 0) selectMember(allMembers[0]);
+  } catch(e) {
+    document.getElementById('member-list').innerHTML = '<div style="padding:12px 14px;color:#f85149;font-size:11px">로드 실패: ' + e.message + '</div>';
+  }
+}
+
+function renderMemberList() {
+  const list = document.getElementById('member-list');
+  if (!allMembers.length) { list.innerHTML = '<div style="padding:12px 14px;color:#6e7681;font-size:11px">멤버 없음</div>'; return; }
+  list.innerHTML = allMembers.map(m => `
+    <div class="member-item${selectedMember?.userId === m.userId ? ' active' : ''}" onclick="selectMember(${JSON.stringify(m).replace(/"/g,'&quot;')})">
+      <div class="member-av">${m.name?.[0] || '?'}</div>
+      <div class="member-info">
+        <div class="member-name">${m.name || '사용자'}</div>
+        <div class="member-team">${m.teamName || m.role || '—'}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function selectMember(m) {
+  selectedMember = m;
+  renderMemberList();
+  loadLogs();
+}
+
+// ── 로그 로드 ─────────────────────────────────────────────────────────────────
+async function loadLogs(full = false) {
+  if (!selectedMember) return;
+  const area = document.getElementById('logs-area');
+  area.innerHTML = '<div class="loading">⏳ 로딩 중...</div>';
+  document.getElementById('status-txt').textContent = '';
+
+  try {
+    const limit  = document.getElementById('limitSel').value;
+    const type   = document.getElementById('typeFilter').value;
+    const from   = document.getElementById('dateFrom').value;
+    const to     = document.getElementById('dateTo').value;
+    let url = '/api/learning/logs?limit=' + limit + '&allTypes=1&userId=' + encodeURIComponent(selectedMember.userId);
+    if (type) url += '&type=' + encodeURIComponent(type);
+    if (from) url += '&from=' + from;
+    if (to)   url += '&to='   + to + 'T23:59:59';
+
+    const data = await fetch(url).then(r => r.json());
+    rawLogs = data.logs || [];
+    re_render();
+  } catch(e) {
+    area.innerHTML = '<div class="empty" style="color:#f85149">로드 실패: ' + e.message + '</div>';
+  }
+}
+
+// ── 렌더 ──────────────────────────────────────────────────────────────────────
+function re_render() {
+  const keyword = document.getElementById('keywordFilter').value.toLowerCase();
+  const sort    = document.getElementById('sortSel').value;
+
+  let logs = rawLogs;
+  if (keyword) {
+    logs = logs.filter(e =>
+      (e.app||'').toLowerCase().includes(keyword) ||
+      (e.windowTitle||'').toLowerCase().includes(keyword) ||
+      (e.summary||'').toLowerCase().includes(keyword) ||
+      (e.visionActivity||'').toLowerCase().includes(keyword)
+    );
+  }
+  if (sort === 'asc') logs = [...logs].reverse();
+
+  renderStats(logs);
+  renderTimeline(logs);
+  document.getElementById('status-txt').textContent = logs.length + '건';
+}
+
+function renderStats(logs) {
+  const bar = document.getElementById('stat-bar');
+  const name = selectedMember?.name || '—';
+  const total = logs.length;
+  const kbCount = logs.filter(e => e.type === 'keyboard.chunk').length;
+  const scCount = logs.filter(e => e.type === 'screen.capture' || e.type === 'screen.analyzed').length;
+  const clicks = logs.reduce((s, e) => s + (e.mouseClicks || 0), 0);
+
+  // 앱 통계
+  const appMap = {};
+  logs.forEach(e => { if (e.app) appMap[e.app] = (appMap[e.app]||0)+1; });
+  const topApps = Object.entries(appMap).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([a])=>a).join(', ');
+
+  bar.innerHTML = `
+    <span>👤 <strong>${name}</strong></span>
+    <span>이벤트: <strong>${total}</strong></span>
+    <span>⌨️ 키보드: <strong>${kbCount}</strong></span>
+    <span>📸 캡처/분석: <strong>${scCount}</strong></span>
+    <span>🖱️ 클릭: <strong>${clicks.toLocaleString()}</strong></span>
+    ${topApps ? `<span>🔝 주요앱: <strong>${topApps}</strong></span>` : ''}
+  `;
+}
+
+function renderTimeline(logs) {
+  const area = document.getElementById('logs-area');
+  if (!logs.length) { area.innerHTML = '<div class="empty">해당 기간 데이터가 없습니다</div>'; return; }
+
+  // 날짜별 그룹
+  const days = {};
+  logs.forEach(e => {
+    const day = (e.timestamp||'').slice(0,10) || '날짜미상';
+    if (!days[day]) days[day] = [];
+    days[day].push(e);
+  });
+
+  const html = Object.entries(days).map(([day, evts]) => `
+    <div class="log-day">
+      <div class="day-header">${formatDate(day)} (${evts.length}건)</div>
+      ${evts.map(e => renderRow(e)).join('')}
+    </div>
+  `).join('');
+  area.innerHTML = html;
+}
+
+function renderRow(e) {
+  const time = (e.timestamp||'').slice(11,16);
+  const badge = typeBadge(e.type);
+  const app = e.app || '—';
+  const title = e.windowTitle || '';
+  const summary = e.summary || e.visionActivity || '';
+  const clicks = e.mouseClicks > 0 ? `<span class="meta-chip">🖱️ ${e.mouseClicks}클릭</span>` : '';
+  const activity = e.activityLevel ? `<span class="meta-chip">${e.activityLevel}</span>` : '';
+  const trigger  = e.trigger ? `<span class="meta-chip">트리거: ${e.trigger}</span>` : '';
+
+  let visionHtml = '';
+  if (e.visionScreen || e.visionHint) {
+    visionHtml = `<div class="vision-box"><span>🔍 Vision: </span>${escHtml(e.visionScreen||'')}${e.visionHint ? ' → <em>' + escHtml(e.visionHint) + '</em>' : ''}${e.visionAutomatable ? ' ✅자동화가능' : ''}</div>`;
+  }
+
+  // windowHistory 앱 흐름
+  let histHtml = '';
+  if (e.windowHistory && Object.keys(e.windowHistory).length > 1) {
+    const apps = Object.keys(e.windowHistory).slice(0,5).join(' → ');
+    histHtml = `<div class="meta-chip" style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">앱흐름: ${escHtml(apps)}</div>`;
+  }
+
+  return `
+    <div class="log-row">
+      <div class="log-time">${time}</div>
+      <div class="log-body">
+        <div class="log-app">${badge} &nbsp;${escHtml(app)}</div>
+        ${title ? `<div class="log-title">${escHtml(title)}</div>` : ''}
+        ${summary ? `<div class="log-summary">${escHtml(summary)}</div>` : ''}
+        <div class="log-meta">${clicks}${activity}${trigger}${histHtml}</div>
+        ${visionHtml}
+      </div>
+    </div>
+  `;
+}
+
+function typeBadge(type) {
+  if (type === 'keyboard.chunk')  return '<span class="badge badge-kb">⌨️ 키보드</span>';
+  if (type === 'screen.capture')  return '<span class="badge badge-sc">📸 캡처</span>';
+  if (type === 'screen.analyzed') return '<span class="badge badge-va">🔍 Vision</span>';
+  if (type === 'idle')            return '<span class="badge badge-idle">💤 유휴</span>';
+  if (type?.includes('dm') || type?.includes('chat')) return '<span class="badge badge-dm">💬 메시지</span>';
+  return `<span class="badge" style="background:#21262d;color:#8b949e">${escHtml(type||'?')}</span>`;
+}
+
+function formatDate(d) {
+  if (!d || d.length < 10) return d;
+  const days = ['일','월','화','수','목','금','토'];
+  const dt = new Date(d);
+  return d + ' (' + days[dt.getDay()] + ')';
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── CSV 내보내기 ───────────────────────────────────────────────────────────────
+function exportCSV() {
+  if (!rawLogs.length) return alert('데이터 없음');
+  const name = selectedMember?.name || 'unknown';
+  const header = ['시간','유형','앱','창제목','요약','클릭수','activityLevel','visionActivity'];
+  const rows = rawLogs.map(e => [
+    e.timestamp||'', e.type||'', e.app||'', e.windowTitle||'',
+    e.summary||'', e.mouseClicks||0, e.activityLevel||'', e.visionActivity||''
+  ].map(v => '"' + String(v).replace(/"/g,'""') + '"').join(','));
+  const blob = new Blob(['\uFEFF' + [header.join(','), ...rows].join('\n')], {type:'text/csv;charset=utf-8'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+  a.download = 'work-log_' + name + '_' + new Date().toISOString().slice(0,10) + '.csv'; a.click();
+}
+
+// ── 엔터키로 검색 ──────────────────────────────────────────────────────────────
+document.getElementById('keywordFilter').addEventListener('keydown', e => { if (e.key === 'Enter') re_render(); });
+document.getElementById('keywordFilter').addEventListener('input', () => re_render());
+
+// ── 초기화 ───────────────────────────────────────────────────────────────────
+loadMembers();
+</script>
+</body>
+</html>
