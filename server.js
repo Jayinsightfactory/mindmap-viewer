@@ -1596,12 +1596,12 @@ app.get('/api/daemon/pg-token-check', async (req, res) => {
   const { token } = req.query;
   if (!token) return res.status(400).json({ error: 'token required' });
   try {
-    const { rows } = await pool.query('SELECT user_id, created_at FROM orbit_auth_tokens WHERE token = $1', [token]);
+    const _pool = dbModule.getDb();
+    const { rows } = await _pool.query('SELECT user_id, created_at FROM orbit_auth_tokens WHERE token = $1', [token]);
     if (rows.length) {
       res.json({ found: true, userId: rows[0].user_id, created_at: rows[0].created_at });
     } else {
-      // 테이블 자체는 있는지 확인
-      const { rows: tbl } = await pool.query("SELECT COUNT(*) as cnt FROM orbit_auth_tokens");
+      const { rows: tbl } = await _pool.query("SELECT COUNT(*) as cnt FROM orbit_auth_tokens");
       res.json({ found: false, tableRowCount: tbl[0]?.cnt });
     }
   } catch (e) {
