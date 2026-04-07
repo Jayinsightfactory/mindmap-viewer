@@ -449,15 +449,13 @@ try {
   $trigger  = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
   $settings = New-ScheduledTaskSettingsSet `
     -ExecutionTimeLimit ([System.TimeSpan]::Zero) `
-    -RestartCount 3 `
-    -RestartInterval (New-TimeSpan -Minutes 1) `
     -StartWhenAvailable $true
   Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger `
     -Settings $settings -Force -RunLevel Limited -ErrorAction Stop 2>$null | Out-Null
   $taskRegistered = $true
   Write-Host "  Task Scheduler registered (primary)" -ForegroundColor Green
 } catch {
-  Write-Host "  Task Scheduler failed, using Startup folder (fallback)..." -ForegroundColor Yellow
+  Write-Host "  Task Scheduler failed ($($_.Exception.Message)), using Startup folder..." -ForegroundColor Yellow
 }
 
 # Startup folder VBS (fallback — used only if Task Scheduler fails)

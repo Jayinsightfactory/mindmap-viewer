@@ -2781,6 +2781,28 @@ app.post('/api/admin/issue-token', (req, res) => {
   res.json({ ok: true, userId: user.id, token, email: user.email, name: user.name });
 });
 
+// ─── 관리자: 멤버 토큰 재발급 + 설치 명령 생성 ────────────────────────────────
+// POST /api/admin/reissue-token { targetEmail }  Authorization: Bearer <admin_token>
+app.post('/api/admin/reissue-token', async (req, res) => {
+  const adminToken = (req.headers.authorization || '').replace('Bearer ', '').trim();
+  const { verifyTokenAsync, getUserByEmail, issueApiToken, pgBackupToken, pgBackupUser } = require('./src/auth');
+  const adminUser = await verifyTokenAsync(adminToken);
+  if (!adminUser || !ADMIN_EMAILS.includes((adminUser.email || '').toLowerCase().trim())) {
+    return res.status(403).json({ error: 'admin only' });
+  }
+  const { targetEmail } = req.body || {};
+  if (!targetEmail) return res.status(400).json({ error: 'targetEmail required' });
+  const user = getUserByEmail(targetEmail);
+  if (!user) return res.status(404).json({ error: 'user not found: ' + targetEmail });
+  const newToken = issueApiToken(user.id);
+  // PG에 즉시 동기화
+  try { await pgBackupUser(user, ''); } catch {}
+  try { await pgBackupToken(newToken, user.id, null); } catch {}
+  const serverUrl = (process.env.SERVER_URL || 'https://sparkling-determination-production-c88b.up.railway.app');
+  const installCmd = `$env:ORBIT_TOKEN='${newToken}'; irm '${serverUrl}/setup/install.ps1' | iex`;
+  res.json({ ok: true, userId: user.id, name: user.name, email: user.email, token: newToken, installCmd });
+});
+
 // ─── 임시 진단 엔드포인트 (verifyToken 디버그용) ─────────────────────────────
 app.get('/api/admin/diag-token', async (req, res) => {
   const { secret } = req.query;
