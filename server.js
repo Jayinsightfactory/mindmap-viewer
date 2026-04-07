@@ -3800,10 +3800,10 @@ if (ragCore && process.env.DATABASE_URL) {
     ragCore.init(_ragDb).then(() => {
       setTimeout(() => ragCore.autoIndex({
         getRecentEvents: (limit) => _ragDb.query(`SELECT * FROM events ORDER BY timestamp DESC LIMIT $1`, [limit]).then(r => r.rows),
-      }), 2 * 60 * 1000);
+      }), 15 * 60 * 1000);
       setInterval(() => ragCore.autoIndex({
         getRecentEvents: (limit) => _ragDb.query(`SELECT * FROM events ORDER BY timestamp DESC LIMIT $1`, [limit]).then(r => r.rows),
-      }), 30 * 60 * 1000);
+      }), 60 * 60 * 1000);
       setInterval(() => ragCore.cleanup({ maxAgeDays: 90 }), 24 * 60 * 60 * 1000);
     }).catch(e => console.warn('[rag-core] 초기화 실패:', e.message));
   }, 60 * 1000);
@@ -4032,16 +4032,31 @@ async function startServer() {
     const _pool = dbModule.getDb ? dbModule.getDb() : null;
     if (_pool?.query) {
       await _pool.query(`CREATE TABLE IF NOT EXISTS orbit_settings (key TEXT PRIMARY KEY, value TEXT, updated_at TIMESTAMPTZ DEFAULT NOW())`);
-      // 항상 force_update = true로 설정 (배포 = 업데이트 필요)
-      await _pool.query(
-        `INSERT INTO orbit_settings (key, value) VALUES ('force_update', 'true')
-         ON CONFLICT (key) DO UPDATE SET value = 'true', updated_at = NOW()`
-      );
-      global._forceUpdateEnabled = true;
-      if (!global._daemonCommands) global._daemonCommands = {};
-      if (!global._daemonCommands['ALL']) global._daemonCommands['ALL'] = [];
-      global._daemonCommands['ALL'].push({ action: 'update', reason: 'server-deploy', ts: new Date().toISOString() });
-      console.log('[startup] 배포 감지 — ALL 데몬 자동 업데이트 명령 등록');
+      // 배포 버전 변경 시에만 force_update (크래시 재시작 시 무한루프 방지)
+      const currentVersion = require('./package.json').version || 'unknown';
+      const gitHash = (() => { try { return require('child_process').execSync('git rev-parse --short HEAD', {encoding:'utf8',timeout:3000}).trim(); } catch { return ''; } })();
+      const deployKey = `${currentVersion}-${gitHash}`;
+      const lastDeployRes = await _pool.query(`SELECT value FROM orbit_settings WHERE key='last_deploy_key'`).catch(()=>({rows:[]}));
+      const lastDeployKey = lastDeployRes.rows[0]?.value || '';
+      const isNewDeploy = deployKey && deployKey !== lastDeployKey;
+
+      if (isNewDeploy) {
+        await _pool.query(
+          `INSERT INTO orbit_settings (key, value) VALUES ('force_update', 'true')
+           ON CONFLICT (key) DO UPDATE SET value = 'true', updated_at = NOW()`
+        );
+        await _pool.query(
+          `INSERT INTO orbit_settings (key, value) VALUES ('last_deploy_key', $1)
+           ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()`, [deployKey]
+        );
+        global._forceUpdateEnabled = true;
+        if (!global._daemonCommands) global._daemonCommands = {};
+        if (!global._daemonCommands['ALL']) global._daemonCommands['ALL'] = [];
+        global._daemonCommands['ALL'].push({ action: 'update', reason: 'server-deploy', ts: new Date().toISOString() });
+        console.log(`[startup] 신규 배포 감지(${deployKey}) — ALL 데몬 자동 업데이트 명령 등록`);
+      } else {
+        console.log(`[startup] 재시작 감지(${deployKey}) — 데몬 강제업데이트 생략 (무한루프 방지)`);
+      }
     }
   } catch (e) {
     console.warn('[startup] 자동 업데이트 명령 등록 실패:', e.message);
