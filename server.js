@@ -952,6 +952,61 @@ app.get('/api/daemon/drive-config', (req, res) => {
   res.json({ enabled: true, credentialsJson: saJson, folderId });
 });
 
+// ─── 일회성: Drive 폴더를 개인 계정에 공유 ───────────────────────────────────
+app.post('/api/admin/share-drive-folder', async (req, res) => {
+  try {
+    const saJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+    const folderId = process.env.GOOGLE_DRIVE_CAPTURES_FOLDER_ID;
+    const targetEmail = req.body?.email || 'dlaww584@gmail.com';
+    if (!saJson || !folderId) return res.status(400).json({ error: 'Drive 설정 없음' });
+
+    const cred = JSON.parse(saJson);
+    // JWT 생성 (서비스 계정)
+    const crypto = require('crypto');
+    const now = Math.floor(Date.now() / 1000);
+    const header = Buffer.from(JSON.stringify({ alg: 'RS256', typ: 'JWT' })).toString('base64url');
+    const payload = Buffer.from(JSON.stringify({
+      iss: cred.client_email,
+      scope: 'https://www.googleapis.com/auth/drive',
+      aud: 'https://oauth2.googleapis.com/token',
+      exp: now + 3600, iat: now,
+    })).toString('base64url');
+    const sign = crypto.createSign('RSA-SHA256');
+    sign.update(`${header}.${payload}`);
+    const sig = sign.sign(cred.private_key, 'base64url');
+    const jwt = `${header}.${payload}.${sig}`;
+
+    // 액세스 토큰 발급
+    const tokenRes = await new Promise((resolve, reject) => {
+      const body = `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${jwt}`;
+      const httpsReq = require('https').request({
+        hostname: 'oauth2.googleapis.com', path: '/token', method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(body) },
+      }, r => { let d = ''; r.on('data', c => d += c); r.on('end', () => resolve(JSON.parse(d))); });
+      httpsReq.on('error', reject);
+      httpsReq.write(body); httpsReq.end();
+    });
+    if (!tokenRes.access_token) return res.status(500).json({ error: '토큰 발급 실패', detail: tokenRes });
+
+    // Drive API: permissions.create
+    const permBody = JSON.stringify({ role: 'writer', type: 'user', emailAddress: targetEmail });
+    const permRes = await new Promise((resolve, reject) => {
+      const r = require('https').request({
+        hostname: 'www.googleapis.com',
+        path: `/drive/v3/files/${folderId}/permissions?sendNotificationEmail=false`,
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${tokenRes.access_token}`, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(permBody) },
+      }, r2 => { let d = ''; r2.on('data', c => d += c); r2.on('end', () => resolve({ status: r2.statusCode, body: d })); });
+      r.on('error', reject);
+      r.write(permBody); r.end();
+    });
+
+    res.json({ ok: permRes.status === 200, status: permRes.status, folderId, targetEmail, detail: JSON.parse(permRes.body || '{}') });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ─── 자동 에러 수정 엔진 ─────────────────────────────────────────────────────
 const autoFixer = (() => { try { return require('./src/auto-fixer'); } catch(e) { console.warn('[auto-fixer] 로드 실패:', e.message); return null; } })();
 
