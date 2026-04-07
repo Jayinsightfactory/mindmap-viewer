@@ -1382,14 +1382,17 @@ async function loadLiveMembers() {
       // topApps가 [[app, min], ...] 배열 형식
       const topAppsArr = Array.isArray(a.topApps) ? a.topApps.map(x => Array.isArray(x) ? {app:x[0], minutes:x[1]} : x) : [];
       const topApp = topAppsArr[0]?.app || '';
-      const summary = a.sessions?.[0]?.title || a.insights?.[0] || topApp || '데이터 없음';
+      // string만 사용 (object 방지)
+      const insightStr = typeof a.insights?.[0] === 'string' ? a.insights[0] : null;
+      const sessionTitle = typeof a.sessions?.[0]?.title === 'string' ? a.sessions[0].title : null;
+      const topCat = Array.isArray(a.topCategories) && a.topCategories[0] ? (Array.isArray(a.topCategories[0]) ? a.topCategories[0][0] : a.topCategories[0]) : null;
+      const summary = sessionTitle || insightStr || (topApp ? topApp + (topCat ? ' · ' + topCat : '') : null) || '데이터 없음';
       const kakaoMin = topAppsArr.find(x => /kakao/i.test(x.app))?.minutes || 0;
       const erpMin   = topAppsArr.find(x => /nenova|erp/i.test(x.app))?.minutes || 0;
-      const recentMin = a.sessions?.length > 0
-        ? Math.round((Date.now() - new Date(a.sessions[0].startTime || 0)) / 60000)
-        : 9999;
+      // eventCount 기반 활성 판단 (sessions 없어도 이벤트 있으면 활성)
+      const eventCount = a.eventCount || 0;
       let status = 'idle';
-      if (recentMin < 60) {
+      if (eventCount > 0) {
         status = /kakao/i.test(topApp) ? 'kakao' : 'active';
       }
       return {
