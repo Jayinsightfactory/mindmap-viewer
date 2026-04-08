@@ -707,7 +707,26 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
 
 <!-- ══ 자동화 현황 ══ -->
 <div class="page" id="page-automation">
-  <div class="ph">⚡ 자동화 현황 <span class="ph-sub">11개 LIVE · 절감 중</span></div>
+  <div class="ph">⚡ 자동화 현황 <span class="ph-sub" id="auto-sub">로딩 중...</span></div>
+
+  <!-- Vision 분석 실시간 통계 -->
+  <div class="g4" style="margin-bottom:14px;" id="auto-stats">
+    <div class="stat-b"><div class="stat-v green" id="auto-live-count">—</div><div class="stat-l">분석된 화면</div></div>
+    <div class="stat-b"><div class="stat-v yellow" id="auto-ok-count">—</div><div class="stat-l">자동화 가능</div></div>
+    <div class="stat-b"><div class="stat-v" style="color:var(--red);" id="auto-human-count">—</div><div class="stat-l">사람 판단 필요</div></div>
+    <div class="stat-b"><div class="stat-v" style="color:var(--purple);" id="auto-nenova-count">—</div><div class="stat-l">nenova 연동</div></div>
+  </div>
+
+  <!-- Vision 분석 결과 카드 -->
+  <div class="card" style="margin-bottom:14px;">
+    <div class="card-hd" style="display:flex;justify-content:space-between;align-items:center;">
+      <span>🔬 Vision 분석 — 자동화/사람판단 구분</span>
+      <button class="btn" style="font-size:11px;padding:3px 10px;" onclick="loadAutoAnalysis()">새로고침</button>
+    </div>
+    <div id="auto-analysis-list" style="min-height:60px;">
+      <div style="text-align:center;padding:20px;color:var(--muted);font-size:12px;">분석 데이터 로딩 중...</div>
+    </div>
+  </div>
 
   <div class="g4" style="margin-bottom:14px;">
     <div class="stat-b"><div class="stat-v green">11</div><div class="stat-l">LIVE 자동화</div></div>
@@ -1430,10 +1449,89 @@ async function loadLiveMembers() {
   }
 }
 
+// ─── Vision 자동화 분석 로더 ────────────────────────────────────────────────
+async function loadAutoAnalysis() {
+  const list = document.getElementById('auto-analysis-list');
+  if (!list) return;
+  try {
+    const r = await fetch('/api/automation/analysis?limit=30');
+    const d = await r.json();
+    const s = d.summary || {};
+
+    // 통계 업데이트
+    const setEl = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    setEl('auto-live-count', s.total || 0);
+    setEl('auto-ok-count', s.automatable || 0);
+    setEl('auto-human-count', s.humanNeeded || 0);
+    setEl('auto-nenova-count', s.nenovaMapped || 0);
+    const sub = document.getElementById('auto-sub');
+    if (sub) sub.textContent = `${s.total || 0}건 분석 · ${s.automatable || 0}건 자동화 가능`;
+
+    if (!d.items || d.items.length === 0) {
+      list.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted);font-size:12px;">아직 Vision 분석 데이터가 없습니다. 캡처가 수집되면 자동으로 업데이트됩니다.</div>';
+      return;
+    }
+
+    list.innerHTML = d.items.slice(0, 15).map(item => {
+      const score = Math.round((item.automationScore || 0) * 100);
+      const scoreColor = score >= 70 ? 'var(--green)' : score >= 40 ? 'var(--yellow)' : 'var(--muted)';
+      const autoTag = item.automatable
+        ? `<span style="background:rgba(46,160,67,.15);color:var(--green);padding:1px 7px;border-radius:4px;font-size:10px;">자동화 가능</span>`
+        : `<span style="background:rgba(248,81,73,.1);color:var(--red);padding:1px 7px;border-radius:4px;font-size:10px;">사람 필요</span>`;
+      const nenovaTag = item.nenovaAction
+        ? `<span style="background:rgba(163,113,247,.15);color:var(--purple);padding:1px 7px;border-radius:4px;font-size:10px;">nenova: ${item.nenovaAction}</span>`
+        : '';
+      const autoAreas = (item.autoAreas || []).map(a => `<span style="color:var(--green);font-size:10px;">✓ ${a}</span>`).join(' ');
+      const humanAreas = (item.humanAreas || []).map(a => `<span style="color:var(--red);font-size:10px;">✗ ${a}</span>`).join(' ');
+      const ts = item.timestamp ? new Date(item.timestamp).toLocaleString('ko-KR', {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : '';
+
+      return `<div style="padding:10px 0;border-bottom:1px solid var(--border);display:flex;gap:10px;align-items:flex-start;">
+        <div style="flex-shrink:0;text-align:center;min-width:42px;">
+          <div style="font-size:16px;font-weight:700;color:${scoreColor};">${score}%</div>
+          <div style="font-size:9px;color:var(--muted);">자동화</div>
+        </div>
+        <div style="flex:1;min-width:0;">
+          <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap;margin-bottom:4px;">
+            <span style="font-size:12px;font-weight:600;color:var(--text);">${item.app || '—'}</span>
+            <span style="font-size:11px;color:var(--muted);">${item.screen || ''}</span>
+            ${autoTag}${nenovaTag}
+          </div>
+          <div style="font-size:11.5px;color:var(--text-s);margin-bottom:5px;">${item.activity || ''}</div>
+          ${autoAreas || humanAreas ? `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:4px;">${autoAreas}${humanAreas}</div>` : ''}
+          ${item.automationHint ? `<div style="font-size:10.5px;color:var(--muted);font-style:italic;">${item.automationHint}</div>` : ''}
+          ${item.nenovaInputMap && item.nenovaInputMap.length > 0 ? `
+            <div style="margin-top:6px;padding:6px 8px;background:rgba(163,113,247,.07);border-radius:5px;">
+              <div style="font-size:10px;color:var(--purple);font-weight:600;margin-bottom:3px;">nenova 입력 매핑</div>
+              ${item.nenovaInputMap.slice(0,4).map(m => `
+                <div style="font-size:10px;color:var(--text-s);display:flex;gap:6px;">
+                  <span style="color:var(--purple);">${m.field}</span>
+                  <span>←</span>
+                  <span>${m.value || '?'}</span>
+                  <span style="color:${m.automatable ? 'var(--green)' : 'var(--red)'};">[${m.source || '?'}]</span>
+                </div>
+              `).join('')}
+            </div>
+          ` : ''}
+        </div>
+        <div style="flex-shrink:0;text-align:right;">
+          <div style="font-size:10px;color:var(--muted);">${item.userName || ''}</div>
+          <div style="font-size:10px;color:var(--muted);">${ts}</div>
+          ${item.scriptType && item.scriptType !== 'none' ? `<div style="font-size:9px;color:var(--accent);margin-top:2px;">${item.scriptType}</div>` : ''}
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    const list2 = document.getElementById('auto-analysis-list');
+    if (list2) list2.innerHTML = `<div style="color:var(--red);font-size:11px;padding:10px;">에러: ${e.message}</div>`;
+  }
+}
+
 // ─── 초기화 ──────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   loadLiveMembers();
+  loadAutoAnalysis();
   setInterval(loadLiveMembers, 5 * 60 * 1000); // 5분마다 갱신
+  setInterval(loadAutoAnalysis, 3 * 60 * 1000); // 3분마다 Vision 분석 갱신
   document.getElementById('sb-updated').textContent = '로드 중...';
 });
 </script>
