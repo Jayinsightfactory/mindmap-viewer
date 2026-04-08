@@ -257,15 +257,17 @@ async function uploadPending(captureDir) {
 
     const result = await upload(filepath, { trigger, activityLevel: activity });
     if (result) {
+      // 업로드 성공 → 로컬 파일 즉시 삭제
+      try { fs.unlinkSync(filepath); } catch {}
       uploadedSet.add(f);
       count++;
     }
   }
 
-  // 업로드 기록 저장
+  // 업로드 기록 저장 (삭제 못한 파일 대비)
   if (count > 0) {
     fs.writeFileSync(uploaded, [...uploadedSet].join('\n'), 'utf8');
-    console.log(`[drive-uploader] ${count}개 캡처 업로드 완료`);
+    console.log(`[drive-uploader] ${count}개 캡처 업로드 + 로컬 삭제 완료`);
   }
   return count;
 }

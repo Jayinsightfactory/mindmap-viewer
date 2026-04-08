@@ -332,7 +332,9 @@ async function processBatch() {
         console.log(`  → ${result.app}: ${result.activity?.substring(0,50)}`);
         await sendToServer(cap, result, b64);
         await saveToSheets(cap, result);
-        await gApi('PATCH', `https://www.googleapis.com/drive/v3/files/${cap.id}`, token, { description:`analyzed:${new Date().toISOString()}` });
+        // 분석 완료 마킹 후 Drive에서 파일 삭제
+        await gApi('DELETE', `https://www.googleapis.com/drive/v3/files/${cap.id}`, token, null);
+        console.log(`  → Drive 파일 삭제 완료: ${cap.name}`);
         done++;
         await new Promise(r => setTimeout(r, 2000));
       } catch (e) { console.warn(`  실패: ${e.message}`); }
