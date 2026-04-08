@@ -21,7 +21,10 @@ const http = require('http');
 
 const { execFile, execSync } = require('child_process');
 
-const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY || '';
+const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY || (() => {
+  try { return JSON.parse(fs.readFileSync(path.join(os.homedir(), '.orbit-config.json'), 'utf8')).anthropicApiKey || ''; }
+  catch { return ''; }
+})();
 const ORBIT_SERVER = process.env.ORBIT_SERVER_URL || 'https://sparkling-determination-production-c88b.up.railway.app';
 
 // Claude CLI 경로 감지
