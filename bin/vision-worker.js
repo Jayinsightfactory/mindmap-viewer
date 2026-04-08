@@ -120,18 +120,45 @@ async function findCaptures() {
 
 // ── 분석 프롬프트 ─────────────────────────────────────────────────────────────
 function _buildPrompt(ctx) {
-  return `이 스크린샷을 분석해주세요. 호스트: ${ctx.hostname}, 파일: ${ctx.name}
+  return `스크린샷을 정밀 분석해주세요. 호스트: ${ctx.hostname}
 
-JSON으로 응답:
+다음 JSON 형식으로만 응답 (마크다운 없이 순수 JSON):
 {
-  "app": "프로그램명",
-  "screen": "화면명/메뉴명",
-  "elements": [{"type":"input|button|menu|table","label":"이름","position":"위치설명"}],
-  "activity": "사용자 작업 1줄 설명",
-  "dataVisible": "화면 데이터 종류 (개인정보 제외)",
+  "app": "실제 프로그램명",
+  "screen": "현재 화면/메뉴명 (예: 신규주문등록, 카카오톡 호남소재 단톡방)",
+  "activity": "사용자가 지금 하는 작업 1줄 (구체적으로)",
+  "workCategory": "전산처리|문서작업|커뮤니케이션|파일관리|웹검색|기타",
+
+  "fields": [
+    {
+      "name": "필드/항목명",
+      "type": "input|button|dropdown|table|text|checkbox",
+      "currentValue": "현재 입력된 값 (보이는 경우)",
+      "position": "화면 위치 (상단/중앙/하단 + 좌/우)",
+      "dataSource": "kakao|manual|erp|clipboard|unknown",
+      "humanRequired": true/false,
+      "humanReason": "사람 판단 필요한 이유 (humanRequired가 true일 때만)"
+    }
+  ],
+
+  "autoAreas": ["자동화 가능한 작업 목록 — 데이터 출처가 명확한 것"],
+  "humanAreas": ["반드시 사람이 판단해야 하는 영역 — 의사결정/확인/예외처리"],
+
+  "nenovaAction": "nenova ERP에서 해당하는 화면명 (해당없으면 null)",
+  "nenovaInputMap": [
+    {
+      "field": "nenova 입력 필드명",
+      "value": "입력할 값 또는 데이터 출처",
+      "source": "kakao_parse|clipboard|manual|formula",
+      "automatable": true/false
+    }
+  ],
+
+  "automationScore": 0.0~1.0,
   "automatable": true/false,
-  "automationHint": "자동화 가능 부분",
-  "workCategory": "전산처리|문서작업|커뮤니케이션|파일관리|웹검색|기타"
+  "automationHint": "자동화 구현 방법 (PAD UI셀렉터 or pyautogui 좌표 or 클립보드)",
+  "padPossible": true/false,
+  "scriptType": "PAD|pyautogui|clipboard|none"
 }`;
 }
 

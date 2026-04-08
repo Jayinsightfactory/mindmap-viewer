@@ -3694,6 +3694,156 @@ app.use('/api/kakao', require('./routes/kakao-decrypt')({ getDb: dbModule.getDb 
 // ─── PAD 커넥터 (nenova ERP 자동화) ─────────────────────────────────────────
 app.use('/api/pad', require('./routes/pad-connector')({ getDb: dbModule.getDb }));
 
+// ─── 자동화 매퍼 — Vision 분석 → 자동화 판단 → 스크립트 생성 → PC 테스트 ────
+// GET  /api/automation/analysis   — 최근 Vision 분석 결과 + 자동화 분류
+// POST /api/automation/generate   — 특정 화면 자동화 스크립트 생성
+// POST /api/automation/test       — 직원 PC에 테스트 실행 명령 전달
+// GET  /api/automation/results    — 테스트 결과 조회
+
+app.get('/api/automation/analysis', async (req, res) => {
+  try {
+    const db = dbModule.getDb();
+    const limit = parseInt(req.query.limit) || 50;
+    const userId = req.query.userId || null;
+    let q = `SELECT id, user_id, timestamp, data_json FROM events WHERE type='screen.analyzed'`;
+    const params = [];
+    if (userId) { params.push(userId); q += ` AND user_id=$${params.length}`; }
+    q += ` ORDER BY timestamp DESC LIMIT $${params.length+1}`;
+    params.push(limit);
+    const { rows } = await db.query(q, params);
+
+    // 사용자 이름 매핑
+    const { rows: users } = await db.query('SELECT id, name FROM orbit_auth_users');
+    const nameMap = {}; users.forEach(u => nameMap[u.id] = u.name);
+
+    const items = rows.map(r => {
+      let d = {}; try { d = typeof r.data_json==='string'?JSON.parse(r.data_json):r.data_json; } catch{}
+      return {
+        id: r.id,
+        userId: r.user_id,
+        userName: nameMap[r.user_id] || r.user_id?.slice(0,8),
+        timestamp: r.timestamp,
+        app: d.app || '',
+        screen: d.screen || '',
+        activity: d.activity || '',
+        workCategory: d.workCategory || '',
+        // 자동화 판단
+        automatable: d.automatable || false,
+        automationScore: d.automationScore || 0,
+        automationHint: d.automationHint || '',
+        scriptType: d.scriptType || 'none',
+        padPossible: d.padPossible || false,
+        // 영역 구분
+        autoAreas: d.autoAreas || [],
+        humanAreas: d.humanAreas || [],
+        // nenova 매핑
+        nenovaAction: d.nenovaAction || null,
+        nenovaInputMap: d.nenovaInputMap || [],
+        // 상세 필드
+        fields: d.fields || [],
+      };
+    });
+
+    // 자동화 가능 / 사람 판단 / 비해당 분류
+    const automatable = items.filter(i => i.automatable && i.automationScore >= 0.6);
+    const humanNeeded = items.filter(i => i.humanAreas?.length > 0 && !i.automatable);
+    const nenovaMapped = items.filter(i => i.nenovaAction);
+
+    res.json({ items, summary: {
+      total: items.length,
+      automatable: automatable.length,
+      humanNeeded: humanNeeded.length,
+      nenovaMapped: nenovaMapped.length,
+      topScreens: [...new Set(items.map(i=>i.screen).filter(Boolean))].slice(0,10),
+    }});
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/automation/generate', async (req, res) => {
+  try {
+    const { screen, nenovaAction, inputMap, scriptType = 'pyautogui', hostname } = req.body;
+    if (!screen) return res.status(400).json({ error: 'screen 필요' });
+
+    // pyautogui 스크립트 생성
+    const lines = [
+      '# Orbit AI 자동화 스크립트 — 자동 생성',
+      `# 화면: ${screen} | nenova: ${nenovaAction||'N/A'} | 생성: ${new Date().toISOString()}`,
+      'import pyautogui, time, subprocess, sys',
+      'pyautogui.FAILSAFE = True',
+      'pyautogui.PAUSE = 0.4',
+      '',
+      '# ── 데이터 준비 ──',
+    ];
+
+    const autoFields = (inputMap||[]).filter(f => f.automatable);
+    const manualFields = (inputMap||[]).filter(f => !f.automatable);
+
+    autoFields.forEach(f => {
+      lines.push(`${f.field.replace(/\s/g,'_').toLowerCase()} = "${f.value || ''}"  # 출처: ${f.source}`);
+    });
+    if (manualFields.length) {
+      lines.push('');
+      lines.push('# ── 사람 확인 필요 항목 ──');
+      manualFields.forEach(f => lines.push(`# ${f.field}: 수동 입력 필요 — ${f.value||'?'}`));
+    }
+
+    lines.push('');
+    lines.push('# ── nenova 실행 ──');
+    if (nenovaAction) {
+      lines.push(`# nenova "${nenovaAction}" 화면으로 이동`);
+      lines.push('# subprocess.Popen(["C:/nenova/nenova.exe"])  # 앱 실행 (필요시 주석 해제)');
+      lines.push('time.sleep(1.0)');
+      autoFields.forEach(f => {
+        lines.push(`# pyautogui.click(x=???, y=???)  # ${f.field} 클릭`);
+        lines.push(`# pyautogui.typewrite(${f.field.replace(/\s/g,'_').toLowerCase()}, interval=0.05)`);
+      });
+    }
+    lines.push('');
+    lines.push('print("완료")');
+
+    const script = lines.join('\n');
+
+    // DB 저장
+    const db = dbModule.getDb();
+    await db.query(
+      `INSERT INTO pad_scripts (name, script_type, script_content, target_app, status, created_at)
+       VALUES ($1,$2,$3,$4,'draft',NOW()) ON CONFLICT DO NOTHING`,
+      [`${screen}_${Date.now()}`, scriptType, script, nenovaAction||screen]
+    ).catch(()=>{});
+
+    res.json({ script, screen, nenovaAction, autoFields: autoFields.length, manualFields: manualFields.length });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/automation/test', async (req, res) => {
+  try {
+    const { hostname, script, action = 'run-script' } = req.body;
+    if (!hostname || !script) return res.status(400).json({ error: 'hostname, script 필요' });
+    const db = dbModule.getDb();
+    await db.query(
+      `INSERT INTO orbit_daemon_commands (hostname, action, command, data_json, ts)
+       VALUES ($1,$2,NULL,$3::jsonb, NOW())`,
+      [hostname, action, JSON.stringify({ script, source: 'automation-mapper', ts: new Date().toISOString() })]
+    );
+    res.json({ ok: true, hostname, message: `${hostname}에 테스트 명령 전달` });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/automation/results', async (req, res) => {
+  try {
+    const db = dbModule.getDb();
+    const { rows } = await db.query(
+      `SELECT id, user_id, timestamp, data_json FROM events
+       WHERE type IN ('automation.result','automation.test','pad.result')
+       ORDER BY timestamp DESC LIMIT 50`
+    );
+    res.json({ results: rows.map(r => {
+      let d={}; try{d=typeof r.data_json==='string'?JSON.parse(r.data_json):r.data_json;}catch{}
+      return { id:r.id, userId:r.user_id, timestamp:r.timestamp, ...d };
+    })});
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 // ─── nenova SQL Server 직접 연결 (전산 데이터 실시간 조회 + 동기화) ──────────
 app.use('/api/nenova', require('./routes/nenova-db')({ getDb: dbModule.getDb }));
 
