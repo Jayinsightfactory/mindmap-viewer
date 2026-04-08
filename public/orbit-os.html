@@ -807,11 +807,23 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
       <div class="auto-ic">📝</div>
       <div class="auto-body">
         <div class="auto-name">nenova 주문 자동 입력 <span class="st st-dev">개발 중</span></div>
-        <div class="auto-desc">파싱된 주문 → nenova 신규주문등록 화면 자동 입력 (PAD)</div>
+        <div class="auto-desc">파싱된 주문 → nenova 신규주문등록 화면 자동 입력 (PAD/pyautogui)</div>
       </div>
       <div class="auto-right">
         <div class="auto-save">-20h/주</div>
         <div class="auto-save-l">목표 절감</div>
+      </div>
+    </div>
+    <div class="auto-item">
+      <div class="auto-rank">—</div>
+      <div class="auto-ic">📊</div>
+      <div class="auto-body">
+        <div class="auto-name">Excel 수주관리 → nenova 자동 동기화 <span class="st st-dev">🆕 Vision 발견</span></div>
+        <div class="auto-desc">수주 현황 Excel에서 ERP 데이터 자동 가져오기 · 수주량 합계·재고 실시간 연동 (자동화 점수 70%)</div>
+      </div>
+      <div class="auto-right">
+        <div class="auto-save">-12h/주</div>
+        <div class="auto-save-l">예상 절감</div>
       </div>
     </div>
     <div class="auto-item">
@@ -826,6 +838,12 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
         <div class="auto-save-l">목표 효과</div>
       </div>
     </div>
+  </div>
+
+  <!-- Vision 분석 발견 항목 -->
+  <div class="card" id="vision-discoveries" style="display:none;">
+    <div class="card-hd">🔬 Vision 분석 최신 발견 <span style="font-size:10px;color:var(--muted);">— 자동화 후보 자동 탐지</span></div>
+    <div id="vision-discovery-list"></div>
   </div>
 </div>
 
@@ -1151,37 +1169,38 @@ function renderMemberCards() {
       <div class="mc" onclick="navTo('members')">
         <div class="mc-top">
           <div class="mc-avatar ${avClass}">${m.emoji}</div>
-          <div>
+          <div style="flex:1;min-width:0;">
             <div class="mc-name">${m.name} <span class="st ${stClass}" style="font-size:9px;">${stTxt}</span></div>
-            <div class="mc-team">${m.team}</div>
+            <div class="mc-team">${m.team}${m.lastSeen ? ` <span style="color:var(--muted);font-size:9px;">· ${m.lastSeen}</span>` : ''}</div>
           </div>
         </div>
         <div class="mc-activity">${m.activity}</div>
         <div class="mc-stat-row" style="margin-top:6px;">
-          <span>💬 카카오 ${m.kakao}회</span>
-          <span>🖥 전산 ${m.erp}회</span>
+          <span>💬 카카오 ${m.kakao || 0}회</span>
+          <span>🖥 전산 ${m.erp || 0}회</span>
+          ${m.eventCount > 0 ? `<span style="color:var(--accent);font-size:9px;">이벤트 ${m.eventCount}</span>` : ''}
         </div>
         <div class="mc-bar"><div class="mc-bar-fill" style="width:${kakaoPct}%;background:#d29922;"></div></div>
-        ${m.warn ? '<div style="font-size:9px;color:var(--red);margin-top:4px;">⚠ 이슈 있음</div>' : ''}
+        ${m.warn ? '<div style="font-size:9px;color:var(--red);margin-top:4px;">⚠ 카카오 과다</div>' : ''}
       </div>
     `;
   }).join('');
-  document.getElementById('now-active').textContent = active + '/6';
-  document.getElementById('now-kakao').textContent = MEMBERS.filter(m => m.status === 'kakao').length;
-  document.getElementById('now-erp').textContent = erpCount;
+  // KPI는 loadLiveMembers()에서 업데이트 (renderMemberCards는 카드만 렌더링)
 
   const sumEl = document.getElementById('today-summary');
   if (sumEl) {
+    const activeMembers = MEMBERS.filter(m => m.status !== 'idle');
+    const bulletLines = activeMembers.length > 0
+      ? activeMembers.map(m => {
+          const color = m.status === 'erp' ? 'var(--green)' : m.status === 'kakao' ? 'var(--yellow)' : 'var(--accent)';
+          const badge = m.status === 'erp' ? '🖥 전산 작업 중' : m.status === 'kakao' ? '💬 카카오 중' : '⚡ 활성';
+          const lastSeenStr = m.lastSeen ? ` (${m.lastSeen})` : '';
+          return `• <b style="color:${color};">${m.name}</b>: ${badge}${lastSeenStr} — ${m.activity}`;
+        }).join('<br>')
+      : '• 현재 활성 직원 없음 (오프라인)';
     sumEl.innerHTML = `
-      <div style="color:var(--text);">오늘 업무 현황 요약 <span style="font-size:10px;color:var(--muted);">(실측 데이터 · ${new Date().toLocaleTimeString('ko-KR')} 기준)</span></div>
-      <div style="margin-top:8px;color:var(--muted);">
-        • <b style="color:var(--text);">설연주</b>: 카카오 100% · 주광담당/현장취소방 업무 + 개인채팅 30% — 신규주문등록 7회 확인<br>
-        • <b style="color:var(--text);">현욱</b>: 태림/박성빈/변진형 거래처 채팅 위주 → Excel 발주 연결 · 자동화 대상 1순위<br>
-        • <b style="color:var(--green);">강현우</b>: Claude에서 "수발주 업무 자동화" 검색 중 — 자발적 관심, 협력 기회<br>
-        • <b style="color:var(--text);">임재용</b>: Claude 60% + Gemini 탐색 · 화훼관리프로그램 별도 운영 확인<br>
-        • <b style="color:var(--text);">박성수</b>: 채권관리대장 Chrome 15회 — 미수금 담당으로 추정<br>
-        • <b style="color:var(--red);">긴급</b>: 주문-출하 불일치 · 화훼관리 별도 시스템 통합 검토 필요
-      </div>
+      <div style="color:var(--text);">실시간 업무 현황 <span style="font-size:10px;color:var(--muted);">(최근 1시간 이벤트 기준 · ${new Date().toLocaleTimeString('ko-KR')})</span></div>
+      <div style="margin-top:8px;color:var(--muted);line-height:1.7;">${bulletLines}</div>
     `;
   }
 }
@@ -1383,13 +1402,35 @@ async function runCrossValidation() {
 const WS_ID = 'WS-NENOVA-2026';
 async function loadLiveMembers() {
   try {
-    // 1) 관리자 API로 워크스페이스 멤버 목록 (인증 불필요)
-    const wsData = await fetch(BASE + '/api/admin/workspaces').then(r => r.json()).catch(() => ({}));
+    // 1) 워크스페이스 멤버 + 최근 로그 병렬 로드
+    const [wsData, logsData] = await Promise.all([
+      fetch(BASE + '/api/admin/workspaces').then(r => r.json()).catch(() => ({})),
+      fetch(BASE + '/api/learning/logs?limit=200').then(r => r.json()).catch(() => ({})),
+    ]);
     const ws = (wsData.workspaces || []).find(w => w.id === WS_ID);
     const rawMembers = ws?.members || [];
     if (rawMembers.length === 0) return;
 
-    // 2) 각 멤버 최근 이벤트 분석 (병렬)
+    // 최근 로그에서 사용자별 실시간 활성 상태 계산 (1시간 이내)
+    const logs = logsData.logs || [];
+    const cutoff = Date.now() - 60 * 60 * 1000; // 1시간
+    const liveStats = {}; // userId → { lastTs, apps, kakao, erp, eventCount }
+    for (const l of logs) {
+      const uid = l.userId;
+      if (!uid || uid === 'local') continue;
+      const ts = new Date(l.timestamp).getTime();
+      if (ts < cutoff) continue;
+      if (!liveStats[uid]) liveStats[uid] = { lastTs: 0, apps: {}, kakao: 0, erp: 0, eventCount: 0 };
+      const s = liveStats[uid];
+      if (ts > s.lastTs) s.lastTs = ts;
+      s.eventCount++;
+      const app = l.app || '';
+      if (app) s.apps[app] = (s.apps[app] || 0) + 1;
+      if (/kakao/i.test(app) || /kakao/i.test(l.windowTitle || '')) s.kakao++;
+      if (/nenova|erp/i.test(app)) s.erp++;
+    }
+
+    // 2) 각 멤버 상세 분석 (병렬, 실패 시 liveStats로 대체)
     const analyses = await Promise.all(rawMembers.map(m =>
       fetch(BASE + '/api/learning/analyze?userId=' + encodeURIComponent(m.user_id))
         .then(r => r.json()).catch(() => ({}))
@@ -1398,21 +1439,24 @@ async function loadLiveMembers() {
     // 3) MEMBERS 배열 구성
     MEMBERS = rawMembers.map((m, i) => {
       const a = analyses[i] || {};
-      // topApps가 [[app, min], ...] 배열 형식
+      const live = liveStats[m.user_id] || {};
+      // topApps: analyze API 우선, 없으면 liveStats
       const topAppsArr = Array.isArray(a.topApps) ? a.topApps.map(x => Array.isArray(x) ? {app:x[0], minutes:x[1]} : x) : [];
-      const topApp = topAppsArr[0]?.app || '';
-      // string만 사용 (object 방지)
+      const liveTopApp = live.apps ? Object.entries(live.apps).sort((a,b)=>b[1]-a[1])[0]?.[0] || '' : '';
+      const topApp = topAppsArr[0]?.app || liveTopApp;
       const insightStr = typeof a.insights?.[0] === 'string' ? a.insights[0] : null;
       const sessionTitle = typeof a.sessions?.[0]?.title === 'string' ? a.sessions[0].title : null;
       const topCat = Array.isArray(a.topCategories) && a.topCategories[0] ? (Array.isArray(a.topCategories[0]) ? a.topCategories[0][0] : a.topCategories[0]) : null;
       const summary = sessionTitle || insightStr || (topApp ? topApp + (topCat ? ' · ' + topCat : '') : null) || '데이터 없음';
       const kakaoMin = topAppsArr.find(x => /kakao/i.test(x.app))?.minutes || 0;
       const erpMin   = topAppsArr.find(x => /nenova|erp/i.test(x.app))?.minutes || 0;
-      // eventCount 기반 활성 판단 (sessions 없어도 이벤트 있으면 활성)
-      const eventCount = a.eventCount || 0;
+      // eventCount: analyze API OR 최근 로그 둘 중 큰 값
+      const eventCount = Math.max(a.eventCount || 0, live.eventCount || 0);
+      const isKakao = live.kakao > 0 || /kakao/i.test(topApp);
+      const isErp   = live.erp > 0 || erpMin > 0;
       let status = 'idle';
       if (eventCount > 0) {
-        status = /kakao/i.test(topApp) ? 'kakao' : 'active';
+        status = isErp ? 'erp' : isKakao ? 'kakao' : 'active';
       }
       return {
         id: m.user_id,
@@ -1421,29 +1465,28 @@ async function loadLiveMembers() {
         emoji: m.role === 'owner' ? '👔' : '👤',
         status,
         activity: summary,
-        kakao: kakaoMin,
-        erp: erpMin,
-        eventCount: a.eventCount || 0,
-        warn: kakaoMin > erpMin * 3,
+        kakao: kakaoMin || live.kakao,
+        erp: erpMin || live.erp,
+        eventCount,
+        lastSeen: live.lastTs ? new Date(live.lastTs).toLocaleTimeString('ko-KR', {hour:'2-digit', minute:'2-digit'}) : null,
+        warn: (kakaoMin || live.kakao) > (erpMin || live.erp) * 3,
       };
     });
 
     renderMemberCards();
 
     // KPI 업데이트
-    const activeCount  = MEMBERS.filter(m => m.status !== 'idle').length;
-    const kakaoCount   = MEMBERS.filter(m => m.status === 'kakao').length;
-    const erpCount     = MEMBERS.filter(m => m.erp > 0).length;
+    const activeCount = MEMBERS.filter(m => m.status !== 'idle').length;
+    const kakaoCount  = MEMBERS.filter(m => m.status === 'kakao').length;
+    const erpCount    = MEMBERS.filter(m => m.status === 'erp').length;
     const kpi = document.getElementById('kpi-members');
     if (kpi) kpi.textContent = activeCount + '/' + MEMBERS.length;
-    const nowActive = document.getElementById('now-active');
-    if (nowActive) nowActive.textContent = activeCount;
-    const nowKakao = document.getElementById('now-kakao');
-    if (nowKakao) nowKakao.textContent = kakaoCount;
-    const nowErp = document.getElementById('now-erp');
-    if (nowErp) nowErp.textContent = erpCount;
+    const setEl2 = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    setEl2('now-active', activeCount);
+    setEl2('now-kakao', kakaoCount);
+    setEl2('now-erp', erpCount);
 
-    document.getElementById('sb-updated').textContent = '마지막: ' + new Date().toLocaleTimeString('ko-KR');
+    document.getElementById('sb-updated').textContent = '업데이트: ' + new Date().toLocaleTimeString('ko-KR');
   } catch (e) {
     console.warn('[orbit-os] 멤버 로드 실패:', e.message);
   }
@@ -1520,6 +1563,34 @@ async function loadAutoAnalysis() {
         </div>
       </div>`;
     }).join('');
+
+    // Vision 발견 항목 — 점수 높은 것 Vision 발견 카드에 표시
+    const highScore = d.items.filter(i => (i.automationScore || 0) >= 0.5 && i.activity);
+    const discCard = document.getElementById('vision-discoveries');
+    const discList = document.getElementById('vision-discovery-list');
+    if (discCard && discList && highScore.length > 0) {
+      discCard.style.display = '';
+      discList.innerHTML = highScore.slice(0, 5).map(i => {
+        const score = Math.round((i.automationScore || 0) * 100);
+        const col = score >= 70 ? 'var(--green)' : 'var(--yellow)';
+        const autos = (i.autoAreas || []).slice(0, 3).join(' / ') || '-';
+        const humans = (i.humanAreas || []).slice(0, 2).join(' / ') || '-';
+        const ts = i.timestamp ? new Date(i.timestamp).toLocaleString('ko-KR',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : '';
+        return `<div style="padding:8px 0;border-bottom:1px solid var(--border);">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <span style="font-size:12px;font-weight:600;color:var(--text);">${i.app} — ${i.screen}</span>
+            <span style="font-size:13px;font-weight:700;color:${col};">${score}%</span>
+          </div>
+          <div style="font-size:11px;color:var(--text-s);margin:3px 0;">${i.activity}</div>
+          <div style="display:flex;gap:12px;font-size:10px;margin-top:3px;">
+            <span style="color:var(--green);">✓ ${autos}</span>
+            <span style="color:var(--red);">✗ ${humans}</span>
+          </div>
+          ${i.nenovaAction ? `<div style="font-size:10px;color:var(--purple);margin-top:2px;">nenova: ${i.nenovaAction}</div>` : ''}
+          <div style="font-size:9px;color:var(--muted);margin-top:2px;">${ts} · ${i.userName}</div>
+        </div>`;
+      }).join('');
+    }
   } catch(e) {
     const list2 = document.getElementById('auto-analysis-list');
     if (list2) list2.innerHTML = `<div style="color:var(--red);font-size:11px;padding:10px;">에러: ${e.message}</div>`;
