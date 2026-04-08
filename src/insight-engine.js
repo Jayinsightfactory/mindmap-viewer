@@ -23,6 +23,22 @@
 const fs   = require('fs');
 const path = require('path');
 
+// ─── 품질 점수 테이블 ─────────────────────────────────────────────────────────
+const SCORE_TABLE = {
+  hot_files:        0.9,   // 반복 패턴 기반
+  peak_hour:        0.9,
+  high_error_rate:  0.8,   // 이상 탐지
+  activity_spike:   0.8,
+  night_work:       0.8,
+  single_channel:   0.5,   // 일반
+  ollama_insight:   0.7,
+  claude_insight:   0.8,
+};
+
+function calcScore(type) {
+  return SCORE_TABLE[type] ?? 0.5;
+}
+
 // ─── 크론 타이머 ──────────────────────────────────────────────────────────────
 let _cronInterval = null;
 const CRON_INTERVAL_MS = parseInt(process.env.INSIGHT_INTERVAL_MS || String(24 * 60 * 60 * 1000)); // 기본 24시간 (하루 1번)
@@ -31,10 +47,136 @@ const CRON_INTERVAL_MS = parseInt(process.env.INSIGHT_INTERVAL_MS || String(24 *
 const DATA_DIR    = path.join(__dirname, '..', 'data');
 const INSIGHT_FILE = path.join(DATA_DIR, 'insights.jsonl');
 
+// ─── PostgreSQL 풀 참조 ──────────────────────────────────────────────────────
+let _pgPool = null;
+
+/**
+ * PG 풀을 주입합니다 (server.js에서 start() 전 호출).
+ * @param {import('pg').Pool} pool
+ */
+function setPgPool(pool) {
+  _pgPool = pool;
+}
+
+// ─── insights 테이블 초기화 (1회) ────────────────────────────────────────────
+let _tableReady = false;
+async function ensureInsightsTable() {
+  if (_tableReady || !_pgPool) return;
+  await _pgPool.query(`
+    CREATE TABLE IF NOT EXISTS insights (
+      id            BIGSERIAL PRIMARY KEY,
+      user_id       TEXT NOT NULL,
+      type          TEXT NOT NULL,
+      content       JSONB NOT NULL DEFAULT '{}',
+      score         REAL NOT NULL DEFAULT 0.5,
+      metadata_json JSONB DEFAULT '{}',
+      created_at    TIMESTAMPTZ DEFAULT NOW(),
+      dismissed     BOOLEAN DEFAULT FALSE
+    );
+    CREATE INDEX IF NOT EXISTS idx_insights_user    ON insights(user_id);
+    CREATE INDEX IF NOT EXISTS idx_insights_score   ON insights(score);
+    CREATE INDEX IF NOT EXISTS idx_insights_created ON insights(created_at);
+  `);
+  _tableReady = true;
+}
+
 // ─── 저장 유틸 ────────────────────────────────────────────────────────────────
 function appendInsight(insight) {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
   fs.appendFileSync(INSIGHT_FILE, JSON.stringify(insight) + '\n', 'utf8');
+}
+
+async function saveInsightToPg(insight) {
+  if (!_pgPool) return;
+  try {
+    await ensureInsightsTable();
+    const score = calcScore(insight.type);
+    await _pgPool.query(
+      `INSERT INTO insights (user_id, type, content, score, metadata_json)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [
+        insight.userId || 'local',
+        insight.type,
+        JSON.stringify({ title: insight.title, body: insight.body, confidence: insight.confidence }),
+        score,
+        JSON.stringify(insight.data || {}),
+      ]
+    );
+  } catch (e) {
+    console.warn('[insight-engine] PG 저장 실패:', e.message);
+  }
+}
+
+// ─── 낮은 점수 인사이트 7일 후 자동 삭제 ────────────────────────────────────
+async function purgeOldLowScoreInsights() {
+  if (!_pgPool) return;
+  try {
+    await ensureInsightsTable();
+    const { rowCount } = await _pgPool.query(
+      `DELETE FROM insights WHERE score < 0.7 AND created_at < NOW() - INTERVAL '7 days'`
+    );
+    if (rowCount > 0) console.log(`[insight-engine] 낮은 점수 인사이트 ${rowCount}건 삭제`);
+  } catch (e) {
+    console.warn('[insight-engine] purge 실패:', e.message);
+  }
+}
+
+// ─── DB 인사이트 조회 ─────────────────────────────────────────────────────────
+/**
+ * PostgreSQL에서 최근 인사이트 조회 (없으면 JSONL 폴백)
+ * @param {string} userId
+ * @param {number} limit
+ * @returns {Promise<object[]>}
+ */
+async function getRecentInsights(userId, limit = 50) {
+  if (_pgPool) {
+    try {
+      await ensureInsightsTable();
+      const { rows } = await _pgPool.query(
+        `SELECT id, user_id AS "userId", type, content, score, metadata_json AS metadata, created_at AS "createdAt", dismissed
+         FROM insights
+         WHERE user_id = $1 AND dismissed = FALSE
+         ORDER BY created_at DESC
+         LIMIT $2`,
+        [userId, limit]
+      );
+      return rows.map(r => ({
+        id:         r.id,
+        userId:     r.userId,
+        type:       r.type,
+        title:      r.content?.title,
+        body:       r.content?.body,
+        confidence: r.content?.confidence,
+        score:      r.score,
+        data:       r.metadata,
+        createdAt:  r.createdAt,
+      }));
+    } catch (e) {
+      console.warn('[insight-engine] PG 조회 실패, JSONL 폴백:', e.message);
+    }
+  }
+  // JSONL 폴백
+  return loadRecentInsights(limit, userId);
+}
+
+/**
+ * 인사이트를 dismissed 처리
+ * @param {number|string} insightId
+ * @returns {Promise<boolean>}
+ */
+async function dismissInsight(insightId) {
+  if (!_pgPool) return false;
+  try {
+    await ensureInsightsTable();
+    const { rowCount } = await _pgPool.query(
+      'UPDATE insights SET dismissed = TRUE WHERE id = $1',
+      [insightId]
+    );
+    return rowCount > 0;
+  } catch (e) {
+    console.warn('[insight-engine] dismiss 실패:', e.message);
+    return false;
+  }
 }
 
 function loadRecentInsights(limit = 50, userId) {
@@ -343,7 +485,7 @@ async function _runForUser(events, userId, { saveSuggestion, broadcastAll }) {
   const insights = await enrichWithLLM(ruleInsights, stats);
   const timestamp = new Date().toISOString();
 
-  insights.forEach(insight => {
+  for (const insight of insights) {
     const record = {
       ...insight,
       userId,
@@ -351,7 +493,11 @@ async function _runForUser(events, userId, { saveSuggestion, broadcastAll }) {
       runAt: timestamp,
     };
 
+    // JSONL 저장 (하위 호환)
     appendInsight(record);
+
+    // PostgreSQL 저장
+    await saveInsightToPg(record);
 
     if (saveSuggestion) {
       try {
@@ -364,7 +510,7 @@ async function _runForUser(events, userId, { saveSuggestion, broadcastAll }) {
         });
       } catch {}
     }
-  });
+  }
 
   if (broadcastAll && insights.length > 0) {
     broadcastAll({
@@ -424,21 +570,27 @@ async function runOnce({ getAllEvents, saveSuggestion, broadcastAll }) {
  *
  * @param {{ getAllEvents, saveSuggestion, broadcastAll, intervalMs? }} deps
  */
-function start({ getAllEvents, saveSuggestion, broadcastAll, intervalMs }) {
+function start({ getAllEvents, saveSuggestion, broadcastAll, intervalMs, pgPool }) {
   if (_cronInterval) {
     console.warn('[insight-engine] 이미 실행 중입니다.');
     return;
   }
+  // PG 풀 주입 (start() 호출 시 함께 전달 가능)
+  if (pgPool) setPgPool(pgPool);
+
   const interval = intervalMs || CRON_INTERVAL_MS;
   console.log(`[insight-engine] 시작 — ${interval / 1000 / 60}분 주기`);
 
   // 서버 안정화 90초 후 첫 실행 (즉시 실행 시 startup OOM 유발)
   const _initTimer = setTimeout(() => {
     runOnce({ getAllEvents, saveSuggestion, broadcastAll });
+    purgeOldLowScoreInsights();
   }, 90_000);
   if (_initTimer.unref) _initTimer.unref();
+
   _cronInterval = setInterval(() => {
     runOnce({ getAllEvents, saveSuggestion, broadcastAll });
+    purgeOldLowScoreInsights();
   }, interval);
 }
 
@@ -455,4 +607,7 @@ function getInsights(limit = 50, userId) {
   return loadRecentInsights(limit, userId);
 }
 
-module.exports = { start, stop, runOnce, getInsights, analyzeEvents };
+module.exports = {
+  start, stop, runOnce, getInsights, analyzeEvents,
+  setPgPool, getRecentInsights, dismissInsight, purgeOldLowScoreInsights,
+};

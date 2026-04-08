@@ -34,6 +34,17 @@ function createThinkEngine({ getDb, ragCore }) {
     return s;
   }
 
+  // ── 시간대 구분 헬퍼 ──
+  // 0=새벽(0-5), 1=오전(6-11), 2=오후(12-17), 3=저녁(18-23)
+  function _timeSlot(date) {
+    const h = (date instanceof Date ? date : new Date(date)).getHours();
+    if (h < 6)  return 0;
+    if (h < 12) return 1;
+    if (h < 18) return 2;
+    return 3;
+  }
+  const TIME_SLOT_NAMES = ['새벽', '오전', '오후', '저녁'];
+
   // ── 테이블 초기화 ──
   async function _ensureTables(db) {
     await db.query(`
@@ -49,6 +60,32 @@ function createThinkEngine({ getDb, ragCore }) {
         UNIQUE(user_id, from_state, to_state)
       )
     `);
+    // 시간대별 전이 확률 테이블 (기존 테이블과 분리)
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS transition_model_timeslot (
+        id SERIAL PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        from_state TEXT NOT NULL,
+        to_state TEXT NOT NULL,
+        time_slot INT NOT NULL,
+        probability REAL DEFAULT 0,
+        count INT DEFAULT 0,
+        avg_seconds REAL DEFAULT 0,
+        updated_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(user_id, from_state, to_state, time_slot)
+      )
+    `).catch(() => {});
+    // 연속 실패 추적 테이블
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS prediction_fail_streak (
+        user_id TEXT NOT NULL,
+        from_state TEXT NOT NULL,
+        to_state TEXT NOT NULL,
+        streak INT DEFAULT 0,
+        last_fail_at TIMESTAMPTZ DEFAULT NOW(),
+        PRIMARY KEY (user_id, from_state, to_state)
+      )
+    `).catch(() => {});
     await db.query(`
       CREATE TABLE IF NOT EXISTS predictions (
         id SERIAL PRIMARY KEY,
@@ -192,9 +229,55 @@ function createThinkEngine({ getDb, ragCore }) {
         upserted++;
       }
 
-      await _log(db, 'learn', 'transition_model', `${upserted}건 학습, ${hours}시간 데이터`);
+      // 시간대별 전이 확률 학습
+      const slotTransitions = await db.query(`
+        WITH ordered AS (
+          SELECT user_id, timestamp,
+            EXTRACT(HOUR FROM timestamp::timestamptz) as hr,
+            COALESCE(data_json->>'windowTitle', data_json->'appContext'->>'currentWindow') as state,
+            LAG(COALESCE(data_json->>'windowTitle', data_json->'appContext'->>'currentWindow'))
+              OVER (PARTITION BY user_id ORDER BY timestamp) as prev_state,
+            LAG(timestamp) OVER (PARTITION BY user_id ORDER BY timestamp) as prev_ts
+          FROM events
+          WHERE type IN ('keyboard.chunk', 'screen.capture')
+            AND timestamp::timestamptz > NOW() - INTERVAL '${hours} hours'
+            AND user_id NOT IN ('MMOLABXL2066516519')
+        )
+        SELECT user_id, prev_state as from_state, state as to_state,
+          CASE WHEN hr < 6 THEN 0 WHEN hr < 12 THEN 1 WHEN hr < 18 THEN 2 ELSE 3 END as time_slot,
+          COUNT(*) as cnt,
+          AVG(EXTRACT(EPOCH FROM (timestamp::timestamptz - prev_ts::timestamptz))) as avg_sec
+        FROM ordered
+        WHERE state IS NOT NULL AND prev_state IS NOT NULL
+          AND state != prev_state
+          AND LENGTH(state) > 3 AND LENGTH(prev_state) > 3
+          AND EXTRACT(EPOCH FROM (timestamp::timestamptz - prev_ts::timestamptz)) < 600
+        GROUP BY user_id, from_state, to_state, time_slot
+        HAVING COUNT(*) >= 2
+      `);
 
-      res.json({ learned: upserted, dataHours: hours, uniqueUsers: new Set(transitions.rows.map(r => r.user_id)).size });
+      const slotTotals = {};
+      for (const r of slotTransitions.rows) {
+        const key = `${r.user_id}:${r.from_state}:${r.time_slot}`;
+        slotTotals[key] = (slotTotals[key] || 0) + parseInt(r.cnt);
+      }
+      let slotUpserted = 0;
+      for (const r of slotTransitions.rows) {
+        const key = `${r.user_id}:${r.from_state}:${r.time_slot}`;
+        const prob = parseInt(r.cnt) / (slotTotals[key] || 1);
+        await db.query(`
+          INSERT INTO transition_model_timeslot (user_id, from_state, to_state, time_slot, probability, count, avg_seconds, updated_at)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+          ON CONFLICT (user_id, from_state, to_state, time_slot) DO UPDATE SET
+            probability = $5, count = $6, avg_seconds = $7, updated_at = NOW()
+        `, [r.user_id, r.from_state, r.to_state, parseInt(r.time_slot), +prob.toFixed(3), parseInt(r.cnt), +parseFloat(r.avg_sec || 0).toFixed(1)])
+          .catch(() => {});
+        slotUpserted++;
+      }
+
+      await _log(db, 'learn', 'transition_model', `${upserted}건 학습(시간대:${slotUpserted}건), ${hours}시간 데이터`);
+
+      res.json({ learned: upserted, slotLearned: slotUpserted, dataHours: hours, uniqueUsers: new Set(transitions.rows.map(r => r.user_id)).size });
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
 
@@ -223,7 +306,19 @@ function createThinkEngine({ getDb, ragCore }) {
       const currentState = currentRes.rows[0].current_state;
       const lastSeen = currentRes.rows[0].timestamp;
 
-      // 전이 확률에서 다음 행동 예측
+      // 현재 시간대 계산
+      const nowSlot = _timeSlot(new Date());
+      const slotName = TIME_SLOT_NAMES[nowSlot];
+
+      // 1) 시간대별 전이 확률 (우선)
+      const slotPredRes = await db.query(`
+        SELECT to_state, probability, count, avg_seconds
+        FROM transition_model_timeslot
+        WHERE user_id = $1 AND from_state = $2 AND time_slot = $3
+        ORDER BY probability DESC LIMIT 5
+      `, [userId, currentState, nowSlot]).catch(() => ({ rows: [] }));
+
+      // 2) 전체 전이 확률 (시간대 데이터 부족 시 보완)
       const predRes = await db.query(`
         SELECT to_state, probability, count, avg_seconds
         FROM transition_model
@@ -231,27 +326,41 @@ function createThinkEngine({ getDb, ragCore }) {
         ORDER BY probability DESC LIMIT 5
       `, [userId, currentState]);
 
-      const predictions = predRes.rows.map(r => ({
-        nextAction: r.to_state,
-        probability: +parseFloat(r.probability).toFixed(2),
-        basedOn: parseInt(r.count) + '회 관찰',
-        expectedIn: Math.round(parseFloat(r.avg_seconds)) + '초',
-      }));
+      // 시간대별 결과가 있으면 우선 사용, 가중치 보정
+      const slotMap = {};
+      for (const r of slotPredRes.rows) slotMap[r.to_state] = parseFloat(r.probability);
 
-      // 예측 로그 저장 (나중에 맞았는지 확인용)
+      const predictions = predRes.rows.map(r => {
+        const slotBoost = slotMap[r.to_state] != null ? slotMap[r.to_state] * 0.4 : 0;
+        const combinedProb = Math.min(1, parseFloat(r.probability) * 0.6 + slotBoost);
+        return {
+          nextAction: r.to_state,
+          probability: +combinedProb.toFixed(2),
+          slotProbability: slotMap[r.to_state] != null ? +parseFloat(slotMap[r.to_state]).toFixed(2) : null,
+          basedOn: parseInt(r.count) + '회 관찰',
+          expectedIn: Math.round(parseFloat(r.avg_seconds)) + '초',
+        };
+      }).sort((a, b) => b.probability - a.probability);
+
+      // 예측 로그 저장 (나중에 맞았는지 확인용) — from_state도 함께 저장
       if (predictions.length > 0) {
         await db.query(`
-          INSERT INTO predictions (user_id, predicted_action, confidence, created_at)
-          VALUES ($1, $2, $3, NOW())
-        `, [userId, predictions[0].nextAction, predictions[0].probability]);
+          INSERT INTO predictions (user_id, predicted_action, predicted_value, confidence, created_at)
+          VALUES ($1, $2, $3, $4, NOW())
+        `, [userId, predictions[0].nextAction, currentState, predictions[0].probability])
+          .catch(() => db.query(`
+            INSERT INTO predictions (user_id, predicted_action, confidence, created_at)
+            VALUES ($1, $2, $3, NOW())
+          `, [userId, predictions[0].nextAction, predictions[0].probability]));
       }
 
       res.json({
         userId,
         currentState,
         lastSeen,
+        timeSlot: slotName,
         predictions,
-        model: `${predRes.rows.length}개 후보`,
+        model: `${predRes.rows.length}개 후보 (시간대:${slotPredRes.rows.length})`,
       });
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
@@ -295,6 +404,19 @@ function createThinkEngine({ getDb, ragCore }) {
 
           verified++;
           if (isCorrect) correct++;
+
+          // 연속 실패 감지 및 가중치 감쇠
+          // predicted_value = from_state (예측 시점에 저장된 경우)
+          const fromState = pred.predicted_value || null;
+          if (!isCorrect && fromState) {
+            await _handlePredictionFailStreak(db, pred.user_id, fromState, pred.predicted_action);
+          } else if (isCorrect && fromState) {
+            // 정답이면 streak 리셋
+            await db.query(`
+              DELETE FROM prediction_fail_streak
+              WHERE user_id = $1 AND from_state = $2 AND to_state = $3
+            `, [pred.user_id, fromState, pred.predicted_action]).catch(() => {});
+          }
         }
       }
 
@@ -556,7 +678,7 @@ function createThinkEngine({ getDb, ragCore }) {
   });
 
   // ═══════════════════════════════════════════════════════════════
-  // GET /api/think/accuracy — 예측 정확도
+  // GET /api/think/accuracy — 예측 정확도 (시간대별 + 앱별 + 트렌드)
   // ═══════════════════════════════════════════════════════════════
   router.get('/accuracy', async (req, res) => {
     try {
@@ -564,6 +686,7 @@ function createThinkEngine({ getDb, ragCore }) {
       if (!db?.query) return res.json({ error: 'DB not available' });
       await _ensureTables(db);
 
+      // 전체 통계
       const result = await db.query(`
         SELECT
           COUNT(*) as total,
@@ -575,7 +698,9 @@ function createThinkEngine({ getDb, ragCore }) {
       const r = result.rows[0] || {};
       const total = parseInt(r.total) || 0;
       const correct = parseInt(r.correct) || 0;
+      const pending = parseInt(r.pending) || 0;
 
+      // 일별 트렌드
       const trendRes = await db.query(`
         SELECT DATE(created_at) as day,
           COUNT(*) as total,
@@ -591,10 +716,63 @@ function createThinkEngine({ getDb, ragCore }) {
         total: parseInt(r.total),
       }));
 
+      // 시간대별 정확도 (predicted_value=from_state, correct 기준)
+      const slotRes = await db.query(`
+        SELECT
+          CASE
+            WHEN EXTRACT(HOUR FROM created_at) < 6  THEN 0
+            WHEN EXTRACT(HOUR FROM created_at) < 12 THEN 1
+            WHEN EXTRACT(HOUR FROM created_at) < 18 THEN 2
+            ELSE 3
+          END as slot,
+          COUNT(*) as total,
+          COUNT(*) FILTER (WHERE correct = true) as correct_cnt
+        FROM predictions
+        WHERE correct IS NOT NULL AND created_at > NOW() - INTERVAL '14 days'
+        GROUP BY slot
+        ORDER BY slot
+      `).catch(() => ({ rows: [] }));
+      const byTimeSlot = slotRes.rows.map(r => ({
+        slot: parseInt(r.slot),
+        slotName: TIME_SLOT_NAMES[parseInt(r.slot)] || '기타',
+        accuracy: parseInt(r.total) > 0 ? Math.round(parseInt(r.correct_cnt) / parseInt(r.total) * 100) : 0,
+        total: parseInt(r.total),
+        correct: parseInt(r.correct_cnt),
+      }));
+
+      // 앱별(predicted_action 기준) 정확도 Top 10
+      const appRes = await db.query(`
+        SELECT
+          predicted_action,
+          COUNT(*) as total,
+          COUNT(*) FILTER (WHERE correct = true) as correct_cnt
+        FROM predictions
+        WHERE correct IS NOT NULL AND created_at > NOW() - INTERVAL '14 days'
+        GROUP BY predicted_action
+        HAVING COUNT(*) >= 3
+        ORDER BY COUNT(*) DESC LIMIT 10
+      `).catch(() => ({ rows: [] }));
+      const byApp = appRes.rows.map(r => ({
+        action: r.predicted_action,
+        accuracy: parseInt(r.total) > 0 ? Math.round(parseInt(r.correct_cnt) / parseInt(r.total) * 100) : 0,
+        total: parseInt(r.total),
+      }));
+
+      // 연속 실패 중인 전이 (streak >= 3)
+      const streakRes = await db.query(`
+        SELECT user_id, from_state, to_state, streak, last_fail_at
+        FROM prediction_fail_streak
+        WHERE streak >= 3
+        ORDER BY streak DESC LIMIT 20
+      `).catch(() => ({ rows: [] }));
+
       res.json({
-        total, correct, wrong: parseInt(r.wrong) || 0, pending: parseInt(r.pending) || 0,
-        accuracy: total > 0 ? Math.round(correct / Math.max(total - parseInt(r.pending || 0), 1) * 100) : 0,
+        total, correct, wrong: parseInt(r.wrong) || 0, pending,
+        accuracy: total > 0 ? Math.round(correct / Math.max(total - pending, 1) * 100) : 0,
         trend,
+        byTimeSlot,
+        byApp,
+        failStreaks: streakRes.rows,
       });
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
@@ -604,6 +782,83 @@ function createThinkEngine({ getDb, ragCore }) {
     try {
       await db.query('INSERT INTO think_log (phase,action,result) VALUES ($1,$2,$3)', [phase, action, result]);
     } catch {}
+  }
+
+  // ── 연속 실패 감지 + 가중치 감쇠 ──
+  // 같은 (user, from, to) 조합에서 3회 이상 틀리면 probability *= 0.5
+  async function _handlePredictionFailStreak(db, userId, fromState, toState) {
+    try {
+      // streak 카운트 업서트
+      const res = await db.query(`
+        INSERT INTO prediction_fail_streak (user_id, from_state, to_state, streak, last_fail_at)
+        VALUES ($1, $2, $3, 1, NOW())
+        ON CONFLICT (user_id, from_state, to_state) DO UPDATE SET
+          streak = prediction_fail_streak.streak + 1,
+          last_fail_at = NOW()
+        RETURNING streak
+      `, [userId, fromState, toState]).catch(() => null);
+
+      const streak = res?.rows?.[0]?.streak || 0;
+
+      // streak >= 3 → 전이 모델 가중치 0.5 감쇠
+      if (streak >= 3) {
+        await db.query(`
+          UPDATE transition_model
+          SET probability = GREATEST(probability * 0.5, 0.001), updated_at = NOW()
+          WHERE user_id = $1 AND from_state = $2 AND to_state = $3
+        `, [userId, fromState, toState]).catch(() => {});
+        // 시간대별 테이블도 동일하게 감쇠
+        await db.query(`
+          UPDATE transition_model_timeslot
+          SET probability = GREATEST(probability * 0.5, 0.001), updated_at = NOW()
+          WHERE user_id = $1 AND from_state = $2 AND to_state = $3
+        `, [userId, fromState, toState]).catch(() => {});
+        console.log(`[think-engine] 연속 실패 ${streak}회: ${fromState} → ${toState} 가중치 감쇠`);
+        await _log(db, 'decay', 'fail_streak', `user:${userId} ${fromState}→${toState} streak:${streak}`);
+      }
+    } catch (e) {
+      console.warn('[think-engine] fail streak 처리 실패:', e.message);
+    }
+  }
+
+  // ── 자동 재학습 루프: 틀린 예측 집계 → 가중치 조정 ──
+  async function _autoRelearn() {
+    try {
+      const db = getDb();
+      if (!db?.query) return;
+
+      // 최근 2시간 틀린 예측들 집계
+      const wrongRes = await db.query(`
+        SELECT user_id, predicted_value as from_state, predicted_action as to_state,
+          COUNT(*) as wrong_cnt
+        FROM predictions
+        WHERE correct = false
+          AND predicted_value IS NOT NULL
+          AND created_at > NOW() - INTERVAL '2 hours'
+        GROUP BY user_id, predicted_value, predicted_action
+        HAVING COUNT(*) >= 2
+      `).catch(() => ({ rows: [] }));
+
+      let adjusted = 0;
+      for (const r of wrongRes.rows) {
+        if (!r.from_state || !r.to_state) continue;
+        // 틀린 횟수에 비례해 감쇠 (건당 5% 추가 감쇠, 최대 50%)
+        const decay = Math.max(0.5, 1 - Math.min(parseInt(r.wrong_cnt) * 0.05, 0.5));
+        await db.query(`
+          UPDATE transition_model
+          SET probability = GREATEST(probability * $4, 0.001), updated_at = NOW()
+          WHERE user_id = $1 AND from_state = $2 AND to_state = $3
+        `, [r.user_id, r.from_state, r.to_state, decay]).catch(() => {});
+        adjusted++;
+      }
+
+      if (adjusted > 0) {
+        console.log(`[think-engine] 자동 재학습: ${adjusted}개 전이 가중치 조정`);
+        await _log(db, 'relearn', 'auto_relearn', `${adjusted}건 가중치 조정`);
+      }
+    } catch (err) {
+      console.warn('[think-engine] 자동 재학습 에러:', err.message);
+    }
   }
 
   // ── 확장 사고: 가능성 탐지 후 capability_ideas에 upsert (source 기준) ──
@@ -760,8 +1015,10 @@ function createThinkEngine({ getDb, ragCore }) {
 
   // 서버 시작 후 각 주기별 스케줄
   setTimeout(() => { _autoLearnTransitions(); setInterval(_autoLearnTransitions, 30 * 60 * 1000); }, 10 * 60 * 1000);
-  setTimeout(() => { _autoVerifyAccuracy();  setInterval(_autoVerifyAccuracy,  60 * 60 * 1000); }, 15 * 60 * 1000);
+  setTimeout(() => { _autoVerifyAccuracy();   setInterval(_autoVerifyAccuracy,   60 * 60 * 1000); }, 15 * 60 * 1000);
   setTimeout(() => { _autoDetectCapabilities(); setInterval(_autoDetectCapabilities, 2 * 60 * 60 * 1000); }, 20 * 60 * 1000);
+  // 자동 재학습: 45분마다 (verify 직후 실행 타이밍)
+  setTimeout(() => { _autoRelearn(); setInterval(_autoRelearn, 45 * 60 * 1000); }, 25 * 60 * 1000);
 
   // ── RAG 증강 예측 ───────────────────────────────────────────────────────
   // GET /api/think/rag-predict?userId=&currentState=
@@ -804,7 +1061,7 @@ function createThinkEngine({ getDb, ragCore }) {
     }
   });
 
-  console.log('[think-engine] 사고 엔진 v2 시작 (전이:30분 / 검증:1시간 / 확장사고:2시간)');
+  console.log('[think-engine] 사고 엔진 v3 시작 (전이:30분 / 검증:1시간 / 재학습:45분 / 확장사고:2시간 / 시간대분리+연속실패감지)');
 
   return router;
 }

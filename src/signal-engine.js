@@ -1,7 +1,7 @@
 /**
  * src/signal-engine.js
  * ─────────────────────────────────────────────────────────────────────────────
- * Tesla FSD 방식 원시 신호 감지 엔진
+ * Tesla FSD 방식 원시 신호 감지 엔진 (PostgreSQL 영구 저장 + 패턴 통계 포함)
  *
  * 핵심 철학:
  *   기존 방식: 이벤트 → 텍스트 라벨 → 규칙 매칭 (번역 오류 발생)
@@ -17,6 +17,12 @@
  *   - CRISIS     : 복잡도 위기 (급격한 파일 수 증가, 오류 폭증)
  *   - IDLE       : 유휴 상태   (이벤트 없음)
  *   - PRODUCTIVE : 생산적 상태 (완료 이벤트 연속, 진행률 증가)
+ *
+ * 추가 기능:
+ *   - PostgreSQL signal_states 테이블에 상태 변화 저장
+ *   - 30분 이상 BLOCKED → 번아웃 경보
+ *   - /api/signal/history, /api/signal/burnout API
+ *   - 일별 집중도 trend 계산
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -36,9 +42,73 @@ const STATE = {
   PRODUCTIVE: 'PRODUCTIVE',
 };
 
+/** 번아웃 경보 임계값: BLOCKED 연속 시간 (ms) */
+const BURNOUT_THRESHOLD_MS = 30 * 60 * 1000; // 30분
+
 // ─── 세션별 신호 버퍼 ─────────────────────────────────────────────────────────
 // Map<sessionId, SignalBuffer>
 const _buffers = new Map();
+
+// ─── DB 초기화 ────────────────────────────────────────────────────────────────
+
+let _dbPool = null;
+
+/**
+ * PostgreSQL 풀 주입 (server.js에서 getDb() 결과를 넘김)
+ * @param {import('pg').Pool} pool
+ */
+async function initSignalDb(pool) {
+  _dbPool = pool;
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS signal_states (
+        id          BIGSERIAL PRIMARY KEY,
+        user_id     TEXT        NOT NULL,
+        hostname    TEXT        NOT NULL DEFAULT '',
+        state       TEXT        NOT NULL,
+        vector_json JSONB       NOT NULL DEFAULT '{}',
+        ts          BIGINT      NOT NULL,
+        burnout     BOOLEAN     NOT NULL DEFAULT FALSE,
+        created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_signal_states_user  ON signal_states(user_id);
+      CREATE INDEX IF NOT EXISTS idx_signal_states_ts    ON signal_states(ts);
+      CREATE INDEX IF NOT EXISTS idx_signal_states_state ON signal_states(state);
+    `);
+    console.log('[SignalEngine] signal_states 테이블 준비 완료');
+  } catch (e) {
+    console.warn('[SignalEngine] DB 초기화 경고:', e.message);
+  }
+}
+
+/**
+ * 상태 변화 DB 저장 (이전 상태와 다를 때만 INSERT)
+ * @param {string} userId
+ * @param {string} hostname
+ * @param {string} newState
+ * @param {object} vector
+ * @param {boolean} burnout
+ */
+async function _persistStateChange(userId, hostname, newState, vector, burnout) {
+  if (!_dbPool) return;
+  try {
+    // 이전 마지막 상태 조회
+    const last = await _dbPool.query(
+      `SELECT state FROM signal_states WHERE user_id = $1 ORDER BY ts DESC LIMIT 1`,
+      [userId]
+    );
+    if (last.rows.length > 0 && last.rows[0].state === newState && !burnout) {
+      return; // 상태 동일 + 번아웃 아니면 skip
+    }
+    await _dbPool.query(
+      `INSERT INTO signal_states (user_id, hostname, state, vector_json, ts, burnout)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [userId, hostname || '', newState, JSON.stringify(vector || {}), Date.now(), burnout]
+    );
+  } catch (e) {
+    console.warn('[SignalEngine] 상태 저장 실패:', e.message);
+  }
+}
 
 /**
  * 신호 버퍼 초기화 또는 반환
@@ -181,6 +251,10 @@ function classifyVector(v) {
   return { state: STATE.IDLE, confidence: 0.6, signals: v };
 }
 
+// ─── 번아웃 추적 ──────────────────────────────────────────────────────────────
+// Map<sessionId, { since: number }> — BLOCKED 시작 시각
+const _blockedSince = new Map();
+
 // ─── 공개 API ─────────────────────────────────────────────────────────────────
 
 /**
@@ -188,18 +262,20 @@ function classifyVector(v) {
  *
  * @param {string} sessionId
  * @param {{ type: string, timestamp: number, data?: object }} event
+ * @param {{ userId?: string, hostname?: string }} [meta]
  */
-function record(sessionId, event) {
+function record(sessionId, event, meta = {}) {
   getBuffer(sessionId).push(event);
 }
 
 /**
- * 세션의 현재 상태를 분석합니다.
+ * 세션의 현재 상태를 분석하고, 필요 시 DB에 상태 변화를 저장합니다.
  *
  * @param {string} sessionId
- * @returns {{ state: string, confidence: number, signals: object } | null}
+ * @param {{ userId?: string, hostname?: string }} [meta]
+ * @returns {{ state: string, confidence: number, signals: object, burnout?: boolean } | null}
  */
-function analyze(sessionId) {
+function analyze(sessionId, meta = {}) {
   const buf = _buffers.get(sessionId);
   if (!buf) return { state: STATE.IDLE, confidence: 1.0, signals: null };
 
@@ -207,6 +283,29 @@ function analyze(sessionId) {
 
   const vector = buf.toVector();
   const result = classifyVector(vector);
+
+  // ── 번아웃 추적 ────────────────────────────────────────────────────────
+  let burnout = false;
+  if (result.state === STATE.BLOCKED) {
+    if (!_blockedSince.has(sessionId)) {
+      _blockedSince.set(sessionId, Date.now());
+    } else {
+      const elapsed = Date.now() - _blockedSince.get(sessionId);
+      if (elapsed >= BURNOUT_THRESHOLD_MS) {
+        burnout = true;
+        result.burnout = true;
+      }
+    }
+  } else {
+    _blockedSince.delete(sessionId); // BLOCKED 아니면 타이머 리셋
+  }
+
+  // ── DB 저장 (비동기, 에러 무시) ────────────────────────────────────────
+  if (meta.userId) {
+    _persistStateChange(meta.userId, meta.hostname || '', result.state, vector, burnout)
+      .catch(() => {});
+  }
+
   buf.lastAnalysis = result;
   return result;
 }
@@ -230,6 +329,7 @@ function analyzeAll() {
  */
 function clearSession(sessionId) {
   _buffers.delete(sessionId);
+  _blockedSince.delete(sessionId);
 }
 
 /**
@@ -239,26 +339,153 @@ function clearSession(sessionId) {
  */
 function stateLabel(state) {
   const map = {
-    [STATE.FOCUSED]:    { label: '집중 중',     color: '#3fb950', emoji: '🎯' },
-    [STATE.BLOCKED]:    { label: '막힌 상태',   color: '#f0883e', emoji: '🚧' },
-    [STATE.CRISIS]:     { label: '위기',         color: '#f85149', emoji: '🔥' },
-    [STATE.IDLE]:       { label: '대기',         color: '#6e7681', emoji: '💤' },
-    [STATE.PRODUCTIVE]: { label: '생산적',       color: '#58a6ff', emoji: '⚡' },
+    [STATE.FOCUSED]:    { label: '집중 중',   color: '#3fb950', emoji: '🎯' },
+    [STATE.BLOCKED]:    { label: '막힌 상태', color: '#f0883e', emoji: '🚧' },
+    [STATE.CRISIS]:     { label: '위기',       color: '#f85149', emoji: '🔥' },
+    [STATE.IDLE]:       { label: '대기',       color: '#6e7681', emoji: '💤' },
+    [STATE.PRODUCTIVE]: { label: '생산적',     color: '#58a6ff', emoji: '⚡' },
   };
   return map[state] || { label: state, color: '#8b949e', emoji: '●' };
 }
 
-// ─── Express 라우터 헬퍼 ──────────────────────────────────────────────────────
+// ─── DB 통계 헬퍼 ─────────────────────────────────────────────────────────────
+
+/**
+ * userId의 최근 N시간 상태 이력 조회
+ */
+async function _queryHistory(userId, hours) {
+  if (!_dbPool) return [];
+  const since = Date.now() - hours * 3600 * 1000;
+  const r = await _dbPool.query(
+    `SELECT id, user_id, hostname, state, vector_json, ts, burnout, created_at
+     FROM signal_states
+     WHERE user_id = $1 AND ts >= $2
+     ORDER BY ts ASC`,
+    [userId, since]
+  );
+  return r.rows;
+}
+
+/**
+ * userId의 번아웃 통계 조회
+ */
+async function _queryBurnout(userId) {
+  if (!_dbPool) return null;
+  const since = Date.now() - 7 * 24 * 3600 * 1000; // 최근 7일
+  const r = await _dbPool.query(
+    `SELECT state, COUNT(*) AS cnt
+     FROM signal_states
+     WHERE user_id = $1 AND ts >= $2
+     GROUP BY state`,
+    [userId, since]
+  );
+  const totals = {};
+  let total = 0;
+  for (const row of r.rows) {
+    totals[row.state] = parseInt(row.cnt, 10);
+    total += parseInt(row.cnt, 10);
+  }
+  const blockedCnt  = (totals[STATE.BLOCKED]  || 0) + (totals[STATE.CRISIS] || 0);
+  const ratio = total > 0 ? (blockedCnt / total) : 0;
+  const burnoutAlert = await _dbPool.query(
+    `SELECT COUNT(*) AS cnt FROM signal_states WHERE user_id = $1 AND burnout = TRUE AND ts >= $2`,
+    [userId, since]
+  );
+  return {
+    userId,
+    total,
+    stateBreakdown: totals,
+    blockedRatio: Math.round(ratio * 100) / 100,
+    burnoutAlertCount: parseInt(burnoutAlert.rows[0].cnt, 10),
+    burnoutAlert: parseInt(burnoutAlert.rows[0].cnt, 10) > 0,
+  };
+}
+
+/**
+ * 일별 집중도 trend 계산 (최근 7일)
+ */
+async function _queryFocusTrend(userId) {
+  if (!_dbPool) return [];
+  const since = Date.now() - 7 * 24 * 3600 * 1000;
+  const r = await _dbPool.query(
+    `SELECT
+       TO_CHAR(created_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') AS day,
+       state,
+       COUNT(*) AS cnt
+     FROM signal_states
+     WHERE user_id = $1 AND ts >= $2
+     GROUP BY day, state
+     ORDER BY day ASC`,
+    [userId, since]
+  );
+  // 일별로 집계
+  const byDay = {};
+  for (const row of r.rows) {
+    if (!byDay[row.day]) byDay[row.day] = {};
+    byDay[row.day][row.state] = parseInt(row.cnt, 10);
+  }
+  return Object.entries(byDay).map(([day, states]) => {
+    const focused  = states[STATE.FOCUSED]    || 0;
+    const blocked  = states[STATE.BLOCKED]    || 0;
+    const idle     = states[STATE.IDLE]       || 0;
+    const denom    = focused + blocked + idle;
+    const focusScore = denom > 0 ? Math.round((focused / denom) * 100) : 0;
+    return { day, focusScore, states };
+  });
+}
+
+// ─── Express 라우터 ───────────────────────────────────────────────────────────
 
 /**
  * server.js에서 use할 Express 라우터를 반환합니다.
- * GET  /api/signal/:sessionId  → 단일 세션 분석
- * GET  /api/signal             → 전체 세션 분석
- * POST /api/signal/record      → 이벤트 기록 (외부에서 직접 호출 시)
+ *
+ * GET  /api/signal/history?userId=xxx&hours=24  → 상태 이력
+ * GET  /api/signal/burnout?userId=xxx           → 번아웃 통계
+ * GET  /api/signal/focus-trend?userId=xxx       → 일별 집중도 trend
+ * GET  /api/signal/:sessionId                   → 단일 세션 분석
+ * GET  /api/signal                              → 전체 세션 분석
+ * POST /api/signal/record                       → 이벤트 기록
  */
 function createRouter() {
   const { Router } = require('express');
   const router = Router();
+
+  // ── 통계 API (path param보다 먼저 등록) ───────────────────────────────
+
+  router.get('/history', async (req, res) => {
+    const { userId, hours = 24 } = req.query;
+    if (!userId) return res.status(400).json({ error: 'userId required' });
+    try {
+      const rows = await _queryHistory(userId, Number(hours));
+      res.json({ userId, hours: Number(hours), count: rows.length, history: rows });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  router.get('/burnout', async (req, res) => {
+    const { userId } = req.query;
+    if (!userId) return res.status(400).json({ error: 'userId required' });
+    try {
+      const stats = await _queryBurnout(userId);
+      res.json(stats);
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  router.get('/focus-trend', async (req, res) => {
+    const { userId } = req.query;
+    if (!userId) return res.status(400).json({ error: 'userId required' });
+    try {
+      const trend = await _queryFocusTrend(userId);
+      res.json({ userId, trend });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── 기존 API ──────────────────────────────────────────────────────────
 
   router.get('/:sessionId', (req, res) => {
     const result = analyze(req.params.sessionId);
@@ -275,11 +502,13 @@ function createRouter() {
   });
 
   router.post('/record', (req, res) => {
-    const { sessionId, event } = req.body || {};
+    const { sessionId, event, userId, hostname } = req.body || {};
     if (!sessionId || !event) {
       return res.status(400).json({ error: 'sessionId and event required' });
     }
-    record(sessionId, event);
+    record(sessionId, event, { userId, hostname });
+    // 이벤트 기록 후 상태 분석 + DB 저장 트리거
+    if (userId) analyze(sessionId, { userId, hostname });
     res.json({ ok: true });
   });
 
@@ -287,4 +516,13 @@ function createRouter() {
 }
 
 // ─── 내보내기 ─────────────────────────────────────────────────────────────────
-module.exports = { record, analyze, analyzeAll, clearSession, stateLabel, STATE, createRouter };
+module.exports = {
+  initSignalDb,
+  record,
+  analyze,
+  analyzeAll,
+  clearSession,
+  stateLabel,
+  STATE,
+  createRouter,
+};

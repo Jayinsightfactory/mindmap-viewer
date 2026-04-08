@@ -13,15 +13,17 @@ const express = require('express');
 const {
   buildLearningProfile,
   generatePersonalRecommendations,
+  buildRoutines,
+  identifyAutomationAreas,
   AI_SOLUTION_CATALOG,
 } = require('../src/learning-engine');
 const { annotateEventsWithPurpose } = require('../src/purpose-classifier');
 
 /**
- * @param {{ verifyToken, getEventsForUser, resolveUserId }} deps
+ * @param {{ verifyToken, getEventsForUser, resolveUserId, db }} deps
  */
 function createLearningRouter(deps) {
-  const { verifyToken, getEventsForUser, resolveUserId } = deps;
+  const { verifyToken, getEventsForUser, resolveUserId, db } = deps;
   const router = express.Router();
 
   // ── 인증 미들웨어 (Bearer + Cookie + query token 지원) ──
@@ -122,11 +124,65 @@ function createLearningRouter(deps) {
   });
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // GET /api/learning/automation-areas
+  // AI 자동화 가능 영역 (learning-engine.identifyAutomationAreas)
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  router.get('/learning/automation-areas', auth, async (req, res) => {
+    try {
+      const events = await loadAnnotatedEvents(req);
+      const profile = buildLearningProfile(events);
+      res.json({ ok: true, automationAreas: profile.automationAreas });
+    } catch (e) {
+      console.error('[Learning] automation-areas error:', e.message);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   // GET /api/learning/catalog
   // AI 솔루션 카탈로그 (전체 목록)
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   router.get('/learning/catalog', auth, async (req, res) => {
     res.json({ ok: true, solutions: AI_SOLUTION_CATALOG });
+  });
+
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // POST /api/learning/feedback
+  // 추천 피드백 저장 (liked / dismissed)
+  // body: { recommendationId, action: 'liked'|'dismissed', userId? }
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  router.post('/learning/feedback', auth, async (req, res) => {
+    try {
+      const { recommendationId, action } = req.body || {};
+      if (!recommendationId || !['liked', 'dismissed'].includes(action)) {
+        return res.status(400).json({ error: 'recommendationId and action(liked|dismissed) required' });
+      }
+      const userId = resolveUserId(req);
+
+      // DB가 있으면 PG에 저장, 없으면 in-memory 로그만
+      if (db && db.query) {
+        await db.query(`
+          CREATE TABLE IF NOT EXISTS learning_feedback (
+            id           BIGSERIAL PRIMARY KEY,
+            user_id      TEXT NOT NULL,
+            recommendation_id TEXT NOT NULL,
+            action       TEXT NOT NULL,
+            created_at   TIMESTAMPTZ DEFAULT NOW()
+          )
+        `);
+        await db.query(
+          'INSERT INTO learning_feedback (user_id, recommendation_id, action) VALUES ($1,$2,$3)',
+          [userId, recommendationId, action]
+        );
+      } else {
+        console.log(`[Learning] feedback (no DB): user=${userId} rec=${recommendationId} action=${action}`);
+      }
+
+      res.json({ ok: true, userId, recommendationId, action });
+    } catch (e) {
+      console.error('[Learning] feedback error:', e.message);
+      res.status(500).json({ error: e.message });
+    }
   });
 
   return router;

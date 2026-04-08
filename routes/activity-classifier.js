@@ -674,9 +674,10 @@ function classifyOther(app, windowTitle) {
 /**
  * 이벤트 1개를 분류
  * @param {object} event - DB 이벤트 row
+ * @param {string} [visionScreen] - Vision screen.analyzed의 screen 필드 (선택)
  * @returns {object} { category, purpose, label, app, detail, confidence }
  */
-function classifyActivity(event) {
+function classifyActivity(event, visionScreen) {
   const dataJson = event.data_json || event.data || {};
   const data = typeof dataJson === 'string' ? (() => { try { return JSON.parse(dataJson || '{}'); } catch { return {}; } })() : dataJson;
 
@@ -687,7 +688,10 @@ function classifyActivity(event) {
     (data.appContext && data.appContext.currentApp) || '';
   const rawInput = event.raw_input || data.rawInput || data.summary || '';
 
-  // 사용자 정의 규칙 우선 적용
+  // visionScreen 파라미터가 없으면 data_json에서 추출 시도 (screen.analyzed 동기 이벤트)
+  const resolvedVisionScreen = visionScreen || data.visionScreen || data.screen || null;
+
+  // 사용자 정의 규칙 우선 적용 (confidence: 1.0)
   for (const rule of _customRules) {
     try {
       const pattern = new RegExp(rule.pattern, 'i');
@@ -699,26 +703,89 @@ function classifyActivity(event) {
           label: rule.label || `[${rule.category}-${rule.purpose}] ${windowTitle}`,
           app: rule.app_name || app,
           detail: { ruleId: rule.id, matched: target },
-          confidence: parseFloat(rule.confidence) || 0.90,
+          confidence: 1.0,
+          matchSource: 'db_rule',
         };
       }
     } catch { /* 정규식 오류 무시 */ }
   }
 
+  // visionScreen 있으면 우선 적용 — confidence 부스트
+  if (resolvedVisionScreen) {
+    // nenova 화면 직접 매칭
+    const NENOVA_SCREENS_MAP = {
+      '신규주문등록': { purpose: '주문입력', label: '[업무-주문입력] 신규 주문 등록 중' },
+      '신규 주문 등록': { purpose: '주문입력', label: '[업무-주문입력] 신규 주문 등록 중' },
+      '주문관리': { purpose: '주문관리', label: '[업무-주문관리] 주문 조회/수정' },
+      '주문 관리': { purpose: '주문관리', label: '[업무-주문관리] 주문 조회/수정' },
+      '출고분배': { purpose: '출고', label: '[업무-출고] 출고 분배 작업' },
+      '출고 분배': { purpose: '출고', label: '[업무-출고] 출고 분배 작업' },
+      '재고관리': { purpose: '재고', label: '[업무-재고] 재고 현황 확인' },
+      '거래처관리': { purpose: '거래처', label: '[업무-거래처] 거래처 정보 관리' },
+      '발주관리': { purpose: '발주', label: '[업무-발주] 발주 관리' },
+      '입고관리': { purpose: '입고', label: '[업무-입고] 입고 처리' },
+      '견적서관리': { purpose: '견적', label: '[업무-견적] 견적서 관리' },
+    };
+
+    const screenMatch = NENOVA_SCREENS_MAP[resolvedVisionScreen];
+    if (screenMatch) {
+      return {
+        category: '업무',
+        purpose: screenMatch.purpose,
+        label: screenMatch.label,
+        app: app || 'nenova',
+        detail: { visionScreen: resolvedVisionScreen },
+        confidence: 0.9,
+        matchSource: 'vision_screen',
+      };
+    }
+
+    // visionScreen은 있지만 DB 규칙에 없는 경우 → 기존 분류 후 confidence 부스트
+    const baseResult = _classifyByAppTitle(app, windowTitle);
+    return {
+      ...baseResult,
+      confidence: Math.min(1.0, (baseResult.confidence || 0.6) + 0.3),
+      detail: { ...baseResult.detail, visionScreen: resolvedVisionScreen },
+      matchSource: 'vision_boosted',
+    };
+  }
+
+  // visionScreen 없음 → 기존 분류 (windowTitle만, confidence: 0.6 기준)
+  const result = _classifyByAppTitle(app, windowTitle);
+  return {
+    ...result,
+    matchSource: result.matchSource || 'title_only',
+  };
+}
+
+/**
+ * app + windowTitle 기반 분류 (내부 헬퍼)
+ * confidence: windowTitle 매칭 시 0.6 기준
+ */
+function _classifyByAppTitle(app, windowTitle) {
   // 1. KakaoTalk
-  if (isKakaoTalk(app, windowTitle)) return classifyKakao(windowTitle);
-
+  if (isKakaoTalk(app, windowTitle)) {
+    const r = classifyKakao(windowTitle);
+    return { ...r, matchSource: 'title_only' };
+  }
   // 2. Excel
-  if (isExcel(app, windowTitle)) return classifyExcel(windowTitle);
-
+  if (isExcel(app, windowTitle)) {
+    const r = classifyExcel(windowTitle);
+    return { ...r, matchSource: 'title_only' };
+  }
   // 3. 화훼 관리 프로그램 (nenova)
-  if (isNenova(app, windowTitle)) return classifyNenova(windowTitle);
-
+  if (isNenova(app, windowTitle)) {
+    const r = classifyNenova(windowTitle);
+    return { ...r, matchSource: 'title_only' };
+  }
   // 4. Browser
-  if (isBrowser(app)) return classifyBrowser(windowTitle);
-
+  if (isBrowser(app)) {
+    const r = classifyBrowser(windowTitle);
+    return { ...r, matchSource: 'title_only' };
+  }
   // 5. Other
-  return classifyOther(app, windowTitle);
+  const r = classifyOther(app, windowTitle);
+  return { ...r, matchSource: 'title_only' };
 }
 
 /**
@@ -855,6 +922,31 @@ module.exports = function createActivityClassifierRouter({ getDb }) {
     } catch { /* 이미 존재 시 무시 */ }
   }
 
+  // ── 피드백/재분류 테이블 초기화 ─────────────────────────────────────────
+  async function ensureFeedbackTable() {
+    const d = db();
+    if (!d?.query) return;
+    try {
+      await d.query(`
+        CREATE TABLE IF NOT EXISTS activity_feedback (
+          id SERIAL PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          event_id TEXT,
+          app TEXT,
+          window_title TEXT,
+          original_class TEXT,
+          corrected_class TEXT NOT NULL,
+          corrected_purpose TEXT NOT NULL,
+          corrected_label TEXT,
+          occurrence_count INT DEFAULT 1,
+          auto_rule_created BOOLEAN DEFAULT false,
+          created_at TIMESTAMPTZ DEFAULT NOW(),
+          UNIQUE(user_id, app, window_title, corrected_class)
+        )
+      `);
+    } catch { /* 이미 존재 시 무시 */ }
+  }
+
   // ── 미분류 활동 테이블 ──────────────────────────────────────────────────
   async function ensureUnknownTable() {
     const d = db();
@@ -883,6 +975,7 @@ module.exports = function createActivityClassifierRouter({ getDb }) {
       if (d?.query) {
         await ensureRulesTable();
         await ensureUnknownTable();
+        await ensureFeedbackTable();
         await ensureCustomerCache(d);
         await ensureRulesCache(d);
         console.log('[activity-classifier] 초기화 완료');
@@ -914,7 +1007,7 @@ module.exports = function createActivityClassifierRouter({ getDb }) {
           COALESCE(data_json->>'app', data_json->'appContext'->>'currentApp', '') as app_name,
           COALESCE(data_json->>'rawInput', '') as raw_input
         FROM events
-        WHERE type IN ('keyboard.chunk', 'screen.capture')
+        WHERE type IN ('keyboard.chunk', 'screen.capture', 'screen.analyzed')
           AND timestamp::timestamptz > NOW() - INTERVAL '${hours} hours'
       `;
       const params = [];
@@ -929,7 +1022,9 @@ module.exports = function createActivityClassifierRouter({ getDb }) {
       const { rows } = await d.query(query, params);
 
       const classified = rows.map(row => {
-        const cls = classifyActivity(row);
+        const dataJson = typeof row.data_json === 'string' ? JSON.parse(row.data_json || '{}') : (row.data_json || {});
+        const visionScreen = row.type === 'screen.analyzed' ? (dataJson.screen || null) : null;
+        const cls = classifyActivity(row, visionScreen);
         return {
           id: row.id,
           userId: row.user_id,
@@ -1516,6 +1611,169 @@ module.exports = function createActivityClassifierRouter({ getDb }) {
   // ═══════════════════════════════════════════════════════════════════════
   // 내부 헬퍼
   // ═══════════════════════════════════════════════════════════════════════
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // POST /api/activity/feedback — 분류 피드백 제출 + 자동 규칙 학습
+  // Body: { userId, eventId?, app?, windowTitle?, originalClass?, correctedClass, correctedPurpose, correctedLabel? }
+  // ═══════════════════════════════════════════════════════════════════════
+  router.post('/feedback', async (req, res) => {
+    try {
+      const d = db();
+      if (!d?.query) return res.status(503).json({ error: 'DB not available' });
+
+      await ensureFeedbackTable();
+      await ensureRulesTable();
+
+      const {
+        userId, eventId,
+        app = '', windowTitle = '',
+        originalClass, correctedClass, correctedPurpose, correctedLabel,
+      } = req.body;
+
+      if (!userId) return res.status(400).json({ error: 'userId required' });
+      if (!correctedClass || !correctedPurpose) return res.status(400).json({ error: 'correctedClass, correctedPurpose required' });
+
+      // 피드백 저장 (UPSERT: 동일 패턴 중복 카운트)
+      const feedbackRes = await d.query(`
+        INSERT INTO activity_feedback
+          (user_id, event_id, app, window_title, original_class, corrected_class, corrected_purpose, corrected_label, occurrence_count)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1)
+        ON CONFLICT (user_id, app, window_title, corrected_class) DO UPDATE SET
+          occurrence_count = activity_feedback.occurrence_count + 1,
+          corrected_label = COALESCE(EXCLUDED.corrected_label, activity_feedback.corrected_label),
+          created_at = activity_feedback.created_at
+        RETURNING *
+      `, [userId, eventId || null, app.substring(0, 200), windowTitle.substring(0, 500),
+          originalClass || null, correctedClass, correctedPurpose, correctedLabel || null]);
+
+      const feedback = feedbackRes.rows[0];
+      let autoRuleCreated = false;
+
+      // 동일 패턴 3회 이상 → activity_rules에 자동 등록
+      if (feedback.occurrence_count >= 3 && !feedback.auto_rule_created) {
+        const pattern = windowTitle
+          ? windowTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') // 정규식 이스케이프
+          : app.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const matchField = windowTitle ? 'windowTitle' : 'app';
+        const autoLabel = correctedLabel || `[${correctedClass}-${correctedPurpose}] ${windowTitle || app}`;
+
+        try {
+          await d.query(`
+            INSERT INTO activity_rules (pattern, match_field, category, purpose, label, app_name, confidence, source)
+            VALUES ($1, $2, $3, $4, $5, $6, 0.90, 'feedback_auto')
+            ON CONFLICT DO NOTHING
+          `, [pattern, matchField, correctedClass, correctedPurpose, autoLabel, app || null]);
+
+          // 피드백 레코드에 auto_rule_created 표시
+          await d.query(`
+            UPDATE activity_feedback SET auto_rule_created = true
+            WHERE id = $1
+          `, [feedback.id]);
+
+          autoRuleCreated = true;
+          // 규칙 캐시 갱신
+          _rulesCacheTs = 0;
+          await ensureRulesCache(d);
+
+          console.log(`[activity-classifier] 피드백 자동 규칙 생성: ${pattern} → ${correctedPurpose}`);
+        } catch (e2) {
+          console.warn('[activity-classifier] 자동 규칙 생성 실패:', e2.message);
+        }
+      }
+
+      res.json({
+        ok: true,
+        feedbackId: feedback.id,
+        occurrenceCount: feedback.occurrence_count,
+        autoRuleCreated,
+        message: autoRuleCreated
+          ? `3회 이상 수정 감지 → activity_rules 자동 등록 완료`
+          : `피드백 저장 완료 (${feedback.occurrence_count}회)`,
+      });
+    } catch (e) {
+      console.error('[activity-classifier] feedback error:', e.message);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // POST /api/activity/reclassify — 최근 N시간 이벤트 재분류
+  // Body: { userId, hours: 24 }
+  // ═══════════════════════════════════════════════════════════════════════
+  router.post('/reclassify', async (req, res) => {
+    try {
+      const d = db();
+      if (!d?.query) return res.status(503).json({ error: 'DB not available' });
+
+      await ensureCustomerCache(d);
+      await ensureRulesCache(d);
+
+      const { userId, hours = 24 } = req.body || {};
+      if (!userId) return res.status(400).json({ error: 'userId required' });
+
+      const hoursInt = Math.min(parseInt(hours) || 24, 168); // 최대 7일
+
+      const { rows } = await d.query(`
+        SELECT id, type, user_id, timestamp, data_json,
+          COALESCE(data_json->>'windowTitle', data_json->'appContext'->>'currentWindow', '') as window_title,
+          COALESCE(data_json->>'app', data_json->'appContext'->>'currentApp', '') as app_name,
+          COALESCE(data_json->>'rawInput', '') as raw_input
+        FROM events
+        WHERE type IN ('keyboard.chunk', 'screen.capture', 'screen.analyzed')
+          AND user_id = $1
+          AND timestamp::timestamptz > NOW() - INTERVAL '${hoursInt} hours'
+        ORDER BY timestamp ASC
+        LIMIT 1000
+      `, [userId]);
+
+      if (!rows.length) {
+        return res.json({ ok: true, totalEvents: 0, changedCount: 0, message: '이벤트 없음' });
+      }
+
+      // 이전 분류 (규칙 캐시 갱신 전)와 신규 분류 비교
+      let changedCount = 0;
+      const changes = [];
+
+      for (const row of rows) {
+        const dataJson = typeof row.data_json === 'string' ? JSON.parse(row.data_json || '{}') : (row.data_json || {});
+        const visionScreen = dataJson.screen || null; // screen.analyzed의 screen 필드
+
+        // 신규 분류 (현재 규칙 적용)
+        const newCls = classifyActivity(row, visionScreen);
+
+        // 이전 분류 (visionScreen 없이 title-only)
+        const oldCls = classifyActivity(row); // visionScreen 파라미터 없이 호출
+
+        if (newCls.purpose !== oldCls.purpose || newCls.confidence !== oldCls.confidence) {
+          changedCount++;
+          if (changes.length < 20) { // 최대 20개만 반환
+            changes.push({
+              eventId: row.id,
+              timestamp: row.timestamp,
+              app: row.app_name,
+              windowTitle: row.window_title,
+              before: { purpose: oldCls.purpose, label: oldCls.label, confidence: oldCls.confidence },
+              after: { purpose: newCls.purpose, label: newCls.label, confidence: newCls.confidence },
+            });
+          }
+        }
+      }
+
+      res.json({
+        ok: true,
+        userId,
+        hours: hoursInt,
+        totalEvents: rows.length,
+        changedCount,
+        changeRate: rows.length > 0 ? `${Math.round((changedCount / rows.length) * 100)}%` : '0%',
+        sampleChanges: changes,
+        message: `${rows.length}개 이벤트 재분류, ${changedCount}개 변경`,
+      });
+    } catch (e) {
+      console.error('[activity-classifier] reclassify error:', e.message);
+      res.status(500).json({ error: e.message });
+    }
+  });
 
   /**
    * 미분류(confidence < 0.5) 활동을 activity_unknown에 기록

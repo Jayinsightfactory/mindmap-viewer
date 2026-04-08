@@ -11,12 +11,56 @@
  * 4. Workflow Extraction — 플로우차트 생성
  * 5. Automation Template — 실행 가능한 자동화 스크립트 생성
  *
- * 저장: ~/.orbit/workflows.json
+ * 저장: PostgreSQL (action_sequences, workflow_patterns) + ~/.orbit/workflows.json
  */
 
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+
+// ─── PostgreSQL 연동 ───────────────────────────────────
+let _getDb = null;
+try {
+  const dbPg = require('./db-pg');
+  _getDb = dbPg.getDb;
+} catch {}
+
+function _pool() {
+  return _getDb ? _getDb() : null;
+}
+
+/** action_sequences, workflow_patterns 테이블 자동 생성 */
+async function _ensureTables() {
+  const pool = _pool();
+  if (!pool) return;
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS action_sequences (
+        id        SERIAL PRIMARY KEY,
+        user_id   TEXT NOT NULL,
+        sequence_json JSONB NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_action_seq_user ON action_sequences(user_id);
+
+      CREATE TABLE IF NOT EXISTS workflow_patterns (
+        id          SERIAL PRIMARY KEY,
+        user_id     TEXT NOT NULL,
+        pattern     TEXT NOT NULL,
+        frequency   INTEGER NOT NULL DEFAULT 1,
+        avg_duration_sec FLOAT NOT NULL DEFAULT 0,
+        last_seen   TIMESTAMPTZ DEFAULT NOW(),
+        score       FLOAT NOT NULL DEFAULT 0,
+        UNIQUE(user_id, pattern)
+      );
+      CREATE INDEX IF NOT EXISTS idx_wf_pattern_user ON workflow_patterns(user_id);
+    `);
+  } catch (e) {
+    console.warn('[workflow-learner] 테이블 생성 경고:', e.message);
+  }
+}
+
+_ensureTables();
 
 const WORKFLOWS_PATH = path.join(os.homedir(), '.orbit', 'workflows.json');
 const ACTIONS_PATH = path.join(os.homedir(), '.orbit', 'action-log.jsonl');
@@ -30,7 +74,7 @@ let _appSessions = {};  // { appName: { startTs, totalMs, switchCount } }
 let _currentAppSession = null;  // { app, startTs }
 
 // ── 앱 전환 시퀀스 추적 ──
-let _appSwitchSequence = [];  // [{ from, to, ts }] — 최근 50개
+let _appSwitchSequence = [];  // [{ from, to, ts, duration }] — 무제한 (DB 저장)
 
 // ── 파일 활동 추적 ──
 let _fileActivities = [];  // [{ path, action, app, ts }] — 최근 100개
@@ -118,9 +162,9 @@ function _trackAppSession(newApp, ts) {
     _appSessions[prevApp].totalMs += duration;
     _appSessions[prevApp].switchCount++;
 
-    // 앱 전환 시퀀스 기록
-    _appSwitchSequence.push({ from: prevApp, to: newApp, ts });
-    if (_appSwitchSequence.length > 50) _appSwitchSequence = _appSwitchSequence.slice(-50);
+    // 앱 전환 시퀀스 기록 (메모리: 최근 500개)
+    _appSwitchSequence.push({ from: prevApp, to: newApp, ts, duration });
+    if (_appSwitchSequence.length > 500) _appSwitchSequence = _appSwitchSequence.slice(-500);
   }
   // 새 앱 세션 시작
   _currentAppSession = { app: newApp, startTs: ts };
@@ -203,6 +247,12 @@ function _endSequence() {
   }
 
   _saveWorkflows();
+
+  // DB에 시퀀스 저장 (비동기, 에러 무시)
+  if (_currentUserId) {
+    _saveAppSequenceToDB(_currentUserId, [summary]).catch(() => {});
+  }
+
   _currentSequence = null;
 }
 
@@ -232,35 +282,106 @@ function _buildSignature(actions) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// 3단계: Pattern Mining — 반복 시퀀스 추출
+// 3단계: Pattern Mining — 반복 시퀀스 추출 (슬라이딩 윈도우 + DB)
 // ═══════════════════════════════════════════════════════════════
+
+/**
+ * 앱 전환 시퀀스에서 길이 2~5 슬라이딩 윈도우로 앱 시퀀스 추출
+ * 예: [A, B, C, D] → [A→B, B→C, A→B→C, B→C→D, ...]
+ */
+function _extractAppSubsequences(switches) {
+  const appList = switches.map(s => s.to);
+  const counts = {};  // pattern → { count, totalDurationMs }
+  for (let len = 2; len <= Math.min(5, appList.length); len++) {
+    for (let i = 0; i <= appList.length - len; i++) {
+      const sub = appList.slice(i, i + len).join('→');
+      if (!counts[sub]) counts[sub] = { count: 0, totalDurationMs: 0 };
+      counts[sub].count++;
+      // 해당 구간의 총 체류 시간 합산
+      for (let j = i; j < i + len; j++) {
+        counts[sub].totalDurationMs += (switches[j].duration || 0);
+      }
+    }
+  }
+  return counts;
+}
+
+/**
+ * 자동화 점수 계산
+ * automationScore = min(1.0, freq/10 * avgDurationSec/300)
+ */
+function _calcAutomationScore(freq, avgDurationMs) {
+  const avgSec = avgDurationMs / 1000;
+  return Math.min(1.0, (freq / 10) * (avgSec / 300));
+}
+
+/**
+ * 앱 전환 시퀀스를 DB에 저장
+ */
+async function _saveAppSequenceToDB(userId, switches) {
+  const pool = _pool();
+  if (!pool || !userId) return;
+  try {
+    await pool.query(
+      `INSERT INTO action_sequences (user_id, sequence_json) VALUES ($1, $2)`,
+      [userId, JSON.stringify(switches)]
+    );
+  } catch (e) {
+    console.warn('[workflow-learner] sequence DB 저장 실패:', e.message);
+  }
+}
+
+/**
+ * 패턴 빈도를 DB에 upsert (workflow_patterns 테이블)
+ */
+async function _upsertPatternsToDB(userId, countsMap) {
+  const pool = _pool();
+  if (!pool || !userId) return;
+  for (const [pattern, data] of Object.entries(countsMap)) {
+    const avgDurationSec = data.count > 0 ? (data.totalDurationMs / data.count / 1000) : 0;
+    const score = _calcAutomationScore(data.count, data.totalDurationMs / data.count);
+    try {
+      await pool.query(`
+        INSERT INTO workflow_patterns (user_id, pattern, frequency, avg_duration_sec, last_seen, score)
+        VALUES ($1, $2, $3, $4, NOW(), $5)
+        ON CONFLICT (user_id, pattern) DO UPDATE
+          SET frequency        = workflow_patterns.frequency + EXCLUDED.frequency,
+              avg_duration_sec = (workflow_patterns.avg_duration_sec + EXCLUDED.avg_duration_sec) / 2,
+              last_seen        = NOW(),
+              score            = EXCLUDED.score
+      `, [userId, pattern, data.count, avgDurationSec, score]);
+    } catch (e) {
+      console.warn('[workflow-learner] pattern upsert 실패:', e.message);
+    }
+  }
+}
+
+// 현재 분석 중인 userId (recordAction 호출 시 주입)
+let _currentUserId = null;
+
+function setUserId(userId) { _currentUserId = userId; }
 
 function _analyzePatterns() {
   const sequences = _workflows.sequences;
   if (sequences.length < 5) return;
 
-  // 시그니처 기반 패턴 매칭
+  // ── 기존: 시그니처 기반 서브시퀀스 (행동 레벨) ──
   const sigCounts = {};
   sequences.forEach(seq => {
     const sig = seq.signature;
     if (!sig || sig.length < 10) return;
-
-    // 3~8 단계 서브시퀀스 추출
     const parts = sig.split('|');
     for (let len = 3; len <= Math.min(8, parts.length); len++) {
       for (let i = 0; i <= parts.length - len; i++) {
         const sub = parts.slice(i, i + len).join('|');
         if (!sigCounts[sub]) sigCounts[sub] = { count: 0, apps: new Set(), examples: [] };
         sigCounts[sub].count++;
-        sigCounts[sub].apps.add(sequences[0]?.app || '');
-        if (sigCounts[sub].examples.length < 3) {
-          sigCounts[sub].examples.push(seq.id);
-        }
+        sigCounts[sub].apps.add(seq.app || '');
+        if (sigCounts[sub].examples.length < 3) sigCounts[sub].examples.push(seq.id);
       }
     }
   });
 
-  // 2회 이상 반복된 패턴
   const patterns = Object.entries(sigCounts)
     .filter(([_, v]) => v.count >= 2)
     .sort((a, b) => b[1].count - a[1].count)
@@ -277,6 +398,28 @@ function _analyzePatterns() {
 
   _workflows.patterns = patterns;
   _saveWorkflows();
+
+  // ── 신규: 앱 전환 슬라이딩 윈도우 → DB upsert ──
+  if (_appSwitchSequence.length >= 2) {
+    const appCounts = _extractAppSubsequences(_appSwitchSequence);
+
+    // TOP 10 빈도 순 필터 (메모리 내 빠른 캐시 갱신)
+    const top10 = Object.entries(appCounts)
+      .sort((a, b) => b[1].count - a[1].count)
+      .slice(0, 10);
+    _workflows.appPatterns = top10.map(([pattern, data]) => ({
+      pattern,
+      count: data.count,
+      avgDurationSec: Math.round(data.totalDurationMs / data.count / 1000),
+      isRoutine: data.count >= 3,
+      automationScore: _calcAutomationScore(data.count, data.totalDurationMs / data.count),
+    }));
+
+    // DB 비동기 upsert (에러 무시)
+    if (_currentUserId) {
+      _upsertPatternsToDB(_currentUserId, appCounts).catch(() => {});
+    }
+  }
 
   // 자동화 가능 패턴이 있으면 템플릿 생성
   patterns.filter(p => p.automatable.score > 0.7).forEach(p => {
@@ -549,6 +692,77 @@ function getFileActivities() {
   return _fileActivities.slice(-100);
 }
 
+// ═══════════════════════════════════════════════════════════════
+// Express Router — /api/workflow/*
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * GET /api/workflow/patterns?userId=xxx
+ * DB에서 TOP 패턴 반환 (없으면 메모리 캐시)
+ */
+async function handleGetPatterns(req, res) {
+  const userId = req.query.userId || _currentUserId;
+  if (!userId) return res.status(400).json({ error: 'userId required' });
+
+  const pool = _pool();
+  if (pool) {
+    try {
+      const { rows } = await pool.query(`
+        SELECT pattern, frequency, avg_duration_sec, last_seen, score
+        FROM workflow_patterns
+        WHERE user_id = $1
+        ORDER BY frequency DESC
+        LIMIT 20
+      `, [userId]);
+      return res.json({ userId, patterns: rows });
+    } catch (e) {
+      console.warn('[workflow-learner] patterns 조회 실패:', e.message);
+    }
+  }
+  // fallback: 메모리
+  return res.json({ userId, patterns: _workflows.appPatterns || [] });
+}
+
+/**
+ * GET /api/workflow/routines?userId=xxx
+ * 루틴(3회 이상) 목록 + 자동화점수 반환
+ */
+async function handleGetRoutines(req, res) {
+  const userId = req.query.userId || _currentUserId;
+  if (!userId) return res.status(400).json({ error: 'userId required' });
+
+  const pool = _pool();
+  if (pool) {
+    try {
+      const { rows } = await pool.query(`
+        SELECT pattern, frequency, avg_duration_sec, score
+        FROM workflow_patterns
+        WHERE user_id = $1 AND frequency >= 3
+        ORDER BY score DESC, frequency DESC
+        LIMIT 20
+      `, [userId]);
+      return res.json({ userId, routines: rows });
+    } catch (e) {
+      console.warn('[workflow-learner] routines 조회 실패:', e.message);
+    }
+  }
+  // fallback: 메모리
+  const routines = (_workflows.appPatterns || []).filter(p => p.isRoutine);
+  return res.json({ userId, routines });
+}
+
+/**
+ * Express 라우터 등록 헬퍼
+ * 사용법 (server.js): app.use('/api/workflow', workflowLearner.createRouter())
+ */
+function createRouter() {
+  const express = require('express');
+  const router = express.Router();
+  router.get('/patterns', (req, res) => handleGetPatterns(req, res).catch(e => res.status(500).json({ error: e.message })));
+  router.get('/routines', (req, res) => handleGetRoutines(req, res).catch(e => res.status(500).json({ error: e.message })));
+  return router;
+}
+
 module.exports = {
   recordAction,
   recordFileSave,
@@ -556,6 +770,8 @@ module.exports = {
   getWorkflows,
   runAnalysis,
   setReporter,
+  setUserId,
   getAppSwitchSequence,
   getFileActivities,
+  createRouter,
 };

@@ -3835,6 +3835,38 @@ app.use('/api/bi', require('./routes/business-intelligence')({ getDb: dbModule.g
 // ─── 깊은 조사 에이전트 (오분류 재분석 + 숨겨진 업무 흐름 + 현실적 자동화 판단) ──
 app.use('/api/investigate', require('./routes/deep-investigator')({ getDb: dbModule.getDb, ragCore }));
 
+// ═══ 2026-04-08 에이전트 대규모 업그레이드 ════════════════════════════════════
+
+// ─── 이상 감지 에이전트 (개인 기준선 대비 실시간 4가지 이상 탐지) ────────────
+app.use('/api/anomaly', require('./routes/anomaly-detector')({ db: dbModule.getDb() }));
+
+// ─── 업무 예측 엔진 (완료시간 예측 + 다음 작업 예측 + 피크타임) ─────────────
+app.use('/api/predict', require('./routes/prediction-engine')({ getDb: dbModule.getDb }));
+
+// ─── 자동화 점수 학습 (Vision 분석 → 화면별 자동화 가능성 누적 학습) ─────────
+app.use('/api/automation-scorer', require('./routes/automation-scorer')({ getDb: dbModule.getDb }));
+
+// ─── 컨텍스트 엔진 (시간대/요일/월말 등 외부 컨텍스트 → 업무 패턴 연계) ──────
+app.use('/api/context', require('./routes/context-engine')({ getDb: dbModule.getDb }));
+
+// ─── 워크플로우 패턴 마이닝 (슬라이딩 윈도우 시퀀스 → 루틴/자동화후보) ────────
+try {
+  const workflowLearner = require('./src/workflow-learner');
+  if (workflowLearner.createRouter) app.use('/api/workflow', workflowLearner.createRouter());
+} catch(e) { console.warn('[mount] workflow-learner:', e.message); }
+
+// ─── 루틴 학습 (시간대+요일별 루틴 학습 → 예측) ─────────────────────────────
+try {
+  const routineLearner = require('./src/routine-learner');
+  if (routineLearner.createRouter) app.use('/api/routine', routineLearner.createRouter());
+} catch(e) { console.warn('[mount] routine-learner:', e.message); }
+
+// ─── Signal Engine DB 초기화 (번아웃 감지, 집중도 trend) ────────────────────
+try {
+  const _pool = dbModule.getDb();
+  if (signalEngine.initSignalDb && _pool) signalEngine.initSignalDb(_pool);
+} catch(e) { console.warn('[mount] signal-engine initDb:', e.message); }
+
 // ─── 데모 시드 (개발/미리보기용) ─────────────────────────────────────────────
 app.post('/api/demo/seed', (req, res) => {
   const token = (req.headers.authorization || '').replace('Bearer ', '') || req.query.token;

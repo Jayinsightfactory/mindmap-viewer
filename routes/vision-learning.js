@@ -186,6 +186,59 @@ async function ensureTables(db) {
       CREATE INDEX IF NOT EXISTS idx_ui_click_map_user ON ui_click_map(user_id);
       CREATE INDEX IF NOT EXISTS idx_ui_click_map_element ON ui_click_map(element_id);
     `);
+
+    // ── 추가 테이블: 화면 전이 학습 ─────────────────────────────────────────
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS screen_transitions (
+        id SERIAL PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        from_screen TEXT NOT NULL,
+        to_screen TEXT NOT NULL,
+        trigger_element TEXT,
+        frequency INT DEFAULT 1,
+        avg_time_sec REAL DEFAULT 0,
+        last_seen TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(user_id, from_screen, to_screen, trigger_element)
+      );
+      CREATE INDEX IF NOT EXISTS idx_screen_transitions_user ON screen_transitions(user_id);
+      CREATE INDEX IF NOT EXISTS idx_screen_transitions_from ON screen_transitions(from_screen);
+    `);
+
+    // ── 추가 테이블: 자동화 시퀀스 후보 ─────────────────────────────────────
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS auto_sequences (
+        id SERIAL PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        app_name TEXT NOT NULL,
+        screen_name TEXT NOT NULL,
+        click_sequence JSONB NOT NULL,
+        occurrence_count INT DEFAULT 1,
+        first_seen TIMESTAMPTZ DEFAULT NOW(),
+        last_seen TIMESTAMPTZ DEFAULT NOW(),
+        is_candidate BOOLEAN DEFAULT false,
+        UNIQUE(user_id, app_name, screen_name, click_sequence)
+      );
+      CREATE INDEX IF NOT EXISTS idx_auto_sequences_user ON auto_sequences(user_id, app_name);
+      CREATE INDEX IF NOT EXISTS idx_auto_sequences_candidate ON auto_sequences(is_candidate);
+    `);
+
+    // ── 추가 테이블: nenova 화면 특화 학습 ───────────────────────────────────
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS nenova_screens (
+        id SERIAL PRIMARY KEY,
+        screen_name TEXT NOT NULL,
+        field_name TEXT NOT NULL,
+        field_x REAL,
+        field_y REAL,
+        field_type TEXT DEFAULT 'input',
+        confidence REAL DEFAULT 0.5,
+        seen_count INT DEFAULT 1,
+        last_seen TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(screen_name, field_name)
+      );
+      CREATE INDEX IF NOT EXISTS idx_nenova_screens_screen ON nenova_screens(screen_name);
+    `);
+
     _tablesCreated = true;
     console.log('[vision-learning] 테이블 초기화 완료');
   } catch (e) {
@@ -300,6 +353,13 @@ async function autoLearnBatch(db, limit = 500) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// nenova 특화 학습 (모듈 레벨 — 라우터 외부에서 사용 가능)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// NOTE: 라우터 내부의 learnNenovaFields 함수가 실제 구현체임.
+// autoLearnBatch에서 nenova 이벤트 자동 감지 시 사용.
+
+// ═══════════════════════════════════════════════════════════════════════════
 // 라우터 팩토리
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -318,6 +378,8 @@ module.exports = function createVisionLearningRouter({ getDb }) {
     await ensureTables(db);
     return fn(db);
   }
+
+  // ── nenova 필드 학습 (라우터 내부 구현, autoLearnBatch에서 호출) ──────────
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   // POST /learn-elements — Vision 분석 결과에서 UI 요소 추출·저장
@@ -1255,6 +1317,459 @@ JSON 응답 형식:
   });
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // GET /transitions — 화면 전이 맵
+  // Query: ?userId=xxx&app=nenova&limit=50
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  router.get('/transitions', async (req, res) => {
+    try {
+      await withDb(res, async (db) => {
+        const { userId, app, limit = 50 } = req.query;
+
+        let sql = 'SELECT * FROM screen_transitions WHERE 1=1';
+        const params = [];
+        let idx = 1;
+
+        if (userId) { sql += ` AND user_id = $${idx++}`; params.push(userId); }
+        if (app) {
+          // app 기반 필터: from_screen 또는 to_screen에 app: prefix 적용 (저장 시 app:screen 형식)
+          sql += ` AND (from_screen LIKE $${idx} OR to_screen LIKE $${idx})`; params.push(`${app}:%`); idx++;
+        }
+        sql += ` ORDER BY frequency DESC LIMIT $${idx}`;
+        params.push(parseInt(limit));
+
+        const result = await db.query(sql, params);
+
+        // 전이 그래프 구성
+        const nodes = new Set();
+        const edges = [];
+        for (const row of result.rows) {
+          nodes.add(row.from_screen);
+          nodes.add(row.to_screen);
+          edges.push({
+            from: row.from_screen,
+            to: row.to_screen,
+            triggerElement: row.trigger_element,
+            frequency: row.frequency,
+            avgTimeSec: Math.round(row.avg_time_sec * 10) / 10,
+            lastSeen: row.last_seen,
+          });
+        }
+
+        res.json({
+          ok: true,
+          total: result.rows.length,
+          graph: {
+            nodes: [...nodes].map(n => ({ id: n, label: n })),
+            edges,
+          },
+          transitions: edges,
+        });
+      });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // 화면 전이 학습 내부 함수
+  // screen.analyzed 이벤트 2개 연속 → 전이 패턴 저장
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  async function learnTransitions(db, userId, events) {
+    // events: [{screen, app, timestamp, triggerElement?}] 시간순
+    if (!events || events.length < 2) return 0;
+    let learned = 0;
+
+    for (let i = 0; i < events.length - 1; i++) {
+      const from = events[i];
+      const to = events[i + 1];
+      if (!from.screen || !to.screen) continue;
+      if (from.screen === to.screen) continue;
+
+      const fromKey = `${from.app || 'unknown'}:${from.screen}`;
+      const toKey = `${to.app || 'unknown'}:${to.screen}`;
+      const timeDiff = (new Date(to.timestamp) - new Date(from.timestamp)) / 1000;
+      if (timeDiff < 0 || timeDiff > 3600) continue; // 1시간 초과면 무관
+
+      const trigger = from.triggerElement || null;
+
+      try {
+        await db.query(`
+          INSERT INTO screen_transitions (user_id, from_screen, to_screen, trigger_element, frequency, avg_time_sec)
+          VALUES ($1, $2, $3, $4, 1, $5)
+          ON CONFLICT (user_id, from_screen, to_screen, trigger_element) DO UPDATE SET
+            frequency = screen_transitions.frequency + 1,
+            avg_time_sec = (screen_transitions.avg_time_sec * screen_transitions.frequency + $5)
+                           / (screen_transitions.frequency + 1),
+            last_seen = NOW()
+        `, [userId, fromKey, toKey, trigger, Math.max(0, timeDiff)]);
+        learned++;
+      } catch (e) { /* 무시 */ }
+    }
+    return learned;
+  }
+
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // POST /ingest-transitions — screen.analyzed 이벤트에서 전이 일괄 학습
+  // Body: { userId, limit? }
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  router.post('/ingest-transitions', async (req, res) => {
+    try {
+      await withDb(res, async (db) => {
+        const { userId, limit = 500 } = req.body || {};
+
+        let sql = `
+          SELECT id, user_id, data_json, timestamp
+          FROM events
+          WHERE type = 'screen.analyzed'
+        `;
+        const params = [];
+        if (userId) { params.push(userId); sql += ` AND user_id = $${params.length}`; }
+        sql += ` ORDER BY user_id, timestamp ASC LIMIT $${params.length + 1}`;
+        params.push(parseInt(limit));
+
+        const eventsRes = await db.query(sql, params);
+        if (!eventsRes.rows.length) return res.json({ ok: true, learned: 0, message: '이벤트 없음' });
+
+        // userId별 그룹
+        const byUser = {};
+        for (const row of eventsRes.rows) {
+          const uid = row.user_id;
+          if (!byUser[uid]) byUser[uid] = [];
+          const d = typeof row.data_json === 'string' ? JSON.parse(row.data_json) : row.data_json;
+          if (d) byUser[uid].push({ screen: d.screen, app: d.app, timestamp: row.timestamp, triggerElement: d.triggerElement });
+        }
+
+        let totalLearned = 0;
+        for (const [uid, evts] of Object.entries(byUser)) {
+          totalLearned += await learnTransitions(db, uid, evts);
+        }
+
+        // nenova 특화 학습도 함께 실행
+        let nenovaLearned = 0;
+        for (const row of eventsRes.rows) {
+          const d = typeof row.data_json === 'string' ? JSON.parse(row.data_json) : row.data_json;
+          if (d && d.app && d.app.toLowerCase().includes('nenova')) {
+            nenovaLearned += await learnNenovaFields(db, d);
+          }
+        }
+
+        res.json({ ok: true, learned: totalLearned, nenovaLearned, scanned: eventsRes.rows.length });
+      });
+    } catch (e) {
+      console.error('[vision-learning] ingest-transitions error:', e.message);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // POST /predict-click — 다음 클릭 위치 예측 (k-NN, k=3)
+  // Body: { screen, recentClicks: [{x, y}], userId?, app? }
+  // Response: { predictedX, predictedY, confidence, nearestPatterns }
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  router.post('/predict-click', async (req, res) => {
+    try {
+      await withDb(res, async (db) => {
+        const { screen, recentClicks, userId, app } = req.body;
+
+        if (!screen) return res.status(400).json({ error: 'screen required' });
+        if (!recentClicks || !Array.isArray(recentClicks) || recentClicks.length === 0) {
+          return res.status(400).json({ error: 'recentClicks array required' });
+        }
+
+        // 최근 3개만 사용 (시퀀스 컨텍스트)
+        const recent = recentClicks.slice(-3);
+        const lastClick = recent[recent.length - 1];
+
+        // 같은 화면의 클릭 시퀀스 조회
+        const appFilter = app || 'unknown';
+        const historyRes = await db.query(`
+          SELECT click_x, click_y, timestamp, user_id
+          FROM ui_click_map
+          WHERE screen_name = $1
+            ${app ? 'AND app_name = $2' : ''}
+          ORDER BY timestamp DESC
+          LIMIT 2000
+        `, app ? [screen, appFilter] : [screen]);
+
+        if (historyRes.rows.length < 3) {
+          return res.json({ ok: true, predictedX: null, predictedY: null, confidence: 0, message: '학습 데이터 부족' });
+        }
+
+        // 연속된 클릭 시퀀스 구성 (시간순, 1분 내 연속)
+        const sequences = [];
+        const rows = historyRes.rows.slice().reverse(); // 오래된 것 → 최신 순
+        for (let i = 0; i < rows.length - recent.length; i++) {
+          const seq = rows.slice(i, i + recent.length);
+          const nextRow = rows[i + recent.length];
+          if (!nextRow) continue;
+
+          // 시간 연속성 체크 (60초 이내)
+          const t0 = new Date(seq[0].timestamp).getTime();
+          const tN = new Date(nextRow.timestamp).getTime();
+          if ((tN - t0) > 60000) continue;
+
+          sequences.push({ seq, next: nextRow });
+        }
+
+        if (sequences.length === 0) {
+          // 단순 예측: 마지막 클릭 근처에서 가장 자주 클릭된 위치
+          const agg = {};
+          for (const row of historyRes.rows) {
+            const gx = Math.round(row.click_x * 20) / 20;
+            const gy = Math.round(row.click_y * 20) / 20;
+            const key = `${gx},${gy}`;
+            if (!agg[key]) agg[key] = { x: gx, y: gy, count: 0 };
+            agg[key].count++;
+          }
+          const sorted = Object.values(agg).sort((a, b) => b.count - a.count);
+          const top = sorted[0];
+          return res.json({
+            ok: true,
+            predictedX: top?.x ?? null,
+            predictedY: top?.y ?? null,
+            confidence: top ? Math.min(0.5, top.count / historyRes.rows.length) : 0,
+            method: 'frequency_fallback',
+          });
+        }
+
+        // k-NN: 현재 recent 시퀀스와 가장 가까운 k=3 패턴 찾기
+        const K = 3;
+        const distances = sequences.map(({ seq, next }) => {
+          let totalDist = 0;
+          for (let j = 0; j < recent.length; j++) {
+            const rx = recent[j]?.x ?? 0.5;
+            const ry = recent[j]?.y ?? 0.5;
+            const sx = seq[j]?.click_x ?? 0.5;
+            const sy = seq[j]?.click_y ?? 0.5;
+            totalDist += euclidean(rx, ry, sx, sy);
+          }
+          return { dist: totalDist / recent.length, next };
+        });
+
+        distances.sort((a, b) => a.dist - b.dist);
+        const kNearest = distances.slice(0, K);
+
+        // 가중 평균 (거리 역수 가중)
+        let sumX = 0, sumY = 0, sumW = 0;
+        for (const { dist, next } of kNearest) {
+          const w = dist < 0.001 ? 1000 : 1 / dist;
+          sumX += next.click_x * w;
+          sumY += next.click_y * w;
+          sumW += w;
+        }
+
+        const predictedX = sumW > 0 ? Math.round((sumX / sumW) * 1000) / 1000 : null;
+        const predictedY = sumW > 0 ? Math.round((sumY / sumW) * 1000) / 1000 : null;
+
+        // 신뢰도: 가장 가까운 패턴의 거리 기반
+        const minDist = kNearest[0]?.dist ?? 1;
+        const confidence = Math.min(0.95, Math.max(0.1, 1 - minDist * 5));
+
+        res.json({
+          ok: true,
+          predictedX,
+          predictedY,
+          confidence: Math.round(confidence * 100) / 100,
+          method: 'knn',
+          k: kNearest.length,
+          nearestPatterns: kNearest.map(({ dist, next }) => ({
+            distance: Math.round(dist * 10000) / 10000,
+            x: next.click_x,
+            y: next.click_y,
+          })),
+        });
+      });
+    } catch (e) {
+      console.error('[vision-learning] predict-click error:', e.message);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // GET /auto-sequences — 자동화 후보 시퀀스 목록
+  // Query: ?userId=xxx&app=nenova
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  router.get('/auto-sequences', async (req, res) => {
+    try {
+      await withDb(res, async (db) => {
+        const { userId, app } = req.query;
+
+        // 먼저 탐지 실행 (최근 데이터에서)
+        await detectAutoSequences(db, userId, app);
+
+        let sql = `SELECT * FROM auto_sequences WHERE is_candidate = true`;
+        const params = [];
+        let idx = 1;
+        if (userId) { sql += ` AND user_id = $${idx++}`; params.push(userId); }
+        if (app) { sql += ` AND app_name = $${idx++}`; params.push(app); }
+        sql += ' ORDER BY occurrence_count DESC, last_seen DESC LIMIT 50';
+
+        const result = await db.query(sql, params);
+
+        res.json({
+          ok: true,
+          total: result.rows.length,
+          sequences: result.rows.map(r => ({
+            id: r.id,
+            userId: r.user_id,
+            app: r.app_name,
+            screen: r.screen_name,
+            clickSequence: r.click_sequence,
+            occurrenceCount: r.occurrence_count,
+            firstSeen: r.first_seen,
+            lastSeen: r.last_seen,
+          })),
+        });
+      });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // 자동화 시퀀스 탐지 내부 함수
+  // 동일 화면 + 동일 클릭 시퀀스 3회 이상 → auto_sequences에 등록
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  async function detectAutoSequences(db, userId, app) {
+    try {
+      let sql = `
+        SELECT user_id, app_name, screen_name, click_x, click_y, element_id, timestamp
+        FROM ui_click_map
+        WHERE timestamp > NOW() - INTERVAL '7 days'
+      `;
+      const params = [];
+      let idx = 1;
+      if (userId) { sql += ` AND user_id = $${idx++}`; params.push(userId); }
+      if (app) { sql += ` AND app_name = $${idx++}`; params.push(app); }
+      sql += ' ORDER BY user_id, app_name, screen_name, timestamp ASC';
+
+      const clicksRes = await db.query(sql, params);
+      if (!clicksRes.rows.length) return;
+
+      // user+app+screen별 그룹
+      const groups = {};
+      for (const row of clicksRes.rows) {
+        const key = `${row.user_id}|${row.app_name}|${row.screen_name}`;
+        if (!groups[key]) groups[key] = { userId: row.user_id, app: row.app_name, screen: row.screen_name, clicks: [] };
+        groups[key].clicks.push({ x: Math.round(row.click_x * 20) / 20, y: Math.round(row.click_y * 20) / 20, ts: row.timestamp });
+      }
+
+      // 각 그룹에서 윈도우 크기 3~6의 반복 시퀀스 탐지
+      for (const { userId: uid, app: appName, screen, clicks } of Object.values(groups)) {
+        const seqCounts = {};
+        for (let winSize = 3; winSize <= Math.min(6, clicks.length); winSize++) {
+          for (let i = 0; i <= clicks.length - winSize; i++) {
+            const window = clicks.slice(i, i + winSize);
+            // 60초 이내 연속 클릭만
+            const t0 = new Date(window[0].ts).getTime();
+            const tN = new Date(window[winSize - 1].ts).getTime();
+            if (tN - t0 > 60000) continue;
+
+            const seqKey = window.map(c => `${c.x},${c.y}`).join('|');
+            if (!seqCounts[seqKey]) seqCounts[seqKey] = { count: 0, seq: window.map(c => ({ x: c.x, y: c.y })) };
+            seqCounts[seqKey].count++;
+          }
+        }
+
+        // 3회 이상 → auto_sequences 등록
+        for (const [, { count, seq }] of Object.entries(seqCounts)) {
+          if (count < 3) continue;
+          try {
+            await db.query(`
+              INSERT INTO auto_sequences (user_id, app_name, screen_name, click_sequence, occurrence_count, is_candidate)
+              VALUES ($1, $2, $3, $4, $5, true)
+              ON CONFLICT (user_id, app_name, screen_name, click_sequence) DO UPDATE SET
+                occurrence_count = GREATEST(auto_sequences.occurrence_count, $5),
+                is_candidate = true,
+                last_seen = NOW()
+            `, [uid, appName, screen, JSON.stringify(seq), count]);
+          } catch (e) { /* 무시 */ }
+        }
+      }
+    } catch (e) {
+      console.warn('[vision-learning] detectAutoSequences 경고:', e.message);
+    }
+  }
+
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // nenova 필드 특화 학습 내부 함수
+  // app에 'nenova' 포함 시 요소의 좌표를 nenova_screens에 별도 저장
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  async function learnNenovaFields(db, eventData) {
+    const screen = eventData.screen || 'unknown';
+    const elements = eventData.elements || [];
+    let learned = 0;
+
+    for (const el of elements) {
+      const label = el.label || el.name || '';
+      if (!label) continue;
+
+      // 입력 필드나 입력 관련 요소만 별도 매핑
+      const type = (el.type || 'unknown').toLowerCase();
+      if (!['input', 'field', 'text', 'dropdown', 'select', 'date', 'number'].includes(type)) continue;
+
+      const pos = parsePosition(el.position || '');
+
+      try {
+        await db.query(`
+          INSERT INTO nenova_screens (screen_name, field_name, field_x, field_y, field_type, confidence, seen_count)
+          VALUES ($1, $2, $3, $4, $5, 0.5, 1)
+          ON CONFLICT (screen_name, field_name) DO UPDATE SET
+            field_x = COALESCE(EXCLUDED.field_x, nenova_screens.field_x),
+            field_y = COALESCE(EXCLUDED.field_y, nenova_screens.field_y),
+            confidence = LEAST(1.0, nenova_screens.confidence + 0.05),
+            seen_count = nenova_screens.seen_count + 1,
+            last_seen = NOW()
+        `, [screen, label, pos.x, pos.y, type]);
+        learned++;
+      } catch (e) { /* 무시 */ }
+    }
+    return learned;
+  }
+
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // GET /nenova-fields — nenova 필드 좌표 맵
+  // Query: ?screen=신규주문등록
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  router.get('/nenova-fields', async (req, res) => {
+    try {
+      await withDb(res, async (db) => {
+        const { screen } = req.query;
+
+        let sql = 'SELECT * FROM nenova_screens';
+        const params = [];
+        if (screen) { sql += ' WHERE screen_name = $1'; params.push(screen); }
+        sql += ' ORDER BY screen_name, confidence DESC, seen_count DESC';
+
+        const result = await db.query(sql, params);
+
+        // 화면별 그룹핑
+        const grouped = {};
+        for (const row of result.rows) {
+          if (!grouped[row.screen_name]) grouped[row.screen_name] = { screen: row.screen_name, fields: [] };
+          grouped[row.screen_name].fields.push({
+            fieldName: row.field_name,
+            x: row.field_x,
+            y: row.field_y,
+            type: row.field_type,
+            confidence: row.confidence,
+            seenCount: row.seen_count,
+            lastSeen: row.last_seen,
+          });
+        }
+
+        res.json({
+          ok: true,
+          total: result.rows.length,
+          screens: Object.values(grouped),
+        });
+      });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   // 자동 학습 스케줄러 — 2시간마다 신규 이벤트 학습
   // 서버 시작 10분 후 첫 실행, 이후 2시간마다 반복
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1269,8 +1784,51 @@ JSON 응답 형식:
       _lastAutoLearn = new Date().toISOString();
       _autoLearnStats = stats;
       console.log(`[vision-learning] 자동 학습 완료: ${stats.scanned}건 스캔, ${stats.learned}개 요소 학습, ${stats.screens.length}개 화면`);
+
+      // 화면 전이 + nenova 특화 학습 (자동 실행)
+      try {
+        await _runTransitionAndNenovaLearn(db);
+      } catch (e2) {
+        console.warn('[vision-learning] 전이/nenova 학습 경고:', e2.message);
+      }
     } catch (e) {
       console.warn('[vision-learning] 자동 학습 실패:', e.message);
+    }
+  }
+
+  async function _runTransitionAndNenovaLearn(db) {
+    // 최근 500개 screen.analyzed에서 전이 + nenova 학습
+    const eventsRes = await db.query(`
+      SELECT user_id, data_json, timestamp
+      FROM events
+      WHERE type = 'screen.analyzed'
+      ORDER BY user_id, timestamp ASC
+      LIMIT 500
+    `);
+    if (!eventsRes.rows.length) return;
+
+    const byUser = {};
+    let nenovaLearned = 0;
+
+    for (const row of eventsRes.rows) {
+      const d = typeof row.data_json === 'string' ? JSON.parse(row.data_json) : row.data_json;
+      if (!d) continue;
+      const uid = row.user_id;
+      if (!byUser[uid]) byUser[uid] = [];
+      byUser[uid].push({ screen: d.screen, app: d.app, timestamp: row.timestamp });
+
+      if (d.app && d.app.toLowerCase().includes('nenova')) {
+        nenovaLearned += await learnNenovaFields(db, d);
+      }
+    }
+
+    let transLearned = 0;
+    for (const [uid, evts] of Object.entries(byUser)) {
+      transLearned += await learnTransitions(db, uid, evts);
+    }
+
+    if (transLearned > 0 || nenovaLearned > 0) {
+      console.log(`[vision-learning] 전이 ${transLearned}건, nenova 필드 ${nenovaLearned}건 추가 학습`);
     }
   }
 

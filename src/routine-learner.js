@@ -8,7 +8,98 @@
  * 2. 작업 시간 패턴 (언제 어떤 작업을 많이 하는지)
  * 3. 도구 사용 패턴 (어떤 작업에 어떤 도구를 쓰는지)
  * 4. 개선 제안 (더 효율적인 순서, 빠진 단계 등)
+ *
+ * 저장: PostgreSQL daily_routines 테이블
  */
+
+// ─── PostgreSQL 연동 ───────────────────────────────────
+let _getDb = null;
+try {
+  const dbPg = require('./db-pg');
+  _getDb = dbPg.getDb;
+} catch {}
+
+function _pool() {
+  return _getDb ? _getDb() : null;
+}
+
+/** daily_routines 테이블 자동 생성 */
+async function _ensureTables() {
+  const pool = _pool();
+  if (!pool) return;
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS daily_routines (
+        id           SERIAL PRIMARY KEY,
+        user_id      TEXT NOT NULL,
+        hour         SMALLINT NOT NULL,
+        day_of_week  SMALLINT NOT NULL,
+        app          TEXT NOT NULL,
+        window_title TEXT NOT NULL DEFAULT '',
+        frequency    INTEGER NOT NULL DEFAULT 1,
+        avg_duration FLOAT NOT NULL DEFAULT 0,
+        updated_at   TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(user_id, hour, day_of_week, app, window_title)
+      );
+      CREATE INDEX IF NOT EXISTS idx_daily_routines_user ON daily_routines(user_id);
+      CREATE INDEX IF NOT EXISTS idx_daily_routines_time ON daily_routines(user_id, hour, day_of_week);
+    `);
+  } catch (e) {
+    console.warn('[routine-learner] 테이블 생성 경고:', e.message);
+  }
+}
+
+_ensureTables();
+
+// ─── 인메모리 이벤트 버킷 (세션 내 빠른 학습) ────────
+// key: `${userId}:${hour}:${dow}:${app}:${windowTitle}`
+const _buckets = {};
+
+/**
+ * 단일 이벤트를 시간대 버킷에 기록하고 DB upsert
+ * @param {string} userId
+ * @param {Object} event  { app, windowTitle, timestamp, duration }
+ */
+async function recordEvent(userId, event) {
+  if (!userId || !event.app) return;
+
+  const ts   = event.timestamp ? new Date(event.timestamp) : new Date();
+  const hour = ts.getHours();          // 0~23
+  const dow  = ts.getDay();            // 0(일)~6(토)
+  const app  = (event.app || '').trim();
+  const win  = (event.windowTitle || '').trim().slice(0, 120);
+  const dur  = Number(event.duration) || 0;
+
+  const key = `${userId}:${hour}:${dow}:${app}:${win}`;
+  if (!_buckets[key]) _buckets[key] = { count: 0, totalDuration: 0 };
+  _buckets[key].count++;
+  _buckets[key].totalDuration += dur;
+
+  // 3회 이상이면 루틴으로 DB upsert
+  if (_buckets[key].count >= 3) {
+    await _upsertRoutine(userId, hour, dow, app, win, _buckets[key]);
+  }
+}
+
+async function _upsertRoutine(userId, hour, dow, app, windowTitle, bucket) {
+  const pool = _pool();
+  if (!pool) return;
+  const avgDur = bucket.count > 0 ? bucket.totalDuration / bucket.count : 0;
+  try {
+    await pool.query(`
+      INSERT INTO daily_routines (user_id, hour, day_of_week, app, window_title, frequency, avg_duration, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+      ON CONFLICT (user_id, hour, day_of_week, app, window_title) DO UPDATE
+        SET frequency    = daily_routines.frequency + EXCLUDED.frequency,
+            avg_duration = (daily_routines.avg_duration + EXCLUDED.avg_duration) / 2,
+            updated_at   = NOW()
+    `, [userId, hour, dow, app, windowTitle, bucket.count, avgDur]);
+    // 버킷 리셋 (중복 누적 방지)
+    _buckets[`${userId}:${hour}:${dow}:${app}:${windowTitle}`] = { count: 0, totalDuration: 0 };
+  } catch (e) {
+    console.warn('[routine-learner] upsert 실패:', e.message);
+  }
+}
 
 /**
  * Extract work units from events (same logic as frontend renderWorkUnits)
@@ -73,10 +164,11 @@ function getFileRole(filename) {
 
 /**
  * Analyze work patterns from multiple sessions
- * @param {Array} allSessionEvents - array of { sessionId, events }
+ * @param {Array}  allSessionEvents - array of { sessionId, events }
+ * @param {string} [userId]         - DB에 시간대별 루틴 저장 시 사용
  * @returns {Object} patterns
  */
-function analyzePatterns(allSessionEvents) {
+function analyzePatterns(allSessionEvents, userId) {
   const patterns = {
     routines: [],       // 반복되는 작업 순서
     timePatterns: {},   // 시간대별 작업 유형
@@ -96,9 +188,23 @@ function analyzePatterns(allSessionEvents) {
     for (const unit of units) {
       // Time patterns
       if (unit.startTime) {
-        const hour = new Date(unit.startTime).getHours();
+        const ts   = new Date(unit.startTime);
+        const hour = ts.getHours();
         const timeSlot = hour < 6 ? '새벽' : hour < 12 ? '오전' : hour < 18 ? '오후' : '저녁';
         patterns.timePatterns[timeSlot] = (patterns.timePatterns[timeSlot] || 0) + 1;
+
+        // DB 시간대 버킷 기록 (userId가 있을 때)
+        if (userId) {
+          // 첫 번째 파일을 앱 대리값으로 사용 (없으면 intent 앞부분)
+          const app = unit.files[0] || unit.intent.slice(0, 30);
+          const windowTitle = unit.result || '';
+          recordEvent(userId, {
+            app,
+            windowTitle,
+            timestamp: unit.startTime,
+            duration: 0,
+          }).catch(() => {});
+        }
       }
 
       // Tool patterns
@@ -233,4 +339,75 @@ function generateReport(patterns) {
   return lines.join('\n');
 }
 
-module.exports = { extractWorkUnits, analyzePatterns, generateReport, getFileRole };
+// ═══════════════════════════════════════════════════════════════
+// 루틴 예측 API
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * GET /api/routine/predict?userId=xxx&hour=14
+ * 지정 시간대(hour)에 예상되는 루틴 반환
+ * hour 미지정 시 현재 시각 사용
+ */
+async function handlePredictRoutine(req, res) {
+  const userId = req.query.userId;
+  if (!userId) return res.status(400).json({ error: 'userId required' });
+
+  const hour = req.query.hour !== undefined
+    ? parseInt(req.query.hour, 10)
+    : new Date().getHours();
+
+  const pool = _pool();
+  if (!pool) {
+    return res.json({ userId, hour, routines: [], source: 'no-db' });
+  }
+
+  try {
+    // 해당 시간대의 모든 요일 데이터 집계 (요일 무관 일반 예측)
+    const { rows } = await pool.query(`
+      SELECT app, window_title,
+             SUM(frequency) AS total_freq,
+             AVG(avg_duration) AS avg_dur
+      FROM daily_routines
+      WHERE user_id = $1 AND hour = $2 AND frequency >= 3
+      GROUP BY app, window_title
+      ORDER BY total_freq DESC
+      LIMIT 10
+    `, [userId, hour]);
+
+    return res.json({
+      userId,
+      hour,
+      routines: rows.map(r => ({
+        app: r.app,
+        windowTitle: r.window_title,
+        frequency: parseInt(r.total_freq, 10),
+        avgDurationSec: Math.round(parseFloat(r.avg_dur)),
+      })),
+      source: 'db',
+    });
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
+}
+
+/**
+ * Express 라우터 등록 헬퍼
+ * 사용법 (server.js): app.use('/api/routine', routineLearner.createRouter())
+ */
+function createRouter() {
+  const express = require('express');
+  const router = express.Router();
+  router.get('/predict', (req, res) =>
+    handlePredictRoutine(req, res).catch(e => res.status(500).json({ error: e.message }))
+  );
+  return router;
+}
+
+module.exports = {
+  extractWorkUnits,
+  analyzePatterns,
+  generateReport,
+  getFileRole,
+  recordEvent,
+  createRouter,
+};

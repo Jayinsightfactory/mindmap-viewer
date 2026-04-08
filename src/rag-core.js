@@ -20,6 +20,77 @@ const { generate } = require('./llm-gateway');
 let _db = null;          // PG pool 참조
 let _initialized = false;
 
+// ── 캐시 레이어 (Map 기반, 5분 TTL) ───────────────────────────────────────
+const _searchCache = new Map();  // key: cacheKey, value: { results, expireAt }
+const CACHE_TTL_MS = 5 * 60 * 1000;  // 5분
+
+function _cacheKey(opts) {
+  return JSON.stringify({
+    q: opts.query, u: opts.userId, st: opts.sourceType,
+    app: opts.app, days: opts.days, lim: opts.limit,
+  });
+}
+
+function _cacheGet(key) {
+  const entry = _searchCache.get(key);
+  if (!entry) return null;
+  if (Date.now() > entry.expireAt) { _searchCache.delete(key); return null; }
+  return entry.results;
+}
+
+function _cacheSet(key, results) {
+  // 캐시 크기 제한 (최대 200개)
+  if (_searchCache.size >= 200) {
+    const firstKey = _searchCache.keys().next().value;
+    _searchCache.delete(firstKey);
+  }
+  _searchCache.set(key, { results, expireAt: Date.now() + CACHE_TTL_MS });
+}
+
+// ── n-gram 유사도 헬퍼 ────────────────────────────────────────────────────
+
+/**
+ * 문자열을 n-gram 집합으로 변환 (n=2)
+ * @param {string} text
+ * @param {number} n - gram 크기 (기본 2)
+ * @returns {Set<string>}
+ */
+function _ngrams(text, n = 2) {
+  const s = (text || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  const result = new Set();
+  for (let i = 0; i <= s.length - n; i++) {
+    result.add(s.slice(i, i + n));
+  }
+  return result;
+}
+
+/**
+ * 두 텍스트 간 n-gram 코사인 유사도 (0~1)
+ * Set 기반 자카드와 달리 빈도 가중치 없음 (이진 벡터)
+ */
+function _ngramSimilarity(a, b, n = 2) {
+  const ga = _ngrams(a, n);
+  const gb = _ngrams(b, n);
+  if (ga.size === 0 || gb.size === 0) return 0;
+  let intersection = 0;
+  for (const g of ga) { if (gb.has(g)) intersection++; }
+  // 코사인 유사도: intersection / sqrt(|A| * |B|)
+  return intersection / Math.sqrt(ga.size * gb.size);
+}
+
+/**
+ * 자카드 유사도 (중복 청크 제거용)
+ */
+function _jaccardSimilarity(a, b, n = 2) {
+  const ga = _ngrams(a, n);
+  const gb = _ngrams(b, n);
+  if (ga.size === 0 && gb.size === 0) return 1;
+  let intersection = 0;
+  for (const g of ga) { if (gb.has(g)) intersection++; }
+  const union = ga.size + gb.size - intersection;
+  return union > 0 ? intersection / union : 0;
+}
+
 // ── 초기화 ──────────────────────────────────────────────────────────────────
 
 async function init(db) {
@@ -209,6 +280,11 @@ async function search({ query, userId, sourceType, app, days, limit = 10 }) {
   if (!_initialized) return [];
   if (!query) return [];
 
+  // ── 캐시 확인 ──
+  const cKey = _cacheKey({ query, userId, sourceType, app, days, limit });
+  const cached = _cacheGet(cKey);
+  if (cached) return cached;
+
   // 검색 쿼리 구성
   const conditions = [];
   const params = [];
@@ -248,8 +324,9 @@ async function search({ query, userId, sourceType, app, days, limit = 10 }) {
     paramIdx++;
   }
 
-  // 결과 제한
-  params.push(Math.min(limit, 50));
+  // DB에서는 limit*3 가져와서 재랭킹 후 limit 반환
+  const fetchLimit = Math.min(limit * 3, 150);
+  params.push(fetchLimit);
 
   const sql = `
     SELECT content, metadata, ts,
@@ -262,12 +339,29 @@ async function search({ query, userId, sourceType, app, days, limit = 10 }) {
 
   try {
     const { rows } = await _db.query(sql, params);
-    return rows.map(r => ({
-      content: r.content,
-      metadata: typeof r.metadata === 'string' ? JSON.parse(r.metadata) : r.metadata,
-      ts: r.ts,
-      score: parseFloat(r.score) || 0,
-    }));
+
+    // ── 재랭킹: tsvector 점수 + n-gram 유사도 + 시간 가중치 합산 ──
+    const now = Date.now();
+    const ranked = rows.map(r => {
+      const tsvScore   = parseFloat(r.score) || 0;
+      const ngramScore = _ngramSimilarity(query, r.content);
+      // 시간 가중치: 최근일수록 높음 (최대 7일 기준, 지수 감쇠)
+      const ageDays    = (now - new Date(r.ts).getTime()) / 864e5;
+      const timeWeight = Math.exp(-ageDays / 7);  // 7일 반감기
+      // 가중 합산 (tsvector 50% + ngram 30% + time 20%)
+      const combined = tsvScore * 0.5 + ngramScore * 0.3 + timeWeight * 0.2;
+      return {
+        content: r.content,
+        metadata: typeof r.metadata === 'string' ? JSON.parse(r.metadata) : r.metadata,
+        ts: r.ts,
+        score: +combined.toFixed(4),
+        tsvScore: +tsvScore.toFixed(4),
+        ngramScore: +ngramScore.toFixed(4),
+      };
+    }).sort((a, b) => b.score - a.score).slice(0, Math.min(limit, 50));
+
+    _cacheSet(cKey, ranked);
+    return ranked;
   } catch (e) {
     console.error('[rag] 검색 실패:', e.message);
     return [];
@@ -318,9 +412,22 @@ function augmentPrompt({ systemPrompt, userQuery, retrievedDocs, maxContextLen =
     return `${systemPrompt}\n\n${userQuery}`;
   }
 
+  // ── 컨텍스트 압축: 자카드 유사도 0.8 이상인 중복 청크 제거 ──
+  const deduplicated = [];
+  for (const doc of retrievedDocs) {
+    let isDuplicate = false;
+    for (const kept of deduplicated) {
+      if (_jaccardSimilarity(doc.content, kept.content) >= 0.8) {
+        isDuplicate = true;
+        break;
+      }
+    }
+    if (!isDuplicate) deduplicated.push(doc);
+  }
+
   // 컨텍스트 구성 (길이 제한 내)
   let context = '';
-  for (const doc of retrievedDocs) {
+  for (const doc of deduplicated) {
     const entry = `- ${doc.content} (${new Date(doc.ts).toLocaleString('ko-KR')})\n`;
     if (context.length + entry.length > maxContextLen) break;
     context += entry;
@@ -328,7 +435,7 @@ function augmentPrompt({ systemPrompt, userQuery, retrievedDocs, maxContextLen =
 
   return `${systemPrompt}
 
-## 관련 데이터 (RAG 검색 결과)
+## 관련 데이터 (RAG 검색 결과, ${deduplicated.length}건 / 원본 ${retrievedDocs.length}건)
 ${context}
 ## 질문
 ${userQuery}`;
@@ -459,10 +566,19 @@ async function getStats() {
       ORDER BY doc_count DESC
     `);
     const total = rows.reduce((s, r) => s + parseInt(r.doc_count), 0);
-    return { initialized: true, total, bySource: rows };
+    return {
+      initialized: true, total, bySource: rows,
+      cache: { size: _searchCache.size, ttlMs: CACHE_TTL_MS },
+    };
   } catch (e) {
     return { initialized: true, error: e.message };
   }
+}
+
+/** 검색 캐시 수동 초기화 */
+function clearCache() {
+  _searchCache.clear();
+  console.log('[rag-core] 캐시 초기화');
 }
 
 // ── 정리 (오래된 문서 삭제) ──────────────────────────────────────────────────
@@ -494,4 +610,5 @@ module.exports = {
   autoIndex,
   getStats,
   cleanup,
+  clearCache,
 };

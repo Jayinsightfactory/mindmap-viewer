@@ -517,5 +517,7 @@ function _estimateSavingsFromData(solution, profile) {
 module.exports = {
   buildLearningProfile,
   generatePersonalRecommendations,
+  buildRoutines,
+  identifyAutomationAreas,
   AI_SOLUTION_CATALOG,
 };
