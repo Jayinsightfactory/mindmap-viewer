@@ -3841,13 +3841,25 @@ app.use('/api/investigate', require('./routes/deep-investigator')({ getDb: dbMod
 app.use('/api/anomaly', require('./routes/anomaly-detector')({ db: dbModule.getDb() }));
 
 // ─── 업무 예측 엔진 (완료시간 예측 + 다음 작업 예측 + 피크타임) ─────────────
-app.use('/api/predict', require('./routes/prediction-engine')({ getDb: dbModule.getDb }));
+try {
+  app.use('/api/predict', require('./routes/prediction-engine')({
+    getDb: dbModule.getDb, verifyToken, getEventsForUser, resolveUserId,
+  }));
+} catch(e) { console.warn('[mount] prediction-engine:', e.message); }
 
 // ─── 자동화 점수 학습 (Vision 분석 → 화면별 자동화 가능성 누적 학습) ─────────
-app.use('/api/automation-scorer', require('./routes/automation-scorer')({ getDb: dbModule.getDb }));
+try {
+  app.use('/api/automation-scorer', require('./routes/automation-scorer')({
+    getDb: dbModule.getDb, verifyToken, getEventsForUser, resolveUserId,
+  }));
+} catch(e) { console.warn('[mount] automation-scorer:', e.message); }
 
 // ─── 컨텍스트 엔진 (시간대/요일/월말 등 외부 컨텍스트 → 업무 패턴 연계) ──────
-app.use('/api/context', require('./routes/context-engine')({ getDb: dbModule.getDb }));
+try {
+  app.use('/api/context', require('./routes/context-engine')({
+    getDb: dbModule.getDb, verifyToken, getEventsForUser, resolveUserId,
+  }));
+} catch(e) { console.warn('[mount] context-engine:', e.message); }
 
 // ─── 워크플로우 패턴 마이닝 (슬라이딩 윈도우 시퀀스 → 루틴/자동화후보) ────────
 try {
