@@ -406,16 +406,17 @@ async function processServerQueue() {
 
         console.log(`  → ${result.app}: ${(result.activity || '').substring(0, 50)}`);
 
-        // screen.analyzed 이벤트로 서버에 전송
+        // screen.analyzed 이벤트로 서버에 전송 (분석 결과 전체 포함)
         const payload = JSON.stringify({ events: [{
           id: `vision-cli-${Date.now()}-${done}`, type: 'screen.analyzed', source: 'vision-cli-worker',
           sessionId: item.sessionId, userId: item.userId,
           timestamp: item.ts || new Date().toISOString(),
-          data: { hostname: item.hostname, app: result.app || item.app, screen: result.screen || '',
-            elements: result.elements || [], activity: result.activity || '',
-            dataVisible: result.dataVisible || '', automatable: result.automatable || false,
-            automationHint: result.automationHint || '', workCategory: result.workCategory || '',
-            originalCaptureId: item.id },
+          data: {
+            hostname: item.hostname,
+            originalCaptureId: item.id,
+            ...result,
+            app: result.app || item.app || '',
+          },
         }] });
 
         await new Promise(resolve => {
