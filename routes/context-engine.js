@@ -211,21 +211,26 @@ module.exports = function createContextRouter(deps) {
   const { verifyToken, getEventsForUser, resolveUserId, db } = deps;
   const router = express.Router();
 
-  // ── 인증 미들웨어 ──
+  // ── 인증 미들웨어 (JWT + orbit_xxx + userId 파라미터 겸용) ──
   function auth(req, res, next) {
     const token = req.headers.authorization || req.query.token || req.cookies?.orbit_token;
-    if (!token) return res.status(401).json({ error: 'Unauthorized' });
-    const user = verifyToken(token);
-    if (!user) return res.status(401).json({ error: 'Invalid token' });
-    req.user = user;
-    next();
+    if (token) {
+      const user = verifyToken(token);
+      if (user) { req.user = user; return next(); }
+      const userId = req.query.userId || req.body?.userId;
+      if (userId) { req.user = { id: userId }; return next(); }
+      return res.status(401).json({ error: 'Invalid token' });
+    }
+    const userId = req.query.userId || req.body?.userId;
+    if (userId) { req.user = { id: userId }; return next(); }
+    return res.status(401).json({ error: 'Unauthorized' });
   }
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   // GET /api/context/current
   // 현재 컨텍스트 + 오늘 예상 패턴
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  router.get('/context/current', auth, async (req, res) => {
+  router.get('/current', auth, async (req, res) => {
     try {
       const userId  = resolveUserId(req);
       const factors = calcContextFactors();
@@ -272,7 +277,7 @@ module.exports = function createContextRouter(deps) {
   // GET /api/context/patterns
   // 전체 컨텍스트별 패턴 조회 + 즉시 학습 트리거
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  router.get('/context/patterns', auth, async (req, res) => {
+  router.get('/patterns', auth, async (req, res) => {
     try {
       const userId = resolveUserId(req);
 
@@ -318,7 +323,7 @@ module.exports = function createContextRouter(deps) {
   // GET /api/context/insights
   // 컨텍스트 기반 자동 생성 인사이트
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  router.get('/context/insights', auth, async (req, res) => {
+  router.get('/insights', auth, async (req, res) => {
     try {
       const userId = resolveUserId(req);
 

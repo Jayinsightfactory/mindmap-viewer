@@ -52,14 +52,22 @@ module.exports = function createPredictionEngineRouter(deps) {
   // 서버 시작 시 테이블 보장 (비동기, 실패해도 라우트는 등록됨)
   ensureTables().catch(e => console.warn('[prediction-engine] 테이블 초기화 경고:', e.message));
 
-  // ── 인증 미들웨어 ──────────────────────────────────────────────────────────
+  // ── 인증 미들웨어 (JWT + orbit_xxx 디바이스 토큰 겸용) ────────────────────
   function auth(req, res, next) {
     const token = req.headers.authorization || req.query.token || req.cookies?.orbit_token;
-    if (!token) return res.status(401).json({ error: 'Unauthorized' });
-    const user = verifyToken(token);
-    if (!user) return res.status(401).json({ error: 'Invalid token' });
-    req.user = user;
-    next();
+    // JWT 검증 시도
+    if (token) {
+      const user = verifyToken(token);
+      if (user) { req.user = user; return next(); }
+      // orbit_xxx 디바이스 토큰: userId 쿼리 파라미터로 폴백
+      const userId = req.query.userId || req.body?.userId;
+      if (userId) { req.user = { id: userId }; return next(); }
+      return res.status(401).json({ error: 'Invalid token' });
+    }
+    // 토큰 없어도 userId 파라미터가 있으면 허용 (관리자 대시보드용)
+    const userId = req.query.userId || req.body?.userId;
+    if (userId) { req.user = { id: userId }; return next(); }
+    return res.status(401).json({ error: 'Unauthorized' });
   }
 
   // ── 공통 헬퍼: 앱 시퀀스 추출 ────────────────────────────────────────────

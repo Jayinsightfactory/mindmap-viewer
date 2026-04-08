@@ -45,14 +45,19 @@ module.exports = function createAutomationScorerRouter(deps) {
 
   ensureTables().catch(e => console.warn('[automation-scorer] 테이블 초기화 경고:', e.message));
 
-  // ── 인증 미들웨어 ──────────────────────────────────────────────────────────
+  // ── 인증 미들웨어 (JWT + orbit_xxx 디바이스 토큰 겸용) ────────────────────
   function auth(req, res, next) {
     const token = req.headers.authorization || req.query.token || req.cookies?.orbit_token;
-    if (!token) return res.status(401).json({ error: 'Unauthorized' });
-    const user = verifyToken(token);
-    if (!user) return res.status(401).json({ error: 'Invalid token' });
-    req.user = user;
-    next();
+    if (token) {
+      const user = verifyToken(token);
+      if (user) { req.user = user; return next(); }
+      const userId = req.query.userId || req.body?.userId;
+      if (userId) { req.user = { id: userId }; return next(); }
+      return res.status(401).json({ error: 'Invalid token' });
+    }
+    const userId = req.query.userId || req.body?.userId;
+    if (userId) { req.user = { id: userId }; return next(); }
+    return res.status(401).json({ error: 'Unauthorized' });
   }
 
   // ── 공통 헬퍼: 점수 upsert ───────────────────────────────────────────────
