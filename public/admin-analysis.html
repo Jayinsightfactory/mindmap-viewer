@@ -3485,7 +3485,22 @@ document.addEventListener('DOMContentLoaded', () => {
 <div class="auto-layout">
   <!-- ── 좌: 워크플로우 목록 ── -->
   <div class="auto-sidebar" id="auto-sidebar">
-    <div class="auto-sidebar-title">LIVE (11)</div>
+    <!-- 실시간 요약 배지 -->
+    <div id="auto-realtime-banner" style="margin:10px 12px 4px;padding:10px 12px;background:#161b22;border:1px solid #30363d;border-radius:8px;font-size:11px;">
+      <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+        <span style="color:#8b949e;">총 절약</span>
+        <span id="auto-total-saving" style="color:#3fb950;font-weight:700;">계산 중...</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+        <span style="color:#8b949e;">자동화 후보</span>
+        <span id="auto-scorer-count" style="color:#58a6ff;font-weight:700;">-</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;">
+        <span style="color:#8b949e;">이상 감지</span>
+        <span id="auto-anomaly-count" style="color:#ffa657;font-weight:700;">-</span>
+      </div>
+    </div>
+    <div class="auto-sidebar-title" id="auto-live-title">LIVE (11)</div>
     <div id="auto-wf-list"></div>
     <div class="auto-sidebar-title" style="margin-top:12px">PLAN (4)</div>
     <div id="auto-wf-plan-list"></div>
@@ -4057,11 +4072,48 @@ document.addEventListener('DOMContentLoaded', () => {
     btn.disabled = false;
   };
 
+  // ── 실시간 배지 업데이트 ──
+  async function updateRealtimeBanner() {
+    const TOKEN = localStorage.getItem('orbit_token');
+    const H = { 'Authorization': 'Bearer ' + (TOKEN || '') };
+
+    // 총 절약 시간 계산
+    const totalSaving = WF_DATA.filter(w=>w.status==='live').reduce((s,w)=>s+w.savings,0);
+    const savingEl = document.getElementById('auto-total-saving');
+    if(savingEl) savingEl.textContent = Math.round(totalSaving/60*10)/10 + '시간/일';
+
+    // 사이드바 LIVE 카운트
+    const liveCount = WF_DATA.filter(w=>w.status==='live').length;
+    const liveTitleEl = document.getElementById('auto-live-title');
+    if(liveTitleEl) liveTitleEl.textContent = 'LIVE (' + liveCount + ')';
+
+    // 자동화 후보 (automation-scorer) — 전체 사용자 합산
+    try {
+      const allUsers = ['MNIAFICB3DC88DCB34','MNMRVD11EDCCF6E7CE','MNMRX6SR07F5FF7C0C','MNMSAQJD78E544A631','MNMR52IIBE1A1E37A2','MNMR8568CC8950F81D'];
+      let totalCandidates = 0;
+      const scorerResults = await Promise.all(allUsers.map(uid =>
+        fetch('/api/automation-scorer/candidates?userId=' + uid, {headers:H})
+          .then(r=>r.ok?r.json():null).catch(()=>null)
+      ));
+      scorerResults.forEach(r => { if(r) totalCandidates += (r.total || 0); });
+      const scorerEl = document.getElementById('auto-scorer-count');
+      if(scorerEl) scorerEl.textContent = totalCandidates + '건';
+    } catch{}
+
+    // 이상 감지 (anomaly)
+    try {
+      const anomalyData = await fetch('/api/anomaly/stats', {headers:H}).then(r=>r.ok?r.json():null).catch(()=>null);
+      const anomalyEl = document.getElementById('auto-anomaly-count');
+      if(anomalyEl) anomalyEl.textContent = (anomalyData?.stats?.length || 0) + '건';
+    } catch{}
+  }
+
   // ── 탭 초기화 함수 (버튼 onclick에서 직접 호출) ──
   window._initAuto = function() {
     if(window._autoInited) return;
     window._autoInited = true;
     renderSidebar();
+    updateRealtimeBanner();
     const first = WF_DATA.find(w=>w.status==='live');
     if(first) setTimeout(()=>selectWf(first.id), 50);
   };
@@ -4229,6 +4281,12 @@ async function loadAgentMeeting() {
     { name: 'BI 건강도', icon: '📈', api: '/api/bi/health', color: '#f778ba' },
     { name: '데이터 갭', icon: '📊', api: '/api/digitize/gaps', color: '#8b949e' },
     { name: '자동화', icon: '⚡', api: '/api/cross/insights/automation', color: '#ffa657' },
+    // ── 신규 5개 에이전트 ──
+    { name: '이상 감지기', icon: '🔴', api: '/api/anomaly/stats', color: '#f85149' },
+    { name: '번아웃 시그널', icon: '😮‍💨', api: '/api/signal/burnout?userId=ALL', color: '#d29922' },
+    { name: '컨텍스트 엔진', icon: '🗂️', api: '/api/context/current', color: '#39d2c0' },
+    { name: '예측 엔진', icon: '🔮', api: '/api/predict/peak-times', color: '#bc8cff' },
+    { name: 'PC 이슈 감지', icon: '🖥️', api: '/api/admin/perf-issues', color: '#ff7b72' },
   ];
 
   // 모든 에이전트 API 병렬 호출
@@ -4362,6 +4420,61 @@ async function loadAgentMeeting() {
         requests = [];
         break;
       }
+      case '이상 감지기': {
+        const stats = data.stats || [];
+        const userCount = data.userCount || 0;
+        const since = data.since ? new Date(data.since).toLocaleString('ko-KR',{timeZone:'Asia/Seoul',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : '-';
+        findings = stats.length + '명 이상 패턴, ' + userCount + '명 분석 중 (기준: ' + since + ')';
+        proposals = stats.length > 0
+          ? stats.slice(0,3).map(function(s){ return (s.userId||s.user||'?') + ': ' + (s.anomalyType||s.type||'이상') + ' ' + (s.count||'') + '회'; })
+          : ['현재 이상 패턴 없음 — 정상', '30분 동일 화면 정체 감지 준비', '복붙 50회/시간 임계값 모니터링'];
+        requests = ['Vision: 정체 화면 스크린샷 확인 요청', '번아웃 시그널: 야근+이상 복합 알림 협업'];
+        break;
+      }
+      case '번아웃 시그널': {
+        const total = data.total || 0;
+        const burnout = data.burnoutAlert ? '🔴 번아웃 위험' : '🟢 정상';
+        const blocked = Math.round((data.blockedRatio || 0) * 100);
+        findings = '전체 ' + total + '건 시그널, 블로킹 비율 ' + blocked + '% — ' + burnout;
+        proposals = [
+          '번아웃 점수 = 야근시간×2 + 주말근무×3 + 반복작업×1',
+          '주간 번아웃 리포트 → 관리자 자동 발송',
+          '번아웃 위험 직원 → 업무 재배분 제안',
+        ];
+        requests = ['이상 감지기: 반복작업 패턴 데이터 공유 요청'];
+        break;
+      }
+      case '컨텍스트 엔진': {
+        const ctx = data.currentContext || {};
+        const key = data.contextKey || '-';
+        const hasPred = data.prediction !== null && data.prediction !== undefined;
+        findings = '현재 컨텍스트: ' + (ctx.timeSlot||'-') + ' / ' + (ctx.dayType||'-') + ' / ' + (ctx.weekPos||'-');
+        proposals = hasPred
+          ? ['예측: ' + JSON.stringify(data.prediction), '컨텍스트 기반 업무 추천 자동화', '시간대별 최적 작업 배분 제안']
+          : ['학습 데이터 쌓이면 컨텍스트 예측 활성화', '오전/오후별 집중 업무 vs 소통 업무 분리', '요일별 루틴 패턴 → 사전 준비 알림'];
+        requests = ['예측 엔진: 피크타임 데이터 공유 요청'];
+        break;
+      }
+      case '예측 엔진': {
+        const peaks = data.peakTimes || data.peaks || [];
+        const peakCount = Array.isArray(peaks) ? peaks.length : 0;
+        findings = '피크타임 ' + peakCount + '건 예측 데이터';
+        proposals = peakCount > 0
+          ? peaks.slice(0,3).map(function(p){ return (p.hour||p.time||'?') + '시 — ' + (p.label||p.app||'업무 집중'); })
+          : ['데이터 축적 중 — 1주일 후 예측 활성화', '피크타임 = 이벤트 밀도 상위 20% 시간대', '피크 전 30분 준비 알림 → 담당자 카톡 전송'];
+        requests = ['컨텍스트 엔진: 컨텍스트-피크 연관 분석 요청'];
+        break;
+      }
+      case 'PC 이슈 감지': {
+        const issues = data.issues || [];
+        const total = data.total || 0;
+        findings = '누적 이슈 ' + total + '건' + (issues.length > 0 ? ' — 최근: ' + (issues[0].issueType||'?') + ' (' + (issues[0].hostname||'?') + ')' : ' — 이상 없음');
+        proposals = total > 0
+          ? issues.slice(0,3).map(function(i){ return '[' + (i.hostname||'?') + '] ' + (i.issueType||'?') + ': ' + (i.cause||'').slice(0,30); })
+          : ['모든 PC 정상 동작 중', 'PowerShell 팝업 / 검은화면 / 메모리 감시 중', '이슈 발생 시 dlaww@naver.com 자동 알림'];
+        requests = ['이상 감지기: PC 이슈 → 업무 데이터 공백 연관 분석'];
+        break;
+      }
       default:
         findings = '데이터 수집 중...';
         proposals = [];
@@ -4375,7 +4488,7 @@ async function loadAgentMeeting() {
 
   // ── 요약 카드 업데이트 ──
   const liveCount = agentDiscussions.filter(function(a) { return a.status === 'LIVE'; }).length;
-  document.getElementById('ag-total').textContent = agentAPIs.length;
+  document.getElementById('ag-total').textContent = agentAPIs.length; // 15
   document.getElementById('ag-total').style.color = 'var(--green)';
 
   // 학습 점수: BI score 또는 live 비율
