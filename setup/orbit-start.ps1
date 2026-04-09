@@ -96,15 +96,16 @@ if (Test-Path $daemon) {
     try {
       $Action  = New-ScheduledTaskAction -Execute $n -Argument "`"$daemon`" --port 4747" -WorkingDirectory $pd
       $Trigger = New-ScheduledTaskTrigger -AtLogOn
-      $Settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
+      $Settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1)
       Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Trigger -Settings $Settings -Description "Orbit AI Daemon" -Force | Out-Null
       Write-Host "  데몬 등록 완료 (Task Scheduler)" -ForegroundColor Green
     } catch {
-      # 폴백: 시작프로그램 바로가기
+      # 폴백: Startup 폴더에 while 루프 bat 등록 (크래시 후 5초마다 자동 재시작)
       $StartupDir = [System.IO.Path]::Combine($env:APPDATA, "Microsoft\Windows\Start Menu\Programs\Startup")
       $bat = Join-Path $StartupDir "OrbitDaemon.bat"
-      "@echo off`nstart /B `"$n`" `"$daemon`" --port 4747" | Set-Content $bat -Encoding ASCII
-      Write-Host "  시작프로그램 바로가기 생성: $bat" -ForegroundColor Green
+      $batContent = "@echo off`r`n:loop`r`nnode `"$daemon`"`r`ntimeout /t 5 /nobreak >nul`r`ngoto loop"
+      $batContent | Set-Content $bat -Encoding ASCII
+      Write-Host "  Startup bat 생성 (while 루프): $bat" -ForegroundColor Green
     }
   } else {
     Write-Host "  데몬 이미 등록됨" -ForegroundColor Green

@@ -1152,6 +1152,26 @@ setInterval(updateClock, 1000);
 updateClock();
 
 // ─── 멤버 카드 렌더 ──────────────────────────────────────────────────────────
+function _relTime(ts) {
+  if (!ts) return null;
+  const diff = Date.now() - ts;
+  const min = Math.floor(diff / 60000);
+  if (min < 1) return '방금';
+  if (min < 60) return min + '분 전';
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return hr + '시간 전';
+  const day = Math.floor(hr / 24);
+  return day + '일 전';
+}
+
+function _daemonBadge(ts) {
+  if (!ts) return { icon: '⚫', label: '미설치', color: 'var(--muted)' };
+  const min = (Date.now() - ts) / 60000;
+  if (min <= 5)  return { icon: '🟢', label: '활성',    color: 'var(--green)' };
+  if (min <= 60) return { icon: '🟡', label: '자리비움', color: 'var(--yellow)' };
+  return                { icon: '🔴', label: '데몬꺼짐', color: 'var(--red)' };
+}
+
 function renderMemberCards() {
   const grid = document.getElementById('member-grid-now');
   if (!grid) return;
@@ -1165,6 +1185,8 @@ function renderMemberCards() {
     if (m.status !== 'idle') active++;
     if (m.status === 'kakao') kakaoCount++;
     if (m.erp > 50) erpCount++;
+    const badge = _daemonBadge(m.lastTs);
+    const relTime = _relTime(m.lastTs);
     return `
       <div class="mc" onclick="navTo('members')">
         <div class="mc-top">
@@ -1172,6 +1194,10 @@ function renderMemberCards() {
           <div style="flex:1;min-width:0;">
             <div class="mc-name">${m.name} <span class="st ${stClass}" style="font-size:9px;">${stTxt}</span></div>
             <div class="mc-team">${m.team}${m.lastSeen ? ` <span style="color:var(--muted);font-size:9px;">· ${m.lastSeen}</span>` : ''}</div>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px;flex-shrink:0;">
+            <span style="font-size:10px;color:${badge.color};font-weight:600;">${badge.icon} ${badge.label}</span>
+            ${relTime ? `<span style="font-size:9px;color:var(--muted);">${relTime}</span>` : ''}
           </div>
         </div>
         <div class="mc-activity">${m.activity}</div>
@@ -1468,6 +1494,7 @@ async function loadLiveMembers() {
         kakao: kakaoMin || live.kakao,
         erp: erpMin || live.erp,
         eventCount,
+        lastTs: live.lastTs || 0,
         lastSeen: live.lastTs ? new Date(live.lastTs).toLocaleTimeString('ko-KR', {hour:'2-digit', minute:'2-digit'}) : null,
         warn: (kakaoMin || live.kakao) > (erpMin || live.erp) * 3,
       };
