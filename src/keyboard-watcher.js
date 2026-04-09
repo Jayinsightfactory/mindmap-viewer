@@ -85,12 +85,13 @@ function setScreenCapture(sc) { _screenCapture = sc; }
 const ANALYSIS_INTERVAL_MS = 60 * 1000;  // 1분 (개발 단계 — 실시간 수집)
 const MAX_HISTORY = 100;                       // 최대 분석 이력 보관 수
 
-// ── 활성 앱/윈도우 캐시 (1초) — 마우스 클릭마다 PowerShell 새 프로세스 방지 ──
+// ── 활성 앱/윈도우 캐시 (10초) — keydown 핸들러 내 blocking PowerShell 최소화 ──
+// 1초 캐시 → keydown 마다 PowerShell 실행 → WH_KEYBOARD_LL 타임아웃 초과 → 키 반복(ㅣㅣㅣ) 버그
 let _cachedApp = '';
 let _cachedAppTs = 0;
 let _cachedTitle = '';
 let _cachedTitleTs = 0;
-const _WIN_CACHE_MS = 1000;
+const _WIN_CACHE_MS = 10000; // 10초 — PowerShell 호출 빈도 대폭 감소
 
 // ── 현재 활성 앱 감지 (macOS / Windows) ─────────────────────────────────────
 function getActiveApp() {
@@ -850,7 +851,7 @@ function start(opts = {}) {
 // → 바이러스 탐지 없음, 1차 설치 기본 모드
 function _startSafePollingMode(opts) {
   let _lastApp = '', _lastWin = '';
-  let _mousePollCount = 0; // 마우스는 3번에 1번만 (9초 간격) — PowerShell 서브프로세스 빈도 감소
+  let _mousePollCount = 0; // 마우스는 3번에 1번만 (45초 간격) — PowerShell 서브프로세스 빈도 감소
   _safePollTimer = setInterval(() => {
     if (_paused) return;
     try {
@@ -879,13 +880,13 @@ function _startSafePollingMode(opts) {
         } catch {}
       }
     } catch {}
-  }, 3000);
+  }, 15000); // 15초 간격 — 3초에서 변경 (PowerShell 창 깜빡임 방지)
 
   _running = true;
   const interval = (opts && opts.analysisInterval) || ANALYSIS_INTERVAL_MS;
   _analysisTimer = setInterval(_runPeriodicAnalysis, interval);
   _startRemoteBatch();
-  console.log('[keyboard-watcher] 안전 폴링 모드 실행 중 (3초 간격, uiohook 없음)');
+  console.log('[keyboard-watcher] 안전 폴링 모드 실행 중 (15초 간격, uiohook 없음)');
 }
 
 // ── daemon.error 서버 전송 (auto-fixer 연동) ──
