@@ -3506,6 +3506,12 @@ document.addEventListener('DOMContentLoaded', () => {
     <div id="auto-wf-plan-list"></div>
 
     <!-- ── nenova 테스트 실행 섹션 ── -->
+    <!-- 사용자 학습 현황 -->
+    <div id="auto-user-status" style="margin:4px 12px 8px;padding:10px 12px;background:#0d1117;border:1px solid #21262d;border-radius:8px;">
+      <div style="color:#8b949e;font-size:10px;font-weight:700;letter-spacing:.5px;margin-bottom:6px;">👥 오늘 학습 현황</div>
+      <div id="auto-user-list" style="font-size:11px;color:#8b949e;">로딩 중...</div>
+    </div>
+
     <div class="auto-sidebar-title" style="margin-top:14px">🧪 nenova 웹 테스트</div>
     <div style="padding:8px 12px;">
       <button id="auto-run-btn" onclick="window.runNenovaTests()"
@@ -3524,7 +3530,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
   <!-- ── 우: UI 미리보기 + 비교분석 ── -->
   <div class="auto-preview" id="auto-preview">
-    <div style="color:#8b949e;font-size:13px;margin-top:40px;text-align:center">워크플로우 선택 후<br>UI 미리보기가 표시됩니다</div>
+    <div id="auto-intelligence-panel" style="padding:16px;">
+      <div style="font-size:12px;color:#8b949e;font-weight:700;letter-spacing:.5px;margin-bottom:12px;">🔍 NENOVA 자동화 인텔리전스</div>
+      <!-- Vision 앱 사용 현황 -->
+      <div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:12px;margin-bottom:10px;">
+        <div style="font-size:11px;color:#58a6ff;font-weight:600;margin-bottom:8px;">📸 Vision 분석 (511 elements · 99 screens · 34 app types)</div>
+        <div id="auto-vision-bars" style="display:flex;flex-direction:column;gap:5px;"></div>
+      </div>
+      <!-- 자동화 우선순위 -->
+      <div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:12px;margin-bottom:10px;">
+        <div style="font-size:11px;color:#ffa657;font-weight:600;margin-bottom:8px;">⚡ 자동화 우선순위 (Impact Score)</div>
+        <div id="auto-priority-list"></div>
+      </div>
+      <!-- 병목 현황 -->
+      <div style="background:#1a1f24;border:1px solid #ffa65733;border-radius:8px;padding:10px 12px;">
+        <div style="font-size:11px;color:#ffa657;font-weight:600;margin-bottom:6px;">🔴 병목 포인트</div>
+        <div style="font-size:11px;color:#c9d1d9;line-height:1.7">
+          WeChat 메시지 <strong style="color:#ffa657">241회/주</strong> 수동 처리<br>
+          → 영업팀 4명 × 60분/주 = <strong style="color:#f85149">240분/주 낭비</strong><br>
+          <span style="color:#8b949e;font-size:10px;">해결: WeChat 자동화 워크플로우 (PLAN → 구현 권장)</span>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -4117,6 +4144,37 @@ document.addEventListener('DOMContentLoaded', () => {
       const anomalyEl = document.getElementById('auto-anomaly-count');
       if(anomalyEl) anomalyEl.textContent = (anomalyData?.stats?.length || 0) + '건';
     } catch{}
+
+    // 전체 사용자 학습 현황
+    try {
+      const USERS = [
+        {id:'MNIAFICB3DC88DCB34', name:'설연주'},
+        {id:'MNMRVD11EDCCF6E7CE', name:'wbk'},
+        {id:'MNMRX6SR07F5FF7C0C', name:'강현우'},
+        {id:'MNMSAQJD78E544A631', name:'강명훈'},
+        {id:'MNMR52IIBE1A1E37A2', name:'박성수'},
+        {id:'MNMR8568CC8950F81D', name:'hoon J'},
+      ];
+      const dashResults = await Promise.all(USERS.map(u =>
+        fetch('/api/work-analysis/dashboard?userId=' + u.id, {headers:H})
+          .then(r=>r.ok?r.json():null).catch(()=>null)
+      ));
+      const userListEl = document.getElementById('auto-user-list');
+      if(userListEl) {
+        let html = '';
+        USERS.forEach((u, i) => {
+          const d = dashResults[i];
+          const events = d?.stats?.total_events || 0;
+          const grade = events > 500 ? 'A' : events > 200 ? 'B' : events > 50 ? 'C' : events > 0 ? 'D' : '-';
+          const gc = grade==='A'?'#3fb950':grade==='B'?'#58a6ff':grade==='C'?'#ffa657':grade==='D'?'#f85149':'#484f58';
+          html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;border-bottom:1px solid #21262d;">
+            <span style="color:${events>0?'#c9d1d9':'#484f58'}">${events>0?'🟢':'⚫'} ${u.name}</span>
+            <span style="color:${gc};font-weight:700">${events>0?events+'건':'-'} <span style="background:${gc}22;border:1px solid ${gc}55;border-radius:3px;padding:0 4px;font-size:10px">${grade}</span></span>
+          </div>`;
+        });
+        userListEl.innerHTML = html || '<div style="color:#484f58">데이터 없음</div>';
+      }
+    } catch(e) {}
   }
 
   // ── 탭 초기화 함수 (버튼 onclick에서 직접 호출) ──
@@ -4164,10 +4222,52 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   };
 
+  function renderIntelligencePanel() {
+    const visionApps = [
+      {app:'카카오톡 / KakaoTalk', pct:47, color:'#ffd700'},
+      {app:'Excel (피벗2.xlsx)', pct:28, color:'#3fb950'},
+      {app:'Chrome', pct:14, color:'#58a6ff'},
+      {app:'이카운트 ERP (nenova)', pct:8, color:'#ff6b6b'},
+      {app:'기타', pct:3, color:'#8b949e'},
+    ];
+    const barsEl = document.getElementById('auto-vision-bars');
+    if(barsEl) {
+      barsEl.innerHTML = visionApps.map(a=>`<div>
+        <div style="display:flex;justify-content:space-between;font-size:10px;color:#8b949e;margin-bottom:2px;">
+          <span>${a.app}</span><span style="color:${a.color};font-weight:600">${a.pct}%</span>
+        </div>
+        <div style="height:5px;background:#21262d;border-radius:3px;">
+          <div style="height:5px;background:${a.color};border-radius:3px;width:${a.pct}%;opacity:.85"></div>
+        </div>
+      </div>`).join('');
+    }
+    const priorities = [
+      {rank:1,name:'카카오톡→주문등록',saving:'91분/일',score:98,status:'live'},
+      {rank:2,name:'WeChat 주문 (영업팀)',saving:'121분/주',score:87,status:'plan'},
+      {rank:3,name:'Excel 차감 대조',saving:'96분/일',score:82,status:'live'},
+      {rank:4,name:'견적서 자동생성',saving:'76분/일',score:75,status:'live'},
+      {rank:5,name:'이카운트 ERP 동기화',saving:'45분/일',score:63,status:'plan'},
+    ];
+    const prioEl = document.getElementById('auto-priority-list');
+    if(prioEl) {
+      prioEl.innerHTML = priorities.map(p=>{
+        const sc = p.score>=90?'#3fb950':p.score>=75?'#58a6ff':'#ffa657';
+        return `<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid #21262d;">
+          <span style="color:#484f58;font-size:10px;width:12px">${p.rank}</span>
+          <span style="color:${p.status==='live'?'#3fb950':'#ffa657'};font-size:9px;">${p.status==='live'?'●':'○'}</span>
+          <span style="flex:1;color:#c9d1d9;font-size:11px">${p.name}</span>
+          <span style="color:#8b949e;font-size:10px">${p.saving}</span>
+          <span style="background:${sc}22;border:1px solid ${sc}55;border-radius:3px;padding:1px 5px;font-size:10px;color:${sc};font-weight:700">${p.score}</span>
+        </div>`;
+      }).join('');
+    }
+  }
+
   window._initAuto = function() {
     if(window._autoInited) return;
     window._autoInited = true;
     renderSidebar();
+    renderIntelligencePanel();
     updateRealtimeBanner();
     // 마지막 테스트 결과 로드
     const H = { 'Authorization': 'Bearer ' + (localStorage.getItem('orbit_token')||'') };
@@ -4185,6 +4285,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // 탭이 이미 열려있는 경우 즉시 초기화
   if(document.getElementById('panel-automation').classList.contains('active')) {
     renderSidebar();
+    renderIntelligencePanel();
     const first = WF_DATA.find(w=>w.status==='live');
     if(first) selectWf(first.id);
     window._autoInited = true;
