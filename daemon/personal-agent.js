@@ -105,14 +105,21 @@ function _reportEvent(type, data) {
     const _tok = getToken(); if (_tok) headers['Authorization'] = 'Bearer ' + _tok;
     const req = mod.request({ hostname: url.hostname, port: url.port || (url.protocol === 'https:' ? 443 : 80),
       path: url.pathname, method: 'POST', headers, timeout: 10000 }, res => {
-      if (res.statusCode === 401) _clearTokenCache();
+      if (res.statusCode === 401) { _clearTokenCache(); _selfHealer?.recordSendError(); }
+      else if (res.statusCode < 400) _selfHealer?.recordEvent();
       res.resume();
     });
-    req.on('error', () => {});
+    req.on('error', () => { _selfHealer?.recordSendError(); });
     req.write(payload);
     req.end();
   } catch {}
 }
+
+// ── 셀프힐러 (데이터 수집 이상 감지 + 자동 복구) ─────────────────────────────
+let _selfHealer = null;
+try {
+  _selfHealer = require(path.join(__dirname, '..', 'src', 'self-healer'));
+} catch {}
 
 // ── 은행 보안프로그램 감지 (Windows 전용) ────────────────────────────────────
 const { execSync } = require('child_process');
@@ -686,6 +693,20 @@ async function main() {
     }, 11000);
   }
 
+  // ②-z 셀프힐러 초기화 (모든 컴포넌트 기동 완료 후)
+  if (_selfHealer) {
+    _selfHealer.init({
+      components: {
+        'keyboard-watcher': { ref: keyboardWatcher, startArgs: { port: PORT } },
+        'screen-capture':   { ref: screenCapture },
+        'file-learner':     { ref: fileLearner, startArgs: { port: PORT } },
+      },
+      reportEvent:      _reportEvent,
+      clearTokenCache:  _clearTokenCache,
+    });
+    _selfHealer.start();
+  }
+
   // ③ 10분마다 content-analyzer 실행 (Ollama 로컬 태깅)
   await runContentAnalysis();
   const contentTimer = setInterval(runContentAnalysis, 10 * 60 * 1000);
@@ -707,6 +728,7 @@ async function main() {
     clearInterval(contentTimer);
     clearInterval(suggestionTimer);
     stopBankSecurityMonitor();
+    try { _selfHealer?.stop(); } catch {}
     try { daemonUpdater?.stop(); } catch {}
     try { keyboardWatcher?.stop(); } catch {}
     try { fileLearner?.stop(); } catch {}
