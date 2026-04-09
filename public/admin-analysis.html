@@ -3504,6 +3504,17 @@ document.addEventListener('DOMContentLoaded', () => {
     <div id="auto-wf-list"></div>
     <div class="auto-sidebar-title" style="margin-top:12px">PLAN (4)</div>
     <div id="auto-wf-plan-list"></div>
+
+    <!-- ── nenova 테스트 실행 섹션 ── -->
+    <div class="auto-sidebar-title" style="margin-top:14px">🧪 nenova 웹 테스트</div>
+    <div style="padding:8px 12px;">
+      <button id="auto-run-btn" onclick="window.runNenovaTests()"
+        style="width:100%;padding:8px 10px;background:#238636;border:none;border-radius:6px;color:#fff;cursor:pointer;font-size:12px;font-weight:600;letter-spacing:.3px;">
+        ▶ 전체 워크플로우 테스트
+      </button>
+      <div id="auto-test-summary" style="margin-top:6px;font-size:11px;color:#8b949e;text-align:center">마지막 실행 없음</div>
+      <div id="auto-test-results" style="margin-top:8px;"></div>
+    </div>
   </div>
 
   <!-- ── 중: 단계 + 시나리오 ── -->
@@ -4109,11 +4120,64 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ── 탭 초기화 함수 (버튼 onclick에서 직접 호출) ──
+  // ── nenova 웹 자동화 테스트 실행 ──────────────────────────────────────────
+  window.runNenovaTests = async function(flowId) {
+    const btn = document.getElementById('auto-run-btn');
+    const summaryEl = document.getElementById('auto-test-summary');
+    const resultsDiv = document.getElementById('auto-test-results');
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ 실행 중...'; }
+    if (summaryEl) summaryEl.textContent = '테스트 실행 중...';
+    if (resultsDiv) resultsDiv.innerHTML = '';
+
+    try {
+      const H = { 'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + (localStorage.getItem('orbit_token') || '') };
+      const body = flowId ? JSON.stringify({ flowId }) : '{}';
+      const resp = await fetch('/api/autotest/run', { method: 'POST', headers: H, body });
+      const run = await resp.json();
+      if (!run.results) throw new Error(run.error || '응답 오류');
+
+      const passed = run.results.filter(r => r.pass).length;
+      const total = run.results.length;
+      const allPass = passed === total;
+      if (summaryEl) summaryEl.innerHTML =
+        `<span style="color:${allPass?'#3fb950':'#ffa657'};font-weight:700">${allPass?'✅':'⚠️'} ${passed}/${total} 통과</span>`;
+
+      let html = '';
+      for (const r of run.results) {
+        html += `<div style="margin-bottom:6px;padding:7px 9px;background:${r.pass?'rgba(35,134,54,.12)':'rgba(248,81,73,.1)'};border-radius:6px;border-left:3px solid ${r.pass?'#3fb950':'#f85149'}">
+          <div style="font-weight:600;font-size:11px;color:${r.pass?'#3fb950':'#f85149'};margin-bottom:3px">${r.pass?'✅':'❌'} ${r.icon||''} ${r.name} <span style="color:#8b949e;font-weight:400">(${r.totalMs||0}ms)</span></div>
+          ${r.steps.map(s=>`<div style="font-size:10px;color:#8b949e;padding-left:8px">• ${s.name}: <span style="color:${s.pass?'#58a6ff':'#ffa657'}">${s.detail}</span></div>`).join('')}
+        </div>`;
+      }
+      if (resultsDiv) resultsDiv.innerHTML = html;
+
+      // 자동화 플로우 탭 선택된 WF 업데이트 힌트
+      const ts = new Date(run.ts).toLocaleTimeString('ko-KR');
+      if (summaryEl) summaryEl.innerHTML +=
+        `<div style="color:#8b949e;font-size:10px;margin-top:2px">${ts} 실행</div>`;
+    } catch(e) {
+      if (summaryEl) summaryEl.textContent = '오류: ' + e.message;
+      if (resultsDiv) resultsDiv.innerHTML = `<div style="color:#f85149;font-size:11px">${e.message}</div>`;
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = '▶ 전체 워크플로우 테스트'; }
+    }
+  };
+
   window._initAuto = function() {
     if(window._autoInited) return;
     window._autoInited = true;
     renderSidebar();
     updateRealtimeBanner();
+    // 마지막 테스트 결과 로드
+    const H = { 'Authorization': 'Bearer ' + (localStorage.getItem('orbit_token')||'') };
+    fetch('/api/autotest/summary', { headers: H }).then(r=>r.json()).then(d=>{
+      const el = document.getElementById('auto-test-summary');
+      if (el && d.ran) {
+        const ts = new Date(d.ts).toLocaleTimeString('ko-KR');
+        el.innerHTML = `<span style="color:${d.pass?'#3fb950':'#ffa657'};font-weight:700">${d.pass?'✅':'⚠️'} ${d.passed}/${d.total} 통과</span> <span style="color:#8b949e;font-size:10px">${ts}</span>`;
+      }
+    }).catch(()=>{});
     const first = WF_DATA.find(w=>w.status==='live');
     if(first) setTimeout(()=>selectWf(first.id), 50);
   };

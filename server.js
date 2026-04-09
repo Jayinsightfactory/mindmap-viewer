@@ -3861,6 +3861,11 @@ try {
   }));
 } catch(e) { console.warn('[mount] automation-scorer:', e.message); }
 
+// ─── nenovaweb 자동화 테스트 엔진 (워크플로우 E2E 테스트) ──────────────────────
+try {
+  app.use('/api/autotest', require('./routes/autotest')());
+} catch(e) { console.warn('[mount] autotest:', e.message); }
+
 // ─── 컨텍스트 엔진 (시간대/요일/월말 등 외부 컨텍스트 → 업무 패턴 연계) ──────
 try {
   app.use('/api/context', require('./routes/context-engine')({
