@@ -1022,12 +1022,12 @@ const _VISION_QUEUE_MAX = 10;
 let _heapPressure = false;
 setInterval(() => {
   const heapMB = process.memoryUsage().heapUsed / 1024 / 1024;
-  _heapPressure = heapMB > 350;
-  if (heapMB > 400) {
+  _heapPressure = heapMB > 500;  // 768MB 힙 기준 — 500MB 이상 압박
+  if (heapMB > 550) {
     console.warn(`[heap] 압력 감지: ${Math.round(heapMB)}MB — GC 강제 실행`);
     if (global.gc) global.gc();
   }
-  if (heapMB > 440) {
+  if (heapMB > 650) {
     console.error(`[heap] 위험: ${Math.round(heapMB)}MB — 캐시 정리 후 GC`);
     // 오래된 daemon commands 정리
     if (global._daemonCommands) {
@@ -4576,6 +4576,12 @@ async function startServer() {
   // Google Drive 사용자 자동 백업 (2시간마다)
   // 2시간마다 Drive 백업 + Sheets 학습 데이터 내보내기 (자동)
   async function _autoGdriveSync() {
+    // 힙 압박 시 백업 스킵 (OOM 방지)
+    const heapMB = process.memoryUsage().heapUsed / 1024 / 1024;
+    if (heapMB > 500) {
+      console.warn(`[gdrive-auto] 힙 ${Math.round(heapMB)}MB — 백업 스킵 (메모리 보호)`);
+      return;
+    }
     try {
       const users = getGoogleOAuthUsers();
       for (const u of users) {
