@@ -108,6 +108,7 @@
       <button data-tab="intelligence">🔍 인텔리전스</button>
       <button data-tab="capability">💼 역량 프로필</button>
       <button data-tab="learning">🧠 AI 학습</button>
+      <button data-tab="journey">🗺️ 개발 여정</button>
     </div>
 
     <!-- ═══ TAB: 종합 ═══ -->
@@ -149,6 +150,17 @@
       <div class="grid grid-2" style="margin-top:20px;">
         <div class="card"><h2>💡 작업 스타일</h2><div id="cap-workstyle"></div></div>
         <div class="card"><h2>📁 주요 프로젝트</h2><div id="cap-projects"></div></div>
+      </div>
+    </div>
+
+    <!-- ═══ TAB: 개발 여정 마인드맵 ═══ -->
+    <div class="tab-pane" id="tab-journey">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+        <div style="font-size:13px;color:var(--text-muted);">Orbit AI 개발 여정 전체 — Phase 1 기반 구축부터 현재까지</div>
+        <div id="journey-legend" style="display:flex;gap:12px;flex-wrap:wrap;"></div>
+      </div>
+      <div class="card" style="padding:8px;overflow:hidden;background:#0a0f17;">
+        <svg id="journey-svg" viewBox="0 0 1500 900" style="width:100%;height:auto;display:block;"></svg>
       </div>
     </div>
 
@@ -422,6 +434,126 @@
       } catch (e) { console.error('loadLearning error:', e); }
     }
 
+    // ─── 개발 여정 마인드맵 ──────────────────
+    function loadJourney() {
+      const svg = document.getElementById('journey-svg');
+      if (svg.children.length > 0) return;
+
+      const W = 1500, H = 900, cx = 750, cy = 450;
+      const R1 = 192, R2 = 388;
+      const ROOT_R = 42, L1_R = 31, L2_R = 14;
+      const MAX_SPREAD = 1.13; // ~65°
+
+      const branches = [
+        { label: '기반 구축',   icon: '🏗️', color: '#3fb950', phase: 'Phase 1',
+          items: ['Google OAuth','3D 우주뷰','Express 서버','워크스페이스','DM 채팅','PG 마이그레이션','팔로우'] },
+        { label: '데이터 수집', icon: '📡', color: '#ffa657', phase: 'Phase 2',
+          items: ['키보드 와처','스크린 캡처','Drive 업로더','데몬 시스템','Windows 설치기','Drive 공유'] },
+        { label: '분석 엔진',   icon: '🧠', color: '#bc8cff', phase: 'Phase 3',
+          items: ['work-analysis','팀 인텔리전스','AI 학습 6 API','관리자 대시보드','분석 대시보드','Sheets 리포트'] },
+        { label: '에이전트팀', icon: '🤖', color: '#39d2c0', phase: 'Phase 4 · 23개',
+          items: ['anomaly','prediction','scorer','context','signal','think','vision','classifier'] },
+        { label: '자동화',      icon: '⚡', color: '#d29922', phase: 'Phase 5',
+          items: ['Vision 분석','auto-mapper','nenova E2E','에이전트 회의','WF01~WF06'] },
+        { label: '안정화',      icon: '🔧', color: '#f85149', phase: '인프라 & 버그수정',
+          items: ['키 반복 버그','검은화면 버그','OOM 방지','데몬 재시작','셀프힐링','자동 업데이트'] },
+      ];
+
+      // Legend
+      const legend = document.getElementById('journey-legend');
+      legend.innerHTML = branches.map(b =>
+        `<span style="display:flex;align-items:center;gap:4px;font-size:11px;color:${b.color};">
+          <span style="width:8px;height:8px;border-radius:50%;background:${b.color};display:inline-block;"></span>${b.label}
+        </span>`
+      ).join('');
+
+      const n = branches.length;
+      let h = '';
+
+      h += `<defs>
+        <filter id="jglow" x="-60%" y="-60%" width="220%" height="220%">
+          <feGaussianBlur stdDeviation="5" result="b"/>
+          <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+        <radialGradient id="jbg" cx="50%" cy="50%" r="55%">
+          <stop offset="0%" stop-color="#111820"/>
+          <stop offset="100%" stop-color="#0a0f17"/>
+        </radialGradient>
+      </defs>`;
+      h += `<rect width="${W}" height="${H}" fill="url(#jbg)"/>`;
+
+      // Compute positions
+      const bPos = [], cPos = [];
+      branches.forEach((br, bi) => {
+        const bA = (2 * Math.PI * bi / n) - Math.PI / 2;
+        const bx = cx + R1 * Math.cos(bA), by = cy + R1 * Math.sin(bA);
+        bPos.push({ x: bx, y: by, a: bA });
+
+        const nc = br.items.length;
+        const step = nc <= 1 ? 0 : MAX_SPREAD / (nc - 1);
+        const s0 = bA - MAX_SPREAD / 2;
+        const kids = br.items.map((label, ci) => {
+          const ca = nc === 1 ? bA : s0 + step * ci;
+          return { x: cx + R2 * Math.cos(ca), y: cy + R2 * Math.sin(ca), a: ca, label };
+        });
+        cPos.push(kids);
+      });
+
+      // Draw root→branch lines
+      branches.forEach((br, bi) => {
+        const p = bPos[bi];
+        h += `<line x1="${cx}" y1="${cy}" x2="${p.x.toFixed(1)}" y2="${p.y.toFixed(1)}" stroke="${br.color}" stroke-width="2.5" stroke-opacity="0.35"/>`;
+      });
+
+      // Draw branch→child bezier curves
+      branches.forEach((br, bi) => {
+        const p = bPos[bi];
+        cPos[bi].forEach(cp => {
+          const dx = cp.x - p.x, dy = cp.y - p.y;
+          const c1x = p.x + dx * 0.35, c1y = p.y + dy * 0.1;
+          const c2x = cp.x - dx * 0.1, c2y = cp.y - dy * 0.25;
+          h += `<path d="M${p.x.toFixed(1)},${p.y.toFixed(1)} C${c1x.toFixed(1)},${c1y.toFixed(1)} ${c2x.toFixed(1)},${c2y.toFixed(1)} ${cp.x.toFixed(1)},${cp.y.toFixed(1)}" fill="none" stroke="${br.color}" stroke-width="1.3" stroke-opacity="0.28"/>`;
+        });
+      });
+
+      // Draw child nodes + labels
+      branches.forEach((br, bi) => {
+        cPos[bi].forEach(cp => {
+          const { x, y, a, label } = cp;
+          const c = br.color;
+          h += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${L2_R}" fill="${c}" fill-opacity="0.13" stroke="${c}" stroke-width="1.3"/>`;
+          const dist = L2_R + 11;
+          const lx = x + Math.cos(a) * dist, ly = y + Math.sin(a) * dist;
+          const cosA = Math.cos(a);
+          const anchor = Math.abs(cosA) < 0.28 ? 'middle' : (cosA > 0 ? 'start' : 'end');
+          h += `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="${anchor}" dominant-baseline="middle" font-size="9.5" fill="${c}" opacity="0.9">${label}</text>`;
+        });
+      });
+
+      // Draw branch nodes (level 1) on top of edges
+      branches.forEach((br, bi) => {
+        const { x, y, a } = bPos[bi];
+        const c = br.color;
+        h += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${L1_R}" fill="${c}" fill-opacity="0.18" stroke="${c}" stroke-width="2"/>`;
+        h += `<text x="${x.toFixed(1)}" y="${(y - 5).toFixed(1)}" text-anchor="middle" dominant-baseline="middle" font-size="17" fill="${c}">${br.icon}</text>`;
+        h += `<text x="${x.toFixed(1)}" y="${(y + 14).toFixed(1)}" text-anchor="middle" font-size="10" font-weight="700" fill="${c}">${br.label}</text>`;
+        // Phase badge (tiny, between root and branch)
+        const px = cx + (R1 * 0.55) * Math.cos(a), py = cy + (R1 * 0.55) * Math.sin(a);
+        h += `<text x="${px.toFixed(1)}" y="${py.toFixed(1)}" text-anchor="middle" dominant-baseline="middle" font-size="8.5" fill="${c}" opacity="0.55">${br.phase}</text>`;
+      });
+
+      // Draw root node (topmost)
+      h += `<circle cx="${cx}" cy="${cy}" r="${ROOT_R}" fill="#58a6ff" fill-opacity="0.1" stroke="#58a6ff" stroke-width="2.5" filter="url(#jglow)"/>`;
+      h += `<circle cx="${cx}" cy="${cy}" r="${ROOT_R - 9}" fill="#0a0f17" fill-opacity="0.55" stroke="#58a6ff" stroke-width="1" stroke-dasharray="4,3"/>`;
+      h += `<text x="${cx}" y="${cy - 7}" text-anchor="middle" dominant-baseline="middle" font-size="19" fill="#58a6ff">⬡</text>`;
+      h += `<text x="${cx}" y="${cy + 12}" text-anchor="middle" font-size="11.5" font-weight="700" fill="#58a6ff" letter-spacing="1.5">Orbit AI</text>`;
+
+      // Title
+      h += `<text x="${W/2}" y="22" text-anchor="middle" font-size="11" fill="#8b949e">Orbit AI 개발 여정 마인드맵 — ${new Date().toLocaleDateString('ko-KR')}</text>`;
+
+      svg.innerHTML = h;
+    }
+
     // ─── 탭 로드 라우터 ──────────────────
     const tabLoaded = {};
     function loadTab(tab) {
@@ -429,6 +561,7 @@
       else if (tab === 'intelligence' && !tabLoaded.intelligence) { loadIntelligence(); tabLoaded.intelligence = true; }
       else if (tab === 'capability' && !tabLoaded.capability) { loadCapability(); tabLoaded.capability = true; }
       else if (tab === 'learning' && !tabLoaded.learning) { loadLearning(); tabLoaded.learning = true; }
+      else if (tab === 'journey' && !tabLoaded.journey) { loadJourney(); tabLoaded.journey = true; }
     }
 
     // 초기 로드
