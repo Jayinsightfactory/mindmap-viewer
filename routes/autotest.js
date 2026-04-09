@@ -94,7 +94,7 @@ const FLOWS = [
       }},
       { name: '품목 그룹', run: async () => {
         const r = await nenovaGet('/api/products/search?groupsOnly=1');
-        const groups = Array.isArray(r.data) ? r.data : [];
+        const groups = Array.isArray(r.data) ? r.data : (r.data?.groups || []);
         return { pass: r.ok && groups.length > 0, detail: `그룹 ${groups.length}개` };
       }},
     ],
@@ -132,7 +132,7 @@ const FLOWS = [
     steps: [
       { name: '품목 그룹 로드', run: async () => {
         const r = await nenovaGet('/api/products/search?groupsOnly=1');
-        const groups = Array.isArray(r.data) ? r.data : [];
+        const groups = Array.isArray(r.data) ? r.data : (r.data?.groups || []);
         const hasCarnation = groups.some(g => JSON.stringify(g).includes('카네이션') || JSON.stringify(g).includes('CARNATION'));
         return { pass: r.ok && groups.length > 0, detail: hasCarnation ? '카네이션 그룹 확인 ✓' : `${groups.length}개 그룹 로드` };
       }},
