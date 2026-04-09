@@ -177,14 +177,19 @@
 
     <!-- ═══ TAB: 변천사 ═══ -->
     <div class="tab-pane" id="tab-changes">
-      <div style="background:#07101e;border:1px solid #1a3a6e;border-radius:10px;padding:28px 32px;font-family:'SF Mono','Courier New',monospace;background-image:repeating-linear-gradient(0deg,transparent,transparent 29px,rgba(30,80,160,0.07) 30px),repeating-linear-gradient(90deg,transparent,transparent 29px,rgba(30,80,160,0.07) 30px);">
-
-        <div style="display:flex;align-items:baseline;gap:16px;margin-bottom:24px;border-bottom:1px solid #1a3a6e;padding-bottom:14px;">
-          <span style="font-size:11px;color:#7ec8ff;letter-spacing:2px;">VALUE EVOLUTION HISTORY</span>
-          <span style="font-size:9px;color:#2a4a7f;">// 처음 → 중간 → 현재 — 굵은 테두리 = 현재값</span>
+      <div style="position:relative;height:700px;border-radius:10px;overflow:hidden;border:1px solid #1a3a6e;">
+        <!-- Zoom controls -->
+        <div style="position:absolute;top:10px;right:10px;z-index:10;display:flex;flex-direction:column;gap:4px;">
+          <button onclick="changesZoom(1.25)" style="width:30px;height:30px;background:#0a1628;border:1px solid #2a5090;color:#7ec8ff;border-radius:6px;cursor:pointer;font-size:18px;line-height:1;padding:0;">+</button>
+          <button onclick="changesZoom(0.8)"  style="width:30px;height:30px;background:#0a1628;border:1px solid #2a5090;color:#7ec8ff;border-radius:6px;cursor:pointer;font-size:22px;line-height:1;padding:0;">−</button>
+          <button onclick="changesReset()"    style="width:30px;height:30px;background:#0a1628;border:1px solid #2a5090;color:#7ec8ff;border-radius:6px;cursor:pointer;font-size:12px;padding:0;" title="전체보기">⊙</button>
         </div>
-
-        <div id="changes-body"></div>
+        <!-- Pannable area -->
+        <div id="changes-outer" style="width:100%;height:100%;overflow:hidden;cursor:grab;background:#07101e;background-image:repeating-linear-gradient(0deg,transparent,transparent 29px,rgba(30,80,160,0.07) 30px),repeating-linear-gradient(90deg,transparent,transparent 29px,rgba(30,80,160,0.07) 30px);">
+          <div id="changes-inner" style="transform-origin:0 0;display:inline-block;min-width:100%;padding:32px 36px;font-family:'SF Mono','Courier New',monospace;">
+            <div id="changes-body"></div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -647,7 +652,24 @@
       svg.addEventListener('touchend', () => { _jDrag = false; });
     }
 
-    // ─── 변천사 ──────────────────
+    // ─── 변천사 줌/팬 ──────────────────
+    let _cS = 1.4, _cTx = 0, _cTy = 0, _cDrag = false, _cDx = 0, _cDy = 0;
+    function _cApply() {
+      const el = document.getElementById('changes-inner');
+      if (el) el.style.transform = `translate(${_cTx}px,${_cTy}px) scale(${_cS})`;
+    }
+    function changesZoom(f) {
+      const outer = document.getElementById('changes-outer');
+      if (!outer) return;
+      const r = outer.getBoundingClientRect(), mx = r.width/2, my = r.height/2;
+      const ns = Math.max(0.4, Math.min(5, _cS * f));
+      _cTx = mx - (mx - _cTx) * (ns / _cS); _cTy = my - (my - _cTy) * (ns / _cS);
+      _cS = ns; _cApply();
+    }
+    function changesReset() {
+      _cS = 1.4; _cTx = 0; _cTy = 0; _cApply();
+    }
+
     function loadChanges() {
       const EVOL = [
         { cat: '데몬 안정성', items: [
@@ -679,43 +701,63 @@
 
       const C = '#3a8fff', CL = '#7ec8ff', CT = '#90b8ef', CTD = '#2a4a7f';
 
-      let html = '';
+      let html = `<div style="font-size:13px;color:${CL};letter-spacing:2px;margin-bottom:20px;border-bottom:1px solid #1a3a6e;padding-bottom:12px;">
+        VALUE EVOLUTION HISTORY &nbsp;<span style="font-size:10px;color:#2a4a7f;">// 처음 → 중간 → 현재 &nbsp;|&nbsp; 굵은 테두리 = 현재값</span>
+      </div>`;
+
       EVOL.forEach(group => {
-        html += `<div style="margin-bottom:28px;">
-          <div style="font-size:9px;color:${CL};letter-spacing:2px;margin-bottom:12px;display:flex;align-items:center;gap:10px;">
+        html += `<div style="margin-bottom:32px;">
+          <div style="font-size:11px;color:${CL};letter-spacing:2px;margin-bottom:14px;display:flex;align-items:center;gap:12px;">
             <span style="flex:1;height:1px;background:linear-gradient(90deg,${C},transparent);opacity:0.4;"></span>
             ${group.cat.toUpperCase()}
             <span style="flex:3;height:1px;background:linear-gradient(90deg,transparent,${C},transparent);opacity:0.3;"></span>
           </div>`;
 
         group.items.forEach(item => {
-          const isFinal = i => i === item.steps.length - 1;
-          html += `<div style="display:flex;align-items:center;gap:0;margin-bottom:9px;flex-wrap:wrap;row-gap:4px;">
-            <div style="width:210px;font-size:9.5px;color:${CTD};padding-right:14px;flex-shrink:0;">${item.label}</div>
-            <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;">`;
+          const last = i => i === item.steps.length - 1;
+          html += `<div style="display:flex;align-items:center;gap:0;margin-bottom:14px;flex-wrap:wrap;row-gap:6px;">
+            <div style="width:240px;font-size:11px;color:${CTD};padding-right:16px;flex-shrink:0;">${item.label}</div>
+            <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;">`;
 
           item.steps.forEach(([val, ctx], i) => {
-            const last = isFinal(i);
-            const star = last;
-            html += `<div style="display:flex;flex-direction:column;align-items:center;gap:2px;">
-              <div style="padding:4px 10px;border-radius:4px;font-size:9.5px;white-space:nowrap;
-                border:${last ? '1.5px solid '+CL : '1px solid #1e3a6e'};
-                color:${last ? CL : '#4a7abf'};
-                background:${last ? 'rgba(58,143,255,0.08)' : 'rgba(10,22,50,0.6)'};
-                ${last ? 'box-shadow:0 0 10px rgba(126,200,255,0.2);' : ''}
-                font-weight:${last ? '700' : '400'};">${val.replace('★','')}</div>
-              ${ctx ? `<div style="font-size:7.5px;color:#1e4080;text-align:center;">${ctx}</div>` : '<div style="height:10px;"></div>'}
+            const isLast = last(i);
+            html += `<div style="display:flex;flex-direction:column;align-items:center;gap:3px;">
+              <div style="padding:6px 14px;border-radius:5px;font-size:11px;white-space:nowrap;
+                border:${isLast ? '2px solid '+CL : '1px solid #1e3a6e'};
+                color:${isLast ? CL : '#4a7abf'};
+                background:${isLast ? 'rgba(58,143,255,0.1)' : 'rgba(10,22,50,0.6)'};
+                ${isLast ? 'box-shadow:0 0 12px rgba(126,200,255,0.25);' : ''}
+                font-weight:${isLast ? '700' : '400'};">${val.replace('★','')}</div>
+              <div style="font-size:9px;color:#1e4080;text-align:center;min-height:12px;">${ctx}</div>
             </div>`;
-            if (!last) html += `<div style="color:#1e3a6e;font-size:14px;padding-bottom:10px;">→</div>`;
+            if (!isLast) html += `<div style="color:#1e3a6e;font-size:16px;padding-bottom:12px;">→</div>`;
           });
 
           html += `</div></div>`;
         });
-
         html += `</div>`;
       });
 
       document.getElementById('changes-body').innerHTML = html;
+
+      // 이벤트 리스너 (중복 방지)
+      const outer = document.getElementById('changes-outer');
+      if (!outer._evtBound) {
+        outer._evtBound = true;
+        outer.addEventListener('wheel', e => {
+          e.preventDefault();
+          const f = e.deltaY < 0 ? 1.15 : 0.87;
+          const ns = Math.max(0.4, Math.min(5, _cS * f));
+          const r = outer.getBoundingClientRect();
+          const mx = e.clientX - r.left, my = e.clientY - r.top;
+          _cTx = mx - (mx - _cTx) * (ns / _cS); _cTy = my - (my - _cTy) * (ns / _cS);
+          _cS = ns; _cApply();
+        }, { passive: false });
+        outer.addEventListener('mousedown', e => { _cDrag = true; _cDx = e.clientX - _cTx; _cDy = e.clientY - _cTy; outer.style.cursor = 'grabbing'; });
+        document.addEventListener('mousemove', e => { if (!_cDrag) return; _cTx = e.clientX - _cDx; _cTy = e.clientY - _cDy; _cApply(); });
+        document.addEventListener('mouseup', () => { if (_cDrag) { _cDrag = false; outer.style.cursor = 'grab'; } });
+      }
+      _cApply();
     }
 
     // ─── 탭 로드 라우터 ──────────────────
