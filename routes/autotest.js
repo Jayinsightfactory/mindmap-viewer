@@ -2,32 +2,40 @@
 const { Router } = require('express');
 
 const NENOVA_BASE = 'https://nenovaweb.com';
-let _session = { cookie: null, expiry: 0 };
+let _session = { token: null, expiry: 0 };
+
+// 현재 ISO 주차 파라미터 계산 (예: "15-01")
+function currentWeekParam() {
+  const d = new Date();
+  const day = d.getUTCDay() || 7;  // 1=Mon ... 7=Sun
+  d.setUTCDate(d.getUTCDate() + 4 - day);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const week = Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
+  return `${week}-01`;
+}
 const _results = [];  // 최근 20회 결과 저장
 
-// ── 로그인 / 세션 관리 ────────────────────────────────────────────────────────
+// ── 로그인 / 세션 관리 (JWT Bearer 방식) ──────────────────────────────────────
 async function nenovaLogin() {
-  if (_session.cookie && Date.now() < _session.expiry) return _session.cookie;
+  if (_session.token && Date.now() < _session.expiry) return _session.token;
   const resp = await fetch(`${NENOVA_BASE}/api/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username: 'admin', password: '1234' }),
+    body: JSON.stringify({ userId: 'admin', password: '1234' }),
   });
   if (!resp.ok) throw new Error(`로그인 실패: ${resp.status}`);
-  const setCookie = resp.headers.get('set-cookie') || '';
-  // next-auth 또는 기타 세션 쿠키 추출
-  const cookieParts = setCookie.split(',').map(c => c.split(';')[0].trim()).filter(Boolean);
-  _session.cookie = cookieParts.join('; ');
-  _session.expiry = Date.now() + 25 * 60 * 1000;
-  if (!_session.cookie) throw new Error('세션 쿠키 없음');
-  return _session.cookie;
+  const json = await resp.json();
+  if (!json.token) throw new Error('토큰 없음');
+  _session.token = json.token;
+  _session.expiry = Date.now() + 7 * 60 * 60 * 1000;  // 7시간 (JWT exp 기준)
+  return _session.token;
 }
 
 async function nenovaGet(path) {
-  const cookie = await nenovaLogin();
+  const token = await nenovaLogin();
   const t = Date.now();
   const resp = await fetch(`${NENOVA_BASE}${path}`, {
-    headers: { Cookie: cookie, Accept: 'application/json' },
+    headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
   });
   const elapsed = Date.now() - t;
   let data = null;
@@ -36,11 +44,11 @@ async function nenovaGet(path) {
 }
 
 async function nenovaPost(path, body) {
-  const cookie = await nenovaLogin();
+  const token = await nenovaLogin();
   const t = Date.now();
   const resp = await fetch(`${NENOVA_BASE}${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Cookie: cookie },
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify(body),
   });
   const elapsed = Date.now() - t;
@@ -85,8 +93,8 @@ const FLOWS = [
     id: 'WF03', name: '발주 현황', icon: '📦',
     desc: '발주 피벗 + 차수별 집계 확인',
     steps: [
-      { name: '발주 피벗 (15-01)', run: async () => {
-        const r = await nenovaGet('/api/warehouse/pivot?week=15-01');
+      { name: '발주 피벗', run: async () => {
+        const r = await nenovaGet(`/api/warehouse/pivot?week=${currentWeekParam()}`);
         const rows = Array.isArray(r.data) ? r.data.length : 0;
         return { pass: r.ok, detail: `${rows}개 품목 (${r.elapsed}ms)` };
       }},
@@ -97,12 +105,12 @@ const FLOWS = [
     desc: '재고현황 vs 출고목록 데이터 정합성',
     steps: [
       { name: '재고현황', run: async () => {
-        const r = await nenovaGet('/api/shipment/stock-status?week=15-01&view=products');
+        const r = await nenovaGet(`/api/shipment/stock-status?week=${currentWeekParam()}&view=products`);
         const rows = Array.isArray(r.data) ? r.data.length : 0;
         return { pass: r.ok, detail: `${rows}개 품목` };
       }},
       { name: '출고 목록', run: async () => {
-        const r = await nenovaGet('/api/shipment?week=15-01');
+        const r = await nenovaGet(`/api/shipment?week=${currentWeekParam()}`);
         const rows = Array.isArray(r.data) ? r.data.length : 0;
         return { pass: r.ok, detail: `${rows}건` };
       }},
@@ -120,7 +128,7 @@ const FLOWS = [
       }},
       { name: '주문 저장 (dryRun)', run: async () => {
         const r = await nenovaPost('/api/orders', {
-          _dryRun: true, week: '15-01',
+          _dryRun: true, week: currentWeekParam(),
           customerId: 'ORBIT_TEST',
           items: [{ productCode: 'TEST', qty: 1, unit: '단' }],
         });
