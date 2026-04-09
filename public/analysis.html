@@ -155,12 +155,22 @@
 
     <!-- ═══ TAB: 개발 여정 마인드맵 ═══ -->
     <div class="tab-pane" id="tab-journey">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
-        <div style="font-size:13px;color:var(--text-muted);">Orbit AI 개발 여정 전체 — Phase 1 기반 구축부터 현재까지</div>
-        <div id="journey-legend" style="display:flex;gap:12px;flex-wrap:wrap;"></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <div style="font-size:11px;color:#3a6aaf;font-family:'SF Mono','Courier New',monospace;letter-spacing:1px;">// ORBIT AI — DEVELOPMENT BLUEPRINT · 스크롤 줌 · 드래그 이동</div>
+        <div style="font-size:9px;color:#2a4a7f;font-family:monospace;">PHASE.01~05 + INFRA.01</div>
       </div>
-      <div class="card" style="padding:8px;overflow:hidden;background:#0a0f17;">
-        <svg id="journey-svg" viewBox="0 0 1500 900" style="width:100%;height:auto;display:block;"></svg>
+      <div style="position:relative;height:700px;border-radius:10px;overflow:hidden;border:1px solid #1a3a6e;background:#07101e;">
+        <svg id="journey-svg" style="width:100%;height:100%;cursor:grab;display:block;"></svg>
+        <!-- Zoom controls -->
+        <div style="position:absolute;top:12px;right:12px;display:flex;flex-direction:column;gap:4px;z-index:10;">
+          <button onclick="journeyZoom(1.25)" style="width:30px;height:30px;background:#0a1628;border:1px solid #2a5090;color:#7ec8ff;border-radius:6px;cursor:pointer;font-size:18px;line-height:1;padding:0;">+</button>
+          <button onclick="journeyZoom(0.8)" style="width:30px;height:30px;background:#0a1628;border:1px solid #2a5090;color:#7ec8ff;border-radius:6px;cursor:pointer;font-size:22px;line-height:1;padding:0;">−</button>
+          <button onclick="journeyReset()" title="전체보기" style="width:30px;height:30px;background:#0a1628;border:1px solid #2a5090;color:#7ec8ff;border-radius:6px;cursor:pointer;font-size:12px;padding:0;">⊙</button>
+        </div>
+        <!-- Blueprint title block -->
+        <div style="position:absolute;bottom:10px;left:14px;font-size:8px;color:#1a3a6e;font-family:monospace;pointer-events:none;letter-spacing:0.5px;">
+          ORBIT AI DEV BLUEPRINT · REV.A · 2026-04-09 · SHEET 1/1
+        </div>
       </div>
     </div>
 
@@ -434,124 +444,193 @@
       } catch (e) { console.error('loadLearning error:', e); }
     }
 
-    // ─── 개발 여정 마인드맵 ──────────────────
+    // ─── 개발 여정 마인드맵 (Blueprint) ──────────────────
+    let _jS = 0.72, _jTx = 0, _jTy = 0, _jDrag = false, _jDx = 0, _jDy = 0;
+
+    function _jApply() {
+      const g = document.getElementById('journey-g');
+      if (g) g.setAttribute('transform', `translate(${_jTx.toFixed(1)},${_jTy.toFixed(1)}) scale(${_jS.toFixed(4)})`);
+    }
+    function journeyZoom(factor) {
+      const svg = document.getElementById('journey-svg');
+      if (!svg) return;
+      const r = svg.getBoundingClientRect(), mx = r.width / 2, my = r.height / 2;
+      const ns = Math.max(0.15, Math.min(5, _jS * factor));
+      _jTx = mx - (mx - _jTx) * (ns / _jS);
+      _jTy = my - (my - _jTy) * (ns / _jS);
+      _jS = ns; _jApply();
+    }
+    function journeyReset() {
+      const svg = document.getElementById('journey-svg');
+      if (!svg) return;
+      const r = svg.getBoundingClientRect();
+      _jS = 0.72; _jTx = r.width / 2; _jTy = r.height / 2; _jApply();
+    }
+
     function loadJourney() {
       const svg = document.getElementById('journey-svg');
-      if (svg.children.length > 0) return;
+      if (svg.querySelector('#journey-g')) return;
 
-      const W = 1500, H = 900, cx = 750, cy = 450;
-      const R1 = 192, R2 = 388;
-      const ROOT_R = 42, L1_R = 31, L2_R = 14;
-      const MAX_SPREAD = 1.13; // ~65°
+      // ── Blueprint constants (origin = 0,0) ──
+      const R1 = 235, R2 = 460, ROOT_R = 50, L1_R = 36, L2_R = 16, MAX_SPREAD = 1.12;
+      const C = '#3a8fff', CL = '#7ec8ff', CD = '#1a3a7a', CT = '#90b8ef', CTD = '#2a5a9f', MONO = "'SF Mono','Courier New',monospace";
 
       const branches = [
-        { label: '기반 구축',   icon: '🏗️', color: '#3fb950', phase: 'Phase 1',
-          items: ['Google OAuth','3D 우주뷰','Express 서버','워크스페이스','DM 채팅','PG 마이그레이션','팔로우'] },
-        { label: '데이터 수집', icon: '📡', color: '#ffa657', phase: 'Phase 2',
-          items: ['키보드 와처','스크린 캡처','Drive 업로더','데몬 시스템','Windows 설치기','Drive 공유'] },
-        { label: '분석 엔진',   icon: '🧠', color: '#bc8cff', phase: 'Phase 3',
-          items: ['work-analysis','팀 인텔리전스','AI 학습 6 API','관리자 대시보드','분석 대시보드','Sheets 리포트'] },
-        { label: '에이전트팀', icon: '🤖', color: '#39d2c0', phase: 'Phase 4 · 23개',
-          items: ['anomaly','prediction','scorer','context','signal','think','vision','classifier'] },
-        { label: '자동화',      icon: '⚡', color: '#d29922', phase: 'Phase 5',
-          items: ['Vision 분석','auto-mapper','nenova E2E','에이전트 회의','WF01~WF06'] },
-        { label: '안정화',      icon: '🔧', color: '#f85149', phase: '인프라 & 버그수정',
-          items: ['키 반복 버그','검은화면 버그','OOM 방지','데몬 재시작','셀프힐링','자동 업데이트'] },
+        { label: '기반 구축',  icon: '🏗️', phase: 'PHASE.01', items: ['Google OAuth','3D 우주뷰','Express 서버','워크스페이스','DM 채팅','PG 마이그레이션','팔로우'] },
+        { label: '데이터 수집',icon: '📡', phase: 'PHASE.02', items: ['키보드 와처','스크린 캡처','Drive 업로더','데몬 시스템','Windows 설치기','Drive 공유'] },
+        { label: '분석 엔진',  icon: '🧠', phase: 'PHASE.03', items: ['work-analysis','팀 인텔리전스','AI 학습 6 API','관리자 대시보드','분석 대시보드','Sheets 리포트'] },
+        { label: '에이전트팀',icon: '🤖', phase: 'PHASE.04 · ×23', items: ['anomaly','prediction','scorer','context','signal','think','vision','classifier'] },
+        { label: '자동화',    icon: '⚡', phase: 'PHASE.05', items: ['Vision 분석','auto-mapper','nenova E2E','에이전트 회의','WF01~WF06'] },
+        { label: '안정화',    icon: '🔧', phase: 'INFRA.01', items: ['키 반복 버그','검은화면 버그','OOM 방지','데몬 재시작','셀프힐링','자동 업데이트'] },
       ];
-
-      // Legend
-      const legend = document.getElementById('journey-legend');
-      legend.innerHTML = branches.map(b =>
-        `<span style="display:flex;align-items:center;gap:4px;font-size:11px;color:${b.color};">
-          <span style="width:8px;height:8px;border-radius:50%;background:${b.color};display:inline-block;"></span>${b.label}
-        </span>`
-      ).join('');
-
       const n = branches.length;
-      let h = '';
 
-      h += `<defs>
-        <filter id="jglow" x="-60%" y="-60%" width="220%" height="220%">
-          <feGaussianBlur stdDeviation="5" result="b"/>
-          <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
-        </filter>
-        <radialGradient id="jbg" cx="50%" cy="50%" r="55%">
-          <stop offset="0%" stop-color="#111820"/>
-          <stop offset="100%" stop-color="#0a0f17"/>
-        </radialGradient>
-      </defs>`;
-      h += `<rect width="${W}" height="${H}" fill="url(#jbg)"/>`;
-
-      // Compute positions
+      // ── Compute node positions ──
       const bPos = [], cPos = [];
       branches.forEach((br, bi) => {
         const bA = (2 * Math.PI * bi / n) - Math.PI / 2;
-        const bx = cx + R1 * Math.cos(bA), by = cy + R1 * Math.sin(bA);
-        bPos.push({ x: bx, y: by, a: bA });
-
+        bPos.push({ x: R1 * Math.cos(bA), y: R1 * Math.sin(bA), a: bA });
         const nc = br.items.length;
         const step = nc <= 1 ? 0 : MAX_SPREAD / (nc - 1);
-        const s0 = bA - MAX_SPREAD / 2;
-        const kids = br.items.map((label, ci) => {
-          const ca = nc === 1 ? bA : s0 + step * ci;
-          return { x: cx + R2 * Math.cos(ca), y: cy + R2 * Math.sin(ca), a: ca, label };
-        });
-        cPos.push(kids);
+        cPos.push(br.items.map((label, ci) => {
+          const ca = nc === 1 ? bA : (bA - MAX_SPREAD / 2) + step * ci;
+          return { x: R2 * Math.cos(ca), y: R2 * Math.sin(ca), a: ca, label };
+        }));
       });
 
-      // Draw root→branch lines
-      branches.forEach((br, bi) => {
-        const p = bPos[bi];
-        h += `<line x1="${cx}" y1="${cy}" x2="${p.x.toFixed(1)}" y2="${p.y.toFixed(1)}" stroke="${br.color}" stroke-width="2.5" stroke-opacity="0.35"/>`;
-      });
+      // ── Build SVG content ──
+      let d = '', g = '';
 
-      // Draw branch→child bezier curves
-      branches.forEach((br, bi) => {
-        const p = bPos[bi];
+      // Defs: grid patterns + filters
+      d += `<defs>
+        <pattern id="bp-f" width="30" height="30" patternUnits="userSpaceOnUse">
+          <path d="M30 0L0 0 0 30" fill="none" stroke="${CD}" stroke-width="0.5" stroke-opacity="0.6"/>
+        </pattern>
+        <pattern id="bp-m" width="150" height="150" patternUnits="userSpaceOnUse">
+          <rect width="150" height="150" fill="url(#bp-f)"/>
+          <path d="M150 0L0 0 0 150" fill="none" stroke="${C}" stroke-width="0.8" stroke-opacity="0.28"/>
+        </pattern>
+        <filter id="bp-gl"><feGaussianBlur stdDeviation="5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+        <filter id="bp-gs"><feGaussianBlur stdDeviation="2.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+      </defs>`;
+
+      // Grid + decorative rings
+      g += `<rect x="-6000" y="-6000" width="12000" height="12000" fill="url(#bp-m)"/>`;
+      g += `<circle r="620" fill="none" stroke="${C}" stroke-width="0.4" stroke-opacity="0.12" stroke-dasharray="3,9"/>`;
+      g += `<circle r="310" fill="none" stroke="${C}" stroke-width="0.4" stroke-opacity="0.18" stroke-dasharray="3,9"/>`;
+
+      // Root→branch lines
+      bPos.forEach(p => { g += `<line x1="0" y1="0" x2="${p.x.toFixed(1)}" y2="${p.y.toFixed(1)}" stroke="${C}" stroke-width="1.5" stroke-opacity="0.4"/>`; });
+
+      // Branch→child curves
+      bPos.forEach((p, bi) => {
         cPos[bi].forEach(cp => {
           const dx = cp.x - p.x, dy = cp.y - p.y;
-          const c1x = p.x + dx * 0.35, c1y = p.y + dy * 0.1;
-          const c2x = cp.x - dx * 0.1, c2y = cp.y - dy * 0.25;
-          h += `<path d="M${p.x.toFixed(1)},${p.y.toFixed(1)} C${c1x.toFixed(1)},${c1y.toFixed(1)} ${c2x.toFixed(1)},${c2y.toFixed(1)} ${cp.x.toFixed(1)},${cp.y.toFixed(1)}" fill="none" stroke="${br.color}" stroke-width="1.3" stroke-opacity="0.28"/>`;
+          g += `<path d="M${p.x.toFixed(1)},${p.y.toFixed(1)} C${(p.x+dx*.4).toFixed(1)},${(p.y+dy*.08).toFixed(1)} ${(cp.x-dx*.08).toFixed(1)},${(cp.y-dy*.28).toFixed(1)} ${cp.x.toFixed(1)},${cp.y.toFixed(1)}" fill="none" stroke="${C}" stroke-width="0.9" stroke-opacity="0.32"/>`;
         });
       });
 
-      // Draw child nodes + labels
-      branches.forEach((br, bi) => {
-        cPos[bi].forEach(cp => {
-          const { x, y, a, label } = cp;
-          const c = br.color;
-          h += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${L2_R}" fill="${c}" fill-opacity="0.13" stroke="${c}" stroke-width="1.3"/>`;
-          const dist = L2_R + 11;
-          const lx = x + Math.cos(a) * dist, ly = y + Math.sin(a) * dist;
-          const cosA = Math.cos(a);
-          const anchor = Math.abs(cosA) < 0.28 ? 'middle' : (cosA > 0 ? 'start' : 'end');
-          h += `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="${anchor}" dominant-baseline="middle" font-size="9.5" fill="${c}" opacity="0.9">${label}</text>`;
+      // Child nodes
+      bPos.forEach((_, bi) => {
+        cPos[bi].forEach(({ x, y, a, label }) => {
+          const tk = L2_R + 7;
+          g += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${L2_R}" fill="#050d1c" stroke="${C}" stroke-width="1" stroke-opacity="0.75"/>`;
+          g += `<line x1="${(x-tk-3).toFixed(1)}" y1="${y.toFixed(1)}" x2="${(x-L2_R).toFixed(1)}" y2="${y.toFixed(1)}" stroke="${CL}" stroke-width="0.6" stroke-opacity="0.4"/>`;
+          g += `<line x1="${(x+L2_R).toFixed(1)}" y1="${y.toFixed(1)}" x2="${(x+tk+3).toFixed(1)}" y2="${y.toFixed(1)}" stroke="${CL}" stroke-width="0.6" stroke-opacity="0.4"/>`;
+          const lx = x + Math.cos(a) * (L2_R + 13), ly = y + Math.sin(a) * (L2_R + 13);
+          const anchor = Math.abs(Math.cos(a)) < 0.28 ? 'middle' : (Math.cos(a) > 0 ? 'start' : 'end');
+          g += `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="${anchor}" dominant-baseline="middle" font-size="9" fill="${CL}" font-family="${MONO}" opacity="0.92">${label}</text>`;
         });
       });
 
-      // Draw branch nodes (level 1) on top of edges
-      branches.forEach((br, bi) => {
-        const { x, y, a } = bPos[bi];
-        const c = br.color;
-        h += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${L1_R}" fill="${c}" fill-opacity="0.18" stroke="${c}" stroke-width="2"/>`;
-        h += `<text x="${x.toFixed(1)}" y="${(y - 5).toFixed(1)}" text-anchor="middle" dominant-baseline="middle" font-size="17" fill="${c}">${br.icon}</text>`;
-        h += `<text x="${x.toFixed(1)}" y="${(y + 14).toFixed(1)}" text-anchor="middle" font-size="10" font-weight="700" fill="${c}">${br.label}</text>`;
-        // Phase badge (tiny, between root and branch)
-        const px = cx + (R1 * 0.55) * Math.cos(a), py = cy + (R1 * 0.55) * Math.sin(a);
-        h += `<text x="${px.toFixed(1)}" y="${py.toFixed(1)}" text-anchor="middle" dominant-baseline="middle" font-size="8.5" fill="${c}" opacity="0.55">${br.phase}</text>`;
+      // Branch nodes (level 1)
+      bPos.forEach(({ x, y, a }, bi) => {
+        const tk = L1_R + 10;
+        g += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${L1_R+6}" fill="none" stroke="${C}" stroke-width="0.5" stroke-opacity="0.28" stroke-dasharray="2,7"/>`;
+        g += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${L1_R}" fill="#050d1c" stroke="${C}" stroke-width="1.8" filter="url(#bp-gs)"/>`;
+        ['x','y'].forEach(axis => {
+          const s = axis === 'x' ? [x-tk, y, x-L1_R, y] : [x, y-tk, x, y-L1_R];
+          const e = axis === 'x' ? [x+L1_R, y, x+tk, y] : [x, y+L1_R, x, y+tk];
+          g += `<line x1="${s[0].toFixed(1)}" y1="${s[1].toFixed(1)}" x2="${s[2].toFixed(1)}" y2="${s[3].toFixed(1)}" stroke="${CL}" stroke-width="0.8" stroke-opacity="0.5"/>`;
+          g += `<line x1="${e[0].toFixed(1)}" y1="${e[1].toFixed(1)}" x2="${e[2].toFixed(1)}" y2="${e[3].toFixed(1)}" stroke="${CL}" stroke-width="0.8" stroke-opacity="0.5"/>`;
+        });
+        g += `<text x="${x.toFixed(1)}" y="${(y-7).toFixed(1)}" text-anchor="middle" dominant-baseline="middle" font-size="17" fill="${CL}">${branches[bi].icon}</text>`;
+        g += `<text x="${x.toFixed(1)}" y="${(y+12).toFixed(1)}" text-anchor="middle" font-size="9.5" font-weight="700" fill="${CT}" font-family="${MONO}">${branches[bi].label}</text>`;
+        const phx = x * 0.52, phy = y * 0.52;
+        g += `<text x="${phx.toFixed(1)}" y="${phy.toFixed(1)}" text-anchor="middle" dominant-baseline="middle" font-size="7.5" fill="${CTD}" font-family="${MONO}">${branches[bi].phase}</text>`;
       });
 
-      // Draw root node (topmost)
-      h += `<circle cx="${cx}" cy="${cy}" r="${ROOT_R}" fill="#58a6ff" fill-opacity="0.1" stroke="#58a6ff" stroke-width="2.5" filter="url(#jglow)"/>`;
-      h += `<circle cx="${cx}" cy="${cy}" r="${ROOT_R - 9}" fill="#0a0f17" fill-opacity="0.55" stroke="#58a6ff" stroke-width="1" stroke-dasharray="4,3"/>`;
-      h += `<text x="${cx}" y="${cy - 7}" text-anchor="middle" dominant-baseline="middle" font-size="19" fill="#58a6ff">⬡</text>`;
-      h += `<text x="${cx}" y="${cy + 12}" text-anchor="middle" font-size="11.5" font-weight="700" fill="#58a6ff" letter-spacing="1.5">Orbit AI</text>`;
+      // Root node
+      const rk = ROOT_R + 16;
+      g += `<circle r="${ROOT_R+9}" fill="none" stroke="${C}" stroke-width="0.5" stroke-opacity="0.22" stroke-dasharray="2,9"/>`;
+      g += `<circle r="${ROOT_R}" fill="#050d1c" stroke="${C}" stroke-width="2.2" filter="url(#bp-gl)"/>`;
+      g += `<circle r="${ROOT_R-11}" fill="none" stroke="${C}" stroke-width="0.8" stroke-opacity="0.45" stroke-dasharray="4,4"/>`;
+      [[-rk,0,-ROOT_R,0],[ROOT_R,0,rk,0],[0,-rk,0,-ROOT_R],[0,ROOT_R,0,rk]].forEach(([x1,y1,x2,y2]) => {
+        g += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${CL}" stroke-width="1.1"/>`;
+      });
+      g += `<text y="-8" text-anchor="middle" dominant-baseline="middle" font-size="20" fill="${CL}">⬡</text>`;
+      g += `<text y="11" text-anchor="middle" font-size="10.5" font-weight="700" fill="${CT}" font-family="${MONO}" letter-spacing="2">ORBIT AI</text>`;
 
-      // Title
-      h += `<text x="${W/2}" y="22" text-anchor="middle" font-size="11" fill="#8b949e">Orbit AI 개발 여정 마인드맵 — ${new Date().toLocaleDateString('ko-KR')}</text>`;
+      // Blueprint title block (bottom-right)
+      g += `<g transform="translate(440,345)">
+        <rect width="205" height="58" fill="#050d1c" stroke="${C}" stroke-width="0.8" stroke-opacity="0.5"/>
+        <line x1="0" y1="15" x2="205" y2="15" stroke="${C}" stroke-width="0.5" stroke-opacity="0.4"/>
+        <line x1="0" y1="36" x2="205" y2="36" stroke="${C}" stroke-width="0.5" stroke-opacity="0.4"/>
+        <line x1="65" y1="36" x2="65" y2="58" stroke="${C}" stroke-width="0.5" stroke-opacity="0.4"/>
+        <line x1="145" y1="36" x2="145" y2="58" stroke="${C}" stroke-width="0.5" stroke-opacity="0.4"/>
+        <text x="102" y="8" text-anchor="middle" dominant-baseline="middle" font-size="6.5" fill="${CTD}" font-family="${MONO}">ORBIT AI DEVELOPMENT BLUEPRINT</text>
+        <text x="102" y="26" text-anchor="middle" dominant-baseline="middle" font-size="8" fill="${CT}" font-family="${MONO}">AI 업무자동화 플랫폼 개발 여정</text>
+        <text x="32" y="47" text-anchor="middle" dominant-baseline="middle" font-size="7" fill="${CTD}" font-family="${MONO}">REV.A</text>
+        <text x="105" y="47" text-anchor="middle" dominant-baseline="middle" font-size="7" fill="${CTD}" font-family="${MONO}">2026-04-09</text>
+        <text x="175" y="47" text-anchor="middle" dominant-baseline="middle" font-size="7" fill="${CTD}" font-family="${MONO}">1 / 1</text>
+      </g>`;
 
-      svg.innerHTML = h;
+      // Corner marks
+      const CM = 510;
+      [[CM,CM,CM-22,CM],[CM,CM,CM,CM-22],[-CM,CM,-CM+22,CM],[-CM,CM,-CM,CM-22],
+       [CM,-CM,CM-22,-CM],[CM,-CM,CM,-CM+22],[-CM,-CM,-CM+22,-CM],[-CM,-CM,-CM,-CM+22]]
+        .forEach(([x1,y1,x2,y2]) => { g += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${C}" stroke-width="1.2" stroke-opacity="0.45"/>`; });
+
+      svg.innerHTML = d + `<g id="journey-g">${g}</g>`;
+
+      // Init transform
+      const svgR = svg.getBoundingClientRect();
+      _jTx = svgR.width / 2; _jTy = svgR.height / 2; _jApply();
+
+      // Wheel zoom
+      svg.addEventListener('wheel', e => {
+        e.preventDefault();
+        const f = e.deltaY < 0 ? 1.15 : 0.87;
+        const ns = Math.max(0.15, Math.min(5, _jS * f));
+        const r = svg.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
+        _jTx = mx - (mx - _jTx) * (ns / _jS); _jTy = my - (my - _jTy) * (ns / _jS); _jS = ns; _jApply();
+      }, { passive: false });
+
+      // Pan
+      svg.addEventListener('mousedown', e => { _jDrag = true; _jDx = e.clientX - _jTx; _jDy = e.clientY - _jTy; svg.style.cursor = 'grabbing'; });
+      document.addEventListener('mousemove', e => { if (!_jDrag) return; _jTx = e.clientX - _jDx; _jTy = e.clientY - _jDy; _jApply(); });
+      document.addEventListener('mouseup', () => { if (_jDrag) { _jDrag = false; svg.style.cursor = 'grab'; } });
+
+      // Touch
+      let _ltd = 0;
+      svg.addEventListener('touchstart', e => {
+        if (e.touches.length === 1) { _jDrag = true; _jDx = e.touches[0].clientX - _jTx; _jDy = e.touches[0].clientY - _jTy; }
+        else if (e.touches.length === 2) { _ltd = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); }
+        e.preventDefault();
+      }, { passive: false });
+      svg.addEventListener('touchmove', e => {
+        if (e.touches.length === 1 && _jDrag) { _jTx = e.touches[0].clientX - _jDx; _jTy = e.touches[0].clientY - _jDy; _jApply(); }
+        else if (e.touches.length === 2) {
+          const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+          const ns = Math.max(0.15, Math.min(5, _jS * d / _ltd));
+          const r = svg.getBoundingClientRect();
+          const mx = (e.touches[0].clientX + e.touches[1].clientX) / 2 - r.left;
+          const my = (e.touches[0].clientY + e.touches[1].clientY) / 2 - r.top;
+          _jTx = mx - (mx - _jTx) * (ns / _jS); _jTy = my - (my - _jTy) * (ns / _jS); _jS = ns; _ltd = d; _jApply();
+        }
+        e.preventDefault();
+      }, { passive: false });
+      svg.addEventListener('touchend', () => { _jDrag = false; });
     }
 
     // ─── 탭 로드 라우터 ──────────────────
