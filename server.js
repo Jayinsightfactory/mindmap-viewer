@@ -1881,29 +1881,21 @@ app.post('/api/admin/push-token', async (req, res) => {
   let tokenToSend = directToken;
 
   if (!tokenToSend && userId) {
-    // 사용자의 기존 토큰 조회 (SQLite)
-    const { verifyToken: _vt, issueApiToken: _issue } = require('./src/auth');
-    const _db = (() => { try { return require('./src/db'); } catch { return null; } })();
-    if (_db?.getDb) {
-      const _sqlite = _db.getDb();
-      const row = _sqlite?.prepare?.('SELECT token FROM tokens WHERE userId = ? AND (expiresAt IS NULL OR expiresAt > datetime(\'now\')) ORDER BY rowid DESC LIMIT 1')?.get?.(userId);
-      tokenToSend = row?.token;
-    }
-    // SQLite에 없으면 PG에서 조회
-    if (!tokenToSend) {
-      try {
-        const pgDb = dbModule.getDb();
-        const { rows } = await pgDb.query(
+    // PG 조회 (3초 타임아웃) → 실패 시 즉시 새 토큰 발급
+    try {
+      const pgDb = dbModule.getDb();
+      const _pgResult = await Promise.race([
+        pgDb.query(
           `SELECT token FROM orbit_auth_tokens WHERE user_id = $1 AND (expires_at IS NULL OR expires_at > NOW()) ORDER BY created_at DESC LIMIT 1`,
           [userId]
-        );
-        if (rows.length > 0) tokenToSend = rows[0].token;
-      } catch {}
-    }
-    // 그래도 없으면 새 토큰 발급
+        ),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 3000)),
+      ]);
+      if (_pgResult.rows?.length > 0) tokenToSend = _pgResult.rows[0].token;
+    } catch {}
+    // 조회 실패 또는 없으면 새 토큰 즉시 발급
     if (!tokenToSend) {
-      const { issueApiToken: _issue } = require('./src/auth');
-      tokenToSend = _issue(userId);
+      tokenToSend = issueApiToken(userId);
     }
   }
 
