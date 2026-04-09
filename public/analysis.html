@@ -109,6 +109,7 @@
       <button data-tab="capability">💼 역량 프로필</button>
       <button data-tab="learning">🧠 AI 학습</button>
       <button data-tab="journey">🗺️ 개발 여정</button>
+      <button data-tab="changes">📈 변천사</button>
     </div>
 
     <!-- ═══ TAB: 종합 ═══ -->
@@ -171,6 +172,19 @@
         <div style="position:absolute;bottom:10px;left:14px;font-size:8px;color:#1a3a6e;font-family:monospace;pointer-events:none;letter-spacing:0.5px;">
           ORBIT AI DEV BLUEPRINT · REV.A · 2026-04-09 · SHEET 1/1
         </div>
+      </div>
+    </div>
+
+    <!-- ═══ TAB: 변천사 ═══ -->
+    <div class="tab-pane" id="tab-changes">
+      <div style="background:#07101e;border:1px solid #1a3a6e;border-radius:10px;padding:28px 32px;font-family:'SF Mono','Courier New',monospace;background-image:repeating-linear-gradient(0deg,transparent,transparent 29px,rgba(30,80,160,0.07) 30px),repeating-linear-gradient(90deg,transparent,transparent 29px,rgba(30,80,160,0.07) 30px);">
+
+        <div style="display:flex;align-items:baseline;gap:16px;margin-bottom:24px;border-bottom:1px solid #1a3a6e;padding-bottom:14px;">
+          <span style="font-size:11px;color:#7ec8ff;letter-spacing:2px;">VALUE EVOLUTION HISTORY</span>
+          <span style="font-size:9px;color:#2a4a7f;">// 처음 → 중간 → 현재 — 굵은 테두리 = 현재값</span>
+        </div>
+
+        <div id="changes-body"></div>
       </div>
     </div>
 
@@ -633,6 +647,77 @@
       svg.addEventListener('touchend', () => { _jDrag = false; });
     }
 
+    // ─── 변천사 ──────────────────
+    function loadChanges() {
+      const EVOL = [
+        { cat: '데몬 안정성', items: [
+          { label: 'RestartCount',       steps: [['3','기본값'],['999★','무제한 재시작']] },
+          { label: 'VBS 실행 대상',      steps: [['tray.ps1','잘못된 파일'],['personal-agent.js★','직접 실행']] },
+          { label: '크래시 복구',        steps: [['없음','수동 재시작'],['while loop bat★','자동 복구']] },
+        ]},
+        { cat: '메모리 & 성능', items: [
+          { label: '힙 크기',            steps: [['512MB','초기'],['640MB','OOM 발생'],['460MB','제한 조정'],['768MB★','현재 최적']] },
+          { label: 'PowerShell 폴링',    steps: [['3초','창 깜빡임'],['15초★','깜빡임 제거']] },
+          { label: '키 캐시(_WIN_CACHE_MS)', steps: [['1초','키 반복 발생'],['10초★','키 반복 제거']] },
+          { label: '힙 정책',            steps: [['기본','OOM 무방비'],['ALWAYS+512MB','안정화'],['ALWAYS+768MB★','현재']] },
+        ]},
+        { cat: '스크린 캡처 (Windows)', items: [
+          { label: '캡처 우선순위',      steps: [['CopyFromScreen','검은화면 버그'],['PIL 우선','안정화'],['PIL→pyautogui→CopyFromScreen★','3단계 폴백']] },
+        ]},
+        { cat: '에이전트 시스템', items: [
+          { label: '에이전트 수',        steps: [['기본 라우트','초기'],['15개','대규모 업그레이드'],['23개★','현재']] },
+          { label: 'API 인증',           steps: [['JWT only','토큰 불일치 오류'],['JWT + userId 폴백★','하위호환']] },
+          { label: 'context 라우트',     steps: [['/context/current','prefix 중복'],[ '/current★','수정']] },
+        ]},
+        { cat: '배포 & 업데이트', items: [
+          { label: '데몬 업데이트',      steps: [['수동',''],['3회/일 스케줄','자동화 v1'],['git push → 1분★','완전 자동']] },
+          { label: '설치 방식',          steps: [['다단계 복잡','사용자 직접'],['PowerShell 한 줄★','간편화']] },
+          { label: 'install.ps1 인코딩', steps: [['한글 포함','irm|iex 파싱 오류'],['영문 전용★','안정화']] },
+          { label: '토큰 push',          steps: [['수동 명령','재설치 필요'],['서버 자동 큐잉★','배포 시 자동']] },
+        ]},
+      ];
+
+      const C = '#3a8fff', CL = '#7ec8ff', CT = '#90b8ef', CTD = '#2a4a7f';
+
+      let html = '';
+      EVOL.forEach(group => {
+        html += `<div style="margin-bottom:28px;">
+          <div style="font-size:9px;color:${CL};letter-spacing:2px;margin-bottom:12px;display:flex;align-items:center;gap:10px;">
+            <span style="flex:1;height:1px;background:linear-gradient(90deg,${C},transparent);opacity:0.4;"></span>
+            ${group.cat.toUpperCase()}
+            <span style="flex:3;height:1px;background:linear-gradient(90deg,transparent,${C},transparent);opacity:0.3;"></span>
+          </div>`;
+
+        group.items.forEach(item => {
+          const isFinal = i => i === item.steps.length - 1;
+          html += `<div style="display:flex;align-items:center;gap:0;margin-bottom:9px;flex-wrap:wrap;row-gap:4px;">
+            <div style="width:210px;font-size:9.5px;color:${CTD};padding-right:14px;flex-shrink:0;">${item.label}</div>
+            <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;">`;
+
+          item.steps.forEach(([val, ctx], i) => {
+            const last = isFinal(i);
+            const star = last;
+            html += `<div style="display:flex;flex-direction:column;align-items:center;gap:2px;">
+              <div style="padding:4px 10px;border-radius:4px;font-size:9.5px;white-space:nowrap;
+                border:${last ? '1.5px solid '+CL : '1px solid #1e3a6e'};
+                color:${last ? CL : '#4a7abf'};
+                background:${last ? 'rgba(58,143,255,0.08)' : 'rgba(10,22,50,0.6)'};
+                ${last ? 'box-shadow:0 0 10px rgba(126,200,255,0.2);' : ''}
+                font-weight:${last ? '700' : '400'};">${val.replace('★','')}</div>
+              ${ctx ? `<div style="font-size:7.5px;color:#1e4080;text-align:center;">${ctx}</div>` : '<div style="height:10px;"></div>'}
+            </div>`;
+            if (!last) html += `<div style="color:#1e3a6e;font-size:14px;padding-bottom:10px;">→</div>`;
+          });
+
+          html += `</div></div>`;
+        });
+
+        html += `</div>`;
+      });
+
+      document.getElementById('changes-body').innerHTML = html;
+    }
+
     // ─── 탭 로드 라우터 ──────────────────
     const tabLoaded = {};
     function loadTab(tab) {
@@ -641,6 +726,7 @@
       else if (tab === 'capability' && !tabLoaded.capability) { loadCapability(); tabLoaded.capability = true; }
       else if (tab === 'learning' && !tabLoaded.learning) { loadLearning(); tabLoaded.learning = true; }
       else if (tab === 'journey' && !tabLoaded.journey) { loadJourney(); tabLoaded.journey = true; }
+      else if (tab === 'changes' && !tabLoaded.changes) { loadChanges(); tabLoaded.changes = true; }
     }
 
     // 초기 로드
