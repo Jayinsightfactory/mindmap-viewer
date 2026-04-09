@@ -286,7 +286,7 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
   </div>
 
   <div class="sb-footer">
-    <div>nenova · 6명</div>
+    <div>nenova · 8명</div>
     <div id="sb-updated">마지막 분석: —</div>
   </div>
 </div>
@@ -319,7 +319,7 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
 
 <!-- ══ 이슈 센터 ══ -->
 <div class="page" id="page-issues">
-  <div class="ph">🚨 이슈 센터 <span class="ph-sub">33개 감지 — 15 긴급</span></div>
+  <div class="ph">🚨 이슈 센터 <span class="ph-sub">35개 감지 — 15 긴급</span></div>
 
   <div class="g3" style="margin-bottom:14px;">
     <div class="stat-b"><div class="stat-v red">15</div><div class="stat-l">긴급 (Critical)</div></div>
@@ -394,10 +394,26 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
         <button class="issue-action">상세</button>
       </div>
       <div class="issue-item">
+        <div class="issue-dot crit"></div>
+        <div class="issue-body">
+          <div class="issue-title">강명훈 — keyboard-watcher 중단 · 분석 불가 <span class="issue-tag st-crit">긴급</span></div>
+          <div class="issue-meta">screen.capture 이벤트는 수집 중 · keyboard 이벤트 0건 · MNMSAQJD78E544A631</div>
+        </div>
+        <button class="issue-action" onclick="triggerUpdate()">재설치 요청</button>
+      </div>
+      <div class="issue-item">
+        <div class="issue-dot crit"></div>
+        <div class="issue-body">
+          <div class="issue-title">hoon J(현욱) — 3일째 이벤트 없음 · 데몬 중단 <span class="issue-tag st-crit">긴급</span></div>
+          <div class="issue-meta">마지막 이벤트: 3일 전 (idle 1건) · MNMR8568CC8950F81D · DESKTOP-CAA5TA1</div>
+        </div>
+        <button class="issue-action" onclick="triggerUpdate()">재설치 요청</button>
+      </div>
+      <div class="issue-item">
         <div class="issue-dot warn"></div>
         <div class="issue-body">
-          <div class="issue-title">데몬 구버전 4대 미업데이트 <span class="issue-tag st-warn">경고</span></div>
-          <div class="issue-meta">설연주/강현우/박성수/임재용 PC · 정밀 분석 제한됨</div>
+          <div class="issue-title">데몬 구버전 2대 + 신규 문제 2건 <span class="issue-tag st-warn">경고</span></div>
+          <div class="issue-meta">wbk/강현우 재설치 완료 (2026-04-09) · 강명훈 keyboard-watcher 중단 · hoon J 3일째 데몬 꺼짐</div>
         </div>
         <button class="issue-action" onclick="triggerUpdate()">업데이트 요청</button>
       </div>
@@ -503,14 +519,14 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
 
 <!-- ══ 직원 현황 ══ -->
 <div class="page" id="page-members">
-  <div class="ph">👥 직원 현황 <span class="ph-sub">6명 개인별 업무 분석</span></div>
+  <div class="ph">👥 직원 현황 <span class="ph-sub">8명 개인별 업무 분석 · 2026-04-09 최신화</span></div>
 
   <div id="member-detail-grid">
-    <!-- 6 detailed member cards — ID 2026-03-27 실측 확인 -->
+    <!-- 8 detailed member cards — ID 2026-04-09 최신화 -->
     <div class="card">
       <div class="card-hd" style="justify-content:space-between;">
         <span>👤 설연주 · 영업지원 <span class="st st-warn" style="font-size:10px;margin-left:8px;">카카오 중</span></span>
-        <span style="font-size:10px;color:var(--muted);">PC: NEONVA · MMSQBC9I3CE01802AD</span>
+        <span style="font-size:10px;color:var(--muted);">PC: NEONVA · MNIAFICB3DC88DCB34</span>
       </div>
       <div class="g3">
         <div class="stat-b"><div class="stat-v yellow">100%</div><div class="stat-l">카카오 전용</div></div>
@@ -529,14 +545,14 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
         <div>nenova: 신규 주문 등록 창 7회 확인</div>
       </div>
       <div style="margin-top:8px;padding:8px;background:rgba(248,81,73,.05);border:1px solid rgba(248,81,73,.2);border-radius:6px;font-size:11px;color:var(--red);">
-        🚨 업무시간 중 개인채팅 30% · idle_result 35회 — 집중도 낮음
+        🚨 업무시간 중 개인채팅 30% · idle_result 35회 — 집중도 낮음<br>✅ 키 반복 버그 패치 완료 (2026-04-09)
       </div>
     </div>
 
     <div class="card">
       <div class="card-hd" style="justify-content:space-between;">
         <span>👤 강현우 · 영업지원 <span class="st st-live" style="font-size:10px;margin-left:8px;">자동화 탐색 중</span></span>
-        <span style="font-size:10px;color:var(--muted);">PC: DESKTOP-T09911T · MMSF0E3PF7FE1CACDA</span>
+        <span style="font-size:10px;color:var(--muted);">PC: DESKTOP-T09911T · MNMRX6SR07F5FF7C0C</span>
       </div>
       <div class="g3">
         <div class="stat-b"><div class="stat-v" style="color:var(--green);">🔥</div><div class="stat-l">자동화 관심</div></div>
@@ -553,14 +569,14 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
         <div>어버이날 자료 준비(Compile parents' day) 24회 — 업무 중 개인 혼재</div>
       </div>
       <div style="margin-top:8px;padding:8px;background:rgba(63,185,80,.05);border:1px solid rgba(63,185,80,.2);border-radius:6px;font-size:11px;color:var(--green);">
-        💡 자발적 자동화 관심 — 협력 기회. 수발주 자동화 직접 제안 가능
+        💡 자발적 자동화 관심 — 협력 기회. 수발주 자동화 직접 제안 가능<br>✅ 데몬 재설치 완료 (2026-04-09 · 토큰 push 완료)
       </div>
     </div>
 
     <div class="card">
       <div class="card-hd" style="justify-content:space-between;">
         <span>👤 박성수 · 영업팀 <span class="st st-warn" style="font-size:10px;margin-left:8px;">채권관리 중</span></span>
-        <span style="font-size:10px;color:var(--muted);">PC: DESKTOP-HGNEA1S · MMVMNUPG2321E9262E</span>
+        <span style="font-size:10px;color:var(--muted);">PC: DESKTOP-HGNEA1S · MNMR52IIBE1A1E37A2</span>
       </div>
       <div class="g3">
         <div class="stat-b"><div class="stat-v yellow">100%</div><div class="stat-l">카카오 전용</div></div>
@@ -957,11 +973,13 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
 
   <div class="g2">
     <div class="card">
-      <div class="card-hd">🔮 AI 예측 인사이트 <span style="font-size:9px;color:var(--muted);">2026-03-27 실측</span></div>
+      <div class="card-hd">🔮 AI 예측 인사이트 <span style="font-size:9px;color:var(--muted);">2026-04-09 최신화</span></div>
       <div style="font-size:12px;line-height:2;color:var(--muted);">
         <div>• 설연주: 카카오 100% + 개인채팅 30% → <b style="color:var(--red);">집중도 개선 필요</b></div>
         <div>• 현욱: 태림/박성빈 채팅→발주 패턴 → <b style="color:var(--text);">자동화 2순위</b></div>
-        <div>• 강현우: <b style="color:var(--green);">Claude로 자동화 자발적 검색 중</b> — 협력 기회</div>
+        <div>• 강현우/wbk: 재설치 완료 — <b style="color:var(--green);">데이터 수집 재개</b></div>
+        <div>• 강명훈: keyboard-watcher 중단 → <b style="color:var(--red);">재설치 긴급</b></div>
+        <div>• hoon J: 3일째 이벤트 없음 → <b style="color:var(--red);">데몬 재시작 필요</b></div>
         <div>• 임재용: Claude 61회 → Orbit OS 활용도 높음 → <b style="color:var(--accent);">대시보드 고도화 가치</b></div>
         <div>• 박성수: 채권관리대장 15회 → <b style="color:var(--text);">미수금 자동화 직접 수혜자</b></div>
         <div>• 화훼 관리 프로그램 별도 존재 → <b style="color:var(--yellow);">nenova 외 시스템 통합 검토</b></div>
@@ -973,7 +991,7 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
         <div>☐ <b style="color:var(--red);">즉시</b> — 강현우 은행 보안 복구</div>
         <div>☐ <b style="color:var(--red);">1주</b> — 카카오→nenova 자동 입력 구축</div>
         <div>☐ <b style="color:var(--yellow);">2주</b> — 미수금 자동 알림 구축</div>
-        <div>☐ <b style="color:var(--yellow);">2주</b> — 데몬 4대 업데이트</div>
+        <div>☐ <b style="color:var(--red);">즉시</b> — 강명훈/hoon J 재설치</div>
         <div>☐ <b style="color:var(--accent);">3주</b> — 주문-출하 자동 대조</div>
         <div>☐ <b style="color:var(--muted);">4주</b> — BI 점수 80점 목표</div>
       </div>
@@ -1032,7 +1050,7 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
       <button class="btn" onclick="clearTerminal()">Clear</button>
     </div>
     <div class="term-out" id="term-out">Orbit OS Terminal v2.0
-에이전트 15개 연결됨 · DB 정상 · 아카이버 대기 중
+에이전트 15개 연결됨 · DB 정상 · 6개 백그라운드 엔진 비활성화 (OOM 방지)
 
 <span style="color:var(--green);">ready</span>
 </div>
@@ -1104,11 +1122,13 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
       <table class="tbl" style="margin-bottom:10px;">
         <thead><tr><th>직원</th><th>상태</th><th>버전</th></tr></thead>
         <tbody>
-          <tr><td>설연주</td><td><span class="st st-warn">구버전</span></td><td>v1.x</td></tr>
-          <tr><td>강현우</td><td><span class="st st-warn">구버전</span></td><td>v1.x</td></tr>
+          <tr><td>설연주</td><td><span class="st st-live">패치됨</span></td><td>v2.x (키반복 수정)</td></tr>
+          <tr><td>강현우</td><td><span class="st st-live">최신</span></td><td>v2.x (2026-04-09 재설치)</td></tr>
+          <tr><td>wbk</td><td><span class="st st-live">최신</span></td><td>v2.x (2026-04-09 재설치)</td></tr>
+          <tr><td>강명훈</td><td><span class="st st-crit">keyboard 중단</span></td><td>v2.x (재설치 필요)</td></tr>
           <tr><td>박성수</td><td><span class="st st-warn">구버전</span></td><td>v1.x</td></tr>
+          <tr><td>hoon J(현욱)</td><td><span class="st st-crit">데몬꺼짐</span></td><td>3일째 이벤트 없음</td></tr>
           <tr><td>임재용</td><td><span class="st st-warn">구버전</span></td><td>v1.x</td></tr>
-          <tr><td>현욱</td><td><span class="st st-live">최신</span></td><td>v2.x</td></tr>
         </tbody>
       </table>
       <div class="btn-row">
