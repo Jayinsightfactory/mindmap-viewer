@@ -20,10 +20,20 @@ async function nenovaLogin() {
   if (_session.token && Date.now() < _session.expiry) return _session.token;
   const resp = await fetch(`${NENOVA_BASE}/api/auth/login`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+      'Origin': NENOVA_BASE,
+      'Referer': `${NENOVA_BASE}/login`,
+      'Accept': 'application/json',
+    },
     body: JSON.stringify({ userId: 'admin', password: '1234' }),
   });
-  if (!resp.ok) throw new Error(`로그인 실패: ${resp.status}`);
+  if (!resp.ok) {
+    let errBody = '';
+    try { errBody = await resp.text(); } catch {}
+    throw new Error(`로그인 실패: ${resp.status} ${errBody.slice(0, 100)}`);
+  }
   const json = await resp.json();
   if (!json.token) throw new Error('토큰 없음');
   _session.token = json.token;
