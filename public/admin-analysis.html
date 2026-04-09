@@ -4287,6 +4287,15 @@ async function loadAgentMeeting() {
     { name: '컨텍스트 엔진', icon: '🗂️', api: '/api/context/current', color: '#39d2c0' },
     { name: '예측 엔진', icon: '🔮', api: '/api/predict/peak-times', color: '#bc8cff' },
     { name: 'PC 이슈 감지', icon: '🖥️', api: '/api/admin/perf-issues', color: '#ff7b72' },
+    // ── 추가 8개 에이전트 ──
+    { name: '자동화 엔진', icon: '🤖', api: '/api/automation/master', color: '#ffa657' },
+    { name: 'ERP 분석', icon: '🏭', api: '/api/erp/manual-gaps', color: '#58a6ff' },
+    { name: '심층 조사', icon: '🔬', api: '/api/investigate/hidden-workflows', color: '#bc8cff' },
+    { name: '회사 구조', icon: '🏢', api: '/api/company/triggers', color: '#3fb950' },
+    { name: 'nenova DB', icon: '🗄️', api: '/api/nenova/dashboard', color: '#39d2c0' },
+    { name: 'PAD 커넥터', icon: '🎮', api: '/api/pad/status', color: '#d29922' },
+    { name: '세션 분석', icon: '📅', api: '/api/sessions/summary', color: '#f778ba' },
+    { name: '개인 인사이트', icon: '👤', api: '/api/me/insights', color: '#8b949e' },
   ];
 
   // 모든 에이전트 API 병렬 호출
@@ -4475,6 +4484,96 @@ async function loadAgentMeeting() {
         requests = ['이상 감지기: PC 이슈 → 업무 데이터 공백 연관 분석'];
         break;
       }
+      case '자동화 엔진': {
+        const scripts = data.scripts || data.total || 0;
+        const ready = data.ready || data.readyCount || 0;
+        findings = '자동화 스크립트 ' + scripts + '건, 즉시 실행 가능 ' + ready + '건';
+        proposals = [
+          'PAD 셀렉터 기반 nenova 클릭 자동화',
+          'pyautogui 좌표 매핑 자동 업데이트',
+          '자동화 성공률 기반 스크립트 자동 개선',
+        ];
+        requests = ['PAD 커넥터: 셀렉터 최신화 요청', 'Vision: 자동화 대상 버튼 좌표 확인'];
+        break;
+      }
+      case 'ERP 분석': {
+        const gaps = Array.isArray(data) ? data : (data.gaps || data.manualGaps || []);
+        findings = '수동 처리 갭 ' + gaps.length + '건 발견';
+        proposals = gaps.slice(0,3).map(function(g) {
+          return typeof g === 'string' ? g : (g.field || g.name || g.description || JSON.stringify(g)).slice(0,40);
+        });
+        if (!proposals.length) proposals = ['nenova 화면 데이터 ↔ DB 불일치 탐색 중', 'ERP 미활용 기능 목록 수집 중', '수기 입력 필드 자동화 우선순위 분석'];
+        requests = ['심층 조사: 수동 입력 반복 패턴 교차 확인'];
+        break;
+      }
+      case '심층 조사': {
+        const workflows = Array.isArray(data) ? data : (data.hiddenWorkflows || data.workflows || []);
+        findings = '숨겨진 워크플로우 ' + workflows.length + '건 탐지';
+        proposals = workflows.slice(0,3).map(function(w) {
+          return typeof w === 'string' ? w : (w.name || w.pattern || w.description || JSON.stringify(w)).slice(0,40);
+        });
+        if (!proposals.length) proposals = ['반복 행동 패턴 → 암묵적 프로세스 발굴', '클릭 동선 분석 → 숨겨진 의사결정 포인트', '이벤트 클러스터링 → 미기록 업무 흐름 시각화'];
+        requests = ['사고 엔진: 전이 패턴과 비교 분석 요청', 'Vision: 반복 화면 시퀀스 확인'];
+        break;
+      }
+      case '회사 구조': {
+        const triggers = Array.isArray(data) ? data : (data.triggers || []);
+        findings = '자동 트리거 ' + triggers.length + '건 감지';
+        proposals = triggers.slice(0,3).map(function(t) {
+          return typeof t === 'string' ? t : (t.name || t.event || t.description || JSON.stringify(t)).slice(0,40);
+        });
+        if (!proposals.length) proposals = ['부서간 업무 전달 자동 감지', '결재 라인 병목 자동 알림', '팀별 업무 부하 실시간 밸런싱'];
+        requests = ['번아웃 시그널: 팀별 과부하 데이터 공유'];
+        break;
+      }
+      case 'nenova DB': {
+        const conn = data.connected !== undefined ? (data.connected ? '연결됨' : '연결 안됨') : '-';
+        const orders = data.todayOrders || data.orders || 0;
+        findings = 'DB 상태: ' + conn + ', 오늘 주문 ' + orders + '건';
+        proposals = [
+          '실시간 주문 → Orbit 자동 동기화',
+          '재고 부족 임박 품목 자동 알림',
+          '거래처별 주문 패턴 → 이상 조기 감지',
+        ];
+        requests = ['자동화 엔진: 신규 주문 자동 입력 스크립트 요청'];
+        break;
+      }
+      case 'PAD 커넥터': {
+        const padStatus = data.status || '-';
+        const selectors = data.selectors || data.selectorCount || 0;
+        findings = 'PAD 상태: ' + padStatus + ', UI 셀렉터 ' + selectors + '개';
+        proposals = [
+          'nenova 주문 등록 PAD 플로우 자동 실행',
+          '셀렉터 변경 감지 → 자동 재학습',
+          'PAD 실행 성공률 모니터링',
+        ];
+        requests = ['Vision: nenova UI 셀렉터 최신 좌표 확인'];
+        break;
+      }
+      case '세션 분석': {
+        const sessions = data.sessions || data.total || 0;
+        const avgMin = data.avgDuration || data.avgMinutes || 0;
+        findings = '총 세션 ' + sessions + '건, 평균 ' + avgMin + '분';
+        proposals = [
+          '세션 길이 분포 → 최적 집중 시간 도출',
+          '세션 전환 패턴 → 컨텍스트 스위칭 비용 측정',
+          '장시간 세션 → 번아웃 위험 자동 플래그',
+        ];
+        requests = ['번아웃 시그널: 장시간 세션 데이터 공유', '컨텍스트 엔진: 세션별 컨텍스트 매핑'];
+        break;
+      }
+      case '개인 인사이트': {
+        const savings = data.aiSavings || data.timeSaved || 0;
+        const insight = data.topInsight || data.summary || '';
+        findings = 'AI 절약 시간 ' + savings + '분' + (insight ? ' — ' + String(insight).slice(0,30) : '');
+        proposals = [
+          '개인별 생산성 점수 자동 산출',
+          '나만의 최고 집중 시간대 추천',
+          '반복 업무 → 개인 자동화 스크립트 제안',
+        ];
+        requests = ['세션 분석: 개인 세션 상세 데이터 요청'];
+        break;
+      }
       default:
         findings = '데이터 수집 중...';
         proposals = [];
@@ -4488,7 +4587,7 @@ async function loadAgentMeeting() {
 
   // ── 요약 카드 업데이트 ──
   const liveCount = agentDiscussions.filter(function(a) { return a.status === 'LIVE'; }).length;
-  document.getElementById('ag-total').textContent = agentAPIs.length; // 15
+  document.getElementById('ag-total').textContent = agentAPIs.length; // 23
   document.getElementById('ag-total').style.color = 'var(--green)';
 
   // 학습 점수: BI score 또는 live 비율
