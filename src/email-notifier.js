@@ -91,4 +91,83 @@ async function sendUpdateEmail(ev) {
   }
 }
 
-module.exports = { sendUpdateEmail };
+// 이슈 타입 → 한국어 설명 + 심각도
+const ISSUE_META = {
+  powershell_flood:    { label: 'PowerShell 창 팝업',   severity: '⚠️ 경고', color: '#d97706' },
+  capture_blackscreen: { label: '검은화면 캡처',         severity: '🔴 긴급', color: '#dc2626' },
+  capture_stale:       { label: '캡처 중단',             severity: '⚠️ 경고', color: '#d97706' },
+  capture_accumulation:{ label: '캡처 파일 누적',        severity: 'ℹ️ 정보',  color: '#2563eb' },
+  memory_high:         { label: 'Node 메모리 과다',      severity: '⚠️ 경고', color: '#d97706' },
+  python_zombie:       { label: 'Python 좀비 프로세스',  severity: '🔴 긴급', color: '#dc2626' },
+  file_write_fail:     { label: '파일 수정/삭제 불가',   severity: '🔴 긴급', color: '#dc2626' },
+  event_silence:       { label: '이벤트 수집 중단',      severity: '⚠️ 경고', color: '#d97706' },
+};
+
+// 마지막 이슈 이메일 발송 시각 (호스트+이슈 조합, 30분 쿨다운)
+const _issueEmailSent = {};
+const ISSUE_EMAIL_COOLDOWN = 30 * 60 * 1000;
+
+/**
+ * daemon.perf.issue 이벤트를 받아 관리자에게 이슈 알림 발송
+ * @param {object} ev — { type: 'daemon.perf.issue', data: { issueType, hostname, cause, ... } }
+ */
+async function sendPerfIssueEmail(ev) {
+  const data      = ev.data || {};
+  const issueType = data.issueType || 'unknown';
+  const hostname  = data.hostname  || '알 수 없음';
+  const cause     = data.cause     || issueType;
+  const memMB     = data.memMB     || 0;
+  const ts        = ev.timestamp
+    ? new Date(ev.timestamp).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })
+    : new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
+
+  // 쿨다운: 같은 호스트+이슈 30분 내 중복 발송 방지
+  const cooldownKey = `${hostname}:${issueType}`;
+  if (_issueEmailSent[cooldownKey] && Date.now() - _issueEmailSent[cooldownKey] < ISSUE_EMAIL_COOLDOWN) return;
+  _issueEmailSent[cooldownKey] = Date.now();
+
+  if (!PASS) return;  // SMTP 미설정 시 무시
+
+  const meta    = ISSUE_META[issueType] || { label: issueType, severity: '⚠️ 경고', color: '#d97706' };
+  const subject = `${meta.severity} [${hostname}] ${meta.label} — Orbit AI`;
+
+  // 이슈별 추가 정보 행
+  const extraRows = Object.entries(data)
+    .filter(([k]) => !['issueType','hostname','platform','ts','cause'].includes(k))
+    .map(([k, v]) => `<tr><td style="padding:4px 0;color:#6b7280;width:110px;">${k}</td><td style="padding:4px 0;">${v}</td></tr>`)
+    .join('');
+
+  const html = `
+<div style="font-family:Apple SD Gothic Neo,Malgun Gothic,sans-serif;max-width:540px;margin:0 auto;background:#fff;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;">
+  <div style="background:${meta.color};padding:16px 24px;">
+    <h1 style="color:#fff;margin:0;font-size:17px;">${meta.severity} ${meta.label}</h1>
+    <p style="color:rgba(255,255,255,0.85);margin:6px 0 0;font-size:13px;">Orbit AI PC 이슈 감지 — 자동 리포트</p>
+  </div>
+  <div style="padding:20px 24px;">
+    <div style="padding:12px 14px;background:#fef9c3;border-left:4px solid ${meta.color};border-radius:4px;margin-bottom:16px;font-size:14px;">
+      ${cause}
+    </div>
+    <table style="width:100%;border-collapse:collapse;font-size:14px;">
+      <tr><td style="padding:4px 0;color:#6b7280;width:110px;">PC</td><td style="padding:4px 0;font-weight:600;">${hostname}</td></tr>
+      <tr><td style="padding:4px 0;color:#6b7280;">이슈 유형</td><td style="padding:4px 0;">${issueType}</td></tr>
+      <tr><td style="padding:4px 0;color:#6b7280;">감지 시각</td><td style="padding:4px 0;">${ts}</td></tr>
+      ${memMB ? `<tr><td style="padding:4px 0;color:#6b7280;">메모리</td><td style="padding:4px 0;">${memMB} MB</td></tr>` : ''}
+      ${extraRows}
+    </table>
+  </div>
+  <div style="padding:12px 24px;background:#f9fafb;font-size:11px;color:#9ca3af;border-top:1px solid #e5e7eb;">
+    Orbit AI 자동 이슈 리포트 · 관리자 대시보드에서 상세 확인
+  </div>
+</div>`.trim();
+
+  try {
+    const transporter = createTransporter();
+    if (!transporter) return;
+    await transporter.sendMail({ from: `"Orbit AI" <${FROM}>`, to: TO, subject, html });
+    console.log(`[email-notifier] 이슈 알림 발송 → ${TO} (${hostname} / ${issueType})`);
+  } catch (err) {
+    console.error(`[email-notifier] 이슈 알림 발송 실패: ${err.message}`);
+  }
+}
+
+module.exports = { sendUpdateEmail, sendPerfIssueEmail };

@@ -1011,7 +1011,7 @@ app.post('/api/admin/share-drive-folder', async (req, res) => {
 const autoFixer = (() => { try { return require('./src/auto-fixer'); } catch(e) { console.warn('[auto-fixer] 로드 실패:', e.message); return null; } })();
 
 // ─── 업데이트 이메일 알림 ────────────────────────────────────────────────────
-const { sendUpdateEmail } = (() => { try { return require('./src/email-notifier'); } catch(e) { console.warn('[email-notifier] 로드 실패:', e.message); return { sendUpdateEmail: () => {} }; } })();
+const { sendUpdateEmail, sendPerfIssueEmail } = (() => { try { return require('./src/email-notifier'); } catch(e) { console.warn('[email-notifier] 로드 실패:', e.message); return { sendUpdateEmail: () => {}, sendPerfIssueEmail: () => {} }; } })();
 
 // ─── Vision 큐 (맥미니 CLI 워커가 폴링해서 분석) ──────────────────────────────
 // Vision 분석은 맥미니 전용 — Railway에서는 큐잉만 함
@@ -1068,6 +1068,13 @@ app.get('/api/admin/pc-list', async (req, res) => {
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
+});
+
+// GET /api/admin/perf-issues — PC 이슈 리포트 목록 (최근 100건)
+app.get('/api/admin/perf-issues', (req, res) => {
+  const { isAdmin } = resolveAdmin(req);
+  if (!isAdmin) return res.status(403).json({ error: 'admin only' });
+  res.json({ issues: global._perfIssues || [], total: (global._perfIssues || []).length });
 });
 
 // GET /api/admin/all-users — 등록된 모든 사용자 목록 (관리자용)
@@ -2249,6 +2256,14 @@ app.post('/api/hook', async (req, res) => {
     for (const ev of events) {
       if (ev.type === 'daemon.update') {
         sendUpdateEmail(ev).catch(e => console.warn('[email-notifier] 오류:', e.message));
+      }
+      // ── PC 성능/이슈 알림 (daemon.perf.issue 이벤트) → 관리자 이메일 ─────
+      if (ev.type === 'daemon.perf.issue') {
+        sendPerfIssueEmail(ev).catch(e => console.warn('[email-notifier/perf] 오류:', e.message));
+        // 대시보드용: 최근 이슈 메모리에 보관 (최대 100건)
+        if (!global._perfIssues) global._perfIssues = [];
+        global._perfIssues.unshift({ ...ev.data, ts: ev.timestamp || new Date().toISOString() });
+        if (global._perfIssues.length > 100) global._perfIssues.length = 100;
       }
     }
 
