@@ -95,7 +95,8 @@ const FLOWS = [
       { name: '품목 그룹', run: async () => {
         const r = await nenovaGet('/api/products/search?groupsOnly=1');
         const groups = Array.isArray(r.data) ? r.data : (r.data?.groups || []);
-        return { pass: r.ok && groups.length > 0, detail: `그룹 ${groups.length}개` };
+        const dataKeys = r.data ? Object.keys(r.data).join(',') : 'null';
+        return { pass: r.ok && groups.length > 0, detail: `그룹 ${groups.length}개 (HTTP ${r.status}, keys:${dataKeys})` };
       }},
     ],
   },
@@ -200,8 +201,10 @@ module.exports = function autotestRouter() {
   router.post('/run', async (req, res) => {
     const { flowId } = req.body || {};
     try {
-      _session = { cookie: null, expiry: 0 }; // 세션 초기화
-      const toRun = flowId ? FLOWS.filter(f => f.id === flowId) : FLOWS;
+      _session = { token: null, expiry: 0 }; // 세션 초기화
+      const { flowIds } = req.body || {};
+      const ids = flowId ? [flowId] : (flowIds || []);
+      const toRun = ids.length > 0 ? FLOWS.filter(f => ids.includes(f.id)) : FLOWS;
       const results = [];
       for (const flow of toRun) {
         const r = await runFlow(flow);
