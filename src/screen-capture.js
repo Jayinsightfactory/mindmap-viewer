@@ -356,11 +356,33 @@ function capture(trigger = 'manual') {
       try { execSync(`scrot "${filepath}"`, { timeout: 5000 }); }
       catch { execSync(`gnome-screenshot -f "${filepath}"`, { timeout: 5000 }); }
     } else if (process.platform === 'win32') {
-      const escaped = filepath.replace(/\\/g, '\\\\');
-      execSync(
-        `powershell -NoProfile -WindowStyle Hidden -NonInteractive -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Screen]::PrimaryScreen | ForEach-Object { $bmp = New-Object System.Drawing.Bitmap($_.Bounds.Width, $_.Bounds.Height); $g = [System.Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($_.Bounds.Location, [System.Drawing.Point]::Empty, $_.Bounds.Size); $bmp.Save('${escaped}') }"`,
-        { timeout: 10000, windowsHide: true, stdio: 'pipe' }
-      );
+      const escaped = filepath.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      // 1순위: Python PIL ImageGrab — 검은화면/GPU 충돌 없음, Add-Type JIT 지연 없음
+      let captured = false;
+      try {
+        execSync(
+          `python -c "from PIL import ImageGrab; ImageGrab.grab(all_screens=True).save('${escaped}')"`,
+          { timeout: 8000, windowsHide: true, stdio: 'pipe' }
+        );
+        captured = fs.existsSync(filepath);
+      } catch (pyErr) {
+        // 2순위: pyautogui (PIL 없을 때 폴백)
+        try {
+          execSync(
+            `python -c "import pyautogui; pyautogui.screenshot('${escaped}')"`,
+            { timeout: 8000, windowsHide: true, stdio: 'pipe' }
+          );
+          captured = fs.existsSync(filepath);
+        } catch {}
+      }
+      // 3순위: PowerShell CopyFromScreen (최후 수단 — 검은화면 가능성 있으나 데이터 우선)
+      if (!captured) {
+        const ps = filepath.replace(/\\/g, '\\\\');
+        execSync(
+          `powershell -NoProfile -WindowStyle Hidden -NonInteractive -Command "Add-Type -AssemblyName System.Windows.Forms,System.Drawing; $s=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds; $bmp=New-Object System.Drawing.Bitmap($s.Width,$s.Height); $g=[System.Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($s.Location,[System.Drawing.Point]::Empty,$s.Size); $bmp.Save('${ps}'); $g.Dispose(); $bmp.Dispose()"`,
+          { timeout: 10000, windowsHide: true, stdio: 'pipe' }
+        );
+      }
     } else { return null; }
 
     if (!fs.existsSync(filepath)) return null;
