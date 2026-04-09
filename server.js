@@ -4439,7 +4439,7 @@ async function startServer() {
       // PC별 userId 직접 매핑 (알고 있는 것만)
       const PC_USER_MAP = {
         '이재만':           'MNCF54MBC9F2C261B6', // 임재용
-        'DESKTOP-T09911T':  'MNCQD09Y22F55C2F39', // 강현우
+        'DESKTOP-T09911T':  'MNMRX6SR07F5FF7C0C', // 강현우 (floshw95@gmail.com)
       };
       // PC별 이름 매핑 → PG orbit_auth_users에서 user_id 동적 조회
       const PC_NAME_MAP = {
