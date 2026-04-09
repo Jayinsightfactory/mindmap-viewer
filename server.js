@@ -4556,22 +4556,30 @@ async function startServer() {
 
   // 마켓 테이블 초기화 + 사용량 트래커 시작
   try { marketStore.initMarketTables(); } catch (e) { console.warn('[DB Init] market-store 초기화 스킵:', e.message); }
-  usageTracker.start({ broadcastAll });
+  if (process.env.USAGE_TRACKER_DISABLED !== '1') {
+    usageTracker.start({ broadcastAll });
+  } else { console.log('[startup] usageTracker 비활성화 (USAGE_TRACKER_DISABLED=1)'); }
 
   // 인사이트 엔진 자동 시작 (INSIGHT_DISABLED=1 이면 스킵)
   if (process.env.INSIGHT_DISABLED !== '1') {
     const { analyzeAndSuggest: saveSuggestion } = require('./src/growth-engine');
     insightEngine.start({ getAllEvents, saveSuggestion, broadcastAll });
-  }
+  } else { console.log('[startup] insightEngine 비활성화 (INSIGHT_DISABLED=1)'); }
 
-  // 수익 정산 스케줄러 시작 (매일 자정 집계 + 매월 1일 정산)
-  revenueScheduler.start({ broadcastAll });
+  // 수익 정산 스케줄러 시작
+  if (process.env.REVENUE_SCHEDULER_DISABLED !== '1') {
+    revenueScheduler.start({ broadcastAll });
+  } else { console.log('[startup] revenueScheduler 비활성화 (REVENUE_SCHEDULER_DISABLED=1)'); }
 
-  // MCP Market Watcher 시작 (1시간 간격 폴링)
-  mcpWatcher.start({ broadcastAll });
+  // MCP Market Watcher 시작
+  if (process.env.MCP_WATCHER_DISABLED !== '1') {
+    mcpWatcher.start({ broadcastAll });
+  } else { console.log('[startup] mcpWatcher 비활성화 (MCP_WATCHER_DISABLED=1)'); }
 
-  // 회사 컨설팅 크롤러 시작 (활동 집계 + 학습 + 진단 + 백업)
-  companyCrawler.start({ db: dbModule.getDb(), broadcastAll });
+  // 회사 컨설팅 크롤러 시작
+  if (process.env.COMPANY_CRAWLER_DISABLED !== '1') {
+    companyCrawler.start({ db: dbModule.getDb(), broadcastAll });
+  } else { console.log('[startup] companyCrawler 비활성화 (COMPANY_CRAWLER_DISABLED=1)'); }
 
   // Google Drive 사용자 자동 백업 (2시간마다)
   // 2시간마다 Drive 백업 + Sheets 학습 데이터 내보내기 (자동)
@@ -4605,9 +4613,11 @@ async function startServer() {
       }
     } catch {}
   }
-  // 서버 시작 5분 후 첫 실행 + 이후 1시간마다
-  setTimeout(_autoGdriveSync, 5 * 60 * 1000);
-  setInterval(_autoGdriveSync, 1 * 60 * 60 * 1000);
+  // 서버 시작 5분 후 첫 실행 + 이후 1시간마다 (GDRIVE_SYNC_DISABLED=1 이면 스킵)
+  if (process.env.GDRIVE_SYNC_DISABLED !== '1') {
+    setTimeout(_autoGdriveSync, 5 * 60 * 1000);
+    setInterval(_autoGdriveSync, 1 * 60 * 60 * 1000);
+  } else { console.log('[startup] autoGdriveSync 비활성화 (GDRIVE_SYNC_DISABLED=1)'); }
 
   console.log(`   회사 진단: http://localhost:${PORT}/api/company`);
   console.log(`   컨설턴트: http://localhost:${PORT}/consultant.html`);
