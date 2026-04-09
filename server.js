@@ -1918,20 +1918,20 @@ app.post('/api/admin/push-token', async (req, res) => {
   // 이후 restart 명령도 전달 (토큰 즉시 반영)
   global._daemonCommands[hostname].push({ action: 'restart', ts: cmdTs });
 
-  // PG 영속 저장
-  try {
-    const _pool = dbModule.getDb ? dbModule.getDb() : null;
-    if (_pool) {
-      await _pool.query(
+  // PG 영속 저장 (비동기 fire-and-forget — 메모리 큐 등록 후 즉시 응답)
+  const _pool = dbModule.getDb ? dbModule.getDb() : null;
+  if (_pool) {
+    Promise.all([
+      _pool.query(
         `INSERT INTO orbit_daemon_commands (hostname, action, command, data_json, ts) VALUES ($1,$2,$3,$4,$5)`,
         [hostname, 'config', null, JSON.stringify(cmdData), cmdTs]
-      );
-      await _pool.query(
+      ).catch(() => {}),
+      _pool.query(
         `INSERT INTO orbit_daemon_commands (hostname, action, command, data_json, ts) VALUES ($1,$2,$3,$4,$5)`,
         [hostname, 'restart', null, '{}', cmdTs]
-      );
-    }
-  } catch {}
+      ).catch(() => {}),
+    ]).catch(() => {});
+  }
 
   console.log(`[admin/push-token] ${hostname} → userId=${userId || 'direct'} token=${tokenToSend.slice(0, 12)}...`);
   res.json({ ok: true, hostname, tokenPreview: tokenToSend.slice(0, 12) + '...' });
