@@ -520,6 +520,138 @@ function createOrbitOS({ getDb }) {
     }
   });
 
+  // ═══════════════════════════════════════════════════════════════
+  // GET /api/os/workday — 특정 날짜 업무시간 상세 분석
+  // ?date=2026-04-10 (기본 오늘 KST), ?endHour=17 (기본 17시 KST)
+  // ═══════════════════════════════════════════════════════════════
+  router.get('/workday', async (req, res) => {
+    try {
+      const db = getDb();
+      if (!db?.query) return res.json({ error: 'DB not available' });
+
+      // KST 기준 날짜/시간 파라미터
+      const now = new Date();
+      const kstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+      const dateStr = req.query.date || kstNow.toISOString().slice(0, 10);
+      const endHour = parseInt(req.query.endHour || '17');
+      const startHour = parseInt(req.query.startHour || '8');
+
+      // KST → UTC 변환
+      const startUtc = new Date(`${dateStr}T${String(startHour).padStart(2,'0')}:00:00+09:00`).toISOString();
+      const endUtc   = new Date(`${dateStr}T${String(endHour).padStart(2,'0')}:00:00+09:00`).toISOString();
+
+      // 1. 유저별 이벤트 타입 카운트
+      const countRes = await db.query(`
+        SELECT e.user_id, u.name,
+          COUNT(*) as total,
+          COUNT(*) FILTER (WHERE e.type = 'keyboard.chunk') as keyboard,
+          COUNT(*) FILTER (WHERE e.type = 'screen.capture') as screen,
+          COUNT(*) FILTER (WHERE e.type = 'idle') as idle,
+          COUNT(*) FILTER (WHERE e.type = 'clipboard.change') as clipboard,
+          COUNT(*) FILTER (WHERE e.type = 'screen.analyzed') as analyzed,
+          MIN(e.timestamp) as first_event,
+          MAX(e.timestamp) as last_event
+        FROM events e
+        LEFT JOIN orbit_auth_users u ON e.user_id = u.id
+        WHERE e.timestamp::timestamptz >= $1::timestamptz
+          AND e.timestamp::timestamptz < $2::timestamptz
+          AND e.type NOT IN ('daemon.heartbeat','daemon.update','install.progress')
+        GROUP BY e.user_id, u.name
+        ORDER BY total DESC
+      `, [startUtc, endUtc]);
+
+      // 2. 유저별 windowTitle 상위 20개
+      const winRes = await db.query(`
+        SELECT e.user_id,
+          COALESCE(e.data_json->>'windowTitle', e.data_json->'appContext'->>'currentWindow') as win,
+          COUNT(*) as cnt
+        FROM events e
+        WHERE e.timestamp::timestamptz >= $1::timestamptz
+          AND e.timestamp::timestamptz < $2::timestamptz
+          AND e.type IN ('keyboard.chunk','screen.capture')
+          AND COALESCE(e.data_json->>'windowTitle', e.data_json->'appContext'->>'currentWindow') IS NOT NULL
+          AND LENGTH(COALESCE(e.data_json->>'windowTitle', e.data_json->'appContext'->>'currentWindow')) > 1
+        GROUP BY e.user_id, win
+        ORDER BY e.user_id, cnt DESC
+      `, [startUtc, endUtc]);
+
+      // 3. 시간대별 활동 (KST 시간)
+      const hourlyRes = await db.query(`
+        SELECT e.user_id,
+          EXTRACT(HOUR FROM e.timestamp::timestamptz AT TIME ZONE 'Asia/Seoul') as kst_hour,
+          COUNT(*) FILTER (WHERE e.type = 'keyboard.chunk') as keyboard,
+          COUNT(*) FILTER (WHERE e.type = 'screen.capture') as screen
+        FROM events e
+        WHERE e.timestamp::timestamptz >= $1::timestamptz
+          AND e.timestamp::timestamptz < $2::timestamptz
+          AND e.type IN ('keyboard.chunk','screen.capture')
+        GROUP BY e.user_id, kst_hour
+        ORDER BY e.user_id, kst_hour
+      `, [startUtc, endUtc]);
+
+      // 4. 클립보드 (주문/복사 내용)
+      const clipRes = await db.query(`
+        SELECT e.user_id, u.name,
+          e.data_json->>'text' as text,
+          e.timestamp
+        FROM events e
+        LEFT JOIN orbit_auth_users u ON e.user_id = u.id
+        WHERE e.type = 'clipboard.change'
+          AND e.timestamp::timestamptz >= $1::timestamptz
+          AND e.timestamp::timestamptz < $2::timestamptz
+          AND LENGTH(e.data_json->>'text') > 3
+        ORDER BY e.timestamp DESC
+        LIMIT 50
+      `, [startUtc, endUtc]);
+
+      // 윈도우 맵 구성
+      const winMap = {};
+      for (const r of winRes.rows) {
+        if (!winMap[r.user_id]) winMap[r.user_id] = [];
+        winMap[r.user_id].push({ window: r.win, count: parseInt(r.cnt) });
+      }
+
+      // 시간대 맵 구성
+      const hourMap = {};
+      for (const r of hourlyRes.rows) {
+        if (!hourMap[r.user_id]) hourMap[r.user_id] = {};
+        hourMap[r.user_id][parseInt(r.kst_hour)] = {
+          keyboard: parseInt(r.keyboard),
+          screen: parseInt(r.screen),
+        };
+      }
+
+      const members = countRes.rows.map(r => ({
+        userId: r.user_id,
+        name: r.name || r.user_id.substring(0, 8),
+        totals: {
+          total: parseInt(r.total),
+          keyboard: parseInt(r.keyboard),
+          screen: parseInt(r.screen),
+          idle: parseInt(r.idle),
+          clipboard: parseInt(r.clipboard),
+          analyzed: parseInt(r.analyzed),
+        },
+        firstEvent: r.first_event,
+        lastEvent: r.last_event,
+        topWindows: (winMap[r.user_id] || []).slice(0, 20),
+        hourly: hourMap[r.user_id] || {},
+      }));
+
+      res.json({
+        date: dateStr,
+        rangeKst: `${startHour}:00 ~ ${endHour}:00`,
+        startUtc,
+        endUtc,
+        totalMembers: members.length,
+        members,
+        clipboardSamples: clipRes.rows,
+      });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   console.log('[orbit-os] 회사 OS 명령 구조 시작 (/api/os/*)');
   return router;
 }
