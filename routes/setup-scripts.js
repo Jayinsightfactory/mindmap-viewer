@@ -164,7 +164,7 @@ if ($nodeExe) {
     $action3   = New-ScheduledTaskAction  -Execute $nodeExe -Argument "$ORBIT\\daemon\\personal-agent.js" -WorkingDirectory $ORBIT
     $trigger3  = New-ScheduledTaskTrigger -AtLogOn
     $settings3 = New-ScheduledTaskSettingsSet -ExecutionTimeLimit 0 -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -MultipleInstances IgnoreNew
-    Register-ScheduledTask -TaskName "OrbitDaemon" -Action $action3 -Trigger $trigger3 -Settings $settings3 -RunLevel Highest -Force 2>$null | Out-Null
+    Register-ScheduledTask -TaskName "OrbitDaemon" -Action $action3 -Trigger $trigger3 -Settings $settings3 -RunLevel Limited -Force 2>$null | Out-Null
     Start-ScheduledTask -TaskName "OrbitDaemon" -ErrorAction SilentlyContinue
     Write-Host "  ✓ Orbit 데몬 OK (키보드+캡처+클립보드+자동업데이트)" -ForegroundColor Green
 } else {
