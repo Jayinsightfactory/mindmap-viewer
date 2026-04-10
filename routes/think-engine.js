@@ -34,6 +34,70 @@ function createThinkEngine({ getDb, ragCore }) {
     return s;
   }
 
+  /**
+   * 업무 목적 기반 상태 정규화 — 전이 모델 학습 품질 개선
+   * raw windowTitle → "app:purpose" 형태로 정규화
+   * 예: "카카오톡 - 네노바 영업방" → "kakaotalk:영업"
+   *     "26년 콜롬비아 물량표.xlsx - Excel" → "excel:물량표"
+   */
+  function _normalizePurposeState(app, windowTitle) {
+    const appLow = (app || '').toLowerCase();
+    const win = (windowTitle || '');
+
+    // nenova ERP
+    if (appLow.includes('nenova') || appLow.includes('네노바') || win.includes('화훼 관리')) {
+      if (/신규.*주문|주문.*등록/.test(win)) return 'nenova:주문입력';
+      if (/주문.*관리/.test(win)) return 'nenova:주문관리';
+      if (/출고/.test(win)) return 'nenova:출고';
+      if (/재고/.test(win)) return 'nenova:재고';
+      if (/거래처/.test(win)) return 'nenova:거래처';
+      if (/발주/.test(win)) return 'nenova:발주';
+      if (/입고/.test(win)) return 'nenova:입고';
+      if (/견적/.test(win)) return 'nenova:견적';
+      if (/피벗|pivot/i.test(win)) return 'nenova:분석';
+      return 'nenova:전산';
+    }
+
+    // Excel
+    if (appLow.includes('excel') || /\.xlsx?/i.test(win)) {
+      if (/물량/.test(win)) return 'excel:물량표';
+      if (/차감/.test(win)) return 'excel:차감';
+      if (/발주/.test(win)) return 'excel:발주';
+      if (/매출/.test(win)) return 'excel:매출';
+      if (/견적/.test(win)) return 'excel:견적';
+      if (/출고/.test(win)) return 'excel:출고';
+      return 'excel:문서';
+    }
+
+    // KakaoTalk — 업무/개인 분리
+    if (appLow.includes('kakaotalk') || appLow.includes('카카오톡') || win.includes('카카오톡')) {
+      if (win.includes('네노바') || win.includes('nenova')) return 'kakao:내부방';
+      if (/주문|발주|출고|입고|견적|물량|차감|배송|거래처/.test(win)) return 'kakao:업무';
+      if (/♡|♥|❤|사랑|엄마|아빠|친구|동창|가족/.test(win)) return 'kakao:개인';
+      return 'kakao:기타';
+    }
+
+    // Browser
+    if (/chrome|firefox|edge|whale|msedge|brave/i.test(appLow)) {
+      if (/holex|꽃|품종|절화|카네이션|장미/i.test(win)) return 'browser:꽃검색';
+      if (/youtube|넷플릭스|netflix|tiktok|instagram|게임|나무위키/i.test(win)) return 'browser:비업무';
+      if (/orbit|뱅킹|은행|mail|메일/i.test(win)) return 'browser:업무';
+      return 'browser:웹';
+    }
+
+    // 기타 앱
+    if (/acrobat|pdf/i.test(appLow) || /\.pdf/i.test(win)) return 'pdf:문서';
+    if (/hwp|한글|word/i.test(appLow)) return 'word:문서';
+    if (/explorer|탐색기/i.test(appLow)) return 'explorer:파일';
+    if (/powershell|cmd|terminal/i.test(appLow)) return 'terminal:시스템';
+
+    // idle
+    if (appLow === 'idle' || appLow === '' || win.includes('잠금')) return 'system:대기';
+
+    // fallback: 기존 normalizeState
+    return _normalizeState(win);
+  }
+
   // ── 시간대 구분 헬퍼 ──
   // 0=새벽(0-5), 1=오전(6-11), 2=오후(12-17), 3=저녁(18-23)
   function _timeSlot(date) {
@@ -275,9 +339,74 @@ function createThinkEngine({ getDb, ragCore }) {
         slotUpserted++;
       }
 
-      await _log(db, 'learn', 'transition_model', `${upserted}건 학습(시간대:${slotUpserted}건), ${hours}시간 데이터`);
+      // ── purpose 기반 전이 모델 학습 (업무 분류 기반, 노이즈 제거) ──
+      const purposeTransitions = await db.query(`
+        WITH ordered AS (
+          SELECT user_id, timestamp,
+            COALESCE(data_json->>'app', data_json->'appContext'->>'currentApp', '') as app,
+            COALESCE(data_json->>'windowTitle', data_json->'appContext'->>'currentWindow', '') as win,
+            LAG(COALESCE(data_json->>'app', data_json->'appContext'->>'currentApp', ''))
+              OVER (PARTITION BY user_id ORDER BY timestamp) as prev_app,
+            LAG(COALESCE(data_json->>'windowTitle', data_json->'appContext'->>'currentWindow', ''))
+              OVER (PARTITION BY user_id ORDER BY timestamp) as prev_win,
+            LAG(timestamp) OVER (PARTITION BY user_id ORDER BY timestamp) as prev_ts
+          FROM events
+          WHERE type IN ('keyboard.chunk', 'screen.capture')
+            AND timestamp::timestamptz > NOW() - INTERVAL '${hours} hours'
+            AND user_id NOT IN ('MMOLABXL2066516519')
+        )
+        SELECT user_id, prev_app, prev_win, app, win,
+          EXTRACT(EPOCH FROM (timestamp::timestamptz - prev_ts::timestamptz)) as sec_gap
+        FROM ordered
+        WHERE win IS NOT NULL AND prev_win IS NOT NULL
+          AND LENGTH(win) > 1 AND LENGTH(prev_win) > 1
+          AND EXTRACT(EPOCH FROM (timestamp::timestamptz - prev_ts::timestamptz)) < 600
+          AND EXTRACT(EPOCH FROM (timestamp::timestamptz - prev_ts::timestamptz)) > 0
+      `);
 
-      res.json({ learned: upserted, slotLearned: slotUpserted, dataHours: hours, uniqueUsers: new Set(transitions.rows.map(r => r.user_id)).size });
+      // purpose 기반 전이 집계
+      const purposeCounts = {};
+      for (const r of purposeTransitions.rows) {
+        const fromP = _normalizePurposeState(r.prev_app, r.prev_win);
+        const toP = _normalizePurposeState(r.app, r.win);
+        if (!fromP || !toP || fromP === toP) continue;
+        const key = `${r.user_id}|${fromP}|${toP}`;
+        if (!purposeCounts[key]) purposeCounts[key] = { userId: r.user_id, from: fromP, to: toP, cnt: 0, totalSec: 0 };
+        purposeCounts[key].cnt++;
+        purposeCounts[key].totalSec += parseFloat(r.sec_gap || 0);
+      }
+
+      const purposeTotals = {};
+      for (const v of Object.values(purposeCounts)) {
+        const key = `${v.userId}:${v.from}`;
+        purposeTotals[key] = (purposeTotals[key] || 0) + v.cnt;
+      }
+
+      let purposeUpserted = 0;
+      for (const v of Object.values(purposeCounts)) {
+        if (v.cnt < 2) continue;
+        const key = `${v.userId}:${v.from}`;
+        const prob = v.cnt / (purposeTotals[key] || 1);
+        // purpose 기반 전이도 같은 transition_model 테이블에 저장 (from/to가 "app:purpose" 형태)
+        await db.query(`
+          INSERT INTO transition_model (user_id, from_state, to_state, probability, count, avg_seconds, updated_at)
+          VALUES ($1, $2, $3, $4, $5, $6, NOW())
+          ON CONFLICT (user_id, from_state, to_state) DO UPDATE SET
+            probability = $4, count = transition_model.count + $5, avg_seconds = $6, updated_at = NOW()
+        `, [v.userId, v.from, v.to, +prob.toFixed(3), v.cnt, +(v.totalSec / v.cnt).toFixed(1)])
+          .catch(() => {});
+        purposeUpserted++;
+      }
+
+      await _log(db, 'learn', 'transition_model', `raw:${upserted}건 + purpose:${purposeUpserted}건 + 시간대:${slotUpserted}건, ${hours}시간 데이터`);
+
+      res.json({
+        learned: upserted,
+        purposeLearned: purposeUpserted,
+        slotLearned: slotUpserted,
+        dataHours: hours,
+        uniqueUsers: new Set(transitions.rows.map(r => r.user_id)).size,
+      });
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
 
