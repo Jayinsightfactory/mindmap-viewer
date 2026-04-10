@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Orbit AI — 프로세스 마이닝</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0d1117; --surface: #161b22; --surface2: #21262d;
+    --border: #30363d; --text: #e6edf3; --muted: #8b949e;
+    --green: #3fb950; --blue: #58a6ff; --red: #f85149;
+    --orange: #ffa657; --purple: #bc8cff; --cyan: #39d2c0;
+  }
+  body { background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, sans-serif; min-height: 100vh; line-height: 1.5; }
+  a { color: var(--blue); text-decoration: none; }
+
+  header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 14px 28px; display: flex; align-items: center; gap: 16px; position: sticky; top: 0; z-index: 100; }
+  .logo { font-size: 18px; font-weight: 700; color: var(--green); }
+  .logo span { color: var(--blue); font-weight: 400; }
+  .header-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+  input[type="date"] { background: var(--surface2); border: 1px solid var(--border); color: var(--text); padding: 6px 12px; border-radius: 6px; font-size: 13px; }
+  select { background: var(--surface2); border: 1px solid var(--border); color: var(--text); padding: 6px 12px; border-radius: 6px; font-size: 13px; }
+  .btn { background: var(--surface2); border: 1px solid var(--border); color: var(--text); padding: 7px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; transition: all .15s; }
+  .btn:hover { background: var(--border); }
+  .btn-primary { background: var(--green); border-color: var(--green); color: #0d1117; font-weight: 600; }
+
+  main { max-width: 1440px; margin: 0 auto; padding: 24px; }
+  .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 28px; }
+  .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 18px; text-align: center; }
+  .stat-value { font-size: 28px; font-weight: 700; color: var(--green); }
+  .stat-label { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 28px; }
+  @media (max-width: 900px) { .grid-2 { grid-template-columns: 1fr; } }
+
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 20px; }
+  .panel-title { font-size: 15px; font-weight: 600; margin-bottom: 14px; color: var(--blue); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); color: var(--muted); font-weight: 500; }
+  td { padding: 8px 10px; border-bottom: 1px solid var(--surface2); }
+  tr:hover td { background: var(--surface2); }
+
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+  .tag-green { background: rgba(63,185,80,.15); color: var(--green); }
+  .tag-orange { background: rgba(255,166,87,.15); color: var(--orange); }
+  .tag-red { background: rgba(248,81,73,.15); color: var(--red); }
+  .tag-blue { background: rgba(88,166,255,.15); color: var(--blue); }
+  .tag-purple { background: rgba(188,140,255,.15); color: var(--purple); }
+
+  .flow-arrow { color: var(--muted); margin: 0 4px; }
+  .chart-container { position: relative; height: 280px; }
+  .loading { text-align: center; padding: 40px; color: var(--muted); }
+
+  .anomaly-card { padding: 12px 16px; border-radius: 6px; margin-bottom: 8px; }
+  .anomaly-warning { background: rgba(255,166,87,.08); border-left: 3px solid var(--orange); }
+  .anomaly-info { background: rgba(88,166,255,.08); border-left: 3px solid var(--blue); }
+
+  .decision-flow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 6px 0; }
+  .decision-node { background: var(--surface2); padding: 4px 10px; border-radius: 4px; font-size: 12px; }
+  .decision-node.from { border: 1px solid var(--blue); color: var(--blue); }
+  .decision-node.to { border: 1px solid var(--green); }
+
+  .text-report { background: var(--surface2); border-radius: 6px; padding: 16px; font-family: 'Courier New', monospace; font-size: 13px; white-space: pre-wrap; line-height: 1.7; max-height: 400px; overflow-y: auto; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Orbit AI <span>프로세스 마이닝</span></div>
+  <div class="header-right">
+    <input type="date" id="dateInput" />
+    <select id="daysInput">
+      <option value="1">1일</option>
+      <option value="3">3일</option>
+      <option value="7" selected>7일</option>
+      <option value="14">14일</option>
+    </select>
+    <select id="userSelect"><option value="">전체</option></select>
+    <button class="btn btn-primary" onclick="loadAll()">분석</button>
+    <button class="btn" onclick="generateReport()">리포트 생성</button>
+    <a href="/admin-analysis.html" class="btn">업무 분석</a>
+  </div>
+</header>
+
+<main>
+  <!-- 요약 카드 -->
+  <div class="stats-grid" id="statsGrid">
+    <div class="stat-card"><div class="stat-value" id="statEvents">-</div><div class="stat-label">총 이벤트</div></div>
+    <div class="stat-card"><div class="stat-value" id="statUsers">-</div><div class="stat-label">활성 사용자</div></div>
+    <div class="stat-card"><div class="stat-value" id="statVision">-</div><div class="stat-label">Vision 분석</div></div>
+    <div class="stat-card"><div class="stat-value" id="statPatterns">-</div><div class="stat-label">업무 패턴</div></div>
+    <div class="stat-card"><div class="stat-value" id="statBottlenecks">-</div><div class="stat-label">병목 감지</div></div>
+    <div class="stat-card"><div class="stat-value" id="statDecisions">-</div><div class="stat-label">의사결정 분기</div></div>
+  </div>
+
+  <!-- 차트 영역 -->
+  <div class="grid-2">
+    <div class="panel">
+      <div class="panel-title">시간대별 활동 히트맵 (KST)</div>
+      <div class="chart-container"><canvas id="hourlyChart"></canvas></div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">앱별 사용 시간 (분)</div>
+      <div class="chart-container"><canvas id="appChart"></canvas></div>
+    </div>
+  </div>
+
+  <!-- 직원 비교 -->
+  <div class="panel">
+    <div class="panel-title">직원별 업무 현황</div>
+    <table id="usersTable">
+      <thead><tr><th>이름</th><th>업무시간(분)</th><th>세션</th><th>평균세션(분)</th><th>주요 앱</th><th>주요 패턴</th></tr></thead>
+      <tbody id="usersBody"></tbody>
+    </table>
+  </div>
+
+  <div class="grid-2">
+    <!-- 업무 흐름 패턴 -->
+    <div class="panel">
+      <div class="panel-title">업무 흐름 패턴 (반복 빈도순)</div>
+      <table id="patternsTable">
+        <thead><tr><th>패턴</th><th>횟수</th><th>평균(분)</th><th>해석</th></tr></thead>
+        <tbody id="patternsBody"></tbody>
+      </table>
+    </div>
+
+    <!-- 병목 분석 -->
+    <div class="panel">
+      <div class="panel-title">병목 감지</div>
+      <table id="bottlenecksTable">
+        <thead><tr><th>앱</th><th>평균(초)</th><th>이상치</th><th>최대(초)</th></tr></thead>
+        <tbody id="bottlenecksBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <!-- 의사결정 분기 -->
+    <div class="panel">
+      <div class="panel-title">의사결정 분기점</div>
+      <div id="decisionsContainer"></div>
+    </div>
+
+    <!-- 비정상 감지 -->
+    <div class="panel">
+      <div class="panel-title">비정상 패턴 감지</div>
+      <div id="anomaliesContainer"><div class="loading">사용자를 선택하세요</div></div>
+    </div>
+  </div>
+
+  <!-- 베스트 프랙티스 -->
+  <div class="panel" id="bestPracticesPanel" style="display:none">
+    <div class="panel-title">베스트 프랙티스 비교</div>
+    <table>
+      <thead><tr><th>워크플로우</th><th>최고 효율</th><th>시간(분)</th><th>최저 효율</th><th>시간(분)</th><th>차이</th></tr></thead>
+      <tbody id="bpBody"></tbody>
+    </table>
+  </div>
+
+  <!-- 텍스트 리포트 -->
+  <div class="panel" id="reportPanel" style="display:none">
+    <div class="panel-title">종합 텍스트 리포트 <a id="sheetsLink" href="#" target="_blank" style="margin-left:12px;font-size:12px">Google Sheets</a></div>
+    <div class="text-report" id="textReport"></div>
+  </div>
+</main>
+
+<script>
+const BASE = location.origin;
+let hourlyChartInstance = null, appChartInstance = null;
+
+// 초기화
+document.getElementById('dateInput').value = new Date().toISOString().slice(0, 10);
+
+async function apiFetch(path) {
+  const res = await fetch(BASE + path);
+  return res.json();
+}
+async function apiPost(path, body) {
+  const res = await fetch(BASE + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  return res.json();
+}
+
+// 전체 로드
+async function loadAll() {
+  const date = document.getElementById('dateInput').value;
+  const days = document.getElementById('daysInput').value;
+  const userId = document.getElementById('userSelect').value;
+
+  // 병렬 API 호출
+  const [summary, compare, decisions] = await Promise.all([
+    apiFetch(`/api/mining/summary?date=${date}&days=${days}`),
+    apiFetch(`/api/mining/compare?date=${date}&days=${days}`),
+    apiFetch(`/api/mining/decisions?date=${date}&days=${days}`),
+  ]);
+
+  // 사용자별 워크플로우 + 병목 (사용자 선택 시)
+  let workflows = null, bottlenecks = null, anomalies = null;
+  if (userId) {
+    [workflows, bottlenecks, anomalies] = await Promise.all([
+      apiFetch(`/api/mining/workflows?userId=${userId}&date=${date}&days=${days}`),
+      apiFetch(`/api/mining/bottlenecks?userId=${userId}&date=${date}&days=${days}`),
+      apiFetch(`/api/mining/anomalies?userId=${userId}&date=${date}`),
+    ]);
+  }
+
+  renderStats(summary, compare, decisions, workflows);
+  renderHourlyChart(summary.hourlyHeatmap || []);
+  renderAppChart(compare);
+  renderUsers(compare.users || []);
+  renderPatterns(workflows?.patterns || compare?.users?.[0]?.topPatterns || []);
+  renderBottlenecks(bottlenecks?.bottlenecks || []);
+  renderDecisions(decisions.decisionPoints || []);
+  renderAnomalies(anomalies?.anomalies || []);
+  renderBestPractices(compare.bestPractices || []);
+
+  // 사용자 목록 업데이트
+  updateUserSelect(compare.users || []);
+}
+
+function updateUserSelect(users) {
+  const sel = document.getElementById('userSelect');
+  const current = sel.value;
+  sel.innerHTML = '<option value="">전체</option>';
+  for (const u of users) {
+    const opt = document.createElement('option');
+    opt.value = u.userId;
+    opt.textContent = u.name;
+    if (u.userId === current) opt.selected = true;
+    sel.appendChild(opt);
+  }
+}
+
+// 통계 카드
+function renderStats(summary, compare, decisions, workflows) {
+  document.getElementById('statEvents').textContent = (summary.stats?.totalEvents || 0).toLocaleString();
+  document.getElementById('statUsers').textContent = summary.stats?.activeUsers || 0;
+  document.getElementById('statVision').textContent = summary.stats?.visionAnalyzed || 0;
+  document.getElementById('statPatterns').textContent = workflows?.patterns?.length || '-';
+  document.getElementById('statBottlenecks').textContent = '-';
+  document.getElementById('statDecisions').textContent = decisions.decisionPoints?.length || 0;
+}
+
+// 시간대 차트
+function renderHourlyChart(data) {
+  if (hourlyChartInstance) hourlyChartInstance.destroy();
+  const ctx = document.getElementById('hourlyChart').getContext('2d');
+  const labels = Array.from({length: 24}, (_, i) => i + '시');
+  const values = labels.map((_, i) => {
+    const h = data.find(d => d.hour === i);
+    return h ? h.events : 0;
+  });
+  hourlyChartInstance = new Chart(ctx, {
+    type: 'bar',
+    data: { labels, datasets: [{ data: values, backgroundColor: values.map(v => v > 100 ? '#3fb950' : v > 30 ? '#58a6ff' : '#30363d'), borderRadius: 3 }] },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
+      scales: { x: { ticks: { color: '#8b949e', font: { size: 10 } }, grid: { display: false } }, y: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' } } } }
+  });
+}
+
+// 앱별 사용 시간 차트
+function renderAppChart(compare) {
+  if (appChartInstance) appChartInstance.destroy();
+  const ctx = document.getElementById('appChart').getContext('2d');
+  const appComp = (compare.appComparison || []).slice(0, 8);
+  const labels = appComp.map(a => a.app);
+  const users = [...new Set(appComp.flatMap(a => a.users.map(u => u.name)))].slice(0, 5);
+  const colors = ['#3fb950', '#58a6ff', '#ffa657', '#bc8cff', '#39d2c0'];
+  const datasets = users.map((name, i) => ({
+    label: name, data: labels.map(app => {
+      const ac = appComp.find(a => a.app === app);
+      return ac?.users.find(u => u.name === name)?.minutes || 0;
+    }),
+    backgroundColor: colors[i % colors.length] + '99', borderColor: colors[i % colors.length], borderWidth: 1, borderRadius: 3,
+  }));
+  appChartInstance = new Chart(ctx, {
+    type: 'bar',
+    data: { labels, datasets },
+    options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { labels: { color: '#8b949e', font: { size: 11 } } } },
+      scales: { x: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' } }, y: { ticks: { color: '#e6edf3', font: { size: 11 } }, grid: { display: false } } } }
+  });
+}
+
+// 직원 테이블
+function renderUsers(users) {
+  const body = document.getElementById('usersBody');
+  body.innerHTML = users.map(u => {
+    const apps = (u.timeByApp || []).slice(0, 3).map(t => `<span class="tag tag-blue">${t.app} ${t.minutes}분</span>`).join(' ');
+    const pats = (u.topPatterns || []).slice(0, 2).map(p => `<span class="tag tag-purple">${p.flow}</span>`).join(' ');
+    return `<tr><td><strong>${u.name}</strong></td><td>${u.totalWorkMin}</td><td>${u.totalSessions}</td><td>${u.avgSessionMin}</td><td>${apps}</td><td>${pats}</td></tr>`;
+  }).join('');
+}
+
+// 패턴 테이블
+function renderPatterns(patterns) {
+  const body = document.getElementById('patternsBody');
+  const list = patterns.slice(0, 12);
+  body.innerHTML = list.map(p => {
+    const flow = (p.flow || p.steps?.join(' → ') || p.pattern || '').split(' → ')
+      .map(s => `<span class="tag tag-green">${s}</span>`).join('<span class="flow-arrow">→</span>');
+    return `<tr><td>${flow}</td><td>${p.count}</td><td>${p.avgDurationMin || p.avgMin || '-'}</td><td style="color:var(--muted);font-size:12px">${p.interpretation || ''}</td></tr>`;
+  }).join('');
+}
+
+// 병목 테이블
+function renderBottlenecks(bottlenecks) {
+  const body = document.getElementById('bottlenecksBody');
+  document.getElementById('statBottlenecks').textContent = bottlenecks.length;
+  body.innerHTML = bottlenecks.map(b => {
+    const severity = b.outlierCount > 10 ? 'red' : b.outlierCount > 3 ? 'orange' : 'green';
+    return `<tr><td><strong>${b.app}</strong></td><td>${b.avgDurationSec}</td><td><span class="tag tag-${severity}">${b.outlierCount}건</span></td><td>${b.worstCaseSec}</td></tr>`;
+  }).join('');
+}
+
+// 의사결정 분기
+function renderDecisions(points) {
+  const container = document.getElementById('decisionsContainer');
+  if (!points.length) { container.innerHTML = '<div class="loading">데이터 없음</div>'; return; }
+  container.innerHTML = points.slice(0, 6).map(dp => {
+    const choices = dp.choices.slice(0, 4).map(c =>
+      `<span class="decision-node to">${c.nextApp} <small>(${c.totalTransitions})</small></span>`
+    ).join('');
+    return `<div style="margin-bottom:14px">
+      <div class="decision-flow"><span class="decision-node from">${dp.fromApp}</span><span class="flow-arrow">→</span>${choices}</div>
+      <div style="font-size:12px;color:var(--muted);margin-left:4px">${dp.insight || ''}</div>
+    </div>`;
+  }).join('');
+}
+
+// 비정상 감지
+function renderAnomalies(anomalies) {
+  const container = document.getElementById('anomaliesContainer');
+  if (!anomalies.length) { container.innerHTML = '<div class="loading">이상 없음</div>'; return; }
+  container.innerHTML = anomalies.map(a => `
+    <div class="anomaly-card anomaly-${a.severity}">
+      <span class="tag tag-${a.severity === 'warning' ? 'orange' : 'blue'}">${a.type}</span>
+      <span style="margin-left:8px;font-size:13px">${a.message}</span>
+    </div>
+  `).join('');
+}
+
+// 베스트 프랙티스
+function renderBestPractices(bps) {
+  const panel = document.getElementById('bestPracticesPanel');
+  if (!bps.length) { panel.style.display = 'none'; return; }
+  panel.style.display = 'block';
+  document.getElementById('bpBody').innerHTML = bps.map(bp =>
+    `<tr><td>${bp.flow}</td><td><span class="tag tag-green">${bp.fastest?.name}</span></td><td>${bp.fastest?.avgMin}</td>
+     <td><span class="tag tag-orange">${bp.slowest?.name}</span></td><td>${bp.slowest?.avgMin}</td>
+     <td><strong>${bp.gapMin}분</strong></td></tr>`
+  ).join('');
+}
+
+// 리포트 생성
+async function generateReport() {
+  const date = document.getElementById('dateInput').value;
+  const days = document.getElementById('daysInput').value;
+  const btn = event.target; btn.textContent = '생성 중...'; btn.disabled = true;
+  try {
+    const result = await apiPost('/api/mining/report', { date, days: parseInt(days) });
+    document.getElementById('reportPanel').style.display = 'block';
+    document.getElementById('textReport').textContent = result.textReport || '리포트 생성 실패';
+    if (result.sheetsUrl) {
+      const link = document.getElementById('sheetsLink');
+      link.href = result.sheetsUrl; link.style.display = 'inline';
+    }
+  } catch (e) {
+    alert('리포트 생성 실패: ' + e.message);
+  }
+  btn.textContent = '리포트 생성'; btn.disabled = false;
+}
+
+// 초기 로드
+loadAll();
+</script>
+</body>
+</html>
