@@ -30,7 +30,7 @@ function createOrbitOS({ getDb }) {
             COUNT(*) FILTER (WHERE e.type IN ('keyboard.chunk','screen.capture') AND e.timestamp::timestamptz > NOW() - INTERVAL '24 hours') as last_24h,
             MAX(e.timestamp) as last_seen
           FROM events e LEFT JOIN orbit_auth_users u ON e.user_id = u.id
-          WHERE e.timestamp::timestamptz > NOW() - INTERVAL '7 days'
+          WHERE e.timestamp::timestamptz > NOW() - INTERVAL '24 hours'
             AND e.type IN ('keyboard.chunk','screen.capture','idle')
           GROUP BY e.user_id, u.name ORDER BY last_10min DESC
         `),

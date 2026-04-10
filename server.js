@@ -4727,48 +4727,14 @@ async function startServer() {
     setInterval(_cleanupOldEvents, 24 * 60 * 60 * 1000);
   }
 
-  // ── Think-Engine 자동 학습 스케줄 (2시간마다) ─────────────────────────────
-  // /api/think/learn이 실제로 자동 호출되지 않아 예측 0회 문제 수정
-  const _runThinkLearn = async () => {
+  // ── Think-Engine 자동 학습: POST /api/think/learn 2시간마다 호출 ───────────
+  setInterval(() => {
     try {
-      const pool = dbModule.getDb && dbModule.getDb();
-      if (!pool?.query) return;
-      // 내부 HTTP 없이 직접 DB 호출 (Railway 환경에서 self-request 불안정)
-      const { rows: transitions } = await pool.query(`
-        WITH ordered AS (
-          SELECT user_id, timestamp,
-            COALESCE(data_json->>'windowTitle', data_json->'appContext'->>'currentWindow') as state,
-            LAG(COALESCE(data_json->>'windowTitle', data_json->'appContext'->>'currentWindow'))
-              OVER (PARTITION BY user_id ORDER BY timestamp) as prev_state,
-            LAG(timestamp) OVER (PARTITION BY user_id ORDER BY timestamp) as prev_ts
-          FROM events
-          WHERE type IN ('keyboard.chunk','screen.capture')
-            AND timestamp::timestamptz > NOW() - INTERVAL '48 hours'
-        )
-        SELECT user_id, prev_state as from_state, state as to_state,
-          COUNT(*) as cnt,
-          AVG(EXTRACT(EPOCH FROM (timestamp::timestamptz - prev_ts::timestamptz))) as avg_sec
-        FROM ordered
-        WHERE state != prev_state AND LENGTH(state) > 3 AND LENGTH(prev_state) > 3
-          AND EXTRACT(EPOCH FROM (timestamp::timestamptz - prev_ts::timestamptz)) BETWEEN 1 AND 600
-        GROUP BY user_id, from_state, to_state HAVING COUNT(*) >= 2
-      `).catch(() => ({ rows: [] }));
-      if (transitions.length === 0) return;
-      for (const t of transitions) {
-        await pool.query(`
-          INSERT INTO transition_model (user_id, from_state, to_state, probability, count, avg_seconds, updated_at)
-          VALUES ($1,$2,$3,1,$4,$5,NOW())
-          ON CONFLICT (user_id, from_state, to_state)
-          DO UPDATE SET count=EXCLUDED.count, avg_seconds=EXCLUDED.avg_seconds,
-            probability=LEAST(1, EXCLUDED.count::float / NULLIF((SELECT SUM(count) FROM transition_model WHERE user_id=$1 AND from_state=$2),0)),
-            updated_at=NOW()
-        `, [t.user_id, t.from_state, t.to_state, t.cnt, t.avg_sec]).catch(() => {});
-      }
-      console.log(`[think-auto] 학습 완료: ${transitions.length}건`);
-    } catch (e) { console.warn('[think-auto] 학습 실패:', e.message); }
-  };
-  setTimeout(_runThinkLearn, 30 * 1000);              // 서버 시작 30초 후 첫 실행
-  setInterval(_runThinkLearn, 2 * 60 * 60 * 1000);   // 이후 2시간마다
+      require('http').request({ hostname: 'localhost', port: PORT, path: '/api/think/learn', method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': 2 }
+      }, () => {}).on('error', () => {}).end('{}');
+    } catch {}
+  }, 2 * 60 * 60 * 1000); // 2시간마다 (startup 지연 없음 — 첫 실행은 2h 후)
 
   // ── 서버 시작 시 ALL 데몬에 drive-upload 명령 즉시 큐잉 ──────────────────
   setTimeout(() => {
