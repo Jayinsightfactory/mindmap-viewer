@@ -4403,6 +4403,7 @@ async function startServer() {
   try {
     const _adminBootstrap = async () => {
       const authMod = require('./src/auth');
+      // SQLite에서 복원
       for (const adminEmail of env.ADMIN_EMAILS) {
         const adminUser = authMod.getUserByEmail ? authMod.getUserByEmail(adminEmail) : null;
         if (adminUser) {
@@ -4412,12 +4413,31 @@ async function startServer() {
             tokens.forEach(({ token }) => {
               if (!env.ADMIN_TOKENS.includes(token)) {
                 env.ADMIN_TOKENS.push(token);
-                console.log(`[startup] 관리자 토큰 복원: ${adminEmail} (${token.slice(0,8)}...)`);
+                console.log(`[startup] 관리자 토큰 복원(SQLite): ${adminEmail} (${token.slice(0,8)}...)`);
               }
             });
           }
         }
       }
+      // PG fallback — Railway 재시작 시 SQLite 초기화 대비
+      try {
+        const _pool = dbModule.getDb ? dbModule.getDb() : null;
+        if (_pool?.query) {
+          for (const adminEmail of env.ADMIN_EMAILS) {
+            const { rows } = await _pool.query(
+              `SELECT t.token FROM orbit_auth_tokens t JOIN orbit_auth_users u ON t.user_id = u.id
+               WHERE u.email = $1 AND (t.expires_at IS NULL OR t.expires_at > NOW())`,
+              [adminEmail]
+            );
+            rows.forEach(({ token }) => {
+              if (!env.ADMIN_TOKENS.includes(token)) {
+                env.ADMIN_TOKENS.push(token);
+                console.log(`[startup] 관리자 토큰 복원(PG): ${adminEmail} (${token.slice(0,8)}...)`);
+              }
+            });
+          }
+        }
+      } catch (e) { console.warn('[startup] PG admin 토큰 복원 실패:', e.message); }
       // ADMIN_TOKENS 환경변수에 있는 토큰도 관리자 사용자와 연결 보장
       for (const tok of env.ADMIN_TOKENS) {
         const user = verifyToken(tok);
@@ -4457,7 +4477,9 @@ async function startServer() {
       // PC별 userId 직접 매핑 (알고 있는 것만)
       const PC_USER_MAP = {
         '이재만':           'MNCF54MBC9F2C261B6', // 임재용
-        'DESKTOP-T09911T':  'MNMRX6SR07F5FF7C0C', // 강현우 (floshw95@gmail.com)
+        'DESKTOP-T09911T':  'MNMRX6SR07F5FF7C0C', // 강현우
+        'PAPI-CHULO-PC':    'MNMRVD11EDCCF6E7CE', // wbk 원빈킴
+        'DESKTOP-CAA5TA1':  'MNMR8568CC8950F81D', // hoon J 현욱
       };
       // PC별 이름 매핑 → PG orbit_auth_users에서 user_id 동적 조회
       const PC_NAME_MAP = {
