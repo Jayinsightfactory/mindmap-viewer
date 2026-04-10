@@ -10,6 +10,9 @@
  *   GET /api/mining/bottlenecks — 병목 감지 + 시간 이상치
  *   GET /api/mining/compare     — 직원 간 비교 분석
  *   GET /api/mining/summary     — 전체 프로세스 마이닝 요약
+ *   GET /api/mining/decisions   — 의사결정 분기점 분석
+ *   GET /api/mining/anomalies   — 비정상 패턴 감지
+ *   POST /api/mining/report     — 종합 리포트 생성 + Google Sheets 저장
  */
 const express = require('express');
 
@@ -268,8 +271,9 @@ function detectBottlenecks(blocks) {
 // ═════════════════════════════════════════════════════════════════════════════
 // 라우터 생성
 // ═════════════════════════════════════════════════════════════════════════════
-function createProcessMining({ getDb }) {
+function createProcessMining({ getDb, reportSheet }) {
   const router = express.Router();
+  router.use(express.json());
 
   // ── 공통: 이벤트 조회 ──────────────────────────────────────────────────────
   async function fetchEvents(db, userId, date, days) {
@@ -828,7 +832,244 @@ function createProcessMining({ getDb }) {
     }
   });
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // POST /api/mining/report — 종합 리포트 생성 + Google Sheets 저장
+  // body: { date?, days? }
+  // ═══════════════════════════════════════════════════════════════════════════
+  router.post('/report', async (req, res) => {
+    try {
+      const db = getDb();
+      if (!db?.query) return res.json({ error: 'DB not available' });
+      const { date, days } = req.body || req.query;
+      const d = parseInt(days) || 7;
+      const startDate = date || new Date().toISOString().substring(0, 10);
+
+      console.log(`[mining/report] 종합 리포트 생성 시작 (${startDate}, ${d}일)`);
+
+      // 1. 전체 요약 (summary 로직)
+      const { rows: [stats] } = await db.query(`
+        SELECT count(*) as total, count(DISTINCT user_id) as users,
+          count(*) FILTER (WHERE type = 'screen.analyzed' AND data_json->>'app' != '') as vision
+        FROM events WHERE type = ANY($1)
+          AND timestamp::date >= $2::date AND timestamp::date < ($2::date + $3 * INTERVAL '1 day')
+      `, [WORK_TYPES, startDate, d]);
+
+      const { rows: hourly } = await db.query(`
+        SELECT EXTRACT(HOUR FROM (timestamp::timestamptz AT TIME ZONE 'Asia/Seoul')) as hour,
+          count(*) as events
+        FROM events WHERE type = ANY($1)
+          AND timestamp::date >= $2::date AND timestamp::date < ($2::date + $3 * INTERVAL '1 day')
+        GROUP BY 1 ORDER BY 1
+      `, [WORK_TYPES, startDate, d]);
+
+      // 2. 활성 사용자 목록
+      const { rows: activeUsers } = await db.query(`
+        SELECT DISTINCT e.user_id, u.name
+        FROM events e LEFT JOIN orbit_auth_users u ON e.user_id = u.id
+        WHERE e.type = ANY($1)
+          AND e.timestamp::date >= $2::date AND e.timestamp::date < ($2::date + $3 * INTERVAL '1 day')
+          AND e.user_id IS NOT NULL AND e.user_id != 'local'
+        GROUP BY e.user_id, u.name HAVING count(*) >= 10
+      `, [WORK_TYPES, startDate, d]);
+
+      // 3. 사용자별 분석 수집 (compare + bottlenecks + decisions)
+      const userProfiles = [];
+      const allBlocks = [];
+      const allPatterns = [];
+
+      for (const u of activeUsers) {
+        const events = await fetchEvents(db, u.user_id, startDate, d);
+        const blocks = buildActivityBlocks(events);
+        allBlocks.push(...blocks);
+        const { timeByApp } = buildTransitionMatrix(blocks);
+        const patterns = extractPatterns(blocks);
+        allPatterns.push(...patterns);
+        const sessions = splitSessions(blocks);
+        const totalWorkMin = timeByApp.reduce((s, t) => s + t.minutes, 0);
+
+        userProfiles.push({
+          userId: u.user_id,
+          name: u.name || u.user_id,
+          totalEvents: events.length,
+          totalBlocks: blocks.length,
+          totalSessions: sessions.length,
+          totalWorkMin,
+          avgSessionMin: sessions.length ? Math.round(sessions.reduce((s, ses) => s + ses.durationMin, 0) / sessions.length) : 0,
+          timeByApp: timeByApp.slice(0, 5),
+          topPatterns: patterns.slice(0, 3).map(p => ({ flow: p.steps.join(' → '), count: p.count, avgMin: p.avgDurationMin })),
+        });
+      }
+
+      // 4. 전체 패턴 (중복 제거 + 빈도순)
+      const patternMap = {};
+      for (const p of allPatterns) {
+        const key = p.pattern;
+        if (!patternMap[key]) patternMap[key] = { ...p, count: 0, totalDuration: 0 };
+        patternMap[key].count += p.count;
+      }
+      const topPatterns = Object.values(patternMap)
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 15)
+        .map(p => ({
+          flow: p.steps.join(' → '),
+          pattern: p.pattern,
+          count: p.count,
+          avgDurationMin: p.avgDurationMin,
+          interpretation: _interpretFlow(p.steps),
+        }));
+
+      // 5. 병목
+      const bottlenecks = detectBottlenecks(allBlocks);
+
+      // 6. 자동화 기회
+      const automationOpps = allBlocks
+        .filter(b => b.automationScore != null && b.automationScore >= 0.6)
+        .map(b => ({ app: b.app, durationSec: Math.round(b.duration / 1000), automationScore: b.automationScore, details: b.details }))
+        .sort((a, b) => b.automationScore - a.automationScore)
+        .slice(0, 20);
+
+      // 7. 의사결정 분기
+      const userTransitions = {};
+      for (const u of activeUsers) {
+        const events = await fetchEvents(db, u.user_id, startDate, d);
+        const blocks = buildActivityBlocks(events);
+        const { transitions } = buildTransitionMatrix(blocks);
+        userTransitions[u.name || u.user_id] = transitions;
+      }
+      const fromApps = {};
+      for (const [userName, transitions] of Object.entries(userTransitions)) {
+        for (const t of transitions) {
+          if (!fromApps[t.from]) fromApps[t.from] = {};
+          if (!fromApps[t.from][t.to]) fromApps[t.from][t.to] = [];
+          fromApps[t.from][t.to].push({ user: userName, count: t.count });
+        }
+      }
+      const decisionPoints = [];
+      for (const [fromApp, toApps] of Object.entries(fromApps)) {
+        const destinations = Object.entries(toApps);
+        if (destinations.length < 2) continue;
+        const choices = destinations.map(([toApp, users]) => ({
+          nextApp: toApp, users, totalTransitions: users.reduce((s, u) => s + u.count, 0),
+        })).sort((a, b) => b.totalTransitions - a.totalTransitions);
+        decisionPoints.push({ fromApp, choiceCount: choices.length, choices, insight: _interpretDecision(fromApp, choices) });
+      }
+
+      // 8. 베스트 프랙티스
+      const bpMap = {};
+      for (const p of userProfiles) {
+        for (const pat of p.topPatterns) {
+          if (!bpMap[pat.flow]) bpMap[pat.flow] = [];
+          bpMap[pat.flow].push({ name: p.name, count: pat.count, avgMin: pat.avgMin });
+        }
+      }
+      const bestPractices = Object.entries(bpMap)
+        .filter(([, u]) => u.length >= 2)
+        .map(([flow, users]) => {
+          const sorted = users.sort((a, b) => a.avgMin - b.avgMin);
+          return { flow, fastest: sorted[0], slowest: sorted[sorted.length - 1], gapMin: sorted[sorted.length - 1].avgMin - sorted[0].avgMin };
+        })
+        .filter(bp => bp.gapMin > 0)
+        .sort((a, b) => b.gapMin - a.gapMin);
+
+      // 9. 텍스트 리포트 생성
+      const textReport = _generateTextReport({
+        period: `${startDate} ~ ${d}일`, stats, userProfiles, topPatterns, bottlenecks, decisionPoints, bestPractices,
+      });
+
+      // 10. Google Sheets 저장
+      let sheetsUrl = null;
+      if (reportSheet?.writeMiningReport) {
+        sheetsUrl = await reportSheet.writeMiningReport({
+          period: `${startDate} ~ ${d}일`,
+          activeUsers: parseInt(stats.users),
+          totalEvents: parseInt(stats.total),
+          visionAnalyzed: parseInt(stats.vision),
+          hourlyHeatmap: hourly.map(h => ({ hour: parseInt(h.hour), events: parseInt(h.events) })),
+          patterns: topPatterns,
+          bottlenecks,
+          automationOpportunities: automationOpps,
+          users: userProfiles.sort((a, b) => b.totalWorkMin - a.totalWorkMin),
+          bestPractices,
+          decisionPoints: decisionPoints.sort((a, b) => b.choiceCount - a.choiceCount),
+          anomalies: [], // 개별 사용자별 anomalies는 별도 호출
+        });
+      }
+
+      console.log(`[mining/report] 완료 — ${activeUsers.length}명, ${topPatterns.length} 패턴, sheets=${!!sheetsUrl}`);
+
+      res.json({
+        ok: true,
+        sheetsUrl,
+        textReport,
+        summary: {
+          period: `${startDate} ~ ${d}일`,
+          activeUsers: activeUsers.length,
+          totalEvents: parseInt(stats.total),
+          patterns: topPatterns.length,
+          bottlenecks: bottlenecks.length,
+          decisionPoints: decisionPoints.length,
+        },
+      });
+    } catch (e) {
+      console.error('[mining/report]', e.message);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   return router;
+}
+
+// ── 텍스트 리포트 생성 (관리자 보고용) ───────────────────────────────────────
+function _generateTextReport({ period, stats, userProfiles, topPatterns, bottlenecks, decisionPoints, bestPractices }) {
+  const lines = [];
+  lines.push(`📊 Orbit 프로세스 마이닝 리포트 (${period})`);
+  lines.push(`총 ${stats.total}건 이벤트, ${stats.users}명 활성`);
+  lines.push('');
+
+  // 직원별 업무 시간
+  lines.push('▸ 직원별 업무 시간');
+  for (const u of userProfiles.sort((a, b) => b.totalWorkMin - a.totalWorkMin)) {
+    const apps = (u.timeByApp || []).slice(0, 3).map(t => t.app).join(', ');
+    lines.push(`  ${u.name}: ${u.totalWorkMin}분 (${u.totalSessions}세션) — ${apps}`);
+  }
+  lines.push('');
+
+  // 주요 업무 패턴
+  if (topPatterns.length) {
+    lines.push('▸ 주요 업무 흐름');
+    for (const p of topPatterns.slice(0, 5)) {
+      lines.push(`  ${p.flow} — ${p.count}회, 평균 ${p.avgDurationMin}분 (${p.interpretation})`);
+    }
+    lines.push('');
+  }
+
+  // 병목
+  if (bottlenecks.length) {
+    lines.push('▸ 병목 감지');
+    for (const b of bottlenecks.slice(0, 3)) {
+      lines.push(`  ${b.app}: 평균 ${b.avgDurationSec}초, 이상치 ${b.outlierCount}건 (최대 ${b.worstCaseSec}초)`);
+    }
+    lines.push('');
+  }
+
+  // 의사결정 분기
+  if (decisionPoints.length) {
+    lines.push('▸ 의사결정 분기');
+    for (const dp of decisionPoints.slice(0, 3)) {
+      lines.push(`  ${dp.fromApp} → ${dp.choices.map(c => c.nextApp).slice(0, 3).join('/')} (${dp.insight})`);
+    }
+    lines.push('');
+  }
+
+  // 베스트 프랙티스
+  if (bestPractices.length) {
+    lines.push('▸ 베스트 프랙티스');
+    for (const bp of bestPractices.slice(0, 3)) {
+      lines.push(`  ${bp.flow}: ${bp.fastest.name}(${bp.fastest.avgMin}분) vs ${bp.slowest.name}(${bp.slowest.avgMin}분) — 차이 ${bp.gapMin}분`);
+    }
+  }
+
+  return lines.join('\n');
 }
 
 // ── 의사결정 분기 해석 ───────────────────────────────────────────────────────
