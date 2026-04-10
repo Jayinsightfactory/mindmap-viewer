@@ -163,9 +163,38 @@ function _buildPrompt(ctx) {
 }
 
 function _parseResult(text) {
-  const m = (text || '').match(/\{[\s\S]*\}/);
-  if (m) { try { return JSON.parse(m[0]); } catch {} }
-  return { raw: (text || '').substring(0, 200) };
+  if (!text) return { raw: '' };
+
+  let jsonStr = null;
+
+  // Strategy 1: ```json ... ``` 코드블록에서 추출
+  const codeBlock = text.match(/```(?:json)?\s*\n?([\s\S]*?)```/);
+  if (codeBlock) jsonStr = codeBlock[1].trim();
+
+  // Strategy 2: 가장 바깥 { ... } 추출
+  if (!jsonStr) {
+    const m = text.match(/\{[\s\S]*\}/);
+    if (m) jsonStr = m[0];
+  }
+
+  if (jsonStr) {
+    // Claude가 프롬프트 템플릿 힌트를 그대로 넣는 문제 수정
+    const cleaned = jsonStr
+      .replace(/:\s*true\/false/g, ': true')              // "true/false" → true
+      .replace(/:\s*(\d+\.?\d*)~(\d+\.?\d*)/g, ': $1')   // "0.0~1.0" → 0.0
+      .replace(/,\s*([}\]])/g, '$1')                       // trailing comma
+      .replace(/\/\/[^\n]*/g, '')                           // line comment
+      .replace(/\/\*[\s\S]*?\*\//g, '');                    // block comment
+
+    try { return JSON.parse(cleaned); } catch {}
+    try { return JSON.parse(jsonStr); } catch {}
+  }
+
+  // Strategy 3: 전체 텍스트를 JSON으로 시도
+  try { return JSON.parse(text.trim()); } catch {}
+
+  // 실패 — 디버깅용 원본 2000자 보존
+  return { raw: text.substring(0, 2000) };
 }
 
 // ── Claude CLI 분석 (Max 구독 — API 키 불필요) ───────────────────────────────
@@ -208,11 +237,29 @@ async function visionApi(base64, ctx) {
   });
 }
 
-// ── 통합 분석 함수 ────────────────────────────────────────────────────────────
+// ── 결과 유효성 검사 ─────────────────────────────────────────────────────────
+function _isValidResult(result) {
+  if (!result) return false;
+  if (result.raw !== undefined && !result.app) return false; // 파싱 실패
+  return !!(result.app || result.activity || result.screen);
+}
+
+// ── 통합 분석 함수 (1회 재시도 포함) ─────────────────────────────────────────
 async function visionAnalyze(base64, ctx) {
-  if (USE_CLI) return visionCli(base64, ctx);
-  if (ANTHROPIC_KEY) return visionApi(base64, ctx);
-  throw new Error('Claude CLI 또는 ANTHROPIC_API_KEY 필요');
+  const analyze = USE_CLI ? visionCli : ANTHROPIC_KEY ? visionApi : null;
+  if (!analyze) throw new Error('Claude CLI 또는 ANTHROPIC_API_KEY 필요');
+
+  let result = await analyze(base64, ctx);
+  if (_isValidResult(result)) return result;
+
+  // 1회 재시도
+  console.log('  ⟳ 빈 결과 — 1회 재시도');
+  await new Promise(r => setTimeout(r, 3000));
+  result = await analyze(base64, ctx);
+  if (_isValidResult(result)) return result;
+
+  console.warn(`  ✗ 재시도 후에도 빈 결과 (${ctx.hostname}/${ctx.name})`);
+  return null;
 }
 
 // ── 결과 서버 전송 ────────────────────────────────────────────────────────────
@@ -359,6 +406,7 @@ async function processBatch() {
         console.log(`[vision] ${cap.hostname}/${cap.name}`);
         const b64 = await gDownload(cap.id, token);
         const result = await visionAnalyze(b64, cap);
+        if (!result) { console.warn(`  ✗ 분석 실패 — 스킵: ${cap.name}`); continue; }
         console.log(`  → ${result.app}: ${result.activity?.substring(0,50)}`);
         await sendToServer(cap, result, b64);
         await saveToSheets(cap, result);
