@@ -4400,6 +4400,13 @@ async function startServer() {
   // 관리자 토큰 자동 부트스트랩 (Railway 재시작 시 ADMIN_TOKENS 복원)
   // ~/.orbit-config.json 또는 ADMIN_TOKENS 환경변수에서 로드됨 (environment.js가 처리)
   // 추가로: PG orbit_auth_tokens에서 관리자 이메일 계정의 토큰들을 ADMIN_TOKENS에 등록
+
+  // ADMIN_SECRET env var → 직접 ADMIN_TOKENS에 포함 (Railway 재시작 후 영구 admin 접근 보장)
+  if (process.env.ADMIN_SECRET && !env.ADMIN_TOKENS.includes(process.env.ADMIN_SECRET)) {
+    env.ADMIN_TOKENS.push(process.env.ADMIN_SECRET);
+    console.log('[startup] ADMIN_SECRET → ADMIN_TOKENS 자동 등록 (Railway 재시작 대응)');
+  }
+
   try {
     const _adminBootstrap = async () => {
       const authMod = require('./src/auth');
