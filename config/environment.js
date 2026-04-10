@@ -30,7 +30,7 @@ const SNAPSHOTS_DIR = path.join(DATA_ROOT, 'snapshots');
 
 // ─── 관리자 ──────────────────────────────────────────────────────────────
 // 여러 이메일은 쉼표로 구분: ADMIN_EMAILS=a@b.com,c@d.com
-const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || 'dlaww584@gmail.com')
+const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || 'dlaww584@gmail.com,dlaww@kicda.com')
   .split(',')
   .map(s => s.trim().toLowerCase())
   .filter(Boolean);
