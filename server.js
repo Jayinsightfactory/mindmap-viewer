@@ -1993,11 +1993,18 @@ app.post('/api/hook', async (req, res) => {
       : (deviceId ? `pc_${deviceId}` : 'local');
 
     // DB 저장 (중복 방지) + JSONL 비동기 쓰기
+    // imageBase64는 Vision 큐용으로 별도 보관, DB에는 저장하지 않음
+    const _imageCache = new Map(); // eventId → imageBase64
     const _isPg = process.env.DATABASE_URL;
     const jsonlLines = [];
     for (const event of events) {
       // user_id를 서버 검증 값으로 덮어쓰기
       event.userId = hookUserId;
+      // screen.capture의 imageBase64를 DB 저장 전에 분리 (DB 용량 폭증 방지)
+      if (event.type === 'screen.capture' && event.data?.imageBase64) {
+        _imageCache.set(event.id, event.data.imageBase64);
+        delete event.data.imageBase64;
+      }
       try { await Promise.resolve(insertEvent(event)); } catch (e) { console.error('[hook] insertEvent 실패:', e.message); }
       if (!_isPg) {
         jsonlLines.push(JSON.stringify({
@@ -2016,10 +2023,11 @@ app.post('/api/hook', async (req, res) => {
 
     // ── 캡처 Vision 큐 (screen.capture + imageBase64 → 맥미니 CLI 워커용) ──
     for (const ev of events) {
-      if (ev.type === 'screen.capture' && ev.data?.imageBase64) {
+      const cachedImage = _imageCache.get(ev.id);
+      if (ev.type === 'screen.capture' && cachedImage) {
         // 힙 압력 시 Vision 큐잉 스킵 (OOM 방지)
         if (_heapPressure) {
-          delete ev.data.imageBase64;
+          _imageCache.delete(ev.id);
           continue;
         }
         // 이미지를 Vision 큐에 보관 (Railway 워커가 직접 처리)
@@ -2029,7 +2037,7 @@ app.post('/api/hook', async (req, res) => {
         );
         global._visionImageQueue.push({
           id:          ev.id,
-          imageBase64: ev.data.imageBase64,
+          imageBase64: cachedImage,
           app:         ev.data.app || '',
           windowTitle: ev.data.windowTitle || '',
           trigger:     ev.data.trigger || '',
@@ -2044,8 +2052,7 @@ app.post('/api/hook', async (req, res) => {
         // 최대 5건 유지 (base64 이미지는 개당 50-500KB)
         while (global._visionImageQueue.length > _VISION_QUEUE_MAX) global._visionImageQueue.shift();
         console.log(`[vision-queue] 이미지 큐잉: ${ev.data.hostname}/${ev.data.app} (큐: ${global._visionImageQueue.length}건)`);
-        // base64는 DB에 저장 안 함
-        delete ev.data.imageBase64;
+        _imageCache.delete(ev.id);
       }
     }
 
@@ -4486,17 +4493,19 @@ async function startServer() {
         '이재만':           'MNCF54MBC9F2C261B6', // 임재용
         'DESKTOP-T09911T':  'MNMRX6SR07F5FF7C0C', // 강현우
         'PAPI-CHULO-PC':    'MNMRVD11EDCCF6E7CE', // wbk 원빈킴
-        'DESKTOP-CAA5TA1':  'MNMR8568CC8950F81D', // hoon J 현욱
+        'DESKTOP-CAA5TA1':  'MNMR8568CC8950F81D', // hoon J (훈제이) — 전용 PC
       };
       // PC별 이름 매핑 → PG orbit_auth_users에서 user_id 동적 조회
+      // ※ PC_USER_MAP에 이미 있는 호스트명은 여기서 제외해야 덮어쓰기 방지
       const PC_NAME_MAP = {
         'NENOVA2025':       '설연주',
         'NEONVA':           '설연주',
         'DESKTOP-HGNEA1S':  '박성수',
-        'DESKTOP-CAA5TA1':  '현욱',
+        // 'DESKTOP-CAA5TA1' 제거 — hoon J 전용 PC, PC_USER_MAP에서 직접 매핑
       };
-      // 이름으로 userId 조회하여 PC_USER_MAP에 추가
+      // 이름으로 userId 조회하여 PC_USER_MAP에 추가 (이미 매핑된 호스트는 스킵)
       for (const [hostname, name] of Object.entries(PC_NAME_MAP)) {
+        if (PC_USER_MAP[hostname]) continue; // 직접 매핑 우선 — 덮어쓰기 방지
         try {
           const { rows: ur } = await _pool.query(
             `SELECT id FROM orbit_auth_users WHERE name ILIKE $1 LIMIT 1`, [`%${name}%`]
