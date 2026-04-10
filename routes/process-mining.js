@@ -614,7 +614,232 @@ function createProcessMining({ getDb }) {
     }
   });
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // GET /api/mining/decisions — 의사결정 패턴 분석
+  // ?date=2026-04-04&days=7
+  // 같은 앱에서 나간 후 다른 앱을 선택하는 분기점 감지
+  // ═══════════════════════════════════════════════════════════════════════════
+  router.get('/decisions', async (req, res) => {
+    try {
+      const db = getDb();
+      if (!db?.query) return res.json({ error: 'DB not available' });
+      const { date, days } = req.query;
+      const d = parseInt(days) || 7;
+      const startDate = date || new Date().toISOString().substring(0, 10);
+
+      // 활성 사용자 데이터 수집
+      const { rows: activeUsers } = await db.query(`
+        SELECT DISTINCT e.user_id, u.name
+        FROM events e LEFT JOIN orbit_auth_users u ON e.user_id = u.id
+        WHERE e.type = ANY($1)
+          AND e.timestamp::date >= $2::date
+          AND e.timestamp::date < ($2::date + $3 * INTERVAL '1 day')
+          AND e.user_id IS NOT NULL AND e.user_id != 'local'
+        GROUP BY e.user_id, u.name HAVING count(*) >= 20
+      `, [WORK_TYPES, startDate, d]);
+
+      // 사용자별 전이 행렬 수집
+      const userTransitions = {};
+      for (const u of activeUsers) {
+        const events = await fetchEvents(db, u.user_id, startDate, d);
+        const blocks = buildActivityBlocks(events);
+        const { transitions } = buildTransitionMatrix(blocks);
+        userTransitions[u.name || u.user_id] = transitions;
+      }
+
+      // 분기점 감지: 같은 앱에서 나갈 때 사용자마다 다른 선택
+      const fromApps = {};
+      for (const [userName, transitions] of Object.entries(userTransitions)) {
+        for (const t of transitions) {
+          if (!fromApps[t.from]) fromApps[t.from] = {};
+          if (!fromApps[t.from][t.to]) fromApps[t.from][t.to] = [];
+          fromApps[t.from][t.to].push({ user: userName, count: t.count });
+        }
+      }
+
+      const decisionPoints = [];
+      for (const [fromApp, toApps] of Object.entries(fromApps)) {
+        const destinations = Object.entries(toApps);
+        if (destinations.length < 2) continue; // 분기가 없으면 스킵
+
+        const choices = destinations.map(([toApp, users]) => ({
+          nextApp: toApp,
+          users: users.sort((a, b) => b.count - a.count),
+          totalTransitions: users.reduce((s, u) => s + u.count, 0),
+        })).sort((a, b) => b.totalTransitions - a.totalTransitions);
+
+        decisionPoints.push({
+          fromApp,
+          choiceCount: choices.length,
+          choices,
+          insight: _interpretDecision(fromApp, choices),
+        });
+      }
+
+      res.json({
+        period: { start: startDate, days: d },
+        decisionPoints: decisionPoints.sort((a, b) => b.choiceCount - a.choiceCount),
+        userCount: activeUsers.length,
+      });
+    } catch (e) {
+      console.error('[mining/decisions]', e.message);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // GET /api/mining/anomalies — 비정상 패턴 감지
+  // ?userId=xxx&date=2026-04-10
+  // 해당일의 업무 패턴을 이전 7일 평균과 비교
+  // ═══════════════════════════════════════════════════════════════════════════
+  router.get('/anomalies', async (req, res) => {
+    try {
+      const db = getDb();
+      if (!db?.query) return res.json({ error: 'DB not available' });
+      const { userId, date } = req.query;
+      if (!userId) return res.status(400).json({ error: 'userId required' });
+      const targetDate = date || new Date().toISOString().substring(0, 10);
+
+      // 이전 7일 기준선 데이터
+      const baselineStart = new Date(targetDate);
+      baselineStart.setDate(baselineStart.getDate() - 7);
+      const baseEvents = await fetchEvents(db, userId, baselineStart.toISOString().substring(0, 10), 7);
+      const baseBlocks = buildActivityBlocks(baseEvents);
+      const { timeByApp: baseTime } = buildTransitionMatrix(baseBlocks);
+      const basePatterns = extractPatterns(baseBlocks);
+
+      // 당일 데이터
+      const todayEvents = await fetchEvents(db, userId, targetDate, 1);
+      const todayBlocks = buildActivityBlocks(todayEvents);
+      const { timeByApp: todayTime } = buildTransitionMatrix(todayBlocks);
+      const todayPatterns = extractPatterns(todayBlocks);
+      const todaySessions = splitSessions(todayBlocks);
+
+      const userName = await getUserName(db, userId);
+      const anomalies = [];
+
+      // 1. 앱별 사용 시간 이상치 (일 평균 대비 ±50%)
+      const baseDailyAvg = {};
+      for (const t of baseTime) baseDailyAvg[t.app] = Math.round(t.minutes / 7);
+
+      for (const t of todayTime) {
+        const avg = baseDailyAvg[t.app] || 0;
+        if (avg === 0 && t.minutes >= 5) {
+          anomalies.push({
+            type: 'new_app',
+            severity: 'info',
+            app: t.app,
+            todayMin: t.minutes,
+            avgMin: 0,
+            message: `${t.app}을(를) 오늘 처음 사용 (${t.minutes}분)`,
+          });
+        } else if (avg > 0 && t.minutes > avg * 1.5) {
+          anomalies.push({
+            type: 'time_spike',
+            severity: 'warning',
+            app: t.app,
+            todayMin: t.minutes,
+            avgMin: avg,
+            ratio: +(t.minutes / avg).toFixed(1),
+            message: `${t.app} 사용 시간 ${+(t.minutes / avg).toFixed(1)}배 증가 (평소 ${avg}분 → 오늘 ${t.minutes}분)`,
+          });
+        } else if (avg > 5 && t.minutes < avg * 0.3) {
+          anomalies.push({
+            type: 'time_drop',
+            severity: 'info',
+            app: t.app,
+            todayMin: t.minutes,
+            avgMin: avg,
+            message: `${t.app} 사용 급감 (평소 ${avg}분 → 오늘 ${t.minutes}분)`,
+          });
+        }
+      }
+
+      // 2. 평소 사용하는 앱을 오늘 안 사용
+      for (const [app, avg] of Object.entries(baseDailyAvg)) {
+        if (avg >= 5 && !todayTime.find(t => t.app === app)) {
+          anomalies.push({
+            type: 'missing_app',
+            severity: 'warning',
+            app,
+            avgMin: avg,
+            message: `${app} 미사용 (평소 일 평균 ${avg}분)`,
+          });
+        }
+      }
+
+      // 3. 세션 길이 이상치
+      if (todaySessions.length > 0) {
+        const avgSessionMin = baseBlocks.length > 0
+          ? Math.round(splitSessions(baseBlocks).reduce((s, ses) => s + ses.durationMin, 0) / Math.max(splitSessions(baseBlocks).length, 1))
+          : 0;
+        for (const ses of todaySessions) {
+          if (avgSessionMin > 0 && ses.durationMin > avgSessionMin * 3) {
+            anomalies.push({
+              type: 'long_session',
+              severity: 'warning',
+              sessionStart: ses.startTime,
+              durationMin: ses.durationMin,
+              avgSessionMin,
+              apps: ses.apps,
+              message: `비정상 긴 세션 ${ses.durationMin}분 (평소 평균 ${avgSessionMin}분)`,
+            });
+          }
+        }
+      }
+
+      // 4. 새로운 워크플로우 패턴 (기준선에 없는)
+      const basePatternSet = new Set(basePatterns.map(p => p.pattern));
+      for (const p of todayPatterns) {
+        if (!basePatternSet.has(p.pattern) && p.count >= 2) {
+          anomalies.push({
+            type: 'new_pattern',
+            severity: 'info',
+            pattern: p.pattern,
+            count: p.count,
+            message: `새로운 업무 패턴 감지: ${p.steps.join(' → ')} (${p.count}회)`,
+          });
+        }
+      }
+
+      res.json({
+        user: { id: userId, name: userName },
+        date: targetDate,
+        baselineDays: 7,
+        anomalies: anomalies.sort((a, b) => {
+          const sev = { warning: 0, info: 1 };
+          return (sev[a.severity] ?? 2) - (sev[b.severity] ?? 2);
+        }),
+        todaySummary: {
+          events: todayEvents.length,
+          sessions: todaySessions.length,
+          timeByApp: todayTime,
+        },
+        baselineSummary: {
+          avgDailyEvents: Math.round(baseEvents.length / 7),
+          avgDailyTimeByApp: Object.entries(baseDailyAvg)
+            .map(([app, min]) => ({ app, avgMin: min }))
+            .sort((a, b) => b.avgMin - a.avgMin),
+        },
+      });
+    } catch (e) {
+      console.error('[mining/anomalies]', e.message);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   return router;
+}
+
+// ── 의사결정 분기 해석 ───────────────────────────────────────────────────────
+function _interpretDecision(fromApp, choices) {
+  if (choices.length < 2) return '';
+  const top2 = choices.slice(0, 2);
+  const apps = top2.map(c => c.nextApp).join(', ');
+  if (fromApp === 'KakaoTalk') return `카카오 확인 후 ${apps} 중 선택 — 주문 유형에 따라 분기`;
+  if (fromApp === 'Excel') return `엑셀 작업 후 ${apps} 중 선택 — 데이터 처리 방식 차이`;
+  if (fromApp === 'Nenova ERP') return `ERP 처리 후 ${apps} 중 선택 — 후속 업무 패턴 차이`;
+  return `${fromApp} 이후 ${choices.length}가지 경로 — 업무 상황별 의사결정 분기`;
 }
 
 // ── 워크플로우 패턴 해석 ─────────────────────────────────────────────────────
