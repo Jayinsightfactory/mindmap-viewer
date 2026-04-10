@@ -348,9 +348,14 @@ async function checkAndArchive(pool) {
     const stats = await getTableStats(pool);
     console.log(`[archiver] events 테이블: ${stats.rows.toLocaleString()}행 (${stats.sizePretty})`);
 
-    if (stats.rows < THRESHOLD) {
-      console.log(`[archiver] 임계값(${THRESHOLD.toLocaleString()}) 미만 — 아카이브 불필요`);
-      return { skipped: true, rows: stats.rows, threshold: THRESHOLD };
+    const MB_THRESHOLD = 1500; // 1.5GB 초과 시 행 수 무관하게 강제 아카이브
+    const sizeMB = Math.round(stats.sizeBytes / 1024 / 1024);
+    if (stats.rows < THRESHOLD && sizeMB < MB_THRESHOLD) {
+      console.log(`[archiver] 임계값 미만 — 스킵 (현재: ${stats.rows}행, ${sizeMB}MB)`);
+      return { skipped: true, rows: stats.rows, sizeMB, threshold: THRESHOLD };
+    }
+    if (sizeMB >= MB_THRESHOLD) {
+      console.log(`[archiver] DB ${sizeMB}MB — 용량 임계값(${MB_THRESHOLD}MB) 초과! 강제 아카이브`);
     }
 
     console.log(`[archiver] 임계값 초과! 아카이브 시작 (KEEP_DAYS=${KEEP_DAYS}일)`);
