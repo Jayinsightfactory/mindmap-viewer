@@ -1016,7 +1016,7 @@ const { sendUpdateEmail, sendPerfIssueEmail } = (() => { try { return require('.
 // ─── Vision 큐 (맥미니 CLI 워커가 폴링해서 분석) ──────────────────────────────
 // Vision 분석은 맥미니 전용 — Railway에서는 큐잉만 함
 if (!global._visionImageQueue) global._visionImageQueue = [];
-const _VISION_QUEUE_MAX = 10;
+const _VISION_QUEUE_MAX = 50; // base64가 DB에 안 들어가므로 큐 확대 (10→50)
 
 // 힙 압력 모니터링 (460MB 힙 기준 — Railway Hobby 512MB 내 안정 운영)
 let _heapPressure = false;
@@ -4490,18 +4490,21 @@ async function startServer() {
     if (_pool?.query && process.env.DATABASE_URL) {
       // PC별 userId 직접 매핑 (알고 있는 것만)
       const PC_USER_MAP = {
-        '이재만':           'MNCF54MBC9F2C261B6', // 임재용
+        '이재만':           'MNH03H73690BB2CD82', // jaeyong lim (임재용)
         'DESKTOP-T09911T':  'MNMRX6SR07F5FF7C0C', // 강현우
         'PAPI-CHULO-PC':    'MNMRVD11EDCCF6E7CE', // wbk 원빈킴
+        'Papi-Chulo-PC':    'MNMRVD11EDCCF6E7CE', // wbk (대소문자 변형)
         'DESKTOP-CAA5TA1':  'MNMR8568CC8950F81D', // hoon J (훈제이) — 전용 PC
+        'DESKTOP-L0C2IOT':  'MNMSAQJD78E544A631', // 강명훈
+        'DESKTOP-4OM3URA':  'MNSKAQSQ649D9E5936', // Luke 전용 PC
       };
       // PC별 이름 매핑 → PG orbit_auth_users에서 user_id 동적 조회
       // ※ PC_USER_MAP에 이미 있는 호스트명은 여기서 제외해야 덮어쓰기 방지
       const PC_NAME_MAP = {
         'NENOVA2025':       '설연주',
         'NEONVA':           '설연주',
+        'neonva':           '설연주', // 소문자 변형
         'DESKTOP-HGNEA1S':  '박성수',
-        // 'DESKTOP-CAA5TA1' 제거 — hoon J 전용 PC, PC_USER_MAP에서 직접 매핑
       };
       // 이름으로 userId 조회하여 PC_USER_MAP에 추가 (이미 매핑된 호스트는 스킵)
       for (const [hostname, name] of Object.entries(PC_NAME_MAP)) {
