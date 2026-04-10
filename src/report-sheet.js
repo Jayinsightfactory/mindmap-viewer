@@ -213,4 +213,153 @@ function getSpreadsheetUrl() {
   return _spreadsheetId ? `https://docs.google.com/spreadsheets/d/${_spreadsheetId}` : null;
 }
 
-module.exports = { init, writeReport, getSpreadsheetUrl };
+// ── 프로세스 마이닝 리포트 → 별도 시트에 기록 ────────────────────────────────
+let _miningSheetId = null;
+
+async function writeMiningReport(miningData) {
+  if (!_credentials) { console.warn('[report-sheet] 미초기화'); return null; }
+
+  try {
+    const token = await _getToken();
+    const today = new Date().toISOString().slice(0, 10);
+
+    // 프로세스 마이닝 전용 스프레드시트 생성 (또는 기존 재사용)
+    if (!_miningSheetId) {
+      const result = await _httpsJson('POST', 'https://sheets.googleapis.com/v4/spreadsheets', token, {
+        properties: { title: `Orbit 프로세스 마이닝 — ${today}` },
+        sheets: [
+          { properties: { title: '프로세스 요약', index: 0 } },
+          { properties: { title: '업무 흐름 패턴', index: 1 } },
+          { properties: { title: '병목 분석', index: 2 } },
+          { properties: { title: '직원 비교', index: 3 } },
+          { properties: { title: '의사결정 분기', index: 4 } },
+          { properties: { title: '비정상 감지', index: 5 } },
+        ],
+      });
+      _miningSheetId = result.spreadsheetId;
+
+      if (_folderId) {
+        try { await _httpsJson('PATCH', `https://www.googleapis.com/drive/v3/files/${_miningSheetId}?addParents=${_folderId}&fields=id`, token); } catch {}
+      }
+      try {
+        await _httpsJson('POST', `https://www.googleapis.com/drive/v3/files/${_miningSheetId}/permissions`, token, {
+          type: 'user', role: 'writer', emailAddress: SHARE_EMAIL,
+        });
+      } catch {}
+      console.log(`[report-sheet] 프로세스 마이닝 시트 생성: ${_miningSheetId}`);
+    } else {
+      try {
+        await _httpsJson('POST', `https://sheets.googleapis.com/v4/spreadsheets/${_miningSheetId}:batchUpdate`, token, {
+          requests: [{ updateSpreadsheetProperties: { properties: { title: `Orbit 프로세스 마이닝 — ${today}` }, fields: 'title' } }],
+        });
+      } catch {}
+    }
+
+    const _updateMiningSheet = async (name, values) => {
+      const range = encodeURIComponent(`${name}!A1`);
+      await _httpsJson('PUT',
+        `https://sheets.googleapis.com/v4/spreadsheets/${_miningSheetId}/values/${range}?valueInputOption=RAW`,
+        token, { range: `${name}!A1`, majorDimension: 'ROWS', values });
+    };
+
+    // 시트1: 프로세스 요약
+    const s1 = [
+      [`Orbit 프로세스 마이닝 리포트`, '', '', `생성: ${new Date().toLocaleString('ko-KR')}`],
+      [],
+      ['기간', miningData.period || today],
+      ['활성 사용자', miningData.activeUsers || 0],
+      ['총 이벤트', miningData.totalEvents || 0],
+      ['Vision 분석', miningData.visionAnalyzed || 0],
+      [],
+      ['=== 시간대별 활동 히트맵 ==='],
+      ['시간(KST)', '이벤트 수', '그래프'],
+    ];
+    for (const h of (miningData.hourlyHeatmap || [])) {
+      const bar = '█'.repeat(Math.min(Math.round(h.events / 10), 30));
+      s1.push([`${h.hour}시`, h.events, bar]);
+    }
+    await _updateMiningSheet('프로세스 요약', s1);
+
+    // 시트2: 업무 흐름 패턴
+    const s2 = [
+      ['업무 흐름 패턴 (반복 빈도순)', '', '', ''],
+      [],
+      ['패턴', '반복 횟수', '평균 소요(분)', '해석'],
+    ];
+    for (const p of (miningData.patterns || [])) {
+      s2.push([p.flow || p.pattern, p.count, p.avgDurationMin || p.avgMin || '', p.interpretation || '']);
+    }
+    await _updateMiningSheet('업무 흐름 패턴', s2);
+
+    // 시트3: 병목 분석
+    const s3 = [
+      ['병목 분석', '', '', '', ''],
+      [],
+      ['앱', '평균 소요(초)', '중간값(초)', '이상치 횟수', '최대(초)', '총 발생'],
+    ];
+    for (const b of (miningData.bottlenecks || [])) {
+      s3.push([b.app, b.avgDurationSec, b.medianDurationSec, b.outlierCount, b.worstCaseSec, b.totalOccurrences]);
+    }
+    s3.push([]);
+    s3.push(['=== 자동화 기회 ===']);
+    s3.push(['앱', '소요(초)', '자동화 점수', '상세']);
+    for (const a of (miningData.automationOpportunities || []).slice(0, 20)) {
+      s3.push([a.app, a.durationSec, a.automationScore, (a.details || []).join('; ')]);
+    }
+    await _updateMiningSheet('병목 분석', s3);
+
+    // 시트4: 직원 비교
+    const s4 = [
+      ['직원 비교 분석', '', '', '', '', ''],
+      [],
+      ['이름', '총 업무(분)', '세션 수', '블록 수', '평균 세션(분)', '주요 앱'],
+    ];
+    for (const u of (miningData.users || [])) {
+      const topApps = (u.timeByApp || []).slice(0, 3).map(t => `${t.app}(${t.minutes}분)`).join(', ');
+      s4.push([u.name, u.totalWorkMin, u.totalSessions, u.totalBlocks, u.avgSessionMin, topApps]);
+    }
+    s4.push([]);
+    s4.push(['=== 베스트 프랙티스 비교 ===']);
+    s4.push(['워크플로우', '최고 효율 직원', '시간(분)', '최저 효율 직원', '시간(분)', '차이(분)']);
+    for (const bp of (miningData.bestPractices || [])) {
+      s4.push([bp.flow, bp.fastest?.name, bp.fastest?.avgMin, bp.slowest?.name, bp.slowest?.avgMin, bp.gapMin]);
+    }
+    await _updateMiningSheet('직원 비교', s4);
+
+    // 시트5: 의사결정 분기
+    const s5 = [
+      ['의사결정 분기점 분석', '', '', ''],
+      [],
+      ['출발 앱', '분기 수', '선택지', '인사이트'],
+    ];
+    for (const dp of (miningData.decisionPoints || [])) {
+      const choices = (dp.choices || []).map(c => `${c.nextApp}(${c.totalTransitions})`).join(', ');
+      s5.push([dp.fromApp, dp.choiceCount, choices, dp.insight || '']);
+    }
+    await _updateMiningSheet('의사결정 분기', s5);
+
+    // 시트6: 비정상 감지
+    const s6 = [
+      ['비정상 패턴 감지', '', '', '', ''],
+      [],
+      ['심각도', '유형', '앱', '상세', '날짜'],
+    ];
+    for (const a of (miningData.anomalies || [])) {
+      s6.push([a.severity, a.type, a.app || '', a.message, a.date || today]);
+    }
+    await _updateMiningSheet('비정상 감지', s6);
+
+    const url = `https://docs.google.com/spreadsheets/d/${_miningSheetId}`;
+    console.log(`[report-sheet] 프로세스 마이닝 리포트: ${url}`);
+    return url;
+  } catch (e) {
+    console.error('[report-sheet] 마이닝 리포트 에러:', e.message);
+    return null;
+  }
+}
+
+function getMiningSheetUrl() {
+  return _miningSheetId ? `https://docs.google.com/spreadsheets/d/${_miningSheetId}` : null;
+}
+
+module.exports = { init, writeReport, getSpreadsheetUrl, writeMiningReport, getMiningSheetUrl };
