@@ -1352,6 +1352,30 @@ setInterval(async () => {
     const result = await workLearner.analyzeWorkspace(pool, userIds);
     const url = await reportSheet.writeReport(result, nameMap);
     if (url) console.log('[report] 리포트 전송 완료:', url);
+
+    // 18:00 KST (h=9 UTC) — 일일 마이닝 리포트도 함께 생성
+    if (match.h === 9 && reportSheet.writeMiningReport) {
+      try {
+        const miningRoute = require('./routes/process-mining');
+        const http = require('http');
+        // 내부 API 호출로 리포트 생성 (동일 프로세스 내)
+        const today = now.toISOString().slice(0, 10);
+        const miningPayload = JSON.stringify({ date: today, days: 1 });
+        const miningResult = await new Promise(resolve => {
+          const req = http.request({ hostname: 'localhost', port: process.env.PORT || 3000,
+            path: '/api/mining/report', method: 'POST', timeout: 120000,
+            headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(miningPayload) },
+          }, res => {
+            let d = ''; res.on('data', c => d += c);
+            res.on('end', () => { try { resolve(JSON.parse(d)); } catch { resolve(null); } });
+          });
+          req.on('error', () => resolve(null));
+          req.write(miningPayload); req.end();
+        });
+        if (miningResult?.sheetsUrl) console.log('[report] 마이닝 리포트:', miningResult.sheetsUrl);
+        else if (miningResult?.ok) console.log('[report] 마이닝 리포트 생성 완료 (Sheets 미설정)');
+      } catch (e) { console.warn('[report] 마이닝 리포트 에러:', e.message); }
+    }
   } catch (e) {
     console.error('[report] 에러:', e.message);
   }
