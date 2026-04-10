@@ -414,6 +414,112 @@ function createOrbitOS({ getDb }) {
     }
   });
 
+  // ═══════════════════════════════════════════════════════════════
+  // GET /api/os/raw-check — 특정 user_id raw 이벤트 직접 조회 (진단용)
+  // ?hours=48 (기본 48시간), ?users=uid1,uid2 (기본: 주요 4명)
+  // ═══════════════════════════════════════════════════════════════
+  router.get('/raw-check', async (req, res) => {
+    try {
+      const db = getDb();
+      if (!db?.query) return res.json({ error: 'DB not available' });
+
+      const hours = Math.min(parseInt(req.query.hours || '48'), 168); // 최대 7일
+      const defaultUsers = [
+        'MNMRVD11EDCCF6E7CE', // wbk 원빈킴
+        'MNMR8568CC8950F81D', // hoon J 현욱
+        'MNMSAQJD78E544A631', // 강명훈
+        'MNH03H73690BB2CD82', // 이재만 (임재용)
+      ];
+      const targetUsers = req.query.users
+        ? req.query.users.split(',').map(s => s.trim()).filter(Boolean)
+        : defaultUsers;
+
+      // 1. user_id별 이벤트 타입 카운트 + 최근 시각
+      const countRes = await db.query(`
+        SELECT user_id,
+          COUNT(*) as total,
+          COUNT(*) FILTER (WHERE type = 'keyboard.chunk') as keyboard,
+          COUNT(*) FILTER (WHERE type = 'screen.capture') as screen,
+          COUNT(*) FILTER (WHERE type = 'idle') as idle,
+          COUNT(*) FILTER (WHERE type = 'clipboard.change') as clipboard,
+          MIN(timestamp) as first_event,
+          MAX(timestamp) as last_event
+        FROM events
+        WHERE user_id = ANY($1)
+          AND timestamp::timestamptz > NOW() - ($2 || ' hours')::INTERVAL
+        GROUP BY user_id
+      `, [targetUsers, String(hours)]);
+
+      // 2. 각 유저의 최근 이벤트 5개
+      const recentRes = await db.query(`
+        SELECT user_id, type, timestamp,
+          COALESCE(data_json->>'windowTitle', data_json->'appContext'->>'currentWindow') as window,
+          COALESCE(data_json->>'app', data_json->'appContext'->>'currentApp') as app
+        FROM events
+        WHERE user_id = ANY($1)
+          AND timestamp::timestamptz > NOW() - ($2 || ' hours')::INTERVAL
+        ORDER BY timestamp DESC
+        LIMIT 30
+      `, [targetUsers, String(hours)]);
+
+      // 3. 전체 DB에서 해당 user_id의 가장 최근 이벤트 (기간 무관)
+      const latestEverRes = await db.query(`
+        SELECT DISTINCT ON (user_id) user_id, type, timestamp
+        FROM events
+        WHERE user_id = ANY($1)
+        ORDER BY user_id, timestamp DESC
+      `, [targetUsers]);
+
+      const countMap = {};
+      for (const r of countRes.rows) countMap[r.user_id] = r;
+
+      const recentMap = {};
+      for (const r of recentRes.rows) {
+        if (!recentMap[r.user_id]) recentMap[r.user_id] = [];
+        if (recentMap[r.user_id].length < 5) recentMap[r.user_id].push(r);
+      }
+
+      const latestEverMap = {};
+      for (const r of latestEverRes.rows) latestEverMap[r.user_id] = r;
+
+      const names = {
+        'MNMRVD11EDCCF6E7CE': 'wbk(원빈킴)',
+        'MNMR8568CC8950F81D': 'hoon J(현욱)',
+        'MNMSAQJD78E544A631': '강명훈',
+        'MNH03H73690BB2CD82': '이재만(임재용)',
+      };
+
+      const result = targetUsers.map(uid => {
+        const c = countMap[uid];
+        const latest = latestEverMap[uid];
+        return {
+          userId: uid,
+          name: names[uid] || uid.substring(0, 8),
+          inRange: !!c,
+          last_Xhours: c ? {
+            total: parseInt(c.total),
+            keyboard: parseInt(c.keyboard),
+            screen: parseInt(c.screen),
+            idle: parseInt(c.idle),
+            clipboard: parseInt(c.clipboard),
+            firstEvent: c.first_event,
+            lastEvent: c.last_event,
+          } : null,
+          latestEver: latest ? { type: latest.type, timestamp: latest.timestamp } : null,
+          recentEvents: recentMap[uid] || [],
+        };
+      });
+
+      res.json({
+        checkedAt: new Date().toISOString(),
+        rangeHours: hours,
+        users: result,
+      });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   console.log('[orbit-os] 회사 OS 명령 구조 시작 (/api/os/*)');
   return router;
 }
