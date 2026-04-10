@@ -4312,6 +4312,19 @@ console.log('[API] /api/v1/* → /api/* alias registered');
 
 // ─── 서버 시작 (PG auth 복원 후 listen) ────────────────────────────────────
 async function startServer() {
+  // Railway 환경에서는 heavy 백그라운드 엔진 기본 비활성화 (OOM → Bad Gateway 방지)
+  // 개별 엔진을 살리려면 Railway 환경변수에서 해당 값을 '0'으로 설정하면 됩니다.
+  // 데이터/토큰에는 영향 없음 — 스케줄러/크롤러만 해당.
+  if (process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_SERVICE_NAME) {
+    process.env.INSIGHT_DISABLED           = process.env.INSIGHT_DISABLED           || '1';
+    process.env.USAGE_TRACKER_DISABLED     = process.env.USAGE_TRACKER_DISABLED     || '1';
+    process.env.REVENUE_SCHEDULER_DISABLED = process.env.REVENUE_SCHEDULER_DISABLED || '1';
+    process.env.MCP_WATCHER_DISABLED       = process.env.MCP_WATCHER_DISABLED       || '1';
+    process.env.COMPANY_CRAWLER_DISABLED   = process.env.COMPANY_CRAWLER_DISABLED   || '1';
+    process.env.GDRIVE_SYNC_DISABLED       = process.env.GDRIVE_SYNC_DISABLED       || '1';
+    console.log('[startup] Railway 환경 감지 — 백그라운드 엔진 기본 비활성화 (메모리 보호)');
+  }
+
   // PostgreSQL: 테이블 초기화 완료 대기 (재배포 시 경합 상태 방지)
   if (process.env.DATABASE_URL && dbModule.waitForTables) {
     await dbModule.waitForTables().catch(e => console.warn('[startup] PG 테이블 대기 실패:', e.message));
