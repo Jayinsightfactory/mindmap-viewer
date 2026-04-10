@@ -3816,6 +3816,9 @@ app.use('/api/ideas', require('./routes/idea-engine')({ getDb: dbModule.getDb, r
 // ─── 사고 엔진 (전이 모델 + 예측 + 검증 + 카톡 추출 + 확장 사고) ────────────
 app.use('/api/think', require('./routes/think-engine')({ getDb: dbModule.getDb, ragCore }));
 
+// ─── 프로세스 마이닝 엔진 (업무 흐름 추출 + 병목 감지 + 비교 분석) ─────────
+app.use('/api/mining', require('./routes/process-mining')({ getDb: dbModule.getDb }));
+
 // ─── 카카오톡 복호화 + 메시지 분석 ──────────────────────────────────────────
 app.use('/api/kakao', require('./routes/kakao-decrypt')({ getDb: dbModule.getDb }));
 
