@@ -652,8 +652,344 @@ function createOrbitOS({ getDb }) {
     }
   });
 
+  // ═══════════════════════════════════════════════════════════════
+  // GET /api/os/learning-data — 학습용 업무 데이터만 추출
+  // 진짜 업무 이벤트만 필터링 + 분류 결과 포함
+  // ?userId=X&date=2026-04-10&days=7
+  // ═══════════════════════════════════════════════════════════════
+  router.get('/learning-data', async (req, res) => {
+    try {
+      const db = getDb();
+      if (!db?.query) return res.json({ error: 'DB not available' });
+
+      const days = Math.min(parseInt(req.query.days) || 7, 30);
+      const userId = req.query.userId || null;
+      const dateStr = req.query.date || null;
+
+      // 학습에 유효한 이벤트 타입만
+      const LEARNING_TYPES = [
+        'keyboard.chunk',    // 타이핑 패턴 — 핵심 학습 데이터
+        'screen.capture',    // 화면 컨텍스트 (base64 제거됨, 메타만)
+        'screen.analyzed',   // Vision 분석 결과
+        'clipboard.change',  // 복사/붙여넣기 업무 흐름
+        'order.detected',    // 주문 자동 감지
+        'purchase.order.detected', // 발주 감지
+      ];
+
+      // 노이즈 필터: 이 windowTitle 패턴은 학습 가치 없음
+      const NOISE_WINDOWS = [
+        '', // 빈 타이틀
+      ];
+
+      let query, params;
+      if (dateStr) {
+        const startUtc = new Date(`${dateStr}T00:00:00+09:00`).toISOString();
+        const endUtc = new Date(`${dateStr}T23:59:59+09:00`).toISOString();
+        query = `
+          SELECT e.id, e.type, e.user_id, u.name, e.timestamp,
+            COALESCE(e.data_json->>'windowTitle', e.data_json->'appContext'->>'currentWindow', '') as window_title,
+            COALESCE(e.data_json->>'app', e.data_json->'appContext'->>'currentApp', '') as app_name,
+            COALESCE(e.data_json->>'rawInput', e.data_json->>'summary', '') as raw_input,
+            COALESCE(e.data_json->>'hostname', '') as hostname,
+            COALESCE(e.data_json->>'trigger', '') as trigger,
+            e.data_json->>'activity' as vision_activity,
+            e.data_json->>'screen' as vision_screen,
+            e.data_json->>'text' as clip_text
+          FROM events e
+          LEFT JOIN orbit_auth_users u ON e.user_id = u.id
+          WHERE e.type = ANY($1)
+            AND e.timestamp::timestamptz >= $2::timestamptz
+            AND e.timestamp::timestamptz < $3::timestamptz
+            ${userId ? 'AND e.user_id = $4' : ''}
+          ORDER BY e.timestamp ASC
+        `;
+        params = userId ? [LEARNING_TYPES, startUtc, endUtc, userId] : [LEARNING_TYPES, startUtc, endUtc];
+      } else {
+        query = `
+          SELECT e.id, e.type, e.user_id, u.name, e.timestamp,
+            COALESCE(e.data_json->>'windowTitle', e.data_json->'appContext'->>'currentWindow', '') as window_title,
+            COALESCE(e.data_json->>'app', e.data_json->'appContext'->>'currentApp', '') as app_name,
+            COALESCE(e.data_json->>'rawInput', e.data_json->>'summary', '') as raw_input,
+            COALESCE(e.data_json->>'hostname', '') as hostname,
+            COALESCE(e.data_json->>'trigger', '') as trigger,
+            e.data_json->>'activity' as vision_activity,
+            e.data_json->>'screen' as vision_screen,
+            e.data_json->>'text' as clip_text
+          FROM events e
+          LEFT JOIN orbit_auth_users u ON e.user_id = u.id
+          WHERE e.type = ANY($1)
+            AND e.timestamp::timestamptz > NOW() - INTERVAL '${days} days'
+            ${userId ? 'AND e.user_id = $2' : ''}
+          ORDER BY e.timestamp ASC
+        `;
+        params = userId ? [LEARNING_TYPES, userId] : [LEARNING_TYPES];
+      }
+
+      const { rows } = await db.query(query, params);
+
+      // 업무/비업무 분류 적용
+      const classified = rows.map(row => {
+        const cls = _classifyForLearning(row);
+        return {
+          id: row.id,
+          type: row.type,
+          userId: row.user_id,
+          name: row.name,
+          timestamp: row.timestamp,
+          app: row.app_name,
+          window: row.window_title,
+          hostname: row.hostname,
+          classification: cls,
+          // 학습 데이터 필드
+          rawInput: row.raw_input || undefined,
+          visionActivity: row.vision_activity || undefined,
+          visionScreen: row.vision_screen || undefined,
+          clipText: row.clip_text || undefined,
+        };
+      });
+
+      // 업무 데이터만 필터
+      const workOnly = classified.filter(e =>
+        e.classification.category === '업무' && e.classification.confidence >= 0.6
+      );
+
+      // 통계
+      const stats = {
+        totalEvents: rows.length,
+        workEvents: workOnly.length,
+        workRate: rows.length > 0 ? Math.round(workOnly.length / rows.length * 100) : 0,
+        byUser: {},
+        byPurpose: {},
+        byApp: {},
+        qualityScore: 0,
+      };
+
+      for (const e of workOnly) {
+        const uid = e.name || e.userId;
+        stats.byUser[uid] = (stats.byUser[uid] || 0) + 1;
+        stats.byPurpose[e.classification.purpose] = (stats.byPurpose[e.classification.purpose] || 0) + 1;
+        stats.byApp[e.classification.app] = (stats.byApp[e.classification.app] || 0) + 1;
+      }
+
+      // 품질 점수 (0~100) — 고신뢰 분류 비율 + 다양성 + Vision 활용률
+      const highConfidence = workOnly.filter(e => e.classification.confidence >= 0.8).length;
+      const visionUsed = workOnly.filter(e => e.visionScreen || e.visionActivity).length;
+      const purposeCount = Object.keys(stats.byPurpose).length;
+      stats.qualityScore = Math.min(100, Math.round(
+        (highConfidence / Math.max(1, workOnly.length)) * 40 +
+        (visionUsed / Math.max(1, workOnly.length)) * 30 +
+        Math.min(purposeCount / 10, 1) * 30
+      ));
+
+      res.json({
+        ok: true,
+        days,
+        date: dateStr || undefined,
+        stats,
+        // 전체 반환 시 과도한 응답 방지
+        events: req.query.full === 'true' ? workOnly : workOnly.slice(0, 200),
+        truncated: !req.query.full && workOnly.length > 200,
+      });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  // GET /api/os/data-quality — PC별 학습 데이터 품질 리포트
+  // ═══════════════════════════════════════════════════════════════
+  router.get('/data-quality', async (req, res) => {
+    try {
+      const db = getDb();
+      if (!db?.query) return res.json({ error: 'DB not available' });
+
+      const days = Math.min(parseInt(req.query.days) || 7, 30);
+
+      // PC별 이벤트 타입 분포 + 첫/마지막 이벤트
+      const { rows: userStats } = await db.query(`
+        SELECT e.user_id, u.name,
+          COUNT(*) as total,
+          COUNT(*) FILTER (WHERE e.type = 'keyboard.chunk') as keyboard,
+          COUNT(*) FILTER (WHERE e.type = 'screen.capture') as screen,
+          COUNT(*) FILTER (WHERE e.type = 'screen.analyzed') as analyzed,
+          COUNT(*) FILTER (WHERE e.type = 'clipboard.change') as clipboard,
+          COUNT(*) FILTER (WHERE e.type = 'order.detected') as orders,
+          COUNT(DISTINCT DATE(e.timestamp::timestamptz AT TIME ZONE 'Asia/Seoul')) as active_days,
+          MIN(e.timestamp) as first_event,
+          MAX(e.timestamp) as last_event
+        FROM events e
+        LEFT JOIN orbit_auth_users u ON e.user_id = u.id
+        WHERE e.timestamp::timestamptz > NOW() - INTERVAL '${days} days'
+          AND e.type IN ('keyboard.chunk','screen.capture','screen.analyzed','clipboard.change','order.detected','purchase.order.detected')
+        GROUP BY e.user_id, u.name
+        ORDER BY total DESC
+      `);
+
+      const users = userStats.map(r => {
+        const keyboard = parseInt(r.keyboard);
+        const screen = parseInt(r.screen);
+        const analyzed = parseInt(r.analyzed);
+        const clipboard = parseInt(r.clipboard);
+        const total = parseInt(r.total);
+        const activeDays = parseInt(r.active_days);
+
+        // 데이터 품질 점수 계산
+        let quality = 0;
+        // 키보드 데이터 충분성 (일 50건 이상이면 만점)
+        quality += Math.min(25, Math.round((keyboard / Math.max(1, activeDays)) / 50 * 25));
+        // 화면 캡처 충분성
+        quality += Math.min(25, Math.round((screen / Math.max(1, activeDays)) / 30 * 25));
+        // Vision 분석 커버율 (screen.analyzed / screen.capture)
+        quality += Math.min(25, screen > 0 ? Math.round((analyzed / screen) * 25) : 0);
+        // 데이터 연속성 (active_days / total_days)
+        quality += Math.min(25, Math.round((activeDays / Math.max(1, days)) * 25));
+
+        return {
+          userId: r.user_id,
+          name: r.name || r.user_id.substring(0, 8),
+          total,
+          keyboard,
+          screen,
+          analyzed,
+          clipboard,
+          orders: parseInt(r.orders),
+          activeDays,
+          firstEvent: r.first_event,
+          lastEvent: r.last_event,
+          qualityScore: Math.min(100, quality),
+          issues: [
+            keyboard === 0 ? '키보드 데이터 없음' : null,
+            screen === 0 ? '화면 캡처 없음' : null,
+            analyzed === 0 && screen > 0 ? 'Vision 분석 미작동' : null,
+            activeDays < days * 0.5 ? `수집 불연속 (${activeDays}/${days}일)` : null,
+          ].filter(Boolean),
+        };
+      });
+
+      // DB 크기 정보
+      const { rows: [dbInfo] } = await db.query(`
+        SELECT pg_database_size('railway') as bytes,
+          (SELECT COUNT(*) FROM events) as total_events
+      `);
+
+      res.json({
+        ok: true,
+        days,
+        dbSizeMB: Math.round(parseInt(dbInfo.bytes) / 1024 / 1024),
+        totalEvents: parseInt(dbInfo.total_events),
+        users,
+      });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   console.log('[orbit-os] 회사 OS 명령 구조 시작 (/api/os/*)');
   return router;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 학습 데이터용 분류 함수 (인라인 — activity-classifier 의존 없이 독립 동작)
+// ═══════════════════════════════════════════════════════════════
+function _classifyForLearning(row) {
+  const app = (row.app_name || '').toLowerCase();
+  const win = (row.window_title || '');
+  const winLow = win.toLowerCase();
+
+  // 1. nenova ERP — 무조건 업무
+  if (app.includes('nenova') || app.includes('네노바') || app.includes('hwahwe') ||
+      win.includes('화훼 관리') || win.includes('화훼관리')) {
+    return { category: '업무', purpose: _nenovaPurpose(win), app: 'nenova', confidence: 0.95 };
+  }
+
+  // 2. Excel — 업무 키워드 매칭
+  if (app.includes('excel') || winLow.includes('.xlsx') || winLow.includes('.xls')) {
+    const purpose = _excelPurpose(win);
+    return { category: '업무', purpose, app: 'excel', confidence: purpose === '문서작업' ? 0.70 : 0.90 };
+  }
+
+  // 3. KakaoTalk — 내부방/거래처만 업무
+  if (app.includes('kakaotalk') || app.includes('카카오톡') || winLow.includes('카카오톡')) {
+    if (win.includes('네노바') || win.includes('nenova')) {
+      return { category: '업무', purpose: '내부소통', app: 'kakaotalk', confidence: 0.90 };
+    }
+    // 업무 관련 키워드
+    if (/주문|발주|출고|입고|견적|물량|차감|배송|거래처/.test(win)) {
+      return { category: '업무', purpose: '업무소통', app: 'kakaotalk', confidence: 0.80 };
+    }
+    // 개인 패턴
+    if (/♡|♥|❤|사랑|엄마|아빠|친구|동창|가족/.test(win)) {
+      return { category: '개인', purpose: '개인대화', app: 'kakaotalk', confidence: 0.90 };
+    }
+    // 기본: 낮은 신뢰도로 업무 추정 (근무 시간이면)
+    return { category: '업무', purpose: '소통', app: 'kakaotalk', confidence: 0.50 };
+  }
+
+  // 4. 브라우저
+  if (/chrome|firefox|edge|whale|msedge|brave/i.test(app)) {
+    // 비업무 패턴 먼저
+    if (/youtube|넷플릭스|netflix|tiktok|instagram|facebook|게임|나무위키/i.test(win)) {
+      return { category: '기타', purpose: '웹서핑', app: 'browser', confidence: 0.80 };
+    }
+    // 업무 패턴
+    if (/holex|꽃|품종|절화|카네이션|장미|orbit|뱅킹|은행|mail|메일/i.test(win)) {
+      return { category: '업무', purpose: '웹업무', app: 'browser', confidence: 0.80 };
+    }
+    return { category: '업무', purpose: '웹', app: 'browser', confidence: 0.50 };
+  }
+
+  // 5. PDF/한글/Word — 업무
+  if (/acrobat|pdf|hwp|한글|word/i.test(app) || /\.pdf|\.hwp|\.docx/i.test(win)) {
+    return { category: '업무', purpose: '문서확인', app: 'document', confidence: 0.75 };
+  }
+
+  // 6. screen.analyzed / order.detected — 항상 업무
+  if (row.type === 'screen.analyzed') {
+    return { category: '업무', purpose: row.vision_screen || 'vision', app: row.app_name || 'vision', confidence: 0.90 };
+  }
+  if (row.type === 'order.detected' || row.type === 'purchase.order.detected') {
+    return { category: '업무', purpose: '주문감지', app: 'auto', confidence: 0.95 };
+  }
+
+  // 7. clipboard — 내용 기반
+  if (row.type === 'clipboard.change') {
+    const text = row.clip_text || '';
+    if (/주문|발주|출고|견적|물량|차감|거래처|배송|품명|수량|단가/.test(text)) {
+      return { category: '업무', purpose: '업무복사', app: 'clipboard', confidence: 0.85 };
+    }
+    return { category: '업무', purpose: '복사', app: 'clipboard', confidence: 0.50 };
+  }
+
+  // 8. idle/잠금
+  if (app === 'idle' || app === '' || winLow.includes('잠금')) {
+    return { category: '기타', purpose: '대기', app: 'system', confidence: 0.95 };
+  }
+
+  // 9. 기본
+  return { category: '기타', purpose: '미분류', app: app || 'unknown', confidence: 0.30 };
+}
+
+function _nenovaPurpose(title) {
+  if (/신규.*주문|주문.*등록/.test(title)) return '주문입력';
+  if (/주문.*관리/.test(title)) return '주문관리';
+  if (/출고/.test(title)) return '출고';
+  if (/재고/.test(title)) return '재고';
+  if (/거래처/.test(title)) return '거래처';
+  if (/발주/.test(title)) return '발주';
+  if (/입고/.test(title)) return '입고';
+  if (/견적/.test(title)) return '견적';
+  if (/피벗|pivot/i.test(title)) return '분석';
+  return '전산';
+}
+
+function _excelPurpose(title) {
+  if (/물량/.test(title)) return '물량표';
+  if (/차감/.test(title)) return '차감대조';
+  if (/발주/.test(title)) return '발주';
+  if (/매출/.test(title)) return '매출';
+  if (/견적/.test(title)) return '견적';
+  if (/출고/.test(title)) return '출고';
+  return '문서작업';
 }
 
 module.exports = createOrbitOS;
