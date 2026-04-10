@@ -2390,6 +2390,7 @@ app.get('/api/agents/status', async (req, res) => {
     { id: 'vision-learning',     name: 'Vision 학습',   path: '/api/vision',       schedule: '캡처시' },
     { id: 'self-evolve',         name: '자가 진화',     path: '/api/evolve',       schedule: '6시간' },
     { id: 'automation-engine',   name: '자동화 엔진',   path: '/api/automation',   schedule: '1시간' },
+    { id: 'script-generator',   name: '스크립트 생성', path: '/api/scripts',      schedule: '요청시' },
     { id: 'nenova-db',           name: 'nenova 전산',   path: '/api/nenova',       schedule: '요청시' },
     { id: 'nenova-cross',        name: '교차 분석',     path: '/api/cross',        schedule: '요청시' },
     { id: 'erp-analyzer',        name: 'ERP 분석',      path: '/api/erp',          schedule: '요청시' },
@@ -3816,6 +3817,11 @@ app.use('/api/automation', require('./routes/automation-engine')({ getDb: dbModu
 // ─── 워크플로우 레지스트리 API (CLI/Orbit OS 공용) ───────────────────────────
 const { createWorkflowRegistry } = require('./routes/automation-engine');
 app.use('/api/automation', createWorkflowRegistry({ getDb: dbModule.getDb }));
+
+// ─── Script Generator (Phase 4: Vision → 자동화 스크립트 자동 생성) ──────────
+try {
+  app.use('/api/scripts', require('./routes/script-generator')({ getDb: dbModule.getDb }));
+} catch(e) { console.warn('[mount] script-generator:', e.message); }
 
 // ─── Orbit OS (팔란티어 스타일 회사 OS 명령 구조) ─────────────────────────────
 app.use('/api/os', require('./routes/orbit-os')({ getDb: dbModule.getDb }));
