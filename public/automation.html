@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Orbit AI — 자동화 스크립트 관리</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0d1117; --surface: #161b22; --surface2: #21262d;
+    --border: #30363d; --text: #e6edf3; --muted: #8b949e;
+    --green: #3fb950; --blue: #58a6ff; --red: #f85149;
+    --orange: #ffa657; --purple: #bc8cff; --cyan: #39d2c0;
+  }
+  body { background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, sans-serif; min-height: 100vh; line-height: 1.5; }
+  a { color: var(--blue); text-decoration: none; }
+
+  header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 14px 28px; display: flex; align-items: center; gap: 16px; position: sticky; top: 0; z-index: 100; }
+  .logo { font-size: 18px; font-weight: 700; color: var(--green); }
+  .logo span { color: var(--cyan); font-weight: 400; }
+  .header-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+  .nav-links { display: flex; gap: 12px; }
+  .nav-links a { color: var(--muted); font-size: 13px; padding: 4px 8px; border-radius: 4px; }
+  .nav-links a:hover { color: var(--text); background: var(--surface2); }
+
+  .btn { background: var(--surface2); border: 1px solid var(--border); color: var(--text); padding: 7px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; transition: all .15s; }
+  .btn:hover { background: var(--border); }
+  .btn-primary { background: var(--green); border-color: var(--green); color: #0d1117; font-weight: 600; }
+  .btn-primary:hover { background: #2ea043; }
+  .btn-danger { background: var(--red); border-color: var(--red); color: #fff; }
+  .btn-sm { padding: 4px 10px; font-size: 12px; }
+  .btn-group { display: flex; gap: 6px; }
+
+  select, input[type="text"] { background: var(--surface2); border: 1px solid var(--border); color: var(--text); padding: 6px 12px; border-radius: 6px; font-size: 13px; }
+
+  main { max-width: 1440px; margin: 0 auto; padding: 24px; }
+
+  .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; margin-bottom: 24px; }
+  .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; text-align: center; }
+  .stat-value { font-size: 26px; font-weight: 700; }
+  .stat-label { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .stat-green .stat-value { color: var(--green); }
+  .stat-blue .stat-value { color: var(--blue); }
+  .stat-orange .stat-value { color: var(--orange); }
+  .stat-purple .stat-value { color: var(--purple); }
+  .stat-cyan .stat-value { color: var(--cyan); }
+  .stat-red .stat-value { color: var(--red); }
+
+  .tabs { display: flex; gap: 2px; margin-bottom: 20px; background: var(--surface); border-radius: 8px; padding: 4px; border: 1px solid var(--border); }
+  .tab { padding: 8px 18px; border-radius: 6px; cursor: pointer; font-size: 13px; color: var(--muted); transition: all .15s; border: none; background: none; }
+  .tab.active { background: var(--surface2); color: var(--text); font-weight: 600; }
+  .tab:hover { color: var(--text); }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 20px; }
+  .panel-title { font-size: 15px; font-weight: 600; margin-bottom: 14px; color: var(--blue); display: flex; align-items: center; gap: 8px; }
+  .panel-title .count { font-size: 12px; color: var(--muted); font-weight: 400; }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+  @media (max-width: 1100px) { .grid-3 { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 900px) { .grid-2, .grid-3 { grid-template-columns: 1fr; } }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); color: var(--muted); font-weight: 500; }
+  td { padding: 8px 10px; border-bottom: 1px solid var(--surface2); }
+  tr:hover td { background: var(--surface2); }
+  tr.clickable { cursor: pointer; }
+
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+  .tag-green { background: rgba(63,185,80,.15); color: var(--green); }
+  .tag-orange { background: rgba(255,166,87,.15); color: var(--orange); }
+  .tag-red { background: rgba(248,81,73,.15); color: var(--red); }
+  .tag-blue { background: rgba(88,166,255,.15); color: var(--blue); }
+  .tag-purple { background: rgba(188,140,255,.15); color: var(--purple); }
+  .tag-cyan { background: rgba(57,210,192,.15); color: var(--cyan); }
+
+  .score-bar { display: inline-block; height: 6px; border-radius: 3px; min-width: 20px; }
+  .chart-container { position: relative; height: 260px; }
+  .loading { text-align: center; padding: 40px; color: var(--muted); }
+
+  .pattern-card { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 16px; transition: all .2s; }
+  .pattern-card:hover { border-color: var(--blue); }
+  .pattern-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .pattern-name { font-weight: 600; font-size: 14px; }
+  .pattern-score { font-size: 20px; font-weight: 700; }
+  .pattern-meta { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+  .pattern-fields { display: flex; gap: 6px; flex-wrap: wrap; }
+  .field-tag { background: var(--surface); padding: 2px 8px; border-radius: 4px; font-size: 11px; border: 1px solid var(--border); }
+
+  .script-viewer { background: #0d1117; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .script-header { background: var(--surface); padding: 10px 16px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); }
+  .script-header .filename { font-size: 13px; font-weight: 600; }
+  .script-body { padding: 16px; font-family: 'Cascadia Code', 'Fira Code', 'Courier New', monospace; font-size: 12px; line-height: 1.7; white-space: pre-wrap; max-height: 500px; overflow-y: auto; color: #c9d1d9; }
+  .script-body .comment { color: #8b949e; }
+  .script-body .keyword { color: #ff7b72; }
+  .script-body .string { color: #a5d6ff; }
+  .script-body .function { color: #d2a8ff; }
+
+  .modal-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,.6); z-index: 200; justify-content: center; align-items: center; }
+  .modal-overlay.show { display: flex; }
+  .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; width: 90%; max-width: 900px; max-height: 85vh; overflow-y: auto; padding: 24px; }
+  .modal-title { font-size: 18px; font-weight: 700; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; }
+  .modal-close { background: none; border: none; color: var(--muted); font-size: 24px; cursor: pointer; }
+
+  .toast { position: fixed; bottom: 20px; right: 20px; background: var(--surface); border: 1px solid var(--green); border-radius: 8px; padding: 12px 20px; z-index: 300; display: none; animation: slideIn .3s; }
+  .toast.show { display: block; }
+  @keyframes slideIn { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Orbit AI <span>Automation Studio</span></div>
+  <div class="nav-links">
+    <a href="/admin-analysis.html">Dashboard</a>
+    <a href="/process-mining.html">Mining</a>
+    <a href="/automation.html" style="color:var(--cyan)">Automation</a>
+  </div>
+  <div class="header-right">
+    <select id="scriptTypeSelect">
+      <option value="pyautogui">pyautogui</option>
+      <option value="pad">PAD</option>
+      <option value="ahk">AutoHotkey</option>
+      <option value="powershell">PowerShell</option>
+    </select>
+    <button class="btn btn-primary" onclick="batchGenerate()">Batch Generate</button>
+    <button class="btn" onclick="refreshAll()">Refresh</button>
+  </div>
+</header>
+
+<main>
+  <!-- Stats -->
+  <div class="stats-grid" id="statsGrid">
+    <div class="stat-card stat-green"><div class="stat-value" id="statTotal">-</div><div class="stat-label">Vision 분석 완료</div></div>
+    <div class="stat-card stat-blue"><div class="stat-value" id="statHigh">-</div><div class="stat-label">고점수 (0.8+)</div></div>
+    <div class="stat-card stat-orange"><div class="stat-value" id="statMid">-</div><div class="stat-label">중점수 (0.5-0.8)</div></div>
+    <div class="stat-card stat-purple"><div class="stat-value" id="statScripts">-</div><div class="stat-label">생성된 스크립트</div></div>
+    <div class="stat-card stat-cyan"><div class="stat-value" id="statDeployed">-</div><div class="stat-label">배포 완료</div></div>
+    <div class="stat-card stat-green"><div class="stat-value" id="statTemplates">-</div><div class="stat-label">템플릿 수</div></div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab active" data-tab="patterns">Patterns</button>
+    <button class="tab" data-tab="scripts">Scripts</button>
+    <button class="tab" data-tab="templates">Templates</button>
+    <button class="tab" data-tab="analytics">Analytics</button>
+  </div>
+
+  <!-- Tab: Patterns -->
+  <div class="tab-content active" id="tab-patterns">
+    <div class="panel">
+      <div class="panel-title">자동화 가능 패턴 <span class="count" id="patternCount"></span></div>
+      <div class="grid-3" id="patternsGrid">
+        <div class="loading">스캔 중...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab: Scripts -->
+  <div class="tab-content" id="tab-scripts">
+    <div class="panel">
+      <div class="panel-title">생성된 스크립트 <span class="count" id="scriptCount"></span></div>
+      <div style="margin-bottom:14px">
+        <select id="statusFilter" onchange="loadScripts()">
+          <option value="">전체</option>
+          <option value="draft">Draft</option>
+          <option value="tested">Tested</option>
+          <option value="deployed">Deployed</option>
+        </select>
+      </div>
+      <table>
+        <thead><tr>
+          <th>ID</th><th>이름</th><th>액션</th><th>타입</th><th>상태</th><th>배포</th><th>성공률</th><th>생성일</th><th>Actions</th>
+        </tr></thead>
+        <tbody id="scriptsTable"><tr><td colspan="9" class="loading">로딩 중...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Tab: Templates -->
+  <div class="tab-content" id="tab-templates">
+    <div class="panel">
+      <div class="panel-title">사용 가능 템플릿</div>
+      <div class="grid-2" id="templatesGrid">
+        <div class="loading">로딩 중...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab: Analytics -->
+  <div class="tab-content" id="tab-analytics">
+    <div class="grid-2">
+      <div class="panel">
+        <div class="panel-title">점수 분포</div>
+        <div class="chart-container"><canvas id="scoreChart"></canvas></div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">액션별 스크립트</div>
+        <div class="chart-container"><canvas id="actionChart"></canvas></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">스크립트 타입 분포</div>
+      <div class="chart-container" style="height:200px"><canvas id="typeChart"></canvas></div>
+    </div>
+  </div>
+</main>
+
+<!-- Script Viewer Modal -->
+<div class="modal-overlay" id="scriptModal">
+  <div class="modal">
+    <div class="modal-title">
+      <span id="modalTitle">스크립트</span>
+      <button class="modal-close" onclick="closeModal()">&times;</button>
+    </div>
+    <div class="script-viewer">
+      <div class="script-header">
+        <span class="filename" id="modalFilename">script.py</span>
+        <div class="btn-group">
+          <button class="btn btn-sm" onclick="copyScript()">Copy</button>
+          <button class="btn btn-sm btn-primary" onclick="deployScript()">Deploy</button>
+          <button class="btn btn-sm btn-danger" onclick="deleteScript()">Delete</button>
+        </div>
+      </div>
+      <div class="script-body" id="modalScriptBody"></div>
+    </div>
+    <div style="margin-top:16px;display:flex;gap:10px;align-items:center">
+      <label style="font-size:13px;color:var(--muted)">Deploy to:</label>
+      <input type="text" id="deployHostname" placeholder="hostname (예: NEONVA)" style="flex:1" />
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+const API = '';
+let currentScriptId = null;
+let statsData = null;
+let patternsData = null;
+
+// ── Tab switching ──
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+  });
+});
+
+// ── Toast ──
+function showToast(msg, duration = 3000) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), duration);
+}
+
+// ── API Calls ──
+async function api(path, opts = {}) {
+  try {
+    const r = await fetch(API + path, {
+      headers: { 'Content-Type': 'application/json' },
+      ...opts,
+      body: opts.body ? JSON.stringify(opts.body) : undefined,
+    });
+    return await r.json();
+  } catch (e) {
+    console.error('API Error:', path, e);
+    return { error: e.message };
+  }
+}
+
+// ── Load Stats ──
+async function loadStats() {
+  const data = await api('/api/scripts/stats/summary');
+  if (data.error) return;
+  statsData = data;
+
+  document.getElementById('statTotal').textContent = data.vision?.total_analyzed || 0;
+  document.getElementById('statHigh').textContent = data.vision?.score_high || 0;
+  document.getElementById('statMid').textContent = data.vision?.score_mid || 0;
+  document.getElementById('statScripts').textContent = data.scripts?.total_scripts || 0;
+  document.getElementById('statDeployed').textContent = data.scripts?.deployed || 0;
+  document.getElementById('statTemplates').textContent = data.availableTemplates?.length || 0;
+
+  renderCharts(data);
+  renderTemplates(data.availableTemplates || []);
+}
+
+// ── Load Patterns ──
+async function loadPatterns() {
+  const data = await api('/api/scripts/scan?limit=500&minScore=0.3');
+  if (data.error) { document.getElementById('patternsGrid').innerHTML = `<div class="loading">Error: ${data.error}</div>`; return; }
+  patternsData = data;
+
+  document.getElementById('patternCount').textContent = `(${data.patternCount} patterns / ${data.automatableCount} items)`;
+
+  const grid = document.getElementById('patternsGrid');
+  if (!data.patterns?.length) { grid.innerHTML = '<div class="loading">자동화 가능 패턴 없음</div>'; return; }
+
+  grid.innerHTML = data.patterns.map(p => {
+    const scoreColor = p.avgScore >= 0.8 ? 'var(--green)' : p.avgScore >= 0.5 ? 'var(--orange)' : 'var(--red)';
+    const statusTag = p.hasTemplate
+      ? '<span class="tag tag-green">Template Ready</span>'
+      : p.generatable
+        ? '<span class="tag tag-blue">Generatable</span>'
+        : '<span class="tag tag-orange">Low Data</span>';
+
+    const fields = (p.inputMaps?.[0] || []).slice(0, 5);
+
+    return `
+      <div class="pattern-card">
+        <div class="pattern-header">
+          <div>
+            <div class="pattern-name">${escHtml(p.actionType)}</div>
+            ${statusTag}
+          </div>
+          <div class="pattern-score" style="color:${scoreColor}">${(p.avgScore * 100).toFixed(0)}%</div>
+        </div>
+        <div class="pattern-meta">
+          ${p.count}건 detected &middot; max ${(p.maxScore * 100).toFixed(0)}% &middot;
+          ${Object.keys(p.scriptTypes).join(', ') || 'none'}
+        </div>
+        ${fields.length ? `
+          <div class="pattern-fields">
+            ${fields.map(f => `<span class="field-tag">${escHtml(f.field || f.label || '?')}</span>`).join('')}
+          </div>
+        ` : ''}
+        <div style="margin-top:12px">
+          <button class="btn btn-sm btn-primary" onclick="generateFromPattern('${escAttr(p.actionType)}')"
+            ${!p.hasTemplate ? 'disabled style="opacity:.5"' : ''}>Generate</button>
+          <button class="btn btn-sm" onclick="viewPatternDetails('${escAttr(p.actionType)}')">Details</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// ── Load Scripts ──
+async function loadScripts() {
+  const status = document.getElementById('statusFilter').value;
+  const data = await api(`/api/scripts/list${status ? '?status=' + status : ''}`);
+  if (data.error) return;
+
+  document.getElementById('scriptCount').textContent = `(${data.scripts?.length || 0})`;
+
+  const tbody = document.getElementById('scriptsTable');
+  if (!data.scripts?.length) { tbody.innerHTML = '<tr><td colspan="9" class="loading">스크립트 없음</td></tr>'; return; }
+
+  tbody.innerHTML = data.scripts.map(s => {
+    const statusClass = { draft: 'tag-orange', tested: 'tag-blue', deployed: 'tag-green', failed: 'tag-red' }[s.status] || 'tag-orange';
+    const total = (s.success_count || 0) + (s.fail_count || 0);
+    const successRate = total > 0 ? ((s.success_count / total) * 100).toFixed(0) + '%' : '-';
+    const date = new Date(s.created_at).toLocaleDateString('ko');
+    return `
+      <tr class="clickable" onclick="viewScript(${s.id})">
+        <td>${s.id}</td>
+        <td>${escHtml(s.name)}</td>
+        <td>${escHtml(s.action_type)}</td>
+        <td><span class="tag tag-purple">${s.script_type}</span></td>
+        <td><span class="tag ${statusClass}">${s.status}</span></td>
+        <td>${s.deploy_count || 0}</td>
+        <td>${successRate}</td>
+        <td>${date}</td>
+        <td>
+          <button class="btn btn-sm" onclick="event.stopPropagation();viewScript(${s.id})">View</button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+// ── Render Templates ──
+function renderTemplates(templates) {
+  const grid = document.getElementById('templatesGrid');
+  if (!templates.length) { grid.innerHTML = '<div class="loading">템플릿 없음</div>'; return; }
+
+  grid.innerHTML = templates.map(t => `
+    <div class="panel" style="margin:0">
+      <div class="panel-title">${escHtml(t.actionType)}</div>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:10px">${escHtml(t.description)}</p>
+      <div style="margin-bottom:8px">
+        <strong style="font-size:12px">Required:</strong>
+        <div class="pattern-fields" style="margin-top:4px">
+          ${t.requiredFields.map(f => `<span class="field-tag" style="border-color:var(--red)">${escHtml(f)}</span>`).join('')}
+        </div>
+      </div>
+      <div style="margin-bottom:12px">
+        <strong style="font-size:12px">Optional:</strong>
+        <div class="pattern-fields" style="margin-top:4px">
+          ${t.optionalFields.map(f => `<span class="field-tag">${escHtml(f)}</span>`).join('')}
+        </div>
+      </div>
+      <button class="btn btn-sm btn-primary" onclick="generateFromTemplate('${escAttr(t.actionType)}')">Generate Script</button>
+    </div>
+  `).join('');
+}
+
+// ── Render Charts ──
+function renderCharts(data) {
+  // Score distribution
+  const scoreCtx = document.getElementById('scoreChart');
+  if (scoreCtx._chart) scoreCtx._chart.destroy();
+  scoreCtx._chart = new Chart(scoreCtx, {
+    type: 'doughnut',
+    data: {
+      labels: ['High (0.8+)', 'Mid (0.5-0.8)', 'Low (<0.5)'],
+      datasets: [{
+        data: [data.vision?.score_high || 0, data.vision?.score_mid || 0, data.vision?.score_low || 0],
+        backgroundColor: ['#3fb950', '#ffa657', '#f85149'],
+        borderWidth: 0,
+      }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: 'bottom', labels: { color: '#8b949e', font: { size: 11 } } } },
+    },
+  });
+
+  // Action distribution
+  const actionCtx = document.getElementById('actionChart');
+  if (actionCtx._chart) actionCtx._chart.destroy();
+  const actions = data.byAction || [];
+  actionCtx._chart = new Chart(actionCtx, {
+    type: 'bar',
+    data: {
+      labels: actions.map(a => a.action_type),
+      datasets: [
+        { label: 'Scripts', data: actions.map(a => parseInt(a.count)), backgroundColor: '#58a6ff' },
+        { label: 'Deploys', data: actions.map(a => parseInt(a.deploys) || 0), backgroundColor: '#3fb950' },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      indexAxis: 'y',
+      scales: {
+        x: { grid: { color: '#21262d' }, ticks: { color: '#8b949e' } },
+        y: { grid: { display: false }, ticks: { color: '#e6edf3', font: { size: 11 } } },
+      },
+      plugins: { legend: { labels: { color: '#8b949e' } } },
+    },
+  });
+
+  // Script type pie
+  const typeCtx = document.getElementById('typeChart');
+  if (typeCtx._chart) typeCtx._chart.destroy();
+  const types = {};
+  (data.byAction || []).forEach(a => { types[a.action_type] = parseInt(a.count); });
+  typeCtx._chart = new Chart(typeCtx, {
+    type: 'pie',
+    data: {
+      labels: Object.keys(types).length ? Object.keys(types) : ['No Data'],
+      datasets: [{
+        data: Object.keys(types).length ? Object.values(types) : [1],
+        backgroundColor: ['#58a6ff', '#3fb950', '#ffa657', '#bc8cff', '#39d2c0', '#f85149', '#ff7b72'],
+        borderWidth: 0,
+      }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: 'right', labels: { color: '#8b949e', font: { size: 11 } } } },
+    },
+  });
+}
+
+// ── Generate from pattern ──
+async function generateFromPattern(actionType) {
+  const scriptType = document.getElementById('scriptTypeSelect').value;
+  showToast(`"${actionType}" 스크립트 생성 중...`);
+
+  const data = await api('/api/scripts/generate', {
+    method: 'POST',
+    body: { actionType, scriptType, name: `${actionType}_${scriptType}` },
+  });
+
+  if (data.ok) {
+    showToast(`"${actionType}" 스크립트 생성 완료!`);
+    loadScripts();
+    // Switch to scripts tab
+    document.querySelector('.tab[data-tab="scripts"]').click();
+    setTimeout(() => viewScript(data.script.id), 500);
+  } else {
+    showToast(`Error: ${data.error}`);
+  }
+}
+
+// ── Generate from template ──
+async function generateFromTemplate(actionType) {
+  await generateFromPattern(actionType);
+}
+
+// ── Batch generate ──
+async function batchGenerate() {
+  const scriptType = document.getElementById('scriptTypeSelect').value;
+  showToast('배치 스크립트 생성 중...');
+
+  const data = await api('/api/scripts/batch', {
+    method: 'POST',
+    body: { minScore: 0.5, scriptType, limit: 20 },
+  });
+
+  if (data.ok) {
+    showToast(`${data.generated}개 스크립트 생성 완료! (${data.skipped}개 스킵)`);
+    loadScripts();
+    loadStats();
+  } else {
+    showToast(`Error: ${data.error}`);
+  }
+}
+
+// ── View script ──
+async function viewScript(id) {
+  const data = await api(`/api/scripts/${id}`);
+  if (data.error || !data.script) { showToast('스크립트 로드 실패'); return; }
+
+  currentScriptId = id;
+  const s = data.script;
+  document.getElementById('modalTitle').textContent = `${s.name} (${s.action_type})`;
+
+  const ext = { pyautogui: '.py', pad: '.robin', ahk: '.ahk', powershell: '.ps1' }[s.script_type] || '.txt';
+  document.getElementById('modalFilename').textContent = s.name + ext;
+
+  document.getElementById('modalScriptBody').textContent = s.script_content;
+  document.getElementById('scriptModal').classList.add('show');
+}
+
+// ── Close modal ──
+function closeModal() {
+  document.getElementById('scriptModal').classList.remove('show');
+  currentScriptId = null;
+}
+
+// ── Copy script ──
+function copyScript() {
+  const body = document.getElementById('modalScriptBody').textContent;
+  navigator.clipboard.writeText(body).then(() => showToast('Copied!'));
+}
+
+// ── Deploy script ──
+async function deployScript() {
+  if (!currentScriptId) return;
+  const hostname = document.getElementById('deployHostname').value.trim();
+  if (!hostname) { showToast('hostname을 입력하세요'); return; }
+
+  const data = await api(`/api/scripts/${currentScriptId}/deploy`, {
+    method: 'POST',
+    body: { hostname },
+  });
+
+  if (data.ok) {
+    showToast(data.message);
+    loadScripts();
+  } else {
+    showToast(`Deploy failed: ${data.error}`);
+  }
+}
+
+// ── Delete script ──
+async function deleteScript() {
+  if (!currentScriptId) return;
+  if (!confirm('이 스크립트를 삭제하시겠습니까?')) return;
+
+  const data = await api(`/api/scripts/${currentScriptId}`, { method: 'DELETE' });
+  if (data.ok) {
+    showToast('삭제 완료');
+    closeModal();
+    loadScripts();
+    loadStats();
+  }
+}
+
+// ── View pattern details ──
+function viewPatternDetails(actionType) {
+  if (!patternsData) return;
+  const p = patternsData.patterns.find(x => x.actionType === actionType);
+  if (!p) return;
+
+  currentScriptId = null;
+  document.getElementById('modalTitle').textContent = `Pattern: ${actionType}`;
+  document.getElementById('modalFilename').textContent = 'pattern-detail.json';
+  document.getElementById('modalScriptBody').textContent = JSON.stringify(p, null, 2);
+  document.getElementById('scriptModal').classList.add('show');
+}
+
+// ── Helpers ──
+function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function escAttr(s) { return String(s).replace(/'/g,"\\'").replace(/"/g,'&quot;'); }
+
+// ── Refresh all ──
+function refreshAll() {
+  loadStats();
+  loadPatterns();
+  loadScripts();
+}
+
+// ── Init ──
+refreshAll();
+</script>
+</body>
+</html>
