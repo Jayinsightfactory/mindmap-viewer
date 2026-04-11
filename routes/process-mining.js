@@ -1017,6 +1017,171 @@ function createProcessMining({ getDb, reportSheet }) {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // GET /api/mining/full-map — 전체 업무 지도 (직원+거래처+카톡방+전산화면+앱)
+  // ?date=2026-04-01&days=14
+  // ═══════════════════════════════════════════════════════════════════════════
+  router.get('/full-map', async (req, res) => {
+    try {
+      const db = getDb();
+      if (!db?.query) return res.json({ error: 'DB not available' });
+      const { date, days } = req.query;
+      const d = parseInt(days) || 7;
+      const startDate = date || new Date().toISOString().substring(0, 10);
+
+      // 1. 직원 목록
+      const { rows: activeUsers } = await db.query(`
+        SELECT DISTINCT e.user_id, u.name
+        FROM events e LEFT JOIN orbit_auth_users u ON e.user_id = u.id
+        WHERE e.type = ANY($1)
+          AND e.timestamp::date >= $2::date
+          AND e.timestamp::date < ($2::date + $3 * INTERVAL '1 day')
+          AND e.user_id IS NOT NULL AND e.user_id != 'local'
+        GROUP BY e.user_id, u.name HAVING count(*) >= 5
+      `, [WORK_TYPES, startDate, d]);
+
+      const nodes = [];   // { id, type, label, group?, color?, size? }
+      const links = [];   // { source, target, value, label? }
+      const nodeSet = new Set();
+
+      function addNode(id, type, label, extra) {
+        if (nodeSet.has(id)) return;
+        nodeSet.add(id);
+        nodes.push({ id, type, label, ...extra });
+      }
+
+      // 2. 사용자별 세부 데이터 수집
+      for (const u of activeUsers) {
+        const userId = u.user_id;
+        const userName = u.name || userId;
+        addNode(`user:${userId}`, 'user', userName, { group: 'user' });
+
+        // 이벤트 조회 (windowTitle 포함)
+        const { rows: events } = await db.query(`
+          SELECT type, timestamp,
+            COALESCE(data_json->>'app', data_json->>'sourceApp', '') as app,
+            data_json->>'windowTitle' as wt,
+            LEFT(data_json->>'text', 200) as text,
+            data_json->>'activity' as activity,
+            data_json->>'screen' as screen
+          FROM events
+          WHERE user_id = $1 AND type = ANY($2)
+            AND timestamp::date >= $3::date
+            AND timestamp::date < ($3::date + $4 * INTERVAL '1 day')
+          ORDER BY timestamp ASC
+        `, [userId, WORK_TYPES, startDate, d]);
+
+        // 앱별 사용 시간 + windowTitle 세부 추출
+        const appTime = {};
+        const kakaoRooms = {};   // 카톡방명 → 건수
+        const nenovaScreens = {}; // nenova 화면 → 건수
+        const excelFiles = {};   // 엑셀 파일명 → 건수
+        const customers = {};    // 거래처명 → 건수
+
+        for (const ev of events) {
+          const rawApp = ev.app || '';
+          const app = normalizeApp(rawApp, ev.wt);
+          if (app === 'unknown') continue;
+          appTime[app] = (appTime[app] || 0) + 1;
+
+          const wt = ev.wt || '';
+          const text = ev.text || '';
+
+          // 카카오톡: 방 이름 추출
+          if (app === 'KakaoTalk' && wt) {
+            const room = _extractKakaoRoom(wt);
+            if (room) kakaoRooms[room] = (kakaoRooms[room] || 0) + 1;
+            // 텍스트에서 거래처명 추출
+            const custs = _extractCustomers(text + ' ' + wt);
+            for (const c of custs) customers[c] = (customers[c] || 0) + 1;
+          }
+
+          // Nenova: 화면명 추출
+          if (app === 'Nenova ERP' && wt) {
+            const screen = _extractNenovaScreen(wt);
+            if (screen) nenovaScreens[screen] = (nenovaScreens[screen] || 0) + 1;
+          }
+
+          // Excel: 파일명 추출
+          if (app === 'Excel' && wt) {
+            const file = _extractExcelFile(wt);
+            if (file) excelFiles[file] = (excelFiles[file] || 0) + 1;
+          }
+
+          // 주문/발주감지에서 거래처
+          if ((ev.type === 'order.detected' || ev.type === 'purchase.order.detected') && text) {
+            const custs = _extractCustomers(text);
+            for (const c of custs) customers[c] = (customers[c] || 0) + 1;
+          }
+        }
+
+        // 앱 노드 + 사용자→앱 링크
+        for (const [app, count] of Object.entries(appTime)) {
+          addNode(`app:${app}`, 'app', app, { group: 'app' });
+          links.push({ source: `user:${userId}`, target: `app:${app}`, value: count, label: `${count}건` });
+        }
+
+        // 카톡방 노드
+        for (const [room, count] of Object.entries(kakaoRooms)) {
+          if (count < 2) continue;
+          addNode(`kakao:${room}`, 'kakao', room, { group: 'kakao' });
+          links.push({ source: `app:KakaoTalk`, target: `kakao:${room}`, value: count });
+        }
+
+        // Nenova 화면 노드
+        for (const [screen, count] of Object.entries(nenovaScreens)) {
+          if (count < 2) continue;
+          addNode(`nenova:${screen}`, 'nenova_screen', screen, { group: 'nenova' });
+          links.push({ source: `app:Nenova ERP`, target: `nenova:${screen}`, value: count });
+        }
+
+        // Excel 파일 노드
+        for (const [file, count] of Object.entries(excelFiles)) {
+          if (count < 2) continue;
+          addNode(`excel:${file}`, 'excel_file', file, { group: 'excel' });
+          links.push({ source: `app:Excel`, target: `excel:${file}`, value: count });
+        }
+
+        // 거래처 노드
+        for (const [cust, count] of Object.entries(customers)) {
+          if (count < 2) continue;
+          addNode(`cust:${cust}`, 'customer', cust, { group: 'customer' });
+          // 거래처는 카카오/주문감지에서 발견
+          if (appTime['KakaoTalk']) links.push({ source: `kakao:${Object.keys(kakaoRooms)[0] || 'KakaoTalk'}`, target: `cust:${cust}`, value: count });
+        }
+      }
+
+      // 3. 앱간 전이 (기존 로직)
+      for (const u of activeUsers) {
+        const events = await fetchEvents(db, u.user_id, startDate, d);
+        const blocks = buildActivityBlocks(events);
+        const { transitions } = buildTransitionMatrix(blocks);
+        for (const t of transitions) {
+          if (t.count >= 2) {
+            links.push({ source: `app:${t.from}`, target: `app:${t.to}`, value: t.count, type: 'transition' });
+          }
+        }
+      }
+
+      // 4. 중복 link 병합
+      const linkMap = {};
+      for (const l of links) {
+        const key = `${l.source}→${l.target}`;
+        if (!linkMap[key]) linkMap[key] = { ...l };
+        else linkMap[key].value += l.value;
+      }
+
+      res.json({
+        nodes,
+        links: Object.values(linkMap).sort((a, b) => b.value - a.value),
+        stats: { users: activeUsers.length, nodeCount: nodes.length, linkCount: Object.keys(linkMap).length },
+      });
+    } catch (e) {
+      console.error('[mining/full-map]', e.message);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // POST /api/mining/deep-analyze — AI 기반 의사결정 심층 분석
   // body: { date?, days?, userId? }
   // Claude를 사용해 "왜 이렇게 했는가", "대안은 무엇인가" 분석
@@ -1514,6 +1679,62 @@ function _interpretFlow(steps) {
   if (hasBrowser && hasExcel) return '웹 조회 → 엑셀 정리';
   if (hasKakao) return '카카오 커뮤니케이션 중심 워크플로우';
   return '업무 전환 패턴';
+}
+
+// ── 카톡방 이름 추출 ────────────────────────────────────────────────────────
+function _extractKakaoRoom(windowTitle) {
+  if (!windowTitle) return null;
+  // "카카오톡 - 방이름" 또는 windowTitle 자체가 방 이름
+  const m = windowTitle.match(/카카오톡\s*[-–]\s*(.+)/);
+  if (m) return m[1].trim().substring(0, 30);
+  // 주요 키워드 포함 시 방 이름으로 간주
+  const t = windowTitle.trim();
+  if (t.length > 2 && t.length < 40 && !t.includes('카카오톡 받은 파일')) return t.substring(0, 30);
+  return null;
+}
+
+// ── Nenova 화면명 추출 ──────────────────────────────────────────────────────
+function _extractNenovaScreen(windowTitle) {
+  if (!windowTitle) return null;
+  const screens = ['신규주문등록','주문관리','출고','재고','거래처','발주','입고','견적','Pivot','주문입력','매출','물량'];
+  for (const s of screens) {
+    if (windowTitle.includes(s)) return s;
+  }
+  if (windowTitle.includes('화훼 관리')) return '메인';
+  if (windowTitle.includes('Preview') || windowTitle.includes('인쇄')) return '인쇄';
+  return null;
+}
+
+// ── Excel 파일명 추출 ───────────────────────────────────────────────────────
+function _extractExcelFile(windowTitle) {
+  if (!windowTitle) return null;
+  // "파일명.xlsx - Excel" 패턴
+  const m = windowTitle.match(/(.+?)\s*[-–]\s*(?:Microsoft\s*)?Excel/i);
+  if (m) return m[1].trim().substring(0, 40);
+  // ".xlsx" 포함
+  const x = windowTitle.match(/([^\\/]+\.xlsx?)/i);
+  if (x) return x[1].substring(0, 40);
+  // 물량표, 차감 등 키워드
+  const kw = ['물량표','차감','발주','매출','견적','출고','재고'];
+  for (const k of kw) {
+    if (windowTitle.includes(k)) return windowTitle.substring(0, 40);
+  }
+  return null;
+}
+
+// ── 거래처명 추출 (간단 규칙 기반) ──────────────────────────────────────────
+function _extractCustomers(text) {
+  if (!text || text.length < 3) return [];
+  const custs = [];
+  // 알려진 패턴: "○○농원", "○○화훼", "○○소재", "○○다원" 등
+  const patterns = [/([가-힣]{2,6}(?:농원|화훼|소재|다원|플라워|팜|원예|종묘|화원|가든|무역))/g];
+  for (const p of patterns) {
+    let m; while ((m = p.exec(text)) !== null) {
+      if (m[1].length >= 3 && m[1].length <= 12) custs.push(m[1]);
+    }
+  }
+  // "경부다원", "에이스" 같은 이름 — 명시적 키워드
+  return [...new Set(custs)];
 }
 
 // ── 의사결정 분기 데이터 추출 (deep-analyze용) ──────────────────────────────
