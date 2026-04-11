@@ -15,6 +15,8 @@
  *   POST /api/mining/report     — 종합 리포트 생성 + Google Sheets 저장
  */
 const express = require('express');
+const path = require('path');
+const fs = require('fs');
 
 // ── 상수 ─────────────────────────────────────────────────────────────────────
 const SESSION_GAP_MS  = 5 * 60 * 1000;   // 5분 이상 공백 → 새 세션
@@ -26,6 +28,9 @@ const WORK_TYPES = [
   'keyboard.chunk', 'screen.capture', 'screen.analyzed',
   'clipboard.change', 'order.detected', 'purchase.order.detected',
 ];
+
+// Recorder 이벤트 타입 (SQLite에서 병합 시 사용)
+const RECORDER_TYPES = ['recorder.click', 'recorder.key', 'recorder.screenshot'];
 
 // windowTitle에서 앱 추론 (app 필드가 비어있을 때)
 function inferAppFromTitle(title) {
@@ -298,6 +303,103 @@ function createProcessMining({ getDb, reportSheet }) {
     return rows;
   }
 
+  // ── recorder DB에서 이벤트 가져오기 (SQLite → 동일 형식 변환) ─────────────
+  function fetchRecorderEvents(date, days) {
+    const dbPath = path.join(__dirname, '..', 'data', 'recording.db');
+    if (!fs.existsSync(dbPath)) return [];
+
+    let Database;
+    try { Database = require('better-sqlite3'); } catch { return []; }
+
+    let rdb;
+    try {
+      rdb = new Database(dbPath, { readonly: true });
+
+      const d = days || 1;
+      const startDate = date || new Date().toISOString().substring(0, 10);
+      const endDate = new Date(new Date(startDate).getTime() + d * 86400000).toISOString().substring(0, 10);
+
+      // 해당 날짜 범위의 세션 찾기
+      const sessions = rdb.prepare(`
+        SELECT id FROM recording_sessions
+        WHERE started_at >= ? AND started_at < ?
+      `).all(startDate, endDate + 'T23:59:59Z');
+
+      if (!sessions.length) { rdb.close(); return []; }
+
+      const sessionIds = sessions.map(s => s.id);
+      const placeholders = sessionIds.map(() => '?').join(',');
+
+      // mouse_click + keydown 이벤트만 (mouse_move/scroll은 노이즈)
+      const rows = rdb.prepare(`
+        SELECT event_type, timestamp_abs, data_json
+        FROM activity_events
+        WHERE session_id IN (${placeholders})
+          AND event_type IN ('mouse_click', 'keydown', 'screenshot')
+        ORDER BY timestamp_abs ASC
+        LIMIT 50000
+      `).all(...sessionIds);
+
+      rdb.close();
+
+      // process-mining 이벤트 형식으로 변환
+      return rows.map(row => {
+        let data = {};
+        try { data = JSON.parse(row.data_json || '{}'); } catch {}
+
+        // mouse_click만 pressed=true 필터 (눌림만, 뗌은 제외)
+        if (row.event_type === 'mouse_click' && data.pressed === false) return null;
+        // keydown은 modifier키 제외 (shift, ctrl, alt 단독은 스킵)
+        if (row.event_type === 'keydown' && data.is_special && !data.key?.startsWith('f')) return null;
+
+        const app = data.processName || '';
+        const windowTitle = data.windowTitle || '';
+
+        return {
+          type: row.event_type === 'mouse_click' ? 'recorder.click'
+              : row.event_type === 'keydown'     ? 'recorder.key'
+              : 'recorder.screenshot',
+          timestamp: row.timestamp_abs,
+          app,
+          windowTitle,
+          activity: row.event_type === 'mouse_click'
+            ? `click(${data.x},${data.y}) ${data.button || ''}`
+            : row.event_type === 'keydown'
+            ? `key:${data.key || ''}`
+            : `screenshot:${data.screenshot_id || ''}`,
+          screen: null,
+          workCategory: null,
+          automationScore: null,
+          text: null,
+          // recorder 고유 메타데이터
+          _recorder: {
+            clickX: data.x, clickY: data.y,
+            button: data.button,
+            key: data.key,
+            screenshotId: data.screenshot_id,
+          },
+        };
+      }).filter(Boolean);
+    } catch (e) {
+      if (rdb) try { rdb.close(); } catch {}
+      console.warn('[mining] recorder 이벤트 조회 실패:', e.message);
+      return [];
+    }
+  }
+
+  // ── 통합 이벤트 조회 (PG + recorder 병합) ──────────────────────────────────
+  async function fetchMergedEvents(db, userId, date, days) {
+    const pgEvents = await fetchEvents(db, userId, date, days);
+    const recEvents = fetchRecorderEvents(date, days);
+
+    if (!recEvents.length) return pgEvents;
+
+    // 타임스탬프 기준 병합 정렬
+    const all = [...pgEvents, ...recEvents];
+    all.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+    return all;
+  }
+
   // 사용자 이름 조회 헬퍼
   async function getUserName(db, userId) {
     const { rows } = await db.query(
@@ -317,7 +419,7 @@ function createProcessMining({ getDb, reportSheet }) {
       const { userId, date, days } = req.query;
       if (!userId) return res.status(400).json({ error: 'userId required' });
 
-      const events = await fetchEvents(db, userId, date, parseInt(days) || 1);
+      const events = await fetchMergedEvents(db, userId, date, parseInt(days) || 1);
       if (!events.length) return res.json({ sessions: [], message: '해당 기간 데이터 없음' });
 
       const blocks = buildActivityBlocks(events);
@@ -325,11 +427,13 @@ function createProcessMining({ getDb, reportSheet }) {
       const { transitions, timeByApp } = buildTransitionMatrix(blocks);
 
       const userName = await getUserName(db, userId);
+      const recorderEvents = events.filter(e => RECORDER_TYPES.includes(e.type)).length;
 
       res.json({
         user: { id: userId, name: userName },
         date: date || new Date().toISOString().substring(0, 10),
         totalEvents: events.length,
+        recorderEvents,
         totalBlocks: blocks.length,
         sessions,
         timeByApp,
@@ -353,7 +457,7 @@ function createProcessMining({ getDb, reportSheet }) {
       if (!userId) return res.status(400).json({ error: 'userId required' });
 
       const d = parseInt(days) || 7;
-      const events = await fetchEvents(db, userId, date, d);
+      const events = await fetchMergedEvents(db, userId, date, d);
       if (!events.length) return res.json({ patterns: [], message: '데이터 없음' });
 
       const blocks = buildActivityBlocks(events);
@@ -397,7 +501,7 @@ function createProcessMining({ getDb, reportSheet }) {
       if (!userId) return res.status(400).json({ error: 'userId required' });
 
       const d = parseInt(days) || 7;
-      const events = await fetchEvents(db, userId, date, d);
+      const events = await fetchMergedEvents(db, userId, date, d);
       if (!events.length) return res.json({ bottlenecks: [], message: '데이터 없음' });
 
       const blocks = buildActivityBlocks(events);
@@ -707,13 +811,13 @@ function createProcessMining({ getDb, reportSheet }) {
       // 이전 7일 기준선 데이터
       const baselineStart = new Date(targetDate);
       baselineStart.setDate(baselineStart.getDate() - 7);
-      const baseEvents = await fetchEvents(db, userId, baselineStart.toISOString().substring(0, 10), 7);
+      const baseEvents = await fetchMergedEvents(db, userId, baselineStart.toISOString().substring(0, 10), 7);
       const baseBlocks = buildActivityBlocks(baseEvents);
       const { timeByApp: baseTime } = buildTransitionMatrix(baseBlocks);
       const basePatterns = extractPatterns(baseBlocks);
 
       // 당일 데이터
-      const todayEvents = await fetchEvents(db, userId, targetDate, 1);
+      const todayEvents = await fetchMergedEvents(db, userId, targetDate, 1);
       const todayBlocks = buildActivityBlocks(todayEvents);
       const { timeByApp: todayTime } = buildTransitionMatrix(todayBlocks);
       const todayPatterns = extractPatterns(todayBlocks);
@@ -1959,5 +2063,9 @@ function _designAutomation(steps, patternData) {
     savingsPerMonth,
   };
 }
+
+// ── Recorder 통합 전용 유틸리티 (recording.js에서도 사용) ─────────────────
+createProcessMining._normalizeApp = normalizeApp;
+createProcessMining._inferAppFromTitle = inferAppFromTitle;
 
 module.exports = createProcessMining;
