@@ -1591,7 +1591,12 @@ function createProcessMining({ getDb, reportSheet }) {
       const SHEET_ID = '1pXLVZqiMwWt6Vh0IhWwASBvgLtZqLnbHXMWqOLNwAXU';
 
       let cred;
-      try { cred = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON || '{}'); } catch { return res.json({ error: 'cred parse fail' }); }
+      try {
+        let raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON || '{}';
+        if (raw.includes('\\\\n')) raw = raw.replace(/\\\\n/g, '\\n');
+        cred = JSON.parse(raw);
+        if (cred.private_key) cred.private_key = cred.private_key.replace(/\\n/g, '\n');
+      } catch (e) { return res.json({ error: 'cred parse fail', msg: e.message }); }
       if (!cred.private_key) return res.json({ error: 'no private_key', email: cred.client_email });
 
       // Token
@@ -2134,8 +2139,13 @@ async function _fetchKakaoSheetData() {
   // 서비스 계정 토큰
   let cred = null;
   try {
-    cred = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON || '{}');
-  } catch { return []; }
+    let raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON || '{}';
+    // Railway 환경변수에서 \\n이 리터럴로 저장되는 경우 처리
+    if (raw.includes('\\\\n')) raw = raw.replace(/\\\\n/g, '\\n');
+    cred = JSON.parse(raw);
+    // private_key 내부 \\n → 실제 줄바꿈
+    if (cred.private_key) cred.private_key = cred.private_key.replace(/\\n/g, '\n');
+  } catch (e) { console.warn('[kakao-sheet] cred parse fail:', e.message); return []; }
   if (!cred.private_key) return [];
 
   const now = Math.floor(Date.now() / 1000);
