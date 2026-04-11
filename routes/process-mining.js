@@ -1593,6 +1593,13 @@ function createProcessMining({ getDb, reportSheet }) {
       let cred;
       try { cred = await _parseServiceAccountJson(); } catch (e) { return res.json({ error: e.message }); }
       if (!cred?.private_key) return res.json({ error: 'no private_key' });
+      // Debug: key info
+      const pkStart = cred.private_key.substring(0, 40);
+      const pkEnd = cred.private_key.substring(cred.private_key.length - 40);
+      const pkLen = cred.private_key.length;
+      const hasBegin = cred.private_key.includes('-----BEGIN');
+      const hasEnd = cred.private_key.includes('-----END');
+      const nlCount = (cred.private_key.match(/\n/g) || []).length;
 
       // Token
       const now = Math.floor(Date.now() / 1000);
@@ -1630,7 +1637,7 @@ function createProcessMining({ getDb, reportSheet }) {
         });
       }
 
-      res.json({ ok: true, email: cred.client_email, tabs, tabCount: tabs.length, meta: meta.error || null, sample });
+      res.json({ ok: true, email: cred.client_email, tabs, tabCount: tabs.length, meta: meta.error || null, sample, keyDebug: { pkStart, pkEnd, pkLen, hasBegin, hasEnd, nlCount } });
     } catch (e) {
       res.json({ ok: false, error: e.message });
     }
