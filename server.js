@@ -1888,6 +1888,39 @@ app.post('/api/daemon/command', (req, res) => {
   res.json({ ok: true, queued: hostname });
 });
 
+// GET /api/daemon/governor — 리소스 거버너 상태 조회 (데몬 PC에서 보고)
+app.get('/api/daemon/governor', (req, res) => {
+  try {
+    const fs = require('fs');
+    const os = require('os');
+    const statePath = require('path').join(os.homedir(), '.orbit', 'governor-state.json');
+    const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+    res.json({ ok: true, ...state });
+  } catch {
+    res.json({ ok: false, level: 'UNKNOWN', message: '거버너 미실행' });
+  }
+});
+
+// POST /api/daemon/governor/force — 거버너 레벨 강제 변경 (관리자 전용)
+app.post('/api/daemon/governor/force', (req, res) => {
+  const { user, isAdmin: _adminOk } = resolveAdmin(req);
+  if (!_adminOk) {
+    if (!user) return res.status(401).json({ error: 'unauthorized' });
+    return res.status(403).json({ error: 'admin only' });
+  }
+  const { level } = req.body || {};
+  if (!['IDLE', 'NORMAL', 'BUSY', 'CRITICAL'].includes(level)) {
+    return res.status(400).json({ error: 'level: IDLE|NORMAL|BUSY|CRITICAL' });
+  }
+  try {
+    const gov = require('./src/resource-governor');
+    const ok = gov.forceLevel(level);
+    res.json({ ok, level });
+  } catch (e) {
+    res.json({ ok: false, error: e.message });
+  }
+});
+
 // POST /api/admin/push-token — PC에 사용자 토큰을 원격으로 푸시
 // { hostname, userId } → 해당 PC의 .orbit-config.json에 token 업데이트 명령 전송
 app.post('/api/admin/push-token', async (req, res) => {
