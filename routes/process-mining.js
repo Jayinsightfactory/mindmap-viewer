@@ -2,6 +2,11 @@
 /**
  * process-mining.js — 업무 프로세스 마이닝 엔진
  *
+ * 3개 데이터 소스 교차 분석:
+ *   A. Orbit 활동 이벤트 (PG) — keyboard.chunk, screen.capture, clipboard.change
+ *   B. Nenova 전산 (SQL Server) — 주문, 출하, 거래처, 상품
+ *   C. 카톡 분석 (Google Sheets) — 비즈니스이벤트, 의사결정, 불량
+ *
  * 이벤트 데이터 → 앱 전환 패턴 → 업무 흐름 추출 → 병목/의사결정 분석
  *
  * 엔드포인트:
@@ -1779,6 +1784,13 @@ function createProcessMining({ getDb, reportSheet }) {
       const startDate = date || new Date().toISOString().substring(0, 10);
       const baseUrl = `http://localhost:${process.env.PORT || 4747}`;
 
+      // ── 0. 카톡 분석 데이터 (Google Sheets) ─────────────────────
+      let kakaoEvents = [];
+      try {
+        kakaoEvents = await _fetchKakaoSheetData();
+        console.log(`[cross-analysis] 카톡 시트 데이터: ${kakaoEvents.length}건`);
+      } catch (e) { console.warn('[cross-analysis] 카톡 시트 읽기 실패:', e.message); }
+
       // 1. 직원별 활동 시퀀스
       const { rows: activeUsers } = await db.query(`
         SELECT DISTINCT e.user_id, u.name
@@ -1909,7 +1921,13 @@ function createProcessMining({ getDb, reportSheet }) {
         }
       } catch (e) {}
 
-      // 6. 인사이트
+      // 6. 카톡 시트 데이터 교차 분석
+      let kakaoAnalysis = null;
+      if (kakaoEvents.length) {
+        kakaoAnalysis = _analyzeKakaoEvents(kakaoEvents, orderMatches);
+      }
+
+      // 7. 인사이트 (모든 소스 종합)
       const insights = [];
       if (comparisons.length) {
         const top = comparisons.sort((a, b) => b.gapSec - a.gapSec)[0];
@@ -1921,11 +1939,23 @@ function createProcessMining({ getDb, reportSheet }) {
         const avg = Math.round(orderMatches.reduce((s, m) => s + Math.abs(m.delaySec), 0) / orderMatches.length);
         insights.push({ type: 'process_time', title: `카톡→전산 평균 ${Math.round(avg / 60)}분`, detail: `${orderMatches.length}건 매칭` });
       }
+      if (kakaoAnalysis) {
+        if (kakaoAnalysis.orderChanges) insights.push({ type: 'kakao_order', title: `카톡 주문변경 ${kakaoAnalysis.orderChanges}건`, detail: `방: ${kakaoAnalysis.topRooms.join(', ')}` });
+        if (kakaoAnalysis.defects) insights.push({ type: 'kakao_defect', title: `불량/클레임 ${kakaoAnalysis.defects}건`, detail: `주요품목: ${kakaoAnalysis.defectProducts.join(', ')}` });
+        if (kakaoAnalysis.decisions) insights.push({ type: 'kakao_decision', title: `의사결정 ${kakaoAnalysis.decisions}건`, detail: `미해결: ${kakaoAnalysis.unresolvedDecisions}건` });
+        if (kakaoAnalysis.responseAvgMin) insights.push({ type: 'kakao_response', title: `카톡 평균 응답시간 ${kakaoAnalysis.responseAvgMin}분`, detail: `최장: ${kakaoAnalysis.responseMaxMin}분` });
+      }
 
       res.json({
         period: { start: startDate, days: d }, userCount: activeUsers.length,
+        dataSources: {
+          orbit: { events: Object.values(userTimelines).reduce((s, t) => s + t.length, 0) },
+          nenova: { orders: orderMatches.length > 0 },
+          kakao: { events: kakaoEvents.length, analysis: !!kakaoAnalysis },
+        },
         insights, comparisons: comparisons.slice(0, 10), bottlenecks: bottlenecks.slice(0, 15),
         orderKakaoMatches: orderMatches.slice(0, 30),
+        kakaoAnalysis,
         workCycles: Object.fromEntries(Object.entries(workCycles).map(([u, cs]) => [u, { total: cs.length, avgSec: cs.length ? Math.round(cs.reduce((s, c) => s + c.durationSec, 0) / cs.length) : 0, topRoutes: _topN(cs.map(c => c.route), 5) }])),
       });
     } catch (e) {
@@ -2034,6 +2064,149 @@ function _interpretFlow(steps) {
   if (hasBrowser && hasExcel) return '웹 조회 → 엑셀 정리';
   if (hasKakao) return '카카오 커뮤니케이션 중심 워크플로우';
   return '업무 전환 패턴';
+}
+
+// ── 구글시트에서 카톡 분석 데이터 읽기 ───────────────────────────────────────
+const KAKAO_SHEET_ID = '1pXLVZqiMwWt6Vh0IhWwASBvgLtZqLnbHXMWqOLNwAXU';
+let _kakaoSheetCache = null;
+let _kakaoSheetCacheTs = 0;
+
+async function _fetchKakaoSheetData() {
+  // 5분 캐시
+  if (_kakaoSheetCache && Date.now() - _kakaoSheetCacheTs < 300000) return _kakaoSheetCache;
+
+  const https = require('https');
+  const crypto = require('crypto');
+
+  // 서비스 계정 토큰
+  let cred = null;
+  try {
+    cred = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON || '{}');
+  } catch { return []; }
+  if (!cred.private_key) return [];
+
+  const now = Math.floor(Date.now() / 1000);
+  const b64 = o => Buffer.from(JSON.stringify(o)).toString('base64url');
+  const unsigned = `${b64({ alg:'RS256', typ:'JWT' })}.${b64({ iss: cred.client_email, scope: 'https://www.googleapis.com/auth/spreadsheets.readonly', aud: 'https://oauth2.googleapis.com/token', iat: now, exp: now + 3600 })}`;
+  const sign = crypto.createSign('RSA-SHA256'); sign.update(unsigned);
+  const jwt = `${unsigned}.${sign.sign(cred.private_key, 'base64url')}`;
+  const body = `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${jwt}`;
+
+  const token = await new Promise((resolve) => {
+    const req = https.request({ hostname: 'oauth2.googleapis.com', path: '/token', method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(body) }
+    }, res => { let d = ''; res.on('data', c => d += c); res.on('end', () => { try { resolve(JSON.parse(d).access_token); } catch { resolve(null); } }); });
+    req.on('error', () => resolve(null)); req.write(body); req.end();
+  });
+  if (!token) return [];
+
+  // 시트 탭 목록 조회
+  const sheetMeta = await new Promise((resolve) => {
+    https.get({ hostname: 'sheets.googleapis.com', path: `/v4/spreadsheets/${KAKAO_SHEET_ID}?fields=sheets.properties`, headers: { Authorization: `Bearer ${token}` } }, res => {
+      let d = ''; res.on('data', c => d += c); res.on('end', () => { try { resolve(JSON.parse(d)); } catch { resolve(null); } });
+    }).on('error', () => resolve(null));
+  });
+
+  const tabs = (sheetMeta?.sheets || []).map(s => s.properties?.title).filter(Boolean);
+
+  // 핵심 탭 읽기: 메시지분류, 비즈니스이벤트, 의사결정추적, 파이프라인보고서
+  const allEvents = [];
+  const targetTabs = tabs.filter(t => ['메시지분류', '비즈니스이벤트', '의사결정추적', '방프로파일'].includes(t));
+
+  for (const tab of targetTabs) {
+    const range = encodeURIComponent(`${tab}!A1:Z5000`);
+    const data = await new Promise((resolve) => {
+      https.get({ hostname: 'sheets.googleapis.com', path: `/v4/spreadsheets/${KAKAO_SHEET_ID}/values/${range}`, headers: { Authorization: `Bearer ${token}` } }, res => {
+        let d = ''; res.on('data', c => d += c); res.on('end', () => { try { resolve(JSON.parse(d)); } catch { resolve(null); } });
+      }).on('error', () => resolve(null));
+    });
+
+    if (data?.values?.length > 1) {
+      const headers = data.values[0];
+      for (let i = 1; i < data.values.length; i++) {
+        const row = {};
+        headers.forEach((h, j) => { row[h] = data.values[i]?.[j] || ''; });
+        row._tab = tab;
+        allEvents.push(row);
+      }
+    }
+  }
+
+  _kakaoSheetCache = allEvents;
+  _kakaoSheetCacheTs = Date.now();
+  return allEvents;
+}
+
+// ── 카톡 이벤트 분석 ────────────────────────────────────────────────────────
+function _analyzeKakaoEvents(events, orderMatches) {
+  const bizEvents = events.filter(e => e._tab === '비즈니스이벤트');
+  const decisions = events.filter(e => e._tab === '의사결정추적');
+  const messages = events.filter(e => e._tab === '메시지분류');
+  const rooms = events.filter(e => e._tab === '방프로파일');
+
+  // 비즈니스 이벤트 분류
+  const eventTypes = {};
+  for (const e of bizEvents) {
+    const type = e['이벤트타입'] || e['event_type'] || e['타입'] || 'unknown';
+    eventTypes[type] = (eventTypes[type] || 0) + 1;
+  }
+
+  // 불량 분석
+  const defects = bizEvents.filter(e => {
+    const t = (e['이벤트타입'] || e['event_type'] || '').toLowerCase();
+    return t.includes('불량') || t.includes('클레임') || t.includes('defect');
+  });
+  const defectProducts = {};
+  for (const d of defects) {
+    const prod = d['품목'] || d['product'] || d['상품'] || '';
+    if (prod) defectProducts[prod] = (defectProducts[prod] || 0) + 1;
+  }
+
+  // 방별 활동량
+  const roomActivity = {};
+  for (const m of messages) {
+    const room = m['방'] || m['room'] || m['채팅방'] || '';
+    if (room) roomActivity[room] = (roomActivity[room] || 0) + 1;
+  }
+
+  // 응답 시간 계산 (같은 방 내 연속 메시지 간 시간 차이)
+  const responseTimes = [];
+  const msgByRoom = {};
+  for (const m of messages) {
+    const room = m['방'] || m['room'] || '';
+    const ts = m['시간'] || m['timestamp'] || m['날짜'] || '';
+    if (room && ts) {
+      if (!msgByRoom[room]) msgByRoom[room] = [];
+      msgByRoom[room].push({ ts: new Date(ts).getTime(), sender: m['발신자'] || m['sender'] || '' });
+    }
+  }
+  for (const [, msgs] of Object.entries(msgByRoom)) {
+    msgs.sort((a, b) => a.ts - b.ts);
+    for (let i = 1; i < msgs.length; i++) {
+      if (msgs[i].sender !== msgs[i - 1].sender && msgs[i].ts - msgs[i - 1].ts < 3600000) {
+        responseTimes.push((msgs[i].ts - msgs[i - 1].ts) / 60000); // 분
+      }
+    }
+  }
+
+  const topRooms = Object.entries(roomActivity).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([r]) => r);
+  const topDefectProducts = Object.entries(defectProducts).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([p]) => p);
+
+  return {
+    totalMessages: messages.length,
+    totalBizEvents: bizEvents.length,
+    eventTypes,
+    orderChanges: eventTypes['주문변경'] || eventTypes['ORDER_CHANGE'] || 0,
+    defects: defects.length,
+    defectProducts: topDefectProducts,
+    decisions: decisions.length,
+    unresolvedDecisions: decisions.filter(d => (d['결과'] || d['status'] || '') === '미해결' || (d['결과'] || d['status'] || '') === '').length,
+    topRooms,
+    roomCount: Object.keys(roomActivity).length,
+    responseAvgMin: responseTimes.length ? Math.round(responseTimes.reduce((s, t) => s + t, 0) / responseTimes.length) : null,
+    responseMaxMin: responseTimes.length ? Math.round(Math.max(...responseTimes)) : null,
+    rooms: rooms.map(r => ({ name: r['방이름'] || r['name'] || '', type: r['분류'] || r['type'] || '', pipeline: r['파이프라인'] || '' })),
+  };
 }
 
 // ── 내부 API 호출 헬퍼 ──────────────────────────────────────────────────────
