@@ -1583,6 +1583,16 @@ function createProcessMining({ getDb, reportSheet }) {
 
   // ═══════════════════════════════════════════════════════════════════════════
   // POST /api/mining/migrate-vision — Vision raw 데이터 마이그레이션
+  // GET /api/mining/kakao-debug — 카톡 시트 연결 디버그
+  router.get('/kakao-debug', async (req, res) => {
+    try {
+      const data = await _fetchKakaoSheetData();
+      res.json({ ok: true, count: data.length, tabs: [...new Set(data.map(e => e._tab))], sample: data.slice(0, 3) });
+    } catch (e) {
+      res.json({ ok: false, error: e.message, stack: e.stack?.substring(0, 300) });
+    }
+  });
+
   // 기존 screen.analyzed raw JSON 문자열 재파싱
   // ═══════════════════════════════════════════════════════════════════════════
   router.post('/migrate-vision', async (req, res) => {
@@ -2098,7 +2108,7 @@ async function _fetchKakaoSheetData() {
     }, res => { let d = ''; res.on('data', c => d += c); res.on('end', () => { try { resolve(JSON.parse(d).access_token); } catch { resolve(null); } }); });
     req.on('error', () => resolve(null)); req.write(body); req.end();
   });
-  if (!token) return [];
+  if (!token) { console.warn('[kakao-sheet] 토큰 발급 실패'); return []; }
 
   // 시트 탭 목록 조회
   const sheetMeta = await new Promise((resolve) => {
@@ -2107,7 +2117,9 @@ async function _fetchKakaoSheetData() {
     }).on('error', () => resolve(null));
   });
 
-  const tabs = (sheetMeta?.sheets || []).map(s => s.properties?.title).filter(Boolean);
+  if (!sheetMeta?.sheets) { console.warn('[kakao-sheet] 시트 메타 조회 실패:', JSON.stringify(sheetMeta)?.substring(0, 200)); return []; }
+  const tabs = sheetMeta.sheets.map(s => s.properties?.title).filter(Boolean);
+  console.log('[kakao-sheet] 탭 목록:', tabs.join(', '));
 
   // 핵심 탭 읽기: 메시지분류, 비즈니스이벤트, 의사결정추적, 파이프라인보고서
   const allEvents = [];
