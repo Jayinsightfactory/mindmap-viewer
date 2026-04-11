@@ -2119,17 +2119,29 @@ function _interpretFlow(steps) {
   return '업무 전환 패턴';
 }
 
-// ── 서비스계정 JSON 파싱 (내부 API 경유) ─────────────────────────────────────
+// ── 서비스계정 JSON 파싱 (Railway 리터럴 \n 대응) ───────────────────────────
 let _cachedCred = null;
 async function _parseServiceAccountJson() {
   if (_cachedCred) return _cachedCred;
-  // 내부 drive-config API에서 raw JSON 가져오기 (server.js가 이미 제공)
-  const cfg = await _internalGet(`http://localhost:${process.env.PORT || 4747}/api/daemon/drive-config`);
-  if (!cfg?.credentialsJson) throw new Error('drive-config 응답 없음');
-  const cred = JSON.parse(cfg.credentialsJson);
-  if (cred.private_key) cred.private_key = cred.private_key.replace(/\\n/g, '\n');
-  _cachedCred = cred;
-  return cred;
+  const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON || '';
+  if (!raw) throw new Error('GOOGLE_SERVICE_ACCOUNT_JSON 미설정');
+
+  // Railway는 JSON 내 \n을 리터럴 2문자로 저장
+  // JSON.parse 대신 정규식으로 핵심 필드 추출
+  const get = (key) => {
+    const m = raw.match(new RegExp(`"${key}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"`));
+    return m ? m[1].replace(/\\n/g, '\n').replace(/\\\\/g, '\\') : '';
+  };
+  _cachedCred = {
+    type: get('type'),
+    project_id: get('project_id'),
+    private_key_id: get('private_key_id'),
+    private_key: get('private_key'),
+    client_email: get('client_email'),
+    client_id: get('client_id'),
+  };
+  if (!_cachedCred.private_key) throw new Error('private_key 추출 실패');
+  return _cachedCred;
 }
 
 // ── 구글시트에서 카톡 분석 데이터 읽기 ───────────────────────────────────────
