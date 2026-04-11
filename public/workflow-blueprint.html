@@ -3,575 +3,623 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Orbit AI — Workflow Blueprint</title>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<title>Orbit AI — Workflow Map</title>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
   --bg: #0c0e14;
-  --grid: rgba(255,255,255,.03);
-  --surface: rgba(255,255,255,.04);
-  --surface2: rgba(255,255,255,.07);
-  --border: rgba(255,255,255,.08);
-  --text: #e8ecf1;
-  --muted: #6b7a8d;
+  --text: #e0e6ed;
+  --muted: #5a6a7e;
   --accent: #00ddb8;
   --accent2: #b96fff;
   --warn: #ffa23e;
   --danger: #ff5252;
   --info: #5b9aff;
-  --node-kakao: #ffe066;
-  --node-excel: #34d399;
-  --node-nenova: #818cf8;
-  --node-browser: #5b9aff;
-  --node-explorer: #f97316;
-  --node-other: #8b949e;
 }
 body {
   background: var(--bg);
-  background-image:
-    linear-gradient(var(--grid) 1px, transparent 1px),
-    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
-  background-size: 40px 40px;
   color: var(--text);
-  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
-  min-height: 100vh;
-  line-height: 1.6;
-}
-
-/* ── Header ── */
-header {
-  background: rgba(12,14,20,.92);
-  backdrop-filter: blur(12px);
-  border-bottom: 1px solid var(--border);
-  padding: 12px 28px;
-  display: flex; align-items: center; gap: 16px;
-  position: sticky; top: 0; z-index: 100;
-}
-.logo { font-size: 15px; font-weight: 700; letter-spacing: 2px; color: var(--accent); text-transform: uppercase; }
-.logo span { color: var(--muted); font-weight: 400; letter-spacing: 0; text-transform: none; }
-.controls { margin-left: auto; display: flex; align-items: center; gap: 8px; }
-input[type="date"], select {
-  background: var(--surface2); border: 1px solid var(--border);
-  color: var(--text); padding: 5px 10px; border-radius: 4px; font-size: 12px;
-  font-family: inherit;
-}
-.btn {
-  background: var(--surface2); border: 1px solid var(--border);
-  color: var(--text); padding: 6px 14px; border-radius: 4px;
-  cursor: pointer; font-size: 12px; font-family: inherit; transition: all .15s;
-}
-.btn:hover { background: var(--accent); color: var(--bg); border-color: var(--accent); }
-.btn-run { background: var(--accent); color: var(--bg); border-color: var(--accent); font-weight: 700; }
-
-/* ── Layout ── */
-main { max-width: 1600px; margin: 0 auto; padding: 24px; }
-.section-label {
-  font-size: 10px; letter-spacing: 3px; text-transform: uppercase;
-  color: var(--muted); margin-bottom: 8px; padding-left: 2px;
-}
-.section-title {
-  font-size: 16px; font-weight: 700; color: var(--accent);
-  margin-bottom: 16px; padding-bottom: 8px;
-  border-bottom: 1px dashed var(--border);
-}
-
-/* ── Stat strip ── */
-.stat-strip {
-  display: flex; gap: 2px; margin-bottom: 28px;
-  background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+  font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
   overflow: hidden;
-}
-.stat-cell {
-  flex: 1; padding: 16px 12px; text-align: center;
-  border-right: 1px solid var(--border);
-}
-.stat-cell:last-child { border-right: none; }
-.stat-val { font-size: 26px; font-weight: 700; }
-.stat-lbl { font-size: 10px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; margin-top: 2px; }
-
-/* ── Flow canvas ── */
-.flow-canvas {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 20px;
-  margin-bottom: 24px;
-  position: relative;
-  overflow-x: auto;
-}
-.flow-canvas svg { display: block; margin: 0 auto; }
-
-/* ── Grids ── */
-.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 24px; }
-.grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; margin-bottom: 24px; }
-@media (max-width: 1100px) { .grid-3 { grid-template-columns: 1fr 1fr; } }
-@media (max-width: 800px) { .grid-2, .grid-3 { grid-template-columns: 1fr; } }
-
-.panel {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 18px;
-}
-.panel-head {
-  font-size: 12px; font-weight: 600; color: var(--accent);
-  margin-bottom: 14px; letter-spacing: 1px; text-transform: uppercase;
+  height: 100vh;
+  user-select: none;
 }
 
-/* ── Flow nodes ── */
-.flow-node {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 600;
-  border: 1.5px solid; white-space: nowrap;
-}
-.flow-arrow { color: var(--muted); font-size: 16px; margin: 0 4px; }
-
-/* ── Pattern cards ── */
-.pattern-card {
-  background: var(--surface2);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 14px;
-  margin-bottom: 10px;
-  transition: border-color .15s;
-}
-.pattern-card:hover { border-color: var(--accent); }
-.pattern-flow { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
-.pattern-meta { display: flex; gap: 16px; font-size: 11px; color: var(--muted); }
-.pattern-meta b { color: var(--text); }
-
-/* ── Decision tree ── */
-.decision-node {
-  background: var(--surface2);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 14px;
-  margin-bottom: 12px;
-}
-.decision-from {
-  font-weight: 700; color: var(--warn); font-size: 13px;
-  margin-bottom: 8px; padding-bottom: 6px;
-  border-bottom: 1px dashed rgba(255,255,255,.06);
-}
-.decision-branch {
-  display: flex; align-items: center; gap: 8px;
-  padding: 4px 0; font-size: 12px;
-}
-.branch-bar {
-  height: 6px; border-radius: 3px; min-width: 4px;
-  transition: width .3s;
-}
-
-/* ── User compare ── */
-.user-bar {
+/* ── toolbar ── */
+#toolbar {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 200;
+  background: rgba(12,14,20,.88); backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(255,255,255,.06);
   display: flex; align-items: center; gap: 10px;
-  padding: 8px 0; font-size: 12px;
-  border-bottom: 1px solid rgba(255,255,255,.04);
+  padding: 8px 20px; height: 44px;
 }
-.user-bar:last-child { border-bottom: none; }
-.user-name { width: 80px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.user-bar-fill { height: 18px; border-radius: 3px; display: flex; overflow: hidden; flex: 1; }
-.user-bar-seg { height: 100%; min-width: 2px; position: relative; }
-.user-bar-seg:hover::after {
-  content: attr(data-tip);
-  position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%);
-  background: #1a1e28; color: #fff; padding: 3px 8px; border-radius: 4px;
-  font-size: 10px; white-space: nowrap; z-index: 10;
+#toolbar .logo { font-size: 13px; font-weight: 700; color: var(--accent); letter-spacing: 2px; text-transform: uppercase; }
+#toolbar .logo span { color: var(--muted); font-weight: 400; letter-spacing: 0; text-transform: none; }
+#toolbar input, #toolbar select {
+  background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.08);
+  color: var(--text); padding: 4px 8px; border-radius: 4px; font-size: 11px; font-family: inherit;
 }
-.user-time { width: 50px; text-align: right; color: var(--muted); font-size: 11px; }
+.tbtn {
+  background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.08);
+  color: var(--text); padding: 4px 12px; border-radius: 4px; font-size: 11px;
+  font-family: inherit; cursor: pointer; transition: all .12s;
+}
+.tbtn:hover { background: var(--accent); color: #0c0e14; border-color: var(--accent); }
+.tbtn-go { background: var(--accent); color: #0c0e14; border-color: var(--accent); font-weight: 700; }
+.spacer { flex: 1; }
+#zoom-label { font-size: 10px; color: var(--muted); }
 
-/* ── ROI ── */
-.roi-box {
-  background: linear-gradient(135deg, rgba(0,221,184,.08), rgba(185,111,255,.08));
-  border: 1px solid rgba(0,221,184,.2);
-  border-radius: 8px;
-  padding: 24px;
-  text-align: center;
+/* ── map canvas ── */
+#map {
+  position: absolute; top: 44px; left: 0; right: 0; bottom: 0;
+  overflow: hidden; cursor: grab;
+  background:
+    radial-gradient(ellipse at center, rgba(0,221,184,.015) 0%, transparent 70%),
+    linear-gradient(rgba(255,255,255,.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.018) 1px, transparent 1px);
+  background-size: 100% 100%, 60px 60px, 60px 60px;
 }
-.roi-big { font-size: 42px; font-weight: 800; color: var(--accent); }
-.roi-sub { font-size: 13px; color: var(--muted); margin-top: 4px; }
-.roi-row { display: flex; justify-content: center; gap: 32px; margin-top: 16px; }
-.roi-item { text-align: center; }
-.roi-item-val { font-size: 20px; font-weight: 700; }
-.roi-item-lbl { font-size: 10px; color: var(--muted); }
+#map.grabbing { cursor: grabbing; }
+#world { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
 
-/* ── Bottleneck ── */
-.bottleneck-item {
-  display: flex; align-items: center; gap: 12px;
-  padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,.04);
-  font-size: 12px;
+/* ── map elements ── */
+.edge {
+  position: absolute; pointer-events: none;
 }
-.bottleneck-item:last-child { border-bottom: none; }
-.bn-app { font-weight: 700; width: 100px; }
-.bn-bar-wrap { flex: 1; position: relative; height: 20px; background: rgba(255,255,255,.03); border-radius: 3px; }
-.bn-bar-avg { position: absolute; top: 0; left: 0; height: 100%; border-radius: 3px; background: var(--info); opacity: .5; }
-.bn-bar-worst { position: absolute; top: 0; left: 0; height: 100%; border-radius: 3px; background: var(--danger); opacity: .6; }
+.edge line { stroke-linecap: round; }
 
-/* ── Loading ── */
-.loading { text-align: center; padding: 60px; color: var(--muted); }
-.loading::after { content: ''; display: inline-block; width: 16px; height: 16px; border: 2px solid var(--accent); border-top-color: transparent; border-radius: 50%; animation: spin .6s linear infinite; margin-left: 8px; vertical-align: middle; }
+.node {
+  position: absolute; display: flex; flex-direction: column; align-items: center;
+  cursor: pointer; transition: transform .15s;
+}
+.node:hover { transform: scale(1.08); z-index: 50; }
+.node-circle {
+  width: 64px; height: 64px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 20px; font-weight: 800;
+  border: 2.5px solid; position: relative;
+  box-shadow: 0 0 20px rgba(0,0,0,.4);
+}
+.node-circle .time-ring {
+  position: absolute; top: -4px; left: -4px; right: -4px; bottom: -4px;
+  border-radius: 50%; border: 3px solid transparent;
+  border-top-color: var(--accent);
+}
+.node-label {
+  margin-top: 6px; font-size: 11px; font-weight: 600;
+  text-align: center; white-space: nowrap; text-shadow: 0 1px 4px rgba(0,0,0,.8);
+}
+.node-time {
+  font-size: 9px; color: var(--muted); margin-top: 1px;
+}
+
+/* user dots around nodes */
+.user-dot {
+  position: absolute; width: 8px; height: 8px; border-radius: 50%;
+  border: 1px solid rgba(0,0,0,.3);
+}
+.user-dot::after {
+  content: attr(data-name);
+  position: absolute; bottom: 110%; left: 50%; transform: translateX(-50%);
+  font-size: 8px; color: var(--muted); white-space: nowrap; display: none;
+  background: rgba(12,14,20,.9); padding: 1px 4px; border-radius: 2px;
+}
+.user-dot:hover::after { display: block; }
+
+/* decision markers */
+.decision-marker {
+  position: absolute; pointer-events: none;
+}
+.decision-diamond {
+  width: 18px; height: 18px; background: var(--warn);
+  transform: rotate(45deg); border-radius: 2px;
+  box-shadow: 0 0 8px rgba(255,162,62,.4);
+}
+
+/* flow label on edges */
+.edge-label {
+  position: absolute; font-size: 8px; color: var(--muted);
+  background: rgba(12,14,20,.85); padding: 1px 5px; border-radius: 3px;
+  white-space: nowrap; pointer-events: none;
+}
+
+/* ── legend ── */
+#legend {
+  position: fixed; bottom: 16px; left: 16px; z-index: 100;
+  background: rgba(12,14,20,.9); border: 1px solid rgba(255,255,255,.06);
+  border-radius: 6px; padding: 12px 16px; font-size: 10px;
+  backdrop-filter: blur(8px);
+}
+#legend h4 { color: var(--accent); font-size: 10px; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 8px; }
+.legend-row { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
+.legend-dot { width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid; flex-shrink: 0; }
+.legend-line { width: 20px; height: 0; border-top: 2px solid; flex-shrink: 0; }
+
+/* ── info panel (right side, slide-in) ── */
+#info-panel {
+  position: fixed; top: 44px; right: 0; bottom: 0; width: 340px; z-index: 150;
+  background: rgba(12,14,20,.95); border-left: 1px solid rgba(255,255,255,.06);
+  backdrop-filter: blur(12px);
+  transform: translateX(100%); transition: transform .25s ease;
+  overflow-y: auto; padding: 20px;
+}
+#info-panel.open { transform: translateX(0); }
+#info-panel .close-btn {
+  position: absolute; top: 8px; right: 12px; background: none; border: none;
+  color: var(--muted); font-size: 18px; cursor: pointer; font-family: inherit;
+}
+#info-panel h3 { font-size: 14px; color: var(--accent); margin-bottom: 12px; }
+#info-panel .detail-section { margin-bottom: 16px; }
+#info-panel .detail-label { font-size: 9px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 4px; }
+#info-panel .detail-val { font-size: 13px; }
+.mini-bar { display: flex; gap: 2px; margin-bottom: 4px; height: 14px; }
+.mini-bar-seg { height: 100%; border-radius: 2px; min-width: 3px; position: relative; }
+.mini-bar-seg::after {
+  content: attr(data-tip); position: absolute; bottom: 110%; left: 0;
+  font-size: 8px; color: #fff; background: #1a1e28; padding: 1px 4px; border-radius: 2px;
+  white-space: nowrap; display: none;
+}
+.mini-bar-seg:hover::after { display: block; }
+
+/* ── stat overlay (top-right) ── */
+#stat-overlay {
+  position: fixed; top: 54px; right: 16px; z-index: 100;
+  display: flex; gap: 6px;
+}
+.stat-pill {
+  background: rgba(12,14,20,.85); border: 1px solid rgba(255,255,255,.06);
+  border-radius: 20px; padding: 4px 12px; font-size: 10px;
+  backdrop-filter: blur(6px);
+}
+.stat-pill b { font-weight: 700; }
+
+/* ── loading ── */
+.map-loading {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+  font-size: 12px; color: var(--muted);
+}
+.map-loading::after {
+  content: ''; display: inline-block; width: 14px; height: 14px;
+  border: 2px solid var(--accent); border-top-color: transparent;
+  border-radius: 50%; animation: spin .5s linear infinite; margin-left: 8px; vertical-align: middle;
+}
 @keyframes spin { to { transform: rotate(360deg); } }
-
-/* ── Chart container ── */
-.chart-wrap { position: relative; height: 260px; }
-
-/* ── Automation step ── */
-.auto-step {
-  background: var(--surface2); border: 1px solid var(--border); border-radius: 6px;
-  padding: 14px; margin-bottom: 10px;
-}
-.auto-step-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-.auto-step-flow { font-weight: 600; font-size: 13px; }
-.auto-step-badge { padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700; }
-.auto-step-steps { font-size: 11px; color: var(--muted); line-height: 1.8; }
-.auto-step-steps li { padding-left: 4px; }
-.feasibility-bar { height: 4px; border-radius: 2px; background: rgba(255,255,255,.06); margin-top: 8px; }
-.feasibility-fill { height: 100%; border-radius: 2px; }
 </style>
 </head>
 <body>
 
-<header>
-  <div class="logo">ORBIT <span>// workflow blueprint</span></div>
-  <div class="controls">
-    <input type="date" id="startDate" value="2026-04-01">
-    <select id="days">
-      <option value="1">1일</option>
-      <option value="3">3일</option>
-      <option value="7" selected>7일</option>
-      <option value="14">14일</option>
-      <option value="30">30일</option>
-    </select>
-    <button class="btn btn-run" onclick="loadAll()">ANALYZE</button>
-    <button class="btn" onclick="runDeepAnalysis()">AI 심층분석</button>
-  </div>
-</header>
+<div id="toolbar">
+  <div class="logo">ORBIT <span>// workflow map</span></div>
+  <div class="spacer"></div>
+  <input type="date" id="startDate" value="2026-04-01">
+  <select id="days">
+    <option value="1">1일</option>
+    <option value="3">3일</option>
+    <option value="7" selected>7일</option>
+    <option value="14">14일</option>
+  </select>
+  <button class="tbtn tbtn-go" onclick="loadMap()">MAP</button>
+  <button class="tbtn" onclick="runAI()">AI 분석</button>
+  <span id="zoom-label">100%</span>
+</div>
 
-<main>
-  <div id="content" class="loading">데이터 로딩 중</div>
-</main>
+<div id="map">
+  <div id="world"></div>
+  <div class="map-loading" id="loader">워크플로우 맵 생성 중</div>
+</div>
+
+<div id="stat-overlay"></div>
+
+<div id="legend">
+  <h4>Legend</h4>
+  <div id="legend-items"></div>
+  <div class="legend-row" style="margin-top:6px"><div class="legend-line" style="border-color:rgba(255,255,255,.2); border-style:dashed"></div> 전환 흐름</div>
+  <div class="legend-row"><div style="width:10px;height:10px;background:var(--warn);transform:rotate(45deg);border-radius:2px"></div> 의사결정 분기</div>
+</div>
+
+<div id="info-panel">
+  <button class="close-btn" onclick="closePanel()">×</button>
+  <div id="panel-content"></div>
+</div>
 
 <script>
 const API = location.origin;
-const APP_COLORS = {
-  'KakaoTalk': '#ffe066', 'Excel': '#34d399', 'Nenova ERP': '#818cf8',
-  'Browser': '#5b9aff', 'Explorer': '#f97316', 'PowerPoint': '#f472b6',
-  'Word': '#60a5fa', 'HWP': '#a78bfa', 'Email': '#fbbf24',
-  'Notepad': '#94a3b8', 'Teams': '#7c3aed', 'Discord': '#8b5cf6',
-  '주문감지': '#ff5252', '발주감지': '#ff8a65',
+const APP_META = {
+  'KakaoTalk':   { color: '#ffe066', icon: '💬', short: 'KT' },
+  'Excel':       { color: '#34d399', icon: '📊', short: 'XL' },
+  'Nenova ERP':  { color: '#818cf8', icon: '🏭', short: 'NV' },
+  'Browser':     { color: '#5b9aff', icon: '🌐', short: 'BR' },
+  'Explorer':    { color: '#f97316', icon: '📁', short: 'EX' },
+  'PowerPoint':  { color: '#f472b6', icon: '📝', short: 'PP' },
+  'Word':        { color: '#60a5fa', icon: '📄', short: 'WD' },
+  'Notepad':     { color: '#94a3b8', icon: '📋', short: 'NP' },
+  'Email':       { color: '#fbbf24', icon: '📧', short: 'EM' },
+  'Teams':       { color: '#7c3aed', icon: '👥', short: 'TM' },
+  '주문감지':     { color: '#ff5252', icon: '🔔', short: '주문' },
+  '발주감지':     { color: '#ff8a65', icon: '📦', short: '발주' },
 };
-function appColor(name) { return APP_COLORS[name] || '#6b7a8d'; }
+function meta(app) { return APP_META[app] || { color: '#6b7a8d', icon: '•', short: app?.substring(0,2) || '?' }; }
 
-async function api(path) {
-  const r = await fetch(API + path);
-  return r.json();
+// ── Pan & Zoom ──
+let panX = 0, panY = 0, zoom = 1;
+let dragging = false, dragStartX, dragStartY, panStartX, panStartY;
+const world = document.getElementById('world');
+const mapEl = document.getElementById('map');
+
+function applyTransform() {
+  world.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
+  document.getElementById('zoom-label').textContent = Math.round(zoom * 100) + '%';
 }
 
-async function loadAll() {
+mapEl.addEventListener('mousedown', e => {
+  if (e.target.closest('.node')) return;
+  dragging = true; mapEl.classList.add('grabbing');
+  dragStartX = e.clientX; dragStartY = e.clientY;
+  panStartX = panX; panStartY = panY;
+});
+window.addEventListener('mousemove', e => {
+  if (!dragging) return;
+  panX = panStartX + (e.clientX - dragStartX);
+  panY = panStartY + (e.clientY - dragStartY);
+  applyTransform();
+});
+window.addEventListener('mouseup', () => { dragging = false; mapEl.classList.remove('grabbing'); });
+mapEl.addEventListener('wheel', e => {
+  e.preventDefault();
+  const rect = mapEl.getBoundingClientRect();
+  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+  const oldZoom = zoom;
+  zoom *= e.deltaY < 0 ? 1.1 : 0.9;
+  zoom = Math.max(0.2, Math.min(3, zoom));
+  panX = mx - (mx - panX) * (zoom / oldZoom);
+  panY = my - (my - panY) * (zoom / oldZoom);
+  applyTransform();
+}, { passive: false });
+
+// ── Data & Rendering ──
+let currentData = {};
+
+async function loadMap() {
   const d = document.getElementById('startDate').value;
   const days = document.getElementById('days').value;
-  document.getElementById('content').innerHTML = '<div class="loading">분석 중</div>';
+  document.getElementById('loader').style.display = '';
 
-  const [summary, infographic, workflows, blueprint, decisions] = await Promise.all([
-    api(`/api/mining/summary?date=${d}&days=${days}`),
-    api(`/api/mining/infographic?date=${d}&days=${days}`),
-    api(`/api/mining/workflows?userId=MNH03H73690BB2CD82&date=${d}&days=${days}`),
-    api(`/api/mining/automation-blueprint?date=${d}&days=${days}`),
-    api(`/api/mining/decisions?date=${d}&days=${days}`),
+  const [compare, decisions, blueprint, summary] = await Promise.all([
+    fetch(API + `/api/mining/compare?date=${d}&days=${days}`).then(r => r.json()),
+    fetch(API + `/api/mining/decisions?date=${d}&days=${days}`).then(r => r.json()),
+    fetch(API + `/api/mining/automation-blueprint?date=${d}&days=${days}`).then(r => r.json()),
+    fetch(API + `/api/mining/summary?date=${d}&days=${days}`).then(r => r.json()),
   ]);
 
-  render(summary, infographic, workflows, blueprint, decisions);
+  currentData = { compare, decisions, blueprint, summary };
+  document.getElementById('loader').style.display = 'none';
+  renderMap(compare, decisions, blueprint, summary);
 }
 
-function render(summary, info, workflows, blueprint, decisions) {
-  const s = summary.stats || {};
-  const roi = info.roi || {};
-  const charts = info.charts || {};
+function renderMap(compare, decisions, blueprint, summary) {
+  const users = compare.users || [];
+  const dps = decisions.decisionPoints || [];
+  const stats = summary.stats || {};
 
-  document.getElementById('content').innerHTML = `
-    <!-- STAT STRIP -->
-    <div class="stat-strip">
-      <div class="stat-cell"><div class="stat-val" style="color:var(--accent)">${s.totalEvents?.toLocaleString() || 0}</div><div class="stat-lbl">Total Events</div></div>
-      <div class="stat-cell"><div class="stat-val" style="color:var(--info)">${s.activeUsers || 0}</div><div class="stat-lbl">Active Users</div></div>
-      <div class="stat-cell"><div class="stat-val" style="color:var(--accent2)">${s.visionAnalyzed || 0}</div><div class="stat-lbl">Vision Analyzed</div></div>
-      <div class="stat-cell"><div class="stat-val" style="color:var(--warn)">${s.ordersDetected || 0}</div><div class="stat-lbl">Orders Detected</div></div>
-      <div class="stat-cell"><div class="stat-val" style="color:var(--node-excel)">${s.keyboardEvents?.toLocaleString() || 0}</div><div class="stat-lbl">Keyboard Events</div></div>
-    </div>
+  // 1. Collect all apps + time totals
+  const appTotals = {};
+  const appUsers = {};
+  for (const u of users) {
+    for (const t of (u.timeByApp || [])) {
+      appTotals[t.app] = (appTotals[t.app] || 0) + t.minutes;
+      if (!appUsers[t.app]) appUsers[t.app] = [];
+      appUsers[t.app].push({ name: u.name, min: t.minutes });
+    }
+  }
 
-    <!-- WORKFLOW PATTERNS (main flow canvas) -->
-    <div class="section-label">process flow</div>
-    <div class="section-title">워크플로우 패턴</div>
-    <div id="patterns-area"></div>
+  // 2. Collect transitions (from compare data — appComparison contains shared apps)
+  // Rebuild transitions from user patterns
+  const transMap = {};
+  for (const u of users) {
+    for (const p of (u.topPatterns || [])) {
+      const steps = p.flow.split(' → ');
+      for (let i = 0; i < steps.length - 1; i++) {
+        const key = `${steps[i]}→${steps[i+1]}`;
+        transMap[key] = (transMap[key] || 0) + p.count;
+      }
+    }
+  }
 
-    <!-- 2-col: heatmap + app distribution -->
-    <div class="grid-2">
-      <div class="panel">
-        <div class="panel-head">시간대별 활동량</div>
-        <div class="chart-wrap"><canvas id="chartHeatmap"></canvas></div>
+  // 3. Layout: force-like circular layout
+  const apps = Object.keys(appTotals).sort((a, b) => appTotals[b] - appTotals[a]);
+  const cx = 700, cy = 450;
+  const baseR = Math.min(300, 80 + apps.length * 25);
+  const positions = {};
+
+  // Main apps in circle, smaller ones further out
+  const mainApps = apps.slice(0, 8);
+  const otherApps = apps.slice(8);
+  mainApps.forEach((app, i) => {
+    const angle = (i / mainApps.length) * Math.PI * 2 - Math.PI / 2;
+    positions[app] = {
+      x: cx + Math.cos(angle) * baseR,
+      y: cy + Math.sin(angle) * baseR,
+    };
+  });
+  otherApps.forEach((app, i) => {
+    const angle = (i / Math.max(otherApps.length, 1)) * Math.PI * 2 - Math.PI / 4;
+    positions[app] = {
+      x: cx + Math.cos(angle) * (baseR + 160),
+      y: cy + Math.sin(angle) * (baseR + 160),
+    };
+  });
+
+  // 4. Build SVG edges
+  const maxTrans = Math.max(...Object.values(transMap), 1);
+  let edgesSvg = `<svg width="1400" height="900" style="position:absolute;top:0;left:0;pointer-events:none">`;
+  edgesSvg += `<defs>
+    <marker id="arrow" markerWidth="6" markerHeight="4" refX="5" refY="2" orient="auto">
+      <path d="M0,0 L6,2 L0,4" fill="rgba(255,255,255,.15)"/>
+    </marker>
+  </defs>`;
+
+  const edgeLabels = [];
+  for (const [key, count] of Object.entries(transMap)) {
+    const [from, to] = key.split('→');
+    if (!positions[from] || !positions[to]) continue;
+    const p1 = positions[from], p2 = positions[to];
+    const thickness = 1 + (count / maxTrans) * 6;
+    const opacity = 0.08 + (count / maxTrans) * 0.25;
+
+    // Curved path
+    const dx = p2.x - p1.x, dy = p2.y - p1.y;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    const mx = (p1.x + p2.x) / 2, my = (p1.y + p2.y) / 2;
+    // perpendicular offset for curve
+    const nx = -dy / dist * (dist * 0.15), ny = dx / dist * (dist * 0.15);
+    const cpx = mx + nx, cpy = my + ny;
+
+    const col = meta(from).color;
+    edgesSvg += `<path d="M${p1.x},${p1.y} Q${cpx},${cpy} ${p2.x},${p2.y}"
+      fill="none" stroke="${col}" stroke-width="${thickness}" stroke-opacity="${opacity}"
+      marker-end="url(#arrow)" stroke-dasharray="${thickness > 3 ? '' : '4,4'}"/>`;
+
+    // label at midpoint of curve
+    const lx = (p1.x + 2*cpx + p2.x) / 4;
+    const ly = (p1.y + 2*cpy + p2.y) / 4;
+    if (count >= 2) {
+      edgeLabels.push({ x: lx, y: ly, text: `${count}회` });
+    }
+  }
+  edgesSvg += '</svg>';
+
+  // 5. Build nodes
+  const maxTime = Math.max(...Object.values(appTotals), 1);
+  let nodesHtml = '';
+  for (const app of apps) {
+    const p = positions[app];
+    if (!p) continue;
+    const m = meta(app);
+    const mins = appTotals[app];
+    const size = 48 + (mins / maxTime) * 32;
+    const usersOfApp = appUsers[app] || [];
+
+    nodesHtml += `<div class="node" style="left:${p.x - size/2}px; top:${p.y - size/2}px" onclick="showAppDetail('${app}')">
+      <div class="node-circle" style="width:${size}px;height:${size}px;border-color:${m.color};background:${m.color}12;color:${m.color};font-size:${size*0.32}px">
+        ${m.icon}
       </div>
-      <div class="panel">
-        <div class="panel-head">앱 사용 분포</div>
-        <div class="chart-wrap"><canvas id="chartApps"></canvas></div>
-      </div>
-    </div>
+      <div class="node-label" style="color:${m.color}">${app}</div>
+      <div class="node-time">${mins}분</div>
+    </div>`;
 
-    <!-- EMPLOYEE COMPARISON -->
-    <div class="section-label">employee comparison</div>
-    <div class="section-title">직원별 업무 시간 비교</div>
-    <div class="panel" id="user-compare" style="margin-bottom:24px"></div>
+    // user dots around node
+    usersOfApp.forEach((u, i) => {
+      const uAngle = (i / usersOfApp.length) * Math.PI * 2;
+      const ur = size / 2 + 14;
+      const ux = p.x + Math.cos(uAngle) * ur - 4;
+      const uy = p.y + Math.sin(uAngle) * ur - 4;
+      const userColors = ['#00ddb8','#b96fff','#5b9aff','#ffa23e','#ff5252','#34d399','#ffe066','#f472b6','#94a3b8'];
+      nodesHtml += `<div class="user-dot" style="left:${ux}px;top:${uy}px;background:${userColors[i%userColors.length]}" data-name="${u.name} ${u.min}분"></div>`;
+    });
+  }
 
-    <!-- 2-col: decisions + bottlenecks -->
-    <div class="grid-2">
-      <div>
-        <div class="section-label">decision points</div>
-        <div class="section-title">의사결정 분기점</div>
-        <div id="decisions-area"></div>
-      </div>
-      <div>
-        <div class="section-label">bottlenecks</div>
-        <div class="section-title">자동화 블루프린트</div>
-        <div id="blueprint-area"></div>
-      </div>
-    </div>
+  // 6. Edge labels
+  let edgeLabelsHtml = edgeLabels.map(l =>
+    `<div class="edge-label" style="left:${l.x}px;top:${l.y}px">${l.text}</div>`
+  ).join('');
 
-    <!-- ROI -->
-    <div class="section-label">automation roi</div>
-    <div class="section-title">자동화 ROI 예측</div>
-    <div class="roi-box" style="margin-bottom:24px">
-      <div class="roi-big">${roi.roiYearlyKRW ? (roi.roiYearlyKRW/10000).toFixed(0) + '만원' : '-'}</div>
-      <div class="roi-sub">연간 예상 절감액</div>
-      <div class="roi-row">
-        <div class="roi-item"><div class="roi-item-val" style="color:var(--accent)">${roi.autoSavingsMinPerDay || 0}분</div><div class="roi-item-lbl">일 절감</div></div>
-        <div class="roi-item"><div class="roi-item-val" style="color:var(--info)">${roi.autoSavingsHoursMonthly || 0}시간</div><div class="roi-item-lbl">월 절감</div></div>
-        <div class="roi-item"><div class="roi-item-val" style="color:var(--accent2)">${roi.automatableBlockCount || 0}건</div><div class="roi-item-lbl">자동화 가능 블록</div></div>
-        <div class="roi-item"><div class="roi-item-val" style="color:var(--warn)">${roi.roiMonthlyKRW ? (roi.roiMonthlyKRW/10000).toFixed(1)+'만원' : '-'}</div><div class="roi-item-lbl">월 절감액</div></div>
-      </div>
-    </div>
+  // 7. Decision markers
+  let decisionHtml = '';
+  for (const dp of dps) {
+    if (!positions[dp.fromApp]) continue;
+    const p = positions[dp.fromApp];
+    // Place diamond slightly offset
+    decisionHtml += `<div class="decision-marker" style="left:${p.x + 30}px;top:${p.y - 40}px">
+      <div class="decision-diamond" title="${dp.fromApp} → ${dp.choiceCount}가지 분기"></div>
+    </div>`;
+  }
 
-    <!-- DEEP ANALYSIS -->
-    <div class="section-label">ai analysis</div>
-    <div class="section-title">AI 심층 분석 결과</div>
-    <div class="panel" id="deep-analysis" style="margin-bottom:24px">
-      <div style="color:var(--muted); font-size:12px">상단 [AI 심층분석] 버튼을 눌러 실행하세요</div>
-    </div>
+  // 8. Render
+  world.innerHTML = edgesSvg + nodesHtml + edgeLabelsHtml + decisionHtml;
+
+  // Center the map
+  panX = (mapEl.clientWidth / 2) - cx * zoom;
+  panY = (mapEl.clientHeight / 2) - cy * zoom;
+  applyTransform();
+
+  // Stat overlay
+  const roi = blueprint.roi || {};
+  document.getElementById('stat-overlay').innerHTML = `
+    <div class="stat-pill"><b style="color:var(--accent)">${stats.totalEvents?.toLocaleString() || 0}</b> events</div>
+    <div class="stat-pill"><b style="color:var(--info)">${stats.activeUsers || 0}</b> users</div>
+    <div class="stat-pill"><b style="color:var(--accent2)">${stats.visionAnalyzed || 0}</b> vision</div>
+    <div class="stat-pill"><b style="color:var(--warn)">${roi.yearlySavingsFormatted || '-'}</b> /년 절감</div>
   `;
 
-  // -- Render patterns
-  renderPatterns(workflows.patterns || workflows.processMap || []);
-
-  // -- Render charts
-  renderHeatmap(charts.hourlyHeatmap || []);
-  renderAppPie(charts.appDistribution || []);
-
-  // -- Render user comparison
-  renderUserCompare(charts.userAppBreakdown || []);
-
-  // -- Render decisions
-  renderDecisions(decisions.decisionPoints || []);
-
-  // -- Render blueprint
-  renderBlueprint(blueprint.candidates || [], blueprint.implementationPlan || []);
-}
-
-function makeFlowNode(app) {
-  const c = appColor(app);
-  return `<span class="flow-node" style="border-color:${c}; color:${c}; background:${c}15">${app}</span>`;
-}
-
-function renderPatterns(patterns) {
-  const area = document.getElementById('patterns-area');
-  if (!patterns.length) { area.innerHTML = '<div class="panel" style="color:var(--muted)">패턴 데이터 없음</div>'; return; }
-
-  area.innerHTML = patterns.slice(0, 10).map(p => {
-    const steps = p.steps || p.flow?.split(' → ') || [];
-    const flowHtml = steps.map(s => makeFlowNode(s)).join('<span class="flow-arrow">→</span>');
-    return `<div class="pattern-card">
-      <div class="pattern-flow">${flowHtml}</div>
-      <div class="pattern-meta">
-        <span>반복 <b>${p.count}회</b></span>
-        <span>평균 <b>${p.avgDurationMin || p.avgMin || '?'}분</b></span>
-        ${p.interpretation ? `<span style="color:var(--accent)">${p.interpretation}</span>` : ''}
-      </div>
-    </div>`;
+  // Legend
+  document.getElementById('legend-items').innerHTML = apps.slice(0, 10).map(app => {
+    const m = meta(app);
+    return `<div class="legend-row"><div class="legend-dot" style="border-color:${m.color};background:${m.color}20"></div>${app}</div>`;
   }).join('');
 }
 
-function renderHeatmap(data) {
-  const ctx = document.getElementById('chartHeatmap');
-  if (!ctx) return;
-  const labels = Array.from({length: 24}, (_, i) => `${i}시`);
-  const values = labels.map((_, i) => {
-    const found = data.find(d => d.hour === i);
-    return found ? found.events : 0;
-  });
-  new Chart(ctx, {
-    type: 'bar',
-    data: { labels, datasets: [{ data: values, backgroundColor: values.map(v => {
-      const max = Math.max(...values, 1);
-      const ratio = v / max;
-      return `rgba(0,221,184,${0.15 + ratio * 0.7})`;
-    }), borderRadius: 3 }] },
-    options: {
-      plugins: { legend: { display: false } },
-      scales: {
-        x: { grid: { color: 'rgba(255,255,255,.04)' }, ticks: { color: '#6b7a8d', font: { size: 10 } } },
-        y: { grid: { color: 'rgba(255,255,255,.04)' }, ticks: { color: '#6b7a8d', font: { size: 10 } } },
-      },
-    },
-  });
-}
+// ── App detail panel ──
+function showAppDetail(app) {
+  const panel = document.getElementById('info-panel');
+  const content = document.getElementById('panel-content');
+  const m = meta(app);
 
-function renderAppPie(data) {
-  const ctx = document.getElementById('chartApps');
-  if (!ctx) return;
-  const labels = data.map(d => d.name);
-  const values = data.map(d => d.minutes);
-  const colors = labels.map(n => appColor(n));
-  new Chart(ctx, {
-    type: 'doughnut',
-    data: { labels, datasets: [{ data: values, backgroundColor: colors, borderWidth: 0 }] },
-    options: {
-      cutout: '55%',
-      plugins: {
-        legend: { position: 'right', labels: { color: '#e8ecf1', font: { size: 11, family: 'monospace' }, padding: 10 } },
-      },
-    },
-  });
-}
+  const users = currentData.compare?.users || [];
+  const blueprint = currentData.blueprint?.candidates || [];
+  const decisions = currentData.decisions?.decisionPoints || [];
 
-function renderUserCompare(users) {
-  const el = document.getElementById('user-compare');
-  if (!users.length) { el.innerHTML = '<div style="color:var(--muted);font-size:12px">데이터 없음</div>'; return; }
-  const maxMin = Math.max(...users.map(u => u.apps.reduce((s, a) => s + a.minutes, 0)), 1);
+  // Users using this app
+  const appUsers = [];
+  for (const u of users) {
+    const t = (u.timeByApp || []).find(t => t.app === app);
+    if (t) appUsers.push({ name: u.name, min: t.minutes, totalMin: u.totalWorkMin });
+  }
+  appUsers.sort((a, b) => b.min - a.min);
+  const maxMin = Math.max(...appUsers.map(u => u.min), 1);
 
-  el.innerHTML = users.map(u => {
-    const total = u.apps.reduce((s, a) => s + a.minutes, 0);
-    const segs = u.apps.map(a => {
-      const w = (a.minutes / maxMin * 100).toFixed(1);
-      return `<div class="user-bar-seg" style="width:${w}%; background:${appColor(a.name)}" data-tip="${a.name} ${a.minutes}분"></div>`;
-    }).join('');
-    return `<div class="user-bar">
-      <div class="user-name">${u.name}</div>
-      <div class="user-bar-fill">${segs}</div>
-      <div class="user-time">${total}분</div>
-    </div>`;
-  }).join('');
-}
+  // Patterns involving this app
+  const patterns = [];
+  for (const u of users) {
+    for (const p of (u.topPatterns || [])) {
+      if (p.flow.includes(app) && !patterns.find(pp => pp.flow === p.flow)) {
+        patterns.push(p);
+      }
+    }
+  }
 
-function renderDecisions(points) {
-  const el = document.getElementById('decisions-area');
-  if (!points.length) { el.innerHTML = '<div class="panel" style="color:var(--muted);font-size:12px">분기 데이터 부족</div>'; return; }
+  // Decision from this app
+  const dp = decisions.find(d => d.fromApp === app);
 
-  el.innerHTML = points.slice(0, 8).map(dp => {
-    const maxT = Math.max(...dp.choices.map(c => c.totalTransitions), 1);
-    const branches = dp.choices.slice(0, 5).map(c => {
-      const w = (c.totalTransitions / maxT * 100).toFixed(0);
-      const col = appColor(c.nextApp);
-      const users = c.users.map(u => u.user).join(', ');
-      return `<div class="decision-branch">
-        <span style="width:80px; color:${col}; font-weight:600">${c.nextApp}</span>
-        <div style="flex:1; position:relative; height:6px; background:rgba(255,255,255,.04); border-radius:3px">
-          <div class="branch-bar" style="width:${w}%; background:${col}; border-radius:3px"></div>
+  // Automation for this app
+  const auto = blueprint.filter(c => c.flow?.includes(app));
+
+  let html = `
+    <h3 style="color:${m.color}">${m.icon} ${app}</h3>
+
+    <div class="detail-section">
+      <div class="detail-label">사용자별 사용 시간</div>
+      ${appUsers.map(u => `
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;font-size:11px">
+          <span style="width:60px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${u.name}</span>
+          <div style="flex:1;height:10px;background:rgba(255,255,255,.04);border-radius:3px">
+            <div style="height:100%;width:${u.min/maxMin*100}%;background:${m.color};border-radius:3px;opacity:.6"></div>
+          </div>
+          <span style="color:var(--muted);width:40px;text-align:right">${u.min}분</span>
         </div>
-        <span style="width:30px; text-align:right; color:var(--muted)">${c.totalTransitions}</span>
-        <span style="color:var(--muted); font-size:10px; width:100px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">${users}</span>
-      </div>`;
-    }).join('');
-    return `<div class="decision-node">
-      <div class="decision-from">${dp.fromApp} 이후 → ${dp.choiceCount}가지 경로</div>
-      ${branches}
-      ${dp.insight ? `<div style="margin-top:6px; font-size:11px; color:var(--accent)">${dp.insight}</div>` : ''}
-    </div>`;
-  }).join('');
+      `).join('')}
+    </div>
+
+    ${patterns.length ? `
+    <div class="detail-section">
+      <div class="detail-label">관련 워크플로우</div>
+      ${patterns.slice(0, 5).map(p => `
+        <div style="font-size:11px;margin-bottom:6px;padding:6px 8px;background:rgba(255,255,255,.03);border-radius:4px">
+          <div>${p.flow.split(' → ').map(s => `<span style="color:${meta(s).color};font-weight:600">${s}</span>`).join(' → ')}</div>
+          <div style="color:var(--muted);font-size:9px;margin-top:2px">${p.count}회 · 평균 ${p.avgMin}분</div>
+        </div>
+      `).join('')}
+    </div>` : ''}
+
+    ${dp ? `
+    <div class="detail-section">
+      <div class="detail-label">의사결정 분기</div>
+      <div style="font-size:11px;color:var(--warn);margin-bottom:4px">${dp.fromApp} 이후 ${dp.choiceCount}가지 경로</div>
+      ${(dp.choices || []).slice(0, 5).map(c => {
+        const total = dp.choices.reduce((s, ch) => s + ch.totalTransitions, 0);
+        const pct = total ? Math.round(c.totalTransitions / total * 100) : 0;
+        return `<div style="display:flex;align-items:center;gap:6px;font-size:11px;margin-bottom:3px">
+          <span style="color:${meta(c.nextApp).color};width:70px;font-weight:600">${c.nextApp}</span>
+          <div style="flex:1;height:6px;background:rgba(255,255,255,.04);border-radius:3px">
+            <div style="height:100%;width:${pct}%;background:${meta(c.nextApp).color};border-radius:3px;opacity:.6"></div>
+          </div>
+          <span style="color:var(--muted);font-size:10px">${pct}%</span>
+        </div>`;
+      }).join('')}
+      ${dp.insight ? `<div style="font-size:10px;color:var(--accent);margin-top:4px">${dp.insight}</div>` : ''}
+    </div>` : ''}
+
+    ${auto.length ? `
+    <div class="detail-section">
+      <div class="detail-label">자동화 기회</div>
+      ${auto.slice(0, 3).map(a => `
+        <div style="font-size:11px;margin-bottom:6px;padding:6px 8px;background:rgba(0,221,184,.04);border:1px solid rgba(0,221,184,.1);border-radius:4px">
+          <div style="font-weight:600">${a.flow}</div>
+          <div style="color:var(--muted);font-size:9px;margin-top:2px">
+            ${a.automationMethod} · 실현가능성 ${Math.round((a.automationFeasibility||0)*100)}% · 월 ${a.savingsPerMonth||0}분 절감
+          </div>
+        </div>
+      `).join('')}
+    </div>` : ''}
+  `;
+
+  content.innerHTML = html;
+  panel.classList.add('open');
 }
 
-function renderBlueprint(candidates, plan) {
-  const el = document.getElementById('blueprint-area');
-  const items = (plan.length ? plan : candidates.slice(0, 5));
-  if (!items.length) { el.innerHTML = '<div class="panel" style="color:var(--muted);font-size:12px">자동화 후보 없음</div>'; return; }
+function closePanel() { document.getElementById('info-panel').classList.remove('open'); }
 
-  el.innerHTML = items.map((c, i) => {
-    const feasibility = c.automationFeasibility || c.feasibility || 0;
-    const fColor = feasibility >= 0.7 ? 'var(--accent)' : feasibility >= 0.4 ? 'var(--warn)' : 'var(--danger)';
-    const fLabel = feasibility >= 0.7 ? 'HIGH' : feasibility >= 0.4 ? 'MED' : 'LOW';
-    const steps = c.implementationSteps || c.steps || [];
-    const flow = c.flow || c.pattern || '';
-    const flowNodes = flow.split(' → ').map(s => makeFlowNode(s.trim())).join('<span class="flow-arrow">→</span>');
-    const method = c.automationMethod || c.method || '';
-    const savings = c.savingsPerMonth || '';
-
-    return `<div class="auto-step">
-      <div class="auto-step-head">
-        <div class="auto-step-flow">${flowNodes}</div>
-        <span class="auto-step-badge" style="background:${fColor}20; color:${fColor}">${fLabel} ${(feasibility*100).toFixed(0)}%</span>
-      </div>
-      <div style="font-size:11px; color:var(--muted); margin-bottom:6px">
-        ${method} ${savings ? `· 월 <b style="color:var(--accent)">${savings}분</b> 절감` : ''}
-      </div>
-      ${steps.length ? `<ol class="auto-step-steps">${steps.map(s => `<li>${typeof s === 'string' ? s.replace(/^\d+\.\s*/, '') : ''}</li>`).join('')}</ol>` : ''}
-      <div class="feasibility-bar"><div class="feasibility-fill" style="width:${feasibility*100}%; background:${fColor}"></div></div>
-    </div>`;
-  }).join('');
-}
-
-async function runDeepAnalysis() {
+// ── AI Analysis ──
+async function runAI() {
   const d = document.getElementById('startDate').value;
   const days = document.getElementById('days').value;
-  const el = document.getElementById('deep-analysis');
-  if (!el) return alert('먼저 ANALYZE를 실행하세요');
-  el.innerHTML = '<div class="loading">Claude AI 분석 중 (30~60초)</div>';
+  const panel = document.getElementById('info-panel');
+  const content = document.getElementById('panel-content');
+  content.innerHTML = '<h3>AI 심층 분석</h3><div class="map-loading" style="position:static;padding:20px">Claude 분석 중 (30~60초)</div>';
+  panel.classList.add('open');
 
   try {
     const r = await fetch(API + '/api/mining/deep-analyze', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ date: d, days: parseInt(days) }),
     });
     const data = await r.json();
-    const insights = data.insights || {};
+    const ins = data.insights || {};
+    let html = '<h3 style="color:var(--accent2)">AI 심층 분석 결과</h3>';
 
-    let html = '';
-
-    if (insights.fullText) {
-      html += `<div style="white-space:pre-wrap; font-size:12px; line-height:1.8; color:var(--text); max-height:600px; overflow-y:auto; padding:12px; background:var(--surface2); border-radius:6px">${escHtml(insights.fullText)}</div>`;
-    }
-
-    if (insights.decisions?.length) {
-      html += '<div style="margin-top:16px"><div class="panel-head">의사결정 분석</div>';
-      for (const dec of insights.decisions) {
-        html += `<div class="pattern-card">
-          <div style="font-weight:600; color:var(--warn); margin-bottom:4px">${escHtml(dec.situation || '')}</div>
-          <div style="font-size:12px; margin-bottom:4px"><b>패턴:</b> ${escHtml(dec.pattern || '')}</div>
-          <div style="font-size:12px; margin-bottom:4px"><b>이유:</b> ${escHtml(dec.reasoning || '')}</div>
-          ${dec.betterAlternative ? `<div style="font-size:12px; color:var(--accent)"><b>대안:</b> ${escHtml(dec.betterAlternative)}</div>` : ''}
+    if (ins.decisions?.length) {
+      html += '<div class="detail-section"><div class="detail-label">의사결정 분석</div>';
+      for (const dec of ins.decisions) {
+        html += `<div style="font-size:11px;margin-bottom:8px;padding:8px;background:rgba(255,255,255,.03);border-radius:4px">
+          <div style="color:var(--warn);font-weight:600;margin-bottom:3px">${esc(dec.situation||'')}</div>
+          <div style="margin-bottom:2px"><b>패턴:</b> ${esc(dec.pattern||'')}</div>
+          <div style="margin-bottom:2px"><b>이유:</b> ${esc(dec.reasoning||'')}</div>
+          ${dec.betterAlternative ? `<div style="color:var(--accent)"><b>대안:</b> ${esc(dec.betterAlternative)}</div>` : ''}
         </div>`;
       }
       html += '</div>';
     }
 
-    if (insights.recommendations?.length) {
-      html += '<div style="margin-top:16px"><div class="panel-head">개선 제안</div>';
-      for (const rec of insights.recommendations) {
-        html += `<div class="pattern-card">
-          <div style="font-weight:600; color:var(--accent); margin-bottom:4px">P${rec.priority || '?'}: ${escHtml(rec.title || '')}</div>
-          <div style="font-size:12px">${escHtml(rec.description || '')}</div>
-          ${rec.expectedSavings ? `<div style="font-size:11px; color:var(--warn); margin-top:4px">절감: ${escHtml(rec.expectedSavings)}</div>` : ''}
+    if (ins.recommendations?.length) {
+      html += '<div class="detail-section"><div class="detail-label">개선 제안</div>';
+      for (const rec of ins.recommendations) {
+        html += `<div style="font-size:11px;margin-bottom:8px;padding:8px;background:rgba(0,221,184,.03);border:1px solid rgba(0,221,184,.08);border-radius:4px">
+          <div style="color:var(--accent);font-weight:600">P${rec.priority||'?'}: ${esc(rec.title||'')}</div>
+          <div style="margin-top:3px">${esc(rec.description||'')}</div>
+          ${rec.expectedSavings ? `<div style="color:var(--warn);margin-top:2px;font-size:10px">절감: ${esc(rec.expectedSavings)}</div>` : ''}
         </div>`;
       }
       html += '</div>';
     }
 
-    el.innerHTML = html || '<div style="color:var(--muted)">분석 결과 없음</div>';
+    if (ins.fullText && !ins.decisions?.length) {
+      html += `<div class="detail-section"><div class="detail-label">전체 분석</div>
+        <div style="font-size:11px;white-space:pre-wrap;line-height:1.7;max-height:500px;overflow-y:auto">${esc(ins.fullText)}</div>
+      </div>`;
+    }
+
+    content.innerHTML = html;
   } catch (e) {
-    el.innerHTML = `<div style="color:var(--danger)">분석 실패: ${e.message}</div>`;
+    content.innerHTML = `<h3>AI 분석</h3><div style="color:var(--danger);font-size:12px">실패: ${e.message}</div>`;
   }
 }
 
-function escHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
-// Auto-load on page open
-loadAll();
+// Keyboard: Escape closes panel
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closePanel(); });
+
+// Auto-load
+loadMap();
 </script>
 </body>
 </html>
