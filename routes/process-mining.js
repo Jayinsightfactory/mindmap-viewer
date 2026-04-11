@@ -1591,13 +1591,17 @@ function createProcessMining({ getDb, reportSheet }) {
       const SHEET_ID = '1pXLVZqiMwWt6Vh0IhWwASBvgLtZqLnbHXMWqOLNwAXU';
 
       let cred;
+      const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON || '';
+      if (!raw) return res.json({ error: 'no GOOGLE_SERVICE_ACCOUNT_JSON env' });
       try {
-        let raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON || '{}';
-        if (raw.includes('\\\\n')) raw = raw.replace(/\\\\n/g, '\\n');
         cred = JSON.parse(raw);
-        if (cred.private_key) cred.private_key = cred.private_key.replace(/\\n/g, '\n');
-      } catch (e) { return res.json({ error: 'cred parse fail', msg: e.message }); }
-      if (!cred.private_key) return res.json({ error: 'no private_key', email: cred.client_email });
+      } catch (e1) {
+        // Railway에서 \n이 리터럴 2문자로 저장된 경우
+        try { cred = JSON.parse(raw.replace(/\\n/g, '\n')); } catch (e2) {
+          return res.json({ error: 'parse fail', msg: e2.message, firstChars: raw.substring(0, 80), charCodes: [...raw.substring(0, 10)].map(c => c.charCodeAt(0)) });
+        }
+      }
+      if (!cred.private_key) return res.json({ error: 'no private_key', keys: Object.keys(cred) });
 
       // Token
       const now = Math.floor(Date.now() / 1000);
