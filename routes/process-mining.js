@@ -1254,19 +1254,76 @@ function createProcessMining({ getDb, reportSheet }) {
         }
       }
 
-      // 3. 앱간 전이 (기존 로직)
+      // 3. 앱간 전이
       for (const u of activeUsers) {
-        const events = await fetchEvents(db, u.user_id, startDate, d);
-        const blocks = buildActivityBlocks(events);
-        const { transitions } = buildTransitionMatrix(blocks);
+        const ev2 = await fetchEvents(db, u.user_id, startDate, d);
+        const bl = buildActivityBlocks(ev2);
+        const { transitions } = buildTransitionMatrix(bl);
         for (const t of transitions) {
-          if (t.count >= 2) {
-            links.push({ source: `app:${t.from}`, target: `app:${t.to}`, value: t.count, type: 'transition' });
-          }
+          if (t.count >= 2) links.push({ source: `app:${t.from}`, target: `app:${t.to}`, value: t.count, type: 'transition' });
         }
       }
 
-      // 4. 중복 link 병합
+      // ── B. nenova 전산 데이터 (자체 API 내부 호출) ─────────────────────
+      try {
+        const baseUrl = `http://localhost:${process.env.PORT || 4747}`;
+
+        // B-1. 최근 주문 → 거래처 + 상품 노드
+        const orderData = await _internalGet(`${baseUrl}/api/nenova/orders?limit=300`);
+        if (orderData?.items) {
+          const custOrders = {};
+          for (const o of orderData.items) {
+            const cn = o.CustomerName || '';
+            if (!cn) continue;
+            const custId = `cust:${cn}`;
+            addNode(custId, 'customer', cn, { group: 'customer', custType: o.Group1 });
+            custOrders[custId] = (custOrders[custId] || 0) + 1;
+
+            // 주문 → 전산화면
+            addNode('nenova:주문관리', 'nenova_screen', '주문관리', { group: 'nenova' });
+
+            // 꽃 종류
+            const flower = o.Flower || o.FlowerName || '';
+            if (flower) {
+              addNode(`product:${flower}`, 'product', flower, { group: 'product' });
+              links.push({ source: 'nenova:주문관리', target: `product:${flower}`, value: 1, type: 'product' });
+            }
+          }
+          for (const [custId, count] of Object.entries(custOrders)) {
+            links.push({ source: custId, target: 'nenova:주문관리', value: count, type: 'order' });
+          }
+        }
+
+        // B-2. 최근 출하 → 거래처↔출고 연결
+        const shipData = await _internalGet(`${baseUrl}/api/nenova/shipments?limit=200`);
+        if (shipData?.items) {
+          const custShips = {};
+          for (const s of shipData.items) {
+            const cn = s.CustomerName || '';
+            if (!cn) continue;
+            const custId = `cust:${cn}`;
+            addNode(custId, 'customer', cn, { group: 'customer' });
+            addNode('nenova:출고', 'nenova_screen', '출고', { group: 'nenova' });
+            custShips[custId] = (custShips[custId] || 0) + 1;
+          }
+          for (const [custId, count] of Object.entries(custShips)) {
+            links.push({ source: 'nenova:출고', target: custId, value: count, type: 'shipment' });
+          }
+        }
+
+        // Nenova ERP앱 ↔ 전산화면 연결
+        if (nodeSet.has('app:Nenova ERP')) {
+          for (const n of nodes) {
+            if (n.type === 'nenova_screen') {
+              links.push({ source: 'app:Nenova ERP', target: n.id, value: 5, type: 'contains' });
+            }
+          }
+        }
+      } catch (ne) {
+        console.warn('[full-map] nenova 데이터:', ne.message);
+      }
+
+      // ── C. 중복 link 병합 ─────────────────────────────────────────────
       const linkMap = {};
       for (const l of links) {
         const key = `${l.source}→${l.target}`;
@@ -1277,7 +1334,10 @@ function createProcessMining({ getDb, reportSheet }) {
       res.json({
         nodes,
         links: Object.values(linkMap).sort((a, b) => b.value - a.value),
-        stats: { users: activeUsers.length, nodeCount: nodes.length, linkCount: Object.keys(linkMap).length },
+        stats: {
+          users: activeUsers.length, nodeCount: nodes.length, linkCount: Object.keys(linkMap).length,
+          sources: { orbit: true, nenova: nodes.some(n => n.type === 'customer'), kakao: nodeSet.has('app:KakaoTalk') },
+        },
       });
     } catch (e) {
       console.error('[mining/full-map]', e.message);
@@ -1783,6 +1843,19 @@ function _interpretFlow(steps) {
   if (hasBrowser && hasExcel) return '웹 조회 → 엑셀 정리';
   if (hasKakao) return '카카오 커뮤니케이션 중심 워크플로우';
   return '업무 전환 패턴';
+}
+
+// ── 내부 API 호출 헬퍼 ──────────────────────────────────────────────────────
+function _internalGet(url) {
+  const http = require('http');
+  return new Promise((resolve) => {
+    const req = http.get(url, { timeout: 8000 }, (res) => {
+      let d = ''; res.on('data', c => d += c);
+      res.on('end', () => { try { resolve(JSON.parse(d)); } catch { resolve(null); } });
+    });
+    req.on('error', () => resolve(null));
+    req.on('timeout', () => { req.destroy(); resolve(null); });
+  });
 }
 
 // ── 카톡방 이름 추출 ────────────────────────────────────────────────────────
