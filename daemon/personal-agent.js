@@ -693,6 +693,15 @@ async function main() {
     }, 11000);
   }
 
+  // ②-y 리소스 거버너 시작 (CPU/RAM 모니터링 → 세팅 자동 조정)
+  let resourceGovernor = null;
+  try {
+    resourceGovernor = require(path.join(ROOT, 'src/resource-governor'));
+    resourceGovernor.start();
+  } catch (err) {
+    console.warn('[personal-agent] 리소스 거버너 시작 실패:', err.message);
+  }
+
   // ②-z 셀프힐러 초기화 (모든 컴포넌트 기동 완료 후)
   if (_selfHealer) {
     _selfHealer.init({
@@ -735,6 +744,7 @@ async function main() {
     try { screenCapture?.stop(); } catch {}
     try { clipboardWatcher?.stop(); } catch {}
     try { fileChangeWatcher?.stop(); } catch {}
+    try { resourceGovernor?.stop(); } catch {}
     removePid();
     process.exit(0);
   }
