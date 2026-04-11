@@ -5,621 +5,282 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Orbit AI — Workflow Map</title>
 <style>
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-:root {
-  --bg: #0c0e14;
-  --text: #e0e6ed;
-  --muted: #5a6a7e;
-  --accent: #00ddb8;
-  --accent2: #b96fff;
-  --warn: #ffa23e;
-  --danger: #ff5252;
-  --info: #5b9aff;
-}
-body {
-  background: var(--bg);
-  color: var(--text);
-  font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
-  overflow: hidden;
-  height: 100vh;
-  user-select: none;
-}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{background:#0c0e14;color:#e0e6ed;font-family:'JetBrains Mono',Consolas,monospace;overflow:hidden;height:100vh;user-select:none}
 
-/* ── toolbar ── */
-#toolbar {
-  position: fixed; top: 0; left: 0; right: 0; z-index: 200;
-  background: rgba(12,14,20,.88); backdrop-filter: blur(10px);
-  border-bottom: 1px solid rgba(255,255,255,.06);
-  display: flex; align-items: center; gap: 10px;
-  padding: 8px 20px; height: 44px;
-}
-#toolbar .logo { font-size: 13px; font-weight: 700; color: var(--accent); letter-spacing: 2px; text-transform: uppercase; }
-#toolbar .logo span { color: var(--muted); font-weight: 400; letter-spacing: 0; text-transform: none; }
-#toolbar input, #toolbar select {
-  background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.08);
-  color: var(--text); padding: 4px 8px; border-radius: 4px; font-size: 11px; font-family: inherit;
-}
-.tbtn {
-  background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.08);
-  color: var(--text); padding: 4px 12px; border-radius: 4px; font-size: 11px;
-  font-family: inherit; cursor: pointer; transition: all .12s;
-}
-.tbtn:hover { background: var(--accent); color: #0c0e14; border-color: var(--accent); }
-.tbtn-go { background: var(--accent); color: #0c0e14; border-color: var(--accent); font-weight: 700; }
-.spacer { flex: 1; }
-#zoom-label { font-size: 10px; color: var(--muted); }
+#toolbar{position:fixed;top:0;left:0;right:0;z-index:200;background:rgba(12,14,20,.92);backdrop-filter:blur(10px);border-bottom:1px solid rgba(255,255,255,.06);display:flex;align-items:center;gap:8px;padding:8px 16px;height:42px}
+.logo{font-size:12px;font-weight:700;color:#00ddb8;letter-spacing:2px;text-transform:uppercase}
+.logo span{color:#5a6a7e;font-weight:400;letter-spacing:0;text-transform:none}
+.spacer{flex:1}
+#toolbar input,#toolbar select{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08);color:#e0e6ed;padding:3px 8px;border-radius:4px;font-size:11px;font-family:inherit}
+.tb{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08);color:#e0e6ed;padding:4px 12px;border-radius:4px;font-size:11px;font-family:inherit;cursor:pointer}
+.tb:hover{background:#00ddb8;color:#0c0e14;border-color:#00ddb8}
+.tb-go{background:#00ddb8;color:#0c0e14;border-color:#00ddb8;font-weight:700}
+#zoom-lbl{font-size:10px;color:#5a6a7e}
 
-/* ── map canvas ── */
-#map {
-  position: absolute; top: 44px; left: 0; right: 0; bottom: 0;
-  overflow: hidden; cursor: grab;
-  background:
-    radial-gradient(ellipse at center, rgba(0,221,184,.015) 0%, transparent 70%),
-    linear-gradient(rgba(255,255,255,.018) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255,255,255,.018) 1px, transparent 1px);
-  background-size: 100% 100%, 60px 60px, 60px 60px;
-}
-#map.grabbing { cursor: grabbing; }
-#world { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
+#map{position:absolute;top:42px;left:0;right:0;bottom:0;overflow:hidden;cursor:grab;
+  background:radial-gradient(ellipse at center,rgba(0,221,184,.012) 0%,transparent 70%),
+  linear-gradient(rgba(255,255,255,.015) 1px,transparent 1px),
+  linear-gradient(90deg,rgba(255,255,255,.015) 1px,transparent 1px);
+  background-size:100% 100%,50px 50px,50px 50px}
+#map.grabbing{cursor:grabbing}
+#world{position:absolute;top:0;left:0;transform-origin:0 0}
 
-/* ── map elements ── */
-.edge {
-  position: absolute; pointer-events: none;
-}
-.edge line { stroke-linecap: round; }
+/* ── Nodes ── */
+.nd{position:absolute;display:flex;flex-direction:column;align-items:center;cursor:pointer;transition:transform .12s;z-index:10}
+.nd:hover{transform:scale(1.12);z-index:50}
+.nd-circ{border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;border:2px solid;position:relative;box-shadow:0 0 16px rgba(0,0,0,.5)}
+.nd-lbl{margin-top:4px;font-size:9px;font-weight:600;text-align:center;white-space:nowrap;max-width:90px;overflow:hidden;text-overflow:ellipsis;text-shadow:0 1px 3px rgba(0,0,0,.9)}
+.nd-sub{font-size:7px;color:#5a6a7e;margin-top:1px}
 
-.node {
-  position: absolute; display: flex; flex-direction: column; align-items: center;
-  cursor: pointer; transition: transform .15s;
-}
-.node:hover { transform: scale(1.08); z-index: 50; }
-.node-circle {
-  width: 64px; height: 64px; border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 20px; font-weight: 800;
-  border: 2.5px solid; position: relative;
-  box-shadow: 0 0 20px rgba(0,0,0,.4);
-}
-.node-circle .time-ring {
-  position: absolute; top: -4px; left: -4px; right: -4px; bottom: -4px;
-  border-radius: 50%; border: 3px solid transparent;
-  border-top-color: var(--accent);
-}
-.node-label {
-  margin-top: 6px; font-size: 11px; font-weight: 600;
-  text-align: center; white-space: nowrap; text-shadow: 0 1px 4px rgba(0,0,0,.8);
-}
-.node-time {
-  font-size: 9px; color: var(--muted); margin-top: 1px;
-}
+/* Type-specific shapes */
+.nd[data-type="user"] .nd-circ{border-radius:50%}
+.nd[data-type="app"] .nd-circ{border-radius:12px}
+.nd[data-type="kakao"] .nd-circ{border-radius:50%;border-style:dashed}
+.nd[data-type="nenova_screen"] .nd-circ{border-radius:4px}
+.nd[data-type="excel_file"] .nd-circ{border-radius:4px;transform:rotate(0deg)}
+.nd[data-type="customer"] .nd-circ{border-radius:50%;border-width:2.5px}
 
-/* user dots around nodes */
-.user-dot {
-  position: absolute; width: 8px; height: 8px; border-radius: 50%;
-  border: 1px solid rgba(0,0,0,.3);
-}
-.user-dot::after {
-  content: attr(data-name);
-  position: absolute; bottom: 110%; left: 50%; transform: translateX(-50%);
-  font-size: 8px; color: var(--muted); white-space: nowrap; display: none;
-  background: rgba(12,14,20,.9); padding: 1px 4px; border-radius: 2px;
-}
-.user-dot:hover::after { display: block; }
+/* ── Side panel ── */
+#panel{position:fixed;top:42px;right:0;bottom:0;width:320px;z-index:150;background:rgba(12,14,20,.95);border-left:1px solid rgba(255,255,255,.06);backdrop-filter:blur(12px);transform:translateX(100%);transition:transform .2s ease;overflow-y:auto;padding:16px;font-size:11px}
+#panel.open{transform:translateX(0)}
+#panel .x{position:absolute;top:6px;right:10px;background:none;border:none;color:#5a6a7e;font-size:16px;cursor:pointer;font-family:inherit}
+.ph{font-size:12px;font-weight:700;color:#00ddb8;margin-bottom:10px}
+.pl{font-size:8px;color:#5a6a7e;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:3px;margin-top:10px}
+.pbar{display:flex;align-items:center;gap:6px;margin-bottom:3px}
+.pbar-fill{height:8px;border-radius:3px;min-width:3px}
+.pbar-name{width:60px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px}
+.pbar-val{font-size:9px;color:#5a6a7e;width:36px;text-align:right}
 
-/* decision markers */
-.decision-marker {
-  position: absolute; pointer-events: none;
-}
-.decision-diamond {
-  width: 18px; height: 18px; background: var(--warn);
-  transform: rotate(45deg); border-radius: 2px;
-  box-shadow: 0 0 8px rgba(255,162,62,.4);
-}
+/* ── Legend ── */
+#legend{position:fixed;bottom:12px;left:12px;z-index:100;background:rgba(12,14,20,.92);border:1px solid rgba(255,255,255,.06);border-radius:6px;padding:10px 14px;font-size:9px;backdrop-filter:blur(8px)}
+#legend h4{color:#00ddb8;font-size:9px;letter-spacing:2px;text-transform:uppercase;margin-bottom:6px}
+.lr{display:flex;align-items:center;gap:5px;margin-bottom:2px}
+.lr-d{width:14px;height:14px;display:flex;align-items:center;justify-content:center;font-size:8px;flex-shrink:0}
 
-/* flow label on edges */
-.edge-label {
-  position: absolute; font-size: 8px; color: var(--muted);
-  background: rgba(12,14,20,.85); padding: 1px 5px; border-radius: 3px;
-  white-space: nowrap; pointer-events: none;
-}
-
-/* ── legend ── */
-#legend {
-  position: fixed; bottom: 16px; left: 16px; z-index: 100;
-  background: rgba(12,14,20,.9); border: 1px solid rgba(255,255,255,.06);
-  border-radius: 6px; padding: 12px 16px; font-size: 10px;
-  backdrop-filter: blur(8px);
-}
-#legend h4 { color: var(--accent); font-size: 10px; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 8px; }
-.legend-row { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
-.legend-dot { width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid; flex-shrink: 0; }
-.legend-line { width: 20px; height: 0; border-top: 2px solid; flex-shrink: 0; }
-
-/* ── info panel (right side, slide-in) ── */
-#info-panel {
-  position: fixed; top: 44px; right: 0; bottom: 0; width: 340px; z-index: 150;
-  background: rgba(12,14,20,.95); border-left: 1px solid rgba(255,255,255,.06);
-  backdrop-filter: blur(12px);
-  transform: translateX(100%); transition: transform .25s ease;
-  overflow-y: auto; padding: 20px;
-}
-#info-panel.open { transform: translateX(0); }
-#info-panel .close-btn {
-  position: absolute; top: 8px; right: 12px; background: none; border: none;
-  color: var(--muted); font-size: 18px; cursor: pointer; font-family: inherit;
-}
-#info-panel h3 { font-size: 14px; color: var(--accent); margin-bottom: 12px; }
-#info-panel .detail-section { margin-bottom: 16px; }
-#info-panel .detail-label { font-size: 9px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 4px; }
-#info-panel .detail-val { font-size: 13px; }
-.mini-bar { display: flex; gap: 2px; margin-bottom: 4px; height: 14px; }
-.mini-bar-seg { height: 100%; border-radius: 2px; min-width: 3px; position: relative; }
-.mini-bar-seg::after {
-  content: attr(data-tip); position: absolute; bottom: 110%; left: 0;
-  font-size: 8px; color: #fff; background: #1a1e28; padding: 1px 4px; border-radius: 2px;
-  white-space: nowrap; display: none;
-}
-.mini-bar-seg:hover::after { display: block; }
-
-/* ── stat overlay (top-right) ── */
-#stat-overlay {
-  position: fixed; top: 54px; right: 16px; z-index: 100;
-  display: flex; gap: 6px;
-}
-.stat-pill {
-  background: rgba(12,14,20,.85); border: 1px solid rgba(255,255,255,.06);
-  border-radius: 20px; padding: 4px 12px; font-size: 10px;
-  backdrop-filter: blur(6px);
-}
-.stat-pill b { font-weight: 700; }
-
-/* ── loading ── */
-.map-loading {
-  position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
-  font-size: 12px; color: var(--muted);
-}
-.map-loading::after {
-  content: ''; display: inline-block; width: 14px; height: 14px;
-  border: 2px solid var(--accent); border-top-color: transparent;
-  border-radius: 50%; animation: spin .5s linear infinite; margin-left: 8px; vertical-align: middle;
-}
-@keyframes spin { to { transform: rotate(360deg); } }
+/* ── Loading ── */
+.ld{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:12px;color:#5a6a7e}
+.ld::after{content:'';display:inline-block;width:12px;height:12px;border:2px solid #00ddb8;border-top-color:transparent;border-radius:50%;animation:sp .5s linear infinite;margin-left:8px;vertical-align:middle}
+@keyframes sp{to{transform:rotate(360deg)}}
 </style>
 </head>
 <body>
-
 <div id="toolbar">
-  <div class="logo">ORBIT <span>// workflow map</span></div>
+  <div class="logo">ORBIT <span>// full map</span></div>
   <div class="spacer"></div>
-  <input type="date" id="startDate" value="2026-04-01">
-  <select id="days">
-    <option value="1">1일</option>
-    <option value="3">3일</option>
-    <option value="7" selected>7일</option>
-    <option value="14">14일</option>
-  </select>
-  <button class="tbtn tbtn-go" onclick="loadMap()">MAP</button>
-  <button class="tbtn" onclick="runAI()">AI 분석</button>
-  <span id="zoom-label">100%</span>
+  <input type="date" id="dt" value="2026-04-01">
+  <select id="dy"><option value="3">3일</option><option value="7" selected>7일</option><option value="14">14일</option></select>
+  <button class="tb tb-go" onclick="go()">MAP</button>
+  <button class="tb" onclick="runAI()">AI</button>
+  <span id="zoom-lbl">100%</span>
 </div>
-
-<div id="map">
-  <div id="world"></div>
-  <div class="map-loading" id="loader">워크플로우 맵 생성 중</div>
-</div>
-
-<div id="stat-overlay"></div>
+<div id="map"><div id="world"></div><div class="ld" id="loader">맵 생성 중</div></div>
 
 <div id="legend">
   <h4>Legend</h4>
-  <div id="legend-items"></div>
-  <div class="legend-row" style="margin-top:6px"><div class="legend-line" style="border-color:rgba(255,255,255,.2); border-style:dashed"></div> 전환 흐름</div>
-  <div class="legend-row"><div style="width:10px;height:10px;background:var(--warn);transform:rotate(45deg);border-radius:2px"></div> 의사결정 분기</div>
+  <div class="lr"><div class="lr-d" style="background:#00ddb8;border-radius:50%">👤</div> 직원</div>
+  <div class="lr"><div class="lr-d" style="background:rgba(255,255,255,.08);border:1.5px solid #5b9aff;border-radius:5px"></div> 앱 (프로그램)</div>
+  <div class="lr"><div class="lr-d" style="background:rgba(255,224,102,.1);border:1.5px dashed #ffe066;border-radius:50%"></div> 카톡방</div>
+  <div class="lr"><div class="lr-d" style="background:rgba(129,140,248,.1);border:1.5px solid #818cf8;border-radius:2px"></div> 전산화면</div>
+  <div class="lr"><div class="lr-d" style="background:rgba(52,211,153,.1);border:1.5px solid #34d399;border-radius:2px"></div> 엑셀 파일</div>
+  <div class="lr"><div class="lr-d" style="background:rgba(255,162,62,.1);border:2px solid #ffa23e;border-radius:50%"></div> 거래처</div>
 </div>
 
-<div id="info-panel">
-  <button class="close-btn" onclick="closePanel()">×</button>
-  <div id="panel-content"></div>
-</div>
+<div id="panel"><button class="x" onclick="closeP()">×</button><div id="pc"></div></div>
 
 <script>
-const API = location.origin;
-const APP_META = {
-  'KakaoTalk':   { color: '#ffe066', icon: '💬', short: 'KT' },
-  'Excel':       { color: '#34d399', icon: '📊', short: 'XL' },
-  'Nenova ERP':  { color: '#818cf8', icon: '🏭', short: 'NV' },
-  'Browser':     { color: '#5b9aff', icon: '🌐', short: 'BR' },
-  'Explorer':    { color: '#f97316', icon: '📁', short: 'EX' },
-  'PowerPoint':  { color: '#f472b6', icon: '📝', short: 'PP' },
-  'Word':        { color: '#60a5fa', icon: '📄', short: 'WD' },
-  'Notepad':     { color: '#94a3b8', icon: '📋', short: 'NP' },
-  'Email':       { color: '#fbbf24', icon: '📧', short: 'EM' },
-  'Teams':       { color: '#7c3aed', icon: '👥', short: 'TM' },
-  '주문감지':     { color: '#ff5252', icon: '🔔', short: '주문' },
-  '발주감지':     { color: '#ff8a65', icon: '📦', short: '발주' },
+const API=location.origin;
+const TYPE_STYLE={
+  user:          {color:'#00ddb8',bg:'#00ddb815',icon:'👤',baseSize:52,shape:'circle'},
+  app:           {color:'#5b9aff',bg:'#5b9aff10',icon:'',baseSize:56,shape:'roundrect'},
+  kakao:         {color:'#ffe066',bg:'#ffe06608',icon:'💬',baseSize:36,shape:'circle-dash'},
+  nenova_screen: {color:'#818cf8',bg:'#818cf808',icon:'🖥',baseSize:32,shape:'rect'},
+  excel_file:    {color:'#34d399',bg:'#34d39908',icon:'📊',baseSize:30,shape:'rect'},
+  customer:      {color:'#ffa23e',bg:'#ffa23e0a',icon:'🏢',baseSize:34,shape:'circle'},
 };
-function meta(app) { return APP_META[app] || { color: '#6b7a8d', icon: '•', short: app?.substring(0,2) || '?' }; }
+const APP_ICON={'KakaoTalk':'💬','Excel':'📊','Nenova ERP':'🏭','Browser':'🌐','Explorer':'📁','PowerPoint':'📝','Word':'📄','주문감지':'🔔','발주감지':'📦'};
 
-// ── Pan & Zoom ──
-let panX = 0, panY = 0, zoom = 1;
-let dragging = false, dragStartX, dragStartY, panStartX, panStartY;
-const world = document.getElementById('world');
-const mapEl = document.getElementById('map');
+// pan/zoom
+let px=0,py=0,zm=1,drag=false,dsx,dsy,psx,psy;
+const W=document.getElementById('world'),M=document.getElementById('map');
+function aT(){W.style.transform=`translate(${px}px,${py}px) scale(${zm})`;document.getElementById('zoom-lbl').textContent=Math.round(zm*100)+'%'}
+M.onmousedown=e=>{if(e.target.closest('.nd'))return;drag=true;M.classList.add('grabbing');dsx=e.clientX;dsy=e.clientY;psx=px;psy=py};
+window.onmousemove=e=>{if(!drag)return;px=psx+(e.clientX-dsx);py=psy+(e.clientY-dsy);aT()};
+window.onmouseup=()=>{drag=false;M.classList.remove('grabbing')};
+M.onwheel=e=>{e.preventDefault();const r=M.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top,oz=zm;zm*=e.deltaY<0?1.1:.9;zm=Math.max(.15,Math.min(4,zm));px=mx-(mx-px)*(zm/oz);py=my-(my-py)*(zm/oz);aT()};
 
-function applyTransform() {
-  world.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
-  document.getElementById('zoom-label').textContent = Math.round(zoom * 100) + '%';
+let mapData=null;
+
+async function go(){
+  const d=document.getElementById('dt').value,dy=document.getElementById('dy').value;
+  document.getElementById('loader').style.display='';
+  const r=await fetch(`${API}/api/mining/full-map?date=${d}&days=${dy}`);
+  mapData=await r.json();
+  document.getElementById('loader').style.display='none';
+  render(mapData);
 }
 
-mapEl.addEventListener('mousedown', e => {
-  if (e.target.closest('.node')) return;
-  dragging = true; mapEl.classList.add('grabbing');
-  dragStartX = e.clientX; dragStartY = e.clientY;
-  panStartX = panX; panStartY = panY;
-});
-window.addEventListener('mousemove', e => {
-  if (!dragging) return;
-  panX = panStartX + (e.clientX - dragStartX);
-  panY = panStartY + (e.clientY - dragStartY);
-  applyTransform();
-});
-window.addEventListener('mouseup', () => { dragging = false; mapEl.classList.remove('grabbing'); });
-mapEl.addEventListener('wheel', e => {
-  e.preventDefault();
-  const rect = mapEl.getBoundingClientRect();
-  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
-  const oldZoom = zoom;
-  zoom *= e.deltaY < 0 ? 1.1 : 0.9;
-  zoom = Math.max(0.2, Math.min(3, zoom));
-  panX = mx - (mx - panX) * (zoom / oldZoom);
-  panY = my - (my - panY) * (zoom / oldZoom);
-  applyTransform();
-}, { passive: false });
+function render(data){
+  const {nodes,links}=data;
+  if(!nodes.length){W.innerHTML='<div style="color:#5a6a7e;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%)">데이터 없음</div>';return}
 
-// ── Data & Rendering ──
-let currentData = {};
-
-async function loadMap() {
-  const d = document.getElementById('startDate').value;
-  const days = document.getElementById('days').value;
-  document.getElementById('loader').style.display = '';
-
-  const [compare, decisions, blueprint, summary] = await Promise.all([
-    fetch(API + `/api/mining/compare?date=${d}&days=${days}`).then(r => r.json()),
-    fetch(API + `/api/mining/decisions?date=${d}&days=${days}`).then(r => r.json()),
-    fetch(API + `/api/mining/automation-blueprint?date=${d}&days=${days}`).then(r => r.json()),
-    fetch(API + `/api/mining/summary?date=${d}&days=${days}`).then(r => r.json()),
-  ]);
-
-  currentData = { compare, decisions, blueprint, summary };
-  document.getElementById('loader').style.display = 'none';
-  renderMap(compare, decisions, blueprint, summary);
-}
-
-function renderMap(compare, decisions, blueprint, summary) {
-  const users = compare.users || [];
-  const dps = decisions.decisionPoints || [];
-  const stats = summary.stats || {};
-
-  // 1. Collect all apps + time totals
-  const appTotals = {};
-  const appUsers = {};
-  for (const u of users) {
-    for (const t of (u.timeByApp || [])) {
-      appTotals[t.app] = (appTotals[t.app] || 0) + t.minutes;
-      if (!appUsers[t.app]) appUsers[t.app] = [];
-      appUsers[t.app].push({ name: u.name, min: t.minutes });
-    }
+  // layout: group-based force-like positioning
+  const groups={user:[],app:[],kakao:[],nenova:[],excel:[],customer:[]};
+  for(const n of nodes){
+    const g=n.group||n.type;
+    if(g==='user')groups.user.push(n);
+    else if(g==='app')groups.app.push(n);
+    else if(g==='kakao')groups.kakao.push(n);
+    else if(g==='nenova')groups.nenova.push(n);
+    else if(g==='excel')groups.excel.push(n);
+    else if(g==='customer')groups.customer.push(n);
   }
 
-  // 2. Collect transitions (from compare data — appComparison contains shared apps)
-  // Rebuild transitions from user patterns
-  const transMap = {};
-  for (const u of users) {
-    for (const p of (u.topPatterns || [])) {
-      const steps = p.flow.split(' → ');
-      for (let i = 0; i < steps.length - 1; i++) {
-        const key = `${steps[i]}→${steps[i+1]}`;
-        transMap[key] = (transMap[key] || 0) + p.count;
-      }
-    }
-  }
+  const pos={};
+  const CX=800,CY=500;
 
-  // 3. Layout: force-like circular layout
-  const apps = Object.keys(appTotals).sort((a, b) => appTotals[b] - appTotals[a]);
-  const cx = 700, cy = 450;
-  const baseR = Math.min(300, 80 + apps.length * 25);
-  const positions = {};
-
-  // Main apps in circle, smaller ones further out
-  const mainApps = apps.slice(0, 8);
-  const otherApps = apps.slice(8);
-  mainApps.forEach((app, i) => {
-    const angle = (i / mainApps.length) * Math.PI * 2 - Math.PI / 2;
-    positions[app] = {
-      x: cx + Math.cos(angle) * baseR,
-      y: cy + Math.sin(angle) * baseR,
-    };
-  });
-  otherApps.forEach((app, i) => {
-    const angle = (i / Math.max(otherApps.length, 1)) * Math.PI * 2 - Math.PI / 4;
-    positions[app] = {
-      x: cx + Math.cos(angle) * (baseR + 160),
-      y: cy + Math.sin(angle) * (baseR + 160),
-    };
+  // Users: left column
+  groups.user.forEach((n,i)=>{
+    pos[n.id]={x:120,y:180+i*100};
   });
 
-  // 4. Build SVG edges
-  const maxTrans = Math.max(...Object.values(transMap), 1);
-  let edgesSvg = `<svg width="1400" height="900" style="position:absolute;top:0;left:0;pointer-events:none">`;
-  edgesSvg += `<defs>
-    <marker id="arrow" markerWidth="6" markerHeight="4" refX="5" refY="2" orient="auto">
-      <path d="M0,0 L6,2 L0,4" fill="rgba(255,255,255,.15)"/>
-    </marker>
-  </defs>`;
+  // Apps: center ring
+  const appR=250;
+  groups.app.forEach((n,i)=>{
+    const a=(i/Math.max(groups.app.length,1))*Math.PI*2-Math.PI/2;
+    pos[n.id]={x:CX+Math.cos(a)*appR,y:CY+Math.sin(a)*appR};
+  });
 
-  const edgeLabels = [];
-  for (const [key, count] of Object.entries(transMap)) {
-    const [from, to] = key.split('→');
-    if (!positions[from] || !positions[to]) continue;
-    const p1 = positions[from], p2 = positions[to];
-    const thickness = 1 + (count / maxTrans) * 6;
-    const opacity = 0.08 + (count / maxTrans) * 0.25;
+  // Kakao rooms: cluster near KakaoTalk
+  const ktPos=pos['app:KakaoTalk']||{x:CX,y:CY-appR};
+  groups.kakao.forEach((n,i)=>{
+    const a=(i/Math.max(groups.kakao.length,1))*Math.PI*2;
+    const r=140+Math.random()*40;
+    pos[n.id]={x:ktPos.x+Math.cos(a)*r,y:ktPos.y+Math.sin(a)*r};
+  });
 
-    // Curved path
-    const dx = p2.x - p1.x, dy = p2.y - p1.y;
-    const dist = Math.sqrt(dx*dx + dy*dy);
-    const mx = (p1.x + p2.x) / 2, my = (p1.y + p2.y) / 2;
-    // perpendicular offset for curve
-    const nx = -dy / dist * (dist * 0.15), ny = dx / dist * (dist * 0.15);
-    const cpx = mx + nx, cpy = my + ny;
+  // Nenova screens: cluster near Nenova ERP
+  const nvPos=pos['app:Nenova ERP']||{x:CX+appR,y:CY};
+  groups.nenova.forEach((n,i)=>{
+    const a=(i/Math.max(groups.nenova.length,1))*Math.PI*2+0.3;
+    const r=120+Math.random()*30;
+    pos[n.id]={x:nvPos.x+Math.cos(a)*r,y:nvPos.y+Math.sin(a)*r};
+  });
 
-    const col = meta(from).color;
-    edgesSvg += `<path d="M${p1.x},${p1.y} Q${cpx},${cpy} ${p2.x},${p2.y}"
-      fill="none" stroke="${col}" stroke-width="${thickness}" stroke-opacity="${opacity}"
-      marker-end="url(#arrow)" stroke-dasharray="${thickness > 3 ? '' : '4,4'}"/>`;
+  // Excel files: cluster near Excel
+  const xlPos=pos['app:Excel']||{x:CX-appR,y:CY};
+  groups.excel.forEach((n,i)=>{
+    const a=(i/Math.max(groups.excel.length,1))*Math.PI*2+1;
+    const r=120+Math.random()*30;
+    pos[n.id]={x:xlPos.x+Math.cos(a)*r,y:xlPos.y+Math.sin(a)*r};
+  });
 
-    // label at midpoint of curve
-    const lx = (p1.x + 2*cpx + p2.x) / 4;
-    const ly = (p1.y + 2*cpy + p2.y) / 4;
-    if (count >= 2) {
-      edgeLabels.push({ x: lx, y: ly, text: `${count}회` });
-    }
+  // Customers: right side
+  groups.customer.forEach((n,i)=>{
+    pos[n.id]={x:CX+appR+280+Math.random()*60,y:200+i*70};
+  });
+
+  // Build SVG edges
+  const maxVal=Math.max(...links.map(l=>l.value),1);
+  let svg=`<svg width="1800" height="1200" style="position:absolute;top:0;left:0;pointer-events:none">
+    <defs><marker id="ar" markerWidth="5" markerHeight="4" refX="4" refY="2" orient="auto"><path d="M0,0 L5,2 L0,4" fill="rgba(255,255,255,.12)"/></marker></defs>`;
+
+  for(const l of links){
+    const p1=pos[l.source],p2=pos[l.target];
+    if(!p1||!p2)continue;
+    const thick=1+(l.value/maxVal)*5;
+    const op=0.06+(l.value/maxVal)*0.2;
+    const dx=p2.x-p1.x,dy=p2.y-p1.y,dist=Math.sqrt(dx*dx+dy*dy)||1;
+    const nx=-dy/dist*(dist*0.12),ny=dx/dist*(dist*0.12);
+    const cpx=(p1.x+p2.x)/2+nx,cpy=(p1.y+p2.y)/2+ny;
+    // color from source type
+    const sn=nodes.find(n=>n.id===l.source);
+    const st=TYPE_STYLE[sn?.type]||TYPE_STYLE.app;
+    const isTransition=l.type==='transition';
+    svg+=`<path d="M${p1.x},${p1.y} Q${cpx},${cpy} ${p2.x},${p2.y}" fill="none" stroke="${st.color}" stroke-width="${thick}" stroke-opacity="${op}" marker-end="url(#ar)" ${isTransition?'stroke-dasharray="6,4"':''}/>`;
   }
-  edgesSvg += '</svg>';
+  svg+='</svg>';
 
-  // 5. Build nodes
-  const maxTime = Math.max(...Object.values(appTotals), 1);
-  let nodesHtml = '';
-  for (const app of apps) {
-    const p = positions[app];
-    if (!p) continue;
-    const m = meta(app);
-    const mins = appTotals[app];
-    const size = 48 + (mins / maxTime) * 32;
-    const usersOfApp = appUsers[app] || [];
+  // Build node HTML
+  let nh='';
+  for(const n of nodes){
+    const p=pos[n.id];
+    if(!p)continue;
+    const st=TYPE_STYLE[n.type]||TYPE_STYLE.app;
+    // size based on connected links
+    const linkVal=links.filter(l=>l.source===n.id||l.target===n.id).reduce((s,l)=>s+l.value,0);
+    const sz=st.baseSize+Math.min(linkVal/20,24);
+    const icon=n.type==='app'?(APP_ICON[n.label]||'⚙'):st.icon;
 
-    nodesHtml += `<div class="node" style="left:${p.x - size/2}px; top:${p.y - size/2}px" onclick="showAppDetail('${app}')">
-      <div class="node-circle" style="width:${size}px;height:${size}px;border-color:${m.color};background:${m.color}12;color:${m.color};font-size:${size*0.32}px">
-        ${m.icon}
-      </div>
-      <div class="node-label" style="color:${m.color}">${app}</div>
-      <div class="node-time">${mins}분</div>
-    </div>`;
-
-    // user dots around node
-    usersOfApp.forEach((u, i) => {
-      const uAngle = (i / usersOfApp.length) * Math.PI * 2;
-      const ur = size / 2 + 14;
-      const ux = p.x + Math.cos(uAngle) * ur - 4;
-      const uy = p.y + Math.sin(uAngle) * ur - 4;
-      const userColors = ['#00ddb8','#b96fff','#5b9aff','#ffa23e','#ff5252','#34d399','#ffe066','#f472b6','#94a3b8'];
-      nodesHtml += `<div class="user-dot" style="left:${ux}px;top:${uy}px;background:${userColors[i%userColors.length]}" data-name="${u.name} ${u.min}분"></div>`;
-    });
-  }
-
-  // 6. Edge labels
-  let edgeLabelsHtml = edgeLabels.map(l =>
-    `<div class="edge-label" style="left:${l.x}px;top:${l.y}px">${l.text}</div>`
-  ).join('');
-
-  // 7. Decision markers
-  let decisionHtml = '';
-  for (const dp of dps) {
-    if (!positions[dp.fromApp]) continue;
-    const p = positions[dp.fromApp];
-    // Place diamond slightly offset
-    decisionHtml += `<div class="decision-marker" style="left:${p.x + 30}px;top:${p.y - 40}px">
-      <div class="decision-diamond" title="${dp.fromApp} → ${dp.choiceCount}가지 분기"></div>
+    nh+=`<div class="nd" data-type="${n.type}" data-id="${n.id}" style="left:${p.x-sz/2}px;top:${p.y-sz/2}px" onclick="showDetail('${n.id}')">
+      <div class="nd-circ" style="width:${sz}px;height:${sz}px;border-color:${st.color};background:${st.bg};color:${st.color};font-size:${sz*0.35}px">${icon}</div>
+      <div class="nd-lbl" style="color:${st.color}">${n.label}</div>
     </div>`;
   }
 
-  // 8. Render
-  world.innerHTML = edgesSvg + nodesHtml + edgeLabelsHtml + decisionHtml;
+  W.innerHTML=svg+nh;
 
-  // Center the map
-  panX = (mapEl.clientWidth / 2) - cx * zoom;
-  panY = (mapEl.clientHeight / 2) - cy * zoom;
-  applyTransform();
-
-  // Stat overlay
-  const roi = blueprint.roi || {};
-  document.getElementById('stat-overlay').innerHTML = `
-    <div class="stat-pill"><b style="color:var(--accent)">${stats.totalEvents?.toLocaleString() || 0}</b> events</div>
-    <div class="stat-pill"><b style="color:var(--info)">${stats.activeUsers || 0}</b> users</div>
-    <div class="stat-pill"><b style="color:var(--accent2)">${stats.visionAnalyzed || 0}</b> vision</div>
-    <div class="stat-pill"><b style="color:var(--warn)">${roi.yearlySavingsFormatted || '-'}</b> /년 절감</div>
-  `;
-
-  // Legend
-  document.getElementById('legend-items').innerHTML = apps.slice(0, 10).map(app => {
-    const m = meta(app);
-    return `<div class="legend-row"><div class="legend-dot" style="border-color:${m.color};background:${m.color}20"></div>${app}</div>`;
-  }).join('');
+  // Center
+  px=(M.clientWidth/2)-CX*zm;
+  py=(M.clientHeight/2)-CY*zm;
+  aT();
 }
 
-// ── App detail panel ──
-function showAppDetail(app) {
-  const panel = document.getElementById('info-panel');
-  const content = document.getElementById('panel-content');
-  const m = meta(app);
+function showDetail(id){
+  if(!mapData)return;
+  const node=mapData.nodes.find(n=>n.id===id);
+  if(!node)return;
+  const st=TYPE_STYLE[node.type]||TYPE_STYLE.app;
+  const inLinks=mapData.links.filter(l=>l.target===id);
+  const outLinks=mapData.links.filter(l=>l.source===id);
+  const maxV=Math.max(...[...inLinks,...outLinks].map(l=>l.value),1);
 
-  const users = currentData.compare?.users || [];
-  const blueprint = currentData.blueprint?.candidates || [];
-  const decisions = currentData.decisions?.decisionPoints || [];
-
-  // Users using this app
-  const appUsers = [];
-  for (const u of users) {
-    const t = (u.timeByApp || []).find(t => t.app === app);
-    if (t) appUsers.push({ name: u.name, min: t.minutes, totalMin: u.totalWorkMin });
-  }
-  appUsers.sort((a, b) => b.min - a.min);
-  const maxMin = Math.max(...appUsers.map(u => u.min), 1);
-
-  // Patterns involving this app
-  const patterns = [];
-  for (const u of users) {
-    for (const p of (u.topPatterns || [])) {
-      if (p.flow.includes(app) && !patterns.find(pp => pp.flow === p.flow)) {
-        patterns.push(p);
-      }
-    }
-  }
-
-  // Decision from this app
-  const dp = decisions.find(d => d.fromApp === app);
-
-  // Automation for this app
-  const auto = blueprint.filter(c => c.flow?.includes(app));
-
-  let html = `
-    <h3 style="color:${m.color}">${m.icon} ${app}</h3>
-
-    <div class="detail-section">
-      <div class="detail-label">사용자별 사용 시간</div>
-      ${appUsers.map(u => `
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;font-size:11px">
-          <span style="width:60px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${u.name}</span>
-          <div style="flex:1;height:10px;background:rgba(255,255,255,.04);border-radius:3px">
-            <div style="height:100%;width:${u.min/maxMin*100}%;background:${m.color};border-radius:3px;opacity:.6"></div>
-          </div>
-          <span style="color:var(--muted);width:40px;text-align:right">${u.min}분</span>
-        </div>
-      `).join('')}
-    </div>
-
-    ${patterns.length ? `
-    <div class="detail-section">
-      <div class="detail-label">관련 워크플로우</div>
-      ${patterns.slice(0, 5).map(p => `
-        <div style="font-size:11px;margin-bottom:6px;padding:6px 8px;background:rgba(255,255,255,.03);border-radius:4px">
-          <div>${p.flow.split(' → ').map(s => `<span style="color:${meta(s).color};font-weight:600">${s}</span>`).join(' → ')}</div>
-          <div style="color:var(--muted);font-size:9px;margin-top:2px">${p.count}회 · 평균 ${p.avgMin}분</div>
-        </div>
-      `).join('')}
-    </div>` : ''}
-
-    ${dp ? `
-    <div class="detail-section">
-      <div class="detail-label">의사결정 분기</div>
-      <div style="font-size:11px;color:var(--warn);margin-bottom:4px">${dp.fromApp} 이후 ${dp.choiceCount}가지 경로</div>
-      ${(dp.choices || []).slice(0, 5).map(c => {
-        const total = dp.choices.reduce((s, ch) => s + ch.totalTransitions, 0);
-        const pct = total ? Math.round(c.totalTransitions / total * 100) : 0;
-        return `<div style="display:flex;align-items:center;gap:6px;font-size:11px;margin-bottom:3px">
-          <span style="color:${meta(c.nextApp).color};width:70px;font-weight:600">${c.nextApp}</span>
-          <div style="flex:1;height:6px;background:rgba(255,255,255,.04);border-radius:3px">
-            <div style="height:100%;width:${pct}%;background:${meta(c.nextApp).color};border-radius:3px;opacity:.6"></div>
-          </div>
-          <span style="color:var(--muted);font-size:10px">${pct}%</span>
-        </div>`;
-      }).join('')}
-      ${dp.insight ? `<div style="font-size:10px;color:var(--accent);margin-top:4px">${dp.insight}</div>` : ''}
-    </div>` : ''}
-
-    ${auto.length ? `
-    <div class="detail-section">
-      <div class="detail-label">자동화 기회</div>
-      ${auto.slice(0, 3).map(a => `
-        <div style="font-size:11px;margin-bottom:6px;padding:6px 8px;background:rgba(0,221,184,.04);border:1px solid rgba(0,221,184,.1);border-radius:4px">
-          <div style="font-weight:600">${a.flow}</div>
-          <div style="color:var(--muted);font-size:9px;margin-top:2px">
-            ${a.automationMethod} · 실현가능성 ${Math.round((a.automationFeasibility||0)*100)}% · 월 ${a.savingsPerMonth||0}분 절감
-          </div>
-        </div>
-      `).join('')}
-    </div>` : ''}
-  `;
-
-  content.innerHTML = html;
-  panel.classList.add('open');
-}
-
-function closePanel() { document.getElementById('info-panel').classList.remove('open'); }
-
-// ── AI Analysis ──
-async function runAI() {
-  const d = document.getElementById('startDate').value;
-  const days = document.getElementById('days').value;
-  const panel = document.getElementById('info-panel');
-  const content = document.getElementById('panel-content');
-  content.innerHTML = '<h3>AI 심층 분석</h3><div class="map-loading" style="position:static;padding:20px">Claude 분석 중 (30~60초)</div>';
-  panel.classList.add('open');
-
-  try {
-    const r = await fetch(API + '/api/mining/deep-analyze', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ date: d, days: parseInt(days) }),
-    });
-    const data = await r.json();
-    const ins = data.insights || {};
-    let html = '<h3 style="color:var(--accent2)">AI 심층 분석 결과</h3>';
-
-    if (ins.decisions?.length) {
-      html += '<div class="detail-section"><div class="detail-label">의사결정 분석</div>';
-      for (const dec of ins.decisions) {
-        html += `<div style="font-size:11px;margin-bottom:8px;padding:8px;background:rgba(255,255,255,.03);border-radius:4px">
-          <div style="color:var(--warn);font-weight:600;margin-bottom:3px">${esc(dec.situation||'')}</div>
-          <div style="margin-bottom:2px"><b>패턴:</b> ${esc(dec.pattern||'')}</div>
-          <div style="margin-bottom:2px"><b>이유:</b> ${esc(dec.reasoning||'')}</div>
-          ${dec.betterAlternative ? `<div style="color:var(--accent)"><b>대안:</b> ${esc(dec.betterAlternative)}</div>` : ''}
-        </div>`;
-      }
-      html += '</div>';
-    }
-
-    if (ins.recommendations?.length) {
-      html += '<div class="detail-section"><div class="detail-label">개선 제안</div>';
-      for (const rec of ins.recommendations) {
-        html += `<div style="font-size:11px;margin-bottom:8px;padding:8px;background:rgba(0,221,184,.03);border:1px solid rgba(0,221,184,.08);border-radius:4px">
-          <div style="color:var(--accent);font-weight:600">P${rec.priority||'?'}: ${esc(rec.title||'')}</div>
-          <div style="margin-top:3px">${esc(rec.description||'')}</div>
-          ${rec.expectedSavings ? `<div style="color:var(--warn);margin-top:2px;font-size:10px">절감: ${esc(rec.expectedSavings)}</div>` : ''}
-        </div>`;
-      }
-      html += '</div>';
-    }
-
-    if (ins.fullText && !ins.decisions?.length) {
-      html += `<div class="detail-section"><div class="detail-label">전체 분석</div>
-        <div style="font-size:11px;white-space:pre-wrap;line-height:1.7;max-height:500px;overflow-y:auto">${esc(ins.fullText)}</div>
+  function linkBar(links,dir){
+    return links.sort((a,b)=>b.value-a.value).slice(0,15).map(l=>{
+      const otherId=dir==='in'?l.source:l.target;
+      const other=mapData.nodes.find(n=>n.id===otherId);
+      const ost=TYPE_STYLE[other?.type]||TYPE_STYLE.app;
+      const w=Math.round(l.value/maxV*100);
+      return `<div class="pbar">
+        <div class="pbar-name" style="color:${ost.color}">${other?.label||otherId}</div>
+        <div style="flex:1;height:8px;background:rgba(255,255,255,.04);border-radius:3px"><div class="pbar-fill" style="width:${w}%;background:${ost.color};opacity:.5"></div></div>
+        <div class="pbar-val">${l.value}</div>
       </div>`;
-    }
-
-    content.innerHTML = html;
-  } catch (e) {
-    content.innerHTML = `<h3>AI 분석</h3><div style="color:var(--danger);font-size:12px">실패: ${e.message}</div>`;
+    }).join('');
   }
+
+  let html=`<div class="ph" style="color:${st.color}">${st.icon} ${node.label}</div>`;
+  html+=`<div style="font-size:10px;color:#5a6a7e;margin-bottom:8px">타입: ${node.type} | 연결: ${inLinks.length+outLinks.length}개</div>`;
+
+  if(inLinks.length){
+    html+=`<div class="pl">← 들어오는 연결 (${inLinks.length})</div>${linkBar(inLinks,'in')}`;
+  }
+  if(outLinks.length){
+    html+=`<div class="pl">→ 나가는 연결 (${outLinks.length})</div>${linkBar(outLinks,'out')}`;
+  }
+
+  document.getElementById('pc').innerHTML=html;
+  document.getElementById('panel').classList.add('open');
 }
 
-function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+function closeP(){document.getElementById('panel').classList.remove('open')}
 
-// Keyboard: Escape closes panel
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closePanel(); });
-
-// Auto-load
-loadMap();
+async function runAI(){
+  const d=document.getElementById('dt').value,dy=document.getElementById('dy').value;
+  const pc=document.getElementById('pc');
+  pc.innerHTML='<div class="ph" style="color:#b96fff">AI 심층 분석</div><div class="ld" style="position:static;padding:16px">Claude 분석 중</div>';
+  document.getElementById('panel').classList.add('open');
+  try{
+    const r=await fetch(API+'/api/mining/deep-analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({date:d,days:parseInt(dy)})});
+    const data=await r.json(),ins=data.insights||{};
+    let h='<div class="ph" style="color:#b96fff">AI 심층 분석 결과</div>';
+    if(ins.fullText)h+=`<div style="white-space:pre-wrap;font-size:10px;line-height:1.7;max-height:80vh;overflow-y:auto">${esc(ins.fullText)}</div>`;
+    pc.innerHTML=h;
+  }catch(e){pc.innerHTML=`<div style="color:#ff5252">실패: ${e.message}</div>`}
+}
+function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeP()});
+go();
 </script>
 </body>
 </html>
