@@ -1583,8 +1583,20 @@ function createProcessMining({ getDb, reportSheet }) {
 
   // ═══════════════════════════════════════════════════════════════════════════
   // POST /api/mining/migrate-vision — Vision raw 데이터 마이그레이션
-  // GET /api/mining/kakao-debug — 카톡 시트 연결 디버그
+  // GET /api/mining/kakao-debug — 카톡 시트 연결 디버그 (?keyonly=1 for key info only)
   router.get('/kakao-debug', async (req, res) => {
+    if (req.query.keyonly) {
+      try {
+        const cred = await _parseServiceAccountJson();
+        const pk = cred.private_key || '';
+        return res.json({
+          email: cred.client_email, type: cred.type,
+          pkLen: pk.length, hasBegin: pk.startsWith('-----BEGIN'), hasEnd: pk.includes('-----END'),
+          nlCount: (pk.match(/\n/g) || []).length,
+          pkFirst50: pk.substring(0, 50), pkLast30: pk.substring(pk.length - 30),
+        });
+      } catch (e) { return res.json({ error: e.message }); }
+    }
     try {
       const https = require('https');
       const crypto = require('crypto');
