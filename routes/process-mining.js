@@ -1016,6 +1016,423 @@ function createProcessMining({ getDb, reportSheet }) {
     }
   });
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // POST /api/mining/deep-analyze — AI 기반 의사결정 심층 분석
+  // body: { date?, days?, userId? }
+  // Claude를 사용해 "왜 이렇게 했는가", "대안은 무엇인가" 분석
+  // ═══════════════════════════════════════════════════════════════════════════
+  router.post('/deep-analyze', async (req, res) => {
+    try {
+      const db = getDb();
+      if (!db?.query) return res.json({ error: 'DB not available' });
+      const { date, days, userId } = req.body || {};
+      const d = parseInt(days) || 7;
+      const startDate = date || new Date().toISOString().substring(0, 10);
+
+      // 1. 대상 사용자 결정
+      let targetUsers;
+      if (userId) {
+        const name = await getUserName(db, userId);
+        targetUsers = [{ user_id: userId, name }];
+      } else {
+        const { rows } = await db.query(`
+          SELECT DISTINCT e.user_id, u.name
+          FROM events e LEFT JOIN orbit_auth_users u ON e.user_id = u.id
+          WHERE e.type = ANY($1)
+            AND e.timestamp::date >= $2::date
+            AND e.timestamp::date < ($2::date + $3 * INTERVAL '1 day')
+            AND e.user_id IS NOT NULL AND e.user_id != 'local'
+          GROUP BY e.user_id, u.name HAVING count(*) >= 20
+        `, [WORK_TYPES, startDate, d]);
+        targetUsers = rows;
+      }
+
+      if (!targetUsers.length) return res.json({ insights: [], message: '분석할 데이터 부족' });
+
+      // 2. 사용자별 패턴 수집
+      const userAnalyses = [];
+      for (const u of targetUsers) {
+        const events = await fetchEvents(db, u.user_id, startDate, d);
+        if (events.length < 10) continue;
+        const blocks = buildActivityBlocks(events);
+        const { transitions, timeByApp } = buildTransitionMatrix(blocks);
+        const patterns = extractPatterns(blocks);
+        const sessions = splitSessions(blocks);
+        const bottlenecks = detectBottlenecks(blocks);
+
+        userAnalyses.push({
+          userId: u.user_id,
+          name: u.name || u.user_id,
+          totalEvents: events.length,
+          totalWorkMin: timeByApp.reduce((s, t) => s + t.minutes, 0),
+          timeByApp: timeByApp.slice(0, 8),
+          topPatterns: patterns.slice(0, 5).map(p => ({
+            flow: p.steps.join(' → '), count: p.count, avgMin: p.avgDurationMin,
+          })),
+          topTransitions: transitions.slice(0, 10),
+          sessionCount: sessions.length,
+          avgSessionMin: sessions.length ? Math.round(sessions.reduce((s, ses) => s + ses.durationMin, 0) / sessions.length) : 0,
+          bottlenecks: bottlenecks.slice(0, 3),
+        });
+      }
+
+      // 3. 의사결정 분기 데이터 수집
+      const userTransitions = {};
+      for (const ua of userAnalyses) {
+        userTransitions[ua.name] = ua.topTransitions;
+      }
+      const decisionData = _extractDecisionData(userTransitions);
+
+      // 4. Claude AI 분석 호출
+      const analysisPrompt = _buildDeepAnalysisPrompt(userAnalyses, decisionData, { startDate, days: d });
+      const aiInsights = await _callClaudeAnalysis(analysisPrompt);
+
+      // 5. 결과를 DB에 저장 (rag_documents로)
+      const reportId = `mining-deep-${Date.now()}`;
+      try {
+        await db.query(`
+          INSERT INTO rag_documents (id, title, content, source, metadata_json)
+          VALUES ($1, $2, $3, $4, $5)
+          ON CONFLICT (id) DO UPDATE SET content = $3, metadata_json = $5
+        `, [
+          reportId,
+          `프로세스 마이닝 심층분석 ${startDate}`,
+          aiInsights.fullText || JSON.stringify(aiInsights),
+          'process-mining',
+          JSON.stringify({ type: 'deep-analysis', date: startDate, days: d, generatedAt: new Date().toISOString() }),
+        ]);
+      } catch (e) { console.warn('[mining/deep-analyze] DB 저장 실패:', e.message); }
+
+      res.json({
+        ok: true,
+        reportId,
+        period: { start: startDate, days: d },
+        userCount: userAnalyses.length,
+        insights: aiInsights,
+        rawData: {
+          users: userAnalyses.map(u => ({ name: u.name, workMin: u.totalWorkMin, events: u.totalEvents })),
+          decisionPoints: decisionData.slice(0, 10),
+        },
+      });
+    } catch (e) {
+      console.error('[mining/deep-analyze]', e.message);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // GET /api/mining/infographic — 인포그래픽 시각화용 구조화 데이터
+  // ?date=2026-04-10&days=7
+  // ═══════════════════════════════════════════════════════════════════════════
+  router.get('/infographic', async (req, res) => {
+    try {
+      const db = getDb();
+      if (!db?.query) return res.json({ error: 'DB not available' });
+      const { date, days } = req.query;
+      const d = parseInt(days) || 7;
+      const startDate = date || new Date().toISOString().substring(0, 10);
+
+      // 활성 사용자
+      const { rows: activeUsers } = await db.query(`
+        SELECT DISTINCT e.user_id, u.name
+        FROM events e LEFT JOIN orbit_auth_users u ON e.user_id = u.id
+        WHERE e.type = ANY($1)
+          AND e.timestamp::date >= $2::date
+          AND e.timestamp::date < ($2::date + $3 * INTERVAL '1 day')
+          AND e.user_id IS NOT NULL AND e.user_id != 'local'
+        GROUP BY e.user_id, u.name HAVING count(*) >= 10
+      `, [WORK_TYPES, startDate, d]);
+
+      // 사용자별 데이터 수집
+      const userData = [];
+      const allBlocks = [];
+      for (const u of activeUsers) {
+        const events = await fetchEvents(db, u.user_id, startDate, d);
+        const blocks = buildActivityBlocks(events);
+        allBlocks.push(...blocks);
+        const { timeByApp } = buildTransitionMatrix(blocks);
+        const totalMin = timeByApp.reduce((s, t) => s + t.minutes, 0);
+        userData.push({
+          name: u.name || u.user_id,
+          userId: u.user_id,
+          totalMin,
+          apps: timeByApp.map(t => ({ name: t.app, minutes: t.minutes, pct: totalMin ? Math.round(t.minutes / totalMin * 100) : 0 })),
+        });
+      }
+
+      // 시간대별 히트맵
+      const { rows: hourly } = await db.query(`
+        SELECT
+          EXTRACT(HOUR FROM (timestamp::timestamptz AT TIME ZONE 'Asia/Seoul')) as hour,
+          count(*) as events,
+          count(DISTINCT user_id) as users
+        FROM events
+        WHERE type = ANY($1)
+          AND timestamp::date >= $2::date
+          AND timestamp::date < ($2::date + $3 * INTERVAL '1 day')
+        GROUP BY 1 ORDER BY 1
+      `, [WORK_TYPES, startDate, d]);
+
+      // 일별 트렌드
+      const { rows: daily } = await db.query(`
+        SELECT timestamp::date as day, count(*) as events, count(DISTINCT user_id) as users
+        FROM events WHERE type = ANY($1)
+          AND timestamp::date >= $2::date
+          AND timestamp::date < ($2::date + $3 * INTERVAL '1 day')
+        GROUP BY 1 ORDER BY 1
+      `, [WORK_TYPES, startDate, d]);
+
+      // 앱 사용 비율 (전체 합산)
+      const appTotals = {};
+      for (const u of userData) {
+        for (const a of u.apps) {
+          appTotals[a.name] = (appTotals[a.name] || 0) + a.minutes;
+        }
+      }
+      const totalAllMin = Object.values(appTotals).reduce((s, m) => s + m, 0);
+      const appDistribution = Object.entries(appTotals)
+        .map(([name, minutes]) => ({ name, minutes, pct: totalAllMin ? Math.round(minutes / totalAllMin * 100) : 0 }))
+        .sort((a, b) => b.minutes - a.minutes);
+
+      // 프로세스 흐름도 데이터 (Sankey/Flow용)
+      const { transitions } = buildTransitionMatrix(allBlocks);
+      const flowNodes = [...new Set(transitions.flatMap(t => [t.from, t.to]))];
+      const flowLinks = transitions.slice(0, 20).map(t => ({
+        source: t.from, target: t.to, value: t.count,
+      }));
+
+      // 자동화 ROI
+      const autoBlocks = allBlocks.filter(b => b.automationScore != null && b.automationScore >= 0.6);
+      const autoSavingsMinPerDay = autoBlocks.reduce((s, b) => s + b.duration, 0) / 60000 / Math.max(d, 1);
+      const autoSavingsMonthly = Math.round(autoSavingsMinPerDay * 22); // 월 22 근무일
+      const autoSavingsYearly = autoSavingsMonthly * 12;
+      const hourlyWage = 15000; // 시급 기준 (원)
+      const roiMonthly = Math.round(autoSavingsMonthly / 60 * hourlyWage);
+      const roiYearly = roiMonthly * 12;
+
+      res.json({
+        period: { start: startDate, days: d },
+        charts: {
+          // 파이차트: 앱 사용 분포
+          appDistribution,
+          // 바차트: 직원별 총 업무 시간
+          userWorktime: userData.map(u => ({ name: u.name, minutes: u.totalMin })).sort((a, b) => b.minutes - a.minutes),
+          // 히트맵: 시간대별 활동량
+          hourlyHeatmap: hourly.map(h => ({ hour: parseInt(h.hour), events: parseInt(h.events), users: parseInt(h.users) })),
+          // 라인차트: 일별 트렌드
+          dailyTrend: daily.map(d => ({ date: d.day, events: parseInt(d.events), users: parseInt(d.users) })),
+          // Sankey/Flow: 앱 전환 흐름도
+          processFlow: { nodes: flowNodes, links: flowLinks },
+          // 스택바: 직원별 앱 사용 분포
+          userAppBreakdown: userData.map(u => ({
+            name: u.name,
+            apps: u.apps.slice(0, 6),
+          })),
+        },
+        roi: {
+          autoSavingsMinPerDay: Math.round(autoSavingsMinPerDay),
+          autoSavingsHoursMonthly: Math.round(autoSavingsMonthly / 60),
+          roiMonthlyKRW: roiMonthly,
+          roiYearlyKRW: roiYearly,
+          roiYearlyFormatted: `${Math.round(roiYearly / 10000)}만원`,
+          automatableBlockCount: autoBlocks.length,
+        },
+      });
+    } catch (e) {
+      console.error('[mining/infographic]', e.message);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // POST /api/mining/migrate-vision — Vision raw 데이터 마이그레이션
+  // 기존 screen.analyzed raw JSON 문자열 재파싱
+  // ═══════════════════════════════════════════════════════════════════════════
+  router.post('/migrate-vision', async (req, res) => {
+    try {
+      const db = getDb();
+      if (!db?.query) return res.json({ error: 'DB not available' });
+
+      // 1. raw 필드에 JSON 문자열이 있는 레코드 조회
+      const { rows: rawRecords } = await db.query(`
+        SELECT id, data_json
+        FROM events
+        WHERE type = 'screen.analyzed'
+          AND data_json->>'raw' IS NOT NULL
+          AND data_json->>'raw' != ''
+          AND (data_json->>'app' IS NULL OR data_json->>'app' = '')
+        LIMIT 200
+      `);
+
+      let fixed = 0, failed = 0;
+      const results = [];
+
+      for (const row of rawRecords) {
+        const rawText = row.data_json.raw;
+        if (!rawText || rawText.length < 10) { failed++; continue; }
+
+        // _parseResult 로직과 동일한 파싱 시도
+        let parsed = null;
+
+        // Strategy 1: ```json 코드블록
+        const codeBlock = rawText.match(/```(?:json)?\s*\n?([\s\S]*?)```/);
+        if (codeBlock) {
+          try { parsed = JSON.parse(codeBlock[1].trim()); } catch {}
+        }
+
+        // Strategy 2: 가장 바깥 { ... }
+        if (!parsed) {
+          const m = rawText.match(/\{[\s\S]*\}/);
+          if (m) {
+            const cleaned = m[0]
+              .replace(/:\s*true\/false/g, ': true')
+              .replace(/:\s*(\d+\.?\d*)~(\d+\.?\d*)/g, ': $1')
+              .replace(/,\s*([}\]])/g, '$1')
+              .replace(/\/\/[^\n]*/g, '')
+              .replace(/\/\*[\s\S]*?\*\//g, '');
+            try { parsed = JSON.parse(cleaned); } catch {}
+            if (!parsed) try { parsed = JSON.parse(m[0]); } catch {}
+          }
+        }
+
+        // Strategy 3: 전체 텍스트
+        if (!parsed) try { parsed = JSON.parse(rawText.trim()); } catch {}
+
+        if (parsed && (parsed.app || parsed.activity || parsed.screen)) {
+          // 기존 metadata 보존하면서 파싱된 데이터 병합
+          const newData = {
+            ...row.data_json,
+            ...parsed,
+            raw: undefined, // raw 제거
+            _migratedAt: new Date().toISOString(),
+          };
+          delete newData.raw;
+
+          await db.query(
+            'UPDATE events SET data_json = $1 WHERE id = $2',
+            [JSON.stringify(newData), row.id]
+          );
+          fixed++;
+          results.push({ id: row.id, app: parsed.app, activity: parsed.activity?.substring(0, 50) });
+        } else {
+          failed++;
+        }
+      }
+
+      // 2. 완전히 빈 screen.analyzed 카운트
+      const { rows: [emptyCount] } = await db.query(`
+        SELECT COUNT(*) as cnt FROM events
+        WHERE type = 'screen.analyzed'
+          AND (data_json->>'app' IS NULL OR data_json->>'app' = '')
+          AND (data_json->>'raw' IS NULL OR data_json->>'raw' = '')
+      `);
+
+      res.json({
+        ok: true,
+        migration: { found: rawRecords.length, fixed, failed },
+        emptyRecords: parseInt(emptyCount.cnt),
+        fixedSamples: results.slice(0, 10),
+        message: `${fixed}건 재파싱 완료, ${failed}건 파싱 실패, ${emptyCount.cnt}건 빈 데이터 남음`,
+      });
+    } catch (e) {
+      console.error('[mining/migrate-vision]', e.message);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // GET /api/mining/automation-blueprint — 자동화 블루프린트
+  // ?date=2026-04-10&days=7
+  // "기계가 대체한다면 이런 식으로 해야겠구나" — 구체적 자동화 설계
+  // ═══════════════════════════════════════════════════════════════════════════
+  router.get('/automation-blueprint', async (req, res) => {
+    try {
+      const db = getDb();
+      if (!db?.query) return res.json({ error: 'DB not available' });
+      const { date, days } = req.query;
+      const d = parseInt(days) || 7;
+      const startDate = date || new Date().toISOString().substring(0, 10);
+
+      // 사용자 데이터 수집
+      const { rows: activeUsers } = await db.query(`
+        SELECT DISTINCT e.user_id, u.name
+        FROM events e LEFT JOIN orbit_auth_users u ON e.user_id = u.id
+        WHERE e.type = ANY($1)
+          AND e.timestamp::date >= $2::date
+          AND e.timestamp::date < ($2::date + $3 * INTERVAL '1 day')
+          AND e.user_id IS NOT NULL AND e.user_id != 'local'
+        GROUP BY e.user_id, u.name HAVING count(*) >= 20
+      `, [WORK_TYPES, startDate, d]);
+
+      const allBlocks = [];
+      const allPatterns = [];
+      for (const u of activeUsers) {
+        const events = await fetchEvents(db, u.user_id, startDate, d);
+        const blocks = buildActivityBlocks(events);
+        allBlocks.push(...blocks);
+        allPatterns.push(...extractPatterns(blocks));
+      }
+
+      // 반복 패턴 → 자동화 후보
+      const patternMap = {};
+      for (const p of allPatterns) {
+        if (!patternMap[p.pattern]) patternMap[p.pattern] = { ...p, count: 0, totalDuration: 0 };
+        patternMap[p.pattern].count += p.count;
+        patternMap[p.pattern].totalDuration += p.avgDurationMin * p.count;
+      }
+
+      const automationCandidates = Object.values(patternMap)
+        .filter(p => p.count >= 3)
+        .sort((a, b) => b.totalDuration - a.totalDuration)
+        .slice(0, 15)
+        .map(p => {
+          const steps = p.steps || p.pattern.split('→');
+          const blueprint = _designAutomation(steps, p);
+          return {
+            pattern: p.pattern,
+            flow: steps.join(' → '),
+            frequency: p.count,
+            totalTimeMin: Math.round(p.totalDuration / p.count) * p.count,
+            avgTimeMin: Math.round(p.totalDuration / p.count),
+            ...blueprint,
+          };
+        });
+
+      // ROI 계산
+      const totalSavableMin = automationCandidates
+        .filter(c => c.automationFeasibility >= 0.5)
+        .reduce((s, c) => s + c.savingsPerMonth, 0);
+      const hourlyWage = 15000;
+
+      res.json({
+        period: { start: startDate, days: d },
+        candidates: automationCandidates,
+        roi: {
+          totalSavableMinPerMonth: totalSavableMin,
+          totalSavableHoursPerMonth: Math.round(totalSavableMin / 60),
+          monthlySavingsKRW: Math.round(totalSavableMin / 60 * hourlyWage),
+          yearlySavingsKRW: Math.round(totalSavableMin / 60 * hourlyWage * 12),
+          yearlySavingsFormatted: `${Math.round(totalSavableMin / 60 * hourlyWage * 12 / 10000)}만원`,
+        },
+        implementationPlan: automationCandidates
+          .filter(c => c.automationFeasibility >= 0.5)
+          .sort((a, b) => b.savingsPerMonth - a.savingsPerMonth)
+          .slice(0, 5)
+          .map((c, i) => ({
+            priority: i + 1,
+            flow: c.flow,
+            method: c.automationMethod,
+            difficulty: c.difficulty,
+            savingsPerMonth: `${c.savingsPerMonth}분`,
+            steps: c.implementationSteps,
+          })),
+      });
+    } catch (e) {
+      console.error('[mining/automation-blueprint]', e.message);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   return router;
 }
 
@@ -1097,6 +1514,229 @@ function _interpretFlow(steps) {
   if (hasBrowser && hasExcel) return '웹 조회 → 엑셀 정리';
   if (hasKakao) return '카카오 커뮤니케이션 중심 워크플로우';
   return '업무 전환 패턴';
+}
+
+// ── 의사결정 분기 데이터 추출 (deep-analyze용) ──────────────────────────────
+function _extractDecisionData(userTransitions) {
+  const fromApps = {};
+  for (const [userName, transitions] of Object.entries(userTransitions)) {
+    for (const t of transitions) {
+      if (!fromApps[t.from]) fromApps[t.from] = {};
+      if (!fromApps[t.from][t.to]) fromApps[t.from][t.to] = [];
+      fromApps[t.from][t.to].push({ user: userName, count: t.count });
+    }
+  }
+  const points = [];
+  for (const [fromApp, toApps] of Object.entries(fromApps)) {
+    const destinations = Object.entries(toApps);
+    if (destinations.length < 2) continue;
+    const choices = destinations.map(([toApp, users]) => ({
+      nextApp: toApp, users, total: users.reduce((s, u) => s + u.count, 0),
+    })).sort((a, b) => b.total - a.total);
+    points.push({ fromApp, choices });
+  }
+  return points.sort((a, b) => b.choices.length - a.choices.length);
+}
+
+// ── Claude API 호출 (심층 분석) ─────────────────────────────────────────────
+async function _callClaudeAnalysis(prompt) {
+  const https = require('https');
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    return {
+      fullText: '(ANTHROPIC_API_KEY 미설정 — AI 분석 불가, 규칙 기반 분석만 제공)',
+      decisions: [], recommendations: [], automationDesign: [],
+    };
+  }
+
+  return new Promise((resolve) => {
+    const body = JSON.stringify({
+      model: process.env.ANTHROPIC_MODEL || 'claude-haiku-4-5-20251001',
+      max_tokens: 4096,
+      messages: [{ role: 'user', content: prompt }],
+    });
+    const req = https.request({
+      hostname: 'api.anthropic.com', path: '/v1/messages', method: 'POST', timeout: 60000,
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'Content-Length': Buffer.byteLength(body),
+      },
+    }, (res) => {
+      let d = ''; res.on('data', c => d += c);
+      res.on('end', () => {
+        try {
+          const text = JSON.parse(d).content?.[0]?.text || '';
+          // JSON 응답 파싱 시도
+          const jsonMatch = text.match(/```(?:json)?\s*\n?([\s\S]*?)```/) || text.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            const jsonStr = jsonMatch[1] || jsonMatch[0];
+            try {
+              const parsed = JSON.parse(jsonStr.trim());
+              parsed.fullText = text;
+              resolve(parsed);
+              return;
+            } catch {}
+          }
+          resolve({ fullText: text, decisions: [], recommendations: [], automationDesign: [] });
+        } catch (e) {
+          resolve({ fullText: `분석 오류: ${e.message}`, decisions: [], recommendations: [], automationDesign: [] });
+        }
+      });
+    });
+    req.on('error', (e) => {
+      resolve({ fullText: `API 호출 실패: ${e.message}`, decisions: [], recommendations: [], automationDesign: [] });
+    });
+    req.write(body);
+    req.end();
+  });
+}
+
+// ── 심층 분석 프롬프트 생성 ─────────────────────────────────────────────────
+function _buildDeepAnalysisPrompt(userAnalyses, decisionData, period) {
+  const userData = userAnalyses.map(u =>
+    `■ ${u.name}: ${u.totalWorkMin}분 작업, ${u.totalEvents}건 이벤트, ${u.sessionCount}세션\n` +
+    `  앱 사용: ${u.timeByApp.map(t => `${t.app}(${t.minutes}분)`).join(', ')}\n` +
+    `  주요 패턴: ${u.topPatterns.map(p => `${p.flow}(${p.count}회, ${p.avgMin}분)`).join(' | ')}\n` +
+    `  병목: ${u.bottlenecks.map(b => `${b.app}(평균${b.avgDurationSec}초, 이상치${b.outlierCount}건)`).join(', ') || '없음'}`
+  ).join('\n\n');
+
+  const decisionText = decisionData.slice(0, 5).map(dp =>
+    `  ${dp.fromApp} → ${dp.choices.map(c => `${c.nextApp}(${c.users.map(u => u.user).join(',')})`).join(' / ')}`
+  ).join('\n');
+
+  return `당신은 기업 업무 프로세스 분석 전문가입니다.
+
+다음은 네노바(농자재 유통 회사) 직원들의 ${period.startDate}부터 ${period.days}일간 PC 활동 데이터 분석 결과입니다.
+
+=== 직원별 업무 패턴 ===
+${userData}
+
+=== 의사결정 분기점 ===
+${decisionText || '(데이터 부족)'}
+
+다음을 분석하여 JSON으로 응답하세요:
+
+\`\`\`json
+{
+  "decisions": [
+    {
+      "situation": "어떤 상황에서 의사결정이 발생하는지",
+      "pattern": "직원들이 실제로 하는 선택 패턴",
+      "reasoning": "왜 이런 선택을 하는지 추정되는 이유",
+      "betterAlternative": "더 나은 대안이 있다면 무엇인지",
+      "automationPossible": true/false,
+      "automationDesign": "자동화한다면 어떤 로직으로 구현할지"
+    }
+  ],
+  "bestPractices": [
+    {
+      "who": "가장 효율적인 직원",
+      "what": "그 직원이 다르게 하는 점",
+      "impact": "이를 전체 적용하면 예상되는 효과"
+    }
+  ],
+  "recommendations": [
+    {
+      "priority": 1,
+      "title": "개선 제안 제목",
+      "description": "구체적 설명",
+      "expectedSavings": "예상 절감 시간/비용",
+      "implementation": "구현 방법"
+    }
+  ],
+  "processMap": "주문접수부터 출고까지 전체 프로세스를 텍스트로 설명",
+  "bottleneckAnalysis": "병목 구간에 대한 심층 분석"
+}
+\`\`\``;
+}
+
+// ── 자동화 블루프린트 설계 ──────────────────────────────────────────────────
+function _designAutomation(steps, patternData) {
+  const hasKakao = steps.includes('KakaoTalk');
+  const hasExcel = steps.includes('Excel');
+  const hasNenova = steps.includes('Nenova ERP');
+  const hasBrowser = steps.includes('Browser');
+
+  let method = 'manual_review';
+  let difficulty = 'high';
+  let feasibility = 0.3;
+  const implSteps = [];
+
+  // 카카오 → ERP 패턴: 메시지 파싱 → 자동 입력
+  if (hasKakao && hasNenova) {
+    method = 'kakao_parse_to_erp';
+    difficulty = 'medium';
+    feasibility = 0.7;
+    implSteps.push(
+      '1. 카카오톡 주문 메시지 자동 파싱 (정규식 + AI)',
+      '2. 파싱된 데이터를 nenova 입력 형식으로 변환',
+      '3. PAD(Power Automate Desktop)로 nenova UI 자동 입력',
+      '4. 입력 결과 카카오톡으로 확인 메시지 발송',
+    );
+  }
+  // 카카오 → 엑셀 패턴: 메시지 → 스프레드시트 자동 기록
+  else if (hasKakao && hasExcel) {
+    method = 'kakao_parse_to_excel';
+    difficulty = 'low';
+    feasibility = 0.85;
+    implSteps.push(
+      '1. 카카오톡 메시지 감지 (clipboard.change 이벤트)',
+      '2. 주문 정보 추출 (품명/수량/단가/거래처)',
+      '3. Excel COM 자동화로 물량표에 행 추가',
+      '4. 추가 결과 로그 기록',
+    );
+  }
+  // 엑셀 → ERP 패턴: 데이터 전송
+  else if (hasExcel && hasNenova) {
+    method = 'excel_to_erp_sync';
+    difficulty = 'medium';
+    feasibility = 0.75;
+    implSteps.push(
+      '1. 엑셀 물량표 변경 감지 (file.change 이벤트)',
+      '2. 변경된 행 데이터 추출 (COM 자동화)',
+      '3. nenova 해당 화면으로 이동 (PAD)',
+      '4. 데이터 입력 + 저장',
+    );
+  }
+  // 브라우저 → 엑셀: 웹 데이터 → 스프레드시트
+  else if (hasBrowser && hasExcel) {
+    method = 'web_scrape_to_excel';
+    difficulty = 'low';
+    feasibility = 0.8;
+    implSteps.push(
+      '1. 브라우저 페이지 데이터 자동 추출 (playwright/puppeteer)',
+      '2. 데이터 정제 및 포맷 변환',
+      '3. Excel에 자동 기록',
+    );
+  }
+  // 기타
+  else {
+    method = 'workflow_automation';
+    difficulty = steps.length > 3 ? 'high' : 'medium';
+    feasibility = 0.4;
+    implSteps.push(
+      '1. 워크플로우 트리거 조건 정의',
+      '2. 각 단계별 자동화 스크립트 작성',
+      '3. 예외 처리 + 수동 개입 지점 설정',
+    );
+  }
+
+  const avgMin = patternData.avgDurationMin || Math.round((patternData.totalDuration || 0) / Math.max(patternData.count, 1));
+  const savingsPerOccurrence = Math.round(avgMin * feasibility);
+  const monthlyOccurrences = Math.round(patternData.count / 7 * 22); // 주간→월간 환산
+  const savingsPerMonth = savingsPerOccurrence * monthlyOccurrences;
+
+  return {
+    automationMethod: method,
+    automationFeasibility: feasibility,
+    difficulty,
+    implementationSteps: implSteps,
+    savingsPerOccurrence,
+    monthlyOccurrences,
+    savingsPerMonth,
+  };
 }
 
 module.exports = createProcessMining;
