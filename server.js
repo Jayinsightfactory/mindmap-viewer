@@ -1016,7 +1016,7 @@ const { sendUpdateEmail, sendPerfIssueEmail } = (() => { try { return require('.
 // ─── Vision 큐 (맥미니 CLI 워커가 폴링해서 분석) ──────────────────────────────
 // Vision 분석은 맥미니 전용 — Railway에서는 큐잉만 함
 if (!global._visionImageQueue) global._visionImageQueue = [];
-const _VISION_QUEUE_MAX = 50; // base64가 DB에 안 들어가므로 큐 확대 (10→50)
+const _VISION_QUEUE_MAX = 100; // Phase4: 배치 10개 + 빈도 증가 대응 (50→100)
 
 // 힙 압력 모니터링 (460MB 힙 기준 — Railway Hobby 512MB 내 안정 운영)
 let _heapPressure = false;
@@ -2105,6 +2105,71 @@ app.post('/api/hook', async (req, res) => {
       }
     }
 
+    // ── 마우스 좌표 자동 학습 → pad_mouse_map (keyboard.chunk의 mousePositions 활용) ──
+    if (_isPg) {
+      for (const ev of events) {
+        if (ev.type !== 'keyboard.chunk') continue;
+        const positions = ev.data?.mousePositions;
+        if (!Array.isArray(positions) || positions.length < 3) continue;
+
+        const windowTitle = ev.data?.appContext?.currentWindow || ev.data?.windowTitle || '';
+        const app = ev.data?.appContext?.currentApp || ev.data?.app || '';
+        // nenova 관련 윈도우만 고정밀 학습 (다른 앱은 기본 학습)
+        const isNenova = /nenova|화훼|관리.*프로그램|재고|주문/i.test(windowTitle + ' ' + app);
+
+        // 20px 그리드 클러스터링
+        const clusters = new Map();
+        for (const pos of positions) {
+          if (!pos.x || !pos.y) continue;
+          const gx = Math.round(pos.x / 20) * 20;
+          const gy = Math.round(pos.y / 20) * 20;
+          const key = `${gx},${gy}`;
+          if (!clusters.has(key)) clusters.set(key, { x: 0, y: 0, count: 0, wins: new Set() });
+          const c = clusters.get(key);
+          c.x += pos.x; c.y += pos.y; c.count++;
+          if (pos.win) c.wins.add(pos.win);
+        }
+
+        const pool = dbModule.getDb();
+        const minClicks = isNenova ? 2 : 3; // nenova는 2회만으로도 학습
+
+        for (const [, cluster] of clusters) {
+          if (cluster.count < minClicks) continue;
+          const avgX = Math.round(cluster.x / cluster.count);
+          const avgY = Math.round(cluster.y / cluster.count);
+          const confidence = Math.min(cluster.count / positions.length, 0.95);
+          const winTitle = [...cluster.wins][0] || windowTitle;
+
+          // 요소명 추론: 좌표 기반 영역 매핑
+          let elementName = `click_${avgX}_${avgY}`;
+          if (isNenova) {
+            // nenova UI 요소 추론 (기본 좌표 범위)
+            if (avgY < 100) elementName = '상단메뉴';
+            else if (avgY < 350 && avgX < 200) elementName = '좌측트리';
+            else if (avgY > 550) elementName = '하단버튼';
+            else elementName = `nenova_${avgX}_${avgY}`;
+          }
+
+          try {
+            await pool.query(`
+              INSERT INTO pad_mouse_map (element_name, window_title, x, y, confidence, source, sample_count)
+              VALUES ($1, $2, $3, $4, $5, 'keyboard_cluster', $6)
+              ON CONFLICT (element_name, window_title) DO UPDATE SET
+                x = CASE WHEN pad_mouse_map.sample_count < 50
+                    THEN (pad_mouse_map.x * pad_mouse_map.sample_count + $3) / (pad_mouse_map.sample_count + 1)
+                    ELSE pad_mouse_map.x END,
+                y = CASE WHEN pad_mouse_map.sample_count < 50
+                    THEN (pad_mouse_map.y * pad_mouse_map.sample_count + $4) / (pad_mouse_map.sample_count + 1)
+                    ELSE pad_mouse_map.y END,
+                confidence = LEAST(pad_mouse_map.confidence + 0.02, 0.99),
+                sample_count = pad_mouse_map.sample_count + $6,
+                updated_at = NOW()
+            `, [elementName, winTitle, avgX, avgY, confidence, cluster.count]);
+          } catch (e) { /* pad_mouse_map 테이블 없으면 무시 */ }
+        }
+      }
+    }
+
     // ── 세션 자동 제목 생성 (이벤트 3개 이상 쌓인 세션) ──────────────────
     if (_isPg) {
       const sessionIds = [...new Set(events.map(e => e.sessionId).filter(Boolean))];
@@ -2502,8 +2567,8 @@ app.post('/api/auto-fix/reset-cooldown', (req, res) => {
 // Vision 분석 큐 (맥미니 CLI 워커용 — 이미지 포함)
 app.get('/api/vision/queue', (req, res) => {
   const queue = global._visionImageQueue || [];
-  // 최대 3개씩 반환 (워커가 CLI로 분석)
-  const batch = queue.splice(0, 3);
+  // 최대 10개씩 반환 (워커가 CLI로 분석) — Phase4: 빈도 증가
+  const batch = queue.splice(0, 10);
   res.json({ pending: queue.length, batch });
 });
 
