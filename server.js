@@ -3930,7 +3930,7 @@ try {
 
 // ─── PC Recording API (Python recorder ↔ Node.js 브리지) ──────────────────────
 try {
-  app.use('/api/recording', require('./routes/recording')({ broadcastAll }));
+  app.use('/api/recording', require('./routes/recording')({ broadcastAll, getDb: dbModule.getDb }));
 } catch(e) { console.warn('[mount] recording:', e.message); }
 
 // ─── Orbit OS (팔란티어 스타일 회사 OS 명령 구조) ─────────────────────────────
