@@ -3888,6 +3888,11 @@ try {
   app.use('/api/scripts', require('./routes/script-generator')({ getDb: dbModule.getDb }));
 } catch(e) { console.warn('[mount] script-generator:', e.message); }
 
+// ─── PC Recording API (Python recorder ↔ Node.js 브리지) ──────────────────────
+try {
+  app.use('/api/recording', require('./routes/recording')({ broadcastAll }));
+} catch(e) { console.warn('[mount] recording:', e.message); }
+
 // ─── Orbit OS (팔란티어 스타일 회사 OS 명령 구조) ─────────────────────────────
 app.use('/api/os', require('./routes/orbit-os')({ getDb: dbModule.getDb }));
 
