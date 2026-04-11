@@ -80,7 +80,7 @@ const CORS_ALLOWED_ORIGINS = [
   ...(IS_RAILWAY && process.env.RAILWAY_PUBLIC_DOMAIN
     ? [`https://${process.env.RAILWAY_PUBLIC_DOMAIN}`]
     : []),
-  'https://sparkling-determination-production-c88b.up.railway.app',
+  'https://mindmap-viewer-production-adb2.up.railway.app',
   ..._extraOrigins,
 ];
 

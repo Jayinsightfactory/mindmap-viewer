@@ -2,4 +2,4 @@ User-agent: *
 Allow: /
 Disallow: /api/
 Disallow: /admin
-Sitemap: https://sparkling-determination-production-c88b.up.railway.app/sitemap.xml
+Sitemap: https://mindmap-viewer-production-adb2.up.railway.app/sitemap.xml

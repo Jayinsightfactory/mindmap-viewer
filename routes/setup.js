@@ -91,7 +91,7 @@ function getNodeVersion() {
 // ── 원키 설치 스크립트 생성 ───────────────────────────────────────────────────
 function buildInstallScript(osType, port = 4747, opts = {}) {
   const { token = '', serverUrl = '', memberName = '' } = opts;
-  const REPO_URL = 'https://github.com/dlaww-wq/mindmap-viewer.git';
+  const REPO_URL = 'https://github.com/Jayinsightfactory/mindmap-viewer.git';
   const ORBIT_DIR = '~/orbit';
 
   // 환경변수 블록 (Railway 연결 시)

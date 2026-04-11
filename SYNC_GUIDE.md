@@ -47,7 +47,7 @@ sync-push.bat 더블클릭
 ## 처음 다른 PC에서 시작할 때 (최초 1회)
 
 ```bash
-git clone https://github.com/dlaww-wq/mindmap-viewer.git
+git clone https://github.com/Jayinsightfactory/mindmap-viewer.git
 cd mindmap-viewer
 npm install
 ```

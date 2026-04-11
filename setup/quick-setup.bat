@@ -13,7 +13,7 @@ if exist "%~dp0..\server.js" (
     git pull
 ) else (
     echo [..] 프로젝트 다운로드 중...
-    git clone https://github.com/dlaww-wq/mindmap-viewer.git "%~dp0.."
+    git clone https://github.com/Jayinsightfactory/mindmap-viewer.git "%~dp0.."
     cd /d "%~dp0.."
 )
 

@@ -5,7 +5,7 @@ set -e
 
 DRIVE_PATH="/Users/darlene/Library/CloudStorage/GoogleDrive-dlaww@kicda.com/내 드라이브/mindmap-viewer/"
 GIT_PATH="/Users/darlene/mindmap-viewer/"
-PROD_URL="https://sparkling-determination-production-c88b.up.railway.app"
+PROD_URL="https://mindmap-viewer-production-adb2.up.railway.app"
 
 cd "$GIT_PATH"
 

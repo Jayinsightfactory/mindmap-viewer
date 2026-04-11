@@ -27,7 +27,7 @@ const CONFIG = (() => {
     return JSON.parse(fs.readFileSync(path.join(os.homedir(), '.orbit-config.json'), 'utf8'));
   } catch { return {}; }
 })();
-const SERVER = CONFIG.serverUrl || process.env.ORBIT_SERVER_URL || 'https://sparkling-determination-production-c88b.up.railway.app';
+const SERVER = CONFIG.serverUrl || process.env.ORBIT_SERVER_URL || 'https://mindmap-viewer-production-adb2.up.railway.app';
 const TOKEN = CONFIG.token || process.env.ORBIT_TOKEN || '';
 
 // ── 한국 은행 보안 프로그램 DB (106개) ──

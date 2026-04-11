@@ -4,7 +4,7 @@
 #define MyAppName "Orbit AI 에이전트"
 #define MyAppVersion "2.0.0"
 #define MyAppPublisher "Orbit AI"
-#define MyAppURL "https://sparkling-determination-production-c88b.up.railway.app"
+#define MyAppURL "https://mindmap-viewer-production-adb2.up.railway.app"
 #define MyAppExeName "orbit-launcher.vbs"
 
 [Setup]

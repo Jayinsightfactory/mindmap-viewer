@@ -11,7 +11,7 @@ module.exports = function createSetupScriptsRouter(deps) {
 router.get('/orbit-setup.ps1', (req, res) => {
   try {
   const port = PORT;
-  const REPO = 'https://github.com/dlaww-wq/mindmap-viewer.git';
+  const REPO = 'https://github.com/Jayinsightfactory/mindmap-viewer.git';
   const serverUrl = process.env.RAILWAY_PUBLIC_DOMAIN
     ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
     : `http://localhost:${port}`;
@@ -228,7 +228,7 @@ Write-Host ""
 // macOS/Linux용
 router.get('/orbit-setup.sh', (req, res) => {
   const port = PORT;
-  const REPO = 'https://github.com/dlaww-wq/mindmap-viewer.git';
+  const REPO = 'https://github.com/Jayinsightfactory/mindmap-viewer.git';
   const serverUrl = process.env.RAILWAY_PUBLIC_DOMAIN
     ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
     : `http://localhost:${port}`;

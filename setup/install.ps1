@@ -3,8 +3,8 @@
 param([string]$Token = $env:ORBIT_TOKEN)
 
 $ErrorActionPreference = "Continue"
-$REMOTE   = "https://sparkling-determination-production-c88b.up.railway.app"
-$REPO     = "https://github.com/dlaww-wq/mindmap-viewer.git"
+$REMOTE   = "https://mindmap-viewer-production-adb2.up.railway.app"
+$REPO     = "https://github.com/Jayinsightfactory/mindmap-viewer.git"
 $DIR      = "$env:USERPROFILE\mindmap-viewer"
 $OrbitDir = "$env:USERPROFILE\.orbit"
 $BANK_MODE = $false

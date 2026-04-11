@@ -13,7 +13,7 @@ const fs = require('fs');
 const path = require('path');
 
 const PORT = process.env.LOG_PORT || 4848;
-const ORBIT_SERVER = process.env.ORBIT_SERVER_URL || 'https://sparkling-determination-production-c88b.up.railway.app';
+const ORBIT_SERVER = process.env.ORBIT_SERVER_URL || 'https://mindmap-viewer-production-adb2.up.railway.app';
 
 // ── 토큰 로드 ──
 function loadToken() {

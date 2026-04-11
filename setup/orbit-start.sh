@@ -5,7 +5,7 @@
 set -e
 
 GREEN='\033[0;32m'; CYAN='\033[0;36m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
-REMOTE="https://sparkling-determination-production-c88b.up.railway.app"
+REMOTE="https://mindmap-viewer-production-adb2.up.railway.app"
 TOKEN="${ORBIT_TOKEN:-}"
 
 echo ""
@@ -43,7 +43,7 @@ fi
 
 # ── [2/6] 프로젝트 다운로드 ──
 echo -e "\n${CYAN}[2/6] 프로젝트 준비...${NC}"
-REPO="https://github.com/dlaww-wq/mindmap-viewer.git"
+REPO="https://github.com/Jayinsightfactory/mindmap-viewer.git"
 DIR="$HOME/mindmap-viewer"
 
 if [ -f "$DIR/server.js" ]; then

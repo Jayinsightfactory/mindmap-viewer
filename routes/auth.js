@@ -198,6 +198,95 @@ function createRouter(deps) {
     res.json({ invites });                                      // 목록 반환
   });
 
+  // ── 토큰 교환 (크로스 시스템 인증) ──────────────────────────────────────────
+  // Orbit 토큰 → 단기 JWT 교환 토큰 (ERP UI / AI Trainer Hub에서 사용)
+
+  const jwt = (() => { try { return require('jsonwebtoken'); } catch { return null; } })();
+  const EXCHANGE_SECRET = process.env.EXCHANGE_JWT_SECRET || process.env.SESSION_SECRET || 'nenova-exchange-2026';
+  const EXCHANGE_EXPIRY = 15 * 60; // 15분
+
+  /**
+   * POST /api/auth/exchange
+   * Orbit 토큰을 검증하고 대상 시스템용 단기 JWT를 발급합니다.
+   * @body {string} target - 대상 시스템: 'erp-ui' | 'ai-trainer' | 'nenova-agent'
+   * @returns {{ exchangeToken: string, expiresIn: number, target: string }}
+   */
+  router.post('/auth/exchange', async (req, res) => {
+    // Orbit 토큰 확인
+    const rawToken = (req.headers.authorization || '').replace('Bearer ', '').trim();
+    let user = verifyToken(rawToken);
+    if (!user) {
+      try {
+        const authSrc = require('../src/auth');
+        user = await authSrc.verifyTokenAsync(rawToken);
+      } catch {}
+    }
+    if (!user) return res.status(401).json({ error: 'Invalid Orbit token' });
+
+    if (!jwt) return res.status(500).json({ error: 'jsonwebtoken not installed' });
+
+    const target = req.body.target || 'erp-ui';
+    const validTargets = ['erp-ui', 'ai-trainer', 'nenova-agent'];
+    if (!validTargets.includes(target)) {
+      return res.status(400).json({ error: `Invalid target. Must be: ${validTargets.join(', ')}` });
+    }
+
+    const payload = {
+      sub: user.id,
+      email: user.email,
+      name: user.name,
+      plan: user.plan,
+      aud: target,
+      iss: 'orbit',
+      workspace: 'nenova',
+    };
+
+    const exchangeToken = jwt.sign(payload, EXCHANGE_SECRET, { expiresIn: EXCHANGE_EXPIRY });
+
+    res.json({
+      exchangeToken,
+      expiresIn: EXCHANGE_EXPIRY,
+      target,
+      user: { id: user.id, email: user.email, name: user.name },
+    });
+  });
+
+  /**
+   * POST /api/auth/verify
+   * 교환 토큰을 검증합니다. ERP UI / AI Trainer Hub가 호출합니다.
+   * @body {string} token  - 교환 JWT
+   * @body {string} target - ���인 시스템: 'erp-ui' | 'ai-trainer'
+   * @returns {{ valid: boolean, user: object }}
+   */
+  router.post('/auth/verify', (req, res) => {
+    if (!jwt) return res.status(500).json({ error: 'jsonwebtoken not installed' });
+
+    const { token, target } = req.body;
+    if (!token) return res.status(400).json({ error: 'token required' });
+
+    try {
+      const decoded = jwt.verify(token, EXCHANGE_SECRET);
+      // aud 확인: 대상 시스템이 일치하는지
+      if (target && decoded.aud !== target) {
+        return res.status(403).json({ valid: false, error: 'Token not issued for this target' });
+      }
+      res.json({
+        valid: true,
+        user: {
+          id: decoded.sub,
+          email: decoded.email,
+          name: decoded.name,
+          plan: decoded.plan,
+          workspace: decoded.workspace,
+        },
+        aud: decoded.aud,
+        exp: decoded.exp,
+      });
+    } catch (e) {
+      res.status(401).json({ valid: false, error: e.message });
+    }
+  });
+
   return router;
 }
 

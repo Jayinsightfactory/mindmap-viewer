@@ -1,7 +1,7 @@
 // @ts-check
 const { test, expect } = require('@playwright/test');
 
-const BASE  = 'https://sparkling-determination-production-c88b.up.railway.app';
+const BASE  = 'https://mindmap-viewer-production-adb2.up.railway.app';
 const EMAIL = 'dlaww@kicda.com';
 const PW    = 'orbit2024';
 

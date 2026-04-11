@@ -2,7 +2,7 @@
 # Orbit AI — 작업 완료 후 백업 (Git + Google Drive)
 # ───────────────────────────────────────────────────────────────
 # PowerShell에 복붙:
-#   irm https://raw.githubusercontent.com/dlaww-wq/mindmap-viewer/main/setup/orbit-backup.ps1 | iex
+#   irm https://raw.githubusercontent.com/Jayinsightfactory/mindmap-viewer/main/setup/orbit-backup.ps1 | iex
 # ═══════════════════════════════════════════════════════════════
 $ErrorActionPreference = "Stop"
 

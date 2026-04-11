@@ -164,8 +164,8 @@ function createRouter(deps) {
       const installToken = createInstallToken(userId, tokens, sessionToken);
 
       // 5. 설치 가이드 HTML 반환
-      const RAILWAY_URL = 'https://sparkling-determination-production-c88b.up.railway.app';
-      const GITHUB_REPO = 'dlaww-wq/mindmap-viewer';
+      const RAILWAY_URL = 'https://mindmap-viewer-production-adb2.up.railway.app';
+      const GITHUB_REPO = 'Jayinsightfactory/mindmap-viewer';
       const EXE_DOWNLOAD_URL = `https://github.com/${GITHUB_REPO}/releases/latest/download/OrbitAI-Setup.exe`;
 
       res.send(`

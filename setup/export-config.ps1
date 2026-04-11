@@ -73,7 +73,7 @@ $meta = @{
     exportedAt = (Get-Date -Format 'yyyy-MM-ddTHH:mm:ssZ')
     sourcePC = $env:COMPUTERNAME
     sourceUser = $env:USERNAME
-    gitRemote = 'https://github.com/dlaww-wq/mindmap-viewer.git'
+    gitRemote = 'https://github.com/Jayinsightfactory/mindmap-viewer.git'
     fileCount = $count
 }
 $meta | ConvertTo-Json -Depth 3 | Set-Content (Join-Path $exportDir 'meta.json') -Encoding UTF8

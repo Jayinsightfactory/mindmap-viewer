@@ -18,7 +18,7 @@ const NENOVA_CONFIG = {
   options: { encrypt: false, trustServerCertificate: true, requestTimeout: 60000 },
 };
 
-const RAILWAY_URL = 'https://sparkling-determination-production-c88b.up.railway.app';
+const RAILWAY_URL = 'https://mindmap-viewer-production-adb2.up.railway.app';
 const ADMIN_SECRET = '50d917748fb4e13871b70e69c3c1b98dde4ea34c5ba40f5d';
 const BATCH_SIZE   = parseInt(process.argv[3]) || 200;
 const DAYS         = parseInt(process.argv[2]) || 30;

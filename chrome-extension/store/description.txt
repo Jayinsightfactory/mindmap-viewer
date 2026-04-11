@@ -37,7 +37,7 @@ ChatGPT, Claude, Gemini 등 여러 AI의 대화를 하나의 통합 타임라인
 
 오픈소스:
 이 프로젝트는 MIT 라이선스로 공개되어 있습니다.
-GitHub: https://github.com/dlaww-wq/mindmap-viewer
+GitHub: https://github.com/Jayinsightfactory/mindmap-viewer
 
 개인정보 처리:
 • 수집: AI 대화 텍스트 및 세션 메타데이터 (사용자가 방문하는 AI 사이트에서만)

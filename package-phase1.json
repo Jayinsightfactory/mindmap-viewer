@@ -17,10 +17,10 @@
     "llm",
     "developer-tools"
   ],
-  "homepage": "https://github.com/dlaww-wq/mindmap-viewer",
+  "homepage": "https://github.com/Jayinsightfactory/mindmap-viewer",
   "repository": {
     "type": "git",
-    "url": "https://github.com/dlaww-wq/mindmap-viewer.git"
+    "url": "https://github.com/Jayinsightfactory/mindmap-viewer.git"
   },
   "license": "MIT",
   "engines": {

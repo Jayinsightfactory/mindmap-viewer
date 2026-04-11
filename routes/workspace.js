@@ -852,7 +852,7 @@ function createWorkspaceRouter({ getDb, db: _dbLegacy, verifyToken, getUserById,
         [code, wsId, req.user.id, expiresAt, maxUses]
       );
 
-      const baseUrl = process.env.PUBLIC_URL || `https://sparkling-determination-production-c88b.up.railway.app`;
+      const baseUrl = process.env.PUBLIC_URL || `https://mindmap-viewer-production-adb2.up.railway.app`;
       res.json({
         code,
         link: `${baseUrl}/invite/${code}`,

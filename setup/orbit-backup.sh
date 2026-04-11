@@ -3,7 +3,7 @@
 # Orbit AI — 작업 완료 후 백업 (Git + Google Drive)
 # ───────────────────────────────────────────────────────────────
 # 터미널에 복붙:
-#   bash <(curl -sL https://raw.githubusercontent.com/dlaww-wq/mindmap-viewer/main/setup/orbit-backup.sh)
+#   bash <(curl -sL https://raw.githubusercontent.com/Jayinsightfactory/mindmap-viewer/main/setup/orbit-backup.sh)
 # ═══════════════════════════════════════════════════════════════
 set -e
 

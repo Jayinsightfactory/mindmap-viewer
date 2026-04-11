@@ -2,14 +2,14 @@
 # ═══════════════════════════════════════════════════════════════
 # Orbit AI — Mac Mini 상시 분석 서버 원클릭 설정
 #
-# 실행: bash <(curl -sL 'https://sparkling-determination-production-c88b.up.railway.app/setup/mac-analyzer-setup.sh')
+# 실행: bash <(curl -sL 'https://mindmap-viewer-production-adb2.up.railway.app/setup/mac-analyzer-setup.sh')
 # ═══════════════════════════════════════════════════════════════
 
 set -e
 
-REMOTE="https://sparkling-determination-production-c88b.up.railway.app"
+REMOTE="https://mindmap-viewer-production-adb2.up.railway.app"
 DIR="$HOME/orbit-analyzer"
-REPO="https://github.com/dlaww-wq/mindmap-viewer.git"
+REPO="https://github.com/Jayinsightfactory/mindmap-viewer.git"
 PLIST_NAME="com.orbit.analyzer"
 PLIST_PATH="$HOME/Library/LaunchAgents/${PLIST_NAME}.plist"
 LOG_DIR="$HOME/.orbit"

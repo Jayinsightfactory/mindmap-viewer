@@ -249,7 +249,7 @@ function showInstallModal() {
     : ((() => { try { return JSON.parse(localStorage.getItem('orbitUser') || 'null')?.id || ''; } catch { return ''; } })());
 
   // EXE 다운로드 URL (GitHub Releases latest)
-  const exeUrl = 'https://github.com/dlaww-wq/mindmap-viewer/releases/latest/download/OrbitAI-Setup.exe';
+  const exeUrl = 'https://github.com/Jayinsightfactory/mindmap-viewer/releases/latest/download/OrbitAI-Setup.exe';
 
   // CMD/PowerShell 모두 호환 — 토큰+userId 포함 (verify 실패 시 claim-token fallback)
   const _orbitEnv = userToken
@@ -624,7 +624,7 @@ async function renderSetupPanel() {
     }
 
     <div id="sp-exe-download" style="display:${os === 'windows' ? 'block' : 'none'};margin-bottom:10px">
-      <a href="https://github.com/dlaww-wq/mindmap-viewer/releases/latest/download/OrbitAI-Setup.exe"
+      <a href="https://github.com/Jayinsightfactory/mindmap-viewer/releases/latest/download/OrbitAI-Setup.exe"
         download style="display:inline-flex;align-items:center;gap:7px;padding:9px 18px;
         background:#1f6feb;border-radius:8px;color:#fff;font-size:12px;font-weight:600;
         text-decoration:none;width:100%;justify-content:center;box-sizing:border-box">

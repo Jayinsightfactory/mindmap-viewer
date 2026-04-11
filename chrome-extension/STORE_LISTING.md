@@ -37,7 +37,7 @@ Orbit는 여러 AI 플랫폼의 대화를 자동으로 수집하여 3D 마인드
 
 ### 오픈소스
 이 프로젝트는 MIT 라이선스로 공개되어 있습니다.
-GitHub: https://github.com/dlaww-wq/mindmap-viewer
+GitHub: https://github.com/Jayinsightfactory/mindmap-viewer
 
 ## Screenshots Needed
 1. **팝업 UI**: 확장 프로그램 팝업 화면 (서버 연결 상태, 수집 현황)

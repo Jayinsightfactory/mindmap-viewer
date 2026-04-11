@@ -5,7 +5,7 @@
 ### 1단계: Railway 프로젝트 생성
 
 1. [railway.app](https://railway.app) → New Project → Deploy from GitHub repo
-2. `dlaww-wq/mindmap-viewer` 선택
+2. `Jayinsightfactory/mindmap-viewer` 선택
 
 ### 2단계: PostgreSQL 추가
 

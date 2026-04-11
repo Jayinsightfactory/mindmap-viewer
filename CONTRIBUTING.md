@@ -7,7 +7,7 @@
 ## 시작하기
 
 ```bash
-git clone https://github.com/dlaww-wq/mindmap-viewer.git
+git clone https://github.com/Jayinsightfactory/mindmap-viewer.git
 cd mindmap-viewer
 npm install
 cp .env.example .env    # 환경변수 설정

@@ -2,7 +2,7 @@
 # Claude Code 환경 설정 가져오기 (Import) + 전체 셋업
 #
 # 사용법:
-#   1. git clone https://github.com/dlaww-wq/mindmap-viewer.git
+#   1. git clone https://github.com/Jayinsightfactory/mindmap-viewer.git
 #   2. cd mindmap-viewer
 #   3. powershell -ExecutionPolicy Bypass -File setup\import-config.ps1
 #

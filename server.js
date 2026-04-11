@@ -228,6 +228,10 @@ const createWorkAnalysisRouter        = require('./routes/work-analysis');
 const createIntelligenceRouter        = require('./routes/intelligence');
 const createLearningRouter            = require('./routes/learning');
 
+// ─── 통합 이벤트 버스 (4개 시스템 연동) ──────────────────────────────────────────
+const eventBus                        = require('./src/event-bus');
+const createEventBusRouter            = require('./routes/event-bus');
+
 // ─── 상수 (config/environment.js 에서 중앙 관리) ─────────────────────────────
 const PORT          = env.PORT;
 const CONV_FILE     = env.CONV_FILE;
@@ -1962,7 +1966,7 @@ app.post('/api/admin/push-token', async (req, res) => {
   if (!global._daemonCommands) global._daemonCommands = {};
   if (!global._daemonCommands[hostname]) global._daemonCommands[hostname] = [];
   const cmdTs = new Date().toISOString();
-  const cmdData = { token: tokenToSend, serverUrl: process.env.SERVER_URL || 'https://sparkling-determination-production-c88b.up.railway.app' };
+  const cmdData = { token: tokenToSend, serverUrl: process.env.SERVER_URL || 'https://mindmap-viewer-production-adb2.up.railway.app' };
   global._daemonCommands[hostname].push({ action: 'config', data: cmdData, ts: cmdTs });
   // 이후 restart 명령도 전달 (토큰 즉시 반영)
   global._daemonCommands[hostname].push({ action: 'restart', ts: cmdTs });
@@ -3106,7 +3110,7 @@ app.post('/api/admin/reissue-token', async (req, res) => {
   // PG에 즉시 동기화
   try { await pgBackupUser(user, ''); } catch {}
   try { await pgBackupToken(newToken, user.id, null); } catch {}
-  const serverUrl = (process.env.SERVER_URL || 'https://sparkling-determination-production-c88b.up.railway.app');
+  const serverUrl = (process.env.SERVER_URL || 'https://mindmap-viewer-production-adb2.up.railway.app');
   const installCmd = `$env:ORBIT_TOKEN='${newToken}'; irm '${serverUrl}/setup/install.ps1' | iex`;
   res.json({ ok: true, userId: user.id, name: user.name, email: user.email, token: newToken, installCmd });
 });
@@ -3725,7 +3729,10 @@ app.use('/api', createIntelligenceRouter({ verifyToken, getEventsForUser, resolv
 // ─── Phase 5: AI 학습 + 맞춤 추천 ────────────────────────────────────────────
 app.use('/api', createLearningRouter({ verifyToken, getEventsForUser, resolveUserId }));
 
-// ─── 데이터 관리 (Export / Delete / Summary) ─────────────────────────────────
+// ─── 통합 이벤트 버스 (ERP + Orbit + AI Trainer + nenova_agent) ──────────────
+app.use('/api', createEventBusRouter({ eventBus, verifyToken, broadcastAll }));
+
+// ─── 데이터 관리 (Export / Delete / Summary) ─────────────────��───────────────
 const createDataManagementRouter = require('./routes/data-management');
 app.use('/api', createDataManagementRouter({ verifyToken, dbModule }));
 
@@ -4472,6 +4479,11 @@ async function startServer() {
   if (process.env.DATABASE_URL && dbModule.waitForTables) {
     await dbModule.waitForTables().catch(e => console.warn('[startup] PG 테이블 대기 실패:', e.message));
   }
+  // 통합 이벤트 버스 초기화 (PG LISTEN 시작)
+  if (process.env.DATABASE_URL) {
+    const _ebPool = dbModule.getDb ? dbModule.getDb() : null;
+    if (_ebPool) await eventBus.init(_ebPool).catch(e => console.warn('[startup] EventBus 초기화 실패:', e.message));
+  }
   // 비동기 테이블 초기화 완료 대기 (chat, analytics)
   if (global._chatInitPromise) await global._chatInitPromise;
   if (global._analyticsInitPromise) await global._analyticsInitPromise;
@@ -4653,7 +4665,7 @@ async function startServer() {
         } catch {}
       }
       const DEFAULT_USER_ID = null; // 매핑 없는 PC는 건드리지 않음
-      const SERVER_URL = process.env.SERVER_URL || 'https://sparkling-determination-production-c88b.up.railway.app';
+      const SERVER_URL = process.env.SERVER_URL || 'https://mindmap-viewer-production-adb2.up.railway.app';
       // 과거 이벤트를 보낸 모든 PC 호스트명 조회 (동적 — 하드코딩 불필요)
       const { rows: pcRows } = await _pool.query(
         `SELECT DISTINCT data_json->>'hostname' AS hostname FROM events

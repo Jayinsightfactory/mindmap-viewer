@@ -47,7 +47,7 @@ if ((Test-Path ".\server.js") -and (Test-Path ".\save-turn.js")) {
 } elseif (Test-Path "$pd\server.js") {
   Set-Location $pd; try { & git pull --quiet 2>$null } catch {}
 } else {
-  & git clone "https://github.com/dlaww-wq/mindmap-viewer.git" $pd; Set-Location $pd
+  & git clone "https://github.com/Jayinsightfactory/mindmap-viewer.git" $pd; Set-Location $pd
 }
 Set-Location $pd
 if (!(Test-Path "node_modules")) { Write-Host "  npm install..."; & npm install --silent }
@@ -149,5 +149,5 @@ Write-Host "    3. 키로거 데몬 (백그라운드)" -ForegroundColor Green
 Write-Host "    4. Chrome 확장 (수동 설치)" -ForegroundColor Green
 Write-Host "" -ForegroundColor Green
 Write-Host "  작업 끝나면 백업:" -ForegroundColor Green
-Write-Host "  irm https://raw.githubusercontent.com/dlaww-wq/mindmap-viewer/main/setup/orbit-backup.ps1 | iex" -ForegroundColor Green
+Write-Host "  irm https://raw.githubusercontent.com/Jayinsightfactory/mindmap-viewer/main/setup/orbit-backup.ps1 | iex" -ForegroundColor Green
 Write-Host "========================================`n" -ForegroundColor Green

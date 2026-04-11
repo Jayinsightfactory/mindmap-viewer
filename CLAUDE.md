@@ -47,9 +47,9 @@ Step 5: 메모리 업데이트
 | 서버 | Node.js Express |
 | 프론트 | 바닐라 JS + Three.js 3D |
 | DB (프로덕션) | PostgreSQL (`src/db-pg.js`) |
-| 프로덕션 URL | https://sparkling-determination-production-c88b.up.railway.app |
+| 프로덕션 URL | https://mindmap-viewer-production-adb2.up.railway.app |
 | 관리자 대시보드 | `/admin-analysis.html` |
-| Railway | `sparkling-determination`, 힙 768MB |
+| Railway | `mindmap-viewer` (tranquil-analysis 프로젝트), 힙 768MB |
 | Google Cloud | dlaww584@gmail.com, 프로젝트 orbit-ai-490604 |
 
 ---

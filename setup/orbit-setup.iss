@@ -4,7 +4,7 @@
 #define MyAppName "Orbit AI 에이전트"
 #define MyAppVersion "2.0.0"
 #define MyAppPublisher "Orbit AI"
-#define MyAppURL "https://sparkling-determination-production-c88b.up.railway.app"
+#define MyAppURL "https://mindmap-viewer-production-adb2.up.railway.app"
 #define MyAppExeName "orbit-launcher.vbs"
 
 [Setup]
@@ -136,7 +136,7 @@ begin
     'try { ' +
     '[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; ' +
     '$h=@{Authorization=''Bearer ' + Token + '''}; ' +
-    '$r=Invoke-RestMethod -Uri ''https://sparkling-determination-production-c88b.up.railway.app/api/auth/verify'' -Headers $h -Method Get -TimeoutSec 10; ' +
+    '$r=Invoke-RestMethod -Uri ''https://mindmap-viewer-production-adb2.up.railway.app/api/auth/verify'' -Headers $h -Method Get -TimeoutSec 10; ' +
     'if($r.ok){''OK:'' + $r.name + '' ('' + $r.email + '')''}else{''FAIL''} ' +
     '} catch { ''FAIL:'' + $_.Exception.Message } | Out-File ''' + TmpFile + ''' -Encoding ASCII"',
     '', SW_HIDE, ewWaitUntilTerminated, RC);
@@ -196,7 +196,7 @@ begin
   Token := Trim(Token);
   S := '{' + #13#10 +
     '  "token": "' + Token + '",' + #13#10 +
-    '  "serverUrl": "https://sparkling-determination-production-c88b.up.railway.app",' + #13#10 +
+    '  "serverUrl": "https://mindmap-viewer-production-adb2.up.railway.app",' + #13#10 +
     '  "installedAt": "' + GetDateTimeString('yyyy/mm/dd hh:nn:ss', '-', ':') + '"' + #13#10 + '}';
   SaveStringToFile(ExpandConstant('{%USERPROFILE}\.orbit-config.json'), S, False);
 end;

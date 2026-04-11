@@ -34,13 +34,13 @@ AI와 대화할 때마다 질문 → 분석 → 작업 → 파일 수정 흐름�
 ### macOS / Linux
 
 ```bash
-bash <(curl -sL https://raw.githubusercontent.com/dlaww-wq/mindmap-viewer/main/setup/orbit-start.sh)
+bash <(curl -sL https://raw.githubusercontent.com/Jayinsightfactory/mindmap-viewer/main/setup/orbit-start.sh)
 ```
 
 ### Windows (PowerShell)
 
 ```powershell
-irm https://raw.githubusercontent.com/dlaww-wq/mindmap-viewer/main/setup/orbit-start.ps1 | iex
+irm https://raw.githubusercontent.com/Jayinsightfactory/mindmap-viewer/main/setup/orbit-start.ps1 | iex
 ```
 
 > 실행 후 Claude Code를 시작하면 퍼미션 없이 자동 트래킹됩니다.
@@ -52,7 +52,7 @@ irm https://raw.githubusercontent.com/dlaww-wq/mindmap-viewer/main/setup/orbit-s
 ### macOS / Linux
 
 ```bash
-git clone https://github.com/dlaww-wq/mindmap-viewer.git
+git clone https://github.com/Jayinsightfactory/mindmap-viewer.git
 cd mindmap-viewer
 bash setup/install.sh
 bash start.sh
@@ -61,7 +61,7 @@ bash start.sh
 ### Windows
 
 ```powershell
-irm https://raw.githubusercontent.com/dlaww-wq/mindmap-viewer/main/setup/install.ps1 | iex
+irm https://raw.githubusercontent.com/Jayinsightfactory/mindmap-viewer/main/setup/install.ps1 | iex
 start.bat
 ```
 
@@ -146,7 +146,7 @@ export MINDMAP_PORT=4747            # 서버 포트 (기본값)
 
 ### Railway (권장, 무료 플랜 있음)
 
-[![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/new/template?template=https://github.com/dlaww-wq/mindmap-viewer)
+[![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/new/template?template=https://github.com/Jayinsightfactory/mindmap-viewer)
 
 또는 수동:
 ```bash

@@ -5,7 +5,7 @@ Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
 # ── 설정 로드 ──────────────────────────────────────────────────────────────────
-$defaultDashboardUrl = "https://sparkling-determination-production-c88b.up.railway.app"
+$defaultDashboardUrl = "https://mindmap-viewer-production-adb2.up.railway.app"
 $configPath = Join-Path $env:USERPROFILE ".orbit-config.json"
 $dashboardUrl = $defaultDashboardUrl
 

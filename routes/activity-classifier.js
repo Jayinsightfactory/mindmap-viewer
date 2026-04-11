@@ -470,7 +470,7 @@ function classifyBrowser(windowTitle) {
   }
 
   // Orbit AI
-  if (titleLow.includes('orbit') || titleLow.includes('sparkling-determination')) {
+  if (titleLow.includes('orbit') || titleLow.includes('mindmap-viewer')) {
     return {
       category: '업무',
       purpose: '관리',

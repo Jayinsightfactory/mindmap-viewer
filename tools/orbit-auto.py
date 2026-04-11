@@ -74,7 +74,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 # 상수
 # ---------------------------------------------------------------------------
-DEFAULT_SERVER = "https://sparkling-determination-production-c88b.up.railway.app"
+DEFAULT_SERVER = "https://mindmap-viewer-production-adb2.up.railway.app"
 CONFIG_DIR = Path.home() / ".orbit"
 CONFIG_FILE = CONFIG_DIR / "config.json"
 LOG_FILE = CONFIG_DIR / "auto.log"

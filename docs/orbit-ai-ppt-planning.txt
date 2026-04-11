@@ -49,7 +49,7 @@
 
 ■ 프로젝트명: Orbit AI (⬡ 오빗 AI)
 ■ 한 줄 소개: "중소기업을 위한 Palantir" — AI 기반 업무 자동화 & 컨설팅 플랫폼
-■ GitHub: https://github.com/dlaww-wq/mindmap-viewer
+■ GitHub: https://github.com/Jayinsightfactory/mindmap-viewer
 ■ 라이선스: MIT
 ■ Node.js ≥ 18.0.0 | Express 4.x | SQLite/PostgreSQL
 
@@ -1164,7 +1164,7 @@
  12. Git 이력 & 개발 현황
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
- ■ GitHub: https://github.com/dlaww-wq/mindmap-viewer
+ ■ GitHub: https://github.com/Jayinsightfactory/mindmap-viewer
 
  ■ 최근 주요 커밋 (2026년):
 

@@ -11,7 +11,7 @@ module.exports = defineConfig({
   workers: 1,
   reporter: [['list']],
   use: {
-    baseURL: 'https://sparkling-determination-production-c88b.up.railway.app',
+    baseURL: 'https://mindmap-viewer-production-adb2.up.railway.app',
     headless: true,
     viewport: { width: 1440, height: 900 },
     screenshot: 'off',
