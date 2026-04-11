@@ -1586,10 +1586,53 @@ function createProcessMining({ getDb, reportSheet }) {
   // GET /api/mining/kakao-debug — 카톡 시트 연결 디버그
   router.get('/kakao-debug', async (req, res) => {
     try {
-      const data = await _fetchKakaoSheetData();
-      res.json({ ok: true, count: data.length, tabs: [...new Set(data.map(e => e._tab))], sample: data.slice(0, 3) });
+      const https = require('https');
+      const crypto = require('crypto');
+      const SHEET_ID = '1pXLVZqiMwWt6Vh0IhWwASBvgLtZqLnbHXMWqOLNwAXU';
+
+      let cred;
+      try { cred = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON || '{}'); } catch { return res.json({ error: 'cred parse fail' }); }
+      if (!cred.private_key) return res.json({ error: 'no private_key', email: cred.client_email });
+
+      // Token
+      const now = Math.floor(Date.now() / 1000);
+      const b64 = o => Buffer.from(JSON.stringify(o)).toString('base64url');
+      const unsigned = `${b64({alg:'RS256',typ:'JWT'})}.${b64({iss:cred.client_email,scope:'https://www.googleapis.com/auth/spreadsheets.readonly',aud:'https://oauth2.googleapis.com/token',iat:now,exp:now+3600})}`;
+      const sign = crypto.createSign('RSA-SHA256'); sign.update(unsigned);
+      const jwt = `${unsigned}.${sign.sign(cred.private_key,'base64url')}`;
+      const body = `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${jwt}`;
+
+      const token = await new Promise((resolve) => {
+        const req = https.request({hostname:'oauth2.googleapis.com',path:'/token',method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded','Content-Length':Buffer.byteLength(body)}}, r => {
+          let d=''; r.on('data',c=>d+=c); r.on('end',()=>{try{resolve(JSON.parse(d))}catch{resolve({error:d.substring(0,200)})}});
+        }); req.on('error',e=>resolve({error:e.message})); req.write(body); req.end();
+      });
+
+      if (!token.access_token) return res.json({ step: 'token', result: token });
+
+      // Sheet meta
+      const meta = await new Promise((resolve) => {
+        https.get({hostname:'sheets.googleapis.com',path:`/v4/spreadsheets/${SHEET_ID}?fields=sheets.properties`,headers:{Authorization:`Bearer ${token.access_token}`}}, r => {
+          let d=''; r.on('data',c=>d+=c); r.on('end',()=>{try{resolve(JSON.parse(d))}catch{resolve({raw:d.substring(0,500)})}});
+        }).on('error',e=>resolve({error:e.message}));
+      });
+
+      const tabs = (meta.sheets || []).map(s => s.properties?.title);
+
+      // Try reading first tab
+      let sample = null;
+      if (tabs.length) {
+        const range = encodeURIComponent(`${tabs[0]}!A1:E5`);
+        sample = await new Promise((resolve) => {
+          https.get({hostname:'sheets.googleapis.com',path:`/v4/spreadsheets/${SHEET_ID}/values/${range}`,headers:{Authorization:`Bearer ${token.access_token}`}}, r => {
+            let d=''; r.on('data',c=>d+=c); r.on('end',()=>{try{resolve(JSON.parse(d))}catch{resolve({raw:d.substring(0,500)})}});
+          }).on('error',e=>resolve({error:e.message}));
+        });
+      }
+
+      res.json({ ok: true, email: cred.client_email, tabs, tabCount: tabs.length, meta: meta.error || null, sample });
     } catch (e) {
-      res.json({ ok: false, error: e.message, stack: e.stack?.substring(0, 300) });
+      res.json({ ok: false, error: e.message });
     }
   });
 
