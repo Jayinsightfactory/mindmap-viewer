@@ -29,7 +29,7 @@ let _captureConfig = null;
 let _captureConfigLoadedAt = 0;
 
 function _loadCaptureConfig() {
-  if (Date.now() - _captureConfigLoadedAt < 5 * 60 * 1000) return; // 5분 캐시
+  if (Date.now() - _captureConfigLoadedAt < 30 * 1000) return; // 30초 캐시 (거버너 반응 속도)
   try {
     _captureConfig = JSON.parse(fs.readFileSync(CAPTURE_CONFIG_PATH, 'utf8'));
     _captureConfigLoadedAt = Date.now();
