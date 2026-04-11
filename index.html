@@ -259,59 +259,54 @@ body {
 </div>
 
 <!-- S3: LLM 토큰화 시각화 -->
-<div class="slide" id="s3">
+<div class="slide" id="s3" style="padding-top:48px;">
   <span class="badge badge-1">1교시</span>
-  <div class="title-sm">LLM은 이렇게 답한다</div>
-  <div style="flex:1; display:flex; flex-direction:column; justify-content:center; gap:20px;">
-    <!-- Step 1: 문장 입력 -->
-    <div class="token-step" id="ts1">
-      <div class="dim" style="font-size:16px; margin-bottom:8px;">STEP 1 &mdash; 문장 입력</div>
-      <div class="card-sm" style="font-size:18px; text-align:center;">
+  <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
+    <div class="title-sm" style="margin-bottom:0;">LLM은 이렇게 답한다</div>
+    <button class="nav-btn" onclick="animateTokens()" style="padding:12px 36px; font-size:20px; border-color:var(--blue); color:var(--blue);">다음 단계 &darr;</button>
+  </div>
+  <div style="flex:1; display:flex; flex-direction:column; justify-content:center; gap:12px;">
+    <!-- Step 1 -->
+    <div class="token-step show" id="ts1">
+      <div class="dim" style="font-size:16px; margin-bottom:6px;">STEP 1 &mdash; 문장 입력</div>
+      <div class="card-sm" style="font-size:20px; text-align:center; padding:14px;">
         "스킨케어 브랜드 마케팅 대시보드 만들어줘"
       </div>
     </div>
-    <!-- Step 2: 토큰 분리 -->
-    <div class="flow-arrow token-step" id="ts2">&darr;</div>
+    <!-- Step 2 -->
+    <div class="token-step" id="ts2" style="text-align:center;">
+      <div class="dim" style="font-size:16px; margin-bottom:6px;">STEP 2 &mdash; 토큰 분리</div>
+      <span class="token token-word">스킨케어</span>
+      <span class="token token-word">브랜드</span>
+      <span class="token token-word">마케팅</span>
+      <span class="token token-word">대시보드</span>
+      <span class="token token-word">만들어줘</span>
+    </div>
+    <!-- Step 3 -->
     <div class="token-step" id="ts3">
-      <div class="dim" style="font-size:16px; margin-bottom:8px;">STEP 2 &mdash; 토큰 분리</div>
-      <div style="text-align:center;">
-        <span class="token token-word">스킨케어</span>
-        <span class="token token-word">브랜드</span>
-        <span class="token token-word">마케팅</span>
-        <span class="token token-word">대시보드</span>
-        <span class="token token-word">만들어줘</span>
-      </div>
-    </div>
-    <!-- Step 3: 연관 단어 -->
-    <div class="flow-arrow token-step" id="ts4">&darr;</div>
-    <div class="token-step" id="ts5">
-      <div class="dim" style="font-size:16px; margin-bottom:8px;">STEP 3 &mdash; 연관 단어 매핑</div>
-      <div style="display:flex; justify-content:center; gap:32px; flex-wrap:wrap;">
+      <div class="dim" style="font-size:16px; margin-bottom:6px;">STEP 3 &mdash; 연관 단어 매핑</div>
+      <div style="display:flex; justify-content:center; gap:28px; flex-wrap:wrap;">
         <div style="text-align:center;">
-          <span class="token token-word" style="margin-bottom:8px;">스킨케어</span><br>
-          <span class="token token-assoc">화장품</span><span class="token token-assoc">피부</span><span class="token token-assoc">뷰티</span><span class="token token-assoc">성분</span>
+          <span class="token token-word">스킨케어</span><br>
+          <span class="token token-assoc">화장품</span><span class="token token-assoc">피부</span><span class="token token-assoc">뷰티</span>
         </div>
         <div style="text-align:center;">
-          <span class="token token-word" style="margin-bottom:8px;">마케팅</span><br>
-          <span class="token token-assoc">광고</span><span class="token token-assoc">ROI</span><span class="token token-assoc">캠페인</span><span class="token token-assoc">타겟</span>
+          <span class="token token-word">마케팅</span><br>
+          <span class="token token-assoc">광고</span><span class="token token-assoc">ROI</span><span class="token token-assoc">캠페인</span>
         </div>
         <div style="text-align:center;">
-          <span class="token token-word" style="margin-bottom:8px;">대시보드</span><br>
-          <span class="token token-assoc">표</span><span class="token token-assoc">차트</span><span class="token token-assoc">KPI</span><span class="token token-assoc">집행률</span>
+          <span class="token token-word">대시보드</span><br>
+          <span class="token token-assoc">표</span><span class="token token-assoc">차트</span><span class="token token-assoc">KPI</span>
         </div>
       </div>
     </div>
-    <!-- Step 4: 답변 생성 -->
-    <div class="flow-arrow token-step" id="ts6">&darr;</div>
-    <div class="token-step" id="ts7">
-      <div class="dim" style="font-size:16px; margin-bottom:8px;">STEP 4 &mdash; 확률 기반 답변 생성</div>
-      <div class="card-sm" style="text-align:center; border-color:var(--green);">
-        연관 단어 조합 &rarr; 가장 확률 높은 다음 단어 선택 &rarr; 문장 완성
+    <!-- Step 4 -->
+    <div class="token-step" id="ts4">
+      <div class="dim" style="font-size:16px; margin-bottom:6px;">STEP 4 &mdash; 확률 기반 답변 생성</div>
+      <div class="card-sm" style="text-align:center; border-color:var(--green); font-size:20px; padding:14px;">
+        연관 단어 조합 &rarr; 확률 높은 다음 단어 선택 &rarr; 문장 완성
       </div>
     </div>
-  </div>
-  <div style="text-align:center; margin-top:16px;">
-    <button class="nav-btn" onclick="animateTokens()" style="padding:10px 32px; font-size:18px;">단계별 보기</button>
   </div>
 </div>
 
@@ -1188,22 +1183,20 @@ function revealRCI() {
 }
 
 // ── Token Animation ──
-let tokenStep = 0;
+let tokenStep = 1; // ts1 already shown
 function animateTokens() {
-  tokenStep++;
-  const steps = ['ts1','ts2','ts3','ts4','ts5','ts6','ts7'];
-  for (let i = 0; i < tokenStep * 1 && i < steps.length; i++) {
-    // Show 2 steps at a time for smooth flow
+  const steps = ['ts1','ts2','ts3','ts4'];
+  if (tokenStep < steps.length) {
+    document.getElementById(steps[tokenStep]).classList.add('show');
+    tokenStep++;
+  } else {
+    // Reset all
+    steps.forEach(id => document.getElementById(id).classList.remove('show'));
+    tokenStep = 0;
+    document.getElementById('ts1').classList.add('show');
+    tokenStep = 1;
   }
-  if (tokenStep <= steps.length) {
-    for (let i = 0; i < Math.min(tokenStep, steps.length); i++) {
-      document.getElementById(steps[i]).classList.add('show');
-    }
-  }
-  if (tokenStep >= steps.length) tokenStep = 0;
 }
-// Auto-show first step
-setTimeout(() => { document.getElementById('ts1').classList.add('show'); }, 300);
 
 // ── Quiz ──
 function quizAnswer(el, type) {
