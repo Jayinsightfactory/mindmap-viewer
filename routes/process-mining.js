@@ -1272,25 +1272,28 @@ function createProcessMining({ getDb, reportSheet }) {
         const orderData = await _internalGet(`${baseUrl}/api/nenova/orders?limit=300`);
         if (orderData?.items) {
           const custOrders = {};
+          addNode('nenova:주문관리', 'nenova_screen', '주문관리', { group: 'nenova' });
           for (const o of orderData.items) {
-            const cn = o.CustomerName || '';
+            const cn = o.CustName || o.CustomerName || '';
             if (!cn) continue;
             const custId = `cust:${cn}`;
-            addNode(custId, 'customer', cn, { group: 'customer', custType: o.Group1 });
+            addNode(custId, 'customer', cn, { group: 'customer' });
             custOrders[custId] = (custOrders[custId] || 0) + 1;
-
-            // 주문 → 전산화면
-            addNode('nenova:주문관리', 'nenova_screen', '주문관리', { group: 'nenova' });
-
-            // 꽃 종류
-            const flower = o.Flower || o.FlowerName || '';
-            if (flower) {
-              addNode(`product:${flower}`, 'product', flower, { group: 'product' });
-              links.push({ source: 'nenova:주문관리', target: `product:${flower}`, value: 1, type: 'product' });
-            }
           }
           for (const [custId, count] of Object.entries(custOrders)) {
             links.push({ source: custId, target: 'nenova:주문관리', value: count, type: 'order' });
+          }
+        }
+
+        // B-1b. 주문 상세 → 상품(꽃) 추출
+        const dashData = await _internalGet(`${baseUrl}/api/nenova/dashboard`);
+        if (dashData?.byFlower) {
+          addNode('nenova:주문관리', 'nenova_screen', '주문관리', { group: 'nenova' });
+          for (const f of dashData.byFlower.slice(0, 12)) {
+            const name = f.flower || f.Flower || '';
+            if (!name) continue;
+            addNode(`product:${name}`, 'product', name, { group: 'product', total: f.total });
+            links.push({ source: 'nenova:주문관리', target: `product:${name}`, value: Math.round(f.total || 1), type: 'product' });
           }
         }
 
@@ -1299,7 +1302,7 @@ function createProcessMining({ getDb, reportSheet }) {
         if (shipData?.items) {
           const custShips = {};
           for (const s of shipData.items) {
-            const cn = s.CustomerName || '';
+            const cn = s.CustName || s.CustomerName || '';
             if (!cn) continue;
             const custId = `cust:${cn}`;
             addNode(custId, 'customer', cn, { group: 'customer' });
