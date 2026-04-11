@@ -303,8 +303,15 @@ body {
     <!-- Step 4 -->
     <div class="token-step" id="ts4">
       <div class="dim" style="font-size:16px; margin-bottom:6px;">STEP 4 &mdash; 확률 기반 답변 생성</div>
-      <div class="card-sm" style="text-align:center; border-color:var(--green); font-size:20px; padding:14px;">
-        연관 단어 조합 &rarr; 확률 높은 다음 단어 선택 &rarr; 문장 완성
+      <div class="card-sm" style="border-color:var(--green); padding:16px 20px;">
+        <!-- 후보 단어 + 확률 -->
+        <div id="gen-candidates" style="display:flex; gap:10px; justify-content:center; margin-bottom:12px; min-height:36px;"></div>
+        <!-- 생성 중인 문장 -->
+        <div style="background:var(--surface); border-radius:10px; padding:14px 20px; font-size:19px; min-height:48px; display:flex; align-items:center;">
+          <span class="dim" style="margin-right:8px;">AI &rarr;</span>
+          <span id="gen-output" style="color:var(--green);"></span>
+          <span id="gen-cursor" style="color:var(--green); animation:pulse 1s infinite;">|</span>
+        </div>
       </div>
     </div>
   </div>
@@ -1188,14 +1195,53 @@ function animateTokens() {
   const steps = ['ts1','ts2','ts3','ts4'];
   if (tokenStep < steps.length) {
     document.getElementById(steps[tokenStep]).classList.add('show');
+    if (tokenStep === 3) setTimeout(startGenAnimation, 400);
     tokenStep++;
   } else {
     // Reset all
     steps.forEach(id => document.getElementById(id).classList.remove('show'));
+    document.getElementById('gen-output').textContent = '';
+    document.getElementById('gen-candidates').innerHTML = '';
     tokenStep = 0;
     document.getElementById('ts1').classList.add('show');
     tokenStep = 1;
   }
+}
+
+// ── Answer Generation Animation ──
+function startGenAnimation() {
+  const sequence = [
+    { candidates: [{w:'스킨케어',p:72},{w:'화장품',p:18},{w:'뷰티',p:10}], pick: '스킨케어' },
+    { candidates: [{w:'브랜드의',p:65},{w:'제품',p:22},{w:'시장',p:13}], pick: '브랜드의' },
+    { candidates: [{w:'마케팅',p:78},{w:'홍보',p:15},{w:'광고',p:7}], pick: '마케팅' },
+    { candidates: [{w:'대시보드를',p:81},{w:'전략을',p:12},{w:'계획을',p:7}], pick: '대시보드를' },
+    { candidates: [{w:'아래와',p:68},{w:'다음과',p:25},{w:'표로',p:7}], pick: '아래와' },
+    { candidates: [{w:'같이',p:85},{w:'같은',p:10},{w:'함께',p:5}], pick: '같이' },
+    { candidates: [{w:'구성합니다.',p:74},{w:'작성합니다.',p:20},{w:'정리합니다.',p:6}], pick: '구성합니다.' },
+  ];
+  const output = document.getElementById('gen-output');
+  const candBox = document.getElementById('gen-candidates');
+  output.textContent = '';
+  let i = 0;
+
+  function nextWord() {
+    if (i >= sequence.length) { candBox.innerHTML = ''; return; }
+    const step = sequence[i];
+    // Show candidates with probabilities
+    candBox.innerHTML = step.candidates.map(c =>
+      `<span style="padding:6px 14px; border-radius:8px; font-size:15px; ${c.w === step.pick
+        ? 'background:rgba(52,211,153,0.2); color:var(--green); border:1px solid var(--green);'
+        : 'background:var(--card); color:var(--text-dim); border:1px solid var(--border);'
+      }">${c.w} <span style="font-size:12px; opacity:0.7;">${c.p}%</span></span>`
+    ).join('');
+    // After a beat, add the picked word to output
+    setTimeout(() => {
+      output.textContent += (i > 0 ? ' ' : '') + step.pick;
+      i++;
+      setTimeout(nextWord, 500);
+    }, 600);
+  }
+  nextWord();
 }
 
 // ── Quiz ──
