@@ -1105,10 +1105,17 @@ body {
         </div>
       </div>
     </div>
-    <div style="flex:0 0 280px; display:flex; flex-direction:column; justify-content:center; align-items:center; gap:24px;">
-      <div style="font-size:56px;">&#x1F3AF;</div>
+    <div style="flex:0 0 300px; display:flex; flex-direction:column; justify-content:center; align-items:center; gap:20px;">
+      <div style="font-size:48px;">&#x1F3AF;</div>
       <div style="font-size:18px; font-weight:700; text-align:center;">완성한 질문을<br>Gemini에 입력</div>
-      <div class="dim" style="font-size:17px; text-align:center;">목표: 1교시 대시보드<br>수준의 결과</div>
+      <div class="dim" style="font-size:16px; text-align:center;">목표: 1교시 대시보드<br>수준의 결과</div>
+      <!-- 미리보기 -->
+      <div id="prompt-preview" class="card-sm" style="width:100%; font-size:14px; color:var(--text-dim); line-height:1.6; max-height:120px; overflow-y:auto; display:none;"></div>
+      <!-- 복사 버튼 -->
+      <button onclick="copyPrompt()" style="width:100%; padding:16px 24px; font-size:20px; font-weight:700; background:var(--blue); color:#fff; border:none; border-radius:12px; cursor:pointer; transition:.2s;">
+        프롬프트 복사하기
+      </button>
+      <div id="copy-msg" style="font-size:15px; color:var(--green); min-height:24px;"></div>
     </div>
   </div>
 </div>
@@ -1174,6 +1181,9 @@ function nextSlide() { showSlide(current + 1); }
 function prevSlide() { showSlide(current - 1); }
 
 document.addEventListener('keydown', e => {
+  // S28 input 중이면 키보드 네비게이션 차단
+  const ae = document.activeElement;
+  if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA')) return;
   if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); nextSlide(); }
   if (e.key === 'ArrowLeft') { e.preventDefault(); prevSlide(); }
 });
@@ -1256,6 +1266,57 @@ function quizAnswer(el, type) {
 function toggleCheck(el) {
   el.classList.toggle('checked');
 }
+
+// ── Prompt Builder (S28) ──
+function buildPrompt() {
+  const s = document.getElementById('s28');
+  const inputs = s.querySelectorAll('.tmpl-input');
+  // [0]=역할, [1]=업종, [2]=팀구성, [3]=예산, [4]=시점, [5]=목적, [6]=출력형식, [7]=포함항목, [8]=표현방식, [9]=분량
+  const v = Array.from(inputs).map(i => i.value.trim());
+  let prompt = '';
+  if (v[0]) prompt += '당신은 ' + v[0] + '입니다.\n\n';
+  const ctx = [];
+  if (v[1]) ctx.push('업종: ' + v[1]);
+  if (v[2]) ctx.push('팀 구성: ' + v[2]);
+  if (v[3]) ctx.push('예산: ' + v[3]);
+  if (v[4]) ctx.push('시점: ' + v[4]);
+  if (v[5]) ctx.push('목적: ' + v[5]);
+  if (ctx.length) prompt += '[상황]\n' + ctx.join('\n') + '\n\n';
+  const inst = [];
+  if (v[6]) inst.push('출력 형식: ' + v[6]);
+  if (v[7]) inst.push('포함 항목: ' + v[7]);
+  if (v[8]) inst.push('표현 방식: ' + v[8]);
+  if (v[9]) inst.push('분량: ' + v[9]);
+  if (inst.length) prompt += '[지시]\n' + inst.join('\n');
+  return prompt.trim();
+}
+
+function updatePreview() {
+  const p = buildPrompt();
+  const el = document.getElementById('prompt-preview');
+  if (p) {
+    el.style.display = 'block';
+    el.textContent = p;
+  } else {
+    el.style.display = 'none';
+  }
+}
+
+function copyPrompt() {
+  const p = buildPrompt();
+  if (!p) {
+    document.getElementById('copy-msg').textContent = '입력된 내용이 없습니다';
+    setTimeout(() => document.getElementById('copy-msg').textContent = '', 2000);
+    return;
+  }
+  navigator.clipboard.writeText(p).then(() => {
+    document.getElementById('copy-msg').textContent = '클립보드에 복사됨!';
+    setTimeout(() => document.getElementById('copy-msg').textContent = '', 2000);
+  });
+}
+
+// Listen for input changes on S28
+document.getElementById('s28').addEventListener('input', updatePreview);
 
 // ── RCI Detail (placeholder) ──
 function showRCIDetail(type) {
