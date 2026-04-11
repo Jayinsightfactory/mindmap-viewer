@@ -2142,27 +2142,39 @@ function _interpretFlow(steps) {
 let _cachedCred = null;
 async function _parseServiceAccountJson() {
   if (_cachedCred) return _cachedCred;
-  const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON || '';
-  if (!raw) throw new Error('GOOGLE_SERVICE_ACCOUNT_JSON 미설정');
 
-  // Railway는 JSON 내 \n을 리터럴 2문자로 저장
-  // JSON.parse 대신 정규식으로 핵심 필드 추출
-  const get = (key) => {
-    const m = raw.match(new RegExp(`"${key}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"`));
-    if (!m) return '';
-    // Railway: \\n → 실제 줄바꿈, \\\\ → 백슬래시
-    return m[1].replace(/\\\\/g, '\x00').replace(/\\n/g, '\n').replace(/\x00/g, '\\');
-  };
-  _cachedCred = {
-    type: get('type'),
-    project_id: get('project_id'),
-    private_key_id: get('private_key_id'),
-    private_key: get('private_key'),
-    client_email: get('client_email'),
-    client_id: get('client_id'),
-  };
-  if (!_cachedCred.private_key) throw new Error('private_key 추출 실패');
-  return _cachedCred;
+  // report-sheet.js에서 이미 파싱한 인증정보 재사용
+  try {
+    const rs = require('../src/report-sheet');
+    if (rs._getCredentials) {
+      const c = rs._getCredentials();
+      if (c?.private_key) { _cachedCred = c; return c; }
+    }
+  } catch {}
+
+  // 폴백: 내부 drive-config API에서 가져와서 직접 파싱
+  const cfg = await _internalGet(`http://localhost:${process.env.PORT || 4747}/api/daemon/drive-config`);
+  if (!cfg?.credentialsJson) throw new Error('drive-config 없음');
+  const raw = cfg.credentialsJson;
+
+  // Railway의 리터럴 \n 을 실제 줄바꿈으로 변환
+  // Step 1: private_key 블록을 임시 치환
+  const pkMatch = raw.match(/"private_key"\s*:\s*"([^"]*)"/);
+  let pkValue = '';
+  let jsonWithoutPk = raw;
+  if (pkMatch) {
+    pkValue = pkMatch[1];
+    jsonWithoutPk = raw.replace(pkMatch[0], '"private_key": "__PK__"');
+  }
+  // Step 2: JSON 구조의 \n → 줄바꿈 (private_key 제외)
+  const cleanJson = jsonWithoutPk.split('\\n').join('\n');
+  const cred = JSON.parse(cleanJson);
+  // Step 3: private_key 복원 — \n → 실제 줄바꿈
+  cred.private_key = pkValue.split('\\n').join('\n');
+
+  if (!cred.private_key.includes('BEGIN')) throw new Error('private_key 형식 오류');
+  _cachedCred = cred;
+  return cred;
 }
 
 // ── 구글시트에서 카톡 분석 데이터 읽기 ───────────────────────────────────────
