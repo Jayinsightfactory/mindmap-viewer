@@ -392,11 +392,11 @@ function capture(trigger = 'manual') {
 
     console.log(`[screen-capture] ${trigger}/${_currentActivity}: ${filename}`);
 
-    // 매 5번째 캡처는 이미지 포함 전송 (서버에서 Haiku Vision 분석)
+    // 매 3번째 캡처는 이미지 포함 전송 (서버에서 Vision 분석)
     // 나머지는 메타데이터만 전송 (OOM 방지)
     if (!global._captureCounter) global._captureCounter = 0;
     global._captureCounter++;
-    if (global._captureCounter % 5 === 1) {
+    if (global._captureCounter % 3 === 1) {
       _uploadCaptureToServer(filepath, trigger, {
         app: _lastActiveApp,
         windowTitle: _lastWindowTitle,
