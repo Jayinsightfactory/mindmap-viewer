@@ -1,0 +1,1228 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI &amp; LLM &amp; Prompt Engineering</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap');
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --bg: #0b0f1a;
+  --surface: #141a2a;
+  --card: #1c2438;
+  --border: #2a3350;
+  --text: #e8ecf4;
+  --text-dim: #7a8bb5;
+  --blue: #4f8ff7;
+  --green: #34d399;
+  --orange: #fb923c;
+  --red: #f87171;
+  --yellow: #fbbf24;
+  --purple: #a78bfa;
+}
+
+body {
+  font-family: 'Noto Sans KR', -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  overflow: hidden;
+  user-select: none;
+}
+
+/* ── Slide System ── */
+.slide {
+  display: none;
+  width: 100vw;
+  height: 100vh;
+  padding: 60px 80px;
+  flex-direction: column;
+  justify-content: center;
+  position: relative;
+}
+.slide.active { display: flex; }
+
+/* ── Navigation ── */
+.nav { position: fixed; bottom: 0; left: 0; right: 0; height: 48px; background: rgba(11,15,26,0.9); display: flex; align-items: center; justify-content: space-between; padding: 0 30px; z-index: 100; border-top: 1px solid var(--border); }
+.nav-btn { background: none; border: 1px solid var(--border); color: var(--text-dim); padding: 6px 18px; border-radius: 6px; cursor: pointer; font-size: 13px; transition: .2s; }
+.nav-btn:hover { border-color: var(--blue); color: var(--blue); }
+.progress-wrap { flex: 1; margin: 0 24px; height: 3px; background: var(--surface); border-radius: 2px; }
+.progress-bar { height: 100%; background: var(--blue); border-radius: 2px; transition: width .3s; }
+.slide-num { color: var(--text-dim); font-size: 12px; min-width: 60px; text-align: center; }
+
+/* ── Section Badge ── */
+.badge { position: absolute; top: 24px; left: 40px; font-size: 12px; font-weight: 500; padding: 4px 14px; border-radius: 20px; letter-spacing: 1px; }
+.badge-1 { background: rgba(79,143,247,0.15); color: var(--blue); }
+.badge-2 { background: rgba(52,211,153,0.15); color: var(--green); }
+.badge-3 { background: rgba(251,146,60,0.15); color: var(--orange); }
+
+/* ── Typography ── */
+.title { font-size: 52px; font-weight: 900; line-height: 1.2; letter-spacing: -1px; margin-bottom: 32px; }
+.title-sm { font-size: 38px; font-weight: 700; line-height: 1.3; margin-bottom: 24px; }
+.subtitle { font-size: 22px; font-weight: 400; color: var(--text-dim); margin-bottom: 40px; }
+.kw { font-size: 18px; font-weight: 500; line-height: 1.8; }
+.kw-lg { font-size: 24px; font-weight: 500; }
+.accent-blue { color: var(--blue); }
+.accent-green { color: var(--green); }
+.accent-orange { color: var(--orange); }
+.accent-red { color: var(--red); }
+.accent-yellow { color: var(--yellow); }
+.accent-purple { color: var(--purple); }
+.dim { color: var(--text-dim); }
+
+/* ── Layouts ── */
+.row { display: flex; gap: 32px; align-items: stretch; }
+.col { flex: 1; }
+.center-col { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+.gap-16 { gap: 16px; }
+.gap-24 { gap: 24px; }
+.mt-24 { margin-top: 24px; }
+.mt-40 { margin-top: 40px; }
+.mb-16 { margin-bottom: 16px; }
+
+/* ── Cards ── */
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 32px; }
+.card-sm { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px 24px; }
+.card-glow-blue { border-color: rgba(79,143,247,0.3); box-shadow: 0 0 30px rgba(79,143,247,0.08); }
+.card-glow-green { border-color: rgba(52,211,153,0.3); box-shadow: 0 0 30px rgba(52,211,153,0.08); }
+.card-glow-orange { border-color: rgba(251,146,60,0.3); box-shadow: 0 0 30px rgba(251,146,60,0.08); }
+
+/* ── Table ── */
+.tbl { width: 100%; border-collapse: collapse; font-size: 15px; }
+.tbl th { text-align: left; padding: 12px 16px; color: var(--text-dim); font-weight: 500; font-size: 13px; border-bottom: 1px solid var(--border); }
+.tbl td { padding: 12px 16px; border-bottom: 1px solid rgba(42,51,80,0.5); }
+.tbl tr:last-child td { border-bottom: none; }
+
+/* ── Mosaic ── */
+.mosaic { background: linear-gradient(135deg, var(--card) 25%, var(--border) 25%, var(--border) 50%, var(--card) 50%, var(--card) 75%, var(--border) 75%); background-size: 8px 8px; color: transparent; border-radius: 12px; padding: 24px 32px; cursor: pointer; transition: all .6s ease; position: relative; overflow: hidden; min-height: 80px; }
+.mosaic::after { content: '클릭하여 공개'; position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); color: var(--text-dim); font-size: 14px; font-weight: 500; letter-spacing: 2px; }
+.mosaic.revealed { background: var(--card); color: var(--text); border: 1px solid var(--border); }
+.mosaic.revealed::after { display: none; }
+
+/* ── Chat UI ── */
+.chat-box { background: var(--surface); border-radius: 16px; padding: 24px; max-height: 420px; overflow-y: auto; border: 1px solid var(--border); }
+.chat-q { background: var(--blue); color: #fff; padding: 12px 18px; border-radius: 16px 16px 4px 16px; font-size: 14px; max-width: 80%; margin-left: auto; margin-bottom: 16px; line-height: 1.6; }
+.chat-a { background: var(--card); padding: 16px 20px; border-radius: 4px 16px 16px 16px; font-size: 14px; max-width: 90%; line-height: 1.7; border: 1px solid var(--border); }
+.chat-label { font-size: 12px; color: var(--text-dim); margin-bottom: 6px; font-weight: 500; }
+
+/* ── Tags ── */
+.tag { display: inline-block; padding: 6px 16px; border-radius: 20px; font-size: 13px; font-weight: 500; margin: 4px; }
+.tag-blue { background: rgba(79,143,247,0.15); color: var(--blue); }
+.tag-green { background: rgba(52,211,153,0.15); color: var(--green); }
+.tag-orange { background: rgba(251,146,60,0.15); color: var(--orange); }
+.tag-red { background: rgba(248,113,113,0.15); color: var(--red); }
+.tag-purple { background: rgba(167,139,250,0.15); color: var(--purple); }
+
+/* ── Quiz ── */
+.quiz-opt { background: var(--card); border: 2px solid var(--border); border-radius: 12px; padding: 16px 24px; cursor: pointer; transition: .2s; font-size: 16px; text-align: left; width: 100%; margin-bottom: 12px; color: var(--text); }
+.quiz-opt:hover { border-color: var(--blue); }
+.quiz-opt.correct { border-color: var(--green); background: rgba(52,211,153,0.1); }
+.quiz-opt.wrong { border-color: var(--red); background: rgba(248,113,113,0.05); }
+
+/* ── Token Animation ── */
+.token-step { opacity: 0; transform: translateY(20px); transition: all .5s ease; }
+.token-step.show { opacity: 1; transform: translateY(0); }
+.token { display: inline-block; padding: 8px 18px; border-radius: 8px; margin: 4px; font-weight: 500; font-size: 16px; }
+.token-word { background: rgba(79,143,247,0.15); color: var(--blue); border: 1px solid rgba(79,143,247,0.3); }
+.token-assoc { background: rgba(167,139,250,0.1); color: var(--purple); border: 1px solid rgba(167,139,250,0.2); font-size: 13px; padding: 5px 12px; }
+
+/* ── Flow Arrow ── */
+.flow-arrow { font-size: 28px; color: var(--text-dim); text-align: center; padding: 8px 0; }
+.flow-arrow-h { font-size: 24px; color: var(--text-dim); padding: 0 16px; display: flex; align-items: center; }
+
+/* ── Data Source ── */
+.source-item { display: flex; align-items: center; gap: 12px; padding: 10px 16px; background: var(--surface); border-radius: 10px; margin-bottom: 8px; font-size: 14px; font-weight: 500; }
+.source-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+/* ── Comparison Grid ── */
+.cmp-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 24px; }
+.cmp-card { text-align: center; }
+.cmp-card .logo { font-size: 32px; font-weight: 900; margin-bottom: 16px; }
+
+/* ── RCI Blocks ── */
+.rci-block { padding: 20px 28px; border-radius: 12px; margin-bottom: 16px; font-size: 17px; line-height: 1.7; }
+.rci-r { background: rgba(79,143,247,0.1); border-left: 4px solid var(--blue); }
+.rci-c { background: rgba(52,211,153,0.1); border-left: 4px solid var(--green); }
+.rci-i { background: rgba(251,146,60,0.1); border-left: 4px solid var(--orange); }
+
+/* ── Checklist ── */
+.check-item { display: flex; align-items: center; gap: 12px; padding: 12px 0; font-size: 16px; border-bottom: 1px solid rgba(42,51,80,0.3); }
+.check-box { width: 22px; height: 22px; border: 2px solid var(--border); border-radius: 6px; flex-shrink: 0; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: .2s; }
+.check-box.checked { background: var(--green); border-color: var(--green); }
+.check-box.checked::after { content: '\2713'; color: #fff; font-size: 14px; font-weight: 700; }
+
+/* ── Template Input ── */
+.tmpl-input { background: var(--surface); border: 1px dashed var(--border); border-radius: 8px; padding: 12px 16px; color: var(--text); font-size: 16px; width: 100%; outline: none; font-family: inherit; }
+.tmpl-input:focus { border-color: var(--blue); }
+.tmpl-label { font-size: 13px; color: var(--text-dim); margin-bottom: 6px; font-weight: 500; }
+
+/* ── Status Dots ── */
+.dot-ok { color: var(--green); }
+.dot-warn { color: var(--yellow); }
+.dot-bad { color: var(--red); }
+
+/* ── Keyframes ── */
+@keyframes fadeUp { from { opacity:0; transform:translateY(30px); } to { opacity:1; transform:translateY(0); } }
+@keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.5; } }
+.anim-fade { animation: fadeUp .6s ease forwards; }
+.anim-pulse { animation: pulse 2s infinite; }
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<!-- ============================================================ -->
+<!-- 1교시: AI / LLM 구조의 이해                                    -->
+<!-- ============================================================ -->
+
+<!-- S1: 후킹 - 완벽한 답변 -->
+<div class="slide" id="s1">
+  <span class="badge badge-1">1교시</span>
+  <div class="title">AI가 만든 대시보드</div>
+  <div class="row" style="flex:1; overflow:hidden;">
+    <div class="col" style="overflow-y:auto;">
+      <div class="card" style="font-size:14px; line-height:1.8;">
+        <div style="font-weight:700; font-size:18px; margin-bottom:16px;">주간 마케팅 통합 대시보드 <span class="dim">(4월 3주차)</span></div>
+        <div style="margin-bottom:12px; font-size:13px; color:var(--text-dim);">전체 예산: 3,000만 원 &nbsp;|&nbsp; 집행액: 2,250만 원 (75%) &nbsp;|&nbsp; 전체 ROAS: 420%</div>
+        <table class="tbl">
+          <tr><th>채널</th><th>담당</th><th>핵심 KPI</th><th>목표대비</th><th>예산소진</th><th>진단</th></tr>
+          <tr><td class="accent-blue">SNS</td><td>김OO</td><td>인게이지먼트 4.2%</td><td class="dot-ok">초과</td><td>60%</td><td>커뮤니티 반응 우수</td></tr>
+          <tr><td class="accent-orange">퍼포먼스</td><td>이OO</td><td>ROAS 510% / CPA 1.2만</td><td class="dot-ok">우수</td><td>95%</td><td>예산 조기 소진</td></tr>
+          <tr><td class="accent-purple">콘텐츠</td><td>박OO</td><td>CTR 3.5%</td><td class="dot-warn">정체</td><td>70%</td><td>소재 피로도 발생</td></tr>
+          <tr><td class="accent-green">CRM</td><td>최OO</td><td>재구매율 18%</td><td class="dot-ok">달성</td><td>50%</td><td>타겟 세분화 완료</td></tr>
+          <tr><td class="accent-red">오프라인</td><td>정OO</td><td>팝업 방문/샘플링</td><td class="dot-bad">미달</td><td>40%</td><td>전환 저조</td></tr>
+        </table>
+        <div style="margin-top:16px; padding:14px 18px; background:rgba(251,146,60,0.08); border-radius:10px; font-size:13px;">
+          <strong class="accent-orange">예산 재배분 제안</strong> &mdash; 오프라인 잔여 300만 &rarr; 퍼포먼스 전용 &rarr; 월말 매출 +15% 기대
+        </div>
+        <div style="margin-top:12px; font-size:13px;">
+          <strong>액션 아이템</strong>: 예산이관(이OO/4.14) &bull; 소재교체(박OO/4.15) &bull; 쿠폰발송(최OO/4.16) &bull; 현장개선(정OO/4.15) &bull; 시뮬레이션(김OO/4.17)
+        </div>
+      </div>
+    </div>
+    <div class="col" style="display:flex; flex-direction:column; justify-content:center; gap:32px;">
+      <div style="font-size:28px; font-weight:700; line-height:1.5;">
+        월요일 아침<br>이거 하나로 회의 끝
+      </div>
+      <div style="font-size:20px; color:var(--text-dim);">이 답변이 나온 질문은?</div>
+      <div class="mosaic" id="mosaic1" onclick="revealMosaic('mosaic1','mosaic1-content')">
+        <span id="mosaic1-content">
+          "매주 월요일 팀 회의에서 쓸 주간 대시보드를 만들어주세요."<br><br>
+          <span style="color:var(--text-dim); font-size:14px;">+ ██████████████████<br>+ ██████████████████<br>+ ██████████████████</span>
+        </span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- S2: 왜 구조화가 필요한가 -->
+<div class="slide" id="s2">
+  <span class="badge badge-1">1교시</span>
+  <div class="title-sm">같은 AI, 다른 결과</div>
+  <div class="row" style="flex:1;">
+    <div class="col">
+      <div class="card" style="height:100%; border-color:var(--red); opacity:0.85;">
+        <div style="font-size:14px; color:var(--red); font-weight:700; margin-bottom:16px;">일반 질문</div>
+        <div style="font-size:20px; font-weight:700; margin-bottom:24px;">"대시보드 만들어줘"</div>
+        <div class="flow-arrow">&darr;</div>
+        <div style="padding:20px; background:var(--surface); border-radius:10px; margin-top:16px; font-size:14px; color:var(--text-dim); line-height:1.8;">
+          &bull; 일반적인 대시보드 설명<br>
+          &bull; 포함 항목 나열<br>
+          &bull; 툴 추천 (Notion, Excel...)<br>
+          &bull; 우리 팀 맥락 없음<br>
+          &bull; 바로 쓸 수 없음
+        </div>
+      </div>
+    </div>
+    <div style="display:flex; align-items:center; font-size:40px; color:var(--text-dim);">VS</div>
+    <div class="col">
+      <div class="card" style="height:100%; border-color:var(--green);">
+        <div style="font-size:14px; color:var(--green); font-weight:700; margin-bottom:16px;">구조화된 질문</div>
+        <div style="font-size:20px; font-weight:700; margin-bottom:24px;">"역할 + 상황 + 지시"</div>
+        <div class="flow-arrow">&darr;</div>
+        <div style="padding:20px; background:var(--surface); border-radius:10px; margin-top:16px; font-size:14px; line-height:1.8;">
+          <span class="dot-ok">&bull;</span> 채널별 KPI 표<br>
+          <span class="dot-ok">&bull;</span> 예산 집행률 퍼센트<br>
+          <span class="dot-ok">&bull;</span> 캠페인 상태 색상 구분<br>
+          <span class="dot-ok">&bull;</span> 담당자 + 마감일<br>
+          <span class="dot-ok">&bull;</span> 예산 재배분 제안
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- S3: LLM 토큰화 시각화 -->
+<div class="slide" id="s3">
+  <span class="badge badge-1">1교시</span>
+  <div class="title-sm">LLM은 이렇게 답한다</div>
+  <div style="flex:1; display:flex; flex-direction:column; justify-content:center; gap:20px;">
+    <!-- Step 1: 문장 입력 -->
+    <div class="token-step" id="ts1">
+      <div class="dim" style="font-size:13px; margin-bottom:8px;">STEP 1 &mdash; 문장 입력</div>
+      <div class="card-sm" style="font-size:18px; text-align:center;">
+        "스킨케어 브랜드 마케팅 대시보드 만들어줘"
+      </div>
+    </div>
+    <!-- Step 2: 토큰 분리 -->
+    <div class="flow-arrow token-step" id="ts2">&darr;</div>
+    <div class="token-step" id="ts3">
+      <div class="dim" style="font-size:13px; margin-bottom:8px;">STEP 2 &mdash; 토큰 분리</div>
+      <div style="text-align:center;">
+        <span class="token token-word">스킨케어</span>
+        <span class="token token-word">브랜드</span>
+        <span class="token token-word">마케팅</span>
+        <span class="token token-word">대시보드</span>
+        <span class="token token-word">만들어줘</span>
+      </div>
+    </div>
+    <!-- Step 3: 연관 단어 -->
+    <div class="flow-arrow token-step" id="ts4">&darr;</div>
+    <div class="token-step" id="ts5">
+      <div class="dim" style="font-size:13px; margin-bottom:8px;">STEP 3 &mdash; 연관 단어 매핑</div>
+      <div style="display:flex; justify-content:center; gap:32px; flex-wrap:wrap;">
+        <div style="text-align:center;">
+          <span class="token token-word" style="margin-bottom:8px;">스킨케어</span><br>
+          <span class="token token-assoc">화장품</span><span class="token token-assoc">피부</span><span class="token token-assoc">뷰티</span><span class="token token-assoc">성분</span>
+        </div>
+        <div style="text-align:center;">
+          <span class="token token-word" style="margin-bottom:8px;">마케팅</span><br>
+          <span class="token token-assoc">광고</span><span class="token token-assoc">ROI</span><span class="token token-assoc">캠페인</span><span class="token token-assoc">타겟</span>
+        </div>
+        <div style="text-align:center;">
+          <span class="token token-word" style="margin-bottom:8px;">대시보드</span><br>
+          <span class="token token-assoc">표</span><span class="token token-assoc">차트</span><span class="token token-assoc">KPI</span><span class="token token-assoc">집행률</span>
+        </div>
+      </div>
+    </div>
+    <!-- Step 4: 답변 생성 -->
+    <div class="flow-arrow token-step" id="ts6">&darr;</div>
+    <div class="token-step" id="ts7">
+      <div class="dim" style="font-size:13px; margin-bottom:8px;">STEP 4 &mdash; 확률 기반 답변 생성</div>
+      <div class="card-sm" style="text-align:center; border-color:var(--green);">
+        연관 단어 조합 &rarr; 가장 확률 높은 다음 단어 선택 &rarr; 문장 완성
+      </div>
+    </div>
+  </div>
+  <div style="text-align:center; margin-top:16px;">
+    <button class="nav-btn" onclick="animateTokens()" style="padding:10px 32px; font-size:15px;">단계별 보기</button>
+  </div>
+</div>
+
+<!-- S4: Gemini 학습 데이터 -->
+<div class="slide" id="s4">
+  <span class="badge badge-1">1교시</span>
+  <div class="title-sm"><span class="accent-blue">Gemini</span> &mdash; 학습 데이터 &rarr; 답변 특성</div>
+  <div class="row" style="flex:1; align-items:center;">
+    <div class="col">
+      <div style="font-size:14px; color:var(--text-dim); margin-bottom:12px; font-weight:500;">학습 데이터</div>
+      <div class="source-item"><span class="source-dot" style="background:var(--blue);"></span>Google 검색 데이터</div>
+      <div class="source-item"><span class="source-dot" style="background:var(--red);"></span>YouTube 영상 / 자막</div>
+      <div class="source-item"><span class="source-dot" style="background:var(--green);"></span>Google Scholar 논문</div>
+      <div class="source-item"><span class="source-dot" style="background:var(--yellow);"></span>Gmail / Docs 패턴</div>
+      <div class="source-item"><span class="source-dot" style="background:var(--orange);"></span>Google Ads 데이터</div>
+    </div>
+    <div class="flow-arrow-h" style="font-size:48px;">&rarr;</div>
+    <div class="col" style="display:flex; align-items:center; justify-content:center;">
+      <div style="width:140px; height:140px; border-radius:50%; background:linear-gradient(135deg, var(--blue), #6366f1); display:flex; align-items:center; justify-content:center; font-size:28px; font-weight:900;">LLM</div>
+    </div>
+    <div class="flow-arrow-h" style="font-size:48px;">&rarr;</div>
+    <div class="col">
+      <div style="font-size:14px; color:var(--text-dim); margin-bottom:12px; font-weight:500;">답변 특성</div>
+      <div class="card-sm card-glow-blue" style="margin-bottom:12px;">
+        <div class="accent-blue" style="font-weight:700;">최신 트렌드 반영</div>
+        <div class="dim" style="font-size:13px;">구글 검색 기반 실시간성</div>
+      </div>
+      <div class="card-sm card-glow-blue" style="margin-bottom:12px;">
+        <div class="accent-blue" style="font-weight:700;">실무 양식 강점</div>
+        <div class="dim" style="font-size:13px;">Docs/Sheets 패턴 학습</div>
+      </div>
+      <div class="card-sm card-glow-blue">
+        <div class="accent-blue" style="font-weight:700;">구글 생태계 연동</div>
+        <div class="dim" style="font-size:13px;">무료 + 즉시 연결</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- S5: GPT 학습 데이터 -->
+<div class="slide" id="s5">
+  <span class="badge badge-1">1교시</span>
+  <div class="title-sm"><span class="accent-green">GPT</span> &mdash; 학습 데이터 &rarr; 답변 특성</div>
+  <div class="row" style="flex:1; align-items:center;">
+    <div class="col">
+      <div style="font-size:14px; color:var(--text-dim); margin-bottom:12px; font-weight:500;">학습 데이터</div>
+      <div class="source-item"><span class="source-dot" style="background:var(--green);"></span>웹 크롤링 (Reddit, 블로그, 위키)</div>
+      <div class="source-item"><span class="source-dot" style="background:var(--purple);"></span>도서 / 학술 논문</div>
+      <div class="source-item"><span class="source-dot" style="background:var(--blue);"></span>GitHub 코드</div>
+      <div class="source-item"><span class="source-dot" style="background:var(--yellow);"></span>Microsoft 파트너십</div>
+      <div class="source-item"><span class="source-dot" style="background:var(--orange);"></span>뉴스 / 미디어</div>
+    </div>
+    <div class="flow-arrow-h" style="font-size:48px;">&rarr;</div>
+    <div class="col" style="display:flex; align-items:center; justify-content:center;">
+      <div style="width:140px; height:140px; border-radius:50%; background:linear-gradient(135deg, var(--green), #059669); display:flex; align-items:center; justify-content:center; font-size:28px; font-weight:900;">LLM</div>
+    </div>
+    <div class="flow-arrow-h" style="font-size:48px;">&rarr;</div>
+    <div class="col">
+      <div style="font-size:14px; color:var(--text-dim); margin-bottom:12px; font-weight:500;">답변 특성</div>
+      <div class="card-sm card-glow-green" style="margin-bottom:12px;">
+        <div class="accent-green" style="font-weight:700;">범용 지식 넓음</div>
+        <div class="dim" style="font-size:13px;">웹 전체 크롤링 기반</div>
+      </div>
+      <div class="card-sm card-glow-green" style="margin-bottom:12px;">
+        <div class="accent-green" style="font-weight:700;">논리적 구조화</div>
+        <div class="dim" style="font-size:13px;">방법론 / 프레임워크 제시</div>
+      </div>
+      <div class="card-sm card-glow-green">
+        <div class="accent-green" style="font-weight:700;">코드 생성 강점</div>
+        <div class="dim" style="font-size:13px;">GitHub 데이터 학습</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- S6: Grok 학습 데이터 -->
+<div class="slide" id="s6">
+  <span class="badge badge-1">1교시</span>
+  <div class="title-sm"><span class="accent-orange">Grok</span> &mdash; 학습 데이터 &rarr; 답변 특성</div>
+  <div class="row" style="flex:1; align-items:center;">
+    <div class="col">
+      <div style="font-size:14px; color:var(--text-dim); margin-bottom:12px; font-weight:500;">학습 데이터</div>
+      <div class="source-item"><span class="source-dot" style="background:var(--orange);"></span>X (트위터) 실시간 포스트</div>
+      <div class="source-item"><span class="source-dot" style="background:var(--blue);"></span>뉴스 피드</div>
+      <div class="source-item"><span class="source-dot" style="background:var(--green);"></span>소셜 트렌드 데이터</div>
+      <div class="source-item"><span class="source-dot" style="background:var(--purple);"></span>웹 크롤링</div>
+      <div class="source-item"><span class="source-dot" style="background:var(--yellow);"></span>xAI 자체 데이터</div>
+    </div>
+    <div class="flow-arrow-h" style="font-size:48px;">&rarr;</div>
+    <div class="col" style="display:flex; align-items:center; justify-content:center;">
+      <div style="width:140px; height:140px; border-radius:50%; background:linear-gradient(135deg, var(--orange), #ea580c); display:flex; align-items:center; justify-content:center; font-size:28px; font-weight:900;">LLM</div>
+    </div>
+    <div class="flow-arrow-h" style="font-size:48px;">&rarr;</div>
+    <div class="col">
+      <div style="font-size:14px; color:var(--text-dim); margin-bottom:12px; font-weight:500;">답변 특성</div>
+      <div class="card-sm card-glow-orange" style="margin-bottom:12px;">
+        <div class="accent-orange" style="font-weight:700;">실시간 데이터 반영</div>
+        <div class="dim" style="font-size:13px;">X 포스트 기반 최신성</div>
+      </div>
+      <div class="card-sm card-glow-orange" style="margin-bottom:12px;">
+        <div class="accent-orange" style="font-weight:700;">직설적 톤</div>
+        <div class="dim" style="font-size:13px;">소셜 미디어 화법</div>
+      </div>
+      <div class="card-sm card-glow-orange">
+        <div class="accent-orange" style="font-weight:700;">소셜 트렌드 민감</div>
+        <div class="dim" style="font-size:13px;">바이럴 / 여론 파악</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- S7: 선택 기준 + 퀴즈 -->
+<div class="slide" id="s7">
+  <span class="badge badge-1">1교시</span>
+  <div class="title-sm">작업에 따라 선택이 다르다</div>
+  <div class="row" style="margin-bottom:32px;">
+    <div class="col card card-glow-blue" style="text-align:center;">
+      <div class="accent-blue" style="font-size:24px; font-weight:900; margin-bottom:12px;">Gemini</div>
+      <div class="dim" style="font-size:14px;">문서 / 양식 제작<br>구글 연동<br>한국어 양식</div>
+    </div>
+    <div class="col card card-glow-green" style="text-align:center;">
+      <div class="accent-green" style="font-size:24px; font-weight:900; margin-bottom:12px;">GPT</div>
+      <div class="dim" style="font-size:14px;">분석 / 기획 / 코딩<br>범용 지식<br>프레임워크 제시</div>
+    </div>
+    <div class="col card card-glow-orange" style="text-align:center;">
+      <div class="accent-orange" style="font-size:24px; font-weight:900; margin-bottom:12px;">Grok</div>
+      <div class="dim" style="font-size:14px;">트렌드 조사 / 뉴스<br>실시간 반응<br>소셜 분석</div>
+    </div>
+  </div>
+  <div>
+    <div style="font-size:16px; font-weight:700; margin-bottom:16px;">QUIZ</div>
+    <div style="font-size:15px; margin-bottom:12px; color:var(--text-dim);">Q1. 매주 회의용 보고서 양식이 필요합니다.</div>
+    <div style="display:flex; gap:12px; margin-bottom:20px;">
+      <button class="quiz-opt" style="flex:1;" onclick="quizAnswer(this,'wrong')">A. GPT</button>
+      <button class="quiz-opt" style="flex:1;" onclick="quizAnswer(this,'correct')">B. Gemini</button>
+      <button class="quiz-opt" style="flex:1;" onclick="quizAnswer(this,'wrong')">C. Grok</button>
+    </div>
+    <div style="font-size:15px; margin-bottom:12px; color:var(--text-dim);">Q2. 경쟁사 SNS 반응을 실시간으로 파악하고 싶습니다.</div>
+    <div style="display:flex; gap:12px;">
+      <button class="quiz-opt" style="flex:1;" onclick="quizAnswer(this,'wrong')">A. Gemini</button>
+      <button class="quiz-opt" style="flex:1;" onclick="quizAnswer(this,'wrong')">B. GPT</button>
+      <button class="quiz-opt" style="flex:1;" onclick="quizAnswer(this,'correct')">C. Grok</button>
+    </div>
+  </div>
+</div>
+
+<!-- S8: 동일 질문 비교 - Gemini -->
+<div class="slide" id="s8">
+  <span class="badge badge-1">1교시</span>
+  <div class="row" style="align-items:flex-start; flex:1;">
+    <div style="flex:0 0 120px;">
+      <div style="font-size:28px; font-weight:900; color:var(--blue);">Gemini</div>
+      <div class="dim" style="font-size:13px; margin-top:4px;">동일 질문 비교</div>
+    </div>
+    <div class="col">
+      <div class="chat-box" style="height:100%;">
+        <div class="chat-label">질문</div>
+        <div class="chat-q">마케팅팀 부장이 매주 월요일 팀 회의에서 쓸 대시보드를 만들어줘. 팀원 5명, 월 예산 3000만원.</div>
+        <div class="chat-label" style="margin-top:16px;">Gemini 답변 요약</div>
+        <div class="chat-a">
+          <strong>주간 마케팅 성과 리포트</strong><br><br>
+          <span class="dim">전체 예산 3,000만 | 집행률 54%</span><br><br>
+          <table class="tbl" style="font-size:12px;">
+            <tr><th>담당</th><th>채널</th><th>핵심 지표</th><th>전주비</th></tr>
+            <tr><td>A</td><td>SNS</td><td>도달률 / 팔로워</td><td class="dot-ok">+5%</td></tr>
+            <tr><td>B</td><td>퍼포먼스</td><td>ROAS / CPA</td><td class="dot-bad">-2%</td></tr>
+            <tr><td>C</td><td>콘텐츠</td><td>조회수 / 체류</td><td class="dot-ok">+12%</td></tr>
+            <tr><td>D</td><td>CRM</td><td>재방문 / 쿠폰</td><td class="dim">&mdash;</td></tr>
+            <tr><td>E</td><td>오프라인</td><td>방문객 / 샘플</td><td class="dot-ok">+8%</td></tr>
+          </table>
+          <div style="margin-top:12px; font-size:12px; color:var(--text-dim);">+ 예산 집행 상세 + 캠페인 상태 + 액션 아이템 + 회의 팁</div>
+        </div>
+      </div>
+    </div>
+    <div style="flex:0 0 200px; display:flex; flex-direction:column; justify-content:center; gap:12px;">
+      <div style="font-size:14px; font-weight:700; margin-bottom:8px;">답변 특징</div>
+      <span class="tag tag-blue">실무 양식</span>
+      <span class="tag tag-blue">표 형태</span>
+      <span class="tag tag-blue">바로 복사 가능</span>
+      <span class="tag tag-blue">노션/시트 안내</span>
+    </div>
+  </div>
+</div>
+
+<!-- S9: 동일 질문 비교 - GPT -->
+<div class="slide" id="s9">
+  <span class="badge badge-1">1교시</span>
+  <div class="row" style="align-items:flex-start; flex:1;">
+    <div style="flex:0 0 120px;">
+      <div style="font-size:28px; font-weight:900; color:var(--green);">GPT</div>
+      <div class="dim" style="font-size:13px; margin-top:4px;">동일 질문 비교</div>
+    </div>
+    <div class="col">
+      <div class="chat-box" style="height:100%;">
+        <div class="chat-label">질문</div>
+        <div class="chat-q">마케팅팀 부장이 매주 월요일 팀 회의에서 쓸 대시보드를 만들어줘. 팀원 5명, 월 예산 3000만원.</div>
+        <div class="chat-label" style="margin-top:16px;">GPT 답변 요약</div>
+        <div class="chat-a">
+          <strong>마케팅팀 주간 대시보드 설계 가이드</strong><br><br>
+          <span class="accent-green" style="font-weight:600;">1. 전체 요약 (Executive Summary)</span><br>
+          <span class="dim" style="font-size:13px;">&bull; 매출/리드/전환/ROAS &bull; 예산 집행률 &bull; 핵심 이슈 3가지</span><br><br>
+          <span class="accent-green" style="font-weight:600;">2. 채널별 성과 테이블</span><br>
+          <span class="dim" style="font-size:13px;">&bull; 담당/채널/KPI/전주비/목표비/코멘트 (빈 템플릿)</span><br><br>
+          <span class="accent-green" style="font-weight:600;">3. 예산 집행 현황</span><br>
+          <span class="dim" style="font-size:13px;">&bull; 파이차트 추천 &bull; 게이지 차트 추천</span><br><br>
+          <span class="accent-green" style="font-weight:600;">4~5. 캠페인 상태 + 액션 아이템</span><br>
+          <span class="dim" style="font-size:13px;">&bull; Looker Studio / Notion / Excel 추천</span>
+        </div>
+      </div>
+    </div>
+    <div style="flex:0 0 200px; display:flex; flex-direction:column; justify-content:center; gap:12px;">
+      <div style="font-size:14px; font-weight:700; margin-bottom:8px;">답변 특징</div>
+      <span class="tag tag-green">설계 가이드</span>
+      <span class="tag tag-green">프레임워크</span>
+      <span class="tag tag-green">빈 템플릿</span>
+      <span class="tag tag-green">툴 추천 포함</span>
+    </div>
+  </div>
+</div>
+
+<!-- S10: 동일 질문 비교 - Grok -->
+<div class="slide" id="s10">
+  <span class="badge badge-1">1교시</span>
+  <div class="row" style="align-items:flex-start; flex:1;">
+    <div style="flex:0 0 120px;">
+      <div style="font-size:28px; font-weight:900; color:var(--orange);">Grok</div>
+      <div class="dim" style="font-size:13px; margin-top:4px;">동일 질문 비교</div>
+    </div>
+    <div class="col">
+      <div class="chat-box" style="height:100%;">
+        <div class="chat-label">질문</div>
+        <div class="chat-q">마케팅팀 부장이 매주 월요일 팀 회의에서 쓸 대시보드를 만들어줘. 팀원 5명, 월 예산 3000만원.</div>
+        <div class="chat-label" style="margin-top:16px;">Grok 답변 요약</div>
+        <div class="chat-a">
+          <strong>마케팅팀 주간 대시보드</strong> <span class="dim">(4월 13일 월요일)</span><br><br>
+          <span class="dim" style="font-size:12px;">월 예산 3,000만 | 집행 2,080만 (69.3%) | 총 전환 915건 (+12%)</span><br><br>
+          <table class="tbl" style="font-size:12px;">
+            <tr><th>채널</th><th>도달</th><th>클릭</th><th>전환</th><th>지출</th><th>ROI</th></tr>
+            <tr><td>SNS</td><td>45,000</td><td>4,200</td><td>420</td><td>420만</td><td class="accent-orange">1.8x</td></tr>
+            <tr><td>퍼포먼스</td><td>32,000</td><td>2,800</td><td>280</td><td>750만</td><td class="accent-orange">2.1x</td></tr>
+            <tr><td>콘텐츠</td><td>18,000</td><td>1,500</td><td>120</td><td>350만</td><td>1.4x</td></tr>
+            <tr><td>CRM</td><td>8,000</td><td>900</td><td>80</td><td>180만</td><td class="accent-orange">2.3x</td></tr>
+            <tr><td>오프라인</td><td>3,000</td><td>200</td><td>15</td><td>280만</td><td class="accent-red">0.8x</td></tr>
+          </table>
+          <div style="margin-top:12px; font-size:12px; color:var(--text-dim);">+ 집행률 프로그레스바 + 캠페인 진행률 + 담당별 액션</div>
+        </div>
+      </div>
+    </div>
+    <div style="flex:0 0 200px; display:flex; flex-direction:column; justify-content:center; gap:12px;">
+      <div style="font-size:14px; font-weight:700; margin-bottom:8px;">답변 특징</div>
+      <span class="tag tag-orange">구체적 숫자</span>
+      <span class="tag tag-orange">완성형 보고서</span>
+      <span class="tag tag-orange">프로그레스바</span>
+      <span class="tag tag-orange">실시간 톤</span>
+    </div>
+  </div>
+</div>
+
+<!-- S11: 차이점 정리 + 왜 Gemini -->
+<div class="slide" id="s11">
+  <span class="badge badge-1">1교시</span>
+  <div class="title-sm">핵심 차이 + 왜 Gemini인가</div>
+  <div class="cmp-grid" style="margin-bottom:36px;">
+    <div class="card card-glow-blue cmp-card">
+      <div class="logo accent-blue">Gemini</div>
+      <div style="text-align:left; font-size:15px; line-height:2;">
+        1. 바로 쓸 수 있는 양식<br>
+        2. 구글 도구와 연동<br>
+        3. 한국어 양식 깔끔
+      </div>
+    </div>
+    <div class="card card-glow-green cmp-card">
+      <div class="logo accent-green">GPT</div>
+      <div style="text-align:left; font-size:15px; line-height:2;">
+        1. 설계 방법론 제시<br>
+        2. 범용 지식 기반 분석<br>
+        3. 코드 / 로직 강점
+      </div>
+    </div>
+    <div class="card card-glow-orange cmp-card">
+      <div class="logo accent-orange">Grok</div>
+      <div style="text-align:left; font-size:15px; line-height:2;">
+        1. 숫자까지 채운 완성본<br>
+        2. 실시간 트렌드 반영<br>
+        3. 직설적 톤
+      </div>
+    </div>
+  </div>
+  <div class="card" style="display:flex; align-items:center; gap:32px; background:rgba(79,143,247,0.05); border-color:rgba(79,143,247,0.2);">
+    <div style="font-size:28px; font-weight:900; color:var(--blue);">이번 강의 &rarr; Gemini</div>
+    <div style="display:flex; gap:16px; flex-wrap:wrap;">
+      <span class="tag tag-blue">실무 양식 즉시 생성</span>
+      <span class="tag tag-blue">구글 계정 = 무료</span>
+      <span class="tag tag-blue">Sheets / Docs 즉시 연동</span>
+    </div>
+  </div>
+</div>
+
+<!-- S12: RCI 떡밥 회수 -->
+<div class="slide" id="s12">
+  <span class="badge badge-1">1교시</span>
+  <div class="title-sm">처음 질문, 공개합니다</div>
+  <div style="flex:1; display:flex; flex-direction:column; justify-content:center; gap:24px;">
+    <div class="mosaic" id="mosaic2" onclick="revealRCI()" style="min-height:auto; padding:32px;">
+      <div id="rci-reveal" style="font-size:16px; line-height:2;">
+        <div class="rci-block rci-r">
+          <span class="accent-blue" style="font-weight:700;">ROLE</span><br>
+          당신은 10년차 마케팅 전략 컨설턴트입니다
+        </div>
+        <div class="rci-block rci-c">
+          <span class="accent-green" style="font-weight:700;">CONTEXT</span><br>
+          스킨케어 브랜드 &bull; 마케팅팀 5명 (SNS/퍼포먼스/콘텐츠/CRM/오프라인)<br>
+          월 예산 3,000만원 &bull; 현재 3주차 &bull; 매주 월요일 팀 회의용
+        </div>
+        <div class="rci-block rci-i">
+          <span class="accent-orange" style="font-weight:700;">INSTRUCTION</span><br>
+          표 형태 &bull; 색상 구분 &bull; 채널별 KPI 실무 지표<br>
+          예산 재배분 제안 &bull; 담당자 + 마감일 포함 &bull; 5분 내 의사결정 구조
+        </div>
+      </div>
+    </div>
+    <div style="text-align:center; font-size:20px; color:var(--text-dim);">
+      역할 &bull; 맥락 &bull; 지시 &rarr; <strong style="color:var(--text);">3교시에서 직접 만듭니다</strong>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- 2교시: Gemini / GPT / Grok 실습                                -->
+<!-- ============================================================ -->
+
+<!-- S13: 복습 퀴즈 -->
+<div class="slide" id="s13">
+  <span class="badge badge-2">2교시</span>
+  <div class="title-sm">복습 퀴즈</div>
+  <div style="flex:1; display:flex; flex-direction:column; justify-content:center; max-width:700px;">
+    <div style="margin-bottom:40px;">
+      <div style="font-size:17px; margin-bottom:16px;">Q1. LLM이 문장을 처리할 때 가장 먼저 하는 일은?</div>
+      <button class="quiz-opt" onclick="quizAnswer(this,'wrong')">A. 문장 전체를 이해한다</button>
+      <button class="quiz-opt" onclick="quizAnswer(this,'correct')">B. 단어 단위로 쪼갠다 (토큰화)</button>
+      <button class="quiz-opt" onclick="quizAnswer(this,'wrong')">C. 인터넷에서 검색한다</button>
+    </div>
+    <div>
+      <div style="font-size:17px; margin-bottom:16px;">Q2. Gemini가 문서 양식에 강한 이유는?</div>
+      <button class="quiz-opt" onclick="quizAnswer(this,'wrong')">A. 가장 최신 모델이라서</button>
+      <button class="quiz-opt" onclick="quizAnswer(this,'correct')">B. 구글 문서/검색 데이터를 학습해서</button>
+      <button class="quiz-opt" onclick="quizAnswer(this,'wrong')">C. 유료 플랜이 좋아서</button>
+    </div>
+  </div>
+</div>
+
+<!-- S14: 실습 환경 세팅 -->
+<div class="slide" id="s14">
+  <span class="badge badge-2">2교시</span>
+  <div class="title-sm">실습 환경 준비</div>
+  <div class="cmp-grid" style="flex:1; align-items:stretch;">
+    <div class="card card-glow-blue" style="display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; gap:16px;">
+      <div style="font-size:36px; font-weight:900; color:var(--blue);">Gemini</div>
+      <div style="font-size:15px; color:var(--text-dim);">gemini.google.com</div>
+      <div class="tag tag-blue">구글 계정 로그인</div>
+    </div>
+    <div class="card card-glow-green" style="display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; gap:16px;">
+      <div style="font-size:36px; font-weight:900; color:var(--green);">ChatGPT</div>
+      <div style="font-size:15px; color:var(--text-dim);">chatgpt.com</div>
+      <div class="tag tag-green">무료 계정 가능</div>
+    </div>
+    <div class="card card-glow-orange" style="display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; gap:16px;">
+      <div style="font-size:36px; font-weight:900; color:var(--orange);">Grok</div>
+      <div style="font-size:15px; color:var(--text-dim);">grok.com</div>
+      <div class="tag tag-orange">X 계정 필요</div>
+    </div>
+  </div>
+  <div style="text-align:center; color:var(--text-dim); font-size:16px; margin-top:24px;">탭 3개 준비</div>
+</div>
+
+<!-- S15: 과제 제시 -->
+<div class="slide" id="s15">
+  <span class="badge badge-2">2교시</span>
+  <div class="center-col" style="flex:1;">
+    <div style="font-size:18px; color:var(--text-dim); margin-bottom:24px;">공통 질문</div>
+    <div class="card" style="max-width:800px; font-size:18px; line-height:2; text-align:left;">
+      마케팅팀 부장이 매주 월요일 팀 회의에서 쓸 대시보드를 만들어줘.<br>
+      팀원 5명이 각각 <span class="accent-blue">SNS</span>, <span class="accent-orange">퍼포먼스</span>, <span class="accent-purple">콘텐츠</span>, <span class="accent-green">CRM</span>, <span class="accent-red">오프라인</span>을 담당하고 있고,<br>
+      월 예산 3000만원이야.<br>
+      채널별 주간 성과, 예산 집행률, 캠페인 진행 상태,<br>
+      다음 주 액션 아이템이 한 눈에 보여야 해.
+    </div>
+    <div style="margin-top:32px; font-size:20px; font-weight:700;">이 질문을 3개 모델에 동일하게 입력</div>
+  </div>
+</div>
+
+<!-- S16: GPT 실습 -->
+<div class="slide" id="s16">
+  <span class="badge badge-2">2교시</span>
+  <div class="row" style="flex:1; align-items:center;">
+    <div class="col center-col">
+      <div style="font-size:42px; font-weight:900; color:var(--green); margin-bottom:24px;">GPT 실습</div>
+      <div style="font-size:18px; color:var(--text-dim); margin-bottom:40px;">ChatGPT에 질문 입력</div>
+      <div style="text-align:left; max-width:400px;">
+        <div class="check-item"><div class="check-box" onclick="toggleCheck(this)"></div>질문 복사 &rarr; 붙여넣기</div>
+        <div class="check-item"><div class="check-box" onclick="toggleCheck(this)"></div>답변 확인</div>
+        <div class="check-item"><div class="check-box" onclick="toggleCheck(this)"></div>바로 쓸 수 있는 표 있는가?</div>
+        <div class="check-item"><div class="check-box" onclick="toggleCheck(this)"></div>구체적 숫자 있는가?</div>
+      </div>
+    </div>
+    <div class="col">
+      <div class="card" style="font-size:15px; line-height:1.8; color:var(--text-dim);">
+        <div style="font-weight:700; color:var(--green); margin-bottom:12px;">예상 결과 방향</div>
+        &bull; 대시보드 설계 가이드<br>
+        &bull; 프레임워크 구조 제시<br>
+        &bull; 빈 템플릿 형태<br>
+        &bull; 추천 툴 안내 (Looker, Notion)<br>
+        &bull; "이렇게 만드세요" 톤
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- S17: Grok 실습 -->
+<div class="slide" id="s17">
+  <span class="badge badge-2">2교시</span>
+  <div class="row" style="flex:1; align-items:center;">
+    <div class="col center-col">
+      <div style="font-size:42px; font-weight:900; color:var(--orange); margin-bottom:24px;">Grok 실습</div>
+      <div style="font-size:18px; color:var(--text-dim); margin-bottom:40px;">Grok에 질문 입력</div>
+      <div style="text-align:left; max-width:400px;">
+        <div class="check-item"><div class="check-box" onclick="toggleCheck(this)"></div>질문 복사 &rarr; 붙여넣기</div>
+        <div class="check-item"><div class="check-box" onclick="toggleCheck(this)"></div>답변 확인</div>
+        <div class="check-item"><div class="check-box" onclick="toggleCheck(this)"></div>바로 쓸 수 있는 표 있는가?</div>
+        <div class="check-item"><div class="check-box" onclick="toggleCheck(this)"></div>구체적 숫자 있는가?</div>
+      </div>
+    </div>
+    <div class="col">
+      <div class="card" style="font-size:15px; line-height:1.8; color:var(--text-dim);">
+        <div style="font-weight:700; color:var(--orange); margin-bottom:12px;">예상 결과 방향</div>
+        &bull; 구체적 숫자 채운 보고서<br>
+        &bull; 진행률 바 / 프로그레스<br>
+        &bull; 날짜까지 지정된 형태<br>
+        &bull; 실시간 데이터 톤<br>
+        &bull; "이번 주는 이렇습니다" 톤
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- S18: Gemini 실습 -->
+<div class="slide" id="s18">
+  <span class="badge badge-2">2교시</span>
+  <div class="row" style="flex:1; align-items:center;">
+    <div class="col center-col">
+      <div style="font-size:42px; font-weight:900; color:var(--blue); margin-bottom:24px;">Gemini 실습</div>
+      <div style="font-size:18px; color:var(--text-dim); margin-bottom:40px;">Gemini에 질문 입력</div>
+      <div style="text-align:left; max-width:400px;">
+        <div class="check-item"><div class="check-box" onclick="toggleCheck(this)"></div>질문 복사 &rarr; 붙여넣기</div>
+        <div class="check-item"><div class="check-box" onclick="toggleCheck(this)"></div>답변 확인</div>
+        <div class="check-item"><div class="check-box" onclick="toggleCheck(this)"></div>바로 쓸 수 있는 표 있는가?</div>
+        <div class="check-item"><div class="check-box" onclick="toggleCheck(this)"></div>구체적 숫자 있는가?</div>
+      </div>
+    </div>
+    <div class="col">
+      <div class="card" style="font-size:15px; line-height:1.8; color:var(--text-dim);">
+        <div style="font-weight:700; color:var(--blue); margin-bottom:12px;">예상 결과 방향</div>
+        &bull; 표 형태 양식 바로 제공<br>
+        &bull; 예시 데이터 포함<br>
+        &bull; 집행 현황 + 액션 아이템<br>
+        &bull; "복사해서 쓰세요" 안내<br>
+        &bull; 노션 / 구글 시트 연결 가이드
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- S19: 결과 비교 + 왜 Gemini -->
+<div class="slide" id="s19">
+  <span class="badge badge-2">2교시</span>
+  <div class="title-sm">실습 결과 비교</div>
+  <div class="cmp-grid" style="margin-bottom:32px;">
+    <div class="card" style="text-align:center;">
+      <div style="font-size:24px; font-weight:900; color:var(--green); margin-bottom:16px;">GPT</div>
+      <div style="font-size:32px; margin-bottom:12px;">설계도</div>
+      <div class="dim" style="font-size:14px;">"이렇게 구성하세요"</div>
+      <div class="dim" style="font-size:13px; margin-top:8px;">빈 칸 템플릿 + 툴 추천</div>
+    </div>
+    <div class="card" style="text-align:center;">
+      <div style="font-size:24px; font-weight:900; color:var(--orange); margin-bottom:16px;">Grok</div>
+      <div style="font-size:32px; margin-bottom:12px;">보고서</div>
+      <div class="dim" style="font-size:14px;">"이번 주 현황입니다"</div>
+      <div class="dim" style="font-size:13px; margin-top:8px;">숫자 채움 (예시 데이터)</div>
+    </div>
+    <div class="card card-glow-blue" style="text-align:center;">
+      <div style="font-size:24px; font-weight:900; color:var(--blue); margin-bottom:16px;">Gemini</div>
+      <div style="font-size:32px; margin-bottom:12px;">양식</div>
+      <div class="dim" style="font-size:14px;">"복사해서 바로 쓰세요"</div>
+      <div class="dim" style="font-size:13px; margin-top:8px;">표 + 데이터 + 안내</div>
+    </div>
+  </div>
+  <div style="text-align:center; font-size:22px; font-weight:700;">
+    월요일 아침에 필요한 것 = <span class="accent-blue">바로 쓸 수 있는 양식</span>
+  </div>
+</div>
+
+<!-- S20: Gemini 심화 실습 -->
+<div class="slide" id="s20">
+  <span class="badge badge-2">2교시</span>
+  <div class="title-sm">Gemini 심화 &mdash; 조건 변경 실습</div>
+  <div class="row" style="flex:1; align-items:center;">
+    <div class="col">
+      <div class="card" style="margin-bottom:24px;">
+        <div style="font-weight:700; margin-bottom:12px;">변형 1</div>
+        <div style="font-size:16px;">예산 <span class="accent-orange">500만원</span>으로 변경</div>
+        <div class="dim" style="font-size:13px; margin-top:8px;">&rarr; 채널 우선순위 / 예산 배분이 어떻게 달라지는가?</div>
+      </div>
+      <div class="card">
+        <div style="font-weight:700; margin-bottom:12px;">변형 2</div>
+        <div style="font-size:16px;">팀원 <span class="accent-orange">3명</span>으로 축소</div>
+        <div class="dim" style="font-size:13px; margin-top:8px;">&rarr; 담당 채널 통합 / 구조가 어떻게 재편되는가?</div>
+      </div>
+    </div>
+    <div class="col center-col">
+      <div style="font-size:64px; margin-bottom:24px;">&#x1F50D;</div>
+      <div style="font-size:22px; font-weight:700; margin-bottom:12px;">조건을 바꾸면<br>답이 바뀐다</div>
+      <div class="dim" style="font-size:16px;">질문 구성이 결과를 결정</div>
+    </div>
+  </div>
+</div>
+
+<!-- S21: 다음 교시 예고 -->
+<div class="slide" id="s21">
+  <span class="badge badge-2">2교시</span>
+  <div class="center-col" style="flex:1;">
+    <div style="font-size:18px; color:var(--text-dim); margin-bottom:32px;">도구 선택 완료</div>
+    <div style="font-size:48px; font-weight:900; margin-bottom:40px;">
+      이제, <span class="accent-blue">잘 쓰는 법</span>
+    </div>
+    <div class="row" style="gap:48px; max-width:600px;">
+      <div class="rci-block rci-r" style="flex:1; text-align:center; font-size:20px; font-weight:700;">
+        <span class="accent-blue">R</span><br><span class="dim" style="font-size:14px;">역할</span>
+      </div>
+      <div class="rci-block rci-c" style="flex:1; text-align:center; font-size:20px; font-weight:700;">
+        <span class="accent-green">C</span><br><span class="dim" style="font-size:14px;">맥락</span>
+      </div>
+      <div class="rci-block rci-i" style="flex:1; text-align:center; font-size:20px; font-weight:700;">
+        <span class="accent-orange">I</span><br><span class="dim" style="font-size:14px;">지시</span>
+      </div>
+    </div>
+    <div class="dim" style="margin-top:40px; font-size:16px;">3교시 &mdash; 이 구조를 직접 만듭니다</div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- 3교시: 프롬프트 시스템 이해 + RCI 작성법                          -->
+<!-- ============================================================ -->
+
+<!-- S22: 프롬프트란 무엇인가 -->
+<div class="slide" id="s22">
+  <span class="badge badge-3">3교시</span>
+  <div class="center-col" style="flex:1;">
+    <div style="font-size:22px; color:var(--text-dim); margin-bottom:24px;">프롬프트 =</div>
+    <div style="font-size:56px; font-weight:900; margin-bottom:48px;">AI에게 보내는 업무 지시서</div>
+    <div class="row" style="max-width:700px; gap:48px;">
+      <div class="card" style="flex:1; text-align:center; border-color:var(--red);">
+        <div style="font-size:15px; color:var(--red); font-weight:700; margin-bottom:12px;">신입에게</div>
+        <div style="font-size:20px; font-weight:700;">"보고서 만들어줘"</div>
+        <div class="dim" style="font-size:14px; margin-top:12px;">&rarr; 뭘 만들어야 하는지 모름</div>
+      </div>
+      <div class="card" style="flex:1; text-align:center; border-color:var(--green);">
+        <div style="font-size:15px; color:var(--green); font-weight:700; margin-bottom:12px;">신입에게</div>
+        <div style="font-size:20px; font-weight:700;">SNS 성과 + 표 + 전주비교<br>+ 내일 아침까지</div>
+        <div class="dim" style="font-size:14px; margin-top:12px;">&rarr; 원하는 결과물 나옴</div>
+      </div>
+    </div>
+    <div style="margin-top:40px; font-size:20px; font-weight:500;">AI도 똑같다</div>
+  </div>
+</div>
+
+<!-- S23: Before / After -->
+<div class="slide" id="s23">
+  <span class="badge badge-3">3교시</span>
+  <div class="title-sm">Before / After</div>
+  <div class="row" style="flex:1;">
+    <div class="col">
+      <div class="card" style="height:100%; border-color:var(--red);">
+        <div style="font-size:14px; color:var(--red); font-weight:700; margin-bottom:16px;">BEFORE</div>
+        <div style="font-size:20px; font-weight:700; margin-bottom:24px; line-height:1.6;">"마케팅 대시보드 만들어줘"</div>
+        <div style="background:var(--surface); border-radius:10px; padding:20px; font-size:14px; color:var(--text-dim); line-height:1.8;">
+          &bull; 일반적인 설명<br>
+          &bull; 구조 안 맞음<br>
+          &bull; 우리 팀 맥락 없음<br>
+          &bull; 추가 질문 필요
+        </div>
+      </div>
+    </div>
+    <div style="display:flex; align-items:center; font-size:48px; color:var(--text-dim);">&rarr;</div>
+    <div class="col">
+      <div class="card" style="height:100%; border-color:var(--green);">
+        <div style="font-size:14px; color:var(--green); font-weight:700; margin-bottom:16px;">AFTER</div>
+        <div style="font-size:20px; font-weight:700; margin-bottom:24px; line-height:1.6;">
+          <span class="accent-blue">역할</span> + <span class="accent-green">맥락</span> + <span class="accent-orange">지시</span>
+        </div>
+        <div style="background:var(--surface); border-radius:10px; padding:20px; font-size:14px; line-height:1.8;">
+          <span class="dot-ok">&bull;</span> 채널별 KPI 표<br>
+          <span class="dot-ok">&bull;</span> 예산 집행률<br>
+          <span class="dot-ok">&bull;</span> 담당자 + 마감일<br>
+          <span class="dot-ok">&bull;</span> 예산 재배분 제안<br>
+          <span class="dot-ok">&bull;</span> 바로 사용 가능
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- S24: RCI 공개 -->
+<div class="slide" id="s24">
+  <span class="badge badge-3">3교시</span>
+  <div class="center-col" style="flex:1; gap:32px;">
+    <div style="display:flex; gap:48px; margin-bottom:24px;">
+      <div style="text-align:center; cursor:pointer;" onclick="showRCIDetail('r')">
+        <div style="width:120px; height:120px; border-radius:50%; background:rgba(79,143,247,0.15); border:3px solid var(--blue); display:flex; align-items:center; justify-content:center; font-size:52px; font-weight:900; color:var(--blue);">R</div>
+        <div style="margin-top:12px; font-size:18px; font-weight:700;">Role</div>
+        <div class="dim" style="font-size:14px;">역할</div>
+      </div>
+      <div style="text-align:center; cursor:pointer;" onclick="showRCIDetail('c')">
+        <div style="width:120px; height:120px; border-radius:50%; background:rgba(52,211,153,0.15); border:3px solid var(--green); display:flex; align-items:center; justify-content:center; font-size:52px; font-weight:900; color:var(--green);">C</div>
+        <div style="margin-top:12px; font-size:18px; font-weight:700;">Context</div>
+        <div class="dim" style="font-size:14px;">맥락</div>
+      </div>
+      <div style="text-align:center; cursor:pointer;" onclick="showRCIDetail('i')">
+        <div style="width:120px; height:120px; border-radius:50%; background:rgba(251,146,60,0.15); border:3px solid var(--orange); display:flex; align-items:center; justify-content:center; font-size:52px; font-weight:900; color:var(--orange);">I</div>
+        <div style="margin-top:12px; font-size:18px; font-weight:700;">Instruction</div>
+        <div class="dim" style="font-size:14px;">지시</div>
+      </div>
+    </div>
+    <div style="max-width:800px; width:100%;">
+      <div class="rci-block rci-r">
+        <span class="accent-blue" style="font-weight:700;">R</span> &mdash; "당신은 10년차 마케팅 전략 컨설턴트입니다"
+      </div>
+      <div class="rci-block rci-c">
+        <span class="accent-green" style="font-weight:700;">C</span> &mdash; "스킨케어 브랜드, 팀 5명, 3주차, 3,000만원"
+      </div>
+      <div class="rci-block rci-i">
+        <span class="accent-orange" style="font-weight:700;">I</span> &mdash; "표 형태, 색상 구분, 담당자+마감일 포함"
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- S25: R 실습 -->
+<div class="slide" id="s25">
+  <span class="badge badge-3">3교시</span>
+  <div class="title-sm"><span class="accent-blue">R</span> &mdash; 역할 설정 실습</div>
+  <div class="row" style="flex:1; align-items:center;">
+    <div class="col">
+      <div class="card" style="margin-bottom:24px; border-color:var(--border);">
+        <div class="dim" style="font-size:13px; margin-bottom:8px;">질문 A &mdash; 역할 없음</div>
+        <div style="font-size:17px;">"마케팅 대시보드 만들어줘"</div>
+      </div>
+      <div class="card" style="border-color:var(--blue);">
+        <div style="font-size:13px; margin-bottom:8px; color:var(--blue);">질문 B &mdash; 역할 추가</div>
+        <div style="font-size:17px;">
+          <span class="accent-blue" style="font-weight:700;">"당신은 10년차 마케팅 전략 컨설턴트입니다."</span><br>
+          마케팅 대시보드 만들어줘
+        </div>
+      </div>
+    </div>
+    <div class="col">
+      <div class="card" style="background:rgba(79,143,247,0.05);">
+        <div style="font-weight:700; margin-bottom:16px;">Role 작성 팁</div>
+        <div style="font-size:16px; line-height:2.2;">
+          <span class="accent-blue">&bull;</span> 구체적 직군<br>
+          <span class="accent-blue">&bull;</span> 경력 연차<br>
+          <span class="accent-blue">&bull;</span> 전문 분야<br>
+        </div>
+        <div class="dim" style="font-size:13px; margin-top:16px; line-height:1.6;">
+          예시: "10년차 마케팅 전략 컨설턴트"<br>
+          예시: "브랜드 매니저 출신 CMO"<br>
+          예시: "퍼포먼스 마케팅 전문가"
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- S26: C 실습 -->
+<div class="slide" id="s26">
+  <span class="badge badge-3">3교시</span>
+  <div class="title-sm"><span class="accent-green">C</span> &mdash; 맥락 제공 실습</div>
+  <div class="row" style="flex:1; align-items:center;">
+    <div class="col">
+      <div class="card" style="margin-bottom:24px; border-color:var(--border);">
+        <div class="dim" style="font-size:13px; margin-bottom:8px;">질문 A &mdash; 맥락 없음</div>
+        <div style="font-size:16px;">
+          <span class="dim">당신은 10년차 마케팅 전략 컨설턴트입니다.</span><br>
+          마케팅 대시보드 만들어줘
+        </div>
+      </div>
+      <div class="card" style="border-color:var(--green);">
+        <div style="font-size:13px; margin-bottom:8px; color:var(--green);">질문 B &mdash; 맥락 추가</div>
+        <div style="font-size:16px;">
+          <span class="dim">당신은 10년차 마케팅 전략 컨설턴트입니다.</span><br>
+          <span class="accent-green" style="font-weight:700;">스킨케어 브랜드, 팀 5명(SNS/퍼포먼스/콘텐츠/CRM/오프라인),<br>월 예산 3,000만원, 현재 3주차.</span><br>
+          마케팅 대시보드 만들어줘
+        </div>
+      </div>
+    </div>
+    <div class="col">
+      <div class="card" style="background:rgba(52,211,153,0.05);">
+        <div style="font-weight:700; margin-bottom:16px;">Context 작성 팁</div>
+        <div style="font-size:16px; line-height:2.2;">
+          <span class="accent-green">&bull;</span> 업종<br>
+          <span class="accent-green">&bull;</span> 팀 구성<br>
+          <span class="accent-green">&bull;</span> 예산<br>
+          <span class="accent-green">&bull;</span> 시점<br>
+          <span class="accent-green">&bull;</span> 목적
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- S27: I 실습 -->
+<div class="slide" id="s27">
+  <span class="badge badge-3">3교시</span>
+  <div class="title-sm"><span class="accent-orange">I</span> &mdash; 지시사항 실습</div>
+  <div class="row" style="flex:1; align-items:center;">
+    <div class="col">
+      <div class="card" style="margin-bottom:24px; border-color:var(--border);">
+        <div class="dim" style="font-size:13px; margin-bottom:8px;">질문 A &mdash; 지시 없음</div>
+        <div style="font-size:16px;">
+          <span class="dim">역할 + 맥락 +</span><br>
+          "마케팅 대시보드 만들어줘"
+        </div>
+      </div>
+      <div class="card" style="border-color:var(--orange);">
+        <div style="font-size:13px; margin-bottom:8px; color:var(--orange);">질문 B &mdash; 지시 추가</div>
+        <div style="font-size:16px;">
+          <span class="dim">역할 + 맥락 +</span><br>
+          <span class="accent-orange" style="font-weight:700;">채널별 주간 성과를 표 형태로,<br>
+          예산 집행률은 퍼센트로,<br>
+          캠페인 상태는 색상 구분,<br>
+          액션 아이템은 담당자+마감일 포함</span>
+        </div>
+      </div>
+    </div>
+    <div class="col">
+      <div class="card" style="background:rgba(251,146,60,0.05);">
+        <div style="font-weight:700; margin-bottom:16px;">Instruction 작성 팁</div>
+        <div style="font-size:16px; line-height:2.2;">
+          <span class="accent-orange">&bull;</span> 출력 형식<br>
+          <span class="accent-orange">&bull;</span> 포함 항목<br>
+          <span class="accent-orange">&bull;</span> 표현 방식<br>
+          <span class="accent-orange">&bull;</span> 분량
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- S28: 종합 실습 -->
+<div class="slide" id="s28">
+  <span class="badge badge-3">3교시</span>
+  <div class="title-sm">종합 실습 &mdash; 직접 만들기</div>
+  <div class="row" style="flex:1;">
+    <div class="col" style="overflow-y:auto;">
+      <div style="margin-bottom:20px;">
+        <div class="tmpl-label"><span class="accent-blue">R</span> &mdash; 역할</div>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span style="color:var(--text-dim);">당신은</span>
+          <input class="tmpl-input" placeholder="예: 10년차 마케팅 전략 컨설턴트" style="flex:1;">
+          <span style="color:var(--text-dim);">입니다.</span>
+        </div>
+      </div>
+      <div style="margin-bottom:20px;">
+        <div class="tmpl-label"><span class="accent-green">C</span> &mdash; 맥락</div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+          <div><div class="dim" style="font-size:12px; margin-bottom:4px;">업종</div><input class="tmpl-input" placeholder="예: 스킨케어 브랜드"></div>
+          <div><div class="dim" style="font-size:12px; margin-bottom:4px;">팀 구성</div><input class="tmpl-input" placeholder="예: 5명 (SNS/퍼포먼스...)"></div>
+          <div><div class="dim" style="font-size:12px; margin-bottom:4px;">예산</div><input class="tmpl-input" placeholder="예: 월 3,000만원"></div>
+          <div><div class="dim" style="font-size:12px; margin-bottom:4px;">시점</div><input class="tmpl-input" placeholder="예: 3주차"></div>
+          <div style="grid-column:1/3;"><div class="dim" style="font-size:12px; margin-bottom:4px;">목적</div><input class="tmpl-input" placeholder="예: 매주 월요일 팀 회의용 대시보드"></div>
+        </div>
+      </div>
+      <div style="margin-bottom:20px;">
+        <div class="tmpl-label"><span class="accent-orange">I</span> &mdash; 지시</div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+          <div><div class="dim" style="font-size:12px; margin-bottom:4px;">출력 형식</div><input class="tmpl-input" placeholder="예: 표 형태"></div>
+          <div><div class="dim" style="font-size:12px; margin-bottom:4px;">포함 항목</div><input class="tmpl-input" placeholder="예: KPI, 집행률, 액션"></div>
+          <div><div class="dim" style="font-size:12px; margin-bottom:4px;">표현 방식</div><input class="tmpl-input" placeholder="예: 색상 구분, 퍼센트"></div>
+          <div><div class="dim" style="font-size:12px; margin-bottom:4px;">분량</div><input class="tmpl-input" placeholder="예: A4 1장 이내"></div>
+        </div>
+      </div>
+    </div>
+    <div style="flex:0 0 280px; display:flex; flex-direction:column; justify-content:center; align-items:center; gap:24px;">
+      <div style="font-size:56px;">&#x1F3AF;</div>
+      <div style="font-size:18px; font-weight:700; text-align:center;">완성한 질문을<br>Gemini에 입력</div>
+      <div class="dim" style="font-size:14px; text-align:center;">목표: 1교시 대시보드<br>수준의 결과</div>
+    </div>
+  </div>
+</div>
+
+<!-- S29: 마무리 -->
+<div class="slide" id="s29">
+  <span class="badge badge-3">3교시</span>
+  <div class="center-col" style="flex:1; gap:40px;">
+    <div style="font-size:22px; color:var(--text-dim);">오늘의 핵심</div>
+    <div class="row" style="max-width:900px; gap:24px;">
+      <div class="card" style="flex:1; text-align:center; padding:28px;">
+        <div style="font-size:40px; margin-bottom:16px;">1</div>
+        <div style="font-size:18px; font-weight:700; margin-bottom:8px;">모델마다 답이 다르다</div>
+        <div class="dim" style="font-size:14px;">학습 데이터 &rarr; 답변 특성<br>목적에 맞는 모델 선택</div>
+      </div>
+      <div class="card" style="flex:1; text-align:center; padding:28px;">
+        <div style="font-size:40px; margin-bottom:16px;">2</div>
+        <div style="font-size:18px; font-weight:700; margin-bottom:8px;">질문이 결과를 결정</div>
+        <div class="dim" style="font-size:14px;">같은 모델이라도<br>질문 구조에 따라 완전히 다름</div>
+      </div>
+      <div class="card" style="flex:1; text-align:center; padding:28px;">
+        <div style="font-size:40px; margin-bottom:16px;">3</div>
+        <div style="font-size:18px; font-weight:700; margin-bottom:8px;">RCI</div>
+        <div style="font-size:14px;">
+          <span class="accent-blue">Role</span> + <span class="accent-green">Context</span> + <span class="accent-orange">Instruction</span><br>
+          <span class="dim">&rarr; 실무 수준 결과</span>
+        </div>
+      </div>
+    </div>
+    <div style="font-size:18px; color:var(--text-dim);">
+      과제: 본인 업무에 RCI 질문 1개 적용해보기
+    </div>
+  </div>
+</div>
+
+<!-- ── Navigation Bar ── -->
+<div class="nav">
+  <button class="nav-btn" onclick="prevSlide()">&larr; 이전</button>
+  <div class="slide-num" id="slideNum">1 / 29</div>
+  <div class="progress-wrap"><div class="progress-bar" id="progressBar"></div></div>
+  <div class="slide-num" id="sectionLabel">1교시</div>
+  <button class="nav-btn" onclick="nextSlide()">다음 &rarr;</button>
+</div>
+
+<script>
+// ── Slide Navigation ──
+const slides = document.querySelectorAll('.slide');
+const total = slides.length;
+let current = 0;
+
+function showSlide(n) {
+  slides[current].classList.remove('active');
+  current = Math.max(0, Math.min(n, total - 1));
+  slides[current].classList.active;
+  slides[current].classList.add('active');
+  document.getElementById('slideNum').textContent = (current + 1) + ' / ' + total;
+  document.getElementById('progressBar').style.width = ((current + 1) / total * 100) + '%';
+  // Section label
+  let sec = current < 12 ? '1교시' : current < 21 ? '2교시' : '3교시';
+  document.getElementById('sectionLabel').textContent = sec;
+}
+
+function nextSlide() { showSlide(current + 1); }
+function prevSlide() { showSlide(current - 1); }
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); nextSlide(); }
+  if (e.key === 'ArrowLeft') { e.preventDefault(); prevSlide(); }
+});
+
+showSlide(0);
+
+// ── Mosaic Reveal ──
+function revealMosaic(id, contentId) {
+  document.getElementById(id).classList.add('revealed');
+}
+
+function revealRCI() {
+  document.getElementById('mosaic2').classList.add('revealed');
+}
+
+// ── Token Animation ──
+let tokenStep = 0;
+function animateTokens() {
+  tokenStep++;
+  const steps = ['ts1','ts2','ts3','ts4','ts5','ts6','ts7'];
+  for (let i = 0; i < tokenStep * 1 && i < steps.length; i++) {
+    // Show 2 steps at a time for smooth flow
+  }
+  if (tokenStep <= steps.length) {
+    for (let i = 0; i < Math.min(tokenStep, steps.length); i++) {
+      document.getElementById(steps[i]).classList.add('show');
+    }
+  }
+  if (tokenStep >= steps.length) tokenStep = 0;
+}
+// Auto-show first step
+setTimeout(() => { document.getElementById('ts1').classList.add('show'); }, 300);
+
+// ── Quiz ──
+function quizAnswer(el, type) {
+  // Reset siblings
+  const parent = el.parentElement;
+  parent.querySelectorAll('.quiz-opt').forEach(b => b.classList.remove('correct','wrong'));
+  el.classList.add(type);
+}
+
+// ── Checklist ──
+function toggleCheck(el) {
+  el.classList.toggle('checked');
+}
+
+// ── RCI Detail (placeholder) ──
+function showRCIDetail(type) {
+  // Could expand to show detail panel
+}
+</script>
+</body>
+</html>
