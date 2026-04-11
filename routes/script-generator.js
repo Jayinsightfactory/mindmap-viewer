@@ -862,6 +862,63 @@ function createScriptGenerator({ getDb }) {
   });
 
   // ═══════════════════════════════════════════════════════════════
+  // GET /api/scripts/stats — 자동화 통계 요약 (/:id 보다 먼저 선언)
+  // ═══════════════════════════════════════════════════════════════
+  router.get('/stats', async (req, res) => {
+    try {
+      const db = getDb();
+      if (!db?.query) return res.json({ error: 'DB not available' });
+      await _ensureTables(db);
+
+      const scriptStats = await db.query(`
+        SELECT
+          COUNT(*) as total_scripts,
+          COUNT(*) FILTER (WHERE status = 'draft') as draft,
+          COUNT(*) FILTER (WHERE status = 'tested') as tested,
+          COUNT(*) FILTER (WHERE status = 'deployed') as deployed,
+          SUM(deploy_count) as total_deploys,
+          SUM(success_count) as total_success,
+          SUM(fail_count) as total_fails
+        FROM generated_scripts
+      `);
+
+      const visionStats = await db.query(`
+        SELECT
+          COUNT(*) as total_analyzed,
+          COUNT(*) FILTER (WHERE (data_json->>'automationScore')::float >= 0.8) as score_high,
+          COUNT(*) FILTER (WHERE (data_json->>'automationScore')::float >= 0.5 AND (data_json->>'automationScore')::float < 0.8) as score_mid,
+          COUNT(*) FILTER (WHERE (data_json->>'automationScore')::float > 0 AND (data_json->>'automationScore')::float < 0.5) as score_low,
+          COUNT(*) FILTER (WHERE data_json->>'nenovaAction' IS NOT NULL) as with_action,
+          COUNT(*) FILTER (WHERE data_json->>'nenovaInputMap' IS NOT NULL AND data_json->>'nenovaInputMap' != '[]') as with_input_map
+        FROM events WHERE type = 'screen.analyzed'
+      `);
+
+      const byAction = await db.query(`
+        SELECT action_type, COUNT(*) as count, SUM(deploy_count) as deploys
+        FROM generated_scripts
+        GROUP BY action_type ORDER BY count DESC
+      `);
+
+      const templates = Object.entries(ACTION_TEMPLATES).map(([k, v]) => ({
+        actionType: k,
+        description: v.description,
+        requiredFields: v.requiredFields,
+        optionalFields: v.optionalFields,
+      }));
+
+      res.json({
+        scripts: scriptStats.rows[0] || {},
+        vision: visionStats.rows[0] || {},
+        byAction: byAction.rows,
+        availableTemplates: templates,
+        supportedTypes: ['pyautogui', 'pad', 'ahk', 'powershell'],
+      });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════
   // GET /api/scripts/:id — 스크립트 상세
   // ═══════════════════════════════════════════════════════════════
   router.get('/:id', async (req, res) => {
@@ -967,67 +1024,6 @@ function createScriptGenerator({ getDb }) {
         ok: true,
         deployed: { scriptId: script.id, hostname, actionType: script.action_type },
         message: `${hostname}에 "${script.action_type}" 스크립트 배포 완료`,
-      });
-    } catch (err) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  // ═══════════════════════════════════════════════════════════════
-  // GET /api/scripts/stats — 자동화 통계 요약
-  // ═══════════════════════════════════════════════════════════════
-  router.get('/stats/summary', async (req, res) => {
-    try {
-      const db = getDb();
-      if (!db?.query) return res.json({ error: 'DB not available' });
-      await _ensureTables(db);
-
-      // 스크립트 통계
-      const scriptStats = await db.query(`
-        SELECT
-          COUNT(*) as total_scripts,
-          COUNT(*) FILTER (WHERE status = 'draft') as draft,
-          COUNT(*) FILTER (WHERE status = 'tested') as tested,
-          COUNT(*) FILTER (WHERE status = 'deployed') as deployed,
-          SUM(deploy_count) as total_deploys,
-          SUM(success_count) as total_success,
-          SUM(fail_count) as total_fails
-        FROM generated_scripts
-      `);
-
-      // Vision 데이터 자동화 점수 분포
-      const visionStats = await db.query(`
-        SELECT
-          COUNT(*) as total_analyzed,
-          COUNT(*) FILTER (WHERE (data_json->>'automationScore')::float >= 0.8) as score_high,
-          COUNT(*) FILTER (WHERE (data_json->>'automationScore')::float >= 0.5 AND (data_json->>'automationScore')::float < 0.8) as score_mid,
-          COUNT(*) FILTER (WHERE (data_json->>'automationScore')::float > 0 AND (data_json->>'automationScore')::float < 0.5) as score_low,
-          COUNT(*) FILTER (WHERE data_json->>'nenovaAction' IS NOT NULL) as with_action,
-          COUNT(*) FILTER (WHERE data_json->>'nenovaInputMap' IS NOT NULL AND data_json->>'nenovaInputMap' != '[]') as with_input_map
-        FROM events WHERE type = 'screen.analyzed'
-      `);
-
-      // 액션별 스크립트 분포
-      const byAction = await db.query(`
-        SELECT action_type, COUNT(*) as count, SUM(deploy_count) as deploys
-        FROM generated_scripts
-        GROUP BY action_type ORDER BY count DESC
-      `);
-
-      // 사용 가능 템플릿
-      const templates = Object.entries(ACTION_TEMPLATES).map(([k, v]) => ({
-        actionType: k,
-        description: v.description,
-        requiredFields: v.requiredFields,
-        optionalFields: v.optionalFields,
-      }));
-
-      res.json({
-        scripts: scriptStats.rows[0] || {},
-        vision: visionStats.rows[0] || {},
-        byAction: byAction.rows,
-        availableTemplates: templates,
-        supportedTypes: ['pyautogui', 'pad', 'ahk', 'powershell'],
       });
     } catch (err) {
       res.status(500).json({ error: err.message });
