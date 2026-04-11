@@ -1765,7 +1765,195 @@ function createProcessMining({ getDb, reportSheet }) {
     }
   });
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // GET /api/mining/cross-analysis — 교차 분석 엔진
+  // 카톡 ↔ nenova 주문 ↔ 직원 활동을 시간축으로 엮어서
+  // 의사결정 경로, 병목, 베스트프랙티스 추출
+  // ═══════════════════════════════════════════════════════════════════════════
+  router.get('/cross-analysis', async (req, res) => {
+    try {
+      const db = getDb();
+      if (!db?.query) return res.json({ error: 'DB not available' });
+      const { date, days } = req.query;
+      const d = parseInt(days) || 7;
+      const startDate = date || new Date().toISOString().substring(0, 10);
+      const baseUrl = `http://localhost:${process.env.PORT || 4747}`;
+
+      // 1. 직원별 활동 시퀀스
+      const { rows: activeUsers } = await db.query(`
+        SELECT DISTINCT e.user_id, u.name
+        FROM events e LEFT JOIN orbit_auth_users u ON e.user_id = u.id
+        WHERE e.type = ANY($1)
+          AND e.timestamp::date >= $2::date AND e.timestamp::date < ($2::date + $3 * INTERVAL '1 day')
+          AND e.user_id IS NOT NULL AND e.user_id != 'local'
+        GROUP BY e.user_id, u.name HAVING count(*) >= 20
+      `, [WORK_TYPES, startDate, d]);
+
+      const userTimelines = {};
+      for (const u of activeUsers) {
+        const { rows } = await db.query(`
+          SELECT type, timestamp,
+            COALESCE(data_json->>'app', data_json->>'sourceApp', '') as app,
+            data_json->>'windowTitle' as wt,
+            LEFT(data_json->>'text', 300) as text
+          FROM events WHERE user_id = $1 AND type = ANY($2)
+            AND timestamp::date >= $3::date AND timestamp::date < ($3::date + $4 * INTERVAL '1 day')
+          ORDER BY timestamp ASC
+        `, [u.user_id, WORK_TYPES, startDate, d]);
+        userTimelines[u.name || u.user_id] = rows.map(ev => ({
+          ts: new Date(ev.timestamp).getTime(), time: ev.timestamp,
+          app: normalizeApp(ev.app || '', ev.wt), wt: ev.wt || '', text: ev.text || '', type: ev.type,
+        }));
+      }
+
+      // 2. 업무 사이클 추출 (카톡→앱전환→작업→완료)
+      const workCycles = {};
+      for (const [userName, timeline] of Object.entries(userTimelines)) {
+        const cycles = [];
+        let cur = null;
+        for (let i = 0; i < timeline.length; i++) {
+          const ev = timeline[i];
+          if (ev.app === 'KakaoTalk' && _isWorkRelated(ev.text, ev.wt)) {
+            if (cur && cur.steps.length > 1) { cur.durationSec = Math.round((cur.endTs - cur.startTs) / 1000); cycles.push(cur); }
+            cur = { trigger: { wt: ev.wt, text: ev.text.substring(0, 80) }, startTs: ev.ts, endTs: ev.ts, steps: [{ app: ev.app, wt: ev.wt, ts: ev.ts }], apps: new Set(['KakaoTalk']) };
+          } else if (cur) {
+            if (ev.app !== 'unknown') {
+              const last = cur.steps[cur.steps.length - 1];
+              if (ev.app !== last.app || ev.ts - last.ts > 60000) { cur.steps.push({ app: ev.app, wt: ev.wt, ts: ev.ts }); cur.apps.add(ev.app); }
+              cur.endTs = ev.ts;
+            }
+            if (i + 1 < timeline.length && timeline[i + 1].ts - ev.ts > 300000) { cur.durationSec = Math.round((cur.endTs - cur.startTs) / 1000); if (cur.steps.length > 1) cycles.push(cur); cur = null; }
+          }
+        }
+        if (cur && cur.steps.length > 1) { cur.durationSec = Math.round((cur.endTs - cur.startTs) / 1000); cycles.push(cur); }
+        workCycles[userName] = cycles.map(c => ({ ...c, apps: [...c.apps], route: c.steps.map(s => s.app).filter((v, i, a) => i === 0 || v !== a[i - 1]).join(' → '), stepCount: c.steps.length }));
+      }
+
+      // 3. 같은 업무 다른 경로 비교
+      const routeMap = {};
+      for (const [userName, cycles] of Object.entries(workCycles)) {
+        for (const c of cycles) {
+          const key = [...c.apps].sort().join('+');
+          if (!routeMap[key]) routeMap[key] = [];
+          routeMap[key].push({ user: userName, ...c });
+        }
+      }
+      const comparisons = [];
+      for (const [routeKey, cycles] of Object.entries(routeMap)) {
+        const userCycles = {};
+        for (const c of cycles) { if (!userCycles[c.user]) userCycles[c.user] = []; userCycles[c.user].push(c); }
+        if (Object.keys(userCycles).length < 2) continue;
+        const stats = Object.entries(userCycles).map(([user, cs]) => ({
+          user, count: cs.length,
+          avgSec: Math.round(cs.reduce((s, c) => s + c.durationSec, 0) / cs.length),
+          commonRoute: _mostCommon(cs.map(c => c.route)),
+          avgSteps: Math.round(cs.reduce((s, c) => s + c.stepCount, 0) / cs.length),
+        })).sort((a, b) => a.avgSec - b.avgSec);
+        const gap = stats[stats.length - 1].avgSec - stats[0].avgSec;
+        if (gap > 10) comparisons.push({
+          apps: routeKey.split('+'), users: stats,
+          fastest: stats[0].user, slowest: stats[stats.length - 1].user, gapSec: gap,
+          bestPractice: stats[0].commonRoute !== stats[stats.length - 1].commonRoute
+            ? `${stats[0].user}의 경로(${stats[0].commonRoute})가 ${stats[0].avgSteps}단계로 더 효율적`
+            : `같은 경로, ${stats[0].user}가 ${gap}초 빠름`,
+        });
+      }
+
+      // 4. 앱 전환 대기 시간 (병목)
+      const transDelays = {};
+      for (const [userName, tl] of Object.entries(userTimelines)) {
+        for (let i = 1; i < tl.length; i++) {
+          const p = tl[i - 1], c = tl[i];
+          if (p.app === 'unknown' || c.app === 'unknown' || p.app === c.app) continue;
+          const sec = (c.ts - p.ts) / 1000;
+          if (sec > 300 || sec < 1) continue;
+          const key = `${p.app}→${c.app}`;
+          if (!transDelays[key]) transDelays[key] = [];
+          transDelays[key].push({ user: userName, sec, from: p.wt?.substring(0, 30), to: c.wt?.substring(0, 30) });
+        }
+      }
+      const bottlenecks = Object.entries(transDelays)
+        .filter(([, d]) => d.length >= 3)
+        .map(([tr, d]) => {
+          const sorted = d.map(x => x.sec).sort((a, b) => a - b);
+          const avg = Math.round(sorted.reduce((s, v) => s + v, 0) / sorted.length);
+          return { transition: tr, count: d.length, avgSec: avg, medianSec: Math.round(sorted[Math.floor(sorted.length / 2)]),
+            isBottleneck: avg > 30,
+            samples: d.sort((a, b) => b.sec - a.sec).slice(0, 3).map(x => ({ user: x.user, sec: Math.round(x.sec), context: `${x.from || ''} → ${x.to || ''}` })),
+          };
+        }).sort((a, b) => b.avgSec - a.avgSec);
+
+      // 5. 카톡 ↔ nenova 주문 매칭
+      let orderMatches = [];
+      try {
+        const orderData = await _internalGet(`${baseUrl}/api/nenova/orders?limit=100`);
+        if (orderData?.items) {
+          for (const order of orderData.items.slice(0, 50)) {
+            const cn = order.CustName || '';
+            if (!cn) continue;
+            const oTs = new Date(order.CreateDtm || order.OrderDtm).getTime();
+            if (!oTs) continue;
+            for (const [userName, tl] of Object.entries(userTimelines)) {
+              const mention = tl.find(ev => ev.app === 'KakaoTalk' && (ev.text.includes(cn) || ev.wt.includes(cn)) && Math.abs(ev.ts - oTs) < 1800000);
+              if (mention) {
+                const startIdx = tl.indexOf(mention);
+                const route = [];
+                for (let j = startIdx; j < Math.min(startIdx + 20, tl.length); j++) {
+                  if (tl[j].ts - mention.ts > 1800000) break;
+                  if (!route.length || route[route.length - 1].app !== tl[j].app) route.push({ app: tl[j].app, wt: tl[j].wt?.substring(0, 40) });
+                }
+                orderMatches.push({ customer: cn, employee: userName, delaySec: Math.round((oTs - mention.ts) / 1000), route: route.map(s => s.app).join(' → ') });
+              }
+            }
+          }
+        }
+      } catch (e) {}
+
+      // 6. 인사이트
+      const insights = [];
+      if (comparisons.length) {
+        const top = comparisons.sort((a, b) => b.gapSec - a.gapSec)[0];
+        insights.push({ type: 'best_practice', title: `${top.fastest}의 방식 전파 시 건당 ${top.gapSec}초 절감`, detail: top.bestPractice });
+      }
+      const realBn = bottlenecks.filter(b => b.isBottleneck);
+      if (realBn.length) insights.push({ type: 'bottleneck', title: `${realBn[0].transition} 전환에 평균 ${realBn[0].avgSec}초`, detail: `${realBn[0].count}회 발생` });
+      if (orderMatches.length) {
+        const avg = Math.round(orderMatches.reduce((s, m) => s + Math.abs(m.delaySec), 0) / orderMatches.length);
+        insights.push({ type: 'process_time', title: `카톡→전산 평균 ${Math.round(avg / 60)}분`, detail: `${orderMatches.length}건 매칭` });
+      }
+
+      res.json({
+        period: { start: startDate, days: d }, userCount: activeUsers.length,
+        insights, comparisons: comparisons.slice(0, 10), bottlenecks: bottlenecks.slice(0, 15),
+        orderKakaoMatches: orderMatches.slice(0, 30),
+        workCycles: Object.fromEntries(Object.entries(workCycles).map(([u, cs]) => [u, { total: cs.length, avgSec: cs.length ? Math.round(cs.reduce((s, c) => s + c.durationSec, 0) / cs.length) : 0, topRoutes: _topN(cs.map(c => c.route), 5) }])),
+      });
+    } catch (e) {
+      console.error('[mining/cross-analysis]', e.message);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   return router;
+}
+
+// ── 업무 관련 카톡 메시지 판별 ──────────────────────────────────────────────
+function _isWorkRelated(text, wt) {
+  const t = (text + ' ' + wt).toLowerCase();
+  const workKeywords = ['주문','발주','출고','배송','물량','박스','단','속','재고','견적','단가','입금','수량','거래처','카네이션','장미','수국','튤립','네노바','차감','확인요청','추가'];
+  return workKeywords.some(k => t.includes(k));
+}
+
+function _mostCommon(arr) {
+  const counts = {};
+  for (const v of arr) counts[v] = (counts[v] || 0) + 1;
+  return Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0] || '';
+}
+
+function _topN(arr, n) {
+  const counts = {};
+  for (const v of arr) counts[v] = (counts[v] || 0) + 1;
+  return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, n).map(([v, c]) => ({ route: v, count: c }));
 }
 
 // ── 텍스트 리포트 생성 (관리자 보고용) ───────────────────────────────────────
