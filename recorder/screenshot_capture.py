@@ -19,7 +19,7 @@ class ScreenshotCapture:
 
     def start(self):
         """주기적 캡처 시작 (설정된 경우)"""
-        if config.SCREENSHOT_INTERVAL_SEC > 0:
+        if config.get_screenshot_interval_sec() > 0:
             self._schedule_periodic()
 
     def stop(self):
@@ -40,13 +40,14 @@ class ScreenshotCapture:
                     raw = sct.grab(monitor)
                     img = Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")
 
-                # 리사이즈 (max width)
-                if img.width > config.SCREENSHOT_MAX_WIDTH:
-                    ratio = config.SCREENSHOT_MAX_WIDTH / img.width
+                # 리사이즈 (max width, 거버너 동적 조정)
+                max_w = config.get_screenshot_max_width()
+                if img.width > max_w:
+                    ratio = max_w / img.width
                     new_h = int(img.height * ratio)
-                    img = img.resize((config.SCREENSHOT_MAX_WIDTH, new_h), Image.LANCZOS)
+                    img = img.resize((max_w, new_h), Image.LANCZOS)
 
-                img.save(str(filepath), "JPEG", quality=config.SCREENSHOT_QUALITY)
+                img.save(str(filepath), "JPEG", quality=config.get_screenshot_quality())
 
                 db.insert_screenshot(
                     screenshot_id, self._session_id,
@@ -59,10 +60,11 @@ class ScreenshotCapture:
                 return None, 0, 0
 
     def _schedule_periodic(self):
-        if config.SCREENSHOT_INTERVAL_SEC > 0:
+        interval = config.get_screenshot_interval_sec()
+        if interval > 0:
             self.capture(trigger="periodic")
             self._periodic_timer = threading.Timer(
-                config.SCREENSHOT_INTERVAL_SEC, self._schedule_periodic
+                interval, self._schedule_periodic
             )
             self._periodic_timer.daemon = True
             self._periodic_timer.start()

@@ -49,9 +49,9 @@ class MouseCapture:
         dy = y - self._last_y
         dist = (dx**2 + dy**2) ** 0.5
 
-        # 샘플링: 최소 간격 + 최소 이동 거리
-        if (now - self._last_move_time < config.MOUSE_SAMPLE_INTERVAL_MS or
-                dist < config.MOUSE_MIN_MOVE_PX):
+        # 샘플링: 최소 간격 + 최소 이동 거리 (거버너 동적 조정)
+        if (now - self._last_move_time < config.get_mouse_sample_interval_ms() or
+                dist < config.get_mouse_min_move_px()):
             return
 
         self._last_move_time = now

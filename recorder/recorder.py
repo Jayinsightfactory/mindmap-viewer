@@ -142,8 +142,8 @@ class Recorder:
             self._activity_count[etype] += 1
 
     def _on_click_screenshot(self, x, y, button):
-        """클릭 시 스크린샷 캡처"""
-        if not config.SCREENSHOT_ON_CLICK or not self._running:
+        """클릭 시 스크린샷 캡처 (거버너 동적 조정)"""
+        if not config.get_screenshot_on_click() or not self._running:
             return
 
         def _capture():
@@ -182,7 +182,7 @@ class Recorder:
                 "total": total,
             })
 
-        self._flush_timer = threading.Timer(config.BATCH_FLUSH_INTERVAL_SEC, self._schedule_flush)
+        self._flush_timer = threading.Timer(config.get_batch_flush_interval_sec(), self._schedule_flush)
         self._flush_timer.daemon = True
         self._flush_timer.start()
 
