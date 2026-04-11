@@ -84,6 +84,7 @@ body{background:#0c0e14;color:#e0e6ed;font-family:'JetBrains Mono',Consolas,mono
   <div class="lr"><div class="lr-d" style="background:rgba(129,140,248,.1);border:1.5px solid #818cf8;border-radius:2px"></div> 전산화면</div>
   <div class="lr"><div class="lr-d" style="background:rgba(52,211,153,.1);border:1.5px solid #34d399;border-radius:2px"></div> 엑셀 파일</div>
   <div class="lr"><div class="lr-d" style="background:rgba(255,162,62,.1);border:2px solid #ffa23e;border-radius:50%"></div> 거래처</div>
+  <div class="lr"><div class="lr-d" style="background:rgba(244,114,182,.1);border:1.5px solid #f472b6;border-radius:50%"></div> 상품 (꽃)</div>
 </div>
 
 <div id="panel"><button class="x" onclick="closeP()">×</button><div id="pc"></div></div>
@@ -97,6 +98,7 @@ const TYPE_STYLE={
   nenova_screen: {color:'#818cf8',bg:'#818cf808',icon:'🖥',baseSize:32,shape:'rect'},
   excel_file:    {color:'#34d399',bg:'#34d39908',icon:'📊',baseSize:30,shape:'rect'},
   customer:      {color:'#ffa23e',bg:'#ffa23e0a',icon:'🏢',baseSize:34,shape:'circle'},
+  product:       {color:'#f472b6',bg:'#f472b608',icon:'🌸',baseSize:28,shape:'circle'},
 };
 const APP_ICON={'KakaoTalk':'💬','Excel':'📊','Nenova ERP':'🏭','Browser':'🌐','Explorer':'📁','PowerPoint':'📝','Word':'📄','주문감지':'🔔','발주감지':'📦'};
 
@@ -125,7 +127,7 @@ function render(data){
   if(!nodes.length){W.innerHTML='<div style="color:#5a6a7e;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%)">데이터 없음</div>';return}
 
   // layout: group-based force-like positioning
-  const groups={user:[],app:[],kakao:[],nenova:[],excel:[],customer:[]};
+  const groups={user:[],app:[],kakao:[],nenova:[],excel:[],customer:[],product:[]};
   for(const n of nodes){
     const g=n.group||n.type;
     if(g==='user')groups.user.push(n);
@@ -134,6 +136,7 @@ function render(data){
     else if(g==='nenova')groups.nenova.push(n);
     else if(g==='excel')groups.excel.push(n);
     else if(g==='customer')groups.customer.push(n);
+    else if(g==='product')groups.product.push(n);
   }
 
   const pos={};
@@ -177,7 +180,16 @@ function render(data){
 
   // Customers: right side
   groups.customer.forEach((n,i)=>{
-    pos[n.id]={x:CX+appR+280+Math.random()*60,y:200+i*70};
+    const col = Math.floor(i / 12);
+    const row = i % 12;
+    pos[n.id]={x:CX+appR+250+col*120,y:80+row*65};
+  });
+
+  // Products: far right, below customers
+  groups.product.forEach((n,i)=>{
+    const col = Math.floor(i / 10);
+    const row = i % 10;
+    pos[n.id]={x:CX+appR+180+col*100,y:CY+200+row*50};
   });
 
   // Build SVG edges
