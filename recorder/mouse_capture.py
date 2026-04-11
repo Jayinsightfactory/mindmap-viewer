@@ -1,7 +1,62 @@
 """마우스 이벤트 캡처 (pynput) - 클릭/이동/스크롤"""
 import time
+import platform
 from pynput import mouse
 from . import config
+
+# ── 활성 윈도우 타이틀 (Windows ctypes) ─────────────────
+_get_window_title = None
+
+if platform.system() == "Windows":
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        _user32 = ctypes.windll.user32
+        _user32.GetForegroundWindow.restype = wintypes.HWND
+        _user32.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+        _user32.GetWindowTextW.restype = ctypes.c_int
+        _user32.GetWindowTextLengthW.argtypes = [wintypes.HWND]
+        _user32.GetWindowTextLengthW.restype = ctypes.c_int
+
+        # GetWindowThreadProcessId → 프로세스명
+        _user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+        _user32.GetWindowThreadProcessId.restype = wintypes.DWORD
+
+        _psapi = ctypes.windll.psapi
+        _kernel32 = ctypes.windll.kernel32
+
+        def _win_get_title():
+            """활성 윈도우 타이틀 + 프로세스명 반환"""
+            try:
+                hwnd = _user32.GetForegroundWindow()
+                length = _user32.GetWindowTextLengthW(hwnd)
+                buf = ctypes.create_unicode_buffer(length + 1)
+                _user32.GetWindowTextW(hwnd, buf, length + 1)
+                title = buf.value
+
+                # 프로세스명 추출
+                pid = wintypes.DWORD()
+                _user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+                proc_name = ""
+                try:
+                    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+                    h = _kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid.value)
+                    if h:
+                        buf2 = ctypes.create_unicode_buffer(260)
+                        _psapi.GetModuleFileNameExW(h, None, buf2, 260)
+                        _kernel32.CloseHandle(h)
+                        proc_name = buf2.value.split("\\")[-1].lower().replace(".exe", "")
+                except Exception:
+                    pass
+
+                return title, proc_name
+            except Exception:
+                return "", ""
+
+        _get_window_title = _win_get_title
+    except Exception:
+        pass
 
 
 class MouseCapture:
@@ -32,13 +87,19 @@ class MouseCapture:
 
     def _on_click(self, x, y, button, pressed):
         btn_name = button.name if hasattr(button, 'name') else str(button)
+        data = {
+            "x": x, "y": y,
+            "button": btn_name,
+            "pressed": pressed,
+        }
+        # 클릭 시 활성 윈도우 타이틀 + 프로세스명 캡처
+        if pressed and _get_window_title:
+            title, proc = _get_window_title()
+            data["windowTitle"] = title
+            data["processName"] = proc
         self._callback({
             "event_type": "mouse_click",
-            "data": {
-                "x": x, "y": y,
-                "button": btn_name,
-                "pressed": pressed,
-            }
+            "data": data,
         })
         if pressed and self._click_callback:
             self._click_callback(x, y, btn_name)
