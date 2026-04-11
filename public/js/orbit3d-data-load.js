@@ -316,15 +316,29 @@ async function _postLoginSync(token) {
       }, 1000);
     }
 
-    // 8) 로그인 직후 설치코드 자동 팝업 (처음 로그인 or 미설치 PC)
-    // — 직원이 본인 PC에서 바로 복사해서 실행할 수 있도록
+    // 8) 로그인 직후 설치코드 — 데몬 미설치 PC에서만 표시
+    // 서버에 해당 유저의 데몬 이벤트가 있는지 확인 → 없으면 설치 팝업
     const _alreadyShownKey = `orbit_install_shown_${token.slice(-8)}`;
     if (!sessionStorage.getItem(_alreadyShownKey)) {
       sessionStorage.setItem(_alreadyShownKey, '1');
-      // userId: _orbitUser에서 또는 /api/auth/verify로 획득
       const _installUserId = (typeof _orbitUser !== 'undefined' ? _orbitUser?.id : null)
         || (() => { try { return JSON.parse(localStorage.getItem('orbitUser') || 'null')?.id; } catch { return null; } })();
-      setTimeout(() => _showInstallCodeModal(token, _installUserId), 1500);
+      try {
+        const _checkRes = await fetch('/api/admin/pcs', { headers: { 'Authorization': 'Bearer ' + token } });
+        const _checkData = await _checkRes.json();
+        // 해당 유저에 연결된 PC가 하나도 없으면 → 설치 팝업
+        const _userPcs = (_checkData.pcs || []).filter(p => p.user_id === _installUserId);
+        const _hasRecentActivity = _userPcs.some(p => {
+          const lastSeen = new Date(p.last_seen);
+          const daysSince = (Date.now() - lastSeen.getTime()) / (1000 * 60 * 60 * 24);
+          return daysSince < 30; // 30일 이내 활동 있으면 설치됨
+        });
+        if (!_hasRecentActivity) {
+          setTimeout(() => _showInstallCodeModal(token, _installUserId), 1500);
+        }
+      } catch {
+        // API 실패 시 팝업 안 띄움 (설치된 것으로 간주)
+      }
     }
   } catch (e) {
     console.warn('[postLoginSync]', e.message);
