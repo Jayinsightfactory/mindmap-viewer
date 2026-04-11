@@ -2149,7 +2149,9 @@ async function _parseServiceAccountJson() {
   // JSON.parse 대신 정규식으로 핵심 필드 추출
   const get = (key) => {
     const m = raw.match(new RegExp(`"${key}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"`));
-    return m ? m[1].replace(/\\n/g, '\n').replace(/\\\\/g, '\\') : '';
+    if (!m) return '';
+    // Railway: \\n → 실제 줄바꿈, \\\\ → 백슬래시
+    return m[1].replace(/\\\\/g, '\x00').replace(/\\n/g, '\n').replace(/\x00/g, '\\');
   };
   _cachedCred = {
     type: get('type'),
