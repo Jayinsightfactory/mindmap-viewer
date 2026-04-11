@@ -1591,7 +1591,7 @@ function createProcessMining({ getDb, reportSheet }) {
       const SHEET_ID = '1pXLVZqiMwWt6Vh0IhWwASBvgLtZqLnbHXMWqOLNwAXU';
 
       let cred;
-      try { cred = _parseServiceAccountJson(); } catch (e) { return res.json({ error: e.message }); }
+      try { cred = await _parseServiceAccountJson(); } catch (e) { return res.json({ error: e.message }); }
       if (!cred?.private_key) return res.json({ error: 'no private_key' });
 
       // Token
@@ -2119,40 +2119,17 @@ function _interpretFlow(steps) {
   return '업무 전환 패턴';
 }
 
-// ── Railway 환경변수 서비스계정 JSON 파싱 ────────────────────────────────────
-function _parseServiceAccountJson() {
-  const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON || '';
-  if (!raw) throw new Error('GOOGLE_SERVICE_ACCOUNT_JSON 미설정');
-  // Railway는 \n을 리터럴 2문자로 저장 → JSON 구조 밖의 \n만 줄바꿈으로 변환
-  // private_key 안의 \n은 JSON 파싱 후 별도 처리
-  try {
-    const cred = JSON.parse(raw);
-    if (cred.private_key) cred.private_key = cred.private_key.replace(/\\n/g, '\n');
-    return cred;
-  } catch {
-    // 리터럴 \n을 실제 줄바꿈으로 바꾸되, 문자열 내부는 유지
-    // 방법: 키-값 구조 밖의 \n만 변환
-    const fixed = raw
-      .replace(/\\n\s*"/g, '\n"')      // \n 뒤에 " → 구조적 줄바꿈
-      .replace(/\\n\s*}/g, '\n}')      // \n 뒤에 } → 구조적 줄바꿈
-      .replace(/^{\\/g, '{\n')          // 시작 {\n → 줄바꿈
-      .replace(/\\n$/g, '\n');          // 끝 \n → 줄바꿈
-    try {
-      const cred = JSON.parse(fixed);
-      if (cred.private_key) cred.private_key = cred.private_key.replace(/\\n/g, '\n');
-      return cred;
-    } catch {
-      // 최후 수단: 모든 \n을 줄바꿈으로 변환 후 private_key를 별도 추출
-      const allNewlines = raw.replace(/\\n/g, '\n');
-      // private_key가 깨지므로 다시 복원
-      const keyMatch = raw.match(/"private_key"\s*:\s*"(.*?)(?<!\\)"/s);
-      const cred = JSON.parse(allNewlines.replace(/"private_key"\s*:\s*"[^"]*"/s, '"private_key": "__PLACEHOLDER__"'));
-      if (keyMatch) {
-        cred.private_key = keyMatch[1].replace(/\\n/g, '\n');
-      }
-      return cred;
-    }
-  }
+// ── 서비스계정 JSON 파싱 (내부 API 경유) ─────────────────────────────────────
+let _cachedCred = null;
+async function _parseServiceAccountJson() {
+  if (_cachedCred) return _cachedCred;
+  // 내부 drive-config API에서 raw JSON 가져오기 (server.js가 이미 제공)
+  const cfg = await _internalGet(`http://localhost:${process.env.PORT || 4747}/api/daemon/drive-config`);
+  if (!cfg?.credentialsJson) throw new Error('drive-config 응답 없음');
+  const cred = JSON.parse(cfg.credentialsJson);
+  if (cred.private_key) cred.private_key = cred.private_key.replace(/\\n/g, '\n');
+  _cachedCred = cred;
+  return cred;
 }
 
 // ── 구글시트에서 카톡 분석 데이터 읽기 ───────────────────────────────────────
@@ -2169,7 +2146,7 @@ async function _fetchKakaoSheetData() {
 
   // 서비스 계정 토큰
   let cred = null;
-  try { cred = _parseServiceAccountJson(); } catch { return []; }
+  try { cred = await _parseServiceAccountJson(); } catch { return []; }
   if (!cred?.private_key) return [];
 
   const now = Math.floor(Date.now() / 1000);
