@@ -274,7 +274,17 @@ function createAutomationEngine({ getDb }) {
         }
       }
 
-      // Step 3: 결과
+      // Step 3: bill_arrival 자동 트래킹 (저장 + 변경 감지 + 알림)
+      let arrivalAlert = null;
+      if (formatType === 'bill_arrival' && orders.length > 0) {
+        const a = orders[0];
+        try {
+          arrivalAlert = await _trackArrival(db, a, text);
+        } catch (e) {
+          console.error('[arrival-track]', e.message);
+        }
+      }
+
       res.json({
         formatType,
         orders,
@@ -284,6 +294,7 @@ function createAutomationEngine({ getDb }) {
           newProducts,
           newCustomers,
         },
+        arrivalAlert,
         meta: { source: source || 'manual', parsedAt: new Date().toISOString() },
       });
     } catch (err) {
@@ -613,6 +624,120 @@ function createAutomationEngine({ getDb }) {
       res.status(500).json({ error: err.message });
     }
   });
+
+  // ═══════════════════════════════════════════════════════════════
+  // 입고 예정 트래킹 — 저장 + 변경 감지 + KakaoWork 알림
+  // ═══════════════════════════════════════════════════════════════
+  async function _ensureArrivalTable() {
+    const db = getDb();
+    if (!db?.query) return;
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS bill_arrivals (
+        id           SERIAL PRIMARY KEY,
+        week_num     TEXT NOT NULL,
+        origin       TEXT,
+        supplier     TEXT,
+        airline      TEXT,
+        arrival_dt   TEXT,
+        awb          TEXT,
+        flight       TEXT,
+        boxes        INT,
+        raw_text     TEXT,
+        created_at   TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+  }
+
+  async function _trackArrival(db, arrival, rawText) {
+    await _ensureArrivalTable();
+
+    const { weekNum, origin, supplier, airline, arrivalDatetime, awb, flight, boxes } = arrival;
+    if (!weekNum) return null;
+
+    // 이전 기록 조회
+    const prev = await db.query(
+      `SELECT * FROM bill_arrivals WHERE week_num=$1 AND supplier=$2 ORDER BY created_at DESC LIMIT 1`,
+      [weekNum, supplier]
+    );
+
+    // 새 기록 저장
+    await db.query(
+      `INSERT INTO bill_arrivals (week_num, origin, supplier, airline, arrival_dt, awb, flight, boxes, raw_text)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [weekNum, origin, supplier, airline, arrivalDatetime, awb, flight, boxes, rawText]
+    );
+
+    if (prev.rows.length === 0) {
+      // 최초 등록 — 알림 없음
+      return { type: 'new', weekNum, supplier };
+    }
+
+    const p = prev.rows[0];
+    const changes = [];
+    if (p.arrival_dt && arrivalDatetime && p.arrival_dt !== arrivalDatetime) {
+      changes.push({ field: 'arrival_dt', from: p.arrival_dt, to: arrivalDatetime });
+    }
+    if (p.boxes && boxes && p.boxes !== boxes) {
+      changes.push({ field: 'boxes', from: p.boxes, to: boxes });
+    }
+
+    if (changes.length === 0) return { type: 'no_change', weekNum, supplier };
+
+    // 변경 감지 → KakaoWork 알림
+    const lines = [`[입고 일정 변경] ${weekNum}차 ${supplier} (${origin})`];
+    for (const c of changes) {
+      if (c.field === 'arrival_dt') {
+        lines.push(`도착일정: ${c.from} → ${c.to}`);
+      } else if (c.field === 'boxes') {
+        lines.push(`박스수량: ${c.from} → ${c.to}`);
+      }
+    }
+    lines.push(`편명: ${flight} | AWB: ${awb}`);
+    const alertText = lines.join('\n');
+
+    await _sendKakaoWorkAlert(alertText);
+    return { type: 'changed', weekNum, supplier, changes, alertText };
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // KakaoWork 관리자톡방 알림 발송
+  // ═══════════════════════════════════════════════════════════════
+  async function _sendKakaoWorkAlert(text) {
+    const token = process.env.KAKAOTALK_TOKEN;
+    const convId = process.env.KAKAO_ADMIN_CONV_ID;
+    if (!token || !convId) {
+      console.log('[kakaowork] KAKAOTALK_TOKEN 또는 KAKAO_ADMIN_CONV_ID 미설정 — 알림 스킵');
+      return;
+    }
+    const https = require('https');
+    const body = JSON.stringify({ conversation_id: convId, text });
+    await new Promise((resolve, reject) => {
+      const req = https.request({
+        hostname: 'api.kakaowork.com',
+        path: '/v1/messages.send',
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(body),
+        },
+      }, res => {
+        let d = '';
+        res.on('data', c => d += c);
+        res.on('end', () => {
+          console.log('[kakaowork] 알림 발송:', res.statusCode, d.slice(0, 100));
+          resolve();
+        });
+      });
+      req.on('error', reject);
+      req.setTimeout(5000, () => req.destroy());
+      req.write(body);
+      req.end();
+    });
+  }
+
+  // 서버 시작 시 테이블 준비
+  setTimeout(_ensureArrivalTable, 5000);
 
   // ═══════════════════════════════════════════════════════════════
   // 자동 학습 스케줄러 — 1시간마다 실행
