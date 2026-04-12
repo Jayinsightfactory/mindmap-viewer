@@ -53,7 +53,7 @@ function createAutomationEngine({ getDb }) {
       // 마스터 데이터 로드
       const [productsRes, customersRes, formatsRes] = await Promise.all([
         db.query('SELECT name, name_en, name_alias, category, origin, unit, code FROM master_products'),
-        db.query('SELECT name, name_alias, region, kakao_room, staff FROM master_customers'),
+        db.query('SELECT nenova_key, name, name_alias, region, kakao_room, staff FROM master_customers'),
         db.query('SELECT pattern, format_type, parser_regex FROM master_formats'),
       ]);
 
