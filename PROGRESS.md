@@ -1,6 +1,29 @@
 # Orbit AI — PROGRESS
 
-> 최종 업데이트: 2026-04-13
+> 최종 업데이트: 2026-04-13 (세션2)
+
+---
+
+## 작업 (2026-04-13) — 네노바 자동화 파이프라인 완성
+
+### 1. launcher.pyw × Orbit 연동 (완료)
+- launcher.pyw에 Orbit parse API 호출 코드 삽입 (`/api/automation/parse`)
+- .env에 `ORBIT_SERVER` 추가
+- 패치 위치 오류(IndentationError) → 수동 수정으로 해결
+- launcher 정상 실행 확인 ✅
+
+### 2. parse API 버그 수정 (완료)
+- `bill_arrival` regex: `항공` 하드코딩 제거, multiline 지원 (`[\s\S]`)
+- 영어 항공사명 (KOREAN AIR LINES) 정상 감지
+- 테스트: boxes 90→95 변경 감지 + `arrivalAlert.type: "changed"` ✅
+
+### 3. master_customers upsert 안정화 (완료)
+- UNIQUE constraint 의존 → check/update/insert 방식으로 변경
+- nenova_key 기준 안정적 동기화
+
+### 남은 작업
+- launcher.pyw Orbit 연동 코드 재삽입 (올바른 위치: classify_and_log_delta 이후)
+- 실제 카톡 방 감시 → parse → 이슈 자동생성 E2E 테스트
 
 ---
 
