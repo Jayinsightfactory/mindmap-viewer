@@ -2079,34 +2079,60 @@ module.exports = function createNenovaDbRouter({ getDb }) {
 
   /**
    * POST /api/nenova/sync/customers — nenova Customer → Orbit master_customers 동기화
+   * Descr 필드에서 통용명(박스라벨 = 카톡 호칭) 추출하여 name으로 저장
+   * Descr 형식: "통용명/품종-출고요일/.../CL번호"
    */
   router.post('/sync/customers', async (req, res) => {
     try {
       const orbitDb = getOrbitDb();
       await ensureSyncTables();
 
-      // nenova에서 전체 거래처 조회
+      // nenova에서 전체 거래처 조회 (Descr 포함)
       const nenovaCustomers = await safeQuery(async (pool) => {
         const data = await pool.request().query(`
-          SELECT CustKey, CustName FROM Customer ORDER BY CustKey
+          SELECT CustKey, CustName, Descr, Manager FROM Customer ORDER BY CustKey
         `);
         return data.recordset;
       });
 
-      let synced = 0, errors = 0;
+      // Descr 있는 활성 거래처만 처리 (통용명 추출)
+      const activeCustomers = nenovaCustomers.filter(c => c.Descr && c.Descr.trim());
 
-      let updated = 0;
-      for (const cust of nenovaCustomers) {
+      let synced = 0, errors = 0, skipped = 0;
+
+      for (const cust of activeCustomers) {
         try {
-          const existing = await orbitDb.query(`SELECT id FROM master_customers WHERE name = $1 LIMIT 1`, [cust.CustName || '']);
+          // Descr 첫 슬래쉬 앞 = 통용명(박스라벨 = 카톡 호칭)
+          const descrName = (cust.Descr || '').split('/')[0].trim();
+          // 통용명이 없으면 CustName 사용
+          const commonName = descrName || cust.CustName || '';
+          if (!commonName) { skipped++; continue; }
+
+          // alias: CustName (사업자명) + descrName (통용명) 모두 포함
+          const aliases = [cust.CustName].filter(a => a && a !== commonName);
+
+          // 기존 레코드 확인 (nenova_key 기준)
+          const existing = await orbitDb.query(
+            `SELECT id FROM master_customers WHERE nenova_key = $1 LIMIT 1`, [cust.CustKey]
+          );
+
           if (existing.rows.length > 0) {
-            await orbitDb.query(`UPDATE master_customers SET nenova_key=$1, source='nenova', synced_at=NOW(), updated_at=NOW() WHERE name=$2`,
-              [cust.CustKey, cust.CustName||'']);
-            updated++;
+            await orbitDb.query(
+              `UPDATE master_customers SET
+                name=$1, name_alias=$2, nenova_key=$3,
+                source='nenova', synced_at=NOW(), updated_at=NOW()
+               WHERE nenova_key=$3`,
+              [commonName, JSON.stringify(aliases), cust.CustKey]
+            );
           } else {
-            await orbitDb.query(`INSERT INTO master_customers (nenova_key, name, source, first_seen, last_seen, seen_count, synced_at)
-              VALUES ($1, $2, 'nenova', NOW(), NOW(), 1, NOW()) ON CONFLICT DO NOTHING`,
-              [cust.CustKey, cust.CustName||'']);
+            await orbitDb.query(
+              `INSERT INTO master_customers
+                (nenova_key, name, name_alias, source, first_seen, last_seen, seen_count, synced_at)
+               VALUES ($1,$2,$3,'nenova',NOW(),NOW(),1,NOW())
+               ON CONFLICT (nenova_key) DO UPDATE SET
+                name=$2, name_alias=$3, synced_at=NOW()`,
+              [cust.CustKey, commonName, JSON.stringify(aliases)]
+            );
           }
           synced++;
         } catch (e) {
@@ -2115,13 +2141,15 @@ module.exports = function createNenovaDbRouter({ getDb }) {
         }
       }
 
-      console.log(`[nenova-db] 거래처 동기화 완료: ${synced}건 처리, ${errors}건 오류`);
+      console.log(`[nenova-db] 거래처 동기화: 활성 ${activeCustomers.length}건 처리, ${synced}성공, ${errors}오류`);
       res.json({
         ok: true,
         sync: 'customers',
         total: nenovaCustomers.length,
+        active: activeCustomers.length,
         synced,
         errors,
+        skipped,
         timestamp: new Date().toISOString(),
       });
     } catch (err) {
