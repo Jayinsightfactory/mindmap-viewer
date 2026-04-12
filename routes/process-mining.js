@@ -2054,7 +2054,292 @@ function createProcessMining({ getDb, reportSheet }) {
     }
   });
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // GET /api/mining/total-analysis — 카톡+전산+비전 토탈 교차분석
+  // ══════════════════════════════════════════════════════════════════════════
+  router.get('/total-analysis', async (req, res) => {
+    try {
+      const db = getDb();
+      const baseUrl = `http://localhost:${process.env.PORT || 4747}`;
+
+      // ── 1. Google Sheets 인증 토큰 ──────────────────────────────────────
+      let token = null;
+      try {
+        const cred = await _parseServiceAccountJson();
+        const crypto = require('crypto');
+        const now = Math.floor(Date.now() / 1000);
+        const b64 = o => Buffer.from(JSON.stringify(o)).toString('base64url');
+        const unsigned = `${b64({alg:'RS256',typ:'JWT'})}.${b64({iss:cred.client_email,scope:'https://www.googleapis.com/auth/spreadsheets.readonly',aud:'https://oauth2.googleapis.com/token',iat:now,exp:now+3600})}`;
+        const sign = crypto.createSign('RSA-SHA256'); sign.update(unsigned);
+        const jwt = `${unsigned}.${sign.sign(cred.private_key,'base64url')}`;
+        const body = `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${jwt}`;
+        const https = require('https');
+        token = await new Promise(resolve => {
+          const r2 = https.request({hostname:'oauth2.googleapis.com',path:'/token',method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded','Content-Length':Buffer.byteLength(body)}}, r => {
+            let d=''; r.on('data',c=>d+=c); r.on('end',()=>{ try{resolve(JSON.parse(d).access_token);}catch{resolve(null);} });
+          }); r2.on('error',()=>resolve(null)); r2.write(body); r2.end();
+        });
+      } catch(e) { console.warn('[total-analysis] 토큰 실패:', e.message); }
+
+      // ── 2. 카톡 시트 7개 탭 전체 읽기 ──────────────────────────────────
+      let tabs = {};
+      if (token) {
+        try { tabs = await _fetchFullKakaoTabs(token); } catch(e) { console.warn('[total-analysis] 시트 오류:', e.message); }
+      }
+
+      // ── 3. Nenova + Vision 데이터 병렬 조회 ─────────────────────────────
+      const [dashData, orderData, visionData] = await Promise.all([
+        _internalGet(`${baseUrl}/api/nenova/dashboard`),
+        _internalGet(`${baseUrl}/api/nenova/orders?limit=500`),
+        db?.query ? db.query(`
+          SELECT data_json->>'app' as app, data_json->>'windowTitle' as wt,
+            data_json->>'screen' as screen, count(*)::int as cnt
+          FROM events WHERE type='screen.analyzed' AND timestamp > NOW() - INTERVAL '30 days'
+          GROUP BY 1,2,3 ORDER BY cnt DESC LIMIT 50
+        `).catch(()=>null) : null,
+      ]);
+
+      // ── 4. 카톡 데이터 집계 ─────────────────────────────────────────────
+      const messages  = tabs['메시지분류']      || [];
+      const bizEvents = tabs['비즈니스이벤트']  || [];
+      const decisions = tabs['의사결정추적']    || [];
+      const rooms     = tabs['방프로파일']       || [];
+      const products  = tabs['품목매칭']         || [];
+      const customers = tabs['거래처매칭']       || [];
+      const patterns  = tabs['패턴라이브러리']   || [];
+
+      // 이벤트타입·방·거래처·품목별 집계
+      const eventTypeMap = {}, roomEventMap = {}, custEventMap = {}, prodEventMap = {};
+      const defectList = [];
+      for (const e of bizEvents) {
+        const type = e['이벤트타입'] || '';
+        const room = e['방이름'] || '';
+        const cust = e['거래처'] || '';
+        const prod = e['품목']   || '';
+        eventTypeMap[type] = (eventTypeMap[type]||0)+1;
+        if (room) roomEventMap[room] = (roomEventMap[room]||0)+1;
+        if (cust) custEventMap[cust] = (custEventMap[cust]||0)+1;
+        if (prod) prodEventMap[prod] = (prodEventMap[prod]||0)+1;
+        if (/불량|클레임|DEFECT|반품|불인정/i.test(type)) defectList.push(e);
+      }
+
+      // AI분류·방별 메시지 집계
+      const aiTypeMap = {}, roomMsgMap = {};
+      for (const m of messages) {
+        const ai   = m['AI분류'] || m['분류'] || '';
+        const room = m['방이름'] || '';
+        if (ai)   aiTypeMap[ai]   = (aiTypeMap[ai]||0)+1;
+        if (room) roomMsgMap[room] = (roomMsgMap[room]||0)+1;
+      }
+
+      // ── 5. 의사결정 분석 ─────────────────────────────────────────────────
+      const unresolvedDec = decisions.filter(d => !d['결과'] || d['결과']==='미해결' || d['결과']==='');
+      const resolvedDec   = decisions.filter(d =>  d['결과'] && d['결과']!=='미해결' && d['결과']!=='');
+      const decByRoom = {}, unresolvByRoom = {};
+      for (const d of decisions) {
+        const room = d['발생방'] || '';
+        if (room) {
+          decByRoom[room] = (decByRoom[room]||0)+1;
+          if (!d['결과']||d['결과']==='미해결') unresolvByRoom[room]=(unresolvByRoom[room]||0)+1;
+        }
+      }
+      const resTimes = decisions.map(d=>parseFloat(d['소요시간(분)']||'0')).filter(t=>t>0);
+      const avgResTime = resTimes.length ? Math.round(resTimes.reduce((a,b)=>a+b,0)/resTimes.length) : 0;
+
+      // ── 6. 품목 불량 위험도 ──────────────────────────────────────────────
+      const defByProd = {};
+      for (const d of defectList) { const p=d['품목']||''; if(p) defByProd[p]=(defByProd[p]||0)+1; }
+      const productRisk = Object.entries(prodEventMap)
+        .filter(([,c])=>c>=3)
+        .map(([name,total])=>{
+          const pm = products.find(p=>p['카톡품명']===name||p['DB ProdName']===name);
+          return { name, total, defects:defByProd[name]||0,
+            defectRate:Math.round((defByProd[name]||0)/total*100),
+            flower:pm?.['꽃종류']||'', country:pm?.['국가']||'', matched:!!(pm?.['DB ProdKey']) };
+        })
+        .sort((a,b)=>b.defects-a.defects).slice(0,12);
+
+      // ── 7. 거래처 위험도 매트릭스 ────────────────────────────────────────
+      const defByCust = {};
+      for (const d of defectList) { const c=d['거래처']||''; if(c) defByCust[c]=(defByCust[c]||0)+1; }
+      const customerRisk = Object.entries(custEventMap)
+        .filter(([,c])=>c>=2)
+        .map(([name,total])=>{
+          const cm = customers.find(c=>c['카톡거래처명']===name);
+          return { name, total, defects:defByCust[name]||0,
+            riskScore:Math.round((defByCust[name]||0)/total*100),
+            custKey:cm?.['DB CustKey']||'', group:cm?.['그룹']||'', matched:!!(cm?.['DB CustKey']) };
+        })
+        .sort((a,b)=>b.total-a.total).slice(0,15);
+
+      // ── 8. 파이프라인 현황 (방프로파일 × 이벤트 × 이슈) ─────────────────
+      const pipelineRooms = rooms.map(r=>{
+        const nm = r['방이름']||'';
+        return {
+          name: nm, purpose:r['목적']||'', mainType:r['주요유형']||'',
+          keySenders:r['핵심발신자']||'', automation:r['자동화기회']||'',
+          msgCount: roomMsgMap[nm]||0, bizEventCount:roomEventMap[nm]||0,
+          defectCount: defectList.filter(d=>d['방이름']===nm).length,
+          issueCount: decByRoom[nm]||0, unresolvedIssues:unresolvByRoom[nm]||0,
+        };
+      }).sort((a,b)=>b.bizEventCount-a.bizEventCount);
+
+      // ── 9. Nenova 교차 매칭 ──────────────────────────────────────────────
+      const nOrders = orderData?.items || [];
+      const nCustNames = nOrders.map(o=>o.CustName||'').filter(Boolean);
+      // 카톡 거래처 → 네노바 거래처 fuzzy match
+      const kakaoToNenova = customerRisk.map(c=>{
+        const match = nCustNames.find(n=>n.includes(c.name)||c.name.includes(n));
+        return match ? { kakao:c.name, nenova:match, events:c.total } : null;
+      }).filter(Boolean);
+
+      // 차수 공통 집계 (카톡 비즈니스이벤트 차수 vs 네노바 OrderWeek)
+      const kakaoWeeks = {};
+      for (const e of bizEvents) {
+        const w = e['차수']||''; if(w) kakaoWeeks[w]=(kakaoWeeks[w]||0)+1;
+      }
+      const nenovaWeeks = {};
+      for (const o of nOrders) {
+        const w = o.OrderWeek||''; if(w) nenovaWeeks[w]=(nenovaWeeks[w]||0)+1;
+      }
+      const commonWeeks = Object.keys(kakaoWeeks).filter(w=>nenovaWeeks[w]);
+
+      // ── 10. 자동화 기회 ──────────────────────────────────────────────────
+      const automationOpps = patterns
+        .filter(p=>p['패턴이름'])
+        .map(p=>({
+          name:p['패턴이름']||'', type:p['분류']||'',
+          accuracy:parseFloat(p['정확도']||'0'),
+          status:p['상태']||'', example:p['예시']||'',
+        }))
+        .sort((a,b)=>b.accuracy-a.accuracy).slice(0,10);
+
+      // ── 11. Vision/Orbit 화면 분석 ────────────────────────────────────────
+      const visionRows = visionData?.rows || [];
+
+      // ── 12. AI 인사이트 생성 ──────────────────────────────────────────────
+      const insights = [];
+      const unresolvedRate = decisions.length ? Math.round(unresolvedDec.length/decisions.length*100) : 0;
+
+      if (unresolvedRate>=50)
+        insights.push({ level:'critical', icon:'🚨',
+          title:`의사결정 미해결율 ${unresolvedRate}%`,
+          detail:`전체 ${decisions.length}건 중 ${unresolvedDec.length}건 처리 안됨. 평균 처리시간 ${avgResTime}분.`,
+          action:'대응자 지정 + 에스컬레이션 기준 수립' });
+
+      const topDP = productRisk.find(p=>p.defectRate>15);
+      if (topDP)
+        insights.push({ level:'warning', icon:'⚠️',
+          title:`${topDP.name} 불량율 ${topDP.defectRate}% (${topDP.defects}/${topDP.total}건)`,
+          detail:`${topDP.flower||''}${topDP.country?' ('+topDP.country+')':''} 품목에 집중 불량 발생.`,
+          action:'수입 검품 강화 또는 공급처 재검토' });
+
+      const unmatchCust = customers.filter(c=>!c['DB CustKey']||c['DB CustKey']==='');
+      if (unmatchCust.length>10)
+        insights.push({ level:'info', icon:'🔗',
+          title:`거래처 전산 미매칭 ${unmatchCust.length}개`,
+          detail:`카톡 거래처 ${customers.length}개 중 ${unmatchCust.length}개가 네노바 DB에 미연결.`,
+          action:'거래처매칭 탭 → DB CustKey 입력으로 교차분석 정확도 향상' });
+
+      const ocCount = eventTypeMap['주문변경']||eventTypeMap['ORDER_CHANGE']||0;
+      if (ocCount>50)
+        insights.push({ level:'opportunity', icon:'⚡',
+          title:`주문변경 ${ocCount}건 — 자동화 시 ${Math.round(ocCount*7)}분 절감`,
+          detail:`반복 주문변경 메시지를 자동으로 전산 반영하면 건당 평균 7분 절감.`,
+          action:'PAD 또는 메시지 파싱 봇으로 자동화 우선 검토' });
+
+      if (commonWeeks.length>0)
+        insights.push({ level:'success', icon:'✅',
+          title:`카톡↔전산 차수 ${commonWeeks.length}개 연결됨`,
+          detail:`카톡 비즈니스이벤트 차수와 네노바 OrderWeek 교차 확인 완료.`,
+          action:`연결율 100% 달성 시 카톡→전산 자동입력 자동화 가능` });
+
+      const matchRate = customerRisk.length ? Math.round(kakaoToNenova.length/customerRisk.length*100) : 0;
+      insights.push({ level:matchRate>60?'success':'warning', icon:matchRate>60?'✅':'⚠️',
+        title:`카톡↔네노바 거래처 연결율 ${matchRate}%`,
+        detail:`카톡 상위 거래처 ${customerRisk.length}개 중 ${kakaoToNenova.length}개 전산 연결.`,
+        action:matchRate<70?'미연결 거래처 수동 매핑으로 데이터 완결성 향상':'연결율 양호 — 교차분석 신뢰도 높음' });
+
+      res.json({
+        generatedAt: new Date().toISOString(),
+        summary: {
+          kakaoMessages: messages.length,
+          kakaoBizEvents: bizEvents.length,
+          decisions: decisions.length,
+          unresolvedDecisions: unresolvedDec.length,
+          defects: defectList.length,
+          productMatches: products.length,
+          customerMatches: customers.length,
+          patterns: patterns.length,
+          nenovaOrders: dashData?.totalOrders||0,
+          nenovaShipments: dashData?.totalShipments||0,
+          nenovaCustomers: dashData?.totalCustomers||0,
+          nenovaProducts: dashData?.totalProducts||0,
+        },
+        eventTypes: Object.entries(eventTypeMap).sort((a,b)=>b[1]-a[1]).map(([type,count])=>({type,count})),
+        aiTypes:    Object.entries(aiTypeMap).sort((a,b)=>b[1]-a[1]).map(([type,count])=>({type,count})),
+        pipelineRooms,
+        productRisk,
+        customerRisk,
+        automationOpps,
+        nenovaFlower:  dashData?.byFlower  || [],
+        nenovaCountry: dashData?.byCountry || [],
+        crossMatch: {
+          kakaoToNenova, commonWeeks,
+          matchRate, kakaoCustomers:customerRisk.length,
+        },
+        decisionStats: {
+          total:decisions.length, unresolved:unresolvedDec.length,
+          resolved:resolvedDec.length, unresolvedRate, avgResponseMin:avgResTime,
+          byRoom: Object.entries(decByRoom).sort((a,b)=>b[1]-a[1])
+            .map(([room,count])=>({room,count,unresolved:unresolvByRoom[room]||0})),
+        },
+        visionScreens: visionRows.slice(0,20),
+        insights,
+      });
+    } catch(e) {
+      console.error('[mining/total-analysis]', e.message);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   return router;
+}
+
+// ── 카톡 시트 전체 탭 읽기 (total-analysis 전용) ────────────────────────────
+async function _fetchFullKakaoTabs(token) {
+  const https = require('https');
+  const TABS = [
+    { name:'메시지분류',     range:'A1:J5000' },
+    { name:'비즈니스이벤트', range:'A1:R2000' },
+    { name:'의사결정추적',   range:'A1:N200'  },
+    { name:'방프로파일',     range:'A1:H20'   },
+    { name:'품목매칭',       range:'A1:J800'  },
+    { name:'거래처매칭',     range:'A1:H400'  },
+    { name:'패턴라이브러리', range:'A1:H60'   },
+  ];
+  const result = {};
+  for (const { name, range } of TABS) {
+    const r = encodeURIComponent(`${name}!${range}`);
+    const data = await new Promise(resolve => {
+      https.get({ hostname:'sheets.googleapis.com',
+        path:`/v4/spreadsheets/${KAKAO_SHEET_ID}/values/${r}`,
+        headers:{ Authorization:`Bearer ${token}` } }, res => {
+        let d=''; res.on('data',c=>d+=c);
+        res.on('end',()=>{ try{resolve(JSON.parse(d));}catch{resolve(null);} });
+      }).on('error',()=>resolve(null));
+    });
+    if (data?.values?.length>1) {
+      const headers = data.values[0];
+      result[name] = data.values.slice(1).map(row=>{
+        const obj={};
+        headers.forEach((h,j)=>{ obj[h]=row[j]||''; });
+        return obj;
+      });
+    } else { result[name]=[]; }
+    console.log(`[total-analysis] ${name}: ${result[name].length}행`);
+  }
+  return result;
 }
 
 // ── 업무 관련 카톡 메시지 판별 ──────────────────────────────────────────────

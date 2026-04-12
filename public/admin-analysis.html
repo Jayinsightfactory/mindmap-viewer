@@ -767,6 +767,9 @@
   <button class="page-tab" data-tab="agents" onclick="switchPageTab('agents')">
     <span class="page-tab-icon">🤖</span> 에이전트 회의
   </button>
+  <button class="page-tab" data-tab="total" onclick="switchPageTab('total');loadTotalAnalysis()">
+    <span class="page-tab-icon">🔬</span> 토탈분석
+  </button>
 </nav>
 
 <!-- ── 탭 패널: 대시보드 (localhost:4848로 이동됨) ── -->
@@ -4346,6 +4349,321 @@ document.addEventListener('DOMContentLoaded', () => {
     </div>
   </main>
 </div>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     탭 패널: 🔬 토탈분석
+  ══════════════════════════════════════════════════════════════════ -->
+<div id="panel-total" class="page-tab-panel">
+<main style="max-width:1400px;margin:0 auto;padding:28px 24px;">
+
+  <!-- 헤더 -->
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;">
+    <div>
+      <h2 style="margin:0;font-size:22px;color:var(--text);">🔬 카톡 × 전산 × 비전 토탈 교차분석</h2>
+      <div style="font-size:12px;color:var(--muted);margin-top:4px;" id="ta-generated-at"></div>
+    </div>
+    <button class="btn btn-primary" onclick="loadTotalAnalysis(true)" style="padding:8px 20px;font-size:14px;">
+      ↻ 재분석
+    </button>
+  </div>
+
+  <!-- 로딩 -->
+  <div id="ta-loading" style="text-align:center;padding:60px;color:var(--muted);">
+    <div class="spinner" style="margin:0 auto 12px;"></div>
+    카톡 시트 7개 탭 + 네노바 DB + 비전 데이터 교차분석 중...<br>
+    <small style="font-size:11px;margin-top:8px;display:block;">최초 실행 시 10~20초 소요</small>
+  </div>
+
+  <div id="ta-body" style="display:none;">
+
+    <!-- ── KPI 스코어카드 ── -->
+    <div id="ta-kpi" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:28px;"></div>
+
+    <!-- ── AI 인사이트 ── -->
+    <div style="margin-bottom:28px;">
+      <h3 style="font-size:15px;color:var(--text);margin:0 0 12px;">🧠 AI 인사이트</h3>
+      <div id="ta-insights"></div>
+    </div>
+
+    <!-- ── 파이프라인 현황 ── -->
+    <div style="margin-bottom:28px;">
+      <h3 style="font-size:15px;color:var(--text);margin:0 0 12px;">🔄 파이프라인 현황 (카톡방 × 이벤트 × 이슈)</h3>
+      <div style="overflow-x:auto;">
+        <table id="ta-pipeline" style="width:100%;border-collapse:collapse;font-size:13px;"></table>
+      </div>
+    </div>
+
+    <!-- ── 2컬럼: 이벤트타입 + 거래처 위험도 ── -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:28px;">
+      <div>
+        <h3 style="font-size:15px;color:var(--text);margin:0 0 12px;">📊 비즈니스이벤트 타입별</h3>
+        <div id="ta-event-types"></div>
+      </div>
+      <div>
+        <h3 style="font-size:15px;color:var(--text);margin:0 0 12px;">🏢 거래처별 이벤트 × 불량</h3>
+        <div id="ta-cust-risk"></div>
+      </div>
+    </div>
+
+    <!-- ── 2컬럼: 품목 불량위험도 + 의사결정 병목 ── -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:28px;">
+      <div>
+        <h3 style="font-size:15px;color:var(--text);margin:0 0 12px;">🌸 품목별 불량 위험도</h3>
+        <div id="ta-prod-risk"></div>
+      </div>
+      <div>
+        <h3 style="font-size:15px;color:var(--text);margin:0 0 12px;">⏱ 의사결정 병목</h3>
+        <div id="ta-decisions"></div>
+      </div>
+    </div>
+
+    <!-- ── 카톡↔네노바 교차매칭 ── -->
+    <div style="margin-bottom:28px;">
+      <h3 style="font-size:15px;color:var(--text);margin:0 0 12px;">🔗 카톡↔네노바 교차 매칭</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+        <div>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">차수(주차) 공통 연결</div>
+          <div id="ta-cross-weeks"></div>
+        </div>
+        <div>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">거래처 이름 매칭</div>
+          <div id="ta-cross-custs"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── 2컬럼: 자동화 기회 + 네노바 품목 물량 ── -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:28px;">
+      <div>
+        <h3 style="font-size:15px;color:var(--text);margin:0 0 12px;">⚡ 자동화 기회 (패턴라이브러리)</h3>
+        <div id="ta-automation"></div>
+      </div>
+      <div>
+        <h3 style="font-size:15px;color:var(--text);margin:0 0 12px;">📦 네노바 품목별 물량 TOP</h3>
+        <div id="ta-nenova-flower"></div>
+      </div>
+    </div>
+
+  </div><!-- /ta-body -->
+</main>
+</div>
+
+<style>
+.ta-card { background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:16px; }
+.ta-kpi-card { background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px 14px;text-align:center; }
+.ta-kpi-num  { font-size:28px;font-weight:700;color:var(--text);line-height:1.1; }
+.ta-kpi-label { font-size:11px;color:var(--muted);margin-top:4px; }
+.ta-insight { display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border-radius:8px;margin-bottom:8px;border-left:3px solid transparent; }
+.ta-insight.critical { background:rgba(248,81,73,.08);border-color:#f85149; }
+.ta-insight.warning  { background:rgba(210,153,34,.08);border-color:#d2a205; }
+.ta-insight.success  { background:rgba(63,185,80,.08);border-color:#3fb950; }
+.ta-insight.opportunity { background:rgba(88,166,255,.08);border-color:#58a6ff; }
+.ta-insight.info     { background:rgba(139,148,158,.08);border-color:#8b949e; }
+.ta-insight-body .title { font-size:13px;font-weight:600;color:var(--text); }
+.ta-insight-body .detail { font-size:12px;color:var(--muted);margin-top:2px; }
+.ta-insight-body .action { font-size:11px;color:#58a6ff;margin-top:4px; }
+.ta-table { width:100%;border-collapse:collapse;font-size:12px; }
+.ta-table th { background:var(--surface2);color:var(--muted);font-weight:500;padding:6px 10px;text-align:left;font-size:11px;white-space:nowrap; }
+.ta-table td { padding:7px 10px;border-bottom:1px solid var(--border);color:var(--text); }
+.ta-table tr:hover td { background:rgba(255,255,255,.03); }
+.ta-bar { height:6px;border-radius:3px;background:var(--border);overflow:hidden;margin-top:3px; }
+.ta-bar-fill { height:100%;border-radius:3px;transition:width .4s; }
+.ta-badge { display:inline-block;padding:1px 7px;border-radius:10px;font-size:10px;font-weight:600; }
+</style>
+
+<script>
+let _taCache = null;
+async function loadTotalAnalysis(force) {
+  if (_taCache && !force) { _renderTotalAnalysis(_taCache); return; }
+  document.getElementById('ta-loading').style.display='block';
+  document.getElementById('ta-body').style.display='none';
+  try {
+    const r = await fetch('/api/mining/total-analysis');
+    _taCache = await r.json();
+    _renderTotalAnalysis(_taCache);
+  } catch(e) {
+    document.getElementById('ta-loading').innerHTML = '❌ 분석 실패: '+e.message;
+  }
+}
+
+function _renderTotalAnalysis(d) {
+  if (d.error) { document.getElementById('ta-loading').innerHTML='❌ '+d.error; return; }
+  document.getElementById('ta-loading').style.display='none';
+  document.getElementById('ta-body').style.display='block';
+  if (d.generatedAt) document.getElementById('ta-generated-at').textContent='분석 시각: '+new Date(d.generatedAt).toLocaleString('ko-KR');
+
+  const s = d.summary||{};
+
+  // ── KPI 카드 ──
+  const kpis = [
+    { num: s.kakaoBizEvents||0, label:'비즈니스이벤트', color:'#58a6ff' },
+    { num: s.kakaoMessages||0, label:'카톡 메시지', color:'#3fb950' },
+    { num: s.decisions||0, label:'의사결정', sub:`미해결 ${s.unresolvedDecisions||0}건`, color: (s.unresolvedDecisions||0)>50?'#f85149':'#d2a205' },
+    { num: s.defects||0, label:'불량/클레임', color:'#f85149' },
+    { num: s.nenovaOrders||0, label:'네노바 주문', color:'#3fb950' },
+    { num: s.nenovaShipments||0, label:'네노바 출하', color:'#58a6ff' },
+    { num: s.productMatches||0, label:'품목매칭', sub:`전산 ${s.nenovaProducts||0}개`, color:'#bc8cff' },
+    { num: s.customerMatches||0, label:'거래처매칭', sub:`전산 ${s.nenovaCustomers||0}개`, color:'#ffa657' },
+    { num: d.crossMatch?.matchRate||0, label:'카톡↔전산 연결율', sub:'%', color: (d.crossMatch?.matchRate||0)>60?'#3fb950':'#d2a205' },
+    { num: s.patterns||0, label:'자동화 패턴', color:'#58a6ff' },
+  ];
+  document.getElementById('ta-kpi').innerHTML = kpis.map(k=>`
+    <div class="ta-kpi-card">
+      <div class="ta-kpi-num" style="color:${k.color}">${typeof k.num==='number'?k.num.toLocaleString():k.num}${k.sub&&k.sub==='%'?'%':''}</div>
+      <div class="ta-kpi-label">${k.label}</div>
+      ${k.sub&&k.sub!=='%'?`<div style="font-size:10px;color:${k.color};margin-top:2px;">${k.sub}</div>`:''}
+    </div>`).join('');
+
+  // ── AI 인사이트 ──
+  document.getElementById('ta-insights').innerHTML = (d.insights||[]).map(i=>`
+    <div class="ta-insight ${i.level}">
+      <div style="font-size:20px;line-height:1;">${i.icon||'•'}</div>
+      <div class="ta-insight-body">
+        <div class="title">${i.title}</div>
+        <div class="detail">${i.detail}</div>
+        <div class="action">→ ${i.action}</div>
+      </div>
+    </div>`).join('');
+
+  // ── 파이프라인 테이블 ──
+  const pl = d.pipelineRooms||[];
+  const plMax = Math.max(...pl.map(r=>r.bizEventCount),1);
+  document.getElementById('ta-pipeline').innerHTML = `
+    <thead><tr>
+      <th>카톡방</th><th>목적</th><th>주요유형</th><th>메시지</th>
+      <th>비즈이벤트</th><th>불량</th><th>이슈</th><th>미해결</th><th>자동화기회</th>
+    </tr></thead>
+    <tbody>${pl.map(r=>`
+      <tr>
+        <td style="font-weight:600;color:var(--text)">${r.name}</td>
+        <td style="color:var(--muted);max-width:180px;white-space:normal;">${r.purpose}</td>
+        <td><span class="ta-badge" style="background:rgba(88,166,255,.15);color:#58a6ff;">${r.mainType}</span></td>
+        <td>${(r.msgCount||0).toLocaleString()}</td>
+        <td>
+          <div style="font-weight:600;color:#3fb950">${r.bizEventCount||0}</div>
+          <div class="ta-bar"><div class="ta-bar-fill" style="width:${Math.round(r.bizEventCount/plMax*100)}%;background:#3fb950;"></div></div>
+        </td>
+        <td style="color:${r.defectCount>5?'#f85149':'var(--muted)'}">${r.defectCount||0}</td>
+        <td>${r.issueCount||0}</td>
+        <td style="color:${r.unresolvedIssues>0?'#f85149':'var(--muted)'};font-weight:${r.unresolvedIssues>0?'600':'400'}">${r.unresolvedIssues||0}</td>
+        <td style="font-size:11px;color:#58a6ff;max-width:160px;white-space:normal;">${r.automation||'-'}</td>
+      </tr>`).join('')}
+    </tbody>`;
+
+  // ── 이벤트타입 ──
+  const et = (d.eventTypes||[]).slice(0,10);
+  const etMax = et[0]?.count||1;
+  document.getElementById('ta-event-types').innerHTML = et.map(e=>`
+    <div style="margin-bottom:8px;">
+      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;">
+        <span style="color:var(--text)">${e.type||'(없음)'}</span>
+        <span style="color:#58a6ff;font-weight:600">${e.count.toLocaleString()}</span>
+      </div>
+      <div class="ta-bar"><div class="ta-bar-fill" style="width:${Math.round(e.count/etMax*100)}%;background:#58a6ff;"></div></div>
+    </div>`).join('');
+
+  // ── 거래처 위험도 ──
+  const cr = (d.customerRisk||[]).slice(0,10);
+  document.getElementById('ta-cust-risk').innerHTML = `
+    <table class="ta-table">
+      <thead><tr><th>거래처</th><th>이벤트</th><th>불량</th><th>전산연결</th></tr></thead>
+      <tbody>${cr.map(c=>`
+        <tr>
+          <td style="font-weight:500">${c.name}</td>
+          <td style="color:#58a6ff">${c.total}</td>
+          <td style="color:${c.defects>0?'#f85149':'var(--muted)'}">${c.defects}${c.riskScore>0?` (${c.riskScore}%)`:''}</td>
+          <td>${c.matched?`<span class="ta-badge" style="background:rgba(63,185,80,.2);color:#3fb950">✓ ${c.custKey}</span>`:'<span class="ta-badge" style="background:rgba(248,81,73,.15);color:#f85149">미연결</span>'}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>`;
+
+  // ── 품목 불량위험도 ──
+  const pr = (d.productRisk||[]).slice(0,10);
+  document.getElementById('ta-prod-risk').innerHTML = `
+    <table class="ta-table">
+      <thead><tr><th>품목</th><th>꽃종류/국가</th><th>이벤트</th><th>불량</th><th>위험율</th></tr></thead>
+      <tbody>${pr.map(p=>`
+        <tr>
+          <td style="font-weight:500">${p.name}</td>
+          <td style="font-size:11px;color:var(--muted)">${[p.flower,p.country].filter(Boolean).join('/')}</td>
+          <td>${p.total}</td>
+          <td style="color:${p.defects>0?'#f85149':'var(--muted)'}">${p.defects}</td>
+          <td>
+            <span class="ta-badge" style="background:${p.defectRate>20?'rgba(248,81,73,.2)':p.defectRate>10?'rgba(210,153,34,.2)':'rgba(63,185,80,.2)'};color:${p.defectRate>20?'#f85149':p.defectRate>10?'#d2a205':'#3fb950'}">${p.defectRate}%</span>
+          </td>
+        </tr>`).join('')}
+      </tbody>
+    </table>`;
+
+  // ── 의사결정 병목 ──
+  const ds = d.decisionStats||{};
+  const dbr = (ds.byRoom||[]).slice(0,8);
+  document.getElementById('ta-decisions').innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px;">
+      <div class="ta-kpi-card">
+        <div class="ta-kpi-num" style="color:${(ds.unresolvedRate||0)>50?'#f85149':'#d2a205'}">${ds.unresolvedRate||0}%</div>
+        <div class="ta-kpi-label">미해결율</div>
+      </div>
+      <div class="ta-kpi-card">
+        <div class="ta-kpi-num" style="color:#58a6ff">${ds.avgResponseMin||0}분</div>
+        <div class="ta-kpi-label">평균처리시간</div>
+      </div>
+      <div class="ta-kpi-card">
+        <div class="ta-kpi-num" style="color:#3fb950">${ds.resolved||0}</div>
+        <div class="ta-kpi-label">처리완료</div>
+      </div>
+    </div>
+    <table class="ta-table">
+      <thead><tr><th>발생방</th><th>이슈수</th><th>미해결</th></tr></thead>
+      <tbody>${dbr.map(r=>`
+        <tr>
+          <td>${r.room}</td>
+          <td>${r.count}</td>
+          <td style="color:${r.unresolved>0?'#f85149':'#3fb950'};font-weight:600">${r.unresolved}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>`;
+
+  // ── 교차 매칭: 차수 ──
+  const cw = (d.crossMatch?.commonWeeks||[]).slice(0,12);
+  document.getElementById('ta-cross-weeks').innerHTML = cw.length ?
+    `<div style="display:flex;flex-wrap:wrap;gap:6px;">${cw.map(w=>`<span class="ta-badge" style="background:rgba(63,185,80,.15);color:#3fb950;padding:3px 10px;">${w}</span>`).join('')}</div>
+     <div style="font-size:11px;color:var(--muted);margin-top:8px;">카톡 이벤트 차수 ↔ 네노바 OrderWeek ${cw.length}개 공통 연결</div>` :
+    '<div style="color:var(--muted);font-size:12px;">차수 데이터 없음</div>';
+
+  // ── 교차 매칭: 거래처 ──
+  const kn = (d.crossMatch?.kakaoToNenova||[]).slice(0,10);
+  document.getElementById('ta-cross-custs').innerHTML = kn.length ?
+    `<table class="ta-table"><thead><tr><th>카톡</th><th>네노바</th><th>이벤트</th></tr></thead>
+     <tbody>${kn.map(m=>`<tr><td>${m.kakao}</td><td style="color:#3fb950">${m.nenova}</td><td>${m.events}</td></tr>`).join('')}
+     </tbody></table>` :
+    '<div style="color:var(--muted);font-size:12px;">매칭 데이터 없음</div>';
+
+  // ── 자동화 기회 ──
+  const ao = (d.automationOpps||[]).slice(0,8);
+  document.getElementById('ta-automation').innerHTML = ao.length ? ao.map(p=>`
+    <div style="padding:8px 12px;border-radius:6px;background:var(--surface);border:1px solid var(--border);margin-bottom:8px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <span style="font-size:13px;font-weight:500;color:var(--text)">${p.name}</span>
+        <span class="ta-badge" style="background:rgba(88,166,255,.15);color:#58a6ff">${Math.round(p.accuracy*100)}%</span>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-top:3px;">${p.type} · ${p.status} ${p.example?'· 예: '+p.example.substring(0,30):''}</div>
+    </div>`).join('') :
+    '<div style="color:var(--muted);font-size:12px;">패턴 데이터 없음</div>';
+
+  // ── 네노바 품목 물량 ──
+  const nf = (d.nenovaFlower||[]).slice(0,8);
+  const nfMax = nf[0]?.total||1;
+  document.getElementById('ta-nenova-flower').innerHTML = nf.map(f=>`
+    <div style="margin-bottom:8px;">
+      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;">
+        <span style="color:var(--text)">${f.flower}</span>
+        <span style="color:#3fb950;font-weight:600">${Math.round(f.total).toLocaleString()}</span>
+      </div>
+      <div class="ta-bar"><div class="ta-bar-fill" style="width:${Math.round(f.total/nfMax*100)}%;background:#3fb950;"></div></div>
+    </div>`).join('');
+}
+</script>
 
 <!-- ── 탭 패널: 작업 내역 ── -->
 <div id="panel-worklogs" class="page-tab-panel">
