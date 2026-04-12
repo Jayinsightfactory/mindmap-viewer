@@ -422,15 +422,38 @@ function _isCheckTime() {
   return false;
 }
 
+// ── Git 직접 비교 (서버 무관) ─────────────────────────────────────────────────
+let _serverFailCount = 0;
+const SERVER_FAIL_THRESHOLD = 5; // 서버 5회 연속 실패 → git 직접 비교 fallback
+
+function _gitDirectCheck() {
+  try {
+    execSync('git fetch origin', { cwd: ROOT, timeout: 30000, windowsHide: true, stdio: 'pipe' });
+    const local = execSync('git rev-parse HEAD', { cwd: ROOT, timeout: 5000, windowsHide: true, stdio: 'pipe' }).toString().trim().slice(0, 8);
+    const remote = execSync('git rev-parse origin/main', { cwd: ROOT, timeout: 5000, windowsHide: true, stdio: 'pipe' }).toString().trim().slice(0, 8);
+    if (local !== remote) {
+      console.log(`[daemon-updater] [git-fallback] 버전 불일치: 로컬=${local} 리모트=${remote}`);
+      return true;
+    }
+    return false;
+  } catch (e) {
+    console.warn('[daemon-updater] [git-fallback] fetch 실패:', e.message);
+    return false;
+  }
+}
+
 // ── 메인 체크 루프 ────────────────────────────────────────────────────────────
 async function _checkCycle() {
   // 대기 명령은 항상 확인 (1분마다)
   try {
     const commands = await fetchCommands();
+    if (commands.length > 0) _serverFailCount = 0; // 서버 통신 성공
     for (const cmd of commands) {
       await executeCommand(cmd);
     }
-  } catch {}
+  } catch {
+    _serverFailCount++;
+  }
 
   // 버전 확인은 정해진 시간에만
   if (!_isCheckTime()) return;
@@ -438,7 +461,9 @@ async function _checkCycle() {
   try {
     console.log('[daemon-updater] 정기 업데이트 확인 시작');
     const serverInfo = await checkServerVersion();
+
     if (serverInfo && serverInfo.version) {
+      _serverFailCount = 0; // 서버 통신 성공
       const local = getLocalVersion();
       if (local !== 'unknown' && serverInfo.version !== local) {
         console.log(`[daemon-updater] 버전 불일치: 로컬=${local} 서버=${serverInfo.version}`);
@@ -446,6 +471,19 @@ async function _checkCycle() {
         return;
       }
       console.log(`[daemon-updater] 최신 버전 확인됨: ${local}`);
+    } else {
+      // 서버 응답 없음 → 실패 카운트 증가
+      _serverFailCount++;
+      console.warn(`[daemon-updater] 서버 응답 없음 (연속 ${_serverFailCount}회)`);
+
+      // 서버 N회 연속 실패 → GitHub에서 직접 비교 (서버 URL 바뀌어도 업데이트 가능)
+      if (_serverFailCount >= SERVER_FAIL_THRESHOLD) {
+        console.log('[daemon-updater] 서버 장기 미응답 → git 직접 비교 fallback');
+        if (_gitDirectCheck()) {
+          pullAndRestart('서버 미응답 + git 직접 비교 업데이트');
+          return;
+        }
+      }
     }
   } catch (e) {
     console.warn('[daemon-updater] 체크 사이클 오류:', e.message);
