@@ -2,7 +2,7 @@
 const { test, expect } = require('@playwright/test');
 
 const BASE  = 'https://mindmap-viewer-production-adb2.up.railway.app';
-const EMAIL = 'dlaww@kicda.com';
+const EMAIL = 'dlaww584@gmail.com';
 const PW    = 'orbit2024';
 
 let TOKEN = '';

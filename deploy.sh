@@ -3,7 +3,7 @@
 # 사용법: ./deploy.sh [커밋 메시지]
 set -e
 
-DRIVE_PATH="/Users/darlene/Library/CloudStorage/GoogleDrive-dlaww@kicda.com/내 드라이브/mindmap-viewer/"
+DRIVE_PATH="/Users/darlene/Library/CloudStorage/GoogleDrive-dlaww584@gmail.com/내 드라이브/mindmap-viewer/"
 GIT_PATH="/Users/darlene/mindmap-viewer/"
 PROD_URL="https://mindmap-viewer-production-adb2.up.railway.app"
 

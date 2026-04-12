@@ -154,7 +154,7 @@ function createRouter(deps) {
 
   /**
    * POST /api/auth/invite
-   * 관리자(dlaww@kicda.com)가 이메일로 사용자를 초대합니다.
+   * 관리자(dlaww584@gmail.com)가 이메일로 사용자를 초대합니다.
    * 초대된 사용자는 팀(team) 플랜 혜택을 자동 부여받습니다.
    * @body {string} email - 초대할 사용자 이메일
    * @returns {{ ok: true } | { error: string }}
