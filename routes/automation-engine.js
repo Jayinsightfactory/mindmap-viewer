@@ -62,19 +62,26 @@ function createAutomationEngine({ getDb }) {
       const formats = formatsRes.rows;
 
       // Step 1: 포맷 감지
+      // ① 수입방 입고 예정 (빌번호) — "[차수 원산지 공급사 (항공사)]" 패턴
       let formatType = 'unknown';
-      for (const fmt of formats) {
-        if (text.includes(fmt.pattern)) {
-          formatType = fmt.format_type;
-          break;
+      if (/\[\d+[-–]\d+차.+\(.+항공.+\)\]|도착 예정.*box|AWB/i.test(text) ||
+          /\[\d+[-–]?\d*차\s+\S+\s+\S+\s+\([\w\s]+\)\]/i.test(text)) {
+        formatType = 'bill_arrival';
+      } else {
+        // ② DB 패턴 매칭
+        for (const fmt of formats) {
+          if (text.includes(fmt.pattern)) { formatType = fmt.format_type; break; }
         }
-      }
-      // 추가 감지
-      if (formatType === 'unknown') {
-        if (/취소|추가/.test(text)) formatType = 'change_order';
-        else if (/창고보관/.test(text)) formatType = 'inventory';
-        else if (/출고/.test(text)) formatType = 'shipping';
-        else if (/\d+\s*(단|박스|kg)/i.test(text)) formatType = 'general_order';
+        // ③ 실제 카톡 메시지 패턴 fallback
+        if (formatType === 'unknown') {
+          if (/\d+[-–]\d+차.*변경사항|차.*변경사항/.test(text)) formatType = 'change_order';
+          else if (/취소|추가/.test(text)) formatType = 'change_order';
+          else if (/\[MEL\]/i.test(text)) formatType = 'mel_order';
+          else if (/ROSE\s*\//.test(text)) formatType = 'rose_order';
+          else if (/창고보관/.test(text)) formatType = 'inventory';
+          else if (/출고/.test(text)) formatType = 'shipping';
+          else if (/\d+\s*(단|박스|kg)/i.test(text)) formatType = 'general_order';
+        }
       }
 
       // Step 2: 변수 추출
@@ -82,9 +89,35 @@ function createAutomationEngine({ getDb }) {
       const newProducts = [];
       const newCustomers = [];
 
-      if (formatType === 'mel_order') {
-        // [MEL] ORIGIN / items
-        const m = text.match(/\[MEL\]\s*(.*?)\s*\/\s*(.*)/);
+      // ─── 수입방 입고 예정 파서 ───────────────────────────────────
+      if (formatType === 'bill_arrival') {
+        // [15-2차 네덜란드 Holex (KOREAN AIR LINES)]
+        // 04월 12일 (일) 16:40 도착 예정
+        // (180-50680173  KE0926  95 box)
+        const headerM = text.match(/\[(\d+[-–]?\d*)차\s+([\w가-힣]+)\s+([\w가-힣]+)\s+\(([^)]+)\)\]/);
+        const dateM   = text.match(/(\d+)월\s*(\d+)일\s*\([일월화수목금토]\)\s*(\d+:\d+)/);
+        const billM   = text.match(/\(?([\d\-]+)\s+([\w]+\d+)\s+(\d+)\s*box\)?/i);
+
+        const weekNum  = headerM?.[1]?.replace('–','-').replace(/[-](\d)$/,(_,n)=>`-0${n}`) || '';
+        const origin   = headerM?.[2] || '';
+        const supplier = headerM?.[3] || '';
+        const airline  = headerM?.[4] || '';
+        const arrDate  = dateM ? `${new Date().getFullYear()}-${String(dateM[1]).padStart(2,'0')}-${String(dateM[2]).padStart(2,'0')} ${dateM[3]}` : '';
+        const awb      = billM?.[1] || '';
+        const flight   = billM?.[2] || '';
+        const boxes    = billM ? parseInt(billM[3]) : 0;
+
+        orders.push({
+          type: 'bill_arrival',
+          weekNum, origin, supplier, airline,
+          arrivalDatetime: arrDate, awb, flight, boxes,
+          action: 'arrival_update',
+          confidence: headerM ? 0.95 : 0.6,
+        });
+      }
+      // ─── MEL 포맷 (해외 주문) ──────────────────────────────────
+      else if (formatType === 'mel_order') {
+        const m = text.match(/\[MEL\]\s*(.*?)\s*\/\s*(.*)/s);
         if (m) {
           const origin = m[1].trim();
           const segments = m[2].split(/\s*\+\s*/);
@@ -93,7 +126,7 @@ function createAutomationEngine({ getDb }) {
             for (const item of items) {
               const im = item.trim().match(/(.+?)\s*:\s*([\d.]+)/);
               if (im) {
-                const prodName = im[1].trim();
+                const prodName = im[1].trim().replace(/:$/, '');
                 const qty = parseFloat(im[2]);
                 const matched = _matchProduct(prodName, products);
                 if (!matched) newProducts.push(prodName);
@@ -113,13 +146,13 @@ function createAutomationEngine({ getDb }) {
           }
         }
       } else if (formatType === 'rose_order') {
-        const m = text.match(/ROSE\s*\/\s*(.*)/);
+        const m = text.match(/ROSE\s*\/\s*(.*)/s);
         if (m) {
           const items = m[1].split(/,\s*/);
           for (const item of items) {
             const im = item.trim().match(/(.+?)\s*:\s*([\d.]+)/);
             if (im) {
-              const prodName = im[1].trim();
+              const prodName = im[1].trim().replace(/:$/, '');
               const qty = parseFloat(im[2]);
               const matched = _matchProduct(prodName, products);
               if (!matched) newProducts.push(prodName);
@@ -136,15 +169,32 @@ function createAutomationEngine({ getDb }) {
             }
           }
         }
-      } else if (formatType === 'change_order') {
+      }
+      // ─── 주문 변경 파서 (영업방팀 실제 메시지 기반) ──────────────
+      else if (formatType === 'change_order') {
         const lines = text.split('\n');
-        let currentCategory = '';
-        for (const line of lines) {
+        // 헤더에서 차수 + 품종 추출
+        // 예: "14-01차 카네이션 변경사항" 또는 "14차 장미 변경사항"
+        let weekNum = '', currentCategory = '';
+        const headerLine = lines[0] || '';
+        const weekM = headerLine.match(/(\d+[-–]\d+)차|(\d+)차/);
+        if (weekM) {
+          weekNum = weekM[1] || `${weekM[2]}-01`;
+          weekNum = weekNum.replace('–', '-');
+          // "14-1" → "14-01" 정규화
+          weekNum = weekNum.replace(/[-](\d)$/, (_, n) => `-0${n}`);
+        }
+        const flowerM = headerLine.match(/카네이션|장미|수국|카라|알스트로메리아|국화|거베라|튤립|라넌큘러스|리시안셔스/);
+        if (flowerM) currentCategory = flowerM[0];
+
+        for (const line of lines.slice(1)) {
           const l = line.trim();
           if (!l) continue;
-          // 카테고리 감지
-          const catMatch = l.match(/^(장미|카네이션|수국변경|수국|카라|알스트로메리아|국화|거베라|꽃수국)$/);
+          // 품종 전환 라인 (단독 품종명)
+          const catMatch = l.match(/^(장미|카네이션|수국|카라|알스트로메리아|국화|거베라|튤립|라넌큘러스|리시안셔스)$/);
           if (catMatch) { currentCategory = catMatch[1]; continue; }
+          // 차수/날짜 라인 스킵
+          if (/변경사항|차수|\d+[-]\d+차/.test(l)) continue;
 
           const action = /취소/.test(l) ? 'cancel' : /추가/.test(l) ? 'add' : 'unknown';
 
@@ -170,26 +220,40 @@ function createAutomationEngine({ getDb }) {
             continue;
           }
 
-          // 단일: "거래처 품목 수량단위 액션"
-          const sm = l.match(/(?:추가\s+)?(\S+)\s+(\S+)\s+(\d+)\s*(박스|단|개)?\s*(취소|추가)?/);
-          if (sm) {
-            let customer = sm[1];
-            let product = sm[2];
-            if (customer === '추가') { customer = ''; }
+          // 실제 포맷: "[업체통용명] [품목명] [수량] [취소|추가]"
+          // 예: "영남 문라이트 1 취소", "남대문경원 핑크빌 3 추가"
+          const action = /취소/.test(l) ? 'cancel' : /추가/.test(l) ? 'add' : 'unknown';
+          // 끝에 취소/추가 제거 후 파싱
+          const stripped = l.replace(/(취소|추가)\s*$/, '').trim();
+          // "업체명 품목명 수량" 추출 — 수량은 맨 끝 숫자
+          const qtyM = stripped.match(/^(.*?)\s+(\d+(?:\.\d+)?)\s*$/);
+          if (qtyM) {
+            const qty = parseFloat(qtyM[2]);
+            const rest = qtyM[1].trim(); // "업체명 품목명"
+            // rest를 마지막 공백 기준으로 업체/품목 분리
+            const lastSpace = rest.lastIndexOf(' ');
+            let custName = lastSpace > 0 ? rest.slice(0, lastSpace).trim() : '';
+            let prodName = lastSpace > 0 ? rest.slice(lastSpace + 1).trim() : rest;
 
-            const matchedP = _matchProduct(product, products);
-            const matchedC = _matchCustomer(customer, customers);
-            if (product && !matchedP) newProducts.push(product);
-            if (customer && !matchedC && customer !== '추가') newCustomers.push(customer);
+            // 단위 처리 (prodName 끝에 박스/단 있으면 제거)
+            const unitM = prodName.match(/^(.+?)\s*(박스|단|개)$/);
+            if (unitM) prodName = unitM[1].trim();
+
+            const matchedP = _matchProduct(prodName, products);
+            const matchedC = _matchCustomer(custName, customers);
+            if (prodName && !matchedP) newProducts.push(prodName);
+            if (custName && !matchedC) newCustomers.push(custName);
 
             orders.push({
-              customer: matchedC?.name || customer,
-              product: matchedP?.name || product,
-              quantity: parseInt(sm[3]),
-              unit: sm[4] || '단',
+              weekNum,
+              customer: matchedC?.name || custName,
+              custKey: matchedC?.nenova_key || null,
+              product: matchedP?.name || prodName,
+              quantity: qty,
+              unit: '박스',
               category: currentCategory,
               action,
-              confidence: (matchedP ? 0.5 : 0) + (matchedC ? 0.5 : 0.3),
+              confidence: (matchedP ? 0.5 : 0.1) + (matchedC ? 0.5 : 0.2),
             });
           }
         }
@@ -656,17 +720,29 @@ function _matchProduct(name, products) {
 
 function _matchCustomer(name, customers) {
   if (!name) return null;
-  const n = name.trim().toLowerCase();
+  const n = name.trim().toLowerCase().replace(/[☆※★\s]/g, '');
+  // 1순위: 정확 매칭 (name = Descr 통용명)
   for (const c of customers) {
-    if (c.name?.toLowerCase() === n) return c;
-    if (c.kakao_room?.toLowerCase().includes(n)) return c;
+    const cn = (c.name || '').toLowerCase().replace(/[☆※★\s]/g, '');
+    if (cn === n) return c;
   }
+  // 2순위: 부분 포함 (통용명이 카톡 호칭을 포함하거나 그 반대)
   for (const c of customers) {
-    if (c.name_alias && Array.isArray(c.name_alias)) {
-      for (const alias of c.name_alias) {
-        if (alias.toLowerCase() === n) return c;
-      }
+    const cn = (c.name || '').toLowerCase().replace(/[☆※★\s]/g, '');
+    if (cn.includes(n) || n.includes(cn)) return c;
+  }
+  // 3순위: alias(CustName 사업자명) 매칭
+  for (const c of customers) {
+    const aliases = Array.isArray(c.name_alias) ? c.name_alias
+      : (typeof c.name_alias === 'string' ? (() => { try { return JSON.parse(c.name_alias); } catch { return []; } })() : []);
+    for (const alias of aliases) {
+      const an = (alias || '').toLowerCase().replace(/[(주)\s]/g, '');
+      if (an.includes(n) || n.includes(an)) return c;
     }
+  }
+  // 4순위: kakao_room 필드
+  for (const c of customers) {
+    if (c.kakao_room?.toLowerCase().includes(n)) return c;
   }
   return null;
 }
