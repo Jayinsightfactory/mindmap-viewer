@@ -64,8 +64,9 @@ function createAutomationEngine({ getDb }) {
       // Step 1: 포맷 감지
       // ① 수입방 입고 예정 (빌번호) — "[차수 원산지 공급사 (항공사)]" 패턴
       let formatType = 'unknown';
-      if (/\[\d+[-–]\d+차.+\(.+항공.+\)\]|도착 예정.*box|AWB/i.test(text) ||
-          /\[\d+[-–]?\d*차\s+\S+\s+\S+\s+\([\w\s]+\)\]/i.test(text)) {
+      if (/\[\d+[-–]?\d*차[\s\S]{1,40}\([\w\s\-]+\)\]/i.test(text) ||
+          /도착 예정[\s\S]{0,50}box/i.test(text) ||
+          /AWB|air\s*waybill/i.test(text)) {
         formatType = 'bill_arrival';
       } else {
         // ② DB 패턴 매칭
