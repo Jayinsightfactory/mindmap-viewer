@@ -166,6 +166,12 @@ try {
 Write-Host "  [3/7] 소스 다운로드..." -ForegroundColor Cyan
 if (Test-Path "$DIR\.git") {
   Set-Location $DIR
+  # git remote URL 자동 수리 (계정 이전/repo 변경 시 구 URL 잔존 방지)
+  $currentRemote = git remote get-url origin 2>$null
+  if ($currentRemote -ne $REPO) {
+    Write-Host "  remote 수리: $currentRemote -> $REPO" -ForegroundColor Yellow
+    git remote set-url origin $REPO 2>$null
+  }
   git fetch origin 2>$null
   git reset --hard origin/main 2>$null
   Write-Host "  업데이트 완료" -ForegroundColor Green
