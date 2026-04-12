@@ -17,6 +17,10 @@ const https = require('https');
 
 const ROOT = path.resolve(__dirname, '..');
 
+// ── 자가복구용 정규값 (코드에 내장 → git pull 시 자동 갱신) ─────────────────
+const CANONICAL_SERVER_URL = 'https://mindmap-viewer-production-adb2.up.railway.app';
+const CANONICAL_GIT_REPO   = 'https://github.com/Jayinsightfactory/mindmap-viewer.git';
+
 // ── 설정 ──────────────────────────────────────────────────────────────────────
 // 업데이트 확인 시간: 평일 09:30, 13:00, 15:00, 17:00 (주말 제외)
 const CHECK_HOURS = [{ h: 9, m: 30 }, { h: 13, m: 0 }, { h: 15, m: 0 }, { h: 17, m: 0 }];
@@ -36,6 +40,43 @@ function _loadConfig() {
     _serverUrl = process.env.ORBIT_SERVER_URL || null;
     _token = process.env.ORBIT_TOKEN || '';
   }
+}
+
+// ── 자가복구 #1: Git remote URL 수리 ────────────────────────────────────────
+function _repairGitRemote() {
+  try {
+    const currentUrl = execSync('git remote get-url origin', { cwd: ROOT, timeout: 5000, windowsHide: true, stdio: 'pipe' }).toString().trim();
+    if (currentUrl !== CANONICAL_GIT_REPO) {
+      console.log(`[daemon-updater] git remote 수리: ${currentUrl} → ${CANONICAL_GIT_REPO}`);
+      execSync(`git remote set-url origin "${CANONICAL_GIT_REPO}"`, { cwd: ROOT, timeout: 5000, windowsHide: true, stdio: 'pipe' });
+      return true;
+    }
+  } catch (e) {
+    console.warn('[daemon-updater] git remote 수리 실패:', e.message);
+  }
+  return false;
+}
+
+// ── 자가복구 #2: config.json serverUrl 수리 (git pull 후 호출) ──────────────
+function _repairConfigServerUrl() {
+  try {
+    const cfgPath = path.join(os.homedir(), '.orbit-config.json');
+    let cfg = {};
+    try { cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf8')); } catch {}
+
+    // 코드에 내장된 정규 URL과 다르면 수리
+    if (cfg.serverUrl !== CANONICAL_SERVER_URL) {
+      const oldUrl = cfg.serverUrl || '(없음)';
+      cfg.serverUrl = CANONICAL_SERVER_URL;
+      fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2), 'utf8');
+      _serverUrl = CANONICAL_SERVER_URL;
+      console.log(`[daemon-updater] config serverUrl 수리: ${oldUrl} → ${CANONICAL_SERVER_URL}`);
+      return true;
+    }
+  } catch (e) {
+    console.warn('[daemon-updater] config 수리 실패:', e.message);
+  }
+  return false;
 }
 
 // ── 현재 로컬 커밋 해시 ───────────────────────────────────────────────────────
@@ -223,7 +264,14 @@ function pullAndRestart(reason) {
 
   try {
     // git fetch + reset --hard (ff-only 실패 / history diverge 상황에서도 강제 업데이트)
-    execSync('git fetch origin', { cwd: ROOT, timeout: 30000, windowsHide: true, stdio: 'pipe' });
+    try {
+      execSync('git fetch origin', { cwd: ROOT, timeout: 30000, windowsHide: true, stdio: 'pipe' });
+    } catch (fetchErr) {
+      // fetch 실패 → git remote URL 수리 후 재시도
+      console.warn('[daemon-updater] git fetch 실패, remote URL 수리 시도:', fetchErr.message);
+      _repairGitRemote();
+      execSync('git fetch origin', { cwd: ROOT, timeout: 30000, windowsHide: true, stdio: 'pipe' });
+    }
     const localVer = getLocalVersion();
     const remoteVer = (() => {
       try { return execSync('git rev-parse origin/main', { cwd: ROOT, timeout: 5000, windowsHide: true, stdio: 'pipe' }).toString().trim().slice(0, 8); } catch { return null; }
@@ -256,6 +304,10 @@ function pullAndRestart(reason) {
     } catch (e) {
       console.warn('[daemon-updater] npm install 실패:', e.message);
     }
+
+    // 자가복구: config.json의 serverUrl을 새 코드 기준으로 수리
+    _repairConfigServerUrl();
+    _loadConfig(); // 수리된 설정 즉시 반영
 
     reportStatus('update_success', pullResult);
 
@@ -428,7 +480,14 @@ const SERVER_FAIL_THRESHOLD = 5; // 서버 5회 연속 실패 → git 직접 비
 
 function _gitDirectCheck() {
   try {
-    execSync('git fetch origin', { cwd: ROOT, timeout: 30000, windowsHide: true, stdio: 'pipe' });
+    // fetch 시도 → 실패하면 remote URL 수리 후 재시도
+    try {
+      execSync('git fetch origin', { cwd: ROOT, timeout: 30000, windowsHide: true, stdio: 'pipe' });
+    } catch {
+      console.log('[daemon-updater] [git-fallback] fetch 실패 → remote URL 수리 시도');
+      _repairGitRemote();
+      execSync('git fetch origin', { cwd: ROOT, timeout: 30000, windowsHide: true, stdio: 'pipe' });
+    }
     const local = execSync('git rev-parse HEAD', { cwd: ROOT, timeout: 5000, windowsHide: true, stdio: 'pipe' }).toString().trim().slice(0, 8);
     const remote = execSync('git rev-parse origin/main', { cwd: ROOT, timeout: 5000, windowsHide: true, stdio: 'pipe' }).toString().trim().slice(0, 8);
     if (local !== remote) {
@@ -437,7 +496,7 @@ function _gitDirectCheck() {
     }
     return false;
   } catch (e) {
-    console.warn('[daemon-updater] [git-fallback] fetch 실패:', e.message);
+    console.warn('[daemon-updater] [git-fallback] fetch 최종 실패:', e.message);
     return false;
   }
 }
@@ -496,10 +555,24 @@ function start() {
   _running = true;
   _loadConfig();
 
-  // 업데이터 시작
+  // 기동 즉시: git remote URL 수리 (잘못된 URL이면 고침)
+  _repairGitRemote();
+
+  // 기동 즉시: config serverUrl 검증 (정규값과 다르면 수리)
+  _repairConfigServerUrl();
+  _loadConfig(); // 수리 반영
 
   // 첫 체크는 30초 후 (데몬 안정화 대기)
-  setTimeout(() => {
+  setTimeout(async () => {
+    // 기동 시 서버 연결 확인 → 실패하면 즉시 git 체크 (CHECK_HOURS 무시)
+    const serverInfo = await checkServerVersion();
+    if (!serverInfo || !serverInfo.version) {
+      console.log('[daemon-updater] 기동 시 서버 미응답 → 즉시 git 직접 비교');
+      if (_gitDirectCheck()) {
+        pullAndRestart('기동 시 서버 미응답 + git 업데이트 발견');
+        return;
+      }
+    }
     _checkCycle();
     _timer = setInterval(_checkCycle, CHECK_POLL_INTERVAL);
   }, 30000);
