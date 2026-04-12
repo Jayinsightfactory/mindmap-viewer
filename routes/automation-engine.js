@@ -285,6 +285,19 @@ function createAutomationEngine({ getDb }) {
         }
       }
 
+      // Step 4: 이슈 자동 생성 (변경 감지 시)
+      try {
+        const http = require('http');
+        const payload = JSON.stringify({ formatType, orders, arrivalAlert, source, rawText: text });
+        const req2 = http.request({
+          hostname: 'localhost', port: process.env.PORT || 4747,
+          path: '/api/biz-issues/auto', method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) },
+        });
+        req2.on('error', () => {});
+        req2.write(payload); req2.end();
+      } catch (_) {}
+
       res.json({
         formatType,
         orders,
