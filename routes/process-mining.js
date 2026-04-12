@@ -1585,15 +1585,33 @@ function createProcessMining({ getDb, reportSheet }) {
   // POST /api/mining/migrate-vision — Vision raw 데이터 마이그레이션
   // GET /api/mining/kakao-debug — 카톡 시트 연결 디버그 (?keyonly=1 for key info only)
   router.get('/kakao-debug', async (req, res) => {
+    if (req.query.rawdebug) {
+      try {
+        _cachedCred = null; // 캐시 무효화
+        const cfg = await _internalGet(`http://localhost:${process.env.PORT || 4747}/api/daemon/drive-config`);
+        const raw = cfg?.credentialsJson || '';
+        const pkMatch = raw.match(/"private_key"\s*:\s*"([^"]*)"/);
+        const pkVal = pkMatch ? pkMatch[1] : '(no match)';
+        return res.json({
+          rawFirst80: raw.substring(0, 80),
+          pkValFirst60: pkVal.substring(0, 60),
+          pkValCharCodes: [...pkVal.substring(0, 20)].map(c => c.charCodeAt(0)),
+          rawLen: raw.length,
+        });
+      } catch (e) { return res.json({ error: e.message }); }
+    }
     if (req.query.keyonly) {
       try {
+        _cachedCred = null; // 캐시 무효화하여 항상 재파싱
         const cred = await _parseServiceAccountJson();
         const pk = cred.private_key || '';
         return res.json({
           email: cred.client_email, type: cred.type,
           pkLen: pk.length, hasBegin: pk.startsWith('-----BEGIN'), hasEnd: pk.includes('-----END'),
           nlCount: (pk.match(/\n/g) || []).length,
+          bsNlCount: (pk.match(/\\\n/g) || []).length,
           pkFirst50: pk.substring(0, 50), pkLast30: pk.substring(pk.length - 30),
+          charCodes: [...pk.substring(0, 30)].map(c => c.charCodeAt(0)),
         });
       } catch (e) { return res.json({ error: e.message }); }
     }
