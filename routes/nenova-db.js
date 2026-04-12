@@ -2018,6 +2018,9 @@ module.exports = function createNenovaDbRouter({ getDb }) {
         return r.recordset;
       }).catch(() => []);
 
+      // nenova_key unique constraint 확보
+      try { await orbitDb.query(`ALTER TABLE master_customers ADD CONSTRAINT uq_mc_nenova_key UNIQUE (nenova_key)`); } catch (_) {}
+
       const activeCustomers = nenovaCustomers.filter(c => c.Descr && c.Descr.trim());
       let synced = 0;
       for (const cust of activeCustomers) {
@@ -2026,19 +2029,21 @@ module.exports = function createNenovaDbRouter({ getDb }) {
           const commonName = descrName || cust.CustName || '';
           if (!commonName) continue;
           const aliases = JSON.stringify([cust.CustName].filter(a => a && a !== commonName));
-          await orbitDb.query(
-            `INSERT INTO master_customers (nenova_key, name, name_alias, source, first_seen, last_seen, seen_count, synced_at)
-             VALUES ($1,$2,$3,'nenova',NOW(),NOW(),1,NOW())
-             ON CONFLICT (nenova_key) DO UPDATE SET name=$2, name_alias=$3, synced_at=NOW()`,
-            [cust.CustKey, commonName, aliases]
-          ).catch(() => {
-            // nenova_key unique constraint 없으면 name 기준으로 시도
-            return orbitDb.query(
+
+          // check → update or insert (constraint 없어도 동작)
+          const ex = await orbitDb.query(`SELECT id FROM master_customers WHERE nenova_key=$1 LIMIT 1`, [cust.CustKey]);
+          if (ex.rows.length > 0) {
+            await orbitDb.query(
+              `UPDATE master_customers SET name=$1, name_alias=$2, source='nenova', synced_at=NOW() WHERE nenova_key=$3`,
+              [commonName, aliases, cust.CustKey]
+            );
+          } else {
+            await orbitDb.query(
               `INSERT INTO master_customers (nenova_key, name, name_alias, source, first_seen, last_seen, seen_count, synced_at)
-               VALUES ($1,$2,$3,'nenova',NOW(),NOW(),1,NOW()) ON CONFLICT DO NOTHING`,
+               VALUES ($1,$2,$3,'nenova',NOW(),NOW(),1,NOW())`,
               [cust.CustKey, commonName, aliases]
             );
-          });
+          }
           synced++;
         } catch (_) {}
       }
