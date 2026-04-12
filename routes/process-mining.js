@@ -2169,8 +2169,8 @@ async function _parseServiceAccountJson() {
   // Step 2: JSON 구조의 \n → 줄바꿈 (private_key 제외)
   const cleanJson = jsonWithoutPk.split('\\n').join('\n');
   const cred = JSON.parse(cleanJson);
-  // Step 3: private_key 복원 — \n → 실제 줄바꿈
-  cred.private_key = pkValue.split('\\n').join('\n');
+  // Step 3: private_key 복원 — \\n → \n(줄바꿈), 잔여 \+newline 제거
+  cred.private_key = pkValue.split('\\n').join('\n').replace(/\\\n/g, '\n');
 
   if (!cred.private_key.includes('BEGIN')) throw new Error('private_key 형식 오류');
   _cachedCred = cred;
