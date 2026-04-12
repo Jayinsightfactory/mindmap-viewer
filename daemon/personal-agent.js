@@ -43,15 +43,17 @@ function _clearTokenCache() {
 }
 // 첫 로드 (기존 동작 보존)
 const _initConfig = _readConfig();
-const REMOTE_URL   = _initConfig.serverUrl || process.env.ORBIT_SERVER_URL || null;
-// REMOTE_TOKEN은 getter로 — 파일 변경 시 5분 내 자동 반영
+// 서버 URL + 토큰 모두 getter — config 변경 시 1분 내 자동 반영 (재시작 불필요)
+function getRemoteUrl() {
+  return _readConfig().serverUrl || process.env.ORBIT_SERVER_URL || null;
+}
 function getToken() {
   return _readConfig().token || process.env.ORBIT_TOKEN || '';
 }
 
 // ── 에러 리포트 서버 전송 ──────────────────────────────────────────────────
 function _reportError(component, error, detail) {
-  if (!REMOTE_URL) return;
+  if (!getRemoteUrl()) return;
   try {
     const payload = JSON.stringify({
       events: [{
@@ -70,7 +72,7 @@ function _reportError(component, error, detail) {
         },
       }],
     });
-    const url = new URL('/api/hook', REMOTE_URL);
+    const url = new URL('/api/hook', getRemoteUrl());
     const mod = url.protocol === 'https:' ? https : http;
     const headers = { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) };
     const _tok = getToken(); if (_tok) headers['Authorization'] = 'Bearer ' + _tok;
@@ -87,7 +89,7 @@ function _reportError(component, error, detail) {
 
 // ── 범용 이벤트 리포트 헬퍼 ──────────────────────────────────────────────────
 function _reportEvent(type, data) {
-  if (!REMOTE_URL) return;
+  if (!getRemoteUrl()) return;
   try {
     const payload = JSON.stringify({
       events: [{
@@ -99,7 +101,7 @@ function _reportEvent(type, data) {
         data: { ...data, hostname: os.hostname() },
       }],
     });
-    const url = new URL('/api/hook', REMOTE_URL);
+    const url = new URL('/api/hook', getRemoteUrl());
     const mod = url.protocol === 'https:' ? https : http;
     const headers = { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) };
     const _tok = getToken(); if (_tok) headers['Authorization'] = 'Bearer ' + _tok;
@@ -199,7 +201,7 @@ function checkBankSecurity() {
  * @param {string} eventType - 'bank.security.active' 또는 'bank.security.inactive'
  */
 function _sendBankSecurityEvent(eventType) {
-  if (!REMOTE_URL) return;
+  if (!getRemoteUrl()) return;
   try {
     const payload = JSON.stringify({
       events: [{
@@ -211,7 +213,7 @@ function _sendBankSecurityEvent(eventType) {
         data: { hostname: os.hostname() },
       }],
     });
-    const url = new URL('/api/hook', REMOTE_URL);
+    const url = new URL('/api/hook', getRemoteUrl());
     const mod = url.protocol === 'https:' ? https : http;
     const headers = { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) };
     const _tok = getToken(); if (_tok) headers['Authorization'] = 'Bearer ' + _tok;
@@ -400,10 +402,10 @@ function waitForServer(retries = 10) {
 
 // ── 원격 서버 헬스 체크 (비차단) ──────────────────────────────────────────────
 function checkRemoteServer() {
-  if (!REMOTE_URL) return Promise.resolve(false);
+  if (!getRemoteUrl()) return Promise.resolve(false);
   return new Promise((resolve) => {
     try {
-      const url = new URL('/api/personal/status', REMOTE_URL);
+      const url = new URL('/api/personal/status', getRemoteUrl());
       const mod = url.protocol === 'https:' ? https : http;
       const req = mod.get(url.href, { timeout: 5000 }, (res) => {
         res.resume();
@@ -492,7 +494,7 @@ async function main() {
   // 원격 서버 헬스 체크 (비차단 — 실패해도 계속)
   checkRemoteServer().then(up => {
     if (up) console.log('[personal-agent] 원격 서버 연결 확인됨');
-    else if (REMOTE_URL) console.warn('[personal-agent] 원격 서버에 연결할 수 없습니다. 로컬만 사용합니다.');
+    else if (getRemoteUrl()) console.warn('[personal-agent] 원격 서버에 연결할 수 없습니다. 로컬만 사용합니다.');
   });
 
   // ① keyboard-watcher 시작
@@ -540,9 +542,9 @@ async function main() {
   try {
     driveUploader = require(path.join(ROOT, 'src/drive-uploader'));
     // 서버에서 Drive 설정 가져오기
-    if (REMOTE_URL) {
+    if (getRemoteUrl()) {
       const driveConfig = await new Promise((resolve) => {
-        const url = new URL('/api/daemon/drive-config', REMOTE_URL);
+        const url = new URL('/api/daemon/drive-config', getRemoteUrl());
         const mod = url.protocol === 'https:' ? https : http;
         const headers = {};
         const _tok = getToken(); if (_tok) headers['Authorization'] = 'Bearer ' + _tok;
