@@ -532,6 +532,81 @@ async function startOllamaServer() {
 }
 window.startOllamaServer = startOllamaServer;
 
+// ── 설치코드 발급 ──────────────────────────────────────────────────────────
+window._issueInstallCode = function() {
+  const token = _getAuthToken();
+  if (!token) return;
+
+  const u = (typeof _orbitUser !== 'undefined' && _orbitUser) ||
+    (() => { try { return JSON.parse(localStorage.getItem('orbitUser') || 'null'); } catch { return null; } })();
+  const uName  = u?.name  || '사용자';
+  const uEmail = u?.email || '';
+  const uPhoto = u?.picture || u?.photo || '';
+
+  // OS/브라우저 감지
+  const ua = navigator.userAgent || '';
+  const detOS = /Windows 11/i.test(ua) ? 'Windows 11'
+    : /Windows 10/i.test(ua) ? 'Windows 10'
+    : /Windows/i.test(ua) ? 'Windows' : /Mac OS X/i.test(ua) ? 'macOS'
+    : /Linux/i.test(ua) ? 'Linux' : 'Unknown';
+  const detBrowser = /Edg\//i.test(ua) ? 'Edge'
+    : /Chrome\//i.test(ua) ? 'Chrome' : /Firefox\//i.test(ua) ? 'Firefox'
+    : /Safari\//i.test(ua) ? 'Safari' : 'Unknown';
+  const isWin = /windows/i.test(detOS);
+
+  // 설치 명령어 생성
+  const setupScript = location.origin + '/setup/install.ps1';
+  const setupSh     = location.origin + '/setup/orbit-start.sh';
+  const installCmd  = isWin
+    ? `&([scriptblock]::Create((irm '${setupScript}'))) -Token '${token}'`
+    : `ORBIT_TOKEN='${token}' bash <(curl -sL '${setupSh}')`;
+
+  // 뱃지 영역
+  const badges = document.getElementById('sp-issued-badges');
+  if (badges) {
+    const photoHtml = uPhoto
+      ? `<img src="${uPhoto}" style="width:28px;height:28px;border-radius:50%;border:2px solid #3fb950" referrerpolicy="no-referrer">`
+      : `<div style="width:28px;height:28px;border-radius:50%;background:#238636;display:flex;align-items:center;justify-content:center;font-size:14px;color:#fff;border:2px solid #3fb950">👤</div>`;
+
+    badges.innerHTML = `
+      <div style="flex:1;min-width:140px;background:rgba(63,185,80,.06);border:1px solid rgba(63,185,80,.25);
+        border-radius:8px;padding:8px 10px;display:flex;align-items:center;gap:8px">
+        ${photoHtml}
+        <div>
+          <div style="font-size:11px;color:#3fb950;font-weight:600">${uName}</div>
+          <div style="font-size:10px;color:#7ee787">${uEmail}</div>
+        </div>
+      </div>
+      <div style="flex:1;min-width:140px;background:rgba(31,111,235,.06);border:1px solid rgba(31,111,235,.25);
+        border-radius:8px;padding:8px 10px;display:flex;align-items:center;gap:8px">
+        <div style="font-size:22px">${isWin ? '🪟' : detOS === 'macOS' ? '🍎' : '🖥️'}</div>
+        <div>
+          <div style="font-size:11px;color:#58a6ff;font-weight:600">${detOS}</div>
+          <div style="font-size:10px;color:#79c0ff">${detBrowser}</div>
+        </div>
+      </div>`;
+  }
+
+  // 토큰 코드 (EXE용)
+  const tokenEl = document.getElementById('sp-install-token-only');
+  if (tokenEl) tokenEl.textContent = token;
+
+  // 터미널 명령어
+  const cmdEl = document.getElementById('sp-install-inline-cmd');
+  if (cmdEl) cmdEl.textContent = installCmd;
+
+  // 결과 영역 표시 + 버튼 상태 변경
+  const resultDiv = document.getElementById('sp-issued-result');
+  if (resultDiv) resultDiv.style.display = 'block';
+
+  const btn = document.getElementById('sp-issue-install-btn');
+  if (btn) {
+    btn.innerHTML = '✅ 설치코드 발급 완료';
+    btn.style.background = 'linear-gradient(135deg,#1a7f37,#238636)';
+    btn.style.cursor = 'default';
+  }
+};
+
 async function renderSetupPanel() {
   const body = document.getElementById('sp-body');
   body.innerHTML = `<div style="padding:24px;text-align:center;color:#6e7681;font-size:12px;">환경 감지 중…</div>`;
@@ -597,30 +672,29 @@ async function renderSetupPanel() {
   const _token       = _getAuthToken();
   const _setupScript = location.origin + '/setup/install.ps1';
   const _setupSh     = location.origin + '/setup/orbit-start.sh';
-  // 설치 명령어에 토큰 포함 — 사용자가 따로 입력 안 해도 자동 연동
-  const _installCmd  = os === 'windows'
-    ? `&([scriptblock]::Create((irm '${_setupScript}'))) -Token '${_token||''}'`
-    : `ORBIT_TOKEN='${_token||''}' bash <(curl -sL '${_setupSh}')`;
+
+  // OS/브라우저 감지 (발급 시 PC 정보 표시용)
+  const _ua = navigator.userAgent || '';
+  const _detectedOS = /Windows 11/i.test(_ua) ? 'Windows 11'
+    : /Windows 10/i.test(_ua) ? 'Windows 10'
+    : /Windows/i.test(_ua) ? 'Windows'
+    : /Mac OS X/i.test(_ua) ? 'macOS'
+    : /Linux/i.test(_ua) ? 'Linux' : 'Unknown';
+  const _detectedBrowser = /Edg\//i.test(_ua) ? 'Edge'
+    : /Chrome\//i.test(_ua) ? 'Chrome'
+    : /Firefox\//i.test(_ua) ? 'Firefox'
+    : /Safari\//i.test(_ua) ? 'Safari' : 'Unknown';
+  const _pcHostHint = _detectedOS + ' · ' + _detectedBrowser;
 
   const installSection = `
     <div class="sp-section">📦 설치 / 업데이트 <span style="font-size:9px;color:#6e7681;text-transform:none;font-weight:400">— 1~2분 소요</span></div>
 
-    ${_token
-      ? (() => {
-          const _u = (typeof _orbitUser !== 'undefined' && _orbitUser) ||
-            (() => { try { return JSON.parse(localStorage.getItem('orbitUser') || 'null'); } catch { return null; } })();
-          const _uName  = _u?.name  || '';
-          const _uEmail = _u?.email || '';
-          const _label  = _uName ? `${_uName}${_uEmail ? ' (' + _uEmail + ')' : ''}` : '내 계정';
-          return `<div style="font-size:11px;color:#3fb950;background:rgba(63,185,80,.08);
-               border:1px solid rgba(63,185,80,.2);border-radius:6px;padding:6px 10px;margin-bottom:7px">
-               ✅ <strong>${_label}</strong> 토큰 포함 — 이 명령어를 실행하면 해당 계정으로 자동 연동됩니다
-             </div>`;
-        })()
-      : `<div style="font-size:11px;color:#f0a82e;background:rgba(240,168,46,.08);
+    ${!_token
+      ? `<div style="font-size:11px;color:#f0a82e;background:rgba(240,168,46,.08);
            border:1px solid rgba(240,168,46,.2);border-radius:6px;padding:6px 10px;margin-bottom:7px">
-           ⚠ 로그인하면 토큰이 포함된 개인화 명령어를 받을 수 있습니다
+           ⚠ 로그인하면 토큰이 포함된 개인화 설치코드를 발급받을 수 있습니다
          </div>`
+      : ''
     }
 
     <div id="sp-exe-download" style="display:${os === 'windows' ? 'block' : 'none'};margin-bottom:10px">
@@ -633,54 +707,71 @@ async function renderSetupPanel() {
       <div style="font-size:10px;color:#6e7681;margin-top:4px;text-align:center">
         Windows 10/11 64bit · 관리자 권한 불필요
       </div>
-      ${_token ? `
-      <div style="margin-top:8px;background:#010409;border:1px solid #21262d;border-radius:8px;padding:10px 12px;position:relative">
-        <div style="font-size:10px;color:#6e7681;margin-bottom:5px">🔑 설치 코드 — EXE 실행 후 입력창에 붙여넣기</div>
-        <code id="sp-install-token-only"
-          style="font-family:'Consolas','Courier New',monospace;font-size:12px;
-          color:#e3b341;word-break:break-all;line-height:1.6;display:block;
-          padding-right:52px">${escHtml(_token)}</code>
+    </div>
+
+    <!-- 발급 버튼 -->
+    <button id="sp-issue-install-btn" onclick="window._issueInstallCode()" ${!_token ? 'disabled' : ''}
+      style="display:flex;align-items:center;justify-content:center;gap:8px;width:100%;
+      padding:11px 18px;margin-bottom:10px;
+      background:${_token ? 'linear-gradient(135deg,#238636,#2ea043)' : '#21262d'};
+      border:1px solid ${_token ? '#2ea043' : '#30363d'};border-radius:8px;
+      color:${_token ? '#fff' : '#484f58'};font-size:13px;font-weight:600;
+      cursor:${_token ? 'pointer' : 'not-allowed'};transition:all .2s">
+      🔑 설치코드 발급
+    </button>
+
+    <!-- 발급 결과 영역 (초기엔 숨김) -->
+    <div id="sp-issued-result" style="display:none">
+      <!-- PC 정보 + Google 계정 뱃지 -->
+      <div id="sp-issued-badges" style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap"></div>
+      <!-- EXE용 토큰 -->
+      <div id="sp-issued-token-box" style="display:${os === 'windows' ? 'block' : 'none'};margin-bottom:8px">
+        <div style="background:#010409;border:1px solid #21262d;border-radius:8px;padding:10px 12px;position:relative">
+          <div style="font-size:10px;color:#6e7681;margin-bottom:5px">🔑 설치 코드 — EXE 실행 후 입력창에 붙여넣기</div>
+          <code id="sp-install-token-only"
+            style="font-family:'Consolas','Courier New',monospace;font-size:12px;
+            color:#e3b341;word-break:break-all;line-height:1.6;display:block;
+            padding-right:52px"></code>
+          <button onclick="(function(){
+            const el=document.getElementById('sp-install-token-only');
+            navigator.clipboard.writeText(el.textContent.trim()).then(()=>{
+              const b=document.getElementById('sp-token-copy-btn');
+              b.textContent='✅';b.style.background='#238636';
+              setTimeout(()=>{b.textContent='복사';b.style.background='#6e4010';},2000);
+            }).catch(()=>prompt('복사:',el.textContent.trim()));
+          })()" id="sp-token-copy-btn"
+            style="position:absolute;top:8px;right:8px;background:#6e4010;border:1px solid #e3b341;
+            border-radius:5px;color:#e3b341;font-size:10px;font-weight:600;
+            padding:3px 8px;cursor:pointer">복사</button>
+        </div>
+      </div>
+      <!-- 터미널 명령어 -->
+      <div style="background:#010409;border:1px solid #21262d;border-radius:8px;
+        padding:10px 12px;margin-bottom:8px;position:relative">
+        <div id="sp-install-os-label" style="font-size:10px;color:#6e7681;margin-bottom:5px">
+          ${os === 'windows' ? '🪟 PowerShell (Win+R → powershell → Enter)' : '🖥️ 터미널'}
+        </div>
+        <code id="sp-install-inline-cmd"
+          style="font-family:'Consolas','Courier New',monospace;font-size:11px;
+          color:#3fb950;word-break:break-all;line-height:1.6;display:block;
+          padding-right:52px"></code>
         <button onclick="(function(){
-          const el=document.getElementById('sp-install-token-only');
+          const el=document.getElementById('sp-install-inline-cmd');
           navigator.clipboard.writeText(el.textContent.trim()).then(()=>{
-            const b=document.getElementById('sp-token-copy-btn');
+            const b=document.getElementById('sp-inline-copy-btn');
             b.textContent='✅';b.style.background='#238636';
-            setTimeout(()=>{b.textContent='복사';b.style.background='#6e4010';},2000);
+            setTimeout(()=>{b.textContent='복사';b.style.background='#1f6feb';},2000);
           }).catch(()=>prompt('복사:',el.textContent.trim()));
-        })()" id="sp-token-copy-btn"
-          style="position:absolute;top:8px;right:8px;background:#6e4010;border:1px solid #e3b341;
-          border-radius:5px;color:#e3b341;font-size:10px;font-weight:600;
+        })()" id="sp-inline-copy-btn"
+          style="position:absolute;top:8px;right:8px;background:#1f6feb;border:none;
+          border-radius:5px;color:#fff;font-size:10px;font-weight:600;
           padding:3px 8px;cursor:pointer">복사</button>
       </div>
-      ` : ''}
-    </div>
-
-    <div style="background:#010409;border:1px solid #21262d;border-radius:8px;
-      padding:10px 12px;margin-bottom:8px;position:relative">
-      <div id="sp-install-os-label" style="font-size:10px;color:#6e7681;margin-bottom:5px">
-        ${os === 'windows' ? '🪟 PowerShell (Win+R → powershell → Enter)' : '🖥️ 터미널'}
+      <div style="font-size:11px;color:#6e7681;line-height:1.6;margin-bottom:4px">
+        <b style="color:#cdd9e5">수집 항목:</b> 모든 앱 사용 · 웹 브라우징 · 키 입력 · Claude Code · VS Code · 터미널<br>
+        <b style="color:#cdd9e5">동기화:</b> 5분마다 자동 전송 · 원본 데이터는 로컬에만 저장<br>
+        <b style="color:#cdd9e5">업데이트:</b> 이미 설치된 PC에서 같은 명령어 재실행하면 최신 버전으로 업데이트
       </div>
-      <code id="sp-install-inline-cmd"
-        style="font-family:'Consolas','Courier New',monospace;font-size:11px;
-        color:#3fb950;word-break:break-all;line-height:1.6;display:block;
-        padding-right:52px">${escHtml(_installCmd)}</code>
-      <button onclick="(function(){
-        const el=document.getElementById('sp-install-inline-cmd');
-        navigator.clipboard.writeText(el.textContent.trim()).then(()=>{
-          const b=document.getElementById('sp-inline-copy-btn');
-          b.textContent='✅';b.style.background='#238636';
-          setTimeout(()=>{b.textContent='복사';b.style.background='#1f6feb';},2000);
-        }).catch(()=>prompt('복사:',el.textContent.trim()));
-      })()" id="sp-inline-copy-btn"
-        style="position:absolute;top:8px;right:8px;background:#1f6feb;border:none;
-        border-radius:5px;color:#fff;font-size:10px;font-weight:600;
-        padding:3px 8px;cursor:pointer">복사</button>
-    </div>
-
-    <div style="font-size:11px;color:#6e7681;line-height:1.6;margin-bottom:4px">
-      <b style="color:#cdd9e5">수집 항목:</b> 모든 앱 사용 · 웹 브라우징 · 키 입력 · Claude Code · VS Code · 터미널<br>
-      <b style="color:#cdd9e5">동기화:</b> 5분마다 자동 전송 · 원본 데이터는 로컬에만 저장<br>
-      <b style="color:#cdd9e5">업데이트:</b> 이미 설치된 PC에서 같은 명령어 재실행하면 최신 버전으로 업데이트
     </div>
   `;
 
