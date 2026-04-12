@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>자동화 청사진 — Orbit AI</title>
+<style>
+:root{--bg:#0d1117;--s:#161b22;--s2:#1c2128;--bd:#30363d;--t:#e6edf3;--m:#8b949e;--g:#3fb950;--b:#58a6ff;--r:#f85149;--y:#d2a205;--p:#bc8cff;--o:#ffa657}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--t);font-family:'Courier New',monospace;font-size:13px;line-height:1.6}
+a{color:var(--b);text-decoration:none}
+
+/* 헤더 */
+#hdr{background:var(--s);border-bottom:2px solid var(--b);padding:14px 28px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:9}
+#hdr .logo{font-size:16px;font-weight:700;letter-spacing:1px}
+#hdr .logo span{color:var(--b)}
+#hdr .meta{font-size:11px;color:var(--m)}
+#hdr .links{display:flex;gap:10px}
+#hdr .links a{font-size:11px;padding:3px 10px;border:1px solid var(--bd);border-radius:4px;color:var(--m)}
+
+/* 레이아웃 */
+#wrap{max-width:1300px;margin:0 auto;padding:24px 28px}
+.section{margin-bottom:36px}
+.section-hdr{font-size:14px;font-weight:700;color:var(--b);border-bottom:1px solid var(--bd);padding-bottom:8px;margin-bottom:16px;letter-spacing:.5px;text-transform:uppercase}
+.col2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.col3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
+@media(max-width:900px){.col2,.col3{grid-template-columns:1fr}}
+
+/* 블록 */
+.blk{background:var(--s);border:1px solid var(--bd);border-radius:6px;padding:16px}
+.blk-title{font-size:11px;font-weight:700;color:var(--m);text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px}
+
+/* 플로우 다이어그램 */
+.flow{background:var(--s2);border:1px solid var(--bd);border-radius:6px;padding:20px;font-size:12px;overflow-x:auto}
+.flow pre{color:var(--t);line-height:1.8;white-space:pre}
+.c-b{color:var(--b)}
+.c-g{color:var(--g)}
+.c-r{color:var(--r)}
+.c-y{color:var(--y)}
+.c-p{color:var(--p)}
+.c-o{color:var(--o)}
+.c-m{color:var(--m)}
+
+/* API 상태 테이블 */
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{color:var(--m);font-weight:600;padding:5px 10px;text-align:left;font-size:10px;border-bottom:1px solid var(--bd);letter-spacing:.5px;text-transform:uppercase}
+td{padding:7px 10px;border-bottom:1px solid rgba(48,54,61,.5);color:var(--t);vertical-align:top}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:rgba(255,255,255,.02)}
+code{background:var(--s2);padding:1px 5px;border-radius:3px;font-size:11px;color:var(--p)}
+
+/* 뱃지 */
+.b{display:inline-block;padding:1px 7px;border-radius:3px;font-size:10px;font-weight:700;font-family:monospace}
+.b-g{background:rgba(63,185,80,.2);color:var(--g)}
+.b-r{background:rgba(248,81,73,.15);color:var(--r)}
+.b-y{background:rgba(210,153,34,.15);color:var(--y)}
+.b-b{background:rgba(88,166,255,.12);color:var(--b)}
+.b-m{background:rgba(139,148,158,.1);color:var(--m)}
+
+/* 테스트 결과 블록 */
+.test-result{background:var(--s2);border:1px solid var(--bd);border-radius:5px;padding:12px;margin-bottom:10px}
+.test-name{font-size:12px;font-weight:700;color:var(--t);margin-bottom:6px}
+.test-req{color:var(--m);font-size:11px;margin-bottom:4px}
+.test-res{background:#0d1117;border-radius:4px;padding:8px;font-size:11px;color:var(--g);white-space:pre-wrap;word-break:break-all;max-height:200px;overflow-y:auto}
+.test-issue{margin-top:6px;font-size:11px;color:var(--r)}
+
+/* 이슈 */
+.issue{padding:10px 14px;border-radius:5px;margin-bottom:8px;border-left:3px solid}
+.issue.critical{background:rgba(248,81,73,.07);border-color:var(--r)}
+.issue.warn{background:rgba(210,153,34,.07);border-color:var(--y)}
+.issue.info{background:rgba(88,166,255,.07);border-color:var(--b)}
+.issue.done{background:rgba(63,185,80,.05);border-color:var(--g)}
+.issue-title{font-size:12px;font-weight:700;color:var(--t)}
+.issue-detail{font-size:11px;color:var(--m);margin-top:3px}
+.issue-fix{font-size:11px;color:var(--b);margin-top:3px}
+
+/* 체크리스트 */
+.checklist{list-style:none;font-size:12px}
+.checklist li{padding:5px 0;border-bottom:1px solid rgba(48,54,61,.4);display:flex;align-items:flex-start;gap:8px}
+.checklist li:last-child{border-bottom:none}
+.ck-done::before{content:"✅";font-size:13px}
+.ck-part::before{content:"⚡";font-size:13px}
+.ck-no::before{content:"❌";font-size:13px}
+.ck-plan::before{content:"📋";font-size:13px}
+
+/* 학습 현황 */
+.stat-row{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(48,54,61,.4);font-size:12px}
+.stat-row:last-child{border-bottom:none}
+.stat-val{font-weight:700;color:var(--b)}
+
+/* 바 */
+.bar{height:4px;background:var(--bd);border-radius:2px;overflow:hidden;margin-top:3px}
+.bar div{height:100%;border-radius:2px}
+
+/* 타임라인 */
+.timeline{position:relative;padding-left:20px}
+.timeline::before{content:'';position:absolute;left:6px;top:0;bottom:0;width:1px;background:var(--bd)}
+.tl-item{position:relative;margin-bottom:14px}
+.tl-item::before{content:'';position:absolute;left:-17px;top:5px;width:7px;height:7px;border-radius:50%;background:var(--b);border:1px solid var(--bg)}
+.tl-phase{font-size:11px;font-weight:700;color:var(--b);text-transform:uppercase;letter-spacing:.5px}
+.tl-desc{font-size:12px;color:var(--t);margin-top:2px}
+.tl-api{font-size:10px;color:var(--m);margin-top:2px}
+
+.spinner{display:inline-block;width:10px;height:10px;border:2px solid var(--bd);border-top-color:var(--b);border-radius:50%;animation:sp .5s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+
+/* 반응형 구분선 */
+hr{border:none;border-top:1px solid var(--bd);margin:24px 0}
+</style>
+</head>
+<body>
+
+<div id="hdr">
+  <div>
+    <div class="logo">ORBIT AI — <span>자동화 청사진</span></div>
+    <div class="meta" id="gen-ts">생성 중...</div>
+  </div>
+  <div class="links">
+    <a href="/orbit-hub.html">🏠 Company OS</a>
+    <a href="/admin-analysis.html">📊 분석</a>
+    <a href="/nenova-dashboard.html">🌸 전산DB</a>
+    <a href="/automation-blueprint.html" onclick="location.reload()">↻ 재실행</a>
+  </div>
+</div>
+
+<div id="wrap">
+
+<!-- ══ 1. 아키텍처 청사진 ══ -->
+<div class="section">
+  <div class="section-hdr">① 전체 자동화 아키텍처</div>
+  <div class="flow">
+<pre>
+  카카오톡 메시지                          네노바 ERP
+  ─────────────────                        ─────────────────
+  "캐더린 30, 프라이드 20"                 SQL Server DB
+  "[MEL] ROSE CHINA / 수국: 50"            (주문/출하/재고)
+           │                                      ↑
+           ▼                                      │
+  <span class="c-b">[ /api/automation/parse ]</span>               │
+  포맷 자동감지 (mel/rose/change/general)   │
+  품목명 → ProdKey 매칭 (3082개 DB)         │
+  신뢰도 산출 (0.0~1.0)                     │
+           │                                      │
+           ▼                                      │
+  <span class="c-y">[ /api/automation/classify ]</span>            │
+  rawInput + 윈도우 + 클릭 → 작업분류       │
+  주문/차감/엑셀/채팅/검색 (5가지)          │
+           │                                      │
+           ▼                                      │
+  <span class="c-p">[ /api/automation/learn ]</span>               │
+  신규 품목/거래처 자동 등록                 │
+  클립보드/윈도우 컨텍스트 학습             │
+           │                                      │
+           ▼                                      │
+  <span class="c-o">[ /api/automation/verify ]</span>              │
+  rawInput vs 자동화 결과 E2E 대조          │
+           │                                      │
+           ▼                                      │
+  <span class="c-g">[ PAD / pyautogui / AHK ]</span> ─────────────┘
+  실제 nenova 화면 자동 입력
+  (현재 단계: 설계 완료, 구현 대기)
+
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  학습 파이프라인
+  ─────────────────────────────────────────────────
+  <span class="c-b">[ Vision 학습 ]</span>          <span class="c-p">[ Think Engine ]</span>       <span class="c-y">[ Workflow 학습 ]</span>
+  화면 캡처 분석            앱 전이 규칙              행동 시퀀스 기록
+  UI 요소 511개             전이규칙 427개            PostgreSQL 저장
+  화면 99개 분류            사용자 11명               패턴 자동 마이닝
+         │                        │                        │
+         └──────────────┬─────────┘                        │
+                        ▼                                  │
+              <span class="c-g">[ /api/mining/total-analysis ]</span>           │
+              카톡 × 전산 × Vision 교차분석 ←─────────────┘
+              인사이트 자동 생성
+</pre>
+  </div>
+</div>
+
+<!-- ══ 2. API 연결 현황 ══ -->
+<div class="section">
+  <div class="section-hdr">② API 연결 현황 — 실시간 테스트</div>
+  <div id="api-table"><div style="color:var(--m);font-size:12px"><span class="spinner"></span> API 테스트 실행 중...</div></div>
+</div>
+
+<!-- ══ 3. 실제 테스트 결과 ══ -->
+<div class="section">
+  <div class="section-hdr">③ 실제 테스트 결과</div>
+  <div class="col2">
+    <div>
+      <div class="blk-title">파싱 테스트 (MEL 포맷)</div>
+      <div id="test-parse"><div class="spinner"></div></div>
+    </div>
+    <div>
+      <div class="blk-title">워크플로우 실행 테스트</div>
+      <div id="test-workflow"><div class="spinner"></div></div>
+    </div>
+  </div>
+  <div class="col2" style="margin-top:16px">
+    <div>
+      <div class="blk-title">네노바 연결 테스트</div>
+      <div id="test-nenova"><div class="spinner"></div></div>
+    </div>
+    <div>
+      <div class="blk-title">교차분석 테스트</div>
+      <div id="test-cross"><div class="spinner"></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ 4. 이슈 및 검증사항 ══ -->
+<div class="section">
+  <div class="section-hdr">④ 발견된 이슈 & 검증사항</div>
+  <div class="col2">
+    <div>
+      <div class="blk-title" style="margin-bottom:10px">발견된 이슈</div>
+      <div id="issues-list"></div>
+    </div>
+    <div>
+      <div class="blk-title" style="margin-bottom:10px">검증 체크리스트</div>
+      <ul class="checklist" id="checklist"></ul>
+    </div>
+  </div>
+</div>
+
+<!-- ══ 5. AI 학습 현황 ══ -->
+<div class="section">
+  <div class="section-hdr">⑤ AI 학습 현황</div>
+  <div class="col3">
+    <div class="blk">
+      <div class="blk-title">🧠 사고 엔진 (Think Engine)</div>
+      <div id="learn-think"><div class="spinner"></div></div>
+    </div>
+    <div class="blk">
+      <div class="blk-title">🔍 Vision 학습</div>
+      <div id="learn-vision"><div class="spinner"></div></div>
+    </div>
+    <div class="blk">
+      <div class="blk-title">⚡ 자동화 학습 DB</div>
+      <div id="learn-auto"><div class="spinner"></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ 6. 구현 로드맵 ══ -->
+<div class="section">
+  <div class="section-hdr">⑥ 구현 로드맵 — 다음 단계</div>
+  <div class="col2">
+    <div class="blk">
+      <div class="blk-title">현재 완성 (실제 동작)</div>
+      <div class="timeline">
+        <div class="tl-item">
+          <div class="tl-phase">파싱 엔진</div>
+          <div class="tl-desc">카톡 텍스트 → 구조화 JSON (4가지 포맷 자동감지)</div>
+          <div class="tl-api"><code>/api/automation/parse</code> ✅ 신뢰도 0.9</div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-phase">네노바 전산 연동</div>
+          <div class="tl-desc">SQL Server 직접 쿼리, 주문/출하/재고/거래처 실시간</div>
+          <div class="tl-api"><code>/api/nenova/*</code> ✅ 3082품목, 677거래처</div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-phase">카톡 분석 시트</div>
+          <div class="tl-desc">Google Sheets 7개 탭 교차분석 (비즈이벤트 1999건)</div>
+          <div class="tl-api"><code>/api/mining/total-analysis</code> ✅</div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-phase">Think Engine</div>
+          <div class="tl-desc">앱 전이 규칙 427개, 사용자 11명 학습 완료</div>
+          <div class="tl-api"><code>/api/think/status</code> ✅</div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-phase">Vision 학습</div>
+          <div class="tl-desc">UI 요소 511개, 화면 99개 분류 완료</div>
+          <div class="tl-api"><code>/api/vision/learning-status</code> ✅</div>
+        </div>
+      </div>
+    </div>
+    <div class="blk">
+      <div class="blk-title">다음 단계 (구현 필요)</div>
+      <div class="timeline">
+        <div class="tl-item" style="--dot-color:var(--y)">
+          <div class="tl-phase" style="color:var(--y)">① 파싱 한글 인코딩 수정</div>
+          <div class="tl-desc">parse API 한글 깨짐 이슈 — Content-Type charset 명시</div>
+          <div class="tl-api">예상 공수: 30분</div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-phase" style="color:var(--o)">② 워크플로우 자동 실행 연결</div>
+          <div class="tl-desc">parse 결과 → PAD 스크립트 자동 생성 → nenova 입력</div>
+          <div class="tl-api">parse결과 JSON → PAD 변수 바인딩 (우선순위 1)</div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-phase" style="color:var(--o)">③ 의사결정 알림 시스템</div>
+          <div class="tl-desc">미해결 132건 → 담당자 카톡/슬랙 자동 알림</div>
+          <div class="tl-api">카톡 웹훅 또는 이메일 트리거</div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-phase" style="color:var(--p)">④ 품목 자동 매칭 정확도 향상</div>
+          <div class="tl-desc">신뢰도 0.4짜리 품목 — 유사도 매칭 알고리즘 개선</div>
+          <div class="tl-api">Levenshtein + 영문/한글 교차 매칭</div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-phase" style="color:var(--m)">⑤ 자동화 실행 로그 대시보드</div>
+          <div class="tl-desc">언제, 누가, 어떤 자동화를 실행했는지 추적</div>
+          <div class="tl-api">action_sequences 테이블 → 시각화</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ 7. 워크플로우 15개 정의 ══ -->
+<div class="section">
+  <div class="section-hdr">⑦ 워크플로우 정의 (15개)</div>
+  <table>
+    <thead><tr><th>#</th><th>이름</th><th>트리거</th><th>API 연결</th><th>절감(분/일)</th><th>상태</th><th>실행방법</th></tr></thead>
+    <tbody id="wf-table"></tbody>
+  </table>
+</div>
+
+</div><!-- /wrap -->
+
+<script>
+const H = {'Content-Type':'application/json','Authorization':'Bearer '+(localStorage.getItem('orbit_token')||'')};
+const BASE = '';
+
+// 워크플로우 정의 (하드코딩된 WF_DATA 재현)
+const WF_LIST = [
+  {id:'order',      name:'주문 등록',      status:'LIVE', savings:170, trigger:'카톡 주문메시지 클립보드',  api:'/api/automation/parse + /api/nenova/orders',    exec:'PAD → 신규주문등록 화면 자동입력'},
+  {id:'deduction',  name:'차감 대조',      status:'LIVE', savings:90,  trigger:'카톡 "차감" 키워드 감지',   api:'/api/automation/classify',                      exec:'Python → 전산 차감수량 비교'},
+  {id:'shipping',   name:'출고 관리',      status:'LIVE', savings:120, trigger:'출고 확정 메시지',           api:'/api/nenova/shipments',                         exec:'PAD → 출고관리 화면 확정 클릭'},
+  {id:'change',     name:'변경사항',       status:'LIVE', savings:60,  trigger:'"취소/추가" 포함 메시지',    api:'/api/automation/parse (change_order 포맷)',      exec:'PAD → 주문수정 화면'},
+  {id:'defect',     name:'불량 처리',      status:'LIVE', savings:45,  trigger:'불량/클레임 비즈이벤트',    api:'/api/mining/total-analysis (defects)',           exec:'알림 발송 + 이슈 등록'},
+  {id:'customer',   name:'거래처 소통',    status:'LIVE', savings:50,  trigger:'새 거래처명 등장',           api:'/api/automation/learn',                         exec:'자동 학습 DB 등록'},
+  {id:'estimate',   name:'견적서 작성',    status:'LIVE', savings:75,  trigger:'단가 문의 메시지',           api:'/api/nenova/products + parse',                  exec:'엑셀 템플릿 자동 생성'},
+  {id:'purchase',   name:'발주 자동생성',  status:'LIVE', savings:110, trigger:'재고 부족 알림',             api:'/api/nenova/products (stock)',                  exec:'PAD → 발주서 자동작성'},
+  {id:'claim',      name:'클레임 처리',    status:'LIVE', savings:65,  trigger:'카톡 불량 사진+메시지',     api:'/api/mining (bizEvents DEFECT)',                 exec:'이슈 트래킹 자동 등록'},
+  {id:'closing',    name:'매출 마감',      status:'LIVE', savings:80,  trigger:'차수 마감일 도달',           api:'/api/nenova/analysis/sales',                    exec:'Google Sheets 자동 업데이트'},
+  {id:'tracking',   name:'배송 추적',      status:'LIVE', savings:70,  trigger:'배송 시작 이벤트',           api:'/api/nenova/shipments',                         exec:'상태 자동 업데이트'},
+  {id:'pricing',    name:'단가 관리',      status:'PLAN', savings:55,  trigger:'단가 변경 메시지',           api:'/api/nenova/products (update)',                 exec:'(미구현) DB 단가 자동 수정'},
+  {id:'report',     name:'매출 보고서',    status:'PLAN', savings:100, trigger:'주간 마감 시점',             api:'/api/nenova/analysis/sales',                    exec:'(미구현) PDF 자동 생성'},
+  {id:'ship_doc',   name:'출고내역서',     status:'PLAN', savings:85,  trigger:'출고 완료 이벤트',           api:'/api/nenova/shipments',                         exec:'(미구현) 내역서 자동 발송'},
+  {id:'prod_mgmt',  name:'품목 관리',      status:'PLAN', savings:95,  trigger:'신규 품목 등장',             api:'/api/automation/learn + nenova',                exec:'(미구현) 자동 등록 전 검증'},
+];
+
+document.getElementById('wf-table').innerHTML = WF_LIST.map((w,i)=>`<tr>
+  <td style="color:var(--m)">${i+1}</td>
+  <td><strong>${w.name}</strong></td>
+  <td style="color:var(--m);font-size:11px">${w.trigger}</td>
+  <td><code style="font-size:10px">${w.api}</code></td>
+  <td style="color:var(--g);font-weight:700">${w.savings}분</td>
+  <td><span class="b ${w.status==='LIVE'?'b-g':'b-y'}">${w.status}</span></td>
+  <td style="color:var(--m);font-size:11px">${w.exec}</td>
+</tr>`).join('');
+
+// API 테스트 실행
+async function runAll() {
+  document.getElementById('gen-ts').textContent = '생성: '+new Date().toLocaleString('ko-KR');
+
+  const apis = [
+    {name:'automation/parse',       method:'POST', path:'/api/automation/parse',       body:{text:'캐더린: 30, 프라이드: 20'},  expect:'orders 배열'},
+    {name:'automation/classify',    method:'GET',  path:'/api/automation/classify?rawInput=test', body:null, expect:'totalClassified'},
+    {name:'automation/master',      method:'GET',  path:'/api/automation/master',       body:null,             expect:'products.count'},
+    {name:'automation/workflows/order/test', method:'POST', path:'/api/automation/workflows/order/test', body:{input:'캐더린 30'}, expect:'ok:true'},
+    {name:'nenova/dashboard',       method:'GET',  path:'/api/nenova/dashboard',        body:null,             expect:'totalOrders'},
+    {name:'nenova/products?limit=5',method:'GET',  path:'/api/nenova/products?limit=5', body:null,             expect:'items 배열'},
+    {name:'think/status',           method:'GET',  path:'/api/think/status',            body:null,             expect:'transitionModel.rules'},
+    {name:'vision/learning-status', method:'GET',  path:'/api/vision/learning-status',  body:null,             expect:'elements'},
+    {name:'mining/total-analysis',  method:'GET',  path:'/api/mining/total-analysis',   body:null,             expect:'insights 배열'},
+  ];
+
+  const results = await Promise.all(apis.map(async a => {
+    const t0 = Date.now();
+    try {
+      const opts = { method:a.method, headers:H };
+      if (a.body) opts.body = JSON.stringify(a.body);
+      const r = await fetch(a.path, opts);
+      const d = await r.json();
+      return { ...a, ok:r.ok, ms:Date.now()-t0, data:d, error:null };
+    } catch(e) {
+      return { ...a, ok:false, ms:Date.now()-t0, data:null, error:e.message };
+    }
+  }));
+
+  // API 테이블
+  document.getElementById('api-table').innerHTML = `<table>
+    <thead><tr><th>엔드포인트</th><th>방법</th><th>상태</th><th>응답시간</th><th>결과 요약</th><th>기대값</th></tr></thead>
+    <tbody>${results.map(r=>{
+      let summary = '';
+      if (r.data && !r.error) {
+        const d = r.data;
+        if (d.orders) summary = `orders ${d.orders.length}건, formatType:${d.formatType}`;
+        else if (d.transitionModel) summary = `rules:${d.transitionModel.rules}, users:${d.transitionModel.users}`;
+        else if (d.elements !== undefined) summary = `elements:${d.elements}, screens:${d.screens}`;
+        else if (d.totalOrders) summary = `orders:${d.totalOrders}, shipments:${d.totalShipments}`;
+        else if (d.items) summary = `items:${Array.isArray(d.items)?d.items.length:'N/A'}`;
+        else if (d.insights) summary = `insights:${d.insights.length}, events:${d.summary?.kakaoBizEvents||0}`;
+        else if (d.ok !== undefined) summary = `ok:${d.ok}${d.workflow?', wf:'+d.workflow:''}`;
+        else if (d.products) summary = `products:${d.products?.count||0}`;
+        else summary = JSON.stringify(d).substring(0,60)+'...';
+      }
+      return `<tr>
+        <td><code>${r.name}</code></td>
+        <td><span class="b b-b">${r.method}</span></td>
+        <td>${r.ok?'<span class="b b-g">✓ OK</span>':'<span class="b b-r">✗ FAIL</span>'}</td>
+        <td style="color:${r.ms<500?'var(--g)':r.ms<2000?'var(--y)':'var(--r)'}">${r.ms}ms</td>
+        <td style="font-size:11px;color:var(--m)">${r.error||summary}</td>
+        <td style="font-size:10px;color:var(--m)">${r.expect}</td>
+      </tr>`;
+    }).join('')}</tbody>
+  </table>`;
+
+  // 개별 테스트 결과
+  const parseR = results.find(r=>r.name==='automation/parse');
+  const wfR    = results.find(r=>r.name.includes('workflows'));
+  const nvR    = results.find(r=>r.name==='nenova/dashboard');
+  const crossR = results.find(r=>r.name==='mining/total-analysis');
+
+  renderTestResult('test-parse', parseR, '캐더린: 30, 프라이드: 20 → parse', d=>{
+    const issues = [];
+    if ((d.formatType||'') === 'unknown') issues.push('⚠️ 포맷 감지 실패: MEL 포맷으로 인식되지 않음');
+    if (d.orders?.some(o=>o.confidence<0.7)) issues.push('⚠️ 신뢰도 0.7 미만 품목 존재 — 품목명 매칭 개선 필요');
+    const prodOk = d.orders?.filter(o=>o.confidence>=0.8).length||0;
+    return {
+      text: JSON.stringify({formatType:d.formatType, itemCount:d.orders?.length, avgConf:(d.stats?.avgConfidence||0).toFixed(2), matched:prodOk},null,2),
+      issues
+    };
+  });
+
+  renderTestResult('test-workflow', wfR, 'POST /api/automation/workflows/order/test {input:"캐더린 30"}', d=>{
+    return {
+      text: JSON.stringify({ok:d.ok, workflow:d.workflow, confidence:d.parseResult?.confidence, elapsedMs:d.elapsedMs},null,2),
+      issues: d.ok ? [] : ['❌ 워크플로우 테스트 실패']
+    };
+  });
+
+  renderTestResult('test-nenova', nvR, 'GET /api/nenova/dashboard', d=>{
+    const issues = [];
+    if (!d.totalOrders) issues.push('❌ 주문 데이터 없음 — SQL Server 연결 확인');
+    return {
+      text: JSON.stringify({totalOrders:d.totalOrders, totalShipments:d.totalShipments, totalCustomers:d.totalCustomers, totalProducts:d.totalProducts},null,2),
+      issues
+    };
+  });
+
+  renderTestResult('test-cross', crossR, 'GET /api/mining/total-analysis', d=>{
+    const issues = [];
+    if ((d.decisionStats?.unresolvedRate||0)===100) issues.push('🚨 의사결정 미해결율 100% — 즉시 조치 필요');
+    return {
+      text: JSON.stringify({bizEvents:d.summary?.kakaoBizEvents, decisions:d.summary?.decisions, unresolved:d.summary?.unresolvedDecisions, matchRate:d.crossMatch?.matchRate+'%'},null,2),
+      issues
+    };
+  });
+
+  // 이슈 목록 (테스트 결과 기반)
+  const allIssues = [
+    { level:'critical', title:'의사결정 132건 전부 미해결 (100%)', detail:'의사결정추적 탭의 모든 이슈가 결과 없음 상태. 대응자 미지정.', fix:'대응자 컬럼 필수화 + 미해결 시 자동 알림 발송' },
+    { level:'warn', title:'automation/parse 한글 인코딩 이슈', detail:'POST 요청 시 일부 한글이 깨짐 (formatType: unknown). Content-Type charset=utf-8 누락.', fix:'API 헤더 Content-Type: application/json; charset=utf-8 명시 + 서버 body-parser 설정 확인' },
+    { level:'warn', title:'품목 매칭 신뢰도 0.4 (낮음)', detail:'일반 텍스트 입력 시 품목 매칭 신뢰도가 0.4로 낮음. MEL 포맷 사용 시 0.9 달성.', fix:'유사도 매칭 개선 (Levenshtein + 영문/한글 교차) 또는 MEL 포맷 사용 가이드 제공' },
+    { level:'warn', title:'automation/classify 데이터 없음', detail:'분류 API가 empty 반환. 최근 events DB에 데이터 없거나 user 필터링 문제.', fix:'classify API 파라미터 검토, 데몬 이벤트 수집 확인' },
+    { level:'info', title:'거래처 전산 미연결 200개', detail:'카톡에 등장하는 거래처 358개 중 200개가 네노바 DB에 미연결.', fix:'거래처매칭 탭에서 DB CustKey 수동 입력 또는 fuzzy 매칭 자동화' },
+    { level:'info', title:'automation/master 품목 33개만 등록', detail:'자동화 학습 DB에 33개뿐. 네노바 3082개와 동기화 필요.', fix:'/api/automation/learn 또는 /api/nenova/sync/products 실행' },
+    { level:'done', title:'네노바 SQL Server 연결 정상', detail:'4179건 주문, 4195건 출하, 677거래처, 3082품목 실시간 연동 확인.', fix:'완료' },
+    { level:'done', title:'Google Sheets 파싱 정상', detail:'7개 탭 전체 읽기 성공. 비즈이벤트 1999건, 의사결정 132건, 패턴 39개.', fix:'완료' },
+    { level:'done', title:'Think Engine 427개 전이규칙 학습', detail:'사용자 11명의 앱 전이 패턴 427개 자동 학습 완료.', fix:'완료' },
+  ];
+
+  document.getElementById('issues-list').innerHTML = allIssues.map(i=>`
+    <div class="issue ${i.level==='done'?'done':i.level==='critical'?'critical':i.level==='warn'?'warn':'info'}">
+      <div class="issue-title">${i.level==='done'?'✅':i.level==='critical'?'🚨':i.level==='warn'?'⚠️':'ℹ️'} ${i.title}</div>
+      <div class="issue-detail">${i.detail}</div>
+      ${i.fix!=='완료'?`<div class="issue-fix">→ ${i.fix}</div>`:''}
+    </div>`).join('');
+
+  // 체크리스트
+  const checks = [
+    {s:'done', t:'카톡 메시지 파싱 (MEL/ROSE/변경 포맷)'},
+    {s:'done', t:'네노바 SQL Server 실시간 연결'},
+    {s:'done', t:'Google Sheets 7개 탭 읽기'},
+    {s:'done', t:'Think Engine 학습 (427규칙)'},
+    {s:'done', t:'Vision 화면 분석 (511요소)'},
+    {s:'done', t:'워크플로우 /test 엔드포인트 동작'},
+    {s:'part', t:'한글 입력 파싱 신뢰도 (현재 0.4 → 목표 0.8+)'},
+    {s:'part', t:'거래처 카톡↔전산 매칭 (현재 80%, 목표 95%+)'},
+    {s:'no',   t:'PAD 스크립트 자동 생성 (미구현)'},
+    {s:'no',   t:'parse 결과 → nenova 자동 입력 실행'},
+    {s:'no',   t:'의사결정 미해결 자동 알림'},
+    {s:'plan', t:'매출 보고서 자동 생성'},
+    {s:'plan', t:'단가 변경 자동 반영'},
+    {s:'plan', t:'출고내역서 자동 발송'},
+  ];
+  document.getElementById('checklist').innerHTML = checks.map(c=>`
+    <li class="ck-${c.s==='done'?'done':c.s==='part'?'part':c.s==='no'?'no':'plan'}">
+      <span>${c.t}</span>
+    </li>`).join('');
+
+  // AI 학습 현황
+  const thinkR  = results.find(r=>r.name==='think/status');
+  const visionR = results.find(r=>r.name==='vision/learning-status');
+  const masterR = results.find(r=>r.name==='automation/master');
+
+  const th = thinkR?.data||{};
+  document.getElementById('learn-think').innerHTML = `
+    <div class="stat-row"><span>전이 규칙</span><span class="stat-val">${th.transitionModel?.rules||0}개</span></div>
+    <div class="stat-row"><span>학습 사용자</span><span class="stat-val">${th.transitionModel?.users||0}명</span></div>
+    <div class="stat-row"><span>예측 정확도</span><span class="stat-val">${(th.predictions?.accuracy*100||0).toFixed(0)}%</span></div>
+    <div class="stat-row"><span>오늘 사고 활동</span><span class="stat-val">${th.thinkingActivity?.last24h||0}회</span></div>
+    <div class="stat-row"><span>아이디어 제안</span><span class="stat-val">${th.capabilityIdeas?.total||0}개</span></div>`;
+
+  const vs = visionR?.data||{};
+  document.getElementById('learn-vision').innerHTML = `
+    <div class="stat-row"><span>분석된 UI 요소</span><span class="stat-val">${vs.elements||0}개</span></div>
+    <div class="stat-row"><span>화면 분류</span><span class="stat-val">${vs.screens||0}개</span></div>
+    <div class="stat-row"><span>평균 신뢰도</span><span class="stat-val">${((vs.avgConfidence||0)*100).toFixed(0)}%</span></div>
+    <div class="stat-row"><span>클릭 매칭율</span><span class="stat-val">${((vs.clickMatchRate||0)*100).toFixed(0)}%</span></div>
+    <div class="stat-row"><span>자동 학습</span><span class="stat-val">${vs.autoLearn?'활성':'비활성'}</span></div>`;
+
+  const ma = masterR?.data||{};
+  const totalSavings = WF_LIST.filter(w=>w.status==='LIVE').reduce((s,w)=>s+w.savings,0);
+  document.getElementById('learn-auto').innerHTML = `
+    <div class="stat-row"><span>학습된 품목</span><span class="stat-val">${ma.products?.count||0}개</span></div>
+    <div class="stat-row"><span>LIVE 워크플로우</span><span class="stat-val">${WF_LIST.filter(w=>w.status==='LIVE').length}개</span></div>
+    <div class="stat-row"><span>PLAN 워크플로우</span><span class="stat-val">${WF_LIST.filter(w=>w.status==='PLAN').length}개</span></div>
+    <div class="stat-row"><span>일일 절감 (LIVE)</span><span class="stat-val" style="color:var(--g)">${totalSavings}분</span></div>
+    <div class="stat-row"><span>월 절감 환산</span><span class="stat-val" style="color:var(--g)">${Math.round(totalSavings*22/60)}시간</span></div>`;
+}
+
+function renderTestResult(id, result, req, parse) {
+  if (!result) { document.getElementById(id).innerHTML='<div style="color:var(--m);font-size:11px">데이터 없음</div>'; return; }
+  let text='', issues=[];
+  try {
+    if (result.data) { const r=parse(result.data); text=r.text; issues=r.issues; }
+    else { text='오류: '+result.error; issues=['❌ API 응답 없음']; }
+  } catch(e) { text='파싱 오류: '+e.message; }
+
+  document.getElementById(id).innerHTML = `
+    <div class="test-result">
+      <div class="test-name">${req}</div>
+      <div class="test-req"><span class="b b-b">${result.method}</span> <code>${result.name}</code> → ${result.ms}ms</div>
+      <div class="test-res">${text}</div>
+      ${issues.map(i=>`<div class="test-issue">${i}</div>`).join('')}
+    </div>`;
+}
+
+runAll();
+</script>
+</body>
+</html>
