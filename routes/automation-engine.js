@@ -196,30 +196,6 @@ function createAutomationEngine({ getDb }) {
           // 차수/날짜 라인 스킵
           if (/변경사항|차수|\d+[-]\d+차/.test(l)) continue;
 
-          const action = /취소/.test(l) ? 'cancel' : /추가/.test(l) ? 'add' : 'unknown';
-
-          // 복합: "추가 - A N + B N"
-          const multiMatch = l.match(/추가\s*[-–]\s*(.*)/);
-          if (multiMatch) {
-            const items = multiMatch[1].match(/(\S+)\s+(\d+)\s*(박스|단|개)?/g) || [];
-            for (const item of items) {
-              const im = item.match(/(\S+)\s+(\d+)\s*(박스|단|개)?/);
-              if (im && !['추가','취소','-','+'].includes(im[1])) {
-                const matched = _matchProduct(im[1], products);
-                if (!matched) newProducts.push(im[1]);
-                orders.push({
-                  product: matched?.name || im[1],
-                  quantity: parseInt(im[2]),
-                  unit: im[3] || '박스',
-                  category: currentCategory,
-                  action: 'add',
-                  confidence: matched ? 1.0 : 0.6,
-                });
-              }
-            }
-            continue;
-          }
-
           // 실제 포맷: "[업체통용명] [품목명] [수량] [취소|추가]"
           // 예: "영남 문라이트 1 취소", "남대문경원 핑크빌 3 추가"
           const action = /취소/.test(l) ? 'cancel' : /추가/.test(l) ? 'add' : 'unknown';
