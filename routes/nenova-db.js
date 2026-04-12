@@ -2005,11 +2005,55 @@ module.exports = function createNenovaDbRouter({ getDb }) {
     try { await db.query(`CREATE INDEX IF NOT EXISTS idx_po_nenova_order ON parsed_orders(nenova_order_key)`); } catch {}
   }
 
-  // 초기화 시도 (실패해도 서버 시작에 영향 없음)
+  // 초기화 + 거래처 자동 동기화 (서버 시작 시)
+  async function _autoSyncCustomers() {
+    try {
+      const orbitDb = getOrbitDb();
+      if (!orbitDb?.query) return;
+      await ensureSyncTables();
+
+      // Descr 있는 활성 거래처만 동기화
+      const nenovaCustomers = await safeQuery(async (pool) => {
+        const r = await pool.request().query(`SELECT CustKey, CustName, Descr, Manager FROM Customer ORDER BY CustKey`);
+        return r.recordset;
+      }).catch(() => []);
+
+      const activeCustomers = nenovaCustomers.filter(c => c.Descr && c.Descr.trim());
+      let synced = 0;
+      for (const cust of activeCustomers) {
+        try {
+          const descrName = (cust.Descr || '').split('/')[0].trim();
+          const commonName = descrName || cust.CustName || '';
+          if (!commonName) continue;
+          const aliases = JSON.stringify([cust.CustName].filter(a => a && a !== commonName));
+          await orbitDb.query(
+            `INSERT INTO master_customers (nenova_key, name, name_alias, source, first_seen, last_seen, seen_count, synced_at)
+             VALUES ($1,$2,$3,'nenova',NOW(),NOW(),1,NOW())
+             ON CONFLICT (nenova_key) DO UPDATE SET name=$2, name_alias=$3, synced_at=NOW()`,
+            [cust.CustKey, commonName, aliases]
+          ).catch(() => {
+            // nenova_key unique constraint 없으면 name 기준으로 시도
+            return orbitDb.query(
+              `INSERT INTO master_customers (nenova_key, name, name_alias, source, first_seen, last_seen, seen_count, synced_at)
+               VALUES ($1,$2,$3,'nenova',NOW(),NOW(),1,NOW()) ON CONFLICT DO NOTHING`,
+              [cust.CustKey, commonName, aliases]
+            );
+          });
+          synced++;
+        } catch (_) {}
+      }
+      if (synced > 0) console.log(`[nenova-db] 거래처 자동 동기화: ${synced}/${activeCustomers.length}건`);
+    } catch (e) {
+      console.warn('[nenova-db] 거래처 자동 동기화 실패:', e.message);
+    }
+  }
+
   try {
     const db = getDb();
     if (db && db.query) {
-      ensureSyncTables().catch(e => console.warn('[nenova-db] sync 테이블 초기화 실패:', e.message));
+      ensureSyncTables()
+        .then(() => setTimeout(_autoSyncCustomers, 3000)) // 서버 완전 시작 후 3초 대기
+        .catch(e => console.warn('[nenova-db] sync 테이블 초기화 실패:', e.message));
     }
   } catch (_) { /* DB 미연결 시 무시 */ }
 
