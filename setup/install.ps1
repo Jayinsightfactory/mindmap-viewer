@@ -206,7 +206,7 @@ $cfg = @{
   token     = $cfgToken
   userId    = $cfgUserId
 }
-$cfg | ConvertTo-Json | Set-Content "$env:USERPROFILE\.orbit-config.json" -Encoding UTF8
+[System.IO.File]::WriteAllText("$env:USERPROFILE\.orbit-config.json", ($cfg | ConvertTo-Json), [System.Text.UTF8Encoding]::new($false))
 [System.Environment]::SetEnvironmentVariable("ORBIT_SERVER_URL", $REMOTE, "User") 2>$null
 Write-Host "  Config saved (hostname: $env:COMPUTERNAME)" -ForegroundColor Green
 
@@ -299,7 +299,7 @@ for ($i = 1; $i -le 6; $i++) {
         # Server auto-matched this hostname to a user + issued token
         $cfg.token = $regResult.token
         $cfg.userId = $regResult.userId
-        $cfg | ConvertTo-Json | Set-Content "$env:USERPROFILE\.orbit-config.json" -Encoding UTF8
+        [System.IO.File]::WriteAllText("$env:USERPROFILE\.orbit-config.json", ($cfg | ConvertTo-Json), [System.Text.UTF8Encoding]::new($false))
         Write-Host "  Server connected + auto-matched: $($regResult.userId)" -ForegroundColor Green
       } else {
         Write-Host "  Server connected (hostname: $env:COMPUTERNAME)" -ForegroundColor Green
