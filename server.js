@@ -2224,7 +2224,11 @@ app.post('/api/hook', async (req, res) => {
         _imageCache.set(event.id, event.data.imageBase64);
         delete event.data.imageBase64;
       }
-      try { await Promise.resolve(insertEvent(event)); } catch (e) { console.error('[hook] insertEvent FAIL:', e.message, 'id=', event.id, 'type=', event.type, 'source=', event.source); }
+      try { await Promise.resolve(insertEvent(event)); } catch (e) {
+        console.error('[hook] insertEvent FAIL:', e.message, 'id=', event.id, 'type=', event.type);
+        if (!req._insertErrors) req._insertErrors = [];
+        req._insertErrors.push({ id: event.id, error: e.message });
+      }
       if (!_isPg) {
         jsonlLines.push(JSON.stringify({
           id: event.id, type: event.type, source: event.source,
@@ -2554,6 +2558,7 @@ app.post('/api/hook', async (req, res) => {
     // 데몬이 daemon-updater 없는 구버전일 때, hook 응답으로 업데이트 지시
     const forceUpdate = global._forceUpdateEnabled || false;
     const response = { success: true, received: events.length, leaksDetected: leaks.length };
+    if (req._insertErrors?.length) response._dbErrors = req._insertErrors;
     if (forceUpdate) {
       response._commands = [{ action: 'update', reason: 'server-forced' }];
     }
