@@ -64,6 +64,18 @@ async function createTables() {
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
 
+    -- PK 없는 기존 테이블 호환: id에 UNIQUE 제약 추가
+    DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'events_pkey' AND conrelid = 'events'::regclass) THEN
+        ALTER TABLE events ADD PRIMARY KEY (id);
+      END IF;
+    EXCEPTION WHEN others THEN NULL;
+    END $$;
+
+    -- source NOT NULL 기본값 수리 (기존 테이블에 DEFAULT 없을 수 있음)
+    ALTER TABLE events ALTER COLUMN source SET DEFAULT 'daemon';
+    ALTER TABLE events ALTER COLUMN source DROP NOT NULL;
+
     CREATE INDEX IF NOT EXISTS idx_events_session   ON events(session_id);
     CREATE INDEX IF NOT EXISTS idx_events_type      ON events(type);
     CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events(timestamp);
@@ -387,11 +399,12 @@ async function insertEvent(event) {
   const timestamp = event.timestamp || new Date().toISOString();
   const dataJson = typeof event.data === 'string' ? JSON.parse(event.data) : (event.data || {});
   const metaJson = typeof event.metadata === 'string' ? JSON.parse(event.metadata) : (event.metadata || {});
-  await pool.query(`
-    INSERT INTO events (id, type, source, session_id, user_id, channel_id, parent_event_id, timestamp, data_json, metadata_json)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-    ON CONFLICT (id) DO NOTHING
-  `, [
+  // ON CONFLICT 대신 EXISTS 체크 (PK 없는 테이블 호환)
+  const { rowCount } = await pool.query(
+    `INSERT INTO events (id, type, source, session_id, user_id, channel_id, parent_event_id, timestamp, data_json, metadata_json)
+     SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,$10
+     WHERE NOT EXISTS (SELECT 1 FROM events WHERE id = $1)`,
+    [
     event.id, type, source,
     sessionId, event.userId || 'local', event.channelId || 'default',
     event.parentEventId || null, timestamp,
