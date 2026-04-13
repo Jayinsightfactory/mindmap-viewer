@@ -250,59 +250,39 @@ function createRouter(deps) {
               <div class="p-note">⚙️ 수집 항목: 업무 앱 전환 패턴 · 작업 내용 요약 · 유휴 시간 · 카카오 업무 메시지</div>
             </div>
 
-            <!-- 다운로드 섹션 -->
+            <!-- PowerShell 설치 -->
             <div class="card">
-              <div class="card-title">1단계 — 설치 프로그램 다운로드</div>
-              <a class="btn-download" href="${EXE_DOWNLOAD_URL}" download>
-                <span class="icon">⬇</span>
-                <span class="meta">
-                  OrbitAI-Setup.exe 다운로드
-                  <small>Windows 10/11 · 관리자 권한 불필요 · 약 15MB</small>
-                </span>
-              </a>
-            </div>
-
-            <!-- 설치코드 섹션 -->
-            <div class="card">
-              <div class="card-title">2단계 — 설치 코드 입력</div>
-              <p style="font-size:14px;color:#94a3b8;margin-bottom:4px;">설치 프로그램 실행 후 아래 코드를 입력하세요. <strong style="color:#fbbf24">10분 이내 사용</strong></p>
-              <div class="token-box">
-                ${installToken}
-                <button class="token-copy" onclick="copyToken()">복사</button>
-              </div>
-            </div>
-
-            <!-- 설치 순서 -->
-            <div class="card">
-              <div class="card-title">설치 순서</div>
+              <div class="card-title">1단계 — PowerShell 열기</div>
               <div class="steps">
                 <div class="step">
                   <div class="step-num">1</div>
-                  <div class="step-body"><strong>OrbitAI-Setup.exe</strong> 다운로드 후 실행</div>
+                  <div class="step-body">시작 메뉴 → <strong>PowerShell</strong> 검색 → 실행</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-title">2단계 — 아래 명령어 복사 → 붙여넣기 → Enter</div>
+              <div class="cmd-box" style="position:relative">
+                irm ${RAILWAY_URL}/installer/${installToken} | iex
+                <button class="token-copy" onclick="copyCmd()" style="position:absolute;top:8px;right:8px">복사</button>
+              </div>
+              <p style="font-size:12px;color:#94a3b8;margin-top:6px;">Node.js, Git, Python 등 필요한 도구가 <strong>자동 설치</strong>됩니다</p>
+            </div>
+
+            <div class="card">
+              <div class="card-title">설치 완료 후</div>
+              <div class="steps">
+                <div class="step">
+                  <div class="step-num">✓</div>
+                  <div class="step-body">화면 우측 하단 트레이에 <strong>Orbit AI 아이콘</strong> 표시</div>
                 </div>
                 <div class="step">
-                  <div class="step-num">2</div>
-                  <div class="step-body">설치 진행 → <strong>설치 코드 입력</strong> 화면에서 위 코드 붙여넣기</div>
-                </div>
-                <div class="step">
-                  <div class="step-num">3</div>
-                  <div class="step-body">설치 완료 → 화면 우측 하단 트레이에 <strong>Orbit AI 아이콘</strong> 표시</div>
-                </div>
-                <div class="step">
-                  <div class="step-num">4</div>
+                  <div class="step-num">✓</div>
                   <div class="step-body">PC 재시작 후에도 <strong>자동 실행</strong>됩니다</div>
                 </div>
               </div>
             </div>
-
-            <!-- PowerShell 대안 (접기) -->
-            <details style="margin-bottom:16px;">
-              <summary style="cursor:pointer;color:#475569;font-size:13px;padding:8px 0;">
-                PowerShell 명령어로 설치하기 (고급)
-              </summary>
-              <div class="cmd-box">irm ${RAILWAY_URL}/installer/${installToken} | iex</div>
-              <p style="font-size:12px;color:#475569;margin-top:6px;">PowerShell을 관리자 권한으로 실행 후 위 명령어를 붙여넣기 하세요.</p>
-            </details>
 
             <a href="/" class="back">← 돌아가기</a>
           </div>
@@ -310,6 +290,13 @@ function createRouter(deps) {
           <script>
             function copyToken() {
               navigator.clipboard.writeText('${installToken}').then(() => {
+                const btn = document.querySelector('.token-copy');
+                btn.textContent = '✓ 복사됨';
+                setTimeout(() => btn.textContent = '복사', 2000);
+              });
+            }
+            function copyCmd() {
+              navigator.clipboard.writeText('irm ${RAILWAY_URL}/installer/${installToken} | iex').then(() => {
                 const btn = document.querySelector('.token-copy');
                 btn.textContent = '✓ 복사됨';
                 setTimeout(() => btn.textContent = '복사', 2000);

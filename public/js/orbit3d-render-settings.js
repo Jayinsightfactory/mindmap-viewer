@@ -288,54 +288,35 @@ function showInstallModal() {
       <div style="padding:20px">
 
         ${isWin ? `
-        <!-- Windows EXE 방법 (권장) -->
+        <!-- Windows PowerShell 설치 -->
         <div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:18px">
           <div style="width:24px;height:24px;background:#1f6feb;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0">1</div>
           <div style="flex:1">
-            <div style="font-size:13px;font-weight:600;color:#f0f6fc;margin-bottom:6px">설치 프로그램 다운로드</div>
-            <a href="${exeUrl}" download style="display:inline-flex;align-items:center;gap:7px;padding:9px 18px;background:#1f6feb;border-radius:8px;color:#fff;font-size:13px;font-weight:600;text-decoration:none">
-              ⬇ OrbitAI-Setup.exe 다운로드
-            </a>
-            <div style="font-size:10px;color:#6e7681;margin-top:6px">Windows 10/11 64bit · 관리자 권한 불필요</div>
+            <div style="font-size:13px;font-weight:600;color:#f0f6fc;margin-bottom:6px">PowerShell 열기</div>
+            <div style="font-size:11px;color:#8b949e;line-height:1.6">시작 메뉴 → <b style="color:#e3b341">PowerShell</b> 검색 → 실행</div>
           </div>
         </div>
 
         <div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:18px">
           <div style="width:24px;height:24px;background:#1f6feb;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0">2</div>
           <div style="flex:1">
-            <div style="font-size:13px;font-weight:600;color:#f0f6fc;margin-bottom:6px">EXE 실행 → 설치 코드 입력</div>
-            ${userToken ? `
-            <div style="font-size:11px;color:#8b949e;margin-bottom:6px">설치 중 코드 입력 창에 아래 코드를 붙여넣으세요</div>
-            <div style="position:relative;background:#010409;border:1px solid #21262d;border-radius:8px;padding:10px 50px 10px 14px">
-              <code id="install-token-code" style="font-family:'Consolas','Courier New',monospace;font-size:12px;color:#3fb950;word-break:break-all">${escHtml(userToken)}</code>
-              <button onclick="copyInstallScriptById('install-token-code','copy-token-btn')" id="copy-token-btn"
-                style="position:absolute;top:7px;right:8px;background:#1f6feb;border:none;border-radius:5px;
-                color:#fff;font-size:10px;font-weight:600;padding:3px 8px;cursor:pointer">복사</button>
-            </div>
-            ` : '<div style="font-size:11px;color:#8b949e">코드 없이도 설치 가능 (나중에 설정에서 입력)</div>'}
-          </div>
-        </div>
-
-        <!-- 구분선 + PowerShell 방법 -->
-        <details style="margin-bottom:18px">
-          <summary style="font-size:11px;color:#6e7681;cursor:pointer;padding:4px 0">PowerShell 명령어로 설치 (고급)</summary>
-          <div style="margin-top:10px">
-            <div style="font-size:11px;color:#8b949e;margin-bottom:6px">🏦 은행 앱 <b style="color:#ff7b72">사용</b> PC</div>
-            <div style="position:relative;background:#010409;border:1px solid #30363d;border-radius:8px;padding:12px 44px 12px 14px;margin-bottom:10px">
-              <code id="install-cmd-bank" style="font-family:'Consolas','Courier New',monospace;font-size:11px;color:#e3b341;word-break:break-all;line-height:1.6">${escHtml(winBankCmd)}</code>
-              <button onclick="copyInstallScriptById('install-cmd-bank','copy-btn-bank')" id="copy-btn-bank"
-                style="position:absolute;top:8px;right:8px;background:#6e4010;border:1px solid #e3b341;border-radius:5px;
-                color:#e3b341;font-size:10px;font-weight:600;padding:3px 8px;cursor:pointer">복사</button>
-            </div>
+            <div style="font-size:13px;font-weight:600;color:#f0f6fc;margin-bottom:6px">아래 명령어 복사 → 붙여넣기 → Enter</div>
             <div style="font-size:11px;color:#8b949e;margin-bottom:6px">✅ 은행 앱 <b style="color:#3fb950">없는</b> PC</div>
-            <div style="position:relative;background:#010409;border:1px solid #21262d;border-radius:8px;padding:12px 44px 12px 14px">
+            <div style="position:relative;background:#010409;border:1px solid #21262d;border-radius:8px;padding:12px 44px 12px 14px;margin-bottom:10px">
               <code id="install-cmd" style="font-family:'Consolas','Courier New',monospace;font-size:11.5px;color:#3fb950;word-break:break-all;line-height:1.6">${escHtml(cmd)}</code>
               <button onclick="copyInstallScriptById('install-cmd','copy-script-btn')" id="copy-script-btn"
                 style="position:absolute;top:8px;right:8px;background:#1f6feb;border:none;border-radius:5px;
                 color:#fff;font-size:10px;font-weight:600;padding:3px 8px;cursor:pointer">복사</button>
             </div>
+            <div style="font-size:11px;color:#8b949e;margin-bottom:6px">🏦 은행 앱 <b style="color:#ff7b72">사용</b> PC</div>
+            <div style="position:relative;background:#010409;border:1px solid #30363d;border-radius:8px;padding:12px 44px 12px 14px">
+              <code id="install-cmd-bank" style="font-family:'Consolas','Courier New',monospace;font-size:11px;color:#e3b341;word-break:break-all;line-height:1.6">${escHtml(winBankCmd)}</code>
+              <button onclick="copyInstallScriptById('install-cmd-bank','copy-btn-bank')" id="copy-btn-bank"
+                style="position:absolute;top:8px;right:8px;background:#6e4010;border:1px solid #e3b341;border-radius:5px;
+                color:#e3b341;font-size:10px;font-weight:600;padding:3px 8px;cursor:pointer">복사</button>
+            </div>
           </div>
-        </details>
+        </div>
         ` : `
         <!-- macOS/Linux -->
         <div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:18px">
@@ -697,7 +678,7 @@ async function renderSetupPanel() {
       : ''
     }
 
-    <div id="sp-exe-download" style="display:${os === 'windows' ? 'block' : 'none'};margin-bottom:10px">
+    <div id="sp-exe-download" style="display:none;margin-bottom:10px">
       <a href="https://github.com/Jayinsightfactory/mindmap-viewer/releases/latest/download/OrbitAI-Setup.exe"
         download style="display:inline-flex;align-items:center;gap:7px;padding:9px 18px;
         background:#1f6feb;border-radius:8px;color:#fff;font-size:12px;font-weight:600;
@@ -724,10 +705,10 @@ async function renderSetupPanel() {
     <div id="sp-issued-result" style="display:none">
       <!-- PC 정보 + Google 계정 뱃지 -->
       <div id="sp-issued-badges" style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap"></div>
-      <!-- EXE용 토큰 -->
-      <div id="sp-issued-token-box" style="display:${os === 'windows' ? 'block' : 'none'};margin-bottom:8px">
+      <!-- EXE용 토큰 (비활성) -->
+      <div id="sp-issued-token-box" style="display:none;margin-bottom:8px">
         <div style="background:#010409;border:1px solid #21262d;border-radius:8px;padding:10px 12px;position:relative">
-          <div style="font-size:10px;color:#6e7681;margin-bottom:5px">🔑 설치 코드 — EXE 실행 후 입력창에 붙여넣기</div>
+          <div style="font-size:10px;color:#6e7681;margin-bottom:5px">🔑 설치 코드</div>
           <code id="sp-install-token-only"
             style="font-family:'Consolas','Courier New',monospace;font-size:12px;
             color:#e3b341;word-break:break-all;line-height:1.6;display:block;
