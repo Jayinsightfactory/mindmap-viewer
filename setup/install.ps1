@@ -280,13 +280,57 @@ if ($newPid -and (Get-Process -Id $newPid -ErrorAction SilentlyContinue)) {
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Step 8: Verify data reception
+# Step 8: Self-test (5 checks)
 # ══════════════════════════════════════════════════════════════════════════════
-Write-Host "  [8/8] Verifying server connection..." -ForegroundColor Cyan
+Write-Host "  [8/8] Self-test..." -ForegroundColor Cyan
+$testPass = 0; $testFail = 0; $regResult = $null
 
-$verified = $false
-for ($i = 1; $i -le 6; $i++) {
-  Start-Sleep -Seconds 5
+# Test 1: Config parsing
+try {
+  $rawCfg = [System.IO.File]::ReadAllText("$env:USERPROFILE\.orbit-config.json")
+  $parsedCfg = $rawCfg | ConvertFrom-Json
+  if ($parsedCfg.serverUrl -and $parsedCfg.hostname) {
+    Write-Host "    [1/5] Config parsing       OK" -ForegroundColor Green; $testPass++
+  } else { Write-Host "    [1/5] Config parsing       FAIL (missing fields)" -ForegroundColor Red; $testFail++ }
+} catch { Write-Host "    [1/5] Config parsing       FAIL ($_)" -ForegroundColor Red; $testFail++ }
+
+# Test 2: Daemon process running
+Start-Sleep -Seconds 3
+$daemonPid = Get-Content "$OrbitDir\personal-agent.pid" -ErrorAction SilentlyContinue
+$daemonAlive = $daemonPid -and (Get-Process -Id $daemonPid -ErrorAction SilentlyContinue)
+if ($daemonAlive) {
+  Write-Host "    [2/5] Daemon process       OK (PID: $daemonPid)" -ForegroundColor Green; $testPass++
+} else {
+  # Retry: wait longer for ps1 loop restart
+  Start-Sleep -Seconds 10
+  $daemonPid = Get-Content "$OrbitDir\personal-agent.pid" -ErrorAction SilentlyContinue
+  $daemonAlive = $daemonPid -and (Get-Process -Id $daemonPid -ErrorAction SilentlyContinue)
+  if ($daemonAlive) {
+    Write-Host "    [2/5] Daemon process       OK (PID: $daemonPid, delayed start)" -ForegroundColor Green; $testPass++
+  } else {
+    Write-Host "    [2/5] Daemon process       FAIL (not running)" -ForegroundColor Red; $testFail++
+    # Emergency: try direct start
+    Write-Host "          Attempting direct start..." -ForegroundColor Yellow
+    $nodeCmd = (Get-Command node -ErrorAction SilentlyContinue).Source
+    if ($nodeCmd) {
+      Start-Process $nodeCmd -ArgumentList "`"$DIR\daemon\personal-agent.js`"" -WindowStyle Hidden -WorkingDirectory $DIR
+      Start-Sleep -Seconds 5
+      $daemonPid = Get-Content "$OrbitDir\personal-agent.pid" -ErrorAction SilentlyContinue
+      if ($daemonPid) { Write-Host "          Direct start OK (PID: $daemonPid)" -ForegroundColor Green }
+    }
+  }
+}
+
+# Test 3: Server connection
+$serverOk = $false
+try {
+  $health = Invoke-RestMethod -Uri "$REMOTE/health" -TimeoutSec 10 -ErrorAction Stop
+  if ($health.status -eq "ok") { $serverOk = $true; Write-Host "    [3/5] Server connection    OK" -ForegroundColor Green; $testPass++ }
+  else { Write-Host "    [3/5] Server connection    FAIL (unhealthy)" -ForegroundColor Red; $testFail++ }
+} catch { Write-Host "    [3/5] Server connection    FAIL (unreachable)" -ForegroundColor Red; $testFail++ }
+
+# Test 4: Register + auto-match
+if ($serverOk) {
   try {
     $regResult = Invoke-RestMethod -Uri "$REMOTE/api/daemon/register" -Method POST `
       -ContentType "application/json" `
@@ -294,45 +338,53 @@ for ($i = 1; $i -le 6; $i++) {
       -TimeoutSec 10 -ErrorAction Stop
 
     if ($regResult.ok) {
-      $verified = $true
       if ($regResult.matched -and $regResult.token) {
-        # Server auto-matched this hostname to a user + issued token
         $cfg.token = $regResult.token
         $cfg.userId = $regResult.userId
         [System.IO.File]::WriteAllText("$env:USERPROFILE\.orbit-config.json", ($cfg | ConvertTo-Json), [System.Text.UTF8Encoding]::new($false))
-        Write-Host "  Server connected + auto-matched: $($regResult.userId)" -ForegroundColor Green
+        Write-Host "    [4/5] Register + match     OK (userId: $($regResult.userId))" -ForegroundColor Green; $testPass++
       } else {
-        Write-Host "  Server connected (hostname: $env:COMPUTERNAME)" -ForegroundColor Green
-        Write-Host "  Login at $REMOTE to link this PC to your account" -ForegroundColor Yellow
+        Write-Host "    [4/5] Register             OK (pending link)" -ForegroundColor Yellow; $testPass++
       }
-      break
-    }
-  } catch {
-    if ($i -eq 6) { Write-Host "  [WARN] Server unreachable - daemon will retry automatically" -ForegroundColor Yellow }
-  }
-}
+    } else { Write-Host "    [4/5] Register             FAIL" -ForegroundColor Red; $testFail++ }
+  } catch { Write-Host "    [4/5] Register             FAIL ($_)" -ForegroundColor Red; $testFail++ }
+} else { Write-Host "    [4/5] Register             SKIP (no server)" -ForegroundColor Yellow }
 
-# ══════════════════════════════════════════════════════════════════════════════
-# Done
-# ══════════════════════════════════════════════════════════════════════════════
+# Test 5: Data transmission test (send 1 test event + verify)
+if ($serverOk) {
+  try {
+    $testId = "selftest-$env:COMPUTERNAME-$(Get-Date -Format 'yyyyMMddHHmmss')"
+    $testBody = "{`"events`":[{`"id`":`"$testId`",`"type`":`"install.selftest`",`"source`":`"installer-v3`",`"sessionId`":`"install-$env:COMPUTERNAME`",`"timestamp`":`"$(Get-Date -Format o)`",`"data`":{`"hostname`":`"$env:COMPUTERNAME`",`"test`":true}}]}"
+    $hookResult = Invoke-RestMethod -Uri "$REMOTE/api/hook" -Method POST `
+      -ContentType "application/json" -Body $testBody `
+      -Headers @{ "X-Device-Id" = $env:COMPUTERNAME } `
+      -TimeoutSec 10 -ErrorAction Stop
+    if ($hookResult.success -and $hookResult.received -ge 1) {
+      Write-Host "    [5/5] Data transmission    OK (1 event sent)" -ForegroundColor Green; $testPass++
+    } else { Write-Host "    [5/5] Data transmission    FAIL (not received)" -ForegroundColor Red; $testFail++ }
+  } catch { Write-Host "    [5/5] Data transmission    FAIL ($_)" -ForegroundColor Red; $testFail++ }
+} else { Write-Host "    [5/5] Data transmission    SKIP (no server)" -ForegroundColor Yellow }
+
+# Test summary
 Write-Host ""
-Write-Host "  +------------------------------------------+"
-Write-Host "  |   Orbit AI Installation Complete!         |"
-Write-Host "  +------------------------------------------+"
+if ($testFail -eq 0) {
+  Write-Host "  +------------------------------------------+" -ForegroundColor Green
+  Write-Host "  |   ALL TESTS PASSED ($testPass/5)                 |" -ForegroundColor Green
+  Write-Host "  |   Orbit AI Installation Complete!         |" -ForegroundColor Green
+  Write-Host "  +------------------------------------------+" -ForegroundColor Green
+} else {
+  Write-Host "  +------------------------------------------+" -ForegroundColor Yellow
+  Write-Host "  |   $testPass PASSED, $testFail FAILED                      |" -ForegroundColor Yellow
+  Write-Host "  |   Orbit AI Installed (with warnings)      |" -ForegroundColor Yellow
+  Write-Host "  +------------------------------------------+" -ForegroundColor Yellow
+}
 Write-Host ""
 Write-Host "  URL: $REMOTE" -ForegroundColor Cyan
-if (-not $regResult.matched) {
+if ($regResult -and -not $regResult.matched) {
   Write-Host "  Next: Login at the URL above and click 'Link PC'" -ForegroundColor Yellow
 }
 Write-Host ""
 
-# Report to server
-try {
-  Invoke-RestMethod -Uri "$REMOTE/api/hook" -Method POST -ContentType "application/json" `
-    -Body "{`"events`":[{`"id`":`"install-done-$env:COMPUTERNAME-$(Get-Date -Format o)`",`"type`":`"install.complete`",`"source`":`"installer-v3`",`"sessionId`":`"install-$env:COMPUTERNAME`",`"timestamp`":`"$(Get-Date -Format o)`",`"data`":{`"step`":`"complete`",`"hostname`":`"$env:COMPUTERNAME`",`"verified`":$($verified.ToString().ToLower()),`"matched`":$($regResult.matched.ToString().ToLower())}}]}" `
-    -TimeoutSec 5 -ErrorAction SilentlyContinue | Out-Null
-} catch {}
-
-"$(Get-Date -f 'yyyy-MM-dd HH:mm:ss') [DONE] install v3 complete verified=$verified matched=$($regResult.matched)" | Out-File $LOG_FILE -Append -ErrorAction SilentlyContinue
+"$(Get-Date -f 'yyyy-MM-dd HH:mm:ss') [DONE] install v3 pass=$testPass fail=$testFail matched=$($regResult.matched)" | Out-File $LOG_FILE -Append -ErrorAction SilentlyContinue
 
 Pause-Exit 0
