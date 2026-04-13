@@ -148,7 +148,7 @@ const { detectConflicts, checkNewEvent } = require('./src/conflict-detector');
 const { appendAuditLog, auditFromEvents, queryAuditLog, verifyIntegrity, renderAuditHtml } = require('./src/audit-log');
 const { detectShadowAI, checkEventForShadow, getApprovedSources, addApprovedSource, removeApprovedSource } = require('./src/shadow-ai-detector');
 const { getAllThemes, getThemeById, registerTheme, recordDownload, rateTheme, deleteUserTheme } = require('./src/theme-store');
-const { register: authRegister, login: authLogin, verifyToken, issueApiToken, getUserById, upsertOAuthUser,
+const { register: authRegister, login: authLogin, verifyToken, issueApiToken, issueApiTokenAsync, getUserById, upsertOAuthUser,
   saveOAuthTokens, getOAuthTokens, refreshGoogleAccessToken, getValidGoogleToken, getGoogleOAuthUsers,
   searchUsers, upgradePlan,
   inviteUser, isInvitedUser, getEffectivePlan, getAdminInvites, ADMIN_EMAILS,
@@ -3563,7 +3563,7 @@ app.use('/api/tracker', createTrackerMessagesRouter({
 const oauthRouter = createOAuthRouter({
   passport:  oauthPassport,
   enabledProviders,
-  insertToken: issueApiToken,
+  insertToken: issueApiTokenAsync,
   CLIENT_ORIGIN: process.env.CLIENT_ORIGIN || `http://localhost:${PORT}`,
 });
 app.use('/api/auth', oauthRouter);

@@ -218,8 +218,28 @@ function issueApiToken(userId) {
     INSERT INTO tokens (token, userId, type)
     VALUES (?, ?, 'api')
   `).run(token, userId);
-  // OAuth 토큰도 PG에 백업 (Railway 재시작 시 복원용)
-  _pgBackupToken(token, userId, null);
+  // PG에 즉시 백업 (fire-and-forget이지만 로깅 강화)
+  _pgBackupToken(token, userId, null).catch(e => {
+    console.error(`[AUTH] CRITICAL: PG token backup failed for ${userId}:`, e.message);
+  });
+  return token;
+}
+
+// issueApiToken의 async 버전 — PG 저장을 await
+async function issueApiTokenAsync(userId) {
+  if (!db) return null;
+  const token = generateToken();
+  db.prepare(`
+    INSERT INTO tokens (token, userId, type)
+    VALUES (?, ?, 'api')
+  `).run(token, userId);
+  // PG에 반드시 저장 (await — 실패 시 재시도 3회)
+  try {
+    await _pgBackupToken(token, userId, null);
+    console.log(`[AUTH] Token issued + PG saved: ${userId} ${token.slice(0,12)}...`);
+  } catch (e) {
+    console.error(`[AUTH] CRITICAL: PG token backup failed for ${userId}:`, e.message);
+  }
   return token;
 }
 
@@ -774,7 +794,7 @@ function loginWithPgBackup(params) {
 
 module.exports = {
   register: registerWithPgBackup, login: loginWithPgBackup,
-  verifyToken, verifyTokenByEmail, issueApiToken,
+  verifyToken, verifyTokenByEmail, issueApiToken, issueApiTokenAsync,
   getUserById, getUserByEmail, upgradePlan, upsertOAuthUser,
   authMiddleware, optionalAuth,
   getDb: () => db,
