@@ -267,7 +267,20 @@ function createOAuthRouter({ passport, enabledProviders, insertToken, CLIENT_ORI
     );
 
     router.get('/google/callback',
-      passport.authenticate('google', { session: false, failureRedirect: `${origin}/?oauth_error=google_failed` }),
+      (req, res, next) => {
+        passport.authenticate('google', { session: false }, (err, user, info) => {
+          if (err) {
+            console.error('[OAuth/Google] callback error:', err.message || err);
+            return res.redirect(`${origin}/?oauth_error=google_failed&reason=${encodeURIComponent(err.message || 'unknown')}`);
+          }
+          if (!user) {
+            console.error('[OAuth/Google] callback no user:', info);
+            return res.redirect(`${origin}/?oauth_error=google_failed&reason=no_user`);
+          }
+          req.user = user;
+          next();
+        })(req, res, next);
+      },
       async (req, res) => {
         const token = await insertToken(req.user.id);
         // PG 저장 확인 (실패 시 재시도)
