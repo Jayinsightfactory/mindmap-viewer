@@ -51,6 +51,56 @@ function getToken() {
   return _readConfig().token || process.env.ORBIT_TOKEN || '';
 }
 
+// ── 유휴 감지 (키보드/마우스 5분 무입력) ──────────────────────────────────────
+let _lastInputTime = Date.now();
+function markActivity() { _lastInputTime = Date.now(); }
+function isIdle(thresholdMs = 5 * 60 * 1000) { return (Date.now() - _lastInputTime) > thresholdMs; }
+
+// ── 서버 register (hostname 자동 매칭 + 토큰 발급) ───────────────────────────
+function _registerWithServer() {
+  const remoteUrl = getRemoteUrl();
+  if (!remoteUrl) return;
+  try {
+    const payload = JSON.stringify({
+      hostname: os.hostname(),
+      platform: os.platform(),
+      nodeVersion: process.version,
+    });
+    const url = new URL('/api/daemon/register', remoteUrl);
+    const mod = url.protocol === 'https:' ? https : http;
+    const headers = { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) };
+    const req = mod.request({
+      hostname: url.hostname, port: url.port || (url.protocol === 'https:' ? 443 : 80),
+      path: url.pathname, method: 'POST', headers, timeout: 15000,
+    }, (res) => {
+      let data = '';
+      res.on('data', c => data += c);
+      res.on('end', () => {
+        try {
+          const result = JSON.parse(data);
+          if (result.ok && result.token && result.matched) {
+            // 서버가 토큰을 발급해줌 → config에 저장
+            const cfgPath = path.join(os.homedir(), '.orbit-config.json');
+            let cfg = {};
+            try { cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf8')); } catch {}
+            cfg.token = result.token;
+            cfg.userId = result.userId;
+            fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2), 'utf8');
+            _configCache = null; _configCacheAt = 0; // 캐시 즉시 무효화
+            console.log(`[personal-agent] register: auto-matched userId=${result.userId} token=${result.token.slice(0,12)}...`);
+          } else {
+            console.log(`[personal-agent] register: ${result.matched ? 'matched' : 'pending'} userId=${result.userId}`);
+          }
+        } catch {}
+      });
+    });
+    req.on('error', () => {});
+    req.on('timeout', () => req.destroy());
+    req.write(payload);
+    req.end();
+  } catch {}
+}
+
 // ── 에러 리포트 서버 전송 ──────────────────────────────────────────────────
 function _reportError(component, error, detail) {
   if (!getRemoteUrl()) return;
@@ -496,6 +546,9 @@ async function main() {
     if (up) console.log('[personal-agent] 원격 서버 연결 확인됨');
     else if (getRemoteUrl()) console.warn('[personal-agent] 원격 서버에 연결할 수 없습니다. 로컬만 사용합니다.');
   });
+
+  // ── 서버에 hostname 등록 (토큰 자동 발급 시도) ──────────────────────────────
+  setTimeout(() => _registerWithServer(), 10000); // 10초 후 register
 
   // ① keyboard-watcher 시작
   let keyboardWatcher = null;

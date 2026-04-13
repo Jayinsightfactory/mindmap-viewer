@@ -1990,6 +1990,164 @@ app.post('/api/admin/push-token', async (req, res) => {
   res.json({ ok: true, hostname, tokenPreview: tokenToSend.slice(0, 12) + '...' });
 });
 
+// ─── POST /api/daemon/register — 데몬 첫 기동 시 hostname 등록 + 자동 토큰 발급 ───
+// 토큰 없이 hostname만으로 등록 → 기존 매칭 있으면 토큰 자동 발급
+app.post('/api/daemon/register', async (req, res) => {
+  try {
+    const { hostname, platform, nodeVersion } = req.body || {};
+    if (!hostname) return res.status(400).json({ error: 'hostname required' });
+
+    const _pool = dbModule.getDb ? dbModule.getDb() : null;
+    let matchedUserId = null;
+    let matchedToken = null;
+
+    // 1) PG에서 hostname → userId 매칭 조회 (기존 이벤트 기반)
+    if (_pool) {
+      try {
+        const { rows } = await _pool.query(
+          `SELECT DISTINCT user_id FROM events
+           WHERE data_json->>'hostname' = $1
+             AND user_id NOT LIKE 'pc_%' AND user_id != 'local'
+           ORDER BY user_id LIMIT 1`,
+          [hostname]
+        );
+        if (rows.length > 0) matchedUserId = rows[0].user_id;
+      } catch {}
+
+      // 2) hostname → userId 매칭 테이블에서도 조회 (link-pc로 등록된 것)
+      if (!matchedUserId) {
+        try {
+          const { rows } = await _pool.query(
+            `SELECT user_id FROM orbit_pc_links WHERE hostname = $1 LIMIT 1`,
+            [hostname]
+          );
+          if (rows.length > 0) matchedUserId = rows[0].user_id;
+        } catch {} // 테이블 없으면 무시
+      }
+    }
+
+    // 3) 매칭된 userId가 있으면 토큰 자동 발급
+    if (matchedUserId) {
+      try {
+        matchedToken = await issueApiTokenAsync(matchedUserId);
+        console.log(`[daemon/register] ${hostname} → auto-matched userId=${matchedUserId} token=${matchedToken?.slice(0,12)}...`);
+      } catch (e) {
+        console.warn(`[daemon/register] token issue failed for ${matchedUserId}:`, e.message);
+        // 토큰 발급 실패해도 매칭 정보는 반환
+      }
+    } else {
+      console.log(`[daemon/register] ${hostname} → no match, will use pc_${hostname}`);
+    }
+
+    // 4) 등록 이벤트 기록
+    if (_pool) {
+      _pool.query(
+        `INSERT INTO events (id, type, user_id, data_json, timestamp) VALUES ($1, $2, $3, $4, NOW())`,
+        [`register-${hostname}-${Date.now()}`, 'daemon.register', matchedUserId || `pc_${hostname}`,
+         JSON.stringify({ hostname, platform, nodeVersion, matchedUserId, autoToken: !!matchedToken })]
+      ).catch(() => {});
+    }
+
+    res.json({
+      ok: true,
+      hostname,
+      userId: matchedUserId || `pc_${hostname}`,
+      token: matchedToken || null,
+      matched: !!matchedUserId,
+    });
+  } catch (e) {
+    console.error('[daemon/register] error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── POST /api/daemon/link-pc — 웹에서 hostname ↔ userId 연결 ───────────────
+// 직원이 웹에서 "내 PC 연결" 클릭 시 hostname을 자기 계정에 매칭
+app.post('/api/daemon/link-pc', async (req, res) => {
+  try {
+    const token = (req.headers.authorization || '').replace('Bearer ', '').trim();
+    if (!token) return res.status(401).json({ error: 'auth required' });
+    const _verifyAsync = require('./src/auth').verifyTokenAsync;
+    const user = await _verifyAsync(token);
+    if (!user) return res.status(401).json({ error: 'invalid token' });
+
+    const { hostname } = req.body || {};
+    if (!hostname) return res.status(400).json({ error: 'hostname required' });
+
+    const _pool = dbModule.getDb ? dbModule.getDb() : null;
+    if (!_pool) return res.status(500).json({ error: 'db not available' });
+
+    // 1) orbit_pc_links 테이블에 매칭 저장 (upsert)
+    await _pool.query(
+      `CREATE TABLE IF NOT EXISTS orbit_pc_links (
+        hostname TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        linked_at TIMESTAMPTZ DEFAULT NOW()
+      )`
+    );
+    await _pool.query(
+      `INSERT INTO orbit_pc_links (hostname, user_id) VALUES ($1, $2)
+       ON CONFLICT (hostname) DO UPDATE SET user_id = $2, linked_at = NOW()`,
+      [hostname, user.id]
+    );
+
+    // 2) 기존 pc_hostname 이벤트를 실제 userId로 재매핑
+    await _pool.query(
+      `UPDATE events SET user_id = $1 WHERE user_id = $2`,
+      [user.id, `pc_${hostname}`]
+    ).catch(() => {});
+
+    // 3) 데몬에 토큰 push (기존 push-token 로직)
+    const newToken = await issueApiTokenAsync(user.id);
+    if (!global._daemonCommands) global._daemonCommands = {};
+    if (!global._daemonCommands[hostname]) global._daemonCommands[hostname] = [];
+    const cmdTs = new Date().toISOString();
+    global._daemonCommands[hostname].push(
+      { action: 'config', data: { token: newToken, userId: user.id, serverUrl: process.env.OAUTH_CALLBACK_BASE || `http://localhost:${PORT}` }, ts: cmdTs },
+      { action: 'restart', ts: cmdTs }
+    );
+    // PG 영속화
+    _pool.query(
+      `INSERT INTO orbit_daemon_commands (hostname, action, data_json, ts) VALUES ($1,$2,$3,$4)`,
+      [hostname, 'config', JSON.stringify({ token: newToken, userId: user.id }), cmdTs]
+    ).catch(() => {});
+
+    console.log(`[daemon/link-pc] ${hostname} → userId=${user.id} (${user.name}) token pushed`);
+    res.json({ ok: true, hostname, userId: user.id, name: user.name, tokenPushed: true });
+  } catch (e) {
+    console.error('[daemon/link-pc] error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── GET /api/daemon/unlinked-pcs — 미매칭 PC 목록 (웹 UI용) ─────────────────
+app.get('/api/daemon/unlinked-pcs', async (req, res) => {
+  try {
+    const token = (req.headers.authorization || '').replace('Bearer ', '').trim();
+    const _verifyAsync = require('./src/auth').verifyTokenAsync;
+    const user = token ? await _verifyAsync(token) : null;
+    if (!user) return res.status(401).json({ error: 'auth required' });
+
+    const _pool = dbModule.getDb ? dbModule.getDb() : null;
+    if (!_pool) return res.json({ pcs: [] });
+
+    const { rows } = await _pool.query(
+      `SELECT DISTINCT data_json->>'hostname' AS hostname,
+              MAX(timestamp) AS last_seen,
+              COUNT(*) AS event_count
+       FROM events
+       WHERE user_id LIKE 'pc_%'
+         AND data_json->>'hostname' IS NOT NULL
+       GROUP BY data_json->>'hostname'
+       ORDER BY last_seen DESC
+       LIMIT 20`
+    );
+    res.json({ pcs: rows });
+  } catch (e) {
+    res.json({ pcs: [] });
+  }
+});
+
 // POST /api/admin/list-users — 관리자용 전체 사용자 목록 조회
 app.get('/api/admin/list-users', async (req, res) => {
   const { isAdmin: _adminOk } = resolveAdmin(req);
