@@ -539,7 +539,7 @@ window._issueInstallCode = function() {
   const setupScript = location.origin + '/setup/install.ps1';
   const setupSh     = location.origin + '/setup/orbit-start.sh';
   const installCmd  = isWin
-    ? `&([scriptblock]::Create((irm '${setupScript}'))) -Token '${token}'`
+    ? `$env:ORBIT_TOKEN='${token}'; irm '${setupScript}' | iex`
     : `ORBIT_TOKEN='${token}' bash <(curl -sL '${setupSh}')`;
 
   // 뱃지 영역
