@@ -2224,7 +2224,7 @@ app.post('/api/hook', async (req, res) => {
         _imageCache.set(event.id, event.data.imageBase64);
         delete event.data.imageBase64;
       }
-      try { await Promise.resolve(insertEvent(event)); } catch (e) { console.error('[hook] insertEvent 실패:', e.message); }
+      try { await Promise.resolve(insertEvent(event)); } catch (e) { console.error('[hook] insertEvent FAIL:', e.message, 'id=', event.id, 'type=', event.type, 'source=', event.source); }
       if (!_isPg) {
         jsonlLines.push(JSON.stringify({
           id: event.id, type: event.type, source: event.source,
