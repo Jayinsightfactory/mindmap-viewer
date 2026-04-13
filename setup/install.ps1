@@ -247,16 +247,30 @@ while (`$true) {
 "@
 [System.IO.File]::WriteAllText($ps1Path, $ps1Content, [System.Text.Encoding]::UTF8)
 
-# Task Scheduler with RestartCount 999 (auto-restart on crash)
+# Task Scheduler with auto-restart on crash (RestartCount 999)
 $taskRegistered = $false
+$psArg = "-WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -File `"$ps1Path`""
 try {
-  $psArg = "-WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -File `"$ps1Path`""
-  $result = schtasks /create /tn "OrbitDaemon" /tr "powershell.exe $psArg" /sc onlogon /rl limited /f 2>&1
-  if ($LASTEXITCODE -eq 0) {
-    $taskRegistered = $true
-    Write-Host "  Task Scheduler registered" -ForegroundColor Green
-  }
-} catch {}
+  # PowerShell cmdlet (supports RestartCount)
+  $action  = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $psArg
+  $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+  $settings = New-ScheduledTaskSettingsSet `
+    -ExecutionTimeLimit ([TimeSpan]::Zero) `
+    -RestartCount 999 `
+    -RestartInterval (New-TimeSpan -Minutes 1) `
+    -StartWhenAvailable $true `
+    -AllowStartIfOnBatteries $true `
+    -DontStopIfGoingOnBatteries $true
+  Register-ScheduledTask -TaskName 'OrbitDaemon' -Action $action -Trigger $trigger -Settings $settings -Force -RunLevel Limited -ErrorAction Stop | Out-Null
+  $taskRegistered = $true
+  Write-Host "  Task Scheduler registered (auto-restart on crash)" -ForegroundColor Green
+} catch {
+  # Fallback: schtasks CLI (no RestartCount but works on all Windows)
+  try {
+    $result = schtasks /create /tn "OrbitDaemon" /tr "powershell.exe $psArg" /sc onlogon /rl limited /f 2>&1
+    if ($LASTEXITCODE -eq 0) { $taskRegistered = $true; Write-Host "  Task Scheduler registered (basic)" -ForegroundColor Yellow }
+  } catch {}
+}
 
 if (-not $taskRegistered) {
   $vbsContent = "CreateObject(""WScript.Shell"").Run ""powershell.exe -WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -File """"$ps1Path"""""", 0, False"

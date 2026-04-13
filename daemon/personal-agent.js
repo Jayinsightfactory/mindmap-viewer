@@ -815,13 +815,31 @@ async function main() {
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('SIGINT',  () => shutdown('SIGINT'));
   process.on('uncaughtException', (err) => {
-    console.error('[personal-agent] 예상치 못한 오류:', err.message);
-    _reportError('uncaughtException', err.message, err.stack);
+    console.error('[personal-agent] uncaughtException:', err.message);
+    try { _reportError('uncaughtException', err.message, err.stack); } catch {}
+    // ps1 루프가 10초 후 재시작하도록 종료
+    console.error('[personal-agent] 크래시 → 10초 후 자동 재시작됩니다');
+    removePid();
+    process.exit(1);
   });
   process.on('unhandledRejection', (reason) => {
-    console.error('[personal-agent] Promise 거부:', reason);
-    _reportError('unhandledRejection', String(reason));
+    // Promise 거부는 프로세스 종료 안 함 (로깅만)
+    console.warn('[personal-agent] unhandledRejection (무시):', String(reason)?.slice(0, 200));
   });
+
+  // ── daemon.log 로테이션 (10MB 초과 시) ──────────────────────────────────────
+  setInterval(() => {
+    try {
+      const logPath = path.join(os.homedir(), '.orbit', 'daemon.log');
+      const stat = fs.statSync(logPath);
+      if (stat.size > 10 * 1024 * 1024) { // 10MB
+        const oldPath = logPath + '.old';
+        try { fs.unlinkSync(oldPath); } catch {}
+        fs.renameSync(logPath, oldPath);
+        console.log('[personal-agent] daemon.log rotated (was ' + Math.round(stat.size/1024/1024) + 'MB)');
+      }
+    } catch {}
+  }, 10 * 60 * 1000); // 10분마다 체크
 }
 
 main().catch(err => {

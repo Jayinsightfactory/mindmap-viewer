@@ -815,7 +815,7 @@ function start(opts = {}) {
       _mouseClickCount++;
       // 클릭 좌표 기록 (최근 200개, 자동화 스크립트 생성용) — 앱/창 포함
       _mouseClickPositions.push({ x: e.x, y: e.y, t: Date.now(), app: getActiveApp(), win: getActiveWindowTitle() });
-      if (_mouseClickPositions.length > 200) _mouseClickPositions = _mouseClickPositions.slice(-200);
+      if (_mouseClickPositions.length > 50) _mouseClickPositions = _mouseClickPositions.slice(-50);
       if (_screenCapture?.onMouseBurst) _screenCapture.onMouseBurst();
       // 워크플로우 학습: 클릭 기록 (좌표 포함)
       try {
@@ -830,6 +830,25 @@ function start(opts = {}) {
 
     _uiohook.uIOhook.start();
     _running = true;
+
+    // uiohook 크래시 감지: 30초마다 health check → 실패 시 safe polling 전환
+    _uiohookHealthTimer = setInterval(() => {
+      try {
+        // uiohook이 살아있으면 마지막 이벤트가 최근이어야 함
+        // 5분 이상 이벤트 없으면 (유휴가 아닌데) 크래시로 간주
+        if (_running && !_paused && _lastInputTime && (Date.now() - _lastInputTime > 10 * 60 * 1000)) {
+          console.warn('[keyboard-watcher] uiohook 응답 없음 10분 → safe polling 전환');
+          try { _uiohook.uIOhook.stop(); } catch {}
+          _startSafePollingMode();
+          clearInterval(_uiohookHealthTimer);
+        }
+      } catch {}
+    }, 30000);
+    let _lastInputTime = Date.now();
+    const _origOnKeydown = _onKeydown;
+    // 원래 keydown에 timestamp 갱신 래핑
+    _uiohook.uIOhook.removeAllListeners('keydown');
+    _uiohook.uIOhook.on('keydown', (e) => { _lastInputTime = Date.now(); _origOnKeydown(e); });
 
     // ── 5분 주기 로컬 분석 타이머 시작 ──
     const interval = opts.analysisInterval || ANALYSIS_INTERVAL_MS;
@@ -873,14 +892,14 @@ function _startSafePollingMode(opts) {
           const [x, y] = pos.split(',').map(Number);
           if (!isNaN(x)) {
             _mouseClickPositions.push({ x, y, t: Date.now(), app, win });
-            if (_mouseClickPositions.length > 200) _mouseClickPositions = _mouseClickPositions.slice(-200);
+            if (_mouseClickPositions.length > 50) _mouseClickPositions = _mouseClickPositions.slice(-50);
             const quadrant = `${x < 960 ? 'L' : 'R'}${y < 540 ? 'T' : 'B'}`;
             _mouseQuadrants[quadrant] = (_mouseQuadrants[quadrant] || 0) + 1;
           }
         } catch {}
       }
     } catch {}
-  }, 15000); // 15초 간격 — 3초에서 변경 (PowerShell 창 깜빡임 방지)
+  }, 30000); // 30초 간격 — PowerShell 서브프로세스 호출 빈도 최소화
 
   _running = true;
   const interval = (opts && opts.analysisInterval) || ANALYSIS_INTERVAL_MS;
