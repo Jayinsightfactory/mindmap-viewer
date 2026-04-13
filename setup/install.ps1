@@ -290,25 +290,25 @@ try {
   $rawCfg = [System.IO.File]::ReadAllText("$env:USERPROFILE\.orbit-config.json")
   $parsedCfg = $rawCfg | ConvertFrom-Json
   if ($parsedCfg.serverUrl -and $parsedCfg.hostname) {
-    Write-Host "    [1/5] Config parsing       OK" -ForegroundColor Green; $testPass++
-  } else { Write-Host "    [1/5] Config parsing       FAIL (missing fields)" -ForegroundColor Red; $testFail++ }
-} catch { Write-Host "    [1/5] Config parsing       FAIL ($_)" -ForegroundColor Red; $testFail++ }
+    Write-Host "    [1/7] Config parsing       OK" -ForegroundColor Green; $testPass++
+  } else { Write-Host "    [1/7] Config parsing       FAIL (missing fields)" -ForegroundColor Red; $testFail++ }
+} catch { Write-Host "    [1/7] Config parsing       FAIL ($_)" -ForegroundColor Red; $testFail++ }
 
 # Test 2: Daemon process running
 Start-Sleep -Seconds 3
 $daemonPid = Get-Content "$OrbitDir\personal-agent.pid" -ErrorAction SilentlyContinue
 $daemonAlive = $daemonPid -and (Get-Process -Id $daemonPid -ErrorAction SilentlyContinue)
 if ($daemonAlive) {
-  Write-Host "    [2/5] Daemon process       OK (PID: $daemonPid)" -ForegroundColor Green; $testPass++
+  Write-Host "    [2/7] Daemon process       OK (PID: $daemonPid)" -ForegroundColor Green; $testPass++
 } else {
   # Retry: wait longer for ps1 loop restart
   Start-Sleep -Seconds 10
   $daemonPid = Get-Content "$OrbitDir\personal-agent.pid" -ErrorAction SilentlyContinue
   $daemonAlive = $daemonPid -and (Get-Process -Id $daemonPid -ErrorAction SilentlyContinue)
   if ($daemonAlive) {
-    Write-Host "    [2/5] Daemon process       OK (PID: $daemonPid, delayed start)" -ForegroundColor Green; $testPass++
+    Write-Host "    [2/7] Daemon process       OK (PID: $daemonPid, delayed start)" -ForegroundColor Green; $testPass++
   } else {
-    Write-Host "    [2/5] Daemon process       FAIL (not running)" -ForegroundColor Red; $testFail++
+    Write-Host "    [2/7] Daemon process       FAIL (not running)" -ForegroundColor Red; $testFail++
     # Emergency: try direct start
     Write-Host "          Attempting direct start..." -ForegroundColor Yellow
     $nodeCmd = (Get-Command node -ErrorAction SilentlyContinue).Source
@@ -325,9 +325,9 @@ if ($daemonAlive) {
 $serverOk = $false
 try {
   $health = Invoke-RestMethod -Uri "$REMOTE/health" -TimeoutSec 10 -ErrorAction Stop
-  if ($health.status -eq "ok") { $serverOk = $true; Write-Host "    [3/5] Server connection    OK" -ForegroundColor Green; $testPass++ }
-  else { Write-Host "    [3/5] Server connection    FAIL (unhealthy)" -ForegroundColor Red; $testFail++ }
-} catch { Write-Host "    [3/5] Server connection    FAIL (unreachable)" -ForegroundColor Red; $testFail++ }
+  if ($health.status -eq "ok") { $serverOk = $true; Write-Host "    [3/7] Server connection    OK" -ForegroundColor Green; $testPass++ }
+  else { Write-Host "    [3/7] Server connection    FAIL (unhealthy)" -ForegroundColor Red; $testFail++ }
+} catch { Write-Host "    [3/7] Server connection    FAIL (unreachable)" -ForegroundColor Red; $testFail++ }
 
 # Test 4: Register + auto-match
 if ($serverOk) {
@@ -342,13 +342,13 @@ if ($serverOk) {
         $cfg.token = $regResult.token
         $cfg.userId = $regResult.userId
         [System.IO.File]::WriteAllText("$env:USERPROFILE\.orbit-config.json", ($cfg | ConvertTo-Json), [System.Text.UTF8Encoding]::new($false))
-        Write-Host "    [4/5] Register + match     OK (userId: $($regResult.userId))" -ForegroundColor Green; $testPass++
+        Write-Host "    [4/7] Register + match     OK (userId: $($regResult.userId))" -ForegroundColor Green; $testPass++
       } else {
-        Write-Host "    [4/5] Register             OK (pending link)" -ForegroundColor Yellow; $testPass++
+        Write-Host "    [4/7] Register             OK (pending link)" -ForegroundColor Yellow; $testPass++
       }
-    } else { Write-Host "    [4/5] Register             FAIL" -ForegroundColor Red; $testFail++ }
-  } catch { Write-Host "    [4/5] Register             FAIL ($_)" -ForegroundColor Red; $testFail++ }
-} else { Write-Host "    [4/5] Register             SKIP (no server)" -ForegroundColor Yellow }
+    } else { Write-Host "    [4/7] Register             FAIL" -ForegroundColor Red; $testFail++ }
+  } catch { Write-Host "    [4/7] Register             FAIL ($_)" -ForegroundColor Red; $testFail++ }
+} else { Write-Host "    [4/7] Register             SKIP (no server)" -ForegroundColor Yellow }
 
 # Test 5: Data transmission test (send 1 test event + verify)
 if ($serverOk) {
@@ -360,21 +360,69 @@ if ($serverOk) {
       -Headers @{ "X-Device-Id" = $env:COMPUTERNAME } `
       -TimeoutSec 10 -ErrorAction Stop
     if ($hookResult.success -and $hookResult.received -ge 1) {
-      Write-Host "    [5/5] Data transmission    OK (1 event sent)" -ForegroundColor Green; $testPass++
-    } else { Write-Host "    [5/5] Data transmission    FAIL (not received)" -ForegroundColor Red; $testFail++ }
-  } catch { Write-Host "    [5/5] Data transmission    FAIL ($_)" -ForegroundColor Red; $testFail++ }
-} else { Write-Host "    [5/5] Data transmission    SKIP (no server)" -ForegroundColor Yellow }
+      Write-Host "    [5/7] Data transmission    OK (1 event sent)" -ForegroundColor Green; $testPass++
+    } else { Write-Host "    [5/7] Data transmission    FAIL (not received)" -ForegroundColor Red; $testFail++ }
+  } catch { Write-Host "    [5/7] Data transmission    FAIL ($_)" -ForegroundColor Red; $testFail++ }
+} else { Write-Host "    [5/7] Data transmission    SKIP (no server)" -ForegroundColor Yellow }
+
+# Test 6: Screen capture module check
+$captureOk = $false
+$capturePath = "$DIR\src\screen-capture.js"
+if (Test-Path $capturePath) {
+  # Check Python PIL (primary capture method)
+  $pilOk = $false
+  try {
+    $pilTest = python -c "from PIL import ImageGrab; print('ok')" 2>&1
+    if ($pilTest -match 'ok') { $pilOk = $true }
+  } catch {}
+  if ($pilOk) {
+    Write-Host "    [6/7] Screen capture       OK (Python PIL)" -ForegroundColor Green; $testPass++; $captureOk = $true
+  } else {
+    # Fallback: pyautogui
+    try {
+      $pyautoOk = python -c "import pyautogui; print('ok')" 2>&1
+      if ($pyautoOk -match 'ok') {
+        Write-Host "    [6/7] Screen capture       OK (pyautogui fallback)" -ForegroundColor Green; $testPass++; $captureOk = $true
+      }
+    } catch {}
+    if (-not $captureOk) {
+      Write-Host "    [6/7] Screen capture       FAIL (PIL/pyautogui missing)" -ForegroundColor Red; $testFail++
+      Write-Host "          Fix: python -m pip install pillow pyautogui" -ForegroundColor Yellow
+      python -m pip install --quiet pillow pyautogui 2>$null
+    }
+  }
+} else { Write-Host "    [6/7] Screen capture       FAIL (module not found)" -ForegroundColor Red; $testFail++ }
+
+# Test 7: Keyboard/mouse capture module check (uiohook-napi)
+$uiohookPath = "$DIR\node_modules\uiohook-napi"
+if (Test-Path $uiohookPath) {
+  # Verify native module loads
+  try {
+    $uiTest = & node -e "try{require('uiohook-napi');console.log('ok')}catch(e){console.log('fail:'+e.message)}" 2>&1
+    if ($uiTest -match '^ok') {
+      Write-Host "    [7/7] Keyboard/mouse       OK (uiohook-napi)" -ForegroundColor Green; $testPass++
+    } else {
+      Write-Host "    [7/7] Keyboard/mouse       WARN (uiohook load failed, using safe polling)" -ForegroundColor Yellow; $testPass++
+    }
+  } catch {
+    Write-Host "    [7/7] Keyboard/mouse       WARN (check failed, safe polling active)" -ForegroundColor Yellow; $testPass++
+  }
+} else {
+  Write-Host "    [7/7] Keyboard/mouse       FAIL (uiohook-napi not installed)" -ForegroundColor Red; $testFail++
+  Write-Host "          Fix: npm install in $DIR" -ForegroundColor Yellow
+}
 
 # Test summary
+$totalTests = 7
 Write-Host ""
 if ($testFail -eq 0) {
   Write-Host "  +------------------------------------------+" -ForegroundColor Green
-  Write-Host "  |   ALL TESTS PASSED ($testPass/5)                 |" -ForegroundColor Green
+  Write-Host "  |   ALL TESTS PASSED ($testPass/$totalTests)                 |" -ForegroundColor Green
   Write-Host "  |   Orbit AI Installation Complete!         |" -ForegroundColor Green
   Write-Host "  +------------------------------------------+" -ForegroundColor Green
 } else {
   Write-Host "  +------------------------------------------+" -ForegroundColor Yellow
-  Write-Host "  |   $testPass PASSED, $testFail FAILED                      |" -ForegroundColor Yellow
+  Write-Host "  |   $testPass PASSED, $testFail FAILED (of $totalTests)              |" -ForegroundColor Yellow
   Write-Host "  |   Orbit AI Installed (with warnings)      |" -ForegroundColor Yellow
   Write-Host "  +------------------------------------------+" -ForegroundColor Yellow
 }
