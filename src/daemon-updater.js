@@ -33,7 +33,9 @@ let _lastCheckDate = ''; // 'YYYY-MM-DD-HH:mm' 중복 방지
 
 function _loadConfig() {
   try {
-    const cfg = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.orbit-config.json'), 'utf8'));
+    let _raw = fs.readFileSync(path.join(os.homedir(), '.orbit-config.json'), 'utf8');
+    if (_raw.charCodeAt(0) === 0xFEFF) _raw = _raw.slice(1);
+    const cfg = JSON.parse(_raw.trim());
     _serverUrl = cfg.serverUrl || process.env.ORBIT_SERVER_URL || null;
     _token = cfg.token || process.env.ORBIT_TOKEN || '';
   } catch {

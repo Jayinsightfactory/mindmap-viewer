@@ -31,8 +31,16 @@ function _readConfig() {
   const now = Date.now();
   if (_configCache && now - _configCacheAt < 60 * 1000) return _configCache;
   try {
-    _configCache = JSON.parse(fs.readFileSync(_CONFIG_PATH, 'utf8'));
-  } catch { _configCache = {}; }
+    let raw = fs.readFileSync(_CONFIG_PATH, 'utf8');
+    // BOM 제거 (PowerShell UTF8 인코딩 문제 방어)
+    if (raw.charCodeAt(0) === 0xFEFF) raw = raw.slice(1);
+    // CMD echo 잔여 공백/제어문자 제거
+    raw = raw.trim();
+    _configCache = JSON.parse(raw);
+  } catch (e) {
+    console.warn('[config] parse failed:', e.message, '— using defaults');
+    _configCache = {};
+  }
   _configCacheAt = now;
   return _configCache;
 }
