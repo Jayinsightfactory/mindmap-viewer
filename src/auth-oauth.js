@@ -62,6 +62,7 @@ function initOAuthStrategies(db) {
       },
       async (accessToken, refreshToken, profile, done) => {
         try {
+          console.log(`[OAuth/Google] Strategy callback: profile.id=${profile?.id} email=${profile?.emails?.[0]?.value}`);
           const email = profile.emails?.[0]?.value || `google_${profile.id}@oauth.local`;
           const user  = await db.upsertOAuthUser({
             provider:    'google',
@@ -82,6 +83,7 @@ function initOAuthStrategies(db) {
           }
           done(null, user);
         } catch (err) {
+          console.error(`[OAuth/Google] Strategy error:`, err.message, err.stack?.slice(0, 300));
           done(err);
         }
       }
@@ -274,7 +276,7 @@ function createOAuthRouter({ passport, enabledProviders, insertToken, CLIENT_ORI
             return res.redirect(`${origin}/?oauth_error=google_failed&reason=${encodeURIComponent(err.message || 'unknown')}`);
           }
           if (!user) {
-            console.error('[OAuth/Google] callback no user:', info);
+            console.error('[OAuth/Google] callback no user:', JSON.stringify(info), 'err was:', err);
             return res.redirect(`${origin}/?oauth_error=google_failed&reason=no_user`);
           }
           req.user = user;
