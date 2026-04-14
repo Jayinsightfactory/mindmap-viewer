@@ -347,13 +347,8 @@ function stopBankSecurityMonitor() {
 
 // ── 프로세스 우선순위 낮춤 (PC 성능 보호) ────────────────────────────────────
 // Windows: BELOW_NORMAL(6) 으로 설정 → Excel/업무앱이 항상 우선
-if (process.platform === 'win32') {
-  try {
-    const { execSync } = require('child_process');
-    execSync(`wmic process where ProcessId=${process.pid} CALL setpriority "below normal"`,
-      { timeout: 3000, windowsHide: true, stdio: 'pipe' });
-  } catch {}
-}
+// Process priority lowered via OS API (no wmic - removed in Win11)
+try { os.setPriority(os.constants.priority.PRIORITY_BELOW_NORMAL); } catch {}
 
 // ── 설정 ─────────────────────────────────────────────────────────────────────
 const args     = process.argv.slice(2);
@@ -843,7 +838,8 @@ async function main() {
 }
 
 main().catch(err => {
-  console.error('[personal-agent] 시작 실패:', err.message);
+  console.error('[personal-agent] FATAL:', err.message);
+  console.error(err.stack);
   removePid();
   process.exit(1);
 });
