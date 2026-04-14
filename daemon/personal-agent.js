@@ -832,7 +832,10 @@ async function main() {
   }, 10 * 60 * 1000); // 10분마다 체크
 }
 
-main().catch(err => {
+main().then(() => {
+  // Keep process alive — prevent Node.js from exiting when all async work is done
+  setInterval(() => {}, 60000);
+}).catch(err => {
   console.error('[personal-agent] FATAL:', err.message);
   console.error(err.stack);
   removePid();
