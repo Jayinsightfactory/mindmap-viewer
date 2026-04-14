@@ -528,21 +528,16 @@ async function runSuggestions() {
 async function main() {
   // 중복 인스턴스 종료 후 시작 (2회 — spawn 직후 타이밍 커버)
   killDuplicates();
-  // 1초 후 한번 더 (ps1 루프 재시작 타이밍에 혹시 남은 프로세스 제거)
-  setTimeout(() => { try { killDuplicates(); } catch {} }, 1000);
   console.log(`[orbit] start PID=${process.pid} (${new Date().toISOString()})`);
   writePid();
-  console.log('[orbit] checkpoint: pid written');
 
   // Java/Node 중복 프로세스 주기적 감시 (5분마다) — nenova ERP 렉 방지
   if (os.platform() === 'win32') {
     setInterval(() => { try { killDuplicates(); } catch {} }, 5 * 60 * 1000);
   }
 
-  console.log('[orbit] checkpoint: before waitForServer');
-  // Orbit local server check (non-blocking)
-  const serverUp = await waitForServer();
-  console.log(`[orbit] checkpoint: waitForServer done (${serverUp})`);
+  // Skip local server wait (not used in daemon-only mode)
+  const serverUp = false;
 
   // 원격 서버 헬스 체크 (비차단 — 실패해도 계속)
   checkRemoteServer().then(up => {

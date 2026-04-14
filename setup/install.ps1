@@ -244,6 +244,49 @@ if (-not $taskRegistered) {
   Write-Host "  Startup folder registered (fallback)" -ForegroundColor Yellow
 }
 
+# Watchdog: 5min interval - checks daemon alive, git pull if needed, restart
+$watchdogPath = "$OrbitDir\watchdog.ps1"
+$watchdogContent = @"
+`$ErrorActionPreference = 'SilentlyContinue'
+`$dir = "`$env:USERPROFILE\mindmap-viewer"
+`$pidFile = "`$env:USERPROFILE\.orbit\personal-agent.pid"
+`$logFile = "`$env:USERPROFILE\.orbit\watchdog.log"
+
+# Check if daemon is alive
+`$alive = `$false
+if (Test-Path `$pidFile) {
+  `$pid = Get-Content `$pidFile -ErrorAction SilentlyContinue
+  if (`$pid -and (Get-Process -Id `$pid -ErrorAction SilentlyContinue)) { `$alive = `$true }
+}
+
+if (-not `$alive) {
+  "[`$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))] daemon dead - restarting" | Add-Content `$logFile
+
+  # git pull (get latest code)
+  Set-Location `$dir
+  `$remote = 'https://github.com/Jayinsightfactory/mindmap-viewer.git'
+  `$cur = git remote get-url origin 2>`$null
+  if (`$cur -ne `$remote) { git remote set-url origin `$remote 2>`$null }
+  git fetch origin 2>`$null
+  git reset --hard origin/main 2>`$null
+
+  # Start daemon via ps1 loop
+  `$ps1 = "`$env:USERPROFILE\.orbit\start-daemon.ps1"
+  if (Test-Path `$ps1) {
+    Start-Process powershell.exe -WindowStyle Hidden -ArgumentList "-NonInteractive -ExecutionPolicy Bypass -File `$ps1"
+    "[`$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))] daemon restarted via ps1" | Add-Content `$logFile
+  }
+}
+"@
+[System.IO.File]::WriteAllText($watchdogPath, $watchdogContent, [System.Text.UTF8Encoding]::new($false))
+
+# Register watchdog: every 5 minutes
+$wdArg = "-WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -Command `"& '$watchdogPath'`""
+try {
+  schtasks /create /tn "OrbitWatchdog" /tr "powershell.exe $wdArg" /sc minute /mo 5 /rl limited /f 2>&1 | Out-Null
+  Write-Host "  Watchdog registered (5min check)" -ForegroundColor Green
+} catch {}
+
 # ==============================================================================
 # Step 7: Start daemon
 # ==============================================================================
