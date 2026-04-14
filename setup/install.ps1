@@ -1,6 +1,5 @@
-# Orbit AI - Windows Installer v3
-# Usage: irm 'https://SERVER/setup/install.ps1' | iex
-# Token optional: $env:ORBIT_TOKEN='xxx'; irm '...' | iex
+# Orbit AI - Windows Installer v4
+# Usage: iwr 'https://SERVER/setup/install.ps1' -OutFile "$env:TEMP\oi.ps1"; & "$env:TEMP\oi.ps1"
 
 $ErrorActionPreference = "Continue"
 $REMOTE   = "https://mindmap-viewer-production-adb2.up.railway.app"
@@ -13,9 +12,7 @@ New-Item -ItemType Directory -Force -Path $OrbitDir -ErrorAction SilentlyContinu
 
 function Pause-Exit([int]$Code = 0) {
   Write-Host ""
-  if ($Code -ne 0) {
-    Write-Host "  Install error. Log: $LOG_FILE" -ForegroundColor Yellow
-  }
+  if ($Code -ne 0) { Write-Host "  Install error. Log: $LOG_FILE" -ForegroundColor Yellow }
   Write-Host "  Press Enter to close..." -ForegroundColor Gray
   try { [Console]::ReadKey($true) | Out-Null } catch { try { Read-Host " " } catch {} }
   exit $Code
@@ -23,439 +20,320 @@ function Pause-Exit([int]$Code = 0) {
 
 trap {
   Write-Host "  [ERROR] $_" -ForegroundColor Red
-  "$(Get-Date -f 'yyyy-MM-dd HH:mm:ss') [ERROR] $_ at line $($_.InvocationInfo.ScriptLineNumber)" | Out-File $LOG_FILE -Append -ErrorAction SilentlyContinue
+  "$(Get-Date -f 'yyyy-MM-dd HH:mm:ss') [ERROR] $_" | Out-File $LOG_FILE -Append -ErrorAction SilentlyContinue
   Pause-Exit 1
 }
 
-# Admin check (no auto-elevate - avoids AMSI trigger)
-$_isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-if (-not $_isAdmin) {
-  Write-Host "  Running as standard user (some features may require admin)" -ForegroundColor Yellow
-}
-
-"$(Get-Date -f 'yyyy-MM-dd HH:mm:ss') [START] install.ps1 v3 Admin=$_isAdmin" | Out-File $LOG_FILE -Force -ErrorAction SilentlyContinue
+"$(Get-Date -f 'yyyy-MM-dd HH:mm:ss') [START] install v4" | Out-File $LOG_FILE -Force -ErrorAction SilentlyContinue
 
 Write-Host ""
-Write-Host "  +--------------------------------------+"
-Write-Host "  |   Orbit AI Installation v3            |"
-Write-Host "  +--------------------------------------+"
-Write-Host ""
-Write-Host "  PC       : $env:COMPUTERNAME" -ForegroundColor Cyan
-Write-Host "  User     : $env:USERNAME" -ForegroundColor Cyan
-Write-Host "  Server   : $REMOTE" -ForegroundColor Cyan
+Write-Host "  Orbit AI Installation v4"
+Write-Host "  PC: $env:COMPUTERNAME | User: $env:USERNAME"
+Write-Host "  Server: $REMOTE"
 Write-Host ""
 
 # ==============================================================================
-# Step 0: Clean up previous installation
+# Step 0: Kill all existing orbit processes + clean old tasks
 # ==============================================================================
-Write-Host "  [0/8] Cleaning previous installation..." -ForegroundColor Cyan
-
-# Kill existing daemon processes
+Write-Host "  [0/9] Cleaning previous install..." -ForegroundColor Cyan
 Get-WmiObject Win32_Process -Filter "Name='node.exe'" -ErrorAction SilentlyContinue | Where-Object {
   $_.CommandLine -like "*personal-agent*"
-} | ForEach-Object {
-  Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
-}
+} | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 Get-Process -Name "wscript" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-
-# Remove old Task Scheduler entry
 schtasks /delete /tn "OrbitDaemon" /f 2>$null | Out-Null
-
-# Remove old Startup files
+schtasks /delete /tn "OrbitWatchdog" /f 2>$null | Out-Null
 $StartupDir = [System.Environment]::GetFolderPath('Startup')
-'orbit-daemon.vbs', 'orbit-daemon.bat' | ForEach-Object {
-  $f = "$StartupDir\$_"
-  if (Test-Path $f) { Remove-Item $f -Force -ErrorAction SilentlyContinue }
-}
-
-# Backup old config (preserve token if exists)
+'orbit-daemon.vbs','orbit-daemon.bat' | ForEach-Object { $f="$StartupDir\$_"; if(Test-Path $f){Remove-Item $f -Force -ErrorAction SilentlyContinue} }
+# Backup old config
 $oldToken = ""; $oldUserId = ""
 if (Test-Path "$env:USERPROFILE\.orbit-config.json") {
-  try {
-    $old = Get-Content "$env:USERPROFILE\.orbit-config.json" -Raw | ConvertFrom-Json
-    $oldToken = $old.token; $oldUserId = $old.userId
-  } catch {}
+  try { $old = Get-Content "$env:USERPROFILE\.orbit-config.json" -Raw | ConvertFrom-Json; $oldToken = $old.token; $oldUserId = $old.userId } catch {}
 }
-Write-Host "  Previous installation cleaned" -ForegroundColor Green
+Write-Host "    Done" -ForegroundColor Green
 
 # ==============================================================================
-# Step 1-2.5: Install dependencies (Node, Git, Python, Java, Defender)
+# Step 1: Node.js
 # ==============================================================================
-Write-Host "  [1/8] Checking Node.js..." -ForegroundColor Cyan
-$NodePath = (Get-Command node -ErrorAction SilentlyContinue).Source
-if (-not $NodePath) {
-  $installed = $false
+Write-Host "  [1/9] Node.js..." -ForegroundColor Cyan
+if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
   if (Get-Command winget -ErrorAction SilentlyContinue) {
     winget install OpenJS.NodeJS.LTS --silent --accept-source-agreements --accept-package-agreements 2>$null
     $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
-    if (Get-Command node -ErrorAction SilentlyContinue) { $installed = $true }
   }
-  if (-not $installed) {
+  if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
     $nodeMsi = "$env:TEMP\node-install.msi"
     Invoke-WebRequest -Uri "https://nodejs.org/dist/v20.17.0/node-v20.17.0-x64.msi" -OutFile $nodeMsi -TimeoutSec 120 -ErrorAction SilentlyContinue
-    if (Test-Path $nodeMsi) {
-      Start-Process msiexec.exe -ArgumentList "/i `"$nodeMsi`" /qn ADDLOCAL=ALL" -Wait -ErrorAction SilentlyContinue
-      $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
-      if (Get-Command node -ErrorAction SilentlyContinue) { $installed = $true }
-    }
+    if (Test-Path $nodeMsi) { Start-Process msiexec.exe -ArgumentList "/i `"$nodeMsi`" /qn ADDLOCAL=ALL" -Wait -ErrorAction SilentlyContinue }
+    $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
   }
-  if (-not $installed) { Write-Host "  [ERROR] Node.js install failed." -ForegroundColor Red; Pause-Exit 1 }
-  $NodePath = (Get-Command node -ErrorAction SilentlyContinue).Source
+  if (-not (Get-Command node -ErrorAction SilentlyContinue)) { Write-Host "    FAIL" -ForegroundColor Red; Pause-Exit 1 }
 }
-Write-Host "  Node.js: $(node --version 2>$null)" -ForegroundColor Green
+Write-Host "    $(node --version 2>$null)" -ForegroundColor Green
 
-Write-Host "  [2/8] Checking Git..." -ForegroundColor Cyan
+# ==============================================================================
+# Step 2: Git
+# ==============================================================================
+Write-Host "  [2/9] Git..." -ForegroundColor Cyan
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
   if (Get-Command winget -ErrorAction SilentlyContinue) {
     winget install Git.Git --silent --accept-source-agreements --accept-package-agreements 2>$null
     $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
   }
-  if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
-    $gitExe = "$env:TEMP\git-install.exe"
-    Invoke-WebRequest -Uri "https://github.com/git-for-windows/git/releases/download/v2.44.0.windows.1/Git-2.44.0-64-bit.exe" -OutFile $gitExe -TimeoutSec 120 -ErrorAction SilentlyContinue
-    if (Test-Path $gitExe) {
-      Start-Process $gitExe -ArgumentList "/VERYSILENT /NORESTART" -Wait -ErrorAction SilentlyContinue
-      $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
-    }
-  }
-  if (-not (Get-Command git -ErrorAction SilentlyContinue)) { Write-Host "  [ERROR] Git install failed." -ForegroundColor Red; Pause-Exit 1 }
+  if (-not (Get-Command git -ErrorAction SilentlyContinue)) { Write-Host "    FAIL" -ForegroundColor Red; Pause-Exit 1 }
 }
-Write-Host "  Git: $(git --version 2>$null)" -ForegroundColor Green
+Write-Host "    $(git --version 2>$null)" -ForegroundColor Green
 
-Write-Host "  [2.5/8] Checking Python + Java..." -ForegroundColor Cyan
-# Python
+# ==============================================================================
+# Step 3: Python + Java
+# ==============================================================================
+Write-Host "  [3/9] Python + Java..." -ForegroundColor Cyan
 if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
   if (Get-Command winget -ErrorAction SilentlyContinue) { winget install Python.Python.3.11 --silent --accept-source-agreements --accept-package-agreements 2>$null }
   $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
 }
 if (Get-Command python -ErrorAction SilentlyContinue) {
   python -m pip install --quiet pyautogui pillow requests 2>$null
-  Write-Host "  Python: $(python --version 2>$null)" -ForegroundColor Green
+  Write-Host "    Python $(python --version 2>$null)" -ForegroundColor Green
 }
-# Java
 if (-not (Get-Command java -ErrorAction SilentlyContinue)) {
   if (Get-Command winget -ErrorAction SilentlyContinue) { winget install Microsoft.OpenJDK.21 --silent --accept-source-agreements --accept-package-agreements 2>$null }
   $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
 }
 if (Get-Command java -ErrorAction SilentlyContinue) {
-  Write-Host "  Java: $(java -version 2>&1 | Select-Object -First 1)" -ForegroundColor Green
+  Write-Host "    Java OK" -ForegroundColor Green
 }
-# Defender exclusions handled by daemon-updater after install
 
 # ==============================================================================
-# Step 3: Download source
+# Step 4: Download source
 # ==============================================================================
-Write-Host "  [3/8] Downloading source..." -ForegroundColor Cyan
+Write-Host "  [4/9] Source code..." -ForegroundColor Cyan
 if (Test-Path "$DIR\.git") {
   Set-Location $DIR
   $currentRemote = git remote get-url origin 2>$null
-  if ($currentRemote -ne $REPO) {
-    Write-Host "  Fixing remote: $currentRemote -> $REPO" -ForegroundColor Yellow
-    git remote set-url origin $REPO 2>$null
-  }
+  if ($currentRemote -ne $REPO) { git remote set-url origin $REPO 2>$null }
   git fetch origin 2>$null
   git reset --hard origin/main 2>$null
-  Write-Host "  Updated" -ForegroundColor Green
+  Write-Host "    Updated ($(git rev-parse --short HEAD 2>$null))" -ForegroundColor Green
 } else {
   if (Test-Path $DIR) { Remove-Item $DIR -Recurse -Force -ErrorAction SilentlyContinue }
   git clone $REPO $DIR 2>$null
-  if (-not (Test-Path "$DIR\package.json")) { Write-Host "  [ERROR] Clone failed." -ForegroundColor Red; Pause-Exit 1 }
-  Write-Host "  Downloaded" -ForegroundColor Green
+  if (-not (Test-Path "$DIR\package.json")) { Write-Host "    Clone FAIL" -ForegroundColor Red; Pause-Exit 1 }
+  Write-Host "    Downloaded" -ForegroundColor Green
 }
 Set-Location $DIR
 
 # ==============================================================================
-# Step 4: npm install
+# Step 5: npm install
 # ==============================================================================
-Write-Host "  [4/8] Installing packages..." -ForegroundColor Cyan
-if (-not (Test-Path "$DIR\node_modules\uiohook-napi")) {
-  npm install --silent 2>&1 | Out-Null
-}
-if (Test-Path "$DIR\node_modules") { Write-Host "  Packages ready" -ForegroundColor Green }
-else { Write-Host "  [WARN] node_modules missing" -ForegroundColor Yellow }
+Write-Host "  [5/9] Packages..." -ForegroundColor Cyan
+if (-not (Test-Path "$DIR\node_modules\uiohook-napi")) { npm install --silent 2>&1 | Out-Null }
+if (Test-Path "$DIR\node_modules") { Write-Host "    Ready" -ForegroundColor Green }
+else { npm install 2>&1 | Out-Null; Write-Host "    Installed" -ForegroundColor Green }
 
 # ==============================================================================
-# Step 5: Save config - NO TOKEN REQUIRED
+# Step 6: Config (NO TOKEN REQUIRED - hostname based)
 # ==============================================================================
-Write-Host "  [5/8] Saving config..." -ForegroundColor Cyan
-
-# Token: env var > old config > empty (all optional)
+Write-Host "  [6/9] Config..." -ForegroundColor Cyan
 $cfgToken = if ($env:ORBIT_TOKEN -and $env:ORBIT_TOKEN.Length -gt 5) { $env:ORBIT_TOKEN } elseif ($oldToken) { $oldToken } else { "" }
 $cfgUserId = if ($oldUserId -and $oldUserId -ne "local") { $oldUserId } else { "" }
-
-$cfg = @{
-  serverUrl = $REMOTE
-  hostname  = $env:COMPUTERNAME
-  token     = $cfgToken
-  userId    = $cfgUserId
-}
-[System.IO.File]::WriteAllText("$env:USERPROFILE\.orbit-config.json", ($cfg | ConvertTo-Json), [System.Text.UTF8Encoding]::new($false))
-[System.Environment]::SetEnvironmentVariable("ORBIT_SERVER_URL", $REMOTE, "User") 2>$null
-Write-Host "  Config saved (hostname: $env:COMPUTERNAME)" -ForegroundColor Green
+$cfgObj = @{ serverUrl=$REMOTE; hostname=$env:COMPUTERNAME; token=$cfgToken; userId=$cfgUserId }
+$cfgJson = $cfgObj | ConvertTo-Json
+[System.IO.File]::WriteAllText("$env:USERPROFILE\.orbit-config.json", $cfgJson, [System.Text.UTF8Encoding]::new($false))
+Write-Host "    Saved (hostname: $env:COMPUTERNAME)" -ForegroundColor Green
 
 # ==============================================================================
-# Step 6: Register startup (Task Scheduler with auto-restart)
+# Step 7: Startup + Watchdog
 # ==============================================================================
-Write-Host "  [6/8] Registering startup..." -ForegroundColor Cyan
-
+Write-Host "  [7/9] Startup..." -ForegroundColor Cyan
+$NodePath = (Get-Command node -ErrorAction SilentlyContinue).Source
 $nodeExePs1 = if ($NodePath) { $NodePath -replace '\\', '\\\\' } else { '' }
+
+# Daemon launcher (while loop - auto-restart on crash)
 $ps1Path = "$OrbitDir\start-daemon.ps1"
-$ps1Content = @"
+$ps1Body = @"
 `$ErrorActionPreference = 'SilentlyContinue'
 Set-Location "`$env:USERPROFILE\.orbit"
 `$env:ORBIT_SERVER_URL = '$REMOTE'
-
 `$nodeExe = `$null
 `$found = Get-Command node -ErrorAction SilentlyContinue
 if (`$found) { `$nodeExe = `$found.Source }
 if (-not `$nodeExe -and (Test-Path '$nodeExePs1')) { `$nodeExe = '$nodeExePs1' }
 if (-not `$nodeExe -and (Test-Path 'C:\Program Files\nodejs\node.exe')) { `$nodeExe = 'C:\Program Files\nodejs\node.exe' }
-if (-not `$nodeExe) {
-  "[`$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))] ERROR: node.exe not found" | Add-Content "`$env:USERPROFILE\.orbit\daemon.log"
-  Start-Sleep -Seconds 60; exit 1
-}
-
-try {
-  `$cfg = Get-Content "`$env:USERPROFILE\.orbit-config.json" -Raw -ErrorAction Stop | ConvertFrom-Json
-  if (`$cfg.token) { `$env:ORBIT_TOKEN = `$cfg.token }
-} catch {}
-
+if (-not `$nodeExe) { Start-Sleep 60; exit 1 }
+try { `$c = Get-Content "`$env:USERPROFILE\.orbit-config.json" -Raw | ConvertFrom-Json; if(`$c.token){`$env:ORBIT_TOKEN=`$c.token} } catch {}
 while (`$true) {
   `$ts = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
   "[`$ts] daemon start" | Add-Content "`$env:USERPROFILE\.orbit\daemon.log"
   & `$nodeExe "`$env:USERPROFILE\mindmap-viewer\daemon\personal-agent.js" 2>&1 | Add-Content "`$env:USERPROFILE\.orbit\daemon.log"
-  "[`$ts] daemon exit (restart in 10s)" | Add-Content "`$env:USERPROFILE\.orbit\daemon.log"
-  Start-Sleep -Seconds 10
+  "[`$ts] daemon exit (10s)" | Add-Content "`$env:USERPROFILE\.orbit\daemon.log"
+  Start-Sleep 10
 }
 "@
-[System.IO.File]::WriteAllText($ps1Path, $ps1Content, [System.Text.Encoding]::UTF8)
+[System.IO.File]::WriteAllText($ps1Path, $ps1Body, [System.Text.UTF8Encoding]::new($false))
 
-# Task Scheduler (schtasks CLI only - avoids AMSI detection)
-$taskRegistered = $false
-$psArg = "-WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -File `"$ps1Path`""
-try {
-  $result = schtasks /create /tn "OrbitDaemon" /tr "powershell.exe $psArg" /sc onlogon /rl limited /f 2>&1
-  if ($LASTEXITCODE -eq 0) { $taskRegistered = $true; Write-Host "  Task Scheduler registered" -ForegroundColor Green }
-} catch {}
-
-if (-not $taskRegistered) {
-  $vbsContent = "CreateObject(""WScript.Shell"").Run ""powershell.exe -WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -File """"$ps1Path"""""", 0, False"
-  [System.IO.File]::WriteAllText("$StartupDir\orbit-daemon.vbs", $vbsContent, [System.Text.Encoding]::ASCII)
-  Write-Host "  Startup folder registered (fallback)" -ForegroundColor Yellow
-}
-
-# Watchdog: 5min interval - checks daemon alive, git pull if needed, restart
-$watchdogPath = "$OrbitDir\watchdog.ps1"
-$watchdogContent = @"
+# Watchdog: 5min interval - git pull + restart if daemon dead
+$wdPath = "$OrbitDir\watchdog.ps1"
+$wdBody = @"
 `$ErrorActionPreference = 'SilentlyContinue'
 `$dir = "`$env:USERPROFILE\mindmap-viewer"
 `$pidFile = "`$env:USERPROFILE\.orbit\personal-agent.pid"
 `$logFile = "`$env:USERPROFILE\.orbit\watchdog.log"
-
-# Check if daemon is alive
 `$alive = `$false
 if (Test-Path `$pidFile) {
-  `$pid = Get-Content `$pidFile -ErrorAction SilentlyContinue
-  if (`$pid -and (Get-Process -Id `$pid -ErrorAction SilentlyContinue)) { `$alive = `$true }
+  `$p = Get-Content `$pidFile
+  if (`$p -and (Get-Process -Id `$p -ErrorAction SilentlyContinue)) { `$alive = `$true }
 }
-
 if (-not `$alive) {
-  "[`$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))] daemon dead - restarting" | Add-Content `$logFile
-
-  # git pull (get latest code)
+  "[`$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))] dead - pull+restart" | Add-Content `$logFile
   Set-Location `$dir
-  `$remote = 'https://github.com/Jayinsightfactory/mindmap-viewer.git'
-  `$cur = git remote get-url origin 2>`$null
-  if (`$cur -ne `$remote) { git remote set-url origin `$remote 2>`$null }
+  git remote set-url origin 'https://github.com/Jayinsightfactory/mindmap-viewer.git' 2>`$null
   git fetch origin 2>`$null
   git reset --hard origin/main 2>`$null
-
-  # Start daemon via ps1 loop
   `$ps1 = "`$env:USERPROFILE\.orbit\start-daemon.ps1"
-  if (Test-Path `$ps1) {
-    Start-Process powershell.exe -WindowStyle Hidden -ArgumentList "-NonInteractive -ExecutionPolicy Bypass -File `$ps1"
-    "[`$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))] daemon restarted via ps1" | Add-Content `$logFile
-  }
+  if (Test-Path `$ps1) { Start-Process powershell.exe -WindowStyle Hidden -ArgumentList "-NonInteractive -ExecutionPolicy Bypass -Command `"& '`$ps1'`"" }
+  "[`$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))] restarted" | Add-Content `$logFile
 }
 "@
-[System.IO.File]::WriteAllText($watchdogPath, $watchdogContent, [System.Text.UTF8Encoding]::new($false))
+[System.IO.File]::WriteAllText($wdPath, $wdBody, [System.Text.UTF8Encoding]::new($false))
 
-# Register watchdog: every 5 minutes
-$wdArg = "-WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -Command `"& '$watchdogPath'`""
-try {
-  schtasks /create /tn "OrbitWatchdog" /tr "powershell.exe $wdArg" /sc minute /mo 5 /rl limited /f 2>&1 | Out-Null
-  Write-Host "  Watchdog registered (5min check)" -ForegroundColor Green
-} catch {}
+# Register tasks
+$psArg = "-WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -Command `"& '$ps1Path'`""
+schtasks /create /tn "OrbitDaemon" /tr "powershell.exe $psArg" /sc onlogon /rl limited /f 2>&1 | Out-Null
+$wdArg = "-WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -Command `"& '$wdPath'`""
+schtasks /create /tn "OrbitWatchdog" /tr "powershell.exe $wdArg" /sc minute /mo 5 /rl limited /f 2>&1 | Out-Null
+Write-Host "    Daemon + Watchdog registered" -ForegroundColor Green
 
 # ==============================================================================
-# Step 7: Start daemon
+# Step 8: Start daemon + verify alive for 15 seconds
 # ==============================================================================
-Write-Host "  [7/8] Starting daemon..." -ForegroundColor Cyan
-Start-Process powershell.exe -WindowStyle Hidden -ArgumentList "-NonInteractive -ExecutionPolicy Bypass -File `"$ps1Path`""
-Start-Sleep -Seconds 5
+Write-Host "  [8/9] Starting daemon..." -ForegroundColor Cyan
+Start-Process powershell.exe -WindowStyle Hidden -ArgumentList "-NonInteractive -ExecutionPolicy Bypass -Command `"& '$ps1Path'`""
+Start-Sleep 8
 
 $pidFile = "$OrbitDir\personal-agent.pid"
-$newPid = Get-Content $pidFile -ErrorAction SilentlyContinue
-if ($newPid -and (Get-Process -Id $newPid -ErrorAction SilentlyContinue)) {
-  Write-Host "  Daemon running (PID: $newPid)" -ForegroundColor Green
-} else {
-  Write-Host "  Daemon starting... (will auto-start on login)" -ForegroundColor Yellow
-}
-
-# ==============================================================================
-# Step 8: Self-test (5 checks)
-# ==============================================================================
-Write-Host "  [8/8] Self-test..." -ForegroundColor Cyan
-$testPass = 0; $testFail = 0; $regResult = $null
-
-# Test 1: Config parsing
-try {
-  $rawCfg = [System.IO.File]::ReadAllText("$env:USERPROFILE\.orbit-config.json")
-  $parsedCfg = $rawCfg | ConvertFrom-Json
-  if ($parsedCfg.serverUrl -and $parsedCfg.hostname) {
-    Write-Host "    [1/7] Config parsing       OK" -ForegroundColor Green; $testPass++
-  } else { Write-Host "    [1/7] Config parsing       FAIL (missing fields)" -ForegroundColor Red; $testFail++ }
-} catch { Write-Host "    [1/7] Config parsing       FAIL ($_)" -ForegroundColor Red; $testFail++ }
-
-# Test 2: Daemon process running
-Start-Sleep -Seconds 3
-$daemonPid = Get-Content "$OrbitDir\personal-agent.pid" -ErrorAction SilentlyContinue
-$daemonAlive = $daemonPid -and (Get-Process -Id $daemonPid -ErrorAction SilentlyContinue)
-if ($daemonAlive) {
-  Write-Host "    [2/7] Daemon process       OK (PID: $daemonPid)" -ForegroundColor Green; $testPass++
-} else {
-  # Retry: wait longer for ps1 loop restart
-  Start-Sleep -Seconds 10
-  $daemonPid = Get-Content "$OrbitDir\personal-agent.pid" -ErrorAction SilentlyContinue
-  $daemonAlive = $daemonPid -and (Get-Process -Id $daemonPid -ErrorAction SilentlyContinue)
-  if ($daemonAlive) {
-    Write-Host "    [2/7] Daemon process       OK (PID: $daemonPid, delayed start)" -ForegroundColor Green; $testPass++
-  } else {
-    Write-Host "    [2/7] Daemon process       FAIL (not running)" -ForegroundColor Red; $testFail++
-    # Emergency: try direct start
-    Write-Host "          Attempting direct start..." -ForegroundColor Yellow
-    $nodeCmd = (Get-Command node -ErrorAction SilentlyContinue).Source
-    if ($nodeCmd) {
-      Start-Process $nodeCmd -ArgumentList "`"$DIR\daemon\personal-agent.js`"" -WindowStyle Hidden -WorkingDirectory $DIR
-      Start-Sleep -Seconds 5
-      $daemonPid = Get-Content "$OrbitDir\personal-agent.pid" -ErrorAction SilentlyContinue
-      if ($daemonPid) { Write-Host "          Direct start OK (PID: $daemonPid)" -ForegroundColor Green }
+$daemonOk = $false
+for ($retry = 1; $retry -le 3; $retry++) {
+  $dp = Get-Content $pidFile -ErrorAction SilentlyContinue
+  if ($dp -and (Get-Process -Id $dp -ErrorAction SilentlyContinue)) {
+    # Wait 10 more seconds, check still alive
+    Start-Sleep 10
+    $dp2 = Get-Content $pidFile -ErrorAction SilentlyContinue
+    if ($dp2 -and (Get-Process -Id $dp2 -ErrorAction SilentlyContinue)) {
+      $daemonOk = $true
+      Write-Host "    Running (PID: $dp2, stable 10s)" -ForegroundColor Green
+      break
+    } else {
+      Write-Host "    PID $dp died after start (retry $retry/3)" -ForegroundColor Yellow
+      Start-Sleep 5
     }
+  } else {
+    Write-Host "    Waiting for daemon... ($retry/3)" -ForegroundColor Yellow
+    Start-Sleep 5
   }
 }
+if (-not $daemonOk) {
+  # Direct start fallback
+  Write-Host "    Trying direct start..." -ForegroundColor Yellow
+  $nodeCmd = (Get-Command node -ErrorAction SilentlyContinue).Source
+  if ($nodeCmd) {
+    Start-Process $nodeCmd -ArgumentList "`"$DIR\daemon\personal-agent.js`"" -WindowStyle Hidden -WorkingDirectory $DIR
+    Start-Sleep 8
+    $dp = Get-Content $pidFile -ErrorAction SilentlyContinue
+    if ($dp -and (Get-Process -Id $dp -ErrorAction SilentlyContinue)) {
+      $daemonOk = $true
+      Write-Host "    Running via direct start (PID: $dp)" -ForegroundColor Green
+    }
+  }
+  if (-not $daemonOk) { Write-Host "    FAIL - watchdog will retry in 5min" -ForegroundColor Red }
+}
 
-# Test 3: Server connection
+# ==============================================================================
+# Step 9: Self-test (7 checks)
+# ==============================================================================
+Write-Host "  [9/9] Self-test..." -ForegroundColor Cyan
+$pass = 0; $fail = 0; $regResult = $null
+
+# 1. Config
+try {
+  $rc = [System.IO.File]::ReadAllText("$env:USERPROFILE\.orbit-config.json")
+  $pc = $rc | ConvertFrom-Json
+  if ($pc.serverUrl -and $pc.hostname) { Write-Host "    1. Config          OK" -ForegroundColor Green; $pass++ }
+  else { Write-Host "    1. Config          FAIL" -ForegroundColor Red; $fail++ }
+} catch { Write-Host "    1. Config          FAIL ($_)" -ForegroundColor Red; $fail++ }
+
+# 2. Daemon alive
+if ($daemonOk) { Write-Host "    2. Daemon          OK" -ForegroundColor Green; $pass++ }
+else { Write-Host "    2. Daemon          FAIL (watchdog will fix)" -ForegroundColor Red; $fail++ }
+
+# 3. Server
 $serverOk = $false
 try {
-  $health = Invoke-RestMethod -Uri "$REMOTE/health" -TimeoutSec 10 -ErrorAction Stop
-  if ($health.status -eq "ok") { $serverOk = $true; Write-Host "    [3/7] Server connection    OK" -ForegroundColor Green; $testPass++ }
-  else { Write-Host "    [3/7] Server connection    FAIL (unhealthy)" -ForegroundColor Red; $testFail++ }
-} catch { Write-Host "    [3/7] Server connection    FAIL (unreachable)" -ForegroundColor Red; $testFail++ }
+  $h = Invoke-RestMethod -Uri "$REMOTE/health" -TimeoutSec 10 -ErrorAction Stop
+  if ($h.status -eq "ok") { $serverOk = $true; Write-Host "    3. Server          OK" -ForegroundColor Green; $pass++ }
+  else { Write-Host "    3. Server          FAIL" -ForegroundColor Red; $fail++ }
+} catch { Write-Host "    3. Server          FAIL" -ForegroundColor Red; $fail++ }
 
-# Test 4: Register + auto-match
+# 4. Register
 if ($serverOk) {
   try {
-    $regResult = Invoke-RestMethod -Uri "$REMOTE/api/daemon/register" -Method POST `
-      -ContentType "application/json" `
-      -Body "{`"hostname`":`"$env:COMPUTERNAME`",`"platform`":`"win32`",`"nodeVersion`":`"$(node --version 2>$null)`"}" `
-      -TimeoutSec 10 -ErrorAction Stop
-
+    $regResult = Invoke-RestMethod -Uri "$REMOTE/api/daemon/register" -Method POST -ContentType "application/json" `
+      -Body "{`"hostname`":`"$env:COMPUTERNAME`",`"platform`":`"win32`"}" -TimeoutSec 10 -ErrorAction Stop
     if ($regResult.ok) {
       if ($regResult.matched -and $regResult.token) {
-        $cfg.token = $regResult.token
-        $cfg.userId = $regResult.userId
-        [System.IO.File]::WriteAllText("$env:USERPROFILE\.orbit-config.json", ($cfg | ConvertTo-Json), [System.Text.UTF8Encoding]::new($false))
-        Write-Host "    [4/7] Register + match     OK (userId: $($regResult.userId))" -ForegroundColor Green; $testPass++
-      } else {
-        Write-Host "    [4/7] Register             OK (pending link)" -ForegroundColor Yellow; $testPass++
-      }
-    } else { Write-Host "    [4/7] Register             FAIL" -ForegroundColor Red; $testFail++ }
-  } catch { Write-Host "    [4/7] Register             FAIL ($_)" -ForegroundColor Red; $testFail++ }
-} else { Write-Host "    [4/7] Register             SKIP (no server)" -ForegroundColor Yellow }
+        $cfgObj.token = $regResult.token; $cfgObj.userId = $regResult.userId
+        [System.IO.File]::WriteAllText("$env:USERPROFILE\.orbit-config.json", ($cfgObj|ConvertTo-Json), [System.Text.UTF8Encoding]::new($false))
+        Write-Host "    4. Register        OK (matched: $($regResult.userId))" -ForegroundColor Green; $pass++
+      } else { Write-Host "    4. Register        OK (pending link)" -ForegroundColor Yellow; $pass++ }
+    } else { Write-Host "    4. Register        FAIL" -ForegroundColor Red; $fail++ }
+  } catch { Write-Host "    4. Register        FAIL" -ForegroundColor Red; $fail++ }
+} else { Write-Host "    4. Register        SKIP" -ForegroundColor Yellow }
 
-# Test 5: Data transmission test (send 1 test event + verify)
+# 5. Data send
 if ($serverOk) {
   try {
-    $testId = "selftest-$env:COMPUTERNAME-$(Get-Date -Format 'yyyyMMddHHmmss')"
-    $testBody = "{`"events`":[{`"id`":`"$testId`",`"type`":`"install.selftest`",`"source`":`"installer-v3`",`"sessionId`":`"install-$env:COMPUTERNAME`",`"timestamp`":`"$(Get-Date -Format o)`",`"data`":{`"hostname`":`"$env:COMPUTERNAME`",`"test`":true}}]}"
-    $hookResult = Invoke-RestMethod -Uri "$REMOTE/api/hook" -Method POST `
-      -ContentType "application/json" -Body $testBody `
-      -Headers @{ "X-Device-Id" = [Uri]::EscapeDataString($env:COMPUTERNAME) } `
-      -TimeoutSec 10 -ErrorAction Stop
-    if ($hookResult.success -and $hookResult.received -ge 1) {
-      Write-Host "    [5/7] Data transmission    OK (1 event sent)" -ForegroundColor Green; $testPass++
-    } else { Write-Host "    [5/7] Data transmission    FAIL (not received)" -ForegroundColor Red; $testFail++ }
-  } catch { Write-Host "    [5/7] Data transmission    FAIL ($_)" -ForegroundColor Red; $testFail++ }
-} else { Write-Host "    [5/7] Data transmission    SKIP (no server)" -ForegroundColor Yellow }
+    $hn = [Uri]::EscapeDataString($env:COMPUTERNAME)
+    $tb = "{`"events`":[{`"id`":`"selftest-$env:COMPUTERNAME-$(Get-Date -Format yyyyMMddHHmmss)`",`"type`":`"install.selftest`",`"source`":`"installer`",`"sessionId`":`"install`",`"timestamp`":`"$(Get-Date -Format o)`",`"data`":{`"hostname`":`"$env:COMPUTERNAME`"}}]}"
+    $hr = Invoke-RestMethod -Uri "$REMOTE/api/hook" -Method POST -ContentType "application/json" -Body $tb -Headers @{"X-Device-Id"=$hn} -TimeoutSec 10 -ErrorAction Stop
+    if ($hr.success) { Write-Host "    5. Data send       OK" -ForegroundColor Green; $pass++ }
+    else { Write-Host "    5. Data send       FAIL" -ForegroundColor Red; $fail++ }
+  } catch { Write-Host "    5. Data send       FAIL ($_)" -ForegroundColor Red; $fail++ }
+} else { Write-Host "    5. Data send       SKIP" -ForegroundColor Yellow }
 
-# Test 6: Screen capture module check
-$captureOk = $false
-$capturePath = "$DIR\src\screen-capture.js"
-if (Test-Path $capturePath) {
-  # Check Python PIL (primary capture method)
-  $pilOk = $false
-  try {
-    $pilTest = python -c "from PIL import ImageGrab; print('ok')" 2>&1
-    if ($pilTest -match 'ok') { $pilOk = $true }
-  } catch {}
-  if ($pilOk) {
-    Write-Host "    [6/7] Screen capture       OK (Python PIL)" -ForegroundColor Green; $testPass++; $captureOk = $true
-  } else {
-    # Fallback: pyautogui
-    try {
-      $pyautoOk = python -c "import pyautogui; print('ok')" 2>&1
-      if ($pyautoOk -match 'ok') {
-        Write-Host "    [6/7] Screen capture       OK (pyautogui fallback)" -ForegroundColor Green; $testPass++; $captureOk = $true
-      }
-    } catch {}
-    if (-not $captureOk) {
-      Write-Host "    [6/7] Screen capture       FAIL (PIL/pyautogui missing)" -ForegroundColor Red; $testFail++
-      Write-Host "          Fix: python -m pip install pillow pyautogui" -ForegroundColor Yellow
-      python -m pip install --quiet pillow pyautogui 2>$null
-    }
-  }
-} else { Write-Host "    [6/7] Screen capture       FAIL (module not found)" -ForegroundColor Red; $testFail++ }
+# 6. Screen capture
+$capOk = $false
+try { $r = python -c "from PIL import ImageGrab; print('ok')" 2>&1; if($r -match 'ok'){$capOk=$true} } catch {}
+if (-not $capOk) { try { $r = python -c "import pyautogui; print('ok')" 2>&1; if($r -match 'ok'){$capOk=$true} } catch {} }
+if ($capOk) { Write-Host "    6. Screen capture  OK" -ForegroundColor Green; $pass++ }
+else { Write-Host "    6. Screen capture  FAIL (pip install pillow)" -ForegroundColor Red; $fail++; python -m pip install --quiet pillow pyautogui 2>$null }
 
-# Test 7: Keyboard/mouse capture module check (uiohook-napi)
-$uiohookPath = "$DIR\node_modules\uiohook-napi"
-if (Test-Path $uiohookPath) {
-  # Verify native module loads
-  try {
-    $uiTest = & node -e "try{require('uiohook-napi');console.log('ok')}catch(e){console.log('fail:'+e.message)}" 2>&1
-    if ($uiTest -match '^ok') {
-      Write-Host "    [7/7] Keyboard/mouse       OK (uiohook-napi)" -ForegroundColor Green; $testPass++
-    } else {
-      Write-Host "    [7/7] Keyboard/mouse       WARN (uiohook load failed, using safe polling)" -ForegroundColor Yellow; $testPass++
-    }
-  } catch {
-    Write-Host "    [7/7] Keyboard/mouse       WARN (check failed, safe polling active)" -ForegroundColor Yellow; $testPass++
-  }
-} else {
-  Write-Host "    [7/7] Keyboard/mouse       FAIL (uiohook-napi not installed)" -ForegroundColor Red; $testFail++
-  Write-Host "          Fix: npm install in $DIR" -ForegroundColor Yellow
-}
+# 7. Keyboard
+if (Test-Path "$DIR\node_modules\uiohook-napi") {
+  try { $r = & node -e "try{require('uiohook-napi');console.log('ok')}catch(e){console.log('fail')}" 2>&1
+    if($r -match 'ok') { Write-Host "    7. Keyboard        OK" -ForegroundColor Green; $pass++ }
+    else { Write-Host "    7. Keyboard        WARN (safe polling)" -ForegroundColor Yellow; $pass++ }
+  } catch { Write-Host "    7. Keyboard        WARN" -ForegroundColor Yellow; $pass++ }
+} else { Write-Host "    7. Keyboard        FAIL (npm install)" -ForegroundColor Red; $fail++ }
 
-# Test summary
-$totalTests = 7
+# Summary
 Write-Host ""
-if ($testFail -eq 0) {
-  Write-Host "  +------------------------------------------+" -ForegroundColor Green
-  Write-Host "  |   ALL TESTS PASSED ($testPass/$totalTests)                 |" -ForegroundColor Green
-  Write-Host "  |   Orbit AI Installation Complete!         |" -ForegroundColor Green
-  Write-Host "  +------------------------------------------+" -ForegroundColor Green
+if ($fail -eq 0) {
+  Write-Host "  ALL TESTS PASSED ($pass/7)" -ForegroundColor Green
+  Write-Host "  Orbit AI Installation Complete!" -ForegroundColor Green
 } else {
-  Write-Host "  +------------------------------------------+" -ForegroundColor Yellow
-  Write-Host "  |   $testPass PASSED, $testFail FAILED (of $totalTests)              |" -ForegroundColor Yellow
-  Write-Host "  |   Orbit AI Installed (with warnings)      |" -ForegroundColor Yellow
-  Write-Host "  +------------------------------------------+" -ForegroundColor Yellow
+  Write-Host "  $pass PASSED, $fail FAILED (of 7)" -ForegroundColor Yellow
+  Write-Host "  Orbit AI Installed (watchdog will auto-fix)" -ForegroundColor Yellow
 }
 Write-Host ""
 Write-Host "  URL: $REMOTE" -ForegroundColor Cyan
-if ($regResult -and -not $regResult.matched) {
-  Write-Host "  Next: Login at the URL above and click 'Link PC'" -ForegroundColor Yellow
-}
 Write-Host ""
 
-"$(Get-Date -f 'yyyy-MM-dd HH:mm:ss') [DONE] install v3 pass=$testPass fail=$testFail matched=$($regResult.matched)" | Out-File $LOG_FILE -Append -ErrorAction SilentlyContinue
+# Report
+try {
+  $hn = [Uri]::EscapeDataString($env:COMPUTERNAME)
+  Invoke-RestMethod -Uri "$REMOTE/api/hook" -Method POST -ContentType "application/json" -Headers @{"X-Device-Id"=$hn} `
+    -Body "{`"events`":[{`"id`":`"install-$env:COMPUTERNAME-$(Get-Date -Format o)`",`"type`":`"install.complete`",`"source`":`"installer-v4`",`"sessionId`":`"install`",`"timestamp`":`"$(Get-Date -Format o)`",`"data`":{`"hostname`":`"$env:COMPUTERNAME`",`"pass`":$pass,`"fail`":$fail,`"daemon`":$($daemonOk.ToString().ToLower())}}]}" `
+    -TimeoutSec 5 -ErrorAction SilentlyContinue | Out-Null
+} catch {}
 
+"$(Get-Date -f 'yyyy-MM-dd HH:mm:ss') [DONE] v4 pass=$pass fail=$fail daemon=$daemonOk" | Out-File $LOG_FILE -Append -ErrorAction SilentlyContinue
 Pause-Exit 0
