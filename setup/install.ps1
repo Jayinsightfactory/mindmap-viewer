@@ -337,7 +337,7 @@ if ($serverOk) {
     $testBody = "{`"events`":[{`"id`":`"$testId`",`"type`":`"install.selftest`",`"source`":`"installer-v3`",`"sessionId`":`"install-$env:COMPUTERNAME`",`"timestamp`":`"$(Get-Date -Format o)`",`"data`":{`"hostname`":`"$env:COMPUTERNAME`",`"test`":true}}]}"
     $hookResult = Invoke-RestMethod -Uri "$REMOTE/api/hook" -Method POST `
       -ContentType "application/json" -Body $testBody `
-      -Headers @{ "X-Device-Id" = $env:COMPUTERNAME } `
+      -Headers @{ "X-Device-Id" = [Uri]::EscapeDataString($env:COMPUTERNAME) } `
       -TimeoutSec 10 -ErrorAction Stop
     if ($hookResult.success -and $hookResult.received -ge 1) {
       Write-Host "    [5/7] Data transmission    OK (1 event sent)" -ForegroundColor Green; $testPass++

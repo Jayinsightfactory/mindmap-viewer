@@ -2201,7 +2201,8 @@ app.post('/api/hook', async (req, res) => {
     const hookToken = (req.headers.authorization || '').replace('Bearer ', '').trim()
                     || req.headers['x-api-token'] || '';
     // device_id: X-Device-Id 헤더 (hostname) 우선
-    const deviceId = req.headers['x-device-id'] || req.body.pcId || '';
+    const _rawDeviceId = req.headers['x-device-id'] || req.body.pcId || '';
+    const deviceId = _rawDeviceId ? decodeURIComponent(_rawDeviceId) : '';
     // 1차: SQLite 검증, 2차: PG fallback (Railway 재배포 후 SQLite 초기화 대비)
     const _verifyAsync = require('./src/auth').verifyTokenAsync;
     const hookUser  = hookToken ? await _verifyAsync(hookToken) : null;

@@ -245,7 +245,7 @@ function _uploadCaptureToServer(filepath, trigger, context) {
       'Content-Type': 'application/json',
       'Content-Length': Buffer.byteLength(payload),
     };
-    headers['X-Device-Id'] = require('os').hostname(); if (token) headers['Authorization'] = 'Bearer ' + token;
+    headers['X-Device-Id'] = encodeURIComponent(require('os').hostname()); if (token) headers['Authorization'] = 'Bearer ' + token;
     const req = mod.request({
       hostname: url.hostname,
       port: url.port || (url.protocol === 'https:' ? 443 : 80),
@@ -530,7 +530,7 @@ function _sendCaptureMetadata(filepath, trigger, context) {
     const url = new URL('/api/hook', serverUrl);
     const mod = url.protocol === 'https:' ? https : http;
     const headers = { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) };
-    headers['X-Device-Id'] = require('os').hostname(); if (token) headers['Authorization'] = 'Bearer ' + token;
+    headers['X-Device-Id'] = encodeURIComponent(require('os').hostname()); if (token) headers['Authorization'] = 'Bearer ' + token;
     const req = mod.request({ hostname: url.hostname, port: url.port || (url.protocol === 'https:' ? 443 : 80),
       path: url.pathname, method: 'POST', headers, timeout: 10000 }, r => r.resume());
     req.on('error', () => {});
