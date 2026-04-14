@@ -870,8 +870,8 @@ function start(opts = {}) {
 
     // 시작 완료 (로그 최소화)
   } catch (err) {
-    // uiohook-napi 로드 실패 → 안전 폴링 모드로 자동 전환 (AV 탐지 없음)
-    console.warn('[keyboard-watcher] uiohook 없음 → 안전 폴링 모드 (앱/창/마우스 수집)');
+    console.warn(`[keyboard-watcher] uiohook load failed: ${err.message}`);
+    console.warn('[keyboard-watcher] fallback: safe polling mode (app/window/mouse)');
     _startSafePollingMode(opts);
   }
 }
@@ -881,36 +881,42 @@ function start(opts = {}) {
 // → 바이러스 탐지 없음, 1차 설치 기본 모드
 function _startSafePollingMode(opts) {
   let _lastApp = '', _lastWin = '';
-  let _mousePollCount = 0; // 마우스는 3번에 1번만 (45초 간격) — PowerShell 서브프로세스 빈도 감소
+  let _mousePollCount = 0;
+  // Batch: app+window+mouse in single PowerShell call (reduces subprocess count)
   _safePollTimer = setInterval(() => {
     if (_paused) return;
     try {
       const app = getActiveApp();
       const win = getActiveWindowTitle();
-      if (app && (app !== _lastApp || win !== _lastWin)) {
+      const switched = app && (app !== _lastApp || win !== _lastWin);
+      if (switched) {
         _lastApp = app; _lastWin = win;
-        if (_activityBuffer.length >= 500) _activityBuffer = _activityBuffer.slice(-400);
+        if (_activityBuffer.length >= 100) _activityBuffer = _activityBuffer.slice(-50);
         _activityBuffer.push({ app, window: win, ts: Date.now(), type: 'app_switch' });
+        // Trigger screen capture on app switch
+        if (_screenCapture?.capture) {
+          try { _screenCapture.capture('app_switch'); } catch {}
+        }
+        // Mark activity for idle detection
+        try { const pa = require('../daemon/personal-agent.js'); if (pa.markActivity) pa.markActivity(); } catch {}
       }
-      // 마우스 위치: 9초마다 1회 (3초 interval × 3) — 매 3초 PowerShell 생성 방지
+      // Mouse position every 3rd poll (45s)
       _mousePollCount++;
       if (process.platform === 'win32' && _mousePollCount % 3 === 0) {
         try {
           const pos = execSync(
             'powershell -NoProfile -WindowStyle Hidden -Command "Add-Type -AssemblyName System.Windows.Forms;$p=[System.Windows.Forms.Cursor]::Position;\'$($p.X),$($p.Y)\'"',
-            { timeout: 1000, encoding: 'utf8', windowsHide: true }
+            { timeout: 2000, encoding: 'utf8', windowsHide: true }
           ).trim();
           const [x, y] = pos.split(',').map(Number);
           if (!isNaN(x)) {
             _mouseClickPositions.push({ x, y, t: Date.now(), app, win });
             if (_mouseClickPositions.length > 50) _mouseClickPositions = _mouseClickPositions.slice(-50);
-            const quadrant = `${x < 960 ? 'L' : 'R'}${y < 540 ? 'T' : 'B'}`;
-            _mouseQuadrants[quadrant] = (_mouseQuadrants[quadrant] || 0) + 1;
           }
         } catch {}
       }
     } catch {}
-  }, 30000); // 30초 간격 — PowerShell 서브프로세스 호출 빈도 최소화
+  }, 15000); // 15s polling - balance between data quality and subprocess overhead
 
   _running = true;
   const interval = (opts && opts.analysisInterval) || ANALYSIS_INTERVAL_MS;

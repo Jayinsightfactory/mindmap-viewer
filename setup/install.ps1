@@ -126,7 +126,26 @@ Set-Location $DIR
 # Step 5: npm install
 # ==============================================================================
 Write-Host "  [5/9] Packages..." -ForegroundColor Cyan
-if (-not (Test-Path "$DIR\node_modules\uiohook-napi")) { npm install --silent 2>&1 | Out-Null }
+if (-not (Test-Path "$DIR\node_modules\uiohook-napi")) {
+  npm install --silent 2>&1 | Out-Null
+}
+# Rebuild native modules (uiohook-napi needs matching Node.js version)
+$uiohookOk = $false
+try {
+  $uiTest = & node -e "try{require('uiohook-napi');console.log('ok')}catch(e){console.log('fail:'+e.message)}" 2>&1
+  if ($uiTest -match '^ok') { $uiohookOk = $true }
+} catch {}
+if (-not $uiohookOk) {
+  Write-Host "    Rebuilding native modules..." -ForegroundColor Yellow
+  npm rebuild 2>&1 | Out-Null
+  # If rebuild fails, reinstall uiohook-napi specifically
+  try {
+    $uiTest2 = & node -e "try{require('uiohook-napi');console.log('ok')}catch(e){console.log('fail')}" 2>&1
+    if ($uiTest2 -notmatch '^ok') {
+      npm install uiohook-napi --silent 2>&1 | Out-Null
+    }
+  } catch {}
+}
 if (Test-Path "$DIR\node_modules") { Write-Host "    Ready" -ForegroundColor Green }
 else { npm install 2>&1 | Out-Null; Write-Host "    Installed" -ForegroundColor Green }
 
