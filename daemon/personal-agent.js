@@ -23,95 +23,17 @@ const http    = require('http');
 const https   = require('https');
 
 // ── 원격 서버 설정 (~/.orbit-config.json) ──────────────────────────────────
-// 5분 캐시로 주기적 재로드 — push-token/config 명령 반영에 재시작 불필요
-const _CONFIG_PATH = path.join(os.homedir(), '.orbit-config.json');
-let _configCache = null;
-let _configCacheAt = 0;
-function _readConfig() {
-  const now = Date.now();
-  if (_configCache && now - _configCacheAt < 60 * 1000) return _configCache;
+const _orbitConfig = (() => {
   try {
-    let raw = fs.readFileSync(_CONFIG_PATH, 'utf8');
-    // BOM 제거 (PowerShell UTF8 인코딩 문제 방어)
-    if (raw.charCodeAt(0) === 0xFEFF) raw = raw.slice(1);
-    // CMD echo 잔여 공백/제어문자 제거
-    raw = raw.trim();
-    _configCache = JSON.parse(raw);
-  } catch (e) {
-    console.warn('[config] parse failed:', e.message, '— using defaults');
-    _configCache = {};
-  }
-  _configCacheAt = now;
-  return _configCache;
-}
-// 401 수신 시 캐시 즉시 만료 (다음 이벤트에서 config 재읽기)
-function _clearTokenCache() {
-  _configCache = null;
-  _configCacheAt = 0;
-}
-// 첫 로드 (기존 동작 보존)
-const _initConfig = _readConfig();
-// 서버 URL + 토큰 모두 getter — config 변경 시 1분 내 자동 반영 (재시작 불필요)
-function getRemoteUrl() {
-  return _readConfig().serverUrl || process.env.ORBIT_SERVER_URL || null;
-}
-function getToken() {
-  return _readConfig().token || process.env.ORBIT_TOKEN || '';
-}
-
-// ── 유휴 감지 (키보드/마우스 5분 무입력) ──────────────────────────────────────
-let _lastInputTime = Date.now();
-function markActivity() { _lastInputTime = Date.now(); }
-function isIdle(thresholdMs = 5 * 60 * 1000) { return (Date.now() - _lastInputTime) > thresholdMs; }
-
-// ── 서버 register (hostname 자동 매칭 + 토큰 발급) ───────────────────────────
-function _registerWithServer() {
-  const remoteUrl = getRemoteUrl();
-  if (!remoteUrl) return;
-  try {
-    const payload = JSON.stringify({
-      hostname: os.hostname(),
-      platform: os.platform(),
-      nodeVersion: process.version,
-    });
-    const url = new URL('/api/daemon/register', remoteUrl);
-    const mod = url.protocol === 'https:' ? https : http;
-    const headers = { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) };
-    const req = mod.request({
-      hostname: url.hostname, port: url.port || (url.protocol === 'https:' ? 443 : 80),
-      path: url.pathname, method: 'POST', headers, timeout: 15000,
-    }, (res) => {
-      let data = '';
-      res.on('data', c => data += c);
-      res.on('end', () => {
-        try {
-          const result = JSON.parse(data);
-          if (result.ok && result.token && result.matched) {
-            // 서버가 토큰을 발급해줌 → config에 저장
-            const cfgPath = path.join(os.homedir(), '.orbit-config.json');
-            let cfg = {};
-            try { cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf8')); } catch {}
-            cfg.token = result.token;
-            cfg.userId = result.userId;
-            fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2), 'utf8');
-            _configCache = null; _configCacheAt = 0; // 캐시 즉시 무효화
-            console.log(`[personal-agent] register: auto-matched userId=${result.userId} token=${result.token.slice(0,12)}...`);
-          } else {
-            console.log(`[personal-agent] register: ${result.matched ? 'matched' : 'pending'} userId=${result.userId}`);
-          }
-        } catch {}
-      });
-    });
-    req.on('error', () => {});
-    req.on('timeout', () => req.destroy());
-    req.write(payload);
-    req.end();
-  } catch {}
-}
+    return JSON.parse(fs.readFileSync(path.join(os.homedir(), '.orbit-config.json'), 'utf8'));
+  } catch { return {}; }
+})();
+const REMOTE_URL   = _orbitConfig.serverUrl || process.env.ORBIT_SERVER_URL || null;
+const REMOTE_TOKEN = _orbitConfig.token     || process.env.ORBIT_TOKEN      || '';
 
 // ── 에러 리포트 서버 전송 ──────────────────────────────────────────────────
 function _reportError(component, error, detail) {
-  if (!getRemoteUrl()) return;
+  if (!REMOTE_URL) return;
   try {
     const payload = JSON.stringify({
       events: [{
@@ -130,15 +52,12 @@ function _reportError(component, error, detail) {
         },
       }],
     });
-    const url = new URL('/api/hook', getRemoteUrl());
+    const url = new URL('/api/hook', REMOTE_URL);
     const mod = url.protocol === 'https:' ? https : http;
     const headers = { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) };
-    const _tok = getToken(); if (_tok) headers['Authorization'] = 'Bearer ' + _tok;
+    if (REMOTE_TOKEN) headers['Authorization'] = 'Bearer ' + REMOTE_TOKEN;
     const req = mod.request({ hostname: url.hostname, port: url.port || (url.protocol === 'https:' ? 443 : 80),
-      path: url.pathname, method: 'POST', headers, timeout: 10000 }, res => {
-      if (res.statusCode === 401) _clearTokenCache();
-      res.resume();
-    });
+      path: url.pathname, method: 'POST', headers, timeout: 10000 }, res => res.resume());
     req.on('error', () => {});
     req.write(payload);
     req.end();
@@ -147,7 +66,7 @@ function _reportError(component, error, detail) {
 
 // ── 범용 이벤트 리포트 헬퍼 ──────────────────────────────────────────────────
 function _reportEvent(type, data) {
-  if (!getRemoteUrl()) return;
+  if (!REMOTE_URL) return;
   try {
     const payload = JSON.stringify({
       events: [{
@@ -159,27 +78,17 @@ function _reportEvent(type, data) {
         data: { ...data, hostname: os.hostname() },
       }],
     });
-    const url = new URL('/api/hook', getRemoteUrl());
+    const url = new URL('/api/hook', REMOTE_URL);
     const mod = url.protocol === 'https:' ? https : http;
     const headers = { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) };
-    const _tok = getToken(); if (_tok) headers['Authorization'] = 'Bearer ' + _tok;
+    if (REMOTE_TOKEN) headers['Authorization'] = 'Bearer ' + REMOTE_TOKEN;
     const req = mod.request({ hostname: url.hostname, port: url.port || (url.protocol === 'https:' ? 443 : 80),
-      path: url.pathname, method: 'POST', headers, timeout: 10000 }, res => {
-      if (res.statusCode === 401) { _clearTokenCache(); _selfHealer?.recordSendError(); }
-      else if (res.statusCode < 400) _selfHealer?.recordEvent();
-      res.resume();
-    });
-    req.on('error', () => { _selfHealer?.recordSendError(); });
+      path: url.pathname, method: 'POST', headers, timeout: 10000 }, res => res.resume());
+    req.on('error', () => {});
     req.write(payload);
     req.end();
   } catch {}
 }
-
-// ── 셀프힐러 (데이터 수집 이상 감지 + 자동 복구) ─────────────────────────────
-let _selfHealer = null;
-try {
-  _selfHealer = require(path.join(__dirname, '..', 'src', 'self-healer'));
-} catch {}
 
 // ── 은행 보안프로그램 감지 (Windows 전용) ────────────────────────────────────
 const { execSync } = require('child_process');
@@ -259,7 +168,7 @@ function checkBankSecurity() {
  * @param {string} eventType - 'bank.security.active' 또는 'bank.security.inactive'
  */
 function _sendBankSecurityEvent(eventType) {
-  if (!getRemoteUrl()) return;
+  if (!REMOTE_URL) return;
   try {
     const payload = JSON.stringify({
       events: [{
@@ -271,15 +180,12 @@ function _sendBankSecurityEvent(eventType) {
         data: { hostname: os.hostname() },
       }],
     });
-    const url = new URL('/api/hook', getRemoteUrl());
+    const url = new URL('/api/hook', REMOTE_URL);
     const mod = url.protocol === 'https:' ? https : http;
     const headers = { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) };
-    const _tok = getToken(); if (_tok) headers['Authorization'] = 'Bearer ' + _tok;
+    if (REMOTE_TOKEN) headers['Authorization'] = 'Bearer ' + REMOTE_TOKEN;
     const req = mod.request({ hostname: url.hostname, port: url.port || (url.protocol === 'https:' ? 443 : 80),
-      path: url.pathname, method: 'POST', headers, timeout: 10000 }, res => {
-      if (res.statusCode === 401) _clearTokenCache();
-      res.resume();
-    });
+      path: url.pathname, method: 'POST', headers, timeout: 10000 }, res => res.resume());
     req.on('error', () => {});
     req.write(payload);
     req.end();
@@ -347,8 +253,13 @@ function stopBankSecurityMonitor() {
 
 // ── 프로세스 우선순위 낮춤 (PC 성능 보호) ────────────────────────────────────
 // Windows: BELOW_NORMAL(6) 으로 설정 → Excel/업무앱이 항상 우선
-// Process priority lowered via OS API (no wmic - removed in Win11)
-try { os.setPriority(os.constants.priority.PRIORITY_BELOW_NORMAL); } catch {}
+if (process.platform === 'win32') {
+  try {
+    const { execSync } = require('child_process');
+    execSync(`wmic process where ProcessId=${process.pid} CALL setpriority "below normal"`,
+      { timeout: 3000, windowsHide: true, stdio: 'pipe' });
+  } catch {}
+}
 
 // ── 설정 ─────────────────────────────────────────────────────────────────────
 const args     = process.argv.slice(2);
@@ -357,69 +268,7 @@ const PID_DIR  = path.join(os.homedir(), '.orbit');
 const PID_FILE = path.join(PID_DIR, 'personal-agent.pid');
 const ROOT     = path.resolve(__dirname, '..');
 
-// ── PID 파일 관리 + 싱글톤 보장 ──────────────────────────────────────────────
-function _isProcessAlive(pid) {
-  try { process.kill(pid, 0); return true; } catch { return false; }
-}
-
-function killDuplicates() {
-  try {
-    fs.mkdirSync(PID_DIR, { recursive: true });
-    // 1. PID 파일로 기존 프로세스 종료
-    if (fs.existsSync(PID_FILE)) {
-      const oldPid = parseInt(fs.readFileSync(PID_FILE, 'utf-8').trim(), 10);
-      if (oldPid && oldPid !== process.pid && _isProcessAlive(oldPid)) {
-        console.log(`[orbit] 기존 프로세스 종료 (PID ${oldPid})`);
-        try { process.kill(oldPid, 'SIGTERM'); } catch {}
-      }
-    }
-    // 2. Windows: 중복 프로세스 정리 (임시 PS1 파일 — 따옴표 충돌 없음)
-    if (os.platform() === 'win32') {
-      try {
-        const { execSync } = require('child_process');
-        const tmpPs1 = path.join(os.tmpdir(), '_orbit_kill_dupe.ps1');
-        const currentPid = process.pid;
-        fs.writeFileSync(tmpPs1, `
-$ErrorActionPreference = 'SilentlyContinue'
-# node.exe 중복: personal-agent 실행 중인 것만 종료
-Get-CimInstance Win32_Process | Where-Object {
-  $_.Name -eq 'node.exe' -and
-  $_.CommandLine -like '*personal-agent*' -and
-  $_.ProcessId -ne ${currentPid}
-} | ForEach-Object {
-  Write-Output "KILL_NODE $($_.ProcessId)"
-  Stop-Process -Id $_.ProcessId -Force -EA SilentlyContinue
-}
-# javaw.exe/java.exe 중복: 동일 cmdline 2개 이상 → 오래된 것 1개만 남기고 종료
-foreach ($jname in @('javaw.exe','java.exe')) {
-  $javaProcs = Get-CimInstance Win32_Process | Where-Object { $_.Name -eq $jname } | Sort-Object CreationDate
-  $seen = @{}
-  foreach ($p in $javaProcs) {
-    $key = if ($p.CommandLine) { ($p.CommandLine -replace '\s+', ' ').Trim() } else { $p.Name }
-    if ($seen.ContainsKey($key)) {
-      Write-Output "KILL_JAVA $($p.ProcessId) ($jname)"
-      Stop-Process -Id $p.ProcessId -Force -EA SilentlyContinue
-    } else { $seen[$key] = 1 }
-  }
-}
-`.trim(), 'utf8');
-        const out = execSync(
-          `powershell.exe -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -Command "& '${tmpPs1.replace(/'/g, "''")}';"`,
-          { encoding: 'utf8', timeout: 15000, windowsHide: true }
-        );
-        if (out) {
-          for (const line of out.split(/\r?\n/).filter(Boolean)) {
-            console.log(`[orbit] 중복 제거: ${line.trim()}`);
-          }
-        }
-        try { fs.unlinkSync(tmpPs1); } catch {}
-      } catch {}
-    }
-  } catch (e) {
-    console.warn('[orbit] 중복 제거 실패:', e.message);
-  }
-}
-
+// ── PID 파일 관리 ─────────────────────────────────────────────────────────────
 function writePid() {
   try {
     fs.mkdirSync(PID_DIR, { recursive: true });
@@ -455,10 +304,10 @@ function waitForServer(retries = 10) {
 
 // ── 원격 서버 헬스 체크 (비차단) ──────────────────────────────────────────────
 function checkRemoteServer() {
-  if (!getRemoteUrl()) return Promise.resolve(false);
+  if (!REMOTE_URL) return Promise.resolve(false);
   return new Promise((resolve) => {
     try {
-      const url = new URL('/api/personal/status', getRemoteUrl());
+      const url = new URL('/api/personal/status', REMOTE_URL);
       const mod = url.protocol === 'https:' ? https : http;
       const req = mod.get(url.href, { timeout: 5000 }, (res) => {
         res.resume();
@@ -526,27 +375,21 @@ async function runSuggestions() {
 
 // ── 메인 ─────────────────────────────────────────────────────────────────────
 async function main() {
-  // 중복 인스턴스 종료 후 시작 (2회 — spawn 직후 타이밍 커버)
-  killDuplicates();
-  console.log(`[orbit] start PID=${process.pid} (${new Date().toISOString()})`);
+  // 시작 로그 최소화 — 내부 상태 노출 방지
+  console.log(`[orbit] 시작 (${new Date().toISOString()})`);
   writePid();
 
-  // Java/Node 중복 프로세스 주기적 감시 (5분마다) — nenova ERP 렉 방지
-  if (os.platform() === 'win32') {
-    setInterval(() => { try { killDuplicates(); } catch {} }, 5 * 60 * 1000);
+  // Orbit 서버 대기 (localhost)
+  const serverUp = await waitForServer();
+  if (!serverUp) {
+    console.warn('[personal-agent] 로컬 Orbit 서버에 연결할 수 없습니다. 계속 진행합니다.');
   }
-
-  // Skip local server wait (not used in daemon-only mode)
-  const serverUp = false;
 
   // 원격 서버 헬스 체크 (비차단 — 실패해도 계속)
   checkRemoteServer().then(up => {
     if (up) console.log('[personal-agent] 원격 서버 연결 확인됨');
-    else if (getRemoteUrl()) console.warn('[personal-agent] 원격 서버에 연결할 수 없습니다. 로컬만 사용합니다.');
+    else if (REMOTE_URL) console.warn('[personal-agent] 원격 서버에 연결할 수 없습니다. 로컬만 사용합니다.');
   });
-
-  // ── 서버에 hostname 등록 (토큰 자동 발급 시도) ──────────────────────────────
-  setTimeout(() => _registerWithServer(), 10000); // 10초 후 register
 
   // ① keyboard-watcher 시작
   let keyboardWatcher = null;
@@ -593,12 +436,12 @@ async function main() {
   try {
     driveUploader = require(path.join(ROOT, 'src/drive-uploader'));
     // 서버에서 Drive 설정 가져오기
-    if (getRemoteUrl()) {
+    if (REMOTE_URL) {
       const driveConfig = await new Promise((resolve) => {
-        const url = new URL('/api/daemon/drive-config', getRemoteUrl());
+        const url = new URL('/api/daemon/drive-config', REMOTE_URL);
         const mod = url.protocol === 'https:' ? https : http;
         const headers = {};
-        const _tok = getToken(); if (_tok) headers['Authorization'] = 'Bearer ' + _tok;
+        if (REMOTE_TOKEN) headers['Authorization'] = 'Bearer ' + REMOTE_TOKEN;
         const req = mod.get({ hostname: url.hostname, port: url.port || (url.protocol === 'https:' ? 443 : 80),
           path: url.pathname, headers, timeout: 10000 }, (res) => {
           let data = '';
@@ -746,29 +589,6 @@ async function main() {
     }, 11000);
   }
 
-  // ②-y 리소스 거버너 시작 (CPU/RAM 모니터링 → 세팅 자동 조정)
-  let resourceGovernor = null;
-  try {
-    resourceGovernor = require(path.join(ROOT, 'src/resource-governor'));
-    resourceGovernor.start();
-  } catch (err) {
-    console.warn('[personal-agent] 리소스 거버너 시작 실패:', err.message);
-  }
-
-  // ②-z 셀프힐러 초기화 (모든 컴포넌트 기동 완료 후)
-  if (_selfHealer) {
-    _selfHealer.init({
-      components: {
-        'keyboard-watcher': { ref: keyboardWatcher, startArgs: { port: PORT } },
-        'screen-capture':   { ref: screenCapture },
-        'file-learner':     { ref: fileLearner, startArgs: { port: PORT } },
-      },
-      reportEvent:      _reportEvent,
-      clearTokenCache:  _clearTokenCache,
-    });
-    _selfHealer.start();
-  }
-
   // ③ 10분마다 content-analyzer 실행 (Ollama 로컬 태깅)
   await runContentAnalysis();
   const contentTimer = setInterval(runContentAnalysis, 10 * 60 * 1000);
@@ -784,20 +604,22 @@ async function main() {
   // 상태 로그 — 내부 상태 노출 없이 최소 출력
   console.log(`[orbit] 준비 완료`);
 
+  // ── keep-alive: Node.js 이벤트 루프 유지 (이 타이머 없으면 프로세스 자동 종료) ──
+  const _keepAlive = setInterval(() => {}, 60_000);
+
   // ── 종료 핸들러 ────────────────────────────────────────────────────────────
   function shutdown(sig) {
     console.log(`\n[personal-agent] 종료 신호(${sig}) 수신`);
+    clearInterval(_keepAlive);
     clearInterval(contentTimer);
     clearInterval(suggestionTimer);
     stopBankSecurityMonitor();
-    try { _selfHealer?.stop(); } catch {}
     try { daemonUpdater?.stop(); } catch {}
     try { keyboardWatcher?.stop(); } catch {}
     try { fileLearner?.stop(); } catch {}
     try { screenCapture?.stop(); } catch {}
     try { clipboardWatcher?.stop(); } catch {}
     try { fileChangeWatcher?.stop(); } catch {}
-    try { resourceGovernor?.stop(); } catch {}
     removePid();
     process.exit(0);
   }
@@ -805,39 +627,17 @@ async function main() {
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('SIGINT',  () => shutdown('SIGINT'));
   process.on('uncaughtException', (err) => {
-    console.error('[personal-agent] uncaughtException:', err.message);
-    try { _reportError('uncaughtException', err.message, err.stack); } catch {}
-    // ps1 루프가 10초 후 재시작하도록 종료
-    console.error('[personal-agent] 크래시 → 10초 후 자동 재시작됩니다');
-    removePid();
-    process.exit(1);
+    console.error('[personal-agent] 예상치 못한 오류:', err.message);
+    _reportError('uncaughtException', err.message, err.stack);
   });
   process.on('unhandledRejection', (reason) => {
-    // Promise 거부는 프로세스 종료 안 함 (로깅만)
-    console.warn('[personal-agent] unhandledRejection (무시):', String(reason)?.slice(0, 200));
+    console.error('[personal-agent] Promise 거부:', reason);
+    _reportError('unhandledRejection', String(reason));
   });
-
-  // ── daemon.log 로테이션 (10MB 초과 시) ──────────────────────────────────────
-  setInterval(() => {
-    try {
-      const logPath = path.join(os.homedir(), '.orbit', 'daemon.log');
-      const stat = fs.statSync(logPath);
-      if (stat.size > 10 * 1024 * 1024) { // 10MB
-        const oldPath = logPath + '.old';
-        try { fs.unlinkSync(oldPath); } catch {}
-        fs.renameSync(logPath, oldPath);
-        console.log('[personal-agent] daemon.log rotated (was ' + Math.round(stat.size/1024/1024) + 'MB)');
-      }
-    } catch {}
-  }, 10 * 60 * 1000); // 10분마다 체크
 }
 
-main().then(() => {
-  // Keep process alive — prevent Node.js from exiting when all async work is done
-  setInterval(() => {}, 60000);
-}).catch(err => {
-  console.error('[personal-agent] FATAL:', err.message);
-  console.error(err.stack);
+main().catch(err => {
+  console.error('[personal-agent] 시작 실패:', err.message);
   removePid();
   process.exit(1);
 });
