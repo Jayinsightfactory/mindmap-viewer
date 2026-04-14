@@ -80,6 +80,7 @@ let _running         = false;
 let _paused          = false;       // 은행 보안프로그램 감지 시 일시정지
 let _uiohook         = null;
 let _safePollTimer   = null;        // uiohook 없을 때 PowerShell 폴링 (1차 안전 모드)
+let _uiohookHealthTimer = null;     // uiohook health check timer
 let _orbitPort       = parseInt(process.env.ORBIT_PORT || '4747', 10);
 let _orbitUrl        = `http://localhost:${_orbitPort}/api/personal/keyboard`;
 let _analysisHistory = [];          // 최근 분석 결과 이력 (최대 100건)
