@@ -183,7 +183,7 @@ function _getStatus() {
     // 폴백: WMI만
     try {
       const raw = execSync(
-        `powershell -NoProfile -WindowStyle Hidden -Command "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; $p=Get-Process | Where-Object{$_.MainWindowTitle -ne ''} | Sort-Object CPU -Desc | Select-Object -First 1; if($p){($p|Select-Object ProcessName,MainWindowTitle|ConvertTo-Json -Compress)}else{'null'}"`,
+        `powershell.exe -NoProfile -WindowStyle Hidden -Command "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; $p=Get-Process | Where-Object{$_.MainWindowTitle -ne ''} | Sort-Object CPU -Desc | Select-Object -First 1; if($p){($p|Select-Object ProcessName,MainWindowTitle|ConvertTo-Json -Compress)}else{'null'}"`,
         PS_OPTS
       ).trim();
       if (raw && raw !== 'null') {
@@ -357,7 +357,7 @@ function _pollApp() {
 function _pollProcs() {
   try {
     const raw = execSync(
-      `powershell -NoProfile -WindowStyle Hidden -Command "Get-Process | Select-Object -ExpandProperty Name -Unique | ConvertTo-Json -Compress"`,
+      `powershell.exe -NoProfile -WindowStyle Hidden -Command "Get-Process | Select-Object -ExpandProperty Name -Unique | ConvertTo-Json -Compress"`,
       PS_OPTS
     ).trim();
     if (!raw) return;
@@ -534,7 +534,7 @@ function start(opts = {}) {
 
   // 초기 프로세스 목록
   try {
-    const raw = execSync(`powershell -NoProfile -WindowStyle Hidden -Command "Get-Process | Select-Object -ExpandProperty Name -Unique | ConvertTo-Json -Compress"`, PS_OPTS).trim();
+    const raw = execSync(`powershell.exe -NoProfile -WindowStyle Hidden -Command "Get-Process | Select-Object -ExpandProperty Name -Unique | ConvertTo-Json -Compress"`, PS_OPTS).trim();
     _prevProcs = new Set(JSON.parse(raw || '[]'));
   } catch {}
 

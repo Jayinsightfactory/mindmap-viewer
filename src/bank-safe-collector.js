@@ -5,22 +5,14 @@
  * ─────────────────────────────────────────────────────────────────────────────
  * 은행 보안 환경에서도 동작하는 데이터 수집 모듈
  *
- * 문제: 은행 보안프로그램(TouchEnKey, nProtect, ASTx 등)이 활성화되면
- *   - 키보드 후킹 (uiohook-napi) → rawInput 0건 (커널 필터 드라이버 차단)
- *   - 스크린 캡처 (BitBlt/PrintWindow) → 빈 이미지 (ASTx API 후킹)
- *   - 마우스 후킹 (SetWindowsHookEx) → 좌표 없음
- *
- * ★ 수정: GetForegroundWindow는 차단되지 않음! (읽기 전용 API)
- *   → bank-safe-enhanced.js에서 1초 폴링으로 정밀 추적 중
+ * 문제: 은행 보안프로그램(TouchEnKey, nProtect 등)이 활성화되면
+ *   - 키보드 후킹 (uiohook-napi) → rawInput 0건
+ *   - GetForegroundWindow → 빈 값
+ *   - 스크린 캡처 → 빈 이미지
+ *   - 마우스 후킹 → 좌표 없음
  *
  * 해결: Windows 네이티브 "조회" 방식 사용 — 후킹이 아닌 WMI/PowerShell 쿼리
  *   은행 보안은 "후킹(Hooking)"을 차단하지만 "조회(Query)"는 차단하지 않음
- *
- * 강화 모듈: bank-safe-enhanced.js (병행 실행)
- *   - GetForegroundWindow 1초 폴링 (정밀 앱 체류 시간)
- *   - UI Automation API (스크린샷 없이 화면 구조 읽기)
- *   - 시스템 메트릭 (CPU/메모리/IO)
- *   - Excel COM Automation (열린 문서 정보)
  *
  * 수집 방법:
  *   1. WMI Process Query (Get-Process) → 실행 프로그램 + 창 제목
@@ -74,7 +66,7 @@ const EMPTY_THRESHOLD    = 5;                // 빈 이벤트 N회 연속 → ba
 // -WindowStyle Hidden: 창 안 보임
 // -NoProfile: 프로필 로드 안 함 (속도)
 // -Command: 인라인 실행
-const PS_PREFIX = 'powershell -WindowStyle Hidden -NoProfile -Command';
+const PS_PREFIX = 'powershell.exe -WindowStyle Hidden -NoProfile -Command';
 
 
 // ══════════════════════════════════════════════════════════════════════════════

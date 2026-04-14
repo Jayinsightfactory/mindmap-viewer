@@ -17,7 +17,7 @@ function _getActiveApp() {
   try {
     if (process.platform === 'win32') {
       return require('child_process').execSync(
-        'powershell -NoProfile -Command "(Get-Process | Where-Object {$_.MainWindowHandle -ne 0} | Sort-Object CPU -Descending | Select-Object -First 1).ProcessName"',
+        'powershell.exe -NoProfile -WindowStyle Hidden -Command "(Get-Process | Where-Object {$_.MainWindowHandle -ne 0} | Sort-Object CPU -Descending | Select-Object -First 1).ProcessName"',
         { timeout: 1000, encoding: 'utf8', windowsHide: true, stdio: 'pipe' }
       ).trim();
     }
@@ -33,7 +33,7 @@ function _getActiveWindowTitle() {
   try {
     if (process.platform === 'win32') {
       return require('child_process').execSync(
-        'powershell -NoProfile -Command "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; Add-Type -TypeDefinition \'using System; using System.Runtime.InteropServices; public class WinAPI { [DllImport(\\\"user32.dll\\\")] public static extern IntPtr GetForegroundWindow(); [DllImport(\\\"user32.dll\\\", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder text, int count); }\'; $h=[WinAPI]::GetForegroundWindow(); $b=New-Object System.Text.StringBuilder 512; [void][WinAPI]::GetWindowText($h,$b,512); $b.ToString()"',
+        'powershell.exe -NoProfile -WindowStyle Hidden -Command "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; Add-Type -TypeDefinition \'using System; using System.Runtime.InteropServices; public class WinAPI { [DllImport(\\\"user32.dll\\\")] public static extern IntPtr GetForegroundWindow(); [DllImport(\\\"user32.dll\\\", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder text, int count); }\'; $h=[WinAPI]::GetForegroundWindow(); $b=New-Object System.Text.StringBuilder 512; [void][WinAPI]::GetWindowText($h,$b,512); $b.ToString()"',
         { timeout: 3000, encoding: 'utf8', windowsHide: true, stdio: 'pipe' }
       ).trim();
     }
@@ -112,7 +112,7 @@ function _check() {
   try {
     let text = '';
     if (process.platform === 'win32') {
-      text = execSync('powershell -NoProfile -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-Clipboard"',
+      text = execSync('powershell.exe -NoProfile -WindowStyle Hidden -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-Clipboard"',
         { timeout: 2000, encoding: 'utf8', windowsHide: true, stdio: 'pipe' }).trim();
     } else if (process.platform === 'darwin') {
       text = execSync('pbpaste', { timeout: 1000, encoding: 'utf8' }).trim();

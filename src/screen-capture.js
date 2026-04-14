@@ -48,13 +48,168 @@ function _getLearnedCooltime(app, windowTitle) {
 
 const MIN_COOLTIME = DEFAULT_COOLTIME;
 
+// ── 캡처 타이밍 인텔리전스 ──────────────────────────────────────────────────
+// 활동 상태 머신: IDLE → ACTIVE → FOCUSED → BURST → COOLDOWN
+const ACTIVITY_STATES = {
+  IDLE:     { captureInterval: 5 * 60 * 1000, label: 'idle' },       // 5분
+  ACTIVE:   { captureInterval: 90 * 1000,     label: 'active' },     // 90초
+  FOCUSED:  { captureInterval: 2 * 60 * 1000, label: 'focused' },    // 2분
+  BURST:    { captureInterval: 30 * 1000,     label: 'burst' },      // 30초
+  COOLDOWN: { captureInterval: Infinity,      label: 'cooldown' },   // 캡처 안 함
+};
+
+let _activityState = ACTIVITY_STATES.IDLE;
+let _stateEnteredAt = Date.now();
+let _sameAppStartTime = Date.now(); // 같은 앱 연속 사용 시작 시간
+let _lastInputTime = 0;             // 마지막 키/마우스 입력 시간
+let _inputCountWindow = 0;          // 30초 윈도우 내 입력 횟수
+let _inputWindowStart = Date.now();
+let _consecutiveIdleCaptures = 0;   // 연속 idle 캡처 횟수
+
+// 앱별 프로파일 (priority + minInterval)
+const APP_PROFILES = {
+  nenova:     { priority: 'critical', minInterval: 30000,  sendImage: true },
+  excel:      { priority: 'high',     minInterval: 45000,  sendImage: true },
+  powerpnt:   { priority: 'high',     minInterval: 60000,  sendImage: true },
+  word:       { priority: 'high',     minInterval: 60000,  sendImage: false },
+  code:       { priority: 'high',     minInterval: 60000,  sendImage: false },
+  rider:      { priority: 'high',     minInterval: 60000,  sendImage: false },
+  pycharm:    { priority: 'high',     minInterval: 60000,  sendImage: false },
+  cursor:     { priority: 'high',     minInterval: 60000,  sendImage: false },
+  chrome:     { priority: 'medium',   minInterval: 90000,  sendImage: false },
+  edge:       { priority: 'medium',   minInterval: 90000,  sendImage: false },
+  whale:      { priority: 'medium',   minInterval: 90000,  sendImage: false },
+  kakaotalk:  { priority: 'low',      minInterval: 180000, sendImage: false },
+  slack:      { priority: 'low',      minInterval: 180000, sendImage: false },
+  explorer:   { priority: 'low',      minInterval: 120000, sendImage: false },
+  calculator: { priority: 'skip',     minInterval: 300000, sendImage: false },
+  spotify:    { priority: 'skip',     minInterval: 300000, sendImage: false },
+};
+
+// 트리거별 중요도
+const TRIGGER_PRIORITY = {
+  app_switch:   'high',
+  title_change: 'medium',
+  idle_result:  'medium',
+  key_burst:    'medium',
+  click_burst:  'medium',
+  startup:      'high',
+  tool_end:     'high',
+  file_write:   'high',
+  manual:       'high',
+};
+
+/**
+ * 활동 상태 머신 업데이트
+ */
+function _updateActivityState() {
+  const now = Date.now();
+  const sinceLast = now - _lastInputTime;
+  const sameAppDuration = now - _sameAppStartTime;
+
+  // 30초 윈도우 리셋
+  if (now - _inputWindowStart > 30000) {
+    _inputCountWindow = 0;
+    _inputWindowStart = now;
+  }
+
+  // BURST: 30초 내 50+ 입력
+  if (_inputCountWindow >= 50) {
+    _activityState = ACTIVITY_STATES.BURST;
+  }
+  // IDLE: 60초 무입력
+  else if (sinceLast > 60000) {
+    _activityState = ACTIVITY_STATES.IDLE;
+  }
+  // FOCUSED: 같은 앱 3분+ 연속 사용
+  else if (sameAppDuration > 3 * 60 * 1000 && sinceLast < 60000) {
+    _activityState = ACTIVITY_STATES.FOCUSED;
+  }
+  // ACTIVE: 입력 있음
+  else if (sinceLast < 60000) {
+    _activityState = ACTIVITY_STATES.ACTIVE;
+  }
+}
+
+/**
+ * 스마트 쿨타임 — 앱 프로파일 + 활동 상태 + 학습값 종합
+ */
+function _smartCooltime(app, trigger) {
+  const appLow = (app || '').toLowerCase();
+  const profile = APP_PROFILES[appLow];
+
+  // 1순위: 학습 에이전트 제안값
+  const learned = _getLearnedCooltime(appLow, _lastWindowTitle);
+  if (learned) return learned;
+
+  // 2순위: 앱 프로파일 minInterval
+  if (profile) return profile.minInterval;
+
+  // 3순위: 활동 상태 기반
+  return _activityState.captureInterval;
+}
+
+/**
+ * 캡처 여부 판단 — 중요도 + 쿨타임 + 중복 제거
+ */
+function _shouldCapture(trigger, app) {
+  const now = Date.now();
+  const appLow = (app || '').toLowerCase();
+  const profile = APP_PROFILES[appLow];
+  const triggerPriority = TRIGGER_PRIORITY[trigger] || 'medium';
+
+  // skip 프로파일 앱은 5분 간격만
+  if (profile?.priority === 'skip') {
+    return (now - _lastCaptureTime) >= 300000;
+  }
+
+  // idle 상태에서 연속 캡처 방지 (첫 1회 후 5분마다)
+  if (_activityState === ACTIVITY_STATES.IDLE && trigger !== 'app_switch' && trigger !== 'startup') {
+    if (_consecutiveIdleCaptures > 0) {
+      return (now - _lastCaptureTime) >= 5 * 60 * 1000;
+    }
+  }
+
+  // HIGH 트리거 → 앱 프로파일 minInterval만 준수
+  if (triggerPriority === 'high') {
+    const minInt = profile?.minInterval || 30000;
+    return (now - _lastCaptureTime) >= minInt;
+  }
+
+  // MEDIUM 트리거 → 스마트 쿨타임 준수
+  const cooltime = _smartCooltime(app, trigger);
+  return (now - _lastCaptureTime) >= cooltime;
+}
+
+/**
+ * 이미지 전송 여부 판단 — HIGH 이벤트 + critical/high 앱만
+ */
+function _shouldSendImage(trigger, app) {
+  const appLow = (app || '').toLowerCase();
+  const profile = APP_PROFILES[appLow];
+  const triggerPriority = TRIGGER_PRIORITY[trigger] || 'medium';
+
+  // critical 앱 (nenova) → 항상 이미지
+  if (profile?.priority === 'critical') return true;
+
+  // HIGH 트리거 + high 앱 → 이미지
+  if (triggerPriority === 'high' && profile?.sendImage) return true;
+
+  // 앱 전환 → 매 3번째만 이미지
+  if (trigger === 'app_switch') {
+    return (global._captureCounter || 0) % 3 === 0;
+  }
+
+  // 나머지 → metadata만
+  return false;
+}
+
 // 앱별 기본 가치 (윈도우 타이틀/키 입력으로 재판단됨)
 const APP_BASE = {
   high: new Set(['excel', 'powerpnt', 'word', 'code', 'rider', 'pycharm', 'intellij',
     'cursor', 'windsurf', 'figma', 'photoshop', 'illustrator', 'premiere',
-    'autocad', 'solidworks', 'tableau', 'powerbi']),
+    'autocad', 'solidworks', 'tableau', 'powerbi', 'nenova']),
   low: new Set(['calculator', 'photos', 'music', 'vlc', 'spotify', 'games']),
-  // 나머지 앱은 전부 "내용으로 판단" (카카오톡/크롬/슬랙/탐색기 등)
 };
 
 // 윈도우 타이틀에서 업무 키워드 감지
@@ -105,7 +260,7 @@ function _detectScreenResolution() {
   try {
     if (process.platform === 'win32') {
       const out = execSync(
-        'powershell -NoProfile -WindowStyle Hidden -NonInteractive -Command "[System.Windows.Forms.Screen]::PrimaryScreen.Bounds | ForEach-Object { \\"$($_.Width)x$($_.Height)\\" }"',
+        'powershell.exe -NoProfile -WindowStyle Hidden -NonInteractive -Command "[System.Windows.Forms.Screen]::PrimaryScreen.Bounds | ForEach-Object { \\"$($_.Width)x$($_.Height)\\" }"',
         { timeout: 3000, encoding: 'utf8', windowsHide: true, stdio: 'pipe' }
       ).trim();
       _screenResolution = out || 'unknown';
@@ -331,14 +486,15 @@ function capture(trigger = 'manual') {
   // 은행 보안프로그램 일시정지 중이면 캡처 스킵
   if (_paused) return null;
 
-  const now = Date.now();
-  const cooltime = _getCurrentCooltime();
+  // ── 인텔리전스: 상태 머신 업데이트 + 스마트 판단 ──
+  _updateActivityState();
 
-  // 쿨타임 체크
-  if (now - _lastCaptureTime < cooltime) return null;
+  if (!_shouldCapture(trigger, _lastActiveApp)) return null;
 
   ensureDir();
-  const filename = `screen-${now}-${trigger}-${_currentActivity}.png`;
+  const now = Date.now();
+  const stateLabel = _activityState.label || 'unknown';
+  const filename = `screen-${now}-${trigger}-${stateLabel}.png`;
   const filepath = path.join(CAPTURE_DIR, filename);
 
   try {
@@ -350,7 +506,7 @@ function capture(trigger = 'manual') {
     } else if (process.platform === 'win32') {
       const escaped = filepath.replace(/\\/g, '\\\\');
       execSync(
-        `powershell -NoProfile -WindowStyle Hidden -NonInteractive -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Screen]::PrimaryScreen | ForEach-Object { $bmp = New-Object System.Drawing.Bitmap($_.Bounds.Width, $_.Bounds.Height); $g = [System.Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($_.Bounds.Location, [System.Drawing.Point]::Empty, $_.Bounds.Size); $bmp.Save('${escaped}') }"`,
+        `powershell.exe -NoProfile -WindowStyle Hidden -NonInteractive -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Screen]::PrimaryScreen | ForEach-Object { $bmp = New-Object System.Drawing.Bitmap($_.Bounds.Width, $_.Bounds.Height); $g = [System.Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($_.Bounds.Location, [System.Drawing.Point]::Empty, $_.Bounds.Size); $bmp.Save('${escaped}') }"`,
         { timeout: 10000, windowsHide: true, stdio: 'pipe' }
       );
     } else { return null; }
@@ -360,27 +516,28 @@ function capture(trigger = 'manual') {
     _lastCapturePath = filepath;
     _lastCaptureTime = now;
 
-    console.log(`[screen-capture] ${trigger}/${_currentActivity}: ${filename}`);
+    // idle 연속 카운트
+    if (_activityState === ACTIVITY_STATES.IDLE) _consecutiveIdleCaptures++;
+    else _consecutiveIdleCaptures = 0;
 
-    // 매 5번째 캡처는 이미지 포함 전송 (서버에서 Haiku Vision 분석)
-    // 나머지는 메타데이터만 전송 (OOM 방지)
+    console.log(`[screen-capture] ${trigger}/${stateLabel}: ${filename}`);
+
+    // ── 인텔리전스: 이미지 전송 여부 판단 ──
     if (!global._captureCounter) global._captureCounter = 0;
     global._captureCounter++;
-    if (global._captureCounter % 5 === 1) {
-      _uploadCaptureToServer(filepath, trigger, {
-        app: _lastActiveApp,
-        windowTitle: _lastWindowTitle,
-        activityLevel: _currentActivity,
-        automationScore: _automationScore,
-        previousCapture: prevCapturePath || '',
-      });
+
+    const context = {
+      app: _lastActiveApp,
+      windowTitle: _lastWindowTitle,
+      activityLevel: stateLabel,
+      automationScore: _automationScore,
+      previousCapture: prevCapturePath || '',
+    };
+
+    if (_shouldSendImage(trigger, _lastActiveApp)) {
+      _uploadCaptureToServer(filepath, trigger, context);
     } else {
-      _sendCaptureMetadata(filepath, trigger, {
-        app: _lastActiveApp,
-        windowTitle: _lastWindowTitle,
-        activityLevel: _currentActivity,
-        automationScore: _automationScore,
-      });
+      _sendCaptureMetadata(filepath, trigger, context);
     }
 
     // 정리
@@ -405,6 +562,8 @@ function onAppChange(appName) {
     const prevApp = _lastActiveApp;
     _lastActiveApp = appName;
     _keyActivityCount = 0;
+    _sameAppStartTime = Date.now(); // FOCUSED 상태 리셋
+    _lastInputTime = Date.now();
     _updateActivityLevel(appName, _lastWindowTitle);
     capture('app_switch');
   }
@@ -430,6 +589,8 @@ function onKeyActivity() {
   if (!_running) return;
   _keyActivityCount++;
   _lastKeyTime = Date.now();
+  _lastInputTime = Date.now();
+  _inputCountWindow++;
   if (_idleTimer) clearTimeout(_idleTimer);
   // 키 입력 멈추면 = 결과물이 화면에 있을 확률 높음
   _idleTimer = setTimeout(() => {
@@ -455,6 +616,8 @@ let _clickBurstTimer = null;
 function onMouseBurst() {
   if (!_running) return;
   _clickBurstCount++;
+  _lastInputTime = Date.now();
+  _inputCountWindow++;
   if (_clickBurstCount > 20 && !_clickBurstTimer) {
     _clickBurstTimer = setTimeout(() => {
       capture('click_burst');
