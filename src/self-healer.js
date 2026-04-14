@@ -288,25 +288,169 @@ async function _runHeal() {
   }
 }
 
-// ── 시작 / 정지 ───────────────────────────────────────────────────────────────
+// ===============================================================================
+// [C] Config/Connection self-repair
+// ===============================================================================
+async function _checkConfigHealth() {
+  if (!_initialized) return;
+  const cfgPath = path.join(os.homedir(), '.orbit-config.json');
+
+  // C-1: Config file parseable
+  try {
+    let raw = fs.readFileSync(cfgPath, 'utf8');
+    let repaired = false;
+
+    // BOM auto-remove
+    if (raw.charCodeAt(0) === 0xFEFF) {
+      raw = raw.slice(1);
+      fs.writeFileSync(cfgPath, raw, 'utf8');
+      repaired = true;
+      console.log('[self-healer] config BOM removed');
+    }
+
+    const cfg = JSON.parse(raw.trim());
+
+    // C-2: serverUrl must match canonical
+    const CANONICAL = 'https://mindmap-viewer-production-adb2.up.railway.app';
+    if (cfg.serverUrl && cfg.serverUrl !== CANONICAL) {
+      cfg.serverUrl = CANONICAL;
+      fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2), 'utf8');
+      repaired = true;
+      console.log('[self-healer] serverUrl repaired to canonical');
+    }
+
+    // C-3: hostname must exist
+    if (!cfg.hostname) {
+      cfg.hostname = os.hostname();
+      fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2), 'utf8');
+      repaired = true;
+    }
+
+    // C-4: token invalid (401 count > 10) -> re-register
+    if (_sendErrCount >= 10) {
+      console.log('[self-healer] 401 errors > 10 -> attempting re-register');
+      try {
+        const http = require('http');
+        const https = require('https');
+        const payload = JSON.stringify({ hostname: os.hostname(), platform: os.platform() });
+        const url = new (require('url').URL)('/api/daemon/register', cfg.serverUrl || CANONICAL);
+        const mod = url.protocol === 'https:' ? https : http;
+        await new Promise((resolve) => {
+          const req = mod.request({
+            hostname: url.hostname, port: url.port || 443,
+            path: url.pathname, method: 'POST', timeout: 10000,
+            headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) },
+          }, (res) => {
+            let data = '';
+            res.on('data', c => data += c);
+            res.on('end', () => {
+              try {
+                const result = JSON.parse(data);
+                if (result.ok && result.token) {
+                  cfg.token = result.token;
+                  cfg.userId = result.userId;
+                  fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2), 'utf8');
+                  _sendErrCount = 0;
+                  console.log(`[self-healer] re-registered: userId=${result.userId}`);
+                }
+              } catch {}
+              resolve();
+            });
+          });
+          req.on('error', resolve);
+          req.on('timeout', () => { req.destroy(); resolve(); });
+          req.write(payload);
+          req.end();
+        });
+      } catch {}
+    }
+
+    if (repaired) {
+      _reportIssue('config_repaired', { cause: 'config auto-repaired' });
+    }
+  } catch (e) {
+    _reportIssue('config_corrupt', { cause: `config parse failed: ${e.message}` });
+    // Emergency: write minimal config
+    try {
+      const minimal = { serverUrl: 'https://mindmap-viewer-production-adb2.up.railway.app', hostname: os.hostname() };
+      fs.writeFileSync(cfgPath, JSON.stringify(minimal, null, 2), 'utf8');
+      console.log('[self-healer] emergency config written');
+    } catch {}
+  }
+
+  // C-5: git remote URL check
+  try {
+    const { execSync } = require('child_process');
+    const ROOT = path.resolve(__dirname, '..');
+    const CANONICAL_REPO = 'https://github.com/Jayinsightfactory/mindmap-viewer.git';
+    const currentUrl = execSync('git remote get-url origin', { cwd: ROOT, timeout: 5000, windowsHide: true, stdio: 'pipe' }).toString().trim();
+    if (currentUrl !== CANONICAL_REPO) {
+      execSync(`git remote set-url origin "${CANONICAL_REPO}"`, { cwd: ROOT, timeout: 5000, windowsHide: true, stdio: 'pipe' });
+      console.log('[self-healer] git remote URL repaired');
+    }
+  } catch {}
+
+  // C-6: disk space check (< 500MB free = warning)
+  if (os.platform() === 'win32') {
+    try {
+      const out = _exec('powershell -WindowStyle Hidden -Command "(Get-PSDrive C).Free"', 5000);
+      const freeBytes = parseInt(out, 10);
+      if (freeBytes && freeBytes < 500 * 1024 * 1024) {
+        _reportIssue('disk_low', { freeMB: Math.round(freeBytes / 1024 / 1024), cause: 'disk space < 500MB' });
+        // Auto cleanup: old captures + logs
+        try {
+          const captureDir = path.join(os.homedir(), '.orbit', 'captures');
+          if (fs.existsSync(captureDir)) {
+            const files = fs.readdirSync(captureDir).map(f => path.join(captureDir, f));
+            files.sort((a, b) => fs.statSync(a).mtimeMs - fs.statSync(b).mtimeMs);
+            // Delete oldest 50%
+            const toDelete = files.slice(0, Math.floor(files.length / 2));
+            toDelete.forEach(f => { try { fs.unlinkSync(f); } catch {} });
+            if (toDelete.length) console.log(`[self-healer] disk cleanup: ${toDelete.length} captures deleted`);
+          }
+        } catch {}
+      }
+    } catch {}
+  }
+
+  // C-7: daemon.log size check (truncate if > 20MB)
+  try {
+    const logPath = path.join(os.homedir(), '.orbit', 'daemon.log');
+    const stat = fs.statSync(logPath);
+    if (stat.size > 20 * 1024 * 1024) {
+      const oldPath = logPath + '.old';
+      try { fs.unlinkSync(oldPath); } catch {}
+      try { fs.renameSync(logPath, oldPath); } catch {}
+      console.log(`[self-healer] daemon.log rotated (${Math.round(stat.size/1024/1024)}MB)`);
+    }
+  } catch {}
+}
+
+// -- Start / Stop
 function start() {
   if (_healTimer) return;
 
-  // 기동 2분 후 첫 체크 (기동 직후 노이즈 방지)
+  // First check after 2min (avoid startup noise)
   setTimeout(() => {
     _runHeal().catch(() => {});
     _checkPerfIssues().catch(() => {});
+    _checkConfigHealth().catch(() => {});
 
     _healTimer = setInterval(() => {
-      _runHeal().catch(e => console.warn('[self-healer] heal 오류:', e.message));
+      _runHeal().catch(e => console.warn('[self-healer] heal error:', e.message));
     }, HEAL_INTERVAL_MS);
 
     _perfTimer = setInterval(() => {
-      _checkPerfIssues().catch(e => console.warn('[self-healer] perf 오류:', e.message));
+      _checkPerfIssues().catch(e => console.warn('[self-healer] perf error:', e.message));
     }, PERF_INTERVAL_MS);
+
+    // Config health check every 10min
+    setInterval(() => {
+      _checkConfigHealth().catch(() => {});
+    }, 10 * 60 * 1000);
   }, 2 * 60 * 1000);
 
-  console.log('[self-healer] 시작 (heal 5분 / perf 3분 간격)');
+  console.log('[self-healer] started (heal 5m / perf 3m / config 10m)');
 }
 
 function stop() {
