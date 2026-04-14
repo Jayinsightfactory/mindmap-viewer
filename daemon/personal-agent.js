@@ -22,6 +22,14 @@ const os      = require('os');
 const http    = require('http');
 const https   = require('https');
 
+// ── 프로세스 keep-alive (최상위 레벨, main() 밖) ──────────────────────────
+// Node.js가 이벤트 루프 빈 상태로 종료하지 않도록 방어
+process.stdin.resume();
+const _topKeepAlive = setInterval(() => {}, 30_000);
+process.on('exit', (code) => {
+  console.log(`[orbit] 프로세스 종료 (exit code: ${code}, ${new Date().toISOString()})`);
+});
+
 // ── 원격 서버 설정 (~/.orbit-config.json) ──────────────────────────────────
 const _orbitConfig = (() => {
   try {
