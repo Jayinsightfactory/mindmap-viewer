@@ -28,24 +28,22 @@ const path  = require('path');
 const fs    = require('fs');
 const { execSync } = require('child_process');
 
-// ── 원격 서버 설정 (~/.orbit-config.json) ────────────────────────────────────
-// Dynamic config read (not cached at module load - avoids stale serverUrl)
-function _getOrbitConfig() {
+// ── 원격 서버 설정 (~/.orbit-config.json, 매번 동적 읽기) ───────────────────
+function _readOrbitConfig() {
   try {
-    let r = fs.readFileSync(path.join(os.homedir(), '.orbit-config.json'), 'utf8');
-    if (r.charCodeAt(0) === 0xFEFF) r = r.slice(1);
-    return JSON.parse(r.trim());
+    let raw = fs.readFileSync(path.join(os.homedir(), '.orbit-config.json'), 'utf8');
+    if (raw.charCodeAt(0) === 0xFEFF) raw = raw.slice(1); // BOM 제거
+    return JSON.parse(raw);
   } catch { return {}; }
 }
 function _getRemoteUrl() {
-  return _getOrbitConfig().serverUrl || process.env.ORBIT_SERVER_URL || null;
+  const cfg = _readOrbitConfig();
+  return cfg.serverUrl || process.env.ORBIT_SERVER_URL || null;
 }
 function _getRemoteToken() {
-  return _getOrbitConfig().token || process.env.ORBIT_TOKEN || '';
+  const cfg = _readOrbitConfig();
+  return cfg.token || process.env.ORBIT_TOKEN || '';
 }
-const _orbitConfig = _getOrbitConfig();
-const _remoteUrl   = _getRemoteUrl();
-const _remoteToken = _orbitConfig.token     || process.env.ORBIT_TOKEN      || '';
 
 // ── 로컬 학습 엔진 로드 ─────────────────────────────────────────────────────
 let localLearning = null;
@@ -79,8 +77,6 @@ let _analysisTimer   = null;        // 5분 분석 주기 타이머
 let _running         = false;
 let _paused          = false;       // 은행 보안프로그램 감지 시 일시정지
 let _uiohook         = null;
-let _safePollTimer   = null;        // uiohook 없을 때 PowerShell 폴링 (1차 안전 모드)
-let _uiohookHealthTimer = null;     // uiohook health check timer
 let _orbitPort       = parseInt(process.env.ORBIT_PORT || '4747', 10);
 let _orbitUrl        = `http://localhost:${_orbitPort}/api/personal/keyboard`;
 let _analysisHistory = [];          // 최근 분석 결과 이력 (최대 100건)
@@ -96,13 +92,12 @@ function setScreenCapture(sc) { _screenCapture = sc; }
 const ANALYSIS_INTERVAL_MS = 60 * 1000;  // 1분 (개발 단계 — 실시간 수집)
 const MAX_HISTORY = 100;                       // 최대 분석 이력 보관 수
 
-// ── 활성 앱/윈도우 캐시 (10초) — keydown 핸들러 내 blocking PowerShell 최소화 ──
-// 1초 캐시 → keydown 마다 PowerShell 실행 → WH_KEYBOARD_LL 타임아웃 초과 → 키 반복(ㅣㅣㅣ) 버그
+// ── 활성 앱/윈도우 캐시 (1초) — 마우스 클릭마다 PowerShell 새 프로세스 방지 ──
 let _cachedApp = '';
 let _cachedAppTs = 0;
 let _cachedTitle = '';
 let _cachedTitleTs = 0;
-const _WIN_CACHE_MS = 10000; // 10초 — PowerShell 호출 빈도 대폭 감소
+const _WIN_CACHE_MS = 1000;
 
 // ── 현재 활성 앱 감지 (macOS / Windows) ─────────────────────────────────────
 function getActiveApp() {
@@ -393,8 +388,7 @@ function _flushToLocalBuffer() {
   // 스크린 캡처: 키 입력 활동
   if (_screenCapture) _screenCapture.onKeyActivity();
 
-  // 활동 기록 (로컬 메모리에만) — 최대 500개 cap (메모리 누수 방지)
-  if (_activityBuffer.length >= 500) _activityBuffer = _activityBuffer.slice(-400);
+  // 활동 기록 (로컬 메모리에만)
   _activityBuffer.push({
     app,
     windowTitle,
@@ -575,8 +569,7 @@ function _startRemoteBatch() {
 }
 
 function _flushRemoteBatch() {
-  const remoteUrl = _getRemoteUrl();
-  if (!remoteUrl || _remoteBatchQueue.length === 0) return;
+  if (!_getRemoteUrl() || _remoteBatchQueue.length === 0) return;
   const batch = _remoteBatchQueue.splice(0); // 큐 비우기
   console.log(`[keyboard-watcher] 원격 배치 전송: ${batch.length}건`);
   batch.forEach(body => _postToRemote(body));
@@ -607,29 +600,28 @@ function _postToLocalhost(body) {
  * 로컬 분석 결과를 hook 이벤트 형식으로 변환하여 전송
  */
 function _postToRemote(body) {
-  const remoteUrl = _getRemoteUrl();
-  if (!remoteUrl) return;
+  if (!_getRemoteUrl()) return;
   try {
     const parsed = JSON.parse(body);
+    // hook 이벤트 형식으로 변환
     const hookPayload = JSON.stringify({
       events: [{
         id:        'kb-' + Date.now(),
         type:      'keyboard.chunk',
-        source:    'keyboard-watcher',
+        source:    'keylogger',
         sessionId: 'daemon-' + os.hostname(),
         timestamp: parsed.ts || new Date().toISOString(),
         data:      parsed.analyzed || parsed,
       }],
       fromRemote: true,
     });
-    const url = new URL('/api/hook', remoteUrl);
+    const url = new URL('/api/hook', _getRemoteUrl());
     const mod = url.protocol === 'https:' ? https : http;
     const headers = {
       'Content-Type':   'application/json',
       'Content-Length':  Buffer.byteLength(hookPayload),
-      'X-Device-Id':    encodeURIComponent(require('os').hostname()),
     };
-    if (_remoteToken) headers['Authorization'] = `Bearer ${_remoteToken}`;
+    if (_getRemoteToken()) headers['Authorization'] = `Bearer ${_getRemoteToken()}`;
     const req = mod.request({
       hostname: url.hostname,
       port:     url.port || (url.protocol === 'https:' ? 443 : 80),
@@ -827,7 +819,7 @@ function start(opts = {}) {
       _mouseClickCount++;
       // 클릭 좌표 기록 (최근 200개, 자동화 스크립트 생성용) — 앱/창 포함
       _mouseClickPositions.push({ x: e.x, y: e.y, t: Date.now(), app: getActiveApp(), win: getActiveWindowTitle() });
-      if (_mouseClickPositions.length > 50) _mouseClickPositions = _mouseClickPositions.slice(-50);
+      if (_mouseClickPositions.length > 200) _mouseClickPositions = _mouseClickPositions.slice(-200);
       if (_screenCapture?.onMouseBurst) _screenCapture.onMouseBurst();
       // 워크플로우 학습: 클릭 기록 (좌표 포함)
       try {
@@ -843,25 +835,6 @@ function start(opts = {}) {
     _uiohook.uIOhook.start();
     _running = true;
 
-    // uiohook 크래시 감지: 30초마다 health check → 실패 시 safe polling 전환
-    _uiohookHealthTimer = setInterval(() => {
-      try {
-        // uiohook이 살아있으면 마지막 이벤트가 최근이어야 함
-        // 5분 이상 이벤트 없으면 (유휴가 아닌데) 크래시로 간주
-        if (_running && !_paused && _lastInputTime && (Date.now() - _lastInputTime > 10 * 60 * 1000)) {
-          console.warn('[keyboard-watcher] uiohook 응답 없음 10분 → safe polling 전환');
-          try { _uiohook.uIOhook.stop(); } catch {}
-          _startSafePollingMode();
-          clearInterval(_uiohookHealthTimer);
-        }
-      } catch {}
-    }, 30000);
-    let _lastInputTime = Date.now();
-    const _origOnKeydown = _onKeydown;
-    // 원래 keydown에 timestamp 갱신 래핑
-    _uiohook.uIOhook.removeAllListeners('keydown');
-    _uiohook.uIOhook.on('keydown', (e) => { _lastInputTime = Date.now(); _origOnKeydown(e); });
-
     // ── 5분 주기 로컬 분석 타이머 시작 ──
     const interval = opts.analysisInterval || ANALYSIS_INTERVAL_MS;
     _analysisTimer = setInterval(_runPeriodicAnalysis, interval);
@@ -871,59 +844,52 @@ function start(opts = {}) {
 
     // 시작 완료 (로그 최소화)
   } catch (err) {
-    console.warn(`[keyboard-watcher] uiohook load failed: ${err.message}`);
-    console.warn('[keyboard-watcher] fallback: safe polling mode (app/window/mouse)');
-    _startSafePollingMode(opts);
-  }
-}
+    console.error('[keyboard-watcher] uiohook load failed:', err.message);
+    _reportDaemonError('keyboard-watcher-uiohook', err.message);
 
-// ── 안전 폴링 모드 ─────────────────────────────────────────────────────────────
-// uiohook-napi 없이도 앱 전환/창 제목/마우스 위치를 PowerShell로 수집
-// → 바이러스 탐지 없음, 1차 설치 기본 모드
-function _startSafePollingMode(opts) {
-  let _lastApp = '', _lastWin = '';
-  let _mousePollCount = 0;
-  // Batch: app+window+mouse in single PowerShell call (reduces subprocess count)
-  _safePollTimer = setInterval(() => {
-    if (_paused) return;
-    try {
-      const app = getActiveApp();
-      const win = getActiveWindowTitle();
-      const switched = app && (app !== _lastApp || win !== _lastWin);
-      if (switched) {
-        _lastApp = app; _lastWin = win;
-        if (_activityBuffer.length >= 100) _activityBuffer = _activityBuffer.slice(-50);
-        _activityBuffer.push({ app, window: win, ts: Date.now(), type: 'app_switch' });
-        // Trigger screen capture on app switch
-        if (_screenCapture?.capture) {
-          try { _screenCapture.capture('app_switch'); } catch {}
-        }
-        // Mark activity for idle detection
-        try { const pa = require('../daemon/personal-agent.js'); if (pa.markActivity) pa.markActivity(); } catch {}
-      }
-      // Mouse position every 3rd poll (45s)
-      _mousePollCount++;
-      if (process.platform === 'win32' && _mousePollCount % 3 === 0) {
+    // ── safe polling 폴백: uiohook 없이 앱/윈도우/마우스 수집 ──
+    if (process.platform === 'win32') {
+      console.log('[keyboard-watcher] fallback: safe polling mode (app/window/mouse)');
+      _running = true;
+      let _lastApp = '', _lastWin = '';
+
+      const pollFn = () => {
+        if (_paused) return;
         try {
-          const pos = execSync(
-            'powershell -NoProfile -WindowStyle Hidden -Command "Add-Type -AssemblyName System.Windows.Forms;$p=[System.Windows.Forms.Cursor]::Position;\'$($p.X),$($p.Y)\'"',
-            { timeout: 2000, encoding: 'utf8', windowsHide: true }
-          ).trim();
-          const [x, y] = pos.split(',').map(Number);
-          if (!isNaN(x)) {
-            _mouseClickPositions.push({ x, y, t: Date.now(), app, win });
-            if (_mouseClickPositions.length > 50) _mouseClickPositions = _mouseClickPositions.slice(-50);
-          }
-        } catch {}
-      }
-    } catch {}
-  }, 15000); // 15s polling - balance between data quality and subprocess overhead
+          const app = getActiveApp();
+          const win = getActiveWindowTitle();
 
-  _running = true;
-  const interval = (opts && opts.analysisInterval) || ANALYSIS_INTERVAL_MS;
-  _analysisTimer = setInterval(_runPeriodicAnalysis, interval);
-  _startRemoteBatch();
-  console.log('[keyboard-watcher] 안전 폴링 모드 실행 중 (15초 간격, uiohook 없음)');
+          // 앱 전환 감지 → 이벤트 기록 + 캡처 트리거
+          if (app !== _lastApp || win !== _lastWin) {
+            _lastApp = app; _lastWin = win;
+            _activityBuffer.push({ app, window: win, ts: Date.now(), type: 'app_switch' });
+            if (_screenCapture?.capture) _screenCapture.capture('app_switch');
+          }
+
+          // 마우스 좌표 (PowerShell)
+          try {
+            const mouseJson = execSync(
+              'powershell.exe -NoProfile -Command "[System.Windows.Forms.Cursor]::Position | ConvertTo-Json -Compress"',
+              { timeout: 3000, encoding: 'utf8', windowsHide: true }
+            ).trim();
+            const pos = JSON.parse(mouseJson);
+            if (pos.X !== undefined) {
+              const q = `${pos.X < 960 ? 'L' : 'R'}${pos.Y < 540 ? 'T' : 'B'}`;
+              _mouseQuadrants[q] = (_mouseQuadrants[q] || 0) + 1;
+            }
+          } catch {}
+        } catch {}
+      };
+
+      setInterval(pollFn, 15000); // 15초 간격
+      console.log('[keyboard-watcher] safe polling 실행 중 (15초 간격)');
+
+      // 분석 + 배치 전송 타이머도 시작
+      const interval = opts.analysisInterval || ANALYSIS_INTERVAL_MS;
+      _analysisTimer = setInterval(_runPeriodicAnalysis, interval);
+      _startRemoteBatch();
+    }
+  }
 }
 
 // ── daemon.error 서버 전송 (auto-fixer 연동) ──
@@ -961,7 +927,6 @@ function stop() {
   // 타이머 정리
   if (_analysisTimer) { clearInterval(_analysisTimer); _analysisTimer = null; }
   if (_flushTimer) { clearTimeout(_flushTimer); _flushTimer = null; }
-  if (_safePollTimer) { clearInterval(_safePollTimer); _safePollTimer = null; }
 
   try { _uiohook?.uIOhook.stop(); } catch {}
   _running = false;
@@ -1023,7 +988,6 @@ function isPaused() { return _paused; }
 // ══════════════════════════════════════════════════════════════════════════════
 let _emptyCount = 0;
 let _bankSafe = null;
-let _bankEnhanced = null;
 
 function _checkBankSecurity() {
   // Windows에서만 동작
@@ -1036,50 +1000,26 @@ function _checkBankSecurity() {
     _emptyCount++;
   } else {
     _emptyCount = 0;
-    // 정상 복구 시 bank-safe 모듈들 중지
+    // 정상 복구 시 bank-safe-collector 중지
     if (_bankSafe) {
       try { _bankSafe.notifyActive(); } catch {}
     }
-    if (_bankEnhanced && _bankEnhanced.isRunning()) {
-      try { _bankEnhanced.stop(); } catch {}
-      console.log('[keyboard-watcher] 정상 복구 → bank-safe-enhanced 중지');
-    }
   }
 
-  // 5회 연속 비어있으면 은행 보안 감지 → bank-safe 모듈들 시작
-  if (_emptyCount >= 5) {
-    // 기존 collector
-    if (!_bankSafe) {
-      try {
-        _bankSafe = require('./bank-safe-collector');
-        if (!_bankSafe.isRunning()) {
-          console.log('[keyboard-watcher] 은행 보안 감지 → bank-safe-collector 시작');
-          _bankSafe.start({
-            serverUrl: _remoteUrl,
-            token: _remoteToken,
-            interval: 5 * 60 * 1000,
-          });
-        }
-      } catch (e) {
-        console.warn('[keyboard-watcher] bank-safe-collector 로드 실패:', e.message);
+  // 5회 연속 비어있으면 은행 보안 감지 → bank-safe-collector 시작
+  if (_emptyCount >= 5 && !_bankSafe) {
+    try {
+      _bankSafe = require('./bank-safe-collector');
+      if (!_bankSafe.isRunning()) {
+        console.log('[keyboard-watcher] 은행 보안 감지 → bank-safe-collector 시작');
+        _bankSafe.start({
+          serverUrl: _getRemoteUrl(),
+          token: _getRemoteToken(),
+          interval: 5 * 60 * 1000,
+        });
       }
-    }
-
-    // ★ 강화 모듈 (GetForegroundWindow + UI Automation + 시스템 메트릭)
-    if (!_bankEnhanced) {
-      try {
-        _bankEnhanced = require('./bank-safe-enhanced');
-        if (!_bankEnhanced.isRunning()) {
-          console.log('[keyboard-watcher] 은행 보안 감지 → bank-safe-enhanced 시작');
-          console.log('[keyboard-watcher]   ├─ GetForegroundWindow 1초 폴링');
-          console.log('[keyboard-watcher]   ├─ UI Automation (스크린샷 대체)');
-          console.log('[keyboard-watcher]   ├─ 시스템 메트릭 (CPU/MEM/IO)');
-          console.log('[keyboard-watcher]   └─ Excel COM (문서 정보)');
-          _bankEnhanced.start();
-        }
-      } catch (e) {
-        console.warn('[keyboard-watcher] bank-safe-enhanced 로드 실패:', e.message);
-      }
+    } catch (e) {
+      console.warn('[keyboard-watcher] bank-safe-collector 로드 실패:', e.message);
     }
   }
 }

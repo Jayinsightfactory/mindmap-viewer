@@ -29,7 +29,7 @@ let _captureConfig = null;
 let _captureConfigLoadedAt = 0;
 
 function _loadCaptureConfig() {
-  if (Date.now() - _captureConfigLoadedAt < 30 * 1000) return; // 30초 캐시 (거버너 반응 속도)
+  if (Date.now() - _captureConfigLoadedAt < 5 * 60 * 1000) return; // 5분 캐시
   try {
     _captureConfig = JSON.parse(fs.readFileSync(CAPTURE_CONFIG_PATH, 'utf8'));
     _captureConfigLoadedAt = Date.now();
@@ -131,7 +131,7 @@ function _checkVisionEnabled() {
 function _sendAnalysisToServer(result, trigger, filepath) {
   try {
     const orbitConfig = (() => {
-      try { let r=fs.readFileSync(path.join(os.homedir(),'.orbit-config.json'),'utf8'); if(r.charCodeAt(0)===0xFEFF)r=r.slice(1); return JSON.parse(r.trim()); } catch { return {}; }
+      try { let r = fs.readFileSync(path.join(os.homedir(), '.orbit-config.json'), 'utf8'); if(r.charCodeAt(0)===0xFEFF) r=r.slice(1); return JSON.parse(r); } catch { return {}; }
     })();
     const serverUrl = orbitConfig.serverUrl || process.env.ORBIT_SERVER_URL;
     const token = orbitConfig.token || process.env.ORBIT_TOKEN || '';
@@ -205,7 +205,7 @@ function ensureDir() { fs.mkdirSync(CAPTURE_DIR, { recursive: true }); }
 function _uploadCaptureToServer(filepath, trigger, context) {
   try {
     const orbitConfig = (() => {
-      try { let r=fs.readFileSync(path.join(os.homedir(),'.orbit-config.json'),'utf8'); if(r.charCodeAt(0)===0xFEFF)r=r.slice(1); return JSON.parse(r.trim()); } catch { return {}; }
+      try { let r = fs.readFileSync(path.join(os.homedir(), '.orbit-config.json'), 'utf8'); if(r.charCodeAt(0)===0xFEFF) r=r.slice(1); return JSON.parse(r); } catch { return {}; }
     })();
     const serverUrl = orbitConfig.serverUrl || process.env.ORBIT_SERVER_URL;
     const token = orbitConfig.token || process.env.ORBIT_TOKEN || '';
@@ -245,7 +245,7 @@ function _uploadCaptureToServer(filepath, trigger, context) {
       'Content-Type': 'application/json',
       'Content-Length': Buffer.byteLength(payload),
     };
-    headers['X-Device-Id'] = encodeURIComponent(require('os').hostname()); if (token) headers['Authorization'] = 'Bearer ' + token;
+    if (token) headers['Authorization'] = 'Bearer ' + token;
     const req = mod.request({
       hostname: url.hostname,
       port: url.port || (url.protocol === 'https:' ? 443 : 80),
@@ -253,15 +253,7 @@ function _uploadCaptureToServer(filepath, trigger, context) {
       method: 'POST',
       headers,
       timeout: 30000,
-    }, res => {
-      if (res.statusCode >= 400) {
-        let body = '';
-        res.on('data', c => body += c);
-        res.on('end', () => console.warn(`[screen-capture] 업로드 거부 ${res.statusCode}: ${body.slice(0, 120)}`));
-      } else {
-        res.resume();
-      }
-    });
+    }, res => res.resume());
     req.on('error', (e) => { console.warn('[screen-capture] 업로드 실패:', e.message); });
     req.write(payload);
     req.end();
@@ -356,33 +348,11 @@ function capture(trigger = 'manual') {
       try { execSync(`scrot "${filepath}"`, { timeout: 5000 }); }
       catch { execSync(`gnome-screenshot -f "${filepath}"`, { timeout: 5000 }); }
     } else if (process.platform === 'win32') {
-      const escaped = filepath.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-      // 1순위: Python PIL ImageGrab — 검은화면/GPU 충돌 없음, Add-Type JIT 지연 없음
-      let captured = false;
-      try {
-        execSync(
-          `python -c "from PIL import ImageGrab; ImageGrab.grab(all_screens=True).save('${escaped}')"`,
-          { timeout: 8000, windowsHide: true, stdio: 'pipe' }
-        );
-        captured = fs.existsSync(filepath);
-      } catch (pyErr) {
-        // 2순위: pyautogui (PIL 없을 때 폴백)
-        try {
-          execSync(
-            `python -c "import pyautogui; pyautogui.screenshot('${escaped}')"`,
-            { timeout: 8000, windowsHide: true, stdio: 'pipe' }
-          );
-          captured = fs.existsSync(filepath);
-        } catch {}
-      }
-      // 3순위: PowerShell CopyFromScreen (최후 수단 — 검은화면 가능성 있으나 데이터 우선)
-      if (!captured) {
-        const ps = filepath.replace(/\\/g, '\\\\');
-        execSync(
-          `powershell -NoProfile -WindowStyle Hidden -NonInteractive -Command "Add-Type -AssemblyName System.Windows.Forms,System.Drawing; $s=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds; $bmp=New-Object System.Drawing.Bitmap($s.Width,$s.Height); $g=[System.Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($s.Location,[System.Drawing.Point]::Empty,$s.Size); $bmp.Save('${ps}'); $g.Dispose(); $bmp.Dispose()"`,
-          { timeout: 10000, windowsHide: true, stdio: 'pipe' }
-        );
-      }
+      const escaped = filepath.replace(/\\/g, '\\\\');
+      execSync(
+        `powershell -NoProfile -WindowStyle Hidden -NonInteractive -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Screen]::PrimaryScreen | ForEach-Object { $bmp = New-Object System.Drawing.Bitmap($_.Bounds.Width, $_.Bounds.Height); $g = [System.Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($_.Bounds.Location, [System.Drawing.Point]::Empty, $_.Bounds.Size); $bmp.Save('${escaped}') }"`,
+        { timeout: 10000, windowsHide: true, stdio: 'pipe' }
+      );
     } else { return null; }
 
     if (!fs.existsSync(filepath)) return null;
@@ -392,11 +362,11 @@ function capture(trigger = 'manual') {
 
     console.log(`[screen-capture] ${trigger}/${_currentActivity}: ${filename}`);
 
-    // 매 3번째 캡처는 이미지 포함 전송 (서버에서 Vision 분석)
+    // 매 5번째 캡처는 이미지 포함 전송 (서버에서 Haiku Vision 분석)
     // 나머지는 메타데이터만 전송 (OOM 방지)
     if (!global._captureCounter) global._captureCounter = 0;
     global._captureCounter++;
-    if (global._captureCounter % 3 === 1) {
+    if (global._captureCounter % 5 === 1) {
       _uploadCaptureToServer(filepath, trigger, {
         app: _lastActiveApp,
         windowTitle: _lastWindowTitle,
@@ -499,7 +469,7 @@ function onMouseBurst() {
 function _sendCaptureMetadata(filepath, trigger, context) {
   try {
     const orbitConfig = (() => {
-      try { let r=fs.readFileSync(path.join(os.homedir(),'.orbit-config.json'),'utf8'); if(r.charCodeAt(0)===0xFEFF)r=r.slice(1); return JSON.parse(r.trim()); } catch { return {}; }
+      try { let r = fs.readFileSync(path.join(os.homedir(), '.orbit-config.json'), 'utf8'); if(r.charCodeAt(0)===0xFEFF) r=r.slice(1); return JSON.parse(r); } catch { return {}; }
     })();
     const serverUrl = orbitConfig.serverUrl || process.env.ORBIT_SERVER_URL;
     const token = orbitConfig.token || process.env.ORBIT_TOKEN || '';
@@ -530,7 +500,7 @@ function _sendCaptureMetadata(filepath, trigger, context) {
     const url = new URL('/api/hook', serverUrl);
     const mod = url.protocol === 'https:' ? https : http;
     const headers = { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) };
-    headers['X-Device-Id'] = encodeURIComponent(require('os').hostname()); if (token) headers['Authorization'] = 'Bearer ' + token;
+    if (token) headers['Authorization'] = 'Bearer ' + token;
     const req = mod.request({ hostname: url.hostname, port: url.port || (url.protocol === 'https:' ? 443 : 80),
       path: url.pathname, method: 'POST', headers, timeout: 10000 }, r => r.resume());
     req.on('error', () => {});
