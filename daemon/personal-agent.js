@@ -404,7 +404,7 @@ foreach ($jname in @('javaw.exe','java.exe')) {
 }
 `.trim(), 'utf8');
         const out = execSync(
-          `powershell.exe -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "${tmpPs1}"`,
+          `powershell.exe -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -Command "& '${tmpPs1.replace(/'/g, "''")}';"`,
           { encoding: 'utf8', timeout: 15000, windowsHide: true }
         );
         if (out) {
@@ -530,19 +530,19 @@ async function main() {
   killDuplicates();
   // 1초 후 한번 더 (ps1 루프 재시작 타이밍에 혹시 남은 프로세스 제거)
   setTimeout(() => { try { killDuplicates(); } catch {} }, 1000);
-  console.log(`[orbit] 시작 PID=${process.pid} (${new Date().toISOString()})`);
+  console.log(`[orbit] start PID=${process.pid} (${new Date().toISOString()})`);
   writePid();
+  console.log('[orbit] checkpoint: pid written');
 
   // Java/Node 중복 프로세스 주기적 감시 (5분마다) — nenova ERP 렉 방지
   if (os.platform() === 'win32') {
     setInterval(() => { try { killDuplicates(); } catch {} }, 5 * 60 * 1000);
   }
 
-  // Orbit 서버 대기 (localhost)
+  console.log('[orbit] checkpoint: before waitForServer');
+  // Orbit local server check (non-blocking)
   const serverUp = await waitForServer();
-  if (!serverUp) {
-    console.warn('[personal-agent] 로컬 Orbit 서버에 연결할 수 없습니다. 계속 진행합니다.');
-  }
+  console.log(`[orbit] checkpoint: waitForServer done (${serverUp})`);
 
   // 원격 서버 헬스 체크 (비차단 — 실패해도 계속)
   checkRemoteServer().then(up => {
