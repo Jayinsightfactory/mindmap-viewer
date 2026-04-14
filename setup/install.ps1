@@ -171,27 +171,74 @@ while (`$true) {
 "@
 [System.IO.File]::WriteAllText($ps1Path, $ps1Body, [System.Text.UTF8Encoding]::new($false))
 
-# Watchdog: 5min interval - git pull + restart if daemon dead
+# Watchdog: 5min interval - git pull + restart if daemon dead + crash report
 $wdPath = "$OrbitDir\watchdog.ps1"
 $wdBody = @"
 `$ErrorActionPreference = 'SilentlyContinue'
 `$dir = "`$env:USERPROFILE\mindmap-viewer"
 `$pidFile = "`$env:USERPROFILE\.orbit\personal-agent.pid"
 `$logFile = "`$env:USERPROFILE\.orbit\watchdog.log"
+`$server = '$REMOTE'
+`$hn = [Uri]::EscapeDataString(`$env:COMPUTERNAME)
+
+# Check alive: PID file + process check + also check any node personal-agent
 `$alive = `$false
 if (Test-Path `$pidFile) {
   `$p = Get-Content `$pidFile
   if (`$p -and (Get-Process -Id `$p -ErrorAction SilentlyContinue)) { `$alive = `$true }
 }
 if (-not `$alive) {
-  "[`$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))] dead - pull+restart" | Add-Content `$logFile
+  # Double check: any node.exe running personal-agent?
+  `$nodeProcs = Get-WmiObject Win32_Process -Filter "Name='node.exe'" | Where-Object { `$_.CommandLine -like '*personal-agent*' }
+  if (`$nodeProcs) { `$alive = `$true }
+}
+
+if (-not `$alive) {
+  `$ts = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+  "[`$ts] daemon dead - restarting" | Add-Content `$logFile
+
+  # Read last 5 lines of daemon.log for crash reason
+  `$crashInfo = ''
+  try {
+    `$dlog = "`$env:USERPROFILE\.orbit\daemon.log"
+    if (Test-Path `$dlog) {
+      `$crashInfo = (Get-Content `$dlog -Tail 5 -ErrorAction SilentlyContinue) -join ' | '
+      if (-not `$crashInfo) {
+        `$fs = [IO.FileStream]::new(`$dlog,'Open','Read','ReadWrite')
+        `$sr = [IO.StreamReader]::new(`$fs)
+        `$lines = `$sr.ReadToEnd() -split "`n"
+        `$sr.Close(); `$fs.Close()
+        `$crashInfo = (`$lines[-5..-1] | Where-Object {`$_}) -join ' | '
+      }
+    }
+  } catch {}
+
+  # Report crash to server
+  try {
+    `$body = "{`"events`":[{`"id`":`"crash-`$env:COMPUTERNAME-`$([DateTimeOffset]::Now.ToUnixTimeSeconds())`",`"type`":`"daemon.crash`",`"source`":`"watchdog`",`"sessionId`":`"watchdog`",`"timestamp`":`"`$((Get-Date).ToString('o'))`",`"data`":{`"hostname`":`"`$env:COMPUTERNAME`",`"crashLog`":`"`$(`$crashInfo -replace '[\x22\\]',' ')`"}}]}"
+    Invoke-RestMethod -Uri "`$server/api/hook" -Method POST -ContentType 'application/json' -Body `$body -Headers @{'X-Device-Id'=`$hn} -TimeoutSec 5 | Out-Null
+  } catch {}
+
+  # git pull latest code
   Set-Location `$dir
   git remote set-url origin 'https://github.com/Jayinsightfactory/mindmap-viewer.git' 2>`$null
   git fetch origin 2>`$null
   git reset --hard origin/main 2>`$null
-  `$ps1 = "`$env:USERPROFILE\.orbit\start-daemon.ps1"
-  if (Test-Path `$ps1) { Start-Process powershell.exe -WindowStyle Hidden -ArgumentList "-NonInteractive -ExecutionPolicy Bypass -Command `"& '`$ps1'`"" }
-  "[`$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))] restarted" | Add-Content `$logFile
+
+  # Start daemon directly via node (not ps1 - avoids execution policy issues)
+  `$nodeExe = (Get-Command node -ErrorAction SilentlyContinue).Source
+  if (`$nodeExe) {
+    `$daemonJs = "`$dir\daemon\personal-agent.js"
+    if (Test-Path `$daemonJs) {
+      Start-Process `$nodeExe -ArgumentList "`$daemonJs" -WindowStyle Hidden -WorkingDirectory `$dir
+      "[`$ts] started via node directly" | Add-Content `$logFile
+    }
+  } else {
+    # Fallback: ps1 loop
+    `$ps1 = "`$env:USERPROFILE\.orbit\start-daemon.ps1"
+    if (Test-Path `$ps1) { Start-Process powershell.exe -WindowStyle Hidden -ArgumentList "-NonInteractive -ExecutionPolicy Bypass -Command `"& '`$ps1'`"" }
+    "[`$ts] started via ps1 loop" | Add-Content `$logFile
+  }
 }
 "@
 [System.IO.File]::WriteAllText($wdPath, $wdBody, [System.Text.UTF8Encoding]::new($false))
