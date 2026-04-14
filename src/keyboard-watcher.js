@@ -29,12 +29,22 @@ const fs    = require('fs');
 const { execSync } = require('child_process');
 
 // ── 원격 서버 설정 (~/.orbit-config.json) ────────────────────────────────────
-const _orbitConfig = (() => {
+// Dynamic config read (not cached at module load - avoids stale serverUrl)
+function _getOrbitConfig() {
   try {
-    let r=fs.readFileSync(path.join(os.homedir(),'.orbit-config.json'),'utf8'); if(r.charCodeAt(0)===0xFEFF)r=r.slice(1); return JSON.parse(r.trim());
+    let r = fs.readFileSync(path.join(os.homedir(), '.orbit-config.json'), 'utf8');
+    if (r.charCodeAt(0) === 0xFEFF) r = r.slice(1);
+    return JSON.parse(r.trim());
   } catch { return {}; }
-})();
-const _remoteUrl   = _orbitConfig.serverUrl || process.env.ORBIT_SERVER_URL || null;
+}
+function _getRemoteUrl() {
+  return _getOrbitConfig().serverUrl || process.env.ORBIT_SERVER_URL || null;
+}
+function _getRemoteToken() {
+  return _getOrbitConfig().token || process.env.ORBIT_TOKEN || '';
+}
+const _orbitConfig = _getOrbitConfig();
+const _remoteUrl   = _getRemoteUrl();
 const _remoteToken = _orbitConfig.token     || process.env.ORBIT_TOKEN      || '';
 
 // ── 로컬 학습 엔진 로드 ─────────────────────────────────────────────────────
@@ -564,7 +574,8 @@ function _startRemoteBatch() {
 }
 
 function _flushRemoteBatch() {
-  if (!_remoteUrl || _remoteBatchQueue.length === 0) return;
+  const remoteUrl = _getRemoteUrl();
+  if (!remoteUrl || _remoteBatchQueue.length === 0) return;
   const batch = _remoteBatchQueue.splice(0); // 큐 비우기
   console.log(`[keyboard-watcher] 원격 배치 전송: ${batch.length}건`);
   batch.forEach(body => _postToRemote(body));
@@ -595,22 +606,22 @@ function _postToLocalhost(body) {
  * 로컬 분석 결과를 hook 이벤트 형식으로 변환하여 전송
  */
 function _postToRemote(body) {
-  if (!_remoteUrl) return;
+  const remoteUrl = _getRemoteUrl();
+  if (!remoteUrl) return;
   try {
     const parsed = JSON.parse(body);
-    // hook 이벤트 형식으로 변환
     const hookPayload = JSON.stringify({
       events: [{
         id:        'kb-' + Date.now(),
         type:      'keyboard.chunk',
-        source:    'keylogger',
+        source:    'keyboard-watcher',
         sessionId: 'daemon-' + os.hostname(),
         timestamp: parsed.ts || new Date().toISOString(),
         data:      parsed.analyzed || parsed,
       }],
       fromRemote: true,
     });
-    const url = new URL('/api/hook', _remoteUrl);
+    const url = new URL('/api/hook', remoteUrl);
     const mod = url.protocol === 'https:' ? https : http;
     const headers = {
       'Content-Type':   'application/json',
@@ -910,7 +921,7 @@ function _startSafePollingMode(opts) {
 
 // ── daemon.error 서버 전송 (auto-fixer 연동) ──
 function _reportDaemonError(component, error) {
-  const url = _remoteUrl;
+  const url = _getRemoteUrl();
   if (!url) return;
   try {
     const hostname = require('os').hostname();
