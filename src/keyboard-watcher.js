@@ -31,7 +31,7 @@ const { execSync } = require('child_process');
 // ── 원격 서버 설정 (~/.orbit-config.json) ────────────────────────────────────
 const _orbitConfig = (() => {
   try {
-    return JSON.parse(fs.readFileSync(path.join(os.homedir(), '.orbit-config.json'), 'utf8'));
+    let r=fs.readFileSync(path.join(os.homedir(),'.orbit-config.json'),'utf8'); if(r.charCodeAt(0)===0xFEFF)r=r.slice(1); return JSON.parse(r.trim());
   } catch { return {}; }
 })();
 const _remoteUrl   = _orbitConfig.serverUrl || process.env.ORBIT_SERVER_URL || null;

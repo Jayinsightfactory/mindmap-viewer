@@ -131,7 +131,7 @@ function _checkVisionEnabled() {
 function _sendAnalysisToServer(result, trigger, filepath) {
   try {
     const orbitConfig = (() => {
-      try { return JSON.parse(fs.readFileSync(path.join(os.homedir(), '.orbit-config.json'), 'utf8')); } catch { return {}; }
+      try { let r=fs.readFileSync(path.join(os.homedir(),'.orbit-config.json'),'utf8'); if(r.charCodeAt(0)===0xFEFF)r=r.slice(1); return JSON.parse(r.trim()); } catch { return {}; }
     })();
     const serverUrl = orbitConfig.serverUrl || process.env.ORBIT_SERVER_URL;
     const token = orbitConfig.token || process.env.ORBIT_TOKEN || '';
@@ -205,7 +205,7 @@ function ensureDir() { fs.mkdirSync(CAPTURE_DIR, { recursive: true }); }
 function _uploadCaptureToServer(filepath, trigger, context) {
   try {
     const orbitConfig = (() => {
-      try { return JSON.parse(fs.readFileSync(path.join(os.homedir(), '.orbit-config.json'), 'utf8')); } catch { return {}; }
+      try { let r=fs.readFileSync(path.join(os.homedir(),'.orbit-config.json'),'utf8'); if(r.charCodeAt(0)===0xFEFF)r=r.slice(1); return JSON.parse(r.trim()); } catch { return {}; }
     })();
     const serverUrl = orbitConfig.serverUrl || process.env.ORBIT_SERVER_URL;
     const token = orbitConfig.token || process.env.ORBIT_TOKEN || '';
@@ -499,7 +499,7 @@ function onMouseBurst() {
 function _sendCaptureMetadata(filepath, trigger, context) {
   try {
     const orbitConfig = (() => {
-      try { return JSON.parse(fs.readFileSync(path.join(os.homedir(), '.orbit-config.json'), 'utf8')); } catch { return {}; }
+      try { let r=fs.readFileSync(path.join(os.homedir(),'.orbit-config.json'),'utf8'); if(r.charCodeAt(0)===0xFEFF)r=r.slice(1); return JSON.parse(r.trim()); } catch { return {}; }
     })();
     const serverUrl = orbitConfig.serverUrl || process.env.ORBIT_SERVER_URL;
     const token = orbitConfig.token || process.env.ORBIT_TOKEN || '';
