@@ -1858,6 +1858,21 @@ app.post('/api/daemon/force-update', async (req, res) => {
   res.json({ ok: true, forceUpdate: global._forceUpdateEnabled || false });
 });
 
+// POST /api/daemon/force-restart — 모든 데몬에 즉시 restart 명령 (idle wait 우회)
+// 'update' 명령은 idle-aware로 30분까지 대기하지만 'restart'는 즉시 process.exit → bat 재시작
+// 새 코드를 즉시 적용해야 할 때 사용 (사용자 작업 1~2초 중단)
+app.post('/api/daemon/force-restart', async (req, res) => {
+  if (!global._daemonCommands) global._daemonCommands = {};
+  if (!global._daemonCommands['ALL']) global._daemonCommands['ALL'] = [];
+  global._daemonCommands['ALL'].push({
+    action: 'restart',
+    reason: 'admin-force-restart',
+    ts: new Date().toISOString(),
+  });
+  console.log('[daemon] ALL 호스트 restart 명령 큐 추가 (idle wait 우회)');
+  res.json({ ok: true, queued: 'ALL' });
+});
+
 // POST /api/daemon/command — 관리자가 데몬에 명령 전송 (인증 필수)
 app.post('/api/daemon/command', (req, res) => {
   // ADMIN_SECRET body 파라미터로도 허용 (CLI 편의)
