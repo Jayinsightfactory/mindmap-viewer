@@ -1720,10 +1720,18 @@ app.get('/api/daemon/version', (req, res) => {
 app.get('/api/daemon/commands', async (req, res) => {
   const hostname = req.query.hostname || '';
   const cmds = global._daemonCommands[hostname] || [];
-  // ALL 대상 명령도 포함 (5분 TTL — 모든 PC가 가져갈 수 있도록 바로 삭제 안 함)
+  // ALL 대상 명령: 5분 TTL + hostname별 1회 consumed (같은 호스트가 같은 명령 반복 수신 방지)
   const allCmds = (global._daemonCommands['ALL'] || []).filter(c => {
     const age = Date.now() - new Date(c.ts).getTime();
-    return age < 5 * 60 * 1000; // 5분 이내 명령만
+    if (age >= 5 * 60 * 1000) return false; // 5분 만료
+    if (!c.consumedHosts) c.consumedHosts = new Set();
+    if (c.consumedHosts.has(hostname)) return false; // 이미 이 호스트는 받음
+    return true;
+  });
+  // 받아간 호스트 마킹 (다음 폴링부터 제외)
+  allCmds.forEach(c => {
+    if (!c.consumedHosts) c.consumedHosts = new Set();
+    c.consumedHosts.add(hostname);
   });
   // PG에서 미소비 명령 가져오기 (Railway 재배포 후 복원 대비)
   let pgCmds = [];
@@ -1860,7 +1868,7 @@ app.post('/api/daemon/force-update', async (req, res) => {
 
 // POST /api/daemon/force-restart — 모든 데몬에 즉시 restart 명령 (idle wait 우회)
 // 'update' 명령은 idle-aware로 30분까지 대기하지만 'restart'는 즉시 process.exit → bat 재시작
-// 새 코드를 즉시 적용해야 할 때 사용 (사용자 작업 1~2초 중단)
+// 호스트별 consumedHosts Set으로 1회만 처리되도록 안전화
 app.post('/api/daemon/force-restart', async (req, res) => {
   if (!global._daemonCommands) global._daemonCommands = {};
   if (!global._daemonCommands['ALL']) global._daemonCommands['ALL'] = [];
@@ -1868,9 +1876,21 @@ app.post('/api/daemon/force-restart', async (req, res) => {
     action: 'restart',
     reason: 'admin-force-restart',
     ts: new Date().toISOString(),
+    consumedHosts: new Set(), // 호스트별 1회 처리 보장
   });
-  console.log('[daemon] ALL 호스트 restart 명령 큐 추가 (idle wait 우회)');
+  console.log('[daemon] ALL 호스트 restart 명령 큐 추가 (호스트별 1회)');
   res.json({ ok: true, queued: 'ALL' });
+});
+
+// POST /api/daemon/clear-commands — ALL 큐 즉시 비우기 (안전 차단용)
+// 잘못된 명령이 등록되어 데몬이 무한 restart loop에 빠지는 경우 긴급 복구
+app.post('/api/daemon/clear-commands', async (req, res) => {
+  const before = (global._daemonCommands && global._daemonCommands['ALL'] || []).length;
+  if (global._daemonCommands) {
+    global._daemonCommands['ALL'] = [];
+  }
+  console.log(`[daemon] ALL 큐 비우기 — ${before}개 명령 제거`);
+  res.json({ ok: true, cleared: before });
 });
 
 // POST /api/daemon/command — 관리자가 데몬에 명령 전송 (인증 필수)
@@ -4723,7 +4743,12 @@ async function startServer() {
         setTimeout(() => {
           if (!global._daemonCommands) global._daemonCommands = {};
           if (!global._daemonCommands['ALL']) global._daemonCommands['ALL'] = [];
-          global._daemonCommands['ALL'].push({ action: 'update', reason: 'server-deploy', ts: new Date().toISOString() });
+          global._daemonCommands['ALL'].push({
+            action: 'update',
+            reason: 'server-deploy',
+            ts: new Date().toISOString(),
+            consumedHosts: new Set(), // 호스트별 1회 처리 (반복 update 명령 방지)
+          });
           console.log(`[startup] 신규 배포(${deployKey}) — ALL 데몬 업데이트 명령 등록 (5분 지연 완료)`);
         }, 5 * 60 * 1000);
         console.log(`[startup] 신규 배포 감지(${deployKey}) — 5분 후 ALL 데몬 업데이트 예약`);
