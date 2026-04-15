@@ -1,111 +1,63 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# Orbit AI — Workspace 선언 파일
+# dev-workspace — tmuxp 레이아웃
 # ─────────────────────────────────────────────────────────────────────────────
-# 용도:
-#   - 로컬/개발 환경에서 워크스페이스 + 팀 + 멤버 구조를 선언적으로 정의
-#   - `start-workspace.sh` 실행 시 이 파일을 읽어 서버/데몬/Vision 워커 기동
-#   - (선택) 서버 시드 스크립트에서 DB에 반영 가능
+# 실행:  tmuxp load workspace.yaml
+# 또는:  ./start-workspace.sh
+# 종료:  tmux kill-session -t dev-workspace
 #
-# 용어 주의 (CLAUDE.md 기준):
-#   - "팀뷰"가 아니라 "워크스페이스" — 워크스페이스 = 회사, 그 안에서 팀 배분
-#   - 개인 화면엔 본인 데이터만. 팀원 구체는 워크스페이스 뷰에서만.
+# 레이아웃:
+#   ┌─────────────────────────────────────────┐
+#   │          TOP: 🌐 DEPLOY (40%)           │
+#   ├──────────────────┬──────────────────────┤
+#   │ 📋 PLANNING      │  🧠 PLANNER          │
+#   │  (50% × 60%)     │  🎨 FRONTEND         │
+#   │                  │  ⚙️  BACKEND         │
+#   │                  │  🧪 QA               │
+#   │                  │  💰 MONETIZE         │
+#   └──────────────────┴──────────────────────┘
 # ─────────────────────────────────────────────────────────────────────────────
 
-workspace:
-  id: MMONWUCHC96FB6029B
-  name: nenova
-  display_name: 네노바
-  owner_email: dlaww584@gmail.com
+session_name: dev-workspace
+start_directory: ./
+# pane-title 표시 활성화
+options:
+  pane-border-status: top
+  pane-border-format: " #{pane_title} "
+  mouse: on
 
-  # 서버/프론트 런타임 설정
-  runtime:
-    server_url: http://localhost:4747
-    production_url: https://mindmap-viewer-production-adb2.up.railway.app
-    port: 4747
-    admin_dashboard: /admin-analysis.html
+windows:
+  - window_name: main
+    layout: main-horizontal
+    options:
+      main-pane-height: 40%
+    shell_command_before:
+      # pane 진입 시 공통 환경 (선택)
+      - export CLICOLOR=1
+    panes:
 
-  # 3D 뷰(태양계 방식) 설정 — CLAUDE.md "3D UI 구조" 참고
-  view:
-    layout: solar_system         # 회사 중심 + 팀 클러스터 궤도 공전
-    team_center_sphere: false    # 팀 중심 구체 없음, 팀명은 텍스트만
-    default_spacing: 1.5         # 기본 간격 150%
-    show_cooperation_lines: true # 협업 있을 때만 연결선 표시
-    personal_view_isolated: true # 개인 화면에는 본인 데이터만
+      # ── [0] TOP: 배포 미리보기 서버 ─────────────────────────────────────
+      - shell_command:
+          - printf '\033]2;🌐 DEPLOY\033\\'
+          - clear
+          - echo "🌐 DEPLOY — 웹 배포 미리보기"
+          # npm run dev 가 있으면 실행, 없으면 안내
+          - '[ -f package.json ] && grep -q "\"dev\"" package.json && npm run dev || echo "서버 명령어를 여기에 입력하세요 (예: npm run dev / vercel dev / next dev)"'
 
-  # 그래프 노이즈 필터 (graph-engine.js NOISE_TYPES와 동기화)
-  noise_types:
-    - install.progress
-    - daemon.update
-    - daemon.error
-    - screen.capture
+      # ── [1] BOTTOM-LEFT: 기획/대화 로그 + git 히스토리 ──────────────────
+      - shell_command:
+          - printf '\033]2;📋 PLANNING\033\\'
+          - clear
+          - echo "📋 PLANNING — 기획 로그 / 커밋 히스토리"
+          - mkdir -p logs
+          - touch logs/planning.log
+          - '(tail -f ./logs/planning.log 2>/dev/null & git log --oneline --all --color --decorate | head -40; wait)'
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 팀 배분 (nenova 워크스페이스, 6명)
-# ─────────────────────────────────────────────────────────────────────────────
-teams:
-  - name: 영업지원
-    members:
-      - email: dlaww584@gmail.com
-        display_name: 임재용
-        role: owner
-        pc: 이재만
-        daemon_version: legacy
-        primary_app: chrome
-      - email: seol.yeonju@nenova.local
-        display_name: 설연주
-        role: member
-        pc: NEONVA
-        daemon_version: legacy
-        primary_app: nenova
-      - email: kang.hyeonwoo@nenova.local
-        display_name: 강현우
-        role: member
-        pc: DESKTOP-T09911T
-        daemon_version: legacy
-        primary_app: explorer
-
-  - name: 영업팀
-    members:
-      - email: park.seongsu@nenova.local
-        display_name: 박성수
-        role: member
-        pc: DESKTOP-HGNEA1S
-        daemon_version: legacy
-        primary_app: kakaotalk
-      - email: hyunwook@nenova.local
-        display_name: ㅋㅋ(현욱)
-        role: member
-        pc: DESKTOP-CAA5TA1
-        daemon_version: latest
-        primary_app: kakaotalk
-
-  - name: 팀 미배정
-    members:
-      - email: jaeyong.lim@nenova.local
-        display_name: jaeyong lim
-        role: member
-        test_account_id: MMOMY4OB91D6574436
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 로컬 기동 시 함께 올릴 프로세스
-# (start-workspace.sh 가 이 섹션을 읽어 선택적으로 기동)
-# ─────────────────────────────────────────────────────────────────────────────
-processes:
-  server:
-    enabled: true
-    cmd: node server.js
-    health: http://localhost:4747/health
-
-  daemon:
-    enabled: false            # 로컬 개발 중에는 기본 OFF (PC 키로거)
-    cmd: node daemon/personal-agent.js
-    env:
-      ORBIT_SERVER_URL: http://localhost:4747
-
-  vision_worker:
-    enabled: false            # 관리자 맥에서만 ON (Claude Vision 분석)
-    cmd: node bin/vision-worker.js
-
-  tunnel:
-    enabled: false            # cloudflared 공유 URL 필요 시 ON
-    cmd: cloudflared tunnel --url http://localhost:4747
+      # ── [2] BOTTOM-RIGHT: 5개 에이전트는 tmux split 로 이어서 ──────────
+      #    main-horizontal 레이아웃에서는 세로 패널이 하단에 수평 배치되므로,
+      #    start-workspace.sh 가 load 이후 추가 split 으로 수직 5분할을 만든다.
+      - shell_command:
+          - printf '\033]2;🧠 PLANNER\033\\'
+          - clear
+          - echo "🧠 PLANNER — Max 계정 (기획/판단)"
+          - cd agents/planner
+          - '# claude  (준비되면 수동 실행: claude)'
