@@ -3677,6 +3677,105 @@ app.get('/setup/download', (req, res) => {
   }
 });
 
+// ─── PC 토큰 방식 설치 (OAuth 없이 PC 단독 등록) ───────────────────────────────
+// POST /api/admin/create-pc-tokens { count, labels?, secret } — 관리자 전용 bulk
+app.post('/api/admin/create-pc-tokens', async (req, res) => {
+  const _secretOk = process.env.ADMIN_SECRET && (req.body || {}).secret === process.env.ADMIN_SECRET;
+  const { isAdmin: _adminOk } = resolveAdmin(req);
+  if (!_secretOk && !_adminOk) return res.status(403).json({ error: 'admin only' });
+
+  const count = Math.min(Math.max(parseInt(req.body?.count, 10) || 1, 1), 20);
+  const labels = Array.isArray(req.body?.labels) ? req.body.labels : [];
+  const serverUrl = process.env.SERVER_URL || 'https://mindmap-viewer-production-adb2.up.railway.app';
+  const { getDb: authGetDb, issueApiToken, pgBackupUser, pgBackupToken } = require('./src/auth');
+  const sqlite = authGetDb();
+  const pool = dbModule.getDb && dbModule.getDb();
+  const crypto = require('crypto');
+
+  if (pool) {
+    try {
+      await pool.query(`CREATE TABLE IF NOT EXISTS pc_install_codes (
+        code TEXT PRIMARY KEY, user_id TEXT NOT NULL, token TEXT NOT NULL,
+        label TEXT, created_at TIMESTAMPTZ DEFAULT NOW(), used_at TIMESTAMPTZ
+      )`);
+    } catch (e) { console.warn('[pc-token] table ensure failed:', e.message); }
+  }
+
+  const out = [];
+  for (let i = 0; i < count; i++) {
+    const rand = crypto.randomBytes(6).toString('hex').toUpperCase();
+    const userId = `MNPC${rand}${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+    const code = crypto.randomBytes(4).toString('hex');
+    const label = String(labels[i] || `PC-${rand.slice(0, 4)}`).trim().slice(0, 40);
+    const email = `pc-${userId.toLowerCase()}@orbit.local`;
+    try {
+      sqlite.prepare(`INSERT INTO users (id, email, name, passwordHash, provider) VALUES (?, ?, ?, '', 'pc_token')`)
+        .run(userId, email, label);
+    } catch (e) {
+      return res.status(500).json({ error: 'user create failed: ' + e.message, at: i });
+    }
+    const token = issueApiToken(userId);
+    try { await pgBackupUser({ id: userId, email, name: label, provider: 'pc_token', plan: 'free' }, ''); } catch {}
+    try { await pgBackupToken(token, userId, null); } catch {}
+    if (pool) {
+      try {
+        await pool.query(
+          `INSERT INTO pc_install_codes (code, user_id, token, label) VALUES ($1, $2, $3, $4)`,
+          [code, userId, token, label]
+        );
+      } catch (e) { console.warn('[pc-token] code store failed:', e.message); }
+    }
+    out.push({
+      userId, label, token, code,
+      installUrl: `${serverUrl}/i/${code}`,
+      installCmd: `$env:ORBIT_TOKEN='${token}'; irm '${serverUrl}/setup/install.ps1' | iex`
+    });
+  }
+  res.json({ ok: true, created: out.length, tokens: out });
+});
+
+// GET /i/:code — 설치 랜딩 페이지 (카톡 공유용)
+app.get('/i/:code', async (req, res) => {
+  const code = String(req.params.code || '').trim().toLowerCase();
+  if (!/^[a-f0-9]{4,32}$/.test(code)) return res.status(400).send('잘못된 설치 코드');
+  const pool = dbModule.getDb && dbModule.getDb();
+  if (!pool) return res.status(500).send('DB 연결 오류');
+  try {
+    const { rows } = await pool.query('SELECT token, label, used_at FROM pc_install_codes WHERE code=$1', [code]);
+    if (!rows.length) return res.status(404).send('설치 코드를 찾을 수 없습니다.');
+    const { token, label } = rows[0];
+    const serverUrl = process.env.SERVER_URL || 'https://mindmap-viewer-production-adb2.up.railway.app';
+    const cmd = `$env:ORBIT_TOKEN='${token}'; irm '${serverUrl}/setup/install.ps1' | iex`;
+    pool.query('UPDATE pc_install_codes SET used_at=COALESCE(used_at, NOW()) WHERE code=$1', [code]).catch(() => {});
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(`<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>Orbit AI 설치 — ${label}</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+body{font-family:'Segoe UI','Apple SD Gothic Neo',sans-serif;background:#0a0a0f;color:#e8e8ef;margin:0;padding:24px;max-width:640px;margin-left:auto;margin-right:auto;line-height:1.5}
+h1{font-size:22px;margin-top:0}.card{background:#14141c;border:1px solid #2a2a3a;border-radius:12px;padding:20px;margin:16px 0}
+.cmd{background:#000;color:#8fe;padding:16px;border-radius:8px;font-family:Consolas,Menlo,monospace;font-size:12px;word-break:break-all;white-space:pre-wrap;user-select:all}
+button{background:#4a9eff;color:#fff;border:none;padding:14px;border-radius:8px;font-size:15px;cursor:pointer;width:100%;margin-top:12px;font-weight:600}
+button:hover{background:#3a8eef}ol{padding-left:20px;margin:8px 0}li{margin-bottom:8px}.warn{color:#ffa;font-size:13px}
+</style></head><body>
+<h1>🚀 Orbit AI 설치 — ${label}</h1>
+<div class="card">
+<b>Windows PC에서 설치:</b>
+<ol>
+<li>시작 메뉴 → <b>PowerShell</b> 검색 → 열기</li>
+<li>아래 "명령어 복사" 버튼 클릭</li>
+<li>PowerShell 창에 <b>우클릭 (붙여넣기)</b> 후 <b>Enter</b></li>
+<li>자동 설치 (약 2분). "설치 완료" 메시지 나오면 끝.</li>
+</ol>
+<div class="cmd" id="cmd">${cmd.replace(/</g, '&lt;')}</div>
+<button id="btn" onclick="(async()=>{try{await navigator.clipboard.writeText(document.getElementById('cmd').innerText);document.getElementById('btn').innerText='✅ 복사됨 — PowerShell에 붙여넣으세요';}catch(e){alert('수동으로 위 명령어를 선택-복사해 주세요');}})()">📋 명령어 복사</button>
+</div>
+<div class="card warn">⚠️ 이 링크는 해당 PC 전용입니다. 다른 사람과 공유하지 마세요.</div>
+</body></html>`);
+  } catch (e) {
+    res.status(500).send('오류: ' + e.message);
+  }
+});
+
 // POST /api/daemon/claim-token — 설치 시 토큰-userId 강제 등록 (verify 실패 fallback)
 app.post('/api/daemon/claim-token', async (req, res) => {
   const { token, userId } = req.body || {};
