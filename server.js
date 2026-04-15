@@ -1893,6 +1893,68 @@ app.post('/api/daemon/clear-commands', async (req, res) => {
   res.json({ ok: true, cleared: before });
 });
 
+// GET /api/admin/pg-commands-inspect?hostname=xxx — PG orbit_daemon_commands 대기 큐 조회
+app.get('/api/admin/pg-commands-inspect', async (req, res) => {
+  try {
+    const _pool = dbModule.getDb ? dbModule.getDb() : null;
+    if (!_pool) return res.status(500).json({ error: 'db not available' });
+    const hostname = req.query.hostname || null;
+    let rows;
+    if (hostname) {
+      const r = await _pool.query(
+        `SELECT id, hostname, action, ts, consumed_at FROM orbit_daemon_commands
+         WHERE hostname = $1 AND consumed_at IS NULL ORDER BY ts ASC LIMIT 200`,
+        [hostname]
+      );
+      rows = r.rows;
+    } else {
+      const r = await _pool.query(
+        `SELECT hostname, action, COUNT(*) as cnt, MIN(ts) as first_ts, MAX(ts) as last_ts
+         FROM orbit_daemon_commands WHERE consumed_at IS NULL
+         GROUP BY hostname, action ORDER BY cnt DESC LIMIT 200`
+      );
+      rows = r.rows;
+    }
+    res.json({ ok: true, pending: rows, total: rows.length });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/admin/pg-commands-purge — PG orbit_daemon_commands pending restart/update 정리
+// body: { hostname?, actions? } — hostname 지정 시 그 host만, actions 기본 ["restart","update"]
+app.post('/api/admin/pg-commands-purge', async (req, res) => {
+  try {
+    const _pool = dbModule.getDb ? dbModule.getDb() : null;
+    if (!_pool) return res.status(500).json({ error: 'db not available' });
+    const { hostname, actions } = req.body || {};
+    const acts = Array.isArray(actions) && actions.length ? actions : ['restart', 'update'];
+    let r;
+    if (hostname) {
+      r = await _pool.query(
+        `UPDATE orbit_daemon_commands SET consumed_at = NOW()
+         WHERE consumed_at IS NULL AND hostname = $1 AND action = ANY($2)`,
+        [hostname, acts]
+      );
+    } else {
+      r = await _pool.query(
+        `UPDATE orbit_daemon_commands SET consumed_at = NOW()
+         WHERE consumed_at IS NULL AND action = ANY($1)`,
+        [acts]
+      );
+    }
+    // 인메모리 ALL 큐도 정리
+    if (global._daemonCommands) {
+      for (const h of Object.keys(global._daemonCommands)) {
+        global._daemonCommands[h] = (global._daemonCommands[h] || []).filter(c => !acts.includes(c.action));
+      }
+    }
+    res.json({ ok: true, purged: r.rowCount || 0, actions: acts, hostname: hostname || 'ALL' });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // GET /api/admin/daemon-log?hostname=xxx&type=daemon|install — 데몬 PC의 로그 직접 조회
 // 데몬이 시작 시마다 daemon.log.snapshot 이벤트로 보낸 최근 200줄을 반환
 app.get('/api/admin/daemon-log', async (req, res) => {

@@ -24,6 +24,14 @@ function _readOrbitConfig() {
 function _getRemoteUrl()   { return _readOrbitConfig().serverUrl || process.env.ORBIT_SERVER_URL || null; }
 function _getRemoteToken() { return _readOrbitConfig().token     || process.env.ORBIT_TOKEN      || '';   }
 
+// HTTP 헤더는 ASCII만 허용 → 한글/유니코드 hostname 안전 변환
+function _asciiHostname() {
+  const raw = String(os.hostname() || 'unknown');
+  // ASCII printable만 유지, 나머지는 '?'로 치환 + URL encode 폴백
+  const safe = raw.replace(/[^\x20-\x7E]/g, '_');
+  return safe || 'unknown';
+}
+
 // ── 상태 ────────────────────────────────────────────────────────────────────
 const FLUSH_INTERVAL_MS  = 60 * 1000;   // 60초마다 원격 전송
 const MOVE_THROTTLE_MS   = 200;         // mousemove 쓰로틀 (초당 5회)
@@ -157,7 +165,7 @@ function _flushRemote() {
     const headers = {
       'Content-Type':   'application/json',
       'Content-Length': Buffer.byteLength(hookPayload),
-      'X-Device-Id':    os.hostname(),
+      'X-Device-Id':    _asciiHostname(),
     };
     const token = _getRemoteToken();
     if (token) headers['Authorization'] = `Bearer ${token}`;
@@ -211,7 +219,7 @@ function _sendStartSignal() {
     const headers = {
       'Content-Type':   'application/json',
       'Content-Length': Buffer.byteLength(hookPayload),
-      'X-Device-Id':    os.hostname(),
+      'X-Device-Id':    _asciiHostname(),
     };
     const token = _getRemoteToken();
     if (token) headers['Authorization'] = `Bearer ${token}`;
