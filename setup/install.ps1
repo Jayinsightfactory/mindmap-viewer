@@ -258,10 +258,13 @@ if (-not `$alive) {
       "[`$ts] started via node directly" | Out-File -Append -Encoding utf8 -FilePath `$logFile
     }
   } else {
-    # Fallback: ps1 loop
+    # Fallback: VBS 래퍼로 start-daemon.ps1 실행 (cmd창 안 뜸)
     `$ps1 = "`$env:USERPROFILE\.orbit\start-daemon.ps1"
-    if (Test-Path `$ps1) { Start-Process powershell.exe -WindowStyle Hidden -ArgumentList "-NonInteractive -ExecutionPolicy Bypass -Command `"& '`$ps1'`"" }
-    "[`$ts] started via ps1 loop" | Out-File -Append -Encoding utf8 -FilePath `$logFile
+    `$vbs = "`$env:USERPROFILE\.orbit\orbit-hidden.vbs"
+    if ((Test-Path `$ps1) -and (Test-Path `$vbs)) {
+      Start-Process wscript.exe -ArgumentList "`"`$vbs`" `"`$ps1`""
+      "[`$ts] started via vbs wrapper" | Out-File -Append -Encoding utf8 -FilePath `$logFile
+    }
   }
 }
 "@
@@ -287,7 +290,8 @@ Write-Host "    Daemon + Watchdog registered" -ForegroundColor Green
 # Step 8: Start daemon + verify alive for 15 seconds
 # ==============================================================================
 Write-Host "  [8/9] Starting daemon..." -ForegroundColor Cyan
-Start-Process powershell.exe -WindowStyle Hidden -ArgumentList "-NonInteractive -ExecutionPolicy Bypass -Command `"& '$ps1Path'`""
+# VBS 래퍼로 시작 — powershell.exe 직접 실행하면 conhost 잠깐 뜸
+Start-Process wscript.exe -ArgumentList "`"$vbsPath`" `"$ps1Path`""
 Start-Sleep 8
 
 $pidFile = "$OrbitDir\personal-agent.pid"
