@@ -5092,26 +5092,16 @@ async function startServer() {
         const token = await getTokenForUser(userId).catch(() => null);
         if (!token) continue;
         const cmdData = { token, serverUrl: SERVER_URL };
+        // config 명령만 등록 — 데몬이 파일 업데이트 후 재시작 없이 live config 반영
+        // (restart INSERT 제거 이유: 매 server 재배포마다 모든 데몬이 process.exit →
+        //  매분 재시작 loop의 원인이었음. config만으로 충분)
         await _pool.query(
           `INSERT INTO orbit_daemon_commands (hostname, action, command, data_json, ts) VALUES ($1,'config',NULL,$2,$3)`,
           [hostname, JSON.stringify(cmdData), ts]
         ).catch(() => {});
-        await _pool.query(
-          `INSERT INTO orbit_daemon_commands (hostname, action, command, data_json, ts) VALUES ($1,'restart',NULL,'{}', $2::timestamptz + interval '1 second')`,
-          [hostname, ts]
-        ).catch(() => {});
         if (!global._daemonCommands) global._daemonCommands = {};
         if (!global._daemonCommands[hostname]) global._daemonCommands[hostname] = [];
         global._daemonCommands[hostname].push({ action: 'config', data: cmdData, ts });
-        global._daemonCommands[hostname].push({ action: 'restart', data: {}, ts });
-        // 신규 배포 시 update 커맨드도 PG에 저장 (2분 후 발동 — config+restart 처리 후)
-        if (global._forceUpdateEnabled) {
-          const updateTs = new Date(new Date(ts).getTime() + 2 * 60 * 1000).toISOString();
-          await _pool.query(
-            `INSERT INTO orbit_daemon_commands (hostname, action, command, data_json, ts) VALUES ($1,'update',NULL,'{"reason":"new-deploy"}', $2::timestamptz)`,
-            [hostname, updateTs]
-          ).catch(() => {});
-        }
         pushed++;
         console.log(`[startup/push-token] ${hostname} → userId=${userId}${global._forceUpdateEnabled ? ' + update@+2min' : ''}`);
       }
