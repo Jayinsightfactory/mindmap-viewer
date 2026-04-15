@@ -101,11 +101,25 @@ function _onWheel(e) {
   _wheelDelta += Math.abs(e.rotation || e.amount || 1);
 }
 
+// flush 상태 추적 — 첫 flush는 무조건 / 이후 idle이면 5분(=5사이클)에 1번 heartbeat
+let _flushCount = 0;
+let _idleSkipCount = 0;
+const IDLE_HEARTBEAT_EVERY = 5;  // 5사이클(=5분)에 1번 heartbeat
+
 function _flushRemote() {
   const url = _getRemoteUrl();
   if (!url) return;
-  // 데이터가 전혀 없으면 스킵 (heartbeat는 keyboard-watcher가 담당)
-  if (_clickCount === 0 && _moveCount === 0 && _wheelCount === 0) return;
+
+  const isIdle = (_clickCount === 0 && _moveCount === 0 && _wheelCount === 0);
+  // 첫 flush는 무조건 (start 직후 동작 검증), 이후 idle은 5분에 1번만 heartbeat
+  if (isIdle && _flushCount > 0) {
+    _idleSkipCount++;
+    if (_idleSkipCount < IDLE_HEARTBEAT_EVERY) return;
+    _idleSkipCount = 0;
+  } else {
+    _idleSkipCount = 0;
+  }
+  _flushCount++;
 
   const now = new Date().toISOString();
   const payload = {
@@ -121,6 +135,8 @@ function _flushRemote() {
     app: _getActiveApp(),
     windowTitle: _getActiveWindow(),
     period: { start: _periodStart, end: now },
+    flushCount: _flushCount,
+    idle: isIdle,
   };
 
   const hookPayload = JSON.stringify({
@@ -175,6 +191,45 @@ function _flushRemote() {
  * 시작 — keyboard-watcher가 uiohook.uIOhook.start()를 이미 호출한 뒤에 불릴 것
  * @param {object} opts { getActiveApp, getActiveWindow }
  */
+function _sendStartSignal() {
+  const url = _getRemoteUrl();
+  if (!url) return;
+  try {
+    const hookPayload = JSON.stringify({
+      events: [{
+        id:        'ms-start-' + Date.now(),
+        type:      'mouse.watcher.started',
+        source:    'mouse-watcher',
+        sessionId: 'daemon-' + os.hostname(),
+        timestamp: new Date().toISOString(),
+        data:      { hostname: os.hostname(), platform: os.platform(), pid: process.pid },
+      }],
+      fromRemote: true,
+    });
+    const u = new URL('/api/hook', url);
+    const mod = u.protocol === 'https:' ? https : http;
+    const headers = {
+      'Content-Type':   'application/json',
+      'Content-Length': Buffer.byteLength(hookPayload),
+      'X-Device-Id':    os.hostname(),
+    };
+    const token = _getRemoteToken();
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const req = mod.request({
+      hostname: u.hostname,
+      port:     u.port || (u.protocol === 'https:' ? 443 : 80),
+      path:     u.pathname,
+      method:   'POST',
+      headers,
+      timeout:  10000,
+    }, res => { res.on('data', () => {}); res.on('end', () => {}); });
+    req.on('error', () => {});
+    req.on('timeout', () => { req.destroy(); });
+    req.write(hookPayload);
+    req.end();
+  } catch {}
+}
+
 function start(opts = {}) {
   if (_running) return;
   if (typeof opts.getActiveApp === 'function') _getActiveApp = opts.getActiveApp;
@@ -189,10 +244,15 @@ function start(opts = {}) {
     uIOhook.on('wheel',     _onWheel);
     _running = true;
     _resetBuffer();
+    // 시작 신호 즉시 전송 (서버에서 데몬이 살아있음 + mouse-watcher 동작 확인용)
+    _sendStartSignal();
+    // 5초 후 첫 flush (검증 빠르게), 이후 60초 주기
+    setTimeout(_flushRemote, 5000);
     _flushTimer = setInterval(_flushRemote, FLUSH_INTERVAL_MS);
-    console.log('[mouse-watcher] started — flush interval 60s');
+    console.log('[mouse-watcher] started — first flush in 5s, interval 60s');
   } catch (err) {
     console.warn('[mouse-watcher] uiohook load 실패:', err.message);
+    // mouse-watcher가 실패해도 keyboard-watcher 등 다른 워처는 영향 없음
   }
 }
 
