@@ -1936,14 +1936,14 @@ app.get('/api/daemon/verify-install', async (req, res) => {
       }
     }
 
-    // 3) 최근 2분 각 파이프라인 이벤트 카운트
+    // 3) 최근 10분 각 파이프라인 이벤트 카운트 (screen/mouse는 활동 기반 → 넉넉히)
     const recentCounts = {};
     const types = ['daemon.update', 'daemon.heartbeat', 'mouse.watcher.started', 'mouse.chunk', 'screen.capture', 'keyboard.chunk', 'install.selftest'];
     if (userId) {
       const cnt = await _pool.query(
         `SELECT type, COUNT(*) as cnt, MAX(timestamp) as last_ts FROM events
          WHERE user_id = $1 AND type = ANY($2)
-           AND timestamp::timestamptz > NOW() - INTERVAL '2 minutes'
+           AND timestamp::timestamptz > NOW() - INTERVAL '10 minutes'
          GROUP BY type`,
         [userId, types]
       );
@@ -1952,16 +1952,23 @@ app.get('/api/daemon/verify-install', async (req, res) => {
     for (const t of types) if (!recentCounts[t]) recentCounts[t] = { count: 0, lastTs: null };
 
     // 4) 검증 결과 판정
+    // 설계 원칙: module.state(heartbeat에서 온 실시간 상태)가 1순위, 이벤트 카운트는 보조
+    // heartbeat.uptime으로 "방금 시작한 데몬" 여부 판단 (install.ps1 시점엔 < 180s)
     const modules = heartbeat?.modules || {};
+    const uptime = heartbeat?.uptime || 0;
+    const isFreshStart = uptime > 0 && uptime < 180;
     const checks = {
-      hostnameMatched:  !!userId,
+      hostnameMatched:   !!userId,
       heartbeatReceived: !!heartbeat,
-      moduleMouseOk:    modules.mouse?.state === 'ok',
-      moduleKeyboardOk: modules.keyboard?.state === 'ok',
-      moduleScreenOk:   modules.screen?.state === 'ok',
-      hasScreenCapture: recentCounts['screen.capture'].count > 0,
-      hasDaemonUpdate:  recentCounts['daemon.update'].count > 0 || recentCounts['daemon.heartbeat'].count > 0,
-      hasMouseStart:    recentCounts['mouse.watcher.started'].count > 0,
+      moduleMouseOk:     modules.mouse?.state === 'ok',
+      moduleKeyboardOk:  modules.keyboard?.state === 'ok',
+      moduleScreenOk:    modules.screen?.state === 'ok',
+      hasDaemonUpdate:   recentCounts['daemon.update'].count > 0 || recentCounts['daemon.heartbeat'].count > 0,
+      // mouse.chunk: 활동 여부로 간접 확인 — 10분 윈도우에 1건 이상이면 파이프라인 동작
+      hasMouseFlow:      recentCounts['mouse.chunk'].count > 0,
+      // 신규 설치 직후에만 mouse.watcher.started 요구 (10분 윈도우에서 1건 이상 기대)
+      // 안정 데몬은 이 체크 대상 아님
+      freshStartSignal:  !isFreshStart || recentCounts['mouse.watcher.started'].count > 0,
     };
     const passed = Object.values(checks).filter(v => v).length;
     const failed = Object.values(checks).filter(v => !v).length;

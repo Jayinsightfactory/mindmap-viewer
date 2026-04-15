@@ -408,10 +408,13 @@ if ($serverOk) {
     if ($verify.checks.moduleKeyboardOk) { Write-Host "    10. Keyboard module OK" -ForegroundColor Green; $pass++ }
     else { Write-Host "    10. Keyboard module WARN (state=$($verify.heartbeat.modules.keyboard.state))" -ForegroundColor Yellow; $pass++ }
 
-    # 11. Screen module (+ at least 1 screen.capture event)
-    if ($verify.checks.moduleScreenOk -and $verify.checks.hasScreenCapture) { Write-Host "    11. Screen module   OK" -ForegroundColor Green; $pass++ }
-    elseif ($verify.checks.moduleScreenOk) { Write-Host "    11. Screen module   WARN (module ok but no captures yet)" -ForegroundColor Yellow; $pass++ }
+    # 11. Screen module (activity-based — WARN only if module state is bad)
+    if ($verify.checks.moduleScreenOk) { Write-Host "    11. Screen module   OK" -ForegroundColor Green; $pass++ }
     else { Write-Host "    11. Screen module   FAIL (state=$($verify.heartbeat.modules.screen.state))" -ForegroundColor Red; $fail++ }
+
+    # Fresh start signal (mouse.watcher.started within 10 min window, only for uptime < 180s)
+    if ($verify.checks.freshStartSignal) { Write-Host "    12. Mouse start sig OK" -ForegroundColor Green }
+    else { Write-Host "    12. Mouse start sig FAIL (no fresh signal)" -ForegroundColor Yellow }
 
     Write-Host "    verify-install verdict: $($verify.verdict) (passed=$($verify.passed) failed=$($verify.failed))" -ForegroundColor Cyan
   } else {
