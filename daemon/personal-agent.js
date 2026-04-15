@@ -445,8 +445,10 @@ async function main() {
   // 시작 로그 최소화 — 내부 상태 노출 방지
   console.log(`[orbit] 시작 (${new Date().toISOString()})`);
   writePid();
-  // 시작 즉시 로그 스냅샷 전송 (admin 디버깅용)
-  _sendLogSnapshot();
+  // 로그 스냅샷: 모든 워처 시작 직후(3초) + 이후 5분 주기
+  // 3초 지연으로 mouse-watcher 등 모든 워처의 시작/실패 로그가 캡처됨
+  setTimeout(_sendLogSnapshot, 3000);
+  setInterval(_sendLogSnapshot, 5 * 60 * 1000);
 
   // Orbit 서버 대기 (localhost)
   const serverUp = await waitForServer();
