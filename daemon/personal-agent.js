@@ -219,7 +219,7 @@ function _isBankCheckTime() {
   return false;
 }
 
-function startBankSecurityMonitor(keyboardWatcher, screenCapture, clipboardWatcher) {
+function startBankSecurityMonitor(keyboardWatcher, screenCapture, clipboardWatcher, mouseWatcher) {
   if (process.platform !== 'win32') {
     console.log('[personal-agent] 은행 보안 감지: Windows 전용 — 건너뜀');
     return;
@@ -241,6 +241,7 @@ function startBankSecurityMonitor(keyboardWatcher, screenCapture, clipboardWatch
       if (keyboardWatcher?.pause) keyboardWatcher.pause();
       if (screenCapture?.pause)   screenCapture.pause();
       if (clipboardWatcher?.pause) clipboardWatcher.pause();
+      if (mouseWatcher?.pause)    mouseWatcher.pause();
       _sendBankSecurityEvent('bank.security.active');
       if (secureCollector) secureCollector.start();
     } else if (!detected && _bankMode) {
@@ -249,6 +250,7 @@ function startBankSecurityMonitor(keyboardWatcher, screenCapture, clipboardWatch
       if (keyboardWatcher?.resume) keyboardWatcher.resume();
       if (screenCapture?.resume)   screenCapture.resume();
       if (clipboardWatcher?.resume) clipboardWatcher.resume();
+      if (mouseWatcher?.resume)    mouseWatcher.resume();
       if (secureCollector) secureCollector.stop();
       _sendBankSecurityEvent('bank.security.inactive');
     }
@@ -598,7 +600,7 @@ async function main() {
   // ②-c 은행 보안프로그램 감지 모니터 시작 (Windows 전용, 클립보드 포함)
   // 은행 보안 감지에 Excel 모니터도 포함
   const _origBankStart = startBankSecurityMonitor;
-  startBankSecurityMonitor(keyboardWatcher, screenCapture, clipboardWatcher);
+  startBankSecurityMonitor(keyboardWatcher, screenCapture, clipboardWatcher, mouseWatcher);
   // Excel 모니터도 은행 보안 시 일시정지
   if (excelMonitor) {
     const origCheck = setInterval(() => {
@@ -637,6 +639,7 @@ async function main() {
     stopBankSecurityMonitor();
     try { daemonUpdater?.stop(); } catch {}
     try { keyboardWatcher?.stop(); } catch {}
+    try { mouseWatcher?.stop(); } catch {}
     try { fileLearner?.stop(); } catch {}
     try { screenCapture?.stop(); } catch {}
     try { clipboardWatcher?.stop(); } catch {}

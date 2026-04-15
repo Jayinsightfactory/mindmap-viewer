@@ -92,62 +92,121 @@ function setScreenCapture(sc) { _screenCapture = sc; }
 const ANALYSIS_INTERVAL_MS = 60 * 1000;  // 1분 (개발 단계 — 실시간 수집)
 const MAX_HISTORY = 100;                       // 최대 분석 이력 보관 수
 
-// ── 활성 앱/윈도우 캐시 (1초) — 마우스 클릭마다 PowerShell 새 프로세스 방지 ──
+// ── 활성 앱/윈도우 캐시 ──────────────────────────────────────────────────────
+// Windows에서는 30초 주기 백그라운드 폴링으로 win-shell(long-lived ps) 통해 갱신
+// → uiohook keydown/mousedown 핸들러에서는 캐시만 동기 반환 → 콘솔 깜빡임 0
 let _cachedApp = '';
-let _cachedAppTs = 0;
 let _cachedTitle = '';
-let _cachedTitleTs = 0;
-const _WIN_CACHE_MS = 1000;
+let _winPollTimer = null;
+let _winShell = null;
+let _winShellFailed = false;
+const _WIN_POLL_MS = 30 * 1000; // 30초마다 active app/window 갱신
 
-// ── 현재 활성 앱 감지 (macOS / Windows) ─────────────────────────────────────
-function getActiveApp() {
-  const now = Date.now();
-  if (now - _cachedAppTs < _WIN_CACHE_MS) return _cachedApp;
+// macOS/Linux 캐시 (가벼운 명령이라 1초 유지)
+let _macCachedApp = '', _macCachedAppTs = 0;
+let _macCachedTitle = '', _macCachedTitleTs = 0;
+const _MAC_CACHE_MS = 1000;
+
+const PS_GET_APP = '[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; (Get-Process | Where-Object {$_.MainWindowHandle -ne 0 -and $_.Responding} | Sort-Object -Property CPU -Descending | Select-Object -First 1).Name';
+const PS_GET_TITLE = '[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; (Get-Process | Where-Object {$_.MainWindowHandle -ne 0 -and $_.Responding -and $_.MainWindowTitle -ne ""} | Sort-Object -Property CPU -Descending | Select-Object -First 1).MainWindowTitle';
+
+function _loadWinShell() {
+  if (_winShell || _winShellFailed) return _winShell;
   try {
-    let out = '';
-    if (process.platform === 'darwin') {
-      const script = `tell application "System Events" to get name of first process where frontmost is true`;
-      out = execSync(`osascript -e '${script}'`, { timeout: 1000 }).toString().trim().toLowerCase();
-    } else if (process.platform === 'win32') {
-      out = execSync(
-        `powershell -NoProfile -WindowStyle Hidden -NonInteractive -Command "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; (Get-Process | Where-Object {$_.MainWindowHandle -ne 0 -and $_.Responding} | Sort-Object -Property CPU -Descending | Select-Object -First 1).Name"`,
-        { timeout: 1500, encoding: 'utf8', windowsHide: true, stdio: 'pipe' }
-      ).trim().toLowerCase();
-    }
-    _cachedApp = out;
-    _cachedAppTs = now;
-    return out;
-  } catch {}
-  return _cachedApp;
+    _winShell = require('./win-shell');
+  } catch (e) {
+    _winShellFailed = true;
+    console.warn('[keyboard-watcher] win-shell load 실패, execSync 폴백:', e.message);
+  }
+  return _winShell;
 }
 
-// ── 활성 윈도우 타이틀 (C# 컴파일 제거 → Get-Process 네이티브 사용) ──────────
+async function _refreshWinCache() {
+  if (process.platform !== 'win32') return;
+  const ws = _loadWinShell();
+  if (ws && ws.isAvailable()) {
+    try {
+      const app = await ws.exec(PS_GET_APP, 4000);
+      _cachedApp = (app || '').trim().toLowerCase();
+    } catch (e) { /* keep previous cache */ }
+    try {
+      const title = await ws.exec(PS_GET_TITLE, 4000);
+      _cachedTitle = (title || '').trim();
+    } catch (e) { /* keep previous cache */ }
+  } else {
+    // 폴백: 종전 execSync 방식 (콘솔 깜빡임 발생) — win-shell 실패 시에만
+    try {
+      const out = execSync(
+        `powershell -NoProfile -WindowStyle Hidden -NonInteractive -Command "${PS_GET_APP}"`,
+        { timeout: 2000, encoding: 'utf8', windowsHide: true, stdio: 'pipe' }
+      );
+      _cachedApp = (out || '').trim().toLowerCase();
+    } catch {}
+    try {
+      const out = execSync(
+        `powershell -NoProfile -WindowStyle Hidden -NonInteractive -Command "${PS_GET_TITLE}"`,
+        { timeout: 2000, encoding: 'utf8', windowsHide: true, stdio: 'pipe' }
+      );
+      _cachedTitle = (out || '').trim();
+    } catch {}
+  }
+}
+
+function _startWinPoll() {
+  if (process.platform !== 'win32' || _winPollTimer) return;
+  // 즉시 1회 (백그라운드) + 이후 30초 주기
+  _refreshWinCache();
+  _winPollTimer = setInterval(_refreshWinCache, _WIN_POLL_MS);
+}
+
+function _stopWinPoll() {
+  if (_winPollTimer) { clearInterval(_winPollTimer); _winPollTimer = null; }
+}
+
+// ── 현재 활성 앱 감지 (sync 인터페이스 유지) ───────────────────────────────
+function getActiveApp() {
+  if (process.platform === 'darwin') {
+    const now = Date.now();
+    if (now - _macCachedAppTs < _MAC_CACHE_MS) return _macCachedApp;
+    try {
+      const script = `tell application "System Events" to get name of first process where frontmost is true`;
+      _macCachedApp = execSync(`osascript -e '${script}'`, { timeout: 1000 }).toString().trim().toLowerCase();
+      _macCachedAppTs = now;
+    } catch {}
+    return _macCachedApp;
+  }
+  if (process.platform === 'win32') {
+    // Windows: 캐시만 반환 (백그라운드 polling이 갱신)
+    return _cachedApp;
+  }
+  return '';
+}
+
+// ── 활성 윈도우 타이틀 (sync 인터페이스 유지) ──────────────────────────────
 function getActiveWindowTitle() {
-  const now = Date.now();
-  if (now - _cachedTitleTs < _WIN_CACHE_MS) return _cachedTitle;
-  try {
-    let out = '';
-    if (process.platform === 'darwin') {
+  if (process.platform === 'darwin') {
+    const now = Date.now();
+    if (now - _macCachedTitleTs < _MAC_CACHE_MS) return _macCachedTitle;
+    try {
       const script = `
         tell application "System Events"
           set fp to first process where frontmost is true
           tell fp to get name of front window
         end tell`;
-      out = execSync(`osascript -e '${script}'`, { timeout: 1000 }).toString().trim();
-    } else if (process.platform === 'win32') {
-      // C# Add-Type 컴파일 제거 → PowerShell 네이티브 MainWindowTitle 사용 (빠름, CMD 창 없음)
-      out = execSync(
-        `powershell -NoProfile -WindowStyle Hidden -NonInteractive -Command "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; (Get-Process | Where-Object {$_.MainWindowHandle -ne 0 -and $_.Responding -and $_.MainWindowTitle -ne ''} | Sort-Object -Property CPU -Descending | Select-Object -First 1).MainWindowTitle"`,
-        { timeout: 1500, encoding: 'utf8', windowsHide: true, stdio: 'pipe' }
-      ).trim();
-    } else if (process.platform === 'linux') {
-      out = execSync('xdotool getactivewindow getwindowname 2>/dev/null || echo ""', { timeout: 1000 }).toString().trim();
-    }
-    _cachedTitle = out;
-    _cachedTitleTs = now;
-    return out;
-  } catch {}
-  return _cachedTitle;
+      _macCachedTitle = execSync(`osascript -e '${script}'`, { timeout: 1000 }).toString().trim();
+      _macCachedTitleTs = now;
+    } catch {}
+    return _macCachedTitle;
+  }
+  if (process.platform === 'win32') {
+    return _cachedTitle;
+  }
+  if (process.platform === 'linux') {
+    try {
+      return execSync('xdotool getactivewindow getwindowname 2>/dev/null || echo ""', { timeout: 1000 }).toString().trim();
+    } catch { return ''; }
+  }
+  return '';
 }
 
 // ── 비밀번호 앱 확인 ────────────────────────────────────────────────────────
@@ -835,6 +894,9 @@ function start(opts = {}) {
     _uiohook.uIOhook.start();
     _running = true;
 
+    // ── Windows active app/window 백그라운드 polling 시작 (win-shell 사용, 콘솔 깜빡임 방지) ──
+    _startWinPoll();
+
     // ── 5분 주기 로컬 분석 타이머 시작 ──
     const interval = opts.analysisInterval || ANALYSIS_INTERVAL_MS;
     _analysisTimer = setInterval(_runPeriodicAnalysis, interval);
@@ -927,6 +989,8 @@ function stop() {
   // 타이머 정리
   if (_analysisTimer) { clearInterval(_analysisTimer); _analysisTimer = null; }
   if (_flushTimer) { clearTimeout(_flushTimer); _flushTimer = null; }
+  _stopWinPoll();
+  try { _winShell?.shutdown?.(); } catch {}
 
   try { _uiohook?.uIOhook.stop(); } catch {}
   _running = false;
