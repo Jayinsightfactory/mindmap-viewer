@@ -577,9 +577,8 @@ function getStatus() {
   let state = 'ok';
   if (!_running)                           state = 'dead';
   else if (_paused)                        state = 'paused';
-  else if (_scErrorCount >= 3 && sinceLast === null) state = 'degraded';
-  // screen capture는 활동 기반이라 5분까지 허용
-  else if (sinceLast !== null && sinceLast > 300) state = 'degraded';
+  else if (_scErrorCount >= 5)             state = 'degraded';
+  // recency 기반 degrade 제거 — 캡처는 전적으로 활동(앱 전환/키 입력 등) 트리거
   return {
     running:      _running,
     paused:       _paused,

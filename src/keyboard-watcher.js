@@ -1122,9 +1122,8 @@ function getStatus() {
   let state = 'ok';
   if (!_running)                              state = 'dead';
   else if (_paused)                           state = 'paused';
-  else if (_kbErrorCount >= 3 && sinceFlush === null) state = 'degraded';
-  // keyboard는 5분 주기라 10분 여유
-  else if (sinceFlush !== null && sinceFlush > 600) state = 'degraded';
+  else if (_kbErrorCount >= 5 && sinceFlush === null) state = 'degraded';
+  // recency 기반 degrade 제거 — 키보드는 유저가 안 치면 5분 윈도우에도 0건 가능
   return {
     running:      _running,
     paused:       _paused,

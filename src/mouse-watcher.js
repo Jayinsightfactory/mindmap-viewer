@@ -307,8 +307,9 @@ function getStatus() {
   let state = 'ok';
   if (!_running)                              state = 'dead';
   else if (_paused)                           state = 'paused';
-  else if (_errorCount >= 3 && sinceFlush === null)  state = 'degraded';
-  else if (sinceFlush !== null && sinceFlush > 180)  state = 'degraded'; // 3분 넘게 성공 flush 없음
+  else if (_errorCount >= 5 && sinceFlush === null)  state = 'degraded';
+  // recency 기반 degrade 제거 — 활동 기반 flush라 idle 유저에게 오판정
+  // state는 running + errorCount만 반영. lastFlushAt은 info로만 표시
   return {
     running:      _running,
     paused:       _paused,
