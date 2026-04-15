@@ -31,15 +31,27 @@ function start(onExcelChange) {
   console.log('[excel-monitor] Excel COM 모니터 시작 (10초 간격)');
 }
 
-function _check() {
+// Windows: long-running PowerShell으로 cmd창 깜빡임 방지
+let _winShell = null, _winShellFailed = false;
+function _loadWinShell() {
+  if (_winShell || _winShellFailed) return _winShell;
+  try { _winShell = require('./win-shell'); }
+  catch (e) { _winShellFailed = true; }
+  return _winShell;
+}
+
+async function _check() {
   if (_paused || !_callback) return;
   try {
-    // PowerShell COM으로 Excel 상태 읽기 (PS 5.1 + 7 호환)
-    const ps = `try { $xl = [Runtime.InteropServices.Marshal]::GetActiveObject('Excel.Application'); if ($xl) { $wb = $xl.ActiveWorkbook; $ws = $xl.ActiveSheet; $sel = $xl.Selection; $wbn = ''; if($wb){$wbn=$wb.Name}; $wsn = ''; if($ws){$wsn=$ws.Name}; $caddr = ''; if($sel){$caddr=$sel.Address($false,$false)}; $cval = ''; if($sel -and $sel.Count -eq 1 -and $sel.Value2){$cval=[string]$sel.Value2}; $cfor = ''; if($sel -and $sel.Count -eq 1 -and $sel.HasFormula){$cfor=$sel.Formula}; $sc = 0; if($wb){$sc=$wb.Sheets.Count}; $rc = 0; if($ws){$rc=$ws.UsedRange.Rows.Count}; $info = @{workbook=$wbn;sheet=$wsn;cell=$caddr;value=$cval;formula=$cfor;sheetCount=$sc;rowCount=$rc}; $info | ConvertTo-Json -Compress } } catch { Write-Output '{}' }`;
+    const ws = _loadWinShell();
+    if (!ws || !ws.isAvailable()) return; // win-shell 없으면 skip (cmd창 폴백 금지)
 
-    const result = execSync(`powershell.exe -NoProfile -Command "${ps}"`, {
-      timeout: 5000, encoding: 'utf8', windowsHide: true,
-    }).trim();
+    // PowerShell COM으로 Excel 상태 읽기 (single-line)
+    const ps = `try { $xl = [Runtime.InteropServices.Marshal]::GetActiveObject('Excel.Application'); if ($xl) { $wb = $xl.ActiveWorkbook; $ws = $xl.ActiveSheet; $sel = $xl.Selection; $wbn = ''; if($wb){$wbn=$wb.Name}; $wsn = ''; if($ws){$wsn=$ws.Name}; $caddr = ''; if($sel){$caddr=$sel.Address($false,$false)}; $cval = ''; if($sel -and $sel.Count -eq 1 -and $sel.Value2){$cval=[string]$sel.Value2}; $cfor = ''; if($sel -and $sel.Count -eq 1 -and $sel.HasFormula){$cfor=$sel.Formula}; $sc = 0; if($wb){$sc=$wb.Sheets.Count}; $rc = 0; if($ws){$rc=$ws.UsedRange.Rows.Count}; $info = @{workbook=$wbn;sheet=$wsn;cell=$caddr;value=$cval;formula=$cfor;sheetCount=$sc;rowCount=$rc}; $info | ConvertTo-Json -Compress } else { Write-Output '{}' } } catch { Write-Output '{}' }`;
+
+    let result = '';
+    try { result = (await ws.exec(ps, 5000) || '').trim(); }
+    catch { return; }
 
     if (!result || result === '{}') return;
 

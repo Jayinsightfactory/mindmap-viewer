@@ -107,13 +107,28 @@ function start(onClipboardChange) {
   console.log('[clipboard-watcher] 시작 (2초 간격, 발주서 자동 감지 ON)');
 }
 
-function _check() {
+// Windows: long-running PowerShell으로 cmd창 깜빡임 방지
+let _winShell = null, _winShellFailed = false;
+function _loadWinShell() {
+  if (_winShell || _winShellFailed) return _winShell;
+  try { _winShell = require('./win-shell'); }
+  catch (e) { _winShellFailed = true; }
+  return _winShell;
+}
+
+async function _check() {
   if (_paused) return;
   try {
     let text = '';
     if (process.platform === 'win32') {
-      text = execSync('powershell.exe -NoProfile -WindowStyle Hidden -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-Clipboard"',
-        { timeout: 2000, encoding: 'utf8', windowsHide: true, stdio: 'pipe' }).trim();
+      const ws = _loadWinShell();
+      if (ws && ws.isAvailable()) {
+        try { text = (await ws.exec('[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; Get-Clipboard', 2000) || '').trim(); }
+        catch { return; } // win-shell 일시 실패 → 다음 사이클에 재시도 (cmd창 폴백 금지)
+      } else {
+        // win-shell 사용 불가 시에도 execSync 폴백 금지 (cmd창 깜빡임 방지)
+        return;
+      }
     } else if (process.platform === 'darwin') {
       text = execSync('pbpaste', { timeout: 1000, encoding: 'utf8' }).trim();
     }
