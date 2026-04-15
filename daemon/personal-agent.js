@@ -440,6 +440,41 @@ function _sendLogSnapshot() {
   }
 }
 
+// ── 데몬 heartbeat: 60초마다 모듈별 상태 보고 (admin watchdog용) ────────────
+// 기존 daemon.update는 "살아있다"만 알려줌. heartbeat는 mouse/kb/screen 개별 상태 포함.
+const _daemonStartedAt = Date.now();
+function _emitHeartbeat() {
+  try {
+    const now = Date.now();
+    const uptime = Math.round((now - _daemonStartedAt) / 1000);
+    const modules = {};
+    // 안전 호출 — 모듈 로드 실패했으면 unknown
+    try { modules.mouse    = mouseWatcher?.getStatus?.()    || { state: 'unloaded' }; } catch (e) { modules.mouse    = { state: 'error', err: e.message }; }
+    try { modules.keyboard = keyboardWatcher?.getStatus?.() || { state: 'unloaded' }; } catch (e) { modules.keyboard = { state: 'error', err: e.message }; }
+    try { modules.screen   = screenCapture?.getStatus?.()   || { state: 'unloaded' }; } catch (e) { modules.screen   = { state: 'error', err: e.message }; }
+
+    // overall 판정: 하나라도 dead/degraded면 전체 degraded
+    const states = Object.values(modules).map(m => m?.state || 'unknown');
+    let overall = 'ok';
+    if (states.some(s => s === 'dead'))       overall = 'dead';
+    else if (states.some(s => s === 'degraded')) overall = 'degraded';
+    else if (states.every(s => s === 'paused')) overall = 'paused';
+    else if (states.some(s => s !== 'ok' && s !== 'paused')) overall = 'degraded';
+
+    _reportEvent('daemon.heartbeat', {
+      hostname: os.hostname(),
+      platform: os.platform(),
+      pid: process.pid,
+      uptime,
+      state: overall,
+      modules,
+      memMB: Math.round(process.memoryUsage().rss / 1024 / 1024),
+    });
+  } catch (e) {
+    console.warn('[heartbeat] 전송 실패:', e.message);
+  }
+}
+
 // ── 메인 ─────────────────────────────────────────────────────────────────────
 async function main() {
   // 시작 로그 최소화 — 내부 상태 노출 방지
@@ -449,6 +484,11 @@ async function main() {
   // 3초 지연으로 mouse-watcher 등 모든 워처의 시작/실패 로그가 캡처됨
   setTimeout(_sendLogSnapshot, 3000);
   setInterval(_sendLogSnapshot, 5 * 60 * 1000);
+
+  // heartbeat: 모든 워처 시작 완료 후 첫 30초 + 이후 60초 주기
+  // 워처 초기화 실패도 즉시 보고됨 (getStatus는 모듈 로드 실패 자동 처리)
+  setTimeout(_emitHeartbeat, 30 * 1000);
+  setInterval(_emitHeartbeat, 60 * 1000);
 
   // Orbit 서버 대기 (localhost)
   const serverUp = await waitForServer();

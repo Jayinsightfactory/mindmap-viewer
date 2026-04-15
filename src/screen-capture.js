@@ -241,6 +241,13 @@ let _lastWindowTitle  = '';
 let _idleTimer       = null;
 let _running         = false;
 let _paused          = false;  // 은행 보안프로그램 감지 시 일시정지
+
+// heartbeat 진단용 상태
+let _scCaptureCount  = 0;  // 이 세션에서 성공한 capture 수
+let _scLastCaptureAt = 0;
+let _scErrorCount    = 0;
+let _scLastErrorAt   = 0;
+let _scLastErrorMsg  = '';
 let _visionEnabled   = false;
 let _lastAnalysis    = null;
 let _screenResolution = null;  // 화면 해상도 캐시
@@ -511,10 +518,17 @@ function capture(trigger = 'manual') {
       );
     } else { return null; }
 
-    if (!fs.existsSync(filepath)) return null;
+    if (!fs.existsSync(filepath)) {
+      _scErrorCount++;
+      _scLastErrorAt = Date.now();
+      _scLastErrorMsg = 'capture command returned no file';
+      return null;
+    }
     const prevCapturePath = _lastCapturePath;
     _lastCapturePath = filepath;
     _lastCaptureTime = now;
+    _scCaptureCount++;
+    _scLastCaptureAt = now;
 
     // idle 연속 카운트
     if (_activityState === ACTIVITY_STATES.IDLE) _consecutiveIdleCaptures++;
@@ -548,9 +562,36 @@ function capture(trigger = 'manual') {
 
     return filepath;
   } catch (e) {
+    _scErrorCount++;
+    _scLastErrorAt = Date.now();
+    _scLastErrorMsg = e.message;
     console.warn('[screen-capture] 실패:', e.message);
     return null;
   }
+}
+
+// heartbeat 진단용 — 모듈 상태 보고
+function getStatus() {
+  const now = Date.now();
+  const sinceLast = _scLastCaptureAt ? Math.round((now - _scLastCaptureAt) / 1000) : null;
+  let state = 'ok';
+  if (!_running)                           state = 'dead';
+  else if (_paused)                        state = 'paused';
+  else if (_scErrorCount >= 3 && sinceLast === null) state = 'degraded';
+  // screen capture는 활동 기반이라 5분까지 허용
+  else if (sinceLast !== null && sinceLast > 300) state = 'degraded';
+  return {
+    running:      _running,
+    paused:       _paused,
+    state,
+    captureCount: _scCaptureCount,
+    lastCaptureAt:  _scLastCaptureAt ? new Date(_scLastCaptureAt).toISOString() : null,
+    secondsSinceCapture: sinceLast,
+    errorCount:   _scErrorCount,
+    lastErrorAt:  _scLastErrorAt ? new Date(_scLastErrorAt).toISOString() : null,
+    lastErrorMsg: _scLastErrorMsg || null,
+    activityState: _activityState,
+  };
 }
 
 // ── 변화 감지 트리거 (고정 간격 없음 — 변화가 있을 때만 캡처) ──
@@ -750,5 +791,6 @@ module.exports = {
   onAppChange, onKeyActivity, onWindowTitleChange, onToolEnd, onFileWrite,
   onKeyBurst, onMouseBurst,
   pause, resume, isPaused,
+  getStatus,
   CAPTURE_DIR,
 };

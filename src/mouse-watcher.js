@@ -41,6 +41,12 @@ let _running       = false;
 let _paused        = false;
 let _flushTimer    = null;
 
+// heartbeat 진단용 상태 추적
+let _lastFlushAt   = 0;  // 마지막 성공 flush timestamp (ms)
+let _lastErrorAt   = 0;  // 마지막 에러 timestamp (ms)
+let _errorCount    = 0;  // 누적 에러 수 (start 이후)
+let _lastErrorMsg  = '';
+
 let _clickCount    = 0;
 let _mousedownCount = 0;
 let _mouseupCount   = 0;
@@ -180,15 +186,28 @@ function _flushRemote() {
       res.on('data', () => {});
       res.on('end', () => {
         if (res.statusCode >= 300) {
+          _errorCount++;
+          _lastErrorAt = Date.now();
+          _lastErrorMsg = `HTTP ${res.statusCode}`;
           console.warn(`[mouse-watcher] 원격 응답: ${res.statusCode}`);
+        } else {
+          _lastFlushAt = Date.now();
         }
       });
     });
-    req.on('error', (err) => console.warn('[mouse-watcher] 전송 실패:', err.message));
+    req.on('error', (err) => {
+      _errorCount++;
+      _lastErrorAt = Date.now();
+      _lastErrorMsg = err.message;
+      console.warn('[mouse-watcher] 전송 실패:', err.message);
+    });
     req.on('timeout', () => { req.destroy(); });
     req.write(hookPayload);
     req.end();
   } catch (err) {
+    _errorCount++;
+    _lastErrorAt = Date.now();
+    _lastErrorMsg = err.message;
     console.warn('[mouse-watcher] 전송 오류:', err.message);
   }
 
@@ -281,4 +300,27 @@ function stop() {
 function pause()  { _paused = true;  }
 function resume() { _paused = false; }
 
-module.exports = { start, stop, pause, resume };
+// heartbeat 진단용 — 모듈 상태 보고
+function getStatus() {
+  const now = Date.now();
+  const sinceFlush = _lastFlushAt ? Math.round((now - _lastFlushAt) / 1000) : null;
+  let state = 'ok';
+  if (!_running)                              state = 'dead';
+  else if (_paused)                           state = 'paused';
+  else if (_errorCount >= 3 && sinceFlush === null)  state = 'degraded';
+  else if (sinceFlush !== null && sinceFlush > 180)  state = 'degraded'; // 3분 넘게 성공 flush 없음
+  return {
+    running:      _running,
+    paused:       _paused,
+    state,
+    flushCount:   _flushCount,
+    lastFlushAt:  _lastFlushAt ? new Date(_lastFlushAt).toISOString() : null,
+    secondsSinceFlush: sinceFlush,
+    errorCount:   _errorCount,
+    lastErrorAt:  _lastErrorAt ? new Date(_lastErrorAt).toISOString() : null,
+    lastErrorMsg: _lastErrorMsg || null,
+    hostname:     _asciiHostname(),
+  };
+}
+
+module.exports = { start, stop, pause, resume, getStatus };

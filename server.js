@@ -1893,6 +1893,63 @@ app.post('/api/daemon/clear-commands', async (req, res) => {
   res.json({ ok: true, cleared: before });
 });
 
+// GET /api/admin/daemon-health — 모든 등록된 데몬의 최신 heartbeat + 모듈별 상태
+// 각 사용자별 최근 daemon.heartbeat 1건씩 조회 → healthy/degraded/silent 자동 판정
+app.get('/api/admin/daemon-health', async (req, res) => {
+  try {
+    const _pool = dbModule.getDb ? dbModule.getDb() : null;
+    if (!_pool) return res.status(500).json({ error: 'db not available' });
+    // DISTINCT ON (user_id) 각 사용자 최신 heartbeat 1건
+    const { rows } = await _pool.query(
+      `SELECT DISTINCT ON (user_id) user_id, timestamp, data_json
+       FROM events
+       WHERE type = 'daemon.heartbeat'
+         AND timestamp::timestamptz > NOW() - INTERVAL '1 hour'
+       ORDER BY user_id, timestamp::timestamptz DESC`
+    );
+    // 사용자 이름 매핑
+    let userNames = {};
+    try {
+      const u = await _pool.query('SELECT id, name, email FROM orbit_auth_users');
+      for (const r of u.rows) userNames[r.id] = { name: r.name, email: r.email };
+    } catch {}
+
+    const now = Date.now();
+    const daemons = rows.map(r => {
+      const data = r.data_json || {};
+      const hbTs = new Date(r.timestamp).getTime();
+      const sinceHb = Math.round((now - hbTs) / 1000);
+      // silent 판정: heartbeat가 3분 넘으면 silent, 10분 넘으면 dead
+      let verdict = data.state || 'unknown';
+      if (sinceHb > 600)      verdict = 'dead';
+      else if (sinceHb > 180) verdict = 'silent';
+      return {
+        userId:   r.user_id,
+        userName: userNames[r.user_id]?.name || null,
+        email:    userNames[r.user_id]?.email || null,
+        hostname: data.hostname || null,
+        pid:      data.pid || null,
+        uptime:   data.uptime || null,
+        memMB:    data.memMB || null,
+        state:    verdict,
+        modules:  data.modules || {},
+        heartbeatAt: r.timestamp,
+        secondsSinceHeartbeat: sinceHb,
+      };
+    });
+    // 상태별 카운트
+    const summary = { ok: 0, degraded: 0, silent: 0, dead: 0, unknown: 0 };
+    for (const d of daemons) {
+      if (summary[d.state] !== undefined) summary[d.state]++;
+      else summary.unknown++;
+    }
+    res.json({ ok: true, summary, total: daemons.length, daemons });
+  } catch (e) {
+    console.error('[admin/daemon-health] error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // GET /api/admin/event-counts?userId=xxx&hours=1 — 이벤트 타입별 카운트 (진단)
 app.get('/api/admin/event-counts', async (req, res) => {
   try {
@@ -5308,6 +5365,59 @@ async function startServer() {
     global._daemonCommands['ALL'].push({ action: 'drive-upload', reason: 'server-startup', ts: new Date().toISOString() });
     console.log('[daemon] ALL 호스트 drive-upload 명령 큐 추가');
   }, 5000);
+
+  // ── Daemon Watchdog: 5분마다 heartbeat 스캔, silent 데몬 자동 재시작 ──────
+  // silent > 10분: 해당 hostname에 restart 명령 자동 등록 (1회만, 후속 복구 대기)
+  // state = 'degraded' (모듈 1개 이상 죽음): 로그만 (자동 개입 안 함 — 재시작이 답이 아닐 수 있음)
+  const _watchdogRecentlyKicked = new Map(); // hostname → last kick ts
+  const _WATCHDOG_KICK_COOLDOWN_MS = 30 * 60 * 1000; // 같은 호스트는 30분에 1회만 kick
+  setInterval(async () => {
+    try {
+      const _pool = dbModule.getDb ? dbModule.getDb() : null;
+      if (!_pool) return;
+      const { rows } = await _pool.query(
+        `SELECT DISTINCT ON (user_id) user_id, timestamp, data_json
+         FROM events
+         WHERE type = 'daemon.heartbeat'
+           AND timestamp::timestamptz > NOW() - INTERVAL '2 hours'
+         ORDER BY user_id, timestamp::timestamptz DESC`
+      );
+      const now = Date.now();
+      let kicked = 0, silent = 0, degraded = 0;
+      for (const r of rows) {
+        const data = r.data_json || {};
+        const hostname = data.hostname;
+        if (!hostname) continue;
+        const hbTs = new Date(r.timestamp).getTime();
+        const sinceHb = Math.round((now - hbTs) / 1000);
+        if (sinceHb > 600) {  // 10분 이상 silent
+          silent++;
+          const lastKick = _watchdogRecentlyKicked.get(hostname) || 0;
+          if (now - lastKick < _WATCHDOG_KICK_COOLDOWN_MS) continue; // 쿨다운
+          // restart 명령 큐에 추가 (특정 hostname — PG에는 저장 안 함)
+          if (!global._daemonCommands) global._daemonCommands = {};
+          if (!global._daemonCommands[hostname]) global._daemonCommands[hostname] = [];
+          global._daemonCommands[hostname].push({
+            action: 'restart',
+            reason: 'watchdog: silent > 10 min',
+            ts: new Date().toISOString(),
+          });
+          _watchdogRecentlyKicked.set(hostname, now);
+          kicked++;
+          console.log(`[watchdog] ${hostname}: silent ${sinceHb}s → restart queued`);
+        } else if (data.state === 'degraded' || data.state === 'dead') {
+          degraded++;
+          console.log(`[watchdog] ${hostname}: ${data.state} — modules:`, JSON.stringify(Object.entries(data.modules || {}).map(([k, v]) => `${k}=${v?.state}`)));
+        }
+      }
+      if (kicked || silent || degraded) {
+        console.log(`[watchdog] scan: ${rows.length} daemons, ${silent} silent, ${degraded} degraded, ${kicked} kicked`);
+      }
+    } catch (e) {
+      console.warn('[watchdog] error:', e.message);
+    }
+  }, 5 * 60 * 1000); // 5분 주기
+  console.log('[watchdog] 데몬 heartbeat 워치독 활성화 (5분 주기, 10분 silent → auto-restart)');
 
   });  // server.listen 콜백 끝
 }
