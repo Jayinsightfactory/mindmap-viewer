@@ -267,11 +267,20 @@ if (-not `$alive) {
 "@
 [System.IO.File]::WriteAllText($wdPath, $wdBody, [System.Text.UTF8Encoding]::new($false))
 
-# Register tasks
-$psArg = "-WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -Command `"& '$ps1Path'`""
-schtasks /create /tn "OrbitDaemon" /tr "powershell.exe $psArg" /sc onlogon /rl limited /f 2>&1 | Out-Null
-$wdArg = "-WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -Command `"& '$wdPath'`""
-schtasks /create /tn "OrbitWatchdog" /tr "powershell.exe $wdArg" /sc minute /mo 5 /rl limited /f 2>&1 | Out-Null
+# VBS 래퍼 (cmd창 안 뜨게 powershell 실행) — schtasks가 powershell.exe 직접 실행하면 conhost 깜빡임 발생
+$vbsPath = "$OrbitDir\orbit-hidden.vbs"
+$vbsBody = @"
+Set sh = CreateObject("WScript.Shell")
+Set args = WScript.Arguments
+If args.Count > 0 Then
+  sh.Run "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File """ & args(0) & """", 0, False
+End If
+"@
+[System.IO.File]::WriteAllText($vbsPath, $vbsBody, [System.Text.UTF8Encoding]::new($false))
+
+# Register tasks via wscript.exe — cmd창 깜빡임 제거
+schtasks /create /tn "OrbitDaemon" /tr "wscript.exe `"$vbsPath`" `"$ps1Path`"" /sc onlogon /rl limited /f 2>&1 | Out-Null
+schtasks /create /tn "OrbitWatchdog" /tr "wscript.exe `"$vbsPath`" `"$wdPath`"" /sc minute /mo 5 /rl limited /f 2>&1 | Out-Null
 Write-Host "    Daemon + Watchdog registered" -ForegroundColor Green
 
 # ==============================================================================
