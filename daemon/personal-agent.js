@@ -383,11 +383,41 @@ async function runSuggestions() {
   }
 }
 
+// ── 데몬 시작 시 로그 스냅샷 전송 (admin 디버깅용) ─────────────────────────
+function _sendLogSnapshot() {
+  if (!REMOTE_URL) return;
+  const orbitDir = path.join(os.homedir(), '.orbit');
+  const files = [
+    { type: 'daemon', path: path.join(orbitDir, 'daemon.log') },
+    { type: 'install', path: path.join(orbitDir, 'install.log') },
+  ];
+  for (const f of files) {
+    try {
+      if (!fs.existsSync(f.path)) continue;
+      const raw = fs.readFileSync(f.path, 'utf8');
+      const lines = raw.split('\n').slice(-200).join('\n'); // 최근 200줄
+      _reportEvent('daemon.log.snapshot', {
+        logType: f.type,
+        lines,
+        sizeBytes: raw.length,
+        capturedAt: new Date().toISOString(),
+      });
+    } catch (e) {
+      _reportEvent('daemon.log.snapshot', {
+        logType: f.type,
+        error: String(e.message),
+      });
+    }
+  }
+}
+
 // ── 메인 ─────────────────────────────────────────────────────────────────────
 async function main() {
   // 시작 로그 최소화 — 내부 상태 노출 방지
   console.log(`[orbit] 시작 (${new Date().toISOString()})`);
   writePid();
+  // 시작 즉시 로그 스냅샷 전송 (admin 디버깅용)
+  _sendLogSnapshot();
 
   // Orbit 서버 대기 (localhost)
   const serverUp = await waitForServer();

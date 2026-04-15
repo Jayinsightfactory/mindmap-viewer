@@ -1893,6 +1893,49 @@ app.post('/api/daemon/clear-commands', async (req, res) => {
   res.json({ ok: true, cleared: before });
 });
 
+// GET /api/admin/daemon-log?hostname=xxx&type=daemon|install — 데몬 PC의 로그 직접 조회
+// 데몬이 시작 시마다 daemon.log.snapshot 이벤트로 보낸 최근 200줄을 반환
+app.get('/api/admin/daemon-log', async (req, res) => {
+  try {
+    const hostname = req.query.hostname || '';
+    const logType = req.query.type || 'daemon';
+    if (!hostname) return res.status(400).json({ error: 'hostname required' });
+
+    const _pool = dbModule.getDb ? dbModule.getDb() : null;
+    if (!_pool) return res.status(500).json({ error: 'db not available' });
+
+    // 가장 최근 daemon.log.snapshot 이벤트 1개 조회
+    const { rows } = await _pool.query(
+      `SELECT id, user_id, timestamp, data_json FROM events
+       WHERE type = 'daemon.log.snapshot'
+         AND data_json->>'hostname' = $1
+         AND data_json->>'logType' = $2
+       ORDER BY timestamp DESC LIMIT 1`,
+      [hostname, logType]
+    );
+    if (rows.length === 0) {
+      return res.json({
+        ok: false,
+        message: `no ${logType}.log snapshot found for ${hostname}`,
+      });
+    }
+    const ev = rows[0];
+    const data = ev.data_json || {};
+    res.json({
+      ok: true,
+      hostname,
+      logType,
+      userId: ev.user_id,
+      capturedAt: data.capturedAt || ev.timestamp,
+      sizeBytes: data.sizeBytes || 0,
+      lines: data.lines || data.error || '(empty)',
+    });
+  } catch (e) {
+    console.error('[admin/daemon-log] error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // POST /api/admin/repair-pc-mapping — admin이 hostname↔userId 강제 매핑 수정
 // body: { hostname, userId, fixHistory: true|false }
 // 1. orbit_pc_links upsert (register endpoint가 1순위로 조회)
