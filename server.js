@@ -3745,7 +3745,8 @@ app.get('/i/:code', async (req, res) => {
     if (!rows.length) return res.status(404).send('설치 코드를 찾을 수 없습니다.');
     const { token, label } = rows[0];
     const serverUrl = process.env.SERVER_URL || 'https://mindmap-viewer-production-adb2.up.railway.app';
-    const cmd = `$env:ORBIT_TOKEN='${token}'; irm '${serverUrl}/setup/install.ps1' | iex`;
+    // -NoExit: 결과 화면이 자동으로 닫히지 않도록 새 PowerShell 창 유지
+    const cmd = `$env:ORBIT_TOKEN='${token}'; iwr '${serverUrl}/setup/install.ps1' -OutFile "$env:TEMP\\orbit-install.ps1"; powershell -NoExit -ExecutionPolicy Bypass -Command "$env:ORBIT_TOKEN='${token}'; & '$env:TEMP\\orbit-install.ps1'"`;
     pool.query('UPDATE pc_install_codes SET used_at=COALESCE(used_at, NOW()) WHERE code=$1', [code]).catch(() => {});
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.send(`<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>Orbit AI 설치 — ${label}</title>

@@ -386,8 +386,12 @@ if (Test-Path "$DIR\node_modules\uiohook-napi") {
 # that steps 1-7 miss (e.g. mouse-watcher header bug, screen-capture crash).
 # -----------------------------------------------------------------------
 if ($serverOk) {
-  Write-Host "    Waiting 90s for daemon to warm up + send heartbeat..." -ForegroundColor Gray
-  Start-Sleep -Seconds 90
+  Write-Host "    Waiting 90s for daemon to warm up + send heartbeat" -NoNewline -ForegroundColor Gray
+  for ($w = 0; $w -lt 18; $w++) {
+    Start-Sleep -Seconds 5
+    Write-Host "." -NoNewline -ForegroundColor Gray
+  }
+  Write-Host ""
   $hnEnc = [Uri]::EscapeDataString($env:COMPUTERNAME)
   $vOk = $false; $verify = $null
   try {
@@ -424,15 +428,18 @@ if ($serverOk) {
 
 # Summary
 Write-Host ""
+Write-Host "  ============================================" -ForegroundColor Cyan
 if ($fail -eq 0) {
-  Write-Host "  ALL TESTS PASSED ($pass/11)" -ForegroundColor Green
-  Write-Host "  Orbit AI Installation Complete!" -ForegroundColor Green
+  Write-Host "  [성공] Orbit AI 설치 완료! ($pass/11)" -ForegroundColor Green
 } else {
-  Write-Host "  $pass PASSED, $fail FAILED (of 11)" -ForegroundColor Yellow
-  Write-Host "  Orbit AI Installed (watchdog will auto-fix)" -ForegroundColor Yellow
+  Write-Host "  [부분 성공] $pass PASSED / $fail FAILED" -ForegroundColor Yellow
+  Write-Host "  → Watchdog가 5분 안에 자동으로 재시도합니다" -ForegroundColor Yellow
 }
+Write-Host "  ============================================" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "  URL: $REMOTE" -ForegroundColor Cyan
+Write-Host "  PC: $env:COMPUTERNAME" -ForegroundColor Gray
+Write-Host "  서버: $REMOTE" -ForegroundColor Gray
+Write-Host "  로그: $LOG_FILE" -ForegroundColor Gray
 Write-Host ""
 
 # Report
