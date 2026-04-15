@@ -39,7 +39,12 @@ Write-Host "  [0/9] Cleaning previous install..." -ForegroundColor Cyan
 Get-WmiObject Win32_Process -Filter "Name='node.exe'" -ErrorAction SilentlyContinue | Where-Object {
   $_.CommandLine -like "*personal-agent*"
 } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+# 데몬 루프 돌리는 powershell.exe도 kill — 안 하면 daemon.log/watchdog.log에 핸들 잡혀서 "파일 사용중" 오류
+Get-WmiObject Win32_Process -Filter "Name='powershell.exe'" -ErrorAction SilentlyContinue | Where-Object {
+  $_.CommandLine -like "*start-daemon.ps1*" -or $_.CommandLine -like "*watchdog.ps1*"
+} | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 Get-Process -Name "wscript" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+Start-Sleep -Milliseconds 1500  # 파일 핸들 해제 대기
 schtasks /delete /tn "OrbitDaemon" /f 2>$null | Out-Null
 schtasks /delete /tn "OrbitWatchdog" /f 2>$null | Out-Null
 $StartupDir = [System.Environment]::GetFolderPath('Startup')
@@ -182,9 +187,9 @@ if (-not `$nodeExe) { Start-Sleep 60; exit 1 }
 try { `$c = Get-Content "`$env:USERPROFILE\.orbit-config.json" -Raw | ConvertFrom-Json; if(`$c.token){`$env:ORBIT_TOKEN=`$c.token} } catch {}
 while (`$true) {
   `$ts = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
-  "[`$ts] daemon start" | Add-Content "`$env:USERPROFILE\.orbit\daemon.log"
-  & `$nodeExe "`$env:USERPROFILE\mindmap-viewer\daemon\personal-agent.js" 2>&1 | Add-Content "`$env:USERPROFILE\.orbit\daemon.log"
-  "[`$ts] daemon exit (10s)" | Add-Content "`$env:USERPROFILE\.orbit\daemon.log"
+  "[`$ts] daemon start" | Out-File -Append -Encoding utf8 -FilePath "`$env:USERPROFILE\.orbit\daemon.log"
+  & `$nodeExe "`$env:USERPROFILE\mindmap-viewer\daemon\personal-agent.js" 2>&1 | Out-File -Append -Encoding utf8 -FilePath "`$env:USERPROFILE\.orbit\daemon.log"
+  "[`$ts] daemon exit (10s)" | Out-File -Append -Encoding utf8 -FilePath "`$env:USERPROFILE\.orbit\daemon.log"
   Start-Sleep 10
 }
 "@
@@ -214,7 +219,7 @@ if (-not `$alive) {
 
 if (-not `$alive) {
   `$ts = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
-  "[`$ts] daemon dead - restarting" | Add-Content `$logFile
+  "[`$ts] daemon dead - restarting" | Out-File -Append -Encoding utf8 -FilePath `$logFile
 
   # Read last 5 lines of daemon.log for crash reason
   `$crashInfo = ''
@@ -250,13 +255,13 @@ if (-not `$alive) {
     `$daemonJs = "`$dir\daemon\personal-agent.js"
     if (Test-Path `$daemonJs) {
       Start-Process `$nodeExe -ArgumentList "`$daemonJs" -WindowStyle Hidden -WorkingDirectory `$dir
-      "[`$ts] started via node directly" | Add-Content `$logFile
+      "[`$ts] started via node directly" | Out-File -Append -Encoding utf8 -FilePath `$logFile
     }
   } else {
     # Fallback: ps1 loop
     `$ps1 = "`$env:USERPROFILE\.orbit\start-daemon.ps1"
     if (Test-Path `$ps1) { Start-Process powershell.exe -WindowStyle Hidden -ArgumentList "-NonInteractive -ExecutionPolicy Bypass -Command `"& '`$ps1'`"" }
-    "[`$ts] started via ps1 loop" | Add-Content `$logFile
+    "[`$ts] started via ps1 loop" | Out-File -Append -Encoding utf8 -FilePath `$logFile
   }
 }
 "@
