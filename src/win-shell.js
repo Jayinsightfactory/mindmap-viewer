@@ -16,7 +16,7 @@ const { spawn } = require('child_process');
 const os = require('os');
 
 const SENTINEL = '__ORBIT_PS_END__';
-const SPAWN_TIMEOUT_MS = 5000;
+const SPAWN_TIMEOUT_MS = 8000; // 5s → 8s (타임아웃으로 인한 과도한 재시작 방지)
 
 let _ps = null;
 let _stdoutBuf = '';
@@ -79,6 +79,13 @@ function _spawn() {
       _initFailed = true;
     });
 
+    // stdin/stdout/stderr EPIPE 크래시 방지 — 프로세스 죽어도 write 시도 안전하게
+    _ps.stdin.on('error', (err) => {
+      console.warn('[win-shell] stdin error (ignored):', err.code || err.message);
+    });
+    _ps.stdout.on('error', () => {});
+    _ps.stderr.on('error', () => {});
+
     _ps.on('exit', (code) => {
       console.warn(`[win-shell] ps exited (code=${code})`);
       _ps = null;
@@ -130,9 +137,10 @@ function _send(cmd, timeoutMs, resolve, reject) {
     if (_pending && _pending.resolve === resolve) {
       console.warn('[win-shell] cmd timeout:', cmd.slice(0, 80));
       _pending = null;
-      // 타임아웃 시 process 재시작 — stdout sync 깨짐 가능
-      _kill();
       reject(new Error('win-shell timeout'));
+      // 타임아웃 시 process 유지 — 재시작하면 conhost 깜빡임 + EPIPE 유발
+      // stdout 버퍼 정리만 하고 다음 명령에서 sentinel 다시 찾도록 함
+      _stdoutBuf = '';
       _processQueue();
     }
   }, timeoutMs);
