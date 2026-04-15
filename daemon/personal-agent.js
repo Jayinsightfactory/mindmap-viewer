@@ -383,61 +383,54 @@ async function runSuggestions() {
   }
 }
 
-// ── 로그 파일 읽기 (lock 우회) ────────────────────────────────────────────
-// daemon.log는 PowerShell Add-Content로 잡혀있어 fs.readFileSync는 EBUSY.
-// PowerShell Get-Content는 FileShare.ReadWrite로 열어서 lock된 파일도 읽음.
-function _readLogTail(filePath, lines = 200) {
+// ── 데몬 자체 로그 파일 (lock 충돌 없음 — 자기 프로세스가 append/read 모두 제어) ──
+// daemon.log는 PowerShell Add-Content로 잡혀있어 외부에서 read 불가 (EBUSY)
+// → 데몬이 직접 daemon-self.log에 기록 + 그걸 읽어서 admin에 전송
+const _selfLogPath = path.join(os.homedir(), '.orbit', 'daemon-self.log');
+
+function _selfLog(msg) {
   try {
-    const raw = fs.readFileSync(filePath, 'utf8');
-    return { ok: true, content: raw.split('\n').slice(-lines).join('\n'), sizeBytes: raw.length };
-  } catch (e1) {
-    if (e1.code !== 'EBUSY' && e1.code !== 'EPERM') {
-      return { ok: false, error: `fs read error: ${e1.message}` };
-    }
-  }
-  // PowerShell Get-Content fallback (lock 우회)
-  if (process.platform !== 'win32') return { ok: false, error: 'EBUSY (non-windows)' };
-  try {
-    const escaped = filePath.replace(/'/g, "''");
-    const out = execSync(
-      `powershell -NoProfile -NonInteractive -WindowStyle Hidden -Command "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; Get-Content -Tail ${lines} -Path '${escaped}' -ErrorAction SilentlyContinue"`,
-      { encoding: 'utf8', windowsHide: true, stdio: 'pipe', timeout: 5000, maxBuffer: 1024 * 1024 }
-    );
-    return { ok: true, content: out, sizeBytes: out.length, source: 'powershell' };
-  } catch (e2) {
-    return { ok: false, error: `ps read error: ${e2.message}` };
-  }
+    fs.appendFileSync(_selfLogPath, `${new Date().toISOString()} ${msg}\n`);
+  } catch {}
 }
+
+// console.log/warn/error를 daemon-self.log에도 병행 기록 (진단 자동 캡처)
+(function _installConsoleProxy() {
+  try {
+    const orbitDir = path.join(os.homedir(), '.orbit');
+    if (!fs.existsSync(orbitDir)) fs.mkdirSync(orbitDir, { recursive: true });
+    const _origLog = console.log.bind(console);
+    const _origWarn = console.warn.bind(console);
+    const _origErr = console.error.bind(console);
+    console.log = (...args) => { _origLog(...args); try { fs.appendFileSync(_selfLogPath, `${new Date().toISOString()} [LOG] ${args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ')}\n`); } catch {} };
+    console.warn = (...args) => { _origWarn(...args); try { fs.appendFileSync(_selfLogPath, `${new Date().toISOString()} [WARN] ${args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ')}\n`); } catch {} };
+    console.error = (...args) => { _origErr(...args); try { fs.appendFileSync(_selfLogPath, `${new Date().toISOString()} [ERR] ${args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ')}\n`); } catch {} };
+  } catch {}
+})();
 
 // ── 데몬 시작 시 로그 스냅샷 전송 (admin 디버깅용) ─────────────────────────
 function _sendLogSnapshot() {
   if (!REMOTE_URL) return;
   const orbitDir = path.join(os.homedir(), '.orbit');
-  const files = [
-    { type: 'daemon', path: path.join(orbitDir, 'daemon.log') },
+  // daemon-self.log (lock 없음) 우선 + install.log fallback
+  const candidates = [
+    { type: 'daemon', path: _selfLogPath },
     { type: 'install', path: path.join(orbitDir, 'install.log') },
   ];
-  for (const f of files) {
+  for (const f of candidates) {
     try {
       if (!fs.existsSync(f.path)) {
         _reportEvent('daemon.log.snapshot', { logType: f.type, error: 'file not found' });
         continue;
       }
-      const r = _readLogTail(f.path, 200);
-      if (r.ok) {
-        _reportEvent('daemon.log.snapshot', {
-          logType: f.type,
-          lines: r.content,
-          sizeBytes: r.sizeBytes,
-          source: r.source || 'fs',
-          capturedAt: new Date().toISOString(),
-        });
-      } else {
-        _reportEvent('daemon.log.snapshot', {
-          logType: f.type,
-          error: r.error,
-        });
-      }
+      const raw = fs.readFileSync(f.path, 'utf8');
+      const tail = raw.split('\n').slice(-200).join('\n');
+      _reportEvent('daemon.log.snapshot', {
+        logType: f.type,
+        lines: tail,
+        sizeBytes: raw.length,
+        capturedAt: new Date().toISOString(),
+      });
     } catch (e) {
       _reportEvent('daemon.log.snapshot', {
         logType: f.type,
