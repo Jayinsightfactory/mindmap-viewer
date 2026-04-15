@@ -442,6 +442,10 @@ function _sendLogSnapshot() {
 
 // ── 데몬 heartbeat: 60초마다 모듈별 상태 보고 (admin watchdog용) ────────────
 // 기존 daemon.update는 "살아있다"만 알려줌. heartbeat는 mouse/kb/screen 개별 상태 포함.
+// module-scope 변수로 선언 — main() 내부 지역변수와 동기화 (start 후 assign)
+let mouseWatcher    = null;
+let keyboardWatcher = null;
+let screenCapture   = null;
 const _daemonStartedAt = Date.now();
 function _emitHeartbeat() {
   try {
@@ -502,8 +506,7 @@ async function main() {
     else if (REMOTE_URL) console.warn('[personal-agent] 원격 서버에 연결할 수 없습니다. 로컬만 사용합니다.');
   });
 
-  // ① keyboard-watcher 시작
-  let keyboardWatcher = null;
+  // ① keyboard-watcher 시작 (module-scope 변수에 재할당 — heartbeat에서 참조)
   try {
     keyboardWatcher = require(path.join(ROOT, 'src/keyboard-watcher'));
     keyboardWatcher.start({ port: PORT });
@@ -513,7 +516,6 @@ async function main() {
   }
 
   // ①-a mouse-watcher 시작 (uiohook singleton에 listener 추가, 60초마다 mouse.chunk 전송)
-  let mouseWatcher = null;
   try {
     mouseWatcher = require(path.join(ROOT, 'src/mouse-watcher'));
     mouseWatcher.start({
@@ -545,7 +547,6 @@ async function main() {
   }
 
   // ②-b screen-capture 시작 + keyboard-watcher 연결
-  let screenCapture = null;
   try {
     screenCapture = require(path.join(ROOT, 'src/screen-capture'));
     screenCapture.start();
