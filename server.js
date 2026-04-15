@@ -2222,6 +2222,27 @@ app.post('/api/admin/repair-pc-mapping', async (req, res) => {
   }
 });
 
+// POST /api/admin/reassign-events — 시간 범위로 events.user_id 재할당
+// body: { fromUserId, toUserId, afterTs, hostname? }
+app.post('/api/admin/reassign-events', async (req, res) => {
+  const { isAdmin: _adminOk } = resolveAdmin(req);
+  const _secretOk = process.env.ADMIN_SECRET && (req.body || {}).secret === process.env.ADMIN_SECRET;
+  if (!_adminOk && !_secretOk) return res.status(403).json({ error: 'admin only' });
+  const { fromUserId, toUserId, afterTs, hostname } = req.body || {};
+  if (!fromUserId || !toUserId || !afterTs) {
+    return res.status(400).json({ error: 'fromUserId, toUserId, afterTs required' });
+  }
+  const _pool = dbModule.getDb ? dbModule.getDb() : null;
+  if (!_pool) return res.status(500).json({ error: 'db not available' });
+  try {
+    const params = [toUserId, fromUserId, afterTs];
+    let where = `user_id = $2 AND timestamp::timestamptz > $3`;
+    if (hostname) { params.push(hostname); where += ` AND data_json->>'hostname' = $${params.length}`; }
+    const upd = await _pool.query(`UPDATE events SET user_id = $1 WHERE ${where}`, params);
+    res.json({ ok: true, updated: upd.rowCount, from: fromUserId, to: toUserId, afterTs, hostname });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // POST /api/daemon/command — 관리자가 데몬에 명령 전송 (인증 필수)
 app.post('/api/daemon/command', (req, res) => {
   // ADMIN_SECRET body 파라미터로도 허용 (CLI 편의)
