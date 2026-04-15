@@ -475,6 +475,38 @@ function _periodicGitCheck() {
   } catch {}
 }
 
+// -- start-daemon.ps1 / watchdog.ps1 의 Add-Content 를 Out-File -Append 로 자동 교체
+// (구버전 install.ps1로 설치된 PC에서 "파일 사용중" 에러 발생 → 원격 fix)
+function _repairStartDaemonPs1() {
+  if (process.platform !== 'win32') return;
+  try {
+    const orbitDir = path.join(os.homedir(), '.orbit');
+    const targets = ['start-daemon.ps1', 'watchdog.ps1'];
+    let repaired = 0;
+    for (const t of targets) {
+      const p = path.join(orbitDir, t);
+      if (!fs.existsSync(p)) continue;
+      const raw = fs.readFileSync(p, 'utf8');
+      if (!raw.includes('Add-Content')) continue;
+      const fixed = raw.replace(/Add-Content/g, 'Out-File -Append -Encoding utf8 -FilePath');
+      fs.writeFileSync(p, fixed, 'utf8');
+      repaired++;
+    }
+    if (repaired > 0) {
+      console.log(`[daemon-updater] repaired ${repaired} ps1 file(s) with Out-File -Append`);
+      // 기존 powershell loop 프로세스 kill — 다음 watchdog 틱/로그온에 새 코드로 재시작됨
+      try {
+        execSync(
+          `powershell -NoProfile -Command "Get-WmiObject Win32_Process -Filter \\"Name='powershell.exe'\\" | Where-Object {$_.CommandLine -match 'start-daemon|watchdog'} | ForEach-Object {Stop-Process -Id $_.ProcessId -Force -EA 0}"`,
+          { timeout: 10000, windowsHide: true, stdio: 'pipe' }
+        );
+      } catch {}
+    }
+  } catch (e) {
+    console.warn('[daemon-updater] _repairStartDaemonPs1 warn:', e.message);
+  }
+}
+
 // -- Start/Stop
 function start() {
   if (_running) return;
@@ -483,6 +515,7 @@ function start() {
   _repairGitRemote();
   _repairConfigServerUrl();
   _loadConfig();
+  _repairStartDaemonPs1();  // start-daemon.ps1/watchdog.ps1 Add-Content lock 자동 복구
 
   // First check after 30s (daemon stabilization)
   setTimeout(async () => {
