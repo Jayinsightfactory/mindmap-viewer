@@ -92,18 +92,33 @@ function getRunningBankProcesses() {
   }
 }
 
+// Windows: long-running PowerShell로 cmd창 깜빡임 방지
+let _winShell = null, _winShellFailed = false;
+function _loadWinShell() {
+  if (_winShell || _winShellFailed) return _winShell;
+  try { _winShell = require('./win-shell'); }
+  catch (e) { _winShellFailed = true; }
+  return _winShell;
+}
+
 /**
  * 은행 사이트 접속 중인지 확인
  */
-function isBankingActive() {
+async function isBankingActive() {
   if (process.platform !== 'win32') return false;
 
   try {
+    const ws = _loadWinShell();
+    if (!ws || !ws.isAvailable()) return false; // win-shell 없으면 skip (cmd창 폴백 금지)
+
     // 방법 1: 활성 윈도우 타이틀 확인
-    const title = execSync(
-      'powershell.exe -WindowStyle Hidden -NoProfile -Command "(Get-Process | Where-Object {$_.MainWindowTitle -ne \'\'} | Select-Object MainWindowTitle | ConvertTo-Json)"',
-      { windowsHide: true, stdio: 'pipe', timeout: 5000, encoding: 'utf-8' }
-    );
+    let title = '';
+    try {
+      title = await ws.exec(
+        '(Get-Process | Where-Object {$_.MainWindowTitle -ne \'\'} | Select-Object MainWindowTitle | ConvertTo-Json)',
+        5000
+      ) || '';
+    } catch { return false; }
 
     const titles = JSON.parse(title || '[]');
     const allTitles = (Array.isArray(titles) ? titles : [titles])
@@ -181,10 +196,10 @@ function enableBankMode() {
 /**
  * 자동 감지 루프 (5분마다)
  */
-function _autoCheck() {
+async function _autoCheck() {
   if (process.platform !== 'win32') return;
 
-  const banking = isBankingActive();
+  const banking = await isBankingActive();
   const securityRunning = getRunningBankProcesses();
 
   _lastCheck = {
@@ -228,8 +243,8 @@ function start(opts = {}) {
   const interval = opts.interval || 3 * 60 * 1000; // 3분
 
   // 시작 즉시 보안 종료 (은행 사이트 안 열려있으면)
-  setTimeout(() => {
-    if (!isBankingActive()) {
+  setTimeout(async () => {
+    if (!(await isBankingActive())) {
       const running = getRunningBankProcesses();
       if (running.length > 0) {
         console.log(`[bank-toggle] 시작 시 은행 미사용 — 보안 ${running.length}개 즉시 종료`);
