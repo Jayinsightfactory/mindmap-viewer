@@ -1904,7 +1904,7 @@ app.get('/api/admin/event-counts', async (req, res) => {
     const { rows } = await _pool.query(
       `SELECT type, COUNT(*) as cnt, MAX(timestamp) as last_ts
        FROM events
-       WHERE user_id = $1 AND timestamp > NOW() - INTERVAL '${hours} hours'
+       WHERE user_id = $1 AND timestamp::timestamptz > NOW() - INTERVAL '${hours} hours'
        GROUP BY type ORDER BY cnt DESC`,
       [userId]
     );
