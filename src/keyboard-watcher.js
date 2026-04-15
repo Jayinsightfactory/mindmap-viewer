@@ -414,8 +414,8 @@ function _runPeriodicAnalysis() {
   const now = new Date().toISOString();
   const periodStart = _sessionStart || now;
 
-  // 분석할 데이터가 없으면 스킵
-  if (_rawBuffer.length === 0 && _activityBuffer.length === 0) return;
+  // 분석할 데이터가 없으면 스킵 (마우스 클릭만 있어도 chunk 생성 — 키보드 없는 작업 추적)
+  if (_rawBuffer.length === 0 && _activityBuffer.length === 0 && _mouseClickCount === 0) return;
 
   console.log(`[keyboard-watcher] 로컬 분석 실행 — 버퍼 크기: ${_rawBuffer.length}자, 활동: ${_activityBuffer.length}건`);
 
@@ -1043,4 +1043,6 @@ module.exports = {
   pause,
   resume,
   isPaused,
+  getActiveApp,
+  getActiveWindowTitle,
 };

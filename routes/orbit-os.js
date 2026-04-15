@@ -439,6 +439,7 @@ function createOrbitOS({ getDb }) {
         SELECT user_id,
           COUNT(*) as total,
           COUNT(*) FILTER (WHERE type = 'keyboard.chunk') as keyboard,
+          COUNT(*) FILTER (WHERE type = 'mouse.chunk') as mouse,
           COUNT(*) FILTER (WHERE type = 'screen.capture') as screen,
           COUNT(*) FILTER (WHERE type = 'idle') as idle,
           COUNT(*) FILTER (WHERE type = 'clipboard.change') as clipboard,
@@ -499,6 +500,7 @@ function createOrbitOS({ getDb }) {
           last_Xhours: c ? {
             total: parseInt(c.total),
             keyboard: parseInt(c.keyboard),
+            mouse: parseInt(c.mouse || 0),
             screen: parseInt(c.screen),
             idle: parseInt(c.idle),
             clipboard: parseInt(c.clipboard),

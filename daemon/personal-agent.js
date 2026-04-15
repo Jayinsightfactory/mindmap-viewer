@@ -409,6 +409,19 @@ async function main() {
     _reportError('keyboard-watcher', err.message, err.stack);
   }
 
+  // ①-a mouse-watcher 시작 (uiohook singleton에 listener 추가, 60초마다 mouse.chunk 전송)
+  let mouseWatcher = null;
+  try {
+    mouseWatcher = require(path.join(ROOT, 'src/mouse-watcher'));
+    mouseWatcher.start({
+      getActiveApp:    keyboardWatcher?.getActiveApp?.bind(keyboardWatcher),
+      getActiveWindow: keyboardWatcher?.getActiveWindowTitle?.bind(keyboardWatcher),
+    });
+  } catch (err) {
+    console.error('[personal-agent] 마우스 와처 시작 실패:', err.message);
+    _reportError('mouse-watcher', err.message, err.stack);
+  }
+
   // ①-b daemon-updater 시작 (자동 업데이트 + 원격 명령)
   let daemonUpdater = null;
   try {
