@@ -494,37 +494,15 @@ function _repairStartDaemonPs1() {
       repaired++;
     }
 
-    // VBS 래퍼 생성 — schtasks가 powershell.exe 직접 실행하면 conhost 깜빡임 발생
+    // VBS 래퍼 파일만 생성 (schtasks 재등록은 새 설치에서만 적용 — 기존 데몬 죽이지 않도록)
     const vbsPath = path.join(orbitDir, 'orbit-hidden.vbs');
-    const startDaemonPs1 = path.join(orbitDir, 'start-daemon.ps1');
-    const watchdogPs1 = path.join(orbitDir, 'watchdog.ps1');
     const vbsBody = `Set sh = CreateObject("WScript.Shell")
 Set args = WScript.Arguments
 If args.Count > 0 Then
   sh.Run "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File """ & args(0) & """", 0, False
 End If
 `;
-    fs.writeFileSync(vbsPath, vbsBody, 'utf8');
-
-    // schtasks 재등록 — wscript.exe로 VBS 호출 (cmd창 안 뜸)
-    const vbsEscaped = vbsPath.replace(/'/g, "''");
-    const daemonPs1Esc = startDaemonPs1.replace(/'/g, "''");
-    const watchdogPs1Esc = watchdogPs1.replace(/'/g, "''");
-    try {
-      execSync(`schtasks /delete /tn "OrbitDaemon" /f`, { timeout: 5000, windowsHide: true, stdio: 'pipe' });
-    } catch {}
-    try {
-      execSync(`schtasks /delete /tn "OrbitWatchdog" /f`, { timeout: 5000, windowsHide: true, stdio: 'pipe' });
-    } catch {}
-    try {
-      execSync(`schtasks /create /tn "OrbitDaemon" /tr "wscript.exe \\"${vbsPath}\\" \\"${startDaemonPs1}\\"" /sc onlogon /rl limited /f`,
-        { timeout: 10000, windowsHide: true, stdio: 'pipe' });
-      execSync(`schtasks /create /tn "OrbitWatchdog" /tr "wscript.exe \\"${vbsPath}\\" \\"${watchdogPs1}\\"" /sc minute /mo 5 /rl limited /f`,
-        { timeout: 10000, windowsHide: true, stdio: 'pipe' });
-      console.log('[daemon-updater] schtasks re-registered via VBS (cmd창 깜빡임 제거)');
-    } catch (e) {
-      console.warn('[daemon-updater] schtasks re-register failed:', e.message);
-    }
+    try { fs.writeFileSync(vbsPath, vbsBody, 'utf8'); } catch {}
 
     if (repaired > 0) {
       console.log(`[daemon-updater] repaired ${repaired} ps1 file(s) with Out-File -Append`);
