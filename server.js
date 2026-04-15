@@ -1893,6 +1893,53 @@ app.post('/api/daemon/clear-commands', async (req, res) => {
   res.json({ ok: true, cleared: before });
 });
 
+// POST /api/admin/repair-pc-mapping — admin이 hostname↔userId 강제 매핑 수정
+// body: { hostname, userId, fixHistory: true|false }
+// 1. orbit_pc_links upsert (register endpoint가 1순위로 조회)
+// 2. fixHistory=true이면 잘못 매핑된 events.user_id를 정정
+// (인증: 관리자만 사용 — 호출 시 즉시 비활성화 권장)
+app.post('/api/admin/repair-pc-mapping', async (req, res) => {
+  try {
+    const { hostname, userId, fixHistory } = req.body || {};
+    if (!hostname || !userId) {
+      return res.status(400).json({ error: 'hostname, userId required' });
+    }
+    const _pool = dbModule.getDb ? dbModule.getDb() : null;
+    if (!_pool) return res.status(500).json({ error: 'db not available' });
+
+    // 1. 테이블 생성 (idempotent)
+    await _pool.query(`CREATE TABLE IF NOT EXISTS orbit_pc_links (
+      hostname TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      linked_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+
+    // 2. upsert 매핑
+    await _pool.query(
+      `INSERT INTO orbit_pc_links (hostname, user_id) VALUES ($1, $2)
+       ON CONFLICT (hostname) DO UPDATE SET user_id = $2, linked_at = NOW()`,
+      [hostname, userId]
+    );
+
+    let updatedEvents = 0;
+    if (fixHistory) {
+      // 3. data_json.hostname 이 일치하지만 user_id가 다른 events 정정
+      const upd = await _pool.query(
+        `UPDATE events SET user_id = $1
+         WHERE data_json->>'hostname' = $2 AND user_id != $1`,
+        [userId, hostname]
+      );
+      updatedEvents = upd.rowCount || 0;
+    }
+
+    console.log(`[admin] repair-pc-mapping ${hostname} → ${userId} (history fix: ${updatedEvents})`);
+    res.json({ ok: true, hostname, userId, updatedEvents });
+  } catch (e) {
+    console.error('[admin/repair-pc-mapping] error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // POST /api/daemon/command — 관리자가 데몬에 명령 전송 (인증 필수)
 app.post('/api/daemon/command', (req, res) => {
   // ADMIN_SECRET body 파라미터로도 허용 (CLI 편의)
@@ -2036,28 +2083,31 @@ app.post('/api/daemon/register', async (req, res) => {
     let matchedUserId = null;
     let matchedToken = null;
 
-    // 1) PG에서 hostname → userId 매칭 조회 (기존 이벤트 기반)
+    // 1) PG에서 hostname → userId 매칭 조회
+    //    A. orbit_pc_links 우선 (admin이 명시적으로 등록한 매핑이 가장 신뢰도 높음)
     if (_pool) {
       try {
         const { rows } = await _pool.query(
-          `SELECT DISTINCT user_id FROM events
-           WHERE data_json->>'hostname' = $1
-             AND user_id NOT LIKE 'pc_%' AND user_id != 'local'
-           ORDER BY user_id LIMIT 1`,
+          `SELECT user_id FROM orbit_pc_links WHERE hostname = $1 LIMIT 1`,
           [hostname]
         );
         if (rows.length > 0) matchedUserId = rows[0].user_id;
-      } catch {}
+      } catch {} // 테이블 없으면 무시
 
-      // 2) hostname → userId 매칭 테이블에서도 조회 (link-pc로 등록된 것)
+      //    B. events 테이블 fallback — 가장 최근 timestamp의 user_id (알파벳 순 X)
+      //       기존 ORDER BY user_id LIMIT 1 버그: 동일 hostname에 여러 user_id 매핑 있을 때
+      //       알파벳 순 첫 번째만 반환 → 강현우 PC가 임재용 ID로 잘못 매칭되는 사고 발생
       if (!matchedUserId) {
         try {
           const { rows } = await _pool.query(
-            `SELECT user_id FROM orbit_pc_links WHERE hostname = $1 LIMIT 1`,
+            `SELECT user_id FROM events
+             WHERE data_json->>'hostname' = $1
+               AND user_id NOT LIKE 'pc_%' AND user_id != 'local'
+             ORDER BY timestamp DESC LIMIT 1`,
             [hostname]
           );
           if (rows.length > 0) matchedUserId = rows[0].user_id;
-        } catch {} // 테이블 없으면 무시
+        } catch {}
       }
     }
 
