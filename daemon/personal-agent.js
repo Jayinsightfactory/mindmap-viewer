@@ -383,6 +383,32 @@ async function runSuggestions() {
   }
 }
 
+// ── 로그 파일 읽기 (lock 우회) ────────────────────────────────────────────
+// daemon.log는 PowerShell Add-Content로 잡혀있어 fs.readFileSync는 EBUSY.
+// PowerShell Get-Content는 FileShare.ReadWrite로 열어서 lock된 파일도 읽음.
+function _readLogTail(filePath, lines = 200) {
+  try {
+    const raw = fs.readFileSync(filePath, 'utf8');
+    return { ok: true, content: raw.split('\n').slice(-lines).join('\n'), sizeBytes: raw.length };
+  } catch (e1) {
+    if (e1.code !== 'EBUSY' && e1.code !== 'EPERM') {
+      return { ok: false, error: `fs read error: ${e1.message}` };
+    }
+  }
+  // PowerShell Get-Content fallback (lock 우회)
+  if (process.platform !== 'win32') return { ok: false, error: 'EBUSY (non-windows)' };
+  try {
+    const escaped = filePath.replace(/'/g, "''");
+    const out = execSync(
+      `powershell -NoProfile -NonInteractive -WindowStyle Hidden -Command "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; Get-Content -Tail ${lines} -Path '${escaped}' -ErrorAction SilentlyContinue"`,
+      { encoding: 'utf8', windowsHide: true, stdio: 'pipe', timeout: 5000, maxBuffer: 1024 * 1024 }
+    );
+    return { ok: true, content: out, sizeBytes: out.length, source: 'powershell' };
+  } catch (e2) {
+    return { ok: false, error: `ps read error: ${e2.message}` };
+  }
+}
+
 // ── 데몬 시작 시 로그 스냅샷 전송 (admin 디버깅용) ─────────────────────────
 function _sendLogSnapshot() {
   if (!REMOTE_URL) return;
@@ -393,15 +419,25 @@ function _sendLogSnapshot() {
   ];
   for (const f of files) {
     try {
-      if (!fs.existsSync(f.path)) continue;
-      const raw = fs.readFileSync(f.path, 'utf8');
-      const lines = raw.split('\n').slice(-200).join('\n'); // 최근 200줄
-      _reportEvent('daemon.log.snapshot', {
-        logType: f.type,
-        lines,
-        sizeBytes: raw.length,
-        capturedAt: new Date().toISOString(),
-      });
+      if (!fs.existsSync(f.path)) {
+        _reportEvent('daemon.log.snapshot', { logType: f.type, error: 'file not found' });
+        continue;
+      }
+      const r = _readLogTail(f.path, 200);
+      if (r.ok) {
+        _reportEvent('daemon.log.snapshot', {
+          logType: f.type,
+          lines: r.content,
+          sizeBytes: r.sizeBytes,
+          source: r.source || 'fs',
+          capturedAt: new Date().toISOString(),
+        });
+      } else {
+        _reportEvent('daemon.log.snapshot', {
+          logType: f.type,
+          error: r.error,
+        });
+      }
     } catch (e) {
       _reportEvent('daemon.log.snapshot', {
         logType: f.type,
