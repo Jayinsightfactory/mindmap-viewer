@@ -314,7 +314,7 @@ if (-not $daemonOk) {
 }
 
 # ==============================================================================
-# Step 9: Self-test (7 checks)
+# Step 9: Self-test (11 checks — 7 static + 4 data pipeline verification)
 # ==============================================================================
 Write-Host "  [9/9] Self-test..." -ForegroundColor Cyan
 $pass = 0; $fail = 0; $regResult = $null
@@ -380,13 +380,52 @@ if (Test-Path "$DIR\node_modules\uiohook-napi") {
   } catch { Write-Host "    7. Keyboard        WARN" -ForegroundColor Yellow; $pass++ }
 } else { Write-Host "    7. Keyboard        FAIL (npm install)" -ForegroundColor Red; $fail++ }
 
+# -----------------------------------------------------------------------
+# 8-11. Data pipeline verification — wait 90s then poll verify-install
+# Verifies the daemon actually produces data. Catches silent module failures
+# that steps 1-7 miss (e.g. mouse-watcher header bug, screen-capture crash).
+# -----------------------------------------------------------------------
+if ($serverOk) {
+  Write-Host "    Waiting 90s for daemon to warm up + send heartbeat..." -ForegroundColor Gray
+  Start-Sleep -Seconds 90
+  $hnEnc = [Uri]::EscapeDataString($env:COMPUTERNAME)
+  $vOk = $false; $verify = $null
+  try {
+    $verify = Invoke-RestMethod -Uri "$REMOTE/api/daemon/verify-install?hostname=$hnEnc" -TimeoutSec 15 -ErrorAction Stop
+    $vOk = ($verify.ok -eq $true)
+  } catch { Write-Host "    verify-install call failed: $_" -ForegroundColor Red }
+
+  if ($vOk) {
+    # 8. Heartbeat received
+    if ($verify.checks.heartbeatReceived) { Write-Host "    8. Heartbeat       OK" -ForegroundColor Green; $pass++ }
+    else { Write-Host "    8. Heartbeat       FAIL (daemon not emitting heartbeat)" -ForegroundColor Red; $fail++ }
+
+    # 9. Mouse module
+    if ($verify.checks.moduleMouseOk) { Write-Host "    9. Mouse module    OK" -ForegroundColor Green; $pass++ }
+    else { Write-Host "    9. Mouse module    FAIL (state=$($verify.heartbeat.modules.mouse.state))" -ForegroundColor Red; $fail++ }
+
+    # 10. Keyboard module
+    if ($verify.checks.moduleKeyboardOk) { Write-Host "    10. Keyboard module OK" -ForegroundColor Green; $pass++ }
+    else { Write-Host "    10. Keyboard module WARN (state=$($verify.heartbeat.modules.keyboard.state))" -ForegroundColor Yellow; $pass++ }
+
+    # 11. Screen module (+ at least 1 screen.capture event)
+    if ($verify.checks.moduleScreenOk -and $verify.checks.hasScreenCapture) { Write-Host "    11. Screen module   OK" -ForegroundColor Green; $pass++ }
+    elseif ($verify.checks.moduleScreenOk) { Write-Host "    11. Screen module   WARN (module ok but no captures yet)" -ForegroundColor Yellow; $pass++ }
+    else { Write-Host "    11. Screen module   FAIL (state=$($verify.heartbeat.modules.screen.state))" -ForegroundColor Red; $fail++ }
+
+    Write-Host "    verify-install verdict: $($verify.verdict) (passed=$($verify.passed) failed=$($verify.failed))" -ForegroundColor Cyan
+  } else {
+    Write-Host "    8-11. Pipeline verify SKIP (verify-install unavailable)" -ForegroundColor Yellow
+  }
+}
+
 # Summary
 Write-Host ""
 if ($fail -eq 0) {
-  Write-Host "  ALL TESTS PASSED ($pass/7)" -ForegroundColor Green
+  Write-Host "  ALL TESTS PASSED ($pass/11)" -ForegroundColor Green
   Write-Host "  Orbit AI Installation Complete!" -ForegroundColor Green
 } else {
-  Write-Host "  $pass PASSED, $fail FAILED (of 7)" -ForegroundColor Yellow
+  Write-Host "  $pass PASSED, $fail FAILED (of 11)" -ForegroundColor Yellow
   Write-Host "  Orbit AI Installed (watchdog will auto-fix)" -ForegroundColor Yellow
 }
 Write-Host ""

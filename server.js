@@ -1893,6 +1893,96 @@ app.post('/api/daemon/clear-commands', async (req, res) => {
   res.json({ ok: true, cleared: before });
 });
 
+// GET /api/daemon/verify-install?hostname=xxx — 설치 직후 install.ps1가 호출
+// heartbeat + 최근 2분 이벤트 카운트 + 모듈별 상태를 한 번에 반환
+app.get('/api/daemon/verify-install', async (req, res) => {
+  try {
+    const hostname = req.query.hostname;
+    if (!hostname) return res.status(400).json({ error: 'hostname required' });
+    const _pool = dbModule.getDb ? dbModule.getDb() : null;
+    if (!_pool) return res.status(500).json({ error: 'db not available' });
+
+    // 1) hostname으로 user_id 조회 (orbit_pc_links 또는 최근 event)
+    let userId = null;
+    try {
+      const pl = await _pool.query('SELECT user_id FROM orbit_pc_links WHERE hostname = $1 LIMIT 1', [hostname]);
+      if (pl.rows.length) userId = pl.rows[0].user_id;
+    } catch {}
+    if (!userId) {
+      const ev = await _pool.query(
+        `SELECT user_id FROM events
+         WHERE data_json->>'hostname' = $1 AND user_id NOT LIKE 'pc_%'
+         ORDER BY timestamp::timestamptz DESC LIMIT 1`,
+        [hostname]
+      );
+      if (ev.rows.length) userId = ev.rows[0].user_id;
+    }
+
+    // 2) 해당 user의 최근 daemon.heartbeat 1건
+    let heartbeat = null;
+    if (userId) {
+      const hb = await _pool.query(
+        `SELECT timestamp, data_json FROM events
+         WHERE user_id = $1 AND type = 'daemon.heartbeat'
+           AND timestamp::timestamptz > NOW() - INTERVAL '5 minutes'
+         ORDER BY timestamp::timestamptz DESC LIMIT 1`,
+        [userId]
+      );
+      if (hb.rows.length) {
+        heartbeat = {
+          ts: hb.rows[0].timestamp,
+          ...(hb.rows[0].data_json || {}),
+        };
+      }
+    }
+
+    // 3) 최근 2분 각 파이프라인 이벤트 카운트
+    const recentCounts = {};
+    const types = ['daemon.update', 'daemon.heartbeat', 'mouse.watcher.started', 'mouse.chunk', 'screen.capture', 'keyboard.chunk', 'install.selftest'];
+    if (userId) {
+      const cnt = await _pool.query(
+        `SELECT type, COUNT(*) as cnt, MAX(timestamp) as last_ts FROM events
+         WHERE user_id = $1 AND type = ANY($2)
+           AND timestamp::timestamptz > NOW() - INTERVAL '2 minutes'
+         GROUP BY type`,
+        [userId, types]
+      );
+      for (const r of cnt.rows) recentCounts[r.type] = { count: parseInt(r.cnt), lastTs: r.last_ts };
+    }
+    for (const t of types) if (!recentCounts[t]) recentCounts[t] = { count: 0, lastTs: null };
+
+    // 4) 검증 결과 판정
+    const modules = heartbeat?.modules || {};
+    const checks = {
+      hostnameMatched:  !!userId,
+      heartbeatReceived: !!heartbeat,
+      moduleMouseOk:    modules.mouse?.state === 'ok',
+      moduleKeyboardOk: modules.keyboard?.state === 'ok',
+      moduleScreenOk:   modules.screen?.state === 'ok',
+      hasScreenCapture: recentCounts['screen.capture'].count > 0,
+      hasDaemonUpdate:  recentCounts['daemon.update'].count > 0 || recentCounts['daemon.heartbeat'].count > 0,
+      hasMouseStart:    recentCounts['mouse.watcher.started'].count > 0,
+    };
+    const passed = Object.values(checks).filter(v => v).length;
+    const failed = Object.values(checks).filter(v => !v).length;
+
+    res.json({
+      ok: true,
+      hostname,
+      userId,
+      checks,
+      passed,
+      failed,
+      recentCounts,
+      heartbeat,
+      verdict: failed === 0 ? 'PASS' : (heartbeat?.state === 'ok' ? 'MOSTLY_OK' : 'FAIL'),
+    });
+  } catch (e) {
+    console.error('[verify-install] error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // GET /api/admin/daemon-health — 모든 등록된 데몬의 최신 heartbeat + 모듈별 상태
 // 각 사용자별 최근 daemon.heartbeat 1건씩 조회 → healthy/degraded/silent 자동 판정
 app.get('/api/admin/daemon-health', async (req, res) => {
