@@ -3734,6 +3734,24 @@ app.post('/api/admin/create-pc-tokens', async (req, res) => {
   res.json({ ok: true, created: out.length, tokens: out });
 });
 
+// GET /api/admin/pc-codes-list — 발급된 PC 토큰 + 사용 현황
+app.get('/api/admin/pc-codes-list', async (req, res) => {
+  const { isAdmin: _adminOk } = resolveAdmin(req);
+  const _secretOk = process.env.ADMIN_SECRET && req.query.secret === process.env.ADMIN_SECRET;
+  if (!_adminOk && !_secretOk) return res.status(403).json({ error: 'admin only' });
+  const pool = dbModule.getDb && dbModule.getDb();
+  if (!pool) return res.status(500).json({ error: 'db unavailable' });
+  try {
+    const { rows } = await pool.query(`
+      SELECT c.code, c.user_id, c.label, c.created_at, c.used_at,
+             (SELECT COUNT(*) FROM events WHERE user_id = c.user_id) AS event_count,
+             (SELECT MAX(timestamp::timestamptz) FROM events WHERE user_id = c.user_id) AS last_event
+      FROM pc_install_codes c
+      ORDER BY c.created_at DESC LIMIT 100`);
+    res.json({ ok: true, count: rows.length, codes: rows });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // GET /i/:code — 설치 랜딩 페이지 (카톡 공유용)
 app.get('/i/:code', async (req, res) => {
   const code = String(req.params.code || '').trim().toLowerCase();
