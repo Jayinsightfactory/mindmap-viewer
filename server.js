@@ -1893,6 +1893,29 @@ app.post('/api/daemon/clear-commands', async (req, res) => {
   res.json({ ok: true, cleared: before });
 });
 
+// GET /api/admin/event-counts?userId=xxx&hours=1 — 이벤트 타입별 카운트 (진단)
+app.get('/api/admin/event-counts', async (req, res) => {
+  try {
+    const userId = req.query.userId;
+    const hours = Math.max(1, Math.min(24, parseInt(req.query.hours) || 1));
+    if (!userId) return res.status(400).json({ error: 'userId required' });
+    const _pool = dbModule.getDb ? dbModule.getDb() : null;
+    if (!_pool) return res.status(500).json({ error: 'db not available' });
+    const { rows } = await _pool.query(
+      `SELECT type, COUNT(*) as cnt, MAX(timestamp) as last_ts
+       FROM events
+       WHERE user_id = $1 AND timestamp > NOW() - INTERVAL '${hours} hours'
+       GROUP BY type ORDER BY cnt DESC`,
+      [userId]
+    );
+    const result = {};
+    for (const r of rows) result[r.type] = { count: parseInt(r.cnt), lastTs: r.last_ts };
+    res.json({ ok: true, userId, hours, counts: result });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // GET /api/admin/pg-commands-inspect?hostname=xxx — PG orbit_daemon_commands 대기 큐 조회
 app.get('/api/admin/pg-commands-inspect', async (req, res) => {
   try {
