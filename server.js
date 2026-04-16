@@ -3710,6 +3710,12 @@ app.get('/setup/download', (req, res) => {
   const SLOT_CHARS = 60; // must match stub.cs placeholder length
 
   function _fetchStub(cb) {
+    // 로컬 dist/orbit-stub.exe 우선 사용 (GitHub Actions 없이도 동작)
+    const localStub = path.join(__dirname, 'dist', 'orbit-stub.exe');
+    if (fs.existsSync(localStub) && fs.statSync(localStub).size > 1000) {
+      try { fs.copyFileSync(localStub, STUB_CACHE); } catch {}
+      return cb(null);
+    }
     if (fs.existsSync(STUB_CACHE) && fs.statSync(STUB_CACHE).size > 1000) return cb(null);
     const _follow = (url, depth) => {
       if (depth > 5) return cb(new Error('too many redirects'));
