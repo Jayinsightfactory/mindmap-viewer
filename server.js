@@ -2229,6 +2229,31 @@ app.post('/api/admin/repair-pc-mapping', async (req, res) => {
   }
 });
 
+// POST /api/admin/update-user-name — userId의 이름 업데이트 (PG + SQLite)
+app.post('/api/admin/update-user-name', async (req, res) => {
+  const { isAdmin: _adminOk } = resolveAdmin(req);
+  if (!_adminOk) return res.status(403).json({ error: 'admin only' });
+  const { userId, name } = req.body || {};
+  if (!userId || !name) return res.status(400).json({ error: 'userId, name required' });
+  const pool = dbModule.getDb && dbModule.getDb();
+  const authDb = require('./src/auth').getDb();
+  let pgOk = false, sqliteOk = false;
+  if (pool) {
+    try {
+      await pool.query(`UPDATE orbit_auth_users SET name=$1 WHERE id=$2`, [name, userId]);
+      pgOk = true;
+    } catch (e) { console.warn('[update-user-name] PG 실패:', e.message); }
+  }
+  if (authDb) {
+    try {
+      authDb.prepare(`UPDATE users SET name=? WHERE id=?`).run(name, userId);
+      sqliteOk = true;
+    } catch (e) { console.warn('[update-user-name] SQLite 실패:', e.message); }
+  }
+  console.log(`[admin] update-user-name ${userId} → ${name} (pg:${pgOk} sqlite:${sqliteOk})`);
+  res.json({ ok: true, userId, name, pgOk, sqliteOk });
+});
+
 // POST /api/admin/reassign-events — 시간 범위로 events.user_id 재할당
 // body: { fromUserId, toUserId, afterTs, hostname? }
 app.post('/api/admin/reassign-events', async (req, res) => {
