@@ -1196,19 +1196,42 @@ app.get('/api/learning/logs', async (req, res) => {
     const pc = req.query.pc || null;       // hostname filter
 
     const allTypes = req.query.allTypes === '1';
-    let query = allTypes
-      ? "SELECT id, type, user_id, timestamp, data_json FROM events WHERE 1=1"
-      : "SELECT id, type, user_id, timestamp, data_json FROM events WHERE type IN ('keyboard.chunk','screen.capture','screen.analyzed','idle')";
+    const perUser = req.query.perUser === '1' || (!userId && !type && !from && !to && !pc);
     const params = [];
-    if (userId) { params.push(userId); query += ` AND user_id=$${params.length}`; }
-    if (type) { params.push(type); query += ` AND type=$${params.length}`; }
-    if (from) { params.push(from); query += ` AND timestamp >= $${params.length}`; }
-    if (to) { params.push(to); query += ` AND timestamp <= $${params.length}`; }
-    if (pc) { params.push(pc); query += ` AND data_json->>'hostname' ILIKE $${params.length}`; }
-    query += ` ORDER BY timestamp DESC LIMIT $${params.length + 1}`;
-    params.push(limit);
+    let rows;
 
-    const { rows } = await pool.query(query, params);
+    if (perUser && !userId) {
+      // 유저별 최신 N건씩 — local/system 제외, 편향 방지
+      const perUserLimit = Math.max(Math.floor(limit / 10), 20);
+      const typeFilter = allTypes ? '' : `AND type IN ('keyboard.chunk','screen.capture','screen.analyzed','idle')`;
+      const { rows: r } = await pool.query(`
+        SELECT id, type, user_id, timestamp, data_json FROM (
+          SELECT id, type, user_id, timestamp, data_json,
+                 ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY timestamp DESC) AS rn
+          FROM events
+          WHERE user_id NOT IN ('local','system') AND user_id IS NOT NULL
+          ${typeFilter}
+          AND timestamp > NOW() - INTERVAL '7 days'
+        ) sub
+        WHERE rn <= $1
+        ORDER BY timestamp DESC
+        LIMIT $2
+      `, [perUserLimit, limit]);
+      rows = r;
+    } else {
+      let query = allTypes
+        ? "SELECT id, type, user_id, timestamp, data_json FROM events WHERE user_id NOT IN ('local','system')"
+        : "SELECT id, type, user_id, timestamp, data_json FROM events WHERE user_id NOT IN ('local','system') AND type IN ('keyboard.chunk','screen.capture','screen.analyzed','idle')";
+      if (userId) { params.push(userId); query += ` AND user_id=$${params.length}`; }
+      if (type) { params.push(type); query += ` AND type=$${params.length}`; }
+      if (from) { params.push(from); query += ` AND timestamp >= $${params.length}`; }
+      if (to) { params.push(to); query += ` AND timestamp <= $${params.length}`; }
+      if (pc) { params.push(pc); query += ` AND data_json->>'hostname' ILIKE $${params.length}`; }
+      query += ` ORDER BY timestamp DESC LIMIT $${params.length + 1}`;
+      params.push(limit);
+      const { rows: r } = await pool.query(query, params);
+      rows = r;
+    }
 
     // 멤버 이름 매핑
     const nameRows = await pool.query('SELECT id, name, email FROM orbit_auth_users');
