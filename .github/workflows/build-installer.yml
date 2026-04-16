@@ -70,6 +70,15 @@ jobs:
           Get-ChildItem dist
         shell: powershell
 
+      - name: stub.exe 빌드 (토큰 패치용 베이스)
+        run: |
+          $csc = "$env:SystemRoot\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
+          if (-not (Test-Path $csc)) { $csc = "$env:SystemRoot\Microsoft.NET\Framework\v4.0.30319\csc.exe" }
+          & $csc /target:winexe /out:dist\orbit-stub.exe setup\stub.cs 2>&1
+          if (-not (Test-Path "dist\orbit-stub.exe")) { throw "stub.exe build failed" }
+          Write-Host "orbit-stub.exe: $([math]::Round((Get-Item 'dist\orbit-stub.exe').Length/1KB)) KB"
+        shell: powershell
+
       - name: ISCC 로그 업로드
         if: always()
         uses: actions/upload-artifact@v4
@@ -100,7 +109,9 @@ jobs:
             ### 시스템 요구사항
             - Windows 10 / 11 (64bit)
             - 인터넷 연결 (최초 설치 시 Node.js 자동 다운로드)
-          files: dist/OrbitAI-Setup.exe
+          files: |
+            dist/OrbitAI-Setup.exe
+            dist/orbit-stub.exe
           make_latest: true
           prerelease: false
         env:
