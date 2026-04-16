@@ -285,7 +285,7 @@ module.exports = function ({ pool }) {
     try {
       const names = await getUserNames();
 
-      // 최근 1시간 내 마지막 이벤트 & 현재 앱/활동
+      // 최근 24시간 내 마지막 이벤트 → OFFLINE도 표시
       const { rows: recent } = await pool.query(`
         SELECT DISTINCT ON (user_id)
           user_id,
@@ -293,10 +293,11 @@ module.exports = function ({ pool }) {
           data_json,
           timestamp
         FROM events
-        WHERE timestamp::timestamptz > NOW() - INTERVAL '2 hours'
+        WHERE timestamp::timestamptz > NOW() - INTERVAL '24 hours'
           AND user_id NOT LIKE 'local%'
           AND user_id IS NOT NULL
           AND user_id != 'system'
+          AND user_id NOT LIKE 'pc_%'
         ORDER BY user_id, timestamp DESC
       `);
 
@@ -338,7 +339,7 @@ module.exports = function ({ pool }) {
         try { data = JSON.parse(r.data_json || '{}'); } catch {}
 
         const minAgo = Math.round((Date.now() - new Date(r.timestamp).getTime()) / 60000);
-        const status = minAgo <= 5 ? 'ACTIVE' : minAgo <= 30 ? 'RECENT' : minAgo <= 60 ? 'IDLE' : 'OFFLINE';
+        const status = minAgo <= 5 ? 'ACTIVE' : minAgo <= 30 ? 'RECENT' : minAgo <= 120 ? 'IDLE' : 'OFFLINE';
         const evtCount = cntMap[r.user_id] || 0;
         const autoInfo = autoMap[r.user_id] || { ratio: 0 };
 
