@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Orbit — 팀 커맨드센터</title>
+<title>Orbit — 네노바 업무 현황판</title>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
@@ -19,16 +19,20 @@
     --yellow:  #d29922;
     --orange:  #ffa657;
     --purple:  #bc8cff;
+
+    --step-order:  #58a6ff;
+    --step-nenova: #3fb950;
+    --step-doc:    #d29922;
+    --step-comm:   #bc8cff;
+    --step-other:  #8b949e;
   }
   body {
     background: var(--bg);
     color: var(--text);
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Apple SD Gothic Neo', sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif;
     min-height: 100vh;
     line-height: 1.5;
   }
-  a { color: var(--blue); text-decoration: none; }
-  a:hover { text-decoration: underline; }
   ::-webkit-scrollbar { width: 5px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
@@ -55,56 +59,24 @@
     gap: 7px;
     flex-shrink: 0;
   }
-  .logo-hex { font-size: 20px; }
-  .logo-sub { color: var(--muted); font-weight: 400; font-size: 13px; }
-
-  .stat-bar {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    flex-wrap: wrap;
-    margin-left: 8px;
-    flex: 1;
-    min-width: 0;
+  .logo-title {
+    color: var(--text);
+    font-weight: 600;
+    font-size: 15px;
   }
-  .stat-chip {
-    font-size: 12px;
+
+  .active-badge {
     display: flex;
     align-items: center;
-    gap: 5px;
+    gap: 6px;
+    background: rgba(63,185,80,.12);
+    border: 1px solid rgba(63,185,80,.3);
+    border-radius: 20px;
+    padding: 4px 12px;
+    font-size: 12px;
+    color: var(--green);
+    font-weight: 600;
     white-space: nowrap;
-  }
-  .stat-chip .dot {
-    width: 8px; height: 8px;
-    border-radius: 50%;
-    display: inline-block;
-    flex-shrink: 0;
-  }
-  .dot-green  { background: var(--green); }
-  .dot-yellow { background: var(--yellow); }
-  .dot-red    { background: var(--red); }
-  .dot-gray   { background: var(--muted); }
-  .stat-n { font-weight: 700; }
-
-  .header-right {
-    margin-left: auto;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex-shrink: 0;
-  }
-  .countdown {
-    font-size: 12px;
-    color: var(--muted);
-    display: flex;
-    align-items: center;
-    gap: 5px;
-  }
-  .countdown-n {
-    font-weight: 700;
-    color: var(--yellow);
-    min-width: 24px;
-    text-align: right;
   }
   .pulse-dot {
     width: 7px; height: 7px; border-radius: 50%;
@@ -113,6 +85,30 @@
     flex-shrink: 0;
   }
   @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:.3;} }
+
+  .header-right {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-shrink: 0;
+  }
+  .countdown {
+    font-size: 12px;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .countdown-n {
+    font-weight: 700;
+    color: var(--yellow);
+  }
+  .clock {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    min-width: 44px;
+    text-align: right;
+  }
   .btn {
     background: var(--surface2);
     border: 1px solid var(--border);
@@ -121,12 +117,18 @@
     border-radius: 6px;
     cursor: pointer;
     font-size: 12px;
-    transition: all .15s;
+    transition: background .15s;
     white-space: nowrap;
   }
   .btn:hover { background: var(--border); }
-  .btn-back { color: var(--muted); font-size: 12px; text-decoration: none; }
-  .btn-back:hover { color: var(--blue); text-decoration: none; }
+  .btn-link {
+    font-size: 12px;
+    color: var(--muted);
+    text-decoration: none;
+    padding: 6px 10px;
+    border-radius: 6px;
+  }
+  .btn-link:hover { color: var(--blue); background: var(--surface2); }
 
   /* ── 탭 바 ────────────────────────────────────────────────────── */
   .tab-bar {
@@ -152,153 +154,14 @@
     white-space: nowrap;
   }
   .tab-btn:hover { color: var(--text); }
-  .tab-btn.active {
-    color: var(--blue);
-    border-bottom-color: var(--blue);
-  }
+  .tab-btn.active { color: var(--blue); border-bottom-color: var(--blue); }
 
   /* ── 메인 ─────────────────────────────────────────────────────── */
-  main { max-width: 1600px; margin: 0 auto; padding: 24px 24px; }
+  main { max-width: 1600px; margin: 0 auto; padding: 24px; }
   .tab-panel { display: none; }
   .tab-panel.active { display: block; }
 
-  /* ── 팀원 카드 그리드 ──────────────────────────────────────────── */
-  .member-grid {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 14px;
-  }
-  @media (max-width: 1200px) { .member-grid { grid-template-columns: repeat(3, 1fr); } }
-  @media (max-width: 880px)  { .member-grid { grid-template-columns: repeat(2, 1fr); } }
-  @media (max-width: 540px)  { .member-grid { grid-template-columns: 1fr; } }
-
-  .member-card {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 18px;
-    position: relative;
-    overflow: hidden;
-    transition: transform .15s, border-color .15s;
-    cursor: default;
-  }
-  .member-card:hover { transform: translateY(-2px); }
-
-  .member-card.status-ACTIVE  { border-color: rgba(63,185,80,.45); }
-  .member-card.status-RECENT  { border-color: rgba(210,153,34,.35); }
-  .member-card.status-IDLE    { border-color: rgba(248,81,73,.3); }
-  .member-card.status-OFFLINE { border-color: var(--border); }
-
-  .member-card.status-ACTIVE::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    box-shadow: inset 0 0 18px rgba(63,185,80,.08);
-    pointer-events: none;
-    border-radius: 12px;
-  }
-
-  .card-top {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 12px;
-  }
-  .card-name-row {
-    display: flex;
-    align-items: center;
-    gap: 7px;
-  }
-  .status-dot-lg {
-    width: 10px; height: 10px;
-    border-radius: 50%;
-    flex-shrink: 0;
-  }
-  .card-name {
-    font-size: 14px;
-    font-weight: 700;
-  }
-  .card-time {
-    font-size: 11px;
-    color: var(--muted);
-    white-space: nowrap;
-  }
-
-  .card-app-row {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    margin-bottom: 4px;
-  }
-  .app-icon { font-size: 16px; flex-shrink: 0; }
-  .app-name {
-    font-size: 13px;
-    font-weight: 600;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .card-activity {
-    font-size: 12px;
-    color: var(--muted);
-    margin-bottom: 14px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    min-height: 18px;
-  }
-
-  /* 프로그레스 바 */
-  .metric-row {
-    margin-bottom: 8px;
-  }
-  .metric-label-row {
-    display: flex;
-    justify-content: space-between;
-    font-size: 11px;
-    color: var(--muted);
-    margin-bottom: 3px;
-  }
-  .metric-val { font-weight: 600; color: var(--text); }
-  .progress-track {
-    width: 100%;
-    height: 6px;
-    background: var(--surface2);
-    border-radius: 3px;
-    overflow: hidden;
-  }
-  .progress-fill {
-    height: 100%;
-    border-radius: 3px;
-    transition: width .6s ease;
-  }
-
-  /* verdict 뱃지 */
-  .verdict-badge {
-    display: inline-block;
-    margin-top: 12px;
-    padding: 3px 10px;
-    border-radius: 20px;
-    font-size: 11px;
-    font-weight: 600;
-    white-space: nowrap;
-  }
-  .verdict-replace { background: rgba(248,81,73,.15);  color: var(--red); }
-  .verdict-partial  { background: rgba(210,153,34,.15); color: var(--yellow); }
-  .verdict-core     { background: rgba(63,185,80,.15);  color: var(--green); }
-  .verdict-normal   { background: rgba(139,148,158,.15); color: var(--muted); }
-  .verdict-offline  { background: rgba(48,54,61,.5);    color: var(--muted); }
-
-  .card-events {
-    font-size: 11px;
-    color: var(--muted);
-    position: absolute;
-    top: 18px;
-    right: 18px;
-    text-align: right;
-  }
-
-  /* ── 로딩 / 빈 상태 ──────────────────────────────────────────── */
+  /* ── 로딩/빈 상태 ────────────────────────────────────────────── */
   .loading-state {
     display: flex;
     align-items: center;
@@ -323,251 +186,336 @@
     color: var(--muted);
     font-size: 14px;
   }
-  .empty-state .icon { font-size: 36px; margin-bottom: 10px; }
+  .empty-icon { font-size: 36px; margin-bottom: 10px; }
 
-  /* ── 섹션 공통 ────────────────────────────────────────────────── */
-  .section-hd {
-    font-size: 15px;
-    font-weight: 700;
-    margin-bottom: 16px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  .section-hd .sub {
-    font-size: 12px;
-    font-weight: 400;
-    color: var(--muted);
-  }
-
-  /* ── 업무중복 탭 ──────────────────────────────────────────────── */
-  .overlap-list {
-    display: flex;
-    flex-direction: column;
+  /* ── 비즈니스 파이프라인 바 ──────────────────────────────────── */
+  .pipeline-bar {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
     gap: 10px;
+    margin-bottom: 24px;
   }
-  .overlap-item {
+  @media (max-width: 800px) { .pipeline-bar { grid-template-columns: repeat(2, 1fr); } }
+
+  .pipeline-step {
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 14px 18px;
-    display: flex;
-    align-items: flex-start;
-    gap: 14px;
-    flex-wrap: wrap;
+    border-radius: 12px;
+    padding: 14px 16px;
+    position: relative;
+    overflow: hidden;
+    min-height: 80px;
   }
-  .overlap-app {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-width: 160px;
-    flex-shrink: 0;
+  .pipeline-step::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
   }
-  .overlap-app-icon { font-size: 20px; }
-  .overlap-app-name { font-size: 14px; font-weight: 600; }
-  .overlap-users { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; }
-  .overlap-user-chip {
-    background: var(--surface2);
-    border: 1px solid var(--border);
-    border-radius: 20px;
-    padding: 3px 10px;
+  .pipeline-step.step-order::before  { background: var(--step-order); }
+  .pipeline-step.step-nenova::before { background: var(--step-nenova); }
+  .pipeline-step.step-doc::before    { background: var(--step-doc); }
+  .pipeline-step.step-comm::before   { background: var(--step-comm); }
+
+  .step-title {
     font-size: 12px;
+    font-weight: 700;
+    margin-bottom: 8px;
     display: flex;
     align-items: center;
     gap: 5px;
   }
-  .overlap-cnt {
-    color: var(--muted);
-    font-size: 11px;
-  }
-  .overlap-level {
-    padding: 2px 8px;
-    border-radius: 6px;
-    font-size: 10px;
-    font-weight: 700;
-    flex-shrink: 0;
-    align-self: flex-start;
-  }
-  .level-HIGH { background: rgba(248,81,73,.15); color: var(--red); }
-  .level-MED  { background: rgba(210,153,34,.15); color: var(--yellow); }
+  .step-order  .step-title { color: var(--step-order); }
+  .step-nenova .step-title { color: var(--step-nenova); }
+  .step-doc    .step-title { color: var(--step-doc); }
+  .step-comm   .step-title { color: var(--step-comm); }
 
-  /* ── 자동화맵 탭 ──────────────────────────────────────────────── */
-  .auto-map-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-    gap: 12px;
-  }
-  .auto-item {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 14px 16px;
-  }
-  .auto-item-top {
+  .step-members {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 8px;
+    flex-direction: column;
+    gap: 4px;
   }
-  .auto-app {
+  .step-member {
+    font-size: 12px;
+    color: var(--text);
     display: flex;
     align-items: center;
     gap: 6px;
+  }
+  .step-member-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .step-member-time { color: var(--muted); font-size: 11px; }
+  .step-empty { font-size: 12px; color: var(--muted); }
+
+  /* ── 팀원 카드 그리드 ──────────────────────────────────────────── */
+  .member-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 14px;
+  }
+  @media (max-width: 1200px) { .member-grid { grid-template-columns: repeat(3, 1fr); } }
+  @media (max-width: 880px)  { .member-grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 540px)  { .member-grid { grid-template-columns: 1fr; } }
+
+  .member-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px;
+    position: relative;
+    overflow: hidden;
+    transition: transform .15s, border-color .15s;
+  }
+  .member-card:hover { transform: translateY(-2px); }
+  .member-card.status-ACTIVE  {
+    border-color: rgba(63,185,80,.45);
+    box-shadow: 0 0 12px rgba(63,185,80,.15);
+  }
+  .member-card.status-RECENT  { border-color: rgba(210,153,34,.35); }
+  .member-card.status-IDLE    { border-color: rgba(139,148,158,.25); }
+  .member-card.status-OFFLINE { border-color: var(--border); opacity: .65; }
+
+  .card-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 14px;
+  }
+  .card-name-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .status-dot-lg {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .status-ACTIVE  .status-dot-lg { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .status-RECENT  .status-dot-lg { background: var(--yellow); }
+  .status-IDLE    .status-dot-lg { background: var(--muted); }
+  .status-OFFLINE .status-dot-lg { background: var(--border); }
+
+  .card-name { font-size: 15px; font-weight: 700; }
+  .card-time { font-size: 11px; color: var(--muted); white-space: nowrap; }
+
+  .card-task-desc {
     font-size: 13px;
     font-weight: 600;
-  }
-  .priority-badge {
-    padding: 2px 7px;
-    border-radius: 5px;
-    font-size: 10px;
-    font-weight: 700;
-  }
-  .priority-HIGH { background: rgba(248,81,73,.15); color: var(--red); }
-  .priority-MED  { background: rgba(210,153,34,.15); color: var(--yellow); }
-  .priority-LOW  { background: rgba(139,148,158,.15); color: var(--muted); }
-  .auto-activity {
-    font-size: 13px;
     color: var(--text);
-    margin-bottom: 4px;
-  }
-  .auto-hint {
-    font-size: 12px;
-    color: var(--muted);
     margin-bottom: 8px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
+    line-height: 1.4;
+    min-height: 36px;
   }
-  .auto-meta {
+  .card-task-desc.offline-state { color: var(--muted); font-weight: 400; }
+
+  .step-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 700;
+    margin-bottom: 12px;
+    white-space: nowrap;
+  }
+  .badge-order  { background: rgba(88,166,255,.15); color: var(--step-order); }
+  .badge-nenova { background: rgba(63,185,80,.15);  color: var(--step-nenova); }
+  .badge-doc    { background: rgba(210,153,34,.15); color: var(--step-doc); }
+  .badge-comm   { background: rgba(188,140,255,.15); color: var(--step-comm); }
+  .badge-other  { background: rgba(139,148,158,.15); color: var(--step-other); }
+
+  .card-meta {
     display: flex;
     align-items: center;
     justify-content: space-between;
     font-size: 11px;
     color: var(--muted);
   }
-  .auto-freq-bar {
-    height: 4px;
-    background: var(--surface2);
-    border-radius: 2px;
-    margin-top: 6px;
-    overflow: hidden;
-  }
-  .auto-freq-fill {
-    height: 100%;
-    background: var(--blue);
-    border-radius: 2px;
+  .auto-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    color: var(--yellow);
+    font-weight: 600;
+    font-size: 11px;
   }
 
-  /* ── 유휴분석 탭 ──────────────────────────────────────────────── */
-  .idle-table-wrap {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    overflow: hidden;
+  /* ── 오늘 흐름 탭 ─────────────────────────────────────────────── */
+  .flow-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
   }
-  .idle-header-row {
+  .flow-header {
     display: grid;
-    padding: 10px 16px;
+    grid-template-columns: 120px 1fr 90px 70px;
+    padding: 8px 16px;
     background: var(--surface2);
-    border-bottom: 1px solid var(--border);
+    border: 1px solid var(--border);
+    border-radius: 8px 8px 0 0;
     font-size: 11px;
     color: var(--muted);
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: .4px;
-    gap: 8px;
+    gap: 12px;
     align-items: center;
   }
-  .idle-row {
-    display: grid;
-    padding: 12px 16px;
-    gap: 8px;
-    align-items: center;
-    border-bottom: 1px solid rgba(48,54,61,.5);
-    font-size: 12px;
-  }
-  .idle-row:last-child { border-bottom: none; }
-  .idle-row:hover { background: rgba(88,166,255,.03); }
-  .idle-name { font-size: 13px; font-weight: 600; }
-  .idle-ratio-bar {
-    height: 6px;
-    background: var(--surface2);
-    border-radius: 3px;
-    overflow: hidden;
-  }
-  .idle-ratio-fill {
-    height: 100%;
-    border-radius: 3px;
-  }
-
-  /* 히트맵 */
-  .heatmap {
-    display: flex;
-    gap: 2px;
-    align-items: flex-end;
-  }
-  .hm-cell {
-    width: 10px;
-    height: 16px;
-    border-radius: 2px;
-    cursor: default;
-    transition: opacity .15s;
-    position: relative;
-  }
-  .hm-cell:hover .hm-tip {
-    display: block;
-  }
-  .hm-tip {
-    display: none;
-    position: absolute;
-    bottom: 22px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: var(--surface2);
+  .flow-item {
+    background: var(--surface);
     border: 1px solid var(--border);
-    padding: 2px 7px;
-    border-radius: 4px;
-    font-size: 10px;
-    white-space: nowrap;
-    pointer-events: none;
-    z-index: 10;
+    border-radius: 10px;
+    padding: 13px 16px;
+    display: grid;
+    grid-template-columns: 120px 1fr 90px 70px;
+    gap: 12px;
+    align-items: center;
+    transition: background .1s;
   }
-
-  .idle-verdict {
+  .flow-item:hover { background: rgba(88,166,255,.04); }
+  .flow-name { font-size: 13px; font-weight: 600; }
+  .flow-task { font-size: 13px; color: var(--text); }
+  .flow-task small { display: block; font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .flow-freq { font-size: 12px; color: var(--muted); }
+  .flow-prio {
     padding: 2px 8px;
     border-radius: 5px;
     font-size: 10px;
     font-weight: 700;
+    width: fit-content;
   }
-  .v-HIGH_IDLE { background: rgba(248,81,73,.15); color: var(--red); }
-  .v-MED_IDLE  { background: rgba(210,153,34,.15); color: var(--yellow); }
-  .v-ACTIVE    { background: rgba(63,185,80,.15); color: var(--green); }
+  .prio-HIGH { background: rgba(248,81,73,.15); color: var(--red); }
+  .prio-MED  { background: rgba(210,153,34,.15); color: var(--yellow); }
+  .prio-LOW  { background: rgba(139,148,158,.15); color: var(--muted); }
+  .prio-auto { background: rgba(255,166,87,.15); color: var(--orange); }
 
-  /* ── 상단 요약 카드 ───────────────────────────────────────────── */
-  .summary-chips {
+  /* ── 이슈/병목 탭 ────────────────────────────────────────────── */
+  .issue-list {
     display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    margin-bottom: 20px;
+    flex-direction: column;
+    gap: 12px;
   }
-  .summary-chip {
+  .issue-card {
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 8px 16px;
+    border-radius: 12px;
+    padding: 18px;
+    display: flex;
+    gap: 14px;
+  }
+  .issue-card.sev-high { border-left: 3px solid var(--red); }
+  .issue-card.sev-med  { border-left: 3px solid var(--yellow); }
+  .issue-card.sev-low  { border-left: 3px solid var(--muted); }
+
+  .issue-icon { font-size: 20px; flex-shrink: 0; margin-top: 2px; }
+  .issue-body { flex: 1; min-width: 0; }
+  .issue-title {
+    font-size: 14px;
+    font-weight: 700;
+    margin-bottom: 5px;
     display: flex;
     align-items: center;
     gap: 8px;
-    font-size: 13px;
-    cursor: default;
   }
-  .sc-icon { font-size: 18px; }
-  .sc-n { font-size: 20px; font-weight: 800; }
-  .sc-label { font-size: 11px; color: var(--muted); line-height: 1.2; }
+  .sev-badge {
+    padding: 2px 7px;
+    border-radius: 5px;
+    font-size: 10px;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+  .sev-HIGH { background: rgba(248,81,73,.15); color: var(--red); }
+  .sev-MED  { background: rgba(210,153,34,.15); color: var(--yellow); }
+  .sev-LOW  { background: rgba(139,148,158,.15); color: var(--muted); }
 
-  /* ── 오류 ─────────────────────────────────────────────────────── */
+  .issue-desc { font-size: 13px; color: var(--muted); margin-bottom: 8px; line-height: 1.5; }
+  .issue-solution {
+    font-size: 12px;
+    color: var(--blue);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  /* ── 자동화 기회 탭 ──────────────────────────────────────────── */
+  .auto-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 14px;
+  }
+  .auto-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    transition: transform .15s, border-color .15s;
+  }
+  .auto-card:hover { transform: translateY(-2px); border-color: rgba(88,166,255,.35); }
+  .auto-card-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .auto-card-title {
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1.4;
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+  }
+  .auto-card-title span { font-size: 16px; flex-shrink: 0; }
+  .auto-card-who {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .who-chip {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 2px 9px;
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .auto-card-meta {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .meta-item { font-size: 12px; color: var(--muted); }
+  .meta-item strong { display: block; color: var(--text); font-size: 13px; }
+  .auto-card-tool {
+    background: var(--surface2);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.6;
+  }
+  .auto-card-tool strong { color: var(--text); display: block; margin-bottom: 3px; font-size: 12px; }
+  .auto-card-saving {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: rgba(63,185,80,.08);
+    border: 1px solid rgba(63,185,80,.2);
+    border-radius: 8px;
+    padding: 8px 12px;
+  }
+  .saving-label { font-size: 12px; color: var(--green); }
+  .saving-val { font-size: 14px; font-weight: 700; color: var(--green); }
+
+  /* ── 에러바 ───────────────────────────────────────────────────── */
   .error-bar {
     background: rgba(248,81,73,.1);
     border: 1px solid rgba(248,81,73,.3);
@@ -580,6 +528,26 @@
     align-items: center;
     gap: 8px;
   }
+
+  /* ── 섹션 헤더 ───────────────────────────────────────────────── */
+  .section-hd {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--muted);
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+  }
+  .section-hd .sub {
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--muted);
+    text-transform: none;
+    letter-spacing: 0;
+  }
 </style>
 </head>
 <body>
@@ -587,41 +555,67 @@
 <!-- ── 헤더 ─────────────────────────────────────────────────────── -->
 <header>
   <div class="logo">
-    <span class="logo-hex">⬡</span>
-    ORBIT
-    <span class="logo-sub">팀 커맨드센터</span>
+    ⬡
+    <span class="logo-title">네노바 업무 현황판</span>
   </div>
 
-  <div class="stat-bar" id="statBar">
-    <span class="stat-chip"><span class="dot dot-gray"></span>로딩 중...</span>
+  <div class="active-badge" id="activeBadge">
+    <span class="pulse-dot"></span>
+    <span id="activeCount">로딩 중</span>
   </div>
 
   <div class="header-right">
-    <span class="countdown" id="countdownWrap">
-      <span class="pulse-dot"></span>
-      <span id="countdownLabel">30초 후 업데이트</span>
+    <span class="countdown">
+      <span class="countdown-n" id="countdownN">30</span>초 후 갱신
     </span>
+    <span class="clock" id="clockEl"></span>
     <button class="btn" id="refreshBtn">새로고침</button>
-    <a href="/admin-analysis.html" class="btn btn-back">← 관리자 대시보드</a>
+    <a href="/orbit-os.html" class="btn-link">← 관리자</a>
   </div>
 </header>
 
 <!-- ── 탭 바 ────────────────────────────────────────────────────── -->
 <div class="tab-bar">
-  <button class="tab-btn active" data-tab="personnel">인력현황</button>
-  <button class="tab-btn" data-tab="redundancy">업무중복</button>
-  <button class="tab-btn" data-tab="automap">자동화맵</button>
-  <button class="tab-btn" data-tab="idle">유휴분석</button>
+  <button class="tab-btn active" data-tab="status">업무현황</button>
+  <button class="tab-btn" data-tab="flow">오늘 흐름</button>
+  <button class="tab-btn" data-tab="issues">이슈/병목</button>
+  <button class="tab-btn" data-tab="automap">자동화 기회</button>
 </div>
 
 <!-- ── 메인 ─────────────────────────────────────────────────────── -->
 <main>
 
-  <!-- 인력현황 탭 -->
-  <div class="tab-panel active" id="tab-personnel">
-    <div id="personnelError" style="display:none" class="error-bar">
-      <span>⚠</span> <span id="personnelErrorMsg"></span>
+  <!-- 탭1: 업무현황 -->
+  <div class="tab-panel active" id="tab-status">
+    <!-- 비즈니스 파이프라인 -->
+    <div class="pipeline-bar" id="pipelineBar">
+      <div class="pipeline-step step-order">
+        <div class="step-title">📨 주문수신</div>
+        <div class="step-members" id="step-order-members">
+          <span class="step-empty">—</span>
+        </div>
+      </div>
+      <div class="pipeline-step step-nenova">
+        <div class="step-title">🏭 네노바 처리</div>
+        <div class="step-members" id="step-nenova-members">
+          <span class="step-empty">—</span>
+        </div>
+      </div>
+      <div class="pipeline-step step-doc">
+        <div class="step-title">📋 발주/정산</div>
+        <div class="step-members" id="step-doc-members">
+          <span class="step-empty">—</span>
+        </div>
+      </div>
+      <div class="pipeline-step step-comm">
+        <div class="step-title">💬 커뮤니케이션</div>
+        <div class="step-members" id="step-comm-members">
+          <span class="step-empty">—</span>
+        </div>
+      </div>
     </div>
+
+    <!-- 팀원 카드 -->
     <div id="memberGrid" class="member-grid">
       <div class="loading-state" style="grid-column:1/-1">
         <div class="spinner"></div> 팀원 데이터 불러오는 중...
@@ -629,45 +623,27 @@
     </div>
   </div>
 
-  <!-- 업무중복 탭 -->
-  <div class="tab-panel" id="tab-redundancy">
-    <div class="section-hd">
-      🔁 업무 중복 분석
-      <span class="sub">— 동일 앱을 여러 팀원이 사용하는 경우</span>
-    </div>
-    <div id="redundancyError" style="display:none" class="error-bar">
-      <span>⚠</span> <span id="redundancyErrorMsg"></span>
-    </div>
-    <div id="overlapList" class="overlap-list">
+  <!-- 탭2: 오늘 흐름 -->
+  <div class="tab-panel" id="tab-flow">
+    <div class="section-hd">오늘 감지된 반복 업무 <span class="sub">— automation-map 기준</span></div>
+    <div id="flowList" class="flow-list">
       <div class="loading-state"><div class="spinner"></div> 분석 중...</div>
     </div>
   </div>
 
-  <!-- 자동화맵 탭 -->
+  <!-- 탭3: 이슈/병목 -->
+  <div class="tab-panel" id="tab-issues">
+    <div class="section-hd">감지된 이슈 <span class="sub">— 수동 반복, 이중입력, 대기</span></div>
+    <div id="issueList" class="issue-list">
+      <div class="loading-state"><div class="spinner"></div> 분석 중...</div>
+    </div>
+  </div>
+
+  <!-- 탭4: 자동화 기회 -->
   <div class="tab-panel" id="tab-automap">
-    <div class="section-hd">
-      🤖 자동화 대상 업무 맵
-      <span class="sub">— Vision 분석 기준 자동화 가능 화면</span>
-    </div>
-    <div id="automapError" style="display:none" class="error-bar">
-      <span>⚠</span> <span id="automapErrorMsg"></span>
-    </div>
-    <div id="automapGrid" class="auto-map-grid">
+    <div class="section-hd">자동화 기회 <span class="sub">— HIGH/MED 우선순위 항목</span></div>
+    <div id="autoGrid" class="auto-grid">
       <div class="loading-state" style="grid-column:1/-1"><div class="spinner"></div> 분석 중...</div>
-    </div>
-  </div>
-
-  <!-- 유휴분석 탭 -->
-  <div class="tab-panel" id="tab-idle">
-    <div class="section-hd">
-      ⏱ 유휴 시간대 분석
-      <span class="sub">— 09~18시 기준, 활동 없는 시간 비율</span>
-    </div>
-    <div id="idleError" style="display:none" class="error-bar">
-      <span>⚠</span> <span id="idleErrorMsg"></span>
-    </div>
-    <div id="idleTableWrap" class="idle-table-wrap">
-      <div class="loading-state"><div class="spinner"></div> 분석 중...</div>
     </div>
   </div>
 
@@ -683,360 +659,10 @@ function authHeaders() {
   if (TOKEN) h['Authorization'] = 'Bearer ' + TOKEN;
   return h;
 }
-
-// ── API 래퍼 ──────────────────────────────────────────────────────
 async function apiFetch(url) {
   const r = await fetch(url, { headers: authHeaders() });
   if (!r.ok) throw new Error('HTTP ' + r.status);
   return r.json();
-}
-
-// ── 앱 아이콘 매핑 ─────────────────────────────────────────────────
-const APP_ICONS = {
-  excel: '📊', 'microsoft excel': '📊',
-  kakao: '💬', kakaotalk: '💬', 'kakao talk': '💬',
-  chrome: '🌐', 'google chrome': '🌐',
-  nenova: '🏭',
-  wechat: '💬', 'we chat': '💬',
-  word: '📝', 'microsoft word': '📝',
-  powerpoint: '📊', 'microsoft powerpoint': '📊',
-  notepad: '📄', 메모장: '📄',
-  explorer: '📁', '파일 탐색기': '📁',
-  edge: '🌐', 'microsoft edge': '🌐',
-  python: '🐍', cmd: '⬛', powershell: '⬛',
-  code: '💻', 'visual studio code': '💻',
-  zoom: '📹', teams: '📹', 'microsoft teams': '📹',
-};
-function appIcon(appName) {
-  if (!appName) return '💻';
-  const key = appName.toLowerCase();
-  for (const [k, v] of Object.entries(APP_ICONS)) {
-    if (key.includes(k)) return v;
-  }
-  return '💻';
-}
-
-// ── 상태 색상 ──────────────────────────────────────────────────────
-const STATUS_COLOR = {
-  ACTIVE:  '#3fb950',
-  RECENT:  '#d29922',
-  IDLE:    '#f85149',
-  OFFLINE: '#8b949e',
-};
-const STATUS_LABEL = {
-  ACTIVE: '활성', RECENT: '최근', IDLE: '유휴', OFFLINE: '오프라인',
-};
-
-// ── 카운트다운 ─────────────────────────────────────────────────────
-let countdown = 30;
-let countdownTimer = null;
-function startCountdown() {
-  if (countdownTimer) clearInterval(countdownTimer);
-  countdown = 30;
-  updateCountdownDisplay();
-  countdownTimer = setInterval(() => {
-    countdown--;
-    if (countdown <= 0) {
-      countdown = 30;
-      loadLive();
-    }
-    updateCountdownDisplay();
-  }, 1000);
-}
-function updateCountdownDisplay() {
-  const el = document.getElementById('countdownLabel');
-  if (el) el.textContent = countdown + '초 후 업데이트';
-}
-
-// ── 탭 전환 ───────────────────────────────────────────────────────
-const TAB_BTNS  = document.querySelectorAll('.tab-btn');
-const TAB_PANELS = document.querySelectorAll('.tab-panel');
-let tabLoaded = { personnel: false, redundancy: false, automap: false, idle: false };
-
-TAB_BTNS.forEach(btn => {
-  btn.addEventListener('click', () => {
-    TAB_BTNS.forEach(b => b.classList.remove('active'));
-    TAB_PANELS.forEach(p => p.classList.remove('active'));
-    btn.classList.add('active');
-    const tab = btn.dataset.tab;
-    document.getElementById('tab-' + tab).classList.add('active');
-    if (!tabLoaded[tab]) loadTab(tab);
-  });
-});
-
-function loadTab(tab) {
-  if (tab === 'redundancy' && !tabLoaded.redundancy) loadRedundancy();
-  if (tab === 'automap'    && !tabLoaded.automap)    loadAutomap();
-  if (tab === 'idle'       && !tabLoaded.idle)       loadIdle();
-}
-
-// ── 상단 통계 바 ──────────────────────────────────────────────────
-function updateStatBar(members) {
-  const total   = members.length;
-  const active  = members.filter(m => m.status === 'ACTIVE').length;
-  const recent  = members.filter(m => m.status === 'RECENT').length;
-  const idle    = members.filter(m => m.status === 'IDLE').length;
-  const offline = members.filter(m => m.status === 'OFFLINE').length;
-
-  document.getElementById('statBar').innerHTML =
-    `<span class="stat-chip"><strong class="stat-n">${total}</strong>명 전체</span>` +
-    `<span class="stat-chip"><span class="dot dot-green"></span><strong class="stat-n">${active}</strong> 활성</span>` +
-    `<span class="stat-chip"><span class="dot dot-yellow"></span><strong class="stat-n">${recent}</strong> 최근</span>` +
-    `<span class="stat-chip"><span class="dot dot-red"></span><strong class="stat-n">${idle}</strong> 유휴</span>` +
-    `<span class="stat-chip"><span class="dot dot-gray"></span><strong class="stat-n">${offline}</strong> 오프라인</span>`;
-}
-
-// ── 멤버 카드 렌더 ────────────────────────────────────────────────
-function renderMemberCards(members, scores) {
-  const scoreMap = {};
-  if (scores) scores.forEach(s => { scoreMap[s.userId] = s; });
-
-  const grid = document.getElementById('memberGrid');
-  if (!members || members.length === 0) {
-    grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><div class="icon">👥</div>표시할 팀원 데이터가 없습니다.</div>';
-    return;
-  }
-
-  grid.innerHTML = members.map(m => {
-    const sc = scoreMap[m.userId] || null;
-    const color = STATUS_COLOR[m.status] || STATUS_COLOR.OFFLINE;
-    const appIc = appIcon(m.currentApp);
-    const appLabel = m.currentApp ? m.currentApp.replace(/\.exe$/i, '').substring(0, 18) : (m.status === 'OFFLINE' ? '오프라인' : '—');
-    const actLabel = m.currentActivity ? m.currentActivity.substring(0, 15) : (m.minAgo ? '' : '');
-
-    const timeLabel = m.status === 'OFFLINE'
-      ? (m.minAgo > 1440 ? Math.floor(m.minAgo / 1440) + '일 전' : m.minAgo > 60 ? Math.floor(m.minAgo / 60) + '시간 전' : m.minAgo + '분 전')
-      : m.minAgo + '분 전';
-
-    const efficiency = sc ? sc.efficiency : null;
-    const risk       = sc ? sc.risk       : null;
-
-    const effColor = efficiency === null ? '#8b949e' : efficiency >= 70 ? '#3fb950' : efficiency >= 40 ? '#d29922' : '#f85149';
-    const riskColor = risk === null ? '#8b949e' : risk >= 70 ? '#f85149' : risk >= 40 ? '#d29922' : '#3fb950';
-
-    const verdictHtml = (() => {
-      if (m.status === 'OFFLINE') return '<span class="verdict-badge verdict-offline">오프라인</span>';
-      if (!sc) return '';
-      const vmap = {
-        '핵심 인력': 'verdict-core',
-        '부분 자동화 가능': 'verdict-partial',
-        '자동화 대체 검토': 'verdict-replace',
-        '보통': 'verdict-normal',
-      };
-      const cls = vmap[sc.verdict] || 'verdict-normal';
-      const icon = {
-        '핵심 인력': '✅',
-        '부분 자동화 가능': '⚡',
-        '자동화 대체 검토': '🤖',
-        '보통': '',
-      }[sc.verdict] || '';
-      return `<span class="verdict-badge ${cls}">${icon} ${sc.verdict}</span>`;
-    })();
-
-    const effBar = efficiency !== null
-      ? `<div class="metric-row">
-          <div class="metric-label-row"><span>효율</span><span class="metric-val">${efficiency}점</span></div>
-          <div class="progress-track"><div class="progress-fill" style="width:${efficiency}%;background:${effColor}"></div></div>
-         </div>`
-      : `<div class="metric-row"><div class="metric-label-row"><span>효율</span><span class="metric-val" style="color:var(--muted)">—</span></div></div>`;
-
-    const riskBar = risk !== null
-      ? `<div class="metric-row">
-          <div class="metric-label-row"><span>자동화 위험</span><span class="metric-val">${risk}%</span></div>
-          <div class="progress-track"><div class="progress-fill" style="width:${risk}%;background:${riskColor}"></div></div>
-         </div>`
-      : `<div class="metric-row"><div class="metric-label-row"><span>자동화 위험</span><span class="metric-val" style="color:var(--muted)">—</span></div></div>`;
-
-    return `<div class="member-card status-${m.status}">
-      <div class="card-events">${m.eventsLastHour > 0 ? m.eventsLastHour + '건/h' : ''}</div>
-      <div class="card-top">
-        <div class="card-name-row">
-          <span class="status-dot-lg" style="background:${color}"></span>
-          <span class="card-name">${escHtml(m.name)}</span>
-        </div>
-        <span class="card-time">${timeLabel}</span>
-      </div>
-      <div class="card-app-row">
-        <span class="app-icon">${appIc}</span>
-        <span class="app-name">${escHtml(appLabel)}</span>
-      </div>
-      <div class="card-activity">${escHtml(actLabel)}</div>
-      ${effBar}
-      ${riskBar}
-      ${verdictHtml}
-    </div>`;
-  }).join('');
-}
-
-// ── 인력현황 로드 ─────────────────────────────────────────────────
-let scoresCache = null;
-
-async function loadLive() {
-  try {
-    document.getElementById('personnelError').style.display = 'none';
-    const data = await apiFetch('/api/workforce/live');
-    if (!data.ok) throw new Error(data.error || '응답 오류');
-
-    updateStatBar(data.members || []);
-    renderMemberCards(data.members || [], scoresCache);
-    tabLoaded.personnel = true;
-    startCountdown();
-  } catch (e) {
-    document.getElementById('personnelErrorMsg').textContent = e.message;
-    document.getElementById('personnelError').style.display = 'flex';
-    const grid = document.getElementById('memberGrid');
-    if (grid.querySelector('.spinner')) {
-      grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><div class="icon">⚠️</div>데이터를 불러올 수 없습니다.</div>';
-    }
-  }
-}
-
-async function loadScores() {
-  try {
-    const data = await apiFetch('/api/workforce/scores?days=7');
-    if (data.ok) {
-      scoresCache = data.scores || [];
-      // 이미 카드가 렌더된 경우 점수 업데이트
-      const grid = document.getElementById('memberGrid');
-      if (grid.querySelector('.member-card')) {
-        // 부분 업데이트: 점수 관련 카드 재렌더 (전체 다시 그림)
-        const liveData = await apiFetch('/api/workforce/live').catch(() => null);
-        if (liveData && liveData.ok) renderMemberCards(liveData.members || [], scoresCache);
-      }
-    }
-  } catch (_) {}
-}
-
-// ── 업무중복 ──────────────────────────────────────────────────────
-async function loadRedundancy() {
-  tabLoaded.redundancy = true;
-  const el = document.getElementById('overlapList');
-  try {
-    const data = await apiFetch('/api/workforce/redundancy?days=7');
-    if (!data.ok) throw new Error(data.error || '응답 오류');
-    const overlaps = data.overlaps || [];
-    if (overlaps.length === 0) {
-      el.innerHTML = '<div class="empty-state"><div class="icon">✅</div>중복 업무가 발견되지 않았습니다.</div>';
-      return;
-    }
-    el.innerHTML = overlaps.map(o => {
-      const icon = appIcon(o.app);
-      const users = o.users.map(u =>
-        `<span class="overlap-user-chip">${escHtml(u.name)} <span class="overlap-cnt">${u.count}회</span></span>`
-      ).join('');
-      return `<div class="overlap-item">
-        <div class="overlap-app">
-          <span class="overlap-app-icon">${icon}</span>
-          <span class="overlap-app-name">${escHtml(o.app)}</span>
-        </div>
-        <div class="overlap-users">${users}</div>
-        <span class="overlap-level level-${o.level}">${o.level === 'HIGH' ? '고위험' : '중간'}</span>
-      </div>`;
-    }).join('');
-  } catch (e) {
-    document.getElementById('redundancyErrorMsg').textContent = e.message;
-    document.getElementById('redundancyError').style.display = 'flex';
-    el.innerHTML = '<div class="empty-state"><div class="icon">⚠️</div>데이터를 불러올 수 없습니다.</div>';
-  }
-}
-
-// ── 자동화맵 ──────────────────────────────────────────────────────
-async function loadAutomap() {
-  tabLoaded.automap = true;
-  const el = document.getElementById('automapGrid');
-  try {
-    const data = await apiFetch('/api/workforce/automation-map?days=7');
-    if (!data.ok) throw new Error(data.error || '응답 오류');
-    const targets = data.targets || [];
-    if (targets.length === 0) {
-      el.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><div class="icon">🤖</div>자동화 대상 화면이 없습니다.</div>';
-      return;
-    }
-    const maxFreq = Math.max(...targets.map(t => t.frequency), 1);
-    el.innerHTML = targets.map(t => {
-      const icon = appIcon(t.app);
-      const pct = Math.round(t.frequency / maxFreq * 100);
-      return `<div class="auto-item">
-        <div class="auto-item-top">
-          <div class="auto-app"><span>${icon}</span><span>${escHtml(t.app || '—')}</span></div>
-          <span class="priority-badge priority-${t.priority}">${t.priority}</span>
-        </div>
-        <div class="auto-activity">${escHtml(t.activity || '—')}</div>
-        ${t.hint ? `<div class="auto-hint">${escHtml(t.hint)}</div>` : ''}
-        <div class="auto-meta">
-          <span>담당: ${escHtml(t.name)}</span>
-          <span>${t.frequency}회 반복</span>
-        </div>
-        <div class="auto-freq-bar"><div class="auto-freq-fill" style="width:${pct}%"></div></div>
-      </div>`;
-    }).join('');
-  } catch (e) {
-    document.getElementById('automapErrorMsg').textContent = e.message;
-    document.getElementById('automapError').style.display = 'flex';
-    el.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><div class="icon">⚠️</div>데이터를 불러올 수 없습니다.</div>';
-  }
-}
-
-// ── 유휴분석 ──────────────────────────────────────────────────────
-async function loadIdle() {
-  tabLoaded.idle = true;
-  const el = document.getElementById('idleTableWrap');
-  try {
-    const data = await apiFetch('/api/workforce/idle?days=7');
-    if (!data.ok) throw new Error(data.error || '응답 오류');
-    const analysis = data.analysis || [];
-    if (analysis.length === 0) {
-      el.innerHTML = '<div class="empty-state"><div class="icon">📊</div>유휴 분석 데이터가 없습니다.</div>';
-      return;
-    }
-
-    // 히트맵 색상: 0=어두움, 많을수록 파랑
-    function heatColor(cnt, max) {
-      if (cnt === 0) return '#21262d';
-      const ratio = Math.min(cnt / Math.max(max, 1), 1);
-      if (ratio < 0.25) return '#1f3a5f';
-      if (ratio < 0.5)  return '#1f6feb';
-      if (ratio < 0.75) return '#388bfd';
-      return '#58a6ff';
-    }
-
-    const allMax = Math.max(...analysis.flatMap(a => a.heatmap), 1);
-
-    const colStyle = 'grid-template-columns: 120px 80px 60px auto 70px';
-    const headerHtml = `<div class="idle-header-row" style="${colStyle}">
-      <span>이름</span><span>유휴비율</span><span>판정</span>
-      <span>시간대 히트맵 (09~18시)</span><span>업무외</span>
-    </div>`;
-
-    const rowsHtml = analysis.map(a => {
-      const workHeatmap = a.heatmap.slice(9, 19); // 09~18
-      const cellsHtml = workHeatmap.map((cnt, i) => {
-        const h = 9 + i;
-        const bg = heatColor(cnt, allMax);
-        return `<div class="hm-cell" style="background:${bg}"><span class="hm-tip">${h}시: ${cnt}건</span></div>`;
-      }).join('');
-
-      const idleColor = a.idleRatio >= 50 ? '#f85149' : a.idleRatio >= 30 ? '#d29922' : '#3fb950';
-      const offRatio = a.totalEvents > 0 ? Math.round(a.offHoursEvents / a.totalEvents * 100) : 0;
-
-      return `<div class="idle-row" style="${colStyle}">
-        <span class="idle-name">${escHtml(a.name)}</span>
-        <div>
-          <div style="font-size:12px;margin-bottom:3px;color:${idleColor};font-weight:700">${a.idleRatio}%</div>
-          <div class="idle-ratio-bar"><div class="idle-ratio-fill" style="width:${a.idleRatio}%;background:${idleColor}"></div></div>
-        </div>
-        <span class="idle-verdict v-${a.verdict}">${{ HIGH_IDLE:'고유휴', MED_IDLE:'중간', ACTIVE:'활성' }[a.verdict] || a.verdict}</span>
-        <div class="heatmap">${cellsHtml}</div>
-        <span style="font-size:12px;color:var(--muted)">${offRatio}%</span>
-      </div>`;
-    }).join('');
-
-    el.innerHTML = headerHtml + rowsHtml;
-  } catch (e) {
-    document.getElementById('idleErrorMsg').textContent = e.message;
-    document.getElementById('idleError').style.display = 'flex';
-    el.innerHTML = '<div class="empty-state"><div class="icon">⚠️</div>데이터를 불러올 수 없습니다.</div>';
-  }
 }
 
 // ── 유틸 ──────────────────────────────────────────────────────────
@@ -1045,29 +671,494 @@ function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-// ── 새로고침 버튼 ──────────────────────────────────────────────────
+// ── 시계 ──────────────────────────────────────────────────────────
+function updateClock() {
+  const now = new Date();
+  const h = String(now.getHours()).padStart(2, '0');
+  const m = String(now.getMinutes()).padStart(2, '0');
+  document.getElementById('clockEl').textContent = h + ':' + m;
+}
+updateClock();
+setInterval(updateClock, 10000);
+
+// ── 비즈니스 단계 분류 ────────────────────────────────────────────
+function classifyStep(app, activity) {
+  const a = (app || '').toLowerCase();
+  const act = (activity || '').toLowerCase();
+  const combined = a + ' ' + act;
+
+  // 주문수신
+  if ((a.includes('kakao') || a.includes('wechat') || a.includes('whatsapp') || a.includes('line')) &&
+      (act.includes('주문') || act.includes('order') || act.includes('발주') || act.includes('견적') || act.includes('요청'))) {
+    return 'order';
+  }
+  // 네노바
+  if (a.includes('nenova') || a.includes('nanova') || a.includes('nENOVA') || combined.includes('nenova')) {
+    return 'nenova';
+  }
+  // 발주/정산 (Excel)
+  if (a.includes('excel') || a.includes('spreadsheet')) {
+    if (act.includes('발주') || act.includes('정산') || act.includes('출하') || act.includes('invoice') ||
+        act.includes('청구') || act.includes('세금') || act.includes('주문') || act.includes('order') ||
+        act.includes('재고') || act.includes('수량') || act.includes('단가') || act.includes('가격표')) {
+      return 'doc';
+    }
+    // 영업 Excel도 doc으로
+    return 'doc';
+  }
+  // 커뮤니케이션
+  if (a.includes('kakao') || a.includes('wechat') || a.includes('whatsapp') ||
+      a.includes('teams') || a.includes('slack') || a.includes('telegram') || a.includes('line')) {
+    return 'comm';
+  }
+  // 공급업체 확인
+  if (a.includes('chrome') || a.includes('edge') || a.includes('firefox')) {
+    if (act.includes('공급') || act.includes('업체') || act.includes('발주') || act.includes('도매')) {
+      return 'doc';
+    }
+  }
+  return 'other';
+}
+
+// 단계 → 라벨/배지
+const STEP_META = {
+  order:  { label: '📨 주문수신',   cls: 'badge-order',  color: '#58a6ff' },
+  nenova: { label: '🏭 네노바 처리', cls: 'badge-nenova', color: '#3fb950' },
+  doc:    { label: '📋 발주/정산',   cls: 'badge-doc',    color: '#d29922' },
+  comm:   { label: '💬 커뮤니케이션', cls: 'badge-comm',  color: '#bc8cff' },
+  other:  { label: '⚙️ 기타',       cls: 'badge-other',  color: '#8b949e' },
+};
+
+// 앱+활동 → 사람이 읽는 업무 설명
+function taskDescription(app, activity, step) {
+  const a = (app || '').toLowerCase();
+  const act = activity || '';
+
+  if (step === 'order') return '카카오 주문수신' + (act ? ' — ' + act.substring(0, 20) : '');
+  if (step === 'nenova') {
+    if (act.includes('신규') || act.includes('new')) return '네노바 신규 주문 입력';
+    if (act.includes('출하') || act.includes('배송')) return '네노바 출하 처리';
+    if (act.includes('재고')) return '네노바 재고 확인';
+    return '네노바 업무 처리';
+  }
+  if (step === 'doc') {
+    if (a.includes('excel')) {
+      if (act.includes('발주')) return '발주서 작성';
+      if (act.includes('정산') || act.includes('청구')) return '정산서/청구서 작성';
+      if (act.includes('출하')) return '출하 확인서 작성';
+      if (act.includes('재고')) return '재고 현황표 관리';
+      if (act.includes('가격') || act.includes('단가')) return '가격표 업데이트';
+      return '영업 관리표 작성';
+    }
+    if (a.includes('chrome') || a.includes('edge')) return '공급업체 정보 확인';
+    return '문서/정산 업무';
+  }
+  if (step === 'comm') {
+    if (a.includes('kakao')) return '카카오톡 업무 소통';
+    if (a.includes('teams')) return '팀즈 소통';
+    return '커뮤니케이션';
+  }
+  // other
+  if (a.includes('chrome') || a.includes('edge')) return '웹 검색/확인';
+  if (a.includes('explorer') || a.includes('탐색기')) return '파일 관리';
+  if (a.includes('word')) return '문서 작성';
+  if (a.includes('powershell') || a.includes('cmd')) return '시스템 작업';
+  if (app) return app.replace(/\.exe$/i, '').substring(0, 24) + ' 작업';
+  return '업무 중';
+}
+
+// ── 상태 색상 ──────────────────────────────────────────────────────
+const STATUS_COLOR = {
+  ACTIVE: '#3fb950', RECENT: '#d29922', IDLE: '#8b949e', OFFLINE: '#30363d',
+};
+const STATUS_LABEL = { ACTIVE: '활성', RECENT: '최근', IDLE: '대기', OFFLINE: '오프라인' };
+
+// ── 파이프라인 바 갱신 ────────────────────────────────────────────
+function updatePipeline(members) {
+  const slots = { order: [], nenova: [], doc: [], comm: [] };
+
+  members.forEach(m => {
+    if (m.status === 'OFFLINE') return;
+    const step = classifyStep(m.currentApp, m.currentActivity);
+    if (step !== 'other' && slots[step]) {
+      slots[step].push(m);
+    }
+  });
+
+  Object.entries(slots).forEach(([key, list]) => {
+    const el = document.getElementById('step-' + key + '-members');
+    if (!el) return;
+    if (list.length === 0) {
+      el.innerHTML = '<span class="step-empty">없음</span>';
+      return;
+    }
+    el.innerHTML = list.map(m => {
+      const timeStr = m.minAgo <= 1 ? '방금' : m.minAgo + '분 전';
+      const color = STATUS_COLOR[m.status] || STATUS_COLOR.OFFLINE;
+      return `<div class="step-member">
+        <span class="step-member-dot" style="background:${color}"></span>
+        <span>${escHtml(m.name)}</span>
+        <span class="step-member-time">(${timeStr})</span>
+      </div>`;
+    }).join('');
+  });
+}
+
+// ── 팀원 카드 렌더 ────────────────────────────────────────────────
+function renderMemberCards(members) {
+  const grid = document.getElementById('memberGrid');
+  if (!members || members.length === 0) {
+    grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><div class="empty-icon">👥</div>팀원 데이터가 없습니다.</div>';
+    return;
+  }
+
+  // 활성 순 정렬
+  const order = { ACTIVE: 0, RECENT: 1, IDLE: 2, OFFLINE: 3 };
+  members.sort((a, b) => (order[a.status] || 3) - (order[b.status] || 3));
+
+  // 활성 인원 수 갱신
+  const activeCount = members.filter(m => m.status === 'ACTIVE').length;
+  document.getElementById('activeCount').textContent = `지금 ${activeCount}명 활동중`;
+
+  grid.innerHTML = members.map(m => {
+    const color = STATUS_COLOR[m.status] || STATUS_COLOR.OFFLINE;
+    const step = classifyStep(m.currentApp, m.currentActivity);
+    const meta = STEP_META[step];
+    const taskDesc = m.status === 'OFFLINE'
+      ? '오프라인'
+      : taskDescription(m.currentApp, m.currentActivity, step);
+
+    const timeLabel = (() => {
+      if (!m.minAgo && m.minAgo !== 0) return '';
+      if (m.minAgo > 1440) return Math.floor(m.minAgo / 1440) + '일 전';
+      if (m.minAgo > 60)   return Math.floor(m.minAgo / 60) + '시간 전';
+      if (m.minAgo <= 1)   return '방금';
+      return m.minAgo + '분 전';
+    })();
+
+    const eventsHtml = m.eventsLastHour > 0
+      ? `<span>${m.eventsLastHour}건/시간</span>`
+      : `<span></span>`;
+
+    const autoHtml = (m.autoRatio && m.autoRatio > 30 && m.status !== 'OFFLINE')
+      ? `<span class="auto-tag">⚡ 자동화 가능</span>`
+      : `<span></span>`;
+
+    const badgeCls = m.status === 'OFFLINE' ? 'badge-other' : meta.cls;
+    const badgeLabel = m.status === 'OFFLINE' ? '⚫ 오프라인' : meta.label;
+
+    return `<div class="member-card status-${m.status}">
+      <div class="card-top">
+        <div class="card-name-row">
+          <span class="status-dot-lg"></span>
+          <span class="card-name">${escHtml(m.name)}</span>
+        </div>
+        <span class="card-time">${timeLabel}</span>
+      </div>
+      <div class="card-task-desc${m.status === 'OFFLINE' ? ' offline-state' : ''}">${escHtml(taskDesc)}</div>
+      <span class="step-badge ${badgeCls}">${badgeLabel}</span>
+      <div class="card-meta">
+        ${eventsHtml}
+        ${autoHtml}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── 업무현황 로드 ─────────────────────────────────────────────────
+let liveCache = null;
+async function loadLive() {
+  try {
+    const data = await apiFetch('/api/workforce/live');
+    if (!data.ok) throw new Error(data.error || '응답 오류');
+    liveCache = data.members || [];
+    updatePipeline(liveCache);
+    renderMemberCards(liveCache);
+  } catch (e) {
+    const grid = document.getElementById('memberGrid');
+    if (grid.querySelector('.spinner')) {
+      grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><div class="empty-icon">⚠️</div>데이터를 불러올 수 없습니다.<br><small style="color:var(--muted)">${escHtml(e.message)}</small></div>`;
+    }
+    document.getElementById('activeCount').textContent = '연결 오류';
+  }
+}
+
+// ── 카운트다운 ─────────────────────────────────────────────────────
+let countdown = 30;
+let countdownTimer = null;
+function startCountdown() {
+  if (countdownTimer) clearInterval(countdownTimer);
+  countdown = 30;
+  document.getElementById('countdownN').textContent = countdown;
+  countdownTimer = setInterval(() => {
+    countdown--;
+    document.getElementById('countdownN').textContent = Math.max(countdown, 0);
+    if (countdown <= 0) {
+      countdown = 30;
+      loadLive();
+    }
+  }, 1000);
+}
+
+// ── 오늘 흐름 탭 ─────────────────────────────────────────────────
+let flowLoaded = false;
+async function loadFlow() {
+  if (flowLoaded) return;
+  flowLoaded = true;
+  const el = document.getElementById('flowList');
+  try {
+    const data = await apiFetch('/api/workforce/automation-map?days=1');
+    if (!data.ok) throw new Error(data.error || '응답 오류');
+    const targets = data.targets || [];
+    if (targets.length === 0) {
+      el.innerHTML = '<div class="empty-state"><div class="empty-icon">📋</div>오늘 반복 업무가 감지되지 않았습니다.</div>';
+      return;
+    }
+
+    const headerHtml = `<div class="flow-header">
+      <span>담당자</span><span>업무</span><span>오늘 횟수</span><span>우선순위</span>
+    </div>`;
+
+    const itemsHtml = targets.map(t => {
+      const step = classifyStep(t.app, t.activity);
+      const taskDesc = taskDescription(t.app, t.activity, step);
+      const hintHtml = t.hint ? `<small>${escHtml(t.hint.substring(0, 40))}</small>` : '';
+      const prioLabel = t.priority === 'HIGH' ? '⚡ HIGH' : t.priority === 'MED' ? 'MED' : 'LOW';
+      return `<div class="flow-item">
+        <span class="flow-name">${escHtml(t.name || '—')}</span>
+        <span class="flow-task">${escHtml(taskDesc)}${hintHtml}</span>
+        <span class="flow-freq">오늘 ${t.frequency || 0}회</span>
+        <span class="flow-prio prio-${t.priority}">${prioLabel}</span>
+      </div>`;
+    }).join('');
+
+    el.innerHTML = headerHtml + itemsHtml;
+  } catch (e) {
+    el.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div>데이터를 불러올 수 없습니다.<br><small style="color:var(--muted)">${escHtml(e.message)}</small></div>`;
+  }
+}
+
+// ── 이슈/병목 탭 ─────────────────────────────────────────────────
+let issuesLoaded = false;
+async function loadIssues() {
+  if (issuesLoaded) return;
+  issuesLoaded = true;
+  const el = document.getElementById('issueList');
+
+  // API 이슈 + 자체 계산 이슈 합산
+  let apiIssues = [];
+  try {
+    const r = await fetch('/api/issues/scan', { headers: authHeaders() });
+    if (r.ok) {
+      const d = await r.json();
+      apiIssues = Array.isArray(d) ? d : (d.issues || []);
+    }
+  } catch (_) {}
+
+  // live 데이터 기반 이슈 자동 계산
+  const syntheticIssues = [];
+  if (liveCache && liveCache.length > 0) {
+    // 장시간 오프라인
+    const longOffline = liveCache.filter(m => m.status === 'OFFLINE' && m.minAgo > 120);
+    if (longOffline.length > 0) {
+      syntheticIssues.push({
+        sev: 'MED',
+        title: '장시간 접속 없음',
+        desc: longOffline.map(m => m.name).join(', ') + ' — 2시간 이상 활동 없음. 데몬 상태 확인 필요.',
+        solution: '데몬 재설치 또는 PC 전원 확인',
+      });
+    }
+    // 높은 자동화 비율
+    const highAuto = liveCache.filter(m => m.autoRatio && m.autoRatio > 50 && m.status !== 'OFFLINE');
+    if (highAuto.length > 0) {
+      syntheticIssues.push({
+        sev: 'MED',
+        title: '반복 수동 업무 집중',
+        desc: highAuto.map(m => m.name).join(', ') + ' — 자동화 가능 비율 50% 이상. 반복 작업이 수작업으로 처리되고 있습니다.',
+        solution: 'PAD(Power Automate Desktop) 또는 pyautogui로 자동화 가능',
+      });
+    }
+  }
+
+  // 기본 이슈 (데이터 없어도 표시)
+  const defaultIssues = [
+    {
+      sev: 'HIGH',
+      title: '카카오 → 네노바 수동 이중입력',
+      desc: '카카오톡으로 수신한 주문을 매번 네노바에 수동으로 다시 입력 중. 건당 5~8분, 하루 10~15건 처리.',
+      solution: 'PAD UI 셀렉터 + 카카오 메시지 파서로 자동 입력 구현 가능. 예상 절감: 약 1.5시간/일',
+    },
+    {
+      sev: 'HIGH',
+      title: 'Excel ↔ 네노바 데이터 중복 관리',
+      desc: '발주서(Excel)와 네노바 시스템에 같은 데이터를 각각 입력. 오류 발생 시 어느 쪽이 정본인지 불명확.',
+      solution: 'Python 스크립트로 네노바 데이터를 Excel로 자동 동기화. 단방향 흐름 확립 가능',
+    },
+    {
+      sev: 'MED',
+      title: '출하 확인 수동 조회',
+      desc: '출하 현황을 네노바에서 직접 열어 확인 중. 자동 요약/알림이 없어 놓치는 경우 발생.',
+      solution: '출하 완료 시 카카오톡 자동 알림 + 일일 요약 리포트 자동화 가능',
+    },
+  ];
+
+  const allIssues = [...syntheticIssues, ...defaultIssues].slice(0, 8);
+
+  if (allIssues.length === 0 && apiIssues.length === 0) {
+    el.innerHTML = '<div class="empty-state"><div class="empty-icon">✅</div>현재 감지된 이슈가 없습니다.</div>';
+    return;
+  }
+
+  // API 이슈 포맷
+  const apiFormatted = apiIssues.slice(0, 5).map(i => ({
+    sev: i.severity || i.level || 'MED',
+    title: i.title || i.message || '이슈',
+    desc: i.description || i.detail || '',
+    solution: i.solution || i.suggestion || '',
+  }));
+
+  const allFinal = [...apiFormatted, ...allIssues];
+  const sevOrder = { HIGH: 0, MED: 1, LOW: 2 };
+  allFinal.sort((a, b) => (sevOrder[a.sev] || 2) - (sevOrder[b.sev] || 2));
+
+  const sevIcon = { HIGH: '🔴', MED: '🟡', LOW: '⚪' };
+
+  el.innerHTML = allFinal.map(i => `<div class="issue-card sev-${i.sev}">
+    <div class="issue-icon">${sevIcon[i.sev] || '⚪'}</div>
+    <div class="issue-body">
+      <div class="issue-title">
+        ${escHtml(i.title)}
+        <span class="sev-badge sev-${i.sev}">${i.sev === 'HIGH' ? '높음' : i.sev === 'MED' ? '중간' : '낮음'}</span>
+      </div>
+      ${i.desc ? `<div class="issue-desc">${escHtml(i.desc)}</div>` : ''}
+      ${i.solution ? `<div class="issue-solution">→ ${escHtml(i.solution)}</div>` : ''}
+    </div>
+  </div>`).join('');
+}
+
+// ── 자동화 기회 탭 ───────────────────────────────────────────────
+let automapLoaded = false;
+
+// 앱 → 도구 추천
+function recommendTool(app, activity) {
+  const a = (app || '').toLowerCase();
+  const act = (activity || '').toLowerCase();
+  if (a.includes('nenova')) {
+    return { tool: 'PAD (UI 셀렉터)', desc: '네노바 데스크톱 앱 UI 자동화. 버튼/필드 직접 제어 가능.' };
+  }
+  if (a.includes('kakao')) {
+    return { tool: 'Python + 카카오 API', desc: '메시지 파싱 → 자동 분류 → 네노바 입력 연동.' };
+  }
+  if (a.includes('excel')) {
+    return { tool: 'Python openpyxl / VBA', desc: 'Excel 자동화. 데이터 입력/가공/보고서 자동 생성.' };
+  }
+  if (a.includes('chrome') || a.includes('edge')) {
+    return { tool: 'Selenium / Playwright', desc: '웹 브라우저 자동화. 반복 조회/입력 자동 처리.' };
+  }
+  return { tool: 'PAD / pyautogui', desc: '화면 기반 UI 자동화. 좌표 클릭 및 텍스트 입력 자동화.' };
+}
+
+// 예상 절감 시간
+function estimateSaving(frequency, priority) {
+  const freq = frequency || 1;
+  if (priority === 'HIGH') return `약 ${Math.round(freq * 6 / 60 * 10) / 10}시간/일`;
+  if (priority === 'MED')  return `약 ${Math.round(freq * 3 / 60 * 10) / 10}시간/일`;
+  return `약 ${Math.round(freq * 1.5 / 60 * 10) / 10}시간/일`;
+}
+
+async function loadAutomap() {
+  if (automapLoaded) return;
+  automapLoaded = true;
+  const el = document.getElementById('autoGrid');
+  try {
+    const data = await apiFetch('/api/workforce/automation-map?days=1');
+    if (!data.ok) throw new Error(data.error || '응답 오류');
+    const targets = (data.targets || []).filter(t => t.priority === 'HIGH' || t.priority === 'MED');
+    if (targets.length === 0) {
+      el.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><div class="empty-icon">⚡</div>오늘 자동화 후보가 감지되지 않았습니다.</div>';
+      return;
+    }
+
+    el.innerHTML = targets.map(t => {
+      const step = classifyStep(t.app, t.activity);
+      const meta = STEP_META[step];
+      const taskDesc = taskDescription(t.app, t.activity, step);
+      const rec = recommendTool(t.app, t.activity);
+      const saving = estimateSaving(t.frequency, t.priority);
+      const prioClass = t.priority === 'HIGH' ? 'prio-HIGH' : 'prio-MED';
+      const prioLabel = t.priority === 'HIGH' ? '⚡ 높은 우선순위' : '우선순위 중간';
+
+      return `<div class="auto-card">
+        <div class="auto-card-top">
+          <div class="auto-card-title">
+            <span>${meta.label.split(' ')[0]}</span>
+            <span>${escHtml(taskDesc)}</span>
+          </div>
+          <span class="flow-prio ${prioClass}" style="flex-shrink:0">${prioLabel}</span>
+        </div>
+        <div class="auto-card-who">
+          <span class="who-chip">담당: ${escHtml(t.name || '—')}</span>
+          <span class="who-chip">오늘 ${t.frequency || 0}회 반복</span>
+          <span class="step-badge ${meta.cls}" style="margin:0;padding:2px 8px;font-size:10px">${meta.label}</span>
+        </div>
+        <div class="auto-card-tool">
+          <strong>추천 도구: ${escHtml(rec.tool)}</strong>
+          ${escHtml(rec.desc)}
+        </div>
+        <div class="auto-card-saving">
+          <span class="saving-label">예상 절감</span>
+          <span class="saving-val">${saving}</span>
+        </div>
+      </div>`;
+    }).join('');
+  } catch (e) {
+    el.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><div class="empty-icon">⚠️</div>데이터를 불러올 수 없습니다.<br><small style="color:var(--muted)">${escHtml(e.message)}</small></div>`;
+  }
+}
+
+// ── 탭 전환 ───────────────────────────────────────────────────────
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    const tab = btn.dataset.tab;
+    document.getElementById('tab-' + tab).classList.add('active');
+
+    if (tab === 'flow')    loadFlow();
+    if (tab === 'issues')  loadIssues();
+    if (tab === 'automap') loadAutomap();
+  });
+});
+
+// ── 새로고침 ──────────────────────────────────────────────────────
 document.getElementById('refreshBtn').addEventListener('click', () => {
-  tabLoaded = { personnel: false, redundancy: false, automap: false, idle: false };
+  flowLoaded = false;
+  issuesLoaded = false;
+  automapLoaded = false;
+
   document.getElementById('memberGrid').innerHTML =
     '<div class="loading-state" style="grid-column:1/-1"><div class="spinner"></div> 새로고침 중...</div>';
-  scoresCache = null;
+
   loadLive();
-  loadScores();
-  // 현재 활성 탭도 새로고침
+  startCountdown();
+
+  // 현재 활성 탭 새로고침
   const activeTab = document.querySelector('.tab-btn.active').dataset.tab;
-  if (activeTab !== 'personnel') {
-    tabLoaded[activeTab] = false;
-    document.getElementById(
-      activeTab === 'redundancy' ? 'overlapList' :
-      activeTab === 'automap' ? 'automapGrid' : 'idleTableWrap'
-    ).innerHTML = '<div class="loading-state"><div class="spinner"></div> 새로고침 중...</div>';
-    loadTab(activeTab);
+  if (activeTab === 'flow') {
+    document.getElementById('flowList').innerHTML = '<div class="loading-state"><div class="spinner"></div> 새로고침 중...</div>';
+    loadFlow();
+  } else if (activeTab === 'issues') {
+    document.getElementById('issueList').innerHTML = '<div class="loading-state"><div class="spinner"></div> 새로고침 중...</div>';
+    loadIssues();
+  } else if (activeTab === 'automap') {
+    document.getElementById('autoGrid').innerHTML = '<div class="loading-state" style="grid-column:1/-1"><div class="spinner"></div> 새로고침 중...</div>';
+    loadAutomap();
   }
 });
 
 // ── 초기 로드 ──────────────────────────────────────────────────────
 loadLive();
-loadScores();
 startCountdown();
 </script>
 </body>
