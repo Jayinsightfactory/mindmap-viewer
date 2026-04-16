@@ -114,8 +114,8 @@ let _macCachedApp = '', _macCachedAppTs = 0;
 let _macCachedTitle = '', _macCachedTitleTs = 0;
 const _MAC_CACHE_MS = 1000;
 
-const PS_GET_APP = '[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; (Get-Process | Where-Object {$_.MainWindowHandle -ne 0 -and $_.Responding} | Sort-Object -Property CPU -Descending | Select-Object -First 1).Name';
-const PS_GET_TITLE = '[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; (Get-Process | Where-Object {$_.MainWindowHandle -ne 0 -and $_.Responding -and $_.MainWindowTitle -ne ""} | Sort-Object -Property CPU -Descending | Select-Object -First 1).MainWindowTitle';
+const PS_GET_APP = '[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; (Get-Process | Where-Object {$_.MainWindowHandle -ne 0} | Sort-Object -Property CPU -Descending | Select-Object -First 1).Name';
+const PS_GET_TITLE = '[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; (Get-Process | Where-Object {$_.MainWindowHandle -ne 0 -and $_.MainWindowTitle -ne ""} | Sort-Object -Property CPU -Descending | Select-Object -First 1).MainWindowTitle';
 
 function _loadWinShell() {
   if (_winShell || _winShellFailed) return _winShell;
