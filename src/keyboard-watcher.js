@@ -798,6 +798,32 @@ function _onKeydown(e) {
     return;
   }
 
+  // Ctrl+P 감지 (인쇄 — 발주서/청구서 출력 순간)
+  if ((ctrlKey || metaKey) && keycode === 25) {
+    try {
+      const wf = require('./workflow-learner');
+      wf.recordAction({ type: 'shortcut', app: getActiveApp(), window: getActiveWindowTitle(), detail: 'ctrl+p (print)' });
+    } catch {}
+    if (_screenCapture?.onPrint) _screenCapture.onPrint();
+    return;
+  }
+
+  // Ctrl+Enter 감지 (Excel 수식 확정, 대화 전송 등)
+  if (ctrlKey && keycode === 28) { // keycode 28 = Enter in most layouts
+    try {
+      const wf = require('./workflow-learner');
+      wf.recordAction({ type: 'shortcut', app: getActiveApp(), window: getActiveWindowTitle(), detail: 'ctrl+enter' });
+    } catch {}
+    const curApp = (getActiveApp() || '').toLowerCase();
+    if (curApp.includes('excel') || curApp.includes('sheet')) {
+      if (_screenCapture?.onExcelFormula) _screenCapture.onExcelFormula();
+    }
+    _enterCount++;
+    _rawBuffer += '\n';
+    _flushToLocalBuffer();
+    return;
+  }
+
   // Tab 키 감지 (데이터 입력/필드 이동 지표)
   if (keycode === 15) {
     _tabCount++;

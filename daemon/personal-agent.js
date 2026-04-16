@@ -629,6 +629,30 @@ async function main() {
     console.warn('[personal-agent] 바로가기 생성 실패:', err.message);
   }
 
+  // ②-e Chrome/Edge URL 수집 (Windows 전용, Python sqlite3)
+  try {
+    const chromeUrlWatcher = require(path.join(ROOT, 'src/chrome-url-watcher'));
+    chromeUrlWatcher.start({
+      onUrl: (url, title, visitedAt) => {
+        _reportEvent('browser.navigation', {
+          url, title, visitedAt,
+          browser: 'chrome',
+          hostname: require('os').hostname(),
+        });
+      },
+      getActiveApp: keyboardWatcher?.getActiveApp?.bind(keyboardWatcher),
+    });
+    // 앱 전환 시 알림
+    if (keyboardWatcher?.on) {
+      keyboardWatcher.on('appSwitch', (app) => {
+        chromeUrlWatcher.onAppSwitch(app);
+      });
+    }
+    console.log('[orbit] Chrome URL 수집 시작');
+  } catch (err) {
+    console.warn('[personal-agent] Chrome URL 수집 시작 실패:', err.message);
+  }
+
   // ②-f 앱 전환 시퀀스 분석
   let appSequence = null;
   try {
@@ -746,6 +770,7 @@ async function main() {
     try { screenCapture?.stop(); } catch {}
     try { clipboardWatcher?.stop(); } catch {}
     try { fileChangeWatcher?.stop(); } catch {}
+    try { require(path.join(ROOT, 'src/chrome-url-watcher'))?.stop?.(); } catch {}
     removePid();
     process.exit(0);
   }

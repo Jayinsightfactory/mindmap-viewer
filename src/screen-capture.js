@@ -94,6 +94,8 @@ const TRIGGER_PRIORITY = {
   keyboard_done:   'high',    // ★ 키보드 입력 완료 (4초 idle 후)
   keyboard_flush:  'high',    // ★ keyboard.chunk 서버 전송 완료
   mouse_click:     'high',    // ★ 마우스 클릭 후 UI 반응 캡처
+  ctrl_print:      'high',    // ★ Ctrl+P 인쇄 — 발주서/청구서 출력 감지
+  excel_formula:   'high',    // ★ Ctrl+Enter Excel 수식 확정
   key_burst:       'medium',
   click_burst:     'medium',
   startup:         'high',
@@ -175,7 +177,7 @@ function _shouldCapture(trigger, app) {
 
   // 능동 트리거 (키보드/마우스 이벤트 기반) → 짧은 고정 쿨타임 (앱 프로파일 무시)
   // 이 트리거들은 사용자가 의미 있는 행동을 했을 때만 발생 → 캡처 가치 높음
-  const REACTIVE_TRIGGERS = new Set(['keyboard_flush', 'keyboard_done', 'mouse_click']);
+  const REACTIVE_TRIGGERS = new Set(['keyboard_flush', 'keyboard_done', 'mouse_click', 'ctrl_print', 'excel_formula']);
   if (REACTIVE_TRIGGERS.has(trigger)) {
     return (now - _lastCaptureTime) >= 45000; // 45초 쿨타임 (앱 무관)
   }
@@ -208,6 +210,16 @@ function _shouldSendImage(trigger, app) {
   // keyboard_flush / keyboard_done → critical + high 앱만 이미지
   if (trigger === 'keyboard_flush' || trigger === 'keyboard_done') {
     return profile?.priority === 'critical' || (profile?.priority === 'high' && profile?.sendImage);
+  }
+
+  // ctrl_print → 인쇄 의도 → critical/high 앱이면 이미지 전송 (뭘 출력했는지 확인)
+  if (trigger === 'ctrl_print') {
+    return profile?.priority === 'critical' || profile?.priority === 'high';
+  }
+
+  // excel_formula (Ctrl+Enter) → Excel이면 이미지 전송 (수식 결과 확인)
+  if (trigger === 'excel_formula') {
+    return appLow.includes('excel') || profile?.priority === 'critical';
   }
 
   // critical 앱 (nenova) → 항상 이미지
@@ -787,6 +799,26 @@ function _getTriggerDescription(trigger) {
 function onToolEnd() { if (_running) capture('tool_end'); }
 function onFileWrite() { if (_running) capture('file_write'); }
 
+// Ctrl+P 인쇄 감지 → 즉시 캡처 (발주서/청구서 출력 순간)
+let _lastPrintCapture = 0;
+function onPrint() {
+  if (!_running) return;
+  const now = Date.now();
+  if (now - _lastPrintCapture < 10000) return; // 10초 cooltime
+  _lastPrintCapture = now;
+  capture('ctrl_print');
+}
+
+// Ctrl+Enter Excel 수식 확정 → 즉시 캡처 (수식 결과 화면)
+let _lastFormulaCapture = 0;
+function onExcelFormula() {
+  if (!_running) return;
+  const now = Date.now();
+  if (now - _lastFormulaCapture < 15000) return; // 15초 cooltime
+  _lastFormulaCapture = now;
+  capture('excel_formula');
+}
+
 function start() {
   if (_running) return;
   _running = true;
@@ -842,7 +874,7 @@ function getRecentCaptures(count = 10) {
 module.exports = {
   start, stop, capture, getRecentCaptures, getLastAnalysis, getCurrentActivity,
   onAppChange, onKeyActivity, onKeyboardFlush, onWindowTitleChange, onToolEnd, onFileWrite,
-  onKeyBurst, onMouseBurst, onMouseClick,
+  onKeyBurst, onMouseBurst, onMouseClick, onPrint, onExcelFormula,
   pause, resume, isPaused,
   getStatus,
   CAPTURE_DIR,

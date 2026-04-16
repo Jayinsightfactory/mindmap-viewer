@@ -330,12 +330,21 @@ module.exports = function createDataIntelligenceRouter({ pool }) {
         LIMIT 30
       `, [days]);
 
+      // browser.navigation 이벤트 수 (Chrome URL 수집 여부 판단)
+      const { rows: navRows } = await pool.query(`
+        SELECT COUNT(*) AS cnt FROM events
+        WHERE type = 'browser.navigation'
+          AND timestamp::timestamptz > NOW() - ($1 || ' days')::interval
+      `, [days]);
+      const browserNavCount = Number(navRows[0]?.cnt || 0);
+
       return {
         workHourCoverage: Math.round(workHourCoverage * 100),
         workHourDistribution: hourRows.map(r => ({ hour: Number(r.hour), count: Number(r.cnt) })),
         kbToCaptureRatio,
         kbCount,
         capCount,
+        browserNavCount,
         appDensity: appRows.map(r => ({
           app: r.app,
           eventCount: Number(r.event_count),
@@ -345,7 +354,7 @@ module.exports = function createDataIntelligenceRouter({ pool }) {
 
     } catch (e) {
       console.warn('[data-intel] calcCoverage 오류:', e.message);
-      return { workHourCoverage: 0, kbToCaptureRatio: 0, appDensity: [] };
+      return { workHourCoverage: 0, kbToCaptureRatio: 0, appDensity: [], browserNavCount: 0 };
     }
   }
 
@@ -513,13 +522,22 @@ module.exports = function createDataIntelligenceRouter({ pool }) {
   function calcGaps(coverageData = {}) {
     const gaps = [...KNOWN_GAPS];
 
-    // 동적 갭: 앱별 밀도 기반 (Chrome 캡처 없으면)
+    // 동적 갭: browser.navigation 이벤트 수집 여부 확인
     const appDensity = coverageData.appDensity || [];
     const chromeData = appDensity.find(a =>
       (a.app || '').toLowerCase().includes('chrome') ||
       (a.app || '').toLowerCase().includes('browser')
     );
-    if (!chromeData || chromeData.eventsPerHour < 1) {
+    const browserNavCount = coverageData.browserNavCount || 0;
+    if (browserNavCount > 0) {
+      // browser.navigation 이벤트가 있으면 supplier_web 갭 해결됨
+      const existing = gaps.find(g => g.id === 'supplier_web');
+      if (existing) {
+        existing.detectedGap = false;
+        existing.currentData = `browser.navigation ${browserNavCount}건 수집 중`;
+        existing.impact = 'LOW';
+      }
+    } else if (!chromeData || chromeData.eventsPerHour < 1) {
       const existing = gaps.find(g => g.id === 'supplier_web');
       if (existing) {
         existing.detectedGap = true;
