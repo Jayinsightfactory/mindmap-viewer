@@ -819,14 +819,25 @@ function onExcelFormula() {
   capture('excel_formula');
 }
 
+// startup 캡처 중복 방지 — 5분 내 재시작 시 startup 캡처 skip (노이즈 감소)
+const _STARTUP_FLAG_PATH = require('path').join(require('os').tmpdir(), '.orbit_startup_ts');
+function _shouldCaptureStartup() {
+  try {
+    const prev = Number(require('fs').readFileSync(_STARTUP_FLAG_PATH, 'utf8'));
+    if (Date.now() - prev < 5 * 60 * 1000) return false; // 5분 내 재시작 = skip
+  } catch {}
+  try { require('fs').writeFileSync(_STARTUP_FLAG_PATH, String(Date.now()), 'utf8'); } catch {}
+  return true;
+}
+
 function start() {
   if (_running) return;
   _running = true;
   _lastCaptureTime = 0;
   _checkVisionEnabled();
   _detectScreenResolution();
-  // 캡처 시작
-  capture('startup');
+  // startup 캡처 — 5분 내 재시작이면 skip (노이즈 1529건 원인)
+  if (_shouldCaptureStartup()) capture('startup');
 }
 
 function stop() {

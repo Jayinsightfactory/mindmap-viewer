@@ -331,6 +331,22 @@ module.exports = function ({ pool }) {
       const cntMap = {};
       countRows.forEach(r => { cntMap[r.user_id] = parseInt(r.cnt); });
 
+      // 최근 30분 browser.navigation URL (공급업체 웹 조회 현황)
+      const { rows: navRows } = await pool.query(`
+        SELECT DISTINCT ON (user_id)
+          user_id,
+          data_json::jsonb->>'url'   AS url,
+          data_json::jsonb->>'title' AS title
+        FROM events
+        WHERE type = 'browser.navigation'
+          AND timestamp::timestamptz > NOW() - INTERVAL '30 minutes'
+          AND user_id NOT LIKE 'local%'
+          AND user_id NOT LIKE 'pc_%'
+        ORDER BY user_id, timestamp DESC
+      `);
+      const navMap = {};
+      navRows.forEach(r => { if (r.url) navMap[r.user_id] = { url: r.url, title: r.title }; });
+
       // 오늘 자동화 가능 화면 수
       const { rows: autoRows } = await pool.query(`
         SELECT user_id,
@@ -373,6 +389,7 @@ module.exports = function ({ pool }) {
           eventsLastHour: evtCount,
           autoRatio: autoInfo.ratio,
           timestamp: r.timestamp,
+          recentUrl: navMap[r.user_id] || null,
         };
       }).sort((a, b) => {
         const order = { ACTIVE: 0, RECENT: 1, IDLE: 2, OFFLINE: 3 };
