@@ -1014,6 +1014,12 @@ app.post('/api/admin/share-drive-folder', async (req, res) => {
 // ─── 자동 에러 수정 엔진 ─────────────────────────────────────────────────────
 const autoFixer = (() => { try { return require('./src/auto-fixer'); } catch(e) { console.warn('[auto-fixer] 로드 실패:', e.message); return null; } })();
 
+// ─── 텍스트 구조화 추출기 ─────────────────────────────────────────────────────
+const textExtractor = (() => { try { return require('./src/text-extractor'); } catch(e) { console.warn('[text-extractor] 로드 실패:', e.message); return null; } })();
+
+// ─── 서버사이드 Vision 분석 루프 ───────────────────────────────────────────────
+const visionProcessor = (() => { try { return require('./src/vision-processor'); } catch(e) { console.warn('[vision-processor] 로드 실패:', e.message); return null; } })();
+
 // ─── 업데이트 이메일 알림 ────────────────────────────────────────────────────
 const { sendUpdateEmail, sendPerfIssueEmail } = (() => { try { return require('./src/email-notifier'); } catch(e) { console.warn('[email-notifier] 로드 실패:', e.message); return { sendUpdateEmail: () => {}, sendPerfIssueEmail: () => {} }; } })();
 
@@ -2600,6 +2606,18 @@ app.post('/api/hook', async (req, res) => {
       ? hookUser.id
       : (deviceId ? `pc_${deviceId}` : 'local');
 
+    // ── 텍스트 구조화 사전 처리 (insertEvent 전) ─────────────────────────────
+    if (textExtractor) {
+      for (const event of events) {
+        if (event.type === 'keyboard.chunk' || event.type === 'clipboard.change') {
+          try {
+            const structured = textExtractor.extract(event);
+            if (structured) event.data._structured = structured;
+          } catch (e) { /* 구조화 실패는 무시 */ }
+        }
+      }
+    }
+
     // DB 저장 (중복 방지) + JSONL 비동기 쓰기
     // imageBase64는 Vision 큐용으로 별도 보관, DB에는 저장하지 않음
     const _imageCache = new Map(); // eventId → imageBase64
@@ -2869,6 +2887,41 @@ app.post('/api/hook', async (req, res) => {
       }
     };
     _broadcastLightweight();
+
+    // ── 활동 자동 분류 디바운스 (userId당 5분 쿨다운) ──────────────────────
+    if (_isPg && hookUserId && hookUserId !== 'local') {
+      if (!global._classifyDebounce) global._classifyDebounce = new Map();
+      const _lastClassify = global._classifyDebounce.get(hookUserId) || 0;
+      if (Date.now() - _lastClassify > 5 * 60 * 1000) {
+        global._classifyDebounce.set(hookUserId, Date.now());
+        setImmediate(async () => {
+          try {
+            const _pool = dbModule.getDb();
+            if (!_pool?.query) return;
+            // 최근 30분 이벤트 가져와서 분류 태깅
+            const { rows } = await _pool.query(`
+              SELECT id, type, data_json, timestamp FROM events
+              WHERE user_id = $1 AND timestamp > NOW() - INTERVAL '30 minutes'
+              AND type IN ('keyboard.chunk','screen.capture','clipboard.change')
+              ORDER BY timestamp DESC LIMIT 100
+            `, [hookUserId]);
+            if (!rows.length) return;
+            // structured 필드 있는 이벤트 집계 → 간단 activity 태깅
+            const appCounts = {};
+            let topApp = '', topCount = 0;
+            for (const r of rows) {
+              const d = typeof r.data_json === 'string' ? JSON.parse(r.data_json) : r.data_json;
+              const s = d?._structured;
+              if (!s) continue;
+              const key = s.app_type || 'general';
+              appCounts[key] = (appCounts[key] || 0) + 1;
+              if (appCounts[key] > topCount) { topApp = key; topCount = appCounts[key]; }
+            }
+            if (topApp) console.log(`[auto-classify] ${hookUserId} 최근 30분 주요 활동: ${topApp} (${topCount}건)`);
+          } catch (e) { /* 분류 실패 무시 */ }
+        });
+      }
+    }
 
     // Ollama 실시간 분석 (이벤트 큐에 추가)
     for (const ev of events) ollamaAnalyzer.addEvent(ev);
@@ -5495,6 +5548,12 @@ async function startServer() {
     console.log(`   Git hooks 설치: curl http://localhost:${PORT}/api/git/install | bash`);
     console.log(`   MCP 서버: http://localhost:${PORT}/api/mcp`);
     console.log(`   학습 데이터: http://localhost:${PORT}/api/learned-insights\n`);
+  }
+
+  // ── 서버사이드 Vision 분석 루프 시작 ────────────────────────────────────
+  if (visionProcessor?.startVisionLoop) {
+    visionProcessor.startVisionLoop(() => dbModule.getDb ? dbModule.getDb() : null);
+    console.log('[vision-proc] 서버사이드 Vision 루프 시작 (30s/2min 인터벌)');
   }
 
   // outcome 테이블 초기화 (기존 DB에 테이블 없으면 생성)
