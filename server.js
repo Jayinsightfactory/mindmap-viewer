@@ -4874,6 +4874,13 @@ try {
   }));
 } catch(e) { console.warn('[mount] context-engine:', e.message); }
 
+// ─── 데이터 인텔리전스 (데이터 파이프라인 품질 평가 + 자가발전 에이전트) ─────────
+try {
+  app.use('/api/data-intel', require('./routes/data-intelligence')({
+    pool: dbModule.getDb(),
+  }));
+} catch(e) { console.warn('[mount] data-intelligence:', e.message); }
+
 // ─── 워크플로우 패턴 마이닝 (슬라이딩 윈도우 시퀀스 → 루틴/자동화후보) ────────
 try {
   const workflowLearner = require('./src/workflow-learner');
