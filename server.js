@@ -1211,7 +1211,7 @@ app.get('/api/learning/logs', async (req, res) => {
           FROM events
           WHERE user_id NOT IN ('local','system') AND user_id IS NOT NULL
           ${typeFilter}
-          AND timestamp > NOW() - INTERVAL '7 days'
+          AND timestamp::timestamptz > NOW() - INTERVAL '7 days'
         ) sub
         WHERE rn <= $1
         ORDER BY timestamp DESC
