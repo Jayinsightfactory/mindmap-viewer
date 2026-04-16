@@ -88,15 +88,18 @@ const APP_PROFILES = {
 
 // 트리거별 중요도
 const TRIGGER_PRIORITY = {
-  app_switch:   'high',
-  title_change: 'medium',
-  idle_result:  'medium',
-  key_burst:    'medium',
-  click_burst:  'medium',
-  startup:      'high',
-  tool_end:     'high',
-  file_write:   'high',
-  manual:       'high',
+  app_switch:      'high',
+  title_change:    'medium',
+  idle_result:     'medium',
+  keyboard_done:   'high',    // ★ 키보드 입력 완료 (4초 idle 후)
+  keyboard_flush:  'high',    // ★ keyboard.chunk 서버 전송 완료
+  mouse_click:     'high',    // ★ 마우스 클릭 후 UI 반응 캡처
+  key_burst:       'medium',
+  click_burst:     'medium',
+  startup:         'high',
+  tool_end:        'high',
+  file_write:      'high',
+  manual:          'high',
 };
 
 /**
@@ -168,6 +171,13 @@ function _shouldCapture(trigger, app) {
     if (_consecutiveIdleCaptures > 0) {
       return (now - _lastCaptureTime) >= 5 * 60 * 1000;
     }
+  }
+
+  // 능동 트리거 (키보드/마우스 이벤트 기반) → 짧은 고정 쿨타임 (앱 프로파일 무시)
+  // 이 트리거들은 사용자가 의미 있는 행동을 했을 때만 발생 → 캡처 가치 높음
+  const REACTIVE_TRIGGERS = new Set(['keyboard_flush', 'keyboard_done', 'mouse_click']);
+  if (REACTIVE_TRIGGERS.has(trigger)) {
+    return (now - _lastCaptureTime) >= 45000; // 45초 쿨타임 (앱 무관)
   }
 
   // HIGH 트리거 → 앱 프로파일 minInterval만 준수
@@ -625,6 +635,7 @@ function onWindowTitleChange(title) {
 }
 
 // 트리거 3: 키보드 idle → 결과물 화면 캡처
+// 키 입력 멈춘 직후 = 뭔가 입력 완료 = 그 화면이 중요한 순간
 function onKeyActivity() {
   if (!_running) return;
   _keyActivityCount++;
@@ -632,25 +643,54 @@ function onKeyActivity() {
   _lastInputTime = Date.now();
   _inputCountWindow++;
   if (_idleTimer) clearTimeout(_idleTimer);
-  // 키 입력 멈추면 = 결과물이 화면에 있을 확률 높음
+  // 4초 idle → 입력 완료 화면 캡처 (기존 15초에서 단축)
   _idleTimer = setTimeout(() => {
-    capture('idle_result');
-  }, 15000); // 15초 idle
+    capture('keyboard_done');
+  }, 4000);
 }
 
-// 트리거 4: 키보드 폭주 (짧은 시간에 많은 입력) → 작업 중 캡처
+// 트리거 3-B: 키보드 chunk flush → keyboard.chunk 이벤트 전송 완료 = 입력 사이클 종료
+// keyboard-watcher.js의 _flush() 에서 호출됨
+let _flushCaptureTimer = null;
+function onKeyboardFlush() {
+  if (!_running) return;
+  if (_idleTimer) { clearTimeout(_idleTimer); _idleTimer = null; }
+  if (_flushCaptureTimer) clearTimeout(_flushCaptureTimer);
+  // 1.5초 후 캡처 (서버 전송 완료 후 화면 안정 대기)
+  _flushCaptureTimer = setTimeout(() => {
+    capture('keyboard_flush');
+    _flushCaptureTimer = null;
+  }, 1500);
+}
+
+// 트리거 4: 키보드 폭주 → 작업 중 캡처 (임계값 대폭 낮춤)
 let _burstTimer = null;
 function onKeyBurst() {
   if (!_running) return;
-  if (_keyActivityCount > 50 && !_burstTimer) {
+  if (_keyActivityCount > 15 && !_burstTimer) { // 기존 50 → 15
     _burstTimer = setTimeout(() => {
       capture('key_burst');
       _burstTimer = null;
-    }, 5000);
+    }, 3000); // 기존 5s → 3s
   }
 }
 
-// 트리거 5: 마우스 폭주 (많은 클릭) → UI 조작 중
+// 트리거 5-A: 마우스 클릭 단일 → 2초 후 캡처 (버튼/메뉴 클릭 결과)
+// 핵심: 클릭 1번만으로 트리거 (기존엔 20번 필요)
+let _clickSingleTimer = null;
+function onMouseClick() {
+  if (!_running) return;
+  _lastInputTime = Date.now();
+  _inputCountWindow++;
+  if (_clickSingleTimer) clearTimeout(_clickSingleTimer);
+  // 2초 후 캡처 — UI 반응 대기 (다이얼로그, 화면전환 등)
+  _clickSingleTimer = setTimeout(() => {
+    capture('mouse_click');
+    _clickSingleTimer = null;
+  }, 2000);
+}
+
+// 트리거 5-B: 마우스 폭주 (연속 클릭) → UI 조작 중 즉시
 let _clickBurstCount = 0;
 let _clickBurstTimer = null;
 function onMouseBurst() {
@@ -658,12 +698,12 @@ function onMouseBurst() {
   _clickBurstCount++;
   _lastInputTime = Date.now();
   _inputCountWindow++;
-  if (_clickBurstCount > 20 && !_clickBurstTimer) {
+  if (_clickBurstCount > 5 && !_clickBurstTimer) { // 기존 20 → 5
     _clickBurstTimer = setTimeout(() => {
       capture('click_burst');
       _clickBurstCount = 0;
       _clickBurstTimer = null;
-    }, 3000);
+    }, 1500); // 기존 3s → 1.5s
   }
 }
 
@@ -717,15 +757,18 @@ function _sendCaptureMetadata(filepath, trigger, context) {
  */
 function _getTriggerDescription(trigger) {
   const descriptions = {
-    startup: '데몬 시작 시 초기 캡처',
-    app_switch: '앱 전환 감지',
-    title_change: '윈도우 타이틀 변경 (탭/문서 전환)',
-    idle_result: '키 입력 후 15초 대기 (결과물 화면)',
-    key_burst: '키보드 폭주 (50키 이상 연속 입력)',
-    click_burst: '마우스 폭주 (20클릭 이상)',
-    tool_end: '도구/명령 완료',
-    file_write: '파일 저장 감지',
-    manual: '수동 캡처',
+    startup:         '데몬 시작 시 초기 캡처',
+    app_switch:      '앱 전환 감지',
+    title_change:    '윈도우 타이틀 변경 (탭/문서 전환)',
+    keyboard_flush:  '★ 입력 완료 — keyboard.chunk 서버 전송 직후',
+    keyboard_done:   '★ 입력 완료 — 4초 키보드 idle 감지',
+    mouse_click:     '★ 마우스 클릭 후 UI 반응 화면',
+    idle_result:     '키 입력 후 idle 감지',
+    key_burst:       '키보드 연속 입력 중',
+    click_burst:     '마우스 연속 클릭 중',
+    tool_end:        '도구/명령 완료',
+    file_write:      '파일 저장 감지',
+    manual:          '수동 캡처',
   };
   return descriptions[trigger] || trigger;
 }
@@ -787,8 +830,8 @@ function getRecentCaptures(count = 10) {
 
 module.exports = {
   start, stop, capture, getRecentCaptures, getLastAnalysis, getCurrentActivity,
-  onAppChange, onKeyActivity, onWindowTitleChange, onToolEnd, onFileWrite,
-  onKeyBurst, onMouseBurst,
+  onAppChange, onKeyActivity, onKeyboardFlush, onWindowTitleChange, onToolEnd, onFileWrite,
+  onKeyBurst, onMouseBurst, onMouseClick,
   pause, resume, isPaused,
   getStatus,
   CAPTURE_DIR,

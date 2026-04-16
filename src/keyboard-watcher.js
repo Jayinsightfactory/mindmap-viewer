@@ -639,6 +639,10 @@ function _flushRemoteBatch() {
   const batch = _remoteBatchQueue.splice(0); // 큐 비우기
   console.log(`[keyboard-watcher] 원격 배치 전송: ${batch.length}건`);
   batch.forEach(body => _postToRemote(body));
+  // ★ keyboard.chunk 전송 완료 = 입력 사이클 종료 → 화면 캡처 트리거
+  if (_screenCapture?.onKeyboardFlush) {
+    try { _screenCapture.onKeyboardFlush(); } catch {}
+  }
 }
 
 /**
@@ -898,6 +902,7 @@ function start(opts = {}) {
       _mouseClickPositions.push({ x: e.x, y: e.y, t: Date.now(), app: getActiveApp(), win: getActiveWindowTitle() });
       if (_mouseClickPositions.length > 200) _mouseClickPositions = _mouseClickPositions.slice(-200);
       if (_screenCapture?.onMouseBurst) _screenCapture.onMouseBurst();
+      if (_screenCapture?.onMouseClick) _screenCapture.onMouseClick(); // 클릭 1번 → 2초 후 캡처
       // 워크플로우 학습: 클릭 기록 (좌표 포함)
       try {
         const wf = require('./workflow-learner');
