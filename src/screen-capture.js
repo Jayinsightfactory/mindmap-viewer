@@ -199,6 +199,17 @@ function _shouldSendImage(trigger, app) {
   const profile = APP_PROFILES[appLow];
   const triggerPriority = TRIGGER_PRIORITY[trigger] || 'medium';
 
+  // mouse_click 트리거 → critical 앱(nenova)만 이미지, 나머지 metadata
+  // 이유: 클릭은 빈번 → 과도한 이미지 전송 방지
+  if (trigger === 'mouse_click') {
+    return profile?.priority === 'critical';
+  }
+
+  // keyboard_flush / keyboard_done → critical + high 앱만 이미지
+  if (trigger === 'keyboard_flush' || trigger === 'keyboard_done') {
+    return profile?.priority === 'critical' || (profile?.priority === 'high' && profile?.sendImage);
+  }
+
   // critical 앱 (nenova) → 항상 이미지
   if (profile?.priority === 'critical') return true;
 

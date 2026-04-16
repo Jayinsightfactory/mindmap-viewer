@@ -1027,7 +1027,7 @@ const { sendUpdateEmail, sendPerfIssueEmail } = (() => { try { return require('.
 // ─── Vision 큐 (맥미니 CLI 워커가 폴링해서 분석) ──────────────────────────────
 // Vision 분석은 맥미니 전용 — Railway에서는 큐잉만 함
 if (!global._visionImageQueue) global._visionImageQueue = [];
-const _VISION_QUEUE_MAX = 100; // Phase4: 배치 10개 + 빈도 증가 대응 (50→100)
+const _VISION_QUEUE_MAX = 20;  // 능동 트리거 빈도 증가 대응 — 100→20 (이미지 1개 ~3MB×20=60MB 안전)
 
 // 힙 압력 모니터링 (460MB 힙 기준 — Railway Hobby 512MB 내 안정 운영)
 let _heapPressure = false;
@@ -2708,6 +2708,12 @@ app.post('/api/hook', async (req, res) => {
         const _recentClickEvt = events.find(e =>
           e.type === 'secure.activity' && e.data?.recentClicks?.length > 0
         );
+        // 이미지 사이즈 체크 — 5MB 초과 base64는 OOM 위험, 스킵
+        if (cachedImage && cachedImage.length > 5_000_000) {
+          console.warn(`[vision-queue] 이미지 너무 큼 (${Math.round(cachedImage.length/1024)}KB) — 스킵`);
+          _imageCache.delete(ev.id);
+          continue;
+        }
         global._visionImageQueue.push({
           id:          ev.id,
           imageBase64: cachedImage,
