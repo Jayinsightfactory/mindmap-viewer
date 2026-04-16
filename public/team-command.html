@@ -947,11 +947,33 @@ async function loadIssues() {
 
   // API 이슈 + 자체 계산 이슈 합산
   let apiIssues = [];
+  let intelIssues = [];
   try {
-    const r = await fetch('/api/issues/scan', { headers: authHeaders() });
-    if (r.ok) {
-      const d = await r.json();
+    const [r1, r2] = await Promise.all([
+      fetch('/api/issues/scan', { headers: authHeaders() }).catch(() => null),
+      fetch('/api/data-intel/recommendations', { headers: authHeaders() }).catch(() => null),
+    ]);
+    if (r1?.ok) {
+      const d = await r1.json();
       apiIssues = Array.isArray(d) ? d : (d.issues || []);
+    }
+    if (r2?.ok) {
+      const d = await r2.json();
+      const recs = d.recommendations || [];
+      // data-intel 권고사항 → 이슈 형태로 변환 (HIGH/CRITICAL 만)
+      intelIssues = recs
+        .filter(r => r.priority === 'CRITICAL' || r.priority === 'HIGH')
+        .slice(0, 4)
+        .map(r => ({
+          sev: r.type === 'VISION_WORKER_LAG' ? 'HIGH' : 'MED',
+          title: r.type === 'VISION_WORKER_LAG' ? '⚠️ Vision 분석 큐 지연'
+               : r.type === 'DUPLICATE_CAPTURES' ? '📸 중복 캡처 낭비'
+               : r.type === 'REDUCE_TRIGGER' ? '🔧 비효율 트리거: ' + r.trigger
+               : r.type,
+          desc: r.reason,
+          solution: r.action,
+          source: '수집전략 에이전트',
+        }));
     }
   } catch (_) {}
 
@@ -1002,7 +1024,7 @@ async function loadIssues() {
     },
   ];
 
-  const allIssues = [...syntheticIssues, ...defaultIssues].slice(0, 8);
+  const allIssues = [...syntheticIssues, ...intelIssues, ...defaultIssues].slice(0, 10);
 
   if (allIssues.length === 0 && apiIssues.length === 0) {
     el.innerHTML = '<div class="empty-state"><div class="empty-icon">✅</div>현재 감지된 이슈가 없습니다.</div>';
@@ -1029,6 +1051,7 @@ async function loadIssues() {
       <div class="issue-title">
         ${escHtml(i.title)}
         <span class="sev-badge sev-${i.sev}">${i.sev === 'HIGH' ? '높음' : i.sev === 'MED' ? '중간' : '낮음'}</span>
+        ${i.source ? `<span style="font-size:10px;color:var(--muted);font-weight:400;"> · ${escHtml(i.source)}</span>` : ''}
       </div>
       ${i.desc ? `<div class="issue-desc">${escHtml(i.desc)}</div>` : ''}
       ${i.solution ? `<div class="issue-solution">→ ${escHtml(i.solution)}</div>` : ''}

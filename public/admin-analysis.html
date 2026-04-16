@@ -4783,6 +4783,9 @@ async function loadAgentMeeting() {
     { name: 'PAD 커넥터', icon: '🎮', api: '/api/pad/status', color: '#d29922' },
     { name: '세션 분석', icon: '📅', api: '/api/sessions/summary', color: '#f778ba' },
     { name: '개인 인사이트', icon: '👤', api: '/api/me/insights', color: '#8b949e' },
+    // ── 자가발전 에이전트 ──
+    { name: '수집전략 진화', icon: '🧬', api: '/api/data-intel/quality', color: '#39d2c0' },
+    { name: '인력 최적화', icon: '👥', api: '/api/workforce/scores', color: '#ffa657' },
   ];
 
   // 모든 에이전트 API 병렬 호출
@@ -5061,6 +5064,29 @@ async function loadAgentMeeting() {
         requests = ['세션 분석: 개인 세션 상세 데이터 요청'];
         break;
       }
+      case '수집전략 진화': {
+        const q = Array.isArray(data.quality) ? data.quality : [];
+        const avgQ = q.length ? Math.round(q.reduce((s, t) => s + (t.avgScore||0), 0) / q.length) : 0;
+        const topTrigger = q.length ? q[0].trigger : '-';
+        const days = data.days || 7;
+        findings = days + '일간 트리거 ' + q.length + '개, 평균 품질 ' + avgQ + '/100 — 최고: ' + topTrigger;
+        const lowQ = q.filter(t => (t.avgScore||0) < 20);
+        proposals = lowQ.length
+          ? lowQ.slice(0,3).map(t => t.trigger + ' (' + (t.count||0) + '건, 품질 ' + (t.avgScore||0) + '점) → 빈도 50% 감소 권고')
+          : ['새 트리거(keyboard_flush/mouse_click) 데이터 축적 중', 'Vision 미처리 큐 → 워커 상태 점검', '교차검증 일치율 100% 유지 중'];
+        requests = ['Vision: 미처리 큐 6387건 소화 요청', 'keyboard_flush 트리거 품질 측정 대기'];
+        break;
+      }
+      case '인력 최적화': {
+        const members = Array.isArray(data) ? data : (data.members || data.scores || []);
+        const active = members.filter(m => (m.status||m.activity||'').toLowerCase().includes('active') || m.activeScore > 60).length;
+        findings = '총 ' + members.length + '명 분석, ' + active + '명 활성';
+        proposals = members.length
+          ? members.slice(0,3).map(m => (m.name||m.userId||'?') + ': ' + (m.currentApp||m.lastApp||'데이터 없음') + ' — ' + (m.status||'?'))
+          : ['인력 데이터 수집 중...', '앱별 업무 시간 집계 준비 완료', '자동화 가능 반복 업무 패턴 분석'];
+        requests = ['수집전략: 키보드 이벤트 품질 개선 협업', '이슈 감지: 특정 멤버 반복 패턴 교차 확인'];
+        break;
+      }
       default:
         findings = '데이터 수집 중...';
         proposals = [];
@@ -5074,7 +5100,7 @@ async function loadAgentMeeting() {
 
   // ── 요약 카드 업데이트 ──
   const liveCount = agentDiscussions.filter(function(a) { return a.status === 'LIVE'; }).length;
-  document.getElementById('ag-total').textContent = agentAPIs.length; // 23
+  document.getElementById('ag-total').textContent = agentAPIs.length; // 25
   document.getElementById('ag-total').style.color = 'var(--green)';
 
   // 학습 점수: BI score 또는 live 비율
