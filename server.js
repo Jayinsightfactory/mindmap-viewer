@@ -3761,6 +3761,50 @@ app.get('/setup/download', (req, res) => {
   });
 })();
 
+// POST /api/setup/register-name — EXE 설치 시 이름 입력 후 자동 계정 생성 + 토큰 발급
+app.post('/api/setup/register-name', async (req, res) => {
+  const name = String(req.body?.name || '').trim().slice(0, 40);
+  if (name.length < 1) return res.status(400).json({ error: 'name required' });
+
+  const crypto = require('crypto');
+  const { issueApiToken, pgBackupUser, pgBackupToken } = require('./src/auth');
+  const { getDb: authGetDb } = require('./src/auth');
+  const sqlite = authGetDb();
+  const pool = dbModule.getDb && dbModule.getDb();
+  const serverUrl = process.env.SERVER_URL || 'https://mindmap-viewer-production-adb2.up.railway.app';
+
+  const rand = crypto.randomBytes(6).toString('hex').toUpperCase();
+  const userId = `MNPC${rand}${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+  const email = `pc-${userId.toLowerCase()}@orbit.local`;
+  const code = crypto.randomBytes(4).toString('hex');
+
+  try {
+    sqlite.prepare(`INSERT INTO users (id, email, name, passwordHash, provider) VALUES (?, ?, ?, '', 'pc_token')`)
+      .run(userId, email, name);
+  } catch (e) {
+    return res.status(500).json({ error: 'user create failed' });
+  }
+
+  const token = issueApiToken(userId);
+  try { await pgBackupUser({ id: userId, email, name, provider: 'pc_token', plan: 'free' }, ''); } catch {}
+  try { await pgBackupToken(token, userId, null); } catch {}
+  if (pool) {
+    try {
+      await pool.query(`CREATE TABLE IF NOT EXISTS pc_install_codes (
+        code TEXT PRIMARY KEY, user_id TEXT NOT NULL, token TEXT NOT NULL,
+        label TEXT, created_at TIMESTAMPTZ DEFAULT NOW(), used_at TIMESTAMPTZ
+      )`);
+      await pool.query(
+        `INSERT INTO pc_install_codes (code, user_id, token, label) VALUES ($1, $2, $3, $4)`,
+        [code, userId, token, name]
+      );
+    } catch {}
+  }
+
+  console.log(`[register-name] new user: ${name} → ${userId}`);
+  res.json({ ok: true, token, userId, name });
+});
+
 // ─── PC 토큰 방식 설치 (OAuth 없이 PC 단독 등록) ───────────────────────────────
 // POST /api/admin/create-pc-tokens { count, labels?, secret } — 관리자 전용 bulk
 app.post('/api/admin/create-pc-tokens', async (req, res) => {

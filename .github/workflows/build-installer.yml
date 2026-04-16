@@ -74,7 +74,10 @@ jobs:
         run: |
           $csc = "$env:SystemRoot\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
           if (-not (Test-Path $csc)) { $csc = "$env:SystemRoot\Microsoft.NET\Framework\v4.0.30319\csc.exe" }
-          & $csc /target:winexe /out:dist\orbit-stub.exe setup\stub.cs 2>&1
+          & $csc /target:winexe /out:dist\orbit-stub.exe `
+            /reference:System.Windows.Forms.dll `
+            /reference:System.Drawing.dll `
+            setup\stub.cs 2>&1
           if (-not (Test-Path "dist\orbit-stub.exe")) { throw "stub.exe build failed" }
           Write-Host "orbit-stub.exe: $([math]::Round((Get-Item 'dist\orbit-stub.exe').Length/1KB)) KB"
         shell: powershell
