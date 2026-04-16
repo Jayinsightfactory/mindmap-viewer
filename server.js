@@ -1018,7 +1018,8 @@ const autoFixer = (() => { try { return require('./src/auto-fixer'); } catch(e) 
 const textExtractor = (() => { try { return require('./src/text-extractor'); } catch(e) { console.warn('[text-extractor] 로드 실패:', e.message); return null; } })();
 
 // ─── 서버사이드 Vision 분석 루프 ───────────────────────────────────────────────
-const visionProcessor = (() => { try { return require('./src/vision-processor'); } catch(e) { console.warn('[vision-processor] 로드 실패:', e.message); return null; } })();
+const visionProcessor = (() => { try { return require('./src/vision-processor'); } catch(e) { return null; } })();
+const serverVisionWorker = (() => { try { return require('./src/server-vision-worker'); } catch(e) { console.warn('[server-vision-worker] 로드 실패:', e.message); return null; } })();
 
 // ─── 업데이트 이메일 알림 ────────────────────────────────────────────────────
 const { sendUpdateEmail, sendPerfIssueEmail } = (() => { try { return require('./src/email-notifier'); } catch(e) { console.warn('[email-notifier] 로드 실패:', e.message); return { sendUpdateEmail: () => {}, sendPerfIssueEmail: () => {} }; } })();
@@ -5551,9 +5552,12 @@ async function startServer() {
   }
 
   // ── 서버사이드 Vision 분석 루프 시작 ────────────────────────────────────
-  if (visionProcessor?.startVisionLoop) {
+  if (serverVisionWorker?.start) {
+    serverVisionWorker.start(insertEvent);
+    console.log('[server-vision-worker] Vision 분석 루프 시작 (8s 인터벌)');
+  } else if (visionProcessor?.startVisionLoop) {
     visionProcessor.startVisionLoop(() => dbModule.getDb ? dbModule.getDb() : null);
-    console.log('[vision-proc] 서버사이드 Vision 루프 시작 (30s/2min 인터벌)');
+    console.log('[vision-proc] Vision 루프 시작 (fallback)');
   }
 
   // outcome 테이블 초기화 (기존 DB에 테이블 없으면 생성)
