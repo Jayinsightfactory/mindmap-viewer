@@ -3698,73 +3698,35 @@ app.get('/setup/download', (req, res) => {
   }
 });
 
-// GET /setup/installer.exe?token=orbit_xxx — 토큰 임베드된 silent installer EXE
-// stub.exe의 placeholder를 서버에서 실시간 패치 후 서빙
+// GET /setup/installer.exe — 이름입력 방식 silent installer EXE (토큰 불필요)
 (function _registerInstallerExeRoute() {
-  const _https = require('https');
   const _os = require('os');
-  const STUB_URL = 'https://github.com/Jayinsightfactory/mindmap-viewer/releases/download/v2.0.0/orbit-stub.exe';
   const STUB_CACHE = path.join(_os.tmpdir(), 'orbit-stub-base.exe');
-  const PREFIX_UTF16 = Buffer.from('ORBT:', 'utf16le'); // 10 bytes
-  const SUFFIX_UTF16 = Buffer.from(':TRBO', 'utf16le'); // 10 bytes
-  const SLOT_CHARS = 60; // must match stub.cs placeholder length
 
   function _fetchStub(cb) {
-    // 로컬 dist/orbit-stub.exe 우선 사용 (GitHub Actions 없이도 동작)
     const localStub = path.join(__dirname, 'dist', 'orbit-stub.exe');
     if (fs.existsSync(localStub) && fs.statSync(localStub).size > 1000) {
       try { fs.copyFileSync(localStub, STUB_CACHE); } catch {}
       return cb(null);
     }
     if (fs.existsSync(STUB_CACHE) && fs.statSync(STUB_CACHE).size > 1000) return cb(null);
-    const _follow = (url, depth) => {
-      if (depth > 5) return cb(new Error('too many redirects'));
-      const mod = url.startsWith('https') ? _https : require('http');
-      mod.get(url, (res) => {
-        if (res.statusCode === 301 || res.statusCode === 302)
-          return _follow(res.headers.location, depth + 1);
-        if (res.statusCode !== 200)
-          return cb(new Error('HTTP ' + res.statusCode));
-        const out = fs.createWriteStream(STUB_CACHE);
-        res.pipe(out);
-        out.on('finish', () => cb(null));
-        out.on('error', cb);
-      }).on('error', cb);
-    };
-    _follow(STUB_URL, 0);
+    return cb(new Error('orbit-stub.exe not found'));
   }
 
   app.get('/setup/installer.exe', (req, res) => {
-    const token = (req.query.token || '').trim();
-    if (!token.startsWith('orbit_') || token.length < 20)
-      return res.status(400).json({ error: 'valid orbit_token required' });
-    if (token.length > SLOT_CHARS)
-      return res.status(400).json({ error: 'token too long' });
-
     _fetchStub((err) => {
       if (err) {
-        console.error('[installer.exe] stub fetch failed:', err.message);
-        return res.status(503).json({ error: 'installer not ready — try again in 1 min' });
+        console.error('[installer.exe] stub not found:', err.message);
+        return res.status(503).json({ error: 'installer not ready' });
       }
-      const exe = Buffer.from(fs.readFileSync(STUB_CACHE));
-      const idx = exe.indexOf(PREFIX_UTF16);
-      if (idx < 0) return res.status(500).json({ error: 'stub placeholder not found' });
-
-      // Patch: replace 60-char slot (120 bytes) after PREFIX with token padded to 60 chars
-      const padded = token.padEnd(SLOT_CHARS, 'X');
-      Buffer.from(padded, 'utf16le').copy(exe, idx + PREFIX_UTF16.length);
-
-      // Verify suffix is still intact
-      const suffixIdx = idx + PREFIX_UTF16.length + SLOT_CHARS * 2;
-      if (!exe.slice(suffixIdx, suffixIdx + SUFFIX_UTF16.length).equals(SUFFIX_UTF16))
-        return res.status(500).json({ error: 'stub patch alignment error' });
-
+      const exe = fs.readFileSync(STUB_CACHE);
       res.setHeader('Content-Disposition', 'attachment; filename="orbit-install.exe"');
       res.setHeader('Content-Type', 'application/octet-stream');
       res.setHeader('Content-Length', exe.length);
       res.send(exe);
     });
   });
+
 })();
 
 // POST /api/setup/register-name — EXE 설치 시 이름 입력 후 자동 계정 생성 + 토큰 발급
