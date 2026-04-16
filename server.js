@@ -4880,6 +4880,15 @@ try {
   if (routineLearner.createRouter) app.use('/api/routine', routineLearner.createRouter());
 } catch(e) { console.warn('[mount] routine-learner:', e.message); }
 
+// ─── 인력 최적화 엔진 (효율스코어/자동화위험도/유휴탐지/중복업무) ─────────────
+try {
+  const _pgPool = dbModule.getDb();
+  if (_pgPool && typeof _pgPool.query === 'function') {
+    app.use('/api/workforce', require('./routes/workforce-optimizer')({ pool: _pgPool }));
+    console.log('[mount] workforce-optimizer: OK');
+  }
+} catch(e) { console.warn('[mount] workforce-optimizer:', e.message); }
+
 // ─── Signal Engine DB 초기화 (번아웃 감지, 집중도 trend) ────────────────────
 try {
   const _pool = dbModule.getDb();

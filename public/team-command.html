@@ -1,0 +1,1074 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Orbit — 팀 커맨드센터</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg:      #0d1117;
+    --surface: #161b22;
+    --surface2:#21262d;
+    --border:  #30363d;
+    --text:    #e6edf3;
+    --muted:   #8b949e;
+    --green:   #3fb950;
+    --blue:    #58a6ff;
+    --red:     #f85149;
+    --yellow:  #d29922;
+    --orange:  #ffa657;
+    --purple:  #bc8cff;
+  }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Apple SD Gothic Neo', sans-serif;
+    min-height: 100vh;
+    line-height: 1.5;
+  }
+  a { color: var(--blue); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  ::-webkit-scrollbar { width: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  /* ── 헤더 ─────────────────────────────────────────────────────── */
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    position: sticky;
+    top: 0;
+    z-index: 200;
+  }
+  .logo {
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--green);
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    flex-shrink: 0;
+  }
+  .logo-hex { font-size: 20px; }
+  .logo-sub { color: var(--muted); font-weight: 400; font-size: 13px; }
+
+  .stat-bar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-left: 8px;
+    flex: 1;
+    min-width: 0;
+  }
+  .stat-chip {
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    white-space: nowrap;
+  }
+  .stat-chip .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+    flex-shrink: 0;
+  }
+  .dot-green  { background: var(--green); }
+  .dot-yellow { background: var(--yellow); }
+  .dot-red    { background: var(--red); }
+  .dot-gray   { background: var(--muted); }
+  .stat-n { font-weight: 700; }
+
+  .header-right {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+  }
+  .countdown {
+    font-size: 12px;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .countdown-n {
+    font-weight: 700;
+    color: var(--yellow);
+    min-width: 24px;
+    text-align: right;
+  }
+  .pulse-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--green);
+    animation: pulse 2s infinite;
+    flex-shrink: 0;
+  }
+  @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:.3;} }
+  .btn {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 6px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: all .15s;
+    white-space: nowrap;
+  }
+  .btn:hover { background: var(--border); }
+  .btn-back { color: var(--muted); font-size: 12px; text-decoration: none; }
+  .btn-back:hover { color: var(--blue); text-decoration: none; }
+
+  /* ── 탭 바 ────────────────────────────────────────────────────── */
+  .tab-bar {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+    display: flex;
+    gap: 2px;
+    position: sticky;
+    top: 56px;
+    z-index: 190;
+  }
+  .tab-btn {
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    padding: 12px 18px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    border-bottom: 2px solid transparent;
+    transition: all .15s;
+    white-space: nowrap;
+  }
+  .tab-btn:hover { color: var(--text); }
+  .tab-btn.active {
+    color: var(--blue);
+    border-bottom-color: var(--blue);
+  }
+
+  /* ── 메인 ─────────────────────────────────────────────────────── */
+  main { max-width: 1600px; margin: 0 auto; padding: 24px 24px; }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* ── 팀원 카드 그리드 ──────────────────────────────────────────── */
+  .member-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 14px;
+  }
+  @media (max-width: 1200px) { .member-grid { grid-template-columns: repeat(3, 1fr); } }
+  @media (max-width: 880px)  { .member-grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 540px)  { .member-grid { grid-template-columns: 1fr; } }
+
+  .member-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px;
+    position: relative;
+    overflow: hidden;
+    transition: transform .15s, border-color .15s;
+    cursor: default;
+  }
+  .member-card:hover { transform: translateY(-2px); }
+
+  .member-card.status-ACTIVE  { border-color: rgba(63,185,80,.45); }
+  .member-card.status-RECENT  { border-color: rgba(210,153,34,.35); }
+  .member-card.status-IDLE    { border-color: rgba(248,81,73,.3); }
+  .member-card.status-OFFLINE { border-color: var(--border); }
+
+  .member-card.status-ACTIVE::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    box-shadow: inset 0 0 18px rgba(63,185,80,.08);
+    pointer-events: none;
+    border-radius: 12px;
+  }
+
+  .card-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+  .card-name-row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .status-dot-lg {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .card-name {
+    font-size: 14px;
+    font-weight: 700;
+  }
+  .card-time {
+    font-size: 11px;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+
+  .card-app-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 4px;
+  }
+  .app-icon { font-size: 16px; flex-shrink: 0; }
+  .app-name {
+    font-size: 13px;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .card-activity {
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 14px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-height: 18px;
+  }
+
+  /* 프로그레스 바 */
+  .metric-row {
+    margin-bottom: 8px;
+  }
+  .metric-label-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: var(--muted);
+    margin-bottom: 3px;
+  }
+  .metric-val { font-weight: 600; color: var(--text); }
+  .progress-track {
+    width: 100%;
+    height: 6px;
+    background: var(--surface2);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width .6s ease;
+  }
+
+  /* verdict 뱃지 */
+  .verdict-badge {
+    display: inline-block;
+    margin-top: 12px;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .verdict-replace { background: rgba(248,81,73,.15);  color: var(--red); }
+  .verdict-partial  { background: rgba(210,153,34,.15); color: var(--yellow); }
+  .verdict-core     { background: rgba(63,185,80,.15);  color: var(--green); }
+  .verdict-normal   { background: rgba(139,148,158,.15); color: var(--muted); }
+  .verdict-offline  { background: rgba(48,54,61,.5);    color: var(--muted); }
+
+  .card-events {
+    font-size: 11px;
+    color: var(--muted);
+    position: absolute;
+    top: 18px;
+    right: 18px;
+    text-align: right;
+  }
+
+  /* ── 로딩 / 빈 상태 ──────────────────────────────────────────── */
+  .loading-state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 64px 20px;
+    color: var(--muted);
+    font-size: 14px;
+    gap: 10px;
+  }
+  .spinner {
+    width: 20px; height: 20px;
+    border: 2px solid var(--border);
+    border-top-color: var(--blue);
+    border-radius: 50%;
+    animation: spin .6s linear infinite;
+    flex-shrink: 0;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .empty-state {
+    text-align: center;
+    padding: 64px 20px;
+    color: var(--muted);
+    font-size: 14px;
+  }
+  .empty-state .icon { font-size: 36px; margin-bottom: 10px; }
+
+  /* ── 섹션 공통 ────────────────────────────────────────────────── */
+  .section-hd {
+    font-size: 15px;
+    font-weight: 700;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .section-hd .sub {
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--muted);
+  }
+
+  /* ── 업무중복 탭 ──────────────────────────────────────────────── */
+  .overlap-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .overlap-item {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 18px;
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+  .overlap-app {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 160px;
+    flex-shrink: 0;
+  }
+  .overlap-app-icon { font-size: 20px; }
+  .overlap-app-name { font-size: 14px; font-weight: 600; }
+  .overlap-users { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; }
+  .overlap-user-chip {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 3px 10px;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .overlap-cnt {
+    color: var(--muted);
+    font-size: 11px;
+  }
+  .overlap-level {
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-size: 10px;
+    font-weight: 700;
+    flex-shrink: 0;
+    align-self: flex-start;
+  }
+  .level-HIGH { background: rgba(248,81,73,.15); color: var(--red); }
+  .level-MED  { background: rgba(210,153,34,.15); color: var(--yellow); }
+
+  /* ── 자동화맵 탭 ──────────────────────────────────────────────── */
+  .auto-map-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 12px;
+  }
+  .auto-item {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .auto-item-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .auto-app {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .priority-badge {
+    padding: 2px 7px;
+    border-radius: 5px;
+    font-size: 10px;
+    font-weight: 700;
+  }
+  .priority-HIGH { background: rgba(248,81,73,.15); color: var(--red); }
+  .priority-MED  { background: rgba(210,153,34,.15); color: var(--yellow); }
+  .priority-LOW  { background: rgba(139,148,158,.15); color: var(--muted); }
+  .auto-activity {
+    font-size: 13px;
+    color: var(--text);
+    margin-bottom: 4px;
+  }
+  .auto-hint {
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 8px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+  .auto-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .auto-freq-bar {
+    height: 4px;
+    background: var(--surface2);
+    border-radius: 2px;
+    margin-top: 6px;
+    overflow: hidden;
+  }
+  .auto-freq-fill {
+    height: 100%;
+    background: var(--blue);
+    border-radius: 2px;
+  }
+
+  /* ── 유휴분석 탭 ──────────────────────────────────────────────── */
+  .idle-table-wrap {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .idle-header-row {
+    display: grid;
+    padding: 10px 16px;
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+    font-size: 11px;
+    color: var(--muted);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .4px;
+    gap: 8px;
+    align-items: center;
+  }
+  .idle-row {
+    display: grid;
+    padding: 12px 16px;
+    gap: 8px;
+    align-items: center;
+    border-bottom: 1px solid rgba(48,54,61,.5);
+    font-size: 12px;
+  }
+  .idle-row:last-child { border-bottom: none; }
+  .idle-row:hover { background: rgba(88,166,255,.03); }
+  .idle-name { font-size: 13px; font-weight: 600; }
+  .idle-ratio-bar {
+    height: 6px;
+    background: var(--surface2);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .idle-ratio-fill {
+    height: 100%;
+    border-radius: 3px;
+  }
+
+  /* 히트맵 */
+  .heatmap {
+    display: flex;
+    gap: 2px;
+    align-items: flex-end;
+  }
+  .hm-cell {
+    width: 10px;
+    height: 16px;
+    border-radius: 2px;
+    cursor: default;
+    transition: opacity .15s;
+    position: relative;
+  }
+  .hm-cell:hover .hm-tip {
+    display: block;
+  }
+  .hm-tip {
+    display: none;
+    position: absolute;
+    bottom: 22px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-size: 10px;
+    white-space: nowrap;
+    pointer-events: none;
+    z-index: 10;
+  }
+
+  .idle-verdict {
+    padding: 2px 8px;
+    border-radius: 5px;
+    font-size: 10px;
+    font-weight: 700;
+  }
+  .v-HIGH_IDLE { background: rgba(248,81,73,.15); color: var(--red); }
+  .v-MED_IDLE  { background: rgba(210,153,34,.15); color: var(--yellow); }
+  .v-ACTIVE    { background: rgba(63,185,80,.15); color: var(--green); }
+
+  /* ── 상단 요약 카드 ───────────────────────────────────────────── */
+  .summary-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+  .summary-chip {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    cursor: default;
+  }
+  .sc-icon { font-size: 18px; }
+  .sc-n { font-size: 20px; font-weight: 800; }
+  .sc-label { font-size: 11px; color: var(--muted); line-height: 1.2; }
+
+  /* ── 오류 ─────────────────────────────────────────────────────── */
+  .error-bar {
+    background: rgba(248,81,73,.1);
+    border: 1px solid rgba(248,81,73,.3);
+    border-radius: 8px;
+    padding: 10px 16px;
+    color: var(--red);
+    font-size: 13px;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+</style>
+</head>
+<body>
+
+<!-- ── 헤더 ─────────────────────────────────────────────────────── -->
+<header>
+  <div class="logo">
+    <span class="logo-hex">⬡</span>
+    ORBIT
+    <span class="logo-sub">팀 커맨드센터</span>
+  </div>
+
+  <div class="stat-bar" id="statBar">
+    <span class="stat-chip"><span class="dot dot-gray"></span>로딩 중...</span>
+  </div>
+
+  <div class="header-right">
+    <span class="countdown" id="countdownWrap">
+      <span class="pulse-dot"></span>
+      <span id="countdownLabel">30초 후 업데이트</span>
+    </span>
+    <button class="btn" id="refreshBtn">새로고침</button>
+    <a href="/admin-analysis.html" class="btn btn-back">← 관리자 대시보드</a>
+  </div>
+</header>
+
+<!-- ── 탭 바 ────────────────────────────────────────────────────── -->
+<div class="tab-bar">
+  <button class="tab-btn active" data-tab="personnel">인력현황</button>
+  <button class="tab-btn" data-tab="redundancy">업무중복</button>
+  <button class="tab-btn" data-tab="automap">자동화맵</button>
+  <button class="tab-btn" data-tab="idle">유휴분석</button>
+</div>
+
+<!-- ── 메인 ─────────────────────────────────────────────────────── -->
+<main>
+
+  <!-- 인력현황 탭 -->
+  <div class="tab-panel active" id="tab-personnel">
+    <div id="personnelError" style="display:none" class="error-bar">
+      <span>⚠</span> <span id="personnelErrorMsg"></span>
+    </div>
+    <div id="memberGrid" class="member-grid">
+      <div class="loading-state" style="grid-column:1/-1">
+        <div class="spinner"></div> 팀원 데이터 불러오는 중...
+      </div>
+    </div>
+  </div>
+
+  <!-- 업무중복 탭 -->
+  <div class="tab-panel" id="tab-redundancy">
+    <div class="section-hd">
+      🔁 업무 중복 분석
+      <span class="sub">— 동일 앱을 여러 팀원이 사용하는 경우</span>
+    </div>
+    <div id="redundancyError" style="display:none" class="error-bar">
+      <span>⚠</span> <span id="redundancyErrorMsg"></span>
+    </div>
+    <div id="overlapList" class="overlap-list">
+      <div class="loading-state"><div class="spinner"></div> 분석 중...</div>
+    </div>
+  </div>
+
+  <!-- 자동화맵 탭 -->
+  <div class="tab-panel" id="tab-automap">
+    <div class="section-hd">
+      🤖 자동화 대상 업무 맵
+      <span class="sub">— Vision 분석 기준 자동화 가능 화면</span>
+    </div>
+    <div id="automapError" style="display:none" class="error-bar">
+      <span>⚠</span> <span id="automapErrorMsg"></span>
+    </div>
+    <div id="automapGrid" class="auto-map-grid">
+      <div class="loading-state" style="grid-column:1/-1"><div class="spinner"></div> 분석 중...</div>
+    </div>
+  </div>
+
+  <!-- 유휴분석 탭 -->
+  <div class="tab-panel" id="tab-idle">
+    <div class="section-hd">
+      ⏱ 유휴 시간대 분석
+      <span class="sub">— 09~18시 기준, 활동 없는 시간 비율</span>
+    </div>
+    <div id="idleError" style="display:none" class="error-bar">
+      <span>⚠</span> <span id="idleErrorMsg"></span>
+    </div>
+    <div id="idleTableWrap" class="idle-table-wrap">
+      <div class="loading-state"><div class="spinner"></div> 분석 중...</div>
+    </div>
+  </div>
+
+</main>
+
+<script>
+'use strict';
+
+// ── 인증 ─────────────────────────────────────────────────────────
+const TOKEN = localStorage.getItem('orbit_token') || '';
+function authHeaders() {
+  const h = { 'Content-Type': 'application/json' };
+  if (TOKEN) h['Authorization'] = 'Bearer ' + TOKEN;
+  return h;
+}
+
+// ── API 래퍼 ──────────────────────────────────────────────────────
+async function apiFetch(url) {
+  const r = await fetch(url, { headers: authHeaders() });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return r.json();
+}
+
+// ── 앱 아이콘 매핑 ─────────────────────────────────────────────────
+const APP_ICONS = {
+  excel: '📊', 'microsoft excel': '📊',
+  kakao: '💬', kakaotalk: '💬', 'kakao talk': '💬',
+  chrome: '🌐', 'google chrome': '🌐',
+  nenova: '🏭',
+  wechat: '💬', 'we chat': '💬',
+  word: '📝', 'microsoft word': '📝',
+  powerpoint: '📊', 'microsoft powerpoint': '📊',
+  notepad: '📄', 메모장: '📄',
+  explorer: '📁', '파일 탐색기': '📁',
+  edge: '🌐', 'microsoft edge': '🌐',
+  python: '🐍', cmd: '⬛', powershell: '⬛',
+  code: '💻', 'visual studio code': '💻',
+  zoom: '📹', teams: '📹', 'microsoft teams': '📹',
+};
+function appIcon(appName) {
+  if (!appName) return '💻';
+  const key = appName.toLowerCase();
+  for (const [k, v] of Object.entries(APP_ICONS)) {
+    if (key.includes(k)) return v;
+  }
+  return '💻';
+}
+
+// ── 상태 색상 ──────────────────────────────────────────────────────
+const STATUS_COLOR = {
+  ACTIVE:  '#3fb950',
+  RECENT:  '#d29922',
+  IDLE:    '#f85149',
+  OFFLINE: '#8b949e',
+};
+const STATUS_LABEL = {
+  ACTIVE: '활성', RECENT: '최근', IDLE: '유휴', OFFLINE: '오프라인',
+};
+
+// ── 카운트다운 ─────────────────────────────────────────────────────
+let countdown = 30;
+let countdownTimer = null;
+function startCountdown() {
+  if (countdownTimer) clearInterval(countdownTimer);
+  countdown = 30;
+  updateCountdownDisplay();
+  countdownTimer = setInterval(() => {
+    countdown--;
+    if (countdown <= 0) {
+      countdown = 30;
+      loadLive();
+    }
+    updateCountdownDisplay();
+  }, 1000);
+}
+function updateCountdownDisplay() {
+  const el = document.getElementById('countdownLabel');
+  if (el) el.textContent = countdown + '초 후 업데이트';
+}
+
+// ── 탭 전환 ───────────────────────────────────────────────────────
+const TAB_BTNS  = document.querySelectorAll('.tab-btn');
+const TAB_PANELS = document.querySelectorAll('.tab-panel');
+let tabLoaded = { personnel: false, redundancy: false, automap: false, idle: false };
+
+TAB_BTNS.forEach(btn => {
+  btn.addEventListener('click', () => {
+    TAB_BTNS.forEach(b => b.classList.remove('active'));
+    TAB_PANELS.forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    const tab = btn.dataset.tab;
+    document.getElementById('tab-' + tab).classList.add('active');
+    if (!tabLoaded[tab]) loadTab(tab);
+  });
+});
+
+function loadTab(tab) {
+  if (tab === 'redundancy' && !tabLoaded.redundancy) loadRedundancy();
+  if (tab === 'automap'    && !tabLoaded.automap)    loadAutomap();
+  if (tab === 'idle'       && !tabLoaded.idle)       loadIdle();
+}
+
+// ── 상단 통계 바 ──────────────────────────────────────────────────
+function updateStatBar(members) {
+  const total   = members.length;
+  const active  = members.filter(m => m.status === 'ACTIVE').length;
+  const recent  = members.filter(m => m.status === 'RECENT').length;
+  const idle    = members.filter(m => m.status === 'IDLE').length;
+  const offline = members.filter(m => m.status === 'OFFLINE').length;
+
+  document.getElementById('statBar').innerHTML =
+    `<span class="stat-chip"><strong class="stat-n">${total}</strong>명 전체</span>` +
+    `<span class="stat-chip"><span class="dot dot-green"></span><strong class="stat-n">${active}</strong> 활성</span>` +
+    `<span class="stat-chip"><span class="dot dot-yellow"></span><strong class="stat-n">${recent}</strong> 최근</span>` +
+    `<span class="stat-chip"><span class="dot dot-red"></span><strong class="stat-n">${idle}</strong> 유휴</span>` +
+    `<span class="stat-chip"><span class="dot dot-gray"></span><strong class="stat-n">${offline}</strong> 오프라인</span>`;
+}
+
+// ── 멤버 카드 렌더 ────────────────────────────────────────────────
+function renderMemberCards(members, scores) {
+  const scoreMap = {};
+  if (scores) scores.forEach(s => { scoreMap[s.userId] = s; });
+
+  const grid = document.getElementById('memberGrid');
+  if (!members || members.length === 0) {
+    grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><div class="icon">👥</div>표시할 팀원 데이터가 없습니다.</div>';
+    return;
+  }
+
+  grid.innerHTML = members.map(m => {
+    const sc = scoreMap[m.userId] || null;
+    const color = STATUS_COLOR[m.status] || STATUS_COLOR.OFFLINE;
+    const appIc = appIcon(m.currentApp);
+    const appLabel = m.currentApp ? m.currentApp.replace(/\.exe$/i, '').substring(0, 18) : (m.status === 'OFFLINE' ? '오프라인' : '—');
+    const actLabel = m.currentActivity ? m.currentActivity.substring(0, 15) : (m.minAgo ? '' : '');
+
+    const timeLabel = m.status === 'OFFLINE'
+      ? (m.minAgo > 1440 ? Math.floor(m.minAgo / 1440) + '일 전' : m.minAgo > 60 ? Math.floor(m.minAgo / 60) + '시간 전' : m.minAgo + '분 전')
+      : m.minAgo + '분 전';
+
+    const efficiency = sc ? sc.efficiency : null;
+    const risk       = sc ? sc.risk       : null;
+
+    const effColor = efficiency === null ? '#8b949e' : efficiency >= 70 ? '#3fb950' : efficiency >= 40 ? '#d29922' : '#f85149';
+    const riskColor = risk === null ? '#8b949e' : risk >= 70 ? '#f85149' : risk >= 40 ? '#d29922' : '#3fb950';
+
+    const verdictHtml = (() => {
+      if (m.status === 'OFFLINE') return '<span class="verdict-badge verdict-offline">오프라인</span>';
+      if (!sc) return '';
+      const vmap = {
+        '핵심 인력': 'verdict-core',
+        '부분 자동화 가능': 'verdict-partial',
+        '자동화 대체 검토': 'verdict-replace',
+        '보통': 'verdict-normal',
+      };
+      const cls = vmap[sc.verdict] || 'verdict-normal';
+      const icon = {
+        '핵심 인력': '✅',
+        '부분 자동화 가능': '⚡',
+        '자동화 대체 검토': '🤖',
+        '보통': '',
+      }[sc.verdict] || '';
+      return `<span class="verdict-badge ${cls}">${icon} ${sc.verdict}</span>`;
+    })();
+
+    const effBar = efficiency !== null
+      ? `<div class="metric-row">
+          <div class="metric-label-row"><span>효율</span><span class="metric-val">${efficiency}점</span></div>
+          <div class="progress-track"><div class="progress-fill" style="width:${efficiency}%;background:${effColor}"></div></div>
+         </div>`
+      : `<div class="metric-row"><div class="metric-label-row"><span>효율</span><span class="metric-val" style="color:var(--muted)">—</span></div></div>`;
+
+    const riskBar = risk !== null
+      ? `<div class="metric-row">
+          <div class="metric-label-row"><span>자동화 위험</span><span class="metric-val">${risk}%</span></div>
+          <div class="progress-track"><div class="progress-fill" style="width:${risk}%;background:${riskColor}"></div></div>
+         </div>`
+      : `<div class="metric-row"><div class="metric-label-row"><span>자동화 위험</span><span class="metric-val" style="color:var(--muted)">—</span></div></div>`;
+
+    return `<div class="member-card status-${m.status}">
+      <div class="card-events">${m.eventsLastHour > 0 ? m.eventsLastHour + '건/h' : ''}</div>
+      <div class="card-top">
+        <div class="card-name-row">
+          <span class="status-dot-lg" style="background:${color}"></span>
+          <span class="card-name">${escHtml(m.name)}</span>
+        </div>
+        <span class="card-time">${timeLabel}</span>
+      </div>
+      <div class="card-app-row">
+        <span class="app-icon">${appIc}</span>
+        <span class="app-name">${escHtml(appLabel)}</span>
+      </div>
+      <div class="card-activity">${escHtml(actLabel)}</div>
+      ${effBar}
+      ${riskBar}
+      ${verdictHtml}
+    </div>`;
+  }).join('');
+}
+
+// ── 인력현황 로드 ─────────────────────────────────────────────────
+let scoresCache = null;
+
+async function loadLive() {
+  try {
+    document.getElementById('personnelError').style.display = 'none';
+    const data = await apiFetch('/api/workforce/live');
+    if (!data.ok) throw new Error(data.error || '응답 오류');
+
+    updateStatBar(data.members || []);
+    renderMemberCards(data.members || [], scoresCache);
+    tabLoaded.personnel = true;
+    startCountdown();
+  } catch (e) {
+    document.getElementById('personnelErrorMsg').textContent = e.message;
+    document.getElementById('personnelError').style.display = 'flex';
+    const grid = document.getElementById('memberGrid');
+    if (grid.querySelector('.spinner')) {
+      grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><div class="icon">⚠️</div>데이터를 불러올 수 없습니다.</div>';
+    }
+  }
+}
+
+async function loadScores() {
+  try {
+    const data = await apiFetch('/api/workforce/scores?days=7');
+    if (data.ok) {
+      scoresCache = data.scores || [];
+      // 이미 카드가 렌더된 경우 점수 업데이트
+      const grid = document.getElementById('memberGrid');
+      if (grid.querySelector('.member-card')) {
+        // 부분 업데이트: 점수 관련 카드 재렌더 (전체 다시 그림)
+        const liveData = await apiFetch('/api/workforce/live').catch(() => null);
+        if (liveData && liveData.ok) renderMemberCards(liveData.members || [], scoresCache);
+      }
+    }
+  } catch (_) {}
+}
+
+// ── 업무중복 ──────────────────────────────────────────────────────
+async function loadRedundancy() {
+  tabLoaded.redundancy = true;
+  const el = document.getElementById('overlapList');
+  try {
+    const data = await apiFetch('/api/workforce/redundancy?days=7');
+    if (!data.ok) throw new Error(data.error || '응답 오류');
+    const overlaps = data.overlaps || [];
+    if (overlaps.length === 0) {
+      el.innerHTML = '<div class="empty-state"><div class="icon">✅</div>중복 업무가 발견되지 않았습니다.</div>';
+      return;
+    }
+    el.innerHTML = overlaps.map(o => {
+      const icon = appIcon(o.app);
+      const users = o.users.map(u =>
+        `<span class="overlap-user-chip">${escHtml(u.name)} <span class="overlap-cnt">${u.count}회</span></span>`
+      ).join('');
+      return `<div class="overlap-item">
+        <div class="overlap-app">
+          <span class="overlap-app-icon">${icon}</span>
+          <span class="overlap-app-name">${escHtml(o.app)}</span>
+        </div>
+        <div class="overlap-users">${users}</div>
+        <span class="overlap-level level-${o.level}">${o.level === 'HIGH' ? '고위험' : '중간'}</span>
+      </div>`;
+    }).join('');
+  } catch (e) {
+    document.getElementById('redundancyErrorMsg').textContent = e.message;
+    document.getElementById('redundancyError').style.display = 'flex';
+    el.innerHTML = '<div class="empty-state"><div class="icon">⚠️</div>데이터를 불러올 수 없습니다.</div>';
+  }
+}
+
+// ── 자동화맵 ──────────────────────────────────────────────────────
+async function loadAutomap() {
+  tabLoaded.automap = true;
+  const el = document.getElementById('automapGrid');
+  try {
+    const data = await apiFetch('/api/workforce/automation-map?days=7');
+    if (!data.ok) throw new Error(data.error || '응답 오류');
+    const targets = data.targets || [];
+    if (targets.length === 0) {
+      el.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><div class="icon">🤖</div>자동화 대상 화면이 없습니다.</div>';
+      return;
+    }
+    const maxFreq = Math.max(...targets.map(t => t.frequency), 1);
+    el.innerHTML = targets.map(t => {
+      const icon = appIcon(t.app);
+      const pct = Math.round(t.frequency / maxFreq * 100);
+      return `<div class="auto-item">
+        <div class="auto-item-top">
+          <div class="auto-app"><span>${icon}</span><span>${escHtml(t.app || '—')}</span></div>
+          <span class="priority-badge priority-${t.priority}">${t.priority}</span>
+        </div>
+        <div class="auto-activity">${escHtml(t.activity || '—')}</div>
+        ${t.hint ? `<div class="auto-hint">${escHtml(t.hint)}</div>` : ''}
+        <div class="auto-meta">
+          <span>담당: ${escHtml(t.name)}</span>
+          <span>${t.frequency}회 반복</span>
+        </div>
+        <div class="auto-freq-bar"><div class="auto-freq-fill" style="width:${pct}%"></div></div>
+      </div>`;
+    }).join('');
+  } catch (e) {
+    document.getElementById('automapErrorMsg').textContent = e.message;
+    document.getElementById('automapError').style.display = 'flex';
+    el.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><div class="icon">⚠️</div>데이터를 불러올 수 없습니다.</div>';
+  }
+}
+
+// ── 유휴분석 ──────────────────────────────────────────────────────
+async function loadIdle() {
+  tabLoaded.idle = true;
+  const el = document.getElementById('idleTableWrap');
+  try {
+    const data = await apiFetch('/api/workforce/idle?days=7');
+    if (!data.ok) throw new Error(data.error || '응답 오류');
+    const analysis = data.analysis || [];
+    if (analysis.length === 0) {
+      el.innerHTML = '<div class="empty-state"><div class="icon">📊</div>유휴 분석 데이터가 없습니다.</div>';
+      return;
+    }
+
+    // 히트맵 색상: 0=어두움, 많을수록 파랑
+    function heatColor(cnt, max) {
+      if (cnt === 0) return '#21262d';
+      const ratio = Math.min(cnt / Math.max(max, 1), 1);
+      if (ratio < 0.25) return '#1f3a5f';
+      if (ratio < 0.5)  return '#1f6feb';
+      if (ratio < 0.75) return '#388bfd';
+      return '#58a6ff';
+    }
+
+    const allMax = Math.max(...analysis.flatMap(a => a.heatmap), 1);
+
+    const colStyle = 'grid-template-columns: 120px 80px 60px auto 70px';
+    const headerHtml = `<div class="idle-header-row" style="${colStyle}">
+      <span>이름</span><span>유휴비율</span><span>판정</span>
+      <span>시간대 히트맵 (09~18시)</span><span>업무외</span>
+    </div>`;
+
+    const rowsHtml = analysis.map(a => {
+      const workHeatmap = a.heatmap.slice(9, 19); // 09~18
+      const cellsHtml = workHeatmap.map((cnt, i) => {
+        const h = 9 + i;
+        const bg = heatColor(cnt, allMax);
+        return `<div class="hm-cell" style="background:${bg}"><span class="hm-tip">${h}시: ${cnt}건</span></div>`;
+      }).join('');
+
+      const idleColor = a.idleRatio >= 50 ? '#f85149' : a.idleRatio >= 30 ? '#d29922' : '#3fb950';
+      const offRatio = a.totalEvents > 0 ? Math.round(a.offHoursEvents / a.totalEvents * 100) : 0;
+
+      return `<div class="idle-row" style="${colStyle}">
+        <span class="idle-name">${escHtml(a.name)}</span>
+        <div>
+          <div style="font-size:12px;margin-bottom:3px;color:${idleColor};font-weight:700">${a.idleRatio}%</div>
+          <div class="idle-ratio-bar"><div class="idle-ratio-fill" style="width:${a.idleRatio}%;background:${idleColor}"></div></div>
+        </div>
+        <span class="idle-verdict v-${a.verdict}">${{ HIGH_IDLE:'고유휴', MED_IDLE:'중간', ACTIVE:'활성' }[a.verdict] || a.verdict}</span>
+        <div class="heatmap">${cellsHtml}</div>
+        <span style="font-size:12px;color:var(--muted)">${offRatio}%</span>
+      </div>`;
+    }).join('');
+
+    el.innerHTML = headerHtml + rowsHtml;
+  } catch (e) {
+    document.getElementById('idleErrorMsg').textContent = e.message;
+    document.getElementById('idleError').style.display = 'flex';
+    el.innerHTML = '<div class="empty-state"><div class="icon">⚠️</div>데이터를 불러올 수 없습니다.</div>';
+  }
+}
+
+// ── 유틸 ──────────────────────────────────────────────────────────
+function escHtml(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── 새로고침 버튼 ──────────────────────────────────────────────────
+document.getElementById('refreshBtn').addEventListener('click', () => {
+  tabLoaded = { personnel: false, redundancy: false, automap: false, idle: false };
+  document.getElementById('memberGrid').innerHTML =
+    '<div class="loading-state" style="grid-column:1/-1"><div class="spinner"></div> 새로고침 중...</div>';
+  scoresCache = null;
+  loadLive();
+  loadScores();
+  // 현재 활성 탭도 새로고침
+  const activeTab = document.querySelector('.tab-btn.active').dataset.tab;
+  if (activeTab !== 'personnel') {
+    tabLoaded[activeTab] = false;
+    document.getElementById(
+      activeTab === 'redundancy' ? 'overlapList' :
+      activeTab === 'automap' ? 'automapGrid' : 'idleTableWrap'
+    ).innerHTML = '<div class="loading-state"><div class="spinner"></div> 새로고침 중...</div>';
+    loadTab(activeTab);
+  }
+});
+
+// ── 초기 로드 ──────────────────────────────────────────────────────
+loadLive();
+loadScores();
+startCountdown();
+</script>
+</body>
+</html>
