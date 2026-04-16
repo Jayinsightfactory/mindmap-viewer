@@ -301,6 +301,23 @@ module.exports = function ({ pool }) {
         ORDER BY user_id, timestamp DESC
       `);
 
+      // 마지막 앱/활동: keyboard.chunk 또는 screen.analyzed 에서
+      const { rows: appRows } = await pool.query(`
+        SELECT DISTINCT ON (user_id)
+          user_id,
+          data_json
+        FROM events
+        WHERE type IN ('keyboard.chunk','screen.analyzed')
+          AND timestamp::timestamptz > NOW() - INTERVAL '24 hours'
+          AND user_id NOT LIKE 'local%'
+          AND user_id NOT LIKE 'pc_%'
+        ORDER BY user_id, timestamp DESC
+      `);
+      const appMap = {};
+      appRows.forEach(r => {
+        try { appMap[r.user_id] = JSON.parse(r.data_json || '{}'); } catch {}
+      });
+
       // 최근 1시간 이벤트 수 (활동량)
       const { rows: countRows } = await pool.query(`
         SELECT user_id, COUNT(*) AS cnt
@@ -342,6 +359,7 @@ module.exports = function ({ pool }) {
         const status = minAgo <= 5 ? 'ACTIVE' : minAgo <= 30 ? 'RECENT' : minAgo <= 120 ? 'IDLE' : 'OFFLINE';
         const evtCount = cntMap[r.user_id] || 0;
         const autoInfo = autoMap[r.user_id] || { ratio: 0 };
+        const appData = appMap[r.user_id] || data;
 
         return {
           userId: r.user_id,
@@ -349,9 +367,9 @@ module.exports = function ({ pool }) {
           status,
           minAgo,
           lastType: r.type,
-          currentApp: data.app || data.windowTitle || data.program || null,
-          currentActivity: data.activity || data.screen || null,
-          automatable: data.automatable || false,
+          currentApp: appData.app || appData.windowTitle || appData.program || data.app || null,
+          currentActivity: appData.activity || appData.screen || data.activity || null,
+          automatable: appData.automatable || data.automatable || false,
           eventsLastHour: evtCount,
           autoRatio: autoInfo.ratio,
           timestamp: r.timestamp,
