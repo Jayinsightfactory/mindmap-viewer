@@ -494,7 +494,7 @@ function _repairStartDaemonPs1() {
       repaired++;
     }
 
-    // VBS 래퍼 파일만 생성 (schtasks 재등록은 새 설치에서만 적용 — 기존 데몬 죽이지 않도록)
+    // VBS 래퍼 파일 생성
     const vbsPath = path.join(orbitDir, 'orbit-hidden.vbs');
     const vbsBody = `Set sh = CreateObject("WScript.Shell")
 Set args = WScript.Arguments
@@ -503,6 +503,25 @@ If args.Count > 0 Then
 End If
 `;
     try { fs.writeFileSync(vbsPath, vbsBody, 'utf8'); } catch {}
+
+    // OrbitWatchdog 미등록 PC 자동 등록 (구버전 설치 PC 원격 fix)
+    try {
+      execSync('schtasks /query /tn OrbitWatchdog', { timeout: 5000, windowsHide: true, stdio: 'pipe' });
+    } catch {
+      // OrbitWatchdog 없음 → 등록
+      const wdPath = path.join(orbitDir, 'watchdog.ps1');
+      if (fs.existsSync(wdPath) && fs.existsSync(vbsPath)) {
+        try {
+          execSync(
+            `schtasks /create /tn "OrbitWatchdog" /tr "wscript.exe \\"${vbsPath}\\" \\"${wdPath}\\"" /sc minute /mo 5 /rl limited /f`,
+            { timeout: 10000, windowsHide: true, stdio: 'pipe' }
+          );
+          console.log('[daemon-updater] OrbitWatchdog registered (was missing on this PC)');
+        } catch (e2) {
+          console.warn('[daemon-updater] OrbitWatchdog register failed:', e2.message);
+        }
+      }
+    }
 
     if (repaired > 0) {
       console.log(`[daemon-updater] repaired ${repaired} ps1 file(s) with Out-File -Append`);
