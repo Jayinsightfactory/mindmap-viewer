@@ -856,7 +856,7 @@ function renderMemberCards(members) {
         <span class="card-time">${timeLabel}</span>
       </div>
       <div class="card-task-desc${m.status === 'OFFLINE' ? ' offline-state' : ''}">${escHtml(taskDesc)}</div>
-      ${m.recentUrl && m.status !== 'OFFLINE' ? `<div style="font-size:11px;color:var(--blue);margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(m.recentUrl.url)}">🌐 ${escHtml(m.recentUrl.title || new URL(m.recentUrl.url).hostname)}</div>` : ''}
+      ${m.recentUrl && m.status !== 'OFFLINE' ? (() => { try { const h = m.recentUrl.title || new URL(m.recentUrl.url).hostname; return `<div style="font-size:11px;color:var(--blue);margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(m.recentUrl.url)}">🌐 ${escHtml(h)}</div>`; } catch { return ''; } })() : ''}
       <span class="step-badge ${badgeCls}">${badgeLabel}</span>
       <div class="card-meta">
         ${eventsHtml}
