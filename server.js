@@ -3263,6 +3263,24 @@ app.get('/api/vision/queue', (req, res) => {
   res.json({ pending: queue.length, batch });
 });
 
+// 큐 상태만 확인 (소비하지 않음) — 진단용
+app.get('/api/vision/queue-peek', (req, res) => {
+  const queue = global._visionImageQueue || [];
+  res.json({ total: queue.length, items: queue.map(i => ({ id: i.id, app: i.app, hostname: i.hostname })) });
+});
+
+// 직접 큐 추가 (테스트/복구용) — ORBIT_TOKEN 인증 필요
+app.post('/api/vision/queue-push', (req, res) => {
+  const token = (req.headers.authorization || '').replace('Bearer ', '').trim();
+  if (!token.startsWith('orbit_')) return res.status(401).json({ error: 'orbit token required' });
+  if (!global._visionImageQueue) global._visionImageQueue = [];
+  const { imageBase64, app: appName, hostname, windowTitle, userId, sessionId, ts } = req.body;
+  if (!imageBase64) return res.status(400).json({ error: 'imageBase64 required' });
+  global._visionImageQueue.push({ id: 'manual-' + Date.now(), imageBase64, app: appName||'', windowTitle: windowTitle||'', hostname: hostname||'', userId: userId||'admin', sessionId: sessionId||'manual', ts: ts||new Date().toISOString() });
+  console.log(`[vision-queue] 수동 큐잉: ${hostname}/${appName} (큐: ${global._visionImageQueue.length}건)`);
+  res.json({ ok: true, queueSize: global._visionImageQueue.length });
+});
+
 // 캡처 썸네일 이미지 제공 (screen.analyzed 이벤트의 thumbnail 필드)
 app.get('/api/vision/thumbnail/:eventId', async (req, res) => {
   try {
