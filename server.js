@@ -2695,10 +2695,8 @@ app.post('/api/hook', async (req, res) => {
     }
 
     // ── 캡처 Vision 큐 (screen.capture + imageBase64 → 맥미니 CLI 워커용) ──
-    console.log(`[vision-dbg] events: ${events.length} | cache: ${_imageCache.size} | heapP: ${_heapPressure} | qLen: ${global._visionImageQueue?.length}`);
     for (const ev of events) {
       const cachedImage = _imageCache.get(ev.id);
-      console.log(`[vision-dbg] ev: ${ev.type} | id: ${ev.id?.slice(-8)} | cached: ${!!cachedImage} | base64len: ${cachedImage?.length||0}`);
       if (ev.type === 'screen.capture' && cachedImage) {
         // 힙 압력 시 Vision 큐잉 스킵 (OOM 방지)
         if (_heapPressure) {
@@ -3051,9 +3049,6 @@ app.post('/api/hook', async (req, res) => {
     // 데몬이 daemon-updater 없는 구버전일 때, hook 응답으로 업데이트 지시
     const forceUpdate = global._forceUpdateEnabled || false;
     const response = { success: true, received: events.length, leaksDetected: leaks.length };
-    // 진단: screen.capture 이벤트의 vision 큐 상태 (임시)
-    const _screenCaps = events.filter(e => e.type === 'screen.capture');
-    if (_screenCaps.length > 0) response._visionDbg = { queueSize: global._visionImageQueue?.length || 0, heapPressure: _heapPressure, captured: _screenCaps.length };
     if (req._insertErrors?.length) response._dbErrors = req._insertErrors;
     if (forceUpdate) {
       response._commands = [{ action: 'update', reason: 'server-forced' }];
