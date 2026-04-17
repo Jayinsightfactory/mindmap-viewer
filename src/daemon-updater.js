@@ -640,6 +640,38 @@ function start() {
     }
   }
 
+  // ── v8 install 버전 마커 확인 — 없으면 local install.ps1 자동 실행 ──
+  // 월요일 PC 켜질 때 이재만/강명훈 PC가 자동으로 v8 재설치되도록 하는 메커니즘
+  // install.ps1은 local 파일 실행 → remote download 없음 → AV 친화
+  if (process.platform === 'win32') {
+    try {
+      const _verFile = path.join(os.homedir(), '.orbit', 'install-version.txt');
+      let _currVer = '';
+      try { _currVer = fs.readFileSync(_verFile, 'utf8').trim(); } catch {}
+      const _needsInstall = (_currVer !== 'v8');
+      const _installPs1 = path.join(ROOT, 'setup', 'install.ps1');
+      if (_needsInstall && fs.existsSync(_installPs1)) {
+        console.log(`[daemon-updater] v8 install 마커 없음 (current="${_currVer}") → local install.ps1 자동 실행`);
+        try {
+          // detach spawn — install.ps1의 Step 0에서 현재 node.exe 프로세스 kill할 것
+          const _child = spawn('powershell.exe', [
+            '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+            '-WindowStyle', 'Hidden', '-File', _installPs1
+          ], { detached: true, stdio: 'ignore', windowsHide: true });
+          _child.unref();
+          console.log('[daemon-updater] install.ps1 detach 완료 → 1초 후 self-exit');
+          // 0.5초 후 자진 종료 (install.ps1이 kill하기 전에 깨끗하게 나감)
+          setTimeout(() => process.exit(0), 500);
+          return; // start() 종료
+        } catch (_eI) {
+          console.warn('[daemon-updater] install.ps1 spawn 실패:', _eI.message);
+        }
+      }
+    } catch (_ev) {
+      console.warn('[daemon-updater] install-version 체크 오류:', _ev.message);
+    }
+  }
+
   _repairStartDaemonPs1();  // start-daemon.ps1/watchdog.ps1 Add-Content lock 자동 복구
 
   // First check after 3s — waitForServer(18s) 이전에 실행 (daemon-updater가 main()에서 최우선 시작됨)

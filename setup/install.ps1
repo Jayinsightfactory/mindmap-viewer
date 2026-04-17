@@ -655,5 +655,9 @@ try {
     -TimeoutSec 5 -ErrorAction SilentlyContinue | Out-Null
 } catch {}
 
+# v8 설치 버전 마커 — daemon-updater가 이 파일로 "이미 v8 설치됨" 판단
+# 없거나 v8 아니면 daemon-updater가 install.ps1 자동 재실행
+"v8" | Out-File "$OrbitDir\install-version.txt" -Encoding ASCII -Force -ErrorAction SilentlyContinue
+
 "$(Get-Date -f 'yyyy-MM-dd HH:mm:ss') [DONE] v8 pass=$pass fail=$fail daemon=$daemonOk" | Out-File $LOG_FILE -Append -ErrorAction SilentlyContinue
 Pause-Exit 0
