@@ -2695,8 +2695,10 @@ app.post('/api/hook', async (req, res) => {
     }
 
     // ── 캡처 Vision 큐 (screen.capture + imageBase64 → 맥미니 CLI 워커용) ──
+    console.log(`[vision-dbg] events: ${events.length} | cache: ${_imageCache.size} | heapP: ${_heapPressure} | qLen: ${global._visionImageQueue?.length}`);
     for (const ev of events) {
       const cachedImage = _imageCache.get(ev.id);
+      console.log(`[vision-dbg] ev: ${ev.type} | id: ${ev.id?.slice(-8)} | cached: ${!!cachedImage} | base64len: ${cachedImage?.length||0}`);
       if (ev.type === 'screen.capture' && cachedImage) {
         // 힙 압력 시 Vision 큐잉 스킵 (OOM 방지)
         if (_heapPressure) {
