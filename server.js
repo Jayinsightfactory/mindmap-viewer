@@ -1852,7 +1852,10 @@ app.get('/api/daemon/pg-token-check', async (req, res) => {
     const _pool = dbModule.getDb();
     const { rows } = await _pool.query('SELECT user_id, created_at FROM orbit_auth_tokens WHERE token = $1', [token]);
     if (rows.length) {
-      res.json({ found: true, userId: rows[0].user_id, created_at: rows[0].created_at });
+      const userId = rows[0].user_id;
+      // orbit_auth_users JOIN 테스트
+      const { rows: userRows } = await _pool.query('SELECT id, name, email FROM orbit_auth_users WHERE id = $1', [userId]);
+      res.json({ found: true, userId, created_at: rows[0].created_at, userInPg: userRows.length > 0, user: userRows[0] || null });
     } else {
       const { rows: tbl } = await _pool.query("SELECT COUNT(*) as cnt FROM orbit_auth_tokens");
       res.json({ found: false, tableRowCount: tbl[0]?.cnt });
