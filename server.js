@@ -1882,7 +1882,7 @@ app.post('/api/admin/pg-restore-token', async (req, res) => {
     await pool.query(
       `INSERT INTO orbit_auth_users (id, email, name, password_hash, plan, provider)
        VALUES ($1,$2,$3,'','free','pc_token')
-       ON CONFLICT (id) DO UPDATE SET name=COALESCE($3, orbit_auth_users.name)`,
+       ON CONFLICT DO NOTHING`,
       [userId, email, displayName]
     );
     // auth.js SQLite에도 복원
