@@ -58,10 +58,10 @@ const KNOWN_GAPS = [
     id: 'phone_call',
     name: '전화 통화',
     description: '공급업체/고객과의 전화 주문/확인',
-    currentData: '없음',
+    currentData: '휴리스틱 감지 (KakaoTalk idle 3분+)',
     impact: 'HIGH',
-    solution: '통화 앱(통화녹음) 또는 CRM 시스템 연동',
-    detectionHint: '현재 입력 없이 5분+ 경과 = 전화 중일 가능성',
+    solution: 'phone.call.detected 이벤트 수집 중 — CRM 연동으로 강화 가능',
+    detectionHint: 'KakaoTalk/Teams/Zoom 활성 + 키보드 idle 3분 이상',
   },
   {
     id: 'paper_work',
@@ -519,8 +519,27 @@ module.exports = function createDataIntelligenceRouter({ pool }) {
    * @param {Object} coverageData
    * @returns {Array}
    */
-  function calcGaps(coverageData = {}) {
+  async function calcGaps(coverageData = {}) {
     const gaps = [...KNOWN_GAPS];
+
+    // phone.call.detected 이벤트가 있으면 phone_call 갭 부분 해결 표시
+    if (hasPool()) {
+      try {
+        const { rows } = await pool.query(`
+          SELECT COUNT(*) AS cnt FROM events
+          WHERE type = 'phone.call.detected'
+            AND timestamp::timestamptz > NOW() - INTERVAL '7 days'
+        `);
+        const callCount = Number(rows[0]?.cnt || 0);
+        if (callCount > 0) {
+          const phoneGap = gaps.find(g => g.id === 'phone_call');
+          if (phoneGap) {
+            phoneGap.currentData = `휴리스틱 감지 ${callCount}건 — KakaoTalk idle 3분+ 패턴`;
+            phoneGap.impact = 'MEDIUM'; // HIGH → MEDIUM (부분 해결)
+          }
+        }
+      } catch {}
+    }
 
     // 동적 갭: browser.navigation 이벤트 수집 여부 확인
     const appDensity = coverageData.appDensity || [];
@@ -750,7 +769,7 @@ module.exports = function createDataIntelligenceRouter({ pool }) {
       calcWastedCaptures(days),
     ]);
 
-    const gaps = calcGaps(coverage);
+    const gaps = await calcGaps(coverage);
     const recommendations = generateRecommendations(quality, coverage, crossVal, wasted);
 
     const report = {
@@ -863,7 +882,7 @@ module.exports = function createDataIntelligenceRouter({ pool }) {
     try {
       const days = Math.min(parseInt(req.query.days, 10) || DEFAULT_DAYS, 90);
       const coverage = await calcCoverage(days);
-      const gaps = calcGaps(coverage);
+      const gaps = await calcGaps(coverage);
       res.json({ ok: true, gaps });
     } catch (e) {
       res.status(500).json({ ok: false, error: e.message });

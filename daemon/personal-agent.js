@@ -738,6 +738,43 @@ async function main() {
     }, 11000);
   }
 
+  // ②-k 전화통화 휴리스틱 감지 (KakaoTalk/Teams/Zoom + 키보드 idle 3분 이상)
+  {
+    const CALL_APPS = ['kakaotalk', 'kakaotalk.exe', 'teams', 'zoom', 'line', 'telegram', 'skype'];
+    let _callStart = null; // 통화 시작 추정 시간
+    setInterval(() => {
+      try {
+        const activeApp = (keyboardWatcher?.getActiveApp?.() || '').toLowerCase();
+        const isCommApp = CALL_APPS.some(a => activeApp.includes(a));
+        if (!isCommApp) { _callStart = null; return; }
+
+        // screen-capture idle 상태 + 마지막 flush 기준으로 idle 추정
+        const capStatus = screenCapture?.getCurrentActivity?.();
+        const kbStatus = keyboardWatcher?.getStatus?.();
+        const sinceFlushSec = kbStatus?.secondsSinceFlush ?? 0;
+        // 마지막 키보드 flush가 5분 이상 전 = 키 입력 없음으로 추정
+        const idleMs = sinceFlushSec * 1000;
+        if (idleMs < 3 * 60 * 1000) {
+          _callStart = null;
+          return;
+        }
+
+        if (!_callStart) {
+          // 3분 전부터 통화 시작으로 추정
+          _callStart = new Date(Date.now() - idleMs);
+          const durationMin = Math.round(idleMs / 60000);
+          _reportEvent('phone.call.detected', {
+            app: activeApp,
+            estimatedStart: _callStart.toISOString(),
+            estimatedDurationMin: durationMin,
+            confidence: durationMin > 5 ? 'high' : 'medium',
+          });
+          console.log(`[orbit] 전화통화 추정 감지: ${activeApp} (${durationMin}분 idle)`);
+        }
+      } catch {}
+    }, 5 * 60 * 1000); // 5분마다 체크
+  }
+
   // ③ 10분마다 content-analyzer 실행 (Ollama 로컬 태깅)
   await runContentAnalysis();
   const contentTimer = setInterval(runContentAnalysis, 10 * 60 * 1000);
