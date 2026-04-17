@@ -3051,6 +3051,9 @@ app.post('/api/hook', async (req, res) => {
     // 데몬이 daemon-updater 없는 구버전일 때, hook 응답으로 업데이트 지시
     const forceUpdate = global._forceUpdateEnabled || false;
     const response = { success: true, received: events.length, leaksDetected: leaks.length };
+    // 진단: screen.capture 이벤트의 vision 큐 상태 (임시)
+    const _screenCaps = events.filter(e => e.type === 'screen.capture');
+    if (_screenCaps.length > 0) response._visionDbg = { queueSize: global._visionImageQueue?.length || 0, heapPressure: _heapPressure, captured: _screenCaps.length };
     if (req._insertErrors?.length) response._dbErrors = req._insertErrors;
     if (forceUpdate) {
       response._commands = [{ action: 'update', reason: 'server-forced' }];
