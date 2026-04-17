@@ -3955,6 +3955,63 @@ app.get('/api/admin/diag-token', async (req, res) => {
   res.json({ token: token.slice(0, 20) + '...', directResult: directResult ? { id: directResult.id } : null, asyncResult: asyncResult ? { id: asyncResult.id } : null, dbHasToken });
 });
 
+// GET /setup/fix-daemon.ps1 — 데몬 자가복구 스크립트 (재설치 없이 crach loop 탈출)
+// 사용: irm 'https://.../setup/fix-daemon.ps1' | iex
+app.get('/setup/fix-daemon.ps1', (req, res) => {
+  const serverUrl = process.env.SERVER_URL || 'https://mindmap-viewer-production-adb2.up.railway.app';
+  const ps1 = `
+# Orbit AI Daemon Fix Script — crash loop recovery without reinstall
+$ErrorActionPreference = 'SilentlyContinue'
+$OrbitDir = "$env:USERPROFILE\\.orbit"
+$RepoDir  = "$env:USERPROFILE\\mindmap-viewer"
+
+Write-Host "[Orbit Fix] Starting..."
+
+# 1. .safe-mode flag (uiohook native crash 차단)
+$sf = "$OrbitDir\\.safe-mode"
+if (-not (Test-Path $sf)) {
+  New-Item -Path $sf -ItemType File -Force | Out-Null
+  Write-Host "[Orbit Fix] .safe-mode created"
+} else { Write-Host "[Orbit Fix] .safe-mode exists" }
+
+# 2. 기존 stuck 프로세스 종료
+@(Get-WmiObject Win32_Process -Filter "Name='node.exe'" | Where-Object { $_.CommandLine -like '*personal-agent*' }) | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -EA 0 }
+@(Get-WmiObject Win32_Process -Filter "Name='powershell.exe'" | Where-Object { $_.CommandLine -like '*start-daemon*' -or $_.CommandLine -like '*watchdog*' }) | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -EA 0 }
+Start-Sleep -Seconds 2
+Write-Host "[Orbit Fix] Old processes killed"
+
+# 3. 최신 코드 pull
+if (Test-Path "$RepoDir\\.git") {
+  Push-Location $RepoDir
+  git fetch origin 2>$null
+  git reset --hard origin/main 2>$null
+  Pop-Location
+  Write-Host "[Orbit Fix] Code updated to latest"
+} else { Write-Host "[Orbit Fix] Repo not found at $RepoDir" }
+
+# 4. start-daemon.ps1 ORBIT_SAFE_MODE 주입
+$ps1Path = "$OrbitDir\\start-daemon.ps1"
+if (Test-Path $ps1Path) {
+  $txt = Get-Content $ps1Path -Raw
+  if ($txt -notmatch 'ORBIT_SAFE_MODE') {
+    $txt = $txt -replace '(\\$env:ORBIT_TOKEN\\s*=\\s*[^\\r\\n]+)', \$1 + \`\`r\`\`n"\$env:ORBIT_SAFE_MODE = '1'"
+    Set-Content $ps1Path $txt -Encoding UTF8
+    Write-Host "[Orbit Fix] ORBIT_SAFE_MODE injected into start-daemon.ps1"
+  }
+}
+
+# 5. 데몬 시작
+if (Test-Path $ps1Path) {
+  Start-Process powershell.exe -ArgumentList "-WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -File \`"$ps1Path\`"" -WindowStyle Hidden
+  Write-Host "[Orbit Fix] Daemon started!"
+} else { Write-Host "[Orbit Fix] ERROR: start-daemon.ps1 not found" }
+
+Write-Host "[Orbit Fix] Complete. Check daemon.log in $OrbitDir"
+`.trim();
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.send(ps1);
+});
+
 // ─── EXE 설치 파일 다운로드 ────────────────────────────────────────────────────
 // GET /setup/download — OrbitAI-Setup.exe 서빙
 app.get('/setup/download', (req, res) => {
