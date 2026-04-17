@@ -974,9 +974,10 @@ app.post('/api/admin/drive-folder-override', async (req, res) => {
       await _pool.query(
         `CREATE TABLE IF NOT EXISTS orbit_settings (key TEXT PRIMARY KEY, value TEXT, updated_at TIMESTAMPTZ DEFAULT NOW())`
       );
+      // DELETE + INSERT 패턴 (ON CONFLICT 대신 — constraint 없는 기존 테이블 호환)
+      await _pool.query(`DELETE FROM orbit_settings WHERE key='drive.folderId.override'`);
       await _pool.query(
-        `INSERT INTO orbit_settings (key, value) VALUES ('drive.folderId.override', $1)
-         ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()`, [folderId]
+        `INSERT INTO orbit_settings (key, value) VALUES ('drive.folderId.override', $1)`, [folderId]
       );
       res.json({ ok: true, folderId, persisted: true });
     } else {
