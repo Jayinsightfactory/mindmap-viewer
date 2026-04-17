@@ -56,9 +56,25 @@ async function loadGoogleConfig() {
       res.on('end', () => {
         try {
           const cfg = JSON.parse(d);
-          if (cfg.enabled) { _gCred = JSON.parse(cfg.credentialsJson); _gFolder = cfg.folderId; }
+          if (cfg.enabled) {
+            // credentialsJson 파싱 — DB 저장 시 이중 이스케이프 처리
+            // private_key PEM의 \\n (chars 92,92,110) vs 구조적 \n (chars 92,110) 구분
+            let credStr = cfg.credentialsJson || '';
+            try {
+              _gCred = JSON.parse(credStr); // 우선 직접 시도
+            } catch {
+              // Step 1: private_key 내부 \\n (이중 이스케이프) 보호
+              credStr = credStr.replace(/\\\\n/g, '__ORBIT_NL__');
+              // Step 2: 구조적 \n → 실제 줄바꿈
+              credStr = credStr.replace(/\\n/g, '\n');
+              // Step 3: 보호된 \\n → JSON string escape \n 복원
+              credStr = credStr.replace(/__ORBIT_NL__/g, '\\n');
+              _gCred = JSON.parse(credStr);
+            }
+            _gFolder = cfg.folderId;
+          }
           resolve(cfg.enabled);
-        } catch { resolve(false); }
+        } catch (e) { console.error('[vision] loadGoogleConfig 실패:', e.message); resolve(false); }
       });
     });
     req.on('error', () => resolve(false));
@@ -106,15 +122,35 @@ function gDownload(fileId, token) {
 // ── 미분석 캡처 찾기 ──────────────────────────────────────────────────────────
 async function findCaptures() {
   const token = await gToken();
-  const folders = await gApi('GET', `https://www.googleapis.com/drive/v3/files?q='${_gFolder}'+in+parents+and+mimeType='application/vnd.google-apps.folder'+and+trashed=false&fields=files(id,name)`, token);
   const caps = [];
-  for (const f of (folders.files || [])) {
-    const files = await gApi('GET', `https://www.googleapis.com/drive/v3/files?q='${f.id}'+in+parents+and+mimeType='image/png'+and+trashed=false&fields=files(id,name,description,createdTime)&orderBy=createdTime+desc&pageSize=10`, token);
-    for (const img of (files.files || [])) {
+
+  // 1차: 설정 폴더 내 hostname 서브폴더 → PNG
+  if (_gFolder) {
+    try {
+      const folders = await gApi('GET', `https://www.googleapis.com/drive/v3/files?q='${_gFolder}'+in+parents+and+mimeType='application/vnd.google-apps.folder'+and+trashed=false&fields=files(id,name)`, token);
+      for (const f of (folders.files || [])) {
+        const files = await gApi('GET', `https://www.googleapis.com/drive/v3/files?q='${f.id}'+in+parents+and+mimeType='image/png'+and+trashed=false&fields=files(id,name,description,createdTime)&orderBy=createdTime+desc&pageSize=10`, token);
+        for (const img of (files.files || [])) {
+          if (img.description?.includes('analyzed')) continue;
+          caps.push({ id:img.id, name:img.name, hostname:f.name, ts:img.createdTime });
+        }
+      }
+    } catch (e) { console.warn('[vision] 설정 폴더 스캔 실패:', e.message); }
+  }
+
+  // 2차 폴백: 서비스 계정 Drive 루트에서 직접 PNG 검색 (hostname=파일명에서 추출)
+  if (!caps.length) {
+    console.log('[vision] 폴백: 루트 Drive PNG 검색');
+    const rootPngs = await gApi('GET', `https://www.googleapis.com/drive/v3/files?q=mimeType='image/png'+and+trashed=false&fields=files(id,name,description,createdTime,parents)&orderBy=createdTime+desc&pageSize=30`, token);
+    for (const img of (rootPngs.files || [])) {
       if (img.description?.includes('analyzed')) continue;
-      caps.push({ id:img.id, name:img.name, hostname:f.name, ts:img.createdTime });
+      // hostname을 파일명에서 추론 (screen-{ts}-{trigger}-{hostname}.png 형식 시도)
+      const hostnameMatch = img.name.match(/[-_]([A-Z][A-Z0-9\-]{4,})\.png$/i);
+      const hostname = hostnameMatch?.[1] || 'unknown-host';
+      caps.push({ id:img.id, name:img.name, hostname, ts:img.createdTime });
     }
   }
+
   return caps;
 }
 

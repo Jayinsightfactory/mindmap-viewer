@@ -26,7 +26,17 @@ function init(config) {
   if (config.credentials) {
     _credentials = config.credentials;
   } else if (config.credentialsJson) {
-    try { _credentials = JSON.parse(config.credentialsJson); } catch {}
+    // DB 저장 시 이중 이스케이프 처리 (vision-worker와 동일)
+    let credStr = config.credentialsJson;
+    try { _credentials = JSON.parse(credStr); }
+    catch {
+      try {
+        credStr = credStr.replace(/\\\\n/g, '__ORBIT_NL__');
+        credStr = credStr.replace(/\\n/g, '\n');
+        credStr = credStr.replace(/__ORBIT_NL__/g, '\\n');
+        _credentials = JSON.parse(credStr);
+      } catch (e2) { console.warn('[drive-uploader] credentialsJson 파싱 실패:', e2.message); }
+    }
   }
   _folderId = config.folderId || null;
   _enabled = !!(_credentials && _credentials.private_key && _folderId);
