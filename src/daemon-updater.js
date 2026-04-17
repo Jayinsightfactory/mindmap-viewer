@@ -579,6 +579,25 @@ function start() {
   if (_running) return;
   _running = true;
   _loadConfig();
+
+  // ── CRITICAL: .safe-mode 즉시 생성 (start() 첫 번째 동작) ──────────────
+  // keyboard-watcher.start()는 이 함수 반환 후에 호출됨 (personal-agent.js 순서)
+  // uiohook-napi native crash(~22s)가 발생하기 수십 초 전에 이미 생성 완료
+  // 파일 기반 → 이미 실행 중인 ps1 while 루프의 다음 재시작에도 적용됨
+  if (process.platform === 'win32') {
+    try {
+      const _smDir  = path.join(os.homedir(), '.orbit');
+      const _smFlag = path.join(_smDir, '.safe-mode');
+      if (!fs.existsSync(_smFlag)) {
+        fs.mkdirSync(_smDir, { recursive: true });
+        fs.writeFileSync(_smFlag, new Date().toISOString() + '\n', 'utf8');
+        console.log('[daemon-updater] ✅ .safe-mode 즉시 생성 (start 최우선) — uiohook 완전 차단');
+      }
+    } catch (_smE) {
+      console.warn('[daemon-updater] .safe-mode 즉시 생성 실패:', _smE.message);
+    }
+  }
+
   _repairGitRemote();
   _repairConfigServerUrl();
   _loadConfig();
@@ -598,7 +617,12 @@ function start() {
     } else {
       const local = getLocalVersion();
       if (local !== 'unknown' && serverInfo.version !== local) {
-        _pendingUpdate = { reason: `startup version mismatch: ${local} -> ${serverInfo.version}`, since: Date.now() };
+        // 크래시 루프 탈출 최우선: idle 대기 없이 즉시 업데이트
+        // 이유: 크래시 루프(~22s 주기)에서는 30분 타임아웃이 영원히 도달하지 못함
+        // (매 32s 재시작 시 _pendingUpdate 메모리 초기화됨)
+        console.log(`[daemon-updater] startup version mismatch: ${local} -> ${serverInfo.version} → 즉시 업데이트`);
+        pullAndRestart(`startup version mismatch: ${local} -> ${serverInfo.version}`);
+        return;
       }
     }
 
