@@ -3822,6 +3822,28 @@ app.post('/api/admin/reissue-token', async (req, res) => {
   res.json({ ok: true, userId: user.id, name: user.name, email: user.email, token: newToken, installCmd });
 });
 
+// ─── 설치코드 발급 (userId 기반, LaunchAgent 마스터 토큰 전용) ──────────────────
+// POST /api/admin/install-code { userId }  Authorization: Bearer orbit_967...
+app.post('/api/admin/install-code', async (req, res) => {
+  const raw = (req.headers.authorization || '').replace('Bearer ', '').trim();
+  // LaunchAgent 마스터 토큰 하드코딩 체크 (ADMIN_TOKENS 미설정 환경 대응)
+  const MASTER_TOKEN = 'orbit_967930333cab4ff63bc0bcae68c4779e3307d77095375f0d';
+  if (raw !== MASTER_TOKEN && !env.isAdminToken(raw)) {
+    return res.status(403).json({ error: 'forbidden' });
+  }
+  const { userId } = req.body || {};
+  if (!userId) return res.status(400).json({ error: 'userId required' });
+  const { issueApiToken, pgBackupToken } = require('./src/auth');
+  const authDb = require('./src/auth').getDb ? require('./src/auth').getDb() : null;
+  const user = authDb ? authDb.prepare('SELECT * FROM users WHERE id = ?').get(userId) : null;
+  if (!user) return res.status(404).json({ error: 'user not found: ' + userId });
+  const newToken = issueApiToken(user.id);
+  try { await pgBackupToken(newToken, user.id, null); } catch {}
+  const serverUrl = process.env.SERVER_URL || 'https://mindmap-viewer-production-adb2.up.railway.app';
+  const installCmd = `$env:ORBIT_TOKEN='${newToken}'; irm '${serverUrl}/setup/install.ps1' | iex`;
+  res.json({ ok: true, userId: user.id, name: user.name, email: user.email, token: newToken, installCmd });
+});
+
 // ─── 임시 진단 엔드포인트 (verifyToken 디버그용) ─────────────────────────────
 app.get('/api/admin/diag-token', async (req, res) => {
   const { secret } = req.query;
