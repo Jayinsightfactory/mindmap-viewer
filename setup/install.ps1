@@ -1,5 +1,5 @@
-# Orbit AI - Windows Installer v4
-# Usage: iwr 'https://SERVER/setup/install.ps1' -OutFile "$env:TEMP\oi.ps1"; & "$env:TEMP\oi.ps1"
+# Orbit AI - Windows Installer v5 (VBS-free, WSH-safe)
+# Usage: $env:ORBIT_TOKEN='...'; irm 'https://SERVER/setup/install.ps1' | iex
 
 $ErrorActionPreference = "Continue"
 $REMOTE   = "https://mindmap-viewer-production-adb2.up.railway.app"
@@ -24,31 +24,32 @@ trap {
   Pause-Exit 1
 }
 
-"$(Get-Date -f 'yyyy-MM-dd HH:mm:ss') [START] install v4" | Out-File $LOG_FILE -Force -ErrorAction SilentlyContinue
+"$(Get-Date -f 'yyyy-MM-dd HH:mm:ss') [START] install v5" | Out-File $LOG_FILE -Force -ErrorAction SilentlyContinue
 
 Write-Host ""
-Write-Host "  Orbit AI Installation v4"
+Write-Host "  Orbit AI Installation v5 (VBS-free)"
 Write-Host "  PC: $env:COMPUTERNAME | User: $env:USERNAME"
 Write-Host "  Server: $REMOTE"
 Write-Host ""
 
 # ==============================================================================
-# Step 0: Kill all existing orbit processes + clean old tasks
+# Step 0: Clean previous install
 # ==============================================================================
 Write-Host "  [0/9] Cleaning previous install..." -ForegroundColor Cyan
 Get-WmiObject Win32_Process -Filter "Name='node.exe'" -ErrorAction SilentlyContinue | Where-Object {
   $_.CommandLine -like "*personal-agent*"
 } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
-# 데몬 루프 돌리는 powershell.exe도 kill — 안 하면 daemon.log/watchdog.log에 핸들 잡혀서 "파일 사용중" 오류
 Get-WmiObject Win32_Process -Filter "Name='powershell.exe'" -ErrorAction SilentlyContinue | Where-Object {
   $_.CommandLine -like "*start-daemon.ps1*" -or $_.CommandLine -like "*watchdog.ps1*"
 } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 Get-Process -Name "wscript" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-Start-Sleep -Milliseconds 1500  # 파일 핸들 해제 대기
+Start-Sleep -Milliseconds 1500
 schtasks /delete /tn "OrbitDaemon" /f 2>$null | Out-Null
 schtasks /delete /tn "OrbitWatchdog" /f 2>$null | Out-Null
 $StartupDir = [System.Environment]::GetFolderPath('Startup')
-'orbit-daemon.vbs','orbit-daemon.bat' | ForEach-Object { $f="$StartupDir\$_"; if(Test-Path $f){Remove-Item $f -Force -ErrorAction SilentlyContinue} }
+'orbit-daemon.vbs','orbit-daemon.bat','orbit-startup.lnk' | ForEach-Object { $f="$StartupDir\$_"; if(Test-Path $f){Remove-Item $f -Force -ErrorAction SilentlyContinue} }
+# 구버전 VBS 래퍼 제거 (v5는 powershell 직접 호출)
+if (Test-Path "$OrbitDir\orbit-hidden.vbs") { Remove-Item "$OrbitDir\orbit-hidden.vbs" -Force -ErrorAction SilentlyContinue }
 # Backup old config
 $oldToken = ""; $oldUserId = ""
 if (Test-Path "$env:USERPROFILE\.orbit-config.json") {
@@ -134,7 +135,6 @@ Write-Host "  [5/9] Packages..." -ForegroundColor Cyan
 if (-not (Test-Path "$DIR\node_modules\uiohook-napi")) {
   npm install --silent 2>&1 | Out-Null
 }
-# Rebuild native modules (uiohook-napi needs matching Node.js version)
 $uiohookOk = $false
 try {
   $uiTest = & node -e "try{require('uiohook-napi');console.log('ok')}catch(e){console.log('fail:'+e.message)}" 2>&1
@@ -143,7 +143,6 @@ try {
 if (-not $uiohookOk) {
   Write-Host "    Rebuilding native modules..." -ForegroundColor Yellow
   npm rebuild 2>&1 | Out-Null
-  # If rebuild fails, reinstall uiohook-napi specifically
   try {
     $uiTest2 = & node -e "try{require('uiohook-napi');console.log('ok')}catch(e){console.log('fail')}" 2>&1
     if ($uiTest2 -notmatch '^ok') {
@@ -155,7 +154,7 @@ if (Test-Path "$DIR\node_modules") { Write-Host "    Ready" -ForegroundColor Gre
 else { npm install 2>&1 | Out-Null; Write-Host "    Installed" -ForegroundColor Green }
 
 # ==============================================================================
-# Step 6: Config (NO TOKEN REQUIRED - hostname based)
+# Step 6: Config
 # ==============================================================================
 Write-Host "  [6/9] Config..." -ForegroundColor Cyan
 $cfgToken = if ($env:ORBIT_TOKEN -and $env:ORBIT_TOKEN.Length -gt 5) { $env:ORBIT_TOKEN } elseif ($oldToken) { $oldToken } else { "" }
@@ -166,9 +165,9 @@ $cfgJson = $cfgObj | ConvertTo-Json
 Write-Host "    Saved (hostname: $env:COMPUTERNAME)" -ForegroundColor Green
 
 # ==============================================================================
-# Step 7: Startup + Watchdog
+# Step 7: Startup + Watchdog (VBS-free, 다중 경로 복구)
 # ==============================================================================
-Write-Host "  [7/9] Startup..." -ForegroundColor Cyan
+Write-Host "  [7/9] Startup + Watchdog..." -ForegroundColor Cyan
 $NodePath = (Get-Command node -ErrorAction SilentlyContinue).Source
 $nodeExePs1 = if ($NodePath) { $NodePath -replace '\\', '\\\\' } else { '' }
 
@@ -200,48 +199,34 @@ $wdPath = "$OrbitDir\watchdog.ps1"
 $wdBody = @"
 `$ErrorActionPreference = 'SilentlyContinue'
 `$dir = "`$env:USERPROFILE\mindmap-viewer"
-`$pidFile = "`$env:USERPROFILE\.orbit\personal-agent.pid"
 `$logFile = "`$env:USERPROFILE\.orbit\watchdog.log"
 `$server = '$REMOTE'
 `$hn = [Uri]::EscapeDataString(`$env:COMPUTERNAME)
 
-# Check alive: PID file + process check + also check any node personal-agent
+# 데몬 생존 판별: WMI로 node.exe personal-agent 검색 (PID 파일 의존 안 함 — 재활용 오탐 제거)
 `$alive = `$false
-if (Test-Path `$pidFile) {
-  `$p = Get-Content `$pidFile
-  if (`$p -and (Get-Process -Id `$p -ErrorAction SilentlyContinue)) { `$alive = `$true }
-}
-if (-not `$alive) {
-  # Double check: any node.exe running personal-agent?
-  `$nodeProcs = Get-WmiObject Win32_Process -Filter "Name='node.exe'" | Where-Object { `$_.CommandLine -like '*personal-agent*' }
+try {
+  `$nodeProcs = Get-WmiObject Win32_Process -Filter "Name='node.exe'" -ErrorAction SilentlyContinue | Where-Object { `$_.CommandLine -like '*personal-agent*' }
   if (`$nodeProcs) { `$alive = `$true }
-}
+} catch {}
 
 if (-not `$alive) {
   `$ts = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
   "[`$ts] daemon dead - restarting" | Out-File -Append -Encoding utf8 -FilePath `$logFile
 
-  # Read last 5 lines of daemon.log for crash reason
+  # daemon.log 꼬리 읽기 (크래시 원인 파악)
   `$crashInfo = ''
   try {
     `$dlog = "`$env:USERPROFILE\.orbit\daemon.log"
     if (Test-Path `$dlog) {
       `$crashInfo = (Get-Content `$dlog -Tail 5 -ErrorAction SilentlyContinue) -join ' | '
-      if (-not `$crashInfo) {
-        `$fs = [IO.FileStream]::new(`$dlog,'Open','Read','ReadWrite')
-        `$sr = [IO.StreamReader]::new(`$fs)
-        `$lines = `$sr.ReadToEnd() -split "`n"
-        `$sr.Close(); `$fs.Close()
-        `$crashInfo = (`$lines[-5..-1] | Where-Object {`$_}) -join ' | '
-      }
     }
   } catch {}
 
-  # Read token from config
   `$cfgTok = ''
   try { `$cfgTok = (Get-Content "`$env:USERPROFILE\.orbit-config.json" -Raw | ConvertFrom-Json).token } catch {}
 
-  # Report crash to server (with token for userId resolution)
+  # 크래시 리포트 서버 전송 (실패해도 진행)
   try {
     `$body = "{`"events`":[{`"id`":`"crash-`$env:COMPUTERNAME-`$([DateTimeOffset]::Now.ToUnixTimeSeconds())`",`"type`":`"daemon.crash`",`"source`":`"watchdog`",`"sessionId`":`"watchdog`",`"timestamp`":`"`$((Get-Date).ToString('o'))`",`"data`":{`"hostname`":`"`$env:COMPUTERNAME`",`"crashLog`":`"`$(`$crashInfo -replace '[\x22\\]',' ')`"}}]}"
     `$hdrs = @{'X-Device-Id'=`$hn}
@@ -249,27 +234,32 @@ if (-not `$alive) {
     Invoke-RestMethod -Uri "`$server/api/hook" -Method POST -ContentType 'application/json' -Body `$body -Headers `$hdrs -TimeoutSec 5 | Out-Null
   } catch {}
 
-  # git pull latest code
+  # 최신 코드 pull (원격 URL 자동 수리 포함)
   Set-Location `$dir
   git remote set-url origin 'https://github.com/Jayinsightfactory/mindmap-viewer.git' 2>`$null
   git fetch origin 2>`$null
   git reset --hard origin/main 2>`$null
 
-  # Start daemon via start-daemon.ps1 (토큰 포함, while-loop 포함)
+  # .safe-mode 플래그 보장 (uiohook native crash 완전 차단)
+  `$smFlag = "`$env:USERPROFILE\.orbit\.safe-mode"
+  if (-not (Test-Path `$smFlag)) {
+    try { New-Item -Path `$smFlag -ItemType File -Force | Out-Null } catch {}
+  }
+
+  # 데몬 재기동 — VBS 없이 powershell 직접 실행 (WSH 차단 환경 대응)
   `$ps1 = "`$env:USERPROFILE\.orbit\start-daemon.ps1"
-  `$vbs = "`$env:USERPROFILE\.orbit\orbit-hidden.vbs"
-  if ((Test-Path `$ps1) -and (Test-Path `$vbs)) {
-    Start-Process wscript.exe -ArgumentList "`"`$vbs`" `"`$ps1`""
-    "[`$ts] started via vbs wrapper (token: `$(if(`$cfgTok){'ok'}else{'missing'}))" | Out-File -Append -Encoding utf8 -FilePath `$logFile
+  if (Test-Path `$ps1) {
+    Start-Process powershell.exe -ArgumentList "-NoProfile","-NonInteractive","-ExecutionPolicy","Bypass","-WindowStyle","Hidden","-File","`"`$ps1`"" -WindowStyle Hidden
+    "[`$ts] started via powershell -File (token: `$(if(`$cfgTok){'ok'}else{'missing'}))" | Out-File -Append -Encoding utf8 -FilePath `$logFile
   } else {
-    # Fallback: node 직접 실행 (토큰 env 설정 후)
+    # Fallback: node 직접 실행
     `$nodeExe = (Get-Command node -ErrorAction SilentlyContinue).Source
     if (`$nodeExe) {
       `$daemonJs = "`$dir\daemon\personal-agent.js"
       if (Test-Path `$daemonJs) {
         if (`$cfgTok) { `$env:ORBIT_TOKEN = `$cfgTok }
         Start-Process `$nodeExe -ArgumentList "`$daemonJs" -WindowStyle Hidden -WorkingDirectory `$dir
-        "[`$ts] started via node directly" | Out-File -Append -Encoding utf8 -FilePath `$logFile
+        "[`$ts] started via node direct" | Out-File -Append -Encoding utf8 -FilePath `$logFile
       }
     }
   }
@@ -277,44 +267,69 @@ if (-not `$alive) {
 "@
 [System.IO.File]::WriteAllText($wdPath, $wdBody, [System.Text.UTF8Encoding]::new($false))
 
-# VBS 래퍼 (cmd창 안 뜨게 powershell 실행) — schtasks가 powershell.exe 직접 실행하면 conhost 깜빡임 발생
-$vbsPath = "$OrbitDir\orbit-hidden.vbs"
-$vbsBody = @"
-Set sh = CreateObject("WScript.Shell")
-Set args = WScript.Arguments
-If args.Count > 0 Then
-  sh.Run "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File """ & args(0) & """", 0, False
-End If
-"@
-[System.IO.File]::WriteAllText($vbsPath, $vbsBody, [System.Text.UTF8Encoding]::new($false))
+# .safe-mode 기본 플래그 생성 (첫 설치 시 uiohook 차단 선제 적용)
+# (데몬이 자체 판단으로 지우거나 유지함 — 실제 필요 없으면 다음 재시작에 재생성)
+$smFlag = "$OrbitDir\.safe-mode"
+if (-not (Test-Path $smFlag)) {
+  try { New-Item -Path $smFlag -ItemType File -Force | Out-Null } catch {}
+}
 
-# Register tasks via wscript.exe — cmd창 깜빡임 제거
-schtasks /create /tn "OrbitDaemon" /tr "wscript.exe `"$vbsPath`" `"$ps1Path`"" /sc onlogon /rl limited /f 2>&1 | Out-Null
-schtasks /create /tn "OrbitWatchdog" /tr "wscript.exe `"$vbsPath`" `"$wdPath`"" /sc minute /mo 5 /rl limited /f 2>&1 | Out-Null
-Write-Host "    Daemon + Watchdog registered" -ForegroundColor Green
+# schtasks 등록 — powershell.exe 직접 실행 (VBS/WSH 의존 제거)
+# -WindowStyle Hidden + /rl limited 조합으로 conhost 창 깜빡임 최소화
+$psExe = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+$dTr = "`"$psExe`" -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$ps1Path`""
+$wTr = "`"$psExe`" -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$wdPath`""
+schtasks /create /tn "OrbitDaemon"   /tr $dTr /sc onlogon          /rl limited /f 2>&1 | Out-Null
+schtasks /create /tn "OrbitWatchdog" /tr $wTr /sc minute /mo 5     /rl limited /f 2>&1 | Out-Null
+
+# 2중 안전망: schtasks 등록 실패 시를 위한 Startup 폴더 바로가기 (Windows 로그인 시 자동 실행)
+try {
+  $lnkPath = "$StartupDir\OrbitDaemon.lnk"
+  $WshShell = New-Object -ComObject WScript.Shell
+  $Shortcut = $WshShell.CreateShortcut($lnkPath)
+  $Shortcut.TargetPath = $psExe
+  $Shortcut.Arguments = "-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$ps1Path`""
+  $Shortcut.WindowStyle = 7  # Minimized
+  $Shortcut.Save()
+} catch {}
+
+# schtasks 등록 검증
+$daemonTaskOk = $false; $watchdogTaskOk = $false
+try {
+  $null = schtasks /query /tn "OrbitDaemon"   2>$null; if ($LASTEXITCODE -eq 0) { $daemonTaskOk   = $true }
+  $null = schtasks /query /tn "OrbitWatchdog" 2>$null; if ($LASTEXITCODE -eq 0) { $watchdogTaskOk = $true }
+} catch {}
+if ($daemonTaskOk -and $watchdogTaskOk) {
+  Write-Host "    Daemon + Watchdog registered (schtasks + Startup shortcut)" -ForegroundColor Green
+} else {
+  Write-Host "    Daemon=$daemonTaskOk Watchdog=$watchdogTaskOk — Startup shortcut backup active" -ForegroundColor Yellow
+}
 
 # ==============================================================================
-# Step 8: Start daemon + verify alive for 15 seconds
+# Step 8: Start daemon + verify alive for 10 seconds
 # ==============================================================================
 Write-Host "  [8/9] Starting daemon..." -ForegroundColor Cyan
-# VBS 래퍼로 시작 — powershell.exe 직접 실행하면 conhost 잠깐 뜸
-Start-Process wscript.exe -ArgumentList "`"$vbsPath`" `"$ps1Path`""
+Start-Process $psExe -ArgumentList "-NoProfile","-NonInteractive","-ExecutionPolicy","Bypass","-WindowStyle","Hidden","-File","`"$ps1Path`"" -WindowStyle Hidden
 Start-Sleep 8
 
-$pidFile = "$OrbitDir\personal-agent.pid"
+# WMI로 데몬 생존 확인 (PID 파일 대신 커맨드라인 매칭)
+function Test-DaemonAlive {
+  try {
+    $p = Get-WmiObject Win32_Process -Filter "Name='node.exe'" -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -like '*personal-agent*' }
+    return [bool]$p
+  } catch { return $false }
+}
+
 $daemonOk = $false
 for ($retry = 1; $retry -le 3; $retry++) {
-  $dp = Get-Content $pidFile -ErrorAction SilentlyContinue
-  if ($dp -and (Get-Process -Id $dp -ErrorAction SilentlyContinue)) {
-    # Wait 10 more seconds, check still alive
+  if (Test-DaemonAlive) {
     Start-Sleep 10
-    $dp2 = Get-Content $pidFile -ErrorAction SilentlyContinue
-    if ($dp2 -and (Get-Process -Id $dp2 -ErrorAction SilentlyContinue)) {
+    if (Test-DaemonAlive) {
       $daemonOk = $true
-      Write-Host "    Running (PID: $dp2, stable 10s)" -ForegroundColor Green
+      Write-Host "    Running (stable 10s)" -ForegroundColor Green
       break
     } else {
-      Write-Host "    PID $dp died after start (retry $retry/3)" -ForegroundColor Yellow
+      Write-Host "    Daemon died after start (retry $retry/3)" -ForegroundColor Yellow
       Start-Sleep 5
     }
   } else {
@@ -323,16 +338,14 @@ for ($retry = 1; $retry -le 3; $retry++) {
   }
 }
 if (-not $daemonOk) {
-  # Direct start fallback
-  Write-Host "    Trying direct start..." -ForegroundColor Yellow
+  Write-Host "    Trying direct node start..." -ForegroundColor Yellow
   $nodeCmd = (Get-Command node -ErrorAction SilentlyContinue).Source
   if ($nodeCmd) {
     Start-Process $nodeCmd -ArgumentList "`"$DIR\daemon\personal-agent.js`"" -WindowStyle Hidden -WorkingDirectory $DIR
     Start-Sleep 8
-    $dp = Get-Content $pidFile -ErrorAction SilentlyContinue
-    if ($dp -and (Get-Process -Id $dp -ErrorAction SilentlyContinue)) {
+    if (Test-DaemonAlive) {
       $daemonOk = $true
-      Write-Host "    Running via direct start (PID: $dp)" -ForegroundColor Green
+      Write-Host "    Running via direct start" -ForegroundColor Green
     }
   }
   if (-not $daemonOk) { Write-Host "    FAIL - watchdog will retry in 5min" -ForegroundColor Red }
@@ -397,7 +410,7 @@ if (-not $capOk) { try { $r = python -c "import pyautogui; print('ok')" 2>&1; if
 if ($capOk) { Write-Host "    6. Screen capture  OK" -ForegroundColor Green; $pass++ }
 else { Write-Host "    6. Screen capture  FAIL (pip install pillow)" -ForegroundColor Red; $fail++; python -m pip install --quiet pillow pyautogui 2>$null }
 
-# 7. Keyboard
+# 7. Keyboard module check
 if (Test-Path "$DIR\node_modules\uiohook-napi") {
   try { $r = & node -e "try{require('uiohook-napi');console.log('ok')}catch(e){console.log('fail')}" 2>&1
     if($r -match 'ok') { Write-Host "    7. Keyboard        OK" -ForegroundColor Green; $pass++ }
@@ -405,11 +418,7 @@ if (Test-Path "$DIR\node_modules\uiohook-napi") {
   } catch { Write-Host "    7. Keyboard        WARN" -ForegroundColor Yellow; $pass++ }
 } else { Write-Host "    7. Keyboard        FAIL (npm install)" -ForegroundColor Red; $fail++ }
 
-# -----------------------------------------------------------------------
 # 8-11. Data pipeline verification — wait 90s then poll verify-install
-# Verifies the daemon actually produces data. Catches silent module failures
-# that steps 1-7 miss (e.g. mouse-watcher header bug, screen-capture crash).
-# -----------------------------------------------------------------------
 if ($serverOk) {
   Write-Host "    Waiting 90s for daemon to warm up + send heartbeat" -NoNewline -ForegroundColor Gray
   for ($w = 0; $w -lt 18; $w++) {
@@ -425,25 +434,10 @@ if ($serverOk) {
   } catch { Write-Host "    verify-install call failed: $_" -ForegroundColor Red }
 
   if ($vOk) {
-    # 8. Heartbeat received
-    if ($verify.checks.heartbeatReceived) { Write-Host "    8. Heartbeat       OK" -ForegroundColor Green; $pass++ }
-    else { Write-Host "    8. Heartbeat       FAIL (daemon not emitting heartbeat)" -ForegroundColor Red; $fail++ }
-
-    # 9. Mouse module
-    if ($verify.checks.moduleMouseOk) { Write-Host "    9. Mouse module    OK" -ForegroundColor Green; $pass++ }
-    else { Write-Host "    9. Mouse module    FAIL (state=$($verify.heartbeat.modules.mouse.state))" -ForegroundColor Red; $fail++ }
-
-    # 10. Keyboard module
-    if ($verify.checks.moduleKeyboardOk) { Write-Host "    10. Keyboard module OK" -ForegroundColor Green; $pass++ }
-    else { Write-Host "    10. Keyboard module WARN (state=$($verify.heartbeat.modules.keyboard.state))" -ForegroundColor Yellow; $pass++ }
-
-    # 11. Screen module (activity-based — WARN only if module state is bad)
-    if ($verify.checks.moduleScreenOk) { Write-Host "    11. Screen module   OK" -ForegroundColor Green; $pass++ }
-    else { Write-Host "    11. Screen module   FAIL (state=$($verify.heartbeat.modules.screen.state))" -ForegroundColor Red; $fail++ }
-
-    # Fresh start signal (mouse.watcher.started within 10 min window, only for uptime < 180s)
-    if ($verify.checks.freshStartSignal) { Write-Host "    12. Mouse start sig OK" -ForegroundColor Green }
-    else { Write-Host "    12. Mouse start sig FAIL (no fresh signal)" -ForegroundColor Yellow }
+    if ($verify.checks.heartbeatReceived)   { Write-Host "    8. Heartbeat       OK" -ForegroundColor Green; $pass++ } else { Write-Host "    8. Heartbeat       FAIL" -ForegroundColor Red; $fail++ }
+    if ($verify.checks.moduleMouseOk)       { Write-Host "    9. Mouse module    OK" -ForegroundColor Green; $pass++ } else { Write-Host "    9. Mouse module    FAIL" -ForegroundColor Red; $fail++ }
+    if ($verify.checks.moduleKeyboardOk)    { Write-Host "    10. Keyboard module OK" -ForegroundColor Green; $pass++ } else { Write-Host "    10. Keyboard module WARN" -ForegroundColor Yellow; $pass++ }
+    if ($verify.checks.moduleScreenOk)      { Write-Host "    11. Screen module   OK" -ForegroundColor Green; $pass++ } else { Write-Host "    11. Screen module   FAIL" -ForegroundColor Red; $fail++ }
 
     Write-Host "    verify-install verdict: $($verify.verdict) (passed=$($verify.passed) failed=$($verify.failed))" -ForegroundColor Cyan
   } else {
@@ -471,9 +465,9 @@ Write-Host ""
 try {
   $hn = [Uri]::EscapeDataString($env:COMPUTERNAME)
   Invoke-RestMethod -Uri "$REMOTE/api/hook" -Method POST -ContentType "application/json" -Headers @{"X-Device-Id"=$hn} `
-    -Body "{`"events`":[{`"id`":`"install-$env:COMPUTERNAME-$(Get-Date -Format o)`",`"type`":`"install.complete`",`"source`":`"installer-v4`",`"sessionId`":`"install`",`"timestamp`":`"$(Get-Date -Format o)`",`"data`":{`"hostname`":`"$env:COMPUTERNAME`",`"pass`":$pass,`"fail`":$fail,`"daemon`":$($daemonOk.ToString().ToLower())}}]}" `
+    -Body "{`"events`":[{`"id`":`"install-$env:COMPUTERNAME-$(Get-Date -Format o)`",`"type`":`"install.complete`",`"source`":`"installer-v5`",`"sessionId`":`"install`",`"timestamp`":`"$(Get-Date -Format o)`",`"data`":{`"hostname`":`"$env:COMPUTERNAME`",`"pass`":$pass,`"fail`":$fail,`"daemon`":$($daemonOk.ToString().ToLower())}}]}" `
     -TimeoutSec 5 -ErrorAction SilentlyContinue | Out-Null
 } catch {}
 
-"$(Get-Date -f 'yyyy-MM-dd HH:mm:ss') [DONE] v4 pass=$pass fail=$fail daemon=$daemonOk" | Out-File $LOG_FILE -Append -ErrorAction SilentlyContinue
+"$(Get-Date -f 'yyyy-MM-dd HH:mm:ss') [DONE] v5 pass=$pass fail=$fail daemon=$daemonOk" | Out-File $LOG_FILE -Append -ErrorAction SilentlyContinue
 Pause-Exit 0
