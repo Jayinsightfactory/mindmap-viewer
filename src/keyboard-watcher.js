@@ -918,10 +918,11 @@ function start(opts = {}) {
 
   try {
     _uiohook = require('uiohook-napi');
-    _uiohook.uIOhook.on('keydown', _onKeydown);
+    // 핸들러를 try/catch로 감싸서 native callback 에러가 uncaughtException으로 빠져나가지 않도록
+    _uiohook.uIOhook.on('keydown', (e) => { try { _onKeydown(e); } catch (_e) { console.warn('[keyboard-watcher] keydown handler error (무시):', _e?.message); } });
 
     // Mouse click tracking + burst + workflow
-    _uiohook.uIOhook.on('mousedown', (e) => {
+    _uiohook.uIOhook.on('mousedown', (e) => { try { // native callback 안전 감싸기
       if (_paused) return; // 은행 보안 일시정지 중 무시
       _mouseClickCount++;
       // 클릭 좌표 기록 (최근 200개, 자동화 스크립트 생성용) — 앱/창 포함
@@ -938,7 +939,7 @@ function start(opts = {}) {
       // Track click position regions (quadrant-based)
       const quadrant = `${e.x < 960 ? 'L' : 'R'}${e.y < 540 ? 'T' : 'B'}`;
       _mouseQuadrants[quadrant] = (_mouseQuadrants[quadrant] || 0) + 1;
-    });
+    } catch (_e) { console.warn('[keyboard-watcher] mousedown handler error (무시):', _e?.message); } });
 
     _uiohook.uIOhook.start();
     _running = true;

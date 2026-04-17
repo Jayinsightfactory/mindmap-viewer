@@ -57,6 +57,10 @@ process.on('unhandledRejection', (reason) => {
   // 프로세스 유지 (종료하지 않음) — 크래시 루프 방지
 });
 
+// Windows native crash 방지 (uiohook-napi SIGABRT 등)
+try { process.on('SIGABRT', () => { console.error('[orbit] SIGABRT 수신 — 무시하고 계속'); }); } catch {}
+try { process.on('SIGFPE',  () => { console.error('[orbit] SIGFPE 수신 — 무시하고 계속');  }); } catch {}
+
 // ── 원격 서버 설정 (~/.orbit-config.json) ──────────────────────────────────
 const _orbitConfig = (() => {
   try {
@@ -341,8 +345,29 @@ function removePid() {
 }
 
 // ── 서버 헬스 체크 ────────────────────────────────────────────────────────────
+// 원격 서버가 살아있으면 즉시 true 반환 (클라이언트 PC엔 localhost 서버 없음)
+// → daemon-updater가 waitForServer 전에 먼저 실행되므로 이 함수는 최소한으로만 실행
 function waitForServer(retries = 10) {
   return new Promise((resolve) => {
+    // 원격 서버 먼저 체크 — 살아있으면 즉시 resolve (크래시 루프 탈출용)
+    if (REMOTE_URL) {
+      try {
+        const _rUrl = new URL(REMOTE_URL);
+        const _rMod = _rUrl.protocol === 'https:' ? require('https') : require('http');
+        const _rReq = _rMod.request({
+          hostname: _rUrl.hostname, port: _rUrl.port || (_rUrl.protocol === 'https:' ? 443 : 80),
+          path: '/api/health', method: 'GET', timeout: 3000,
+        }, _rRes => {
+          _rRes.resume();
+          resolve(true); // 원격 서버 응답 → 즉시 통과
+        });
+        _rReq.on('error', () => {}); // 원격 실패 시 localhost 체크로 진행
+        _rReq.on('timeout', () => { try { _rReq.destroy(); } catch {} });
+        _rReq.end();
+      } catch {}
+    }
+
+    // localhost 체크 (로컬 모드 or 원격 미응답 폴백)
     let attempts = 0;
     const check = () => {
       const req = http.get(`http://localhost:${PORT}/api/personal/status`, res => {
