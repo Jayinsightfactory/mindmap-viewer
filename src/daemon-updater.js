@@ -547,7 +547,8 @@ function start() {
   _loadConfig();
   _repairStartDaemonPs1();  // start-daemon.ps1/watchdog.ps1 Add-Content lock 자동 복구
 
-  // First check after 8s — 크래시 루프 PC가 30s 전에 죽으므로 업데이트를 먼저 받아야 함
+  // First check after 3s — waitForServer(18s) 이전에 실행 (daemon-updater가 main()에서 최우선 시작됨)
+  // 크래시 루프 탈출: 버전 체크 → git pull → exit 0 이 크래시(~20s) 전에 완료됨
   setTimeout(async () => {
     // Startup: check server + git
     const serverInfo = await checkServerVersion();
@@ -567,7 +568,7 @@ function start() {
     _checkCycle();
     _timer = setInterval(_checkCycle, CHECK_POLL_INTERVAL);
     _gitCheckTimer = setInterval(_periodicGitCheck, GIT_CHECK_INTERVAL);
-  }, 8000);
+  }, 3000);
 }
 
 function stop() {

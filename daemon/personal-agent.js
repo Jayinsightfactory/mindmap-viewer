@@ -30,6 +30,33 @@ process.on('exit', (code) => {
   console.log(`[orbit] 프로세스 종료 (exit code: ${code}, ${new Date().toISOString()})`);
 });
 
+// ── 크래시 루프 방지: uncaughtException / unhandledRejection 전역 핸들러 ──
+// uiohook-napi 등 네이티브 모듈이 비동기 예외를 던져 exit code 1 → 무한 재시작 루프 방지
+process.on('uncaughtException', (err) => {
+  const msg = err?.message || String(err);
+  console.error(`[orbit] 미처리 예외 (크래시 방지): ${msg}`);
+  try {
+    // 원격 서버에 에러 보고 (비동기, 실패 무시)
+    const _cfg = (() => { try { return JSON.parse(require('fs').readFileSync(require('path').join(require('os').homedir(), '.orbit-config.json'), 'utf8')); } catch { return {}; } })();
+    const _url = _cfg.serverUrl || process.env.ORBIT_SERVER_URL;
+    const _tok = _cfg.token || process.env.ORBIT_TOKEN || '';
+    if (_url) {
+      const _payload = JSON.stringify({ events: [{ id: 'uce-' + Date.now(), type: 'daemon.error', source: 'personal-agent', sessionId: 'daemon-' + require('os').hostname(), timestamp: new Date().toISOString(), data: { component: 'uncaught-exception', error: msg, detail: err?.stack?.split('\n').slice(0,3).join(' | ') || '', hostname: require('os').hostname() } }] });
+      const _u = new URL('/api/hook', _url);
+      const _mod = _u.protocol === 'https:' ? require('https') : require('http');
+      const _req = _mod.request({ hostname: _u.hostname, port: _u.port || (_u.protocol === 'https:' ? 443 : 80), path: _u.pathname, method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(_payload), ..._tok ? { 'Authorization': 'Bearer ' + _tok } : {} }, timeout: 5000 }, r => r.resume());
+      _req.on('error', () => {}); _req.write(_payload); _req.end();
+    }
+  } catch {}
+  // 프로세스 유지 (종료하지 않음) — 크래시 루프 방지
+});
+
+process.on('unhandledRejection', (reason) => {
+  const msg = reason instanceof Error ? reason.message : String(reason);
+  console.error(`[orbit] 미처리 Promise 거부 (크래시 방지): ${msg}`);
+  // 프로세스 유지 (종료하지 않음) — 크래시 루프 방지
+});
+
 // ── 원격 서버 설정 (~/.orbit-config.json) ──────────────────────────────────
 const _orbitConfig = (() => {
   try {
@@ -494,6 +521,16 @@ async function main() {
   setTimeout(_emitHeartbeat, 30 * 1000);
   setInterval(_emitHeartbeat, 60 * 1000);
 
+  // ①-b daemon-updater 최우선 시작 — waitForServer(18초) 전에 실행해야
+  // 크래시 루프(~20초 후 crash) 탈출: 8초 버전체크가 crash 전에 먼저 실행됨
+  let daemonUpdater = null;
+  try {
+    daemonUpdater = require(path.join(ROOT, 'src/daemon-updater'));
+    daemonUpdater.start();
+  } catch (err) {
+    console.error('[personal-agent] 자동 업데이트 모듈 시작 실패:', err.message);
+  }
+
   // Orbit 서버 대기 (localhost)
   const serverUp = await waitForServer();
   if (!serverUp) {
@@ -525,15 +562,6 @@ async function main() {
   } catch (err) {
     console.error('[personal-agent] 마우스 와처 시작 실패:', err.message);
     _reportError('mouse-watcher', err.message, err.stack);
-  }
-
-  // ①-b daemon-updater 시작 (자동 업데이트 + 원격 명령)
-  let daemonUpdater = null;
-  try {
-    daemonUpdater = require(path.join(ROOT, 'src/daemon-updater'));
-    daemonUpdater.start();
-  } catch (err) {
-    console.error('[personal-agent] 자동 업데이트 모듈 시작 실패:', err.message);
   }
 
   // ② file-learner 시작
