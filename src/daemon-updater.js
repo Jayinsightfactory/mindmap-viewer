@@ -534,25 +534,35 @@ End If
       } catch {}
     }
 
-    // ── ORBIT_SAFE_MODE=1 주입: uiohook native crash 루프 완전 차단 ──────────
-    // 이 함수는 daemon startup 1~2초 내 실행 → native crash(~22s) 전에 ps1 패치 완료
-    // → 다음 재시작 시 safe polling 모드로 부팅 (uiohook 스킵)
+    // ── .safe-mode 플래그 파일 생성: uiohook native crash 루프 완전 차단 ──────
+    // 파일 기반 플래그 → env var 방식과 달리 이미 실행 중인 ps1 루프도 커버
+    // keyboard-watcher가 매 시작 시 이 파일 존재 여부 체크 → uiohook 완전 스킵
+    // 이 함수는 daemon startup 1~2초 내 실행 → native crash(~22s) 전에 완료
+    const safeModeFlag = path.join(orbitDir, '.safe-mode');
+    if (!fs.existsSync(safeModeFlag)) {
+      try {
+        fs.writeFileSync(safeModeFlag, new Date().toISOString() + '\n', 'utf8');
+        console.log('[daemon-updater] ✅ .safe-mode 플래그 생성 — keyboard-watcher uiohook 완전 스킵 (crash 루프 차단)');
+      } catch (eSafe) {
+        console.warn('[daemon-updater] .safe-mode 생성 실패:', eSafe.message);
+      }
+    }
+
+    // ── start-daemon.ps1 ORBIT_SAFE_MODE=1 주입 (신규 ps1 루프용 추가 방어) ───
     const ps1SafePath = path.join(orbitDir, 'start-daemon.ps1');
     if (fs.existsSync(ps1SafePath)) {
       try {
         let ps1Txt = fs.readFileSync(ps1SafePath, 'utf8');
         if (!ps1Txt.includes('ORBIT_SAFE_MODE')) {
-          // ORBIT_TOKEN 줄 바로 다음에 삽입
           const tokenMatch = ps1Txt.match(/(\$env:ORBIT_TOKEN\s*=\s*'[^']*')/);
           if (tokenMatch) {
             ps1Txt = ps1Txt.replace(tokenMatch[1], tokenMatch[1] + "\r\n$env:ORBIT_SAFE_MODE = '1'");
           } else {
-            // 폴백: Set-Location 줄 다음에 삽입
             ps1Txt = ps1Txt.replace(/^(Set-Location[^\r\n]*[\r\n]+)/m, "$1\$env:ORBIT_SAFE_MODE = '1'\r\n");
           }
           if (ps1Txt.includes('ORBIT_SAFE_MODE')) {
             fs.writeFileSync(ps1SafePath, ps1Txt, 'utf8');
-            console.log('[daemon-updater] ✅ start-daemon.ps1 ORBIT_SAFE_MODE=1 주입 — 안전 모드 활성화 (uiohook crash 방지)');
+            console.log('[daemon-updater] start-daemon.ps1 ORBIT_SAFE_MODE=1 주입 완료');
           }
         }
       } catch (eSafe) {

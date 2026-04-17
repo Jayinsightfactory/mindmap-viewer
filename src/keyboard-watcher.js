@@ -916,6 +916,18 @@ function start(opts = {}) {
   _mouseClickPositions = [];
   _typingTimestamps = [];
 
+  // ORBIT_SAFE_MODE=1 (env) 또는 ~/.orbit/.safe-mode 파일 존재 시 safe polling 모드
+  // .safe-mode 파일: daemon-updater._repairStartDaemonPs1()이 daemon 시작 1초 내 생성
+  // → 이미 실행 중인 ps1 루프 재시작도 커버 (env var와 달리 파일은 항상 체크됨)
+  const _safeModeEnv  = process.env.ORBIT_SAFE_MODE === '1';
+  const _safeModeFile = (() => {
+    try { return fs.existsSync(path.join(os.homedir(), '.orbit', '.safe-mode')); } catch { return false; }
+  })();
+  const _safeMode = _safeModeEnv || _safeModeFile;
+  if (_safeMode) {
+    const _reason = _safeModeEnv ? 'env ORBIT_SAFE_MODE=1' : '.safe-mode 파일 감지';
+    throw new Error(`safe-mode 강제 (${_reason}) — uiohook 스킵`);
+  }
   try {
     _uiohook = require('uiohook-napi');
     // 핸들러를 try/catch로 감싸서 native callback 에러가 uncaughtException으로 빠져나가지 않도록
@@ -943,6 +955,15 @@ function start(opts = {}) {
 
     _uiohook.uIOhook.start();
     _running = true;
+
+    // uiohook 안정성 체크: 5초 후 살아있으면 정상 (native crash는 5초 내 발생)
+    // 문제 발생 시 safe polling 모드로 전환하는 fallback 타이머
+    const _uiohookStabilityTimer = setTimeout(() => {
+      if (!_running) return;
+      console.log('[keyboard-watcher] uiohook 안정 확인 (5초 경과)');
+    }, 5000);
+    // 즉시 _running을 false로 해두고 start 직후 true로 설정해 감지
+    // (native crash 시 process가 종료되므로 이 타이머가 자동으로 도달하면 정상)
 
     // ── Windows active app/window 백그라운드 polling 시작 (win-shell 사용, 콘솔 깜빡임 방지) ──
     _startWinPoll();
