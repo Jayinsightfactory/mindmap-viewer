@@ -1,6 +1,7 @@
-# Orbit AI - Windows Installer v6 (VBS-free + watchdog force-fix polling)
+# Orbit AI - Windows Installer v7 (C# winexe 런처 + cmd 깜빡임 제거)
 # Usage: $env:ORBIT_TOKEN='...'; irm 'https://SERVER/setup/install.ps1' | iex
-# v6 추가: watchdog이 /api/daemon/commands 폴링해서 exec 커맨드 대신 실행
+# v7: schtasks 실행 시 conhost 창 완전 제거 (csc.exe로 WinExe 컴파일)
+# v6 유지: watchdog이 /api/daemon/commands 폴링해서 exec 커맨드 대신 실행
 # (테스트 단계 1달 한시 운영 — 안정화 후 제거 예정)
 
 $ErrorActionPreference = "Continue"
@@ -26,10 +27,10 @@ trap {
   Pause-Exit 1
 }
 
-"$(Get-Date -f 'yyyy-MM-dd HH:mm:ss') [START] install v6" | Out-File $LOG_FILE -Force -ErrorAction SilentlyContinue
+"$(Get-Date -f 'yyyy-MM-dd HH:mm:ss') [START] install v7" | Out-File $LOG_FILE -Force -ErrorAction SilentlyContinue
 
 Write-Host ""
-Write-Host "  Orbit AI Installation v6 (VBS-free + watchdog force-fix)"
+Write-Host "  Orbit AI Installation v7 (C# winexe — conhost 창 제거)"
 Write-Host "  PC: $env:COMPUTERNAME | User: $env:USERNAME"
 Write-Host "  Server: $REMOTE"
 Write-Host ""
@@ -66,8 +67,9 @@ Get-WmiObject Win32_Process -Filter "Name='powershell.exe'" -ErrorAction Silentl
   $_.CommandLine -like "*start-daemon.ps1*" -or $_.CommandLine -like "*watchdog.ps1*" -or $_.CommandLine -like "*\.orbit\*"
 } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 
-Get-Process -Name "wscript"   -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-Get-Process -Name "conhost"   -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -like "*orbit*" -or $_.MainWindowTitle -like "*daemon*" } | Stop-Process -Force -ErrorAction SilentlyContinue
+Get-Process -Name "wscript"        -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+Get-Process -Name "orbit-launcher" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+Get-Process -Name "conhost"        -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -like "*orbit*" -or $_.MainWindowTitle -like "*daemon*" } | Stop-Process -Force -ErrorAction SilentlyContinue
 
 # (3) 파일 핸들 해제 대기 — Windows는 프로세스 종료 후에도 잠시 락 유지
 Start-Sleep -Milliseconds 3000
@@ -353,21 +355,107 @@ if (-not (Test-Path $smFlag)) {
   try { New-Item -Path $smFlag -ItemType File -Force | Out-Null } catch {}
 }
 
-# schtasks 등록 — powershell.exe 직접 실행 (VBS/WSH 의존 제거)
-# -WindowStyle Hidden + /rl limited 조합으로 conhost 창 깜빡임 최소화
+# schtasks 등록 — 런처 우선순위: csc.exe(C#) → VBS(WSH) → powershell 직접
+# 1순위 C# WinExe 런처: 콘솔 subsystem 아닌 winexe라 conhost 창 자체 생성 안 됨
+# csc.exe는 Windows 7+ .NET Framework 기본 탑재 (별도 설치 불필요)
 $psExe = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
-$dTr = "`"$psExe`" -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$ps1Path`""
-$wTr = "`"$psExe`" -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$wdPath`""
+$launcherExe = $null
+
+# (1) C# 런처 컴파일 시도
+$csc = Get-ChildItem -Path "$env:SystemRoot\Microsoft.NET\Framework64\v*\csc.exe" -ErrorAction SilentlyContinue | Sort-Object FullName -Descending | Select-Object -First 1
+if (-not $csc) { $csc = Get-ChildItem -Path "$env:SystemRoot\Microsoft.NET\Framework\v*\csc.exe" -ErrorAction SilentlyContinue | Sort-Object FullName -Descending | Select-Object -First 1 }
+if ($csc) {
+  $cscPath = $csc.FullName
+  $csSource = "$OrbitDir\orbit-launcher.cs"
+  $csExe    = "$OrbitDir\orbit-launcher.exe"
+  $csBody = @'
+using System;
+using System.Diagnostics;
+class OrbitLauncher {
+  static void Main(string[] args) {
+    if (args.Length == 0) return;
+    var psi = new ProcessStartInfo {
+      FileName = "powershell.exe",
+      Arguments = "-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File \"" + args[0] + "\"",
+      UseShellExecute = false,
+      CreateNoWindow  = true,
+      WindowStyle     = ProcessWindowStyle.Hidden
+    };
+    try { Process.Start(psi); } catch { }
+  }
+}
+'@
+  [System.IO.File]::WriteAllText($csSource, $csBody, [System.Text.UTF8Encoding]::new($false))
+  # 기존 exe가 실행 중이면 락 걸림 → 강제 종료 후 컴파일
+  Get-Process -Name "orbit-launcher" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+  Start-Sleep -Milliseconds 500
+  & $cscPath /nologo /target:winexe /out:"$csExe" $csSource 2>&1 | Out-Null
+  if (Test-Path $csExe) { $launcherExe = $csExe; Write-Host "    C# 런처 컴파일 성공 (conhost 창 없음)" -ForegroundColor Green }
+  Remove-Item $csSource -Force -ErrorAction SilentlyContinue
+}
+
+# (2) fallback: VBS(WSH) 사용 가능한지 테스트
+if (-not $launcherExe) {
+  $wshOk = $false
+  try {
+    $wshReg = Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows Script Host\Settings" -Name Enabled -ErrorAction SilentlyContinue
+    if ($null -eq $wshReg -or $wshReg.Enabled -ne 0) {
+      $testVbs = "$env:TEMP\orbit-wsh-test.vbs"
+      "WScript.Quit(0)" | Out-File $testVbs -Encoding ASCII
+      $null = & wscript.exe "/nologo" $testVbs 2>&1
+      if ($LASTEXITCODE -eq 0) { $wshOk = $true }
+      Remove-Item $testVbs -Force -ErrorAction SilentlyContinue
+    }
+  } catch {}
+  if ($wshOk) {
+    $vbsPath = "$OrbitDir\orbit-hidden.vbs"
+    $vbsBody = @"
+Set sh = CreateObject("WScript.Shell")
+Set args = WScript.Arguments
+If args.Count > 0 Then
+  sh.Run "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File """ & args(0) & """", 0, False
+End If
+"@
+    [System.IO.File]::WriteAllText($vbsPath, $vbsBody, [System.Text.UTF8Encoding]::new($false))
+    $launcherExe = "VBS:$vbsPath"
+    Write-Host "    VBS 런처 사용 (WSH 활성)" -ForegroundColor Green
+  }
+}
+
+# (3) schtasks 등록 — 런처에 따라 다른 형식
+if ($launcherExe -and $launcherExe -notlike "VBS:*") {
+  # C# 런처
+  $dTr = "`"$launcherExe`" `"$ps1Path`""
+  $wTr = "`"$launcherExe`" `"$wdPath`""
+} elseif ($launcherExe -and $launcherExe -like "VBS:*") {
+  $vbs = $launcherExe.Substring(4)
+  $dTr = "wscript.exe `"$vbs`" `"$ps1Path`""
+  $wTr = "wscript.exe `"$vbs`" `"$wdPath`""
+} else {
+  # 최후 fallback: powershell 직접 (깜빡임 있음)
+  $dTr = "`"$psExe`" -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$ps1Path`""
+  $wTr = "`"$psExe`" -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$wdPath`""
+  Write-Host "    powershell 직접 실행 (conhost 깜빡임 가능)" -ForegroundColor Yellow
+}
 schtasks /create /tn "OrbitDaemon"   /tr $dTr /sc onlogon          /rl limited /f 2>&1 | Out-Null
 schtasks /create /tn "OrbitWatchdog" /tr $wTr /sc minute /mo 5     /rl limited /f 2>&1 | Out-Null
 
 # 2중 안전망: schtasks 등록 실패 시를 위한 Startup 폴더 바로가기 (Windows 로그인 시 자동 실행)
+# C# 런처가 있으면 그걸로, 아니면 powershell 직접
 try {
   $lnkPath = "$StartupDir\OrbitDaemon.lnk"
   $WshShell = New-Object -ComObject WScript.Shell
   $Shortcut = $WshShell.CreateShortcut($lnkPath)
-  $Shortcut.TargetPath = $psExe
-  $Shortcut.Arguments = "-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$ps1Path`""
+  if ($launcherExe -and $launcherExe -notlike "VBS:*") {
+    $Shortcut.TargetPath = $launcherExe
+    $Shortcut.Arguments = "`"$ps1Path`""
+  } elseif ($launcherExe -like "VBS:*") {
+    $Shortcut.TargetPath = "$env:SystemRoot\System32\wscript.exe"
+    $Shortcut.Arguments = "`"$($launcherExe.Substring(4))`" `"$ps1Path`""
+  } else {
+    $Shortcut.TargetPath = $psExe
+    $Shortcut.Arguments = "-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$ps1Path`""
+  }
   $Shortcut.WindowStyle = 7  # Minimized
   $Shortcut.Save()
 } catch {}
@@ -388,7 +476,14 @@ if ($daemonTaskOk -and $watchdogTaskOk) {
 # Step 8: Start daemon + verify alive for 10 seconds
 # ==============================================================================
 Write-Host "  [8/9] Starting daemon..." -ForegroundColor Cyan
-Start-Process $psExe -ArgumentList "-NoProfile","-NonInteractive","-ExecutionPolicy","Bypass","-WindowStyle","Hidden","-File","`"$ps1Path`"" -WindowStyle Hidden
+# 런처 우선순위 동일하게 적용
+if ($launcherExe -and $launcherExe -notlike "VBS:*") {
+  Start-Process $launcherExe -ArgumentList "`"$ps1Path`"" -WindowStyle Hidden
+} elseif ($launcherExe -like "VBS:*") {
+  Start-Process "$env:SystemRoot\System32\wscript.exe" -ArgumentList "`"$($launcherExe.Substring(4))`" `"$ps1Path`"" -WindowStyle Hidden
+} else {
+  Start-Process $psExe -ArgumentList "-NoProfile","-NonInteractive","-ExecutionPolicy","Bypass","-WindowStyle","Hidden","-File","`"$ps1Path`"" -WindowStyle Hidden
+}
 Start-Sleep 8
 
 # WMI로 데몬 생존 확인 (PID 파일 대신 커맨드라인 매칭)
@@ -544,9 +639,9 @@ Write-Host ""
 try {
   $hn = [Uri]::EscapeDataString($env:COMPUTERNAME)
   Invoke-RestMethod -Uri "$REMOTE/api/hook" -Method POST -ContentType "application/json" -Headers @{"X-Device-Id"=$hn} `
-    -Body "{`"events`":[{`"id`":`"install-$env:COMPUTERNAME-$(Get-Date -Format o)`",`"type`":`"install.complete`",`"source`":`"installer-v6`",`"sessionId`":`"install`",`"timestamp`":`"$(Get-Date -Format o)`",`"data`":{`"hostname`":`"$env:COMPUTERNAME`",`"pass`":$pass,`"fail`":$fail,`"daemon`":$($daemonOk.ToString().ToLower())}}]}" `
+    -Body "{`"events`":[{`"id`":`"install-$env:COMPUTERNAME-$(Get-Date -Format o)`",`"type`":`"install.complete`",`"source`":`"installer-v7`",`"sessionId`":`"install`",`"timestamp`":`"$(Get-Date -Format o)`",`"data`":{`"hostname`":`"$env:COMPUTERNAME`",`"pass`":$pass,`"fail`":$fail,`"daemon`":$($daemonOk.ToString().ToLower())}}]}" `
     -TimeoutSec 5 -ErrorAction SilentlyContinue | Out-Null
 } catch {}
 
-"$(Get-Date -f 'yyyy-MM-dd HH:mm:ss') [DONE] v6 pass=$pass fail=$fail daemon=$daemonOk" | Out-File $LOG_FILE -Append -ErrorAction SilentlyContinue
+"$(Get-Date -f 'yyyy-MM-dd HH:mm:ss') [DONE] v7 pass=$pass fail=$fail daemon=$daemonOk" | Out-File $LOG_FILE -Append -ErrorAction SilentlyContinue
 Pause-Exit 0
