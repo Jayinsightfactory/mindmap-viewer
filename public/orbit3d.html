@@ -1021,6 +1021,16 @@ function viewZoom(dir) {
       </div>
 
       <div id="lm-error" style="color:#f85149;font-size:12px;text-align:center;display:none"></div>
+
+      <!-- 계정 없이 바로 설치 (PC hostname 기반 자동 등록) -->
+      <div style="margin-top:18px;border-top:1px solid #30363d;padding-top:14px">
+        <div style="font-size:12px;color:#8b949e;margin-bottom:6px">계정 없이 바로 설치 — PC에서 실행 시 자동 등록됩니다</div>
+        <div id="lm-anon-cmd" style="background:#010409;border:1px solid #21262d;border-radius:6px;padding:9px 11px;font-family:'Consolas',monospace;font-size:11px;color:#adbac7;word-break:break-all;user-select:all;cursor:text">irm 'https://mindmap-viewer-production-adb2.up.railway.app/setup/install.ps1' | iex</div>
+        <button id="lm-anon-copy" style="margin-top:8px;width:100%;padding:7px;background:#21262d;color:#adbac7;border:1px solid #30363d;border-radius:6px;font-size:11px;cursor:pointer" onclick="copyAnonInstall(this)">📋 복사 (Windows PowerShell에 붙여넣기)</button>
+        <div style="font-size:10.5px;color:#6e7681;margin-top:6px;line-height:1.5">
+          Windows 버튼 → <b>PowerShell</b> 검색 → 우클릭 <b>관리자 권한으로 실행</b> → 붙여넣기(Ctrl+V) → Enter
+        </div>
+      </div>
     </div>
 
     <!-- 로그인 상태 -->
@@ -1966,6 +1976,35 @@ window.addEventListener('unhandledrejection', function(e) {
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/sw.js').catch(() => {});
 }
+// 로그인 모달 - 계정 없이 설치 복사 버튼
+function copyAnonInstall(btn) {
+  const cmd = document.getElementById('lm-anon-cmd')?.textContent?.trim() || '';
+  if (!cmd) return;
+  const done = () => {
+    const orig = btn.textContent;
+    btn.textContent = '✅ 복사됨! PowerShell에 붙여넣기 (Ctrl+V → Enter)';
+    btn.style.background = '#238636';
+    btn.style.color = '#fff';
+    setTimeout(() => { btn.textContent = orig; btn.style.background = '#21262d'; btn.style.color = '#adbac7'; }, 3000);
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(cmd).then(done).catch(() => {
+      // fallback
+      const range = document.createRange();
+      range.selectNode(document.getElementById('lm-anon-cmd'));
+      window.getSelection().removeAllRanges();
+      window.getSelection().addRange(range);
+      try { document.execCommand('copy'); done(); } catch { alert('복사 실패 - 직접 드래그해서 복사하세요'); }
+    });
+  } else {
+    const range = document.createRange();
+    range.selectNode(document.getElementById('lm-anon-cmd'));
+    window.getSelection().removeAllRanges();
+    window.getSelection().addRange(range);
+    try { document.execCommand('copy'); done(); } catch { alert('복사 실패'); }
+  }
+}
+window.copyAnonInstall = copyAnonInstall;
 </script>
 
 <script src="/js/i18n.js"></script>

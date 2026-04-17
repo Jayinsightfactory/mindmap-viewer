@@ -35,22 +35,60 @@ Write-Host "  Server: $REMOTE"
 Write-Host ""
 
 # ==============================================================================
-# Step 0: Clean previous install
+# Step 0: Clean previous install (파일 사용중 방지 — 모든 자식 프로세스까지 정리)
 # ==============================================================================
 Write-Host "  [0/9] Cleaning previous install..." -ForegroundColor Cyan
-Get-WmiObject Win32_Process -Filter "Name='node.exe'" -ErrorAction SilentlyContinue | Where-Object {
-  $_.CommandLine -like "*personal-agent*"
-} | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
-Get-WmiObject Win32_Process -Filter "Name='powershell.exe'" -ErrorAction SilentlyContinue | Where-Object {
-  $_.CommandLine -like "*start-daemon.ps1*" -or $_.CommandLine -like "*watchdog.ps1*"
-} | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
-Get-Process -Name "wscript" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-Start-Sleep -Milliseconds 1500
-schtasks /delete /tn "OrbitDaemon" /f 2>$null | Out-Null
+
+# (1) schtasks 먼저 중단 — 죽여도 5분 안에 watchdog이 되살리는 것 방지
+schtasks /end    /tn "OrbitDaemon"   2>$null | Out-Null
+schtasks /end    /tn "OrbitWatchdog" 2>$null | Out-Null
+schtasks /delete /tn "OrbitDaemon"   /f 2>$null | Out-Null
 schtasks /delete /tn "OrbitWatchdog" /f 2>$null | Out-Null
+
+# (2) 데몬 및 그 자식 프로세스 전부 kill
+#     - node.exe personal-agent (메인 데몬)
+#     - python.exe (screen-capture가 spawn한 자식 — pyautogui/PIL)
+#     - powershell.exe (start-daemon.ps1 while loop, watchdog, keyboard-watcher 앱감지 폴링)
+#     - wscript.exe (구버전 VBS 래퍼)
+Get-WmiObject Win32_Process -Filter "Name='node.exe'" -ErrorAction SilentlyContinue | Where-Object {
+  $_.CommandLine -like "*personal-agent*" -or $_.CommandLine -like "*mindmap-viewer*daemon*"
+} | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+
+Get-WmiObject Win32_Process -Filter "Name='python.exe'" -ErrorAction SilentlyContinue | Where-Object {
+  $_.CommandLine -like "*pyautogui*" -or $_.CommandLine -like "*ImageGrab*" -or $_.CommandLine -like "*mindmap-viewer*"
+} | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+
+Get-WmiObject Win32_Process -Filter "Name='pythonw.exe'" -ErrorAction SilentlyContinue | Where-Object {
+  $_.CommandLine -like "*pyautogui*" -or $_.CommandLine -like "*mindmap-viewer*"
+} | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+
+Get-WmiObject Win32_Process -Filter "Name='powershell.exe'" -ErrorAction SilentlyContinue | Where-Object {
+  $_.CommandLine -like "*start-daemon.ps1*" -or $_.CommandLine -like "*watchdog.ps1*" -or $_.CommandLine -like "*\.orbit\*"
+} | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+
+Get-Process -Name "wscript"   -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+Get-Process -Name "conhost"   -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -like "*orbit*" -or $_.MainWindowTitle -like "*daemon*" } | Stop-Process -Force -ErrorAction SilentlyContinue
+
+# (3) 파일 핸들 해제 대기 — Windows는 프로세스 종료 후에도 잠시 락 유지
+Start-Sleep -Milliseconds 3000
+
+# (4) 타겟 로그 파일 락 해제 확인 (남아있으면 이름 변경)
+'daemon.log','watchdog.log','install.log' | ForEach-Object {
+  $f = "$OrbitDir\$_"
+  if (Test-Path $f) {
+    try {
+      $fs = [IO.File]::Open($f, 'Open', 'ReadWrite', 'Read')
+      $fs.Close()
+    } catch {
+      # 락 걸림 → rotate (원본은 .old로 밀기)
+      try { Move-Item $f "$f.old.$(Get-Date -Format yyyyMMddHHmmss)" -Force -ErrorAction SilentlyContinue } catch {}
+    }
+  }
+}
+
+# (5) Startup 폴더 + 구버전 VBS 잔재 제거
 $StartupDir = [System.Environment]::GetFolderPath('Startup')
-'orbit-daemon.vbs','orbit-daemon.bat','orbit-startup.lnk' | ForEach-Object { $f="$StartupDir\$_"; if(Test-Path $f){Remove-Item $f -Force -ErrorAction SilentlyContinue} }
-# 구버전 VBS 래퍼 제거 (v5는 powershell 직접 호출)
+'orbit-daemon.vbs','orbit-daemon.bat','orbit-startup.lnk','OrbitDaemon.lnk' | ForEach-Object { $f="$StartupDir\$_"; if(Test-Path $f){Remove-Item $f -Force -ErrorAction SilentlyContinue} }
 if (Test-Path "$OrbitDir\orbit-hidden.vbs") { Remove-Item "$OrbitDir\orbit-hidden.vbs" -Force -ErrorAction SilentlyContinue }
 # Backup old config
 $oldToken = ""; $oldUserId = ""
@@ -92,9 +130,10 @@ if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
 Write-Host "    $(git --version 2>$null)" -ForegroundColor Green
 
 # ==============================================================================
-# Step 3: Python + Java
+# Step 3: Python (스크린 캡처용 pyautogui/pillow 필수)
+# v6에서 Java 제거 — daemon 코드에서 실제 사용하지 않음 (중복 런타임 방지)
 # ==============================================================================
-Write-Host "  [3/9] Python + Java..." -ForegroundColor Cyan
+Write-Host "  [3/9] Python..." -ForegroundColor Cyan
 if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
   if (Get-Command winget -ErrorAction SilentlyContinue) { winget install Python.Python.3.11 --silent --accept-source-agreements --accept-package-agreements 2>$null }
   $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
@@ -102,13 +141,8 @@ if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
 if (Get-Command python -ErrorAction SilentlyContinue) {
   python -m pip install --quiet pyautogui pillow requests 2>$null
   Write-Host "    Python $(python --version 2>$null)" -ForegroundColor Green
-}
-if (-not (Get-Command java -ErrorAction SilentlyContinue)) {
-  if (Get-Command winget -ErrorAction SilentlyContinue) { winget install Microsoft.OpenJDK.21 --silent --accept-source-agreements --accept-package-agreements 2>$null }
-  $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
-}
-if (Get-Command java -ErrorAction SilentlyContinue) {
-  Write-Host "    Java OK" -ForegroundColor Green
+} else {
+  Write-Host "    Python 미설치 — screen-capture 폴백 모드로 작동" -ForegroundColor Yellow
 }
 
 # ==============================================================================
