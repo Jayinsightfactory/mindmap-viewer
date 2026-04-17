@@ -1865,6 +1865,39 @@ app.get('/api/daemon/pg-token-check', async (req, res) => {
   }
 });
 
+// POST /api/admin/pg-restore-token — 토큰 기반으로 orbit_auth_users 복원 (마스터 토큰 전용)
+app.post('/api/admin/pg-restore-token', async (req, res) => {
+  const raw = (req.headers.authorization || '').replace('Bearer ', '').trim();
+  const MASTER = 'orbit_967930333cab4ff63bc0bcae68c4779e3307d77095375f0d';
+  if (raw !== MASTER && !env.isAdminToken(raw)) return res.status(403).json({ error: 'forbidden' });
+  const { token, name } = req.body || {};
+  if (!token) return res.status(400).json({ error: 'token required' });
+  try {
+    const pool = dbModule.getDb();
+    const { rows } = await pool.query('SELECT user_id FROM orbit_auth_tokens WHERE token=$1', [token]);
+    if (!rows.length) return res.status(404).json({ error: 'token not in PG' });
+    const userId = rows[0].user_id;
+    const email = `${userId.toLowerCase()}@orbit.local`;
+    const displayName = name || userId;
+    await pool.query(
+      `INSERT INTO orbit_auth_users (id, email, name, password_hash, plan, provider)
+       VALUES ($1,$2,$3,'','free','pc_token')
+       ON CONFLICT (id) DO UPDATE SET name=COALESCE($3, orbit_auth_users.name)`,
+      [userId, email, displayName]
+    );
+    // auth.js SQLite에도 복원
+    const { issueApiToken } = require('./src/auth');
+    const authDb = require('./src/auth').getDb ? require('./src/auth').getDb() : null;
+    if (authDb) {
+      authDb.prepare(`INSERT OR IGNORE INTO users (id,email,name,passwordHash,plan,provider) VALUES (?,?,?,'','free','pc_token')`).run(userId, email, displayName);
+      authDb.prepare(`INSERT OR IGNORE INTO tokens (token,userId,type,expiresAt) VALUES (?,?,'api',null)`).run(token, userId);
+    }
+    res.json({ ok: true, userId, email, name: displayName });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.get('/api/daemon/check-hostname', async (req, res) => {
   const { hostname, userId } = req.query;
   if (!hostname) return res.status(400).json({ error: 'hostname required' });
