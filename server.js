@@ -959,7 +959,7 @@ app.get('/api/daemon/drive-config', (req, res) => {
 });
 
 // ─── Drive 폴더ID 오버라이드 (Railway 환경변수 우회) ────────────────────────────
-app.post('/api/admin/drive-folder-override', (req, res) => {
+app.post('/api/admin/drive-folder-override', async (req, res) => {
   const token = (req.headers.authorization || '').replace('Bearer ', '').trim();
   if (!token.startsWith('orbit_')) return res.status(401).json({ error: 'orbit token required' });
   const { folderId } = req.body;
@@ -967,7 +967,25 @@ app.post('/api/admin/drive-folder-override', (req, res) => {
   if (!global._driveConfigOverride) global._driveConfigOverride = {};
   global._driveConfigOverride.folderId = folderId;
   console.log(`[drive-config] 폴더ID 오버라이드 설정: ${folderId}`);
-  res.json({ ok: true, folderId, note: '재시작 시 초기화됨 (env var 업데이트 권장)' });
+  // DB에 영구 저장 (Railway 재시작 후에도 유지)
+  try {
+    const _pool = dbModule.getDb ? dbModule.getDb() : null;
+    if (_pool?.query) {
+      await _pool.query(
+        `CREATE TABLE IF NOT EXISTS orbit_settings (key TEXT PRIMARY KEY, value TEXT, updated_at TIMESTAMPTZ DEFAULT NOW())`
+      );
+      await _pool.query(
+        `INSERT INTO orbit_settings (key, value) VALUES ('drive.folderId.override', $1)
+         ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()`, [folderId]
+      );
+      res.json({ ok: true, folderId, persisted: true });
+    } else {
+      res.json({ ok: true, folderId, persisted: false, note: '메모리만 저장 (PG 없음)' });
+    }
+  } catch (e) {
+    console.warn('[drive-config] DB 저장 실패:', e.message);
+    res.json({ ok: true, folderId, persisted: false, note: e.message });
+  }
 });
 
 // ─── 일회성: Drive 폴더를 개인 계정에 공유 ───────────────────────────────────
@@ -5455,6 +5473,21 @@ async function startServer() {
   } catch (e) {
     console.warn('[startup] 자동 업데이트 명령 등록 실패:', e.message);
   }
+
+  // Drive 폴더ID 오버라이드 복원 (orbit_settings에서 로드)
+  try {
+    const _pool = dbModule.getDb ? dbModule.getDb() : null;
+    if (_pool?.query) {
+      const { rows } = await _pool.query(
+        `SELECT value FROM orbit_settings WHERE key='drive.folderId.override'`
+      ).catch(() => ({ rows: [] }));
+      if (rows[0]?.value) {
+        if (!global._driveConfigOverride) global._driveConfigOverride = {};
+        global._driveConfigOverride.folderId = rows[0].value;
+        console.log(`[startup] Drive 폴더ID 오버라이드 복원: ${rows[0].value}`);
+      }
+    }
+  } catch (e) { console.warn('[startup] Drive 폴더ID 복원 실패:', e.message); }
 
   // 관리자 토큰 자동 부트스트랩 (Railway 재시작 시 ADMIN_TOKENS 복원)
   // ~/.orbit-config.json 또는 ADMIN_TOKENS 환경변수에서 로드됨 (environment.js가 처리)
