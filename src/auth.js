@@ -696,6 +696,10 @@ async function _pgInit() {
       );
     `);
   } catch (e) { console.warn('[AUTH-PG] init warn:', e.message); }
+  // 기존 테이블에 컬럼 누락 시 추가 (마이그레이션)
+  try {
+    await _pgPool.query(`ALTER TABLE orbit_auth_tokens ADD COLUMN IF NOT EXISTS type TEXT DEFAULT 'session'`);
+  } catch {}
 }
 
 // 사용자 + 토큰을 PG에 비동기 백업 (비밀번호 해시 포함)
