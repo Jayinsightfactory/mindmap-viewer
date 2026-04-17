@@ -3831,12 +3831,28 @@ app.post('/api/admin/install-code', async (req, res) => {
   if (raw !== MASTER_TOKEN && !env.isAdminToken(raw)) {
     return res.status(403).json({ error: 'forbidden' });
   }
-  const { userId } = req.body || {};
-  if (!userId) return res.status(400).json({ error: 'userId required' });
-  const { issueApiToken, pgBackupToken } = require('./src/auth');
+  const { userId, name: reqName } = req.body || {};
+  if (!userId && !reqName) return res.status(400).json({ error: 'userId or name required' });
+  const { issueApiToken, pgBackupToken, pgBackupUser } = require('./src/auth');
   const authDb = require('./src/auth').getDb ? require('./src/auth').getDb() : null;
-  const user = authDb ? authDb.prepare('SELECT * FROM users WHERE id = ?').get(userId) : null;
-  if (!user) return res.status(404).json({ error: 'user not found: ' + userId });
+  let user = null;
+  if (userId) {
+    user = authDb ? authDb.prepare('SELECT * FROM users WHERE id = ?').get(userId) : null;
+  }
+  // name으로 생성 (또는 name으로 기존 조회)
+  if (!user && reqName) {
+    const slug = reqName.toLowerCase().replace(/\s+/g, '.').replace(/[^a-z0-9.가-힣]/g, '');
+    const email = `${slug}.pc@orbit.local`;
+    user = authDb ? authDb.prepare('SELECT * FROM users WHERE email = ?').get(email) : null;
+    if (!user) {
+      const crypto = require('crypto');
+      const newId = 'MN' + crypto.randomBytes(8).toString('hex').toUpperCase();
+      authDb.prepare(`INSERT INTO users (id, email, name, passwordHash, provider) VALUES (?, ?, ?, '', 'pc_token')`).run(newId, email, reqName);
+      user = authDb.prepare('SELECT * FROM users WHERE id = ?').get(newId);
+      try { await pgBackupUser(user, ''); } catch {}
+    }
+  }
+  if (!user) return res.status(404).json({ error: 'user not found' });
   const newToken = issueApiToken(user.id);
   try { await pgBackupToken(newToken, user.id, null); } catch {}
   const serverUrl = process.env.SERVER_URL || 'https://mindmap-viewer-production-adb2.up.railway.app';
