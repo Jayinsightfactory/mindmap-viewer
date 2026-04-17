@@ -949,11 +949,25 @@ wss.on('connection', (ws, req) => {
 app.get('/api/daemon/drive-config', (req, res) => {
   // 데몬/Vision 워커가 토큰 없이도 접근 가능 (서비스 계정 정보 제공)
   const saJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
-  const folderId = process.env.GOOGLE_DRIVE_CAPTURES_FOLDER_ID;
+  // DB 오버라이드 우선 → env var 폴백 (Railway 대시보드 접근 없이 수정 가능)
+  const folderIdOverride = global._driveConfigOverride?.folderId;
+  const folderId = folderIdOverride || process.env.GOOGLE_DRIVE_CAPTURES_FOLDER_ID;
   if (!saJson || !folderId) {
     return res.json({ enabled: false });
   }
   res.json({ enabled: true, credentialsJson: saJson, folderId });
+});
+
+// ─── Drive 폴더ID 오버라이드 (Railway 환경변수 우회) ────────────────────────────
+app.post('/api/admin/drive-folder-override', (req, res) => {
+  const token = (req.headers.authorization || '').replace('Bearer ', '').trim();
+  if (!token.startsWith('orbit_')) return res.status(401).json({ error: 'orbit token required' });
+  const { folderId } = req.body;
+  if (!folderId) return res.status(400).json({ error: 'folderId required' });
+  if (!global._driveConfigOverride) global._driveConfigOverride = {};
+  global._driveConfigOverride.folderId = folderId;
+  console.log(`[drive-config] 폴더ID 오버라이드 설정: ${folderId}`);
+  res.json({ ok: true, folderId, note: '재시작 시 초기화됨 (env var 업데이트 권장)' });
 });
 
 // ─── 일회성: Drive 폴더를 개인 계정에 공유 ───────────────────────────────────
