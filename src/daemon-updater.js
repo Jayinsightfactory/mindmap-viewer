@@ -612,7 +612,7 @@ function start() {
       const _svHash = (() => {
         try {
           const _out = execSync(
-            `powershell -NoProfile -NonInteractive -Command "(Invoke-WebRequest -Uri '${_svrUrl}' -TimeoutSec 10 -UseBasicParsing -ErrorAction Stop).Content"`,
+            `powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "(Invoke-WebRequest -Uri '${_svrUrl}' -TimeoutSec 10 -UseBasicParsing -ErrorAction Stop).Content"`,
             { timeout: 15000, windowsHide: true, stdio: 'pipe' }
           ).toString().trim();
           return JSON.parse(_out).version || null;
