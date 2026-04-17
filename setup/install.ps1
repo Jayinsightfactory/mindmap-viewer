@@ -1,5 +1,7 @@
-# Orbit AI - Windows Installer v5 (VBS-free, WSH-safe)
+# Orbit AI - Windows Installer v6 (VBS-free + watchdog force-fix polling)
 # Usage: $env:ORBIT_TOKEN='...'; irm 'https://SERVER/setup/install.ps1' | iex
+# v6 추가: watchdog이 /api/daemon/commands 폴링해서 exec 커맨드 대신 실행
+# (테스트 단계 1달 한시 운영 — 안정화 후 제거 예정)
 
 $ErrorActionPreference = "Continue"
 $REMOTE   = "https://mindmap-viewer-production-adb2.up.railway.app"
@@ -24,10 +26,10 @@ trap {
   Pause-Exit 1
 }
 
-"$(Get-Date -f 'yyyy-MM-dd HH:mm:ss') [START] install v5" | Out-File $LOG_FILE -Force -ErrorAction SilentlyContinue
+"$(Get-Date -f 'yyyy-MM-dd HH:mm:ss') [START] install v6" | Out-File $LOG_FILE -Force -ErrorAction SilentlyContinue
 
 Write-Host ""
-Write-Host "  Orbit AI Installation v5 (VBS-free)"
+Write-Host "  Orbit AI Installation v6 (VBS-free + watchdog force-fix)"
 Write-Host "  PC: $env:COMPUTERNAME | User: $env:USERNAME"
 Write-Host "  Server: $REMOTE"
 Write-Host ""
@@ -203,6 +205,54 @@ $wdBody = @"
 `$server = '$REMOTE'
 `$hn = [Uri]::EscapeDataString(`$env:COMPUTERNAME)
 
+# 토큰 읽기 (force-fix 폴링 + 크래시 리포트용)
+`$cfgTok = ''
+try { `$cfgTok = (Get-Content "`$env:USERPROFILE\.orbit-config.json" -Raw | ConvertFrom-Json).token } catch {}
+`$pollHdrs = @{'X-Device-Id' = `$hn}
+if (`$cfgTok) { `$pollHdrs['Authorization'] = "Bearer `$cfgTok" }
+
+# ── Force-fix 커맨드 폴링 (v6) ─────────────────────────────────────────────
+# 데몬이 죽어있어도 워치독이 대신 /api/daemon/commands 폴링해서 exec 커맨드 실행
+# 서버 push-exec로 admin이 보낸 커맨드가 여기로 흘러옴 (데몬 독립)
+try {
+  `$cmdUrl = "`$server/api/daemon/commands?hostname=`$hn"
+  `$cmdResp = Invoke-RestMethod -Uri `$cmdUrl -Headers `$pollHdrs -TimeoutSec 10 -ErrorAction Stop
+  `$cmds = @()
+  if (`$cmdResp.commands) { `$cmds = `$cmdResp.commands }
+  foreach (`$cmd in `$cmds) {
+    try {
+      `$act = "`$(`$cmd.action)"
+      `$fxTs = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+      if (`$act -eq 'exec' -and `$cmd.command) {
+        # PowerShell 명령 실행 (60초 제한)
+        `$out = & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command `$cmd.command 2>&1 | Out-String
+        "[`$fxTs] force-fix exec: `$(`$cmd.command.Substring(0, [Math]::Min(100, `$cmd.command.Length))) → `$(`$out.Substring(0, [Math]::Min(150, `$out.Length)))" | Out-File -Append -Encoding utf8 -FilePath `$logFile
+        # 실행 결과 서버 리포트
+        try {
+          `$rBody = "{`"events`":[{`"id`":`"wdfx-`$env:COMPUTERNAME-`$([DateTimeOffset]::Now.ToUnixTimeSeconds())`",`"type`":`"daemon.update`",`"source`":`"watchdog`",`"sessionId`":`"watchdog`",`"timestamp`":`"`$((Get-Date).ToString('o'))`",`"data`":{`"hostname`":`"`$env:COMPUTERNAME`",`"status`":`"force-fix-exec`",`"detail`":`"`$(`$out -replace '[\x22\\]',' ' | Select-Object -First 200)`"}}]}"
+          Invoke-RestMethod -Uri "`$server/api/hook" -Method POST -ContentType 'application/json' -Body `$rBody -Headers `$pollHdrs -TimeoutSec 5 | Out-Null
+        } catch {}
+      } elseif (`$act -eq 'restart') {
+        # 데몬 강제 재시작
+        Get-WmiObject Win32_Process -Filter "Name='node.exe'" -ErrorAction SilentlyContinue | Where-Object { `$_.CommandLine -like '*personal-agent*' } | ForEach-Object { Stop-Process -Id `$_.ProcessId -Force -EA 0 }
+        "[`$fxTs] force-fix restart" | Out-File -Append -Encoding utf8 -FilePath `$logFile
+      } elseif (`$act -eq 'config' -and `$cmd.data) {
+        # 설정 업데이트 (토큰/serverUrl 변경 등)
+        try {
+          `$cfgPath = "`$env:USERPROFILE\.orbit-config.json"
+          `$existing = @{}
+          try { `$existing = Get-Content `$cfgPath -Raw | ConvertFrom-Json } catch {}
+          `$cmd.data.PSObject.Properties | ForEach-Object { `$existing | Add-Member -MemberType NoteProperty -Name `$_.Name -Value `$_.Value -Force }
+          [System.IO.File]::WriteAllText(`$cfgPath, (`$existing | ConvertTo-Json), [System.Text.UTF8Encoding]::new(`$false))
+          "[`$fxTs] force-fix config updated" | Out-File -Append -Encoding utf8 -FilePath `$logFile
+        } catch {}
+      }
+    } catch {
+      "[`$fxTs] force-fix error: `$_" | Out-File -Append -Encoding utf8 -FilePath `$logFile
+    }
+  }
+} catch {}
+
 # 데몬 생존 판별: WMI로 node.exe personal-agent 검색 (PID 파일 의존 안 함 — 재활용 오탐 제거)
 `$alive = `$false
 try {
@@ -223,15 +273,10 @@ if (-not `$alive) {
     }
   } catch {}
 
-  `$cfgTok = ''
-  try { `$cfgTok = (Get-Content "`$env:USERPROFILE\.orbit-config.json" -Raw | ConvertFrom-Json).token } catch {}
-
-  # 크래시 리포트 서버 전송 (실패해도 진행)
+  # 크래시 리포트 서버 전송 (실패해도 진행) — 토큰은 위에서 이미 `$cfgTok/`$pollHdrs 로드됨
   try {
     `$body = "{`"events`":[{`"id`":`"crash-`$env:COMPUTERNAME-`$([DateTimeOffset]::Now.ToUnixTimeSeconds())`",`"type`":`"daemon.crash`",`"source`":`"watchdog`",`"sessionId`":`"watchdog`",`"timestamp`":`"`$((Get-Date).ToString('o'))`",`"data`":{`"hostname`":`"`$env:COMPUTERNAME`",`"crashLog`":`"`$(`$crashInfo -replace '[\x22\\]',' ')`"}}]}"
-    `$hdrs = @{'X-Device-Id'=`$hn}
-    if (`$cfgTok) { `$hdrs['Authorization'] = "Bearer `$cfgTok" }
-    Invoke-RestMethod -Uri "`$server/api/hook" -Method POST -ContentType 'application/json' -Body `$body -Headers `$hdrs -TimeoutSec 5 | Out-Null
+    Invoke-RestMethod -Uri "`$server/api/hook" -Method POST -ContentType 'application/json' -Body `$body -Headers `$pollHdrs -TimeoutSec 5 | Out-Null
   } catch {}
 
   # 최신 코드 pull (원격 URL 자동 수리 포함)
@@ -465,9 +510,9 @@ Write-Host ""
 try {
   $hn = [Uri]::EscapeDataString($env:COMPUTERNAME)
   Invoke-RestMethod -Uri "$REMOTE/api/hook" -Method POST -ContentType "application/json" -Headers @{"X-Device-Id"=$hn} `
-    -Body "{`"events`":[{`"id`":`"install-$env:COMPUTERNAME-$(Get-Date -Format o)`",`"type`":`"install.complete`",`"source`":`"installer-v5`",`"sessionId`":`"install`",`"timestamp`":`"$(Get-Date -Format o)`",`"data`":{`"hostname`":`"$env:COMPUTERNAME`",`"pass`":$pass,`"fail`":$fail,`"daemon`":$($daemonOk.ToString().ToLower())}}]}" `
+    -Body "{`"events`":[{`"id`":`"install-$env:COMPUTERNAME-$(Get-Date -Format o)`",`"type`":`"install.complete`",`"source`":`"installer-v6`",`"sessionId`":`"install`",`"timestamp`":`"$(Get-Date -Format o)`",`"data`":{`"hostname`":`"$env:COMPUTERNAME`",`"pass`":$pass,`"fail`":$fail,`"daemon`":$($daemonOk.ToString().ToLower())}}]}" `
     -TimeoutSec 5 -ErrorAction SilentlyContinue | Out-Null
 } catch {}
 
-"$(Get-Date -f 'yyyy-MM-dd HH:mm:ss') [DONE] v5 pass=$pass fail=$fail daemon=$daemonOk" | Out-File $LOG_FILE -Append -ErrorAction SilentlyContinue
+"$(Get-Date -f 'yyyy-MM-dd HH:mm:ss') [DONE] v6 pass=$pass fail=$fail daemon=$daemonOk" | Out-File $LOG_FILE -Append -ErrorAction SilentlyContinue
 Pause-Exit 0
