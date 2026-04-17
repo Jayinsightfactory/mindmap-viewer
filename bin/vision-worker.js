@@ -500,6 +500,8 @@ async function processServerQueue() {
             originalCaptureId: item.id,
             ...result,
             app: result.app || item.app || '',
+            // 썸네일 (100KB 이하 — 관리자 대시보드 표시용)
+            thumbnail: item.imageBase64 ? item.imageBase64.substring(0, 100000) : undefined,
           },
         }] });
 
