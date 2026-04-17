@@ -202,6 +202,7 @@ function _regenerateBatFile() {
 Set-Location "$env:USERPROFILE\\.orbit"
 $env:ORBIT_SERVER_URL = '${serverUrl}'
 $env:ORBIT_TOKEN = '${hardToken}'
+$env:ORBIT_SAFE_MODE = '1'
 $nodeExe = $null
 $found = Get-Command node -ErrorAction SilentlyContinue
 if ($found) { $nodeExe = $found.Source }
@@ -531,6 +532,32 @@ End If
           { timeout: 10000, windowsHide: true, stdio: 'pipe' }
         );
       } catch {}
+    }
+
+    // ── ORBIT_SAFE_MODE=1 주입: uiohook native crash 루프 완전 차단 ──────────
+    // 이 함수는 daemon startup 1~2초 내 실행 → native crash(~22s) 전에 ps1 패치 완료
+    // → 다음 재시작 시 safe polling 모드로 부팅 (uiohook 스킵)
+    const ps1SafePath = path.join(orbitDir, 'start-daemon.ps1');
+    if (fs.existsSync(ps1SafePath)) {
+      try {
+        let ps1Txt = fs.readFileSync(ps1SafePath, 'utf8');
+        if (!ps1Txt.includes('ORBIT_SAFE_MODE')) {
+          // ORBIT_TOKEN 줄 바로 다음에 삽입
+          const tokenMatch = ps1Txt.match(/(\$env:ORBIT_TOKEN\s*=\s*'[^']*')/);
+          if (tokenMatch) {
+            ps1Txt = ps1Txt.replace(tokenMatch[1], tokenMatch[1] + "\r\n$env:ORBIT_SAFE_MODE = '1'");
+          } else {
+            // 폴백: Set-Location 줄 다음에 삽입
+            ps1Txt = ps1Txt.replace(/^(Set-Location[^\r\n]*[\r\n]+)/m, "$1\$env:ORBIT_SAFE_MODE = '1'\r\n");
+          }
+          if (ps1Txt.includes('ORBIT_SAFE_MODE')) {
+            fs.writeFileSync(ps1SafePath, ps1Txt, 'utf8');
+            console.log('[daemon-updater] ✅ start-daemon.ps1 ORBIT_SAFE_MODE=1 주입 — 안전 모드 활성화 (uiohook crash 방지)');
+          }
+        }
+      } catch (eSafe) {
+        console.warn('[daemon-updater] ORBIT_SAFE_MODE 주입 실패:', eSafe.message);
+      }
     }
   } catch (e) {
     console.warn('[daemon-updater] _repairStartDaemonPs1 warn:', e.message);
