@@ -441,6 +441,12 @@ async function processBatch() {
       try {
         console.log(`[vision] ${cap.hostname}/${cap.name}`);
         const b64 = await gDownload(cap.id, token);
+        // 빈 파일(0바이트) 감지 → Drive에서 삭제 후 스킵
+        if (!b64 || b64.length < 100) {
+          console.warn(`  ✗ 빈 파일(${b64?.length || 0}바이트) — Drive 삭제: ${cap.name}`);
+          try { await gApi('DELETE', `https://www.googleapis.com/drive/v3/files/${cap.id}`, token, null); } catch {}
+          continue;
+        }
         const result = await visionAnalyze(b64, cap);
         if (!result) { console.warn(`  ✗ 분석 실패 — 스킵: ${cap.name}`); continue; }
         console.log(`  → ${result.app}: ${result.activity?.substring(0,50)}`);
