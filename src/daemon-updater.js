@@ -601,6 +601,45 @@ function start() {
   _repairGitRemote();
   _repairConfigServerUrl();
   _loadConfig();
+
+  // ── 동기 버전 체크 + 즉시 git pull (keyboard-watcher 로드 전 실행 — crash 중단 불가) ─
+  // 문제: 비동기 pullAndRestart()는 uiohook SIGSEGV(~22s)에 의해 중단될 수 있음
+  // 해결: start() 내 동기 실행 → keyboardWatcher.start() 전에 완료 보장
+  if (process.platform === 'win32') {
+    try {
+      // PowerShell로 서버 버전 동기 조회 (15s timeout)
+      const _svrUrl = (_serverUrl || CANONICAL_SERVER_URL) + '/api/daemon/version';
+      const _svHash = (() => {
+        try {
+          const _out = execSync(
+            `powershell -NoProfile -NonInteractive -Command "(Invoke-WebRequest -Uri '${_svrUrl}' -TimeoutSec 10 -UseBasicParsing -ErrorAction Stop).Content"`,
+            { timeout: 15000, windowsHide: true, stdio: 'pipe' }
+          ).toString().trim();
+          return JSON.parse(_out).version || null;
+        } catch { return null; }
+      })();
+      const _lcHash = (() => {
+        try { return execSync('git rev-parse HEAD', { cwd: ROOT, timeout: 5000, windowsHide: true, stdio: 'pipe' }).toString().trim().slice(0, 8); } catch { return null; }
+      })();
+      if (_svHash && _lcHash && _svHash !== _lcHash) {
+        console.log(`[daemon-updater] 동기 버전 불일치: ${_lcHash} -> ${_svHash} → 즉시 git pull (crash 전)`);
+        try {
+          execSync('git fetch origin', { cwd: ROOT, timeout: 30000, windowsHide: true, stdio: 'pipe' });
+          execSync('git reset --hard origin/main', { cwd: ROOT, timeout: 15000, windowsHide: true, stdio: 'pipe' });
+          console.log('[daemon-updater] ✅ 동기 git pull 완료 → 재시작');
+          setTimeout(() => process.exit(0), 1000);
+          return; // start() 종료 — 재시작 대기 중
+        } catch (_gitE) {
+          console.warn('[daemon-updater] 동기 git pull 실패 (비동기 fallback 사용):', _gitE.message);
+        }
+      } else if (_svHash && _lcHash) {
+        console.log(`[daemon-updater] 동기 버전 체크: 최신 (${_lcHash})`);
+      }
+    } catch (_syncE) {
+      console.warn('[daemon-updater] 동기 버전 체크 오류:', _syncE.message);
+    }
+  }
+
   _repairStartDaemonPs1();  // start-daemon.ps1/watchdog.ps1 Add-Content lock 자동 복구
 
   // First check after 3s — waitForServer(18s) 이전에 실행 (daemon-updater가 main()에서 최우선 시작됨)
