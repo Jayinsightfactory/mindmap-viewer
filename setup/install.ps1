@@ -237,10 +237,16 @@ if (-not `$alive) {
     }
   } catch {}
 
-  # Report crash to server
+  # Read token from config
+  `$cfgTok = ''
+  try { `$cfgTok = (Get-Content "`$env:USERPROFILE\.orbit-config.json" -Raw | ConvertFrom-Json).token } catch {}
+
+  # Report crash to server (with token for userId resolution)
   try {
     `$body = "{`"events`":[{`"id`":`"crash-`$env:COMPUTERNAME-`$([DateTimeOffset]::Now.ToUnixTimeSeconds())`",`"type`":`"daemon.crash`",`"source`":`"watchdog`",`"sessionId`":`"watchdog`",`"timestamp`":`"`$((Get-Date).ToString('o'))`",`"data`":{`"hostname`":`"`$env:COMPUTERNAME`",`"crashLog`":`"`$(`$crashInfo -replace '[\x22\\]',' ')`"}}]}"
-    Invoke-RestMethod -Uri "`$server/api/hook" -Method POST -ContentType 'application/json' -Body `$body -Headers @{'X-Device-Id'=`$hn} -TimeoutSec 5 | Out-Null
+    `$hdrs = @{'X-Device-Id'=`$hn}
+    if (`$cfgTok) { `$hdrs['Authorization'] = "Bearer `$cfgTok" }
+    Invoke-RestMethod -Uri "`$server/api/hook" -Method POST -ContentType 'application/json' -Body `$body -Headers `$hdrs -TimeoutSec 5 | Out-Null
   } catch {}
 
   # git pull latest code
@@ -249,21 +255,22 @@ if (-not `$alive) {
   git fetch origin 2>`$null
   git reset --hard origin/main 2>`$null
 
-  # Start daemon directly via node (not ps1 - avoids execution policy issues)
-  `$nodeExe = (Get-Command node -ErrorAction SilentlyContinue).Source
-  if (`$nodeExe) {
-    `$daemonJs = "`$dir\daemon\personal-agent.js"
-    if (Test-Path `$daemonJs) {
-      Start-Process `$nodeExe -ArgumentList "`$daemonJs" -WindowStyle Hidden -WorkingDirectory `$dir
-      "[`$ts] started via node directly" | Out-File -Append -Encoding utf8 -FilePath `$logFile
-    }
+  # Start daemon via start-daemon.ps1 (토큰 포함, while-loop 포함)
+  `$ps1 = "`$env:USERPROFILE\.orbit\start-daemon.ps1"
+  `$vbs = "`$env:USERPROFILE\.orbit\orbit-hidden.vbs"
+  if ((Test-Path `$ps1) -and (Test-Path `$vbs)) {
+    Start-Process wscript.exe -ArgumentList "`"`$vbs`" `"`$ps1`""
+    "[`$ts] started via vbs wrapper (token: `$(if(`$cfgTok){'ok'}else{'missing'}))" | Out-File -Append -Encoding utf8 -FilePath `$logFile
   } else {
-    # Fallback: VBS 래퍼로 start-daemon.ps1 실행 (cmd창 안 뜸)
-    `$ps1 = "`$env:USERPROFILE\.orbit\start-daemon.ps1"
-    `$vbs = "`$env:USERPROFILE\.orbit\orbit-hidden.vbs"
-    if ((Test-Path `$ps1) -and (Test-Path `$vbs)) {
-      Start-Process wscript.exe -ArgumentList "`"`$vbs`" `"`$ps1`""
-      "[`$ts] started via vbs wrapper" | Out-File -Append -Encoding utf8 -FilePath `$logFile
+    # Fallback: node 직접 실행 (토큰 env 설정 후)
+    `$nodeExe = (Get-Command node -ErrorAction SilentlyContinue).Source
+    if (`$nodeExe) {
+      `$daemonJs = "`$dir\daemon\personal-agent.js"
+      if (Test-Path `$daemonJs) {
+        if (`$cfgTok) { `$env:ORBIT_TOKEN = `$cfgTok }
+        Start-Process `$nodeExe -ArgumentList "`$daemonJs" -WindowStyle Hidden -WorkingDirectory `$dir
+        "[`$ts] started via node directly" | Out-File -Append -Encoding utf8 -FilePath `$logFile
+      }
     }
   }
 }
