@@ -3803,7 +3803,9 @@ app.post('/api/admin/issue-token', (req, res) => {
 app.post('/api/admin/reissue-token', async (req, res) => {
   const adminToken = (req.headers.authorization || '').replace('Bearer ', '').trim();
   const { verifyTokenAsync, getUserByEmail, issueApiToken, pgBackupToken, pgBackupUser } = require('./src/auth');
-  const adminUser = await verifyTokenAsync(adminToken);
+  // orbit 마스터 토큰 또는 admin JWT 허용
+  const isOrbitAdmin = env.isAdminToken(adminToken);
+  const adminUser = isOrbitAdmin ? { email: env.ADMIN_EMAILS[0] } : await verifyTokenAsync(adminToken);
   if (!adminUser || !ADMIN_EMAILS.includes((adminUser.email || '').toLowerCase().trim())) {
     return res.status(403).json({ error: 'admin only' });
   }
