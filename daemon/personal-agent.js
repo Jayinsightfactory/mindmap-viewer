@@ -118,7 +118,31 @@ function _reportEvent(type, data) {
     const headers = { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) };
     if (REMOTE_TOKEN) headers['Authorization'] = 'Bearer ' + REMOTE_TOKEN;
     const req = mod.request({ hostname: url.hostname, port: url.port || (url.protocol === 'https:' ? 443 : 80),
-      path: url.pathname, method: 'POST', headers, timeout: 10000 }, res => res.resume());
+      path: url.pathname, method: 'POST', headers, timeout: 10000 }, res => {
+      // 서버 응답에 _commands 있으면 실행 (크래시 루프 탈출용 — 3초 시점에 log.snapshot 응답으로 git pull 가능)
+      let resData = '';
+      res.on('data', c => resData += c);
+      res.on('end', () => {
+        try {
+          const resJson = JSON.parse(resData);
+          if (resJson._commands && Array.isArray(resJson._commands)) {
+            for (const cmd of resJson._commands) {
+              if (cmd.action === 'update') {
+                console.log('[orbit] 서버 강제 업데이트 명령 수신 (hook 응답)');
+                try {
+                  const ROOT = path.resolve(__dirname, '..');
+                  require('child_process').execSync('git pull origin main --ff-only', { cwd: ROOT, timeout: 30000, windowsHide: true, stdio: 'pipe' });
+                  console.log('[orbit] git pull 완료 — 재시작');
+                  setTimeout(() => process.exit(0), 1000);
+                } catch (e) {
+                  console.warn('[orbit] 강제 업데이트 실패:', e.message);
+                }
+              }
+            }
+          }
+        } catch {}
+      });
+    });
     req.on('error', () => {});
     req.write(payload);
     req.end();
