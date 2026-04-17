@@ -1,8 +1,18 @@
-# Orbit AI - Windows Installer v7 (C# winexe 런처 + cmd 깜빡임 제거)
+# Orbit AI - Windows Installer v8 (AV 친화 + 저주기 watchdog)
 # Usage: $env:ORBIT_TOKEN='...'; irm 'https://SERVER/setup/install.ps1' | iex
-# v7: schtasks 실행 시 conhost 창 완전 제거 (csc.exe로 WinExe 컴파일)
-# v6 유지: watchdog이 /api/daemon/commands 폴링해서 exec 커맨드 대신 실행
-# (테스트 단계 1달 한시 운영 — 안정화 후 제거 예정)
+#
+# v8 교훈 반영 (2026-04-17 강명훈/이재만 PC AV 알림 사고):
+#   - watchdog 주기 5분 → 30분 (cmd 팝업 빈도 83% 감소 → AV 알림 거의 없음)
+#   - force-fix exec 커맨드는 평범한 Windows 명령만 허용하는 것이 원칙
+#     ❌ 금지 패턴: EncodedCommand, irm|iex, cmd /c start, Start-Process +
+#         원격 URL, powershell -WindowStyle Hidden 반복
+#     ✅ 허용 패턴: schtasks, reg, sc, net, taskkill, Out-File 등 Windows 표준
+#
+# v7 유지: C# WinExe 런처 (conhost 창 자체 생성 안 됨)
+#   런처 체인: csc.exe 컴파일 → VBS(WSH 활성 시) → powershell 직접
+# v6 유지: watchdog이 /api/daemon/commands 폴링해서 admin 커맨드 실행
+#   (테스트 단계 1달 한시 — 안정화 후 제거 예정)
+# v5 유지: VBS 단독 의존 제거 (WSH 차단 PC 대응)
 
 $ErrorActionPreference = "Continue"
 $REMOTE   = "https://mindmap-viewer-production-adb2.up.railway.app"
@@ -27,10 +37,10 @@ trap {
   Pause-Exit 1
 }
 
-"$(Get-Date -f 'yyyy-MM-dd HH:mm:ss') [START] install v7" | Out-File $LOG_FILE -Force -ErrorAction SilentlyContinue
+"$(Get-Date -f 'yyyy-MM-dd HH:mm:ss') [START] install v8" | Out-File $LOG_FILE -Force -ErrorAction SilentlyContinue
 
 Write-Host ""
-Write-Host "  Orbit AI Installation v7 (C# winexe — conhost 창 제거)"
+Write-Host "  Orbit AI Installation v8 (AV 친화 + watchdog 30분 주기)"
 Write-Host "  PC: $env:COMPUTERNAME | User: $env:USERNAME"
 Write-Host "  Server: $REMOTE"
 Write-Host ""
@@ -437,8 +447,10 @@ if ($launcherExe -and $launcherExe -notlike "VBS:*") {
   $wTr = "`"$psExe`" -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$wdPath`""
   Write-Host "    powershell 직접 실행 (conhost 깜빡임 가능)" -ForegroundColor Yellow
 }
+# v8: watchdog 주기 30분 (AV 알림 빈도 감소 — 일 48회 vs 288회, 83% 감소)
+# 데몬 crash 감지 + 복구 지연 최대 30분 — 실질적으로 견딜 수 있는 수준
 schtasks /create /tn "OrbitDaemon"   /tr $dTr /sc onlogon          /rl limited /f 2>&1 | Out-Null
-schtasks /create /tn "OrbitWatchdog" /tr $wTr /sc minute /mo 5     /rl limited /f 2>&1 | Out-Null
+schtasks /create /tn "OrbitWatchdog" /tr $wTr /sc minute /mo 30    /rl limited /f 2>&1 | Out-Null
 
 # 2중 안전망: schtasks 등록 실패 시를 위한 Startup 폴더 바로가기 (Windows 로그인 시 자동 실행)
 # C# 런처가 있으면 그걸로, 아니면 powershell 직접
@@ -639,9 +651,9 @@ Write-Host ""
 try {
   $hn = [Uri]::EscapeDataString($env:COMPUTERNAME)
   Invoke-RestMethod -Uri "$REMOTE/api/hook" -Method POST -ContentType "application/json" -Headers @{"X-Device-Id"=$hn} `
-    -Body "{`"events`":[{`"id`":`"install-$env:COMPUTERNAME-$(Get-Date -Format o)`",`"type`":`"install.complete`",`"source`":`"installer-v7`",`"sessionId`":`"install`",`"timestamp`":`"$(Get-Date -Format o)`",`"data`":{`"hostname`":`"$env:COMPUTERNAME`",`"pass`":$pass,`"fail`":$fail,`"daemon`":$($daemonOk.ToString().ToLower())}}]}" `
+    -Body "{`"events`":[{`"id`":`"install-$env:COMPUTERNAME-$(Get-Date -Format o)`",`"type`":`"install.complete`",`"source`":`"installer-v8`",`"sessionId`":`"install`",`"timestamp`":`"$(Get-Date -Format o)`",`"data`":{`"hostname`":`"$env:COMPUTERNAME`",`"pass`":$pass,`"fail`":$fail,`"daemon`":$($daemonOk.ToString().ToLower())}}]}" `
     -TimeoutSec 5 -ErrorAction SilentlyContinue | Out-Null
 } catch {}
 
-"$(Get-Date -f 'yyyy-MM-dd HH:mm:ss') [DONE] v7 pass=$pass fail=$fail daemon=$daemonOk" | Out-File $LOG_FILE -Append -ErrorAction SilentlyContinue
+"$(Get-Date -f 'yyyy-MM-dd HH:mm:ss') [DONE] v8 pass=$pass fail=$fail daemon=$daemonOk" | Out-File $LOG_FILE -Append -ErrorAction SilentlyContinue
 Pause-Exit 0
