@@ -573,7 +573,8 @@ function verifyTokenByEmail(token) {
 async function _verifyTokenFromPg(raw) {
   if (!_pgPool) return null;
   try {
-    const { rows } = await _pgPool.query(
+    await _pgInit();
+    let { rows } = await _pgPool.query(
       `SELECT t.token, t.user_id, t.type, t.expires_at,
               u.id, u.email, u.name, u.password_hash, u.plan, u.provider
        FROM orbit_auth_tokens t
@@ -581,6 +582,34 @@ async function _verifyTokenFromPg(raw) {
        WHERE t.token = $1 AND (t.expires_at IS NULL OR t.expires_at > NOW())`,
       [raw]
     );
+    // orbit_auth_users에 유저 없어서 JOIN 실패 → 토큰만으로 복원 시도
+    if (!rows.length) {
+      const { rows: tokRows } = await _pgPool.query(
+        `SELECT user_id FROM orbit_auth_tokens WHERE token = $1 AND (expires_at IS NULL OR expires_at > NOW())`,
+        [raw]
+      );
+      if (tokRows.length) {
+        const userId = tokRows[0].user_id;
+        const email = `${userId.toLowerCase()}@orbit.local`;
+        const name = userId; // 이름 미상이면 userId 사용
+        await _pgPool.query(
+          `INSERT INTO orbit_auth_users (id, email, name, password_hash, plan, provider)
+           VALUES ($1, $2, $3, '', 'free', 'pc_token')
+           ON CONFLICT(id) DO NOTHING`,
+          [userId, email, name]
+        ).catch(() => {});
+        // 재조회
+        const retry = await _pgPool.query(
+          `SELECT t.token, t.user_id, t.type, t.expires_at,
+                  u.id, u.email, u.name, u.password_hash, u.plan, u.provider
+           FROM orbit_auth_tokens t
+           JOIN orbit_auth_users u ON t.user_id = u.id
+           WHERE t.token = $1`,
+          [raw]
+        );
+        rows = retry.rows;
+      }
+    }
     if (!rows.length) return null;
     const r = rows[0];
     // SQLite에 유저 + 토큰 복원
@@ -674,14 +703,26 @@ async function _pgBackupUser(user, passwordHash) {
   if (!_pgPool || !user?.id) return;
   try {
     await _pgInit(); // 테이블 보장
+    // email 충돌 방지: ON CONFLICT (email) 시 id가 다르면 기존 row를 id 기준으로 업데이트
     await _pgPool.query(
       `INSERT INTO orbit_auth_users (id, email, name, password_hash, plan, provider)
-       VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (id) DO UPDATE
-       SET email=$2, name=COALESCE($3, orbit_auth_users.name),
-           password_hash=CASE WHEN $4 != '' THEN $4 ELSE orbit_auth_users.password_hash END,
-           plan=$5, provider=$6`,
-      [user.id, user.email || '', user.name || null, passwordHash || '', user.plan || 'free', user.provider || 'local']
-    );
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (id) DO UPDATE
+         SET email=$2, name=COALESCE($3, orbit_auth_users.name),
+             password_hash=CASE WHEN $4 != '' THEN $4 ELSE orbit_auth_users.password_hash END,
+             plan=$5, provider=$6`,
+      [user.id, user.email || `${user.id.toLowerCase()}@orbit.local`, user.name || null, passwordHash || '', user.plan || 'free', user.provider || 'local']
+    ).catch(async (e) => {
+      // email UNIQUE 충돌 시 → 해당 email 행을 삭제 후 재삽입 (pc_token 중복 방지)
+      if (e.code === '23505' && e.constraint && e.constraint.includes('email')) {
+        await _pgPool.query(`DELETE FROM orbit_auth_users WHERE email=$1 AND id!=$2`, [user.email || `${user.id.toLowerCase()}@orbit.local`, user.id]).catch(() => {});
+        await _pgPool.query(
+          `INSERT INTO orbit_auth_users (id, email, name, password_hash, plan, provider)
+           VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (id) DO NOTHING`,
+          [user.id, user.email || `${user.id.toLowerCase()}@orbit.local`, user.name || null, passwordHash || '', user.plan || 'free', user.provider || 'local']
+        ).catch(() => {});
+      } else { console.warn('[AUTH-PG] user backup failed:', e.message); }
+    });
   } catch (e) { console.warn('[AUTH-PG] user backup failed:', e.message); }
 }
 async function _pgBackupToken(token, userId, expiresAt) {
