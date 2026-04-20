@@ -643,16 +643,38 @@ function start() {
   // ── v8 install 버전 마커 확인 — 없으면 local install.ps1 자동 실행 ──
   // 월요일 PC 켜질 때 이재만/강명훈 PC가 자동으로 v8 재설치되도록 하는 메커니즘
   // install.ps1은 local 파일 실행 → remote download 없음 → AV 친화
+  //
+  // ⚠️ 쿨다운: install.ps1이 v8 마커 쓰기 실패하면 start()마다 spawn 반복 → 10초 루프.
+  // install-last-run.txt에 마지막 spawn 타임스탬프 기록, 15분 내면 스킵하고 수집 모드로 진행.
+  // 최소한 루프는 탈출하고 원격 명령(command poll)과 수집이 동작하도록 보장.
   if (process.platform === 'win32') {
     try {
       const _verFile = path.join(os.homedir(), '.orbit', 'install-version.txt');
+      const _lastRunFile = path.join(os.homedir(), '.orbit', 'install-last-run.txt');
       let _currVer = '';
       try { _currVer = fs.readFileSync(_verFile, 'utf8').trim(); } catch {}
       const _needsInstall = (_currVer !== 'v8');
+
+      let _coolingDown = false;
+      try {
+        const _lastRun = parseInt(fs.readFileSync(_lastRunFile, 'utf8').trim(), 10);
+        if (_lastRun && Number.isFinite(_lastRun)) {
+          const _elapsedMs = Date.now() - _lastRun;
+          if (_elapsedMs >= 0 && _elapsedMs < 15 * 60 * 1000) {
+            _coolingDown = true;
+            console.log(`[daemon-updater] install.ps1 쿨다운 중 (${Math.round(_elapsedMs / 60000)}분 전 실행) — 스킵`);
+          }
+        }
+      } catch {}
+
       const _installPs1 = path.join(ROOT, 'setup', 'install.ps1');
-      if (_needsInstall && fs.existsSync(_installPs1)) {
+      if (_needsInstall && !_coolingDown && fs.existsSync(_installPs1)) {
         console.log(`[daemon-updater] v8 install 마커 없음 (current="${_currVer}") → local install.ps1 자동 실행`);
         try {
+          try {
+            fs.mkdirSync(path.dirname(_lastRunFile), { recursive: true });
+            fs.writeFileSync(_lastRunFile, String(Date.now()), 'utf8');
+          } catch {}
           // detach spawn — install.ps1의 Step 0에서 현재 node.exe 프로세스 kill할 것
           const _child = spawn('powershell.exe', [
             '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
