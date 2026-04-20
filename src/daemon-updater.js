@@ -640,14 +640,16 @@ function start() {
     }
   }
 
-  // ── v8 install 버전 마커 확인 — 없으면 local install.ps1 자동 실행 ──
-  // 월요일 PC 켜질 때 이재만/강명훈 PC가 자동으로 v8 재설치되도록 하는 메커니즘
-  // install.ps1은 local 파일 실행 → remote download 없음 → AV 친화
+  // ── v8 install 버전 마커 확인 — 기본 비활성화 (ORBIT_AUTO_REINSTALL=1 환경에서만) ──
   //
-  // ⚠️ 쿨다운: install.ps1이 v8 마커 쓰기 실패하면 start()마다 spawn 반복 → 10초 루프.
-  // install-last-run.txt에 마지막 spawn 타임스탬프 기록, 15분 내면 스킵하고 수집 모드로 진행.
-  // 최소한 루프는 탈출하고 원격 명령(command poll)과 수집이 동작하도록 보장.
-  if (process.platform === 'win32') {
+  // ⚠️ 2026-04-20 사고: v8 install 자동 spawn 로직이 install.ps1 Step 0의 schtasks /delete와
+  // 결합해 전 PC 10초 루프 + schtasks 소멸로 이어짐. 원격 복구 불가능한 영구 침묵 상태 유발.
+  //
+  // 새 원칙: 수집 연속성이 최우선. install.ps1 재실행은 자동화하지 않는다.
+  //   1. 자동 git pull만 수행 (이 함수 아래의 setTimeout). 코드 최신화는 이걸로 충분.
+  //   2. install.ps1 재실행은 ORBIT_AUTO_REINSTALL=1 환경변수 있을 때만.
+  //   3. 쿨다운(install-last-run.txt)은 유지 — 혹시 활성화됐을 때 10초 루프 방지.
+  if (process.platform === 'win32' && process.env.ORBIT_AUTO_REINSTALL === '1') {
     try {
       const _verFile = path.join(os.homedir(), '.orbit', 'install-version.txt');
       const _lastRunFile = path.join(os.homedir(), '.orbit', 'install-last-run.txt');
@@ -669,22 +671,20 @@ function start() {
 
       const _installPs1 = path.join(ROOT, 'setup', 'install.ps1');
       if (_needsInstall && !_coolingDown && fs.existsSync(_installPs1)) {
-        console.log(`[daemon-updater] v8 install 마커 없음 (current="${_currVer}") → local install.ps1 자동 실행`);
+        console.log(`[daemon-updater] ORBIT_AUTO_REINSTALL=1 + v8 마커 없음 → install.ps1 spawn`);
         try {
           try {
             fs.mkdirSync(path.dirname(_lastRunFile), { recursive: true });
             fs.writeFileSync(_lastRunFile, String(Date.now()), 'utf8');
           } catch {}
-          // detach spawn — install.ps1의 Step 0에서 현재 node.exe 프로세스 kill할 것
           const _child = spawn('powershell.exe', [
             '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
             '-WindowStyle', 'Hidden', '-File', _installPs1
           ], { detached: true, stdio: 'ignore', windowsHide: true });
           _child.unref();
-          console.log('[daemon-updater] install.ps1 detach 완료 → 1초 후 self-exit');
-          // 0.5초 후 자진 종료 (install.ps1이 kill하기 전에 깨끗하게 나감)
+          console.log('[daemon-updater] install.ps1 detach 완료 → 0.5초 후 self-exit');
           setTimeout(() => process.exit(0), 500);
-          return; // start() 종료
+          return;
         } catch (_eI) {
           console.warn('[daemon-updater] install.ps1 spawn 실패:', _eI.message);
         }

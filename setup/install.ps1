@@ -50,11 +50,13 @@ Write-Host ""
 # ==============================================================================
 Write-Host "  [0/9] Cleaning previous install..." -ForegroundColor Cyan
 
-# (1) schtasks 먼저 중단 — 죽여도 5분 안에 watchdog이 되살리는 것 방지
-schtasks /end    /tn "OrbitDaemon"   2>$null | Out-Null
-schtasks /end    /tn "OrbitWatchdog" 2>$null | Out-Null
-schtasks /delete /tn "OrbitDaemon"   /f 2>$null | Out-Null
-schtasks /delete /tn "OrbitWatchdog" /f 2>$null | Out-Null
+# (1) schtasks 일시 중단 — /end만, /delete 금지
+# ⚠️ 중요: schtasks 삭제 시 install.ps1이 Step 7 재등록 전에 실패하면
+# PC가 재부팅해도 자동 기동 안 되는 영구 침묵 상태가 됨 (2026-04-20 전 PC 사멸 사고).
+# 해결: /delete 제거. Step 7의 `schtasks /create /f`가 기존 정의를 안전하게 덮어씀.
+# 실패해도 기존 schtasks는 살아남아 30분 후 watchdog이 자동 복구.
+schtasks /end /tn "OrbitDaemon"   2>$null | Out-Null
+schtasks /end /tn "OrbitWatchdog" 2>$null | Out-Null
 
 # (2) 데몬 및 그 자식 프로세스 전부 kill
 #     - node.exe personal-agent (메인 데몬)
@@ -499,6 +501,23 @@ if ($daemonTaskOk -and $watchdogTaskOk) {
   Write-Host "    Daemon + Watchdog registered (schtasks + Startup shortcut)" -ForegroundColor Green
 } else {
   Write-Host "    Daemon=$daemonTaskOk Watchdog=$watchdogTaskOk — Startup shortcut backup active" -ForegroundColor Yellow
+}
+
+# 3중 안전망: HKCU\...\Run 레지스트리 (schtasks + Startup lnk + Registry Run)
+# schtasks 미등록 + Startup 폴더 잠김/정리 시에도 로그인마다 데몬 기동 보장.
+try {
+  $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+  if ($launcherExe -and $launcherExe -notlike "VBS:*") {
+    $runCmd = "`"$launcherExe`" `"$ps1Path`""
+  } elseif ($launcherExe -like "VBS:*") {
+    $runCmd = "wscript.exe `"$($launcherExe.Substring(4))`" `"$ps1Path`""
+  } else {
+    $runCmd = "`"$psExe`" -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$ps1Path`""
+  }
+  Set-ItemProperty -Path $runKey -Name 'OrbitDaemon' -Value $runCmd -Force -ErrorAction SilentlyContinue
+  Write-Host "    Registry Run fallback added" -ForegroundColor Green
+} catch {
+  Write-Host "    Registry Run 등록 스킵 ($($_.Exception.Message.Split([char]10)[0]))" -ForegroundColor DarkGray
 }
 
 # ==============================================================================
