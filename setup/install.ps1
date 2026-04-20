@@ -206,11 +206,28 @@ else { npm install 2>&1 | Out-Null; Write-Host "    Installed" -ForegroundColor 
 # ==============================================================================
 Write-Host "  [6/9] Config..." -ForegroundColor Cyan
 $cfgToken = if ($env:ORBIT_TOKEN -and $env:ORBIT_TOKEN.Length -gt 5) { $env:ORBIT_TOKEN } elseif ($oldToken) { $oldToken } else { "" }
-$cfgUserId = if ($oldUserId -and $oldUserId -ne "local") { $oldUserId } else { "" }
+# userId 우선순위: ORBIT_USER_ID 환경변수 (reissue-token이 주입) → 기존 config → 빈 값
+$cfgUserId = if ($env:ORBIT_USER_ID -and $env:ORBIT_USER_ID.Length -gt 5) { $env:ORBIT_USER_ID } elseif ($oldUserId -and $oldUserId -ne "local") { $oldUserId } else { "" }
 $cfgObj = @{ serverUrl=$REMOTE; hostname=$env:COMPUTERNAME; token=$cfgToken; userId=$cfgUserId }
 $cfgJson = $cfgObj | ConvertTo-Json
 [System.IO.File]::WriteAllText("$env:USERPROFILE\.orbit-config.json", $cfgJson, [System.Text.UTF8Encoding]::new($false))
-Write-Host "    Saved (hostname: $env:COMPUTERNAME)" -ForegroundColor Green
+Write-Host "    Saved (hostname: $env:COMPUTERNAME, userId: $(if ($cfgUserId) { $cfgUserId.Substring(0, [Math]::Min(12, $cfgUserId.Length)) + '...' } else { '(none)' }))" -ForegroundColor Green
+
+# hostname ↔ userId 서버 공식 등록 (orbit_pc_links) — 토큰 ghosting 방지
+# 설치자가 실행한 이 PC를 자기 계정에 못박는다. 다음부터 어떤 토큰이 와도 서버가 이 매핑 우선.
+if ($cfgToken -and $env:COMPUTERNAME) {
+  try {
+    $linkBody = @{ hostname = $env:COMPUTERNAME } | ConvertTo-Json -Compress
+    $linkRes = Invoke-RestMethod -Uri "$REMOTE/api/daemon/link-pc" -Method Post `
+      -Headers @{ Authorization = "Bearer $cfgToken"; 'Content-Type' = 'application/json' } `
+      -Body $linkBody -TimeoutSec 10 -ErrorAction Stop
+    Write-Host "    PC linked → $($linkRes.name)" -ForegroundColor Green
+    "$(Get-Date -f 'yyyy-MM-dd HH:mm:ss') [link-pc] ok: $($linkRes.name)" | Out-File $LOG_FILE -Append -ErrorAction SilentlyContinue
+  } catch {
+    Write-Host "    (link-pc skip: $($_.Exception.Message.Split([char]10)[0]))" -ForegroundColor DarkGray
+    "$(Get-Date -f 'yyyy-MM-dd HH:mm:ss') [link-pc] fail: $($_.Exception.Message)" | Out-File $LOG_FILE -Append -ErrorAction SilentlyContinue
+  }
+}
 
 # ==============================================================================
 # Step 7: Startup + Watchdog (VBS-free, 다중 경로 복구)

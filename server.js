@@ -2760,9 +2760,30 @@ app.post('/api/hook', async (req, res) => {
     const hookUser  = hookToken ? await _verifyAsync(hookToken) : null;
     // 토큰 인증 실패 시 → hostname 기반 user_id 사용 (local 대신)
     // 형식: "pc_이재만", "pc_NENOVA2025" — PC별 데이터 분리 유지
-    const hookUserId = hookUser
+    let hookUserId = hookUser
       ? hookUser.id
       : (deviceId ? `pc_${deviceId}` : 'local');
+
+    // ── orbit_pc_links 우선 매핑 ─────────────────────────────────────────
+    // 토큰 ghosting 방지: PC에 다른 유저 토큰이 깔려있어도 hostname 매핑이 있으면
+    // 공식 owner로 덮어씀. admin이 등록한 pc_links가 단일 source of truth.
+    if (deviceId) {
+      try {
+        const _pgPool = dbModule.getDb ? dbModule.getDb() : null;
+        if (_pgPool && process.env.DATABASE_URL) {
+          const { rows: _pcl } = await _pgPool.query(
+            `SELECT user_id FROM orbit_pc_links WHERE hostname = $1 LIMIT 1`,
+            [deviceId]
+          );
+          if (_pcl.length > 0 && _pcl[0].user_id && _pcl[0].user_id !== hookUserId) {
+            console.warn(`[hook] pc_link override: ${deviceId} token=${hookUserId} → ${_pcl[0].user_id}`);
+            hookUserId = _pcl[0].user_id;
+          }
+        }
+      } catch (_plErr) {
+        // pc_links 테이블 없거나 쿼리 실패 → 기존 hookUserId 유지 (fail-open)
+      }
+    }
 
     // ── 텍스트 구조화 사전 처리 (insertEvent 전) ─────────────────────────────
     if (textExtractor) {
@@ -3900,7 +3921,7 @@ app.post('/api/admin/reissue-token', async (req, res) => {
   try { await pgBackupUser(user, ''); } catch {}
   try { await pgBackupToken(newToken, user.id, null); } catch {}
   const serverUrl = (process.env.SERVER_URL || 'https://mindmap-viewer-production-adb2.up.railway.app');
-  const installCmd = `$env:ORBIT_TOKEN='${newToken}'; irm '${serverUrl}/setup/install.ps1' | iex`;
+  const installCmd = `$env:ORBIT_TOKEN='${newToken}'; $env:ORBIT_USER_ID='${user.id}'; irm '${serverUrl}/setup/install.ps1' | iex`;
   res.json({ ok: true, userId: user.id, name: user.name, email: user.email, token: newToken, installCmd });
 });
 
@@ -3938,7 +3959,7 @@ app.post('/api/admin/install-code', async (req, res) => {
   const newToken = issueApiToken(user.id);
   try { await pgBackupToken(newToken, user.id, null); } catch {}
   const serverUrl = process.env.SERVER_URL || 'https://mindmap-viewer-production-adb2.up.railway.app';
-  const installCmd = `$env:ORBIT_TOKEN='${newToken}'; irm '${serverUrl}/setup/install.ps1' | iex`;
+  const installCmd = `$env:ORBIT_TOKEN='${newToken}'; $env:ORBIT_USER_ID='${user.id}'; irm '${serverUrl}/setup/install.ps1' | iex`;
   res.json({ ok: true, userId: user.id, name: user.name, email: user.email, token: newToken, installCmd });
 });
 
