@@ -251,6 +251,25 @@ if (-not `$nodeExe -and (Test-Path '$nodeExePs1')) { `$nodeExe = '$nodeExePs1' }
 if (-not `$nodeExe -and (Test-Path 'C:\Program Files\nodejs\node.exe')) { `$nodeExe = 'C:\Program Files\nodejs\node.exe' }
 if (-not `$nodeExe) { Start-Sleep 60; exit 1 }
 try { `$c = Get-Content "`$env:USERPROFILE\.orbit-config.json" -Raw | ConvertFrom-Json; if(`$c.token){`$env:ORBIT_TOKEN=`$c.token} } catch {}
+
+# 하루 1회 Windows Toast 알림 — 데몬 시작 가시성 (conhost 창 대체)
+`$toastFile = "`$env:USERPROFILE\.orbit\toast-last.txt"
+`$today = (Get-Date).ToString('yyyyMMdd')
+`$lastToast = ''
+try { `$lastToast = (Get-Content `$toastFile -ErrorAction SilentlyContinue).Trim() } catch {}
+if (`$lastToast -ne `$today) {
+  try {
+    [void][Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType=WindowsRuntime]
+    `$tmpl = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02)
+    `$nodes = `$tmpl.GetElementsByTagName('text')
+    `$nodes.Item(0).AppendChild(`$tmpl.CreateTextNode('Orbit')) | Out-Null
+    `$nodes.Item(1).AppendChild(`$tmpl.CreateTextNode('업무 기록 시작됨')) | Out-Null
+    `$toast = [Windows.UI.Notifications.ToastNotification]::new(`$tmpl)
+    [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('Orbit').Show(`$toast)
+    `$today | Out-File `$toastFile -Encoding ASCII -Force
+  } catch {}
+}
+
 while (`$true) {
   `$ts = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
   "[`$ts] daemon start" | Out-File -Append -Encoding utf8 -FilePath "`$env:USERPROFILE\.orbit\daemon.log"
@@ -468,8 +487,43 @@ if ($launcherExe -and $launcherExe -notlike "VBS:*") {
 }
 # v8: watchdog 주기 30분 (AV 알림 빈도 감소 — 일 48회 vs 288회, 83% 감소)
 # 데몬 crash 감지 + 복구 지연 최대 30분 — 실질적으로 견딜 수 있는 수준
-schtasks /create /tn "OrbitDaemon"   /tr $dTr /sc onlogon          /rl limited /f 2>&1 | Out-Null
-schtasks /create /tn "OrbitWatchdog" /tr $wTr /sc minute /mo 30    /rl limited /f 2>&1 | Out-Null
+#
+# ⚡ v9 (2026-04-21): Register-ScheduledTask -Hidden 사용 — powershell 직접 실행 시에도
+# conhost 창 자체가 OS 레벨에서 숨겨짐 (schtasks.exe CLI는 /HIDDEN 옵션 없어서 불가).
+# PowerShell 3.0+ / Win8+에서 지원. 실패 시 기존 schtasks.exe 폴백.
+$v9TaskOk = $false
+try {
+  $psArgs = "-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File"
+  if ($launcherExe -and $launcherExe -notlike "VBS:*") {
+    $actDaemon = New-ScheduledTaskAction -Execute $launcherExe -Argument "`"$ps1Path`""
+    $actWatch  = New-ScheduledTaskAction -Execute $launcherExe -Argument "`"$wdPath`""
+  } elseif ($launcherExe -like "VBS:*") {
+    $vbs = $launcherExe.Substring(4)
+    $actDaemon = New-ScheduledTaskAction -Execute "wscript.exe" -Argument "`"$vbs`" `"$ps1Path`""
+    $actWatch  = New-ScheduledTaskAction -Execute "wscript.exe" -Argument "`"$vbs`" `"$wdPath`""
+  } else {
+    $actDaemon = New-ScheduledTaskAction -Execute $psExe -Argument "$psArgs `"$ps1Path`""
+    $actWatch  = New-ScheduledTaskAction -Execute $psExe -Argument "$psArgs `"$wdPath`""
+  }
+  $trigDaemon = New-ScheduledTaskTrigger -AtLogOn
+  $trigWatch  = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) `
+    -RepetitionInterval (New-TimeSpan -Minutes 30) -RepetitionDuration ([TimeSpan]::MaxValue)
+  $settings = New-ScheduledTaskSettingsSet -Hidden -AllowStartIfOnBatteries `
+    -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit ([TimeSpan]::Zero)
+
+  Register-ScheduledTask -TaskName "OrbitDaemon"   -Action $actDaemon -Trigger $trigDaemon -Settings $settings -Force -ErrorAction Stop | Out-Null
+  Register-ScheduledTask -TaskName "OrbitWatchdog" -Action $actWatch  -Trigger $trigWatch  -Settings $settings -Force -ErrorAction Stop | Out-Null
+  $v9TaskOk = $true
+  Write-Host "    v9: Register-ScheduledTask -Hidden 성공 (conhost 완전 숨김)" -ForegroundColor Green
+} catch {
+  Write-Host "    v9 Register-ScheduledTask 실패 ($($_.Exception.Message.Split([char]10)[0])) → schtasks.exe 폴백" -ForegroundColor DarkGray
+}
+
+# 폴백: schtasks.exe CLI (Register-ScheduledTask 실패 시만)
+if (-not $v9TaskOk) {
+  schtasks /create /tn "OrbitDaemon"   /tr $dTr /sc onlogon       /rl limited /f 2>&1 | Out-Null
+  schtasks /create /tn "OrbitWatchdog" /tr $wTr /sc minute /mo 30 /rl limited /f 2>&1 | Out-Null
+}
 
 # 2중 안전망: schtasks 등록 실패 시를 위한 Startup 폴더 바로가기 (Windows 로그인 시 자동 실행)
 # C# 런처가 있으면 그걸로, 아니면 powershell 직접
