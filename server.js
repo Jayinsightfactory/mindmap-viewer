@@ -4199,6 +4199,266 @@ td{border-bottom:1px solid #e4e6e9;padding:8px;vertical-align:top}
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
+// 사용자 데이터 분석 — 이벤트 타입 · 시간대 · PC별 활동 · 앱 분포 · 품질
+// ═══════════════════════════════════════════════════════════════════════════
+
+function _checkAnalyticsToken(req, res) {
+  const token = (req.headers.authorization || '').replace('Bearer ', '').trim()
+             || (req.query.token || '').trim();
+  if (!token || !token.startsWith('orbit_')) {
+    res.status(401).json({ error: 'orbit_ token required' });
+    return null;
+  }
+  return token;
+}
+
+// GET /api/analytics/event-types?hours=24
+app.get('/api/analytics/event-types', async (req, res) => {
+  if (!_checkAnalyticsToken(req, res)) return;
+  const hours = Math.min(parseInt(req.query.hours) || 24, 24 * 30);
+  try {
+    const pool = dbModule.getDb();
+    const since = new Date(Date.now() - hours * 3600 * 1000).toISOString();
+    const { rows } = await pool.query(`
+      SELECT type, COUNT(*)::int AS count,
+             COUNT(DISTINCT user_id)::int AS users,
+             COUNT(DISTINCT data_json->>'hostname')::int AS pcs
+      FROM events
+      WHERE timestamp > $1
+      GROUP BY type
+      ORDER BY count DESC
+      LIMIT 50
+    `, [since]);
+    res.json({ hours, totalEvents: rows.reduce((s, r) => s + r.count, 0), types: rows });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/analytics/hourly?hours=24
+app.get('/api/analytics/hourly', async (req, res) => {
+  if (!_checkAnalyticsToken(req, res)) return;
+  const hours = Math.min(parseInt(req.query.hours) || 24, 24 * 7);
+  try {
+    const pool = dbModule.getDb();
+    const since = new Date(Date.now() - hours * 3600 * 1000).toISOString();
+    const { rows } = await pool.query(`
+      SELECT
+        to_char(timestamp::timestamptz, 'YYYY-MM-DD HH24') AS hour,
+        COUNT(*)::int AS events,
+        COUNT(DISTINCT data_json->>'hostname')::int AS active_pcs
+      FROM events
+      WHERE timestamp > $1
+      GROUP BY to_char(timestamp::timestamptz, 'YYYY-MM-DD HH24')
+      ORDER BY hour ASC
+    `, [since]);
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/analytics/apps?hours=24 — 오염 제거된 상위 앱
+app.get('/api/analytics/apps', async (req, res) => {
+  if (!_checkAnalyticsToken(req, res)) return;
+  const hours = Math.min(parseInt(req.query.hours) || 24, 24 * 7);
+  try {
+    const pool = dbModule.getDb();
+    const since = new Date(Date.now() - hours * 3600 * 1000).toISOString();
+    const { rows } = await pool.query(`
+      SELECT
+        lower(trim(data_json->>'app')) AS app,
+        COUNT(*)::int AS events,
+        COUNT(DISTINCT data_json->>'hostname')::int AS pcs
+      FROM events
+      WHERE timestamp > $1
+        AND data_json->>'app' IS NOT NULL
+        AND length(trim(data_json->>'app')) > 0
+        AND length(trim(data_json->>'app')) < 40
+        AND data_json->>'app' NOT LIKE '{%'
+        AND data_json->>'app' NOT LIKE '%$env:%'
+        AND data_json->>'app' NOT LIKE '%powershell%'
+      GROUP BY lower(trim(data_json->>'app'))
+      ORDER BY events DESC
+      LIMIT 30
+    `, [since]);
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/analytics/quality — 데이터 오염 비율 리포트
+app.get('/api/analytics/quality', async (req, res) => {
+  if (!_checkAnalyticsToken(req, res)) return;
+  try {
+    const pool = dbModule.getDb();
+    const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+    const { rows } = await pool.query(`
+      SELECT
+        COUNT(*)::int AS total,
+        COUNT(*) FILTER (WHERE data_json->>'app' IS NULL OR trim(data_json->>'app') = '')::int AS app_missing,
+        COUNT(*) FILTER (WHERE data_json->>'app' LIKE '{%')::int AS app_is_json,
+        COUNT(*) FILTER (WHERE length(data_json->>'app') > 40)::int AS app_too_long,
+        COUNT(*) FILTER (WHERE data_json->>'app' LIKE '%$env:%' OR data_json->>'app' LIKE '%powershell%')::int AS app_is_cmd,
+        COUNT(*) FILTER (WHERE data_json->>'hostname' IS NULL)::int AS hostname_missing,
+        COUNT(*) FILTER (WHERE user_id = 'local' OR user_id IS NULL OR user_id LIKE 'pc_%')::int AS userid_unmatched
+      FROM events
+      WHERE timestamp > $1
+    `, [since]);
+    const r = rows[0];
+    const total = r.total || 1;
+    res.json({
+      hours: 24,
+      totalEvents: r.total,
+      quality: {
+        app_missing: { count: r.app_missing, pct: Math.round(r.app_missing / total * 100) },
+        app_is_json: { count: r.app_is_json, pct: Math.round(r.app_is_json / total * 100) },
+        app_too_long: { count: r.app_too_long, pct: Math.round(r.app_too_long / total * 100) },
+        app_is_cmd: { count: r.app_is_cmd, pct: Math.round(r.app_is_cmd / total * 100) },
+        hostname_missing: { count: r.hostname_missing, pct: Math.round(r.hostname_missing / total * 100) },
+        userid_unmatched: { count: r.userid_unmatched, pct: Math.round(r.userid_unmatched / total * 100) },
+      },
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /admin/analytics — 분석 대시보드 HTML
+app.get('/admin/analytics', async (req, res) => {
+  const base = `${req.protocol}://${req.get('host')}`;
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(`<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><title>Orbit 분석</title>
+<style>
+body{font-family:"Malgun Gothic",-apple-system,sans-serif;max-width:1100px;margin:0 auto;padding:20px;background:#f5f7fa;color:#1a1a1a}
+.card{background:#fff;padding:18px 22px;border-radius:12px;box-shadow:0 1px 6px rgba(0,0,0,.05);margin-bottom:16px}
+h1{color:#0b5fff;margin:0 0 6px}h2{font-size:17px;margin:18px 0 10px;border-bottom:1px solid #e4e6e9;padding-bottom:4px}
+.kpi{display:inline-block;background:#f0f7ff;border-radius:8px;padding:12px 18px;margin:4px 8px 4px 0;min-width:140px}
+.kpi .n{font-size:22px;font-weight:700;color:#0b5fff}.kpi .l{font-size:12px;color:#666}
+.bar{display:inline-block;height:14px;background:#0b5fff;border-radius:3px;vertical-align:middle}
+.bar.warn{background:#ff9800}.bar.ok{background:#4caf50}
+table{width:100%;border-collapse:collapse;font-size:14px}th{background:#f0f2f5;padding:6px 10px;text-align:left;font-size:13px}
+td{border-bottom:1px solid #e4e6e9;padding:6px 10px}.muted{color:#888;font-size:12px}
+input,button{padding:6px 10px;border:1px solid #d4d6d9;border-radius:4px;font-size:13px}
+.tok{background:#1a1a1a;color:#4ade80;padding:6px 10px;border-radius:4px;font-family:Consolas,monospace;font-size:12px}
+.q-warn{color:#d32f2f;font-weight:600}.q-ok{color:#4caf50;font-weight:600}
+</style></head><body>
+
+<div class="card">
+<h1>📊 사용자 데이터 분석</h1>
+<p class="muted">토큰 입력 후 새로고침. 토큰은 <code>~/.orbit-config.json</code> 의 <code>token</code> 필드.</p>
+<input id="tok" type="password" placeholder="orbit_..." style="width:360px">
+<button onclick="localStorage.orbitTok=document.getElementById('tok').value;location.reload()">설정 후 로드</button>
+<span id="tokStatus" class="muted" style="margin-left:10px"></span>
+</div>
+
+<div id="content"></div>
+
+<script>
+const base = location.origin;
+const tok = localStorage.orbitTok || '';
+if (tok) document.getElementById('tokStatus').textContent = '토큰 설정됨 (localStorage)';
+const H = (s) => String(s||'').replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
+
+async function api(p) {
+  const r = await fetch(base + p, { headers: { Authorization: 'Bearer ' + tok }});
+  if (!r.ok) throw new Error(r.status + ' ' + await r.text());
+  return r.json();
+}
+
+async function load() {
+  if (!tok) { document.getElementById('content').innerHTML = '<div class="card">토큰을 먼저 입력하세요.</div>'; return; }
+  const content = document.getElementById('content');
+  content.innerHTML = '<div class="card">로딩 중...</div>';
+
+  try {
+    const [types, hourly, apps, quality, deployment] = await Promise.all([
+      api('/api/analytics/event-types?hours=24'),
+      api('/api/analytics/hourly?hours=24'),
+      api('/api/analytics/apps?hours=24'),
+      api('/api/analytics/quality'),
+      api('/api/sheet/deployment'),
+    ]);
+
+    const livePcs = deployment.filter(r => r.status === 'live').length;
+    const activePcs24h = deployment.filter(r => r.events_24h > 0).length;
+    const maxHourly = Math.max(...hourly.map(h => h.events), 1);
+    const maxTypeCount = Math.max(...types.types.map(t => t.count), 1);
+    const maxAppCount = Math.max(...apps.map(a => a.events), 1);
+    const q = quality.quality;
+
+    content.innerHTML = \`
+<div class="card">
+<h2>📈 KPI (최근 24시간)</h2>
+<div class="kpi"><div class="n">\${types.totalEvents.toLocaleString()}</div><div class="l">총 이벤트</div></div>
+<div class="kpi"><div class="n">\${livePcs}</div><div class="l">LIVE PC</div></div>
+<div class="kpi"><div class="n">\${activePcs24h}</div><div class="l">활동 PC (24h)</div></div>
+<div class="kpi"><div class="n">\${types.types.length}</div><div class="l">이벤트 종류</div></div>
+</div>
+
+<div class="card">
+<h2>🕒 시간대별 활동 (최근 24h)</h2>
+<table><tr><th>시각</th><th>이벤트 수</th><th>활성 PC</th><th style="width:50%">분포</th></tr>
+\${hourly.slice(-24).map(h => \`<tr>
+<td>\${H(h.hour.slice(-5))}시</td>
+<td>\${h.events.toLocaleString()}</td>
+<td>\${h.active_pcs}</td>
+<td><span class="bar" style="width:\${Math.round(h.events/maxHourly*100)}%"></span></td>
+</tr>\`).join('')}
+</table></div>
+
+<div class="card">
+<h2>📋 이벤트 타입 분포 (최근 24h)</h2>
+<table><tr><th>Type</th><th>Count</th><th>Users</th><th>PCs</th><th style="width:40%">분포</th></tr>
+\${types.types.slice(0, 20).map(t => \`<tr>
+<td><code>\${H(t.type)}</code></td>
+<td>\${t.count.toLocaleString()}</td>
+<td>\${t.users}</td>
+<td>\${t.pcs}</td>
+<td><span class="bar" style="width:\${Math.round(t.count/maxTypeCount*100)}%"></span></td>
+</tr>\`).join('')}
+</table></div>
+
+<div class="card">
+<h2>🏆 앱 랭킹 (최근 24h, 오염 필터 적용)</h2>
+<table><tr><th>App</th><th>Events</th><th>PCs</th><th style="width:40%">분포</th></tr>
+\${apps.map(a => \`<tr>
+<td>\${H(a.app)}</td>
+<td>\${a.events.toLocaleString()}</td>
+<td>\${a.pcs}</td>
+<td><span class="bar" style="width:\${Math.round(a.events/maxAppCount*100)}%"></span></td>
+</tr>\`).join('') || '<tr><td colspan="4" class="muted">데이터 없음</td></tr>'}
+</table></div>
+
+<div class="card">
+<h2>⚠️ 데이터 품질 리포트 (최근 24h)</h2>
+<p class="muted">품질 문제가 있는 이벤트 비율. app 필드에 JSON/명령어/윈도우타이틀이 들어가는 버그 존재.</p>
+<table>
+<tr><th>항목</th><th>건수</th><th>비율</th><th>상태</th></tr>
+<tr><td>app 필드 누락</td><td>\${q.app_missing.count.toLocaleString()}</td><td>\${q.app_missing.pct}%</td><td class="\${q.app_missing.pct > 30 ? 'q-warn' : 'q-ok'}">\${q.app_missing.pct > 30 ? '심각' : 'OK'}</td></tr>
+<tr><td>app 필드가 JSON</td><td>\${q.app_is_json.count.toLocaleString()}</td><td>\${q.app_is_json.pct}%</td><td class="\${q.app_is_json.pct > 5 ? 'q-warn' : 'q-ok'}">\${q.app_is_json.pct > 5 ? '버그' : 'OK'}</td></tr>
+<tr><td>app 40자 초과 (windowTitle 오염)</td><td>\${q.app_too_long.count.toLocaleString()}</td><td>\${q.app_too_long.pct}%</td><td class="\${q.app_too_long.pct > 5 ? 'q-warn' : 'q-ok'}">\${q.app_too_long.pct > 5 ? '버그' : 'OK'}</td></tr>
+<tr><td>app에 PS 명령어</td><td>\${q.app_is_cmd.count.toLocaleString()}</td><td>\${q.app_is_cmd.pct}%</td><td class="\${q.app_is_cmd.pct > 1 ? 'q-warn' : 'q-ok'}">\${q.app_is_cmd.pct > 1 ? '버그' : 'OK'}</td></tr>
+<tr><td>hostname 누락</td><td>\${q.hostname_missing.count.toLocaleString()}</td><td>\${q.hostname_missing.pct}%</td><td class="\${q.hostname_missing.pct > 10 ? 'q-warn' : 'q-ok'}">\${q.hostname_missing.pct > 10 ? '심각' : 'OK'}</td></tr>
+<tr><td>userId 매칭 실패 (local/pc_*)</td><td>\${q.userid_unmatched.count.toLocaleString()}</td><td>\${q.userid_unmatched.pct}%</td><td class="\${q.userid_unmatched.pct > 20 ? 'q-warn' : 'q-ok'}">\${q.userid_unmatched.pct > 20 ? '심각' : 'OK'}</td></tr>
+</table>
+</div>
+
+<div class="card">
+<h2>🖥 PC별 활동 요약</h2>
+<table><tr><th>Hostname</th><th>UserId</th><th>Events 24h</th><th>최근 활동</th><th>상태</th></tr>
+\${deployment.slice(0, 20).map(d => \`<tr>
+<td><a href="/admin/logs?hostname=\${encodeURIComponent(d.hostname)}">\${H(d.hostname)}</a></td>
+<td class="muted">\${H((d.user_id||'').slice(0,12))}</td>
+<td>\${(d.events_24h||0).toLocaleString()}</td>
+<td class="muted">\${d.age_minutes===null?'-':d.age_minutes+'분 전'}</td>
+<td class="\${d.status==='live'?'q-ok':d.status==='stale'?'q-warn':''}">\${d.status}</td>
+</tr>\`).join('')}
+</table></div>
+\`;
+  } catch (e) {
+    content.innerHTML = '<div class="card" style="color:#d32f2f">오류: ' + H(e.message) + '</div>';
+  }
+}
+load();
+</script>
+</body></html>`);
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
 // 진단 로그 업로드/조회 — 유저 원클릭 진단 + 관리자 조회
 // ═══════════════════════════════════════════════════════════════════════════
 
