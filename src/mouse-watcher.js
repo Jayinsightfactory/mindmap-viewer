@@ -264,11 +264,13 @@ function start(opts = {}) {
 
   try {
     const { uIOhook } = require('uiohook-napi');
+    // idle-detector에 활동 알림 (깜빡임 방지) — 마우스 이벤트 모두에서 touch
+    const _idle = (() => { try { return require('./idle-detector'); } catch { return null; } })();
     // keyboard-watcher가 이미 start() 했으므로 listener만 추가
-    uIOhook.on('mousedown', _onMousedown);
-    uIOhook.on('mouseup',   _onMouseup);
-    uIOhook.on('mousemove', _onMousemove);
-    uIOhook.on('wheel',     _onWheel);
+    uIOhook.on('mousedown', (e) => { if (_idle) _idle.touch(); _onMousedown(e); });
+    uIOhook.on('mouseup',   (e) => { if (_idle) _idle.touch(); _onMouseup(e); });
+    uIOhook.on('mousemove', (e) => { if (_idle) _idle.touch(); _onMousemove(e); });
+    uIOhook.on('wheel',     (e) => { if (_idle) _idle.touch(); _onWheel(e); });
     _running = true;
     _resetBuffer();
     // 시작 신호 즉시 전송 (서버에서 데몬이 살아있음 + mouse-watcher 동작 확인용)

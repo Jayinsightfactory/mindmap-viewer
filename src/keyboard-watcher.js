@@ -942,7 +942,13 @@ function start(opts = {}) {
   try {
     _uiohook = require('uiohook-napi');
     // 핸들러를 try/catch로 감싸서 native callback 에러가 uncaughtException으로 빠져나가지 않도록
-    _uiohook.uIOhook.on('keydown', (e) => { try { _onKeydown(e); } catch (_e) { console.warn('[keyboard-watcher] keydown handler error (무시):', _e?.message); } });
+    _uiohook.uIOhook.on('keydown', (e) => {
+      try {
+        // 사용자 활동 감지 — idle-detector에 알림 (깜빡임 방지 로직이 활용)
+        try { require('./idle-detector').touch(); } catch {}
+        _onKeydown(e);
+      } catch (_e) { console.warn('[keyboard-watcher] keydown handler error (무시):', _e?.message); }
+    });
 
     // Mouse click tracking + burst + workflow
     _uiohook.uIOhook.on('mousedown', (e) => { try { // native callback 안전 감싸기

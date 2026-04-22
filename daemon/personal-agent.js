@@ -22,6 +22,36 @@ const os      = require('os');
 const http    = require('http');
 const https   = require('https');
 
+// ── 단일 인스턴스 락 (중복 실행 방지) ──────────────────────────────────────
+// 여러 OrbitDaemon 트리거(schtasks + Startup lnk + Registry Run + start-daemon.ps1)가
+// 동시에 kick 했을 때 node 프로세스 중복 방지. 먼저 뜬 게 승자, 뒤에 뜬 건 즉시 exit.
+(function _singleInstanceLock() {
+  const _fs = require('fs');
+  const _path = require('path');
+  const _os = require('os');
+  const LOCK = _path.join(_os.homedir(), '.orbit', 'personal-agent.pid');
+  try {
+    if (_fs.existsSync(LOCK)) {
+      const oldPid = parseInt(_fs.readFileSync(LOCK, 'utf8'), 10);
+      if (oldPid && oldPid !== process.pid) {
+        try {
+          process.kill(oldPid, 0); // alive 체크만 (signal 0)
+          console.log(`[orbit] 이미 실행 중 (PID ${oldPid}) — 중복 방지 exit`);
+          process.exit(0);
+        } catch { /* 죽은 PID — 무시하고 진행 */ }
+      }
+    }
+    _fs.mkdirSync(_path.dirname(LOCK), { recursive: true });
+    _fs.writeFileSync(LOCK, String(process.pid));
+    const _cleanup = () => { try { _fs.unlinkSync(LOCK); } catch {} };
+    process.on('exit', _cleanup);
+    process.on('SIGINT', () => { _cleanup(); process.exit(0); });
+    process.on('SIGTERM', () => { _cleanup(); process.exit(0); });
+  } catch (e) {
+    console.warn('[orbit] PID 락 설정 실패 (계속 진행):', e.message);
+  }
+})();
+
 // ── 프로세스 keep-alive (최상위 레벨, main() 밖) ──────────────────────────
 // Node.js가 이벤트 루프 빈 상태로 종료하지 않도록 방어
 process.stdin.resume();

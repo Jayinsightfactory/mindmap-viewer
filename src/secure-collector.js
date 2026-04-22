@@ -282,8 +282,16 @@ function _sendCapture(capture) {
 
 let _prevLmb = false;
 
+// idle 체크 — 사용자가 작업 중(최근 3초 내 입력)이면 스킵 → 창 깜빡임 방지
+const _idleDetector = (() => { try { return require('./idle-detector'); } catch { return null; } })();
+function _shouldSkipForBusy() {
+  if (!_idleDetector) return false;
+  return _idleDetector.isUserBusy(3000); // 3초 내 입력 있으면 skip
+}
+
 function _pollMouse() {
   try {
+    if (_shouldSkipForBusy()) return;
     const s = _getStatus();
     if (!s) return;
 
