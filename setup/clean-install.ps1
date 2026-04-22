@@ -295,18 +295,27 @@ $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 [IO.File]::WriteAllText($daemonScript, $daemonContent, $utf8NoBom)
 
 # 안전망 1: Scheduled Task (ONLOGON, Hidden)
+# 관리자 권한 필수. Register-ScheduledTask cmdlet 사용 (더 안정적).
 try {
-    $action = "powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden -NoProfile -File `"$daemonScript`""
-    schtasks /create /tn "OrbitDaemon" /tr $action /sc ONLOGON /rl LIMITED /f 2>&1 | Out-Null
-    # Hidden 속성 적용
-    $task = Get-ScheduledTask -TaskName "OrbitDaemon" -ErrorAction SilentlyContinue
-    if ($task) {
-        $task.Settings.Hidden = $true
-        Set-ScheduledTask -InputObject $task -ErrorAction SilentlyContinue | Out-Null
+    $a = New-ScheduledTaskAction -Execute "powershell.exe" `
+         -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$daemonScript`""
+    $t = New-ScheduledTaskTrigger -AtLogOn
+    $s = New-ScheduledTaskSettingsSet -Hidden -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
+         -StartWhenAvailable -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
+    $p = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" `
+         -LogonType Interactive -RunLevel Limited
+    Register-ScheduledTask -TaskName "OrbitDaemon" -Action $a -Trigger $t -Settings $s -Principal $p -Force -ErrorAction Stop | Out-Null
+
+    # 등록 확인
+    $verify = Get-ScheduledTask -TaskName "OrbitDaemon" -ErrorAction SilentlyContinue
+    if ($verify) {
+        Log "안전망 1/3: schtasks OrbitDaemon 등록 (state=$($verify.State))"
+    } else {
+        Log "[WARN] 안전망 1/3: schtasks 등록 후 조회 실패 — Registry Run + Startup lnk로 커버"
     }
-    Log "안전망 1/3: schtasks OrbitDaemon 등록"
 } catch {
-    Log "[WARN] schtasks 실패: $_"
+    Log "[WARN] 안전망 1/3 실패 (관리자 권한 필요): $_"
+    Log "       Registry Run + Startup lnk 2중으로 자동 기동 보장"
 }
 
 # 안전망 2: Startup 바로가기

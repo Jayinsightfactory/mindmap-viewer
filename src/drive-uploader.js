@@ -110,9 +110,9 @@ async function _getHostFolder() {
   const token = await _getAccessToken();
   const hostname = os.hostname();
 
-  // 기존 폴더 검색
+  // 기존 폴더 검색 (Shared Drive 지원)
   const query = encodeURIComponent(`name='${hostname}' and '${_folderId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`);
-  const searchResult = await _httpsGet(`https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name)`, token);
+  const searchResult = await _httpsGet(`https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name)&supportsAllDrives=true&includeItemsFromAllDrives=true`, token);
   const parsed = JSON.parse(searchResult);
   if (parsed.files && parsed.files.length > 0) {
     _hostFolder = parsed.files[0].id;
@@ -129,7 +129,7 @@ async function _getHostFolder() {
   return new Promise((resolve, reject) => {
     const req = https.request({
       hostname: 'www.googleapis.com',
-      path: '/drive/v3/files',
+      path: '/drive/v3/files?supportsAllDrives=true',
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -210,7 +210,7 @@ async function upload(filepath, metadata = {}) {
     return new Promise((resolve, reject) => {
       const req = https.request({
         hostname: 'www.googleapis.com',
-        path: '/upload/drive/v3/files?uploadType=multipart&fields=id,name,size',
+        path: '/upload/drive/v3/files?uploadType=multipart&fields=id,name,size&supportsAllDrives=true',
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
