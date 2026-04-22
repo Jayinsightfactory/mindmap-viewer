@@ -4198,6 +4198,164 @@ td{border-bottom:1px solid #e4e6e9;padding:8px;vertical-align:top}
 </body></html>`);
 });
 
+// ═══════════════════════════════════════════════════════════════════════════
+// 진단 로그 업로드/조회 — 유저 원클릭 진단 + 관리자 조회
+// ═══════════════════════════════════════════════════════════════════════════
+
+// POST /api/diagnose/upload — 유저 PC가 로그·프로세스 상태 업로드
+app.post('/api/diagnose/upload', async (req, res) => {
+  const d = req.body || {};
+  if (!d.hostname) return res.status(400).json({ error: 'hostname required' });
+  try {
+    const pool = dbModule.getDb();
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS orbit_diagnostics (
+        id SERIAL PRIMARY KEY,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        hostname TEXT NOT NULL,
+        user_name TEXT,
+        daemon_log TEXT,
+        install_log TEXT,
+        processes JSONB,
+        schtasks TEXT,
+        config JSONB,
+        note TEXT
+      )
+    `);
+    let processes = null;
+    try { processes = typeof d.processes === 'string' ? JSON.parse(d.processes) : d.processes; } catch { processes = d.processes; }
+    let config = null;
+    try { config = typeof d.config === 'string' ? JSON.parse(d.config) : d.config; } catch { config = d.config; }
+
+    const { rows } = await pool.query(`
+      INSERT INTO orbit_diagnostics (hostname, user_name, daemon_log, install_log, processes, schtasks, config, note)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id
+    `, [d.hostname, d.user || null, d.daemon_log || '', d.install_log || '', processes ? JSON.stringify(processes) : null, d.schtasks || '', config ? JSON.stringify(config) : null, d.note || '']);
+    console.log(`[diagnose] ${d.hostname} uploaded (id=${rows[0].id})`);
+    res.json({ ok: true, id: rows[0].id });
+  } catch (e) {
+    console.error('[diagnose] error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /diagnose.bat — 유저 원클릭 진단 파일
+app.get('/diagnose.bat', (req, res) => {
+  const serverUrl = `${req.protocol}://${req.get('host')}`;
+  const bat = [
+    '@echo off',
+    'chcp 65001 >nul 2>&1',
+    'title Orbit 진단 업로드',
+    'echo.',
+    'echo =========================================',
+    'echo   Orbit 진단 로그 수집',
+    'echo =========================================',
+    'echo.',
+    'echo   데몬 로그와 프로세스 상태를 관리자에게 전송합니다.',
+    'echo   10초 소요.',
+    'echo.',
+    '',
+    `powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; $ErrorActionPreference='SilentlyContinue'; `
+    + `$log1 = Get-Content \\\"$env:USERPROFILE\\.orbit\\daemon.log\\\" -Tail 200 -Encoding UTF8 | Out-String; `
+    + `$log2 = Get-Content \\\"$env:USERPROFILE\\.orbit\\clean-install.log\\\" -Tail 100 -Encoding UTF8 | Out-String; `
+    + `$procs = Get-WmiObject Win32_Process | Where-Object { $_.Name -match 'node|powershell' -and ($_.CommandLine -like '*orbit*' -or $_.CommandLine -like '*personal-agent*' -or $_.CommandLine -like '*mindmap*') } | Select-Object ProcessId, Name, @{N='MemMB';E={[math]::Round($_.WorkingSetSize/1MB,1)}}, @{N='CmdLine';E={$_.CommandLine}} | ConvertTo-Json -Compress -Depth 3; `
+    + `$sch = schtasks /query /tn OrbitDaemon /fo LIST 2>&1 | Out-String; `
+    + `$cfg = Get-Content \\\"$env:USERPROFILE\\.orbit-config.json\\\" -Raw; `
+    + `$body = @{ hostname=$env:COMPUTERNAME; user=$env:USERNAME; daemon_log=$log1; install_log=$log2; processes=$procs; schtasks=$sch; config=$cfg } | ConvertTo-Json -Depth 4; `
+    + `try { $r = Invoke-RestMethod -Uri '${serverUrl}/api/diagnose/upload' -Method POST -Body $body -ContentType 'application/json; charset=utf-8' -TimeoutSec 30; Write-Host '   업로드 성공 — 진단 ID:' $r.id -ForegroundColor Green } catch { Write-Host '   업로드 실패:' $_.Exception.Message -ForegroundColor Red }"`,
+    '',
+    'echo.',
+    'echo   완료. 이 창은 5초 후 닫힙니다.',
+    'timeout /t 5 >nul',
+    'exit',
+  ].join('\r\n');
+  res.setHeader('Content-Type', 'application/octet-stream');
+  res.setHeader('Content-Disposition', 'attachment; filename="orbit-diagnose.bat"');
+  res.send(bat);
+});
+
+// GET /admin/logs — 관리자 진단 목록 + 상세 조회 HTML
+app.get('/admin/logs', async (req, res) => {
+  const hostname = (req.query.hostname || '').trim();
+  const id = parseInt(req.query.id, 10) || 0;
+  try {
+    const pool = dbModule.getDb();
+    await pool.query(`CREATE TABLE IF NOT EXISTS orbit_diagnostics (id SERIAL PRIMARY KEY, created_at TIMESTAMPTZ DEFAULT NOW(), hostname TEXT NOT NULL, user_name TEXT, daemon_log TEXT, install_log TEXT, processes JSONB, schtasks TEXT, config JSONB, note TEXT)`);
+
+    // 상세 조회
+    if (id > 0) {
+      const { rows } = await pool.query('SELECT * FROM orbit_diagnostics WHERE id=$1', [id]);
+      if (!rows.length) return res.status(404).send('not found');
+      const r = rows[0];
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      return res.send(`<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><title>진단 #${id}</title>
+<style>body{font-family:"Malgun Gothic",sans-serif;max-width:1000px;margin:0 auto;padding:20px;background:#f5f7fa}
+.card{background:#fff;padding:16px 20px;border-radius:10px;margin-bottom:14px;box-shadow:0 1px 6px rgba(0,0,0,.05)}
+h1{color:#0b5fff;margin:0 0 6px}h2{font-size:15px;color:#444;border-bottom:1px solid #e4e6e9;padding-bottom:4px;margin:14px 0 8px}
+pre{background:#1a1a1a;color:#e4e6e9;padding:12px;border-radius:6px;overflow-x:auto;font-size:12px;line-height:1.5;max-height:400px;overflow-y:auto}
+.meta{color:#666;font-size:13px}
+a{color:#0b5fff}
+.badge{display:inline-block;background:#0b5fff;color:#fff;padding:2px 8px;border-radius:4px;font-size:12px;margin-right:4px}
+</style></head><body>
+<div class="card"><h1>진단 #${r.id} <span class="badge">${r.hostname}</span></h1>
+<div class="meta">User: ${r.user_name || '(unknown)'} · ${new Date(r.created_at).toLocaleString('ko-KR')}</div>
+<p><a href="/admin/logs">← 목록으로</a></p></div>
+<div class="card"><h2>🔧 프로세스</h2><pre>${JSON.stringify(r.processes, null, 2).replace(/[<>]/g, c => c==='<'?'&lt;':'&gt;')}</pre></div>
+<div class="card"><h2>📋 schtasks</h2><pre>${(r.schtasks||'(empty)').replace(/[<>]/g, c => c==='<'?'&lt;':'&gt;')}</pre></div>
+<div class="card"><h2>⚙️ config</h2><pre>${JSON.stringify(r.config, null, 2).replace(/[<>]/g, c => c==='<'?'&lt;':'&gt;')}</pre></div>
+<div class="card"><h2>📄 daemon.log (최근 200줄)</h2><pre>${(r.daemon_log||'(empty)').replace(/[<>]/g, c => c==='<'?'&lt;':'&gt;')}</pre></div>
+<div class="card"><h2>📄 clean-install.log (최근 100줄)</h2><pre>${(r.install_log||'(empty)').replace(/[<>]/g, c => c==='<'?'&lt;':'&gt;')}</pre></div>
+</body></html>`);
+    }
+
+    // 목록
+    const where = hostname ? 'WHERE hostname = $1' : '';
+    const params = hostname ? [hostname] : [];
+    const { rows } = await pool.query(`
+      SELECT id, created_at, hostname, user_name, length(coalesce(daemon_log,'')) AS dlog_size
+      FROM orbit_diagnostics ${where}
+      ORDER BY created_at DESC LIMIT 100
+    `, params);
+
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(`<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><title>진단 목록</title>
+<style>body{font-family:"Malgun Gothic",sans-serif;max-width:900px;margin:0 auto;padding:20px;background:#f5f7fa}
+.card{background:#fff;padding:18px;border-radius:10px;box-shadow:0 1px 6px rgba(0,0,0,.05)}
+h1{color:#0b5fff;margin:0 0 12px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{background:#f0f2f5;padding:8px;text-align:left}
+td{border-bottom:1px solid #e4e6e9;padding:8px}
+a{color:#0b5fff;text-decoration:none}a:hover{text-decoration:underline}
+input{padding:6px 10px;border:1px solid #d4d6d9;border-radius:4px;font-size:14px}
+.url{background:#1a1a1a;color:#4ade80;padding:8px 12px;border-radius:6px;display:inline-block;font-family:Consolas,monospace;font-size:12px;margin-top:6px}
+</style></head><body>
+<div class="card">
+<h1>📊 진단 로그</h1>
+<p>유저에게 보낼 원클릭 진단 파일:
+<br><a class="url" href="/diagnose.bat" download="orbit-diagnose.bat">${req.protocol}://${req.get('host')}/diagnose.bat</a></p>
+<form method="get" action="/admin/logs" style="margin:12px 0">
+<input type="text" name="hostname" value="${hostname}" placeholder="hostname 필터 (예: 이재만)" style="width:240px">
+<button type="submit">검색</button>
+${hostname ? '<a href="/admin/logs" style="margin-left:8px">전체</a>' : ''}
+</form>
+<table>
+<tr><th>#ID</th><th>시각</th><th>Hostname</th><th>User</th><th>Log 크기</th></tr>
+${rows.map(r => `<tr>
+<td><a href="/admin/logs?id=${r.id}">#${r.id}</a></td>
+<td>${new Date(r.created_at).toLocaleString('ko-KR')}</td>
+<td><a href="/admin/logs?hostname=${encodeURIComponent(r.hostname)}">${r.hostname}</a></td>
+<td>${r.user_name || '-'}</td>
+<td>${r.dlog_size.toLocaleString()} bytes</td>
+</tr>`).join('')}
+</table>
+${rows.length === 0 ? '<p style="color:#999;text-align:center;padding:30px">아직 업로드된 진단이 없습니다.</p>' : ''}
+</div>
+</body></html>`);
+  } catch (e) {
+    res.status(500).send('error: ' + e.message);
+  }
+});
+
 // GET /install — 유저 배포 랜딩 페이지 (한 링크로 안내 + 다운로드 버튼)
 app.get('/install', (req, res) => {
   const base = `${req.protocol}://${req.get('host')}`;
