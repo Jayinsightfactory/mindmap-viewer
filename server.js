@@ -3976,6 +3976,92 @@ app.get('/api/admin/diag-token', async (req, res) => {
   res.json({ token: token.slice(0, 20) + '...', directResult: directResult ? { id: directResult.id } : null, asyncResult: asyncResult ? { id: asyncResult.id } : null, dbHasToken });
 });
 
+// GET /install — 유저 배포 랜딩 페이지 (한 링크로 안내 + 다운로드 버튼)
+app.get('/install', (req, res) => {
+  const base = `${req.protocol}://${req.get('host')}`;
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(`<!DOCTYPE html>
+<html lang="ko"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Orbit AI 재설치 안내</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, "Malgun Gothic", "Apple SD Gothic Neo", sans-serif; max-width: 640px; margin: 0 auto; padding: 24px; background: #f5f7fa; color: #1a1a1a; line-height: 1.6; }
+  .card { background: #fff; border-radius: 12px; padding: 28px; box-shadow: 0 2px 12px rgba(0,0,0,.06); margin-bottom: 16px; }
+  h1 { font-size: 22px; margin: 0 0 8px; color: #0b5fff; }
+  h2 { font-size: 16px; margin: 20px 0 8px; color: #333; }
+  .sub { color: #666; font-size: 14px; margin-bottom: 20px; }
+  .btn { display: block; width: 100%; background: #0b5fff; color: #fff; padding: 16px 24px; border-radius: 10px; text-decoration: none; text-align: center; font-weight: 700; font-size: 17px; margin: 8px 0; transition: background .2s; border: none; cursor: pointer; }
+  .btn:hover { background: #0a4dd4; }
+  .btn.copy { background: #f0f2f5; color: #1a1a1a; font-size: 13px; padding: 10px 16px; font-weight: 500; }
+  .btn.copy:hover { background: #e4e6e9; }
+  ol { padding-left: 20px; }
+  ol li { margin-bottom: 12px; }
+  .step-num { display: inline-block; width: 24px; height: 24px; border-radius: 50%; background: #0b5fff; color: #fff; text-align: center; font-size: 13px; font-weight: 700; line-height: 24px; margin-right: 6px; }
+  .warn { background: #fff8e1; border-left: 4px solid #ffa726; padding: 12px 16px; border-radius: 6px; font-size: 13px; color: #5d4037; margin: 12px 0; }
+  .tip { background: #e8f5e9; border-left: 4px solid #4caf50; padding: 12px 16px; border-radius: 6px; font-size: 13px; color: #2e4e32; margin: 12px 0; }
+  code { background: #f0f2f5; padding: 2px 6px; border-radius: 4px; font-size: 12px; font-family: "Courier New", monospace; }
+  .link-box { background: #f0f2f5; border-radius: 8px; padding: 10px 14px; font-family: "Courier New", monospace; font-size: 12px; word-break: break-all; margin: 8px 0; }
+  details { margin-top: 16px; background: #fafafa; border-radius: 8px; padding: 10px 14px; }
+  summary { cursor: pointer; font-weight: 600; font-size: 14px; color: #555; }
+  details p { font-size: 13px; color: #666; margin: 8px 0 4px; }
+</style>
+</head><body>
+
+<div class="card">
+  <h1>Orbit AI 데이터 수집 재설치</h1>
+  <div class="sub">PC 이름 기반 자동 식별 · 2~3분 소요 · 관리자 권한 필요</div>
+
+  <a class="btn" href="${base}/api/install-clean.bat" download="orbit-install.bat">
+    ⬇️  설치 파일 다운로드
+  </a>
+
+  <div class="tip">
+    <b>Tip</b> 버튼을 눌러도 안 되면 아래 링크를 브라우저 주소창에 직접 붙여넣기 하세요.
+  </div>
+  <div class="link-box" id="dl-link">${base}/api/install-clean.bat</div>
+  <button class="btn copy" onclick="navigator.clipboard.writeText(document.getElementById('dl-link').textContent); this.textContent='✅ 복사됨';">링크 복사</button>
+</div>
+
+<div class="card">
+  <h2>설치 순서</h2>
+  <ol>
+    <li><span class="step-num">1</span> 위 <b>설치 파일 다운로드</b> 버튼 클릭</li>
+    <li><span class="step-num">2</span> 다운로드 폴더의 <code>orbit-install.bat</code> 파일을 <b>더블클릭</b></li>
+    <li><span class="step-num">3</span> "Windows가 PC를 보호했습니다" 창 → <b>추가 정보</b> → <b>실행</b></li>
+    <li><span class="step-num">4</span> "사용자 계정 컨트롤" (UAC) 창 → <b>예</b></li>
+    <li><span class="step-num">5</span> 검은 창이 자동으로 설치 진행 (2~3분)</li>
+    <li><span class="step-num">6</span> <b>"설치 완료 — 데이터 수집 시작됨"</b> 메시지 확인 후 창 자동 닫힘</li>
+  </ol>
+
+  <div class="warn">
+    <b>⚠️ 주의</b> 설치 중 검은 창이 저절로 닫히지 않습니다. 강제로 닫지 마세요.
+  </div>
+</div>
+
+<div class="card">
+  <h2>문제가 생겼다면</h2>
+  <details>
+    <summary>설치 파일이 다운로드 안 됨 / 실행 안 됨</summary>
+    <p>Chrome: 브라우저 하단 경고 → "계속" → 파일 실행</p>
+    <p>Edge: 다운로드 창 → "…" → "유지"</p>
+    <p>SmartScreen: "추가 정보" → "실행"</p>
+  </details>
+  <details>
+    <summary>설치 실패 / 로그 확인</summary>
+    <p>위치: <code>%USERPROFILE%\\.orbit\\clean-install.log</code></p>
+    <p>탐색기 주소창에 위 경로 붙여넣기 → 파일 내용 관리자에게 전송</p>
+  </details>
+  <details>
+    <summary>관리자에게 문의</summary>
+    <p>위 로그 파일 + 자신의 PC 이름 알려주세요. <br>PC 이름 확인: Win+R → <code>hostname</code> 입력</p>
+  </details>
+</div>
+
+</body></html>`);
+});
+
 // GET /setup/fix-daemon.ps1 — 데몬 자가복구 스크립트 (재설치 없이 crach loop 탈출)
 // 사용: irm 'https://.../setup/fix-daemon.ps1' | iex
 app.get('/setup/fix-daemon.ps1', (req, res) => {
