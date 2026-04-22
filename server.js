@@ -3976,6 +3976,226 @@ app.get('/api/admin/diag-token', async (req, res) => {
   res.json({ token: token.slice(0, 20) + '...', directResult: directResult ? { id: directResult.id } : null, asyncResult: asyncResult ? { id: asyncResult.id } : null, dbHasToken });
 });
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Excel Power Query 연동용 JSON 엔드포인트 (관리자 토큰 필요)
+//   사용: Excel → 데이터 → 웹에서 가져오기 → URL 입력 → 토큰 헤더 or ?token=
+// ═══════════════════════════════════════════════════════════════════════════
+function _checkSheetToken(req, res) {
+  const token = (req.headers.authorization || '').replace('Bearer ', '').trim()
+             || (req.query.token || '').trim();
+  if (!token || !token.startsWith('orbit_')) {
+    res.status(401).json({ error: 'orbit_ token required (Authorization: Bearer or ?token=)' });
+    return null;
+  }
+  return token;
+}
+
+// GET /api/sheet/issues — 이슈·오류·기능누락 현황 (14개 + 동적 crash 수)
+app.get('/api/sheet/issues', async (req, res) => {
+  if (!_checkSheetToken(req, res)) return;
+  try {
+    const pool = dbModule.getDb();
+    // 최근 24h crash 건수 집계
+    let crashCount24h = 0;
+    try {
+      const { rows } = await pool.query(`SELECT COUNT(*)::int AS c FROM orbit_crashes WHERE ts > NOW() - INTERVAL '24 hours'`);
+      crashCount24h = rows[0]?.c || 0;
+    } catch {}
+
+    const issues = [
+      { id: 1, priority: 'HIGH', category: '설치', title: 'schtasks OrbitDaemon 등록 실패', status: '배포완료', owner: 'claude', deployed: '2026-04-22', note: 'install.bat UAC 승격 + Register-ScheduledTask' },
+      { id: 2, priority: 'HIGH', category: '업로드', title: 'Drive 403 Service Account 쿼터', status: '대표 작업 대기', owner: '대표', deployed: '', note: 'Shared Drive 생성 + Service Account Member 추가 필요' },
+      { id: 3, priority: 'HIGH', category: '매핑', title: 'hostname 자동매칭 실패', status: '조사중', owner: 'claude', deployed: '', note: '/api/daemon/register matchedUserId=null' },
+      { id: 4, priority: 'MID', category: '성능', title: 'node.exe 메모리 증가 (546→1024MB)', status: '24h 관찰', owner: 'claude', deployed: '', note: '메모리 누수 가능성' },
+      { id: 5, priority: 'MID', category: '검증', title: '/api/crash/report E2E 미검증', status: '인위 crash 테스트 필요', owner: 'claude', deployed: '', note: '' },
+      { id: 6, priority: 'MID', category: '검증', title: '학습값 실 적용 미검증', status: '대기', owner: 'claude', deployed: '', note: 'capture-config 복원 후 데몬 활용 여부' },
+      { id: 7, priority: 'MID', category: '호환', title: 'setup/fix-daemon.ps1 구버전', status: '대기', owner: 'claude', deployed: '', note: 'clean-install v9와 동기화 필요' },
+      { id: 8, priority: 'MID', category: '로깅', title: 'clean-install.log 첫 줄 UTF-16', status: '대기', owner: 'claude', deployed: '', note: 'Out-File -Force 기본 인코딩' },
+      { id: 9, priority: 'LOW', category: '데이터', title: 'raw events DB truncate 미구현', status: '대기', owner: '대표 확인', deployed: '', note: '학습 스냅샷은 저장됨' },
+      { id: 10, priority: 'LOW', category: 'UI', title: '관리자 대시보드 미반영', status: '대기', owner: 'claude', deployed: '', note: 'crash/snapshot/PC 상태' },
+      { id: 11, priority: 'LOW', category: '복구', title: 'Rescue 채널 미구현', status: '대기', owner: 'claude', deployed: '', note: '데몬 독립 복구 경로' },
+      { id: 12, priority: 'LOW', category: 'AI', title: 'Phase 2 Claude 분석 미구현', status: '계획', owner: 'claude', deployed: '', note: 'crash → Claude 자동 진단' },
+      { id: 13, priority: 'LOW', category: '배포', title: '카나리·회로차단기 없음', status: '계획', owner: 'claude', deployed: '', note: 'push 후 자동 롤백 없음' },
+      { id: 14, priority: 'LOW', category: 'UI', title: '3중 안전망 상태 가시화', status: '계획', owner: 'claude', deployed: '', note: 'PC별 schtasks/lnk/registry 상태' },
+      { id: 15, priority: 'DYNAMIC', category: '모니터', title: '최근 24h crash 건수', status: `${crashCount24h} 건`, owner: '자동집계', deployed: new Date().toISOString().slice(0,10), note: 'orbit_crashes 테이블' },
+    ];
+    res.json(issues);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/sheet/deployment — PC별 배포·수집 현황
+app.get('/api/sheet/deployment', async (req, res) => {
+  if (!_checkSheetToken(req, res)) return;
+  try {
+    const pool = dbModule.getDb();
+    // PC별 최근 활동 + hook 수 집계
+    const { rows } = await pool.query(`
+      SELECT
+        data_json->>'hostname' AS hostname,
+        user_id,
+        COUNT(*)::int AS events_24h,
+        MAX(timestamp) AS last_event,
+        MIN(timestamp) FILTER (WHERE timestamp > NOW() - INTERVAL '24 hours') AS first_event_24h
+      FROM events
+      WHERE timestamp > NOW() - INTERVAL '7 days'
+        AND data_json->>'hostname' IS NOT NULL
+      GROUP BY data_json->>'hostname', user_id
+      ORDER BY last_event DESC NULLS LAST
+      LIMIT 50
+    `);
+    const now = Date.now();
+    const rowsOut = rows.map(r => {
+      const lastMs = r.last_event ? new Date(r.last_event).getTime() : 0;
+      const ageMin = lastMs ? Math.round((now - lastMs) / 60000) : null;
+      return {
+        hostname: r.hostname,
+        user_id: r.user_id,
+        events_24h: r.events_24h,
+        last_event: r.last_event,
+        age_minutes: ageMin,
+        status: ageMin === null ? 'never' : ageMin < 30 ? 'live' : ageMin < 1440 ? 'idle' : 'stale',
+      };
+    });
+    res.json(rowsOut);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/sheet/crashes — orbit_crashes 테이블 dump (최근 100건)
+app.get('/api/sheet/crashes', async (req, res) => {
+  if (!_checkSheetToken(req, res)) return;
+  try {
+    const pool = dbModule.getDb();
+    const { rows } = await pool.query(`
+      SELECT id, ts, origin, hostname, user_id, node_version,
+             error_name, error_message,
+             recent_crash_count_1h,
+             (analyzed_at IS NOT NULL) AS analyzed
+      FROM orbit_crashes
+      ORDER BY ts DESC
+      LIMIT 100
+    `);
+    res.json(rows);
+  } catch (e) {
+    // 테이블 없을 때 (첫 crash 전)
+    if (/does not exist/i.test(e.message)) return res.json([]);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/sheet/roadmap — Phase 진행 현황 (정적 + 계산값)
+app.get('/api/sheet/roadmap', (req, res) => {
+  if (!_checkSheetToken(req, res)) return;
+  const today = new Date().toISOString().slice(0,10);
+  res.json([
+    { phase: '긴급 복구', period: '2026-04-22', task: 'clean-install 배포 + .safe-mode 제거', status: '완료', deliverable: 'commit 5e4d5e5/e783907/2187e03' },
+    { phase: 'P0 관찰', period: '4주 (2026-04-23 ~ 05-20)', task: 'document-watcher + Drive 역스캔, 분류 X', status: '대기', deliverable: 'orbit_document_observations 테이블' },
+    { phase: 'P0.5 Shadow 분류', period: '4주 (2026-05-21 ~ 06-17)', task: 'Claude 예측 vs 실제 저장 비교', status: '대기', deliverable: 'company-ontology.json + 주간 정확도 리포트' },
+    { phase: 'P1 최종 배포', period: '정확도 85%↑ 도달 시', task: '자동 분류·업로드 전환', status: '대기', deliverable: '카테고리별 순차 자동화' },
+    { phase: 'Phase 2 Crash Analyzer', period: 'crash 데이터 축적 후', task: 'Claude 자동 진단 + 수정 제안', status: '계획', deliverable: 'src/claude-analyzer.js' },
+    { phase: 'Phase 3 승인 UI', period: 'Phase 2 이후', task: '관리자 1-click 적용', status: '계획', deliverable: '/admin/crashes 페이지' },
+    { phase: 'DLP', period: '최후순위', task: '외부 전송 감지·알림', status: '보류', deliverable: '(차단 불가 - 알림 only)' },
+  ]);
+});
+
+// GET /admin/sheet-setup — Excel Power Query 연동 가이드
+app.get('/admin/sheet-setup', (req, res) => {
+  const base = `${req.protocol}://${req.get('host')}`;
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(`<!DOCTYPE html>
+<html lang="ko"><head><meta charset="UTF-8"><title>Excel 연동 가이드</title>
+<style>
+body{font-family:"Malgun Gothic",-apple-system,sans-serif;max-width:780px;margin:0 auto;padding:24px;background:#f5f7fa;line-height:1.7;color:#1a1a1a}
+.card{background:#fff;border-radius:12px;padding:24px;box-shadow:0 2px 12px rgba(0,0,0,.06);margin-bottom:16px}
+h1{color:#0b5fff;margin:0 0 8px}
+h2{font-size:17px;margin:20px 0 10px;border-bottom:2px solid #e4e6e9;padding-bottom:4px}
+code{background:#f0f2f5;padding:2px 8px;border-radius:4px;font-size:13px;font-family:Consolas,monospace}
+.url{display:block;background:#1a1a1a;color:#4ade80;padding:12px 16px;border-radius:8px;font-family:Consolas,monospace;font-size:13px;word-break:break-all;margin:6px 0;cursor:pointer}
+.url:hover{background:#2a2a2a}
+ol{padding-left:22px}
+ol li{margin-bottom:10px}
+.warn{background:#fff8e1;border-left:4px solid #ffa726;padding:12px 16px;border-radius:6px;font-size:14px;margin:12px 0}
+.tip{background:#e8f5e9;border-left:4px solid #4caf50;padding:12px 16px;border-radius:6px;font-size:14px;margin:12px 0}
+table{width:100%;border-collapse:collapse;font-size:14px;margin:8px 0}
+th{background:#f0f2f5;text-align:left;padding:8px}
+td{border-bottom:1px solid #e4e6e9;padding:8px;vertical-align:top}
+</style></head><body>
+
+<div class="card">
+<h1>📊 Excel 실시간 연동 설정</h1>
+<p>nenovaagent Excel에 Power Query로 4개 시트 자동 갱신.</p>
+</div>
+
+<div class="card">
+<h2>1. 4개 API URL (클릭하면 복사)</h2>
+<p>아래 4개 URL을 Excel Power Query에서 사용합니다. <code>TOKEN</code> 자리에 당신의 Bearer 토큰을 넣으세요 (끝에 <code>?token=</code> 붙이면 더 간단).</p>
+
+<table>
+<tr><th>시트</th><th>URL</th></tr>
+<tr><td>이슈_현황</td><td><span class="url" onclick="navigator.clipboard.writeText(this.textContent);this.style.background='#4ade80';">${base}/api/sheet/issues?token=YOUR_TOKEN</span></td></tr>
+<tr><td>배포_트래킹</td><td><span class="url" onclick="navigator.clipboard.writeText(this.textContent);this.style.background='#4ade80';">${base}/api/sheet/deployment?token=YOUR_TOKEN</span></td></tr>
+<tr><td>Crash_대시보드</td><td><span class="url" onclick="navigator.clipboard.writeText(this.textContent);this.style.background='#4ade80';">${base}/api/sheet/crashes?token=YOUR_TOKEN</span></td></tr>
+<tr><td>Phase_로드맵</td><td><span class="url" onclick="navigator.clipboard.writeText(this.textContent);this.style.background='#4ade80';">${base}/api/sheet/roadmap?token=YOUR_TOKEN</span></td></tr>
+</table>
+
+<div class="warn"><b>⚠️ 토큰</b> <code>YOUR_TOKEN</code> 자리에 관리자 토큰 넣으세요. 없으면 <code>~/.orbit-config.json</code> 의 <code>token</code> 값 사용. <code>orbit_</code>로 시작하는 값이면 통과.</div>
+</div>
+
+<div class="card">
+<h2>2. Excel Power Query 설정 (각 시트마다 1회)</h2>
+<ol>
+<li>엑셀에서 <b>새 시트 추가</b> (예: "이슈_현황")</li>
+<li>리본 메뉴: <b>데이터 → 데이터 가져오기 → 웹에서</b></li>
+<li>URL 붙여넣기 (토큰 포함) → <b>확인</b></li>
+<li>"익명" 선택 → <b>연결</b> (토큰이 URL에 있으니 인증 불필요)</li>
+<li>Power Query 창 열리면: 우측 <b>목록 → 테이블로 변환</b> → <b>Record 확장</b> (모든 컬럼 선택)</li>
+<li><b>닫고 로드</b> → 시트에 테이블 생성됨 ✓</li>
+<li>4개 URL 모두 같은 방식으로 반복</li>
+</ol>
+</div>
+
+<div class="card">
+<h2>3. 자동 새로고침 설정</h2>
+<ol>
+<li>각 테이블 우클릭 → <b>테이블 → 쿼리 편집</b></li>
+<li>리본: <b>쿼리 → 새로고침 → 연결 속성</b></li>
+<li><b>"백그라운드 새로고침 사용"</b> 체크</li>
+<li><b>"n분마다 새로고침"</b> → <code>5</code> 분 입력</li>
+<li><b>"파일을 열 때 데이터 새로고침"</b> 체크</li>
+<li>확인 → 이제 5분마다 자동 갱신 ✓</li>
+</ol>
+
+<div class="tip"><b>Tip</b> 수동 새로고침은 <b>Ctrl + Alt + F5</b> (모든 쿼리 동시 새로고침)</div>
+</div>
+
+<div class="card">
+<h2>4. 각 시트 컬럼 구조 (자동 생성됨)</h2>
+
+<h3 style="font-size:14px;margin:12px 0 4px">이슈_현황 (15행)</h3>
+<code>id · priority · category · title · status · owner · deployed · note</code>
+
+<h3 style="font-size:14px;margin:12px 0 4px">배포_트래킹 (최대 50 PC)</h3>
+<code>hostname · user_id · events_24h · last_event · age_minutes · status(live|idle|stale|never)</code>
+
+<h3 style="font-size:14px;margin:12px 0 4px">Crash_대시보드 (최근 100건)</h3>
+<code>id · ts · origin · hostname · user_id · node_version · error_name · error_message · recent_crash_count_1h · analyzed</code>
+
+<h3 style="font-size:14px;margin:12px 0 4px">Phase_로드맵 (7단계)</h3>
+<code>phase · period · task · status · deliverable</code>
+</div>
+
+<div class="card">
+<h2>5. 조건부 서식 제안</h2>
+<ul>
+<li><b>이슈_현황</b>: priority=HIGH → 빨강 / status=배포완료 → 초록</li>
+<li><b>배포_트래킹</b>: status=stale → 빨강 / live → 초록 / age_minutes > 60 → 노랑</li>
+<li><b>Crash_대시보드</b>: analyzed=false → 노랑 / recent_crash_count_1h ≥ 3 → 빨강</li>
+<li><b>Phase_로드맵</b>: status=완료 → 초록 / 대기 → 회색 / 계획 → 노랑</li>
+</ul>
+</div>
+
+</body></html>`);
+});
+
 // GET /install — 유저 배포 랜딩 페이지 (한 링크로 안내 + 다운로드 버튼)
 app.get('/install', (req, res) => {
   const base = `${req.protocol}://${req.get('host')}`;
