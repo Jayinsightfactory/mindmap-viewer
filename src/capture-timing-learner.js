@@ -78,7 +78,12 @@ async function analyzeForUser(pool, userId, hostname) {
   const parsed = captures.map(row => {
     const d = row.data_json || {};
     const ts = new Date(row.timestamp).getTime();
-    const app = (d.app || d.appContext?.currentApp || 'unknown').toLowerCase().trim() || 'unknown';
+    // app 필드 오염 필터 — windowTitle/clipboard/JSON/명령어가 섞인 경우 unknown 처리
+    let app = (d.app || d.appContext?.currentApp || '').toLowerCase().trim();
+    if (!app || app.length > 40 || app.includes('{') || app.includes('$env:') ||
+        app.includes('\n') || app.includes('powershell')) {
+      app = 'unknown';
+    }
     const title = d.windowTitle || d.appContext?.currentWindow || '';
     const trigger = d.trigger || '';
     const filename = d.filename || '';

@@ -138,6 +138,14 @@ function fetchCommands() {
 
 function reportStatus(status, detail) {
   if (!_serverUrl) return;
+  // 노이즈 제거 (2026-04-22) — update_start/update_skip은 전송 제외, 로그만.
+  // 사유: no-op 상태가 분당 11건씩 쌓여 daemon.update가 전체 60% 점유 (15K/24h).
+  //       실제 변경(update_success/update_fail/command_*)만 서버 기록.
+  const SKIP_STATUSES = new Set(['update_start', 'update_skip']);
+  if (SKIP_STATUSES.has(status)) {
+    try { console.log(`[daemon-updater] (no-report) ${status}: ${detail || ''}`); } catch {}
+    return;
+  }
   try {
     const payload = JSON.stringify({
       events: [{

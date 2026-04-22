@@ -395,6 +395,20 @@ function _sendAnalysisToServer(result, trigger, filepath) {
 function ensureDir() { fs.mkdirSync(CAPTURE_DIR, { recursive: true }); }
 
 /**
+ * app 필드 정규화 — windowTitle/clipboard/JSON/명령어 오염 방지.
+ * process name 패턴만 허용 (영숫자/하이픈/밑줄/점, 40자 이하).
+ */
+function _sanitizeAppName(raw) {
+  if (!raw) return '';
+  const s = String(raw).trim().toLowerCase();
+  if (!s || s.length > 40) return '';
+  if (s.includes('{') || s.includes('$env:') || s.includes('powershell') || s.includes('\n') || s.includes('\r')) return '';
+  // process name 패턴 (chrome, excel, code, cursor, kakaotalk 등)
+  if (/^[a-z0-9가-힣][a-z0-9가-힣\-_. ]{0,38}$/.test(s)) return s;
+  return '';
+}
+
+/**
  * 캡처 파일을 서버로 업로드 (서버에서 Vision 분석)
  */
 function _uploadCaptureToServer(filepath, trigger, context) {
@@ -420,8 +434,8 @@ function _uploadCaptureToServer(filepath, trigger, context) {
         data: {
           trigger,
           triggerReason: _getTriggerDescription(trigger),
-          app: context.app || '',
-          windowTitle: context.windowTitle || '',
+          app: _sanitizeAppName(context.app),
+          windowTitle: (context.windowTitle || '').slice(0, 200),
           activityLevel: context.activityLevel || '',
           automationScore: context.automationScore || 0,
           screenResolution: _detectScreenResolution(),
@@ -751,8 +765,8 @@ function _sendCaptureMetadata(filepath, trigger, context) {
         data: {
           trigger,
           triggerReason: _getTriggerDescription(trigger),
-          app: context.app || '',
-          windowTitle: context.windowTitle || '',
+          app: _sanitizeAppName(context.app),
+          windowTitle: (context.windowTitle || '').slice(0, 200), // 최대 200자
           activityLevel: context.activityLevel || '',
           automationScore: context.automationScore || 0,
           screenResolution: _detectScreenResolution(),
