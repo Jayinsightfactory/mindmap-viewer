@@ -1015,6 +1015,45 @@ while ($true) {
     res.send(batContent);
   });
 
+  // ── Clean Install (v9) — 원클릭 .bat: 기존 전부 삭제 + 새로 설치 ────────────
+  // 유저 URL: https://<server>/api/install-clean.bat  ← 전원 공유 링크 하나
+  //   → 파일 다운로드 → 더블클릭 → clean-install.ps1 실행
+  //   → PC hostname(COMPUTERNAME)으로 서버에서 자동 userId 매칭
+  router.get('/install-clean.bat', (req, res) => {
+    const serverUrl = `${req.protocol}://${req.get('host')}`;
+
+    const batContent = [
+      '@echo off',
+      'chcp 65001 >nul 2>&1',
+      'title Orbit AI - Clean Install',
+      'echo.',
+      'echo =========================================',
+      'echo   Orbit AI 재설치',
+      'echo =========================================',
+      'echo.',
+      'echo   기존 설치를 정리하고 새로 설치합니다.',
+      'echo   PC 이름 기반 자동 식별 - 별도 입력 불필요',
+      'echo   2-3분 소요. 창을 닫지 마세요.',
+      'echo.',
+      '',
+      `set "ORBIT_REMOTE=${serverUrl}"`,
+      '',
+      `powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; $env:ORBIT_REMOTE='${serverUrl}'; iex (irm '${serverUrl}/setup/clean-install.ps1')"`,
+      '',
+      'if %errorlevel% neq 0 (',
+      '    echo.',
+      '    echo   설치 중 오류 발생. 관리자에게 문의하세요.',
+      '    echo   로그: %USERPROFILE%\\.orbit\\clean-install.log',
+      '    pause',
+      ')',
+      'exit',
+    ].join('\r\n');
+
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Disposition', `attachment; filename="orbit-install.bat"`);
+    res.send(batContent);
+  });
+
   // ── 벤치마크 API ──────────────────────────────────────────────────────────
 
   router.get('/benchmark/:industry', async (req, res) => {
