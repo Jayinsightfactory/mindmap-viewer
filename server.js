@@ -4244,6 +4244,104 @@ button:hover{background:#3a8eef}ol{padding-left:20px;margin:8px 0}li{margin-bott
   }
 });
 
+// ═══════════════════════════════════════════════════════════════════════════
+// GET /api/daemon/learned-config?userId=X&hostname=Y
+//   새 설치 직후 데몬이 과거 학습값(capture-config) 복원용으로 호출.
+// ═══════════════════════════════════════════════════════════════════════════
+app.get('/api/daemon/learned-config', async (req, res) => {
+  const userId = (req.query.userId || '').trim();
+  const hostname = (req.query.hostname || '').trim();
+  if (!userId || !hostname) return res.status(400).json({ error: 'userId and hostname required' });
+  try {
+    const { analyzeForUser, DEFAULT_COOLTIME } = require('./src/capture-timing-learner');
+    const pool = dbModule.getDb();
+    let config;
+    try { config = await analyzeForUser(pool, userId, hostname); }
+    catch { config = { byApp: {}, default: DEFAULT_COOLTIME, sampleCount: 0, analyzedAt: new Date().toISOString() }; }
+    config.suggestedBy = 'learned-config-endpoint';
+    config.restoredFrom = 'server';
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.json(config);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// POST /api/admin/extract-learning — 전 PC 학습값 추출 + 서버에 스냅샷 저장
+// ═══════════════════════════════════════════════════════════════════════════
+app.post('/api/admin/extract-learning', async (req, res) => {
+  const master = (req.headers.authorization || '').replace('Bearer ', '').trim();
+  if (!master || !master.startsWith('orbit_')) return res.status(401).json({ error: 'master token required' });
+  try {
+    const { runForAllPCs } = require('./src/capture-timing-learner');
+    const pool = dbModule.getDb();
+    const results = await runForAllPCs(pool, null);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS learning_snapshots (
+        id SERIAL PRIMARY KEY,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        data_json JSONB NOT NULL
+      )
+    `);
+    await pool.query('INSERT INTO learning_snapshots (data_json) VALUES ($1)', [JSON.stringify({ results, extractedAt: new Date().toISOString() })]);
+    res.json({ ok: true, pcCount: results.length, results });
+  } catch (e) {
+    res.status(500).json({ error: e.message, stack: e.stack });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// POST /api/crash/report — 데몬 crash 리포트 수신 (crash-reporter.js에서 호출)
+//   Phase 1: DB 저장. Phase 2에서 claude-analyzer가 비동기 분석 트리거.
+// ═══════════════════════════════════════════════════════════════════════════
+app.post('/api/crash/report', async (req, res) => {
+  const report = req.body || {};
+  if (!report.id || !report.error) return res.status(400).json({ error: 'id and error required' });
+  try {
+    const pool = dbModule.getDb();
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS orbit_crashes (
+        id TEXT PRIMARY KEY,
+        ts TIMESTAMPTZ NOT NULL,
+        origin TEXT,
+        hostname TEXT,
+        user_id TEXT,
+        platform TEXT,
+        arch TEXT,
+        node_version TEXT,
+        daemon_pid INTEGER,
+        error_name TEXT,
+        error_message TEXT,
+        error_stack TEXT,
+        error_code TEXT,
+        daemon_log_tail TEXT,
+        recent_crash_count_1h INTEGER DEFAULT 0,
+        analyzed_at TIMESTAMPTZ,
+        claude_analysis JSONB,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await pool.query(`
+      INSERT INTO orbit_crashes
+        (id, ts, origin, hostname, user_id, platform, arch, node_version, daemon_pid,
+         error_name, error_message, error_stack, error_code, daemon_log_tail, recent_crash_count_1h)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+      ON CONFLICT (id) DO NOTHING
+    `, [
+      report.id, report.ts, report.origin, report.hostname, report.userId,
+      report.platform, report.arch, report.nodeVersion, report.daemonPid,
+      report.error.name, report.error.message, report.error.stack, report.error.code,
+      report.daemonLogTail, report.recentCrashCount1h || 0,
+    ]);
+    console.log(`[crash-report] ${report.hostname} ${report.origin} ${report.error.name}: ${String(report.error.message || '').slice(0, 100)}`);
+    res.json({ ok: true, id: report.id });
+  } catch (e) {
+    console.error('[crash-report] DB error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // POST /api/daemon/claim-token — 설치 시 토큰-userId 강제 등록 (verify 실패 fallback)
 app.post('/api/daemon/claim-token', async (req, res) => {
   const { token, userId } = req.body || {};

@@ -534,41 +534,10 @@ End If
       } catch {}
     }
 
-    // ── .safe-mode 플래그 파일 생성: uiohook native crash 루프 완전 차단 ──────
-    // 파일 기반 플래그 → env var 방식과 달리 이미 실행 중인 ps1 루프도 커버
-    // keyboard-watcher가 매 시작 시 이 파일 존재 여부 체크 → uiohook 완전 스킵
-    // 이 함수는 daemon startup 1~2초 내 실행 → native crash(~22s) 전에 완료
-    const safeModeFlag = path.join(orbitDir, '.safe-mode');
-    if (!fs.existsSync(safeModeFlag)) {
-      try {
-        fs.writeFileSync(safeModeFlag, new Date().toISOString() + '\n', 'utf8');
-        console.log('[daemon-updater] ✅ .safe-mode 플래그 생성 — keyboard-watcher uiohook 완전 스킵 (crash 루프 차단)');
-      } catch (eSafe) {
-        console.warn('[daemon-updater] .safe-mode 생성 실패:', eSafe.message);
-      }
-    }
-
-    // ── start-daemon.ps1 ORBIT_SAFE_MODE=1 주입 (신규 ps1 루프용 추가 방어) ───
-    const ps1SafePath = path.join(orbitDir, 'start-daemon.ps1');
-    if (fs.existsSync(ps1SafePath)) {
-      try {
-        let ps1Txt = fs.readFileSync(ps1SafePath, 'utf8');
-        if (!ps1Txt.includes('ORBIT_SAFE_MODE')) {
-          const tokenMatch = ps1Txt.match(/(\$env:ORBIT_TOKEN\s*=\s*'[^']*')/);
-          if (tokenMatch) {
-            ps1Txt = ps1Txt.replace(tokenMatch[1], tokenMatch[1] + "\r\n$env:ORBIT_SAFE_MODE = '1'");
-          } else {
-            ps1Txt = ps1Txt.replace(/^(Set-Location[^\r\n]*[\r\n]+)/m, "$1\$env:ORBIT_SAFE_MODE = '1'\r\n");
-          }
-          if (ps1Txt.includes('ORBIT_SAFE_MODE')) {
-            fs.writeFileSync(ps1SafePath, ps1Txt, 'utf8');
-            console.log('[daemon-updater] start-daemon.ps1 ORBIT_SAFE_MODE=1 주입 완료');
-          }
-        }
-      } catch (eSafe) {
-        console.warn('[daemon-updater] ORBIT_SAFE_MODE 주입 실패:', eSafe.message);
-      }
-    }
+    // NOTE: .safe-mode 무조건 생성 제거 (2026-04-22) — crash-reporter로 대체.
+    // 과거 uiohook native crash 대응용이었으나, crash 안 나도 영구 차단되어 키/마우스 수집 2주간 중단.
+    // 현 구조: crash-reporter.js가 실제 crash 포착 → 서버/Claude 분석 → auto-fixer가 조건부로 safe-mode 진입.
+    // 긴급 수동 스위치는 env ORBIT_SAFE_MODE=1 로 유지.
   } catch (e) {
     console.warn('[daemon-updater] _repairStartDaemonPs1 warn:', e.message);
   }
@@ -580,23 +549,8 @@ function start() {
   _running = true;
   _loadConfig();
 
-  // ── CRITICAL: .safe-mode 즉시 생성 (start() 첫 번째 동작) ──────────────
-  // keyboard-watcher.start()는 이 함수 반환 후에 호출됨 (personal-agent.js 순서)
-  // uiohook-napi native crash(~22s)가 발생하기 수십 초 전에 이미 생성 완료
-  // 파일 기반 → 이미 실행 중인 ps1 while 루프의 다음 재시작에도 적용됨
-  if (process.platform === 'win32') {
-    try {
-      const _smDir  = path.join(os.homedir(), '.orbit');
-      const _smFlag = path.join(_smDir, '.safe-mode');
-      if (!fs.existsSync(_smFlag)) {
-        fs.mkdirSync(_smDir, { recursive: true });
-        fs.writeFileSync(_smFlag, new Date().toISOString() + '\n', 'utf8');
-        console.log('[daemon-updater] ✅ .safe-mode 즉시 생성 (start 최우선) — uiohook 완전 차단');
-      }
-    } catch (_smE) {
-      console.warn('[daemon-updater] .safe-mode 즉시 생성 실패:', _smE.message);
-    }
-  }
+  // NOTE: .safe-mode 즉시 생성 제거 (2026-04-22). crash-reporter로 대체.
+  // 실제 crash 발생 시에만 조건부로 safe-mode 진입. 긴급시 env ORBIT_SAFE_MODE=1 사용.
 
   _repairGitRemote();
   _repairConfigServerUrl();

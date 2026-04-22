@@ -30,32 +30,15 @@ process.on('exit', (code) => {
   console.log(`[orbit] 프로세스 종료 (exit code: ${code}, ${new Date().toISOString()})`);
 });
 
-// ── 크래시 루프 방지: uncaughtException / unhandledRejection 전역 핸들러 ──
-// uiohook-napi 등 네이티브 모듈이 비동기 예외를 던져 exit code 1 → 무한 재시작 루프 방지
-process.on('uncaughtException', (err) => {
-  const msg = err?.message || String(err);
-  console.error(`[orbit] 미처리 예외 (크래시 방지): ${msg}`);
-  try {
-    // 원격 서버에 에러 보고 (비동기, 실패 무시)
-    const _cfg = (() => { try { return JSON.parse(require('fs').readFileSync(require('path').join(require('os').homedir(), '.orbit-config.json'), 'utf8')); } catch { return {}; } })();
-    const _url = _cfg.serverUrl || process.env.ORBIT_SERVER_URL;
-    const _tok = _cfg.token || process.env.ORBIT_TOKEN || '';
-    if (_url) {
-      const _payload = JSON.stringify({ events: [{ id: 'uce-' + Date.now(), type: 'daemon.error', source: 'personal-agent', sessionId: 'daemon-' + require('os').hostname(), timestamp: new Date().toISOString(), data: { component: 'uncaught-exception', error: msg, detail: err?.stack?.split('\n').slice(0,3).join(' | ') || '', hostname: require('os').hostname() } }] });
-      const _u = new URL('/api/hook', _url);
-      const _mod = _u.protocol === 'https:' ? require('https') : require('http');
-      const _req = _mod.request({ hostname: _u.hostname, port: _u.port || (_u.protocol === 'https:' ? 443 : 80), path: _u.pathname, method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(_payload), ..._tok ? { 'Authorization': 'Bearer ' + _tok } : {} }, timeout: 5000 }, r => r.resume());
-      _req.on('error', () => {}); _req.write(_payload); _req.end();
-    }
-  } catch {}
-  // 프로세스 유지 (종료하지 않음) — 크래시 루프 방지
-});
-
-process.on('unhandledRejection', (reason) => {
-  const msg = reason instanceof Error ? reason.message : String(reason);
-  console.error(`[orbit] 미처리 Promise 거부 (크래시 방지): ${msg}`);
-  // 프로세스 유지 (종료하지 않음) — 크래시 루프 방지
-});
+// ── 크래시 리포터 설치 (크래시 추적 + 서버 전송 + 3회/1h → safe-mode 자동 진입) ──
+// 대체: 기존 inline 핸들러 → src/crash-reporter.js (Claude 분석 파이프라인 연동)
+try {
+  require('../src/crash-reporter').installHandlers();
+} catch (e) {
+  console.error('[orbit] crash-reporter 로드 실패 — 기본 핸들러로 폴백:', e.message);
+  process.on('uncaughtException', (err) => console.error(`[orbit] 미처리 예외: ${err?.message || err}`));
+  process.on('unhandledRejection', (r) => console.error(`[orbit] 미처리 rejection: ${r}`));
+}
 
 // Windows native crash 방지 (uiohook-napi SIGABRT 등)
 try { process.on('SIGABRT', () => { console.error('[orbit] SIGABRT 수신 — 무시하고 계속'); }); } catch {}

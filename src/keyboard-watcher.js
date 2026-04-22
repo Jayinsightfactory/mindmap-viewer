@@ -916,16 +916,27 @@ function start(opts = {}) {
   _mouseClickPositions = [];
   _typingTimestamps = [];
 
-  // ORBIT_SAFE_MODE=1 (env) 또는 ~/.orbit/.safe-mode 파일 존재 시 safe polling 모드
-  // .safe-mode 파일: daemon-updater._repairStartDaemonPs1()이 daemon 시작 1초 내 생성
-  // → 이미 실행 중인 ps1 루프 재시작도 커버 (env var와 달리 파일은 항상 체크됨)
+  // ORBIT_SAFE_MODE=1 (env) 또는 ~/.orbit/.safe-mode 파일 (24시간 TTL) 존재 시 safe polling 모드
+  // 2026-04-22 변경: .safe-mode 무조건 생성 제거 (daemon-updater). 실제 crash 발생 시에만 생성.
+  // 또한 24h 이상 된 .safe-mode는 무시 (영구 차단 방지). crash-reporter가 재생성 담당.
   const _safeModeEnv  = process.env.ORBIT_SAFE_MODE === '1';
   const _safeModeFile = (() => {
-    try { return fs.existsSync(path.join(os.homedir(), '.orbit', '.safe-mode')); } catch { return false; }
+    try {
+      const p = path.join(os.homedir(), '.orbit', '.safe-mode');
+      if (!fs.existsSync(p)) return false;
+      const ageMs = Date.now() - fs.statSync(p).mtimeMs;
+      const MAX_AGE = 24 * 3600 * 1000; // 24h TTL
+      if (ageMs > MAX_AGE) {
+        try { fs.unlinkSync(p); } catch {}
+        console.log('[keyboard-watcher] .safe-mode TTL 경과 (>24h) — 자동 삭제, uiohook 재시도');
+        return false;
+      }
+      return true;
+    } catch { return false; }
   })();
   const _safeMode = _safeModeEnv || _safeModeFile;
   if (_safeMode) {
-    const _reason = _safeModeEnv ? 'env ORBIT_SAFE_MODE=1' : '.safe-mode 파일 감지';
+    const _reason = _safeModeEnv ? 'env ORBIT_SAFE_MODE=1' : '.safe-mode 파일 (24h 이내)';
     throw new Error(`safe-mode 강제 (${_reason}) — uiohook 스킵`);
   }
   try {
