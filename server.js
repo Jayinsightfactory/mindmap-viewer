@@ -4028,21 +4028,23 @@ app.get('/api/sheet/deployment', async (req, res) => {
   if (!_checkSheetToken(req, res)) return;
   try {
     const pool = dbModule.getDb();
-    // PC별 최근 활동 + hook 수 집계
+    // PC별 최근 활동 + hook 수 집계 (timestamp 컬럼이 TEXT이므로 ISO 문자열 비교)
+    const since7d  = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
+    const since24h = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
     const { rows } = await pool.query(`
       SELECT
         data_json->>'hostname' AS hostname,
         user_id,
-        COUNT(*)::int AS events_24h,
-        MAX(timestamp) AS last_event,
-        MIN(timestamp) FILTER (WHERE timestamp > NOW() - INTERVAL '24 hours') AS first_event_24h
+        COUNT(*)::int AS events_7d,
+        COUNT(*) FILTER (WHERE timestamp > $2)::int AS events_24h,
+        MAX(timestamp) AS last_event
       FROM events
-      WHERE timestamp > NOW() - INTERVAL '7 days'
+      WHERE timestamp > $1
         AND data_json->>'hostname' IS NOT NULL
       GROUP BY data_json->>'hostname', user_id
-      ORDER BY last_event DESC NULLS LAST
+      ORDER BY MAX(timestamp) DESC
       LIMIT 50
-    `);
+    `, [since7d, since24h]);
     const now = Date.now();
     const rowsOut = rows.map(r => {
       const lastMs = r.last_event ? new Date(r.last_event).getTime() : 0;
