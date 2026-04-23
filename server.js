@@ -4995,6 +4995,104 @@ app.get('/api/daemon/learned-config', async (req, res) => {
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ═══════════════════════════════════════════════════════════════════════════
+// GET /api/admin/pc-inference — hostname별 콘텐츠 샘플로 유저 추론 힌트
+//   Authorization: Bearer <master>
+//   각 PC의 clipboard.change 텍스트 + 시간대 + 작업 패턴 → 누가 쓰는지 추론 재료.
+// ═══════════════════════════════════════════════════════════════════════════
+app.get('/api/admin/pc-inference', async (req, res) => {
+  const master = (req.headers.authorization || '').replace('Bearer ', '').trim();
+  if (!master || !master.startsWith('orbit_')) return res.status(401).json({ error: 'master token required' });
+  const days = Math.min(parseInt(req.query.days) || 7, 30);
+  try {
+    const pool = dbModule.getDb();
+    const since = new Date(Date.now() - days * 24 * 3600 * 1000).toISOString();
+
+    // 1) 각 PC의 활동 통계
+    const { rows: pcs } = await pool.query(`
+      SELECT DISTINCT data_json->>'hostname' AS hostname, user_id,
+             COUNT(*)::int AS total,
+             MAX(timestamp) AS last_seen
+      FROM events
+      WHERE timestamp > $1 AND data_json->>'hostname' IS NOT NULL
+      GROUP BY data_json->>'hostname', user_id
+      ORDER BY total DESC
+      LIMIT 20
+    `, [since]);
+
+    // 2) 기존 orbit_pc_links 매핑 + orbit_auth_users 이름
+    let knownMap = {};
+    try {
+      const { rows } = await pool.query(`
+        SELECT l.hostname, l.user_id, u.name, u.email
+        FROM orbit_pc_links l LEFT JOIN orbit_auth_users u ON u.id = l.user_id
+      `);
+      rows.forEach(r => { knownMap[r.hostname] = { userId: r.user_id, name: r.name, email: r.email }; });
+    } catch {}
+
+    // 3) 각 hostname별 clipboard 샘플 + 시간대 + app 분포
+    const result = [];
+    for (const pc of pcs) {
+      const host = pc.hostname;
+      const mapped = knownMap[host] || null;
+
+      // clipboard 최근 5개 샘플 (이름/거래처/업무 키워드 추출용)
+      const { rows: clips } = await pool.query(`
+        SELECT data_json->>'text' AS text,
+               data_json->>'sourceApp' AS source_app,
+               data_json->>'windowTitle' AS window_title,
+               timestamp
+        FROM events
+        WHERE type='clipboard.change' AND data_json->>'hostname'=$1
+          AND timestamp > $2
+          AND length(data_json->>'text') > 10
+        ORDER BY timestamp DESC
+        LIMIT 5
+      `, [host, since]);
+
+      // 시간대 분포 (업무시간 패턴)
+      const { rows: hourly } = await pool.query(`
+        SELECT EXTRACT(HOUR FROM timestamp::timestamptz) AS h, COUNT(*)::int AS c
+        FROM events
+        WHERE data_json->>'hostname'=$1 AND timestamp > $2
+        GROUP BY EXTRACT(HOUR FROM timestamp::timestamptz)
+        ORDER BY c DESC LIMIT 5
+      `, [host, since]);
+
+      // 주요 app (정상 필터링된 것만)
+      const { rows: apps } = await pool.query(`
+        SELECT lower(trim(data_json->>'app')) AS app, COUNT(*)::int AS c
+        FROM events
+        WHERE data_json->>'hostname'=$1 AND timestamp > $2
+          AND length(trim(data_json->>'app')) BETWEEN 2 AND 40
+          AND data_json->>'app' NOT LIKE '{%' AND data_json->>'app' NOT LIKE '%$env%'
+        GROUP BY lower(trim(data_json->>'app'))
+        ORDER BY c DESC LIMIT 5
+      `, [host, since]);
+
+      result.push({
+        hostname: host,
+        user_id_raw: pc.user_id,
+        total_events: pc.total,
+        last_seen: pc.last_seen,
+        mapped,
+        clipboard_samples: clips.map(c => ({
+          source: c.source_app,
+          window: (c.window_title || '').slice(0, 60),
+          text: (c.text || '').slice(0, 300),
+          ts: c.timestamp,
+        })),
+        peak_hours_kst: hourly.map(h => ({ hour: h.h, count: h.c })),
+        top_apps: apps,
+      });
+    }
+
+    res.json({ days, pcs: result.length, data: result });
+  } catch (e) {
+    res.status(500).json({ error: e.message, stack: e.stack });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
 // POST /api/admin/force-update-all — 전 LIVE/IDLE PC에 업데이트 명령 큐잉
 //   Authorization: Bearer <master>
 //   동작: 최근 N시간 내 활동 있는 PC 전체에 {action:'update'} 전송.
