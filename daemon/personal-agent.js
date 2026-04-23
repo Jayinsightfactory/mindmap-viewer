@@ -52,6 +52,22 @@ const https   = require('https');
   }
 })();
 
+// ── stdout/stderr EPIPE 무시 ─────────────────────────────────────────────
+// start-daemon.ps1의 Add-Content 파이프가 끊기면 node의 console.log가 EPIPE throw.
+// 이게 uncaughtException → crash-reporter 집계로 들어가 100건 이상 폭주한 원인.
+// 파이프 에러는 로깅만 실패한 것이지 기능엔 문제 없으므로 silently ignore.
+(function _ignorePipeErrors() {
+  const swallow = (stream, name) => {
+    stream.on('error', (e) => {
+      if (e && (e.code === 'EPIPE' || e.code === 'ERR_STREAM_DESTROYED')) return;
+      // 다른 에러는 기록만 (throw하지 않음)
+      try { console.error(`[${name}] non-pipe error:`, e.message); } catch {}
+    });
+  };
+  try { swallow(process.stdout, 'stdout'); } catch {}
+  try { swallow(process.stderr, 'stderr'); } catch {}
+})();
+
 // ── 프로세스 keep-alive (최상위 레벨, main() 밖) ──────────────────────────
 // Node.js가 이벤트 루프 빈 상태로 종료하지 않도록 방어
 process.stdin.resume();

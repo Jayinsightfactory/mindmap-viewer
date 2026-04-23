@@ -395,17 +395,19 @@ function _sendAnalysisToServer(result, trigger, filepath) {
 function ensureDir() { fs.mkdirSync(CAPTURE_DIR, { recursive: true }); }
 
 /**
- * app 필드 정규화 — windowTitle/clipboard/JSON/명령어 오염 방지.
- * process name 패턴만 허용 (영숫자/하이픈/밑줄/점, 40자 이하).
+ * app 필드 정규화 — windowTitle/clipboard/JSON/명령어 오염만 필터.
+ * 정상 process name은 패턴 제약 없이 통과 (한글·괄호·특수문자 포함 가능).
  */
 function _sanitizeAppName(raw) {
   if (!raw) return '';
-  const s = String(raw).trim().toLowerCase();
-  if (!s || s.length > 40) return '';
-  if (s.includes('{') || s.includes('$env:') || s.includes('powershell') || s.includes('\n') || s.includes('\r')) return '';
-  // process name 패턴 (chrome, excel, code, cursor, kakaotalk 등)
-  if (/^[a-z0-9가-힣][a-z0-9가-힣\-_. ]{0,38}$/.test(s)) return s;
-  return '';
+  const s = String(raw).trim();
+  if (!s) return '';
+  if (s.length > 40) return '';                       // windowTitle/clipboard 오염
+  if (s.includes('{') || s.includes('}')) return ''; // JSON 객체
+  if (s.includes('$env:') || /powershell|irm\s+http/i.test(s)) return ''; // PS 명령어
+  if (s.includes('\n') || s.includes('\r')) return '';// 다줄 텍스트
+  if (s.includes('\t')) return '';
+  return s.toLowerCase();
 }
 
 /**

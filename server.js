@@ -4994,6 +4994,78 @@ app.get('/api/daemon/learned-config', async (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════
+// POST /api/admin/force-update-all — 전 LIVE/IDLE PC에 업데이트 명령 큐잉
+//   Authorization: Bearer <master>
+//   동작: 최근 N시간 내 활동 있는 PC 전체에 {action:'update'} 전송.
+//         각 daemon-updater._checkCycle(60초 주기)이 받아서 pullAndRestart.
+//         STALE(24h+ 조용한) PC는 daemon이 죽어있어 무시 (수동 재설치 필요).
+// ═══════════════════════════════════════════════════════════════════════════
+app.post('/api/admin/force-update-all', async (req, res) => {
+  const master = (req.headers.authorization || '').replace('Bearer ', '').trim();
+  if (!master || !master.startsWith('orbit_')) return res.status(401).json({ error: 'master token required' });
+  const maxAgeHours = parseInt(req.query.maxAgeHours || req.body?.maxAgeHours || '24', 10);
+  const dryRun = req.query.dryRun === '1' || req.body?.dryRun === true;
+  try {
+    const pool = dbModule.getDb();
+    // 최근 활동 있는 PC 목록 (live + idle)
+    const since = new Date(Date.now() - maxAgeHours * 3600 * 1000).toISOString();
+    const { rows: hosts } = await pool.query(`
+      SELECT DISTINCT data_json->>'hostname' AS hostname, MAX(timestamp) AS last_seen
+      FROM events
+      WHERE timestamp > $1 AND data_json->>'hostname' IS NOT NULL
+      GROUP BY data_json->>'hostname'
+      ORDER BY MAX(timestamp) DESC
+    `, [since]);
+    const targets = hosts.map(r => r.hostname).filter(Boolean);
+
+    if (dryRun) {
+      return res.json({ ok: true, dryRun: true, wouldTarget: targets.length, hostnames: targets });
+    }
+
+    // orbit_daemon_commands 테이블 존재 보장 (없으면 생성)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS orbit_daemon_commands (
+        id SERIAL PRIMARY KEY,
+        hostname TEXT NOT NULL,
+        action TEXT NOT NULL,
+        command TEXT,
+        data_json JSONB,
+        ts TIMESTAMPTZ DEFAULT NOW(),
+        consumed_at TIMESTAMPTZ
+      )
+    `);
+
+    // 각 hostname에 update command 큐잉 (중복 방지: 최근 10분 내 동일 command 이미 있으면 skip)
+    let queued = 0;
+    let skipped = 0;
+    const reason = 'admin force-update-all ' + new Date().toISOString();
+    for (const h of targets) {
+      const { rows: dup } = await pool.query(
+        `SELECT id FROM orbit_daemon_commands
+         WHERE hostname=$1 AND action='update' AND consumed_at IS NULL
+           AND ts > NOW() - INTERVAL '10 minutes'
+         LIMIT 1`,
+        [h]
+      );
+      if (dup.length) { skipped++; continue; }
+      await pool.query(
+        `INSERT INTO orbit_daemon_commands (hostname, action, command, data_json) VALUES ($1, 'update', NULL, $2)`,
+        [h, JSON.stringify({ reason })]
+      );
+      queued++;
+      // 메모리 큐에도 추가 (in-process PC가 이미 polling 중인 경우 바로 잡기)
+      if (!global._daemonCommands) global._daemonCommands = {};
+      if (!global._daemonCommands[h]) global._daemonCommands[h] = [];
+      global._daemonCommands[h].push({ action: 'update', data: { reason }, ts: new Date().toISOString() });
+    }
+    console.log(`[force-update-all] 큐잉 ${queued} / 중복 skip ${skipped} / 총 ${targets.length}`);
+    res.json({ ok: true, targeted: targets.length, queued, skipped, hostnames: targets });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // POST /api/admin/extract-learning — 전 PC 학습값 추출 + 서버에 스냅샷 저장
 // ═══════════════════════════════════════════════════════════════════════════
 app.post('/api/admin/extract-learning', async (req, res) => {

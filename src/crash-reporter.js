@@ -172,6 +172,14 @@ async function _flushPending() {
 }
 
 async function _reportCrash(error, origin) {
+  // EPIPE / ERR_STREAM_DESTROYED 는 기능 영향 없는 파이프 끊김 — 스킵 (폭주 방지)
+  const msg = error?.message || '';
+  const code = error?.code || '';
+  if (code === 'EPIPE' || code === 'ERR_STREAM_DESTROYED' ||
+      /EPIPE|broken pipe|ERR_STREAM_DESTROYED/i.test(msg)) {
+    return;
+  }
+
   const report = _buildReport(error, origin);
 
   // 1. 로컬 이력 저장 (safe-mode 판단 근거)
