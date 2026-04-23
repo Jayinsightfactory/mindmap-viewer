@@ -5176,6 +5176,106 @@ app.get('/api/admin/pc-inference', async (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
+// POST /api/admin/daily-maintenance — 매일 1회 자동 실행 (+수동 트리거)
+//   1) 전 PC 학습 스냅샷 저장 (learning_snapshots)
+//   2) 30일 이상 된 raw events 삭제
+//   3) 90일 이상 된 orbit_crashes / orbit_diagnostics 삭제
+//   4) 결과를 orbit_maintenance_log 테이블에 기록
+// ═══════════════════════════════════════════════════════════════════════════
+async function _runDailyMaintenance(trigger = 'auto') {
+  const pool = dbModule.getDb();
+  const summary = { trigger, startedAt: new Date().toISOString(), steps: {} };
+  try {
+    // Step 1: 학습 스냅샷
+    try {
+      const { runForAllPCs } = require('./src/capture-timing-learner');
+      const results = await runForAllPCs(pool, null);
+      await pool.query(`CREATE TABLE IF NOT EXISTS learning_snapshots (
+        id SERIAL PRIMARY KEY, created_at TIMESTAMPTZ DEFAULT NOW(), data_json JSONB NOT NULL
+      )`);
+      await pool.query('INSERT INTO learning_snapshots (data_json) VALUES ($1)',
+        [JSON.stringify({ results, trigger, extractedAt: new Date().toISOString() })]);
+      summary.steps.learning = { ok: true, pcs: results.length };
+    } catch (e) { summary.steps.learning = { ok: false, error: e.message }; }
+
+    // Step 2: events 30일 이상 삭제
+    try {
+      const cutoff = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
+      const { rowCount } = await pool.query('DELETE FROM events WHERE timestamp < $1', [cutoff]);
+      summary.steps.events_purge = { ok: true, deleted: rowCount, cutoff };
+    } catch (e) { summary.steps.events_purge = { ok: false, error: e.message }; }
+
+    // Step 3: orbit_crashes 90일 이상 삭제
+    try {
+      const { rowCount } = await pool.query(
+        "DELETE FROM orbit_crashes WHERE ts < NOW() - INTERVAL '90 days'");
+      summary.steps.crashes_purge = { ok: true, deleted: rowCount };
+    } catch (e) { summary.steps.crashes_purge = { ok: false, error: e.message }; }
+
+    // Step 4: orbit_diagnostics 90일 이상 삭제
+    try {
+      const { rowCount } = await pool.query(
+        "DELETE FROM orbit_diagnostics WHERE created_at < NOW() - INTERVAL '90 days'");
+      summary.steps.diagnostics_purge = { ok: true, deleted: rowCount };
+    } catch (e) { summary.steps.diagnostics_purge = { ok: false, error: e.message }; }
+
+    summary.endedAt = new Date().toISOString();
+
+    // Step 5: 로그 저장
+    try {
+      await pool.query(`CREATE TABLE IF NOT EXISTS orbit_maintenance_log (
+        id SERIAL PRIMARY KEY, created_at TIMESTAMPTZ DEFAULT NOW(), trigger TEXT, summary JSONB NOT NULL
+      )`);
+      await pool.query('INSERT INTO orbit_maintenance_log (trigger, summary) VALUES ($1, $2)',
+        [trigger, JSON.stringify(summary)]);
+    } catch {}
+
+    console.log(`[daily-maintenance] ${trigger}: learning=${JSON.stringify(summary.steps.learning)} events_purge=${JSON.stringify(summary.steps.events_purge)}`);
+    return summary;
+  } catch (e) {
+    summary.fatalError = e.message;
+    return summary;
+  }
+}
+
+app.post('/api/admin/daily-maintenance', async (req, res) => {
+  const master = (req.headers.authorization || '').replace('Bearer ', '').trim();
+  if (!master || !master.startsWith('orbit_')) return res.status(401).json({ error: 'master token required' });
+  const summary = await _runDailyMaintenance(req.query.trigger || 'manual');
+  res.json(summary);
+});
+
+app.get('/api/admin/maintenance-log', async (req, res) => {
+  const master = (req.headers.authorization || '').replace('Bearer ', '').trim();
+  if (!master || !master.startsWith('orbit_')) return res.status(401).json({ error: 'master token required' });
+  try {
+    const pool = dbModule.getDb();
+    const { rows } = await pool.query(
+      'SELECT id, created_at, trigger, summary FROM orbit_maintenance_log ORDER BY created_at DESC LIMIT 30');
+    res.json({ count: rows.length, log: rows });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 서버 시작 시 하루 1회 타이머 등록 (KST 03:00 기준)
+(function _scheduleDailyMaintenance() {
+  const DAY_MS = 24 * 3600 * 1000;
+  function msUntilNext3AMKST() {
+    const now = new Date();
+    // KST = UTC+9. 3 AM KST = 18:00 UTC 전날
+    const target = new Date(now);
+    target.setUTCHours(18, 0, 0, 0); // 18 UTC = 03 KST
+    if (target <= now) target.setUTCDate(target.getUTCDate() + 1);
+    return target - now;
+  }
+  const first = msUntilNext3AMKST();
+  setTimeout(function runAndRepeat() {
+    _runDailyMaintenance('scheduled').catch(e => console.error('[daily-maintenance] fatal:', e.message));
+    setInterval(() => _runDailyMaintenance('scheduled').catch(() => {}), DAY_MS);
+  }, first);
+  console.log(`[daily-maintenance] scheduled first run in ${Math.round(first / 60000)}min (KST 03:00)`);
+})();
+
+// ═══════════════════════════════════════════════════════════════════════════
 // POST /api/admin/force-update-all — 전 LIVE/IDLE PC에 업데이트 명령 큐잉
 //   Authorization: Bearer <master>
 //   동작: 최근 N시간 내 활동 있는 PC 전체에 {action:'update'} 전송.
