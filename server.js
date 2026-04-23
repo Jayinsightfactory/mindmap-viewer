@@ -4995,6 +4995,89 @@ app.get('/api/daemon/learned-config', async (req, res) => {
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ═══════════════════════════════════════════════════════════════════════════
+// GET /api/admin/users?q=XXX — orbit_auth_users에서 이름/이메일 검색
+// ═══════════════════════════════════════════════════════════════════════════
+app.get('/api/admin/users', async (req, res) => {
+  const master = (req.headers.authorization || '').replace('Bearer ', '').trim();
+  if (!master || !master.startsWith('orbit_')) return res.status(401).json({ error: 'master token required' });
+  const q = (req.query.q || '').trim();
+  if (!q) return res.status(400).json({ error: 'q required' });
+  try {
+    const pool = dbModule.getDb();
+    const { rows } = await pool.query(`
+      SELECT id, name, email, created_at
+      FROM orbit_auth_users
+      WHERE lower(name) LIKE lower($1) OR lower(email) LIKE lower($1) OR id LIKE $1
+      ORDER BY created_at DESC LIMIT 30
+    `, [`%${q}%`]);
+    res.json({ q, results: rows });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// POST /api/admin/pc-link  Body: { hostname, userId }
+// ═══════════════════════════════════════════════════════════════════════════
+app.post('/api/admin/pc-link', async (req, res) => {
+  const master = (req.headers.authorization || '').replace('Bearer ', '').trim();
+  if (!master || !master.startsWith('orbit_')) return res.status(401).json({ error: 'master token required' });
+  const { hostname, userId } = req.body || {};
+  if (!hostname || !userId) return res.status(400).json({ error: 'hostname and userId required' });
+  try {
+    const pool = dbModule.getDb();
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS orbit_pc_links (
+        hostname TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        linked_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await pool.query(`
+      INSERT INTO orbit_pc_links (hostname, user_id) VALUES ($1, $2)
+      ON CONFLICT (hostname) DO UPDATE SET user_id = $2, linked_at = NOW()
+    `, [hostname, userId]);
+    const { rows } = await pool.query(
+      `SELECT l.hostname, l.user_id, u.name, u.email
+       FROM orbit_pc_links l LEFT JOIN orbit_auth_users u ON u.id = l.user_id
+       WHERE l.hostname = $1`, [hostname]);
+    res.json({ ok: true, link: rows[0] });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// POST /api/admin/remap-local-userids  — local/pc_* userId를 hostname 기반으로 재매핑
+// ═══════════════════════════════════════════════════════════════════════════
+app.post('/api/admin/remap-local-userids', async (req, res) => {
+  const master = (req.headers.authorization || '').replace('Bearer ', '').trim();
+  if (!master || !master.startsWith('orbit_')) return res.status(401).json({ error: 'master token required' });
+  const dryRun = req.query.dryRun === '1';
+  try {
+    const pool = dbModule.getDb();
+    const whereClause = `user_id = 'local' OR user_id LIKE 'pc_%' OR user_id IS NULL`;
+
+    if (dryRun) {
+      const { rows } = await pool.query(`
+        SELECT events.user_id AS current_userid, l.user_id AS correct_userid,
+               events.data_json->>'hostname' AS hostname, COUNT(*)::int AS cnt
+        FROM events
+        JOIN orbit_pc_links l ON l.hostname = events.data_json->>'hostname'
+        WHERE ${whereClause}
+        GROUP BY events.user_id, l.user_id, events.data_json->>'hostname'
+        ORDER BY cnt DESC LIMIT 50
+      `);
+      return res.json({ dryRun: true, wouldUpdate: rows });
+    }
+
+    const { rowCount } = await pool.query(`
+      UPDATE events SET user_id = l.user_id
+      FROM orbit_pc_links l
+      WHERE l.hostname = events.data_json->>'hostname'
+        AND (${whereClause.replace(/user_id/g, 'events.user_id')})
+    `);
+    res.json({ ok: true, updated: rowCount });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
 // GET /api/admin/pc-inference — hostname별 콘텐츠 샘플로 유저 추론 힌트
 //   Authorization: Bearer <master>
 //   각 PC의 clipboard.change 텍스트 + 시간대 + 작업 패턴 → 누가 쓰는지 추론 재료.
