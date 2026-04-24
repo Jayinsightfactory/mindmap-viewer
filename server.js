@@ -6779,6 +6779,17 @@ async function startServer() {
   // 통합 이벤트 버스 초기화 (PG LISTEN 시작)
   if (process.env.DATABASE_URL) {
     const _ebPool = dbModule.getDb ? dbModule.getDb() : null;
+
+    // ── 마이그레이션 자동 실행 (_migrations 테이블로 멱등 보장) ──
+    if (_ebPool) {
+      try {
+        const { runMigrations } = require('./src/migrate');
+        await runMigrations(_ebPool);
+      } catch (e) {
+        console.warn('[startup] 마이그레이션 실패 (서비스는 계속):', e.message);
+      }
+    }
+
     if (_ebPool) await eventBus.init(_ebPool).catch(e => console.warn('[startup] EventBus 초기화 실패:', e.message));
 
     // ── Intelligence Layer 1 publishers (opt-in: INTELLIGENCE_PUBLISHERS=1) ──
