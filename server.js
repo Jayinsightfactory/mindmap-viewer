@@ -6808,6 +6808,10 @@ async function startServer() {
         } else {
           console.warn('[startup] NENOVA_ERP_USER/PASS 미설정 — agent/erp publisher 건너뜀');
         }
+
+        // ── Layer 2 entity-resolution scheduler ──
+        const erScheduler = require('./src/intelligence/entity-resolution/scheduler');
+        erScheduler.start(_ebPool);
       } catch (e) {
         console.warn('[startup] intelligence publishers 초기화 실패:', e.message);
       }
