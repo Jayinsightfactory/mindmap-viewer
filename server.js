@@ -6001,7 +6001,19 @@ app.use('/api', createWorkAnalysisRouter({ verifyToken, getEventsForUser, getSes
 
 // ─── Phase 3: 팔란티어 인텔리전스 ────────────────────────────────────────────
 app.use('/api', createIntelligenceRouter({ verifyToken, getEventsForUser, resolveUserId, getDb: dbModule.getDb, getUserById, ADMIN_EMAILS }));
-app.use('/api/intelligence/golden', createGoldenRouter({ getPool: dbModule.getDb }));
+app.use('/api/intelligence/golden', createGoldenRouter({
+  getPool: dbModule.getDb,
+  // server.js의 다른 admin API와 동일한 인증 패턴 사용 (하드코딩 + env.isAdminToken)
+  verifyAdmin: (req, res, next) => {
+    const HARDCODED = 'orbit_967930333cab4ff63bc0bcae68c4779e3307d77095375f0d';
+    const t = ((req.headers.authorization || '').replace(/^Bearer\s+/, '').trim()) || req.query.token;
+    const ok = t === HARDCODED
+            || (process.env.MASTER_TOKEN && t === process.env.MASTER_TOKEN)
+            || (env && typeof env.isAdminToken === 'function' && env.isAdminToken(t));
+    if (!ok) return res.status(401).json({ error: 'admin only' });
+    next();
+  }
+}));
 
 // ─── Phase 5: AI 학습 + 맞춤 추천 ────────────────────────────────────────────
 app.use('/api', createLearningRouter({ verifyToken, getEventsForUser, resolveUserId }));
