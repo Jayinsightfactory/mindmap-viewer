@@ -6804,6 +6804,17 @@ async function startServer() {
 
     if (_ebPool) await eventBus.init(_ebPool).catch(e => console.warn('[startup] EventBus 초기화 실패:', e.message));
 
+    // ── Layer 2 entity-resolution scheduler — 부작용 없음, 항상 실행 ──
+    // (publisher 게이트 밖에 둠: 시드/매처는 idempotent, 데이터 없으면 0건 반환)
+    if (_ebPool) {
+      try {
+        const erScheduler = require('./src/intelligence/entity-resolution/scheduler');
+        erScheduler.start(_ebPool);
+      } catch (e) {
+        console.warn('[startup] entity-resolution scheduler 초기화 실패:', e.message);
+      }
+    }
+
     // ── Intelligence Layer 1 publishers (opt-in: INTELLIGENCE_PUBLISHERS=1) ──
     if (_ebPool && process.env.INTELLIGENCE_PUBLISHERS === '1') {
       try {
@@ -6820,10 +6831,6 @@ async function startServer() {
         } else {
           console.warn('[startup] NENOVA_ERP_USER/PASS 미설정 — agent/erp publisher 건너뜀');
         }
-
-        // ── Layer 2 entity-resolution scheduler ──
-        const erScheduler = require('./src/intelligence/entity-resolution/scheduler');
-        erScheduler.start(_ebPool);
       } catch (e) {
         console.warn('[startup] intelligence publishers 초기화 실패:', e.message);
       }
