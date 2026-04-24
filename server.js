@@ -226,6 +226,7 @@ const companyCrawler                  = require('./src/company-crawler');
 // ─── Phase 2-5: 작업 분석 + 인텔리전스 + AI 학습 ──────────────────────────────
 const createWorkAnalysisRouter        = require('./routes/work-analysis');
 const createIntelligenceRouter        = require('./routes/intelligence');
+const createGoldenRouter              = require('./routes/intelligence-golden');
 const createLearningRouter            = require('./routes/learning');
 
 // ─── 통합 이벤트 버스 (4개 시스템 연동) ──────────────────────────────────────────
@@ -6000,6 +6001,7 @@ app.use('/api', createWorkAnalysisRouter({ verifyToken, getEventsForUser, getSes
 
 // ─── Phase 3: 팔란티어 인텔리전스 ────────────────────────────────────────────
 app.use('/api', createIntelligenceRouter({ verifyToken, getEventsForUser, resolveUserId, getDb: dbModule.getDb, getUserById, ADMIN_EMAILS }));
+app.use('/api/intelligence/golden', createGoldenRouter({ getPool: dbModule.getDb }));
 
 // ─── Phase 5: AI 학습 + 맞춤 추천 ────────────────────────────────────────────
 app.use('/api', createLearningRouter({ verifyToken, getEventsForUser, resolveUserId }));
@@ -6778,6 +6780,27 @@ async function startServer() {
   if (process.env.DATABASE_URL) {
     const _ebPool = dbModule.getDb ? dbModule.getDb() : null;
     if (_ebPool) await eventBus.init(_ebPool).catch(e => console.warn('[startup] EventBus 초기화 실패:', e.message));
+
+    // ── Intelligence Layer 1 publishers (opt-in: INTELLIGENCE_PUBLISHERS=1) ──
+    if (_ebPool && process.env.INTELLIGENCE_PUBLISHERS === '1') {
+      try {
+        const orbitPub = require('./src/intelligence/adapters/orbit-publisher');
+        const agentPub = require('./src/intelligence/adapters/agent-publisher');
+        const erpPub   = require('./src/intelligence/adapters/erp-publisher');
+        const pollMs   = parseInt(process.env.NENOVA_ERP_POLL_INTERVAL_MS || '60000', 10);
+
+        orbitPub.init(_ebPool); orbitPub.start(pollMs);
+        // ERP/agent 는 자격증명 있을 때만
+        if (process.env.NENOVA_ERP_USER && process.env.NENOVA_ERP_PASS) {
+          agentPub.init(_ebPool); agentPub.start(pollMs);
+          erpPub.init(_ebPool);   erpPub.start(pollMs);
+        } else {
+          console.warn('[startup] NENOVA_ERP_USER/PASS 미설정 — agent/erp publisher 건너뜀');
+        }
+      } catch (e) {
+        console.warn('[startup] intelligence publishers 초기화 실패:', e.message);
+      }
+    }
   }
   // 비동기 테이블 초기화 완료 대기 (chat, analytics)
   if (global._chatInitPromise) await global._chatInitPromise;

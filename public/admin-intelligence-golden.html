@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<title>Intelligence Golden — Workshop 드릴다운</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root {
+    --bg: #0b0d12; --panel: #11141b; --panel-2: #161a23; --border: #232836;
+    --fg: #e6e9ef; --muted: #8a93a6; --accent: #6cf0c2; --accent-2: #ffd166;
+    --warn: #ff7b72; --info: #79c0ff;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);
+               font: 13px/1.5 -apple-system, "Segoe UI", "Pretendard", "Apple SD Gothic Neo", sans-serif; }
+  header { padding: 10px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 16px; }
+  header h1 { margin: 0; font-size: 14px; letter-spacing: 0.5px; }
+  header nav { display: flex; gap: 8px; }
+  header button { background: var(--panel); color: var(--fg); border: 1px solid var(--border);
+                  padding: 5px 10px; border-radius: 6px; cursor: pointer; font-size: 12px; }
+  header button.active { background: var(--accent); color: #06241c; font-weight: 600; }
+  .stats-bar { padding: 8px 16px; background: var(--panel); border-bottom: 1px solid var(--border);
+               display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; }
+  .stats-bar .pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px;
+                     background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; }
+  .stats-bar .pill b { color: var(--accent); }
+  main { display: grid; grid-template-columns: 320px 1fr; height: calc(100vh - 90px); }
+  .list { border-right: 1px solid var(--border); overflow: auto; background: var(--panel); }
+  .list .item { padding: 10px 12px; border-bottom: 1px solid var(--border); cursor: pointer; }
+  .list .item:hover { background: var(--panel-2); }
+  .list .item.active { background: var(--panel-2); border-left: 3px solid var(--accent); }
+  .list .item .name { font-weight: 600; }
+  .list .item .meta { font-size: 11px; color: var(--muted); margin-top: 3px; display: flex; gap: 8px; }
+  .conf-bar { display: inline-block; height: 6px; width: 50px; background: var(--border); border-radius: 3px; vertical-align: middle; }
+  .conf-bar > span { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+  .conf-1 { background: #4a5260 !important; }   /* 1 source — gray */
+  .conf-2 { background: var(--accent-2) !important; }  /* 2 source — yellow */
+  .conf-3 { background: var(--accent) !important; }    /* 3 source — green */
+  .detail { padding: 16px 24px; overflow: auto; }
+  .detail h2 { margin: 0 0 4px; font-size: 18px; }
+  .detail .sub { color: var(--muted); font-size: 12px; margin-bottom: 16px; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; margin-bottom: 12px; }
+  .card h3 { margin: 0 0 8px; font-size: 13px; color: var(--accent-2); letter-spacing: 0.3px; text-transform: uppercase; }
+  .kv { display: grid; grid-template-columns: 130px 1fr; gap: 4px 12px; font-size: 12px; }
+  .kv .k { color: var(--muted); }
+  .kv .v { word-break: break-all; }
+  .badges { display: flex; gap: 6px; flex-wrap: wrap; }
+  .badges span { padding: 2px 8px; background: var(--panel-2); border: 1px solid var(--border);
+                 border-radius: 10px; font-size: 11px; }
+  .src-orbit { border-color: var(--info); color: var(--info); }
+  .src-erp-ui { border-color: var(--accent-2); color: var(--accent-2); }
+  .src-nenova-agent { border-color: var(--accent); color: var(--accent); }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 500; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .empty { color: var(--muted); padding: 16px; text-align: center; font-style: italic; }
+  .err { color: var(--warn); padding: 16px; }
+  code { background: var(--panel-2); padding: 1px 5px; border-radius: 3px; font-size: 11px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🔮 Intelligence Golden — Workshop 드릴다운</h1>
+  <nav>
+    <button id="tab-people" class="active">사람 (Person)</button>
+    <button id="tab-customers">거래처 (Customer)</button>
+  </nav>
+  <div style="margin-left:auto; color: var(--muted); font-size: 11px;">
+    토큰: <input id="token" type="password" placeholder="MASTER_TOKEN" style="background:var(--panel-2); color:var(--fg); border:1px solid var(--border); border-radius:4px; padding:3px 6px; width:200px;"/>
+    <button id="apply-token">적용</button>
+  </div>
+</header>
+<div class="stats-bar" id="stats"></div>
+<main>
+  <div class="list" id="list"></div>
+  <div class="detail" id="detail"><div class="empty">좌측에서 항목을 선택하세요</div></div>
+</main>
+
+<script>
+const $ = (s) => document.querySelector(s);
+let TOKEN = sessionStorage.getItem('golden_token') || '';
+let MODE = 'people';                  // 'people' | 'customers'
+let SELECTED_ID = null;
+
+if (TOKEN) $('#token').value = TOKEN;
+$('#apply-token').onclick = () => {
+  TOKEN = $('#token').value.trim();
+  sessionStorage.setItem('golden_token', TOKEN);
+  refresh();
+};
+
+async function api(path) {
+  const url = `/api/intelligence/golden${path}` + (path.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(TOKEN);
+  const res = await fetch(url, { headers: { 'Authorization': 'Bearer ' + TOKEN } });
+  if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
+  return res.json();
+}
+
+function confClass(count) {
+  if (count >= 3) return 'conf-3';
+  if (count >= 2) return 'conf-2';
+  return 'conf-1';
+}
+
+function fmt(d) {
+  if (!d) return '—';
+  return new Date(d).toLocaleString('ko-KR', { hour12: false });
+}
+
+function badges(sourceRefs) {
+  const out = [];
+  for (const [src, refs] of Object.entries(sourceRefs || {})) {
+    if (!refs?.length) continue;
+    out.push(`<span class="src-${src}" title="${refs.join('\n')}">${src}: ${refs.length}</span>`);
+  }
+  return `<div class="badges">${out.join('')}</div>`;
+}
+
+async function loadStats() {
+  try {
+    const s = await api('/stats');
+    const pills = [];
+    for (const r of s.by_type || []) {
+      pills.push(`<span class="pill">${r.entity_type} <b>${r.count}</b> · 평균신뢰 ${r.avg_confidence}</span>`);
+    }
+    for (const r of s.unified_events_24h || []) {
+      pills.push(`<span class="pill">24h ${r.source} <b>${r.count}</b></span>`);
+    }
+    $('#stats').innerHTML = pills.join('') || '<span class="pill">데이터 없음 — Phase A 배포 필요</span>';
+  } catch (e) {
+    $('#stats').innerHTML = `<span class="pill" style="border-color:var(--warn);color:var(--warn)">stats: ${e.message}</span>`;
+  }
+}
+
+async function loadList() {
+  $('#list').innerHTML = '<div class="empty">로딩...</div>';
+  try {
+    const j = await api(`/${MODE}?limit=200`);
+    const items = j[MODE] || [];
+    if (items.length === 0) {
+      $('#list').innerHTML = '<div class="empty">골든 레코드 없음<br/>(seed/bootstrap 실행 필요)</div>';
+      return;
+    }
+    $('#list').innerHTML = items.map(it => `
+      <div class="item ${it.id === SELECTED_ID ? 'active' : ''}" data-id="${it.id}">
+        <div class="name">${it.display_name || it.id}</div>
+        <div class="meta">
+          <span class="conf-bar"><span class="${confClass(it.source_count)}" style="width:${Math.round((it.confidence || 0)*100)}%"></span></span>
+          ${it.source_count}/3 · ${it.confidence}
+        </div>
+        ${badges(it.source_refs)}
+      </div>
+    `).join('');
+    document.querySelectorAll('.item').forEach(el => {
+      el.onclick = () => { SELECTED_ID = el.dataset.id; loadList(); loadDetail(); };
+    });
+  } catch (e) {
+    $('#list').innerHTML = `<div class="err">${e.message}</div>`;
+  }
+}
+
+async function loadDetail() {
+  if (!SELECTED_ID) return;
+  $('#detail').innerHTML = '<div class="empty">로딩...</div>';
+  try {
+    const d = await api(`/${MODE}/${SELECTED_ID}`);
+    $('#detail').innerHTML = MODE === 'people' ? renderPerson(d) : renderCustomer(d);
+  } catch (e) {
+    $('#detail').innerHTML = `<div class="err">${e.message}</div>`;
+  }
+}
+
+function renderPerson(d) {
+  const p = d.person, a = p.attributes || {};
+  const srcCounts = d.activity?.source_counts || {};
+  const typeCounts = d.activity?.type_counts || {};
+  const top = (m) => Object.entries(m).sort((x,y) => y[1]-x[1]).slice(0, 8);
+
+  return `
+    <h2>${p.display_name}</h2>
+    <div class="sub">${a.email || '(이메일 없음)'} · 신뢰도 ${p.confidence} (${p.source_count}/3 소스)</div>
+
+    <div class="card">
+      <h3>골든 속성</h3>
+      <div class="kv">
+        <div class="k">user_id</div><div class="v"><code>${a.user_id || '—'}</code></div>
+        <div class="k">name</div><div class="v">${a.name || '—'}</div>
+        <div class="k">aliases</div><div class="v">${(a.aliases || []).join(', ') || '—'}</div>
+        <div class="k">소스 등록</div><div class="v">${badges(p.source_refs)}</div>
+        <div class="k">최근 갱신</div><div class="v">${fmt(p.updated_at)}</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>최근 활동 (${d.activity?.recent_count || 0}건)</h3>
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+        <div>
+          <div style="color:var(--muted); margin-bottom:4px;">소스별</div>
+          <table><tbody>
+            ${top(srcCounts).map(([k,v]) => `<tr><td><span class="src-${k}">${k}</span></td><td class="num">${v}</td></tr>`).join('') || '<tr><td class="empty" colspan="2">데이터 없음</td></tr>'}
+          </tbody></table>
+        </div>
+        <div>
+          <div style="color:var(--muted); margin-bottom:4px;">이벤트 타입 Top 8</div>
+          <table><tbody>
+            ${top(typeCounts).map(([k,v]) => `<tr><td><code>${k}</code></td><td class="num">${v}</td></tr>`).join('') || '<tr><td class="empty" colspan="2">데이터 없음</td></tr>'}
+          </tbody></table>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>관여 거래처 Top ${(d.customers || []).length}</h3>
+      ${(d.customers || []).length === 0 ? '<div class="empty">거래처 데이터 없음 (erp-ui publisher 가동 필요)</div>' :
+        `<table>
+          <thead><tr><th>거래처명</th><th>CustKey</th><th class="num">이벤트</th><th>마지막 접촉</th></tr></thead>
+          <tbody>${d.customers.map(c => `
+            <tr><td>${c.cust_name || '—'}</td><td><code>${c.cust_key}</code></td>
+                <td class="num">${c.event_count}</td><td>${fmt(c.last_seen)}</td></tr>
+          `).join('')}</tbody>
+        </table>`}
+    </div>
+
+    <div class="card">
+      <h3>매칭 이력 (Provenance)</h3>
+      ${(d.match_log || []).length === 0 ? '<div class="empty">없음</div>' :
+        `<table>
+          <thead><tr><th>소스</th><th>참조</th><th>방식</th><th class="num">점수</th><th>버전</th><th>시각</th></tr></thead>
+          <tbody>${d.match_log.map(m => `
+            <tr><td><span class="src-${m.source}">${m.source}</span></td>
+                <td><code>${m.source_ref}</code></td>
+                <td>${m.match_type}</td>
+                <td class="num">${m.match_score}</td>
+                <td><code>${m.matcher_version}</code></td>
+                <td>${fmt(m.created_at)}</td></tr>
+          `).join('')}</tbody>
+        </table>`}
+    </div>
+  `;
+}
+
+function renderCustomer(d) {
+  const c = d.customer, a = c.attributes || {};
+  return `
+    <h2>${c.display_name}</h2>
+    <div class="sub">CustKey <code>${a.cust_key || '—'}</code> · 신뢰도 ${c.confidence} (${c.source_count}/3 소스)</div>
+
+    <div class="card">
+      <h3>골든 속성</h3>
+      <div class="kv">
+        <div class="k">정규화명</div><div class="v">${a.name || c.display_name}</div>
+        <div class="k">aliases</div><div class="v">${(a.aliases || []).join(', ') || '—'}</div>
+        <div class="k">소스 등록</div><div class="v">${badges(c.source_refs)}</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>관여 사람 Top ${(d.people_involved || []).length}</h3>
+      ${(d.people_involved || []).length === 0 ? '<div class="empty">데이터 없음</div>' :
+        `<table>
+          <thead><tr><th>UserID</th><th class="num">이벤트</th><th>최초 접촉</th><th>마지막 접촉</th></tr></thead>
+          <tbody>${d.people_involved.map(p => `
+            <tr><td><code>${p.user_id}</code></td><td class="num">${p.event_count}</td>
+                <td>${fmt(p.first_seen)}</td><td>${fmt(p.last_seen)}</td></tr>
+          `).join('')}</tbody>
+        </table>`}
+    </div>
+
+    <div class="card">
+      <h3>매칭된 카톡방</h3>
+      ${(d.kakao_rooms || []).length === 0 ? '<div class="empty">없음</div>' :
+        `<div class="badges">${d.kakao_rooms.map(r => `<span class="src-nenova-agent">${r}</span>`).join('')}</div>`}
+    </div>
+
+    <div class="card">
+      <h3>매칭 이력 (Provenance)</h3>
+      ${(d.match_log || []).length === 0 ? '<div class="empty">없음</div>' :
+        `<table>
+          <thead><tr><th>소스</th><th>참조</th><th>방식</th><th class="num">점수</th><th>증거</th><th>시각</th></tr></thead>
+          <tbody>${d.match_log.map(m => `
+            <tr><td><span class="src-${m.source}">${m.source}</span></td>
+                <td><code>${m.source_ref}</code></td>
+                <td>${m.match_type}</td>
+                <td class="num">${m.match_score}</td>
+                <td><code title="${JSON.stringify(m.evidence)}">${JSON.stringify(m.evidence).slice(0,40)}…</code></td>
+                <td>${fmt(m.created_at)}</td></tr>
+          `).join('')}</tbody>
+        </table>`}
+    </div>
+  `;
+}
+
+document.querySelectorAll('header nav button').forEach(btn => {
+  btn.onclick = () => {
+    document.querySelectorAll('header nav button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    MODE = btn.id === 'tab-people' ? 'people' : 'customers';
+    SELECTED_ID = null;
+    $('#detail').innerHTML = '<div class="empty">좌측에서 항목을 선택하세요</div>';
+    loadList();
+  };
+});
+
+function refresh() {
+  loadStats();
+  loadList();
+}
+refresh();
+</script>
+</body>
+</html>
