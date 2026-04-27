@@ -561,15 +561,22 @@ End If
       }
     }
 
-    // 기존 .safe-mode 파일 삭제 (키보드/마우스 수집 즉시 복원)
+    // 구버전 .safe-mode 파일 삭제 (watchdog/install.ps1이 생성한 빈 파일만)
+    // crash-reporter.js가 생성한 JSON 파일({"reason":"crash",...})은 유지 — crash loop 방지용
     const safeModeFile = path.join(orbitDir, '.safe-mode');
     if (fs.existsSync(safeModeFile)) {
       try {
-        fs.unlinkSync(safeModeFile);
-        console.log('[daemon-updater] .safe-mode 파일 삭제 → keyboard-watcher 활성화');
-        repaired++;
+        const smContent = fs.readFileSync(safeModeFile, 'utf8').trim();
+        const isLegacy = smContent.length === 0 || !smContent.startsWith('{');
+        if (isLegacy) {
+          fs.unlinkSync(safeModeFile);
+          console.log('[daemon-updater] 구버전 .safe-mode(빈 파일) 삭제 → keyboard-watcher 활성화');
+          repaired++;
+        } else {
+          console.log('[daemon-updater] crash-reporter .safe-mode 유지 (crash loop 방지)');
+        }
       } catch (e2) {
-        console.warn('[daemon-updater] .safe-mode 삭제 실패:', e2.message);
+        console.warn('[daemon-updater] .safe-mode 처리 실패:', e2.message);
       }
     }
 
