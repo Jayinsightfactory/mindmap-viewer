@@ -219,9 +219,9 @@ if (-not $nodeExe) { exit 1 }
 try { $cfg = Get-Content "$env:USERPROFILE\\.orbit-config.json" -Raw | ConvertFrom-Json; if ($cfg.token) { $env:ORBIT_TOKEN = $cfg.token } } catch {}
 while ($true) {
   $ts = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
-  "[$ts] daemon start" | Add-Content "$env:USERPROFILE\\.orbit\\daemon.log"
-  & $nodeExe "$env:USERPROFILE\\mindmap-viewer\\daemon\\personal-agent.js" 2>&1 | Add-Content "$env:USERPROFILE\\.orbit\\daemon.log"
-  "[$ts] daemon exit (restart in 10s)" | Add-Content "$env:USERPROFILE\\.orbit\\daemon.log"
+  "[$ts] daemon start" | Out-File -Append -Encoding utf8 -FilePath "$env:USERPROFILE\\.orbit\\daemon.log"
+  & $nodeExe "$env:USERPROFILE\\mindmap-viewer\\daemon\\personal-agent.js" 2>&1 | Out-File -Append -Encoding utf8 -FilePath "$env:USERPROFILE\\.orbit\\daemon.log"
+  "[$ts] daemon exit (restart in 10s)" | Out-File -Append -Encoding utf8 -FilePath "$env:USERPROFILE\\.orbit\\daemon.log"
   Start-Sleep -Seconds 10
 }`;
     const orbitPs1 = path.join(orbitDir, 'start-daemon.ps1');
@@ -521,7 +521,7 @@ End If
       if (fs.existsSync(wdPath) && fs.existsSync(vbsPath)) {
         try {
           execSync(
-            `schtasks /create /tn "OrbitWatchdog" /tr "wscript.exe \\"${vbsPath}\\" \\"${wdPath}\\"" /sc minute /mo 5 /rl limited /f`,
+            `schtasks /create /tn "OrbitWatchdog" /tr "wscript.exe \\"${vbsPath}\\" \\"${wdPath}\\"" /sc minute /mo 30 /rl limited /f`,
             { timeout: 10000, windowsHide: true, stdio: 'pipe' }
           );
           console.log('[daemon-updater] OrbitWatchdog registered (was missing on this PC)');
