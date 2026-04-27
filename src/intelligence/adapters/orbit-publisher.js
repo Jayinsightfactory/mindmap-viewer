@@ -19,17 +19,22 @@
 
 const eventBus = require('../../event-bus');
 
-// 의미 이벤트 type 화이트리스트 (events.type 기준)
+// 의미 이벤트 type 화이트리스트 (events.type 기준 — 실제 PC 데몬 타입 사용)
 const MEANINGFUL_TYPES = new Set([
-  'focus_change',
-  'app_focus',
-  'clipboard_paste',
-  'clipboard_change',
-  'file_save',
-  'file_open',
-  'session_start',
-  'session_end',
-  'tool_use',
+  'daemon.update',       // 앱 포커스/창 전환 (가장 빈번, 활동 컨텍스트)
+  'clipboard.change',    // 클립보드 — 복사·붙여넣기 경계
+  'excel.activity',      // 엑셀 작업 (업무 연관도 높음)
+  'order.detected',      // 발주/수주 감지 — 핵심 비즈니스 이벤트
+  'file.read',           // 파일 열기
+  'file.write',          // 파일 저장
+  'file.change',         // 파일 변경
+  'tool.start',          // 도구 사용 시작
+  'tool.end',            // 도구 사용 종료
+  'user.message',        // AI 채팅 입력
+  'assistant.message',   // AI 채팅 응답 (사용 컨텍스트)
+  'session.start',       // 세션 시작
+  'session.end',         // 세션 종료
+  'task.complete',       // 작업 완료
 ]);
 
 let _pool = null;
