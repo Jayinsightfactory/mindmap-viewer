@@ -312,118 +312,141 @@ function createGoldenRouter(deps) {
       const hostMap = {};
       for (const r of pcLinks) hostMap[r.hostname] = r.name || r.email || r.user_id;
 
+      const toName = (hostname, userId) => hostMap[hostname] || userId || hostname || '?';
+
       const since = new Date(Date.now() - hours * 3600 * 1000).toISOString();
 
-      // 실업무 이벤트 (파일/엑셀/주문/클립보드/AI + daemon.update 창제목)
-      const { rows: events } = await pool.query(`
-        SELECT type, user_id,
-               data_json->>'hostname' AS hostname,
-               data_json,
-               timestamp
-          FROM events
-         WHERE timestamp > $1
-           AND type IN (
-             'excel.activity','file.write','file.read','file.change',
-             'order.detected','clipboard.change',
-             'user.message','assistant.message','tool.start','tool.end',
-             'daemon.update'
-           )
-         ORDER BY timestamp DESC
-         LIMIT 5000
-      `, [since]);
+      // 타입별 개별 쿼리 (daemon.update 제외 — 창제목 없는 status 이벤트라 오염만 됨)
+      const SEL = `SELECT type, user_id, data_json->>'hostname' AS hostname, data_json, timestamp FROM events WHERE timestamp > $1`;
+      const [
+        { rows: excelRows },
+        { rows: fileRows },
+        { rows: clipRows },
+        { rows: orderRows },
+        { rows: aiRows },
+        { rows: snapRows },
+      ] = await Promise.all([
+        pool.query(`${SEL} AND type = 'excel.activity' ORDER BY timestamp DESC LIMIT 3000`, [since]),
+        pool.query(`${SEL} AND type IN ('file.write','file.read','file.change') ORDER BY timestamp DESC LIMIT 2000`, [since]),
+        pool.query(`${SEL} AND type = 'clipboard.change' ORDER BY timestamp DESC LIMIT 1000`, [since]),
+        pool.query(`${SEL} AND type = 'order.detected' ORDER BY timestamp DESC LIMIT 500`, [since]),
+        pool.query(`${SEL} AND type IN ('user.message','assistant.message') ORDER BY timestamp DESC LIMIT 300`, [since]),
+        pool.query(`${SEL} AND type = 'daemon.log.snapshot' ORDER BY timestamp DESC LIMIT 1000`, [since]),
+      ]);
 
-      // 타입별 + 사용자별 그룹핑
-      const byType = {};
-      for (const e of events) {
-        const name = hostMap[e.hostname] || e.user_id || e.hostname || '?';
-        const d = typeof e.data_json === 'string' ? JSON.parse(e.data_json) : (e.data_json || {});
-        if (!byType[e.type]) byType[e.type] = [];
-        byType[e.type].push({ ts: e.timestamp, user: name, data: d });
-      }
+      const parse = r => ({
+        ts: r.timestamp,
+        user: toName(r.hostname, r.user_id),
+        data: typeof r.data_json === 'string' ? JSON.parse(r.data_json) : (r.data_json || {}),
+      });
 
-      // 엑셀 상세: 파일>시트별로 셀값 스트림 (중복값 제거, 최근 100건씩)
+      // ── 엑셀 상세: 파일>시트별 셀값 스트림 ─────────────────────────────
       const excelByFile = {};
-      for (const ev of (byType['excel.activity'] || [])) {
+      for (const r of excelRows) {
+        const ev = parse(r);
         const wb = ev.data.workbook || ev.data.file || '?';
         const sh = ev.data.sheet || ev.data.sheetName || '';
         const key = sh ? `${wb} > ${sh}` : wb;
         if (!excelByFile[key]) excelByFile[key] = { users: new Set(), cells: [] };
         excelByFile[key].users.add(ev.user);
-        if (excelByFile[key].cells.length < 200) {
-          excelByFile[key].cells.push({
-            ts: ev.ts, cell: ev.data.cell, value: ev.data.value,
-            formula: ev.data.formula || '', row: ev.data.rowCount,
-          });
-        }
+        excelByFile[key].cells.push({
+          ts: ev.ts, cell: ev.data.cell, value: ev.data.value,
+          formula: ev.data.formula || '', row: ev.data.rowCount,
+        });
       }
-      // 파일별로 고유 셀값 목록 + 최근 활동
       const excelFiles = Object.entries(excelByFile)
         .sort((a, b) => b[1].cells.length - a[1].cells.length)
-        .slice(0, 15)
+        .slice(0, 20)
         .map(([file, v]) => {
           const uniqueVals = [...new Set(
-            v.cells.map(c => c.value).filter(x => x && x.trim() && x !== '0')
-          )].slice(0, 40);
-          const cellsSample = v.cells.slice(0, 30);
-          return { file, users: [...v.users], activity_count: v.cells.length, unique_values: uniqueVals, recent_cells: cellsSample };
+            v.cells.map(c => c.value).filter(x => x != null && String(x).trim() && String(x) !== '0')
+          )].slice(0, 60);
+          return {
+            file,
+            users: [...v.users],
+            activity_count: v.cells.length,
+            unique_values: uniqueVals,
+            recent_cells: v.cells.slice(0, 50),
+          };
         });
 
-      // 파일 요약
+      // ── 파일 요약 ────────────────────────────────────────────────────────
       const fileSummary = {};
-      for (const t of ['file.write','file.read','file.change']) {
-        for (const ev of (byType[t] || [])) {
-          const path = ev.data.path || ev.data.filePath || ev.data.file || '?';
-          if (!fileSummary[path]) fileSummary[path] = { ops: {}, users: new Set() };
-          fileSummary[path].ops[t] = (fileSummary[path].ops[t] || 0) + 1;
-          fileSummary[path].users.add(ev.user);
-        }
+      for (const r of fileRows) {
+        const ev = parse(r);
+        const path = ev.data.path || ev.data.filePath || ev.data.file || '?';
+        if (!fileSummary[path]) fileSummary[path] = { ops: {}, users: new Set(), last: ev.ts };
+        fileSummary[path].ops[r.type] = (fileSummary[path].ops[r.type] || 0) + 1;
+        fileSummary[path].users.add(ev.user);
       }
       const fileList = Object.entries(fileSummary)
         .sort((a, b) => Object.values(b[1].ops).reduce((s,v)=>s+v,0) - Object.values(a[1].ops).reduce((s,v)=>s+v,0))
-        .slice(0, 30)
-        .map(([path, v]) => ({ path, ops: v.ops, users: [...v.users] }));
+        .slice(0, 40)
+        .map(([path, v]) => ({ path, ops: v.ops, users: [...v.users], last: v.last }));
 
-      // 주문 감지 요약
-      const orders = (byType['order.detected'] || []).slice(0, 50).map(ev => ({
-        ts: ev.ts, user: ev.user, ...ev.data,
-      }));
+      // ── 주문 감지 ────────────────────────────────────────────────────────
+      const orders = orderRows.slice(0, 50).map(r => {
+        const ev = parse(r);
+        return { ts: ev.ts, user: ev.user, ...ev.data };
+      });
 
-      // AI 대화 요약 (user.message만)
-      const aiMessages = (byType['user.message'] || []).slice(0, 50).map(ev => ({
-        ts: ev.ts, user: ev.user,
-        message: (ev.data.content || ev.data.text || ev.data.message || '').slice(0, 500),
-      }));
+      // ── AI 대화 ──────────────────────────────────────────────────────────
+      const aiMessages = aiRows.slice(0, 80).map(r => {
+        const ev = parse(r);
+        return {
+          ts: ev.ts, user: ev.user, type: r.type,
+          message: (ev.data.content || ev.data.text || ev.data.message || '').slice(0, 600),
+        };
+      });
 
-      // 클립보드 전체 (중복 제거, 사용자별, 최근 100건)
+      // ── 클립보드 (사용자별, 연속 중복 제거) ─────────────────────────────
       const clipByUser = {};
-      for (const ev of (byType['clipboard.change'] || [])) {
+      for (const r of clipRows) {
+        const ev = parse(r);
         if (!clipByUser[ev.user]) clipByUser[ev.user] = [];
         const text = (ev.data.text || ev.data.content || '').trim();
-        if (text && clipByUser[ev.user].length < 100) {
-          clipByUser[ev.user].push({ ts: ev.ts, text: text.slice(0, 300) });
+        const prev = clipByUser[ev.user].slice(-1)[0]?.text;
+        if (text && text !== prev && clipByUser[ev.user].length < 100) {
+          clipByUser[ev.user].push({ ts: ev.ts, text: text.slice(0, 400) });
         }
       }
 
-      // daemon.update 창제목 타임라인 (사용자별, 중복 연속 제거)
+      // ── 창/앱 타임라인 (daemon.log.snapshot) ────────────────────────────
+      // snapshot 첫 1건으로 실제 필드 구조 확인용
+      const snapSample = snapRows[0]
+        ? (typeof snapRows[0].data_json === 'string' ? JSON.parse(snapRows[0].data_json) : snapRows[0].data_json)
+        : null;
+
       const windowByUser = {};
-      for (const ev of [...(byType['daemon.update'] || [])].reverse()) {
+      for (const r of [...snapRows].reverse()) {
+        const ev = parse(r);
+        const title = ev.data.activeWindow || ev.data.windowTitle || ev.data.title
+                   || ev.data.active_window || ev.data.app || ev.data.process || '';
+        const app   = ev.data.app || ev.data.process || ev.data.processName || '';
         if (!windowByUser[ev.user]) windowByUser[ev.user] = [];
-        const title = ev.data.title || ev.data.windowTitle || ev.data.app || '';
         const prev = windowByUser[ev.user].slice(-1)[0];
-        if (title && title !== prev?.title && windowByUser[ev.user].length < 150) {
-          windowByUser[ev.user].push({ ts: ev.ts, title, app: ev.data.app || ev.data.process || '' });
+        if (title && title !== prev?.title && windowByUser[ev.user].length < 200) {
+          windowByUser[ev.user].push({ ts: ev.ts, title, app });
         }
       }
 
       res.json({
         hours,
-        total_events: events.length,
+        event_counts: {
+          excel: excelRows.length,
+          file: fileRows.length,
+          clipboard: clipRows.length,
+          order: orderRows.length,
+          ai: aiRows.length,
+          snapshot: snapRows.length,
+        },
         excel_files: excelFiles,
         files: fileList,
-        orders: orders,
+        orders,
         ai_messages: aiMessages,
         clipboard_by_user: clipByUser,
         window_timeline_by_user: windowByUser,
+        snapshot_sample: snapSample,
       });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
