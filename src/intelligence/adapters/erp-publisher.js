@@ -47,11 +47,16 @@ async function _publishEndpoint(ep) {
     console.warn(`[erp-publisher] ${ep.path} 호출 실패: ${e.message}`);
     return 0;
   }
-  // 응답 컨테이너 형태 다양: {success,data:[]} 또는 {rows:[]} 또는 [] 직접
-  const list = Array.isArray(json) ? json
-             : Array.isArray(json?.data) ? json.data
-             : Array.isArray(json?.rows) ? json.rows
-             : [];
+  // 응답 컨테이너 자동 탐지: 배열인 값을 가진 첫 번째 키 사용
+  let list;
+  if (Array.isArray(json)) {
+    list = json;
+  } else if (json && typeof json === 'object') {
+    const arrayKey = Object.keys(json).find(k => Array.isArray(json[k]));
+    list = arrayKey ? json[arrayKey] : [];
+  } else {
+    list = [];
+  }
   if (list.length === 0) return 0;
 
   const lastAt = await _getLastCursor(ep.idPrefix);

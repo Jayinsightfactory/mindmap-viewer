@@ -71,19 +71,30 @@ function createGoldenRouter(deps) {
       let loginResult = null;
       let sampleData = null;
       try {
-        const raw = await erp.get('/api/orders/history', { limit: 3 });
         loginResult = 'ok';
-        // 응답 형태 + 첫 레코드 키 목록
-        const list = Array.isArray(raw) ? raw
-                   : Array.isArray(raw?.data) ? raw.data
-                   : Array.isArray(raw?.rows) ? raw.rows
-                   : null;
-        sampleData = {
-          topLevelKeys: Object.keys(raw || {}),
-          listLength: list ? list.length : null,
-          firstRecordKeys: list && list[0] ? Object.keys(list[0]) : null,
-          firstRecord: list && list[0] ? list[0] : null,
-        };
+        // 3개 엔드포인트 응답 키 모두 확인
+        const endpoints = [
+          '/api/orders/history',
+          '/api/shipment/history',
+          '/api/estimate',
+        ];
+        sampleData = {};
+        for (const ep of endpoints) {
+          try {
+            const raw = await erp.get(ep, { limit: 2 });
+            const keys = Object.keys(raw || {});
+            const listKey = keys.find(k => Array.isArray(raw[k]));
+            const list = listKey ? raw[listKey] : (Array.isArray(raw) ? raw : null);
+            sampleData[ep] = {
+              topLevelKeys: keys,
+              listKey,
+              listLength: list ? list.length : null,
+              firstRecordKeys: list && list[0] ? Object.keys(list[0]) : null,
+            };
+          } catch (e) {
+            sampleData[ep] = { error: e.message };
+          }
+        }
       } catch (e) {
         loginResult = e.message;
       }
