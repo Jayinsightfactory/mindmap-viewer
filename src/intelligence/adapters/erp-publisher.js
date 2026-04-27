@@ -83,6 +83,10 @@ async function _publishEndpoint(ep) {
   return n;
 }
 
+function init(pool) {
+  _pool = pool;
+}
+
 async function tick() {
   if (!_pool) throw new Error('[erp-publisher] init(pool) 호출 필요');
   let total = 0;
