@@ -314,7 +314,7 @@ function createGoldenRouter(deps) {
 
       const since = new Date(Date.now() - hours * 3600 * 1000).toISOString();
 
-      // 실업무 이벤트 (파일/엑셀/주문/클립보드/AI)
+      // 실업무 이벤트 (파일/엑셀/주문/클립보드/AI + daemon.update 창제목)
       const { rows: events } = await pool.query(`
         SELECT type, user_id,
                data_json->>'hostname' AS hostname,
@@ -325,10 +325,11 @@ function createGoldenRouter(deps) {
            AND type IN (
              'excel.activity','file.write','file.read','file.change',
              'order.detected','clipboard.change',
-             'user.message','assistant.message','tool.start','tool.end'
+             'user.message','assistant.message','tool.start','tool.end',
+             'daemon.update'
            )
          ORDER BY timestamp DESC
-         LIMIT 2000
+         LIMIT 5000
       `, [since]);
 
       // 타입별 + 사용자별 그룹핑
@@ -340,19 +341,32 @@ function createGoldenRouter(deps) {
         byType[e.type].push({ ts: e.timestamp, user: name, data: d });
       }
 
-      // 엑셀 요약: 파일명 + 시트 집계
-      const excelSummary = {};
+      // 엑셀 상세: 파일>시트별로 셀값 스트림 (중복값 제거, 최근 100건씩)
+      const excelByFile = {};
       for (const ev of (byType['excel.activity'] || [])) {
-        const key = [ev.data.file || ev.data.fileName || ev.data.workbook || '?',
-                     ev.data.sheet || ev.data.sheetName || ''].filter(Boolean).join(' > ');
-        if (!excelSummary[key]) excelSummary[key] = { count: 0, users: new Set() };
-        excelSummary[key].count++;
-        excelSummary[key].users.add(ev.user);
+        const wb = ev.data.workbook || ev.data.file || '?';
+        const sh = ev.data.sheet || ev.data.sheetName || '';
+        const key = sh ? `${wb} > ${sh}` : wb;
+        if (!excelByFile[key]) excelByFile[key] = { users: new Set(), cells: [] };
+        excelByFile[key].users.add(ev.user);
+        if (excelByFile[key].cells.length < 200) {
+          excelByFile[key].cells.push({
+            ts: ev.ts, cell: ev.data.cell, value: ev.data.value,
+            formula: ev.data.formula || '', row: ev.data.rowCount,
+          });
+        }
       }
-      const excelFiles = Object.entries(excelSummary)
-        .sort((a, b) => b[1].count - a[1].count)
-        .slice(0, 20)
-        .map(([file, v]) => ({ file, count: v.count, users: [...v.users] }));
+      // 파일별로 고유 셀값 목록 + 최근 활동
+      const excelFiles = Object.entries(excelByFile)
+        .sort((a, b) => b[1].cells.length - a[1].cells.length)
+        .slice(0, 15)
+        .map(([file, v]) => {
+          const uniqueVals = [...new Set(
+            v.cells.map(c => c.value).filter(x => x && x.trim() && x !== '0')
+          )].slice(0, 40);
+          const cellsSample = v.cells.slice(0, 30);
+          return { file, users: [...v.users], activity_count: v.cells.length, unique_values: uniqueVals, recent_cells: cellsSample };
+        });
 
       // 파일 요약
       const fileSummary = {};
@@ -375,16 +389,31 @@ function createGoldenRouter(deps) {
       }));
 
       // AI 대화 요약 (user.message만)
-      const aiMessages = (byType['user.message'] || []).slice(0, 30).map(ev => ({
+      const aiMessages = (byType['user.message'] || []).slice(0, 50).map(ev => ({
         ts: ev.ts, user: ev.user,
-        message: (ev.data.content || ev.data.text || ev.data.message || '').slice(0, 200),
+        message: (ev.data.content || ev.data.text || ev.data.message || '').slice(0, 500),
       }));
 
-      // 클립보드 샘플 (최근 20건)
-      const clips = (byType['clipboard.change'] || []).slice(0, 20).map(ev => ({
-        ts: ev.ts, user: ev.user,
-        text: (ev.data.text || ev.data.content || ev.data.value || '').slice(0, 150),
-      }));
+      // 클립보드 전체 (중복 제거, 사용자별, 최근 100건)
+      const clipByUser = {};
+      for (const ev of (byType['clipboard.change'] || [])) {
+        if (!clipByUser[ev.user]) clipByUser[ev.user] = [];
+        const text = (ev.data.text || ev.data.content || '').trim();
+        if (text && clipByUser[ev.user].length < 100) {
+          clipByUser[ev.user].push({ ts: ev.ts, text: text.slice(0, 300) });
+        }
+      }
+
+      // daemon.update 창제목 타임라인 (사용자별, 중복 연속 제거)
+      const windowByUser = {};
+      for (const ev of [...(byType['daemon.update'] || [])].reverse()) {
+        if (!windowByUser[ev.user]) windowByUser[ev.user] = [];
+        const title = ev.data.title || ev.data.windowTitle || ev.data.app || '';
+        const prev = windowByUser[ev.user].slice(-1)[0];
+        if (title && title !== prev?.title && windowByUser[ev.user].length < 150) {
+          windowByUser[ev.user].push({ ts: ev.ts, title, app: ev.data.app || ev.data.process || '' });
+        }
+      }
 
       res.json({
         hours,
@@ -393,7 +422,8 @@ function createGoldenRouter(deps) {
         files: fileList,
         orders: orders,
         ai_messages: aiMessages,
-        clipboard_samples: clips,
+        clipboard_by_user: clipByUser,
+        window_timeline_by_user: windowByUser,
       });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
