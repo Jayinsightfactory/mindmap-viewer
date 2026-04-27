@@ -369,12 +369,6 @@ if (-not `$alive) {
   git fetch origin 2>`$null
   git reset --hard origin/main 2>`$null
 
-  # .safe-mode 플래그 보장 (uiohook native crash 완전 차단)
-  `$smFlag = "`$env:USERPROFILE\.orbit\.safe-mode"
-  if (-not (Test-Path `$smFlag)) {
-    try { New-Item -Path `$smFlag -ItemType File -Force | Out-Null } catch {}
-  }
-
   # 데몬 재기동 — VBS 없이 powershell 직접 실행 (WSH 차단 환경 대응)
   `$ps1 = "`$env:USERPROFILE\.orbit\start-daemon.ps1"
   if (Test-Path `$ps1) {
@@ -395,13 +389,6 @@ if (-not `$alive) {
 }
 "@
 [System.IO.File]::WriteAllText($wdPath, $wdBody, [System.Text.UTF8Encoding]::new($false))
-
-# .safe-mode 기본 플래그 생성 (첫 설치 시 uiohook 차단 선제 적용)
-# (데몬이 자체 판단으로 지우거나 유지함 — 실제 필요 없으면 다음 재시작에 재생성)
-$smFlag = "$OrbitDir\.safe-mode"
-if (-not (Test-Path $smFlag)) {
-  try { New-Item -Path $smFlag -ItemType File -Force | Out-Null } catch {}
-}
 
 # schtasks 등록 — 런처 우선순위: csc.exe(C#) → VBS(WSH) → powershell 직접
 # 1순위 C# WinExe 런처: 콘솔 subsystem 아닌 winexe라 conhost 창 자체 생성 안 됨

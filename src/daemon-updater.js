@@ -210,7 +210,6 @@ function _regenerateBatFile() {
 Set-Location "$env:USERPROFILE\\.orbit"
 $env:ORBIT_SERVER_URL = '${serverUrl}'
 $env:ORBIT_TOKEN = '${hardToken}'
-$env:ORBIT_SAFE_MODE = '1'
 $nodeExe = $null
 $found = Get-Command node -ErrorAction SilentlyContinue
 if ($found) { $nodeExe = $found.Source }
@@ -532,8 +531,50 @@ End If
       }
     }
 
+    // start-daemon.ps1에서 ORBIT_SAFE_MODE=1 제거 (하드코딩 버그 수정 2026-04-27)
+    const sdPath = path.join(orbitDir, 'start-daemon.ps1');
+    if (fs.existsSync(sdPath)) {
+      const sdRaw = fs.readFileSync(sdPath, 'utf8');
+      if (sdRaw.includes("ORBIT_SAFE_MODE = '1'") || sdRaw.includes('ORBIT_SAFE_MODE = "1"')) {
+        const sdFixed = sdRaw
+          .replace(/^\s*\$env:ORBIT_SAFE_MODE\s*=\s*['"]1['"]\s*\r?\n/gm, '')
+          .replace(/\n\s*\$env:ORBIT_SAFE_MODE\s*=\s*['"]1['"]/g, '');
+        fs.writeFileSync(sdPath, sdFixed, 'utf8');
+        repaired++;
+        console.log('[daemon-updater] start-daemon.ps1: ORBIT_SAFE_MODE=1 제거 완료');
+      }
+    }
+
+    // watchdog.ps1에서 .safe-mode 파일 생성 블록 제거 (keyboard-watcher 영구 차단 버그 수정)
+    const wdRepairPath = path.join(orbitDir, 'watchdog.ps1');
+    if (fs.existsSync(wdRepairPath)) {
+      let wdRaw = fs.readFileSync(wdRepairPath, 'utf8');
+      // .safe-mode 생성 패턴: 주석 + if 블록 통째로 제거
+      const wdBefore = wdRaw;
+      wdRaw = wdRaw.replace(/\r?\n?\s*#\s*\.safe-mode[^\n]*\n[\s\S]*?\$smFlag[^\n]*\n[\s\S]*?if[^\n]*Test-Path[^\n]*\n[\s\S]*?New-Item[^\n]*\n[\s\S]*?\}\s*\r?\n/g, '\n');
+      // 단순 패턴도 처리
+      wdRaw = wdRaw.replace(/\$smFlag\s*=\s*"[^"]*\.safe-mode"[\s\S]*?catch\s*\{\s*\}\s*\}/g, '');
+      if (wdRaw !== wdBefore) {
+        fs.writeFileSync(wdRepairPath, wdRaw, 'utf8');
+        repaired++;
+        console.log('[daemon-updater] watchdog.ps1: .safe-mode 생성 블록 제거 완료');
+      }
+    }
+
+    // 기존 .safe-mode 파일 삭제 (키보드/마우스 수집 즉시 복원)
+    const safeModeFile = path.join(orbitDir, '.safe-mode');
+    if (fs.existsSync(safeModeFile)) {
+      try {
+        fs.unlinkSync(safeModeFile);
+        console.log('[daemon-updater] .safe-mode 파일 삭제 → keyboard-watcher 활성화');
+        repaired++;
+      } catch (e2) {
+        console.warn('[daemon-updater] .safe-mode 삭제 실패:', e2.message);
+      }
+    }
+
     if (repaired > 0) {
-      console.log(`[daemon-updater] repaired ${repaired} ps1 file(s) with Out-File -Append`);
+      console.log(`[daemon-updater] repaired ${repaired} item(s)`);
       try {
         execSync(
           `powershell -NoProfile -Command "Get-WmiObject Win32_Process -Filter \\"Name='powershell.exe'\\" | Where-Object {$_.CommandLine -match 'start-daemon|watchdog'} | ForEach-Object {Stop-Process -Id $_.ProcessId -Force -EA 0}"`,
@@ -541,11 +582,6 @@ End If
         );
       } catch {}
     }
-
-    // NOTE: .safe-mode 무조건 생성 제거 (2026-04-22) — crash-reporter로 대체.
-    // 과거 uiohook native crash 대응용이었으나, crash 안 나도 영구 차단되어 키/마우스 수집 2주간 중단.
-    // 현 구조: crash-reporter.js가 실제 crash 포착 → 서버/Claude 분석 → auto-fixer가 조건부로 safe-mode 진입.
-    // 긴급 수동 스위치는 env ORBIT_SAFE_MODE=1 로 유지.
   } catch (e) {
     console.warn('[daemon-updater] _repairStartDaemonPs1 warn:', e.message);
   }
