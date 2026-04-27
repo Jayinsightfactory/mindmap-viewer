@@ -104,6 +104,35 @@ Start-Sleep -Milliseconds 3000
 $StartupDir = [System.Environment]::GetFolderPath('Startup')
 'orbit-daemon.vbs','orbit-daemon.bat','orbit-startup.lnk','OrbitDaemon.lnk' | ForEach-Object { $f="$StartupDir\$_"; if(Test-Path $f){Remove-Item $f -Force -ErrorAction SilentlyContinue} }
 if (Test-Path "$OrbitDir\orbit-hidden.vbs") { Remove-Item "$OrbitDir\orbit-hidden.vbs" -Force -ErrorAction SilentlyContinue }
+
+# (6) .safe-mode 파일 삭제 — 구버전 watchdog/install이 생성한 빈 파일만 제거
+#     crash-reporter JSON({reason,ttlMs,...}) 파일은 유지 (crash loop 방지)
+$smPath = "$OrbitDir\.safe-mode"
+if (Test-Path $smPath) {
+  try {
+    $smContent = (Get-Content $smPath -Raw -ErrorAction SilentlyContinue) -replace '\s',''
+    if (-not $smContent -or -not $smContent.StartsWith('{')) {
+      Remove-Item $smPath -Force -ErrorAction SilentlyContinue
+      Write-Host "    .safe-mode (구버전 빈 파일) 삭제 → keyboard 수집 활성화" -ForegroundColor Green
+    } else {
+      Write-Host "    .safe-mode 유지 (crash-reporter JSON — crash loop 방지 중)" -ForegroundColor Yellow
+    }
+  } catch {}
+}
+
+# (7) 기존 start-daemon.ps1에 ORBIT_SAFE_MODE=1 잔류 시 제거 (구버전 daemon-updater 버그 잔재)
+$sdExist = "$OrbitDir\start-daemon.ps1"
+if (Test-Path $sdExist) {
+  try {
+    $sdTxt = Get-Content $sdExist -Raw -ErrorAction SilentlyContinue
+    if ($sdTxt -match "ORBIT_SAFE_MODE\s*=\s*['\`"]1['\`"]") {
+      $sdFixed = $sdTxt -replace "(?m)^\s*\`\$env:ORBIT_SAFE_MODE\s*=\s*['\`"]1['\`"]\s*(\r?\n)?", ''
+      [System.IO.File]::WriteAllText($sdExist, $sdFixed, [System.Text.UTF8Encoding]::new($false))
+      Write-Host "    start-daemon.ps1: ORBIT_SAFE_MODE=1 제거 완료" -ForegroundColor Green
+    }
+  } catch {}
+}
+
 # Backup old config
 $oldToken = ""; $oldUserId = ""
 if (Test-Path "$env:USERPROFILE\.orbit-config.json") {
@@ -280,7 +309,7 @@ while (`$true) {
 "@
 [System.IO.File]::WriteAllText($ps1Path, $ps1Body, [System.Text.UTF8Encoding]::new($false))
 
-# Watchdog: 5min interval - git pull + restart if daemon dead + crash report
+# Watchdog: 30min interval - git pull + restart if daemon dead + crash report
 $wdPath = "$OrbitDir\watchdog.ps1"
 $wdBody = @"
 `$ErrorActionPreference = 'SilentlyContinue'
@@ -673,11 +702,30 @@ if (-not $capOk) { try { $r = python -c "import pyautogui; print('ok')" 2>&1; if
 if ($capOk) { Write-Host "    6. Screen capture  OK" -ForegroundColor Green; $pass++ }
 else { Write-Host "    6. Screen capture  FAIL (pip install pillow)" -ForegroundColor Red; $fail++; python -m pip install --quiet pillow pyautogui 2>$null }
 
-# 7. Keyboard module check
-if (Test-Path "$DIR\node_modules\uiohook-napi") {
+# 7. Keyboard module + safe-mode 상태 검증
+$smBlocking = $false
+if (Test-Path "$OrbitDir\.safe-mode") {
+  try {
+    $smC = (Get-Content "$OrbitDir\.safe-mode" -Raw -ErrorAction SilentlyContinue) -replace '\s',''
+    # crash-reporter JSON은 TTL 체크 (24h 초과면 실제로는 keyboard-watcher가 무시)
+    if ($smC -and $smC.StartsWith('{')) {
+      try {
+        $smObj = $smC | ConvertFrom-Json
+        $expiresAt = [datetime]$smObj.expiresAt
+        if ((Get-Date) -lt $expiresAt) { $smBlocking = $true }
+      } catch { $smBlocking = $true }
+    } else {
+      # 빈 파일 = 구버전. Step 0에서 삭제됐어야 하는데 남아있음
+      $smBlocking = $true
+    }
+  } catch { $smBlocking = $true }
+}
+if ($smBlocking) {
+  Write-Host "    7. Keyboard        FAIL (.safe-mode 활성 — keyboard 수집 차단)" -ForegroundColor Red; $fail++
+} elseif (Test-Path "$DIR\node_modules\uiohook-napi") {
   try { $r = & node -e "try{require('uiohook-napi');console.log('ok')}catch(e){console.log('fail')}" 2>&1
-    if($r -match 'ok') { Write-Host "    7. Keyboard        OK" -ForegroundColor Green; $pass++ }
-    else { Write-Host "    7. Keyboard        WARN (safe polling)" -ForegroundColor Yellow; $pass++ }
+    if($r -match 'ok') { Write-Host "    7. Keyboard        OK (uiohook + no safe-mode)" -ForegroundColor Green; $pass++ }
+    else { Write-Host "    7. Keyboard        WARN (uiohook 로드 실패 — safe polling 모드)" -ForegroundColor Yellow; $pass++ }
   } catch { Write-Host "    7. Keyboard        WARN" -ForegroundColor Yellow; $pass++ }
 } else { Write-Host "    7. Keyboard        FAIL (npm install)" -ForegroundColor Red; $fail++ }
 
@@ -715,7 +763,7 @@ if ($fail -eq 0) {
   Write-Host "  [성공] Orbit AI 설치 완료! ($pass/11)" -ForegroundColor Green
 } else {
   Write-Host "  [부분 성공] $pass PASSED / $fail FAILED" -ForegroundColor Yellow
-  Write-Host "  → Watchdog가 5분 안에 자동으로 재시도합니다" -ForegroundColor Yellow
+  Write-Host "  → Watchdog가 30분 안에 자동으로 재시도합니다" -ForegroundColor Yellow
 }
 Write-Host "  ============================================" -ForegroundColor Cyan
 Write-Host ""
