@@ -78,12 +78,11 @@ async function analyzeForUser(pool, userId, hostname) {
   const parsed = captures.map(row => {
     const d = row.data_json || {};
     const ts = new Date(row.timestamp).getTime();
-    // app 필드 오염 필터 — windowTitle/clipboard/JSON/명령어가 섞인 경우 unknown 처리
+    // app 필드 오염 필터 — 실제 앱 실행파일명만 허용 (영숫자+공백+하이픈, 최대 30자)
     let app = (d.app || d.appContext?.currentApp || '').toLowerCase().trim();
-    if (!app || app.length > 40 || app.includes('{') || app.includes('$env:') ||
-        app.includes('\n') || app.includes('powershell')) {
-      app = 'unknown';
-    }
+    // 실제 앱명 패턴: "chrome", "excel", "kakaotalk", "msedge" 등 (영숫자/점/하이픈, 공백 1개까지)
+    const isCleanApp = app && app.length <= 30 && /^[a-z0-9._\- ]+$/.test(app);
+    if (!isCleanApp) app = 'unknown';
     const title = d.windowTitle || d.appContext?.currentWindow || '';
     const trigger = d.trigger || '';
     const filename = d.filename || '';

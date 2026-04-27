@@ -780,6 +780,30 @@ try {
     -TimeoutSec 5 -ErrorAction SilentlyContinue | Out-Null
 } catch {}
 
+# 과거 학습값(capture-config) 복원 — 재설치/기기변경 시 즉시 이전 최적값 적용
+# userId: Step 9 register에서 받은 값 우선, 없으면 config에서 읽기
+if ($serverOk) {
+  try {
+    $cfgUserId = ''
+    if ($regResult -and $regResult.userId) { $cfgUserId = $regResult.userId }
+    if (-not $cfgUserId) {
+      try { $cfgUserId = (Get-Content "$env:USERPROFILE\.orbit-config.json" -Raw | ConvertFrom-Json).userId } catch {}
+    }
+    if ($cfgUserId) {
+      $hnEnc2 = [Uri]::EscapeDataString($env:COMPUTERNAME)
+      $learned = Invoke-RestMethod -Uri "$REMOTE/api/daemon/learned-config?userId=$cfgUserId&hostname=$hnEnc2" -TimeoutSec 10 -ErrorAction SilentlyContinue
+      if ($learned -and $learned.sampleCount -ge 10) {
+        $capCfgPath = "$OrbitDir\capture-config.json"
+        $learned | Add-Member -MemberType NoteProperty -Name 'restoredAt' -Value (Get-Date -Format o) -Force
+        [System.IO.File]::WriteAllText($capCfgPath, ($learned | ConvertTo-Json -Depth 5), [System.Text.UTF8Encoding]::new($false))
+        Write-Host "    학습값 복원 OK (sampleCount=$($learned.sampleCount) default=$([math]::Round($learned.default/1000))s)" -ForegroundColor Green
+      } else {
+        Write-Host "    학습값 없음 (신규 설치 — 기본값 60s 적용)" -ForegroundColor Gray
+      }
+    }
+  } catch { Write-Host "    학습값 복원 스킵 ($($_.Exception.Message.Split([char]10)[0]))" -ForegroundColor DarkGray }
+}
+
 # v8 설치 버전 마커 — daemon-updater가 이 파일로 "이미 v8 설치됨" 판단
 # 없거나 v8 아니면 daemon-updater가 install.ps1 자동 재실행
 "v8" | Out-File "$OrbitDir\install-version.txt" -Encoding ASCII -Force -ErrorAction SilentlyContinue
