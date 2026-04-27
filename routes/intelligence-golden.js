@@ -518,6 +518,109 @@ function createGoldenRouter(deps) {
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
+  // ── 센서 전용: 스크린/키보드/마우스 상세 ─────────────────────────────────
+  router.get('/sensors', adminOnly, async (req, res) => {
+    try {
+      const hours = Math.min(parseInt(req.query.hours) || 24, 72);
+      const pool = getPool();
+      const { rows: pcLinks } = await pool.query(
+        `SELECT l.hostname, u.name, u.email, l.user_id FROM orbit_pc_links l LEFT JOIN orbit_auth_users u ON u.id = l.user_id`
+      );
+      const hostMap = {};
+      for (const r of pcLinks) hostMap[r.hostname] = r.name || r.email || r.user_id;
+      const toName = (hostname, userId) => hostMap[hostname] || userId || hostname || '?';
+      const since = new Date(Date.now() - hours * 3600 * 1000).toISOString();
+      const SEL = `SELECT type, user_id, data_json->>'hostname' AS hostname, data_json, timestamp FROM events WHERE timestamp > $1`;
+      const parse = r => ({
+        ts: r.timestamp,
+        user: toName(r.hostname, r.user_id),
+        data: typeof r.data_json === 'string' ? JSON.parse(r.data_json) : (r.data_json || {}),
+      });
+
+      const [{ rows: screenRows }, { rows: kbRows }, { rows: mouseRows }, { rows: snapRows }] = await Promise.all([
+        pool.query(`${SEL} AND type IN ('screen.capture','screen.analyzed') ORDER BY timestamp DESC LIMIT 300`, [since]),
+        pool.query(`${SEL} AND type = 'keyboard.chunk' ORDER BY timestamp DESC LIMIT 300`, [since]),
+        pool.query(`${SEL} AND type = 'mouse.chunk' ORDER BY timestamp DESC LIMIT 300`, [since]),
+        pool.query(`${SEL} AND type = 'daemon.log.snapshot' ORDER BY timestamp DESC LIMIT 500`, [since]),
+      ]);
+
+      // 스크린 캡처 (base64 제외)
+      const screens = screenRows.map(r => {
+        const ev = parse(r);
+        const { imageBase64, ...meta } = ev.data;
+        return { ts: ev.ts, user: ev.user, type: r.type, ...meta };
+      });
+
+      // 키보드 청크
+      const keyboard = kbRows.map(r => {
+        const ev = parse(r);
+        return {
+          ts: ev.ts, user: ev.user,
+          app: ev.data.app || ev.data.appContext?.currentApp || '',
+          window: (ev.data.windowTitle || ev.data.appContext?.currentWindow || '').slice(0, 150),
+          activityType: ev.data.activityType || '',
+          patterns: ev.data.patterns || [],
+          metrics: {
+            totalChars: ev.data.rawStats?.totalChars ?? ev.data.metrics?.totalChars ?? 0,
+            wordCount:  ev.data.rawStats?.wordCount  ?? ev.data.metrics?.wordCount  ?? 0,
+            lineCount:  ev.data.rawStats?.lineCount  ?? ev.data.metrics?.lineCount  ?? 0,
+          },
+          typing: ev.data.typingPatterns || {},
+          summary: ev.data.summary || '',
+          windowHistory: ev.data.appContext?.windowHistory || {},
+        };
+      });
+
+      // 마우스 청크
+      const mouse = mouseRows.map(r => {
+        const ev = parse(r);
+        return {
+          ts: ev.ts, user: ev.user,
+          app: ev.data.app || '',
+          window: (ev.data.windowTitle || '').slice(0, 150),
+          clicks: ev.data.clicks || 0,
+          moveDistance: ev.data.moveDistance || 0,
+          quadrants: ev.data.quadrants || {},
+          clickPositions: (ev.data.clickPositions || []).slice(-20),
+          idle: ev.data.idle || false,
+          period: ev.data.period || null,
+        };
+      });
+
+      // 창 타임라인
+      const windowByUser = {};
+      for (const r of [...snapRows].reverse()) {
+        const ev = parse(r);
+        const title = ev.data.activeWindow || ev.data.windowTitle || ev.data.title || ev.data.app || '';
+        const app   = ev.data.app || ev.data.process || '';
+        if (!windowByUser[ev.user]) windowByUser[ev.user] = [];
+        const prev = windowByUser[ev.user].slice(-1)[0];
+        if (title && title !== prev?.title && windowByUser[ev.user].length < 200) {
+          windowByUser[ev.user].push({ ts: ev.ts, title, app });
+        }
+      }
+      // screen.capture도 창 보완
+      for (const s of screens) {
+        const title = s.windowTitle || s.app || '';
+        if (!title) continue;
+        if (!windowByUser[s.user]) windowByUser[s.user] = [];
+        const prev = windowByUser[s.user].slice(-1)[0];
+        if (title !== prev?.title && windowByUser[s.user].length < 200) {
+          windowByUser[s.user].push({ ts: s.ts, title, app: s.app || '' });
+        }
+      }
+
+      res.json({
+        hours,
+        counts: { screen: screenRows.length, keyboard: kbRows.length, mouse: mouseRows.length, snapshot: snapRows.length },
+        screens,
+        keyboard,
+        mouse,
+        window_timeline_by_user: windowByUser,
+      });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
   return router;
 }
 
