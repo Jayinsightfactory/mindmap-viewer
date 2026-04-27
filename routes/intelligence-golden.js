@@ -67,11 +67,23 @@ function createGoldenRouter(deps) {
     try {
       const erp = require('../src/intelligence/adapters/erp-client');
       const st = erp.status();
-      // 실제 로그인 시도
+      // 실제 API 응답 구조 확인
       let loginResult = null;
+      let sampleData = null;
       try {
-        await erp.get('/api/orders/history', { limit: 1 });
+        const raw = await erp.get('/api/orders/history', { limit: 3 });
         loginResult = 'ok';
+        // 응답 형태 + 첫 레코드 키 목록
+        const list = Array.isArray(raw) ? raw
+                   : Array.isArray(raw?.data) ? raw.data
+                   : Array.isArray(raw?.rows) ? raw.rows
+                   : null;
+        sampleData = {
+          topLevelKeys: Object.keys(raw || {}),
+          listLength: list ? list.length : null,
+          firstRecordKeys: list && list[0] ? Object.keys(list[0]) : null,
+          firstRecord: list && list[0] ? list[0] : null,
+        };
       } catch (e) {
         loginResult = e.message;
       }
@@ -80,7 +92,7 @@ function createGoldenRouter(deps) {
       const { rows } = await pool.query(
         `SELECT COUNT(*)::int AS total, MAX(timestamp) AS latest FROM unified_events WHERE source='erp-ui'`
       );
-      res.json({ erp_client: st, login_test: loginResult, erp_events: rows[0] });
+      res.json({ erp_client: st, login_test: loginResult, sample: sampleData, erp_events: rows[0] });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
