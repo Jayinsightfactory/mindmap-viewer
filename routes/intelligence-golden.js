@@ -89,7 +89,7 @@ function createGoldenRouter(deps) {
               topLevelKeys: keys,
               listKey,
               listLength: list ? list.length : null,
-              firstRecordKeys: list && list[0] ? Object.keys(list[0]) : null,
+              firstRecord: list && list[0] ? list[0] : null,
             };
           } catch (e) {
             sampleData[ep] = { error: e.message };
