@@ -22,11 +22,34 @@ let _timer = null;
 let _running = false;
 
 // 폴링 대상 엔드포인트 정의
-// idField: 멱등성 ID 생성 키, tsField: cursor 비교용 timestamp 키
+// idFields: 복합키(배열) 또는 단일키(문자열) — 멱등성 ID 생성
+// tsField: cursor 비교용 timestamp 키 (null이면 현재 시각 사용)
+// userField: user_id 추출 키
 const ENDPOINTS = [
-  { path: '/api/orders/history',     idField: 'OhKey',   tsField: 'ChgDtm',    type: 'erp-ui.order.history',    idPrefix: 'erp-orderH' },
-  { path: '/api/shipment/history',   idField: 'ShKey',   tsField: 'ChgDtm',    type: 'erp-ui.shipment.history', idPrefix: 'erp-shipH'  },
-  { path: '/api/estimate',           idField: 'EstKey',  tsField: 'UpdDtm',    type: 'erp-ui.estimate',         idPrefix: 'erp-est'    },
+  {
+    path: '/api/orders/history',
+    idFields: ['차수', '꽃', '변경항목'],  // 차수=배치번호, 꽃=품종, 변경항목=변경필드
+    tsField: '변경일자',
+    userField: '변경사용자',
+    type: 'erp-ui.order.history',
+    idPrefix: 'erp-orderH',
+  },
+  {
+    path: '/api/shipment/history',
+    idFields: ['week', 'name', 'type'],    // week=배송주차, name=품목명, type=변경유형
+    tsField: 'ChangeDtm',
+    userField: null,
+    type: 'erp-ui.shipment.history',
+    idPrefix: 'erp-shipH',
+  },
+  {
+    path: '/api/estimate',
+    idFields: ['firstShipmentKey'],        // 고유 출고키
+    tsField: null,                         // timestamp 없음 → 현재 시각
+    userField: null,
+    type: 'erp-ui.estimate',
+    idPrefix: 'erp-est',
+  },
 ];
 
 async function _getLastCursor(idPrefix) {
@@ -65,8 +88,14 @@ async function _publishEndpoint(ep) {
   for (const r of list) {
     const ts = r[ep.tsField] || r.created_at || r.updated_at || null;
     if (ts && ts <= lastAt) continue;
-    const sourceId = r[ep.idField];
-    if (!sourceId) continue;
+
+    // 복합키 지원: idFields 배열이면 각 값 join, 문자열이면 단일 필드
+    const fields = Array.isArray(ep.idFields) ? ep.idFields : [ep.idField || ep.idFields];
+    const sourceId = fields.map(f => r[f] ?? '').join('|');
+    if (!sourceId || sourceId === fields.map(() => '').join('|')) continue;
+
+    const userId = ep.userField ? (r[ep.userField] || null)
+                 : (r.UserID || r.RegUser || r.ChgUser || r['변경사용자'] || null);
 
     try {
       await eventBus.publish({
@@ -74,9 +103,9 @@ async function _publishEndpoint(ep) {
         type: ep.type,
         source: 'erp-ui',
         timestamp: ts || new Date().toISOString(),
-        user_id: r.UserID || r.RegUser || r.ChgUser || null,
-        data: r,                                      // 원형 보존
-        metadata: { endpoint: ep.path, id_field: ep.idField, ts_field: ep.tsField },
+        user_id: userId,
+        data: r,
+        metadata: { endpoint: ep.path, id_fields: fields, ts_field: ep.tsField },
       });
       n++;
     } catch (e) {
