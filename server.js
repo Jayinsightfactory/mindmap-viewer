@@ -4715,12 +4715,27 @@ $RepoDir  = "$env:USERPROFILE\\mindmap-viewer"
 
 Write-Host "[Orbit Fix] Starting..."
 
-# 1. .safe-mode flag (uiohook native crash 차단)
+# 1. .safe-mode 점검 (빈 파일=레거시만 삭제, crash-reporter JSON은 유지)
 $sf = "$OrbitDir\\.safe-mode"
-if (-not (Test-Path $sf)) {
-  New-Item -Path $sf -ItemType File -Force | Out-Null
-  Write-Host "[Orbit Fix] .safe-mode created"
-} else { Write-Host "[Orbit Fix] .safe-mode exists" }
+if (Test-Path $sf) {
+  $smContent = (Get-Content $sf -Raw -Encoding UTF8 -ErrorAction SilentlyContinue) -replace '\\s',''
+  if (-not $smContent -or -not $smContent.StartsWith('{')) {
+    Remove-Item $sf -Force
+    Write-Host "[Orbit Fix] 레거시 .safe-mode 삭제됨"
+  } else {
+    try {
+      $smData = $smContent | ConvertFrom-Json
+      $expAt = [datetime]::Parse($smData.expiresAt)
+      if ((Get-Date) -gt $expAt) {
+        Remove-Item $sf -Force
+        Write-Host "[Orbit Fix] 만료된 crash-reporter .safe-mode 삭제됨"
+      } else {
+        $remain = [int](($expAt - (Get-Date)).TotalMinutes)
+        Write-Host "[Orbit Fix] crash-reporter .safe-mode 활성 (${remain}분 남음) - uiohook 보호 중"
+      }
+    } catch { Write-Host "[Orbit Fix] .safe-mode JSON 파싱 실패, 유지" }
+  }
+} else { Write-Host "[Orbit Fix] .safe-mode 없음 (정상)" }
 
 # 2. 기존 stuck 프로세스 종료
 @(Get-WmiObject Win32_Process -Filter "Name='node.exe'" | Where-Object { $_.CommandLine -like '*personal-agent*' }) | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -EA 0 }
@@ -4737,15 +4752,15 @@ if (Test-Path "$RepoDir\\.git") {
   Write-Host "[Orbit Fix] Code updated to latest"
 } else { Write-Host "[Orbit Fix] Repo not found at $RepoDir" }
 
-# 4. start-daemon.ps1 ORBIT_SAFE_MODE 주입
+# 4. start-daemon.ps1 ORBIT_SAFE_MODE 제거 (있으면 삭제)
 $ps1Path = "$OrbitDir\\start-daemon.ps1"
 if (Test-Path $ps1Path) {
   $txt = Get-Content $ps1Path -Raw
-  if ($txt -notmatch 'ORBIT_SAFE_MODE') {
-    $txt = $txt -replace '(\\$env:ORBIT_TOKEN\\s*=\\s*[^\\r\\n]+)', \$1 + \`\`r\`\`n"\$env:ORBIT_SAFE_MODE = '1'"
-    Set-Content $ps1Path $txt -Encoding UTF8
-    Write-Host "[Orbit Fix] ORBIT_SAFE_MODE injected into start-daemon.ps1"
-  }
+  if ($txt -match 'ORBIT_SAFE_MODE') {
+    $txt = ($txt -split '\`r?\`n' | Where-Object { $_ -notmatch 'ORBIT_SAFE_MODE' }) -join '\`r\`n'
+    [System.IO.File]::WriteAllText($ps1Path, $txt, [System.Text.UTF8Encoding]::new($false))
+    Write-Host "[Orbit Fix] ORBIT_SAFE_MODE 제거됨"
+  } else { Write-Host "[Orbit Fix] start-daemon.ps1 정상 (ORBIT_SAFE_MODE 없음)" }
 }
 
 # 5. 데몬 시작

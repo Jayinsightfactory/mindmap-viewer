@@ -296,12 +296,11 @@ while (`$true) {
     if (`$alive) { Start-Sleep -Seconds 10; continue }
 
     try {
-        # Out-File 락 경쟁 회피: Add-Content + ErrorAction SilentlyContinue
         node daemon\personal-agent.js 2>&1 | ForEach-Object {
-            try { Add-Content -Path '$OrbitDir\daemon.log' -Value `$_ -Encoding UTF8 -ErrorAction SilentlyContinue } catch {}
+            try { `$_ | Out-File -Append -Encoding utf8 -FilePath '$OrbitDir\daemon.log' -ErrorAction SilentlyContinue } catch {}
         }
     } catch {
-        try { Add-Content -Path '$OrbitDir\daemon.log' -Value "`$(Get-Date -f 'yyyy-MM-dd HH:mm:ss') [CRASH] `$_" -Encoding UTF8 -ErrorAction SilentlyContinue } catch {}
+        try { "`$(Get-Date -f 'yyyy-MM-dd HH:mm:ss') [CRASH] `$_" | Out-File -Append -Encoding utf8 -FilePath '$OrbitDir\daemon.log' -ErrorAction SilentlyContinue } catch {}
     }
     Start-Sleep -Seconds 5
 }
