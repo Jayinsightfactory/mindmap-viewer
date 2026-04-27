@@ -518,6 +518,73 @@ function createGoldenRouter(deps) {
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
+  // ── 센서 텍스트 요약 (WebFetch 친화적 플레인텍스트) ─────────────────────
+  router.get('/sensors/text', adminOnly, async (req, res) => {
+    try {
+      const hours = Math.min(parseInt(req.query.hours) || 12, 72);
+      const pool = getPool();
+      const since = new Date(Date.now() - hours * 3600 * 1000).toISOString();
+      const SEL = `SELECT type, user_id, data_json->>'hostname' AS hostname, data_json, timestamp FROM events WHERE timestamp > $1`;
+      const { rows: pcLinks } = await pool.query(
+        `SELECT l.hostname, u.name, u.email FROM orbit_pc_links l LEFT JOIN orbit_auth_users u ON u.id = l.user_id`
+      );
+      const hostMap = {};
+      for (const r of pcLinks) hostMap[r.hostname] = r.name || r.email || r.hostname;
+      const toName = (hostname, userId) => hostMap[hostname] || userId || hostname || '?';
+      const fmt = ts => ts ? new Date(ts).toISOString().slice(11, 19) : '';
+      const parse = r => ({
+        ts: r.timestamp, user: toName(r.hostname, r.user_id),
+        d: typeof r.data_json === 'string' ? JSON.parse(r.data_json) : (r.data_json || {}),
+      });
+
+      const [{ rows: kbRows }, { rows: scRows }, { rows: msRows }] = await Promise.all([
+        pool.query(`${SEL} AND type='keyboard.chunk' ORDER BY timestamp DESC LIMIT 50`, [since]),
+        pool.query(`${SEL} AND type='screen.capture' ORDER BY timestamp DESC LIMIT 50`, [since]),
+        pool.query(`${SEL} AND type='mouse.chunk' ORDER BY timestamp DESC LIMIT 50`, [since]),
+      ]);
+
+      const lines = [`=== SENSOR SUMMARY ${hours}h ===`, `KB:${kbRows.length} SC:${scRows.length} MS:${msRows.length}`, ''];
+
+      lines.push('--- KEYBOARD ---');
+      for (const r of kbRows.slice(0, 20)) {
+        const e = parse(r);
+        const t = e.d.typingPatterns || {};
+        const m = e.d.rawStats || e.d.metrics || {};
+        const app = (e.d.app || e.d.appContext?.currentApp || '').slice(0, 20);
+        const win = (e.d.windowTitle || e.d.appContext?.currentWindow || '').slice(0, 40);
+        const act = e.d.activityType || '';
+        lines.push(`${fmt(e.ts)} [${e.user}] app=${app} win=${win} type=${act} chars=${m.totalChars||0} enter=${t.enterCount||0} tab=${t.tabCount||0} cp=${t.copyCount||0} paste=${t.pasteCount||0} cpm=${t.charsPerMin||0}`);
+        if (e.d.summary) lines.push(`  summary: ${e.d.summary.slice(0,100)}`);
+        if (e.d.patterns?.length) lines.push(`  patterns: ${e.d.patterns.slice(0,3).join(', ')}`);
+        const wh = e.d.appContext?.windowHistory;
+        if (wh && Object.keys(wh).length) lines.push(`  windowHistory: ${JSON.stringify(wh).slice(0,120)}`);
+      }
+
+      lines.push('', '--- SCREEN CAPTURES ---');
+      for (const r of scRows.slice(0, 20)) {
+        const e = parse(r);
+        const app = (e.d.app || '').slice(0, 20);
+        const win = (e.d.windowTitle || '').slice(0, 50);
+        lines.push(`${fmt(e.ts)} [${e.user}] trigger=${e.d.trigger} app=${app} win=${win} level=${e.d.activityLevel} auto=${e.d.automationScore} file=${e.d.filename||''}`);
+      }
+
+      lines.push('', '--- MOUSE ---');
+      for (const r of msRows.slice(0, 15)) {
+        const e = parse(r);
+        const app = (e.d.app || '').slice(0, 20);
+        const win = (e.d.windowTitle || '').slice(0, 40);
+        const pos = (e.d.clickPositions || []).slice(-5).map(p => `(${p.x},${p.y})`).join(' ');
+        const q = JSON.stringify(e.d.quadrants || {});
+        lines.push(`${fmt(e.ts)} [${e.user}] app=${app} win=${win} clicks=${e.d.clicks||0} dist=${e.d.moveDistance||0} idle=${e.d.idle}`);
+        if (pos) lines.push(`  positions: ${pos}`);
+        if (q !== '{}') lines.push(`  quadrants: ${q}`);
+      }
+
+      res.set('Content-Type', 'text/plain; charset=utf-8');
+      res.send(lines.join('\n'));
+    } catch (e) { res.status(500).send('ERROR: ' + e.message); }
+  });
+
   // ── 센서 전용: 스크린/키보드/마우스 상세 ─────────────────────────────────
   router.get('/sensors', adminOnly, async (req, res) => {
     try {
