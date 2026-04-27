@@ -303,16 +303,17 @@ function createGoldenRouter(deps) {
       const hours = Math.min(parseInt(req.query.hours) || 24, 72);
       const pool = getPool();
 
-      // PC 링크 (hostname → 이름)
-      const { rows: pcLinks } = await pool.query(
-        `SELECT l.hostname, u.name, u.email, l.user_id
-           FROM orbit_pc_links l
-           LEFT JOIN orbit_auth_users u ON u.id = l.user_id`
-      );
+      // PC 링크 (hostname → 이름) + 유저 ID → 이름 매핑
+      const [{ rows: pcLinks }, { rows: authUsers }] = await Promise.all([
+        pool.query(`SELECT l.hostname, u.name, u.email, l.user_id FROM orbit_pc_links l LEFT JOIN orbit_auth_users u ON u.id = l.user_id`),
+        pool.query(`SELECT id, name, email FROM orbit_auth_users`),
+      ]);
       const hostMap = {};
       for (const r of pcLinks) hostMap[r.hostname] = r.name || r.email || r.user_id;
+      const userIdMap = {};
+      for (const r of authUsers) userIdMap[r.id] = r.name || r.email || r.id;
 
-      const toName = (hostname, userId) => hostMap[hostname] || userId || hostname || '?';
+      const toName = (hostname, userId) => hostMap[hostname] || userIdMap[userId] || userId || hostname || '?';
 
       const since = new Date(Date.now() - hours * 3600 * 1000).toISOString();
 
@@ -525,12 +526,15 @@ function createGoldenRouter(deps) {
       const pool = getPool();
       const since = new Date(Date.now() - hours * 3600 * 1000).toISOString();
       const SEL = `SELECT type, user_id, data_json->>'hostname' AS hostname, data_json, timestamp FROM events WHERE timestamp > $1`;
-      const { rows: pcLinks } = await pool.query(
-        `SELECT l.hostname, u.name, u.email FROM orbit_pc_links l LEFT JOIN orbit_auth_users u ON u.id = l.user_id`
-      );
+      const [{ rows: pcLinks }, { rows: authUsers }] = await Promise.all([
+        pool.query(`SELECT l.hostname, u.name, u.email FROM orbit_pc_links l LEFT JOIN orbit_auth_users u ON u.id = l.user_id`),
+        pool.query(`SELECT id, name, email FROM orbit_auth_users`),
+      ]);
       const hostMap = {};
       for (const r of pcLinks) hostMap[r.hostname] = r.name || r.email || r.hostname;
-      const toName = (hostname, userId) => hostMap[hostname] || userId || hostname || '?';
+      const userIdMap = {};
+      for (const r of authUsers) userIdMap[r.id] = r.name || r.email || r.id;
+      const toName = (hostname, userId) => hostMap[hostname] || userIdMap[userId] || userId || hostname || '?';
       const fmt = ts => ts ? new Date(ts).toISOString().slice(11, 19) : '';
       const parse = r => ({
         ts: r.timestamp, user: toName(r.hostname, r.user_id),

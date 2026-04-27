@@ -145,6 +145,12 @@ Layer 5: 의사결정 지원 (인력 배치, 이슈 예측, 프로세스 설계)
 관리자 맥 (Vision 워커: bin/vision-worker.js)
 ├── Google Drive 캡처 → Claude Vision (CLI 모드, API 키 불필요)
 └── 분석 결과 → 서버 DB (screen.analyzed)
+    ↓ [병렬 경로 — Railway 서버사이드]
+src/server-vision-worker.js (2026-04-27 추가)
+├── screen.capture 수신 즉시 global._visionImageQueue 적재
+├── 8초 인터벌로 큐 처리 → Anthropic API (ANTHROPIC_API_KEY 필요)
+└── screen.analyzed 이벤트 저장
+⚠️ 두 경로 중복 없음: Drive 경로는 파일 기반, 서버 경로는 메모리 큐 기반
 ```
 
 ### 노이즈 필터 (그래프에 안 보임)
