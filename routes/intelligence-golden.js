@@ -325,6 +325,9 @@ function createGoldenRouter(deps) {
         { rows: orderRows },
         { rows: aiRows },
         { rows: snapRows },
+        { rows: screenRows },
+        { rows: kbRows },
+        { rows: mouseRows },
       ] = await Promise.all([
         pool.query(`${SEL} AND type = 'excel.activity' ORDER BY timestamp DESC LIMIT 3000`, [since]),
         pool.query(`${SEL} AND type IN ('file.write','file.read','file.change') ORDER BY timestamp DESC LIMIT 2000`, [since]),
@@ -332,6 +335,9 @@ function createGoldenRouter(deps) {
         pool.query(`${SEL} AND type = 'order.detected' ORDER BY timestamp DESC LIMIT 500`, [since]),
         pool.query(`${SEL} AND type IN ('user.message','assistant.message') ORDER BY timestamp DESC LIMIT 300`, [since]),
         pool.query(`${SEL} AND type = 'daemon.log.snapshot' ORDER BY timestamp DESC LIMIT 1000`, [since]),
+        pool.query(`${SEL} AND type IN ('screen.capture','screen.analyzed') ORDER BY timestamp DESC LIMIT 500`, [since]),
+        pool.query(`${SEL} AND type = 'keyboard.chunk' ORDER BY timestamp DESC LIMIT 500`, [since]),
+        pool.query(`${SEL} AND type = 'mouse.chunk' ORDER BY timestamp DESC LIMIT 500`, [since]),
       ]);
 
       const parse = r => ({
@@ -411,22 +417,78 @@ function createGoldenRouter(deps) {
         }
       }
 
-      // ── 창/앱 타임라인 (daemon.log.snapshot) ────────────────────────────
-      // snapshot 첫 1건으로 실제 필드 구조 확인용
-      const snapSample = snapRows[0]
-        ? (typeof snapRows[0].data_json === 'string' ? JSON.parse(snapRows[0].data_json) : snapRows[0].data_json)
-        : null;
-
+      // ── 창/앱 타임라인 (daemon.log.snapshot 우선, screen.capture 보완) ──
       const windowByUser = {};
-      for (const r of [...snapRows].reverse()) {
-        const ev = parse(r);
+      const _addWindow = (ev) => {
         const title = ev.data.activeWindow || ev.data.windowTitle || ev.data.title
                    || ev.data.active_window || ev.data.app || ev.data.process || '';
         const app   = ev.data.app || ev.data.process || ev.data.processName || '';
         if (!windowByUser[ev.user]) windowByUser[ev.user] = [];
         const prev = windowByUser[ev.user].slice(-1)[0];
-        if (title && title !== prev?.title && windowByUser[ev.user].length < 200) {
+        if (title && title !== prev?.title && windowByUser[ev.user].length < 300) {
           windowByUser[ev.user].push({ ts: ev.ts, title, app });
+        }
+      };
+      for (const r of [...snapRows].reverse()) _addWindow(parse(r));
+
+      // ── 스크린 캡처 (base64 제외, 메타만) ──────────────────────────────
+      const screenByUser = {};
+      for (const r of screenRows) {
+        const ev = parse(r);
+        // base64 이미지 제거 (응답 크기 절감)
+        const { imageBase64, ...meta } = ev.data;
+        if (!screenByUser[ev.user]) screenByUser[ev.user] = [];
+        if (screenByUser[ev.user].length < 100) {
+          screenByUser[ev.user].push({ ts: ev.ts, type: r.type, ...meta });
+        }
+        // 창 타임라인 보완 (snapshot 없는 사용자용)
+        if (meta.windowTitle || meta.app) _addWindow(ev);
+      }
+
+      // ── 키보드 활동 요약 (사용자별 타임라인) ────────────────────────────
+      const kbByUser = {};
+      for (const r of kbRows) {
+        const ev = parse(r);
+        if (!kbByUser[ev.user]) kbByUser[ev.user] = [];
+        if (kbByUser[ev.user].length < 100) {
+          kbByUser[ev.user].push({
+            ts: ev.ts,
+            app: ev.data.app || ev.data.appContext?.currentApp || '',
+            window: ev.data.windowTitle || ev.data.appContext?.currentWindow || '',
+            activityType: ev.data.activityType || '',
+            patterns: ev.data.patterns || [],
+            metrics: {
+              totalChars: ev.data.rawStats?.totalChars || ev.data.metrics?.totalChars || 0,
+              wordCount:  ev.data.rawStats?.wordCount  || ev.data.metrics?.wordCount  || 0,
+              lineCount:  ev.data.rawStats?.lineCount  || ev.data.metrics?.lineCount  || 0,
+            },
+            typing: ev.data.typingPatterns || {},
+            summary: ev.data.summary || '',
+          });
+        }
+        // 창 타임라인에도 반영
+        _addWindow({ ts: ev.ts, user: ev.user, data: {
+          windowTitle: ev.data.windowTitle || ev.data.appContext?.currentWindow,
+          app: ev.data.app || ev.data.appContext?.currentApp,
+        }});
+      }
+
+      // ── 마우스 활동 요약 (사용자별) ─────────────────────────────────────
+      const mouseByUser = {};
+      for (const r of mouseRows) {
+        const ev = parse(r);
+        if (!mouseByUser[ev.user]) mouseByUser[ev.user] = [];
+        if (mouseByUser[ev.user].length < 100) {
+          mouseByUser[ev.user].push({
+            ts: ev.ts,
+            app: ev.data.app || '',
+            window: ev.data.windowTitle || '',
+            clicks: ev.data.clicks || 0,
+            moveDistance: ev.data.moveDistance || 0,
+            quadrants: ev.data.quadrants || {},
+            clickPositions: (ev.data.clickPositions || []).slice(-20),
+            idle: ev.data.idle || false,
+          });
         }
       }
 
@@ -439,6 +501,9 @@ function createGoldenRouter(deps) {
           order: orderRows.length,
           ai: aiRows.length,
           snapshot: snapRows.length,
+          screen_capture: screenRows.length,
+          keyboard: kbRows.length,
+          mouse: mouseRows.length,
         },
         excel_files: excelFiles,
         files: fileList,
@@ -446,7 +511,9 @@ function createGoldenRouter(deps) {
         ai_messages: aiMessages,
         clipboard_by_user: clipByUser,
         window_timeline_by_user: windowByUser,
-        snapshot_sample: snapSample,
+        screen_captures_by_user: screenByUser,
+        keyboard_by_user: kbByUser,
+        mouse_by_user: mouseByUser,
       });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
