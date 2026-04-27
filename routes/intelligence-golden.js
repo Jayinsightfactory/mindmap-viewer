@@ -62,6 +62,28 @@ function createGoldenRouter(deps) {
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
+  // ── ERP 연결 진단 ─────────────────────────────────────────────────────────
+  router.get('/erp-diag', adminOnly, async (req, res) => {
+    try {
+      const erp = require('../src/intelligence/adapters/erp-client');
+      const st = erp.status();
+      // 실제 로그인 시도
+      let loginResult = null;
+      try {
+        await erp.get('/api/orders/history', { limit: 1 });
+        loginResult = 'ok';
+      } catch (e) {
+        loginResult = e.message;
+      }
+      // unified_events ERP 건수
+      const pool = getPool();
+      const { rows } = await pool.query(
+        `SELECT COUNT(*)::int AS total, MAX(timestamp) AS latest FROM unified_events WHERE source='erp-ui'`
+      );
+      res.json({ erp_client: st, login_test: loginResult, erp_events: rows[0] });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
   // ── Person 리스트 ────────────────────────────────────────────────────────
   router.get('/people', adminOnly, async (req, res) => {
     try {
