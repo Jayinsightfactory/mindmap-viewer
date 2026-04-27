@@ -22,6 +22,18 @@
 
 const MATCHER_VERSION = 'person-erp/1.0';
 
+// config/erp-user-map.json: ERP 로그인ID → 실명 매핑 (자동 fuzzy 불가 시 사용)
+let _erpUserMap = null;
+function _getErpUserMap() {
+  if (_erpUserMap) return _erpUserMap;
+  try {
+    _erpUserMap = require('../../../config/erp-user-map.json');
+  } catch (_) {
+    _erpUserMap = {};
+  }
+  return _erpUserMap;
+}
+
 function _norm(s) {
   return String(s || '').toLowerCase().replace(/[\s_\-.]/g, '');
 }
@@ -68,17 +80,31 @@ async function matchOnce(pool, opts = {}) {
 
     // 3. 후보 매칭
     const hits = [];
-    for (const p of persons) {
-      const a = p.attributes || {};
-      // (1) exact user_id
-      if (a.user_id === erpUid) { hits.push({ p, score: 1.0, type: 'exact', via: 'attributes.user_id' }); continue; }
-      // (2) aliases
-      if (Array.isArray(a.aliases) && a.aliases.includes(erpUid)) {
-        hits.push({ p, score: 1.0, type: 'exact', via: 'attributes.aliases' }); continue;
+    // (0) config map: ERP ID → 실명 직접 매핑
+    const mapEntry = _getErpUserMap()[erpUid];
+    if (mapEntry?.name) {
+      const normMapped = _norm(mapEntry.name);
+      for (const p of persons) {
+        const a = p.attributes || {};
+        const pName = _norm(a.name || p.display_name || '');
+        if (pName && (pName === normMapped || pName.includes(normMapped) || normMapped.includes(pName))) {
+          hits.push({ p, score: 1.0, type: 'exact', via: 'config-map' }); break;
+        }
       }
-      // (3) fuzzy name
-      if (a.name && _norm(a.name) === normErp) {
-        hits.push({ p, score: 0.7, type: 'fuzzy', via: 'attributes.name~user_id' });
+    }
+    if (hits.length === 0) {
+      for (const p of persons) {
+        const a = p.attributes || {};
+        // (1) exact user_id
+        if (a.user_id === erpUid) { hits.push({ p, score: 1.0, type: 'exact', via: 'attributes.user_id' }); continue; }
+        // (2) aliases
+        if (Array.isArray(a.aliases) && a.aliases.includes(erpUid)) {
+          hits.push({ p, score: 1.0, type: 'exact', via: 'attributes.aliases' }); continue;
+        }
+        // (3) fuzzy name
+        if (a.name && _norm(a.name) === normErp) {
+          hits.push({ p, score: 0.7, type: 'fuzzy', via: 'attributes.name~user_id' });
+        }
       }
     }
 
