@@ -103,7 +103,12 @@ function createGoldenRouter(deps) {
       const { rows } = await pool.query(
         `SELECT COUNT(*)::int AS total, MAX(timestamp) AS latest FROM unified_events WHERE source='erp-ui'`
       );
-      res.json({ erp_client: st, login_test: loginResult, sample: sampleData, erp_events: rows[0] });
+      // ERP distinct user_ids
+      const { rows: erpUsers } = await pool.query(
+        `SELECT user_id, COUNT(*)::int AS cnt FROM unified_events
+          WHERE source='erp-ui' AND user_id IS NOT NULL GROUP BY user_id ORDER BY cnt DESC LIMIT 30`
+      );
+      res.json({ erp_client: st, login_test: loginResult, sample: sampleData, erp_events: rows[0], erp_user_ids: erpUsers });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
