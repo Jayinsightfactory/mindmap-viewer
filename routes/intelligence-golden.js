@@ -297,6 +297,107 @@ function createGoldenRouter(deps) {
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
+  // ── 실업무 데이터: 오늘 파일/엑셀/주문/클립보드 실내용 ─────────────────────
+  router.get('/worklog', adminOnly, async (req, res) => {
+    try {
+      const hours = Math.min(parseInt(req.query.hours) || 24, 72);
+      const pool = getPool();
+
+      // PC 링크 (hostname → 이름)
+      const { rows: pcLinks } = await pool.query(
+        `SELECT l.hostname, u.name, u.email, l.user_id
+           FROM orbit_pc_links l
+           LEFT JOIN orbit_auth_users u ON u.id = l.user_id`
+      );
+      const hostMap = {};
+      for (const r of pcLinks) hostMap[r.hostname] = r.name || r.email || r.user_id;
+
+      const since = new Date(Date.now() - hours * 3600 * 1000).toISOString();
+
+      // 실업무 이벤트 (파일/엑셀/주문/클립보드/AI)
+      const { rows: events } = await pool.query(`
+        SELECT type, user_id,
+               data_json->>'hostname' AS hostname,
+               data_json,
+               timestamp
+          FROM events
+         WHERE timestamp > $1
+           AND type IN (
+             'excel.activity','file.write','file.read','file.change',
+             'order.detected','clipboard.change',
+             'user.message','assistant.message','tool.start','tool.end'
+           )
+         ORDER BY timestamp DESC
+         LIMIT 2000
+      `, [since]);
+
+      // 타입별 + 사용자별 그룹핑
+      const byType = {};
+      for (const e of events) {
+        const name = hostMap[e.hostname] || e.user_id || e.hostname || '?';
+        const d = typeof e.data_json === 'string' ? JSON.parse(e.data_json) : (e.data_json || {});
+        if (!byType[e.type]) byType[e.type] = [];
+        byType[e.type].push({ ts: e.timestamp, user: name, data: d });
+      }
+
+      // 엑셀 요약: 파일명 + 시트 집계
+      const excelSummary = {};
+      for (const ev of (byType['excel.activity'] || [])) {
+        const key = [ev.data.file || ev.data.fileName || ev.data.workbook || '?',
+                     ev.data.sheet || ev.data.sheetName || ''].filter(Boolean).join(' > ');
+        if (!excelSummary[key]) excelSummary[key] = { count: 0, users: new Set() };
+        excelSummary[key].count++;
+        excelSummary[key].users.add(ev.user);
+      }
+      const excelFiles = Object.entries(excelSummary)
+        .sort((a, b) => b[1].count - a[1].count)
+        .slice(0, 20)
+        .map(([file, v]) => ({ file, count: v.count, users: [...v.users] }));
+
+      // 파일 요약
+      const fileSummary = {};
+      for (const t of ['file.write','file.read','file.change']) {
+        for (const ev of (byType[t] || [])) {
+          const path = ev.data.path || ev.data.filePath || ev.data.file || '?';
+          if (!fileSummary[path]) fileSummary[path] = { ops: {}, users: new Set() };
+          fileSummary[path].ops[t] = (fileSummary[path].ops[t] || 0) + 1;
+          fileSummary[path].users.add(ev.user);
+        }
+      }
+      const fileList = Object.entries(fileSummary)
+        .sort((a, b) => Object.values(b[1].ops).reduce((s,v)=>s+v,0) - Object.values(a[1].ops).reduce((s,v)=>s+v,0))
+        .slice(0, 30)
+        .map(([path, v]) => ({ path, ops: v.ops, users: [...v.users] }));
+
+      // 주문 감지 요약
+      const orders = (byType['order.detected'] || []).slice(0, 50).map(ev => ({
+        ts: ev.ts, user: ev.user, ...ev.data,
+      }));
+
+      // AI 대화 요약 (user.message만)
+      const aiMessages = (byType['user.message'] || []).slice(0, 30).map(ev => ({
+        ts: ev.ts, user: ev.user,
+        message: (ev.data.content || ev.data.text || ev.data.message || '').slice(0, 200),
+      }));
+
+      // 클립보드 샘플 (최근 20건)
+      const clips = (byType['clipboard.change'] || []).slice(0, 20).map(ev => ({
+        ts: ev.ts, user: ev.user,
+        text: (ev.data.text || ev.data.content || ev.data.value || '').slice(0, 150),
+      }));
+
+      res.json({
+        hours,
+        total_events: events.length,
+        excel_files: excelFiles,
+        files: fileList,
+        orders: orders,
+        ai_messages: aiMessages,
+        clipboard_samples: clips,
+      });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
   return router;
 }
 
