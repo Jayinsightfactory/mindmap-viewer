@@ -143,4 +143,14 @@ function start(insertEventFn) {
   console.log('[server-vision-worker] 시작 — Haiku, 8s 인터벌');
 }
 
-module.exports = { start };
+function getStatus() {
+  return {
+    running: _running,
+    apiKeyConfigured: !!process.env.ANTHROPIC_API_KEY,
+    lastTickAt: _lastAt ? new Date(_lastAt).toISOString() : null,
+    secondsSinceLastTick: _lastAt ? Math.round((Date.now() - _lastAt) / 1000) : null,
+    intervalMs: INTERVAL_MS,
+  };
+}
+
+module.exports = { start, getStatus };

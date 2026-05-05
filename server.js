@@ -3406,6 +3406,15 @@ app.get('/api/vision/queue-peek', (req, res) => {
   res.json({ total: queue.length, items: queue.map(i => ({ id: i.id, app: i.app, hostname: i.hostname })) });
 });
 
+// Vision worker 상태 진단 — ANTHROPIC_API_KEY 설정/실행 여부
+app.get('/api/vision/stat', (req, res) => {
+  try {
+    const svw = require('./src/server-vision-worker');
+    const st = svw.getStatus ? svw.getStatus() : { error: 'getStatus not exported' };
+    res.json({ ok: true, worker: st, queueSize: (global._visionImageQueue || []).length });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // 직접 큐 추가 (테스트/복구용) — ORBIT_TOKEN 인증 필요
 app.post('/api/vision/queue-push', (req, res) => {
   const token = (req.headers.authorization || '').replace('Bearer ', '').trim();
