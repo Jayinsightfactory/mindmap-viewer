@@ -4749,6 +4749,18 @@ app.get('/install', (req, res) => {
     <p>SmartScreen: "추가 정보" → "실행"</p>
   </details>
   <details>
+    <summary>🛡️ "이 스크립트에 악성 콘텐츠..." / AV 차단</summary>
+    <p><b>증상</b>: PowerShell이 "This script contains malicious content..." 라고 차단</p>
+    <p><b>원인</b>: Windows Defender / 백신이 PowerShell 스크립트를 의심</p>
+    <p><b>해결 1</b> (가장 쉬움): 아래 명령을 <b>관리자 PowerShell</b>에 복사 → Enter</p>
+    <div class="link-box" id="wl-cmd">irm '${base}/api/setup/whitelist.ps1' | iex</div>
+    <button class="btn copy" onclick="navigator.clipboard.writeText(document.getElementById('wl-cmd').textContent); this.textContent='✅ 복사됨';">명령 복사</button>
+    <p>실행 후 <b>이 페이지 새로고침 → 다시 다운로드</b></p>
+    <p><b>해결 2</b>: 관리자 PowerShell에서 직접 실행 (수동):</p>
+    <div class="link-box">Add-MpPreference -ExclusionPath "$env:USERPROFILE\\.orbit"<br>Add-MpPreference -ExclusionPath "$env:USERPROFILE\\mindmap-viewer"</div>
+    <p><b>해결 3</b>: 알림창에서 "허용" / "추가 정보 → 실행" 클릭</p>
+  </details>
+  <details>
     <summary>설치 실패 / 로그 확인</summary>
     <p>위치: <code>%USERPROFILE%\\.orbit\\clean-install.log</code></p>
     <p>탐색기 주소창에 위 경로 붙여넣기 → 파일 내용 관리자에게 전송</p>

@@ -1015,10 +1015,9 @@ while ($true) {
     res.send(batContent);
   });
 
-  // ── Clean Install (v9) — 원클릭 .bat: 기존 전부 삭제 + 새로 설치 ────────────
-  // 유저 URL: https://<server>/api/install-clean.bat  ← 전원 공유 링크 하나
-  //   → 파일 다운로드 → 더블클릭 → clean-install.ps1 실행
-  //   → PC hostname(COMPUTERNAME)으로 서버에서 자동 userId 매칭
+  // ── Clean Install (v10) — AV 차단 대응 + 다운로드 fallback ────────────
+  //   다운로드 우선순위: bitsadmin → curl → PowerShell DownloadFile
+  //   AV 차단 감지 시 명확한 안내 + Defender 예외 등록 가이드
   router.get('/install-clean.bat', (req, res) => {
     const serverUrl = `${req.protocol}://${req.get('host')}`;
 
@@ -1044,41 +1043,116 @@ while ($true) {
       'echo   Orbit AI 재설치 (관리자 권한 확인됨)',
       'echo =========================================',
       'echo.',
-      'echo   기존 설치를 정리하고 새로 설치합니다.',
+      'echo   기존 설치 정리 + 새로 설치 (2-3분)',
       'echo   PC 이름 기반 자동 식별 - 별도 입력 불필요',
-      'echo   2-3분 소요. 창을 닫지 마세요.',
       'echo.',
       '',
       `set "ORBIT_REMOTE=${serverUrl}"`,
       `set "PS1_URL=${serverUrl}/setup/clean-install.ps1"`,
       'set "PS1_LOCAL=%TEMP%\\orbit-clean-install.ps1"',
       '',
-      'REM --- 스크립트 다운로드 (iex 스코프 이슈 회피) ---',
-      `powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; try { (New-Object Net.WebClient).DownloadFile('${serverUrl}/setup/clean-install.ps1', $env:TEMP + '\\orbit-clean-install.ps1'); exit 0 } catch { Write-Host '다운로드 실패:' $_.Exception.Message; exit 1 }"`,
-      'if %errorlevel% neq 0 (',
-      '    echo   설치 스크립트 다운로드 실패. 인터넷 연결 확인 후 재시도.',
+      'REM --- AV 친화적 다운로드 우선순위: bitsadmin -> curl -> PowerShell ---',
+      'REM --- bitsadmin: Windows 자체 도구, AV 차단 가능성 가장 낮음 ---',
+      'set DL_OK=0',
+      'echo   다운로드 시도 1/3: bitsadmin (Windows 자체 도구)...',
+      'bitsadmin /transfer OrbitInstall /priority HIGH "%PS1_URL%" "%PS1_LOCAL%" >nul 2>&1',
+      'if exist "%PS1_LOCAL%" (set DL_OK=1 && goto DL_DONE)',
+      '',
+      'echo   다운로드 시도 2/3: curl...',
+      'curl -fsSL -o "%PS1_LOCAL%" "%PS1_URL%" >nul 2>&1',
+      'if exist "%PS1_LOCAL%" (set DL_OK=1 && goto DL_DONE)',
+      '',
+      'echo   다운로드 시도 3/3: PowerShell...',
+      `powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; try { (New-Object Net.WebClient).DownloadFile('%PS1_URL%','%PS1_LOCAL%') } catch { exit 1 }" 2>nul`,
+      'if exist "%PS1_LOCAL%" set DL_OK=1',
+      '',
+      ':DL_DONE',
+      'if %DL_OK% neq 1 (',
+      '    echo.',
+      '    echo   ====================================================',
+      '    echo   [차단됨] 모든 다운로드 방식 실패',
+      '    echo   ====================================================',
+      '    echo   원인: 백신/방화벽이 차단했거나 인터넷 연결 문제',
+      '    echo.',
+      '    echo   해결 방법:',
+      '    echo   1. Windows Defender 알림 -^> "추가 정보" -^> "실행"',
+      '    echo   2. AV 프로그램에서 차단 해제',
+      '    echo   3. 아래 URL을 브라우저로 직접 다운로드:',
+      '    echo      %PS1_URL%',
+      '    echo      ^(다운받은 파일을 PowerShell 관리자로 열어 실행^)',
+      '    echo.',
+      '    echo   여전히 안 되면 관리자에게 문의:',
+      '    echo   AV 예외 등록 명령 (관리자 PowerShell):',
+      '    echo   Add-MpPreference -ExclusionPath "%USERPROFILE%\\.orbit"',
+      '    echo   Add-MpPreference -ExclusionPath "%USERPROFILE%\\mindmap-viewer"',
       '    pause',
       '    exit /b 1',
       ')',
       '',
-      'REM --- 로컬 파일로 실행 (-File 사용, 함수 스코프 정상 동작) ---',
+      'echo   다운로드 완료. 설치 시작...',
+      'echo.',
+      '',
+      'REM --- 다운로드된 .ps1 실행 (-File 사용, AMSI 트리거 회피) ---',
       'powershell -NoProfile -ExecutionPolicy Bypass -File "%PS1_LOCAL%"',
+      'set RC=%errorlevel%',
       '',
       'REM --- 임시파일 정리 ---',
       'del "%PS1_LOCAL%" >nul 2>&1',
       '',
-      'if %errorlevel% neq 0 (',
+      'if %RC% neq 0 (',
       '    echo.',
-      '    echo   설치 중 오류 발생. 관리자에게 문의하세요.',
+      '    echo   ====================================================',
+      '    echo   [중단] 설치 중 오류 (PowerShell 차단 가능성)',
+      '    echo   ====================================================',
+      '    echo   AV가 PowerShell 스크립트를 차단했을 수 있습니다.',
+      '    echo.',
+      '    echo   해결: 관리자 PowerShell에서 다음 실행 후 재시도:',
+      '    echo   Add-MpPreference -ExclusionPath "%USERPROFILE%\\.orbit"',
+      '    echo   Add-MpPreference -ExclusionPath "%USERPROFILE%\\mindmap-viewer"',
+      '    echo.',
       '    echo   로그: %USERPROFILE%\\.orbit\\clean-install.log',
       '    pause',
       ')',
-      'exit',
+      'exit /b 0',
     ].join('\r\n');
 
     res.setHeader('Content-Type', 'application/octet-stream');
     res.setHeader('Content-Disposition', `attachment; filename="orbit-install.bat"`);
     res.send(batContent);
+  });
+
+  // ── /api/setup/whitelist.ps1 — Defender 예외 등록 원라이너 ────────────────
+  // 사용자가 AV 차단 시 관리자 PowerShell에서 실행하는 헬퍼 스크립트
+  router.get('/setup/whitelist.ps1', (req, res) => {
+    const ps1 = `# Orbit AI - Windows Defender 예외 등록 (관리자 권한 필요)
+# 실행: PowerShell 관리자 -> irm '${req.protocol}://${req.get('host')}/api/setup/whitelist.ps1' | iex
+
+if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]"Administrator")) {
+    Write-Host "[ERROR] 관리자 권한이 필요합니다." -ForegroundColor Red
+    Write-Host "  PowerShell 관리자로 다시 실행하세요." -ForegroundColor Yellow
+    exit 1
+}
+
+$paths = @(
+    "$env:USERPROFILE\\.orbit",
+    "$env:USERPROFILE\\mindmap-viewer"
+)
+
+foreach ($p in $paths) {
+    try {
+        Add-MpPreference -ExclusionPath $p -ErrorAction Stop
+        Write-Host "  [OK] 예외 등록: $p" -ForegroundColor Green
+    } catch {
+        Write-Host "  [WARN] 등록 실패: $p ($_)" -ForegroundColor Yellow
+    }
+}
+
+Write-Host ""
+Write-Host "Windows Defender 예외 등록 완료." -ForegroundColor Cyan
+Write-Host "이제 ${req.protocol}://${req.get('host')}/install 에서 다시 설치 시도하세요." -ForegroundColor Cyan
+`;
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.send(ps1);
   });
 
   // ── 벤치마크 API ──────────────────────────────────────────────────────────
