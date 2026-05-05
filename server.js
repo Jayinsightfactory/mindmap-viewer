@@ -2562,7 +2562,21 @@ app.post('/api/daemon/register', async (req, res) => {
         if (rows.length > 0) matchedUserId = rows[0].user_id;
       } catch {} // 테이블 없으면 무시
 
-      //    B. events 테이블 fallback — 가장 최근 timestamp의 user_id (알파벳 순 X)
+      //    B. PC_USER_MAP / PC_NAME_MAP / 카톡 / 클립보드 통합 resolver (Q1A+B)
+      let resolveSource = 'orbit_pc_links';
+      if (!matchedUserId) {
+        try {
+          const resolver = require('./src/pc-user-resolver');
+          const r = await resolver.resolveHostnameToUser(_pool, hostname);
+          if (r && r.userId) {
+            matchedUserId = r.userId;
+            resolveSource = r.source;
+            console.log(`[daemon/register] ${hostname} resolver match: ${r.source} confidence=${r.confidence}`);
+          }
+        } catch (e) { console.warn('[daemon/register] resolver error:', e.message); }
+      }
+
+      //    C. events 테이블 fallback — 가장 최근 timestamp의 user_id (알파벳 순 X)
       //       기존 ORDER BY user_id LIMIT 1 버그: 동일 hostname에 여러 user_id 매핑 있을 때
       //       알파벳 순 첫 번째만 반환 → 강현우 PC가 임재용 ID로 잘못 매칭되는 사고 발생
       if (!matchedUserId) {
@@ -2574,7 +2588,7 @@ app.post('/api/daemon/register', async (req, res) => {
              ORDER BY timestamp DESC LIMIT 1`,
             [hostname]
           );
-          if (rows.length > 0) matchedUserId = rows[0].user_id;
+          if (rows.length > 0) { matchedUserId = rows[0].user_id; resolveSource = 'events_recent'; }
         } catch {}
       }
     }
@@ -2783,6 +2797,42 @@ app.post('/api/hook', async (req, res) => {
         }
       } catch (_plErr) {
         // pc_links 테이블 없거나 쿼리 실패 → 기존 hookUserId 유지 (fail-open)
+      }
+    }
+
+    // ── 자동 사용자 분류 (Q2A) — pc_HOSTNAME 익명이면 50건마다 비동기 추론 ──
+    if (hookUserId && hookUserId.startsWith('pc_') && deviceId) {
+      global._pcAnonCounters = global._pcAnonCounters || {};
+      global._pcAnonResolving = global._pcAnonResolving || {};
+      global._pcAnonCounters[deviceId] = (global._pcAnonCounters[deviceId] || 0) + events.length;
+      if (global._pcAnonCounters[deviceId] >= 50 && !global._pcAnonResolving[deviceId]) {
+        global._pcAnonResolving[deviceId] = true;
+        (async () => {
+          try {
+            const resolver = require('./src/pc-user-resolver');
+            const _pgPool = dbModule.getDb ? dbModule.getDb() : null;
+            if (_pgPool) {
+              const r = await resolver.resolveHostnameToUser(_pgPool, deviceId);
+              if (r && r.userId && !r.userId.startsWith('pc_')) {
+                await _pgPool.query(`CREATE TABLE IF NOT EXISTS orbit_pc_links (
+                  hostname TEXT PRIMARY KEY, user_id TEXT NOT NULL, linked_at TIMESTAMPTZ DEFAULT NOW()
+                )`);
+                await _pgPool.query(
+                  `INSERT INTO orbit_pc_links (hostname, user_id) VALUES ($1, $2)
+                   ON CONFLICT (hostname) DO UPDATE SET user_id=$2, linked_at=NOW()`,
+                  [deviceId, r.userId]
+                );
+                console.log(`[hook] auto-classify ${deviceId} → ${r.userId} (${r.source}, conf=${r.confidence?.toFixed?.(2)})`);
+              } else {
+                console.log(`[hook] auto-classify ${deviceId} — 매칭 실패 (Q3A: 익명 유지)`);
+              }
+            }
+          } catch (e) { console.warn('[hook] auto-classify error:', e.message); }
+          finally {
+            global._pcAnonCounters[deviceId] = 0;
+            global._pcAnonResolving[deviceId] = false;
+          }
+        })();
       }
     }
 
@@ -5177,12 +5227,20 @@ app.get('/api/admin/pc-inference', async (req, res) => {
         ORDER BY c DESC LIMIT 5
       `, [host, since]);
 
+      // resolver 결과 (Q1A+B 통합 자동 매칭 후보)
+      let auto = null;
+      try {
+        const resolver = require('./src/pc-user-resolver');
+        auto = await resolver.resolveHostnameToUser(pool, host);
+      } catch {}
+
       result.push({
         hostname: host,
         user_id_raw: pc.user_id,
         total_events: pc.total,
         last_seen: pc.last_seen,
         mapped,
+        auto_resolve: auto, // { userId, source, confidence, name? }
         clipboard_samples: clips.map(c => ({
           source: c.source_app,
           window: (c.window_title || '').slice(0, 60),
