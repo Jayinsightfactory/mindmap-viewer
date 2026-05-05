@@ -314,13 +314,38 @@ function startBankSecurityMonitor(keyboardWatcher, screenCapture, clipboardWatch
     try { return require('../src/secure-collector'); } catch { return null; }
   })();
 
-  // 1분마다 시간만 체크 (가벼운 로컬 비교, PowerShell 실행 안 함)
-  _bankCheckTimer = setInterval(() => {
-    if (!_isBankCheckTime()) return; // 지정 시간 아니면 즉시 종료
+  // 은행모드 진입/해제 자동 — 1분마다
+  // 버그 픽스: _isBankCheckTime() 가드가 해제 분기까지 막아 영구 paused 발생 → 진입 시간 OR _bankMode일 때 모두 진행
+  // 안전장치: bank-mode 진입 후 90분 timeout → 무조건 강제 해제
+  const BANK_MODE_MAX_MS = 90 * 60 * 1000;
+  let _bankModeStartedAt = 0;
+  const _forceResume = () => {
+    _bankMode = false;
+    _bankModeStartedAt = 0;
+    console.log('[orbit] 은행 보안 모드 강제 해제');
+    if (keyboardWatcher?.resume) keyboardWatcher.resume();
+    if (screenCapture?.resume)   screenCapture.resume();
+    if (clipboardWatcher?.resume) clipboardWatcher.resume();
+    if (mouseWatcher?.resume)    mouseWatcher.resume();
+    if (secureCollector) secureCollector.stop();
+    _sendBankSecurityEvent('bank.security.inactive');
+  };
 
-    const detected = checkBankSecurity(); // 하루 2회만 실제 Get-Process 실행
+  _bankCheckTimer = setInterval(() => {
+    const isCheckTime = _isBankCheckTime();
+    // 시간 초과 강제 해제 (process 감지 실패해도)
+    if (_bankMode && _bankModeStartedAt && (Date.now() - _bankModeStartedAt > BANK_MODE_MAX_MS)) {
+      console.log('[orbit] 은행 모드 90분 timeout — 강제 해제');
+      _forceResume();
+      return;
+    }
+    // 진입 시간도 아니고 _bankMode 도 아니면 skip (해제 검사 불필요)
+    if (!isCheckTime && !_bankMode) return;
+
+    const detected = checkBankSecurity();
     if (detected && !_bankMode) {
       _bankMode = true;
+      _bankModeStartedAt = Date.now();
       console.log('[orbit] 은행 보안 감지 — 후킹 일시정지');
       if (keyboardWatcher?.pause) keyboardWatcher.pause();
       if (screenCapture?.pause)   screenCapture.pause();
@@ -329,16 +354,9 @@ function startBankSecurityMonitor(keyboardWatcher, screenCapture, clipboardWatch
       _sendBankSecurityEvent('bank.security.active');
       if (secureCollector) secureCollector.start();
     } else if (!detected && _bankMode) {
-      _bankMode = false;
-      console.log('[orbit] 은행 보안 없음 — 전체 수집 재개');
-      if (keyboardWatcher?.resume) keyboardWatcher.resume();
-      if (screenCapture?.resume)   screenCapture.resume();
-      if (clipboardWatcher?.resume) clipboardWatcher.resume();
-      if (mouseWatcher?.resume)    mouseWatcher.resume();
-      if (secureCollector) secureCollector.stop();
-      _sendBankSecurityEvent('bank.security.inactive');
+      _forceResume();
     }
-  }, 60 * 1000); // 1분마다 시간 확인 (로컬 비교만, 부하 없음)
+  }, 60 * 1000);
 }
 
 function stopBankSecurityMonitor() {

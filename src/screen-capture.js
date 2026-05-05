@@ -201,39 +201,48 @@ function _shouldSendImage(trigger, app) {
   const profile = APP_PROFILES[appLow];
   const triggerPriority = TRIGGER_PRIORITY[trigger] || 'medium';
 
-  // mouse_click 트리거 → critical 앱(nenova)만 이미지, 나머지 metadata
-  // 이유: 클릭은 빈번 → 과도한 이미지 전송 방지
+  // 임계값 완화: Vision 분석 데이터 부족 (현재 7건) → 학습 부트스트랩
+  // critical/high 모두 image 전송, medium 은 일부 비율, skip/low 만 metadata
+
+  // mouse_click — critical=항상, high=1/3 비율 (Vision 부담 감소)
   if (trigger === 'mouse_click') {
-    return profile?.priority === 'critical';
+    if (profile?.priority === 'critical') return true;
+    if (profile?.priority === 'high') return ((global._captureCounter || 0) % 3 === 0);
+    return false;
   }
 
-  // keyboard_flush / keyboard_done → critical + high 앱만 이미지
+  // keyboard_flush / keyboard_done — critical/high 모두 image
   if (trigger === 'keyboard_flush' || trigger === 'keyboard_done') {
-    return profile?.priority === 'critical' || (profile?.priority === 'high' && profile?.sendImage);
+    return profile?.priority === 'critical' || profile?.priority === 'high' || profile?.priority === 'medium';
   }
 
-  // ctrl_print → 인쇄 의도 → critical/high 앱이면 이미지 전송 (뭘 출력했는지 확인)
-  if (trigger === 'ctrl_print') {
-    return profile?.priority === 'critical' || profile?.priority === 'high';
+  // ctrl_print / excel_formula / ctrl_s — 항상 이미지 (작업 마디)
+  if (['ctrl_print', 'excel_formula', 'ctrl_s'].includes(trigger)) {
+    return true;
   }
 
-  // excel_formula (Ctrl+Enter) → Excel이면 이미지 전송 (수식 결과 확인)
-  if (trigger === 'excel_formula') {
-    return appLow.includes('excel') || profile?.priority === 'critical';
-  }
-
-  // critical 앱 (nenova) → 항상 이미지
+  // critical 앱 — 항상 이미지
   if (profile?.priority === 'critical') return true;
 
-  // HIGH 트리거 + high 앱 → 이미지
-  if (triggerPriority === 'high' && profile?.sendImage) return true;
+  // high 앱 — sendImage true면 이미지
+  if (profile?.priority === 'high' && profile?.sendImage) return true;
 
-  // 앱 전환 → 매 3번째만 이미지
-  if (trigger === 'app_switch') {
-    return (global._captureCounter || 0) % 3 === 0;
+  // medium 앱 (chrome/edge) + HIGH 트리거 — 1/2 비율 image (browser 화면도 학습)
+  if (profile?.priority === 'medium' && triggerPriority === 'high') {
+    return ((global._captureCounter || 0) % 2 === 0);
   }
 
-  // 나머지 → metadata만
+  // 앱 전환 — 매 2번째 이미지 (기존 1/3 → 1/2 완화)
+  if (trigger === 'app_switch') {
+    return (global._captureCounter || 0) % 2 === 0;
+  }
+
+  // 프로파일 없는(미정의) 앱 + HIGH 트리거 — 매 3번째 이미지
+  if (!profile && triggerPriority === 'high') {
+    return ((global._captureCounter || 0) % 3 === 0);
+  }
+
+  // skip/low + 나머지 — metadata만
   return false;
 }
 
