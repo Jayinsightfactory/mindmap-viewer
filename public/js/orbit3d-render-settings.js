@@ -515,13 +515,12 @@ window.startOllamaServer = startOllamaServer;
 
 // ── 설치코드 발급 ──────────────────────────────────────────────────────────
 window._issueInstallCode = function() {
-  const token = _getAuthToken();
-  if (!token) return;
+  const token = _getAuthToken();  // null이면 익명 설치 모드 (hostname 자동 분류)
 
   const u = (typeof _orbitUser !== 'undefined' && _orbitUser) ||
     (() => { try { return JSON.parse(localStorage.getItem('orbitUser') || 'null'); } catch { return null; } })();
-  const uName  = u?.name  || '사용자';
-  const uEmail = u?.email || '';
+  const uName  = u?.name  || (token ? '사용자' : '익명 (hostname 자동 분류)');
+  const uEmail = u?.email || (token ? '' : 'PC 이름·앱 사용 패턴으로 자동 매칭');
   const uPhoto = u?.picture || u?.photo || '';
 
   // OS/브라우저 감지
@@ -536,11 +535,15 @@ window._issueInstallCode = function() {
   const isWin = /windows/i.test(detOS);
 
   // 설치 명령어 생성 (Windows: 다운로드 버튼 우선, AMSI 안전)
+  // 토큰 있으면 박힘, 없으면 익명 (서버에서 hostname 자동 분류)
   const setupSh     = location.origin + '/setup/orbit-start.sh';
-  const batUrl      = location.origin + '/api/install-clean.bat?token=' + encodeURIComponent(token);
+  const batUrl      = location.origin + '/api/install-clean.bat'
+                      + (token ? '?token=' + encodeURIComponent(token) : '');
   const installCmd  = isWin
     ? batUrl  // 직접 다운로드 URL (irm|iex 제거 — AMSI 차단 회피)
-    : `ORBIT_TOKEN='${token}' bash <(curl -sL '${setupSh}')`;
+    : (token
+        ? `ORBIT_TOKEN='${token}' bash <(curl -sL '${setupSh}')`
+        : `bash <(curl -sL '${setupSh}')`);
 
   // 뱃지 영역
   const badges = document.getElementById('sp-issued-badges');
@@ -682,9 +685,9 @@ async function renderSetupPanel() {
     <div class="sp-section">📦 설치 / 업데이트 <span style="font-size:9px;color:#6e7681;text-transform:none;font-weight:400">— 1~2분 소요</span></div>
 
     ${!_token
-      ? `<div style="font-size:11px;color:#f0a82e;background:rgba(240,168,46,.08);
-           border:1px solid rgba(240,168,46,.2);border-radius:6px;padding:6px 10px;margin-bottom:7px">
-           ⚠ 로그인하면 토큰이 포함된 개인화 설치코드를 발급받을 수 있습니다
+      ? `<div style="font-size:11px;color:#7ee787;background:rgba(63,185,80,.06);
+           border:1px solid rgba(63,185,80,.2);border-radius:6px;padding:6px 10px;margin-bottom:7px">
+           ℹ 로그인 없이 익명 설치 가능 — 서버가 PC 이름/앱 사용 패턴으로 사용자 자동 매칭
          </div>`
       : ''
     }
@@ -701,14 +704,14 @@ async function renderSetupPanel() {
       </div>
     </div>
 
-    <!-- 발급 버튼 -->
-    <button id="sp-issue-install-btn" onclick="window._issueInstallCode()" ${!_token ? 'disabled' : ''}
+    <!-- 발급 버튼 (로그인 없이도 작동 — 익명 설치 지원) -->
+    <button id="sp-issue-install-btn" onclick="window._issueInstallCode()"
       style="display:flex;align-items:center;justify-content:center;gap:8px;width:100%;
       padding:11px 18px;margin-bottom:10px;
-      background:${_token ? 'linear-gradient(135deg,#238636,#2ea043)' : '#21262d'};
-      border:1px solid ${_token ? '#2ea043' : '#30363d'};border-radius:8px;
-      color:${_token ? '#fff' : '#484f58'};font-size:13px;font-weight:600;
-      cursor:${_token ? 'pointer' : 'not-allowed'};transition:all .2s">
+      background:linear-gradient(135deg,#238636,#2ea043);
+      border:1px solid #2ea043;border-radius:8px;
+      color:#fff;font-size:13px;font-weight:600;
+      cursor:pointer;transition:all .2s">
       🔑 설치코드 발급
     </button>
 
