@@ -535,11 +535,11 @@ window._issueInstallCode = function() {
     : /Safari\//i.test(ua) ? 'Safari' : 'Unknown';
   const isWin = /windows/i.test(detOS);
 
-  // 설치 명령어 생성
-  const setupScript = location.origin + '/setup/install.ps1';
+  // 설치 명령어 생성 (Windows: 다운로드 버튼 우선, AMSI 안전)
   const setupSh     = location.origin + '/setup/orbit-start.sh';
+  const batUrl      = location.origin + '/api/install-clean.bat?token=' + encodeURIComponent(token);
   const installCmd  = isWin
-    ? `$env:ORBIT_TOKEN='${token}'; irm '${setupScript}' | iex`
+    ? batUrl  // 직접 다운로드 URL (irm|iex 제거 — AMSI 차단 회피)
     : `ORBIT_TOKEN='${token}' bash <(curl -sL '${setupSh}')`;
 
   // 뱃지 영역
@@ -572,7 +572,18 @@ window._issueInstallCode = function() {
   const tokenEl = document.getElementById('sp-install-token-only');
   if (tokenEl) tokenEl.textContent = token;
 
-  // 터미널 명령어
+  // Windows: 다운로드 버튼 보이기 (AMSI 안전 흐름)
+  if (isWin) {
+    const dlBtn = document.getElementById('sp-install-bat-download');
+    if (dlBtn) {
+      dlBtn.href = batUrl;
+      dlBtn.style.display = 'flex';
+    }
+    const dlHelp = document.getElementById('sp-install-bat-help');
+    if (dlHelp) dlHelp.style.display = 'block';
+  }
+
+  // 터미널 명령어 (Windows는 batUrl, Mac/Linux는 bash 명령)
   const cmdEl = document.getElementById('sp-install-inline-cmd');
   if (cmdEl) cmdEl.textContent = installCmd;
 
@@ -705,6 +716,20 @@ async function renderSetupPanel() {
     <div id="sp-issued-result" style="display:none">
       <!-- PC 정보 + Google 계정 뱃지 -->
       <div id="sp-issued-badges" style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap"></div>
+
+      <!-- Windows 다운로드 버튼 (AMSI 안전, irm|iex 회피) -->
+      <a id="sp-install-bat-download" download="orbit-install.bat"
+        style="display:none;align-items:center;justify-content:center;gap:8px;width:100%;
+        padding:13px 18px;margin-bottom:8px;background:#1f6feb;border:1px solid #58a6ff;
+        border-radius:8px;color:#fff;font-size:13px;font-weight:600;text-decoration:none;
+        box-sizing:border-box">
+        ⬇️ 설치 파일 다운로드 (orbit-install.bat)
+      </a>
+      <div id="sp-install-bat-help" style="display:none;font-size:11px;color:#8b949e;
+        margin-bottom:8px;line-height:1.5">
+        다운 후 더블클릭 → "추가 정보 → 실행" → UAC "예" → 자동 설치 (2~3분)<br>
+        <span style="color:#f0a82e">백신 차단 시 아래 details 펼쳐서 예외 등록</span>
+      </div>
       <!-- EXE용 토큰 (비활성) -->
       <div id="sp-issued-token-box" style="display:none;margin-bottom:8px">
         <div style="background:#010409;border:1px solid #21262d;border-radius:8px;padding:10px 12px;position:relative">
@@ -726,11 +751,11 @@ async function renderSetupPanel() {
             padding:3px 8px;cursor:pointer">복사</button>
         </div>
       </div>
-      <!-- 터미널 명령어 -->
+      <!-- 터미널 명령어 / 다운로드 URL (백업용) -->
       <div style="background:#010409;border:1px solid #21262d;border-radius:8px;
         padding:10px 12px;margin-bottom:8px;position:relative">
         <div id="sp-install-os-label" style="font-size:10px;color:#6e7681;margin-bottom:5px">
-          ${os === 'windows' ? '🪟 PowerShell (Win+R → powershell → Enter)' : '🖥️ 터미널'}
+          ${os === 'windows' ? '🪟 다운로드 URL (위 버튼 안 되면 브라우저 주소창에 복사)' : '🖥️ 터미널 (Mac/Linux)'}
         </div>
         <code id="sp-install-inline-cmd"
           style="font-family:'Consolas','Courier New',monospace;font-size:11px;
@@ -753,6 +778,22 @@ async function renderSetupPanel() {
         <b style="color:#cdd9e5">동기화:</b> 5분마다 자동 전송 · 원본 데이터는 로컬에만 저장<br>
         <b style="color:#cdd9e5">업데이트:</b> 이미 설치된 PC에서 같은 명령어 재실행하면 최신 버전으로 업데이트
       </div>
+
+      <details style="margin-top:8px;background:#0d1117;border:1px solid #21262d;border-radius:6px;padding:8px 12px">
+        <summary style="cursor:pointer;font-size:11px;color:#f0a82e;font-weight:600">🛡️ 백신이 차단할 때</summary>
+        <div style="font-size:11px;color:#8b949e;margin-top:8px;line-height:1.6">
+          관리자 PowerShell에서 한 줄 실행 → Defender 예외 등록:
+          <div style="background:#000;color:#8fe;padding:8px 10px;border-radius:5px;
+            font-family:Consolas,monospace;font-size:10px;margin:6px 0;word-break:break-all"
+            id="sp-whitelist-cmd">irm '${location.origin}/api/setup/whitelist.ps1' | iex</div>
+          <button onclick="(function(){
+            const el=document.getElementById('sp-whitelist-cmd');
+            navigator.clipboard.writeText(el.textContent.trim()).then(()=>{this.textContent='✅ 복사됨';});
+          }).call(this)" style="background:#6e4010;border:1px solid #e3b341;border-radius:4px;
+            color:#e3b341;font-size:10px;padding:3px 8px;cursor:pointer">예외 등록 명령 복사</button>
+          <br>실행 후 위 다운로드 버튼 다시 클릭
+        </div>
+      </details>
     </div>
   `;
 

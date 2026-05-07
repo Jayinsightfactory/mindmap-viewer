@@ -1020,7 +1020,8 @@ while ($true) {
   //   AV 차단 감지 시 명확한 안내 + Defender 예외 등록 가이드
   router.get('/install-clean.bat', async (req, res) => {
     const serverUrl = `${req.protocol}://${req.get('host')}`;
-    // 옵션: ?code=xxx 로 토큰 박힌 bat 발급 (/i/:code 다운로드 버튼용)
+    // 옵션 1: ?code=xxx — 토큰 박힌 bat 발급 (/i/:code 카톡 링크용)
+    // 옵션 2: ?token=orbit_xxx — 토큰 직접 박힘 (마인드맵뷰어 설정 패널용)
     let envToken = '';
     if (req.query.code) {
       const code = String(req.query.code).trim().toLowerCase();
@@ -1033,6 +1034,10 @@ while ($true) {
           }
         } catch {}
       }
+    }
+    if (!envToken && req.query.token) {
+      const t = String(req.query.token).trim();
+      if (/^orbit_[a-f0-9]{32,80}$/.test(t)) envToken = t;
     }
 
     const batContent = [
