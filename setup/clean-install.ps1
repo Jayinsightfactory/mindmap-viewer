@@ -45,7 +45,9 @@ trap {
     PauseExit 1
 }
 
-"$(Get-Date -f 'yyyy-MM-dd HH:mm:ss') [START] clean-install v9" | Out-File $LOG -Force
+# 로그 파일 초기화 (UTF-8 NoBOM — Log 함수와 인코딩 일치, cmd 깨짐 방지)
+$_initLine = "$(Get-Date -f 'yyyy-MM-dd HH:mm:ss') [START] clean-install v11`r`n"
+[IO.File]::WriteAllText($LOG, $_initLine, (New-Object System.Text.UTF8Encoding($false)))
 
 Write-Host ""
 Write-Host "  ═══════════════════════════════════════" -ForegroundColor Cyan

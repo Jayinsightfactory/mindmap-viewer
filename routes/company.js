@@ -1144,7 +1144,7 @@ while ($true) {
       'echo.',
       'echo   ----- 설치 로그 (clean-install.log 마지막 30줄) -----',
       'echo.',
-      'powershell -NoProfile -Command "if(Test-Path \'%USERPROFILE%\\.orbit\\clean-install.log\'){Get-Content \'%USERPROFILE%\\.orbit\\clean-install.log\' -Tail 30}else{Write-Host \'(로그 파일 없음)\'}"',
+      'powershell -NoProfile -Command "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; if(Test-Path \'%USERPROFILE%\\.orbit\\clean-install.log\'){Get-Content \'%USERPROFILE%\\.orbit\\clean-install.log\' -Tail 30 -Encoding UTF8}else{Write-Host \'(로그 파일 없음)\'}"',
       'echo.',
       'echo   ====================================================',
       'echo   PC: %COMPUTERNAME%',
