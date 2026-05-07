@@ -1018,8 +1018,22 @@ while ($true) {
   // ── Clean Install (v10) — AV 차단 대응 + 다운로드 fallback ────────────
   //   다운로드 우선순위: bitsadmin → curl → PowerShell DownloadFile
   //   AV 차단 감지 시 명확한 안내 + Defender 예외 등록 가이드
-  router.get('/install-clean.bat', (req, res) => {
+  router.get('/install-clean.bat', async (req, res) => {
     const serverUrl = `${req.protocol}://${req.get('host')}`;
+    // 옵션: ?code=xxx 로 토큰 박힌 bat 발급 (/i/:code 다운로드 버튼용)
+    let envToken = '';
+    if (req.query.code) {
+      const code = String(req.query.code).trim().toLowerCase();
+      if (/^[a-f0-9]{4,32}$/.test(code)) {
+        try {
+          const pool = require('../src/db-pg').getDb();
+          if (pool) {
+            const { rows } = await pool.query('SELECT token FROM pc_install_codes WHERE code=$1', [code]);
+            if (rows.length && rows[0].token) envToken = rows[0].token;
+          }
+        } catch {}
+      }
+    }
 
     const batContent = [
       '@echo off',
@@ -1048,6 +1062,7 @@ while ($true) {
       'echo.',
       '',
       `set "ORBIT_REMOTE=${serverUrl}"`,
+      ...(envToken ? [`set "ORBIT_TOKEN=${envToken}"`] : []),
       `set "PS1_URL=${serverUrl}/setup/clean-install.ps1"`,
       'set "PS1_LOCAL=%TEMP%\\orbit-clean-install.ps1"',
       '',

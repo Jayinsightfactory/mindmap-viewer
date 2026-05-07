@@ -5023,34 +5023,51 @@ app.get('/i/:code', async (req, res) => {
   try {
     const { rows } = await pool.query('SELECT token, label, used_at FROM pc_install_codes WHERE code=$1', [code]);
     if (!rows.length) return res.status(404).send('설치 코드를 찾을 수 없습니다.');
-    const { token, label } = rows[0];
+    const { label } = rows[0];
     const serverUrl = process.env.SERVER_URL || 'https://mindmap-viewer-production-adb2.up.railway.app';
-    // -NoExit: 결과 화면이 자동으로 닫히지 않도록 새 PowerShell 창 유지
-    const cmd = `$env:ORBIT_TOKEN='${token}'; iwr '${serverUrl}/setup/install.ps1' -OutFile "$env:TEMP\\orbit-install.ps1"; powershell -NoExit -ExecutionPolicy Bypass -Command "$env:ORBIT_TOKEN='${token}'; & '$env:TEMP\\orbit-install.ps1'"`;
     pool.query('UPDATE pc_install_codes SET used_at=COALESCE(used_at, NOW()) WHERE code=$1', [code]).catch(() => {});
+    // 다운로드 방식 (AMSI 안전) — irm|iex 패턴 제거, /install 페이지와 동일 흐름
+    const dlUrl = `${serverUrl}/api/install-clean.bat?code=${code}`;
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.send(`<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>Orbit AI 설치 — ${label}</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
-body{font-family:'Segoe UI','Apple SD Gothic Neo',sans-serif;background:#0a0a0f;color:#e8e8ef;margin:0;padding:24px;max-width:640px;margin-left:auto;margin-right:auto;line-height:1.5}
-h1{font-size:22px;margin-top:0}.card{background:#14141c;border:1px solid #2a2a3a;border-radius:12px;padding:20px;margin:16px 0}
-.cmd{background:#000;color:#8fe;padding:16px;border-radius:8px;font-family:Consolas,Menlo,monospace;font-size:12px;word-break:break-all;white-space:pre-wrap;user-select:all}
-button{background:#4a9eff;color:#fff;border:none;padding:14px;border-radius:8px;font-size:15px;cursor:pointer;width:100%;margin-top:12px;font-weight:600}
-button:hover{background:#3a8eef}ol{padding-left:20px;margin:8px 0}li{margin-bottom:8px}.warn{color:#ffa;font-size:13px}
+body{font-family:'Segoe UI','Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:#0a0a0f;color:#e8e8ef;margin:0;padding:24px;max-width:640px;margin-left:auto;margin-right:auto;line-height:1.6}
+h1{font-size:22px;margin-top:0}.card{background:#14141c;border:1px solid #2a2a3a;border-radius:12px;padding:24px;margin:16px 0}
+a.btn{display:block;background:#4a9eff;color:#fff;text-decoration:none;padding:16px 24px;border-radius:10px;font-size:17px;font-weight:700;text-align:center;margin:12px 0}
+a.btn:hover{background:#3a8eef}
+ol{padding-left:20px;margin:8px 0}li{margin-bottom:8px}
+.warn{color:#ffa;font-size:13px}
+.tip{background:#1a2a1a;border-left:3px solid #4caf50;padding:10px 14px;border-radius:6px;font-size:13px;color:#aef;margin:12px 0}
+.link-box{background:#000;color:#8fe;padding:10px 14px;border-radius:6px;font-family:Consolas,Menlo,monospace;font-size:11px;word-break:break-all;margin:8px 0}
 </style></head><body>
 <h1>🚀 Orbit AI 설치 — ${label}</h1>
+
 <div class="card">
-<b>Windows PC에서 설치:</b>
-<ol>
-<li>시작 메뉴 → <b>PowerShell</b> 검색 → 열기</li>
-<li>아래 "명령어 복사" 버튼 클릭</li>
-<li>PowerShell 창에 <b>우클릭 (붙여넣기)</b> 후 <b>Enter</b></li>
-<li>자동 설치 (약 2분). "설치 완료" 메시지 나오면 끝.</li>
-</ol>
-<div class="cmd" id="cmd">${cmd.replace(/</g, '&lt;')}</div>
-<button id="btn" onclick="(async()=>{try{await navigator.clipboard.writeText(document.getElementById('cmd').innerText);document.getElementById('btn').innerText='✅ 복사됨 — PowerShell에 붙여넣으세요';}catch(e){alert('수동으로 위 명령어를 선택-복사해 주세요');}})()">📋 명령어 복사</button>
+<a class="btn" href="${dlUrl}" download="orbit-install.bat">⬇️  설치 파일 다운로드</a>
+<div class="tip">버튼이 안 되면 아래 링크를 브라우저 주소창에 붙여넣기:</div>
+<div class="link-box" id="dl">${dlUrl}</div>
 </div>
+
+<div class="card">
+<b>설치 순서:</b>
+<ol>
+<li>위 <b>설치 파일 다운로드</b> 클릭</li>
+<li>다운로드된 <code>orbit-install.bat</code> 더블클릭</li>
+<li>"Windows가 PC를 보호했습니다" → <b>추가 정보 → 실행</b></li>
+<li>"사용자 계정 컨트롤" (UAC) → <b>예</b></li>
+<li>검은 창에서 자동 설치 (2~3분)</li>
+</ol>
+</div>
+
 <div class="card warn">⚠️ 이 링크는 해당 PC 전용입니다. 다른 사람과 공유하지 마세요.</div>
+
+<details style="margin-top:16px;color:#888;font-size:13px">
+<summary style="cursor:pointer">🛡️ 백신이 설치를 차단할 때</summary>
+<p>관리자 PowerShell에서 한 줄 실행:</p>
+<div class="link-box" id="wl">irm '${serverUrl}/api/setup/whitelist.ps1' | iex</div>
+<p>→ Defender 예외 등록 후 위 다운로드 버튼 다시 클릭</p>
+</details>
 </body></html>`);
   } catch (e) {
     res.status(500).send('오류: ' + e.message);
