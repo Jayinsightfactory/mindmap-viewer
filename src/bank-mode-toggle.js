@@ -68,28 +68,50 @@ let _bankMode = false; // true = 은행 보안 활성 상태
 let _lastCheck = null;
 
 /**
- * 현재 실행 중인 은행 보안 프로세스 확인
+ * 현재 실행 중인 은행 보안 프로세스 확인 (win-shell 통해 cmd 깜빡임 0)
+ * 이전: execSync('tasklist') 매 3분 호출 → conhost 깜빡임 원인
+ * 현재: long-running PowerShell의 Get-Process 1회 쿼리
  */
-function getRunningBankProcesses() {
+let _procListCache = '';
+let _procListCacheAt = 0;
+async function getRunningBankProcessesAsync() {
   if (process.platform !== 'win32') return [];
 
-  try {
-    const output = execSync(
-      'tasklist /FO CSV /NH',
-      { windowsHide: true, stdio: 'pipe', timeout: 10000, encoding: 'utf-8' }
-    );
+  // 30초 캐시 — 같은 사이클에서 isBankingActive + getRunningBankProcesses 둘 다 호출되는 경우 대비
+  const now = Date.now();
+  let output = (now - _procListCacheAt < 30000) ? _procListCache : '';
 
-    const running = [];
-    for (const proc of BANK_SECURITY_PROCESSES) {
-      if (proc.critical) continue; // V3 같은 건 건드리지 않음
-      if (output.toLowerCase().includes(proc.process.toLowerCase())) {
-        running.push(proc);
-      }
-    }
-    return running;
-  } catch {
-    return [];
+  if (!output) {
+    const ws = _loadWinShell();
+    if (!ws || !ws.isAvailable()) return []; // 폴백 X (cmd창 깜빡임 절대 회피)
+    try {
+      output = (await ws.exec('(Get-Process | Select-Object -ExpandProperty Name) -join \',\'', 5000) || '').toLowerCase();
+      _procListCache = output;
+      _procListCacheAt = now;
+    } catch { return []; }
   }
+
+  const running = [];
+  for (const proc of BANK_SECURITY_PROCESSES) {
+    if (proc.critical) continue;
+    const name = proc.process.toLowerCase().replace(/\.exe$/, '');
+    if (output.includes(name)) running.push(proc);
+  }
+  return running;
+}
+
+// 동기 호환용 — 호출자는 비어있는 배열 받음 (이전 호출 누적 캐시는 살아있음)
+function getRunningBankProcesses() {
+  if (process.platform !== 'win32') return [];
+  // 캐시된 값으로 동기 응답 (없으면 빈 배열)
+  if (!_procListCache) return [];
+  const running = [];
+  for (const proc of BANK_SECURITY_PROCESSES) {
+    if (proc.critical) continue;
+    const name = proc.process.toLowerCase().replace(/\.exe$/, '');
+    if (_procListCache.includes(name)) running.push(proc);
+  }
+  return running;
 }
 
 // Windows: long-running PowerShell로 cmd창 깜빡임 방지
@@ -200,7 +222,8 @@ async function _autoCheck() {
   if (process.platform !== 'win32') return;
 
   const banking = await isBankingActive();
-  const securityRunning = getRunningBankProcesses();
+  // win-shell 통한 비동기 호출 (cmd 깜빡임 0)
+  const securityRunning = await getRunningBankProcessesAsync();
 
   _lastCheck = {
     timestamp: new Date().toISOString(),
