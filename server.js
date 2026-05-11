@@ -4749,6 +4749,21 @@ app.get('/install', (req, res) => {
     <p>SmartScreen: "추가 정보" → "실행"</p>
   </details>
   <details>
+    <summary>🛡️ AhnLab V3 / 알약 등 백신 경고창</summary>
+    <p><b>증상</b>: 설치 후 V3가 "문제있는 프로그램" 경고창 / PowerShell이 자주 뜸</p>
+    <p><b>원인</b>: schtasks + 레지스트리 + PowerShell 주기 호출 조합을 휴리스틱이 의심</p>
+    <p><b>해결</b> — V3 콘솔에서 폴더 예외 등록:</p>
+    <ol style="font-size:13px;color:#666;line-height:1.6;padding-left:20px">
+      <li>V3 더블클릭 → <b>환경 설정</b></li>
+      <li><b>검사 설정</b> → <b>검사 제외</b> → <b>폴더 추가</b></li>
+      <li>다음 두 폴더 추가:<br>
+        <code>%USERPROFILE%\\.orbit</code><br>
+        <code>%USERPROFILE%\\mindmap-viewer</code></li>
+      <li>저장 후 PC 재부팅</li>
+    </ol>
+    <p><b>알약 / Norton 등도 동일 방식</b> — "검사 제외 폴더" 메뉴에 위 두 폴더 추가</p>
+  </details>
+  <details>
     <summary>🛡️ "이 스크립트에 악성 콘텐츠..." / AV 차단</summary>
     <p><b>증상</b>: PowerShell이 "This script contains malicious content..." 라고 차단</p>
     <p><b>원인</b>: Windows Defender / 백신이 PowerShell 스크립트를 의심</p>

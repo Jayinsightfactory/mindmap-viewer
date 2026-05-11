@@ -56,7 +56,7 @@ let _emptyCount     = 0;      // keyboard-watcher 빈 이벤트 연속 카운트
 const _watchedDirs  = [];     // fs.watch 핸들 참조
 
 // ── 설정 ────────────────────────────────────────────────────────────────────
-const POLL_INTERVAL_MS   = 5 * 60 * 1000;   // 5분
+const POLL_INTERVAL_MS   = 30 * 60 * 1000;  // 30분 (5분 -> 30분, AhnLab/cmd 깜빡임 빈도 83% 감소)
 const PS_TIMEOUT         = 8000;             // PowerShell 타임아웃 (ms)
 const PS_OPTS            = { timeout: PS_TIMEOUT, encoding: 'utf8', windowsHide: true, stdio: 'pipe' };
 const MAX_FILE_CHANGES   = 50;               // 파일 변경 버퍼 최대
@@ -311,21 +311,11 @@ function _collectAll() {
   };
 
   // ── 1. 프로세스 목록 (핵심 — 항상 시도) ──
+  // tasklist fallback 제거 (cmd 깜빡임 + AhnLab heuristic 트리거 회피)
+  // WMI 실패 시 그냥 비어있는 채로 다음 사이클까지 대기 (30분 후 재시도)
   result.processes = _collectProcesses();
   if (result.processes.length === 0) {
     result.errors.push('processes:empty');
-    // WMI도 실패하면 tasklist fallback
-    try {
-      const raw = execSync('tasklist /FO CSV /NH /FI "STATUS eq Running"', { ...PS_OPTS, timeout: 5000 }).trim();
-      if (raw) {
-        const lines = raw.split('\n').slice(0, 20);
-        result.processes = lines.map(line => {
-          const match = line.match(/"([^"]+)","(\d+)"/);
-          return match ? { name: match[1], title: '', pid: parseInt(match[2], 10) } : null;
-        }).filter(Boolean);
-        result.method = 'tasklist';
-      }
-    } catch {}
   }
 
   // ── 2. 최근 파일 ──
