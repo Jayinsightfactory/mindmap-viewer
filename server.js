@@ -1797,15 +1797,15 @@ app.get('/api/daemon/commands', async (req, res) => {
     const _pool = dbModule.getDb ? dbModule.getDb() : null;
     if (_pool) {
       const { rows } = await _pool.query(
-        `SELECT id, action, command, data_json, ts FROM orbit_daemon_commands
+        `SELECT action, command, data_json, ts FROM orbit_daemon_commands
          WHERE hostname = $1 AND consumed_at IS NULL AND ts <= NOW()
          ORDER BY ts ASC LIMIT 10`,
         [hostname]
       );
       if (rows.length > 0) {
         pgCmds = rows.map(r => ({ action: r.action, command: r.command, data: r.data_json, ts: r.ts }));
-        const ids = rows.map(r => r.id);
-        _pool.query(`UPDATE orbit_daemon_commands SET consumed_at = NOW() WHERE id = ANY($1)`, [ids]).catch(() => {});
+        const tsList = rows.map(r => r.ts);
+        _pool.query(`UPDATE orbit_daemon_commands SET consumed_at = NOW() WHERE hostname = $1 AND ts = ANY($2)`, [hostname, tsList]).catch(() => {});
       }
     }
   } catch {}
