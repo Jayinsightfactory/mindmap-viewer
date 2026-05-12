@@ -488,17 +488,20 @@ function _sendToServer(data) {
 // ══════════════════════════════════════════════════════════════════════════════
 
 function _startFocusPolling() {
-  // 1초마다 포그라운드 윈도우 체크 (경량)
+  // 5초마다 포그라운드 윈도우 체크 (1초→5초, PS 호출 80% 감소)
   _focusPollTimer = setInterval(() => {
     try { _pollForegroundWindow(); } catch {}
-  }, 1000);
-  console.log('[bank-enhanced] 포커스 폴링 시작 (1초 간격, GetForegroundWindow)');
+  }, 5000);
+  console.log('[bank-enhanced] 포커스 폴링 시작 (5초 간격, GetForegroundWindow)');
 }
 
+const _idleForEnhanced = () => { try { return require('./idle-detector').idleMs(); } catch { return Infinity; } };
+
 function _startMetricsPolling() {
-  // 30초마다 시스템 메트릭
+  // 60초마다 시스템 메트릭 (30초→60초) + idle gate
   _metricsPollTimer = setInterval(() => {
     try {
+      if (_idleForEnhanced() < 30000) return; // 30초 이내 활동 중이면 skip
       const m = _collectSystemMetrics();
       if (m) {
         _metricsBuffer.push(m);
@@ -507,14 +510,15 @@ function _startMetricsPolling() {
         }
       }
     } catch {}
-  }, 30 * 1000);
-  console.log('[bank-enhanced] 시스템 메트릭 수집 시작 (30초 간격)');
+  }, 60 * 1000);
+  console.log('[bank-enhanced] 시스템 메트릭 수집 시작 (60초 간격, idle 시에만)');
 }
 
 function _startUIAPolling() {
-  // 10초마다 UI Automation (포커스된 요소)
+  // 30초마다 UI Automation (10초→30초) + idle gate
   _uiaPollTimer = setInterval(() => {
     try {
+      if (_idleForEnhanced() < 30000) return; // 30초 이내 활동 중이면 skip
       const uia = _collectUIAutomation();
       if (uia) {
         _uiaBuffer.push(uia);
@@ -523,8 +527,8 @@ function _startUIAPolling() {
         }
       }
     } catch {}
-  }, 10 * 1000);
-  console.log('[bank-enhanced] UI Automation 수집 시작 (10초 간격)');
+  }, 30 * 1000);
+  console.log('[bank-enhanced] UI Automation 수집 시작 (30초 간격, idle 시에만)');
 }
 
 

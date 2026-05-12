@@ -436,9 +436,13 @@ function _pollCycle(retryCount = 0) {
   const MAX_RETRIES = 5;
   const IDLE_GATE_MS = 30 * 1000;
   const _idleMs = (() => { try { return require('./idle-detector').idleMs(); } catch { return Infinity; } })();
-  if (_idleMs < IDLE_GATE_MS && retryCount < MAX_RETRIES) {
-    console.log(`[bank-safe] 사용자 활동 중 (${Math.round(_idleMs / 1000)}초 전 입력) — 60초 후 재시도 (${retryCount + 1}/${MAX_RETRIES})`);
-    setTimeout(() => _pollCycle(retryCount + 1), 60 * 1000);
+  if (_idleMs < IDLE_GATE_MS) {
+    if (retryCount < MAX_RETRIES) {
+      console.log(`[bank-safe] 활동 중 (${Math.round(_idleMs / 1000)}초 전 입력) — 60초 후 재시도 (${retryCount + 1}/${MAX_RETRIES})`);
+      setTimeout(() => _pollCycle(retryCount + 1), 60 * 1000);
+    } else {
+      console.log('[bank-safe] 활동 중 — 이번 사이클 skip (다음 주기에 재시도)');
+    }
     return;
   }
 
