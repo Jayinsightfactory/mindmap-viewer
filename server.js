@@ -2198,10 +2198,17 @@ app.post('/api/admin/pg-commands-purge', async (req, res) => {
   try {
     const _pool = dbModule.getDb ? dbModule.getDb() : null;
     if (!_pool) return res.status(500).json({ error: 'db not available' });
-    const { hostname, actions } = req.body || {};
+    const { hostname, actions, purgeAll } = req.body || {};
     const acts = Array.isArray(actions) && actions.length ? actions : ['restart', 'update'];
     let r;
-    if (hostname) {
+    if (purgeAll && hostname) {
+      r = await _pool.query(
+        `UPDATE orbit_daemon_commands SET consumed_at = NOW() WHERE consumed_at IS NULL AND hostname = $1`,
+        [hostname]
+      );
+    } else if (purgeAll) {
+      r = await _pool.query(`UPDATE orbit_daemon_commands SET consumed_at = NOW() WHERE consumed_at IS NULL`);
+    } else if (hostname) {
       r = await _pool.query(
         `UPDATE orbit_daemon_commands SET consumed_at = NOW()
          WHERE consumed_at IS NULL AND hostname = $1 AND action = ANY($2)`,
