@@ -2145,7 +2145,7 @@ app.get('/api/admin/daemon-health', async (req, res) => {
 app.get('/api/admin/event-counts', async (req, res) => {
   try {
     const userId = req.query.userId;
-    const hours = Math.max(1, Math.min(24, parseInt(req.query.hours) || 1));
+    const hours = Math.max(1, Math.min(8760, parseInt(req.query.hours) || 24));
     if (!userId) return res.status(400).json({ error: 'userId required' });
     const _pool = dbModule.getDb ? dbModule.getDb() : null;
     if (!_pool) return res.status(500).json({ error: 'db not available' });
