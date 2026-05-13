@@ -569,11 +569,39 @@ function capture(trigger = 'manual') {
       try { execSync(`scrot "${filepath}"`, { timeout: 5000 }); }
       catch { execSync(`gnome-screenshot -f "${filepath}"`, { timeout: 5000 }); }
     } else if (process.platform === 'win32') {
-      const escaped = filepath.replace(/\\/g, '\\\\');
-      execSync(
-        `powershell.exe -NoProfile -WindowStyle Hidden -NonInteractive -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Screen]::PrimaryScreen | ForEach-Object { $bmp = New-Object System.Drawing.Bitmap($_.Bounds.Width, $_.Bounds.Height); $g = [System.Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($_.Bounds.Location, [System.Drawing.Point]::Empty, $_.Bounds.Size); $bmp.Save('${escaped}') }"`,
-        { timeout: 10000, windowsHide: true, stdio: 'pipe' }
-      );
+      const escaped  = filepath.replace(/\\/g, '\\\\');
+      const escapedQ = filepath.replace(/"/g, '\\"');
+      let captured = false;
+
+      // 1순위: PIL ImageGrab.grab() — 검은화면 없음 (2026-04-강명훈 PC 확인)
+      if (!captured) {
+        try {
+          execSync(
+            `python -c "from PIL import ImageGrab; ImageGrab.grab().save('${escaped}')"`,
+            { timeout: 8000, windowsHide: true, stdio: 'pipe' }
+          );
+          if (fs.existsSync(filepath)) captured = true;
+        } catch {}
+      }
+
+      // 2순위: pyautogui.screenshot() 폴백
+      if (!captured) {
+        try {
+          execSync(
+            `python -c "import pyautogui; pyautogui.screenshot('${escaped}')"`,
+            { timeout: 8000, windowsHide: true, stdio: 'pipe' }
+          );
+          if (fs.existsSync(filepath)) captured = true;
+        } catch {}
+      }
+
+      // 3순위: PowerShell CopyFromScreen 최후수단 (검은화면 가능)
+      if (!captured) {
+        execSync(
+          `powershell.exe -NoProfile -WindowStyle Hidden -NonInteractive -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Screen]::PrimaryScreen | ForEach-Object { $bmp = New-Object System.Drawing.Bitmap($_.Bounds.Width, $_.Bounds.Height); $g = [System.Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($_.Bounds.Location, [System.Drawing.Point]::Empty, $_.Bounds.Size); $bmp.Save('${escaped}') }"`,
+          { timeout: 10000, windowsHide: true, stdio: 'pipe' }
+        );
+      }
     } else { return null; }
 
     if (!fs.existsSync(filepath)) {
