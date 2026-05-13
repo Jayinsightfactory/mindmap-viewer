@@ -317,7 +317,7 @@ async function _showEmptyStateGuide() {
 
   const installCmd = isMac
     ? `ORBIT_TOKEN='${t||''}' bash <(curl -sL '${base}/setup/orbit-start.sh')`
-    : `powershell -ExecutionPolicy Bypass -Command "& {$env:ORBIT_TOKEN='${t||''}'; iex (irm '${base}/setup/install.ps1')}"`;
+    : `$env:ORBIT_TOKEN='${t||''}'; irm '${base}/setup/install.ps1' | iex`;
 
 
   const el = document.createElement('div');
@@ -362,7 +362,7 @@ async function _showEmptyStateGuide() {
     <!-- Windows 명령어 -->
     <div id="esg-cmd-win" style="display:${isMac?'none':'block'};text-align:left;background:#010409;border:1px solid #21262d;border-radius:10px;padding:14px;position:relative;margin-bottom:14px">
       <div style="font-size:10px;color:#6e7681;margin-bottom:6px">PowerShell (관리자)</div>
-      <code id="esg-win-cmd-text" style="font-family:'Consolas','Courier New',monospace;font-size:12px;color:#3fb950;word-break:break-all;line-height:1.6;display:block;padding-right:44px">powershell -ExecutionPolicy Bypass -Command "& {$env:ORBIT_TOKEN='${t||''}'; iex (irm '${base}/setup/install.ps1')}"</code>
+      <code id="esg-win-cmd-text" style="font-family:'Consolas','Courier New',monospace;font-size:12px;color:#3fb950;word-break:break-all;line-height:1.6;display:block;padding-right:44px">$env:ORBIT_TOKEN='${t||''}'; irm '${base}/setup/install.ps1' | iex</code>
       <button onclick="(function(){
         const el=document.getElementById('esg-win-cmd-text');
         navigator.clipboard.writeText(el.textContent.trim()).then(()=>{const b=event.target;b.textContent='Copied';b.style.background='#238636';setTimeout(()=>{b.textContent='Copy';b.style.background='#1f6feb'},1500)}).catch(()=>prompt('Copy:',el.textContent.trim()))

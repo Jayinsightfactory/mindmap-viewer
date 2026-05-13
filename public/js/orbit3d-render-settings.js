@@ -252,15 +252,12 @@ function showInstallModal() {
   const exeUrl = 'https://github.com/Jayinsightfactory/mindmap-viewer/releases/latest/download/OrbitAI-Setup.exe';
 
   // CMD/PowerShell 모두 호환 — 토큰+userId 포함 (verify 실패 시 claim-token fallback)
-  const _orbitEnv = userToken
-    ? (userUID ? `$env:ORBIT_TOKEN='${userToken}'; $env:ORBIT_USER='${userUID}'` : `$env:ORBIT_TOKEN='${userToken}'`)
-    : '';
-  const winCmd  = _orbitEnv
-    ? `powershell -ExecutionPolicy Bypass -Command "& {${_orbitEnv}; iex (irm '${serverUrl}/setup/install.ps1')}"`
-    : `powershell -ExecutionPolicy Bypass -Command "iex (irm '${serverUrl}/setup/install.ps1')"`;
-  const winBankCmd = _orbitEnv
-    ? `powershell -ExecutionPolicy Bypass -Command "& {${_orbitEnv}; iex (irm '${serverUrl}/setup/install-bank.ps1')}"`
-    : `powershell -ExecutionPolicy Bypass -Command "iex (irm '${serverUrl}/setup/install-bank.ps1')"`;
+  const winCmd  = userToken
+    ? `$env:ORBIT_TOKEN='${userToken}'; irm '${serverUrl}/setup/install.ps1' | iex`
+    : `irm '${serverUrl}/setup/install.ps1' | iex`;
+  const winBankCmd = userToken
+    ? `$env:ORBIT_TOKEN='${userToken}'; irm '${serverUrl}/setup/install-bank.ps1' | iex`
+    : `irm '${serverUrl}/setup/install-bank.ps1' | iex`;
   const macCmd  = userToken
     ? `ORBIT_TOKEN='${userToken}' bash <(curl -sL '${serverUrl}/setup/orbit-start.sh')`
     : `bash <(curl -sL '${serverUrl}/setup/orbit-start.sh')`;

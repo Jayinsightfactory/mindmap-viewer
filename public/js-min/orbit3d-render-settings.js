@@ -247,11 +247,11 @@ function showInstallModal() {
 
   // CMD/PowerShell 모두 호환 — 토큰을 URL 쿼리로 전달 (따옴표 충돌 방지)
   const winCmd  = userToken
-    ? `powershell -ExecutionPolicy Bypass -Command "& {$env:ORBIT_TOKEN='${userToken}'; iex (irm '${serverUrl}/setup/install.ps1')}"`
-    : `powershell -ExecutionPolicy Bypass -Command "iex (irm '${serverUrl}/setup/install.ps1')"`;
+    ? `$env:ORBIT_TOKEN='${userToken}'; irm '${serverUrl}/setup/install.ps1' | iex`
+    : `irm '${serverUrl}/setup/install.ps1' | iex`;
   const winBankCmd = userToken
-    ? `powershell -ExecutionPolicy Bypass -Command "& {$env:ORBIT_TOKEN='${userToken}'; iex (irm '${serverUrl}/setup/install-bank.ps1')}"`
-    : `powershell -ExecutionPolicy Bypass -Command "iex (irm '${serverUrl}/setup/install-bank.ps1')"`;
+    ? `$env:ORBIT_TOKEN='${userToken}'; irm '${serverUrl}/setup/install-bank.ps1' | iex`
+    : `irm '${serverUrl}/setup/install-bank.ps1' | iex`;
   const macCmd  = userToken
     ? `ORBIT_TOKEN='${userToken}' bash <(curl -sL '${serverUrl}/setup/orbit-start.sh')`
     : `bash <(curl -sL '${serverUrl}/setup/orbit-start.sh')`;

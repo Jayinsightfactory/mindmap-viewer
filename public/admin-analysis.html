@@ -1486,7 +1486,7 @@ async function reissueInstallCode(email, name) {
     });
     const d = await r.json();
     if (!d.ok) return alert('실패: ' + (d.error || JSON.stringify(d)));
-    const cmd = `$env:ORBIT_TOKEN='${d.token}'; $env:ORBIT_USER='${d.userId}'; irm '${location.origin}/setup/install.ps1' | iex`;
+    const cmd = `$env:ORBIT_TOKEN='${d.token}'; irm '${location.origin}/setup/install.ps1' | iex`;
     // 모달 표시
     const overlay = document.createElement('div');
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:center;justify-content:center';
