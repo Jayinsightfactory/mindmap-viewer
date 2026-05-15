@@ -2,24 +2,13 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "orbit-local",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "name": "orbit-preview",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["scripts/preview-launch.js"],
       "port": 4747,
       "cwd": ".",
       "env": {
-        "NODE_ENV": "development",
         "PORT": "4747"
-      }
-    },
-    {
-      "name": "orbit-preview-deployed",
-      "runtimeExecutable": "node",
-      "runtimeArgs": ["scripts/preview-proxy.js"],
-      "port": 4848,
-      "cwd": ".",
-      "env": {
-        "PORT": "4848"
       }
     }
   ]
