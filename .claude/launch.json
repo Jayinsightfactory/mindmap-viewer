@@ -3,9 +3,13 @@
   "configurations": [
     {
       "name": "orbit-dev",
-      "runtimeExecutable": "node",
-      "runtimeArgs": ["server.js"],
-      "port": 4747
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 4747,
+      "cwd": ".",
+      "env": {
+        "NODE_ENV": "development"
+      }
     }
   ]
 }
