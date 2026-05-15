@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>nenova AI</title>
+  <meta name="theme-color" content="#020617">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color: transparent; }
+    :root {
+      --bg:#020617; --surface:#111a30; --surface2:#18223d;
+      --border:#25304d; --text:#e6ecff; --muted:#8b97b8;
+      --blue:#5b8cff; --cyan:#38d4e8; --green:#3fd68b; --violet:#a98bff;
+    }
+    html, body {
+      background: var(--bg); color: var(--text);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+    body {
+      height: 100vh; height: 100dvh;
+      display: flex; flex-direction: column;
+      font-size: 15px;
+      overscroll-behavior: contain;
+    }
+
+    /* 상단 헤더 */
+    .chat-bar {
+      flex-shrink: 0;
+      display: flex; align-items: center; gap: 8px;
+      padding: 10px 8px;
+      background: rgba(2,6,23,0.92);
+      backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+      border-bottom: 1px solid var(--border);
+      padding-top: calc(10px + env(safe-area-inset-top));
+    }
+    .icon-btn {
+      width: 40px; height: 40px; border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      background: transparent; border: none; color: var(--text);
+      font-size: 20px; cursor: pointer; text-decoration: none;
+      flex-shrink: 0;
+    }
+    .icon-btn:active { background: var(--surface2); }
+    .chat-title {
+      flex: 1;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .chat-title .av {
+      width: 34px; height: 34px; border-radius: 50%;
+      background: linear-gradient(135deg, var(--cyan), var(--blue));
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px;
+    }
+    .chat-title .meta { display:flex; flex-direction:column; }
+    .chat-title .meta .name { font-weight: 700; font-size: 15px; }
+    .chat-title .meta .status {
+      font-size: 11px; color: var(--green); margin-top: 1px;
+      display: flex; align-items: center; gap: 4px;
+    }
+    .chat-title .meta .status::before {
+      content: ''; width: 6px; height: 6px; border-radius: 50%;
+      background: var(--green); box-shadow: 0 0 6px var(--green);
+    }
+
+    /* 메시지 영역 */
+    .scroll {
+      flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
+      padding: 16px 14px 12px;
+    }
+    .scroll::-webkit-scrollbar { width: 4px; }
+    .scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    .intro {
+      text-align: center; padding: 20px 16px 28px;
+    }
+    .intro .av {
+      width: 56px; height: 56px; border-radius: 50%;
+      background: linear-gradient(135deg, var(--cyan), var(--blue));
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: 28px; margin-bottom: 12px;
+      box-shadow: 0 6px 20px rgba(56,212,232,0.3);
+    }
+    .intro h1 { font-size: 18px; color: var(--text); font-weight: 700; margin-bottom: 6px; }
+    .intro p { font-size: 13px; color: var(--muted); line-height: 1.5; }
+
+    .msg { margin-bottom: 12px; display: flex; gap: 6px; max-width: 88%; }
+    .msg.user { margin-left: auto; flex-direction: row-reverse; }
+    .msg.bot { margin-right: auto; }
+    .bubble {
+      padding: 11px 14px; border-radius: 18px;
+      font-size: 14.5px; line-height: 1.55;
+      word-break: break-word;
+    }
+    .msg.user .bubble {
+      background: linear-gradient(135deg, var(--blue), #4a7af7);
+      color: #fff;
+      border-bottom-right-radius: 6px;
+    }
+    .msg.bot .bubble {
+      background: var(--surface2);
+      color: var(--text);
+      border-bottom-left-radius: 6px;
+      border: 1px solid var(--border);
+    }
+    .msg .time {
+      font-size: 10px; color: var(--muted);
+      align-self: flex-end; padding: 0 4px 2px;
+    }
+
+    /* Tool 호출 표시 */
+    .tool {
+      display: inline-flex; align-items: center; gap: 6px;
+      margin: 8px 0 4px;
+      padding: 5px 10px; border-radius: 8px;
+      background: rgba(56,212,232,0.08); border: 1px solid rgba(56,212,232,0.3);
+      font-size: 11px; color: var(--cyan); font-family: 'SF Mono', Menlo, monospace;
+    }
+    .tool .spinner {
+      width: 10px; height: 10px; border-radius: 50%;
+      border: 1.5px solid var(--cyan); border-top-color: transparent;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* 옵션 버튼 (멀티턴 빠른 응답) */
+    .options {
+      display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px;
+    }
+    .option {
+      padding: 7px 12px; border-radius: 999px;
+      background: transparent; border: 1px solid var(--cyan);
+      color: var(--cyan); font-size: 12px; font-weight: 600;
+      cursor: pointer; font-family: inherit;
+    }
+    .option:active { background: rgba(56,212,232,0.1); }
+
+    /* 데이터 카드 (답변 안의 표) */
+    .data-card {
+      background: rgba(2,6,23,0.5); border: 1px solid var(--border);
+      border-radius: 12px; padding: 10px 12px;
+      margin-top: 8px; font-size: 13px;
+    }
+    .data-card .head {
+      display:flex; justify-content:space-between; align-items:center;
+      margin-bottom: 6px; padding-bottom: 6px;
+      border-bottom: 1px solid var(--border);
+    }
+    .data-card .head .label {
+      font-size: 10.5px; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.05em;
+    }
+    .data-card .head .badge { font-size: 11px; color: var(--cyan); font-weight: 600; }
+    .data-card ul { list-style: none; }
+    .data-card li {
+      display: flex; justify-content: space-between;
+      padding: 5px 0; font-size: 13px;
+    }
+    .data-card li:not(:last-child) {
+      border-bottom: 1px dashed rgba(37,48,77,0.6);
+    }
+    .data-card li.sum {
+      padding-top: 8px; margin-top: 4px;
+      border-top: 1px solid var(--border);
+      border-bottom: none;
+      font-weight: 700; color: var(--cyan);
+    }
+
+    /* 빠른 질문 칩 */
+    .quick-chips {
+      flex-shrink: 0;
+      padding: 8px 14px 4px;
+      display: flex; gap: 8px;
+      overflow-x: auto; -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+    }
+    .quick-chips::-webkit-scrollbar { display: none; }
+    .chip {
+      flex: 0 0 auto;
+      padding: 8px 13px; border-radius: 999px;
+      background: var(--surface); border: 1px solid var(--border);
+      color: var(--text); font-size: 12.5px; font-weight: 500;
+      cursor: pointer; white-space: nowrap; font-family: inherit;
+    }
+    .chip:active { background: var(--surface2); border-color: var(--cyan); }
+
+    /* 입력 바 */
+    .input-bar {
+      flex-shrink: 0;
+      padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+      background: rgba(2,6,23,0.94);
+      backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+      border-top: 1px solid var(--border);
+      display: flex; gap: 8px; align-items: flex-end;
+    }
+    .input-bar .mic, .input-bar .send {
+      width: 44px; height: 44px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      border: none; cursor: pointer;
+      flex-shrink: 0;
+    }
+    .input-bar .mic { background: var(--surface2); color: var(--muted); font-size: 18px; }
+    .input-bar .mic:active { background: var(--border); }
+    .input-bar .send {
+      background: linear-gradient(135deg, var(--blue), var(--cyan));
+      color: #fff; font-size: 16px;
+      box-shadow: 0 4px 12px rgba(91,140,255,0.3);
+    }
+    .input-bar .send:active { transform: scale(0.94); }
+    .input-bar textarea {
+      flex: 1; min-height: 44px; max-height: 120px;
+      padding: 11px 14px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 22px;
+      color: var(--text); font-size: 16px; font-family: inherit;
+      resize: none; outline: none;
+      line-height: 1.4;
+    }
+    .input-bar textarea:focus { border-color: var(--cyan); }
+  </style>
+</head>
+<body>
+  <header class="chat-bar">
+    <a href="/mockup-mobile-home.html" class="icon-btn" aria-label="뒤로">&larr;</a>
+    <div class="chat-title">
+      <div class="av">&#129302;</div>
+      <div class="meta">
+        <span class="name">nenova AI</span>
+        <span class="status">답변 준비됨</span>
+      </div>
+    </div>
+    <button class="icon-btn" title="새 대화" aria-label="새 대화">&#9998;</button>
+  </header>
+
+  <div class="scroll" id="scroll">
+    <div class="intro">
+      <div class="av">&#129302;</div>
+      <h1>무엇을 도와드릴까요?</h1>
+      <p>출고·주문·재고·거래처를 자연어로 물어보세요</p>
+    </div>
+
+    <div class="msg user">
+      <div class="bubble">20차 출고수량</div>
+      <div class="time">14:23</div>
+    </div>
+
+    <div class="msg bot">
+      <div class="bubble">
+        20차는 <strong>20-01</strong>, <strong>20-02</strong> 두 sub-round가 있어요. 어느 거 보실까요?
+        <div class="options">
+          <button class="option">20-01</button>
+          <button class="option">20-02</button>
+          <button class="option">둘 다</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="msg user">
+      <div class="bubble">20-1</div>
+      <div class="time">14:23</div>
+    </div>
+
+    <div class="msg bot">
+      <div class="bubble">
+        담당자 지정업체 전부 보시겠어요, 특정 업체 고르시겠어요?
+        <div class="options">
+          <button class="option">전체</button>
+          <button class="option">담당자별</button>
+          <button class="option">특정 업체</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="msg user">
+      <div class="bubble">임재용 담당, 특정 업체</div>
+      <div class="time">14:24</div>
+    </div>
+
+    <div class="msg bot">
+      <div class="bubble">
+        <div class="tool"><span class="spinner"></span> list_vendors_by_manager("임재용")</div>
+        임재용 담당 업체입니다. 어느 업체?
+        <div class="options">
+          <button class="option">가나꽃집</button>
+          <button class="option">ABC플라워</button>
+          <button class="option">대한플로리스트</button>
+          <button class="option">서울장미</button>
+          <button class="option">우성농원</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="msg user">
+      <div class="bubble">가나꽃집</div>
+      <div class="time">14:24</div>
+    </div>
+
+    <div class="msg bot">
+      <div class="bubble">
+        가나꽃집의 20-01차 출고 내역입니다.
+        <div class="data-card">
+          <div class="head">
+            <span class="label">출고 (20-01)</span>
+            <span class="badge">가나꽃집</span>
+          </div>
+          <ul>
+            <li><span>카네이션 핑크</span><span>5박스</span></li>
+            <li><span>장미 레드</span><span>3박스</span></li>
+            <li><span>안개꽃 화이트</span><span>2박스</span></li>
+            <li class="sum"><span>합계</span><span>10박스</span></li>
+          </ul>
+        </div>
+        다른 업체나 차수도 보시려면 알려주세요.
+      </div>
+    </div>
+  </div>
+
+  <div class="quick-chips">
+    <button class="chip">20차 출고 확인</button>
+    <button class="chip">네덜란드 20-1 주문량</button>
+    <button class="chip">임재용 담당 업체</button>
+    <button class="chip">재고 부족 품목</button>
+    <button class="chip">이번 차수 매출</button>
+  </div>
+
+  <form class="input-bar" onsubmit="event.preventDefault();">
+    <button type="button" class="mic" title="음성 입력" aria-label="음성 입력">&#127908;</button>
+    <textarea placeholder="궁금한 걸 물어보세요…" rows="1"></textarea>
+    <button type="submit" class="send" title="보내기" aria-label="보내기">&#10148;</button>
+  </form>
+
+  <script>
+    // 스크롤을 가장 아래로
+    var sc = document.getElementById('scroll');
+    sc.scrollTop = sc.scrollHeight;
+    // 텍스트영역 자동 높이
+    var ta = document.querySelector('.input-bar textarea');
+    ta.addEventListener('input', function () {
+      this.style.height = 'auto';
+      this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+    });
+  </script>
+</body>
+</html>
