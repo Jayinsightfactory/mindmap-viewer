@@ -1672,6 +1672,11 @@ async function init() {
 
 init();
 
+// 허브에서 ?ai=1 로 진입 시 AI 챗봇 패널 자동 오픈
+if (new URLSearchParams(location.search).get('ai') === '1') {
+  openAIPanel();
+}
+
 // ═══ 통합 현황 탭 ═══════════════════════════════════════════════════════════
 
 const PIPELINE_STAGES = [
@@ -1868,5 +1873,6 @@ switchTab = function(tab) {
 };
 
 </script>
+<script src="/js/region-marker.js" defer></script>
 </body>
 </html>

@@ -460,6 +460,19 @@ if (process.env.NODE_ENV === 'production') {
   // 개발 단계: 원본 JS 사용 (minified에서 TDZ 에러 발생)
   // app.use('/js', express.static(path.join(__dirname, 'public', 'js-min'), { maxAge: '7d', etag: true }));
 }
+// viewer.nenovaweb.com 서브도메인 — 루트 진입 시 허브 랜딩페이지 서빙
+// (그 외 도메인은 기존대로 index.html → orbit3d.html 리다이렉트 유지)
+app.get('/', (req, res, next) => {
+  const host = (req.hostname || '').toLowerCase();
+  if (host === 'viewer.nenovaweb.com') {
+    return res.sendFile(path.join(__dirname, 'public', 'viewer.html'));
+  }
+  next();
+});
+// 테스트/직접 접근용 — 도메인 무관하게 허브 페이지 접근 가능
+app.get(['/viewer', '/viewer/'], (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'viewer.html'));
+});
 app.use(express.static(path.join(__dirname, 'public'), {
   maxAge: 0, // 개발 단계: 캐시 비활성화 (안정화 후 1d로 복구)
   etag: true,
