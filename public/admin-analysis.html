@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Orbit AI — 업무 분석 대시보드</title>
+<title>nenova — 업무 분석 대시보드</title>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
@@ -736,11 +736,11 @@
 
 <!-- ── 헤더 ───────────────────────────────────────────────────────── -->
 <header>
-  <div class="logo">Orbit AI <span>— 업무 분석 대시보드</span></div>
+  <div class="logo">nenova <span>— 업무 분석 대시보드</span></div>
   <div class="header-right">
     <span id="user-info" style="font-size:12px;color:var(--muted);"></span>
     <a href="/orbit-hub.html" style="padding:6px 14px;border-radius:6px;background:#3fb950;color:#0d1117;font-size:12px;font-weight:600;text-decoration:none;">🏠 Company OS</a>
-    <a href="/orbit-os.html" style="padding:6px 14px;border-radius:6px;background:#58a6ff;color:#fff;font-size:12px;font-weight:600;text-decoration:none;">🌐 Orbit OS</a>
+    <a href="/orbit-os.html" style="padding:6px 14px;border-radius:6px;background:#58a6ff;color:#fff;font-size:12px;font-weight:600;text-decoration:none;">🌐 nenova OS</a>
     <a href="javascript:switchPageTab('worklogs')" style="padding:6px 14px;border-radius:6px;background:#bc8cff;color:#fff;font-size:12px;font-weight:600;text-decoration:none;">📝 작업 내역</a>
     <a href="/nenova-dashboard.html" style="padding:6px 14px;border-radius:6px;background:#3fb950;color:#fff;font-size:12px;font-weight:600;text-decoration:none;">🌸 전산 DB</a>
     <button class="btn" onclick="loadAll()">새로고침</button>
@@ -790,7 +790,7 @@
   <!-- ══════ 섹션 0: 기획 구조 아키텍처 ══════ -->
   <div class="arch-card" id="sec-architecture">
     <div class="arch-card-title">
-      Orbit AI — Company OS 분석 아키텍처
+      nenova — Company OS 분석 아키텍처
       <span>시스템 전체 파이프라인</span>
     </div>
 
@@ -2949,7 +2949,7 @@ function renderLearningLog(el, userData) {
   if (!logs.length) { el.innerHTML = '<div class="empty-state">학습 내역 없음</div>'; return; }
 
   let html = '<div class="learning-log-panel">';
-  html += '<div style="color:var(--muted);font-size:11px;margin-bottom:8px;font-family:inherit">--- Orbit AI Learning Engine Log ---</div>';
+  html += '<div style="color:var(--muted);font-size:11px;margin-bottom:8px;font-family:inherit">--- nenova Learning Engine Log ---</div>';
   logs.forEach(log => {
     const cls = log.type === 'pattern' ? 'll-pattern' :
                 log.type === 'algo' ? 'll-algo' :
@@ -3596,7 +3596,7 @@ document.addEventListener('DOMContentLoaded', () => {
       desc:'카카오톡 주문 메시지 클립보드 복사 → 자동 파싱 → nenova 신규주문 등록',
       steps:[
         {name:'메시지 감지', where:'클립보드 모니터', action:'[MEL] 형식 클립보드 복사 감지'},
-        {name:'주문 파싱', where:'Orbit 서버', action:'품목명→ProdKey 매핑, 수량/단위 추출'},
+        {name:'주문 파싱', where:'nenova 서버', action:'품목명→ProdKey 매핑, 수량/단위 추출'},
         {name:'거래처 매칭', where:'nenova DB', action:'발신자 이름 → 거래처 코드 자동 조회'},
         {name:'자동 입력', where:'nenova > 신규주문', action:'PAD/pyautogui로 폼 필드 자동 채움'},
         {name:'저장 확인', where:'nenova', action:'저장 버튼 클릭 → 주문번호 확인'},
@@ -3626,7 +3626,7 @@ document.addEventListener('DOMContentLoaded', () => {
       steps:[
         {name:'주문 조회', where:'nenova 주문 관리', action:'오늘 주문 목록 쿼리'},
         {name:'배송량 수신', where:'카카오 "경부선 늘봄"', action:'입고 수량 메시지 파싱'},
-        {name:'비교 계산', where:'Orbit 서버', action:'주문 30단 - 실입고 28단 = 차감 2단'},
+        {name:'비교 계산', where:'nenova 서버', action:'주문 30단 - 실입고 28단 = 차감 2단'},
         {name:'Excel 생성', where:'자동 → 피벗2.xlsx', action:'차감표 셀 자동 채움 (품목/수량/차이)'},
       ],
       scenario:{
@@ -3651,8 +3651,8 @@ document.addEventListener('DOMContentLoaded', () => {
       desc:'오늘 출고 대상 → 거래처별 자동 집계 → 배송 메시지 자동 전송',
       steps:[
         {name:'출고 조회', where:'nenova 출고 관리', action:'오늘 출고 예정 목록 쿼리'},
-        {name:'거래처 분류', where:'Orbit 서버', action:'거래처별 그룹핑'},
-        {name:'메시지 생성', where:'Orbit 서버', action:'거래처별 출고 내역 텍스트 생성'},
+        {name:'거래처 분류', where:'nenova 서버', action:'거래처별 그룹핑'},
+        {name:'메시지 생성', where:'nenova 서버', action:'거래처별 출고 내역 텍스트 생성'},
         {name:'전송', where:'카카오톡 각 거래처방', action:'"오늘 출고: 캐더린20단" 메시지 전송'},
       ],
       scenario:{
@@ -3677,7 +3677,7 @@ document.addEventListener('DOMContentLoaded', () => {
       desc:'거래처 주문 취소/추가 메시지 → nenova 기존 주문 자동 수정',
       steps:[
         {name:'변경 감지', where:'카카오톡 거래처방', action:'"캐더린 30→20으로 변경" 메시지 감지'},
-        {name:'변경 파싱', where:'Orbit 서버', action:'기존 주문 대조 → 변경 항목 추출'},
+        {name:'변경 파싱', where:'nenova 서버', action:'기존 주문 대조 → 변경 항목 추출'},
         {name:'nenova 수정', where:'화훼관리 > 주문수정', action:'ProdKey 2851 수량 30→20 업데이트'},
         {name:'알림', where:'카카오톡', action:'"캐더린 30→20 변경 완료" 자동 응답'},
       ],
@@ -3704,7 +3704,7 @@ document.addEventListener('DOMContentLoaded', () => {
         {name:'불량 감지', where:'불량 공유방', action:'"돈셀 2박스 파손" 메시지 파싱'},
         {name:'사진 분석', where:'Vision 워커', action:'첨부 사진 → 불량 유형/수량 확인'},
         {name:'nenova 등록', where:'화훼관리 > 불량등록', action:'품목/수량/사유 자동 입력'},
-        {name:'클레임 생성', where:'Orbit 서버', action:'클레임 문서 자동 생성'},
+        {name:'클레임 생성', where:'nenova 서버', action:'클레임 문서 자동 생성'},
         {name:'알림', where:'카카오톡', action:'거래처에 처리 현황 자동 전달'},
       ],
       scenario:{
@@ -3727,8 +3727,8 @@ document.addEventListener('DOMContentLoaded', () => {
       desc:'거래처 문의 자동 분류 → 표준 답변 생성 → 담당자 확인 후 전송',
       steps:[
         {name:'문의 수신', where:'카카오톡 거래처방', action:'거래처 메시지 실시간 감지'},
-        {name:'의도 분류', where:'Orbit AI', action:'문의 유형 분류 (주문확인/배송조회/단가문의)'},
-        {name:'답변 생성', where:'Orbit 서버', action:'DB 조회 → 맞춤 답변 초안 생성'},
+        {name:'의도 분류', where:'nenova AI', action:'문의 유형 분류 (주문확인/배송조회/단가문의)'},
+        {name:'답변 생성', where:'nenova 서버', action:'DB 조회 → 맞춤 답변 초안 생성'},
         {name:'확인 전송', where:'담당자 확인', action:'담당자 승인 → 자동 전송'},
       ],
       scenario:{
@@ -3752,7 +3752,7 @@ document.addEventListener('DOMContentLoaded', () => {
       steps:[
         {name:'요청 감지', where:'카카오톡', action:'"캐더린 100단 견적 부탁" 메시지 파싱'},
         {name:'단가 조회', where:'nenova 단가 DB', action:'품목별 현재 단가 + 수량 할인율'},
-        {name:'견적서 생성', where:'Orbit 서버', action:'Excel/PDF 견적서 자동 생성'},
+        {name:'견적서 생성', where:'nenova 서버', action:'Excel/PDF 견적서 자동 생성'},
         {name:'전송', where:'카카오톡/이메일', action:'견적서 파일 자동 첨부 전송'},
       ],
       scenario:{
@@ -3777,8 +3777,8 @@ document.addEventListener('DOMContentLoaded', () => {
       desc:'재고 부족 자동 감지 → 거래처별 발주서 생성 → 이메일/팩스 전송',
       steps:[
         {name:'재고 분석', where:'nenova 재고 DB', action:'기준 재고 이하 품목 자동 탐색'},
-        {name:'발주량 계산', where:'Orbit 서버', action:'평균 소비량 × 2주치 발주량 계산'},
-        {name:'발주서 생성', where:'Orbit 서버', action:'거래처별 Excel 발주서 자동 생성'},
+        {name:'발주량 계산', where:'nenova 서버', action:'평균 소비량 × 2주치 발주량 계산'},
+        {name:'발주서 생성', where:'nenova 서버', action:'거래처별 Excel 발주서 자동 생성'},
         {name:'전송', where:'이메일/카카오', action:'거래처별 발주서 자동 전송'},
       ],
       scenario:{
@@ -3802,7 +3802,7 @@ document.addEventListener('DOMContentLoaded', () => {
       desc:'거래처 클레임 메시지 → 내용 분류 → 처리 프로세스 자동 개시',
       steps:[
         {name:'클레임 감지', where:'카카오톡 거래처방', action:'불만/클레임 키워드 감지'},
-        {name:'내용 분류', where:'Orbit AI', action:'클레임 유형 분류 (품질/배송/수량)'},
+        {name:'내용 분류', where:'nenova AI', action:'클레임 유형 분류 (품질/배송/수량)'},
         {name:'처리 개시', where:'내부 담당자', action:'담당자에게 클레임 알림 + 처리 지시'},
         {name:'결과 전달', where:'카카오톡', action:'처리 결과 + 보상 내용 자동 전달'},
       ],
@@ -3827,7 +3827,7 @@ document.addEventListener('DOMContentLoaded', () => {
       steps:[
         {name:'출고 확인', where:'nenova 출고 DB', action:'출고 완료 건 자동 감지'},
         {name:'운송장 조회', where:'택배 API', action:'운송장 번호 → 현재 위치 조회'},
-        {name:'현황 업데이트', where:'Orbit 서버', action:'배송 단계별 상태 업데이트'},
+        {name:'현황 업데이트', where:'nenova 서버', action:'배송 단계별 상태 업데이트'},
         {name:'거래처 알림', where:'카카오톡', action:'"배송 출발/도착 예정" 자동 메시지'},
       ],
       scenario:{
@@ -3850,8 +3850,8 @@ document.addEventListener('DOMContentLoaded', () => {
       desc:'월말 매출 집계 → 거래처별 청구서 자동 생성 → 전송',
       steps:[
         {name:'매출 집계', where:'nenova 매출 DB', action:'월간 거래처별 매출 합산'},
-        {name:'정산 계산', where:'Orbit 서버', action:'할인율/반품/차감 적용 최종금액'},
-        {name:'청구서 생성', where:'Orbit 서버', action:'거래처별 Excel/PDF 청구서 생성'},
+        {name:'정산 계산', where:'nenova 서버', action:'할인율/반품/차감 적용 최종금액'},
+        {name:'청구서 생성', where:'nenova 서버', action:'거래처별 Excel/PDF 청구서 생성'},
         {name:'전송', where:'이메일/팩스', action:'청구서 자동 발송 + 카카오 알림'},
       ],
       scenario:{
@@ -3875,7 +3875,7 @@ document.addEventListener('DOMContentLoaded', () => {
       desc:'시장 단가 스캔 → 자동 단가 업데이트 제안',
       steps:[
         {name:'시장 조사', where:'웹 스크래핑', action:'경쟁사/수입 단가 자동 수집'},
-        {name:'비교 분석', where:'Orbit 서버', action:'현재 단가 vs 시장 단가 비교'},
+        {name:'비교 분석', where:'nenova 서버', action:'현재 단가 vs 시장 단가 비교'},
         {name:'업데이트 제안', where:'관리자 대시보드', action:'단가 조정 제안 + 승인 요청'},
         {name:'적용', where:'nenova DB', action:'승인 후 단가 자동 업데이트'},
       ],
@@ -3886,7 +3886,7 @@ document.addEventListener('DOMContentLoaded', () => {
       desc:'09:00/13:30/18:00 자동 매출 현황 Google Sheets 보고',
       steps:[
         {name:'데이터 수집', where:'nenova DB', action:'시간대별 매출/주문 집계'},
-        {name:'분석', where:'Orbit 서버', action:'전일/전주 대비 증감률'},
+        {name:'분석', where:'nenova 서버', action:'전일/전주 대비 증감률'},
         {name:'시트 업데이트', where:'Google Sheets', action:'자동 차트/표 업데이트'},
         {name:'알림', where:'카카오톡', action:'요약 보고 메시지 전송'},
       ],
@@ -3897,7 +3897,7 @@ document.addEventListener('DOMContentLoaded', () => {
       desc:'출고 마감 시 거래처별 출고내역서 자동 생성 + 전송',
       steps:[
         {name:'출고 마감', where:'nenova', action:'하루 출고 마감 감지'},
-        {name:'내역서 생성', where:'Orbit 서버', action:'거래처별 출고 내역 PDF 생성'},
+        {name:'내역서 생성', where:'nenova 서버', action:'거래처별 출고 내역 PDF 생성'},
         {name:'전송', where:'이메일/카카오', action:'거래처별 내역서 자동 발송'},
       ],
       scenario:{trigger:'매일 오후 6시',input:'당일 출고 데이터',parseResult:[],nenovaScreen:'nenova 출고 내역서',expectedResult:'15개 거래처 내역서 자동 발송',compare:{before:{time:'40분/일',clicks:'120회',errors:'5%',steps:'수동'},after:{time:'자동',clicks:'0회',errors:'0%',steps:'자동'},saving:'40분/일'}}
@@ -4069,7 +4069,7 @@ document.addEventListener('DOMContentLoaded', () => {
       </div>
       <div class="mock-menu"><span>파일(F)</span><span>편집(E)</span><span>조회(V)</span><span>입력(I)</span><span>도움말(H)</span></div>
       <div class="mock-toolbar">
-        <span style="font-size:10px;color:#3a6;font-weight:bold">🤖 Orbit 자동 입력 완료</span>
+        <span style="font-size:10px;color:#3a6;font-weight:bold">🤖 nenova 자동 입력 완료</span>
         ${extraBtns}
       </div>
       <div class="mock-form-area">
@@ -4081,7 +4081,7 @@ document.addEventListener('DOMContentLoaded', () => {
           ✅ ${pr.length}건 자동 입력 완료 — ${sc.expectedResult}
         </div>
       </div>
-      <div class="mock-status-bar">준비 | ${pr.length}건 처리 완료 | Orbit AI 자동화</div>
+      <div class="mock-status-bar">준비 | ${pr.length}건 처리 완료 | nenova 자동화</div>
     </div>`;
   }
 
@@ -5046,7 +5046,7 @@ async function loadAgentMeeting() {
         const orders = data.todayOrders || data.orders || 0;
         findings = 'DB 상태: ' + conn + ', 오늘 주문 ' + orders + '건';
         proposals = [
-          '실시간 주문 → Orbit 자동 동기화',
+          '실시간 주문 → nenova 자동 동기화',
           '재고 부족 임박 품목 자동 알림',
           '거래처별 주문 패턴 → 이상 조기 감지',
         ];
