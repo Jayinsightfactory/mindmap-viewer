@@ -7,7 +7,8 @@
       "Bash(npm start:*)",
       "Bash(npm install:*)",
       "Bash(ls:*)",
-      "WebFetch(domain:drive.google.com)"
+      "WebFetch(domain:drive.google.com)",
+      "Bash(mkdir -p .claude/hooks && ls .claude/hooks)"
     ]
   }
 }
