@@ -14,8 +14,13 @@ fi
 
 cd "$CLAUDE_PROJECT_DIR"
 
-# 1) 의존성 설치 (idempotent — 이미 있으면 빠르게 통과)
-npm install --no-audit --no-fund
+# 1) 의존성 설치 — node_modules 없을 때만. (매 세션마다 install 돌면
+#    package-lock.json이 재배열돼 워킹 트리를 더럽힘 → resume 시 stop hook 노이즈)
+#    혹시 install이 실행됐다면 lockfile은 즉시 revert.
+if [ ! -d node_modules ]; then
+  npm install --no-audit --no-fund
+  git checkout -- package-lock.json 2>/dev/null || true
+fi
 
 # 2) 프리뷰 디스패처 기동 (이미 떠 있으면 건너뜀)
 if ! curl -s -o /dev/null --max-time 2 http://localhost:4747/ 2>/dev/null; then
