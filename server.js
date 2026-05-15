@@ -1266,10 +1266,21 @@ app.get('/api/learning/logs', async (req, res) => {
     const names = {};
     nameRows.rows.forEach(r => { names[r.id] = r.name || r.email?.split('@')[0] || r.id.substring(0, 10); });
 
+    const rawMode = req.query.raw === '1';
+
     const logs = finalRows.map(r => {
       let data = {};
       try { data = typeof r.data_json === 'string' ? JSON.parse(r.data_json) : (r.data_json || {}); } catch {}
       const ctx = data.appContext || {};
+
+      if (rawMode) {
+        return {
+          id: r.id, type: r.type, userId: r.user_id,
+          userName: names[r.user_id] || r.user_id?.substring(0, 10),
+          timestamp: r.timestamp, data,
+        };
+      }
+
       return {
         id: r.id,
         type: r.type,
