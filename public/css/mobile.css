@@ -1,0 +1,41 @@
+/* 모바일 공통 스타일 — 768px 이하에서 적용 */
+/* 이 파일은 다음 phase에서 필요한 페이지가 직접 import. 여기서는 link 없음. */
+
+@media (max-width: 768px) {
+  /* 터치 타겟 최소 크기 확보 (Apple HIG 기준 44px) */
+  button,
+  a[role="button"],
+  .btn {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /* iOS Safari 입력 필드 자동 확대 방지 — font-size 16px 이상이면 확대 안 함 */
+  input,
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+
+  /* 가로 스크롤 테이블 처리 */
+  table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* iOS Safari 텍스트 자동 크기 조정 방지 */
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  /* 세로 풀-투-리프레시 방지 (앱처럼 동작) */
+  body {
+    overscroll-behavior-y: contain;
+  }
+}
