@@ -473,6 +473,10 @@ app.get('/', (req, res, next) => {
 app.get(['/viewer', '/viewer/'], (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'viewer.html'));
 });
+// 모바일 진입점 — nenova 대시보드로 리다이렉트
+app.get('/m', (req, res) => {
+  res.redirect(302, '/nenova-dashboard.html?mobile=1');
+});
 app.use(express.static(path.join(__dirname, 'public'), {
   maxAge: 0, // 개발 단계: 캐시 비활성화 (안정화 후 1d로 복구)
   etag: true,
@@ -6399,6 +6403,9 @@ app.use('/api/kakao', require('./routes/kakao-decrypt')({ getDb: dbModule.getDb 
 
 // ─── PAD 커넥터 (nenova ERP 자동화) ─────────────────────────────────────────
 app.use('/api/pad', require('./routes/pad-connector')({ getDb: dbModule.getDb }));
+
+// ─── nenova 챗봇 AI (LLM 응답, nenova-db보다 먼저 등록해야 /ai/* 라우트 충돌 없음) ─
+app.use('/api/nenova/ai', require('./routes/nenova-ai'));
 
 // ─── nenova SQL Server 직접 연결 (전산 데이터 실시간 조회 + 동기화) ──────────
 app.use('/api/nenova', require('./routes/nenova-db')({ getDb: dbModule.getDb }));
