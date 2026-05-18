@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>nenova — 선택</title>
+  <meta name="theme-color" content="#020617">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color: transparent; }
+    :root {
+      --bg:#020617; --surface:#111a30; --surface2:#18223d;
+      --border:#25304d; --text:#e6ecff; --muted:#8b97b8;
+      --blue:#5b8cff; --cyan:#38d4e8; --green:#3fd68b; --violet:#a98bff;
+    }
+    html, body {
+      background: var(--bg); color: var(--text);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      min-height: 100%;
+    }
+    body {
+      background:
+        radial-gradient(ellipse 80% 60% at 50% -10%, rgba(91,140,255,0.18), transparent),
+        radial-gradient(ellipse 60% 50% at 90% 10%, rgba(169,139,255,0.12), transparent),
+        var(--bg);
+      min-height: 100vh;
+      display: flex; flex-direction: column;
+      padding: 40px 20px 24px;
+    }
+    .header { text-align: center; margin-bottom: 8px; }
+    .logo {
+      display:inline-flex; align-items:center; gap:8px;
+      font-size:12px; font-weight:600; letter-spacing:0.16em;
+      text-transform:uppercase; color:var(--cyan); margin-bottom:24px;
+    }
+    .logo .dot {
+      width:8px;height:8px;border-radius:50%;
+      background:var(--cyan); box-shadow:0 0 12px var(--cyan);
+    }
+    .greet {
+      font-size:26px; font-weight:800; letter-spacing:-0.02em;
+      margin-bottom:8px;
+    }
+    .greet .name {
+      background: linear-gradient(90deg, var(--blue), var(--cyan));
+      -webkit-background-clip: text; background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .sub { color: var(--muted); font-size:14px; }
+    .tiles {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 16px;
+      max-width: 640px;
+      width: 100%;
+      margin: 32px auto;
+      align-content: center;
+    }
+    @media (min-width: 720px) {
+      .tiles { grid-template-columns: 1fr 1fr; gap: 18px; }
+    }
+    .tile {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 22px;
+      padding: 30px 22px;
+      display: flex; flex-direction: column;
+      text-decoration: none; color: inherit;
+      transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+      position: relative; overflow: hidden;
+      min-height: 220px;
+    }
+    .tile::before {
+      content:''; position:absolute; inset:0;
+      background: linear-gradient(135deg, var(--_glow), transparent 60%);
+      opacity:0; transition: opacity 0.18s ease;
+    }
+    .tile:hover, .tile:active {
+      transform: translateY(-3px);
+      border-color: var(--_accent);
+      background: var(--surface2);
+    }
+    .tile:hover::before, .tile:active::before { opacity: 0.2; }
+    .tile .icon {
+      width: 60px; height: 60px; border-radius: 16px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 32px; margin-bottom: 18px;
+      background: var(--surface2); border: 1px solid var(--border);
+    }
+    .tile h2 { font-size: 21px; font-weight: 700; margin-bottom: 8px; }
+    .tile p { font-size: 13.5px; color: var(--muted); line-height: 1.6; flex: 1; }
+    .tile .go {
+      margin-top: 18px; font-size: 13px; font-weight: 600;
+      color: var(--_accent); display: flex; align-items: center; gap: 6px;
+    }
+    .t-chat { --_accent: var(--cyan); --_glow: rgba(56,212,232,0.18); }
+    .t-app  { --_accent: var(--green); --_glow: rgba(63,214,139,0.18); }
+    .footer {
+      display: flex; flex-direction: column; align-items: center; gap: 14px;
+      font-size: 13px; color: var(--muted);
+      padding-top: 16px;
+    }
+    .footer label {
+      display: inline-flex; align-items: center; gap: 8px; cursor: pointer;
+      padding: 8px 12px;
+    }
+    .footer input[type="checkbox"] {
+      width: 16px; height: 16px; accent-color: var(--cyan);
+    }
+    .footer .logout {
+      color: var(--muted); text-decoration: none;
+      padding: 8px 16px; border-radius: 8px;
+    }
+    .footer .logout:hover { color: var(--text); background: var(--surface); }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="logo"><span class="dot"></span> nenova</div>
+    <div class="greet">안녕하세요, <span class="name">임재용</span> 님</div>
+    <div class="sub">오늘은 어떤 작업을 하시겠어요?</div>
+  </div>
+
+  <div class="tiles">
+    <a class="tile t-chat" href="/mockup-chat.html">
+      <div class="icon">&#129302;</div>
+      <h2>AI 챗봇</h2>
+      <p>"20차 출고수량"처럼 자연어로 물어보세요. 출고·주문·재고·카톡 주문까지 한 번에.</p>
+      <span class="go">시작하기 &rarr;</span>
+    </a>
+
+    <a class="tile t-app" href="/mockup-mobile-home.html">
+      <div class="icon">&#128230;</div>
+      <h2>네노바앱</h2>
+      <p>주문·출고·재고·거래처를 모바일에서 직접 작업. 핸드폰 앱처럼 빠르게.</p>
+      <span class="go">열기 &rarr;</span>
+    </a>
+  </div>
+
+  <div class="footer">
+    <label><input type="checkbox"> 다음부터 이 화면 건너뛰기</label>
+    <a href="#" class="logout">로그아웃</a>
+  </div>
+</body>
+</html>

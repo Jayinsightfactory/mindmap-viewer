@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Orbit AI — nenova 전산</title>
+<title>nenova 전산</title>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
@@ -353,7 +353,7 @@ tr.clickable:hover td { background: rgba(88,166,255,.06); }
 
 <!-- ═══ HEADER ═══ -->
 <header>
-  <div class="logo">Orbit AI <span>— nenova 전산</span></div>
+  <div class="logo">nenova <span>전산</span></div>
   <div class="header-right">
     <span class="conn-status" id="connStatus"><span class="conn-dot" id="connDot"></span>연결 확인중...</span>
     <div class="toggle-wrap">
@@ -362,7 +362,7 @@ tr.clickable:hover td { background: rgba(88,166,255,.06); }
     </div>
     <button class="btn btn-sm" onclick="openAIPanel()">AI 챗봇</button>
     <a href="/admin-analysis.html" class="header-back">← 관리자 대시보드</a>
-    <a href="/orbit-os.html" class="header-back">Orbit OS</a>
+    <a href="/orbit-os.html" class="header-back">nenova OS</a>
   </div>
 </header>
 
@@ -588,8 +588,8 @@ tr.clickable:hover td { background: rgba(88,166,255,.06); }
       </div>
       <div class="kpi-card" id="sysOrbit">
         <div class="kpi-icon">&#127760;</div>
-        <div class="kpi-label">Orbit AI</div>
-        <div class="kpi-value" style="font-size:16px;">orbit3d.ai</div>
+        <div class="kpi-label">nenova AI</div>
+        <div class="kpi-value" style="font-size:16px;">viewer.nenovaweb.com</div>
         <div class="kpi-sub" id="sysOrbitStatus">확인 중...</div>
       </div>
       <div class="kpi-card" id="sysAgent">
@@ -772,7 +772,7 @@ tr.clickable:hover td { background: rgba(88,166,255,.06); }
 
 <script>
 /* ══════════════════════════════════════════════════════════
-   ORBIT AI — NENOVA DASHBOARD
+   NENOVA DASHBOARD
    ══════════════════════════════════════════════════════════ */
 
 const TOKEN = localStorage.getItem('orbit_token');
@@ -1716,24 +1716,60 @@ function closeAIPanel() {
 }
 
 function aiQuickQ(q) {
-  const msgEl = document.getElementById('aiMessages');
-  msgEl.innerHTML += `<div style="margin-bottom:12px;">
-    <div style="font-size:12px;color:var(--blue);margin-bottom:4px;">질문</div>
-    <div style="background:var(--surface2);padding:10px 14px;border-radius:8px;font-size:13px;">${q}</div>
-  </div>
-  <div style="margin-bottom:12px;">
-    <div style="font-size:12px;color:var(--green);margin-bottom:4px;">AI</div>
-    <div style="background:var(--surface2);padding:10px 14px;border-radius:8px;font-size:13px;color:var(--muted);">MCP 연동이 완료되면 답변을 제공합니다. 현재는 대시보드의 각 탭에서 직접 데이터를 확인해주세요.</div>
-  </div>`;
-  msgEl.scrollTop = msgEl.scrollHeight;
+  const input = document.getElementById('aiInput');
+  input.value = q;
+  aiSend();
 }
 
-function aiSend() {
+async function aiSend() {
   const input = document.getElementById('aiInput');
   const q = input.value.trim();
   if (!q) return;
   input.value = '';
-  aiQuickQ(q);
+
+  const msgEl = document.getElementById('aiMessages');
+
+  // 질문 버블
+  msgEl.innerHTML += `<div style="margin-bottom:12px;">
+    <div style="font-size:12px;color:var(--blue);margin-bottom:4px;">질문</div>
+    <div style="background:var(--surface2);padding:10px 14px;border-radius:8px;font-size:13px;">${q.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
+  </div>`;
+
+  // 로딩 버블
+  const loadingId = 'ai-loading-' + Date.now();
+  msgEl.innerHTML += `<div id="${loadingId}" style="margin-bottom:12px;">
+    <div style="font-size:12px;color:var(--green);margin-bottom:4px;">AI</div>
+    <div style="background:var(--surface2);padding:10px 14px;border-radius:8px;font-size:13px;color:var(--muted);">답변 생성 중…</div>
+  </div>`;
+  msgEl.scrollTop = msgEl.scrollHeight;
+
+  try {
+    const token = localStorage.getItem('orbit_token') || '';
+    const res = await fetch('/api/nenova/ai/ask', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ question: q })
+    });
+    const data = await res.json();
+    const answer = data.answer || '죄송해요, 답변을 받지 못했습니다.';
+
+    // 로딩 버블 교체
+    const loadingEl = document.getElementById(loadingId);
+    if (loadingEl) {
+      loadingEl.innerHTML = `<div style="font-size:12px;color:var(--green);margin-bottom:4px;">AI</div>
+        <div style="background:var(--surface2);padding:10px 14px;border-radius:8px;font-size:13px;">${answer.replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>')}</div>`;
+    }
+  } catch (e) {
+    const loadingEl = document.getElementById(loadingId);
+    if (loadingEl) {
+      loadingEl.innerHTML = `<div style="font-size:12px;color:var(--green);margin-bottom:4px;">AI</div>
+        <div style="background:var(--surface2);padding:10px 14px;border-radius:8px;font-size:13px;color:var(--muted);">네트워크 오류가 발생했습니다. 잠시 후 다시 시도해주세요.</div>`;
+    }
+  }
+  msgEl.scrollTop = msgEl.scrollHeight;
 }
 
 // ══════════════════════════════════════════════════════════
@@ -1762,6 +1798,11 @@ async function init() {
 }
 
 init();
+
+// 허브에서 ?ai=1 로 진입 시 AI 챗봇 패널 자동 오픈
+if (new URLSearchParams(location.search).get('ai') === '1') {
+  openAIPanel();
+}
 
 // ═══ 통합 현황 탭 ═══════════════════════════════════════════════════════════
 
@@ -2069,5 +2110,6 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 </script>
+<script src="/js/region-marker.js" defer></script>
 </body>
 </html>

@@ -1423,7 +1423,7 @@ function _shareInviteLink() {
   const link = window._currentInviteLink;
   if (!link) return;
   if (navigator.share) {
-    navigator.share({ title: 'Orbit AI 워크스페이스 초대', text: 'Orbit AI 워크스페이스에 참여하세요!', url: link })
+    navigator.share({ title: 'nenova 워크스페이스 초대', text: 'nenova 워크스페이스에 참여하세요!', url: link })
       .catch(() => _copyInviteLink());
   } else {
     _copyInviteLink();
@@ -1479,7 +1479,7 @@ window.switchMsgTab = switchMsgTab;
 function resetChatView() {
   document.getElementById('msg-chat-name').textContent = '채팅방 선택';
   document.getElementById('msg-messages-area').innerHTML =
-    '<div class="msg-empty-chat"><span style="font-size:28px">💬</span><span>채팅방을 선택하세요</span><span style="font-size:10px;color:#484f58">@orbit — AI에게 질문 가능</span></div>';
+    '<div class="msg-empty-chat"><span style="font-size:28px">💬</span><span>채팅방을 선택하세요</span><span style="font-size:10px;color:#484f58">@nenova — AI에게 질문 가능</span></div>';
   document.getElementById('msg-input-wrap').style.display = 'none';
 }
 
@@ -1604,7 +1604,7 @@ function renderMsgBubbles(msgs) {
   const area = document.getElementById('msg-messages-area');
   if (!area) return;
   if (!msgs.length) {
-    area.innerHTML = '<div class="msg-empty-chat"><span>대화를 시작해보세요</span><span style="font-size:10px;color:#484f58">@orbit 으로 AI에게 질문할 수 있어요</span></div>';
+    area.innerHTML = '<div class="msg-empty-chat"><span>대화를 시작해보세요</span><span style="font-size:10px;color:#484f58">@nenova 으로 AI에게 질문할 수 있어요</span></div>';
     return;
   }
   const myId = _orbitUser?.id || '';
@@ -1643,10 +1643,10 @@ async function sendChatMsg() {
   tmpEl.innerHTML = `<div class="msg-bubble mine" style="opacity:.6">${escapeHtml(content)}<div class="msg-time">${time}</div></div>`;
   // AI 로딩 표시
   let aiLoadingEl = null;
-  if (content.includes('@orbit') || content.startsWith('/ai ')) {
+  if (content.includes('@nenova') || content.startsWith('/ai ')) {
     aiLoadingEl = document.createElement('div');
     aiLoadingEl.id = 'ai-loading-msg';
-    aiLoadingEl.innerHTML = `<div class="msg-bubble ai-bot" style="opacity:.7">🤖 Orbit AI 응답 중…</div>`;
+    aiLoadingEl.innerHTML = `<div class="msg-bubble ai-bot" style="opacity:.7">🤖 nenova AI 응답 중…</div>`;
   }
 
   // 빈 상태 제거
@@ -2130,7 +2130,7 @@ let _tossPendingOrder = null; // { planId, orderId, amount, userId }
 
 async function selectPlan(planId) {
   if (planId === 'free') { closePricing(); return; }
-  if (planId === 'enterprise') { alert('enterprise@orbit-ai.dev 로 문의해주세요.'); return; }
+  if (planId === 'enterprise') { alert('엔터프라이즈 플랜은 별도 문의가 필요합니다.'); return; }
   if (!_orbitUser) { openLoginModal(); return; }
 
   try {
@@ -2274,7 +2274,7 @@ async function executeTossPayment() {
     // Toss SDK가 결제창을 열고, 성공 시 successUrl로 리다이렉트
     await _tossWidgets.requestPayment({
       orderId: order.orderId,
-      orderName: `Orbit ${order.planId.toUpperCase()} 월정액`,
+      orderName: `nenova ${order.planId.toUpperCase()} 월정액`,
       successUrl: `${window.location.origin}/api/payment/toss-success?planId=${order.planId}&userId=${order.userId}`,
       failUrl: `${window.location.origin}/orbit3d.html?paymentFail=true`,
     });
@@ -2397,7 +2397,7 @@ function openDesktopWindow(data) {
   status.className = 'dw-status';
   const dotColor = data.active ? '#3fb950' : '#6e7681';
   status.innerHTML = `<div class="dw-status-dot" style="background:${dotColor}"></div>
-    <span>${data.source || data.type || 'orbit'}</span>
+    <span>${data.source || data.type || 'nenova'}</span>
     <span style="margin-left:auto">${data.timestamp ? relativeTime(data.timestamp) : ''}</span>`;
 
   win.appendChild(titlebar);
@@ -3207,7 +3207,7 @@ async function exportMyData() {
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url;
-    a.download = `orbit-my-data-${new Date().toISOString().slice(0,10)}.json`;
+    a.download = `nenova-my-data-${new Date().toISOString().slice(0,10)}.json`;
     a.click(); URL.revokeObjectURL(url);
     showToast('데이터 다운로드 완료');
   } catch (e) { showToast('내보내기 실패: ' + e.message); }

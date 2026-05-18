@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>nenova — 네노바앱</title>
+  <meta name="theme-color" content="#020617">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color: transparent; }
+    :root {
+      --bg:#020617; --bg2:#0a1224; --surface:#111a30; --surface2:#18223d;
+      --border:#25304d; --text:#e6ecff; --muted:#8b97b8;
+      --blue:#5b8cff; --cyan:#38d4e8; --green:#3fd68b; --violet:#a98bff;
+      --orange:#ff9966; --red:#ff6b6b; --yellow:#ffcc66;
+    }
+    html, body {
+      background: var(--bg); color: var(--text);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+    body {
+      min-height: 100vh;
+      padding-bottom: calc(80px + env(safe-area-inset-bottom));
+      background:
+        radial-gradient(ellipse 100% 30% at 50% 0%, rgba(91,140,255,0.10), transparent),
+        var(--bg);
+      font-size: 15px;
+    }
+
+    /* 상단바 */
+    .app-bar {
+      position: sticky; top: 0; z-index: 50;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 16px;
+      background: rgba(2,6,23,0.92);
+      backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+      border-bottom: 1px solid var(--border);
+    }
+    .brand {
+      display:flex; align-items:center; gap:8px;
+      font-weight:700; font-size:17px;
+    }
+    .brand .dot {
+      width:8px; height:8px; border-radius:50%;
+      background:var(--cyan); box-shadow:0 0 10px var(--cyan);
+    }
+    .app-bar .right { display:flex; gap:10px; align-items:center; }
+    .ai-btn {
+      display:flex; align-items:center; gap:6px;
+      padding: 8px 12px; border-radius: 999px;
+      background: linear-gradient(135deg, var(--cyan), var(--blue));
+      color: #fff; font-size:12px; font-weight:600; text-decoration:none;
+      box-shadow: 0 4px 14px rgba(56,212,232,0.25);
+      min-height: 36px;
+    }
+    .avatar {
+      width:38px; height:38px; border-radius:50%;
+      background:var(--surface2); border:1px solid var(--border);
+      display:flex; align-items:center; justify-content:center;
+      font-weight:700; font-size:14px; color:var(--cyan);
+    }
+
+    /* KPI 가로 슬라이드 */
+    .kpi-row {
+      display: flex; gap: 12px;
+      overflow-x: auto; scroll-snap-type: x mandatory;
+      padding: 18px 16px 6px;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+    }
+    .kpi-row::-webkit-scrollbar { display: none; }
+    .kpi {
+      flex: 0 0 auto;
+      scroll-snap-align: start;
+      min-width: 160px;
+      padding: 16px 18px;
+      border-radius: 16px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      position: relative; overflow: hidden;
+    }
+    .kpi::before {
+      content: ''; position:absolute; top:0; left:0; right:0; height:3px;
+      background: var(--_accent, var(--blue));
+    }
+    .kpi .label {
+      font-size:11px; color:var(--muted); margin-bottom:8px;
+      text-transform: uppercase; letter-spacing: 0.06em;
+    }
+    .kpi .value { font-size:24px; font-weight:800; letter-spacing:-0.02em; }
+    .kpi .value .unit { font-size:13px; color:var(--muted); font-weight:500; margin-left:3px; }
+    .kpi .meta { font-size:12px; color:var(--muted); margin-top:6px; }
+    .kpi .meta.up { color: var(--green); }
+    .kpi .meta.warn { color: var(--orange); }
+    .kpi.k-blue { --_accent: var(--blue); }
+    .kpi.k-violet { --_accent: var(--violet); }
+    .kpi.k-green { --_accent: var(--green); }
+    .kpi.k-orange { --_accent: var(--orange); }
+
+    /* 섹션 타이틀 */
+    .section-title {
+      padding: 18px 20px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+
+    /* 빠른 액션 3개 */
+    .actions {
+      display: grid; grid-template-columns: repeat(3, 1fr);
+      gap: 10px; padding: 0 16px;
+    }
+    .action {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 18px 10px;
+      text-align: center;
+      text-decoration: none; color: inherit;
+      transition: transform 0.12s, background 0.12s, border-color 0.12s;
+      position: relative; overflow: hidden;
+    }
+    .action:active { transform: scale(0.96); background: var(--surface2); }
+    .action .ico {
+      width:44px; height:44px; border-radius:13px;
+      display:flex; align-items:center; justify-content:center;
+      font-size: 24px; margin: 0 auto 10px;
+      background: var(--surface2); border: 1px solid var(--border);
+    }
+    .action .ttl { font-size: 13px; font-weight: 600; margin-bottom: 2px; }
+    .action .sub { font-size: 11px; color: var(--muted); }
+    .action.primary {
+      background: linear-gradient(135deg, var(--blue), var(--cyan));
+      border-color: transparent;
+      box-shadow: 0 6px 18px rgba(91,140,255,0.25);
+    }
+    .action.primary .ico { background: rgba(255,255,255,0.20); border-color: transparent; }
+    .action.primary .ttl { color: #fff; }
+    .action.primary .sub { color: rgba(255,255,255,0.85); }
+
+    /* 오늘 할 일 */
+    .tasks { padding: 0 16px; }
+    .task {
+      display: flex; align-items: center; gap: 12px;
+      padding: 13px 14px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      margin-bottom: 8px;
+      text-decoration: none; color: inherit;
+    }
+    .task:active { background: var(--surface2); }
+    .task .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .task.warn .dot { background: var(--orange); box-shadow: 0 0 8px var(--orange); }
+    .task.danger .dot { background: var(--red); box-shadow: 0 0 8px var(--red); }
+    .task.info .dot { background: var(--cyan); box-shadow: 0 0 8px var(--cyan); }
+    .task .text { flex: 1; font-size: 13px; line-height: 1.5; }
+    .task .text strong { color: var(--text); font-weight: 600; }
+    .task .text .meta { color: var(--muted); font-size: 12px; }
+    .task .go { font-size: 12px; color: var(--cyan); font-weight: 600; }
+
+    /* 더보기 리스트 */
+    .more-list { padding: 0 16px; }
+    .more-item {
+      display: flex; align-items: center; gap: 14px;
+      padding: 14px 16px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      margin-bottom: 10px;
+      text-decoration: none; color: inherit;
+    }
+    .more-item:active { background: var(--surface2); }
+    .more-item .ico {
+      width:40px; height:40px; border-radius:12px;
+      display:flex; align-items:center; justify-content:center; font-size:20px;
+      background: var(--surface2); border: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .more-item .body { flex: 1; }
+    .more-item .ttl { font-size: 15px; font-weight: 600; }
+    .more-item .sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+    .more-item .chev { color: var(--muted); font-size: 18px; }
+    .more-item .badge {
+      padding: 3px 10px; border-radius: 999px;
+      background: rgba(255,107,107,0.15); color: var(--red);
+      font-size: 11px; font-weight: 600;
+    }
+    .more-item .planned {
+      font-size: 11px; color: var(--orange); font-weight: 500; margin-left: 4px;
+    }
+
+    /* 하단 탭바 */
+    .bottom-tab {
+      position: fixed; bottom: 0; left: 0; right: 0; z-index: 100;
+      display: flex; justify-content: space-around;
+      padding: 10px 8px calc(10px + env(safe-area-inset-bottom));
+      background: rgba(2,6,23,0.94);
+      backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+      border-top: 1px solid var(--border);
+    }
+    .tab-item {
+      flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px;
+      padding: 6px 4px;
+      text-decoration: none;
+      color: var(--muted); font-size: 10.5px; font-weight: 500;
+      min-height: 44px;
+      transition: color 0.15s;
+    }
+    .tab-item.active { color: var(--cyan); }
+    .tab-item .ico { font-size: 22px; }
+
+    /* FAB */
+    .fab {
+      position: fixed;
+      right: 18px;
+      bottom: calc(86px + env(safe-area-inset-bottom));
+      z-index: 99;
+      width: 56px; height: 56px; border-radius: 50%;
+      background: linear-gradient(135deg, var(--blue), var(--cyan));
+      display: flex; align-items: center; justify-content: center;
+      color: #fff; font-size: 30px; font-weight: 300;
+      box-shadow: 0 10px 26px rgba(91,140,255,0.45);
+      text-decoration: none;
+      transition: transform 0.12s;
+    }
+    .fab:active { transform: scale(0.92); }
+  </style>
+</head>
+<body>
+  <header class="app-bar">
+    <div class="brand"><span class="dot"></span> nenova</div>
+    <div class="right">
+      <a href="/mockup-chat.html" class="ai-btn">&#129302; AI</a>
+      <div class="avatar">임</div>
+    </div>
+  </header>
+
+  <!-- KPI 가로 슬라이드 -->
+  <div class="kpi-row">
+    <div class="kpi k-blue">
+      <div class="label">현재 차수</div>
+      <div class="value">20-01</div>
+      <div class="meta">진행 중</div>
+    </div>
+    <div class="kpi k-violet">
+      <div class="label">차수 출고</div>
+      <div class="value">42<span class="unit">박스</span></div>
+      <div class="meta up">▲ 19-01 대비 +6</div>
+    </div>
+    <div class="kpi k-green">
+      <div class="label">이번 차수 매출</div>
+      <div class="value">₩12.4M</div>
+      <div class="meta up">▲ 8.2%</div>
+    </div>
+    <div class="kpi k-orange">
+      <div class="label">재고 부족</div>
+      <div class="value">3<span class="unit">품목</span></div>
+      <div class="meta warn">발주 검토 필요</div>
+    </div>
+  </div>
+
+  <!-- 빠른 액션 3개 -->
+  <div class="section-title">빠른 작업</div>
+  <div class="actions">
+    <a class="action primary" href="#">
+      <div class="ico">&#128221;</div>
+      <div class="ttl">신규 주문</div>
+      <div class="sub">+ 추가</div>
+    </a>
+    <a class="action" href="#">
+      <div class="ico">&#128203;</div>
+      <div class="ttl">주문 조회</div>
+      <div class="sub">검색·필터</div>
+    </a>
+    <a class="action" href="#">
+      <div class="ico">&#128666;</div>
+      <div class="ttl">출고 확인</div>
+      <div class="sub">대기 5건</div>
+    </a>
+  </div>
+
+  <!-- 오늘 할 일 -->
+  <div class="section-title">처리 대기</div>
+  <div class="tasks">
+    <a href="#" class="task warn">
+      <div class="dot"></div>
+      <div class="text"><strong>출고 지연 2건</strong> · <span class="meta">19-02차 미처리</span></div>
+      <span class="go">처리 &rarr;</span>
+    </a>
+    <a href="#" class="task danger">
+      <div class="dot"></div>
+      <div class="text"><strong>재고 부족 3품목</strong> · <span class="meta">카네이션 핑크 외</span></div>
+      <span class="go">확인 &rarr;</span>
+    </a>
+    <a href="#" class="task info">
+      <div class="dot"></div>
+      <div class="text"><strong>카톡 주문 7건</strong> · <span class="meta">미확인</span></div>
+      <span class="go">보기 &rarr;</span>
+    </a>
+  </div>
+
+  <!-- 더보기 -->
+  <div class="section-title">메뉴</div>
+  <div class="more-list">
+    <a class="more-item" href="#">
+      <div class="ico">&#127800;</div>
+      <div class="body">
+        <div class="ttl">상품 / 재고</div>
+        <div class="sub">품목 검색, 재고 확인</div>
+      </div>
+      <span class="badge">3 부족</span>
+    </a>
+    <a class="more-item" href="#">
+      <div class="ico">&#127970;</div>
+      <div class="body">
+        <div class="ttl">거래처</div>
+        <div class="sub">담당자별·국가별 조회</div>
+      </div>
+      <span class="chev">&rsaquo;</span>
+    </a>
+    <a class="more-item" href="#">
+      <div class="ico">&#128202;</div>
+      <div class="body">
+        <div class="ttl">분석 / 피벗</div>
+        <div class="sub">차수별·매출 추이</div>
+      </div>
+      <span class="chev">&rsaquo;</span>
+    </a>
+    <a class="more-item" href="#">
+      <div class="ico">&#128172;</div>
+      <div class="body">
+        <div class="ttl">카톡 주문 <span class="planned">(예정)</span></div>
+        <div class="sub">톡방 주문량 자동 집계</div>
+      </div>
+      <span class="chev">&rsaquo;</span>
+    </a>
+  </div>
+
+  <!-- FAB -->
+  <a href="#" class="fab" aria-label="신규 주문">+</a>
+
+  <!-- 하단 탭바 -->
+  <nav class="bottom-tab">
+    <a class="tab-item active" href="#"><div class="ico">&#127968;</div>홈</a>
+    <a class="tab-item" href="#"><div class="ico">&#128203;</div>주문</a>
+    <a class="tab-item" href="#"><div class="ico">&#128666;</div>출고</a>
+    <a class="tab-item" href="#"><div class="ico">&#9776;</div>더보기</a>
+  </nav>
+</body>
+</html>

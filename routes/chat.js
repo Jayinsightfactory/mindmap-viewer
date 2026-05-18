@@ -440,3 +440,21 @@ function createRouter({ getDb, verifyToken, broadcastToRoom }) {
 }
 
 module.exports = createRouter;
+
+// ── 외부 재사용용 export ───────────────────────────────────────────────────────
+// nenova-ai.js 등에서 동일한 LLM 게이트웨이를 공유하기 위해 노출
+module.exports.getAIReply = async function getAIReplyExported(userMsg, history = []) {
+  const { generate } = require('../src/llm-gateway');
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return null; // null 반환 → 호출부에서 키 미설정 처리
+  const prompt = (history || []).slice(-6).map(m =>
+    `${m.sender_name || '사용자'}: ${m.content}`
+  ).join('\n') + `\n사용자: ${userMsg}\nOrbit AI:`;
+  try {
+    const reply = await generate({ provider: 'anthropic', model: process.env.ANTHROPIC_MODEL || 'claude-3-5-haiku-20241022', prompt, apiKey });
+    return reply || '죄송해요, 지금 답변하기 어려워요.';
+  } catch (e) {
+    console.error('[chat/getAIReply]', e.message);
+    return 'AI 응답 생성 중 오류가 발생했습니다.';
+  }
+};
