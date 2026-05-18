@@ -376,6 +376,7 @@ tr.clickable:hover td { background: rgba(88,166,255,.06); }
   <div class="tab-item" data-tab="pivot" onclick="switchTab('pivot')">피벗 통계</div>
   <div class="tab-item" data-tab="analysis" onclick="switchTab('analysis')">분석</div>
   <div class="tab-item" data-tab="unified" onclick="switchTab('unified')" style="color:var(--cyan)">&#9670; 통합 현황</div>
+  <div class="tab-item" data-tab="match" onclick="switchTab('match')" style="color:var(--orange)">&#128279; 연결 분석</div>
 </nav>
 
 <!-- ═══ MAIN ═══ -->
@@ -635,6 +636,96 @@ tr.clickable:hover td { background: rgba(88,166,255,.06); }
         <div class="card-title">&#9889; 실시간 이벤트 스트림 <button class="btn btn-sm" onclick="closeSSEMonitor()" style="margin-left:auto;">닫기</button></div>
         <div id="sseStream" style="max-height:300px;overflow-y:auto;padding:8px;font-family:monospace;font-size:12px;background:var(--bg);border-radius:8px;"></div>
       </div>
+    </div>
+  </div>
+
+  <!-- 연결 분석 탭 -->
+  <div class="tab-content" id="tab-match">
+    <div class="section-header">
+      <div class="section-title">&#128279; 카카오 → Excel → nenova 연결 분석</div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <select id="matchDays" class="btn btn-sm" style="width:auto;">
+          <option value="3">최근 3일</option>
+          <option value="7" selected>최근 7일</option>
+          <option value="14">최근 14일</option>
+          <option value="30">최근 30일</option>
+        </select>
+        <select id="matchWindow" class="btn btn-sm" style="width:auto;">
+          <option value="5">±5분</option>
+          <option value="10" selected>±10분</option>
+          <option value="20">±20분</option>
+          <option value="30">±30분</option>
+        </select>
+        <button class="btn btn-sm btn-primary" onclick="loadMatch()">&#128279; 분석 실행</button>
+      </div>
+    </div>
+
+    <!-- KPI 카드 -->
+    <div class="kpi-grid" id="matchKpi" style="margin-bottom:14px;">
+      <div class="kpi-card">
+        <div class="kpi-label">전체 매칭 세션</div>
+        <div class="kpi-value" id="matchTotal">—</div>
+        <div class="kpi-sub">카카오 이벤트 기준</div>
+      </div>
+      <div class="kpi-card" style="border-color:var(--green)">
+        <div class="kpi-label">3중 완전 매칭</div>
+        <div class="kpi-value" id="matchFull" style="color:var(--green)">—</div>
+        <div class="kpi-sub">카카오+Excel+nenova 동시</div>
+      </div>
+      <div class="kpi-card" style="border-color:var(--blue)">
+        <div class="kpi-label">평균 매칭 점수</div>
+        <div class="kpi-value" id="matchAvgScore" style="color:var(--blue)">—</div>
+        <div class="kpi-sub">100점 = 완전 매칭</div>
+      </div>
+      <div class="kpi-card" style="border-color:var(--orange)">
+        <div class="kpi-label">3중 매칭률</div>
+        <div class="kpi-value" id="matchRate" style="color:var(--orange)">—</div>
+        <div class="kpi-sub">목표: 80% 이상</div>
+      </div>
+    </div>
+
+    <!-- 소스별 원시 데이터 카운트 -->
+    <div class="charts-row" style="margin-bottom:14px;">
+      <div class="card">
+        <div class="card-title">&#128200; 소스별 이벤트 수</div>
+        <div id="matchRawCounts" style="padding:14px;display:flex;gap:24px;flex-wrap:wrap;">
+          <div style="text-align:center;"><div style="font-size:28px;font-weight:700;color:var(--cyan);" id="rcKakao">—</div><div style="font-size:12px;color:var(--muted);">카카오 이벤트</div></div>
+          <div style="font-size:24px;color:var(--muted);align-self:center;">→</div>
+          <div style="text-align:center;"><div style="font-size:28px;font-weight:700;color:var(--green);" id="rcExcel">—</div><div style="font-size:12px;color:var(--muted);">Excel 작업</div></div>
+          <div style="font-size:24px;color:var(--muted);align-self:center;">→</div>
+          <div style="text-align:center;"><div style="font-size:28px;font-weight:700;color:var(--orange);" id="rcNenova">—</div><div style="font-size:12px;color:var(--muted);">nenova 화면</div></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">&#128202; 매칭 유형 분포</div>
+        <div id="matchTypeDist" style="padding:14px;font-size:13px;"></div>
+      </div>
+    </div>
+
+    <!-- 매칭 세션 목록 -->
+    <div class="card">
+      <div class="card-title">&#128279; 매칭 세션 목록 <span id="matchListCount" style="color:var(--muted);font-size:12px;font-weight:400;margin-left:8px;"></span></div>
+      <div id="matchList" style="padding:0 8px 8px;">
+        <div style="color:var(--muted);font-size:13px;padding:24px;text-align:center;">분석 실행 버튼을 누르세요</div>
+      </div>
+    </div>
+
+    <!-- 타임라인 뷰 -->
+    <div class="card" style="margin-top:14px;">
+      <div class="card-title">
+        &#128336; 오늘 업무 타임라인
+        <select id="timelineUser" class="btn btn-sm" style="width:auto;margin-left:12px;font-weight:400;">
+          <option value="">전체 직원</option>
+          <option value="MNIAFICB3DC88DCB34">설연주</option>
+          <option value="MNSKAQSQ649D9E5936">Luke</option>
+          <option value="MNMRX6SR07F5FF7C0C">강현우</option>
+          <option value="MNMSAQJD78E544A631">강명훈</option>
+          <option value="MNH03H73690BB2CD82">jaeyong</option>
+        </select>
+        <input type="date" id="timelineDate" class="btn btn-sm" style="width:auto;font-weight:400;margin-left:8px;" />
+        <button class="btn btn-sm" onclick="loadTimeline()" style="margin-left:8px;">조회</button>
+      </div>
+      <div id="timelineContainer" style="padding:8px;max-height:500px;overflow-y:auto;"></div>
     </div>
   </div>
 
@@ -1866,6 +1957,116 @@ switchTab = function(tab) {
   _origSwitchTab(tab);
   if (tab === 'unified') refreshUnified();
 };
+
+// ── 연결 분석 탭 ──────────────────────────────────────────────────────────────
+async function loadMatch() {
+  const days = document.getElementById('matchDays').value;
+  const window_ = document.getElementById('matchWindow').value;
+
+  document.getElementById('matchList').innerHTML = '<div style="color:var(--muted);font-size:13px;padding:24px;text-align:center;">분석 중...</div>';
+
+  try {
+    const data = await fetch(`/api/cross/flow/match?days=${days}&window=${window_}`, { headers: H }).then(r => r.json());
+    if (!data.ok) throw new Error(data.error || 'API 오류');
+
+    const s = data.summary;
+    document.getElementById('matchTotal').textContent = s.total;
+    document.getElementById('matchFull').textContent = s.fullMatch;
+    document.getElementById('matchAvgScore').textContent = s.avgScore + '점';
+    document.getElementById('matchRate').textContent = s.matchRate;
+    document.getElementById('rcKakao').textContent = s.rawCounts.kakaoEvents;
+    document.getElementById('rcExcel').textContent = s.rawCounts.excelEvents;
+    document.getElementById('rcNenova').textContent = s.rawCounts.nenovaEvents;
+    document.getElementById('matchListCount').textContent = `(상위 ${data.sessions.length}건)`;
+
+    // 매칭 유형 분포
+    const distEl = document.getElementById('matchTypeDist');
+    const types = [
+      { key: 'full_match', label: '3중 완전 매칭', color: 'var(--green)', count: s.fullMatch },
+      { key: 'kakao_excel', label: '카카오+Excel', color: 'var(--blue)', count: s.kakaoExcel },
+      { key: 'kakao_nenova', label: '카카오+nenova', color: 'var(--orange)', count: s.kakaoNenova },
+      { key: 'kakao_only', label: '카카오만', color: 'var(--muted)', count: s.kakaoOnly },
+    ];
+    distEl.innerHTML = types.map(t => `
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+        <div style="width:12px;height:12px;border-radius:50%;background:${t.color};flex-shrink:0;"></div>
+        <div style="flex:1;font-size:13px;">${t.label}</div>
+        <div style="font-weight:700;color:${t.color};">${t.count}건</div>
+        <div style="width:80px;background:var(--surface2);border-radius:4px;height:8px;overflow:hidden;">
+          <div style="width:${s.total>0?Math.round((t.count/s.total)*100):0}%;background:${t.color};height:100%;border-radius:4px;"></div>
+        </div>
+      </div>
+    `).join('');
+
+    // 세션 목록
+    const listEl = document.getElementById('matchList');
+    if (data.sessions.length === 0) {
+      listEl.innerHTML = '<div style="color:var(--muted);padding:24px;text-align:center;">매칭된 세션이 없습니다</div>';
+      return;
+    }
+
+    const typeColors = { full_match:'var(--green)', kakao_excel:'var(--blue)', kakao_nenova:'var(--orange)', kakao_only:'var(--muted)' };
+    const typeLabels = { full_match:'3중 완전', kakao_excel:'카카오+Excel', kakao_nenova:'카카오+nenova', kakao_only:'카카오만' };
+
+    listEl.innerHTML = data.sessions.map(s => `
+      <div style="border:1px solid var(--border);border-left:3px solid ${typeColors[s.matchType]||'var(--muted)'};
+           border-radius:8px;padding:12px;margin-bottom:8px;cursor:pointer;"
+           onclick="this.querySelector('.match-detail').style.display=this.querySelector('.match-detail').style.display==='none'?'block':'none'">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <span style="font-size:11px;background:${typeColors[s.matchType]||'var(--muted)'};color:#0d1117;padding:2px 8px;border-radius:10px;font-weight:700;">${typeLabels[s.matchType]||s.matchType}</span>
+          <span style="font-size:12px;color:var(--muted);">${s.timestamp?.substring(0,16)?.replace('T',' ')}</span>
+          <span style="font-size:12px;color:var(--orange);">${s.user}</span>
+          <span style="margin-left:auto;font-weight:700;color:${s.matchScore>=100?'var(--green)':s.matchScore>=66?'var(--blue)':'var(--muted)'};">${s.matchScore}점</span>
+        </div>
+        <div style="margin-top:6px;font-size:13px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${s.sources.kakao.text}</div>
+        <div class="match-detail" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">
+          ${s.sources.excel.length ? `<div style="margin-bottom:6px;"><span style="color:var(--green);font-size:11px;font-weight:700;">Excel</span> ${s.sources.excel.map(e=>`<span style="font-size:12px;color:var(--muted);">${e.workbook||''} [${e.sheet||''}] ${e.cell||''} ${e.value||''}</span>`).join(' · ')}</div>` : ''}
+          ${s.sources.nenova.length ? `<div style="margin-bottom:6px;"><span style="color:var(--orange);font-size:11px;font-weight:700;">nenova</span> ${s.sources.nenova.map(n=>`<span style="font-size:12px;color:var(--muted);">${n.windowTitle||n.screen||n.activity||''}</span>`).join(' · ')}</div>` : ''}
+          ${s.keywordMatches.length ? `<div><span style="color:var(--cyan);font-size:11px;font-weight:700;">키워드 매칭</span> ${s.keywordMatches.map(k=>`<span style="font-size:11px;background:var(--surface2);padding:1px 6px;border-radius:4px;margin:2px;">${k.keyword}</span>`).join('')}</div>` : ''}
+        </div>
+      </div>
+    `).join('');
+  } catch (e) {
+    document.getElementById('matchList').innerHTML = `<div style="color:var(--red);padding:24px;">${e.message}</div>`;
+  }
+}
+
+async function loadTimeline() {
+  const userId = document.getElementById('timelineUser').value;
+  const date = document.getElementById('timelineDate').value || new Date().toISOString().substring(0,10);
+  const container = document.getElementById('timelineContainer');
+  container.innerHTML = '<div style="color:var(--muted);padding:16px;text-align:center;">로딩 중...</div>';
+
+  try {
+    const data = await fetch(`/api/cross/flow/timeline?userId=${userId}&date=${date}`, { headers: H }).then(r => r.json());
+    if (!data.ok) throw new Error(data.error || 'API 오류');
+
+    if (data.timeline.length === 0) {
+      container.innerHTML = '<div style="color:var(--muted);padding:24px;text-align:center;">해당 날짜의 데이터가 없습니다</div>';
+      return;
+    }
+
+    const srcColors = { kakao:'var(--cyan)', excel:'var(--green)', nenova:'var(--orange)', other:'var(--muted)' };
+    const srcIcons = { kakao:'💬', excel:'📊', nenova:'🖥️', other:'•' };
+
+    container.innerHTML = data.timeline.map(ev => `
+      <div style="display:flex;gap:12px;margin-bottom:6px;align-items:flex-start;">
+        <div style="font-size:11px;color:var(--muted);white-space:nowrap;min-width:50px;padding-top:2px;">${(ev.timestamp||'').substring(11,16)}</div>
+        <div style="width:20px;text-align:center;flex-shrink:0;">${srcIcons[ev.source]||'•'}</div>
+        <div style="font-size:11px;color:${srcColors[ev.source]||'var(--muted)'};min-width:50px;flex-shrink:0;">${ev.user||''}</div>
+        <div style="font-size:12px;color:var(--text);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${ev.label||''}</div>
+      </div>
+    `).join('');
+  } catch(e) {
+    container.innerHTML = `<div style="color:var(--red);padding:16px;">${e.message}</div>`;
+  }
+}
+
+// 탭 진입 시 자동 날짜 세팅
+document.addEventListener('DOMContentLoaded', () => {
+  const td = document.getElementById('timelineDate');
+  if (td) td.value = new Date().toISOString().substring(0,10);
+});
 
 </script>
 </body>

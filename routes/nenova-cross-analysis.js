@@ -2450,6 +2450,304 @@ module.exports = function createCrossAnalysisRouter({ getDb }) {
   });
 
 
+  /**
+   * GET /api/cross/flow/match
+   * 카카오 → Excel → nenova 3-way 매칭 (실제 events 데이터 기반)
+   * ?days=7&window=10 (window: 분 단위 매칭 시간 윈도우)
+   */
+  router.get('/flow/match', async (req, res) => {
+    try {
+      const orbitDb = getOrbitDb();
+      const days = Math.min(parseInt(req.query.days) || 14, 90);
+      const windowMin = Math.min(parseInt(req.query.window) || 10, 60);
+
+      // 1. 카카오 클립보드 이벤트 (order.detected + clipboard.change 발주 관련)
+      const kakaoQ = await orbitDb.query(`
+        SELECT
+          e.id, e.type, e.user_id, e.timestamp,
+          e.data_json->>'text' AS text,
+          e.data_json->>'rawText' AS raw_text,
+          e.data_json->'items' AS items,
+          u.name AS user_name
+        FROM events e
+        LEFT JOIN orbit_auth_users u ON e.user_id = u.id
+        WHERE e.type IN ('order.detected','clipboard.change')
+          AND e.timestamp::timestamptz >= NOW() - INTERVAL '1 day' * $1
+          AND e.user_id NOT IN ('local','system')
+          AND (
+            e.data_json->>'text' ILIKE ANY(ARRAY['%박스%','%단%','%차%','%발주%','%출고%','%수량%','%취소%','%추가%','%재고%'])
+            OR e.type = 'order.detected'
+          )
+          AND LENGTH(COALESCE(e.data_json->>'text', e.data_json->>'rawText', '')) > 10
+          AND (e.data_json->>'text') NOT LIKE '{%'
+        ORDER BY e.timestamp DESC
+        LIMIT 500
+      `, [days]);
+
+      // 2. Excel 작업 이벤트
+      const excelQ = await orbitDb.query(`
+        SELECT
+          e.id, e.type, e.user_id, e.timestamp,
+          e.data_json->>'workbook' AS workbook,
+          e.data_json->>'sheet' AS sheet,
+          e.data_json->>'cell' AS cell,
+          e.data_json->>'value' AS value,
+          e.data_json->>'formula' AS formula,
+          u.name AS user_name
+        FROM events e
+        LEFT JOIN orbit_auth_users u ON e.user_id = u.id
+        WHERE e.type = 'excel.activity'
+          AND e.timestamp::timestamptz >= NOW() - INTERVAL '1 day' * $1
+          AND e.user_id NOT IN ('local','system')
+          AND COALESCE(e.data_json->>'workbook','') != ''
+        ORDER BY e.timestamp DESC
+        LIMIT 500
+      `, [days]);
+
+      // 3. nenova 작업 이벤트 (keyboard + screen.analyzed)
+      const nenovaQ = await orbitDb.query(`
+        SELECT
+          e.id, e.type, e.user_id, e.timestamp,
+          COALESCE(e.data_json->'appContext'->>'currentApp', e.data_json->>'app', '') AS app,
+          COALESCE(e.data_json->'appContext'->>'windowTitle', e.data_json->>'windowTitle', '') AS window_title,
+          e.data_json->>'screen' AS screen,
+          e.data_json->>'activity' AS activity,
+          e.data_json->'visibleText' AS visible_text,
+          e.data_json->>'nenovaScreen' AS nenova_screen,
+          u.name AS user_name
+        FROM events e
+        LEFT JOIN orbit_auth_users u ON e.user_id = u.id
+        WHERE e.type IN ('keyboard.chunk','screen.analyzed')
+          AND e.timestamp::timestamptz >= NOW() - INTERVAL '1 day' * $1
+          AND e.user_id NOT IN ('local','system')
+          AND (
+            LOWER(COALESCE(e.data_json->'appContext'->>'currentApp', e.data_json->>'app', '')) LIKE '%nenova%'
+            OR LOWER(COALESCE(e.data_json->'appContext'->>'windowTitle', e.data_json->>'windowTitle', '')) LIKE '%nenova%'
+            OR LOWER(COALESCE(e.data_json->'appContext'->>'windowTitle', e.data_json->>'windowTitle', '')) LIKE '%주문%'
+            OR LOWER(COALESCE(e.data_json->'appContext'->>'windowTitle', e.data_json->>'windowTitle', '')) LIKE '%출하%'
+            OR LOWER(COALESCE(e.data_json->'appContext'->>'windowTitle', e.data_json->>'windowTitle', '')) LIKE '%입고%'
+            OR e.type = 'screen.analyzed'
+          )
+        ORDER BY e.timestamp DESC
+        LIMIT 500
+      `, [days]);
+
+      const kakaoRows = kakaoQ.rows;
+      const excelRows = excelQ.rows;
+      const nenovaRows = nenovaQ.rows;
+
+      // ── 매칭 엔진 ──────────────────────────────────────────────────────────
+      // 타임스탬프 기준 ±windowMin 분 내 같은 유저 이벤트를 세션으로 묶기
+      const WINDOW_MS = windowMin * 60 * 1000;
+      const sessions = [];
+      const usedKakao = new Set();
+
+      for (const k of kakaoRows) {
+        if (usedKakao.has(k.id)) continue;
+        const kTs = new Date(k.timestamp).getTime();
+        const kUser = k.user_id;
+
+        // 같은 시간대 Excel 이벤트
+        const matchedExcel = excelRows.filter(ex =>
+          ex.user_id === kUser &&
+          Math.abs(new Date(ex.timestamp).getTime() - kTs) <= WINDOW_MS
+        );
+
+        // 같은 시간대 nenova 이벤트
+        const matchedNenova = nenovaRows.filter(nv =>
+          nv.user_id === kUser &&
+          Math.abs(new Date(nv.timestamp).getTime() - kTs) <= WINDOW_MS
+        );
+
+        // 키워드 매칭: 카카오 텍스트에서 키워드 추출 → Excel 값/파일명과 비교
+        const kakaoText = (k.text || k.raw_text || '').replace(/\s+/g,' ');
+        const keywords = kakaoText.match(/[가-힣a-zA-Z]{2,}/g) || [];
+
+        const keywordMatches = [];
+        for (const kw of keywords.slice(0,10)) {
+          for (const ex of matchedExcel) {
+            if ((ex.workbook||'').includes(kw) || (ex.value||'').includes(kw) || (ex.sheet||'').includes(kw)) {
+              keywordMatches.push({ keyword: kw, matchedIn: 'excel', file: ex.workbook, value: ex.value });
+            }
+          }
+          for (const nv of matchedNenova) {
+            if ((nv.window_title||'').includes(kw) || (nv.activity||'').includes(kw)) {
+              keywordMatches.push({ keyword: kw, matchedIn: 'nenova', screen: nv.screen || nv.window_title });
+            }
+          }
+        }
+
+        // 매칭 타입 결정
+        const hasExcel = matchedExcel.length > 0;
+        const hasNenova = matchedNenova.length > 0;
+        let matchType = 'kakao_only';
+        let matchScore = 0;
+        if (hasExcel && hasNenova) { matchType = 'full_match'; matchScore = 100; }
+        else if (hasExcel) { matchType = 'kakao_excel'; matchScore = 66; }
+        else if (hasNenova) { matchType = 'kakao_nenova'; matchScore = 66; }
+
+        if (keywordMatches.length > 0) matchScore = Math.min(100, matchScore + 10);
+
+        usedKakao.add(k.id);
+        sessions.push({
+          id: k.id,
+          timestamp: k.timestamp,
+          user: k.user_name || kUser,
+          matchType,
+          matchScore,
+          sources: {
+            kakao: {
+              type: k.type,
+              text: kakaoText.substring(0,120),
+            },
+            excel: matchedExcel.slice(0,3).map(ex => ({
+              workbook: ex.workbook,
+              sheet: ex.sheet,
+              cell: ex.cell,
+              value: ex.value,
+            })),
+            nenova: matchedNenova.slice(0,3).map(nv => ({
+              type: nv.type,
+              app: nv.app,
+              windowTitle: nv.window_title,
+              screen: nv.screen,
+              activity: nv.activity,
+            })),
+          },
+          keywordMatches: keywordMatches.slice(0,5),
+        });
+      }
+
+      // 통계 요약
+      const total = sessions.length;
+      const fullMatch = sessions.filter(s => s.matchType === 'full_match').length;
+      const kakaoExcel = sessions.filter(s => s.matchType === 'kakao_excel').length;
+      const kakaoNenova = sessions.filter(s => s.matchType === 'kakao_nenova').length;
+      const kakaoOnly = sessions.filter(s => s.matchType === 'kakao_only').length;
+      const avgScore = total > 0 ? Math.round(sessions.reduce((a,s) => a+s.matchScore,0)/total) : 0;
+
+      res.json({
+        ok: true,
+        period: `${days}일`,
+        windowMin,
+        summary: {
+          total,
+          fullMatch,
+          kakaoExcel,
+          kakaoNenova,
+          kakaoOnly,
+          avgScore,
+          matchRate: total > 0 ? `${Math.round((fullMatch/total)*100)}%` : '0%',
+          rawCounts: {
+            kakaoEvents: kakaoRows.length,
+            excelEvents: excelRows.length,
+            nenovaEvents: nenovaRows.length,
+          },
+        },
+        sessions: sessions.sort((a,b) => b.matchScore - a.matchScore).slice(0,100),
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err) {
+      handleError(res, err, 'flow/match');
+    }
+  });
+
+  /**
+   * GET /api/cross/flow/timeline
+   * 직원별 업무 타임라인 (3개 소스 통합)
+   * ?userId=xxx&date=2026-05-15
+   */
+  router.get('/flow/timeline', async (req, res) => {
+    try {
+      const orbitDb = getOrbitDb();
+      const userId = req.query.userId || null;
+      const date = req.query.date || new Date().toISOString().substring(0,10);
+
+      const WORK_TYPES = ['order.detected','clipboard.change','excel.activity','keyboard.chunk','screen.analyzed'];
+
+      let qStr = `
+        SELECT
+          e.id, e.type, e.user_id, e.timestamp,
+          e.data_json,
+          u.name AS user_name
+        FROM events e
+        LEFT JOIN orbit_auth_users u ON e.user_id = u.id
+        WHERE e.type = ANY($1)
+          AND e.timestamp::timestamptz >= $2::timestamptz
+          AND e.timestamp::timestamptz < ($2::timestamptz + INTERVAL '1 day')
+          AND e.user_id NOT IN ('local','system')
+      `;
+      const params = [WORK_TYPES, date];
+      if (userId) { qStr += ` AND e.user_id = $3`; params.push(userId); }
+      qStr += ` ORDER BY e.timestamp ASC LIMIT 1000`;
+
+      const { rows } = await orbitDb.query(qStr, params);
+
+      // 이벤트를 소스별로 분류
+      const timeline = rows.map(r => {
+        let data = {};
+        try { data = typeof r.data_json === 'string' ? JSON.parse(r.data_json) : (r.data_json || {}); } catch {}
+        const ctx = data.appContext || {};
+
+        let source = 'other';
+        let label = '';
+        let detail = {};
+
+        if (r.type === 'order.detected' || (r.type === 'clipboard.change' && (data.text||'').match(/박스|단|차|발주|출고/))) {
+          source = 'kakao';
+          label = (data.text || data.rawText || '').substring(0,80).replace(/\n/g,' ');
+          detail = { rawText: (data.rawText||data.text||'').substring(0,200), items: data.items };
+        } else if (r.type === 'excel.activity') {
+          source = 'excel';
+          label = `${data.workbook||'?'} > [${data.sheet||'?'}] ${data.cell||''}`;
+          detail = { workbook: data.workbook, sheet: data.sheet, cell: data.cell, value: data.value, formula: data.formula };
+        } else if (r.type === 'keyboard.chunk' || r.type === 'screen.analyzed') {
+          const app = (ctx.currentApp || data.app || '').toLowerCase();
+          const win = (ctx.windowTitle || data.windowTitle || '').toLowerCase();
+          if (app.includes('nenova') || win.includes('nenova') || win.includes('주문') || win.includes('출하') || data.nenovaScreen) {
+            source = 'nenova';
+            label = data.screen || data.activity || (ctx.windowTitle||data.windowTitle||'nenova');
+            detail = { screen: data.screen, activity: data.activity, nenovaScreen: data.nenovaScreen, visibleText: (data.visibleText||[]).slice(0,5) };
+          } else {
+            source = 'excel'; // 다른 앱
+            label = `${ctx.currentApp||data.app||'?'} — ${(ctx.windowTitle||data.windowTitle||'').substring(0,40)}`;
+            detail = {};
+          }
+        } else {
+          label = (data.text||'').substring(0,60);
+        }
+
+        return {
+          id: r.id,
+          type: r.type,
+          source,
+          timestamp: r.timestamp,
+          user: r.user_name || r.user_id?.substring(0,8),
+          label,
+          detail,
+        };
+      });
+
+      // 유저별 그룹
+      const byUser = {};
+      timeline.forEach(ev => {
+        if (!byUser[ev.user]) byUser[ev.user] = [];
+        byUser[ev.user].push(ev);
+      });
+
+      res.json({
+        ok: true,
+        date,
+        userId,
+        total: timeline.length,
+        byUser,
+        timeline,
+      });
+    } catch (err) {
+      handleError(res, err, 'flow/timeline');
+    }
+  });
+
   // ── 라우터 반환 ──
   return router;
 };
