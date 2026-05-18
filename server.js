@@ -477,6 +477,14 @@ app.get(['/viewer', '/viewer/'], (req, res) => {
 app.get('/m', (req, res) => {
   res.redirect(302, '/nenova-dashboard.html?mobile=1');
 });
+// 챗봇 진입점
+app.get('/chat', (req, res) => {
+  res.redirect(302, '/chat.html');
+});
+// 워크스페이스 선택 진입점
+app.get('/select', (req, res) => {
+  res.redirect(302, '/select.html');
+});
 app.use(express.static(path.join(__dirname, 'public'), {
   maxAge: 0, // 개발 단계: 캐시 비활성화 (안정화 후 1d로 복구)
   etag: true,
