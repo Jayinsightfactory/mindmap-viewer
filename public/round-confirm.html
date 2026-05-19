@@ -2,242 +2,343 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>차수 확정 관리 — nenova</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>차수 확정 관리 — nenovaweb</title>
   <meta name="theme-color" content="#020617">
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
-    * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color: transparent; }
+    * { margin:0; padding:0; box-sizing:border-box; }
     :root {
-      --bg:#020617; --bg2:#0a1224; --surface:#111a30; --surface2:#18223d;
-      --border:#25304d; --text:#e6ecff; --muted:#8b97b8;
+      --bg:#0a1224; --surface:#111a30; --surface2:#18223d; --surface3:#1f2a47;
+      --border:#25304d; --border2:#2f3c5c;
+      --text:#e6ecff; --muted:#8b97b8; --dim:#5a6890;
       --blue:#5b8cff; --cyan:#38d4e8; --green:#3fd68b; --violet:#a98bff;
       --orange:#ff9966; --red:#ff6b6b; --yellow:#ffcc66;
     }
     html, body {
       background: var(--bg); color: var(--text);
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 14px;
+      height: 100%;
     }
     body {
       min-height: 100vh;
-      padding-bottom: 80px;
-      font-size: 15px;
+      display: flex; flex-direction: column;
     }
 
-    /* 상단바 */
-    .app-bar {
-      position: sticky; top: 0; z-index: 50;
-      display: flex; align-items: center; gap: 10px;
-      padding: 14px 16px;
-      background: rgba(2,6,23,0.94);
-      backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    /* 상단 툴바 */
+    .toolbar {
+      flex-shrink: 0;
+      display: flex; align-items: center; gap: 14px;
+      padding: 12px 20px;
+      background: var(--surface);
       border-bottom: 1px solid var(--border);
     }
-    .icon-btn {
-      width: 40px; height: 40px; border-radius: 12px;
-      display: flex; align-items: center; justify-content: center;
-      background: transparent; border: none; color: var(--text);
-      font-size: 18px; cursor: pointer; text-decoration: none;
+    .toolbar .brand {
+      display:flex; align-items:center; gap:8px;
+      font-size: 12px; font-weight: 700; letter-spacing: 0.14em;
+      text-transform: uppercase; color: var(--cyan);
     }
-    .icon-btn:active { background: var(--surface2); }
-    .title {
+    .toolbar .brand .dot {
+      width:7px; height:7px; border-radius:50%;
+      background:var(--cyan); box-shadow:0 0 8px var(--cyan);
+    }
+    .toolbar .divider { width:1px; height:20px; background:var(--border); }
+    .toolbar h1 { font-size: 15px; font-weight: 700; }
+    .toolbar .spacer { flex: 1; }
+    .toolbar .form-group { display:flex; align-items:center; gap:8px; }
+    .toolbar label { font-size: 12px; color: var(--muted); }
+    .toolbar select, .toolbar input {
+      background: var(--surface2); border: 1px solid var(--border2);
+      color: var(--text); font-size: 13px; font-family: inherit;
+      padding: 6px 10px; border-radius: 6px;
+      cursor: pointer; min-width: 80px;
+    }
+    .toolbar select:focus { outline: none; border-color: var(--cyan); }
+    .toolbar .close-btn {
+      width: 32px; height: 32px; border-radius: 6px;
+      background: transparent; border: 1px solid var(--border);
+      color: var(--muted); cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      text-decoration: none; font-size: 16px;
+    }
+    .toolbar .close-btn:hover { background: var(--surface2); color: var(--text); }
+
+    /* 본문 — 좌(차수) / 우(카테고리) 분할 */
+    .main {
       flex: 1;
-      font-size: 16px; font-weight: 700;
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      min-height: 0;
     }
-    .year-picker {
-      background: var(--surface); border: 1px solid var(--border);
-      color: var(--text); font-size: 14px; font-family: inherit;
-      padding: 8px 12px; border-radius: 10px;
+    @media (max-width: 900px) {
+      .main { grid-template-columns: 1fr; }
+    }
+
+    /* 좌 패널 — 차수 리스트 */
+    .left-pane {
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      overflow-y: auto;
+    }
+    .pane-head {
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border);
+      display: flex; justify-content: space-between; align-items: center;
+      background: var(--surface);
+      position: sticky; top: 0;
+      z-index: 5;
+    }
+    .pane-head .title { font-size: 13px; font-weight: 700; }
+    .pane-head .count { font-size: 12px; color: var(--muted); }
+    .round-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    .round-table th {
+      text-align: left;
+      padding: 8px 14px;
+      font-size: 11px; font-weight: 600; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.04em;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      position: sticky; top: 49px;
+      z-index: 4;
+    }
+    .round-table th.num { text-align: right; }
+    .round-table tr {
       cursor: pointer;
+      border-bottom: 1px solid var(--border);
+      transition: background 0.1s;
     }
-    .year-picker:focus { outline: none; border-color: var(--cyan); }
-
-    /* 차수 칩 */
-    .round-chips {
-      display: flex; gap: 8px;
-      overflow-x: auto; -webkit-overflow-scrolling: touch;
-      padding: 16px 16px 6px;
-      scrollbar-width: none;
+    .round-table tbody tr:hover { background: var(--surface2); }
+    .round-table tr.active {
+      background: rgba(91,140,255,0.12);
+      box-shadow: inset 3px 0 0 var(--blue);
     }
-    .round-chips::-webkit-scrollbar { display: none; }
-    .round-chip {
-      flex: 0 0 auto;
+    .round-table td {
       padding: 10px 14px;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 999px;
-      font-size: 13px; font-weight: 600;
-      color: var(--text); cursor: pointer; white-space: nowrap;
-      display: flex; align-items: center; gap: 6px;
-      transition: all 0.15s ease;
-      min-height: 40px;
+      vertical-align: middle;
     }
-    .round-chip .dot {
+    .round-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .round-table .dot {
+      display: inline-block;
       width: 7px; height: 7px; border-radius: 50%;
+      margin-right: 6px;
     }
-    .round-chip[data-status="all-confirmed"] .dot { background: var(--green); box-shadow: 0 0 6px var(--green); }
-    .round-chip[data-status="partial"] .dot { background: var(--orange); box-shadow: 0 0 6px var(--orange); }
-    .round-chip[data-status="pending"] .dot { background: var(--muted); }
-    .round-chip[data-status="none"] .dot { background: var(--border); }
-    .round-chip:hover, .round-chip:active { background: var(--surface2); border-color: var(--blue); }
-    .round-chip.active {
-      background: linear-gradient(135deg, var(--blue), var(--cyan));
-      color: #fff; border-color: transparent;
-      box-shadow: 0 4px 14px rgba(91,140,255,0.3);
+    .round-table .week {
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
     }
-    .round-chip.active .dot { background: #fff; box-shadow: none; }
+    .status-confirmed { color: var(--green); }
+    .status-partial   { color: var(--orange); }
+    .status-pending   { color: var(--red); }
+    .status-empty     { color: var(--dim); }
+    .dot-confirmed { background: var(--green); box-shadow: 0 0 6px var(--green); }
+    .dot-partial   { background: var(--orange); box-shadow: 0 0 6px var(--orange); }
+    .dot-pending   { background: var(--red); }
+    .dot-empty     { background: var(--border); }
+    .progress {
+      display: inline-block;
+      width: 80px; height: 6px; border-radius: 3px;
+      background: var(--surface3); vertical-align: middle;
+      overflow: hidden;
+    }
+    .progress > i {
+      display: block; height: 100%;
+      background: linear-gradient(90deg, var(--green), var(--cyan));
+      transition: width 0.2s ease;
+    }
+    .progress.partial > i { background: linear-gradient(90deg, var(--orange), var(--yellow)); }
+    .progress.pending > i { background: var(--red); }
 
-    .section-title {
-      padding: 18px 20px 12px;
-      font-size: 12px; font-weight: 600;
-      color: var(--muted);
-      text-transform: uppercase; letter-spacing: 0.1em;
-      display: flex; justify-content: space-between; align-items: baseline;
+    /* 우 패널 — 카테고리 디테일 */
+    .right-pane {
+      display: flex; flex-direction: column;
+      overflow: hidden;
     }
-    .section-title .sub {
-      font-size: 11px; color: var(--muted); text-transform: none; letter-spacing: 0;
-    }
-
-    /* 요약 박스 */
-    .summary {
-      margin: 0 16px 6px;
-      padding: 14px 16px;
+    .detail-head {
+      padding: 16px 24px;
+      border-bottom: 1px solid var(--border);
+      display: flex; justify-content: space-between; align-items: center;
       background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      display: grid; grid-template-columns: repeat(3, 1fr);
-      gap: 12px;
     }
-    .summary .cell { text-align: center; }
-    .summary .cell .label { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
-    .summary .cell .value { font-size: 18px; font-weight: 700; }
-    .summary .cell .value.c { color: var(--green); }
-    .summary .cell .value.p { color: var(--orange); }
-
-    /* 카테고리 리스트 */
-    .cat-list { padding: 0 16px; }
-    .cat-row {
-      display: flex; align-items: center; gap: 12px;
-      padding: 14px 16px;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      margin-bottom: 8px;
+    .detail-head .info h2 {
+      font-size: 18px; font-weight: 700;
+      margin-bottom: 4px;
     }
-    .cat-row .check {
-      width: 22px; height: 22px; border-radius: 6px;
-      border: 1.5px solid var(--border);
-      display: flex; align-items: center; justify-content: center;
-      cursor: pointer; flex-shrink: 0;
-      background: var(--surface2);
-      font-size: 14px; color: var(--cyan);
-    }
-    .cat-row .check.checked {
-      background: var(--cyan); border-color: var(--cyan); color: #fff;
-    }
-    .cat-row .body { flex: 1; min-width: 0; }
-    .cat-row .name {
-      font-size: 15px; font-weight: 600;
-      margin-bottom: 2px;
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    }
-    .cat-row .meta {
+    .detail-head .info .sub {
       font-size: 12px; color: var(--muted);
     }
-    .cat-row .badge {
-      padding: 5px 10px; border-radius: 999px;
+    .detail-head .stats {
+      display: flex; gap: 18px;
+    }
+    .detail-head .stat .label {
+      font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em;
+    }
+    .detail-head .stat .value {
+      font-size: 20px; font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+    .stat.confirmed .value { color: var(--green); }
+    .stat.pending .value   { color: var(--orange); }
+
+    .cat-table-wrap { flex: 1; overflow-y: auto; }
+    .cat-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    .cat-table th {
+      text-align: left;
+      padding: 10px 14px;
+      font-size: 11px; font-weight: 600; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.05em;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      position: sticky; top: 0;
+      z-index: 5;
+    }
+    .cat-table th.num { text-align: right; }
+    .cat-table th.action { text-align: center; }
+    .cat-table td {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: middle;
+    }
+    .cat-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .cat-table tr:hover { background: var(--surface2); }
+    .cat-table .check {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 18px; height: 18px; border-radius: 4px;
+      background: var(--surface2); border: 1.5px solid var(--border2);
+      cursor: pointer; color: var(--cyan); font-size: 12px;
+      vertical-align: middle;
+    }
+    .cat-table .check.checked { background: var(--cyan); border-color: var(--cyan); color: #fff; }
+    .cat-table .name { font-weight: 600; }
+    .badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 4px 10px; border-radius: 999px;
       font-size: 12px; font-weight: 600;
       white-space: nowrap;
-      display: flex; align-items: center; gap: 4px;
     }
-    .cat-row .badge.confirmed { background: rgba(63,214,139,0.15); color: var(--green); }
-    .cat-row .badge.partial   { background: rgba(255,153,102,0.18); color: var(--orange); }
-    .cat-row .badge.pending   { background: rgba(255,107,107,0.15); color: var(--red); }
+    .badge.confirmed { background: rgba(63,214,139,0.13); color: var(--green); }
+    .badge.partial   { background: rgba(255,153,102,0.15); color: var(--orange); }
+    .badge.pending   { background: rgba(255,107,107,0.13); color: var(--red); }
+
+    /* 하단 액션 바 */
+    .action-bar {
+      flex-shrink: 0;
+      padding: 14px 24px;
+      border-top: 1px solid var(--border);
+      background: var(--surface);
+      display: flex; align-items: center; gap: 12px;
+      flex-wrap: wrap;
+    }
+    .action-bar .selection-info {
+      flex: 1;
+      font-size: 12px; color: var(--muted);
+    }
+    .action-bar .selection-info b { color: var(--cyan); font-weight: 700; }
+    .action-bar button {
+      padding: 9px 16px;
+      background: var(--surface2); border: 1px solid var(--border2);
+      color: var(--muted); font-size: 13px; font-weight: 600;
+      border-radius: 6px; cursor: not-allowed;
+      font-family: inherit;
+      opacity: 0.65;
+      display: inline-flex; align-items: center; gap: 6px;
+    }
+    .action-bar .primary { color: var(--green); border-color: rgba(63,214,139,0.4); }
+    .action-bar .danger { color: var(--red); border-color: rgba(255,107,107,0.35); }
+    .phase-note {
+      font-size: 11px; color: var(--orange);
+      padding: 4px 10px; border-radius: 4px;
+      background: rgba(255,153,102,0.1);
+      border: 1px solid rgba(255,153,102,0.2);
+    }
 
     .empty {
-      text-align: center; padding: 60px 20px; color: var(--muted);
-      font-size: 14px;
-    }
-    .empty .icon { font-size: 36px; margin-bottom: 12px; opacity: 0.5; }
-
-    /* 하단 액션 바 (Phase 2 — 현재 disabled) */
-    .action-bar {
-      position: fixed; bottom: 0; left: 0; right: 0;
-      padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
-      background: rgba(2,6,23,0.94);
-      backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
-      border-top: 1px solid var(--border);
-      display: flex; gap: 8px;
-    }
-    .action-bar button {
-      flex: 1; padding: 12px;
-      background: var(--surface2); border: 1px solid var(--border);
-      color: var(--muted); font-size: 13px; font-weight: 600;
-      border-radius: 12px; cursor: not-allowed;
-      font-family: inherit;
-      opacity: 0.6;
-    }
-    .action-bar .note {
-      position: absolute; top: -22px; left: 16px;
-      font-size: 10px; color: var(--orange);
-    }
-
-    /* 로딩 */
-    .loading {
-      padding: 20px; text-align: center; color: var(--muted);
+      padding: 60px 20px; text-align: center; color: var(--muted);
       font-size: 13px;
     }
+    .empty .icon { font-size: 36px; margin-bottom: 12px; opacity: 0.4; }
+    .loading { padding: 20px; text-align: center; color: var(--muted); font-size: 13px; }
     .err {
-      padding: 16px; margin: 16px;
-      background: rgba(255,107,107,0.1); border: 1px solid rgba(255,107,107,0.3);
-      border-radius: 12px; color: var(--red);
-      font-size: 13px;
+      margin: 16px 24px; padding: 14px 18px;
+      background: rgba(255,107,107,0.08); border: 1px solid rgba(255,107,107,0.3);
+      border-radius: 8px; color: var(--red); font-size: 13px;
     }
   </style>
 </head>
 <body>
-  <header class="app-bar">
-    <a href="/select.html" class="icon-btn" aria-label="닫기">&times;</a>
-    <div class="title">차수 확정 관리</div>
-    <select class="year-picker" id="yearPicker">
-      <option value="2026">2026</option>
-      <option value="2025">2025</option>
-      <option value="2024">2024</option>
-    </select>
-  </header>
-
-  <div class="section-title">
-    <span>차수 선택</span>
-    <span class="sub">●완료  ●부분  ○미확정</span>
-  </div>
-  <div class="round-chips" id="roundChips">
-    <div class="loading">차수 로딩 중…</div>
+  <div class="toolbar">
+    <div class="brand"><span class="dot"></span>nenovaweb</div>
+    <div class="divider"></div>
+    <h1>차수 확정 관리</h1>
+    <div class="spacer"></div>
+    <div class="form-group">
+      <label for="yearPicker">연도</label>
+      <select class="year-picker" id="yearPicker">
+        <option value="2026">2026</option>
+        <option value="2025">2025</option>
+        <option value="2024">2024</option>
+      </select>
+    </div>
+    <a href="/select.html" class="close-btn" aria-label="닫기">&times;</a>
   </div>
 
-  <div id="detailWrap" style="display:none;">
-    <div class="section-title">
-      <span id="selectedLabel">선택된 차수</span>
-      <span class="sub" id="selectedSub"></span>
-    </div>
-    <div class="summary" id="summaryBox" style="display:none;">
-      <div class="cell"><div class="label">전체</div><div class="value" id="sumTotal">-</div></div>
-      <div class="cell"><div class="label">확정</div><div class="value c" id="sumConfirmed">-</div></div>
-      <div class="cell"><div class="label">미확정</div><div class="value p" id="sumPending">-</div></div>
-    </div>
-    <div class="section-title" style="padding-top:10px;">
-      <span>카테고리</span>
-      <span class="sub" id="catCount"></span>
-    </div>
-    <div class="cat-list" id="catList"></div>
-  </div>
+  <div class="main">
+    <!-- 좌 패널: 차수 리스트 -->
+    <aside class="left-pane">
+      <div class="pane-head">
+        <span class="title">차수</span>
+        <span class="count" id="roundCount">-</span>
+      </div>
+      <table class="round-table">
+        <thead>
+          <tr>
+            <th>차수</th>
+            <th class="num">확정/전체</th>
+            <th class="num">진행</th>
+          </tr>
+        </thead>
+        <tbody id="roundTbody">
+          <tr><td colspan="3"><div class="loading">차수 로딩 중…</div></td></tr>
+        </tbody>
+      </table>
+    </aside>
 
-  <div class="action-bar">
-    <span class="note">읽기 전용 (Phase 1) — 쓰기는 검증 후 활성화</span>
-    <button disabled>선택 일괄 확정</button>
-    <button disabled>선택 확정 취소</button>
+    <!-- 우 패널: 카테고리 디테일 -->
+    <main class="right-pane">
+      <div class="detail-head" id="detailHead" style="display:none;">
+        <div class="info">
+          <h2 id="selectedTitle">선택된 차수</h2>
+          <div class="sub" id="selectedSub"></div>
+        </div>
+        <div class="stats">
+          <div class="stat"><div class="label">전체</div><div class="value" id="sumTotal">-</div></div>
+          <div class="stat confirmed"><div class="label">확정</div><div class="value" id="sumConfirmed">-</div></div>
+          <div class="stat pending"><div class="label">미확정</div><div class="value" id="sumPending">-</div></div>
+        </div>
+      </div>
+      <div class="cat-table-wrap" id="catWrap">
+        <div class="empty"><div class="icon">📋</div>왼쪽에서 차수를 선택하세요</div>
+      </div>
+      <div class="action-bar">
+        <span class="phase-note">읽기 전용 (Phase 1)</span>
+        <div class="selection-info">선택 <b id="selCount">0</b>개 카테고리</div>
+        <button disabled class="primary"><span>✓</span> 선택 일괄 확정</button>
+        <button disabled class="danger"><span>✕</span> 선택 확정 취소</button>
+        <button disabled class="primary">전체 확정</button>
+        <button disabled class="danger">전체 확정 취소</button>
+      </div>
+    </main>
   </div>
 
   <script>
@@ -245,79 +346,89 @@
     var API = '/api/nenova/rounds/confirmation-status';
     var token = localStorage.getItem('orbit_token') || '';
     var roundsCache = [];
-    var selectedRound = null;
+    var selectedWeek = null;
     var selectedCats = new Set();
 
-    function roundStatus(r) {
-      if (!r.totalShipments) return 'none';
-      if (r.confirmedShipments === r.totalShipments) return 'all-confirmed';
+    function statusOf(r) {
+      if (!r.totalShipments) return 'empty';
+      if (r.confirmedShipments === r.totalShipments) return 'confirmed';
       if (r.confirmedShipments === 0) return 'pending';
       return 'partial';
     }
 
-    function renderChips() {
-      var box = document.getElementById('roundChips');
+    function renderRounds() {
+      var tbody = document.getElementById('roundTbody');
+      document.getElementById('roundCount').textContent = roundsCache.length + '개';
       if (!roundsCache.length) {
-        box.innerHTML = '<div class="empty"><div class="icon">📭</div>이 연도에 출하 데이터가 없습니다.</div>';
+        tbody.innerHTML = '<tr><td colspan="3"><div class="empty"><div class="icon">📭</div>출하 데이터가 없습니다.</div></td></tr>';
         return;
       }
-      box.innerHTML = '';
+      tbody.innerHTML = '';
       roundsCache.forEach(function (r) {
-        var btn = document.createElement('button');
-        btn.className = 'round-chip';
-        btn.dataset.status = roundStatus(r);
-        btn.dataset.week = r.orderWeek;
-        btn.innerHTML = '<span class="dot"></span>' + r.orderWeek;
-        if (selectedRound && selectedRound.orderWeek === r.orderWeek) btn.classList.add('active');
-        btn.addEventListener('click', function () { selectRound(r); });
-        box.appendChild(btn);
+        var s = statusOf(r);
+        var pct = r.totalShipments ? Math.round(r.confirmedShipments * 100 / r.totalShipments) : 0;
+        var tr = document.createElement('tr');
+        if (r.orderWeek === selectedWeek) tr.classList.add('active');
+        tr.dataset.week = r.orderWeek;
+        tr.innerHTML =
+          '<td><span class="dot dot-' + s + '"></span><span class="week">' + r.orderWeek + '</span></td>' +
+          '<td class="num status-' + s + '">' + r.confirmedShipments + '<span style="color:var(--dim);">/' + r.totalShipments + '</span></td>' +
+          '<td class="num"><span class="progress ' + s + '"><i style="width:' + pct + '%;"></i></span></td>';
+        tr.addEventListener('click', function () { selectRound(r); });
+        tbody.appendChild(tr);
       });
     }
 
     function selectRound(r) {
-      selectedRound = r;
+      selectedWeek = r.orderWeek;
       selectedCats.clear();
-      // 칩 활성화 갱신
-      document.querySelectorAll('.round-chip').forEach(function (el) {
-        el.classList.toggle('active', el.dataset.week === r.orderWeek);
+      updateSelCount();
+      // 좌 패널 활성화 갱신
+      document.querySelectorAll('.round-table tr').forEach(function (el) {
+        if (el.dataset.week) el.classList.toggle('active', el.dataset.week === r.orderWeek);
       });
-      // 상세 영역
-      document.getElementById('detailWrap').style.display = 'block';
-      document.getElementById('selectedLabel').textContent = r.orderWeek + '차 카테고리';
-      document.getElementById('selectedSub').textContent = r.orderYearWeek || '';
-      // 요약
-      document.getElementById('summaryBox').style.display = 'grid';
-      document.getElementById('sumTotal').textContent = r.totalShipments + '건';
-      document.getElementById('sumConfirmed').textContent = r.confirmedShipments + '건';
-      document.getElementById('sumPending').textContent = (r.totalShipments - r.confirmedShipments) + '건';
-      // 카테고리
-      var list = document.getElementById('catList');
-      list.innerHTML = '';
-      document.getElementById('catCount').textContent = (r.categories.length || 0) + '개';
+      // 헤더
+      document.getElementById('detailHead').style.display = 'flex';
+      document.getElementById('selectedTitle').textContent = r.orderWeek + '차 카테고리';
+      document.getElementById('selectedSub').textContent = (r.orderYearWeek || '') + '  ·  카테고리 ' + (r.categories?.length || 0) + '개';
+      document.getElementById('sumTotal').textContent = r.totalShipments;
+      document.getElementById('sumConfirmed').textContent = r.confirmedShipments;
+      document.getElementById('sumPending').textContent = (r.totalShipments - r.confirmedShipments);
+      // 카테고리 표
+      var wrap = document.getElementById('catWrap');
       if (!r.categories || !r.categories.length) {
-        list.innerHTML = '<div class="empty"><div class="icon">🌿</div>이 차수에 카테고리가 없습니다.</div>';
+        wrap.innerHTML = '<div class="empty"><div class="icon">🌿</div>이 차수에 카테고리가 없습니다.</div>';
         return;
       }
-      r.categories.forEach(function (c) {
-        var row = document.createElement('div');
-        row.className = 'cat-row';
-        var badgeCls = c.status; // 'confirmed' | 'partial' | 'pending'
-        var badgeText = c.status === 'confirmed' ? '✓ 확정' : c.status === 'partial' ? '⚠ 부분' : '○ 미확정';
-        row.innerHTML =
-          '<div class="check" data-cat="' + c.counName + '">+</div>' +
-          '<div class="body">' +
-            '<div class="name">' + escapeHtml(c.counName) + '</div>' +
-            '<div class="meta">' + c.confirmedShipments + '/' + c.totalShipments + ' 출하 · ' + Math.round(c.confirmedBox) + '/' + Math.round(c.totalBox) + ' 박스</div>' +
-          '</div>' +
-          '<div class="badge ' + badgeCls + '">' + badgeText + '</div>';
-        row.querySelector('.check').addEventListener('click', function (e) {
-          var el = e.currentTarget;
+      var rows = r.categories.map(function (c) {
+        var badge = c.status === 'confirmed' ? '<span class="badge confirmed">✓ 확정</span>'
+                  : c.status === 'partial'   ? '<span class="badge partial">⚠ 부분</span>'
+                                              : '<span class="badge pending">○ 미확정</span>';
+        return '<tr data-cat="' + escapeHtml(c.counName) + '">' +
+          '<td><span class="check" data-cat="' + escapeHtml(c.counName) + '">+</span></td>' +
+          '<td class="name">' + escapeHtml(c.counName) + '</td>' +
+          '<td class="num">' + c.confirmedShipments + '<span style="color:var(--dim);">/' + c.totalShipments + '</span></td>' +
+          '<td class="num">' + Math.round(c.confirmedBox) + '<span style="color:var(--dim);">/' + Math.round(c.totalBox) + '</span></td>' +
+          '<td>' + badge + '</td>' +
+          '</tr>';
+      }).join('');
+      wrap.innerHTML =
+        '<table class="cat-table">' +
+        '<thead><tr><th style="width:32px;"></th><th>카테고리</th><th class="num">확정/전체 출하</th><th class="num">확정/전체 박스</th><th>상태</th></tr></thead>' +
+        '<tbody>' + rows + '</tbody></table>';
+      wrap.querySelectorAll('.check').forEach(function (el) {
+        el.addEventListener('click', function (e) {
+          e.stopPropagation();
           var name = el.dataset.cat;
           if (selectedCats.has(name)) { selectedCats.delete(name); el.classList.remove('checked'); el.textContent = '+'; }
           else { selectedCats.add(name); el.classList.add('checked'); el.textContent = '✓'; }
+          updateSelCount();
         });
-        list.appendChild(row);
       });
+    }
+
+    function updateSelCount() {
+      document.getElementById('selCount').textContent = selectedCats.size;
     }
 
     function escapeHtml(s) {
@@ -327,9 +438,10 @@
     }
 
     function load(year) {
-      var box = document.getElementById('roundChips');
-      box.innerHTML = '<div class="loading">차수 로딩 중…</div>';
-      document.getElementById('detailWrap').style.display = 'none';
+      var tbody = document.getElementById('roundTbody');
+      tbody.innerHTML = '<tr><td colspan="3"><div class="loading">차수 로딩 중…</div></td></tr>';
+      document.getElementById('detailHead').style.display = 'none';
+      document.getElementById('catWrap').innerHTML = '<div class="empty"><div class="icon">📋</div>왼쪽에서 차수를 선택하세요</div>';
       fetch(API + '?year=' + encodeURIComponent(year), {
         headers: { 'Authorization': 'Bearer ' + token },
       })
@@ -337,18 +449,14 @@
         .then(function (data) {
           if (!data.ok) throw new Error(data.error || '응답 오류');
           roundsCache = data.rounds || [];
-          renderChips();
-          // 자동으로 최신 차수 선택
-          if (roundsCache.length) {
-            selectRound(roundsCache[roundsCache.length - 1]);
-          }
+          renderRounds();
+          if (roundsCache.length) selectRound(roundsCache[roundsCache.length - 1]);
         })
         .catch(function (err) {
-          box.innerHTML = '<div class="err">로딩 실패: ' + escapeHtml(err.message) + '</div>';
+          tbody.innerHTML = '<tr><td colspan="3"><div class="err">로딩 실패: ' + escapeHtml(err.message) + '</div></td></tr>';
         });
     }
 
-    // 초기화
     var picker = document.getElementById('yearPicker');
     picker.value = String(new Date().getFullYear());
     picker.addEventListener('change', function () { load(this.value); });
