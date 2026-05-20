@@ -8,10 +8,12 @@ import {
   updateOrderStatus,
   deleteOrder,
   nextOrderId,
-  PRODUCTS,
-  CUSTOMERS,
+  getProducts,
+  getCustomers,
   type Order,
   type OrderStatus,
+  type Product,
+  type Customer,
 } from "@/lib/store";
 
 const STATUSES: OrderStatus[] = ["접수", "처리중", "완료", "취소"];
@@ -24,6 +26,8 @@ const STATUS_STYLE: Record<OrderStatus, string> = {
 
 export default function OrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<"전체" | OrderStatus>("전체");
   const [showForm, setShowForm] = useState(false);
@@ -36,6 +40,8 @@ export default function OrdersPage() {
 
   function refresh() {
     setOrders(getOrders());
+    setProducts(getProducts());
+    setCustomers(getCustomers());
   }
 
   useEffect(() => {
@@ -153,7 +159,7 @@ export default function OrdersPage() {
                 placeholder="고객사 선택 또는 입력"
               />
               <datalist id="customer-list">
-                {CUSTOMERS.map((c) => (
+                {customers.map((c) => (
                   <option key={c.id} value={c.name} />
                 ))}
               </datalist>
@@ -168,7 +174,7 @@ export default function OrdersPage() {
                 placeholder="품목 선택 또는 입력"
               />
               <datalist id="product-list">
-                {PRODUCTS.map((p) => (
+                {products.map((p) => (
                   <option key={p.sku} value={p.name} />
                 ))}
               </datalist>
@@ -271,7 +277,7 @@ export default function OrdersPage() {
       </div>
 
       <p className="text-xs text-slate-400">
-        총 {filtered.length}건 · 데이터는 현재 브라우저에 임시 저장됩니다 (추후 서버 연동).
+        총 {filtered.length}건 · 등록된 품목과 일치하면 재고가 자동 차감됩니다 · 데이터는 현재 브라우저에 임시 저장 (추후 서버 연동).
       </p>
     </div>
   );
