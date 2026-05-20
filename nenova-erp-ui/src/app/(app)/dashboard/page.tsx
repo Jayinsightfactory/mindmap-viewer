@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { getOrders, PRODUCTS, CUSTOMERS, type Order } from "@/lib/store";
+import { getOrders, getProducts, getCustomers, type Order, type Product } from "@/lib/store";
 
 const STATUS_STYLE: Record<string, string> = {
   접수: "bg-amber-100 text-amber-700",
@@ -13,21 +13,25 @@ const STATUS_STYLE: Record<string, string> = {
 
 export default function DashboardPage() {
   const [orders, setOrders] = useState<Order[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [customerCount, setCustomerCount] = useState(0);
 
   useEffect(() => {
     setOrders(getOrders());
+    setProducts(getProducts());
+    setCustomerCount(getCustomers().length);
   }, []);
 
   const today = new Date().toISOString().slice(0, 10);
   const todayCount = orders.filter((o) => o.createdAt.slice(0, 10) === today).length;
   const pending = orders.filter((o) => o.status === "접수" || o.status === "처리중").length;
-  const lowStock = PRODUCTS.filter((p) => p.stock < p.safetyStock);
+  const lowStock = products.filter((p) => p.stock < p.safetyStock);
 
   const cards = [
     { label: "오늘 신규 주문", value: todayCount, suffix: "건", accent: "text-brand" },
     { label: "처리 대기", value: pending, suffix: "건", accent: "text-amber-600" },
     { label: "재고 부족 품목", value: lowStock.length, suffix: "종", accent: "text-red-600" },
-    { label: "등록 고객", value: CUSTOMERS.length, suffix: "사", accent: "text-green-600" },
+    { label: "등록 고객", value: customerCount, suffix: "사", accent: "text-green-600" },
   ];
 
   return (
