@@ -134,6 +134,20 @@ async function _check() {
     }
 
     if (text && text !== _lastClipboard && text.length > 0 && text.length < 5000) {
+      // ── 노이즈 필터: win-shell 응답 오염 패턴 제거 ──
+      const _isNoise = (
+        // 프로세스 목록 (콤마 3개 이상, 모두 영문 프로세스명)
+        (text.includes(',') && text.split(',').length > 3 && /^[A-Za-z0-9,. ]+$/.test(text)) ||
+        // 윈도우 타이틀 패턴 (app - Chrome, app - Microsoft Edge 등)
+        /^.{2,80}\s+[-–]\s+(Chrome|Microsoft Edge|Microsoft Excel|Microsoft Word|Edge|Firefox|Opera)$/.test(text) ||
+        // 단순 프로세스명 (1단어 영소문자, 잘 알려진 앱명)
+        /^(chrome|excel|word|powerpnt|kakaotalk|notepad|explorer|cmd|powershell|Teams)$/i.test(text.trim())
+      );
+      if (_isNoise) {
+        // 오염된 값은 _lastClipboard에 반영하지 않음 (다음 진짜 클립보드 감지 유지)
+        return;
+      }
+
       const prev = _lastClipboard;
       _lastClipboard = text;
       if (_callback && prev) {

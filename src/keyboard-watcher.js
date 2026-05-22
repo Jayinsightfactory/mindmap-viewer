@@ -134,11 +134,20 @@ async function _refreshWinCache() {
   if (ws && ws.isAvailable()) {
     try {
       const app = await ws.exec(PS_GET_APP, 4000);
-      _cachedApp = (app || '').trim().toLowerCase();
+      const _appRaw = (app || '').trim();
+      // 유효한 프로세스 이름만 적용 (JSON, 버전번호, 프로세스목록 오염 방지)
+      if (_appRaw && /^[a-zA-Z0-9][a-zA-Z0-9._\- ]{0,80}$/.test(_appRaw) && !_appRaw.startsWith('{') && !_appRaw.includes(',')) {
+        _cachedApp = _appRaw.toLowerCase();
+      }
+      // else: 이전 캐시 유지 (garbage 값으로 덮어쓰기 방지)
     } catch (e) { /* keep previous cache */ }
     try {
       const title = await ws.exec(PS_GET_TITLE, 4000);
-      _cachedTitle = (title || '').trim();
+      const _titleRaw = (title || '').trim();
+      // 프로세스 목록(콤마 구분)이 title로 오면 무시
+      if (_titleRaw && !(_titleRaw.includes(',') && _titleRaw.split(',').length > 3)) {
+        _cachedTitle = _titleRaw;
+      }
     } catch (e) { /* keep previous cache */ }
   } else {
     // 폴백: 종전 execSync 방식 (콘솔 깜빡임 발생) — win-shell 실패 시에만

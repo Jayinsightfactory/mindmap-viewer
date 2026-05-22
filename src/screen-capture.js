@@ -211,8 +211,9 @@ function _shouldSendImage(trigger, app) {
     return false;
   }
 
-  // keyboard_flush / keyboard_done — critical/high 모두 image
+  // keyboard_flush / keyboard_done — critical/high 모두 image, 미지 앱도 25% 비율
   if (trigger === 'keyboard_flush' || trigger === 'keyboard_done') {
+    if (!profile) return ((global._captureCounter || 0) % 4 === 0); // unknown: 25% 샘플
     return profile?.priority === 'critical' || profile?.priority === 'high' || profile?.priority === 'medium';
   }
 
@@ -240,6 +241,12 @@ function _shouldSendImage(trigger, app) {
   // 프로파일 없는(미정의) 앱 + HIGH 트리거 — 매 3번째 이미지
   if (!profile && triggerPriority === 'high') {
     return ((global._captureCounter || 0) % 3 === 0);
+  }
+
+  // unknown app + high/critical 트리거 — 33% 샘플 (앱 감지 오류 대응)
+  if (!profile) {
+    const highTriggers = new Set(['keyboard_flush', 'keyboard_done', 'click_burst', 'app_switch', 'file_write']);
+    if (highTriggers.has(trigger)) return ((global._captureCounter || 0) % 3 === 0);
   }
 
   // skip/low + 나머지 — metadata만
