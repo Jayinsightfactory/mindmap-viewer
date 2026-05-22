@@ -4066,6 +4066,56 @@ app.post('/api/admin/install-code', async (req, res) => {
   res.json({ ok: true, userId: user.id, name: user.name, email: user.email, token: newToken, installCmd });
 });
 
+// ─── 오픈 설치 자동 등록 (토큰 불필요 — hostname 기반 계정 자동 생성) ──────────
+// POST /api/setup/auto-register  body: { hostname, windowsUser? }
+// install-open.ps1 에서 호출 → token + userId 반환
+app.post('/api/setup/auto-register', async (req, res) => {
+  try {
+    const { hostname, windowsUser } = req.body || {};
+    if (!hostname) return res.status(400).json({ error: 'hostname required' });
+    const { issueApiToken, pgBackupToken, pgBackupUser } = require('./src/auth');
+    const authDb = require('./src/auth').getDb ? require('./src/auth').getDb() : null;
+    const pool = dbModule.getDb();
+
+    // 이미 이 hostname으로 등록된 PC 계정이 있으면 재사용
+    const slug = `pc.${hostname.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
+    const email = `${slug}@orbit.local`;
+    let user = authDb ? authDb.prepare('SELECT * FROM users WHERE email = ?').get(email) : null;
+
+    if (!user) {
+      // 새 PC 계정 생성 — 이름은 hostname (나중에 관리자가 실제 이름으로 변경)
+      const crypto = require('crypto');
+      const newId = 'MN' + crypto.randomBytes(8).toString('hex').toUpperCase();
+      const displayName = windowsUser || hostname;
+      if (authDb) {
+        authDb.prepare(`INSERT OR IGNORE INTO users (id, email, name, passwordHash, provider) VALUES (?, ?, ?, '', 'pc_auto')`).run(newId, email, displayName);
+        user = authDb.prepare('SELECT * FROM users WHERE id = ?').get(newId);
+      }
+      if (!user) return res.status(500).json({ error: 'user create failed' });
+      try { await pgBackupUser({ id: user.id, email, name: displayName, provider: 'pc_auto', plan: 'free' }, ''); } catch {}
+    }
+
+    const token = issueApiToken(user.id);
+    try { await pgBackupToken(token, user.id, null); } catch {}
+
+    // orbit_pc_links 등록 (hostname ↔ userId 매핑)
+    try {
+      await pool.query(
+        `INSERT INTO orbit_pc_links (hostname, user_id, created_at)
+         VALUES ($1, $2, NOW())
+         ON CONFLICT (hostname) DO UPDATE SET user_id = EXCLUDED.user_id`,
+        [hostname, user.id]
+      );
+    } catch {}
+
+    const serverUrl = process.env.SERVER_URL || 'https://mindmap-viewer-production-adb2.up.railway.app';
+    res.json({ ok: true, userId: user.id, name: user.name, token, serverUrl });
+  } catch (e) {
+    console.error('[auto-register]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ─── 임시 진단 엔드포인트 (verifyToken 디버그용) ─────────────────────────────
 app.get('/api/admin/diag-token', async (req, res) => {
   const { secret } = req.query;
