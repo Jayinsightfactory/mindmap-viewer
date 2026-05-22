@@ -4100,13 +4100,16 @@ app.post('/api/setup/auto-register', async (req, res) => {
 
     // orbit_pc_links 등록 (hostname ↔ userId 매핑)
     try {
+      await pool.query(`CREATE TABLE IF NOT EXISTS orbit_pc_links (
+        hostname TEXT PRIMARY KEY, user_id TEXT NOT NULL, linked_at TIMESTAMPTZ DEFAULT NOW()
+      )`);
       await pool.query(
-        `INSERT INTO orbit_pc_links (hostname, user_id, created_at)
+        `INSERT INTO orbit_pc_links (hostname, user_id, linked_at)
          VALUES ($1, $2, NOW())
-         ON CONFLICT (hostname) DO UPDATE SET user_id = EXCLUDED.user_id`,
+         ON CONFLICT (hostname) DO UPDATE SET user_id = EXCLUDED.user_id, linked_at = NOW()`,
         [hostname, user.id]
       );
-    } catch {}
+    } catch (e) { console.warn('[auto-register] pc_links:', e.message); }
 
     const serverUrl = process.env.SERVER_URL || 'https://mindmap-viewer-production-adb2.up.railway.app';
     res.json({ ok: true, userId: user.id, name: user.name, token, serverUrl });
