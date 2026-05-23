@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import AiWorkConsole from "@/components/AiWorkConsole";
 import { OPS_ACTIONS, OPS_METRICS, OPS_MODULES } from "@/lib/operating-plan";
-import { getOrders, getProducts, getCustomers, type Order, type Product } from "@/lib/store";
+import { getOrders, getProducts, getCustomers, getErpSnapshot, type Order, type Product } from "@/lib/store";
 
 const STATUS_STYLE: Record<string, string> = {
   접수: "bg-amber-100 text-amber-700",
@@ -17,11 +17,13 @@ export default function DashboardPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [customerCount, setCustomerCount] = useState(0);
+  const [erpSnapshot, setErpSnapshot] = useState<ReturnType<typeof getErpSnapshot> | null>(null);
 
   useEffect(() => {
     setOrders(getOrders());
     setProducts(getProducts());
     setCustomerCount(getCustomers().length);
+    setErpSnapshot(getErpSnapshot());
   }, []);
 
   const today = new Date().toISOString().slice(0, 10);
@@ -35,6 +37,17 @@ export default function DashboardPage() {
     { label: "재고 부족 품목", value: lowStock.length, suffix: "종", accent: "text-red-600" },
     { label: "등록 고객", value: customerCount, suffix: "사", accent: "text-green-600" },
   ];
+
+  const erpCards = erpSnapshot
+    ? [
+        { label: "회의/녹음 기록", value: erpSnapshot.counts.meetings, detail: "견적 전환 가능한 업무 원문" },
+        { label: "진행 견적", value: erpSnapshot.counts.quoteDrafts, detail: "초안/발송 후 계약 대기" },
+        { label: "계약 확정", value: erpSnapshot.counts.confirmedQuotes, detail: "프로젝트로 전환된 견적" },
+        { label: "진행 프로젝트", value: erpSnapshot.counts.activeProjects, detail: "담당자 할 일과 연결" },
+        { label: "미완료 할 일", value: erpSnapshot.counts.pendingTasks, detail: "대기/진행/지연 상태" },
+        { label: "미입금 매출", value: `${erpSnapshot.revenue.unpaid.toLocaleString()}원`, detail: "세금계산서 대기 포함" },
+      ]
+    : [];
 
   return (
     <div className="space-y-6">
@@ -53,8 +66,8 @@ export default function DashboardPage() {
               녹음 기록, 견적, 계약, 프로젝트, 할 일, 일정, 매출, 세금계산서, 파일, 직원 질문을 한 화면에서 이어 봅니다.
               직원은 이 화면에서 바로 Claude 또는 GPT에 업무 질문을 던지고 다음 액션을 만들 수 있습니다.
             </p>
-            <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              {OPS_METRICS.map((metric) => (
+            <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {(erpCards.length ? erpCards : OPS_METRICS).slice(0, 6).map((metric) => (
                 <div key={metric.label} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                   <div className="text-xs font-medium text-slate-500">{metric.label}</div>
                   <div className="mt-1 text-2xl font-semibold text-slate-950">{metric.value}</div>
@@ -83,10 +96,10 @@ export default function DashboardPage() {
               ))}
             </div>
             <Link
-              href="/assistant"
+              href="/erp-flow"
               className="mt-5 inline-flex rounded-md bg-white px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-slate-100"
             >
-              AI 비서로 질문하기
+              ERP 흐름 실행하기
             </Link>
           </div>
         </div>

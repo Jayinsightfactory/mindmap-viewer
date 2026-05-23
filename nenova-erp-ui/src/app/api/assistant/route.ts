@@ -3,7 +3,7 @@ import { KNOWLEDGE_SUMMARY, OPS_ACTIONS, OPS_MODULES, OPS_METRICS } from "@/lib/
 
 type Provider = "anthropic" | "openai";
 
-function buildContext(question: string) {
+function buildContext(question: string, erpContext?: unknown) {
   return [
     "당신은 Nenova 내부 업무 OS의 AI 비서입니다.",
     "직원 질문에 대해 실행 가능한 답변, 다음 할 일, 확인할 데이터 위치를 한국어로 답합니다.",
@@ -12,8 +12,9 @@ function buildContext(question: string) {
     `운영 지표: ${OPS_METRICS.map((m) => `${m.label} ${m.value}(${m.detail})`).join(" / ")}`,
     `업무 모듈: ${OPS_MODULES.map((m) => `${m.title}[${m.status}] - ${m.summary}`).join(" / ")}`,
     `현재 액션: ${OPS_ACTIONS.map((a) => `${a.title}(${a.owner}, ${a.due})`).join(" / ")}`,
+    erpContext ? `현재 ERP 실행 데이터: ${JSON.stringify(erpContext)}` : "",
     `직원 질문: ${question}`,
-  ].join("\n\n");
+  ].filter(Boolean).join("\n\n");
 }
 
 function demoAnswer(provider: Provider, question: string) {
@@ -101,12 +102,13 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const provider = (body.provider === "openai" ? "openai" : "anthropic") as Provider;
     const question = String(body.question || "").trim();
+    const erpContext = body.erpContext;
 
     if (!question) {
       return NextResponse.json({ error: "질문을 입력하세요." }, { status: 400 });
     }
 
-    const prompt = buildContext(question);
+    const prompt = buildContext(question, erpContext);
     const live = provider === "openai" ? await askOpenAI(prompt) : await askAnthropic(prompt);
 
     if (!live) {

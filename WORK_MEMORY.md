@@ -173,3 +173,36 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - `nenova-erp-ui/src/app/api/kakaowork/callback/route.ts`
 - `nenova-erp-ui/src/lib/kakaowork-plan.ts`
 - `docs/nenova-kakaowork-integration.md`
+
+### ERP 흐름 실제 기능화
+
+날짜:
+- 2026-05-24 KST
+
+사용자 요청:
+- 대시보드/AI 비서가 기획 수준을 넘어서 실제 ERP 기준으로 기능 구현되었으면 좋겠다고 요청했습니다.
+
+검색한 단어:
+- `nenova`, `erp`, `견적`, `계약`, `프로젝트`, `할 일`, `일정`, `매출`, `세금계산서`
+
+기존 상태:
+- `nenova-erp-ui/src/lib/store.ts`에는 주문/재고/고객 CRUD만 있었습니다.
+- 녹음, 견적, 계약, 프로젝트, 할 일, 매출/세금계산서는 `operating-plan.ts`와 대시보드 표시 수준이었습니다.
+
+현재 조치:
+- `store.ts`에 회의/녹음 기록, 견적, 프로젝트, 할 일, 세금계산서, 일일 보고 타입과 저장/전환 로직을 추가했습니다.
+- `/erp-flow` 화면을 추가했습니다.
+- 회의 기록 → 견적 생성 → 계약 확정 → 프로젝트/할 일/세금계산서 생성 흐름을 실제 버튼 동작으로 만들었습니다.
+- 프로젝트 진행률, 할 일 상태, 세금계산서 상태, 일일 보고 생성 기능을 추가했습니다.
+- 대시보드가 실제 ERP 스냅샷 지표를 표시하게 했습니다.
+- AI 업무 콘솔이 현재 ERP 스냅샷을 함께 보내도록 연결했습니다.
+
+검증:
+- `npm run build` 성공
+- 브라우저에서 `/erp-flow` 주요 섹션 표시 확인
+
+다시 반복되면 먼저 볼 위치:
+- `nenova-erp-ui/src/app/(app)/erp-flow/page.tsx`
+- `nenova-erp-ui/src/lib/store.ts`
+- `nenova-erp-ui/src/app/(app)/dashboard/page.tsx`
+- `nenova-erp-ui/src/components/AiWorkConsole.tsx`

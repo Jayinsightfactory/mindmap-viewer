@@ -26,6 +26,7 @@ npm run start  # 빌드 후 실행
 
 - **로그인** (`/login`)
 - **대시보드** (`/dashboard`) — 녹음→견적→프로젝트→할 일 운영 허브 + AI 비서 + 주문/재고 KPI
+- **ERP 흐름** (`/erp-flow`) — 회의/녹음 기록 → 견적 → 계약 확정 → 프로젝트/할 일/세금계산서 자동 생성
 - **AI 비서** (`/assistant`) — Claude/GPT 기반 업무 질의, 질문 템플릿, 자동화 모듈 설계
 - **워크 연동** (`/kakaowork`) — 카카오워크 메시지/알림/콜백을 nenovaweb 업무 이벤트로 연결하는 설계
 - **신규 주문** (`/orders`) — 주문 등록·검색·상태변경·삭제 (핵심 업무 화면)
@@ -73,6 +74,7 @@ src/
     api/kakaowork/    카카오워크 notify/callback API
     (app)/            인증 필요 영역 (사이드바 + 상단바 셸)
       dashboard/
+      erp-flow/
       assistant/
       kakaowork/
       orders/
@@ -81,7 +83,7 @@ src/
   components/         Sidebar, Topbar
   lib/
     auth.ts           목업 인증 (localStorage)
-    store.ts          목업 데이터 (주문/재고/고객)
+    store.ts          ERP 데이터와 업무 전환 로직 (주문/재고/고객/견적/프로젝트/할 일/세금계산서)
     operating-plan.ts 녹음/견적/프로젝트/AI 비서 운영 설계 데이터
     kakaowork-plan.ts 카카오워크 업무 게이트 설계 데이터
     nav.ts            네비게이션 정의
@@ -93,4 +95,4 @@ src/
 - 주문 → 재고 차감 흐름을 실제 입출고 기록/거래내역 API로 확장
 - 하나의 화면에서 여러 작업을 동시에 처리할 수 있도록 패널/탭/상태 카드 단위로 업무를 분리
 - 예전 `Jayinsightfactory/nenova-erp-ui` 저장소의 DB 연결/API 구현은 참고 소스로만 사용하고, 새 기준은 이 폴더로 통합
-- 녹음/Plaud, Google Drive, Calendar, Gmail, Contacts, Slack/Kakao, 홈택스 연동은 `operating-plan.ts`의 모듈을 기준으로 단계 구현
+- 녹음/Plaud, Google Drive, Calendar, Gmail, Contacts, Slack/Kakao, 홈택스 실제 발행 API는 `erp-flow`의 업무 객체를 기준으로 단계 구현

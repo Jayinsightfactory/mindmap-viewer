@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { PROMPT_TEMPLATES } from "@/lib/operating-plan";
+import { getErpSnapshot } from "@/lib/store";
 
 type Provider = "anthropic" | "openai";
 
@@ -31,7 +32,7 @@ export default function AiWorkConsole({ compact = false }: { compact?: boolean }
       const res = await fetch("/api/assistant", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider, question: trimmed }),
+        body: JSON.stringify({ provider, question: trimmed, erpContext: getErpSnapshot() }),
       });
       const data = (await res.json()) as AssistantResponse & { error?: string };
       if (!res.ok) throw new Error(data.error || "AI 응답을 가져오지 못했습니다.");
