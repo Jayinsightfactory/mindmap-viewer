@@ -24,6 +24,8 @@
 
 ## 운영 원칙
 
+- 작업을 시작하기 전에 `WORK_MEMORY.md`와 관련 단어 검색 결과를 확인합니다.
+- 사용자의 반복 수정 요청과 대화 핵심은 `WORK_MEMORY.md`에 누적하고 삭제하지 않습니다.
 - 저장소를 기능마다 쪼개지 않고, 하나의 작업 허브 안에서 여러 업무 흐름을 관리합니다.
 - 하나의 화면이 여러 업무를 동시에 다룰 수 있으므로, "페이지 1개 = 작업 1개"로 보지 않습니다.
 - 화면은 업무 단위의 패널, 탭, 상태 카드로 나누고, 코드는 앱/라우트/도메인 모듈 단위로 나눕니다.
@@ -44,10 +46,9 @@
 | 브랜치 | 의미 |
 |--------|------|
 | `main` | 기준 배포 브랜치 |
-| `workspace/nenova-erp-ui-unified` | Nenova ERP UI 통합 이어작업 브랜치 |
-| `continue-nenova-erp-ui` | 이전 로컬 이어작업 브랜치 이름 |
-| `claude/start-nenovaweb-work-YD5FE` | Nenova ERP UI 원 작업 브랜치 |
-| `claude/continue-work-Od1oe` | 차수 확정 관리 등 이전 실험 브랜치 |
+| `workspace/nenova-erp-ui-unified` | PR #4로 `main`에 병합 완료 |
+| `claude/start-nenovaweb-work-YD5FE` | Nenova ERP UI 원 작업 브랜치. 참고용 |
+| `claude/continue-work-Od1oe` | 차수 확정 관리 등 이전 실험 브랜치. 참고용 |
 
 Claude가 만든 임시 브랜치는 작업 소스처럼 보고, 최종 흐름은 기준 저장소의 `main`으로 합칩니다.
 
