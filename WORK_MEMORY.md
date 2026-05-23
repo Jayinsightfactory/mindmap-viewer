@@ -135,3 +135,41 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 바로 새로 만들지 말고 검색부터 합니다.
 - 수정 후에는 실제 실행/빌드/라우트 확인까지 합니다.
 - 작업 결과는 이 파일에 날짜별로 누적합니다.
+
+### KakaoWork 기반 회사 업무 연동
+
+날짜:
+- 2026-05-24 KST
+
+사용자 요청:
+- 회사 업무는 카카오워크 기반으로 보게 되므로, KakaoWork API와 연동되는 `nenovaweb` 구조의 기초 설계가 필요합니다.
+- 단순 알림이 아니라 카카오워크 대화에서 업무 요청, 질문, 승인, 완료 보고가 들어오고 `nenovaweb` 업무 데이터로 이어져야 합니다.
+
+검색한 단어:
+- `카카오워크`, `KakaoWork`, `messages.send`, `conversations.open`, `webhook`, `워크 API`
+
+기존 코드에서 찾은 것:
+- `routes/issues.js`: `KAKAOTALK_TOKEN`, `KAKAO_ADMIN_CONV_ID`, `messages.send`, `conversations.open` 기반 알림
+- `routes/automation-engine.js`: 입고 예정 변경 감지 후 KakaoWork 관리자 채널 알림
+- `routes/webhooks.js`: 수신 웹훅 기록/정규화 패턴
+
+현재 조치:
+- `nenova-erp-ui/src/app/(app)/kakaowork/page.tsx`를 추가해 카카오워크 업무 게이트 설계를 화면화했습니다.
+- `nenova-erp-ui/src/lib/kakaowork-plan.ts`에 흐름, API 계약, 데이터 매핑, 환경변수, 보안 체크를 정리했습니다.
+- `nenova-erp-ui/src/app/api/kakaowork/notify/route.ts`를 추가해 dryRun/live 메시지 발송 기반을 만들었습니다.
+- `nenova-erp-ui/src/app/api/kakaowork/callback/route.ts`를 추가해 수신 이벤트 정규화 기반을 만들었습니다.
+- `docs/nenova-kakaowork-integration.md`에 공식 API 기준과 단계별 구현 계획을 기록했습니다.
+
+검증:
+- `npm run build` 성공
+- `GET /api/kakaowork/notify` 응답 확인
+- `POST /api/kakaowork/notify` dryRun 응답 확인
+- `POST /api/kakaowork/callback` 정규화 응답 확인
+- 브라우저에서 `/kakaowork` 메뉴, 제목, 업무 흐름, API 설계 표시 확인
+
+다시 반복되면 먼저 볼 위치:
+- `nenova-erp-ui/src/app/(app)/kakaowork/page.tsx`
+- `nenova-erp-ui/src/app/api/kakaowork/notify/route.ts`
+- `nenova-erp-ui/src/app/api/kakaowork/callback/route.ts`
+- `nenova-erp-ui/src/lib/kakaowork-plan.ts`
+- `docs/nenova-kakaowork-integration.md`

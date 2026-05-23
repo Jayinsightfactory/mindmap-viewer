@@ -26,6 +26,7 @@ export const OPS_METRICS: OpsMetric[] = [
   { label: "진행 프로젝트", value: "35", detail: "견적, 계약, 납품, 후속 할 일을 한 흐름으로 관리" },
   { label: "누적 프로젝트", value: "120+", detail: "프로젝트 히스토리와 산출물을 재사용" },
   { label: "AI 질의 채널", value: "2", detail: "Claude API와 GPT API를 업무 질문 라우터로 사용" },
+  { label: "워크 게이트", value: "1", detail: "카카오워크 대화와 nenovaweb 업무 기록을 연결" },
 ];
 
 export const OPS_MODULES: OpsModule[] = [
@@ -55,6 +56,15 @@ export const OPS_MODULES: OpsModule[] = [
     summary: "업무 요청을 담당자 할 일로 바꾸고, 일정/마감/리마인드를 자동으로 묶습니다.",
     inputs: ["업무 요청", "마감일", "담당자", "Slack/Kakao 대화"],
     outputs: ["칸반 카드", "일정", "마감 알림", "일일 진행 보고"],
+  },
+  {
+    id: "kakaowork-gateway",
+    title: "카카오워크 업무 게이트",
+    status: "설계",
+    owner: "전 직원",
+    summary: "카카오워크 메시지, 답장, 승인 액션을 업무 이벤트로 받아 주문, 견적, 프로젝트, 할 일로 연결합니다.",
+    inputs: ["카카오워크 메시지", "사용자 ID", "대화방 ID", "버튼/답장 액션"],
+    outputs: ["업무 이벤트", "담당자 알림", "AI 분류", "상태 업데이트"],
   },
   {
     id: "contacts",
@@ -110,6 +120,12 @@ export const OPS_ACTIONS: OpsAction[] = [
     owner: "관리자",
     source: "AI 업무 비서",
   },
+  {
+    title: "카카오워크 요청을 주문/견적/할 일 후보로 분류",
+    due: "상시",
+    owner: "업무 게이트",
+    source: "카카오워크 업무 게이트",
+  },
 ];
 
 export const KNOWLEDGE_SUMMARY = `
@@ -120,6 +136,7 @@ Nenova 업무 OS 목표:
 - 명함 촬영, Google Contacts, Google Drive, Calendar, Gmail, Slack/Kakao 알림을 업무 데이터와 연결한다.
 - 매출, 입금, 세금계산서, 영수증을 관리하고 세무 전달 자료를 줄인다.
 - Claude API와 OpenAI GPT API는 직원 질문에 답하고, 업무 데이터 기반 조언과 실행 초안을 만든다.
+- 카카오워크는 회사 업무의 대화형 진입점으로 두고, nenovaweb은 원문/분류/실행 결과를 기록한다.
 `;
 
 export const PROMPT_TEMPLATES = [

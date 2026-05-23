@@ -42,6 +42,31 @@
 
 ---
 
+## 작업 (2026-05-24) — KakaoWork 기반 업무 게이트 기초 설계
+
+### 완료
+- 기존 `routes/issues.js`, `routes/automation-engine.js`의 KakaoWork `messages.send`/`conversations.open` 흔적 확인
+- 공식 KakaoWork Web API 기준 확인: Bot App Key는 서버에서 `Authorization: Bearer`로 사용
+- `/kakaowork` 화면 추가: 업무 흐름, 서버 API 초안, 환경변수, 데이터 매핑, 보안 체크 표시
+- `POST /api/kakaowork/notify` 추가: conversationId/email/userId 대상 메시지 발송 또는 dryRun
+- `POST /api/kakaowork/callback` 추가: 워크 이벤트 정규화와 다음 파이프라인 반환
+- `docs/nenova-kakaowork-integration.md`에 통합 설계 문서화
+
+### 검증
+- `npm run build` 성공
+- `GET /api/kakaowork/notify` 응답 확인
+- `POST /api/kakaowork/notify` dryRun 응답 확인
+- `POST /api/kakaowork/callback` 이벤트 정규화 응답 확인
+- 브라우저에서 `/kakaowork` 메뉴, 제목, 업무 흐름, API 설계 표시 확인
+
+### 다음 단계
+- 실제 카카오워크 Bot App Key와 관리자 conversation ID 등록
+- 직원 email ↔ KakaoWork user_id 매핑 테이블 생성
+- 프로젝트/팀 채널 conversation_id 매핑
+- 수신 이벤트를 주문/견적/프로젝트/할 일 생성 로직에 연결
+
+---
+
 ## 작업 (2026-04-13) — 네노바 자동화 파이프라인 완성
 
 ### 1. launcher.pyw × Orbit 연동 (완료)
