@@ -2,7 +2,7 @@
 
 네노바(nenova) 내부 직원용 ERP 웹. Next.js(App Router) + TypeScript + Tailwind CSS v4.
 
-> 임시 위치: 현재 `mindmap-viewer` 저장소 안에서 개발 중. 추후 `jayinsightfactory/nenova-erp-ui` 저장소로 폴더째 이동 예정.
+> 통합 위치: `mindmap-viewer/nenova-erp-ui`. 현재는 Orbit/Nenova 기준 저장소 안의 업무 앱으로 유지합니다.
 
 ## 실행
 
@@ -51,4 +51,6 @@ src/
 ## 다음 단계
 
 - 인증/데이터를 목업(localStorage)에서 실제 백엔드로 교체 (Orbit 서버 API 또는 자체 DB)
-- 주문 → 재고 차감 연동, 입출고 기록, 거래내역
+- 주문 → 재고 차감 흐름을 실제 입출고 기록/거래내역 API로 확장
+- 하나의 화면에서 여러 작업을 동시에 처리할 수 있도록 패널/탭/상태 카드 단위로 업무를 분리
+- 예전 `Jayinsightfactory/nenova-erp-ui` 저장소의 DB 연결/API 구현은 참고 소스로만 사용하고, 새 기준은 이 폴더로 통합
