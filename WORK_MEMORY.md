@@ -76,6 +76,37 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 
 ## 반복 수정 요청 기록
 
+### Nenovaweb 첫 화면 내용 부족
+
+날짜:
+- 2026-05-24 KST
+
+사용자 요청:
+- `nenovaweb` 첫 페이지가 메뉴만 있고 중요한 내용이 없으므로, 기존 메뉴와 기능은 유지하면서 transcript 기반 구성 기획을 추가해야 합니다.
+- 700개가 넘는 녹음, 견적서 자동 발행, 계약 후 프로젝트 생성, 할 일 배정, 일정 보고, 명함 OCR, 매출/세금계산서, Slack/Kakao 알림, Claude/GPT 업무 질의 구조를 반영해야 합니다.
+- 회사 직원들이 Claude API와 GPT API를 사용해서 질문하고 답하면서 업무를 볼 수 있어야 합니다.
+
+검색한 단어:
+- `nenovaweb`, `첫페이지`, `메뉴`, `Claude`, `GPT`, `API`, `녹음`, `견적`
+
+현재 조치:
+- `nenova-erp-ui/src/app/(app)/dashboard/page.tsx`를 운영 허브 첫 화면으로 확장했습니다.
+- `nenova-erp-ui/src/app/(app)/assistant/page.tsx`를 추가했습니다.
+- `nenova-erp-ui/src/app/api/assistant/route.ts`를 추가해 Claude/GPT 서버 라우팅 구조를 만들었습니다.
+- `nenova-erp-ui/src/components/AiWorkConsole.tsx`를 추가했습니다.
+- `nenova-erp-ui/src/lib/operating-plan.ts`에 transcript 기반 운영 모듈을 정리했습니다.
+
+검증:
+- `npm run build` 성공
+- 브라우저 로그인 후 `/dashboard`에서 운영 허브, AI 비서, 녹음/견적/프로젝트 흐름, 최근 주문 표시 확인
+- `/assistant`에서 질문 실행 후 데모 응답 표시 확인
+
+다시 반복되면 먼저 볼 위치:
+- `nenova-erp-ui/src/app/(app)/dashboard/page.tsx`
+- `nenova-erp-ui/src/app/(app)/assistant/page.tsx`
+- `nenova-erp-ui/src/app/api/assistant/route.ts`
+- `nenova-erp-ui/src/lib/operating-plan.ts`
+
 ### 저장소/작업 기준 반복
 
 문제:

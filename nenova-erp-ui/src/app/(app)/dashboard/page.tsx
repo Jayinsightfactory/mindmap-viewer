@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import AiWorkConsole from "@/components/AiWorkConsole";
+import { OPS_ACTIONS, OPS_METRICS, OPS_MODULES } from "@/lib/operating-plan";
 import { getOrders, getProducts, getCustomers, type Order, type Product } from "@/lib/store";
 
 const STATUS_STYLE: Record<string, string> = {
@@ -36,9 +38,113 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
+      <section className="rounded-lg border border-slate-200 bg-white p-6">
+        <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+          <div>
+            <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">
+              <span className="rounded-full bg-blue-50 px-2.5 py-1 text-brand">NENOVAWEB</span>
+              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-600">운영 허브</span>
+              <span className="rounded-full bg-green-50 px-2.5 py-1 text-green-700">AI 비서 연결 준비</span>
+            </div>
+            <h2 className="mt-4 text-3xl font-semibold tracking-tight text-slate-950">
+              메뉴가 아니라, 오늘 회사가 어떻게 돌아가는지 먼저 보여줍니다.
+            </h2>
+            <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">
+              녹음 기록, 견적, 계약, 프로젝트, 할 일, 일정, 매출, 세금계산서, 파일, 직원 질문을 한 화면에서 이어 봅니다.
+              직원은 이 화면에서 바로 Claude 또는 GPT에 업무 질문을 던지고 다음 액션을 만들 수 있습니다.
+            </p>
+            <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              {OPS_METRICS.map((metric) => (
+                <div key={metric.label} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                  <div className="text-xs font-medium text-slate-500">{metric.label}</div>
+                  <div className="mt-1 text-2xl font-semibold text-slate-950">{metric.value}</div>
+                  <div className="mt-2 text-xs leading-5 text-slate-500">{metric.detail}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-slate-200 bg-slate-950 p-5 text-white">
+            <div className="text-sm font-semibold">오늘의 운영 흐름</div>
+            <div className="mt-4 space-y-3">
+              {[
+                "녹음/회의 기록 자동 적재",
+                "견적 후보와 후속 할 일 추출",
+                "계약 확정 시 프로젝트 생성",
+                "담당자 배정과 마감 알림",
+                "18시 진행 보고 자동 요약",
+              ].map((step, index) => (
+                <div key={step} className="flex items-center gap-3">
+                  <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-white/10 text-xs font-semibold">
+                    {index + 1}
+                  </span>
+                  <span className="text-sm text-slate-200">{step}</span>
+                </div>
+              ))}
+            </div>
+            <Link
+              href="/assistant"
+              className="mt-5 inline-flex rounded-md bg-white px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-slate-100"
+            >
+              AI 비서로 질문하기
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      <section className="grid gap-4 lg:grid-cols-3">
+        {OPS_MODULES.slice(0, 6).map((module) => (
+          <article key={module.id} className="rounded-lg border border-slate-200 bg-white p-5">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="font-semibold text-slate-900">{module.title}</h3>
+              <span
+                className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+                  module.status === "운영"
+                    ? "bg-green-50 text-green-700"
+                    : module.status === "구축"
+                      ? "bg-blue-50 text-brand"
+                      : "bg-slate-100 text-slate-600"
+                }`}
+              >
+                {module.status}
+              </span>
+            </div>
+            <p className="mt-3 min-h-16 text-sm leading-6 text-slate-600">{module.summary}</p>
+            <div className="mt-4 text-xs text-slate-500">
+              <span className="font-semibold text-slate-700">결과:</span> {module.outputs.slice(0, 3).join(" · ")}
+            </div>
+          </article>
+        ))}
+      </section>
+
+      <section className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+        <div className="rounded-lg border border-slate-200 bg-white">
+          <div className="border-b border-slate-100 px-5 py-4">
+            <h2 className="font-semibold text-slate-900">자동 생성해야 할 업무</h2>
+            <p className="mt-1 text-sm text-slate-500">녹음, 견적, 프로젝트, 일정에서 계속 생기는 다음 액션입니다.</p>
+          </div>
+          <div className="divide-y divide-slate-100">
+            {OPS_ACTIONS.map((action) => (
+              <div key={action.title} className="flex items-start justify-between gap-4 px-5 py-4">
+                <div>
+                  <div className="text-sm font-medium text-slate-900">{action.title}</div>
+                  <div className="mt-1 text-xs text-slate-500">{action.source}</div>
+                </div>
+                <div className="text-right text-xs text-slate-500">
+                  <div className="font-semibold text-slate-700">{action.owner}</div>
+                  <div>{action.due}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <AiWorkConsole compact />
+      </section>
+
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {cards.map((c) => (
-          <div key={c.label} className="rounded-xl border border-slate-200 bg-white p-5">
+          <div key={c.label} className="rounded-lg border border-slate-200 bg-white p-5">
             <div className="text-sm text-slate-500">{c.label}</div>
             <div className="mt-2">
               <span className={`text-3xl font-semibold ${c.accent}`}>{c.value}</span>
@@ -49,7 +155,7 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <div className="rounded-xl border border-slate-200 bg-white lg:col-span-2">
+        <div className="rounded-lg border border-slate-200 bg-white lg:col-span-2">
           <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
             <h2 className="font-semibold text-slate-800">최근 주문</h2>
             <Link href="/orders" className="text-sm font-medium text-brand hover:underline">
@@ -91,7 +197,7 @@ export default function DashboardPage() {
           </table>
         </div>
 
-        <div className="rounded-xl border border-slate-200 bg-white">
+        <div className="rounded-lg border border-slate-200 bg-white">
           <div className="border-b border-slate-100 px-5 py-4">
             <h2 className="font-semibold text-slate-800">재고 부족 알림</h2>
           </div>

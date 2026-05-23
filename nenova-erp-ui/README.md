@@ -25,10 +25,26 @@ npm run start  # 빌드 후 실행
 ## 화면
 
 - **로그인** (`/login`)
-- **대시보드** (`/dashboard`) — 오늘 주문 / 처리 대기 / 재고 부족 / 고객 KPI + 최근 주문 + 재고 알림
+- **대시보드** (`/dashboard`) — 녹음→견적→프로젝트→할 일 운영 허브 + AI 비서 + 주문/재고 KPI
+- **AI 비서** (`/assistant`) — Claude/GPT 기반 업무 질의, 질문 템플릿, 자동화 모듈 설계
 - **신규 주문** (`/orders`) — 주문 등록·검색·상태변경·삭제 (핵심 업무 화면)
 - **재고 관리** (`/inventory`)
 - **고객 관리** (`/customers`)
+
+## AI API 연결
+
+서버 라우트 `POST /api/assistant`가 Claude 또는 GPT로 업무 질문을 전달합니다.
+키가 없으면 화면 검증용 데모 응답으로 동작합니다.
+
+```bash
+ANTHROPIC_API_KEY=...
+ANTHROPIC_MODEL=claude-3-5-haiku-20241022
+
+OPENAI_API_KEY=...
+OPENAI_MODEL=gpt-4.1
+```
+
+API 키는 브라우저에 노출하지 않고 Next.js 서버 라우트에서만 사용합니다.
 
 ## 구조
 
@@ -36,8 +52,10 @@ npm run start  # 빌드 후 실행
 src/
   app/
     login/            로그인
+    api/assistant/    Claude/GPT 업무 질의 API
     (app)/            인증 필요 영역 (사이드바 + 상단바 셸)
       dashboard/
+      assistant/
       orders/
       inventory/
       customers/
@@ -45,6 +63,7 @@ src/
   lib/
     auth.ts           목업 인증 (localStorage)
     store.ts          목업 데이터 (주문/재고/고객)
+    operating-plan.ts 녹음/견적/프로젝트/AI 비서 운영 설계 데이터
     nav.ts            네비게이션 정의
 ```
 
@@ -54,3 +73,4 @@ src/
 - 주문 → 재고 차감 흐름을 실제 입출고 기록/거래내역 API로 확장
 - 하나의 화면에서 여러 작업을 동시에 처리할 수 있도록 패널/탭/상태 카드 단위로 업무를 분리
 - 예전 `Jayinsightfactory/nenova-erp-ui` 저장소의 DB 연결/API 구현은 참고 소스로만 사용하고, 새 기준은 이 폴더로 통합
+- 녹음/Plaud, Google Drive, Calendar, Gmail, Contacts, Slack/Kakao, 홈택스 연동은 `operating-plan.ts`의 모듈을 기준으로 단계 구현

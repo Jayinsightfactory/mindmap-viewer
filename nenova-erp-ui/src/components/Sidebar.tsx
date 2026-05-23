@@ -31,7 +31,7 @@ export default function Sidebar() {
                   : "text-slate-300 hover:bg-slate-800 hover:text-white"
               }`}
             >
-              <span className="text-base leading-none">{item.icon}</span>
+              <span className="w-5 text-center text-xs font-semibold leading-none">{item.icon}</span>
               {item.label}
             </Link>
           );
