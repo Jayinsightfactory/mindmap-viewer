@@ -72,10 +72,117 @@ function inferEntity(intent: string, category: string): SuggestedEntity {
   return "question";
 }
 
+function dateOnly(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
+
 function nextDueDate(days = 1) {
   const date = new Date();
   date.setDate(date.getDate() + days);
-  return date.toISOString().slice(0, 10);
+  return dateOnly(date);
+}
+
+function parseAmount(input: string) {
+  const compact = input.replace(/,/g, "");
+  const unitMatch = compact.match(/(\d+(?:\.\d+)?)\s*(억|천만|백만|십만|만)\s*원?/);
+  if (unitMatch) {
+    const value = Number(unitMatch[1]);
+    const multipliers: Record<string, number> = {
+      억: 100000000,
+      천만: 10000000,
+      백만: 1000000,
+      십만: 100000,
+      만: 10000,
+    };
+    return Math.round(value * multipliers[unitMatch[2]]);
+  }
+
+  const wonMatch = compact.match(/(\d{4,})\s*원/);
+  if (wonMatch) return Number(wonMatch[1]);
+
+  const keywordMatch = compact.match(/(?:금액|공급가|견적가|견적|예산|비용)\D{0,12}(\d+(?:\.\d+)?)\s*(억|천만|백만|십만|만|원)?/);
+  if (!keywordMatch) return undefined;
+  const value = Number(keywordMatch[1]);
+  if (!Number.isFinite(value)) return undefined;
+  const unit = keywordMatch[2];
+  if (unit === "억") return Math.round(value * 100000000);
+  if (unit === "천만") return Math.round(value * 10000000);
+  if (unit === "백만") return Math.round(value * 1000000);
+  if (unit === "십만") return Math.round(value * 100000);
+  if (unit === "만") return Math.round(value * 10000);
+  return value >= 10000 ? Math.round(value) : undefined;
+}
+
+function parseDueDate(input: string) {
+  const now = new Date();
+  const explicit = input.match(/(20\d{2})[-./년\s]+(\d{1,2})[-./월\s]+(\d{1,2})/);
+  if (explicit) {
+    return dateOnly(new Date(Number(explicit[1]), Number(explicit[2]) - 1, Number(explicit[3])));
+  }
+
+  const monthDay = input.match(/(\d{1,2})\s*월\s*(\d{1,2})\s*일/);
+  if (monthDay) {
+    const date = new Date(now.getFullYear(), Number(monthDay[1]) - 1, Number(monthDay[2]));
+    if (date < new Date(now.getFullYear(), now.getMonth(), now.getDate())) date.setFullYear(date.getFullYear() + 1);
+    return dateOnly(date);
+  }
+
+  const relativeDays: Array<[RegExp, number]> = [
+    [/오늘|금일/, 0],
+    [/내일|익일/, 1],
+    [/모레/, 2],
+    [/이번\s*주\s*말|이번주말/, 6],
+    [/다음\s*주\s*말|다음주말/, 13],
+  ];
+  for (const [pattern, days] of relativeDays) {
+    if (pattern.test(input)) return nextDueDate(days);
+  }
+
+  const dday = input.match(/D\s*[+＋]\s*(\d{1,3})/i);
+  if (dday) return nextDueDate(Number(dday[1]));
+
+  const weekdays: Record<string, number> = {
+    일: 0,
+    월: 1,
+    화: 2,
+    수: 3,
+    목: 4,
+    금: 5,
+    토: 6,
+  };
+  const weekday = input.match(/(이번\s*주|이번주|다음\s*주|다음주)?\s*([월화수목금토일])요일/);
+  if (weekday) {
+    const current = now.getDay();
+    const target = weekdays[weekday[2]];
+    const nextWeek = Boolean(weekday[1]?.includes("다음"));
+    let days = target - current;
+    if (days < 0 || nextWeek) days += 7;
+    return nextDueDate(days);
+  }
+
+  return undefined;
+}
+
+function parseCustomer(input: string) {
+  const direct = input.match(/(?:고객사|고객|거래처|업체)\s*[:：=]?\s*([가-힣A-Za-z0-9&().\-\s]{2,40})/);
+  if (direct) return direct[1].replace(/\s+(견적|계약|프로젝트|문의|요청).*$/i, "").trim();
+
+  const koreanCompany = input.match(/([가-힣A-Za-z0-9&().\-\s]{2,40})(?:에서|의)\s*(?:견적|계약|프로젝트|문의|요청)/);
+  if (koreanCompany) return koreanCompany[1].trim();
+
+  const englishFor = input.match(/\bfor\s+([A-Za-z0-9&().\-\s]{2,40})/i);
+  if (englishFor) return englishFor[1].replace(/\s+(quote|request|task|project).*$/i, "").trim();
+
+  return undefined;
+}
+
+function extractDraftFields(payload: IntakePayload) {
+  const source = [payload.title, payload.detail, payload.text].filter(Boolean).join(" ");
+  const customerSource = [payload.detail, payload.text].filter(Boolean).join(" ") || text(payload.title);
+  const amount = parseAmount(source);
+  const dueDate = parseDueDate(source);
+  const customer = parseCustomer(customerSource);
+  return { amount, dueDate, customer };
 }
 
 async function loadItems(): Promise<IntakeItem[]> {
@@ -100,6 +207,15 @@ function normalize(payload: IntakePayload, existing: IntakeItem[]): IntakeItem {
   const suggestedEntity = payload.suggestedEntity || inferEntity(intent, category);
   const id = payload.id || `ERP-IN-${(payload.sourceEventId || now).replace(/[^a-z0-9가-힣]+/gi, "-").replace(/^-|-$/g, "")}`;
   const previous = existing.find((item) => item.id === id);
+  const extracted = extractDraftFields(payload);
+  const amount = payload.amount ?? previous?.amount ?? extracted.amount;
+  const customer = payload.customer || previous?.customer || extracted.customer;
+  const dueDate = payload.dueDate || previous?.dueDate || extracted.dueDate || nextDueDate(suggestedEntity === "quote" ? 3 : 1);
+  const extractionEvidence = [
+    extracted.customer ? `extracted_customer=${extracted.customer}` : "",
+    extracted.amount ? `extracted_amount=${extracted.amount}` : "",
+    extracted.dueDate ? `extracted_dueDate=${extracted.dueDate}` : "",
+  ].filter(Boolean);
 
   return {
     id,
@@ -110,15 +226,15 @@ function normalize(payload: IntakePayload, existing: IntakeItem[]): IntakeItem {
     suggestedEntity,
     title: text(payload.title, `${category} 수신 요청`),
     detail: text(payload.detail, text(payload.text, "내용 없음")),
-    customer: payload.customer,
+    customer,
     owner: text(payload.owner, "미지정"),
     accountId: payload.accountId,
     team: payload.team,
     conversationName: payload.conversationName,
     status: previous?.status || "초안",
-    dueDate: payload.dueDate || previous?.dueDate || nextDueDate(suggestedEntity === "quote" ? 3 : 1),
-    amount: payload.amount,
-    evidence: Array.from(new Set([...(previous?.evidence || []), ...(payload.evidence || [])].filter(Boolean))),
+    dueDate,
+    amount,
+    evidence: Array.from(new Set([...(previous?.evidence || []), ...(payload.evidence || []), ...extractionEvidence].filter(Boolean))),
     linkedEntityType: previous?.linkedEntityType,
     linkedEntityId: previous?.linkedEntityId,
     convertedAt: previous?.convertedAt,

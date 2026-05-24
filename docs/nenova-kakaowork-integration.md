@@ -127,6 +127,12 @@ Stores actionable KakaoWork requests as ERP intake drafts.
 
 KakaoWork callback automatically posts quote/task/inventory/finance/project intents into this inbox unless `syncErpIntake: false` is provided.
 
+Current draft extraction:
+
+- Customer is parsed from phrases such as `고객사: ...`, `거래처 ...`, `대한상사에서 견적 ...`, and English `for ...`.
+- Amount is parsed from `320만원`, `1,200,000원`, `1.5억`, and amount keywords like `견적 320만`.
+- Due date is parsed from `오늘`, `내일`, `모레`, `5월 30일`, `2026-05-30`, `D+3`, and weekday phrases such as `다음주 금요일`.
+
 ## Environment Variables
 
 ```bash
@@ -167,6 +173,7 @@ Suggested tables or collections:
 Current `nenovaweb` behavior:
 
 - Quote-like intake items become meeting/record candidates first, so the existing quote creation flow can add amount and due date before contract confirmation.
+- Quote-like intake items with a parsed amount become quote drafts immediately after conversion.
 - Other actionable intake items become assigned tasks.
 - The server intake record keeps the generated local ERP object ID, allowing later cross-checks between KakaoWork message, work unit, PC activity, and ERP result.
 

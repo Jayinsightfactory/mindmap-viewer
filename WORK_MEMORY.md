@@ -374,3 +374,24 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 다시 반복되면 먼저 볼 위치:
 - `nenova-erp-ui/src/app/api/erp/intake/route.ts`
 - `nenova-erp-ui/src/app/(app)/erp-flow/page.tsx`
+
+### ERP 수신함 초안 필드 추출
+
+날짜:
+- 2026-05-24 KST
+
+현재 조치:
+- `/api/erp/intake`가 카카오워크/외부 메시지에서 고객, 공급가, 목표일을 1차 추출합니다.
+- 지원 예시는 `대한상사에서 견적 320만원 내일까지`, `고객사: ...`, `1,200,000원`, `1.5억`, `5월 30일`, `D+3`, `다음주 금요일`입니다.
+- 추출 결과는 `customer`, `amount`, `dueDate`에 저장되고 evidence에 `extracted_customer`, `extracted_amount`, `extracted_dueDate`가 남습니다.
+- `/erp-flow` 수신함 카드에 추출된 고객/공급가를 표시합니다.
+- 견적 수신함 항목에 `amount`가 있으면 전환 시 회의 기록뿐 아니라 견적 초안까지 생성하고 `linkedEntityType: "quote"`로 연결합니다.
+
+검증:
+- `npx tsc --noEmit` 성공
+- 샘플 카카오워크 콜백 `대한상사에서 견적 320만원 내일까지 부탁드립니다.`가 `customer=대한상사`, `amount=3200000`, `dueDate=2026-05-25`로 저장되는 것 확인
+- `/erp-flow` HTTP 200 확인
+
+다시 반복되면 먼저 볼 위치:
+- `nenova-erp-ui/src/app/api/erp/intake/route.ts`
+- `nenova-erp-ui/src/app/(app)/erp-flow/page.tsx`

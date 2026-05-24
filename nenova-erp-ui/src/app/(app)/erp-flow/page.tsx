@@ -52,6 +52,7 @@ type ErpIntakeItem = {
   conversationName?: string;
   status: "초안" | "승인대기" | "전환완료" | "보류";
   dueDate?: string;
+  amount?: number;
   linkedEntityType?: "meeting" | "task" | "quote" | "project" | "invoice";
   linkedEntityId?: string;
   convertedAt?: string;
@@ -222,6 +223,17 @@ export default function ErpFlowPage() {
         summary: item.detail,
         owner,
       });
+      if (item.amount && item.amount > 0) {
+        const quote = createQuoteFromMeeting(meeting.id, item.amount, item.dueDate || defaultDueDate(7), owner);
+        await updateIntakeItem(item.id, {
+          status: "전환완료",
+          linkedEntityType: quote ? "quote" : "meeting",
+          linkedEntityId: quote?.id || meeting.id,
+          conversionNote: quote ? "견적 초안으로 등록" : "회의/견적 후보로 등록",
+        });
+        refresh();
+        return;
+      }
       await updateIntakeItem(item.id, {
         status: "전환완료",
         linkedEntityType: "meeting",
@@ -319,6 +331,8 @@ export default function ErpFlowPage() {
                   <p className="mt-1 text-sm leading-6 text-slate-600">{item.detail}</p>
                   <div className="mt-2 text-xs text-slate-500">
                     {item.owner} · {item.conversationName || item.team || "채널 미지정"} · 목표일 {item.dueDate || "-"}
+                    {item.customer ? ` · 고객 ${item.customer}` : ""}
+                    {item.amount ? ` · 공급가 ${formatWon(item.amount)}` : ""}
                   </div>
                   {item.linkedEntityId && (
                     <div className="mt-2 inline-flex rounded-md bg-green-50 px-2 py-1 text-xs font-medium text-green-700">
