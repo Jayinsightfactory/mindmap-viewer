@@ -814,3 +814,19 @@
 - 로컬 커밋 완료: `6fbfeca fix: prevent week pivot input clipping`
 - `Jayinsightfactory/nenova-erp-ui` 원격 푸시는 인증 프롬프트 요구로 자동 푸시 실패
 - 사용자가 GitHub 인증을 갱신하면 `C:\Users\pc\OneDrive\Pictures\Desktop\커서 작업`에서 `git push origin master` 필요
+
+---
+
+## 작업 (2026-05-24) — 차수피벗 엑셀 자연어 컬럼
+
+### 1. 엑셀 내보내기 수정 (완료)
+- 실제 소스: `C:\Users\pc\OneDrive\Pictures\Desktop\커서 작업\pages\shipment\stock-status.js`
+- 차수피벗 엑셀 다운로드 헤더에 `자연어` 컬럼 추가
+- 컬럼 위치: `국가 / 꽃 / 품명 / 자연어 / 차수별 업체...`
+- 자연어 값: `국가 꽃 품명`
+
+### 2. 검증 (완료)
+- `npm run build` 성공
+
+### 3. 커밋/푸시 상태
+- `커서 작업` 저장소 로컬 커밋 예정/완료 후에도 원격 푸시는 인증 갱신 필요

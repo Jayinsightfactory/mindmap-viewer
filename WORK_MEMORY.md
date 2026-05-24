@@ -794,3 +794,23 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - `C:\Users\pc\OneDrive\Pictures\Desktop\커서 작업\lib\useWeekInput.js`
 - `C:\Users\pc\OneDrive\Pictures\Desktop\커서 작업\pages\shipment\stock-status.js`
 - `C:\Users\pc\OneDrive\Pictures\Desktop\커서 작업\pages\shipment\week-pivot.js`
+
+### 차수피벗 엑셀 자연어 품목명
+
+날짜:
+- 2026-05-24 KST
+
+사용자 요청:
+- 차수피벗에서 엑셀 다운로드 시 품목이름 옆 셀에 자연어 품목명도 표시.
+
+현재 조치:
+- 실제 소스 위치: `C:\Users\pc\OneDrive\Pictures\Desktop\커서 작업\pages\shipment\stock-status.js`
+- `naturalProdName(p)` helper 추가.
+- 엑셀 헤더를 `국가 / 꽃 / 품명 / 자연어 / 차수별 업체...` 순서로 변경.
+- 자연어 컬럼 값은 `국가 꽃 품명` 형태입니다. 예: `콜롬비아 수국 Blue (블루)`.
+
+검증:
+- `npm run build` 성공.
+
+다시 반복되면 먼저 볼 위치:
+- `C:\Users\pc\OneDrive\Pictures\Desktop\커서 작업\pages\shipment\stock-status.js`
