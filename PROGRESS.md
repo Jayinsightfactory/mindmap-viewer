@@ -320,3 +320,33 @@
 - 디렉터리를 파일/DB 기반으로 편집 가능하게 만들기
 - `/work-units` 화면에 매핑 신뢰도와 매칭 근거 표시
 - KakaoWork 승인 액션이 실제 ERP task/quote 생성으로 이어지게 연결
+
+---
+
+## 작업 (2026-05-24) — KakaoWork → ERP 수신함
+
+### 1. ERP Intake API (완료)
+- `GET/POST/PATCH /api/erp/intake` 추가
+- 카카오워크/외부 요청을 견적, 할 일, 재고, 정산, 프로젝트, 질문 초안으로 저장
+- 로컬 운영 데이터는 `data/erp-intake.json`에 보관
+
+### 2. KakaoWork callback 연결 (완료)
+- 견적/할 일/재고/정산/프로젝트 의도는 callback 수신 시 ERP 수신함에 자동 등록
+- `syncErpIntake: false`로 수신함 등록 생략 가능
+- 직원 디렉터리로 owner/accountId/team 정규화
+
+### 3. ERP 흐름 화면 연결 (완료)
+- `/erp-flow`에 "카카오워크 ERP 수신함" 추가
+- 견적 후보는 회의/녹음 기록으로 등록해 기존 견적 생성 흐름에 태움
+- 그 외 요청은 담당자 할 일로 등록
+- 수신 항목 보류/초안 복귀 가능
+
+### 4. 검증 (완료)
+- `npx tsc --noEmit` 성공
+- 샘플 KakaoWork 콜백 → `ERP-IN-KW-kw-msg-sample-erp-001` 견적 수신함 생성 확인
+- `/erp-flow` HTTP 200 확인
+
+### 다음 단계
+- 수신함 전환 시 서버 수신함 상태와 localStorage ERP 객체 ID를 함께 연결
+- 견적 초안 금액/고객/마감일 추출 자동화
+- 카카오워크 버튼 액션으로 승인/보류/전환 실행

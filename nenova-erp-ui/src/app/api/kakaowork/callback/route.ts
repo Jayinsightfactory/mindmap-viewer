@@ -14,6 +14,7 @@ type CallbackBody = {
   message?: { id?: string; text?: string; createdAt?: string };
   actions?: Record<string, unknown>;
   syncWorkUnit?: boolean;
+  syncErpIntake?: boolean;
   [key: string]: unknown;
 };
 
@@ -200,6 +201,49 @@ async function syncToWorkUnits(req: NextRequest, event: NormalizedKakaoWorkEvent
   return { ok: response.ok, status: response.status, payload, response: body };
 }
 
+async function syncToErpIntake(req: NextRequest, event: NormalizedKakaoWorkEvent) {
+  const identity = resolveEmployeeIdentity({
+    employeeName: event.userName || undefined,
+    userName: event.userName || undefined,
+    userEmail: event.userEmail || undefined,
+    email: event.userEmail || undefined,
+    userId: event.userId ? String(event.userId) : undefined,
+    kakaoworkUserId: event.userId ? String(event.userId) : undefined,
+  });
+  const response = await fetch(new URL("/api/erp/intake", req.nextUrl.origin), {
+    method: "POST",
+    headers: { "Content-Type": "application/json; charset=utf-8" },
+    body: JSON.stringify({
+      id: `ERP-IN-${event.id}`,
+      source: "KakaoWork",
+      sourceEventId: event.id,
+      intent: event.intent,
+      category: event.category,
+      title: `${event.category} 카카오워크 요청`,
+      detail: event.text || "카카오워크에서 업무 요청이 들어왔습니다.",
+      owner: identity?.employee || event.userName || "미지정",
+      accountId: identity?.accountId || event.userEmail || undefined,
+      team: identity?.team || event.conversationName || undefined,
+      conversationName: event.conversationName || undefined,
+      evidence: [
+        `source=KakaoWork callback`,
+        `event=${event.event}`,
+        `intent=${event.intent}`,
+        `conversation=${event.conversationName || event.conversationId || "unknown"}`,
+        identity ? `employee_match=${identity.matchedBy}:${identity.confidence}` : "",
+      ].filter(Boolean),
+    }),
+  });
+  const text = await response.text();
+  let body: unknown;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    body = { raw: text };
+  }
+  return { ok: response.ok, status: response.status, response: body };
+}
+
 export async function GET() {
   const events = await loadEvents();
   return NextResponse.json({
@@ -223,6 +267,7 @@ export async function POST(req: NextRequest) {
   const normalized = normalizeEvent(body);
   await saveEvent(normalized);
   const shouldSync = body.syncWorkUnit !== false;
+  const shouldSyncIntake = body.syncErpIntake !== false && ["quote_request", "task_request", "inventory_check", "finance_check", "project_update"].includes(normalized.intent);
   let workUnitSync = null;
   if (shouldSync) {
     try {
@@ -231,17 +276,27 @@ export async function POST(req: NextRequest) {
       workUnitSync = { ok: false, error: err instanceof Error ? err.message : "work unit sync failed" };
     }
   }
+  let erpIntakeSync = null;
+  if (shouldSyncIntake) {
+    try {
+      erpIntakeSync = await syncToErpIntake(req, normalized);
+    } catch (err) {
+      erpIntakeSync = { ok: false, error: err instanceof Error ? err.message : "ERP intake sync failed" };
+    }
+  }
 
   return NextResponse.json({
     received: true,
     mode: "ingest",
     normalized,
     workUnitSync,
+    erpIntakeSync,
     nextPipeline: [
       "work_event.raw 저장",
       "직원/대화방 매핑",
       "AI 의도 분류",
       "작업 단위 relatedTalks 후보 등록",
+      "ERP 초안 수신함 등록",
       "PC 작업/ERP 원장과 30분 창 교차검증",
       "카카오워크 확인 메시지 발송",
     ],

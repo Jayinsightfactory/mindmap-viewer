@@ -334,3 +334,24 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - `nenova-erp-ui/src/app/api/employees/directory/route.ts`
 - `nenova-erp-ui/src/app/api/kakaowork/callback/route.ts`
 - `nenova-erp-ui/src/app/api/work-units/route.ts`
+
+### KakaoWork → ERP 수신함
+
+날짜:
+- 2026-05-24 KST
+
+현재 조치:
+- `GET/POST/PATCH /api/erp/intake`를 추가했습니다.
+- 카카오워크 콜백에서 견적/할 일/재고/정산/프로젝트 의도가 나오면 ERP 수신함에 초안으로 자동 저장합니다.
+- `/erp-flow`에 "카카오워크 ERP 수신함" 섹션을 추가했습니다.
+- 수신함 항목을 회의/견적 후보 또는 할 일로 전환하고, 보류/초안 복귀를 할 수 있게 했습니다.
+
+검증:
+- `npx tsc --noEmit` 성공
+- 샘플 KakaoWork 콜백이 `ERP-IN-KW-kw-msg-sample-erp-001` 견적 초안으로 들어오는 것 확인
+- `/erp-flow` HTTP 200 확인
+
+다시 반복되면 먼저 볼 위치:
+- `nenova-erp-ui/src/app/api/erp/intake/route.ts`
+- `nenova-erp-ui/src/app/api/kakaowork/callback/route.ts`
+- `nenova-erp-ui/src/app/(app)/erp-flow/page.tsx`

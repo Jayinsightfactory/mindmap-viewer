@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { getSession } from "@/lib/auth";
 import {
+  addTask,
   addMeetingRecord,
   confirmQuoteToProject,
   createQuoteFromMeeting,
@@ -35,6 +36,24 @@ const QUOTE_STATUSES: QuoteStatus[] = ["초안", "발송", "계약확정", "반�
 const PROJECT_STATUSES: ProjectStatus[] = ["대기", "진행", "완료", "보류"];
 const TASK_STATUSES: WorkTaskStatus[] = ["대기", "진행", "완료", "지연"];
 const INVOICE_STATUSES: TaxInvoiceStatus[] = ["작성", "발행요청", "발행완료", "입금완료"];
+
+type ErpIntakeItem = {
+  id: string;
+  source: string;
+  intent: string;
+  category: string;
+  suggestedEntity: "quote" | "task" | "inventory" | "finance" | "project" | "question";
+  title: string;
+  detail: string;
+  customer?: string;
+  owner: string;
+  accountId?: string;
+  team?: string;
+  conversationName?: string;
+  status: "초안" | "승인대기" | "전환완료" | "보류";
+  dueDate?: string;
+  createdAt: string;
+};
 
 const STATUS_STYLE: Record<string, string> = {
   기록: "bg-slate-100 text-slate-600",
@@ -72,6 +91,7 @@ export default function ErpFlowPage() {
   const [tasks, setTasks] = useState<WorkTask[]>([]);
   const [invoices, setInvoices] = useState<TaxInvoice[]>([]);
   const [reports, setReports] = useState<DailyReport[]>([]);
+  const [intakeItems, setIntakeItems] = useState<ErpIntakeItem[]>([]);
   const [showMeetingForm, setShowMeetingForm] = useState(false);
 
   const [customer, setCustomer] = useState("");
@@ -87,6 +107,18 @@ export default function ErpFlowPage() {
     setTasks(getTasks());
     setInvoices(getTaxInvoices());
     setReports(getDailyReports());
+    void refreshIntake();
+  }
+
+  async function refreshIntake() {
+    try {
+      const response = await fetch("/api/erp/intake", { cache: "no-store" });
+      if (!response.ok) return;
+      const data = (await response.json()) as { items?: ErpIntakeItem[] };
+      setIntakeItems(data.items ?? []);
+    } catch {
+      setIntakeItems([]);
+    }
   }
 
   useEffect(() => {
@@ -158,6 +190,36 @@ export default function ErpFlowPage() {
     refresh();
   }
 
+  async function updateIntakeStatus(id: string, status: ErpIntakeItem["status"]) {
+    await fetch("/api/erp/intake", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({ id, status }),
+    });
+    await refreshIntake();
+  }
+
+  async function handleConvertIntake(item: ErpIntakeItem) {
+    const owner = getSession()?.name ?? item.owner ?? "미지정";
+    if (item.suggestedEntity === "quote" || item.category === "견적") {
+      addMeetingRecord({
+        customer: item.customer || item.conversationName || "미지정",
+        title: item.title,
+        summary: item.detail,
+        owner,
+      });
+    } else {
+      addTask({
+        title: item.title,
+        owner,
+        dueDate: item.dueDate || defaultDueDate(1),
+        source: `${item.source} 수신`,
+      });
+    }
+    await updateIntakeStatus(item.id, "전환완료");
+    refresh();
+  }
+
   return (
     <div className="space-y-6">
       <section className="rounded-lg border border-slate-200 bg-white p-6">
@@ -200,6 +262,61 @@ export default function ErpFlowPage() {
             <div className="mt-2 text-xs leading-5 text-slate-500">{stat.detail}</div>
           </article>
         ))}
+      </section>
+
+      <section className="rounded-lg border border-slate-200 bg-white">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
+          <div>
+            <h3 className="font-semibold text-slate-900">카카오워크 ERP 수신함</h3>
+            <p className="mt-1 text-sm text-slate-500">워크 대화에서 들어온 견적/할 일/재고/정산 요청을 실제 ERP 기록으로 전환합니다.</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => void refreshIntake()}
+            className="rounded-md border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+          >
+            수신함 동기화
+          </button>
+        </div>
+        <div className="divide-y divide-slate-100">
+          {intakeItems.length === 0 && <div className="px-5 py-8 text-center text-sm text-slate-400">수신된 ERP 초안이 없습니다.</div>}
+          {intakeItems.slice(0, 6).map((item) => (
+            <article key={item.id} className="px-5 py-4">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-600">{item.source}</span>
+                    <span className="rounded-full bg-blue-50 px-2 py-0.5 text-brand">{item.category}</span>
+                    <span className={`rounded-full px-2 py-0.5 ${STATUS_STYLE[item.status] || "bg-slate-100 text-slate-600"}`}>{item.status}</span>
+                    {item.accountId && <span className="font-mono text-slate-400">{item.accountId}</span>}
+                  </div>
+                  <h4 className="mt-2 font-semibold text-slate-900">{item.title}</h4>
+                  <p className="mt-1 text-sm leading-6 text-slate-600">{item.detail}</p>
+                  <div className="mt-2 text-xs text-slate-500">
+                    {item.owner} · {item.conversationName || item.team || "채널 미지정"} · 목표일 {item.dueDate || "-"}
+                  </div>
+                </div>
+                <div className="flex shrink-0 flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void handleConvertIntake(item)}
+                    disabled={item.status === "전환완료"}
+                    className="rounded-md bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-200"
+                  >
+                    {item.suggestedEntity === "quote" ? "회의/견적 후보 등록" : "할 일 등록"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void updateIntakeStatus(item.id, item.status === "보류" ? "초안" : "보류")}
+                    className="rounded-md border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                  >
+                    {item.status === "보류" ? "초안 복귀" : "보류"}
+                  </button>
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
       </section>
 
       {showMeetingForm && (

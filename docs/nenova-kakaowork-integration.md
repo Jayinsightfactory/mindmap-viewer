@@ -116,6 +116,16 @@ GET /api/employees/directory?userEmail=worker@example.com
 
 The response includes the resolved internal `employee`, `accountId`, `team`, `defaultWorkArea`, and the match source such as `email`, `kakaoworkUserId`, `orbitUserId`, `hostname`, or `name`.
 
+### `GET/POST/PATCH /api/erp/intake`
+
+Stores actionable KakaoWork requests as ERP intake drafts.
+
+- `GET /api/erp/intake`: list recent quote/task/inventory/finance/project drafts
+- `POST /api/erp/intake`: upsert one or more intake drafts
+- `PATCH /api/erp/intake`: update `status` such as `전환완료` or `보류`
+
+KakaoWork callback automatically posts quote/task/inventory/finance/project intents into this inbox unless `syncErpIntake: false` is provided.
+
 ## Environment Variables
 
 ```bash
