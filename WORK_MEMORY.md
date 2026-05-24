@@ -706,3 +706,33 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - `nenova-erp-ui/src/app/api/nenova-exe/sessions/route.ts`
 - `nenova-erp-ui/src/app/(app)/work-units/page.tsx`
 - `docs/nenova-exe-work-unit-ingest.md`
+
+### Watcher 데이터 품질 공통 필터
+
+날짜:
+- 2026-05-24 KST
+
+사용자 요청:
+- 금요일 마지막 작업인 `app명 오염/클립보드 노이즈/Vision 미작동` 수정을 이어서 더 단단하게 보강해야 합니다.
+- `nenova.exe` 작업데이터, 카톡/카카오워크 대화데이터, PC 작업데이터가 3차 교차검증될 때 앱명/창제목 오염 때문에 같은 오류가 반복되면 안 됩니다.
+
+현재 조치:
+- `src/data-quality.js` 공통 필터를 추가했습니다.
+- 앱명 정규화에서 `.exe` 별칭을 처리합니다. 예: `nenova.exe -> nenova`, `chrome.exe -> chrome`, `msedge.exe -> edge`.
+- 앱명 오염값을 차단합니다. 예: JSON 이벤트, PowerShell 명령어, 버전번호, 프로세스 목록.
+- 창제목 정제에서 프로세스 목록/PowerShell 명령어를 차단하고 이메일, URL 파라미터, 사용자 홈 경로를 마스킹합니다.
+- 클립보드 노이즈 필터를 공통화했습니다. 단순 앱명/프로세스 목록/윈도우 타이틀 오염은 버리고, 발주/견적/테이블 텍스트는 유지합니다.
+- `keyboard-watcher.js`, `clipboard-watcher.js`, `screen-capture.js`가 같은 공통 필터를 사용하게 변경했습니다.
+- 스크린캡처 프로파일 키가 `.exe` 앱명 때문에 `unknown`으로 빠지지 않게 했습니다.
+
+검증:
+- `npx jest tests\data-quality.test.js --runInBand` 성공
+- `node -e "require('./src/data-quality'); require('./src/keyboard-watcher'); require('./src/clipboard-watcher'); require('./src/screen-capture'); console.log('modules ok'); process.exit(0)"` 성공
+- `npx jest --runInBand` 성공, 8개 테스트 스위트 / 144개 테스트 통과
+
+다시 반복되면 먼저 볼 위치:
+- `src/data-quality.js`
+- `src/keyboard-watcher.js`
+- `src/clipboard-watcher.js`
+- `src/screen-capture.js`
+- `tests/data-quality.test.js`

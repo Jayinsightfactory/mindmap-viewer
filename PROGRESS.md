@@ -726,3 +726,32 @@
 ### 다음 단계
 - 병합 후보 확정 버튼을 추가해 work unit validation/evidence에 ERP intake ID를 저장
 - 추출 파서를 AI 보정 단계와 연결해 애매한 문장은 Claude/GPT 검증으로 넘기기
+
+---
+
+## 작업 (2026-05-24) — Watcher 데이터 품질 보강
+
+### 1. 금요일 작업 이어서 수정 (완료)
+- 기준 작업: 2026-05-22 금요일 마지막 커밋 `4c9efb0 fix: 데이터 품질 3종 수정`
+- 목적: `nenova.exe` 작업데이터, 카톡/카카오워크 대화데이터, PC 작업데이터를 합칠 때 앱명/창제목/클립보드 오염이 다시 섞이지 않게 함
+
+### 2. 공통 필터 추가 (완료)
+- `src/data-quality.js` 추가
+- 앱명 정규화: `.exe` 별칭 처리, JSON/버전번호/PowerShell/프로세스목록 차단
+- 창제목 정제: 프로세스목록/PowerShell 차단, 이메일/URL 파라미터/사용자 경로 마스킹
+- 클립보드 필터: 시스템 노이즈는 제거하고 견적/발주/테이블 텍스트는 유지
+
+### 3. watcher 적용 (완료)
+- `keyboard-watcher.js`: Windows/macOS/Linux 앱명·창제목 수집과 분석 payload에 공통 필터 적용
+- `clipboard-watcher.js`: 클립보드 노이즈 판정과 source app/window 정제에 공통 필터 적용
+- `screen-capture.js`: 캡처 프로파일 키와 서버 전송 app/windowTitle에 공통 필터 적용
+- `nenova.exe`, `msedge.exe`, `chrome.exe` 등이 `unknown`으로 빠지지 않게 보정
+
+### 4. 검증 (완료)
+- `npx jest tests\data-quality.test.js --runInBand` 성공
+- watcher 3개 모듈 로드 확인 성공
+- `npx jest --runInBand` 성공
+- 전체 8개 테스트 스위트, 144개 테스트 통과
+
+### 다음 단계
+- 실제 운영 데이터가 들어오면 `/workflow` 원장 화면에서 source app/window/title/evidence가 오염 없이 연결되는지 샘플 검증

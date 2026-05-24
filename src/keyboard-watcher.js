@@ -27,6 +27,7 @@ const os    = require('os');
 const path  = require('path');
 const fs    = require('fs');
 const { execSync } = require('child_process');
+const { normalizeAppName, sanitizeWindowTitle } = require('./data-quality');
 
 // ── 원격 서버 설정 (~/.orbit-config.json, 매번 동적 읽기) ───────────────────
 function _readOrbitConfig() {
@@ -134,20 +135,13 @@ async function _refreshWinCache() {
   if (ws && ws.isAvailable()) {
     try {
       const app = await ws.exec(PS_GET_APP, 4000);
-      const _appRaw = (app || '').trim();
-      // 유효한 프로세스 이름만 적용 (JSON, 버전번호, 프로세스목록 오염 방지)
-      if (_appRaw && /^[a-zA-Z0-9][a-zA-Z0-9._\- ]{0,80}$/.test(_appRaw) && !_appRaw.startsWith('{') && !_appRaw.includes(',')) {
-        _cachedApp = _appRaw.toLowerCase();
-      }
-      // else: 이전 캐시 유지 (garbage 값으로 덮어쓰기 방지)
+      const cleanApp = normalizeAppName(app, _cachedApp);
+      if (cleanApp) _cachedApp = cleanApp;
     } catch (e) { /* keep previous cache */ }
     try {
       const title = await ws.exec(PS_GET_TITLE, 4000);
-      const _titleRaw = (title || '').trim();
-      // 프로세스 목록(콤마 구분)이 title로 오면 무시
-      if (_titleRaw && !(_titleRaw.includes(',') && _titleRaw.split(',').length > 3)) {
-        _cachedTitle = _titleRaw;
-      }
+      const cleanTitle = sanitizeWindowTitle(title, _cachedTitle);
+      if (cleanTitle) _cachedTitle = cleanTitle;
     } catch (e) { /* keep previous cache */ }
   } else {
     // 폴백: 종전 execSync 방식 (콘솔 깜빡임 발생) — win-shell 실패 시에만
@@ -156,14 +150,16 @@ async function _refreshWinCache() {
         `powershell -NoProfile -WindowStyle Hidden -NonInteractive -Command "${PS_GET_APP}"`,
         { timeout: 2000, encoding: 'utf8', windowsHide: true, stdio: 'pipe' }
       );
-      _cachedApp = (out || '').trim().toLowerCase();
+      const cleanApp = normalizeAppName(out, _cachedApp);
+      if (cleanApp) _cachedApp = cleanApp;
     } catch {}
     try {
       const out = execSync(
         `powershell -NoProfile -WindowStyle Hidden -NonInteractive -Command "${PS_GET_TITLE}"`,
         { timeout: 2000, encoding: 'utf8', windowsHide: true, stdio: 'pipe' }
       );
-      _cachedTitle = (out || '').trim();
+      const cleanTitle = sanitizeWindowTitle(out, _cachedTitle);
+      if (cleanTitle) _cachedTitle = cleanTitle;
     } catch {}
   }
 }
@@ -186,7 +182,7 @@ function getActiveApp() {
     if (now - _macCachedAppTs < _MAC_CACHE_MS) return _macCachedApp;
     try {
       const script = `tell application "System Events" to get name of first process where frontmost is true`;
-      _macCachedApp = execSync(`osascript -e '${script}'`, { timeout: 1000 }).toString().trim().toLowerCase();
+      _macCachedApp = normalizeAppName(execSync(`osascript -e '${script}'`, { timeout: 1000 }).toString(), _macCachedApp);
       _macCachedAppTs = now;
     } catch {}
     return _macCachedApp;
@@ -209,7 +205,7 @@ function getActiveWindowTitle() {
           set fp to first process where frontmost is true
           tell fp to get name of front window
         end tell`;
-      _macCachedTitle = execSync(`osascript -e '${script}'`, { timeout: 1000 }).toString().trim();
+      _macCachedTitle = sanitizeWindowTitle(execSync(`osascript -e '${script}'`, { timeout: 1000 }).toString(), _macCachedTitle);
       _macCachedTitleTs = now;
     } catch {}
     return _macCachedTitle;
@@ -219,7 +215,7 @@ function getActiveWindowTitle() {
   }
   if (process.platform === 'linux') {
     try {
-      return execSync('xdotool getactivewindow getwindowname 2>/dev/null || echo ""', { timeout: 1000 }).toString().trim();
+      return sanitizeWindowTitle(execSync('xdotool getactivewindow getwindowname 2>/dev/null || echo ""', { timeout: 1000 }).toString());
     } catch { return ''; }
   }
   return '';
@@ -403,17 +399,7 @@ function _summarizeKeyPhrases(buffer, activityType) {
  * @private
  */
 function _sanitizeWindowTitle(title) {
-  if (!title) return '';
-  // 이메일 주소 제거
-  let sanitized = title.replace(/[\w.-]+@[\w.-]+/g, '[email]');
-  // URL에서 쿼리 파라미터 제거
-  sanitized = sanitized.replace(/\?[^\s]*/g, '?[params]');
-  // 파일 경로에서 사용자 이름 부분 제거
-  sanitized = sanitized.replace(/\/Users\/[\w.-]+\//g, '/Users/[user]/');
-  sanitized = sanitized.replace(/C:\\Users\\[\w.-]+\\/gi, 'C:\\Users\\[user]\\');
-  // 200자 제한
-  if (sanitized.length > 200) sanitized = sanitized.substring(0, 200);
-  return sanitized;
+  return sanitizeWindowTitle(title);
 }
 
 
@@ -430,7 +416,7 @@ function _flushToLocalBuffer() {
   const text = _rawBuffer;
   if (!text) return;
 
-  const app = getActiveApp();
+  const app = normalizeAppName(getActiveApp(), '');
   if (isPasswordApp(app)) {
     console.log(`[keyboard-watcher] 비밀번호 앱(${app}) 감지 → 버퍼 삭제`);
     _rawBuffer = '';
@@ -438,7 +424,7 @@ function _flushToLocalBuffer() {
   }
 
   // 윈도우 타이틀 수집 (뭘 하고 있는지) — 다른 곳에서 참조하므로 먼저 선언
-  const windowTitle = getActiveWindowTitle();
+  const windowTitle = sanitizeWindowTitle(getActiveWindowTitle());
 
   // 스크린 캡처 트리거: 앱 전환 감지
   if (_screenCapture && app && app !== _lastDetectedApp) {
@@ -538,7 +524,7 @@ function _runPeriodicAnalysis() {
       appCounts[a.app].keys += a.keystrokeMetrics?.totalKeys || 0;
       if (a.windowTitle) appCounts[a.app].windows.add(a.windowTitle);
     });
-    const curApp = getActiveApp();
+    const curApp = normalizeAppName(getActiveApp(), '');
     Object.entries(appCounts).forEach(([app, data]) => {
       profiler.recordActivity(app, {
         keyCount: data.keys,
@@ -559,8 +545,8 @@ function _runPeriodicAnalysis() {
   }
 
   // ── 현재 활성 앱/윈도우 (최상위 필드로 포함 — 서버 저장 보장) ──
-  const currentApp = getActiveApp();
-  const currentWindow = getActiveWindowTitle();
+  const currentApp = normalizeAppName(getActiveApp(), 'unknown');
+  const currentWindow = sanitizeWindowTitle(getActiveWindowTitle());
 
   // ── 분석 결과 → 로컬 즉시 + 원격 배치 큐 ──
   const payload = JSON.stringify({

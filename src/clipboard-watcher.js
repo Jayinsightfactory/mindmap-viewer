@@ -4,6 +4,7 @@
 
 const { execSync } = require('child_process');
 const os = require('os');
+const { isClipboardNoise, normalizeAppName, sanitizeWindowTitle } = require('./data-quality');
 
 let _lastClipboard = '';
 let _timer = null;
@@ -16,14 +17,14 @@ let _lastCopyTime = 0;        // 마지막 복사 시간
 function _getActiveApp() {
   try {
     if (process.platform === 'win32') {
-      return require('child_process').execSync(
+      return normalizeAppName(require('child_process').execSync(
         'powershell.exe -NoProfile -WindowStyle Hidden -Command "(Get-Process | Where-Object {$_.MainWindowHandle -ne 0} | Sort-Object CPU -Descending | Select-Object -First 1).ProcessName"',
         { timeout: 1000, encoding: 'utf8', windowsHide: true, stdio: 'pipe' }
-      ).trim();
+      ));
     }
     if (process.platform === 'darwin') {
       const script = 'tell application "System Events" to get name of first process where frontmost is true';
-      return require('child_process').execSync(`osascript -e '${script}'`, { timeout: 1000, encoding: 'utf8' }).trim();
+      return normalizeAppName(require('child_process').execSync(`osascript -e '${script}'`, { timeout: 1000, encoding: 'utf8' }));
     }
   } catch {}
   return '';
@@ -32,14 +33,14 @@ function _getActiveApp() {
 function _getActiveWindowTitle() {
   try {
     if (process.platform === 'win32') {
-      return require('child_process').execSync(
+      return sanitizeWindowTitle(require('child_process').execSync(
         'powershell.exe -NoProfile -WindowStyle Hidden -Command "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; Add-Type -TypeDefinition \'using System; using System.Runtime.InteropServices; public class WinAPI { [DllImport(\\\"user32.dll\\\")] public static extern IntPtr GetForegroundWindow(); [DllImport(\\\"user32.dll\\\", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder text, int count); }\'; $h=[WinAPI]::GetForegroundWindow(); $b=New-Object System.Text.StringBuilder 512; [void][WinAPI]::GetWindowText($h,$b,512); $b.ToString()"',
         { timeout: 3000, encoding: 'utf8', windowsHide: true, stdio: 'pipe' }
-      ).trim();
+      ));
     }
     if (process.platform === 'darwin') {
       const script = 'tell application "System Events" to tell (first process where frontmost is true) to get name of front window';
-      return require('child_process').execSync(`osascript -e '${script}'`, { timeout: 1000, encoding: 'utf8' }).trim();
+      return sanitizeWindowTitle(require('child_process').execSync(`osascript -e '${script}'`, { timeout: 1000, encoding: 'utf8' }));
     }
   } catch {}
   return '';
@@ -134,16 +135,7 @@ async function _check() {
     }
 
     if (text && text !== _lastClipboard && text.length > 0 && text.length < 5000) {
-      // ── 노이즈 필터: win-shell 응답 오염 패턴 제거 ──
-      const _isNoise = (
-        // 프로세스 목록 (콤마 3개 이상, 모두 영문 프로세스명)
-        (text.includes(',') && text.split(',').length > 3 && /^[A-Za-z0-9,. ]+$/.test(text)) ||
-        // 윈도우 타이틀 패턴 (app - Chrome, app - Microsoft Edge 등)
-        /^.{2,80}\s+[-–]\s+(Chrome|Microsoft Edge|Microsoft Excel|Microsoft Word|Edge|Firefox|Opera)$/.test(text) ||
-        // 단순 프로세스명 (1단어 영소문자, 잘 알려진 앱명)
-        /^(chrome|excel|word|powerpnt|kakaotalk|notepad|explorer|cmd|powershell|Teams)$/i.test(text.trim())
-      );
-      if (_isNoise) {
+      if (isClipboardNoise(text)) {
         // 오염된 값은 _lastClipboard에 반영하지 않음 (다음 진짜 클립보드 감지 유지)
         return;
       }
@@ -156,8 +148,8 @@ async function _check() {
         const parsed = orderFormat ? _quickParse(text, orderFormat) : [];
 
         // 활성 앱/윈도우 컨텍스트 수집
-        const sourceApp = _getActiveApp();
-        const sourceWindow = _getActiveWindowTitle();
+        const sourceApp = normalizeAppName(_getActiveApp(), '');
+        const sourceWindow = sanitizeWindowTitle(_getActiveWindowTitle());
 
         // 앱별 클립보드 변경 빈도 추적
         if (sourceApp) {

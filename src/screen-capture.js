@@ -14,6 +14,7 @@ const fs   = require('fs');
 const os   = require('os');
 const http = require('http');
 const https = require('https');
+const { getAppProfileKey, normalizeAppName, sanitizeWindowTitle } = require('./data-quality');
 
 const CAPTURE_DIR   = path.join(os.homedir(), '.orbit', 'captures');
 const MAX_CAPTURES  = 500; // 개발 단계: 최대 보관
@@ -40,7 +41,7 @@ function _getLearnedCooltime(app, windowTitle) {
   _loadCaptureConfig();
   if (!_captureConfig) return null;
   // 앱별 제안값 (학습 에이전트가 { byApp: { excel: 120000, kakaotalk: 45000 }, default: 60000 } 형태로 저장)
-  const appLow = (app || '').toLowerCase();
+  const appLow = getAppProfileKey(app);
   if (_captureConfig.byApp?.[appLow]) return _captureConfig.byApp[appLow];
   if (_captureConfig.default) return _captureConfig.default;
   return null;
@@ -140,7 +141,7 @@ function _updateActivityState() {
  * 스마트 쿨타임 — 앱 프로파일 + 활동 상태 + 학습값 종합
  */
 function _smartCooltime(app, trigger) {
-  const appLow = (app || '').toLowerCase();
+  const appLow = getAppProfileKey(app);
   const profile = APP_PROFILES[appLow];
 
   // 1순위: 학습 에이전트 제안값
@@ -159,7 +160,7 @@ function _smartCooltime(app, trigger) {
  */
 function _shouldCapture(trigger, app) {
   const now = Date.now();
-  const appLow = (app || '').toLowerCase();
+  const appLow = getAppProfileKey(app);
   const profile = APP_PROFILES[appLow];
   const triggerPriority = TRIGGER_PRIORITY[trigger] || 'medium';
 
@@ -197,7 +198,7 @@ function _shouldCapture(trigger, app) {
  * 이미지 전송 여부 판단 — HIGH 이벤트 + critical/high 앱만
  */
 function _shouldSendImage(trigger, app) {
-  const appLow = (app || '').toLowerCase();
+  const appLow = getAppProfileKey(app);
   const profile = APP_PROFILES[appLow];
   const triggerPriority = TRIGGER_PRIORITY[trigger] || 'medium';
 
@@ -356,7 +357,7 @@ function _sendAnalysisToServer(result, trigger, filepath) {
         data: {
           trigger,
           activity: result.activity,
-          app: result.app,
+          app: normalizeAppName(result.app, 'unknown'),
           description: result.description,
           details: result.details || '',
           confidence: result.confidence,
@@ -415,15 +416,7 @@ function ensureDir() { fs.mkdirSync(CAPTURE_DIR, { recursive: true }); }
  * 정상 process name은 패턴 제약 없이 통과 (한글·괄호·특수문자 포함 가능).
  */
 function _sanitizeAppName(raw) {
-  if (!raw) return '';
-  const s = String(raw).trim();
-  if (!s) return '';
-  if (s.length > 40) return '';                       // windowTitle/clipboard 오염
-  if (s.includes('{') || s.includes('}')) return ''; // JSON 객체
-  if (s.includes('$env:') || /powershell|irm\s+http/i.test(s)) return ''; // PS 명령어
-  if (s.includes('\n') || s.includes('\r')) return '';// 다줄 텍스트
-  if (s.includes('\t')) return '';
-  return s.toLowerCase();
+  return normalizeAppName(raw, '');
 }
 
 /**
@@ -453,7 +446,7 @@ function _uploadCaptureToServer(filepath, trigger, context) {
           trigger,
           triggerReason: _getTriggerDescription(trigger),
           app: _sanitizeAppName(context.app),
-          windowTitle: (context.windowTitle || '').slice(0, 200),
+          windowTitle: sanitizeWindowTitle(context.windowTitle),
           activityLevel: context.activityLevel || '',
           automationScore: context.automationScore || 0,
           screenResolution: _detectScreenResolution(),
@@ -491,8 +484,8 @@ function _uploadCaptureToServer(filepath, trigger, context) {
  * 최소 쿨타임 반환 — 카카오톡/주문 앱 활성 시 단축
  */
 function _getCurrentCooltime() {
-  const app = (_lastActiveApp || '').toLowerCase();
-  const win = (_lastWindowTitle || '').toLowerCase();
+  const app = getAppProfileKey(_lastActiveApp);
+  const win = sanitizeWindowTitle(_lastWindowTitle).toLowerCase();
 
   // 1순위: 학습 에이전트 제안값 (capture-config.json)
   const learned = _getLearnedCooltime(app, win);
@@ -506,7 +499,7 @@ function _getCurrentCooltime() {
  * 키로거 데이터 기반 활동 레벨 업데이트
  */
 function _updateActivityLevel(app, windowTitle) {
-  const appLow = (app || '').toLowerCase();
+  const appLow = getAppProfileKey(app);
 
   // 자동화 패턴 감지 (윈도우 타이틀에서)
   const isAutomation = AUTOMATION_PATTERNS.some(p => p.test(windowTitle || ''));
@@ -691,13 +684,14 @@ function getStatus() {
 // 트리거 1: 앱 전환 → 즉시 캡처
 function onAppChange(appName) {
   if (!_running) return;
-  if (appName && appName !== _lastActiveApp) {
+  const cleanApp = normalizeAppName(appName, '');
+  if (cleanApp && cleanApp !== _lastActiveApp) {
     const prevApp = _lastActiveApp;
-    _lastActiveApp = appName;
+    _lastActiveApp = cleanApp;
     _keyActivityCount = 0;
     _sameAppStartTime = Date.now(); // FOCUSED 상태 리셋
     _lastInputTime = Date.now();
-    _updateActivityLevel(appName, _lastWindowTitle);
+    _updateActivityLevel(cleanApp, _lastWindowTitle);
     capture('app_switch');
   }
 }
@@ -706,13 +700,13 @@ function onAppChange(appName) {
 let _lastCapturedTitle = '';
 function onWindowTitleChange(title) {
   if (!_running) return;
-  _lastWindowTitle = title || '';
+  _lastWindowTitle = sanitizeWindowTitle(title);
   _updateActivityLevel(_lastActiveApp, _lastWindowTitle);
   // 타이틀이 실질적으로 변경됐을 때만 (숫자/시간 변경 무시)
-  const normalized = (title || '').replace(/[\d:/.]+/g, '').trim();
+  const normalized = (_lastWindowTitle || '').replace(/[\d:/.]+/g, '').trim();
   const lastNorm = _lastCapturedTitle.replace(/[\d:/.]+/g, '').trim();
   if (normalized !== lastNorm && normalized.length > 3) {
-    _lastCapturedTitle = title || '';
+    _lastCapturedTitle = _lastWindowTitle;
     capture('title_change');
   }
 }
@@ -812,7 +806,7 @@ function _sendCaptureMetadata(filepath, trigger, context) {
           trigger,
           triggerReason: _getTriggerDescription(trigger),
           app: _sanitizeAppName(context.app),
-          windowTitle: (context.windowTitle || '').slice(0, 200), // 최대 200자
+          windowTitle: sanitizeWindowTitle(context.windowTitle),
           activityLevel: context.activityLevel || '',
           automationScore: context.automationScore || 0,
           screenResolution: _detectScreenResolution(),
