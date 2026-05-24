@@ -2,11 +2,14 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  getWorkUnitSnapshot,
   getWorkUnits,
   updateWorkUnitStatus,
+  type CrossValidationStatus,
+  type TalkEvent,
   type TalkWorkRelation,
   type WorkUnit,
+  type WorkUnitCategory,
+  type WorkUnitSource,
   type WorkUnitStatus,
 } from "@/lib/store";
 
@@ -33,6 +36,15 @@ const RELATION_STYLE: Record<TalkWorkRelation, string> = {
 };
 
 const WORK_UNIT_STATUSES: WorkUnitStatus[] = ["수집", "확인필요", "진행중", "완료", "자동화후보"];
+const WORK_UNIT_SOURCES: WorkUnitSource[] = ["nenova.exe", "KakaoTalk", "KakaoWork", "GoogleSheet", "nenovaweb", "Mindmap", "PC"];
+const WORK_UNIT_CATEGORIES: WorkUnitCategory[] = ["고객응대", "견적", "계약", "프로젝트", "할일", "정산", "재고", "보고", "AI검토", "기타"];
+const VALIDATION_STATUSES: CrossValidationStatus[] = ["일치", "부분일치", "충돌", "검증대기"];
+const TALK_RELATIONS: TalkWorkRelation[] = ["대화후작업", "작업후대화", "동시진행", "미연결"];
+
+type WorkUnitsApiResponse = {
+  receivedCount?: number;
+  units?: Partial<WorkUnit>[];
+};
 
 function timeLabel(value: string) {
   return new Date(value).toLocaleTimeString("ko-KR", {
@@ -55,20 +67,177 @@ function shortList(items: string[], fallback: string) {
   return items.length ? items : [fallback];
 }
 
+function durationMinutes(startedAt: string, endedAt: string, fallback = 1) {
+  const start = new Date(startedAt).getTime();
+  const end = new Date(endedAt).getTime();
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return fallback;
+  return Math.max(1, Math.round((end - start) / 60000));
+}
+
+function enumValue<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
+  return allowed.includes(value as T) ? (value as T) : fallback;
+}
+
+function normalizeRemoteWorkUnit(input: Partial<WorkUnit>): WorkUnit | null {
+  if (!input.id) return null;
+  const startedAt = typeof input.startedAt === "string" ? input.startedAt : new Date().toISOString();
+  const endedAt = typeof input.endedAt === "string" ? input.endedAt : startedAt;
+  const talkRelation = enumValue(input.talkRelation, TALK_RELATIONS, "미연결");
+  const relatedTalks: TalkEvent[] = Array.isArray(input.relatedTalks)
+    ? input.relatedTalks.map((talk, index) => ({
+        id: talk.id || `${input.id}-TALK-${index + 1}`,
+        source: talk.source === "KakaoWork" ? ("KakaoWork" as const) : ("KakaoTalk" as const),
+        room: talk.room || "대화방 미수집",
+        sender: talk.sender || "미지정",
+        sentAt: talk.sentAt || startedAt,
+        text: talk.text || "",
+        intent: talk.intent || "unknown",
+        relation: enumValue(talk.relation, TALK_RELATIONS, talkRelation),
+      }))
+    : [];
+
+  return {
+    id: input.id,
+    employee: input.employee || "미지정",
+    accountId: input.accountId || input.employee || "미지정",
+    team: input.team || "미지정",
+    workArea: input.workArea || input.category || "기타",
+    source: enumValue(input.source, WORK_UNIT_SOURCES, "PC"),
+    category: enumValue(input.category, WORK_UNIT_CATEGORIES, "기타"),
+    title: input.title || `${input.appName || "PC"} 작업`,
+    detail: input.detail || "API로 수집된 작업 단위입니다.",
+    appName: input.appName || "작업 앱 미수집",
+    windowTitle: input.windowTitle || "작업 창 미수집",
+    clickCount: Number.isFinite(Number(input.clickCount)) ? Number(input.clickCount) : 0,
+    clickEvidence: Array.isArray(input.clickEvidence) ? input.clickEvidence : [],
+    customer: input.customer,
+    projectId: input.projectId,
+    taskId: input.taskId,
+    startedAt,
+    endedAt,
+    durationMin: Number.isFinite(Number(input.durationMin)) ? Number(input.durationMin) : durationMinutes(startedAt, endedAt),
+    status: enumValue(input.status, WORK_UNIT_STATUSES, "수집"),
+    confidence: Math.min(100, Math.max(0, Number.isFinite(Number(input.confidence)) ? Number(input.confidence) : 70)),
+    evidence: Array.isArray(input.evidence) ? input.evidence : [],
+    pcEvidence: Array.isArray(input.pcEvidence) ? input.pcEvidence : [],
+    relatedTalks,
+    talkRelation,
+    validationStatus: enumValue(input.validationStatus, VALIDATION_STATUSES, "검증대기"),
+    validationMemo: input.validationMemo || "API 수집 후 카카오톡/PC/ERP 3차 교차검증 대기 중입니다.",
+    nextAction: input.nextAction || "ERP 고객/프로젝트/할 일과 연결해 검증을 완료합니다.",
+    automationCandidate: Boolean(input.automationCandidate),
+  };
+}
+
+function mergeWorkUnits(localUnits: WorkUnit[], remoteUnits: Partial<WorkUnit>[]) {
+  const map = new Map<string, WorkUnit>();
+  localUnits.forEach((unit) => map.set(unit.id, unit));
+  remoteUnits.forEach((unit) => {
+    const normalized = normalizeRemoteWorkUnit(unit);
+    if (normalized) map.set(normalized.id, normalized);
+  });
+  return Array.from(map.values()).sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+}
+
+function buildWorkUnitSnapshot(workUnits: WorkUnit[]) {
+  const today = new Date().toISOString().slice(0, 10);
+  const todayUnits = workUnits.filter((unit) => unit.startedAt.slice(0, 10) === today);
+  const targetUnits = todayUnits.length ? todayUnits : workUnits;
+  const totalMinutes = targetUnits.reduce((sum, unit) => sum + unit.durationMin, 0);
+  const employeeMap = targetUnits.reduce<
+    Record<
+      string,
+      {
+        accountId: string;
+        team: string;
+        minutes: number;
+        count: number;
+        latest: string;
+        workAreas: Set<string>;
+        clickCount: number;
+        talkLinked: number;
+        validated: number;
+      }
+    >
+  >((acc, unit) => {
+    const current = acc[unit.employee] ?? {
+      accountId: unit.accountId,
+      team: unit.team,
+      minutes: 0,
+      count: 0,
+      latest: "",
+      workAreas: new Set<string>(),
+      clickCount: 0,
+      talkLinked: 0,
+      validated: 0,
+    };
+    current.minutes += unit.durationMin;
+    current.count += 1;
+    current.clickCount += unit.clickCount;
+    current.workAreas.add(unit.workArea);
+    if (unit.relatedTalks.length > 0 || unit.talkRelation !== "미연결") current.talkLinked += 1;
+    if (unit.validationStatus === "일치") current.validated += 1;
+    current.latest = current.latest && current.latest > unit.startedAt ? current.latest : unit.startedAt;
+    acc[unit.employee] = current;
+    return acc;
+  }, {});
+
+  return {
+    counts: {
+      totalUnits: workUnits.length,
+      activeEmployees: Object.keys(employeeMap).length,
+      talkLinked: workUnits.filter((unit) => unit.relatedTalks.length > 0 || unit.talkRelation !== "미연결").length,
+      tripleValidated: workUnits.filter((unit) => unit.validationStatus === "일치").length,
+      automationCandidates: workUnits.filter((unit) => unit.automationCandidate || unit.status === "자동화후보").length,
+    },
+    time: {
+      totalMinutes,
+      totalHours: Math.round((totalMinutes / 60) * 10) / 10,
+    },
+    byEmployee: Object.entries(employeeMap)
+      .map(([employee, item]) => ({
+        employee,
+        accountId: item.accountId,
+        team: item.team,
+        workAreas: Array.from(item.workAreas),
+        minutes: item.minutes,
+        count: item.count,
+        latest: item.latest,
+        clickCount: item.clickCount,
+        talkLinked: item.talkLinked,
+        validated: item.validated,
+      }))
+      .sort((a, b) => b.minutes - a.minutes),
+  };
+}
+
 export default function WorkUnitsPage() {
   const [units, setUnits] = useState<WorkUnit[]>([]);
   const [employeeFilter, setEmployeeFilter] = useState("전체");
   const [areaFilter, setAreaFilter] = useState("전체");
+  const [apiCount, setApiCount] = useState(0);
+  const [syncError, setSyncError] = useState("");
 
-  function refresh() {
-    setUnits(getWorkUnits());
+  async function refresh() {
+    const localUnits = getWorkUnits();
+    setUnits(localUnits);
+    setSyncError("");
+    try {
+      const response = await fetch("/api/work-units", { cache: "no-store" });
+      if (!response.ok) throw new Error(`API ${response.status}`);
+      const data = (await response.json()) as WorkUnitsApiResponse;
+      setApiCount(data.receivedCount ?? data.units?.length ?? 0);
+      setUnits(mergeWorkUnits(localUnits, data.units ?? []));
+    } catch (err) {
+      setSyncError(err instanceof Error ? err.message : "API 동기화 실패");
+    }
   }
 
   useEffect(() => {
-    refresh();
+    void refresh();
   }, []);
 
-  const snapshot = useMemo(() => getWorkUnitSnapshot(), [units]);
+  const snapshot = useMemo(() => buildWorkUnitSnapshot(units), [units]);
   const employees = useMemo(() => ["전체", ...Array.from(new Set(units.map((unit) => unit.employee)))], [units]);
   const workAreas = useMemo(() => ["전체", ...Array.from(new Set(units.map((unit) => unit.workArea)))], [units]);
 
@@ -113,6 +282,17 @@ export default function WorkUnitsPage() {
               2. PC 앱/화면/클릭 근거
               <br />
               3. ERP 고객/프로젝트/할 일 연결
+            </div>
+            <div className="mt-3 border-t border-slate-200 pt-3">
+              <div className="text-xs text-slate-500">API 수신 {apiCount}건</div>
+              {syncError && <div className="mt-1 text-xs text-amber-700">{syncError}</div>}
+              <button
+                type="button"
+                onClick={() => void refresh()}
+                className="mt-2 rounded-md bg-slate-900 px-3 py-2 text-xs font-medium text-white hover:bg-slate-700"
+              >
+                API 동기화
+              </button>
             </div>
           </div>
         </div>
@@ -258,8 +438,9 @@ export default function WorkUnitsPage() {
                   <select
                     value={unit.status}
                     onChange={(e) => {
-                      updateWorkUnitStatus(unit.id, e.target.value as WorkUnitStatus);
-                      refresh();
+                      const nextStatus = e.target.value as WorkUnitStatus;
+                      updateWorkUnitStatus(unit.id, nextStatus);
+                      setUnits((prev) => prev.map((item) => (item.id === unit.id ? { ...item, status: nextStatus } : item)));
                     }}
                     className={`rounded-full border-0 px-2 py-1 text-xs font-medium outline-none ${STATUS_STYLE[unit.status]}`}
                   >

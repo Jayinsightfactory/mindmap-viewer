@@ -251,3 +251,16 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - `.claude/agents/nenova-ops-orchestrator.md`
 - `.claude/agents/nenova-cross-validator.md`
 - `docs/nenova-work-unit-cross-validation.md`
+
+추가 조치:
+- `POST /api/work-units`를 메모리 배열에서 파일 저장형 수신함으로 변경했습니다.
+- 수신 데이터는 `nenova-erp-ui/data/work-units.json`에 저장하며, 운영 데이터라 Git 추적에서 제외했습니다.
+- `/work-units` 화면이 localStorage 시드 데이터와 API 수신 데이터를 병합해 표시합니다.
+- `scripts/post-work-unit-sample.ps1` 샘플 전송 스크립트를 추가했습니다.
+- PowerShell 5.1 인코딩 문제 때문에 실행용 PS1은 ASCII 페이로드로 유지하고, 한글 페이로드 예시는 `docs/nenova-exe-work-unit-ingest.md`에 문서화했습니다.
+- API는 영어 relation 값(`talk_before_work`, `work_before_talk`, `simultaneous`)도 한국어 검증 관계로 정규화합니다.
+
+추가 검증:
+- `npm run build` 성공
+- `scripts/post-work-unit-sample.ps1` 실행 후 `GET /api/work-units`에서 수신 1건, `대화후작업`, `부분일치` 확인
+- `/work-units` HTTP 200 확인

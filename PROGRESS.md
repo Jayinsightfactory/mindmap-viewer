@@ -203,3 +203,34 @@
 - 실제 `nenova.exe` 이벤트 송신부에서 `/api/work-units`로 accountId/workArea/clickEvidence/relatedTalks 전송
 - 기존 카카오톡/구글시트 파서 결과를 `relatedTalks` 구조로 매핑
 - DB 원장 테이블로 localStorage 시드 데이터를 대체
+
+---
+
+## 작업 (2026-05-24) — Nenova 작업 단위 API 저장/동기화 고도화
+
+### 1. API 수신함 영속화 (완료)
+- `GET/POST /api/work-units`를 서버 메모리 배열에서 파일 저장형 수신함으로 변경
+- `nenova-erp-ui/data/work-units.json`에 최대 2000건 저장
+- 동일 `id` 재수신 시 덮어써서 PC 이벤트/카카오 매칭 보정 가능
+- `mouse.chunk`, `keyboard.chunk`, `screen.analyzed`, `nenova.exe` payload를 `sourceEventType`으로 정규화
+
+### 2. 화면 동기화 (완료)
+- `/work-units`가 localStorage 시드 데이터와 API 수신 데이터를 병합해서 표시
+- API 수신 건수와 수동 동기화 버튼 추가
+- API 수신 데이터도 계정별 업무영역, 대화 매칭, 3차 검증 통계에 반영
+
+### 3. 송신 계약 문서/샘플 (완료)
+- `docs/nenova-exe-work-unit-ingest.md`에 실제 `nenova.exe` 송신 페이로드 계약 기록
+- `scripts/post-work-unit-sample.ps1`로 샘플 작업 단위 전송 가능
+- PowerShell 실행 안정성을 위해 샘플 스크립트는 ASCII 페이로드 사용
+
+### 4. 검증 (완료)
+- `npm run build` 성공
+- 샘플 POST 후 `GET /api/work-units`에서 수신 1건 확인
+- 수신 샘플이 `대화후작업` / `부분일치`로 정규화되는 것 확인
+- `/work-units` HTTP 200 확인
+
+### 다음 단계
+- 기존 `routes/process-mining.js`의 PC/카카오/구글시트 병합 결과를 `/api/work-units`로 직접 전달
+- 카카오톡/카카오워크 수신 이벤트를 `relatedTalks`로 자동 매핑
+- 운영 DB 도입 시 `data/work-units.json`을 work_unit 원장 테이블로 승격

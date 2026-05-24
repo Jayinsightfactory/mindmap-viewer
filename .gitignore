@@ -20,6 +20,7 @@ conversation-backup/
 # Data files (local)
 data/audit/
 data/insights.jsonl
+nenova-erp-ui/data/
 
 # 환경변수
 .env
