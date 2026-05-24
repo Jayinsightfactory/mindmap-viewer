@@ -629,6 +629,29 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 다시 반복되면 먼저 볼 위치:
 - `nenova-erp-ui/src/app/(app)/work-units/page.tsx`
 
+### Workflow 별도 페이지
+
+날짜:
+- 2026-05-24 KST
+
+사용자 요청:
+- `nenovaweb.com/workflow` 페이지에 직원 작업 데이터 원장을 따로 볼 수 있게 만들어야 합니다.
+
+현재 조치:
+- `/workflow` 라우트를 추가했습니다.
+- `/workflow`는 현재 실제 작업 데이터 원장 UI를 재사용합니다.
+- 사이드바 `직원 워크플로우` 메뉴의 대표 주소를 `/work-units`에서 `/workflow`로 변경했습니다.
+- 기존 `/work-units`도 직접 접근 가능하게 남겨두었습니다.
+
+검증:
+- `npx tsc --noEmit` 성공
+- `GET /workflow` HTTP 200 확인
+- 브라우저에서 `http://127.0.0.1:3000/workflow` 접근 시 `실제 작업 데이터`, `작업ID/시간`, `직원/계정`, `PC 화면`, `대화 원문`, `원본 근거`, `검증` 컬럼이 보이는 것 확인
+
+다시 반복되면 먼저 볼 위치:
+- `nenova-erp-ui/src/app/(app)/workflow/page.tsx`
+- `nenova-erp-ui/src/lib/nav.ts`
+
 ### Nenova.exe 원본 이벤트 → Work Unit 브릿지
 
 날짜:

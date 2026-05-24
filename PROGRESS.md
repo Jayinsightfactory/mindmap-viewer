@@ -686,6 +686,26 @@
 
 ---
 
+## 작업 (2026-05-24) — `/workflow` 별도 페이지
+
+### 1. 라우트 추가 (완료)
+- `nenova-erp-ui/src/app/(app)/workflow/page.tsx` 추가
+- 실제 작업 데이터 원장 UI를 `/workflow`에서 볼 수 있게 연결
+- 기존 `/work-units`는 유지
+
+### 2. 사이드바 변경 (완료)
+- `직원 워크플로우` 메뉴 href를 `/workflow`로 변경
+
+### 3. 검증 (완료)
+- `npx tsc --noEmit` 성공
+- `/workflow` HTTP 200 확인
+- 브라우저에서 `/workflow` 접근 시 데이터 원장 컬럼 렌더링 확인
+
+### 다음 단계
+- 배포 도메인에서는 `https://nenovaweb.com/workflow`로 접근하면 같은 화면이 보이게 됨
+
+---
+
 ## 작업 (2026-05-24) — ERP Flow 전환 요청 큐
 
 ### 1. 전환 요청 표시 (완료)
