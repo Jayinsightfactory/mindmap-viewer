@@ -347,6 +347,27 @@
 - `/erp-flow` HTTP 200 확인
 
 ### 다음 단계
-- 수신함 전환 시 서버 수신함 상태와 localStorage ERP 객체 ID를 함께 연결
 - 견적 초안 금액/고객/마감일 추출 자동화
 - 카카오워크 버튼 액션으로 승인/보류/전환 실행
+
+---
+
+## 작업 (2026-05-24) — ERP 수신함 전환 추적
+
+### 1. 서버 수신함 링크 필드 (완료)
+- `/api/erp/intake`에 `linkedEntityType`, `linkedEntityId`, `convertedAt`, `conversionNote` 저장 필드 추가
+- 전환 완료 시 전환 시각을 서버에 남김
+
+### 2. ERP 흐름 화면 연결 (완료)
+- `/erp-flow`에서 카카오워크 수신함 항목을 전환할 때 생성된 회의/할 일 ID를 수신함 PATCH로 되돌려 저장
+- 카드에서 연결된 ERP 객체 ID와 전환 메모 표시
+
+### 3. 검증 (완료)
+- `npx tsc --noEmit` 성공
+- `POST/PATCH /api/erp/intake`로 링크 필드 저장 확인
+- `/erp-flow` HTTP 200 확인
+
+### 다음 단계
+- 견적 초안 금액/고객/마감일 추출 자동화
+- 카카오워크 버튼 액션으로 승인/보류/전환 실행
+- 전환된 수신함과 `/work-units`의 PC 작업 단위를 자동 병합하는 후보 UI 추가

@@ -355,3 +355,22 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - `nenova-erp-ui/src/app/api/erp/intake/route.ts`
 - `nenova-erp-ui/src/app/api/kakaowork/callback/route.ts`
 - `nenova-erp-ui/src/app/(app)/erp-flow/page.tsx`
+
+### ERP 수신함 전환 추적
+
+날짜:
+- 2026-05-24 KST
+
+현재 조치:
+- `/api/erp/intake`의 PATCH가 `linkedEntityType`, `linkedEntityId`, `convertedAt`, `conversionNote`를 저장합니다.
+- `/erp-flow`에서 수신함 항목을 회의/견적 후보나 할 일로 전환하면 생성된 localStorage ERP 객체 ID를 서버 수신함에 다시 연결합니다.
+- 전환된 수신함 카드에는 `연결 meeting MTG-...` 또는 `연결 task TSK-...`가 표시됩니다.
+
+검증:
+- `npx tsc --noEmit` 성공
+- `POST /api/erp/intake` 후 `PATCH /api/erp/intake`로 `linkedEntityId`와 `convertedAt` 저장 확인
+- `/erp-flow` HTTP 200 확인
+
+다시 반복되면 먼저 볼 위치:
+- `nenova-erp-ui/src/app/api/erp/intake/route.ts`
+- `nenova-erp-ui/src/app/(app)/erp-flow/page.tsx`

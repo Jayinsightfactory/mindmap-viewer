@@ -52,6 +52,10 @@ type ErpIntakeItem = {
   conversationName?: string;
   status: "초안" | "승인대기" | "전환완료" | "보류";
   dueDate?: string;
+  linkedEntityType?: "meeting" | "task" | "quote" | "project" | "invoice";
+  linkedEntityId?: string;
+  convertedAt?: string;
+  conversionNote?: string;
   createdAt: string;
 };
 
@@ -60,6 +64,8 @@ const STATUS_STYLE: Record<string, string> = {
   견적생성: "bg-blue-50 text-brand",
   보류: "bg-amber-100 text-amber-700",
   초안: "bg-slate-100 text-slate-600",
+  승인대기: "bg-amber-100 text-amber-700",
+  전환완료: "bg-green-50 text-green-700",
   발송: "bg-blue-50 text-brand",
   계약확정: "bg-green-50 text-green-700",
   반려: "bg-red-50 text-red-700",
@@ -190,11 +196,19 @@ export default function ErpFlowPage() {
     refresh();
   }
 
-  async function updateIntakeStatus(id: string, status: ErpIntakeItem["status"]) {
+  async function updateIntakeItem(
+    id: string,
+    patch: {
+      status: ErpIntakeItem["status"];
+      linkedEntityType?: ErpIntakeItem["linkedEntityType"];
+      linkedEntityId?: string;
+      conversionNote?: string;
+    },
+  ) {
     await fetch("/api/erp/intake", {
       method: "PATCH",
       headers: { "Content-Type": "application/json; charset=utf-8" },
-      body: JSON.stringify({ id, status }),
+      body: JSON.stringify({ id, ...patch }),
     });
     await refreshIntake();
   }
@@ -202,21 +216,32 @@ export default function ErpFlowPage() {
   async function handleConvertIntake(item: ErpIntakeItem) {
     const owner = getSession()?.name ?? item.owner ?? "미지정";
     if (item.suggestedEntity === "quote" || item.category === "견적") {
-      addMeetingRecord({
+      const meeting = addMeetingRecord({
         customer: item.customer || item.conversationName || "미지정",
         title: item.title,
         summary: item.detail,
         owner,
       });
+      await updateIntakeItem(item.id, {
+        status: "전환완료",
+        linkedEntityType: "meeting",
+        linkedEntityId: meeting.id,
+        conversionNote: "회의/견적 후보로 등록",
+      });
     } else {
-      addTask({
+      const task = addTask({
         title: item.title,
         owner,
         dueDate: item.dueDate || defaultDueDate(1),
         source: `${item.source} 수신`,
       });
+      await updateIntakeItem(item.id, {
+        status: "전환완료",
+        linkedEntityType: "task",
+        linkedEntityId: task.id,
+        conversionNote: "담당자 할 일로 등록",
+      });
     }
-    await updateIntakeStatus(item.id, "전환완료");
     refresh();
   }
 
@@ -295,6 +320,12 @@ export default function ErpFlowPage() {
                   <div className="mt-2 text-xs text-slate-500">
                     {item.owner} · {item.conversationName || item.team || "채널 미지정"} · 목표일 {item.dueDate || "-"}
                   </div>
+                  {item.linkedEntityId && (
+                    <div className="mt-2 inline-flex rounded-md bg-green-50 px-2 py-1 text-xs font-medium text-green-700">
+                      연결 {item.linkedEntityType || "ERP"} {item.linkedEntityId}
+                      {item.conversionNote ? ` · ${item.conversionNote}` : ""}
+                    </div>
+                  )}
                 </div>
                 <div className="flex shrink-0 flex-wrap gap-2">
                   <button
@@ -307,7 +338,7 @@ export default function ErpFlowPage() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => void updateIntakeStatus(item.id, item.status === "보류" ? "초안" : "보류")}
+                    onClick={() => void updateIntakeItem(item.id, { status: item.status === "보류" ? "초안" : "보류" })}
                     className="rounded-md border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
                   >
                     {item.status === "보류" ? "초안 복귀" : "보류"}

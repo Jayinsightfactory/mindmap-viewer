@@ -123,6 +123,7 @@ Stores actionable KakaoWork requests as ERP intake drafts.
 - `GET /api/erp/intake`: list recent quote/task/inventory/finance/project drafts
 - `POST /api/erp/intake`: upsert one or more intake drafts
 - `PATCH /api/erp/intake`: update `status` such as `전환완료` or `보류`
+- When an intake item is converted, PATCH should also store `linkedEntityType`, `linkedEntityId`, `convertedAt`, and `conversionNote`.
 
 KakaoWork callback automatically posts quote/task/inventory/finance/project intents into this inbox unless `syncErpIntake: false` is provided.
 
@@ -162,6 +163,12 @@ Suggested tables or collections:
 6. KakaoWork sends confirmation to assignee and project channel.
 7. Staff clicks or replies "완료".
 8. Callback updates task status and writes audit log.
+
+Current `nenovaweb` behavior:
+
+- Quote-like intake items become meeting/record candidates first, so the existing quote creation flow can add amount and due date before contract confirmation.
+- Other actionable intake items become assigned tasks.
+- The server intake record keeps the generated local ERP object ID, allowing later cross-checks between KakaoWork message, work unit, PC activity, and ERP result.
 
 ## Security Rules
 

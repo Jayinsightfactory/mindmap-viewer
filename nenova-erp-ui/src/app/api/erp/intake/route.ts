@@ -6,6 +6,7 @@ export const runtime = "nodejs";
 
 type IntakeStatus = "초안" | "승인대기" | "전환완료" | "보류";
 type SuggestedEntity = "quote" | "task" | "inventory" | "finance" | "project" | "question";
+type LinkedEntityType = "meeting" | "task" | "quote" | "project" | "invoice";
 
 type IntakePayload = {
   id?: string;
@@ -45,6 +46,10 @@ type IntakeItem = {
   dueDate?: string;
   amount?: number;
   evidence: string[];
+  linkedEntityType?: LinkedEntityType;
+  linkedEntityId?: string;
+  convertedAt?: string;
+  conversionNote?: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -114,6 +119,10 @@ function normalize(payload: IntakePayload, existing: IntakeItem[]): IntakeItem {
     dueDate: payload.dueDate || previous?.dueDate || nextDueDate(suggestedEntity === "quote" ? 3 : 1),
     amount: payload.amount,
     evidence: Array.from(new Set([...(previous?.evidence || []), ...(payload.evidence || [])].filter(Boolean))),
+    linkedEntityType: previous?.linkedEntityType,
+    linkedEntityId: previous?.linkedEntityId,
+    convertedAt: previous?.convertedAt,
+    conversionNote: previous?.conversionNote,
     createdAt: previous?.createdAt || now,
     updatedAt: now,
   };
@@ -160,12 +169,27 @@ export async function POST(req: NextRequest) {
 
 export async function PATCH(req: NextRequest) {
   try {
-    const body = (await req.json()) as { id?: string; status?: IntakeStatus };
+    const body = (await req.json()) as {
+      id?: string;
+      status?: IntakeStatus;
+      linkedEntityType?: LinkedEntityType;
+      linkedEntityId?: string;
+      conversionNote?: string;
+    };
     if (!body.id || !body.status) return NextResponse.json({ ok: false, error: "id and status required" }, { status: 400 });
     const items = await loadItems();
     const index = items.findIndex((item) => item.id === body.id);
     if (index < 0) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
-    items[index] = { ...items[index], status: body.status, updatedAt: new Date().toISOString() };
+    const now = new Date().toISOString();
+    items[index] = {
+      ...items[index],
+      status: body.status,
+      linkedEntityType: body.linkedEntityType || items[index].linkedEntityType,
+      linkedEntityId: body.linkedEntityId || items[index].linkedEntityId,
+      convertedAt: body.status === "전환완료" ? items[index].convertedAt || now : items[index].convertedAt,
+      conversionNote: body.conversionNote || items[index].conversionNote,
+      updatedAt: now,
+    };
     await saveItems(items);
     return NextResponse.json({ ok: true, item: items[index] });
   } catch (err) {
