@@ -7,7 +7,7 @@ export type NavItem = {
 export const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard", label: "대시보드", icon: "▦" },
   { href: "/erp-flow", label: "ERP 흐름", icon: "ERP" },
-  { href: "/work-units", label: "작업 단위", icon: "WU" },
+  { href: "/work-units", label: "직원 워크플로우", icon: "WF" },
   { href: "/assistant", label: "AI 비서", icon: "AI" },
   { href: "/kakaowork", label: "워크 연동", icon: "KW" },
   { href: "/orders", label: "신규 주문", icon: "▤" },

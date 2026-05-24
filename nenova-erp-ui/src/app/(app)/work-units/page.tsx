@@ -269,6 +269,132 @@ function buildWorkUnitSnapshot(workUnits: WorkUnit[]) {
   };
 }
 
+function sourceLabel(source: WorkUnitSource) {
+  const labels: Record<WorkUnitSource, string> = {
+    "nenova.exe": "nenova.exe",
+    KakaoTalk: "카톡",
+    KakaoWork: "워크",
+    GoogleSheet: "시트",
+    nenovaweb: "웹",
+    Mindmap: "마인드맵",
+    PC: "PC",
+  };
+  return labels[source];
+}
+
+function hourKey(value: string) {
+  return new Date(value).toLocaleTimeString("ko-KR", {
+    timeZone: "Asia/Seoul",
+    hour: "2-digit",
+    hour12: false,
+  });
+}
+
+function buildEmployeeWorkflows(workUnits: WorkUnit[]) {
+  const grouped = new Map<string, WorkUnit[]>();
+  workUnits.forEach((unit) => {
+    grouped.set(unit.employee, [...(grouped.get(unit.employee) || []), unit]);
+  });
+
+  return Array.from(grouped.entries())
+    .map(([employee, employeeUnits]) => {
+      const ordered = [...employeeUnits].sort((a, b) => a.startedAt.localeCompare(b.startedAt));
+      const minutes = ordered.reduce((sum, unit) => sum + unit.durationMin, 0);
+      const sourceSummary = WORK_UNIT_SOURCES.map((source) => {
+        const sourceUnits = ordered.filter((unit) => unit.source === source);
+        return {
+          source,
+          count: sourceUnits.length,
+          minutes: sourceUnits.reduce((sum, unit) => sum + unit.durationMin, 0),
+        };
+      }).filter((item) => item.count > 0);
+      const areaCounts = ordered.reduce<Record<string, number>>((acc, unit) => {
+        acc[unit.workArea] = (acc[unit.workArea] || 0) + 1;
+        return acc;
+      }, {});
+      const primaryArea = Object.entries(areaCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || "미지정";
+      const contextSwitches = ordered.reduce((count, unit, index) => {
+        if (index === 0) return count;
+        return ordered[index - 1].category === unit.category ? count : count + 1;
+      }, 0);
+      const talkLinked = ordered.filter((unit) => unit.relatedTalks.length > 0 || unit.talkRelation !== "미연결").length;
+      const pcBacked = ordered.filter((unit) => unit.pcEvidence.length > 0 || unit.clickCount > 0 || unit.source === "PC" || unit.source === "nenova.exe").length;
+      const validated = ordered.filter((unit) => unit.validationStatus === "일치" || unit.validationStatus === "부분일치").length;
+      const workflowRisk =
+        ordered.some((unit) => unit.validationStatus === "충돌")
+          ? "충돌 확인"
+          : talkLinked === 0
+            ? "대화 근거 부족"
+            : pcBacked === 0
+              ? "PC 근거 부족"
+              : validated < Math.ceil(ordered.length / 2)
+                ? "검증 보강"
+                : "흐름 안정";
+
+      return {
+        employee,
+        accountId: ordered[0]?.accountId || "미지정",
+        team: ordered[0]?.team || "미지정",
+        primaryArea,
+        minutes,
+        count: ordered.length,
+        talkLinked,
+        pcBacked,
+        validated,
+        contextSwitches,
+        workflowRisk,
+        sourceSummary,
+        timeline: ordered.slice(0, 5),
+      };
+    })
+    .sort((a, b) => b.minutes - a.minutes);
+}
+
+function buildCompanyWorkflow(workUnits: WorkUnit[]) {
+  const ordered = [...workUnits].sort((a, b) => a.startedAt.localeCompare(b.startedAt));
+  const transitions = new Map<string, { from: WorkUnitCategory; to: WorkUnitCategory; count: number }>();
+  for (let index = 1; index < ordered.length; index += 1) {
+    const from = ordered[index - 1].category;
+    const to = ordered[index].category;
+    const key = `${from}->${to}`;
+    const current = transitions.get(key) || { from, to, count: 0 };
+    current.count += 1;
+    transitions.set(key, current);
+  }
+
+  const hourly = new Map<string, { hour: string; minutes: number; units: number; employees: Set<string> }>();
+  ordered.forEach((unit) => {
+    const key = hourKey(unit.startedAt);
+    const current = hourly.get(key) || { hour: key, minutes: 0, units: 0, employees: new Set<string>() };
+    current.minutes += unit.durationMin;
+    current.units += 1;
+    current.employees.add(unit.employee);
+    hourly.set(key, current);
+  });
+
+  const sourceCoverage = WORK_UNIT_SOURCES.map((source) => {
+    const sourceUnits = ordered.filter((unit) => unit.source === source);
+    return {
+      source,
+      count: sourceUnits.length,
+      minutes: sourceUnits.reduce((sum, unit) => sum + unit.durationMin, 0),
+    };
+  }).filter((item) => item.count > 0);
+
+  const bottlenecks = ordered
+    .filter((unit) => unit.validationStatus === "충돌" || unit.validationStatus === "검증대기" || unit.talkRelation === "미연결")
+    .slice(0, 5);
+
+  return {
+    transitions: Array.from(transitions.values()).sort((a, b) => b.count - a.count).slice(0, 6),
+    hourly: Array.from(hourly.values())
+      .map((item) => ({ ...item, employees: item.employees.size }))
+      .sort((a, b) => a.hour.localeCompare(b.hour)),
+    sourceCoverage,
+    bottlenecks,
+  };
+}
+
 export default function WorkUnitsPage() {
   const [units, setUnits] = useState<WorkUnit[]>([]);
   const [employeeFilter, setEmployeeFilter] = useState("전체");
@@ -348,6 +474,8 @@ export default function WorkUnitsPage() {
     }),
     [filteredUnits],
   );
+  const employeeWorkflows = useMemo(() => buildEmployeeWorkflows(filteredUnits), [filteredUnits]);
+  const companyWorkflow = useMemo(() => buildCompanyWorkflow(filteredUnits), [filteredUnits]);
 
   return (
     <div className="space-y-6">
@@ -359,18 +487,18 @@ export default function WorkUnitsPage() {
               계정별 업무영역, 클릭 시간, 카카오톡 대화, PC 작업 데이터를 같이 봅니다.
             </h2>
             <p className="mt-3 text-sm leading-6 text-slate-600">
-              직원마다 담당 영역이 다르기 때문에 계정과 업무영역을 먼저 고정합니다. 그 다음 카카오톡/워크 대화가 작업을 만들었는지,
-              작업 후 대화가 이어졌는지, PC 화면/클릭 데이터가 같은 흐름을 증명하는지 3차로 확인합니다.
+              핵심은 ERP가 아니라 직원별 실제 작업 흐름입니다. `nenova.exe` 작업 단위, 카톡/워크 대화, PC 화면/클릭 데이터를 먼저 묶고
+              그 다음 대화가 작업을 만들었는지, 작업 후 대화가 이어졌는지, 동시에 진행됐는지 확인합니다.
             </p>
           </div>
           <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
             <div className="font-semibold text-slate-900">검증 기준</div>
             <div className="mt-2 leading-6">
-              1. 대화 시간 ±30분
+              1. nenova.exe 작업 시간
               <br />
-              2. PC 앱/화면/클릭 근거
+              2. 카톡/워크 대화 시간
               <br />
-              3. ERP 고객/프로젝트/할 일 연결
+              3. PC 앱/화면/클릭 근거
             </div>
             <div className="mt-3 border-t border-slate-200 pt-3">
               <div className="text-xs text-slate-500">API 수신 {apiCount}건</div>
@@ -406,10 +534,151 @@ export default function WorkUnitsPage() {
       </section>
 
       <section className="rounded-lg border border-slate-200 bg-white p-5">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <h3 className="font-semibold text-slate-900">직원별 실제 업무 흐름</h3>
+            <p className="mt-1 text-sm text-slate-500">직원 한 명씩 어떤 소스에서 어떤 업무를 했는지, 대화와 PC 근거가 붙었는지 확인합니다.</p>
+          </div>
+          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">{employeeWorkflows.length}명</span>
+        </div>
+        <div className="mt-4 grid gap-4 xl:grid-cols-2">
+          {employeeWorkflows.map((row) => (
+            <article key={row.employee} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h4 className="font-semibold text-slate-900">{row.employee}</h4>
+                  <div className="mt-1 font-mono text-xs text-slate-400">{row.accountId}</div>
+                  <div className="mt-2 text-sm text-slate-600">
+                    {row.team} · {row.primaryArea}
+                  </div>
+                </div>
+                <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${row.workflowRisk === "흐름 안정" ? "bg-green-50 text-green-700" : "bg-amber-100 text-amber-700"}`}>
+                  {row.workflowRisk}
+                </span>
+              </div>
+              <div className="mt-4 grid grid-cols-4 gap-2 text-center text-xs">
+                <div className="rounded-md bg-white p-2">
+                  <div className="font-semibold text-slate-900">{row.count}</div>
+                  <div className="mt-1 text-slate-500">작업</div>
+                </div>
+                <div className="rounded-md bg-white p-2">
+                  <div className="font-semibold text-slate-900">{row.minutes}분</div>
+                  <div className="mt-1 text-slate-500">시간</div>
+                </div>
+                <div className="rounded-md bg-white p-2">
+                  <div className="font-semibold text-slate-900">{row.talkLinked}</div>
+                  <div className="mt-1 text-slate-500">대화</div>
+                </div>
+                <div className="rounded-md bg-white p-2">
+                  <div className="font-semibold text-slate-900">{row.pcBacked}</div>
+                  <div className="mt-1 text-slate-500">PC근거</div>
+                </div>
+              </div>
+              <div className="mt-4">
+                <div className="text-xs font-semibold text-slate-500">소스 비중</div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {row.sourceSummary.map((source) => (
+                    <span key={source.source} className="rounded-full bg-white px-2.5 py-1 text-xs text-slate-600">
+                      {sourceLabel(source.source)} {source.count}건/{source.minutes}분
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <div className="mt-4">
+                <div className="text-xs font-semibold text-slate-500">최근 흐름</div>
+                <div className="mt-2 space-y-2">
+                  {row.timeline.map((unit) => (
+                    <div key={unit.id} className="rounded-md bg-white px-3 py-2 text-sm">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="truncate font-medium text-slate-900">{unit.title}</span>
+                        <span className="shrink-0 text-xs text-slate-400">{timeLabel(unit.startedAt)}</span>
+                      </div>
+                      <div className="mt-1 text-xs text-slate-500">
+                        {sourceLabel(unit.source)} · {unit.category} · {unit.talkRelation}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+        <article className="rounded-lg border border-slate-200 bg-white p-5">
+          <h3 className="font-semibold text-slate-900">회사 전체 워크플로우 예측</h3>
+          <p className="mt-1 text-sm text-slate-500">시간순 작업단위에서 업무 카테고리 전환을 뽑아 회사 전체 흐름을 봅니다.</p>
+          <div className="mt-4 space-y-3">
+            {companyWorkflow.transitions.map((transition) => (
+              <div key={`${transition.from}-${transition.to}`} className="flex items-center justify-between gap-3 rounded-md bg-slate-50 px-3 py-2 text-sm">
+                <span className="font-medium text-slate-800">
+                  {transition.from} → {transition.to}
+                </span>
+                <span className="rounded-full bg-white px-2.5 py-1 text-xs text-slate-600">{transition.count}회</span>
+              </div>
+            ))}
+            {companyWorkflow.transitions.length === 0 && <div className="rounded-md bg-slate-50 p-4 text-sm text-slate-400">전환을 계산할 작업 단위가 부족합니다.</div>}
+          </div>
+        </article>
+
+        <article className="rounded-lg border border-slate-200 bg-white p-5">
+          <h3 className="font-semibold text-slate-900">시간대별 업무량</h3>
+          <p className="mt-1 text-sm text-slate-500">분/시간 단위로 어느 시간대에 누가 몰리는지 봅니다.</p>
+          <div className="mt-4 space-y-3">
+            {companyWorkflow.hourly.map((hour) => (
+              <div key={hour.hour}>
+                <div className="mb-1 flex items-center justify-between text-xs text-slate-500">
+                  <span>{hour.hour}시</span>
+                  <span>
+                    {hour.units}건 · {hour.minutes}분 · {hour.employees}명
+                  </span>
+                </div>
+                <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+                  <div className="h-full rounded-full bg-slate-900" style={{ width: `${Math.min(100, hour.minutes * 2)}%` }} />
+                </div>
+              </div>
+            ))}
+            {companyWorkflow.hourly.length === 0 && <div className="rounded-md bg-slate-50 p-4 text-sm text-slate-400">시간대 데이터가 없습니다.</div>}
+          </div>
+        </article>
+      </section>
+
+      <section className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
+        <article className="rounded-lg border border-slate-200 bg-white p-5">
+          <h3 className="font-semibold text-slate-900">데이터 소스 커버리지</h3>
+          <p className="mt-1 text-sm text-slate-500">nenova.exe, 카톡/워크, PC 작업 데이터가 얼마나 들어왔는지 확인합니다.</p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            {companyWorkflow.sourceCoverage.map((item) => (
+              <span key={item.source} className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600">
+                {sourceLabel(item.source)} {item.count}건/{item.minutes}분
+              </span>
+            ))}
+          </div>
+        </article>
+
+        <article className="rounded-lg border border-slate-200 bg-white p-5">
+          <h3 className="font-semibold text-slate-900">확인 필요한 흐름</h3>
+          <p className="mt-1 text-sm text-slate-500">대화 미연결, 검증대기, 충돌 항목을 먼저 확인합니다.</p>
+          <div className="mt-4 space-y-2">
+            {companyWorkflow.bottlenecks.map((unit) => (
+              <div key={unit.id} className="rounded-md bg-slate-50 px-3 py-2">
+                <div className="text-sm font-medium text-slate-900">{unit.title}</div>
+                <div className="mt-1 text-xs text-slate-500">
+                  {unit.employee} · {sourceLabel(unit.source)} · {unit.validationStatus} · {unit.talkRelation}
+                </div>
+              </div>
+            ))}
+            {companyWorkflow.bottlenecks.length === 0 && <div className="rounded-md bg-slate-50 p-4 text-sm text-slate-400">우선 확인할 병목이 없습니다.</div>}
+          </div>
+        </article>
+      </section>
+
+      <section className="rounded-lg border border-slate-200 bg-white p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h3 className="font-semibold text-slate-900">ERP 수신함 병합 후보</h3>
-            <p className="mt-1 text-sm text-slate-500">카카오워크 작업단위와 ERP 수신함을 이벤트 ID, 계정, 카테고리, 고객, 시간창으로 점수화합니다.</p>
+            <h3 className="font-semibold text-slate-900">보조 데이터 연결 후보</h3>
+            <p className="mt-1 text-sm text-slate-500">업무 파악이 먼저이고, ERP 수신함은 작업 결과를 보강하는 보조 근거로만 연결합니다.</p>
             {candidateMessage && <p className="mt-1 text-sm font-medium text-brand">{candidateMessage}</p>}
           </div>
           <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">{intakeCandidates.length}건</span>
