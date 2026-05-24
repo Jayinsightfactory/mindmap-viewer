@@ -273,6 +273,7 @@ export default function WorkUnitsPage() {
   const [units, setUnits] = useState<WorkUnit[]>([]);
   const [employeeFilter, setEmployeeFilter] = useState("전체");
   const [areaFilter, setAreaFilter] = useState("전체");
+  const [validationFilter, setValidationFilter] = useState("전체");
   const [apiCount, setApiCount] = useState(0);
   const [intakeCandidates, setIntakeCandidates] = useState<IntakeCandidate[]>([]);
   const [syncError, setSyncError] = useState("");
@@ -333,9 +334,10 @@ export default function WorkUnitsPage() {
       units.filter((unit) => {
         const employeeOk = employeeFilter === "전체" || unit.employee === employeeFilter;
         const areaOk = areaFilter === "전체" || unit.workArea === areaFilter;
-        return employeeOk && areaOk;
+        const validationOk = validationFilter === "전체" || unit.validationStatus === validationFilter;
+        return employeeOk && areaOk && validationOk;
       }),
-    [areaFilter, employeeFilter, units],
+    [areaFilter, employeeFilter, units, validationFilter],
   );
 
   const relationGroups = useMemo(
@@ -499,6 +501,20 @@ export default function WorkUnitsPage() {
                 {workAreas.map((area) => (
                   <option key={area} value={area}>
                     {area}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="text-sm text-slate-600">
+              검증상태
+              <select
+                value={validationFilter}
+                onChange={(e) => setValidationFilter(e.target.value)}
+                className="ml-2 rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand"
+              >
+                {["전체", ...VALIDATION_STATUSES].map((status) => (
+                  <option key={status} value={status}>
+                    {status}
                   </option>
                 ))}
               </select>

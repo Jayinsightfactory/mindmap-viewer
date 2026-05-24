@@ -506,3 +506,20 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - `nenova-erp-ui/src/app/api/erp/intake/ai-review/route.ts`
 - `nenova-erp-ui/src/app/(app)/erp-flow/page.tsx`
 - `nenova-erp-ui/src/app/api/assistant/route.ts`
+
+### Work Units 검증상태 필터
+
+날짜:
+- 2026-05-24 KST
+
+현재 조치:
+- `/work-units` 계정별 업무영역 필터에 `검증상태` 필터를 추가했습니다.
+- `전체`, `일치`, `부분일치`, `충돌`, `검증대기` 기준으로 작업단위 목록을 볼 수 있습니다.
+- 병합 확정 후 `일치`로 바뀐 work unit을 빠르게 확인하는 용도입니다.
+
+검증:
+- `npx tsc --noEmit` 성공
+- `/work-units` HTTP 200 확인
+
+다시 반복되면 먼저 볼 위치:
+- `nenova-erp-ui/src/app/(app)/work-units/page.tsx`
