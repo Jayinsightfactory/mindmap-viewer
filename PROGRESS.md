@@ -782,3 +782,35 @@
 
 ### 다음 단계
 - 실제 송금 API/은행 알림 데이터가 들어오면 `송금완료` 상태 변경을 수동이 아니라 외부 근거 기반으로 기록
+
+---
+
+## 작업 (2026-05-24) — 차수피벗 차수 입력 잘림 수정
+
+### 1. 실제 소스 위치 확인 (완료)
+- 사용자 화면: `/shipment/week-pivot?weekFrom=2026-21-01&weekTo=2026-21-01`
+- 실제 소스는 `mindmap-viewer/nenova-erp-ui`가 아니라 `C:\Users\pc\OneDrive\Pictures\Desktop\커서 작업`
+- 이전에 수정이 안 먹은 이유는 작업 대상 저장소가 달랐기 때문
+
+### 2. 차수 입력 컴포넌트 수정 (완료)
+- `lib/useWeekInput.js`
+- `YYYY-WW-SS` 형식 포맷/입력/이전·다음 이동 지원
+- 입력칸 폭 `60px` → `112px`
+- 입력 컴포넌트 `flexShrink: 0` 처리
+
+### 3. 차수피벗 라우트와 쿼리 반영 (완료)
+- `pages/shipment/week-pivot.js` 추가
+- `/shipment/week-pivot` 진입 시 기본으로 차수 피벗 탭 열기
+- `weekFrom/weekTo` URL 쿼리를 초기 입력값으로 반영
+- 차수 컨트롤 영역 `minWidth: max-content`, `overflow: visible` 처리
+
+### 4. 검증 (완료)
+- `npm run build` 성공
+- 로컬 `http://127.0.0.1:3001/shipment/week-pivot?weekFrom=2026-21-01&weekTo=2026-21-01` 확인
+- 입력값 `2026-21-01` 전체 표시 확인
+- 브라우저 측정: `clientWidth=110`, `scrollWidth=110`, overflow 없음
+
+### 5. 커밋/푸시 상태
+- 로컬 커밋 완료: `6fbfeca fix: prevent week pivot input clipping`
+- `Jayinsightfactory/nenova-erp-ui` 원격 푸시는 인증 프롬프트 요구로 자동 푸시 실패
+- 사용자가 GitHub 인증을 갱신하면 `C:\Users\pc\OneDrive\Pictures\Desktop\커서 작업`에서 `git push origin master` 필요

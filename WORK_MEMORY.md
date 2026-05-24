@@ -762,3 +762,35 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - `nenova-erp-ui/src/app/(app)/inventory/page.tsx`
 - `nenova-erp-ui/src/lib/store.ts`
 - `nenova-erp-ui/src/lib/nav.ts`
+
+### 차수피벗 차수 입력 잘림
+
+날짜:
+- 2026-05-24 KST
+
+사용자 요청:
+- `nenovaweb.com/shipment/week-pivot?weekFrom=2026-21-01&weekTo=2026-21-01` 차수피벗 페이지에서 차수 입력값이 `2026-20-0`처럼 잘려 보이는 문제 수정.
+
+중요 원인:
+- 이 화면의 실제 소스는 `mindmap-viewer/nenova-erp-ui`가 아니라 `C:\Users\pc\OneDrive\Pictures\Desktop\커서 작업` 저장소에 있습니다.
+- 공통 `WeekInput` 입력칸 폭이 `60px` 고정이라 `YYYY-WW-SS` 형식을 담기 부족했습니다.
+
+현재 조치:
+- `C:\Users\pc\OneDrive\Pictures\Desktop\커서 작업\lib\useWeekInput.js`
+  - `YYYY-WW-SS` 형식 포맷/입력/이전·다음 이동 지원.
+  - `WeekInput` 폭을 `112px`로 확대하고 shrink 방지.
+- `C:\Users\pc\OneDrive\Pictures\Desktop\커서 작업\pages\shipment\stock-status.js`
+  - URL `weekFrom/weekTo` 쿼리값 초기 반영.
+  - 차수 컨트롤 영역이 줄어들지 않도록 `minWidth: max-content`, `overflow: visible`.
+- `C:\Users\pc\OneDrive\Pictures\Desktop\커서 작업\pages\shipment\week-pivot.js`
+  - `/shipment/week-pivot` 라우트 추가, 기본 차수피벗 탭 연결.
+
+검증:
+- `npm run build` 성공.
+- `http://127.0.0.1:3001/shipment/week-pivot?weekFrom=2026-21-01&weekTo=2026-21-01` 확인.
+- 브라우저 측정: 두 입력칸 모두 value `2026-21-01`, `clientWidth=110`, `scrollWidth=110`으로 잘림 없음.
+
+다시 반복되면 먼저 볼 위치:
+- `C:\Users\pc\OneDrive\Pictures\Desktop\커서 작업\lib\useWeekInput.js`
+- `C:\Users\pc\OneDrive\Pictures\Desktop\커서 작업\pages\shipment\stock-status.js`
+- `C:\Users\pc\OneDrive\Pictures\Desktop\커서 작업\pages\shipment\week-pivot.js`
