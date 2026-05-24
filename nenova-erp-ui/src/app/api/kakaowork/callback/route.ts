@@ -12,6 +12,9 @@ type CallbackBody = {
   user?: { id?: string | number; email?: string; name?: string };
   conversation?: { id?: string; name?: string; type?: string };
   message?: { id?: string; text?: string; createdAt?: string };
+  action?: string;
+  intakeId?: string;
+  erpIntakeId?: string;
   actions?: Record<string, unknown>;
   syncWorkUnit?: boolean;
   syncErpIntake?: boolean;
@@ -244,6 +247,27 @@ async function syncToErpIntake(req: NextRequest, event: NormalizedKakaoWorkEvent
   return { ok: response.ok, status: response.status, response: body };
 }
 
+function hasActionPayload(body: CallbackBody) {
+  const actions = body.actions || {};
+  return Boolean(body.action || body.intakeId || body.erpIntakeId || actions.action || actions.type || actions.value || actions.name || actions.intakeId || actions.erpIntakeId);
+}
+
+async function syncKakaoWorkAction(req: NextRequest, body: CallbackBody) {
+  const response = await fetch(new URL("/api/kakaowork/action", req.nextUrl.origin), {
+    method: "POST",
+    headers: { "Content-Type": "application/json; charset=utf-8" },
+    body: JSON.stringify(body),
+  });
+  const text = await response.text();
+  let data: unknown;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    data = { raw: text };
+  }
+  return { ok: response.ok, status: response.status, response: data };
+}
+
 export async function GET() {
   const events = await loadEvents();
   return NextResponse.json({
@@ -266,8 +290,10 @@ export async function POST(req: NextRequest) {
   const body = (await req.json().catch(() => ({}))) as CallbackBody;
   const normalized = normalizeEvent(body);
   await saveEvent(normalized);
+  const hasAction = hasActionPayload(body);
   const shouldSync = body.syncWorkUnit !== false;
-  const shouldSyncIntake = body.syncErpIntake !== false && ["quote_request", "task_request", "inventory_check", "finance_check", "project_update"].includes(normalized.intent);
+  const shouldSyncIntake =
+    !hasAction && body.syncErpIntake !== false && ["quote_request", "task_request", "inventory_check", "finance_check", "project_update"].includes(normalized.intent);
   let workUnitSync = null;
   if (shouldSync) {
     try {
@@ -284,6 +310,14 @@ export async function POST(req: NextRequest) {
       erpIntakeSync = { ok: false, error: err instanceof Error ? err.message : "ERP intake sync failed" };
     }
   }
+  let actionSync = null;
+  if (hasAction) {
+    try {
+      actionSync = await syncKakaoWorkAction(req, body);
+    } catch (err) {
+      actionSync = { ok: false, error: err instanceof Error ? err.message : "KakaoWork action sync failed" };
+    }
+  }
 
   return NextResponse.json({
     received: true,
@@ -291,6 +325,7 @@ export async function POST(req: NextRequest) {
     normalized,
     workUnitSync,
     erpIntakeSync,
+    actionSync,
     nextPipeline: [
       "work_event.raw 저장",
       "직원/대화방 매핑",

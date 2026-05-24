@@ -50,13 +50,22 @@ type ErpIntakeItem = {
   accountId?: string;
   team?: string;
   conversationName?: string;
-  status: "초안" | "승인대기" | "전환완료" | "보류";
+  status: "초안" | "승인대기" | "승인완료" | "전환완료" | "보류";
   dueDate?: string;
   amount?: number;
   linkedEntityType?: "meeting" | "task" | "quote" | "project" | "invoice";
   linkedEntityId?: string;
   convertedAt?: string;
   conversionNote?: string;
+  requestedConversionAt?: string;
+  lastAction?: {
+    source: string;
+    action: string;
+    actor?: string;
+    accountId?: string;
+    note?: string;
+    actedAt: string;
+  };
   createdAt: string;
 };
 
@@ -66,6 +75,7 @@ const STATUS_STYLE: Record<string, string> = {
   보류: "bg-amber-100 text-amber-700",
   초안: "bg-slate-100 text-slate-600",
   승인대기: "bg-amber-100 text-amber-700",
+  승인완료: "bg-blue-50 text-brand",
   전환완료: "bg-green-50 text-green-700",
   발송: "bg-blue-50 text-brand",
   계약확정: "bg-green-50 text-green-700",
@@ -338,6 +348,12 @@ export default function ErpFlowPage() {
                     <div className="mt-2 inline-flex rounded-md bg-green-50 px-2 py-1 text-xs font-medium text-green-700">
                       연결 {item.linkedEntityType || "ERP"} {item.linkedEntityId}
                       {item.conversionNote ? ` · ${item.conversionNote}` : ""}
+                    </div>
+                  )}
+                  {item.lastAction && (
+                    <div className="mt-2 text-xs text-slate-400">
+                      카카오워크 액션 {item.lastAction.action} · {item.lastAction.actor || item.lastAction.accountId || "unknown"} ·{" "}
+                      {item.lastAction.actedAt.slice(0, 16)}
                     </div>
                   )}
                 </div>

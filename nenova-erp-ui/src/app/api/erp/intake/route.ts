@@ -4,9 +4,17 @@ import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
-type IntakeStatus = "초안" | "승인대기" | "전환완료" | "보류";
+type IntakeStatus = "초안" | "승인대기" | "승인완료" | "전환완료" | "보류";
 type SuggestedEntity = "quote" | "task" | "inventory" | "finance" | "project" | "question";
 type LinkedEntityType = "meeting" | "task" | "quote" | "project" | "invoice";
+type IntakeActionLog = {
+  source: string;
+  action: string;
+  actor?: string;
+  accountId?: string;
+  note?: string;
+  actedAt: string;
+};
 
 type IntakePayload = {
   id?: string;
@@ -50,6 +58,8 @@ type IntakeItem = {
   linkedEntityId?: string;
   convertedAt?: string;
   conversionNote?: string;
+  requestedConversionAt?: string;
+  lastAction?: IntakeActionLog;
   createdAt: string;
   updatedAt: string;
 };
@@ -239,6 +249,8 @@ function normalize(payload: IntakePayload, existing: IntakeItem[]): IntakeItem {
     linkedEntityId: previous?.linkedEntityId,
     convertedAt: previous?.convertedAt,
     conversionNote: previous?.conversionNote,
+    requestedConversionAt: previous?.requestedConversionAt,
+    lastAction: previous?.lastAction,
     createdAt: previous?.createdAt || now,
     updatedAt: now,
   };
@@ -291,6 +303,8 @@ export async function PATCH(req: NextRequest) {
       linkedEntityType?: LinkedEntityType;
       linkedEntityId?: string;
       conversionNote?: string;
+      requestedConversionAt?: string;
+      lastAction?: IntakeActionLog;
     };
     if (!body.id || !body.status) return NextResponse.json({ ok: false, error: "id and status required" }, { status: 400 });
     const items = await loadItems();
@@ -304,6 +318,8 @@ export async function PATCH(req: NextRequest) {
       linkedEntityId: body.linkedEntityId || items[index].linkedEntityId,
       convertedAt: body.status === "전환완료" ? items[index].convertedAt || now : items[index].convertedAt,
       conversionNote: body.conversionNote || items[index].conversionNote,
+      requestedConversionAt: body.requestedConversionAt || items[index].requestedConversionAt,
+      lastAction: body.lastAction || items[index].lastAction,
       updatedAt: now,
     };
     await saveItems(items);

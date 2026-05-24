@@ -395,3 +395,29 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 다시 반복되면 먼저 볼 위치:
 - `nenova-erp-ui/src/app/api/erp/intake/route.ts`
 - `nenova-erp-ui/src/app/(app)/erp-flow/page.tsx`
+
+### KakaoWork 액션 → ERP 수신함 상태 변경
+
+날짜:
+- 2026-05-24 KST
+
+현재 조치:
+- `GET/POST /api/kakaowork/action`을 추가했습니다.
+- 카카오워크 버튼/액션 payload의 `action`과 `intakeId`를 받아 `/api/erp/intake` 상태를 바꿉니다.
+- 지원 액션은 `approve -> 승인완료`, `hold -> 보류`, `restore -> 초안`, `convert -> 승인완료 + requestedConversionAt`입니다.
+- 액션 실행자는 직원 디렉터리로 `accountId`까지 매핑하고 `lastAction`에 저장합니다.
+- `/api/kakaowork/callback`도 `actions.action`과 `actions.intakeId`를 감지하면 `/api/kakaowork/action`으로 전달합니다.
+- `/erp-flow` 수신함 카드에 마지막 카카오워크 액션을 표시합니다.
+
+검증:
+- `npx tsc --noEmit` 성공
+- `GET /api/kakaowork/action` 계약 응답 확인
+- 직접 `POST /api/kakaowork/action` convert 성공
+- `POST /api/kakaowork/callback`의 actions payload가 action route로 전달되어 보류 처리되는 것 확인
+- `/erp-flow` HTTP 200 확인
+
+다시 반복되면 먼저 볼 위치:
+- `nenova-erp-ui/src/app/api/kakaowork/action/route.ts`
+- `nenova-erp-ui/src/app/api/kakaowork/callback/route.ts`
+- `nenova-erp-ui/src/app/api/erp/intake/route.ts`
+- `nenova-erp-ui/src/app/(app)/erp-flow/page.tsx`

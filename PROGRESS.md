@@ -391,6 +391,33 @@
 - `/erp-flow` HTTP 200 확인
 
 ### 다음 단계
-- 카카오워크 버튼 액션으로 승인/보류/전환 실행
+- 전환된 수신함과 `/work-units`의 PC 작업 단위를 자동 병합하는 후보 UI 추가
+- 추출 파서를 AI 보정 단계와 연결해 애매한 문장은 Claude/GPT 검증으로 넘기기
+
+---
+
+## 작업 (2026-05-24) — KakaoWork 액션 처리
+
+### 1. 액션 API (완료)
+- `GET/POST /api/kakaowork/action` 추가
+- `approve`, `hold`, `restore`, `convert` 액션을 ERP 수신함 상태 변경으로 매핑
+- 실행자 정보를 직원 디렉터리로 해석해 `lastAction`에 저장
+
+### 2. 콜백 연결 (완료)
+- `/api/kakaowork/callback`이 `actions.action` + `actions.intakeId`를 감지하면 action route로 전달
+- 액션 콜백은 별도 ERP 초안을 중복 생성하지 않게 분기
+
+### 3. 화면 표시 (완료)
+- `/erp-flow` 수신함 카드에 마지막 카카오워크 액션, 실행자, 실행 시각 표시
+- `승인완료` 상태 스타일 추가
+
+### 4. 검증 (완료)
+- `npx tsc --noEmit` 성공
+- `GET /api/kakaowork/action` 응답 확인
+- 직접 action `convert`와 callback action `hold` 성공 확인
+- `/erp-flow` HTTP 200 확인
+
+### 다음 단계
+- 전환 요청이 들어온 수신함 항목을 `/erp-flow`에서 한 번에 실제 견적/할 일로 생성하는 자동 실행 버튼 추가
 - 전환된 수신함과 `/work-units`의 PC 작업 단위를 자동 병합하는 후보 UI 추가
 - 추출 파서를 AI 보정 단계와 연결해 애매한 문장은 Claude/GPT 검증으로 넘기기

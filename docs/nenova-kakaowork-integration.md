@@ -104,6 +104,30 @@ Response includes:
 
 Returns the recent KakaoWork callback inbox and storage status.
 
+### `GET/POST /api/kakaowork/action`
+
+Processes KakaoWork button/action payloads for ERP intake drafts.
+
+Request:
+
+```json
+{
+  "action": "convert",
+  "intakeId": "ERP-IN-KW-...",
+  "user": { "id": "kw-user-001", "email": "worker@example.com", "name": "설연주" },
+  "note": "카카오워크 버튼에서 전환"
+}
+```
+
+Supported actions:
+
+- `approve`: set intake status to `승인완료`
+- `hold`: set intake status to `보류`
+- `restore`: set intake status to `초안`
+- `convert`: set intake status to `승인완료`, store `requestedConversionAt`, and leave conversion intent for `/erp-flow`
+
+The callback route also detects `actions.action` + `actions.intakeId` and forwards it to this route.
+
 ### `GET /api/employees/directory`
 
 Returns the internal employee identity map used by KakaoWork callbacks and work-unit ingestion.
