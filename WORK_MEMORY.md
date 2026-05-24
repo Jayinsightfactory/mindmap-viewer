@@ -206,3 +206,48 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - `nenova-erp-ui/src/lib/store.ts`
 - `nenova-erp-ui/src/app/(app)/dashboard/page.tsx`
 - `nenova-erp-ui/src/components/AiWorkConsole.tsx`
+
+### Claude 에이전트 검증 + 직원 작업 단위 3차 교차검증
+
+날짜:
+- 2026-05-24 KST
+
+사용자 요청:
+- Claude에서도 서로 검증하는 에이전트 구성을 만들고, `nenova.exe` 직원 작업 단위를 네노바웹에서 확인할 수 있게 해야 합니다.
+- 직원마다 계정과 작업 영역이 다르므로 계정별 업무영역을 체크해야 합니다.
+- 클릭/작업 시간대와 카카오톡/카카오워크 대화를 매칭해서, 어떤 대화가 어떤 작업을 만들었는지와 어떤 작업 뒤 어떤 톡이 오갔는지를 양방향으로 확인해야 합니다.
+- PC 작업 데이터까지 합쳐 3차 교차검증해야 합니다.
+
+검색한 단어:
+- `Claude`, `클로드`, `에이전트`, `agent`, `검증`, `verification`, `process-mining`, `employee`, `work unit`, `작업단위`, `nenova.exe`, `KakaoTalk`, `KakaoWork`
+
+기존 구현 확인:
+- `.claude/agents/`에 일반 작업 에이전트는 있었지만 Nenova 전용 데이터 병합/예측/교차검증 에이전트는 없었습니다.
+- `routes/process-mining.js`에는 세션/블록 병합 기준이 있었습니다.
+- `nenova-erp-ui`에는 ERP 흐름은 있었지만 직원 계정별 작업 단위, 카카오 대화 전후관계, PC 클릭 근거를 함께 보는 화면은 없었습니다.
+
+현재 조치:
+- Claude 에이전트 4개를 추가했습니다: `nenova-data-fusion`, `nenova-workflow-forecaster`, `nenova-cross-validator`, `nenova-ops-orchestrator`.
+- `/work-units` 화면을 추가해 직원 계정, 업무영역, 클릭/PC 근거, 카카오톡/워크 대화 매칭, 3차 검증 상태를 확인하게 했습니다.
+- `store.ts`에 `WorkUnit`, `TalkEvent`, `TalkWorkRelation`, `CrossValidationStatus` 타입과 샘플 데이터, 스냅샷 함수를 추가했습니다.
+- `POST /api/work-units`를 추가해 `nenova.exe`가 작업 이벤트를 보낼 수 있는 기초 API를 만들었습니다.
+- 대시보드에 작업 단위 지표와 `/work-units` 링크를 추가했습니다.
+- AI 비서 프롬프트에 계정별 업무영역, 클릭/작업 시간대, 카카오톡/워크 대화, PC 화면/앱 데이터를 3차 교차검증하도록 지시를 추가했습니다.
+- `docs/nenova-claude-agent-orchestration.md`, `docs/nenova-work-unit-cross-validation.md`에 운영 설계를 기록했습니다.
+
+검증:
+- `npm run build` 성공
+- `git diff --check` 통과
+- `GET /work-units` HTTP 200 확인
+- `GET /api/work-units` 응답 확인
+- 브라우저에서 `/work-units` 주요 문구, 계정 ID, 카카오 대화 매칭, 3차 검증 섹션 표시 확인
+- 브라우저에서 `/dashboard` 작업 단위 메뉴/지표/링크 표시 확인
+
+다시 반복되면 먼저 볼 위치:
+- `nenova-erp-ui/src/app/(app)/work-units/page.tsx`
+- `nenova-erp-ui/src/app/api/work-units/route.ts`
+- `nenova-erp-ui/src/lib/store.ts`
+- `nenova-erp-ui/src/app/api/assistant/route.ts`
+- `.claude/agents/nenova-ops-orchestrator.md`
+- `.claude/agents/nenova-cross-validator.md`
+- `docs/nenova-work-unit-cross-validation.md`

@@ -8,6 +8,8 @@ function buildContext(question: string, erpContext?: unknown) {
     "당신은 Nenova 내부 업무 OS의 AI 비서입니다.",
     "직원 질문에 대해 실행 가능한 답변, 다음 할 일, 확인할 데이터 위치를 한국어로 답합니다.",
     "확정되지 않은 데이터는 추정이라고 표시하고, 실제 실행 전 확인해야 할 항목을 분리합니다.",
+    "직원 작업 분석은 계정별 업무영역, 클릭/작업 시간대, 카카오톡/카카오워크 대화, PC 화면/앱 데이터를 3차 교차검증해서 답합니다.",
+    "대화가 작업을 만들었는지, 작업 뒤 대화가 이어졌는지, 동시에 진행됐는지 관계를 구분하고 신뢰도를 함께 표시합니다.",
     KNOWLEDGE_SUMMARY,
     `운영 지표: ${OPS_METRICS.map((m) => `${m.label} ${m.value}(${m.detail})`).join(" / ")}`,
     `업무 모듈: ${OPS_MODULES.map((m) => `${m.title}[${m.status}] - ${m.summary}`).join(" / ")}`,

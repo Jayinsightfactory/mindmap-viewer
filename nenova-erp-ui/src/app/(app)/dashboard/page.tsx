@@ -45,6 +45,7 @@ export default function DashboardPage() {
         { label: "계약 확정", value: erpSnapshot.counts.confirmedQuotes, detail: "프로젝트로 전환된 견적" },
         { label: "진행 프로젝트", value: erpSnapshot.counts.activeProjects, detail: "담당자 할 일과 연결" },
         { label: "미완료 할 일", value: erpSnapshot.counts.pendingTasks, detail: "대기/진행/지연 상태" },
+        { label: "직원 작업 단위", value: erpSnapshot.workUnits.counts.totalUnits, detail: "톡/클릭/PC 교차검증" },
         { label: "미입금 매출", value: `${erpSnapshot.revenue.unpaid.toLocaleString()}원`, detail: "세금계산서 대기 포함" },
       ]
     : [];
@@ -67,7 +68,7 @@ export default function DashboardPage() {
               직원은 이 화면에서 바로 Claude 또는 GPT에 업무 질문을 던지고 다음 액션을 만들 수 있습니다.
             </p>
             <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {(erpCards.length ? erpCards : OPS_METRICS).slice(0, 6).map((metric) => (
+              {(erpCards.length ? erpCards : OPS_METRICS).slice(0, 8).map((metric) => (
                 <div key={metric.label} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                   <div className="text-xs font-medium text-slate-500">{metric.label}</div>
                   <div className="mt-1 text-2xl font-semibold text-slate-950">{metric.value}</div>
@@ -100,6 +101,12 @@ export default function DashboardPage() {
               className="mt-5 inline-flex rounded-md bg-white px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-slate-100"
             >
               ERP 흐름 실행하기
+            </Link>
+            <Link
+              href="/work-units"
+              className="ml-2 mt-5 inline-flex rounded-md border border-white/30 px-4 py-2 text-sm font-semibold text-white hover:bg-white/10"
+            >
+              작업 단위 보기
             </Link>
           </div>
         </div>

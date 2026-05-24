@@ -172,3 +172,34 @@
 - nenova 4대 PC 설치코드 재실행 (발급 버튼으로 간편화됨)
 - Vision 정밀 분석 고도화 (캡처→화면해독→자동화지점)
 - 자동화 스크립트 자동 생성 엔진 (PAD/pyautogui/AHK)
+
+---
+
+## 작업 (2026-05-24) — Nenova Claude 검증 에이전트 + 작업 단위 화면
+
+### 1. Claude 전용 에이전트 구성 (완료)
+- `.claude/agents/nenova-data-fusion.md`: 카카오/구글시트, mindmap, nenovaweb ERP, nenova.exe, PC 클릭/화면 데이터를 작업 단위로 병합
+- `.claude/agents/nenova-workflow-forecaster.md`: 15분/60분/240분/1일 업무 흐름 예측
+- `.claude/agents/nenova-cross-validator.md`: 카카오톡/워크 대화, PC 클릭/작업, ERP 상태 3차 교차검증
+- `.claude/agents/nenova-ops-orchestrator.md`: PASS/WARN/FAIL과 신뢰도 기반 최종 운영 답변
+
+### 2. 네노바웹 작업 단위 구현 (완료)
+- `/work-units` 페이지 추가
+- 직원 계정, 팀, 업무영역, 작업 시간, 클릭 횟수, PC 근거, 카카오톡/워크 대화 매칭, 검증 상태 표시
+- 대화→작업, 작업→대화, 동시진행 흐름을 분리해서 확인
+- 대시보드에 작업 단위 지표와 링크 추가
+
+### 3. 수집 API와 AI 컨텍스트 (완료)
+- `GET/POST /api/work-units` 추가
+- `nenova.exe`에서 보낼 payload 초안 정의
+- AI 비서가 작업 단위 스냅샷과 3차 검증 기준을 컨텍스트로 사용하도록 반영
+
+### 4. 검증 (완료)
+- `npm run build` 성공
+- `git diff --check` 통과
+- `/work-units`, `/api/work-units`, `/dashboard` 로컬 확인 완료
+
+### 다음 단계
+- 실제 `nenova.exe` 이벤트 송신부에서 `/api/work-units`로 accountId/workArea/clickEvidence/relatedTalks 전송
+- 기존 카카오톡/구글시트 파서 결과를 `relatedTalks` 구조로 매핑
+- DB 원장 테이블로 localStorage 시드 데이터를 대체

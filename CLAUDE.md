@@ -50,6 +50,16 @@ Step 5: 메모리 업데이트
 - 같은 파일 동시 수정 금지
 - 완료 후 rsync → git diff → 충돌 없으면 commit
 
+#### Nenova 업무 예측/검증 에이전트
+Nenova 전사 워크플로우, 직원 작업 단위, 카카오톡/워크 대화 매칭, 자동화 후보를 판단할 때는 다음 순서로 본다.
+
+1. `nenova-data-fusion`: 카카오/구글시트, mindmap, nenovaweb ERP, nenova.exe, PC 클릭/화면 데이터를 계정별 작업 단위로 병합
+2. `nenova-workflow-forecaster`: 15분/60분/240분/1일 단위 업무 흐름과 병목 예측
+3. `nenova-cross-validator`: 카카오톡/워크 대화, 클릭/PC 작업, ERP 상태를 3차 교차검증
+4. `nenova-ops-orchestrator`: PASS/WARN/FAIL, 신뢰도, 다음 액션, 자동화 후보를 최종 정리
+
+검증 없이 "직원이 무엇을 했다"라고 확정하지 않는다. 계정/업무영역/대화시각/작업시각/클릭근거/ERP근거를 함께 확인한다.
+
 ### 2. 기존 코드 충돌 금지
 - 기존에 만들어놓은 기능과 **절대 충돌 안 됨**
 - 수정이 필요하면 기존 코드를 **편집** (새로 작성 X)
