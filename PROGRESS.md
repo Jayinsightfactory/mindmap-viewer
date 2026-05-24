@@ -596,6 +596,38 @@
 
 ---
 
+## 작업 (2026-05-24) — PC 세션 병합 후보
+
+### 1. 세션 병합 API (완료)
+- `GET/POST /api/nenova-exe/sessions` 추가
+- `data/nenova-exe-events.json` 원본 이벤트를 `accountId + sessionId + category + appName` 기준으로 병합
+- 기본 `gapMin=5`분, 이벤트 간격이 이보다 크면 다른 세션으로 분리
+- `NX-SESSION-...` 작업 단위 payload 생성
+
+### 2. Work Units 화면 연결 (완료)
+- `/work-units`에 "PC 세션 병합 후보" 섹션 추가
+- raw 이벤트 수와 세션 후보 수 표시
+- 후보별 이벤트 수, 작업 시간, 클릭, 화면 근거, 직원/업무영역 표시
+- `세션 작업단위 저장` 버튼으로 `/api/work-units`에 병합 세션 저장
+
+### 3. 문서화 (완료)
+- `docs/nenova-exe-work-unit-ingest.md`에 세션 병합 엔드포인트와 규칙 추가
+
+### 4. 검증 (완료)
+- `npx tsc --noEmit` 성공
+- 샘플 이벤트 2건이 기본 `gapMin=5`에서 하나의 세션 후보로 병합되는 것 확인
+- 세션 저장 시 `/api/work-units` 동기화 성공 확인
+- `gapMin` 미입력 시 1분으로 줄어들던 숫자 파싱 버그 수정
+- 테스트 데이터 정리 완료
+- `GET /api/nenova-exe/sessions` HTTP 200 확인
+- `/work-units` HTTP 200 확인
+
+### 다음 단계
+- 저장된 세션 작업 단위와 카톡/카카오워크 후보를 자동으로 우선 매칭하기
+- 직원별 리스크 점수에서 "세션 후보 있음/미저장" 상태를 반영하기
+
+---
+
 ## 작업 (2026-05-24) — ERP Flow 전환 요청 큐
 
 ### 1. 전환 요청 표시 (완료)

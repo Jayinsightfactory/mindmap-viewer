@@ -112,6 +112,36 @@ type TalkCandidateApiResponse = {
   candidates?: TalkCandidate[];
 };
 
+type NenovaSessionCandidate = {
+  id: string;
+  workUnitId: string;
+  employee: string;
+  accountId: string;
+  team: string;
+  workArea: string;
+  source: WorkUnitSource;
+  category: WorkUnitCategory;
+  appName: string;
+  windowTitle: string;
+  startedAt: string;
+  endedAt: string;
+  durationMin: number;
+  eventCount: number;
+  mouseClicks: number;
+  keyboardCount: number;
+  screenCount: number;
+  confidence: number;
+  eventIds: string[];
+  reasons: string[];
+  recommendation: string;
+};
+
+type NenovaSessionApiResponse = {
+  totalRawEvents?: number;
+  count?: number;
+  sessions?: NenovaSessionCandidate[];
+};
+
 function formatWon(value: number) {
   return `${value.toLocaleString()}원`;
 }
@@ -435,6 +465,8 @@ export default function WorkUnitsPage() {
   const [apiCount, setApiCount] = useState(0);
   const [intakeCandidates, setIntakeCandidates] = useState<IntakeCandidate[]>([]);
   const [talkCandidates, setTalkCandidates] = useState<TalkCandidate[]>([]);
+  const [sessionCandidates, setSessionCandidates] = useState<NenovaSessionCandidate[]>([]);
+  const [rawEventCount, setRawEventCount] = useState(0);
   const [syncError, setSyncError] = useState("");
   const [candidateMessage, setCandidateMessage] = useState("");
 
@@ -466,6 +498,16 @@ export default function WorkUnitsPage() {
       setTalkCandidates(data.candidates ?? []);
     } catch {
       setTalkCandidates([]);
+    }
+    try {
+      const response = await fetch("/api/nenova-exe/sessions?limit=6", { cache: "no-store" });
+      if (!response.ok) throw new Error(`nenova session API ${response.status}`);
+      const data = (await response.json()) as NenovaSessionApiResponse;
+      setRawEventCount(data.totalRawEvents ?? 0);
+      setSessionCandidates(data.sessions ?? []);
+    } catch {
+      setRawEventCount(0);
+      setSessionCandidates([]);
     }
   }
 
@@ -504,6 +546,24 @@ export default function WorkUnitsPage() {
       return;
     }
     setCandidateMessage(`${candidate.workUnitId}에 카톡 ${candidate.talkId} 근거를 저장했습니다.`);
+    await refresh();
+  }
+
+  async function pushSessionCandidate(candidate: NenovaSessionCandidate) {
+    setCandidateMessage("");
+    const response = await fetch("/api/nenova-exe/sessions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({
+        sessionIds: [candidate.id],
+        limit: 50,
+      }),
+    });
+    if (!response.ok) {
+      setCandidateMessage(`세션 저장 실패: API ${response.status}`);
+      return;
+    }
+    setCandidateMessage(`${candidate.employee} ${candidate.category} 세션을 작업 단위로 저장했습니다.`);
     await refresh();
   }
 
@@ -563,6 +623,8 @@ export default function WorkUnitsPage() {
             <div className="mt-3 border-t border-slate-200 pt-3">
               <div className="text-xs text-slate-500">API 수신 {apiCount}건</div>
               <div className="mt-1 text-xs text-slate-500">카톡 연결 후보 {talkCandidates.length}건</div>
+              <div className="mt-1 text-xs text-slate-500">PC 세션 후보 {sessionCandidates.length}건</div>
+              <div className="mt-1 text-xs text-slate-500">원본 PC 이벤트 {rawEventCount}건</div>
               {syncError && <div className="mt-1 text-xs text-amber-700">{syncError}</div>}
               <button
                 type="button"
@@ -732,6 +794,80 @@ export default function WorkUnitsPage() {
             {companyWorkflow.bottlenecks.length === 0 && <div className="rounded-md bg-slate-50 p-4 text-sm text-slate-400">우선 확인할 병목이 없습니다.</div>}
           </div>
         </article>
+      </section>
+
+      <section className="rounded-lg border border-slate-200 bg-white p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="font-semibold text-slate-900">PC 세션 병합 후보</h3>
+            <p className="mt-1 text-sm text-slate-500">잘게 들어온 nenova.exe/PC 이벤트를 실제 업무 시간 단위로 묶어 직원 워크플로우를 정리합니다.</p>
+            {candidateMessage && <p className="mt-1 text-sm font-medium text-brand">{candidateMessage}</p>}
+          </div>
+          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
+            {sessionCandidates.length}건 · raw {rawEventCount}건
+          </span>
+        </div>
+        <div className="mt-4 grid gap-3 xl:grid-cols-2">
+          {sessionCandidates.map((candidate) => (
+            <article key={candidate.id} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="text-xs font-mono text-slate-400">
+                    {candidate.id} → {candidate.workUnitId}
+                  </div>
+                  <h4 className="mt-1 font-semibold text-slate-900">{candidate.recommendation}</h4>
+                </div>
+                <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${candidate.confidence >= 85 ? "bg-green-50 text-green-700" : "bg-amber-100 text-amber-700"}`}>
+                  {candidate.confidence}%
+                </span>
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-2 text-center text-xs md:grid-cols-4">
+                <div className="rounded-md bg-white p-2">
+                  <div className="font-semibold text-slate-900">{candidate.eventCount}</div>
+                  <div className="mt-1 text-slate-500">이벤트</div>
+                </div>
+                <div className="rounded-md bg-white p-2">
+                  <div className="font-semibold text-slate-900">{candidate.durationMin}분</div>
+                  <div className="mt-1 text-slate-500">시간</div>
+                </div>
+                <div className="rounded-md bg-white p-2">
+                  <div className="font-semibold text-slate-900">{candidate.mouseClicks}</div>
+                  <div className="mt-1 text-slate-500">클릭</div>
+                </div>
+                <div className="rounded-md bg-white p-2">
+                  <div className="font-semibold text-slate-900">{candidate.screenCount}</div>
+                  <div className="mt-1 text-slate-500">화면</div>
+                </div>
+              </div>
+              <div className="mt-3 rounded-md bg-white p-3">
+                <div className="text-sm font-medium text-slate-900">{candidate.employee}</div>
+                <div className="mt-1 text-xs text-slate-500">
+                  {candidate.team} · {candidate.workArea} · {candidate.category}
+                </div>
+                <div className="mt-2 text-xs text-slate-500">
+                  {candidate.appName} · {candidate.windowTitle} · {timeLabel(candidate.startedAt)}-{timeLabel(candidate.endedAt)}
+                </div>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {candidate.reasons.map((reason) => (
+                  <span key={reason} className="rounded-full bg-white px-2 py-0.5 text-xs text-slate-500">
+                    {reason}
+                  </span>
+                ))}
+              </div>
+              <div className="mt-4 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => void pushSessionCandidate(candidate)}
+                  className="rounded-md bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-700"
+                >
+                  세션 작업단위 저장
+                </button>
+              </div>
+            </article>
+          ))}
+          {sessionCandidates.length === 0 && <div className="rounded-md bg-slate-50 p-6 text-center text-sm text-slate-400 xl:col-span-2">병합할 원본 PC 세션 후보가 없습니다.</div>}
+        </div>
       </section>
 
       <section className="rounded-lg border border-slate-200 bg-white p-5">

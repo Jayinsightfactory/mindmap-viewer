@@ -77,6 +77,29 @@ recorder.click
 - `session_id`, `hostname`, `process`, `executable`, `active_window`, `mouse_clicks`, `keyboard_count`, `screen_summary`를 교차검증 evidence로 남깁니다.
 - 새 작업 단위의 `validationStatus`는 우선 `검증대기`이며, 이후 카톡/카카오워크/ERP/구글시트 근거와 연결해 `부분일치` 또는 `일치`로 보정합니다.
 
+원본 이벤트가 너무 잘게 쌓일 때는 세션 병합 후보를 봅니다.
+
+```http
+GET /api/nenova-exe/sessions?date=2026-05-24&gapMin=5&limit=50
+```
+
+세션 병합은 `accountId`, `sessionId`, `category`, `appName` 기준으로 묶고, 이벤트 간격이 `gapMin`분을 넘으면 다른 세션으로 나눕니다. 하나라도 `nenova.exe` 이벤트가 포함되면 세션 source는 `nenova.exe`로 봅니다.
+
+화면에서 후보를 확인한 뒤 저장하거나, API로 바로 저장할 수 있습니다.
+
+```http
+POST /api/nenova-exe/sessions
+Content-Type: application/json
+
+{
+  "sessionIds": ["NXS-nenova-sales-support-sul-yeonju-sess-20260524-seol-001-20260524061000-1"],
+  "gapMin": 5,
+  "limit": 50
+}
+```
+
+저장하면 `NX-SESSION-...` 작업 단위가 `/api/work-units`에 들어갑니다. 이 작업 단위는 원본 이벤트 목록, 클릭 합계, 키보드 합계, 화면 요약 개수, 세션 시간을 evidence로 남깁니다.
+
 이미 정규화된 작업 단위는 아래 엔드포인트로 직접 보낼 수도 있습니다.
 
 ```http

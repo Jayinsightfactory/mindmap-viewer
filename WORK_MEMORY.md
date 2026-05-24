@@ -603,3 +603,32 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 다시 반복되면 먼저 볼 위치:
 - `nenova-erp-ui/src/app/api/nenova-exe/events/route.ts`
 - `docs/nenova-exe-work-unit-ingest.md`
+
+### Nenova.exe 원본 이벤트 세션 병합
+
+날짜:
+- 2026-05-24 KST
+
+현재 조치:
+- `GET/POST /api/nenova-exe/sessions`를 추가했습니다.
+- `data/nenova-exe-events.json`의 원본 이벤트를 직원 실제 업무 세션 단위로 병합합니다.
+- 그룹 기준은 `accountId`, `sessionId`, `category`, `appName`이고, 기본 `gapMin=5`분을 넘으면 다른 세션으로 나눕니다.
+- 세션 source는 포함 이벤트 중 하나라도 `nenova.exe`이면 `nenova.exe`, 아니면 `PC`입니다.
+- 세션 작업 단위 id는 `NX-SESSION-...` 형식입니다.
+- 세션 work unit에는 원본 event ids, 세션 시간, 클릭 합계, 키보드 합계, 화면요약 개수, 주요 창 제목을 evidence/pcEvidence로 저장합니다.
+- `/work-units`에 "PC 세션 병합 후보" 섹션을 추가했습니다.
+- 후보 카드에서 `세션 작업단위 저장`을 누르면 `/api/nenova-exe/sessions` POST로 해당 세션이 `/api/work-units`에 저장됩니다.
+
+검증:
+- `npx tsc --noEmit` 성공
+- 샘플 `nx-session-test-001/002` 이벤트 2건이 기본 `gapMin=5`에서 세션 1건으로 병합되는 것 확인
+- 병합 세션 POST 시 `workUnitSync.ok=true`, `source_events=2`, `NX-SESSION-...` 작업 단위 생성 확인
+- `gapMin` 미입력 시 URL `null`이 0으로 읽혀 1분으로 줄어드는 문제를 고쳤습니다.
+- 테스트 로컬 데이터는 정리 완료
+- `GET /api/nenova-exe/sessions` HTTP 200 확인
+- `/work-units` HTTP 200 확인
+
+다시 반복되면 먼저 볼 위치:
+- `nenova-erp-ui/src/app/api/nenova-exe/sessions/route.ts`
+- `nenova-erp-ui/src/app/(app)/work-units/page.tsx`
+- `docs/nenova-exe-work-unit-ingest.md`
