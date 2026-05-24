@@ -464,8 +464,31 @@
 - `/work-units` HTTP 200 확인
 
 ### 다음 단계
-- 추출 파서를 AI 보정 단계와 연결해 애매한 문장은 Claude/GPT 검증으로 넘기기
 - 확정된 병합 후보를 `/work-units` 목록에서 별도 필터로 볼 수 있게 하기
+
+---
+
+## 작업 (2026-05-24) — ERP Intake AI 보정 큐
+
+### 1. AI 보정 API (완료)
+- `GET/POST /api/erp/intake/ai-review` 추가
+- 추출 근거가 부족한 수신함을 고객/금액/마감일 기준으로 큐잉
+- POST 시 `/api/assistant`로 `erp-intake-ai-review` 컨텍스트 전달
+
+### 2. 화면 연결 (완료)
+- `/erp-flow`에 "AI 보정 큐" 섹션 추가
+- 누락 필드와 우선순위 표시
+- `AI 보정 요청` 버튼으로 Claude/GPT 경로 호출
+
+### 3. 검증 (완료)
+- `npx tsc --noEmit` 성공
+- `GET /api/erp/intake/ai-review` 응답 확인
+- 샘플 보정 요청이 `claude-demo` 응답으로 반환되는 것 확인
+- `/erp-flow` HTTP 200 확인
+
+### 다음 단계
+- 확정된 병합 후보를 `/work-units` 목록에서 별도 필터로 볼 수 있게 하기
+- AI 보정 응답을 JSON으로 파싱해 수신함 초안에 제안값으로 표시하기
 
 ---
 

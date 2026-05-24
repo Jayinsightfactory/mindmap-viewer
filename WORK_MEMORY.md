@@ -483,3 +483,26 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - `nenova-erp-ui/src/app/api/work-units/intake-candidates/route.ts`
 - `nenova-erp-ui/src/app/(app)/work-units/page.tsx`
 - `docs/nenova-work-unit-cross-validation.md`
+
+### ERP Intake AI 보정 큐
+
+날짜:
+- 2026-05-24 KST
+
+현재 조치:
+- `GET/POST /api/erp/intake/ai-review`를 추가했습니다.
+- GET은 고객, 금액, 추출된 마감일 근거가 부족한 수신함을 AI 보정 큐로 반환합니다.
+- POST는 선택 항목을 `/api/assistant`로 보내 `mode=erp-intake-ai-review` 컨텍스트에서 Claude/GPT 검증을 요청합니다.
+- API 키가 없으면 기존 assistant demo 응답으로 흐름 검증이 가능합니다.
+- `/erp-flow`에 "AI 보정 큐" 섹션과 `AI 보정 요청` 버튼을 추가했습니다.
+
+검증:
+- `npx tsc --noEmit` 성공
+- `GET /api/erp/intake/ai-review` 응답 확인
+- 샘플 `ERP-IN-ai-review-test-001` POST가 `claude-demo` 응답을 반환하는 것 확인
+- `/erp-flow` HTTP 200 확인
+
+다시 반복되면 먼저 볼 위치:
+- `nenova-erp-ui/src/app/api/erp/intake/ai-review/route.ts`
+- `nenova-erp-ui/src/app/(app)/erp-flow/page.tsx`
+- `nenova-erp-ui/src/app/api/assistant/route.ts`

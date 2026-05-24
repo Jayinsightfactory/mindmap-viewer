@@ -69,6 +69,13 @@ type ErpIntakeItem = {
   createdAt: string;
 };
 
+type AiReviewItem = {
+  id: string;
+  priority: "높음" | "보통";
+  missingFields: string[];
+  item: ErpIntakeItem;
+};
+
 const STATUS_STYLE: Record<string, string> = {
   기록: "bg-slate-100 text-slate-600",
   견적생성: "bg-blue-50 text-brand",
@@ -109,6 +116,8 @@ export default function ErpFlowPage() {
   const [invoices, setInvoices] = useState<TaxInvoice[]>([]);
   const [reports, setReports] = useState<DailyReport[]>([]);
   const [intakeItems, setIntakeItems] = useState<ErpIntakeItem[]>([]);
+  const [aiReviewItems, setAiReviewItems] = useState<AiReviewItem[]>([]);
+  const [aiReviewMessage, setAiReviewMessage] = useState("");
   const [showMeetingForm, setShowMeetingForm] = useState(false);
 
   const [customer, setCustomer] = useState("");
@@ -133,8 +142,21 @@ export default function ErpFlowPage() {
       if (!response.ok) return;
       const data = (await response.json()) as { items?: ErpIntakeItem[] };
       setIntakeItems(data.items ?? []);
+      await refreshAiReview();
     } catch {
       setIntakeItems([]);
+      setAiReviewItems([]);
+    }
+  }
+
+  async function refreshAiReview() {
+    try {
+      const response = await fetch("/api/erp/intake/ai-review", { cache: "no-store" });
+      if (!response.ok) return;
+      const data = (await response.json()) as { queue?: AiReviewItem[] };
+      setAiReviewItems(data.queue ?? []);
+    } catch {
+      setAiReviewItems([]);
     }
   }
 
@@ -273,6 +295,23 @@ export default function ErpFlowPage() {
     refresh();
   }
 
+  async function handleAiReview(item: AiReviewItem) {
+    setAiReviewMessage("AI 보정 요청 중...");
+    const response = await fetch("/api/erp/intake/ai-review", {
+      method: "POST",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({ id: item.id, provider: "anthropic" }),
+    });
+    const data = (await response.json()) as { assistant?: { mode?: string; answer?: string }; error?: string };
+    if (!response.ok) {
+      setAiReviewMessage(data.error || `AI 보정 실패: API ${response.status}`);
+      return;
+    }
+    const mode = data.assistant?.mode ? ` (${data.assistant.mode})` : "";
+    const answer = data.assistant?.answer ? data.assistant.answer.slice(0, 160) : "응답 없음";
+    setAiReviewMessage(`AI 보정 응답${mode}: ${answer}`);
+  }
+
   const conversionRequests = intakeItems.filter((item) => item.requestedConversionAt && item.status !== "전환완료");
 
   return (
@@ -389,6 +428,45 @@ export default function ErpFlowPage() {
                   </button>
                 </div>
               </div>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="rounded-lg border border-slate-200 bg-white">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
+          <div>
+            <h3 className="font-semibold text-slate-900">AI 보정 큐</h3>
+            <p className="mt-1 text-sm text-slate-500">고객/금액/마감일 추출 근거가 부족한 ERP 수신함을 Claude/GPT 검증 대상으로 분리합니다.</p>
+            {aiReviewMessage && <p className="mt-1 text-sm font-medium text-brand">{aiReviewMessage}</p>}
+          </div>
+          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">{aiReviewItems.length}건</span>
+        </div>
+        <div className="divide-y divide-slate-100">
+          {aiReviewItems.length === 0 && <div className="px-5 py-6 text-center text-sm text-slate-400">AI 보정이 필요한 수신함이 없습니다.</div>}
+          {aiReviewItems.slice(0, 4).map((entry) => (
+            <article key={entry.id} className="flex flex-wrap items-start justify-between gap-4 px-5 py-4">
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <span className={`rounded-full px-2 py-0.5 ${entry.priority === "높음" ? "bg-red-50 text-red-700" : "bg-amber-100 text-amber-700"}`}>
+                    {entry.priority}
+                  </span>
+                  {entry.missingFields.map((field) => (
+                    <span key={field} className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-600">
+                      {field}
+                    </span>
+                  ))}
+                </div>
+                <h4 className="mt-2 font-semibold text-slate-900">{entry.item.title}</h4>
+                <p className="mt-1 text-sm leading-6 text-slate-600">{entry.item.detail}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => void handleAiReview(entry)}
+                className="rounded-md bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-700"
+              >
+                AI 보정 요청
+              </button>
             </article>
           ))}
         </div>

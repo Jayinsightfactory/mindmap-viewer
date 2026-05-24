@@ -157,6 +157,14 @@ Current draft extraction:
 - Amount is parsed from `320만원`, `1,200,000원`, `1.5억`, and amount keywords like `견적 320만`.
 - Due date is parsed from `오늘`, `내일`, `모레`, `5월 30일`, `2026-05-30`, `D+3`, and weekday phrases such as `다음주 금요일`.
 
+### `GET/POST /api/erp/intake/ai-review`
+
+Builds an AI correction queue for intake drafts with weak extraction evidence.
+
+- `GET`: lists intake items missing customer, amount, or extracted due-date evidence.
+- `POST`: sends the selected item to `/api/assistant` with `mode=erp-intake-ai-review`.
+- If Claude/GPT keys are not configured, `/api/assistant` returns the existing demo response, so the workflow can still be tested.
+
 ## Environment Variables
 
 ```bash
