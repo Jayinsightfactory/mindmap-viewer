@@ -461,3 +461,25 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 
 다시 반복되면 먼저 볼 위치:
 - `nenova-erp-ui/src/app/(app)/erp-flow/page.tsx`
+
+### Work Unit ↔ ERP Intake 병합 확정
+
+날짜:
+- 2026-05-24 KST
+
+현재 조치:
+- `POST /api/work-units/intake-candidates`가 병합 후보 확정을 처리합니다.
+- 요청은 `workUnitId`, `intakeId`, `note`를 받습니다.
+- work unit에 `erp_intake=...`, `erp_intake_status=...`, `erp_merge_score=...`, `erp_merge_reason=...` evidence를 저장합니다.
+- 고득점 후보는 `validationStatus: "일치"`, 그 외는 `부분일치`로 표시합니다.
+- `/work-units` 후보 카드에 `병합 근거 저장` 버튼을 추가했습니다.
+
+검증:
+- `npx tsc --noEmit` 성공
+- 샘플 후보 확정 시 `validationStatus=일치`, `erp_intake=ERP-IN-KW-confirm-test-001`, `erp_merge_score=89` 저장 확인
+- `/work-units` HTTP 200 확인
+
+다시 반복되면 먼저 볼 위치:
+- `nenova-erp-ui/src/app/api/work-units/intake-candidates/route.ts`
+- `nenova-erp-ui/src/app/(app)/work-units/page.tsx`
+- `docs/nenova-work-unit-cross-validation.md`

@@ -69,6 +69,26 @@ Recommendations:
 - `60-84`: review before merge.
 - Below threshold: low priority and hidden from the first list.
 
+## Confirming A Candidate
+
+`POST /api/work-units/intake-candidates` stores the selected ERP intake evidence back into the work unit.
+
+Request:
+
+```json
+{
+  "workUnitId": "KW-WU-...",
+  "intakeId": "ERP-IN-KW-...",
+  "note": "ERP 수신함 병합 확정"
+}
+```
+
+Effect:
+
+- `validationStatus` becomes `일치` for high-score candidates and `부분일치` otherwise.
+- `evidence` receives `erp_intake=...`, `erp_intake_status=...`, `erp_merge_score=...`, and `erp_merge_reason=...`.
+- Missing `customer`, `taskId`, or `projectId` can be filled from the intake item when available.
+
 ## Example Payload
 
 ```json

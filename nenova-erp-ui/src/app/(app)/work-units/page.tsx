@@ -276,6 +276,7 @@ export default function WorkUnitsPage() {
   const [apiCount, setApiCount] = useState(0);
   const [intakeCandidates, setIntakeCandidates] = useState<IntakeCandidate[]>([]);
   const [syncError, setSyncError] = useState("");
+  const [candidateMessage, setCandidateMessage] = useState("");
 
   async function refresh() {
     const localUnits = getWorkUnits();
@@ -298,6 +299,25 @@ export default function WorkUnitsPage() {
     } catch {
       setIntakeCandidates([]);
     }
+  }
+
+  async function confirmIntakeCandidate(candidate: IntakeCandidate) {
+    setCandidateMessage("");
+    const response = await fetch("/api/work-units/intake-candidates", {
+      method: "POST",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({
+        workUnitId: candidate.workUnitId,
+        intakeId: candidate.intakeId,
+        note: `ERP 수신함 ${candidate.intakeId} 병합 확정`,
+      }),
+    });
+    if (!response.ok) {
+      setCandidateMessage(`병합 실패: API ${response.status}`);
+      return;
+    }
+    setCandidateMessage(`${candidate.workUnitId}와 ${candidate.intakeId} 병합 근거를 저장했습니다.`);
+    await refresh();
   }
 
   useEffect(() => {
@@ -388,6 +408,7 @@ export default function WorkUnitsPage() {
           <div>
             <h3 className="font-semibold text-slate-900">ERP 수신함 병합 후보</h3>
             <p className="mt-1 text-sm text-slate-500">카카오워크 작업단위와 ERP 수신함을 이벤트 ID, 계정, 카테고리, 고객, 시간창으로 점수화합니다.</p>
+            {candidateMessage && <p className="mt-1 text-sm font-medium text-brand">{candidateMessage}</p>}
           </div>
           <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">{intakeCandidates.length}건</span>
         </div>
@@ -431,6 +452,15 @@ export default function WorkUnitsPage() {
                 {candidate.timeDiffMin != null && (
                   <span className="rounded-full bg-white px-2 py-0.5 text-xs text-slate-500">{candidate.timeDiffMin}분 차이</span>
                 )}
+              </div>
+              <div className="mt-4 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => void confirmIntakeCandidate(candidate)}
+                  className="rounded-md bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-700"
+                >
+                  병합 근거 저장
+                </button>
               </div>
             </article>
           ))}

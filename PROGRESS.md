@@ -442,8 +442,30 @@
 - `/work-units` HTTP 200 확인
 
 ### 다음 단계
-- 병합 후보 확정 버튼을 추가해 work unit validation/evidence에 ERP intake ID를 저장
 - 추출 파서를 AI 보정 단계와 연결해 애매한 문장은 Claude/GPT 검증으로 넘기기
+
+---
+
+## 작업 (2026-05-24) — Work Unit ↔ ERP Intake 병합 확정
+
+### 1. 확정 API (완료)
+- `POST /api/work-units/intake-candidates` 추가
+- `workUnitId`, `intakeId`, `note`를 받아 work unit의 검증 상태와 evidence 업데이트
+- `erp_intake`, `erp_intake_status`, `erp_merge_score`, `erp_merge_reason` 근거 저장
+
+### 2. 화면 버튼 (완료)
+- `/work-units` 병합 후보 카드에 `병합 근거 저장` 버튼 추가
+- 확정 후 후보 목록과 작업단위 목록 새로고침
+- 성공/실패 메시지 표시
+
+### 3. 검증 (완료)
+- `npx tsc --noEmit` 성공
+- 샘플 후보 확정 시 `validationStatus=일치`, `erp_merge_score=89` 저장 확인
+- `/work-units` HTTP 200 확인
+
+### 다음 단계
+- 추출 파서를 AI 보정 단계와 연결해 애매한 문장은 Claude/GPT 검증으로 넘기기
+- 확정된 병합 후보를 `/work-units` 목록에서 별도 필터로 볼 수 있게 하기
 
 ---
 

@@ -1,6 +1,6 @@
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
@@ -17,6 +17,11 @@ type WorkUnit = {
   endedAt?: string;
   relatedTalks?: Array<{ id?: string; sentAt?: string; text?: string; intent?: string }>;
   validationStatus?: string;
+  validationMemo?: string;
+  nextAction?: string;
+  evidence?: string[];
+  taskId?: string;
+  projectId?: string;
 };
 
 type IntakeItem = {
@@ -34,6 +39,7 @@ type IntakeItem = {
   amount?: number;
   status?: string;
   createdAt?: string;
+  linkedEntityType?: string;
   linkedEntityId?: string;
 };
 
@@ -49,6 +55,11 @@ async function readJsonArray<T>(file: string): Promise<T[]> {
   } catch {
     return [];
   }
+}
+
+async function writeJsonArray<T>(file: string, items: T[]) {
+  await mkdir(path.dirname(file), { recursive: true });
+  await writeFile(file, `${JSON.stringify(items, null, 2)}\n`, "utf8");
 }
 
 function eventSuffix(value?: string) {
@@ -171,4 +182,58 @@ export async function GET() {
     scoring: ["same_kakaowork_event", "same_account", "same_category", "same_customer", "within_30min", "erp_already_linked"],
     candidates: candidates.slice(0, 50),
   });
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const body = (await req.json()) as { workUnitId?: string; intakeId?: string; note?: string };
+    if (!body.workUnitId || !body.intakeId) {
+      return NextResponse.json({ ok: false, error: "workUnitId and intakeId are required" }, { status: 400 });
+    }
+
+    const [workUnits, intakeItems] = await Promise.all([readJsonArray<WorkUnit>(WORK_UNITS_FILE), readJsonArray<IntakeItem>(ERP_INTAKE_FILE)]);
+    const unitIndex = workUnits.findIndex((unit) => unit.id === body.workUnitId);
+    const intake = intakeItems.find((item) => item.id === body.intakeId);
+    if (unitIndex < 0 || !intake) {
+      return NextResponse.json({ ok: false, error: "work unit or intake not found" }, { status: 404 });
+    }
+
+    const unit = workUnits[unitIndex];
+    const scored = scoreCandidate(unit, intake);
+    const evidence = Array.from(
+      new Set([
+        ...(unit.evidence || []),
+        `erp_intake=${intake.id}`,
+        intake.linkedEntityId ? `erp_linked_entity=${intake.linkedEntityType || "ERP"}:${intake.linkedEntityId}` : "",
+        intake.status ? `erp_intake_status=${intake.status}` : "",
+        `erp_merge_score=${scored.score}`,
+        ...scored.reasons.map((reason) => `erp_merge_reason=${reason}`),
+      ].filter(Boolean)),
+    );
+
+    workUnits[unitIndex] = {
+      ...unit,
+      customer: unit.customer || intake.customer,
+      taskId: unit.taskId || (intake.linkedEntityType === "task" ? intake.linkedEntityId : undefined),
+      projectId: unit.projectId || (intake.linkedEntityType === "project" ? intake.linkedEntityId : undefined),
+      validationStatus: scored.score >= 85 ? "일치" : "부분일치",
+      validationMemo:
+        body.note ||
+        `ERP 수신함 ${intake.id}와 병합 확인. 근거: ${scored.reasons.join(", ") || "manual"}.`,
+      nextAction: intake.linkedEntityId ? "ERP 수신함과 실제 업무 객체가 연결되었습니다. 후속 상태만 추적합니다." : "ERP 수신함은 연결됐지만 실제 견적/할 일 전환 여부를 확인합니다.",
+      evidence,
+    };
+
+    await writeJsonArray(WORK_UNITS_FILE, workUnits);
+
+    return NextResponse.json({
+      ok: true,
+      workUnit: workUnits[unitIndex],
+      intake,
+      score: scored.score,
+      reasons: scored.reasons,
+    });
+  } catch (err) {
+    return NextResponse.json({ ok: false, error: err instanceof Error ? err.message : "candidate confirm failed" }, { status: 500 });
+  }
 }
