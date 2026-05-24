@@ -419,5 +419,29 @@
 
 ### 다음 단계
 - 전환 요청이 들어온 수신함 항목을 `/erp-flow`에서 한 번에 실제 견적/할 일로 생성하는 자동 실행 버튼 추가
-- 전환된 수신함과 `/work-units`의 PC 작업 단위를 자동 병합하는 후보 UI 추가
+- 추출 파서를 AI 보정 단계와 연결해 애매한 문장은 Claude/GPT 검증으로 넘기기
+
+---
+
+## 작업 (2026-05-24) — Work Unit ↔ ERP Intake 병합 후보
+
+### 1. 후보 API (완료)
+- `GET /api/work-units/intake-candidates` 추가
+- `work-units.json`과 `erp-intake.json`을 비교해 병합 후보 점수화
+- 같은 카카오워크 이벤트, 내부 계정, 카테고리, 고객, 시간창, ERP 연결 여부를 근거로 사용
+
+### 2. 화면 표시 (완료)
+- `/work-units`에 "ERP 수신함 병합 후보" 섹션 추가
+- 후보별 작업 단위/ERP 수신함/점수/추천/근거 태그 표시
+- 검증 기준 카드에 ERP 병합 후보 건수 표시
+
+### 3. 검증 (완료)
+- `npx tsc --noEmit` 성공
+- `GET /api/work-units/intake-candidates` 응답 확인
+- 샘플 매칭이 89점 `자동 병합 후보`로 잡히는 것 확인
+- `/work-units` HTTP 200 확인
+
+### 다음 단계
+- 전환 요청이 들어온 수신함 항목을 `/erp-flow`에서 한 번에 실제 견적/할 일로 생성하는 자동 실행 버튼 추가
+- 병합 후보 확정 버튼을 추가해 work unit validation/evidence에 ERP intake ID를 저장
 - 추출 파서를 AI 보정 단계와 연결해 애매한 문장은 Claude/GPT 검증으로 넘기기

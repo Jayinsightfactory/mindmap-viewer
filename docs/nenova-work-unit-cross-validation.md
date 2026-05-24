@@ -19,6 +19,7 @@ Nenova staff work in different accounts and responsibility areas. A useful ERP/A
 - Page: `/work-units`
 - Data store: `nenova-erp-ui/src/lib/store.ts`
 - Ingestion foundation: `POST /api/work-units`
+- ERP merge candidates: `GET /api/work-units/intake-candidates`
 - AI context: `/api/assistant` receives `getErpSnapshot()`, which includes work-unit summaries.
 
 ## Work Unit Shape
@@ -48,6 +49,25 @@ Important fields:
    - `부분일치`: two sources match, one is missing.
    - `충돌`: sources disagree.
    - `검증대기`: only one source exists.
+
+## ERP Intake Candidate Scoring
+
+`GET /api/work-units/intake-candidates` compares file-backed work units with ERP intake drafts.
+
+Score signals:
+
+- `same_kakaowork_event`: work unit ID and intake `sourceEventId` point to the same KakaoWork message.
+- `same_account`: both records resolve to the same internal `accountId`.
+- `same_category`: quote/task/project/finance/inventory category matches.
+- `same_customer`: extracted customer names match.
+- `within_30min` or `within_3h`: event time is close enough for operational review.
+- `erp_already_linked`: intake was already converted into an ERP object.
+
+Recommendations:
+
+- `85+`: automatic merge candidate.
+- `60-84`: review before merge.
+- Below threshold: low priority and hidden from the first list.
 
 ## Example Payload
 

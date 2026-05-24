@@ -46,6 +46,44 @@ type WorkUnitsApiResponse = {
   units?: Partial<WorkUnit>[];
 };
 
+type IntakeCandidate = {
+  id: string;
+  workUnitId: string;
+  intakeId: string;
+  score: number;
+  reasons: string[];
+  recommendation: string;
+  timeDiffMin: number | null;
+  workUnit: {
+    title?: string;
+    employee?: string;
+    accountId?: string;
+    category?: string;
+    startedAt?: string;
+    validationStatus?: string;
+  };
+  intake: {
+    title?: string;
+    owner?: string;
+    accountId?: string;
+    category?: string;
+    status?: string;
+    customer?: string;
+    amount?: number;
+    createdAt?: string;
+    linkedEntityId?: string;
+  };
+};
+
+type IntakeCandidateApiResponse = {
+  counts?: { candidates?: number; autoMergeCandidates?: number };
+  candidates?: IntakeCandidate[];
+};
+
+function formatWon(value: number) {
+  return `${value.toLocaleString()}원`;
+}
+
 function timeLabel(value: string) {
   return new Date(value).toLocaleTimeString("ko-KR", {
     timeZone: "Asia/Seoul",
@@ -236,6 +274,7 @@ export default function WorkUnitsPage() {
   const [employeeFilter, setEmployeeFilter] = useState("전체");
   const [areaFilter, setAreaFilter] = useState("전체");
   const [apiCount, setApiCount] = useState(0);
+  const [intakeCandidates, setIntakeCandidates] = useState<IntakeCandidate[]>([]);
   const [syncError, setSyncError] = useState("");
 
   async function refresh() {
@@ -250,6 +289,14 @@ export default function WorkUnitsPage() {
       setUnits(mergeWorkUnits(localUnits, data.units ?? []));
     } catch (err) {
       setSyncError(err instanceof Error ? err.message : "API 동기화 실패");
+    }
+    try {
+      const response = await fetch("/api/work-units/intake-candidates", { cache: "no-store" });
+      if (!response.ok) throw new Error(`candidate API ${response.status}`);
+      const data = (await response.json()) as IntakeCandidateApiResponse;
+      setIntakeCandidates(data.candidates ?? []);
+    } catch {
+      setIntakeCandidates([]);
     }
   }
 
@@ -305,6 +352,7 @@ export default function WorkUnitsPage() {
             </div>
             <div className="mt-3 border-t border-slate-200 pt-3">
               <div className="text-xs text-slate-500">API 수신 {apiCount}건</div>
+              <div className="mt-1 text-xs text-slate-500">ERP 병합 후보 {intakeCandidates.length}건</div>
               {syncError && <div className="mt-1 text-xs text-amber-700">{syncError}</div>}
               <button
                 type="button"
@@ -333,6 +381,61 @@ export default function WorkUnitsPage() {
             <div className="mt-2 text-xs leading-5 text-slate-500">{item.detail}</div>
           </article>
         ))}
+      </section>
+
+      <section className="rounded-lg border border-slate-200 bg-white p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="font-semibold text-slate-900">ERP 수신함 병합 후보</h3>
+            <p className="mt-1 text-sm text-slate-500">카카오워크 작업단위와 ERP 수신함을 이벤트 ID, 계정, 카테고리, 고객, 시간창으로 점수화합니다.</p>
+          </div>
+          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">{intakeCandidates.length}건</span>
+        </div>
+        <div className="mt-4 grid gap-3 xl:grid-cols-2">
+          {intakeCandidates.slice(0, 6).map((candidate) => (
+            <article key={candidate.id} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="text-xs font-mono text-slate-400">
+                    {candidate.workUnitId} ↔ {candidate.intakeId}
+                  </div>
+                  <h4 className="mt-1 font-semibold text-slate-900">{candidate.recommendation}</h4>
+                </div>
+                <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${candidate.score >= 85 ? "bg-green-50 text-green-700" : "bg-amber-100 text-amber-700"}`}>
+                  {candidate.score}점
+                </span>
+              </div>
+              <div className="mt-3 grid gap-3 md:grid-cols-2">
+                <div className="rounded-md bg-white p-3">
+                  <div className="text-xs font-semibold text-slate-500">작업 단위</div>
+                  <div className="mt-1 text-sm font-medium text-slate-900">{candidate.workUnit.title || "제목 없음"}</div>
+                  <div className="mt-1 text-xs text-slate-500">
+                    {candidate.workUnit.employee || "-"} · {candidate.workUnit.category || "-"}
+                  </div>
+                </div>
+                <div className="rounded-md bg-white p-3">
+                  <div className="text-xs font-semibold text-slate-500">ERP 수신함</div>
+                  <div className="mt-1 text-sm font-medium text-slate-900">{candidate.intake.title || "제목 없음"}</div>
+                  <div className="mt-1 text-xs text-slate-500">
+                    {candidate.intake.customer || candidate.intake.owner || "-"}
+                    {candidate.intake.amount ? ` · ${formatWon(candidate.intake.amount)}` : ""}
+                  </div>
+                </div>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {candidate.reasons.map((reason) => (
+                  <span key={reason} className="rounded-full bg-white px-2 py-0.5 text-xs text-slate-500">
+                    {reason}
+                  </span>
+                ))}
+                {candidate.timeDiffMin != null && (
+                  <span className="rounded-full bg-white px-2 py-0.5 text-xs text-slate-500">{candidate.timeDiffMin}분 차이</span>
+                )}
+              </div>
+            </article>
+          ))}
+          {intakeCandidates.length === 0 && <div className="rounded-md bg-slate-50 p-6 text-center text-sm text-slate-400 xl:col-span-2">ERP 수신함과 연결할 후보가 없습니다.</div>}
+        </div>
       </section>
 
       <section className="rounded-lg border border-slate-200 bg-white p-5">

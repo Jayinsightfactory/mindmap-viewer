@@ -421,3 +421,25 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - `nenova-erp-ui/src/app/api/kakaowork/callback/route.ts`
 - `nenova-erp-ui/src/app/api/erp/intake/route.ts`
 - `nenova-erp-ui/src/app/(app)/erp-flow/page.tsx`
+
+### Work Unit ↔ ERP Intake 병합 후보
+
+날짜:
+- 2026-05-24 KST
+
+현재 조치:
+- `GET /api/work-units/intake-candidates`를 추가했습니다.
+- file-backed `work-units.json`과 `erp-intake.json`을 비교해 같은 카카오워크 이벤트, 내부 계정, 카테고리, 고객, 시간창, ERP 연결 여부로 점수화합니다.
+- `/work-units`에 "ERP 수신함 병합 후보" 섹션을 추가했습니다.
+- 후보 카드에는 작업 단위, ERP 수신함, 점수, 추천(`자동 병합 후보`/`검토 후 병합`), 근거 태그가 표시됩니다.
+
+검증:
+- `npx tsc --noEmit` 성공
+- `GET /api/work-units/intake-candidates` 응답 확인
+- 같은 KakaoWork event/account/category 샘플이 89점 `자동 병합 후보`로 잡히는 것 확인
+- `/work-units` HTTP 200 확인
+
+다시 반복되면 먼저 볼 위치:
+- `nenova-erp-ui/src/app/api/work-units/intake-candidates/route.ts`
+- `nenova-erp-ui/src/app/(app)/work-units/page.tsx`
+- `docs/nenova-work-unit-cross-validation.md`
