@@ -814,3 +814,34 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 
 다시 반복되면 먼저 볼 위치:
 - `C:\Users\pc\OneDrive\Pictures\Desktop\커서 작업\pages\shipment\stock-status.js`
+
+### 네노바웹 메뉴 중복/겹침 정리
+
+날짜:
+- 2026-05-24 KST
+
+사용자 요청:
+- 네노바웹 메뉴에서 겹치는 것을 정리.
+
+현재 조치:
+- `nenova-erp-ui/src/lib/nav.ts`
+  - 기존 단일 메뉴 배열을 `NAV_GROUPS`로 재구성.
+  - 메뉴 그룹: `홈`, `실무 처리`, `검증·자동화`.
+  - 긴/겹치는 라벨 축약:
+    - `ERP 흐름` → `업무 흐름`
+    - `신규 주문` → `주문`
+    - `입고단가·송금` → `입고/송금`
+    - `고객 관리` → `고객`
+    - `직원 워크플로우` → `작업 원장`
+    - `워크 연동` → `카카오워크`
+- `nenova-erp-ui/src/components/Sidebar.tsx`
+  - 사이드바를 그룹 단위로 렌더링.
+  - 아이콘 영역 폭 고정, 라벨 `truncate`, 메뉴 스크롤 적용으로 겹침 방지.
+
+검증:
+- `npx tsc --noEmit` 성공.
+- 브라우저 `http://127.0.0.1:3000/inventory`에서 사이드바 그룹/메뉴 렌더링 확인.
+
+다시 반복되면 먼저 볼 위치:
+- `nenova-erp-ui/src/lib/nav.ts`
+- `nenova-erp-ui/src/components/Sidebar.tsx`

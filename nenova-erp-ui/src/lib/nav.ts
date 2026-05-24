@@ -4,16 +4,38 @@ export type NavItem = {
   icon: string; // 이모지 — 추후 아이콘 컴포넌트로 교체 가능
 };
 
-export const NAV_ITEMS: NavItem[] = [
-  { href: "/dashboard", label: "대시보드", icon: "▦" },
-  { href: "/erp-flow", label: "ERP 흐름", icon: "ERP" },
-  { href: "/workflow", label: "직원 워크플로우", icon: "WF" },
-  { href: "/assistant", label: "AI 비서", icon: "AI" },
-  { href: "/kakaowork", label: "워크 연동", icon: "KW" },
-  { href: "/orders", label: "신규 주문", icon: "▤" },
-  { href: "/inventory", label: "입고단가·송금", icon: "▣" },
-  { href: "/customers", label: "고객 관리", icon: "◍" },
+export type NavGroup = {
+  label: string;
+  items: NavItem[];
+};
+
+export const NAV_GROUPS: NavGroup[] = [
+  {
+    label: "홈",
+    items: [
+      { href: "/dashboard", label: "대시보드", icon: "HOME" },
+    ],
+  },
+  {
+    label: "실무 처리",
+    items: [
+      { href: "/erp-flow", label: "업무 흐름", icon: "ERP" },
+      { href: "/orders", label: "주문", icon: "ORD" },
+      { href: "/inventory", label: "입고/송금", icon: "PAY" },
+      { href: "/customers", label: "고객", icon: "CUS" },
+    ],
+  },
+  {
+    label: "검증·자동화",
+    items: [
+      { href: "/workflow", label: "작업 원장", icon: "LOG" },
+      { href: "/assistant", label: "AI 비서", icon: "AI" },
+      { href: "/kakaowork", label: "카카오워크", icon: "KW" },
+    ],
+  },
 ];
+
+export const NAV_ITEMS: NavItem[] = NAV_GROUPS.flatMap((group) => group.items);
 
 export function pageTitle(pathname: string): string {
   const item = NAV_ITEMS.find((n) => pathname.startsWith(n.href));
