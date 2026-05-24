@@ -443,3 +443,21 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - `nenova-erp-ui/src/app/api/work-units/intake-candidates/route.ts`
 - `nenova-erp-ui/src/app/(app)/work-units/page.tsx`
 - `docs/nenova-work-unit-cross-validation.md`
+
+### ERP Flow 전환 요청 큐 표시
+
+날짜:
+- 2026-05-24 KST
+
+현재 조치:
+- `/erp-flow` 카카오워크 ERP 수신함에서 `requestedConversionAt`이 있는 항목을 전환 요청 대기 건으로 표시합니다.
+- 수신함 헤더에 "카카오워크 전환 요청 N건이 실행 대기 중입니다."를 표시합니다.
+- 전환 요청 항목은 연한 파란 배경과 `전환 요청됨` 배지로 강조합니다.
+- 버튼 문구는 요청/데이터 상태에 따라 `견적 초안 생성`, `전환 요청 실행`, `회의/견적 후보 등록`, `할 일 등록`, `전환 완료`로 바뀝니다.
+
+검증:
+- `npx tsc --noEmit` 성공
+- `/erp-flow` HTTP 200 확인
+
+다시 반복되면 먼저 볼 위치:
+- `nenova-erp-ui/src/app/(app)/erp-flow/page.tsx`
