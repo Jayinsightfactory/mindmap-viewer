@@ -11,7 +11,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/assistant", label: "AI 비서", icon: "AI" },
   { href: "/kakaowork", label: "워크 연동", icon: "KW" },
   { href: "/orders", label: "신규 주문", icon: "▤" },
-  { href: "/inventory", label: "재고 관리", icon: "▣" },
+  { href: "/inventory", label: "입고단가·송금", icon: "▣" },
   { href: "/customers", label: "고객 관리", icon: "◍" },
 ];
 

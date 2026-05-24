@@ -736,3 +736,29 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - `src/clipboard-watcher.js`
 - `src/screen-capture.js`
 - `tests/data-quality.test.js`
+
+### 입고단가·송금 변경내역 패널
+
+날짜:
+- 2026-05-24 KST
+
+사용자 요청:
+- 입고단가 송금 메뉴 페이지에서 변경내역이 있는 품목을 옆에 별도 리스트로 볼 수 있어야 합니다.
+
+현재 조치:
+- `/inventory` 메뉴명을 `입고단가·송금`으로 변경했습니다.
+- 품목 데이터에 `transferStatus`, `transferMemo`, `updatedAt` 필드를 추가했습니다.
+- `ProductChangeRecord` 변경 이력 모델을 추가했습니다.
+- 입고/출고, 단가 변경, 송금상태 변경, 품목등록 시 변경내역이 자동 기록됩니다.
+- `/inventory` 오른쪽에 `변경내역 있는 품목` 패널을 추가했습니다.
+- 변경내역이 있는 품목만 별도 리스트로 보이고, 최근 3건의 변경 타입/전후값/메모/작업자를 확인할 수 있습니다.
+- 기존 브라우저 저장소의 오래된 품목 데이터도 seed 기준 송금상태를 보정해서 보이게 했습니다.
+
+검증:
+- `npx tsc --noEmit` 성공
+- 브라우저 `http://127.0.0.1:3000/inventory`에서 `입고단가·송금`, `변경내역 있는 품목`, `송금완료`, `송금대기`, `단가변경` 렌더링 확인
+
+다시 반복되면 먼저 볼 위치:
+- `nenova-erp-ui/src/app/(app)/inventory/page.tsx`
+- `nenova-erp-ui/src/lib/store.ts`
+- `nenova-erp-ui/src/lib/nav.ts`

@@ -22,6 +22,24 @@ export type Product = {
   stock: number;
   safetyStock: number;
   unitPrice: number;
+  transferStatus?: ProductTransferStatus;
+  transferMemo?: string;
+  updatedAt?: string;
+};
+
+export type ProductTransferStatus = "미요청" | "송금대기" | "송금완료";
+export type ProductChangeKind = "입고" | "출고" | "단가변경" | "송금상태" | "품목등록";
+
+export type ProductChangeRecord = {
+  id: string;
+  sku: string;
+  productName: string;
+  kind: ProductChangeKind;
+  before: string;
+  after: string;
+  memo: string;
+  actor: string;
+  changedAt: string;
 };
 
 export type Customer = {
@@ -163,6 +181,7 @@ export type WorkUnit = {
 
 const ORDERS_KEY = "nenova_orders";
 const PRODUCTS_KEY = "nenova_products";
+const PRODUCT_CHANGES_KEY = "nenova_product_changes";
 const CUSTOMERS_KEY = "nenova_customers";
 const MEETINGS_KEY = "nenova_meetings";
 const QUOTES_KEY = "nenova_quotes";
@@ -180,11 +199,47 @@ const SEED_ORDERS: Order[] = [
 ];
 
 const SEED_PRODUCTS: Product[] = [
-  { sku: "BR-6204", name: "정밀 베어링 6204", stock: 42, safetyStock: 50, unitPrice: 3200 },
-  { sku: "HC-50", name: "유압 실린더 50mm", stock: 15, safetyStock: 5, unitPrice: 84000 },
-  { sku: "BT-M8", name: "스테인리스 볼트 M8", stock: 18400, safetyStock: 5000, unitPrice: 90 },
-  { sku: "OR-NBR20", name: "오링 NBR 20호", stock: 320, safetyStock: 400, unitPrice: 150 },
-  { sku: "VL-2W", name: "솔레노이드 밸브 2way", stock: 7, safetyStock: 10, unitPrice: 21000 },
+  { sku: "BR-6204", name: "정밀 베어링 6204", stock: 42, safetyStock: 50, unitPrice: 3200, transferStatus: "송금완료", transferMemo: "5월 정기 입고분" },
+  { sku: "HC-50", name: "유압 실린더 50mm", stock: 15, safetyStock: 5, unitPrice: 84000, transferStatus: "송금대기", transferMemo: "공급사 확인 후 송금" },
+  { sku: "BT-M8", name: "스테인리스 볼트 M8", stock: 18400, safetyStock: 5000, unitPrice: 90, transferStatus: "미요청", transferMemo: "" },
+  { sku: "OR-NBR20", name: "오링 NBR 20호", stock: 320, safetyStock: 400, unitPrice: 150, transferStatus: "송금완료", transferMemo: "입고 완료" },
+  { sku: "VL-2W", name: "솔레노이드 밸브 2way", stock: 7, safetyStock: 10, unitPrice: 21000, transferStatus: "송금대기", transferMemo: "잔금 대기" },
+];
+
+const SEED_PRODUCT_CHANGES: ProductChangeRecord[] = [
+  {
+    id: "PCH-20260522-001",
+    sku: "BR-6204",
+    productName: "정밀 베어링 6204",
+    kind: "단가변경",
+    before: "3,000원",
+    after: "3,200원",
+    memo: "6월 공급 단가 인상 반영",
+    actor: "설연주",
+    changedAt: "2026-05-22T02:20:00.000Z",
+  },
+  {
+    id: "PCH-20260522-002",
+    sku: "HC-50",
+    productName: "유압 실린더 50mm",
+    kind: "송금상태",
+    before: "미요청",
+    after: "송금대기",
+    memo: "입고 확인 후 송금 요청 대기",
+    actor: "강현우",
+    changedAt: "2026-05-22T04:15:00.000Z",
+  },
+  {
+    id: "PCH-20260523-001",
+    sku: "OR-NBR20",
+    productName: "오링 NBR 20호",
+    kind: "입고",
+    before: "180개",
+    after: "320개",
+    memo: "대한상사 긴급 납품 대비 입고",
+    actor: "설연주",
+    changedAt: "2026-05-23T01:35:00.000Z",
+  },
 ];
 
 const SEED_CUSTOMERS: Customer[] = [
@@ -567,6 +622,32 @@ function save<T>(key: string, value: T[]) {
   localStorage.setItem(key, JSON.stringify(value));
 }
 
+function withProductDefaults(product: Product): Product {
+  const seed = SEED_PRODUCTS.find((p) => p.sku === product.sku);
+  return {
+    ...product,
+    transferStatus: product.transferStatus ?? seed?.transferStatus ?? "미요청",
+    transferMemo: product.transferMemo ?? seed?.transferMemo ?? "",
+  };
+}
+
+function nextProductChangeId(existing: ProductChangeRecord[]) {
+  const today = ymd();
+  const count = existing.filter((item) => item.id.includes(today)).length + 1;
+  return `PCH-${today}-${String(count).padStart(3, "0")}`;
+}
+
+function appendProductChanges(records: Omit<ProductChangeRecord, "id" | "changedAt">[]) {
+  if (typeof window === "undefined" || records.length === 0) return;
+  const existing = load(PRODUCT_CHANGES_KEY, SEED_PRODUCT_CHANGES);
+  const stamped = records.map((record, index) => ({
+    ...record,
+    id: `PCH-${ymd()}-${String(existing.filter((item) => item.id.includes(ymd())).length + index + 1).padStart(3, "0")}`,
+    changedAt: new Date().toISOString(),
+  }));
+  save(PRODUCT_CHANGES_KEY, [...existing, ...stamped]);
+}
+
 function ymd(date = new Date()) {
   return `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, "0")}${String(date.getDate()).padStart(2, "0")}`;
 }
@@ -641,7 +722,7 @@ export function deleteOrder(id: string) {
 /* ── 재고 ─────────────────────────────────────────── */
 
 export function getProducts(): Product[] {
-  return load(PRODUCTS_KEY, SEED_PRODUCTS);
+  return load(PRODUCTS_KEY, SEED_PRODUCTS).map(withProductDefaults);
 }
 
 export function addProduct(input: Product): { ok: boolean; error?: string } {
@@ -649,16 +730,102 @@ export function addProduct(input: Product): { ok: boolean; error?: string } {
   if (products.some((p) => p.sku === input.sku)) {
     return { ok: false, error: "이미 존재하는 SKU입니다." };
   }
-  products.push(input);
+  const product = withProductDefaults({
+    ...input,
+    updatedAt: new Date().toISOString(),
+  });
+  products.push(product);
   save(PRODUCTS_KEY, products);
+  appendProductChanges([
+    {
+      sku: product.sku,
+      productName: product.name,
+      kind: "품목등록",
+      before: "-",
+      after: `${product.stock.toLocaleString()}개 / ${product.unitPrice.toLocaleString()}원`,
+      memo: product.transferMemo || "신규 품목 등록",
+      actor: "nenovaweb",
+    },
+  ]);
   return { ok: true };
 }
 
-export function adjustStock(sku: string, delta: number) {
-  const products = load(PRODUCTS_KEY, SEED_PRODUCTS).map((p) =>
-    p.sku === sku ? { ...p, stock: Math.max(0, p.stock + delta) } : p
-  );
+export function adjustStock(sku: string, delta: number, actor = "nenovaweb", memo = "") {
+  let change: Omit<ProductChangeRecord, "id" | "changedAt"> | null = null;
+  const products = load(PRODUCTS_KEY, SEED_PRODUCTS).map((p) => {
+    if (p.sku !== sku) return p;
+    const beforeStock = p.stock;
+    const afterStock = Math.max(0, p.stock + delta);
+    if (beforeStock !== afterStock) {
+      change = {
+        sku: p.sku,
+        productName: p.name,
+        kind: delta > 0 ? "입고" : "출고",
+        before: `${beforeStock.toLocaleString()}개`,
+        after: `${afterStock.toLocaleString()}개`,
+        memo: memo || (delta > 0 ? "입고 수량 반영" : "출고 수량 반영"),
+        actor,
+      };
+    }
+    return { ...withProductDefaults(p), stock: afterStock, updatedAt: new Date().toISOString() };
+  });
   save(PRODUCTS_KEY, products);
+  if (change) appendProductChanges([change]);
+}
+
+export function updateProductCommercial(
+  sku: string,
+  input: { unitPrice: number; transferStatus: ProductTransferStatus; transferMemo?: string; actor?: string }
+): { ok: boolean; error?: string; changes: number } {
+  const products = load(PRODUCTS_KEY, SEED_PRODUCTS).map(withProductDefaults);
+  const idx = products.findIndex((p) => p.sku === sku);
+  if (idx < 0) return { ok: false, error: "품목을 찾을 수 없습니다.", changes: 0 };
+
+  const current = products[idx];
+  const nextPrice = Math.max(0, Math.round(input.unitPrice || 0));
+  const nextTransferStatus = input.transferStatus;
+  const nextMemo = input.transferMemo?.trim() ?? "";
+  const actor = input.actor || "nenovaweb";
+  const changes: Omit<ProductChangeRecord, "id" | "changedAt">[] = [];
+
+  if (current.unitPrice !== nextPrice) {
+    changes.push({
+      sku: current.sku,
+      productName: current.name,
+      kind: "단가변경",
+      before: `${current.unitPrice.toLocaleString()}원`,
+      after: `${nextPrice.toLocaleString()}원`,
+      memo: nextMemo || "입고 단가 변경",
+      actor,
+    });
+  }
+
+  if ((current.transferStatus ?? "미요청") !== nextTransferStatus) {
+    changes.push({
+      sku: current.sku,
+      productName: current.name,
+      kind: "송금상태",
+      before: current.transferStatus ?? "미요청",
+      after: nextTransferStatus,
+      memo: nextMemo || "송금 상태 변경",
+      actor,
+    });
+  }
+
+  products[idx] = {
+    ...current,
+    unitPrice: nextPrice,
+    transferStatus: nextTransferStatus,
+    transferMemo: nextMemo,
+    updatedAt: new Date().toISOString(),
+  };
+  save(PRODUCTS_KEY, products);
+  appendProductChanges(changes);
+  return { ok: true, changes: changes.length };
+}
+
+export function getProductChangeHistory(): ProductChangeRecord[] {
+  return load(PRODUCT_CHANGES_KEY, SEED_PRODUCT_CHANGES).sort((a, b) => b.changedAt.localeCompare(a.changedAt));
 }
 
 /* ── 고객 ─────────────────────────────────────────── */
