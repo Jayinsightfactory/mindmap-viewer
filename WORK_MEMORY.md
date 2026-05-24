@@ -264,3 +264,24 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - `npm run build` 성공
 - `scripts/post-work-unit-sample.ps1` 실행 후 `GET /api/work-units`에서 수신 1건, `대화후작업`, `부분일치` 확인
 - `/work-units` HTTP 200 확인
+
+### Process Mining → 작업 단위 브릿지
+
+날짜:
+- 2026-05-24 KST
+
+현재 조치:
+- `routes/process-mining.js`의 분석 이벤트 타입에 `mouse.chunk`를 추가했습니다.
+- `buildActivityBlocks`가 클릭 수와 클릭 근거를 유지하도록 확장했습니다.
+- `GET /api/mining/work-units`를 추가해 PC/recorder/process-mining 이벤트를 네노바웹 작업 단위 후보로 변환합니다.
+- `POST /api/mining/work-units/push`를 추가해 후보를 `NENOVA_WORK_UNITS_URL` 또는 `http://localhost:3000/api/work-units`로 전송합니다.
+- 30분 창 안의 KakaoTalk 이벤트를 `relatedTalks`로 묶고 `대화후작업`, `작업후대화`, `동시진행`으로 분류합니다.
+
+검증:
+- `node --check routes/process-mining.js` 성공
+- `node --check server.js` 성공
+- `npm run build` 성공
+
+다시 반복되면 먼저 볼 위치:
+- `routes/process-mining.js`
+- `docs/nenova-exe-work-unit-ingest.md`

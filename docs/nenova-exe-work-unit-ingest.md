@@ -102,3 +102,29 @@ http://localhost:3000/api/work-units
 - 대화후작업, 작업후대화, 동시진행 분류
 - 3차 검증 메모와 다음 액션
 
+## Process Mining 브릿지
+
+기존 Orbit/PC 수집 이벤트에서 작업 단위 후보를 만들 때는 다음 엔드포인트를 사용합니다.
+
+```http
+GET /api/mining/work-units?userId={userId}&date=2026-05-24&days=1&limit=50
+```
+
+이 엔드포인트는 `keyboard.chunk`, `mouse.chunk`, `screen.capture`, `screen.analyzed`, `clipboard.change`, `recorder.click` 이벤트를 앱 블록으로 묶고, 같은 30분 창 안의 카카오톡 이벤트를 `relatedTalks`로 붙입니다.
+
+네노바웹으로 바로 밀어 넣을 때는 다음 엔드포인트를 사용합니다.
+
+```http
+POST /api/mining/work-units/push
+Content-Type: application/json
+
+{
+  "userId": "nenova:sales-support:sul-yeonju",
+  "date": "2026-05-24",
+  "days": 1,
+  "limit": 50,
+  "targetUrl": "http://localhost:3000/api/work-units"
+}
+```
+
+`targetUrl`이 없으면 `NENOVA_WORK_UNITS_URL` 환경변수를 보고, 그것도 없으면 `http://localhost:3000/api/work-units`로 보냅니다.

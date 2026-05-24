@@ -30,7 +30,7 @@ const MIN_BLOCK_MS    = 5 * 1000;         // 5초 미만 블록 → 노이즈 �
 
 // 분석 대상 이벤트 타입
 const WORK_TYPES = [
-  'keyboard.chunk', 'screen.capture', 'screen.analyzed',
+  'keyboard.chunk', 'mouse.chunk', 'screen.capture', 'screen.analyzed',
   'clipboard.change', 'order.detected', 'purchase.order.detected',
 ];
 
@@ -79,6 +79,11 @@ function normalizeApp(raw, windowTitle) {
   return raw.length > 30 ? raw.substring(0, 30) : raw;
 }
 
+function numberValue(value, fallback = 0) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
 // ── 핵심 함수: 이벤트 → 활동 블록 변환 ──────────────────────────────────────
 function buildActivityBlocks(events) {
   if (!events.length) return [];
@@ -95,6 +100,10 @@ function buildActivityBlocks(events) {
     const app = normalizeApp(rawApp, ev.windowTitle);
     if (app === 'unknown') continue; // 앱 추론 불가능한 이벤트 스킵
     const detail = ev.activity || ev.windowTitle || ev.screen || ev.text || '';
+    const clickCount = Math.max(0, numberValue(ev.clickCount || ev.clicks || ev.mouseClicks || (ev.type === 'recorder.click' ? 1 : 0), 0));
+    const clickEvidence = ev.type === 'recorder.click' || clickCount > 0
+      ? [detail || `${app} click ${clickCount}`]
+      : [];
 
     if (!cur || app !== cur.app || (ts - cur.endTs) > MERGE_WINDOW_MS) {
       // 새 블록 시작
@@ -106,6 +115,8 @@ function buildActivityBlocks(events) {
         duration: 0,
         events: 1,
         details: detail ? [detail] : [],
+        clickCount,
+        clickEvidence,
         types: new Set([ev.type]),
         workCategory: ev.workCategory || null,
         automationScore: ev.automationScore != null ? parseFloat(ev.automationScore) : null,
@@ -115,6 +126,10 @@ function buildActivityBlocks(events) {
       cur.endTs = ts;
       cur.duration = cur.endTs - cur.startTs;
       cur.events++;
+      cur.clickCount += clickCount;
+      for (const item of clickEvidence) {
+        if (item && !cur.clickEvidence.includes(item)) cur.clickEvidence.push(item);
+      }
       if (detail && !cur.details.includes(detail)) cur.details.push(detail);
       cur.types.add(ev.type);
       if (ev.workCategory && !cur.workCategory) cur.workCategory = ev.workCategory;
@@ -130,6 +145,8 @@ function buildActivityBlocks(events) {
       duration: b.endTs - b.startTs,
       types: [...b.types],
       details: b.details.slice(0, 5), // 최대 5개
+      clickCount: b.clickCount || 0,
+      clickEvidence: (b.clickEvidence || []).slice(0, 5),
     }))
     .filter(b => b.duration >= MIN_BLOCK_MS || b.events >= 2);
 }
@@ -297,6 +314,11 @@ function createProcessMining({ getDb, reportSheet }) {
         data_json->>'screen' as screen,
         data_json->>'workCategory' as "workCategory",
         data_json->>'automationScore' as "automationScore",
+        COALESCE(data_json->>'clickCount', data_json->>'clicks', data_json->>'mouseClicks', '0') as "clickCount",
+        data_json->>'hostname' as hostname,
+        data_json->>'employeeName' as "employeeName",
+        data_json->>'accountId' as "accountId",
+        data_json as "dataJson",
         LEFT(data_json->>'text', 100) as text
       FROM events
       WHERE user_id = $1
@@ -372,6 +394,7 @@ function createProcessMining({ getDb, reportSheet }) {
             : row.event_type === 'keydown'
             ? `key:${data.key || ''}`
             : `screenshot:${data.screenshot_id || ''}`,
+          clickCount: row.event_type === 'mouse_click' ? 1 : 0,
           screen: null,
           workCategory: null,
           automationScore: null,
@@ -413,6 +436,124 @@ function createProcessMining({ getDb, reportSheet }) {
     return rows[0]?.name || userId;
   }
 
+  function workUnitSourceForApp(app) {
+    if (app === 'Nenova ERP') return 'nenova.exe';
+    if (app === 'KakaoTalk') return 'KakaoTalk';
+    if (app === 'Excel') return 'GoogleSheet';
+    if (app === 'Browser') return 'nenovaweb';
+    return 'PC';
+  }
+
+  function workUnitCategoryForBlock(block) {
+    const text = `${block.app} ${(block.details || []).join(' ')} ${block.workCategory || ''}`.toLowerCase();
+    if (text.includes('견적') || text.includes('quote')) return '견적';
+    if (text.includes('계약') || text.includes('contract')) return '계약';
+    if (text.includes('프로젝트') || text.includes('project')) return '프로젝트';
+    if (text.includes('할 일') || text.includes('할일') || text.includes('task')) return '할일';
+    if (text.includes('세금') || text.includes('입금') || text.includes('정산') || text.includes('invoice')) return '정산';
+    if (text.includes('재고') || text.includes('출고') || text.includes('inventory')) return '재고';
+    if (text.includes('보고') || text.includes('report')) return '보고';
+    if (text.includes('claude') || text.includes('gpt') || text.includes('ai')) return 'AI검토';
+    if (text.includes('kakao') || text.includes('카카오') || text.includes('상담') || text.includes('고객')) return '고객응대';
+    return '기타';
+  }
+
+  function talkRelationFor(block, talkTs) {
+    if (talkTs < block.startTs) return '대화후작업';
+    if (talkTs > block.endTs) return '작업후대화';
+    return '동시진행';
+  }
+
+  function relatedTalksForBlock(events, block) {
+    const windowMs = 30 * 60 * 1000;
+    return events
+      .filter(ev => normalizeApp(ev.app, ev.windowTitle) === 'KakaoTalk')
+      .map(ev => ({ ev, ts: new Date(ev.timestamp).getTime() }))
+      .filter(({ ts }) => Number.isFinite(ts) && ts >= block.startTs - windowMs && ts <= block.endTs + windowMs)
+      .slice(0, 5)
+      .map(({ ev, ts }, index) => ({
+        id: `PM-TALK-${block.startTs}-${index + 1}`,
+        source: 'KakaoTalk',
+        room: _extractKakaoRoom(ev.windowTitle || '') || ev.windowTitle || 'KakaoTalk',
+        sender: ev.employeeName || ev.userId || 'unknown',
+        sentAt: new Date(ts).toISOString(),
+        text: ev.text || ev.activity || ev.windowTitle || '',
+        intent: workUnitCategoryForBlock({ ...block, details: [ev.text || ev.activity || ev.windowTitle || ''] }),
+        relation: talkRelationFor(block, ts),
+      }));
+  }
+
+  function customerForBlock(block, relatedTalks) {
+    const text = [
+      ...(block.details || []),
+      ...relatedTalks.map(talk => `${talk.room} ${talk.text}`),
+    ].join(' ');
+    return _extractCustomers(text)[0] || undefined;
+  }
+
+  function workUnitId(userId, block) {
+    const stamp = new Date(block.startTs).toISOString().replace(/\D/g, '').slice(0, 14);
+    const app = String(block.app || 'pc').replace(/[^a-z0-9가-힣]+/gi, '-').replace(/^-|-$/g, '').slice(0, 24) || 'pc';
+    const user = String(userId || 'unknown').replace(/[^a-z0-9가-힣]+/gi, '-').replace(/^-|-$/g, '').slice(0, 32) || 'unknown';
+    return `PM-${stamp}-${user}-${app}`;
+  }
+
+  function buildWorkUnitCandidates(events, blocks, { userId, userName, limit = 50 } = {}) {
+    return blocks.slice(0, limit).map(block => {
+      const relatedTalks = relatedTalksForBlock(events, block);
+      const category = workUnitCategoryForBlock(block);
+      const customer = customerForBlock(block, relatedTalks);
+      const firstDetail = block.details?.[0] || block.app;
+      const appName = block.app === 'Nenova ERP' ? 'nenova.exe' : block.app;
+      const source = workUnitSourceForApp(block.app);
+      const validationStatus = relatedTalks.length && block.app !== 'KakaoTalk' ? '부분일치' : '검증대기';
+      return {
+        id: workUnitId(userId, block),
+        type: block.types?.[0] || 'process-mining.block',
+        employeeName: userName || userId,
+        employeeId: userId,
+        accountId: userId,
+        team: 'process-mining',
+        workArea: `${category}/${block.app}`,
+        source,
+        appName,
+        windowTitle: firstDetail,
+        clickCount: block.clickCount || 0,
+        clickEvidence: block.clickEvidence || [],
+        category,
+        title: `${customer ? `${customer} ` : ''}${category} ${block.app} 작업`,
+        detail: `${block.app}에서 ${Math.max(1, Math.round(block.duration / 60000))}분 동안 감지된 작업 블록입니다. 근거: ${(block.details || []).slice(0, 3).join(' / ') || '상세 없음'}`,
+        customer,
+        startedAt: new Date(block.startTs).toISOString(),
+        endedAt: new Date(block.endTs || block.startTs + 60000).toISOString(),
+        durationSec: Math.max(1, Math.round((block.endTs - block.startTs) / 1000)),
+        confidence: relatedTalks.length ? 78 : 62,
+        evidence: [
+          `source=process-mining`,
+          `types=${(block.types || []).join(',')}`,
+          `events=${block.events}`,
+          `app=${block.app}`,
+        ],
+        pcEvidence: [
+          `app=${block.app}`,
+          `events=${block.events}`,
+          `clicks=${block.clickCount || 0}`,
+          `details=${(block.details || []).slice(0, 2).join(' | ') || 'none'}`,
+        ],
+        relatedTalks,
+        talkRelation: relatedTalks[0]?.relation || '미연결',
+        validationStatus,
+        validationMemo: relatedTalks.length
+          ? '프로세스 마이닝 블록과 카카오톡 대화가 30분 창 안에서 연결된 후보입니다. ERP 고객/프로젝트 매핑으로 3차 검증을 마무리해야 합니다.'
+          : '프로세스 마이닝에서 PC 작업 블록만 확인되었습니다. 같은 시간대 카카오톡/워크 대화 또는 ERP 원장 연결이 필요합니다.',
+        nextAction: relatedTalks.length
+          ? '네노바웹 작업 단위 화면에서 고객/프로젝트/할 일 연결을 확정합니다.'
+          : '카카오톡/워크 및 ERP 원장 데이터와 추가 매칭합니다.',
+        automationCandidate: (block.clickCount || 0) >= 20 || (block.automationScore || 0) >= 0.7,
+      };
+    });
+  }
+
   // ═══════════════════════════════════════════════════════════════════════════
   // GET /api/mining/timeline — 사용자 활동 타임라인
   // ?userId=xxx&date=2026-04-10&days=1
@@ -446,6 +587,83 @@ function createProcessMining({ getDb, reportSheet }) {
       });
     } catch (e) {
       console.error('[mining/timeline]', e.message);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // GET /api/mining/work-units — 프로세스 마이닝 → 네노바웹 작업 단위 후보
+  // ?userId=xxx&date=2026-05-24&days=1&limit=50
+  // ═══════════════════════════════════════════════════════════════════════════
+  router.get('/work-units', async (req, res) => {
+    try {
+      const db = getDb();
+      if (!db?.query) return res.json({ error: 'DB not available' });
+      const { userId, date, days, limit } = req.query;
+      if (!userId) return res.status(400).json({ error: 'userId required' });
+
+      const d = parseInt(days) || 1;
+      const l = Math.min(200, Math.max(1, parseInt(limit) || 50));
+      const events = await fetchMergedEvents(db, userId, date, d);
+      if (!events.length) return res.json({ workUnits: [], message: '데이터 없음' });
+
+      const blocks = buildActivityBlocks(events);
+      const userName = await getUserName(db, userId);
+      const workUnits = buildWorkUnitCandidates(events, blocks, { userId, userName, limit: l });
+
+      res.json({
+        user: { id: userId, name: userName },
+        period: { start: date || new Date().toISOString().substring(0, 10), days: d },
+        totalEvents: events.length,
+        totalBlocks: blocks.length,
+        count: workUnits.length,
+        workUnits,
+      });
+    } catch (e) {
+      console.error('[mining/work-units]', e.message);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // POST /api/mining/work-units/push — 후보를 네노바웹 /api/work-units로 전송
+  // body: { userId, date, days, limit, targetUrl? }
+  // ═══════════════════════════════════════════════════════════════════════════
+  router.post('/work-units/push', async (req, res) => {
+    try {
+      const db = getDb();
+      if (!db?.query) return res.json({ error: 'DB not available' });
+      const { userId, date, days, limit, targetUrl } = req.body || {};
+      if (!userId) return res.status(400).json({ error: 'userId required' });
+
+      const d = parseInt(days) || 1;
+      const l = Math.min(200, Math.max(1, parseInt(limit) || 50));
+      const events = await fetchMergedEvents(db, userId, date, d);
+      if (!events.length) return res.json({ ok: true, pushed: 0, message: '데이터 없음' });
+
+      const blocks = buildActivityBlocks(events);
+      const userName = await getUserName(db, userId);
+      const workUnits = buildWorkUnitCandidates(events, blocks, { userId, userName, limit: l });
+      const url = targetUrl || process.env.NENOVA_WORK_UNITS_URL || 'http://localhost:3000/api/work-units';
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json; charset=utf-8' },
+        body: JSON.stringify({ units: workUnits }),
+      });
+      const text = await response.text();
+      let body;
+      try { body = JSON.parse(text); } catch { body = { raw: text }; }
+
+      res.status(response.ok ? 200 : 502).json({
+        ok: response.ok,
+        targetUrl: url,
+        pushed: workUnits.length,
+        responseStatus: response.status,
+        response: body,
+      });
+    } catch (e) {
+      console.error('[mining/work-units/push]', e.message);
       res.status(500).json({ error: e.message });
     }
   });

@@ -234,3 +234,32 @@
 - 기존 `routes/process-mining.js`의 PC/카카오/구글시트 병합 결과를 `/api/work-units`로 직접 전달
 - 카카오톡/카카오워크 수신 이벤트를 `relatedTalks`로 자동 매핑
 - 운영 DB 도입 시 `data/work-units.json`을 work_unit 원장 테이블로 승격
+
+---
+
+## 작업 (2026-05-24) — Process Mining → Nenova Work Units 브릿지
+
+### 1. 이벤트 블록 확장 (완료)
+- process-mining 분석 타입에 `mouse.chunk` 추가
+- 활동 블록에 `clickCount`, `clickEvidence` 유지
+- recorder click도 작업 단위 클릭 근거로 반영
+
+### 2. 작업 단위 후보 API (완료)
+- `GET /api/mining/work-units` 추가
+- 사용자/기간 기준으로 PC 이벤트를 작업 블록으로 묶고 네노바웹 `/api/work-units` 페이로드로 변환
+- 30분 창 안의 KakaoTalk 이벤트를 `relatedTalks`로 자동 매칭
+
+### 3. 네노바웹 전송 API (완료)
+- `POST /api/mining/work-units/push` 추가
+- `targetUrl` 또는 `NENOVA_WORK_UNITS_URL`로 작업 단위 후보 일괄 전송
+- 기본값은 `http://localhost:3000/api/work-units`
+
+### 4. 검증 (완료)
+- `node --check routes/process-mining.js` 성공
+- `node --check server.js` 성공
+- `npm run build` 성공
+
+### 다음 단계
+- KakaoWork 수신 콜백도 `relatedTalks` 후보에 포함
+- 직원 계정 매핑 테이블을 붙여 `userId` 대신 네노바 계정 ID를 자동 확정
+- `/work-units`에서 process-mining push 실행 결과를 운영자가 볼 수 있는 버튼/로그 추가
