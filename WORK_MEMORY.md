@@ -578,6 +578,30 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - `nenova-erp-ui/src/app/(app)/work-units/page.tsx`
 - `docs/nenova-exe-work-unit-ingest.md`
 
+### Talk/Work 메시지 → PC 작업 후보 확장
+
+날짜:
+- 2026-05-24 KST
+
+현재 조치:
+- `GET/POST /api/work-units/talk-candidates`가 이제 `data/kakaotalk-messages.json`과 `data/kakaowork-events.json`을 함께 읽습니다.
+- 카카오워크 이벤트는 `resolveEmployeeIdentity`로 내부 `accountId`를 찾아 `TalkMessage`로 정규화합니다.
+- 후보 점수에 `same_account`, `kakaowork_source`, `session_work_unit` 가중치를 추가했습니다.
+- 카카오워크/카카오톡 자체가 만든 work unit은 후보 target에서 제외하고, PC/nenova.exe/`NX-SESSION-...` 작업 단위를 우선 매칭합니다.
+- `/work-units` 문구를 "카톡 연결 후보"에서 "톡/워크 연결 후보"로 바꾸고, 후보 카드에 `KakaoTalk`/`KakaoWork` source가 보이게 했습니다.
+- 직원별 업무 흐름 카드에서 미저장 PC 세션 후보가 있으면 리스크 배지에 `세션 후보 N`으로 표시합니다.
+
+검증:
+- `npx tsc --noEmit` 성공
+- `GET /api/work-units/talk-candidates`가 `kakaoworkMessages`, `targetWorkUnits`를 반환하고 카카오워크 후보를 점수화하는 것 확인
+- `/work-units` HTTP 200 확인
+- 브라우저에서 "톡/워크 연결 후보"와 `KakaoWork 메시지` 후보 렌더링 확인
+
+다시 반복되면 먼저 볼 위치:
+- `nenova-erp-ui/src/app/api/work-units/talk-candidates/route.ts`
+- `nenova-erp-ui/src/app/(app)/work-units/page.tsx`
+- `docs/nenova-work-unit-cross-validation.md`
+
 ### Nenova.exe 원본 이벤트 → Work Unit 브릿지
 
 날짜:

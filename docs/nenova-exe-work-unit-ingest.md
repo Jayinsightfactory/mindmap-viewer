@@ -143,11 +143,13 @@ Content-Type: application/json
 }
 ```
 
-저장된 카톡 메시지와 작업 단위 연결 후보는 다음에서 확인합니다.
+저장된 카카오톡 메시지와 카카오워크 콜백 이벤트를 작업 단위와 연결하는 후보는 다음에서 확인합니다.
 
 ```http
 GET /api/work-units/talk-candidates
 ```
+
+이 후보 API는 `data/kakaotalk-messages.json`과 `data/kakaowork-events.json`을 함께 읽습니다. `KakaoTalk`/`KakaoWork` 메시지를 시간차, 카테고리, 내부 계정, 대화방명, 세션 작업 단위 여부로 점수화합니다. 카카오워크 메시지 자체가 만든 work unit은 후보 목록에서 제외하고, PC/nenova.exe/세션 작업 단위를 우선 매칭합니다.
 
 후보 확정:
 
@@ -158,7 +160,7 @@ Content-Type: application/json
 {
   "workUnitId": "WU-PC-20260524-001",
   "talkId": "KT-20260524-001",
-  "note": "카톡 요청과 nenova.exe 견적 작업 연결"
+  "note": "톡/워크 요청과 nenova.exe 견적 작업 연결"
 }
 ```
 

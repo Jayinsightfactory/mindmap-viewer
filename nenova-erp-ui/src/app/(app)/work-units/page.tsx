@@ -98,6 +98,7 @@ type TalkCandidate = {
   };
   talk: {
     id: string;
+    source: "KakaoTalk" | "KakaoWork";
     room: string;
     sender: string;
     sentAt: string;
@@ -108,7 +109,7 @@ type TalkCandidate = {
 };
 
 type TalkCandidateApiResponse = {
-  counts?: { candidates?: number; kakaotalkMessages?: number };
+  counts?: { candidates?: number; kakaotalkMessages?: number; kakaoworkMessages?: number };
   candidates?: TalkCandidate[];
 };
 
@@ -538,14 +539,14 @@ export default function WorkUnitsPage() {
       body: JSON.stringify({
         workUnitId: candidate.workUnitId,
         talkId: candidate.talkId,
-        note: `카톡 ${candidate.talkId} 작업 근거 연결`,
+        note: `${candidate.talk.source} ${candidate.talkId} 작업 근거 연결`,
       }),
     });
     if (!response.ok) {
-      setCandidateMessage(`카톡 연결 실패: API ${response.status}`);
+      setCandidateMessage(`톡/워크 연결 실패: API ${response.status}`);
       return;
     }
-    setCandidateMessage(`${candidate.workUnitId}에 카톡 ${candidate.talkId} 근거를 저장했습니다.`);
+    setCandidateMessage(`${candidate.workUnitId}에 ${candidate.talk.source} ${candidate.talkId} 근거를 저장했습니다.`);
     await refresh();
   }
 
@@ -622,7 +623,7 @@ export default function WorkUnitsPage() {
             </div>
             <div className="mt-3 border-t border-slate-200 pt-3">
               <div className="text-xs text-slate-500">API 수신 {apiCount}건</div>
-              <div className="mt-1 text-xs text-slate-500">카톡 연결 후보 {talkCandidates.length}건</div>
+              <div className="mt-1 text-xs text-slate-500">톡/워크 연결 후보 {talkCandidates.length}건</div>
               <div className="mt-1 text-xs text-slate-500">PC 세션 후보 {sessionCandidates.length}건</div>
               <div className="mt-1 text-xs text-slate-500">원본 PC 이벤트 {rawEventCount}건</div>
               {syncError && <div className="mt-1 text-xs text-amber-700">{syncError}</div>}
@@ -664,7 +665,10 @@ export default function WorkUnitsPage() {
           <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">{employeeWorkflows.length}명</span>
         </div>
         <div className="mt-4 grid gap-4 xl:grid-cols-2">
-          {employeeWorkflows.map((row) => (
+          {employeeWorkflows.map((row) => {
+            const pendingSessionCount = sessionCandidates.filter((candidate) => candidate.employee === row.employee).length;
+            const riskLabel = pendingSessionCount ? `세션 후보 ${pendingSessionCount}` : row.workflowRisk;
+            return (
             <article key={row.employee} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
@@ -674,8 +678,8 @@ export default function WorkUnitsPage() {
                     {row.team} · {row.primaryArea}
                   </div>
                 </div>
-                <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${row.workflowRisk === "흐름 안정" ? "bg-green-50 text-green-700" : "bg-amber-100 text-amber-700"}`}>
-                  {row.workflowRisk}
+                <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${riskLabel === "흐름 안정" ? "bg-green-50 text-green-700" : "bg-amber-100 text-amber-700"}`}>
+                  {riskLabel}
                 </span>
               </div>
               <div className="mt-4 grid grid-cols-4 gap-2 text-center text-xs">
@@ -723,7 +727,8 @@ export default function WorkUnitsPage() {
                 </div>
               </div>
             </article>
-          ))}
+            );
+          })}
         </div>
       </section>
 
@@ -873,8 +878,8 @@ export default function WorkUnitsPage() {
       <section className="rounded-lg border border-slate-200 bg-white p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h3 className="font-semibold text-slate-900">카톡 연결 후보</h3>
-            <p className="mt-1 text-sm text-slate-500">카톡 원본 메시지를 작업단위와 시간/카테고리/대화방 기준으로 연결합니다.</p>
+            <h3 className="font-semibold text-slate-900">톡/워크 연결 후보</h3>
+            <p className="mt-1 text-sm text-slate-500">카카오톡과 카카오워크 메시지를 작업단위와 시간/카테고리/대화방 기준으로 연결합니다.</p>
             {candidateMessage && <p className="mt-1 text-sm font-medium text-brand">{candidateMessage}</p>}
           </div>
           <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">{talkCandidates.length}건</span>
@@ -902,7 +907,7 @@ export default function WorkUnitsPage() {
                   </div>
                 </div>
                 <div className="rounded-md bg-white p-3">
-                  <div className="text-xs font-semibold text-slate-500">카톡 메시지</div>
+                  <div className="text-xs font-semibold text-slate-500">{candidate.talk.source} 메시지</div>
                   <div className="mt-1 text-sm font-medium text-slate-900">{candidate.talk.room}</div>
                   <div className="mt-1 text-xs text-slate-500">
                     {candidate.talk.sender} · {timeLabel(candidate.talk.sentAt)}
@@ -927,12 +932,12 @@ export default function WorkUnitsPage() {
                   onClick={() => void confirmTalkCandidate(candidate)}
                   className="rounded-md bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-700"
                 >
-                  카톡 근거 저장
+                  톡/워크 근거 저장
                 </button>
               </div>
             </article>
           ))}
-          {talkCandidates.length === 0 && <div className="rounded-md bg-slate-50 p-6 text-center text-sm text-slate-400 xl:col-span-2">작업단위와 연결할 카톡 후보가 없습니다.</div>}
+          {talkCandidates.length === 0 && <div className="rounded-md bg-slate-50 p-6 text-center text-sm text-slate-400 xl:col-span-2">작업단위와 연결할 톡/워크 후보가 없습니다.</div>}
         </div>
       </section>
 

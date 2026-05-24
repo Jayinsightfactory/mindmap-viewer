@@ -628,6 +628,34 @@
 
 ---
 
+## 작업 (2026-05-24) — 톡/워크 후보 우선 매칭
+
+### 1. 후보 API 확장 (완료)
+- `/api/work-units/talk-candidates`가 KakaoTalk와 KakaoWork 이벤트를 함께 읽도록 확장
+- 카카오워크 이벤트를 내부 직원 `accountId`로 정규화
+- `same_account`, `kakaowork_source`, `session_work_unit` 점수 신호 추가
+- 카카오톡/카카오워크 단독 work unit은 후보 target에서 제외하고 PC/nenova.exe/세션 작업 단위만 우선 매칭
+
+### 2. 화면 반영 (완료)
+- `/work-units`의 "카톡 연결 후보"를 "톡/워크 연결 후보"로 변경
+- 후보 카드에 `KakaoTalk`/`KakaoWork` 메시지 source 표시
+- 직원별 업무 흐름 카드에 미저장 세션 후보가 있으면 `세션 후보 N` 리스크 배지 표시
+
+### 3. 문서화 (완료)
+- `docs/nenova-exe-work-unit-ingest.md`에 톡/워크 후보 규칙 추가
+- `docs/nenova-work-unit-cross-validation.md`에 Talk/Work candidate scoring 추가
+
+### 4. 검증 (완료)
+- `npx tsc --noEmit` 성공
+- `GET /api/work-units/talk-candidates`에서 `kakaoworkMessages`, `targetWorkUnits`와 카카오워크 후보 확인
+- `/work-units` HTTP 200 확인
+- 브라우저에서 "톡/워크 연결 후보"와 `KakaoWork 메시지` 렌더링 확인
+
+### 다음 단계
+- 카카오워크 메시지와 PC 세션 후보를 확정할 때, 같은 시간대 ERP/구글시트 결과 근거까지 자동으로 같이 붙이기
+
+---
+
 ## 작업 (2026-05-24) — ERP Flow 전환 요청 큐
 
 ### 1. 전환 요청 표시 (완료)

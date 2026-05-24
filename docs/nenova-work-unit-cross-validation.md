@@ -19,6 +19,7 @@ Nenova staff work in different accounts and responsibility areas. The primary go
 - Page: `/work-units`
 - Data store: `nenova-erp-ui/src/lib/store.ts`
 - Ingestion foundation: `POST /api/work-units`
+- Talk/work matching candidates: `GET/POST /api/work-units/talk-candidates`
 - Optional business-record merge candidates: `GET /api/work-units/intake-candidates`
 - AI context: `/api/assistant` receives `getErpSnapshot()`, which includes work-unit summaries.
 
@@ -57,6 +58,25 @@ Important fields:
    - `부분일치`: two sources match, one is missing.
    - `충돌`: sources disagree.
    - `검증대기`: only one source exists.
+
+## Talk/Work Candidate Scoring
+
+`GET /api/work-units/talk-candidates` reads both file-backed talk sources:
+
+- `data/kakaotalk-messages.json`
+- `data/kakaowork-events.json`
+
+It hides KakaoTalk/KakaoWork-only work units from the candidate target list so that the first candidates focus on PC, `nenova.exe`, and `NX-SESSION-...` session work units.
+
+Score signals:
+
+- `within_30min` or `within_3h`: talk and PC work are close in time.
+- `same_category`: quote/task/project/finance/inventory category matches.
+- `same_account`: KakaoWork user resolves to the same internal `accountId`.
+- `kakaowork_source`: KakaoWork is a company work channel, so it receives a small priority boost.
+- `session_work_unit`: merged PC session work units receive a priority boost.
+- `room_in_work`: room/customer name appears in the work unit text.
+- `not_yet_linked`: the message is not already attached to the work unit.
 
 ## ERP Intake Candidate Scoring
 
