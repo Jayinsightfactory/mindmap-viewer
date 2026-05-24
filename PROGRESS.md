@@ -291,3 +291,31 @@
 - 직원 이메일/카카오워크 userId와 네노바 계정 ID 매핑 테이블 추가
 - 카카오워크 콜백에서 실제 할 일/견적 초안 생성으로 이어지는 승인 플로우 구현
 - `/work-units`에서 카카오워크 단독 후보를 PC 작업과 수동 병합하는 UI 추가
+
+---
+
+## 작업 (2026-05-24) — 직원 계정 매핑 디렉터리
+
+### 1. 내부 직원 디렉터리 (완료)
+- `employee-directory.ts` 추가
+- 내부 로그인 ID, 표시 이름, accountId, 팀, 기본 업무영역, 이메일, KakaoWork userId, Orbit userId, PC hostname, 별칭을 통합
+- 임재용, 설연주, 강현우, 박성수 4명 기준 등록
+
+### 2. API 연결 (완료)
+- `GET /api/employees/directory` 추가
+- query로 `userEmail`, `userId`, `kakaoworkUserId`, `hostname`, `employeeName`, `accountId`를 넣으면 내부 계정 해석 결과 반환
+- `/api/kakaowork/callback`과 `/api/work-units`가 같은 매핑 함수를 사용
+
+### 3. 검증 (완료)
+- `worker@example.com` → 설연주 / `nenova:sales-support:sul-yeonju` 매핑 확인
+- `kw-user-001` 카카오워크 콜백 → 작업 단위 후보가 내부 계정으로 저장되는 것 확인
+- `npx tsc --noEmit` 성공
+- dev 서버 재시작 후 `/work-units` HTTP 200 확인
+
+### 참고
+- `npm run build`는 `.next/server/app/assistant.segments` 파일 잠금으로 실패했습니다. 코드 타입 검증은 `npx tsc --noEmit`으로 통과했습니다.
+
+### 다음 단계
+- 디렉터리를 파일/DB 기반으로 편집 가능하게 만들기
+- `/work-units` 화면에 매핑 신뢰도와 매칭 근거 표시
+- KakaoWork 승인 액션이 실제 ERP task/quote 생성으로 이어지게 연결

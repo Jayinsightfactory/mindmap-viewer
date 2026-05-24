@@ -307,3 +307,28 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - `nenova-erp-ui/src/app/api/kakaowork/callback/route.ts`
 - `nenova-erp-ui/src/app/api/work-units/route.ts`
 - `docs/nenova-kakaowork-integration.md`
+
+### 직원 계정 매핑 기준
+
+날짜:
+- 2026-05-24 KST
+
+현재 조치:
+- `nenova-erp-ui/src/lib/employee-directory.ts`를 추가해 내부 직원 계정, 팀, 기본 업무영역, 이메일, KakaoWork userId, Orbit userId, PC hostname, 별칭을 한 곳에 모았습니다.
+- `GET /api/employees/directory`를 추가해 매핑 상태와 단건 해석 결과를 확인할 수 있게 했습니다.
+- `/api/kakaowork/callback`과 `/api/work-units`가 이 매핑을 사용해 외부 ID를 내부 `accountId`로 정규화합니다.
+- 샘플 `worker@example.com`/`kw-user-001`은 `설연주`, `seol`, `nenova:sales-support:sul-yeonju`, `견적/거래처 단가`로 해석됩니다.
+
+검증:
+- `npx tsc --noEmit` 성공
+- `GET /api/employees/directory?userEmail=worker@example.com` 확인
+- 카카오워크 샘플 콜백 재전송 후 `/api/work-units`에서 내부 계정으로 저장 확인
+
+주의:
+- `npm run build`는 코드 타입 체크 전 단계에서 `.next/server/app/assistant.segments` 파일 잠금(OneDrive/Next dev 산출물)으로 실패했습니다. 같은 변경에 대해 `npx tsc --noEmit`과 dev 서버 HTTP 200으로 대체 검증했습니다.
+
+다시 반복되면 먼저 볼 위치:
+- `nenova-erp-ui/src/lib/employee-directory.ts`
+- `nenova-erp-ui/src/app/api/employees/directory/route.ts`
+- `nenova-erp-ui/src/app/api/kakaowork/callback/route.ts`
+- `nenova-erp-ui/src/app/api/work-units/route.ts`

@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { NextRequest, NextResponse } from "next/server";
+import { resolveEmployeeIdentity } from "@/lib/employee-directory";
 
 export const runtime = "nodejs";
 
@@ -123,14 +124,26 @@ async function saveEvent(event: NormalizedKakaoWorkEvent) {
 }
 
 function toWorkUnitPayload(event: NormalizedKakaoWorkEvent) {
+  const identity = resolveEmployeeIdentity({
+    employeeName: event.userName || undefined,
+    userName: event.userName || undefined,
+    userEmail: event.userEmail || undefined,
+    email: event.userEmail || undefined,
+    userId: event.userId ? String(event.userId) : undefined,
+    kakaoworkUserId: event.userId ? String(event.userId) : undefined,
+  });
+  const sender = identity?.employee || event.userName || event.userEmail || String(event.userId || "unknown");
+
   return {
     id: `KW-WU-${event.id.replace(/^KW-/, "")}`,
     type: `kakaowork.${event.event}`,
-    employeeName: event.userName || event.userEmail || String(event.userId || "KakaoWork"),
-    employeeId: event.userId ? String(event.userId) : undefined,
-    accountId: event.userEmail || (event.userId ? `kakaowork:${event.userId}` : "kakaowork:unknown"),
-    team: event.conversationName || "KakaoWork",
-    workArea: `${event.category}/KakaoWork`,
+    employeeName: identity?.employee || event.userName || event.userEmail || String(event.userId || "KakaoWork"),
+    employeeId: identity?.id || (event.userId ? String(event.userId) : undefined),
+    userId: event.userId ? String(event.userId) : undefined,
+    userEmail: event.userEmail || undefined,
+    accountId: identity?.accountId || event.userEmail || (event.userId ? `kakaowork:${event.userId}` : "kakaowork:unknown"),
+    team: identity?.team || event.conversationName || "KakaoWork",
+    workArea: identity?.defaultWorkArea || `${event.category}/KakaoWork`,
     source: "KakaoWork",
     appName: "KakaoWork",
     windowTitle: event.conversationName || event.conversationId || "KakaoWork conversation",
@@ -147,6 +160,7 @@ function toWorkUnitPayload(event: NormalizedKakaoWorkEvent) {
       `event=${event.event}`,
       `intent=${event.intent}`,
       `conversation=${event.conversationName || event.conversationId || "unknown"}`,
+      identity ? `employee_match=${identity.matchedBy}:${identity.confidence}` : "",
     ],
     pcEvidence: ["app=KakaoWork", `conversation=${event.conversationName || event.conversationId || "unknown"}`],
     relatedTalks: [
@@ -154,7 +168,7 @@ function toWorkUnitPayload(event: NormalizedKakaoWorkEvent) {
         id: event.id,
         source: "KakaoWork",
         room: event.conversationName || event.conversationId || "KakaoWork",
-        sender: event.userName || event.userEmail || String(event.userId || "unknown"),
+        sender,
         sentAt: event.receivedAt,
         text: event.text,
         intent: event.intent,

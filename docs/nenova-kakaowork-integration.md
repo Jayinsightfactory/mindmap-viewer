@@ -104,6 +104,18 @@ Response includes:
 
 Returns the recent KakaoWork callback inbox and storage status.
 
+### `GET /api/employees/directory`
+
+Returns the internal employee identity map used by KakaoWork callbacks and work-unit ingestion.
+
+Example:
+
+```http
+GET /api/employees/directory?userEmail=worker@example.com
+```
+
+The response includes the resolved internal `employee`, `accountId`, `team`, `defaultWorkArea`, and the match source such as `email`, `kakaoworkUserId`, `orbitUserId`, `hostname`, or `name`.
+
 ## Environment Variables
 
 ```bash

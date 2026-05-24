@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { NextRequest, NextResponse } from "next/server";
+import { resolveEmployeeIdentity } from "@/lib/employee-directory";
 
 export const runtime = "nodejs";
 
@@ -20,6 +21,10 @@ type WorkUnitPayload = {
   employee?: string;
   employeeName?: string;
   employeeId?: string;
+  userId?: string;
+  userEmail?: string;
+  email?: string;
+  hostname?: string;
   userName?: string;
   accountId?: string;
   team?: string;
@@ -241,8 +246,19 @@ function normalize(payload: WorkUnitPayload, existingUnits: NormalizedWorkUnit[]
   const fallbackEnd = new Date(new Date(startedAt).getTime() + Math.max(1, durationSecInput ?? 60) * 1000);
   const endedAt = iso(payload.endedAt ?? period.end ?? data.endedAt ?? data.end, fallbackEnd);
   const durationSec = Math.max(1, Math.round((new Date(endedAt).getTime() - new Date(startedAt).getTime()) / 1000));
-  const employee = readString(payload.employee, payload.employeeName, data.employee, data.employeeName, payload.userName, data.userName, payload.employeeId, "미지정");
-  const employeeId = readString(payload.employeeId, data.employeeId) || undefined;
+  const identity = resolveEmployeeIdentity({
+    employee: readString(payload.employee, data.employee),
+    employeeName: readString(payload.employeeName, data.employeeName),
+    employeeId: readString(payload.employeeId, data.employeeId),
+    accountId: readString(payload.accountId, data.accountId),
+    userName: readString(payload.userName, data.userName),
+    userId: readString(payload.userId, data.userId),
+    userEmail: readString(payload.userEmail, payload.email, data.userEmail, data.email),
+    kakaoworkUserId: readString(payload.userId, data.userId),
+    hostname: readString(payload.hostname, data.hostname),
+  });
+  const employee = identity?.employee || readString(payload.employee, payload.employeeName, data.employee, data.employeeName, payload.userName, data.userName, payload.employeeId, "미지정");
+  const employeeId = readString(identity?.id, payload.employeeId, data.employeeId) || undefined;
   const appName = readString(payload.appName, payload.app, data.appName, data.app, "nenova.exe");
   const windowTitle = readString(payload.windowTitle, payload.window, data.windowTitle, data.window, "작업 창 미수집");
   const source = inferSource(readString(payload.source, data.source), appName, eventType);
@@ -275,6 +291,7 @@ function normalize(payload: WorkUnitPayload, existingUnits: NormalizedWorkUnit[]
     `source=${source}`,
     `app=${appName}`,
     `window=${windowTitle}`,
+    identity ? `employee_match=${identity.matchedBy}:${identity.confidence}` : "",
   ];
   const payloadPcEvidence = readStringList(payload.pcEvidence);
   const dataPcEvidence = readStringList(data.pcEvidence);
@@ -291,9 +308,9 @@ function normalize(payload: WorkUnitPayload, existingUnits: NormalizedWorkUnit[]
     source,
     employee,
     employeeId,
-    accountId: readString(payload.accountId, data.accountId, employeeId, employee),
-    team: readString(payload.team, data.team, "미지정"),
-    workArea: readString(payload.workArea, data.workArea, category),
+    accountId: identity?.accountId || readString(payload.accountId, data.accountId, employeeId, employee),
+    team: identity?.team || readString(payload.team, data.team, "미지정"),
+    workArea: readString(payload.workArea, data.workArea, identity?.defaultWorkArea, category),
     category,
     title: readString(payload.title, payload.summary, data.title, data.summary, `${appName} 작업`).slice(0, 120),
     detail: readString(payload.detail, payload.summary, data.detail, data.summary, `${windowTitle}에서 수집된 작업 단위입니다.`),
