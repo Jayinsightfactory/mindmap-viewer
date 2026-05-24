@@ -345,6 +345,35 @@ function sourceLabel(source: WorkUnitSource) {
   return labels[source];
 }
 
+function evidenceValue(items: string[], key: string) {
+  const match = items.find((item) => item.startsWith(`${key}=`));
+  return match ? match.slice(key.length + 1) : "";
+}
+
+function sourceIds(unit: WorkUnit) {
+  return [
+    evidenceValue(unit.evidence, "raw_event_id"),
+    evidenceValue(unit.evidence, "session_id"),
+    evidenceValue(unit.evidence, "event_ids"),
+    unit.relatedTalks[0]?.id,
+  ].filter(Boolean);
+}
+
+function firstTalk(unit: WorkUnit) {
+  return unit.relatedTalks[0];
+}
+
+function rawEvidence(unit: WorkUnit) {
+  return [
+    evidenceValue(unit.evidence, "hostname"),
+    evidenceValue(unit.evidence, "process"),
+    evidenceValue(unit.evidence, "active_window"),
+    evidenceValue(unit.evidence, "mouse_clicks") ? `clicks=${evidenceValue(unit.evidence, "mouse_clicks")}` : "",
+    evidenceValue(unit.evidence, "keyboard_count") ? `keys=${evidenceValue(unit.evidence, "keyboard_count")}` : "",
+    evidenceValue(unit.evidence, "screen_summary"),
+  ].filter(Boolean);
+}
+
 function hourKey(value: string) {
   return new Date(value).toLocaleTimeString("ko-KR", {
     timeZone: "Asia/Seoul",
@@ -603,29 +632,26 @@ export default function WorkUnitsPage() {
       <section className="rounded-lg border border-slate-200 bg-white p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="max-w-4xl">
-            <p className="text-sm font-semibold text-brand">직원 작업 단위 교차검증</p>
+            <p className="text-sm font-semibold text-brand">직원 작업 데이터 원장</p>
             <h2 className="mt-2 text-2xl font-semibold text-slate-950">
-              계정별 업무영역, 클릭 시간, 카카오톡 대화, PC 작업 데이터를 같이 봅니다.
+              직원이 실제로 남긴 작업, 대화, PC 근거를 한 줄씩 확인합니다.
             </h2>
             <p className="mt-3 text-sm leading-6 text-slate-600">
-              핵심은 ERP가 아니라 직원별 실제 작업 흐름입니다. `nenova.exe` 작업 단위, 카톡/워크 대화, PC 화면/클릭 데이터를 먼저 묶고
-              그 다음 대화가 작업을 만들었는지, 작업 후 대화가 이어졌는지, 동시에 진행됐는지 확인합니다.
+              통계보다 원본 확인이 먼저입니다. 작업ID, 직원 계정, 시간, 앱/창 제목, 카카오톡/워크 메시지, 클릭/화면 근거, 원본 이벤트 ID가 바로 보이게 정리합니다.
             </p>
           </div>
           <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-            <div className="font-semibold text-slate-900">검증 기준</div>
+            <div className="font-semibold text-slate-900">보는 순서</div>
             <div className="mt-2 leading-6">
-              1. nenova.exe 작업 시간
+              1. 직원/계정
               <br />
-              2. 카톡/워크 대화 시간
+              2. 실제 작업 시간
               <br />
-              3. PC 앱/화면/클릭 근거
+              3. 대화와 PC 근거
             </div>
             <div className="mt-3 border-t border-slate-200 pt-3">
-              <div className="text-xs text-slate-500">API 수신 {apiCount}건</div>
-              <div className="mt-1 text-xs text-slate-500">톡/워크 연결 후보 {talkCandidates.length}건</div>
-              <div className="mt-1 text-xs text-slate-500">PC 세션 후보 {sessionCandidates.length}건</div>
-              <div className="mt-1 text-xs text-slate-500">원본 PC 이벤트 {rawEventCount}건</div>
+              <div className="text-xs text-slate-500">work-units.json + nenova-exe-events.json</div>
+              <div className="mt-1 text-xs text-slate-500">kakaotalk/kakaowork 이벤트 근거 포함</div>
               {syncError && <div className="mt-1 text-xs text-amber-700">{syncError}</div>}
               <button
                 type="button"
@@ -639,7 +665,163 @@ export default function WorkUnitsPage() {
         </div>
       </section>
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+      <section className="rounded-lg border border-slate-200 bg-white p-5">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <h3 className="font-semibold text-slate-900">실제 작업 데이터</h3>
+            <p className="mt-1 text-sm text-slate-500">요약 숫자 없이, 수집된 작업과 근거를 그대로 확인합니다.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <label className="text-sm text-slate-600">
+              직원
+              <select
+                value={employeeFilter}
+                onChange={(e) => setEmployeeFilter(e.target.value)}
+                className="ml-2 rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand"
+              >
+                {employees.map((employee) => (
+                  <option key={employee} value={employee}>
+                    {employee}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="text-sm text-slate-600">
+              업무영역
+              <select
+                value={areaFilter}
+                onChange={(e) => setAreaFilter(e.target.value)}
+                className="ml-2 rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand"
+              >
+                {workAreas.map((area) => (
+                  <option key={area} value={area}>
+                    {area}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="text-sm text-slate-600">
+              검증상태
+              <select
+                value={validationFilter}
+                onChange={(e) => setValidationFilter(e.target.value)}
+                className="ml-2 rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand"
+              >
+                {["전체", ...VALIDATION_STATUSES].map((status) => (
+                  <option key={status} value={status}>
+                    {status}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        </div>
+
+        <div className="mt-4 overflow-x-auto">
+          <table className="min-w-[1180px] w-full text-sm">
+            <thead>
+              <tr className="border-y border-slate-200 bg-slate-50 text-left text-xs text-slate-500">
+                <th className="px-3 py-3 font-medium">작업ID/시간</th>
+                <th className="px-3 py-3 font-medium">직원/계정</th>
+                <th className="px-3 py-3 font-medium">작업 내용</th>
+                <th className="px-3 py-3 font-medium">PC 화면</th>
+                <th className="px-3 py-3 font-medium">대화 원문</th>
+                <th className="px-3 py-3 font-medium">원본 근거</th>
+                <th className="px-3 py-3 font-medium">검증</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredUnits.map((unit) => {
+                const talk = firstTalk(unit);
+                const ids = sourceIds(unit);
+                const rawItems = rawEvidence(unit);
+                return (
+                  <tr key={unit.id} className="border-b border-slate-100 align-top">
+                    <td className="w-[170px] px-3 py-4">
+                      <div className="font-mono text-xs font-semibold text-slate-800">{unit.id}</div>
+                      <div className="mt-1 text-xs text-slate-500">
+                        {dateLabel(unit.startedAt)} {timeLabel(unit.startedAt)}-{timeLabel(unit.endedAt)}
+                      </div>
+                      <div className="mt-1 text-xs text-slate-500">{unit.durationMin}분</div>
+                    </td>
+                    <td className="w-[190px] px-3 py-4">
+                      <div className="font-medium text-slate-900">{unit.employee}</div>
+                      <div className="mt-1 break-all font-mono text-xs text-slate-500">{unit.accountId}</div>
+                      <div className="mt-2 text-xs text-slate-500">{unit.team}</div>
+                    </td>
+                    <td className="w-[230px] px-3 py-4">
+                      <div className="font-medium text-slate-900">{unit.title}</div>
+                      <div className="mt-1 text-xs text-slate-500">
+                        {unit.category} · {unit.workArea}
+                      </div>
+                      <p className="mt-2 line-clamp-3 text-xs leading-5 text-slate-600">{unit.detail}</p>
+                    </td>
+                    <td className="w-[210px] px-3 py-4">
+                      <div className="text-xs font-medium text-slate-900">{sourceLabel(unit.source)} · {unit.appName}</div>
+                      <div className="mt-1 text-xs leading-5 text-slate-600">{unit.windowTitle}</div>
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        <span className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600">click {unit.clickCount}</span>
+                        {unit.clickEvidence.slice(0, 2).map((item) => (
+                          <span key={item} className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
+                            {item}
+                          </span>
+                        ))}
+                      </div>
+                    </td>
+                    <td className="w-[230px] px-3 py-4">
+                      {talk ? (
+                        <div>
+                          <div className="text-xs font-medium text-slate-900">
+                            {talk.source} · {talk.room}
+                          </div>
+                          <div className="mt-1 text-xs text-slate-500">
+                            {talk.sender} · {timeLabel(talk.sentAt)}
+                          </div>
+                          <p className="mt-2 line-clamp-3 text-xs leading-5 text-slate-600">{talk.text}</p>
+                          <span className={`mt-2 inline-flex rounded-full px-2 py-0.5 text-xs ${RELATION_STYLE[talk.relation]}`}>{talk.relation}</span>
+                        </div>
+                      ) : (
+                        <div className="text-xs text-slate-400">연결된 대화 없음</div>
+                      )}
+                    </td>
+                    <td className="w-[220px] px-3 py-4">
+                      <div className="space-y-1">
+                        {shortList(ids, "원본ID 대기").slice(0, 3).map((item) => (
+                          <div key={item} className="break-all font-mono text-xs text-slate-600">
+                            {item}
+                          </div>
+                        ))}
+                      </div>
+                      <div className="mt-2 space-y-1">
+                        {shortList(rawItems, "PC 근거 대기").slice(0, 4).map((item) => (
+                          <div key={item} className="break-all text-xs text-slate-500">
+                            {item}
+                          </div>
+                        ))}
+                      </div>
+                    </td>
+                    <td className="w-[140px] px-3 py-4">
+                      <span className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${VALIDATION_STYLE[unit.validationStatus]}`}>
+                        {unit.validationStatus}
+                      </span>
+                      <div className="mt-2 text-xs leading-5 text-slate-500">{unit.validationMemo}</div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {filteredUnits.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="px-3 py-10 text-center text-sm text-slate-400">
+                    필터에 맞는 실제 작업 데이터가 없습니다.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="hidden">
         {[
           { label: "작업 단위", value: snapshot.counts.totalUnits, detail: "수집/시드 전체" },
           { label: "활성 계정", value: snapshot.counts.activeEmployees, detail: "직원 계정 기준" },
@@ -656,7 +838,7 @@ export default function WorkUnitsPage() {
         ))}
       </section>
 
-      <section className="rounded-lg border border-slate-200 bg-white p-5">
+      <section className="hidden">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <h3 className="font-semibold text-slate-900">직원별 실제 업무 흐름</h3>
@@ -732,7 +914,7 @@ export default function WorkUnitsPage() {
         </div>
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+      <section className="hidden">
         <article className="rounded-lg border border-slate-200 bg-white p-5">
           <h3 className="font-semibold text-slate-900">회사 전체 워크플로우 예측</h3>
           <p className="mt-1 text-sm text-slate-500">시간순 작업단위에서 업무 카테고리 전환을 뽑아 회사 전체 흐름을 봅니다.</p>
@@ -771,7 +953,7 @@ export default function WorkUnitsPage() {
         </article>
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
+      <section className="hidden">
         <article className="rounded-lg border border-slate-200 bg-white p-5">
           <h3 className="font-semibold text-slate-900">데이터 소스 커버리지</h3>
           <p className="mt-1 text-sm text-slate-500">nenova.exe, 카톡/워크, PC 작업 데이터가 얼마나 들어왔는지 확인합니다.</p>
@@ -1006,7 +1188,7 @@ export default function WorkUnitsPage() {
         </div>
       </section>
 
-      <section className="rounded-lg border border-slate-200 bg-white p-5">
+      <section className="hidden">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <h3 className="font-semibold text-slate-900">계정별 업무영역</h3>
@@ -1093,7 +1275,7 @@ export default function WorkUnitsPage() {
         </div>
       </section>
 
-      <section className="grid gap-4 lg:grid-cols-3">
+      <section className="hidden">
         {[
           { title: "대화가 작업을 만든 경우", relation: "대화후작업" as const, items: relationGroups.대화후작업 },
           { title: "작업 뒤 대화가 이어진 경우", relation: "작업후대화" as const, items: relationGroups.작업후대화 },

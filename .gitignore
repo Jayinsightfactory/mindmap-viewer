@@ -41,4 +41,5 @@ coverage/
 *.bak
 test-screenshots/
 test-results/
+artifacts/screenshots/
 Dockerfile.bak

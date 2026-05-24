@@ -602,6 +602,33 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - `nenova-erp-ui/src/app/(app)/work-units/page.tsx`
 - `docs/nenova-work-unit-cross-validation.md`
 
+### Work Units 화면: 통계보다 명확한 데이터 원장
+
+날짜:
+- 2026-05-24 KST
+
+사용자 정정:
+- 사용자는 통계/예측/비중을 보고 싶은 것이 아니라 직원별 실제 작업 데이터가 명확하게 보이길 원합니다.
+- 첫 화면에서 숫자 카드나 워크플로우 예측보다 작업ID, 직원, 시간, 앱/창, 대화 원문, PC 근거, 원본 이벤트 ID가 보여야 합니다.
+
+현재 조치:
+- `/work-units` 상단을 "직원 작업 데이터 원장"으로 변경했습니다.
+- 통계 카드, 회사 전체 워크플로우 예측, 시간대별 업무량, 데이터 소스 커버리지, 계정별 요약, 관계별 요약 섹션은 화면에서 숨겼습니다.
+- 첫 번째 주요 섹션을 "실제 작업 데이터" 테이블로 바꿨습니다.
+- 테이블 컬럼: `작업ID/시간`, `직원/계정`, `작업 내용`, `PC 화면`, `대화 원문`, `원본 근거`, `검증`.
+- `원본 근거`에는 `raw_event_id`, `session_id`, `event_ids`, talk id, hostname, process, active_window, clicks, keys, screen_summary가 직접 보입니다.
+- 필터는 직원/업무영역/검증상태만 유지했습니다.
+
+검증:
+- `npx tsc --noEmit` 성공
+- `/work-units` HTTP 200 확인
+- 브라우저에서 `실제 작업 데이터`와 주요 컬럼 렌더링 확인
+- 브라우저에서 이전 통계 문구 `총 작업 시간`, `회사 전체 워크플로우 예측`이 화면에 보이지 않는 것 확인
+- 텍스트 overflow 검사에서 문제 없음
+
+다시 반복되면 먼저 볼 위치:
+- `nenova-erp-ui/src/app/(app)/work-units/page.tsx`
+
 ### Nenova.exe 원본 이벤트 → Work Unit 브릿지
 
 날짜:

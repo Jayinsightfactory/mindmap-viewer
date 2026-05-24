@@ -23,13 +23,15 @@ Nenova staff work in different accounts and responsibility areas. The primary go
 - Optional business-record merge candidates: `GET /api/work-units/intake-candidates`
 - AI context: `/api/assistant` receives `getErpSnapshot()`, which includes work-unit summaries.
 
-The top of `/work-units` now prioritizes:
+The top of `/work-units` now prioritizes clear source data, not statistics:
 
-- employee-by-employee workflow cards,
-- source coverage for `nenova.exe`, KakaoTalk/KakaoWork, and PC work,
-- time-of-day workload by minutes and hours,
-- company-wide category transitions such as customer response to quote or quote to project,
-- bottlenecks where talk data, PC evidence, or validation is missing.
+- work unit ID and exact time window,
+- employee/account/team,
+- task title and category,
+- PC app/window/click evidence,
+- KakaoTalk/KakaoWork message text,
+- raw event IDs and session IDs,
+- validation status and memo.
 
 ## Work Unit Shape
 
