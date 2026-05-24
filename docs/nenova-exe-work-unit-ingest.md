@@ -11,6 +11,74 @@
 
 ## 엔드포인트
 
+`nenova.exe`가 수집한 원본 PC 이벤트는 먼저 이 엔드포인트로 보냅니다.
+
+```http
+POST /api/nenova-exe/events
+Content-Type: application/json
+```
+
+이 엔드포인트는 원본 이벤트를 `nenova-erp-ui/data/nenova-exe-events.json`에 저장하고, 동시에 직원 워크플로우 화면에서 볼 수 있는 작업 단위로 변환해 내부적으로 `/api/work-units`에 동기화합니다.
+
+원본 이벤트 예시:
+
+```json
+{
+  "id": "nx-20260524-001",
+  "type": "mouse.chunk",
+  "sessionId": "sess-20260524-seol-001",
+  "timestamp": "2026-05-24T15:10:00+09:00",
+  "hostname": "NENOVA2025",
+  "userEmail": "worker@example.com",
+  "data": {
+    "app": "nenova.exe",
+    "processName": "nenova.exe",
+    "executablePath": "C:\\Nenova\\nenova.exe",
+    "windowTitle": "견적관리 - 세종상사",
+    "mouseClicks": 18,
+    "mouseRegions": {
+      "quoteGrid": 12,
+      "saveButton": 1
+    },
+    "screenSummary": "세종상사 견적 단가표 입력 화면"
+  }
+}
+```
+
+지원하는 주요 원본 필드:
+
+- `id`, `type`, `eventType`, `sessionId`, `parentEventId`, `timestamp`
+- `userId`, `userEmail`, `employeeName`, `accountId`, `hostname`, `deviceId`
+- `data.app`, `app`, `processName`, `exe`, `executablePath`
+- `windowTitle`, `activeWindowTitle`, `activeWindow.title`, `activeWindow.processName`
+- `mouseClicks`, `clickCount`, `recentClicks`, `mouseRegions`, `mousePositions`
+- `keyboardCount`, `keyCount`, `keystrokes`, `textLength`
+- `screenSummary`, `visionSummary`, `screenText`, `ocrText`, `data.screen.summary`
+- `startedAt`, `endedAt`, `period.start`, `period.end`, `durationSec`, `activeSeconds`
+
+자주 쓰는 이벤트 타입:
+
+```text
+active_window
+mouse.chunk
+keyboard.chunk
+screen.capture
+screen.analyzed
+clipboard.change
+recorder.click
+```
+
+정규화 결과는 다음 규칙으로 생성합니다.
+
+- 앱/프로세스/실행 경로에 `nenova.exe`가 있으면 source를 `nenova.exe`로 저장합니다.
+- 그 외 PC 이벤트는 source를 `PC`로 저장합니다.
+- hostname, email, accountId, KakaoWork userId로 직원 계정을 매칭합니다.
+- 화면 제목, 화면 요약, 앱 이름에서 견적/계약/프로젝트/할일/정산/재고/보고/AI검토/고객응대 카테고리를 추론합니다.
+- `session_id`, `hostname`, `process`, `executable`, `active_window`, `mouse_clicks`, `keyboard_count`, `screen_summary`를 교차검증 evidence로 남깁니다.
+- 새 작업 단위의 `validationStatus`는 우선 `검증대기`이며, 이후 카톡/카카오워크/ERP/구글시트 근거와 연결해 `부분일치` 또는 `일치`로 보정합니다.
+
+이미 정규화된 작업 단위는 아래 엔드포인트로 직접 보낼 수도 있습니다.
+
 ```http
 POST /api/work-units
 Content-Type: application/json

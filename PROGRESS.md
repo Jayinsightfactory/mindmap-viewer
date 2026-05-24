@@ -565,6 +565,37 @@
 
 ---
 
+## 작업 (2026-05-24) — Nenova.exe 원본 이벤트 브릿지
+
+### 1. 원본 이벤트 수집 API (완료)
+- `GET/POST /api/nenova-exe/events` 추가
+- 원본 저장 위치: `data/nenova-exe-events.json`
+- 단건, 배열, `{ events: [] }`, `{ items: [] }` 형태 지원
+
+### 2. Work Unit 자동 동기화 (완료)
+- 원본 이벤트를 직원 작업 단위 payload로 정규화
+- 내부적으로 `/api/work-units`에 동기화
+- `nenova.exe`/PC source 구분
+- hostname/email/accountId/KakaoWork userId 기반 직원 매칭
+- 클릭, 키보드, 화면 요약, active window, process, 실행 경로를 evidence로 저장
+
+### 3. 문서화 (완료)
+- `docs/nenova-exe-work-unit-ingest.md`에 원본 이벤트 계약 추가
+- 지원 필드와 정규화 규칙 추가
+
+### 4. 검증 (완료)
+- `npx tsc --noEmit` 성공
+- `GET /api/nenova-exe/events` HTTP 200 확인
+- 샘플 이벤트 POST 시 `workUnitSync.ok=true`, 직원 `설연주`, 카테고리 `견적` 확인
+- 테스트 데이터 정리 완료
+- `/work-units` HTTP 200 확인
+
+### 다음 단계
+- `nenova.exe` 이벤트와 카톡/카카오워크 메시지 매칭 결과를 직원별 리스크 점수에 더 강하게 반영하기
+- PC 이벤트가 너무 잘게 쌓일 때 세션 단위 병합 규칙 추가하기
+
+---
+
 ## 작업 (2026-05-24) — ERP Flow 전환 요청 큐
 
 ### 1. 전환 요청 표시 (완료)

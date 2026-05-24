@@ -577,3 +577,29 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - `nenova-erp-ui/src/app/api/work-units/talk-candidates/route.ts`
 - `nenova-erp-ui/src/app/(app)/work-units/page.tsx`
 - `docs/nenova-exe-work-unit-ingest.md`
+
+### Nenova.exe 원본 이벤트 → Work Unit 브릿지
+
+날짜:
+- 2026-05-24 KST
+
+현재 조치:
+- `GET/POST /api/nenova-exe/events`를 추가했습니다.
+- `nenova.exe` 원본 PC 이벤트를 `data/nenova-exe-events.json`에 저장합니다.
+- 같은 요청에서 원본 이벤트를 직원 작업 단위 payload로 변환해 내부적으로 `/api/work-units`에 동기화합니다.
+- 지원 필드: `id`, `type/eventType`, `sessionId`, `parentEventId`, `timestamp`, `userId`, `userEmail`, `employeeName`, `accountId`, `hostname`, `deviceId`, `data.app/app`, `processName/exe`, `executablePath`, `windowTitle/activeWindowTitle/activeWindow`, `mouseClicks/clickCount/recentClicks/mouseRegions/mousePositions`, `keyboardCount/keyCount/keystrokes/textLength`, `screenSummary/visionSummary/screenText/ocrText`, `startedAt/endedAt/period`, `durationSec/activeSeconds`.
+- 앱/프로세스/실행 경로에 `nenova.exe`가 있으면 source를 `nenova.exe`, 아니면 `PC`로 저장합니다.
+- hostname/email/accountId/KakaoWork userId로 직원 계정을 매칭합니다.
+- evidence에 `session_id`, `hostname`, `event_type`, `process`, `executable`, `active_window`, `mouse_clicks`, `keyboard_count`, `screen_summary`를 남깁니다.
+- 생성된 work unit은 기본 `validationStatus: "검증대기"`이며 이후 카톡/워크/ERP/구글시트 근거와 연결해 검증합니다.
+
+검증:
+- `npx tsc --noEmit` 성공
+- `GET /api/nenova-exe/events` HTTP 200 확인
+- 샘플 `nx-test-001` POST 시 `workUnitSync.ok=true`, 직원 `설연주`, 카테고리 `견적`, workUnitId `NX-nx-test-001` 생성 확인
+- 테스트 로컬 데이터는 정리 완료
+- `/work-units` HTTP 200 확인
+
+다시 반복되면 먼저 볼 위치:
+- `nenova-erp-ui/src/app/api/nenova-exe/events/route.ts`
+- `docs/nenova-exe-work-unit-ingest.md`
