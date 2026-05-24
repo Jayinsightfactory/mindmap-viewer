@@ -285,3 +285,25 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 다시 반복되면 먼저 볼 위치:
 - `routes/process-mining.js`
 - `docs/nenova-exe-work-unit-ingest.md`
+
+### KakaoWork 콜백 → 작업 단위 후보 등록
+
+날짜:
+- 2026-05-24 KST
+
+현재 조치:
+- `POST /api/kakaowork/callback`이 이제 수신 이벤트를 `nenova-erp-ui/data/kakaowork-events.json`에 저장합니다.
+- 콜백 수신 시 기본적으로 `/api/work-units`에 `KakaoWork` 작업 단위 후보를 자동 등록합니다.
+- `syncWorkUnit: false`를 보내면 콜백 이벤트만 저장하고 작업 단위 등록은 생략합니다.
+- 카카오워크 메시지 텍스트에서 견적/계약/프로젝트/할 일/재고/정산/보고/AI검토 의도를 1차 추론합니다.
+- 명시적으로 `talkRelation: "미연결"`이 들어온 작업 단위는 같은 시각 대화가 있어도 `동시진행`으로 강제 추론하지 않도록 고쳤습니다.
+
+검증:
+- `npm run build` 성공
+- 샘플 `POST /api/kakaowork/callback` 성공
+- `GET /api/work-units`에서 `KW-WU-kw-msg-sample-001` 후보가 `미연결`/`검증대기`로 저장되는 것 확인
+
+다시 반복되면 먼저 볼 위치:
+- `nenova-erp-ui/src/app/api/kakaowork/callback/route.ts`
+- `nenova-erp-ui/src/app/api/work-units/route.ts`
+- `docs/nenova-kakaowork-integration.md`

@@ -85,12 +85,24 @@ Rules:
 
 ### `POST /api/kakaowork/callback`
 
-Receives KakaoWork or middleware events and normalizes them into a `work_event` shape.
+Receives KakaoWork or middleware events, stores them in a local `work_event` inbox, and registers a `KakaoWork` work-unit candidate.
 
 Security:
 
 - If `KAKAOWORK_CALLBACK_SECRET` is set, requests must include `x-nenova-kakaowork-secret` or `?secret=...`.
-- Raw payload should be persisted before classification.
+- The normalized inbox is stored at `nenova-erp-ui/data/kakaowork-events.json`.
+- By default the callback also posts a candidate to `/api/work-units` so `/work-units` can later match the conversation with PC activity.
+- Send `syncWorkUnit: false` to store only the callback event.
+
+Response includes:
+
+- `normalized`: KakaoWork event with inferred `intent` and `category`
+- `workUnitSync`: `/api/work-units` sync result
+- `nextPipeline`: employee mapping, AI classification, 30-minute PC/ERP cross-validation steps
+
+### `GET /api/kakaowork/callback`
+
+Returns the recent KakaoWork callback inbox and storage status.
 
 ## Environment Variables
 

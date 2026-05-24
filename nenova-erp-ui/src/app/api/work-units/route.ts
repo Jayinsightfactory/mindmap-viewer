@@ -264,8 +264,9 @@ function normalize(payload: WorkUnitPayload, existingUnits: NormalizedWorkUnit[]
       relation: normalizeRelation(talk.relation),
     };
   });
-  const payloadRelation = normalizeRelation(payload.talkRelation);
-  const talkRelation = payloadRelation !== "미연결" ? payloadRelation : inferTalkRelation(relatedTalks, startedAt, endedAt);
+  const payloadRelationText = readString(payload.talkRelation);
+  const payloadRelation = normalizeRelation(payloadRelationText);
+  const talkRelation = payloadRelationText ? payloadRelation : inferTalkRelation(relatedTalks, startedAt, endedAt);
   const validationStatus = normalizeValidation(payload.validationStatus, relatedTalks, appName);
   const evidence = [
     ...readStringList(payload.evidence),

@@ -263,3 +263,31 @@
 - KakaoWork 수신 콜백도 `relatedTalks` 후보에 포함
 - 직원 계정 매핑 테이블을 붙여 `userId` 대신 네노바 계정 ID를 자동 확정
 - `/work-units`에서 process-mining push 실행 결과를 운영자가 볼 수 있는 버튼/로그 추가
+
+---
+
+## 작업 (2026-05-24) — KakaoWork Callback → Work Unit 후보 등록
+
+### 1. 콜백 수신 저장 (완료)
+- `POST /api/kakaowork/callback`이 수신 이벤트를 `data/kakaowork-events.json`에 저장
+- `GET /api/kakaowork/callback`으로 최근 수신 이벤트 확인 가능
+- 콜백 시크릿 검증 유지
+
+### 2. 의도 추론과 작업 단위 등록 (완료)
+- 메시지 텍스트에서 견적, 계약, 프로젝트, 할 일, 재고, 정산, 보고, AI검토 카테고리 1차 추론
+- 기본적으로 `/api/work-units`에 `KakaoWork` 작업 단위 후보 자동 등록
+- `syncWorkUnit: false`로 등록 생략 가능
+
+### 3. 교차검증 상태 보정 (완료)
+- 카카오워크 단독 수신 후보는 `미연결` / `검증대기`로 보존
+- 이후 PC 작업 또는 ERP 원장과 연결될 때 `대화후작업`, `동시진행`, `작업후대화`로 승격할 수 있게 함
+
+### 4. 검증 (완료)
+- `npm run build` 성공
+- 샘플 카카오워크 콜백 POST 성공
+- `/api/work-units`에서 `KW-WU-kw-msg-sample-001` 후보 저장 확인
+
+### 다음 단계
+- 직원 이메일/카카오워크 userId와 네노바 계정 ID 매핑 테이블 추가
+- 카카오워크 콜백에서 실제 할 일/견적 초안 생성으로 이어지는 승인 플로우 구현
+- `/work-units`에서 카카오워크 단독 후보를 PC 작업과 수동 병합하는 UI 추가

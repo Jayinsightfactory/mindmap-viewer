@@ -118,8 +118,8 @@ export const KAKAOWORK_CONTRACTS: KakaoWorkContract[] = [
     method: "POST",
     path: "/api/kakaowork/callback",
     purpose: "카카오워크 또는 중계 서버에서 들어온 메시지/액션 이벤트를 표준 이벤트로 바꿉니다.",
-    request: ["event", "user", "conversation", "message", "actions"],
-    result: ["normalized", "nextPipeline", "receivedAt"],
+    request: ["event", "user", "conversation", "message", "actions", "syncWorkUnit?"],
+    result: ["normalized", "workUnitSync", "nextPipeline", "receivedAt"],
   },
   {
     name: "AI 업무 질의",
