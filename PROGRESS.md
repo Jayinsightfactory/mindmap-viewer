@@ -533,7 +533,35 @@
 
 ### 다음 단계
 - `nenova.exe` 실제 수집 필드 기준으로 작업 단위 payload를 더 촘촘히 맞추기
-- 카톡 원본 export/import 경로를 붙여 KakaoTalk 데이터를 WorkUnit relatedTalks로 직접 병합하기
+
+---
+
+## 작업 (2026-05-24) — KakaoTalk 원본 메시지 연결
+
+### 1. 카톡 메시지 수집 API (완료)
+- `GET/POST /api/kakaotalk/messages` 추가
+- 단건/배치 메시지 저장 지원
+- KakaoTalk 내보내기 텍스트 `rawText` 파싱 지원
+- 저장 위치: `data/kakaotalk-messages.json`
+
+### 2. 카톡 ↔ 작업단위 후보 API (완료)
+- `GET/POST /api/work-units/talk-candidates` 추가
+- 시간차, 카테고리, 대화방명, 미연결 여부로 후보 점수화
+- 확정 시 `relatedTalks`, `talkRelation`, `evidence`, `validationMemo` 갱신
+
+### 3. 화면 연결 (완료)
+- `/work-units`에 "카톡 연결 후보" 섹션 추가
+- 후보별 작업 단위/카톡 메시지/점수/관계/근거 표시
+- `카톡 근거 저장` 버튼 추가
+
+### 4. 검증 (완료)
+- `npx tsc --noEmit` 성공
+- `/work-units` HTTP 200 확인
+- 샘플 카톡 메시지와 `nenova.exe` 작업 단위가 90점 `대화후작업` 후보로 잡히고 저장되는 것 확인
+
+### 다음 단계
+- `nenova.exe` 실제 수집 필드 기준으로 작업 단위 payload를 더 촘촘히 맞추기
+- 카톡 연결 후보를 직원별 워크플로우 카드의 리스크 산정에 더 강하게 반영하기
 
 ---
 

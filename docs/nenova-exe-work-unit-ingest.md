@@ -24,6 +24,55 @@ http://localhost:3000/api/work-units
 
 수신 데이터는 `nenova-erp-ui/data/work-units.json`에 저장됩니다. 이 파일은 로컬 운영 데이터이므로 Git에는 올리지 않습니다.
 
+카카오톡 원본 메시지는 별도 엔드포인트로 먼저 저장할 수 있습니다.
+
+```http
+POST /api/kakaotalk/messages
+Content-Type: application/json
+```
+
+단건:
+
+```json
+{
+  "id": "KT-20260524-001",
+  "room": "대한상사",
+  "sender": "김철수 과장",
+  "sentAt": "2026-05-24T09:07:00+09:00",
+  "text": "6월 단가표 오늘 받을 수 있을까요?"
+}
+```
+
+카카오톡 내보내기 텍스트도 `rawText`로 보낼 수 있습니다.
+
+```json
+{
+  "room": "대한상사",
+  "rawText": "--------------- 2026년 5월 24일 일요일 ---------------\n[김철수 과장] [오전 9:07] 6월 단가표 오늘 받을 수 있을까요?"
+}
+```
+
+저장된 카톡 메시지와 작업 단위 연결 후보는 다음에서 확인합니다.
+
+```http
+GET /api/work-units/talk-candidates
+```
+
+후보 확정:
+
+```http
+POST /api/work-units/talk-candidates
+Content-Type: application/json
+
+{
+  "workUnitId": "WU-PC-20260524-001",
+  "talkId": "KT-20260524-001",
+  "note": "카톡 요청과 nenova.exe 견적 작업 연결"
+}
+```
+
+확정하면 work unit의 `relatedTalks`, `talkRelation`, `evidence`, `validationMemo`가 갱신됩니다.
+
 ## 단건 페이로드
 
 ```json

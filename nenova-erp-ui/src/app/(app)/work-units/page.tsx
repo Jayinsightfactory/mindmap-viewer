@@ -80,6 +80,38 @@ type IntakeCandidateApiResponse = {
   candidates?: IntakeCandidate[];
 };
 
+type TalkCandidate = {
+  id: string;
+  workUnitId: string;
+  talkId: string;
+  score: number;
+  reasons: string[];
+  timeDiffMin: number | null;
+  relation: TalkWorkRelation;
+  recommendation: string;
+  workUnit: {
+    title?: string;
+    employee?: string;
+    accountId?: string;
+    category?: string;
+    startedAt?: string;
+  };
+  talk: {
+    id: string;
+    room: string;
+    sender: string;
+    sentAt: string;
+    text: string;
+    intent: string;
+    category: string;
+  };
+};
+
+type TalkCandidateApiResponse = {
+  counts?: { candidates?: number; kakaotalkMessages?: number };
+  candidates?: TalkCandidate[];
+};
+
 function formatWon(value: number) {
   return `${value.toLocaleString()}원`;
 }
@@ -402,6 +434,7 @@ export default function WorkUnitsPage() {
   const [validationFilter, setValidationFilter] = useState("전체");
   const [apiCount, setApiCount] = useState(0);
   const [intakeCandidates, setIntakeCandidates] = useState<IntakeCandidate[]>([]);
+  const [talkCandidates, setTalkCandidates] = useState<TalkCandidate[]>([]);
   const [syncError, setSyncError] = useState("");
   const [candidateMessage, setCandidateMessage] = useState("");
 
@@ -426,6 +459,14 @@ export default function WorkUnitsPage() {
     } catch {
       setIntakeCandidates([]);
     }
+    try {
+      const response = await fetch("/api/work-units/talk-candidates", { cache: "no-store" });
+      if (!response.ok) throw new Error(`talk candidate API ${response.status}`);
+      const data = (await response.json()) as TalkCandidateApiResponse;
+      setTalkCandidates(data.candidates ?? []);
+    } catch {
+      setTalkCandidates([]);
+    }
   }
 
   async function confirmIntakeCandidate(candidate: IntakeCandidate) {
@@ -444,6 +485,25 @@ export default function WorkUnitsPage() {
       return;
     }
     setCandidateMessage(`${candidate.workUnitId}와 ${candidate.intakeId} 병합 근거를 저장했습니다.`);
+    await refresh();
+  }
+
+  async function confirmTalkCandidate(candidate: TalkCandidate) {
+    setCandidateMessage("");
+    const response = await fetch("/api/work-units/talk-candidates", {
+      method: "POST",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({
+        workUnitId: candidate.workUnitId,
+        talkId: candidate.talkId,
+        note: `카톡 ${candidate.talkId} 작업 근거 연결`,
+      }),
+    });
+    if (!response.ok) {
+      setCandidateMessage(`카톡 연결 실패: API ${response.status}`);
+      return;
+    }
+    setCandidateMessage(`${candidate.workUnitId}에 카톡 ${candidate.talkId} 근거를 저장했습니다.`);
     await refresh();
   }
 
@@ -502,7 +562,7 @@ export default function WorkUnitsPage() {
             </div>
             <div className="mt-3 border-t border-slate-200 pt-3">
               <div className="text-xs text-slate-500">API 수신 {apiCount}건</div>
-              <div className="mt-1 text-xs text-slate-500">ERP 병합 후보 {intakeCandidates.length}건</div>
+              <div className="mt-1 text-xs text-slate-500">카톡 연결 후보 {talkCandidates.length}건</div>
               {syncError && <div className="mt-1 text-xs text-amber-700">{syncError}</div>}
               <button
                 type="button"
@@ -672,6 +732,72 @@ export default function WorkUnitsPage() {
             {companyWorkflow.bottlenecks.length === 0 && <div className="rounded-md bg-slate-50 p-4 text-sm text-slate-400">우선 확인할 병목이 없습니다.</div>}
           </div>
         </article>
+      </section>
+
+      <section className="rounded-lg border border-slate-200 bg-white p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="font-semibold text-slate-900">카톡 연결 후보</h3>
+            <p className="mt-1 text-sm text-slate-500">카톡 원본 메시지를 작업단위와 시간/카테고리/대화방 기준으로 연결합니다.</p>
+            {candidateMessage && <p className="mt-1 text-sm font-medium text-brand">{candidateMessage}</p>}
+          </div>
+          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">{talkCandidates.length}건</span>
+        </div>
+        <div className="mt-4 grid gap-3 xl:grid-cols-2">
+          {talkCandidates.slice(0, 6).map((candidate) => (
+            <article key={candidate.id} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="text-xs font-mono text-slate-400">
+                    {candidate.workUnitId} ↔ {candidate.talkId}
+                  </div>
+                  <h4 className="mt-1 font-semibold text-slate-900">{candidate.recommendation}</h4>
+                </div>
+                <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${candidate.score >= 70 ? "bg-green-50 text-green-700" : "bg-amber-100 text-amber-700"}`}>
+                  {candidate.score}점
+                </span>
+              </div>
+              <div className="mt-3 grid gap-3 md:grid-cols-2">
+                <div className="rounded-md bg-white p-3">
+                  <div className="text-xs font-semibold text-slate-500">작업 단위</div>
+                  <div className="mt-1 text-sm font-medium text-slate-900">{candidate.workUnit.title || "제목 없음"}</div>
+                  <div className="mt-1 text-xs text-slate-500">
+                    {candidate.workUnit.employee || "-"} · {candidate.workUnit.category || "-"}
+                  </div>
+                </div>
+                <div className="rounded-md bg-white p-3">
+                  <div className="text-xs font-semibold text-slate-500">카톡 메시지</div>
+                  <div className="mt-1 text-sm font-medium text-slate-900">{candidate.talk.room}</div>
+                  <div className="mt-1 text-xs text-slate-500">
+                    {candidate.talk.sender} · {timeLabel(candidate.talk.sentAt)}
+                  </div>
+                  <p className="mt-2 text-sm leading-5 text-slate-600">{candidate.talk.text}</p>
+                </div>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <span className={`rounded-full px-2 py-0.5 text-xs ${RELATION_STYLE[candidate.relation]}`}>{candidate.relation}</span>
+                {candidate.reasons.map((reason) => (
+                  <span key={reason} className="rounded-full bg-white px-2 py-0.5 text-xs text-slate-500">
+                    {reason}
+                  </span>
+                ))}
+                {candidate.timeDiffMin != null && (
+                  <span className="rounded-full bg-white px-2 py-0.5 text-xs text-slate-500">{candidate.timeDiffMin}분 차이</span>
+                )}
+              </div>
+              <div className="mt-4 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => void confirmTalkCandidate(candidate)}
+                  className="rounded-md bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-700"
+                >
+                  카톡 근거 저장
+                </button>
+              </div>
+            </article>
+          ))}
+          {talkCandidates.length === 0 && <div className="rounded-md bg-slate-50 p-6 text-center text-sm text-slate-400 xl:col-span-2">작업단위와 연결할 카톡 후보가 없습니다.</div>}
+        </div>
       </section>
 
       <section className="rounded-lg border border-slate-200 bg-white p-5">

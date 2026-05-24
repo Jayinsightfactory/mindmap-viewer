@@ -551,3 +551,29 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - `nenova-erp-ui/src/app/(app)/work-units/page.tsx`
 - `nenova-erp-ui/src/lib/nav.ts`
 - `docs/nenova-work-unit-cross-validation.md`
+
+### KakaoTalk 원본 메시지 → Work Unit 연결
+
+날짜:
+- 2026-05-24 KST
+
+현재 조치:
+- `GET/POST /api/kakaotalk/messages`를 추가했습니다.
+- 단건/배치 메시지와 KakaoTalk export `rawText`를 받아 `data/kakaotalk-messages.json`에 저장합니다.
+- 메시지 텍스트에서 견적/계약/프로젝트/할일/정산/재고/고객응대 의도를 1차 추론합니다.
+- `GET/POST /api/work-units/talk-candidates`를 추가했습니다.
+- work unit과 카톡 메시지를 시간차, 카테고리, 대화방명, 미연결 여부로 점수화합니다.
+- 후보 확정 시 work unit의 `relatedTalks`, `talkRelation`, `evidence`, `validationMemo`, `validationStatus`가 갱신됩니다.
+- `/work-units`에 "카톡 연결 후보" 섹션과 `카톡 근거 저장` 버튼을 추가했습니다.
+
+검증:
+- `npx tsc --noEmit` 성공
+- `/work-units` HTTP 200 확인
+- 샘플 `KT-talk-test-001`과 `WU-talk-test-001`이 90점 `대화후작업` 후보로 잡히고, 확정 시 work unit evidence에 `kakaotalk=...`, `talk_merge_score=90`이 저장되는 것 확인
+- 테스트 로컬 데이터는 정리 완료
+
+다시 반복되면 먼저 볼 위치:
+- `nenova-erp-ui/src/app/api/kakaotalk/messages/route.ts`
+- `nenova-erp-ui/src/app/api/work-units/talk-candidates/route.ts`
+- `nenova-erp-ui/src/app/(app)/work-units/page.tsx`
+- `docs/nenova-exe-work-unit-ingest.md`
