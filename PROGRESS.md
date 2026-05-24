@@ -305,6 +305,7 @@
 - `GET /api/employees/directory` 추가
 - query로 `userEmail`, `userId`, `kakaoworkUserId`, `hostname`, `employeeName`, `accountId`를 넣으면 내부 계정 해석 결과 반환
 - `/api/kakaowork/callback`과 `/api/work-units`가 같은 매핑 함수를 사용
+- `/work-units` 카드에 계정 매핑 근거와 신뢰도 배지 표시
 
 ### 3. 검증 (완료)
 - `worker@example.com` → 설연주 / `nenova:sales-support:sul-yeonju` 매핑 확인

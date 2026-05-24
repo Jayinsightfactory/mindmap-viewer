@@ -67,6 +67,26 @@ function shortList(items: string[], fallback: string) {
   return items.length ? items : [fallback];
 }
 
+function identityMatch(unit: WorkUnit) {
+  const raw = unit.evidence.find((item) => item.startsWith("employee_match="));
+  if (!raw) return null;
+  const [method = "unknown", confidence = ""] = raw.replace("employee_match=", "").split(":");
+  const methodLabel: Record<string, string> = {
+    accountId: "내부계정",
+    employeeId: "직원ID",
+    email: "이메일",
+    kakaoworkUserId: "워크ID",
+    orbitUserId: "OrbitID",
+    hostname: "PC명",
+    name: "이름",
+  };
+  return {
+    method,
+    label: methodLabel[method] || method,
+    confidence: Number(confidence) || 0,
+  };
+}
+
 function durationMinutes(startedAt: string, endedAt: string, fallback = 1) {
   const start = new Date(startedAt).getTime();
   const end = new Date(endedAt).getTime();
@@ -417,7 +437,9 @@ export default function WorkUnitsPage() {
       </section>
 
       <section className="space-y-4">
-        {filteredUnits.map((unit) => (
+        {filteredUnits.map((unit) => {
+          const match = identityMatch(unit);
+          return (
           <article key={unit.id} className="rounded-lg border border-slate-200 bg-white">
             <div className="border-b border-slate-100 px-5 py-4">
               <div className="flex flex-wrap items-start justify-between gap-4">
@@ -455,6 +477,11 @@ export default function WorkUnitsPage() {
               <div className="mt-3 flex flex-wrap gap-2 text-xs">
                 <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-600">{unit.employee}</span>
                 <span className="rounded-full bg-slate-100 px-2.5 py-1 font-mono text-slate-600">{unit.accountId}</span>
+                {match && (
+                  <span className="rounded-full bg-green-50 px-2.5 py-1 text-green-700">
+                    계정매핑 {match.label} {match.confidence}%
+                  </span>
+                )}
                 <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-600">{unit.team}</span>
                 <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-600">{unit.workArea}</span>
                 <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-600">{unit.appName}</span>
@@ -522,7 +549,8 @@ export default function WorkUnitsPage() {
               </div>
             </div>
           </article>
-        ))}
+          );
+        })}
       </section>
     </div>
   );
