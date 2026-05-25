@@ -18,6 +18,11 @@ let _client      = null;
 let _running     = false;
 let _insertEvent = null;
 let _lastAt      = 0;
+let _startedAt   = null;
+let _processed   = 0;
+let _failed      = 0;
+let _lastError   = null;
+let _lastSkipReason = null;
 
 function _getClient() {
   if (_client) return _client;
@@ -79,11 +84,12 @@ async function _analyzeOne(item) {
     return _parseResult(msg.content?.[0]?.text || '');
   } catch (err) {
     console.warn('[server-vision-worker] API 에러:', err.message);
+    _lastError = err.message;
     return null;
   }
 }
 
-function _emitAnalyzed(item, analysis) {
+async function _emitAnalyzed(item, analysis) {
   if (!_insertEvent) return;
   const event = {
     id:        'svw-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
@@ -99,17 +105,19 @@ function _emitAnalyzed(item, analysis) {
       ...analysis,
     },
   };
-  try { _insertEvent(event); } catch (e) {
+  try { await Promise.resolve(_insertEvent(event)); } catch (e) {
     console.warn('[server-vision-worker] insertEvent 실패:', e.message);
+    _lastError = e.message;
   }
   console.log(`[server-vision-worker] ✓ ${item.hostname}/${item.app} → ${analysis.screen || '?'} (auto:${analysis.automationScore ?? '?'})`);
 }
 
 async function _tick() {
   const queue = global._visionImageQueue;
-  if (!queue || queue.length === 0) return;
-  if (!_getClient()) return;
-  if (Date.now() - _lastAt < MIN_GAP_MS) return;
+  if (!queue || queue.length === 0) { _lastSkipReason = 'empty_queue'; return; }
+  if (!_getClient()) { _lastSkipReason = 'missing_anthropic_api_key'; return; }
+  if (Date.now() - _lastAt < MIN_GAP_MS) { _lastSkipReason = 'min_gap'; return; }
+  _lastSkipReason = null;
 
   let done = 0;
   while (queue.length > 0 && done < BATCH_MAX) {
@@ -117,9 +125,11 @@ async function _tick() {
     if (!item?.imageBase64) continue;
     const analysis = await _analyzeOne(item);
     if (analysis) {
-      _emitAnalyzed(item, analysis);
+      await _emitAnalyzed(item, analysis);
+      _processed++;
     } else {
       console.warn(`[server-vision-worker] 분석 실패: ${item.hostname}/${item.app}`);
+      _failed++;
     }
     done++;
     _lastAt = Date.now();
@@ -137,6 +147,7 @@ function start(insertEventFn) {
   }
   _insertEvent = insertEventFn;
   _running = true;
+  _startedAt = new Date().toISOString();
   setInterval(() => {
     _tick().catch(e => console.error('[server-vision-worker] tick 에러:', e.message));
   }, INTERVAL_MS);
@@ -147,9 +158,18 @@ function getStatus() {
   return {
     running: _running,
     apiKeyConfigured: !!process.env.ANTHROPIC_API_KEY,
+    startedAt: _startedAt,
     lastTickAt: _lastAt ? new Date(_lastAt).toISOString() : null,
     secondsSinceLastTick: _lastAt ? Math.round((Date.now() - _lastAt) / 1000) : null,
     intervalMs: INTERVAL_MS,
+    processed: _processed,
+    failed: _failed,
+    lastError: _lastError,
+    lastSkipReason: _lastSkipReason,
+    queueSize: (global._visionImageQueue || []).length,
+    likelyBlockedBy: !_running
+      ? (!process.env.ANTHROPIC_API_KEY ? 'missing_anthropic_api_key' : 'not_started')
+      : ((global._visionImageQueue || []).length === 0 ? 'empty_queue' : null),
   };
 }
 

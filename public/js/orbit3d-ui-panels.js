@@ -2674,47 +2674,176 @@ function onTeamSimJoin() {
 }
 window.onTeamSimJoin = onTeamSimJoin;
 
+let _agentGrowthLoading = false;
+let _agentGrowthSnapshot = null;
+
+function growthFetch(url, opts = {}) {
+  if (typeof _authFetch === 'function') return _authFetch(url, opts);
+  return fetch(url, opts);
+}
+
+function escapeGrowthHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  }[ch]));
+}
+
+function priorityRank(priority) {
+  const p = String(priority || '').toUpperCase();
+  return ({ CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 })[p] ?? 4;
+}
+
+function normalizeAgentGrowthData(data) {
+  const recommendations = Array.isArray(data?.recommendations?.recommendations)
+    ? data.recommendations.recommendations
+    : [];
+  const candidates = Array.isArray(data?.candidates?.candidates)
+    ? data.candidates.candidates
+    : [];
+  const triggers = Array.isArray(data?.triggers?.triggers)
+    ? data.triggers.triggers
+    : [];
+  const logs = Array.isArray(data?.logs?.logs)
+    ? data.logs.logs
+    : [];
+
+  const backlog = [
+    ...recommendations.map(r => ({
+      source: 'data-intel',
+      priority: r.priority || (r.autoApply ? 'HIGH' : 'MEDIUM'),
+      title: r.title || r.action || r.name || '데이터 수집 전략 개선',
+      detail: r.reason || r.description || r.detail || r.message || r.solution || '',
+    })),
+    ...candidates.map(c => ({
+      source: 'automation',
+      priority: c.autoScoreAvg >= 0.85 ? 'HIGH' : 'MEDIUM',
+      title: `${c.app || '앱'} 자동화 후보`,
+      detail: `${c.screen || '화면'} · 자동화 ${Math.round((c.autoScoreAvg || 0) * 100)}% · 샘플 ${c.sampleCount || 0}건`,
+    })),
+    ...triggers.map(t => ({
+      source: 'trigger',
+      priority: t.severity === 'warning' ? 'HIGH' : 'LOW',
+      title: t.type || '운영 변화 감지',
+      detail: t.detail || '',
+    })),
+  ].sort((a, b) => priorityRank(a.priority) - priorityRank(b.priority)).slice(0, 8);
+
+  const signalXP =
+    recommendations.length * 12 +
+    candidates.length * 18 +
+    triggers.length * 10 +
+    logs.length * 4;
+  const level = Math.max(1, Math.floor(signalXP / 100) + 1);
+  const currentXP = signalXP % xpForLevel(level);
+
+  return {
+    recommendations,
+    candidates,
+    triggers,
+    logs,
+    backlog,
+    signalXP,
+    level,
+    currentXP,
+    checkedAt: data?.triggers?.checkedAt || data?.recommendations?.checkedAt || new Date().toISOString(),
+  };
+}
+
+async function loadAgentGrowthPanel(force = false) {
+  if (_agentGrowthLoading) return _agentGrowthSnapshot;
+  if (_agentGrowthSnapshot && !force) return _agentGrowthSnapshot;
+  _agentGrowthLoading = true;
+  const loopEl = document.getElementById('gp-loop-state');
+  if (loopEl) loopEl.textContent = '데이터 분석 중';
+
+  try {
+    const [recommendations, candidates, triggers, logs] = await Promise.all([
+      growthFetch('/api/data-intel/recommendations?days=7').then(r => r.ok ? r.json() : null).catch(() => null),
+      growthFetch('/api/automation-scorer/candidates?min_score=0.6').then(r => r.ok ? r.json() : null).catch(() => null),
+      growthFetch('/api/company/triggers').then(r => r.ok ? r.json() : null).catch(() => null),
+      growthFetch('/api/data-intel/evolution-log?limit=8').then(r => r.ok ? r.json() : null).catch(() => null),
+    ]);
+    _agentGrowthSnapshot = normalizeAgentGrowthData({ recommendations, candidates, triggers, logs });
+  } finally {
+    _agentGrowthLoading = false;
+  }
+  renderGrowthPanel();
+  return _agentGrowthSnapshot;
+}
+window.loadAgentGrowthPanel = loadAgentGrowthPanel;
+
 // ─── 성장 패널 렌더링 ────────────────────────────
 function renderGrowthPanel() {
+  const snapshot = _agentGrowthSnapshot;
   const lvEl = document.getElementById('gp-level');
   const lvnEl = document.getElementById('gp-level-num');
   const xpEl = document.getElementById('gp-xp');
   const xpmEl = document.getElementById('gp-xp-max');
   const xpfEl = document.getElementById('gp-xp-fill');
-  const skEl = document.getElementById('gp-streak');
+  const recEl = document.getElementById('gp-rec-count');
+  const autoEl = document.getElementById('gp-auto-count');
+  const triggerEl = document.getElementById('gp-trigger-count');
+  const loopEl = document.getElementById('gp-loop-state');
   const shEl = document.getElementById('gp-streak-hint');
-  const bdEl = document.getElementById('gp-badges');
+  const backlogEl = document.getElementById('gp-backlog');
   const hiEl = document.getElementById('gp-history');
 
-  if (lvEl) lvEl.textContent = _growthData.level;
-  if (lvnEl) lvnEl.textContent = _growthData.level;
-  if (xpEl) xpEl.textContent = _growthData.xp;
-  const maxXP = xpForLevel(_growthData.level);
+  const level = snapshot?.level || _growthData.level;
+  const xp = snapshot?.currentXP ?? _growthData.xp;
+  if (lvEl) lvEl.textContent = level;
+  if (lvnEl) lvnEl.textContent = level;
+  if (xpEl) xpEl.textContent = xp;
+  const maxXP = xpForLevel(level);
   if (xpmEl) xpmEl.textContent = maxXP;
-  if (xpfEl) xpfEl.style.width = Math.min(100, Math.round((_growthData.xp / maxXP) * 100)) + '%';
-  if (skEl) skEl.textContent = _growthData.streak;
+  if (xpfEl) xpfEl.style.width = Math.min(100, Math.round((xp / maxXP) * 100)) + '%';
+  if (recEl) recEl.textContent = snapshot ? snapshot.recommendations.length : '-';
+  if (autoEl) autoEl.textContent = snapshot ? snapshot.candidates.length : '-';
+  if (triggerEl) triggerEl.textContent = snapshot ? snapshot.triggers.length : '-';
+  if (loopEl && snapshot) loopEl.textContent = snapshot.backlog.length ? '개발 큐 생성됨' : '추가 개발 신호 없음';
   if (shEl) {
-    const today = new Date().toDateString();
-    shEl.textContent = _growthData.lastActiveDate === today ? '오늘 활동 완료!' : '오늘 작업을 시작하세요!';
+    shEl.textContent = snapshot?.checkedAt
+      ? `마지막 확인 ${formatGrowthTimeAgo(new Date(snapshot.checkedAt).getTime())}`
+      : '최근 수집 데이터로 개발 큐를 만듭니다';
   }
 
-  // Badges
-  if (bdEl) {
-    bdEl.innerHTML = BADGE_DEFS.map(b => {
-      const earned = _growthData.badges.includes(b.id);
-      return `<div class="gp-badge ${earned ? 'earned' : 'locked'}">${b.label}</div>`;
-    }).join('');
-  }
-
-  // History
-  if (hiEl) {
-    const items = _growthData.history.slice(0, 10);
-    if (items.length === 0) {
-      hiEl.innerHTML = '<div style="color:#6e7681;font-size:11px;text-align:center;padding:10px">아직 활동이 없습니다</div>';
+  if (backlogEl) {
+    if (!snapshot) {
+      backlogEl.innerHTML = '<div class="gp-empty">데이터 로딩 중...</div>';
+    } else if (!snapshot.backlog.length) {
+      backlogEl.innerHTML = '<div class="gp-empty">현재는 강한 개선 신호가 없습니다. 데이터가 더 들어오면 자동으로 큐가 갱신됩니다.</div>';
     } else {
-      hiEl.innerHTML = items.map(h => {
-        const ago = formatGrowthTimeAgo(h.ts);
-        return `<div style="display:flex;justify-content:space-between;font-size:11px;padding:3px 0;border-bottom:1px solid #161b22"><span style="color:#cdd9e5">${h.text}</span><span style="color:#6e7681;flex-shrink:0;margin-left:8px">${ago}</span></div>`;
+      backlogEl.innerHTML = snapshot.backlog.map(item => {
+        const priority = String(item.priority || 'LOW').toLowerCase();
+        return `<div class="gp-dev-item ${priority}">
+          <div class="gp-dev-top">
+            <span>${escapeGrowthHtml(item.title)}</span>
+            <span class="gp-dev-badge ${priority}">${escapeGrowthHtml(item.priority || 'LOW')}</span>
+          </div>
+          <div class="gp-dev-meta">${escapeGrowthHtml(item.source)} · ${escapeGrowthHtml(item.detail || '세부 데이터 없음')}</div>
+        </div>`;
+      }).join('');
+    }
+  }
+
+  if (hiEl) {
+    const logs = snapshot?.logs || [];
+    if (!snapshot) {
+      hiEl.innerHTML = '<div class="gp-empty">이력 데이터 로딩 중...</div>';
+    } else if (!logs.length) {
+      hiEl.innerHTML = '<div class="gp-empty">아직 저장된 자가발전 이력이 없습니다.</div>';
+    } else {
+      hiEl.innerHTML = logs.map(log => {
+        const report = log.report || log.data || {};
+        const title = report.summary || report.title || '자가발전 분석 실행';
+        const ts = log.ts || log.timestamp || report.createdAt || Date.now();
+        return `<div class="gp-dev-item">
+          <div class="gp-dev-top"><span>${escapeGrowthHtml(title)}</span><span class="gp-dev-badge">LOG</span></div>
+          <div class="gp-dev-meta">${formatGrowthTimeAgo(new Date(ts).getTime())}</div>
+        </div>`;
       }).join('');
     }
   }
@@ -2732,7 +2861,10 @@ function toggleGrowthPanel() {
   const panel = document.getElementById('growth-panel');
   if (!panel) return;
   const isOpen = panel.classList.toggle('open');
-  if (isOpen) renderGrowthPanel();
+  if (isOpen) {
+    renderGrowthPanel();
+    loadAgentGrowthPanel();
+  }
 }
 window.toggleGrowthPanel = toggleGrowthPanel;
 
@@ -2740,6 +2872,8 @@ window.toggleGrowthPanel = toggleGrowthPanel;
 document.addEventListener('DOMContentLoaded', () => {
   updateStreak();
   renderGrowthPanel();
+  setTimeout(() => loadAgentGrowthPanel(), 2500);
+  setInterval(() => loadAgentGrowthPanel(true), 120000);
 });
 
 // ── 숨김 노드 리스트 패널 ──────────────────────────────────────────────────

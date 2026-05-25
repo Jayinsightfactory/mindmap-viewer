@@ -40,6 +40,17 @@ module.exports = function createAutomationScorerRouter(deps) {
       CREATE INDEX IF NOT EXISTS idx_sas_app     ON screen_automation_scores(app);
       CREATE INDEX IF NOT EXISTS idx_sas_score   ON screen_automation_scores(auto_score_avg DESC);
       CREATE INDEX IF NOT EXISTS idx_sas_cand    ON screen_automation_scores(is_candidate) WHERE is_candidate = TRUE;
+
+      CREATE TABLE IF NOT EXISTS past_durations (
+        id               SERIAL PRIMARY KEY,
+        user_id          TEXT NOT NULL,
+        app              TEXT NOT NULL,
+        avg_duration_sec FLOAT NOT NULL DEFAULT 0,
+        sample_count     INTEGER NOT NULL DEFAULT 0,
+        updated_at       TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(user_id, app)
+      );
+      CREATE INDEX IF NOT EXISTS idx_pd_user_app ON past_durations(user_id, LOWER(app));
     `);
   }
 
@@ -47,13 +58,16 @@ module.exports = function createAutomationScorerRouter(deps) {
 
   // ── 인증 미들웨어 (JWT + orbit_xxx 디바이스 토큰 겸용) ────────────────────
   function auth(req, res, next) {
-    const token = req.headers.authorization || req.query.token || req.cookies?.orbit_token;
+    const token = String(req.headers.authorization || req.query.token || req.cookies?.orbit_token || '')
+      .replace(/^Bearer\s+/i, '')
+      .trim();
     if (token) {
       const user = verifyToken(token);
       if (user) { req.user = user; return next(); }
-      const userId = req.query.userId || req.body?.userId;
-      if (userId) { req.user = { id: userId }; return next(); }
       return res.status(401).json({ error: 'Invalid token' });
+    }
+    if (process.env.AUTH_DISABLED !== '1') {
+      return res.status(401).json({ error: 'Unauthorized' });
     }
     const userId = req.query.userId || req.body?.userId;
     if (userId) { req.user = { id: userId }; return next(); }
@@ -343,7 +357,12 @@ module.exports = function createAutomationScorerRouter(deps) {
   router.post('/webhook', async (req, res) => {
     try {
       // 내부 웹훅: Bearer 또는 쿼리 토큰 인증
-      const token = req.headers.authorization || req.query.token;
+      const token = String(req.headers.authorization || req.query.token || '')
+        .replace(/^Bearer\s+/i, '')
+        .trim();
+      if (!token) {
+        return res.status(401).json({ error: 'token required' });
+      }
       if (token) {
         const user = verifyToken(token);
         if (!user) return res.status(401).json({ error: 'Invalid token' });

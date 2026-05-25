@@ -51,6 +51,17 @@ const AUTO_APPLY_THRESHOLD = 30;
 /** cooltime 조정 배율 */
 const COOLTIME_REDUCE_FACTOR = 0.7;  // 고품질 trigger: cooltime 줄이기
 const COOLTIME_EXPAND_FACTOR = 1.5;  // 저품질 trigger: cooltime 늘리기
+const LOW_QUALITY_FALLBACK_COOLTIME = {
+  mouse_click:    120000,
+  file_write:     120000,
+  click_burst:    180000,
+  keyboard_done:  120000,
+  app_switch:     120000,
+  ctrl_print:      45000,
+  keyboard_flush:  90000,
+  startup:     6 * 60 * 60 * 1000,
+  kakao_periodic: 300000,
+};
 
 /** 화훼도매 업무 미수집 갭 정의 */
 const KNOWN_GAPS = [
@@ -598,16 +609,19 @@ module.exports = function createDataIntelligenceRouter({ pool }) {
     // trigger 품질 기반 권고
     quality.forEach(q => {
       if (q.avgScore < 40) {
+        const newCooltime = q.avgCooltime > 0
+          ? Math.round(q.avgCooltime * COOLTIME_EXPAND_FACTOR)
+          : (LOW_QUALITY_FALLBACK_COOLTIME[q.trigger] || 120000);
         recs.push({
           type: 'REDUCE_TRIGGER',
           trigger: q.trigger,
           reason: `품질점수 ${q.avgScore}점 — 의미없는 캡처 많음`,
           action: q.avgCooltime > 0
             ? `cooltime ${q.avgCooltime}ms → ${Math.round(q.avgCooltime * COOLTIME_EXPAND_FACTOR)}ms`
-            : 'trigger 빈도 50% 감소 권고',
+            : `cooltime 기본값 → ${newCooltime}ms`,
           autoApply: q.avgScore < AUTO_APPLY_THRESHOLD,
           priority: q.avgScore < AUTO_APPLY_THRESHOLD ? 'CRITICAL' : 'HIGH',
-          newCooltime: q.avgCooltime > 0 ? Math.round(q.avgCooltime * COOLTIME_EXPAND_FACTOR) : null,
+          newCooltime,
         });
       }
 

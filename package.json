@@ -40,7 +40,8 @@
     "docker:up": "docker-compose up -d",
     "docker:down": "docker-compose down",
     "build:frontend": "node scripts/build-frontend.js",
-    "migrate": "node bin/migrate.js"
+    "migrate": "node bin/migrate.js",
+    "cu": "node scripts/nenova-cu.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",

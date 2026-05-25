@@ -2180,6 +2180,8 @@ app.get('/api/admin/daemon-health', async (req, res) => {
 // GET /api/admin/event-counts?userId=xxx&hours=1 — 이벤트 타입별 카운트 (진단)
 app.get('/api/admin/event-counts', async (req, res) => {
   try {
+    const { isAdmin: _adminOk } = resolveAdmin(req);
+    if (!_adminOk) return res.status(403).json({ error: 'admin only' });
     const userId = req.query.userId;
     const hours = Math.max(1, Math.min(8760, parseInt(req.query.hours) || 24));
     if (!userId) return res.status(400).json({ error: 'userId required' });
@@ -2203,6 +2205,8 @@ app.get('/api/admin/event-counts', async (req, res) => {
 // GET /api/admin/pg-commands-inspect?hostname=xxx — PG orbit_daemon_commands 대기 큐 조회
 app.get('/api/admin/pg-commands-inspect', async (req, res) => {
   try {
+    const { isAdmin: _adminOk } = resolveAdmin(req);
+    if (!_adminOk) return res.status(403).json({ error: 'admin only' });
     const _pool = dbModule.getDb ? dbModule.getDb() : null;
     if (!_pool) return res.status(500).json({ error: 'db not available' });
     const hostname = req.query.hostname || null;
@@ -2232,6 +2236,8 @@ app.get('/api/admin/pg-commands-inspect', async (req, res) => {
 // body: { hostname?, actions? } — hostname 지정 시 그 host만, actions 기본 ["restart","update"]
 app.post('/api/admin/pg-commands-purge', async (req, res) => {
   try {
+    const { isAdmin: _adminOk } = resolveAdmin(req);
+    if (!_adminOk) return res.status(403).json({ error: 'admin only' });
     const _pool = dbModule.getDb ? dbModule.getDb() : null;
     if (!_pool) return res.status(500).json({ error: 'db not available' });
     const { hostname, actions, purgeAll } = req.body || {};
@@ -5405,10 +5411,52 @@ app.get('/api/admin/pc-inference', async (req, res) => {
 //   3) 90일 이상 된 orbit_crashes / orbit_diagnostics 삭제
 //   4) 결과를 orbit_maintenance_log 테이블에 기록
 // ═══════════════════════════════════════════════════════════════════════════
+async function _tableExists(pool, tableName) {
+  const { rows } = await pool.query(`SELECT to_regclass($1) AS reg`, [tableName]);
+  return !!rows[0]?.reg;
+}
+
+async function _getPgUsage(pool) {
+  try {
+    const limitMB = parseInt(process.env.PG_SIZE_LIMIT_MB || '1024', 10);
+    const { rows } = await pool.query(`SELECT pg_database_size(current_database()) AS bytes`);
+    const sizeMB = Math.round((Number(rows[0]?.bytes || 0) / 1024 / 1024) * 10) / 10;
+    return { sizeMB, limitMB, usagePct: limitMB > 0 ? Math.round((sizeMB / limitMB) * 100) : null };
+  } catch (e) {
+    return { error: e.message };
+  }
+}
+
+async function _purgeTableByTimestamp(pool, tableName, timestampColumn, cutoff, typeColumn, types) {
+  const allowed = {
+    events: { timestamp: 'timestamp', type: 'type' },
+    unified_events: { timestamp: 'timestamp', type: 'type' },
+  };
+  if (allowed[tableName]?.timestamp !== timestampColumn || allowed[tableName]?.type !== typeColumn) {
+    return { ok: false, skipped: true, reason: 'table or column not allowed', table: tableName };
+  }
+  if (!(await _tableExists(pool, tableName))) {
+    return { ok: true, skipped: true, reason: 'table missing', table: tableName };
+  }
+  const before = await pool.query(
+    `SELECT COUNT(*)::int AS count FROM ${tableName}
+     WHERE ${timestampColumn} < $1 AND ${typeColumn} = ANY($2)`,
+    [cutoff, types]
+  );
+  const { rowCount } = await pool.query(
+    `DELETE FROM ${tableName}
+     WHERE ${timestampColumn} < $1 AND ${typeColumn} = ANY($2)`,
+    [cutoff, types]
+  );
+  return { ok: true, table: tableName, cutoff, candidates: before.rows[0]?.count || 0, deleted: rowCount };
+}
+
 async function _runDailyMaintenance(trigger = 'auto') {
   const pool = dbModule.getDb();
   const summary = { trigger, startedAt: new Date().toISOString(), steps: {} };
   try {
+    summary.databaseBefore = await _getPgUsage(pool);
+
     // Step 1: 학습 스냅샷
     try {
       const { runForAllPCs } = require('./src/capture-timing-learner');
@@ -5428,6 +5476,36 @@ async function _runDailyMaintenance(trigger = 'auto') {
       summary.steps.events_purge = { ok: true, deleted: rowCount, cutoff };
     } catch (e) { summary.steps.events_purge = { ok: false, error: e.message }; }
 
+    // Step 2B: DB pressure purge.
+    // 85% 이상이면 원본 재생이 가능한 고빈도 raw 이벤트만 14일 기준으로 추가 정리한다.
+    try {
+      const pressureCheck = await _getPgUsage(pool);
+      summary.databaseAfterStandardPurge = pressureCheck;
+      const beforePct = pressureCheck?.usagePct ?? 0;
+      const thresholdPct = parseInt(process.env.DB_PRESSURE_PURGE_PCT || '85', 10);
+      const pressureDays = parseInt(process.env.DB_PRESSURE_RAW_DAYS || '14', 10);
+      const rawTypes = (process.env.DB_PRESSURE_RAW_TYPES || 'screen.capture,mouse.chunk,mouse_click,keyboard.chunk,clipboard.change')
+        .split(',')
+        .map(s => s.trim())
+        .filter(Boolean);
+
+      if (beforePct >= thresholdPct) {
+        const cutoff = new Date(Date.now() - pressureDays * 24 * 3600 * 1000).toISOString();
+        const events = await _purgeTableByTimestamp(pool, 'events', 'timestamp', cutoff, 'type', rawTypes);
+        const unified = await _purgeTableByTimestamp(pool, 'unified_events', 'timestamp', cutoff, 'type', rawTypes);
+        summary.steps.pressure_purge = {
+          ok: true,
+          thresholdPct,
+          pressureDays,
+          rawTypes,
+          events,
+          unified,
+        };
+      } else {
+        summary.steps.pressure_purge = { ok: true, skipped: true, usagePct: beforePct, thresholdPct };
+      }
+    } catch (e) { summary.steps.pressure_purge = { ok: false, error: e.message }; }
+
     // Step 3: orbit_crashes 90일 이상 삭제
     try {
       const { rowCount } = await pool.query(
@@ -5443,6 +5521,7 @@ async function _runDailyMaintenance(trigger = 'auto') {
     } catch (e) { summary.steps.diagnostics_purge = { ok: false, error: e.message }; }
 
     summary.endedAt = new Date().toISOString();
+    summary.databaseAfter = await _getPgUsage(pool);
 
     // Step 5: 로그 저장
     try {
@@ -5453,7 +5532,7 @@ async function _runDailyMaintenance(trigger = 'auto') {
         [trigger, JSON.stringify(summary)]);
     } catch {}
 
-    console.log(`[daily-maintenance] ${trigger}: learning=${JSON.stringify(summary.steps.learning)} events_purge=${JSON.stringify(summary.steps.events_purge)}`);
+    console.log(`[daily-maintenance] ${trigger}: learning=${JSON.stringify(summary.steps.learning)} events_purge=${JSON.stringify(summary.steps.events_purge)} pressure_purge=${JSON.stringify(summary.steps.pressure_purge)}`);
     return summary;
   } catch (e) {
     summary.fatalError = e.message;
@@ -5462,15 +5541,15 @@ async function _runDailyMaintenance(trigger = 'auto') {
 }
 
 app.post('/api/admin/daily-maintenance', async (req, res) => {
-  const master = (req.headers.authorization || '').replace('Bearer ', '').trim();
-  if (!master || !master.startsWith('orbit_')) return res.status(401).json({ error: 'master token required' });
+  const { isAdmin: _adminOk } = resolveAdmin(req);
+  if (!_adminOk) return res.status(403).json({ error: 'admin only' });
   const summary = await _runDailyMaintenance(req.query.trigger || 'manual');
   res.json(summary);
 });
 
 app.get('/api/admin/maintenance-log', async (req, res) => {
-  const master = (req.headers.authorization || '').replace('Bearer ', '').trim();
-  if (!master || !master.startsWith('orbit_')) return res.status(401).json({ error: 'master token required' });
+  const { isAdmin: _adminOk } = resolveAdmin(req);
+  if (!_adminOk) return res.status(403).json({ error: 'admin only' });
   try {
     const pool = dbModule.getDb();
     const { rows } = await pool.query(
@@ -6533,6 +6612,14 @@ try {
 try {
   app.use('/api/autotest', require('./routes/autotest')());
 } catch(e) { console.warn('[mount] autotest:', e.message); }
+
+// ─── Company OS 생성 에이전트 (구조/평가 전용, 직원 PC 실행 없음) ─────────────
+try {
+  app.use('/api/company-os-generator', require('./routes/company-os-generator')({
+    getDb: dbModule.getDb,
+    rootDir: __dirname,
+  }));
+} catch(e) { console.warn('[mount] company-os-generator:', e.message); }
 
 // ─── 컨텍스트 엔진 (시간대/요일/월말 등 외부 컨텍스트 → 업무 패턴 연계) ──────
 try {

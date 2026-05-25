@@ -4,6 +4,12 @@ Date: 2026-05-24 KST
 
 This document preserves the first-pass architecture for using KakaoWork as Nenova's company work interface while keeping `nenovaweb` as the system of record.
 
+This integration must follow `docs/nenova-agent-algorithm-development.md`.
+KakaoWork/KakaoTalk data is not only imported text; it is the conversation
+evidence family used to explain why PC and `nenova.exe` work happened, what
+follow-up should be scheduled, and which algorithm/product gap Codex and Claude
+should improve next.
+
 ## Goal
 
 Nenova staff should be able to work from KakaoWork while `nenovaweb` records the actual business state.

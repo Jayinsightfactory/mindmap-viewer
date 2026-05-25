@@ -569,6 +569,7 @@ function _sendLogSnapshot() {
 let mouseWatcher    = null;
 let keyboardWatcher = null;
 let screenCapture   = null;
+let resourceGovernor = null;
 const _daemonStartedAt = Date.now();
 function _emitHeartbeat() {
   try {
@@ -670,7 +671,16 @@ async function main() {
     _reportError('file-learner', err.message, err.stack);
   }
 
-  // ②-b screen-capture 시작 + keyboard-watcher 연결
+  // ②-b PC 부하에 따라 캡처/입력 수집 설정 자동 조정
+  try {
+    resourceGovernor = require(path.join(ROOT, 'src/resource-governor'));
+    resourceGovernor.start();
+  } catch (err) {
+    console.warn('[personal-agent] 리소스 거버너 시작 실패:', err.message);
+    _reportError('resource-governor', err.message, err.stack);
+  }
+
+  // ②-c screen-capture 시작 + keyboard-watcher 연결
   try {
     screenCapture = require(path.join(ROOT, 'src/screen-capture'));
     screenCapture.start();
@@ -682,6 +692,28 @@ async function main() {
 
   // ②-d Google Drive 캡처 업로드 초기화
   let driveUploader = null;
+  let driveUploadTimer = null;
+  let driveUploadStartupTimer = null;
+  const WORK_HOUR_UPLOAD_INTERVAL_MS = 60 * 60 * 1000;
+  const _isKstWorkHours = () => {
+    const now = new Date();
+    const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+    const day = kst.getUTCDay();
+    const hour = kst.getUTCHours();
+    return day >= 1 && day <= 5 && hour >= 9 && hour < 18;
+  };
+  const _uploadPendingDuringWorkHours = async () => {
+    if (!_isKstWorkHours()) return;
+    try { await screenCapture?.uploadPendingToServer?.(20); } catch {}
+    try {
+      if (driveUploader?.isEnabled?.()) await driveUploader.uploadPending();
+    } catch {}
+  };
+  const _scheduleBootCaptureRecovery = () => {
+    const delays = [10 * 60_000, 60 * 60_000, 3 * 60 * 60_000];
+    return delays.map(delay => setTimeout(_uploadPendingDuringWorkHours, delay));
+  };
+  const bootCaptureRecoveryTimers = _scheduleBootCaptureRecovery();
   try {
     driveUploader = require(path.join(ROOT, 'src/drive-uploader'));
     // 서버에서 Drive 설정 가져오기
@@ -702,10 +734,10 @@ async function main() {
       });
       if (driveConfig?.enabled) {
         driveUploader.init(driveConfig);
-        // 5분마다 미업로드 캡처 일괄 업로드
-        setInterval(() => driveUploader.uploadPending(), 5 * 60 * 1000);
-        // 시작 시 즉시 1회
-        setTimeout(() => driveUploader.uploadPending(), 10000);
+        // 업무시간 안에만 느슨하게 미업로드 캡처 일괄 업로드
+        driveUploadTimer = setInterval(_uploadPendingDuringWorkHours, WORK_HOUR_UPLOAD_INTERVAL_MS);
+        // 시작 직후 부담 방지: 10분 뒤, 업무시간이면 1회 복구 업로드
+        driveUploadStartupTimer = setTimeout(_uploadPendingDuringWorkHours, 10 * 60 * 1000);
       }
     }
   } catch (err) {
@@ -918,11 +950,17 @@ async function main() {
   const _keepAlive = setInterval(() => {}, 60_000);
 
   // ── 종료 핸들러 ────────────────────────────────────────────────────────────
-  function shutdown(sig) {
+  let _shutdownStarted = false;
+  async function shutdown(sig) {
+    if (_shutdownStarted) return;
+    _shutdownStarted = true;
     console.log(`\n[personal-agent] 종료 신호(${sig}) 수신`);
     clearInterval(_keepAlive);
     clearInterval(contentTimer);
     clearInterval(suggestionTimer);
+    if (driveUploadTimer) clearInterval(driveUploadTimer);
+    if (driveUploadStartupTimer) clearTimeout(driveUploadStartupTimer);
+    bootCaptureRecoveryTimers.forEach(t => clearTimeout(t));
     stopBankSecurityMonitor();
     try { daemonUpdater?.stop(); } catch {}
     try { keyboardWatcher?.stop(); } catch {}
@@ -932,6 +970,17 @@ async function main() {
     try { clipboardWatcher?.stop(); } catch {}
     try { fileChangeWatcher?.stop(); } catch {}
     try { require(path.join(ROOT, 'src/chrome-url-watcher'))?.stop?.(); } catch {}
+    try { resourceGovernor?.stop?.(); } catch {}
+    if (_isKstWorkHours()) {
+      try {
+        if (driveUploader?.isEnabled?.()) {
+          await Promise.race([
+            driveUploader.uploadPending(),
+            new Promise(resolve => setTimeout(resolve, 8000)),
+          ]);
+        }
+      } catch {}
+    }
     removePid();
     process.exit(0);
   }

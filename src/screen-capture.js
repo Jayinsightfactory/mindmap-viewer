@@ -105,6 +105,25 @@ const TRIGGER_PRIORITY = {
   manual:          'high',
 };
 
+const TRIGGER_QUALITY_POLICY = {
+  mouse_click:     { cooltime: 120000, sendImage: false, reason: 'low_quality_click_noise' },
+  click_burst:     { cooltime: 180000, sendImage: false, reason: 'low_quality_click_burst' },
+  file_write:      { cooltime: 120000, sendImage: false, reason: 'low_quality_file_write' },
+  keyboard_done:   { cooltime: 120000, sendImage: false, reason: 'keyboard_done_duplicates' },
+  keyboard_flush:  { cooltime: 90000,  imageEvery: 2,  reason: 'stable_after_input_upload' },
+  app_switch:      { cooltime: 120000, imageEvery: 3,  reason: 'app_switch_duplicates' },
+  startup:         { cooltime: 6 * 60 * 60 * 1000, sendImage: false, reason: 'startup_noise' },
+  kakao_periodic:  { cooltime: 5 * 60 * 1000, imageEvery: 4, reason: 'kakao_periodic_noise' },
+};
+
+function _getTriggerPolicy(trigger) {
+  _loadCaptureConfig();
+  const local = TRIGGER_QUALITY_POLICY[trigger] || {};
+  const remote = _captureConfig?.triggerAdjustments?.[trigger] || {};
+  const cooltime = remote.cooltime || remote.minCooltime || local.cooltime || 0;
+  return { ...local, ...remote, cooltime };
+}
+
 /**
  * 활동 상태 머신 업데이트
  */
@@ -155,6 +174,12 @@ function _smartCooltime(app, trigger) {
   return _activityState.captureInterval;
 }
 
+function _effectiveCooltime(app, trigger) {
+  const base = _smartCooltime(app, trigger);
+  const policy = _getTriggerPolicy(trigger);
+  return Math.max(base || 0, policy.cooltime || 0);
+}
+
 /**
  * 캡처 여부 판단 — 중요도 + 쿨타임 + 중복 제거
  */
@@ -163,10 +188,13 @@ function _shouldCapture(trigger, app) {
   const appLow = getAppProfileKey(app);
   const profile = APP_PROFILES[appLow];
   const triggerPriority = TRIGGER_PRIORITY[trigger] || 'medium';
+  const triggerPolicy = _getTriggerPolicy(trigger);
+
+  if (triggerPolicy.enabled === false) return false;
 
   // skip 프로파일 앱은 5분 간격만
   if (profile?.priority === 'skip') {
-    return (now - _lastCaptureTime) >= 300000;
+    return (now - _lastCaptureTime) >= Math.max(300000, triggerPolicy.cooltime || 0);
   }
 
   // idle 상태에서 연속 캡처 방지 (첫 1회 후 5분마다)
@@ -180,17 +208,17 @@ function _shouldCapture(trigger, app) {
   // 이 트리거들은 사용자가 의미 있는 행동을 했을 때만 발생 → 캡처 가치 높음
   const REACTIVE_TRIGGERS = new Set(['keyboard_flush', 'keyboard_done', 'mouse_click', 'ctrl_print', 'excel_formula']);
   if (REACTIVE_TRIGGERS.has(trigger)) {
-    return (now - _lastCaptureTime) >= 45000; // 45초 쿨타임 (앱 무관)
+    return (now - _lastCaptureTime) >= Math.max(45000, triggerPolicy.cooltime || 0);
   }
 
   // HIGH 트리거 → 앱 프로파일 minInterval만 준수
   if (triggerPriority === 'high') {
     const minInt = profile?.minInterval || 30000;
-    return (now - _lastCaptureTime) >= minInt;
+    return (now - _lastCaptureTime) >= Math.max(minInt, triggerPolicy.cooltime || 0);
   }
 
   // MEDIUM 트리거 → 스마트 쿨타임 준수
-  const cooltime = _smartCooltime(app, trigger);
+  const cooltime = _effectiveCooltime(app, trigger);
   return (now - _lastCaptureTime) >= cooltime;
 }
 
@@ -201,6 +229,12 @@ function _shouldSendImage(trigger, app) {
   const appLow = getAppProfileKey(app);
   const profile = APP_PROFILES[appLow];
   const triggerPriority = TRIGGER_PRIORITY[trigger] || 'medium';
+  const triggerPolicy = _getTriggerPolicy(trigger);
+
+  if (triggerPolicy.sendImage === false) return false;
+  if (triggerPolicy.imageEvery && triggerPolicy.imageEvery > 1) {
+    if ((global._captureCounter || 0) % triggerPolicy.imageEvery !== 0) return false;
+  }
 
   // 임계값 완화: Vision 분석 데이터 부족 (현재 7건) → 학습 부트스트랩
   // critical/high 모두 image 전송, medium 은 일부 비율, skip/low 만 metadata
@@ -423,13 +457,14 @@ function _sanitizeAppName(raw) {
  * 캡처 파일을 서버로 업로드 (서버에서 Vision 분석)
  */
 function _uploadCaptureToServer(filepath, trigger, context) {
+  return new Promise((resolve) => {
   try {
     const orbitConfig = (() => {
       try { let r = fs.readFileSync(path.join(os.homedir(), '.orbit-config.json'), 'utf8'); if(r.charCodeAt(0)===0xFEFF) r=r.slice(1); return JSON.parse(r); } catch { return {}; }
     })();
     const serverUrl = orbitConfig.serverUrl || process.env.ORBIT_SERVER_URL;
     const token = orbitConfig.token || process.env.ORBIT_TOKEN || '';
-    if (!serverUrl) return;
+    if (!serverUrl) return resolve(false);
 
     // 이미지를 base64로 인코딩해서 전송
     const imageData = fs.readFileSync(filepath);
@@ -449,6 +484,8 @@ function _uploadCaptureToServer(filepath, trigger, context) {
           windowTitle: sanitizeWindowTitle(context.windowTitle),
           activityLevel: context.activityLevel || '',
           automationScore: context.automationScore || 0,
+          cooltime: context.cooltime || _effectiveCooltime(context.app, trigger),
+          capturePolicy: context.capturePolicy || _getTriggerPolicy(trigger),
           screenResolution: _detectScreenResolution(),
           previousCapture: context.previousCapture || '',
           filename: path.basename(filepath),
@@ -473,11 +510,54 @@ function _uploadCaptureToServer(filepath, trigger, context) {
       method: 'POST',
       headers,
       timeout: 30000,
-    }, res => res.resume());
-    req.on('error', (e) => { console.warn('[screen-capture] 업로드 실패:', e.message); });
+    }, res => {
+      res.resume();
+      res.on('end', () => resolve(res.statusCode >= 200 && res.statusCode < 300));
+    });
+    req.on('error', (e) => { console.warn('[screen-capture] 업로드 실패:', e.message); resolve(false); });
+    req.on('timeout', () => { req.destroy(); resolve(false); });
     req.write(payload);
     req.end();
-  } catch (e) { console.warn('[screen-capture] 업로드 에러:', e.message); }
+  } catch (e) { console.warn('[screen-capture] 업로드 에러:', e.message); resolve(false); }
+  });
+}
+
+async function uploadPendingToServer(limit = 20) {
+  ensureDir();
+  let sentSet = new Set();
+  const marker = path.join(CAPTURE_DIR, '.remote-uploaded');
+  try { sentSet = new Set(fs.readFileSync(marker, 'utf8').split(/\r?\n/).filter(Boolean)); } catch {}
+
+  let files = [];
+  try {
+    files = fs.readdirSync(CAPTURE_DIR)
+      .filter(f => f.startsWith('screen-') && f.endsWith('.png') && !sentSet.has(f))
+      .sort();
+  } catch { return 0; }
+
+  let count = 0;
+  for (const f of files.slice(0, limit)) {
+    const filepath = path.join(CAPTURE_DIR, f);
+    const parts = f.replace(/\.png$/i, '').split('-');
+    const trigger = parts[2] || 'boot_recovery';
+    const activityLevel = parts[3] || 'unknown';
+    const ok = await _uploadCaptureToServer(filepath, trigger, {
+      app: '',
+      windowTitle: '',
+      activityLevel,
+      automationScore: 0,
+      previousCapture: '',
+    });
+    if (ok) {
+      sentSet.add(f);
+      count++;
+    }
+  }
+  if (count > 0) {
+    try { fs.writeFileSync(marker, [...sentSet].join('\n'), 'utf8'); } catch {}
+    console.log(`[screen-capture] 부팅 복구 업로드 ${count}건 완료`);
+  }
+  return count;
 }
 
 /**
@@ -632,6 +712,8 @@ function capture(trigger = 'manual') {
       activityLevel: stateLabel,
       automationScore: _automationScore,
       previousCapture: prevCapturePath || '',
+      cooltime: _effectiveCooltime(_lastActiveApp, trigger),
+      capturePolicy: _getTriggerPolicy(trigger),
     };
 
     if (_shouldSendImage(trigger, _lastActiveApp)) {
@@ -733,11 +815,11 @@ function onKeyboardFlush() {
   if (!_running) return;
   if (_idleTimer) { clearTimeout(_idleTimer); _idleTimer = null; }
   if (_flushCaptureTimer) clearTimeout(_flushCaptureTimer);
-  // 1.5초 후 캡처 (서버 전송 완료 후 화면 안정 대기)
+  // 3초 후 캡처 (입력 결과가 화면에 렌더링될 시간 확보)
   _flushCaptureTimer = setTimeout(() => {
     capture('keyboard_flush');
     _flushCaptureTimer = null;
-  }, 1500);
+  }, 3000);
 }
 
 // 트리거 4: 키보드 폭주 → 작업 중 캡처 (임계값 대폭 낮춤)
@@ -775,12 +857,12 @@ function onMouseBurst() {
   _clickBurstCount++;
   _lastInputTime = Date.now();
   _inputCountWindow++;
-  if (_clickBurstCount > 5 && !_clickBurstTimer) { // 기존 20 → 5
+  if (_clickBurstCount > 8 && !_clickBurstTimer) {
     _clickBurstTimer = setTimeout(() => {
       capture('click_burst');
       _clickBurstCount = 0;
       _clickBurstTimer = null;
-    }, 1500); // 기존 3s → 1.5s
+    }, 2500);
   }
 }
 
@@ -809,6 +891,8 @@ function _sendCaptureMetadata(filepath, trigger, context) {
           windowTitle: sanitizeWindowTitle(context.windowTitle),
           activityLevel: context.activityLevel || '',
           automationScore: context.automationScore || 0,
+          cooltime: context.cooltime || _effectiveCooltime(context.app, trigger),
+          capturePolicy: context.capturePolicy || _getTriggerPolicy(trigger),
           screenResolution: _detectScreenResolution(),
           filename: path.basename(filepath),
           hostname: os.hostname(),
@@ -897,6 +981,10 @@ function start() {
 function stop() {
   _running = false;
   if (_idleTimer) { clearTimeout(_idleTimer); _idleTimer = null; }
+  if (_flushCaptureTimer) { clearTimeout(_flushCaptureTimer); _flushCaptureTimer = null; }
+  if (_burstTimer) { clearTimeout(_burstTimer); _burstTimer = null; }
+  if (_clickSingleTimer) { clearTimeout(_clickSingleTimer); _clickSingleTimer = null; }
+  if (_clickBurstTimer) { clearTimeout(_clickBurstTimer); _clickBurstTimer = null; }
 }
 
 /**
@@ -907,6 +995,10 @@ function pause() {
   if (_paused) return;
   _paused = true;
   if (_idleTimer) { clearTimeout(_idleTimer); _idleTimer = null; }
+  if (_flushCaptureTimer) { clearTimeout(_flushCaptureTimer); _flushCaptureTimer = null; }
+  if (_burstTimer) { clearTimeout(_burstTimer); _burstTimer = null; }
+  if (_clickSingleTimer) { clearTimeout(_clickSingleTimer); _clickSingleTimer = null; }
+  if (_clickBurstTimer) { clearTimeout(_clickBurstTimer); _clickBurstTimer = null; }
   console.log('[screen-capture] 일시정지됨 (은행 보안)');
 }
 
@@ -940,6 +1032,7 @@ module.exports = {
   start, stop, capture, getRecentCaptures, getLastAnalysis, getCurrentActivity,
   onAppChange, onKeyActivity, onKeyboardFlush, onWindowTitleChange, onToolEnd, onFileWrite,
   onKeyBurst, onMouseBurst, onMouseClick, onPrint, onExcelFormula,
+  uploadPendingToServer,
   pause, resume, isPaused,
   getStatus,
   CAPTURE_DIR,

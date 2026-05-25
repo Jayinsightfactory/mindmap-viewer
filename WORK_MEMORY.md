@@ -845,3 +845,103 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 다시 반복되면 먼저 볼 위치:
 - `nenova-erp-ui/src/lib/nav.ts`
 - `nenova-erp-ui/src/components/Sidebar.tsx`
+
+### CLAUDE.md 10만 스타 가드레일 적용
+
+날짜:
+- 2026-05-25 KST
+
+사용자 요청:
+- GitHub에서 10만 개 이상 스타를 받은 `CLAUDE.md` 파일 내용을 우리 프로젝트에도 적용.
+
+확인한 외부 기준:
+- `forrestchang/andrej-karpathy-skills` 및 `multica-ai/andrej-karpathy-skills`의 `CLAUDE.md`.
+- 핵심 원칙: 구현 전 사고, 단순성 우선, 수술식 변경, 검증 가능한 목표.
+
+현재 조치:
+- 루트 `CLAUDE.md` 상단 `절대 규칙` 아래에 `000. Karpathy식 에이전트 코딩 가드레일` 추가.
+- 원문 전체 복사가 아니라 Nenova/Orbit 위험 영역에 맞춰 적용:
+  - 직원 PC/데몬/배포/데이터 삭제·수정/자동 실행은 더 엄격히 가정과 범위 확인.
+  - 기존 패턴 우선.
+  - 요청과 직접 연결된 파일만 수정.
+  - 검증 불가 영역은 완료처럼 말하지 않기.
+
+검증:
+- `Get-Content -Path CLAUDE.md -TotalCount 90`로 상단 삽입 확인.
+
+다시 반복되면 먼저 볼 위치:
+- `CLAUDE.md`의 `000. Karpathy식 에이전트 코딩 가드레일`.
+
+### Nenova Computer Use Lab 고성능 OCR/로컬 조작 확장
+
+날짜:
+- 2026-05-25 KST
+
+사용자 요청:
+- Windows 내장 OCR 성능이 낮으므로 Claude Vision 수준에 가까운 OCR을 추가하고, Nenova 업무 분석에 맞춘 OCR 성능을 디벨롭.
+- 기존 모든 툴의 성능을 계속 디벨롭하는 개념으로, macOS Claude Computer Use처럼 조작 기능도 발전.
+
+현재 조치:
+- `scripts/nenova-cu.js`
+  - `ocr --engine best|vision|local` 추가/확장.
+  - `best` 모드는 Claude Vision CLI → Tesseract → Windows OCR 순서로 시도.
+  - Claude Vision OCR 프롬프트는 Nenova 업무 화면 전용 JSON(`text`, `lines`, `fields`, `guiElements`, `businessIntent`)을 요구.
+  - Windows OCR/Tesseract 결과에도 Nenova 업무 후처리 적용.
+  - OCR 보정 사전 추가: `거래서→거래처`, `고객멍→고객명`, `오르빗→Orbit` 등.
+  - 업무 필드 추출: `거래처`, `주문번호`, `품목`, `수량`, `날짜`, `금액`, 화면유형, 앱유형.
+  - `desktop-run` 추가: 로컬 PC 클릭/입력/단축키/대기 액션 지원.
+  - 기본은 dry-run, `--execute`가 있을 때만 실제 로컬 조작.
+  - 실제 실행 시 전/후 스크린샷과 후처리 OCR 결과를 artifact로 저장.
+- `docs/nenova-computer-use-lab.md`
+  - OCR 엔진 우선순위, Nenova 보정, desktop-run 사용법, 안전 경계 문서화.
+
+검증:
+- `node --check scripts\nenova-cu.js` 성공.
+- `node scripts\nenova-cu.js ocr --image artifacts\nenova-cu\ocr-smoke-ko.png --engine best`
+  - Claude Vision 시도 후 Windows OCR fallback.
+  - 결과: `네노바 주문 테스트 12345 거래처: Orbit 플라워`
+  - fields: `customer=Orbit 플라워`, `screen=order`, `app=nenova`
+  - corrections: `거래서→거래처`, `오르빗→Orbit`
+- `node scripts\nenova-cu.js desktop-run --click "100,200" --type "네노바 테스트"`
+  - dry-run 성공, 실제 조작 없음.
+- `node scripts\nenova-cu.js health`
+  - Python, pyautogui, Pillow, Playwright, Windows OCR 사용 가능.
+  - Tesseract 미설치.
+  - Claude CLI 경로 감지됨. 단, Claude Vision 실제 사용은 CLI 로그인 상태 필요.
+
+다시 반복되면 먼저 볼 위치:
+- `scripts/nenova-cu.js`
+- `docs/nenova-computer-use-lab.md`
+- `artifacts/nenova-cu/*.json`
+
+### Nenova Computer Use Lab 영상형 프리뷰
+
+날짜:
+- 2026-05-25 KST
+
+사용자 요청:
+- `nenova-cu`가 어떻게 작업하는지 프리뷰 화면에서 영상처럼 보여지게 하기.
+- 어느 구간을 클릭했는지, 어느 구간을 OCR 처리/분석했는지까지 표시.
+
+현재 조치:
+- `scripts/nenova-cu.js`
+  - `preview --latest 80` 명령 추가.
+  - 최근 `artifacts/nenova-cu/*.json`을 읽어 `preview.html` 생성.
+  - OCR 결과의 word bounding box를 초록 박스로 표시.
+  - `desktop-run` 클릭 위치를 십자 마커로 표시.
+  - 입력/단축키 액션은 화면 위 액션 박스로 표시.
+  - Playwright `web-audit` 요소는 웹 요소 박스로 표시.
+  - Play/Pause/Prev/Next 타임라인 UI 생성.
+- `docs/nenova-computer-use-lab.md`
+  - `preview` 명령과 시각화 범위 문서화.
+
+검증:
+- `node --check scripts\nenova-cu.js` 성공.
+- `node scripts\nenova-cu.js preview --latest 80` 성공.
+- 생성 파일: `artifacts/nenova-cu/preview.html`
+- frameCount: 9
+- HTML 안에 OCR word boxes, desktop click marker, web element overlay 데이터 확인.
+
+다시 반복되면 먼저 볼 위치:
+- `scripts/nenova-cu.js`의 `preview`, `collectPreviewFrames`, `buildPreviewHtml`
+- `artifacts/nenova-cu/preview.html`

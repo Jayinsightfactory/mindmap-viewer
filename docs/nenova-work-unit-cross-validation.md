@@ -12,6 +12,12 @@ Nenova staff work in different accounts and responsibility areas. The primary go
 - which KakaoTalk/KakaoWork conversation happened before, during, or after the work,
 - whether optional business records support the same conclusion.
 
+This document is one implementation surface of the shared algorithm-development
+contract in `docs/nenova-agent-algorithm-development.md`. Work units are not
+only display records; they are the training and validation atoms used to improve
+future employee assistance, manager summaries, automation candidates, and
+Codex-Claude product development.
+
 ## Web Implementation
 
 `nenovaweb` now has a work-unit view:
@@ -48,6 +54,10 @@ Important fields:
 | `talkRelation` | `대화후작업`, `작업후대화`, `동시진행`, `미연결` |
 | `pcEvidence` | Screen/app/keyboard/mouse evidence |
 | `validationStatus` | `일치`, `부분일치`, `충돌`, `검증대기` |
+| `confidence` | 0-100 evidence confidence |
+| `conflicts` | Missing or disagreeing sources |
+| `nextAction` | Employee/manager/automation follow-up |
+| `algorithmLearning` | What the next algorithm/UI/API loop should improve |
 
 ## Matching Logic
 
@@ -60,6 +70,11 @@ Important fields:
    - `부분일치`: two sources match, one is missing.
    - `충돌`: sources disagree.
    - `검증대기`: only one source exists.
+6. Record the learning:
+   - which source was missing,
+   - which timing rule was too loose or strict,
+   - which UI/API/agent improvement should be built next,
+   - whether the employee or manager accepted/corrected the interpretation.
 
 ## Talk/Work Candidate Scoring
 

@@ -1003,7 +1003,7 @@ function createScriptGenerator({ getDb }) {
       // 데몬 명령 큐잉
       await db.query(`
         INSERT INTO orbit_daemon_commands (hostname, action, command, data_json, ts)
-        VALUES ($1, 'run-script', NULL, $2::jsonb, NOW())
+        VALUES ($1, 'rpa-dry-run', NULL, $2::jsonb, NOW())
       `, [
         hostname,
         JSON.stringify({
@@ -1012,18 +1012,65 @@ function createScriptGenerator({ getDb }) {
           script: script.script_content,
           actionType: script.action_type,
           source: 'script-generator',
+          dryRun: true,
+          approved: false,
           ts: new Date().toISOString(),
         }),
       ]);
 
-      // 배포 카운트 증가
+      await db.query('UPDATE generated_scripts SET deploy_count = deploy_count + 1, status = $1, updated_at = NOW() WHERE id = $2',
+        ['tested', script.id]);
+
+      res.json({
+        ok: true,
+        deployed: { scriptId: script.id, hostname, actionType: script.action_type, mode: 'dry-run' },
+        message: `${hostname}에 "${script.action_type}" RPA dry-run 전달 완료`,
+      });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  // POST /api/scripts/:id/approve-run — 승인된 RPA 실행
+  // ═══════════════════════════════════════════════════════════════
+  router.post('/:id/approve-run', async (req, res) => {
+    try {
+      const db = getDb();
+      if (!db?.query) return res.json({ error: 'DB not available' });
+
+      const { hostname, timeoutMs } = req.body;
+      if (!hostname) return res.status(400).json({ error: 'hostname 필요' });
+
+      const { rows } = await db.query('SELECT * FROM generated_scripts WHERE id = $1', [req.params.id]);
+      if (rows.length === 0) return res.status(404).json({ error: 'Script not found' });
+      const script = rows[0];
+
+      await db.query(`
+        INSERT INTO orbit_daemon_commands (hostname, action, command, data_json, ts)
+        VALUES ($1, 'rpa-run', NULL, $2::jsonb, NOW())
+      `, [
+        hostname,
+        JSON.stringify({
+          scriptId: script.id,
+          scriptType: script.script_type,
+          script: script.script_content,
+          actionType: script.action_type,
+          source: 'script-generator-approved',
+          approved: true,
+          mode: 'execute',
+          timeoutMs: timeoutMs || 120000,
+          ts: new Date().toISOString(),
+        }),
+      ]);
+
       await db.query('UPDATE generated_scripts SET deploy_count = deploy_count + 1, status = $1, updated_at = NOW() WHERE id = $2',
         ['deployed', script.id]);
 
       res.json({
         ok: true,
-        deployed: { scriptId: script.id, hostname, actionType: script.action_type },
-        message: `${hostname}에 "${script.action_type}" 스크립트 배포 완료`,
+        queued: { scriptId: script.id, hostname, actionType: script.action_type, mode: 'execute' },
+        message: `${hostname}에 승인된 RPA 실행 명령 전달 완료`,
       });
     } catch (err) {
       res.status(500).json({ error: err.message });

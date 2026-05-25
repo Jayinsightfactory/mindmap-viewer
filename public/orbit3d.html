@@ -92,6 +92,7 @@
     <div class="ln-sep">도구</div>
     <button class="ln-item" onclick="toggleInsightPanel()">📊 인사이트</button>
     <button class="ln-item" id="ln-suggest-btn" onclick="toggleSuggestionPanel()">💡 AI 추천</button>
+    <button class="ln-item" onclick="toggleGrowthPanel()">🧬 Agent Growth</button>
     <button class="ln-item" onclick="toggleTaskSidebar()">📋 할 일</button>
 
     <!-- 커뮤니티 -->
@@ -1196,39 +1197,38 @@ function viewZoom(dir) {
 <!-- ═══ 성장 엔진 패널 ═══ -->
 <div id="growth-panel">
   <div class="gp-header">
-    <span class="gp-title">📈 성장 엔진</span>
+    <span class="gp-title">🧬 Agent Growth</span>
+    <button class="gp-refresh" onclick="loadAgentGrowthPanel(true)" title="새로고침">↺</button>
     <button class="gp-close" onclick="toggleGrowthPanel()">✕</button>
   </div>
   <div class="gp-body">
     <div class="gp-level-row">
       <div class="gp-level-circle" id="gp-level">1</div>
       <div class="gp-level-info">
-        <div class="gp-level-label">Level <span id="gp-level-num">1</span></div>
+        <div class="gp-level-label">Agent Level <span id="gp-level-num">1</span></div>
         <div class="gp-xp-bar"><div class="gp-xp-fill" id="gp-xp-fill" style="width:0%"></div></div>
-        <div class="gp-xp-text"><span id="gp-xp">0</span> / <span id="gp-xp-max">100</span> XP</div>
+        <div class="gp-xp-text"><span id="gp-xp">0</span> / <span id="gp-xp-max">100</span> signal XP</div>
       </div>
+    </div>
+    <div class="gp-signal-grid">
+      <div class="gp-signal"><b id="gp-rec-count">-</b><span>개선 권고</span></div>
+      <div class="gp-signal"><b id="gp-auto-count">-</b><span>자동화 후보</span></div>
+      <div class="gp-signal"><b id="gp-trigger-count">-</b><span>운영 트리거</span></div>
     </div>
     <div class="gp-streak-row">
-      <div class="gp-streak-icon">🔥</div>
+      <div class="gp-streak-icon">↻</div>
       <div class="gp-streak-info">
-        <div class="gp-streak-count"><span id="gp-streak">0</span>일 연속</div>
-        <div class="gp-streak-hint" id="gp-streak-hint">오늘 작업을 시작하세요!</div>
+        <div class="gp-streak-count" id="gp-loop-state">데이터 확인 대기</div>
+        <div class="gp-streak-hint" id="gp-streak-hint">최근 수집 데이터로 개발 큐를 만듭니다</div>
       </div>
     </div>
-    <div class="gp-section-label">뱃지</div>
-    <div class="gp-badges" id="gp-badges">
-      <div class="gp-badge locked">🌱 첫 작업</div>
-      <div class="gp-badge locked">🔥 3일 연속</div>
-      <div class="gp-badge locked">⚡ 7일 연속</div>
-      <div class="gp-badge locked">🏆 30일 연속</div>
-      <div class="gp-badge locked">💯 100개 파일</div>
-      <div class="gp-badge locked">🤖 AI 대화 50회</div>
-      <div class="gp-badge locked">👥 워크스페이스 참여</div>
-      <div class="gp-badge locked">🌟 레벨 10</div>
+    <div class="gp-section-label">개발 우선순위</div>
+    <div class="gp-backlog" id="gp-backlog">
+      <div class="gp-empty">데이터 로딩 중...</div>
     </div>
-    <div class="gp-section-label">최근 활동</div>
+    <div class="gp-section-label">자가발전 이력</div>
     <div class="gp-history" id="gp-history">
-      <div style="color:#6e7681;font-size:11px;text-align:center;padding:10px">활동 데이터 로딩 중...</div>
+      <div class="gp-empty">이력 데이터 로딩 중...</div>
     </div>
   </div>
 </div>
@@ -1336,13 +1336,13 @@ function viewZoom(dir) {
 <script src="js/orbit3d-render-panels.js?v=20260326-v2"></script>
 <script src="js/orbit3d-render-settings.js?v=20260407-v2"></script>
 <script src="js/orbit3d-render-labels.js?v=20260326-v2"></script>
-<script src="js/orbit3d-data-load.js?v=20260407-v1"></script>
+<script src="js/orbit3d-data-load.js?v=20260525-v1"></script>
 <script src="js/orbit3d-ws.js?v=20260326-v2"></script>
 <script src="js/orbit3d-company.js?v=20260326-v2"></script>
 <script src="js/orbit3d-loop.js?v=20260326-v2"></script>
 <script src="js/orbit3d-social.js?v=20260326-v2"></script>
 <script src="js/orbit3d-ui.js?v=20260326-v2"></script>
-<script src="js/orbit3d-ui-panels.js?v=20260326-v2"></script>
+<script src="js/orbit3d-ui-panels.js?v=20260525-v1"></script>
 <script src="js/orbit3d-monitor.js?v=20260326-v2"></script>
 <script src="js/orbit3d-behavior.js?v=20260326-v2"></script>
 <script src="js/orbit3d-transitions.js?v=20260326-v2"></script>

@@ -26,10 +26,10 @@ const DEFAULT_COOLTIME = 60  * 1000;  // 분석 데이터 부족 시 기본값
 const MIN_SAMPLES      = 5;           // 학습 시동 임계 — 부트스트랩 위해 10→5 완화
 const ANALYSIS_DAYS    = 7;           // 분석 기간
 
-// 유용한 트리거 (캡처 자체가 가치 있는 타이밍) — REACTIVE도 학습 입력 포함
+// 유용한 트리거 (캡처 자체가 가치 있는 타이밍)
+// 키보드/마우스 반응형 트리거는 실제 Vision 결과가 유용할 때만 학습에 반영한다.
 const USEFUL_TRIGGERS = new Set([
   'app_switch', 'idle_result', 'title_change',
-  'keyboard_flush', 'keyboard_done', 'mouse_click',
   'ctrl_print', 'ctrl_s', 'excel_formula',
 ]);
 

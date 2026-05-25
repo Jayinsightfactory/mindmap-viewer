@@ -77,9 +77,18 @@ let _lastError = null;
 
 function validateReadOnly(query) {
   const normalized = query.replace(/--.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '').trim().toUpperCase();
-  const forbidden = ['INSERT', 'UPDATE', 'DELETE', 'DROP', 'ALTER', 'CREATE', 'TRUNCATE', 'EXEC', 'EXECUTE', 'MERGE'];
+  if (!/^(SELECT|WITH)\b/.test(normalized)) {
+    throw new Error('[보안] nenova DB에는 SELECT/WITH 읽기 쿼리만 허용됩니다.');
+  }
+  if (normalized.includes(';')) {
+    throw new Error('[보안] nenova DB 다중 문장 쿼리 실행 금지! 읽기 전용입니다.');
+  }
+  const forbidden = [
+    'INSERT', 'UPDATE', 'DELETE', 'DROP', 'ALTER', 'CREATE', 'TRUNCATE', 'EXEC', 'EXECUTE', 'MERGE',
+    'OPENROWSET', 'OPENQUERY', 'OPENDATASOURCE',
+  ];
   for (const keyword of forbidden) {
-    if (normalized.startsWith(keyword)) {
+    if (new RegExp(`\\b${keyword}\\b`).test(normalized)) {
       throw new Error(`[보안] nenova DB에 ${keyword} 쿼리 실행 금지! 읽기 전용입니다.`);
     }
   }
@@ -215,6 +224,27 @@ module.exports = function createCrossAnalysisRouter({ getDb }) {
     }
 
     return null;
+  }
+
+  function classifyClipboardEvidence(row) {
+    const sourceApp = String(row.source_app || '').toLowerCase();
+    const windowTitle = String(row.window_title || '').toLowerCase();
+    const source = String(row.source || '').toLowerCase();
+    const combined = `${sourceApp} ${windowTitle} ${source}`;
+
+    if (row.type === 'order.detected') {
+      return { family: 'order_parser', label: 'Order Parser', verifiedTalk: true };
+    }
+    if (combined.match(/kakao|카카오|kakaowork|kakao ?talk|talk|워크/)) {
+      return { family: 'kakao', label: 'KakaoTalk/KakaoWork', verifiedTalk: true };
+    }
+    if (combined.match(/excel|엑셀|spreadsheet|sheet/)) {
+      return { family: 'excel_clipboard', label: 'Excel Clipboard', verifiedTalk: false };
+    }
+    if (combined.match(/nenova|네노바|화훼/)) {
+      return { family: 'nenova_clipboard', label: 'Nenova Clipboard', verifiedTalk: false };
+    }
+    return { family: 'clipboard_unverified', label: 'Unverified Clipboard', verifiedTalk: false };
   }
 
   // ── 교차 분석 테이블 초기화 ──
@@ -2467,6 +2497,9 @@ module.exports = function createCrossAnalysisRouter({ getDb }) {
           e.id, e.type, e.user_id, e.timestamp,
           e.data_json->>'text' AS text,
           e.data_json->>'rawText' AS raw_text,
+          e.data_json->>'sourceApp' AS source_app,
+          e.data_json->>'windowTitle' AS window_title,
+          e.source AS source,
           e.data_json->'items' AS items,
           u.name AS user_name
         FROM events e
@@ -2546,6 +2579,7 @@ module.exports = function createCrossAnalysisRouter({ getDb }) {
         if (usedKakao.has(k.id)) continue;
         const kTs = new Date(k.timestamp).getTime();
         const kUser = k.user_id;
+        const primaryEvidence = classifyClipboardEvidence(k);
 
         // 같은 시간대 Excel 이벤트
         const matchedExcel = excelRows.filter(ex =>
@@ -2580,11 +2614,20 @@ module.exports = function createCrossAnalysisRouter({ getDb }) {
         // 매칭 타입 결정
         const hasExcel = matchedExcel.length > 0;
         const hasNenova = matchedNenova.length > 0;
-        let matchType = 'kakao_only';
+        let matchType = primaryEvidence.verifiedTalk ? 'kakao_only' : `${primaryEvidence.family}_only`;
         let matchScore = 0;
-        if (hasExcel && hasNenova) { matchType = 'full_match'; matchScore = 100; }
-        else if (hasExcel) { matchType = 'kakao_excel'; matchScore = 66; }
-        else if (hasNenova) { matchType = 'kakao_nenova'; matchScore = 66; }
+        if (hasExcel && hasNenova) {
+          matchType = primaryEvidence.verifiedTalk ? 'full_match' : `${primaryEvidence.family}_excel_nenova`;
+          matchScore = primaryEvidence.verifiedTalk ? 100 : 76;
+        }
+        else if (hasExcel) {
+          matchType = primaryEvidence.verifiedTalk ? 'kakao_excel' : `${primaryEvidence.family}_excel`;
+          matchScore = primaryEvidence.verifiedTalk ? 66 : 46;
+        }
+        else if (hasNenova) {
+          matchType = primaryEvidence.verifiedTalk ? 'kakao_nenova' : `${primaryEvidence.family}_nenova`;
+          matchScore = primaryEvidence.verifiedTalk ? 66 : 46;
+        }
 
         if (keywordMatches.length > 0) matchScore = Math.min(100, matchScore + 10);
 
@@ -2596,10 +2639,19 @@ module.exports = function createCrossAnalysisRouter({ getDb }) {
           matchType,
           matchScore,
           sources: {
-            kakao: {
+            primary: {
               type: k.type,
+              family: primaryEvidence.family,
+              label: primaryEvidence.label,
+              verifiedTalk: primaryEvidence.verifiedTalk,
+              sourceApp: k.source_app || '',
+              windowTitle: k.window_title || '',
               text: kakaoText.substring(0,120),
             },
+            kakao: primaryEvidence.verifiedTalk ? {
+              type: k.type,
+              text: kakaoText.substring(0,120),
+            } : null,
             excel: matchedExcel.slice(0,3).map(ex => ({
               workbook: ex.workbook,
               sheet: ex.sheet,
@@ -2624,6 +2676,11 @@ module.exports = function createCrossAnalysisRouter({ getDb }) {
       const kakaoExcel = sessions.filter(s => s.matchType === 'kakao_excel').length;
       const kakaoNenova = sessions.filter(s => s.matchType === 'kakao_nenova').length;
       const kakaoOnly = sessions.filter(s => s.matchType === 'kakao_only').length;
+      const unverifiedClipboard = sessions.filter(s => s.sources?.primary?.family === 'clipboard_unverified').length;
+      const nonTalkClipboard = sessions.filter(s => {
+        const family = s.sources?.primary?.family || '';
+        return family.endsWith('_clipboard') || family === 'clipboard_unverified';
+      }).length;
       const avgScore = total > 0 ? Math.round(sessions.reduce((a,s) => a+s.matchScore,0)/total) : 0;
 
       res.json({
@@ -2638,6 +2695,12 @@ module.exports = function createCrossAnalysisRouter({ getDb }) {
           kakaoOnly,
           avgScore,
           matchRate: total > 0 ? `${Math.round((fullMatch/total)*100)}%` : '0%',
+          sourceQualityWarnings: [
+            ...(unverifiedClipboard > 0 ? [`${unverifiedClipboard} clipboard events have no reliable sourceApp/windowTitle; not counted as Kakao evidence`] : []),
+            ...(nonTalkClipboard > 0 ? [`${nonTalkClipboard} clipboard events were separated from Kakao evidence to avoid false full-match claims`] : []),
+          ],
+          unverifiedClipboard,
+          nonTalkClipboard,
           rawCounts: {
             kakaoEvents: kakaoRows.length,
             excelEvents: excelRows.length,

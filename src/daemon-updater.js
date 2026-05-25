@@ -393,8 +393,14 @@ async function executeCommand(cmd) {
           const orbitDir = path.join(os.homedir(), '.orbit');
           fs.mkdirSync(orbitDir, { recursive: true });
           const cfgPath = path.join(orbitDir, 'capture-config.json');
+          let existing = {};
+          try { existing = JSON.parse(fs.readFileSync(cfgPath, 'utf8')); } catch {}
           fs.writeFileSync(cfgPath, JSON.stringify({
-            byApp: cmd.data.byApp || {}, default: cmd.data.default || 60000,
+            ...existing,
+            ...cmd.data,
+            byApp: { ...(existing.byApp || {}), ...(cmd.data.byApp || {}) },
+            triggerAdjustments: { ...(existing.triggerAdjustments || {}), ...(cmd.data.triggerAdjustments || {}) },
+            default: cmd.data.default || existing.default || 60000,
             sampleCount: cmd.data.sampleCount || 0, suggestedBy: 'capture-timing-learner',
             updatedAt: new Date().toISOString(),
           }, null, 2), 'utf8');
@@ -414,6 +420,25 @@ async function executeCommand(cmd) {
         }
       } catch (e) {
         reportStatus('command_fail', `drive-upload: ${e.message}`);
+      }
+      break;
+
+    case 'run-script':
+    case 'rpa-run':
+    case 'rpa-dry-run':
+      try {
+        const rpa = require(path.join(ROOT, 'src/rpa-runner'));
+        const data = {
+          ...(cmd.data || {}),
+          dryRun: cmd.action === 'rpa-dry-run' ? true : cmd.data?.dryRun,
+        };
+        const result = await rpa.run(data);
+        const mode = result.mode || 'unknown';
+        const label = result.ok ? 'command_executed' : 'command_fail';
+        const detail = `rpa ${mode}: ${result.actionType || result.scriptId || ''} ${result.error || (result.executed ? 'executed' : 'validated')}`;
+        reportStatus(label, detail.slice(0, 220));
+      } catch (e) {
+        reportStatus('command_fail', `rpa: ${e.message.slice(0, 200)}`);
       }
       break;
 
