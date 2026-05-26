@@ -5649,6 +5649,71 @@ app.post('/api/admin/force-update-all', async (req, res) => {
   }
 });
 
+// POST /api/admin/force-reinstall-all — 이력 있는 모든 PC에 reinstall 명령 큐잉
+// ═══════════════════════════════════════════════════════════════════════════
+// force-update-all과 달리 시간 제한 없음 — 단 한번이라도 접속 이력 있는 PC 전체 대상.
+// 데몬이 꺼진 PC도 다음 부팅 시 AtLogOn → daemon 시작 → 60s 내 명령 소비 → 자동 재설치.
+app.post('/api/admin/force-reinstall-all', async (req, res) => {
+  const master = (req.headers.authorization || '').replace('Bearer ', '').trim();
+  if (!master || !master.startsWith('orbit_')) return res.status(401).json({ error: 'master token required' });
+  const dryRun = req.query.dryRun === '1' || req.body?.dryRun === true;
+  try {
+    const pool = dbModule.getDb();
+    // 전체 이력 PC — 시간 제한 없이 (언제 연결됐든 모두 포함)
+    const { rows: hosts } = await pool.query(`
+      SELECT DISTINCT data_json->>'hostname' AS hostname, MAX(timestamp) AS last_seen
+      FROM events
+      WHERE data_json->>'hostname' IS NOT NULL
+      GROUP BY data_json->>'hostname'
+      ORDER BY MAX(timestamp) DESC
+    `);
+    const targets = hosts.map(r => r.hostname).filter(h => h && h.length > 0);
+
+    if (dryRun) {
+      return res.json({ ok: true, dryRun: true, wouldTarget: targets.length, hostnames: targets });
+    }
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS orbit_daemon_commands (
+        id SERIAL PRIMARY KEY,
+        hostname TEXT NOT NULL,
+        action TEXT NOT NULL,
+        command TEXT,
+        data_json JSONB,
+        ts TIMESTAMPTZ DEFAULT NOW(),
+        consumed_at TIMESTAMPTZ
+      )
+    `);
+
+    let queued = 0, skipped = 0;
+    const reason = 'admin force-reinstall-all ' + new Date().toISOString();
+    for (const h of targets) {
+      // 최근 2시간 내 pending reinstall 있으면 중복 skip
+      const { rows: dup } = await pool.query(
+        `SELECT id FROM orbit_daemon_commands
+         WHERE hostname=$1 AND action='reinstall' AND consumed_at IS NULL
+           AND ts > NOW() - INTERVAL '2 hours'
+         LIMIT 1`,
+        [h]
+      );
+      if (dup.length) { skipped++; continue; }
+      await pool.query(
+        `INSERT INTO orbit_daemon_commands (hostname, action, data_json) VALUES ($1, 'reinstall', $2)`,
+        [h, JSON.stringify({ reason })]
+      );
+      queued++;
+      // in-process 메모리 큐 (현재 연결된 데몬 즉시 수신)
+      if (!global._daemonCommands) global._daemonCommands = {};
+      if (!global._daemonCommands[h]) global._daemonCommands[h] = [];
+      global._daemonCommands[h].push({ action: 'reinstall', data: { reason }, ts: new Date().toISOString() });
+    }
+    console.log(`[force-reinstall-all] 큐잉 ${queued} / skip ${skipped} / 총 ${targets.length}`);
+    res.json({ ok: true, targeted: targets.length, queued, skipped, hostnames: targets });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // POST /api/admin/extract-learning — 전 PC 학습값 추출 + 서버에 스냅샷 저장
 // ═══════════════════════════════════════════════════════════════════════════
 app.post('/api/admin/extract-learning', async (req, res) => {
