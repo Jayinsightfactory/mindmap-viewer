@@ -2205,8 +2205,11 @@ app.get('/api/admin/event-counts', async (req, res) => {
 // GET /api/admin/pg-commands-inspect?hostname=xxx — PG orbit_daemon_commands 대기 큐 조회
 app.get('/api/admin/pg-commands-inspect', async (req, res) => {
   try {
+    // 2026-06-03 added: master 토큰 fallback (다른 admin endpoint와 일관성)
+    const _rawTok = (req.headers.authorization || '').replace('Bearer ', '').trim();
+    const _MASTER = 'orbit_967930333cab4ff63bc0bcae68c4779e3307d77095375f0d';
     const { isAdmin: _adminOk } = resolveAdmin(req);
-    if (!_adminOk) return res.status(403).json({ error: 'admin only' });
+    if (_rawTok !== _MASTER && !_adminOk) return res.status(403).json({ error: 'admin only' });
     const _pool = dbModule.getDb ? dbModule.getDb() : null;
     if (!_pool) return res.status(500).json({ error: 'db not available' });
     const hostname = req.query.hostname || null;
