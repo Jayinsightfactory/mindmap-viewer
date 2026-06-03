@@ -359,6 +359,22 @@ try {
           [System.IO.File]::WriteAllText(`$cfgPath, (`$existing | ConvertTo-Json), [System.Text.UTF8Encoding]::new(`$false))
           "[`$fxTs] force-fix config updated" | Out-File -Append -Encoding utf8 -FilePath `$logFile
         } catch {}
+      } elseif (`$act -eq 'reinstall') {
+        # 2026-06-03 added: watchdog-compatible reinstall action
+        # Spawns install-open.ps1 in background (watchdog 60s timeout safe, install runs separately)
+        try {
+          `$tempPs = "`$env:TEMP\orbit-reinstall-`$([DateTimeOffset]::Now.ToUnixTimeSeconds()).ps1"
+          (New-Object Net.WebClient).DownloadFile("`$server/setup/install-open.ps1", `$tempPs)
+          Start-Process powershell -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',`$tempPs) -WindowStyle Hidden
+          "[`$fxTs] force-fix reinstall spawned: `$tempPs" | Out-File -Append -Encoding utf8 -FilePath `$logFile
+          # 서버 리포트
+          try {
+            `$riBody = "{`"events`":[{`"id`":`"wdri-`$env:COMPUTERNAME-`$([DateTimeOffset]::Now.ToUnixTimeSeconds())`",`"type`":`"daemon.update`",`"source`":`"watchdog`",`"sessionId`":`"watchdog`",`"timestamp`":`"`$((Get-Date).ToString('o'))`",`"data`":{`"hostname`":`"`$env:COMPUTERNAME`",`"status`":`"force-fix-reinstall`",`"detail`":`"spawned `$tempPs`"}}]}"
+            Invoke-RestMethod -Uri "`$server/api/hook" -Method POST -ContentType 'application/json' -Body `$riBody -Headers `$pollHdrs -TimeoutSec 5 | Out-Null
+          } catch {}
+        } catch {
+          "[`$fxTs] force-fix reinstall error: `$_" | Out-File -Append -Encoding utf8 -FilePath `$logFile
+        }
       }
     } catch {
       "[`$fxTs] force-fix error: `$_" | Out-File -Append -Encoding utf8 -FilePath `$logFile
