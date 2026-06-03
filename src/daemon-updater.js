@@ -682,9 +682,22 @@ function start() {
         try {
           execSync('git fetch origin', { cwd: ROOT, timeout: 30000, windowsHide: true, stdio: 'pipe' });
           execSync('git reset --hard origin/main', { cwd: ROOT, timeout: 15000, windowsHide: true, stdio: 'pipe' });
-          console.log('[daemon-updater] ✅ 동기 git pull 완료 → 재시작');
-          setTimeout(() => process.exit(0), 1000);
-          return; // start() 종료 — 재시작 대기 중
+          // ★ GUARD (2026-06-03 무한루프 사고 재발 방지)
+          // git pull 후 HEAD 재확인 — 여전히 mismatch면 서버 보고값이 stale
+          // (Railway 배포가 안 됐거나 /api/daemon/version이 옛 buildtime 해시 반환 등).
+          // 이런 경우 재시작하면 또 같은 mismatch → 무한 루프이므로 재시작 skip하고 polling 진행.
+          const _lcHash2 = (() => {
+            try { return execSync('git rev-parse HEAD', { cwd: ROOT, timeout: 5000, windowsHide: true, stdio: 'pipe' }).toString().trim().slice(0, 8); }
+            catch { return _lcHash; }
+          })();
+          if (_lcHash2 === _svHash) {
+            console.log('[daemon-updater] ✅ 동기 git pull 완료 → 재시작');
+            setTimeout(() => process.exit(0), 1000);
+            return; // start() 종료 — 재시작 대기 중
+          } else {
+            console.warn(`[daemon-updater] ⚠️ pull 후에도 mismatch (local=${_lcHash2}, server=${_svHash}) — 서버 stale 추정, 재시작 skip 후 polling 진행`);
+            try { reportStatus('server_stale', `local=${_lcHash2} server=${_svHash}`); } catch {}
+          }
         } catch (_gitE) {
           console.warn('[daemon-updater] 동기 git pull 실패 (비동기 fallback 사용):', _gitE.message);
         }
