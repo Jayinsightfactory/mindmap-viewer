@@ -2210,11 +2210,14 @@ app.get('/api/admin/pg-commands-inspect', async (req, res) => {
     const _pool = dbModule.getDb ? dbModule.getDb() : null;
     if (!_pool) return res.status(500).json({ error: 'db not available' });
     const hostname = req.query.hostname || null;
+    // 2026-06-03 added: includeConsumed=1 로 처리완료까지 포함 조회 (polling 진단용)
+    const includeConsumed = req.query.includeConsumed === '1';
     let rows;
     if (hostname) {
+      const whereClause = includeConsumed ? 'hostname = $1' : 'hostname = $1 AND consumed_at IS NULL';
       const r = await _pool.query(
         `SELECT id, hostname, action, ts, consumed_at FROM orbit_daemon_commands
-         WHERE hostname = $1 AND consumed_at IS NULL ORDER BY ts ASC LIMIT 200`,
+         WHERE ${whereClause} ORDER BY ts DESC LIMIT 50`,
         [hostname]
       );
       rows = r.rows;
