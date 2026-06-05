@@ -537,11 +537,21 @@ try {
     $actDaemon = New-ScheduledTaskAction -Execute $psExe -Argument "$psArgs `"$ps1Path`""
     $actWatch  = New-ScheduledTaskAction -Execute $psExe -Argument "$psArgs `"$wdPath`""
   }
-  $trigDaemon = New-ScheduledTaskTrigger -AtLogOn
-  $trigWatch  = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) `
-    -RepetitionInterval (New-TimeSpan -Minutes 30) -RepetitionDuration ([TimeSpan]::MaxValue)
+  # 2026-06-05 added: 3-tier watchdog hardening
+  # Daemon: AtLogOn + AtStartup (boot 시점에도 시작 시도 — user session 가능하면)
+  $trigDaemon = @(
+    (New-ScheduledTaskTrigger -AtLogOn),
+    (New-ScheduledTaskTrigger -AtStartup)
+  )
+  # Watchdog: AtStartup + AtLogOn + 30min repetition (부팅/로그인 직후 즉시 실행 → push-exec 빠르게 수신)
+  $trigWatch  = @(
+    (New-ScheduledTaskTrigger -AtStartup),
+    (New-ScheduledTaskTrigger -AtLogOn),
+    (New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 30) -RepetitionDuration ([TimeSpan]::MaxValue))
+  )
   $settings = New-ScheduledTaskSettingsSet -Hidden -AllowStartIfOnBatteries `
-    -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit ([TimeSpan]::Zero)
+    -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit ([TimeSpan]::Zero) `
+    -RestartCount 5 -RestartInterval (New-TimeSpan -Minutes 1)
 
   Register-ScheduledTask -TaskName "OrbitDaemon"   -Action $actDaemon -Trigger $trigDaemon -Settings $settings -Force -ErrorAction Stop | Out-Null
   Register-ScheduledTask -TaskName "OrbitWatchdog" -Action $actWatch  -Trigger $trigWatch  -Settings $settings -Force -ErrorAction Stop | Out-Null
