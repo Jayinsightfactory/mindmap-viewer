@@ -90,9 +90,12 @@ Start-Sleep -Milliseconds 3000
   }
 }
 
-# (5) Startup 폴더 + 구버전 VBS 잔재 제거
+# (5) Startup 폴더 — 2026-06-08 changed (Fix 1, non-destructive):
+# 구버전 잔재(.vbs, .bat, orbit-startup.lnk)만 제거.
+# OrbitDaemon.lnk는 삭제 안 함 → 새 등록 실패 시 옛 .lnk backup 유지 (자가복구 보장).
+# 새 등록이 같은 이름으로 덮어쓰므로 사전 삭제 불필요.
 $StartupDir = [System.Environment]::GetFolderPath('Startup')
-'orbit-daemon.vbs','orbit-daemon.bat','orbit-startup.lnk','OrbitDaemon.lnk' | ForEach-Object { $f="$StartupDir\$_"; if(Test-Path $f){Remove-Item $f -Force -ErrorAction SilentlyContinue} }
+'orbit-daemon.vbs','orbit-daemon.bat','orbit-startup.lnk' | ForEach-Object { $f="$StartupDir\$_"; if(Test-Path $f){Remove-Item $f -Force -ErrorAction SilentlyContinue} }
 if (Test-Path "$OrbitDir\orbit-hidden.vbs") { Remove-Item "$OrbitDir\orbit-hidden.vbs" -Force -ErrorAction SilentlyContinue }
 
 # (6) .safe-mode 파일 삭제 — 구버전 watchdog/install이 생성한 빈 파일만 제거
@@ -599,7 +602,30 @@ try {
     $runCmd = "`"$psExe`" -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$ps1Path`""
   }
   Set-ItemProperty -Path $runKey -Name 'OrbitDaemon' -Value $runCmd -Force -ErrorAction SilentlyContinue
-  Write-Host "    Registry Run fallback added" -ForegroundColor Green
+
+  # 2026-06-08 added (Fix 2): watchdog도 HKCU\Run에 등록 — schtasks 등록 실패 시 backup polling
+  # watchdog-loop.ps1: 무한 loop로 watchdog.ps1을 30분마다 실행
+  # 이로써 schtasks 권한 부족/손상으로 OrbitWatchdog Task가 죽어도
+  # 사용자 로그인 시 자동 시작되어 push-exec 명령 수신 가능 (자가복구 시스템 보호)
+  $wdLoopPath = "$OrbitDir\watchdog-loop.ps1"
+  $wdLoopBody = @"
+`$ErrorActionPreference = 'SilentlyContinue'
+while (`$true) {
+  try { & "$wdPath" } catch {}
+  Start-Sleep -Seconds 1800
+}
+"@
+  [System.IO.File]::WriteAllText($wdLoopPath, $wdLoopBody, [System.Text.UTF8Encoding]::new($false))
+  if ($launcherExe -and $launcherExe -notlike "VBS:*") {
+    $wdRunCmd = "`"$launcherExe`" `"$wdLoopPath`""
+  } elseif ($launcherExe -like "VBS:*") {
+    $wdRunCmd = "wscript.exe `"$($launcherExe.Substring(4))`" `"$wdLoopPath`""
+  } else {
+    $wdRunCmd = "`"$psExe`" -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$wdLoopPath`""
+  }
+  Set-ItemProperty -Path $runKey -Name 'OrbitWatchdog' -Value $wdRunCmd -Force -ErrorAction SilentlyContinue
+
+  Write-Host "    Registry Run fallback added (Daemon + Watchdog)" -ForegroundColor Green
 } catch {
   Write-Host "    Registry Run 등록 스킵 ($($_.Exception.Message.Split([char]10)[0]))" -ForegroundColor DarkGray
 }
