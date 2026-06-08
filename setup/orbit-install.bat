@@ -1,7 +1,8 @@
 @echo off
 REM Orbit AI - One-click installer
-REM 2026-06-08 v3: UAC auto-elevation 제거 (cmd 창 즉시 닫힘 버그)
-REM 사용자가 직접 우클릭 "관리자 권한으로 실행" 권장. 일반 권한도 OK (Node/Git 있을 때).
+REM 2026-06-08 v3: removed UAC auto-elevation (cmd window closed immediately).
+REM User should right-click bat and "Run as administrator" for Node/Git install.
+REM User mode also works if Node/Git already installed.
 
 setlocal
 set "SERVER=https://mindmap-viewer-production-adb2.up.railway.app"
