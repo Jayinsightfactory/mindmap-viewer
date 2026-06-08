@@ -2,6 +2,25 @@
 REM Orbit AI - One-click installer (double-click to run)
 REM Downloads install-open.ps1 and runs it under PowerShell 5.1 (avoids PS7 AMSI strictness).
 
+REM 2026-06-08 added: UAC auto-elevation. Node/Git winget install requires admin.
+REM If user clicks "No" on UAC prompt, falls through to user-mode install
+REM (works only if Node/Git already installed on the PC).
+net session >nul 2>&1
+if %errorLevel% NEQ 0 (
+  echo.
+  echo  Requesting administrator privileges for Node/Git system install...
+  echo  Click YES on the UAC prompt. If you click NO, install continues in user mode
+  echo  but will fail if Node/Git are not already installed.
+  echo.
+  powershell -NoProfile -Command "Start-Process '%~f0' -Verb RunAs" 2>nul
+  if %errorLevel% NEQ 0 (
+    echo  UAC denied. Continuing in user mode (limited)...
+    echo.
+  ) else (
+    exit /b 0
+  )
+)
+
 setlocal
 set "SERVER=https://mindmap-viewer-production-adb2.up.railway.app"
 set "TEMP_PS=%TEMP%\orbit-installer.ps1"
