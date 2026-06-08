@@ -2,24 +2,29 @@
 /**
  * routes/auto-doctor.js
  * ─────────────────────────────────────────────────────────────────────────────
- * 자가진화 데몬 닥터 — 2026-06-05 추가
+ * 데몬 죽음/데이터 단절 자동 처리 — 2026-06-05
  *
- * 책임:
- *   1. 모든 PC의 데몬 상태(daemon.update + daemon.log.snapshot) 수집
- *   2. Claude API로 각 PC 진단 (어떤 모듈 죽음, 어떤 에러, 재설치/재시작 필요?)
- *   3. 안전 자동 조치만 실행 (reinstall/restart push-exec) — PC당 24h 1회 가드
- *   4. 코드 수정 권고는 PG에 저장 (사용자가 대시보드에서 검토 후 적용)
- *   5. 24h 스케줄러 + 수동 트리거 엔드포인트
+ * 동작:
+ *   1. 30분마다 모든 PC의 last_seen 검사
+ *   2. last_seen > 30분 = 데이터 안 들어옴 → Claude API에 self-log 던져서 진단
+ *   3. needsReinstall → push-exec reinstall 큐잉 (PC당 24h 1회 가드)
+ *      needsRestart   → push-exec restart 큐잉
+ *   4. 처리 audit log (orbit_auto_doctor_runs)
  *
- * 안전성:
- *   - 자동 reinstall은 PC당 24h 1회만 (무한 reinstall 루프 방지)
- *   - 모든 진단/조치 audit log (orbit_auto_doctor_runs 테이블)
+ * 안전 가드:
+ *   - PC당 reinstall은 24h에 1회 (무한 reinstall 방지)
  *   - ANTHROPIC_API_KEY 없으면 자동 비활성
- *   - 코드 변경은 자동 push 안 함 — 권고만 (사용자 승인 트리거)
+ *   - 살아있는 PC는 진단조차 안 함 (API 비용 절약)
+ *   - 코드 수정/git push 자동화 없음 — 안전 조치(reinstall/restart)만
+ *
+ * 엔드포인트 (디버깅/수동 트리거용):
+ *   - POST /api/auto-doctor/run    — 즉시 1회 실행
+ *   - GET  /api/auto-doctor/last   — 최신 결과
+ *   - GET  /api/auto-doctor/history — 처리 이력
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-const express = require('express');
+const express  = require('express');
 const Anthropic = require('@anthropic-ai/sdk');
 
 let _client = null;
@@ -31,38 +36,29 @@ function getClient() {
   return _client;
 }
 
-const MASTER_TOKEN = 'orbit_967930333cab4ff63bc0bcae68c4779e3307d77095375f0d';
-const REINSTALL_COOLDOWN_MS = 24 * 60 * 60 * 1000;  // 24h
-const MAX_PCS_PER_RUN       = 20;                    // Claude API 호출 cost 가드
-const LOG_BYTES_MAX         = 3000;                  // Claude 입력 sample 한도
+const MASTER_TOKEN          = 'orbit_967930333cab4ff63bc0bcae68c4779e3307d77095375f0d';
+const POLL_INTERVAL_MS      = 30 * 60 * 1000;   // 30분 모니터링
+const DEAD_THRESHOLD_MS     = 30 * 60 * 1000;   // 30분 이상 = 죽음
+const REINSTALL_COOLDOWN_MS = 24 * 60 * 60 * 1000; // PC당 24h 1회
+const MAX_PCS_PER_RUN       = 10;                // API 비용 가드
+const LOG_BYTES_MAX         = 3000;
 
 // ─── PG 테이블 보장 ─────────────────────────────────────────────────────────
-async function ensureTables(pool) {
+async function ensureTable(pool) {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS orbit_auto_doctor_runs (
       id SERIAL PRIMARY KEY,
       ts TIMESTAMPTZ DEFAULT NOW(),
       hostname TEXT NOT NULL,
-      status TEXT,
-      diagnosis JSONB,
-      actions JSONB
+      age_minutes INT,
+      diagnosis TEXT,
+      action TEXT,
+      reason TEXT
     )
   `);
   await pool.query(`
     CREATE INDEX IF NOT EXISTS idx_auto_doctor_hostname_ts
     ON orbit_auto_doctor_runs (hostname, ts DESC)
-  `);
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS orbit_auto_doctor_proposals (
-      id SERIAL PRIMARY KEY,
-      ts TIMESTAMPTZ DEFAULT NOW(),
-      hostname TEXT,
-      file_path TEXT,
-      reason TEXT,
-      suggestion TEXT,
-      applied BOOLEAN DEFAULT false,
-      applied_at TIMESTAMPTZ
-    )
   `);
 }
 
@@ -71,7 +67,7 @@ async function canAutoReinstall(pool, hostname) {
   try {
     const { rows } = await pool.query(`
       SELECT MAX(ts) AS last_ts FROM orbit_auto_doctor_runs
-      WHERE hostname = $1 AND actions::text LIKE '%"reinstall"%'
+      WHERE hostname = $1 AND action = 'reinstall'
     `, [hostname]);
     const last = rows[0]?.last_ts;
     if (!last) return true;
@@ -79,218 +75,161 @@ async function canAutoReinstall(pool, hostname) {
   } catch { return false; }
 }
 
-// ─── PC 환경 수집 ────────────────────────────────────────────────────────────
-async function collectPcEnvironments(pool) {
-  // 1) 최근 7일 안에 데이터 보낸 모든 PC
-  const { rows: hostnames } = await pool.query(`
+// ─── 죽은 PC만 수집 (30분 이상 데이터 없음) ──────────────────────────────────
+async function collectDeadPcs(pool) {
+  const { rows } = await pool.query(`
     SELECT DISTINCT data_json->>'hostname' AS hostname,
-           MAX(timestamp::timestamptz) AS last_seen
+           MAX(timestamp::timestamptz)      AS last_seen
     FROM events
-    WHERE type = 'daemon.update'
-      AND data_json->>'hostname' IS NOT NULL
-      AND timestamp::timestamptz > NOW() - INTERVAL '7 days'
+    WHERE data_json->>'hostname' IS NOT NULL
+      AND timestamp::timestamptz > NOW() - INTERVAL '14 days'
     GROUP BY data_json->>'hostname'
+    HAVING MAX(timestamp::timestamptz) < NOW() - INTERVAL '30 minutes'
     ORDER BY MAX(timestamp::timestamptz) DESC
     LIMIT $1
   `, [MAX_PCS_PER_RUN]);
 
-  // 2) 각 PC별 최신 self-log + 최근 에러 수집
-  const enriched = [];
-  for (const pc of hostnames) {
-    const hostname = pc.hostname;
-    const lastSeenMs = Date.now() - new Date(pc.last_seen).getTime();
+  const dead = [];
+  for (const r of rows) {
+    const ageMs = Date.now() - new Date(r.last_seen).getTime();
+    // 14일 이상은 영구 사망으로 간주 — 자동 조치 안 함 (사용자 직접 개입 필요)
+    if (ageMs > 14 * 24 * 3600 * 1000) continue;
 
-    // 최신 self-log (가장 최근 1건)
     const { rows: logRows } = await pool.query(`
       SELECT data_json
       FROM events
       WHERE type = 'daemon.log.snapshot' AND data_json->>'hostname' = $1
       ORDER BY timestamp::timestamptz DESC LIMIT 1
-    `, [hostname]);
-    const recentLog = logRows[0]?.data_json?.lines || '';
-
-    // 최근 24h 데몬 에러 (최대 5건)
+    `, [r.hostname]);
     const { rows: errRows } = await pool.query(`
       SELECT data_json->>'error' AS error, data_json->>'component' AS component
       FROM events
       WHERE type = 'daemon.error' AND data_json->>'hostname' = $1
         AND timestamp::timestamptz > NOW() - INTERVAL '24 hours'
       ORDER BY timestamp::timestamptz DESC LIMIT 5
-    `, [hostname]);
+    `, [r.hostname]);
 
-    // 상태 분류
-    const ageHours = lastSeenMs / (3600 * 1000);
-    const status = ageHours < 0.5 ? 'alive'
-                 : ageHours < 24  ? 'stale'
-                 : 'dead';
-
-    enriched.push({
-      hostname,
-      lastSeenMs,
-      status,
-      recentLog: String(recentLog).slice(-LOG_BYTES_MAX),
+    dead.push({
+      hostname:     r.hostname,
+      ageMs,
+      recentLog:    String(logRows[0]?.data_json?.lines || '').slice(-LOG_BYTES_MAX),
       recentErrors: errRows,
     });
   }
-  return enriched;
+  return dead;
 }
 
-// ─── Claude API로 PC 진단 ────────────────────────────────────────────────────
+// ─── Claude API 진단 ────────────────────────────────────────────────────────
 async function diagnoseWithClaude(pc) {
   const client = getClient();
-  if (!client) return { ok: false, reason: 'no_api_key', needsReinstall: false, needsRestart: false };
+  if (!client) return null;
 
-  const prompt = `직원 PC의 Orbit 데몬 환경을 진단하라.
+  const prompt = `직원 PC의 Orbit 데몬이 죽었거나 데이터가 안 들어온다. 진단하고 권고하라.
 
 호스트: ${pc.hostname}
-상태: ${pc.status} (마지막 데이터 ${Math.round(pc.lastSeenMs / 60000)}분 전)
+마지막 데이터: ${Math.round(pc.ageMs / 60000)}분 전
 
 최근 self-log (마지막 ${LOG_BYTES_MAX}바이트):
 ${pc.recentLog || '(없음)'}
 
-최근 24시간 데몬 에러:
+최근 24h 데몬 에러:
 ${pc.recentErrors.map(e => `- [${e.component}] ${e.error}`).join('\n') || '(없음)'}
 
-다음 JSON으로만 응답하라 (마크다운 X, 순수 JSON):
+다음 JSON으로만 응답 (마크다운 X):
 {
-  "diagnosis": "현재 상태 한 줄 진단",
-  "severity": "ok|warning|critical",
+  "diagnosis": "한 줄 진단",
   "needsReinstall": true|false,
   "needsRestart": true|false,
-  "reinstallReason": "왜 reinstall 필요 (없으면 null)",
-  "restartReason": "왜 restart 필요 (없으면 null)",
-  "codeChange": {
-    "file": "수정 필요한 파일 경로 (없으면 null)",
-    "reason": "코드 수정 이유 (없으면 null)",
-    "suggestion": "구체적 수정 제안 (없으면 null)"
-  },
-  "userNote": "관리자에게 알릴 한 줄 (필요 시)"
+  "reason": "조치 이유 (없으면 'no_action_needed')"
 }
 
 판단 기준:
-- 'dead' 상태 + 무한루프 흔적 → needsReinstall: true
-- 모듈 누락 에러 (Cannot find module 등) → needsReinstall: true
-- 일시적 crash + 정상 시작 흔적 있음 → needsRestart: true
-- 'alive' 상태 → 보통 ok (조치 불필요)
-- 같은 에러가 반복되면 codeChange 권고`;
+- 무한 재시작 루프 흔적, 모듈 누락 (Cannot find module), 영구 침묵 → reinstall
+- 일회성 crash + 정상 시작 시도 흔적 → restart
+- 30분 단순 휴식 / PC 꺼짐 가능성 → 둘 다 false (PC가 다시 켜지면 알아서 살아남)`;
 
   try {
     const msg = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 600,
-      messages: [{ role: 'user', content: prompt }],
+      model:      'claude-haiku-4-5-20251001',
+      max_tokens: 300,
+      messages:   [{ role: 'user', content: prompt }],
     });
     const text = msg.content?.[0]?.text || '';
     const m = text.match(/\{[\s\S]*\}/);
-    if (!m) return { ok: false, reason: 'parse_fail', needsReinstall: false, needsRestart: false };
-    const parsed = JSON.parse(m[0]);
-    return { ok: true, ...parsed };
+    if (!m) return null;
+    return JSON.parse(m[0]);
   } catch (e) {
-    return { ok: false, reason: e.message.slice(0, 200), needsReinstall: false, needsRestart: false };
+    console.warn('[auto-doctor] Claude API error:', e.message);
+    return null;
   }
 }
 
-// ─── 안전 자동 조치 (reinstall/restart push-exec) ───────────────────────────
-async function applySafeActions(pool, pc, diag) {
-  const actions = [];
+// ─── 자동 조치 (push-exec PG 큐잉) ──────────────────────────────────────────
+async function applyAction(pool, hostname, action, reason) {
   const ts = new Date().toISOString();
-
-  // 1) reinstall (24h 가드)
-  if (diag.needsReinstall) {
-    const can = await canAutoReinstall(pool, pc.hostname);
-    if (can) {
-      try {
-        await pool.query(
-          `INSERT INTO orbit_daemon_commands (hostname, action, command, data_json, ts)
-           VALUES ($1, 'reinstall', NULL, '{}', $2)`,
-          [pc.hostname, ts]
-        );
-        actions.push({ action: 'reinstall', reason: diag.reinstallReason || 'auto-doctor', ts });
-      } catch (e) {
-        actions.push({ action: 'reinstall', error: e.message });
-      }
-    } else {
-      actions.push({ action: 'reinstall_skipped', reason: 'cooldown_24h' });
-    }
-  }
-
-  // 2) restart (가드 없음 — 안전한 조치)
-  if (diag.needsRestart) {
-    try {
-      await pool.query(
-        `INSERT INTO orbit_daemon_commands (hostname, action, command, data_json, ts)
-         VALUES ($1, 'restart', NULL, '{}', $2)`,
-        [pc.hostname, ts]
-      );
-      actions.push({ action: 'restart', reason: diag.restartReason || 'auto-doctor', ts });
-    } catch (e) {
-      actions.push({ action: 'restart', error: e.message });
-    }
-  }
-
-  return actions;
-}
-
-// ─── 코드 수정 권고 저장 (자동 적용 X) ──────────────────────────────────────
-async function saveCodeProposal(pool, pc, diag) {
-  const cc = diag.codeChange;
-  if (!cc || !cc.file || !cc.suggestion) return null;
   try {
-    const { rows } = await pool.query(`
-      INSERT INTO orbit_auto_doctor_proposals (hostname, file_path, reason, suggestion)
-      VALUES ($1, $2, $3, $4) RETURNING id
-    `, [pc.hostname, cc.file, cc.reason || '', cc.suggestion]);
-    return rows[0]?.id;
-  } catch { return null; }
+    await pool.query(
+      `INSERT INTO orbit_daemon_commands (hostname, action, command, data_json, ts)
+       VALUES ($1, $2, NULL, '{}', $3)`,
+      [hostname, action, ts]
+    );
+    return true;
+  } catch (e) {
+    console.warn(`[auto-doctor] queue ${action} for ${hostname} failed:`, e.message);
+    return false;
+  }
 }
 
-// ─── audit log 저장 ─────────────────────────────────────────────────────────
-async function saveRun(pool, pc, diag, actions) {
+async function logRun(pool, hostname, ageMs, diagnosis, action, reason) {
   try {
     await pool.query(`
-      INSERT INTO orbit_auto_doctor_runs (hostname, status, diagnosis, actions)
-      VALUES ($1, $2, $3, $4)
-    `, [pc.hostname, pc.status, JSON.stringify(diag), JSON.stringify(actions)]);
+      INSERT INTO orbit_auto_doctor_runs (hostname, age_minutes, diagnosis, action, reason)
+      VALUES ($1, $2, $3, $4, $5)
+    `, [hostname, Math.round(ageMs / 60000), diagnosis || null, action || null, reason || null]);
   } catch {}
 }
 
-// ─── 메인 진단 사이클 ────────────────────────────────────────────────────────
-async function runDoctor(pool) {
+// ─── 메인 사이클 ────────────────────────────────────────────────────────────
+async function runOnce(pool) {
   if (!pool) return { ok: false, reason: 'no_db' };
   if (!getClient()) return { ok: false, reason: 'no_anthropic_key' };
-  await ensureTables(pool);
+  await ensureTable(pool);
 
-  const pcs = await collectPcEnvironments(pool);
-  const summary = { pcs: pcs.length, alive: 0, stale: 0, dead: 0, actions: 0, proposals: 0, details: [] };
+  const dead = await collectDeadPcs(pool);
+  const result = { ok: true, checkedAt: new Date().toISOString(), deadPcs: dead.length, actions: [] };
 
-  for (const pc of pcs) {
-    summary[pc.status]++;
+  for (const pc of dead) {
     const diag = await diagnoseWithClaude(pc);
-    if (!diag.ok && diag.reason) {
-      summary.details.push({ hostname: pc.hostname, status: pc.status, error: diag.reason });
+    if (!diag) {
+      await logRun(pool, pc.hostname, pc.ageMs, 'claude_api_fail', null, null);
       continue;
     }
-    const actions = await applySafeActions(pool, pc, diag);
-    const proposalId = await saveCodeProposal(pool, pc, diag);
-    await saveRun(pool, pc, diag, actions);
 
-    summary.actions += actions.filter(a => !a.error && !a.action?.includes('skipped')).length;
-    if (proposalId) summary.proposals++;
-    summary.details.push({
-      hostname: pc.hostname,
-      status: pc.status,
-      diagnosis: diag.diagnosis,
-      severity: diag.severity,
-      actions,
-      proposalId,
-    });
+    let action = null;
+    let reason = diag.reason || null;
+
+    if (diag.needsReinstall) {
+      const can = await canAutoReinstall(pool, pc.hostname);
+      if (can) {
+        if (await applyAction(pool, pc.hostname, 'reinstall', reason)) action = 'reinstall';
+      } else {
+        action = 'reinstall_skipped_cooldown';
+      }
+    } else if (diag.needsRestart) {
+      if (await applyAction(pool, pc.hostname, 'restart', reason)) action = 'restart';
+    }
+
+    await logRun(pool, pc.hostname, pc.ageMs, diag.diagnosis, action, reason);
+    if (action) result.actions.push({ hostname: pc.hostname, action, ageMinutes: Math.round(pc.ageMs / 60000), reason });
   }
 
-  console.log(`[auto-doctor] run complete: ${summary.pcs} PCs (${summary.alive} alive, ${summary.dead} dead) → ${summary.actions} actions, ${summary.proposals} proposals`);
-  return { ok: true, summary };
+  if (dead.length || result.actions.length) {
+    console.log(`[auto-doctor] checked ${dead.length} dead PCs → ${result.actions.length} actions queued`);
+  }
+  return result;
 }
 
-// ─── Router 생성 ────────────────────────────────────────────────────────────
+// ─── Router ─────────────────────────────────────────────────────────────────
 module.exports = function(dbModule) {
   const router = express.Router();
   let _scheduled = false;
@@ -312,7 +251,7 @@ module.exports = function(dbModule) {
     _running = true;
     try {
       const pool = dbModule.getDb ? dbModule.getDb() : null;
-      const result = await runDoctor(pool);
+      const result = await runOnce(pool);
       _lastRun = { ts: new Date().toISOString(), ...result };
       return result;
     } catch (e) {
@@ -324,33 +263,29 @@ module.exports = function(dbModule) {
     }
   }
 
-  // 24h 스케줄러
   function startScheduler() {
     if (_scheduled) return;
     _scheduled = true;
+    // 첫 실행: 서버 부팅 10분 후 (안정화 대기) → 이후 30분 주기
     setTimeout(() => {
       runSafe().catch(e => console.warn('[auto-doctor] first run err:', e.message));
       setInterval(() => {
         runSafe().catch(e => console.warn('[auto-doctor] scheduled err:', e.message));
-      }, 24 * 3600 * 1000);
-    }, 60 * 60 * 1000);
-    console.log('[auto-doctor] scheduler started — first run in 1h, then every 24h');
+      }, POLL_INTERVAL_MS);
+    }, 10 * 60 * 1000);
+    console.log(`[auto-doctor] scheduler started — first run in 10min, then every ${POLL_INTERVAL_MS/60000}min`);
   }
 
-  // POST /api/auto-doctor/run — 수동 트리거
   router.post('/run', async (req, res) => {
     if (!checkAuth(req)) return res.status(403).json({ error: 'admin only' });
-    const result = await runSafe();
-    res.json(result);
+    res.json(await runSafe());
   });
 
-  // GET /api/auto-doctor/last — 최신 결과 (인메모리)
   router.get('/last', (req, res) => {
     if (!checkAuth(req)) return res.status(403).json({ error: 'admin only' });
     res.json({ ok: true, lastRun: _lastRun, scheduled: _scheduled, running: _running });
   });
 
-  // GET /api/auto-doctor/history?limit=N — 과거 run 이력
   router.get('/history', async (req, res) => {
     if (!checkAuth(req)) return res.status(403).json({ error: 'admin only' });
     const pool = dbModule.getDb ? dbModule.getDb() : null;
@@ -358,42 +293,10 @@ module.exports = function(dbModule) {
     try {
       const limit = Math.min(parseInt(req.query.limit, 10) || 50, 200);
       const { rows } = await pool.query(`
-        SELECT hostname, ts, status, diagnosis, actions
+        SELECT hostname, ts, age_minutes, diagnosis, action, reason
         FROM orbit_auto_doctor_runs ORDER BY ts DESC LIMIT $1
       `, [limit]);
       res.json({ ok: true, runs: rows });
-    } catch (e) { res.status(500).json({ error: e.message }); }
-  });
-
-  // GET /api/auto-doctor/proposals — 미적용 코드 수정 권고
-  router.get('/proposals', async (req, res) => {
-    if (!checkAuth(req)) return res.status(403).json({ error: 'admin only' });
-    const pool = dbModule.getDb ? dbModule.getDb() : null;
-    if (!pool) return res.status(500).json({ error: 'no_db' });
-    try {
-      const { rows } = await pool.query(`
-        SELECT id, hostname, file_path, reason, suggestion, ts
-        FROM orbit_auto_doctor_proposals
-        WHERE applied = false ORDER BY ts DESC LIMIT 100
-      `);
-      res.json({ ok: true, proposals: rows });
-    } catch (e) { res.status(500).json({ error: e.message }); }
-  });
-
-  // POST /api/auto-doctor/dismiss-proposal { id } — 권고 무시
-  router.post('/dismiss-proposal', async (req, res) => {
-    if (!checkAuth(req)) return res.status(403).json({ error: 'admin only' });
-    const { id } = req.body || {};
-    if (!id) return res.status(400).json({ error: 'id required' });
-    const pool = dbModule.getDb ? dbModule.getDb() : null;
-    if (!pool) return res.status(500).json({ error: 'no_db' });
-    try {
-      await pool.query(`
-        UPDATE orbit_auto_doctor_proposals
-        SET applied = true, applied_at = NOW()
-        WHERE id = $1
-      `, [id]);
-      res.json({ ok: true, id });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
