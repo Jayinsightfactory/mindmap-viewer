@@ -630,6 +630,63 @@ while (`$true) {
   Write-Host "    Registry Run 등록 스킵 ($($_.Exception.Message.Split([char]10)[0]))" -ForegroundColor DarkGray
 }
 
+# 2026-06-08 added: NSSM 기반 Windows Service Watchdog (OS-level 자동 재시작)
+# schtasks/HKCU\Run 모두 깨져도 SCM(Service Control Manager)이 watchdog polling 보장
+# 관리자 권한 필요 — UAC 상승 안 됐으면 skip
+Write-Host "    NSSM Service watchdog 설정 시도..." -ForegroundColor Cyan
+$nssmPath = "$OrbitDir\nssm.exe"
+
+# (1) NSSM 다운로드 (~340KB, 없을 때만)
+if (-not (Test-Path $nssmPath)) {
+  try {
+    $nssmZip = "$env:TEMP\nssm-2.24.zip"
+    Invoke-WebRequest -Uri "https://nssm.cc/release/nssm-2.24.zip" -OutFile $nssmZip -UseBasicParsing -TimeoutSec 30 -ErrorAction Stop
+    $nssmExtract = "$env:TEMP\nssm-extract-$(Get-Random)"
+    Expand-Archive -Path $nssmZip -DestinationPath $nssmExtract -Force
+    $arch = if ([Environment]::Is64BitOperatingSystem) { 'win64' } else { 'win32' }
+    Copy-Item "$nssmExtract\nssm-2.24\$arch\nssm.exe" $nssmPath -Force
+    Remove-Item $nssmZip, $nssmExtract -Recurse -Force -ErrorAction SilentlyContinue
+  } catch {
+    Write-Host "    NSSM 다운로드 실패 — schtasks/HKCU\Run watchdog만 사용" -ForegroundColor Yellow
+  }
+}
+
+# (2) Service 등록 (관리자 권한 필요)
+if (Test-Path $nssmPath) {
+  try {
+    # 기존 service 중지/삭제 (재install 대비)
+    & $nssmPath stop OrbitWatchdogSvc confirm 2>&1 | Out-Null
+    Start-Sleep -Milliseconds 800
+    & $nssmPath remove OrbitWatchdogSvc confirm 2>&1 | Out-Null
+    Start-Sleep -Milliseconds 800
+
+    # 신규 등록
+    & $nssmPath install OrbitWatchdogSvc $psExe 2>&1 | Out-Null
+    & $nssmPath set OrbitWatchdogSvc AppParameters "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$wdLoopPath`"" 2>&1 | Out-Null
+    & $nssmPath set OrbitWatchdogSvc Description "Orbit Daemon Watchdog (OS-level auto-restart)" 2>&1 | Out-Null
+    & $nssmPath set OrbitWatchdogSvc Start SERVICE_AUTO_START 2>&1 | Out-Null
+    & $nssmPath set OrbitWatchdogSvc AppStdout "$OrbitDir\watchdog-svc.log" 2>&1 | Out-Null
+    & $nssmPath set OrbitWatchdogSvc AppStderr "$OrbitDir\watchdog-svc.log" 2>&1 | Out-Null
+    # SYSTEM context인데 USERPROFILE은 install 실행한 user로 override
+    & $nssmPath set OrbitWatchdogSvc AppEnvironmentExtra "USERPROFILE=$env:USERPROFILE" 2>&1 | Out-Null
+    # crash 시 자동 재시작 (5초 후)
+    & $nssmPath set OrbitWatchdogSvc AppExit Default Restart 2>&1 | Out-Null
+    & $nssmPath set OrbitWatchdogSvc AppRestartDelay 5000 2>&1 | Out-Null
+    & $nssmPath start OrbitWatchdogSvc 2>&1 | Out-Null
+    Start-Sleep -Seconds 2
+
+    # 검증
+    $svcStatus = (& $nssmPath status OrbitWatchdogSvc 2>&1) -join ' '
+    if ($svcStatus -match 'SERVICE_RUNNING') {
+      Write-Host "    Watchdog Service: RUNNING (OS-level, SCM 보장)" -ForegroundColor Green
+    } else {
+      Write-Host "    Watchdog Service: $svcStatus" -ForegroundColor Yellow
+    }
+  } catch {
+    Write-Host "    NSSM Service 등록 실패: $($_.Exception.Message.Split([char]10)[0])" -ForegroundColor Yellow
+  }
+}
+
 # ==============================================================================
 # Step 8: Start daemon + verify alive for 10 seconds
 # ==============================================================================
