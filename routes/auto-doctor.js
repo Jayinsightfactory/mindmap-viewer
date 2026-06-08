@@ -191,6 +191,19 @@ async function applyAction(pool, hostname, action, reason) {
   }
 }
 
+// ─── 24h 가드 (reinstall 횟수 제한) ─────────────────────────────────────────
+async function recentlyReinstalled(pool, hostname) {
+  try {
+    const { rows } = await pool.query(`
+      SELECT MAX(ts) AS last_ts FROM orbit_auto_doctor_runs
+      WHERE hostname = $1 AND action = 'reinstall'
+    `, [hostname]);
+    const last = rows[0]?.last_ts;
+    if (!last) return false;
+    return (Date.now() - new Date(last).getTime()) < REINSTALL_COOLDOWN_MS;
+  } catch { return false; }
+}
+
 async function logRun(pool, hostname, ageMs, diagnosis, action, reason) {
   try {
     await pool.query(`
@@ -211,26 +224,32 @@ async function runOnce(pool) {
 
   for (const pc of dead) {
     const diag = await diagnoseWithClaude(pc);
-    if (!diag) {
-      await logRun(pool, pc.hostname, pc.ageMs, 'claude_api_fail', null, null);
-      continue;
-    }
+    // Claude 진단 결과 (참고용 — 실제 조치 판단은 시간 기반)
+    const diagText = diag ? diag.diagnosis : 'claude_skipped';
 
+    // 2026-06-08 fix: 적극적 자가복구
+    // - 15분~ : restart 무조건 (가드 없음, 가벼움)
+    // - 12h~  : reinstall 추가 (24h 가드)
+    // - Claude 진단은 reason으로 기록만, 판단은 시간 기반 (정책 단순화)
     let action = null;
-    let reason = diag.reason || null;
+    let reason = '';
+    const ageHours = pc.ageMs / 3600000;
 
-    if (diag.needsReinstall) {
-      const can = await canAutoReinstall(pool, pc.hostname);
-      if (can) {
-        if (await applyAction(pool, pc.hostname, 'reinstall', reason)) action = 'reinstall';
-      } else {
-        action = 'reinstall_skipped_cooldown';
-      }
-    } else if (diag.needsRestart) {
-      if (await applyAction(pool, pc.hostname, 'restart', reason)) action = 'restart';
+    // 1순위: restart (모든 죽은 PC, 매 사이클 큐잉 — watchdog가 받아 처리)
+    if (await applyAction(pool, pc.hostname, 'restart', `auto: dead ${Math.round(pc.ageMs/60000)}min`)) {
+      action = 'restart';
+      reason = `dead ${Math.round(pc.ageMs/60000)}min (claude: ${diagText})`;
     }
 
-    await logRun(pool, pc.hostname, pc.ageMs, diag.diagnosis, action, reason);
+    // 2순위: 12h+ 죽음이면 reinstall도 큐잉 (24h 가드)
+    if (ageHours >= 12 && !(await recentlyReinstalled(pool, pc.hostname))) {
+      if (await applyAction(pool, pc.hostname, 'reinstall', `auto: dead ${ageHours.toFixed(1)}h`)) {
+        action = action ? 'restart+reinstall' : 'reinstall';
+        reason += ` + reinstall (${ageHours.toFixed(1)}h)`;
+      }
+    }
+
+    await logRun(pool, pc.hostname, pc.ageMs, diagText, action, reason);
     if (action) result.actions.push({ hostname: pc.hostname, action, ageMinutes: Math.round(pc.ageMs / 60000), reason });
   }
 
