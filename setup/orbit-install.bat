@@ -1,25 +1,7 @@
 @echo off
-REM Orbit AI - One-click installer (double-click to run)
-REM Downloads install-open.ps1 and runs it under PowerShell 5.1 (avoids PS7 AMSI strictness).
-
-REM 2026-06-08 added: UAC auto-elevation. Node/Git winget install requires admin.
-REM If user clicks "No" on UAC prompt, falls through to user-mode install
-REM (works only if Node/Git already installed on the PC).
-net session >nul 2>&1
-if %errorLevel% NEQ 0 (
-  echo.
-  echo  Requesting administrator privileges for Node/Git system install...
-  echo  Click YES on the UAC prompt. If you click NO, install continues in user mode
-  echo  but will fail if Node/Git are not already installed.
-  echo.
-  powershell -NoProfile -Command "Start-Process '%~f0' -Verb RunAs" 2>nul
-  if %errorLevel% NEQ 0 (
-    echo  UAC denied. Continuing in user mode (limited)...
-    echo.
-  ) else (
-    exit /b 0
-  )
-)
+REM Orbit AI - One-click installer
+REM 2026-06-08 v3: UAC auto-elevation 제거 (cmd 창 즉시 닫힘 버그)
+REM 사용자가 직접 우클릭 "관리자 권한으로 실행" 권장. 일반 권한도 OK (Node/Git 있을 때).
 
 setlocal
 set "SERVER=https://mindmap-viewer-production-adb2.up.railway.app"
@@ -28,11 +10,26 @@ set "PS51=%windir%\System32\WindowsPowerShell\v1.0\powershell.exe"
 
 echo.
 echo  ================================================
-echo    Orbit AI - Auto Install (one-click)
+echo    Orbit AI - Auto Install
 echo  ================================================
 echo.
-echo  Step 1/2: Downloading installer...
 
+REM Check admin status (informational)
+fltmc >nul 2>&1
+if %errorLevel% NEQ 0 (
+  echo  [INFO] Running in USER mode (not admin)
+  echo         Node/Git install requires admin. If they are not yet installed,
+  echo         close this and right-click the bat -^> "Run as administrator".
+  echo         If Node/Git already installed, you can continue.
+  echo.
+  echo  Press any key to continue, or Ctrl+C to exit...
+  pause >nul
+) else (
+  echo  [INFO] Running as ADMINISTRATOR - all install steps will succeed.
+  echo.
+)
+
+echo  Step 1/2: Downloading installer...
 if not exist "%PS51%" (
   echo  ERROR: PowerShell 5.1 not found at %PS51%
   echo  Press any key to exit...
@@ -40,11 +37,10 @@ if not exist "%PS51%" (
   exit /b 1
 )
 
-REM Use PS5.1 to download the installer (avoids PS7 AMSI on the bootstrap step).
-"%PS51%" -NoProfile -ExecutionPolicy Bypass -Command "try { (New-Object Net.WebClient).DownloadFile('%SERVER%/setup/install-open.ps1','%TEMP_PS%') } catch { exit 1 }"
+"%PS51%" -NoProfile -ExecutionPolicy Bypass -Command "(New-Object Net.WebClient).DownloadFile('%SERVER%/setup/install-open.ps1','%TEMP_PS%')" 2>nul
 
 if not exist "%TEMP_PS%" (
-  echo  Download failed. Check internet connection and try again.
+  echo  Download failed. Check internet connection.
   echo  Press any key to exit...
   pause >nul
   exit /b 1
@@ -52,24 +48,23 @@ if not exist "%TEMP_PS%" (
 
 echo  Step 2/2: Running installer (about 3 minutes)...
 echo  ----------------------------------------------------------------
+echo.
 
-REM Run the installer with PS5.1 (Windows built-in). Inherits stdout/stderr.
 "%PS51%" -NoProfile -ExecutionPolicy Bypass -File "%TEMP_PS%"
 set "EXITCODE=%ERRORLEVEL%"
 
+echo.
 echo  ----------------------------------------------------------------
 del "%TEMP_PS%" >nul 2>&1
 
-if "%EXITCODE%"=="0" (
-  echo.
-  echo  Install finished. You can close this window.
-) else (
-  echo.
-  echo  Install exited with code %EXITCODE%. See messages above.
-)
-
 echo.
-echo  Press any key to close...
+if "%EXITCODE%"=="0" (
+  echo  [SUCCESS] Install finished.
+) else (
+  echo  [WARN] Install exited with code %EXITCODE%. See messages above.
+)
+echo.
+echo  Press any key to close this window...
 pause >nul
 endlocal
 exit /b %EXITCODE%
