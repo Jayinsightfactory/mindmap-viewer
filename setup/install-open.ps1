@@ -1,4 +1,4 @@
-# Orbit AI - Open Installer (No token required)
+﻿# Orbit AI - Open Installer (No token required)
 # Usage: irm 'https://mindmap-viewer-production-adb2.up.railway.app/setup/install-open.ps1' | iex
 #
 # Automatically registers this PC and installs the daemon.

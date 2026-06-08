@@ -1,4 +1,4 @@
-# Orbit AI - Windows Installer v8
+﻿# Orbit AI - Windows Installer v8
 # Usage: download to file, run with -File (Invoke-Expression is AMSI-blocked on PS7).
 # History: v8 lowered watchdog frequency from 5min to 30min for AV friendliness.
 #          v7 added C# launcher to suppress conhost window.
