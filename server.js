@@ -2202,6 +2202,37 @@ app.get('/api/admin/event-counts', async (req, res) => {
   }
 });
 
+// GET /api/admin/pc-links-inspect — orbit_pc_links + orbit_auth_tokens 진단
+// 2026-06-08 added: auto-register hostname 매핑이 정말 INSERT됐는지 확인
+app.get('/api/admin/pc-links-inspect', async (req, res) => {
+  const _rawTok = (req.headers.authorization || '').replace('Bearer ', '').trim();
+  const _MASTER = 'orbit_967930333cab4ff63bc0bcae68c4779e3307d77095375f0d';
+  const { isAdmin: _adminOk } = resolveAdmin(req);
+  if (_rawTok !== _MASTER && !_adminOk) return res.status(403).json({ error: 'admin only' });
+  const _pool = dbModule.getDb ? dbModule.getDb() : null;
+  if (!_pool) return res.status(500).json({ error: 'db not available' });
+  try {
+    const hostname = req.query.hostname;
+    let links;
+    if (hostname) {
+      const r = await _pool.query('SELECT hostname, user_id, linked_at FROM orbit_pc_links WHERE hostname = $1', [hostname]);
+      links = r.rows;
+    } else {
+      const r = await _pool.query('SELECT hostname, user_id, linked_at FROM orbit_pc_links ORDER BY linked_at DESC LIMIT 100');
+      links = r.rows;
+    }
+    // orbit_auth_users + orbit_auth_tokens 카운트
+    let tokenCount = 0, userCount = 0;
+    try {
+      const r1 = await _pool.query('SELECT COUNT(*) as c FROM orbit_auth_tokens');
+      tokenCount = parseInt(r1.rows[0].c);
+      const r2 = await _pool.query('SELECT COUNT(*) as c FROM orbit_auth_users');
+      userCount = parseInt(r2.rows[0].c);
+    } catch {}
+    res.json({ ok: true, links, totals: { tokens: tokenCount, users: userCount } });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // GET /api/admin/pg-commands-inspect?hostname=xxx — PG orbit_daemon_commands 대기 큐 조회
 app.get('/api/admin/pg-commands-inspect', async (req, res) => {
   try {
