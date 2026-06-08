@@ -528,14 +528,12 @@ try {
     $actWatch  = New-ScheduledTaskAction -Execute $psExe -Argument "$psArgs `"$wdPath`""
   }
   # 2026-06-05 added: 3-tier watchdog hardening
-  # Daemon: AtLogOn + AtStartup (boot 시점에도 시작 시도 — user session 가능하면)
-  $trigDaemon = @(
-    (New-ScheduledTaskTrigger -AtLogOn),
-    (New-ScheduledTaskTrigger -AtStartup)
-  )
-  # Watchdog: AtStartup + AtLogOn + 30min repetition (부팅/로그인 직후 즉시 실행 → push-exec 빠르게 수신)
+  # 2026-06-08 fixed: AtStartup 제거 (관리자 권한 필요해서 일반 사용자 PC에서 등록 거부됨)
+  # AtLogOn만 사용 — 부팅 후 사용자 로그인 시 즉시 실행. 실용적으로 동일 효과.
+  # RestartCount/Interval은 일반 사용자 권한 OK라 유지.
+  $trigDaemon = New-ScheduledTaskTrigger -AtLogOn
+  # Watchdog: AtLogOn (즉시 실행) + 30min repetition (지속 polling)
   $trigWatch  = @(
-    (New-ScheduledTaskTrigger -AtStartup),
     (New-ScheduledTaskTrigger -AtLogOn),
     (New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 30) -RepetitionDuration ([TimeSpan]::MaxValue))
   )
