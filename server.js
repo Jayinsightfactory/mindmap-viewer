@@ -4085,7 +4085,9 @@ app.post('/api/setup/auto-register', async (req, res) => {
   try {
     const { hostname, windowsUser } = req.body || {};
     if (!hostname) return res.status(400).json({ error: 'hostname required' });
-    const { issueApiToken, pgBackupToken, pgBackupUser } = require('./src/auth');
+    // 2026-06-08 fix: issueApiToken (fire-and-forget PG) → issueApiTokenAsync (await PG)
+    // race condition 해결 — 사용자 PC가 즉시 link-pc 호출 시 PG에 토큰 보장됨
+    const { issueApiTokenAsync, pgBackupToken, pgBackupUser } = require('./src/auth');
     const authDb = require('./src/auth').getDb ? require('./src/auth').getDb() : null;
     const pool = dbModule.getDb();
     const serverUrl = process.env.SERVER_URL || 'https://mindmap-viewer-production-adb2.up.railway.app';
@@ -4117,20 +4119,21 @@ app.post('/api/setup/auto-register', async (req, res) => {
 
     // 2) 매핑 있으면 재사용 — 토큰만 새로 발급
     if (existingUserId) {
+      const slug = `pc.${hostname.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
+      const email = `${slug}@orbit.local`;
+      const name  = existingName || windowsUser || hostname;
       if (authDb) {
         const u = authDb.prepare('SELECT id FROM users WHERE id = ?').get(existingUserId);
         if (!u) {
-          // Railway 재배포로 SQLite 손실된 경우 → users 테이블 복원
-          const slug = `pc.${hostname.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
-          const email = `${slug}@orbit.local`;
-          const name  = existingName || windowsUser || hostname;
+          // Railway 재배포로 SQLite 손실 → users 복원
           try {
             authDb.prepare(`INSERT OR IGNORE INTO users (id, email, name, passwordHash, provider) VALUES (?, ?, ?, '', 'pc_auto')`).run(existingUserId, email, name);
           } catch {}
         }
       }
-      const token = issueApiToken(existingUserId);
-      try { await pgBackupToken(token, existingUserId, null); } catch {}
+      // 2026-06-08 fix: PG에 user 보장 (토큰 JOIN 성공 위해) + 토큰 await 발급 (race condition X)
+      try { await pgBackupUser({ id: existingUserId, email, name, provider: 'pc_auto', plan: 'free' }, ''); } catch {}
+      const token = await issueApiTokenAsync(existingUserId);
       console.log(`[auto-register] ${hostname} → REUSED ${existingUserId.slice(0,12)}`);
       return res.json({ ok: true, userId: existingUserId, name: existingName || hostname, token, serverUrl, reused: true });
     }
@@ -4149,11 +4152,12 @@ app.post('/api/setup/auto-register', async (req, res) => {
         user = authDb.prepare('SELECT * FROM users WHERE id = ?').get(newId);
       }
       if (!user) return res.status(500).json({ error: 'user create failed' });
+      // 2026-06-08 fix: PG user backup await로 보장 (토큰 JOIN 성공 위해)
       try { await pgBackupUser({ id: user.id, email, name: displayName, provider: 'pc_auto', plan: 'free' }, ''); } catch {}
     }
 
-    const token = issueApiToken(user.id);
-    try { await pgBackupToken(token, user.id, null); } catch {}
+    // 2026-06-08 fix: issueApiTokenAsync 사용 → PG 토큰 backup 보장 후 응답 (race condition X)
+    const token = await issueApiTokenAsync(user.id);
 
     // orbit_pc_links INSERT — 최초 1회만. (위의 SELECT에서 매핑 없을 때만 여기 도달)
     try {
