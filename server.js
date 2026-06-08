@@ -6706,6 +6706,22 @@ try {
   }));
 } catch(e) { console.warn('[mount] data-intelligence:', e.message); }
 
+// ─── 자가진화 데몬 닥터 (Claude API 진단 + 안전 자동 조치) ─────────────────────
+// 2026-06-05 추가 — 모든 PC 환경을 24h마다 Claude API로 진단:
+//   1) daemon-health + self-log 수집 → Claude API 진단
+//   2) 안전 조치 자동 실행 (reinstall/restart push-exec, PC당 24h 1회 가드)
+//   3) 코드 수정 권고는 PG 저장 (사용자가 대시보드에서 검토 후 적용)
+try {
+  const autoDoctor = require('./routes/auto-doctor')(dbModule);
+  app.use('/api/auto-doctor', autoDoctor);
+  // PG 환경에서만 스케줄러 시작 (SQLite local dev에서는 비활성)
+  if (process.env.DATABASE_URL && process.env.ANTHROPIC_API_KEY) {
+    autoDoctor.startScheduler();
+  } else {
+    console.log('[mount] auto-doctor: 라우터만 등록 (스케줄러는 DATABASE_URL + ANTHROPIC_API_KEY 필요)');
+  }
+} catch(e) { console.warn('[mount] auto-doctor:', e.message); }
+
 // ─── 워크플로우 패턴 마이닝 (슬라이딩 윈도우 시퀀스 → 루틴/자동화후보) ────────
 try {
   const workflowLearner = require('./src/workflow-learner');
