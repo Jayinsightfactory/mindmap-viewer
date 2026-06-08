@@ -4088,14 +4088,59 @@ app.post('/api/setup/auto-register', async (req, res) => {
     const { issueApiToken, pgBackupToken, pgBackupUser } = require('./src/auth');
     const authDb = require('./src/auth').getDb ? require('./src/auth').getDb() : null;
     const pool = dbModule.getDb();
+    const serverUrl = process.env.SERVER_URL || 'https://mindmap-viewer-production-adb2.up.railway.app';
 
-    // 이미 이 hostname으로 등록된 PC 계정이 있으면 재사용
-    const slug = `pc.${hostname.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
+    // 2026-06-08 fix: 같은 hostname에 매번 새 user 생성하던 버그
+    // → orbit_pc_links (PG, persistent) 매핑 우선 조회. 매핑 있으면 그 userId 재사용.
+    // (기존: SQLite authDb의 email 매칭만 했음 — Railway 재배포 시 SQLite 손실되면 매번 새 user)
+
+    // 1) PG orbit_pc_links에서 hostname → user_id 매핑 우선 조회
+    let existingUserId = null;
+    let existingName   = null;
+    try {
+      await pool.query(`CREATE TABLE IF NOT EXISTS orbit_pc_links (
+        hostname TEXT PRIMARY KEY, user_id TEXT NOT NULL, linked_at TIMESTAMPTZ DEFAULT NOW()
+      )`);
+      const { rows } = await pool.query(
+        'SELECT user_id FROM orbit_pc_links WHERE hostname = $1', [hostname]
+      );
+      if (rows.length) {
+        existingUserId = rows[0].user_id;
+        try {
+          const { rows: uRows } = await pool.query(
+            'SELECT name FROM orbit_auth_users WHERE id = $1', [existingUserId]
+          );
+          if (uRows.length) existingName = uRows[0].name;
+        } catch {}
+      }
+    } catch (e) { console.warn('[auto-register] pc_links lookup:', e.message); }
+
+    // 2) 매핑 있으면 재사용 — 토큰만 새로 발급
+    if (existingUserId) {
+      if (authDb) {
+        const u = authDb.prepare('SELECT id FROM users WHERE id = ?').get(existingUserId);
+        if (!u) {
+          // Railway 재배포로 SQLite 손실된 경우 → users 테이블 복원
+          const slug = `pc.${hostname.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
+          const email = `${slug}@orbit.local`;
+          const name  = existingName || windowsUser || hostname;
+          try {
+            authDb.prepare(`INSERT OR IGNORE INTO users (id, email, name, passwordHash, provider) VALUES (?, ?, ?, '', 'pc_auto')`).run(existingUserId, email, name);
+          } catch {}
+        }
+      }
+      const token = issueApiToken(existingUserId);
+      try { await pgBackupToken(token, existingUserId, null); } catch {}
+      console.log(`[auto-register] ${hostname} → REUSED ${existingUserId.slice(0,12)}`);
+      return res.json({ ok: true, userId: existingUserId, name: existingName || hostname, token, serverUrl, reused: true });
+    }
+
+    // 3) 매핑 없을 때만 새 user 생성 (최초 install)
+    const slug  = `pc.${hostname.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
     const email = `${slug}@orbit.local`;
     let user = authDb ? authDb.prepare('SELECT * FROM users WHERE email = ?').get(email) : null;
 
     if (!user) {
-      // 새 PC 계정 생성 — 이름은 hostname (나중에 관리자가 실제 이름으로 변경)
       const crypto = require('crypto');
       const newId = 'MN' + crypto.randomBytes(8).toString('hex').toUpperCase();
       const displayName = windowsUser || hostname;
@@ -4110,21 +4155,18 @@ app.post('/api/setup/auto-register', async (req, res) => {
     const token = issueApiToken(user.id);
     try { await pgBackupToken(token, user.id, null); } catch {}
 
-    // orbit_pc_links 등록 (hostname ↔ userId 매핑)
+    // orbit_pc_links INSERT — 최초 1회만. (위의 SELECT에서 매핑 없을 때만 여기 도달)
     try {
-      await pool.query(`CREATE TABLE IF NOT EXISTS orbit_pc_links (
-        hostname TEXT PRIMARY KEY, user_id TEXT NOT NULL, linked_at TIMESTAMPTZ DEFAULT NOW()
-      )`);
       await pool.query(
         `INSERT INTO orbit_pc_links (hostname, user_id, linked_at)
          VALUES ($1, $2, NOW())
-         ON CONFLICT (hostname) DO UPDATE SET user_id = EXCLUDED.user_id, linked_at = NOW()`,
+         ON CONFLICT (hostname) DO NOTHING`,
         [hostname, user.id]
       );
-    } catch (e) { console.warn('[auto-register] pc_links:', e.message); }
+    } catch (e) { console.warn('[auto-register] pc_links insert:', e.message); }
 
-    const serverUrl = process.env.SERVER_URL || 'https://mindmap-viewer-production-adb2.up.railway.app';
-    res.json({ ok: true, userId: user.id, name: user.name, token, serverUrl });
+    console.log(`[auto-register] ${hostname} → NEW user ${user.id.slice(0,12)}`);
+    res.json({ ok: true, userId: user.id, name: user.name, token, serverUrl, reused: false });
   } catch (e) {
     console.error('[auto-register]', e.message);
     res.status(500).json({ error: e.message });
