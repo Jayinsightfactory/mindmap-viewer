@@ -98,19 +98,15 @@ $StartupDir = [System.Environment]::GetFolderPath('Startup')
 'orbit-daemon.vbs','orbit-daemon.bat','orbit-startup.lnk' | ForEach-Object { $f="$StartupDir\$_"; if(Test-Path $f){Remove-Item $f -Force -ErrorAction SilentlyContinue} }
 if (Test-Path "$OrbitDir\orbit-hidden.vbs") { Remove-Item "$OrbitDir\orbit-hidden.vbs" -Force -ErrorAction SilentlyContinue }
 
-# (6) .safe-mode 파일 삭제 — 구버전 watchdog/install이 생성한 빈 파일만 제거
-#     crash-reporter JSON({reason,ttlMs,...}) 파일은 유지 (crash loop 방지)
+# (6) .safe-mode 파일 무조건 삭제 — 2026-06-08 changed
+# 이전: crash-reporter JSON은 유지 (crash loop 방지)
+# 변경: install 실행 = 사용자가 fresh start 의도 → 무조건 삭제
+# 근거: 24h TTL .safe-mode 가 self-test 7-11 모두 FAIL 유발 (uiohook 강제 skip)
+#       crash 발생 시 crash-reporter가 다시 만들 것이므로 안전
 $smPath = "$OrbitDir\.safe-mode"
 if (Test-Path $smPath) {
-  try {
-    $smContent = (Get-Content $smPath -Raw -ErrorAction SilentlyContinue) -replace '\s',''
-    if (-not $smContent -or -not $smContent.StartsWith('{')) {
-      Remove-Item $smPath -Force -ErrorAction SilentlyContinue
-      Write-Host "    .safe-mode (구버전 빈 파일) 삭제 → keyboard 수집 활성화" -ForegroundColor Green
-    } else {
-      Write-Host "    .safe-mode 유지 (crash-reporter JSON — crash loop 방지 중)" -ForegroundColor Yellow
-    }
-  } catch {}
+  Remove-Item $smPath -Force -ErrorAction SilentlyContinue
+  Write-Host "    .safe-mode 삭제 (fresh start) -> keyboard uiohook 활성화" -ForegroundColor Green
 }
 
 # (7) 기존 start-daemon.ps1에 ORBIT_SAFE_MODE=1 잔류 시 제거 (구버전 daemon-updater 버그 잔재)
