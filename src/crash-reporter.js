@@ -26,7 +26,7 @@ const SAFE_MODE   = path.join(ORBIT_DIR, '.safe-mode');
 
 const CRASH_WINDOW_MS  = 60 * 60 * 1000;   // 1시간
 const CRASH_THRESHOLD  = 3;                 // 3회 crash 시 safe-mode
-const SAFE_MODE_TTL_MS = 24 * 3600 * 1000;  // 24시간
+const SAFE_MODE_TTL_MS = 1 * 3600 * 1000;   // 1시간 (2026-06-08 24h→1h: 사용자 작업 데이터 차단 최소화)
 
 function _readConfig() {
   try {

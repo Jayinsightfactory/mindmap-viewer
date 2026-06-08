@@ -920,10 +920,10 @@ function start(opts = {}) {
       const p = path.join(os.homedir(), '.orbit', '.safe-mode');
       if (!fs.existsSync(p)) return false;
       const ageMs = Date.now() - fs.statSync(p).mtimeMs;
-      const MAX_AGE = 24 * 3600 * 1000; // 24h TTL
+      const MAX_AGE = 1 * 3600 * 1000; // 1h TTL (2026-06-08 24h→1h: crash-reporter와 동기화)
       if (ageMs > MAX_AGE) {
         try { fs.unlinkSync(p); } catch {}
-        console.log('[keyboard-watcher] .safe-mode TTL 경과 (>24h) — 자동 삭제, uiohook 재시도');
+        console.log('[keyboard-watcher] .safe-mode TTL 경과 (>1h) — 자동 삭제, uiohook 재시도');
         return false;
       }
       return true;
