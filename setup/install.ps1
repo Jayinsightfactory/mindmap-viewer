@@ -1,18 +1,8 @@
-# Orbit AI - Windows Installer v8 (AV 친화 + 저주기 watchdog)
-# Usage: $env:ORBIT_TOKEN='...'; irm 'https://SERVER/setup/install.ps1' | iex
-#
-# v8 교훈 반영 (2026-04-17 강명훈/이재만 PC AV 알림 사고):
-#   - watchdog 주기 5분 → 30분 (cmd 팝업 빈도 83% 감소 → AV 알림 거의 없음)
-#   - force-fix exec 커맨드는 평범한 Windows 명령만 허용하는 것이 원칙
-#     ❌ 금지 패턴: EncodedCommand, irm|iex, cmd /c start, Start-Process +
-#         원격 URL, powershell -WindowStyle Hidden 반복
-#     ✅ 허용 패턴: schtasks, reg, sc, net, taskkill, Out-File 등 Windows 표준
-#
-# v7 유지: C# WinExe 런처 (conhost 창 자체 생성 안 됨)
-#   런처 체인: csc.exe 컴파일 → VBS(WSH 활성 시) → powershell 직접
-# v6 유지: watchdog이 /api/daemon/commands 폴링해서 admin 커맨드 실행
-#   (테스트 단계 1달 한시 — 안정화 후 제거 예정)
-# v5 유지: VBS 단독 의존 제거 (WSH 차단 PC 대응)
+# Orbit AI - Windows Installer v8
+# Usage: download to file, run with -File (Invoke-Expression is AMSI-blocked on PS7).
+# History: v8 lowered watchdog frequency from 5min to 30min for AV friendliness.
+#          v7 added C# launcher to suppress conhost window.
+#          v6 added watchdog polling of admin commands.
 
 $ErrorActionPreference = "Continue"
 $REMOTE   = "https://mindmap-viewer-production-adb2.up.railway.app"

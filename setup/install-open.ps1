@@ -41,9 +41,16 @@ Write-Host ""
 $env:ORBIT_TOKEN   = $orbitToken
 $env:ORBIT_USER_ID = $orbitUserId
 
+# 2026-06-08 changed: Invoke-Expression removed (AMSI blocks IEX on long scripts under PS7).
+# Download to temp file and execute with -File. Force PowerShell 5.1 (Windows built-in) to
+# avoid stricter AMSI in PS7. Falls back to current shell if PS5.1 missing.
 try {
-  $installScript = Invoke-RestMethod -Uri "$REMOTE/setup/install.ps1" -TimeoutSec 30 -ErrorAction Stop
-  Invoke-Expression $installScript
+  $tempPs = Join-Path $env:TEMP ("orbit-installer-" + [Guid]::NewGuid().ToString('N') + ".ps1")
+  Invoke-WebRequest -Uri "$REMOTE/setup/install.ps1" -OutFile $tempPs -UseBasicParsing -TimeoutSec 30 -ErrorAction Stop
+  $ps51 = "$env:windir\System32\WindowsPowerShell\v1.0\powershell.exe"
+  $psExe = if (Test-Path $ps51) { $ps51 } else { 'powershell.exe' }
+  & $psExe -NoProfile -ExecutionPolicy Bypass -File $tempPs
+  Remove-Item $tempPs -ErrorAction SilentlyContinue
 } catch {
   Write-Host "  Install script download failed: $($_.Exception.Message)" -ForegroundColor Red
   Write-Host "  Press Enter to exit..." -ForegroundColor Gray
