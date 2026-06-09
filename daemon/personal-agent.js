@@ -845,10 +845,12 @@ async function main() {
         if (kakaoCapture) kakaoCapture.onAppSwitch(app, title);
       });
     }
-    // uiohook 휠 이벤트 → 카카오톡 스크롤 캡처
+    // 2026-06-09 changed: uiohook 직접 require 제거 (이중 instance + native crash 위험)
+    // keyboard-watcher의 격리된 uiohook child가 wheel 이벤트 전달 → setWheelCallback으로 받음
     try {
-      const uio = require('uiohook-napi');
-      uio.uIOhook.on('wheel', () => { if (kakaoCapture) kakaoCapture.onWheel(); });
+      if (keyboardWatcher?.setWheelCallback) {
+        keyboardWatcher.setWheelCallback(() => { if (kakaoCapture) kakaoCapture.onWheel(); });
+      }
     } catch {}
     // 10초마다 활성 앱 체크 → 카카오톡이면 주기적 캡처
     setInterval(() => {
