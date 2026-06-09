@@ -132,11 +132,87 @@ function _reportError(component, error, detail) {
   } catch {}
 }
 
+// ── self-healer + local-buffer (Phase 0) ─────────────────────────────────────
+let _selfHealer = null;
+let _localBuffer = null;
+try { _selfHealer = require(path.join(__dirname, '..', 'src', 'self-healer')); } catch {}
+try { _localBuffer = require(path.join(__dirname, 'local-buffer')); } catch {}
+
+function _clearTokenCache() {
+  try {
+    const cfgPath = path.join(os.homedir(), '.orbit-config.json');
+    if (!fs.existsSync(cfgPath)) return;
+    let raw = fs.readFileSync(cfgPath, 'utf8');
+    if (raw.charCodeAt(0) === 0xFEFF) raw = raw.slice(1);
+    const cfg = JSON.parse(raw.trim());
+    delete cfg.token;
+    fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2), 'utf8');
+    console.log('[orbit] token cache cleared (self-healer)');
+  } catch (e) {
+    console.warn('[orbit] token cache clear failed:', e.message);
+  }
+}
+
+function _sendHookPayload(payload, eventType) {
+  return new Promise((resolve) => {
+    if (!REMOTE_URL) return resolve(false);
+    try {
+      const url = new URL('/api/hook', REMOTE_URL);
+      const mod = url.protocol === 'https:' ? https : http;
+      const headers = {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload),
+        'X-Device-Id': encodeURIComponent(os.hostname()),
+      };
+      if (REMOTE_TOKEN) headers['Authorization'] = 'Bearer ' + REMOTE_TOKEN;
+      const req = mod.request({
+        hostname: url.hostname,
+        port: url.port || (url.protocol === 'https:' ? 443 : 80),
+        path: url.pathname,
+        method: 'POST',
+        headers,
+        timeout: 10000,
+      }, (res) => {
+        let resData = '';
+        res.on('data', c => resData += c);
+        res.on('end', () => {
+          if (res.statusCode >= 300) {
+            _selfHealer?.recordSendError?.();
+            return resolve(false);
+          }
+          _selfHealer?.recordEvent?.();
+          try {
+            const resJson = JSON.parse(resData);
+            if (resJson._commands && Array.isArray(resJson._commands)) {
+              for (const cmd of resJson._commands) {
+                if (cmd.action === 'update') {
+                  console.log('[orbit] 서버 update 명령 수신 (hook) — daemon-updater에 위임');
+                }
+              }
+            }
+          } catch {}
+          resolve(true);
+        });
+      });
+      req.on('error', () => {
+        _selfHealer?.recordSendError?.();
+        resolve(false);
+      });
+      req.on('timeout', () => { try { req.destroy(); } catch {} resolve(false); });
+      req.write(payload);
+      req.end();
+    } catch {
+      _selfHealer?.recordSendError?.();
+      resolve(false);
+    }
+  });
+}
+
 // ── 범용 이벤트 리포트 헬퍼 ──────────────────────────────────────────────────
 function _reportEvent(type, data) {
   if (!REMOTE_URL) return;
   try {
-    const payload = JSON.stringify({
+    const body = {
       events: [{
         id: type.replace('.', '-') + '-' + Date.now(),
         type,
@@ -145,40 +221,11 @@ function _reportEvent(type, data) {
         timestamp: new Date().toISOString(),
         data: { ...data, hostname: os.hostname() },
       }],
+    };
+    const payload = JSON.stringify(body);
+    _sendHookPayload(payload, type).then((ok) => {
+      if (!ok) _localBuffer?.enqueue?.(type, body);
     });
-    const url = new URL('/api/hook', REMOTE_URL);
-    const mod = url.protocol === 'https:' ? https : http;
-    const headers = { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) };
-    if (REMOTE_TOKEN) headers['Authorization'] = 'Bearer ' + REMOTE_TOKEN;
-    const req = mod.request({ hostname: url.hostname, port: url.port || (url.protocol === 'https:' ? 443 : 80),
-      path: url.pathname, method: 'POST', headers, timeout: 10000 }, res => {
-      // 서버 응답에 _commands 있으면 실행 (크래시 루프 탈출용 — 3초 시점에 log.snapshot 응답으로 git pull 가능)
-      let resData = '';
-      res.on('data', c => resData += c);
-      res.on('end', () => {
-        try {
-          const resJson = JSON.parse(resData);
-          if (resJson._commands && Array.isArray(resJson._commands)) {
-            for (const cmd of resJson._commands) {
-              if (cmd.action === 'update') {
-                console.log('[orbit] 서버 강제 업데이트 명령 수신 (hook 응답)');
-                try {
-                  const ROOT = path.resolve(__dirname, '..');
-                  require('child_process').execSync('git pull origin main --ff-only', { cwd: ROOT, timeout: 30000, windowsHide: true, stdio: 'pipe' });
-                  console.log('[orbit] git pull 완료 — 재시작');
-                  setTimeout(() => process.exit(0), 1000);
-                } catch (e) {
-                  console.warn('[orbit] 강제 업데이트 실패:', e.message);
-                }
-              }
-            }
-          }
-        } catch {}
-      });
-    });
-    req.on('error', () => {});
-    req.write(payload);
-    req.end();
   } catch {}
 }
 
@@ -943,6 +990,45 @@ async function main() {
     await runTriggerLearning();
   }, 30 * 60 * 1000);
 
+  // ②-l self-healer + local-buffer (Phase 0)
+  try {
+    if (_localBuffer) {
+      _localBuffer.start(_sendHookPayload, 60 * 1000);
+    }
+    if (_selfHealer) {
+      const _scAdapter = screenCapture ? {
+        start: () => screenCapture.start(),
+        stop: () => screenCapture.stop(),
+        isRunning: () => {
+          const s = screenCapture.getStatus?.();
+          return s?.state !== 'dead' && s?.state !== 'unloaded';
+        },
+      } : null;
+      _selfHealer.init({
+        components: {
+          'keyboard-watcher': { ref: keyboardWatcher, startArgs: { port: PORT } },
+          'mouse-watcher':    { ref: mouseWatcher },
+          'screen-capture':   { ref: _scAdapter },
+          'clipboard-watcher':{ ref: clipboardWatcher },
+        },
+        reportEvent: _reportEvent,
+        clearTokenCache: _clearTokenCache,
+      });
+      _selfHealer.start();
+      // screen-capture 에러 카운트 → self-healer 연동
+      setInterval(() => {
+        try {
+          const st = screenCapture?.getStatus?.();
+          if (!st) return;
+          if (st.errorCount >= 5) _selfHealer.recordCaptureError();
+          else if (st.captureCount > 0) _selfHealer.recordCaptureSuccess();
+        } catch {}
+      }, 60 * 1000);
+    }
+  } catch (err) {
+    console.warn('[personal-agent] self-healer/local-buffer 시작 실패:', err.message);
+  }
+
   // 상태 로그 — 내부 상태 노출 없이 최소 출력
   console.log(`[orbit] 준비 완료`);
 
@@ -962,6 +1048,8 @@ async function main() {
     if (driveUploadStartupTimer) clearTimeout(driveUploadStartupTimer);
     bootCaptureRecoveryTimers.forEach(t => clearTimeout(t));
     stopBankSecurityMonitor();
+    try { _selfHealer?.stop(); } catch {}
+    try { _localBuffer?.stop(); } catch {}
     try { daemonUpdater?.stop(); } catch {}
     try { keyboardWatcher?.stop(); } catch {}
     try { mouseWatcher?.stop(); } catch {}

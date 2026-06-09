@@ -1834,6 +1834,28 @@ app.get('/api/daemon/version', (req, res) => {
   });
 });
 
+// Phase 0: 위험 명령 차단 + safe-cmd 매핑
+const FORBIDDEN_DAEMON_ACTIONS = new Set(['reinstall']);
+const RESTART_TO_SAFE = { restart: 'gitpull-worker' };
+
+function _sanitizeDaemonCommands(commands) {
+  const out = [];
+  for (const c of commands || []) {
+    if (!c?.action) continue;
+    if (FORBIDDEN_DAEMON_ACTIONS.has(c.action)) {
+      console.warn(`[daemon-cmd] blocked ${c.action} → reclone-worker`);
+      out.push({ ...c, action: 'reclone-worker', data: { ...(c.data || {}), blockedFrom: c.action } });
+      continue;
+    }
+    if (RESTART_TO_SAFE[c.action]) {
+      out.push({ ...c, action: RESTART_TO_SAFE[c.action], data: { ...(c.data || {}), blockedFrom: c.action } });
+      continue;
+    }
+    out.push(c);
+  }
+  return out;
+}
+
 // GET /api/daemon/commands?hostname=xxx — 대기 중인 명령 가져가기
 app.get('/api/daemon/commands', async (req, res) => {
   const hostname = req.query.hostname || '';
@@ -1869,7 +1891,7 @@ app.get('/api/daemon/commands', async (req, res) => {
       }
     }
   } catch {}
-  const result = [...cmds, ...allCmds, ...pgCmds];
+  const result = _sanitizeDaemonCommands([...cmds, ...allCmds, ...pgCmds]);
   // 개별 hostname 명령은 가져가면 삭제
   global._daemonCommands[hostname] = [];
   // ALL 명령은 5분 후 자동 만료 (삭제 안 함)
@@ -2296,8 +2318,8 @@ app.get('/api/admin/pg-commands-inspect', async (req, res) => {
   }
 });
 
-// POST /api/admin/pg-commands-purge — PG orbit_daemon_commands pending restart/update 정리
-// body: { hostname?, actions? } — hostname 지정 시 그 host만, actions 기본 ["restart","update"]
+// POST /api/admin/pg-commands-purge — PG orbit_daemon_commands pending 위험 명령 정리
+// body: { hostname?, actions? } — 기본 ["restart","update","reinstall"]
 app.post('/api/admin/pg-commands-purge', async (req, res) => {
   try {
     // 2026-06-09 added: master 토큰 fallback
@@ -2308,7 +2330,7 @@ app.post('/api/admin/pg-commands-purge', async (req, res) => {
     const _pool = dbModule.getDb ? dbModule.getDb() : null;
     if (!_pool) return res.status(500).json({ error: 'db not available' });
     const { hostname, actions, purgeAll } = req.body || {};
-    const acts = Array.isArray(actions) && actions.length ? actions : ['restart', 'update'];
+    const acts = Array.isArray(actions) && actions.length ? actions : ['restart', 'update', 'reinstall'];
     let r;
     if (purgeAll && hostname) {
       r = await _pool.query(
@@ -2337,6 +2359,78 @@ app.post('/api/admin/pg-commands-purge', async (req, res) => {
       }
     }
     res.json({ ok: true, purged: r.rowCount || 0, actions: acts, hostname: hostname || 'ALL' });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/install/verify?hostname=xxx — 설치 완료 = 실제 chunk + 올바른 user_id
+// install.complete 이벤트만으로는 성공 아님
+app.get('/api/install/verify', async (req, res) => {
+  try {
+    const hostname = (req.query.hostname || '').trim();
+    if (!hostname) return res.status(400).json({ error: 'hostname required' });
+
+    const _pool = dbModule.getDb ? dbModule.getDb() : null;
+    if (!_pool?.query) return res.status(500).json({ error: 'db not available' });
+
+    const COLLECTION_TYPES = ['keyboard.chunk', 'mouse.chunk', 'screen.capture', 'clipboard.change'];
+
+    const { rows: installRows } = await _pool.query(
+      `SELECT timestamp, data_json FROM events
+       WHERE type = 'install.complete' AND data_json->>'hostname' = $1
+       ORDER BY timestamp DESC LIMIT 1`,
+      [hostname]
+    );
+
+    const { rows: chunkRows } = await _pool.query(
+      `SELECT type, user_id, timestamp FROM events
+       WHERE data_json->>'hostname' = $1
+         AND type = ANY($2)
+         AND timestamp > NOW() - INTERVAL '15 minutes'
+       ORDER BY timestamp DESC LIMIT 20`,
+      [hostname, COLLECTION_TYPES]
+    );
+
+    const { rows: linkRows } = await _pool.query(
+      `SELECT user_id FROM orbit_pc_links WHERE hostname = $1 LIMIT 1`,
+      [hostname]
+    );
+    const expectedUserId = linkRows[0]?.user_id || null;
+
+    const chunkUserIds = [...new Set(chunkRows.map(r => r.user_id).filter(Boolean))];
+    const hasRealChunks = chunkRows.length > 0;
+    const hasInstallPing = installRows.length > 0;
+
+    const badUserId = chunkUserIds.some(uid => uid === 'local' || uid === 'anonymous');
+    const matchedUserId = expectedUserId
+      ? chunkUserIds.includes(expectedUserId)
+      : chunkUserIds.some(uid => uid && !uid.startsWith('pc_') && uid !== 'local');
+
+    const verified = hasRealChunks && !badUserId && (matchedUserId || (!expectedUserId && chunkUserIds.length > 0 && !chunkUserIds.every(u => u.startsWith('pc_'))));
+
+    res.json({
+      ok: true,
+      hostname,
+      verified,
+      criteria: {
+        installPing: hasInstallPing,
+        realChunks15m: hasRealChunks,
+        chunkCount: chunkRows.length,
+        correctUserId: matchedUserId && !badUserId,
+        expectedUserId,
+        observedUserIds: chunkUserIds,
+      },
+      installAt: installRows[0]?.timestamp || null,
+      latestChunk: chunkRows[0] || null,
+      message: verified
+        ? '설치 검증 통과 — 실제 수집 데이터 + user_id OK'
+        : hasInstallPing && !hasRealChunks
+          ? 'install.complete만 있음 — 실제 chunk 미수신'
+          : badUserId
+            ? 'user_id=local — 토큰/매핑 실패'
+            : '검증 미통과 — 15분 내 수집 chunk 확인 필요',
+    });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -5902,6 +5996,11 @@ app.post('/api/admin/force-update-all', async (req, res) => {
 // force-update-all과 달리 시간 제한 없음 — 단 한번이라도 접속 이력 있는 PC 전체 대상.
 // 데몬이 꺼진 PC도 다음 부팅 시 AtLogOn → daemon 시작 → 60s 내 명령 소비 → 자동 재설치.
 app.post('/api/admin/force-reinstall-all', async (req, res) => {
+  // Phase 0: reinstall 영구 금지
+  return res.status(410).json({
+    error: 'reinstall permanently disabled',
+    alternative: 'POST /api/admin/push-exec with action=reclone-worker or gitpull-worker',
+  });
   const master = (req.headers.authorization || '').replace('Bearer ', '').trim();
   if (!master || !master.startsWith('orbit_')) return res.status(401).json({ error: 'master token required' });
   const dryRun = req.query.dryRun === '1' || req.body?.dryRun === true;
@@ -7973,17 +8072,22 @@ async function startServer() {
           silent++;
           const lastKick = _watchdogRecentlyKicked.get(hostname) || 0;
           if (now - lastKick < _WATCHDOG_KICK_COOLDOWN_MS) continue; // 쿨다운
-          // restart 명령 큐에 추가 (특정 hostname — PG에는 저장 안 함)
+          // Phase 0: restart 금지 → gitpull-worker + capture-diag
           if (!global._daemonCommands) global._daemonCommands = {};
           if (!global._daemonCommands[hostname]) global._daemonCommands[hostname] = [];
           global._daemonCommands[hostname].push({
-            action: 'restart',
+            action: 'capture-diag',
+            reason: 'watchdog: silent > 10 min',
+            ts: new Date().toISOString(),
+          });
+          global._daemonCommands[hostname].push({
+            action: 'gitpull-worker',
             reason: 'watchdog: silent > 10 min',
             ts: new Date().toISOString(),
           });
           _watchdogRecentlyKicked.set(hostname, now);
           kicked++;
-          console.log(`[watchdog] ${hostname}: silent ${sinceHb}s → restart queued`);
+          console.log(`[watchdog] ${hostname}: silent ${sinceHb}s → safe-cmd queued`);
         } else if (data.state === 'degraded' || data.state === 'dead') {
           degraded++;
           console.log(`[watchdog] ${hostname}: ${data.state} — modules:`, JSON.stringify(Object.entries(data.modules || {}).map(([k, v]) => `${k}=${v?.state}`)));
@@ -7996,7 +8100,7 @@ async function startServer() {
       console.warn('[watchdog] error:', e.message);
     }
   }, 5 * 60 * 1000); // 5분 주기
-  console.log('[watchdog] 데몬 heartbeat 워치독 활성화 (5분 주기, 10분 silent → auto-restart)');
+  console.log('[watchdog] 데몬 heartbeat 워치독 활성화 (5분 주기, 10분 silent → safe-cmd)');
 
   });  // server.listen 콜백 끝
 }
