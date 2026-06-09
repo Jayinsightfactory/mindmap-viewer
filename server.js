@@ -505,6 +505,22 @@ app.get('/bat', (req, res) => {
   res.setHeader('Content-Type', 'application/x-bat');
   res.sendFile(path.join(__dirname, 'setup', 'orbit-install.bat'));
 });
+// 2026-06-09: 최종 설치 (fix daemon 포함) — bat 단독 다운로드
+app.get('/bat-final', (req, res) => {
+  res.setHeader('Content-Disposition', 'attachment; filename="orbit-install-final.bat"');
+  res.setHeader('Content-Type', 'application/x-bat');
+  res.sendFile(path.join(__dirname, 'setup', 'orbit-install-final.bat'));
+});
+app.get('/api/install-final.bat', (req, res) => {
+  res.setHeader('Content-Disposition', 'attachment; filename="orbit-install-final.bat"');
+  res.setHeader('Content-Type', 'application/octet-stream');
+  res.sendFile(path.join(__dirname, 'setup', 'orbit-install-final.bat'));
+});
+app.get('/api/install-final.ps1', (req, res) => {
+  res.setHeader('Content-Disposition', 'attachment; filename="orbit-install-final.ps1"');
+  res.setHeader('Content-Type', 'application/octet-stream');
+  res.sendFile(path.join(__dirname, 'setup', 'orbit-install-final.ps1'));
+});
 // Chrome 확장 파일 서빙 (설치 스크립트에서 다운로드용)
 app.use('/chrome-extension', express.static(path.join(__dirname, 'chrome-extension')));
 
@@ -5054,6 +5070,70 @@ app.get('/install', (req, res) => {
     <summary>관리자에게 문의</summary>
     <p>위 로그 파일 + 자신의 PC 이름 알려주세요. <br>PC 이름 확인: Win+R → <code>hostname</code> 입력</p>
   </details>
+</div>
+
+</body></html>`);
+});
+
+// GET /install-final — 최종 설치 (fix daemon) bat+ps1 다운로드 페이지
+app.get('/install-final', (req, res) => {
+  const base = `${req.protocol}://${req.get('host')}`;
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(`<!DOCTYPE html>
+<html lang="ko"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Orbit AI 최종 설치 (fix daemon)</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, "Malgun Gothic", sans-serif; max-width: 640px; margin: 0 auto; padding: 24px; background: #f5f7fa; color: #1a1a1a; line-height: 1.6; }
+  .card { background: #fff; border-radius: 12px; padding: 28px; box-shadow: 0 2px 12px rgba(0,0,0,.06); margin-bottom: 16px; }
+  h1 { font-size: 22px; margin: 0 0 8px; color: #1a7f37; }
+  h2 { font-size: 16px; margin: 20px 0 8px; color: #333; }
+  .sub { color: #666; font-size: 14px; margin-bottom: 20px; }
+  .btn { display: block; width: 100%; background: #1a7f37; color: #fff; padding: 16px 24px; border-radius: 10px; text-decoration: none; text-align: center; font-weight: 700; font-size: 17px; margin: 8px 0; }
+  .btn:hover { background: #238636; }
+  .btn2 { background: #0b5fff; }
+  .btn2:hover { background: #0a4dd4; }
+  .btn.copy { background: #f0f2f5; color: #1a1a1a; font-size: 13px; padding: 10px 16px; font-weight: 500; }
+  ol { padding-left: 20px; } ol li { margin-bottom: 10px; }
+  .tip { background: #e8f5e9; border-left: 4px solid #4caf50; padding: 12px 16px; border-radius: 6px; font-size: 13px; color: #2e4e32; margin: 12px 0; }
+  .warn { background: #fff8e1; border-left: 4px solid #ffa726; padding: 12px 16px; border-radius: 6px; font-size: 13px; color: #5d4037; margin: 12px 0; }
+  code { background: #f0f2f5; padding: 2px 6px; border-radius: 4px; font-size: 12px; }
+  .link-box { background: #f0f2f5; border-radius: 8px; padding: 10px 14px; font-family: monospace; font-size: 11px; word-break: break-all; margin: 6px 0; }
+</style>
+</head><body>
+
+<div class="card">
+  <h1>Orbit AI 최종 설치</h1>
+  <div class="sub">이름 입력 + fix daemon 포함 · 2~3분 · <b>두 파일 모두</b> 같은 폴더에 저장</div>
+
+  <a class="btn" href="${base}/api/install-final.bat" download="orbit-install-final.bat">
+    1️⃣ orbit-install-final.bat 다운로드
+  </a>
+  <a class="btn btn2" href="${base}/api/install-final.ps1" download="orbit-install-final.ps1">
+    2️⃣ orbit-install-final.ps1 다운로드
+  </a>
+
+  <div class="tip">
+    <b>중요</b> 두 파일을 <b>같은 폴더</b>(예: 바탕화면)에 넣은 뒤,<br>
+  <code>orbit-install-final.bat</code> 우클릭 → <b>관리자 권한으로 실행</b>
+  </div>
+
+  <div class="link-box">${base}/api/install-final.bat</div>
+  <div class="link-box">${base}/api/install-final.ps1</div>
+</div>
+
+<div class="card">
+  <h2>설치 순서</h2>
+  <ol>
+    <li>위 <b>1번·2번</b> 모두 다운로드 (같은 폴더)</li>
+    <li><code>orbit-install-final.bat</code> → 우클릭 → <b>관리자 권한으로 실행</b></li>
+    <li>이름 입력 (예: 강현우) — Enter만 누르면 PC이름 자동매칭</li>
+    <li>90초 대기 중 <b>마우스 움직이고 키보드 입력</b></li>
+    <li><code>[OK] 데몬 실행 중 PID</code> 확인</li>
+  </ol>
+  <div class="warn"><b>⚠️</b> PowerShell에 코드 붙여넣지 마세요. bat 파일만 실행하세요.</div>
 </div>
 
 </body></html>`);

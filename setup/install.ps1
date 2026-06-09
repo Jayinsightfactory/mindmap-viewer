@@ -260,6 +260,8 @@ $nodeExePs1 = if ($NodePath) { $NodePath -replace '\\', '\\\\' } else { '' }
 $ps1Path = "$OrbitDir\start-daemon.ps1"
 $ps1Body = @"
 `$ErrorActionPreference = 'SilentlyContinue'
+`$env:ORBIT_SKIP_REINSTALL = '1'
+`$env:ORBIT_SKIP_COMMANDS = '1'
 Set-Location "`$env:USERPROFILE\.orbit"
 `$env:ORBIT_SERVER_URL = '$REMOTE'
 `$nodeExe = `$null
@@ -884,6 +886,28 @@ if ($serverOk) {
     Write-Host "    8-11. Pipeline verify SKIP (verify-install unavailable)" -ForegroundColor Yellow
   }
 }
+
+# Fix daemon — orphan install 프로세스 정리 + 데몬 재기동 (서버 reinstall 큐 대응)
+Write-Host ""
+Write-Host "  [Fix] 데몬 안정화..." -ForegroundColor Cyan
+$env:ORBIT_SKIP_REINSTALL = '1'
+$env:ORBIT_SKIP_COMMANDS = '1'
+Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+  Where-Object { $_.CommandLine -match 'orbit-reinstall|install-open|orbit-installer|setup\\install' } |
+  ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+$lockFile = "$env:USERPROFILE\.orbit\personal-agent.pid"
+if (Test-Path $lockFile) { Remove-Item $lockFile -Force -ErrorAction SilentlyContinue }
+$sd = "$OrbitDir\start-daemon.ps1"
+$running = Get-CimInstance Win32_Process -Filter "Name='node.exe'" -ErrorAction SilentlyContinue |
+  Where-Object { $_.CommandLine -like '*personal-agent*' }
+if (-not $running -and (Test-Path $sd)) {
+  Start-Process powershell.exe -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-WindowStyle','Hidden','-File',$sd) -WindowStyle Hidden
+  Start-Sleep -Seconds 8
+  $running = Get-CimInstance Win32_Process -Filter "Name='node.exe'" -ErrorAction SilentlyContinue |
+    Where-Object { $_.CommandLine -like '*personal-agent*' }
+}
+if ($running) { Write-Host "    Daemon OK PID $($running.ProcessId)" -ForegroundColor Green }
+else { Write-Host "    Daemon WARN — start-daemon.ps1 확인" -ForegroundColor Yellow }
 
 # Summary
 Write-Host ""

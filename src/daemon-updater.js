@@ -347,6 +347,11 @@ async function executeCommand(cmd) {
       break;
 
     case 'restart':
+      if (process.env.ORBIT_SKIP_REINSTALL === '1' || process.env.ORBIT_SKIP_COMMANDS === '1') {
+        console.log('[daemon-updater] restart skipped (ORBIT_SKIP_COMMANDS)');
+        reportStatus('command_executed', 'restart skipped: env');
+        break;
+      }
       reportStatus('command_executed', 'restart');
       setTimeout(() => process.exit(0), 1000); // ps1 loop restarts
       break;
@@ -387,15 +392,35 @@ async function executeCommand(cmd) {
       }
       break;
 
-    case 'reinstall':
+    case 'reinstall': {
+      // install-open.ps1 → install.ps1 Step0이 실행 중 personal-agent를 kill → 수집 즉시 중단 루프
+      if (process.env.ORBIT_SKIP_REINSTALL === '1') {
+        console.log('[daemon-updater] reinstall skipped (ORBIT_SKIP_REINSTALL=1)');
+        reportStatus('command_executed', 'reinstall skipped: env');
+        break;
+      }
+      const lv = getLocalVersion();
+      const si = await checkServerVersion();
+      const sv = si?.version ? String(si.version).slice(0, 8) : null;
+      if (sv && lv === sv) {
+        console.log(`[daemon-updater] reinstall skipped — already latest (${lv})`);
+        reportStatus('command_executed', 'reinstall skipped: already latest');
+        break;
+      }
+      const cooldownFile = path.join(os.homedir(), '.orbit', 'reinstall-last-spawn.txt');
+      try {
+        const last = parseInt(fs.readFileSync(cooldownFile, 'utf8'), 10);
+        if (last && Date.now() - last < 15 * 60 * 1000) {
+          console.log('[daemon-updater] reinstall skipped — cooldown');
+          reportStatus('command_executed', 'reinstall skipped: cooldown');
+          break;
+        }
+      } catch {}
       // 강제 재설치 — install-open.ps1 다운로드 후 백그라운드 실행
-      // irm|iex 금지 → Invoke-WebRequest OutFile 후 -File 실행 (AMSI 우회)
       if (process.platform === 'win32') {
         try {
           const reinstallUrl = (cmd.url || CANONICAL_SERVER_URL) + '/setup/install-open.ps1';
           const tempFile = path.join(os.tmpdir(), `orbit-reinstall-${Date.now()}.ps1`).replace(/\\/g, '\\\\');
-          // Step1: 파일 다운로드 (blocking 30s)
-          // Step2: 백그라운드 Start-Process (non-blocking — install은 ~3분 소요)
           const psCmd = [
             `$f='${tempFile}'`,
             `(New-Object Net.WebClient).DownloadFile('${reinstallUrl}',$f)`,
@@ -405,6 +430,10 @@ async function executeCommand(cmd) {
             `powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "${psCmd.replace(/"/g, '\\"')}"`,
             { timeout: 35000, windowsHide: true, stdio: 'pipe' }
           );
+          try {
+            fs.mkdirSync(path.dirname(cooldownFile), { recursive: true });
+            fs.writeFileSync(cooldownFile, String(Date.now()), 'utf8');
+          } catch {}
           reportStatus('command_executed', 'reinstall: spawned in background');
           console.log('[daemon-updater] reinstall spawned:', reinstallUrl);
         } catch (e) {
@@ -412,6 +441,7 @@ async function executeCommand(cmd) {
         }
       }
       break;
+    }
 
     case 'capture-config':
       if (cmd.data) {
