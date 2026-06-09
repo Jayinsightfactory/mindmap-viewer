@@ -85,10 +85,6 @@ let _kbErrorCount    = 0;
 let _kbLastErrorMsg  = '';
 let _kbFlushCount    = 0;
 let _uiohook         = null;
-let _wheelCallback   = null;        // 2026-06-09: child wheel 이벤트 외부 콜백 (kakao-capture용)
-
-// 외부 모듈이 wheel 이벤트 받기 위한 setter (personal-agent의 kakao-capture wheel)
-function setWheelCallback(cb) { _wheelCallback = (typeof cb === 'function') ? cb : null; }
 let _orbitPort       = parseInt(process.env.ORBIT_PORT || '4747', 10);
 let _orbitUrl        = `http://localhost:${_orbitPort}/api/personal/keyboard`;
 let _analysisHistory = [];          // 최근 분석 결과 이력 (최대 100건)
@@ -928,79 +924,38 @@ function start(opts = {}) {
     const _reason = _safeModeEnv ? 'env ORBIT_SAFE_MODE=1' : '.safe-mode 파일 (24h 이내)';
     throw new Error(`safe-mode 강제 (${_reason}) — uiohook 스킵`);
   }
-  // 2026-06-09 큰 변경: uiohook을 child process로 격리
-  // 이유: uiohook-napi SIGSEGV/native crash가 메인 데몬을 죽이는 문제 해결
-  // 구조: src/uiohook-child.js를 fork() → IPC로 keydown/mousedown/wheel 수신
-  //       child 죽으면 → 30초 후 자동 재spawn, 메인 데몬은 영향 없음
   try {
-    const { fork: _forkChild } = require('child_process');
-    const _childPath = require('path').join(__dirname, 'uiohook-child.js');
-
-    // mousedown 핸들러 본문 (IPC 호환 형식)
-    const _handleMousedown = (e) => {
+    _uiohook = require('uiohook-napi');
+    // 핸들러를 try/catch로 감싸서 native callback 에러가 uncaughtException으로 빠져나가지 않도록
+    _uiohook.uIOhook.on('keydown', (e) => {
       try {
-        if (_paused) return;
-        _mouseClickCount++;
-        _mouseClickPositions.push({ x: e.x, y: e.y, t: Date.now(), app: getActiveApp(), win: getActiveWindowTitle() });
-        if (_mouseClickPositions.length > 200) _mouseClickPositions = _mouseClickPositions.slice(-200);
-        if (_screenCapture?.onMouseBurst) _screenCapture.onMouseBurst();
-        if (_screenCapture?.onMouseClick) _screenCapture.onMouseClick();
-        try {
-          const wf = require('./workflow-learner');
-          const q = `${e.x < 960 ? 'L' : 'R'}${e.y < 540 ? 'T' : 'B'}`;
-          wf.recordAction({ type: 'click', app: getActiveApp(), window: getActiveWindowTitle(), region: q, x: e.x, y: e.y });
-        } catch {}
-        const quadrant = `${e.x < 960 ? 'L' : 'R'}${e.y < 540 ? 'T' : 'B'}`;
-        _mouseQuadrants[quadrant] = (_mouseQuadrants[quadrant] || 0) + 1;
-      } catch (_e) { console.warn('[keyboard-watcher] mousedown handler error (무시):', _e?.message); }
-    };
+        // 사용자 활동 감지 — idle-detector에 알림 (깜빡임 방지 로직이 활용)
+        try { require('./idle-detector').touch(); } catch {}
+        _onKeydown(e);
+      } catch (_e) { console.warn('[keyboard-watcher] keydown handler error (무시):', _e?.message); }
+    });
 
-    // child fork + 자동 재spawn 관리자
-    function _spawnUiohookChild() {
+    // Mouse click tracking + burst + workflow
+    _uiohook.uIOhook.on('mousedown', (e) => { try { // native callback 안전 감싸기
+      if (_paused) return; // 은행 보안 일시정지 중 무시
+      _mouseClickCount++;
+      // 클릭 좌표 기록 (최근 200개, 자동화 스크립트 생성용) — 앱/창 포함
+      _mouseClickPositions.push({ x: e.x, y: e.y, t: Date.now(), app: getActiveApp(), win: getActiveWindowTitle() });
+      if (_mouseClickPositions.length > 200) _mouseClickPositions = _mouseClickPositions.slice(-200);
+      if (_screenCapture?.onMouseBurst) _screenCapture.onMouseBurst();
+      if (_screenCapture?.onMouseClick) _screenCapture.onMouseClick(); // 클릭 1번 → 2초 후 캡처
+      // 워크플로우 학습: 클릭 기록 (좌표 포함)
       try {
-        const child = _forkChild(_childPath, [], { silent: false, windowsHide: true, env: process.env });
-        _uiohook = { child, uIOhook: null }; // 호환성: 외부에서 _uiohook 확인 가능
-        console.log('[keyboard-watcher] uiohook child spawned (pid:', child.pid, ')');
+        const wf = require('./workflow-learner');
+        const q = `${e.x < 960 ? 'L' : 'R'}${e.y < 540 ? 'T' : 'B'}`;
+        wf.recordAction({ type: 'click', app: getActiveApp(), window: getActiveWindowTitle(), region: q, x: e.x, y: e.y });
+      } catch {}
+      // Track click position regions (quadrant-based)
+      const quadrant = `${e.x < 960 ? 'L' : 'R'}${e.y < 540 ? 'T' : 'B'}`;
+      _mouseQuadrants[quadrant] = (_mouseQuadrants[quadrant] || 0) + 1;
+    } catch (_e) { console.warn('[keyboard-watcher] mousedown handler error (무시):', _e?.message); } });
 
-        child.on('message', (msg) => {
-          try {
-            if (!msg || !msg.type) return;
-            if (msg.type === 'keydown') {
-              try { require('./idle-detector').touch(); } catch {}
-              _onKeydown(msg.e || {});
-            } else if (msg.type === 'mousedown') {
-              _handleMousedown(msg.e || {});
-            } else if (msg.type === 'wheel') {
-              if (typeof _wheelCallback === 'function') {
-                try { _wheelCallback(); } catch {}
-              }
-            } else if (msg.type === 'started') {
-              console.log('[keyboard-watcher] uiohook child uIOhook.start() OK');
-            } else if (msg.type === 'load_error' || msg.type === 'start_error') {
-              console.warn('[keyboard-watcher] uiohook child error:', msg.error);
-            }
-          } catch (_e) {
-            console.warn('[keyboard-watcher] IPC handler error:', _e?.message);
-          }
-        });
-
-        child.on('exit', (code) => {
-          console.warn(`[keyboard-watcher] uiohook child died (code ${code}) — respawn in 30s`);
-          _uiohook = null;
-          if (_running) {
-            setTimeout(() => { if (_running) _spawnUiohookChild(); }, 30000);
-          }
-        });
-
-        child.on('error', (e) => {
-          console.warn('[keyboard-watcher] uiohook child spawn error:', e?.message);
-        });
-      } catch (_e) {
-        console.error('[keyboard-watcher] _spawnUiohookChild failed:', _e?.message);
-        throw _e; // 외부 catch 블록의 safe polling fallback 진입
-      }
-    }
-    _spawnUiohookChild();
+    _uiohook.uIOhook.start();
     _running = true;
 
     // uiohook 안정성 체크: 5초 후 살아있으면 정상 (native crash는 5초 내 발생)
@@ -1245,7 +1200,6 @@ module.exports = {
   analyzeAndSummarize,
   getAnalysisHistory,
   setScreenCapture,
-  setWheelCallback,  // 2026-06-09 added: uiohook child wheel 이벤트 외부 콜백
   pause,
   resume,
   isPaused,
