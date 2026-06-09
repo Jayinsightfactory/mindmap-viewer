@@ -2505,12 +2505,13 @@ app.get('/api/install/verify', async (req, res) => {
     const hasRealChunks = chunkRows.length > 0;
     const hasInstallPing = installRows.length > 0;
 
-    const badUserId = chunkUserIds.some(uid => uid === 'local' || uid === 'anonymous');
+    const goodChunks = chunkRows.filter(r => r.user_id && r.user_id !== 'local' && r.user_id !== 'anonymous');
     const matchedUserId = expectedUserId
-      ? chunkUserIds.includes(expectedUserId)
-      : chunkUserIds.some(uid => uid && !uid.startsWith('pc_') && uid !== 'local');
+      ? goodChunks.some(r => r.user_id === expectedUserId)
+      : goodChunks.some(r => r.user_id && !r.user_id.startsWith('pc_'));
+    const onlyBadUserIds = chunkRows.length > 0 && goodChunks.length === 0;
 
-    const verified = hasRealChunks && !badUserId && (matchedUserId || (!expectedUserId && chunkUserIds.length > 0 && !chunkUserIds.every(u => u.startsWith('pc_'))));
+    const verified = hasRealChunks && matchedUserId && !onlyBadUserIds;
 
     res.json({
       ok: true,
@@ -2520,7 +2521,8 @@ app.get('/api/install/verify', async (req, res) => {
         installPing: hasInstallPing,
         realChunks15m: hasRealChunks,
         chunkCount: chunkRows.length,
-        correctUserId: matchedUserId && !badUserId,
+        correctUserId: matchedUserId,
+        onlyBadUserIds,
         expectedUserId,
         observedUserIds: chunkUserIds,
       },
@@ -2530,9 +2532,9 @@ app.get('/api/install/verify', async (req, res) => {
         ? '설치 검증 통과 — 실제 수집 데이터 + user_id OK'
         : hasInstallPing && !hasRealChunks
           ? 'install.complete만 있음 — 실제 chunk 미수신'
-          : badUserId
-            ? 'user_id=local — 토큰/매핑 실패'
-            : '검증 미통과 — 15분 내 수집 chunk 확인 필요',
+          : onlyBadUserIds
+            ? 'user_id=local만 수신 — 토큰/매핑 실패'
+            : '검증 미통과 — 15분 내 올바른 user_id chunk 확인 필요',
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
