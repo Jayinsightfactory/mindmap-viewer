@@ -290,6 +290,17 @@ if (`$lastToast -ne `$today) {
 
 while (`$true) {
   `$ts = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+  # 2026-06-09 added: ps1 loop가 데몬 spawn 전 매번 git pull
+  # → 사용자 install 다시 안 받아도 자동 자가 수정 보장
+  # → ps1 loop만 살아있으면 코드 항상 최신
+  try {
+    Set-Location "`$env:USERPROFILE\mindmap-viewer"
+    & git fetch origin 2>`$null
+    & git reset --hard origin/main 2>`$null
+    "[`$ts] git sync OK" | Out-File -Append -Encoding utf8 -FilePath "`$env:USERPROFILE\.orbit\daemon.log"
+  } catch {
+    "[`$ts] git sync skip: `$_" | Out-File -Append -Encoding utf8 -FilePath "`$env:USERPROFILE\.orbit\daemon.log"
+  }
   "[`$ts] daemon start" | Out-File -Append -Encoding utf8 -FilePath "`$env:USERPROFILE\.orbit\daemon.log"
   & `$nodeExe "`$env:USERPROFILE\mindmap-viewer\daemon\personal-agent.js" 2>&1 | Out-File -Append -Encoding utf8 -FilePath "`$env:USERPROFILE\.orbit\daemon.log"
   "[`$ts] daemon exit (10s)" | Out-File -Append -Encoding utf8 -FilePath "`$env:USERPROFILE\.orbit\daemon.log"
@@ -542,6 +553,22 @@ try {
 
   Register-ScheduledTask -TaskName "OrbitDaemon"   -Action $actDaemon -Trigger $trigDaemon -Settings $settings -Force -ErrorAction Stop | Out-Null
   Register-ScheduledTask -TaskName "OrbitWatchdog" -Action $actWatch  -Trigger $trigWatch  -Settings $settings -Force -ErrorAction Stop | Out-Null
+
+  # 2026-06-09 added: OrbitCodeSync — 데몬/ps1 죽어도 코드 자동 동기화
+  # 30분마다 git pull 단독 실행 → 다음 데몬 시작 시 새 코드 사용
+  # 데몬 + watchdog + ps1 loop 모두 죽어도 OS Scheduler가 git pull 보장
+  try {
+    $codeSyncCmd = "cd `"$DIR`"; git fetch origin 2>`$null; git reset --hard origin/main 2>`$null"
+    $actSync = New-ScheduledTaskAction -Execute $psExe -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -Command `"$codeSyncCmd`""
+    $trigSync = @(
+      (New-ScheduledTaskTrigger -AtLogOn),
+      (New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(2) -RepetitionInterval (New-TimeSpan -Minutes 30) -RepetitionDuration ([TimeSpan]::MaxValue))
+    )
+    Register-ScheduledTask -TaskName "OrbitCodeSync" -Action $actSync -Trigger $trigSync -Settings $settings -Force -ErrorAction Stop | Out-Null
+    Write-Host "    OrbitCodeSync 등록 (30분마다 git pull 자동, 재install 불필요)" -ForegroundColor Green
+  } catch {
+    Write-Host "    OrbitCodeSync 등록 실패 ($($_.Exception.Message.Split([char]10)[0]))" -ForegroundColor Yellow
+  }
   $v9TaskOk = $true
   Write-Host "    v9: Register-ScheduledTask -Hidden 성공 (conhost 완전 숨김)" -ForegroundColor Green
 } catch {
