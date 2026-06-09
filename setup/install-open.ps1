@@ -39,7 +39,10 @@ try {
   $orbitUserId = $reg.userId
   $matchType = if ($reg.matchedByName) { "by NAME" } elseif ($reg.reused) { "by HOSTNAME (reused)" } else { "NEW user" }
   Write-Host "    Registered: $($reg.name) ($matchType)" -ForegroundColor Green
-  Write-Host "    User ID: $($orbitUserId.Substring(0, [Math]::Min(12,$orbitUserId.Length)))..." -ForegroundColor Gray
+  Write-Host "    User ID:  $($orbitUserId.Substring(0, [Math]::Min(12,$orbitUserId.Length)))..." -ForegroundColor Gray
+  Write-Host "    Hostname: $hostname" -ForegroundColor Gray
+  Write-Host "    Windows:  $windowsUser" -ForegroundColor Gray
+  if ($reg.clientIp) { Write-Host "    Your IP:  $($reg.clientIp)" -ForegroundColor Gray }
 } catch {
   Write-Host "    Registration failed: $($_.Exception.Message)" -ForegroundColor Red
   Write-Host "    Press Enter to exit..." -ForegroundColor Gray

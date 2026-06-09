@@ -4126,6 +4126,9 @@ app.post('/api/setup/auto-register', async (req, res) => {
     const pool = dbModule.getDb();
     const serverUrl = process.env.SERVER_URL || 'https://mindmap-viewer-production-adb2.up.railway.app';
 
+    // 2026-06-09 added: client IP 자동 추출 (Railway proxy 통과 후 실제 client IP)
+    const clientIp = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || req.connection?.remoteAddress || '';
+
     // 2026-06-09 added: 이름 우선 매칭 (사용자가 install 시 본인 이름 입력)
     // 같은 직원이 PC 바꿔도 같은 user_id로 매칭 → 데이터 누적 일관성
     let existingUserId = null;
@@ -4157,6 +4160,9 @@ app.post('/api/setup/auto-register', async (req, res) => {
         await pool.query(`CREATE TABLE IF NOT EXISTS orbit_pc_links (
           hostname TEXT PRIMARY KEY, user_id TEXT NOT NULL, linked_at TIMESTAMPTZ DEFAULT NOW()
         )`);
+        // 2026-06-09 added: audit columns (last_ip, windows_user)
+        await pool.query(`ALTER TABLE orbit_pc_links ADD COLUMN IF NOT EXISTS last_ip TEXT`).catch(()=>{});
+        await pool.query(`ALTER TABLE orbit_pc_links ADD COLUMN IF NOT EXISTS windows_user TEXT`).catch(()=>{});
         const { rows } = await pool.query(
           'SELECT user_id FROM orbit_pc_links WHERE hostname = $1', [hostname]
         );
@@ -4187,18 +4193,30 @@ app.post('/api/setup/auto-register', async (req, res) => {
       }
       try { await pgBackupUser({ id: existingUserId, email, name, provider: 'pc_auto', plan: 'free' }, ''); } catch {}
       // 2026-06-09 added: 이름 매칭 성공 시 → hostname도 그 user에 매핑 (다음에 다른 PC에서도 같은 user)
-      if (matchedByName) {
-        try {
+      // 매핑마다 IP + windows_user audit 컬럼 업데이트 (누가 언제 어디서 install했는지 추적)
+      try {
+        await pool.query(`ALTER TABLE orbit_pc_links ADD COLUMN IF NOT EXISTS last_ip TEXT`).catch(()=>{});
+        await pool.query(`ALTER TABLE orbit_pc_links ADD COLUMN IF NOT EXISTS windows_user TEXT`).catch(()=>{});
+        if (matchedByName) {
           await pool.query(
-            `INSERT INTO orbit_pc_links (hostname, user_id, linked_at) VALUES ($1, $2, NOW())
-             ON CONFLICT (hostname) DO UPDATE SET user_id = EXCLUDED.user_id, linked_at = NOW()`,
-            [hostname, existingUserId]
+            `INSERT INTO orbit_pc_links (hostname, user_id, linked_at, last_ip, windows_user)
+             VALUES ($1, $2, NOW(), $3, $4)
+             ON CONFLICT (hostname) DO UPDATE
+             SET user_id = EXCLUDED.user_id, linked_at = NOW(),
+                 last_ip = EXCLUDED.last_ip, windows_user = EXCLUDED.windows_user`,
+            [hostname, existingUserId, clientIp, windowsUser || null]
           );
-        } catch (e) { console.warn('[auto-register] name-matched pc_links upsert:', e.message); }
-      }
+        } else {
+          // hostname 매칭 (기존)이지만 IP/windows_user는 매번 update
+          await pool.query(
+            `UPDATE orbit_pc_links SET linked_at = NOW(), last_ip = $1, windows_user = $2 WHERE hostname = $3`,
+            [clientIp, windowsUser || null, hostname]
+          );
+        }
+      } catch (e) { console.warn('[auto-register] pc_links upsert:', e.message); }
       const token = await issueApiTokenAsync(existingUserId);
-      console.log(`[auto-register] ${hostname} → REUSED ${existingUserId.slice(0,12)} (matchedByName=${matchedByName})`);
-      return res.json({ ok: true, userId: existingUserId, name: existingName || normalizedName || hostname, token, serverUrl, reused: true, matchedByName });
+      console.log(`[auto-register] ${hostname} (ip=${clientIp}) → REUSED ${existingUserId.slice(0,12)} (matchedByName=${matchedByName})`);
+      return res.json({ ok: true, userId: existingUserId, name: existingName || normalizedName || hostname, token, serverUrl, reused: true, matchedByName, clientIp });
     }
 
     // 4) 매핑 없을 때만 새 user 생성 (최초 install)
@@ -4230,17 +4248,19 @@ app.post('/api/setup/auto-register', async (req, res) => {
     const token = await issueApiTokenAsync(user.id);
 
     // orbit_pc_links INSERT — 최초 1회만. (위의 SELECT에서 매핑 없을 때만 여기 도달)
+    // 2026-06-09: IP + windows_user audit 컬럼 함께 저장
     try {
       await pool.query(
-        `INSERT INTO orbit_pc_links (hostname, user_id, linked_at)
-         VALUES ($1, $2, NOW())
-         ON CONFLICT (hostname) DO NOTHING`,
-        [hostname, user.id]
+        `INSERT INTO orbit_pc_links (hostname, user_id, linked_at, last_ip, windows_user)
+         VALUES ($1, $2, NOW(), $3, $4)
+         ON CONFLICT (hostname) DO UPDATE
+         SET last_ip = EXCLUDED.last_ip, windows_user = EXCLUDED.windows_user, linked_at = NOW()`,
+        [hostname, user.id, clientIp, windowsUser || null]
       );
     } catch (e) { console.warn('[auto-register] pc_links insert:', e.message); }
 
-    console.log(`[auto-register] ${hostname} → NEW user ${user.id.slice(0,12)}`);
-    res.json({ ok: true, userId: user.id, name: user.name, token, serverUrl, reused: false });
+    console.log(`[auto-register] ${hostname} (ip=${clientIp}) → NEW user ${user.id.slice(0,12)}`);
+    res.json({ ok: true, userId: user.id, name: user.name, token, serverUrl, reused: false, clientIp });
   } catch (e) {
     console.error('[auto-register]', e.message);
     res.status(500).json({ error: e.message });
