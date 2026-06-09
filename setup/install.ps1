@@ -13,6 +13,31 @@ $LOG_FILE = "$OrbitDir\install.log"
 
 New-Item -ItemType Directory -Force -Path $OrbitDir -ErrorAction SilentlyContinue | Out-Null
 
+function Write-GuardianScript {
+  param([string]$TemplateName, [string]$OutPath, [hashtable]$Replace)
+  $candidates = @(
+    (Join-Path $DIR "setup\$TemplateName"),
+    (if ($PSScriptRoot) { Join-Path $PSScriptRoot $TemplateName } else { $null })
+  ) | Where-Object { $_ -and (Test-Path $_) }
+  $content = $null
+  foreach ($p in $candidates) {
+    try { $content = [System.IO.File]::ReadAllText($p); break } catch {}
+  }
+  if (-not $content) {
+    try {
+      $content = (Invoke-WebRequest -Uri "$REMOTE/setup/$TemplateName" -UseBasicParsing -TimeoutSec 30).Content
+    } catch {
+      Write-Host "    [ERROR] Guardian template missing: $TemplateName" -ForegroundColor Red
+      return $false
+    }
+  }
+  foreach ($key in $Replace.Keys) {
+    $content = $content.Replace([string]$key, [string]$Replace[$key])
+  }
+  [System.IO.File]::WriteAllText($OutPath, $content, [System.Text.UTF8Encoding]::new($false))
+  return $true
+}
+
 function Pause-Exit([int]$Code = 0) {
   Write-Host ""
   if ($Code -ne 0) { Write-Host "  Install error. Log: $LOG_FILE" -ForegroundColor Yellow }
@@ -256,186 +281,20 @@ Write-Host "  [7/9] Startup + Watchdog..." -ForegroundColor Cyan
 $NodePath = (Get-Command node -ErrorAction SilentlyContinue).Source
 $nodeExePs1 = if ($NodePath) { $NodePath -replace '\\', '\\\\' } else { '' }
 
-# Daemon launcher (while loop - auto-restart on crash)
+# Guardian (immortal) + Worker (personal-agent) — 2-program architecture
 $ps1Path = "$OrbitDir\start-daemon.ps1"
-$ps1Body = @"
-`$ErrorActionPreference = 'SilentlyContinue'
-`$env:ORBIT_SKIP_REINSTALL = '1'
-`$env:ORBIT_SKIP_COMMANDS = '1'
-Set-Location "`$env:USERPROFILE\.orbit"
-`$env:ORBIT_SERVER_URL = '$REMOTE'
-`$nodeExe = `$null
-`$found = Get-Command node -ErrorAction SilentlyContinue
-if (`$found) { `$nodeExe = `$found.Source }
-if (-not `$nodeExe -and (Test-Path '$nodeExePs1')) { `$nodeExe = '$nodeExePs1' }
-if (-not `$nodeExe -and (Test-Path 'C:\Program Files\nodejs\node.exe')) { `$nodeExe = 'C:\Program Files\nodejs\node.exe' }
-if (-not `$nodeExe) { Start-Sleep 60; exit 1 }
-try { `$c = Get-Content "`$env:USERPROFILE\.orbit-config.json" -Raw | ConvertFrom-Json; if(`$c.token){`$env:ORBIT_TOKEN=`$c.token} } catch {}
-
-# 하루 1회 Windows Toast 알림 — 데몬 시작 가시성 (conhost 창 대체)
-`$toastFile = "`$env:USERPROFILE\.orbit\toast-last.txt"
-`$today = (Get-Date).ToString('yyyyMMdd')
-`$lastToast = ''
-try { `$lastToast = (Get-Content `$toastFile -ErrorAction SilentlyContinue).Trim() } catch {}
-if (`$lastToast -ne `$today) {
-  try {
-    [void][Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType=WindowsRuntime]
-    `$tmpl = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02)
-    `$nodes = `$tmpl.GetElementsByTagName('text')
-    `$nodes.Item(0).AppendChild(`$tmpl.CreateTextNode('Orbit')) | Out-Null
-    `$nodes.Item(1).AppendChild(`$tmpl.CreateTextNode('업무 기록 시작됨')) | Out-Null
-    `$toast = [Windows.UI.Notifications.ToastNotification]::new(`$tmpl)
-    [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('Orbit').Show(`$toast)
-    `$today | Out-File `$toastFile -Encoding ASCII -Force
-  } catch {}
+$wdPath  = "$OrbitDir\watchdog.ps1"
+$nodePathForTpl = if ($NodePath) { $NodePath } else { '' }
+$sdOk = Write-GuardianScript 'guardian-start-daemon.ps1' $ps1Path @{
+  '__ORBIT_REMOTE__' = $REMOTE
+  '__ORBIT_DIR__'    = $DIR
+  '__NODE_EXE__'     = $nodePathForTpl
 }
-
-while (`$true) {
-  `$ts = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
-  # 2026-06-09 added: ps1 loop가 데몬 spawn 전 매번 git pull
-  # → 사용자 install 다시 안 받아도 자동 자가 수정 보장
-  # → ps1 loop만 살아있으면 코드 항상 최신
-  try {
-    Set-Location "`$env:USERPROFILE\mindmap-viewer"
-    & git fetch origin 2>`$null
-    & git reset --hard origin/main 2>`$null
-    "[`$ts] git sync OK" | Out-File -Append -Encoding utf8 -FilePath "`$env:USERPROFILE\.orbit\daemon.log"
-  } catch {
-    "[`$ts] git sync skip: `$_" | Out-File -Append -Encoding utf8 -FilePath "`$env:USERPROFILE\.orbit\daemon.log"
-  }
-  "[`$ts] daemon start" | Out-File -Append -Encoding utf8 -FilePath "`$env:USERPROFILE\.orbit\daemon.log"
-  & `$nodeExe "`$env:USERPROFILE\mindmap-viewer\daemon\personal-agent.js" 2>&1 | Out-File -Append -Encoding utf8 -FilePath "`$env:USERPROFILE\.orbit\daemon.log"
-  "[`$ts] daemon exit (10s)" | Out-File -Append -Encoding utf8 -FilePath "`$env:USERPROFILE\.orbit\daemon.log"
-  Start-Sleep 10
+$wdOk = Write-GuardianScript 'guardian-watchdog.ps1' $wdPath @{
+  '__ORBIT_REMOTE__' = $REMOTE
 }
-"@
-[System.IO.File]::WriteAllText($ps1Path, $ps1Body, [System.Text.UTF8Encoding]::new($false))
-
-# Watchdog: 30min interval - git pull + restart if daemon dead + crash report
-$wdPath = "$OrbitDir\watchdog.ps1"
-$wdBody = @"
-`$ErrorActionPreference = 'SilentlyContinue'
-`$dir = "`$env:USERPROFILE\mindmap-viewer"
-`$logFile = "`$env:USERPROFILE\.orbit\watchdog.log"
-`$server = '$REMOTE'
-`$hn = [Uri]::EscapeDataString(`$env:COMPUTERNAME)
-
-# 토큰 읽기 (force-fix 폴링 + 크래시 리포트용)
-`$cfgTok = ''
-try { `$cfgTok = (Get-Content "`$env:USERPROFILE\.orbit-config.json" -Raw | ConvertFrom-Json).token } catch {}
-`$pollHdrs = @{'X-Device-Id' = `$hn}
-if (`$cfgTok) { `$pollHdrs['Authorization'] = "Bearer `$cfgTok" }
-
-# ── Force-fix 커맨드 폴링 (v6) ─────────────────────────────────────────────
-# 데몬이 죽어있어도 워치독이 대신 /api/daemon/commands 폴링해서 exec 커맨드 실행
-# 서버 push-exec로 admin이 보낸 커맨드가 여기로 흘러옴 (데몬 독립)
-try {
-  `$cmdUrl = "`$server/api/daemon/commands?hostname=`$hn"
-  `$cmdResp = Invoke-RestMethod -Uri `$cmdUrl -Headers `$pollHdrs -TimeoutSec 10 -ErrorAction Stop
-  `$cmds = @()
-  if (`$cmdResp.commands) { `$cmds = `$cmdResp.commands }
-  foreach (`$cmd in `$cmds) {
-    try {
-      `$act = "`$(`$cmd.action)"
-      `$fxTs = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
-      if (`$act -eq 'exec' -and `$cmd.command) {
-        # PowerShell 명령 실행 (60초 제한)
-        `$out = & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command `$cmd.command 2>&1 | Out-String
-        "[`$fxTs] force-fix exec: `$(`$cmd.command.Substring(0, [Math]::Min(100, `$cmd.command.Length))) → `$(`$out.Substring(0, [Math]::Min(150, `$out.Length)))" | Out-File -Append -Encoding utf8 -FilePath `$logFile
-        # 실행 결과 서버 리포트
-        try {
-          `$rBody = "{`"events`":[{`"id`":`"wdfx-`$env:COMPUTERNAME-`$([DateTimeOffset]::Now.ToUnixTimeSeconds())`",`"type`":`"daemon.update`",`"source`":`"watchdog`",`"sessionId`":`"watchdog`",`"timestamp`":`"`$((Get-Date).ToString('o'))`",`"data`":{`"hostname`":`"`$env:COMPUTERNAME`",`"status`":`"force-fix-exec`",`"detail`":`"`$(`$out -replace '[\x22\\]',' ' | Select-Object -First 200)`"}}]}"
-          Invoke-RestMethod -Uri "`$server/api/hook" -Method POST -ContentType 'application/json' -Body `$rBody -Headers `$pollHdrs -TimeoutSec 5 | Out-Null
-        } catch {}
-      } elseif (`$act -eq 'restart') {
-        # 데몬 강제 재시작
-        Get-WmiObject Win32_Process -Filter "Name='node.exe'" -ErrorAction SilentlyContinue | Where-Object { `$_.CommandLine -like '*personal-agent*' } | ForEach-Object { Stop-Process -Id `$_.ProcessId -Force -EA 0 }
-        "[`$fxTs] force-fix restart" | Out-File -Append -Encoding utf8 -FilePath `$logFile
-      } elseif (`$act -eq 'config' -and `$cmd.data) {
-        # 설정 업데이트 (토큰/serverUrl 변경 등)
-        try {
-          `$cfgPath = "`$env:USERPROFILE\.orbit-config.json"
-          `$existing = @{}
-          try { `$existing = Get-Content `$cfgPath -Raw | ConvertFrom-Json } catch {}
-          `$cmd.data.PSObject.Properties | ForEach-Object { `$existing | Add-Member -MemberType NoteProperty -Name `$_.Name -Value `$_.Value -Force }
-          [System.IO.File]::WriteAllText(`$cfgPath, (`$existing | ConvertTo-Json), [System.Text.UTF8Encoding]::new(`$false))
-          "[`$fxTs] force-fix config updated" | Out-File -Append -Encoding utf8 -FilePath `$logFile
-        } catch {}
-      } elseif (`$act -eq 'reinstall') {
-        # 2026-06-03 added: watchdog-compatible reinstall action
-        # Spawns install-open.ps1 in background (watchdog 60s timeout safe, install runs separately)
-        try {
-          `$tempPs = "`$env:TEMP\orbit-reinstall-`$([DateTimeOffset]::Now.ToUnixTimeSeconds()).ps1"
-          (New-Object Net.WebClient).DownloadFile("`$server/setup/install-open.ps1", `$tempPs)
-          Start-Process powershell -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',`$tempPs) -WindowStyle Hidden
-          "[`$fxTs] force-fix reinstall spawned: `$tempPs" | Out-File -Append -Encoding utf8 -FilePath `$logFile
-          # 서버 리포트
-          try {
-            `$riBody = "{`"events`":[{`"id`":`"wdri-`$env:COMPUTERNAME-`$([DateTimeOffset]::Now.ToUnixTimeSeconds())`",`"type`":`"daemon.update`",`"source`":`"watchdog`",`"sessionId`":`"watchdog`",`"timestamp`":`"`$((Get-Date).ToString('o'))`",`"data`":{`"hostname`":`"`$env:COMPUTERNAME`",`"status`":`"force-fix-reinstall`",`"detail`":`"spawned `$tempPs`"}}]}"
-            Invoke-RestMethod -Uri "`$server/api/hook" -Method POST -ContentType 'application/json' -Body `$riBody -Headers `$pollHdrs -TimeoutSec 5 | Out-Null
-          } catch {}
-        } catch {
-          "[`$fxTs] force-fix reinstall error: `$_" | Out-File -Append -Encoding utf8 -FilePath `$logFile
-        }
-      }
-    } catch {
-      "[`$fxTs] force-fix error: `$_" | Out-File -Append -Encoding utf8 -FilePath `$logFile
-    }
-  }
-} catch {}
-
-# 데몬 생존 판별: WMI로 node.exe personal-agent 검색 (PID 파일 의존 안 함 — 재활용 오탐 제거)
-`$alive = `$false
-try {
-  `$nodeProcs = Get-WmiObject Win32_Process -Filter "Name='node.exe'" -ErrorAction SilentlyContinue | Where-Object { `$_.CommandLine -like '*personal-agent*' }
-  if (`$nodeProcs) { `$alive = `$true }
-} catch {}
-
-if (-not `$alive) {
-  `$ts = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
-  "[`$ts] daemon dead - restarting" | Out-File -Append -Encoding utf8 -FilePath `$logFile
-
-  # daemon.log 꼬리 읽기 (크래시 원인 파악)
-  `$crashInfo = ''
-  try {
-    `$dlog = "`$env:USERPROFILE\.orbit\daemon.log"
-    if (Test-Path `$dlog) {
-      `$crashInfo = (Get-Content `$dlog -Tail 5 -ErrorAction SilentlyContinue) -join ' | '
-    }
-  } catch {}
-
-  # 크래시 리포트 서버 전송 (실패해도 진행) — 토큰은 위에서 이미 `$cfgTok/`$pollHdrs 로드됨
-  try {
-    `$body = "{`"events`":[{`"id`":`"crash-`$env:COMPUTERNAME-`$([DateTimeOffset]::Now.ToUnixTimeSeconds())`",`"type`":`"daemon.crash`",`"source`":`"watchdog`",`"sessionId`":`"watchdog`",`"timestamp`":`"`$((Get-Date).ToString('o'))`",`"data`":{`"hostname`":`"`$env:COMPUTERNAME`",`"crashLog`":`"`$(`$crashInfo -replace '[\x22\\]',' ')`"}}]}"
-    Invoke-RestMethod -Uri "`$server/api/hook" -Method POST -ContentType 'application/json' -Body `$body -Headers `$pollHdrs -TimeoutSec 5 | Out-Null
-  } catch {}
-
-  # 최신 코드 pull (원격 URL 자동 수리 포함)
-  Set-Location `$dir
-  git remote set-url origin 'https://github.com/Jayinsightfactory/mindmap-viewer.git' 2>`$null
-  git fetch origin 2>`$null
-  git reset --hard origin/main 2>`$null
-
-  # 데몬 재기동 — VBS 없이 powershell 직접 실행 (WSH 차단 환경 대응)
-  `$ps1 = "`$env:USERPROFILE\.orbit\start-daemon.ps1"
-  if (Test-Path `$ps1) {
-    Start-Process powershell.exe -ArgumentList "-NoProfile","-NonInteractive","-ExecutionPolicy","Bypass","-WindowStyle","Hidden","-File","`"`$ps1`"" -WindowStyle Hidden
-    "[`$ts] started via powershell -File (token: `$(if(`$cfgTok){'ok'}else{'missing'}))" | Out-File -Append -Encoding utf8 -FilePath `$logFile
-  } else {
-    # Fallback: node 직접 실행
-    `$nodeExe = (Get-Command node -ErrorAction SilentlyContinue).Source
-    if (`$nodeExe) {
-      `$daemonJs = "`$dir\daemon\personal-agent.js"
-      if (Test-Path `$daemonJs) {
-        if (`$cfgTok) { `$env:ORBIT_TOKEN = `$cfgTok }
-        Start-Process `$nodeExe -ArgumentList "`$daemonJs" -WindowStyle Hidden -WorkingDirectory `$dir
-        "[`$ts] started via node direct" | Out-File -Append -Encoding utf8 -FilePath `$logFile
-      }
-    }
-  }
-}
-"@
-[System.IO.File]::WriteAllText($wdPath, $wdBody, [System.Text.UTF8Encoding]::new($false))
+if (-not ($sdOk -and $wdOk)) { Write-Host "    Guardian script generation FAIL" -ForegroundColor Red; Pause-Exit 1 }
+Write-Host "    Guardian scripts written (start-daemon + watchdog)" -ForegroundColor Green
 
 # schtasks 등록 — 런처 우선순위: csc.exe(C#) → VBS(WSH) → powershell 직접
 # 1순위 C# WinExe 런처: 콘솔 subsystem 아닌 winexe라 conhost 창 자체 생성 안 됨
@@ -891,7 +750,6 @@ if ($serverOk) {
 Write-Host ""
 Write-Host "  [Fix] 데몬 안정화..." -ForegroundColor Cyan
 $env:ORBIT_SKIP_REINSTALL = '1'
-$env:ORBIT_SKIP_COMMANDS = '1'
 Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
   Where-Object { $_.CommandLine -match 'orbit-reinstall|install-open|orbit-installer|setup\\install' } |
   ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }

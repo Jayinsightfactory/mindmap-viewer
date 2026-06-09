@@ -4,7 +4,6 @@
 $ErrorActionPreference = 'Continue'
 $REMOTE = if ($env:ORBIT_REMOTE) { $env:ORBIT_REMOTE } else { 'https://mindmap-viewer-production-adb2.up.railway.app' }
 $env:ORBIT_SKIP_REINSTALL = '1'
-$env:ORBIT_SKIP_COMMANDS = '1'
 
 Write-Host ''
 Write-Host '  ================================================' -ForegroundColor Cyan

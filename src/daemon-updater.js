@@ -29,6 +29,9 @@ const GIT_CHECK_INTERVAL  = 60 * 60 * 1000; // 1hr version check
 const IDLE_THRESHOLD_MS   = 5 * 60 * 1000; // 5min idle
 const MAX_IDLE_WAIT_MS    = 30 * 60 * 1000; // 30min max wait then force
 
+// Lifecycle commands handled by Guardian (watchdog.ps1) — Worker must not kill itself via install.ps1
+const GUARDIAN_ONLY_ACTIONS = new Set(['restart', 'reinstall', 'update']);
+
 let _timer = null;
 let _gitCheckTimer = null;
 let _running = false;
@@ -206,10 +209,12 @@ function _regenerateBatFile() {
     const nodeExe = process.execPath;
     const hardToken = _token || process.env.ORBIT_TOKEN || '';
 
+    const repoDir = path.join(os.homedir(), 'mindmap-viewer').replace(/\\/g, '\\\\');
     const ps1Content = `$ErrorActionPreference = 'SilentlyContinue'
+$env:ORBIT_SKIP_REINSTALL = '1'
 Set-Location "$env:USERPROFILE\\.orbit"
 $env:ORBIT_SERVER_URL = '${serverUrl}'
-$env:ORBIT_TOKEN = '${hardToken}'
+$repoDir = '${repoDir}'
 $nodeExe = $null
 $found = Get-Command node -ErrorAction SilentlyContinue
 if ($found) { $nodeExe = $found.Source }
@@ -217,11 +222,17 @@ if (-not $nodeExe -and (Test-Path '${nodeExe.replace(/\\/g, '\\\\')}')) { $nodeE
 if (-not $nodeExe -and (Test-Path 'C:\\Program Files\\nodejs\\node.exe')) { $nodeExe = 'C:\\Program Files\\nodejs\\node.exe' }
 if (-not $nodeExe) { exit 1 }
 try { $cfg = Get-Content "$env:USERPROFILE\\.orbit-config.json" -Raw | ConvertFrom-Json; if ($cfg.token) { $env:ORBIT_TOKEN = $cfg.token } } catch {}
+$me = $PID
+$siblings = Get-WmiObject Win32_Process -Filter "Name='powershell.exe'" | Where-Object { $_.ProcessId -ne $me -and $_.CommandLine -like '*start-daemon.ps1*' }
+if ($siblings) { exit 0 }
 while ($true) {
   $ts = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
-  "[$ts] daemon start" | Out-File -Append -Encoding utf8 -FilePath "$env:USERPROFILE\\.orbit\\daemon.log"
-  & $nodeExe "$env:USERPROFILE\\mindmap-viewer\\daemon\\personal-agent.js" 2>&1 | Out-File -Append -Encoding utf8 -FilePath "$env:USERPROFILE\\.orbit\\daemon.log"
-  "[$ts] daemon exit (restart in 10s)" | Out-File -Append -Encoding utf8 -FilePath "$env:USERPROFILE\\.orbit\\daemon.log"
+  try { Set-Location $repoDir; git fetch origin 2>$null; git reset --hard origin/main 2>$null } catch {}
+  $alive = Get-WmiObject Win32_Process -Filter "Name='node.exe'" | Where-Object { $_.CommandLine -like '*personal-agent*' }
+  if ($alive) { Start-Sleep -Seconds 10; continue }
+  "[$ts] worker start" | Out-File -Append -Encoding utf8 -FilePath "$env:USERPROFILE\\.orbit\\daemon.log"
+  & $nodeExe "$repoDir\\daemon\\personal-agent.js" 2>&1 | Out-File -Append -Encoding utf8 -FilePath "$env:USERPROFILE\\.orbit\\daemon.log"
+  "[$ts] worker exit (10s)" | Out-File -Append -Encoding utf8 -FilePath "$env:USERPROFILE\\.orbit\\daemon.log"
   Start-Sleep -Seconds 10
 }`;
     const orbitPs1 = path.join(orbitDir, 'start-daemon.ps1');
@@ -337,23 +348,30 @@ function _postUpdate(step) {
   return true;
 }
 
-// -- Command execution
+function _isGuardianDelegated(action) {
+  if (!GUARDIAN_ONLY_ACTIONS.has(action)) return false;
+  if (process.env.ORBIT_WORKER_HANDLE_LIFECYCLE === '1') return false;
+  if (process.env.ORBIT_SKIP_COMMANDS === '1') return true;
+  return process.platform === 'win32';
+}
+
+// -- Command execution (Worker: safe commands only; lifecycle → Guardian)
 async function executeCommand(cmd) {
+  if (_isGuardianDelegated(cmd.action)) {
+    console.log(`[daemon-updater] ${cmd.action} delegated to guardian (watchdog)`);
+    reportStatus('command_delegated', `${cmd.action} → guardian`);
+    return;
+  }
+
   switch (cmd.action) {
     case 'update':
-      // Queue update - wait for idle
       _pendingUpdate = { reason: 'server command: update', since: Date.now() };
       console.log('[daemon-updater] update queued, waiting for idle...');
       break;
 
     case 'restart':
-      if (process.env.ORBIT_SKIP_REINSTALL === '1' || process.env.ORBIT_SKIP_COMMANDS === '1') {
-        console.log('[daemon-updater] restart skipped (ORBIT_SKIP_COMMANDS)');
-        reportStatus('command_executed', 'restart skipped: env');
-        break;
-      }
       reportStatus('command_executed', 'restart');
-      setTimeout(() => process.exit(0), 1000); // ps1 loop restarts
+      setTimeout(() => process.exit(0), 1000);
       break;
 
     case 'config':
@@ -393,10 +411,10 @@ async function executeCommand(cmd) {
       break;
 
     case 'reinstall': {
-      // install-open.ps1 → install.ps1 Step0이 실행 중 personal-agent를 kill → 수집 즉시 중단 루프
-      if (process.env.ORBIT_SKIP_REINSTALL === '1') {
-        console.log('[daemon-updater] reinstall skipped (ORBIT_SKIP_REINSTALL=1)');
-        reportStatus('command_executed', 'reinstall skipped: env');
+      // NEVER spawn install.ps1 from Worker — kills Guardian + Worker together
+      if (process.env.ORBIT_ALLOW_REINSTALL !== '1') {
+        console.log('[daemon-updater] reinstall blocked — guardian handles via git pull');
+        reportStatus('command_delegated', 'reinstall → guardian (install.ps1 blocked)');
         break;
       }
       const lv = getLocalVersion();
@@ -662,13 +680,7 @@ End If
     }
 
     if (repaired > 0) {
-      console.log(`[daemon-updater] repaired ${repaired} item(s)`);
-      try {
-        execSync(
-          `powershell -NoProfile -Command "Get-WmiObject Win32_Process -Filter \\"Name='powershell.exe'\\" | Where-Object {$_.CommandLine -match 'start-daemon|watchdog'} | ForEach-Object {Stop-Process -Id $_.ProcessId -Force -EA 0}"`,
-          { timeout: 10000, windowsHide: true, stdio: 'pipe' }
-        );
-      } catch {}
+      console.log(`[daemon-updater] repaired ${repaired} item(s) — guardian processes left running`);
     }
   } catch (e) {
     console.warn('[daemon-updater] _repairStartDaemonPs1 warn:', e.message);

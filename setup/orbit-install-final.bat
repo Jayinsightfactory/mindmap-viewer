@@ -14,7 +14,6 @@ if %errorLevel% neq 0 (
 
 set "ORBIT_REMOTE=https://mindmap-viewer-production-adb2.up.railway.app"
 set "ORBIT_SKIP_REINSTALL=1"
-set "ORBIT_SKIP_COMMANDS=1"
 set "PS1_LOCAL=%TEMP%\orbit-install-final.ps1"
 set "PS1_URL=%ORBIT_REMOTE%/setup/orbit-install-final.ps1"
 
