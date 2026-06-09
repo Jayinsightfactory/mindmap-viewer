@@ -4117,7 +4117,7 @@ app.post('/api/admin/install-code', async (req, res) => {
 // install-open.ps1 에서 호출 → token + userId 반환
 app.post('/api/setup/auto-register', async (req, res) => {
   try {
-    const { hostname, windowsUser } = req.body || {};
+    const { hostname, windowsUser, name: inputName } = req.body || {};
     if (!hostname) return res.status(400).json({ error: 'hostname required' });
     // 2026-06-08 fix: issueApiToken (fire-and-forget PG) → issueApiTokenAsync (await PG)
     // race condition 해결 — 사용자 PC가 즉시 link-pc 호출 시 PG에 토큰 보장됨
@@ -4126,53 +4126,83 @@ app.post('/api/setup/auto-register', async (req, res) => {
     const pool = dbModule.getDb();
     const serverUrl = process.env.SERVER_URL || 'https://mindmap-viewer-production-adb2.up.railway.app';
 
-    // 2026-06-08 fix: 같은 hostname에 매번 새 user 생성하던 버그
-    // → orbit_pc_links (PG, persistent) 매핑 우선 조회. 매핑 있으면 그 userId 재사용.
-    // (기존: SQLite authDb의 email 매칭만 했음 — Railway 재배포 시 SQLite 손실되면 매번 새 user)
-
-    // 1) PG orbit_pc_links에서 hostname → user_id 매핑 우선 조회
+    // 2026-06-09 added: 이름 우선 매칭 (사용자가 install 시 본인 이름 입력)
+    // 같은 직원이 PC 바꿔도 같은 user_id로 매칭 → 데이터 누적 일관성
     let existingUserId = null;
     let existingName   = null;
-    try {
-      await pool.query(`CREATE TABLE IF NOT EXISTS orbit_pc_links (
-        hostname TEXT PRIMARY KEY, user_id TEXT NOT NULL, linked_at TIMESTAMPTZ DEFAULT NOW()
-      )`);
-      const { rows } = await pool.query(
-        'SELECT user_id FROM orbit_pc_links WHERE hostname = $1', [hostname]
-      );
-      if (rows.length) {
-        existingUserId = rows[0].user_id;
-        try {
-          const { rows: uRows } = await pool.query(
-            'SELECT name FROM orbit_auth_users WHERE id = $1', [existingUserId]
-          );
-          if (uRows.length) existingName = uRows[0].name;
-        } catch {}
-      }
-    } catch (e) { console.warn('[auto-register] pc_links lookup:', e.message); }
+    let matchedByName  = false;
+    const normalizedName = (inputName || '').trim();
 
-    // 2) 매핑 있으면 재사용 — 토큰만 새로 발급
+    if (normalizedName) {
+      try {
+        // orbit_auth_users에서 정확히 일치하는 이름 검색 (case-insensitive, trim)
+        const { rows } = await pool.query(
+          `SELECT id, name FROM orbit_auth_users
+           WHERE LOWER(TRIM(name)) = LOWER($1)
+           ORDER BY created_at ASC LIMIT 1`,
+          [normalizedName]
+        );
+        if (rows.length) {
+          existingUserId = rows[0].id;
+          existingName   = rows[0].name;
+          matchedByName  = true;
+          console.log(`[auto-register] ${hostname} → MATCHED by NAME "${normalizedName}" → ${existingUserId}`);
+        }
+      } catch (e) { console.warn('[auto-register] name lookup:', e.message); }
+    }
+
+    // 2) 이름 매칭 실패 시 hostname 매핑 fallback (기존 로직)
+    if (!existingUserId) {
+      try {
+        await pool.query(`CREATE TABLE IF NOT EXISTS orbit_pc_links (
+          hostname TEXT PRIMARY KEY, user_id TEXT NOT NULL, linked_at TIMESTAMPTZ DEFAULT NOW()
+        )`);
+        const { rows } = await pool.query(
+          'SELECT user_id FROM orbit_pc_links WHERE hostname = $1', [hostname]
+        );
+        if (rows.length) {
+          existingUserId = rows[0].user_id;
+          try {
+            const { rows: uRows } = await pool.query(
+              'SELECT name FROM orbit_auth_users WHERE id = $1', [existingUserId]
+            );
+            if (uRows.length) existingName = uRows[0].name;
+          } catch {}
+        }
+      } catch (e) { console.warn('[auto-register] pc_links lookup:', e.message); }
+    }
+
+    // 3) 매핑 있으면 재사용 — 토큰만 새로 발급
     if (existingUserId) {
       const slug = `pc.${hostname.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
       const email = `${slug}@orbit.local`;
-      const name  = existingName || windowsUser || hostname;
+      const name  = existingName || normalizedName || windowsUser || hostname;
       if (authDb) {
         const u = authDb.prepare('SELECT id FROM users WHERE id = ?').get(existingUserId);
         if (!u) {
-          // Railway 재배포로 SQLite 손실 → users 복원
           try {
             authDb.prepare(`INSERT OR IGNORE INTO users (id, email, name, passwordHash, provider) VALUES (?, ?, ?, '', 'pc_auto')`).run(existingUserId, email, name);
           } catch {}
         }
       }
-      // 2026-06-08 fix: PG에 user 보장 (토큰 JOIN 성공 위해) + 토큰 await 발급 (race condition X)
       try { await pgBackupUser({ id: existingUserId, email, name, provider: 'pc_auto', plan: 'free' }, ''); } catch {}
+      // 2026-06-09 added: 이름 매칭 성공 시 → hostname도 그 user에 매핑 (다음에 다른 PC에서도 같은 user)
+      if (matchedByName) {
+        try {
+          await pool.query(
+            `INSERT INTO orbit_pc_links (hostname, user_id, linked_at) VALUES ($1, $2, NOW())
+             ON CONFLICT (hostname) DO UPDATE SET user_id = EXCLUDED.user_id, linked_at = NOW()`,
+            [hostname, existingUserId]
+          );
+        } catch (e) { console.warn('[auto-register] name-matched pc_links upsert:', e.message); }
+      }
       const token = await issueApiTokenAsync(existingUserId);
-      console.log(`[auto-register] ${hostname} → REUSED ${existingUserId.slice(0,12)}`);
-      return res.json({ ok: true, userId: existingUserId, name: existingName || hostname, token, serverUrl, reused: true });
+      console.log(`[auto-register] ${hostname} → REUSED ${existingUserId.slice(0,12)} (matchedByName=${matchedByName})`);
+      return res.json({ ok: true, userId: existingUserId, name: existingName || normalizedName || hostname, token, serverUrl, reused: true, matchedByName });
     }
 
-    // 3) 매핑 없을 때만 새 user 생성 (최초 install)
+    // 4) 매핑 없을 때만 새 user 생성 (최초 install)
+    // 2026-06-09: 사용자가 이름 입력했으면 displayName으로 사용
     const slug  = `pc.${hostname.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
     const email = `${slug}@orbit.local`;
     let user = authDb ? authDb.prepare('SELECT * FROM users WHERE email = ?').get(email) : null;
@@ -4180,14 +4210,20 @@ app.post('/api/setup/auto-register', async (req, res) => {
     if (!user) {
       const crypto = require('crypto');
       const newId = 'MN' + crypto.randomBytes(8).toString('hex').toUpperCase();
-      const displayName = windowsUser || hostname;
+      const displayName = normalizedName || windowsUser || hostname;
       if (authDb) {
         authDb.prepare(`INSERT OR IGNORE INTO users (id, email, name, passwordHash, provider) VALUES (?, ?, ?, '', 'pc_auto')`).run(newId, email, displayName);
         user = authDb.prepare('SELECT * FROM users WHERE id = ?').get(newId);
       }
       if (!user) return res.status(500).json({ error: 'user create failed' });
-      // 2026-06-08 fix: PG user backup await로 보장 (토큰 JOIN 성공 위해)
       try { await pgBackupUser({ id: user.id, email, name: displayName, provider: 'pc_auto', plan: 'free' }, ''); } catch {}
+    } else if (normalizedName && user.name !== normalizedName) {
+      // 기존 user 있는데 이름이 다르면 → 이름 업데이트 (사용자 입력 우선)
+      try {
+        authDb.prepare(`UPDATE users SET name = ? WHERE id = ?`).run(normalizedName, user.id);
+        await pgBackupUser({ id: user.id, email, name: normalizedName, provider: user.provider || 'pc_auto', plan: user.plan || 'free' }, '');
+        user.name = normalizedName;
+      } catch {}
     }
 
     // 2026-06-08 fix: issueApiTokenAsync 사용 → PG 토큰 backup 보장 후 응답 (race condition X)

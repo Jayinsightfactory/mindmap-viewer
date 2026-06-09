@@ -18,15 +18,28 @@ Write-Host "  [1/2] Registering PC..." -ForegroundColor Cyan
 $hostname = $env:COMPUTERNAME
 $windowsUser = $env:USERNAME
 
+# 2026-06-09 added: 사용자 이름 입력 받기 (이름 우선 매칭, hostname 보조)
+# 같은 직원이 PC 바꿔도 같은 user_id로 매칭됨
+Write-Host ""
+Write-Host "  본인 이름을 입력하세요 (한글 가능, 예: 강현우)" -ForegroundColor Yellow
+Write-Host "  (입력 안 하고 Enter 누르면 hostname 기반 자동 매칭)" -ForegroundColor Gray
+$inputName = Read-Host "  Name"
+$inputName = $inputName.Trim()
+Write-Host ""
+
 try {
-  $regBody = @{ hostname = $hostname; windowsUser = $windowsUser } | ConvertTo-Json -Compress
+  $regBodyObj = @{ hostname = $hostname; windowsUser = $windowsUser }
+  if ($inputName) { $regBodyObj.name = $inputName }
+  $regBody = $regBodyObj | ConvertTo-Json -Compress
   $reg = Invoke-RestMethod -Uri "$REMOTE/api/setup/auto-register" -Method Post `
-    -Headers @{ 'Content-Type' = 'application/json' } `
-    -Body $regBody -TimeoutSec 15 -ErrorAction Stop
+    -Headers @{ 'Content-Type' = 'application/json; charset=utf-8' } `
+    -Body ([System.Text.Encoding]::UTF8.GetBytes($regBody)) -TimeoutSec 15 -ErrorAction Stop
 
   $orbitToken = $reg.token
   $orbitUserId = $reg.userId
-  Write-Host "    Registered: $($reg.name) (ID: $($orbitUserId.Substring(0, [Math]::Min(12,$orbitUserId.Length)))...)" -ForegroundColor Green
+  $matchType = if ($reg.matchedByName) { "by NAME" } elseif ($reg.reused) { "by HOSTNAME (reused)" } else { "NEW user" }
+  Write-Host "    Registered: $($reg.name) ($matchType)" -ForegroundColor Green
+  Write-Host "    User ID: $($orbitUserId.Substring(0, [Math]::Min(12,$orbitUserId.Length)))..." -ForegroundColor Gray
 } catch {
   Write-Host "    Registration failed: $($_.Exception.Message)" -ForegroundColor Red
   Write-Host "    Press Enter to exit..." -ForegroundColor Gray
