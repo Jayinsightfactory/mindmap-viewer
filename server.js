@@ -2387,8 +2387,8 @@ app.get('/api/install/verify', async (req, res) => {
       `SELECT type, user_id, timestamp FROM events
        WHERE data_json->>'hostname' = $1
          AND type = ANY($2)
-         AND timestamp > NOW() - INTERVAL '15 minutes'
-       ORDER BY timestamp DESC LIMIT 20`,
+         AND timestamp::timestamptz > NOW() - INTERVAL '15 minutes'
+       ORDER BY timestamp::timestamptz DESC LIMIT 20`,
       [hostname, COLLECTION_TYPES]
     );
 
