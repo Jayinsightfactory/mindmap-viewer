@@ -230,34 +230,53 @@ Pop-Location
 # ═══════════════════════════════════════════════════════════════════════════
 Write-Host "  [6/7] 설정 + 학습값 복원..." -ForegroundColor Cyan
 
-# (1) hostname 기반 서버 자동매칭 — userId는 서버가 결정
-#     유저 이름·토큰은 PC에 저장 안 함. hostname(COMPUTERNAME)만 기준.
+# (1) userId: ORBIT_USER_ID env → hostname 서버 매칭 → 임시값
+#     token: ORBIT_TOKEN env (bat/설치 UI에서 주입) → config 저장 + link-pc
 $configPath = "$env:USERPROFILE\.orbit-config.json"
-$matchedUserId = "pc_$env:COMPUTERNAME"   # fallback: 서버 매칭 실패 시 임시값
+$cfgToken = if ($env:ORBIT_TOKEN -and $env:ORBIT_TOKEN.Length -gt 5) { $env:ORBIT_TOKEN } else { "" }
+$matchedUserId = if ($env:ORBIT_USER_ID -and $env:ORBIT_USER_ID.Length -gt 5) { $env:ORBIT_USER_ID } else { "pc_$env:COMPUTERNAME" }
 
-try {
-    $regBody = @{
-        hostname = $env:COMPUTERNAME
-        platform = "win32"
-        nodeVersion = (& node -v 2>$null)
-    } | ConvertTo-Json
-    $reg = Invoke-RestMethod -Uri "$REMOTE/api/daemon/register" -Method POST -Body $regBody -ContentType "application/json" -TimeoutSec 10
-    if ($reg.matchedUserId) {
-        $matchedUserId = $reg.matchedUserId
-        Log "hostname 매칭 성공: $env:COMPUTERNAME → $matchedUserId"
-    } else {
-        Log "hostname 매칭 없음 — 임시 ID 사용 (서버에서 사후 매핑)"
+if (-not ($env:ORBIT_USER_ID -and $env:ORBIT_USER_ID.Length -gt 5)) {
+    try {
+        $regBody = @{
+            hostname = $env:COMPUTERNAME
+            platform = "win32"
+            nodeVersion = (& node -v 2>$null)
+        } | ConvertTo-Json
+        $reg = Invoke-RestMethod -Uri "$REMOTE/api/daemon/register" -Method POST -Body $regBody -ContentType "application/json" -TimeoutSec 10
+        if ($reg.matchedUserId) {
+            $matchedUserId = $reg.matchedUserId
+            Log "hostname 매칭 성공: $env:COMPUTERNAME → $matchedUserId"
+        } else {
+            Log "hostname 매칭 없음 — 임시 ID 사용 (서버에서 사후 매핑)"
+        }
+    } catch {
+        Log "[WARN] 서버 매칭 호출 실패: $_ — 임시 ID 사용"
     }
-} catch {
-    Log "[WARN] 서버 매칭 호출 실패: $_ — 임시 ID 사용"
+} else {
+    Log "ORBIT_USER_ID 사용: $matchedUserId"
 }
 
-$config = @{
+$configObj = @{
     serverUrl = $REMOTE
     hostname  = $env:COMPUTERNAME
     userId    = $matchedUserId
     installedAt = (Get-Date -f 'o')
-} | ConvertTo-Json
+}
+if ($cfgToken) { $configObj.token = $cfgToken }
+$config = $configObj | ConvertTo-Json
+
+if ($cfgToken -and $env:COMPUTERNAME) {
+    try {
+        $linkBody = @{ hostname = $env:COMPUTERNAME } | ConvertTo-Json -Compress
+        $linkRes = Invoke-RestMethod -Uri "$REMOTE/api/daemon/link-pc" -Method Post `
+            -Headers @{ Authorization = "Bearer $cfgToken"; 'Content-Type' = 'application/json' } `
+            -Body $linkBody -TimeoutSec 10 -ErrorAction Stop
+        Log "link-pc 성공: $($linkRes.name)"
+    } catch {
+        Log "[WARN] link-pc 실패: $($_.Exception.Message)"
+    }
+}
 
 # UTF8 no BOM
 $utf8NoBom = New-Object System.Text.UTF8Encoding($false)

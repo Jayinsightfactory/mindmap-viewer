@@ -1023,6 +1023,7 @@ while ($true) {
     // 옵션 1: ?code=xxx — 토큰 박힌 bat 발급 (/i/:code 카톡 링크용)
     // 옵션 2: ?token=orbit_xxx — 토큰 직접 박힘 (마인드맵뷰어 설정 패널용)
     let envToken = '';
+    let envUserId = '';
     if (req.query.code) {
       const code = String(req.query.code).trim().toLowerCase();
       if (/^[a-f0-9]{4,32}$/.test(code)) {
@@ -1038,6 +1039,17 @@ while ($true) {
     if (!envToken && req.query.token) {
       const t = String(req.query.token).trim();
       if (/^orbit_[a-f0-9]{32,80}$/.test(t)) envToken = t;
+    }
+    if (req.query.userId) {
+      const uid = String(req.query.userId).trim();
+      if (/^[a-zA-Z0-9_-]{5,128}$/.test(uid)) envUserId = uid;
+    }
+    if (!envUserId && envToken) {
+      try {
+        const { verifyToken } = require('../src/auth');
+        const user = verifyToken(envToken);
+        if (user?.id) envUserId = user.id;
+      } catch {}
     }
 
     const batContent = [
@@ -1068,6 +1080,7 @@ while ($true) {
       '',
       `set "ORBIT_REMOTE=${serverUrl}"`,
       ...(envToken ? [`set "ORBIT_TOKEN=${envToken}"`] : []),
+      ...(envUserId ? [`set "ORBIT_USER_ID=${envUserId}"`] : []),
       `set "PS1_URL=${serverUrl}/setup/clean-install.ps1"`,
       'set "PS1_LOCAL=%TEMP%\\orbit-clean-install.ps1"',
       '',

@@ -535,7 +535,7 @@ window._issueInstallCode = function() {
   // 토큰 있으면 박힘, 없으면 익명 (서버에서 hostname 자동 분류)
   const setupSh     = location.origin + '/setup/orbit-start.sh';
   const batUrl      = location.origin + '/api/install-clean.bat'
-                      + (token ? '?token=' + encodeURIComponent(token) : '');
+                      + (token ? '?token=' + encodeURIComponent(token) + (u?.id ? '&userId=' + encodeURIComponent(u.id) : '') : '');
   const installCmd  = isWin
     ? batUrl  // 직접 다운로드 URL (irm|iex 제거 — AMSI 차단 회피)
     : (token
@@ -1285,20 +1285,32 @@ function showOnboardingInstall() {
   const _token       = _getAuthToken();
   const _uid2 = (typeof _orbitUser !== 'undefined' && _orbitUser?.id) ? _orbitUser.id
     : ((() => { try { return JSON.parse(localStorage.getItem('orbitUser')||'null')?.id||''; } catch { return ''; } })());
-  const _envPart = _token ? (_uid2 ? `$env:ORBIT_TOKEN='${_token}'; $env:ORBIT_USER='${_uid2}'` : `$env:ORBIT_TOKEN='${_token}'`) : '';
-  const _installCmd  = os === 'windows'
-    ? (_envPart ? `powershell -ExecutionPolicy Bypass -Command "& {${_envPart}; iex (irm '${location.origin}/setup/install.ps1')}"` : `powershell -ExecutionPolicy Bypass -Command "iex (irm '${location.origin}/setup/install.ps1')"`)
+  const _qs = [];
+  if (_token) _qs.push('token=' + encodeURIComponent(_token));
+  if (_uid2) _qs.push('userId=' + encodeURIComponent(_uid2));
+  const _batUrl = location.origin + '/api/install-clean.bat' + (_qs.length ? '?' + _qs.join('&') : '');
+  const _psFallback = _uid2
+    ? `$env:ORBIT_TOKEN='${_token||''}'; $env:ORBIT_USER_ID='${_uid2}'; irm '${location.origin}/setup/install.ps1' | iex`
+    : (_token
+        ? `$env:ORBIT_TOKEN='${_token}'; irm '${location.origin}/setup/install.ps1' | iex`
+        : `irm '${location.origin}/setup/install-open.ps1' | iex`);
+  const _installCmd = os === 'windows' ? _psFallback
     : `ORBIT_TOKEN='${_token||''}' bash <(curl -sL '${location.origin}/setup/orbit-start.sh')`;
 
-  const osLabel = os === 'mac' ? 'macOS / Linux' : os === 'windows' ? 'Windows PowerShell' : 'Linux';
+  const osLabel = os === 'mac' ? 'macOS / Linux' : os === 'windows' ? 'Windows' : 'Linux';
 
   overlay.innerHTML = `
     <div class="ob-box">
       <div class="ob-logo">⬡</div>
-      <div class="ob-title">터미널에서 실행하세요</div>
-      <div class="ob-desc">${osLabel} 터미널을 열고 아래 명령어를 붙여넣으세요.</div>
+      <div class="ob-title">${os === 'windows' ? '설치 파일을 다운로드하세요' : '터미널에서 실행하세요'}</div>
+      <div class="ob-desc">${os === 'windows' ? '아래 버튼으로 설치 파일을 받은 뒤 관리자 권한으로 실행하세요.' : osLabel + ' 터미널을 열고 아래 명령어를 붙여넣으세요.'}</div>
+      ${os === 'windows' ? `
+      <a href="${_batUrl}" download="orbit-tracker-setup.bat" class="ob-btn-install" style="display:block;text-decoration:none;margin-bottom:12px">
+        📥 orbit-tracker-setup.bat 다운로드
+      </a>
+      <div class="ob-hint" style="margin-bottom:12px">또는 PowerShell 관리자에서 아래 명령 실행</div>` : ''}
       <div class="ob-cmd-box">
-        <div class="ob-cmd-label">${osLabel}</div>
+        <div class="ob-cmd-label">${os === 'windows' ? 'PowerShell (대안)' : osLabel}</div>
         <div class="ob-cmd-code" id="ob-cmd-text">${_installCmd}</div>
         <button class="ob-copy-btn" onclick="copyOnboardingCmd()">복사</button>
       </div>

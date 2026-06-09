@@ -346,14 +346,30 @@ async function _postLoginSync(token) {
   }
 }
 
+function _buildOrbitInstallAssets(token, userId, base) {
+  base = base || location.origin;
+  const t = token || '';
+  const uid = userId || null;
+  const qs = [];
+  if (t) qs.push('token=' + encodeURIComponent(t));
+  if (uid) qs.push('userId=' + encodeURIComponent(uid));
+  const batUrl = base + '/api/install-clean.bat' + (qs.length ? '?' + qs.join('&') : '');
+  const psCmd = uid
+    ? `$env:ORBIT_TOKEN='${t}'; $env:ORBIT_USER_ID='${uid}'; irm '${base}/setup/install.ps1' | iex`
+    : (t
+        ? `$env:ORBIT_TOKEN='${t}'; irm '${base}/setup/install.ps1' | iex`
+        : `irm '${base}/setup/install-open.ps1' | iex`);
+  const macCmd = t
+    ? `ORBIT_TOKEN='${t}' bash <(curl -sL '${base}/setup/orbit-start.sh')`
+    : `bash <(curl -sL '${base}/setup/orbit-start.sh')`;
+  return { batUrl, psCmd, macCmd };
+}
+
 function _showInstallCodeModal(token, userId) {
   const serverUrl = location.origin;
   const _uid = userId || (typeof _orbitUser !== 'undefined' ? _orbitUser?.id : null)
              || (() => { try { return JSON.parse(localStorage.getItem('orbitUser') || 'null')?.id; } catch { return null; } })();
-  const psCmd = _uid
-    ? `$env:ORBIT_TOKEN='${token}'; $env:ORBIT_USER='${_uid}'; irm '${serverUrl}/setup/install.ps1' | iex`
-    : `$env:ORBIT_TOKEN='${token}'; irm '${serverUrl}/setup/install.ps1' | iex`;
-  const macCmd = `ORBIT_TOKEN='${token}' bash <(curl -sL '${serverUrl}/setup/install.sh')`;
+  const { batUrl, psCmd, macCmd } = _buildOrbitInstallAssets(token, _uid, serverUrl);
 
   const old = document.getElementById('_orbit_install_modal');
   if (old) old.remove();
@@ -367,9 +383,15 @@ function _showInstallCodeModal(token, userId) {
       <h2 style="margin:0 0 4px;color:#4a9eff;font-size:17px;font-weight:700;">Orbit AI 트래커 설치</h2>
       <p style="color:#888;margin:0 0 18px;font-size:12px;line-height:1.6;">아래 명령어를 복사해서 터미널에 붙여넣으면 자동으로 설치됩니다.</p>
 
-      <!-- Windows -->
+      <!-- Windows (bat 다운로드 우선 — AMSI 안전) -->
       <div style="margin-bottom:10px;">
-        <div style="font-size:11px;color:#8b949e;margin-bottom:5px;font-weight:600;">Windows — PowerShell 관리자 권한으로 실행</div>
+        <div style="font-size:11px;color:#8b949e;margin-bottom:5px;font-weight:600;">Windows — 설치 파일 다운로드 (권장)</div>
+        <a href="${batUrl}" download="orbit-tracker-setup.bat"
+          style="display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:11px;background:linear-gradient(135deg,#1a7f37,#238636);border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700;text-decoration:none;margin-bottom:8px;">
+          📥 orbit-tracker-setup.bat 다운로드
+        </a>
+        <div style="font-size:10px;color:#6e7681;margin-bottom:8px;line-height:1.6;">다운로드 후 우클릭 → <b>관리자 권한으로 실행</b></div>
+        <div style="font-size:11px;color:#8b949e;margin-bottom:5px;font-weight:600;">또는 PowerShell (관리자)</div>
         <div style="background:#010409;border:1px solid #21262d;border-radius:8px;padding:10px 12px;display:flex;align-items:center;gap:8px;">
           <code id="_im_ps_cmd" style="color:#3fb950;font-size:11px;word-break:break-all;flex:1;line-height:1.6;">${psCmd}</code>
           <button onclick="navigator.clipboard.writeText(document.getElementById('_im_ps_cmd').textContent).then(()=>{this.textContent='✅';setTimeout(()=>this.textContent='복사',1800)}).catch(()=>{})"
@@ -463,10 +485,7 @@ async function _showEmptyStateGuide() {
 
   const _esgUid = (typeof _orbitUser !== 'undefined' ? _orbitUser?.id : null)
     || (() => { try { return JSON.parse(localStorage.getItem('orbitUser') || 'null')?.id; } catch { return null; } })();
-  const psCmd = _esgUid
-    ? `$env:ORBIT_TOKEN='${t||''}'; $env:ORBIT_USER='${_esgUid}'; irm '${base}/setup/install.ps1' | iex`
-    : `$env:ORBIT_TOKEN='${t||''}'; irm '${base}/setup/install.ps1' | iex`;
-  const macCmd = `ORBIT_TOKEN='${t||''}' bash <(curl -sL '${base}/setup/install.sh')`;
+  const { batUrl, psCmd, macCmd } = _buildOrbitInstallAssets(t, _esgUid, base);
 
   const el = document.createElement('div');
   el.id = 'empty-state-guide';
@@ -494,16 +513,19 @@ async function _showEmptyStateGuide() {
         style="background:#21262d;border:none;color:#8b949e;padding:5px 14px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer">${isMac?'Windows':'macOS'}</button>
     </div>
 
-    <!-- Windows PowerShell 패널 -->
+    <!-- Windows 패널 (bat 다운로드 우선) -->
     <div id="esg-panel-win" style="display:${isMac?'none':'block'};text-align:left;margin-bottom:14px">
-      <div style="font-size:11px;color:#8b949e;margin-bottom:6px;font-weight:600;">PowerShell — 관리자 권한으로 실행 후 붙여넣기</div>
+      <div style="font-size:11px;color:#8b949e;margin-bottom:6px;font-weight:600;">설치 파일 다운로드 (권장)</div>
+      <a href="${batUrl}" download="orbit-tracker-setup.bat"
+        style="display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:10px;background:linear-gradient(135deg,#1a7f37,#238636);border:none;border-radius:8px;color:#fff;font-size:12px;font-weight:700;text-decoration:none;margin-bottom:10px;">
+        📥 orbit-tracker-setup.bat 다운로드
+      </a>
+      <div style="font-size:10px;color:#6e7681;margin-bottom:10px;line-height:1.6;">다운로드 후 우클릭 → <b>관리자 권한으로 실행</b></div>
+      <div style="font-size:11px;color:#8b949e;margin-bottom:6px;font-weight:600;">또는 PowerShell — 관리자 권한으로 실행 후 붙여넣기</div>
       <div style="background:#010409;border:1px solid #21262d;border-radius:8px;padding:10px 12px;display:flex;align-items:center;gap:8px;">
         <code id="esg-ps-cmd" style="color:#3fb950;font-size:11px;word-break:break-all;flex:1;line-height:1.6;">${psCmd}</code>
         <button onclick="navigator.clipboard.writeText(document.getElementById('esg-ps-cmd').textContent).then(()=>{this.textContent='✅';setTimeout(()=>this.textContent='복사',1800)}).catch(()=>{})"
           style="background:#1f6feb;border:none;border-radius:5px;color:#fff;font-size:11px;padding:5px 10px;cursor:pointer;flex-shrink:0;font-weight:600;">복사</button>
-      </div>
-      <div style="font-size:10px;color:#6e7681;margin-top:6px;line-height:1.6;">
-        시작 → "PowerShell" 검색 → 우클릭 → <b>관리자 권한으로 실행</b>
       </div>
     </div>
 
