@@ -4117,7 +4117,8 @@ app.post('/api/admin/install-code', async (req, res) => {
 // install-open.ps1 에서 호출 → token + userId 반환
 app.post('/api/setup/auto-register', async (req, res) => {
   try {
-    const { hostname, windowsUser, name: inputName } = req.body || {};
+    const { hostname, windowsUser, name: inputName,
+            kakaoTitle, nenovaTitle, kakaoFolders } = req.body || {};
     if (!hostname) return res.status(400).json({ error: 'hostname required' });
     // 2026-06-08 fix: issueApiToken (fire-and-forget PG) → issueApiTokenAsync (await PG)
     // race condition 해결 — 사용자 PC가 즉시 link-pc 호출 시 PG에 토큰 보장됨
@@ -4160,9 +4161,10 @@ app.post('/api/setup/auto-register', async (req, res) => {
         await pool.query(`CREATE TABLE IF NOT EXISTS orbit_pc_links (
           hostname TEXT PRIMARY KEY, user_id TEXT NOT NULL, linked_at TIMESTAMPTZ DEFAULT NOW()
         )`);
-        // 2026-06-09 added: audit columns (last_ip, windows_user)
+        // 2026-06-09 added: audit columns (last_ip, windows_user, metadata JSON)
         await pool.query(`ALTER TABLE orbit_pc_links ADD COLUMN IF NOT EXISTS last_ip TEXT`).catch(()=>{});
         await pool.query(`ALTER TABLE orbit_pc_links ADD COLUMN IF NOT EXISTS windows_user TEXT`).catch(()=>{});
+        await pool.query(`ALTER TABLE orbit_pc_links ADD COLUMN IF NOT EXISTS metadata JSONB`).catch(()=>{});
         const { rows } = await pool.query(
           'SELECT user_id FROM orbit_pc_links WHERE hostname = $1', [hostname]
         );
@@ -4193,24 +4195,30 @@ app.post('/api/setup/auto-register', async (req, res) => {
       }
       try { await pgBackupUser({ id: existingUserId, email, name, provider: 'pc_auto', plan: 'free' }, ''); } catch {}
       // 2026-06-09 added: 이름 매칭 성공 시 → hostname도 그 user에 매핑 (다음에 다른 PC에서도 같은 user)
-      // 매핑마다 IP + windows_user audit 컬럼 업데이트 (누가 언제 어디서 install했는지 추적)
+      // 매핑마다 IP + windows_user + metadata audit (누가 언제 어디서 install했는지 추적)
+      const auditMeta = {
+        kakaoTitle:  kakaoTitle  || null,
+        nenovaTitle: nenovaTitle || null,
+        kakaoFolders: Array.isArray(kakaoFolders) ? kakaoFolders : [],
+        ts: new Date().toISOString(),
+      };
       try {
         await pool.query(`ALTER TABLE orbit_pc_links ADD COLUMN IF NOT EXISTS last_ip TEXT`).catch(()=>{});
         await pool.query(`ALTER TABLE orbit_pc_links ADD COLUMN IF NOT EXISTS windows_user TEXT`).catch(()=>{});
+        await pool.query(`ALTER TABLE orbit_pc_links ADD COLUMN IF NOT EXISTS metadata JSONB`).catch(()=>{});
         if (matchedByName) {
           await pool.query(
-            `INSERT INTO orbit_pc_links (hostname, user_id, linked_at, last_ip, windows_user)
-             VALUES ($1, $2, NOW(), $3, $4)
+            `INSERT INTO orbit_pc_links (hostname, user_id, linked_at, last_ip, windows_user, metadata)
+             VALUES ($1, $2, NOW(), $3, $4, $5)
              ON CONFLICT (hostname) DO UPDATE
              SET user_id = EXCLUDED.user_id, linked_at = NOW(),
-                 last_ip = EXCLUDED.last_ip, windows_user = EXCLUDED.windows_user`,
-            [hostname, existingUserId, clientIp, windowsUser || null]
+                 last_ip = EXCLUDED.last_ip, windows_user = EXCLUDED.windows_user, metadata = EXCLUDED.metadata`,
+            [hostname, existingUserId, clientIp, windowsUser || null, JSON.stringify(auditMeta)]
           );
         } else {
-          // hostname 매칭 (기존)이지만 IP/windows_user는 매번 update
           await pool.query(
-            `UPDATE orbit_pc_links SET linked_at = NOW(), last_ip = $1, windows_user = $2 WHERE hostname = $3`,
-            [clientIp, windowsUser || null, hostname]
+            `UPDATE orbit_pc_links SET linked_at = NOW(), last_ip = $1, windows_user = $2, metadata = $3 WHERE hostname = $4`,
+            [clientIp, windowsUser || null, JSON.stringify(auditMeta), hostname]
           );
         }
       } catch (e) { console.warn('[auto-register] pc_links upsert:', e.message); }
@@ -4248,14 +4256,21 @@ app.post('/api/setup/auto-register', async (req, res) => {
     const token = await issueApiTokenAsync(user.id);
 
     // orbit_pc_links INSERT — 최초 1회만. (위의 SELECT에서 매핑 없을 때만 여기 도달)
-    // 2026-06-09: IP + windows_user audit 컬럼 함께 저장
+    // 2026-06-09: IP + windows_user + metadata audit 컬럼 함께 저장
+    const newAuditMeta = {
+      kakaoTitle:  kakaoTitle  || null,
+      nenovaTitle: nenovaTitle || null,
+      kakaoFolders: Array.isArray(kakaoFolders) ? kakaoFolders : [],
+      ts: new Date().toISOString(),
+    };
     try {
       await pool.query(
-        `INSERT INTO orbit_pc_links (hostname, user_id, linked_at, last_ip, windows_user)
-         VALUES ($1, $2, NOW(), $3, $4)
+        `INSERT INTO orbit_pc_links (hostname, user_id, linked_at, last_ip, windows_user, metadata)
+         VALUES ($1, $2, NOW(), $3, $4, $5)
          ON CONFLICT (hostname) DO UPDATE
-         SET last_ip = EXCLUDED.last_ip, windows_user = EXCLUDED.windows_user, linked_at = NOW()`,
-        [hostname, user.id, clientIp, windowsUser || null]
+         SET last_ip = EXCLUDED.last_ip, windows_user = EXCLUDED.windows_user,
+             metadata = EXCLUDED.metadata, linked_at = NOW()`,
+        [hostname, user.id, clientIp, windowsUser || null, JSON.stringify(newAuditMeta)]
       );
     } catch (e) { console.warn('[auto-register] pc_links insert:', e.message); }
 
