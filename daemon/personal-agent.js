@@ -995,6 +995,29 @@ async function main() {
     console.error('[personal-agent] Promise 거부:', reason);
     _reportError('unhandledRejection', String(reason));
   });
+
+  // 2026-06-09 added: 메모리 모니터링 + graceful restart (OOM kill 방지)
+  // 600MB 초과하면 데이터 flush 후 의도된 재시작 (ps1 loop가 재spawn).
+  // 메모리 누수 누적으로 인한 강제 종료 방지.
+  const MEM_LIMIT_MB = 600;
+  let memWarnCount = 0;
+  setInterval(() => {
+    try {
+      const rssMB = Math.round(process.memoryUsage().rss / 1024 / 1024);
+      if (rssMB > MEM_LIMIT_MB) {
+        memWarnCount++;
+        console.warn(`[orbit] 메모리 ${rssMB}MB > ${MEM_LIMIT_MB}MB (warning ${memWarnCount}/3)`);
+        // 3회 연속 (15분 동안) 한도 초과 → graceful restart
+        if (memWarnCount >= 3) {
+          console.warn('[orbit] 메모리 누수 의심 → graceful restart (ps1 loop가 재시작)');
+          _reportError('memory_graceful_restart', `${rssMB}MB > ${MEM_LIMIT_MB}MB`);
+          shutdown('memory_limit').catch(()=>{});
+        }
+      } else if (memWarnCount > 0) {
+        memWarnCount = 0; // 정상 복귀 시 리셋
+      }
+    } catch {}
+  }, 5 * 60 * 1000); // 5분마다 체크
 }
 
 main().catch(err => {
