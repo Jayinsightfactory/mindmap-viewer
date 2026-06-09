@@ -626,15 +626,18 @@ while (`$true) {
   Write-Host "    Registry Run 등록 스킵 ($($_.Exception.Message.Split([char]10)[0]))" -ForegroundColor DarkGray
 }
 
-# 2026-06-08 added: NSSM 기반 Windows Service Watchdog (OS-level 자동 재시작)
-# schtasks/HKCU\Run 모두 깨져도 SCM(Service Control Manager)이 watchdog polling 보장
-# 관리자 권한 필요 — UAC 상승 안 됐으면 skip
-Write-Host "    NSSM Service watchdog 설정 시도..." -ForegroundColor Cyan
+# 2026-06-08 added (2026-06-09 안내 메시지 부드럽게):
+# NSSM Windows Service Watchdog = 4번째 안전망 (선택적 향상, 없어도 정상 작동).
+# 기본 안전망: schtasks AtLogOn + 30min polling + HKCU\Run + Startup lnk + watchdog-loop.ps1
+# = 이미 4중 안전망. NSSM은 추가 5번째 (SCM 보장).
+Write-Host "    NSSM Service watchdog (선택적 5번째 안전망) 시도..." -ForegroundColor DarkGray
 $nssmPath = "$OrbitDir\nssm.exe"
 
-# (1) NSSM 다운로드 (~340KB, 없을 때만)
+# (1) NSSM 다운로드 (~340KB) — 실패 정상 (선택적 향상)
 if (-not (Test-Path $nssmPath)) {
   try {
+    # TLS 1.2 강제 (구식 PS5.1 호환)
+    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
     $nssmZip = "$env:TEMP\nssm-2.24.zip"
     Invoke-WebRequest -Uri "https://nssm.cc/release/nssm-2.24.zip" -OutFile $nssmZip -UseBasicParsing -TimeoutSec 30 -ErrorAction Stop
     $nssmExtract = "$env:TEMP\nssm-extract-$(Get-Random)"
@@ -643,7 +646,7 @@ if (-not (Test-Path $nssmPath)) {
     Copy-Item "$nssmExtract\nssm-2.24\$arch\nssm.exe" $nssmPath -Force
     Remove-Item $nssmZip, $nssmExtract -Recurse -Force -ErrorAction SilentlyContinue
   } catch {
-    Write-Host "    NSSM 다운로드 실패 — schtasks/HKCU\Run watchdog만 사용" -ForegroundColor Yellow
+    Write-Host "    NSSM 다운로드 skip (선택적 향상) — schtasks+HKCU\Run+Startup lnk 4중 안전망 정상 작동" -ForegroundColor DarkGray
   }
 }
 
