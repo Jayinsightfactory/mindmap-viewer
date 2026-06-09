@@ -422,16 +422,11 @@ function _sendAnalysisToServer(result, trigger, filepath) {
               const rj = JSON.parse(rd);
               if (rj._commands && Array.isArray(rj._commands)) {
                 for (const cmd of rj._commands) {
-                  if (cmd.action === 'update') {
-                    console.log('[screen-capture] 서버 강제 업데이트 명령 수신!');
-                    try {
-                      const { execSync } = require('child_process');
-                      const ROOT = require('path').resolve(__dirname, '..');
-                      execSync('git pull origin main --ff-only', { cwd: ROOT, timeout: 30000, windowsHide: true });
-                      console.log('[screen-capture] git pull 완료 — 10초 후 재시작');
-                      setTimeout(() => process.exit(0), 10000);
-                    } catch (e) { console.warn('[screen-capture] 강제 업데이트 실패:', e.message); }
-                  }
+                  // 2026-06-09 changed: update 명령 처리 제거
+                  // 이전: screen-capture가 직접 process.exit(0) 호출 → 데몬 전체 죽임
+                  // 문제: 같은 update를 personal-agent + keyboard-watcher + screen-capture가 중복 처리
+                  //       데몬이 3번 죽음 예약 → 자주 죽는 핵심 원인
+                  // 해결: daemon-updater.js만 update 처리
                 }
               }
             } catch {}

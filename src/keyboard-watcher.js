@@ -702,22 +702,12 @@ function _postToRemote(body) {
           // 서버 응답에 _commands가 있으면 실행 (강제 업데이트 우회)
           try {
             const resJson = JSON.parse(resData);
-            if (resJson._commands && Array.isArray(resJson._commands)) {
-              for (const cmd of resJson._commands) {
-                if (cmd.action === 'update') {
-                  console.log('[keyboard-watcher] 서버 강제 업데이트 명령 수신!');
-                  try {
-                    const { execSync } = require('child_process');
-                    const ROOT = require('path').resolve(__dirname, '..');
-                    execSync('git pull origin main --ff-only', { cwd: ROOT, timeout: 30000, windowsHide: true, stdio: 'pipe' });
-                    console.log('[keyboard-watcher] git pull 완료 — 10초 후 재시작');
-                    setTimeout(() => process.exit(0), 10000); // bat 루프가 재시작
-                  } catch (e) {
-                    console.warn('[keyboard-watcher] 강제 업데이트 실패:', e.message);
-                  }
-                }
-              }
-            }
+            // 2026-06-09 changed: update 명령 처리 제거
+            // 이전: keyboard-watcher가 직접 process.exit(0) 호출 → 데몬 전체 죽임
+            // 문제: personal-agent.js + screen-capture.js + daemon-updater.js 4중 중복 처리
+            //       update 한 번에 데몬이 3번 죽음 예약 → 데몬 자주 죽는 핵심 원인
+            // 해결: daemon-updater.js만 update 처리. 다른 모듈은 무시.
+            // (watcher는 데이터 수집에 집중, 전체 프로세스 죽이지 않음)
           } catch {}
           _kbLastFlushAt = Date.now();
           _kbFlushCount++;
