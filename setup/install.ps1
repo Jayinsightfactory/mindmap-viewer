@@ -826,7 +826,13 @@ if ($smBlocking) {
 } else { Write-Host "    7. Keyboard        FAIL (npm install)" -ForegroundColor Red; $fail++ }
 
 # 8-11. Data pipeline verification — wait 90s then poll verify-install
+# 2026-06-09 added: 사용자에게 활동 안내 (mouse/keyboard watcher 검증에 활동 필요)
 if ($serverOk) {
+  Write-Host ""
+  Write-Host "    ★ 90초 동안 마우스를 천천히 움직이고 키보드도 한 번 눌러주세요 ★" -ForegroundColor Yellow
+  Write-Host "      (이게 데몬이 'mouse_click/keyboard_done' 이벤트 보내는지 검증합니다)" -ForegroundColor Gray
+  Write-Host "      (활동 안 하면 8-11번 FAIL로 표시되지만 데몬은 정상 — 사용 시작하면 작동)" -ForegroundColor Gray
+  Write-Host ""
   Write-Host "    Waiting 90s for daemon to warm up + send heartbeat" -NoNewline -ForegroundColor Gray
   for ($w = 0; $w -lt 18; $w++) {
     Start-Sleep -Seconds 5
