@@ -713,37 +713,60 @@ if ($smBlocking) {
   } catch { Write-Host "    7. Keyboard        WARN" -ForegroundColor Yellow; $pass++ }
 } else { Write-Host "    7. Keyboard        FAIL (npm install)" -ForegroundColor Red; $fail++ }
 
-# 8-11. Data pipeline verification — wait 90s then poll verify-install
-# 2026-06-09 added: 사용자에게 활동 안내 (mouse/keyboard watcher 검증에 활동 필요)
-if ($serverOk) {
-  Write-Host ""
-  Write-Host "    ★ 90초 동안 마우스를 천천히 움직이고 키보드도 한 번 눌러주세요 ★" -ForegroundColor Yellow
-  Write-Host "      (이게 데몬이 'mouse_click/keyboard_done' 이벤트 보내는지 검증합니다)" -ForegroundColor Gray
-  Write-Host "      (활동 안 하면 8-11번 FAIL로 표시되지만 데몬은 정상 — 사용 시작하면 작동)" -ForegroundColor Gray
-  Write-Host ""
-  Write-Host "    Waiting 90s for daemon to warm up + send heartbeat" -NoNewline -ForegroundColor Gray
-  for ($w = 0; $w -lt 18; $w++) {
-    Start-Sleep -Seconds 5
-    Write-Host "." -NoNewline -ForegroundColor Gray
-  }
-  Write-Host ""
-  $hnEnc = [Uri]::EscapeDataString($env:COMPUTERNAME)
-  $vOk = $false; $verify = $null
+# 8-11. 가이드 검증 — 데몬 데이터 서버 수신 확인될 때까지 반복 (통과 시에만 설치 종료)
+$guidedVerified = $false
+$guidedPath = Join-Path $DIR "setup\install-guided-verify.ps1"
+if (-not (Test-Path $guidedPath) -and $PSScriptRoot) {
+  $alt = Join-Path $PSScriptRoot "install-guided-verify.ps1"
+  if (Test-Path $alt) { $guidedPath = $alt }
+}
+if (-not (Test-Path $guidedPath)) {
   try {
-    $verify = Invoke-RestMethod -Uri "$REMOTE/api/daemon/verify-install?hostname=$hnEnc" -TimeoutSec 15 -ErrorAction Stop
-    $vOk = ($verify.ok -eq $true)
-  } catch { Write-Host "    verify-install call failed: $_" -ForegroundColor Red }
+    $gc = (Invoke-WebRequest -Uri "$REMOTE/setup/install-guided-verify.ps1" -UseBasicParsing -TimeoutSec 30).Content
+    New-Item -ItemType Directory -Force -Path (Split-Path $guidedPath) | Out-Null
+    [System.IO.File]::WriteAllText($guidedPath, $gc, [System.Text.UTF8Encoding]::new($false))
+  } catch {}
+}
 
-  if ($vOk) {
-    if ($verify.checks.heartbeatReceived)   { Write-Host "    8. Heartbeat       OK" -ForegroundColor Green; $pass++ } else { Write-Host "    8. Heartbeat       FAIL" -ForegroundColor Red; $fail++ }
-    if ($verify.checks.moduleMouseOk)       { Write-Host "    9. Mouse module    OK" -ForegroundColor Green; $pass++ } else { Write-Host "    9. Mouse module    FAIL" -ForegroundColor Red; $fail++ }
-    if ($verify.checks.moduleKeyboardOk)    { Write-Host "    10. Keyboard module OK" -ForegroundColor Green; $pass++ } else { Write-Host "    10. Keyboard module WARN" -ForegroundColor Yellow; $pass++ }
-    if ($verify.checks.moduleScreenOk)      { Write-Host "    11. Screen module   OK" -ForegroundColor Green; $pass++ } else { Write-Host "    11. Screen module   FAIL" -ForegroundColor Red; $fail++ }
-
-    Write-Host "    verify-install verdict: $($verify.verdict) (passed=$($verify.passed) failed=$($verify.failed))" -ForegroundColor Cyan
-  } else {
-    Write-Host "    8-11. Pipeline verify SKIP (verify-install unavailable)" -ForegroundColor Yellow
+if ($serverOk -and $daemonOk -and (Test-Path $guidedPath)) {
+  . $guidedPath
+  $verifyAttempt = 0
+  while (-not $guidedVerified) {
+    $verifyAttempt++
+    if ($verifyAttempt -gt 1) {
+      Write-Host ""
+      Write-Host "  검증 미통과 — 다시 시도합니다 ($verifyAttempt회차)" -ForegroundColor Yellow
+      Write-Host "  (클릭 → 메모장 Ctrl+V → Enter 순서)" -ForegroundColor Gray
+      Write-Host ""
+    } else {
+      Start-Sleep -Seconds 8
+    }
+    $g = Invoke-OrbitGuidedInstallVerify -Remote $REMOTE
+    $guidedVerified = $g.verified
+    if (-not $guidedVerified) {
+      Write-Host ""
+      Write-Host "  아직 서버에 데몬 데이터가 확인되지 않았습니다." -ForegroundColor Yellow
+      Write-Host "  Enter = 재시도  |  Q + Enter = 설치 중단" -ForegroundColor Gray
+      $ans = Read-Host "  "
+      if ($ans -match '^[qQ]') { break }
+    }
   }
+  if ($g.steps | Where-Object { $_.name -eq 'mouse' -and $_.ok }) {
+    Write-Host "    8. Mouse click      OK" -ForegroundColor Green; $pass++
+  } else { Write-Host "    8. Mouse click      FAIL" -ForegroundColor Red; $fail++ }
+  if ($g.steps | Where-Object { $_.name -eq 'keyboard' -and $_.ok }) {
+    Write-Host "    9. Keyboard input   OK" -ForegroundColor Green; $pass++
+  } else { Write-Host "    9. Keyboard input   FAIL" -ForegroundColor Red; $fail++ }
+  if ($g.steps | Where-Object { $_.name -eq 'screen' -and $_.ok }) {
+    Write-Host "    10. Screen capture  OK" -ForegroundColor Green; $pass++
+  } else { Write-Host "    10. Screen capture  FAIL" -ForegroundColor Red; $fail++ }
+  if ($guidedVerified) {
+    Write-Host "    11. Install verify  OK (chunk + user_id)" -ForegroundColor Green; $pass++
+  } else {
+    Write-Host "    11. Install verify  FAIL" -ForegroundColor Red; $fail++
+  }
+} elseif ($serverOk) {
+  Write-Host "    8-11. Guided verify SKIP (daemon not running or script missing)" -ForegroundColor Yellow
 }
 
 # Fix daemon — orphan install 프로세스 정리 + 데몬 재기동 (서버 reinstall 큐 대응)
@@ -770,11 +793,13 @@ else { Write-Host "    Daemon WARN — start-daemon.ps1 확인" -ForegroundColor
 # Summary
 Write-Host ""
 Write-Host "  ============================================" -ForegroundColor Cyan
-if ($fail -eq 0) {
-  Write-Host "  [성공] Orbit AI 설치 완료! ($pass/11)" -ForegroundColor Green
+if ($fail -eq 0 -and $guidedVerified) {
+  Write-Host "  [성공] Orbit AI 설치 + 검증 완료! ($pass/11)" -ForegroundColor Green
+} elseif ($fail -eq 0) {
+  Write-Host "  [부분 성공] 정적 검사 통과 — 가이드 검증 미완료 ($pass/11)" -ForegroundColor Yellow
 } else {
   Write-Host "  [부분 성공] $pass PASSED / $fail FAILED" -ForegroundColor Yellow
-  Write-Host "  → Watchdog가 30분 안에 자동으로 재시도합니다" -ForegroundColor Yellow
+  Write-Host "  → 가이드 단계를 다시 따라주세요 (클릭 → 메모장 붙여넣기 → Enter)" -ForegroundColor Yellow
 }
 Write-Host "  ============================================" -ForegroundColor Cyan
 Write-Host ""
@@ -783,13 +808,17 @@ Write-Host "  서버: $REMOTE" -ForegroundColor Gray
 Write-Host "  로그: $LOG_FILE" -ForegroundColor Gray
 Write-Host ""
 
-# Report
-try {
-  $hn = [Uri]::EscapeDataString($env:COMPUTERNAME)
-  Invoke-RestMethod -Uri "$REMOTE/api/hook" -Method POST -ContentType "application/json" -Headers @{"X-Device-Id"=$hn} `
-    -Body "{`"events`":[{`"id`":`"install-$env:COMPUTERNAME-$(Get-Date -Format o)`",`"type`":`"install.complete`",`"source`":`"installer-v8`",`"sessionId`":`"install`",`"timestamp`":`"$(Get-Date -Format o)`",`"data`":{`"hostname`":`"$env:COMPUTERNAME`",`"pass`":$pass,`"fail`":$fail,`"daemon`":$($daemonOk.ToString().ToLower())}}]}" `
-    -TimeoutSec 5 -ErrorAction SilentlyContinue | Out-Null
-} catch {}
+# Report — install.complete는 검증 통과(데몬 데이터 확인) 시에만 전송
+if ($guidedVerified) {
+  try {
+    $hn = [Uri]::EscapeDataString($env:COMPUTERNAME)
+    Invoke-RestMethod -Uri "$REMOTE/api/hook" -Method POST -ContentType "application/json" -Headers @{"X-Device-Id"=$hn} `
+      -Body "{`"events`":[{`"id`":`"install-$env:COMPUTERNAME-$(Get-Date -Format o)`",`"type`":`"install.complete`",`"source`":`"installer-v8`",`"sessionId`":`"install`",`"timestamp`":`"$(Get-Date -Format o)`",`"data`":{`"hostname`":`"$env:COMPUTERNAME`",`"pass`":$pass,`"fail`":$fail,`"daemon`":$($daemonOk.ToString().ToLower()),`"verified`":true,`"verifyMode`":`"guided`"}}]}" `
+      -TimeoutSec 5 -ErrorAction SilentlyContinue | Out-Null
+  } catch {}
+} else {
+  Write-Host "  install.complete 미전송 — 데몬 데이터 검증 필요" -ForegroundColor Yellow
+}
 
 # 과거 학습값(capture-config) 복원 — 재설치/기기변경 시 즉시 이전 최적값 적용
 # userId: Step 9 register에서 받은 값 우선, 없으면 config에서 읽기
@@ -819,5 +848,10 @@ if ($serverOk) {
 # 없거나 v8 아니면 daemon-updater가 install.ps1 자동 재실행
 "v8" | Out-File "$OrbitDir\install-version.txt" -Encoding ASCII -Force -ErrorAction SilentlyContinue
 
-"$(Get-Date -f 'yyyy-MM-dd HH:mm:ss') [DONE] v8 pass=$pass fail=$fail daemon=$daemonOk" | Out-File $LOG_FILE -Append -ErrorAction SilentlyContinue
-Pause-Exit 0
+"$(Get-Date -f 'yyyy-MM-dd HH:mm:ss') [DONE] v8 pass=$pass fail=$fail daemon=$daemonOk verified=$guidedVerified" | Out-File $LOG_FILE -Append -ErrorAction SilentlyContinue
+if ($guidedVerified) {
+  Pause-Exit 0
+} else {
+  Write-Host "  설치 미완료 — 가이드 검증 통과 후 종료됩니다." -ForegroundColor Red
+  Pause-Exit 1
+}

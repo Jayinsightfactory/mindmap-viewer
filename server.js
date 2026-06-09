@@ -2364,6 +2364,109 @@ app.post('/api/admin/pg-commands-purge', async (req, res) => {
   }
 });
 
+// GET /api/install/verify-step?hostname=&step=mouse|clipboard|keyboard|screen&since=ISO&token=
+// 설치 가이드 각 단계 실시간 검증 (install-guided-verify.ps1)
+app.get('/api/install/verify-step', async (req, res) => {
+  try {
+    const hostname = (req.query.hostname || '').trim();
+    const step = (req.query.step || '').trim().toLowerCase();
+    const since = req.query.since || new Date(Date.now() - 10 * 60 * 1000).toISOString();
+    const token = (req.query.token || '').trim();
+    if (!hostname) return res.status(400).json({ error: 'hostname required' });
+    if (!step) return res.status(400).json({ error: 'step required (mouse|clipboard|keyboard|screen)' });
+
+    const _pool = dbModule.getDb ? dbModule.getDb() : null;
+    if (!_pool?.query) return res.status(500).json({ error: 'db not available' });
+
+    const baseWhere = `data_json->>'hostname' = $1 AND timestamp::timestamptz > $2::timestamptz`;
+    let verified = false;
+    let detail = {};
+    let userId = null;
+
+    if (step === 'mouse') {
+      const { rows } = await _pool.query(
+        `SELECT user_id, data_json, timestamp FROM events
+         WHERE ${baseWhere} AND type = 'mouse.chunk'
+         ORDER BY timestamp::timestamptz DESC LIMIT 5`,
+        [hostname, since]
+      );
+      for (const r of rows) {
+        const d = r.data_json || {};
+        const clicks = Number(d.clicks || d.mousedowns || 0);
+        const moves = Number(d.moves || d.moveCount || 0);
+        if (clicks >= 1 || moves >= 3) {
+          verified = true;
+          userId = r.user_id;
+          detail = { clicks, moves, ts: r.timestamp };
+          break;
+        }
+      }
+    } else if (step === 'clipboard' || step === 'keyboard') {
+      if (token) {
+        const { rows: cb } = await _pool.query(
+          `SELECT user_id, data_json, timestamp FROM events
+           WHERE ${baseWhere} AND type = 'clipboard.change'
+             AND (data_json->>'text' ILIKE $3 OR data_json::text ILIKE $3)
+           ORDER BY timestamp::timestamptz DESC LIMIT 1`,
+          [hostname, since, `%${token}%`]
+        );
+        if (cb.length) {
+          verified = true;
+          userId = cb[0].user_id;
+          detail = { via: 'clipboard.change', ts: cb[0].timestamp };
+        }
+      }
+      if (!verified) {
+        const { rows: kb } = await _pool.query(
+          `SELECT user_id, data_json, timestamp FROM events
+           WHERE ${baseWhere} AND type = 'keyboard.chunk'
+           ORDER BY timestamp::timestamptz DESC LIMIT 3`,
+          [hostname, since]
+        );
+        for (const r of kb) {
+          const d = r.data_json || {};
+          const chars = Number(d.metrics?.totalChars || d.totalChars || 0);
+          const body = JSON.stringify(d);
+          if ((token && body.includes(token)) || chars >= 8) {
+            verified = true;
+            userId = r.user_id;
+            detail = { via: 'keyboard.chunk', totalChars: chars, ts: r.timestamp };
+            break;
+          }
+        }
+      }
+    } else if (step === 'screen') {
+      const { rows } = await _pool.query(
+        `SELECT user_id, timestamp, data_json FROM events
+         WHERE ${baseWhere} AND type = 'screen.capture'
+         ORDER BY timestamp::timestamptz DESC LIMIT 1`,
+        [hostname, since]
+      );
+      if (rows.length) {
+        verified = true;
+        userId = rows[0].user_id;
+        detail = { via: 'screen.capture', ts: rows[0].timestamp, trigger: rows[0].data_json?.trigger };
+      }
+    } else {
+      return res.status(400).json({ error: `unknown step: ${step}` });
+    }
+
+    const badUser = userId === 'local' || userId === 'anonymous' || !userId;
+    res.json({
+      ok: true,
+      hostname,
+      step,
+      verified: verified && !badUser,
+      userId,
+      badUserId: badUser,
+      detail,
+      since,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // GET /api/install/verify?hostname=xxx — 설치 완료 = 실제 chunk + 올바른 user_id
 // install.complete 이벤트만으로는 성공 아님
 app.get('/api/install/verify', async (req, res) => {

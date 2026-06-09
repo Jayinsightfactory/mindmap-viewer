@@ -433,30 +433,82 @@ $daemonAlive = Get-WmiObject Win32_Process -Filter "Name='node.exe'" -ErrorActio
     $_.CommandLine -like "*personal-agent*"
 }
 
-Write-Host ""
+# 가이드 검증 — 데몬 데이터 서버 수신 확인될 때까지 반복 (통과 시에만 설치 종료)
+$guidedVerified = $false
 if ($daemonAlive) {
+    $guidedPath = Join-Path $PSScriptRoot "install-guided-verify.ps1"
+    if (-not (Test-Path $guidedPath)) {
+        $guidedPath = Join-Path $DIR "setup\install-guided-verify.ps1"
+    }
+    if (-not (Test-Path $guidedPath)) {
+        try {
+            $gc = (Invoke-WebRequest -Uri "$REMOTE/setup/install-guided-verify.ps1" -UseBasicParsing -TimeoutSec 30).Content
+            New-Item -ItemType Directory -Force -Path (Split-Path $guidedPath) | Out-Null
+            [System.IO.File]::WriteAllText($guidedPath, $gc, [System.Text.UTF8Encoding]::new($false))
+        } catch {}
+    }
+    if (Test-Path $guidedPath) {
+        try {
+            . $guidedPath
+            $verifyAttempt = 0
+            while (-not $guidedVerified) {
+                $verifyAttempt++
+                if ($verifyAttempt -gt 1) {
+                    Write-Host "  검증 재시도 ($verifyAttempt회차)..." -ForegroundColor Yellow
+                }
+                $g = Invoke-OrbitGuidedInstallVerify -Remote $REMOTE
+                $guidedVerified = $g.verified
+                if (-not $guidedVerified) {
+                    Write-Host "  서버에 데몬 데이터 미확인 — Enter=재시도 / Q=중단" -ForegroundColor Yellow
+                    $ans = Read-Host "  "
+                    if ($ans -match '^[qQ]') { break }
+                }
+            }
+            if ($guidedVerified) { Log "가이드 검증 통과" } else { Log "[WARN] 가이드 검증 실패" }
+        } catch {
+            Log "[WARN] 가이드 검증 오류: $_"
+        }
+    }
+}
+
+Write-Host ""
+if ($daemonAlive -and $guidedVerified) {
     Write-Host "  ═══════════════════════════════════════" -ForegroundColor Green
-    Write-Host "  ✅ 설치 완료 — 데이터 수집 시작됨" -ForegroundColor Green
+    Write-Host "  ✅ 설치 + 검증 완료 — 실제 chunk 수신 확인됨" -ForegroundColor Green
     Write-Host "  ═══════════════════════════════════════" -ForegroundColor Green
-    Log "설치 성공 — 데몬 PID: $($daemonAlive.ProcessId -join ',')"
+    Log "설치+검증 성공 — 데몬 PID: $($daemonAlive.ProcessId -join ',')"
+} elseif ($daemonAlive) {
+    Write-Host "  ═══════════════════════════════════════" -ForegroundColor Yellow
+    Write-Host "  ⚠ 데몬 기동됨 — 가이드 검증 미완료 (클릭→붙여넣기→Enter 다시 시도)" -ForegroundColor Yellow
+    Write-Host "  ═══════════════════════════════════════" -ForegroundColor Yellow
+    Log "데몬 OK, 가이드 검증 미완료"
 } else {
     Write-Host "  ⚠ 데몬 기동 확인 실패 — 다음 로그인 시 3중 안전망으로 자동 기동" -ForegroundColor Yellow
     Log "[WARN] 즉시 기동 확인 실패 — 안전망 의존"
 }
 
-# 서버에 설치 완료 알림 (실패해도 무시)
-try {
-    $body = @{
-        event = "install.complete"
-        userId = $matchedUserId
-        hostname = $env:COMPUTERNAME
-        version = "v12-guardian"
-        timestamp = (Get-Date -f 'o')
-    } | ConvertTo-Json
-    Invoke-WebRequest -Uri "$REMOTE/api/install/status" -Method POST -Body $body -ContentType "application/json" -TimeoutSec 5 -UseBasicParsing -ErrorAction SilentlyContinue | Out-Null
-} catch {}
+# 서버에 설치 완료 알림 — 검증 통과 시에만
+if ($guidedVerified) {
+    try {
+        $body = @{
+            event = "install.complete"
+            userId = $matchedUserId
+            hostname = $env:COMPUTERNAME
+            version = "v12-guardian"
+            verified = $true
+            verifyMode = "guided"
+            timestamp = (Get-Date -f 'o')
+        } | ConvertTo-Json
+        Invoke-WebRequest -Uri "$REMOTE/api/install/status" -Method POST -Body $body -ContentType "application/json" -TimeoutSec 5 -UseBasicParsing -ErrorAction SilentlyContinue | Out-Null
+    } catch {}
+    Write-Host ""
+    Write-Host "  이 창은 5초 후 자동으로 닫힙니다..." -ForegroundColor Gray
+    Start-Sleep -Seconds 5
+    exit 0
+}
 
 Write-Host ""
-Write-Host "  이 창은 5초 후 자동으로 닫힙니다..." -ForegroundColor Gray
-Start-Sleep -Seconds 5
-exit 0
+Write-Host "  설치 미완료 — 데몬 데이터 검증 후 자동 종료됩니다." -ForegroundColor Red
+Write-Host "  Enter를 누르면 닫습니다." -ForegroundColor Gray
+try { Read-Host } catch {}
+exit 1
