@@ -497,6 +497,14 @@ app.use('/setup', express.static(path.join(__dirname, 'setup'), {
     }
   },
 }));
+
+// 2026-06-09 added: /bat 짧은 alias — orbit-install.bat 다운로드용
+// 사용자 friendly URL: nenovaweb.com/bat (custom domain 연결 후)
+app.get('/bat', (req, res) => {
+  res.setHeader('Content-Disposition', 'attachment; filename="orbit-install.bat"');
+  res.setHeader('Content-Type', 'application/x-bat');
+  res.sendFile(path.join(__dirname, 'setup', 'orbit-install.bat'));
+});
 // Chrome 확장 파일 서빙 (설치 스크립트에서 다운로드용)
 app.use('/chrome-extension', express.static(path.join(__dirname, 'chrome-extension')));
 
