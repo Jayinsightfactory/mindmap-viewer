@@ -444,49 +444,69 @@ Log "Guardian + Worker 기동..."
 Start-Process -FilePath $psExe -ArgumentList "-ExecutionPolicy Bypass -WindowStyle Hidden -NoProfile -File `"$daemonScript`"" -WindowStyle Hidden
 Start-Process -FilePath $psExe -ArgumentList "-ExecutionPolicy Bypass -WindowStyle Hidden -NoProfile -File `"$watchdogScript`"" -WindowStyle Hidden
 
-# 10초 대기 + 기동 확인
-Start-Sleep -Seconds 10
-$daemonAlive = Get-WmiObject Win32_Process -Filter "Name='node.exe'" -ErrorAction SilentlyContinue | Where-Object {
-    $_.CommandLine -like "*personal-agent*"
+# 데몬 기동 대기 (최대 60초, 5초마다 재시도)
+function Test-DaemonAlive {
+    Get-CimInstance Win32_Process -Filter "Name='node.exe'" -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -like '*personal-agent*' }
+}
+$daemonAlive = $null
+for ($i = 1; $i -le 12; $i++) {
+    Start-Sleep -Seconds 5
+    $daemonAlive = Test-DaemonAlive
+    if ($daemonAlive) {
+        Log "데몬 기동 확인 (${i}회차) PID: $($daemonAlive.ProcessId -join ',')"
+        break
+    }
+    if ($i -le 3) {
+        Log "데몬 미감지 — Guardian 재기동 (${i}/12)"
+        Start-Process -FilePath $psExe -ArgumentList "-ExecutionPolicy Bypass -WindowStyle Hidden -NoProfile -File `"$daemonScript`"" -WindowStyle Hidden -ErrorAction SilentlyContinue
+    }
 }
 
-# 가이드 검증 — 데몬 데이터 서버 수신 확인될 때까지 반복 (통과 시에만 설치 종료)
+# 가이드 검증 — 데몬 여부와 무관하게 항상 실행 (클릭/키보드/화면 chunk 확인)
 $guidedVerified = $false
-if ($daemonAlive) {
-    $guidedPath = Join-Path $PSScriptRoot "install-guided-verify.ps1"
-    if (-not (Test-Path $guidedPath)) {
-        $guidedPath = Join-Path $DIR "setup\install-guided-verify.ps1"
-    }
-    if (-not (Test-Path $guidedPath)) {
-        try {
-            Invoke-WebRequest -Uri "$REMOTE/setup/install-guided-verify.ps1" -OutFile $guidedPath -UseBasicParsing -TimeoutSec 30 | Out-Null
-            Ensure-OrbitPs1Bom $guidedPath | Out-Null
-        } catch {}
-    }
-    if (Test-Path $guidedPath) {
-        try {
-            Ensure-OrbitPs1Bom $guidedPath | Out-Null
-            . $guidedPath
-            $verifyAttempt = 0
-            while (-not $guidedVerified) {
-                $verifyAttempt++
-                if ($verifyAttempt -gt 1) {
-                    Write-Host "  검증 재시도 ($verifyAttempt회차)..." -ForegroundColor Yellow
-                }
-                $g = Invoke-OrbitGuidedInstallVerify -Remote $REMOTE
-                $guidedVerified = $g.verified
-                if (-not $guidedVerified) {
-                    Write-Host "  서버에 데몬 데이터 미확인 — Enter=재시도 / Q=중단" -ForegroundColor Yellow
-                    $ans = Read-Host "  "
-                    if ($ans -match '^[qQ]') { break }
-                }
-            }
-            if ($guidedVerified) { Log "가이드 검증 통과" } else { Log "[WARN] 가이드 검증 실패" }
-        } catch {
-            Log "[WARN] 가이드 검증 오류: $_"
-        }
+$guidedPath = Join-Path $DIR "setup\install-guided-verify.ps1"
+if (-not (Test-Path $guidedPath)) {
+    $guidedPath = Join-Path $env:TEMP "orbit-install-guided-verify.ps1"
+    try {
+        Invoke-WebRequest -Uri "$REMOTE/setup/install-guided-verify.ps1" -OutFile $guidedPath -UseBasicParsing -TimeoutSec 30 | Out-Null
+        Ensure-OrbitPs1Bom $guidedPath | Out-Null
+    } catch {
+        Log "[WARN] 가이드 스크립트 다운로드 실패: $_"
     }
 }
+if (Test-Path $guidedPath) {
+    try {
+        Ensure-OrbitPs1Bom $guidedPath | Out-Null
+        . $guidedPath
+        if (-not $daemonAlive) {
+            Write-Host '  데몬이 아직 안 떴습니다. 가이드 검증을 진행하면서 Guardian이 기동합니다.' -ForegroundColor Yellow
+        }
+        $verifyAttempt = 0
+        while (-not $guidedVerified) {
+            $verifyAttempt++
+            if ($verifyAttempt -gt 1) {
+                Write-Host "  검증 재시도 ($verifyAttempt회차)..." -ForegroundColor Yellow
+                if (-not (Test-DaemonAlive)) {
+                    Start-Process -FilePath $psExe -ArgumentList "-ExecutionPolicy Bypass -WindowStyle Hidden -NoProfile -File `"$daemonScript`"" -WindowStyle Hidden -ErrorAction SilentlyContinue
+                }
+            }
+            $g = Invoke-OrbitGuidedInstallVerify -Remote $REMOTE
+            $guidedVerified = $g.verified
+            if (-not $guidedVerified) {
+                Write-Host "  서버에 데몬 데이터 미확인 — Enter=재시도 / Q=중단" -ForegroundColor Yellow
+                $ans = Read-Host "  "
+                if ($ans -match '^[qQ]') { break }
+            }
+        }
+        if ($guidedVerified) { Log "가이드 검증 통과" } else { Log "[WARN] 가이드 검증 실패" }
+    } catch {
+        Log "[WARN] 가이드 검증 오류: $_"
+    }
+} else {
+    Log "[WARN] 가이드 스크립트 없음"
+}
+$daemonAlive = Test-DaemonAlive
 
 Write-Host ""
 if ($daemonAlive -and $guidedVerified) {

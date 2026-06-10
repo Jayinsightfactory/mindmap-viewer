@@ -24,18 +24,23 @@ function Invoke-OrbitPs1File([string]$Path) {
   Ensure-OrbitPs1Bom $Path | Out-Null
   $ps51 = "$env:windir\System32\WindowsPowerShell\v1.0\powershell.exe"
   $psExe = if (Test-Path $ps51) { $ps51 } else { 'powershell.exe' }
-  & $psExe -NoProfile -ExecutionPolicy Bypass -File $Path
-  return $LASTEXITCODE
+  & $psExe -NoProfile -ExecutionPolicy Bypass -File $Path | Out-Host
+  if ($null -ne $LASTEXITCODE) { return [int]$LASTEXITCODE }
+  return 1
 }
 
-function Pause-Exit([int]$Code = 0) {
+function Pause-Exit($Code = 0) {
+  $exitCode = 0
+  try {
+    if ($Code -is [array]) { $exitCode = [int]$Code[-1] } else { $exitCode = [int]$Code }
+  } catch { $exitCode = 1 }
   Write-Host ''
-  if ($Code -ne 0) {
-    Write-Host "  설치 실패 (code $Code). 로그: $LOG" -ForegroundColor Red
+  if ($exitCode -ne 0) {
+    Write-Host "  설치 실패 (code $exitCode). 로그: $LOG" -ForegroundColor Red
   }
   Write-Host '  Enter를 누르면 닫습니다...' -ForegroundColor Gray
   try { Read-Host } catch {}
-  exit $Code
+  exit $exitCode
 }
 
 trap {
@@ -47,7 +52,7 @@ trap {
 Write-Log 'START orbit-install-final.ps1'
 Write-Host ''
 Write-Host '  ================================================' -ForegroundColor Cyan
-Write-Host '    Orbit AI 설치 v13 (Guardian + 가이드 검증)' -ForegroundColor Cyan
+Write-Host '    Orbit AI 설치 v18 (Guardian + 가이드 검증)' -ForegroundColor Cyan
 Write-Host '  ================================================' -ForegroundColor Cyan
 Write-Host ''
 

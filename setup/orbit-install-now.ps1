@@ -44,8 +44,8 @@ try {
   $winPs = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
   if (-not (Test-Path $winPs)) { $winPs = 'powershell.exe' }
   Log "Run installer via Windows PowerShell"
-  & $winPs -NoProfile -ExecutionPolicy Bypass -WindowStyle Normal -File $ps1Local
-  $rc = $LASTEXITCODE
+  & $winPs -NoProfile -ExecutionPolicy Bypass -WindowStyle Normal -File $ps1Local | Out-Host
+  $rc = if ($null -ne $LASTEXITCODE) { [int]$LASTEXITCODE } else { 1 }
   Log "EXIT=$rc"
   if ($rc -ne 0) {
     Read-Host 'Install failed. Enter to close'
