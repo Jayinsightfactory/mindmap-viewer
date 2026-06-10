@@ -5274,7 +5274,7 @@ app.get('/install', (req, res) => {
 </body></html>`);
 });
 
-// GET /install-final — 최종 설치 (fix daemon) bat+ps1 다운로드 페이지
+// GET /install-final — 직원 PC 설치 (bat 1개면 충분)
 app.get('/install-final', (req, res) => {
   const base = `${req.protocol}://${req.get('host')}`;
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
@@ -5282,7 +5282,7 @@ app.get('/install-final', (req, res) => {
 <html lang="ko"><head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Orbit AI 최종 설치 (fix daemon)</title>
+<title>Orbit AI 설치 v13</title>
 <style>
   * { box-sizing: border-box; }
   body { font-family: -apple-system, "Malgun Gothic", sans-serif; max-width: 640px; margin: 0 auto; padding: 24px; background: #f5f7fa; color: #1a1a1a; line-height: 1.6; }
@@ -5290,53 +5290,62 @@ app.get('/install-final', (req, res) => {
   h1 { font-size: 22px; margin: 0 0 8px; color: #1a7f37; }
   h2 { font-size: 16px; margin: 20px 0 8px; color: #333; }
   .sub { color: #666; font-size: 14px; margin-bottom: 20px; }
-  .btn { display: block; width: 100%; background: #1a7f37; color: #fff; padding: 16px 24px; border-radius: 10px; text-decoration: none; text-align: center; font-weight: 700; font-size: 17px; margin: 8px 0; }
+  .btn { display: block; width: 100%; background: #1a7f37; color: #fff; padding: 18px 24px; border-radius: 10px; text-decoration: none; text-align: center; font-weight: 700; font-size: 18px; margin: 12px 0; }
   .btn:hover { background: #238636; }
-  .btn2 { background: #0b5fff; }
-  .btn2:hover { background: #0a4dd4; }
-  .btn.copy { background: #f0f2f5; color: #1a1a1a; font-size: 13px; padding: 10px 16px; font-weight: 500; }
   ol { padding-left: 20px; } ol li { margin-bottom: 10px; }
   .tip { background: #e8f5e9; border-left: 4px solid #4caf50; padding: 12px 16px; border-radius: 6px; font-size: 13px; color: #2e4e32; margin: 12px 0; }
   .warn { background: #fff8e1; border-left: 4px solid #ffa726; padding: 12px 16px; border-radius: 6px; font-size: 13px; color: #5d4037; margin: 12px 0; }
+  .guide { background: #e3f2fd; border-left: 4px solid #1976d2; padding: 12px 16px; border-radius: 6px; font-size: 13px; margin: 12px 0; }
   code { background: #f0f2f5; padding: 2px 6px; border-radius: 4px; font-size: 12px; }
-  .link-box { background: #f0f2f5; border-radius: 8px; padding: 10px 14px; font-family: monospace; font-size: 11px; word-break: break-all; margin: 6px 0; }
+  .link-box { background: #f0f2f5; border-radius: 8px; padding: 12px 14px; font-family: monospace; font-size: 12px; word-break: break-all; margin: 8px 0; user-select: all; }
+  .badge { display: inline-block; background: #1a7f37; color: #fff; font-size: 11px; padding: 2px 8px; border-radius: 4px; margin-left: 6px; }
 </style>
 </head><body>
 
 <div class="card">
-  <h1>Orbit AI 최종 설치</h1>
-  <div class="sub">이름 입력 + fix daemon 포함 · 2~3분 · <b>두 파일 모두</b> 같은 폴더에 저장</div>
+  <h1>Orbit AI 설치 <span class="badge">v13</span></h1>
+  <div class="sub">Guardian + 가이드 검증 · 서버에 데이터 확인되면 설치 종료</div>
 
   <a class="btn" href="${base}/api/install-final.bat" download="orbit-install-final.bat">
-    1️⃣ orbit-install-final.bat 다운로드
-  </a>
-  <a class="btn btn2" href="${base}/api/install-final.ps1" download="orbit-install-final.ps1">
-    2️⃣ orbit-install-final.ps1 다운로드
+    ⬇ orbit-install-final.bat 다운로드
   </a>
 
   <div class="tip">
-    <b>중요</b> 두 파일을 <b>같은 폴더</b>(예: 바탕화면)에 넣은 뒤,<br>
-  <code>orbit-install-final.bat</code> 우클릭 → <b>관리자 권한으로 실행</b>
+    <b>bat 파일 1개만</b> 받으면 됩니다.<br>
+    우클릭 → <b>관리자 권한으로 실행</b> (PowerShell에 붙여넣기 금지)
   </div>
 
+  <h2>설치 링크 (복사용)</h2>
+  <div class="link-box">${base}/install-final</div>
   <div class="link-box">${base}/api/install-final.bat</div>
-  <div class="link-box">${base}/api/install-final.ps1</div>
 </div>
 
 <div class="card">
   <h2>설치 순서</h2>
   <ol>
-    <li>위 <b>1번·2번</b> 모두 다운로드 (같은 폴더)</li>
-    <li><code>orbit-install-final.bat</code> → 우클릭 → <b>관리자 권한으로 실행</b></li>
+    <li><code>orbit-install-final.bat</code> 다운로드 → <b>관리자 권한으로 실행</b></li>
     <li>이름 입력 (예: 강현우) — Enter만 누르면 PC이름 자동매칭</li>
-    <li>90초 대기 중 <b>마우스 움직이고 키보드 입력</b></li>
-    <li><code>[OK] 데몬 실행 중 PID</code> 확인</li>
+    <li>2~3분 자동 설치 (Guardian + Worker)</li>
+    <li><b>가이드 검증</b> — 아래 3단계 따라하기</li>
+    <li>서버 데이터 확인되면 <b>설치 창 자동 종료</b></li>
   </ol>
-  <div class="warn"><b>⚠️</b> PowerShell에 코드 붙여넣지 마세요. bat 파일만 실행하세요.</div>
+
+  <div class="guide">
+    <b>가이드 검증 (설치 마지막)</b><br>
+    ① 화면 아무 곳 <b>클릭 1번</b><br>
+    ② 메모장 열림 → <b>Ctrl+V</b> 붙여넣기<br>
+    ③ <b>Enter</b> 1번 → 서버 확인 후 종료
+  </div>
+
+  <div class="warn"><b>⚠️</b> 90초 기다리기 없음. 위 3단계만 하면 됩니다.<br>
+  검증 실패 시 Enter로 재시도. 데이터가 서버에 들어와야 설치 완료입니다.</div>
 </div>
 
 </body></html>`);
 });
+
+// GET /install — /install-final 별칭
+app.get('/install', (req, res) => res.redirect(302, '/install-final'));
 
 // GET /setup/fix-daemon.ps1 — 데몬 자가복구 스크립트 (재설치 없이 crach loop 탈출)
 // 사용: irm 'https://.../setup/fix-daemon.ps1' | iex
