@@ -126,8 +126,7 @@ Write-Host "  검증: $REMOTE/api/install/verify?hostname=$hnEnc"
 Write-Host ''
 
 if ($rc -eq 0) {
-  Write-Host '  설치 완료. 5초 후 닫힙니다...' -ForegroundColor Green
-  Start-Sleep -Seconds 5
+  Write-Host '  설치 완료.' -ForegroundColor Green
   exit 0
 }
 

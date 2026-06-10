@@ -509,16 +509,19 @@ app.get('/bat', (req, res) => {
 app.get('/bat-final', (req, res) => {
   res.setHeader('Content-Disposition', 'attachment; filename="orbit-install-final.bat"');
   res.setHeader('Content-Type', 'application/x-bat');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
   res.sendFile(path.join(__dirname, 'setup', 'orbit-install-final.bat'));
 });
 app.get('/api/install-final.bat', (req, res) => {
   res.setHeader('Content-Disposition', 'attachment; filename="orbit-install-final.bat"');
   res.setHeader('Content-Type', 'application/octet-stream');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
   res.sendFile(path.join(__dirname, 'setup', 'orbit-install-final.bat'));
 });
 app.get('/api/install-final.ps1', (req, res) => {
   res.setHeader('Content-Disposition', 'attachment; filename="orbit-install-final.ps1"');
   res.setHeader('Content-Type', 'application/octet-stream');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
   res.sendFile(path.join(__dirname, 'setup', 'orbit-install-final.ps1'));
 });
 // Chrome 확장 파일 서빙 (설치 스크립트에서 다운로드용)
@@ -5282,7 +5285,7 @@ app.get('/install-final', (req, res) => {
 <html lang="ko"><head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Orbit AI 설치 v13</title>
+<title>Orbit AI 설치 v14</title>
 <style>
   * { box-sizing: border-box; }
   body { font-family: -apple-system, "Malgun Gothic", sans-serif; max-width: 640px; margin: 0 auto; padding: 24px; background: #f5f7fa; color: #1a1a1a; line-height: 1.6; }
@@ -5303,7 +5306,7 @@ app.get('/install-final', (req, res) => {
 </head><body>
 
 <div class="card">
-  <h1>Orbit AI 설치 <span class="badge">v13</span></h1>
+  <h1>Orbit AI 설치 <span class="badge">v14</span></h1>
   <div class="sub">Guardian + 가이드 검증 · 서버에 데이터 확인되면 설치 종료</div>
 
   <a class="btn" href="${base}/api/install-final.bat" download="orbit-install-final.bat">
@@ -5327,7 +5330,7 @@ app.get('/install-final', (req, res) => {
     <li>이름 입력 (예: 강현우) — Enter만 누르면 PC이름 자동매칭</li>
     <li>2~3분 자동 설치 (Guardian + Worker)</li>
     <li><b>가이드 검증</b> — 아래 3단계 따라하기</li>
-    <li>서버 데이터 확인되면 <b>설치 창 자동 종료</b></li>
+    <li>서버 데이터 확인되면 <b>Enter로 창 닫기</b></li>
   </ol>
 
   <div class="guide">
