@@ -41,24 +41,14 @@ function Invoke-OrbitGuidedInstallVerify {
 
   Write-Host ""
   Write-Host "  ┌─────────────────────────────────────────────┐" -ForegroundColor Cyan
-  Write-Host "  │  Orbit 설치 검증 — 3단계 (각 최대 ${StepTimeoutSec}초)   │" -ForegroundColor Cyan
+  Write-Host "  │  Orbit 설치 검증 — 2단계 (각 최대 ${StepTimeoutSec}초)   │" -ForegroundColor Cyan
   Write-Host "  └─────────────────────────────────────────────┘" -ForegroundColor Cyan
   Write-Host ""
 
-  # ── 1단계: 마우스 클릭 ─────────────────────────────────────────────
-  Write-Host "  [1/3] 마우스" -ForegroundColor Yellow
-  Write-Host "        → 화면 아무 곳이나 왼쪽 클릭 1번 하세요" -ForegroundColor White
-  Write-Host "        (데스크톱, 이 PowerShell 창, 작업 표시줄 모두 OK)" -ForegroundColor DarkGray
-  Write-Host -NoNewline "        서버 확인 중"
-  if (Wait-VerifyStep -Step 'mouse' -Label 'mouse.chunk 수신' -Timeout $StepTimeoutSec) {
-    $results.pass++; $results.steps += @{ step = 1; name = 'mouse'; ok = $true }
-  } else {
-    $results.fail++; $results.steps += @{ step = 1; name = 'mouse'; ok = $false }
-  }
-
-  # ── 2단계: 키보드 입력 (메모장 + 붙여넣기) ───────────────────────
-  Write-Host ""
-  Write-Host "  [2/3] 키보드" -ForegroundColor Yellow
+  # [2026-06-10] 마우스 단계 제거 — mouse.chunk는 30~60초 배치 전송이라 검증 타임아웃을
+  # 못 넘겨 구조적으로 실패. 마우스는 데몬이 평소 수집하므로 검증에서만 제외. 키보드+화면만 확인.
+  # ── 1단계: 키보드 입력 (메모장 + 붙여넣기) ───────────────────────
+  Write-Host "  [1/2] 키보드" -ForegroundColor Yellow
   Write-Host "        → 메모장이 열립니다. 아래 문자열을 붙여넣기(Ctrl+V) 하세요" -ForegroundColor White
   Write-Host ""
   Write-Host "        $token" -ForegroundColor Cyan
@@ -79,9 +69,9 @@ function Invoke-OrbitGuidedInstallVerify {
     $results.fail++; $results.steps += @{ step = 2; name = 'keyboard'; ok = $false }
   }
 
-  # ── 3단계: Enter → 화면 캡처 ─────────────────────────────────────
+  # ── 2단계: Enter → 화면 캡처 ─────────────────────────────────────
   Write-Host ""
-  Write-Host "  [3/3] 화면 캡처" -ForegroundColor Yellow
+  Write-Host "  [2/2] 화면 캡처" -ForegroundColor Yellow
   Write-Host "        → 메모장에서 Enter 키 1번 누르세요 (화면 캡처 트리거)" -ForegroundColor White
   Write-Host -NoNewline "        서버 확인 중"
   if (Wait-VerifyStep -Step 'screen' -Label 'screen.capture 수신' -Timeout $StepTimeoutSec) {

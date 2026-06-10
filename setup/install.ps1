@@ -5,6 +5,8 @@
 #          v6 added watchdog polling of admin commands.
 
 $ErrorActionPreference = "Continue"
+# [2026-06-10] 콘솔 UTF-8 강제 — 한글 출력 깨짐(예: '친친화화') 방지
+try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; chcp 65001 | Out-Null } catch {}
 $REMOTE   = "https://mindmap-viewer-production-adb2.up.railway.app"
 $REPO     = "https://github.com/Jayinsightfactory/mindmap-viewer.git"
 $DIR      = "$env:USERPROFILE\mindmap-viewer"
