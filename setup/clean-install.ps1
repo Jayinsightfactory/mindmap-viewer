@@ -31,6 +31,15 @@ function Log($msg) {
     } catch {}
 }
 
+function Ensure-OrbitPs1Bom([string]$Path) {
+    if (-not (Test-Path $Path)) { return $false }
+    $bytes = [IO.File]::ReadAllBytes($Path)
+    if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) { return $true }
+    $text = if ($bytes.Length -gt 0) { [Text.Encoding]::UTF8.GetString($bytes) } else { '' }
+    [IO.File]::WriteAllText($Path, $text, (New-Object Text.UTF8Encoding $true))
+    return $true
+}
+
 function Write-GuardianScript {
     param([string]$TemplateName, [string]$OutPath, [hashtable]$Replace)
     $candidates = @(
@@ -39,7 +48,15 @@ function Write-GuardianScript {
     ) | Where-Object { $_ -and (Test-Path $_) }
     $content = $null
     foreach ($p in $candidates) {
-        try { $content = [IO.File]::ReadAllText($p); break } catch {}
+        try {
+            $raw = [IO.File]::ReadAllBytes($p)
+            if ($raw.Length -ge 3 -and $raw[0] -eq 0xEF -and $raw[1] -eq 0xBB -and $raw[2] -eq 0xBF) {
+                $content = [Text.Encoding]::UTF8.GetString($raw, 3, $raw.Length - 3)
+            } else {
+                $content = [Text.Encoding]::UTF8.GetString($raw)
+            }
+            break
+        } catch {}
     }
     if (-not $content) {
         try {
@@ -52,7 +69,7 @@ function Write-GuardianScript {
     foreach ($key in $Replace.Keys) {
         $content = $content.Replace([string]$key, [string]$Replace[$key])
     }
-    $utf8 = New-Object System.Text.UTF8Encoding($false)
+    $utf8 = New-Object System.Text.UTF8Encoding($true)
     [IO.File]::WriteAllText($OutPath, $content, $utf8)
     return $true
 }
@@ -442,13 +459,13 @@ if ($daemonAlive) {
     }
     if (-not (Test-Path $guidedPath)) {
         try {
-            $gc = (Invoke-WebRequest -Uri "$REMOTE/setup/install-guided-verify.ps1" -UseBasicParsing -TimeoutSec 30).Content
-            New-Item -ItemType Directory -Force -Path (Split-Path $guidedPath) | Out-Null
-            [System.IO.File]::WriteAllText($guidedPath, $gc, [System.Text.UTF8Encoding]::new($false))
+            Invoke-WebRequest -Uri "$REMOTE/setup/install-guided-verify.ps1" -OutFile $guidedPath -UseBasicParsing -TimeoutSec 30 | Out-Null
+            Ensure-OrbitPs1Bom $guidedPath | Out-Null
         } catch {}
     }
     if (Test-Path $guidedPath) {
         try {
+            Ensure-OrbitPs1Bom $guidedPath | Out-Null
             . $guidedPath
             $verifyAttempt = 0
             while (-not $guidedVerified) {

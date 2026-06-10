@@ -11,6 +11,23 @@ function Write-Log($msg) {
   try { Add-Content -Path $LOG -Value $line -Encoding UTF8 } catch {}
 }
 
+function Ensure-OrbitPs1Bom([string]$Path) {
+  if (-not (Test-Path $Path)) { return $false }
+  $bytes = [IO.File]::ReadAllBytes($Path)
+  if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) { return $true }
+  $text = if ($bytes.Length -gt 0) { [Text.Encoding]::UTF8.GetString($bytes) } else { '' }
+  [IO.File]::WriteAllText($Path, $text, (New-Object Text.UTF8Encoding $true))
+  return $true
+}
+
+function Invoke-OrbitPs1File([string]$Path) {
+  Ensure-OrbitPs1Bom $Path | Out-Null
+  $ps51 = "$env:windir\System32\WindowsPowerShell\v1.0\powershell.exe"
+  $psExe = if (Test-Path $ps51) { $ps51 } else { 'powershell.exe' }
+  & $psExe -NoProfile -ExecutionPolicy Bypass -File $Path
+  return $LASTEXITCODE
+}
+
 function Pause-Exit([int]$Code = 0) {
   Write-Host ''
   if ($Code -ne 0) {
@@ -91,10 +108,7 @@ Write-Host '  │ 3) Enter 1번 → 서버 데이터 확인 후 종료   │' -F
 Write-Host '  └───────────────────────────────────────────┘' -ForegroundColor Yellow
 Write-Host ''
 
-$ps51 = "$env:windir\System32\WindowsPowerShell\v1.0\powershell.exe"
-$psExe = if (Test-Path $ps51) { $ps51 } else { 'powershell.exe' }
-& $psExe -NoProfile -ExecutionPolicy Bypass -File $tempClean
-$rc = $LASTEXITCODE
+$rc = Invoke-OrbitPs1File $tempClean
 Remove-Item $tempClean -ErrorAction SilentlyContinue
 
 # [4] 결과

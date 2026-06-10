@@ -489,6 +489,24 @@ app.use(express.static(path.join(__dirname, 'public'), {
   maxAge: 0, // 개발 단계: 캐시 비활성화 (안정화 후 1d로 복구)
   etag: true,
 }));
+// PS1 UTF-8 BOM — PowerShell 5.1 -File 한글 파싱 오류 방지
+function sendPs1WithBom(res, filePath, filename) {
+  let buf = fs.readFileSync(filePath);
+  if (!(buf.length >= 3 && buf[0] === 0xEF && buf[1] === 0xBB && buf[2] === 0xBF)) {
+    buf = Buffer.concat([Buffer.from([0xEF, 0xBB, 0xBF]), buf]);
+  }
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.setHeader('Content-Type', 'application/octet-stream');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+  res.send(buf);
+}
+app.get('/setup/:script.ps1', (req, res, next) => {
+  const name = req.params.script;
+  if (!/^[a-zA-Z0-9._-]+$/.test(name)) return next();
+  const fp = path.join(__dirname, 'setup', `${name}.ps1`);
+  if (!fs.existsSync(fp)) return next();
+  sendPs1WithBom(res, fp, `${name}.ps1`);
+});
 // setup 스크립트 서빙
 app.use('/setup', express.static(path.join(__dirname, 'setup'), {
   setHeaders: (res, filePath) => {
@@ -519,10 +537,7 @@ app.get('/api/install-final.bat', (req, res) => {
   res.sendFile(path.join(__dirname, 'setup', 'orbit-install-final.bat'));
 });
 app.get('/api/install-final.ps1', (req, res) => {
-  res.setHeader('Content-Disposition', 'attachment; filename="orbit-install-final.ps1"');
-  res.setHeader('Content-Type', 'application/octet-stream');
-  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
-  res.sendFile(path.join(__dirname, 'setup', 'orbit-install-final.ps1'));
+  sendPs1WithBom(res, path.join(__dirname, 'setup', 'orbit-install-final.ps1'), 'orbit-install-final.ps1');
 });
 // Chrome 확장 파일 서빙 (설치 스크립트에서 다운로드용)
 app.use('/chrome-extension', express.static(path.join(__dirname, 'chrome-extension')));
@@ -5285,7 +5300,7 @@ app.get('/install-final', (req, res) => {
 <html lang="ko"><head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Orbit AI 설치 v15</title>
+<title>Orbit AI 설치 v16</title>
 <style>
   * { box-sizing: border-box; }
   body { font-family: -apple-system, "Malgun Gothic", sans-serif; max-width: 640px; margin: 0 auto; padding: 24px; background: #f5f7fa; color: #1a1a1a; line-height: 1.6; }
@@ -5306,7 +5321,7 @@ app.get('/install-final', (req, res) => {
 </head><body>
 
 <div class="card">
-  <h1>Orbit AI 설치 <span class="badge">v15</span></h1>
+  <h1>Orbit AI 설치 <span class="badge">v16</span></h1>
   <div class="sub">Guardian + 가이드 검증 · 서버에 데이터 확인되면 설치 종료</div>
 
   <a class="btn" href="${base}/api/install-final.bat" download="orbit-install-final.bat">
