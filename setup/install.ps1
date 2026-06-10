@@ -15,10 +15,15 @@ New-Item -ItemType Directory -Force -Path $OrbitDir -ErrorAction SilentlyContinu
 
 function Write-GuardianScript {
   param([string]$TemplateName, [string]$OutPath, [hashtable]$Replace)
-  $candidates = @(
-    (Join-Path $DIR "setup\$TemplateName"),
-    (if ($PSScriptRoot) { Join-Path $PSScriptRoot $TemplateName } else { $null })
-  ) | Where-Object { $_ -and (Test-Path $_) }
+  # [2026-06-10] PS5.1은 'if'를 표현식으로 못 써서 배열 안 (if...) 가 'if 인식 안됨' FATAL을 냄.
+  # statement로 분리 (clean-install.ps1과 동일 수정).
+  $candidates = @()
+  $p1 = Join-Path $DIR "setup\$TemplateName"
+  if (Test-Path $p1) { $candidates += $p1 }
+  if ($PSScriptRoot) {
+    $p2 = Join-Path $PSScriptRoot $TemplateName
+    if (Test-Path $p2) { $candidates += $p2 }
+  }
   $content = $null
   foreach ($p in $candidates) {
     try { $content = [System.IO.File]::ReadAllText($p); break } catch {}
