@@ -534,6 +534,12 @@ app.get('/bat', (req, res) => {
   res.setHeader('Content-Type', 'application/x-bat');
   res.sendFile(path.join(__dirname, 'setup', 'orbit-install.bat'));
 });
+// 2026-06-10 added: 직원 배포용 — install-open.ps1(이름 입력→계정 매칭) 더블클릭 설치 bat
+app.get('/api/install-open.bat', (req, res) => {
+  res.setHeader('Content-Disposition', 'attachment; filename="orbit-install.bat"');
+  res.setHeader('Content-Type', 'application/x-bat');
+  res.sendFile(path.join(__dirname, 'setup', 'install-open.bat'));
+});
 // 2026-06-09: 최종 설치 (fix daemon 포함) — bat 단독 다운로드
 app.get('/bat-final', (req, res) => {
   res.setHeader('Content-Disposition', 'attachment; filename="orbit-install-final.bat"');
