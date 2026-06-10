@@ -551,7 +551,7 @@ app.get('/api/install-final.ps1', (req, res) => {
   sendPs1WithBom(res, path.join(__dirname, 'setup', 'orbit-install-final.ps1'), 'orbit-install-final.ps1');
 });
 app.get('/api/install-now.ps1', (req, res) => {
-  sendPs1ForIex(res, path.join(__dirname, 'setup', 'orbit-install-now.ps1'), 'orbit-install-now.ps1');
+  sendPs1WithBom(res, path.join(__dirname, 'setup', 'orbit-install-now.ps1'), 'orbit-install-now.ps1');
 });
 // Chrome 확장 파일 서빙 (설치 스크립트에서 다운로드용)
 app.use('/chrome-extension', express.static(path.join(__dirname, 'chrome-extension')));
@@ -5306,6 +5306,186 @@ app.get('/install', (req, res) => {
 </body></html>`);
 });
 
+// GET /install-guided — 브라우저 단계별 설치 검증 UI
+app.get('/install-guided', (req, res) => {
+  const base = `${req.protocol}://${req.get('host')}`;
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(`<!DOCTYPE html>
+<html lang="ko"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Orbit 설치 검증</title>
+<style>
+*{box-sizing:border-box}
+body{font-family:-apple-system,"Malgun Gothic",sans-serif;max-width:520px;margin:0 auto;padding:20px;background:#f0f4f8;color:#1a1a1a}
+.card{background:#fff;border-radius:16px;padding:24px;box-shadow:0 4px 20px rgba(0,0,0,.08);margin-bottom:16px}
+h1{font-size:20px;margin:0 0 4px;color:#1a7f37}
+.sub{color:#666;font-size:13px;margin-bottom:20px}
+.step{border:2px solid #e8ecf0;border-radius:12px;padding:16px;margin:12px 0;transition:.2s}
+.step.active{border-color:#1976d2;background:#f8fbff}
+.step.done{border-color:#4caf50;background:#f1f8f4}
+.step.fail{border-color:#e53935;background:#fff5f5}
+.step-num{display:inline-block;width:28px;height:28px;border-radius:50%;background:#e8ecf0;text-align:center;line-height:28px;font-weight:700;margin-right:8px;font-size:14px}
+.step.active .step-num{background:#1976d2;color:#fff}
+.step.done .step-num{background:#4caf50;color:#fff}
+.step h3{margin:0 0 8px;font-size:16px}
+.step p{margin:0 0 12px;font-size:14px;color:#444;line-height:1.5}
+.btn{display:block;width:100%;padding:14px;border:none;border-radius:10px;font-size:16px;font-weight:700;cursor:pointer;margin-top:8px}
+.btn-primary{background:#1a7f37;color:#fff}
+.btn-primary:disabled{background:#ccc;cursor:not-allowed}
+.btn-secondary{background:#e3f2fd;color:#1565c0}
+.token{background:#f5f5f5;border:2px dashed #1976d2;border-radius:8px;padding:12px;font-family:monospace;font-size:13px;word-break:break-all;margin:8px 0}
+.status{text-align:center;padding:12px;font-size:14px;color:#666}
+.spinner{display:inline-block;width:18px;height:18px;border:3px solid #ddd;border-top-color:#1976d2;border-radius:50%;animation:spin .8s linear infinite;vertical-align:middle;margin-right:8px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.ok{color:#2e7d32;font-weight:700}
+.err{color:#c62828}
+.final{text-align:center;padding:24px}
+.final .icon{font-size:48px}
+.hidden{display:none}
+</style>
+</head><body>
+<div class="card">
+  <h1>Orbit 설치 검증</h1>
+  <div class="sub" id="pc-info">PC 확인 중...</div>
+
+  <div class="step active" id="step1">
+    <h3><span class="step-num">1</span>마우스 클릭</h3>
+    <p>바탕화면이나 <b>아무 창</b>에서 왼쪽 클릭 <b>1번</b> 하세요.<br>클릭 후 아래 버튼을 누르세요.</p>
+    <button class="btn btn-primary" id="btn1">클릭했습니다 — 확인</button>
+    <div class="status hidden" id="st1"></div>
+  </div>
+
+  <div class="step" id="step2">
+    <h3><span class="step-num">2</span>키보드 / 붙여넣기</h3>
+    <p>열린 <b>메모장</b>에 아래 문자열을 <b>Ctrl+V</b>로 붙여넣으세요.</p>
+    <div class="token" id="token-box">—</div>
+    <button class="btn btn-secondary" id="btn-copy">토큰 복사</button>
+    <button class="btn btn-primary" id="btn2" disabled>붙여넣기 했습니다 — 확인</button>
+    <div class="status hidden" id="st2"></div>
+  </div>
+
+  <div class="step" id="step3">
+    <h3><span class="step-num">3</span>Enter (화면 캡처)</h3>
+    <p>메모장에서 <b>Enter</b> 키를 1번 누르세요.<br>누른 후 아래 버튼을 누르세요.</p>
+    <button class="btn btn-primary" id="btn3" disabled>Enter 눌렀습니다 — 확인</button>
+    <div class="status hidden" id="st3"></div>
+  </div>
+
+  <div class="step" id="step4">
+    <h3><span class="step-num">4</span>최종 확인</h3>
+    <p>서버에 데이터가 들어왔는지 확인합니다.</p>
+    <div class="status" id="st4">대기 중...</div>
+  </div>
+</div>
+
+<div class="card final hidden" id="success">
+  <div class="icon">✅</div>
+  <h2>설치 검증 완료!</h2>
+  <p>실제 업무 데이터가 서버에 확인되었습니다.<br>PowerShell 창으로 돌아가 Enter를 누르세요.</p>
+</div>
+
+<script>
+const P = new URLSearchParams(location.search);
+const hostname = P.get('hostname') || '';
+const token = P.get('token') || '';
+const since = P.get('since') || new Date().toISOString();
+const userId = P.get('user') || '';
+const base = location.origin;
+
+document.getElementById('pc-info').textContent = hostname ? ('PC: ' + hostname + (userId ? ' · ' + userId : '')) : 'PC 정보 없음';
+document.getElementById('token-box').textContent = token || '(토큰 없음)';
+
+function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
+function setStatus(id, html, cls){
+  const el = document.getElementById(id);
+  el.classList.remove('hidden');
+  el.innerHTML = html;
+  if (cls) el.className = 'status ' + cls;
+}
+function markDone(n){
+  document.getElementById('step'+n).classList.remove('active','fail');
+  document.getElementById('step'+n).classList.add('done');
+  if (n < 4) document.getElementById('step'+(n+1)).classList.add('active');
+}
+function markFail(n, msg){
+  document.getElementById('step'+n).classList.add('fail');
+  setStatus('st'+n, '<span class="err">✗ '+msg+'</span><br>다시 시도해 주세요.');
+}
+
+async function pollStep(step, timeoutSec){
+  const deadline = Date.now() + timeoutSec * 1000;
+  while (Date.now() < deadline) {
+    let url = base + '/api/install/verify-step?hostname=' + encodeURIComponent(hostname) + '&step=' + step + '&since=' + encodeURIComponent(since);
+    if (step === 'clipboard' || step === 'keyboard') url += '&token=' + encodeURIComponent(token);
+    try {
+      const r = await fetch(url).then(x=>x.json());
+      if (r.verified) return { ok: true, r };
+    } catch(e) {}
+    await sleep(2000);
+  }
+  return { ok: false };
+}
+
+document.getElementById('btn-copy').onclick = () => {
+  navigator.clipboard.writeText(token).then(()=>{
+    document.getElementById('btn-copy').textContent = '✓ 복사됨';
+  }).catch(()=>{ alert('복사 실패 — 토큰을 직접 선택해 복사하세요'); });
+};
+
+document.getElementById('btn1').onclick = async function(){
+  this.disabled = true;
+  setStatus('st1', '<span class="spinner"></span> 확인 중입니다...');
+  const r = await pollStep('mouse', 45);
+  if (r.ok) { markDone(1); setStatus('st1','<span class="ok">✓ 마우스 데이터 확인됨</span>'); document.getElementById('btn2').disabled=false; }
+  else { markFail(1,'마우스 데이터 미수신 (데몬 미실행?)'); this.disabled=false; }
+};
+
+document.getElementById('btn2').onclick = async function(){
+  this.disabled = true;
+  setStatus('st2', '<span class="spinner"></span> 확인 중입니다...');
+  const r = await pollStep('clipboard', 45);
+  if (r.ok) { markDone(2); setStatus('st2','<span class="ok">✓ 키보드/클립보드 확인됨</span>'); document.getElementById('btn3').disabled=false; }
+  else { markFail(2,'키보드 데이터 미수신'); this.disabled=false; }
+};
+
+document.getElementById('btn3').onclick = async function(){
+  this.disabled = true;
+  setStatus('st3', '<span class="spinner"></span> 확인 중입니다...');
+  const r = await pollStep('screen', 45);
+  if (r.ok) { markDone(3); setStatus('st3','<span class="ok">✓ 화면 캡처 확인됨</span>'); runFinal(); }
+  else { markFail(3,'화면 캡처 미수신'); this.disabled=false; }
+};
+
+async function runFinal(){
+  document.getElementById('step4').classList.add('active');
+  setStatus('st4', '<span class="spinner"></span> 최종 확인 중입니다...');
+  for (let i = 0; i < 20; i++) {
+    try {
+      const v = await fetch(base + '/api/install/verify?hostname=' + encodeURIComponent(hostname)).then(x=>x.json());
+      if (v.verified) {
+        markDone(4);
+        setStatus('st4', '<span class="ok">✓ 검증 완료 — chunk ' + (v.criteria?.chunkCount||'?') + '건</span>');
+        document.getElementById('success').classList.remove('hidden');
+        try {
+          await fetch(base + '/api/install/status', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ event: 'install.complete', userId, hostname, version: 'v19-web-guided', verified: true, verifyMode: 'web-guided', timestamp: new Date().toISOString() })
+          });
+        } catch(e) {}
+        return;
+      }
+      setStatus('st4', '<span class="spinner"></span> 최종 확인 중... (' + ((i+1)*2) + '초)');
+    } catch(e) {}
+    await sleep(2000);
+  }
+  markFail(4, '최종 검증 실패 — PowerShell 창에서 재시도');
+}
+</script>
+</body></html>`);
+});
+
 // GET /install-final — 직원 PC 설치 (bat 1개면 충분)
 app.get('/install-final', (req, res) => {
   const base = `${req.protocol}://${req.get('host')}`;
@@ -5314,7 +5494,7 @@ app.get('/install-final', (req, res) => {
 <html lang="ko"><head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Orbit AI 설치 v18</title>
+<title>Orbit AI 설치 v19</title>
 <style>
   * { box-sizing: border-box; }
   body { font-family: -apple-system, "Malgun Gothic", sans-serif; max-width: 640px; margin: 0 auto; padding: 24px; background: #f5f7fa; color: #1a1a1a; line-height: 1.6; }
@@ -5335,8 +5515,8 @@ app.get('/install-final', (req, res) => {
 </head><body>
 
 <div class="card">
-  <h1>Orbit AI 설치 <span class="badge">v18</span></h1>
-  <div class="sub">Guardian + 가이드 검증 · 서버에 데이터 확인되면 설치 종료</div>
+  <h1>Orbit AI 설치 <span class="badge">v19</span></h1>
+  <div class="sub">Guardian 설치 후 <b>브라우저</b>에서 단계별 검증</div>
 
   <a class="btn" href="${base}/api/install-final.bat" download="orbit-install-final.bat">
     ⬇ orbit-install-final.bat 다운로드
@@ -5344,8 +5524,8 @@ app.get('/install-final', (req, res) => {
 
   <div class="tip">
     <b>방법 A:</b> bat 다운로드 → 우클릭 → <b>관리자 권한으로 실행</b><br>
-    <b>방법 B (bat 안 될 때):</b> 관리자 PowerShell에서<br>
-    <code>irm '${base}/api/install-now.ps1' | iex</code>
+    <b>방법 B:</b> 관리자 PowerShell에서 아래 명령 복사 실행<br>
+    <code style="display:block;margin-top:8px;white-space:pre-wrap">$f="$env:TEMP\\orbit-install-now.ps1"; iwr '${base}/api/install-now.ps1' -OutFile $f; &amp; $f</code>
   </div>
 
   <h2>설치 링크 (복사용)</h2>
@@ -5359,19 +5539,16 @@ app.get('/install-final', (req, res) => {
     <li><code>orbit-install-final.bat</code> 다운로드 → <b>관리자 권한으로 실행</b></li>
     <li>이름 입력 (예: 강현우) — Enter만 누르면 PC이름 자동매칭</li>
     <li>2~3분 자동 설치 (Guardian + Worker)</li>
-    <li><b>가이드 검증</b> — 아래 3단계 따라하기</li>
-    <li>서버 데이터 확인되면 <b>Enter로 창 닫기</b></li>
+    <li>이름 입력 후 <b>브라우저 검증 창</b>이 자동으로 열림</li>
+    <li>브라우저에서 <b>클릭 → 붙여넣기 → Enter</b> 각 단계 [확인] 버튼</li>
+    <li>「설치 검증 완료」 나오면 PowerShell에서 Enter</li>
   </ol>
 
   <div class="guide">
-    <b>가이드 검증 (설치 마지막)</b><br>
-    ① 화면 아무 곳 <b>클릭 1번</b><br>
-    ② 메모장 열림 → <b>Ctrl+V</b> 붙여넣기<br>
-    ③ <b>Enter</b> 1번 → 서버 확인 후 종료
+    <b>브라우저 검증 (설치 마지막)</b><br>
+    새 인터넷 창에서 단계별 안내 · <b>확인 중입니다...</b> 표시<br>
+    각 단계 완료 시 ✓ 표시 → 최종 「설치 검증 완료」
   </div>
-
-  <div class="warn"><b>⚠️</b> 90초 기다리기 없음. 위 3단계만 하면 됩니다.<br>
-  검증 실패 시 Enter로 재시도. 데이터가 서버에 들어와야 설치 완료입니다.</div>
 </div>
 
 </body></html>`);

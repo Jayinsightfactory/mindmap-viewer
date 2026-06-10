@@ -52,7 +52,7 @@ trap {
 Write-Log 'START orbit-install-final.ps1'
 Write-Host ''
 Write-Host '  ================================================' -ForegroundColor Cyan
-Write-Host '    Orbit AI 설치 v18 (Guardian + 가이드 검증)' -ForegroundColor Cyan
+Write-Host '    Orbit AI 설치 v19 (브라우저 검증)' -ForegroundColor Cyan
 Write-Host '  ================================================' -ForegroundColor Cyan
 Write-Host ''
 
@@ -103,32 +103,54 @@ try {
   Pause-Exit 1
 }
 
-# [3] Guardian 설치 + 가이드 검증 (통과 시에만 종료)
-Write-Host '  [3/4] 설치 실행 (가이드 검증 포함)...' -ForegroundColor Cyan
-Write-Host ''
-Write-Host '  ┌─ 가이드 검증 (설치 마지막) ─────────────────┐' -ForegroundColor Yellow
-Write-Host '  │ 1) 화면 아무 곳 클릭 1번                  │' -ForegroundColor White
-Write-Host '  │ 2) 메모장 열림 → Ctrl+V 붙여넣기          │' -ForegroundColor White
-Write-Host '  │ 3) Enter 1번 → 서버 데이터 확인 후 종료   │' -ForegroundColor White
-Write-Host '  └───────────────────────────────────────────┘' -ForegroundColor Yellow
-Write-Host ''
-
+# [3] Guardian 설치 (데몬 등록)
+Write-Host '  [3/4] Guardian + Worker 설치...' -ForegroundColor Cyan
+$env:ORBIT_WEB_GUIDED = '1'
 $rc = Invoke-OrbitPs1File $tempClean
 Remove-Item $tempClean -ErrorAction SilentlyContinue
 
-# [4] 결과
+function Get-ExitCode($v) {
+  try { if ($v -is [array]) { return [int]$v[-1] }; return [int]$v } catch { return 1 }
+}
+$rcInt = Get-ExitCode $rc
+if ($rcInt -ne 0) {
+  Write-Host "  [ERROR] Guardian 설치 실패 (code $rcInt)" -ForegroundColor Red
+  Pause-Exit $rcInt
+}
+
+# [4] 브라우저 가이드 검증
 Write-Host ''
-Write-Host '  [4/4] 결과' -ForegroundColor Cyan
+Write-Host '  [4/4] 브라우저 검증 (자동으로 새 창이 열립니다)' -ForegroundColor Cyan
 $hnEnc = [Uri]::EscapeDataString($hostname)
+$verifyToken = "ORBIT-VERIFY-$hostname-$(Get-Date -Format 'yyyyMMddHHmmss')"
+$since = (Get-Date).ToUniversalTime().ToString('o')
+$guidedUrl = "$REMOTE/install-guided?hostname=$hnEnc&token=$([Uri]::EscapeDataString($verifyToken))&since=$([Uri]::EscapeDataString($since))&user=$([Uri]::EscapeDataString($env:ORBIT_USER_ID))"
+
 try {
-  $v = Invoke-RestMethod -Uri "$REMOTE/api/install/verify?hostname=$hnEnc" -TimeoutSec 15 -ErrorAction Stop
-  if ($v.verified) {
-    Write-Host "  ✅ 설치 검증 통과 — chunk $($v.criteria.chunkCount)건, user_id OK" -ForegroundColor Green
-  } else {
-    Write-Host "  ⚠ 검증 미통과: $($v.message)" -ForegroundColor Yellow
+  Set-Clipboard -Value $verifyToken
+  Write-Host '  검증 토큰 클립보드 복사 완료' -ForegroundColor Gray
+} catch {}
+try { Start-Process notepad.exe -ErrorAction SilentlyContinue } catch {}
+Start-Sleep -Seconds 1
+Start-Process $guidedUrl
+Write-Host '  브라우저에서 단계별 [확인] 버튼을 눌러 주세요.' -ForegroundColor Yellow
+Write-Host '  이 창은 서버 확인이 끝날 때까지 대기합니다...' -ForegroundColor Gray
+
+$verified = $false
+for ($i = 0; $i -lt 150; $i++) {
+  Start-Sleep -Seconds 2
+  try {
+    $v = Invoke-RestMethod -Uri "$REMOTE/api/install/verify?hostname=$hnEnc" -TimeoutSec 12 -ErrorAction Stop
+    if ($v.verified) {
+      $verified = $true
+      Write-Host ''
+      Write-Host "  ✅ 설치 검증 통과 — chunk $($v.criteria.chunkCount)건, user_id OK" -ForegroundColor Green
+      break
+    }
+  } catch {}
+  if ($i % 5 -eq 0) {
+    Write-Host "  서버 확인 중... ($($i * 2)초)" -ForegroundColor DarkGray
   }
-} catch {
-  Write-Host "  검증 API 호출 실패 (설치는 계속 진행됨)" -ForegroundColor Gray
 }
 
 $running = Get-CimInstance Win32_Process -Filter "Name='node.exe'" -ErrorAction SilentlyContinue |
@@ -144,9 +166,11 @@ Write-Host "  PC: $hostname"
 Write-Host "  검증: $REMOTE/api/install/verify?hostname=$hnEnc"
 Write-Host ''
 
-if ($rc -eq 0) {
-  Write-Host '  설치 완료.' -ForegroundColor Green
+if ($verified) {
+  Write-Host '  설치 완료. Enter로 닫습니다.' -ForegroundColor Green
+  try { Read-Host } catch {}
   exit 0
 }
 
-Pause-Exit $rc
+Write-Host '  ⚠ 브라우저 검증 미완료 — 브라우저에서 다시 시도하거나 Enter로 종료' -ForegroundColor Yellow
+Pause-Exit 1

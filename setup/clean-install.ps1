@@ -463,6 +463,14 @@ for ($i = 1; $i -le 12; $i++) {
     }
 }
 
+# 웹 UI 검증 모드 — PowerShell 가이드 스킵
+if ($env:ORBIT_WEB_GUIDED -eq '1') {
+    Log "Guardian 설치 완료 — 브라우저 검증으로 이동"
+    Write-Host ""
+    Write-Host "  Guardian 설치 완료. 곧 브라우저 검증 창이 열립니다." -ForegroundColor Green
+    exit 0
+}
+
 # 가이드 검증 — 데몬 여부와 무관하게 항상 실행 (클릭/키보드/화면 chunk 확인)
 $guidedVerified = $false
 $guidedPath = Join-Path $DIR "setup\install-guided-verify.ps1"
