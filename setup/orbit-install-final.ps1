@@ -4,7 +4,30 @@
 $ErrorActionPreference = 'Continue'
 $REMOTE = if ($env:ORBIT_REMOTE) { $env:ORBIT_REMOTE } else { 'https://mindmap-viewer-production-adb2.up.railway.app' }
 $env:ORBIT_SKIP_REINSTALL = '1'
+$LOG = Join-Path $env:TEMP 'orbit-install-final.log'
 
+function Write-Log($msg) {
+  $line = "$(Get-Date -f 'yyyy-MM-dd HH:mm:ss') $msg"
+  try { Add-Content -Path $LOG -Value $line -Encoding UTF8 } catch {}
+}
+
+function Pause-Exit([int]$Code = 0) {
+  Write-Host ''
+  if ($Code -ne 0) {
+    Write-Host "  설치 실패 (code $Code). 로그: $LOG" -ForegroundColor Red
+  }
+  Write-Host '  Enter를 누르면 닫습니다...' -ForegroundColor Gray
+  try { Read-Host } catch {}
+  exit $Code
+}
+
+trap {
+  Write-Log "FATAL: $_"
+  Write-Host "  [FATAL] $_" -ForegroundColor Red
+  Pause-Exit 1
+}
+
+Write-Log 'START orbit-install-final.ps1'
 Write-Host ''
 Write-Host '  ================================================' -ForegroundColor Cyan
 Write-Host '    Orbit AI 설치 v13 (Guardian + 가이드 검증)' -ForegroundColor Cyan
@@ -45,8 +68,7 @@ try {
   Write-Host "    User ID: $($reg.userId)" -ForegroundColor Gray
 } catch {
   Write-Host "  [ERROR] 등록 실패: $($_.Exception.Message)" -ForegroundColor Red
-  Read-Host '  Enter로 종료'
-  exit 1
+  Pause-Exit 1
 }
 
 # [2] clean-install.ps1 다운로드 (Guardian v12)
@@ -56,8 +78,7 @@ try {
   Invoke-WebRequest -Uri "$REMOTE/setup/clean-install.ps1" -OutFile $tempClean -UseBasicParsing -TimeoutSec 60
 } catch {
   Write-Host "  [ERROR] 다운로드 실패: $($_.Exception.Message)" -ForegroundColor Red
-  Read-Host '  Enter로 종료'
-  exit 1
+  Pause-Exit 1
 }
 
 # [3] Guardian 설치 + 가이드 검증 (통과 시에만 종료)
@@ -110,6 +131,4 @@ if ($rc -eq 0) {
   exit 0
 }
 
-Write-Host '  가이드 검증을 완료하면 설치가 종료됩니다.' -ForegroundColor Yellow
-Read-Host '  Enter로 닫기'
-exit $rc
+Pause-Exit $rc
