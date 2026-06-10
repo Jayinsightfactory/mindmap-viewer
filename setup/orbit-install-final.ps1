@@ -1,4 +1,4 @@
-# Orbit AI — Final Install v13 (이름 등록 + Guardian v12 + 가이드 검증)
+﻿# Orbit AI — Final Install v13 (이름 등록 + Guardian v12 + 가이드 검증)
 # Usage: orbit-install-final.bat (관리자 권한)
 
 $ErrorActionPreference = 'Continue'

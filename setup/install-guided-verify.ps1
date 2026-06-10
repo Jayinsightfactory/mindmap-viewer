@@ -1,4 +1,4 @@
-# setup/install-guided-verify.ps1
+﻿# setup/install-guided-verify.ps1
 # 설치 직후 가이드 검증 — "90초 작업" 대신 단계별 클릭/입력 → 서버 실시간 확인
 # Usage: . .\install-guided-verify.ps1; Invoke-OrbitGuidedInstallVerify -Remote $REMOTE
 
