@@ -14,10 +14,8 @@
  * ⚠️ Windows 전용 (process.platform === 'win32')
  */
 
-const { execSync } = require('child_process');
-const os = require('os');
-const fs = require('fs');
-const path = require('path');
+// [2026-06-10] execSync/os/fs/path 제거 — 강제 종료(taskkill/net stop)와 bat 생성 로직을
+// 없애면서 더는 쓰이지 않음. 프로세스 조회는 아래 win-shell 비동기 호출로만 한다.
 
 // ── 한국 은행 보안 프로세스 목록 ──
 const BANK_SECURITY_PROCESSES = [
@@ -164,56 +162,9 @@ async function isBankingActive() {
   }
 }
 
-/**
- * 은행 보안 프로세스 종료 (은행 작업 안 할 때)
- */
-function killBankSecurity() {
-  if (process.platform !== 'win32') return { killed: 0 };
-
-  const running = getRunningBankProcesses();
-  let killed = 0;
-
-  for (const proc of running) {
-    try {
-      execSync(`taskkill /IM "${proc.process}" /F`, {
-        windowsHide: true, stdio: 'pipe', timeout: 5000
-      });
-      console.log(`[bank-toggle] ${proc.name} 종료`);
-      killed++;
-    } catch {
-      // 이미 종료됐거나 권한 부족
-    }
-
-    // 서비스도 중지
-    if (proc.service) {
-      try {
-        execSync(`net stop "${proc.service}"`, {
-          windowsHide: true, stdio: 'pipe', timeout: 10000
-        });
-      } catch {}
-    }
-  }
-
-  _bankMode = false;
-  return { killed, processes: running.map(p => p.name) };
-}
-
-/**
- * 은행 모드 활성화 (보안 프로그램 재시작 — 은행 사이트 접속 시 자동)
- */
-function enableBankMode() {
-  // 은행 사이트 접속하면 보안 프로그램이 자동으로 다시 설치/실행됨
-  // 여기서는 상태만 전환하고, bank-safe-collector로 전환
-  _bankMode = true;
-  console.log('[bank-toggle] 은행 모드 활성화 — bank-safe-collector 전환');
-
-  try {
-    const bankSafe = require('./bank-safe-collector');
-    if (!bankSafe.isRunning()) {
-      bankSafe.start({ interval: 3 * 60 * 1000 });
-    }
-  } catch {}
-}
+// [2026-06-10] 은행 보안 프로그램 강제 종료(killBankSecurity)·재시작(enableBankMode) 로직 제거.
+// 정책 변경: 보안 프로그램은 절대 종료하지 않는다. 떠 있는 동안엔 키보드 후킹이 막히므로
+// 최소 수집(bank-safe-collector)으로만 전환하고, 사라지면 풀 수집으로 복귀한다. (_autoCheck 참조)
 
 /**
  * 자동 감지 루프 (5분마다)
@@ -221,34 +172,33 @@ function enableBankMode() {
 async function _autoCheck() {
   if (process.platform !== 'win32') return;
 
-  const banking = await isBankingActive();
-  // win-shell 통한 비동기 호출 (cmd 깜빡임 0)
+  // 은행 보안 프로세스가 떠 있는지만 본다 (은행 사이트 접속 여부와 무관 —
+  // 보안 프로그램이 켜지면 키보드 후킹 자체가 막히므로 최소 수집으로 전환)
   const securityRunning = await getRunningBankProcessesAsync();
 
   _lastCheck = {
     timestamp: new Date().toISOString(),
-    bankingActive: banking,
     securityProcesses: securityRunning.map(p => p.name),
     bankMode: _bankMode,
   };
 
-  if (banking) {
-    // 은행 작업 중 → 보안 유지
-    if (!_bankMode) {
-      enableBankMode();
-      console.log('[bank-toggle] 은행 사이트 감지 → 보안 모드 유지');
-    }
-  } else if (securityRunning.length > 0 && !banking) {
-    // 은행 작업 안 하는데 보안 프로그램 실행 중 → 종료
-    console.log(`[bank-toggle] 은행 미사용 + 보안 ${securityRunning.length}개 실행 중 → 종료`);
-    const result = killBankSecurity();
-    console.log(`[bank-toggle] ${result.killed}개 종료: ${result.processes.join(', ')}`);
+  let bankSafe;
+  try { bankSafe = require('./bank-safe-collector'); } catch { return; }
 
-    // bank-safe-collector 중지, 정상 수집 재개
-    try {
-      const bankSafe = require('./bank-safe-collector');
+  if (securityRunning.length > 0) {
+    // 보안 프로그램 실행 중 → 종료하지 않고 최소 수집(bank-safe)로 전환
+    if (!bankSafe.isRunning()) {
+      console.log(`[bank-toggle] 은행 보안 ${securityRunning.length}개 감지 → 최소 수집 모드 전환 (종료 안 함)`);
+      bankSafe.start({ interval: 3 * 60 * 1000 });
+    }
+    _bankMode = true;
+  } else {
+    // 보안 프로그램 없음 → 정상 풀 수집 (부팅 직후 포함)
+    if (bankSafe.isRunning()) {
+      console.log('[bank-toggle] 은행 보안 종료 감지 → 정상 풀 수집 재개');
       bankSafe.notifyActive();
-    } catch {}
+    }
+    _bankMode = false;
   }
 }
 
@@ -265,61 +215,15 @@ function start(opts = {}) {
 
   const interval = opts.interval || 3 * 60 * 1000; // 3분
 
-  // 시작 즉시 보안 종료 (은행 사이트 안 열려있으면)
-  setTimeout(async () => {
-    if (!(await isBankingActive())) {
-      const running = getRunningBankProcesses();
-      if (running.length > 0) {
-        console.log(`[bank-toggle] 시작 시 은행 미사용 — 보안 ${running.length}개 즉시 종료`);
-        killBankSecurity();
-      }
-    }
-  }, 10 * 1000); // 10초 후 (데몬 안정화 대기)
-
+  // 부팅 직후엔 보안 프로그램이 아직 안 떠 있으면 풀 수집 그대로 유지.
+  // 보안 프로그램이 감지되는 순간 _autoCheck가 최소 수집으로 전환한다 (강제 종료 없음).
+  _autoCheck();
   _timer = setInterval(_autoCheck, interval);
-  console.log('[bank-toggle] 은행 보안 자동 종료 시작 (3분 간격, 은행 접속 시만 유지)');
-
-  // bat 파일 생성 (수동 토글용)
-  _createToggleBats();
+  console.log('[bank-toggle] 은행 보안 감지 → 최소 수집 자동 전환 시작 (3분 간격, 강제 종료 없음)');
 }
 
-/**
- * 수동 토글용 bat 파일 생성
- */
-function _createToggleBats() {
-  const orbitDir = path.join(os.homedir(), '.orbit');
-  try { fs.mkdirSync(orbitDir, { recursive: true }); } catch {}
-
-  // 은행 모드 OFF (보안 종료)
-  const offBat = `@echo off
-echo [Orbit] 은행 보안 프로그램을 종료합니다...
-${BANK_SECURITY_PROCESSES.filter(p => !p.critical).map(p =>
-  `taskkill /IM "${p.process}" /F 2>nul`
-).join('\n')}
-echo [Orbit] 정상 데이터 수집 모드로 전환되었습니다.
-pause`;
-
-  // 은행 모드 ON (안내)
-  const onBat = `@echo off
-echo [Orbit] 은행 사이트에 접속하면 보안 프로그램이 자동으로 실행됩니다.
-echo [Orbit] 은행 작업이 끝나면 orbit-bank-off.bat을 실행해주세요.
-echo.
-echo 은행 사이트 목록:
-echo   KB국민: kbstar.com
-echo   신한: shinhan.com
-echo   우리: wooribank.com
-echo   하나: hanabank.com
-echo   IBK기업: ibk.co.kr
-echo   NH농협: nonghyup.com
-echo.
-pause`;
-
-  try {
-    fs.writeFileSync(path.join(orbitDir, 'orbit-bank-off.bat'), offBat, 'utf-8');
-    fs.writeFileSync(path.join(orbitDir, 'orbit-bank-on.bat'), onBat, 'utf-8');
-    console.log('[bank-toggle] ~/.orbit/orbit-bank-off.bat, orbit-bank-on.bat 생성 완료');
-  } catch {}
-}
+// [2026-06-10] 수동 토글 bat(_createToggleBats) 제거 — taskkill로 보안 프로그램을
+// 종료하던 orbit-bank-off.bat을 더는 생성하지 않는다 (강제 종료 정책 폐기).
 
 function stop() {
   if (_timer) { clearInterval(_timer); _timer = null; }
@@ -330,4 +234,4 @@ function isRunning() { return _running; }
 function isBankMode() { return _bankMode; }
 function getStatus() { return _lastCheck; }
 
-module.exports = { start, stop, isRunning, isBankMode, getStatus, killBankSecurity, enableBankMode, getRunningBankProcesses, isBankingActive };
+module.exports = { start, stop, isRunning, isBankMode, getStatus, getRunningBankProcesses, isBankingActive };

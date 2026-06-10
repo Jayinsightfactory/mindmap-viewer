@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ORBIT 도입 테스트 체크리스트 (PoC 4주)</title>
+<style>
+  :root{--bg:#0d1117;--panel:#161b22;--border:#30363d;--text:#e6edf3;--dim:#8b949e;--teal:#39d2c0;--green:#3fb950;--orange:#ffa657}
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:var(--bg);color:var(--text);font-family:'Segoe UI','Malgun Gothic',sans-serif;line-height:1.6}
+  .wrap{max-width:860px;margin:0 auto;padding:40px 24px 80px}
+  .logo{font-size:12px;letter-spacing:5px;color:var(--teal);font-weight:700}
+  h1{font-size:30px;margin:10px 0 6px}
+  .sub{color:var(--dim);margin-bottom:10px}
+  .progress-wrap{position:sticky;top:0;background:var(--bg);padding:14px 0;z-index:5;border-bottom:1px solid var(--border)}
+  .bar{height:10px;background:var(--panel);border-radius:6px;overflow:hidden;border:1px solid var(--border)}
+  .bar>div{height:100%;width:0;background:linear-gradient(90deg,var(--teal),var(--green));transition:.3s}
+  .pct{font-size:13px;color:var(--dim);margin-top:6px}
+  section{margin-top:34px;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:24px}
+  section h2{font-size:18px;margin-bottom:4px}
+  section .week{font-size:12px;color:var(--orange);font-weight:700}
+  section .goal{font-size:13.5px;color:var(--dim);margin-bottom:14px}
+  label.item{display:flex;gap:12px;align-items:flex-start;padding:11px 8px;border-radius:8px;cursor:pointer;font-size:14.5px}
+  label.item:hover{background:rgba(57,210,192,.06)}
+  label.item input{margin-top:5px;accent-color:var(--teal);width:16px;height:16px;flex-shrink:0}
+  label.item .note{display:block;font-size:12.5px;color:var(--dim)}
+  label.item.done span.t{color:var(--dim);text-decoration:line-through}
+  .pass{margin-top:40px;border:1px solid var(--green);border-radius:12px;padding:24px;text-align:center;display:none}
+  .pass.show{display:block}
+  .pass b{color:var(--green);font-size:18px}
+  .toolbar{margin-top:14px;font-size:13px}
+  .toolbar button{background:transparent;border:1px solid var(--border);color:var(--dim);border-radius:6px;padding:5px 14px;cursor:pointer;margin-right:8px}
+  a{color:var(--teal)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="logo">O R B I T · PILOT</div>
+  <h1>도입 테스트 체크리스트 — PoC 4주</h1>
+  <p class="sub">도입사와 함께 보면서 진행하는 검증 시나리오입니다. 체크 상태는 이 브라우저에 저장됩니다.</p>
+  <div class="toolbar"><button id="clearAll">전체 초기화</button><a href="solution.html">← 솔루션 데모로</a></div>
+
+  <div class="progress-wrap"><div class="bar"><div id="fill"></div></div><div class="pct" id="pct">0% 완료</div></div>
+
+  <section>
+    <span class="week">WEEK 1</span><h2>1. 설치 · 동의 · 보안</h2>
+    <p class="goal">목표: 동의 기반으로 안전하게 설치되고, 민감 상황에서 수집이 멈추는지 확인</p>
+    <label class="item"><input type="checkbox" data-k="s1a"><span><span class="t">파일럿 직원(2~5명)에게 수집 항목·목적 안내 후 <b>서면/전자 동의</b> 수령</span><span class="note">동의서 양식은 도입 패키지에 포함 — 동의 없는 PC에는 설치하지 않음</span></span></label>
+    <label class="item"><input type="checkbox" data-k="s1b"><span><span class="t">Orbit Agent 설치 후 재부팅 시 자동 시작 확인</span></span></label>
+    <label class="item"><input type="checkbox" data-k="s1c"><span><span class="t">은행 사이트/보안 프로그램 실행 시 <b>수집 자동 일시정지</b> 동작 확인</span><span class="note">트레이 아이콘 상태 변화로 확인</span></span></label>
+    <label class="item"><input type="checkbox" data-k="s1d"><span><span class="t">키 입력 원문이 서버로 전송되지 않음을 확인 (로컬 통계 변환)</span><span class="note">전송 로그 점검 — 통계/이벤트만 전송</span></span></label>
+    <label class="item"><input type="checkbox" data-k="s1e"><span><span class="t">네트워크 차단 상태에서 작업 → 복구 시 누락 없이 재전송(오프라인 버퍼) 확인</span></span></label>
+  </section>
+
+  <section>
+    <span class="week">WEEK 2</span><h2>2. 관찰 — 업무량이 정확히 보이는가</h2>
+    <p class="goal">목표: 도입사 담당자가 "내 하루가 맞게 기록됐다"고 인정하는 것</p>
+    <label class="item"><input type="checkbox" data-k="s2a"><span><span class="t">하루 업무 후 Orbit Map에서 본인 타임라인 확인 — 주요 작업이 빠짐없이 기록됐는가</span></span></label>
+    <label class="item"><input type="checkbox" data-k="s2b"><span><span class="t">앱 전환·문서 작업·웹 사용이 이벤트로 구분되어 보이는가</span></span></label>
+    <label class="item"><input type="checkbox" data-k="s2c"><span><span class="t">반복 업무(예: 주문 입력, 견적 작성)가 패턴으로 묶여 보이는가</span></span></label>
+    <label class="item"><input type="checkbox" data-k="s2d"><span><span class="t">업무량 통계(시간/건수)가 담당자 체감과 ±20% 이내인가</span></span></label>
+  </section>
+
+  <section>
+    <span class="week">WEEK 3</span><h2>3. 학습 — 우리 회사를 배우는가</h2>
+    <p class="goal">목표: 도입사의 거래처·품목·용어가 매핑 자산으로 쌓이는 것</p>
+    <label class="item"><input type="checkbox" data-k="s3a"><span><span class="t">도입사 거래처/품목 마스터를 연동하거나 등록</span></span></label>
+    <label class="item"><input type="checkbox" data-k="s3b"><span><span class="t">실제 주문/요청 텍스트 20건을 붙여넣기 → AI 해석 정확도 측정 (목표: 80%+)</span><span class="note">틀린 건은 1회 교정 → 같은 패턴 재입력 시 학습 반영 확인</span></span></label>
+    <label class="item"><input type="checkbox" data-k="s3c"><span><span class="t">교정한 매핑이 다음 해석에 즉시 적용되는지 확인 (학습 루프)</span></span></label>
+    <label class="item"><input type="checkbox" data-k="s3d"><span><span class="t">Orbit Map 그래프에서 "누가-무엇을-어떤 순서로" 워크플로가 읽히는가</span></span></label>
+  </section>
+
+  <section>
+    <span class="week">WEEK 4</span><h2>4. 실행 + 컨펌 — 루프가 닫히는가</h2>
+    <p class="goal">목표: 에이전트 작업 → 사람 승인 → 반영의 전체 루프 1건 완주</p>
+    <label class="item"><input type="checkbox" data-k="s4a"><span><span class="t">에이전트가 작성한 작업이 <b>검증 대기</b> 상태로 만들어지는가 (즉시 반영 아님)</span></span></label>
+    <label class="item"><input type="checkbox" data-k="s4b"><span><span class="t">담당자 Orbit Talk에 컨펌 카드가 도착하는가 (출처·신뢰도 표시 포함)</span></span></label>
+    <label class="item"><input type="checkbox" data-k="s4c"><span><span class="t">승인 → 실제 시스템 반영 / 반려 → 미반영+사유 기록 확인</span></span></label>
+    <label class="item"><input type="checkbox" data-k="s4d"><span><span class="t">전 과정이 감사 로그에 남는가 (누가 요청, AI가 무엇을, 누가 승인)</span></span></label>
+    <label class="item"><input type="checkbox" data-k="s4e"><span><span class="t">기존 방식 대비 처리 시간 측정 — 절감 효과 수치화 (보고서용)</span></span></label>
+  </section>
+
+  <div class="pass" id="pass"><b>✅ PoC 통과 기준 충족!</b><p style="color:var(--dim);margin-top:6px">측정된 수치(해석 정확도·시간 절감)를 도입 보고서에 정리하고 본 계약 범위를 협의합니다.</p></div>
+</div>
+
+<script>
+(function(){
+  const KEY='orbit-pilot-v1';
+  const boxes=[...document.querySelectorAll('input[type=checkbox]')];
+  const saved=JSON.parse(localStorage.getItem(KEY)||'{}');
+  boxes.forEach(b=>{ b.checked=!!saved[b.dataset.k]; sync(b); b.addEventListener('change',()=>{saved[b.dataset.k]=b.checked;localStorage.setItem(KEY,JSON.stringify(saved));sync(b);update();}); });
+  function sync(b){ b.closest('label').classList.toggle('done',b.checked); }
+  function update(){
+    const n=boxes.filter(b=>b.checked).length, p=Math.round(n/boxes.length*100);
+    document.getElementById('fill').style.width=p+'%';
+    document.getElementById('pct').textContent=p+'% 완료 ('+n+'/'+boxes.length+')';
+    document.getElementById('pass').classList.toggle('show',p===100);
+  }
+  document.getElementById('clearAll').onclick=()=>{ localStorage.removeItem(KEY); boxes.forEach(b=>{b.checked=false;sync(b);}); update(); };
+  update();
+})();
+</script>
+</body>
+</html>

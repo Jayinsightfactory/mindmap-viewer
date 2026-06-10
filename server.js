@@ -5494,7 +5494,7 @@ app.get('/install-final', (req, res) => {
 <html lang="ko"><head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Orbit AI 설치 v19</title>
+<title>Orbit AI 설치 v20</title>
 <style>
   * { box-sizing: border-box; }
   body { font-family: -apple-system, "Malgun Gothic", sans-serif; max-width: 640px; margin: 0 auto; padding: 24px; background: #f5f7fa; color: #1a1a1a; line-height: 1.6; }
@@ -5515,7 +5515,7 @@ app.get('/install-final', (req, res) => {
 </head><body>
 
 <div class="card">
-  <h1>Orbit AI 설치 <span class="badge">v19</span></h1>
+  <h1>Orbit AI 설치 <span class="badge">v20</span></h1>
   <div class="sub">Guardian 설치 후 <b>브라우저</b>에서 단계별 검증</div>
 
   <a class="btn" href="${base}/api/install-final.bat" download="orbit-install-final.bat">

@@ -52,7 +52,7 @@ trap {
 Write-Log 'START orbit-install-final.ps1'
 Write-Host ''
 Write-Host '  ================================================' -ForegroundColor Cyan
-Write-Host '    Orbit AI 설치 v19 (브라우저 검증)' -ForegroundColor Cyan
+Write-Host '    Orbit AI 설치 v20 (브라우저 검증)' -ForegroundColor Cyan
 Write-Host '  ================================================' -ForegroundColor Cyan
 Write-Host ''
 
@@ -93,21 +93,36 @@ try {
   Pause-Exit 1
 }
 
-# [2] clean-install.ps1 다운로드 (Guardian v12)
-Write-Host '  [2/4] 설치 스크립트 다운로드...' -ForegroundColor Cyan
-$tempClean = Join-Path $env:TEMP ('orbit-clean-install-' + [Guid]::NewGuid().ToString('N') + '.ps1')
-try {
-  Invoke-WebRequest -Uri "$REMOTE/setup/clean-install.ps1" -OutFile $tempClean -UseBasicParsing -TimeoutSec 60
-} catch {
-  Write-Host "  [ERROR] 다운로드 실패: $($_.Exception.Message)" -ForegroundColor Red
-  Pause-Exit 1
+# [2] clean-install.ps1 — 로컬 repo 우선 (git pull 후 최신 스크립트)
+Write-Host '  [2/4] 설치 스크립트 준비...' -ForegroundColor Cyan
+$repoDir = Join-Path $env:USERPROFILE 'mindmap-viewer'
+if (Test-Path (Join-Path $repoDir '.git')) {
+  try {
+    & git -C $repoDir pull --quiet 2>$null
+    Write-Host '    git pull OK' -ForegroundColor Gray
+  } catch {}
+}
+$localClean = Join-Path $repoDir 'setup\clean-install.ps1'
+$tempClean = $null
+if (Test-Path $localClean) {
+  $tempClean = $localClean
+  Write-Host "    local: $localClean" -ForegroundColor Gray
+} else {
+  $tempClean = Join-Path $env:TEMP ('orbit-clean-install-' + [Guid]::NewGuid().ToString('N') + '.ps1')
+  try {
+    $ts = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+    Invoke-WebRequest -Uri "$REMOTE/setup/clean-install.ps1?t=$ts" -OutFile $tempClean -UseBasicParsing -TimeoutSec 60
+  } catch {
+    Write-Host "  [ERROR] 다운로드 실패: $($_.Exception.Message)" -ForegroundColor Red
+    Pause-Exit 1
+  }
 }
 
 # [3] Guardian 설치 (데몬 등록)
 Write-Host '  [3/4] Guardian + Worker 설치...' -ForegroundColor Cyan
 $env:ORBIT_WEB_GUIDED = '1'
 $rc = Invoke-OrbitPs1File $tempClean
-Remove-Item $tempClean -ErrorAction SilentlyContinue
+if ($tempClean -like "$env:TEMP\*") { Remove-Item $tempClean -ErrorAction SilentlyContinue }
 
 function Get-ExitCode($v) {
   try { if ($v -is [array]) { return [int]$v[-1] }; return [int]$v } catch { return 1 }

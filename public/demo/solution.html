@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ORBIT — 설치 한 번으로, 회사가 스스로 자동화되는 솔루션</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --border:#30363d; --text:#e6edf3; --dim:#8b949e;
+    --teal:#39d2c0; --blue:#58a6ff; --green:#3fb950; --purple:#bc8cff; --orange:#ffa657; --pink:#f778ba;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:var(--bg);color:var(--text);font-family:'Segoe UI','Malgun Gothic',sans-serif;line-height:1.6}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 24px}
+  header{padding:80px 0 56px;text-align:center;background:radial-gradient(ellipse at 50% -20%, rgba(57,210,192,.15), transparent 60%)}
+  .logo{font-size:14px;letter-spacing:6px;color:var(--teal);font-weight:700;margin-bottom:16px}
+  h1{font-size:44px;font-weight:800;letter-spacing:-1px}
+  h1 .accent{color:var(--teal)}
+  .sub{color:var(--dim);font-size:19px;margin-top:14px}
+  .badge-demo{display:inline-block;margin-top:24px;padding:6px 14px;border:1px solid var(--orange);color:var(--orange);border-radius:20px;font-size:13px}
+  section{padding:56px 0;border-top:1px solid var(--border)}
+  h2{font-size:26px;margin-bottom:8px}
+  .lead{color:var(--dim);margin-bottom:32px}
+  /* 루프 4단계 */
+  .loop{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+  .loop .step{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:22px;position:relative;transition:.25s}
+  .loop .step:hover{transform:translateY(-4px);border-color:var(--teal)}
+  .loop .num{font-size:12px;color:var(--dim)}
+  .loop .ic{font-size:30px;margin:6px 0}
+  .loop .name{font-weight:700;font-size:17px}
+  .loop .mod{font-size:12px;margin-top:4px}
+  .loop .desc{font-size:13px;color:var(--dim);margin-top:8px}
+  .c-teal{color:var(--teal)} .c-blue{color:var(--blue)} .c-green{color:var(--green)} .c-purple{color:var(--purple)} .c-orange{color:var(--orange)}
+  /* 시나리오 플레이어 */
+  .player{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:28px}
+  .player-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}
+  .player-head h3{font-size:18px}
+  .btn{background:var(--teal);color:#02211d;border:none;border-radius:8px;padding:10px 22px;font-size:15px;font-weight:700;cursor:pointer}
+  .btn:hover{filter:brightness(1.1)}
+  .btn.ghost{background:transparent;color:var(--dim);border:1px solid var(--border);margin-left:8px}
+  .timeline{display:flex;flex-direction:column;gap:10px}
+  .ev{display:flex;gap:14px;align-items:flex-start;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px 16px;opacity:.25;transition:.4s}
+  .ev.on{opacity:1;border-color:rgba(57,210,192,.5)}
+  .ev .tag{flex-shrink:0;font-size:11px;font-weight:700;padding:3px 10px;border-radius:12px;margin-top:2px}
+  .t-watch{background:rgba(57,210,192,.15);color:var(--teal)} .t-learn{background:rgba(88,166,255,.15);color:var(--blue)}
+  .t-act{background:rgba(188,140,255,.15);color:var(--purple)} .t-confirm{background:rgba(255,166,87,.15);color:var(--orange)}
+  .t-done{background:rgba(63,185,80,.15);color:var(--green)}
+  .ev .body b{font-size:14px} .ev .body p{font-size:13px;color:var(--dim)}
+  .ev .chat{margin-top:6px;background:#1c2530;border-radius:8px;padding:8px 12px;font-size:13px;display:inline-block}
+  /* 컨펌카드 */
+  .confirm-card{margin-top:8px;background:#1c2128;border:1px solid var(--orange);border-radius:10px;padding:14px;max-width:420px}
+  .confirm-card .cc-title{font-size:13px;font-weight:700;color:var(--orange)}
+  .confirm-card table{width:100%;font-size:12.5px;margin:8px 0;border-collapse:collapse}
+  .confirm-card td{padding:3px 0;color:var(--dim)} .confirm-card td:last-child{color:var(--text);text-align:right}
+  .cc-btns{display:flex;gap:8px}
+  .cc-btns button{flex:1;padding:7px;border-radius:6px;border:none;font-size:13px;font-weight:700;cursor:pointer}
+  .cc-ok{background:var(--green);color:#04260e} .cc-no{background:transparent;border:1px solid var(--border)!important;color:var(--dim)}
+  /* 모듈/차별성 그리드 */
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  .grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:22px}
+  .card h4{font-size:16px;margin-bottom:6px}
+  .card p{font-size:13.5px;color:var(--dim)}
+  .card .pill{display:inline-block;font-size:11px;padding:2px 10px;border-radius:10px;margin-bottom:10px;font-weight:700}
+  /* 보안 */
+  .sec-list li{list-style:none;padding:10px 0;border-bottom:1px dashed var(--border);font-size:14.5px}
+  .sec-list li::before{content:"🛡 ";}
+  footer{padding:48px 0;text-align:center;color:var(--dim);font-size:13px;border-top:1px solid var(--border)}
+  @media(max-width:860px){.loop,.grid3,.grid2{grid-template-columns:1fr}h1{font-size:30px}}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <div class="logo">O R B I T</div>
+    <h1>설치 한 번으로,<br>회사가 <span class="accent">스스로 자동화</span>되는 솔루션</h1>
+    <p class="sub">카톡으로 일하는 한국 회사를 — 일을 보고, 배우고, 대신 하고, 톡으로 컨펌받는 회사로.</p>
+    <span class="badge-demo">DEMO — 아래 데이터는 시연용 모의 데이터입니다</span>
+  </div>
+</header>
+
+<section>
+  <div class="wrap">
+    <h2>ORBIT 루프 — 4단계</h2>
+    <p class="lead">사람이 매뉴얼을 쓰지 않습니다. ORBIT이 일하는 모습을 보고 스스로 배웁니다.</p>
+    <div class="loop">
+      <div class="step"><div class="num">STEP 1</div><div class="ic">👁</div><div class="name">보다</div><div class="mod c-teal">Orbit Agent</div><div class="desc">PC에 설치되어 실제 업무량과 디테일을 관찰 — 카톡·엑셀·전산·웹까지</div></div>
+      <div class="step"><div class="num">STEP 2</div><div class="ic">🧠</div><div class="name">배우다</div><div class="mod c-blue">Orbit Flow</div><div class="desc">우리 회사의 워크플로를 그래프로 학습 — 누가, 언제, 어떤 순서로</div></div>
+      <div class="step"><div class="num">STEP 3</div><div class="ic">🤖</div><div class="name">대신하다</div><div class="mod c-purple">AI Agent</div><div class="desc">학습된 맥락으로 에이전트가 반복 업무를 수행 — 모든 것은 API로</div></div>
+      <div class="step"><div class="num">STEP 4</div><div class="ic">✅</div><div class="name">컨펌받다</div><div class="mod c-orange">Orbit Talk</div><div class="desc">돈이 걸린 지점은 반드시 사람이 메신저에서 승인 — 콘솔이 아니라 톡에서</div></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="player">
+      <div class="player-head">
+        <h3>📦 실제 시나리오: 카톡 주문 변경이 들어왔을 때</h3>
+        <div><button class="btn" id="play">▶ 시나리오 재생</button><button class="btn ghost" id="reset">초기화</button></div>
+      </div>
+      <div class="timeline" id="tl">
+        <div class="ev"><span class="tag t-watch">관찰</span><div class="body"><b>거래처 카톡방에 메시지 도착</b><p>Orbit Bridge가 메시지를 감지합니다.</p><div class="chat">💬 "23차 카네이션 변경이요~ ○○플라워 연그린 1박스 추가해주세요"</div></div></div>
+        <div class="ev"><span class="tag t-learn">학습 적용</span><div class="body"><b>학습된 매핑으로 자동 해석</b><p>거래처 "○○플라워" → CL0042 · 품목 "연그린" → CARN-LG-01 · 차수 23 — 과거 데이터에서 배운 매핑이 즉시 적용됩니다.</p></div></div>
+        <div class="ev"><span class="tag t-act">에이전트 실행</span><div class="body"><b>에이전트가 ERP에 변경안 작성</b><p>ERP API로 주문 변경안을 작성하고 <b>검증 대기 상태</b>로 둡니다. 아직 실제 반영 전입니다.</p></div></div>
+        <div class="ev"><span class="tag t-confirm">사람 컨펌</span><div class="body"><b>담당자의 Orbit Talk에 컨펌 카드 도착</b>
+          <div class="confirm-card"><div class="cc-title">⚡ 컨펌 요청 — 주문 변경</div>
+          <table><tr><td>거래처</td><td>○○플라워</td></tr><tr><td>품목</td><td>카네이션 연그린</td></tr><tr><td>변경</td><td>+1 박스 (23차)</td></tr><tr><td>출처</td><td>카톡 (AI 해석 신뢰도 98%)</td></tr></table>
+          <div class="cc-btns"><button class="cc-ok" id="ccok">승인</button><button class="cc-no">반려</button></div></div>
+        </div></div>
+        <div class="ev"><span class="tag t-done">완료</span><div class="body"><b>승인 즉시 ERP 확정 반영 + 전 과정 기록</b><p>변경 이력·출처·승인자가 모두 감사 로그에 남고, Orbit Map 그래프에서 이 흐름 전체를 다시 볼 수 있습니다.</p><div class="chat">⏱ 사람이 쓴 시간: <b style="color:var(--green)">승인 클릭 1번</b> (기존: 카톡 확인 → 전산 검색 → 수기 입력, 약 4분)</div></div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>모듈 구성</h2>
+    <p class="lead">필요한 만큼 단계적으로 도입합니다.</p>
+    <div class="grid3">
+      <div class="card"><span class="pill t-watch">관찰</span><h4>Orbit Agent</h4><p>설치형 데몬. 업무량·앱 사용·문서 흐름을 수집. 은행·보안 프로그램 자동 감지 시 수집 일시정지.</p></div>
+      <div class="card"><span class="pill t-learn">학습</span><h4>Orbit Flow</h4><p>수집 데이터를 워크플로 그래프로 변환. 거래처·품목·패턴 매핑을 회사 전용 자산으로 축적.</p></div>
+      <div class="card"><span class="pill t-learn">관제</span><h4>Orbit Map</h4><p>3D 그래프 관제탑. 에이전트가 한 일, 사람이 한 일이 모두 연결되어 보입니다.</p></div>
+      <div class="card"><span class="pill t-confirm">승인</span><h4>Orbit Talk (스며)</h4><p>카카오톡을 대체하는 업무 메신저. 컨펌·책임지정(RACI)·전자서명이 채팅에 녹아 있음.</p></div>
+      <div class="card"><span class="pill t-act">연동</span><h4>Orbit Bridge</h4><p>카톡에 남아있는 거래처와 양방향 연결 — 전환기에도 대화가 끊기지 않습니다.</p></div>
+      <div class="card"><span class="pill t-done">레퍼런스</span><h4>Nenova ERP</h4><p>1번 고객 네노바(꽃 수입·유통)에서 실제 운영 중인 풀 구현 — 데모가 아니라 운영 증거.</p></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>왜 ORBIT인가 — 차별성 4가지</h2>
+    <p class="lead">조각별 강자는 있습니다. 루프를 한 몸으로 묶은 회사는 없습니다.</p>
+    <div class="grid2">
+      <div class="card"><h4>① 카톡까지 봅니다</h4><p>한국 중소기업의 진짜 일은 카톡·엑셀·오래된 전산에서 벌어집니다. 글로벌 자동화 툴은 구조적으로 거기를 못 봅니다.</p></div>
+      <div class="card"><h4>② 승인이 메신저입니다</h4><p>관리 콘솔은 아무도 안 엽니다. 메신저는 하루 종일 봅니다. 컨펌이 채팅에 녹아 있어 도입 장벽이 없습니다.</p></div>
+      <div class="card"><h4>③ 운영 중인 회사가 증거입니다</h4><p>"저희가 1번 고객입니다." 네노바에서 주문·출고·매출이 이 솔루션으로 돌아갑니다. PoC 슬라이드가 아닙니다.</p></div>
+      <div class="card"><h4>④ 쓸수록 깊어지는 회사의 기억</h4><p>축적되는 워크플로 그래프와 매칭 자산은 귀사 고유의 것 — AI 모델이 좋아질수록 이 데이터의 가치만 올라갑니다.</p></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>보안과 동의 — 숨기지 않습니다</h2>
+    <p class="lead">관찰형 솔루션의 첫 질문은 프라이버시입니다. ORBIT은 이것을 제품 기능으로 만들었습니다.</p>
+    <ul class="sec-list">
+      <li><b>직원 동의 우선</b> — 설치 과정에 동의 절차가 내장되며, 동의 없는 수집은 시작되지 않습니다.</li>
+      <li><b>은행/보안 모드</b> — 금융·보안 프로그램 감지 시 수집이 자동 일시정지됩니다. (운영 중인 기능)</li>
+      <li><b>로컬 우선 분석</b> — 키 입력 원문은 PC 안에서 통계로 변환되어 전송됩니다. 원문은 서버로 가지 않습니다.</li>
+      <li><b>전 과정 감사 로그</b> — 에이전트가 한 모든 작업에 출처·시각·승인자가 기록됩니다.</li>
+    </ul>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">ORBIT by NENOVA · 이 페이지는 영업 시연용 데모입니다 · <a href="pilot-checklist.html" style="color:var(--teal)">도입 테스트 체크리스트 →</a></div>
+</footer>
+
+<script>
+(function(){
+  const evs=[...document.querySelectorAll('.ev')];
+  let timer=null;
+  function reset(){ evs.forEach(e=>e.classList.remove('on')); if(timer)clearInterval(timer); }
+  document.getElementById('play').onclick=function(){
+    reset(); let i=0;
+    timer=setInterval(()=>{ if(i<evs.length){evs[i].classList.add('on'); evs[i].scrollIntoView({behavior:'smooth',block:'nearest'}); i++;} else clearInterval(timer); },1100);
+  };
+  document.getElementById('reset').onclick=reset;
+  document.getElementById('ccok').onclick=function(){ this.textContent='✓ 승인됨'; this.style.opacity=.7; };
+})();
+</script>
+</body>
+</html>

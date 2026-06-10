@@ -40,29 +40,50 @@ function Ensure-OrbitPs1Bom([string]$Path) {
     return $true
 }
 
+function Read-OrbitScriptUtf8([string]$Path) {
+    $raw = [IO.File]::ReadAllBytes($Path)
+    if ($raw.Length -ge 3 -and $raw[0] -eq 0xEF -and $raw[1] -eq 0xBB -and $raw[2] -eq 0xBF) {
+        return [Text.Encoding]::UTF8.GetString($raw, 3, $raw.Length - 3)
+    }
+    return [Text.Encoding]::UTF8.GetString($raw)
+}
+
+function Test-OrbitScriptContent([string]$Content) {
+    if (-not $Content) { return $false }
+    $t = $Content.TrimStart()
+    if ($t.StartsWith('<') -or $t.StartsWith('{')) { return $false }
+    return ($t.StartsWith('#') -or $t.StartsWith('$'))
+}
+
 function Write-GuardianScript {
     param([string]$TemplateName, [string]$OutPath, [hashtable]$Replace)
-    $candidates = @(
-        (Join-Path $DIR "setup\$TemplateName"),
-        (if ($PSScriptRoot) { Join-Path $PSScriptRoot $TemplateName } else { $null })
-    ) | Where-Object { $_ -and (Test-Path $_) }
+    $candidates = @()
+    $p1 = Join-Path $DIR "setup\$TemplateName"
+    if (Test-Path $p1) { $candidates += $p1 }
+    if ($PSScriptRoot) {
+        $p2 = Join-Path $PSScriptRoot $TemplateName
+        if (Test-Path $p2) { $candidates += $p2 }
+    }
     $content = $null
     foreach ($p in $candidates) {
         try {
-            $raw = [IO.File]::ReadAllBytes($p)
-            if ($raw.Length -ge 3 -and $raw[0] -eq 0xEF -and $raw[1] -eq 0xBB -and $raw[2] -eq 0xBF) {
-                $content = [Text.Encoding]::UTF8.GetString($raw, 3, $raw.Length - 3)
-            } else {
-                $content = [Text.Encoding]::UTF8.GetString($raw)
-            }
-            break
+            $content = Read-OrbitScriptUtf8 $p
+            if (Test-OrbitScriptContent $content) { break }
+            $content = $null
         } catch {}
     }
     if (-not $content) {
         try {
-            $content = (Invoke-WebRequest -Uri "$REMOTE/setup/$TemplateName" -UseBasicParsing -TimeoutSec 30).Content
+            $tmpTpl = Join-Path $env:TEMP ("orbit-tpl-" + $TemplateName)
+            Invoke-WebRequest -Uri "$REMOTE/setup/$TemplateName" -OutFile $tmpTpl -UseBasicParsing -TimeoutSec 30 | Out-Null
+            Ensure-OrbitPs1Bom $tmpTpl | Out-Null
+            $content = Read-OrbitScriptUtf8 $tmpTpl
+            if (-not (Test-OrbitScriptContent $content)) {
+                Log "[ERROR] Invalid template download: $TemplateName"
+                return $false
+            }
         } catch {
-            Log "[ERROR] Guardian template missing: $TemplateName"
+            Log "[ERROR] Guardian template missing: $TemplateName — $($_.Exception.Message)"
             return $false
         }
     }
@@ -71,6 +92,7 @@ function Write-GuardianScript {
     }
     $utf8 = New-Object System.Text.UTF8Encoding($true)
     [IO.File]::WriteAllText($OutPath, $content, $utf8)
+    Log "Guardian script written: $OutPath"
     return $true
 }
 
@@ -373,46 +395,33 @@ while (`$true) {
 
 $psExe = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
 if (-not (Test-Path $psExe)) { $psExe = 'powershell.exe' }
-$taskSettings = New-ScheduledTaskSettingsSet -Hidden -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
-    -StartWhenAvailable -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 5 -RestartInterval (New-TimeSpan -Minutes 1)
-$taskPrincipal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Limited
 
-# OrbitDaemon — Worker supervisor loop
-try {
-    $actDaemon = New-ScheduledTaskAction -Execute $psExe -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$daemonScript`""
-    $trigDaemon = New-ScheduledTaskTrigger -AtLogOn
-    Register-ScheduledTask -TaskName "OrbitDaemon" -Action $actDaemon -Trigger $trigDaemon -Settings $taskSettings -Principal $taskPrincipal -Force -ErrorAction Stop | Out-Null
-    Log "schtasks OrbitDaemon (Guardian worker loop)"
-} catch {
-    Log "[WARN] OrbitDaemon schtasks 실패: $_"
+function Register-OrbitSchTask {
+    param([string]$Name, [string]$ScriptPath, [string]$Schedule = 'ONLOGON', [int]$MinuteInterval = 0)
+    $tr = "`"$psExe`" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$ScriptPath`""
+    schtasks /Delete /TN $Name /F 2>$null | Out-Null
+    if ($Schedule -eq 'MINUTE' -and $MinuteInterval -gt 0) {
+        schtasks /Create /TN $Name /TR $tr /SC MINUTE /MO $MinuteInterval /RL LIMITED /F 2>&1 | Out-Null
+    } else {
+        schtasks /Create /TN $Name /TR $tr /SC $Schedule /RL LIMITED /F 2>&1 | Out-Null
+    }
+    if ($LASTEXITCODE -eq 0) { Log "schtasks $Name OK" } else { Log "[WARN] schtasks $Name fail code=$LASTEXITCODE" }
 }
 
-# OrbitWatchdog — immortal supervisor (commands + crash recovery)
-try {
-    $actWatch = New-ScheduledTaskAction -Execute $psExe -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$watchdogScript`""
-    $trigWatch = @(
-        (New-ScheduledTaskTrigger -AtLogOn),
-        (New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 30) -RepetitionDuration ([TimeSpan]::MaxValue))
-    )
-    Register-ScheduledTask -TaskName "OrbitWatchdog" -Action $actWatch -Trigger $trigWatch -Settings $taskSettings -Principal $taskPrincipal -Force -ErrorAction Stop | Out-Null
-    Log "schtasks OrbitWatchdog (30min + logon)"
-} catch {
-    Log "[WARN] OrbitWatchdog schtasks 실패: $_"
-}
+Register-OrbitSchTask -Name 'OrbitDaemon' -ScriptPath $daemonScript
+Register-OrbitSchTask -Name 'OrbitWatchdog' -ScriptPath $watchdogScript
+Register-OrbitSchTask -Name 'OrbitWatchdog30' -ScriptPath $watchdogScript -Schedule 'MINUTE' -MinuteInterval 30
 
-# OrbitCodeSync — git pull even if Worker + Guardian loop both dead
-try {
-    $codeSyncCmd = "cd `"$DIR`"; git remote set-url origin '$REPO' 2>`$null; git fetch origin 2>`$null; git reset --hard origin/main 2>`$null"
-    $actSync = New-ScheduledTaskAction -Execute $psExe -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -Command `"$codeSyncCmd`""
-    $trigSync = @(
-        (New-ScheduledTaskTrigger -AtLogOn),
-        (New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(2) -RepetitionInterval (New-TimeSpan -Minutes 30) -RepetitionDuration ([TimeSpan]::MaxValue))
-    )
-    Register-ScheduledTask -TaskName "OrbitCodeSync" -Action $actSync -Trigger $trigSync -Settings $taskSettings -Principal $taskPrincipal -Force -ErrorAction Stop | Out-Null
-    Log "schtasks OrbitCodeSync (30min git pull)"
-} catch {
-    Log "[WARN] OrbitCodeSync schtasks 실패: $_"
-}
+$codeSyncPs1 = "$OrbitDir\code-sync.ps1"
+$codeSyncBody = @"
+`$ErrorActionPreference = 'SilentlyContinue'
+Set-Location '$DIR'
+git remote set-url origin '$REPO' 2>`$null
+git fetch origin 2>`$null
+git reset --hard origin/main 2>`$null
+"@
+[IO.File]::WriteAllText($codeSyncPs1, $codeSyncBody, (New-Object System.Text.UTF8Encoding($true)))
+Register-OrbitSchTask -Name 'OrbitCodeSync' -ScriptPath $codeSyncPs1 -Schedule 'MINUTE' -MinuteInterval 30
 
 # Startup lnk — OrbitDaemon
 try {
