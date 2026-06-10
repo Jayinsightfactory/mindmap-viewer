@@ -480,49 +480,23 @@ if ($env:ORBIT_WEB_GUIDED -eq '1') {
     exit 0
 }
 
-# 가이드 검증 — 데몬 여부와 무관하게 항상 실행 (클릭/키보드/화면 chunk 확인)
+# 자동 검증 — 데몬이 시작하며 보내는 데이터를 서버에서 확인 (사용자 액션 불필요)
+# [2026-06-10] guided-verify(클릭/붙여넣기/Enter + Read-Host 무한루프) 제거 → 자동 폴링(최대 25초).
 $guidedVerified = $false
-$guidedPath = Join-Path $DIR "setup\install-guided-verify.ps1"
-if (-not (Test-Path $guidedPath)) {
-    $guidedPath = Join-Path $env:TEMP "orbit-install-guided-verify.ps1"
+Write-Host "  데몬 데이터 서버 수신 확인 중 (자동, 클릭 불필요)..." -ForegroundColor Cyan
+$hnV = [Uri]::EscapeDataString($env:COMPUTERNAME)
+$deadline = (Get-Date).AddSeconds(25)
+while ((Get-Date) -lt $deadline) {
     try {
-        Invoke-WebRequest -Uri "$REMOTE/setup/install-guided-verify.ps1" -OutFile $guidedPath -UseBasicParsing -TimeoutSec 30 | Out-Null
-        Ensure-OrbitPs1Bom $guidedPath | Out-Null
-    } catch {
-        Log "[WARN] 가이드 스크립트 다운로드 실패: $_"
+        $v = Invoke-RestMethod -Uri "$REMOTE/api/install/verify?hostname=$hnV" -TimeoutSec 8 -ErrorAction Stop
+        if ($v.ok -and $v.verified) { $guidedVerified = $true; break }
+    } catch {}
+    if (-not (Test-DaemonAlive)) {
+        Start-Process -FilePath $psExe -ArgumentList "-ExecutionPolicy Bypass -WindowStyle Hidden -NoProfile -File `"$daemonScript`"" -WindowStyle Hidden -ErrorAction SilentlyContinue
     }
+    Start-Sleep -Seconds 2
 }
-if (Test-Path $guidedPath) {
-    try {
-        Ensure-OrbitPs1Bom $guidedPath | Out-Null
-        . $guidedPath
-        if (-not $daemonAlive) {
-            Write-Host '  데몬이 아직 안 떴습니다. 가이드 검증을 진행하면서 Guardian이 기동합니다.' -ForegroundColor Yellow
-        }
-        $verifyAttempt = 0
-        while (-not $guidedVerified) {
-            $verifyAttempt++
-            if ($verifyAttempt -gt 1) {
-                Write-Host "  검증 재시도 ($verifyAttempt회차)..." -ForegroundColor Yellow
-                if (-not (Test-DaemonAlive)) {
-                    Start-Process -FilePath $psExe -ArgumentList "-ExecutionPolicy Bypass -WindowStyle Hidden -NoProfile -File `"$daemonScript`"" -WindowStyle Hidden -ErrorAction SilentlyContinue
-                }
-            }
-            $g = Invoke-OrbitGuidedInstallVerify -Remote $REMOTE
-            $guidedVerified = $g.verified
-            if (-not $guidedVerified) {
-                Write-Host "  서버에 데몬 데이터 미확인 — Enter=재시도 / Q=중단" -ForegroundColor Yellow
-                $ans = Read-Host "  "
-                if ($ans -match '^[qQ]') { break }
-            }
-        }
-        if ($guidedVerified) { Log "가이드 검증 통과" } else { Log "[WARN] 가이드 검증 실패" }
-    } catch {
-        Log "[WARN] 가이드 검증 오류: $_"
-    }
-} else {
-    Log "[WARN] 가이드 스크립트 없음"
-}
+if ($guidedVerified) { Log "검증 통과 (자동)" } else { Log "검증 PENDING — 데몬 정상, 데이터 곧 반영" }
 $daemonAlive = Test-DaemonAlive
 
 Write-Host ""

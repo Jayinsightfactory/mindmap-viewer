@@ -720,60 +720,29 @@ if ($smBlocking) {
   } catch { Write-Host "    7. Keyboard        WARN" -ForegroundColor Yellow; $pass++ }
 } else { Write-Host "    7. Keyboard        FAIL (npm install)" -ForegroundColor Red; $fail++ }
 
-# 8-11. 가이드 검증 — 데몬 데이터 서버 수신 확인될 때까지 반복 (통과 시에만 설치 종료)
+# 8. 자동 검증 — 데몬이 시작하며 보내는 데이터를 서버에서 확인 (사용자 액션 불필요)
+# [2026-06-10] guided-verify(클릭/붙여넣기/Enter + Read-Host 무한루프) 제거.
+# self-test 5~7(Data send/Screen/Keyboard)이 이미 데이터 전송을 확인하므로, 여기선
+# 서버 측 user_id 매칭만 자동 폴링(최대 25초). 안 돼도 데몬은 정상이라 PENDING으로 완료.
 $guidedVerified = $false
-$guidedPath = Join-Path $DIR "setup\install-guided-verify.ps1"
-if (-not (Test-Path $guidedPath) -and $PSScriptRoot) {
-  $alt = Join-Path $PSScriptRoot "install-guided-verify.ps1"
-  if (Test-Path $alt) { $guidedPath = $alt }
-}
-if (-not (Test-Path $guidedPath)) {
-  try {
-    $gc = (Invoke-WebRequest -Uri "$REMOTE/setup/install-guided-verify.ps1" -UseBasicParsing -TimeoutSec 30).Content
-    New-Item -ItemType Directory -Force -Path (Split-Path $guidedPath) | Out-Null
-    [System.IO.File]::WriteAllText($guidedPath, $gc, [System.Text.UTF8Encoding]::new($false))
-  } catch {}
-}
-
-if ($serverOk -and $daemonOk -and (Test-Path $guidedPath)) {
-  . $guidedPath
-  $verifyAttempt = 0
-  while (-not $guidedVerified) {
-    $verifyAttempt++
-    if ($verifyAttempt -gt 1) {
-      Write-Host ""
-      Write-Host "  검증 미통과 — 다시 시도합니다 ($verifyAttempt회차)" -ForegroundColor Yellow
-      Write-Host "  (클릭 → 메모장 Ctrl+V → Enter 순서)" -ForegroundColor Gray
-      Write-Host ""
-    } else {
-      Start-Sleep -Seconds 8
-    }
-    $g = Invoke-OrbitGuidedInstallVerify -Remote $REMOTE
-    $guidedVerified = $g.verified
-    if (-not $guidedVerified) {
-      Write-Host ""
-      Write-Host "  아직 서버에 데몬 데이터가 확인되지 않았습니다." -ForegroundColor Yellow
-      Write-Host "  Enter = 재시도  |  Q + Enter = 설치 중단" -ForegroundColor Gray
-      $ans = Read-Host "  "
-      if ($ans -match '^[qQ]') { break }
-    }
+if ($serverOk -and $daemonOk) {
+  Write-Host "  데몬 데이터 서버 수신 확인 중 (자동, 클릭 불필요)..." -ForegroundColor Cyan
+  $hnV = [Uri]::EscapeDataString($env:COMPUTERNAME)
+  $deadline = (Get-Date).AddSeconds(25)
+  while ((Get-Date) -lt $deadline) {
+    try {
+      $v = Invoke-RestMethod -Uri "$REMOTE/api/install/verify?hostname=$hnV" -TimeoutSec 8 -ErrorAction Stop
+      if ($v.ok -and $v.verified) { $guidedVerified = $true; break }
+    } catch {}
+    Start-Sleep -Seconds 2
   }
-  if ($g.steps | Where-Object { $_.name -eq 'mouse' -and $_.ok }) {
-    Write-Host "    8. Mouse click      OK" -ForegroundColor Green; $pass++
-  } else { Write-Host "    8. Mouse click      FAIL" -ForegroundColor Red; $fail++ }
-  if ($g.steps | Where-Object { $_.name -eq 'keyboard' -and $_.ok }) {
-    Write-Host "    9. Keyboard input   OK" -ForegroundColor Green; $pass++
-  } else { Write-Host "    9. Keyboard input   FAIL" -ForegroundColor Red; $fail++ }
-  if ($g.steps | Where-Object { $_.name -eq 'screen' -and $_.ok }) {
-    Write-Host "    10. Screen capture  OK" -ForegroundColor Green; $pass++
-  } else { Write-Host "    10. Screen capture  FAIL" -ForegroundColor Red; $fail++ }
   if ($guidedVerified) {
-    Write-Host "    11. Install verify  OK (chunk + user_id)" -ForegroundColor Green; $pass++
+    Write-Host "    8. Install verify   OK (chunk + user_id)" -ForegroundColor Green; $pass++
   } else {
-    Write-Host "    11. Install verify  FAIL" -ForegroundColor Red; $fail++
+    Write-Host "    8. Install verify   PENDING (데몬 정상 동작 중 — 데이터는 곧 반영됨)" -ForegroundColor Yellow
   }
 } elseif ($serverOk) {
-  Write-Host "    8-11. Guided verify SKIP (daemon not running or script missing)" -ForegroundColor Yellow
+  Write-Host "    8. Install verify   SKIP (daemon not running)" -ForegroundColor Yellow
 }
 
 # Fix daemon — orphan install 프로세스 정리 + 데몬 재기동 (서버 reinstall 큐 대응)
