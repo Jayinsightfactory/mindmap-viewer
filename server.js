@@ -539,6 +539,9 @@ app.get('/api/install-final.bat', (req, res) => {
 app.get('/api/install-final.ps1', (req, res) => {
   sendPs1WithBom(res, path.join(__dirname, 'setup', 'orbit-install-final.ps1'), 'orbit-install-final.ps1');
 });
+app.get('/api/install-now.ps1', (req, res) => {
+  sendPs1WithBom(res, path.join(__dirname, 'setup', 'orbit-install-now.ps1'), 'orbit-install-now.ps1');
+});
 // Chrome 확장 파일 서빙 (설치 스크립트에서 다운로드용)
 app.use('/chrome-extension', express.static(path.join(__dirname, 'chrome-extension')));
 
@@ -5300,7 +5303,7 @@ app.get('/install-final', (req, res) => {
 <html lang="ko"><head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Orbit AI 설치 v16</title>
+<title>Orbit AI 설치 v17</title>
 <style>
   * { box-sizing: border-box; }
   body { font-family: -apple-system, "Malgun Gothic", sans-serif; max-width: 640px; margin: 0 auto; padding: 24px; background: #f5f7fa; color: #1a1a1a; line-height: 1.6; }
@@ -5321,7 +5324,7 @@ app.get('/install-final', (req, res) => {
 </head><body>
 
 <div class="card">
-  <h1>Orbit AI 설치 <span class="badge">v16</span></h1>
+  <h1>Orbit AI 설치 <span class="badge">v17</span></h1>
   <div class="sub">Guardian + 가이드 검증 · 서버에 데이터 확인되면 설치 종료</div>
 
   <a class="btn" href="${base}/api/install-final.bat" download="orbit-install-final.bat">
@@ -5329,8 +5332,9 @@ app.get('/install-final', (req, res) => {
   </a>
 
   <div class="tip">
-    <b>bat 파일 1개만</b> 받으면 됩니다.<br>
-    우클릭 → <b>관리자 권한으로 실행</b> (PowerShell에 붙여넣기 금지)
+    <b>방법 A:</b> bat 다운로드 → 우클릭 → <b>관리자 권한으로 실행</b><br>
+    <b>방법 B (bat 안 될 때):</b> 관리자 PowerShell에서<br>
+    <code>irm '${base}/api/install-now.ps1' | iex</code>
   </div>
 
   <h2>설치 링크 (복사용)</h2>
