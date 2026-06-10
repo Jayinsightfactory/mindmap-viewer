@@ -33,7 +33,7 @@ function _asciiHostname() {
 }
 
 // ── 상태 ────────────────────────────────────────────────────────────────────
-const FLUSH_INTERVAL_MS  = 60 * 1000;   // 60초마다 원격 전송
+const FLUSH_INTERVAL_MS  = 30 * 1000;   // 30초마다 원격 전송 (설치 검증 45초 타임아웃 안에 mouse.chunk 도달하도록 단축)
 const MOVE_THROTTLE_MS   = 200;         // mousemove 쓰로틀 (초당 5회)
 const MAX_CLICK_POSITIONS = 100;        // chunk당 클릭 좌표 최대 저장
 
