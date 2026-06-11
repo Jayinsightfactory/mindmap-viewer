@@ -4816,6 +4816,39 @@ app.get('/api/analytics/event-types', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// GET /api/learning/routine?userId=X&period=day|week|month|year — 직원 업무 루틴 (기간별 집계, 2026-06-11)
+app.get('/api/learning/routine', async (req, res) => {
+  if (!_checkAnalyticsToken(req, res)) return;
+  const userId = (req.query.userId || '').trim();
+  const period = ['day','week','month','year'].includes(req.query.period) ? req.query.period : 'day';
+  if (!userId) return res.status(400).json({ error: 'userId required' });
+  const cfg = {
+    day:   { trunc: "to_char(timestamp::timestamptz, 'HH24')",       days: 7,   unit: 'hour'  },
+    week:  { trunc: "to_char(timestamp::timestamptz, 'ID')",         days: 28,  unit: 'dow'   },
+    month: { trunc: "to_char(timestamp::timestamptz, 'YYYY-MM-DD')", days: 30,  unit: 'date'  },
+    year:  { trunc: "to_char(timestamp::timestamptz, 'YYYY-MM')",    days: 365, unit: 'month' },
+  }[period];
+  try {
+    const pool = dbModule.getDb();
+    const since = new Date(Date.now() - cfg.days * 86400 * 1000).toISOString();
+    const sql = "SELECT " + cfg.trunc + " AS bucket, lower(trim(data_json->>'app')) AS app, data_json->>'workCategory' AS wc, COUNT(*)::int AS c FROM events WHERE user_id = $1 AND timestamp::timestamptz > $2::timestamptz AND type IN ('keyboard.chunk','screen.capture','screen.analyzed','mouse.chunk') GROUP BY bucket, app, wc";
+    const { rows } = await pool.query(sql, [userId, since]);
+    const buckets = {};
+    for (const r of rows) {
+      if (!r.bucket) continue;
+      const b = buckets[r.bucket] || (buckets[r.bucket] = { bucket: r.bucket, total: 0, apps: {}, cats: {} });
+      b.total += r.c;
+      if (r.app && r.app !== 'null' && r.app !== '') b.apps[r.app] = (b.apps[r.app] || 0) + r.c;
+      if (r.wc) b.cats[r.wc] = (b.cats[r.wc] || 0) + r.c;
+    }
+    const top = (o) => { const e = Object.entries(o).sort((a, b) => b[1] - a[1]); return e.length ? e[0][0] : null; };
+    const result = Object.values(buckets).map(b => ({
+      bucket: b.bucket, total: b.total, topApp: top(b.apps), topCategory: top(b.cats),
+    })).sort((a, b) => (a.bucket < b.bucket ? -1 : 1));
+    res.json({ ok: true, userId, period, unit: cfg.unit, buckets: result });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // GET /api/analytics/hourly?hours=24
 app.get('/api/analytics/hourly', async (req, res) => {
   if (!_checkAnalyticsToken(req, res)) return;
