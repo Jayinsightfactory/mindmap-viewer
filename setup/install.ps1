@@ -426,8 +426,18 @@ try {
   # 30분마다 git pull 단독 실행 → 다음 데몬 시작 시 새 코드 사용
   # 데몬 + watchdog + ps1 loop 모두 죽어도 OS Scheduler가 git pull 보장
   try {
-    $codeSyncCmd = "cd `"$DIR`"; git fetch origin 2>`$null; git reset --hard origin/main 2>`$null"
-    $actSync = New-ScheduledTaskAction -Execute $psExe -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -Command `"$codeSyncCmd`""
+    # [2026-06-11] OrbitCodeSync도 데몬과 동일한 숨김 런처(VBS/C#)로 실행 — 직접 powershell -Command은
+    # 30분마다 conhost 창이 깜빡임. 명령을 .ps1로 저장하고 -File 런처로 돌려 conhost 제거.
+    $codeSyncPs1 = "$OrbitDir\orbit-code-sync.ps1"
+    $codeSyncBody = "Set-Location `"$DIR`"; git fetch origin 2>`$null; git reset --hard origin/main 2>`$null"
+    [System.IO.File]::WriteAllText($codeSyncPs1, $codeSyncBody, [System.Text.UTF8Encoding]::new($false))
+    if ($launcherExe -and $launcherExe -notlike "VBS:*") {
+      $actSync = New-ScheduledTaskAction -Execute $launcherExe -Argument "`"$codeSyncPs1`""
+    } elseif ($launcherExe -like "VBS:*") {
+      $actSync = New-ScheduledTaskAction -Execute "wscript.exe" -Argument "`"$($launcherExe.Substring(4))`" `"$codeSyncPs1`""
+    } else {
+      $actSync = New-ScheduledTaskAction -Execute $psExe -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$codeSyncPs1`""
+    }
     $trigSync = @(
       (New-ScheduledTaskTrigger -AtLogOn),
       (New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(2) -RepetitionInterval (New-TimeSpan -Minutes 30) -RepetitionDuration ([TimeSpan]::MaxValue))
