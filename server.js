@@ -4849,6 +4849,29 @@ app.get('/api/learning/routine', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// GET /api/learning/capture-funnel?days=7 — 캡처→분석→유용 퍼널 (병목 진단, 2026-06-11)
+app.get('/api/learning/capture-funnel', async (req, res) => {
+  if (!_checkAnalyticsToken(req, res)) return;
+  const days = Math.min(parseInt(req.query.days) || 7, 90);
+  try {
+    const pool = dbModule.getDb();
+    const since = new Date(Date.now() - days * 86400 * 1000).toISOString();
+    const sql = "SELECT user_id, " +
+      "COUNT(*) FILTER (WHERE type='screen.capture')::int AS captures, " +
+      "COUNT(*) FILTER (WHERE type='screen.analyzed')::int AS analyzed, " +
+      "COUNT(*) FILTER (WHERE type='screen.analyzed' AND COALESCE(data_json->>'activity','') NOT IN ('','idle'))::int AS useful " +
+      "FROM events WHERE timestamp::timestamptz > $1::timestamptz AND user_id NOT IN ('local','system') " +
+      "GROUP BY user_id HAVING COUNT(*) FILTER (WHERE type='screen.capture') > 0 ORDER BY captures DESC";
+    const { rows } = await pool.query(sql, [since]);
+    const funnel = rows.map(r => ({
+      userId: r.user_id, captures: r.captures, analyzed: r.analyzed, useful: r.useful,
+      analyzeRate: r.captures ? Math.round(r.analyzed / r.captures * 100) : 0,
+      usefulRate: r.analyzed ? Math.round(r.useful / r.analyzed * 100) : 0,
+    }));
+    res.json({ ok: true, days, funnel });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // GET /api/analytics/hourly?hours=24
 app.get('/api/analytics/hourly', async (req, res) => {
   if (!_checkAnalyticsToken(req, res)) return;
