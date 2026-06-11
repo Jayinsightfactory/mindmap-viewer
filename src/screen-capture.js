@@ -243,7 +243,9 @@ function _shouldSendImage(trigger, app) {
   if (trigger === 'mouse_click') {
     if (profile?.priority === 'critical') return true;
     if (profile?.priority === 'high') return ((global._captureCounter || 0) % 3 === 0);
-    return false;
+    if (profile?.priority === 'skip') return false;
+    // scenario-1 테스트: 그 외 업무앱(ERP웹/브라우저/채팅 클릭 작업) 1/8 throttle 샘플
+    return ((global._captureCounter || 0) % 8 === 0);
   }
 
   // keyboard_flush / keyboard_done — critical/high 모두 image, 미지 앱도 25% 비율
