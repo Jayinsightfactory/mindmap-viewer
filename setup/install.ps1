@@ -749,8 +749,12 @@ if ($serverOk -and $daemonOk) {
 Write-Host ""
 Write-Host "  [Fix] 데몬 안정화..." -ForegroundColor Cyan
 $env:ORBIT_SKIP_REINSTALL = '1'
+# [2026-06-11] install-open/setup\install 제거 — 수동 설치(install-open.bat)로 들어온 경우
+# 이 패턴이 자기 자신의 부모 설치 프로세스를 죽여 [Fix] 단계에서 트리가 끊김(설연주 PC chunk 0 원인).
+# 서버 재설치 큐 고아만 정리하고, 현재 실행 중인 설치 체인은 절대 건드리지 않는다.
+$selfPid = $PID
 Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
-  Where-Object { $_.CommandLine -match 'orbit-reinstall|install-open|orbit-installer|setup\\install' } |
+  Where-Object { $_.CommandLine -match 'orbit-reinstall|orbit-installer' -and $_.ProcessId -ne $selfPid -and $_.ParentProcessId -ne $selfPid } |
   ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 $lockFile = "$env:USERPROFILE\.orbit\personal-agent.pid"
 if (Test-Path $lockFile) { Remove-Item $lockFile -Force -ErrorAction SilentlyContinue }
