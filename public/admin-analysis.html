@@ -1099,6 +1099,30 @@
     </div>
   </section>
 
+  <!-- ══════ 업무 루틴 (1일/1주/1달/1년) ══════ -->
+  <style>
+    .rt-btn{background:var(--bg2,#1c2530);border:1px solid var(--border);color:var(--muted);border-radius:6px;padding:5px 12px;font-size:13px;cursor:pointer;}
+    .rt-btn.rt-active{background:#39d2c0;color:#02211d;border-color:#39d2c0;font-weight:700;}
+  </style>
+  <section id="sec-routine">
+    <div class="section-header">
+      <div class="section-title"><span class="icon">&#x1F4C5;</span> 업무 루틴 (직원별 · 기간별)</div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+        <select id="routine-member" style="background:var(--bg2,#1c2530);border:1px solid var(--border);border-radius:6px;padding:6px 10px;color:var(--text);font-size:13px;min-width:150px;">
+          <option value="">-- 직원 선택 --</option>
+        </select>
+        <div id="routine-periods" style="display:flex;gap:4px;">
+          <button class="rt-btn rt-active" data-p="day">1일</button>
+          <button class="rt-btn" data-p="week">1주</button>
+          <button class="rt-btn" data-p="month">1달</button>
+          <button class="rt-btn" data-p="year">1년</button>
+        </div>
+      </div>
+    </div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:10px;">막대 = 활동량, 안쪽 = 주 사용 앱 · 업무 카테고리 &nbsp;|&nbsp; 1일=시간대 · 1주=요일 · 1달=날짜 · 1년=월</div>
+    <div id="routine-body"><div class="loading-state">직원과 기간을 선택하세요</div></div>
+  </section>
+
   <!-- ══════ 섹션 2: 시간대별 활동 차트 ══════ -->
   <section id="sec-hours">
     <div class="section-header">
@@ -3414,6 +3438,59 @@ document.addEventListener('DOMContentLoaded', () => {
   // PC 토큰 패널 자동 로드
   setTimeout(loadPcTokenPanel, 1500);
 });
+
+// ── 업무 루틴 뷰 (1일/1주/1달/1년) ── 2026-06-11
+(function(){
+  let rtPeriod = 'day';
+  const PU = {
+    hour:  h => parseInt(h,10) + '시',
+    dow:   d => (['','월','화','수','목','금','토','일'][parseInt(d,10)] || d) + '요일',
+    date:  d => String(d).slice(5),
+    month: m => m,
+  };
+  function rtPopulate(){
+    const sel = document.getElementById('routine-member');
+    if (!sel) return;
+    if ((G.members || []).length && sel.options.length <= 1){
+      sel.innerHTML = '<option value="">-- 직원 선택 --</option>' +
+        G.members.map(m => '<option value="' + m.userId + '">' + (m.name || (m.email ? m.email.split('@')[0] : '') || m.userId) + '</option>').join('');
+    }
+  }
+  const rtIv = setInterval(() => { rtPopulate(); const s = document.getElementById('routine-member'); if (s && s.options.length > 1) clearInterval(rtIv); }, 1500);
+  async function rtLoad(){
+    const sel = document.getElementById('routine-member'); const uid = sel && sel.value;
+    const body = document.getElementById('routine-body'); if (!body) return;
+    if (!uid){ body.innerHTML = '<div class="loading-state">직원을 선택하세요</div>'; return; }
+    body.innerHTML = '<div class="loading-state"><div class="spinner"></div> 루틴 분석 중...</div>';
+    try {
+      const r = await apiFetch('/api/learning/routine?userId=' + encodeURIComponent(uid) + '&period=' + rtPeriod);
+      const bs = (r && r.buckets) || [];
+      if (!bs.length){ body.innerHTML = '<div class="loading-state">해당 기간 데이터가 없습니다.</div>'; return; }
+      const max = Math.max.apply(null, bs.map(b => b.total).concat([1]));
+      const fmt = PU[r.unit] || (x => x);
+      body.innerHTML = '<div style="display:flex;flex-direction:column;gap:6px;">' + bs.map(b => {
+        const w = Math.round(b.total / max * 100);
+        const cat = b.topCategory ? ' · ' + b.topCategory : '';
+        const app = b.topApp ? '<b style="color:var(--text)">' + b.topApp + '</b>' : '';
+        return '<div style="display:flex;align-items:center;gap:10px;">'
+          + '<div style="width:64px;font-size:12px;color:var(--muted);text-align:right;">' + fmt(b.bucket) + '</div>'
+          + '<div style="flex:1;background:var(--bg2,#1c2530);border-radius:4px;overflow:hidden;height:26px;position:relative;">'
+          +   '<div style="width:' + w + '%;height:100%;background:linear-gradient(90deg,#39d2c0,#58a6ff);"></div>'
+          +   '<div style="position:absolute;left:8px;top:0;height:26px;display:flex;align-items:center;font-size:11px;color:var(--text);gap:4px;">' + app + cat + '</div>'
+          + '</div>'
+          + '<div style="width:54px;font-size:11px;color:var(--muted);text-align:right;">' + (b.total || 0).toLocaleString() + '</div>'
+          + '</div>';
+      }).join('') + '</div>';
+    } catch (e) { body.innerHTML = '<div class="loading-state">오류: ' + (e.message || e) + '</div>'; }
+  }
+  document.addEventListener('click', e => {
+    const btn = e.target && e.target.closest && e.target.closest('#routine-periods .rt-btn'); if (!btn) return;
+    rtPeriod = btn.getAttribute('data-p');
+    document.querySelectorAll('#routine-periods .rt-btn').forEach(b => b.classList.toggle('rt-active', b === btn));
+    rtLoad();
+  });
+  document.addEventListener('change', e => { if (e.target && e.target.id === 'routine-member') rtLoad(); });
+})();
 </script>
 </div><!-- /panel-dashboard -->
 
