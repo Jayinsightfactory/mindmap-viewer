@@ -945,3 +945,12 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 다시 반복되면 먼저 볼 위치:
 - `scripts/nenova-cu.js`의 `preview`, `collectPreviewFrames`, `buildPreviewHtml`
 - `artifacts/nenova-cu/preview.html`
+
+## 2026-06-12~13 — Vision 파이프라인 부활 + DATA_CHECK.md 확립
+- 요청: 데이터 확인 방식을 MD에 고정 저장 / 분석 0% 원인 규명
+- 검색어: capture-funnel, vision/stat, claim-token, sendImage, _heapPressure
+- 원인(확정): ① 서버 ANTHROPIC_API_KEY 무효(401) → 교체+검증 완료 ② owner PC 임시ID 설치→self-healer 토큰 자기파괴 루프(치유#69) → claim-token으로 MNH03H73690BB2CD82 복구 ③ mouse_click 이미지 게이트 죽은코드 → f838f92 수정 ④ 설연주/강현우 데몬 크래시루프(uiohook 실패/updater dead-loop) — 미해결
+- 수정 파일: src/screen-capture.js(2082b5f, f838f92), DATA_CHECK.md(86ec7ab), ~/.orbit-config.json(토큰)
+- 검증: /api/vision/stat processed 0→1 (첫 실화면 분석 성공, 2026-06-13 00시)
+- 미해결: processed 증가했는데 screen.analyzed 이벤트 미저장(저장 경로 버그) — DATA_CHECK.md '추적 중' 참조
+- 재발 시 먼저 볼 곳: **DATA_CHECK.md** (표준 runbook, 함정 9종)
