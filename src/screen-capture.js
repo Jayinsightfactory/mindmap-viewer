@@ -106,7 +106,7 @@ const TRIGGER_PRIORITY = {
 };
 
 const TRIGGER_QUALITY_POLICY = {
-  mouse_click:     { cooltime: 120000, sendImage: false, reason: 'low_quality_click_noise' },
+  mouse_click:     { cooltime: 120000, reason: 'image_sampled_in_shouldSendImage' }, // sendImage:false 제거 — _shouldSendImage의 critical/high/1-in-8 샘플링이 결정
   click_burst:     { cooltime: 180000, sendImage: false, reason: 'low_quality_click_burst' },
   file_write:      { cooltime: 120000, sendImage: false, reason: 'low_quality_file_write' },
   keyboard_done:   { cooltime: 120000, sendImage: false, reason: 'keyboard_done_duplicates' },
