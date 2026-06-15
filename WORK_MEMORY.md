@@ -954,3 +954,15 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 검증: /api/vision/stat processed 0→1 (첫 실화면 분석 성공, 2026-06-13 00시)
 - 미해결: processed 증가했는데 screen.analyzed 이벤트 미저장(저장 경로 버그) — DATA_CHECK.md '추적 중' 참조
 - 재발 시 먼저 볼 곳: **DATA_CHECK.md** (표준 runbook, 함정 9종)
+
+## 2026-06-15 — 설치코드 근본수정 (원인→픽스)
+- 요청: 지금까지 파악한 원인 반영한 '문제없는 설치코드 최종본' 검증 후 작성
+- 설치경로 정리: 직원=install-open.bat→install-open.ps1(auto-register 이름매칭→실토큰)→install.ps1. owner가 쓴 clean-install.ps1은 임시ID 경로(문제 근원 중 하나)
+- 근본원인→픽스:
+  1) self-healer 토큰 자기파괴(_clearTokenCache가 디스크 토큰 삭제) → personal-agent.js 무력화 (4e8aa0a)
+  2) OrbitCodeSync가 git pull만 하고 데몬 재시작 안 함→구코드 며칠 실행(강현우 72h) → install.ps1 line432 HEAD변경시 재시작 (a3a5e88)
+  3) OrbitWatchdog 30분 폴링 vs 원격명령 5분 TTL 불일치 → 원격 restart/update 자주 빗나감 (미수정, 명령TTL 연장 or 폴링단축 필요)
+  4) auto-register는 issueApiTokenAsync(PG await)로 claimable 토큰 발급 → 정상
+- 검증: PowerShell AST 파서로 install.ps1 전체 + 생성 orbit-code-sync.ps1 본문 문법 통과
+- 미완(라이브 e2e는 서버 502 안정화 + 테스트PC 필요): install-open.ps1 설치후 자가검증(토큰verify+이벤트도착) 추가, 임시ID hard-fail
+- 재발 시 먼저: DATA_CHECK.md + 이 항목
