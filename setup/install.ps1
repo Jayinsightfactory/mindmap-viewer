@@ -429,7 +429,10 @@ try {
     # [2026-06-11] OrbitCodeSync도 데몬과 동일한 숨김 런처(VBS/C#)로 실행 — 직접 powershell -Command은
     # 30분마다 conhost 창이 깜빡임. 명령을 .ps1로 저장하고 -File 런처로 돌려 conhost 제거.
     $codeSyncPs1 = "$OrbitDir\orbit-code-sync.ps1"
-    $codeSyncBody = "Set-Location `"$DIR`"; git fetch origin 2>`$null; git reset --hard origin/main 2>`$null"
+    # [2026-06-15 fix] git pull 후 HEAD가 바뀌면 데몬 재시작 → 디스크 새 코드가 즉시 반영.
+    # 이전엔 pull만 하고 재시작 안 해서 데몬이 구코드를 며칠씩 실행하는 문제(강현우 72h)가 있었음.
+    # 변경 없으면 아무 동작 안 함(불필요한 재시작 방지). 재시작은 OrbitWatchdog가 깨끗하게 respawn.
+    $codeSyncBody = "Set-Location `"$DIR`"; `$b=(git rev-parse HEAD 2>`$null); git fetch origin 2>`$null; git reset --hard origin/main 2>`$null; `$a=(git rev-parse HEAD 2>`$null); if (`$b -ne `$a -and `$a) { Get-WmiObject Win32_Process -Filter `"Name='node.exe'`" -EA SilentlyContinue | Where-Object { `$_.CommandLine -like '*personal-agent*' } | ForEach-Object { Stop-Process -Id `$_.ProcessId -Force -EA SilentlyContinue }; schtasks /run /tn `"OrbitWatchdog`" 2>`$null | Out-Null }"
     [System.IO.File]::WriteAllText($codeSyncPs1, $codeSyncBody, [System.Text.UTF8Encoding]::new($false))
     if ($launcherExe -and $launcherExe -notlike "VBS:*") {
       $actSync = New-ScheduledTaskAction -Execute $launcherExe -Argument "`"$codeSyncPs1`""
