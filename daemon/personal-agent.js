@@ -139,18 +139,10 @@ try { _selfHealer = require(path.join(__dirname, '..', 'src', 'self-healer')); }
 try { _localBuffer = require(path.join(__dirname, 'local-buffer')); } catch {}
 
 function _clearTokenCache() {
-  try {
-    const cfgPath = path.join(os.homedir(), '.orbit-config.json');
-    if (!fs.existsSync(cfgPath)) return;
-    let raw = fs.readFileSync(cfgPath, 'utf8');
-    if (raw.charCodeAt(0) === 0xFEFF) raw = raw.slice(1);
-    const cfg = JSON.parse(raw.trim());
-    delete cfg.token;
-    fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2), 'utf8');
-    console.log('[orbit] token cache cleared (self-healer)');
-  } catch (e) {
-    console.warn('[orbit] token cache clear failed:', e.message);
-  }
+  // ⚠️ 토큰을 디스크에서 지우면 재등록 실패 시 영구 무토큰 루프에 빠진다(실사고 2026-06).
+  // 전송 에러(send_errors_50)는 대부분 네트워크/서버 일시 문제 → 토큰을 보존한다.
+  // 진짜 무효 토큰은 self-healer C-4 경로(401>10)가 /api/daemon/register로 교체한다.
+  console.log('[orbit] token cache clear skipped — preserving token (self-healer fix)');
 }
 
 function _sendHookPayload(payload, eventType) {
