@@ -966,3 +966,10 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 검증: PowerShell AST 파서로 install.ps1 전체 + 생성 orbit-code-sync.ps1 본문 문법 통과
 - 미완(라이브 e2e는 서버 502 안정화 + 테스트PC 필요): install-open.ps1 설치후 자가검증(토큰verify+이벤트도착) 추가, 임시ID hard-fail
 - 재발 시 먼저: DATA_CHECK.md + 이 항목
+
+## 2026-06-15 (속행) — 남은 3개 완료
+- #1 라이브 e2e: auto-register(name=jaeyong lim)→matchedByName=true·실유저 MNH03H·토큰len54→auth/verify 즉시 ok. install/verify verified=true chunks20. (E2E-TEST-PC/VERIFY-TEST-PC pc_link 테스트잔여 — 가짜hostname이라 무해)
+- #2 명령 TTL 5→40분 (server.js ~1904) — watchdog 30분폴링이 force-restart/update를 반드시 1회 잡음. node -c 통과 (b로 시작 커밋)
+- #3 install-open.ps1 설치 자가검증 추가 — 토큰 verify + install/verify 폴링(2분)→PASS/FAIL. AST 통과 + 자가검증 로직 라이브(tokenOk/dataOk=True)
+- 커밋: a3a5e88(codesync restart), 4e8aa0a(token), +TTL/verify 커밋. 전부 push→배포
+- 재발 시: DATA_CHECK.md + 이 기록
