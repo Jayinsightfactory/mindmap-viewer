@@ -1898,10 +1898,12 @@ function _sanitizeDaemonCommands(commands) {
 app.get('/api/daemon/commands', async (req, res) => {
   const hostname = req.query.hostname || '';
   const cmds = global._daemonCommands[hostname] || [];
-  // ALL 대상 명령: 5분 TTL + hostname별 1회 consumed (같은 호스트가 같은 명령 반복 수신 방지)
+  // ALL 대상 명령: 40분 TTL + hostname별 1회 consumed (같은 호스트가 같은 명령 반복 수신 방지)
+  // [2026-06-15 fix] 5분→40분: OrbitWatchdog 폴링이 30분 주기라 5분 TTL이면 force-restart/update가
+  // 거의 항상 만료돼서 못 받았음(강현우 8번 시도 빗나감). 40분이면 30분 폴링이 반드시 1회는 잡음.
   const allCmds = (global._daemonCommands['ALL'] || []).filter(c => {
     const age = Date.now() - new Date(c.ts).getTime();
-    if (age >= 5 * 60 * 1000) return false; // 5분 만료
+    if (age >= 40 * 60 * 1000) return false; // 40분 만료
     if (!c.consumedHosts) c.consumedHosts = new Set();
     if (c.consumedHosts.has(hostname)) return false; // 이미 이 호스트는 받음
     return true;
