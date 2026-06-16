@@ -116,7 +116,7 @@ async function _tick() {
   // [2026-06-15] 전용 OFF 스위치 — ANTHROPIC_API_KEY는 다른 기능(주문매칭/RAG/챗봇 등 16개 파일)이
   // 공유하므로 비울 수 없음. 이 서버 Vision 워커만 끄려면 Railway에 VISION_SERVER_WORKER=off 설정.
   // (분석은 owner PC의 CLI 야간 워커가 무과금으로 대신 처리)
-  if ((process.env.VISION_SERVER_WORKER || '').toLowerCase() === 'off') { _lastSkipReason = 'disabled_by_flag'; return; }
+  if (global._serverVisionOff || (process.env.VISION_SERVER_WORKER || '').toLowerCase() === 'off') { _lastSkipReason = 'disabled_by_flag'; return; }
   const queue = global._visionImageQueue;
   if (!queue || queue.length === 0) { _lastSkipReason = 'empty_queue'; return; }
   if (!_getClient()) { _lastSkipReason = 'missing_anthropic_api_key'; return; }

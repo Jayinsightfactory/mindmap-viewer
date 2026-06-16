@@ -3820,6 +3820,28 @@ app.get('/api/vision/stat', (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// [2026-06-15] 서버 Vision 유료워커 ON/OFF 런타임 토글 (Railway 변수 없이 제어, PG 영속)
+// off로 두면 owner PC CLI 야간워커가 무과금으로 분석. ANTHROPIC_API_KEY는 건드리지 않음(다른 기능 공유).
+app.post('/api/vision/server-worker', async (req, res) => {
+  const token = (req.headers.authorization || '').replace('Bearer ', '').trim();
+  if (!token.startsWith('orbit_')) return res.status(401).json({ error: 'orbit token required' });
+  const enabled = req.body?.enabled !== false; // 기본 ON, {enabled:false}면 OFF
+  global._serverVisionOff = !enabled;
+  try {
+    const _pool = dbModule.getDb ? dbModule.getDb() : null;
+    if (_pool?.query) {
+      await _pool.query(`CREATE TABLE IF NOT EXISTS orbit_settings (key TEXT PRIMARY KEY, value TEXT, updated_at TIMESTAMPTZ DEFAULT NOW())`);
+      await _pool.query(
+        `INSERT INTO orbit_settings (key, value) VALUES ('vision_server_off', $1)
+         ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()`,
+        [global._serverVisionOff ? 'true' : 'false']
+      );
+    }
+  } catch (e) { console.warn('[vision-toggle] PG 저장 실패:', e.message); }
+  console.log(`[vision-toggle] 서버 Vision 워커 ${global._serverVisionOff ? 'OFF(무과금 CLI로 대체)' : 'ON'}`);
+  res.json({ ok: true, serverVisionWorker: global._serverVisionOff ? 'off' : 'on' });
+});
+
 // 직접 큐 추가 (테스트/복구용) — ORBIT_TOKEN 인증 필요
 app.post('/api/vision/queue-push', (req, res) => {
   const token = (req.headers.authorization || '').replace('Bearer ', '').trim();
@@ -7998,6 +8020,8 @@ async function startServer() {
     const _pool = dbModule.getDb ? dbModule.getDb() : null;
     if (_pool?.query) {
       await _pool.query(`CREATE TABLE IF NOT EXISTS orbit_settings (key TEXT PRIMARY KEY, value TEXT, updated_at TIMESTAMPTZ DEFAULT NOW())`);
+      // [2026-06-15] 서버 Vision 워커 OFF 토글 로드 (재배포해도 유지) — owner PC CLI 야간워커 대체용
+      try { const _vr = await _pool.query(`SELECT value FROM orbit_settings WHERE key='vision_server_off'`); global._serverVisionOff = (_vr.rows[0]?.value === 'true'); if (global._serverVisionOff) console.log('[vision-toggle] 부팅: 서버 Vision 워커 OFF (PG 설정)'); } catch {}
       // 배포 버전 변경 시에만 force_update (크래시 재시작 시 무한루프 방지)
       const currentVersion = require('./package.json').version || 'unknown';
       const gitHash = (() => { try { return require('child_process').execSync('git rev-parse --short HEAD', {encoding:'utf8',timeout:3000}).trim(); } catch { return ''; } })();
