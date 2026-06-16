@@ -37,6 +37,17 @@ const CLAUDE_CLI = (() => {
 const USE_CLI = !ANTHROPIC_KEY && !!CLAUDE_CLI;
 const TEMP_DIR = path.join(os.tmpdir(), 'orbit-vision');
 try { fs.mkdirSync(TEMP_DIR, { recursive: true }); } catch {}
+
+// [2026-06-15] 야간 배치 모드(--night): 낮엔 큐 이미지를 디스크에 보관만(CLI 비용 0),
+// 19:00~08:00에만 CLI 분석. owner PC를 켜두고 퇴근 → 구독한도/업무시간 충돌 없이 야간 처리.
+const NIGHT_MODE = process.argv.includes('--night');
+const NIGHT_START = 19, NIGHT_END = 8; // 19시~다음날 8시
+const PENDING_DIR = path.join(os.homedir(), '.orbit', 'vision-pending');
+try { fs.mkdirSync(PENDING_DIR, { recursive: true }); } catch {}
+function _isNight() { const h = new Date().getHours(); return (h >= NIGHT_START || h < NIGHT_END); }
+function _savePending(item) { try { fs.writeFileSync(path.join(PENDING_DIR, `${(item.id||Date.now())}.json`), JSON.stringify(item)); } catch {} }
+function _pendingCount() { try { return fs.readdirSync(PENDING_DIR).filter(f=>f.endsWith('.json')).length; } catch { return 0; } }
+let _pqBusy = false; // 재진입 방지 (야간 CLI는 분당 수십초 소요 → setInterval 겹침 방지)
 const ORBIT_TOKEN = process.env.ORBIT_TOKEN || (() => {
   try { return JSON.parse(fs.readFileSync(path.join(os.homedir(), '.orbit-config.json'), 'utf8')).token || ''; }
   catch { return ''; }
@@ -465,6 +476,8 @@ async function processBatch() {
 
 // ── 서버 큐 모드: /api/vision/queue에서 이미지 가져와 CLI 분석 ───────────────
 async function processServerQueue() {
+  if (_pqBusy) return 0;
+  _pqBusy = true;
   try {
     const url = new URL('/api/vision/queue', ORBIT_SERVER);
     const mod = url.protocol === 'https:' ? https : http;
@@ -480,11 +493,27 @@ async function processServerQueue() {
     });
 
     const batch = queueData.batch || [];
-    if (!batch.length) return 0;
-    console.log(`[vision-queue] 서버 큐에서 ${batch.length}건 수신 (대기: ${queueData.pending}건)`);
+    // 주간(--night) — 큐 이미지를 디스크에 보관만 (CLI 비용 0). 큐는 비워 서버 메모리 보호. 분석은 야간.
+    if (NIGHT_MODE && !_isNight()) {
+      for (const item of batch) if (item.imageBase64) _savePending(item);
+      if (batch.length) console.log(`[vision-collect] 주간 보관 ${batch.length}건 (분석 ${NIGHT_START}시~, 누적 ${_pendingCount()}건)`);
+      return batch.length;
+    }
+    // 야간(또는 일반 모드) — 디스크 누적분을 큐와 합쳐 처리
+    let pending = [];
+    if (NIGHT_MODE) {
+      try {
+        pending = fs.readdirSync(PENDING_DIR).filter(f => f.endsWith('.json')).slice(0, 15)
+          .map(f => { try { const it = JSON.parse(fs.readFileSync(path.join(PENDING_DIR, f), 'utf8')); it.__pf = path.join(PENDING_DIR, f); return it; } catch { try { fs.unlinkSync(path.join(PENDING_DIR, f)); } catch {} return null; } })
+          .filter(Boolean);
+      } catch {}
+    }
+    const work = [...batch, ...pending];
+    if (!work.length) return 0;
+    console.log(`[vision-queue] 처리 ${work.length}건 (큐:${batch.length} 누적:${pending.length}, 대기:${queueData.pending || 0})`);
 
     let done = 0;
-    for (const item of batch) {
+    for (const item of work) {
       try {
         if (!item.imageBase64) { console.warn('  이미지 없음, 스킵'); continue; }
         console.log(`[vision-queue] ${item.hostname}/${item.app}: ${item.windowTitle || ''}`);
@@ -522,11 +551,13 @@ async function processServerQueue() {
         });
 
         done++;
+        if (item.__pf) { try { fs.unlinkSync(item.__pf); } catch {} } // 누적분 처리완료 → 삭제
         await new Promise(r => setTimeout(r, 2000)); // CLI 쿨다운
       } catch (e) { console.warn(`  분석 실패: ${e.message}`); }
     }
     return done;
   } catch (e) { console.error('[vision-queue] 에러:', e.message); return 0; }
+  finally { _pqBusy = false; }
 }
 
 // ── 메인 ─────────────────────────────────────────────────────────────────────
