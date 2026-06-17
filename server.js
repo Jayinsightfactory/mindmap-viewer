@@ -1035,6 +1035,9 @@ wss.on('connection', (ws, req) => {
 // ─── 데몬용 Drive 설정 배포 API (인증 필수) ──────────────────────────────────
 // 데몬이 캡처 → Google Drive 업로드에 필요한 서비스 계정 키 제공
 app.get('/api/daemon/drive-config', (req, res) => {
+  // [2026-06-17] Drive 전역 OFF — 서비스계정 quota 없어 403 무한재시도로 로그/자원 폭주.
+  // 분석은 서버큐+CLI워커로 이전했으므로 Drive 업로드 불필요. enabled:false면 데몬이 uploader 미기동.
+  if (global._driveDisabled) return res.json({ enabled: false, disabledReason: 'drive_global_off' });
   // 데몬/Vision 워커가 토큰 없이도 접근 가능 (서비스 계정 정보 제공)
   const saJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
   // DB 오버라이드 우선 → env var 폴백 (Railway 대시보드 접근 없이 수정 가능)
@@ -1044,6 +1047,22 @@ app.get('/api/daemon/drive-config', (req, res) => {
     return res.json({ enabled: false });
   }
   res.json({ enabled: true, credentialsJson: saJson, folderId });
+});
+
+// [2026-06-17] Drive 업로드 전역 ON/OFF (403 폭주 차단) — orbit_ 토큰, PG 영속
+app.post('/api/admin/drive-toggle', async (req, res) => {
+  const token = (req.headers.authorization || '').replace('Bearer ', '').trim();
+  if (!token.startsWith('orbit_')) return res.status(401).json({ error: 'orbit token required' });
+  global._driveDisabled = (req.body?.enabled === false);
+  try {
+    const _pool = dbModule.getDb ? dbModule.getDb() : null;
+    if (_pool?.query) {
+      await _pool.query(`CREATE TABLE IF NOT EXISTS orbit_settings (key TEXT PRIMARY KEY, value TEXT, updated_at TIMESTAMPTZ DEFAULT NOW())`);
+      await _pool.query(`INSERT INTO orbit_settings (key,value) VALUES ('drive_disabled',$1) ON CONFLICT (key) DO UPDATE SET value=$1, updated_at=NOW()`, [global._driveDisabled ? 'true' : 'false']);
+    }
+  } catch (e) { console.warn('[drive-toggle] PG:', e.message); }
+  console.log(`[drive-toggle] Drive 업로드 ${global._driveDisabled ? 'OFF(403폭주 차단)' : 'ON'}`);
+  res.json({ ok: true, driveUpload: global._driveDisabled ? 'off' : 'on' });
 });
 
 // ─── Drive 폴더ID 오버라이드 (Railway 환경변수 우회) ────────────────────────────
@@ -8022,6 +8041,7 @@ async function startServer() {
       await _pool.query(`CREATE TABLE IF NOT EXISTS orbit_settings (key TEXT PRIMARY KEY, value TEXT, updated_at TIMESTAMPTZ DEFAULT NOW())`);
       // [2026-06-15] 서버 Vision 워커 OFF 토글 로드 (재배포해도 유지) — owner PC CLI 야간워커 대체용
       try { const _vr = await _pool.query(`SELECT value FROM orbit_settings WHERE key='vision_server_off'`); global._serverVisionOff = (_vr.rows[0]?.value === 'true'); if (global._serverVisionOff) console.log('[vision-toggle] 부팅: 서버 Vision 워커 OFF (PG 설정)'); } catch {}
+      try { const _dr = await _pool.query(`SELECT value FROM orbit_settings WHERE key='drive_disabled'`); global._driveDisabled = (_dr.rows[0]?.value === 'true'); if (global._driveDisabled) console.log('[drive-toggle] 부팅: Drive 업로드 OFF (PG 설정)'); } catch {}
       // 배포 버전 변경 시에만 force_update (크래시 재시작 시 무한루프 방지)
       const currentVersion = require('./package.json').version || 'unknown';
       const gitHash = (() => { try { return require('child_process').execSync('git rev-parse --short HEAD', {encoding:'utf8',timeout:3000}).trim(); } catch { return ''; } })();
