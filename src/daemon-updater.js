@@ -30,7 +30,12 @@ const IDLE_THRESHOLD_MS   = 5 * 60 * 1000; // 5min idle
 const MAX_IDLE_WAIT_MS    = 30 * 60 * 1000; // 30min max wait then force
 
 // Lifecycle commands handled by Guardian (watchdog.ps1) — Worker must not kill itself via install.ps1
-const GUARDIAN_ONLY_ACTIONS = new Set(['restart', 'reinstall', 'update']);
+// [2026-06-17] restart/update를 위임 목록에서 제외 — 워커·watchdog이 같은 큐를 폴링하는데
+// 서버가 GET 때 큐를 비워서, 자주 폴링하는 워커(60s)가 먼저 명령을 소비→"guardian한테 넘김"만
+// 보고하고 끝 → watchdog(30min)은 빈 큐를 받아 영영 재시작 못함(블랙홀). 워커가 직접 처리하면
+// 'restart'=process.exit→start-daemon.ps1 루프가 즉시 재respawn(gitpull-worker와 동일 경로),
+// 'update'=_pendingUpdate→pullAndRestart. reinstall만 무거워서 guardian에 남김.
+const GUARDIAN_ONLY_ACTIONS = new Set(['reinstall']);
 
 let _timer = null;
 let _gitCheckTimer = null;
