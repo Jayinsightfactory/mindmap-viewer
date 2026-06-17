@@ -973,3 +973,24 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - #3 install-open.ps1 설치 자가검증 추가 — 토큰 verify + install/verify 폴링(2분)→PASS/FAIL. AST 통과 + 자가검증 로직 라이브(tokenOk/dataOk=True)
 - 커밋: a3a5e88(codesync restart), 4e8aa0a(token), +TTL/verify 커밋. 전부 push→배포
 - 재발 시: DATA_CHECK.md + 이 기록
+
+## 2026-06-17 — 서버 OOM 위기 + Vision 무과금 + 신규3명 + 디테일 저하 (대규모)
+### 요청 흐름
+- Vision API 비용 → owner PC CLI 무과금 전환; 신규 PC 데이터 확인; 서버 502 반복 원인; 키보드/카톡 디테일 저하 확인
+### 핵심 사고: 서버 OOM (오늘 종일 502의 진짜 범인)
+- railway logs: FATAL heap limit(742→787MB) 78초마다 크래시루프
+- 사슬: Drive 403 무한재시도 → daemon.log 8.7MB → 거대 이벤트/snapshot 폭주 → 서버 OOM. + 크래시루프 데몬 daemon.update 폭주 + 서버가 이벤트를 Haiku로 [AI분석] → 부하/비용. + 내 force-restart/update 수십번 = 명령큐 누적
+- 해결(영구): railway 변수 GOOGLE_DRIVE_CAPTURES_FOLDER_ID 제거 → drive-config 무조건 enabled:false (백업값 1XvD0BwymPoQLthnLezgqftVm0D-27Uh5). + /api/admin/drive-toggle {enabled:false}(global._driveDisabled). 단 실행중 데몬은 재시작해야 반영
+### 수정 커밋
+- 4e8aa0a self-healer 토큰 자기파괴 제거 / a3a5e88 OrbitCodeSync 코드변경시 데몬재시작 / f838f92 mouse_click 이미지 / ceda93f 명령TTL40분+install-open 자가검증 / 40c589f vision 워커 OFF토글(VISION_SERVER_WORKER=off, Railway변수도 설정) / drive-toggle 커밋
+### 무과금 Vision
+- owner PC: bin/vision-worker.js --server-queue --night (CLI Max구독, ANTHROPIC_API_KEY 비움) HKCU\Run+시작프로그램 자동기동. 서버 유료워커는 VISION_SERVER_WORKER=off(런타임토글+Railway변수)
+### 신규 3명 (오늘 설치)
+- 강명훈=DESKTOP-L0C2IOT(MNMSAQJD78E5, 이름정상) / 김빛나=NENOVA2025(MN0B1204A46C4B8EAC, update-user-name으로 등록완료) / 정재훈=nenova(MND11FFB8C, PC꺼짐 미등록 — 켜지면 등록)
+- 이름등록 엔드포인트: POST /api/admin/update-user-name {userId,name} (admin토큰=dlaww584 config토큰, 데이터 유지)
+### 디테일 저하 (중요)
+- 직원들 keyboard.chunk=0 (설연주/김빛나/강현우) → 타이핑/카톡 디테일 사라짐. owner만 풀(keyboard28+screen105+clipboard). 원인=uiohook 키보드후킹 실패 + 크래시루프가 실작업캡처 밀어냄. 데몬 안정화 후 복구 기대, 안되면 uiohook 코드진단
+### 도구/교훈
+- railway CLI 로그인됨(dlaww584, tranquil-analysis/mindmap-viewer). railway logs/redeploy/variables 사용가능
+- 잦은 push=재배포 churn으로 502 악화 → 모아서 push. 데이터문제는 DATA_CHECK.md 먼저, 재부팅 금지
+### 재발 시 먼저 볼 곳: DATA_CHECK.md + memory(server-oom-drive-flood, no-reboot-use-selfheal, vision-cli-worker-local)
