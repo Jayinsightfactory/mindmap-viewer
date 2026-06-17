@@ -229,6 +229,13 @@ async function upload(filepath, metadata = {}) {
               resolve(result);
             } else {
               console.warn(`[drive-uploader] 업로드 실패:`, data.slice(0, 200));
+              // [2026-06-17] 403 storage quota = 영구실패. 무한재시도가 daemon.log를 8.7MB로 키워
+              // 서버 OOM·키보드캡처 묻힘 유발. 서비스계정 quota는 Shared Drive 전까진 절대 안 풀리므로
+              // 한 번 감지하면 uploader를 끈다(uploadPending/upload가 _enabled로 즉시 bail).
+              if ((result.error && result.error.code === 403) || /storage quota|Service Accounts do not have/i.test(data)) {
+                _enabled = false;
+                console.warn('[drive-uploader] 403 영구실패 감지 — uploader 비활성화 (폭주 중단)');
+              }
               resolve(null);
             }
           } catch (e) { resolve(null); }
