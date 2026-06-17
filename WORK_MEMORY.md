@@ -994,3 +994,24 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - railway CLI 로그인됨(dlaww584, tranquil-analysis/mindmap-viewer). railway logs/redeploy/variables 사용가능
 - 잦은 push=재배포 churn으로 502 악화 → 모아서 push. 데이터문제는 DATA_CHECK.md 먼저, 재부팅 금지
 ### 재발 시 먼저 볼 곳: DATA_CHECK.md + memory(server-oom-drive-flood, no-reboot-use-selfheal, vision-cli-worker-local)
+
+---
+## 2026-06-17 (오후) — 서버 OOM(daemon.update 폭주) + 원격 재시작 레버 정립
+
+**사용자 요청 핵심**: ①"데이터 확인" 시 처리절차를 MD에 ②연결 PC 전부 재점검 ③김빛나 PC 왜 그런지(바이러스?) ④이 상황 재발방지 MD화.
+
+**검색/확인**: src/daemon-updater.js(GUARDIAN_ONLY_ACTIONS, executeCommand, pullAndRestart), setup/guardian-watchdog.ps1, server.js /api/hook(insertEvent, _heapPressure), railway logs.
+
+**진단 결과**:
+- 서버 OOM 2차 원인 = crash-loop 데몬의 daemon.update 폭주 → PG 연결 타임아웃 → insertEvent 적체 → heap 760MB OOM. (오늘 전직원 데이터 안 들어온 진짜 주범)
+- 원격 재시작이 안 닿던 이유 = restart/update가 GUARDIAN_ONLY_ACTIONS 위임 블랙홀(워커가 같은 큐 먼저 소비). gitpull-worker는 "최신"이면 skip, reclone-worker는 Windows 디렉터리 rename EBUSY 실패.
+- 김빛나(NENOVA2025): 데몬·마우스·워커 살아있음(바이러스 통째 차단 아님). 화면캡처 모듈 반복死+keyboard 0. AV차단 vs 로드실패는 로그 증거없어 미확정→아침 daemon-self.log 필요. 원격레버 다 소진→전원주기로만 회생.
+
+**수정 파일/커밋**:
+- 5ec0814 src/daemon-updater.js — GUARDIAN_ONLY_ACTIONS=['reinstall'](restart/update 직접처리)
+- 05ff191 server.js — /api/hook 힙압력 시 노이즈 저장 스킵
+- 0b700f2·460b58d DATA_CHECK.md — "데이터 확인" 트리거절차+§13 레버+§13-Z 좀비+§10 OOM②
+
+**검증**: 정재훈(nenova) gitpull-worker로 재시작 성공(87m→1m). 서버 재배포 후 5/5 200 안정. 김빛나는 4종 레버 다 무반응(전원주기 대기).
+
+**반복 시 먼저 볼 위치**: DATA_CHECK.md ★"데이터 확인" 트리거 / §10(서버 OOM 메타규칙) / §13(원격레버)·§13-Z(좀비). 메모리 no-reboot-use-selfheal.
