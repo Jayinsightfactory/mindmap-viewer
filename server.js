@@ -3235,6 +3235,13 @@ app.post('/api/hook', async (req, res) => {
         _imageCache.set(event.id, event.data.imageBase64);
         delete event.data.imageBase64;
       }
+      // [2026-06-17] 힙 압력 시 고볼륨 노이즈 저장 스킵 — crash-loop 데몬의 daemon.update 폭주가
+      // PG 연결 타임아웃→insertEvent await 적체→OOM 유발(실사고). NOISE_TYPES라 그래프에도 안 쓰임.
+      // 평상시엔 정상 저장, 500MB 압박 때만 방어(daemon.update 이메일알림은 별도 루프라 영향 없음).
+      if (_heapPressure && (event.type === 'daemon.update' || event.type === 'daemon.heartbeat'
+          || event.type === 'daemon.log.snapshot' || event.type === 'daemon.perf.issue')) {
+        continue;
+      }
       try { await Promise.resolve(insertEvent(event)); } catch (e) {
         console.error('[hook] insertEvent FAIL:', e.message, 'id=', event.id, 'type=', event.type);
         if (!req._insertErrors) req._insertErrors = [];
