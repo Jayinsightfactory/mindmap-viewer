@@ -69,7 +69,8 @@ function extractContext(event) {
     const wh = ctx.windowHistory || {};
     const summary = data.summary || '';
     const mouseClicks = data.mouseClicks || 0;
-    return { app: app.toLowerCase(), window: normalizeWindowTitle(window), windowHistory: wh, summary, mouseClicks, type: 'keyboard' };
+    const inputText = data.inputText || '';  // [골:Phase1] 세션에 타이핑 내용 포함
+    return { app: app.toLowerCase(), window: normalizeWindowTitle(window), windowHistory: wh, summary, mouseClicks, inputText, type: 'keyboard' };
   }
 
   if (event.type === 'screen.capture') {
@@ -354,10 +355,28 @@ async function analyzeWorkspace(pool, memberIds) {
   return { members: results, teamInsights, analyzedAt: new Date().toISOString() };
 }
 
+// 두벌식 QWERTY→한글 (키훅이 IME 조합 전 물리키를 잡아서 — 자동화 후보 가독용)
+function qwertyToHangul(str){
+  if(!str) return '';
+  const M={q:'ㅂ',w:'ㅈ',e:'ㄷ',r:'ㄱ',t:'ㅅ',y:'ㅛ',u:'ㅕ',i:'ㅑ',o:'ㅐ',p:'ㅔ',a:'ㅁ',s:'ㄴ',d:'ㅇ',f:'ㄹ',g:'ㅎ',h:'ㅗ',j:'ㅓ',k:'ㅏ',l:'ㅣ',z:'ㅋ',x:'ㅌ',c:'ㅊ',v:'ㅍ',b:'ㅠ',n:'ㅜ',m:'ㅡ',Q:'ㅃ',W:'ㅉ',E:'ㄸ',R:'ㄲ',T:'ㅆ',O:'ㅒ',P:'ㅖ'};
+  const CHO='ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ';
+  const JUNG='ㅏㅐㅑㅒㅓㅔㅕㅖㅗㅘㅙㅚㅛㅜㅝㅞㅟㅠㅡㅢㅣ';
+  const VC={'ㅗㅏ':'ㅘ','ㅗㅐ':'ㅙ','ㅗㅣ':'ㅚ','ㅜㅓ':'ㅝ','ㅜㅔ':'ㅞ','ㅜㅣ':'ㅟ','ㅡㅣ':'ㅢ'};
+  const TC={'ㄱㅅ':'ㄳ','ㄴㅈ':'ㄵ','ㄴㅎ':'ㄶ','ㄹㄱ':'ㄺ','ㄹㅁ':'ㄻ','ㄹㅂ':'ㄼ','ㄹㅅ':'ㄽ','ㄹㅌ':'ㄾ','ㄹㅍ':'ㄿ','ㄹㅎ':'ㅀ','ㅂㅅ':'ㅄ'};
+  const TS={'ㄳ':['ㄱ','ㅅ'],'ㄵ':['ㄴ','ㅈ'],'ㄶ':['ㄴ','ㅎ'],'ㄺ':['ㄹ','ㄱ'],'ㄻ':['ㄹ','ㅁ'],'ㄼ':['ㄹ','ㅂ'],'ㄽ':['ㄹ','ㅅ'],'ㄾ':['ㄹ','ㅌ'],'ㄿ':['ㄹ','ㅍ'],'ㅀ':['ㄹ','ㅎ'],'ㅄ':['ㅂ','ㅅ']};
+  const JONGL=['','ㄱ','ㄲ','ㄳ','ㄴ','ㄵ','ㄶ','ㄷ','ㄹ','ㄺ','ㄻ','ㄼ','ㄽ','ㄾ','ㄿ','ㅀ','ㅁ','ㅂ','ㅄ','ㅅ','ㅆ','ㅇ','ㅈ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ'];
+  const isC=c=>CHO.includes(c);
+  let out='',cho='',jung='',jong='';
+  const flush=()=>{if(cho&&jung){const ci=CHO.indexOf(cho),ji=JUNG.indexOf(jung),ti=JONGL.indexOf(jong||'');out+=String.fromCharCode(0xAC00+(ci*21+ji)*28+(ti<0?0:ti));}else out+=(cho||'')+(jung||'')+(jong||'');cho='';jung='';jong='';};
+  for(const ch of str){const j=M[ch];if(j===undefined){flush();out+=ch;continue;}if(isC(j)){if(!cho&&!jung)cho=j;else if(cho&&!jung){flush();cho=j;}else if(cho&&jung&&!jong){if(JONGL.includes(j))jong=j;else{flush();cho=j;}}else{const cc=TC[jong+j];if(cc)jong=cc;else{flush();cho=j;}}}else{if(cho&&!jung)jung=j;else if(cho&&jung&&!jong){const vc=VC[jung+j];if(vc)jung=vc;else{flush();out+=j;}}else if(cho&&jung&&jong){const sp=TS[jong];let mj;if(sp){jong=sp[0];mj=sp[1];}else{mj=jong;jong='';}flush();cho=mj;jung=j;}else{const vc=VC[jung+j];if(jung&&vc){jung=vc;}else{flush();out+=j;}}}}flush();return out;
+}
+
+// [2026-06-18 골:Phase1] 키보드 내용(inputText) → 반복입력 → 자동화 후보. 한글 디코딩으로 가독.
+// (기존 rawInput은 항상 비어있었음 — 옵션2로 inputText 캡처하면서 이 엔진이 실데이터로 작동)
 function _extractRawInputPatterns(events) {
   const inputs = events
-    .filter(e => e.type === 'keyboard.chunk' && typeof e.data?.rawInput === 'string' && e.data.rawInput.trim().length > 3)
-    .map(e => e.data.rawInput.trim().slice(0, 100));
+    .filter(e => e.type === 'keyboard.chunk' && typeof e.data?.inputText === 'string' && e.data.inputText.trim().length > 3)
+    .map(e => e.data.inputText.trim().slice(0, 100));
 
   if (inputs.length < 5) return { count: inputs.length, patterns: [], topInputs: [] };
 
@@ -371,14 +390,16 @@ function _extractRawInputPatterns(events) {
     .filter(([_, c]) => c >= 2)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 10)
-    .map(([pattern, count]) => ({
-      pattern,
-      count,
-      automatable: count >= 3,
-      suggestion: count >= 3 ? `"${pattern}" 자동완성 또는 단축키 등록 가능` : null,
-    }));
+    .map(([pattern, count]) => {
+      const ko = qwertyToHangul(pattern);
+      return {
+        pattern, patternKo: ko, count,
+        automatable: count >= 3,
+        suggestion: count >= 3 ? `"${ko}" 반복 입력 ${count}회 → 자동완성/단축키 등록 가능` : null,
+      };
+    });
 
-  return { count: inputs.length, patterns, topInputs: inputs.slice(0, 5) };
+  return { count: inputs.length, patterns, topInputs: inputs.slice(0, 5).map(s => ({ raw: s, ko: qwertyToHangul(s) })) };
 }
 
 function _clusterMouseClicks(events) {
