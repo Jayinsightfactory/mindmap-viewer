@@ -170,6 +170,12 @@ async function createTables() {
     CREATE INDEX IF NOT EXISTS idx_wm_ws   ON workspace_members(workspace_id);
 
     ALTER TABLE workspace_members ADD COLUMN IF NOT EXISTS team_hierarchy_id TEXT;
+    -- [2026-06-18] 라이브 테이블이 옛 스키마(PK 없음)로 생성돼 INSERT ... ON CONFLICT 실패
+    -- (workspace-add-member/setup-nenova "no unique constraint matching ON CONFLICT").
+    -- CREATE TABLE IF NOT EXISTS는 기존 테이블을 못 고치므로 unique 인덱스+status 컬럼을 보강.
+    ALTER TABLE workspace_members ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active';
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_wm_ws_user ON workspace_members(workspace_id, user_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_ws_id ON workspaces(id);
     ALTER TABLE workspace_members ADD COLUMN IF NOT EXISTS department_id TEXT;
     ALTER TABLE workspace_members ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'active';
 
