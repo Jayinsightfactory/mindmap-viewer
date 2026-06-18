@@ -49,6 +49,8 @@ scripts/prework-search.ps1 "nenova" "관련검색어"
 ```
 
 최소 확인 파일:
+- **`DAEMON_STRUCTURE.md` — 데몬/설치/복구/모니터링 관련 질문·지시면 무조건 먼저 읽는다 (구조 추측·재발명 금지)**
+- `DATA_CHECK.md` — "데이터 안 들어온다/분석 안 된다"류 표준 디버깅 절차
 - `WORK_MEMORY.md` — 대화 핵심 지시, 반복 오류, 미적용 방지 기록
 - `WORKSPACE.md` — 기준 저장소, 브랜치, 흩어진 저장소 정리
 - `PROGRESS.md` — 진행/남은 작업
@@ -333,6 +335,12 @@ Phase 6 ⬜ 회사 OS (실시간 대시보드/KPI/병목감지/의사결정)
 
 ### 오라클 모드 (`fix:`)
 `fix:` 로 시작하면 근본 원인 분석 + 비정통적 방법도 시도.
+
+### 골모드 (`골:` 또는 `gold:`)
+**토탈 플랫폼 관점으로 사고한다** — Orbit 수집데이터 → 업무 의미화 → nenovaweb 연동 → ERP+실전업무 통합(회사 OS). 단순 코딩이 아니라 **제품 통합 설계자**로 행동.
+- 로드맵: **`TOTAL_PLATFORM.md`** (Phase 1 의미화 → 2 nenovaweb 연동 → 3 토탈 플랫폼)
+- nenova 4대 에이전트 자동 활용: `nenova-data-fusion` → `nenova-workflow-forecaster` → `nenova-cross-validator` → `nenova-ops-orchestrator`
+- 데몬 작업이면 `DAEMON_STRUCTURE.md` 먼저, ERP/주문은 nenovaweb 메모리들 먼저.
 
 ---
 
