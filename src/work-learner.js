@@ -103,9 +103,9 @@ function analyzeSession(session) {
   const apps = {};
   const categories = {};
   const windows = [];
-  let totalKeys = 0;
   let totalClicks = 0;
   let captureCount = 0;
+  const typedParts = [];                          // [골:Phase1] 세션 타이핑 내용
 
   for (const ev of session.events) {
     const ctx = extractContext(ev);
@@ -113,6 +113,7 @@ function analyzeSession(session) {
     if (ctx.window) windows.push(ctx.window);
     if (ctx.mouseClicks) totalClicks += ctx.mouseClicks;
     if (ctx.type === 'capture') captureCount++;
+    if (ctx.inputText && ctx.inputText.trim()) typedParts.push(ctx.inputText.trim());
 
     const cat = classifyActivity(ctx.app, ctx.window);
     categories[cat] = (categories[cat] || 0) + 1;
@@ -124,6 +125,13 @@ function analyzeSession(session) {
 
   // 고유 윈도우 타이틀 (반복 제거)
   const uniqueWindows = [...new Set(windows)].slice(0, 5);
+
+  // [골:Phase1] 타이핑 내용(한글 디코딩) + 사람이 읽는 세션 요약
+  const typedRaw = typedParts.join(' ').slice(0, 300);
+  const typedText = qwertyToHangul(typedRaw);
+  const sessionSummary = `${primaryApp}에서 ${durationMin}분 · ${primaryCategory}`
+    + (typedText ? ` · 입력 "${typedText.slice(0, 50)}"` : '')
+    + (totalClicks ? ` · ${totalClicks}클릭` : '');
 
   return {
     startTime: new Date(session.startTs).toISOString(),
@@ -137,6 +145,8 @@ function analyzeSession(session) {
     uniqueWindows,
     totalClicks,
     captureCount,
+    typedText,                                     // [골:Phase1] 세션에 친 내용(한글)
+    sessionSummary,                                // [골:Phase1] "nenova에서 8분 · 데이터입력 · 입력 '...' · 45클릭"
   };
 }
 
