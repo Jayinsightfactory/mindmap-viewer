@@ -1423,6 +1423,8 @@ app.get('/api/learning/logs', async (req, res) => {
         windowTitle: ctx.currentWindow || data.windowTitle || '',
         windowHistory: ctx.windowHistory || {},
         summary: data.summary || '',
+        // [2026-06-18] 옵션2: 키보드 원본 타이핑 내용 (데몬 inputText). 없으면 빈 문자열.
+        inputText: data.inputText || '',
         trigger: data.trigger || '',
         activityLevel: data.activityLevel || '',
         mouseClicks: data.mouseClicks || 0,
