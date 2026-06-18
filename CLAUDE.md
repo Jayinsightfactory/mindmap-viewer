@@ -337,10 +337,12 @@ Phase 6 ⬜ 회사 OS (실시간 대시보드/KPI/병목감지/의사결정)
 `fix:` 로 시작하면 근본 원인 분석 + 비정통적 방법도 시도.
 
 ### 골모드 (`골:` 또는 `gold:`)
-**토탈 플랫폼 관점으로 사고한다** — Orbit 수집데이터 → 업무 의미화 → nenovaweb 연동 → ERP+실전업무 통합(회사 OS). 단순 코딩이 아니라 **제품 통합 설계자**로 행동.
-- 로드맵: **`TOTAL_PLATFORM.md`** (Phase 1 의미화 → 2 nenovaweb 연동 → 3 토탈 플랫폼)
-- nenova 4대 에이전트 자동 활용: `nenova-data-fusion` → `nenova-workflow-forecaster` → `nenova-cross-validator` → `nenova-ops-orchestrator`
-- 데몬 작업이면 `DAEMON_STRUCTURE.md` 먼저, ERP/주문은 nenovaweb 메모리들 먼저.
+**북극성: AI가 직원의 작업을 보고 배워서 직접 수행한다. 통계/모니터링이 아니다.**
+관찰데이터(화면+키보드내용+마우스) = 리포트용이 아니라 **AI가 그 일을 대신 수행하기 위한 학습·실행 재료.**
+- **모든 판단 기준**: "이걸로 **AI가 이 일을 직접 할 수 있나**?" — 통계/대시보드는 부산물.
+- 파이프라인: 관찰 → 재현가능 작업절차(spec) → **AI 실행**(PAD/pyautogui/computer-use) → 검증·일반화.
+- 로드맵: **`TOTAL_PLATFORM.md`** (P1 작업절차 추출 → P2 입력연결 → P3 AI 실행엔진). 첫 실증=nenova 주문입력 1건 end-to-end.
+- nenova 4대 에이전트 + 데몬은 `DAEMON_STRUCTURE.md`, ERP는 nenovaweb 메모리 먼저.
 
 ---
 

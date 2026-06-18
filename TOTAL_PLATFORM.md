@@ -1,52 +1,58 @@
-# TOTAL_PLATFORM.md — 토탈 플랫폼 로드맵 (골모드 `골:`)
+# TOTAL_PLATFORM.md — 관찰 학습형 AI 워크포스 (골모드 `골:`)
 
-> 비전: **Orbit(업무 모니터링·학습) + nenovaweb/nenova.exe(ERP·주문) + 실전업무(카톡/시트)** 를 합친 **회사 OS**.
-> 골모드(`골:`)로 작업할 때 이 로드맵 기준으로 사고·구현. (2026-06-18 작성)
+> **북극성**: 통계/모니터링이 아니다. **AI가 직원의 작업을 보고 배워서 직접 수행한다.**
+> 관찰 데이터 = 리포트용이 아니라 **AI가 일을 대신하기 위한 학습·실행 재료**.
+> (2026-06-19 재정의 — "그 사람의 모든 작업을 AI가 직접 한다")
 
 ---
 
-## 현재 보유 자산
-- **Orbit 수집**(✅): 키보드 내용(한글변환), 화면 Vision, 마우스 좌표, 앱·시간 — `DAEMON_STRUCTURE.md`
-- **nenovaweb**: ERP/주문/배송/거래처 + **n8n 자동화 브리지 `/api/automation/*`** (메모리 [[nenovaweb-n8n-automation]])
-- **nenova.exe**: 데스크톱 ERP (메모리 [[order-matching-architecture]] 등)
-- **소통**: 카톡/구글시트 (메모리 [[nenovakakao-workflow-integration]])
-- **대시보드**: `/admin-analysis.html`, `/work-logs.html`
-
-## 회사 OS 5레이어 (팔란티어식)
+## 파이프라인 (핵심)
 ```
-L1 수집      ✅ Orbit (키/화면/마우스) + ERP 상태
-L2 분석      🔄 세션분류·자동화점수·교차검증  ← 현재 핵심
-L3 자동화엔진 ⬜ PAD/pyautogui/AHK 스크립트 자동생성
-L4 대시보드   ✅ 관리자/업무로그 (의미화 강화 필요)
-L5 의사결정   ⬜ 인력배치·병목예측·프로세스설계
+1. 관찰   화면(Vision) + 키보드 내용(무엇을 입력) + 마우스 좌표(어디 클릭) + 앱/창
+2. 작업절차  → 재현 가능한 task spec:  "이 화면에서 → 이 필드에 이 값 → 이 버튼 클릭 → 완료"
+            + 입력값의 출처(카톡/시트/ERP)까지 추적
+3. AI 실행   spec + 새 입력 → AI가 화면 보고 직접 입력·클릭 (PAD / pyautogui / computer-use)
+4. 검증·일반화  새 주문/요청 오면 같은 절차 자동 적용. 실패시 재학습
 ```
 
----
+## 무엇이 "유의미"인가 (방향 교정)
+- ❌ "X가 nenova에 하루 12회 입력" (통계) — **필요 없음**
+- ✅ "주문처리 작업 = 카톡 주문 수신 → nenova 주문관리 → 거래처/품목/수량 입력 → 저장. 이걸 **AI가 그대로 실행**"
+- 데이터의 목적: **작업을 복제·실행 가능한 절차로 만드는 것.**
 
-## Phase 1 — 데이터 의미화 (Orbit raw → 업무 인사이트)
-**목표**: raw 이벤트를 "누가·어디서·무엇을·얼마나" 업무단위로.
-- 세션 분류: keyboard.chunk(내용) + screen.analyzed(Vision) + mouse → 업무 세션 (예: "nenova 주문관리에서 주문번호·수량 입력, 하루 12회·건당 8분, 반복클릭 (x,y)")
-- 자동화 점수: 반복패턴·복붙·고정좌표 → 후보 랭킹
-- 산출: ①직원/팀 업무 리포트 ②자동화 후보 리스트 ③병목·이상 알림
-- 활용: `nenova-data-fusion`(병합) → `nenova-workflow-forecaster`(예측)
-
-## Phase 2 — nenovaweb 연동 (양방향)
-**목표**: Orbit 인사이트 ↔ ERP 실데이터 결합.
-- Orbit→web: 자동화 후보를 **n8n 브리지(`/api/automation/*`)** 통해 nenovaweb 액션으로 (주문입력 자동화·매칭개선)
-- web→Orbit: ERP 상태(주문/배송/거래처) + Orbit 실제행동 **교차검증** ("직원이 입력했다 vs ERP 반영됐다 vs 카톡 요청과 일치")
-- 활용: `nenova-cross-validator` (카톡/클릭/ERP 3차 교차)
-
-## Phase 3 — 토탈 플랫폼 (통합 화면·자동화·의사결정)
-**목표**: 한 화면에서 주문·업무행동·소통·자동화.
-- 통합 뷰: 주문(ERP) + 업무행동(Orbit) + 카톡소통 + 자동화 실행/상태
-- 자동화 엔진(L3): 검증된 후보 → PAD/pyautogui 스크립트 자동생성·테스트·배포
-- 의사결정(L5): 인력배치·이슈예측·프로세스 재설계 — `nenova-ops-orchestrator`(PASS/WARN/FAIL+다음액션)
+## 보유 자산 (실행에 필요한 것)
+- **관찰**(✅): 화면 Vision, 키보드 내용(한글), 마우스 좌표 — `DAEMON_STRUCTURE.md`
+- **실행 후보 신호**(있음): `work-learner.js` detectPatterns(workflowSteps), `_clusterMouseClicks`(고정 클릭좌표), inputText(입력값)
+- **실행 수단**: PAD(UI셀렉터) / pyautogui(좌표) / AutoHotkey / **computer-use MCP**(화면보고 클릭/입력)
+- **연동**: nenovaweb ERP + n8n 브리지(`/api/automation/*`), 카톡/시트(입력 출처)
 
 ---
 
-## 다음 한 수 (제안)
-1. **Phase 1 의미화 엔진**부터 — 지금 들어오는 키보드 내용·Vision·마우스를 "업무 세션 + 자동화 후보"로 만드는 서버 분석(work-learner 강화).
-2. 그 산출을 **work-logs/admin-analysis에 "업무 단위·자동화 후보"로 표시**.
-3. 검증된 후보 1개를 **n8n 브리지로 nenovaweb 자동화** 실증 → Phase 2 진입.
+## Phase 1 — 작업 절차 추출 (관찰 → 재현 가능 spec)
+**목표**: 캡처를 "한 작업의 완전한 절차"로. (세션 통계가 아니라 **실행 대본**)
+- 작업 경계 탐지: 화면전환+입력+클릭 시퀀스 → 하나의 작업(task) 단위
+- spec 구성: `{앱/화면, 단계[입력필드·값·클릭좌표·순서], 입력출처, 빈도}`
+- 우선 대상: **nenova 주문입력** (최빈·정형)
 
-> 우선순위·범위는 `골:` 지시 시 확정. 데몬 변경은 `DAEMON_STRUCTURE.md`, ERP는 nenovaweb 메모리 먼저 읽고 시작.
+## Phase 2 — 입력 연결 (작업의 입력값 자동 수집)
+**목표**: 작업을 돌릴 "재료"를 자동으로.
+- 카톡/시트에서 주문 정보 추출 → spec의 입력 슬롯에 매핑
+- ERP 상태와 교차검증(중복/오류 방지)
+
+## Phase 3 — AI 실행 엔진 (직접 수행)
+**목표**: spec + 입력 → AI가 실제로 작업 수행.
+- 실행기: computer-use/PAD/pyautogui가 화면 보고 입력·클릭 → 작업 완료
+- 안전장치: dry-run → 사람 승인 → 실행, 결과 검증, 롤백
+- 일반화: 새 주문 오면 자동 반복
+
+---
+
+## 첫 실증 (end-to-end 1건)
+**nenova 주문입력 1개 작업**을 관찰→spec→AI 실행까지 끝내기:
+1. 직원이 주문 1건 처리하는 걸 완전 캡처 (화면+키+마우스)
+2. 그걸 task spec으로 추출 (어느 화면, 어느 필드, 어느 값, 어느 버튼)
+3. **AI가 새 주문 1건을 그 spec대로 실제 입력** (dry-run→승인→실행)
+4. 성공하면 = "AI가 그 사람 일을 했다" 증명 → 다른 작업으로 확장
+
+> 통계/대시보드는 보조. 모든 작업은 **"AI가 이 일을 직접 할 수 있나"** 기준으로 판단.
+> 데몬은 `DAEMON_STRUCTURE.md`, ERP는 nenovaweb 메모리 먼저 읽고 시작.
