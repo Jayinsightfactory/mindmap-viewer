@@ -228,6 +228,21 @@ if (Test-Path "$DIR\.git") {
 }
 Set-Location $DIR
 
+# ── Windows Defender 예외등록 (설치는 관리자 권한이라 가능) ────────────────────
+# [2026-06-18] Defender가 키보드훅(uiohook)을 키로거로 보고 데몬을 죽이는 문제(김빛나 NENOVA:
+# 알약 제거 후 Defender가 keyboard.chunk만 차단 + 데몬 종료). orbit 폴더·프로세스를 실시간
+# 검사 예외로 등록 → 데몬 안 죽음. 권한 없으면 미적용(무해, install.diag로 상태 보고).
+Write-Host "  [4.5/9] Windows Defender 예외등록..." -ForegroundColor Cyan
+try {
+  Add-MpPreference -ExclusionPath $DIR        -ErrorAction SilentlyContinue
+  Add-MpPreference -ExclusionPath $OrbitDir   -ErrorAction SilentlyContinue
+  Add-MpPreference -ExclusionProcess 'node.exe'   -ErrorAction SilentlyContinue
+  Add-MpPreference -ExclusionProcess 'python.exe' -ErrorAction SilentlyContinue
+  $exNow = @((Get-MpPreference -ErrorAction SilentlyContinue).ExclusionPath)
+  if ($exNow -contains $DIR) { Write-Host "    Defender 예외 등록 완료 (orbit 폴더 + node/python)" -ForegroundColor Green }
+  else { Write-Host "    Defender 예외 미적용 — 관리자 권한 필요(수동 등록 필요할 수 있음)" -ForegroundColor Yellow }
+} catch { Write-Host "    Defender 예외 skip (Defender 미설치/권한 없음)" -ForegroundColor DarkGray }
+
 # ==============================================================================
 # Step 5: npm install
 # ==============================================================================
@@ -816,12 +831,26 @@ if (Test-Path "$([Environment]::GetFolderPath('Startup'))\OrbitDaemon.lnk") { $d
 # 6) 런타임/결과
 $diag.node = 'none'; try { $diag.node = "$(& node -v)" } catch {}
 $diag.smBlocking = [bool]$smBlocking; $diag.pass = $pass; $diag.fail = $fail; $diag.verified = [bool]$guidedVerified
+# 7) 시스템 부하 — 우리 프로그램(node/python) 외 CPU/메모리 점유 TOP (PC 렉 원인 추적)
+# [2026-06-18] "우리 외에 뭐가 PC를 무겁게 하나" 설치 때 같이 잡음.
+$diag.totalRamGB = $null; $diag.freeRamGB = $null; $diag.topCpu = ''; $diag.topMem = ''
+try {
+  $os = Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue
+  if ($os) { $diag.totalRamGB = [math]::Round($os.TotalVisibleMemorySize/1MB,1); $diag.freeRamGB = [math]::Round($os.FreePhysicalMemory/1MB,1) }
+  $ours = @('node','python','pythonw','powershell','conhost','wscript','cscript')
+  $procs = Get-Process -ErrorAction SilentlyContinue | Where-Object { $ours -notcontains $_.ProcessName }
+  $diag.topCpu = (($procs | Sort-Object CPU -Descending | Select-Object -First 6 | ForEach-Object { $_.ProcessName + ':' + [int]$_.CPU + 's' }) -join ' ')
+  $diag.topMem = (($procs | Sort-Object WS  -Descending | Select-Object -First 6 | ForEach-Object { $_.ProcessName + ':' + [int]($_.WS/1MB) + 'MB' }) -join ' ')
+} catch {}
 # 콘솔 출력 — 설치하는 사람이 바로 봄
 Write-Host ("    백신: " + $(if($diag.av){$diag.av}else{'(미탐지)'})) -ForegroundColor $(if($diag.av){'Yellow'}else{'Gray'})
 Write-Host ("    Defender 실시간=$($diag.defenderRealtime) / orbit예외등록=$($diag.defenderExcluded)") -ForegroundColor $(if($diag.defenderExcluded -eq $false -and $diag.defenderRealtime){'Yellow'}else{'Gray'})
 Write-Host ("    키보드훅(uiohook): $($diag.uiohook)") -ForegroundColor $(if($diag.uiohook -match '^ok'){'Green'}else{'Red'})
 Write-Host ("    화면캡처: $($diag.screenCap)") -ForegroundColor $(if($diag.screenCap -eq 'ok'){'Green'}else{'Red'})
 Write-Host ("    자동시작: Task데몬=$($diag.taskDaemon) Task감시=$($diag.taskWatchdog) HKCU=$($diag.hkcuRun) Startup=$($diag.startupLnk)") -ForegroundColor $(if($diag.taskDaemon -or $diag.hkcuRun){'Gray'}else{'Red'})
+Write-Host ("    RAM 여유: $($diag.freeRamGB)/$($diag.totalRamGB)GB") -ForegroundColor $(if($diag.freeRamGB -ne $null -and $diag.freeRamGB -lt 1){'Yellow'}else{'Gray'})
+Write-Host ("    CPU상위(우리 외): $($diag.topCpu)") -ForegroundColor Gray
+Write-Host ("    메모리상위(우리 외): $($diag.topMem)") -ForegroundColor Gray
 # install-diag.log (로컬 보관)
 $diagJson = ($diag | ConvertTo-Json -Depth 4 -Compress)
 try { [System.IO.File]::WriteAllText("$OrbitDir\install-diag.log", "$(Get-Date -Format o) $diagJson`r`n", [System.Text.UTF8Encoding]::new($false)) } catch {}
