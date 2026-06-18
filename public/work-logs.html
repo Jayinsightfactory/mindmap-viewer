@@ -71,6 +71,7 @@ button.primary:hover{background:#388bfd}
     <option value="idle">💤 유휴</option>
   </select>
   <input type="text" id="keywordFilter" placeholder="앱/창 검색..." style="width:140px"/>
+  <label style="font-size:12px;color:#c9d1d9;display:flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" id="hangulToggle" checked onchange="re_render()"/> 🇰🇷 한글변환</label>
   <button class="primary" onclick="loadLogs()">🔍 조회</button>
   <button onclick="loadLogs(true)">전체 새로고침</button>
   <span id="status-txt" style="color:#6e7681;font-size:11px;margin-left:4px"></span>
@@ -256,6 +257,42 @@ function renderTimeline(logs) {
   area.innerHTML = html;
 }
 
+// ── 두벌식 QWERTY → 한글 역변환 (키보드훅이 IME 조합 전 물리키를 잡아서) ──────────
+function qwertyToHangul(str){
+  if(!str) return '';
+  const M={q:'ㅂ',w:'ㅈ',e:'ㄷ',r:'ㄱ',t:'ㅅ',y:'ㅛ',u:'ㅕ',i:'ㅑ',o:'ㅐ',p:'ㅔ',a:'ㅁ',s:'ㄴ',d:'ㅇ',f:'ㄹ',g:'ㅎ',h:'ㅗ',j:'ㅓ',k:'ㅏ',l:'ㅣ',z:'ㅋ',x:'ㅌ',c:'ㅊ',v:'ㅍ',b:'ㅠ',n:'ㅜ',m:'ㅡ',Q:'ㅃ',W:'ㅉ',E:'ㄸ',R:'ㄲ',T:'ㅆ',O:'ㅒ',P:'ㅖ'};
+  const CHO='ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ';
+  const JUNG='ㅏㅐㅑㅒㅓㅔㅕㅖㅗㅘㅙㅚㅛㅜㅝㅞㅟㅠㅡㅢㅣ';
+  const VC={'ㅗㅏ':'ㅘ','ㅗㅐ':'ㅙ','ㅗㅣ':'ㅚ','ㅜㅓ':'ㅝ','ㅜㅔ':'ㅞ','ㅜㅣ':'ㅟ','ㅡㅣ':'ㅢ'};
+  const TC={'ㄱㅅ':'ㄳ','ㄴㅈ':'ㄵ','ㄴㅎ':'ㄶ','ㄹㄱ':'ㄺ','ㄹㅁ':'ㄻ','ㄹㅂ':'ㄼ','ㄹㅅ':'ㄽ','ㄹㅌ':'ㄾ','ㄹㅍ':'ㄿ','ㄹㅎ':'ㅀ','ㅂㅅ':'ㅄ'};
+  const TS={'ㄳ':['ㄱ','ㅅ'],'ㄵ':['ㄴ','ㅈ'],'ㄶ':['ㄴ','ㅎ'],'ㄺ':['ㄹ','ㄱ'],'ㄻ':['ㄹ','ㅁ'],'ㄼ':['ㄹ','ㅂ'],'ㄽ':['ㄹ','ㅅ'],'ㄾ':['ㄹ','ㅌ'],'ㄿ':['ㄹ','ㅍ'],'ㅀ':['ㄹ','ㅎ'],'ㅄ':['ㅂ','ㅅ']};
+  const JONGL=['','ㄱ','ㄲ','ㄳ','ㄴ','ㄵ','ㄶ','ㄷ','ㄹ','ㄺ','ㄻ','ㄼ','ㄽ','ㄾ','ㄿ','ㅀ','ㅁ','ㅂ','ㅄ','ㅅ','ㅆ','ㅇ','ㅈ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ'];
+  const isC=c=>CHO.includes(c), isV=c=>JUNG.includes(c);
+  let out='', cho='', jung='', jong='';
+  const flush=()=>{
+    if(cho&&jung){ const ci=CHO.indexOf(cho),ji=JUNG.indexOf(jung),ti=JONGL.indexOf(jong||''); out+=String.fromCharCode(0xAC00+(ci*21+ji)*28+(ti<0?0:ti)); }
+    else out+=(cho||'')+(jung||'')+(jong||'');
+    cho=''; jung=''; jong='';
+  };
+  for(const ch of str){
+    const j=M[ch];
+    if(j===undefined){ flush(); out+=ch; continue; }
+    if(isC(j)){
+      if(!cho && !jung) cho=j;
+      else if(cho && !jung){ flush(); cho=j; }
+      else if(cho && jung && !jong){ if(JONGL.includes(j)) jong=j; else { flush(); cho=j; } }
+      else { const cc=TC[jong+j]; if(cc) jong=cc; else { flush(); cho=j; } }
+    } else {
+      if(cho && !jung) jung=j;
+      else if(cho && jung && !jong){ const vc=VC[jung+j]; if(vc) jung=vc; else { flush(); out+=j; } }
+      else if(cho && jung && jong){ const sp=TS[jong]; let mj; if(sp){ jong=sp[0]; mj=sp[1]; } else { mj=jong; jong=''; } flush(); cho=mj; jung=j; }
+      else { const vc=VC[jung+j]; if(jung&&vc){jung=vc;} else { flush(); out+=j; } }
+    }
+  }
+  flush();
+  return out;
+}
+
 function renderRow(e) {
   const time = (e.timestamp||'').slice(11,16);
   const badge = typeBadge(e.type);
@@ -284,7 +321,7 @@ function renderRow(e) {
       <div class="log-body">
         <div class="log-app">${badge} &nbsp;${escHtml(app)}</div>
         ${title ? `<div class="log-title">${escHtml(title)}</div>` : ''}
-        ${e.inputText ? `<div class="log-input" style="margin-top:4px;padding:6px 8px;background:#0d1117;border-left:2px solid #58a6ff;border-radius:3px;font-size:12.5px;color:#c9d1d9;white-space:pre-wrap;word-break:break-word">⌨️ ${escHtml(e.inputText)}</div>` : ''}
+        ${e.inputText ? `<div class="log-input" style="margin-top:4px;padding:6px 8px;background:#0d1117;border-left:2px solid #58a6ff;border-radius:3px;font-size:12.5px;color:#c9d1d9;white-space:pre-wrap;word-break:break-word">⌨️ ${escHtml(document.getElementById('hangulToggle')?.checked ? qwertyToHangul(e.inputText) : e.inputText)}</div>` : ''}
         ${summary ? `<div class="log-summary">${escHtml(summary)}</div>` : ''}
         <div class="log-meta">${clicks}${activity}${trigger}${histHtml}</div>
         ${visionHtml}
