@@ -2727,7 +2727,14 @@ app.post('/api/admin/update-user-name', async (req, res) => {
   let pgOk = false, sqliteOk = false;
   if (pool) {
     try {
-      await pool.query(`UPDATE orbit_auth_users SET name=$1 WHERE id=$2`, [name, userId]);
+      // [2026-06-18] UPDATE만 하면 orbit_auth_users에 레코드 없는 유저(PC-link만 된 김빛나 등)는
+      // 이름이 안 박혀 대시보드에 "사용자"로 뜸. UPSERT로 없으면 생성.
+      await pool.query(
+        `INSERT INTO orbit_auth_users (id, email, name, password_hash, plan, provider)
+         VALUES ($2, $3, $1, '', 'free', 'pc-link')
+         ON CONFLICT (id) DO UPDATE SET name=$1`,
+        [name, userId, `${String(userId).toLowerCase()}@orbit.local`]
+      );
       pgOk = true;
     } catch (e) { console.warn('[update-user-name] PG 실패:', e.message); }
   }
