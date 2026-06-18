@@ -48,6 +48,8 @@ function Write-GuardianScript {
 function Pause-Exit([int]$Code = 0) {
   Write-Host ""
   if ($Code -ne 0) { Write-Host "  Install error. Log: $LOG_FILE" -ForegroundColor Yellow }
+  # [2026-06-18 라이프라인] 자가재설치(비대화식)에선 입력 대기 없이 즉시 종료 — 무한정 멈춤 방지
+  if ($env:ORBIT_AUTO_REINSTALL -eq '1') { exit $Code }
   Write-Host "  Press Enter to close..." -ForegroundColor Gray
   try { [Console]::ReadKey($true) | Out-Null } catch { try { Read-Host " " } catch {} }
   exit $Code

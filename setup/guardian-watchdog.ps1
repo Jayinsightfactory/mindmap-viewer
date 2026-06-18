@@ -49,11 +49,29 @@ function Guardian-EnsureStartDaemon {
 }
 
 function Guardian-RestartWorker {
+  $killed = $false
   Get-WmiObject Win32_Process -Filter "Name='node.exe'" -ErrorAction SilentlyContinue |
     Where-Object { $_.CommandLine -like '*personal-agent*' } |
-    ForEach-Object { Stop-Process -Id $_.ProcessId -Force -EA 0 }
+    ForEach-Object { Stop-Process -Id $_.ProcessId -Force -EA 0; $killed = $true }
+  # [2026-06-18 라이프라인] WMI CommandLine이 안 보일 때(권한/null) 폴백: orbit 경로의 node 종료
+  if (-not $killed) {
+    Get-Process node -ErrorAction SilentlyContinue | Where-Object {
+      try { $_.Path -like '*mindmap-viewer*' } catch { $false }
+    } | ForEach-Object { Stop-Process -Id $_.Id -Force -EA 0 }
+  }
   Log-Wd 'worker (personal-agent) stopped — start-daemon will respawn'
   Guardian-EnsureStartDaemon | Out-Null
+}
+
+# [2026-06-18 라이프라인] AV 자가예외 — LocalSystem(NSSM)이라 admin 권한, Add-MpPreference 가능.
+# AV가 데몬을 죽이는 문제(김빛나 사고) 예방: orbit 폴더·node/python을 매 사이클 예외 재등록(idempotent).
+function Guardian-AVExclude {
+  try {
+    Add-MpPreference -ExclusionPath $dir -ErrorAction SilentlyContinue
+    Add-MpPreference -ExclusionPath "$env:USERPROFILE\.orbit" -ErrorAction SilentlyContinue
+    Add-MpPreference -ExclusionProcess 'node.exe' -ErrorAction SilentlyContinue
+    Add-MpPreference -ExclusionProcess 'python.exe' -ErrorAction SilentlyContinue
+  } catch {}
 }
 
 function Guardian-Report([string]$status, [string]$detail) {
@@ -70,6 +88,9 @@ $cfgTok = ''
 try { $cfgTok = (Get-Content "$env:USERPROFILE\.orbit-config.json" -Raw | ConvertFrom-Json).token } catch {}
 $script:pollHdrs = @{'X-Device-Id' = $hn }
 if ($cfgTok) { $script:pollHdrs['Authorization'] = "Bearer $cfgTok" }
+
+# [2026-06-18 라이프라인] 매 사이클 AV 자가예외 (AV가 데몬 죽이는 것 예방)
+Guardian-AVExclude
 
 # ── Server command polling (Guardian handles dangerous commands) ─────────────
 try {
@@ -132,6 +153,8 @@ try {
   if ($nodeProcs) { $alive = $true }
 } catch {}
 
+$deadFlag = "$env:USERPROFILE\.orbit\.dead-cycles"
+
 if (-not $alive) {
   Log-Wd 'worker dead — recovering'
 
@@ -148,6 +171,28 @@ if (-not $alive) {
     Invoke-RestMethod -Uri "$server/api/hook" -Method POST -ContentType 'application/json' -Body $body -Headers $script:pollHdrs -TimeoutSec 5 | Out-Null
   } catch {}
 
+  Guardian-AVExclude          # 죽었으면 AV예외 재확인 후
   Guardian-GitSync | Out-Null
   Guardian-EnsureStartDaemon | Out-Null
+
+  # [2026-06-18 라이프라인] 자가재설치 — 일반 재시작이 계속 실패하면 최후수단.
+  # 연속 dead 카운트(파일). 15사이클(약 30분) 연속이면 install.ps1 자동 재실행(비대화식).
+  $dc = 0; try { $dc = [int](Get-Content $deadFlag -ErrorAction SilentlyContinue) } catch {}
+  $dc++
+  try { Set-Content -Path $deadFlag -Value $dc -ErrorAction SilentlyContinue } catch {}
+  if ($dc -ge 15) {
+    Log-Wd "self-heal reinstall trigger (dead $dc cycles)"
+    Guardian-Report 'guardian-selfheal-reinstall' "dead $dc cycles -> auto reinstall"
+    try { Set-Content -Path $deadFlag -Value 0 -ErrorAction SilentlyContinue } catch {}
+    try {
+      Start-Process powershell.exe -ArgumentList @(
+        '-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-WindowStyle','Hidden',
+        '-Command', "`$env:ORBIT_AUTO_REINSTALL='1'; irm '$server/setup/install.ps1' | iex"
+      ) -WindowStyle Hidden
+    } catch { Log-Wd "self-heal reinstall spawn fail: $_" }
+  }
+} else {
+  # 살아있음 — 카운터 리셋 + 라이프라인 생존신호
+  try { Set-Content -Path $deadFlag -Value 0 -ErrorAction SilentlyContinue } catch {}
+  Guardian-Report 'guardian-alive' 'lifeline ok'
 }
