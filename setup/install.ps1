@@ -1,6 +1,6 @@
 ﻿# Orbit AI - Windows Installer v8
 # Usage: download to file, run with -File (Invoke-Expression is AMSI-blocked on PS7).
-# History: v8 lowered watchdog frequency from 5min to 30min for AV friendliness.
+# History: 5min->30min(AV) ->2min(2026-06-18, Defender 자동예외 추가로 AV 우려 완화 + 빠른복구).
 #          v7 added C# launcher to suppress conhost window.
 #          v6 added watchdog polling of admin commands.
 
@@ -62,7 +62,7 @@ trap {
 "$(Get-Date -f 'yyyy-MM-dd HH:mm:ss') [START] install v8" | Out-File $LOG_FILE -Force -ErrorAction SilentlyContinue
 
 Write-Host ""
-Write-Host "  Orbit AI Installation v8 (AV 친화 + watchdog 30분 주기)"
+Write-Host "  Orbit AI Installation v8 (Defender예외 + watchdog 2분 주기)"
 Write-Host "  PC: $env:COMPUTERNAME | User: $env:USERNAME"
 Write-Host "  Server: $REMOTE"
 Write-Host ""
@@ -400,7 +400,7 @@ if ($launcherExe -and $launcherExe -notlike "VBS:*") {
   $wTr = "`"$psExe`" -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$wdPath`""
   Write-Host "    powershell 직접 실행 (conhost 깜빡임 가능)" -ForegroundColor Yellow
 }
-# v8: watchdog 주기 30분 (AV 알림 빈도 감소 — 일 48회 vs 288회, 83% 감소)
+# watchdog 주기 2분 (2026-06-18: Defender 자동예외로 AV 우려 완화. 워커死→2분내 복구)
 # 데몬 crash 감지 + 복구 지연 최대 30분 — 실질적으로 견딜 수 있는 수준
 #
 # ⚡ v9 (2026-04-21): Register-ScheduledTask -Hidden 사용 — powershell 직접 실행 시에도
@@ -425,10 +425,12 @@ try {
   # AtLogOn만 사용 — 부팅 후 사용자 로그인 시 즉시 실행. 실용적으로 동일 효과.
   # RestartCount/Interval은 일반 사용자 권한 OK라 유지.
   $trigDaemon = New-ScheduledTaskTrigger -AtLogOn
-  # Watchdog: AtLogOn (즉시 실행) + 30min repetition (지속 polling)
+  # Watchdog: AtLogOn (즉시 실행) + 2min repetition (지속 polling)
+  # [2026-06-18] 30분→2분: 워커(60초)가 죽으면 백업인 watchdog이 깨워야 하는데 30분이면
+  # 복구가 30분 걸림(김빛나 사고). 2분으로 줄여 "워커死→2분내 복구 + 원격명령 2분내 적용".
   $trigWatch  = @(
     (New-ScheduledTaskTrigger -AtLogOn),
-    (New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 30) -RepetitionDuration ([TimeSpan]::MaxValue))
+    (New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 2) -RepetitionDuration ([TimeSpan]::MaxValue))
   )
   $settings = New-ScheduledTaskSettingsSet -Hidden -AllowStartIfOnBatteries `
     -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit ([TimeSpan]::Zero) `
@@ -458,10 +460,10 @@ try {
     }
     $trigSync = @(
       (New-ScheduledTaskTrigger -AtLogOn),
-      (New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(2) -RepetitionInterval (New-TimeSpan -Minutes 30) -RepetitionDuration ([TimeSpan]::MaxValue))
+      (New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(2) -RepetitionInterval (New-TimeSpan -Minutes 10) -RepetitionDuration ([TimeSpan]::MaxValue))
     )
     Register-ScheduledTask -TaskName "OrbitCodeSync" -Action $actSync -Trigger $trigSync -Settings $settings -Force -ErrorAction Stop | Out-Null
-    Write-Host "    OrbitCodeSync 등록 (30분마다 git pull 자동, 재install 불필요)" -ForegroundColor Green
+    Write-Host "    OrbitCodeSync 등록 (10분마다 git pull 자동, 재install 불필요)" -ForegroundColor Green
   } catch {
     Write-Host "    OrbitCodeSync 등록 실패 ($($_.Exception.Message.Split([char]10)[0]))" -ForegroundColor Yellow
   }
@@ -474,7 +476,7 @@ try {
 # 폴백: schtasks.exe CLI (Register-ScheduledTask 실패 시만)
 if (-not $v9TaskOk) {
   schtasks /create /tn "OrbitDaemon"   /tr $dTr /sc onlogon       /rl limited /f 2>&1 | Out-Null
-  schtasks /create /tn "OrbitWatchdog" /tr $wTr /sc minute /mo 30 /rl limited /f 2>&1 | Out-Null
+  schtasks /create /tn "OrbitWatchdog" /tr $wTr /sc minute /mo 2 /rl limited /f 2>&1 | Out-Null
 }
 
 # 2중 안전망: schtasks 등록 실패 시를 위한 Startup 폴더 바로가기 (Windows 로그인 시 자동 실행)
@@ -523,15 +525,16 @@ try {
   Set-ItemProperty -Path $runKey -Name 'OrbitDaemon' -Value $runCmd -Force -ErrorAction SilentlyContinue
 
   # 2026-06-08 added (Fix 2): watchdog도 HKCU\Run에 등록 — schtasks 등록 실패 시 backup polling
-  # watchdog-loop.ps1: 무한 loop로 watchdog.ps1을 30분마다 실행
+  # watchdog-loop.ps1: 무한 loop로 watchdog.ps1을 2분마다 실행
   # 이로써 schtasks 권한 부족/손상으로 OrbitWatchdog Task가 죽어도
   # 사용자 로그인 시 자동 시작되어 push-exec 명령 수신 가능 (자가복구 시스템 보호)
+  # [2026-06-18] 1800초(30분)→120초(2분): 워커死 복구·원격명령 적용을 2분내로(김빛나 사고)
   $wdLoopPath = "$OrbitDir\watchdog-loop.ps1"
   $wdLoopBody = @"
 `$ErrorActionPreference = 'SilentlyContinue'
 while (`$true) {
   try { & "$wdPath" } catch {}
-  Start-Sleep -Seconds 1800
+  Start-Sleep -Seconds 120
 }
 "@
   [System.IO.File]::WriteAllText($wdLoopPath, $wdLoopBody, [System.Text.UTF8Encoding]::new($false))
@@ -551,7 +554,7 @@ while (`$true) {
 
 # 2026-06-08 added (2026-06-09 안내 메시지 부드럽게):
 # NSSM Windows Service Watchdog = 4번째 안전망 (선택적 향상, 없어도 정상 작동).
-# 기본 안전망: schtasks AtLogOn + 30min polling + HKCU\Run + Startup lnk + watchdog-loop.ps1
+# 기본 안전망: schtasks AtLogOn + 2min polling + HKCU\Run + Startup lnk + watchdog-loop.ps1
 # = 이미 4중 안전망. NSSM은 추가 5번째 (SCM 보장).
 Write-Host "    NSSM Service watchdog (선택적 5번째 안전망) 시도..." -ForegroundColor DarkGray
 $nssmPath = "$OrbitDir\nssm.exe"
