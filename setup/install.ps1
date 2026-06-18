@@ -783,6 +783,58 @@ if (-not $running -and (Test-Path $sd)) {
 if ($running) { Write-Host "    Daemon OK PID $($running.ProcessId)" -ForegroundColor Green }
 else { Write-Host "    Daemon WARN — start-daemon.ps1 확인" -ForegroundColor Yellow }
 
+# ── 환경 진단 (이 PC가 다른 PC와 뭐가 다른지) ─────────────────────────────────
+# [2026-06-18] 특정 PC만 매번 설치 실패하는 원인을 설치 시점에 포착해 콘솔+로그+서버로 남긴다.
+# 핵심 의심: 백신(AhnLab V3 등)이 uiohook(키보드훅)·화면캡처를 막거나, 자동시작 등록이 막힘.
+Write-Host ""
+Write-Host "  [진단] 이 PC 환경 차이 점검..." -ForegroundColor Cyan
+$diag = [ordered]@{ hostname = $env:COMPUTERNAME }
+# 1) 백신 제품
+$avList = @()
+try { $avList = @(Get-CimInstance -Namespace 'root/SecurityCenter2' -ClassName AntiVirusProduct -ErrorAction Stop | Select-Object -ExpandProperty displayName) } catch {}
+$diag.av = ($avList -join ', ')
+# 2) Defender 실시간 + orbit 폴더 예외 여부
+$diag.defenderRealtime = $null; $diag.defenderExcluded = $null
+try {
+  $mp = Get-MpComputerStatus -ErrorAction Stop; $diag.defenderRealtime = [bool]$mp.RealTimeProtectionEnabled
+  $exPaths = @((Get-MpPreference -ErrorAction Stop).ExclusionPath)
+  $diag.defenderExcluded = [bool](($exPaths -contains $DIR) -or ($exPaths -contains "$env:USERPROFILE\.orbit"))
+} catch {}
+# 3) uiohook 키보드훅 로드 (차단 핵심 지표)
+$diag.uiohook = 'unknown'
+Push-Location $DIR
+try { $u = & node -e "try{require('uiohook-napi');console.log('ok')}catch(e){console.log('fail:'+(e.message||'').slice(0,80))}" 2>&1; $diag.uiohook = (("$u" -split "`n")[0]).Trim() } catch { $diag.uiohook = 'error' }
+Pop-Location
+# 4) 화면캡처
+$diag.screenCap = $(if ($capOk) { 'ok' } else { 'fail' })
+# 5) 자동시작 등록 상태 (재부팅 후 안 뜨는 원인)
+$diag.taskDaemon = $false; $diag.taskWatchdog = $false; $diag.hkcuRun = $false; $diag.startupLnk = $false
+$null = schtasks /query /tn "OrbitDaemon" 2>$null;   if ($LASTEXITCODE -eq 0) { $diag.taskDaemon = $true }
+$null = schtasks /query /tn "OrbitWatchdog" 2>$null; if ($LASTEXITCODE -eq 0) { $diag.taskWatchdog = $true }
+try { $rk = Get-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -ErrorAction Stop; if ($rk.OrbitDaemon) { $diag.hkcuRun = $true } } catch {}
+if (Test-Path "$([Environment]::GetFolderPath('Startup'))\OrbitDaemon.lnk") { $diag.startupLnk = $true }
+# 6) 런타임/결과
+$diag.node = 'none'; try { $diag.node = "$(& node -v)" } catch {}
+$diag.smBlocking = [bool]$smBlocking; $diag.pass = $pass; $diag.fail = $fail; $diag.verified = [bool]$guidedVerified
+# 콘솔 출력 — 설치하는 사람이 바로 봄
+Write-Host ("    백신: " + $(if($diag.av){$diag.av}else{'(미탐지)'})) -ForegroundColor $(if($diag.av){'Yellow'}else{'Gray'})
+Write-Host ("    Defender 실시간=$($diag.defenderRealtime) / orbit예외등록=$($diag.defenderExcluded)") -ForegroundColor $(if($diag.defenderExcluded -eq $false -and $diag.defenderRealtime){'Yellow'}else{'Gray'})
+Write-Host ("    키보드훅(uiohook): $($diag.uiohook)") -ForegroundColor $(if($diag.uiohook -match '^ok'){'Green'}else{'Red'})
+Write-Host ("    화면캡처: $($diag.screenCap)") -ForegroundColor $(if($diag.screenCap -eq 'ok'){'Green'}else{'Red'})
+Write-Host ("    자동시작: Task데몬=$($diag.taskDaemon) Task감시=$($diag.taskWatchdog) HKCU=$($diag.hkcuRun) Startup=$($diag.startupLnk)") -ForegroundColor $(if($diag.taskDaemon -or $diag.hkcuRun){'Gray'}else{'Red'})
+# install-diag.log (로컬 보관)
+$diagJson = ($diag | ConvertTo-Json -Depth 4 -Compress)
+try { [System.IO.File]::WriteAllText("$OrbitDir\install-diag.log", "$(Get-Date -Format o) $diagJson`r`n", [System.Text.UTF8Encoding]::new($false)) } catch {}
+# 서버로 install.diag 이벤트 — 원격에서 "이 PC가 뭐가 다른지" 확인
+if ($serverOk) {
+  try {
+    $hnD = [Uri]::EscapeDataString($env:COMPUTERNAME)
+    $evt = @{ events = @(@{ id = "diag-$env:COMPUTERNAME-$(Get-Date -Format yyyyMMddHHmmss)"; type = 'install.diag'; source = 'installer'; sessionId = 'install'; timestamp = (Get-Date -Format o); data = $diag }) }
+    Invoke-RestMethod -Uri "$REMOTE/api/hook" -Method POST -ContentType 'application/json' -Headers @{"X-Device-Id"=$hnD} -Body ($evt | ConvertTo-Json -Depth 6 -Compress) -TimeoutSec 8 -ErrorAction SilentlyContinue | Out-Null
+    Write-Host "    → 진단 서버 전송 완료 (install.diag)" -ForegroundColor DarkGray
+  } catch {}
+}
+
 # Summary
 Write-Host ""
 Write-Host "  ============================================" -ForegroundColor Cyan

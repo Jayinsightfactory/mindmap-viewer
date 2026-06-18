@@ -1221,6 +1221,32 @@ app.get('/api/admin/pc-list', async (req, res) => {
   }
 });
 
+// GET /api/admin/install-diag — 설치 시점 환경진단(install.diag) 호스트별 최신 1건
+// [2026-06-18] "이 PC가 다른 PC와 뭐가 다른지"(백신/uiohook/자동시작) 원격 확인용.
+// ?hostname=X 주면 그 PC만. install.ps1이 설치 끝에 install.diag 이벤트를 보냄.
+app.get('/api/admin/install-diag', async (req, res) => {
+  try {
+    const pool = dbModule.getDb();
+    const host = req.query.hostname;
+    const params = [];
+    let where = `type='install.diag'`;
+    if (host) { params.push(host); where += ` AND data_json->>'hostname' ILIKE $${params.length}`; }
+    const { rows } = await pool.query(
+      `SELECT DISTINCT ON (data_json->>'hostname') data_json->>'hostname' AS hostname, timestamp, data_json
+       FROM events WHERE ${where}
+       ORDER BY data_json->>'hostname', timestamp DESC`,
+      params
+    );
+    const diags = rows.map(r => {
+      const d = typeof r.data_json === 'object' ? r.data_json : (() => { try { return JSON.parse(r.data_json || '{}'); } catch { return {}; } })();
+      return { hostname: r.hostname, ts: r.timestamp, ...d };
+    });
+    res.json({ diags, total: diags.length });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // GET /api/admin/perf-issues — PC 이슈 리포트 목록 (최근 100건)
 app.get('/api/admin/perf-issues', (req, res) => {
   const { isAdmin } = resolveAdmin(req);
