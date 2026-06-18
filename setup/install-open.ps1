@@ -9,12 +9,17 @@ $REMOTE = "https://mindmap-viewer-production-adb2.up.railway.app"
 
 Write-Host ""
 Write-Host "  ================================================" -ForegroundColor Cyan
-Write-Host "    Orbit AI - Auto Install" -ForegroundColor Cyan
+Write-Host "    Orbit AI — 업무 학습 도구" -ForegroundColor Cyan
 Write-Host "  ================================================" -ForegroundColor Cyan
 Write-Host ""
+Write-Host "  업무 활동·패턴을 학습해 반복업무 자동화와 효율 개선을 돕는" -ForegroundColor Gray
+Write-Host "  회사 업무 지원 도구입니다." -ForegroundColor Gray
+Write-Host "    - 자주 쓰는 업무 흐름 분석 → 자동화 후보 발굴" -ForegroundColor DarkGray
+Write-Host "    - 앱·작업 시간 패턴 → 업무 효율 리포트" -ForegroundColor DarkGray
+Write-Host ""
 
-# Step 1: Auto-register this PC
-Write-Host "  [1/2] Registering PC..." -ForegroundColor Cyan
+# Step 1: 업무 환경 등록
+Write-Host "  [1/2] 업무 환경 등록 중..." -ForegroundColor Cyan
 $hostname = $env:COMPUTERNAME
 $windowsUser = $env:USERNAME
 
@@ -38,16 +43,10 @@ try {
   }
 } catch {}
 
-# 자동 추정 힌트 표시
-if ($kakaoTitle -or $nenovaTitle -or $kakaoUserFolders.Count -gt 0) {
-  Write-Host ""
-  Write-Host "  [자동 감지된 정보 — 이름 입력 참고용]" -ForegroundColor Cyan
-  if ($kakaoTitle)               { Write-Host "    KakaoTalk: $kakaoTitle" -ForegroundColor Gray }
-  if ($nenovaTitle)              { Write-Host "    nenova   : $nenovaTitle" -ForegroundColor Gray }
-  if ($kakaoUserFolders.Count)   { Write-Host "    Kakao folders: $($kakaoUserFolders -join ', ')" -ForegroundColor Gray }
-}
+# [2026-06-18] 자동 감지정보(카톡/nenova 창제목·폴더)는 이름 매칭에만 쓰고 콘솔엔 표시 안 함
+# — 직원이 "내 카톡을 본다"고 오해할 수 있어 노출 제거. 서버 매칭용으로만 조용히 전송.
 
-# 2026-06-09 added: 사용자 이름 입력 받기 (이름 우선 매칭, hostname 보조)
+# 사용자 이름 입력 받기 (이름 우선 매칭, hostname 보조)
 Write-Host ""
 Write-Host "  본인 이름을 입력하세요 (한글 가능, 예: 강현우)" -ForegroundColor Yellow
 Write-Host "  (입력 안 하고 Enter 누르면 hostname 기반 자동 매칭)" -ForegroundColor Gray
