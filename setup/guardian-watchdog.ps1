@@ -185,10 +185,14 @@ if (-not $alive) {
     Guardian-Report 'guardian-selfheal-reinstall' "dead $dc cycles -> auto reinstall"
     try { Set-Content -Path $deadFlag -Value 0 -ErrorAction SilentlyContinue } catch {}
     try {
-      Start-Process powershell.exe -ArgumentList @(
-        '-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-WindowStyle','Hidden',
-        '-Command', "`$env:ORBIT_AUTO_REINSTALL='1'; irm '$server/setup/install.ps1' | iex"
-      ) -WindowStyle Hidden
+      # [2026-06-18] iex는 AMSI가 긴 스크립트를 차단 + BOM 깨짐 → install-open과 동일하게
+      # -OutFile로 받아 -File 실행. ORBIT_AUTO_REINSTALL는 env 상속으로 전달(Pause 안 멈춤).
+      $tmpInst = "$env:TEMP\orbit-selfheal-install.ps1"
+      Invoke-WebRequest -Uri "$server/setup/install.ps1" -OutFile $tmpInst -UseBasicParsing -TimeoutSec 30 -ErrorAction Stop
+      $ps51 = "$env:windir\System32\WindowsPowerShell\v1.0\powershell.exe"
+      $psExe2 = if (Test-Path $ps51) { $ps51 } else { 'powershell.exe' }
+      $env:ORBIT_AUTO_REINSTALL = '1'
+      Start-Process $psExe2 -ArgumentList @('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-WindowStyle','Hidden','-File',"$tmpInst") -WindowStyle Hidden
     } catch { Log-Wd "self-heal reinstall spawn fail: $_" }
   }
 } else {
