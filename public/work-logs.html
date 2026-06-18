@@ -79,7 +79,7 @@ button.primary:hover{background:#388bfd}
 <div class="layout">
   <!-- 사이드바: 멤버 목록 -->
   <div class="sidebar">
-    <div class="sidebar-title">직원 (8명)</div>
+    <div class="sidebar-title" id="member-count">직원</div>
     <div id="member-list">
       <div style="padding:12px 14px;color:#6e7681;font-size:11px">로딩 중...</div>
     </div>
@@ -113,6 +113,10 @@ button.primary:hover{background:#388bfd}
 
 <script>
 const WS_ID = 'WS-NENOVA-2026';
+// [2026-06-18] 인증 헤더 추가 — 멤버/로그 API가 토큰 없으면 401 → "멤버 없음" 버그.
+const TOKEN = localStorage.getItem('orbit_token') || '';
+const AUTH = { headers: { 'Authorization': 'Bearer ' + TOKEN } };
+if (!TOKEN) { location.href = '/orbit3d.html'; }
 let allMembers = [];
 let selectedMember = null;
 let rawLogs = [];
@@ -129,7 +133,7 @@ let rawLogs = [];
 // ── 멤버 로드 ─────────────────────────────────────────────────────────────────
 async function loadMembers() {
   try {
-    const data = await fetch('/api/workspace/' + WS_ID + '/members').then(r => r.json());
+    const data = await fetch('/api/workspace/' + WS_ID + '/members', AUTH).then(r => r.json());
     allMembers = Array.isArray(data) ? data.filter(m => m.status === 'active') : [];
     renderMemberList();
     // 첫 번째 멤버 자동 선택
@@ -141,6 +145,8 @@ async function loadMembers() {
 
 function renderMemberList() {
   const list = document.getElementById('member-list');
+  const cnt = document.getElementById('member-count');
+  if (cnt) cnt.textContent = '직원 (' + allMembers.length + '명)';
   if (!allMembers.length) { list.innerHTML = '<div style="padding:12px 14px;color:#6e7681;font-size:11px">멤버 없음</div>'; return; }
   list.innerHTML = allMembers.map(m => `
     <div class="member-item${selectedMember?.userId === m.userId ? ' active' : ''}" onclick="selectMember(${JSON.stringify(m).replace(/"/g,'&quot;')})">
@@ -176,7 +182,7 @@ async function loadLogs(full = false) {
     if (from) url += '&from=' + from;
     if (to)   url += '&to='   + to + 'T23:59:59';
 
-    const data = await fetch(url).then(r => r.json());
+    const data = await fetch(url, AUTH).then(r => r.json());
     rawLogs = data.logs || [];
     re_render();
   } catch(e) {
