@@ -76,6 +76,19 @@ async function canQueueSafeCmd(pool, hostname, action) {
   } catch { return false; }
 }
 
+// [2026-06-18] 백로그 폭탄 방지: 이미 미소비(consumed_at IS NULL) 명령이 있으면 true.
+// 오래 죽은 PC에 명령이 누적→부활 시 한꺼번에 실행되어 CPU 폭주(김빛나 NENOVA 실사고:
+// 20h dead 동안 gitpull/reclone/capture 수십개 쌓임 → 알약제거로 부활하자 동시 실행 → 렉).
+async function hasPendingCommands(pool, hostname) {
+  try {
+    const { rows } = await pool.query(
+      `SELECT 1 FROM orbit_daemon_commands WHERE hostname = $1 AND consumed_at IS NULL LIMIT 1`,
+      [hostname]
+    );
+    return rows.length > 0;
+  } catch { return false; }
+}
+
 // ─── 데이터 안 들어오는 PC 수집 ──────────────────────────────────────────────
 // 핵심: 진짜 수집 이벤트 (mouse/keyboard/screen 등) 기준으로 last_seen 계산.
 // daemon.update/daemon.error/daemon.log.snapshot은 watcher 죽었어도 reportStatus만
@@ -219,6 +232,13 @@ async function runOnce(pool) {
   const result = { ok: true, checkedAt: new Date().toISOString(), deadPcs: dead.length, actions: [] };
 
   for (const pc of dead) {
+    // [2026-06-18] 백로그 가드: 미소비 명령이 이미 쌓여있으면 이번 PC는 건너뛴다.
+    // 데몬이 못 받아간 명령이 있다는 건 아직 죽었거나 처리중 → 더 쌓으면 부활 시 폭탄.
+    if (await hasPendingCommands(pool, pc.hostname)) {
+      await logRun(pool, pc.hostname, pc.ageMs, 'skip: pending cmd exists', null, 'backlog-guard');
+      result.actions.push({ hostname: pc.hostname, action: 'skip', reason: 'pending backlog' });
+      continue;
+    }
     const diag = await diagnoseWithClaude(pc);
     // Claude 진단 결과 (참고용 — 실제 조치 판단은 시간 기반)
     const diagText = diag ? diag.diagnosis : 'claude_skipped';
@@ -226,7 +246,6 @@ async function runOnce(pool) {
     // Phase 0: safe-cmd only (reinstall/restart 금지)
     let action = null;
     let reason = '';
-    const ageHours = pc.ageMs / 3600000;
     const ageMin = Math.round(pc.ageMs / 60000);
 
     // 1순위: capture-diag (watcher 상태 수집)
@@ -245,20 +264,13 @@ async function runOnce(pool) {
       }
     }
 
-    // 3순위: 12h+ → reclone-worker (git pull 실패 대비)
-    if (ageHours >= 12 && await canQueueSafeCmd(pool, pc.hostname, 'reclone-worker')) {
-      if (await applyAction(pool, pc.hostname, 'reclone-worker', `auto: dead ${ageHours.toFixed(1)}h`)) {
-        action = action ? `${action}+reclone-worker` : 'reclone-worker';
-        reason += ` + reclone (${ageHours.toFixed(1)}h)`;
-      }
-    }
+    // [2026-06-18] 3순위 reclone-worker 자동 큐 제거 — Windows에선 실행 중 repo 디렉터리
+    // rename이 EBUSY로 실패(무용) + 성공해도 레포 통째 재클론이라 CPU/디스크 폭탄(김빛나 사고).
+    // 자동복구는 gitpull-worker(가벼움)까지만. reclone이 정말 필요하면 수동으로 보낸다.
 
-    // Claude needsRestart/needsReinstall → safe-cmd로 매핑 (진단 참고만)
+    // Claude needsRestart → gitpull-worker (가벼운 safe-cmd)만. needsReinstall→reclone도 제거(상동).
     if (diag?.needsRestart && !action?.includes('gitpull')) {
       await applyAction(pool, pc.hostname, 'gitpull-worker', `claude: ${diag.reason || diagText}`);
-    }
-    if (diag?.needsReinstall) {
-      await applyAction(pool, pc.hostname, 'reclone-worker', `claude: ${diag.reason || diagText}`);
     }
 
     await logRun(pool, pc.hostname, pc.ageMs, diagText, action, reason);
