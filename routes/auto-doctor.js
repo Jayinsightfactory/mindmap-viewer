@@ -225,7 +225,7 @@ async function logRun(pool, hostname, ageMs, diagnosis, action, reason) {
 // ─── 메인 사이클 ────────────────────────────────────────────────────────────
 async function runOnce(pool) {
   if (!pool) return { ok: false, reason: 'no_db' };
-  if (!getClient()) return { ok: false, reason: 'no_anthropic_key' };
+  // [2026-06-18] Claude 키 없어도 시간기반 복구는 돌린다 (Claude 진단은 참고용·옵션).
   await ensureTable(pool);
 
   const dead = await collectDeadPcs(pool);
@@ -239,9 +239,10 @@ async function runOnce(pool) {
       result.actions.push({ hostname: pc.hostname, action: 'skip', reason: 'pending backlog' });
       continue;
     }
-    const diag = await diagnoseWithClaude(pc);
-    // Claude 진단 결과 (참고용 — 실제 조치 판단은 시간 기반)
-    const diagText = diag ? diag.diagnosis : 'claude_skipped';
+    // [2026-06-18] Claude 진단 기본 OFF (무과금). 필요시 env AUTODOCTOR_CLAUDE=on. 죽은PC마다
+    // Haiku 호출이 오늘 비용의 주범(죽은PC 많은 날 10분마다×PC수). 조치는 시간기반이라 진단 없어도 됨.
+    const diag = (process.env.AUTODOCTOR_CLAUDE === 'on') ? await diagnoseWithClaude(pc) : null;
+    const diagText = diag ? diag.diagnosis : 'claude_off';
 
     // Phase 0: safe-cmd only (reinstall/restart 금지)
     let action = null;
