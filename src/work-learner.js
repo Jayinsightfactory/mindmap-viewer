@@ -447,4 +447,147 @@ function _clusterMouseClicks(events) {
   return { clickCount: clicks.length, hotspots };
 }
 
-module.exports = { analyzeUser, analyzeWorkspace, groupIntoWorkSessions, classifyActivity, detectPatterns, normalizeWindowTitle, _extractRawInputPatterns, _clusterMouseClicks };
+// ── [골:Phase1] Task Spec 추출 ────────────────────────────────────────────
+// 클립보드+앱전환+윈도우타이틀 → "카톡→nenova 주문입력" 작업 대본
+// inputText 없어도 기존 데이터만으로 동작.
+const TASK_TRIGGERS = {
+  order_entry: {
+    pattern: ['kakaotalk', 'nenova'],
+    description: '카카오톡 주문 수신 → nenova 주문입력',
+  },
+  inventory_check: {
+    pattern: ['kakaotalk', 'excel'],
+    description: '카카오톡 재고 문의 → Excel 확인',
+  },
+  doc_report: {
+    pattern: ['excel', 'chrome'],
+    description: 'Excel 작업 → 웹 업로드/보고',
+  },
+};
+
+// 클립보드 이벤트에서 재고/주문 데이터 파싱
+function parseOrderFromClipboard(text) {
+  if (!text || text.length < 3) return null;
+  const lines = text.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+
+  // 품목+수량 패턴: "안개꽃 20단", "튤립 안트락티카 10단 <12.13>"
+  const items = [];
+  const itemRe = /^(.+?)\s+(\d+)\s*(단|박스|개|스팀|ea|EA)/;
+  for (const line of lines) {
+    const m = line.match(itemRe);
+    if (m) items.push({ name: m[1].trim(), qty: parseInt(m[2]), unit: m[3] });
+  }
+
+  // 주문 헤더: "25-1차 중국 잔량", "25-2차 네덜란드 잔량"
+  const headerRe = /(\d+)-(\d+차)\s+(.+)\s+(잔량|주문|발주)/;
+  const header = lines.map(l => l.match(headerRe)).find(Boolean);
+
+  if (items.length === 0 && !header) return null;
+  return {
+    items,
+    header: header ? { lot: header[1], round: header[2], origin: header[3], type: header[4] } : null,
+    raw: text.slice(0, 300),
+  };
+}
+
+// 앱전환 시퀀스에서 task pattern 매칭
+function matchTaskPattern(appSeq, patternApps) {
+  // patternApps = ['kakaotalk','nenova'] → 이 순서로 등장하는지
+  let pi = 0;
+  const matchedAt = [];
+  for (let i = 0; i < appSeq.length; i++) {
+    if (appSeq[i].includes(patternApps[pi])) {
+      matchedAt.push(i);
+      pi++;
+      if (pi === patternApps.length) return { matched: true, matchedAt };
+    }
+  }
+  return { matched: false };
+}
+
+// 이벤트 배열 → task spec 목록 추출
+function extractTaskSpecs(events) {
+  // clipboard.change 이벤트 수집
+  const clipboardEvents = events.filter(e => e.type === 'clipboard.change').map(e => {
+    const d = (typeof e.data === 'string') ? JSON.parse(e.data) : (e.data || {});
+    return { ts: new Date(e.timestamp).getTime(), text: d.text || d.clipboard || '', sourceApp: d.sourceApp || '' };
+  });
+
+  // 세션별 분석
+  const sessions = groupIntoWorkSessions(events, 10); // 10분 gap
+  const specs = [];
+
+  for (const session of sessions) {
+    const appSeq = [];
+    const windowSeq = [];
+    const inputParts = [];
+    let lastApp = '';
+
+    for (const ev of session.events) {
+      const ctx = extractContext(ev);
+      if (ctx.app && ctx.app !== lastApp) { appSeq.push(ctx.app); lastApp = ctx.app; }
+      if (ctx.window) windowSeq.push(ctx.window);
+      if (ctx.inputText) inputParts.push(ctx.inputText.trim());
+    }
+
+    // 각 task pattern 매칭 시도
+    for (const [taskType, def] of Object.entries(TASK_TRIGGERS)) {
+      const { matched, matchedAt } = matchTaskPattern(appSeq, def.pattern);
+      if (!matched) continue;
+
+      // 이 세션 시간대의 클립보드 이벤트 수집
+      const sessionClips = clipboardEvents.filter(
+        c => c.ts >= session.startTs - 5 * 60 * 1000 && c.ts <= session.endTs + 60 * 1000
+      );
+
+      // 클립보드에서 주문 데이터 파싱
+      const orderData = sessionClips
+        .map(c => parseOrderFromClipboard(c.text))
+        .filter(Boolean);
+
+      // 입력 내용(inputText, 있으면)
+      const typedRaw = inputParts.join(' ').slice(0, 200);
+      const typedText = typedRaw ? qwertyToHangul(typedRaw) : '';
+
+      // nenova 화면 시퀀스 (어느 화면을 거쳤나)
+      const nenovaWindows = windowSeq.filter(w => w && (w.includes('주문') || w.includes('관리') || w.includes('입력') || w.includes('nenova')));
+
+      specs.push({
+        taskType,
+        description: def.description,
+        startTime: new Date(session.startTs).toISOString(),
+        endTime: new Date(session.endTs).toISOString(),
+        durationMin: Math.round((session.endTs - session.startTs) / 60000),
+        appSequence: appSeq,
+        nenovaScreens: [...new Set(nenovaWindows)].slice(0, 5),
+        clipboardOrders: orderData,          // 클립보드에서 파싱된 주문/재고 데이터
+        typedText: typedText || null,        // inputText 있을 때 한글 디코딩
+        clipboardCount: sessionClips.length,
+        confidence: orderData.length > 0 ? 'high' : (sessionClips.length > 0 ? 'medium' : 'low'),
+      });
+    }
+  }
+
+  // 동일 taskType 빈도 집계
+  const byType = {};
+  for (const s of specs) {
+    if (!byType[s.taskType]) byType[s.taskType] = [];
+    byType[s.taskType].push(s);
+  }
+
+  return {
+    totalSpecs: specs.length,
+    byType: Object.fromEntries(
+      Object.entries(byType).map(([k, v]) => [k, {
+        count: v.length,
+        description: TASK_TRIGGERS[k]?.description,
+        latest: v[v.length - 1],
+        highConfidence: v.filter(s => s.confidence === 'high').length,
+        sampleOrders: v.flatMap(s => s.clipboardOrders).slice(0, 5),
+      }])
+    ),
+    specs: specs.slice(-20), // 최근 20건
+  };
+}
+
+module.exports = { analyzeUser, analyzeWorkspace, groupIntoWorkSessions, classifyActivity, detectPatterns, normalizeWindowTitle, _extractRawInputPatterns, _clusterMouseClicks, extractTaskSpecs, parseOrderFromClipboard };

@@ -4934,6 +4934,34 @@ app.get('/api/learning/routine', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// GET /api/learning/task-specs?userId=X&days=30 — [골:Phase1] 작업 절차 추출 (클립보드+앱전환 기반)
+app.get('/api/learning/task-specs', async (req, res) => {
+  if (!_checkAnalyticsToken(req, res)) return;
+  const userId = (req.query.userId || '').trim();
+  const days = Math.min(parseInt(req.query.days) || 30, 90);
+  if (!userId) return res.status(400).json({ error: 'userId required' });
+  try {
+    const pool = dbModule.getDb();
+    const since = new Date(Date.now() - days * 86400 * 1000).toISOString();
+    // 클립보드 + 키보드 + 화면 이벤트 (앱전환 추적용)
+    const { rows } = await pool.query(
+      `SELECT id, type, timestamp, data_json FROM events
+       WHERE user_id=$1
+         AND type IN ('keyboard.chunk','screen.capture','clipboard.change','idle')
+         AND timestamp::TIMESTAMPTZ > $2::TIMESTAMPTZ
+       ORDER BY timestamp ASC LIMIT 8000`,
+      [userId, since]
+    );
+    const events = rows.map(r => ({
+      id: r.id, type: r.type, timestamp: r.timestamp,
+      data: typeof r.data_json === 'string' ? JSON.parse(r.data_json) : (r.data_json || {}),
+    }));
+    const { extractTaskSpecs } = require('./src/work-learner');
+    const result = extractTaskSpecs(events);
+    res.json({ ok: true, userId, days, eventCount: events.length, ...result });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // GET /api/learning/capture-funnel?days=7 — 캡처→분석→유용 퍼널 (병목 진단, 2026-06-11)
 app.get('/api/learning/capture-funnel', async (req, res) => {
   if (!_checkAnalyticsToken(req, res)) return;
