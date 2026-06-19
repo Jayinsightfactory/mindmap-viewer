@@ -18,26 +18,32 @@
 // 없애면서 더는 쓰이지 않음. 프로세스 조회는 아래 win-shell 비동기 호출로만 한다.
 
 // ── 한국 은행 보안 프로세스 목록 ──
+//
+// residentOnly: true  → 부팅 시 상주하지만 키보드 후킹을 실제로 막지 않는 에이전트.
+//   이 프로세스만 감지되면 은행 사이트(URL/타이틀)가 함께 활성일 때만 bank-safe 전환.
+//   은행 업무를 안 할 때는 정상 수집 유지.
+// residentOnly 없음   → 키보드 보안 프로그램: 실행 중이면 키보드 후킹 자체가 막히므로
+//   은행 사이트 여부와 무관하게 즉시 bank-safe 전환 (기존 동작 유지).
+//
 const BANK_SECURITY_PROCESSES = [
-  // 키보드 보안
+  // 키보드 보안 (후킹 차단 — 무조건 bank-safe)
   { name: 'TouchEnKey', process: 'TouchEnKey.exe', service: 'TouchEnKey' },
   { name: 'KeySharp', process: 'KeySharp.exe', service: null },
   { name: 'ASTx', process: 'astx.exe', service: 'ASTxSvc' },
-  // 범용 보안
+  // 범용 보안 (키보드 후킹 차단 — 무조건 bank-safe)
   { name: 'nProtect', process: 'nProtect.exe', service: 'nProtect' },
-  { name: 'nProtect Online Security', process: 'npupdate.exe', service: null },
   { name: 'AhnLab Safe Transaction', process: 'ASDSvc.exe', service: 'AhnLabSafeTransaction' },
   { name: 'AhnLab V3', process: 'V3Lite.exe', service: null, critical: true }, // V3는 건드리면 안 됨
-  // 인증/전자서명
+  // 인증/전자서명 (키보드 후킹 차단 — 무조건 bank-safe)
   { name: 'INISAFEWeb', process: 'INISAFEWeb.exe', service: null },
   { name: 'INISAFE CrossWeb', process: 'INISAFECrossWebEX.exe', service: null },
   { name: 'XecureWeb', process: 'XecureWeb.exe', service: null },
-  // IP/설치 관리
-  { name: 'IPInside', process: 'IPInsideAgent.exe', service: 'IPInsideAgent' },
-  { name: 'Veraport', process: 'veraport.exe', service: null },
-  // 방화벽/기타
-  { name: 'MarkAny', process: 'MaWebClient.exe', service: null },
-  { name: 'Fasoo DRM', process: 'FSD.exe', service: null },
+  // 상주 에이전트 (키보드 후킹 안 막음 — 은행 사이트 병용 시에만 bank-safe)
+  { name: 'nProtect Online Security', process: 'npupdate.exe', service: null, residentOnly: true },
+  { name: 'IPInside', process: 'IPInsideAgent.exe', service: 'IPInsideAgent', residentOnly: true },
+  { name: 'Veraport', process: 'veraport.exe', service: null, residentOnly: true },
+  { name: 'MarkAny', process: 'MaWebClient.exe', service: null, residentOnly: true },
+  { name: 'Fasoo DRM', process: 'FSD.exe', service: null, residentOnly: true },
 ];
 
 // ── 은행 사이트 URL 패턴 ──
@@ -176,26 +182,46 @@ async function _autoCheck() {
   // 보안 프로그램이 켜지면 키보드 후킹 자체가 막히므로 최소 수집으로 전환)
   const securityRunning = await getRunningBankProcessesAsync();
 
+  // 키보드 후킹 차단 프로세스 vs 상주 에이전트(후킹 안 막음) 분리
+  const hardProcs = securityRunning.filter(p => !p.residentOnly);
+  const softProcs = securityRunning.filter(p => p.residentOnly);
+
   _lastCheck = {
     timestamp: new Date().toISOString(),
     securityProcesses: securityRunning.map(p => p.name),
+    hardProcs: hardProcs.map(p => p.name),
+    softProcs: softProcs.map(p => p.name),
     bankMode: _bankMode,
   };
 
   let bankSafe;
   try { bankSafe = require('./bank-safe-collector'); } catch { return; }
 
-  if (securityRunning.length > 0) {
-    // 보안 프로그램 실행 중 → 종료하지 않고 최소 수집(bank-safe)로 전환
+  // 키보드 차단 프로세스가 있으면 무조건 bank-safe
+  // 상주 에이전트만 있으면 실제 은행 사이트 접속 여부도 함께 확인
+  let shouldBankSafe = false;
+  if (hardProcs.length > 0) {
+    shouldBankSafe = true;
+  } else if (softProcs.length > 0) {
+    const bankingNow = await isBankingActive();
+    if (bankingNow) {
+      shouldBankSafe = true;
+      console.log(`[bank-toggle] 상주 보안 프로그램(${softProcs.map(p=>p.name).join(',')}) + 은행 사이트 감지 → 최소 수집 전환`);
+    } else {
+      console.log(`[bank-toggle] 상주 보안 프로그램(${softProcs.map(p=>p.name).join(',')}) 감지 — 은행 사이트 없음 → 정상 수집 유지`);
+    }
+  }
+
+  if (shouldBankSafe) {
     if (!bankSafe.isRunning()) {
-      console.log(`[bank-toggle] 은행 보안 ${securityRunning.length}개 감지 → 최소 수집 모드 전환 (종료 안 함)`);
+      const trigger = hardProcs.length > 0 ? hardProcs.map(p=>p.name).join(',') : softProcs.map(p=>p.name).join(',');
+      console.log(`[bank-toggle] 은행 보안 감지(${trigger}) → 최소 수집 모드 전환`);
       bankSafe.start({ interval: 3 * 60 * 1000 });
     }
     _bankMode = true;
   } else {
-    // 보안 프로그램 없음 → 정상 풀 수집 (부팅 직후 포함)
     if (bankSafe.isRunning()) {
-      console.log('[bank-toggle] 은행 보안 종료 감지 → 정상 풀 수집 재개');
+      console.log('[bank-toggle] 은행 보안 없음 → 정상 풀 수집 재개');
       bankSafe.notifyActive();
     }
     _bankMode = false;
