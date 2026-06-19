@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Orbit 실시간 업무 대시보드</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #0f1117;
+  --bg2: #161b22;
+  --bg3: #1f2733;
+  --border: #30363d;
+  --text: #e6edf3;
+  --text2: #8b949e;
+  --green: #3fb950;
+  --yellow: #d29922;
+  --red: #f85149;
+  --blue: #58a6ff;
+  --purple: #bc8cff;
+  --orange: #f0883e;
+  --teal: #39d353;
+}
+
+body { background: var(--bg); color: var(--text); font-family: -apple-system, 'Segoe UI', sans-serif; font-size: 13px; }
+
+/* ── TOP BAR ── */
+#topbar {
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  padding: 10px 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  position: sticky; top: 0; z-index: 100;
+}
+#topbar h1 { font-size: 15px; font-weight: 700; color: var(--blue); flex-shrink: 0; }
+#token-input {
+  flex: 1; max-width: 420px;
+  background: var(--bg3); border: 1px solid var(--border); border-radius: 6px;
+  color: var(--text2); padding: 5px 10px; font-size: 12px; font-family: monospace;
+}
+#token-input:focus { outline: none; border-color: var(--blue); color: var(--text); }
+#refresh-btn {
+  background: var(--bg3); border: 1px solid var(--border); border-radius: 6px;
+  color: var(--text); padding: 5px 12px; cursor: pointer; font-size: 12px;
+}
+#refresh-btn:hover { border-color: var(--blue); color: var(--blue); }
+#status-line { font-size: 11px; color: var(--text2); }
+#status-line .ok { color: var(--green); }
+#status-line .err { color: var(--red); }
+#auto-badge { font-size: 10px; background: var(--bg3); padding: 2px 8px; border-radius: 10px; color: var(--text2); }
+
+/* ── KPI ROW ── */
+#kpi-row { display: flex; gap: 12px; padding: 14px 20px 0; }
+.kpi { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; flex: 1; min-width: 120px; }
+.kpi .kv { font-size: 26px; font-weight: 700; line-height: 1; }
+.kpi .kl { font-size: 11px; color: var(--text2); margin-top: 4px; }
+.kv.green { color: var(--green); }
+.kv.yellow { color: var(--yellow); }
+.kv.blue { color: var(--blue); }
+.kv.purple { color: var(--purple); }
+
+/* ── GRID ── */
+#grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 12px; padding: 14px 20px 20px; }
+
+.card {
+  background: var(--bg2); border: 1px solid var(--border); border-radius: 10px;
+  overflow: hidden; transition: border-color 0.2s;
+}
+.card:hover { border-color: #444; }
+.card.bank-mode { border-color: var(--yellow); }
+.card.online { border-color: #26522e; }
+.card.offline { border-color: var(--border); opacity: 0.7; }
+
+/* card header */
+.ch {
+  padding: 12px 14px 10px;
+  display: flex; align-items: flex-start; justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+}
+.ch-left { display: flex; flex-direction: column; gap: 3px; }
+.ch-name { font-size: 15px; font-weight: 700; }
+.ch-host { font-size: 10px; color: var(--text2); font-family: monospace; }
+.badge {
+  font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 10px;
+  flex-shrink: 0; margin-top: 2px;
+}
+.badge.online { background: #1c3a24; color: var(--green); }
+.badge.bank { background: #3a2c0a; color: var(--yellow); }
+.badge.paused { background: #2a2010; color: var(--orange); }
+.badge.offline { background: #2a2a2a; color: var(--text2); }
+
+/* now section */
+.now-section { padding: 10px 14px; border-bottom: 1px solid var(--border); }
+.section-label { font-size: 10px; color: var(--text2); font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 6px; }
+.now-app {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--bg3); border-radius: 6px; padding: 7px 10px;
+  font-size: 12px;
+}
+.app-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.app-dot.green { background: var(--green); animation: pulse 2s infinite; }
+.app-dot.yellow { background: var(--yellow); }
+.app-dot.gray { background: #555; }
+.app-name { font-weight: 600; color: var(--blue); }
+.app-window { color: var(--text2); font-size: 11px; margin-left: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 180px; }
+.now-time { font-size: 10px; color: var(--text2); margin-top: 5px; }
+
+/* activity log */
+.act-section { padding: 10px 14px; border-bottom: 1px solid var(--border); }
+.act-item {
+  display: flex; gap: 8px; align-items: flex-start; margin-bottom: 5px; font-size: 11px;
+}
+.act-time { color: var(--text2); flex-shrink: 0; font-family: monospace; width: 42px; }
+.act-icon { flex-shrink: 0; width: 14px; text-align: center; }
+.act-text { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.act-text.file { color: var(--orange); }
+.act-text.app { color: var(--text); }
+.act-text.bank { color: var(--yellow); }
+.act-text.key { color: var(--teal); }
+
+/* auto section */
+.auto-section { padding: 10px 14px; }
+.auto-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: var(--bg3); border: 1px solid #2a3a2a;
+  border-radius: 16px; padding: 4px 10px; font-size: 11px;
+  margin: 2px; color: var(--green); cursor: default;
+}
+.auto-chip.medium { border-color: #3a2a10; color: var(--orange); }
+.auto-chip.info { border-color: #1a2a3a; color: var(--blue); }
+.no-auto { font-size: 11px; color: var(--text2); }
+
+/* modules */
+.mod-row { display: flex; gap: 4px; padding: 8px 14px 0; }
+.mod-chip { flex: 1; text-align: center; font-size: 10px; font-weight: 600; padding: 3px; border-radius: 4px; }
+.mod-chip.ok { background: #1c3a24; color: var(--green); }
+.mod-chip.paused { background: #3a2c0a; color: var(--yellow); }
+.mod-chip.dead { background: #3a1010; color: var(--red); }
+.mod-chip.na { background: #222; color: #444; }
+
+/* stats row */
+.stats-row { display: flex; gap: 0; padding: 8px 14px 12px; }
+.stat { flex: 1; text-align: center; }
+.stat-v { font-size: 14px; font-weight: 700; }
+.stat-l { font-size: 9px; color: var(--text2); margin-top: 1px; }
+
+/* pulse animation */
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+/* loading */
+#loading { text-align: center; padding: 60px; color: var(--text2); }
+#loading .spin { display: inline-block; width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--blue); border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 12px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* error */
+.err-msg { background: #3a1010; border: 1px solid var(--red); border-radius: 8px; padding: 12px 16px; margin: 20px; color: var(--red); font-size: 12px; }
+
+/* peak hours mini bar */
+.peak-row { display: flex; align-items: flex-end; gap: 2px; height: 24px; padding: 0 14px 8px; }
+.peak-bar { flex: 1; background: #1a2a3a; border-radius: 2px 2px 0 0; min-height: 2px; }
+.peak-bar.top { background: var(--blue); }
+
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <h1>⚡ Orbit 업무 대시보드</h1>
+  <input id="token-input" type="password" placeholder="orbit_... 토큰 입력 후 Enter" />
+  <button id="refresh-btn" onclick="loadAll()">↻ 새로고침</button>
+  <span id="auto-badge">⏱ 20초 자동갱신</span>
+  <span id="status-line">대기 중</span>
+</div>
+
+<div id="kpi-row">
+  <div class="kpi"><div class="kv green" id="kpi-online">-</div><div class="kl">온라인</div></div>
+  <div class="kpi"><div class="kv yellow" id="kpi-bank">-</div><div class="kl">은행보안 모드</div></div>
+  <div class="kpi"><div class="kv blue" id="kpi-events">-</div><div class="kl">총 이벤트 (7일)</div></div>
+  <div class="kpi"><div class="kv purple" id="kpi-auto">-</div><div class="kl">자동화 후보</div></div>
+</div>
+
+<div id="grid"><div id="loading"><div class="spin"></div><div>데이터 로딩 중...</div></div></div>
+
+<script>
+const BASE = location.origin;
+let TOKEN = localStorage.getItem('orbit_token') || '';
+let timer = null;
+
+const $ = id => document.getElementById(id);
+
+// ── token input ──
+$('token-input').value = TOKEN;
+$('token-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') { TOKEN = e.target.value.trim(); localStorage.setItem('orbit_token', TOKEN); loadAll(); }
+});
+$('token-input').addEventListener('blur', e => {
+  TOKEN = e.target.value.trim(); localStorage.setItem('orbit_token', TOKEN);
+});
+
+// ── fetch helper ──
+async function api(path) {
+  const r = await fetch(BASE + path, { headers: { Authorization: 'Bearer ' + TOKEN } });
+  if (!r.ok) throw new Error(r.status + ' ' + path);
+  return r.json();
+}
+
+// ── parse daemon log lines ──
+function parseLog(lines) {
+  const acts = [];
+  let currentApp = null, currentWindow = null, currentMode = 'normal';
+
+  for (const line of lines) {
+    const ts = line.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})/)?.[1];
+    const kstHHMM = ts ? new Date(ts).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Seoul' }) : '';
+
+    if (line.includes('은행 보안 감지') && line.includes('일시정지')) {
+      currentMode = 'bank';
+      acts.push({ time: kstHHMM, icon: '🏦', text: '은행 보안 모드 시작', type: 'bank' });
+    } else if (line.includes('은행 보안 종료') || line.includes('정상 풀 수집 재개')) {
+      currentMode = 'normal';
+      acts.push({ time: kstHHMM, icon: '✅', text: '은행 보안 종료 — 정상 수집 재개', type: 'bank' });
+    } else if (line.includes('[secure-collector] 앱 전환:')) {
+      const m = line.match(/앱 전환: (.+?) — (.+)/);
+      if (m) { currentApp = m[1]; currentWindow = m[2]; acts.push({ time: kstHHMM, icon: '🖥', text: currentWindow || currentApp, type: 'app' }); }
+    } else if (line.includes('[file-learner] 처리:')) {
+      const m = line.match(/처리: (.+?) \(/);
+      if (m) acts.push({ time: kstHHMM, icon: '📄', text: m[1], type: 'file' });
+    } else if (line.includes('[keyboard-watcher] 원격 배치 전송:')) {
+      const m = line.match(/전송: (\d+)건/);
+      if (m && parseInt(m[1]) > 0) acts.push({ time: kstHHMM, icon: '⌨', text: `키보드 ${m[1]}건 전송`, type: 'key' });
+    } else if (line.includes('[screen-capture]') && line.includes('.png')) {
+      const m = line.match(/\] (.+?): screen-.+-(.+)-(.+)\.png/);
+      if (m) acts.push({ time: kstHHMM, icon: '📸', text: `화면 캡처 (${m[2]}/${m[3]})`, type: 'app' });
+    } else if (line.includes('[orbit] 시작')) {
+      acts.push({ time: kstHHMM, icon: '🔄', text: '데몬 시작/재시작', type: 'app' });
+    } else if (line.includes('[kakao-capture]') && line.includes('시작')) {
+      acts.push({ time: kstHHMM, icon: '💬', text: '카카오톡 캡처 시작', type: 'app' });
+    }
+  }
+
+  // get latest app
+  let latestApp = null, latestWindow = null;
+  for (const line of [...lines].reverse()) {
+    const m1 = line.match(/앱 전환: (.+?) — (.+)/);
+    if (m1) { latestApp = m1[1]; latestWindow = m1[2]; break; }
+    const m2 = line.match(/\[screen-capture\].*? (.+?)\/.+?:.+\.png/);
+    if (m2 && !latestApp) { latestApp = m2[1]; }
+  }
+
+  return { acts: acts.slice(-8).reverse(), currentMode, latestApp, latestWindow };
+}
+
+// ── automation suggestions ──
+function suggestAuto(userName, logParsed, pcData, daemonState) {
+  const sugs = [];
+  const files = logParsed.acts.filter(a => a.type === 'file').map(a => a.text.toLowerCase());
+  const apps = (pcData?.top_apps || []).map(a => a.app.toLowerCase());
+  const allText = logParsed.acts.map(a => a.text.toLowerCase()).join(' ');
+
+  if (files.some(f => f.includes('외화') || f.includes('송금') || f.includes('환전') || f.includes('지출결의'))) {
+    sugs.push({ label: '💸 외화송금 자동화', level: 'high', desc: '외화송금결의서 템플릿 자동 채우기 + 이체 내역 아카이브' });
+  }
+  if (files.some(f => f.includes('매출') || f.includes('원가') || f.includes('재고'))) {
+    sugs.push({ label: '📊 매출/원가 보고서', level: 'high', desc: 'Excel 자동 취합 + 정기 보고서 생성' });
+  }
+  if (apps.some(a => a.includes('kakaotalk') || a.includes('kakao')) && apps.some(a => a.includes('nenova'))) {
+    sugs.push({ label: '🤖 카카오 주문 자동 입력', level: 'high', desc: '카카오톡 주문 파싱 → nenova 자동 입력' });
+  }
+  if (apps.some(a => a.includes('kakaotalk') || a.includes('kakao'))) {
+    sugs.push({ label: '💬 카카오 메시지 분석', level: 'medium', desc: '카카오톡 주문/문의 자동 분류' });
+  }
+  if (logParsed.currentMode === 'bank' || allText.includes('하나은행') || allText.includes('기업뱅킹')) {
+    sugs.push({ label: '🏦 이체내역 자동 저장', level: 'medium', desc: '은행 이체 완료 시 결과 자동 문서화' });
+  }
+  if (files.some(f => f.includes('발주') || f.includes('주문') || f.includes('견적'))) {
+    sugs.push({ label: '📦 발주서 자동 처리', level: 'high', desc: '발주서 파싱 → 재고 자동 업데이트' });
+  }
+  if (files.some(f => f.includes('사원') || f.includes('명부') || f.includes('계좌'))) {
+    sugs.push({ label: '👥 인사 데이터 자동화', level: 'medium', desc: '사원 정보 변경 시 자동 업데이트' });
+  }
+  if (sugs.length === 0) {
+    if (daemonState === 'ok') sugs.push({ label: 'ℹ️ 데이터 수집 중', level: 'info', desc: '패턴 분석 중 — 더 많은 데이터 필요' });
+  }
+  return sugs;
+}
+
+// ── format uptime ──
+function fmtUptime(sec) {
+  if (!sec) return '-';
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60);
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
+// ── format last seen ──
+function fmtSince(isoStr) {
+  if (!isoStr) return '-';
+  const diff = Math.floor((Date.now() - new Date(isoStr)) / 1000);
+  if (diff < 60) return `${diff}초 전`;
+  if (diff < 3600) return `${Math.floor(diff/60)}분 전`;
+  return `${Math.floor(diff/3600)}시간 전`;
+}
+
+// ── main load ──
+async function loadAll() {
+  if (!TOKEN) {
+    $('status-line').innerHTML = '<span class="err">토큰을 입력하세요</span>';
+    return;
+  }
+  $('status-line').innerHTML = '로딩 중...';
+
+  try {
+    const [dhRes, piRes] = await Promise.all([
+      api('/api/admin/daemon-health'),
+      api('/api/admin/pc-inference?days=7')
+    ]);
+
+    const daemons = dhRes.daemons || [];
+    const pcMap = {};
+    for (const pc of (piRes.data || [])) {
+      const uid = pc.user_id_raw;
+      if (!pcMap[uid] || (pcMap[uid].total_events || 0) < (pc.total_events || 0)) pcMap[uid] = pc;
+    }
+
+    // fetch logs for active daemons in parallel (limit 5)
+    const logMap = {};
+    await Promise.all(daemons.slice(0, 6).map(async d => {
+      try {
+        const r = await fetch(BASE + `/api/admin/daemon-log?hostname=${d.hostname}&lines=80`, { headers: { Authorization: 'Bearer ' + TOKEN } });
+        if (r.ok) { const j = await r.json(); logMap[d.userId] = j.lines || []; }
+      } catch {}
+    }));
+
+    // ── KPI ──
+    const onlineCount = daemons.filter(d => d.state === 'ok').length;
+    const bankCount = daemons.filter(d => d.modules?.keyboard?.state === 'paused' || d.state === 'paused').length;
+    const totalEvents = Object.values(pcMap).reduce((s, p) => s + (p.total_events || 0), 0);
+
+    let allAutoCount = 0;
+
+    // ── build cards ──
+    const cards = daemons.map(d => {
+      const pc = pcMap[d.userId] || {};
+      const lines = logMap[d.userId] || [];
+      const logParsed = parseLog(lines);
+      const sugs = suggestAuto(d.userName, logParsed, pc, d.state);
+      allAutoCount += sugs.filter(s => s.level === 'high').length;
+
+      const stateBadge = d.state === 'ok'
+        ? (logParsed.currentMode === 'bank' ? '<span class="badge bank">🏦 은행보안</span>' : '<span class="badge online">● 온라인</span>')
+        : d.state === 'paused' ? '<span class="badge paused">⏸ 일시정지</span>'
+        : '<span class="badge offline">○ 오프라인</span>';
+
+      const cardClass = d.state === 'ok'
+        ? (logParsed.currentMode === 'bank' ? 'bank-mode' : 'online')
+        : 'offline';
+
+      const mods = d.modules || {};
+      const modHtml = ['mouse', 'screen', 'keyboard'].map(k => {
+        const m = mods[k] || {};
+        const s = m.state || (d.state === 'ok' ? 'ok' : 'na');
+        return `<div class="mod-chip ${s}">${k === 'mouse' ? '🖱마우스' : k === 'screen' ? '📸화면' : '⌨키보드'}</div>`;
+      }).join('');
+
+      const nowApp = logParsed.latestApp || (d.modules?.screen?.activityState?.label ? `(${d.modules.screen.activityState.label})` : '알 수 없음');
+      const nowWindow = logParsed.latestWindow || '';
+      const dotClass = logParsed.currentMode === 'bank' ? 'yellow' : (d.state === 'ok' ? 'green' : 'gray');
+
+      const actHtml = logParsed.acts.slice(0, 6).map(a =>
+        `<div class="act-item"><span class="act-time">${a.time}</span><span class="act-icon">${a.icon}</span><span class="act-text ${a.type}" title="${a.text}">${a.text}</span></div>`
+      ).join('') || '<div class="act-item"><span class="act-time">-</span><span class="act-text" style="color:var(--text2)">최근 활동 없음</span></div>';
+
+      const autoHtml = sugs.map(s =>
+        `<span class="auto-chip ${s.level === 'medium' ? 'medium' : s.level === 'info' ? 'info' : ''}" title="${s.desc}">${s.label}</span>`
+      ).join('') || '<span class="no-auto">분석 중...</span>';
+
+      // peak hours mini bars
+      const peaks = pc.peak_hours_kst || [];
+      const maxPeak = Math.max(...peaks.map(p => p.count), 1);
+      let peakHtml = '';
+      for (let h = 0; h < 24; h++) {
+        const p = peaks.find(x => parseInt(x.hour) === h);
+        const pct = p ? Math.round((p.count / maxPeak) * 100) : 2;
+        const isTop = pct > 60;
+        peakHtml += `<div class="peak-bar ${isTop ? 'top' : ''}" style="height:${pct}%" title="${h}시: ${p?.count||0}건"></div>`;
+      }
+
+      const lastSeen = d.heartbeatAt ? fmtSince(d.heartbeatAt) : fmtSince(pc.last_seen);
+      const uptime = fmtUptime(d.uptime);
+
+      return `
+<div class="card ${cardClass}">
+  <div class="ch">
+    <div class="ch-left">
+      <div class="ch-name">${d.userName || pc.mapped?.name || '미등록'}</div>
+      <div class="ch-host">${d.hostname}</div>
+    </div>
+    ${stateBadge}
+  </div>
+
+  <div class="mod-row">${modHtml}</div>
+
+  <div class="stats-row">
+    <div class="stat"><div class="stat-v" style="color:var(--text2)">${(pc.total_events||0).toLocaleString()}</div><div class="stat-l">이벤트</div></div>
+    <div class="stat"><div class="stat-v" style="color:var(--blue)">${uptime}</div><div class="stat-l">업타임</div></div>
+    <div class="stat"><div class="stat-v" style="color:var(--text2)">${lastSeen}</div><div class="stat-l">heartbeat</div></div>
+  </div>
+
+  <div class="now-section">
+    <div class="section-label">지금 하는 일</div>
+    <div class="now-app">
+      <div class="app-dot ${dotClass}"></div>
+      <span class="app-name">${nowApp}</span>
+      ${nowWindow ? `<span class="app-window">— ${nowWindow}</span>` : ''}
+    </div>
+    ${logParsed.currentMode === 'bank' ? '<div class="now-time" style="color:var(--yellow)">🏦 은행 보안 프로그램 실행 중 — 최소 수집 모드</div>' : ''}
+  </div>
+
+  <div class="act-section">
+    <div class="section-label">최근 활동</div>
+    ${actHtml}
+  </div>
+
+  <div class="act-section" style="border-bottom:1px solid var(--border); padding-bottom:8px;">
+    <div class="section-label">업무 시간대 (KST)</div>
+    <div class="peak-row">${peakHtml}</div>
+    <div style="display:flex;justify-content:space-between;padding:0 14px;font-size:9px;color:var(--text2)"><span>0시</span><span>6시</span><span>12시</span><span>18시</span><span>23시</span></div>
+  </div>
+
+  <div class="auto-section">
+    <div class="section-label">자동화 가능</div>
+    ${autoHtml}
+  </div>
+</div>`;
+    });
+
+    // offline employees (in pcMap but not in daemons)
+    const onlineIds = new Set(daemons.map(d => d.userId));
+    const offlineNames = { MNMRX6SR07F5FF7C0C: '강현우' };
+    for (const [uid, name] of Object.entries(offlineNames)) {
+      if (!onlineIds.has(uid)) {
+        const pc = pcMap[uid] || {};
+        const peaks = pc.peak_hours_kst || [];
+        const maxPeak = Math.max(...peaks.map(p => p.count), 1);
+        let peakHtml = '';
+        for (let h = 0; h < 24; h++) {
+          const p = peaks.find(x => parseInt(x.hour) === h);
+          const pct = p ? Math.round((p.count / maxPeak) * 100) : 2;
+          peakHtml += `<div class="peak-bar ${pct>60?'top':''}" style="height:${pct}%" title="${h}시"></div>`;
+        }
+        const lastSeen = fmtSince(pc.last_seen);
+        const topApps = (pc.top_apps || []).slice(0, 3).map(a => a.app).join(', ');
+        cards.push(`
+<div class="card offline">
+  <div class="ch">
+    <div class="ch-left">
+      <div class="ch-name">${name}</div>
+      <div class="ch-host">${pc.hostname || '-'}</div>
+    </div>
+    <span class="badge offline">○ 오프라인</span>
+  </div>
+  <div class="stats-row">
+    <div class="stat"><div class="stat-v" style="color:var(--text2)">${(pc.total_events||0).toLocaleString()}</div><div class="stat-l">이벤트</div></div>
+    <div class="stat"><div class="stat-v" style="color:var(--text2)">-</div><div class="stat-l">업타임</div></div>
+    <div class="stat"><div class="stat-v" style="color:var(--text2)">${lastSeen}</div><div class="stat-l">마지막</div></div>
+  </div>
+  <div class="act-section">
+    <div class="section-label">자주 쓰는 앱</div>
+    <div class="act-item"><span class="act-text">${topApps || '데이터 없음'}</span></div>
+  </div>
+  <div class="act-section" style="border-bottom:1px solid var(--border); padding-bottom:8px;">
+    <div class="section-label">업무 시간대 (KST)</div>
+    <div class="peak-row">${peakHtml}</div>
+    <div style="display:flex;justify-content:space-between;padding:0 14px;font-size:9px;color:var(--text2)"><span>0시</span><span>6시</span><span>12시</span><span>18시</span><span>23시</span></div>
+  </div>
+  <div class="auto-section"><span class="no-auto">오프라인 — 출근 후 자동 연결</span></div>
+</div>`);
+      }
+    }
+
+    $('kpi-online').textContent = onlineCount;
+    $('kpi-bank').textContent = bankCount;
+    $('kpi-events').textContent = (totalEvents / 1000).toFixed(0) + 'K';
+    $('kpi-auto').textContent = allAutoCount;
+    $('grid').innerHTML = cards.join('');
+
+    const now = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    $('status-line').innerHTML = `<span class="ok">✓ ${now} 업데이트됨</span>`;
+
+  } catch (e) {
+    $('status-line').innerHTML = `<span class="err">오류: ${e.message}</span>`;
+    $('grid').innerHTML = `<div class="err-msg">❌ 데이터 로드 실패: ${e.message}<br>토큰을 확인하세요.</div>`;
+  }
+}
+
+// ── auto refresh ──
+function scheduleRefresh() {
+  clearTimeout(timer);
+  timer = setTimeout(() => { loadAll().then(scheduleRefresh); }, 20000);
+}
+
+if (TOKEN) loadAll().then(scheduleRefresh);
+else $('status-line').innerHTML = '토큰을 입력하고 Enter 키를 누르세요';
+</script>
+</body>
+</html>
