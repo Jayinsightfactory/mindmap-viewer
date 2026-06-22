@@ -31,12 +31,23 @@ try {
 }
 
 // 이벤트 → 부모로 IPC 전달 (직렬화 가능한 필드만)
+// mousemove는 고빈도라 100ms 쓰로틀 후 전송 (IPC 폭주 방지)
+let _lastMoveSent = 0;
 try {
   _uIOhook.on('keydown', (e) => {
     send({ type: 'keydown', e: { keycode: e.keycode, time: e.time, ctrlKey: e.ctrlKey, shiftKey: e.shiftKey, altKey: e.altKey, metaKey: e.metaKey } });
   });
   _uIOhook.on('mousedown', (e) => {
     send({ type: 'mousedown', e: { x: e.x, y: e.y, button: e.button, time: e.time } });
+  });
+  _uIOhook.on('mouseup', (e) => {
+    send({ type: 'mouseup', e: { x: e.x, y: e.y, button: e.button, time: e.time } });
+  });
+  _uIOhook.on('mousemove', (e) => {
+    const now = Date.now();
+    if (now - _lastMoveSent < 100) return;
+    _lastMoveSent = now;
+    send({ type: 'mousemove', e: { x: e.x, y: e.y, time: e.time } });
   });
   _uIOhook.on('wheel', (e) => {
     send({ type: 'wheel', e: e ? { rotation: e.rotation, direction: e.direction, time: e.time } : {} });

@@ -257,43 +257,40 @@ function _sendStartSignal() {
   } catch {}
 }
 
+let _unsubscribe = null;
+
 function start(opts = {}) {
   if (_running) return;
   if (typeof opts.getActiveApp === 'function') _getActiveApp = opts.getActiveApp;
   if (typeof opts.getActiveWindow === 'function') _getActiveWindow = opts.getActiveWindow;
 
-  try {
-    const { uIOhook } = require('uiohook-napi');
-    // idle-detector에 활동 알림 (깜빡임 방지) — 마우스 이벤트 모두에서 touch
-    const _idle = (() => { try { return require('./idle-detector'); } catch { return null; } })();
-    // keyboard-watcher가 이미 start() 했으므로 listener만 추가
-    uIOhook.on('mousedown', (e) => { if (_idle) _idle.touch(); _onMousedown(e); });
-    uIOhook.on('mouseup',   (e) => { if (_idle) _idle.touch(); _onMouseup(e); });
-    uIOhook.on('mousemove', (e) => { if (_idle) _idle.touch(); _onMousemove(e); });
-    uIOhook.on('wheel',     (e) => { if (_idle) _idle.touch(); _onWheel(e); });
-    _running = true;
-    _resetBuffer();
-    // 시작 신호 즉시 전송 (서버에서 데몬이 살아있음 + mouse-watcher 동작 확인용)
-    _sendStartSignal();
-    // 5초 후 첫 flush (검증 빠르게), 이후 60초 주기
-    setTimeout(_flushRemote, 5000);
-    _flushTimer = setInterval(_flushRemote, FLUSH_INTERVAL_MS);
-    console.log('[mouse-watcher] started — first flush in 5s, interval 60s');
-  } catch (err) {
-    console.warn('[mouse-watcher] uiohook load 실패:', err.message);
-    // mouse-watcher가 실패해도 keyboard-watcher 등 다른 워처는 영향 없음
+  // uiohook은 keyboard-watcher가 child process로 격리 소유 → 여기선 그 이벤트를 구독만 한다.
+  // (in-process uiohook 로드 금지 — native crash가 데몬을 죽이는 문제 방지)
+  const subscribe = (typeof opts.subscribeInput === 'function') ? opts.subscribeInput : null;
+  if (!subscribe) {
+    console.warn('[mouse-watcher] subscribeInput 미제공 — 마우스 수집 비활성 (uiohook child 미연결)');
+    return;
   }
+  const _idle = (() => { try { return require('./idle-detector'); } catch { return null; } })();
+  _unsubscribe = subscribe({
+    onMousedown: (e) => { if (_idle) _idle.touch(); _onMousedown(e); },
+    onMouseup:   (e) => { if (_idle) _idle.touch(); _onMouseup(e); },
+    onMousemove: (e) => { if (_idle) _idle.touch(); _onMousemove(e); },
+    onWheel:     (e) => { if (_idle) _idle.touch(); _onWheel(e); },
+  }, 'mouse-watcher');
+  _running = true;
+  _resetBuffer();
+  // 시작 신호 즉시 전송 (서버에서 데몬이 살아있음 + mouse-watcher 동작 확인용)
+  _sendStartSignal();
+  // 5초 후 첫 flush (검증 빠르게), 이후 60초 주기
+  setTimeout(_flushRemote, 5000);
+  _flushTimer = setInterval(_flushRemote, FLUSH_INTERVAL_MS);
+  console.log('[mouse-watcher] started (uiohook child 구독) — first flush in 5s');
 }
 
 function stop() {
   if (!_running) return;
-  try {
-    const { uIOhook } = require('uiohook-napi');
-    uIOhook.off('mousedown', _onMousedown);
-    uIOhook.off('mouseup',   _onMouseup);
-    uIOhook.off('mousemove', _onMousemove);
-    uIOhook.off('wheel',     _onWheel);
-  } catch {}
+  try { if (_unsubscribe) { _unsubscribe(); _unsubscribe = null; } } catch {}
   if (_flushTimer) { clearInterval(_flushTimer); _flushTimer = null; }
   _flushRemote();
   _running = false;

@@ -710,6 +710,7 @@ async function main() {
     mouseWatcher.start({
       getActiveApp:    keyboardWatcher?.getActiveApp?.bind(keyboardWatcher),
       getActiveWindow: keyboardWatcher?.getActiveWindowTitle?.bind(keyboardWatcher),
+      subscribeInput:  keyboardWatcher?.subscribeInput,
     });
   } catch (err) {
     console.error('[personal-agent] 마우스 와처 시작 실패:', err.message);

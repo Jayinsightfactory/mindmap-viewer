@@ -85,6 +85,14 @@ let _kbErrorCount    = 0;
 let _kbLastErrorMsg  = '';
 let _kbFlushCount    = 0;
 let _uiohook         = null;
+// uiohook-napi를 별도 child process(uiohook-child.js)로 격리 — native crash(SIGSEGV)가
+// 메인 데몬을 죽이지 않도록. 은행 키보드보안(ASTx 등)과 후킹 충돌 시 child만 죽고 재fork.
+let _uiohookChild        = null;   // fork된 자식 프로세스 핸들
+let _uiohookChildRestarts = 0;     // 연속 재시작 횟수 (5분 내 5회면 포기)
+let _uiohookChildFirstStart = 0;   // 첫 fork 시각 (연속 크래시 판정용)
+let _safePollingActive   = false;  // safe polling 폴백 활성 여부
+let _safePollTimer       = null;   // safe polling setInterval 핸들
+const _inputSubscribers  = new Map(); // name → { onMousedown, onMouseup, onMousemove, onWheel }
 let _orbitPort       = parseInt(process.env.ORBIT_PORT || '4747', 10);
 let _orbitUrl        = `http://localhost:${_orbitPort}/api/personal/keyboard`;
 let _analysisHistory = [];          // 최근 분석 결과 이력 (최대 100건)
@@ -920,111 +928,190 @@ function start(opts = {}) {
     } catch { return false; }
   })();
   const _safeMode = _safeModeEnv || _safeModeFile;
+
+  // ── 공통: 윈도우 폴링 + 분석/배치 타이머 (입력 후킹 방식과 무관하게 항상) ──
+  _startWinPoll();
+  const interval = opts.analysisInterval || ANALYSIS_INTERVAL_MS;
+  if (!_analysisTimer) _analysisTimer = setInterval(_runPeriodicAnalysis, interval);
+  _startRemoteBatch();
+  _running = true;
+
   if (_safeMode) {
-    const _reason = _safeModeEnv ? 'env ORBIT_SAFE_MODE=1' : '.safe-mode 파일 (24h 이내)';
-    throw new Error(`safe-mode 강제 (${_reason}) — uiohook 스킵`);
+    const _reason = _safeModeEnv ? 'env ORBIT_SAFE_MODE=1' : '.safe-mode 파일 (1h 이내)';
+    console.log(`[keyboard-watcher] safe-mode (${_reason}) — uiohook 스킵, safe polling 전환`);
+    _startSafePolling();
+    return;
   }
+
+  // uiohook을 child process로 격리 fork — native crash가 데몬을 죽이지 않음
   try {
-    _uiohook = require('uiohook-napi');
-    // 핸들러를 try/catch로 감싸서 native callback 에러가 uncaughtException으로 빠져나가지 않도록
-    _uiohook.uIOhook.on('keydown', (e) => {
-      try {
-        // 사용자 활동 감지 — idle-detector에 알림 (깜빡임 방지 로직이 활용)
-        try { require('./idle-detector').touch(); } catch {}
-        _onKeydown(e);
-      } catch (_e) { console.warn('[keyboard-watcher] keydown handler error (무시):', _e?.message); }
-    });
-
-    // Mouse click tracking + burst + workflow
-    _uiohook.uIOhook.on('mousedown', (e) => { try { // native callback 안전 감싸기
-      if (_paused) return; // 은행 보안 일시정지 중 무시
-      _mouseClickCount++;
-      // 클릭 좌표 기록 (최근 200개, 자동화 스크립트 생성용) — 앱/창 포함
-      _mouseClickPositions.push({ x: e.x, y: e.y, t: Date.now(), app: getActiveApp(), win: getActiveWindowTitle() });
-      if (_mouseClickPositions.length > 200) _mouseClickPositions = _mouseClickPositions.slice(-200);
-      if (_screenCapture?.onMouseBurst) _screenCapture.onMouseBurst();
-      if (_screenCapture?.onMouseClick) _screenCapture.onMouseClick(); // 클릭 1번 → 2초 후 캡처
-      // 워크플로우 학습: 클릭 기록 (좌표 포함)
-      try {
-        const wf = require('./workflow-learner');
-        const q = `${e.x < 960 ? 'L' : 'R'}${e.y < 540 ? 'T' : 'B'}`;
-        wf.recordAction({ type: 'click', app: getActiveApp(), window: getActiveWindowTitle(), region: q, x: e.x, y: e.y });
-      } catch {}
-      // Track click position regions (quadrant-based)
-      const quadrant = `${e.x < 960 ? 'L' : 'R'}${e.y < 540 ? 'T' : 'B'}`;
-      _mouseQuadrants[quadrant] = (_mouseQuadrants[quadrant] || 0) + 1;
-    } catch (_e) { console.warn('[keyboard-watcher] mousedown handler error (무시):', _e?.message); } });
-
-    _uiohook.uIOhook.start();
-    _running = true;
-
-    // uiohook 안정성 체크: 5초 후 살아있으면 정상 (native crash는 5초 내 발생)
-    // 문제 발생 시 safe polling 모드로 전환하는 fallback 타이머
-    const _uiohookStabilityTimer = setTimeout(() => {
-      if (!_running) return;
-      console.log('[keyboard-watcher] uiohook 안정 확인 (5초 경과)');
-    }, 5000);
-    // 즉시 _running을 false로 해두고 start 직후 true로 설정해 감지
-    // (native crash 시 process가 종료되므로 이 타이머가 자동으로 도달하면 정상)
-
-    // ── Windows active app/window 백그라운드 polling 시작 (win-shell 사용, 콘솔 깜빡임 방지) ──
-    _startWinPoll();
-
-    // ── 5분 주기 로컬 분석 타이머 시작 ──
-    const interval = opts.analysisInterval || ANALYSIS_INTERVAL_MS;
-    _analysisTimer = setInterval(_runPeriodicAnalysis, interval);
-
-    // 원격 배치 전송 타이머 시작 (10분마다)
-    _startRemoteBatch();
-
-    // 시작 완료 (로그 최소화)
+    _forkUiohookChild();
   } catch (err) {
-    console.error('[keyboard-watcher] uiohook load failed:', err.message);
-    _reportDaemonError('keyboard-watcher-uiohook', err.message);
-
-    // ── safe polling 폴백: uiohook 없이 앱/윈도우/마우스 수집 ──
-    if (process.platform === 'win32') {
-      console.log('[keyboard-watcher] fallback: safe polling mode (app/window/mouse)');
-      _running = true;
-      let _lastApp = '', _lastWin = '';
-
-      const pollFn = () => {
-        if (_paused) return;
-        try {
-          const app = getActiveApp();
-          const win = getActiveWindowTitle();
-
-          // 앱 전환 감지 → 이벤트 기록 + 캡처 트리거
-          if (app !== _lastApp || win !== _lastWin) {
-            _lastApp = app; _lastWin = win;
-            _activityBuffer.push({ app, window: win, ts: Date.now(), type: 'app_switch' });
-            if (_screenCapture?.capture) _screenCapture.capture('app_switch');
-          }
-
-          // 마우스 좌표 (PowerShell)
-          try {
-            const mouseJson = execSync(
-              'powershell.exe -NoProfile -Command "[System.Windows.Forms.Cursor]::Position | ConvertTo-Json -Compress"',
-              { timeout: 3000, encoding: 'utf8', windowsHide: true }
-            ).trim();
-            const pos = JSON.parse(mouseJson);
-            if (pos.X !== undefined) {
-              const q = `${pos.X < 960 ? 'L' : 'R'}${pos.Y < 540 ? 'T' : 'B'}`;
-              _mouseQuadrants[q] = (_mouseQuadrants[q] || 0) + 1;
-            }
-          } catch {}
-        } catch {}
-      };
-
-      setInterval(pollFn, 15000); // 15초 간격
-      console.log('[keyboard-watcher] safe polling 실행 중 (15초 간격)');
-
-      // 분석 + 배치 전송 타이머도 시작
-      const interval = opts.analysisInterval || ANALYSIS_INTERVAL_MS;
-      _analysisTimer = setInterval(_runPeriodicAnalysis, interval);
-      _startRemoteBatch();
-    }
+    console.error('[keyboard-watcher] uiohook child fork 실패:', err.message);
+    _reportDaemonError('keyboard-watcher-uiohook-fork', err.message);
+    _startSafePolling();
   }
+}
+
+// ── keyboard-watcher 자체 mousedown 처리 (캡처 트리거 + 워크플로우 학습) ──
+function _handleMousedown(e) {
+  if (_paused) return; // 은행 보안 일시정지 중 무시
+  _mouseClickCount++;
+  // 클릭 좌표 기록 (최근 200개, 자동화 스크립트 생성용) — 앱/창 포함
+  _mouseClickPositions.push({ x: e.x, y: e.y, t: Date.now(), app: getActiveApp(), win: getActiveWindowTitle() });
+  if (_mouseClickPositions.length > 200) _mouseClickPositions = _mouseClickPositions.slice(-200);
+  if (_screenCapture?.onMouseBurst) _screenCapture.onMouseBurst();
+  if (_screenCapture?.onMouseClick) _screenCapture.onMouseClick(); // 클릭 1번 → 2초 후 캡처
+  // 워크플로우 학습: 클릭 기록 (좌표 포함)
+  try {
+    const wf = require('./workflow-learner');
+    const q = `${e.x < 960 ? 'L' : 'R'}${e.y < 540 ? 'T' : 'B'}`;
+    wf.recordAction({ type: 'click', app: getActiveApp(), window: getActiveWindowTitle(), region: q, x: e.x, y: e.y });
+  } catch {}
+  // Track click position regions (quadrant-based)
+  const quadrant = `${e.x < 960 ? 'L' : 'R'}${e.y < 540 ? 'T' : 'B'}`;
+  _mouseQuadrants[quadrant] = (_mouseQuadrants[quadrant] || 0) + 1;
+}
+
+// ── 입력 이벤트 구독 (mouse-watcher 등이 child의 이벤트를 받기 위함) ──
+// 같은 name으로 재구독하면 교체(중복 카운트 방지). 반환값은 unsubscribe 함수.
+function subscribeInput(handlers, name = 'default') {
+  if (handlers && typeof handlers === 'object') _inputSubscribers.set(name, handlers);
+  return () => _inputSubscribers.delete(name);
+}
+function _notifySubscribers(kind, e) {
+  for (const s of _inputSubscribers.values()) {
+    try { const fn = s[kind]; if (typeof fn === 'function') fn(e); } catch {}
+  }
+}
+
+// ── uiohook child fork + IPC 라우팅 ──
+function _forkUiohookChild() {
+  const { fork } = require('child_process');
+  const childPath = path.join(__dirname, 'uiohook-child.js');
+  if (!_uiohookChildFirstStart) _uiohookChildFirstStart = Date.now();
+  const child = fork(childPath, [], { windowsHide: true });
+  _uiohookChild = child;
+
+  child.on('message', (msg) => {
+    if (!msg || typeof msg !== 'object') return;
+    switch (msg.type) {
+      case 'keydown':
+        // idle 알림은 pause 여부와 무관 (기존 동작 보존), _onKeydown 내부에서 _paused 체크
+        try { require('./idle-detector').touch(); } catch {}
+        try { _onKeydown(msg.e || {}); }
+        catch (_e) { console.warn('[keyboard-watcher] keydown handler error (무시):', _e?.message); }
+        break;
+      case 'mousedown':
+        try { _handleMousedown(msg.e || {}); }
+        catch (_e) { console.warn('[keyboard-watcher] mousedown handler error (무시):', _e?.message); }
+        _notifySubscribers('onMousedown', msg.e || {});
+        break;
+      case 'mouseup':
+        _notifySubscribers('onMouseup', msg.e || {});
+        break;
+      case 'mousemove':
+        _notifySubscribers('onMousemove', msg.e || {});
+        break;
+      case 'wheel':
+        _notifySubscribers('onWheel', msg.e || {});
+        break;
+      case 'stable':
+        // 5초 안정 → 연속 크래시 카운터 리셋
+        _uiohookChildRestarts = 0;
+        _uiohookChildFirstStart = 0;
+        break;
+      case 'load_error':
+      case 'start_error':
+      case 'handler_error':
+        console.error('[keyboard-watcher] uiohook child', msg.type + ':', msg.error);
+        _reportDaemonError('keyboard-watcher-uiohook', `${msg.type}: ${msg.error}`);
+        _giveUpUiohook();
+        break;
+      default:
+        break; // started / heartbeat / uncaught / unhandled / shutdown
+    }
+  });
+
+  child.on('error', (e) => {
+    console.warn('[keyboard-watcher] uiohook child error:', e?.message);
+  });
+
+  child.on('exit', (code, signal) => {
+    if (_uiohookChild === child) _uiohookChild = null;
+    if (!_running) return;          // stop() 중 정상 종료 → 재시작 안 함
+    if (_safePollingActive) return; // 이미 폴백 중
+    console.warn(`[keyboard-watcher] uiohook child 종료 (code=${code}, signal=${signal}) — 재시작 예약`);
+    _scheduleUiohookRefork();
+  });
+}
+
+// child가 비정상 종료 시 30초 후 재fork. 5분 내 5회 이상이면 포기 → safe polling.
+function _scheduleUiohookRefork() {
+  _uiohookChildRestarts++;
+  const within5min = _uiohookChildFirstStart && (Date.now() - _uiohookChildFirstStart) < 5 * 60 * 1000;
+  if (_uiohookChildRestarts >= 5 && within5min) {
+    console.warn('[keyboard-watcher] uiohook child 5회 연속 크래시 — uiohook 포기, safe polling 전환');
+    _reportDaemonError('keyboard-watcher-uiohook', 'uiohook child 5회 연속 크래시 — safe polling');
+    // .safe-mode 생성으로 다음 start에서도 uiohook 스킵 (1h TTL, crash-reporter와 동기화)
+    try { fs.writeFileSync(path.join(os.homedir(), '.orbit', '.safe-mode'), new Date().toISOString()); } catch {}
+    _startSafePolling();
+    return;
+  }
+  setTimeout(() => {
+    if (_running && !_uiohookChild && !_safePollingActive) {
+      try { _forkUiohookChild(); }
+      catch (e) { console.error('[keyboard-watcher] refork 실패:', e.message); _startSafePolling(); }
+    }
+  }, 30 * 1000);
+}
+
+// uiohook 자체 사용 불가(load/start 에러) → child 정리 후 safe polling
+function _giveUpUiohook() {
+  try { if (_uiohookChild) { _uiohookChild.removeAllListeners('exit'); _uiohookChild.kill(); } } catch {}
+  _uiohookChild = null;
+  _startSafePolling();
+}
+
+// ── safe polling 폴백: uiohook 없이 앱/윈도우/마우스 좌표 수집 ──
+function _startSafePolling() {
+  if (_safePollingActive) return;
+  _safePollingActive = true;
+  if (process.platform !== 'win32') return;
+  console.log('[keyboard-watcher] fallback: safe polling mode (app/window/mouse)');
+  _running = true;
+  let _lastApp = '', _lastWin = '';
+
+  const pollFn = () => {
+    if (_paused) return;
+    try {
+      const app = getActiveApp();
+      const win = getActiveWindowTitle();
+
+      // 앱 전환 감지 → 이벤트 기록 + 캡처 트리거
+      if (app !== _lastApp || win !== _lastWin) {
+        _lastApp = app; _lastWin = win;
+        _activityBuffer.push({ app, window: win, ts: Date.now(), type: 'app_switch' });
+        if (_screenCapture?.capture) _screenCapture.capture('app_switch');
+      }
+
+      // 마우스 좌표 (PowerShell)
+      try {
+        const mouseJson = execSync(
+          'powershell.exe -NoProfile -Command "[System.Windows.Forms.Cursor]::Position | ConvertTo-Json -Compress"',
+          { timeout: 3000, encoding: 'utf8', windowsHide: true }
+        ).trim();
+        const pos = JSON.parse(mouseJson);
+        if (pos.X !== undefined) {
+          const q = `${pos.X < 960 ? 'L' : 'R'}${pos.Y < 540 ? 'T' : 'B'}`;
+          _mouseQuadrants[q] = (_mouseQuadrants[q] || 0) + 1;
+        }
+      } catch {}
+    } catch {}
+  };
+
+  _safePollTimer = setInterval(pollFn, 15000); // 15초 간격
+  console.log('[keyboard-watcher] safe polling 실행 중 (15초 간격)');
 }
 
 // ── daemon.error 서버 전송 (auto-fixer 연동) ──
@@ -1062,9 +1149,14 @@ function stop() {
   // 타이머 정리
   if (_analysisTimer) { clearInterval(_analysisTimer); _analysisTimer = null; }
   if (_flushTimer) { clearTimeout(_flushTimer); _flushTimer = null; }
+  if (_safePollTimer) { clearInterval(_safePollTimer); _safePollTimer = null; }
+  _safePollingActive = false;
   _stopWinPoll();
   try { _winShell?.shutdown?.(); } catch {}
 
+  // uiohook child 종료 (exit 핸들러 제거 후 kill → 재fork 방지)
+  try { if (_uiohookChild) { _uiohookChild.removeAllListeners('exit'); _uiohookChild.kill(); } } catch {}
+  _uiohookChild = null;
   try { _uiohook?.uIOhook.stop(); } catch {}
   _running = false;
 
@@ -1200,6 +1292,7 @@ module.exports = {
   analyzeAndSummarize,
   getAnalysisHistory,
   setScreenCapture,
+  subscribeInput,
   pause,
   resume,
   isPaused,
