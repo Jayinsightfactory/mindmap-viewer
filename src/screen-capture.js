@@ -80,7 +80,7 @@ const APP_PROFILES = {
   chrome:     { priority: 'medium',   minInterval: 90000,  sendImage: false },
   edge:       { priority: 'medium',   minInterval: 90000,  sendImage: false },
   whale:      { priority: 'medium',   minInterval: 90000,  sendImage: false },
-  kakaotalk:  { priority: 'low',      minInterval: 180000, sendImage: false },
+  kakaotalk:  { priority: 'skip',     minInterval: 300000, sendImage: false, noLocalSave: true },
   slack:      { priority: 'low',      minInterval: 180000, sendImage: false },
   explorer:   { priority: 'low',      minInterval: 120000, sendImage: false },
   calculator: { priority: 'skip',     minInterval: 300000, sendImage: false },
@@ -632,6 +632,19 @@ function capture(trigger = 'manual') {
   _updateActivityState();
 
   if (!_shouldCapture(trigger, _lastActiveApp)) return null;
+
+  // noLocalSave 앱(카카오톡 등): PNG 저장 없이 메타데이터만 서버 전송 (개인 대화 내용 로컬 저장 방지)
+  const _appKey = getAppProfileKey(_lastActiveApp);
+  if (APP_PROFILES[_appKey]?.noLocalSave) {
+    _sendCaptureMetadata('(no-save)', trigger, {
+      app: _lastActiveApp, windowTitle: _lastWindowTitle,
+      activityLevel: _activityState?.label || '', automationScore: _automationScore,
+      cooltime: _effectiveCooltime(_lastActiveApp, trigger), capturePolicy: _getTriggerPolicy(trigger),
+    });
+    _scCaptureCount++;
+    _scLastCaptureAt = Date.now();
+    return null;
+  }
 
   ensureDir();
   const now = Date.now();
