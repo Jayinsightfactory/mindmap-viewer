@@ -6738,6 +6738,39 @@ app.post('/api/admin/create-employee-token', async (req, res) => {
 });
 
 // ─── 관리자: 사용자 삭제 ──────────────────────────────────────────────────────
+// POST /api/admin/delete-events — 특정 조건의 이벤트 일괄 삭제 (개인정보 정리용)
+// body: { userId, type, appFilter (ILIKE), windowFilter (ILIKE), dryRun }
+app.post('/api/admin/delete-events', async (req, res) => {
+  try {
+    const { isAdmin: _adminOk } = resolveAdmin(req);
+    if (!_adminOk) return res.status(403).json({ error: 'admin only' });
+
+    const { userId, type, appFilter, windowFilter, dryRun = true } = req.body || {};
+    if (!userId) return res.status(400).json({ error: 'userId 필수' });
+
+    const pool = dbModule.getDb();
+    const params = [userId];
+    let where = 'user_id = $1';
+    if (type) { params.push(type); where += ` AND type = $${params.length}`; }
+    if (appFilter) {
+      params.push(`%${appFilter}%`);
+      where += ` AND (data_json->>'app' ILIKE $${params.length} OR data_json->'appContext'->>'currentApp' ILIKE $${params.length})`;
+    }
+    if (windowFilter) {
+      params.push(`%${windowFilter}%`);
+      where += ` AND (data_json->>'windowTitle' ILIKE $${params.length} OR data_json->'appContext'->>'currentWindow' ILIKE $${params.length})`;
+    }
+
+    const countRes = await pool.query(`SELECT COUNT(*)::int AS cnt FROM events WHERE ${where}`, params);
+    const cnt = countRes.rows[0].cnt;
+
+    if (dryRun) return res.json({ dryRun: true, wouldDelete: cnt, where, params });
+
+    const del = await pool.query(`DELETE FROM events WHERE ${where}`, params);
+    res.json({ ok: true, deleted: del.rowCount });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // DELETE /api/admin/delete-user
 // body: { email } 또는 { userId }
 // 인증: ADMIN_EMAILS(Bearer 토큰) 또는 body.secret = ADMIN_SECRET
