@@ -93,6 +93,11 @@ function _exec(cmd, timeoutMs = 5000) {
 async function _restartComponent(name) {
   const comp = _components[name];
   if (!comp?.ref) return false;
+  // bank-safe 등 일시정지 중이면 restart 건너뜀
+  if (typeof comp.ref.isPaused === 'function' && comp.ref.isPaused()) {
+    console.log(`[self-healer] ${name} 재시작 건너뜀 (일시정지 중)`);
+    return false;
+  }
   try { if (typeof comp.ref.stop === 'function') comp.ref.stop(); } catch {}
   await new Promise(r => setTimeout(r, 2000));
   try {
