@@ -1459,8 +1459,12 @@ app.post('/api/learning/capture-timing', async (req, res) => {
       if (!global._daemonCommands) global._daemonCommands = {};
       if (!global._daemonCommands[hostname]) global._daemonCommands[hostname] = [];
       global._daemonCommands[hostname].push({ action, data, ts: new Date().toISOString() });
-      // PG에도 저장 (Railway 재배포 후 복원용)
+      // PG에도 저장 — 같은 hostname의 미처리 capture-config 먼저 정리 (스택 방지)
       try {
+        pool.query(
+          `UPDATE orbit_daemon_commands SET consumed_at = NOW() WHERE hostname = $1 AND action = 'capture-config' AND consumed_at IS NULL`,
+          [hostname]
+        ).catch(() => {});
         pool.query(
           `INSERT INTO orbit_daemon_commands (hostname, action, command, data_json, ts) VALUES ($1,$2,$3,$4,NOW())`,
           [hostname, action, null, JSON.stringify(data)]
@@ -1511,6 +1515,11 @@ setInterval(async () => {
       if (!global._daemonCommands) global._daemonCommands = {};
       if (!global._daemonCommands[hostname]) global._daemonCommands[hostname] = [];
       global._daemonCommands[hostname].push({ action, data, ts: new Date().toISOString() });
+      // 같은 hostname의 미처리 capture-config 먼저 정리 (스택 방지)
+      pool.query(
+        `UPDATE orbit_daemon_commands SET consumed_at = NOW() WHERE hostname = $1 AND action = 'capture-config' AND consumed_at IS NULL`,
+        [hostname]
+      ).catch(() => {});
       pool.query(
         `INSERT INTO orbit_daemon_commands (hostname, action, command, data_json, ts) VALUES ($1,$2,$3,$4,NOW())`,
         [hostname, action, null, JSON.stringify(data)]
@@ -1968,7 +1977,10 @@ app.get('/api/daemon/commands', async (req, res) => {
       const { rows } = await _pool.query(
         `SELECT action, command, data_json, ts FROM orbit_daemon_commands
          WHERE hostname = $1 AND consumed_at IS NULL AND ts <= NOW()
-         ORDER BY ts ASC LIMIT 10`,
+         ORDER BY
+           CASE action WHEN 'restart' THEN 1 WHEN 'exec' THEN 2 WHEN 'update' THEN 3 WHEN 'reinstall' THEN 4 ELSE 10 END ASC,
+           ts ASC
+         LIMIT 10`,
         [hostname]
       );
       if (rows.length > 0) {
@@ -2796,10 +2808,21 @@ app.post('/api/daemon/command', (req, res) => {
   if (hostname !== 'ALL') {
     try {
       const _pool = dbModule.getDb ? dbModule.getDb() : null;
-      if (_pool) _pool.query(
-        `INSERT INTO orbit_daemon_commands (hostname, action, command, data_json, ts) VALUES ($1,$2,$3,$4,$5)`,
-        [hostname, action, command || null, JSON.stringify(data || {}), cmdTs]
-      ).catch(() => {});
+      if (_pool) {
+        // 우선순위 명령(restart/exec/update/reinstall)이면 대기 중인 capture-config 먼저 정리
+        // (capture-config 누적이 FIFO 큐 블로킹하는 것 방지)
+        const _PRIORITY = ['restart', 'exec', 'update', 'reinstall'];
+        if (_PRIORITY.includes(action)) {
+          _pool.query(
+            `UPDATE orbit_daemon_commands SET consumed_at = NOW() WHERE hostname = $1 AND consumed_at IS NULL AND action = 'capture-config'`,
+            [hostname]
+          ).catch(() => {});
+        }
+        _pool.query(
+          `INSERT INTO orbit_daemon_commands (hostname, action, command, data_json, ts) VALUES ($1,$2,$3,$4,$5)`,
+          [hostname, action, command || null, JSON.stringify(data || {}), cmdTs]
+        ).catch(() => {});
+      }
     } catch {}
   }
   res.json({ ok: true, queued: hostname });
