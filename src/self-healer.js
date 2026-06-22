@@ -257,9 +257,16 @@ async function _runHeal() {
   if (_isWorkHour()) {
     const silenceMs = now - _lastEventAt;
     if (silenceMs > MAX_SILENCE_MS) {
-      issues.push(`event_silence_${Math.round(silenceMs / 60000)}min`);
-      const ok = await _restartComponent('keyboard-watcher');
-      if (ok) _lastEventAt = now;
+      // bank-safe(일시정지) 중이면 restart 금지 — resume 후 자연 재개
+      const _kbRef = _components['keyboard-watcher']?.ref;
+      const _kbPaused = typeof _kbRef?.isPaused === 'function' && _kbRef.isPaused();
+      if (_kbPaused) {
+        _lastEventAt = now; // 타이머 리셋만 — 다음 30분 체크 방지
+      } else {
+        issues.push(`event_silence_${Math.round(silenceMs / 60000)}min`);
+        const ok = await _restartComponent('keyboard-watcher');
+        if (ok) _lastEventAt = now;
+      }
     }
   }
 
