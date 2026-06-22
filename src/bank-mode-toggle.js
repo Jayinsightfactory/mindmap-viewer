@@ -32,12 +32,12 @@ const BANK_SECURITY_PROCESSES = [
   { name: 'ASTx', process: 'astx.exe', service: 'ASTxSvc' },
   // 범용 보안 (키보드 후킹 차단 — 무조건 bank-safe)
   { name: 'nProtect', process: 'nProtect.exe', service: 'nProtect' },
-  { name: 'AhnLab Safe Transaction', process: 'ASDSvc.exe', service: 'AhnLabSafeTransaction' },
   { name: 'AhnLab V3', process: 'V3Lite.exe', service: null, critical: true }, // V3는 건드리면 안 됨
-  // 인증/전자서명 (키보드 후킹 차단 — 무조건 bank-safe)
-  { name: 'INISAFEWeb', process: 'INISAFEWeb.exe', service: null },
-  { name: 'INISAFE CrossWeb', process: 'INISAFECrossWebEX.exe', service: null },
-  { name: 'XecureWeb', process: 'XecureWeb.exe', service: null },
+  // 인증/전자서명 (상주하지만 실제 은행거래 시에만 후킹 차단 — 은행 사이트 병용 시에만 bank-safe)
+  { name: 'AhnLab Safe Transaction', process: 'ASDSvc.exe', service: 'AhnLabSafeTransaction', residentOnly: true },
+  { name: 'INISAFEWeb', process: 'INISAFEWeb.exe', service: null, residentOnly: true },
+  { name: 'INISAFE CrossWeb', process: 'INISAFECrossWebEX.exe', service: null, residentOnly: true },
+  { name: 'XecureWeb', process: 'XecureWeb.exe', service: null, residentOnly: true },
   // 상주 에이전트 (키보드 후킹 안 막음 — 은행 사이트 병용 시에만 bank-safe)
   { name: 'nProtect Online Security', process: 'npupdate.exe', service: null, residentOnly: true },
   { name: 'IPInside', process: 'IPInsideAgent.exe', service: 'IPInsideAgent', residentOnly: true },

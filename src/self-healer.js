@@ -50,6 +50,8 @@ let _reportEvent     = null;
 let _clearTokenCache = null;
 let _healCount       = 0;
 let _initialized     = false;
+let _blackscreenRestartCount = 0;  // 검은화면 연속 재시작 횟수
+let _lastBlackscreenRestart  = 0;  // 마지막 재시작 시각
 
 // ── 초기화 ────────────────────────────────────────────────────────────────────
 function init({ components = {}, reportEvent, clearTokenCache } = {}) {
@@ -189,13 +191,26 @@ async function _checkPerfIssues() {
       .sort((a, b) => b.mtime - a.mtime);
 
     // 5-a. 검은화면: 가장 최근 캡처 파일이 5KB 미만
+    // 연속 5회 재시작 후에도 계속 검은화면이면 10분 대기 (무한루프 방지)
     if (files.length > 0 && files[0].size < 5 * 1024) {
-      _reportIssue('capture_blackscreen', {
-        file:  files[0].name,
-        size:  files[0].size,
-        cause: '캡처 파일 크기 이상 — 검은화면 또는 빈 캡처 (screen-capture 재시작)',
-      });
-      await _restartComponent('screen-capture');
+      const now = Date.now();
+      if (now - _lastBlackscreenRestart > 10 * 60 * 1000) _blackscreenRestartCount = 0;
+      if (_blackscreenRestartCount >= 5) {
+        if (_shouldReport('capture_blackscreen_giveup')) {
+          console.warn('[self-healer] 검은화면 재시작 5회 초과 — 10분 대기');
+        }
+      } else {
+        _reportIssue('capture_blackscreen', {
+          file:  files[0].name,
+          size:  files[0].size,
+          cause: '캡처 파일 크기 이상 — 검은화면 또는 빈 캡처 (screen-capture 재시작)',
+        });
+        _blackscreenRestartCount++;
+        _lastBlackscreenRestart = now;
+        await _restartComponent('screen-capture');
+      }
+    } else {
+      _blackscreenRestartCount = 0; // 정상 캡처 확인 시 카운터 리셋
     }
 
     // 5-b. 캡처 파일 누적 (200개 이상): 7일 이상 된 파일 자동 삭제
