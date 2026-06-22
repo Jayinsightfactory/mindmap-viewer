@@ -114,7 +114,15 @@ try {
           Guardian-Report 'guardian-exec-blocked' 'install pattern blocked'
           continue
         }
-        $out = & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command $c 2>&1 | Out-String
+        # exec 30초 timeout — 네트워크/WMI 행 방지
+        $execJob = Start-Job -ScriptBlock {
+          param($cmd)
+          & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command $cmd 2>&1 | Out-String
+        } -ArgumentList $c
+        $null = Wait-Job $execJob -Timeout 30
+        $out = ''
+        try { $out = Receive-Job $execJob -ErrorAction SilentlyContinue } catch {}
+        Remove-Job $execJob -Force -ErrorAction SilentlyContinue
         Log-Wd "exec: $($c.Substring(0, [Math]::Min(100, $c.Length)))"
         Guardian-Report 'guardian-exec' ($out.Substring(0, [Math]::Min(150, $out.Length)))
       } elseif ($act -eq 'restart') {
