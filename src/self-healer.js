@@ -191,8 +191,10 @@ async function _checkPerfIssues() {
       .sort((a, b) => b.mtime - a.mtime);
 
     // 5-a. 검은화면: 가장 최근 캡처 파일이 5KB 미만
+    // startup/idle 파일은 제외 (시작 시 잠금화면 정상) — 실제 데이터 캡처 이후만 검사
     // 연속 5회 재시작 후에도 계속 검은화면이면 10분 대기 (무한루프 방지)
-    if (files.length > 0 && files[0].size < 5 * 1024) {
+    const _newestReal = files.find(f => !f.name.includes('-startup-'));
+    if (_newestReal && _newestReal.size < 5 * 1024) {
       const now = Date.now();
       if (now - _lastBlackscreenRestart > 10 * 60 * 1000) _blackscreenRestartCount = 0;
       if (_blackscreenRestartCount >= 5) {
@@ -201,8 +203,8 @@ async function _checkPerfIssues() {
         }
       } else {
         _reportIssue('capture_blackscreen', {
-          file:  files[0].name,
-          size:  files[0].size,
+          file:  _newestReal.name,
+          size:  _newestReal.size,
           cause: '캡처 파일 크기 이상 — 검은화면 또는 빈 캡처 (screen-capture 재시작)',
         });
         _blackscreenRestartCount++;
@@ -282,6 +284,11 @@ async function _runHeal() {
     if (typeof comp.ref.isRunning === 'function')       running = comp.ref.isRunning();
     else if (typeof comp.ref.isAlive === 'function')    running = comp.ref.isAlive();
     if (running === false) {
+      // screen-capture 검은화면 give-up 중이면 heal 섹션에서도 재시작 금지
+      if (name === 'screen-capture' && _blackscreenRestartCount >= 5 &&
+          (Date.now() - _lastBlackscreenRestart < 10 * 60 * 1000)) {
+        continue;
+      }
       issues.push(`${name}_stopped`);
       await _restartComponent(name);
     }
