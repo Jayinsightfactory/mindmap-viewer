@@ -34,11 +34,27 @@ const https   = require('https');
     if (_fs.existsSync(LOCK)) {
       const oldPid = parseInt(_fs.readFileSync(LOCK, 'utf8'), 10);
       if (oldPid && oldPid !== process.pid) {
+        let isOrbitProcess = false;
         try {
-          process.kill(oldPid, 0); // alive 체크만 (signal 0)
+          process.kill(oldPid, 0); // alive 체크
+          // Windows에서 PID 재사용 오탐 방지: 실제로 node personal-agent인지 확인
+          if (process.platform === 'win32') {
+            try {
+              const { execSync: _es } = require('child_process');
+              const cmdline = _es(`wmic process where ProcessId=${oldPid} get CommandLine /value 2>nul`, { encoding: 'utf8', windowsHide: true, timeout: 3000 });
+              isOrbitProcess = cmdline.includes('personal-agent');
+            } catch { isOrbitProcess = false; }
+          } else {
+            isOrbitProcess = true; // unix: signal 0 성공이면 같은 사용자 프로세스
+          }
+        } catch { isOrbitProcess = false; }
+
+        if (isOrbitProcess) {
           console.log(`[orbit] 이미 실행 중 (PID ${oldPid}) — 중복 방지 exit`);
           process.exit(0);
-        } catch { /* 죽은 PID — 무시하고 진행 */ }
+        } else {
+          console.log(`[orbit] 스테일 PID ${oldPid} (다른 프로세스가 재사용) — 무시하고 시작`);
+        }
       }
     }
     _fs.mkdirSync(_path.dirname(LOCK), { recursive: true });
