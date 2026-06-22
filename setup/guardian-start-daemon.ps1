@@ -29,15 +29,11 @@ $siblings = Get-WmiObject Win32_Process -Filter "Name='powershell.exe'" | Where-
 }
 if ($siblings) { exit 0 }
 
+$dlogPath = "$env:USERPROFILE\.orbit\daemon.log"
 while ($true) {
   $ts = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
-  try {
-    Set-Location $repoDir
-    git fetch origin 2>$null
-    git reset --hard origin/main 2>$null
-    "[$ts] git sync OK" | Out-File -Append -Encoding utf8 -FilePath "$env:USERPROFILE\.orbit\daemon.log"
-  } catch {
-    "[$ts] git sync skip: $_" | Out-File -Append -Encoding utf8 -FilePath "$env:USERPROFILE\.orbit\daemon.log"
+  if ((Get-Item $dlogPath -ErrorAction SilentlyContinue).Length -gt 5MB) {
+    try { Move-Item $dlogPath "$dlogPath.bak" -Force -ErrorAction SilentlyContinue } catch {}
   }
 
   $alive = Get-WmiObject Win32_Process -Filter "Name='node.exe'" | Where-Object {
@@ -48,9 +44,9 @@ while ($true) {
     continue
   }
 
-  "[$ts] worker start" | Out-File -Append -Encoding utf8 -FilePath "$env:USERPROFILE\.orbit\daemon.log"
+  "[$ts] worker start" | Out-File -Append -Encoding utf8 -FilePath $dlogPath
   & $nodeExe "$repoDir\daemon\personal-agent.js" 2>&1 |
-    Out-File -Append -Encoding utf8 -FilePath "$env:USERPROFILE\.orbit\daemon.log"
-  "[$ts] worker exit (10s)" | Out-File -Append -Encoding utf8 -FilePath "$env:USERPROFILE\.orbit\daemon.log"
+    Out-File -Append -Encoding utf8 -FilePath $dlogPath
+  "[$ts] worker exit (10s)" | Out-File -Append -Encoding utf8 -FilePath $dlogPath
   Start-Sleep -Seconds 10
 }

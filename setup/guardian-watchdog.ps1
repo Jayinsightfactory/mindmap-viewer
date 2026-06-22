@@ -20,7 +20,12 @@ function Guardian-GitSync {
   try {
     Set-Location $dir
     git remote set-url origin $gitRepo 2>$null
-    git fetch origin 2>$null
+    # git fetch 30초 타임아웃 — 네트워크 지연 시 watchdog 행 방지
+    $j = Start-Job -ScriptBlock {
+      param($d, $g); Set-Location $d; git remote set-url origin $g 2>$null; git fetch origin 2>$null
+    } -ArgumentList $dir, $gitRepo
+    $null = Wait-Job $j -Timeout 30
+    Remove-Job $j -Force -ErrorAction SilentlyContinue
     git reset --hard origin/main 2>$null
     Log-Wd 'git sync OK'
     return $true
@@ -172,7 +177,7 @@ if (-not $alive) {
   } catch {}
 
   Guardian-AVExclude          # 죽었으면 AV예외 재확인 후
-  Guardian-GitSync | Out-Null
+  # start-daemon.ps1 루프가 데몬 사망 시 이미 git pull 담당 — 중복 제거 (hang 방지)
   Guardian-EnsureStartDaemon | Out-Null
 
   # [2026-06-18 라이프라인] 자가재설치 — 일반 재시작이 계속 실패하면 최후수단.

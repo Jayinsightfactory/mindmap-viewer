@@ -220,6 +220,7 @@ $env:ORBIT_SKIP_REINSTALL = '1'
 Set-Location "$env:USERPROFILE\\.orbit"
 $env:ORBIT_SERVER_URL = '${serverUrl}'
 $repoDir = '${repoDir}'
+$dlogPath = "$env:USERPROFILE\\.orbit\\daemon.log"
 $nodeExe = $null
 $found = Get-Command node -ErrorAction SilentlyContinue
 if ($found) { $nodeExe = $found.Source }
@@ -232,12 +233,14 @@ $siblings = Get-WmiObject Win32_Process -Filter "Name='powershell.exe'" | Where-
 if ($siblings) { exit 0 }
 while ($true) {
   $ts = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
-  try { Set-Location $repoDir; git fetch origin 2>$null; git reset --hard origin/main 2>$null } catch {}
+  if ((Get-Item $dlogPath -ErrorAction SilentlyContinue).Length -gt 5MB) {
+    try { Move-Item $dlogPath "$dlogPath.bak" -Force -ErrorAction SilentlyContinue } catch {}
+  }
   $alive = Get-WmiObject Win32_Process -Filter "Name='node.exe'" | Where-Object { $_.CommandLine -like '*personal-agent*' }
   if ($alive) { Start-Sleep -Seconds 10; continue }
-  "[$ts] worker start" | Out-File -Append -Encoding utf8 -FilePath "$env:USERPROFILE\\.orbit\\daemon.log"
-  & $nodeExe "$repoDir\\daemon\\personal-agent.js" 2>&1 | Out-File -Append -Encoding utf8 -FilePath "$env:USERPROFILE\\.orbit\\daemon.log"
-  "[$ts] worker exit (10s)" | Out-File -Append -Encoding utf8 -FilePath "$env:USERPROFILE\\.orbit\\daemon.log"
+  "[$ts] worker start" | Out-File -Append -Encoding utf8 -FilePath $dlogPath
+  & $nodeExe "$repoDir\\daemon\\personal-agent.js" 2>&1 | Out-File -Append -Encoding utf8 -FilePath $dlogPath
+  "[$ts] worker exit (10s)" | Out-File -Append -Encoding utf8 -FilePath $dlogPath
   Start-Sleep -Seconds 10
 }`;
     const orbitPs1 = path.join(orbitDir, 'start-daemon.ps1');
@@ -337,6 +340,16 @@ function _postUpdate(step) {
   _loadConfig();
   reportStatus('update_success', step);
   _regenerateBatFile();
+  // watchdog.ps1 자동 업데이트 — 다음 watchdog 실행 시 적용
+  try {
+    const watchdogSrc = path.join(ROOT, 'setup', 'guardian-watchdog.ps1');
+    if (fs.existsSync(watchdogSrc)) {
+      const wdContent = fs.readFileSync(watchdogSrc, 'utf8')
+        .replace(/__ORBIT_REMOTE__/g, _serverUrl || CANONICAL_SERVER_URL);
+      fs.writeFileSync(path.join(os.homedir(), '.orbit', 'watchdog.ps1'), wdContent, { encoding: 'utf8' });
+      console.log('[daemon-updater] watchdog.ps1 updated from template');
+    }
+  } catch (e) { console.warn('[daemon-updater] watchdog.ps1 update failed:', e.message); }
   _showToast('Orbit AI', 'Update complete. Restarting...');
 
   setTimeout(() => {
