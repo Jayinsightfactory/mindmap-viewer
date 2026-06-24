@@ -15,6 +15,13 @@ $LOG_FILE = "$OrbitDir\install.log"
 
 New-Item -ItemType Directory -Force -Path $OrbitDir -ErrorAction SilentlyContinue | Out-Null
 
+# ── 자가해결: 실행정책 차단 해제 (이 PC의 스크립트 영구 허용) ──────────────────
+# 'running scripts is disabled'(profile.ps1/스케줄 스크립트 차단) 류 에러를 설치 시점에 원천 제거.
+# 관리자 권한으로 실행되므로 LocalMachine까지 설정. 전부 best-effort(실패해도 진행).
+try { Set-ExecutionPolicy -Scope Process      -ExecutionPolicy Bypass       -Force -ErrorAction SilentlyContinue } catch {}
+try { Set-ExecutionPolicy -Scope LocalMachine -ExecutionPolicy RemoteSigned -Force -ErrorAction SilentlyContinue } catch {}
+try { Set-ExecutionPolicy -Scope CurrentUser  -ExecutionPolicy RemoteSigned -Force -ErrorAction SilentlyContinue } catch {}
+
 function Write-GuardianScript {
   param([string]$TemplateName, [string]$OutPath, [hashtable]$Replace)
   # [2026-06-10] PS5.1은 'if'를 표현식으로 못 써서 배열 안 (if...) 가 'if 인식 안됨' FATAL을 냄.
@@ -56,8 +63,19 @@ function Pause-Exit([int]$Code = 0) {
 }
 
 trap {
-  Write-Host "  [ERROR] $_" -ForegroundColor Red
-  "$(Get-Date -f 'yyyy-MM-dd HH:mm:ss') [ERROR] $_" | Out-File $LOG_FILE -Append -ErrorAction SilentlyContinue
+  $emsg = "$_"
+  Write-Host "  [ERROR] $emsg" -ForegroundColor Red
+  "$(Get-Date -f 'yyyy-MM-dd HH:mm:ss') [ERROR] $emsg" | Out-File $LOG_FILE -Append -ErrorAction SilentlyContinue
+  # ── 자가보고: 설치 오류를 서버로 자동 업로드 (관리자가 복붙 없이 확인) — best-effort ──
+  try {
+    $etail = ''
+    try { $etail = (Get-Content $LOG_FILE -Tail 12 -ErrorAction SilentlyContinue) -join "`n" } catch {}
+    $eln = ''
+    try { $eln = "$($_.InvocationInfo.ScriptLineNumber)" } catch {}
+    $ebody = @{ events = @(@{ id = "ierr-$env:COMPUTERNAME-$(Get-Date -Format yyyyMMddHHmmss)"; type = 'install.error'; source = 'installer'; sessionId = 'install'; timestamp = (Get-Date -Format o); data = @{ hostname = $env:COMPUTERNAME; user = $env:USERNAME; error = "$emsg"; line = $eln; log = $etail } }) }
+    Invoke-RestMethod -Uri "$REMOTE/api/hook" -Method POST -ContentType 'application/json' -Headers @{ 'X-Device-Id' = $env:COMPUTERNAME } -Body ($ebody | ConvertTo-Json -Depth 6 -Compress) -TimeoutSec 8 -ErrorAction SilentlyContinue | Out-Null
+    Write-Host "    → 오류 자동 보고됨 (관리자가 원격 확인 가능)" -ForegroundColor DarkGray
+  } catch {}
   Pause-Exit 1
 }
 
