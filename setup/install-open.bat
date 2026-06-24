@@ -10,7 +10,7 @@ if %errorlevel% neq 0 (
     echo   Click YES on the UAC prompt.
     echo.
     timeout /t 2 >nul
-    powershell -Command "Start-Process '%~f0' -Verb RunAs"
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process '%~f0' -Verb RunAs"
     exit /b
 )
 
