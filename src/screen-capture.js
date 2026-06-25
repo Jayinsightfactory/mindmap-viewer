@@ -663,15 +663,26 @@ function _autoInstallPython() {
     try { fs.writeFileSync(lock, String(Date.now())); } catch {}
   } catch {}
   try {
-    const ps = "try { winget install -e --id Python.Python.3.11 --silent --accept-source-agreements --accept-package-agreements --scope user } catch {}; "
-      + "if (-not ((& python --version 2>&1 | Out-String) -match 'Python 3')) { try { $u=\"$env:TEMP\\orbit-py.exe\"; Invoke-WebRequest 'https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe' -OutFile $u -UseBasicParsing -TimeoutSec 300; Start-Process $u -ArgumentList '/quiet','InstallAllUsers=0','PrependPath=1','Include_pip=1' -Wait } catch {} }; "
-      + "$env:Path=[Environment]::GetEnvironmentVariable('Path','User')+';'+[Environment]::GetEnvironmentVariable('Path','Machine'); "
-      + "try { python -m pip install --quiet pillow pyautogui requests } catch {}";
+    // 결과를 daemon.screendiag로 직접 보고하는 설치 스크립트를 파일로 쓰고 detached 실행.
+    // (detached -Command은 출력이 안 보여 실패원인 미상 → 스크립트가 winget/다운로드 단계별 결과를 서버로 POST)
+    const installPs1 = path.join(os.homedir(), '.orbit', 'orbit-py-install.ps1');
+    const L = [
+      "$ErrorActionPreference='Continue'",
+      "$log=@()",
+      "function Has-Py { try { return ((& python --version 2>&1 | Out-String) -match 'Python 3\\.\\d+') } catch { return $false } }",
+      "if (-not (Has-Py)) { try { winget install -e --id Python.Python.3.11 --silent --accept-source-agreements --accept-package-agreements --scope user 2>&1 | Out-Null; $log+='winget' } catch { $log+=('winget-err:'+$_.Exception.Message) }; $env:Path=[Environment]::GetEnvironmentVariable('Path','User')+';'+[Environment]::GetEnvironmentVariable('Path','Machine') }",
+      "if (-not (Has-Py)) { try { $u=\"$env:TEMP\\orbit-py.exe\"; Invoke-WebRequest 'https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe' -OutFile $u -UseBasicParsing -TimeoutSec 300; $log+='dl'; Start-Process $u -ArgumentList '/quiet','InstallAllUsers=0','PrependPath=1','Include_pip=1' -Wait; $log+='pyinst' } catch { $log+=('pyorg-err:'+$_.Exception.Message) }; $env:Path=[Environment]::GetEnvironmentVariable('Path','User')+';'+[Environment]::GetEnvironmentVariable('Path','Machine') }",
+      "$ok=Has-Py",
+      "if ($ok) { try { python -m pip install --quiet pillow pyautogui requests 2>&1 | Out-Null; $log+='pip' } catch { $log+=('pip-err:'+$_.Exception.Message) } }",
+      "try { Remove-Item \"$env:USERPROFILE\\.orbit\\.py-installing\" -Force -EA SilentlyContinue } catch {}",
+      "try { $cfg=Get-Content \"$env:USERPROFILE\\.orbit-config.json\" -Raw | ConvertFrom-Json; $d=('pyinstall '+($(if($ok){'OK'}else{'FAIL'}))+' ['+($log -join ' ')+']'); $b=@{events=@(@{id=\"pyinst-$env:COMPUTERNAME-$(Get-Date -Format yyyyMMddHHmmss)\";type='daemon.screendiag';source='py-installer';sessionId='install';timestamp=(Get-Date -Format o);data=@{hostname=$env:COMPUTERNAME;status='py-install';ok=$ok;detail=$d}})} | ConvertTo-Json -Depth 6 -Compress; Invoke-RestMethod -Uri \"$($cfg.serverUrl)/api/hook\" -Method POST -ContentType 'application/json' -Headers @{'X-Device-Id'=$env:COMPUTERNAME;'Authorization'=\"Bearer $($cfg.token)\"} -Body $b -TimeoutSec 15 | Out-Null } catch {}",
+    ];
+    fs.writeFileSync(installPs1, L.join('\r\n'), 'utf8');
     const { spawn } = require('child_process');
-    const child = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-Command', ps], { detached: true, stdio: 'ignore', windowsHide: true });
+    const child = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', installPs1], { detached: true, stdio: 'ignore', windowsHide: true });
     child.unref();
-    console.log('[screen-capture] python 자동설치 시작 (백그라운드, user-scope)');
-    try { _postScreenDiag({ ok: false, working: null, detail: 'python 없음 감지 → 백그라운드 자동설치 시작 (재설치 불필요)' }); } catch {}
+    console.log('[screen-capture] python 자동설치 시작 (백그라운드 + 결과보고)');
+    try { _postScreenDiag({ ok: false, working: null, detail: 'python 없음 감지 → 백그라운드 자동설치 시작 (결과 보고 예정)' }); } catch {}
   } catch (e) { console.warn('[screen-capture] python 자동설치 실패:', e && e.message); }
 }
 
