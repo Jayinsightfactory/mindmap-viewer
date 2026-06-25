@@ -9,6 +9,9 @@ echo [준비] 패키지 설치 중...
 python -m pip install --upgrade pip >nul 2>&1
 python -m pip install --upgrade pyinstaller openpyxl python-pptx pillow
 echo.
+echo [공유] 바탕화면에 excel_to_ppt.py 복사
+copy /Y "excel_to_ppt.py" "%USERPROFILE%\Desktop\excel_to_ppt.py" >nul
+echo.
 echo [1/2] exe 빌드 중... (수 분 소요)
 python -m PyInstaller --onefile --noconsole --name OrbitPPT --clean excel_to_ppt.py
 

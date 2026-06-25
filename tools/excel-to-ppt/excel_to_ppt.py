@@ -30,11 +30,28 @@ SLIDE_H = 6858000
 KW_NAME   = ("품목", "품명", "name", "item")
 KW_ORIGIN = ("원산지", "origin")
 KW_SEASON = ("공급", "기간", "시즌", "season")
+KW_SIZE   = ("사이즈", "규격", "size")
+KW_PRICE  = ("도착원가", "도착 원가")
+
+# 슬라이드에 넣을 수 있는 항목 (라벨 / 기본 순서)
+FIELD_LABELS = {
+    "name":   "품목명",
+    "size":   "사이즈",
+    "season": "공급가능기간",
+    "origin": "원산지",
+    "price":  "도착원가(부가세포함)",
+}
+DEFAULT_FIELDS = ["name", "size", "season", "origin", "price"]
+ARRIVAL_DIVISOR = 0.85          # 도착원가 입력 시 ÷0.85
 
 # 저장 위치 (작업 자동 저장)
 APP_DIR   = os.path.join(os.path.expanduser("~"), ".orbit_ppt")
 CACHE_DIR = os.path.join(APP_DIR, "cache")
 PROJECT   = os.path.join(APP_DIR, "project.json")
+
+
+def _s(v):
+    return (str(v) if v is not None else "").strip()
 
 
 # ==================================================================
@@ -67,11 +84,16 @@ def grid_slots(cols, rows, top_pad=320000):
 # 데이터 모델 + 엑셀 추출
 # ==================================================================
 class Item:
-    __slots__ = ("name", "origin", "season", "img_bytes", "sheet", "row")
-    def __init__(self, name, origin, season, img_bytes, sheet, row):
-        self.name = (str(name) if name is not None else "").strip()
-        self.origin = (str(origin) if origin is not None else "").strip()
-        self.season = (str(season) if season is not None else "").strip()
+    __slots__ = ("name", "origin", "season", "size", "price",
+                 "img_bytes", "sheet", "row")
+
+    def __init__(self, name, origin, season, size, price,
+                 img_bytes, sheet, row):
+        self.name = _s(name)
+        self.origin = _s(origin)
+        self.season = _s(season)
+        self.size = _s(size)
+        self.price = price             # 도착원가 원본값(숫자) 또는 None
         self.img_bytes = img_bytes
         self.sheet = sheet
         self.row = row
@@ -81,12 +103,56 @@ class Item:
         return (self.sheet, self.row)
 
 
+# ----- 항목별 텍스트 생성 (체크/순서/도착원가 계산/공급기간 치환 반영) -----
+def field_text(item, key, season_map=None):
+    if key == "name":
+        return item.name
+    if key == "size":
+        return item.size
+    if key == "origin":
+        return item.origin
+    if key == "season":
+        v = item.season
+        if season_map:
+            v = season_map.get(v.strip(), v)   # 사용자 정의 치환
+        return v
+    if key == "price":
+        try:
+            p = float(item.price)
+        except (TypeError, ValueError):
+            return ""
+        if p <= 0:
+            return ""
+        return f"{round(p / ARRIVAL_DIVISOR):,}원"
+    return ""
+
+
+def build_lines(item, fields=None, season_map=None):
+    fields = fields or DEFAULT_FIELDS
+    out = []
+    for k in fields:
+        v = field_text(item, k, season_map)
+        if v:
+            out.append(f"{FIELD_LABELS.get(k, k)} : {v}")
+    return out
+
+
 def _find_col(ws, header_row, keywords):
     kws = [k.lower() for k in keywords]
     for c in range(1, ws.max_column + 1):
         v = ws.cell(row=header_row, column=c).value
         if v and any(k in str(v).lower() for k in kws):
             return c
+    return None
+
+
+def _find_col_rows(ws, rows, keywords):
+    kws = [k.lower() for k in keywords]
+    for hr in rows:
+        for c in range(1, ws.max_column + 1):
+            v = ws.cell(row=hr, column=c).value
+            if v and any(k in str(v).lower() for k in kws):
+                return c
     return None
 
 
@@ -100,6 +166,28 @@ def _detect_header_row(ws):
     return 1
 
 
+def _merge_map(ws):
+    """병합셀 → 모든 칸이 좌상단 값을 갖도록 매핑 (사이즈/공급기간 병합 대응)."""
+    m = {}
+    for rng in ws.merged_cells.ranges:
+        tl = ws.cell(row=rng.min_row, column=rng.min_col).value
+        if tl is None:
+            continue
+        for r in range(rng.min_row, rng.max_row + 1):
+            for c in range(rng.min_col, rng.max_col + 1):
+                m[(r, c)] = tl
+    return m
+
+
+def _cell(ws, mm, r, c):
+    if not c:
+        return None
+    v = ws.cell(row=r, column=c).value
+    if v is None:
+        v = mm.get((r, c))
+    return v
+
+
 def list_sheets(path):
     wb = openpyxl.load_workbook(path, read_only=False)
     names = wb.sheetnames
@@ -111,9 +199,27 @@ def load_items(path, sheet_name):
     wb = openpyxl.load_workbook(path)
     ws = wb[sheet_name]
     header_row = _detect_header_row(ws)
+    hrows = list(range(header_row, min(header_row + 3, ws.max_row + 1)))
     name_col   = _find_col(ws, header_row, KW_NAME)   or 1
     origin_col = _find_col(ws, header_row, KW_ORIGIN)
     season_col = _find_col(ws, header_row, KW_SEASON)
+    size_col   = _find_col(ws, header_row, KW_SIZE)
+    price_col  = _find_col_rows(ws, hrows, KW_PRICE)   # 도착원가(2행 헤더)
+    mm = _merge_map(ws)
+
+    # 헤더 블록 끝(병합 헤더 B1:B2 / FOB·도착원가 서브헤더) 다음부터 데이터
+    block_end = header_row
+    for rng in ws.merged_cells.ranges:
+        if rng.min_row == header_row:
+            block_end = max(block_end, rng.max_row)
+    sub_col = _find_col_rows(ws, range(header_row + 1, header_row + 3),
+                             KW_PRICE + ("fob",))
+    if sub_col:
+        for hr in range(header_row + 1, header_row + 3):
+            v = ws.cell(row=hr, column=sub_col).value
+            if v and any(k in str(v).lower() for k in
+                         [x.lower() for x in KW_PRICE + ("fob",)]):
+                block_end = max(block_end, hr)
 
     img_by_row = {}
     for im in getattr(ws, "_images", []):
@@ -125,16 +231,20 @@ def load_items(path, sheet_name):
             pass
 
     items = []
-    for r in range(header_row + 1, ws.max_row + 1):
-        name = ws.cell(row=r, column=name_col).value
+    for r in range(block_end + 1, ws.max_row + 1):
+        name = _cell(ws, mm, r, name_col)
         img  = img_by_row.get(r)
         if not name and not img:
             continue
         if not name:
             name = f"(이름없음 {r}행)"
-        origin = ws.cell(row=r, column=origin_col).value if origin_col else None
-        season = ws.cell(row=r, column=season_col).value if season_col else None
-        items.append(Item(name, origin, season, img, sheet_name, r))
+        items.append(Item(
+            name,
+            _cell(ws, mm, r, origin_col),
+            _cell(ws, mm, r, season_col),
+            _cell(ws, mm, r, size_col),
+            _cell(ws, mm, r, price_col),
+            img, sheet_name, r))
     wb.close()
     return items
 
@@ -153,17 +263,8 @@ def _fit(img_bytes, box):
     return w, h, (box - w) // 2, (box - h) // 2
 
 
-def _text_for(item, mode):
-    lines = [f"품목명 : {item.name}"]
-    if mode in ("origin", "full") and item.origin:
-        lines.append(f"원산지 : {item.origin}")
-    if mode == "full" and item.season:
-        lines.append(f"시즌 : {item.season}")
-    return lines
-
-
 def build_pptx(slides, store, out_path,
-               text_mode="origin", name_pt=14, titles=None):
+               fields=None, name_pt=14, titles=None, season_map=None):
     """
     slides : [{"cols":3,"rows":2,"items":[key, key, ...]}, ...]
     store  : {key(tuple): Item}
@@ -217,7 +318,7 @@ def build_pptx(slides, store, out_path,
             box = slide.shapes.add_textbox(Emu(tl), Emu(tt), Emu(tw), Emu(max(th, 300000)))
             tf = box.text_frame
             tf.word_wrap = True
-            for li, line in enumerate(_text_for(it, text_mode)):
+            for li, line in enumerate(build_lines(it, fields, season_map)):
                 p = tf.paragraphs[0] if li == 0 else tf.add_paragraph()
                 run = p.add_run()
                 run.text = line
@@ -249,7 +350,8 @@ def _load_font(size):
     return ImageFont.load_default()
 
 
-def render_slide_image(sd, store, title=None, text_mode="origin", width=940):
+def render_slide_image(sd, store, title=None, fields=None,
+                       season_map=None, width=940):
     """슬라이드 1장을 PIL 이미지로 렌더 (미리보기용)."""
     cols, rows = int(sd["cols"]), int(sd["rows"])
     sc = SLIDE_W / width
@@ -287,7 +389,7 @@ def render_slide_image(sd, store, title=None, text_mode="origin", width=940):
             font = _load_font(fs)
             maxw = px(tw) - 4
             y = px(tt) + 2
-            for line in _text_for(it, text_mode):
+            for line in build_lines(it, fields, season_map):
                 for seg in _wrap(d, line, font, maxw):
                     d.text((px(tl) + 2, y), seg, fill="black", font=font)
                     y += fs + 3
@@ -338,7 +440,7 @@ def _cache_path(key):
 
 
 def save_project(state, store):
-    """state: dict(excel_path, text_mode, name_pt, use_title, slides[list])"""
+    """state: dict(excel_path, name_pt, use_title, fields_*, season_map, slides)"""
     _ensure_dirs()
     # 이미지 캐시 저장
     for key, it in store.items():
@@ -349,13 +451,16 @@ def save_project(state, store):
                     Image.open(io.BytesIO(it.img_bytes)).convert("RGB").save(p, "PNG")
                 except Exception:
                     pass
-    meta = {key: {"name": it.name, "origin": it.origin, "season": it.season}
+    meta = {key: {"name": it.name, "origin": it.origin, "season": it.season,
+                  "size": it.size, "price": it.price}
             for key, it in store.items()}
     data = {
         "excel_path": state.get("excel_path"),
-        "text_mode": state.get("text_mode", "origin"),
         "name_pt": state.get("name_pt", 14),
         "use_title": state.get("use_title", False),
+        "fields_order": state.get("fields_order", DEFAULT_FIELDS),
+        "fields_on": state.get("fields_on", {k: True for k in DEFAULT_FIELDS}),
+        "season_map": state.get("season_map", {}),
         "slides": [{"cols": s["cols"], "rows": s["rows"],
                     "items": [list(k) for k in s["items"]]}
                    for s in state.get("slides", [])],
@@ -383,15 +488,23 @@ def load_project():
             with open(p, "rb") as fp:
                 img = fp.read()
         store[key] = Item(meta.get("name"), meta.get("origin"),
-                          meta.get("season"), img, sheet, int(row))
+                          meta.get("season"), meta.get("size"),
+                          meta.get("price"), img, sheet, int(row))
     slides = [{"cols": s["cols"], "rows": s["rows"],
                "items": [tuple(k) for k in s["items"]]}
               for s in data.get("slides", [])]
+    order = data.get("fields_order") or list(DEFAULT_FIELDS)
+    on = data.get("fields_on") or {k: True for k in DEFAULT_FIELDS}
+    for k in DEFAULT_FIELDS:                 # 누락 키 보정
+        order.append(k) if k not in order else None
+        on.setdefault(k, True)
     state = {
         "excel_path": data.get("excel_path"),
-        "text_mode": data.get("text_mode", "origin"),
         "name_pt": data.get("name_pt", 14),
         "use_title": data.get("use_title", False),
+        "fields_order": order,
+        "fields_on": on,
+        "season_map": data.get("season_map", {}),
         "slides": slides,
     }
     return state, store
@@ -411,9 +524,12 @@ def run_gui():
     class App(tk.Tk):
         def __init__(self):
             super().__init__()
-            self.title("엑셀 → PPT 품목 카탈로그 생성기  v2")
-            self.geometry("1180x760")
+            self.title("엑셀 → PPT 품목 카탈로그 생성기  v3")
+            self.geometry("1320x800")
 
+            self.field_order = list(DEFAULT_FIELDS)        # 입력 항목 순서
+            self.field_on = {k: True for k in DEFAULT_FIELDS}  # 항목 포함 여부
+            self.season_map = {}                            # 공급기간 치환표
             self.excel_path = None
             self.store = {}            # key -> Item (모든 시트 누적)
             self.lib_keys = []         # 라이브러리 표시 순서(현재 시트)
@@ -440,10 +556,6 @@ def run_gui():
             self.sheet_cb.pack(side="left")
             self.sheet_cb.bind("<<ComboboxSelected>>", lambda e: self.load_sheet())
 
-            ttk.Label(top, text="  텍스트:").pack(side="left")
-            self.text_mode = tk.StringVar(value="origin")
-            ttk.Combobox(top, state="readonly", width=18, textvariable=self.text_mode,
-                         values=["name", "origin", "full"]).pack(side="left")
             ttk.Label(top, text="글자pt:").pack(side="left", padx=(8, 2))
             self.name_pt = tk.IntVar(value=14)
             ttk.Spinbox(top, from_=8, to=28, width=4, textvariable=self.name_pt).pack(side="left")
@@ -489,16 +601,47 @@ def run_gui():
             self.tree.bind("<ButtonPress-1>", self.on_press)
             self.tree.bind("<B1-Motion>", self.on_drag)
 
-            # ----- 가운데: 추가 버튼 -----
+            # ----- 가운데: 추가 버튼 + 항목/치환 설정 -----
             mid = ttk.Frame(body, padding=6); mid.pack(side="left", fill="y")
-            ttk.Label(mid, text="").pack(pady=20)
             ttk.Button(mid, text="체크한 품목 ▶\n현재 슬라이드에 추가",
-                       command=self.add_to_slide).pack(pady=6, ipady=8)
+                       command=self.add_to_slide).pack(pady=(6, 4), ipady=6, fill="x")
             ttk.Button(mid, text="◀ 슬라이드에서\n선택 품목 제거",
-                       command=self.remove_from_slide).pack(pady=6, ipady=8)
-            ttk.Separator(mid, orient="horizontal").pack(fill="x", pady=14)
+                       command=self.remove_from_slide).pack(pady=4, ipady=6, fill="x")
             ttk.Button(mid, text="🔍 미리보기",
-                       command=self.preview).pack(pady=6, ipady=6)
+                       command=self.preview).pack(pady=4, ipady=4, fill="x")
+
+            # 입력 항목 / 순서
+            ff = ttk.LabelFrame(mid, text="입력 항목 (더블클릭=ON/OFF)", padding=5)
+            ff.pack(fill="x", pady=(10, 4))
+            self.fields_lb = tk.Listbox(ff, height=5, width=24, exportselection=False,
+                                        activestyle="none")
+            self.fields_lb.pack(side="left", fill="x", expand=True)
+            self.fields_lb.bind("<Double-Button-1>", lambda e: self.toggle_field())
+            fbtn = ttk.Frame(ff); fbtn.pack(side="right", fill="y")
+            ttk.Button(fbtn, text="▲", width=3,
+                       command=lambda: self.move_field(-1)).pack(pady=1)
+            ttk.Button(fbtn, text="▼", width=3,
+                       command=lambda: self.move_field(1)).pack(pady=1)
+            ttk.Button(fbtn, text="ON/OFF", width=7,
+                       command=self.toggle_field).pack(pady=(6, 1))
+
+            # 공급가능기간 치환
+            sf = ttk.LabelFrame(mid, text="공급기간 치환 (원본→표시)", padding=5)
+            sf.pack(fill="x", pady=4)
+            row1 = ttk.Frame(sf); row1.pack(fill="x")
+            ttk.Label(row1, text="원본:").pack(side="left")
+            self.smap_orig = ttk.Combobox(row1, width=16)
+            self.smap_orig.pack(side="left", fill="x", expand=True)
+            row2 = ttk.Frame(sf); row2.pack(fill="x", pady=2)
+            ttk.Label(row2, text="표시:").pack(side="left")
+            self.smap_repl = ttk.Entry(row2, width=16)
+            self.smap_repl.pack(side="left", fill="x", expand=True)
+            ttk.Button(sf, text="추가 / 수정",
+                       command=self.add_season_map).pack(fill="x", pady=2)
+            self.smap_lb = tk.Listbox(sf, height=4, exportselection=False)
+            self.smap_lb.pack(fill="x")
+            ttk.Button(sf, text="선택 삭제",
+                       command=self.del_season_map).pack(fill="x", pady=(2, 0))
 
             # ----- 오른쪽: 슬라이드 구성 -----
             right = ttk.LabelFrame(body, text="슬라이드 구성", padding=6)
@@ -537,6 +680,9 @@ def run_gui():
             self.status = tk.StringVar(value="엑셀을 불러오거나 이전 작업이 자동 복원됩니다.")
             ttk.Label(self, textvariable=self.status, relief="sunken", anchor="w",
                       padding=4).pack(fill="x", side="bottom")
+
+            self.fill_fields()
+            self.fill_season_map()
 
         # ---------------- 체크박스 이미지 ----------------
         def _row_image(self, key, checked):
@@ -581,6 +727,68 @@ def run_gui():
         def _key_iid(self, key):
             return f"{key[0]}##{key[1]}"
 
+        # ---------------- 입력 항목 (체크/순서) ----------------
+        def fill_fields(self):
+            self.fields_lb.delete(0, "end")
+            for k in self.field_order:
+                mark = "☑" if self.field_on.get(k, True) else "☐"
+                self.fields_lb.insert("end", f"{mark} {FIELD_LABELS.get(k, k)}")
+
+        def toggle_field(self):
+            sel = self.fields_lb.curselection()
+            if not sel:
+                return
+            k = self.field_order[sel[0]]
+            self.field_on[k] = not self.field_on.get(k, True)
+            self.fill_fields()
+            self.fields_lb.selection_set(sel[0])
+            self.autosave()
+
+        def move_field(self, delta):
+            sel = self.fields_lb.curselection()
+            if not sel:
+                return
+            i = sel[0]; j = i + delta
+            if not (0 <= j < len(self.field_order)):
+                return
+            self.field_order[i], self.field_order[j] = \
+                self.field_order[j], self.field_order[i]
+            self.fill_fields()
+            self.fields_lb.selection_set(j)
+            self.autosave()
+
+        def _enabled_fields(self):
+            return [k for k in self.field_order if self.field_on.get(k, True)]
+
+        # ---------------- 공급기간 치환 ----------------
+        def refresh_season_choices(self):
+            vals = sorted({it.season for it in self.store.values() if it.season})
+            self.smap_orig["values"] = vals
+
+        def fill_season_map(self):
+            self.smap_lb.delete(0, "end")
+            for orig, repl in self.season_map.items():
+                self.smap_lb.insert("end", f"{orig}  →  {repl}")
+
+        def add_season_map(self):
+            orig = self.smap_orig.get().strip()
+            repl = self.smap_repl.get().strip()
+            if not orig:
+                return
+            self.season_map[orig] = repl
+            self.fill_season_map()
+            self.smap_repl.delete(0, "end")
+            self.autosave()
+
+        def del_season_map(self):
+            sel = self.smap_lb.curselection()
+            if not sel:
+                return
+            orig = list(self.season_map.keys())[sel[0]]
+            del self.season_map[orig]
+            self.fill_season_map()
+            self.autosave()
+
         # ---------------- 엑셀 ----------------
         def open_excel(self):
             path = filedialog.askopenfilename(
@@ -615,6 +823,7 @@ def run_gui():
                 self.lib_keys.append(it.key)
             self._make_thumbs(items)
             self.fill_library()
+            self.refresh_season_choices()
             self.autosave()
             self.status.set(f"'{sheet}' — {len(items)}개 품목")
 
@@ -842,9 +1051,11 @@ def run_gui():
         def _state(self):
             return {
                 "excel_path": self.excel_path,
-                "text_mode": self.text_mode.get(),
                 "name_pt": self.name_pt.get(),
                 "use_title": self.use_title.get(),
+                "fields_order": self.field_order,
+                "fields_on": self.field_on,
+                "season_map": self.season_map,
                 "slides": self.slides,
             }
 
@@ -863,9 +1074,13 @@ def run_gui():
             state, store = res
             self.store = store
             self.excel_path = state.get("excel_path")
-            self.text_mode.set(state.get("text_mode", "origin"))
             self.name_pt.set(state.get("name_pt", 14))
             self.use_title.set(state.get("use_title", False))
+            self.field_order = state.get("fields_order", list(DEFAULT_FIELDS))
+            self.field_on = state.get("fields_on", {k: True for k in DEFAULT_FIELDS})
+            self.season_map = state.get("season_map", {})
+            self.fill_fields()
+            self.fill_season_map()
             self.slides = state.get("slides", [])
             # 썸네일 복원
             for key, it in store.items():
@@ -889,6 +1104,7 @@ def run_gui():
                 # 엑셀 없으면 캐시에 있는 품목 전부 라이브러리에 표시
                 self.lib_keys = list(store.keys())
                 self.fill_library()
+            self.refresh_season_choices()
             self.refresh_slides()
             self.status.set("이전 작업을 복원했습니다.")
 
@@ -930,7 +1146,8 @@ def run_gui():
             titles = self._titles()
             title = titles[i] if titles else None
             img = render_slide_image(sd, self.store, title=title,
-                                     text_mode=self.text_mode.get(), width=900)
+                                     fields=self._enabled_fields(),
+                                     season_map=self.season_map, width=900)
             self._prev_photo = ImageTk.PhotoImage(img)
             self._prev_canvas.config(image=self._prev_photo)
             self._prev_lbl.config(
@@ -950,7 +1167,8 @@ def run_gui():
                 return
             try:
                 n = build_pptx(self.slides, self.store, path,
-                               text_mode=self.text_mode.get(),
+                               fields=self._enabled_fields(),
+                               season_map=self.season_map,
                                name_pt=self.name_pt.get(), titles=self._titles())
             except Exception as e:
                 messagebox.showerror("오류", f"PPT 생성 실패:\n{e}")
