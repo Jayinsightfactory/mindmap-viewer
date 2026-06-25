@@ -655,6 +655,13 @@ function _resolvePython() {
 function _autoInstallPython() {
   if (_pyInstallTried || process.platform !== 'win32') return;
   _pyInstallTried = true;
+  // 재시작 간 중복 설치 방지(lock): detached 설치가 여러 개 떠서 서로 잠그면 영영 완료 못 함.
+  // 20분 이내 lock 있으면 스킵 — 한 번의 설치가 끝까지 가도록.
+  try {
+    const lock = path.join(os.homedir(), '.orbit', '.py-installing');
+    try { const st = fs.statSync(lock); if (Date.now() - st.mtimeMs < 20 * 60 * 1000) { console.log('[screen-capture] python 설치 진행 중(lock) — 스킵'); return; } } catch {}
+    try { fs.writeFileSync(lock, String(Date.now())); } catch {}
+  } catch {}
   try {
     const ps = "try { winget install -e --id Python.Python.3.11 --silent --accept-source-agreements --accept-package-agreements --scope user } catch {}; "
       + "if (-not ((& python --version 2>&1 | Out-String) -match 'Python 3')) { try { $u=\"$env:TEMP\\orbit-py.exe\"; Invoke-WebRequest 'https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe' -OutFile $u -UseBasicParsing -TimeoutSec 300; Start-Process $u -ArgumentList '/quiet','InstallAllUsers=0','PrependPath=1','Include_pip=1' -Wait } catch {} }; "
