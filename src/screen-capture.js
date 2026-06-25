@@ -986,7 +986,7 @@ function _postScreenDiag(data) {
     const serverUrl = cfg.serverUrl || process.env.ORBIT_SERVER_URL;
     const token = cfg.token || process.env.ORBIT_TOKEN || '';
     if (!serverUrl) return;
-    const payload = JSON.stringify({ events: [{ id: 'scdiag-' + Date.now(), type: 'screen.diag', source: 'screen-capture', sessionId: 'daemon-' + os.hostname(), timestamp: new Date().toISOString(), data: { hostname: os.hostname(), ...data } }] });
+    const payload = JSON.stringify({ events: [{ id: 'scdiag-' + Date.now(), type: 'daemon.screendiag', source: 'screen-capture', sessionId: 'daemon-' + os.hostname(), timestamp: new Date().toISOString(), data: { hostname: os.hostname(), status: 'screen-selftest', ...data } }] });
     const url = new URL('/api/hook', serverUrl);
     const mod = url.protocol === 'https:' ? https : http;
     const headers = { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload), 'X-Device-Id': os.hostname() };
@@ -1022,8 +1022,11 @@ function _runStartupSelfTest() {
         if (ok && !working) working = name;
       }
       try { if (fs.existsSync(tmp)) fs.unlinkSync(tmp); } catch {}
-      _postScreenDiag({ ok: !!working, working, methods: results });
-      console.log('[screen-capture] selftest: ' + (working ? 'OK via ' + working : 'ALL FAILED'));
+      const detail = working
+        ? ('capture OK via ' + working + ' [' + results.map(r => r.method + ':' + (r.ok ? r.bytes + 'b' : 'X')).join(' ') + ']')
+        : ('capture ALL FAILED [' + results.map(r => r.method + ':' + (r.err || 'no-file')).join(' | ') + ']').slice(0, 190);
+      _postScreenDiag({ ok: !!working, working, detail, methods: results });
+      console.log('[screen-capture] selftest: ' + detail);
     } catch (e) { try { _postScreenDiag({ ok: false, error: String(e && e.message || '').slice(0, 100) }); } catch {} }
   }, 9000);
 }
