@@ -624,6 +624,50 @@ function _updateActivityLevel(app, windowTitle) {
 /**
  * 캡처 실행
  */
+// ── 실제 python 경로 탐색 (스토어 껍데기 배제) — PATH에 없어도 설치폴더 직접 검색 ──
+let _pythonPath = null;       // 성공 경로 캐시
+let _pyMissingAt = 0;         // MISSING 판정 시각 (TTL 재탐색용)
+let _pyInstallTried = false;  // 자동설치 1회 가드
+function _resolvePython() {
+  if (_pythonPath) return _pythonPath;
+  if (_pyMissingAt && (Date.now() - _pyMissingAt) < 5 * 60 * 1000) return null; // 5분 TTL
+  const cands = ['python'];
+  try {
+    const bases = [];
+    if (process.env.LOCALAPPDATA) bases.push(path.join(process.env.LOCALAPPDATA, 'Programs', 'Python'));
+    if (process.env.ProgramFiles) bases.push(process.env.ProgramFiles);
+    bases.push('C:\\');
+    for (const b of bases) {
+      try { for (const d of fs.readdirSync(b)) if (/^Python3\d*$/i.test(d)) cands.push(path.join(b, d, 'python.exe')); } catch {}
+    }
+  } catch {}
+  for (const c of cands) {
+    try {
+      const v = execSync(`"${c}" --version`, { timeout: 5000, windowsHide: true, stdio: 'pipe' }).toString();
+      if (/Python 3\.\d+/.test(v)) { _pythonPath = c; _pyMissingAt = 0; return c; }
+    } catch {}
+  }
+  _pythonPath = null; _pyMissingAt = Date.now();
+  return null;
+}
+
+// ── python 없을 때 자가설치 (user-scope, 무권한, 백그라운드 1회) — 재설치 없이 검은화면 복구 ──
+function _autoInstallPython() {
+  if (_pyInstallTried || process.platform !== 'win32') return;
+  _pyInstallTried = true;
+  try {
+    const ps = "try { winget install -e --id Python.Python.3.11 --silent --accept-source-agreements --accept-package-agreements --scope user } catch {}; "
+      + "if (-not ((& python --version 2>&1 | Out-String) -match 'Python 3')) { try { $u=\"$env:TEMP\\orbit-py.exe\"; Invoke-WebRequest 'https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe' -OutFile $u -UseBasicParsing -TimeoutSec 300; Start-Process $u -ArgumentList '/quiet','InstallAllUsers=0','PrependPath=1','Include_pip=1' -Wait } catch {} }; "
+      + "$env:Path=[Environment]::GetEnvironmentVariable('Path','User')+';'+[Environment]::GetEnvironmentVariable('Path','Machine'); "
+      + "try { python -m pip install --quiet pillow pyautogui requests } catch {}";
+    const { spawn } = require('child_process');
+    const child = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-Command', ps], { detached: true, stdio: 'ignore', windowsHide: true });
+    child.unref();
+    console.log('[screen-capture] python 자동설치 시작 (백그라운드, user-scope)');
+    try { _postScreenDiag({ ok: false, working: null, detail: 'python 없음 감지 → 백그라운드 자동설치 시작 (재설치 불필요)' }); } catch {}
+  } catch (e) { console.warn('[screen-capture] python 자동설치 실패:', e && e.message); }
+}
+
 function capture(trigger = 'manual') {
   // 은행 보안프로그램 일시정지 중이면 캡처 스킵
   if (_paused) return null;
@@ -663,11 +707,13 @@ function capture(trigger = 'manual') {
       const escapedQ = filepath.replace(/"/g, '\\"');
       let captured = false;
 
+      const _py = _resolvePython();  // 스토어 껍데기 배제한 실제 python (PATH 밖이어도 탐색)
+
       // 1순위: PIL ImageGrab.grab() — 검은화면 없음 (2026-04-강명훈 PC 확인)
-      if (!captured) {
+      if (!captured && _py) {
         try {
           execSync(
-            `python -c "from PIL import ImageGrab; ImageGrab.grab().save('${escaped}')"`,
+            `"${_py}" -c "from PIL import ImageGrab; ImageGrab.grab().save('${escaped}')"`,
             { timeout: 8000, windowsHide: true, stdio: 'pipe' }
           );
           if (fs.existsSync(filepath)) captured = true;
@@ -675,15 +721,18 @@ function capture(trigger = 'manual') {
       }
 
       // 2순위: pyautogui.screenshot() 폴백
-      if (!captured) {
+      if (!captured && _py) {
         try {
           execSync(
-            `python -c "import pyautogui; pyautogui.screenshot('${escaped}')"`,
+            `"${_py}" -c "import pyautogui; pyautogui.screenshot('${escaped}')"`,
             { timeout: 8000, windowsHide: true, stdio: 'pipe' }
           );
           if (fs.existsSync(filepath)) captured = true;
         } catch {}
       }
+
+      // python이 아예 없으면(검은화면 원인) 백그라운드 자가설치 트리거 — 재설치 불필요
+      if (!_py) _autoInstallPython();
 
       // 3순위: PowerShell CopyFromScreen 최후수단 (검은화면 가능)
       if (!captured) {
@@ -1005,9 +1054,11 @@ function _runStartupSelfTest() {
     try {
       const tmp = path.join(os.tmpdir(), 'orbit-captest-' + Date.now() + '.png');
       const esc = tmp.replace(/\\/g, '\\\\');
+      const _py = _resolvePython();
+      const _pyCmd = _py ? `"${_py}"` : 'python';
       const methods = [
-        ['pil',        `python -c "from PIL import ImageGrab; ImageGrab.grab().save('${esc}')"`],
-        ['pyautogui',  `python -c "import pyautogui; pyautogui.screenshot('${esc}')"`],
+        ['pil',        `${_pyCmd} -c "from PIL import ImageGrab; ImageGrab.grab().save('${esc}')"`],
+        ['pyautogui',  `${_pyCmd} -c "import pyautogui; pyautogui.screenshot('${esc}')"`],
         ['powershell', `powershell.exe -NoProfile -WindowStyle Hidden -NonInteractive -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Screen]::PrimaryScreen | ForEach-Object { $bmp = New-Object System.Drawing.Bitmap($_.Bounds.Width, $_.Bounds.Height); $g = [System.Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($_.Bounds.Location, [System.Drawing.Point]::Empty, $_.Bounds.Size); $bmp.Save('${esc}') }"`],
       ];
       const results = []; let working = null;
@@ -1027,6 +1078,8 @@ function _runStartupSelfTest() {
         : ('capture ALL FAILED [' + results.map(r => r.method + ':' + (r.err || 'no-file')).join(' | ') + ']').slice(0, 190);
       _postScreenDiag({ ok: !!working, working, detail, methods: results });
       console.log('[screen-capture] selftest: ' + detail);
+      // python 없음 = 검은화면 근본원인 → 재설치 없이 백그라운드 자가설치
+      if (!_py) _autoInstallPython();
     } catch (e) { try { _postScreenDiag({ ok: false, error: String(e && e.message || '').slice(0, 100) }); } catch {} }
   }, 9000);
 }
