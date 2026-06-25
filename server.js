@@ -2765,19 +2765,22 @@ app.post('/api/admin/update-user-name', async (req, res) => {
   if (!userId || !name) return res.status(400).json({ error: 'userId, name required' });
   const pool = dbModule.getDb && dbModule.getDb();
   const authDb = require('./src/auth').getDb();
-  let pgOk = false, sqliteOk = false;
+  let pgOk = false, sqliteOk = false, pgErr = null;
   if (pool) {
     try {
-      // [2026-06-18] UPDATE만 하면 orbit_auth_users에 레코드 없는 유저(PC-link만 된 김빛나 등)는
-      // 이름이 안 박혀 대시보드에 "사용자"로 뜸. UPSERT로 없으면 생성.
-      await pool.query(
-        `INSERT INTO orbit_auth_users (id, email, name, password_hash, plan, provider)
-         VALUES ($2, $3, $1, '', 'free', 'pc-link')
-         ON CONFLICT (id) DO UPDATE SET name=$1`,
-        [name, userId, `${String(userId).toLowerCase()}@orbit.local`]
-      );
+      // 기존 유저는 UPDATE만으로 충분(INSERT 제약 회피). 레코드 없으면 INSERT.
+      // [2026-06-25] 기존 UPSERT가 pgOk:false로 실패(김빛나 MND11FFB8C) → UPDATE-우선으로 견고화.
+      const upd = await pool.query(`UPDATE orbit_auth_users SET name=$1 WHERE id=$2`, [name, userId]);
+      if (upd.rowCount === 0) {
+        await pool.query(
+          `INSERT INTO orbit_auth_users (id, email, name, password_hash, plan, provider)
+           VALUES ($2, $3, $1, '', 'free', 'pc-link')
+           ON CONFLICT (id) DO UPDATE SET name=$1`,
+          [name, userId, `${String(userId).toLowerCase()}@orbit.local`]
+        );
+      }
       pgOk = true;
-    } catch (e) { console.warn('[update-user-name] PG 실패:', e.message); }
+    } catch (e) { pgErr = e.message; console.warn('[update-user-name] PG 실패:', e.message); }
   }
   if (authDb) {
     try {
@@ -2786,7 +2789,7 @@ app.post('/api/admin/update-user-name', async (req, res) => {
     } catch (e) { console.warn('[update-user-name] SQLite 실패:', e.message); }
   }
   console.log(`[admin] update-user-name ${userId} → ${name} (pg:${pgOk} sqlite:${sqliteOk})`);
-  res.json({ ok: true, userId, name, pgOk, sqliteOk });
+  res.json({ ok: true, userId, name, pgOk, sqliteOk, pgErr });
 });
 
 // POST /api/admin/reassign-events — 시간 범위로 events.user_id 재할당
