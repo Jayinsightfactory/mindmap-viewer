@@ -15,6 +15,7 @@ import io
 import os
 import sys
 import json
+import zipfile
 import subprocess
 
 import openpyxl
@@ -31,7 +32,7 @@ KW_NAME   = ("품목", "품명", "name", "item")
 KW_ORIGIN = ("원산지", "origin")
 KW_SEASON = ("공급", "기간", "시즌", "season")
 KW_SIZE   = ("사이즈", "규격", "size")
-KW_PRICE  = ("도착원가", "도착 원가")
+KW_PRICE  = ("도착원가", "도착 원가", "도착", "원가", "단가")
 
 # 슬라이드에 넣을 수 있는 항목 (라벨 / 기본 순서)
 FIELD_LABELS = {
@@ -188,6 +189,61 @@ def _cell(ws, mm, r, c):
     return v
 
 
+# 마지막 load_items 진단 정보 (이미지 인식 개수 등)
+LOAD_DIAG = {"items": 0, "images_total": 0, "images_mapped": 0, "images_used": 0}
+
+
+def _img_anchor_row(im):
+    a = getattr(im, "anchor", None)
+    frm = getattr(a, "_from", None)
+    if frm is not None and hasattr(frm, "row"):
+        try:
+            return int(frm.row) + 1
+        except Exception:
+            return None
+    return None
+
+
+def _safe_img_data(im):
+    try:
+        return im._data()
+    except Exception:
+        try:
+            ref = getattr(im, "ref", None)
+            if hasattr(ref, "getvalue"):
+                return ref.getvalue()
+        except Exception:
+            pass
+    return None
+
+
+def _extract_images(ws, path):
+    """이미지를 행 기준으로 추출. 앵커 매핑 실패 시 순서 배정 / zip 미디어 폴백."""
+    mapped, ordered = {}, []
+    imgs = list(getattr(ws, "_images", []))
+    for im in imgs:
+        data = _safe_img_data(im)
+        if not data:
+            continue
+        ordered.append(data)
+        row = _img_anchor_row(im)
+        if row is not None:
+            mapped.setdefault(row, data)
+    total = len(imgs)
+    if not ordered:                       # 워크시트에서 이미지를 전혀 못 읽음 → zip 직접
+        try:
+            with zipfile.ZipFile(path) as z:
+                for n in sorted(z.namelist()):
+                    low = n.lower()
+                    if n.startswith("xl/media/") and low.split(".")[-1] in (
+                            "png", "jpg", "jpeg", "gif", "bmp", "emf", "wmf"):
+                        ordered.append(z.read(n))
+        except Exception:
+            pass
+        total = max(total, len(ordered))
+    return mapped, ordered, total
+
+
 def list_sheets(path):
     wb = openpyxl.load_workbook(path, read_only=False)
     names = wb.sheetnames
@@ -221,23 +277,23 @@ def load_items(path, sheet_name):
                          [x.lower() for x in KW_PRICE + ("fob",)]):
                 block_end = max(block_end, hr)
 
-    img_by_row = {}
-    for im in getattr(ws, "_images", []):
-        try:
-            r = im.anchor._from.row + 1
-            if r not in img_by_row:
-                img_by_row[r] = im._data()
-        except Exception:
-            pass
+    mapped, ordered, total_imgs = _extract_images(ws, path)
+    # 앵커 매핑이 전혀 안 되면 이름 있는 행에 순서대로 이미지 배정
+    use_seq = (len(mapped) == 0 and len(ordered) > 0)
+    seq = iter(ordered)
 
-    items = []
+    items, used = [], 0
     for r in range(block_end + 1, ws.max_row + 1):
         name = _cell(ws, mm, r, name_col)
-        img  = img_by_row.get(r)
+        img = mapped.get(r)
+        if img is None and use_seq and name:
+            img = next(seq, None)
         if not name and not img:
             continue
         if not name:
             name = f"(이름없음 {r}행)"
+        if img:
+            used += 1
         items.append(Item(
             name,
             _cell(ws, mm, r, origin_col),
@@ -246,6 +302,8 @@ def load_items(path, sheet_name):
             _cell(ws, mm, r, price_col),
             img, sheet_name, r))
     wb.close()
+    LOAD_DIAG.update(items=len(items), images_total=total_imgs,
+                     images_mapped=len(mapped), images_used=used)
     return items
 
 
@@ -261,6 +319,13 @@ def _fit(img_bytes, box):
     s = min(box / iw, box / ih)
     w, h = int(iw * s), int(ih * s)
     return w, h, (box - w) // 2, (box - h) // 2
+
+
+def _fit_font_pt(n_lines, box_h_emu, base_pt):
+    """줄 수 × 박스 높이에 맞춰 글자 크기(pt) 자동 축소 — 모든 항목이 칸에 들어가게."""
+    n = max(1, n_lines)
+    max_pt = (box_h_emu / n) / 12700 / 1.3      # 1pt=12700EMU, 줄간격 여유 1.3
+    return max(7, int(min(base_pt, max_pt)))
 
 
 def build_pptx(slides, store, out_path,
@@ -315,14 +380,17 @@ def build_pptx(slides, store, out_path,
                 ph.fill.fore_color.rgb = RGBColor(0xEE, 0xEE, 0xEE)
                 ph.line.color.rgb = RGBColor(0xCC, 0xCC, 0xCC)
 
-            box = slide.shapes.add_textbox(Emu(tl), Emu(tt), Emu(tw), Emu(max(th, 300000)))
+            box_h = max(th, 300000)
+            box = slide.shapes.add_textbox(Emu(tl), Emu(tt), Emu(tw), Emu(box_h))
             tf = box.text_frame
             tf.word_wrap = True
-            for li, line in enumerate(build_lines(it, fields, season_map)):
+            lines = build_lines(it, fields, season_map)
+            fpt = _fit_font_pt(len(lines), box_h, name_pt)
+            for li, line in enumerate(lines):
                 p = tf.paragraphs[0] if li == 0 else tf.add_paragraph()
                 run = p.add_run()
                 run.text = line
-                run.font.size = Pt(name_pt if li == 0 else max(8, name_pt - 1))
+                run.font.size = Pt(fpt)
                 run.font.bold = (li == 0)
 
     prs.save(out_path)
@@ -385,14 +453,17 @@ def render_slide_image(sd, store, title=None, fields=None,
             except Exception:
                 pass
         if it:
-            fs = max(9, int(px(ibox) * 0.10))
+            lines = build_lines(it, fields, season_map)
+            avail = max(1, px(th))
+            fs = max(8, min(int(px(ibox) * 0.11),
+                            int(avail / max(1, len(lines)) / 1.25)))
             font = _load_font(fs)
             maxw = px(tw) - 4
-            y = px(tt) + 2
-            for line in build_lines(it, fields, season_map):
+            y = px(tt) + 1
+            for line in lines:
                 for seg in _wrap(d, line, font, maxw):
                     d.text((px(tl) + 2, y), seg, fill="black", font=font)
-                    y += fs + 3
+                    y += fs + 2
     return cv
 
 
@@ -743,6 +814,7 @@ def run_gui():
             self.fill_fields()
             self.fields_lb.selection_set(sel[0])
             self.autosave()
+            self._sync_preview()
 
         def move_field(self, delta):
             sel = self.fields_lb.curselection()
@@ -756,6 +828,7 @@ def run_gui():
             self.fill_fields()
             self.fields_lb.selection_set(j)
             self.autosave()
+            self._sync_preview()
 
         def _enabled_fields(self):
             return [k for k in self.field_order if self.field_on.get(k, True)]
@@ -779,6 +852,7 @@ def run_gui():
             self.fill_season_map()
             self.smap_repl.delete(0, "end")
             self.autosave()
+            self._sync_preview()
 
         def del_season_map(self):
             sel = self.smap_lb.curselection()
@@ -788,6 +862,7 @@ def run_gui():
             del self.season_map[orig]
             self.fill_season_map()
             self.autosave()
+            self._sync_preview()
 
         # ---------------- 엑셀 ----------------
         def open_excel(self):
@@ -825,7 +900,16 @@ def run_gui():
             self.fill_library()
             self.refresh_season_choices()
             self.autosave()
-            self.status.set(f"'{sheet}' — {len(items)}개 품목")
+            withimg = sum(1 for it in items if it.img_bytes)
+            self.status.set(f"'{sheet}' — {len(items)}개 품목, 이미지 {withimg}개 인식")
+            if items and withimg == 0:
+                messagebox.showwarning(
+                    "이미지 인식 안 됨",
+                    "이 시트에서 셀에 박힌 이미지를 찾지 못했습니다.\n\n"
+                    "· 그림이 '셀 안에 삽입(IMAGE 함수/셀 위 떠있는 그림)'인지 확인\n"
+                    "· .xls가 아니라 .xlsx 인지 확인\n"
+                    "· 그림이 도형 그룹/연결(LINK)된 경우 인식되지 않을 수 있습니다.\n"
+                    "텍스트(품목명/가격 등)는 정상 입력됩니다.")
 
         def _make_thumbs(self, items):
             for it in items:
@@ -924,6 +1008,7 @@ def run_gui():
             self.refresh_slides()
             self.fill_library()
             self.autosave()
+            self._sync_preview()
 
         def move_slide(self, delta):
             i = self.cur_slide
@@ -938,6 +1023,7 @@ def run_gui():
             self.slide_lb.selection_set(j)
             self.on_slide_select()
             self.autosave()
+            self._sync_preview(j)
 
         def refresh_slides(self):
             self.slide_lb.delete(0, "end")
@@ -968,6 +1054,7 @@ def run_gui():
             self.slide_lb.selection_set(self.cur_slide)
             self.fill_slide_items()
             self.autosave()
+            self._sync_preview(self.cur_slide)
 
         def fill_slide_items(self):
             self.slide_items.delete(0, "end")
@@ -1012,6 +1099,8 @@ def run_gui():
             self.autosave()
             self.status.set(f"{added}개 품목을 슬라이드 {self.cur_slide+1}에 추가"
                             + (f" (남은 {len(keys)-added}개는 칸 부족)" if full else ""))
+            self.preview()                       # 추가할 때마다 미리보기 자동 표시
+            self._sync_preview(self.cur_slide)
             if full:
                 messagebox.showinfo("가득 참",
                                     f"슬라이드 {self.cur_slide+1}은 최대 {cap}개입니다.\n"
@@ -1031,6 +1120,7 @@ def run_gui():
             self.fill_slide_items()
             self.fill_library()
             self.autosave()
+            self._sync_preview(self.cur_slide)
 
         def move_item(self, delta):
             if self.cur_slide is None:
@@ -1046,6 +1136,7 @@ def run_gui():
             self.fill_slide_items()
             self.slide_items.selection_set(j)
             self.autosave()
+            self._sync_preview(self.cur_slide)
 
         # ---------------- 자동 저장 / 복원 ----------------
         def _state(self):
@@ -1137,6 +1228,19 @@ def run_gui():
 
         def _prev_nav(self, d):
             self._prev_idx = max(0, min(len(self.slides) - 1, self._prev_idx + d))
+            self._prev_render()
+
+        def _prev_open(self):
+            return bool(self._prev_win) and tk.Toplevel.winfo_exists(self._prev_win)
+
+        def _sync_preview(self, idx=None):
+            """슬라이드 변경 시 미리보기 창이 열려 있으면 자동 갱신."""
+            if not self._prev_open() or not self.slides:
+                return
+            if idx is not None:
+                self._prev_idx = max(0, min(len(self.slides) - 1, idx))
+            elif self._prev_idx >= len(self.slides):
+                self._prev_idx = len(self.slides) - 1
             self._prev_render()
 
         def _prev_render(self):
