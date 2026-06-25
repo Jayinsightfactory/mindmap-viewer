@@ -1021,10 +1021,11 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 
 **프로세스 반성(사용자 지적)**: 이 세션에서 데몬/설치 수정을 연속하며 **작업 전 WORK_MEMORY/DAEMON_STRUCTURE 재확인을 건너뛰었음**. 그 결과 신원 혼동(아래) 발생. 다음부터 데몬/설치 작업은 무조건 prework-search + 이 파일 먼저.
 
-**★신원 정정(중요, hostname 충돌 §9)**:
-- 김빛나 = **NENOVA2025** (userId MN0B1204A4)
-- 정재훈 = **nenova/NENOVA(대소문자 혼재)** (userId MND11FFB8C…)
-- 이번 세션에서 "김빛나"로 다룬 NENOVA/MND11FFB8C는 실제로 **정재훈**. 오늘 install-open이 이름 "김빛나"를 MND11FFB8C(정재훈)에 by-HOSTNAME reused 등록함 → 이름/계정 정정 필요할 수 있음(update-user-name).
+**★신원(2026-06-25 실데이터로 확정 — 6/17 잠정메모 정정)**:
+- **김빛나 = hostname NENOVA(=소문자 nenova 동일머신) = userId MND11FFB8CBF0916DB**. 근거: 오늘 사용자가 직접 install-open으로 "김빛나" 등록 + pc-list에서 이 userId가 16:55까지 현역(3617 이벤트). 6/17 메모의 "정재훈=MND11FFB8C(PC꺼짐 미등록 잠정)"은 **미확정 추정이었고 오늘 등록으로 무효화됨.** 내가 이 잠정메모를 확정인 양 사용자에게 들이민 게 실수(2회 성급).
+- NENOVA2025 = userId MN0B1204A4 = 별개 머신, 12:38 이후 비활성. 정체 미확정(6/17엔 김빛나로 잠정표기됐으나 오늘 활동은 NENOVA쪽). **단정 금지.**
+- 교훈: 신원은 6/17 잠정메모가 아니라 **pc-list 최신활동 + 사용자 실시간 등록**을 1순위로. hostname 대소문자(NENOVA/nenova/NEONVA/NENOVA2025) 난립 = §9 함정.
+- 이름표시 이슈: update-user-name은 orbit_auth_users 대상(대시보드용)인데 PG upsert pgOk:false로 실패(원인 미규명, SQLite만 됨). learning/logs의 userName은 이벤트 denormalized라 이걸로 안 바뀜 → 데몬이 config의 이름을 보내야 근본 반영. 보드에 MND11FFB8C로 뜨는 중.
 
 **화면캡처 검은화면 근본원인(확정)**: `[3/9] Python` 단계의 `Get-Command python`이 **Windows 스토어 껍데기(WindowsApps\python.exe 0-byte 별칭)도 TRUE로 판정** → 실제 python 미설치인데 설치 건너뜀 → PIL/pyautogui 실패 → 데몬이 PS CopyFromScreen 폴백으로 **3KB 검은화면만** 생성. self-test로 PC별 확정: 설연주(neonva)·현욱(CAA5TA1)·임재용(S4S2HMU)=실제캡처 정상(250KB~1.3MB), 정재훈(nenova)=python없음 3KB 검은화면.
 
@@ -1050,4 +1051,6 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - Register-ScheduledTask XML 포맷에러(schtasks.exe 폴백으로 자동시작은 정상) — 추후 정리
 - 이름/계정 정정(김빛나↔정재훈 hostname 혼동) 확인 필요
 
-**재발 시 먼저**: 이 항목 + DATA_CHECK.md(§13-Z 좀비, §9 hostname충돌) + DAEMON_STRUCTURE.md. 화면캡처 검은화면=python누락 의심→daemon.screendiag 확인. 신원은 989번줄 매핑 신뢰.
+**재발 시 먼저**: 이 항목 + DATA_CHECK.md(§13-Z 좀비, §9 hostname충돌) + DAEMON_STRUCTURE.md. 화면캡처 검은화면=python누락 의심→daemon.screendiag 확인. **신원은 989번줄(6/17 잠정) 말고 pc-list 최신활동+사용자 등록 우선**(위 ★신원 참조).
+
+**검증 로그(2026-06-25)**: 김빛나 NENOVA daemon.screendiag 16:34/16:35/16:43에 "python 없음 감지 → 백그라운드 자동설치 시작" 트리거 확인(1e79861 작동). 단 16:43:49까지 still working=powershell(3KB 검은화면)=python 설치 완료 전. 데몬 잦은 재시작으로 _autoInstallPython이 매 재시작 재트리거(detached라 install은 살아남음). 추적: 설치 완료 후 working=pil 되는지. 안 되면 winget 부재/python.org 다운로드 실패 의심 → 동시중복설치 방지 lock-file 가드 검토.
