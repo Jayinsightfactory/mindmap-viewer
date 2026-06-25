@@ -218,15 +218,40 @@ Write-Host "    $(git --version 2>$null)" -ForegroundColor Green
 # v6에서 Java 제거 — daemon 코드에서 실제 사용하지 않음 (중복 런타임 방지)
 # ==============================================================================
 Write-Host "  [3/9] Python..." -ForegroundColor Cyan
-if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
-  if (Get-Command winget -ErrorAction SilentlyContinue) { winget install Python.Python.3.11 --silent --accept-source-agreements --accept-package-agreements 2>$null }
-  $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+# Windows 스토어 껍데기(WindowsApps\python.exe 0-byte 별칭)는 Get-Command엔 잡히지만 실행하면
+# 'python은 명령이 아님'이 됨 → 실제 'Python 3.x' 버전이 나오는지로 진짜 설치 판정.
+# (2026-06 화면캡처 검은화면 근본원인: 껍데기를 진짜로 오인해 PIL/pyautogui 미설치 → PS 폴백 3KB 검은화면)
+function Test-RealPython { try { return ((& python --version 2>&1 | Out-String).Trim() -match 'Python 3\.\d+') } catch { return $false } }
+$RefreshPath = { $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User") }
+if (-not (Test-RealPython)) {
+  Write-Host "    실제 Python 미설치(스토어 껍데기 가능) — 설치 중..." -ForegroundColor Yellow
+  if (Get-Command winget -ErrorAction SilentlyContinue) {
+    winget install -e --id Python.Python.3.11 --silent --accept-source-agreements --accept-package-agreements --scope machine 2>$null | Out-Null
+    & $RefreshPath
+  }
+  if (-not (Test-RealPython)) {
+    try {
+      $pyExe = "$env:TEMP\python-3.11.9-amd64.exe"
+      Invoke-WebRequest -Uri "https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe" -OutFile $pyExe -UseBasicParsing -TimeoutSec 180 -ErrorAction Stop
+      Start-Process -FilePath $pyExe -ArgumentList '/quiet','InstallAllUsers=1','PrependPath=1','Include_pip=1' -Wait
+      & $RefreshPath
+    } catch { Write-Host "    Python 직접설치 실패: $($_.Exception.Message.Split([char]10)[0])" -ForegroundColor DarkGray }
+  }
 }
-if (Get-Command python -ErrorAction SilentlyContinue) {
-  python -m pip install --quiet pyautogui pillow requests 2>$null
-  Write-Host "    Python $(python --version 2>$null)" -ForegroundColor Green
+if (Test-RealPython) {
+  python -m pip install --quiet --upgrade pip 2>$null
+  python -m pip install --quiet pillow pyautogui requests 2>$null
+  $pilOk = (& python -c "from PIL import ImageGrab; print('ok')" 2>&1 | Out-String)
+  if ($pilOk -match 'ok') {
+    Write-Host "    Python $((& python --version 2>&1 | Out-String).Trim()) + Pillow OK" -ForegroundColor Green
+  } else {
+    python -m pip install --force-reinstall --quiet pillow 2>$null
+    $pilOk2 = (& python -c "from PIL import ImageGrab; print('ok')" 2>&1 | Out-String)
+    if ($pilOk2 -match 'ok') { Write-Host "    Python + Pillow OK (재설치)" -ForegroundColor Green }
+    else { Write-Host "    Pillow 로드 실패 — 화면캡처 품질 저하 가능" -ForegroundColor Yellow }
+  }
 } else {
-  Write-Host "    보조 분석 모드로 작동" -ForegroundColor Yellow
+  Write-Host "    Python 설치 실패 — 화면캡처는 PowerShell 폴백(검은화면 가능)" -ForegroundColor Yellow
 }
 
 # ==============================================================================
