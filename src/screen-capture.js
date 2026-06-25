@@ -978,6 +978,56 @@ function _shouldCaptureStartup() {
   return true;
 }
 
+// ── screen.diag 직접 전송 (/api/hook — guardian 명령채널 우회, 신뢰성 100%) ──
+function _postScreenDiag(data) {
+  try {
+    let cfg = {};
+    try { let r = fs.readFileSync(path.join(os.homedir(), '.orbit-config.json'), 'utf8'); if (r.charCodeAt(0) === 0xFEFF) r = r.slice(1); cfg = JSON.parse(r); } catch {}
+    const serverUrl = cfg.serverUrl || process.env.ORBIT_SERVER_URL;
+    const token = cfg.token || process.env.ORBIT_TOKEN || '';
+    if (!serverUrl) return;
+    const payload = JSON.stringify({ events: [{ id: 'scdiag-' + Date.now(), type: 'screen.diag', source: 'screen-capture', sessionId: 'daemon-' + os.hostname(), timestamp: new Date().toISOString(), data: { hostname: os.hostname(), ...data } }] });
+    const url = new URL('/api/hook', serverUrl);
+    const mod = url.protocol === 'https:' ? https : http;
+    const headers = { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload), 'X-Device-Id': os.hostname() };
+    if (token) headers['Authorization'] = 'Bearer ' + token;
+    const req = mod.request({ hostname: url.hostname, port: url.port || (url.protocol === 'https:' ? 443 : 80), path: url.pathname, method: 'POST', headers, timeout: 15000 }, res => res.resume());
+    req.on('error', () => {}); req.on('timeout', () => req.destroy());
+    req.write(payload); req.end();
+  } catch {}
+}
+
+// ── 시작 시 캡처 자가테스트: 3방법(PIL/pyautogui/PS)을 실제로 돌려보고 결과 보고 ──
+// dedup/트리거/idle 무관하게 항상 1회 — 화면캡처가 진짜 되는지 신뢰성 있게 판정.
+function _runStartupSelfTest() {
+  if (process.platform !== 'win32') return;
+  setTimeout(() => {
+    try {
+      const tmp = path.join(os.tmpdir(), 'orbit-captest-' + Date.now() + '.png');
+      const esc = tmp.replace(/\\/g, '\\\\');
+      const methods = [
+        ['pil',        `python -c "from PIL import ImageGrab; ImageGrab.grab().save('${esc}')"`],
+        ['pyautogui',  `python -c "import pyautogui; pyautogui.screenshot('${esc}')"`],
+        ['powershell', `powershell.exe -NoProfile -WindowStyle Hidden -NonInteractive -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Screen]::PrimaryScreen | ForEach-Object { $bmp = New-Object System.Drawing.Bitmap($_.Bounds.Width, $_.Bounds.Height); $g = [System.Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($_.Bounds.Location, [System.Drawing.Point]::Empty, $_.Bounds.Size); $bmp.Save('${esc}') }"`],
+      ];
+      const results = []; let working = null;
+      for (const [name, cmd] of methods) {
+        try { if (fs.existsSync(tmp)) fs.unlinkSync(tmp); } catch {}
+        let ok = false, bytes = 0, err = ''; const t0 = Date.now();
+        try {
+          execSync(cmd, { timeout: 12000, windowsHide: true, stdio: 'pipe' });
+          if (fs.existsSync(tmp)) { bytes = fs.statSync(tmp).size; ok = bytes > 2048; }
+        } catch (e) { err = String((e && (e.stderr || e.message)) || '').slice(0, 100); }
+        results.push({ method: name, ok, bytes, ms: Date.now() - t0, err });
+        if (ok && !working) working = name;
+      }
+      try { if (fs.existsSync(tmp)) fs.unlinkSync(tmp); } catch {}
+      _postScreenDiag({ ok: !!working, working, methods: results });
+      console.log('[screen-capture] selftest: ' + (working ? 'OK via ' + working : 'ALL FAILED'));
+    } catch (e) { try { _postScreenDiag({ ok: false, error: String(e && e.message || '').slice(0, 100) }); } catch {} }
+  }, 9000);
+}
+
 function start() {
   if (_running) return;
   _running = true;
@@ -986,6 +1036,8 @@ function start() {
   _detectScreenResolution();
   // startup 캡처 — 5분 내 재시작이면 skip (노이즈 1529건 원인)
   if (_shouldCaptureStartup()) capture('startup');
+  // 캡처 자가테스트 — 항상 1회, /api/hook으로 screen.diag 보고
+  _runStartupSelfTest();
 }
 
 function stop() {
