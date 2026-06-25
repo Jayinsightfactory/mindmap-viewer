@@ -13,11 +13,12 @@ exe 빌드   :  build.bat 실행 (PyInstaller --noconsole)
 
 import io
 import os
+import sys
 import json
-import base64
+import subprocess
 
 import openpyxl
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 from pptx import Presentation
 from pptx.util import Emu, Pt
 from pptx.dml.color import RGBColor
@@ -228,6 +229,104 @@ def build_pptx(slides, store, out_path,
 
 
 # ==================================================================
+# 슬라이드 미리보기 렌더 (PIL — tkinter 없이 사용 가능)
+# ==================================================================
+_FONT_CANDIDATES = [
+    "C:/Windows/Fonts/malgun.ttf",
+    "C:/Windows/Fonts/malgunsl.ttf",
+    "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+]
+
+
+def _load_font(size):
+    for p in _FONT_CANDIDATES:
+        if os.path.exists(p):
+            try:
+                return ImageFont.truetype(p, size)
+            except Exception:
+                pass
+    return ImageFont.load_default()
+
+
+def render_slide_image(sd, store, title=None, text_mode="origin", width=940):
+    """슬라이드 1장을 PIL 이미지로 렌더 (미리보기용)."""
+    cols, rows = int(sd["cols"]), int(sd["rows"])
+    sc = SLIDE_W / width
+    W, H = width, int(SLIDE_H / sc)
+    cv = Image.new("RGB", (W, H), "white")
+    d = ImageDraw.Draw(cv)
+    d.rectangle([0, 0, W - 1, H - 1], outline="#cccccc")
+
+    def px(v):
+        return int(v / sc)
+
+    top_pad = 320000
+    if title:
+        top_pad = 880000
+        d.text((px(500000), px(220000)), str(title),
+               fill="black", font=_load_font(max(14, px(360000))))
+
+    slots = grid_slots(cols, rows, top_pad)
+    keys = sd["items"][:cols * rows]
+    for i, key in enumerate(keys):
+        it = store.get(tuple(key))
+        il, it_top, ibox, tl, tt, tw, th = slots[i]
+        d.rectangle([px(il), px(it_top), px(il + ibox), px(it_top + ibox)],
+                    outline="#dddddd")
+        if it and it.img_bytes:
+            w, h, ox, oy = _fit(it.img_bytes, ibox)
+            try:
+                im = Image.open(io.BytesIO(it.img_bytes)).convert("RGB")
+                im = im.resize((max(1, px(w)), max(1, px(h))))
+                cv.paste(im, (px(il + ox), px(it_top + oy)))
+            except Exception:
+                pass
+        if it:
+            fs = max(9, int(px(ibox) * 0.10))
+            font = _load_font(fs)
+            maxw = px(tw) - 4
+            y = px(tt) + 2
+            for line in _text_for(it, text_mode):
+                for seg in _wrap(d, line, font, maxw):
+                    d.text((px(tl) + 2, y), seg, fill="black", font=font)
+                    y += fs + 3
+    return cv
+
+
+def _wrap(draw, text, font, maxw):
+    """maxw(px) 안에 들어가도록 단어/글자 단위 줄바꿈."""
+    def w(s):
+        return draw.textlength(s, font=font)
+    if w(text) <= maxw:
+        return [text]
+    out, cur = [], ""
+    for ch in text:
+        if w(cur + ch) > maxw and cur:
+            out.append(cur)
+            cur = ch
+        else:
+            cur += ch
+    if cur:
+        out.append(cur)
+    return out
+
+
+def open_file(path):
+    """OS 기본 프로그램으로 파일 열기 (Windows에서 PPT 자동 실행)."""
+    try:
+        if os.name == "nt":
+            os.startfile(path)            # Windows
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", path])
+        else:
+            subprocess.Popen(["xdg-open", path])
+        return True
+    except Exception:
+        return False
+
+
+# ==================================================================
 # 작업 자동 저장 / 복원
 # ==================================================================
 def _ensure_dirs():
@@ -320,9 +419,13 @@ def run_gui():
             self.lib_keys = []         # 라이브러리 표시 순서(현재 시트)
             self.thumbs = {}           # key -> PIL thumbnail
             self.row_imgs = {}         # iid -> PhotoImage (참조 유지)
+            self.checked = set()       # 체크된 품목 key (복수선택)
             self.slides = []           # [{cols,rows,items:[key]}]
             self.cur_slide = None      # 선택된 슬라이드 index
             self._drag_anchor = None
+            self._drag_val = True      # 드래그 시 체크/해제 방향
+            self._prev_win = None      # 미리보기 창
+            self._prev_idx = 0
 
             self._build()
             self._restore()
@@ -349,6 +452,9 @@ def run_gui():
                             command=self.autosave).pack(side="left", padx=8)
 
             ttk.Button(top, text="💾 PPT 내보내기", command=self.export_ppt).pack(side="right")
+            self.open_after = tk.BooleanVar(value=True)
+            ttk.Checkbutton(top, text="내보낸 후 바로 열기",
+                            variable=self.open_after).pack(side="right", padx=4)
             self.save_lbl = ttk.Label(top, text="", foreground="#2a7")
             self.save_lbl.pack(side="right", padx=8)
 
@@ -356,16 +462,17 @@ def run_gui():
             body.pack(fill="both", expand=True)
 
             # ----- 왼쪽: 품목 라이브러리 -----
-            left = ttk.LabelFrame(body, text="품목 라이브러리 (드래그=복수선택, 클릭=체크)", padding=6)
+            left = ttk.LabelFrame(body, text="품목 라이브러리 (클릭=체크, 드래그=여러 개 체크)", padding=6)
             left.pack(side="left", fill="both", expand=True)
 
             lb = ttk.Frame(left); lb.pack(fill="x")
-            ttk.Button(lb, text="전체선택", command=self.sel_all).pack(side="left")
-            ttk.Button(lb, text="선택해제", command=self.sel_none).pack(side="left", padx=4)
-            ttk.Label(lb, text="선택한 품목을 →", foreground="#888").pack(side="right")
+            ttk.Button(lb, text="전체체크", command=self.sel_all).pack(side="left")
+            ttk.Button(lb, text="전체해제", command=self.sel_none).pack(side="left", padx=4)
+            self.chk_lbl = ttk.Label(lb, text="체크: 0개", foreground="#2a7")
+            self.chk_lbl.pack(side="right")
 
             self.tree = ttk.Treeview(left, columns=("name", "origin", "used"),
-                                     show="tree headings", selectmode="extended")
+                                     show="tree headings", selectmode="none")
             self.tree.heading("#0", text="✔  이미지")
             self.tree.heading("name", text="품목명")
             self.tree.heading("origin", text="원산지")
@@ -381,15 +488,17 @@ def run_gui():
             ttk.Style(self).configure("Treeview", rowheight=THUMB + 8)
             self.tree.bind("<ButtonPress-1>", self.on_press)
             self.tree.bind("<B1-Motion>", self.on_drag)
-            self.tree.bind("<<TreeviewSelect>>", lambda e: self.refresh_checks())
 
             # ----- 가운데: 추가 버튼 -----
             mid = ttk.Frame(body, padding=6); mid.pack(side="left", fill="y")
             ttk.Label(mid, text="").pack(pady=20)
-            ttk.Button(mid, text="선택 품목 ▶\n현재 슬라이드에 추가",
+            ttk.Button(mid, text="체크한 품목 ▶\n현재 슬라이드에 추가",
                        command=self.add_to_slide).pack(pady=6, ipady=8)
             ttk.Button(mid, text="◀ 슬라이드에서\n선택 품목 제거",
                        command=self.remove_from_slide).pack(pady=6, ipady=8)
+            ttk.Separator(mid, orient="horizontal").pack(fill="x", pady=14)
+            ttk.Button(mid, text="🔍 미리보기",
+                       command=self.preview).pack(pady=6, ipady=6)
 
             # ----- 오른쪽: 슬라이드 구성 -----
             right = ttk.LabelFrame(body, text="슬라이드 구성", padding=6)
@@ -453,13 +562,16 @@ def run_gui():
                 img.paste(thumb, (CB + 8, (H - th) // 2))
             return ImageTk.PhotoImage(img)
 
-        def refresh_checks(self):
-            sel = set(self.tree.selection())
+        def update_row(self, iid):
+            key = self._iid_key(iid)
+            photo = self._row_image(key, key in self.checked)
+            self.row_imgs[iid] = photo
+            self.tree.item(iid, image=photo)
+
+        def update_all_rows(self):
             for iid in self.tree.get_children():
-                key = self._iid_key(iid)
-                photo = self._row_image(key, iid in sel)
-                self.row_imgs[iid] = photo
-                self.tree.item(iid, image=photo)
+                self.update_row(iid)
+            self.chk_lbl.config(text=f"체크: {len(self.checked)}개")
 
         # ---------------- 키 ↔ iid ----------------
         def _iid_key(self, iid):
@@ -526,41 +638,64 @@ def run_gui():
                 if not it:
                     continue
                 iid = self._key_iid(key)
-                photo = self._row_image(key, False)
+                photo = self._row_image(key, key in self.checked)
                 self.row_imgs[iid] = photo
                 placed = self._slides_with(key)
                 used = ",".join(str(i + 1) for i in placed) if placed else ""
                 self.tree.insert("", "end", iid=iid, image=photo,
                                  values=(it.name, it.origin, used))
+            self.chk_lbl.config(text=f"체크: {len(self.checked)}개")
 
         def _slides_with(self, key):
             return [i for i, s in enumerate(self.slides) if key in s["items"]]
 
-        # ---------------- 선택/드래그 ----------------
+        # ---------------- 체크 토글 / 드래그 ----------------
         def on_press(self, event):
-            self._drag_anchor = self.tree.identify_row(event.y)
+            iid = self.tree.identify_row(event.y)
+            if not iid:
+                return
+            self._drag_anchor = iid
+            key = self._iid_key(iid)
+            if key in self.checked:           # 토글
+                self.checked.discard(key)
+                self._drag_val = False
+            else:
+                self.checked.add(key)
+                self._drag_val = True
+            self.update_row(iid)
+            self.chk_lbl.config(text=f"체크: {len(self.checked)}개")
 
         def on_drag(self, event):
-            row = self.tree.identify_row(event.y)
-            if not row or not self._drag_anchor:
+            iid = self.tree.identify_row(event.y)
+            if not iid or not self._drag_anchor:
                 return
             children = list(self.tree.get_children())
             try:
                 a = children.index(self._drag_anchor)
-                b = children.index(row)
+                b = children.index(iid)
             except ValueError:
                 return
             lo, hi = sorted((a, b))
-            self.tree.selection_set(children[lo:hi + 1])
+            for c in children[lo:hi + 1]:
+                k = self._iid_key(c)
+                if self._drag_val:
+                    self.checked.add(k)
+                else:
+                    self.checked.discard(k)
+                self.update_row(c)
+            self.chk_lbl.config(text=f"체크: {len(self.checked)}개")
 
         def sel_all(self):
-            self.tree.selection_set(self.tree.get_children())
+            self.checked = set(self.lib_keys)
+            self.update_all_rows()
 
         def sel_none(self):
-            self.tree.selection_remove(self.tree.get_children())
+            self.checked.clear()
+            self.update_all_rows()
 
         def _selected_keys(self):
-            return [self._iid_key(i) for i in self.tree.selection()]
+            # 라이브러리 표시 순서대로 체크된 품목 반환
+            return [k for k in self.lib_keys if k in self.checked]
 
         # ---------------- 슬라이드 ----------------
         def add_slide(self):
@@ -602,7 +737,6 @@ def run_gui():
                 self.slide_lb.insert(
                     "end", f"슬라이드 {i+1}  ({s['cols']}×{s['rows']})  "
                            f"{len(s['items'])}/{cap}")
-            self.refresh_checks() if self.tree.get_children() else None
 
         def on_slide_select(self):
             sel = self.slide_lb.curselection()
@@ -639,26 +773,40 @@ def run_gui():
                 self.slide_items.insert("end", it.name if it else str(key))
 
         def add_to_slide(self):
-            if self.cur_slide is None:
-                messagebox.showinfo("알림", "먼저 오른쪽에서 슬라이드를 선택(또는 추가)하세요.")
+            keys = self._selected_keys()
+            if not keys:
+                messagebox.showinfo("알림", "먼저 왼쪽에서 품목을 체크(클릭/드래그)하세요.")
                 return
+            # 슬라이드가 없으면 자동 생성, 선택 안 됐으면 마지막 슬라이드 사용
+            if not self.slides:
+                self.add_slide()
+            if self.cur_slide is None:
+                self.cur_slide = len(self.slides) - 1
+                self.slide_lb.selection_clear(0, "end")
+                self.slide_lb.selection_set(self.cur_slide)
+                self.on_slide_select()
             s = self.slides[self.cur_slide]
             cap = s["cols"] * s["rows"]
-            added = 0
-            for key in self._selected_keys():
+            added, full = 0, False
+            for key in keys:
                 if len(s["items"]) >= cap:
-                    messagebox.showinfo("가득 참",
-                                        f"이 슬라이드는 최대 {cap}개입니다. {added}개만 추가됨.")
+                    full = True
                     break
                 if key not in s["items"]:
                     s["items"].append(key)
+                    self.checked.discard(key)
                     added += 1
             self.refresh_slides()
             self.slide_lb.selection_set(self.cur_slide)
             self.fill_slide_items()
             self.fill_library()
             self.autosave()
-            self.status.set(f"{added}개 품목을 슬라이드 {self.cur_slide+1}에 추가")
+            self.status.set(f"{added}개 품목을 슬라이드 {self.cur_slide+1}에 추가"
+                            + (f" (남은 {len(keys)-added}개는 칸 부족)" if full else ""))
+            if full:
+                messagebox.showinfo("가득 참",
+                                    f"슬라이드 {self.cur_slide+1}은 최대 {cap}개입니다.\n"
+                                    f"{added}개만 추가됨. 새 슬라이드를 추가해 나머지를 넣으세요.")
 
         def remove_from_slide(self):
             if self.cur_slide is None:
@@ -744,6 +892,51 @@ def run_gui():
             self.refresh_slides()
             self.status.set("이전 작업을 복원했습니다.")
 
+        # ---------------- 미리보기 ----------------
+        def _titles(self):
+            if self.use_title.get():
+                return [self.sheet_cb.get() or ""] * len(self.slides)
+            return None
+
+        def preview(self):
+            if not self.slides:
+                messagebox.showinfo("알림", "먼저 슬라이드를 추가하세요.")
+                return
+            self._prev_idx = self.cur_slide if self.cur_slide is not None else 0
+            if self._prev_win and tk.Toplevel.winfo_exists(self._prev_win):
+                self._prev_win.lift()
+            else:
+                self._prev_win = tk.Toplevel(self)
+                self._prev_win.title("미리보기")
+                nav = ttk.Frame(self._prev_win); nav.pack(fill="x", pady=4)
+                ttk.Button(nav, text="◀ 이전",
+                           command=lambda: self._prev_nav(-1)).pack(side="left", padx=6)
+                self._prev_lbl = ttk.Label(nav, text="")
+                self._prev_lbl.pack(side="left", expand=True)
+                ttk.Button(nav, text="다음 ▶",
+                           command=lambda: self._prev_nav(1)).pack(side="right", padx=6)
+                self._prev_canvas = ttk.Label(self._prev_win)
+                self._prev_canvas.pack(padx=6, pady=6)
+            self._prev_render()
+
+        def _prev_nav(self, d):
+            self._prev_idx = max(0, min(len(self.slides) - 1, self._prev_idx + d))
+            self._prev_render()
+
+        def _prev_render(self):
+            from PIL import ImageTk
+            i = self._prev_idx
+            sd = self.slides[i]
+            titles = self._titles()
+            title = titles[i] if titles else None
+            img = render_slide_image(sd, self.store, title=title,
+                                     text_mode=self.text_mode.get(), width=900)
+            self._prev_photo = ImageTk.PhotoImage(img)
+            self._prev_canvas.config(image=self._prev_photo)
+            self._prev_lbl.config(
+                text=f"슬라이드 {i+1} / {len(self.slides)}   "
+                     f"({sd['cols']}×{sd['rows']}, {len(sd['items'])}개)")
+
         # ---------------- 내보내기 ----------------
         def export_ppt(self):
             if not self.slides or all(not s["items"] for s in self.slides):
@@ -755,18 +948,19 @@ def run_gui():
                 initialfile="품목_카탈로그.pptx")
             if not path:
                 return
-            titles = None
-            if self.use_title.get():
-                titles = [self.sheet_cb.get() or ""] * len(self.slides)
             try:
                 n = build_pptx(self.slides, self.store, path,
                                text_mode=self.text_mode.get(),
-                               name_pt=self.name_pt.get(), titles=titles)
+                               name_pt=self.name_pt.get(), titles=self._titles())
             except Exception as e:
                 messagebox.showerror("오류", f"PPT 생성 실패:\n{e}")
                 return
             self.status.set(f"완료: {n}개 슬라이드 → {path}")
-            messagebox.showinfo("완료", f"{n}개 슬라이드 생성\n{path}")
+            if self.open_after.get():
+                if not open_file(path):
+                    messagebox.showinfo("완료", f"{n}개 슬라이드 생성\n{path}\n(자동 열기는 실패)")
+            else:
+                messagebox.showinfo("완료", f"{n}개 슬라이드 생성\n{path}")
 
     App().mainloop()
 
