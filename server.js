@@ -2772,10 +2772,10 @@ app.post('/api/admin/update-user-name', async (req, res) => {
       // [2026-06-25] 기존 UPSERT가 pgOk:false로 실패(김빛나 MND11FFB8C) → UPDATE-우선으로 견고화.
       const upd = await pool.query(`UPDATE orbit_auth_users SET name=$1 WHERE id=$2`, [name, userId]);
       if (upd.rowCount === 0) {
+        // id에 unique 제약이 없어 ON CONFLICT 불가 → UPDATE 0행이면 행이 없는 것이므로 평범한 INSERT.
         await pool.query(
           `INSERT INTO orbit_auth_users (id, email, name, password_hash, plan, provider)
-           VALUES ($2, $3, $1, '', 'free', 'pc-link')
-           ON CONFLICT (id) DO UPDATE SET name=$1`,
+           VALUES ($2, $3, $1, '', 'free', 'pc-link')`,
           [name, userId, `${String(userId).toLowerCase()}@orbit.local`]
         );
       }
