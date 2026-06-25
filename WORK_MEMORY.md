@@ -1015,3 +1015,39 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 **검증**: 정재훈(nenova) gitpull-worker로 재시작 성공(87m→1m). 서버 재배포 후 5/5 200 안정. 김빛나는 4종 레버 다 무반응(전원주기 대기).
 
 **반복 시 먼저 볼 위치**: DATA_CHECK.md ★"데이터 확인" 트리거 / §10(서버 OOM 메타규칙) / §13(원격레버)·§13-Z(좀비). 메모리 no-reboot-use-selfheal.
+
+---
+## 2026-06-25 KST — 데몬 자가해결 체계 + 화면캡처 검은화면 근본수정 + nowlink 다운로드
+
+**프로세스 반성(사용자 지적)**: 이 세션에서 데몬/설치 수정을 연속하며 **작업 전 WORK_MEMORY/DAEMON_STRUCTURE 재확인을 건너뛰었음**. 그 결과 신원 혼동(아래) 발생. 다음부터 데몬/설치 작업은 무조건 prework-search + 이 파일 먼저.
+
+**★신원 정정(중요, hostname 충돌 §9)**:
+- 김빛나 = **NENOVA2025** (userId MN0B1204A4)
+- 정재훈 = **nenova/NENOVA(대소문자 혼재)** (userId MND11FFB8C…)
+- 이번 세션에서 "김빛나"로 다룬 NENOVA/MND11FFB8C는 실제로 **정재훈**. 오늘 install-open이 이름 "김빛나"를 MND11FFB8C(정재훈)에 by-HOSTNAME reused 등록함 → 이름/계정 정정 필요할 수 있음(update-user-name).
+
+**화면캡처 검은화면 근본원인(확정)**: `[3/9] Python` 단계의 `Get-Command python`이 **Windows 스토어 껍데기(WindowsApps\python.exe 0-byte 별칭)도 TRUE로 판정** → 실제 python 미설치인데 설치 건너뜀 → PIL/pyautogui 실패 → 데몬이 PS CopyFromScreen 폴백으로 **3KB 검은화면만** 생성. self-test로 PC별 확정: 설연주(neonva)·현욱(CAA5TA1)·임재용(S4S2HMU)=실제캡처 정상(250KB~1.3MB), 정재훈(nenova)=python없음 3KB 검은화면.
+
+**수정 커밋(mindmap-viewer, 전부 push·배포)**:
+- 9cb56a0 uiohook을 child process(uiohook-child.js)로 격리 — 은행 키보드보안 충돌 시 데몬 사망 방지. keyboard-watcher/mouse-watcher 둘 다 child 이벤트 구독(subscribeInput)
+- b00d1f7·2d7766e self-healer가 bank-safe(isPaused) 중 컴포넌트 강제재시작 안 하게(uiohook crash 방지)
+- 23ce9f7 install-open.bat UAC 승격 런처에 -NoProfile 추가(‘running scripts is disabled’ profile.ps1 빨간에러 제거)
+- abe6fea install.ps1 실행정책 자가해제(Process/LocalMachine/CurrentUser) + trap에서 install.error 자동보고(복붙 불필요)
+- 8624831·d4bd17f screen-capture 시작 시 캡처 자가테스트 → **daemon.screendiag** 이벤트로 직접 보고(guardian 명령채널 우회). detail에 method별 결과
+- 2c442ca **GET /api/admin/raw-events?type=&hostname=** — learning/logs가 커스텀필드 깎는 문제 우회, 원본 data_json 조회(진단 필수 도구)
+- bc0a887 install.ps1 [3/9] Python: Test-RealPython(실제 'Python 3.x' 검증)으로 스토어껍데기 배제 + winget→python.org 이중설치(PrependPath)
+- 1e79861 screen-capture **python 자가탐색(_resolvePython, PATH밖도 설치폴더 검색)+자가설치(_autoInstallPython, user-scope 무권한 백그라운드)** — **재설치 없이** git pull만으로 검은화면 자가복구
+
+**자가해결 체계 완성(사용자 핵심요구=babysitting 제거)**: 직원 재실행 없이 ①실행정책 자가해제 ②설치오류 자동보고 ③화면캡처 self-test 자동진단 ④python 없으면 데몬 자가설치. 새 오류만 1회 내가 고치면 그담부터 자동.
+
+**nowlink.kr = ai-trainer-hub(별도 Next.js repo: Jayinsightfactory/ai-trainer-hub, master, Railway)**. mindmap-viewer 아님. /install은 자영업자 AI 출장설치 신청폼(상용). 커밋 4c8c5bc: /install에 직원용 Orbit 다운로드 카드 + **/orbit-install** 라우트(mindmap-viewer install-open.bat으로 302). 공유주소 nowlink.kr/orbit-install.
+
+**워크플로우 융합 보드**: `C:\Users\USER\Documents\orbit-workflow-board\index.html` — 5913 관찰이벤트→1598 융합동작(화면캡처/화면해독/키보드/마우스/클립보드/주문/카카오톡/ERP), 자동화후보 412, 교차검증 78. 융합스크립트 /tmp(AppData\Local\Temp)\orbitfuse\fuse3.py·gen2.py. screen.analyzed(vision)는 06/17배치라 최근 키보드와 시각 어긋남.
+
+**미해결/리스크**:
+- 정재훈/김빛나 등 python 누락 PC: 자가설치 코드가 다음 git pull 후 작동하는지 daemon.screendiag로 확인 필요(설치 수분 소요)
+- guardian가 exec/capture-diag 결과를 빈값으로 보고하는 명령채널 한계 → daemon.screendiag/raw-events로 우회 확립
+- Register-ScheduledTask XML 포맷에러(schtasks.exe 폴백으로 자동시작은 정상) — 추후 정리
+- 이름/계정 정정(김빛나↔정재훈 hostname 혼동) 확인 필요
+
+**재발 시 먼저**: 이 항목 + DATA_CHECK.md(§13-Z 좀비, §9 hostname충돌) + DAEMON_STRUCTURE.md. 화면캡처 검은화면=python누락 의심→daemon.screendiag 확인. 신원은 989번줄 매핑 신뢰.
