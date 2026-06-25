@@ -1054,3 +1054,9 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 **재발 시 먼저**: 이 항목 + DATA_CHECK.md(§13-Z 좀비, §9 hostname충돌) + DAEMON_STRUCTURE.md. 화면캡처 검은화면=python누락 의심→daemon.screendiag 확인. **신원은 989번줄(6/17 잠정) 말고 pc-list 최신활동+사용자 등록 우선**(위 ★신원 참조).
 
 **검증 로그(2026-06-25)**: 김빛나 NENOVA daemon.screendiag 16:34/16:35/16:43에 "python 없음 감지 → 백그라운드 자동설치 시작" 트리거 확인(1e79861 작동). 단 16:43:49까지 still working=powershell(3KB 검은화면)=python 설치 완료 전. 데몬 잦은 재시작으로 _autoInstallPython이 매 재시작 재트리거(detached라 install은 살아남음). 추적: 설치 완료 후 working=pil 되는지. 안 되면 winget 부재/python.org 다운로드 실패 의심 → 동시중복설치 방지 lock-file 가드 검토.
+
+**최종 상태(2026-06-25 야간)**:
+- ✅ 완료·검증: 신원정정(WORK_MEMORY), 이름 "김빛나" PG반영(update-user-name UPDATE우선+ON CONFLICT제거, 9004f62, pgOk=True 확인·learning/logs userName=김빛나), 설치기/데몬 하드닝 전부 배포(-NoProfile 23ce9f7, 실행정책자가해제+install.error abe6fea, uiohook격리 9cb56a0, self-test+daemon.screendiag 8624831/d4bd17f, raw-events 2c442ca, python스토어껍데기 bc0a887, python자가탐색·자가설치 1e79861, 중복방지lock 2658d20, 설치결과보고형 4bcf2bf)
+- ❌ **미검증(정직)**: 김빛나(NENOVA) 화면캡처 python 설치 **완료 못 확인**. self-heal은 트리거 증명됨(screendiag "python없음→자동설치 시작"). 그러나 (a)데몬이 야간 idle이라 capture트리거 거의 없고 (b)내 restart/update 명령에 데몬이 재시작 안 함(§13-Z 명령채널 안 닿음) → 설치가 거의 시도 안 돼 미완. 최신 self-test 17:12:48 이후 갱신 없음.
+- **자동복구 경로**: 김빛나가 아침 **재부팅 시(=§13-Z 정석 회생)** 또는 활동 시작 시 self-test/capture가 _autoInstallPython 트리거 → 4bcf2bf 결과보고형이라 **"pyinstall OK" 또는 실패원인을 daemon.screendiag(status=py-install)로 자동 POST**. 그때 raw-events?type=daemon.screendiag&hostname=NENOVA로 확인. 즉시확정은 재설치 1회(설치기 python 이미 수정됨)뿐인데 사용자가 거부함.
+- 교훈: 원격으로 idle PC의 백그라운드 설치 완료를 그 자리에서 강제·검증하는 건 명령채널 한계로 불가. 자가복구+자가보고를 심어두고 다음 전원주기/활동에 맡기는 게 현실적.
