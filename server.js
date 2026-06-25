@@ -1247,6 +1247,33 @@ app.get('/api/admin/install-diag', async (req, res) => {
   }
 });
 
+// GET /api/admin/raw-events?type=X&hostname=Y&limit=N — 임의 타입 이벤트의 원본 data_json 조회
+// learning/logs가 고정스키마로 커스텀 필드를 버리는 문제 우회 (screen.diag/daemon.screendiag 등 진단용).
+app.get('/api/admin/raw-events', async (req, res) => {
+  try {
+    const pool = dbModule.getDb();
+    const type = req.query.type;
+    if (!type) return res.status(400).json({ error: 'type required' });
+    const host = req.query.hostname;
+    const limit = Math.min(parseInt(req.query.limit) || 20, 200);
+    const params = [type];
+    let where = `type = $1`;
+    if (host) { params.push(host); where += ` AND data_json->>'hostname' ILIKE $${params.length}`; }
+    params.push(limit);
+    const { rows } = await pool.query(
+      `SELECT id, type, timestamp, data_json FROM events WHERE ${where} ORDER BY timestamp DESC LIMIT $${params.length}`,
+      params
+    );
+    const events = rows.map(r => {
+      const d = typeof r.data_json === 'object' ? r.data_json : (() => { try { return JSON.parse(r.data_json || '{}'); } catch { return {}; } })();
+      return { id: r.id, ts: r.timestamp, data: d };
+    });
+    res.json({ events, total: events.length });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // GET /api/admin/perf-issues — PC 이슈 리포트 목록 (최근 100건)
 app.get('/api/admin/perf-issues', (req, res) => {
   const { isAdmin } = resolveAdmin(req);
