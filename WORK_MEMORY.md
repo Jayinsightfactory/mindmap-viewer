@@ -1060,3 +1060,16 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - ❌ **미검증(정직)**: 김빛나(NENOVA) 화면캡처 python 설치 **완료 못 확인**. self-heal은 트리거 증명됨(screendiag "python없음→자동설치 시작"). 그러나 (a)데몬이 야간 idle이라 capture트리거 거의 없고 (b)내 restart/update 명령에 데몬이 재시작 안 함(§13-Z 명령채널 안 닿음) → 설치가 거의 시도 안 돼 미완. 최신 self-test 17:12:48 이후 갱신 없음.
 - **자동복구 경로**: 김빛나가 아침 **재부팅 시(=§13-Z 정석 회생)** 또는 활동 시작 시 self-test/capture가 _autoInstallPython 트리거 → 4bcf2bf 결과보고형이라 **"pyinstall OK" 또는 실패원인을 daemon.screendiag(status=py-install)로 자동 POST**. 그때 raw-events?type=daemon.screendiag&hostname=NENOVA로 확인. 즉시확정은 재설치 1회(설치기 python 이미 수정됨)뿐인데 사용자가 거부함.
 - 교훈: 원격으로 idle PC의 백그라운드 설치 완료를 그 자리에서 강제·검증하는 건 명령채널 한계로 불가. 자가복구+자가보고를 심어두고 다음 전원주기/활동에 맡기는 게 현실적.
+
+## 2026-06-25 (속행) — 온톨로지화 (audit P0/P2/P3/P4 실행)
+- 요청: "작금의 작업들은 온톨로지화 되었는가" → 확인결과 골격(company-ontology/event-bus/golden/work-units)은 가동중이나 원시관찰이 자동 승격 안 됨. "모두작업" 지시로 구현.
+- 기존 접지: unified_events(0010, source∈orbit/erp-ui/ai-trainer/nenova-agent), orbit_entity_golden(0011, person/customer/document/task, conf 1/2/3소스=0.34/0.67/1.0), event-bus.publish(ON CONFLICT 없음→멱등 위해 라우트서 직접 upsert). 관계 store는 없었음(audit P3).
+- 만든 것(커밋 e0c1a47, push·배포):
+  - `docs/nenova-ontology-spec.md`: 표준 객체(Action/Person/Customer/Document/Task/App/Room/Process)·관계 9종·provenance·confidence 명세(P0)
+  - `migrations/0012_ops_relation.sql` + `routes/ops-ontology.js` ensureOpsTables: **ops_relation** 1급 관계 store(P3)
+  - promote(): events(키보드/화면해독/마우스/클립/주문) → 사용자별 120s 시간창 융합 → Action(unified_events type=work.action, id=act:{uid}:{startSec}, 멱등) + ops_relation 멱등 upsert(P2). 관계: person_performed_action/action_in_app/action_in_room/screen_observed_action/automation_candidate_for_process. conf=소스종류수.
+  - ops API(P4): POST /api/ops-ontology/promote?hours=N, GET /stats /entities?type= /relations?fromRef=&relType= /actions/:id/context(OAG패킷)
+  - server.js 배선(require+app.use+init ensureOpsTables)
+- 검증(라이브): promote?hours=720 → 315,178 원천 → **28,929 Action + 64,983 관계**. stats: 27,743 action(verified 7,858, automatable 277). 관계 action_in_app 28,670·person_performed 27,743·action_in_room 5,579·screen_observed 983·automation 550. OAG패킷(actions/:id/context) 정상(app·활동·증거2·관계4 반환). entities?type=person 12명(설연주 conf0.667 등).
+- 미구현(spec엔 있으나 populate 안 됨, 다음): talk_triggered_action(시간창 대화→작업), action_mentions_customer/action_updated_erp(OCR/ERP 추출 연결=P1 golden id), person_performed_action의 from_ref가 raw userId(golden person id 연결 P1). promote는 수동 트리거(자동 cron 미설정).
+- 재발/이어서: 이 항목 + docs/nenova-ontology-spec.md + docs/nenova-ontology-audit.md. promote 주기실행 cron + golden id 연결(P1)이 다음 단계.
