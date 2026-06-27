@@ -232,6 +232,7 @@ const createLearningRouter            = require('./routes/learning');
 // ─── 통합 이벤트 버스 (4개 시스템 연동) ──────────────────────────────────────────
 const eventBus                        = require('./src/event-bus');
 const createEventBusRouter            = require('./routes/event-bus');
+const createOpsOntologyRouter         = require('./routes/ops-ontology');
 
 // ─── 상수 (config/environment.js 에서 중앙 관리) ─────────────────────────────
 const PORT          = env.PORT;
@@ -7318,6 +7319,7 @@ app.use('/api', createLearningRouter({ verifyToken, getEventsForUser, resolveUse
 
 // ─── 통합 이벤트 버스 (ERP + Orbit + AI Trainer + nenova_agent) ──────────────
 app.use('/api', createEventBusRouter({ eventBus, verifyToken, broadcastAll }));
+app.use('/api/ops-ontology', createOpsOntologyRouter({ getPool: dbModule.getDb, resolveAdmin }));
 
 // ─── 데이터 관리 (Export / Delete / Summary) ─────────────────��───────────────
 const createDataManagementRouter = require('./routes/data-management');
@@ -7799,6 +7801,7 @@ app.use('/api', createSyncRouter({ getDb: dbModule.getDb, getAllEvents }));
 
 // ─── 회사 컨설팅 플랫폼 (Company Ontology + Diagnosis + Learning) ───────────
 try { companyOntology.ensureCompanyTables(dbModule.getDb()); } catch (e) { console.warn('[DB Init] company-ontology 초기화 스킵:', e.message); }
+try { createOpsOntologyRouter.ensureOpsTables(dbModule.getDb()); } catch (e) { console.warn('[DB Init] ops-ontology 초기화 스킵:', e.message); }
 app.use('/api', createCompanyRouter({ getDb: dbModule.getDb, broadcastAll }));
 app.use('/api', createDiagnosisRouter({ getDb: dbModule.getDb, broadcastAll }));
 app.use('/api', createCompanyLearningRouter({ getDb: dbModule.getDb }));

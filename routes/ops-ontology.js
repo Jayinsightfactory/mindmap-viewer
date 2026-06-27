@@ -1,0 +1,233 @@
+'use strict';
+/**
+ * ops-ontology.js — 회사 업무 온톨로지 (승격 + 조회)
+ * docs/nenova-ontology-spec.md 표준 구현.
+ *
+ * 원천 증거(events) → 객체(Action=unified_events) + 관계(ops_relation) 로 멱등 승격.
+ * audit P0(명세)·P2(evidence publish)·P3(relation store)·P4(ops API)를 충족.
+ */
+
+const express = require('express');
+
+// ── 관계 저장 테이블 (1급 데이터, audit P3) ──────────────────────────────────
+async function ensureOpsTables(pool) {
+  if (!pool) return;
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ops_relation (
+      id            TEXT PRIMARY KEY,
+      rel_type      TEXT NOT NULL,
+      from_type     TEXT NOT NULL,
+      from_ref      TEXT NOT NULL,
+      to_type       TEXT NOT NULL,
+      to_ref        TEXT NOT NULL,
+      attrs         JSONB DEFAULT '{}',
+      source        TEXT NOT NULL DEFAULT 'orbit',
+      confidence    NUMERIC(4,3) DEFAULT 0.34,
+      evidence      JSONB DEFAULT '{}',
+      ts            TIMESTAMPTZ,
+      workspace_id  TEXT DEFAULT 'nenova',
+      updated_at    TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_opsrel_from ON ops_relation(from_ref)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_opsrel_type ON ops_relation(rel_type)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_opsrel_to   ON ops_relation(to_ref)`);
+}
+
+// ── 앱 정규화 (fusion과 동일 규칙) ───────────────────────────────────────────
+function normApp(a) {
+  a = String(a || '').trim();
+  let al = a.toLowerCase();
+  al = al.replace(/\s*[-–]\s*(google )?chrome$/, '').replace(/\s*\(카카오톡\)/, '');
+  if (al.includes('kakaotalk') || al.includes('카카오톡')) return '카카오톡';
+  if (al.includes('kakaowork') || al.includes('카카오워크')) return '카카오워크';
+  if (al.includes('ecount')) return 'ECOUNT ERP';
+  if (al.includes('nenova erp') || al.includes('구매현황') || al.includes('erp')) return 'nenova ERP';
+  if (al === 'nenova') return 'nenova(앱)';
+  if (al.includes('excel')) return 'Excel';
+  if (al.includes('powerpnt') || al.includes('powerpoint')) return 'PowerPoint';
+  if (al.includes('chrome') || al.includes('edge') || al.includes('whale')) return '웹브라우저';
+  if (al.includes('explorer')) return '파일탐색기';
+  if (al.includes('textinputhost') || al === '' || al === '0' || al === 'unknown' || al === '23') return '기타입력';
+  return a.slice(0, 24) || '기타';
+}
+const SRC_OF = {
+  'keyboard.chunk': 'kbd', 'screen.analyzed': 'vision', 'screen.capture': 'screen',
+  'mouse.chunk': 'mouse', 'clipboard.change': 'clip', 'file.change': 'file',
+  'excel.activity': 'excel', 'purchase.order.detected': 'order', 'order.detected': 'order',
+  'phone.call.detected': 'call',
+};
+const PROMOTE_TYPES = Object.keys(SRC_OF);
+const conf = (n) => (n >= 3 ? 1.0 : n === 2 ? 0.67 : 0.34);
+
+// ── 승격: events → Action(unified_events) + ops_relation (멱등) ───────────────
+async function promote(pool, hours) {
+  const since = new Date(Date.now() - (hours || 24) * 3600 * 1000).toISOString();
+  const { rows } = await pool.query(
+    `SELECT id, type, user_id, timestamp, data_json FROM events
+     WHERE type = ANY($1) AND timestamp >= $2 AND user_id NOT IN ('local','system') AND user_id IS NOT NULL
+     ORDER BY user_id, timestamp ASC`,
+    [PROMOTE_TYPES, since]
+  );
+  // 정규화
+  const evs = rows.map(r => {
+    let d = {};
+    try { d = typeof r.data_json === 'string' ? JSON.parse(r.data_json) : (r.data_json || {}); } catch {}
+    return {
+      eid: r.id, u: r.user_id, t: new Date(r.timestamp).getTime(), src: SRC_OF[r.type] || 'etc',
+      app: normApp(d.app), win: (d.windowTitle || '').trim(), inp: (d.inputText || '').trim(),
+      clk: d.mouseClicks || 0, va: (d.activity || d.visionActivity || '').trim(),
+      vs: (d.screen || d.visionScreen || '').trim(), auto: !!(d.automatable || d.visionAutomatable),
+    };
+  });
+  // 사용자별 시간창 융합 (gap>120s 또는 앱변경 → 새 동작)
+  const byU = {};
+  for (const e of evs) (byU[e.u] = byU[e.u] || []).push(e);
+  const GAP = 120000;
+  const actions = [];
+  for (const u of Object.keys(byU)) {
+    let cur = null;
+    for (const e of byU[u]) {
+      if (cur && (e.t - cur.end) <= GAP && cur.app === e.app) { cur.end = e.t; cur.evs.push(e); }
+      else { if (cur) actions.push(cur); cur = { u, app: e.app, start: e.t, end: e.t, evs: [e] }; }
+    }
+    if (cur) actions.push(cur);
+  }
+
+  let nAct = 0, nRel = 0;
+  for (const a of actions) {
+    const srcs = [...new Set(a.evs.map(e => e.src))];
+    const c = conf(srcs.length);
+    const va = (a.evs.find(e => e.va) || {}).va || '';
+    const vs = (a.evs.find(e => e.vs) || {}).vs || '';
+    const win = (a.evs.find(e => e.win) || {}).win || '';
+    const typed = a.evs.reduce((s, e) => s + (e.inp ? e.inp.length : 0), 0);
+    const clicks = a.evs.reduce((s, e) => s + (e.clk || 0), 0);
+    const auto = a.evs.some(e => e.auto);
+    const isKakao = a.app === '카카오톡' || a.app === '카카오워크';
+    const room = isKakao && win ? win.slice(0, 60) : '';
+    const evIds = a.evs.map(e => e.eid).slice(0, 40);
+    const startSec = Math.floor(a.start / 1000);
+    const actId = `act:${a.u}:${startSec}`;
+    const tsIso = new Date(a.start).toISOString();
+    const data = {
+      app: a.app, room, activity: va.slice(0, 200), screen: vs.slice(0, 120),
+      sources: srcs, verified: c >= 0.67, confidence: c, typedChars: typed, clicks,
+      durationSec: Math.round((a.end - a.start) / 1000), n: a.evs.length, auto,
+      evidence: { events: evIds },
+    };
+    // Action 객체 upsert (unified_events, 멱등)
+    await pool.query(
+      `INSERT INTO unified_events (id, type, source, timestamp, user_id, workspace_id, data, metadata)
+       VALUES ($1,'work.action','orbit',$2,$3,'nenova',$4,'{}')
+       ON CONFLICT (id) DO UPDATE SET data=$4, timestamp=$2`,
+      [actId, tsIso, a.u, JSON.stringify(data)]
+    );
+    nAct++;
+
+    const rels = [];
+    rels.push(['person_performed_action', 'Person', a.u, 'Action', actId, c]);
+    rels.push(['action_in_app', 'Action', actId, 'App', a.app, c]);
+    if (room) rels.push(['action_in_room', 'Action', actId, 'Room', room, c]);
+    if (vs) rels.push(['screen_observed_action', 'Action', actId, 'VisionEvidence', vs.slice(0, 60), c]);
+    if (auto) rels.push(['automation_candidate_for_process', 'Action', actId, 'Process', (va || a.app).slice(0, 40), c]);
+    for (const [rt, ft, fr, tt, tr, rc] of rels) {
+      const rid = `rel:${rt}:${fr}:${tr}`.slice(0, 200);
+      await pool.query(
+        `INSERT INTO ops_relation (id, rel_type, from_type, from_ref, to_type, to_ref, source, confidence, evidence, ts, workspace_id)
+         VALUES ($1,$2,$3,$4,$5,$6,'orbit',$7,$8,$9,'nenova')
+         ON CONFLICT (id) DO UPDATE SET confidence=$7, ts=$9, evidence=$8`,
+        [rid, rt, ft, fr, tt, tr, rc, JSON.stringify({ events: evIds }), tsIso]
+      );
+      nRel++;
+    }
+  }
+  return { actions: nAct, relations: nRel, sourceEvents: rows.length, windowHours: hours || 24 };
+}
+
+// ── 라우터 ───────────────────────────────────────────────────────────────────
+function createOpsOntologyRouter(deps = {}) {
+  const getPool = deps.getPool;
+  const resolveAdmin = deps.resolveAdmin || (() => ({ isAdmin: true }));
+  const router = express.Router();
+  const pool = () => (getPool ? getPool() : null);
+
+  router.post('/promote', async (req, res) => {
+    try {
+      if (!resolveAdmin(req).isAdmin) return res.status(403).json({ error: 'admin only' });
+      const p = pool(); if (!p) return res.status(500).json({ error: 'db not available' });
+      await ensureOpsTables(p);
+      const hours = Math.min(parseInt(req.query.hours) || 24, 720);
+      const r = await promote(p, hours);
+      res.json({ ok: true, ...r });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  router.get('/stats', async (req, res) => {
+    try {
+      const p = pool(); if (!p) return res.status(500).json({ error: 'db not available' });
+      await ensureOpsTables(p);
+      const [act, rel, gold] = await Promise.all([
+        p.query(`SELECT COUNT(*) c, COUNT(*) FILTER (WHERE (data->>'verified')='true') v, COUNT(*) FILTER (WHERE (data->>'auto')='true') a FROM unified_events WHERE type='work.action'`),
+        p.query(`SELECT rel_type, COUNT(*) c FROM ops_relation GROUP BY rel_type ORDER BY c DESC`),
+        p.query(`SELECT entity_type, COUNT(*) c FROM orbit_entity_golden GROUP BY entity_type`).catch(() => ({ rows: [] })),
+      ]);
+      res.json({
+        ok: true,
+        actions: Number(act.rows[0].c), verified: Number(act.rows[0].v), automatable: Number(act.rows[0].a),
+        relations: rel.rows.map(r => ({ type: r.rel_type, count: Number(r.c) })),
+        goldenEntities: gold.rows.map(r => ({ type: r.entity_type, count: Number(r.c) })),
+      });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  router.get('/entities', async (req, res) => {
+    try {
+      const p = pool(); if (!p) return res.status(500).json({ error: 'db not available' });
+      const type = req.query.type;
+      const params = []; let where = '1=1';
+      if (type) { params.push(type); where += ` AND entity_type=$${params.length}`; }
+      const { rows } = await p.query(
+        `SELECT id, entity_type, display_name, attributes, source_refs, confidence FROM orbit_entity_golden WHERE ${where} ORDER BY confidence DESC LIMIT 500`,
+        params
+      ).catch(() => ({ rows: [] }));
+      res.json({ ok: true, entities: rows, total: rows.length });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  router.get('/relations', async (req, res) => {
+    try {
+      const p = pool(); if (!p) return res.status(500).json({ error: 'db not available' });
+      await ensureOpsTables(p);
+      const params = []; let where = '1=1';
+      if (req.query.fromRef) { params.push(req.query.fromRef); where += ` AND from_ref=$${params.length}`; }
+      if (req.query.toRef) { params.push(req.query.toRef); where += ` AND to_ref=$${params.length}`; }
+      if (req.query.relType) { params.push(req.query.relType); where += ` AND rel_type=$${params.length}`; }
+      const limit = Math.min(parseInt(req.query.limit) || 200, 2000);
+      params.push(limit);
+      const { rows } = await p.query(
+        `SELECT id, rel_type, from_type, from_ref, to_type, to_ref, confidence, ts, evidence FROM ops_relation WHERE ${where} ORDER BY ts DESC LIMIT $${params.length}`,
+        params
+      );
+      res.json({ ok: true, relations: rows, total: rows.length });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // OAG 패킷: 한 Action + 모든 관계 + 증거
+  router.get('/actions/:id/context', async (req, res) => {
+    try {
+      const p = pool(); if (!p) return res.status(500).json({ error: 'db not available' });
+      await ensureOpsTables(p);
+      const id = req.params.id;
+      const act = await p.query(`SELECT id, type, user_id, timestamp, data FROM unified_events WHERE id=$1`, [id]);
+      if (!act.rows.length) return res.status(404).json({ error: 'action not found' });
+      const rels = await p.query(`SELECT rel_type, from_type, from_ref, to_type, to_ref, confidence FROM ops_relation WHERE from_ref=$1 OR to_ref=$1`, [id]);
+      res.json({ ok: true, action: act.rows[0], relations: rels.rows });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  return router;
+}
+
+module.exports = createOpsOntologyRouter;
+module.exports.ensureOpsTables = ensureOpsTables;
+module.exports.promote = promote;
