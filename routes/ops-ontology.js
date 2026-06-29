@@ -94,6 +94,7 @@ async function promote(pool, hours) {
   }
 
   let nAct = 0, nRel = 0;
+  let prevAct = null; // talk_triggered_action: 같은 사용자에서 카톡 동작 직후 업무 동작이면 "대화→작업"
   for (const a of actions) {
     const srcs = [...new Set(a.evs.map(e => e.src))];
     const c = conf(srcs.length);
@@ -130,6 +131,10 @@ async function promote(pool, hours) {
     if (room) rels.push(['action_in_room', 'Action', actId, 'Room', room, c]);
     if (vs) rels.push(['screen_observed_action', 'Action', actId, 'VisionEvidence', vs.slice(0, 60), c]);
     if (auto) rels.push(['automation_candidate_for_process', 'Action', actId, 'Process', (va || a.app).slice(0, 40), c]);
+    // talk_triggered_action: 같은 사용자에서 직전이 카톡 동작이고 현재가 업무앱(카톡 아님)이며 10분 이내면 대화→작업
+    if (prevAct && prevAct.u === a.u && prevAct.isKakao && !isKakao && (a.start - prevAct.endMs) < 10 * 60 * 1000) {
+      rels.push(['talk_triggered_action', 'Action', prevAct.actId, 'Action', actId, c]);
+    }
     for (const [rt, ft, fr, tt, tr, rc] of rels) {
       const rid = `rel:${rt}:${fr}:${tr}`.slice(0, 200);
       await pool.query(
@@ -140,8 +145,25 @@ async function promote(pool, hours) {
       );
       nRel++;
     }
+    prevAct = { u: a.u, isKakao, actId, endMs: a.end };
   }
   return { actions: nAct, relations: nRel, sourceEvents: rows.length, windowHours: hours || 24 };
+}
+
+// ── 자동 cron: 주기적으로 최근 구간을 멱등 승격 (온톨로지 상시 최신) ──────────────
+let _cronTimer = null;
+function startPromoteCron(getPool, intervalMin = 30, hours = 2) {
+  if (_cronTimer) return;
+  const run = async () => {
+    try {
+      const p = getPool && getPool(); if (!p) return;
+      await ensureOpsTables(p);
+      const r = await promote(p, hours);
+      console.log(`[ops-ontology] promote cron: ${r.actions} actions / ${r.relations} rels (${r.sourceEvents} ev, ${hours}h)`);
+    } catch (e) { console.warn('[ops-ontology] promote cron 실패:', e.message); }
+  };
+  _cronTimer = setInterval(run, intervalMin * 60 * 1000);
+  setTimeout(run, 60 * 1000); // 부팅 1분 후 첫 실행
 }
 
 // ── 라우터 ───────────────────────────────────────────────────────────────────
@@ -231,3 +253,4 @@ function createOpsOntologyRouter(deps = {}) {
 module.exports = createOpsOntologyRouter;
 module.exports.ensureOpsTables = ensureOpsTables;
 module.exports.promote = promote;
+module.exports.startPromoteCron = startPromoteCron;

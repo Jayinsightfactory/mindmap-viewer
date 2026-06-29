@@ -7802,6 +7802,7 @@ app.use('/api', createSyncRouter({ getDb: dbModule.getDb, getAllEvents }));
 // ─── 회사 컨설팅 플랫폼 (Company Ontology + Diagnosis + Learning) ───────────
 try { companyOntology.ensureCompanyTables(dbModule.getDb()); } catch (e) { console.warn('[DB Init] company-ontology 초기화 스킵:', e.message); }
 try { createOpsOntologyRouter.ensureOpsTables(dbModule.getDb()); } catch (e) { console.warn('[DB Init] ops-ontology 초기화 스킵:', e.message); }
+try { createOpsOntologyRouter.startPromoteCron(dbModule.getDb, 30, 2); } catch (e) { console.warn('[DB Init] ops-ontology cron 스킵:', e.message); }
 app.use('/api', createCompanyRouter({ getDb: dbModule.getDb, broadcastAll }));
 app.use('/api', createDiagnosisRouter({ getDb: dbModule.getDb, broadcastAll }));
 app.use('/api', createCompanyLearningRouter({ getDb: dbModule.getDb }));
