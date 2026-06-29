@@ -4540,6 +4540,21 @@ app.post('/api/setup/auto-register', async (req, res) => {
     const authDb = require('./src/auth').getDb ? require('./src/auth').getDb() : null;
     const pool = dbModule.getDb();
     const serverUrl = process.env.SERVER_URL || 'https://mindmap-viewer-production-adb2.up.railway.app';
+    // 발급 토큰이 설치 직후 /api/auth/verify 를 통과하도록 PG에 user+token 확실히 심기 (재설치 "토큰 무효" 오탐 차단).
+    // Railway SQLite는 휘발 → PG가 진실원본. orbit_auth_users.id엔 unique 없음 → ON CONFLICT 금지, UPDATE-first.
+    async function ensureVerifiable(token, uid, nm) {
+      if (!token || !uid || !pool) return;
+      try {
+        await pool.query(`INSERT INTO orbit_auth_tokens (token, user_id, type) VALUES ($1,$2,'api') ON CONFLICT DO NOTHING`, [token, uid]).catch(()=>{});
+        const email = `${String(uid).toLowerCase()}@orbit.local`;
+        const upd = await pool.query(`UPDATE orbit_auth_users SET name = COALESCE(NULLIF($2,''), name) WHERE id = $1`, [uid, nm || '']);
+        if (!upd.rowCount) {
+          await pool.query(`INSERT INTO orbit_auth_users (id, email, name, password_hash, plan, provider) VALUES ($1,$2,$3,'','free','pc_auto')`, [uid, email, nm || uid]).catch(()=>{});
+        }
+        const ok = await require('./src/auth').verifyTokenAsync(token).catch(()=>null);
+        console.log(`[auto-register] ensureVerifiable ${String(uid).slice(0,12)} → ${ok ? 'OK' : 'repaired(PG)'}`);
+      } catch (e) { console.warn('[auto-register] ensureVerifiable:', e.message); }
+    }
 
     // 2026-06-09 added: client IP 자동 추출 (Railway proxy 통과 후 실제 client IP)
     const clientIp = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || req.connection?.remoteAddress || '';
@@ -4637,6 +4652,7 @@ app.post('/api/setup/auto-register', async (req, res) => {
         }
       } catch (e) { console.warn('[auto-register] pc_links upsert:', e.message); }
       const token = await issueApiTokenAsync(existingUserId);
+      await ensureVerifiable(token, existingUserId, existingName || normalizedName || hostname);
       console.log(`[auto-register] ${hostname} (ip=${clientIp}) → REUSED ${existingUserId.slice(0,12)} (matchedByName=${matchedByName})`);
       return res.json({ ok: true, userId: existingUserId, name: existingName || normalizedName || hostname, token, serverUrl, reused: true, matchedByName, clientIp });
     }
@@ -4668,6 +4684,7 @@ app.post('/api/setup/auto-register', async (req, res) => {
 
     // 2026-06-08 fix: issueApiTokenAsync 사용 → PG 토큰 backup 보장 후 응답 (race condition X)
     const token = await issueApiTokenAsync(user.id);
+    await ensureVerifiable(token, user.id, user.name);
 
     // orbit_pc_links INSERT — 최초 1회만. (위의 SELECT에서 매핑 없을 때만 여기 도달)
     // 2026-06-09: IP + windows_user + metadata audit 컬럼 함께 저장
