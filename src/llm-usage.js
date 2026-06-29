@@ -97,7 +97,7 @@ async function summary(pool, days = 14) {
   const [byCaller, byModel, byDay, total] = await Promise.all([
     _pool.query(`SELECT caller, COUNT(*) calls, SUM(in_tokens) in_tok, SUM(out_tokens) out_tok, SUM(cost_usd) cost FROM orbit_llm_usage WHERE ts > ${since} GROUP BY caller ORDER BY cost DESC`),
     _pool.query(`SELECT model, COUNT(*) calls, SUM(cost_usd) cost FROM orbit_llm_usage WHERE ts > ${since} GROUP BY model ORDER BY cost DESC`),
-    _pool.query(`SELECT to_char(ts AT TIME ZONE 'Asia/Seoul','YYYY-MM-DD') day, SUM(cost_usd) cost, COUNT(*) calls FROM orbit_llm_usage WHERE ts > ${since} GROUP BY day ORDER BY day`),
+    _pool.query(`SELECT to_char(ts AT TIME ZONE 'Asia/Seoul','YYYY-MM-DD') AS dt, SUM(cost_usd) cost, COUNT(*) calls FROM orbit_llm_usage WHERE ts > ${since} GROUP BY dt ORDER BY dt`),
     _pool.query(`SELECT SUM(cost_usd) cost, COUNT(*) calls FROM orbit_llm_usage WHERE ts > ${since}`),
   ]);
   const num = (x) => Math.round((Number(x) || 0) * 1e4) / 1e4;
@@ -106,7 +106,7 @@ async function summary(pool, days = 14) {
     total: { cost: num(total.rows[0]?.cost), calls: Number(total.rows[0]?.calls || 0) },
     byCaller: byCaller.rows.map(r => ({ caller: r.caller, calls: Number(r.calls), inTokens: Number(r.in_tok), outTokens: Number(r.out_tok), cost: num(r.cost) })),
     byModel: byModel.rows.map(r => ({ model: r.model, calls: Number(r.calls), cost: num(r.cost) })),
-    byDay: byDay.rows.map(r => ({ day: r.day, cost: num(r.cost), calls: Number(r.calls) })),
+    byDay: byDay.rows.map(r => ({ day: r.dt, cost: num(r.cost), calls: Number(r.calls) })),
   };
 }
 
