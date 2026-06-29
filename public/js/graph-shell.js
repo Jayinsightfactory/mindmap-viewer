@@ -189,6 +189,33 @@
       + `<br>고리색 신뢰도: <span style="color:#2e9e6b">●</span>1.0 <span style="color:#d9a630">●</span>0.67 <span style="color:#7e828a">●</span>0.34`;
   }
 
+  // ── 운영 인사이트 패널 (주기 에이전트 산출물) ───────────────────────────────
+  function ago(iso) {
+    const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+    return m < 60 ? m + '분 전' : Math.round(m / 60) + '시간 전';
+  }
+  async function loadOps() {
+    const el = $('#ops'); el.style.display = 'block';
+    el.innerHTML = '<span class="close" id="opsClose">✕</span><h3>운영 인사이트 로딩…</h3>';
+    $('#opsClose').onclick = () => el.style.display = 'none';
+    try {
+      const d = await api('/api/flow/ops-report'); const L = d.latest;
+      if (!L) { el.innerHTML = '<span class="close" id="opsClose">✕</span><h3>운영 인사이트</h3><div class="ts">아직 리포트 없음 — owner PC 에이전트 워커가 생성하면 표시됩니다.</div>'; $('#opsClose').onclick = () => el.style.display = 'none'; return; }
+      const r = L.report || {};
+      const sec = (title, rows) => rows && rows.length ? `<section><b>${title}</b>${rows.join('')}</section>` : '';
+      el.innerHTML = `<span class="close" id="opsClose">✕</span>
+        <h3>운영 인사이트 <span class="verdict v-${r.verdict || 'WARN'}">${r.verdict || '-'} ${r.confidence || 0}</span></h3>
+        <div class="ts">${ago(L.ts)} 갱신 · 최근 ${r.windowHours || ''}h · ${r.summary || ''}</div>
+        ${sec('🔮 예측·다음 액션', (r.forecast || []).map(f => `<div class="row"><span class="tag">${f.horizon || ''}</span>${f.work || ''} · ${f.owner || ''} ${f.etaMin ? '(' + f.etaMin + '분)' : ''}<br><span style="color:var(--muted)">${f.basis || ''}</span></div>`))}
+        ${sec('🚧 병목', (r.bottlenecks || []).map(b => `<div class="row">${b.work || ''} — ${b.cause || ''}<br><span style="color:var(--muted)">영향: ${b.impact || ''} · 조치: ${b.action || ''}</span></div>`))}
+        ${sec('👥 담당자 부하', (r.loads || []).map(l => `<div class="row">${l.person || ''} · <b style="color:${l.level === '높음' ? '#e88' : l.level === '보통' ? '#e6c25a' : '#5fd39b'}">${l.level || ''}</b> <span style="color:var(--muted)">${l.basis || ''}</span></div>`))}
+        ${sec('⚡ 자동화 후보', (r.automation || []).map(a => `<div class="row"><span class="tag">${a.method || ''}</span>${a.unit || ''}<br><span style="color:var(--muted)">${a.basis || ''}</span></div>`))}
+        ${sec('✓ 교차검증', (r.validations || []).map(v => `<div class="row"><span class="verdict v-${v.verdict}">${v.verdict}</span> ${v.item || ''} <span style="color:var(--muted)">${v.basis || ''}</span></div>`))}
+        ${sec('⚠ 원천 불일치', (r.disagreements || []).map(x => `<div class="row">${x.unit || ''} <span style="color:var(--muted)">(${x.sources || ''}) ${x.note || ''}</span></div>`))}`;
+      $('#opsClose').onclick = () => el.style.display = 'none';
+    } catch (e) { el.innerHTML = `<span class="close" id="opsClose">✕</span><h3>로드 실패</h3><div class="ts">${e.message}</div>`; $('#opsClose').onclick = () => el.style.display = 'none'; }
+  }
+
   // ── 툴바 ────────────────────────────────────────────────────────────────────
   $('#modeSeg').addEventListener('click', (e) => {
     const b = e.target.closest('button'); if (!b) return;
@@ -196,6 +223,7 @@
     state.mode = b.dataset.mode; reload();
   });
   $('#reload').onclick = reload;
+  $('#opsBtn').onclick = () => { const el = $('#ops'); if (el.style.display === 'block') el.style.display = 'none'; else loadOps(); };
   $('#setToken').onclick = askToken;
   $('#toggle3d').onclick = () => {
     state.is3d = !state.is3d; $('#toggle3d').textContent = state.is3d ? '2D' : '3D';

@@ -38,6 +38,16 @@
   .legend .dot{ display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:5px; vertical-align:middle; }
   .empty{ color:var(--muted); font-size:13px; line-height:1.6; }
   a.tokenlink{ color:var(--accent); cursor:pointer; }
+  #ops{ position:fixed; top:62px; left:12px; width:360px; max-height:calc(100vh - 80px); overflow-y:auto;
+    background:rgba(32,34,39,.97); border:1px solid var(--border); border-radius:12px; padding:14px 16px; z-index:11; display:none; }
+  #ops h3{ margin:0 0 2px; font-size:14px; }
+  #ops .ts{ color:var(--muted); font-size:11px; margin-bottom:8px; }
+  #ops .verdict{ display:inline-block; padding:2px 9px; border-radius:6px; font-size:11px; font-weight:700; margin-left:6px; }
+  #ops .v-PASS{ background:#1e4632; color:#5fd39b; } #ops .v-WARN{ background:#4a3c16; color:#e6c25a; } #ops .v-FAIL{ background:#4a1e1e; color:#e88; }
+  #ops section{ margin-top:12px; } #ops section b{ font-size:12px; color:var(--txt2); display:block; margin-bottom:5px; }
+  #ops .row{ font-size:12px; color:var(--txt2); padding:4px 0; border-bottom:1px dashed var(--border); line-height:1.45; }
+  #ops .tag{ font-size:10px; padding:1px 6px; border-radius:5px; background:var(--panel2); margin-right:5px; }
+  #ops .close{ float:right; cursor:pointer; color:var(--muted); }
 </style>
 </head>
 <body>
@@ -50,10 +60,12 @@
     </div>
     <div id="ctx"></div>
     <button class="ghost" id="reload">↻ 새로고침</button>
+    <button class="ghost" id="opsBtn">📊 운영 인사이트</button>
     <button class="ghost" id="toggle3d">3D</button>
     <span id="status">토큰 입력 필요</span>
   </div>
   <div id="graph"></div>
+  <div id="ops"></div>
   <div id="side">
     <div class="empty" id="sideEmpty">
       노드를 클릭하면 여기에 <b>증거 패킷(OAG)</b>이 열립니다.<br><br>

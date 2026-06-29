@@ -229,6 +229,71 @@ function createFlowMapRouter(deps = {}) {
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
+  // ── 에이전트 파이프라인 입력 번들 (worker가 Claude CLI에 먹일 압축 데이터) ──
+  router.get('/ops-input', async (req, res) => {
+    try {
+      if (!auth(req)) return res.status(401).json({ error: 'unauthorized' });
+      const p = pool(); if (!p) return res.status(500).json({ error: 'db not available' });
+      const hours = Math.min(parseInt(req.query.hours) || 24, 336);
+      const since = new Date(Date.now() - hours * 3600 * 1000).toISOString();
+      const [persons, customers, actsR, handoffsR, talkR, autoR] = await Promise.all([
+        personMap(p), customerMap(p),
+        p.query(`SELECT id, user_id, timestamp, data FROM unified_events WHERE type='work.action' AND timestamp>=$1 ORDER BY timestamp DESC LIMIT 160`, [since]),
+        p.query(`SELECT from_ref, to_ref, confidence FROM ops_relation WHERE rel_type='action_handoff' AND ts>=$1`, [since]),
+        p.query(`SELECT COUNT(*) c FROM ops_relation WHERE rel_type='talk_triggered_action' AND ts>=$1`, [since]),
+        p.query(`SELECT to_ref, COUNT(*) c FROM ops_relation WHERE rel_type='automation_candidate_for_process' AND ts>=$1 GROUP BY to_ref ORDER BY c DESC LIMIT 15`, [since]),
+      ]);
+      const actIds = actsR.rows.map(r => r.id);
+      const mentions = actIds.length ? await p.query(`SELECT from_ref, to_ref FROM ops_relation WHERE rel_type='action_mentions_customer' AND from_ref = ANY($1)`, [actIds]) : { rows: [] };
+      const actCust = new Map(mentions.rows.map(r => [r.from_ref, customers.get(r.to_ref)?.label || r.to_ref]));
+      const units = actsR.rows.map(r => {
+        const d = tryObj(r.data);
+        return { ts: r.timestamp, person: persons.get(r.user_id)?.label || r.user_id, userId: r.user_id,
+          app: d.app, activity: (d.activity || '').slice(0, 80), room: d.room || '', customer: actCust.get(r.id) || '',
+          min: Math.round((d.durationSec || 0) / 60), clicks: d.clicks || 0, typed: d.typedChars || 0,
+          sources: d.sources || [], confidence: d.confidence, auto: !!d.auto };
+      });
+      // 사람별 부하 요약
+      const loadAll = await p.query(`SELECT user_id, COUNT(*) c, MAX(timestamp) last FROM unified_events WHERE type='work.action' AND timestamp>=$1 GROUP BY user_id ORDER BY c DESC`, [since]);
+      const loads = loadAll.rows.filter(r => r.user_id !== 'local' && r.user_id !== 'system')
+        .map(r => ({ person: persons.get(r.user_id)?.label || r.user_id, userId: r.user_id, units: Number(r.c), last: r.last }));
+      const handoffs = handoffsR.rows.map(r => ({ from: persons.get(userOfAct(r.from_ref))?.label || userOfAct(r.from_ref), to: persons.get(userOfAct(r.to_ref))?.label || userOfAct(r.to_ref) }))
+        .filter(h => h.from !== h.to);
+      res.json({ ok: true, windowHours: hours, generatedAtIso: new Date().toISOString(),
+        loads, units, handoffs, talkTriggered: Number(talkR.rows[0].c),
+        automationCandidates: autoR.rows.map(r => ({ process: r.to_ref, count: Number(r.c) })) });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  async function ensureReportTable(p) {
+    await p.query(`CREATE TABLE IF NOT EXISTS orbit_ops_report (
+      id BIGSERIAL PRIMARY KEY, ts TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      kind TEXT NOT NULL DEFAULT 'ops', source TEXT DEFAULT 'cli-agent', report JSONB NOT NULL )`);
+  }
+  // worker가 에이전트 산출물(예측·병목·검증·자동화·disagreement)을 저장
+  router.post('/ops-report', express.json({ limit: '2mb' }), async (req, res) => {
+    try {
+      if (!auth(req)) return res.status(401).json({ error: 'unauthorized' });
+      const p = pool(); if (!p) return res.status(500).json({ error: 'db not available' });
+      await ensureReportTable(p);
+      const { kind, report, source } = req.body || {};
+      if (!report) return res.status(400).json({ error: 'report required' });
+      await p.query(`INSERT INTO orbit_ops_report (kind, source, report) VALUES ($1,$2,$3)`,
+        [kind || 'ops', source || 'cli-agent', JSON.stringify(report)]);
+      res.json({ ok: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+  // 흐름 뷰가 최신 운영 리포트 표시
+  router.get('/ops-report', async (req, res) => {
+    try {
+      if (!auth(req)) return res.status(401).json({ error: 'unauthorized' });
+      const p = pool(); if (!p) return res.status(500).json({ error: 'db not available' });
+      await ensureReportTable(p);
+      const { rows } = await p.query(`SELECT ts, kind, source, report FROM orbit_ops_report ORDER BY ts DESC LIMIT 1`);
+      res.json({ ok: true, latest: rows[0] || null });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
   return router;
 }
 
