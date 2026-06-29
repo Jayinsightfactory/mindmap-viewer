@@ -132,7 +132,7 @@ async function promote(pool, hours) {
     if (vs) rels.push(['screen_observed_action', 'Action', actId, 'VisionEvidence', vs.slice(0, 60), c]);
     if (auto) rels.push(['automation_candidate_for_process', 'Action', actId, 'Process', (va || a.app).slice(0, 40), c]);
     // talk_triggered_action: 같은 사용자에서 직전이 카톡 동작이고 현재가 업무앱(카톡 아님)이며 10분 이내면 대화→작업
-    if (prevAct && prevAct.u === a.u && prevAct.isKakao && !isKakao && (a.start - prevAct.endMs) < 10 * 60 * 1000) {
+    if (prevAct && prevAct.u === a.u && prevAct.isKakao && !isKakao && (a.start - prevAct.endMs) < 30 * 60 * 1000) {
       rels.push(['talk_triggered_action', 'Action', prevAct.actId, 'Action', actId, c]);
     }
     for (const [rt, ft, fr, tt, tr, rc] of rels) {
