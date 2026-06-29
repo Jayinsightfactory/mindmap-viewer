@@ -732,16 +732,18 @@ def run_gui():
             self.chk_lbl = ttk.Label(lb, text="체크: 0개", foreground="#2a7")
             self.chk_lbl.pack(side="right")
 
-            self.tree = ttk.Treeview(left, columns=("name", "origin", "used"),
+            self.tree = ttk.Treeview(left, columns=("name", "origin", "price", "used"),
                                      show="tree headings", selectmode="none")
             self.tree.heading("#0", text="✔  이미지")
             self.tree.heading("name", text="품목명")
             self.tree.heading("origin", text="원산지")
+            self.tree.heading("price", text="도착원가")
             self.tree.heading("used", text="배치")
             self.tree.column("#0", width=130, anchor="w")
-            self.tree.column("name", width=260)
-            self.tree.column("origin", width=80, anchor="center")
-            self.tree.column("used", width=90, anchor="center")
+            self.tree.column("name", width=240)
+            self.tree.column("origin", width=70, anchor="center")
+            self.tree.column("price", width=90, anchor="e")
+            self.tree.column("used", width=70, anchor="center")
             self.tree.pack(side="left", fill="both", expand=True)
             sb = ttk.Scrollbar(left, orient="vertical", command=self.tree.yview)
             sb.pack(side="right", fill="y")
@@ -1032,8 +1034,10 @@ def run_gui():
                 self.row_imgs[iid] = photo
                 placed = self._slides_with(key)
                 used = ",".join(str(i + 1) for i in placed) if placed else ""
+                price = field_text(it, "price", self.season_map) or "—"
+                noimg = "" if it.img_bytes else "🚫"
                 self.tree.insert("", "end", iid=iid, image=photo,
-                                 values=(it.name, it.origin, used))
+                                 values=(noimg + it.name, it.origin, price, used))
             self.chk_lbl.config(text=f"체크: {len(self.checked)}개")
 
         def _slides_with(self, key):
