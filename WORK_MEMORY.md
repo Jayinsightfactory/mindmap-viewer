@@ -1105,3 +1105,14 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 활성 PC(오늘 16:1x~16:31): T09911T(강현우 32,727)·S4S2HMU(owner임재용 204,839)·NENOVA(김빛나 3,724)·NEONVA(설연주 295)·DESKTOP-CAA5TA1(현욱 30,594)·NENOVA2025(10,705).
 - ⚠️ DESKTOP-L0C2IOT(MNMSAQJD…) last_seen="9024-09-21" = 해당 PC 시계 미래로 깨짐(타임스탬프 오염, 집계 왜곡 가능 — 점검대상).
 - 일부 user_id가 여러 hostname에 중복(예: MNH03H… owner가 S4S2HMU/nenova/L0C2IOT/NENOVA2025) = 같은 계정 다PC 잔재. 오전 07:xx까지만 찍힌 항목은 그 조합이 오전 후 비활성.
+
+## 2026-06-29 — 업무 흐름 청사진(옵시디언 그래프 뷰) V1 구현·배포·검증 (커밋 b83f697→9ac5194)
+**목표**: 팔란티어식 "숫자 아닌 흐름" 뷰. 미구현 재설계(ORBIT_3D_REDESIGN_GUIDE.md, 옵시디언×3D)를 기존 온톨로지(unified_events+ops_relation+orbit_entity_golden)로 채워 완성. 줌3단(회사맵/직원/업무단위)+핸드오프 엔진. plan: peppy-swinging-goblet.md.
+- **P1 핸드오프 엔진** `src/flow-handoff.js` `enrichHandoff(pool,hours)` — promote() 직후 호출(ops-ontology.js /promote+cron). 룩백 min72h(짝 누락 방지), 멱등. 신규 rel 3종:
+  - action_mentions_customer: Action.data(activity/screen/room)→거래처 골든(N.findCandidates score≥0.85). 재사용 src/intelligence/entity-resolution(korean-normalizer/bootstrap-customer). 검증: "그린화원" 등 정확 매칭.
+  - action_handoff: 공유키(cust/order≥5자리/doc파일명/**room=카톡방**)+다른사람+24h내 인접쌍. **room 키가 핵심**(같은 톡방=협업맥락). 검증: **설연주→강현우** 등 11쌍.
+  - action_updated_erp: ERP앱 액션+키→ErpOutcome.
+- **P2 Flow API** `routes/flow-map.js` mount /api/flow (server.js). 인증=intelligence-golden 패턴(MASTER_TOKEN orbit_9679 또는 ?token, **resolveAdmin 아님**—그건 env ADMIN_TOKENS만 받음). 액션id `act:{userId}:{sec}`에서 userId 파싱해 핸드오프 롤업(조인불필요). 엔드포인트: /company(별자리+핸드오프 overlay) /employee?userId=&hours= /workunit?customer=&order= /people. 검증: company 노드22/엣지30, employee(강현우)400노드.
+- **P3 프론트** `public/graph.html`+`public/js/graph-shell.js` — UMD force-graph(2D)/3d-force-graph(3D 토글), 줌3단, 신뢰도 고리(녹1.0/황0.67/회0.34), 핸드오프 흐름선, 노드클릭→OAG 패널(/api/ops-ontology/actions/:id/context). 브라우저 검증완료(스샷): 회사 별자리 렌더, 강현우 직원흐름 400노드, 액션클릭→Excel 작업 증거패킷+관계 표시.
+- **재발/한계**: ① 핸드오프는 데이터 희소—owner 외엔 vision/keyboard 약해 처음 0이었음. 336h promote+room키 후 11쌍. 설연주/강현우 keyboard死 회복되면 더 늘어남. ② /employee 기본선택이 활동최다(MN90A…8463, 06-18마지막)면 168h창 밖→0노드. 최근활동순 정렬 개선 여지. ③ 회사맵에서 일부 거래처명(정화원예 등)이 라벨겹침/엔티티오분류로 보일 수 있음(entity-resolution 후속). ④ promote 720h=OOM, ≤168h. ⑤ admin token=env ADMIN_TOKENS(로컬 ~/.orbit-config.json token=orbit_1f4df8…이 프로덕션도 통함), flow API는 orbit_9679로 접근.
+- 범위밖(후속): workunit 선형DAG 레이아웃, 기존페이지 graph셸 흡수(지침 PhaseB~D), 노드 클러스터링.
