@@ -55,14 +55,28 @@ def _s(v):
     return (str(v) if v is not None else "").strip()
 
 
+import re as _re
+
+
+def _to_number(v):
+    """숫자/숫자형 문자열(콤마·통화 포함)을 float로. 실패 시 None."""
+    if v is None:
+        return None
+    if isinstance(v, (int, float)):
+        return float(v)
+    s = str(v).replace(",", "")
+    m = _re.search(r"-?\d+(?:\.\d+)?", s)
+    return float(m.group()) if m else None
+
+
 # ==================================================================
 # 그리드 슬롯 계산 (가로 cols × 세로 rows → 셀마다 이미지+텍스트 위치)
 # ==================================================================
-def grid_slots(cols, rows, top_pad=320000):
+def grid_slots(cols, rows, top_pad=320000, slide_w=SLIDE_W, slide_h=SLIDE_H):
     mx, mb, gut = 500000, 300000, 160000
     my = top_pad
-    usable_w = SLIDE_W - 2 * mx
-    usable_h = SLIDE_H - my - mb
+    usable_w = slide_w - 2 * mx
+    usable_h = slide_h - my - mb
     cw = (usable_w - (cols - 1) * gut) / cols
     ch = (usable_h - (rows - 1) * gut) / rows
     slots = []
@@ -118,11 +132,8 @@ def field_text(item, key, season_map=None):
             v = season_map.get(v.strip(), v)   # 사용자 정의 치환
         return v
     if key == "price":
-        try:
-            p = float(item.price)
-        except (TypeError, ValueError):
-            return ""
-        if p <= 0:
+        p = _to_number(item.price)
+        if p is None or p <= 0:
             return ""
         return f"{round(p / ARRIVAL_DIVISOR):,}원"
     return ""
@@ -252,7 +263,8 @@ def list_sheets(path):
 
 
 def load_items(path, sheet_name):
-    wb = openpyxl.load_workbook(path)
+    # data_only=True: 수식 셀의 캐시된 계산값을 읽음(도착원가 등)
+    wb = openpyxl.load_workbook(path, data_only=True)
     ws = wb[sheet_name]
     header_row = _detect_header_row(ws)
     hrows = list(range(header_row, min(header_row + 3, ws.max_row + 1)))
@@ -328,16 +340,17 @@ def _fit_font_pt(n_lines, box_h_emu, base_pt):
     return max(7, int(min(base_pt, max_pt)))
 
 
-def build_pptx(slides, store, out_path,
-               fields=None, name_pt=14, titles=None, season_map=None):
+def build_pptx(slides, store, out_path, fields=None, name_pt=14,
+               titles=None, season_map=None,
+               slide_w=SLIDE_W, slide_h=SLIDE_H):
     """
     slides : [{"cols":3,"rows":2,"items":[key, key, ...]}, ...]
     store  : {key(tuple): Item}
     titles : 슬라이드별 제목 리스트 또는 None
     """
     prs = Presentation()
-    prs.slide_width = SLIDE_W
-    prs.slide_height = SLIDE_H
+    prs.slide_width = slide_w
+    prs.slide_height = slide_h
     blank = prs.slide_layouts[6]
     from pptx.enum.shapes import MSO_SHAPE
 
@@ -350,14 +363,14 @@ def build_pptx(slides, store, out_path,
         if title:
             top_pad = 880000
             tb = slide.shapes.add_textbox(
-                Emu(500000), Emu(180000), Emu(SLIDE_W - 1000000), Emu(560000))
+                Emu(500000), Emu(180000), Emu(slide_w - 1000000), Emu(560000))
             p = tb.text_frame.paragraphs[0]
             run = p.add_run()
             run.text = str(title)
             run.font.size = Pt(20)
             run.font.bold = True
 
-        slots = grid_slots(cols, rows, top_pad)
+        slots = grid_slots(cols, rows, top_pad, slide_w, slide_h)
         keys = sd["items"][:cols * rows]
         for idx, key in enumerate(keys):
             it = store.get(tuple(key))
@@ -419,11 +432,12 @@ def _load_font(size):
 
 
 def render_slide_image(sd, store, title=None, fields=None,
-                       season_map=None, width=940):
+                       season_map=None, width=940,
+                       slide_w=SLIDE_W, slide_h=SLIDE_H):
     """슬라이드 1장을 PIL 이미지로 렌더 (미리보기용)."""
     cols, rows = int(sd["cols"]), int(sd["rows"])
-    sc = SLIDE_W / width
-    W, H = width, int(SLIDE_H / sc)
+    sc = slide_w / width
+    W, H = width, int(slide_h / sc)
     cv = Image.new("RGB", (W, H), "white")
     d = ImageDraw.Draw(cv)
     d.rectangle([0, 0, W - 1, H - 1], outline="#cccccc")
@@ -437,7 +451,7 @@ def render_slide_image(sd, store, title=None, fields=None,
         d.text((px(500000), px(220000)), str(title),
                fill="black", font=_load_font(max(14, px(360000))))
 
-    slots = grid_slots(cols, rows, top_pad)
+    slots = grid_slots(cols, rows, top_pad, slide_w, slide_h)
     keys = sd["items"][:cols * rows]
     for i, key in enumerate(keys):
         it = store.get(tuple(key))
@@ -532,6 +546,8 @@ def save_project(state, store):
         "fields_order": state.get("fields_order", DEFAULT_FIELDS),
         "fields_on": state.get("fields_on", {k: True for k in DEFAULT_FIELDS}),
         "season_map": state.get("season_map", {}),
+        "slide_w": state.get("slide_w", SLIDE_W),
+        "slide_h": state.get("slide_h", SLIDE_H),
         "slides": [{"cols": s["cols"], "rows": s["rows"],
                     "items": [list(k) for k in s["items"]]}
                    for s in state.get("slides", [])],
@@ -576,6 +592,8 @@ def load_project():
         "fields_order": order,
         "fields_on": on,
         "season_map": data.get("season_map", {}),
+        "slide_w": data.get("slide_w", SLIDE_W),
+        "slide_h": data.get("slide_h", SLIDE_H),
         "slides": slides,
     }
     return state, store
@@ -601,6 +619,9 @@ def run_gui():
             self.field_order = list(DEFAULT_FIELDS)        # 입력 항목 순서
             self.field_on = {k: True for k in DEFAULT_FIELDS}  # 항목 포함 여부
             self.season_map = {}                            # 공급기간 치환표
+            self.slide_w = SLIDE_W                           # 슬라이드 가로(EMU)
+            self.slide_h = SLIDE_H                           # 슬라이드 세로(EMU)
+            self._focus_key = None                           # 마지막 클릭 품목(이미지 지정용)
             self.excel_path = None
             self.store = {}            # key -> Item (모든 시트 누적)
             self.lib_keys = []         # 라이브러리 표시 순서(현재 시트)
@@ -634,6 +655,17 @@ def run_gui():
             ttk.Checkbutton(top, text="슬라이드 제목(시트명)", variable=self.use_title,
                             command=self.autosave).pack(side="left", padx=8)
 
+            ttk.Label(top, text="슬라이드cm 가로:").pack(side="left")
+            self.sw_cm = tk.DoubleVar(value=round(self.slide_w / 360000, 1))
+            ttk.Spinbox(top, from_=10, to=50, increment=0.5, width=5,
+                        textvariable=self.sw_cm,
+                        command=self.apply_slide_size).pack(side="left")
+            ttk.Label(top, text="세로:").pack(side="left", padx=(4, 0))
+            self.sh_cm = tk.DoubleVar(value=round(self.slide_h / 360000, 1))
+            ttk.Spinbox(top, from_=10, to=50, increment=0.5, width=5,
+                        textvariable=self.sh_cm,
+                        command=self.apply_slide_size).pack(side="left")
+
             ttk.Button(top, text="💾 PPT 내보내기", command=self.export_ppt).pack(side="right")
             self.open_after = tk.BooleanVar(value=True)
             ttk.Checkbutton(top, text="내보낸 후 바로 열기",
@@ -651,6 +683,7 @@ def run_gui():
             lb = ttk.Frame(left); lb.pack(fill="x")
             ttk.Button(lb, text="전체체크", command=self.sel_all).pack(side="left")
             ttk.Button(lb, text="전체해제", command=self.sel_none).pack(side="left", padx=4)
+            ttk.Button(lb, text="🖼 이미지 지정", command=self.assign_image).pack(side="left")
             self.chk_lbl = ttk.Label(lb, text="체크: 0개", foreground="#2a7")
             self.chk_lbl.pack(side="right")
 
@@ -942,6 +975,49 @@ def run_gui():
         def _slides_with(self, key):
             return [i for i, s in enumerate(self.slides) if key in s["items"]]
 
+        # ---------------- 슬라이드 크기 ----------------
+        def apply_slide_size(self):
+            try:
+                self.slide_w = int(round(float(self.sw_cm.get()) * 360000))
+                self.slide_h = int(round(float(self.sh_cm.get()) * 360000))
+            except Exception:
+                return
+            self.autosave()
+            self._sync_preview()
+
+        # ---------------- 이미지 직접 지정 ----------------
+        def assign_image(self):
+            key = self._focus_key
+            if not key or key not in self.store:
+                messagebox.showinfo("알림",
+                                    "먼저 왼쪽 목록에서 이미지를 넣을 품목을 한 번 클릭하세요.")
+                return
+            it = self.store[key]
+            path = filedialog.askopenfilename(
+                title=f"'{it.name}' 이미지 선택",
+                filetypes=[("이미지", "*.png *.jpg *.jpeg *.gif *.bmp"), ("All", "*.*")])
+            if not path:
+                return
+            try:
+                with open(path, "rb") as f:
+                    data = f.read()
+                im = Image.open(io.BytesIO(data)).convert("RGB")
+                buf = io.BytesIO()
+                im.save(buf, "PNG")
+                it.img_bytes = buf.getvalue()
+                thumb = im.copy()
+                thumb.thumbnail((THUMB, THUMB))
+                self.thumbs[key] = thumb
+                _ensure_dirs()                       # 캐시에 즉시 저장(복원용)
+                im.save(_cache_path(key), "PNG")
+            except Exception as e:
+                messagebox.showerror("오류", f"이미지를 읽을 수 없습니다:\n{e}")
+                return
+            self.fill_library()
+            self.autosave()
+            self._sync_preview()
+            self.status.set(f"'{it.name}'에 이미지 지정 완료")
+
         # ---------------- 체크 토글 / 드래그 ----------------
         def on_press(self, event):
             iid = self.tree.identify_row(event.y)
@@ -949,6 +1025,7 @@ def run_gui():
                 return
             self._drag_anchor = iid
             key = self._iid_key(iid)
+            self._focus_key = key             # 이미지 지정 대상(마지막 클릭)
             if key in self.checked:           # 토글
                 self.checked.discard(key)
                 self._drag_val = False
@@ -1147,6 +1224,8 @@ def run_gui():
                 "fields_order": self.field_order,
                 "fields_on": self.field_on,
                 "season_map": self.season_map,
+                "slide_w": self.slide_w,
+                "slide_h": self.slide_h,
                 "slides": self.slides,
             }
 
@@ -1170,6 +1249,10 @@ def run_gui():
             self.field_order = state.get("fields_order", list(DEFAULT_FIELDS))
             self.field_on = state.get("fields_on", {k: True for k in DEFAULT_FIELDS})
             self.season_map = state.get("season_map", {})
+            self.slide_w = state.get("slide_w", SLIDE_W)
+            self.slide_h = state.get("slide_h", SLIDE_H)
+            self.sw_cm.set(round(self.slide_w / 360000, 1))
+            self.sh_cm.set(round(self.slide_h / 360000, 1))
             self.fill_fields()
             self.fill_season_map()
             self.slides = state.get("slides", [])
@@ -1251,7 +1334,8 @@ def run_gui():
             title = titles[i] if titles else None
             img = render_slide_image(sd, self.store, title=title,
                                      fields=self._enabled_fields(),
-                                     season_map=self.season_map, width=900)
+                                     season_map=self.season_map, width=900,
+                                     slide_w=self.slide_w, slide_h=self.slide_h)
             self._prev_photo = ImageTk.PhotoImage(img)
             self._prev_canvas.config(image=self._prev_photo)
             self._prev_lbl.config(
@@ -1273,7 +1357,8 @@ def run_gui():
                 n = build_pptx(self.slides, self.store, path,
                                fields=self._enabled_fields(),
                                season_map=self.season_map,
-                               name_pt=self.name_pt.get(), titles=self._titles())
+                               name_pt=self.name_pt.get(), titles=self._titles(),
+                               slide_w=self.slide_w, slide_h=self.slide_h)
             except Exception as e:
                 messagebox.showerror("오류", f"PPT 생성 실패:\n{e}")
                 return
