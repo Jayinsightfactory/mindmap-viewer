@@ -1090,3 +1090,18 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 검증: 워커 재기동(--night 없이 즉시처리) → screen.analyzed 신규생성 확인("jaeyong lim ECOUNT ERP 구매입력 화면 일자/입고창고 채움" 등 정밀분석). vision queue 처리 중.
 - 운영: 낮 즉시처리는 Max구독 쿼터 사용. 밤엔 autostart의 --night가 이어받음(setup-token으로 그것도 이제 인증됨). screen.analyzed는 ops-ontology cron(30분)이 screen_observed_action으로 자동 승격.
 - 재발 시: vision/stat이 disabled_by_flag(서버워커 OFF=정상, 무과금정책)인데 anal 안 늘면 → 이 PC CLI 토큰 만료 의심 → `claude setup-token` 재실행 + 워커 재기동. 메모리 vision-cli-worker-local.
+
+## 2026-06-29 — API 일$5 비용 출처 규명 + 차단 + 호출자별 추적기 (커밋 b3f5e41·ef4635c)
+- 증상: Anthropic 콘솔 전액 **Claude Haiku 4.5**, 하루 $3~13(6/11 데몬 증가 시점부터 급증).
+- **범인: src/ollama-analyzer.js** — 이름과 달리 `runAnalysis()`에서 **Haiku가 1차, Ollama는 폴백**. Railway엔 Ollama 없어 항상 Haiku. server.js `for(ev of events) ollamaAnalyzer.addEvent(ev)`로 **수신 모든 이벤트**가 큐→10건/12초마다 queryHaiku 발사 → 근무중 상시 과금.
+- 차단: Haiku 1차를 `REALTIME_HAIKU=on`(또는 global._realtimeHaikuOn) + 60초 스로틀 게이트로. **기본 OFF → 과금 0**. Ollama 폴백 유지(모듈 원래 의도 복원).
+- 추적기 신설 `src/llm-usage.js`: Anthropic 호출별 토큰/비용 → 테이블 orbit_llm_usage. `wrap(client,caller)`(SDK) / `record(caller,model,parsed.usage)`(raw https). 연결처: ollama-analyzer·insight-engine·auto-doctor·server-vision-worker·llm-gateway·nenova-ai(챗봇).
+- API: `GET /api/costs/llm?days=14`(호출자/모델/일자별), `POST /api/costs/realtime-haiku`(master 토큰, {enabled} 런타임 on/off — 실시간 패널 복원용).
+- 검증: 배포 후 /api/costs/llm `source:db` byCaller 빈 배열(=Haiku 멈춤), 토글 401(무인증)/off(인증). **최종확인=Anthropic 콘솔 24h내 일비용 하락**. byDay 별칭 day(예약어)→dt 수정(ef4635c). 메모리 api-cost-ollama-analyzer-haiku.
+- 다른 Haiku4.5 호출처는 비활성/저빈도: server-vision-worker(VISION_SERVER_WORKER off), auto-doctor(AUTODOCTOR_CLAUDE off, 죽은PC만), insight-engine(24h), process-mining(온디맨드).
+
+## 2026-06-29 — 데이터 신선도 스냅샷 (작업내역 확인 범위)
+- /api/admin/pc-list 기준 **실데이터 06-29 16:31 KST까지 실시간 유입**(이 시각 기준 방금 전까지 활성).
+- 활성 PC(오늘 16:1x~16:31): T09911T(강현우 32,727)·S4S2HMU(owner임재용 204,839)·NENOVA(김빛나 3,724)·NEONVA(설연주 295)·DESKTOP-CAA5TA1(현욱 30,594)·NENOVA2025(10,705).
+- ⚠️ DESKTOP-L0C2IOT(MNMSAQJD…) last_seen="9024-09-21" = 해당 PC 시계 미래로 깨짐(타임스탬프 오염, 집계 왜곡 가능 — 점검대상).
+- 일부 user_id가 여러 hostname에 중복(예: MNH03H… owner가 S4S2HMU/nenova/L0C2IOT/NENOVA2025) = 같은 계정 다PC 잔재. 오전 07:xx까지만 찍힌 항목은 그 조합이 오전 후 비활성.
