@@ -103,6 +103,7 @@
     const fg = FG()(el)
       .backgroundColor('#191a1d')
       .nodeId('id')
+      .nodeRelSize(3)
       .nodeVal(nodeVal)
       .nodeLabel(n => `${n.label}${n.count ? ' · ' + n.count : ''}${n.auto ? ' ⚡' : ''}`)
       .nodeColor(n => {
@@ -139,8 +140,8 @@
       });
     }
     // 옵시디언식으로 펼치기: 반발력↑ + 링크거리 확보 (덩어리·라벨겹침 완화)
-    try { fg.d3Force('charge').strength(state.mode === 'company' ? -450 : -120); } catch {}
-    try { fg.d3Force('link').distance(l => l.kind === 'handoff' ? 170 : l.kind === 'next' ? 24 : 95).strength(0.18); } catch {}
+    try { fg.d3Force('charge').strength(state.mode === 'company' ? -850 : -140).distanceMax(600); } catch {}
+    try { fg.d3Force('link').distance(l => l.kind === 'handoff' ? 190 : l.kind === 'next' ? 22 : 110).strength(0.1); } catch {}
     state.fg = fg;
   }
   function refresh() { if (state.fg) state.fg.nodeColor(state.fg.nodeColor()).linkColor(state.fg.linkColor()); }
@@ -152,7 +153,11 @@
     setStatus(`${title} · 노드 ${data.nodes.length} · 연결 ${data.links.length}`);
     renderLegend();
     // 레이아웃 안정 후 화면에 꽉 차게 (작게 몰리는 문제 해결)
-    setTimeout(() => { try { state.fg.zoomToFit(600, 120); } catch {} }, 1100);
+    // 펼친 뒤 화면맞춤 + 줌 상한(노드 22개뿐일 때 거대화 방지)
+    setTimeout(() => {
+      try { state.fg.zoomToFit(600, 140); } catch {}
+      setTimeout(() => { try { if (state.fg.zoom && state.fg.zoom() > 1.7) state.fg.zoom(1.7, 500); } catch {} }, 750);
+    }, 1100);
   }
 
   // ── 우측 패널 (OAG 증거 패킷) ────────────────────────────────────────────────
