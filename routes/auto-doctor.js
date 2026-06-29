@@ -32,7 +32,7 @@ function getClient() {
   if (_client) return _client;
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) return null;
-  try { _client = new Anthropic({ apiKey: key }); } catch { return null; }
+  try { _client = require('../src/llm-usage').wrap(new Anthropic({ apiKey: key }), 'auto-doctor'); } catch { return null; }
   return _client;
 }
 

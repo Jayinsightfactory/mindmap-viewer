@@ -28,7 +28,7 @@ function _getClient() {
   if (_client) return _client;
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) return null;
-  _client = new Anthropic({ apiKey: key });
+  _client = require('./llm-usage').wrap(new Anthropic({ apiKey: key }), 'server-vision-worker');
   return _client;
 }
 

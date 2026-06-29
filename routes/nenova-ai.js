@@ -122,6 +122,7 @@ function anthropicMessages({ apiKey, model, system, messages, tools }) {
             const msg = parsed.error?.message || `HTTP ${res.statusCode}`;
             reject(new Error(msg));
           } else {
+            try { require('../src/llm-usage').record('nenova-ai(chatbot)', model, parsed.usage); } catch {}
             resolve(parsed);
           }
         } catch {

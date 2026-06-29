@@ -7803,6 +7803,24 @@ app.use('/api', createSyncRouter({ getDb: dbModule.getDb, getAllEvents }));
 try { companyOntology.ensureCompanyTables(dbModule.getDb()); } catch (e) { console.warn('[DB Init] company-ontology 초기화 스킵:', e.message); }
 try { createOpsOntologyRouter.ensureOpsTables(dbModule.getDb()); } catch (e) { console.warn('[DB Init] ops-ontology 초기화 스킵:', e.message); }
 try { createOpsOntologyRouter.startPromoteCron(dbModule.getDb, 30, 2); } catch (e) { console.warn('[DB Init] ops-ontology cron 스킵:', e.message); }
+
+// ─── LLM 비용 계측 (호출자별 토큰/비용 — "API 비용 어디서 나가나") ──────────
+try { require('./src/llm-usage').ensureTable(dbModule.getDb()); } catch (e) { console.warn('[DB Init] llm-usage 초기화 스킵:', e.message); }
+app.get('/api/costs/llm', async (req, res) => {
+  try {
+    const days = parseInt(req.query.days) || 14;
+    const data = await require('./src/llm-usage').summary(dbModule.getDb(), days);
+    res.json(data);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// 실시간 Haiku 분석(ollama-analyzer 1차) 런타임 토글 — 기본 OFF(비용차단). master 토큰 필요.
+app.post('/api/costs/realtime-haiku', (req, res) => {
+  const MASTER = 'orbit_967930333cab4ff63bc0bcae68c4779e3307d77095375f0d';
+  const tok = (req.headers.authorization || '').replace(/^Bearer\s+/i, '') || req.query.token;
+  if (tok !== MASTER) return res.status(401).json({ error: 'unauthorized' });
+  global._realtimeHaikuOn = !!(req.body && req.body.enabled);
+  res.json({ ok: true, realtimeHaiku: global._realtimeHaikuOn ? 'on' : 'off' });
+});
 app.use('/api', createCompanyRouter({ getDb: dbModule.getDb, broadcastAll }));
 app.use('/api', createDiagnosisRouter({ getDb: dbModule.getDb, broadcastAll }));
 app.use('/api', createCompanyLearningRouter({ getDb: dbModule.getDb }));

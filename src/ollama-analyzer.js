@@ -12,6 +12,7 @@
 'use strict';
 
 const http = require('http');
+const llmUsage = require('./llm-usage');  // 호출별 토큰/비용 계측
 
 const OLLAMA_HOST   = process.env.OLLAMA_HOST  || '127.0.0.1';
 const OLLAMA_PORT   = parseInt(process.env.OLLAMA_PORT  || '11434');
@@ -19,6 +20,20 @@ const OLLAMA_MODEL  = process.env.OLLAMA_MODEL || 'qwen2.5-coder:1.5b';
 const DEBOUNCE_MS   = 12000;   // 마지막 이벤트 후 12초 대기
 const QUEUE_LIMIT   = 10;      // 큐 10개 이상 → 즉시 분석
 const MAX_EVENTS    = 20;      // 분석에 넣을 최대 이벤트 수
+
+// ── 실시간 Haiku 분석 게이트 (비용 차단) ──────────────────────
+// 모든 이벤트배치를 Haiku로 분석하면 하루 $5+. 기본 OFF, 켜도 스로틀.
+let _lastHaikuAt = 0;
+const HAIKU_MIN_INTERVAL_MS = parseInt(process.env.REALTIME_HAIKU_MIN_MS || '60000'); // 최소 60초 간격
+function _haikuEnabled() {
+  return (process.env.REALTIME_HAIKU || '').toLowerCase() === 'on' || global._realtimeHaikuOn === true;
+}
+function _throttleOk() {
+  const now = Date.now();
+  if (now - _lastHaikuAt < HAIKU_MIN_INTERVAL_MS) return false;
+  _lastHaikuAt = now;
+  return true;
+}
 
 let _broadcastFn  = null;     // server.js의 broadcastAll 참조
 let _eventQueue   = [];       // 분석 대기 이벤트
@@ -92,6 +107,7 @@ async function queryHaiku(prompt) {
             console.error(`[Haiku] API 오류 ${res.statusCode}:`, parsed.error?.message || data.slice(0, 100));
             return resolve(null);
           }
+          try { llmUsage.record('realtime-insight(ollama-analyzer)', model, parsed.usage); } catch {}
           const text = parsed.content?.[0]?.text || '';
           const match = text.match(/\{[\s\S]*\}/);
           if (match) {
@@ -116,8 +132,8 @@ async function runAnalysis() {
   let analysis = null;
   let usedModel = '';
 
-  // 1차: Haiku API (빠르고 정확)
-  if (process.env.ANTHROPIC_API_KEY) {
+  // 1차: Haiku API — 기본 OFF (비용 차단). REALTIME_HAIKU=on + 60초 스로틀일 때만.
+  if (_haikuEnabled() && process.env.ANTHROPIC_API_KEY && _throttleOk()) {
     analysis = await queryHaiku(prompt);
     usedModel = process.env.ANTHROPIC_MODEL || 'claude-haiku-4-5';
   }

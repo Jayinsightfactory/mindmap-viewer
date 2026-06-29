@@ -48,6 +48,7 @@ async function generateAnthropic({ model, prompt, apiKey }) {
     'content-type':       'application/json',
     'content-length':     Buffer.byteLength(body),
   });
+  try { require('./llm-usage').record('llm-gateway', model, data.usage); } catch {}
   return data.content?.[0]?.text || '';
 }
 

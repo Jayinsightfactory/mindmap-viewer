@@ -420,7 +420,7 @@ async function enrichWithClaude(ruleInsights, stats) {
 
   try {
     const Anthropic = require('@anthropic-ai/sdk');
-    const client    = new Anthropic.Anthropic();
+    const client    = require('./llm-usage').wrap(new Anthropic.Anthropic(), 'insight-engine');
 
     const prompt = `당신은 AI 개발 도구 사용 패턴 분석 전문가입니다.
 
