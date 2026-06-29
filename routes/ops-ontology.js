@@ -8,6 +8,7 @@
  */
 
 const express = require('express');
+const { enrichHandoff } = require('../src/flow-handoff'); // 핸드오프 엔진 (Action 관계 보강)
 
 // ── 관계 저장 테이블 (1급 데이터, audit P3) ──────────────────────────────────
 async function ensureOpsTables(pool) {
@@ -159,7 +160,8 @@ function startPromoteCron(getPool, intervalMin = 30, hours = 2) {
       const p = getPool && getPool(); if (!p) return;
       await ensureOpsTables(p);
       const r = await promote(p, hours);
-      console.log(`[ops-ontology] promote cron: ${r.actions} actions / ${r.relations} rels (${r.sourceEvents} ev, ${hours}h)`);
+      const e = await enrichHandoff(p, hours);
+      console.log(`[ops-ontology] promote cron: ${r.actions} actions / ${r.relations} rels (${r.sourceEvents} ev, ${hours}h) + ${e.mentions} mentions / ${e.handoffs} handoffs / ${e.erp} erp`);
     } catch (e) { console.warn('[ops-ontology] promote cron 실패:', e.message); }
   };
   _cronTimer = setInterval(run, intervalMin * 60 * 1000);
@@ -180,7 +182,8 @@ function createOpsOntologyRouter(deps = {}) {
       await ensureOpsTables(p);
       const hours = Math.min(parseInt(req.query.hours) || 24, 720);
       const r = await promote(p, hours);
-      res.json({ ok: true, ...r });
+      const e = await enrichHandoff(p, hours); // Action → 거래처/핸드오프/ERP 관계 보강
+      res.json({ ok: true, ...r, ...e });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
