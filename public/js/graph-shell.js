@@ -94,8 +94,8 @@
     return s;
   }
   function nodeColor(n) { return KIND_COLOR[n.kind] || KIND_COLOR.default; }
-  // 크기 캡: 직원이 거대블롭이 되지 않게 (count 많아도 ≤9), 거래처 5, 액션 2.5
-  function nodeVal(n) { return n.kind === 'employee' ? Math.min(9, 3 + Math.sqrt(n.count || 1) / 3) : n.kind === 'customer' ? 5 : 2.5; }
+  // 크기 캡: 직원 ≤6(거대블롭 방지), 거래처 4, 액션 2
+  function nodeVal(n) { return n.kind === 'employee' ? Math.min(6, 2.5 + Math.sqrt(n.count || 1) / 4) : n.kind === 'customer' ? 4 : 2; }
 
   function makeFG() {
     const el = $('#graph'); el.innerHTML = '';
@@ -139,8 +139,8 @@
       });
     }
     // 옵시디언식으로 펼치기: 반발력↑ + 링크거리 확보 (덩어리·라벨겹침 완화)
-    try { fg.d3Force('charge').strength(state.mode === 'company' ? -260 : -110); } catch {}
-    try { fg.d3Force('link').distance(l => l.kind === 'handoff' ? 140 : l.kind === 'next' ? 28 : 75); } catch {}
+    try { fg.d3Force('charge').strength(state.mode === 'company' ? -450 : -120); } catch {}
+    try { fg.d3Force('link').distance(l => l.kind === 'handoff' ? 170 : l.kind === 'next' ? 24 : 95).strength(0.18); } catch {}
     state.fg = fg;
   }
   function refresh() { if (state.fg) state.fg.nodeColor(state.fg.nodeColor()).linkColor(state.fg.linkColor()); }
@@ -152,7 +152,7 @@
     setStatus(`${title} · 노드 ${data.nodes.length} · 연결 ${data.links.length}`);
     renderLegend();
     // 레이아웃 안정 후 화면에 꽉 차게 (작게 몰리는 문제 해결)
-    setTimeout(() => { try { state.fg.zoomToFit(600, 70); } catch {} }, 900);
+    setTimeout(() => { try { state.fg.zoomToFit(600, 120); } catch {} }, 1100);
   }
 
   // ── 우측 패널 (OAG 증거 패킷) ────────────────────────────────────────────────
