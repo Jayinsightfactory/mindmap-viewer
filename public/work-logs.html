@@ -178,8 +178,11 @@ async function loadLogs(full = false) {
     const type   = document.getElementById('typeFilter').value;
     const from   = document.getElementById('dateFrom').value;
     const to     = document.getElementById('dateTo').value;
-    let url = '/api/learning/logs?limit=' + limit + '&allTypes=1&userId=' + encodeURIComponent(selectedMember.userId);
-    if (type) url += '&type=' + encodeURIComponent(type);
+    // [2026-06-29] allTypes=1 상시 사용 버그 수정: daemon.update(생존신호) 노이즈가 윈도를 도배해
+    // keyboard.chunk가 밀려 "건수만 있고 내용 없음"이 됨(DATA_CHECK §3).
+    // 전체보기 → 서버 기본 필터(keyboard/screen/analyzed/idle, daemon 노이즈 제외). 특정타입 → allTypes+type.
+    let url = '/api/learning/logs?limit=' + limit + '&userId=' + encodeURIComponent(selectedMember.userId);
+    if (type) url += '&allTypes=1&type=' + encodeURIComponent(type);
     if (from) url += '&from=' + from;
     if (to)   url += '&to='   + to + 'T23:59:59';
 
