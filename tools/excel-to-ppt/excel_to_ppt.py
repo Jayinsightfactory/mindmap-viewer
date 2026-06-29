@@ -24,6 +24,8 @@ from pptx import Presentation
 from pptx.util import Emu, Pt
 from pptx.dml.color import RGBColor
 
+APP_VERSION = "v4 (2026-06-29)"     # 실행 중인 버전 확인용
+
 # ---------------- 슬라이드 크기 (템플릿 기준 27.5 x 19.1 cm) ----------------
 SLIDE_W = 9906000
 SLIDE_H = 6858000
@@ -647,8 +649,15 @@ def run_gui():
     class App(tk.Tk):
         def __init__(self):
             super().__init__()
-            self.title("엑셀 → PPT 품목 카탈로그 생성기  v3")
-            self.geometry("1320x800")
+            self.title(f"엑셀 → PPT 품목 카탈로그 생성기  [{APP_VERSION}]")
+            self.geometry("1360x900")
+            try:                       # 창을 최대화해 하단 미리보기까지 보이게
+                self.state("zoomed")
+            except Exception:
+                try:
+                    self.attributes("-zoomed", True)
+                except Exception:
+                    pass
 
             self.field_order = list(DEFAULT_FIELDS)        # 입력 항목 순서
             self.field_on = {k: True for k in DEFAULT_FIELDS}  # 항목 포함 여부
@@ -818,7 +827,8 @@ def run_gui():
             ttk.Button(ib, text="▲ 위로", command=lambda: self.move_item(-1)).pack(side="left")
             ttk.Button(ib, text="▼ 아래로", command=lambda: self.move_item(1)).pack(side="left", padx=4)
 
-            self.status = tk.StringVar(value="엑셀을 불러오거나 이전 작업이 자동 복원됩니다.")
+            self.status = tk.StringVar(
+                value=f"[{APP_VERSION}] 엑셀을 불러오거나 이전 작업이 자동 복원됩니다.")
             ttk.Label(self, textvariable=self.status, relief="sunken", anchor="w",
                       padding=4).pack(fill="x", side="bottom")
 
