@@ -1073,3 +1073,11 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 검증(라이브): promote?hours=720 → 315,178 원천 → **28,929 Action + 64,983 관계**. stats: 27,743 action(verified 7,858, automatable 277). 관계 action_in_app 28,670·person_performed 27,743·action_in_room 5,579·screen_observed 983·automation 550. OAG패킷(actions/:id/context) 정상(app·활동·증거2·관계4 반환). entities?type=person 12명(설연주 conf0.667 등).
 - 미구현(spec엔 있으나 populate 안 됨, 다음): talk_triggered_action(시간창 대화→작업), action_mentions_customer/action_updated_erp(OCR/ERP 추출 연결=P1 golden id), person_performed_action의 from_ref가 raw userId(golden person id 연결 P1). promote는 수동 트리거(자동 cron 미설정).
 - 재발/이어서: 이 항목 + docs/nenova-ontology-spec.md + docs/nenova-ontology-audit.md. promote 주기실행 cron + golden id 연결(P1)이 다음 단계.
+
+## 2026-06-29 — work-logs 버그수정 + 온톨로지 자동화/보강
+- work-logs.html "건수만 있고 내용 없음" 버그(커밋 bfdeba7): 대시보드가 allTypes=1 상시사용 → daemon.update(생존신호)가 limit윈도 도배 → keyboard.chunk 밀림(DATA_CHECK §3). 수정: 전체보기=서버기본필터(keyboard/screen/analyzed/idle), 특정타입만 allTypes+type. 검증 임재용 inputText 0→80.
+- 온톨로지 자동화/보강(커밋 fd51346, 98ae8eb): ① startPromoteCron — 부팅1분후+30분마다 최근2h 멱등 promote(수동 불필요, 상시최신). server.js init 배선. ② talk_triggered_action 관계 — 카톡 동작 직후 30분내 업무앱 전환=대화→작업. 검증: promote 168h→talk_triggered 596건. 전체 28,524 action / action_in_app 29,456·action_in_room 5,580·talk_triggered 596·screen_observed 983·automation 550.
+- ⚠️ promote 720h(315K이벤트) 한방은 502(힙768MB) — 백필은 가벼운 창(≤168h)으로. cron은 2h라 안전.
+- 직원 데이터 현황(06/29): 임재용·김빛나 정상(키보드내용+화면). **김빛나 회복**(python 미설치지만 PS폴백 312KB 실화면+키보드내용). 설연주·강현우 키보드 0(uiohook死, 명령채널 안 닿음=§13-Z, 다음 재시작/13:00·15:00 자동업데이트 회생 대기). 이름정정 반영(update-user-name pgOk=True, 김빛나 표시됨).
+- Vision anal=None: 서버워커 disabled_by_flag(무과금 정책), owner PC CLI워커 필요(원격불가).
+- 미완(다음): 온톨로지 golden person id 연결(P1, 현재 from_ref=raw userId), action_mentions_customer/action_updated_erp(OCR/ERP 연결).
