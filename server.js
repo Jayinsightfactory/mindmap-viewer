@@ -7320,6 +7320,7 @@ app.use('/api', createLearningRouter({ verifyToken, getEventsForUser, resolveUse
 // ─── 통합 이벤트 버스 (ERP + Orbit + AI Trainer + nenova_agent) ──────────────
 app.use('/api', createEventBusRouter({ eventBus, verifyToken, broadcastAll }));
 app.use('/api/ops-ontology', createOpsOntologyRouter({ getPool: dbModule.getDb, resolveAdmin }));
+app.use('/api/flow', require('./routes/flow-map')({ getPool: dbModule.getDb, isAdminToken: env.isAdminToken })); // 업무 흐름 청사진 API
 
 // ─── 데이터 관리 (Export / Delete / Summary) ─────────────────��───────────────
 const createDataManagementRouter = require('./routes/data-management');
