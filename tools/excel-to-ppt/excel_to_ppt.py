@@ -262,17 +262,49 @@ def list_sheets(path):
     return names
 
 
-def load_items(path, sheet_name):
+def analyze_columns(path, sheet_name):
+    """시트의 열 목록과 자동 인식된 항목→열 매핑을 반환 (컬럼 보정 UI용)."""
+    from openpyxl.utils import get_column_letter
+    wb = openpyxl.load_workbook(path, data_only=True)
+    ws = wb[sheet_name]
+    header_row = _detect_header_row(ws)
+    cols = []
+    for c in range(1, ws.max_column + 1):
+        parts = []
+        for hr in range(header_row, min(header_row + 1, ws.max_row) + 1):
+            v = ws.cell(row=hr, column=c).value
+            if v:
+                parts.append(str(v).strip())
+        label = " / ".join(parts) if parts else "(빈칸)"
+        cols.append((c, f"{get_column_letter(c)}: {label}"))
+    hrows = list(range(header_row, min(header_row + 3, ws.max_row + 1)))
+    detected = {
+        "name":   _find_col(ws, header_row, KW_NAME),
+        "size":   _find_col(ws, header_row, KW_SIZE),
+        "season": _find_col(ws, header_row, KW_SEASON),
+        "origin": _find_col(ws, header_row, KW_ORIGIN),
+        "price":  _find_col_rows(ws, hrows, KW_PRICE),
+    }
+    wb.close()
+    return cols, detected
+
+
+def load_items(path, sheet_name, colmap=None):
     # data_only=True: 수식 셀의 캐시된 계산값을 읽음(도착원가 등)
     wb = openpyxl.load_workbook(path, data_only=True)
     ws = wb[sheet_name]
     header_row = _detect_header_row(ws)
     hrows = list(range(header_row, min(header_row + 3, ws.max_row + 1)))
-    name_col   = _find_col(ws, header_row, KW_NAME)   or 1
-    origin_col = _find_col(ws, header_row, KW_ORIGIN)
-    season_col = _find_col(ws, header_row, KW_SEASON)
-    size_col   = _find_col(ws, header_row, KW_SIZE)
-    price_col  = _find_col_rows(ws, hrows, KW_PRICE)   # 도착원가(2행 헤더)
+    cm = colmap or {}
+
+    def pick(field, auto):
+        return cm[field] if field in cm else auto   # cm 값 None = '(없음)'
+
+    name_col   = pick("name",   _find_col(ws, header_row, KW_NAME)) or 1
+    origin_col = pick("origin", _find_col(ws, header_row, KW_ORIGIN))
+    season_col = pick("season", _find_col(ws, header_row, KW_SEASON))
+    size_col   = pick("size",   _find_col(ws, header_row, KW_SIZE))
+    price_col  = pick("price",  _find_col_rows(ws, hrows, KW_PRICE))
     mm = _merge_map(ws)
 
     # 헤더 블록 끝(병합 헤더 B1:B2 / FOB·도착원가 서브헤더) 다음부터 데이터
@@ -548,6 +580,7 @@ def save_project(state, store):
         "season_map": state.get("season_map", {}),
         "slide_w": state.get("slide_w", SLIDE_W),
         "slide_h": state.get("slide_h", SLIDE_H),
+        "colmaps": state.get("colmaps", {}),
         "slides": [{"cols": s["cols"], "rows": s["rows"],
                     "items": [list(k) for k in s["items"]]}
                    for s in state.get("slides", [])],
@@ -594,6 +627,7 @@ def load_project():
         "season_map": data.get("season_map", {}),
         "slide_w": data.get("slide_w", SLIDE_W),
         "slide_h": data.get("slide_h", SLIDE_H),
+        "colmaps": data.get("colmaps", {}),
         "slides": slides,
     }
     return state, store
@@ -622,6 +656,7 @@ def run_gui():
             self.slide_w = SLIDE_W                           # 슬라이드 가로(EMU)
             self.slide_h = SLIDE_H                           # 슬라이드 세로(EMU)
             self._focus_key = None                           # 마지막 클릭 품목(이미지 지정용)
+            self.colmaps = {}                                # {시트: {항목: 열}} 수동 보정
             self.excel_path = None
             self.store = {}            # key -> Item (모든 시트 누적)
             self.lib_keys = []         # 라이브러리 표시 순서(현재 시트)
@@ -632,8 +667,7 @@ def run_gui():
             self.cur_slide = None      # 선택된 슬라이드 index
             self._drag_anchor = None
             self._drag_val = True      # 드래그 시 체크/해제 방향
-            self._prev_win = None      # 미리보기 창
-            self._prev_idx = 0
+            self._prev_idx = 0         # 내장 미리보기 현재 슬라이드
 
             self._build()
             self._restore()
@@ -647,6 +681,8 @@ def run_gui():
             self.sheet_cb = ttk.Combobox(top, state="readonly", width=14)
             self.sheet_cb.pack(side="left")
             self.sheet_cb.bind("<<ComboboxSelected>>", lambda e: self.load_sheet())
+            ttk.Button(top, text="🔧 컬럼 보정",
+                       command=self.open_colmap_dialog).pack(side="left", padx=4)
 
             ttk.Label(top, text="글자pt:").pack(side="left", padx=(8, 2))
             self.name_pt = tk.IntVar(value=14)
@@ -711,8 +747,9 @@ def run_gui():
                        command=self.add_to_slide).pack(pady=(6, 4), ipady=6, fill="x")
             ttk.Button(mid, text="◀ 슬라이드에서\n선택 품목 제거",
                        command=self.remove_from_slide).pack(pady=4, ipady=6, fill="x")
-            ttk.Button(mid, text="🔍 미리보기",
-                       command=self.preview).pack(pady=4, ipady=4, fill="x")
+            ttk.Button(mid, text="🔍 현재 슬라이드 보기",
+                       command=lambda: self._sync_preview(self.cur_slide)
+                       ).pack(pady=4, ipady=4, fill="x")
 
             # 입력 항목 / 순서
             ff = ttk.LabelFrame(mid, text="입력 항목 (더블클릭=ON/OFF)", padding=5)
@@ -784,6 +821,19 @@ def run_gui():
             self.status = tk.StringVar(value="엑셀을 불러오거나 이전 작업이 자동 복원됩니다.")
             ttk.Label(self, textvariable=self.status, relief="sunken", anchor="w",
                       padding=4).pack(fill="x", side="bottom")
+
+            # ----- 하단: 실시간 미리보기 (내장) -----
+            pv = ttk.LabelFrame(self, text="실시간 미리보기", padding=4)
+            pv.pack(fill="x", side="bottom")
+            navp = ttk.Frame(pv); navp.pack()
+            ttk.Button(navp, text="◀", width=3,
+                       command=lambda: self._prev_nav(-1)).pack(side="left")
+            self._prev_lbl = ttk.Label(navp, text="슬라이드 -")
+            self._prev_lbl.pack(side="left", padx=10)
+            ttk.Button(navp, text="▶", width=3,
+                       command=lambda: self._prev_nav(1)).pack(side="left")
+            self.prev_canvas = ttk.Label(pv)
+            self.prev_canvas.pack(pady=4)
 
             self.fill_fields()
             self.fill_season_map()
@@ -921,7 +971,7 @@ def run_gui():
             self.status.set(f"'{sheet}' 불러오는 중...")
             self.update_idletasks()
             try:
-                items = load_items(self.excel_path, sheet)
+                items = load_items(self.excel_path, sheet, self.colmaps.get(sheet))
             except Exception as e:
                 messagebox.showerror("오류", f"시트 로드 실패:\n{e}")
                 return
@@ -934,15 +984,19 @@ def run_gui():
             self.refresh_season_choices()
             self.autosave()
             withimg = sum(1 for it in items if it.img_bytes)
-            self.status.set(f"'{sheet}' — {len(items)}개 품목, 이미지 {withimg}개 인식")
-            if items and withimg == 0:
-                messagebox.showwarning(
-                    "이미지 인식 안 됨",
-                    "이 시트에서 셀에 박힌 이미지를 찾지 못했습니다.\n\n"
-                    "· 그림이 '셀 안에 삽입(IMAGE 함수/셀 위 떠있는 그림)'인지 확인\n"
-                    "· .xls가 아니라 .xlsx 인지 확인\n"
-                    "· 그림이 도형 그룹/연결(LINK)된 경우 인식되지 않을 수 있습니다.\n"
-                    "텍스트(품목명/가격 등)는 정상 입력됩니다.")
+            # 인식 못한 항목 점검(수동 보정 안내)
+            try:
+                _, det = analyze_columns(self.excel_path, sheet)
+            except Exception:
+                det = {}
+            cm = self.colmaps.get(sheet, {})
+            miss = [FIELD_LABELS[f] for f in ("name", "size", "season", "origin", "price")
+                    if (cm.get(f) if f in cm else det.get(f)) is None]
+            msg = f"'{sheet}' — {len(items)}개 품목, 이미지 {withimg}개 인식"
+            if miss:
+                msg += f"  | 미인식: {', '.join(miss)} (🔧 컬럼 보정)"
+            self.status.set(msg)
+            self._sync_preview()
 
         def _make_thumbs(self, items):
             for it in items:
@@ -1017,6 +1071,56 @@ def run_gui():
             self.autosave()
             self._sync_preview()
             self.status.set(f"'{it.name}'에 이미지 지정 완료")
+
+        # ---------------- 컬럼 인식 보정 ----------------
+        def open_colmap_dialog(self):
+            if not self.excel_path:
+                messagebox.showinfo("알림", "먼저 엑셀을 불러오세요.")
+                return
+            sheet = self.sheet_cb.get()
+            try:
+                cols, det = analyze_columns(self.excel_path, sheet)
+            except Exception as e:
+                messagebox.showerror("오류", f"열 분석 실패:\n{e}")
+                return
+            cur = self.colmaps.get(sheet, {})
+            opts = ["(없음)"] + [lab for _, lab in cols]
+            idx_by_lab = {lab: c for c, lab in cols}
+            lab_by_idx = {c: lab for c, lab in cols}
+
+            win = tk.Toplevel(self)
+            win.title(f"컬럼 인식 보정 — {sheet}")
+            win.transient(self); win.grab_set()
+            ttk.Label(win, padding=8, justify="left",
+                      text="각 항목이 엑셀의 어느 열인지 지정한 뒤 [적용]을 누르세요.\n"
+                           "자동 인식이 틀렸거나 비어 있을 때 직접 지정합니다.").pack(anchor="w")
+            body = ttk.Frame(win, padding=8); body.pack(fill="x")
+            combos = {}
+            fields = [("name", "품목명(필수)"), ("size", "사이즈"),
+                      ("season", "공급가능기간"), ("origin", "원산지"),
+                      ("price", "단가/도착원가")]
+            for i, (f, label) in enumerate(fields):
+                ttk.Label(body, text=label, width=14).grid(row=i, column=0,
+                                                           sticky="w", pady=3)
+                cb = ttk.Combobox(body, state="readonly", width=36, values=opts)
+                cb.grid(row=i, column=1, pady=3)
+                sel = cur[f] if f in cur else det.get(f)
+                cb.set(lab_by_idx.get(sel, "(없음)") if sel else "(없음)")
+                combos[f] = cb
+
+            def apply():
+                m = {}
+                for f, cb in combos.items():
+                    v = cb.get()
+                    m[f] = None if v == "(없음)" else idx_by_lab.get(v)
+                self.colmaps[sheet] = m
+                win.destroy()
+                self.load_sheet()
+                self.autosave()
+
+            bf = ttk.Frame(win, padding=8); bf.pack(fill="x")
+            ttk.Button(bf, text="적용", command=apply).pack(side="right")
+            ttk.Button(bf, text="취소", command=win.destroy).pack(side="right", padx=6)
 
         # ---------------- 체크 토글 / 드래그 ----------------
         def on_press(self, event):
@@ -1120,6 +1224,7 @@ def run_gui():
             self.cols_var.set(s["cols"])
             self.rows_var.set(s["rows"])
             self.fill_slide_items()
+            self._sync_preview(self.cur_slide)
 
         def apply_grid(self):
             if self.cur_slide is None:
@@ -1176,8 +1281,7 @@ def run_gui():
             self.autosave()
             self.status.set(f"{added}개 품목을 슬라이드 {self.cur_slide+1}에 추가"
                             + (f" (남은 {len(keys)-added}개는 칸 부족)" if full else ""))
-            self.preview()                       # 추가할 때마다 미리보기 자동 표시
-            self._sync_preview(self.cur_slide)
+            self._sync_preview(self.cur_slide)   # 추가할 때마다 미리보기 실시간 갱신
             if full:
                 messagebox.showinfo("가득 참",
                                     f"슬라이드 {self.cur_slide+1}은 최대 {cap}개입니다.\n"
@@ -1226,6 +1330,7 @@ def run_gui():
                 "season_map": self.season_map,
                 "slide_w": self.slide_w,
                 "slide_h": self.slide_h,
+                "colmaps": self.colmaps,
                 "slides": self.slides,
             }
 
@@ -1251,6 +1356,7 @@ def run_gui():
             self.season_map = state.get("season_map", {})
             self.slide_w = state.get("slide_w", SLIDE_W)
             self.slide_h = state.get("slide_h", SLIDE_H)
+            self.colmaps = state.get("colmaps", {})
             self.sw_cm.set(round(self.slide_w / 360000, 1))
             self.sh_cm.set(round(self.slide_h / 360000, 1))
             self.fill_fields()
@@ -1280,45 +1386,29 @@ def run_gui():
                 self.fill_library()
             self.refresh_season_choices()
             self.refresh_slides()
+            self._sync_preview()
             self.status.set("이전 작업을 복원했습니다.")
 
-        # ---------------- 미리보기 ----------------
+        # ---------------- 실시간 미리보기 (내장) ----------------
         def _titles(self):
             if self.use_title.get():
                 return [self.sheet_cb.get() or ""] * len(self.slides)
             return None
 
-        def preview(self):
-            if not self.slides:
-                messagebox.showinfo("알림", "먼저 슬라이드를 추가하세요.")
-                return
-            self._prev_idx = self.cur_slide if self.cur_slide is not None else 0
-            if self._prev_win and tk.Toplevel.winfo_exists(self._prev_win):
-                self._prev_win.lift()
-            else:
-                self._prev_win = tk.Toplevel(self)
-                self._prev_win.title("미리보기")
-                nav = ttk.Frame(self._prev_win); nav.pack(fill="x", pady=4)
-                ttk.Button(nav, text="◀ 이전",
-                           command=lambda: self._prev_nav(-1)).pack(side="left", padx=6)
-                self._prev_lbl = ttk.Label(nav, text="")
-                self._prev_lbl.pack(side="left", expand=True)
-                ttk.Button(nav, text="다음 ▶",
-                           command=lambda: self._prev_nav(1)).pack(side="right", padx=6)
-                self._prev_canvas = ttk.Label(self._prev_win)
-                self._prev_canvas.pack(padx=6, pady=6)
-            self._prev_render()
-
         def _prev_nav(self, d):
+            if not self.slides:
+                return
             self._prev_idx = max(0, min(len(self.slides) - 1, self._prev_idx + d))
             self._prev_render()
 
-        def _prev_open(self):
-            return bool(self._prev_win) and tk.Toplevel.winfo_exists(self._prev_win)
-
         def _sync_preview(self, idx=None):
-            """슬라이드 변경 시 미리보기 창이 열려 있으면 자동 갱신."""
-            if not self._prev_open() or not self.slides:
+            """슬라이드/항목/설정 변경 시 내장 미리보기 즉시 갱신."""
+            if not hasattr(self, "prev_canvas"):
+                return
+            if not self.slides:
+                self.prev_canvas.config(image="")
+                self._prev_photo = None
+                self._prev_lbl.config(text="슬라이드 없음")
                 return
             if idx is not None:
                 self._prev_idx = max(0, min(len(self.slides) - 1, idx))
@@ -1328,16 +1418,21 @@ def run_gui():
 
         def _prev_render(self):
             from PIL import ImageTk
+            if not self.slides:
+                return
             i = self._prev_idx
             sd = self.slides[i]
             titles = self._titles()
             title = titles[i] if titles else None
+            # 슬라이드 비율 유지, 높이 ~250px 로 맞춰 렌더
+            pv_h = 250
+            w = max(300, int(pv_h * self.slide_w / self.slide_h))
             img = render_slide_image(sd, self.store, title=title,
                                      fields=self._enabled_fields(),
-                                     season_map=self.season_map, width=900,
+                                     season_map=self.season_map, width=w,
                                      slide_w=self.slide_w, slide_h=self.slide_h)
             self._prev_photo = ImageTk.PhotoImage(img)
-            self._prev_canvas.config(image=self._prev_photo)
+            self.prev_canvas.config(image=self._prev_photo)
             self._prev_lbl.config(
                 text=f"슬라이드 {i+1} / {len(self.slides)}   "
                      f"({sd['cols']}×{sd['rows']}, {len(sd['items'])}개)")
