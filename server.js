@@ -528,8 +528,19 @@ app.use('/setup', express.static(path.join(__dirname, 'setup'), {
   },
 }));
 
-// 2026-06-09 added: /bat 짧은 alias — orbit-install.bat 다운로드용
-// 사용자 friendly URL: nenovaweb.com/bat (custom domain 연결 후)
+// ═══ 설치 링크 정리 (2026-06-29) ═════════════════════════════════════════════
+// ★ 직원 배포 표준(canonical): GET /install
+//   체인: install-open.bat → /setup/install-open.ps1 → /api/setup/auto-register(이름→계정) → /setup/install.ps1
+//   직원에게는 이 링크 하나만 주면 됨. 아래 /bat·/bat-final·/api/install-* 는 과거 공유 링크 호환용(legacy)으로 유지.
+//   (커스텀 도메인 연결 후엔 nenovaweb 서브도메인/install 권장 — DNS+Railway 도메인 설정 필요)
+app.get('/install', (req, res) => {
+  res.setHeader('Content-Disposition', 'attachment; filename="orbit-install.bat"');
+  res.setHeader('Content-Type', 'application/x-bat');
+  res.setHeader('Cache-Control', 'no-store');
+  res.sendFile(path.join(__dirname, 'setup', 'install-open.bat'));
+});
+
+// [legacy] 2026-06-09: /bat 짧은 alias — orbit-install.bat (구 공유 링크 호환, 표준은 /install)
 app.get('/bat', (req, res) => {
   res.setHeader('Content-Disposition', 'attachment; filename="orbit-install.bat"');
   res.setHeader('Content-Type', 'application/x-bat');
