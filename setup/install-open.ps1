@@ -1,4 +1,4 @@
-﻿# Orbit AI - Open Installer (No token required)
+﻿# MOYI - Open Installer (No token required)
 # Usage: irm 'https://mindmap-viewer-production-adb2.up.railway.app/setup/install-open.ps1' | iex
 #
 # Automatically registers this PC and installs the daemon.
@@ -9,7 +9,7 @@ $REMOTE = "https://mindmap-viewer-production-adb2.up.railway.app"
 
 Write-Host ""
 Write-Host "  ================================================" -ForegroundColor Cyan
-Write-Host "    Orbit AI — 업무 학습 도구" -ForegroundColor Cyan
+Write-Host "    MOYI — 업무 학습 도구" -ForegroundColor Cyan
 Write-Host "  ================================================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "  업무 활동·패턴을 학습해 반복업무 자동화와 효율 개선을 돕는" -ForegroundColor Gray

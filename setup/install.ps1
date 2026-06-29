@@ -1,4 +1,4 @@
-﻿# Orbit AI - Windows Installer v8
+﻿# MOYI - Windows Installer v8
 # Usage: download to file, run with -File (Invoke-Expression is AMSI-blocked on PS7).
 # History: 5min->30min(AV) ->2min(2026-06-18, Defender 자동예외 추가로 AV 우려 완화 + 빠른복구).
 #          v7 added C# launcher to suppress conhost window.
@@ -82,7 +82,7 @@ trap {
 "$(Get-Date -f 'yyyy-MM-dd HH:mm:ss') [START] install v8" | Out-File $LOG_FILE -Force -ErrorAction SilentlyContinue
 
 Write-Host ""
-Write-Host "  Orbit AI — 업무 학습 도구 설치"
+Write-Host "  MOYI — 업무 학습 도구 설치"
 Write-Host "  PC: $env:COMPUTERNAME | User: $env:USERNAME"
 Write-Host "  Server: $REMOTE"
 Write-Host ""
@@ -916,7 +916,7 @@ if ($serverOk) {
 Write-Host ""
 Write-Host "  ============================================" -ForegroundColor Cyan
 if ($fail -eq 0 -and $guidedVerified) {
-  Write-Host "  [성공] Orbit AI 설치 + 검증 완료! ($pass/11)" -ForegroundColor Green
+  Write-Host "  [성공] MOYI 설치 + 검증 완료! ($pass/11)" -ForegroundColor Green
 } elseif ($fail -eq 0) {
   Write-Host "  [부분 성공] 정적 검사 통과 — 가이드 검증 미완료 ($pass/11)" -ForegroundColor Yellow
 } else {

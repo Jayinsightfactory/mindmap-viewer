@@ -1,6 +1,6 @@
 @echo off
 chcp 65001 >nul 2>&1
-title Orbit AI Install
+title MOYI Install
 
 REM --- Admin check + auto elevate ---
 net session >nul 2>&1
@@ -18,7 +18,7 @@ set "PS1_URL=https://mindmap-viewer-production-adb2.up.railway.app/setup/install
 set "PS1_LOCAL=%TEMP%\orbit-install-open.ps1"
 
 echo.
-echo   Orbit AI - downloading installer...
+echo   MOYI - downloading installer...
 echo.
 
 REM --- Download 1/2: curl (built-in on Win10/11) ---
