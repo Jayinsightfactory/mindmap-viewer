@@ -1123,5 +1123,5 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - **워커** bin/ops-agent-worker.js: ops-input fetch → 합성 프롬프트(orchestrator+forecaster+validator)를 claude CLI에 **stdin**으로(arg길이제한 회피) → JSON 파싱 → ops-report POST. 4h 루프(--once 지원). CLAUDE_CLI=where claude(C:\Users\USER\.local\bin\claude.exe). 무과금(Max구독).
 - **프론트**(graph.html): "📊 운영 인사이트" 패널 — verdict/confidence + 예측·병목·부하·자동화·교차검증·원천불일치 + "N분 전 갱신".
 - **검증완료(브라우저 스샷)**: 워커 1회 62초 무과금 실행 → verdict WARN 0.55, 예측4·병목2·자동화4 생성·저장. 패널 렌더: "회계분개 jaeyong 1인 집중·handoff0→보조담당 지정", "Excel주문 ㅋㅋ 단독→강현우 이관검토" 등 증거기반(vision 4회, units503). 교차검증이 핸드오프 희소를 정확히 WARN.
-- **상시화**: bg 루프 가동중(pid, ~/.orbit/ops-agent.log). 런처 ~/.orbit/ops-agent-start.ps1 + ops-agent-hidden.vbs 생성. **HKCU\Run OrbitOpsAgent 등록은 권한가드에 막힘(사용자 명시승인 필요)** — 승인 시 vision워커처럼 wscript ops-agent-hidden.vbs 등록하면 부팅 자동시작.
+- **상시화**: bg 루프 가동중(~/.orbit/ops-agent.log, 4h). 런처 ~/.orbit/ops-agent-start.ps1 + ops-agent-hidden.vbs. **HKCU\Run OrbitOpsAgent=wscript ops-agent-hidden.vbs 등록완료(사용자 승인)** → 부팅 자동재시작. 기존 OrbitVisionWorker와 동일 패턴.
 - 한계: ops-input handoff는 입력창(72h)내만 → 0일 수 있음(company뷰는 전체라 11). confidence 0~1로 출력됨(스키마 0~100 의도였으나 표시 무방). CLI 토큰 만료시 워커 빈출력([[vision-cli-worker-local]] setup-token 동일 이슈).
