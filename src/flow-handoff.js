@@ -78,7 +78,7 @@ async function enrichHandoff(pool, hours) {
     const d = tryObj(r.data);
     return {
       id: r.id, u: r.user_id, ts: new Date(r.timestamp).getTime(), tsIso: new Date(r.timestamp).toISOString(),
-      app: d.app || '', text: actionText(d), data: d,
+      app: d.app || '', room: d.room || '', text: actionText(d), data: d,
     };
   });
 
@@ -112,6 +112,9 @@ async function enrichHandoff(pool, hours) {
     for (const o of new Set(orders)) addKey(`order:${o}`, a);
     const doc = a.text.match(docRe);
     if (doc) addKey(`doc:${doc[1].toLowerCase()}`, a);
+    // 카톡방 = 여러 직원이 공유하는 협업 맥락(같은 거래처/안건) → 사람간 인계 신호
+    const room = N.normalizeName(a.room);
+    if (room && room.length >= 2) addKey(`room:${room}`, a);
   }
 
   // ── B. action_handoff: 같은 key, 다른 사람, 시간차 ≤ 윈도우인 인접쌍 ──
