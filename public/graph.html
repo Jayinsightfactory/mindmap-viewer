@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>업무 흐름 청사진 — Orbit</title>
+<!-- 옵시디언식 force graph (UMD 전역: ForceGraph, ForceGraph3D) -->
+<script src="https://unpkg.com/force-graph@1"></script>
+<script src="https://unpkg.com/3d-force-graph@1"></script>
+<style>
+  :root{ --bg:#191a1d; --panel:#202227; --panel2:#26282e; --border:#2c2f36;
+         --txt:#e8eaed; --txt2:#b9bcc2; --muted:#7e828a; --accent:#5b9dff; }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; height:100%; background:var(--bg); color:var(--txt);
+    font-family:system-ui,-apple-system,'Segoe UI',sans-serif; overflow:hidden; }
+  #bar{ position:fixed; top:0; left:0; right:0; height:52px; display:flex; align-items:center;
+    gap:10px; padding:0 14px; background:var(--panel); border-bottom:1px solid var(--border); z-index:10; }
+  #bar h1{ font-size:15px; font-weight:700; margin:0 12px 0 0; white-space:nowrap; }
+  .seg{ display:flex; background:var(--panel2); border:1px solid var(--border); border-radius:8px; overflow:hidden; }
+  .seg button{ background:none; border:none; color:var(--txt2); padding:7px 12px; font-size:12.5px; cursor:pointer; }
+  .seg button.on{ background:var(--accent); color:#0f1115; font-weight:700; }
+  input,select{ background:var(--panel2); border:1px solid var(--border); color:var(--txt); border-radius:7px; padding:6px 9px; font-size:12.5px; }
+  #ctx{ display:flex; gap:8px; align-items:center; }
+  .ghost{ background:none; border:1px solid var(--border); color:var(--txt2); border-radius:7px; padding:6px 10px; font-size:12.5px; cursor:pointer; }
+  #status{ margin-left:auto; color:var(--muted); font-size:12px; white-space:nowrap; }
+  #graph{ position:fixed; top:52px; left:0; right:340px; bottom:0; }
+  #side{ position:fixed; top:52px; right:0; bottom:0; width:340px; background:var(--panel);
+    border-left:1px solid var(--border); overflow-y:auto; padding:16px; }
+  #side h2{ font-size:14px; margin:0 0 4px; }
+  #side .sub{ color:var(--muted); font-size:12px; margin-bottom:12px; }
+  .kv{ display:flex; justify-content:space-between; font-size:12.5px; padding:5px 0; border-bottom:1px solid var(--border); }
+  .kv b{ color:var(--txt2); font-weight:600; }
+  .chip{ display:inline-block; background:var(--panel2); border:1px solid var(--border); border-radius:6px;
+    padding:2px 8px; font-size:11px; color:var(--txt2); margin:2px 4px 2px 0; }
+  .rel{ font-size:12px; color:var(--txt2); padding:4px 0; border-bottom:1px dashed var(--border); }
+  .legend{ position:fixed; bottom:12px; left:12px; background:rgba(32,34,39,.92); border:1px solid var(--border);
+    border-radius:10px; padding:10px 12px; font-size:11px; color:var(--txt2); z-index:9; max-width:300px; }
+  .legend .dot{ display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:5px; vertical-align:middle; }
+  .empty{ color:var(--muted); font-size:13px; line-height:1.6; }
+  a.tokenlink{ color:var(--accent); cursor:pointer; }
+</style>
+</head>
+<body>
+  <div id="bar">
+    <h1>🕸 업무 흐름 청사진</h1>
+    <div class="seg" id="modeSeg">
+      <button data-mode="company" class="on">회사맵</button>
+      <button data-mode="employee">직원 흐름</button>
+      <button data-mode="workunit">업무단위</button>
+    </div>
+    <div id="ctx"></div>
+    <button class="ghost" id="reload">↻ 새로고침</button>
+    <button class="ghost" id="toggle3d">3D</button>
+    <span id="status">토큰 입력 필요</span>
+  </div>
+  <div id="graph"></div>
+  <div id="side">
+    <div class="empty" id="sideEmpty">
+      노드를 클릭하면 여기에 <b>증거 패킷(OAG)</b>이 열립니다.<br><br>
+      • <b>회사맵</b>: 직원·거래처 별자리 + 핸드오프 흐름<br>
+      • <b>직원 흐름</b>: 한 사람의 시간순 작업<br>
+      • <b>업무단위</b>: 거래처/주문 1건이 사람을 가로지르는 경로<br><br>
+      관리자 토큰이 필요합니다. <a class="tokenlink" id="setToken">토큰 설정</a>
+    </div>
+    <div id="sideBody" style="display:none"></div>
+  </div>
+  <div class="legend" id="legend"></div>
+  <script src="/js/graph-shell.js"></script>
+</body>
+</html>
