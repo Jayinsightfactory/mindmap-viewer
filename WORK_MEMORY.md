@@ -1081,3 +1081,12 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 직원 데이터 현황(06/29): 임재용·김빛나 정상(키보드내용+화면). **김빛나 회복**(python 미설치지만 PS폴백 312KB 실화면+키보드내용). 설연주·강현우 키보드 0(uiohook死, 명령채널 안 닿음=§13-Z, 다음 재시작/13:00·15:00 자동업데이트 회생 대기). 이름정정 반영(update-user-name pgOk=True, 김빛나 표시됨).
 - Vision anal=None: 서버워커 disabled_by_flag(무과금 정책), owner PC CLI워커 필요(원격불가).
 - 미완(다음): 온톨로지 golden person id 연결(P1, 현재 from_ref=raw userId), action_mentions_customer/action_updated_erp(OCR/ERP 연결).
+
+### Vision 워커 재가동 (이 PC, 무과금 CLI)
+- 요청: "비전분석 이 PC에서 워커로 작업 시작". owner PC(이 PC)에서 bin/vision-worker.js --server-queue 로 Claude CLI(Max구독) 무과금 분석.
+- **★근본 막힘(비자명, 재발주의): Claude CLI OAuth 토큰 만료**(~/.claude/.credentials.json expiresAt 2026-06-22). 워커가 `claude -p`로 분석하는데 401 Invalid auth → 모든 분석 빈결과. 이 Claude Code 세션은 호스트가 토큰 갱신해줘서 되지만 **별도 spawn한 claude 서브프로세스엔 안 퍼짐**. 일반 로그인/데스크톱앱 로그인으론 standalone CLI 토큰 갱신 안 됨.
+- **해결: `claude setup-token`**(헤드리스 장기토큰 생성). 일반 login 아니라 이거여야 standalone CLI(/.local/bin/claude, 워커가 쓰는 것)가 인증됨. → expiresAt 갱신, `claude -p` 이미지분석 정상.
+- claude 바이너리 2개 주의: 워커는 /c/Users/USER/.local/bin/claude(2.1.173) 사용. 데스크톱앱은 Packages\Claude_...\claude-code\2.1.187. setup-token이 둘 다 쓰는 ~/.claude 토큰 갱신.
+- 검증: 워커 재기동(--night 없이 즉시처리) → screen.analyzed 신규생성 확인("jaeyong lim ECOUNT ERP 구매입력 화면 일자/입고창고 채움" 등 정밀분석). vision queue 처리 중.
+- 운영: 낮 즉시처리는 Max구독 쿼터 사용. 밤엔 autostart의 --night가 이어받음(setup-token으로 그것도 이제 인증됨). screen.analyzed는 ops-ontology cron(30분)이 screen_observed_action으로 자동 승격.
+- 재발 시: vision/stat이 disabled_by_flag(서버워커 OFF=정상, 무과금정책)인데 anal 안 늘면 → 이 PC CLI 토큰 만료 의심 → `claude setup-token` 재실행 + 워커 재기동. 메모리 vision-cli-worker-local.
