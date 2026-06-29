@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>⬡ Orbit AI 원키 설정</title>
+<title>⬡ MOYI 원키 설정</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -97,7 +97,7 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="logo">⬡ Orbit AI 원키 설정</div>
+  <div class="logo">⬡ MOYI 원키 설정</div>
   <div class="sub">Claude Code 데이터를 자동 수집하기 위한 설정입니다. 아래 단계를 따라주세요.</div>
 
   <!-- 전체 설치 버튼 -->
@@ -154,7 +154,7 @@
       <div class="step-title">Claude Code 훅 등록</div>
     </div>
     <div class="step-desc" id="s2-desc">
-      Claude Code를 사용할 때 자동으로 Orbit 서버에 기록합니다.<br>
+      Claude Code를 사용할 때 자동으로 MOYI 서버에 기록합니다.<br>
       <code style="background:#010409;padding:2px 6px;border-radius:4px;font-size:11px;color:#58a6ff">~/.claude/settings.json</code>에 훅이 추가됩니다.
     </div>
     <div class="terminal" id="s2-log"></div>
@@ -219,7 +219,7 @@
     <div class="done-title">✅ 설정 완료!</div>
     <div class="done-desc">
       이제 Claude Code를 사용하면 데이터가 자동 수집됩니다.<br>
-      Orbit 대시보드(<a href="/orbit3d.html"
+      MOYI 대시보드(<a href="/orbit3d.html"
         target="_blank" style="color:#58a6ff">orbit3d.html</a>)에서 데이터를 확인하세요.
     </div>
     <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
@@ -310,7 +310,7 @@ async function installOllama() {
   log.classList.add('show');
   log.innerHTML = '';
 
-  appendLog(log, 'info-line', `[Orbit] OS: ${state.osType} — Ollama 설치 시작…`);
+  appendLog(log, 'info-line', `[MOYI] OS: ${state.osType} — Ollama 설치 시작…`);
 
   try {
     // SSE로 설치 진행 스트리밍
@@ -417,7 +417,7 @@ async function registerHook() {
   const log = document.getElementById('s2-log');
   log.classList.add('show');
   log.innerHTML = '';
-  appendLog(log, 'info-line', '[Orbit] ~/.claude/settings.json 업데이트 중…');
+  appendLog(log, 'info-line', '[MOYI] ~/.claude/settings.json 업데이트 중…');
 
   try {
     const r = await fetch('/api/setup/hook-register', {
@@ -488,7 +488,7 @@ async function startDaemon() {
   const log = document.getElementById('s3-log');
   log.classList.add('show');
   log.innerHTML = '';
-  appendLog(log, 'info-line', '[Orbit] 키로거 데몬 시작 중…');
+  appendLog(log, 'info-line', '[MOYI] 키로거 데몬 시작 중…');
 
   try {
     const r = await fetch('/api/daemon/start', { method: 'POST' });
@@ -633,8 +633,8 @@ function showManualOllama() {
 function showManualFallback() {
   // 로컬 서버가 꺼져 있을 때 — 터미널 명령 안내
   document.getElementById('s1-desc').innerHTML = `
-    <div style="color:#f85149;margin-bottom:8px">⚠️ 로컬 Orbit 서버(localhost:4747)가 실행되지 않고 있습니다.</div>
-    먼저 Orbit 서버를 실행하세요:<br>
+    <div style="color:#f85149;margin-bottom:8px">⚠️ 로컬 MOYI 서버(localhost:4747)가 실행되지 않고 있습니다.</div>
+    먼저 MOYI 서버를 실행하세요:<br>
     <div style="background:#010409;border:1px solid #21262d;border-radius:6px;padding:10px;margin:8px 0;font-family:monospace;font-size:11px;color:#3fb950">
 cd 프로젝트경로 &amp;&amp; npm run dev</div>
     이후 이 페이지를 새로고침 하세요.

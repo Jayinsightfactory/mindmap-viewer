@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Orbit AI - 자동화 워크플로우</title>
+<title>MOYI - 자동화 워크플로우</title>
 <style>
 :root{--bg:#0d1117;--card:#161b22;--border:#30363d;--text:#e6edf3;--muted:#8b949e;--accent:#58a6ff;--green:#3fb950;--yellow:#d29922;--red:#f85149;--purple:#bc8cff;--orange:#ffa657;--cyan:#39d2c0;--topbar-h:48px;}
 *{margin:0;padding:0;box-sizing:border-box;}
@@ -187,11 +187,11 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
 <div class="topbar">
   <div class="topbar-left">
     <div class="topbar-brand">
-      <span style="font-size:18px;">&#x2699;&#xFE0F;</span> <span>Orbit AI</span> &mdash; 자동화 워크플로우
+      <span style="font-size:18px;">&#x2699;&#xFE0F;</span> <span>MOYI</span> &mdash; 자동화 워크플로우
     </div>
   </div>
   <div class="topbar-links">
-    <a href="/orbit-os.html">Orbit OS</a>
+    <a href="/orbit-os.html">MOYI OS</a>
     <a href="/admin-analysis.html">분석</a>
     <a href="/nenova-dashboard.html">nenova</a>
     <a href="/dashboard.html">대시보드</a>
@@ -338,7 +338,7 @@ const WORKFLOWS = {
       {
         id: 'master', label: '마스터 매칭', type: 'database', status: 'live',
         module: 'master_products(3,140) + nenova Product(3,035)',
-        desc: 'Orbit + nenova 전산 DB 품목 매칭\n동기화율: 103.46%\n\n실제 매칭 결과:\n• Catherine → [2851] [MEL] ROSE CHINA / 케서린\n• Pride → [2744] [MEL] ROSE CHINA / 프라우드\n• Doncel → [2306] Carnation CHINA / 돈셀\n• Crimea → [2309] Carnation CHINA / 크리미아\n• Novia → [2515] CARNATION MIx Box A',
+        desc: 'MOYI + nenova 전산 DB 품목 매칭\n동기화율: 103.46%\n\n실제 매칭 결과:\n• Catherine → [2851] [MEL] ROSE CHINA / 케서린\n• Pride → [2744] [MEL] ROSE CHINA / 프라우드\n• Doncel → [2306] Carnation CHINA / 돈셀\n• Crimea → [2309] Carnation CHINA / 크리미아\n• Novia → [2515] CARNATION MIx Box A',
         inputs: [{name:'orders[]',type:'Array'},{name:'product_name',type:'string'}],
         outputs: [{name:'matched_orders[]',type:'Array'},{name:'prodKeys[]',type:'number[]'},{name:'match_rate',type:'number'}],
         sampleData: '실제 nenova ProdKey 매칭:\nCatherine → [2851] 케서린 ✅\nPride → [2744] 프라우드 ✅\nDoncel → [2306] 돈셀 ✅\nNovia → [2515] MIx Box ✅\nCrimea → [2309] 크리미아 ✅\n\n동기화: 3,140/3,035 (103%)',
@@ -1282,7 +1282,7 @@ const WORKFLOWS = {
       {
         id: 'pm_sync', label: '마스터 동기화', type: 'database', status: 'dev',
         module: 'master_products 동기화',
-        desc: 'nenova Product 테이블과 Orbit master_products 동기화. 3,140 ↔ 3,035 매칭',
+        desc: 'nenova Product 테이블과 MOYI master_products 동기화. 3,140 ↔ 3,035 매칭',
         inputs: [{name:'prodKeys[]',type:'number[]'}],
         outputs: [{name:'synced',type:'boolean'},{name:'total_master',type:'number'},{name:'total_nenova',type:'number'},{name:'sync_rate',type:'number'}],
         test: { api: '/api/nenova/products?search=Rose&limit=3', method: 'GET', defaultBody: '', formatResult: d => { const items=d.items||d.products||d||[]; return `마스터 동기화\nnneova: ${Array.isArray(items)?items.length:'-'}건\n동기화율: 103.46%`; } }
@@ -1810,7 +1810,7 @@ function downloadTestTool() {
   const serverUrl = window.location.origin;
   const script = `#!/usr/bin/env python3
 # ═══════════════════════════════════════════════════════════════
-# Orbit AI 자동화 테스트 도구 v2 (orbit-test.py)
+# MOYI 자동화 테스트 도구 v2 (orbit-test.py)
 # ═══════════════════════════════════════════════════════════════
 # CLI 사용법:
 #   orbit-test.py status                    서버 + 워크플로우 상태
@@ -1823,7 +1823,7 @@ function downloadTestTool() {
 # 인증:  orbit-test.py login EMAIL PASSWORD
 # JSON:  orbit-test.py workflows --json     (파이프 호환)
 #
-# Orbit OS CLI 연동:
+# MOYI OS CLI 연동:
 #   orbit automation status    ← 이 스크립트와 동일 API 사용
 #   orbit automation test-all  ← 동일 엔드포인트
 #
@@ -1958,7 +1958,7 @@ def cmd_run(wf_id, data_str=None):
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser(
-        description="Orbit AI 자동화 테스트 도구 v2",
+        description="MOYI 자동화 테스트 도구 v2",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""예시:
   %(prog)s login dlaww584@gmail.com orbit2024

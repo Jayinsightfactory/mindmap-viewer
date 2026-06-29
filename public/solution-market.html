@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>⬡ Orbit — 솔루션 마켓</title>
+<title>⬡ MOYI — 솔루션 마켓</title>
 <style>
 :root {
   --bg: #060a10; --bg2: #0d1117; --bg3: #161b22;
@@ -253,7 +253,7 @@ body { background: var(--bg); color: var(--text); font-family: var(--font); font
 
 <!-- 탑바 -->
 <div class="topbar">
-  <div class="logo">⬡ Orbit</div>
+  <div class="logo">⬡ MOYI</div>
   <div class="tabs">
     <button class="tab active" onclick="switchTab('market')">솔루션 마켓</button>
     <button class="tab" onclick="switchTab('suggestions')">AI 제안 <span id="sugg-count-badge"></span></button>
@@ -261,7 +261,7 @@ body { background: var(--bg); color: var(--text); font-family: var(--font); font
     <button class="tab" onclick="switchTab('upload')">제출하기</button>
   </div>
   <div class="topbar-right">
-    <a href="/orbit3d.html" style="color:var(--text3);font-size:12px;text-decoration:none">← Orbit</a>
+    <a href="/orbit3d.html" style="color:var(--text3);font-size:12px;text-decoration:none">← MOYI</a>
     <a href="/theme-market.html" style="color:var(--text3);font-size:12px;text-decoration:none">테마 마켓</a>
   </div>
 </div>
@@ -347,7 +347,7 @@ body { background: var(--bg); color: var(--text); font-family: var(--font); font
 <div class="modal-overlay" id="feedback-modal">
   <div class="modal">
     <div class="modal-title">👎 개선 제안</div>
-    <div class="modal-sub">이 제안이 왜 도움이 안 됐나요? 대안을 제시해주시면 Orbit이 학습합니다.</div>
+    <div class="modal-sub">이 제안이 왜 도움이 안 됐나요? 대안을 제시해주시면 MOYI이 학습합니다.</div>
     <div class="modal-label">이유 (선택)</div>
     <textarea class="modal-textarea" id="fb-reason" placeholder="예: 이미 자동화했어요, 다른 방식을 쓰고 있어요..."></textarea>
     <div class="modal-label">더 나은 방법 제안 (선택 — 여기서 학습합니다!)</div>
@@ -410,7 +410,7 @@ const BUILTIN_SOLUTIONS = [
     title: '엑셀 자동화 파이썬',
     description: '반복적인 엑셀 데이터 변환, 정렬, 필터링을 Python으로 자동화합니다. 매일 같은 작업을 하고 있다면 바로 적용 가능.',
     type: 'automation_script',
-    author: 'Orbit',
+    author: 'MOYI',
     authorId: 'orbit',
     tags: ['python', 'excel', 'automation', 'daily'],
     price: 0,
@@ -423,9 +423,9 @@ const BUILTIN_SOLUTIONS = [
   {
     id: 'git-daily-report',
     title: '일일 Git 작업 리포트',
-    description: 'git log를 분석해 오늘 작업한 내용을 Slack/카카오워크 형식으로 자동 요약. Orbit과 연동하면 AI 활동도 포함.',
+    description: 'git log를 분석해 오늘 작업한 내용을 Slack/카카오워크 형식으로 자동 요약. MOYI과 연동하면 AI 활동도 포함.',
     type: 'automation_script',
-    author: 'Orbit',
+    author: 'MOYI',
     authorId: 'orbit',
     tags: ['git', 'report', 'slack', 'daily'],
     price: 0,
@@ -436,9 +436,9 @@ const BUILTIN_SOLUTIONS = [
   {
     id: 'orbit-claude-hook',
     title: 'Claude Code 완전 통합 훅',
-    description: 'orbit init으로 자동 설치되는 훅 외에, 추가 컨텍스트(파일 내용, 에러 상세)를 Orbit에 전송하는 고급 훅 설정.',
+    description: 'orbit init으로 자동 설치되는 훅 외에, 추가 컨텍스트(파일 내용, 에러 상세)를 MOYI에 전송하는 고급 훅 설정.',
     type: 'ai_agent',
-    author: 'Orbit',
+    author: 'MOYI',
     authorId: 'orbit',
     tags: ['claude-code', 'hooks', 'orbit', 'integration'],
     price: 0,
@@ -450,9 +450,9 @@ const BUILTIN_SOLUTIONS = [
   {
     id: 'file-watcher-notify',
     title: '파일 변경 알림 에이전트',
-    description: '지정 폴더를 감시하다가 특정 파일이 변경되면 Orbit에 이벤트를 보내고, 설정에 따라 자동 처리 스크립트를 실행.',
+    description: '지정 폴더를 감시하다가 특정 파일이 변경되면 MOYI에 이벤트를 보내고, 설정에 따라 자동 처리 스크립트를 실행.',
     type: 'ai_agent',
-    author: 'Orbit',
+    author: 'MOYI',
     authorId: 'orbit',
     tags: ['file-watch', 'automation', 'notify', 'orbit'],
     price: 0,
@@ -463,9 +463,9 @@ const BUILTIN_SOLUTIONS = [
   {
     id: 'erp-export-auto',
     title: 'ERP 내보내기 자동 처리',
-    description: 'SAP/더존 등 ERP에서 내보낸 CSV/Excel을 자동 감지하고 정해진 형식으로 변환. Orbit daily-work-adapter와 연동.',
+    description: 'SAP/더존 등 ERP에서 내보낸 CSV/Excel을 자동 감지하고 정해진 형식으로 변환. MOYI daily-work-adapter와 연동.',
     type: 'workflow_recipe',
-    author: 'Orbit',
+    author: 'MOYI',
     authorId: 'orbit',
     tags: ['erp', 'excel', 'automation', 'enterprise'],
     price: 9900,
@@ -478,14 +478,14 @@ const BUILTIN_SOLUTIONS = [
     title: 'Claude→Cursor 컨텍스트 동기화',
     description: 'Claude Code에서 Cursor로 전환할 때 작업 컨텍스트를 자동으로 전달. ORBIT_CONTEXT.md가 자동 생성되어 Cursor가 바로 이어받음.',
     type: 'workflow_recipe',
-    author: 'Orbit',
+    author: 'MOYI',
     authorId: 'orbit',
     tags: ['cursor', 'claude', 'context', 'handoff'],
     price: 0,
     downloads: 156,
     rating: 4.8,
     featured: true,
-    code: `# Claude → Cursor 컨텍스트 전달\n# 1. Orbit 서버에서 컨텍스트 저장\ncurl "http://localhost:4747/api/context/bridge?save=1&format=markdown"\n\n# 2. 생성된 ORBIT_CONTEXT.md를 Cursor가 자동 읽음\n# Cursor 설정: Include ORBIT_CONTEXT.md in context\n\n# 또는 orbit.html에서 K 단축키로 검색 후 컨텍스트 복사`,
+    code: `# Claude → Cursor 컨텍스트 전달\n# 1. MOYI 서버에서 컨텍스트 저장\ncurl "http://localhost:4747/api/context/bridge?save=1&format=markdown"\n\n# 2. 생성된 ORBIT_CONTEXT.md를 Cursor가 자동 읽음\n# Cursor 설정: Include ORBIT_CONTEXT.md in context\n\n# 또는 orbit.html에서 K 단축키로 검색 후 컨텍스트 복사`,
   },
 ];
 
@@ -580,7 +580,7 @@ async function loadSuggestions() {
     list.innerHTML = `<div class="empty-state">
       <div class="empty-icon">🔭</div>
       <div class="empty-title">아직 패턴이 없습니다</div>
-      <div class="empty-desc">작업을 계속하면 Orbit이 반복 패턴을 감지하고<br>자동화 제안을 드립니다.</div>
+      <div class="empty-desc">작업을 계속하면 MOYI이 반복 패턴을 감지하고<br>자동화 제안을 드립니다.</div>
     </div>`;
     return;
   }

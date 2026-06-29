@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>⬡ Orbit — 커뮤니티</title>
+<title>⬡ MOYI — 커뮤니티</title>
 <style>
 :root {
   --bg: #060a10; --bg2: #0d1117; --bg3: #161b22;
@@ -202,14 +202,14 @@ select.search-box { min-width: 120px; flex: none; }
 <div class="app">
 
 <div class="topbar">
-  <div class="logo">⬡ Orbit</div>
+  <div class="logo">⬡ MOYI</div>
   <div class="tabs">
     <button class="tab active" onclick="switchView('list')">커뮤니티</button>
     <button class="tab" id="detail-tab" style="display:none" onclick="switchView('list')">← 목록</button>
   </div>
   <div class="topbar-right">
     <button class="btn btn-primary" onclick="openNewPost()">+ 글쓰기</button>
-    <a href="/orbit3d.html" style="color:var(--text3);font-size:12px">← Orbit</a>
+    <a href="/orbit3d.html" style="color:var(--text3);font-size:12px">← MOYI</a>
     <a href="/solution-market.html" style="color:var(--text3);font-size:12px">솔루션 마켓</a>
   </div>
 </div>
@@ -317,7 +317,7 @@ const SAMPLE_POSTS = [
   {
     id: 'p1',
     category: 'insight',
-    title: 'Orbit + Claude Code 하네스로 작업 속도 3배 높인 방법',
+    title: 'MOYI + Claude Code 하네스로 작업 속도 3배 높인 방법',
     body: `CLAUDE.md에 울트라 워크 설정을 하고 나서 반복 작업이 현저히 줄었습니다.\n\n특히 \`ulw:\` 명령어로 복잡한 리팩토링을 한 번에 처리하는 게 핵심이에요.\n\n\`\`\`\nulw: 이 파일들의 중복 로직을 제거하고 공통 모듈로 추출해\n\`\`\`\n\n이렇게만 해도 Claude가 알아서 분석 → 계획 → 구현 → 검증까지 합니다.`,
     author: 'orbit_user',
     tags: ['claude-code', 'ulw', 'productivity', 'harness'],
@@ -339,8 +339,8 @@ const SAMPLE_POSTS = [
   {
     id: 'p2',
     category: 'question',
-    title: 'Orbit daily-work-adapter에서 엑셀 파일이 감지가 안 됩니다',
-    body: `설정은 했는데 .xlsx 파일 수정해도 Orbit에 이벤트가 안 잡히네요.\n\nWATCH_DIRS 환경변수를 설정했고 daily-work-adapter.js도 실행 중입니다.\n\n혹시 같은 문제 겪으신 분 계신가요?`,
+    title: 'MOYI daily-work-adapter에서 엑셀 파일이 감지가 안 됩니다',
+    body: `설정은 했는데 .xlsx 파일 수정해도 MOYI에 이벤트가 안 잡히네요.\n\nWATCH_DIRS 환경변수를 설정했고 daily-work-adapter.js도 실행 중입니다.\n\n혹시 같은 문제 겪으신 분 계신가요?`,
     author: 'excel_user',
     tags: ['daily-work', 'excel', 'troubleshooting'],
     votes: 8,
@@ -357,7 +357,7 @@ const SAMPLE_POSTS = [
     id: 'p3',
     category: 'showcase',
     title: 'ERP 내보내기 자동 처리 워크플로우 공유합니다',
-    body: `더존 ERP에서 내보내는 파일을 Orbit으로 추적하고 자동 변환하는 워크플로우를 만들었습니다.\n\n\`\`\`bash\nexport ERP_WATCH_DIR="$HOME/더존/내보내기"\nexport ORBIT_CHANNEL=erp\nnode adapters/daily-work-adapter.js\n\`\`\`\n\n파일이 생성되면 Orbit이 자동으로 캡처하고 처리 스크립트가 실행됩니다.`,
+    body: `더존 ERP에서 내보내는 파일을 MOYI으로 추적하고 자동 변환하는 워크플로우를 만들었습니다.\n\n\`\`\`bash\nexport ERP_WATCH_DIR="$HOME/더존/내보내기"\nexport ORBIT_CHANNEL=erp\nnode adapters/daily-work-adapter.js\n\`\`\`\n\n파일이 생성되면 MOYI이 자동으로 캡처하고 처리 스크립트가 실행됩니다.`,
     author: 'erp_master',
     tags: ['erp', 'automation', 'dozone', 'workflow'],
     votes: 23,

@@ -85,10 +85,10 @@
     <h2>ORBIT 루프 — 4단계</h2>
     <p class="lead">사람이 매뉴얼을 쓰지 않습니다. ORBIT이 일하는 모습을 보고 스스로 배웁니다.</p>
     <div class="loop">
-      <div class="step"><div class="num">STEP 1</div><div class="ic">👁</div><div class="name">보다</div><div class="mod c-teal">Orbit Agent</div><div class="desc">PC에 설치되어 실제 업무량과 디테일을 관찰 — 카톡·엑셀·전산·웹까지</div></div>
-      <div class="step"><div class="num">STEP 2</div><div class="ic">🧠</div><div class="name">배우다</div><div class="mod c-blue">Orbit Flow</div><div class="desc">우리 회사의 워크플로를 그래프로 학습 — 누가, 언제, 어떤 순서로</div></div>
+      <div class="step"><div class="num">STEP 1</div><div class="ic">👁</div><div class="name">보다</div><div class="mod c-teal">MOYI Agent</div><div class="desc">PC에 설치되어 실제 업무량과 디테일을 관찰 — 카톡·엑셀·전산·웹까지</div></div>
+      <div class="step"><div class="num">STEP 2</div><div class="ic">🧠</div><div class="name">배우다</div><div class="mod c-blue">MOYI Flow</div><div class="desc">우리 회사의 워크플로를 그래프로 학습 — 누가, 언제, 어떤 순서로</div></div>
       <div class="step"><div class="num">STEP 3</div><div class="ic">🤖</div><div class="name">대신하다</div><div class="mod c-purple">AI Agent</div><div class="desc">학습된 맥락으로 에이전트가 반복 업무를 수행 — 모든 것은 API로</div></div>
-      <div class="step"><div class="num">STEP 4</div><div class="ic">✅</div><div class="name">컨펌받다</div><div class="mod c-orange">Orbit Talk</div><div class="desc">돈이 걸린 지점은 반드시 사람이 메신저에서 승인 — 콘솔이 아니라 톡에서</div></div>
+      <div class="step"><div class="num">STEP 4</div><div class="ic">✅</div><div class="name">컨펌받다</div><div class="mod c-orange">MOYI Talk</div><div class="desc">돈이 걸린 지점은 반드시 사람이 메신저에서 승인 — 콘솔이 아니라 톡에서</div></div>
     </div>
   </div>
 </section>
@@ -101,15 +101,15 @@
         <div><button class="btn" id="play">▶ 시나리오 재생</button><button class="btn ghost" id="reset">초기화</button></div>
       </div>
       <div class="timeline" id="tl">
-        <div class="ev"><span class="tag t-watch">관찰</span><div class="body"><b>거래처 카톡방에 메시지 도착</b><p>Orbit Bridge가 메시지를 감지합니다.</p><div class="chat">💬 "23차 카네이션 변경이요~ ○○플라워 연그린 1박스 추가해주세요"</div></div></div>
+        <div class="ev"><span class="tag t-watch">관찰</span><div class="body"><b>거래처 카톡방에 메시지 도착</b><p>MOYI Bridge가 메시지를 감지합니다.</p><div class="chat">💬 "23차 카네이션 변경이요~ ○○플라워 연그린 1박스 추가해주세요"</div></div></div>
         <div class="ev"><span class="tag t-learn">학습 적용</span><div class="body"><b>학습된 매핑으로 자동 해석</b><p>거래처 "○○플라워" → CL0042 · 품목 "연그린" → CARN-LG-01 · 차수 23 — 과거 데이터에서 배운 매핑이 즉시 적용됩니다.</p></div></div>
         <div class="ev"><span class="tag t-act">에이전트 실행</span><div class="body"><b>에이전트가 ERP에 변경안 작성</b><p>ERP API로 주문 변경안을 작성하고 <b>검증 대기 상태</b>로 둡니다. 아직 실제 반영 전입니다.</p></div></div>
-        <div class="ev"><span class="tag t-confirm">사람 컨펌</span><div class="body"><b>담당자의 Orbit Talk에 컨펌 카드 도착</b>
+        <div class="ev"><span class="tag t-confirm">사람 컨펌</span><div class="body"><b>담당자의 MOYI Talk에 컨펌 카드 도착</b>
           <div class="confirm-card"><div class="cc-title">⚡ 컨펌 요청 — 주문 변경</div>
           <table><tr><td>거래처</td><td>○○플라워</td></tr><tr><td>품목</td><td>카네이션 연그린</td></tr><tr><td>변경</td><td>+1 박스 (23차)</td></tr><tr><td>출처</td><td>카톡 (AI 해석 신뢰도 98%)</td></tr></table>
           <div class="cc-btns"><button class="cc-ok" id="ccok">승인</button><button class="cc-no">반려</button></div></div>
         </div></div>
-        <div class="ev"><span class="tag t-done">완료</span><div class="body"><b>승인 즉시 ERP 확정 반영 + 전 과정 기록</b><p>변경 이력·출처·승인자가 모두 감사 로그에 남고, Orbit Map 그래프에서 이 흐름 전체를 다시 볼 수 있습니다.</p><div class="chat">⏱ 사람이 쓴 시간: <b style="color:var(--green)">승인 클릭 1번</b> (기존: 카톡 확인 → 전산 검색 → 수기 입력, 약 4분)</div></div></div>
+        <div class="ev"><span class="tag t-done">완료</span><div class="body"><b>승인 즉시 ERP 확정 반영 + 전 과정 기록</b><p>변경 이력·출처·승인자가 모두 감사 로그에 남고, MOYI Map 그래프에서 이 흐름 전체를 다시 볼 수 있습니다.</p><div class="chat">⏱ 사람이 쓴 시간: <b style="color:var(--green)">승인 클릭 1번</b> (기존: 카톡 확인 → 전산 검색 → 수기 입력, 약 4분)</div></div></div>
       </div>
     </div>
   </div>
@@ -120,11 +120,11 @@
     <h2>모듈 구성</h2>
     <p class="lead">필요한 만큼 단계적으로 도입합니다.</p>
     <div class="grid3">
-      <div class="card"><span class="pill t-watch">관찰</span><h4>Orbit Agent</h4><p>설치형 데몬. 업무량·앱 사용·문서 흐름을 수집. 은행·보안 프로그램 자동 감지 시 수집 일시정지.</p></div>
-      <div class="card"><span class="pill t-learn">학습</span><h4>Orbit Flow</h4><p>수집 데이터를 워크플로 그래프로 변환. 거래처·품목·패턴 매핑을 회사 전용 자산으로 축적.</p></div>
-      <div class="card"><span class="pill t-learn">관제</span><h4>Orbit Map</h4><p>3D 그래프 관제탑. 에이전트가 한 일, 사람이 한 일이 모두 연결되어 보입니다.</p></div>
-      <div class="card"><span class="pill t-confirm">승인</span><h4>Orbit Talk (스며)</h4><p>카카오톡을 대체하는 업무 메신저. 컨펌·책임지정(RACI)·전자서명이 채팅에 녹아 있음.</p></div>
-      <div class="card"><span class="pill t-act">연동</span><h4>Orbit Bridge</h4><p>카톡에 남아있는 거래처와 양방향 연결 — 전환기에도 대화가 끊기지 않습니다.</p></div>
+      <div class="card"><span class="pill t-watch">관찰</span><h4>MOYI Agent</h4><p>설치형 데몬. 업무량·앱 사용·문서 흐름을 수집. 은행·보안 프로그램 자동 감지 시 수집 일시정지.</p></div>
+      <div class="card"><span class="pill t-learn">학습</span><h4>MOYI Flow</h4><p>수집 데이터를 워크플로 그래프로 변환. 거래처·품목·패턴 매핑을 회사 전용 자산으로 축적.</p></div>
+      <div class="card"><span class="pill t-learn">관제</span><h4>MOYI Map</h4><p>3D 그래프 관제탑. 에이전트가 한 일, 사람이 한 일이 모두 연결되어 보입니다.</p></div>
+      <div class="card"><span class="pill t-confirm">승인</span><h4>MOYI Talk (스며)</h4><p>카카오톡을 대체하는 업무 메신저. 컨펌·책임지정(RACI)·전자서명이 채팅에 녹아 있음.</p></div>
+      <div class="card"><span class="pill t-act">연동</span><h4>MOYI Bridge</h4><p>카톡에 남아있는 거래처와 양방향 연결 — 전환기에도 대화가 끊기지 않습니다.</p></div>
       <div class="card"><span class="pill t-done">레퍼런스</span><h4>Nenova ERP</h4><p>1번 고객 네노바(꽃 수입·유통)에서 실제 운영 중인 풀 구현 — 데모가 아니라 운영 증거.</p></div>
     </div>
   </div>

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Orbit AI - Project Map</title>
+<title>MOYI - Project Map</title>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
 body { background:#0d1117; color:#e6edf3; font-family:system-ui,-apple-system,sans-serif; font-size:13px; overflow:hidden; height:100vh; }
@@ -136,7 +136,7 @@ const fileData = [
     folder: "server.js",
     tag: "backend", tagLabel: "Backend",
     files: [
-      { name: "server.js", desc: "Orbit AI 서버 진입점 (Express + WebSocket + DB 초기화)" }
+      { name: "server.js", desc: "MOYI 서버 진입점 (Express + WebSocket + DB 초기화)" }
     ]
   },
   {
@@ -369,7 +369,7 @@ const fileData = [
     files: [
       { name: "index.html", desc: "로그인/회원가입 페이지" },
       { name: "orbit3d.html", desc: "메인 3D 마인드맵 뷰어" },
-      { name: "orbit.html", desc: "Orbit 대시보드" },
+      { name: "orbit.html", desc: "MOYI 대시보드" },
       { name: "dashboard.html", desc: "통합 대시보드" },
       { name: "analysis.html", desc: "개인 업무 분석 페이지" },
       { name: "settings.html", desc: "설정 페이지" },
@@ -402,7 +402,7 @@ const fileData = [
     folder: "public/css/",
     tag: "frontend", tagLabel: "Styles",
     files: [
-      { name: "orbit.css", desc: "Orbit 대시보드 스타일" },
+      { name: "orbit.css", desc: "MOYI 대시보드 스타일" },
       { name: "orbit3d.css", desc: "3D 뷰어 메인 스타일" },
       { name: "settings.css", desc: "설정 페이지 스타일" },
       { name: "legacy-2d.css", desc: "레거시 2D 뷰 스타일" }
@@ -418,12 +418,12 @@ const fileData = [
       { name: "adapter-perplexity.js", desc: "Perplexity API -> 표준 MindmapEvent 변환" },
       { name: "adapter-vscode.js", desc: "VS Code 활동 -> 표준 MindmapEvent 변환" },
       { name: "ai-adapter-base.js", desc: "멀티 AI 어댑터 공통 베이스" },
-      { name: "calendar-adapter.js", desc: "Google Calendar -> Orbit 연동" },
+      { name: "calendar-adapter.js", desc: "Google Calendar -> MOYI 연동" },
       { name: "daily-work-adapter.js", desc: "중소기업 직원 일상 업무 추적 어댑터" },
-      { name: "notion-adapter.js", desc: "Notion -> Orbit 연동" },
-      { name: "slack-adapter.js", desc: "Slack/Discord -> Orbit 연동" },
+      { name: "notion-adapter.js", desc: "Notion -> MOYI 연동" },
+      { name: "slack-adapter.js", desc: "Slack/Discord -> MOYI 연동" },
       { name: "webhook-server.js", desc: "Slack+Discord+Zoom 웹훅 통합 서버" },
-      { name: "zoom-adapter.js", desc: "Zoom -> Orbit 연동" },
+      { name: "zoom-adapter.js", desc: "Zoom -> MOYI 연동" },
       { name: "ecosystem.config.js", desc: "PM2 ecosystem 설정 (전체 실행)" }
     ]
   },
@@ -449,7 +449,7 @@ const fileData = [
     folder: "sdk/",
     tag: "cli", tagLabel: "SDK",
     files: [
-      { name: "orbit-agent.js", desc: "Orbit Agent SDK (봇/스크립트 이벤트 리포트)" }
+      { name: "orbit-agent.js", desc: "MOYI Agent SDK (봇/스크립트 이벤트 리포트)" }
     ]
   },
   {
@@ -550,7 +550,7 @@ const conversations = [
   { date:"2026-03-19 23:58", src:"dev", msg:"에이전트 태스크 실행 (자동 분석)" },
   { date:"2026-03-19 02:14", src:"dev", msg:"메모리 관리 지침 설정 - \"말하면 메모리만, 실행하면 작업\"" },
   { date:"2026-03-15 11:36", src:"dev", msg:"에이전트 태스크 실행" },
-  { date:"2026-03-13 02:01", src:"dev", msg:"Orbit 프로젝트 구조 파악" },
+  { date:"2026-03-13 02:01", src:"dev", msg:"MOYI 프로젝트 구조 파악" },
   { date:"2026-03-13 01:46", src:"dev", msg:"컨텍스트 초과 방지 지침 설정 후 작업" },
   { date:"2026-03-13 01:19", src:"dev", msg:"세션 초기화 후 이전 작업 이어서 진행" },
   { date:"2026-03-13 01:12", src:"dev", msg:"세션 초기화 원인 분석 + 이전 작업 확인" },

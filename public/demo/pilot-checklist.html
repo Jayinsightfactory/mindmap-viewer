@@ -46,7 +46,7 @@
     <span class="week">WEEK 1</span><h2>1. 설치 · 동의 · 보안</h2>
     <p class="goal">목표: 동의 기반으로 안전하게 설치되고, 민감 상황에서 수집이 멈추는지 확인</p>
     <label class="item"><input type="checkbox" data-k="s1a"><span><span class="t">파일럿 직원(2~5명)에게 수집 항목·목적 안내 후 <b>서면/전자 동의</b> 수령</span><span class="note">동의서 양식은 도입 패키지에 포함 — 동의 없는 PC에는 설치하지 않음</span></span></label>
-    <label class="item"><input type="checkbox" data-k="s1b"><span><span class="t">Orbit Agent 설치 후 재부팅 시 자동 시작 확인</span></span></label>
+    <label class="item"><input type="checkbox" data-k="s1b"><span><span class="t">MOYI Agent 설치 후 재부팅 시 자동 시작 확인</span></span></label>
     <label class="item"><input type="checkbox" data-k="s1c"><span><span class="t">은행 사이트/보안 프로그램 실행 시 <b>수집 자동 일시정지</b> 동작 확인</span><span class="note">트레이 아이콘 상태 변화로 확인</span></span></label>
     <label class="item"><input type="checkbox" data-k="s1d"><span><span class="t">키 입력 원문이 서버로 전송되지 않음을 확인 (로컬 통계 변환)</span><span class="note">전송 로그 점검 — 통계/이벤트만 전송</span></span></label>
     <label class="item"><input type="checkbox" data-k="s1e"><span><span class="t">네트워크 차단 상태에서 작업 → 복구 시 누락 없이 재전송(오프라인 버퍼) 확인</span></span></label>
@@ -55,7 +55,7 @@
   <section>
     <span class="week">WEEK 2</span><h2>2. 관찰 — 업무량이 정확히 보이는가</h2>
     <p class="goal">목표: 도입사 담당자가 "내 하루가 맞게 기록됐다"고 인정하는 것</p>
-    <label class="item"><input type="checkbox" data-k="s2a"><span><span class="t">하루 업무 후 Orbit Map에서 본인 타임라인 확인 — 주요 작업이 빠짐없이 기록됐는가</span></span></label>
+    <label class="item"><input type="checkbox" data-k="s2a"><span><span class="t">하루 업무 후 MOYI Map에서 본인 타임라인 확인 — 주요 작업이 빠짐없이 기록됐는가</span></span></label>
     <label class="item"><input type="checkbox" data-k="s2b"><span><span class="t">앱 전환·문서 작업·웹 사용이 이벤트로 구분되어 보이는가</span></span></label>
     <label class="item"><input type="checkbox" data-k="s2c"><span><span class="t">반복 업무(예: 주문 입력, 견적 작성)가 패턴으로 묶여 보이는가</span></span></label>
     <label class="item"><input type="checkbox" data-k="s2d"><span><span class="t">업무량 통계(시간/건수)가 담당자 체감과 ±20% 이내인가</span></span></label>
@@ -67,14 +67,14 @@
     <label class="item"><input type="checkbox" data-k="s3a"><span><span class="t">도입사 거래처/품목 마스터를 연동하거나 등록</span></span></label>
     <label class="item"><input type="checkbox" data-k="s3b"><span><span class="t">실제 주문/요청 텍스트 20건을 붙여넣기 → AI 해석 정확도 측정 (목표: 80%+)</span><span class="note">틀린 건은 1회 교정 → 같은 패턴 재입력 시 학습 반영 확인</span></span></label>
     <label class="item"><input type="checkbox" data-k="s3c"><span><span class="t">교정한 매핑이 다음 해석에 즉시 적용되는지 확인 (학습 루프)</span></span></label>
-    <label class="item"><input type="checkbox" data-k="s3d"><span><span class="t">Orbit Map 그래프에서 "누가-무엇을-어떤 순서로" 워크플로가 읽히는가</span></span></label>
+    <label class="item"><input type="checkbox" data-k="s3d"><span><span class="t">MOYI Map 그래프에서 "누가-무엇을-어떤 순서로" 워크플로가 읽히는가</span></span></label>
   </section>
 
   <section>
     <span class="week">WEEK 4</span><h2>4. 실행 + 컨펌 — 루프가 닫히는가</h2>
     <p class="goal">목표: 에이전트 작업 → 사람 승인 → 반영의 전체 루프 1건 완주</p>
     <label class="item"><input type="checkbox" data-k="s4a"><span><span class="t">에이전트가 작성한 작업이 <b>검증 대기</b> 상태로 만들어지는가 (즉시 반영 아님)</span></span></label>
-    <label class="item"><input type="checkbox" data-k="s4b"><span><span class="t">담당자 Orbit Talk에 컨펌 카드가 도착하는가 (출처·신뢰도 표시 포함)</span></span></label>
+    <label class="item"><input type="checkbox" data-k="s4b"><span><span class="t">담당자 MOYI Talk에 컨펌 카드가 도착하는가 (출처·신뢰도 표시 포함)</span></span></label>
     <label class="item"><input type="checkbox" data-k="s4c"><span><span class="t">승인 → 실제 시스템 반영 / 반려 → 미반영+사유 기록 확인</span></span></label>
     <label class="item"><input type="checkbox" data-k="s4d"><span><span class="t">전 과정이 감사 로그에 남는가 (누가 요청, AI가 무엇을, 누가 승인)</span></span></label>
     <label class="item"><input type="checkbox" data-k="s4e"><span><span class="t">기존 방식 대비 처리 시간 측정 — 절감 효과 수치화 (보고서용)</span></span></label>

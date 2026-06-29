@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Orbit AI — 자동화 시각화</title>
+<title>MOYI — 자동화 시각화</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -199,7 +199,7 @@ a{color:var(--blue);text-decoration:none}
 
 <div class="hdr">
   <div>
-    <h1>⚡ Orbit AI — 자동화 시각화</h1>
+    <h1>⚡ MOYI — 자동화 시각화</h1>
     <div class="sub">nenova 업무 자동화 파이프라인 · 전체 흐름 + 예시 + UI + SQL + 에이전트</div>
   </div>
   <div class="hdr-stats">
@@ -684,7 +684,7 @@ const WF = [
   },
   {
     id:'nenovasync', icon:'🔗', name:'넷노바 DB 동기화', status:'plan',
-    desc:'넷노바 SQL Server → Orbit PG 실시간 미러링',
+    desc:'넷노바 SQL Server → MOYI PG 실시간 미러링',
     tags:['SQL Server','CDC','읽기전용'],
     saving:'—', savingDetail:'기반 인프라',
     trigger:'5분 간격 폴링',triggerIcon:'🔄',
@@ -692,7 +692,7 @@ const WF = [
       {name:'SQL Server 연결',tool:'nenova-db.js',detail:'TDS 프로토콜 SQL Server 직접 접속',input:'connection string',output:'연결 완료',color:'blue'},
       {name:'변경분 감지',tool:'CDC 쿼리',detail:'LastModified 기준 변경 레코드 조회',input:'마지막 동기 시각',output:'changed_rows[]',color:'purple'},
       {name:'데이터 변환',tool:'data-digitizer.js',detail:'SQL Server → PG 타입 변환',input:'rows[]',output:'transformed[]',color:'yellow'},
-      {name:'PG 동기화',tool:'orbit_events UPSERT',detail:'Orbit DB에 미러 데이터 저장',input:'transformed[]',output:'동기 완료',color:'green'},
+      {name:'PG 동기화',tool:'orbit_events UPSERT',detail:'MOYI DB에 미러 데이터 저장',input:'transformed[]',output:'동기 완료',color:'green'},
     ],
     example:{
       raw:'넷노바 DB 43개 테이블 중 주요 8개 동기화 대상',
@@ -847,7 +847,7 @@ const AGENTS = [
   {id:'automation-engine',icon:'⚡',name:'Automation Engine',type:'자동화실행',route:'/api/automation',desc:'워크플로우 실행, PAD 스크립트 생성, API 연동'},
   {id:'company-structure',icon:'🏢',name:'Company Structure',type:'조직분석',route:'/api/company-structure',desc:'조직 구조 분석, 워크스페이스 관리'},
   {id:'nenova-db',icon:'🗄️',name:'Nenova DB',type:'DB연결',route:'/api/nenova-db',desc:'SQL Server 직접 접속, 넷노바 43테이블 조회'},
-  {id:'nenova-cross',icon:'🔗',name:'Nenova Cross',type:'교차분석',route:'/api/nenova-cross',desc:'Orbit+넷노바 교차 분석, 데이터 검증'},
+  {id:'nenova-cross',icon:'🔗',name:'Nenova Cross',type:'교차분석',route:'/api/nenova-cross',desc:'MOYI+넷노바 교차 분석, 데이터 검증'},
   {id:'rag-core',icon:'📚',name:'RAG Core',type:'검색/매칭',route:'/api/rag-core',desc:'임베딩 유사도 검색, 문서 참조, 품목 매핑'},
 ];
 

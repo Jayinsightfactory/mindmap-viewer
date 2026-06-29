@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Orbit — AI 행성계</title>
+  <title>MOYI — AI 행성계</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 
   <script type="importmap">
@@ -24,8 +24,8 @@
      style="position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden"></div>
 
 <!-- HUD -->
-<div id="hud" role="toolbar" aria-label="Orbit 제어 도구">
-  <span class="logo">🌌 <span>Orbit</span></span>
+<div id="hud" role="toolbar" aria-label="MOYI 제어 도구">
+  <span class="logo">🌌 <span>MOYI</span></span>
   <div class="live-dot" id="live-dot"></div>
   <div class="zoom-badge">Depth: <b id="scale-val">800</b></div>
   <div class="level-badge" id="level-badge" style="color:var(--cyan);border-color:var(--cyan)">
@@ -46,7 +46,7 @@
     <button class="hud-btn" onclick="autoFit()"
       data-tip-title="⊡ 자동 맞춤 (F)" data-tip-desc="모든 노드가 화면에 맞도록 카메라를 자동으로 조정합니다.">자동 맞춤</button>
     <button class="hud-btn" id="orbit-toggle" onclick="toggleOrbit()"
-      data-tip-title="🔄 Orbit 모드 (O)" data-tip-desc="노드들이 부모 노드 주위를 공전하는 애니메이션을 켜고 끕니다.\n끄면 정적 레이아웃으로 고정됩니다.">🔄 Orbit 모드</button>
+      data-tip-title="🔄 MOYI 모드 (O)" data-tip-desc="노드들이 부모 노드 주위를 공전하는 애니메이션을 켜고 끕니다.\n끄면 정적 레이아웃으로 고정됩니다.">🔄 MOYI 모드</button>
     <button class="hud-btn" id="timeline-toggle" onclick="toggleTimeline()"
       data-tip-title="⏱ 타임라인 (L)" data-tip-desc="이벤트를 시간 순서로 레일에 표시합니다.\n세션별 작업 흐름을 시각적으로 추적하세요.">⏱ 타임라인</button>
     <label title="표시할 최대 노드 수 조절" style="font-size:10px;color:var(--text3);display:flex;align-items:center;gap:4px">
@@ -65,13 +65,13 @@
     <a href="/team-dashboard.html" style="text-decoration:none"><button class="hud-btn hud-secondary"
       data-tip-title="👥 팀 대시보드 (G)" data-tip-desc="팀원별 작업 현황과 협업 패턴을 분석합니다.">👥 팀</button></a>
     <a href="/theme-market.html" target="_blank" style="text-decoration:none"><button class="hud-btn hud-secondary"
-      data-tip-title="🎨 테마 마켓 (T)" data-tip-desc="Orbit 시각 테마를 변경합니다.\nCyberpunk·Ocean·Forest 등 6종 내장 테마.">🎨 테마</button></a>
+      data-tip-title="🎨 테마 마켓 (T)" data-tip-desc="MOYI 시각 테마를 변경합니다.\nCyberpunk·Ocean·Forest 등 6종 내장 테마.">🎨 테마</button></a>
     <a href="/solution-market.html" target="_blank" style="text-decoration:none"><button class="hud-btn hud-secondary"
       data-tip-title="⚡ 솔루션 마켓" data-tip-desc="커뮤니티가 공유한 자동화 솔루션을 탐색하고 적용합니다.">⚡ 솔루션</button></a>
     <a href="/contributor-dashboard.html" target="_blank" style="text-decoration:none"><button class="hud-btn hud-secondary"
       data-tip-title="💰 마켓 2.0 (W)" data-tip-desc="기여자 수익 공유 현황과 리더보드를 확인합니다.\n솔루션 사용량 기반 정산 시스템.">💰 마켓 2.0</button></a>
     <a href="/community.html" target="_blank" style="text-decoration:none"><button class="hud-btn hud-secondary"
-      data-tip-title="💬 커뮤니티" data-tip-desc="다른 Orbit 사용자와 팁·솔루션·인사이트를 공유합니다.">💬 커뮤니티</button></a>
+      data-tip-title="💬 커뮤니티" data-tip-desc="다른 MOYI 사용자와 팁·솔루션·인사이트를 공유합니다.">💬 커뮤니티</button></a>
     <a href="/settings.html" style="text-decoration:none"><button class="hud-btn"
       data-tip-title="⚙️ 설정" data-tip-desc="AI 소스 연결·알림·보안 정책·테마를 설정합니다.">⚙️ 설정</button></a>
     <a href="/api/portfolio/pdf" target="_blank" style="text-decoration:none"><button class="hud-btn hud-secondary"
@@ -161,7 +161,7 @@
 <div id="tl-selected-bar"></div>
 
 <!-- THREE.JS 컨테이너 -->
-<div id="three-container" role="application" aria-label="Orbit AI 뉴런 맵"></div>
+<div id="three-container" role="application" aria-label="MOYI 뉴런 맵"></div>
 
 <!-- TOOLTIP -->
 <div id="tooltip">
@@ -224,7 +224,7 @@
     <div class="sh-item"><span class="sh-key">A</span>경보 패널</div>
     <div class="sh-item"><span class="sh-key">P</span>목적 뷰</div>
     <div class="sh-item"><span class="sh-key">M</span>팀 오버레이</div>
-    <div class="sh-item"><span class="sh-key">O</span>Orbit 모드</div>
+    <div class="sh-item"><span class="sh-key">O</span>MOYI 모드</div>
     <div class="sh-item"><span class="sh-key">R</span>새로고침</div>
     <div class="sh-item"><span class="sh-key">G</span>팀 대시보드</div>
     <div class="sh-item"><span class="sh-key">T</span>테마 마켓</div>
