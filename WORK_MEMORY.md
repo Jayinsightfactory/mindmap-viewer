@@ -1116,3 +1116,12 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - **P3 프론트** `public/graph.html`+`public/js/graph-shell.js` — UMD force-graph(2D)/3d-force-graph(3D 토글), 줌3단, 신뢰도 고리(녹1.0/황0.67/회0.34), 핸드오프 흐름선, 노드클릭→OAG 패널(/api/ops-ontology/actions/:id/context). 브라우저 검증완료(스샷): 회사 별자리 렌더, 강현우 직원흐름 400노드, 액션클릭→Excel 작업 증거패킷+관계 표시.
 - **재발/한계**: ① 핸드오프는 데이터 희소—owner 외엔 vision/keyboard 약해 처음 0이었음. 336h promote+room키 후 11쌍. 설연주/강현우 keyboard死 회복되면 더 늘어남. ② /employee 기본선택이 활동최다(MN90A…8463, 06-18마지막)면 168h창 밖→0노드. 최근활동순 정렬 개선 여지. ③ 회사맵에서 일부 거래처명(정화원예 등)이 라벨겹침/엔티티오분류로 보일 수 있음(entity-resolution 후속). ④ promote 720h=OOM, ≤168h. ⑤ admin token=env ADMIN_TOKENS(로컬 ~/.orbit-config.json token=orbit_1f4df8…이 프로덕션도 통함), flow API는 orbit_9679로 접근.
 - 범위밖(후속): workunit 선형DAG 레이아웃, 기존페이지 graph셸 흡수(지침 PhaseB~D), 노드 클러스터링.
+
+## 2026-06-29 — 주기 운영 에이전트 파이프라인 (owner PC CLI 무과금) (커밋 70b0082)
+사용자 요청: 데이터구조를 에이전트구성에서 가져오고, 주기적 업데이트. 확인결과 **흐름 그래프는 이미 30분 cron(promote+enrichHandoff)으로 자동갱신**되나, nenova 4에이전트(.claude/agents/nenova-*, data-fusion/forecaster/cross-validator/ops-orchestrator)는 세션 수동호출만이라 예측·병목·교차검증 층이 주기화 안 됨. 결정: **owner PC Claude CLI(무과금)로 에이전트 파이프라인 주기 실행**(Vision워커 패턴), 산출물 전부(예측/병목/부하/자동화/교차검증/source_disagreement) 흐름 뷰에 표시.
+- **서버**(routes/flow-map.js): GET /api/flow/ops-input(융합 작업단위 번들=data-fusion 산출물, units160·loads·handoffs) + POST/GET /api/flow/ops-report(orbit_ops_report 테이블).
+- **워커** bin/ops-agent-worker.js: ops-input fetch → 합성 프롬프트(orchestrator+forecaster+validator)를 claude CLI에 **stdin**으로(arg길이제한 회피) → JSON 파싱 → ops-report POST. 4h 루프(--once 지원). CLAUDE_CLI=where claude(C:\Users\USER\.local\bin\claude.exe). 무과금(Max구독).
+- **프론트**(graph.html): "📊 운영 인사이트" 패널 — verdict/confidence + 예측·병목·부하·자동화·교차검증·원천불일치 + "N분 전 갱신".
+- **검증완료(브라우저 스샷)**: 워커 1회 62초 무과금 실행 → verdict WARN 0.55, 예측4·병목2·자동화4 생성·저장. 패널 렌더: "회계분개 jaeyong 1인 집중·handoff0→보조담당 지정", "Excel주문 ㅋㅋ 단독→강현우 이관검토" 등 증거기반(vision 4회, units503). 교차검증이 핸드오프 희소를 정확히 WARN.
+- **상시화**: bg 루프 가동중(pid, ~/.orbit/ops-agent.log). 런처 ~/.orbit/ops-agent-start.ps1 + ops-agent-hidden.vbs 생성. **HKCU\Run OrbitOpsAgent 등록은 권한가드에 막힘(사용자 명시승인 필요)** — 승인 시 vision워커처럼 wscript ops-agent-hidden.vbs 등록하면 부팅 자동시작.
+- 한계: ops-input handoff는 입력창(72h)내만 → 0일 수 있음(company뷰는 전체라 11). confidence 0~1로 출력됨(스키마 0~100 의도였으나 표시 무방). CLI 토큰 만료시 워커 빈출력([[vision-cli-worker-local]] setup-token 동일 이슈).
