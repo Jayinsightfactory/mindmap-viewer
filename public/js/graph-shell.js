@@ -60,14 +60,15 @@
       .map(e => ({ source: e.from, target: e.to, ...e }));
     return { nodes, links };
   }
-  async function loadCompany() { setStatus('회사맵 로딩…'); render(toGraph(await api('/api/flow/company')), '회사 전체'); }
+  async function loadCompany() { state.refresh = loadCompany; setStatus('회사맵 로딩…'); render(toGraph(await api('/api/flow/company')), '회사 전체'); }
   async function loadEmployee(uid) {
     if (!uid) { const s = $('#empSel'); uid = s && s.value; }
-    if (!uid) return; setStatus('직원 흐름 로딩…');
+    if (!uid) return; state.refresh = () => loadEmployee(uid); setStatus('직원 흐름 로딩…');
     const d = await api('/api/flow/employee?hours=168&userId=' + encodeURIComponent(uid));
     render(toGraph(d), '직원 흐름 · ' + (peopleCache?.find(p => p.userId === uid)?.label || uid));
   }
   async function loadWorkunit(key) {
+    state.refresh = () => loadWorkunit(key);
     setStatus('업무단위 로딩…');
     const isNum = /^\d+$/.test(key);
     const d = await api('/api/flow/workunit?' + (isNum ? 'order=' : 'customer=') + encodeURIComponent(key));
@@ -150,7 +151,8 @@
     state.data = data; state.highlight = new Set();
     if (!state.fg) makeFG();
     state.fg.graphData(data);
-    setStatus(`${title} · 노드 ${data.nodes.length} · 연결 ${data.links.length}`);
+    const _t = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+    setStatus(`${title} · 노드 ${data.nodes.length} · 연결 ${data.links.length} · ⟳${_t} 갱신`);
     renderLegend();
     // 레이아웃 안정 후 화면에 꽉 차게 (작게 몰리는 문제 해결)
     // 펼친 뒤 화면맞춤 + 줌 상한(노드 22개뿐일 때 거대화 방지)
@@ -243,4 +245,11 @@
 
   // 초기화
   if (!token()) askToken(); else reload();
+
+  // 1시간마다 자동 새로고침 — 현재 보기(선택 유지)만 다시 불러옴. 운영 인사이트 패널 열려있으면 같이 갱신.
+  setInterval(() => {
+    if (!token()) return;
+    if (state.refresh) state.refresh();
+    if ($('#ops').style.display === 'block') loadOps();
+  }, 60 * 60 * 1000);
 })();
