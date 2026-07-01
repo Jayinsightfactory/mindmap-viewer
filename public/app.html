@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MOYI — 업무 인텔리전스 콘솔</title>
+<style>
+  :root{--bg:#161719;--panel:#1e2024;--panel2:#26282e;--border:#2c2f36;--txt:#eceef1;--txt2:#b9bcc2;--muted:#7e828a;--accent:#5b9dff;--green:#2e9e6b;--amber:#d9a630}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--txt);font-family:-apple-system,system-ui,'Segoe UI',sans-serif;line-height:1.55}
+  a{color:inherit;text-decoration:none}
+  nav{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:6px;height:56px;padding:0 18px;background:var(--panel);border-bottom:1px solid var(--border)}
+  .logo{font-weight:800;font-size:19px;margin-right:16px}.logo b{color:var(--accent)}
+  .tab{background:none;border:none;color:var(--txt2);padding:8px 14px;border-radius:8px;font-size:14px;cursor:pointer}
+  .tab.on{background:var(--panel2);color:var(--txt);font-weight:700}
+  nav .right{margin-left:auto;display:flex;gap:8px;align-items:center}
+  .ghost{background:none;border:1px solid var(--border);color:var(--txt2);border-radius:8px;padding:7px 12px;font-size:13px;cursor:pointer}
+  .wrap{max-width:1180px;margin:0 auto;padding:26px 20px}
+  h2{font-size:22px;font-weight:800;margin-bottom:4px}
+  .sub{color:var(--muted);font-size:13px;margin-bottom:22px}
+  .kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:26px}
+  @media(max-width:900px){.kpis{grid-template-columns:repeat(3,1fr)}}
+  .kpi{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:16px}
+  .kpi .n{font-size:26px;font-weight:800}.kpi .l{color:var(--muted);font-size:12px;margin-top:3px}
+  .kpi.a .n{color:var(--accent)}.kpi.g .n{color:#5fd39b}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:16px}@media(max-width:900px){.row2{grid-template-columns:1fr}}
+  .panel{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:18px}
+  .panel h3{font-size:15px;margin-bottom:12px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--border)}
+  th{color:var(--muted);font-weight:600;font-size:12px}
+  td.r,th.r{text-align:right}
+  .dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:6px}
+  .verdict{display:inline-block;padding:2px 10px;border-radius:6px;font-size:12px;font-weight:700}
+  .v-PASS{background:#1e4632;color:#5fd39b}.v-WARN{background:#4a3c16;color:#e6c25a}.v-FAIL{background:#4a1e1e;color:#e88}
+  .sec{margin-top:16px}.sec b{display:block;color:var(--txt2);font-size:13px;margin-bottom:6px}
+  .item{font-size:13px;color:var(--txt2);padding:6px 0;border-bottom:1px dashed var(--border)}
+  .tag{font-size:10px;padding:1px 7px;border-radius:5px;background:var(--panel2);margin-right:6px;color:var(--accent)}
+  .btn{background:var(--accent);color:#0f1115;font-weight:700;border:none;border-radius:9px;padding:10px 16px;font-size:14px;cursor:pointer}
+  iframe{width:100%;height:calc(100vh - 120px);border:1px solid var(--border);border-radius:12px;background:#191a1d}
+  .muted{color:var(--muted);font-size:13px}
+  .copybox{display:flex;gap:8px;margin-top:10px}
+  .copybox input{flex:1;background:var(--panel2);border:1px solid var(--border);color:var(--txt);border-radius:8px;padding:9px 11px;font-size:13px}
+</style>
+</head>
+<body>
+  <nav>
+    <div class="logo">M<b>O</b>YI</div>
+    <button class="tab on" data-v="home">회사 현황</button>
+    <button class="tab" data-v="flow">업무 흐름</button>
+    <button class="tab" data-v="insight">운영 인사이트</button>
+    <button class="tab" data-v="staff">직원 · 설치</button>
+    <div class="right">
+      <span class="muted" id="tenant">nenova</span>
+      <button class="ghost" id="tok">토큰</button>
+    </div>
+  </nav>
+  <div class="wrap" id="view"></div>
+
+<script>
+'use strict';
+const $ = s => document.querySelector(s);
+const KEY = 'orbit_flow_token';
+const token = () => sessionStorage.getItem(KEY) || '';
+function askTok(){ const t = prompt('관리자 토큰 (orbit_...)', token()); if(t!=null){ sessionStorage.setItem(KEY, t.trim()); render(state.v); } }
+async function api(p){ const sep=p.includes('?')?'&':'?'; const r=await fetch(p+sep+'token='+encodeURIComponent(token())); if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); }
+const num = n => (n==null?'-':Number(n).toLocaleString());
+const confDot = c => c>=1?'#2e9e6b':c>=0.67?'#d9a630':'#7e828a';
+const ago = iso => { if(!iso) return '-'; const m=Math.round((Date.now()-new Date(iso).getTime())/60000); return m<60?m+'분 전':m<1440?Math.round(m/60)+'시간 전':Math.round(m/1440)+'일 전'; };
+
+const state = { v:'home' };
+
+async function viewHome(){
+  $('#view').innerHTML = '<h2>회사 현황</h2><div class="sub">실시간 업무 데이터 요약 (테넌트: nenova)</div><div id="k" class="muted">불러오는 중…</div>';
+  try{
+    const [st, ppl] = await Promise.all([ api('/api/ops-ontology/stats'), api('/api/flow/people') ]);
+    const relTotal = (st.relations||[]).reduce((s,r)=>s+r.count,0);
+    const cust = (st.goldenEntities||[]).find(g=>g.type==='customer')?.count||0;
+    const people = (ppl.people||[]);
+    const kpi = (n,l,cls='')=>`<div class="kpi ${cls}"><div class="n">${n}</div><div class="l">${l}</div></div>`;
+    $('#view').innerHTML = `<h2>회사 현황</h2><div class="sub">실시간 업무 데이터 요약 · 테넌트 격리됨</div>
+      <div class="kpis">
+        ${kpi(num(st.actions),'작업 액션','a')}${kpi(num(st.verified),'검증됨(3소스)','g')}${kpi(num(st.automatable),'자동화 후보','a')}
+        ${kpi(num(relTotal),'관계')}${kpi(num(people.length),'활동 직원')}${kpi(num(cust),'거래처')}
+      </div>
+      <div class="row2">
+        <div class="panel"><h3>활동 상위 직원</h3><table><thead><tr><th>직원</th><th class="r">작업</th><th class="r">최근</th></tr></thead><tbody>
+          ${people.slice(0,8).map(p=>`<tr><td>${p.label}</td><td class="r">${num(p.count)}</td><td class="r muted">${ago(p.last)}</td></tr>`).join('')}
+        </tbody></table></div>
+        <div class="panel"><h3>관계 종류별</h3><table><thead><tr><th>관계</th><th class="r">건수</th></tr></thead><tbody>
+          ${(st.relations||[]).map(r=>`<tr><td>${r.type}</td><td class="r">${num(r.count)}</td></tr>`).join('')}
+        </tbody></table></div>
+      </div>`;
+  }catch(e){ $('#view').innerHTML = errBox(e); }
+}
+
+function viewFlow(){
+  $('#view').innerHTML = `<h2>업무 흐름 청사진</h2><div class="sub">직원·거래처·인계를 그래프로. 노드 클릭 → 증거 패킷.</div><iframe src="/graph.html"></iframe>`;
+}
+
+async function viewInsight(){
+  $('#view').innerHTML = '<h2>운영 인사이트</h2><div class="sub">AI 에이전트 산출 (4시간 주기, 무과금 CLI)</div><div id="ins" class="muted">불러오는 중…</div>';
+  try{
+    const d = await api('/api/flow/ops-report'); const L = d.latest;
+    if(!L){ $('#ins').innerHTML = '<div class="panel muted">아직 리포트가 없습니다. owner PC 에이전트 워커가 생성하면 표시됩니다.</div>'; return; }
+    const r = L.report||{};
+    const sec = (t,rows)=> rows&&rows.length?`<div class="sec"><b>${t}</b>${rows.join('')}</div>`:'';
+    $('#ins').innerHTML = `<div class="panel">
+      <h3>종합 판정 <span class="verdict v-${r.verdict||'WARN'}">${r.verdict||'-'} ${r.confidence||0}</span> <span class="muted" style="font-weight:400">· ${ago(L.ts)} 갱신</span></h3>
+      <div class="muted">${r.summary||''}</div>
+      ${sec('🔮 예측·다음 액션',(r.forecast||[]).map(f=>`<div class="item"><span class="tag">${f.horizon||''}</span>${f.work||''} · ${f.owner||''} ${f.etaMin?'('+f.etaMin+'분)':''}<br><span class="muted">${f.basis||''}</span></div>`))}
+      ${sec('🚧 병목',(r.bottlenecks||[]).map(b=>`<div class="item">${b.work||''} — ${b.cause||''}<br><span class="muted">조치: ${b.action||''}</span></div>`))}
+      ${sec('👥 담당자 부하',(r.loads||[]).map(l=>`<div class="item">${l.person||''} · <b style="color:${l.level==='높음'?'#e88':l.level==='보통'?'#e6c25a':'#5fd39b'}">${l.level||''}</b> <span class="muted">${l.basis||''}</span></div>`))}
+      ${sec('⚡ 자동화 후보',(r.automation||[]).map(a=>`<div class="item"><span class="tag">${a.method||''}</span>${a.unit||''} <span class="muted">${a.basis||''}</span></div>`))}
+      ${sec('✓ 교차검증',(r.validations||[]).map(v=>`<div class="item"><span class="verdict v-${v.verdict}">${v.verdict}</span> ${v.item||''} <span class="muted">${v.basis||''}</span></div>`))}
+      ${sec('⚠ 원천 불일치',(r.disagreements||[]).map(x=>`<div class="item">${x.unit||''} <span class="muted">(${x.sources||''}) ${x.note||''}</span></div>`))}
+    </div>`;
+  }catch(e){ $('#ins').innerHTML = errBox(e); }
+}
+
+async function viewStaff(){
+  const base = location.origin;
+  $('#view').innerHTML = `<h2>직원 · 설치 관리</h2><div class="sub">직원 목록 · PC/데몬 상태 · 설치 링크</div>
+    <div class="panel"><h3>직원 설치 링크</h3><div class="muted">직원에게 이 링크를 전달 → 실행 → 이름 입력 → 자동 설치</div>
+      <div class="copybox"><input id="inslink" value="${base}/install" readonly><button class="btn" onclick="navigator.clipboard.writeText('${base}/install');this.textContent='복사됨'">복사</button>
+      <a class="btn" href="/install" style="text-decoration:none">설치 파일 받기</a></div></div>
+    <div class="row2" style="margin-top:16px">
+      <div class="panel"><h3>활동 직원</h3><div id="ppl" class="muted">불러오는 중…</div></div>
+      <div class="panel"><h3>PC · 데몬 상태</h3><div id="pcs" class="muted">불러오는 중…</div></div>
+    </div>`;
+  try{
+    const ppl = await api('/api/flow/people');
+    $('#ppl').innerHTML = `<table><thead><tr><th>직원</th><th class="r">작업</th><th class="r">최근</th></tr></thead><tbody>
+      ${(ppl.people||[]).map(p=>`<tr><td>${p.label}</td><td class="r">${num(p.count)}</td><td class="r muted">${ago(p.last)}</td></tr>`).join('')}</tbody></table>`;
+  }catch(e){ $('#ppl').innerHTML = errBox(e); }
+  try{
+    const pc = await api('/api/admin/pc-list');
+    const rows = (pc.pcs||[]).slice(0,14).map(p=>{
+      const live = p.last_seen && (Date.now()-new Date(p.last_seen).getTime()) < 20*60000;
+      return `<tr><td><span class="dot" style="background:${live?'#2e9e6b':'#7e828a'}"></span>${p.hostname||'-'}</td><td class="muted">${(p.user_id||'').slice(0,10)}</td><td class="r">${num(p.event_count)}</td><td class="r muted">${ago(p.last_seen)}</td></tr>`;
+    }).join('');
+    $('#pcs').innerHTML = `<table><thead><tr><th>PC</th><th>계정</th><th class="r">이벤트</th><th class="r">최근</th></tr></thead><tbody>${rows}</tbody></table>`;
+  }catch(e){ $('#pcs').innerHTML = errBox(e); }
+}
+
+function errBox(e){ return `<div class="panel"><div style="color:#e88">불러오기 실패: ${e.message}</div><div class="muted" style="margin-top:8px">관리자 토큰이 필요합니다. 우상단 "토큰"을 눌러 입력하세요.</div></div>`; }
+
+function render(v){
+  state.v = v;
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('on', t.dataset.v===v));
+  ({home:viewHome, flow:viewFlow, insight:viewInsight, staff:viewStaff}[v]||viewHome)();
+}
+document.querySelectorAll('.tab').forEach(t=> t.onclick=()=>render(t.dataset.v));
+$('#tok').onclick = askTok;
+if(!token()) askTok(); else render('home');
+</script>
+</body>
+</html>
