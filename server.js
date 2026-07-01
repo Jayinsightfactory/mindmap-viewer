@@ -4532,7 +4532,7 @@ app.post('/api/admin/install-code', async (req, res) => {
 app.post('/api/setup/auto-register', async (req, res) => {
   try {
     const { hostname, windowsUser, name: inputName,
-            kakaoTitle, nenovaTitle, kakaoFolders } = req.body || {};
+            kakaoTitle, nenovaTitle, kakaoFolders, consent, consentAt } = req.body || {};
     if (!hostname) return res.status(400).json({ error: 'hostname required' });
     // 2026-06-08 fix: issueApiToken (fire-and-forget PG) → issueApiTokenAsync (await PG)
     // race condition 해결 — 사용자 PC가 즉시 link-pc 호출 시 PG에 토큰 보장됨
@@ -4629,6 +4629,7 @@ app.post('/api/setup/auto-register', async (req, res) => {
         kakaoTitle:  kakaoTitle  || null,
         nenovaTitle: nenovaTitle || null,
         kakaoFolders: Array.isArray(kakaoFolders) ? kakaoFolders : [],
+        consent: consent === true, consentAt: consentAt || null,
         ts: new Date().toISOString(),
       };
       try {
@@ -4692,6 +4693,7 @@ app.post('/api/setup/auto-register', async (req, res) => {
       kakaoTitle:  kakaoTitle  || null,
       nenovaTitle: nenovaTitle || null,
       kakaoFolders: Array.isArray(kakaoFolders) ? kakaoFolders : [],
+      consent: consent === true, consentAt: consentAt || null,
       ts: new Date().toISOString(),
     };
     try {

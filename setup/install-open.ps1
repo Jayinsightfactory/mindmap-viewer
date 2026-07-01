@@ -18,6 +18,25 @@ Write-Host "    - 자주 쓰는 업무 흐름 분석 → 자동화 후보 발굴
 Write-Host "    - 앱·작업 시간 패턴 → 업무 효율 리포트" -ForegroundColor DarkGray
 Write-Host ""
 
+# Step 0: 수집 동의 (개인정보·법적 고지 — 설치 전 필수)
+Write-Host "  ------------------------------------------------" -ForegroundColor Yellow
+Write-Host "  [수집 동의 안내] 이 도구는 업무 자동화 학습을 위해 다음을 수집합니다:" -ForegroundColor Yellow
+Write-Host "    - 사용 앱 / 창 제목 / 작업 시간 패턴" -ForegroundColor Gray
+Write-Host "    - 화면 캡처, 키보드 / 마우스 입력 (업무 재현 학습용)" -ForegroundColor Gray
+Write-Host "  * 은행 / 보안 앱은 자동 제외되며, 비밀번호 입력은 마스킹됩니다." -ForegroundColor DarkGray
+Write-Host "  * 본인은 자기 데이터 열람 / 수집 일시정지 / 삭제를 요청할 수 있습니다." -ForegroundColor DarkGray
+Write-Host "  * 목적: 반복업무 자동화와 효율 개선 (감시 목적 아님)." -ForegroundColor DarkGray
+Write-Host "  ------------------------------------------------" -ForegroundColor Yellow
+$consent = Read-Host "  위 내용에 동의하고 설치하시겠습니까? 동의: Enter / 거부: N"
+if ($consent.Trim().ToUpper() -eq 'N') {
+  Write-Host ""
+  Write-Host "  동의하지 않아 설치를 취소했습니다. (수집된 데이터 없음)" -ForegroundColor Red
+  try { [Console]::ReadKey($true) | Out-Null } catch { Read-Host " " }
+  exit 0
+}
+Write-Host "    동의 확인됨 — 계속합니다." -ForegroundColor Green
+Write-Host ""
+
 # Step 1: 업무 환경 등록
 Write-Host "  [1/2] 업무 환경 등록 중..." -ForegroundColor Cyan
 $hostname = $env:COMPUTERNAME
@@ -55,7 +74,7 @@ $inputName = $inputName.Trim()
 Write-Host ""
 
 try {
-  $regBodyObj = @{ hostname = $hostname; windowsUser = $windowsUser }
+  $regBodyObj = @{ hostname = $hostname; windowsUser = $windowsUser; consent = $true; consentAt = (Get-Date).ToString('o') }
   if ($inputName)                { $regBodyObj.name           = $inputName }
   if ($kakaoTitle)               { $regBodyObj.kakaoTitle     = $kakaoTitle }
   if ($nenovaTitle)              { $regBodyObj.nenovaTitle    = $nenovaTitle }
