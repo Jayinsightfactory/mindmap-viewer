@@ -1125,3 +1125,10 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - **검증완료(브라우저 스샷)**: 워커 1회 62초 무과금 실행 → verdict WARN 0.55, 예측4·병목2·자동화4 생성·저장. 패널 렌더: "회계분개 jaeyong 1인 집중·handoff0→보조담당 지정", "Excel주문 ㅋㅋ 단독→강현우 이관검토" 등 증거기반(vision 4회, units503). 교차검증이 핸드오프 희소를 정확히 WARN.
 - **상시화**: bg 루프 가동중(~/.orbit/ops-agent.log, 4h). 런처 ~/.orbit/ops-agent-start.ps1 + ops-agent-hidden.vbs. **HKCU\Run OrbitOpsAgent=wscript ops-agent-hidden.vbs 등록완료(사용자 승인)** → 부팅 자동재시작. 기존 OrbitVisionWorker와 동일 패턴.
 - 한계: ops-input handoff는 입력창(72h)내만 → 0일 수 있음(company뷰는 전체라 11). confidence 0~1로 출력됨(스키마 0~100 의도였으나 표시 무방). CLI 토큰 만료시 워커 빈출력([[vision-cli-worker-local]] setup-token 동일 이슈).
+
+## 2026-06-29 — MOYI 플랫폼화: 설치프로그램 set 설계 + I0(수집 동의) (커밋 900c7a0)
+- 흐름 대시보드 1시간 자동새로고침(선택유지, 커밋 65e1d20), 재설치 "토큰 무효" 오탐 수정(810ef60, [[orbit-daemon-install-deploy]]).
+- **설치프로그램 set 설계**: C:\Users\USER\MOYI_PLATFORM_PLAN.md §9. 핵심: 실제 설치물=MOYI Agent(PC EXE)+MOYI Talk(모바일/PWA), 나머지 웹. 테넌트 부트스트랩 체인(가입→온보딩→설치링크?t=→Agent설치[동의]→Talk→Map). **이미 Inno Setup EXE 경로 반쯤 존재**(setup/orbit-setup.iss+build-installer.ps1+stub.cs) → 완성+코드사이닝만. 갭: tenant_id·동의·collection_profile·서명.
+- **동의≠인증서 확정**: 동의=개인정보 고지·법적(설치 내 간단동의). 인증서=SmartScreen/Defender 신뢰(외부 판매 시 필요, 지금 파일럿은 현 web-.bat로 불필요). 사용자 결정: 간단동의, 인증서 나중.
+- **I0 구현**: setup/install-open.ps1에 이름입력 전 [수집 동의 안내](항목·목적·은행제외·마스킹·열람/정지/삭제 권리)→동의(Enter)/거부(N 취소). server.js auto-register가 consent/consentAt를 orbit_pc_links.metadata 감사기록에 저장(재사용·신규 양경로). 검증: PS파서 통과, 배포 후 /setup/install-open.ps1에 문구 확인, 동의 auto-register ok:True.
+- **다음(미완)**: T0 테넌트 격리(promote/flow/ops 쿼리에 tenant_id 필터 — 2호 거래업체 전 필수, [[flow-blueprint-obsidian-graph]] 격리갭). 설치링크?t=→config tenantId→hook 플러밍은 T0와 묶어서. 서명EXE+인증서는 외부판매 시점.
