@@ -1148,3 +1148,11 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
   - ★토큰은 prompt() 금지(렌더블록+UX나쁨) → **인라인 토큰 바**. 
 - 교훈: 목업 이미지는 "실제 페이지 아님"이라 사용자에 도움 안 됨 → 실 API 페이지로. 마스터토큰 게이트가 업체 사용 장벽(T1 SSO 미구현) — 지금은 토큰 입력으로 접근.
 - rapid push(20+)로 Railway 재배포 churn → moyi.html 404 지연, 빈 커밋 재트리거로 해소. **변경 모아서 push할 것**(DATA_CHECK §10).
+
+## 2026-06-29 — 실제 페이지 샘플화: mask/demo 모드 (커밋 ae00f3b·d311d06)
+- 사용자: "우리 페이지를 샘플로 + 모자이크" (가짜 목업 말고 실제 페이지).
+- **?mask=1** (app.html+graph-shell): 실제 데이터 + 직원/거래처/ID/인사이트 블러(모자이크), 토큰UI 숨김, "샘플·모자이크" 배지. → 사용자 본인 토큰으로 실 데이터 데모.
+- **?demo=1** (공개, 토큰불필요): 실제 콘솔 UI + 익명 SAMPLE 데이터(직원 A~H, 거래처 ㄱㄴㄷ). app.html 3뷰 + graph-shell SAMPLE_GRAPH. PII 없음 → 랜딩 공개 임베드용.
+- moyi.html "화면 미리보기" = 라이브 iframe(/app.html?demo=1) → 프로스펙트가 진짜 페이지 조작. (SVG 목업은 요약으로 display:none 유지)
+- 검증(브라우저): app.html?demo=1 토큰없이 샘플 KPI/직원A~H/관계표 정상, "샘플 데이터·라이브 콘솔" 배지. mask=1은 직원명 블러 확인.
+- 교훈: 목업 이미지≠도움. 실제 UI+샘플/모자이크 데이터가 정답. (Chrome save_to_disk 경로 접근 불가라 정적 캡처 대신 라이브 iframe 채택.)
