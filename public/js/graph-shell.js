@@ -53,8 +53,15 @@
   }
 
   // ── 데이터 적재 ─────────────────────────────────────────────────────────────
+  const MASK = new URLSearchParams(location.search).has('mask'); // 샘플/모자이크: 직원·거래처 익명화
   function toGraph(api) {
     const nodes = (api.nodes || []).map(n => ({ ...n }));
+    if (MASK) {
+      let pi = 0, ci = 0; const seen = {};
+      const gen = (n) => { const k = n.kind + ':' + n.id; if (seen[k]) return seen[k];
+        return seen[k] = n.kind === 'customer' ? '거래처 ' + '가나다라마바사아자차'[ci++ % 10] : n.kind === 'employee' ? '직원 ' + 'ABCDEFGHIJKLMNOP'[pi++ % 16] : n.label; };
+      for (const n of nodes) if (n.kind === 'employee' || n.kind === 'customer') n.label = gen(n);
+    }
     const ids = new Set(nodes.map(n => n.id));
     const links = (api.edges || []).filter(e => ids.has(e.from) && ids.has(e.to))
       .map(e => ({ source: e.from, target: e.to, ...e }));

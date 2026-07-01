@@ -39,6 +39,11 @@
   .btn{background:var(--accent);color:#0f1115;font-weight:700;border:none;border-radius:9px;padding:10px 16px;font-size:14px;cursor:pointer}
   iframe{width:100%;height:calc(100vh - 120px);border:1px solid var(--border);border-radius:12px;background:#191a1d}
   .muted{color:var(--muted);font-size:13px}
+  /* 모자이크 모드 (?mask=1): 실제 페이지를 샘플로 쓰되 민감정보만 블러 */
+  body.mask .pii{filter:blur(5px);user-select:none}
+  body.mask #ins .item,body.mask #ins>.panel>.muted{filter:blur(4px)}
+  body.mask #tokbar,body.mask #tok{display:none!important}
+  body.mask::after{content:'샘플 · 개인정보 모자이크';position:fixed;bottom:14px;right:16px;background:var(--panel2);border:1px solid var(--border);color:var(--muted);font-size:11px;padding:5px 11px;border-radius:20px;z-index:99}
   .copybox{display:flex;gap:8px;margin-top:10px}
   .copybox input{flex:1;background:var(--panel2);border:1px solid var(--border);color:var(--txt);border-radius:8px;padding:9px 11px;font-size:13px}
 </style>
@@ -91,7 +96,7 @@ async function viewHome(){
       </div>
       <div class="row2">
         <div class="panel"><h3>활동 상위 직원</h3><table><thead><tr><th>직원</th><th class="r">작업</th><th class="r">최근</th></tr></thead><tbody>
-          ${people.slice(0,8).map(p=>`<tr><td>${p.label}</td><td class="r">${num(p.count)}</td><td class="r muted">${ago(p.last)}</td></tr>`).join('')}
+          ${people.slice(0,8).map(p=>`<tr><td class="pii">${p.label}</td><td class="r">${num(p.count)}</td><td class="r muted">${ago(p.last)}</td></tr>`).join('')}
         </tbody></table></div>
         <div class="panel"><h3>관계 종류별</h3><table><thead><tr><th>관계</th><th class="r">건수</th></tr></thead><tbody>
           ${(st.relations||[]).map(r=>`<tr><td>${r.type}</td><td class="r">${num(r.count)}</td></tr>`).join('')}
@@ -101,7 +106,8 @@ async function viewHome(){
 }
 
 function viewFlow(){
-  $('#view').innerHTML = `<h2>업무 흐름 청사진</h2><div class="sub">직원·거래처·인계를 그래프로. 노드 클릭 → 증거 패킷.</div><iframe src="/graph.html"></iframe>`;
+  const m = document.body.classList.contains('mask') ? '?mask=1' : '';
+  $('#view').innerHTML = `<h2>업무 흐름 청사진</h2><div class="sub">직원·거래처·인계를 그래프로. 노드 클릭 → 증거 패킷.</div><iframe src="/graph.html${m}"></iframe>`;
 }
 
 async function viewInsight(){
@@ -137,13 +143,13 @@ async function viewStaff(){
   try{
     const ppl = await api('/api/flow/people');
     $('#ppl').innerHTML = `<table><thead><tr><th>직원</th><th class="r">작업</th><th class="r">최근</th></tr></thead><tbody>
-      ${(ppl.people||[]).map(p=>`<tr><td>${p.label}</td><td class="r">${num(p.count)}</td><td class="r muted">${ago(p.last)}</td></tr>`).join('')}</tbody></table>`;
+      ${(ppl.people||[]).map(p=>`<tr><td class="pii">${p.label}</td><td class="r">${num(p.count)}</td><td class="r muted">${ago(p.last)}</td></tr>`).join('')}</tbody></table>`;
   }catch(e){ $('#ppl').innerHTML = errBox(e); }
   try{
     const pc = await api('/api/admin/pc-list');
     const rows = (pc.pcs||[]).slice(0,14).map(p=>{
       const live = p.last_seen && (Date.now()-new Date(p.last_seen).getTime()) < 20*60000;
-      return `<tr><td><span class="dot" style="background:${live?'#2e9e6b':'#7e828a'}"></span>${p.hostname||'-'}</td><td class="muted">${(p.user_id||'').slice(0,10)}</td><td class="r">${num(p.event_count)}</td><td class="r muted">${ago(p.last_seen)}</td></tr>`;
+      return `<tr><td><span class="dot" style="background:${live?'#2e9e6b':'#7e828a'}"></span><span class="pii">${p.hostname||'-'}</span></td><td class="muted pii">${(p.user_id||'').slice(0,10)}</td><td class="r">${num(p.event_count)}</td><td class="r muted">${ago(p.last_seen)}</td></tr>`;
     }).join('');
     $('#pcs').innerHTML = `<table><thead><tr><th>PC</th><th>계정</th><th class="r">이벤트</th><th class="r">최근</th></tr></thead><tbody>${rows}</tbody></table>`;
   }catch(e){ $('#pcs').innerHTML = errBox(e); }
@@ -156,6 +162,7 @@ function render(v){
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('on', t.dataset.v===v));
   ({home:viewHome, flow:viewFlow, insight:viewInsight, staff:viewStaff}[v]||viewHome)();
 }
+if(new URLSearchParams(location.search).has('mask')) document.body.classList.add('mask');
 document.querySelectorAll('.tab').forEach(t=> t.onclick=()=>render(t.dataset.v));
 $('#tok').onclick = showTok;
 $('#toksave').onclick = saveTok;
