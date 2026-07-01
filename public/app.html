@@ -44,6 +44,9 @@
   body.mask #ins .item,body.mask #ins>.panel>.muted{filter:blur(4px)}
   body.mask #tokbar,body.mask #tok{display:none!important}
   body.mask::after{content:'샘플 · 개인정보 모자이크';position:fixed;bottom:14px;right:16px;background:var(--panel2);border:1px solid var(--border);color:var(--muted);font-size:11px;padding:5px 11px;border-radius:20px;z-index:99}
+  /* 라이브 샘플(?demo=1): 실제 콘솔 UI + 익명 샘플 데이터 (토큰·PII 없음, 공개 임베드용) */
+  body.demo #tokbar,body.demo #tok{display:none!important}
+  body.demo::after{content:'샘플 데이터 · 라이브 콘솔';position:fixed;bottom:14px;right:16px;background:var(--panel2);border:1px solid var(--border);color:var(--accent);font-size:11px;padding:5px 11px;border-radius:20px;z-index:99}
   .copybox{display:flex;gap:8px;margin-top:10px}
   .copybox input{flex:1;background:var(--panel2);border:1px solid var(--border);color:var(--txt);border-radius:8px;padding:9px 11px;font-size:13px}
 </style>
@@ -80,11 +83,19 @@ const confDot = c => c>=1?'#2e9e6b':c>=0.67?'#d9a630':'#7e828a';
 const ago = iso => { if(!iso) return '-'; const m=Math.round((Date.now()-new Date(iso).getTime())/60000); return m<60?m+'분 전':m<1440?Math.round(m/60)+'시간 전':Math.round(m/1440)+'일 전'; };
 
 const state = { v:'home' };
+const DEMO = new URLSearchParams(location.search).has('demo'); // 라이브 샘플(익명 데이터)
+const _t = m => new Date(Date.now()-m*60000).toISOString();
+const SAMPLE = {
+  stats:{actions:38940,verified:11080,automatable:305,relations:[{type:'action_in_app',count:40180},{type:'person_performed_action',count:38940},{type:'action_in_room',count:7540},{type:'talk_triggered_action',count:4760},{type:'screen_observed_action',count:1068},{type:'automation_candidate_for_process',count:597},{type:'action_mentions_customer',count:592},{type:'action_handoff',count:121}],goldenEntities:[{type:'person',count:12},{type:'customer',count:101}]},
+  people:[{label:'직원 A',count:8463,last:_t(13)},{label:'직원 B',count:7425,last:_t(3)},{label:'직원 C',count:5902,last:_t(3)},{label:'직원 D',count:3669,last:_t(3)},{label:'직원 E',count:3058,last:_t(31)},{label:'직원 F',count:2789,last:_t(25)},{label:'직원 G',count:2449,last:_t(27)},{label:'직원 H',count:2394,last:_t(360)}],
+  report:{ts:_t(12),report:{verdict:'WARN',confidence:0.6,summary:'활동량이 일부 담당자에 집중돼 있으나 라벨/신뢰도가 낮아 업무 확정은 부분적으로만 가능(WARN).',forecast:[{horizon:'15분',work:'ERP 시트 값 입력·전송 지속',owner:'직원 A',etaMin:15,basis:'다중소스 근거'},{horizon:'60분',work:'거래처 톡방 문의 응대·담당 인계',owner:'직원 D',etaMin:45,basis:'인계 왕복 패턴'},{horizon:'240분',work:'ERP 채권/미수금 조회 반복',owner:'직원 E',etaMin:180,basis:'ERP 조회'}],bottlenecks:[{work:'거래처 응대 인계',cause:'담당 간 인계 수십 회 왕복',action:'1차 담당 고정·규칙 명문화'},{work:'시트 입력',cause:'1인 집중',action:'백업 담당 지정'}],loads:[{person:'직원 A',level:'높음',basis:'단일 세션 반복 집중'},{person:'직원 D',level:'높음',basis:'톡방 응대 다수'},{person:'직원 E',level:'보통',basis:'ERP 조회 위주'}],automation:[{method:'API',unit:'채권·입출금 매칭 조회 반복',basis:'3회+·정형'},{method:'PAD',unit:'주문 시트 입력',basis:'안정적 입력 패턴'}],validations:[{verdict:'PASS',item:'시간축 일치',basis:'카톡→작업 정합'},{verdict:'WARN',item:'거래처 매칭',basis:'라벨 일부 공백'}],disagreements:[{unit:'ERP 조회 반복',sources:'ERP만',note:'PC 작업 근거 부족'}]}},
+  pcs:[{hostname:'회사 PC-1',user_id:'********',event_count:32000,last_seen:_t(3)},{hostname:'회사 PC-2',user_id:'********',event_count:30000,last_seen:_t(4)},{hostname:'회사 PC-3',user_id:'********',event_count:16000,last_seen:_t(8)},{hostname:'회사 PC-4',user_id:'********',event_count:10000,last_seen:_t(360)}]
+};
 
 async function viewHome(){
   $('#view').innerHTML = '<h2>회사 현황</h2><div class="sub">실시간 업무 데이터 요약 (테넌트: nenova)</div><div id="k" class="muted">불러오는 중…</div>';
   try{
-    const [st, ppl] = await Promise.all([ api('/api/ops-ontology/stats'), api('/api/flow/people') ]);
+    const [st, ppl] = DEMO ? [SAMPLE.stats, {people:SAMPLE.people}] : await Promise.all([ api('/api/ops-ontology/stats'), api('/api/flow/people') ]);
     const relTotal = (st.relations||[]).reduce((s,r)=>s+r.count,0);
     const cust = (st.goldenEntities||[]).find(g=>g.type==='customer')?.count||0;
     const people = (ppl.people||[]);
@@ -106,14 +117,14 @@ async function viewHome(){
 }
 
 function viewFlow(){
-  const m = document.body.classList.contains('mask') ? '?mask=1' : '';
-  $('#view').innerHTML = `<h2>업무 흐름 청사진</h2><div class="sub">직원·거래처·인계를 그래프로. 노드 클릭 → 증거 패킷.</div><iframe src="/graph.html${m}"></iframe>`;
+  const q = DEMO ? '?demo=1' : (document.body.classList.contains('mask') ? '?mask=1' : '');
+  $('#view').innerHTML = `<h2>업무 흐름 청사진</h2><div class="sub">직원·거래처·인계를 그래프로. 노드 클릭 → 증거 패킷.</div><iframe src="/graph.html${q}"></iframe>`;
 }
 
 async function viewInsight(){
   $('#view').innerHTML = '<h2>운영 인사이트</h2><div class="sub">AI 에이전트 산출 (4시간 주기, 무과금 CLI)</div><div id="ins" class="muted">불러오는 중…</div>';
   try{
-    const d = await api('/api/flow/ops-report'); const L = d.latest;
+    const d = DEMO ? {latest:SAMPLE.report} : await api('/api/flow/ops-report'); const L = d.latest;
     if(!L){ $('#ins').innerHTML = '<div class="panel muted">아직 리포트가 없습니다. owner PC 에이전트 워커가 생성하면 표시됩니다.</div>'; return; }
     const r = L.report||{};
     const sec = (t,rows)=> rows&&rows.length?`<div class="sec"><b>${t}</b>${rows.join('')}</div>`:'';
@@ -141,12 +152,12 @@ async function viewStaff(){
       <div class="panel"><h3>PC · 데몬 상태</h3><div id="pcs" class="muted">불러오는 중…</div></div>
     </div>`;
   try{
-    const ppl = await api('/api/flow/people');
+    const ppl = DEMO ? {people:SAMPLE.people} : await api('/api/flow/people');
     $('#ppl').innerHTML = `<table><thead><tr><th>직원</th><th class="r">작업</th><th class="r">최근</th></tr></thead><tbody>
       ${(ppl.people||[]).map(p=>`<tr><td class="pii">${p.label}</td><td class="r">${num(p.count)}</td><td class="r muted">${ago(p.last)}</td></tr>`).join('')}</tbody></table>`;
   }catch(e){ $('#ppl').innerHTML = errBox(e); }
   try{
-    const pc = await api('/api/admin/pc-list');
+    const pc = DEMO ? {pcs:SAMPLE.pcs} : await api('/api/admin/pc-list');
     const rows = (pc.pcs||[]).slice(0,14).map(p=>{
       const live = p.last_seen && (Date.now()-new Date(p.last_seen).getTime()) < 20*60000;
       return `<tr><td><span class="dot" style="background:${live?'#2e9e6b':'#7e828a'}"></span><span class="pii">${p.hostname||'-'}</span></td><td class="muted pii">${(p.user_id||'').slice(0,10)}</td><td class="r">${num(p.event_count)}</td><td class="r muted">${ago(p.last_seen)}</td></tr>`;
@@ -163,11 +174,14 @@ function render(v){
   ({home:viewHome, flow:viewFlow, insight:viewInsight, staff:viewStaff}[v]||viewHome)();
 }
 if(new URLSearchParams(location.search).has('mask')) document.body.classList.add('mask');
+if(DEMO) document.body.classList.add('demo');
 document.querySelectorAll('.tab').forEach(t=> t.onclick=()=>render(t.dataset.v));
 $('#tok').onclick = showTok;
 $('#toksave').onclick = saveTok;
 $('#tokin').addEventListener('keydown', e=>{ if(e.key==='Enter') saveTok(); });
-if(!token()){ showTok(); $('#view').innerHTML = '<div class="panel muted">상단에 관리자 토큰을 입력하면 실제 데이터가 표시됩니다.</div>'; } else render('home');
+if(DEMO){ render('home'); }
+else if(!token()){ showTok(); $('#view').innerHTML = '<div class="panel muted">상단에 관리자 토큰을 입력하면 실제 데이터가 표시됩니다.</div>'; }
+else render('home');
 </script>
 </body>
 </html>

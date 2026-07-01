@@ -13,6 +13,15 @@
   const confDot = (c) => (c >= 1 ? '#2e9e6b' : c >= 0.67 ? '#d9a630' : '#7e828a');
 
   const state = { mode: 'company', is3d: false, fg: null, data: { nodes: [], links: [] }, highlight: new Set(), hoverId: null };
+  const DEMO = new URLSearchParams(location.search).has('demo'); // 라이브 샘플(익명, 토큰불필요)
+  const SAMPLE_GRAPH = { nodes: [
+    { id:'p1',kind:'employee',label:'직원 A',confidence:1,count:8463 },{ id:'p2',kind:'employee',label:'직원 B',confidence:0.67,count:7425 },
+    { id:'p3',kind:'employee',label:'직원 C',confidence:0.67,count:5902 },{ id:'p4',kind:'employee',label:'직원 D',confidence:0.34,count:3669 },
+    { id:'c1',kind:'customer',label:'거래처 ㄱ',confidence:0.67 },{ id:'c2',kind:'customer',label:'거래처 ㄴ',confidence:0.67 },{ id:'c3',kind:'customer',label:'거래처 ㄷ',confidence:0.34 },
+  ], edges: [
+    { from:'p1',to:'p3',kind:'handoff',count:4,confidence:0.67 },{ from:'p2',to:'p4',kind:'handoff',count:2,confidence:0.67 },
+    { from:'p1',to:'c1',kind:'mentions',count:5,confidence:0.85 },{ from:'p2',to:'c2',kind:'mentions',count:3,confidence:0.85 },{ from:'p4',to:'c3',kind:'mentions',count:2,confidence:0.85 },
+  ] };
 
   function token() { return sessionStorage.getItem(TOKEN_KEY) || ''; }
   function setStatus(t) { $('#status').textContent = t; }
@@ -67,7 +76,7 @@
       .map(e => ({ source: e.from, target: e.to, ...e }));
     return { nodes, links };
   }
-  async function loadCompany() { state.refresh = loadCompany; setStatus('회사맵 로딩…'); render(toGraph(await api('/api/flow/company')), '회사 전체'); }
+  async function loadCompany() { state.refresh = loadCompany; if (DEMO) { render(toGraph(SAMPLE_GRAPH), '샘플 회사'); return; } setStatus('회사맵 로딩…'); render(toGraph(await api('/api/flow/company')), '회사 전체'); }
   async function loadEmployee(uid) {
     if (!uid) { const s = $('#empSel'); uid = s && s.value; }
     if (!uid) return; state.refresh = () => loadEmployee(uid); setStatus('직원 흐름 로딩…');
@@ -83,7 +92,7 @@
   }
 
   async function reload() {
-    if (!token()) { setStatus('토큰 입력 필요'); return; }
+    if (!DEMO && !token()) { setStatus('토큰 입력 필요'); return; }
     try {
       await buildCtx();
       if (state.mode === 'company') await loadCompany();
@@ -251,7 +260,7 @@
   };
 
   // 초기화
-  if (!token()) askToken(); else reload();
+  if (DEMO) reload(); else if (!token()) askToken(); else reload();
 
   // 1시간마다 자동 새로고침 — 현재 보기(선택 유지)만 다시 불러옴. 운영 인사이트 패널 열려있으면 같이 갱신.
   setInterval(() => {

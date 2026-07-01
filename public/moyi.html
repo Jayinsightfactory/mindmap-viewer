@@ -96,6 +96,11 @@
   .shot svg{display:block;width:100%;height:auto;background:#191a1d}
   .shot .cap{padding:13px 15px;font-size:13px;color:var(--txt2)}
   .shot .cap b{color:var(--txt);display:block;font-size:14.5px;margin-bottom:3px}
+  .liveframe{border:1px solid var(--border);border-radius:12px;overflow:hidden;background:#191a1d}
+  .liveframe .chrome{display:flex;align-items:center;gap:6px;padding:9px 12px;background:var(--panel2);border-bottom:1px solid var(--border)}
+  .liveframe .chrome i{width:9px;height:9px;border-radius:50%;display:inline-block}
+  .liveframe .chrome .tt{margin-left:8px;font-size:12px;color:var(--txt2)}
+  .liveframe iframe{display:block;width:100%;height:600px;border:0}
 </style>
 </head>
 <body>
@@ -124,9 +129,11 @@
 
   <!-- SCREENS (실제 화면 목업 — 익명 예시 데이터) -->
   <section id="screens"><div class="wrap">
-    <div class="eyebrow">화면 미리보기</div>
-    <h2>실제 이렇게 보입니다</h2>
-    <p class="lead">아래는 제품 화면입니다. 개인정보 보호를 위해 예시(익명) 데이터로 표시했습니다.</p>
+    <div class="eyebrow">라이브 데모</div>
+    <h2>실제 콘솔을 지금 만져보세요</h2>
+    <p class="lead">아래는 <b style="color:var(--accent)">진짜 제품 콘솔</b>입니다 — 익명 샘플 데이터로 지금 직접 조작할 수 있습니다(상단 탭 전환·그래프 클릭 가능).</p>
+    <div class="liveframe"><div class="chrome"><i style="background:#e0655a"></i><i style="background:#e6b23a"></i><i style="background:#4fb06b"></i><span class="tt">MOYI 콘솔 · 라이브 샘플 (app.html?demo=1)</span></div><iframe src="/app.html?demo=1" loading="lazy"></iframe></div>
+    <p class="lead" style="margin-top:14px">아래는 각 화면 요약:</p>
     <div class="shots">
 
       <!-- 1. 업무 흐름 청사진 -->
