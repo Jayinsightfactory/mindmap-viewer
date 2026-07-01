@@ -1137,3 +1137,14 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - routes/flow-map.js 전 쿼리에 workspace_id 스코프(?tenant=, 기본 nenova). tenant경계=workspace_id(unified_events·ops_relation·orbit_entity_golden 전부 컬럼+인덱스 확인). orbit_ops_report에 workspace_id 컬럼 추가.
 - 검증: /api/flow/company?tenant=nenova 23노드(실데이터) vs ?tenant=zzztest 0노드 = 격리 확인. people 13 vs 0.
 - 남음: ops-ontology.js 읽기 스코프 + write-side(promote 'nenova' 하드코딩→2호 온보딩 시 설치링크?t=→config→hook→promote 태깅). 상세 [[flow-blueprint-obsidian-graph]], MOYI_PLATFORM_PLAN.md §8 T0.
+
+## 2026-06-29 — MOYI 랜딩 + 실제 제품 콘솔 (커밋 3f906be~8919af5)
+- **랜딩** public/moyi.html: 히어로 + 실제화면 미리보기(대형 SVG 목업 3) + 지금 제공 기능(썸네일 목업 10, 제공중7/준비중3) + 프로그램 구성 + 도입3단계. 진입버튼→/app.html.
+- **실제 제품 콘솔** public/app.html(=사용자 "기능별 실제 페이지" 요구): 상단 4탭, 전부 실제 API 데이터.
+  - 회사현황: /api/ops-ontology/stats + /api/flow/people (KPI 6 + 직원/관계 표). 검증: 액션38,947·직원13·거래처101·handoff116.
+  - 업무흐름: /graph.html iframe(토큰 sessionStorage 'orbit_flow_token' 공유→중복 프롬프트 없음).
+  - 운영인사이트: /api/flow/ops-report 렌더(WARN0.55·예측·병목·부하·검증). 실 AI 데이터 확인.
+  - 직원·설치: /api/flow/people + /api/admin/pc-list + /install 복사·다운로드.
+  - ★토큰은 prompt() 금지(렌더블록+UX나쁨) → **인라인 토큰 바**. 
+- 교훈: 목업 이미지는 "실제 페이지 아님"이라 사용자에 도움 안 됨 → 실 API 페이지로. 마스터토큰 게이트가 업체 사용 장벽(T1 SSO 미구현) — 지금은 토큰 입력으로 접근.
+- rapid push(20+)로 Railway 재배포 churn → moyi.html 404 지연, 빈 커밋 재트리거로 해소. **변경 모아서 push할 것**(DATA_CHECK §10).
