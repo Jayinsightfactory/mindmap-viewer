@@ -51,6 +51,10 @@
   .tag{font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;white-space:nowrap}
   .tag.live{background:rgba(46,158,107,.16);color:#5fd39b}
   .tag.soon{background:rgba(217,166,48,.16);color:#e6c25a}
+  a.card{display:block;color:inherit;transition:border-color .15s,transform .15s}
+  a.card:hover{border-color:var(--accent);transform:translateY(-2px)}
+  .card .go{margin-top:12px;color:var(--accent);font-size:13px;font-weight:700}
+  .card.soonc{opacity:.66}
 
   /* program composition */
   .flow{display:flex;align-items:stretch;gap:12px;flex-wrap:wrap;margin-bottom:26px}
@@ -205,17 +209,18 @@
     <div class="eyebrow">Available now</div>
     <h2>지금 업체에 제공되는 기능</h2>
     <p class="lead">실제 작동·검증된 기능만 <span class="tag live">제공중</span> 으로 표시했습니다. 로드맵은 <span class="tag soon">준비중</span>.</p>
+    <p class="lead" style="margin-top:-18px"><span class="tag live">제공중</span> 카드는 <b style="color:var(--accent)">클릭하면 실제 화면으로 연결</b>됩니다.</p>
     <div class="grid">
-      <div class="card"><div class="ic">🕸</div><h3>업무 흐름 청사진 <span class="tag live">제공중</span></h3><p>회사·직원·거래처·인계(핸드오프)를 옵시디언식 그래프로. 줌 3단(회사맵·직원흐름·업무단위 라이프사이클) + 2D/3D.</p></div>
-      <div class="card"><div class="ic">🔍</div><h3>증거 기반 정밀분석 <span class="tag live">제공중</span></h3><p>노드 클릭 → 그 작업의 화면해독·타이핑·클릭·관계(OAG 패킷). "155회 사용" 통계가 아니라 무엇을 어떻게 했는지.</p></div>
-      <div class="card"><div class="ic">🧠</div><h3>운영 인사이트(AI) <span class="tag live">제공중</span></h3><p>예측·병목·담당자 부하·자동화 후보·3중 교차검증. AI 에이전트가 4시간마다 무과금으로 산출.</p></div>
-      <div class="card"><div class="ic">🔗</div><h3>거래처·인계 자동연결 <span class="tag live">제공중</span></h3><p>카톡방·거래처·주문번호를 키로 "설연주→강현우" 같은 사람간 인계와 거래처 접점을 자동 추론.</p></div>
-      <div class="card"><div class="ic">💾</div><h3>자동 데이터 수집 <span class="tag live">제공중</span></h3><p>설치 한 번으로 화면·키보드 내용·마우스를 관찰. 은행/보안앱 자동제외, 비밀번호 마스킹, 설치 시 동의.</p></div>
-      <div class="card"><div class="ic">🔒</div><h3>회사별 완전 격리 <span class="tag live">제공중</span></h3><p>멀티테넌트 — 거래업체마다 데이터가 분리됩니다. 한 회사의 정보가 다른 회사에 절대 노출되지 않습니다.</p></div>
-      <div class="card"><div class="ic">🔄</div><h3>실시간 관리자 대시보드 <span class="tag live">제공중</span></h3><p>1시간 자동 갱신 + 즉시 새로고침. 직원별 시간순 작업, 회사 전체 흐름을 한 화면에.</p></div>
-      <div class="card"><div class="ic">💬</div><h3>승인 메신저 (MOYI Talk) <span class="tag soon">준비중</span></h3><p>AI가 일을 해오면 톡의 컨펌 카드로 사람이 승인. 콘솔이 아니라 메신저에서 결재.</p></div>
-      <div class="card"><div class="ic">🔌</div><h3>커넥터 (이카운트·카톡·시트) <span class="tag soon">준비중</span></h3><p>회사가 쓰는 시스템에 붙는 어댑터. 기존 ERP를 바꾸지 않고 연결.</p></div>
-      <div class="card"><div class="ic">🤖</div><h3>AI 실행 엔진 <span class="tag soon">준비중</span></h3><p>관찰·학습한 업무를 AI가 직접 수행(dry-run→승인→실행). 통계를 넘어 대신 일하기.</p></div>
+      <a class="card" href="/graph.html"><div class="ic">🕸</div><h3>업무 흐름 청사진 <span class="tag live">제공중</span></h3><p>회사·직원·거래처·인계(핸드오프)를 옵시디언식 그래프로. 줌 3단(회사맵·직원흐름·업무단위 라이프사이클) + 2D/3D.</p><div class="go">▶ 대시보드 열기</div></a>
+      <a class="card" href="/graph.html"><div class="ic">🔍</div><h3>증거 기반 정밀분석 <span class="tag live">제공중</span></h3><p>노드 클릭 → 그 작업의 화면해독·타이핑·클릭·관계(OAG 패킷). "155회 사용" 통계가 아니라 무엇을 어떻게 했는지.</p><div class="go">▶ 노드 클릭해 증거 보기</div></a>
+      <a class="card" href="/graph.html"><div class="ic">🧠</div><h3>운영 인사이트(AI) <span class="tag live">제공중</span></h3><p>예측·병목·담당자 부하·자동화 후보·3중 교차검증. AI 에이전트가 4시간마다 무과금으로 산출.</p><div class="go">▶ 운영 인사이트 패널 열기</div></a>
+      <a class="card" href="/graph.html"><div class="ic">🔗</div><h3>거래처·인계 자동연결 <span class="tag live">제공중</span></h3><p>카톡방·거래처·주문번호를 키로 사람간 인계와 거래처 접점을 자동 추론.</p><div class="go">▶ 업무단위 흐름 보기</div></a>
+      <a class="card" href="/install"><div class="ic">💾</div><h3>자동 데이터 수집 <span class="tag live">제공중</span></h3><p>설치 한 번으로 화면·키보드 내용·마우스를 관찰. 은행/보안앱 자동제외, 비밀번호 마스킹, 설치 시 동의.</p><div class="go">⬇ 설치 파일 받기 (/install)</div></a>
+      <a class="card" href="/graph.html"><div class="ic">🔒</div><h3>회사별 완전 격리 <span class="tag live">제공중</span></h3><p>멀티테넌트 — 거래업체마다 데이터가 분리됩니다. 한 회사의 정보가 다른 회사에 절대 노출되지 않습니다.</p><div class="go">▶ 격리된 대시보드 확인</div></a>
+      <a class="card" href="/graph.html"><div class="ic">🔄</div><h3>실시간 관리자 대시보드 <span class="tag live">제공중</span></h3><p>1시간 자동 갱신 + 즉시 새로고침. 직원별 시간순 작업, 회사 전체 흐름을 한 화면에.</p><div class="go">▶ 대시보드 열기</div></a>
+      <div class="card soonc"><div class="ic">💬</div><h3>승인 메신저 (MOYI Talk) <span class="tag soon">준비중</span></h3><p>AI가 일을 해오면 톡의 컨펌 카드로 사람이 승인. 콘솔이 아니라 메신저에서 결재.</p></div>
+      <div class="card soonc"><div class="ic">🔌</div><h3>커넥터 (이카운트·카톡·시트) <span class="tag soon">준비중</span></h3><p>회사가 쓰는 시스템에 붙는 어댑터. 기존 ERP를 바꾸지 않고 연결.</p></div>
+      <div class="card soonc"><div class="ic">🤖</div><h3>AI 실행 엔진 <span class="tag soon">준비중</span></h3><p>관찰·학습한 업무를 AI가 직접 수행(dry-run→승인→실행). 통계를 넘어 대신 일하기.</p></div>
     </div>
   </div></section>
 
