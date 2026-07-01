@@ -1132,3 +1132,8 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - **동의≠인증서 확정**: 동의=개인정보 고지·법적(설치 내 간단동의). 인증서=SmartScreen/Defender 신뢰(외부 판매 시 필요, 지금 파일럿은 현 web-.bat로 불필요). 사용자 결정: 간단동의, 인증서 나중.
 - **I0 구현**: setup/install-open.ps1에 이름입력 전 [수집 동의 안내](항목·목적·은행제외·마스킹·열람/정지/삭제 권리)→동의(Enter)/거부(N 취소). server.js auto-register가 consent/consentAt를 orbit_pc_links.metadata 감사기록에 저장(재사용·신규 양경로). 검증: PS파서 통과, 배포 후 /setup/install-open.ps1에 문구 확인, 동의 auto-register ok:True.
 - **다음(미완)**: T0 테넌트 격리(promote/flow/ops 쿼리에 tenant_id 필터 — 2호 거래업체 전 필수, [[flow-blueprint-obsidian-graph]] 격리갭). 설치링크?t=→config tenantId→hook 플러밍은 T0와 묶어서. 서명EXE+인증서는 외부판매 시점.
+
+## 2026-06-29 — T0a 멀티테넌트 격리(읽기) 완료 (커밋 49fd17f)
+- routes/flow-map.js 전 쿼리에 workspace_id 스코프(?tenant=, 기본 nenova). tenant경계=workspace_id(unified_events·ops_relation·orbit_entity_golden 전부 컬럼+인덱스 확인). orbit_ops_report에 workspace_id 컬럼 추가.
+- 검증: /api/flow/company?tenant=nenova 23노드(실데이터) vs ?tenant=zzztest 0노드 = 격리 확인. people 13 vs 0.
+- 남음: ops-ontology.js 읽기 스코프 + write-side(promote 'nenova' 하드코딩→2호 온보딩 시 설치링크?t=→config→hook→promote 태깅). 상세 [[flow-blueprint-obsidian-graph]], MOYI_PLATFORM_PLAN.md §8 T0.
