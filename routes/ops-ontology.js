@@ -174,6 +174,7 @@ function createOpsOntologyRouter(deps = {}) {
   const resolveAdmin = deps.resolveAdmin || (() => ({ isAdmin: true }));
   const router = express.Router();
   const pool = () => (getPool ? getPool() : null);
+  const tenantOf = (req) => String(req.query.tenant || 'nenova').slice(0, 60); // 테넌트 격리(기본 nenova)
 
   router.post('/promote', async (req, res) => {
     try {
@@ -191,10 +192,11 @@ function createOpsOntologyRouter(deps = {}) {
     try {
       const p = pool(); if (!p) return res.status(500).json({ error: 'db not available' });
       await ensureOpsTables(p);
+      const ws = tenantOf(req);
       const [act, rel, gold] = await Promise.all([
-        p.query(`SELECT COUNT(*) c, COUNT(*) FILTER (WHERE (data->>'verified')='true') v, COUNT(*) FILTER (WHERE (data->>'auto')='true') a FROM unified_events WHERE type='work.action'`),
-        p.query(`SELECT rel_type, COUNT(*) c FROM ops_relation GROUP BY rel_type ORDER BY c DESC`),
-        p.query(`SELECT entity_type, COUNT(*) c FROM orbit_entity_golden GROUP BY entity_type`).catch(() => ({ rows: [] })),
+        p.query(`SELECT COUNT(*) c, COUNT(*) FILTER (WHERE (data->>'verified')='true') v, COUNT(*) FILTER (WHERE (data->>'auto')='true') a FROM unified_events WHERE type='work.action' AND workspace_id=$1`, [ws]),
+        p.query(`SELECT rel_type, COUNT(*) c FROM ops_relation WHERE workspace_id=$1 GROUP BY rel_type ORDER BY c DESC`, [ws]),
+        p.query(`SELECT entity_type, COUNT(*) c FROM orbit_entity_golden WHERE workspace_id=$1 GROUP BY entity_type`, [ws]).catch(() => ({ rows: [] })),
       ]);
       res.json({
         ok: true,
@@ -209,7 +211,7 @@ function createOpsOntologyRouter(deps = {}) {
     try {
       const p = pool(); if (!p) return res.status(500).json({ error: 'db not available' });
       const type = req.query.type;
-      const params = []; let where = '1=1';
+      const params = [tenantOf(req)]; let where = 'workspace_id=$1';
       if (type) { params.push(type); where += ` AND entity_type=$${params.length}`; }
       const { rows } = await p.query(
         `SELECT id, entity_type, display_name, attributes, source_refs, confidence FROM orbit_entity_golden WHERE ${where} ORDER BY confidence DESC LIMIT 500`,
@@ -223,7 +225,7 @@ function createOpsOntologyRouter(deps = {}) {
     try {
       const p = pool(); if (!p) return res.status(500).json({ error: 'db not available' });
       await ensureOpsTables(p);
-      const params = []; let where = '1=1';
+      const params = [tenantOf(req)]; let where = 'workspace_id=$1';
       if (req.query.fromRef) { params.push(req.query.fromRef); where += ` AND from_ref=$${params.length}`; }
       if (req.query.toRef) { params.push(req.query.toRef); where += ` AND to_ref=$${params.length}`; }
       if (req.query.relType) { params.push(req.query.relType); where += ` AND rel_type=$${params.length}`; }
@@ -243,9 +245,10 @@ function createOpsOntologyRouter(deps = {}) {
       const p = pool(); if (!p) return res.status(500).json({ error: 'db not available' });
       await ensureOpsTables(p);
       const id = req.params.id;
-      const act = await p.query(`SELECT id, type, user_id, timestamp, data FROM unified_events WHERE id=$1`, [id]);
+      const ws = tenantOf(req);
+      const act = await p.query(`SELECT id, type, user_id, timestamp, data FROM unified_events WHERE id=$1 AND workspace_id=$2`, [id, ws]);
       if (!act.rows.length) return res.status(404).json({ error: 'action not found' });
-      const rels = await p.query(`SELECT rel_type, from_type, from_ref, to_type, to_ref, confidence FROM ops_relation WHERE from_ref=$1 OR to_ref=$1`, [id]);
+      const rels = await p.query(`SELECT rel_type, from_type, from_ref, to_type, to_ref, confidence FROM ops_relation WHERE (from_ref=$1 OR to_ref=$1) AND workspace_id=$2`, [id, ws]);
       res.json({ ok: true, action: act.rows[0], relations: rels.rows });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
