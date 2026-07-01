@@ -55,6 +55,11 @@
       <button class="ghost" id="tok">토큰</button>
     </div>
   </nav>
+  <div id="tokbar" style="display:none;align-items:center;gap:8px;padding:10px 18px;background:var(--panel2);border-bottom:1px solid var(--border)">
+    <span class="muted">관리자 토큰</span>
+    <input id="tokin" placeholder="orbit_..." style="flex:1;max-width:520px;background:#191a1d;border:1px solid var(--border);color:var(--txt);border-radius:8px;padding:8px 11px;font-size:13px">
+    <button class="btn" id="toksave" style="padding:8px 14px">저장</button>
+  </div>
   <div class="wrap" id="view"></div>
 
 <script>
@@ -62,7 +67,8 @@
 const $ = s => document.querySelector(s);
 const KEY = 'orbit_flow_token';
 const token = () => sessionStorage.getItem(KEY) || '';
-function askTok(){ const t = prompt('관리자 토큰 (orbit_...)', token()); if(t!=null){ sessionStorage.setItem(KEY, t.trim()); render(state.v); } }
+function showTok(){ $('#tokbar').style.display='flex'; $('#tokin').value=token(); $('#tokin').focus(); }
+function saveTok(){ const v=$('#tokin').value.trim(); if(v){ sessionStorage.setItem(KEY,v); $('#tokbar').style.display='none'; render(state.v); } }
 async function api(p){ const sep=p.includes('?')?'&':'?'; const r=await fetch(p+sep+'token='+encodeURIComponent(token())); if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); }
 const num = n => (n==null?'-':Number(n).toLocaleString());
 const confDot = c => c>=1?'#2e9e6b':c>=0.67?'#d9a630':'#7e828a';
@@ -151,8 +157,10 @@ function render(v){
   ({home:viewHome, flow:viewFlow, insight:viewInsight, staff:viewStaff}[v]||viewHome)();
 }
 document.querySelectorAll('.tab').forEach(t=> t.onclick=()=>render(t.dataset.v));
-$('#tok').onclick = askTok;
-if(!token()) askTok(); else render('home');
+$('#tok').onclick = showTok;
+$('#toksave').onclick = saveTok;
+$('#tokin').addEventListener('keydown', e=>{ if(e.key==='Enter') saveTok(); });
+if(!token()){ showTok(); $('#view').innerHTML = '<div class="panel muted">상단에 관리자 토큰을 입력하면 실제 데이터가 표시됩니다.</div>'; } else render('home');
 </script>
 </body>
 </html>
