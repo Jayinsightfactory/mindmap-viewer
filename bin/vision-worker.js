@@ -41,6 +41,7 @@ try { fs.mkdirSync(TEMP_DIR, { recursive: true }); } catch {}
 // [2026-06-15] 야간 배치 모드(--night): 낮엔 큐 이미지를 디스크에 보관만(CLI 비용 0),
 // 19:00~08:00에만 CLI 분석. owner PC를 켜두고 퇴근 → 구독한도/업무시간 충돌 없이 야간 처리.
 const NIGHT_MODE = process.argv.includes('--night');
+const FLUSH = process.argv.includes('--flush'); // 주간에도 vision-pending 백로그 즉시 소진
 const NIGHT_START = 19, NIGHT_END = 8; // 19시~다음날 8시
 const PENDING_DIR = path.join(os.homedir(), '.orbit', 'vision-pending');
 try { fs.mkdirSync(PENDING_DIR, { recursive: true }); } catch {}
@@ -494,14 +495,14 @@ async function processServerQueue() {
 
     const batch = queueData.batch || [];
     // 주간(--night) — 큐 이미지를 디스크에 보관만 (CLI 비용 0). 큐는 비워 서버 메모리 보호. 분석은 야간.
-    if (NIGHT_MODE && !_isNight()) {
+    if (NIGHT_MODE && !_isNight() && !FLUSH) {
       for (const item of batch) if (item.imageBase64) _savePending(item);
       if (batch.length) console.log(`[vision-collect] 주간 보관 ${batch.length}건 (분석 ${NIGHT_START}시~, 누적 ${_pendingCount()}건)`);
       return batch.length;
     }
     // 야간(또는 일반 모드) — 디스크 누적분을 큐와 합쳐 처리
     let pending = [];
-    if (NIGHT_MODE) {
+    if (NIGHT_MODE || FLUSH) {
       try {
         pending = fs.readdirSync(PENDING_DIR).filter(f => f.endsWith('.json')).slice(0, 15)
           .map(f => { try { const it = JSON.parse(fs.readFileSync(path.join(PENDING_DIR, f), 'utf8')); it.__pf = path.join(PENDING_DIR, f); return it; } catch { try { fs.unlinkSync(path.join(PENDING_DIR, f)); } catch {} return null; } })
