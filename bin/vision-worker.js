@@ -563,6 +563,7 @@ async function processServerQueue() {
 
 // ── 메인 ─────────────────────────────────────────────────────────────────────
 const SERVER_QUEUE_MODE = process.argv.includes('--server-queue') || !process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+const SERVER_QUEUE_POLL_MS = 60 * 60 * 1000; // 1시간 (Claude 사용량 절감, 기존 30초)
 
 async function main() {
   console.log('[vision-worker] Claude Vision 분석 워커');
@@ -576,14 +577,14 @@ async function main() {
   console.log(`  소스: ${SERVER_QUEUE_MODE ? '서버 큐 (/api/vision/queue)' : 'Google Drive'}`);
   if (CLAUDE_CLI) console.log(`  CLI: ${CLAUDE_CLI}`);
   console.log(`  서버: ${ORBIT_SERVER}`);
-  console.log(`  폴링: ${(SERVER_QUEUE_MODE ? 30 : POLL_INTERVAL / 1000)}초`);
+  console.log(`  폴링: ${(SERVER_QUEUE_MODE ? SERVER_QUEUE_POLL_MS / 1000 : POLL_INTERVAL / 1000)}초`);
 
   if (SERVER_QUEUE_MODE) {
-    // 서버 큐 모드: 30초마다 서버에서 이미지 가져와 CLI 분석
+    // 서버 큐 모드: SERVER_QUEUE_POLL_MS마다 서버에서 이미지 가져와 CLI 분석
     const first = await processServerQueue();
     console.log(`[vision] 첫 배치: ${first}건`);
     if (process.argv.includes('--once')) { process.exit(0); }
-    setInterval(processServerQueue, 30 * 1000);
+    setInterval(processServerQueue, SERVER_QUEUE_POLL_MS);
   } else {
     // Google Drive 모드
     if (!(await loadGoogleConfig())) { console.error('Google Drive 설정 실패'); process.exit(1); }
