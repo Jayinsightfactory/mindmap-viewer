@@ -308,6 +308,22 @@ module.exports = function createNenovaDbRouter({ getDb }) {
     } catch (err) { res.json({ ok: false, error: err.message }); }
   });
 
+  /**
+   * GET /api/nenova/tables — 전체 테이블 목록 (세션/로그인/사용자 활동 테이블 존재 여부 확인용)
+   * 2026-07-04 added: 데몬 없이도 "직원이 어느 화면에 상주 중인지" 서버측 신호가 nenova ERP 자체에 있는지 확인
+   */
+  router.get('/tables', async (req, res) => {
+    try {
+      const pool = await getPool();
+      const result = await pool.request()
+        .query(`SELECT t.name AS table_name, p.rows AS row_count
+                FROM sys.tables t
+                JOIN sys.partitions p ON t.object_id = p.object_id AND p.index_id IN (0,1)
+                ORDER BY t.name`);
+      res.json({ ok: true, count: result.recordset.length, tables: result.recordset });
+    } catch (err) { res.json({ ok: false, error: err.message }); }
+  });
+
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   //                           대시보드
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
