@@ -1175,3 +1175,16 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - **실전 버그 A**: 골든매칭 로직 변경 시 to_ref가 달라져 옛 원문명 관계가 고아로 누적 → kakao_event_mentions_customer/kakao_event_in_room 모두 매 동기화마다 delete+insert(전량 재도출, sheet=append-only라 안전)로 수정.
 - **실전 버그 B(데이터품질, 부분완화)**: 카톡방 이름이 시트/전송 경로에서 인코딩 손상(U+FFFD)돼 같은 방("영업방팀 발주 및 추가 재고확인")이 11개 변형 노드로 쪼개짐. korean-normalizer.levenshtein 재사용해 근접변형 병합(dist≤3, 비율<20%) — 실측 검증: 고정샘플 11→1 완전병합, 실제 서로다른 방 15개는 오탐없이 유지. 단 **라이브 전체동기화에서는 11→7로 부분개선**(추가 미관측 손상패턴 존재, 임계값을 더 풀면 실제 다른 방 오탐병합 위험 → 더 진행 안 함). **근본원인은 nenovakakao/kakaoagent 파이프라인 쪽 인코딩 문제로 추정, 여기 정규화는 완화책이지 완전수정 아님**.
 - 검증(최종): synced 372 / mentions 294 / rooms 372. /api/flow/company stats.kakaoRooms=7 (11→7). 502 1회 관측(잦은 push 재배포 churn, DATA_CHECK §10 기지사실) — 재시도로 회복.
+
+## 2026-07-06 — T0b 완료 + DB 디스크 위기 실사고(Postgres 다운→복구) + 인증버그 발견수정
+"전체작업 마무리" 진행 중 T0b(테넌트 실제 workspaces.id 정합) 작업이 **실제 프로덕션 DB 다운 사고**로 번짐. 전체 타임라인:
+
+1. **T0b 코드**: promote()가 workspace_members 실멤버십에서 워크스페이스 도출(하드코딩 'nenova' 제거), flow-handoff.js가 Action 자신의 workspace_id를 파생관계에 전파, flow-map.js/ops-ontology.js/kakao-ontology-sync.js 기본값을 실제 tenant id **'WS-NENOVA-2026'**(workspace_members에 8명 실멤버, jaeyong lim=owner)로 정합. 발견: 온톨로지 테이블은 그동안 'nenova'라는 별개 문자열을 썼는데 진짜 로그인/팀 시스템의 tenant id는 따로 있었음.
+2. **DB 디스크 99.7%참(4984/5000MB) 발견** → 마이그레이션 실행 중 `Postgres가 WAL redo 중 "No space left on device"로 완전히 다운`(크래시 복구조차 실패, "database system is shut down"). **사용자가 Railway Pro플랜 전환 + 볼륨 250GB로 수동 확장 → 복구 성공**.
+3. **원인**: `unified_events` 데드튜플 89만개(36%, 오늘 promote() 반복실행의 UPDATE 부작용) + `events` 노이즈(daemon.heartbeat/update/log.snapshot 등) 216,557건 삭제(사용자 승인) 후 VACUUM(안전, 무손실)으로 회수.
+4. **인증버그 발견(중요, 재발주의)**: `resolveAdmin()`은 **동기 SQLite verifyToken만** 확인하는데, `/api/daemon/claim-token`은 **PG(orbit_auth_tokens)에만** 등록 — 서로 안 보여서 claim-token이 성공해도 resolveAdmin 기반 엔드포인트는 계속 "admin only". `isAdminReqAsync` 헬퍼(resolveAdmin 폴백 + verifyTokenAsync로 PG도 확인) 신설로 해결 — **새 admin 엔드포인트 만들 땐 resolveAdmin 대신 이걸 쓸 것**.
+5. **대량 UPDATE는 30분 cron(promote)과 deadlock** — 배치(ctid, 2000행x15배치=호출당 3만행 상한)로 분할, done:false면 재호출하는 패턴으로 해결. **1.5M+행 테이블에 단일 UPDATE 금지, 항상 배치+게이트웨이 타임아웃 고려**.
+6. **최종검증**: 신규기본tenant(WS-NENOVA-2026) actions 60,067·relations 151,719·people 13, 옛 라벨(nenova) 0/0(고아없음). /api/flow/company 정상(69노드·107엣지).
+7. 신규 엔드포인트(전부 isAdminReqAsync): `/api/admin/events-size-diag`(GET, 타입별 크기), `/api/admin/db-size-diag`(GET, 테이블별+데드튜플+WAL슬롯), `/api/admin/purge-noise-events`(POST ?days=, 노이즈 삭제), `/api/admin/vacuum-tables`(POST, 안전VACUUM), `/api/admin/migrate-ontology-workspace`(POST, 배치 라벨이관, 멱등·재호출가능).
+
+**재발 시 확인 순서**: ① `railway volume list`로 볼륨 사용량 먼저 ② db-size-diag로 데드튜플 확인 ③ 대량쓰기 전 항상 events-size-diag/db-size-diag로 여유 확인 ④ admin 엔드포인트 401/403 뜨면 isAdminReqAsync 썼는지부터 확인.
