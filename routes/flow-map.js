@@ -9,8 +9,9 @@
  *   GET /api/flow/employee?userId=&hours=   — 한 직원의 시간순 액션 흐름
  *   GET /api/flow/workunit?customer=&order= — 업무단위 라이프사이클(사람 가로지르는 체인)
  *
- * 인증: intelligence-golden 패턴(헤더 Bearer 또는 ?token= === MASTER_TOKEN).
- * ★멀티테넌트: 모든 조회는 workspace_id(=tenant, 기본 'nenova')로 격리. ?tenant= 로 지정.
+ * 인증: 마스터/관리자 토큰(?tenant= 로 대상 회사 지정) 또는 일반 로그인 사용자(Google OAuth) —
+ * 로그인 사용자는 workspace_members 소속 회사로 자동 스코프(T1, 2026-07-06).
+ * ★멀티테넌트: 모든 조회는 workspace_id(=tenant, 기본 'WS-NENOVA-2026')로 격리.
  * node={id,kind,label,confidence,auto,actionId?,userId?,count?,meta}
  * edge={from,to,kind,confidence,label?,count?}
  * ─────────────────────────────────────────────────────────────────────────────
@@ -22,9 +23,6 @@ const MASTER_TOKEN = 'orbit_967930333cab4ff63bc0bcae68c4779e3307d77095375f0d';
 
 function tryObj(x) { if (!x) return {}; if (typeof x === 'object') return x; try { return JSON.parse(x); } catch { return {}; } }
 function userOfAct(actId) { const p = String(actId || '').split(':'); return p[1] || ''; } // act:{userId}:{sec}
-// 실제 workspaces.id(T0b) — 온톨로지 테이블이 예전엔 별도로 'nenova' 문자열을 썼으나
-// 진짜 로그인/팀 시스템(workspace_members)의 tenant id로 정합(2026-07-06 이관).
-function tenantOf(req) { return String(req.query.tenant || 'WS-NENOVA-2026').slice(0, 60); }
 
 function createFlowMapRouter(deps = {}) {
   const getPool = deps.getPool;
@@ -32,9 +30,24 @@ function createFlowMapRouter(deps = {}) {
   const router = express.Router();
   const pool = () => (getPool ? getPool() : null);
 
-  function auth(req) {
+  // T1: 마스터/관리자 토큰은 여전히 전체(?tenant=)로 열람 가능. 일반 로그인 사용자는
+  // 실제 workspace_members 소속 회사(=자기 회사)로 강제 스코프(다른 회사 데이터 노출 금지).
+  async function auth(req) {
     const raw = (req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim() || req.query.token || '';
-    return raw === MASTER_TOKEN || isAdminToken(raw);
+    if (!raw) return null;
+    if (raw === MASTER_TOKEN || isAdminToken(raw)) {
+      return String(req.query.tenant || 'WS-NENOVA-2026').slice(0, 60);
+    }
+    const { verifyTokenAsync } = require('../src/auth');
+    const user = await verifyTokenAsync(raw);
+    if (!user) return null;
+    const p = pool(); if (!p) return null;
+    const { rows } = await p.query(
+      `SELECT workspace_id FROM workspace_members WHERE user_id=$1 AND status='active' ORDER BY joined_at ASC LIMIT 1`,
+      [user.id]
+    );
+    if (!rows.length) return 'NO_WORKSPACE'; // 로그인은 됐지만 아직 회사 배정 전 — 401과 구분해 안내
+    return rows[0].workspace_id;
   }
 
   // 골든 person userId→{label,conf} 맵 (테넌트 스코프)
@@ -58,9 +71,10 @@ function createFlowMapRouter(deps = {}) {
   // ── 회사 별자리 ─────────────────────────────────────────────────────────────
   router.get('/company', async (req, res) => {
     try {
-      if (!auth(req)) return res.status(401).json({ error: 'unauthorized' });
+      const ws = await auth(req);
+      if (ws === 'NO_WORKSPACE') return res.status(403).json({ error: 'not_onboarded', message: '아직 회사에 배정되지 않았습니다. 관리자에게 문의하세요.' });
+      if (!ws) return res.status(401).json({ error: 'unauthorized' });
       const p = pool(); if (!p) return res.status(500).json({ error: 'db not available' });
-      const ws = tenantOf(req);
       const [persons, customers, actCount, mentions, handoffs, kakaoRoomCust] = await Promise.all([
         personMap(p, ws),
         customerMap(p, ws),
@@ -148,9 +162,10 @@ function createFlowMapRouter(deps = {}) {
   // ── 직원 일일 흐름 ──────────────────────────────────────────────────────────
   router.get('/employee', async (req, res) => {
     try {
-      if (!auth(req)) return res.status(401).json({ error: 'unauthorized' });
+      const ws = await auth(req);
+      if (ws === 'NO_WORKSPACE') return res.status(403).json({ error: 'not_onboarded', message: '아직 회사에 배정되지 않았습니다. 관리자에게 문의하세요.' });
+      if (!ws) return res.status(401).json({ error: 'unauthorized' });
       const p = pool(); if (!p) return res.status(500).json({ error: 'db not available' });
-      const ws = tenantOf(req);
       const userId = req.query.userId; if (!userId) return res.status(400).json({ error: 'userId required' });
       const hours = Math.min(parseInt(req.query.hours) || 168, 720);
       const since = new Date(Date.now() - hours * 3600 * 1000).toISOString();
@@ -190,9 +205,10 @@ function createFlowMapRouter(deps = {}) {
   // ── 업무단위 라이프사이클 ────────────────────────────────────────────────────
   router.get('/workunit', async (req, res) => {
     try {
-      if (!auth(req)) return res.status(401).json({ error: 'unauthorized' });
+      const ws = await auth(req);
+      if (ws === 'NO_WORKSPACE') return res.status(403).json({ error: 'not_onboarded', message: '아직 회사에 배정되지 않았습니다. 관리자에게 문의하세요.' });
+      if (!ws) return res.status(401).json({ error: 'unauthorized' });
       const p = pool(); if (!p) return res.status(500).json({ error: 'db not available' });
-      const ws = tenantOf(req);
       let customer = req.query.customer, order = req.query.order;
       if (!customer && !order) return res.status(400).json({ error: 'customer or order required' });
 
@@ -249,9 +265,10 @@ function createFlowMapRouter(deps = {}) {
   // 직원 드롭다운용: 활동 있는 사람 목록(라벨+userId+건수)
   router.get('/people', async (req, res) => {
     try {
-      if (!auth(req)) return res.status(401).json({ error: 'unauthorized' });
+      const ws = await auth(req);
+      if (ws === 'NO_WORKSPACE') return res.status(403).json({ error: 'not_onboarded', message: '아직 회사에 배정되지 않았습니다. 관리자에게 문의하세요.' });
+      if (!ws) return res.status(401).json({ error: 'unauthorized' });
       const p = pool(); if (!p) return res.status(500).json({ error: 'db not available' });
-      const ws = tenantOf(req);
       const [pm, cnt] = await Promise.all([
         personMap(p, ws),
         p.query(`SELECT user_id, COUNT(*) c, MAX(timestamp) last FROM unified_events WHERE type='work.action' AND workspace_id=$1 GROUP BY user_id ORDER BY c DESC`, [ws]),
@@ -265,9 +282,10 @@ function createFlowMapRouter(deps = {}) {
   // ── 에이전트 파이프라인 입력 번들 (worker가 Claude CLI에 먹일 압축 데이터) ──
   router.get('/ops-input', async (req, res) => {
     try {
-      if (!auth(req)) return res.status(401).json({ error: 'unauthorized' });
+      const ws = await auth(req);
+      if (ws === 'NO_WORKSPACE') return res.status(403).json({ error: 'not_onboarded', message: '아직 회사에 배정되지 않았습니다. 관리자에게 문의하세요.' });
+      if (!ws) return res.status(401).json({ error: 'unauthorized' });
       const p = pool(); if (!p) return res.status(500).json({ error: 'db not available' });
-      const ws = tenantOf(req);
       const hours = Math.min(parseInt(req.query.hours) || 24, 336);
       const since = new Date(Date.now() - hours * 3600 * 1000).toISOString();
       const [persons, customers, actsR, handoffsR, talkR, autoR] = await Promise.all([
@@ -307,10 +325,11 @@ function createFlowMapRouter(deps = {}) {
   // worker가 에이전트 산출물(예측·병목·검증·자동화·disagreement)을 저장
   router.post('/ops-report', express.json({ limit: '2mb' }), async (req, res) => {
     try {
-      if (!auth(req)) return res.status(401).json({ error: 'unauthorized' });
+      const ws = await auth(req);
+      if (ws === 'NO_WORKSPACE') return res.status(403).json({ error: 'not_onboarded', message: '아직 회사에 배정되지 않았습니다. 관리자에게 문의하세요.' });
+      if (!ws) return res.status(401).json({ error: 'unauthorized' });
       const p = pool(); if (!p) return res.status(500).json({ error: 'db not available' });
       await ensureReportTable(p);
-      const ws = tenantOf(req);
       const { kind, report, source } = req.body || {};
       if (!report) return res.status(400).json({ error: 'report required' });
       await p.query(`INSERT INTO orbit_ops_report (workspace_id, kind, source, report) VALUES ($1,$2,$3,$4)`,
@@ -321,10 +340,11 @@ function createFlowMapRouter(deps = {}) {
   // 흐름 뷰가 최신 운영 리포트 표시
   router.get('/ops-report', async (req, res) => {
     try {
-      if (!auth(req)) return res.status(401).json({ error: 'unauthorized' });
+      const ws = await auth(req);
+      if (ws === 'NO_WORKSPACE') return res.status(403).json({ error: 'not_onboarded', message: '아직 회사에 배정되지 않았습니다. 관리자에게 문의하세요.' });
+      if (!ws) return res.status(401).json({ error: 'unauthorized' });
       const p = pool(); if (!p) return res.status(500).json({ error: 'db not available' });
       await ensureReportTable(p);
-      const ws = tenantOf(req);
       const { rows } = await p.query(`SELECT ts, kind, source, report FROM orbit_ops_report WHERE workspace_id=$1 ORDER BY ts DESC LIMIT 1`, [ws]);
       res.json({ ok: true, latest: rows[0] || null });
     } catch (e) { res.status(500).json({ error: e.message }); }

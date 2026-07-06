@@ -35,6 +35,11 @@
     const sep = path.includes('?') ? '&' : '?';
     const r = await fetch(API + path + sep + 'token=' + encodeURIComponent(token()));
     if (r.status === 401) { setStatus('인증 실패 — 토큰 확인'); throw new Error('401'); }
+    if (r.status === 403) {
+      const b = await r.json().catch(() => ({}));
+      setStatus(b.message || '아직 회사에 배정되지 않았습니다');
+      throw new Error('403');
+    }
     if (!r.ok) throw new Error('HTTP ' + r.status);
     return r.json();
   }

@@ -259,14 +259,18 @@ function createOAuthRouter({ passport, enabledProviders, insertToken, CLIENT_ORI
 
   // ── Google 로그인 ───────────────────────────────────────────────────────────
   if (enabledProviders.includes('google')) {
-    router.get('/google',
+    // T1: ?next=app 이면 로그인 후 /app.html 로 돌아감(회사 흐름 대시보드 자가로그인).
+    // state 화이트리스트로 오픈리다이렉트 방지 — 미지정/그 외 값은 기존 orbit3d.html 유지.
+    router.get('/google', (req, res, next) => {
+      const nextTarget = req.query.next === 'app' ? 'app' : 'orbit3d';
       passport.authenticate('google', {
         scope: ['profile', 'email', 'https://www.googleapis.com/auth/drive.file'],
         accessType: 'offline',
         prompt: 'consent',
         session: false,
-      })
-    );
+        state: nextTarget,
+      })(req, res, next);
+    });
 
     router.get('/google/callback',
       (req, res, next) => {
@@ -294,7 +298,8 @@ function createOAuthRouter({ passport, enabledProviders, insertToken, CLIENT_ORI
         } catch (e) {
           console.error(`[OAuth/Google] PG 저장 실패: ${req.user.email} — ${e.message}`);
         }
-        res.redirect(`${clientPage}?oauth_token=${token}&provider=google`);
+        const nextTarget = req.query.state === 'app' ? 'app' : 'orbit3d';
+        res.redirect(`${origin}/${nextTarget}.html?oauth_token=${token}&provider=google`);
       }
     );
   } else {
