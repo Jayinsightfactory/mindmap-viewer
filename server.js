@@ -1469,29 +1469,34 @@ app.post('/api/admin/purge-noise-events', async (req, res) => {
 // 큰 단일 UPDATE는 30분 cron(promote)의 동시 쓰기와 충돌해 "deadlock detected" 발생(2026-07-06 실측) →
 // 배치(ctid 기준 5000행씩)로 짧은 트랜잭션 반복. 중간에 실패해도 이미 옮긴 행은 안전(멱등, WHERE절이
 // 남은 미이관 행만 계속 골라냄).
-async function batchRelabel(pool, table, from, to, batchSize = 5000) {
-  let total = 0;
-  for (;;) {
+// maxBatches로 호출 1번의 작업량을 제한(게이트웨이 타임아웃 회피) — done:false면 그대로 다시 호출해 이어감.
+async function batchRelabel(pool, table, from, to, batchSize, maxBatches) {
+  let total = 0, done = false;
+  for (let i = 0; i < maxBatches; i++) {
     const r = await pool.query(
       `UPDATE ${table} SET workspace_id=$2
          WHERE ctid IN (SELECT ctid FROM ${table} WHERE workspace_id=$1 LIMIT ${batchSize})`,
       [from, to]
     );
     total += r.rowCount;
-    if (r.rowCount < batchSize) break;
+    if (r.rowCount < batchSize) { done = true; break; }
   }
-  return total;
+  return { total, done };
 }
 app.post('/api/admin/migrate-ontology-workspace', async (req, res) => {
   try {
     if (!(await isAdminReqAsync(req))) return res.status(403).json({ error: 'admin only' });
     const pool = dbModule.getDb();
     const FROM = 'nenova', TO = 'WS-NENOVA-2026';
-    const unified_events = await batchRelabel(pool, 'unified_events', FROM, TO);
-    const ops_relation = await batchRelabel(pool, 'ops_relation', FROM, TO);
-    const orbit_entity_golden = await batchRelabel(pool, 'orbit_entity_golden', FROM, TO);
-    const orbit_ops_report = await batchRelabel(pool, 'orbit_ops_report', FROM, TO).catch(() => 0);
-    res.json({ ok: true, from: FROM, to: TO, unified_events, ops_relation, orbit_entity_golden, orbit_ops_report });
+    const batchSize = 2000, maxBatches = 15; // 호출당 최대 3만행 — 안전한 응답시간
+    const tables = ['unified_events', 'ops_relation', 'orbit_entity_golden', 'orbit_ops_report'];
+    const results = {};
+    let allDone = true;
+    for (const t of tables) {
+      const r = await batchRelabel(pool, t, FROM, TO, batchSize, maxBatches).catch(() => ({ total: 0, done: true }));
+      results[t] = r.total; if (!r.done) allDone = false;
+    }
+    res.json({ ok: true, from: FROM, to: TO, moved: results, done: allDone, hint: allDone ? '완료' : '남은 행 있음 — 다시 호출하세요' });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
