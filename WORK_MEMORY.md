@@ -1156,3 +1156,13 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - moyi.html "화면 미리보기" = 라이브 iframe(/app.html?demo=1) → 프로스펙트가 진짜 페이지 조작. (SVG 목업은 요약으로 display:none 유지)
 - 검증(브라우저): app.html?demo=1 토큰없이 샘플 KPI/직원A~H/관계표 정상, "샘플 데이터·라이브 콘솔" 배지. mask=1은 직원명 블러 확인.
 - 교훈: 목업 이미지≠도움. 실제 UI+샘플/모자이크 데이터가 정답. (Chrome save_to_disk 경로 접근 불가라 정적 캡처 대신 라이브 iframe 채택.)
+
+## 2026-07-06 — 카톡 시트(kakaoagent) → 온톨로지 연결 (커밋 f229ebf·b7f78f0)
+- 요청: "지금 최신 카톡데이터 kakaoagent로 작업한 데이터가 시트에 업로드됐고. 전체직원데이터 최신화" → "연결해줘".
+- 전체최신화: promote(24h→168h) 실행. actions 47,400→58,241(핸드오프141→214, talk_triggered6547→9439). 화면분석 flush로 screen_observed 1080→3004(vision-pending 백로그 계속 소진).
+- **카톡 연결(신규)**: 재사용 원칙 준수 — 새 시트리더 안 만들고 기존 routes/process-mining.js `_fetchKakaoSheetData`(KAKAO_SHEET_ID='1pXLVZqiMwWt6Vh0IhWwASBvgLtZqLnbHXMWqOLNwAXU', GOOGLE_SERVICE_ACCOUNT_JSON) export해 재사용.
+  - 신규 `src/kakao-ontology-sync.js`: 비즈니스이벤트/의사결정추적 탭(구조화 신호만, 메시지분류=원문대화는 프라이버시상 제외)을 unified_events(source='nenova-agent')+ops_relation(kakao_event_in_room, kakao_event_mentions_customer, conf0.85)로 UNNEST 벌크insert(멱등, 왕복 2회).
+  - **함정+수정**: 첫 배포시 "ON CONFLICT DO UPDATE cannot affect row a second time" — 타임스탬프 미상 행이 now()로 겹쳐 배치 내 id 중복 → Map dedup으로 해결(b7f78f0).
+  - ops-ontology.js `/promote` + 30분 cron에 배선. stats/relations API가 신규 rel_type 자동노출(코드변경 불필요, GROUP BY rel_type 제네릭).
+  - 검증: synced 353 events / mentions 274 / rooms 353 (rows 11,682). 실거래처 정밀매칭 확인(원협가빈·광주천사·일신원예 + 수국/장미/카네이션 + SHIPMENT/ORDER).
+- 미연결(후속): flow-map.js `/company` 그래프는 아직 action_mentions_customer만 롤업 — kakao_event_mentions_customer는 stats/relations API로만 조회 가능, 그래프 노드에 아직 안 얹음(담당자 필드가 시트에 없어 사람-노드 연결은 보류). entity-resolution 스케줄러(hourly)가 room_name 자동 재사용 — 별도 확인 필요.
