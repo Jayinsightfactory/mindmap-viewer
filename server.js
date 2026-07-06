@@ -1403,6 +1403,22 @@ app.get('/api/admin/events-size-diag', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// GET /api/admin/db-size-diag — DB 전체 그림(테이블별 크기+데드튜플, 읽기전용)
+app.get('/api/admin/db-size-diag', async (req, res) => {
+  try {
+    if (!resolveAdmin(req).isAdmin) return res.status(403).json({ error: 'admin only' });
+    const pool = dbModule.getDb();
+    const dbSize = await pool.query(`SELECT pg_size_pretty(pg_database_size(current_database())) sz, pg_database_size(current_database()) bytes`);
+    const tables = await pool.query(`
+      SELECT relname, pg_size_pretty(pg_total_relation_size(relid)) total,
+             pg_total_relation_size(relid) total_bytes,
+             n_live_tup, n_dead_tup
+      FROM pg_stat_user_tables ORDER BY pg_total_relation_size(relid) DESC LIMIT 20`);
+    const wal = await pool.query(`SELECT slot_name, active, pg_size_pretty(pg_wal_lsn_diff(pg_current_wal_lsn(), restart_lsn)) lag FROM pg_replication_slots`).catch(() => ({ rows: [] }));
+    res.json({ ok: true, database: dbSize.rows[0], tables: tables.rows, replicationSlots: wal.rows });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // POST /api/admin/purge-noise-events — 순수 노이즈 타입(그래프/온톨로지 어디에도 안 쓰임) 삭제(디스크 확보)
 // 대상: install.progress/install.diag/daemon.update/daemon.error/daemon.heartbeat/daemon.log.snapshot/daemon.perf.issue
 // (graph-engine.NOISE_TYPES + /api/hook 힙압력 스킵목록과 동일 — 이미 "버려도 되는 것"으로 확정된 타입)
