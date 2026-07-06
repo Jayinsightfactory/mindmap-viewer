@@ -99,13 +99,19 @@ async function syncKakaoToOntology(pool, fetchFn, workspaceId = 'nenova') {
     relations.push({ id: `rel:kakao_event_in_room:${id}:${room}`.slice(0, 200), relType: 'kakao_event_in_room', fromType: 'KakaoEvent', fromRef: id, toType: 'Room', toRef: room.slice(0, 60), confidence: 0.67, evidence: { unresolved }, ts, workspaceId });
   }
 
-  await bulkInsertEvents(pool, events);
-  await bulkInsertRelations(pool, relations);
+  // 같은 배치 안에서 id 중복 제거 (타임스탬프 미상→now 기본값 겹침 시 UNNEST+ON CONFLICT DO UPDATE가
+  // "affect row a second time"로 실패하므로 필수). 멱등 upsert는 다음 동기화에서 자연히 갱신됨.
+  const dedup = arr => [...new Map(arr.map(x => [x.id, x])).values()];
+  const dedupEvents = dedup(events);
+  const dedupRelations = dedup(relations);
+
+  await bulkInsertEvents(pool, dedupEvents);
+  await bulkInsertRelations(pool, dedupRelations);
 
   return {
-    synced: events.length,
-    mentions: relations.filter(r => r.relType === 'kakao_event_mentions_customer').length,
-    rooms: relations.filter(r => r.relType === 'kakao_event_in_room').length,
+    synced: dedupEvents.length,
+    mentions: dedupRelations.filter(r => r.relType === 'kakao_event_mentions_customer').length,
+    rooms: dedupRelations.filter(r => r.relType === 'kakao_event_in_room').length,
     rows: rows.length,
   };
 }
