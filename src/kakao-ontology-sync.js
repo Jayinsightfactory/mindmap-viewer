@@ -35,6 +35,23 @@ function resolveCustomerRef(custRaw, index) {
 }
 
 function pick(row, keys) { for (const k of keys) if (row[k]) return row[k]; return ''; }
+
+// 시트/전송 경로에서 일부 한글이 깨져(�) 같은 방이 여러 변형명으로 쪼개지는 문제 보정.
+// 레벤슈타인 거리(N.levenshtein, 기존 재사용)로 근접 변형을 이미 본 대표명에 합침.
+function canonicalizeRoom(raw, registry) {
+  if (!raw) return raw;
+  if (registry.has(raw)) return registry.get(raw);
+  let best = null, bestDist = Infinity;
+  for (const canon of new Set(registry.values())) {
+    if (Math.abs(canon.length - raw.length) > 3) continue;
+    const dist = N.levenshtein(raw, canon);
+    if (dist < bestDist) { bestDist = dist; best = canon; }
+  }
+  // 원본 길이 대비 소폭 차이(≤2자, � 1~2개 정도)면 같은 방으로 간주
+  const label = (best !== null && bestDist <= 2 && bestDist / Math.max(raw.length, 1) < 0.15) ? best : raw;
+  registry.set(raw, label);
+  return label;
+}
 function parseSheetTs(row) {
   const raw = pick(row, ['일시', '날짜', '시간', 'timestamp']);
   if (!raw) return null;
@@ -89,10 +106,11 @@ async function syncKakaoToOntology(pool, fetchFn, workspaceId = 'nenova') {
   const now = new Date();
   const events = [], relations = [];
   const custIndex = await loadCustomerIndex(pool).catch(() => []);
+  const roomRegistry = new Map(); // 깨진 방이름 변형 → 대표명 정규화(회사 전체 동기화 1회 스코프)
 
   for (const r of rows.filter(r => r._tab === '비즈니스이벤트')) {
     const eventType = pick(r, ['이벤트타입', 'event_type', '타입']);
-    const room = pick(r, ['방이름', '방', 'room', '채팅방']);
+    const room = canonicalizeRoom(pick(r, ['방이름', '방', 'room', '채팅방']), roomRegistry);
     const cust = pick(r, ['거래처', 'customer']);
     const prod = pick(r, ['품목', 'product', '상품']);
     if (!eventType && !room) continue;
@@ -107,7 +125,7 @@ async function syncKakaoToOntology(pool, fetchFn, workspaceId = 'nenova') {
   }
 
   for (const r of rows.filter(r => r._tab === '의사결정추적')) {
-    const room = pick(r, ['발생방', '방이름', 'room']);
+    const room = canonicalizeRoom(pick(r, ['발생방', '방이름', 'room']), roomRegistry);
     const result = pick(r, ['결과', 'status']);
     if (!room) continue;
     const ts = parseSheetTs(r) || now;
@@ -124,9 +142,10 @@ async function syncKakaoToOntology(pool, fetchFn, workspaceId = 'nenova') {
   const dedupRelations = dedup(relations);
 
   await bulkInsertEvents(pool, dedupEvents);
-  // kakao_event_mentions_customer는 매 실행마다 전량 재도출(sheet=append-only 원본, 골든매칭 로직이
-  // 바뀌면 to_ref가 달라져 옛 원문명 행이 고아로 남을 수 있음) → 교체 후 재삽입으로 정합성 유지.
-  await pool.query(`DELETE FROM ops_relation WHERE rel_type='kakao_event_mentions_customer' AND workspace_id=$1`, [workspaceId]);
+  // kakao_event_mentions_customer/kakao_event_in_room은 매 실행마다 전량 재도출한다(sheet=append-only
+  // 원본이라 안전). 골든매칭·방이름 정규화 로직이 바뀌면 to_ref가 달라져 옛 행이 고아로 남으므로
+  // 교체 후 재삽입으로 정합성 유지.
+  await pool.query(`DELETE FROM ops_relation WHERE rel_type IN ('kakao_event_mentions_customer','kakao_event_in_room') AND workspace_id=$1`, [workspaceId]);
   await bulkInsertRelations(pool, dedupRelations);
 
   return {
