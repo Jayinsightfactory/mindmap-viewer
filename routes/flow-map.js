@@ -51,9 +51,17 @@ function createFlowMapRouter(deps = {}) {
   }
 
   // 골든 person userId→{label,conf} 맵 (테넌트 스코프)
+  // 골든에 없는 계정은 orbit_auth_users 이름으로 폴백 — 원시ID(MN...)가 라벨로 새는 것 방지
   async function personMap(p, ws) {
-    const { rows } = await p.query(`SELECT display_name, attributes, confidence FROM orbit_entity_golden WHERE entity_type='person' AND workspace_id=$1`, [ws]);
+    const [{ rows }, users] = await Promise.all([
+      p.query(`SELECT display_name, attributes, confidence FROM orbit_entity_golden WHERE entity_type='person' AND workspace_id=$1`, [ws]),
+      p.query(`SELECT id, name, email FROM orbit_auth_users`).catch(() => ({ rows: [] })),
+    ]);
     const m = new Map();
+    for (const u of users.rows) {
+      const nm = u.name || (u.email || '').split('@')[0];
+      if (nm) m.set(u.id, { label: nm, confidence: 0.34 });
+    }
     for (const r of rows) {
       const a = tryObj(r.attributes);
       const uid = a.user_id || a.orbitUserId || a.userId;
@@ -288,12 +296,36 @@ function createFlowMapRouter(deps = {}) {
       const p = pool(); if (!p) return res.status(500).json({ error: 'db not available' });
       const hours = Math.min(parseInt(req.query.hours) || 24, 336);
       const since = new Date(Date.now() - hours * 3600 * 1000).toISOString();
-      const [persons, customers, actsR, handoffsR, talkR, autoR] = await Promise.all([
+      // 이 테넌트 소속 user_id 목록 — events(글로벌 테이블)의 vision을 테넌트 격리해 읽기 위함.
+      // 기본 테넌트는 promote()와 동일하게 미배정 계정도 흡수(필터 없음).
+      const memberR = await p.query(`SELECT user_id FROM workspace_members WHERE workspace_id=$1 AND status='active'`, [ws]).catch(() => ({ rows: [] }));
+      const memberIds = memberR.rows.map(r => r.user_id);
+      const isDefaultWs = ws === 'WS-NENOVA-2026';
+      const [persons, customers, actsR, handoffsR, talkR, autoR, kakaoR, visionR, erpR] = await Promise.all([
         personMap(p, ws), customerMap(p, ws),
-        p.query(`SELECT id, user_id, timestamp, data FROM unified_events WHERE type='work.action' AND timestamp>=$1 AND workspace_id=$2 ORDER BY timestamp DESC LIMIT 160`, [since, ws]),
-        p.query(`SELECT from_ref, to_ref, confidence FROM ops_relation WHERE rel_type='action_handoff' AND ts>=$1 AND workspace_id=$2`, [since, ws]),
+        // ★층화 샘플: 최신순 전체를 잘라먹지 않고 사람별 최근 20건씩 — 한 사람 폭주가 나머지를 밀어내지 않음
+        p.query(`SELECT id, user_id, timestamp, data FROM (
+                   SELECT id, user_id, timestamp, data,
+                          ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY timestamp DESC) rn
+                     FROM unified_events WHERE type='work.action' AND timestamp>=$1 AND workspace_id=$2
+                 ) t WHERE rn <= 20 ORDER BY timestamp DESC`, [since, ws]),
+        p.query(`SELECT from_ref, to_ref, confidence, evidence FROM ops_relation WHERE rel_type='action_handoff' AND ts>=$1 AND workspace_id=$2`, [since, ws]),
         p.query(`SELECT COUNT(*) c FROM ops_relation WHERE rel_type='talk_triggered_action' AND ts>=$1 AND workspace_id=$2`, [since, ws]),
         p.query(`SELECT to_ref, COUNT(*) c FROM ops_relation WHERE rel_type='automation_candidate_for_process' AND ts>=$1 AND workspace_id=$2 GROUP BY to_ref ORDER BY c DESC LIMIT 15`, [since, ws]),
+        // ★카톡 비즈니스 신호(시트 경유): 거래처·품목·미해결 의사결정 — 숫자가 아니라 내용을 전달
+        p.query(`SELECT type, timestamp, data FROM unified_events
+                  WHERE type IN ('kakao.business_event','kakao.decision') AND timestamp>=$1 AND workspace_id=$2
+                  ORDER BY (CASE WHEN data->>'unresolved'='true' THEN 0 ELSE 1 END), timestamp DESC LIMIT 60`, [since, ws]),
+        // ★비전 화면해독: "무엇을 하는 중인지" 원문 — 융합 액션에 실리기 전이라도 직접 전달
+        isDefaultWs || memberIds.length
+          ? p.query(`SELECT user_id, timestamp, data_json FROM events
+                      WHERE type='screen.analyzed' AND timestamp>=$1 ${isDefaultWs ? '' : 'AND user_id = ANY($2)'}
+                      ORDER BY timestamp DESC LIMIT 40`, isDefaultWs ? [since] : [since, memberIds])
+          : Promise.resolve({ rows: [] }),
+        // ★ERP 스냅샷(erp-publisher: erp-ui.order.history 등) — 있으면 교차검증 근거로
+        p.query(`SELECT type, timestamp, data FROM unified_events
+                  WHERE type LIKE 'erp-ui.%' AND timestamp>=$1 AND workspace_id=$2
+                  ORDER BY timestamp DESC LIMIT 20`, [since, ws]),
       ]);
       const actIds = actsR.rows.map(r => r.id);
       const mentions = actIds.length ? await p.query(`SELECT from_ref, to_ref FROM ops_relation WHERE rel_type='action_mentions_customer' AND from_ref = ANY($1) AND workspace_id=$2`, [actIds, ws]) : { rows: [] };
@@ -301,17 +333,61 @@ function createFlowMapRouter(deps = {}) {
       const units = actsR.rows.map(r => {
         const d = tryObj(r.data);
         return { ts: r.timestamp, person: persons.get(r.user_id)?.label || r.user_id, userId: r.user_id,
-          app: d.app, activity: (d.activity || '').slice(0, 80), room: d.room || '', customer: actCust.get(r.id) || '',
+          app: d.app, activity: (d.activity || '').slice(0, 120), room: d.room || '', customer: actCust.get(r.id) || '',
           min: Math.round((d.durationSec || 0) / 60), clicks: d.clicks || 0, typed: d.typedChars || 0,
           sources: d.sources || [], confidence: d.confidence, auto: !!d.auto };
       });
+      // ★시간대별 타임라인(창 전체): 샘플이 못 담는 하루 흐름을 사람×시간 집계로 보장
+      const tlR = await p.query(`SELECT user_id, date_trunc('hour', timestamp::timestamptz) h, COUNT(*) c,
+                 COALESCE(SUM(NULLIF(data->>'typedChars','')::int),0) typed,
+                 COALESCE(SUM(NULLIF(data->>'clicks','')::int),0) clicks,
+                 COUNT(*) FILTER (WHERE (data->>'confidence')::numeric >= 0.67) multi
+            FROM unified_events WHERE type='work.action' AND timestamp>=$1 AND workspace_id=$2
+           GROUP BY 1, 2 ORDER BY 2 ASC`, [since, ws]);
+      const timeline = tlR.rows.map(r => ({ person: persons.get(r.user_id)?.label || r.user_id,
+        hourKst: new Date(r.h).toLocaleString('sv-SE', { timeZone: 'Asia/Seoul' }).slice(0, 13),
+        units: Number(r.c), typed: Number(r.typed), clicks: Number(r.clicks), multiSource: Number(r.multi) }));
       const loadAll = await p.query(`SELECT user_id, COUNT(*) c, MAX(timestamp) last FROM unified_events WHERE type='work.action' AND timestamp>=$1 AND workspace_id=$2 GROUP BY user_id ORDER BY c DESC`, [since, ws]);
       const loads = loadAll.rows.filter(r => r.user_id !== 'local' && r.user_id !== 'system')
         .map(r => ({ person: persons.get(r.user_id)?.label || r.user_id, userId: r.user_id, units: Number(r.c), last: r.last }));
-      const handoffs = handoffsR.rows.map(r => ({ from: persons.get(userOfAct(r.from_ref))?.label || userOfAct(r.from_ref), to: persons.get(userOfAct(r.to_ref))?.label || userOfAct(r.to_ref) }))
-        .filter(h => h.from !== h.to);
+      // 핸드오프: 라벨쌍으로 집계 + 매칭 근거(keys) 동봉 — "왕복 노이즈" 판단 재료
+      const hoAgg = new Map();
+      for (const r of handoffsR.rows) {
+        const from = persons.get(userOfAct(r.from_ref))?.label || userOfAct(r.from_ref);
+        const to = persons.get(userOfAct(r.to_ref))?.label || userOfAct(r.to_ref);
+        if (from === to) continue;
+        const ev = tryObj(r.evidence);
+        const k = `${from}→${to}`;
+        const e = hoAgg.get(k) || { from, to, count: 0, keys: new Set() };
+        e.count++; (ev.keys || []).forEach(x => e.keys.add(x)); hoAgg.set(k, e);
+      }
+      const handoffs = [...hoAgg.values()].map(e => ({ from: e.from, to: e.to, count: e.count, keys: [...e.keys] }));
+      // 카톡 신호 압축
+      const kakao = kakaoR.rows.map(r => {
+        const d = tryObj(r.data);
+        return { ts: r.timestamp, kind: r.type === 'kakao.decision' ? '의사결정' : d.event_type || '이벤트',
+          room: d.room_name || '', customer: d.customer || '', product: d.product || '',
+          result: d.result || '', unresolved: !!d.unresolved };
+      });
+      // 비전 해독 압축 (같은 사람 연속 중복 제거)
+      const vision = [];
+      let prevKey = '';
+      for (const r of visionR.rows) {
+        let d = {}; try { d = typeof r.data_json === 'string' ? JSON.parse(r.data_json) : (r.data_json || {}); } catch {}
+        const act = (d.activity || '').slice(0, 140);
+        if (!act) continue;
+        const key = r.user_id + '|' + act.slice(0, 40);
+        if (key === prevKey) continue; prevKey = key;
+        vision.push({ ts: r.timestamp, person: persons.get(r.user_id)?.label || r.user_id,
+          app: (d.app || '').slice(0, 30), activity: act, automatable: !!d.automatable });
+        if (vision.length >= 30) break;
+      }
+      // ERP 스냅샷 압축 (원형 payload가 커서 앞부분만)
+      const erp = erpR.rows.map(r => ({ ts: r.timestamp, type: r.type,
+        data: JSON.stringify(tryObj(r.data)).slice(0, 800) }));
       res.json({ ok: true, tenant: ws, windowHours: hours, generatedAtIso: new Date().toISOString(),
-        loads, units, handoffs, talkTriggered: Number(talkR.rows[0].c),
+        loads, timeline, units, handoffs, kakao, vision, erp,
+        talkTriggered: Number(talkR.rows[0].c),
         automationCandidates: autoR.rows.map(r => ({ process: r.to_ref, count: Number(r.c) })) });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });

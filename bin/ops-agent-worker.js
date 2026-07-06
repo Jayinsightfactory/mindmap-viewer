@@ -46,12 +46,21 @@ function buildPrompt(input) {
   return `당신은 Nenova 업무 OS의 운영 에이전트다(nenova-ops-orchestrator). 아래 "융합된 작업단위 데이터"(data-fusion 산출물)를 받아,
 워크플로우 예측(forecaster) + 교차검증(cross-validator)을 수행하고 결과를 JSON으로만 출력한다.
 
+[입력 섹션 사용법 — 반드시 전부 활용]
+- timeline: 사람×시간대(KST) 집계 — 하루 전체 리듬·부하·공백은 여기서 판단(units는 샘플일 뿐).
+- units: 사람별 최근 작업단위 샘플(앱·거래처·타이핑·클릭·원천).
+- vision: 화면 해독 원문 — "지금 무엇을 하는 중인지"의 최우선 근거. 거래처/품목/문서명이 여기 있다.
+- kakao: 카톡 비즈니스 이벤트·의사결정(거래처·품목·미해결). unresolved=true는 아직 처리 안 된 요청 → 예측/병목의 1순위 재료.
+- erp: ERP 상태 스냅샷 — 카톡 요청·PC 작업이 실제 ERP 반영으로 이어졌는지 교차검증에 사용. 비어 있으면 "ERP 근거 없음"을 명시.
+- handoffs: 사람간 인계(count·매칭 keys). keys가 room뿐이면 톡방 교대 노이즈 가능성 감안.
+
 [판단 기준]
 - 시간은 KST. 직원 식별은 person 라벨 기준. 같은 거래처/주문/톡방을 다른 사람이 24h 내 이어받으면 인계(handoff).
-- 병목: 한 담당자에게 작업이 몰리거나(부하 높음) 다음 단계 담당자가 비어 있음.
+- 병목: 한 담당자에게 작업이 몰리거나(부하 높음) 다음 단계 담당자가 비어 있음. kakao unresolved가 특정인에게 쌓이면 병목.
 - 자동화 후보: 같은 유형 3회+·평균 5분+·입력/클릭 패턴 안정.
-- 교차검증: 카톡↔ERP↔PC작업이 시간/담당자/상태로 일치하면 PASS, 누락/충돌 있으면 WARN, 업무판단 불가면 FAIL.
-- source_disagreement: 한 원천엔 있는데 다른 원천 근거가 없는 작업단위(예: ERP만, PC근거 없음).
+- 교차검증: 카톡↔ERP↔PC작업(vision 포함)이 시간/담당자/상태로 일치하면 PASS, 누락/충돌 있으면 WARN, 업무판단 불가면 FAIL.
+- source_disagreement: 한 원천엔 있는데 다른 원천 근거가 없는 작업단위(예: 카톡 요청만 있고 PC/ERP 근거 없음).
+- basis에는 반드시 구체 근거를 쓴다: 원천 이름(vision/kakao/erp/units/timeline) + 실제 거래처/품목/방/시각. "활동량 많음" 같은 통계 서술 금지.
 - 근거 없는 단정 금지. 데이터로 설명 안 되면 confidence를 낮춘다.
 
 [융합 데이터]

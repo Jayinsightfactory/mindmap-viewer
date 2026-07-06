@@ -81,7 +81,7 @@ async function publish(event) {
     source,
     timestamp: event.timestamp || new Date().toISOString(),
     user_id: event.user_id || null,
-    workspace_id: event.workspace_id || 'nenova',
+    workspace_id: event.workspace_id || 'WS-NENOVA-2026', // 실제 workspaces.id (T0b 정합)
     session_id: event.session_id || null,
     data: event.data || {},
     metadata: event.metadata || {},

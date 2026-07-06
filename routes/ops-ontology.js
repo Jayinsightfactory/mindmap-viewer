@@ -84,7 +84,8 @@ async function promote(pool, hours) {
     try { d = typeof r.data_json === 'string' ? JSON.parse(r.data_json) : (r.data_json || {}); } catch {}
     return {
       eid: r.id, u: r.user_id, t: new Date(r.timestamp).getTime(), src: SRC_OF[r.type] || 'etc',
-      app: normApp(d.app), win: (d.windowTitle || '').trim(), inp: (d.inputText || '').trim(),
+      // 구버전 데몬은 top-level app 없이 appContext.currentApp에만 앱명을 실음 — 폴백 없으면 전부 '기타입력'으로 뭉개짐
+      app: normApp(d.app || (d.appContext && d.appContext.currentApp)), win: (d.windowTitle || '').trim(), inp: (d.inputText || '').trim(),
       clk: d.mouseClicks || 0, va: (d.activity || d.visionActivity || '').trim(),
       vs: (d.screen || d.visionScreen || '').trim(), auto: !!(d.automatable || d.visionAutomatable),
     };
@@ -97,7 +98,10 @@ async function promote(pool, hours) {
   for (const u of Object.keys(byU)) {
     let cur = null;
     for (const e of byU[u]) {
-      if (cur && (e.t - cur.end) <= GAP && cur.app === e.app) { cur.end = e.t; cur.evs.push(e); }
+      // vision(screen.analyzed)의 app은 Claude가 화면에서 추론한 표기라 데몬 앱명과 항상 어긋남 —
+      // 같은 사람·같은 시간창이면 앱명 불일치여도 같은 동작의 증거로 흡수(아니면 activity가 영원히 별도 액션으로 유실됨)
+      const attach = cur && (e.t - cur.end) <= GAP && (cur.app === e.app || e.src === 'vision');
+      if (attach) { cur.end = e.t; cur.evs.push(e); }
       else { if (cur) actions.push(cur); cur = { u, app: e.app, start: e.t, end: e.t, evs: [e] }; }
     }
     if (cur) actions.push(cur);
