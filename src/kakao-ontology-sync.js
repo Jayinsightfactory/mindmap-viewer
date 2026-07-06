@@ -124,6 +124,9 @@ async function syncKakaoToOntology(pool, fetchFn, workspaceId = 'nenova') {
   const dedupRelations = dedup(relations);
 
   await bulkInsertEvents(pool, dedupEvents);
+  // kakao_event_mentions_customer는 매 실행마다 전량 재도출(sheet=append-only 원본, 골든매칭 로직이
+  // 바뀌면 to_ref가 달라져 옛 원문명 행이 고아로 남을 수 있음) → 교체 후 재삽입으로 정합성 유지.
+  await pool.query(`DELETE FROM ops_relation WHERE rel_type='kakao_event_mentions_customer' AND workspace_id=$1`, [workspaceId]);
   await bulkInsertRelations(pool, dedupRelations);
 
   return {
