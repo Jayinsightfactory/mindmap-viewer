@@ -1389,10 +1389,21 @@ app.post('/api/admin/setup-nenova', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// resolveAdmin()은 동기 SQLite verifyToken만 봄 — /api/daemon/claim-token은 PG(orbit_auth_tokens)에만
+// 등록해 서로 안 보이는 갭이 있다(2026-07-06 발견). 아래 진단/정리용 엔드포인트는 PG도 함께 확인.
+async function isAdminReqAsync(req) {
+  if (resolveAdmin(req).isAdmin) return true;
+  const raw = (req.headers.authorization || '').replace('Bearer ', '').trim();
+  if (!raw) return false;
+  const { verifyTokenAsync } = require('./src/auth');
+  const user = await verifyTokenAsync(raw);
+  return !!user && env.isAdmin(user.email);
+}
+
 // GET /api/admin/events-size-diag — 타입별 건수+대략 크기(디스크 위기 진단, 읽기전용)
 app.get('/api/admin/events-size-diag', async (req, res) => {
   try {
-    if (!resolveAdmin(req).isAdmin) return res.status(403).json({ error: 'admin only' });
+    if (!(await isAdminReqAsync(req))) return res.status(403).json({ error: 'admin only' });
     const pool = dbModule.getDb();
     const { rows } = await pool.query(`
       SELECT type, COUNT(*) c, pg_size_pretty(SUM(pg_column_size(data_json))::bigint) approx_size,
@@ -1407,7 +1418,7 @@ app.get('/api/admin/events-size-diag', async (req, res) => {
 // Postgres가 재사용하도록 회수. 데이터 손실 없음(가비지 컬렉션과 동일 개념).
 app.post('/api/admin/vacuum-tables', async (req, res) => {
   try {
-    if (!resolveAdmin(req).isAdmin) return res.status(403).json({ error: 'admin only' });
+    if (!(await isAdminReqAsync(req))) return res.status(403).json({ error: 'admin only' });
     const pool = dbModule.getDb();
     const targets = ['events', 'unified_events', 'ops_relation'];
     const results = {};
@@ -1422,7 +1433,7 @@ app.post('/api/admin/vacuum-tables', async (req, res) => {
 // GET /api/admin/db-size-diag — DB 전체 그림(테이블별 크기+데드튜플, 읽기전용)
 app.get('/api/admin/db-size-diag', async (req, res) => {
   try {
-    if (!resolveAdmin(req).isAdmin) return res.status(403).json({ error: 'admin only' });
+    if (!(await isAdminReqAsync(req))) return res.status(403).json({ error: 'admin only' });
     const pool = dbModule.getDb();
     const dbSize = await pool.query(`SELECT pg_size_pretty(pg_database_size(current_database())) sz, pg_database_size(current_database()) bytes`);
     const tables = await pool.query(`
@@ -1440,7 +1451,7 @@ app.get('/api/admin/db-size-diag', async (req, res) => {
 // (graph-engine.NOISE_TYPES + /api/hook 힙압력 스킵목록과 동일 — 이미 "버려도 되는 것"으로 확정된 타입)
 app.post('/api/admin/purge-noise-events', async (req, res) => {
   try {
-    if (!resolveAdmin(req).isAdmin) return res.status(403).json({ error: 'admin only' });
+    if (!(await isAdminReqAsync(req))) return res.status(403).json({ error: 'admin only' });
     const pool = dbModule.getDb();
     const days = Math.max(parseInt(req.query.days) || 3, 1);
     const NOISE = ['install.progress', 'install.diag', 'daemon.update', 'daemon.error', 'daemon.heartbeat', 'daemon.log.snapshot', 'daemon.perf.issue'];
@@ -1457,7 +1468,7 @@ app.post('/api/admin/purge-noise-events', async (req, res) => {
 // T0b(멀티테넌트 쓰기측 정합) — 안전(라벨 UPDATE만, 데이터 삭제 없음, 여러 번 실행해도 무해).
 app.post('/api/admin/migrate-ontology-workspace', async (req, res) => {
   try {
-    if (!resolveAdmin(req).isAdmin) return res.status(403).json({ error: 'admin only' });
+    if (!(await isAdminReqAsync(req))) return res.status(403).json({ error: 'admin only' });
     const pool = dbModule.getDb();
     const FROM = 'nenova', TO = 'WS-NENOVA-2026';
     const r1 = await pool.query(`UPDATE unified_events SET workspace_id=$2 WHERE workspace_id=$1`, [FROM, TO]);
