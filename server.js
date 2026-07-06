@@ -1429,7 +1429,7 @@ app.post('/api/admin/purge-noise-events', async (req, res) => {
     const days = Math.max(parseInt(req.query.days) || 3, 1);
     const NOISE = ['install.progress', 'install.diag', 'daemon.update', 'daemon.error', 'daemon.heartbeat', 'daemon.log.snapshot', 'daemon.perf.issue'];
     const r = await pool.query(
-      `DELETE FROM events WHERE type = ANY($1) AND timestamp < NOW() - ($2 || ' days')::interval`,
+      `DELETE FROM events WHERE type = ANY($1) AND timestamp::timestamptz < NOW() - ($2 || ' days')::interval`,
       [NOISE, String(days)]
     );
     res.json({ ok: true, deleted: r.rowCount, types: NOISE, olderThanDays: days });
