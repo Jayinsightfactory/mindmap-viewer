@@ -1389,6 +1389,37 @@ app.post('/api/admin/setup-nenova', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// GET /api/admin/events-size-diag — 타입별 건수+대략 크기(디스크 위기 진단, 읽기전용)
+app.get('/api/admin/events-size-diag', async (req, res) => {
+  try {
+    if (!resolveAdmin(req).isAdmin) return res.status(403).json({ error: 'admin only' });
+    const pool = dbModule.getDb();
+    const { rows } = await pool.query(`
+      SELECT type, COUNT(*) c, pg_size_pretty(SUM(pg_column_size(data_json))::bigint) approx_size,
+             SUM(pg_column_size(data_json)) raw_bytes, MIN(timestamp) oldest, MAX(timestamp) newest
+      FROM events GROUP BY type ORDER BY raw_bytes DESC NULLS LAST LIMIT 30`);
+    const { rows: totalRows } = await pool.query(`SELECT pg_size_pretty(pg_total_relation_size('events')) total, COUNT(*) c FROM events`);
+    res.json({ ok: true, total: totalRows[0], byType: rows });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/admin/purge-noise-events — 순수 노이즈 타입(그래프/온톨로지 어디에도 안 쓰임) 삭제(디스크 확보)
+// 대상: install.progress/install.diag/daemon.update/daemon.error/daemon.heartbeat/daemon.log.snapshot/daemon.perf.issue
+// (graph-engine.NOISE_TYPES + /api/hook 힙압력 스킵목록과 동일 — 이미 "버려도 되는 것"으로 확정된 타입)
+app.post('/api/admin/purge-noise-events', async (req, res) => {
+  try {
+    if (!resolveAdmin(req).isAdmin) return res.status(403).json({ error: 'admin only' });
+    const pool = dbModule.getDb();
+    const days = Math.max(parseInt(req.query.days) || 3, 1);
+    const NOISE = ['install.progress', 'install.diag', 'daemon.update', 'daemon.error', 'daemon.heartbeat', 'daemon.log.snapshot', 'daemon.perf.issue'];
+    const r = await pool.query(
+      `DELETE FROM events WHERE type = ANY($1) AND timestamp < NOW() - ($2 || ' days')::interval`,
+      [NOISE, String(days)]
+    );
+    res.json({ ok: true, deleted: r.rowCount, types: NOISE, olderThanDays: days });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // POST /api/admin/migrate-ontology-workspace — 일회성: 온톨로지 테이블의 임시 tenant 라벨('nenova')을
 // 실제 workspaces.id('WS-NENOVA-2026', workspace_members에 8명 실멤버 존재)로 이관.
 // T0b(멀티테넌트 쓰기측 정합) — 안전(라벨 UPDATE만, 데이터 삭제 없음, 여러 번 실행해도 무해).
