@@ -1166,3 +1166,12 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
   - ops-ontology.js `/promote` + 30분 cron에 배선. stats/relations API가 신규 rel_type 자동노출(코드변경 불필요, GROUP BY rel_type 제네릭).
   - 검증: synced 353 events / mentions 274 / rooms 353 (rows 11,682). 실거래처 정밀매칭 확인(원협가빈·광주천사·일신원예 + 수국/장미/카네이션 + SHIPMENT/ORDER).
 - 미연결(후속): flow-map.js `/company` 그래프는 아직 action_mentions_customer만 롤업 — kakao_event_mentions_customer는 stats/relations API로만 조회 가능, 그래프 노드에 아직 안 얹음(담당자 필드가 시트에 없어 사람-노드 연결은 보류). entity-resolution 스케줄러(hourly)가 room_name 자동 재사용 — 별도 확인 필요.
+
+## 2026-07-06(계속) — 카톡 방/거래처를 그래프에 표시 + 실전 버그 2건 수정 (커밋 3543cc9~03c48c8)
+- "이어서 작업" = 카톡 관계(kakao_event_in_room/mentions_customer)를 옵시디언 그래프(/api/flow/company)에 실제 노드로.
+- **거래처 골든 매칭**: kakao-ontology-sync가 시트 원문 거래처명을 flow-handoff.loadCustomerIndex(재사용)+korean-normalizer로 골든 customer id에 정규화 → 매칭되면 action_mentions_customer가 이미 만든 노드를 재사용(중복 노드 방지), 미매칭이면 원문명 유지.
+- **flow-map.js /company 확장**: kakao_event_in_room ⋈ kakao_event_mentions_customer를 같은 KakaoEvent(from_ref)로 조인해 방↔거래처 롤업. 담당자 필드가 시트에 없어 사람 노드와는 미연결(설계상 보류). stats.kakaoRooms 추가.
+- graph-shell.js: room kind 색상(#2bb3a3)+범례.
+- **실전 버그 A**: 골든매칭 로직 변경 시 to_ref가 달라져 옛 원문명 관계가 고아로 누적 → kakao_event_mentions_customer/kakao_event_in_room 모두 매 동기화마다 delete+insert(전량 재도출, sheet=append-only라 안전)로 수정.
+- **실전 버그 B(데이터품질, 부분완화)**: 카톡방 이름이 시트/전송 경로에서 인코딩 손상(U+FFFD)돼 같은 방("영업방팀 발주 및 추가 재고확인")이 11개 변형 노드로 쪼개짐. korean-normalizer.levenshtein 재사용해 근접변형 병합(dist≤3, 비율<20%) — 실측 검증: 고정샘플 11→1 완전병합, 실제 서로다른 방 15개는 오탐없이 유지. 단 **라이브 전체동기화에서는 11→7로 부분개선**(추가 미관측 손상패턴 존재, 임계값을 더 풀면 실제 다른 방 오탐병합 위험 → 더 진행 안 함). **근본원인은 nenovakakao/kakaoagent 파이프라인 쪽 인코딩 문제로 추정, 여기 정규화는 완화책이지 완전수정 아님**.
+- 검증(최종): synced 372 / mentions 294 / rooms 372. /api/flow/company stats.kakaoRooms=7 (11→7). 502 1회 관측(잦은 push 재배포 churn, DATA_CHECK §10 기지사실) — 재시도로 회복.
