@@ -1389,6 +1389,22 @@ app.post('/api/admin/setup-nenova', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// POST /api/admin/migrate-ontology-workspace — 일회성: 온톨로지 테이블의 임시 tenant 라벨('nenova')을
+// 실제 workspaces.id('WS-NENOVA-2026', workspace_members에 8명 실멤버 존재)로 이관.
+// T0b(멀티테넌트 쓰기측 정합) — 안전(라벨 UPDATE만, 데이터 삭제 없음, 여러 번 실행해도 무해).
+app.post('/api/admin/migrate-ontology-workspace', async (req, res) => {
+  try {
+    if (!resolveAdmin(req).isAdmin) return res.status(403).json({ error: 'admin only' });
+    const pool = dbModule.getDb();
+    const FROM = 'nenova', TO = 'WS-NENOVA-2026';
+    const r1 = await pool.query(`UPDATE unified_events SET workspace_id=$2 WHERE workspace_id=$1`, [FROM, TO]);
+    const r2 = await pool.query(`UPDATE ops_relation SET workspace_id=$2 WHERE workspace_id=$1`, [FROM, TO]);
+    const r3 = await pool.query(`UPDATE orbit_entity_golden SET workspace_id=$2 WHERE workspace_id=$1`, [FROM, TO]);
+    const r4 = await pool.query(`UPDATE orbit_ops_report SET workspace_id=$2 WHERE workspace_id=$1`, [FROM, TO]).catch(() => ({ rowCount: 0 }));
+    res.json({ ok: true, from: FROM, to: TO, unified_events: r1.rowCount, ops_relation: r2.rowCount, orbit_entity_golden: r3.rowCount, orbit_ops_report: r4.rowCount });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // GET /api/learning/logs — 원시 이벤트 로그 조회 (관리자 대시보드용)
 app.get('/api/learning/logs', async (req, res) => {
   try {

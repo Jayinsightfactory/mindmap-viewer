@@ -45,13 +45,13 @@ async function loadCustomerIndex(pool) {
   return index;
 }
 
-async function upsertRel(pool, relType, fromType, fromRef, toType, toRef, confidence, evidence, tsIso) {
+async function upsertRel(pool, relType, fromType, fromRef, toType, toRef, confidence, evidence, tsIso, workspaceId) {
   const rid = `rel:${relType}:${fromRef}:${toRef}`.slice(0, 200);
   await pool.query(
     `INSERT INTO ops_relation (id, rel_type, from_type, from_ref, to_type, to_ref, source, confidence, evidence, ts, workspace_id)
-     VALUES ($1,$2,$3,$4,$5,$6,'orbit',$7,$8,$9,'nenova')
+     VALUES ($1,$2,$3,$4,$5,$6,'orbit',$7,$8,$9,$10)
      ON CONFLICT (id) DO UPDATE SET confidence=$7, ts=$9, evidence=$8`,
-    [rid, relType, fromType, fromRef, toType, toRef, confidence, JSON.stringify(evidence || {}), tsIso]
+    [rid, relType, fromType, fromRef, toType, toRef, confidence, JSON.stringify(evidence || {}), tsIso, workspaceId]
   );
 }
 
@@ -69,7 +69,7 @@ async function enrichHandoff(pool, hours) {
   const since = new Date(Date.now() - lookbackH * 3600 * 1000).toISOString();
 
   const { rows } = await pool.query(
-    `SELECT id, user_id, timestamp, data FROM unified_events
+    `SELECT id, user_id, timestamp, data, workspace_id FROM unified_events
       WHERE type='work.action' AND timestamp >= $1
       ORDER BY timestamp ASC`,
     [since]
@@ -78,7 +78,7 @@ async function enrichHandoff(pool, hours) {
     const d = tryObj(r.data);
     return {
       id: r.id, u: r.user_id, ts: new Date(r.timestamp).getTime(), tsIso: new Date(r.timestamp).toISOString(),
-      app: d.app || '', room: d.room || '', text: actionText(d), data: d,
+      app: d.app || '', room: d.room || '', text: actionText(d), data: d, ws: r.workspace_id,
     };
   });
 
@@ -98,7 +98,7 @@ async function enrichHandoff(pool, hours) {
     const best = hits.sort((x, y) => y.score - x.score)[0];
     actCust.set(a.id, best.id);
     await upsertRel(pool, 'action_mentions_customer', 'Action', a.id, 'Customer', best.id,
-      best.score, { matchedName: best.displayName, snippet: a.text.slice(0, 80) }, a.tsIso);
+      best.score, { matchedName: best.displayName, snippet: a.text.slice(0, 80) }, a.tsIso, a.ws);
     mentions++;
   }
 
@@ -125,9 +125,10 @@ async function enrichHandoff(pool, hours) {
     for (let i = 0; i < list.length - 1; i++) {
       const a = list[i], b = list[i + 1];
       if (a.u === b.u) continue;                       // 같은 사람 연속은 인계 아님
+      if (a.ws !== b.ws) continue;                     // 다른 테넌트끼리는 인계 아님(안전장치)
       if ((b.ts - a.ts) > HANDOFF_WINDOW_MS) continue; // 윈도우 초과 컷
       const pid = `${a.id}|${b.id}`;
-      if (!pairs.has(pid)) pairs.set(pid, { from: a.id, to: b.id, fromU: a.u, toU: b.u, tsIso: b.tsIso, keys: new Set(), gapSec: Math.round((b.ts - a.ts) / 1000) });
+      if (!pairs.has(pid)) pairs.set(pid, { from: a.id, to: b.id, fromU: a.u, toU: b.u, tsIso: b.tsIso, ws: b.ws, keys: new Set(), gapSec: Math.round((b.ts - a.ts) / 1000) });
       pairs.get(pid).keys.add(key.split(':')[0]); // cust/order/doc
     }
   }
@@ -135,7 +136,7 @@ async function enrichHandoff(pool, hours) {
   for (const p of pairs.values()) {
     const c = p.keys.size >= 2 ? 1.0 : 0.67;
     await upsertRel(pool, 'action_handoff', 'Action', p.from, 'Action', p.to,
-      c, { fromUser: p.fromU, toUser: p.toU, keys: [...p.keys], gapSec: p.gapSec }, p.tsIso);
+      c, { fromUser: p.fromU, toUser: p.toU, keys: [...p.keys], gapSec: p.gapSec }, p.tsIso, p.ws);
     handoffs++;
   }
 
@@ -148,7 +149,7 @@ async function enrichHandoff(pool, hours) {
     else { const o = (a.text.match(/\d{5,}/) || [])[0]; if (o) key = `order:${o}`; }
     if (!key) continue;
     await upsertRel(pool, 'action_updated_erp', 'Action', a.id, 'ErpOutcome', `erp:${a.app}:${key}`,
-      a.data.confidence || 0.67, { app: a.app, key }, a.tsIso);
+      a.data.confidence || 0.67, { app: a.app, key }, a.tsIso, a.ws);
     erp++;
   }
 

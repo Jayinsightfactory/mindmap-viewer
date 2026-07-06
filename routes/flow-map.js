@@ -22,7 +22,9 @@ const MASTER_TOKEN = 'orbit_967930333cab4ff63bc0bcae68c4779e3307d77095375f0d';
 
 function tryObj(x) { if (!x) return {}; if (typeof x === 'object') return x; try { return JSON.parse(x); } catch { return {}; } }
 function userOfAct(actId) { const p = String(actId || '').split(':'); return p[1] || ''; } // act:{userId}:{sec}
-function tenantOf(req) { return String(req.query.tenant || 'nenova').slice(0, 60); } // 테넌트 경계(기본 nenova)
+// 실제 workspaces.id(T0b) — 온톨로지 테이블이 예전엔 별도로 'nenova' 문자열을 썼으나
+// 진짜 로그인/팀 시스템(workspace_members)의 tenant id로 정합(2026-07-06 이관).
+function tenantOf(req) { return String(req.query.tenant || 'WS-NENOVA-2026').slice(0, 60); }
 
 function createFlowMapRouter(deps = {}) {
   const getPool = deps.getPool;

@@ -61,6 +61,10 @@ const SRC_OF = {
 };
 const PROMOTE_TYPES = Object.keys(SRC_OF);
 const conf = (n) => (n >= 3 ? 1.0 : n === 2 ? 0.67 : 0.34);
+// 실제 workspaces.id (T0b — 예전엔 온톨로지 테이블만 별도로 'nenova' 문자열을 썼으나,
+// 진짜 로그인/팀 시스템(workspace_members)의 tenant id는 이것. 2번째 회사가 들어오면
+// 그 회사도 /api/workspace/create로 자기 workspaces.id를 받고, 아래 wsMap이 자동으로 분리한다.
+const DEFAULT_WORKSPACE_ID = 'WS-NENOVA-2026';
 
 // ── 승격: events → Action(unified_events) + ops_relation (멱등) ───────────────
 async function promote(pool, hours) {
@@ -71,6 +75,9 @@ async function promote(pool, hours) {
      ORDER BY user_id, timestamp ASC`,
     [PROMOTE_TYPES, since]
   );
+  // 사용자별 실제 워크스페이스(테넌트) — workspace_members 실멤버십에서 도출, 없으면 기본 테넌트
+  const { rows: wsRows } = await pool.query(`SELECT user_id, workspace_id FROM workspace_members WHERE status='active'`).catch(() => ({ rows: [] }));
+  const wsMap = new Map(wsRows.map(r => [r.user_id, r.workspace_id]));
   // 정규화
   const evs = rows.map(r => {
     let d = {};
@@ -113,6 +120,7 @@ async function promote(pool, hours) {
     const startSec = Math.floor(a.start / 1000);
     const actId = `act:${a.u}:${startSec}`;
     const tsIso = new Date(a.start).toISOString();
+    const ws = wsMap.get(a.u) || DEFAULT_WORKSPACE_ID; // 이 사람의 실제 소속 테넌트
     const data = {
       app: a.app, room, activity: va.slice(0, 200), screen: vs.slice(0, 120),
       sources: srcs, verified: c >= 0.67, confidence: c, typedChars: typed, clicks,
@@ -122,9 +130,9 @@ async function promote(pool, hours) {
     // Action 객체 upsert (unified_events, 멱등)
     await pool.query(
       `INSERT INTO unified_events (id, type, source, timestamp, user_id, workspace_id, data, metadata)
-       VALUES ($1,'work.action','orbit',$2,$3,'nenova',$4,'{}')
+       VALUES ($1,'work.action','orbit',$2,$3,$5,$4,'{}')
        ON CONFLICT (id) DO UPDATE SET data=$4, timestamp=$2`,
-      [actId, tsIso, a.u, JSON.stringify(data)]
+      [actId, tsIso, a.u, JSON.stringify(data), ws]
     );
     nAct++;
 
@@ -142,9 +150,9 @@ async function promote(pool, hours) {
       const rid = `rel:${rt}:${fr}:${tr}`.slice(0, 200);
       await pool.query(
         `INSERT INTO ops_relation (id, rel_type, from_type, from_ref, to_type, to_ref, source, confidence, evidence, ts, workspace_id)
-         VALUES ($1,$2,$3,$4,$5,$6,'orbit',$7,$8,$9,'nenova')
+         VALUES ($1,$2,$3,$4,$5,$6,'orbit',$7,$8,$9,$10)
          ON CONFLICT (id) DO UPDATE SET confidence=$7, ts=$9, evidence=$8`,
-        [rid, rt, ft, fr, tt, tr, rc, JSON.stringify({ events: evIds }), tsIso]
+        [rid, rt, ft, fr, tt, tr, rc, JSON.stringify({ events: evIds }), tsIso, ws]
       );
       nRel++;
     }
@@ -177,7 +185,7 @@ function createOpsOntologyRouter(deps = {}) {
   const resolveAdmin = deps.resolveAdmin || (() => ({ isAdmin: true }));
   const router = express.Router();
   const pool = () => (getPool ? getPool() : null);
-  const tenantOf = (req) => String(req.query.tenant || 'nenova').slice(0, 60); // 테넌트 격리(기본 nenova)
+  const tenantOf = (req) => String(req.query.tenant || DEFAULT_WORKSPACE_ID).slice(0, 60); // 테넌트 격리(기본 실제 workspaces.id)
 
   router.post('/promote', async (req, res) => {
     try {

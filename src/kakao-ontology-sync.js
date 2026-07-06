@@ -99,7 +99,7 @@ async function bulkInsertRelations(pool, rels) {
  * @param {Function} fetchFn  createProcessMining._fetchKakaoSheetData (호출측에서 주입)
  * @param {string} workspaceId  테넌트 (기본 nenova)
  */
-async function syncKakaoToOntology(pool, fetchFn, workspaceId = 'nenova') {
+async function syncKakaoToOntology(pool, fetchFn, workspaceId = 'WS-NENOVA-2026') {
   if (typeof fetchFn !== 'function') return { synced: 0, mentions: 0, error: 'fetch fn missing' };
   const rows = await fetchFn().catch(() => []);
   if (!rows.length) return { synced: 0, mentions: 0, rows: 0 };
