@@ -1466,16 +1466,32 @@ app.post('/api/admin/purge-noise-events', async (req, res) => {
 // POST /api/admin/migrate-ontology-workspace — 일회성: 온톨로지 테이블의 임시 tenant 라벨('nenova')을
 // 실제 workspaces.id('WS-NENOVA-2026', workspace_members에 8명 실멤버 존재)로 이관.
 // T0b(멀티테넌트 쓰기측 정합) — 안전(라벨 UPDATE만, 데이터 삭제 없음, 여러 번 실행해도 무해).
+// 큰 단일 UPDATE는 30분 cron(promote)의 동시 쓰기와 충돌해 "deadlock detected" 발생(2026-07-06 실측) →
+// 배치(ctid 기준 5000행씩)로 짧은 트랜잭션 반복. 중간에 실패해도 이미 옮긴 행은 안전(멱등, WHERE절이
+// 남은 미이관 행만 계속 골라냄).
+async function batchRelabel(pool, table, from, to, batchSize = 5000) {
+  let total = 0;
+  for (;;) {
+    const r = await pool.query(
+      `UPDATE ${table} SET workspace_id=$2
+         WHERE ctid IN (SELECT ctid FROM ${table} WHERE workspace_id=$1 LIMIT ${batchSize})`,
+      [from, to]
+    );
+    total += r.rowCount;
+    if (r.rowCount < batchSize) break;
+  }
+  return total;
+}
 app.post('/api/admin/migrate-ontology-workspace', async (req, res) => {
   try {
     if (!(await isAdminReqAsync(req))) return res.status(403).json({ error: 'admin only' });
     const pool = dbModule.getDb();
     const FROM = 'nenova', TO = 'WS-NENOVA-2026';
-    const r1 = await pool.query(`UPDATE unified_events SET workspace_id=$2 WHERE workspace_id=$1`, [FROM, TO]);
-    const r2 = await pool.query(`UPDATE ops_relation SET workspace_id=$2 WHERE workspace_id=$1`, [FROM, TO]);
-    const r3 = await pool.query(`UPDATE orbit_entity_golden SET workspace_id=$2 WHERE workspace_id=$1`, [FROM, TO]);
-    const r4 = await pool.query(`UPDATE orbit_ops_report SET workspace_id=$2 WHERE workspace_id=$1`, [FROM, TO]).catch(() => ({ rowCount: 0 }));
-    res.json({ ok: true, from: FROM, to: TO, unified_events: r1.rowCount, ops_relation: r2.rowCount, orbit_entity_golden: r3.rowCount, orbit_ops_report: r4.rowCount });
+    const unified_events = await batchRelabel(pool, 'unified_events', FROM, TO);
+    const ops_relation = await batchRelabel(pool, 'ops_relation', FROM, TO);
+    const orbit_entity_golden = await batchRelabel(pool, 'orbit_entity_golden', FROM, TO);
+    const orbit_ops_report = await batchRelabel(pool, 'orbit_ops_report', FROM, TO).catch(() => 0);
+    res.json({ ok: true, from: FROM, to: TO, unified_events, ops_relation, orbit_entity_golden, orbit_ops_report });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
