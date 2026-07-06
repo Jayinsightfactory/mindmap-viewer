@@ -9,6 +9,8 @@
 
 const express = require('express');
 const { enrichHandoff } = require('../src/flow-handoff'); // 핸드오프 엔진 (Action 관계 보강)
+const { syncKakaoToOntology } = require('../src/kakao-ontology-sync'); // 카톡 구글시트 → 온톨로지 연결
+const _fetchKakaoSheetData = require('./process-mining')._fetchKakaoSheetData; // 시트 리더 재사용(재구현 금지)
 
 // ── 관계 저장 테이블 (1급 데이터, audit P3) ──────────────────────────────────
 async function ensureOpsTables(pool) {
@@ -161,7 +163,8 @@ function startPromoteCron(getPool, intervalMin = 30, hours = 2) {
       await ensureOpsTables(p);
       const r = await promote(p, hours);
       const e = await enrichHandoff(p, hours);
-      console.log(`[ops-ontology] promote cron: ${r.actions} actions / ${r.relations} rels (${r.sourceEvents} ev, ${hours}h) + ${e.mentions} mentions / ${e.handoffs} handoffs / ${e.erp} erp`);
+      const k = await syncKakaoToOntology(p, _fetchKakaoSheetData).catch(err => ({ error: err.message, synced: 0 }));
+      console.log(`[ops-ontology] promote cron: ${r.actions} actions / ${r.relations} rels (${r.sourceEvents} ev, ${hours}h) + ${e.mentions} mentions / ${e.handoffs} handoffs / ${e.erp} erp + kakao ${k.synced || 0} events/${k.mentions || 0} mentions`);
     } catch (e) { console.warn('[ops-ontology] promote cron 실패:', e.message); }
   };
   _cronTimer = setInterval(run, intervalMin * 60 * 1000);
@@ -184,7 +187,8 @@ function createOpsOntologyRouter(deps = {}) {
       const hours = Math.min(parseInt(req.query.hours) || 24, 720);
       const r = await promote(p, hours);
       const e = await enrichHandoff(p, hours); // Action → 거래처/핸드오프/ERP 관계 보강
-      res.json({ ok: true, ...r, ...e });
+      const k = await syncKakaoToOntology(p, _fetchKakaoSheetData).catch(err => ({ error: err.message })); // 카톡 시트 연결
+      res.json({ ok: true, ...r, ...e, kakao: k });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 

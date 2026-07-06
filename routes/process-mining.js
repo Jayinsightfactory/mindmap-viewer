@@ -3136,5 +3136,7 @@ function _designAutomation(steps, patternData) {
 // ── Recorder 통합 전용 유틸리티 (recording.js에서도 사용) ─────────────────
 createProcessMining._normalizeApp = normalizeApp;
 createProcessMining._inferAppFromTitle = inferAppFromTitle;
+// 카톡 구글시트 리더 재사용 (kakao-ontology-sync.js에서 온톨로지 연결용으로 재사용 — 재구현 금지)
+createProcessMining._fetchKakaoSheetData = _fetchKakaoSheetData;
 
 module.exports = createProcessMining;
