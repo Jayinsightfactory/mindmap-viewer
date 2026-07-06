@@ -59,12 +59,20 @@ function createFlowMapRouter(deps = {}) {
       if (!auth(req)) return res.status(401).json({ error: 'unauthorized' });
       const p = pool(); if (!p) return res.status(500).json({ error: 'db not available' });
       const ws = tenantOf(req);
-      const [persons, customers, actCount, mentions, handoffs] = await Promise.all([
+      const [persons, customers, actCount, mentions, handoffs, kakaoRoomCust] = await Promise.all([
         personMap(p, ws),
         customerMap(p, ws),
         p.query(`SELECT user_id, COUNT(*) c FROM unified_events WHERE type='work.action' AND workspace_id=$1 GROUP BY user_id`, [ws]),
         p.query(`SELECT from_ref, to_ref FROM ops_relation WHERE rel_type='action_mentions_customer' AND workspace_id=$1`, [ws]),
         p.query(`SELECT from_ref, to_ref, confidence FROM ops_relation WHERE rel_type='action_handoff' AND workspace_id=$1`, [ws]),
+        // 카톡 이벤트가 같은 KakaoEvent(from_ref)로 방+거래처를 동시에 가리키면 방↔거래처 연결로 집계
+        p.query(
+          `SELECT room.to_ref AS room, cust.to_ref AS cust_ref, cust.to_type AS cust_type, cust.confidence AS conf
+             FROM ops_relation room
+             JOIN ops_relation cust ON cust.from_ref = room.from_ref AND cust.rel_type = 'kakao_event_mentions_customer' AND cust.workspace_id = $1
+            WHERE room.rel_type = 'kakao_event_in_room' AND room.workspace_id = $1`,
+          [ws]
+        ),
       ]);
       const cnt = new Map(actCount.rows.map(r => [r.user_id, Number(r.c)]));
       const nodes = [], edges = [];
@@ -107,7 +115,31 @@ function createFlowMapRouter(deps = {}) {
         edges.push({ from: 'person:' + a, to: 'person:' + b, kind: 'handoff', count: e.count, confidence: e.conf });
       }
 
-      res.json({ ok: true, level: 'company', tenant: ws, nodes, edges, stats: { people: nodes.filter(n => n.kind === 'employee').length, customers: usedCust.size, handoffs: pp.size } });
+      // 카톡 방↔거래처 롤업 (담당자 필드가 시트에 없어 사람 노드와는 직접 연결 안 함 — 방/거래처만)
+      const rc = new Map(); // `${room}|${custKey}` → {count, conf, label}
+      for (const r of kakaoRoomCust.rows) {
+        if (!r.room || !r.cust_ref) continue;
+        const golden = r.cust_type === 'Customer';
+        const custKey = golden ? 'customer:' + r.cust_ref : 'customerName:' + r.cust_ref;
+        const k = `${r.room}|${custKey}`;
+        const e = rc.get(k) || { count: 0, conf: 0, golden, custRef: r.cust_ref };
+        e.count++; e.conf = Math.max(e.conf, Number(r.conf) || 0.5); rc.set(k, e);
+      }
+      const usedRooms = new Set();
+      for (const [k, e] of rc) {
+        const [room, custKey] = k.split('|');
+        if (!usedRooms.has(room)) { usedRooms.add(room); nodes.push({ id: 'room:' + room, kind: 'room', label: room, confidence: 0.67 }); }
+        // dedup 키는 기존 관례(seen='c:'+goldenId)와 동일하게 — action_mentions_customer가 이미 추가한
+        // 골든 거래처 노드와 겹치면 중복 노드를 만들지 않고 재사용한다.
+        if (!seen.has('c:' + e.custRef)) {
+          seen.add('c:' + e.custRef);
+          const label = e.golden ? (customers.get(e.custRef)?.label || e.custRef) : e.custRef;
+          nodes.push({ id: custKey, kind: 'customer', label, confidence: e.golden ? (customers.get(e.custRef)?.confidence || 0.85) : 0.5 });
+        }
+        edges.push({ from: 'room:' + room, to: custKey, kind: 'mentions', count: e.count, confidence: e.conf });
+      }
+
+      res.json({ ok: true, level: 'company', tenant: ws, nodes, edges, stats: { people: nodes.filter(n => n.kind === 'employee').length, customers: usedCust.size, handoffs: pp.size, kakaoRooms: usedRooms.size } });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 

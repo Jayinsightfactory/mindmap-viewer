@@ -8,7 +8,7 @@
   const API = '';
   const TOKEN_KEY = 'orbit_flow_token';
 
-  const KIND_COLOR = { employee: '#8a7df0', action: '#5b9dff', customer: '#e0913a', erp: '#46a06a', default: '#5a5f68' };
+  const KIND_COLOR = { employee: '#8a7df0', action: '#5b9dff', customer: '#e0913a', erp: '#46a06a', room: '#2bb3a3', default: '#5a5f68' };
   const EDGE_COLOR = { handoff: '#5b9dff', mentions: '#e0913a', triggered: '#46a06a', updated_erp: '#46a06a', next: '#3a3d44', default: '#3a3d44' };
   const confDot = (c) => (c >= 1 ? '#2e9e6b' : c >= 0.67 ? '#d9a630' : '#7e828a');
 
@@ -211,7 +211,7 @@
   }
 
   function renderLegend() {
-    const L = [['employee', '직원'], ['action', '액션'], ['customer', '거래처'], ['erp', 'ERP결과']];
+    const L = [['employee', '직원'], ['action', '액션'], ['customer', '거래처'], ['erp', 'ERP결과'], ['room', '카톡방']];
     $('#legend').innerHTML =
       L.map(([k, n]) => `<span class="dot" style="background:${KIND_COLOR[k]}"></span>${n}`).join(' &nbsp; ')
       + `<br><span style="color:#5b9dff">━</span> 핸드오프 &nbsp; <span style="color:#e0913a">┄</span> 거래처 &nbsp; <span style="color:#46a06a">━</span> 대화→작업`

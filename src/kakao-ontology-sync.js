@@ -19,6 +19,20 @@
  */
 
 const crypto = require('crypto');
+const N = require('./intelligence/entity-resolution/korean-normalizer');
+const { loadCustomerIndex } = require('./flow-handoff'); // 거래처 골든 인덱스 재사용(중복 시트명 노드 방지)
+
+// 시트의 원문 거래처명을 골든 고객 id로 정규화(가능하면). 매칭 안 되면 원문 유지(그래도 유용한 신호).
+function resolveCustomerRef(custRaw, index) {
+  if (!custRaw) return null;
+  const norm = N.normalizeName(custRaw);
+  if (!norm) return null;
+  const exact = index.find(g => g.normName === norm);
+  if (exact) return { type: 'Customer', ref: exact.id, matched: true };
+  const hit = N.findCandidates(custRaw, index).filter(h => h.score >= 0.85).sort((a, b) => b.score - a.score)[0];
+  if (hit) return { type: 'Customer', ref: hit.id, matched: true };
+  return { type: 'CustomerName', ref: custRaw.slice(0, 60), matched: false };
+}
 
 function pick(row, keys) { for (const k of keys) if (row[k]) return row[k]; return ''; }
 function parseSheetTs(row) {
@@ -74,6 +88,7 @@ async function syncKakaoToOntology(pool, fetchFn, workspaceId = 'nenova') {
 
   const now = new Date();
   const events = [], relations = [];
+  const custIndex = await loadCustomerIndex(pool).catch(() => []);
 
   for (const r of rows.filter(r => r._tab === '비즈니스이벤트')) {
     const eventType = pick(r, ['이벤트타입', 'event_type', '타입']);
@@ -85,7 +100,10 @@ async function syncKakaoToOntology(pool, fetchFn, workspaceId = 'nenova') {
     const id = hashId('kakao:biz', [eventType, room, cust, prod, ts.toISOString().slice(0, 16)]);
     events.push({ id, type: 'kakao.business_event', ts, workspaceId, data: { room_name: room, event_type: eventType, customer: cust, product: prod, tab: '비즈니스이벤트' } });
     if (room) relations.push({ id: `rel:kakao_event_in_room:${id}:${room}`.slice(0, 200), relType: 'kakao_event_in_room', fromType: 'KakaoEvent', fromRef: id, toType: 'Room', toRef: room.slice(0, 60), confidence: 0.67, evidence: { eventType, product: prod }, ts, workspaceId });
-    if (cust) relations.push({ id: `rel:kakao_event_mentions_customer:${id}:${cust}`.slice(0, 200), relType: 'kakao_event_mentions_customer', fromType: 'KakaoEvent', fromRef: id, toType: 'CustomerName', toRef: cust.slice(0, 60), confidence: 0.85, evidence: { eventType, product: prod, room }, ts, workspaceId });
+    if (cust) {
+      const resolved = resolveCustomerRef(cust, custIndex);
+      if (resolved) relations.push({ id: `rel:kakao_event_mentions_customer:${id}:${resolved.ref}`.slice(0, 200), relType: 'kakao_event_mentions_customer', fromType: 'KakaoEvent', fromRef: id, toType: resolved.type, toRef: resolved.ref, confidence: resolved.matched ? 0.85 : 0.5, evidence: { eventType, product: prod, room, rawName: cust, goldenMatched: resolved.matched }, ts, workspaceId });
+    }
   }
 
   for (const r of rows.filter(r => r._tab === '의사결정추적')) {
