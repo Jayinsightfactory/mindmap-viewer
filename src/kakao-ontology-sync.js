@@ -43,12 +43,13 @@ function canonicalizeRoom(raw, registry) {
   if (registry.has(raw)) return registry.get(raw);
   let best = null, bestDist = Infinity;
   for (const canon of new Set(registry.values())) {
-    if (Math.abs(canon.length - raw.length) > 3) continue;
+    if (Math.abs(canon.length - raw.length) > 4) continue;
     const dist = N.levenshtein(raw, canon);
     if (dist < bestDist) { bestDist = dist; best = canon; }
   }
-  // 원본 길이 대비 소폭 차이(≤2자, � 1~2개 정도)면 같은 방으로 간주
-  const label = (best !== null && bestDist <= 2 && bestDist / Math.max(raw.length, 1) < 0.15) ? best : raw;
+  // 실측(2026-07-06): 깨진 글자 1개가 U+FFFD 1~2개로 늘어나 dist 최대 3까지 관측됨.
+  // 짧은 방이름(예 3자 '견적방')끼리 오탐 병합은 비율 게이트(<20%)가 막음.
+  const label = (best !== null && bestDist <= 3 && bestDist / Math.max(raw.length, 1) < 0.2) ? best : raw;
   registry.set(raw, label);
   return label;
 }
