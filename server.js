@@ -1403,6 +1403,22 @@ app.get('/api/admin/events-size-diag', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// POST /api/admin/vacuum-tables — 안전한 VACUUM(비FULL, 락 없음): 삭제/갱신으로 생긴 데드튜플을
+// Postgres가 재사용하도록 회수. 데이터 손실 없음(가비지 컬렉션과 동일 개념).
+app.post('/api/admin/vacuum-tables', async (req, res) => {
+  try {
+    if (!resolveAdmin(req).isAdmin) return res.status(403).json({ error: 'admin only' });
+    const pool = dbModule.getDb();
+    const targets = ['events', 'unified_events', 'ops_relation'];
+    const results = {};
+    for (const t of targets) {
+      try { await pool.query(`VACUUM (ANALYZE) ${t}`); results[t] = 'ok'; }
+      catch (e) { results[t] = 'fail: ' + e.message; }
+    }
+    res.json({ ok: true, results });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // GET /api/admin/db-size-diag — DB 전체 그림(테이블별 크기+데드튜플, 읽기전용)
 app.get('/api/admin/db-size-diag', async (req, res) => {
   try {
