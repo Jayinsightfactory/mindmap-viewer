@@ -14,7 +14,7 @@
  */
 
 const { seed: seedPerson }            = require('./seed-person-from-pc-links');
-const { matchOnce: matchPersonERP }   = require('./match-person-erp');
+const { matchOnce: matchPersonERP, seedFromManagers } = require('./match-person-erp');
 const { bootstrap: bootstrapCustomer }= require('./bootstrap-customer');
 const { matchOnce: matchCustomerFuzzy }= require('./match-customer-fuzzy');
 
@@ -32,6 +32,12 @@ async function _runSeedPerson() {
 }
 
 async function _runMatchersAndBootstrap() {
+  try {
+    const r = await seedFromManagers(_pool);
+    console.log(`[er-scheduler] seed-erp-managers: managers=${r.managers} seeded=${r.seeded} skipped=${r.skipped}`);
+  } catch (e) {
+    console.warn('[er-scheduler] seed-erp-managers 실패:', e.message);
+  }
   try {
     const r = await matchPersonERP(_pool);
     console.log(`[er-scheduler] match-person-erp: candidates=${r.candidates} matched=${r.matched} skipped=${r.skipped} ambiguous=${r.ambiguous}`);

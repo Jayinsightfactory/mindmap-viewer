@@ -65,7 +65,9 @@ function createFlowMapRouter(deps = {}) {
     for (const r of rows) {
       const a = tryObj(r.attributes);
       const uid = a.user_id || a.orbitUserId || a.userId;
-      if (uid) m.set(uid, { label: r.display_name || uid, confidence: Number(r.confidence) || 0.34 });
+      // 시드 당시 auth에 이름이 없으면 골든 display_name이 원시ID로 굳음(김빛나 사례) — 그 경우 auth 이름 폴백 유지
+      const goldenName = (r.display_name && r.display_name !== uid) ? r.display_name : null;
+      if (uid) m.set(uid, { label: goldenName || m.get(uid)?.label || uid, confidence: Number(r.confidence) || 0.34 });
     }
     return m;
   }
@@ -396,7 +398,7 @@ function createFlowMapRouter(deps = {}) {
     await p.query(`CREATE TABLE IF NOT EXISTS orbit_ops_report (
       id BIGSERIAL PRIMARY KEY, ts TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       kind TEXT NOT NULL DEFAULT 'ops', source TEXT DEFAULT 'cli-agent', report JSONB NOT NULL )`);
-    await p.query(`ALTER TABLE orbit_ops_report ADD COLUMN IF NOT EXISTS workspace_id TEXT NOT NULL DEFAULT 'nenova'`).catch(() => {});
+    await p.query(`ALTER TABLE orbit_ops_report ADD COLUMN IF NOT EXISTS workspace_id TEXT NOT NULL DEFAULT 'WS-NENOVA-2026'`).catch(() => {});
   }
   // worker가 에이전트 산출물(예측·병목·검증·자동화·disagreement)을 저장
   router.post('/ops-report', express.json({ limit: '2mb' }), async (req, res) => {

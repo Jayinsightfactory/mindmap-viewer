@@ -48,7 +48,7 @@ async function seed(pool, opts = {}) {
 
     // 3. 기존 person 골든 검색 — attributes.user_id 또는 source_refs.orbit 교집합으로
     const { rows: existing } = await pool.query(`
-      SELECT id, source_refs, attributes
+      SELECT id, display_name, source_refs, attributes
         FROM orbit_entity_golden
        WHERE entity_type = 'person'
          AND (
@@ -90,16 +90,21 @@ async function seed(pool, opts = {}) {
       const cur = (g.source_refs?.orbit) || [];
       const merged = [...new Set([...cur, ...u.hostnames])];
       const added = merged.filter(h => !cur.includes(h));
+      // 이름 리프레시: 시드 당시 auth에 이름이 없어 display_name이 원시ID로 굳은 골든을
+      // auth가 나중에 이름을 얻으면 실명으로 갱신 (김빛나 원시ID 고착 사례)
+      const gAttrs = g.attributes || {};
+      const staleName = u.name && (g.display_name === userId || !gAttrs.name || gAttrs.name === userId);
 
-      if (added.length === 0) { skipped++; continue; }
+      if (added.length === 0 && !staleName) { skipped++; continue; }
 
       if (!dryRun) {
         const newRefs = { ...(g.source_refs || {}), orbit: merged };
+        const newAttrs = staleName ? { ...gAttrs, name: u.name, email: u.email || gAttrs.email || null } : gAttrs;
         await pool.query(`
           UPDATE orbit_entity_golden
-             SET source_refs = $1
-           WHERE id = $2
-        `, [JSON.stringify(newRefs), g.id]);
+             SET source_refs = $1, display_name = $2, attributes = $3
+           WHERE id = $4
+        `, [JSON.stringify(newRefs), staleName ? u.name : g.display_name, JSON.stringify(newAttrs), g.id]);
 
         for (const hn of added) {
           await pool.query(`

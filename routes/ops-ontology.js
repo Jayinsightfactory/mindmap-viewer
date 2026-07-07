@@ -28,7 +28,7 @@ async function ensureOpsTables(pool) {
       confidence    NUMERIC(4,3) DEFAULT 0.34,
       evidence      JSONB DEFAULT '{}',
       ts            TIMESTAMPTZ,
-      workspace_id  TEXT DEFAULT 'nenova',
+      workspace_id  TEXT DEFAULT 'WS-NENOVA-2026',
       updated_at    TIMESTAMPTZ DEFAULT NOW()
     )`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_opsrel_from ON ops_relation(from_ref)`);

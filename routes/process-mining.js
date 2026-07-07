@@ -1874,10 +1874,11 @@ function createProcessMining({ getDb, reportSheet }) {
 
       const tabs = (meta.sheets || []).map(s => s.properties?.title);
 
-      // Try reading first tab
+      // Try reading first tab (?tab= 으로 특정 탭 헤더 확인 가능 — 예: 의사결정추적 일시컬럼 진단)
       let sample = null;
       if (tabs.length) {
-        const range = encodeURIComponent(`${tabs[0]}!A1:E5`);
+        const wantTab = req.query.tab && tabs.includes(req.query.tab) ? req.query.tab : tabs[0];
+        const range = encodeURIComponent(`${wantTab}!A1:N3`);
         sample = await new Promise((resolve) => {
           https.get({hostname:'sheets.googleapis.com',path:`/v4/spreadsheets/${SHEET_ID}/values/${range}`,headers:{Authorization:`Bearer ${token.access_token}`}}, r => {
             let d=''; r.on('data',c=>d+=c); r.on('end',()=>{try{resolve(JSON.parse(d))}catch{resolve({raw:d.substring(0,500)})}});

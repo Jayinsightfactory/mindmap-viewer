@@ -145,7 +145,61 @@ async function matchOnce(pool, opts = {}) {
   return { candidates: erpUsers.length, matched, skipped, ambiguous };
 }
 
-module.exports = { matchOnce };
+/**
+ * ERP 전용 담당자 골든 생성 — erp-ui 이벤트의 Manager(실명) 중 골든에 없는 사람을 생성.
+ * PC 데몬 미추적 직원(예: 견적 담당 조현욱·정재훈·김원영)이 온톨로지에 "알 수 없는 사람"으로
+ * 남아 교차검증이 WARN을 남발하는 문제 해소. 보수적: 한글 2~4자 실명만, 멱등.
+ */
+async function seedFromManagers(pool, opts = {}) {
+  const dryRun = !!opts.dryRun;
+  const since = opts.since || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const { ulid } = require('ulid');
+
+  const { rows: mgrRows } = await pool.query(`
+    SELECT DISTINCT data ->> 'Manager' AS name
+      FROM unified_events
+     WHERE source = 'erp-ui'
+       AND data ->> 'Manager' IS NOT NULL
+       AND timestamp > $1
+  `, [since]);
+  const names = mgrRows.map(r => (r.name || '').trim()).filter(n => /^[가-힣]{2,4}$/.test(n));
+  if (names.length === 0) return { managers: 0, seeded: 0, skipped: 0 };
+
+  const { rows: persons } = await pool.query(`
+    SELECT id, display_name, attributes FROM orbit_entity_golden WHERE entity_type = 'person'
+  `);
+  const known = new Set();
+  for (const p of persons) {
+    if (p.display_name) known.add(_norm(p.display_name));
+    if (p.attributes?.name) known.add(_norm(p.attributes.name));
+  }
+
+  let seeded = 0, skipped = 0;
+  for (const name of names) {
+    if (known.has(_norm(name))) { skipped++; continue; }
+    // erp-user-map 역참조: 실명 → ERP 로그인ID (있으면 aliases로 보존해 향후 user_id 매칭에 사용)
+    const loginIds = Object.entries(_getErpUserMap()).filter(([, v]) => v?.name === name).map(([id]) => id);
+    const id = ulid();
+    const attrs = { name, aliases: loginIds, erp_only: true };
+    if (!dryRun) {
+      await pool.query(`
+        INSERT INTO orbit_entity_golden
+          (id, entity_type, display_name, attributes, source_refs, confidence, source_count)
+        VALUES ($1, 'person', $2, $3, $4, 0.333, 1)
+      `, [id, name, JSON.stringify(attrs), JSON.stringify({ 'erp-ui': [`manager:${name}`] })]);
+      await pool.query(`
+        INSERT INTO orbit_entity_match_log
+          (golden_id, source, source_ref, match_type, match_score, evidence, matcher_version)
+        VALUES ($1, 'erp-ui', $2, 'exact', 1.000, $3, $4)
+      `, [id, `manager:${name}`, JSON.stringify({ via: 'estimate.Manager', loginIds }), MATCHER_VERSION]);
+    }
+    known.add(_norm(name));
+    seeded++;
+  }
+  return { managers: names.length, seeded, skipped };
+}
+
+module.exports = { matchOnce, seedFromManagers };
 
 if (require.main === module) {
   require('dotenv').config();
