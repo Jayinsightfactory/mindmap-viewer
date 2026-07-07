@@ -1211,3 +1211,13 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - **카카오 중복적재 근본수정(0014)**: 실측 시각컬럼=비즈니스이벤트'시각'/의사결정'발생시각', 값 "오전 10:38"(날짜없음)→파싱실패→ts=now가 ID 해시에 들어가 **매 30분 같은 행이 새 이벤트로 중복적재**("미해결 40방 동일시각"의 근본원인). 안정 ID(의사결정=이슈ID, 결과 제외→해결 전이가 data 갱신) + DO UPDATE(최초관측 ts 보존) + 이슈내용·대응자·발신자 보강 + 기존 중복 전량삭제(시트에서 재구축). kakao-debug에 ?tab= 진단 파라미터 추가.
 - **신규 발견(미해결)**: ①vision 분석 백로그 ~1500장, 최신 분석이 5시간 지연(vision-worker 처리량<유입량) — 최근 유닛 activity 공란의 현재 원인, 처리량 개선 또는 최신우선(LIFO) 필요 ②마스터토큰 선점 계정 정리(어느 데몬이 claim했는지).
 - 검증: 골든 16명(김빛나·조현욱·정재훈·김원영 확인), ops-input 원시ID 25→12%, 기타입력 57→51%, 새 리포트가 "김빛나 운임비 정산 PASS"+"조현욱 견적 지속" 실명 예측 + kakao 아티팩트 자가진단.
+
+## 2026-07-07(계속) — 비전 트리아지 + 직무 프로파일(신입 매뉴얼) 파이프라인 (커밋 7cf2ffa)
+- 요청: "비전 분석에 에이전트 구성 — 필요한 캡처 타이밍인지 선별, 쓸모없는 데이터 컷. 진짜 원하는 건 클릭/입력 통계로 못 얻는 것: 이 사람이 실제 어떤 업무를 하는지, 회사에서 어떤 위치인지, 신입 매뉴얼로 쓸 수준."
+- **캡처 트리아지**: vision-worker processServerQueue에 필터 — 같은 사람·앱·창(40자)을 10분 내 재분석 금지(_triageSeen LRU 800) + 최신 우선 정렬. /api/vision/queue FIFO→LIFO. 기존 capture-timing-learner(수집측 쿨타임 학습)와 상호보완: 수집측은 타이밍, 워커측은 중복화면 컷.
+- **직무 프로파일 파이프라인**(TOTAL_PLATFORM P1 방향):
+  - GET /api/flow/duty-input?userId=&days= — vision 원문 80건(연속중복 제거)+앱/방/거래처+receivesFrom/handsTo(핸드오프 상대별 count/keys)+kakaoResponder+erpManagerEvents
+  - ops-agent-worker --duty [userId|all] → buildDutyPrompt(매뉴얼 강제: "어느 화면에서 무엇을 입력" 수준, 통계서술 금지, 근거없으면 gaps로) → kind='duty:{userId}' 저장
+  - 4h 루프 틱마다 1명 로테이션(하루 6명 자동 갱신). GET /ops-report?kind=duty:X + /duty-profiles 일람
+- **검증(실제 산출)**: jaeyong lim conf0.62 업무9개 — "ECOUNT 견적 33행부터 이어 입력", "콜수국 색상·농장코드별 발주", "White6/Blue1/DarkPink1 배분→저장" 등 화면 단위 절차. 설연주 conf0.35 — vision 0건이라 초안에 "⚠화면 상세 미확정" 명시+gaps 1순위로 "이 사람 vision 최우선 필요" 자가요구. 설계 의도(근거기반+정직한 공백) 그대로.
+- 다음 레버: 직원 vision 커버리지(트리아지+LIFO로 자동 개선 예상) → 매뉴얼 질 자동 상승. duty-profiles 뷰(graph.html/app.html 통합)는 미착수.
