@@ -289,6 +289,82 @@ function createFlowMapRouter(deps = {}) {
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
+  // ── 직무 프로파일 입력 번들: 한 사람의 "실제 업무"를 매뉴얼 수준으로 재구성할 재료 ──
+  // 클릭/입력 통계가 아니라: vision 화면해독 원문(무슨 업무를 봤는지) + 흐름상 위치(누구에게 받아
+  // 누구에게 넘기는지) + 담당 거래처/방/ERP 역할. worker --duty가 소비.
+  router.get('/duty-input', async (req, res) => {
+    try {
+      const ws = await auth(req);
+      if (ws === 'NO_WORKSPACE') return res.status(403).json({ error: 'not_onboarded' });
+      if (!ws) return res.status(401).json({ error: 'unauthorized' });
+      const p = pool(); if (!p) return res.status(500).json({ error: 'db not available' });
+      const userId = String(req.query.userId || '').slice(0, 60);
+      if (!userId) return res.status(400).json({ error: 'userId required' });
+      const days = Math.min(parseInt(req.query.days) || 14, 60);
+      const since = new Date(Date.now() - days * 24 * 3600 * 1000).toISOString();
+      const persons = await personMap(p, ws);
+      const label = persons.get(userId)?.label || userId;
+      const actPrefix = `act:${userId}:%`;
+      const [visionR, appsR, roomsR, custR, hoOutR, hoInR, kakaoRespR, erpMgrR] = await Promise.all([
+        // 1차 근거: 화면해독 원문 — "이 사람이 실제 어떤 업무 화면에서 무엇을 했는지"
+        p.query(`SELECT timestamp, data_json FROM events WHERE type='screen.analyzed' AND user_id=$1 AND timestamp>=$2 ORDER BY timestamp DESC LIMIT 200`, [userId, since]),
+        p.query(`SELECT data->>'app' app, COUNT(*) c,
+                        COALESCE(SUM(NULLIF(data->>'typedChars','')::int),0) typed,
+                        COALESCE(SUM(NULLIF(data->>'clicks','')::int),0) clicks,
+                        COALESCE(SUM(NULLIF(data->>'durationSec','')::int),0) sec
+                   FROM unified_events WHERE type='work.action' AND user_id=$1 AND timestamp>=$2 AND workspace_id=$3
+                  GROUP BY 1 ORDER BY c DESC LIMIT 12`, [userId, since, ws]),
+        p.query(`SELECT data->>'room' room, COUNT(*) c FROM unified_events
+                  WHERE type='work.action' AND user_id=$1 AND timestamp>=$2 AND workspace_id=$3 AND COALESCE(data->>'room','')<>''
+                  GROUP BY 1 ORDER BY c DESC LIMIT 10`, [userId, since, ws]),
+        p.query(`SELECT to_ref, COUNT(*) c FROM ops_relation
+                  WHERE rel_type='action_mentions_customer' AND from_ref LIKE $1 AND ts>=$2 AND workspace_id=$3
+                  GROUP BY 1 ORDER BY c DESC LIMIT 15`, [actPrefix, since, ws]),
+        p.query(`SELECT to_ref, evidence FROM ops_relation
+                  WHERE rel_type='action_handoff' AND from_ref LIKE $1 AND ts>=$2 AND workspace_id=$3 LIMIT 400`, [actPrefix, since, ws]),
+        p.query(`SELECT from_ref, evidence FROM ops_relation
+                  WHERE rel_type='action_handoff' AND to_ref LIKE $1 AND ts>=$2 AND workspace_id=$3 LIMIT 400`, [actPrefix, since, ws]),
+        // 카톡 의사결정 대응자로 등장한 건 (실명 매칭)
+        p.query(`SELECT data->>'room_name' room, data->>'issue' issue, data->>'result' result, COUNT(*) c
+                   FROM unified_events WHERE type='kakao.decision' AND workspace_id=$2 AND data->>'responder' LIKE $1
+                  GROUP BY 1,2,3 ORDER BY MAX(timestamp) DESC LIMIT 20`, ['%' + label.slice(0, 10) + '%', ws]),
+        p.query(`SELECT COUNT(*) c FROM unified_events WHERE source='erp-ui' AND data->>'Manager'=$1 AND timestamp>=$2`, [label, since]),
+      ]);
+      const customers = await customerMap(p, ws);
+      // vision 압축: 연속 중복 제거, 상위 80건
+      const vision = [];
+      let prevA = '';
+      for (const r of visionR.rows) {
+        let d = {}; try { d = typeof r.data_json === 'string' ? JSON.parse(r.data_json) : (r.data_json || {}); } catch {}
+        const act = (d.activity || '').slice(0, 160);
+        if (!act || act.slice(0, 50) === prevA) continue; prevA = act.slice(0, 50);
+        vision.push({ ts: r.timestamp, app: (d.app || '').slice(0, 30), activity: act, automatable: !!d.automatable });
+        if (vision.length >= 80) break;
+      }
+      const hoCount = (rows, refCol) => {
+        const m = new Map();
+        for (const r of rows) {
+          const other = persons.get(userOfAct(r[refCol]))?.label || userOfAct(r[refCol]);
+          if (!other || other === label) continue;
+          const ev = tryObj(r.evidence);
+          const e = m.get(other) || { person: other, count: 0, keys: new Set() };
+          e.count++; (ev.keys || []).forEach(k => e.keys.add(k)); m.set(other, e);
+        }
+        return [...m.values()].map(e => ({ person: e.person, count: e.count, keys: [...e.keys] })).sort((a, b) => b.count - a.count).slice(0, 8);
+      };
+      res.json({ ok: true, tenant: ws, userId, label, days,
+        vision,
+        apps: appsR.rows.map(r => ({ app: r.app, units: Number(r.c), typed: Number(r.typed), clicks: Number(r.clicks), min: Math.round(Number(r.sec) / 60) })),
+        rooms: roomsR.rows.map(r => ({ room: r.room, units: Number(r.c) })),
+        customers: custR.rows.map(r => ({ customer: customers.get(r.to_ref)?.label || r.to_ref, count: Number(r.c) })),
+        handsTo: hoCount(hoOutR.rows, 'to_ref'),
+        receivesFrom: hoCount(hoInR.rows, 'from_ref'),
+        kakaoResponder: kakaoRespR.rows.map(r => ({ room: r.room, issue: r.issue, result: r.result, count: Number(r.c) })),
+        erpManagerEvents: Number(erpMgrR.rows[0]?.c || 0),
+      });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
   // ── 에이전트 파이프라인 입력 번들 (worker가 Claude CLI에 먹일 압축 데이터) ──
   router.get('/ops-input', async (req, res) => {
     try {
@@ -423,8 +499,25 @@ function createFlowMapRouter(deps = {}) {
       if (!ws) return res.status(401).json({ error: 'unauthorized' });
       const p = pool(); if (!p) return res.status(500).json({ error: 'db not available' });
       await ensureReportTable(p);
-      const { rows } = await p.query(`SELECT ts, kind, source, report FROM orbit_ops_report WHERE workspace_id=$1 ORDER BY ts DESC LIMIT 1`, [ws]);
+      // ?kind= 지정 시 그 종류의 최신본 (예: kind=duty:MNIAFICB... → 그 사람 직무 프로파일). 기본 'ops'.
+      const kind = String(req.query.kind || 'ops').slice(0, 80);
+      const { rows } = await p.query(`SELECT ts, kind, source, report FROM orbit_ops_report WHERE workspace_id=$1 AND kind=$2 ORDER BY ts DESC LIMIT 1`, [ws, kind]);
       res.json({ ok: true, latest: rows[0] || null });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+  // 직무 프로파일 목록 (kind='duty:*' 최신본 일람 — 사람별 매뉴얼 인덱스)
+  router.get('/duty-profiles', async (req, res) => {
+    try {
+      const ws = await auth(req);
+      if (ws === 'NO_WORKSPACE') return res.status(403).json({ error: 'not_onboarded' });
+      if (!ws) return res.status(401).json({ error: 'unauthorized' });
+      const p = pool(); if (!p) return res.status(500).json({ error: 'db not available' });
+      await ensureReportTable(p);
+      const { rows } = await p.query(
+        `SELECT DISTINCT ON (kind) kind, ts, report FROM orbit_ops_report
+          WHERE workspace_id=$1 AND kind LIKE 'duty:%' ORDER BY kind, ts DESC`, [ws]);
+      res.json({ ok: true, profiles: rows.map(r => ({ kind: r.kind, ts: r.ts,
+        person: r.report?.person, roleSummary: r.report?.roleSummary, duties: (r.report?.duties || []).length })) });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 

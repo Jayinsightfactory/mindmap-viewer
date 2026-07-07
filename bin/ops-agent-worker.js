@@ -99,6 +99,52 @@ function parseJson(text) {
   return JSON.parse(text.slice(s, e + 1));
 }
 
+// ── 직무 프로파일: "이 사람이 회사에서 실제 어떤 업무를 하는 사람인가" — 신입 매뉴얼 수준 ──
+function buildDutyPrompt(input) {
+  return `당신은 Nenova 업무 OS의 업무 분석가다. 아래 관찰 데이터로 "${input.label}"의 직무 프로파일을 작성한다.
+목표: 통계가 아니라, 신입 직원에게 인수인계 문서로 줄 수 있는 수준의 실무 매뉴얼 초안.
+
+[입력 데이터]
+- vision: 화면 해독 원문(최우선 근거 — 실제 어떤 화면에서 무슨 업무를 봤는지). 여기의 거래처/품목/문서/화면 이름을 그대로 쓴다.
+- apps/rooms/customers: 시간 배분·담당 거래처·활동 톡방.
+- receivesFrom/handsTo: 업무 흐름에서 누구에게 받아 누구에게 넘기는지(회사 내 위치).
+- kakaoResponder: 카톡 이슈 대응 이력. erpManagerEvents: ERP 견적 담당 건수.
+
+[작성 원칙]
+- 절차(procedure)는 "어느 화면에서 무엇을 입력하고 무엇을 누른다/확인한다" 수준으로 구체적으로. vision에 없는 단계는 지어내지 않는다.
+- "OO앱 N회 사용" 같은 통계 서술 금지. 업무 이름은 실제 업무 언어로(예: "콜롬비아 수국 발주 수량 입력", "운임비 정산").
+- 근거가 부족한 부분은 duties에 넣지 말고 gaps에 "무엇이 더 관찰되어야 하는지"로 적는다.
+- 한국어. 오직 JSON 하나만 출력.
+
+[관찰 데이터]
+${JSON.stringify(input).slice(0, 90000)}
+
+[출력 JSON]
+{
+ "person":"${input.label}",
+ "roleSummary":"이 사람의 실제 역할·회사 내 위치 한 문단",
+ "flowPosition":{"receivesFrom":["사람/방/시스템"],"handsTo":["사람/방/시스템"]},
+ "duties":[{"name":"업무명","when":"언제/어떤 신호로 시작","procedure":["단계1","단계2"],"tools":["앱/화면"],"inputsFrom":"입력 출처","outputsTo":"결과가 가는 곳","frequency":"관찰된 빈도","evidence":"근거(vision 시각/내용)"}],
+ "manualDraft":"신입 인수인계 문서 초안(마크다운, 위 duties를 절차 중심으로 서술)",
+ "gaps":["더 관찰 필요한 것"],
+ "confidence":0
+}`;
+}
+
+async function runDutyOnce(userId) {
+  const input = await httpJson('GET', `/api/flow/duty-input?userId=${encodeURIComponent(userId)}&days=14`);
+  if (!input.ok) throw new Error('duty-input 실패: ' + JSON.stringify(input).slice(0, 150));
+  if ((input.vision || []).length === 0 && (input.apps || []).length === 0) {
+    console.log(`  [duty] ${input.label}: 관찰 데이터 없음 — 스킵`); return null;
+  }
+  const report = parseJson(await runClaude(buildDutyPrompt(input)));
+  report.generatedAtIso = new Date().toISOString();
+  report.userId = userId; report.days = input.days;
+  const r = await httpJson('POST', '/api/flow/ops-report', { kind: `duty:${userId}`, source: 'cli-agent', report });
+  console.log(`  [duty] ${input.label}: ${r.ok ? 'OK' : JSON.stringify(r)} · 업무 ${report.duties?.length || 0}개 · conf ${report.confidence}`);
+  return report;
+}
+
 async function runOnce() {
   const t0 = Date.now();
   console.log(`[ops-agent] ${new Date().toISOString()} 시작 (입력 ${INPUT_H}h)`);
@@ -113,9 +159,36 @@ async function runOnce() {
 }
 
 (async () => {
-  console.log(`[ops-agent-worker] 서버=${SERVER} CLI=${CLAUDE_CLI || '없음!'} 주기=${INTERVAL_H}h once=${ONCE}`);
+  const DUTY_ARG = process.argv.findIndex(a => a === '--duty');
+  console.log(`[ops-agent-worker] 서버=${SERVER} CLI=${CLAUDE_CLI || '없음!'} 주기=${INTERVAL_H}h once=${ONCE} duty=${DUTY_ARG >= 0}`);
   if (!CLAUDE_CLI) { console.error('Claude CLI 미발견 — claude setup-token 필요'); process.exit(1); }
-  const tick = () => runOnce().catch(e => console.error('[ops-agent] 실패:', e.message));
+
+  // --duty [userId|all]: 직무 프로파일만 생성하고 종료
+  if (DUTY_ARG >= 0) {
+    const target = process.argv[DUTY_ARG + 1] || 'all';
+    const pp = await httpJson('GET', '/api/flow/people');
+    const people = (pp.people || []).filter(x => x.count >= 50); // 관찰량 최소선
+    const targets = target === 'all' ? people : people.filter(x => x.userId === target);
+    console.log(`[duty] 대상 ${targets.length}명`);
+    for (const t of targets) {
+      await runDutyOnce(t.userId).catch(e => console.error(`  [duty] ${t.label} 실패:`, e.message));
+    }
+    process.exit(0);
+  }
+
+  let dutyIdx = 0;
+  const tick = async () => {
+    await runOnce().catch(e => console.error('[ops-agent] 실패:', e.message));
+    // 매 틱마다 1명씩 직무 프로파일 로테이션 갱신(4h×6=하루 6명 — 전직원 1~2일 주기 신선도)
+    try {
+      const pp = await httpJson('GET', '/api/flow/people');
+      const people = (pp.people || []).filter(x => x.count >= 50);
+      if (people.length) {
+        const t = people[dutyIdx % people.length]; dutyIdx++;
+        await runDutyOnce(t.userId).catch(e => console.error(`  [duty] ${t.label} 실패:`, e.message));
+      }
+    } catch (e) { console.error('[duty] 로테이션 실패:', e.message); }
+  };
   await tick();
   if (!ONCE) setInterval(tick, INTERVAL_H * 3600 * 1000);
 })();

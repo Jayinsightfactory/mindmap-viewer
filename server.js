@@ -4037,8 +4037,8 @@ app.post('/api/auto-fix/reset-cooldown', (req, res) => {
 // Vision 분석 큐 (맥미니 CLI 워커용 — 이미지 포함)
 app.get('/api/vision/queue', (req, res) => {
   const queue = global._visionImageQueue || [];
-  // 최대 10개씩 반환 (워커가 CLI로 분석) — Phase4: 빈도 증가
-  const batch = queue.splice(0, 10);
+  // 최신 우선(LIFO): 백로그가 쌓여도 "지금 무엇을 하는지"는 항상 신선하게 — 오래된 건 한가할 때 소진
+  const batch = queue.splice(-10).reverse();
   res.json({ pending: queue.length, batch });
 });
 

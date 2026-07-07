@@ -47,6 +47,7 @@ const PENDING_DIR = path.join(os.homedir(), '.orbit', 'vision-pending');
 try { fs.mkdirSync(PENDING_DIR, { recursive: true }); } catch {}
 function _isNight() { const h = new Date().getHours(); return (h >= NIGHT_START || h < NIGHT_END); }
 function _savePending(item) { try { fs.writeFileSync(path.join(PENDING_DIR, `${(item.id||Date.now())}.json`), JSON.stringify(item)); } catch {} }
+const _triageSeen = new Map(); // `${user}|${app}|${win}` → 마지막 분석 캡처시각 (중복화면 컷)
 function _pendingCount() { try { return fs.readdirSync(PENDING_DIR).filter(f=>f.endsWith('.json')).length; } catch { return 0; } }
 let _pqBusy = false; // 재진입 방지 (야간 CLI는 분당 수십초 소요 → setInterval 겹침 방지)
 const ORBIT_TOKEN = process.env.ORBIT_TOKEN || (() => {
@@ -509,9 +510,26 @@ async function processServerQueue() {
           .filter(Boolean);
       } catch {}
     }
-    const work = [...batch, ...pending];
+    let work = [...batch, ...pending];
     if (!work.length) return 0;
-    console.log(`[vision-queue] 처리 ${work.length}건 (큐:${batch.length} 누적:${pending.length}, 대기:${queueData.pending || 0})`);
+    // ── 트리아지: 분석 가치 없는 캡처 선별 컷 (같은 사람·앱·창을 10분 내 재분석 금지 — 화면 안 바뀜) ──
+    // 목적: CLI 처리량을 "새 정보가 있는 화면"에만 쓴다. 백로그의 대부분이 동일화면 반복 캡처.
+    work.sort((a, b) => new Date(b.ts || 0) - new Date(a.ts || 0)); // 최신 우선
+    const before = work.length;
+    work = work.filter(item => {
+      const key = `${item.userId || item.hostname}|${item.app || ''}|${(item.windowTitle || '').slice(0, 40)}`;
+      const itemMs = new Date(item.ts || Date.now()).getTime();
+      const last = _triageSeen.get(key);
+      if (last && Math.abs(itemMs - last) < 10 * 60 * 1000) {
+        if (item.__pf) { try { fs.unlinkSync(item.__pf); } catch {} } // 누적분도 컷하면 파일 정리
+        return false;
+      }
+      _triageSeen.set(key, itemMs);
+      if (_triageSeen.size > 800) { const k = _triageSeen.keys().next().value; _triageSeen.delete(k); }
+      return true;
+    });
+    const cut = before - work.length;
+    console.log(`[vision-queue] 처리 ${work.length}건 (트리아지 컷 ${cut}, 큐:${batch.length} 누적:${pending.length}, 대기:${queueData.pending || 0})`);
 
     let done = 0;
     for (const item of work) {
