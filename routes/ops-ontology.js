@@ -181,6 +181,20 @@ function startPromoteCron(getPool, intervalMin = 30, hours = 2) {
   };
   _cronTimer = setInterval(run, intervalMin * 60 * 1000);
   setTimeout(run, 60 * 1000); // 부팅 1분 후 첫 실행
+  // 데이터 최신화(1회 깊은 재승격): PROMOTE_BOOT_HOURS=168 설정 후 재배포 → 부팅 3분 뒤 실행.
+  // 토큰 불필요(서버 내부 실행). 끝나면 env 제거할 것 — 매 부팅 반복 방지(멱등이라 반복돼도 데이터는 안전).
+  const bootH = parseInt(process.env.PROMOTE_BOOT_HOURS || '0');
+  if (bootH > 0) {
+    setTimeout(async () => {
+      try {
+        const p = getPool && getPool(); if (!p) return;
+        console.log(`[ops-ontology] 부팅 깊은 재승격 시작 (${Math.min(bootH, 336)}h)`);
+        const r = await promote(p, Math.min(bootH, 336));
+        const e = await enrichHandoff(p, Math.min(bootH, 336));
+        console.log(`[ops-ontology] 부팅 깊은 재승격 완료: ${r.actions} actions / ${e.mentions} mentions / ${e.handoffs} handoffs`);
+      } catch (e) { console.warn('[ops-ontology] 부팅 깊은 재승격 실패:', e.message); }
+    }, 3 * 60 * 1000);
+  }
 }
 
 // ── 라우터 ───────────────────────────────────────────────────────────────────
