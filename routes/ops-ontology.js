@@ -187,13 +187,15 @@ function startPromoteCron(getPool, intervalMin = 30, hours = 2) {
 function createOpsOntologyRouter(deps = {}) {
   const getPool = deps.getPool;
   const resolveAdmin = deps.resolveAdmin || (() => ({ isAdmin: true }));
+  // PG 등록 토큰도 인식하는 async 검사(isAdminReqAsync) — resolveAdmin은 SQLite만 봐서 claim-token 토큰을 거부함
+  const isAdminReq = deps.isAdminReq || (async (req) => resolveAdmin(req).isAdmin);
   const router = express.Router();
   const pool = () => (getPool ? getPool() : null);
   const tenantOf = (req) => String(req.query.tenant || DEFAULT_WORKSPACE_ID).slice(0, 60); // 테넌트 격리(기본 실제 workspaces.id)
 
   router.post('/promote', async (req, res) => {
     try {
-      if (!resolveAdmin(req).isAdmin) return res.status(403).json({ error: 'admin only' });
+      if (!(await isAdminReq(req))) return res.status(403).json({ error: 'admin only' });
       const p = pool(); if (!p) return res.status(500).json({ error: 'db not available' });
       await ensureOpsTables(p);
       const hours = Math.min(parseInt(req.query.hours) || 24, 720);
