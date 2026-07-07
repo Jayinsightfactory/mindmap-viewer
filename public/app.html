@@ -57,6 +57,7 @@
     <button class="tab on" data-v="home">회사 현황</button>
     <button class="tab" data-v="flow">업무 흐름</button>
     <button class="tab" data-v="insight">운영 인사이트</button>
+    <button class="tab" data-v="duty">직무 매뉴얼</button>
     <button class="tab" data-v="staff">직원 · 설치</button>
     <div class="right">
       <span class="muted" id="tenant">nenova</span>
@@ -142,6 +143,59 @@ async function viewInsight(){
   }catch(e){ $('#ins').innerHTML = errBox(e); }
 }
 
+// ── 직무 매뉴얼: 사람별 프로파일(에이전트 산출, 4h 로테이션) — 신입 인수인계 문서 ──
+function mdLite(md){ // manualDraft 마크다운 간이 렌더 (외부 라이브러리 없이)
+  const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return esc(md||'')
+    .replace(/^### (.*)$/gm,'<h5 style="margin:12px 0 4px">$1</h5>')
+    .replace(/^## (.*)$/gm,'<h4 style="margin:16px 0 6px">$1</h4>')
+    .replace(/^# (.*)$/gm,'<h3 style="margin:16px 0 8px">$1</h3>')
+    .replace(/^&gt; (.*)$/gm,'<div style="border-left:3px solid var(--amber);padding:4px 10px;color:var(--txt2);margin:6px 0">$1</div>')
+    .replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>')
+    .replace(/^[-*] (.*)$/gm,'<div style="padding-left:14px">• $1</div>')
+    .replace(/^(\d+)\. (.*)$/gm,'<div style="padding-left:14px">$1. $2</div>')
+    .replace(/\n{2,}/g,'<br>');
+}
+async function viewDuty(){
+  $('#view').innerHTML = '<h2>직무 매뉴얼</h2><div class="sub">관찰 데이터로 재구성한 사람별 실무 프로파일 — 신입 인수인계 초안 (4시간마다 1명씩 자동 갱신)</div><div id="dt" class="muted">불러오는 중…</div>';
+  if(DEMO){ $('#dt').innerHTML = '<div class="panel muted">샘플 모드에서는 직무 매뉴얼이 비공개입니다(개인 업무 정보).</div>'; return; }
+  try{
+    const d = await api('/api/flow/duty-profiles');
+    const ps = d.profiles||[];
+    if(!ps.length){ $('#dt').innerHTML='<div class="panel muted">아직 생성된 프로파일이 없습니다. 에이전트 워커가 4시간마다 1명씩 생성합니다.</div>'; return; }
+    $('#dt').innerHTML = `<div class="row2"><div class="panel"><h3>직원 선택</h3><div id="dlist"></div></div>
+      <div class="panel" style="grid-column:span 1" id="dbody"><div class="muted">왼쪽에서 직원을 선택하세요.</div></div></div>
+      <style>@media(min-width:901px){#dt .row2{grid-template-columns:280px 1fr}}</style>`;
+    $('#dlist').innerHTML = ps.map(p=>`<div class="item" style="cursor:pointer" data-k="${p.kind}">
+      <b class="pii">${p.person||p.kind.slice(5,15)}</b> <span class="tag">업무 ${p.duties}개</span><br>
+      <span class="muted">${(p.roleSummary||'').slice(0,60)}…</span><br><span class="muted">${ago(p.ts)} 갱신</span></div>`).join('');
+    document.querySelectorAll('#dlist .item').forEach(el=> el.onclick=()=>loadDuty(el.dataset.k));
+    loadDuty(ps[0].kind);
+  }catch(e){ $('#dt').innerHTML = errBox(e); }
+}
+async function loadDuty(kind){
+  $('#dbody').innerHTML = '<div class="muted">불러오는 중…</div>';
+  try{
+    const d = await api('/api/flow/ops-report?kind='+encodeURIComponent(kind));
+    const r = (d.latest||{}).report; if(!r){ $('#dbody').innerHTML='<div class="muted">없음</div>'; return; }
+    const fp = r.flowPosition||{};
+    $('#dbody').innerHTML = `
+      <h3 class="pii">${r.person||''} <span class="muted" style="font-weight:400">신뢰도 ${r.confidence??'-'} · ${ago((d.latest||{}).ts)} 갱신 · 관찰 ${r.days||14}일</span></h3>
+      <div class="muted" style="margin-bottom:10px">${r.roleSummary||''}</div>
+      <div class="sec"><b>업무 흐름 위치</b>
+        <div class="item">받음 ← <span class="pii">${(fp.receivesFrom||[]).join(' · ')||'-'}</span></div>
+        <div class="item">넘김 → <span class="pii">${(fp.handsTo||[]).join(' · ')||'-'}</span></div></div>
+      <div class="sec"><b>업무 목록 (${(r.duties||[]).length})</b>
+        ${(r.duties||[]).map((du,i)=>`<div class="item"><b>${i+1}. ${du.name||''}</b> <span class="tag">${du.frequency||''}</span>
+          ${du.when?`<br><span class="muted">시작 신호: ${du.when}</span>`:''}
+          <br>${(du.procedure||[]).map((s,j)=>`<span class="muted">${j+1})</span> ${s}`).join('<br>')}
+          ${du.inputsFrom||du.outputsTo?`<br><span class="muted">입력: ${du.inputsFrom||'-'} → 산출: ${du.outputsTo||'-'}</span>`:''}
+          ${du.evidence?`<br><span class="muted" style="font-size:11px">근거: ${du.evidence}</span>`:''}</div>`).join('')}</div>
+      <div class="sec"><b>📖 인수인계 문서 초안</b><div class="panel" style="background:var(--panel2);font-size:13px" class="pii">${mdLite(r.manualDraft)}</div></div>
+      ${(r.gaps||[]).length?`<div class="sec"><b>⚠ 더 관찰이 필요한 것</b>${r.gaps.map(g=>`<div class="item muted">${g}</div>`).join('')}</div>`:''}`;
+  }catch(e){ $('#dbody').innerHTML = errBox(e); }
+}
+
 async function viewStaff(){
   const base = location.origin;
   $('#view').innerHTML = `<h2>직원 · 설치 관리</h2><div class="sub">직원 목록 · PC/데몬 상태 · 설치 링크</div>
@@ -175,7 +229,7 @@ function errBox(e){
 function render(v){
   state.v = v;
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('on', t.dataset.v===v));
-  ({home:viewHome, flow:viewFlow, insight:viewInsight, staff:viewStaff}[v]||viewHome)();
+  ({home:viewHome, flow:viewFlow, insight:viewInsight, duty:viewDuty, staff:viewStaff}[v]||viewHome)();
 }
 // 회사 계정 로그인 콜백(oauth-google.js) 복귀: ?oauth_token=... → 세션에 저장 후 URL 정리
 (function captureOAuthToken(){
