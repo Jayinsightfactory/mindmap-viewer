@@ -1188,3 +1188,17 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 7. 신규 엔드포인트(전부 isAdminReqAsync): `/api/admin/events-size-diag`(GET, 타입별 크기), `/api/admin/db-size-diag`(GET, 테이블별+데드튜플+WAL슬롯), `/api/admin/purge-noise-events`(POST ?days=, 노이즈 삭제), `/api/admin/vacuum-tables`(POST, 안전VACUUM), `/api/admin/migrate-ontology-workspace`(POST, 배치 라벨이관, 멱등·재호출가능).
 
 **재발 시 확인 순서**: ① `railway volume list`로 볼륨 사용량 먼저 ② db-size-diag로 데드튜플 확인 ③ 대량쓰기 전 항상 events-size-diag/db-size-diag로 여유 확인 ④ admin 엔드포인트 401/403 뜨면 isAdminReqAsync 썼는지부터 확인.
+
+## 2026-07-07 — 운영 에이전트 결과 수준저하 근본진단(GIGO)+수술 (커밋 00fe2b8, 8f4fc81)
+- 요청: "에이전트 구성+자체디벨롭까지 해놨는데 결과값이 너무 수준이 낮다" → 재구현 아닌 진단 프로토콜로 원인 확정.
+- **진단(실측, 알고리즘 문제 아님 — 입력이 비어있었음)**:
+  ① ops-input `LIMIT 160`이 "24h"를 실제 **27분**으로 절단(07:57~08:24만 전달)
+  ② units.activity **100% 공란** — vision(screen.analyzed)은 고품질로 존재하나 promote()가 (user,app) 그룹핑할 때 vision의 app(화면추론 표기)이 데몬 앱명과 안 맞아 별도 액션으로 찢어져 유실
+  ③ app "기타입력" 91/160 — 구버전 데몬은 top-level `data.app` 없이 `appContext.currentApp`에만 실음(promote 미폴백)
+  ④ 카톡은 talkTriggered **숫자 1개**만 전달(내용 0)
+  ⑤ ERP 완전단절 — NENOVA_ERP_URL이 죽은 서비스(nenova-erp-production, 404). 진짜 nenovaweb.com/api/auth/login은 정상
+  ⑥ 직원라벨 원시ID(MN...) 노출 — personMap이 golden만 보고 orbit_auth_users 미폴백
+- **수정**: flow-map `/ops-input` 재설계(사람별 20건 층화샘플 + 사람×시간대 timeline 집계 + kakao.business_event/decision 내용(미해결 우선) + screen.analyzed 원문 30건 + erp-ui.* 스냅샷 + handoff keys 근거), personMap orbit_auth_users 폴백, promote() app폴백+vision흡수(같은 사람·시간창이면 앱명 불일치여도 병합), event-bus workspace_id 기본값 T0b 정합, 워커 프롬프트에 섹션 사용법+실명근거 강제, NENOVA_ERP_URL=https://nenovaweb.com (Railway env).
+- **검증(신규 ops-input)**: timeline 98·kakao 60·vision 30·erp 20행(전부 0에서), units 창 27분→16h, 원시ID 5→2계정(MN0B1204/MND11FFB만 잔존—auth에 이름없음). ERP 실데이터 유입 확인(erp-ui.estimate: 참좋은원예·호남선·조현욱·19-02차).
+- **새 리포트 품질(비교)**: "활동량 많음" 통계서술 → "kakao 수입방 29-1 콜수국 요청→vision ERP발주관 반영→units AQ23셀 3원일치 PASS". **ERP Manager(조현욱·정재훈·박성수·김원영)가 데몬추적 8인에 없다는 조직 인사이트**까지 도출. 자동화후보도 실명("화훼관리 v1.0.13 다원플라워 콜수국 색상별 입력→pyautogui").
+- **잔여**: ① owner PC의 ops-agent-worker 4h 루프는 구코드로 기동 중 — 재시작 필요(classifier가 기존 프로세스 kill 차단, --once 신규실행으로 새 리포트만 생성함) ② 기타입력 57%는 cron 재승격이 시간창 훑으며 점진 개선(수동 48h 재빌드는 마스터토큰이 PG admin 미등록이라 403—/promote는 isAdminReqAsync로 고쳐놨으니 admin 유저토큰으론 가능) ③ kakao.decision 타임스탬프가 시트 파싱실패시 now()로 뭉쳐 "미해결 40방 동일시각" 노이즈 — 리포트가 스스로 지적, kakaoagent쪽 일시 컬럼 확인 필요 ④ ERP Manager↔데몬유저 매칭(match-person-erp.js 재사용 후보).
