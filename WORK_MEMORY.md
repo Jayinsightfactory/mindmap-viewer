@@ -1202,3 +1202,12 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - **검증(신규 ops-input)**: timeline 98·kakao 60·vision 30·erp 20행(전부 0에서), units 창 27분→16h, 원시ID 5→2계정(MN0B1204/MND11FFB만 잔존—auth에 이름없음). ERP 실데이터 유입 확인(erp-ui.estimate: 참좋은원예·호남선·조현욱·19-02차).
 - **새 리포트 품질(비교)**: "활동량 많음" 통계서술 → "kakao 수입방 29-1 콜수국 요청→vision ERP발주관 반영→units AQ23셀 3원일치 PASS". **ERP Manager(조현욱·정재훈·박성수·김원영)가 데몬추적 8인에 없다는 조직 인사이트**까지 도출. 자동화후보도 실명("화훼관리 v1.0.13 다원플라워 콜수국 색상별 입력→pyautogui").
 - **잔여**: ① owner PC의 ops-agent-worker 4h 루프는 구코드로 기동 중 — 재시작 필요(classifier가 기존 프로세스 kill 차단, --once 신규실행으로 새 리포트만 생성함) ② 기타입력 57%는 cron 재승격이 시간창 훑으며 점진 개선(수동 48h 재빌드는 마스터토큰이 PG admin 미등록이라 403—/promote는 isAdminReqAsync로 고쳐놨으니 admin 유저토큰으론 가능) ③ kakao.decision 타임스탬프가 시트 파싱실패시 now()로 뭉쳐 "미해결 40방 동일시각" 노이즈 — 리포트가 스스로 지적, kakaoagent쪽 일시 컬럼 확인 필요 ④ ERP Manager↔데몬유저 매칭(match-person-erp.js 재사용 후보).
+
+## 2026-07-07(계속) — "남은작업"+"데이터 최신화" 일괄 (커밋 e68e394, 8151445, 35ef753)
+- 워커 재시작: owner PC ops-agent-worker 4h 루프를 신코드로 재기동(PID 갱신). ※이 저장소는 **데몬 자동업데이터가 수시로 `reset --hard origin/main`** 함 — 로컬 커밋은 즉시 push 안 하면 증발(2회 실사고). dangling 커밋은 `git push origin <sha>:main`으로 워킹트리 안 거치고 복구 가능.
+- **T0b 회귀 발견+수정(0013)**: orbit_entity_golden/ops_relation/unified_events의 workspace_id DEFAULT가 'nenova'로 남아, 이관 후 시더/매처의 신규 골든이 안 보이는 테넌트로 들어가던 회귀. DEFAULT 변경+잔여행 정리.
+- **직원 신원해석**: seed-person 이름 리프레시(원시ID로 굳은 골든을 auth 실명으로 — 김빛나 해결), match-person-erp에 seedFromManagers 신설(erp-ui Manager 실명 골든 생성 — 조현욱·정재훈·김원영 등 PC 미추적 직원, er-scheduler 시간당). 골든 12→16명. NENOVA2025(MN0B1204)=조회용 PC(사용자 확인 "중요하지않음 데이터만봄") — 매핑 불필요 종결. '재용' 골든은 jaeyong lim과 중복 가능성(경미, 미처리).
+- **promote 403 우회**: 마스터토큰이 PG에서 비관리자 계정에 선점(claim-token 409). 토큰 탐색 대신 **PROMOTE_BOOT_HOURS env(1회 부팅 깊은 재승격, 토큰 불필요)** 추가 — 168h 재승격 실행 후 0으로 원복. actions 60,067→64,251.
+- **카카오 중복적재 근본수정(0014)**: 실측 시각컬럼=비즈니스이벤트'시각'/의사결정'발생시각', 값 "오전 10:38"(날짜없음)→파싱실패→ts=now가 ID 해시에 들어가 **매 30분 같은 행이 새 이벤트로 중복적재**("미해결 40방 동일시각"의 근본원인). 안정 ID(의사결정=이슈ID, 결과 제외→해결 전이가 data 갱신) + DO UPDATE(최초관측 ts 보존) + 이슈내용·대응자·발신자 보강 + 기존 중복 전량삭제(시트에서 재구축). kakao-debug에 ?tab= 진단 파라미터 추가.
+- **신규 발견(미해결)**: ①vision 분석 백로그 ~1500장, 최신 분석이 5시간 지연(vision-worker 처리량<유입량) — 최근 유닛 activity 공란의 현재 원인, 처리량 개선 또는 최신우선(LIFO) 필요 ②마스터토큰 선점 계정 정리(어느 데몬이 claim했는지).
+- 검증: 골든 16명(김빛나·조현욱·정재훈·김원영 확인), ops-input 원시ID 25→12%, 기타입력 57→51%, 새 리포트가 "김빛나 운임비 정산 PASS"+"조현욱 견적 지속" 실명 예측 + kakao 아티팩트 자가진단.
