@@ -54,7 +54,10 @@ function canonicalizeRoom(raw, registry) {
   return label;
 }
 function parseSheetTs(row) {
-  const raw = pick(row, ['일시', '날짜', '시간', 'timestamp']);
+  // 실측(2026-07-07): 비즈니스이벤트='시각', 의사결정추적='발생시각' — 값이 "오전 10:38"처럼
+  // 날짜 없는 한국어 시각이라 절대시각 복원 불가. 파싱 실패 시 null → 최초 관측 시각(insert 시각)이
+  // ts가 되고, 안정 ID + ON CONFLICT로 재동기화 때 변하지 않는다(과거의 "매 동기화 now()로 중복적재" 수정).
+  const raw = pick(row, ['일시', '날짜', '시간', '시각', '발생시각', 'timestamp']);
   if (!raw) return null;
   const d = new Date(raw);
   return isNaN(d.getTime()) ? null : d;
@@ -71,7 +74,8 @@ async function bulkInsertEvents(pool, rows) {
     `INSERT INTO unified_events (id, type, source, timestamp, user_id, workspace_id, data)
      SELECT id, type, 'nenova-agent', ts::timestamptz, 'kakao-agent', ws, data::jsonb
      FROM UNNEST($1::text[], $2::text[], $3::text[], $4::text[], $5::text[]) AS t(id, type, ts, ws, data)
-     ON CONFLICT (id) DO NOTHING`,
+     ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data`,
+    // timestamp는 갱신하지 않음 — 시트에 날짜가 없어 최초 관측 시각이 유일한 시간 근거.
     [ids, types, tss, wss, datas]
   );
 }
@@ -110,14 +114,18 @@ async function syncKakaoToOntology(pool, fetchFn, workspaceId = 'WS-NENOVA-2026'
   const roomRegistry = new Map(); // 깨진 방이름 변형 → 대표명 정규화(회사 전체 동기화 1회 스코프)
 
   for (const r of rows.filter(r => r._tab === '비즈니스이벤트')) {
-    const eventType = pick(r, ['이벤트타입', 'event_type', '타입']);
+    const eventType = pick(r, ['이벤트타입', 'event_type', '타입', 'AI분류']);
     const room = canonicalizeRoom(pick(r, ['방이름', '방', 'room', '채팅방']), roomRegistry);
     const cust = pick(r, ['거래처', 'customer']);
     const prod = pick(r, ['품목', 'product', '상품']);
     if (!eventType && !room) continue;
     const ts = parseSheetTs(r) || now;
-    const id = hashId('kakao:biz', [eventType, room, cust, prod, ts.toISOString().slice(0, 16)]);
-    events.push({ id, type: 'kakao.business_event', ts, workspaceId, data: { room_name: room, event_type: eventType, customer: cust, product: prod, tab: '비즈니스이벤트' } });
+    // ★안정 ID: ts(=now)를 넣으면 매 동기화마다 같은 행이 새 이벤트로 중복 적재됨(실사고).
+    // 원문+시각문자열을 해시 재료로만 사용(원문 자체는 프라이버시상 저장 안 함) — 행 고유성 확보.
+    const rawMsg = pick(r, ['원문', '내용']);
+    const rawClock = pick(r, ['시각', '일시']);
+    const id = hashId('kakao:biz', [eventType, room, cust, prod, rawClock, String(rawMsg).slice(0, 80)]);
+    events.push({ id, type: 'kakao.business_event', ts, workspaceId, data: { room_name: room, event_type: eventType, customer: cust, product: prod, sender: pick(r, ['발신자', 'sender']).slice(0, 30), tab: '비즈니스이벤트' } });
     if (room) relations.push({ id: `rel:kakao_event_in_room:${id}:${room}`.slice(0, 200), relType: 'kakao_event_in_room', fromType: 'KakaoEvent', fromRef: id, toType: 'Room', toRef: room.slice(0, 60), confidence: 0.67, evidence: { eventType, product: prod }, ts, workspaceId });
     if (cust) {
       const resolved = resolveCustomerRef(cust, custIndex);
@@ -131,8 +139,15 @@ async function syncKakaoToOntology(pool, fetchFn, workspaceId = 'WS-NENOVA-2026'
     if (!room) continue;
     const ts = parseSheetTs(r) || now;
     const unresolved = !result || result === '미해결';
-    const id = hashId('kakao:dec', ['dec', room, result, ts.toISOString().slice(0, 16)]);
-    events.push({ id, type: 'kakao.decision', ts, workspaceId, data: { room_name: room, result: result || '미해결', unresolved, tab: '의사결정추적' } });
+    // ★안정 ID: 시트의 이슈ID가 행 고유키(실측 컬럼: 이슈ID/발생시각/이슈내용/대응자/결과).
+    // result를 ID에서 빼서 미해결→해결 전이가 같은 이벤트의 갱신(DO UPDATE data)으로 반영되게 함.
+    const issueId = pick(r, ['이슈ID', 'issue_id']);
+    const issue = pick(r, ['이슈내용', 'issue']).slice(0, 120);
+    const id = issueId ? hashId('kakao:dec', ['dec', issueId])
+                       : hashId('kakao:dec', ['dec', room, issue, pick(r, ['발생시각'])]);
+    events.push({ id, type: 'kakao.decision', ts, workspaceId, data: {
+      room_name: room, result: result || '미해결', unresolved, issue,
+      responder: pick(r, ['대응자']).slice(0, 30), pipeline: pick(r, ['파이프라인']).slice(0, 30), tab: '의사결정추적' } });
     relations.push({ id: `rel:kakao_event_in_room:${id}:${room}`.slice(0, 200), relType: 'kakao_event_in_room', fromType: 'KakaoEvent', fromRef: id, toType: 'Room', toRef: room.slice(0, 60), confidence: 0.67, evidence: { unresolved }, ts, workspaceId });
   }
 
