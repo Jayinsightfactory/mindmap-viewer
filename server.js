@@ -1214,6 +1214,24 @@ function _visionQueueTake(n) {
   return taken;
 }
 
+// [골:실행좌표 융합] 호스트별 최근 클릭 링버퍼 — keyboard.chunk의 mousePositions를 담아뒀다가
+// screen.capture를 vision 큐에 넣을 때 직전 클릭들을 첨부한다(클릭 좌표는 캡처 이벤트가 아니라
+// keyboard.chunk에 실려 오므로 시점을 이어붙여야 vision이 "어느 필드를 클릭했나"를 판단 가능).
+if (!global._recentClicksByHost) global._recentClicksByHost = new Map(); // host → [{t,x,y,app,win}] (최근 30초·최대 40개)
+function _pushRecentClicks(host, positions) {
+  if (!host || !Array.isArray(positions) || !positions.length) return;
+  const arr = global._recentClicksByHost.get(host) || [];
+  for (const p of positions) if (p && typeof p.x === 'number' && typeof p.y === 'number') arr.push({ t: p.t || Date.now(), x: p.x, y: p.y, app: p.app, win: p.win });
+  const cutoff = Date.now() - 30000;
+  const trimmed = arr.filter(p => (p.t || 0) >= cutoff).slice(-40);
+  global._recentClicksByHost.set(host, trimmed);
+}
+function _clicksForCapture(host, captureTsMs) {
+  const arr = global._recentClicksByHost.get(host) || [];
+  const lo = captureTsMs - 12000; // 캡처 직전 12초 내 클릭만(이 화면에서 한 클릭일 가능성)
+  return arr.filter(p => (p.t || 0) >= lo && (p.t || 0) <= captureTsMs + 2000).slice(-8);
+}
+
 // 힙 압력 모니터링 (460MB 힙 기준 — Railway Hobby 512MB 내 안정 운영)
 let _heapPressure = false;
 setInterval(() => {
@@ -3527,6 +3545,14 @@ app.post('/api/hook', async (req, res) => {
       });
     }
 
+    // [골:실행좌표 융합] 캡처 큐잉보다 먼저 이 배치의 keyboard.chunk 클릭들을 링버퍼에 적재
+    // (같은 배치에 캡처가 함께 와도 직전 클릭을 붙일 수 있게 — 아래 pad_mouse_map 루프는 읽기만).
+    for (const ev of events) {
+      if (ev.type === 'keyboard.chunk' && Array.isArray(ev.data?.mousePositions)) {
+        _pushRecentClicks(ev.data?.hostname || hookHostname, ev.data.mousePositions);
+      }
+    }
+
     // ── 캡처 Vision 큐 (screen.capture + imageBase64 → 맥미니 CLI 워커용) ──
     for (const ev of events) {
       const cachedImage = _imageCache.get(ev.id);
@@ -3537,10 +3563,9 @@ app.post('/api/hook', async (req, res) => {
           continue;
         }
         // 이미지를 Vision 큐에 보관 (Railway 워커가 직접 처리)
-        // 클릭 좌표를 같이 첨부 → "어느 셀/버튼 클릭했는지" 함께 분석
-        const _recentClickEvt = events.find(e =>
-          e.type === 'secure.activity' && e.data?.recentClicks?.length > 0
-        );
+        // [골:실행좌표 융합] 캡처 직전 12초 내 이 호스트의 실제 클릭 좌표를 첨부 → vision이
+        // "어느 필드/버튼을 클릭했나"를 판단해 fields[].clickXY로 되돌려줌(pyautogui 실행 좌표).
+        const _capClicks = _clicksForCapture(ev.data.hostname || '', new Date(ev.timestamp).getTime());
         // 이미지 사이즈 체크 — 5MB 초과 base64는 OOM 위험, 스킵
         if (cachedImage && cachedImage.length > 5_000_000) {
           console.warn(`[vision-queue] 이미지 너무 큼 (${Math.round(cachedImage.length/1024)}KB) — 스킵`);
@@ -3558,8 +3583,7 @@ app.post('/api/hook', async (req, res) => {
           sessionId:   ev.sessionId,
           userId:      ev.userId || hookUserId,
           ts:          ev.timestamp,
-          // 직전 클릭 좌표 첨부 (Vision 분석에 활용)
-          recentClicks: _recentClickEvt?.data?.recentClicks?.slice(-5) || ev.data.mouseClicks || [],
+          recentClicks: _capClicks,  // [골:실행좌표 융합] 캡처 직전 실제 클릭들(빈 배열 가능)
         });
         console.log(`[vision-queue] 이미지 큐잉: ${ev.data.hostname}/${ev.data.app} (사용자별 큐, 총 ${_visionQueueTotal()}건)`);
         _imageCache.delete(ev.id);
@@ -3597,6 +3621,7 @@ app.post('/api/hook', async (req, res) => {
         if (ev.type !== 'keyboard.chunk') continue;
         const positions = ev.data?.mousePositions;
         if (!Array.isArray(positions) || positions.length < 3) continue;
+        // (클릭 링버퍼 적재는 위 캡처 큐 앞 조기 패스에서 이미 처리됨 — 여기선 pad_mouse_map 학습만)
 
         const windowTitle = ev.data?.appContext?.currentWindow || ev.data?.windowTitle || '';
         const app = ev.data?.appContext?.currentApp || ev.data?.app || '';

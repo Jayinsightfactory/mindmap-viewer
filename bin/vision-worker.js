@@ -169,8 +169,14 @@ async function findCaptures() {
 
 // ── 분석 프롬프트 ─────────────────────────────────────────────────────────────
 function _buildPrompt(ctx) {
-  return `스크린샷을 정밀 분석해주세요. 호스트: ${ctx.hostname}
-
+  // [골:실행좌표 융합] 이 화면에서 실제 클릭된 좌표들(같은 payload에 첨부됨)을 필드에 매핑시킨다.
+  // 캡처는 primary 모니터만 담으므로, 이미지 밖(멀티모니터) 좌표는 무시하라고 명시.
+  let clickBlock = '';
+  const clicks = (ctx.recentClicks || []).filter(c => c && typeof c.x === 'number' && typeof c.y === 'number').slice(-8);
+  if (clicks.length) {
+    clickBlock = `\n[실제 클릭 좌표] 이 스크린샷 직전 사용자가 클릭한 픽셀 좌표들이다(시간순). 이미지는 주 모니터(primary)만 담으므로 이미지 경계 밖 좌표는 다른 모니터라 무시하라. 이미지 안쪽 좌표는 그 위치의 필드/버튼을 특정하는 근거로 써라:\n${clicks.map((c,i)=>`  ${i+1}. (${c.x}, ${c.y})`).join('\n')}\n각 field가 위 클릭 중 하나와 겹치면 그 field에 "clickXY":[x,y] 를 넣어라(겹치는 게 확실할 때만, 아니면 생략).\n`;
+  }
+  return `스크린샷을 정밀 분석해주세요. 호스트: ${ctx.hostname}${clickBlock}
 다음 JSON 형식으로만 응답 (마크다운 없이 순수 JSON):
 {
   "app": "실제 프로그램명",
@@ -184,6 +190,7 @@ function _buildPrompt(ctx) {
       "type": "input|button|dropdown|table|text|checkbox",
       "currentValue": "현재 입력된 값 (보이는 경우)",
       "position": "화면 위치 (상단/중앙/하단 + 좌/우)",
+      "clickXY": "[x,y] — 위 실제 클릭 좌표 중 이 필드에 떨어진 것(있을 때만, pyautogui 실행 좌표로 씀)",
       "dataSource": "kakao|manual|erp|clipboard|unknown",
       "humanRequired": true/false,
       "humanReason": "사람 판단 필요한 이유 (humanRequired가 true일 때만)"
@@ -540,6 +547,7 @@ async function processServerQueue() {
 
         const result = await visionAnalyze(item.imageBase64, {
           hostname: item.hostname, name: item.app || 'capture',
+          recentClicks: item.recentClicks,  // [골:실행좌표 융합] 서버 큐가 첨부한 직전 클릭들
         });
         if (!result) continue;
 

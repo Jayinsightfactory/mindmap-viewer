@@ -33,8 +33,13 @@ function _getClient() {
 }
 
 function _buildPrompt(ctx) {
-  return `스크린샷을 정밀 분석해주세요. 호스트: ${ctx.hostname || '?'} 앱: ${ctx.app || '?'} 창: ${ctx.windowTitle || '?'}
-
+  // [골:실행좌표 융합] bin/vision-worker.js와 동일 — 큐에 첨부된 직전 클릭을 필드에 매핑(이미지 밖=타모니터 무시).
+  let clickBlock = '';
+  const clicks = (ctx.recentClicks || []).filter(c => c && typeof c.x === 'number' && typeof c.y === 'number').slice(-8);
+  if (clicks.length) {
+    clickBlock = `\n[실제 클릭 좌표] 직전 클릭 픽셀(시간순, 이미지는 primary 모니터만이라 경계 밖은 무시): ${clicks.map(c=>`(${c.x},${c.y})`).join(' ')}\n각 field가 클릭과 겹치면 "clickXY":[x,y] 추가(확실할 때만).\n`;
+  }
+  return `스크린샷을 정밀 분석해주세요. 호스트: ${ctx.hostname || '?'} 앱: ${ctx.app || '?'} 창: ${ctx.windowTitle || '?'}${clickBlock}
 다음 JSON 형식으로만 응답 (마크다운 없이 순수 JSON):
 {
   "app": "실제 프로그램명",
@@ -43,7 +48,7 @@ function _buildPrompt(ctx) {
   "workCategory": "전산처리|문서작업|커뮤니케이션|파일관리|웹검색|기타",
   "visibleText": ["화면에 보이는 핵심 텍스트/숫자 최대 10개"],
   "fields": [
-    { "name": "필드명", "currentValue": "현재 값", "position": "위치" }
+    { "name": "필드명", "currentValue": "현재 값", "position": "위치", "clickXY": "[x,y] 클릭 겹칠 때만" }
   ],
   "automationScore": 0.0,
   "automatable": false,
