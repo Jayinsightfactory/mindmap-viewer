@@ -8673,6 +8673,24 @@ async function startServer() {
     console.log('[vision-proc] Vision 루프 시작 (fallback)');
   }
 
+  // 시계손상 이벤트 1회 정리(토큰 불필요, 서버 내부 실행) — FIX_CLOCK_HOSTNAME env 설정 후 재배포 시
+  // 부팅 2분 뒤 실행. PROMOTE_BOOT_HOURS와 동일 패턴(마스터토큰이 admin 미등록이라 API 경유 불가).
+  if (process.env.FIX_CLOCK_HOSTNAME) {
+    setTimeout(async () => {
+      try {
+        const pool = dbModule.getDb();
+        const nowIso = new Date().toISOString();
+        const r = await pool.query(
+          `UPDATE events SET timestamp = $2
+            WHERE data_json->>'hostname' = $1
+              AND (timestamp::timestamptz > NOW() + INTERVAL '1 day' OR timestamp::timestamptz < '2020-01-01')`,
+          [process.env.FIX_CLOCK_HOSTNAME, nowIso]
+        );
+        console.log(`[fix-clock-skew] ${process.env.FIX_CLOCK_HOSTNAME}: ${r.rowCount}건 보정`);
+      } catch (e) { console.warn('[fix-clock-skew] 실패:', e.message); }
+    }, 2 * 60 * 1000);
+  }
+
   // outcome 테이블 초기화 (기존 DB에 테이블 없으면 생성)
   outcomeStore.initOutcomeTable();
 
