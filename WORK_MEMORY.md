@@ -1235,3 +1235,15 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - **P1 추가수정**: windowTitle 폴백 이후에도 기타입력 72→70%로 거의 안 줄어 원인 재조사 → clip+order 이벤트만으로 구성된 액션은 애초에 app/windowTitle 필드가 없어(clipboard.change/order.detected는 앱컨텍스트 미탑재) 폴백이 무효였음(실측: action evidence.events 9개 전부 clip/order). order 소스 있으면 '주문처리(클립보드)'로 명명하는 2차 수정 배포(72819e4) — 다음 cron 사이클에서 효과 확인 필요.
 - **P2**: hoon J↔ᄏᄏ 89/99(전 88/99) — 거의 그대로. 쿨다운은 신규 페어 생성만 억제하고 기존 72h lookback 내 과거행은 그대로 남아있어 즉시 감소는 기대난망 — 며칠 관찰 후 증가세 멈췄는지로 판단.
 - 다음 세션 확인목록: ① orbit_pc_links 테이블 직접 조회(전용 엔드포인트 없음 — 신설 또는 DB 직접 확인 필요) ② P1 2차수정 효과 ③ P2 장기추이 ④ vision 계정분포가 시간 지나며 고르게 퍼지는지.
+
+## 2026-07-08(계속) — "쓸모없는 캡처 줄이기" 조사: 이미 있는 시스템 발견, 중복작업 회피
+- 요청: 데이터 최신화 + 캡처 추가기능/쓸모없는 캡처 감소 방안 조사.
+- **데이터 최신화**: PROMOTE_BOOT_HOURS=168 1회 재실행 후 정리(actions 64251→66841). P1 2차수정("주문처리(클립보드)") 효과 확인: 최근1h 샘플에서 20건 정상 라벨링, 기타입력 105→87.
+- **capture-timing-learner.js에 triggerAdjustments 채우려다 중단**: 구현 완료 후 `routes/data-intelligence.js`에 **이미 완전히 같은 일을 하는 시스템**이 있음을 발견 — `calcTriggerQuality`+`generateRecommendations`+`applyAutoRecommendations`가 정확히 트리거별 쿨타임을 계산해 `orbit_daemon_commands`에 `triggerAdjustments` 패치를 써왔음(AUTO_APPLY_THRESHOLD=30점 미만이면 자동적용). **git checkout으로 되돌림, 커밋 안 함** — 두 시스템이 같은 채널에 동시 기록하면 충돌 위험.
+- **왜 효과가 안 보였나**: `data-intel` 자체 24h 스케줄러(부팅 1시간 후 최초실행)가 **한 번도 완주 못 함** — evolution-log 0건. 오늘만 배포 10회+, 활발한 개발기간엔 서버가 1시간 연속 안 떠 있어 타이머가 매번 리셋되는 구조적 문제로 추정(코드버그 아님).
+- **읽기전용 `/api/data-intel/recommendations?days=7` 수동조회(부작용 없음, POST /evolve는 전직원 자동적용이라 classifier가 정확히 차단함)** 결과, 이미 계산된 진짜 데이터:
+  - 트리거 10종 전부 품질점수 7~14점(매우낮음) — **단, 이 7일 윈도우는 오늘 고친 P0(비전큐 병목) 버그에 오염된 기간이라 점수가 인위적으로 낮게 나왔을 가능성 높음**(분석 자체가 vision.analyzed 매칭에 의존).
+  - **VISION_WORKER_LAG 14,575건** 미분석 캡처 — 오늘 새벽 진단한 P0(331건/h vs 10건/h)와 정확히 같은 문제의 다른 각도 재확인.
+  - **DUPLICATE_CAPTURES 11,135건**(같은 windowTitle 60초 내 반복) — vision 의존 없는 순수 타임스탬프 비교라 **이 수치는 신뢰 가능**. "쓸모없는 캡처"의 가장 확실한 실증.
+  - TIMING_ISSUE: vision↔키보드 교차검증 매치율 8%.
+- **결론/다음 액션**: P0 수정으로 vision 처리량이 정상화되면 며칠 후 `/api/data-intel/recommendations`를 다시 읽기전용 조회 — 그때 나오는 점수가 훨씬 신뢰 가능. 그 뒤에 `POST /api/data-intel/evolve`(전직원 자동적용) 실행 여부를 **사용자 승인 받고** 결정할 것. DUPLICATE_CAPTURES(11,135건)는 신뢰 가능한 수치이므로 별도로 daemon측 dedup 강화를 고려할 수 있음(단, 직원PC 코드변경은 항상 사용자 승인 필요 — CLAUDE.md 가드레일1).
