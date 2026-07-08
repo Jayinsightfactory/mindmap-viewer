@@ -1221,3 +1221,9 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
   - 4h 루프 틱마다 1명 로테이션(하루 6명 자동 갱신). GET /ops-report?kind=duty:X + /duty-profiles 일람
 - **검증(실제 산출)**: jaeyong lim conf0.62 업무9개 — "ECOUNT 견적 33행부터 이어 입력", "콜수국 색상·농장코드별 발주", "White6/Blue1/DarkPink1 배분→저장" 등 화면 단위 절차. 설연주 conf0.35 — vision 0건이라 초안에 "⚠화면 상세 미확정" 명시+gaps 1순위로 "이 사람 vision 최우선 필요" 자가요구. 설계 의도(근거기반+정직한 공백) 그대로.
 - 다음 레버: 직원 vision 커버리지(트리아지+LIFO로 자동 개선 예상) → 매뉴얼 질 자동 상승. duty-profiles 뷰(graph.html/app.html 통합)는 미착수.
+
+## 2026-07-08 — 재부팅 워커 사망 복구 + 상시분석 전환 (사용자 전부승인)
+- 증상: PC 재부팅 후 vision 분석이 전일 17:32에서 정지. 원인 2개: ①ops-agent-worker는 ~/.orbit에 vbs/ps1만 있고 **시작프로그램 링크가 없어** 부팅 생존 불가 ②vision-worker는 부팅 시 **--night(주간 수집만)**로 살아나 주간 분석 정지 + 어제 수동 기동한 --flush 프로세스는 재부팅으로 소멸.
+- 조치: OrbitOpsAgent.lnk 시작프로그램 추가(vision과 동일 vbs 패턴), vision-worker-start.ps1 --night→--flush(트리아지가 물량 컷하므로 주간 상시분석 가능), 구 --night 프로세스 교체 재기동. ※ps1 중복방지 가드 때문에 구프로세스 살아있으면 새 모드 못 뜸 — 모드 변경 시 반드시 kill 후 재기동.
+- kakao 이슈내용 60/60 정상 유입 확인(f8dcbf0 + 재동기화). vision 백로그 지연 5h→30분 확인(트리아지 효과, 전일 저녁 측정).
+- **미해결 관찰**: promote()가 vision 이벤트를 액션에 흡수(activity 부착)하는 게 units에서 아직 0 — 신선한 vision이 들어오는 다음 cron 사이클에서 재검증 필요(타이밍 vs 로직버그 미확정).
