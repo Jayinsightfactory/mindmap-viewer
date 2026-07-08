@@ -445,6 +445,7 @@ function createFlowMapRouter(deps = {}) {
         const d = tryObj(r.data);
         return { ts: r.timestamp, kind: r.type === 'kakao.decision' ? '의사결정' : d.event_type || '이벤트',
           room: d.room_name || '', customer: d.customer || '', product: d.product || '',
+          issue: (d.issue || '').slice(0, 100), responder: d.responder || '', // 이슈 실내용·대응자 — 에이전트의 병목/담당 판단 재료
           result: d.result || '', unresolved: !!d.unresolved };
       });
       // 비전 해독 압축 (같은 사람 연속 중복 제거)
