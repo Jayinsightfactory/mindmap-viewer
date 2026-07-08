@@ -1227,3 +1227,11 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 조치: OrbitOpsAgent.lnk 시작프로그램 추가(vision과 동일 vbs 패턴), vision-worker-start.ps1 --night→--flush(트리아지가 물량 컷하므로 주간 상시분석 가능), 구 --night 프로세스 교체 재기동. ※ps1 중복방지 가드 때문에 구프로세스 살아있으면 새 모드 못 뜸 — 모드 변경 시 반드시 kill 후 재기동.
 - kakao 이슈내용 60/60 정상 유입 확인(f8dcbf0 + 재동기화). vision 백로그 지연 5h→30분 확인(트리아지 효과, 전일 저녁 측정).
 - **미해결 관찰**: promote()가 vision 이벤트를 액션에 흡수(activity 부착)하는 게 units에서 아직 0 — 신선한 vision이 들어오는 다음 cron 사이클에서 재검증 필요(타이밍 vs 로직버그 미확정).
+
+## 2026-07-08 — P0~P3 배포검증 + 신규 발견(사람 오귀속 의심) + P1 추가수정 (72819e4)
+- **P3 확정**: fix-clock-skew 4건 보정, DESKTOP-L0C2IOT last_seen 9024→정상(2026-07-08T11:04). FIX_CLOCK_HOSTNAME env `railway variable delete`로 정리(주의: `--set "X="`는 안 먹힘, `variable delete --service X KEY` 서브커맨드 사용).
+- **P0 메커니즘 확인**: 로컬 워커 로그가 owner 외 neonva(설연주)·nenova(김빛나)·DESKTOP-CAA5TA1 등 여러 PC를 실제로 분석함을 확인(라운드로빈 작동). 폴링 600초(10분)·트리아지 컷 동작 확인.
+- **⚠️신규 발견(미해결, 별도조사 필요)**: 로컬 로그상 hostname='nenova'(김빛나 PC)에서 분석된 "ECOUNT ERP 2026/06 구매내역 조회" 캡처가 DB엔 **userId=MNH03H73690BB2CD82(jaeyong lim)**로 저장됨. hookUserId는 확인결과 요청-로컬 변수라 레이스컨디션 아님 — 유력 원인은 `orbit_pc_links` 테이블에 hostname='nenova'가 jaeyong lim으로 매핑되어 있어 실제 사용자(김빛나)의 캡처를 강제 덮어쓰는 것(server.js 3432행 pc_link override 로직, "admin이 등록한 pc_links가 단일 source of truth"). pc-list에서도 hostname='nenova'가 두 계정(김빛나 30978건, jaeyong lim 2755건/17h전) 모두에 걸쳐있어 과거 PC 재사용/재설치 흔적과 일치. **테이블 내용 확인 후 admin이 pc_links를 재매핑해야 함 — 이 세션에서는 확인만, 수정 안 함(신원 매핑은 admin 검토 대상).**
+- **P1 추가수정**: windowTitle 폴백 이후에도 기타입력 72→70%로 거의 안 줄어 원인 재조사 → clip+order 이벤트만으로 구성된 액션은 애초에 app/windowTitle 필드가 없어(clipboard.change/order.detected는 앱컨텍스트 미탑재) 폴백이 무효였음(실측: action evidence.events 9개 전부 clip/order). order 소스 있으면 '주문처리(클립보드)'로 명명하는 2차 수정 배포(72819e4) — 다음 cron 사이클에서 효과 확인 필요.
+- **P2**: hoon J↔ᄏᄏ 89/99(전 88/99) — 거의 그대로. 쿨다운은 신규 페어 생성만 억제하고 기존 72h lookback 내 과거행은 그대로 남아있어 즉시 감소는 기대난망 — 며칠 관찰 후 증가세 멈췄는지로 판단.
+- 다음 세션 확인목록: ① orbit_pc_links 테이블 직접 조회(전용 엔드포인트 없음 — 신설 또는 DB 직접 확인 필요) ② P1 2차수정 효과 ③ P2 장기추이 ④ vision 계정분포가 시간 지나며 고르게 퍼지는지.
