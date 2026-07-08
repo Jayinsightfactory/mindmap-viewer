@@ -130,8 +130,12 @@ async function promote(pool, hours) {
     const actId = `act:${a.u}:${startSec}`;
     const tsIso = new Date(a.start).toISOString();
     const ws = wsMap.get(a.u) || DEFAULT_WORKSPACE_ID; // 이 사람의 실제 소속 테넌트
+    // 실측(2026-07-08): clipboard.change/order.detected만으로 구성된 액션은 애초에 app/windowTitle
+    // 필드가 없어 windowTitle 폴백도 못 살림 — 그런데 order 소스가 있으면 "주문서 붙여넣기 처리"라는
+    // 뚜렷한 업무 신호라 '기타입력'보다 훨씬 유용하게 명명 가능.
+    const appLabel = (a.app === '기타입력' && srcs.includes('order')) ? '주문처리(클립보드)' : a.app;
     const data = {
-      app: a.app, room, activity: va.slice(0, 200), screen: vs.slice(0, 120),
+      app: appLabel, room, activity: va.slice(0, 200), screen: vs.slice(0, 120),
       sources: srcs, verified: c >= 0.67, confidence: c, typedChars: typed, clicks,
       durationSec: Math.round((a.end - a.start) / 1000), n: a.evs.length, auto,
       evidence: { events: evIds },
@@ -147,10 +151,10 @@ async function promote(pool, hours) {
 
     const rels = [];
     rels.push(['person_performed_action', 'Person', a.u, 'Action', actId, c]);
-    rels.push(['action_in_app', 'Action', actId, 'App', a.app, c]);
+    rels.push(['action_in_app', 'Action', actId, 'App', appLabel, c]);
     if (room) rels.push(['action_in_room', 'Action', actId, 'Room', room, c]);
     if (vs) rels.push(['screen_observed_action', 'Action', actId, 'VisionEvidence', vs.slice(0, 60), c]);
-    if (auto) rels.push(['automation_candidate_for_process', 'Action', actId, 'Process', (va || a.app).slice(0, 40), c]);
+    if (auto) rels.push(['automation_candidate_for_process', 'Action', actId, 'Process', (va || appLabel).slice(0, 40), c]);
     // talk_triggered_action: 같은 사용자에서 직전이 카톡 동작이고 현재가 업무앱(카톡 아님)이며 10분 이내면 대화→작업
     if (prevAct && prevAct.u === a.u && prevAct.isKakao && !isKakao && (a.start - prevAct.endMs) < 30 * 60 * 1000) {
       rels.push(['talk_triggered_action', 'Action', prevAct.actId, 'Action', actId, c]);
