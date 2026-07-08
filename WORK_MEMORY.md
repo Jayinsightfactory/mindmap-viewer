@@ -1247,3 +1247,11 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
   - **DUPLICATE_CAPTURES 11,135건**(같은 windowTitle 60초 내 반복) — vision 의존 없는 순수 타임스탬프 비교라 **이 수치는 신뢰 가능**. "쓸모없는 캡처"의 가장 확실한 실증.
   - TIMING_ISSUE: vision↔키보드 교차검증 매치율 8%.
 - **결론/다음 액션**: P0 수정으로 vision 처리량이 정상화되면 며칠 후 `/api/data-intel/recommendations`를 다시 읽기전용 조회 — 그때 나오는 점수가 훨씬 신뢰 가능. 그 뒤에 `POST /api/data-intel/evolve`(전직원 자동적용) 실행 여부를 **사용자 승인 받고** 결정할 것. DUPLICATE_CAPTURES(11,135건)는 신뢰 가능한 수치이므로 별도로 daemon측 dedup 강화를 고려할 수 있음(단, 직원PC 코드변경은 항상 사용자 승인 필요 — CLAUDE.md 가드레일1).
+
+## 2026-07-09 — [골] AI 실행엔진 디벨롭 시작: 좌표↔필드 융합(#1/3) (커밋 c516eeb)
+- 사용자: "지금 데이터로는 직원을 AI로 대체 못 함. 클릭/키보드/비전 로직 디벨롭 필요." → 골모드 북극성(AI가 직원작업 직접수행) 방향.
+- **진단(중요, 재발견)**: 문제는 데이터 수집 알고리즘이 아니라 **조립·검증 레이어 부재**. 실측: vision 4784건 중 **1450건이 이미 nenovaInputMap 보유**, fields[]에 name/type/position/dataSource/humanRequired까지 구조화, autoAreas/humanAreas 경계, scriptType(PAD/pyautogui/COM)까지 vision이 생성 중. 마우스 정밀좌표{t,x,y,app,win}도 있음. script-generator.js(1083줄)도 마운트됨. **재료는 spec수준으로 있는데 4개가 단절**: ①좌표↔필드 미융합(vision=자연어위치, 마우스=픽셀, 미연결→실행좌표 없음) ②단발캡처만 end-to-end 미조립 ③생성기가 실데이터 대신 하드코딩템플릿 사용(생성이력 draft1/배포0) ④검증·실행루프 없음.
+- **디벨롭 순서(내 판단)**: ①좌표↔필드융합(기반) → ②캡처 스티칭(순서있는 절차) → ③end-to-end 실증. ①없으면 나머지 전부 실행불가라 여기부터.
+- **#1 완료(이번)**: 클릭좌표는 keyboard.chunk의 mousePositions에 있는데 screen.capture가 안 실어보내 vision큐 recentClicks가 늘 빈배열이던 단절 수정. server.js에 호스트별 클릭 링버퍼(_recentClicksByHost, 30초·40개, 캡처 큐잉 전 조기패스로 적재) + 캡처 직전 12초 클릭 첨부. vision-worker.js/server-vision-worker.js 프롬프트에 클릭블록+fields[].clickXY 지시(primary밖 좌표=타모니터 무시, Claude가 이미지+좌표로 공간추론). **효과: 신규 캡처부터 fields[]에 실행좌표 박힘**(기존1450건 소급안됨). 로컬 vision-worker 재시작(PID4804).
+- **검증 대기**: 배포+캡처유입+분석 후 screen.analyzed의 fields[]에 clickXY 실제로 나오는지 확인 필요(1시간+ 소요). nenova.exe 화면 캡처에서 특히.
+- **다음(#2)**: 같은 작업의 연속 캡처(같은 사람·앱·시간창)를 시간순 하나의 절차로 스티칭 → task spec의 '순서' 확보. #3: nenovaInputMap+clickXY+스티칭된 순서 → script-generator가 실데이터로 실행스크립트 생성 → dry-run.
