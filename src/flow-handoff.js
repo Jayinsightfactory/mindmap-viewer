@@ -119,14 +119,26 @@ async function enrichHandoff(pool, hours) {
 
   // ── B. action_handoff: 같은 key, 다른 사람, 시간차 ≤ 윈도우인 인접쌍 ──
   const pairs = new Map(); // `${from}|${to}` → {from,to,fromU,toU,ts,tsIso,keys:Set,gapSec}
+  // room 키는 같은 톡방에 있으면 성립 — 두 사람이 빠르게 번갈아 대화하면 메시지마다 인접쌍이
+  // 생겨 실제론 "협업 신호 1건"인데 수십~수백 건으로 폭증(실측: hoon J↔ᄏᄏ 88/99건).
+  // (방,사람쌍)당 쿨다운으로 중복 생성만 억제 — cust/order/doc는 애초에 빈도가 낮아 그대로 둔다.
+  const roomPairCooldown = new Map(); // `room:{room}|{정렬된 u쌍}` → 마지막 기록 ts
+  const ROOM_PAIR_COOLDOWN_MS = 2 * 3600 * 1000;
   for (const [key, listRaw] of keyIndex) {
     if (listRaw.length < 2) continue;
+    const isRoom = key.startsWith('room:');
     const list = listRaw.slice().sort((x, y) => x.ts - y.ts);
     for (let i = 0; i < list.length - 1; i++) {
       const a = list[i], b = list[i + 1];
       if (a.u === b.u) continue;                       // 같은 사람 연속은 인계 아님
       if (a.ws !== b.ws) continue;                     // 다른 테넌트끼리는 인계 아님(안전장치)
       if ((b.ts - a.ts) > HANDOFF_WINDOW_MS) continue; // 윈도우 초과 컷
+      if (isRoom) {
+        const pairKey = `${key}|${[a.u, b.u].sort().join('_')}`;
+        const last = roomPairCooldown.get(pairKey);
+        if (last && (b.ts - last) < ROOM_PAIR_COOLDOWN_MS) continue;
+        roomPairCooldown.set(pairKey, b.ts);
+      }
       const pid = `${a.id}|${b.id}`;
       if (!pairs.has(pid)) pairs.set(pid, { from: a.id, to: b.id, fromU: a.u, toU: b.u, tsIso: b.tsIso, ws: b.ws, keys: new Set(), gapSec: Math.round((b.ts - a.ts) / 1000) });
       pairs.get(pid).keys.add(key.split(':')[0]); // cust/order/doc

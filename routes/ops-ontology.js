@@ -37,7 +37,7 @@ async function ensureOpsTables(pool) {
 }
 
 // ── 앱 정규화 (fusion과 동일 규칙) ───────────────────────────────────────────
-function normApp(a) {
+function normApp(a, fallback) {
   a = String(a || '').trim();
   let al = a.toLowerCase();
   al = al.replace(/\s*[-–]\s*(google )?chrome$/, '').replace(/\s*\(카카오톡\)/, '');
@@ -50,7 +50,12 @@ function normApp(a) {
   if (al.includes('powerpnt') || al.includes('powerpoint')) return 'PowerPoint';
   if (al.includes('chrome') || al.includes('edge') || al.includes('whale')) return '웹브라우저';
   if (al.includes('explorer')) return '파일탐색기';
-  if (al.includes('textinputhost') || al === '' || al === '0' || al === 'unknown' || al === '23') return '기타입력';
+  if (al.includes('textinputhost') || al === '' || al === '0' || al === 'unknown' || al === '23') {
+    // 실측(2026-07-08): app='unknown'인 keyboard.chunk의 windowTitle엔 실제 앱명이 살아있음(예: 'claude').
+    // app이 IME/미상일 때 windowTitle로 1회 복구 시도 — 기타입력 72% 오분류의 실제 원인.
+    if (fallback) return normApp(fallback);
+    return '기타입력';
+  }
   return a.slice(0, 24) || '기타';
 }
 const SRC_OF = {
@@ -85,7 +90,7 @@ async function promote(pool, hours) {
     return {
       eid: r.id, u: r.user_id, t: new Date(r.timestamp).getTime(), src: SRC_OF[r.type] || 'etc',
       // 구버전 데몬은 top-level app 없이 appContext.currentApp에만 앱명을 실음 — 폴백 없으면 전부 '기타입력'으로 뭉개짐
-      app: normApp(d.app || (d.appContext && d.appContext.currentApp)), win: (d.windowTitle || '').trim(), inp: (d.inputText || '').trim(),
+      app: normApp(d.app || (d.appContext && d.appContext.currentApp), d.windowTitle), win: (d.windowTitle || '').trim(), inp: (d.inputText || '').trim(),
       clk: d.mouseClicks || 0, va: (d.activity || d.visionActivity || '').trim(),
       vs: (d.screen || d.visionScreen || '').trim(), auto: !!(d.automatable || d.visionAutomatable),
     };

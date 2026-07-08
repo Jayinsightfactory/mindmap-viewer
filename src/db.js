@@ -585,7 +585,12 @@ function insertEvent(event) {
   if (!event.sessionId) event.sessionId = 'default';
   if (!event.userId)    event.userId = 'local';
   if (!event.channelId) event.channelId = 'default';
-  if (!event.timestamp) event.timestamp = new Date().toISOString();
+  // 클라이언트(PC) 시계 손상 방어 — src/db-pg.js와 동일 로직(2026-07-08). 상식 범위(2020-01-01~미래1일) 밖이면 대체.
+  const _rawTs = event.timestamp ? new Date(event.timestamp).getTime() : NaN;
+  const _now = Date.now();
+  if (!(Number.isFinite(_rawTs) && _rawTs > 1577836800000 && _rawTs - _now < 86400000)) {
+    event.timestamp = new Date(_now).toISOString();
+  }
   if (event.data == null) event.data = {};
 
   const stmt = db.prepare(`

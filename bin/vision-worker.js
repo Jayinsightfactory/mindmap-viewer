@@ -482,11 +482,12 @@ async function processServerQueue() {
   _pqBusy = true;
   try {
     const url = new URL('/api/vision/queue', ORBIT_SERVER);
+    url.searchParams.set('n', String(QUEUE_BATCH_N)); // 사용자별 라운드로빈 배치 크기(서버측 상한 40)
     const mod = url.protocol === 'https:' ? https : http;
     const h = {}; if (ORBIT_TOKEN) h['Authorization'] = 'Bearer ' + ORBIT_TOKEN;
 
     const queueData = await new Promise((resolve) => {
-      const req = mod.get({ hostname: url.hostname, port: url.port || 443, path: url.pathname, headers: h, timeout: 15000 }, (res) => {
+      const req = mod.get({ hostname: url.hostname, port: url.port || 443, path: url.pathname + url.search, headers: h, timeout: 15000 }, (res) => {
         let d = ''; res.on('data', c => d += c);
         res.on('end', () => { try { resolve(JSON.parse(d)); } catch { resolve({ batch: [] }); } });
       });
@@ -581,7 +582,10 @@ async function processServerQueue() {
 
 // ── 메인 ─────────────────────────────────────────────────────────────────────
 const SERVER_QUEUE_MODE = process.argv.includes('--server-queue') || !process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
-const SERVER_QUEUE_POLL_MS = 60 * 60 * 1000; // 1시간 (Claude 사용량 절감, 기존 30초)
+// 2026-07-08: 1시간/10건이 유입량(실측 331건/h)의 3%만 처리해 저활동 직원 캡처가 서버 큐에서
+// 상시 밀려나던 병목의 절반 원인(나머지 절반은 서버측 사용자별 라운드로빈으로 해결) — 10분/24건으로 상향.
+const SERVER_QUEUE_POLL_MS = parseInt(process.env.VISION_POLL_MS) || 10 * 60 * 1000;
+const QUEUE_BATCH_N = parseInt(process.env.VISION_BATCH_N) || 24;
 
 async function main() {
   console.log('[vision-worker] Claude Vision 분석 워커');

@@ -1178,8 +1178,41 @@ const { sendUpdateEmail, sendPerfIssueEmail } = (() => { try { return require('.
 
 // ─── Vision 큐 (맥미니 CLI 워커가 폴링해서 분석) ──────────────────────────────
 // Vision 분석은 맥미니 전용 — Railway에서는 큐잉만 함
+// 2026-07-08 실측: 단일 배열+상한20 구조는 활동 많은 PC가 큐를 독점해 저활동 직원 캡처가
+// 분석 전에 유실됨(유입 331건/h vs 소비 10건/h, 큐 20개 전부 owner PC였음).
+// → 사용자별 분리 큐 + 라운드로빈으로 교체: 한 사람이 폭주해도 다른 사람 슬롯을 뺏지 않는다.
+if (!global._visionQueueByUser) global._visionQueueByUser = new Map(); // userId → [items](오래된→최신), 상한 초과시 가장 오래된 것부터 버림
+const _VISION_PER_USER_MAX = 6; // 사용자당 보관 상한(이미지 최대 5MB 게이트 있음 — 워스트케이스도 힙 예산 안전)
+// 레거시 배열도 병행 유지 — src/server-vision-worker.js·src/vision-processor.js·services/memory-manager.js가
+// ANTHROPIC_API_KEY 설정 시 이 배열을 직접 splice/shift로 소비하는 별도(현재 휴면) 유료 경로라 끊으면 안 됨.
 if (!global._visionImageQueue) global._visionImageQueue = [];
-const _VISION_QUEUE_MAX = 20;  // 능동 트리거 빈도 증가 대응 — 100→20 (이미지 1개 ~3MB×20=60MB 안전)
+const _VISION_LEGACY_MAX = 20;
+function _visionQueuePush(item) {
+  const uid = item.userId || 'unknown';
+  if (!global._visionQueueByUser.has(uid)) global._visionQueueByUser.set(uid, []);
+  const q = global._visionQueueByUser.get(uid);
+  q.push(item);
+  while (q.length > _VISION_PER_USER_MAX) q.shift();
+  global._visionImageQueue.push(item);
+  while (global._visionImageQueue.length > _VISION_LEGACY_MAX) global._visionImageQueue.shift();
+}
+function _visionQueueTotal() { let n = 0; for (const q of global._visionQueueByUser.values()) n += q.length; return n; }
+// 라운드로빈 추출: 사용자를 한 바퀴씩 돌며 각자 최신 항목부터(LIFO) 채움 — 특정 사용자 독점 방지
+function _visionQueueTake(n) {
+  const taken = [];
+  const users = [...global._visionQueueByUser.keys()];
+  let progressed = true;
+  while (taken.length < n && progressed) {
+    progressed = false;
+    for (const uid of users) {
+      if (taken.length >= n) break;
+      const q = global._visionQueueByUser.get(uid);
+      if (q && q.length) { taken.push(q.pop()); progressed = true; }
+    }
+  }
+  for (const uid of users) if ((global._visionQueueByUser.get(uid) || []).length === 0) global._visionQueueByUser.delete(uid);
+  return taken;
+}
 
 // 힙 압력 모니터링 (460MB 힙 기준 — Railway Hobby 512MB 내 안정 운영)
 let _heapPressure = false;
@@ -1460,6 +1493,27 @@ app.post('/api/admin/purge-noise-events', async (req, res) => {
       [NOISE, String(days)]
     );
     res.json({ ok: true, deleted: r.rowCount, types: NOISE, olderThanDays: days });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/admin/fix-clock-skew?hostname=X — 특정 PC의 시계손상 이벤트(비상식적 timestamp)를
+// 서버 수신시각으로 일괄 보정(1회성). insertEvent 방어(2026-07-08)는 향후 유입만 막으므로 이미
+// 적재된 과거 손상 행(실측: DESKTOP-L0C2IOT last_seen=9024년)은 이걸로 정리. hostname 필수
+// (전체 events 테이블 스캔 방지 — 특정 PC로 범위 한정).
+app.post('/api/admin/fix-clock-skew', async (req, res) => {
+  try {
+    if (!(await isAdminReqAsync(req))) return res.status(403).json({ error: 'admin only' });
+    const hostname = req.query.hostname;
+    if (!hostname) return res.status(400).json({ error: 'hostname query param required' });
+    const pool = dbModule.getDb();
+    const nowIso = new Date().toISOString();
+    const r = await pool.query(
+      `UPDATE events SET timestamp = $2
+        WHERE data_json->>'hostname' = $1
+          AND (timestamp::timestamptz > NOW() + INTERVAL '1 day' OR timestamp::timestamptz < '2020-01-01')`,
+      [hostname, nowIso]
+    );
+    res.json({ ok: true, hostname, fixed: r.rowCount, newTimestamp: nowIso });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -3493,7 +3547,7 @@ app.post('/api/hook', async (req, res) => {
           _imageCache.delete(ev.id);
           continue;
         }
-        global._visionImageQueue.push({
+        _visionQueuePush({
           id:          ev.id,
           imageBase64: cachedImage,
           app:         ev.data.app || '',
@@ -3507,9 +3561,7 @@ app.post('/api/hook', async (req, res) => {
           // 직전 클릭 좌표 첨부 (Vision 분석에 활용)
           recentClicks: _recentClickEvt?.data?.recentClicks?.slice(-5) || ev.data.mouseClicks || [],
         });
-        // 최대 5건 유지 (base64 이미지는 개당 50-500KB)
-        while (global._visionImageQueue.length > _VISION_QUEUE_MAX) global._visionImageQueue.shift();
-        console.log(`[vision-queue] 이미지 큐잉: ${ev.data.hostname}/${ev.data.app} (큐: ${global._visionImageQueue.length}건)`);
+        console.log(`[vision-queue] 이미지 큐잉: ${ev.data.hostname}/${ev.data.app} (사용자별 큐, 총 ${_visionQueueTotal()}건)`);
         _imageCache.delete(ev.id);
       }
     }
@@ -4035,17 +4087,23 @@ app.post('/api/auto-fix/reset-cooldown', (req, res) => {
 });
 
 // Vision 분석 큐 (맥미니 CLI 워커용 — 이미지 포함)
+// 사용자별 라운드로빈으로 추출 — 한 PC가 캡처를 폭주해도 다른 직원 캡처가 굶지 않는다.
+// ?n= 으로 배치 크기 조절(워커 폴링 주기 단축에 맞춰 기본값도 상향, 최대 40).
 app.get('/api/vision/queue', (req, res) => {
-  const queue = global._visionImageQueue || [];
-  // 최신 우선(LIFO): 백로그가 쌓여도 "지금 무엇을 하는지"는 항상 신선하게 — 오래된 건 한가할 때 소진
-  const batch = queue.splice(-10).reverse();
-  res.json({ pending: queue.length, batch });
+  const n = Math.min(parseInt(req.query.n) || 10, 40);
+  const batch = _visionQueueTake(n);
+  res.json({ pending: _visionQueueTotal(), batch });
 });
 
 // 큐 상태만 확인 (소비하지 않음) — 진단용
 app.get('/api/vision/queue-peek', (req, res) => {
-  const queue = global._visionImageQueue || [];
-  res.json({ total: queue.length, items: queue.map(i => ({ id: i.id, app: i.app, hostname: i.hostname })) });
+  const items = [];
+  for (const [uid, q] of global._visionQueueByUser) for (const i of q) items.push({ id: i.id, app: i.app, hostname: i.hostname, userId: uid });
+  res.json({
+    total: items.length,
+    byUser: [...global._visionQueueByUser.entries()].map(([userId, q]) => ({ userId, count: q.length })),
+    items,
+  });
 });
 
 // Vision worker 상태 진단 — ANTHROPIC_API_KEY 설정/실행 여부
@@ -4053,7 +4111,7 @@ app.get('/api/vision/stat', (req, res) => {
   try {
     const svw = require('./src/server-vision-worker');
     const st = svw.getStatus ? svw.getStatus() : { error: 'getStatus not exported' };
-    res.json({ ok: true, worker: st, queueSize: (global._visionImageQueue || []).length });
+    res.json({ ok: true, worker: st, queueSize: _visionQueueTotal() });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -4083,12 +4141,11 @@ app.post('/api/vision/server-worker', async (req, res) => {
 app.post('/api/vision/queue-push', (req, res) => {
   const token = (req.headers.authorization || '').replace('Bearer ', '').trim();
   if (!token.startsWith('orbit_')) return res.status(401).json({ error: 'orbit token required' });
-  if (!global._visionImageQueue) global._visionImageQueue = [];
   const { imageBase64, app: appName, hostname, windowTitle, userId, sessionId, ts } = req.body;
   if (!imageBase64) return res.status(400).json({ error: 'imageBase64 required' });
-  global._visionImageQueue.push({ id: 'manual-' + Date.now(), imageBase64, app: appName||'', windowTitle: windowTitle||'', hostname: hostname||'', userId: userId||'admin', sessionId: sessionId||'manual', ts: ts||new Date().toISOString() });
-  console.log(`[vision-queue] 수동 큐잉: ${hostname}/${appName} (큐: ${global._visionImageQueue.length}건)`);
-  res.json({ ok: true, queueSize: global._visionImageQueue.length });
+  _visionQueuePush({ id: 'manual-' + Date.now(), imageBase64, app: appName||'', windowTitle: windowTitle||'', hostname: hostname||'', userId: userId||'admin', sessionId: sessionId||'manual', ts: ts||new Date().toISOString() });
+  console.log(`[vision-queue] 수동 큐잉: ${hostname}/${appName} (총 ${_visionQueueTotal()}건)`);
+  res.json({ ok: true, queueSize: _visionQueueTotal() });
 });
 
 // 캡처 썸네일 이미지 제공 (screen.analyzed 이벤트의 thumbnail 필드)

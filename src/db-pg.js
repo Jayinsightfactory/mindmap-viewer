@@ -402,7 +402,13 @@ async function insertEvent(event) {
   // NOT NULL 컬럼 방어: source, type, timestamp가 없으면 기본값
   const source = event.source || 'daemon';
   const type = event.type || 'unknown';
-  const timestamp = event.timestamp || new Date().toISOString();
+  // 클라이언트(PC) 시계 손상 방어 — 실측: DESKTOP-L0C2IOT가 시스템 시계 손상으로 timestamp=9024년을
+  // 그대로 보내 last_seen/정렬/신선도 판단을 전부 왜곡. 서버 수신시각 기준 상식 범위를 벗어나면 대체.
+  const _rawTs = event.timestamp ? new Date(event.timestamp).getTime() : NaN;
+  const _now = Date.now();
+  const timestamp = (Number.isFinite(_rawTs) && _rawTs > 1577836800000 /* 2020-01-01 */ && _rawTs - _now < 86400000 /* 미래 1일 초과 금지 */)
+    ? event.timestamp
+    : new Date(_now).toISOString();
   const dataJson = typeof event.data === 'string' ? JSON.parse(event.data) : (event.data || {});
   const metaJson = typeof event.metadata === 'string' ? JSON.parse(event.metadata) : (event.metadata || {});
   // ON CONFLICT 대신 EXISTS 체크 (PK 없는 테이블 호환)
