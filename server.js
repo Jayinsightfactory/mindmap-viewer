@@ -3580,14 +3580,52 @@ app.post('/api/hook', async (req, res) => {
       }
     }
 
+    // [2026-07-09] screen.analyzed 귀속 교정 ──────────────────────────────────
+    // owner PC의 CLI 비전워커가 전 직원 캡처를 분석해 owner 토큰으로 되보내므로,
+    // 토큰 기준(hookUserId)이면 전 직원 분석결과가 owner로 쏠린다(대시보드에 본인 것만 보임).
+    // 원 캡처 hostname(event.data.hostname)의 실사용자로 재귀속한다. hostname당 30분 캐시.
+    const _analyzedUserByHost = new Map();
+    try {
+      const _pgPool = dbModule.getDb ? dbModule.getDb() : null;
+      if (_pgPool && process.env.DATABASE_URL) {
+        if (!global._hostUserCache) global._hostUserCache = new Map();
+        const hosts = [...new Set(events
+          .filter(e => e.type === 'screen.analyzed' && e.data && e.data.hostname)
+          .map(e => String(e.data.hostname).toLowerCase()))];
+        for (const host of hosts) {
+          const c = global._hostUserCache.get(host);
+          if (c && Date.now() - c.at < 30 * 60 * 1000) { if (c.uid) _analyzedUserByHost.set(host, c.uid); continue; }
+          let uid = null;
+          try {
+            const { rows } = await _pgPool.query(
+              `SELECT user_id FROM orbit_pc_links WHERE LOWER(hostname)=$1 AND user_id NOT LIKE 'pc_%' AND user_id<>'local' LIMIT 1`, [host]);
+            if (rows[0] && rows[0].user_id) uid = rows[0].user_id;
+            if (!uid) {
+              const { rows: dr } = await _pgPool.query(
+                `SELECT user_id, COUNT(*) c FROM events
+                 WHERE LOWER(data_json->>'hostname')=$1 AND user_id NOT LIKE 'pc_%' AND user_id<>'local'
+                   AND timestamp::timestamptz > NOW() - INTERVAL '14 days'
+                 GROUP BY user_id ORDER BY c DESC LIMIT 1`, [host]);
+              if (dr[0] && dr[0].user_id) uid = dr[0].user_id;
+            }
+          } catch (_) {}
+          global._hostUserCache.set(host, { uid, at: Date.now() });
+          if (uid) _analyzedUserByHost.set(host, uid);
+        }
+      }
+    } catch (_) {}
+
     // DB 저장 (중복 방지) + JSONL 비동기 쓰기
     // imageBase64는 Vision 큐용으로 별도 보관, DB에는 저장하지 않음
     const _imageCache = new Map(); // eventId → imageBase64
     const _isPg = process.env.DATABASE_URL;
     const jsonlLines = [];
     for (const event of events) {
-      // user_id를 서버 검증 값으로 덮어쓰기
-      event.userId = hookUserId;
+      // user_id를 서버 검증 값으로 덮어쓰기 (screen.analyzed는 원 캡처 hostname의 실사용자로)
+      event.userId = (event.type === 'screen.analyzed' && event.data && event.data.hostname
+        && _analyzedUserByHost.has(String(event.data.hostname).toLowerCase()))
+        ? _analyzedUserByHost.get(String(event.data.hostname).toLowerCase())
+        : hookUserId;
       // screen.capture의 imageBase64를 DB 저장 전에 분리 (DB 용량 폭증 방지)
       if (event.type === 'screen.capture' && event.data?.imageBase64) {
         _imageCache.set(event.id, event.data.imageBase64);
