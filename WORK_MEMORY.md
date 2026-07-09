@@ -1265,3 +1265,10 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - **현욱 즉시교정**: `POST /api/admin/pc-link {hostname:DESKTOP-CAA5TA1, userId:MNMS93EB30F11EF433}` 재바인딩 완료. hook의 pc_link override(단일 진실원본)라 재설치 없이 즉시 정본계정으로 유입. [[pc-link-misattribution-suspect]] 유형과 동일.
 - **박성수 잔여**: HGNEA1S에 현 installer(/install 원클릭, install-open.bat→install.ps1) 1회 실행 필요 — PC가 켜져야 하고 본인이 실행(또는 원격). 현 installer가 이미 Defender예외·NSSM라이프라인·5중자동복구 다 포함이라 재설치만 하면 됨. 하드닝으로 계정도 자동 올바르게.
 - 다음: 박성수 PC 켜지면 /install 재설치. 현욱 재바인딩 후 유입 정본계정 확인.
+
+## 2026-07-09 — [골] #2 캡처 스티칭 완성 + 화면 세션뷰 (커밋 b639ab7, 30768ef)
+- #1 좌표융합 검증완료(clickXY 실제 박힘: 카톡 채팅목록 [1727,294] 등, userId키잉+fetch시점첨부+15분버퍼로 3차 근본버그 해결) 후 #2 진행.
+- **#2 스티칭**: GET /api/vision/task-sessions?userId=&hours=&gapSec= — screen.analyzed를 시간순 조립, 세션경계=유휴갭>gapSec 또는 앱바뀌고 60s+갭(같은작업 중 카톡↔ERP 짧은전환은 한세션 유지). 세션=ordered step[], step={화면·활동·clickFields(실행좌표필드=pyautogui대상)·nenovaInputMap·nenovaAction·auto·썸네일}. 3장+만, clickStepCount/autoScore 요약. 읽기전용.
+- **검증**: owner 24h에 4세션. 압권=[Chrome→Excel→nenova.exe] 출고분배가 한 절차로(메일확인→엑셀견적→nenova 콜수국 비율분배). [Excel 5단계]=ECOUNT 견적일괄등록. clickStepCount 0인건 24h창이 clickXY배포 이전캡처라 그럼(신규캡처부터 각step 좌표박힘).
+- **화면 세션뷰**: app.html 화면타임라인에 보기토글(썸네일/작업세션). 세션모드=직원선택→연속캡처를 시간순 step리스트(썸네일+시각+갭+📍좌표수+활동), 헤더에 앱흐름·nenovaAction·자동화·좌표배지. step썸네일클릭→상세(clickFields 좌표).
+- **파이프라인 현황**: 관찰 → #1 좌표융합✅ → #2 스티칭✅ → #3 실행(절차+좌표→pyautogui/PAD생성→dry-run) 미착수. script-generator.js(1083줄, 마운트됨)가 #3 소비처 후보(현재 하드코딩템플릿→실데이터 전환 필요).
