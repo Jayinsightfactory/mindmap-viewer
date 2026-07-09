@@ -565,6 +565,132 @@ function createScriptGenerator({ getDb }) {
   }
 
   // ═══════════════════════════════════════════════════════════════
+  // [골 #3] 스티칭 세션 → dry-run 실행 스크립트
+  //   하드코딩 템플릿이 아니라, 관찰된 실제 절차(steps[])의 step별
+  //   clickXY 좌표·입력값을 그대로 pyautogui 계획으로 변환한다.
+  //   DRY_RUN=True: 실제 클릭/입력 없이 "무엇을 할지"만 출력(커서만 이동).
+  //   실행은 반드시 사람 승인(approve-run) 경유 — 여기서는 생성만.
+  // ═══════════════════════════════════════════════════════════════
+  function _pyLit(v) {
+    return String(v == null ? '' : v).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\r?\n/g, ' ');
+  }
+
+  function _generateFromSession(session) {
+    const steps = Array.isArray(session?.steps) ? session.steps : [];
+    const appFlow = [...new Set(steps.map(s => s.app).filter(Boolean))].join(' → ') || '?';
+    const nenovaActions = [...new Set(steps.map(s => s.nenovaAction).filter(Boolean))];
+    let clickCount = 0, typeCount = 0, humanCount = 0;
+
+    const L = [
+      '# -*- coding: utf-8 -*-',
+      '"""',
+      'Orbit AI — 관찰 기반 자동화 스크립트 (dry-run)',
+      `절차: ${appFlow}`,
+      `nenova 액션: ${nenovaActions.join(', ') || 'N/A'}`,
+      `단계 수: ${steps.length}`,
+      '생성: (서버측 스탬프)',
+      '',
+      '※ DRY_RUN=True: 실제 클릭/입력 없이 계획만 출력하고 커서만 이동합니다.',
+      '   실제 실행은 관리자 승인(approve-run)을 거쳐 DRY_RUN=False로만 가능합니다.',
+      '"""',
+      'import pyautogui, time, subprocess',
+      '',
+      'DRY_RUN = True   # 승인 전에는 절대 False 금지',
+      'pyautogui.FAILSAFE = True   # 마우스 좌상단 이동 시 즉시 중단',
+      'pyautogui.PAUSE = 0.3',
+      '',
+      'def plan_click(x, y, label=""):',
+      '    if DRY_RUN:',
+      '        print(f"[DRY] 클릭예정 ({x},{y}) {label}")',
+      '        pyautogui.moveTo(x, y, duration=0.15)   # 커서만 이동, 클릭 안 함',
+      '    else:',
+      '        pyautogui.click(x=x, y=y); time.sleep(0.2)',
+      '',
+      'def plan_type(text, label=""):',
+      '    if DRY_RUN:',
+      '        print(f"[DRY] 입력예정 \'{text}\' {label}")',
+      '    else:',
+      '        subprocess.run([\'powershell\',\'-Command\',f"Set-Clipboard -Value \'{text}\'"], capture_output=True)',
+      '        pyautogui.hotkey(\'ctrl\',\'v\'); time.sleep(0.2)',
+      '',
+      'def human_stop(label):',
+      '    print(f"[사람] {label} — 판단/확인 필요, 자동화 보류 지점")',
+      '    if not DRY_RUN:',
+      '        input("   확인 후 Enter...")',
+      '',
+      '# ── 관찰된 절차 (순서대로) ──',
+    ];
+
+    steps.forEach((s, i) => {
+      const gap = s.gapSec ? ` (+${s.gapSec}s)` : '';
+      L.push('');
+      L.push(`# [단계 ${i + 1}]${gap} ${s.app || '?'} / ${s.screen || '?'} — ${_pyLit(s.activity || '')}`);
+      const cf = Array.isArray(s.clickFields) ? s.clickFields : [];
+      if (!cf.length) {
+        L.push(`#   (좌표 미확보 — 화면 관찰만, 실행 대상 아님)`);
+      }
+      for (const f of cf) {
+        const [x, y] = Array.isArray(f.clickXY) ? f.clickXY : [null, null];
+        if (x == null || y == null) continue;
+        if (f.human) {
+          L.push(`human_stop("${_pyLit(f.name)}")`);
+          L.push(`plan_click(${x}, ${y}, "${_pyLit(f.name)}")`);
+          humanCount++; clickCount++;
+        } else {
+          L.push(`plan_click(${x}, ${y}, "${_pyLit(f.name)}")`);
+          clickCount++;
+          if (f.value != null && String(f.value).trim() !== '') {
+            L.push(`plan_type("${_pyLit(f.value)}", "${_pyLit(f.name)} · 출처:${_pyLit(f.source || '?')}")`);
+            typeCount++;
+          }
+        }
+      }
+    });
+
+    L.push('');
+    L.push('print("── dry-run 완료: 위 계획을 검토 후 승인하세요 ──")');
+
+    return {
+      script: L.join('\n'),
+      summary: { steps: steps.length, clicks: clickCount, types: typeCount, humanStops: humanCount, nenovaActions, appFlow },
+    };
+  }
+
+  // POST /api/scripts/from-session — 스티칭 세션(steps[])을 dry-run 스크립트로
+  //   body: { session: {steps:[...]}, name?, userId? }  또는  { steps:[...] }
+  router.post('/from-session', async (req, res) => {
+    try {
+      const db = getDb();
+      const session = req.body?.session || (Array.isArray(req.body?.steps) ? { steps: req.body.steps } : null);
+      if (!session || !Array.isArray(session.steps) || !session.steps.length) {
+        return res.status(400).json({ error: 'session.steps 필요 (스티칭된 작업 세션)' });
+      }
+      const { script, summary } = _generateFromSession(session);
+      if (!summary.clicks) {
+        return res.json({ ok: false, reason: 'no_click_coords', script, summary,
+          message: '이 세션엔 실행좌표(clickXY)가 없어 dry-run만 가능합니다. 직원이 nenova에서 실제 클릭할 때 좌표가 쌓입니다.' });
+      }
+
+      let saved = null;
+      if (db?.query) {
+        await _ensureTables(db);
+        const name = req.body?.name || `관찰절차:${summary.appFlow}`.slice(0, 80);
+        const srcIds = session.steps.map(s => (s.thumbnailUrl || '').split('/').pop()).filter(Boolean);
+        const { rows } = await db.query(`
+          INSERT INTO generated_scripts (name, action_type, script_type, script_content, target_app, target_screen, source_event_ids, status)
+          VALUES ($1,$2,'pyautogui',$3,$4,$5,$6,'draft') RETURNING id, name, status`,
+          [name, (summary.nenovaActions[0] || summary.appFlow || '관찰절차'), script,
+           (session.steps[0]?.app || 'nenova'), (session.steps[session.steps.length - 1]?.screen || null), srcIds]);
+        saved = rows[0];
+      }
+      res.json({ ok: true, script, summary, saved, mode: 'dry-run',
+        message: `${summary.steps}단계 · 클릭 ${summary.clicks} · 입력 ${summary.types} · 사람확인 ${summary.humanStops} → dry-run 스크립트 생성(초안 저장). 실행은 승인 필요.` });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════
   // GET /api/scripts/scan — automatable 패턴 스캔 + 그룹핑
   // ═══════════════════════════════════════════════════════════════
   router.get('/scan', async (req, res) => {
