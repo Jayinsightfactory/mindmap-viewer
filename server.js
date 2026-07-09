@@ -4239,6 +4239,66 @@ app.get('/api/vision/thumbnails', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// [골 #2: 캡처 스티칭] 연속 캡처를 "같은 작업의 시간순 절차"로 꿰맴 → 실행가능 task spec의 뼈대.
+// GET /api/vision/task-sessions?userId=&hours=  → 세션별 ordered step[] (각 step=화면+필드+clickXY).
+// 세션 경계: 시간갭>gapSec 또는 앱이 바뀌고 갭>60s. 읽기전용 조립(새 저장 없음).
+app.get('/api/vision/task-sessions', async (req, res) => {
+  try {
+    const db = dbModule.getDb();
+    if (!db?.query) return res.status(503).json({ error: 'DB not available' });
+    const userId = req.query.userId;
+    if (!userId) return res.status(400).json({ error: 'userId required' });
+    const hours = Math.min(parseInt(req.query.hours) || 24, 168);
+    const gapSec = Math.min(parseInt(req.query.gapSec) || 600, 1800); // 세션 분리 유휴 임계
+    const since = new Date(Date.now() - hours * 3600 * 1000).toISOString();
+    const { rows } = await db.query(
+      `SELECT id, timestamp, data_json->>'app' app, data_json->>'screen' screen,
+              data_json->>'activity' activity, data_json->>'automationScore' auto_score,
+              data_json->>'automationHint' hint, data_json->>'nenovaAction' nenova_action,
+              (data_json->'fields') fields, (data_json->'nenovaInputMap') input_map
+         FROM events WHERE type='screen.analyzed' AND user_id=$1 AND timestamp>=$2
+        ORDER BY timestamp ASC`,
+      [userId, since]
+    );
+    const normApp = a => String(a || '').replace(/\s*[\(\-–].*/, '').trim() || '기타';
+    const sessions = [];
+    let cur = null, prevT = 0;
+    for (const r of rows) {
+      const app = normApp(r.app);
+      const t = new Date(r.timestamp).getTime();
+      const gap = prevT ? (t - prevT) / 1000 : 0;
+      // 새 세션: 큰 유휴갭 or (앱바뀌고 1분+ 갭). 같은 작업 중 카톡↔ERP 짧은 전환은 한 세션 유지.
+      if (!cur || gap > gapSec || (cur.app !== app && gap > 60)) {
+        if (cur) sessions.push(cur);
+        cur = { app, startTs: r.timestamp, endTs: r.timestamp, steps: [], apps: new Set() };
+      }
+      const flds = Array.isArray(r.fields) ? r.fields : [];
+      const clickFields = flds.filter(f => Array.isArray(f.clickXY))
+        .map(f => ({ name: f.name, clickXY: f.clickXY, value: f.currentValue, source: f.dataSource, human: !!f.humanRequired }));
+      cur.steps.push({
+        t: r.timestamp, gapSec: Math.round(gap), app, screen: r.screen, activity: r.activity,
+        clickFields,                                   // ★실행좌표가 있는 필드(pyautogui 대상)
+        inputMap: Array.isArray(r.input_map) ? r.input_map : [],
+        nenovaAction: r.nenova_action || null,
+        auto: Number(r.auto_score) || 0, thumbnailUrl: `/api/vision/thumbnail/${r.id}`,
+      });
+      cur.endTs = r.timestamp; cur.apps.add(app); prevT = t;
+    }
+    if (cur) sessions.push(cur);
+    // 3장+ 세션만(1~2장은 단발). 요약필드 계산.
+    const out = sessions.filter(s => s.steps.length >= 3).map(s => ({
+      app: s.app, apps: [...s.apps], startTs: s.startTs, endTs: s.endTs,
+      durationMin: Math.round((new Date(s.endTs) - new Date(s.startTs)) / 60000),
+      stepCount: s.steps.length,
+      clickStepCount: s.steps.filter(x => x.clickFields.length).length,   // 실행좌표 있는 단계 수
+      autoScore: Math.max(0, ...s.steps.map(x => x.auto)),
+      nenovaActions: [...new Set(s.steps.map(x => x.nenovaAction).filter(Boolean))],
+      steps: s.steps,
+    })).sort((a, b) => new Date(b.startTs) - new Date(a.startTs));
+    res.json({ ok: true, userId, hours, sessionCount: out.length, sessions: out });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.post('/api/vision/result', async (req, res) => {
   try {
     const { captureId, analysis, sessionId, userId } = req.body;
