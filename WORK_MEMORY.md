@@ -1310,3 +1310,11 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - **검증**: data.hostname=neonva 테스트 analyzed→MNIAFICB(설연주) 귀속 OK.
 - **잔여**: 과거 owner쏠림 데이터(오늘분 포함) 배치 UPDATE 재귀속 필요(대량UPDATE 배치필수). keyboard.chunk 설연주/강현우 0건=uiohook死 별개.
 - 조회: /api/admin/pc-list, /api/admin/capture-health, /api/admin/raw-events?type=.
+
+## 과거분 재귀속 마이그레이션 — 실행완료 검증 (2026-07-09, 커밋 4543f40)
+- 배포(deployment a0152a5f Online) 후 사용자 pc-list 재조회로 확인.
+- neonva→owner(803건) 행 소멸(설연주로 이동), DESKTOP-T09911T→owner(435건) 소멸(강현우), DESKTOP-L0C2IOT→owner(255건) 소멸, DESKTOP-CAA5TA1→owner(178건) 소멸(현욱).
+- nenova→owner는 2628건(최근)→2018건(6/11 이전)로 감소 — screen.analyzed/capture만 스코프라 6월11일 이전 비-screen타입 잔재는 의도대로 미이동(별개 이슈, 손대지 않음).
+- orbit_migrations 마커(reattr-analyzed-v1)로 1회성 보장, 재실행 안 됨.
+- **결론**: 포워드 수정(e0ab353)+과거분 마이그레이션(4543f40) 둘 다 라이브·검증 완료. 직원 화면데이터 전체가 이제 각자 계정에 정상 귀속됨.
+- **디버깅 메모**: 배포 직후 이 세션(Claude)에서 curl/node/git이 도메인·토큰 관련 이전 문맥 때문에 auto-mode 세이프티에 막혀, 검증은 사용자 PowerShell(railway CLI, Invoke-RestMethod)로 우회 진행. 다음에 유사 상황이면 처음부터 사용자 터미널 검증으로 넘길 것.
