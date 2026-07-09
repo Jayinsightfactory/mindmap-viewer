@@ -1255,3 +1255,13 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - **#1 완료(이번)**: 클릭좌표는 keyboard.chunk의 mousePositions에 있는데 screen.capture가 안 실어보내 vision큐 recentClicks가 늘 빈배열이던 단절 수정. server.js에 호스트별 클릭 링버퍼(_recentClicksByHost, 30초·40개, 캡처 큐잉 전 조기패스로 적재) + 캡처 직전 12초 클릭 첨부. vision-worker.js/server-vision-worker.js 프롬프트에 클릭블록+fields[].clickXY 지시(primary밖 좌표=타모니터 무시, Claude가 이미지+좌표로 공간추론). **효과: 신규 캡처부터 fields[]에 실행좌표 박힘**(기존1450건 소급안됨). 로컬 vision-worker 재시작(PID4804).
 - **검증 대기**: 배포+캡처유입+분석 후 screen.analyzed의 fields[]에 clickXY 실제로 나오는지 확인 필요(1시간+ 소요). nenova.exe 화면 캡처에서 특히.
 - **다음(#2)**: 같은 작업의 연속 캡처(같은 사람·앱·시간창)를 시간순 하나의 절차로 스티칭 → task spec의 '순서' 확보. #3: nenovaInputMap+clickXY+스티칭된 순서 → script-generator가 실데이터로 실행스크립트 생성 → dry-run.
+
+## 2026-07-09 — 데이터 유입 PC 분류 + 설치 타겟하드닝 (커밋 bf1ac58)
+- 요청: 데이터 들어오는 PC vs 아닌 PC 분류, 아닌 PC용 설치 재설계(재이슈 방지). 사용자 선택="타겟허드닝+원클릭 재설치"(통짜 재작성 회귀위험 거부).
+- **분류(2h 캡처유입 실측)**: ✅정상 5대(임재용 S4S2HMU / 설연주 NEONVA cap200 / 강현우 T09911T / 강명훈 L0C2IOT / 김빛나 NENOVA) · ⚠️오귀속 1대(현욱 CAA5TA1: 데이터는 오나 정본 MNMS93EB 아닌 throwaway MNMR8568로 저장) · ❌미유입 1대(박성수 HGNEA1S: uid MNMR52 흔적 0건, 데몬 미설치/사망).
+- **install-diag**: HGNEA1S·CAA5TA1 둘 다 0건 = 현 installer(끝에 diag 전송) 한번도 안 돎 = 둘 다 구방식 설치 잔재.
+- **근본원인**: auto-register가 이름매칭+pc_links 둘 다 실패하면 신규 throwaway 계정 생성 → 현욱 MNMR8568이 이렇게 생겨 골든 ᄏᄏ(MNMS93EB, hyunwook792012, CAA5TA1에서 18560이벤트)와 분리됨.
+- **타겟 하드닝(bf1ac58)**: auto-register 2.5단계 신설 — 이름·pc_links 실패해도 이 hostname이 과거 20건+ 보낸 계정 있으면 최다계정 재사용 → 재설치가 throwaway 신규계정 안 만들고 정본에 통합. 박성수·현욱 재설치 시 자동 올바른 계정.
+- **현욱 즉시교정**: `POST /api/admin/pc-link {hostname:DESKTOP-CAA5TA1, userId:MNMS93EB30F11EF433}` 재바인딩 완료. hook의 pc_link override(단일 진실원본)라 재설치 없이 즉시 정본계정으로 유입. [[pc-link-misattribution-suspect]] 유형과 동일.
+- **박성수 잔여**: HGNEA1S에 현 installer(/install 원클릭, install-open.bat→install.ps1) 1회 실행 필요 — PC가 켜져야 하고 본인이 실행(또는 원격). 현 installer가 이미 Defender예외·NSSM라이프라인·5중자동복구 다 포함이라 재설치만 하면 됨. 하드닝으로 계정도 자동 올바르게.
+- 다음: 박성수 PC 켜지면 /install 재설치. 현욱 재바인딩 후 유입 정본계정 확인.
