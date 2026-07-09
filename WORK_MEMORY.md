@@ -1284,3 +1284,11 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - **함정: prod generated_scripts.id SERIAL 기본값 유실** → 신규행 id=null 저장(PK였다면 에러났을것=nullable드리프트 증거). 수정=내 insert만 `id=COALESCE(MAX(id),0)+1` 명시할당 + `_ensureTables`에서 `DELETE WHERE id IS NULL` 배포당1회 청소. 기존 generate/batch insert(851/936)도 동일 잠재결함이나 이번엔 미수정(수술범위).
 - **파이프라인 현황**: 관찰→#1 좌표융합✅→#2 스티칭✅→#3 dry-run 생성✅. **남은건 실제 실행경로**(데몬에 rpa 커맨드 소비기: 화면위 클릭순서 오버레이/로그만, 실클릭X → 사람승인 → DRY_RUN=False). 직원PC 실행이라 별도 설계·승인 후.
 - **주의**: 데몬 자동업데이터가 로컬 `git reset --hard origin/main` 돌려 미push 로컬커밋 날림. 이번에도 bd178df 날아가 `git push origin <sha>:main`으로 복구+배포. 로컬커밋은 즉시 push할것.
+
+## 직원용 배포 안내 페이지 + 설치 기능표기 (2026-07-09)
+- **요청**: "모든 기능 포함 설치파일 업데이트 및 링크". 확정=①설치파일 기능표기 ②직원용(이름입력) 안내페이지.
+- **감사 결론**: install.ps1은 이미 v8 풀버전(11단계검증·install.diag·capture-config복원·5중자동시작·Defender예외·NSSM라이프라인). 데몬은 keyboard/mouse(clickXY)/screen 전 모듈 시작+CodeSync 자동최신화 → 구조적 누락 없음. ⚠️버전마커 v8 올리면 daemon-updater가 전PC 일제 재설치 유발 → **버전 안 건드림**.
+- **산출**: public/install-guide.html(설치버튼→/install, 전체기능 6종 목록, 설치4단계, FAQ, 링크복사, 자체완결). server.js GET /guide·/install-guide + /api/setup/version(install.ps1 마커 파싱). install.ps1 완료배너에 "설치된 전체 기능" 텍스트 목록(버전로직 불변).
+- **링크**: 직원 배포 = https://mindmap-viewer-production-adb2.up.railway.app/guide (버튼이 /install bat 다운). 커밋 4cca72d.
+- **검증(prod)**: /api/setup/version JSON OK, /guide 요소 OK, install.ps1 59263bytes(기능목록 반영), /install 200 무결성 OK.
+- 관련: [[orbit-daemon-install-deploy]]. 미설치 PC 박성수 HGNEA1S에 이 링크 전달.
