@@ -225,21 +225,20 @@ async function viewStaff(){
 // ── 화면 타임라인: 실제 캡처 썸네일을 시간순으로 — "이 사람이 무슨 화면에서 뭘 했나"를 눈으로 ──
 let _screenPeople = null;
 async function viewScreens(){
-  $('#view').innerHTML = `<h2>화면 타임라인</h2><div class="sub">실제 캡처 화면을 시간순으로 — 어떤 화면에서 무슨 작업을 했는지 눈으로 확인. 화면 클릭 → 상세(입력필드·자동화 판단).</div>
+  $('#view').innerHTML = `<h2>화면 타임라인</h2><div class="sub">실제 캡처 화면을 시간순으로. <b>작업 세션</b> 모드 = 연속 캡처를 하나의 업무 절차로 꿰맴(AI 실행용). 화면 클릭 → 상세(입력필드·📍클릭좌표).</div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px">
+      <span class="muted">보기</span><select id="scMode" style="min-height:32px;background:var(--panel2);border:1px solid var(--border);color:var(--txt);border-radius:8px;padding:0 10px;font-size:13px"><option value="grid">썸네일</option><option value="session" selected>작업 세션(절차)</option></select>
       <span class="muted">직원</span><select id="scUser" style="min-height:32px;background:var(--panel2);border:1px solid var(--border);color:var(--txt);border-radius:8px;padding:0 10px;font-size:13px"><option value="">전체</option></select>
       <span class="muted">기간</span><select id="scHours" style="min-height:32px;background:var(--panel2);border:1px solid var(--border);color:var(--txt);border-radius:8px;padding:0 10px;font-size:13px"><option value="8">최근 8시간</option><option value="24" selected>오늘(24h)</option><option value="72">3일</option><option value="168">1주</option></select>
       <button class="btn" id="scGo" style="padding:8px 14px">조회</button>
     </div>
     <div id="scGrid" class="muted">불러오는 중…</div>`;
-  const load = async () => {
-    $('#scGrid').innerHTML = '<div class="muted">불러오는 중…</div>';
+  const loadGrid = async () => {
     try{
       const uid = $('#scUser').value, hrs = $('#scHours').value;
       const d = await api(`/api/vision/thumbnails?hours=${hrs}&limit=90${uid?'&userId='+encodeURIComponent(uid):''}`);
       const ts = d.thumbnails||[];
       if(!ts.length){ $('#scGrid').innerHTML='<div class="panel muted">이 조건에 캡처가 없습니다. (직원 PC가 켜져 활동 중일 때 화면이 쌓입니다)</div>'; return; }
-      // 시간대별 그룹(HH시)로 묶어 흐름이 보이게
       const groups = {};
       for(const t of ts){ const h=new Date(t.timestamp).toLocaleString('sv-SE',{hour12:false}).slice(0,13); (groups[h]=groups[h]||[]).push(t); }
       $('#scGrid').innerHTML = Object.entries(groups).map(([h,items])=>`
@@ -256,18 +255,55 @@ async function viewScreens(){
               </div></div>`;
           }).join('')}
         </div>`).join('');
-      // 카드 클릭 → 상세 모달
       const byId = Object.fromEntries(ts.map(t=>[t.id,t]));
       document.querySelectorAll('#scGrid .scard').forEach(el=> el.onclick=()=> openScreen(byId[el.dataset.id]));
     }catch(e){ $('#scGrid').innerHTML = errBox(e); }
   };
-  // 직원 드롭다운 채우기(1회)
+  // ── 작업 세션(절차) 모드: 연속 캡처를 하나의 업무 흐름으로 ──
+  const loadSessions = async () => {
+    const uid = $('#scUser').value, hrs = $('#scHours').value;
+    if(!uid){ $('#scGrid').innerHTML='<div class="panel muted">작업 세션은 <b>직원을 먼저 선택</b>하세요(한 사람의 연속 작업을 절차로 꿰맵니다).</div>'; return; }
+    try{
+      const d = await api(`/api/vision/task-sessions?userId=${encodeURIComponent(uid)}&hours=${hrs}`);
+      const ss = d.sessions||[];
+      if(!ss.length){ $('#scGrid').innerHTML='<div class="panel muted">이 기간에 3장 이상 이어진 작업 세션이 없습니다.</div>'; return; }
+      $('#scGrid').innerHTML = ss.map((s,i)=>{
+        const autoBadge = s.autoScore>=0.6?'<span class="tag" style="color:#5fd39b">⚡자동화 후보</span>':'';
+        const naction = (s.nenovaActions||[]).length?`<span class="tag" style="color:#5b9dff">${s.nenovaActions[0]}</span>`:'';
+        const clickBadge = s.clickStepCount>0?`<span class="tag" style="color:#5b9dff">📍좌표 ${s.clickStepCount}단계</span>`:'';
+        const apps = (s.apps||[]).join(' → ');
+        const steps = s.steps.map((st,j)=>{
+          const clk = (st.clickFields||[]).length?` <span style="color:#5b9dff">📍${st.clickFields.length}</span>`:'';
+          const gp = st.gapSec>60?` <span class="muted">(+${Math.round(st.gapSec/60)}분)</span>`:'';
+          return `<div style="display:flex;gap:8px;padding:6px 0;border-bottom:1px dashed var(--border)">
+            <img src="${st.thumbnailUrl}" loading="lazy" style="width:120px;height:68px;object-fit:cover;object-position:top;border-radius:6px;background:#0d0e10;flex:none;cursor:pointer" class="sstep" data-si="${i}" data-sj="${j}">
+            <div style="min-width:0;font-size:12px">
+              <div class="muted" style="font-size:11px">${j+1}. ${new Date(st.t).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',second:'2-digit'})} · ${(st.app||'').slice(0,20)}${gp}${clk}</div>
+              <div class="pii" style="color:var(--txt2);margin-top:2px">${st.activity||st.screen||''}</div>
+            </div></div>`;
+        }).join('');
+        return `<div class="panel" style="margin-bottom:14px">
+          <div style="display:flex;justify-content:space-between;align-items:start;gap:8px;flex-wrap:wrap">
+            <div><b>세션 ${i+1} · ${apps}</b> ${naction} ${autoBadge} ${clickBadge}</div>
+            <div class="muted" style="font-size:12px">${new Date(s.startTs).toLocaleString('ko-KR',{hour:'2-digit',minute:'2-digit'})}~ · ${s.stepCount}단계 · ${s.durationMin}분</div></div>
+          <div style="margin-top:8px">${steps}</div></div>`;
+      }).join('');
+      // step 썸네일 클릭 → 상세
+      document.querySelectorAll('#scGrid .sstep').forEach(el=> el.onclick=()=>{
+        const st = ss[+el.dataset.si].steps[+el.dataset.sj];
+        openScreen({ app:st.app, timestamp:st.t, screen:st.screen, activity:st.activity, thumbnailUrl:st.thumbnailUrl,
+          fields:(st.clickFields||[]).map(f=>({name:f.name,type:'',dataSource:f.source,humanRequired:f.human,clickXY:f.clickXY,currentValue:f.value})),
+          hint:(st.nenovaAction||'') });
+      });
+    }catch(e){ $('#scGrid').innerHTML = errBox(e); }
+  };
+  const load = async () => { $('#scGrid').innerHTML='<div class="muted">불러오는 중…</div>'; ($('#scMode').value==='session'?loadSessions:loadGrid)(); };
   try{
     if(!_screenPeople) _screenPeople = (await api('/api/flow/people')).people||[];
     $('#scUser').innerHTML = '<option value="">전체</option>' + _screenPeople.map(p=>`<option value="${p.userId}">${p.label}</option>`).join('');
   }catch{}
   $('#scGo').onclick = load;
-  $('#scHours').onchange = load; $('#scUser').onchange = load;
+  $('#scMode').onchange = load; $('#scHours').onchange = load; $('#scUser').onchange = load;
   load();
 }
 function openScreen(t){
