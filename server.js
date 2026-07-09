@@ -1361,6 +1361,57 @@ app.get('/api/admin/raw-events', async (req, res) => {
   }
 });
 
+// GET /api/admin/capture-health — PC별 화면캡처/Python 실태 요약
+//   신뢰성 있게 도착하는 daemon.screendiag(screen-selftest) 이벤트로 PC별 최신 상태를 판정.
+//   Python 자동설치 완료보고(detached PS)는 유실될 수 있어, "via pil" 캡처 도착 자체를 Python OK 신호로 씀.
+app.get('/api/admin/capture-health', async (req, res) => {
+  try {
+    const pool = dbModule.getDb();
+    const hours = Math.min(parseInt(req.query.hours) || 24, 168);
+    const { rows } = await pool.query(
+      `SELECT timestamp, data_json FROM events
+       WHERE type='daemon.screendiag' AND timestamp > NOW() - ($1 || ' hours')::interval
+       ORDER BY timestamp DESC LIMIT 600`, [String(hours)]);
+    const byHost = {};
+    for (const r of rows) {
+      const d = typeof r.data_json === 'object' ? r.data_json : (() => { try { return JSON.parse(r.data_json || '{}'); } catch { return {}; } })();
+      const host = d.hostname || '?';
+      const detail = String(d.detail || '');
+      const h = byHost[host] || (byHost[host] = { host, lastAt: r.timestamp, method: null, sizeB: null, pilOk: false, pending: false, samples: 0 });
+      h.samples++;
+      // 최신 1건에서 방식/크기 판정 (rows가 최신순이라 host별 첫 등장이 최신)
+      if (!h.method) {
+        const mv = detail.match(/via (\w+)/);
+        if (mv) h.method = mv[1];
+        // 선택된 방식의 바이트 크기
+        const key = h.method === 'pil' ? 'pil' : h.method === 'pyautogui' ? 'pyautogui' : 'powershell';
+        const sz = detail.match(new RegExp(key + ':(\\d+)b'));
+        if (sz) h.sizeB = parseInt(sz[1]);
+        if (/python 없음 감지/.test(detail)) h.pending = true;
+      }
+      // 최근 창 내 어디서든 pil 캡처 성공이 있었으면 Python OK
+      if (/via pil/.test(detail)) h.pilOk = true;
+    }
+    const pcs = Object.values(byHost).map(h => {
+      let verdict, note;
+      if (h.pilOk) { verdict = 'OK'; note = 'Python+PIL 정상'; }
+      else if (h.method === 'powershell' && (h.sizeB || 0) >= 30000) { verdict = 'OK_PS'; note = 'Python 없이 PowerShell 폴백(실화면)'; }
+      else if (h.pending) { verdict = 'INSTALLING'; note = 'Python 없음 → 자동설치 진행중'; }
+      else if (h.method === 'powershell' && (h.sizeB || 0) < 10000) { verdict = 'BLACK'; note = '검은화면 위험(작은 PS캡처, Python 필요)'; }
+      else { verdict = 'UNKNOWN'; note = '판정 불가'; }
+      return { ...h, verdict, note };
+    }).sort((a, b) => (a.verdict === 'BLACK' ? -1 : 1) - (b.verdict === 'BLACK' ? -1 : 1));
+    const summary = { total: pcs.length,
+      ok: pcs.filter(p => p.verdict === 'OK').length,
+      okPs: pcs.filter(p => p.verdict === 'OK_PS').length,
+      installing: pcs.filter(p => p.verdict === 'INSTALLING').length,
+      black: pcs.filter(p => p.verdict === 'BLACK').length };
+    res.json({ hours, summary, pcs });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // GET /api/admin/perf-issues — PC 이슈 리포트 목록 (최근 100건)
 app.get('/api/admin/perf-issues', (req, res) => {
   const { isAdmin } = resolveAdmin(req);
