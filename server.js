@@ -8928,6 +8928,54 @@ async function startServer() {
     }, 2 * 60 * 1000);
   }
 
+  // [2026-07-09] 1회 마이그레이션: owner로 쏠린 과거 직원 screen.analyzed/capture 재귀속.
+  // owner PC CLI 비전워커가 전 직원 캡처를 owner 토큰으로 재제출해온 버그(포워드는 e0ab353에서 수정).
+  // 마커(orbit_migrations)로 1회만, 배치(5000건)로, owner 본인 PC는 가드(실사용자 건수>owner쏠림 건수)로 보호.
+  setTimeout(async () => {
+    try {
+      const pool = dbModule.getDb();
+      if (!pool || !process.env.DATABASE_URL) return;
+      await pool.query(`CREATE TABLE IF NOT EXISTS orbit_migrations (name TEXT PRIMARY KEY, done_at TIMESTAMPTZ DEFAULT NOW(), detail TEXT)`);
+      const done = await pool.query(`SELECT 1 FROM orbit_migrations WHERE name='reattr-analyzed-v1'`);
+      if (done.rowCount) return;
+      const OWNER = 'MNH03H73690BB2CD82';
+      // hostname → 실사용자(owner/pc_/local 제외 dominant). owner쏠림보다 많은 hostname만(owner 본인 PC 보호).
+      const map = await pool.query(`
+        WITH ho AS (
+          SELECT LOWER(data_json->>'hostname') host, COUNT(*) owner_cnt
+          FROM events WHERE user_id=$1 AND type IN ('screen.analyzed','screen.capture')
+            AND data_json->>'hostname' IS NOT NULL GROUP BY 1
+        ), hr AS (
+          SELECT host, user_id, cnt, ROW_NUMBER() OVER (PARTITION BY host ORDER BY cnt DESC) rn FROM (
+            SELECT LOWER(data_json->>'hostname') host, user_id, COUNT(*) cnt
+            FROM events WHERE user_id NOT LIKE 'pc_%' AND user_id<>'local' AND user_id<>$1
+              AND data_json->>'hostname' IS NOT NULL GROUP BY 1,2) t
+        )
+        SELECT ho.host, hr.user_id AS target, ho.owner_cnt, hr.cnt AS real_cnt
+        FROM ho JOIN hr ON hr.host=ho.host AND hr.rn=1
+        WHERE hr.cnt > ho.owner_cnt`, [OWNER]);
+      let totalFixed = 0; const perHost = [];
+      for (const row of map.rows) {
+        let fixed = 0;
+        for (;;) {
+          const r = await pool.query(`
+            UPDATE events SET user_id=$2
+            WHERE id IN (
+              SELECT id FROM events
+              WHERE user_id=$3 AND type IN ('screen.analyzed','screen.capture')
+                AND LOWER(data_json->>'hostname')=$1
+              LIMIT 5000)`, [row.host, row.target, OWNER]);
+          fixed += r.rowCount;
+          if (r.rowCount < 5000) break;
+        }
+        if (fixed) { totalFixed += fixed; perHost.push(`${row.host}→${String(row.target).slice(0,8)}:${fixed}`); }
+      }
+      await pool.query(`INSERT INTO orbit_migrations(name, detail) VALUES('reattr-analyzed-v1',$1) ON CONFLICT(name) DO NOTHING`,
+        [`fixed=${totalFixed} [${perHost.join(' ')}]`]);
+      console.log(`[reattr-analyzed] 완료 fixed=${totalFixed} [${perHost.join(' ')}]`);
+    } catch (e) { console.warn('[reattr-analyzed] 실패:', e.message); }
+  }, 90 * 1000);  // 부팅 90초 뒤 (DB 안정화 대기)
+
   // outcome 테이블 초기화 (기존 DB에 테이블 없으면 생성)
   outcomeStore.initOutcomeTable();
 
