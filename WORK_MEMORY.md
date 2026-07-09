@@ -1292,3 +1292,12 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - **링크**: 직원 배포 = https://mindmap-viewer-production-adb2.up.railway.app/guide (버튼이 /install bat 다운). 커밋 4cca72d.
 - **검증(prod)**: /api/setup/version JSON OK, /guide 요소 OK, install.ps1 59263bytes(기능목록 반영), /install 200 무결성 OK.
 - 관련: [[orbit-daemon-install-deploy]]. 미설치 PC 박성수 HGNEA1S에 이 링크 전달.
+
+## Python 자가복구 = 이미 존재+작동, 가시성만 보강 (2026-07-09)
+- **의심**: "파이썬 확인하고 설치하는 게 아닌 것 같다".
+- **진단(CLAUDE.md 반복감지 규칙)**: 이미 구현됨. install-open.ps1:114/117 → install.ps1 [3/9] Python(Test-RealPython+winget/python.org+PIL검증). 런타임도 screen-capture.js _resolvePython()(스토어껍데기 배제, 728/1075) → 없으면 _autoInstallPython()(753/1100, user-scope 무권한 자동설치+pip pillow, 커밋 1e79861/2658d20/4bcf2bf, origin 반영). **다시 만들지 않음.**
+- **실증(raw-events daemon.screendiag)**: 강현우 T09911T 07:12 python없음→자동설치→07:14 PIL 346KB로 전환. **자가복구 실제 작동 확인.**
+- **진짜 공백=가시성**: 자동설치 완료보고(detached PS, line 678)가 0건 도착(스크립트가 보고 전 죽음 추정) → "됐는지" 안 보임.
+- **수정**: GET /api/admin/capture-health — screen-selftest 이벤트(신뢰 도착)로 PC별 verdict(OK/OK_PS/INSTALLING/BLACK) 판정. via pil 도착=Python OK 신호. 커밋 697f3b1(+d2d43b5 timestamp::timestamptz 캐스팅).
+- **실태(6대, 24h)**: OK(pil) owner/강현우/현욱 3 · OK_PS(폴백실화면) 설연주/김빛나 2 · INSTALLING L0C2IOT 1 · **BLACK 0**.
+- **잔여관찰**: L0C2IOT(로스터 밖 신규 hostname?) 자동설치 진행중—수렴 확인 필요. neonva/nenova는 PS폴백 실화면이라 정상이나 PIL이면 더 나음. 완료보고 경로 신뢰성은 후속.
