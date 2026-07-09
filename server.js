@@ -4830,6 +4830,25 @@ app.post('/api/setup/auto-register', async (req, res) => {
       } catch (e) { console.warn('[auto-register] pc_links lookup:', e.message); }
     }
 
+    // 2.5) [2026-07-09 하드닝] 이름·pc_links 둘 다 실패해도, 이 hostname이 과거에 데이터를 보낸
+    // 계정이 있으면 그 중 가장 데이터 많은 계정을 재사용한다. → 재설치가 throwaway 신규계정을
+    // 만들어 데이터가 갈라지던 재이슈(현욱 CAA5TA1가 MNMR8568로 새로 생긴 사례)를 근본 차단.
+    if (!existingUserId && pool) {
+      try {
+        const { rows } = await pool.query(
+          `SELECT user_id, COUNT(*) c FROM events
+             WHERE data_json->>'hostname' = $1 AND user_id NOT IN ('local','system') AND user_id IS NOT NULL
+             GROUP BY user_id ORDER BY c DESC LIMIT 1`,
+          [hostname]
+        );
+        if (rows.length && Number(rows[0].c) >= 20) {  // 우연한 소량 유입은 제외(20건+)
+          existingUserId = rows[0].user_id;
+          try { const { rows: uRows } = await pool.query('SELECT name FROM orbit_auth_users WHERE id = $1', [existingUserId]); if (uRows.length) existingName = uRows[0].name; } catch {}
+          console.log(`[auto-register] ${hostname} → MATCHED by HISTORY (${rows[0].c}건) → ${String(existingUserId).slice(0,12)} — 신규계정 생성 차단`);
+        }
+      } catch (e) { console.warn('[auto-register] history match:', e.message); }
+    }
+
     // 3) 매핑 있으면 재사용 — 토큰만 새로 발급
     if (existingUserId) {
       const slug = `pc.${hostname.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
