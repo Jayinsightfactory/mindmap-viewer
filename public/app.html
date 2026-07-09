@@ -58,6 +58,7 @@
     <button class="tab" data-v="flow">업무 흐름</button>
     <button class="tab" data-v="insight">운영 인사이트</button>
     <button class="tab" data-v="duty">직무 매뉴얼</button>
+    <button class="tab" data-v="screens">화면 타임라인</button>
     <button class="tab" data-v="staff">직원 · 설치</button>
     <div class="right">
       <span class="muted" id="tenant">nenova</span>
@@ -221,6 +222,76 @@ async function viewStaff(){
   }catch(e){ $('#pcs').innerHTML = errBox(e); }
 }
 
+// ── 화면 타임라인: 실제 캡처 썸네일을 시간순으로 — "이 사람이 무슨 화면에서 뭘 했나"를 눈으로 ──
+let _screenPeople = null;
+async function viewScreens(){
+  $('#view').innerHTML = `<h2>화면 타임라인</h2><div class="sub">실제 캡처 화면을 시간순으로 — 어떤 화면에서 무슨 작업을 했는지 눈으로 확인. 화면 클릭 → 상세(입력필드·자동화 판단).</div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px">
+      <span class="muted">직원</span><select id="scUser" style="min-height:32px;background:var(--panel2);border:1px solid var(--border);color:var(--txt);border-radius:8px;padding:0 10px;font-size:13px"><option value="">전체</option></select>
+      <span class="muted">기간</span><select id="scHours" style="min-height:32px;background:var(--panel2);border:1px solid var(--border);color:var(--txt);border-radius:8px;padding:0 10px;font-size:13px"><option value="8">최근 8시간</option><option value="24" selected>오늘(24h)</option><option value="72">3일</option><option value="168">1주</option></select>
+      <button class="btn" id="scGo" style="padding:8px 14px">조회</button>
+    </div>
+    <div id="scGrid" class="muted">불러오는 중…</div>`;
+  const load = async () => {
+    $('#scGrid').innerHTML = '<div class="muted">불러오는 중…</div>';
+    try{
+      const uid = $('#scUser').value, hrs = $('#scHours').value;
+      const d = await api(`/api/vision/thumbnails?hours=${hrs}&limit=90${uid?'&userId='+encodeURIComponent(uid):''}`);
+      const ts = d.thumbnails||[];
+      if(!ts.length){ $('#scGrid').innerHTML='<div class="panel muted">이 조건에 캡처가 없습니다. (직원 PC가 켜져 활동 중일 때 화면이 쌓입니다)</div>'; return; }
+      // 시간대별 그룹(HH시)로 묶어 흐름이 보이게
+      const groups = {};
+      for(const t of ts){ const h=new Date(t.timestamp).toLocaleString('sv-SE',{hour12:false}).slice(0,13); (groups[h]=groups[h]||[]).push(t); }
+      $('#scGrid').innerHTML = Object.entries(groups).map(([h,items])=>`
+        <div style="margin-bottom:6px;color:var(--muted);font-size:12px;font-weight:700">${h.replace('T',' ')}시 · ${items.length}장</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;margin-bottom:18px">
+          ${items.map(t=>{
+            const auto = Number(t.automationScore)||0;
+            const badge = auto>=0.6?'<span class="tag" style="color:#5fd39b">⚡자동화 후보</span>':'';
+            return `<div class="scard" data-id="${t.id}" style="background:var(--panel);border:1px solid var(--border);border-radius:10px;overflow:hidden;cursor:pointer">
+              <img src="${t.thumbnailUrl}" loading="lazy" style="width:100%;height:124px;object-fit:cover;object-position:top;background:#0d0e10;display:block">
+              <div style="padding:8px 10px">
+                <div style="font-size:11px;color:var(--muted)">${new Date(t.timestamp).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})} · ${(t.app||'').slice(0,18)} ${badge}</div>
+                <div class="pii" style="font-size:12px;color:var(--txt2);margin-top:3px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical">${t.activity||t.screen||''}</div>
+              </div></div>`;
+          }).join('')}
+        </div>`).join('');
+      // 카드 클릭 → 상세 모달
+      const byId = Object.fromEntries(ts.map(t=>[t.id,t]));
+      document.querySelectorAll('#scGrid .scard').forEach(el=> el.onclick=()=> openScreen(byId[el.dataset.id]));
+    }catch(e){ $('#scGrid').innerHTML = errBox(e); }
+  };
+  // 직원 드롭다운 채우기(1회)
+  try{
+    if(!_screenPeople) _screenPeople = (await api('/api/flow/people')).people||[];
+    $('#scUser').innerHTML = '<option value="">전체</option>' + _screenPeople.map(p=>`<option value="${p.userId}">${p.label}</option>`).join('');
+  }catch{}
+  $('#scGo').onclick = load;
+  $('#scHours').onchange = load; $('#scUser').onchange = load;
+  load();
+}
+function openScreen(t){
+  if(!t) return;
+  const fields = (t.fields||[]);
+  const fieldRows = fields.map(f=>{
+    const xy = Array.isArray(f.clickXY)?` <span style="color:#5b9dff">📍${f.clickXY[0]},${f.clickXY[1]}</span>`:'';
+    const hr = f.humanRequired?'<span style="color:#e6c25a">사람</span>':'<span style="color:#5fd39b">자동가능</span>';
+    return `<div class="item" style="font-size:12px">${f.name||''} <span class="muted">(${f.type||''}, ${f.dataSource||''})</span> · ${hr}${xy}${f.currentValue?` <span class="muted">= ${String(f.currentValue).slice(0,40)}</span>`:''}</div>`;
+  }).join('');
+  const m = document.createElement('div');
+  m.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:100;display:flex;align-items:center;justify-content:center;padding:24px';
+  m.innerHTML = `<div style="background:var(--panel);border:1px solid var(--border);border-radius:14px;max-width:1100px;width:100%;max-height:92vh;overflow:auto;padding:16px">
+    <div style="display:flex;justify-content:space-between;align-items:start;gap:12px;margin-bottom:10px">
+      <div><h3 style="margin:0" class="pii">${t.app||''}</h3><div class="muted" style="font-size:12px">${new Date(t.timestamp).toLocaleString('ko-KR')} · ${t.screen||''}</div></div>
+      <button class="ghost" id="scClose">닫기 ✕</button></div>
+    <img src="${t.thumbnailUrl}" style="width:100%;border-radius:8px;border:1px solid var(--border);background:#0d0e10">
+    <div class="sec" style="margin-top:12px"><b>무슨 작업</b><div class="muted pii" style="font-size:13px">${t.activity||''}</div></div>
+    ${fields.length?`<div class="sec"><b>입력 필드 (${fields.length}) · 📍=클릭좌표</b>${fieldRows}</div>`:''}
+    ${t.hint?`<div class="sec"><b>⚡ 자동화 방법</b><div class="muted" style="font-size:12px">${t.hint}</div></div>`:''}</div>`;
+  m.onclick = e=>{ if(e.target===m || e.target.id==='scClose') m.remove(); };
+  document.body.appendChild(m);
+}
+
 function errBox(e){
   if (e.code === 'not_onboarded') return `<div class="panel"><div style="color:#e6c25a">${e.message}</div></div>`;
   return `<div class="panel"><div style="color:#e88">불러오기 실패: ${e.message}</div><div class="muted" style="margin-top:8px">관리자 토큰이 필요합니다. 우상단 "토큰"을 눌러 입력하거나 회사 계정으로 로그인하세요.</div></div>`;
@@ -229,7 +300,7 @@ function errBox(e){
 function render(v){
   state.v = v;
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('on', t.dataset.v===v));
-  ({home:viewHome, flow:viewFlow, insight:viewInsight, duty:viewDuty, staff:viewStaff}[v]||viewHome)();
+  ({home:viewHome, flow:viewFlow, insight:viewInsight, duty:viewDuty, screens:viewScreens, staff:viewStaff}[v]||viewHome)();
 }
 // 회사 계정 로그인 콜백(oauth-google.js) 복귀: ?oauth_token=... → 세션에 저장 후 URL 정리
 (function captureOAuthToken(){

@@ -4208,22 +4208,31 @@ app.get('/api/vision/thumbnail/:eventId', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// 최근 캡처 썸네일 목록
+// 최근 캡처 썸네일 목록 — ?userId=&hours=&limit= 필터. [골] 화면단위 업무 타임라인용.
 app.get('/api/vision/thumbnails', async (req, res) => {
   try {
     const db = dbModule.getDb();
     if (!db?.query) return res.status(503).json({ error: 'DB not available' });
-    const limit = Math.min(parseInt(req.query.limit) || 20, 50);
+    const limit = Math.min(parseInt(req.query.limit) || 40, 120);
+    const hours = Math.min(parseInt(req.query.hours) || 24, 720);
+    const userId = req.query.userId || null;
+    const params = [new Date(Date.now() - hours * 3600 * 1000).toISOString()];
+    let where = `type = 'screen.analyzed' AND data_json->>'thumbnail' IS NOT NULL AND timestamp >= $1`;
+    if (userId) { params.push(userId); where += ` AND user_id = $${params.length}`; }
+    params.push(limit);
     const result = await db.query(
       `SELECT id, user_id, timestamp,
         data_json->>'app' as app, data_json->>'activity' as activity, data_json->>'screen' as screen,
-        CASE WHEN data_json->>'thumbnail' IS NOT NULL THEN true ELSE false END as has_thumbnail
-       FROM events WHERE type = 'screen.analyzed' AND data_json->>'thumbnail' IS NOT NULL
-       ORDER BY timestamp DESC LIMIT $1`,
-      [limit]
+        data_json->>'automationScore' as auto_score,
+        (data_json->'fields') as fields, data_json->>'automationHint' as hint
+       FROM events WHERE ${where}
+       ORDER BY timestamp DESC LIMIT $${params.length}`,
+      params
     );
     res.json({ count: result.rows.length, thumbnails: result.rows.map(r => ({
-      ...r, thumbnailUrl: `/api/vision/thumbnail/${r.id}`
+      id: r.id, userId: r.user_id, timestamp: r.timestamp, app: r.app, activity: r.activity,
+      screen: r.screen, automationScore: r.auto_score, hint: r.hint,
+      fields: r.fields || [], thumbnailUrl: `/api/vision/thumbnail/${r.id}`,
     })) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
