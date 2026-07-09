@@ -1272,3 +1272,15 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - **검증**: owner 24h에 4세션. 압권=[Chrome→Excel→nenova.exe] 출고분배가 한 절차로(메일확인→엑셀견적→nenova 콜수국 비율분배). [Excel 5단계]=ECOUNT 견적일괄등록. clickStepCount 0인건 24h창이 clickXY배포 이전캡처라 그럼(신규캡처부터 각step 좌표박힘).
 - **화면 세션뷰**: app.html 화면타임라인에 보기토글(썸네일/작업세션). 세션모드=직원선택→연속캡처를 시간순 step리스트(썸네일+시각+갭+📍좌표수+활동), 헤더에 앱흐름·nenovaAction·자동화·좌표배지. step썸네일클릭→상세(clickFields 좌표).
 - **파이프라인 현황**: 관찰 → #1 좌표융합✅ → #2 스티칭✅ → #3 실행(절차+좌표→pyautogui/PAD생성→dry-run) 미착수. script-generator.js(1083줄, 마운트됨)가 #3 소비처 후보(현재 하드코딩템플릿→실데이터 전환 필요).
+
+## 골 #3 실행엔진(dry-run 생성) — 완료·배포·검증 (2026-07-09)
+- **핵심 전환**: script-generator.js를 하드코딩 ACTION_TEMPLATES가 아니라 **스티칭 세션의 실데이터**로 생성.
+- **신규 POST /api/scripts/from-session**: body {session:{steps[]}} → dry-run pyautogui 생성+초안저장.
+  - step별 clickXY 있는 필드만 `plan_click(x,y)`, 값 있으면 `plan_type(val)`, humanRequired는 `human_stop()`.
+  - `DRY_RUN=True` 고정: 실제 클릭/입력 없이 계획만 print + 커서만 moveTo(클릭X). 실행은 기존 approve-run 게이트 경유(아직 어떤 데몬 실행기에도 미연결).
+  - 내부함수 `_generateFromSession(session)` (script-generator.js, /scan 라우트 직전).
+- **프론트**: app.html 화면타임라인>세션모드에 "🤖 이 절차로 스크립트 생성(dry-run)" 버튼(clickStepCount>0 세션만) + `openScriptPlan` 모달(단계/클릭/입력/사람확인 요약+스크립트+복사).
+- **검증(프로덕션)**: 빈body→400, 실세션→200 ok:true, plan_click(1727,294)+plan_type("202601")+human_stop 순서정확. 커밋 bd178df→16f2a44→e7a22c2.
+- **함정: prod generated_scripts.id SERIAL 기본값 유실** → 신규행 id=null 저장(PK였다면 에러났을것=nullable드리프트 증거). 수정=내 insert만 `id=COALESCE(MAX(id),0)+1` 명시할당 + `_ensureTables`에서 `DELETE WHERE id IS NULL` 배포당1회 청소. 기존 generate/batch insert(851/936)도 동일 잠재결함이나 이번엔 미수정(수술범위).
+- **파이프라인 현황**: 관찰→#1 좌표융합✅→#2 스티칭✅→#3 dry-run 생성✅. **남은건 실제 실행경로**(데몬에 rpa 커맨드 소비기: 화면위 클릭순서 오버레이/로그만, 실클릭X → 사람승인 → DRY_RUN=False). 직원PC 실행이라 별도 설계·승인 후.
+- **주의**: 데몬 자동업데이터가 로컬 `git reset --hard origin/main` 돌려 미push 로컬커밋 날림. 이번에도 bd178df 날아가 `git push origin <sha>:main`으로 복구+배포. 로컬커밋은 즉시 push할것.
