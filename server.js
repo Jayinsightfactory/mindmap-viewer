@@ -1217,17 +1217,20 @@ function _visionQueueTake(n) {
 // [골:실행좌표 융합] 호스트별 최근 클릭 링버퍼 — keyboard.chunk의 mousePositions를 담아뒀다가
 // screen.capture를 vision 큐에 넣을 때 직전 클릭들을 첨부한다(클릭 좌표는 캡처 이벤트가 아니라
 // keyboard.chunk에 실려 오므로 시점을 이어붙여야 vision이 "어느 필드를 클릭했나"를 판단 가능).
-if (!global._recentClicksByHost) global._recentClicksByHost = new Map(); // host → [{t,x,y,app,win}] (최근 30초·최대 40개)
-function _pushRecentClicks(host, positions) {
-  if (!host || !Array.isArray(positions) || !positions.length) return;
-  const arr = global._recentClicksByHost.get(host) || [];
+// ★userId로 키잉(2026-07-09 버그수정): keyboard.chunk는 data.hostname이 비어있고(undefined)
+// screen.capture는 'DESKTOP-...'로 채워져 있어 hostname으로 키잉하면 키가 안 맞아 클릭이 안 붙었음.
+// userId는 hook이 두 이벤트 모두에 확정(hookUserId)하므로 안정적 공통키.
+if (!global._recentClicksByUser) global._recentClicksByUser = new Map(); // userId → [{t,x,y,app,win}] (최근 30초·최대 40개)
+function _pushRecentClicks(uid, positions) {
+  if (!uid || !Array.isArray(positions) || !positions.length) return;
+  const arr = global._recentClicksByUser.get(uid) || [];
   for (const p of positions) if (p && typeof p.x === 'number' && typeof p.y === 'number') arr.push({ t: p.t || Date.now(), x: p.x, y: p.y, app: p.app, win: p.win });
   const cutoff = Date.now() - 30000;
   const trimmed = arr.filter(p => (p.t || 0) >= cutoff).slice(-40);
-  global._recentClicksByHost.set(host, trimmed);
+  global._recentClicksByUser.set(uid, trimmed);
 }
-function _clicksForCapture(host, captureTsMs) {
-  const arr = global._recentClicksByHost.get(host) || [];
+function _clicksForCapture(uid, captureTsMs) {
+  const arr = global._recentClicksByUser.get(uid) || [];
   const lo = captureTsMs - 12000; // 캡처 직전 12초 내 클릭만(이 화면에서 한 클릭일 가능성)
   return arr.filter(p => (p.t || 0) >= lo && (p.t || 0) <= captureTsMs + 2000).slice(-8);
 }
@@ -3549,7 +3552,7 @@ app.post('/api/hook', async (req, res) => {
     // (같은 배치에 캡처가 함께 와도 직전 클릭을 붙일 수 있게 — 아래 pad_mouse_map 루프는 읽기만).
     for (const ev of events) {
       if (ev.type === 'keyboard.chunk' && Array.isArray(ev.data?.mousePositions)) {
-        _pushRecentClicks(ev.data?.hostname || hookHostname, ev.data.mousePositions);
+        _pushRecentClicks(ev.userId || hookUserId, ev.data.mousePositions);
       }
     }
 
@@ -3565,7 +3568,7 @@ app.post('/api/hook', async (req, res) => {
         // 이미지를 Vision 큐에 보관 (Railway 워커가 직접 처리)
         // [골:실행좌표 융합] 캡처 직전 12초 내 이 호스트의 실제 클릭 좌표를 첨부 → vision이
         // "어느 필드/버튼을 클릭했나"를 판단해 fields[].clickXY로 되돌려줌(pyautogui 실행 좌표).
-        const _capClicks = _clicksForCapture(ev.data.hostname || '', new Date(ev.timestamp).getTime());
+        const _capClicks = _clicksForCapture(ev.userId || hookUserId, new Date(ev.timestamp).getTime());
         // 이미지 사이즈 체크 — 5MB 초과 base64는 OOM 위험, 스킵
         if (cachedImage && cachedImage.length > 5_000_000) {
           console.warn(`[vision-queue] 이미지 너무 큼 (${Math.round(cachedImage.length/1024)}KB) — 스킵`);
@@ -4123,10 +4126,11 @@ app.get('/api/vision/queue', (req, res) => {
 // 큐 상태만 확인 (소비하지 않음) — 진단용
 app.get('/api/vision/queue-peek', (req, res) => {
   const items = [];
-  for (const [uid, q] of global._visionQueueByUser) for (const i of q) items.push({ id: i.id, app: i.app, hostname: i.hostname, userId: uid });
+  for (const [uid, q] of global._visionQueueByUser) for (const i of q) items.push({ id: i.id, app: i.app, hostname: i.hostname, userId: uid, clicks: (i.recentClicks || []).length });
   res.json({
     total: items.length,
     byUser: [...global._visionQueueByUser.entries()].map(([userId, q]) => ({ userId, count: q.length })),
+    clickBuf: [...(global._recentClicksByUser || new Map()).entries()].map(([uid, arr]) => ({ userId: uid, buffered: arr.length })),  // [골:실행좌표융합 진단] 링버퍼 상태
     items,
   });
 });
