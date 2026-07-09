@@ -1301,3 +1301,12 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - **수정**: GET /api/admin/capture-health — screen-selftest 이벤트(신뢰 도착)로 PC별 verdict(OK/OK_PS/INSTALLING/BLACK) 판정. via pil 도착=Python OK 신호. 커밋 697f3b1(+d2d43b5 timestamp::timestamptz 캐스팅).
 - **실태(6대, 24h)**: OK(pil) owner/강현우/현욱 3 · OK_PS(폴백실화면) 설연주/김빛나 2 · INSTALLING L0C2IOT 1 · **BLACK 0**.
 - **잔여관찰**: L0C2IOT(로스터 밖 신규 hostname?) 자동설치 진행중—수렴 확인 필요. neonva/nenova는 PS폴백 실화면이라 정상이나 PIL이면 더 나음. 완료보고 경로 신뢰성은 후속.
+
+## 근본원인: 직원 화면분석이 전부 owner로 오귀속 (2026-07-09 해결·포워드)
+- **사용자 지적**: "화면데이터 들어오는 사람 내 PC밖에 없다". 내 초기 "정상"은 데몬 자가진단(screen-selftest) 기준이라 오판.
+- **실측(admin raw-events/pc-list)**: 6대 전부 screen.capture+분석 유입(설연주 카톡발주·강현우 발주표 리치판독). 그러나 user_id 컬럼 보면 각 직원 hostname이 →MNH03H73(owner)로 샌 행 병존.
+- **근본원인**: owner PC CLI 비전워커(bin/vision-worker.js:355·362)가 전 직원 캡처 분석후 owner 토큰으로 /api/hook 재제출 → hookUserId=owner 스탬핑. 캡처는 X-Device-Id로 정상귀속되나 분석 재제출만 누락.
+- **수정(server.js /api/hook, e0ab353)**: 삽입루프에서 screen.analyzed는 event.data.hostname 실사용자로 재귀속(pc_links LOWER→dominant 폴백, 30분캐시). 자동배포·워커재시작 불필요.
+- **검증**: data.hostname=neonva 테스트 analyzed→MNIAFICB(설연주) 귀속 OK.
+- **잔여**: 과거 owner쏠림 데이터(오늘분 포함) 배치 UPDATE 재귀속 필요(대량UPDATE 배치필수). keyboard.chunk 설연주/강현우 0건=uiohook死 별개.
+- 조회: /api/admin/pc-list, /api/admin/capture-health, /api/admin/raw-events?type=.
