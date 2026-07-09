@@ -1220,19 +1220,24 @@ function _visionQueueTake(n) {
 // ★userId로 키잉(2026-07-09 버그수정): keyboard.chunk는 data.hostname이 비어있고(undefined)
 // screen.capture는 'DESKTOP-...'로 채워져 있어 hostname으로 키잉하면 키가 안 맞아 클릭이 안 붙었음.
 // userId는 hook이 두 이벤트 모두에 확정(hookUserId)하므로 안정적 공통키.
-if (!global._recentClicksByUser) global._recentClicksByUser = new Map(); // userId → [{t,x,y,app,win}] (최근 30초·최대 40개)
+// ★보존 15분(2026-07-09): 캡처는 클릭 순간 즉시 큐잉되는데 그 클릭을 담은 keyboard.chunk는
+// 나중에 flush돼 도착함(캡처가 클릭보다 먼저 옴). 그래서 클릭 첨부는 push가 아니라 워커가 큐를
+// 가져가는 fetch 시점(/api/vision/queue)에 함 — 그땐 클릭이 다 도착해 있음. 버퍼는 그때까지 보존.
+if (!global._recentClicksByUser) global._recentClicksByUser = new Map(); // userId → [{t,x,y,app,win}] (최근 15분·최대 300개)
+const _CLICK_RETAIN_MS = 15 * 60 * 1000;
 function _pushRecentClicks(uid, positions) {
   if (!uid || !Array.isArray(positions) || !positions.length) return;
   const arr = global._recentClicksByUser.get(uid) || [];
   for (const p of positions) if (p && typeof p.x === 'number' && typeof p.y === 'number') arr.push({ t: p.t || Date.now(), x: p.x, y: p.y, app: p.app, win: p.win });
-  const cutoff = Date.now() - 30000;
-  const trimmed = arr.filter(p => (p.t || 0) >= cutoff).slice(-40);
+  const cutoff = Date.now() - _CLICK_RETAIN_MS;
+  const trimmed = arr.filter(p => (p.t || 0) >= cutoff).slice(-300);
   global._recentClicksByUser.set(uid, trimmed);
 }
 function _clicksForCapture(uid, captureTsMs) {
   const arr = global._recentClicksByUser.get(uid) || [];
-  const lo = captureTsMs - 12000; // 캡처 직전 12초 내 클릭만(이 화면에서 한 클릭일 가능성)
-  return arr.filter(p => (p.t || 0) >= lo && (p.t || 0) <= captureTsMs + 2000).slice(-8);
+  // 캡처 전후 창: 화면을 연 클릭(직전)~캡처 직후 반응클릭까지. 첫 화면 클릭이 캡처보다 앞설 수도, 뒤일 수도.
+  const lo = captureTsMs - 15000, hi = captureTsMs + 8000;
+  return arr.filter(p => (p.t || 0) >= lo && (p.t || 0) <= hi).slice(-8);
 }
 
 // 힙 압력 모니터링 (460MB 힙 기준 — Railway Hobby 512MB 내 안정 운영)
@@ -4120,13 +4125,21 @@ app.post('/api/auto-fix/reset-cooldown', (req, res) => {
 app.get('/api/vision/queue', (req, res) => {
   const n = Math.min(parseInt(req.query.n) || 10, 40);
   const batch = _visionQueueTake(n);
+  // ★[골:실행좌표융합] fetch 시점에 클릭 첨부 — 이때는 캡처 순간의 클릭을 담은 keyboard.chunk가
+  // 이미 다 도착해 링버퍼에 있음(push 시점엔 캡처가 클릭보다 먼저라 비어있었음).
+  for (const item of batch) {
+    if (item && !(item.recentClicks && item.recentClicks.length)) {
+      item.recentClicks = _clicksForCapture(item.userId, new Date(item.ts).getTime());
+    }
+  }
   res.json({ pending: _visionQueueTotal(), batch });
 });
 
 // 큐 상태만 확인 (소비하지 않음) — 진단용
 app.get('/api/vision/queue-peek', (req, res) => {
   const items = [];
-  for (const [uid, q] of global._visionQueueByUser) for (const i of q) items.push({ id: i.id, app: i.app, hostname: i.hostname, userId: uid, clicks: (i.recentClicks || []).length });
+  // clicks = 지금 fetch하면 붙을 클릭 수(진단용, 소비 안 함)
+  for (const [uid, q] of global._visionQueueByUser) for (const i of q) items.push({ id: i.id, app: i.app, hostname: i.hostname, userId: uid, clicks: _clicksForCapture(uid, new Date(i.ts).getTime()).length });
   res.json({
     total: items.length,
     byUser: [...global._visionQueueByUser.entries()].map(([userId, q]) => ({ userId, count: q.length })),
