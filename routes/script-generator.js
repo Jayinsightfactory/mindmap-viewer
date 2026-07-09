@@ -50,6 +50,9 @@ function createScriptGenerator({ getDb }) {
     `);
     await db.query(`CREATE INDEX IF NOT EXISTS idx_gs_action ON generated_scripts(action_type)`);
     await db.query(`CREATE INDEX IF NOT EXISTS idx_gs_status ON generated_scripts(status)`);
+    // prod SERIAL 기본값 유실로 생긴 id=null 행은 deploy/approve/delete가 모두 id로 동작하므로
+    // 영구히 타겟 불가한 깨진 초안 → 배포당 1회 정리(정상행은 id가 있어 영향 없음).
+    try { await db.query(`DELETE FROM generated_scripts WHERE id IS NULL`); } catch (_) {}
     _tablesReady = true;
   }
 
