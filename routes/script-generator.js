@@ -676,9 +676,11 @@ function createScriptGenerator({ getDb }) {
         await _ensureTables(db);
         const name = req.body?.name || `관찰절차:${summary.appFlow}`.slice(0, 80);
         const srcIds = session.steps.map(s => (s.thumbnailUrl || '').split('/').pop()).filter(Boolean);
+        // 프로덕션 테이블의 id SERIAL 기본값이 유실돼 있어(신규행 id=null) 명시 할당.
+        // admin 저빈도 트리거라 max+1 레이스는 무시 가능.
         const { rows } = await db.query(`
-          INSERT INTO generated_scripts (name, action_type, script_type, script_content, target_app, target_screen, source_event_ids, status)
-          VALUES ($1,$2,'pyautogui',$3,$4,$5,$6,'draft') RETURNING id, name, status`,
+          INSERT INTO generated_scripts (id, name, action_type, script_type, script_content, target_app, target_screen, source_event_ids, status)
+          VALUES (COALESCE((SELECT MAX(id) FROM generated_scripts),0)+1, $1,$2,'pyautogui',$3,$4,$5,$6,'draft') RETURNING id, name, status`,
           [name, (summary.nenovaActions[0] || summary.appFlow || '관찰절차'), script,
            (session.steps[0]?.app || 'nenova'), (session.steps[session.steps.length - 1]?.screen || null), srcIds]);
         saved = rows[0];
