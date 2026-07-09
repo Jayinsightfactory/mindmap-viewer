@@ -1370,7 +1370,7 @@ app.get('/api/admin/capture-health', async (req, res) => {
     const hours = Math.min(parseInt(req.query.hours) || 24, 168);
     const { rows } = await pool.query(
       `SELECT timestamp, data_json FROM events
-       WHERE type='daemon.screendiag' AND timestamp > NOW() - ($1 || ' hours')::interval
+       WHERE type='daemon.screendiag' AND timestamp::timestamptz > NOW() - ($1 || ' hours')::interval
        ORDER BY timestamp DESC LIMIT 600`, [String(hours)]);
     const byHost = {};
     for (const r of rows) {
