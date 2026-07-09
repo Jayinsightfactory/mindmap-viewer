@@ -552,6 +552,22 @@ app.get('/api/install-open.bat', (req, res) => {
   res.setHeader('Content-Type', 'application/x-bat');
   res.sendFile(path.join(__dirname, 'setup', 'install-open.bat'));
 });
+// 2026-07-09: 직원 배포 안내 페이지 (설치버튼+기능목록+설치법). 짧은 공유 링크 /guide.
+app.get(['/guide', '/install-guide'], (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'install-guide.html'));
+});
+// 설치 버전 배지용 — install.ps1 상단 마커에서 실제 버전 파싱(캐시)
+let _installVer = null;
+app.get('/api/setup/version', (req, res) => {
+  try {
+    if (!_installVer) {
+      const head = fs.readFileSync(path.join(__dirname, 'setup', 'install.ps1'), 'utf8').slice(0, 200);
+      const m = head.match(/Installer\s+(v\d+)/i);
+      _installVer = m ? m[1] : 'v8';
+    }
+    res.json({ version: _installVer, features: ['screen', 'keyboard', 'mouse', 'self-heal', 'av-exception', 'lifeline'] });
+  } catch (e) { res.json({ version: 'v8' }); }
+});
 // 2026-06-09: 최종 설치 (fix daemon 포함) — bat 단독 다운로드
 app.get('/bat-final', (req, res) => {
   res.setHeader('Content-Disposition', 'attachment; filename="orbit-install-final.bat"');

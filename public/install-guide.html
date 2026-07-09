@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MOYI 업무 학습 도구 — 설치 안내</title>
+<style>
+  :root{--bg:#161719;--panel:#1e2024;--panel2:#26282e;--border:#2c2f36;--txt:#eceef1;--txt2:#b9bcc2;--muted:#7e828a;--accent:#5b9dff;--green:#2e9e6b}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--txt);font-family:-apple-system,system-ui,'Segoe UI','Malgun Gothic',sans-serif;line-height:1.6;padding:0 16px}
+  .wrap{max-width:680px;margin:0 auto;padding:40px 0 60px}
+  .logo{font-weight:800;font-size:26px;letter-spacing:.5px}.logo b{color:var(--accent)}
+  .lead{color:var(--muted);font-size:14px;margin-top:6px}
+  .hero{background:linear-gradient(160deg,#20242c,#1a1c20);border:1px solid var(--border);border-radius:18px;padding:28px 24px;margin:26px 0;text-align:center}
+  .hero h1{font-size:22px;font-weight:800;margin-bottom:8px}
+  .hero p{color:var(--txt2);font-size:14px;margin-bottom:20px}
+  .btn{display:inline-block;background:var(--accent);color:#0f1115;font-weight:800;border:none;border-radius:12px;padding:15px 34px;font-size:17px;cursor:pointer;text-decoration:none;transition:transform .08s}
+  .btn:active{transform:scale(.97)}
+  .btn.sec{background:none;border:1px solid var(--border);color:var(--txt2);font-weight:600;font-size:13px;padding:9px 16px;margin-top:14px}
+  .ver{display:inline-block;margin-top:14px;font-size:12px;color:var(--muted);background:var(--panel2);border:1px solid var(--border);padding:3px 10px;border-radius:20px}
+  h2{font-size:15px;margin:30px 0 12px;color:var(--txt)}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin-bottom:14px}
+  .feat{display:flex;gap:12px;padding:10px 0;border-bottom:1px dashed var(--border)}
+  .feat:last-child{border-bottom:none}
+  .feat .i{font-size:20px;flex:none;width:26px;text-align:center}
+  .feat b{display:block;font-size:14px}.feat span{color:var(--muted);font-size:13px}
+  ol.steps{list-style:none;counter-reset:s}
+  ol.steps li{counter-increment:s;position:relative;padding:12px 0 12px 44px;border-bottom:1px dashed var(--border);font-size:14px}
+  ol.steps li:last-child{border-bottom:none}
+  ol.steps li::before{content:counter(s);position:absolute;left:0;top:10px;width:30px;height:30px;background:var(--accent);color:#0f1115;font-weight:800;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px}
+  ol.steps li b{color:var(--accent)}
+  .note{color:var(--txt2);font-size:13px}
+  .note code{background:var(--panel2);padding:1px 6px;border-radius:5px;font-size:12px;color:var(--accent)}
+  .warn{background:#231f14;border:1px solid #4a3c16;border-radius:12px;padding:14px 16px;margin-top:14px;font-size:13px;color:#e6c25a}
+  .foot{text-align:center;color:var(--muted);font-size:12px;margin-top:34px}
+  .copied{color:var(--green)!important}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="logo">M<b>O</b>YI</div>
+  <div class="lead">업무 학습 도구 — 설치 안내</div>
+
+  <div class="hero">
+    <h1>1분이면 설치 완료</h1>
+    <p>버튼을 누르고 이름만 입력하면 끝. 나머지는 자동입니다.</p>
+    <a class="btn" href="/install" download>⬇ 설치 시작 (Windows)</a>
+    <div><button class="btn sec" id="copyLink">🔗 이 설치 링크 복사</button></div>
+    <div class="ver" id="verBadge">전체 기능 포함 · Installer v8</div>
+  </div>
+
+  <h2>설치되는 기능 (전체)</h2>
+  <div class="card">
+    <div class="feat"><div class="i">🖥️</div><div><b>화면 활동 자동 기록 + AI 분석</b><span>어떤 화면에서 무슨 작업을 하는지 AI가 이해</span></div></div>
+    <div class="feat"><div class="i">⌨️</div><div><b>키보드 입력 학습 (한글 포함)</b><span>업무에 입력하는 내용을 배워 자동화 재료로</span></div></div>
+    <div class="feat"><div class="i">🖱️</div><div><b>마우스 동선·클릭 좌표</b><span>어디를 누르는지 학습 → 반복 작업 자동화 지점 파악</span></div></div>
+    <div class="feat"><div class="i">🔁</div><div><b>5중 자동 복구</b><span>꺼지거나 멈춰도 스스로 다시 시작</span></div></div>
+    <div class="feat"><div class="i">🛡️</div><div><b>백신 자동 예외 등록</b><span>알약·Windows Defender 충돌 자동 방지</span></div></div>
+    <div class="feat"><div class="i">💓</div><div><b>라이프라인 감시 서비스</b><span>문제 생기면 자동 재설치까지 하는 감시 서비스</span></div></div>
+  </div>
+
+  <h2>설치 방법</h2>
+  <div class="card">
+    <ol class="steps">
+      <li>위 <b>설치 시작</b> 버튼 → <code>orbit-install.bat</code> 다운로드</li>
+      <li>다운로드한 파일 <b>실행</b> → 관리자 권한 창에서 <b>"예"</b> 클릭</li>
+      <li>본인 <b>이름 입력</b> (계정이 자동으로 연결됩니다)</li>
+      <li>자동 설치·검증이 끝나면 <b>창을 닫으면 완료</b></li>
+    </ol>
+  </div>
+
+  <div class="warn">
+    ⚠️ 설치 중 백신/SmartScreen 경고가 뜨면 <b>"허용 / 추가 정보 → 실행 / 신뢰"</b>를 눌러주세요.
+    회사 승인 업무 도구라 안전하며, 백신 예외는 설치 과정에서 자동 등록됩니다.
+  </div>
+
+  <h2 style="margin-top:26px">자주 묻는 것</h2>
+  <div class="card note">
+    <p style="margin-bottom:10px">• <b>설치 후 아무 창도 안 떠요</b> — 정상입니다. 백그라운드에서 조용히 동작하며, 데이터는 몇 분 뒤부터 반영됩니다.</p>
+    <p style="margin-bottom:10px">• <b>이름을 잘못 입력했어요</b> — 다시 설치 버튼을 눌러 재실행하면 됩니다(덮어쓰기).</p>
+    <p>• <b>재설치해도 이전 학습값 유지</b> — 계정 기준으로 자동 복원됩니다.</p>
+  </div>
+
+  <div class="foot">설치가 안 되거나 궁금하면 관리자에게 문의하세요. · MOYI</div>
+</div>
+
+<script>
+  // 설치 링크 복사
+  document.getElementById('copyLink').addEventListener('click', function(){
+    var url = location.origin + '/install';
+    navigator.clipboard.writeText(url).then(function(){
+      var b = document.getElementById('copyLink');
+      b.textContent = '✓ 복사됨 — 붙여넣어 공유하세요';
+      b.classList.add('copied');
+      setTimeout(function(){ b.textContent = '🔗 이 설치 링크 복사'; b.classList.remove('copied'); }, 2500);
+    });
+  });
+  // 서버가 알려주는 실제 설치 버전으로 배지 갱신(있으면)
+  fetch('/api/setup/version').then(r=>r.ok?r.json():null).then(function(d){
+    if(d && d.version){ document.getElementById('verBadge').textContent = '전체 기능 포함 · Installer ' + d.version; }
+  }).catch(function(){});
+</script>
+</body>
+</html>

@@ -925,6 +925,13 @@ if ($fail -eq 0 -and $guidedVerified) {
 }
 Write-Host "  ============================================" -ForegroundColor Cyan
 Write-Host ""
+Write-Host "  설치된 전체 기능:" -ForegroundColor Cyan
+Write-Host "    - 화면 활동 기록 + AI 분석" -ForegroundColor Gray
+Write-Host "    - 키보드 입력 학습 (한글 포함)" -ForegroundColor Gray
+Write-Host "    - 마우스 동선/클릭 좌표 수집" -ForegroundColor Gray
+Write-Host "    - 5중 자동 복구 + 라이프라인 감시 서비스" -ForegroundColor Gray
+Write-Host "    - 백신 자동 예외 (알약/Defender)" -ForegroundColor Gray
+Write-Host ""
 Write-Host "  PC: $env:COMPUTERNAME" -ForegroundColor Gray
 Write-Host "  서버: $REMOTE" -ForegroundColor Gray
 Write-Host "  로그: $LOG_FILE" -ForegroundColor Gray
