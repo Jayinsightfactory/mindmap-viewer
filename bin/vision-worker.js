@@ -38,6 +38,31 @@ const USE_CLI = !ANTHROPIC_KEY && !!CLAUDE_CLI;
 const TEMP_DIR = path.join(os.tmpdir(), 'orbit-vision');
 try { fs.mkdirSync(TEMP_DIR, { recursive: true }); } catch {}
 
+// [화면 타임라인] 썸네일을 base64 자르기(→화면 상단만 보임) 대신 전체 화면을 축소해 저장.
+// owner PC(Windows)의 System.Drawing으로 폭 900px JPEG로 리사이즈 → 전체 화면이 다 보이면서 작음.
+// 실패 시 기존 방식(substring) 폴백. execSync는 무겁지만 캡처당 1회라 감당 가능.
+function _makeThumb(base64) {
+  try {
+    if (!base64 || base64.length < 2000) return (base64 || '').substring(0, 100000);
+    const inP = path.join(TEMP_DIR, `thin-${Date.now()}-${Math.floor(Math.random()*1e6)}.png`);
+    const outP = inP.replace('.png', '.jpg');
+    fs.writeFileSync(inP, Buffer.from(base64, 'base64'));
+    const ps = `Add-Type -AssemblyName System.Drawing; `
+      + `$img=[System.Drawing.Image]::FromFile('${inP}'); `
+      + `$w=900; $h=[int]($img.Height*$w/$img.Width); `
+      + `$bmp=New-Object System.Drawing.Bitmap($w,$h); $g=[System.Drawing.Graphics]::FromImage($bmp); `
+      + `$g.InterpolationMode='HighQualityBicubic'; $g.DrawImage($img,0,0,$w,$h); `
+      + `$eps=New-Object System.Drawing.Imaging.EncoderParameters(1); `
+      + `$q=[System.Drawing.Imaging.Encoder]::Quality; $eps.Param[0]=New-Object System.Drawing.Imaging.EncoderParameter($q,[long]62); `
+      + `$codec=[System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders()|?{$_.MimeType -eq 'image/jpeg'}; `
+      + `$bmp.Save('${outP}',$codec,$eps); $img.Dispose(); $bmp.Dispose()`;
+    execSync(`powershell -NoProfile -NonInteractive -Command "${ps.replace(/"/g,'\\"')}"`, { timeout: 15000, windowsHide: true, stdio: 'pipe' });
+    const out = fs.readFileSync(outP).toString('base64');
+    try { fs.unlinkSync(inP); fs.unlinkSync(outP); } catch {}
+    return out.length ? out : base64.substring(0, 100000);
+  } catch { return (base64 || '').substring(0, 100000); }
+}
+
 // [2026-06-15] 야간 배치 모드(--night): 낮엔 큐 이미지를 디스크에 보관만(CLI 비용 0),
 // 19:00~08:00에만 CLI 분석. owner PC를 켜두고 퇴근 → 구독한도/업무시간 충돌 없이 야간 처리.
 const NIGHT_MODE = process.argv.includes('--night');
@@ -324,7 +349,7 @@ function sendToServer(cap, analysis, base64Thumbnail) {
   // 썸네일 포함 (100KB 이하로 리사이즈 — 원본의 처음 부분)
   if (base64Thumbnail) {
     // base64 이미지의 앞 100KB만 전송 (썸네일 용도)
-    eventData.thumbnail = base64Thumbnail.substring(0, 100000);
+    eventData.thumbnail = _makeThumb(base64Thumbnail);  // 전체 화면 축소(잘라내기 아님)
   }
   const payload = JSON.stringify({ events:[{
     id:`vision-${Date.now()}-${cap.id.substring(0,6)}`, type:'screen.analyzed', source:'vision-worker',
@@ -564,7 +589,7 @@ async function processServerQueue() {
             ...result,
             app: result.app || item.app || '',
             // 썸네일 (100KB 이하 — 관리자 대시보드 표시용)
-            thumbnail: item.imageBase64 ? item.imageBase64.substring(0, 100000) : undefined,
+            thumbnail: item.imageBase64 ? _makeThumb(item.imageBase64) : undefined,  // 전체 화면 축소
           },
         }] });
 

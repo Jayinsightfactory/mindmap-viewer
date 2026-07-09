@@ -4202,7 +4202,9 @@ app.get('/api/vision/thumbnail/:eventId', async (req, res) => {
     const thumb = result.rows[0]?.thumb;
     if (!thumb) return res.status(404).json({ error: 'thumbnail not found' });
     const buf = Buffer.from(thumb, 'base64');
-    res.setHeader('Content-Type', 'image/png');
+    // 포맷 감지: 구 썸네일=PNG(0x89504E47), 신 썸네일=JPEG(0xFFD8) — magic byte로 Content-Type 결정
+    const isJpeg = buf.length > 2 && buf[0] === 0xFF && buf[1] === 0xD8;
+    res.setHeader('Content-Type', isJpeg ? 'image/jpeg' : 'image/png');
     res.setHeader('Cache-Control', 'public, max-age=86400');
     res.send(buf);
   } catch (e) { res.status(500).json({ error: e.message }); }
