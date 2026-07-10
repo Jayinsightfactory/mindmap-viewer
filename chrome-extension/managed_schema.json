@@ -1,0 +1,13 @@
+{
+  "type": "object",
+  "properties": {
+    "orbit_token": {
+      "title": "Orbit 인증 토큰 (직원 계정 귀속용)",
+      "type": "string"
+    },
+    "orbit_server_url": {
+      "title": "Orbit 서버 URL",
+      "type": "string"
+    }
+  }
+}
