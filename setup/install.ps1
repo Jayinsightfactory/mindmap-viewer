@@ -912,6 +912,38 @@ if ($serverOk) {
   } catch {}
 }
 
+# ── 브라우저 확장 강제설치 (Chrome + Edge, 골모드 웹 work-step 수집) ──────────
+# ExtensionInstallForcelist 정책 = 다음 브라우저 실행 시 자동 설치·고정(사용자 못 끔).
+# EXT_ID: 확장 pack 후 확정되는 32자 ID. 비어있으면 스킵(패킹 전).
+$EXT_ID  = "nbdgofhdhgieeadliokgoifhdbhbnfea"   # manifest key로 고정된 확장 ID
+$EXT_URL = "$REMOTE/chrome-extension/updates.xml"
+if ($EXT_ID -and $EXT_ID.Length -ge 30) {
+  Write-Host "  [확장] Chrome/Edge 강제설치 + 토큰 주입..." -ForegroundColor Cyan
+  # 이 PC 직원 토큰(귀속용) — 방금 쓴 .orbit-config.json에서 읽음
+  $extToken = ""
+  try { $extToken = (Get-Content "$env:USERPROFILE\.orbit-config.json" -Raw | ConvertFrom-Json).token } catch {}
+  foreach ($vendor in @(
+      @{ n='Chrome'; k='HKLM:\SOFTWARE\Policies\Google\Chrome' },
+      @{ n='Edge';   k='HKLM:\SOFTWARE\Policies\Microsoft\Edge' })) {
+    try {
+      # 1) 강제설치 목록 (기존 항목 유지, 우리 확장만 1번 슬롯 upsert)
+      $fl = Join-Path $vendor.k 'ExtensionInstallForcelist'
+      New-Item -Path $fl -Force -ErrorAction SilentlyContinue | Out-Null
+      New-ItemProperty -Path $fl -Name '1' -Value "$EXT_ID;$EXT_URL" -PropertyType String -Force -ErrorAction SilentlyContinue | Out-Null
+      # 2) 관리형 스토리지 정책 = 직원 토큰+서버 (확장이 chrome.storage.managed로 읽어 자동 귀속)
+      if ($extToken) {
+        $pol = Join-Path $vendor.k ("3rdparty\extensions\$EXT_ID\policy")
+        New-Item -Path $pol -Force -ErrorAction SilentlyContinue | Out-Null
+        New-ItemProperty -Path $pol -Name 'orbit_token'      -Value $extToken -PropertyType String -Force -ErrorAction SilentlyContinue | Out-Null
+        New-ItemProperty -Path $pol -Name 'orbit_server_url' -Value $REMOTE    -PropertyType String -Force -ErrorAction SilentlyContinue | Out-Null
+      }
+      Write-Host "    $($vendor.n) 정책 등록 완료$(if($extToken){' (+토큰)'})" -ForegroundColor Green
+    } catch { Write-Host "    $($vendor.n) 정책 등록 실패: $($_.Exception.Message.Split([char]10)[0])" -ForegroundColor DarkGray }
+  }
+} else {
+  Write-Host "  [확장] EXT_ID 미설정 — 브라우저 확장 강제설치 스킵 (패킹 후 활성)" -ForegroundColor DarkGray
+}
+
 # Summary
 Write-Host ""
 Write-Host "  ============================================" -ForegroundColor Cyan

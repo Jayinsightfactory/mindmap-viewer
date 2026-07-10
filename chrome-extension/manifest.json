@@ -1,8 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "Orbit — AI 대화 수집기",
-  "version": "2.0.0",
-  "description": "ChatGPT, Claude, Gemini 등 AI 대화를 자동 수집하여 3D 마인드맵으로 시각화합니다. 데이터는 로컬 우선 저장.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAzp1MmF1IOx2cPENL8auevyUzSCzBK1PYInv/Eq28aJ8omeZiubaqnWNWOnG2fXPcFj4w15xQJmpUr93KCNHl2oPdPbFt7hR8JrEfBY9qKU2Xznr4+yLJD3Nh9LKaBM/VP+KE079z+Hn1w0jZLEg3OEqxzjBtxZx0d+I6Tk0H2JsjAFgTetqTAxcM2RyBCNngfnTIRJghRKtRuYizVx6Hd/dWJK0yoRrBL1+TvXW7qb7ODyo8WdGakmVCPuSjQa1GFiJW1wgpyXzEzQoEx5JLxIxNQ3T2SwDWtxWHrsEtR0fwPx02ekQML+kMwBmxoksdEwuCnKqjN5ZOBZzJ1M0KOQIDAQAB",
+  "name": "Orbit — 업무 학습 수집기",
+  "version": "2.1.0",
+  "description": "업무 웹앱(ERP 등) 작업과 AI 대화를 자동 수집하여 업무 절차를 학습합니다. 업무 도메인 한정, 데이터는 로컬 우선.",
   "homepage_url": "https://github.com/Jayinsightfactory/mindmap-viewer",
   "icons": {
     "16": "icons/icon16.png",
@@ -10,6 +11,7 @@
     "128": "icons/icon128.png"
   },
   "permissions": ["tabs", "storage", "alarms", "scripting"],
+  "storage": { "managed_schema": "managed_schema.json" },
   "host_permissions": [
     "http://localhost/*",
     "https://*.up.railway.app/*",
@@ -20,7 +22,9 @@
     "https://www.perplexity.ai/*",
     "https://perplexity.ai/*",
     "https://www.bing.com/*",
-    "https://copilot.microsoft.com/*"
+    "https://copilot.microsoft.com/*",
+    "https://*.ecount.com/*",
+    "https://*.nenovaweb.com/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -39,6 +43,14 @@
         "https://www.bing.com/search*"
       ],
       "js": ["content-ai.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://*.ecount.com/*",
+        "https://*.nenovaweb.com/*"
+      ],
+      "js": ["content-work.js"],
       "run_at": "document_idle"
     }
   ],

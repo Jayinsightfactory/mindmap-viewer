@@ -14,17 +14,20 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-const DEFAULT_SERVER_URL = 'https://mindmap-viewer-production.up.railway.app';
+const DEFAULT_SERVER_URL = 'https://mindmap-viewer-production-adb2.up.railway.app';
 const MAX_STORED   = 500;        // chrome.storage에 최대 보관 대화 수
 const RETRY_ALARM  = 'orbit-retry';
 const MIN_STAY_MS  = 5000;       // 탭 방문: 5초 이상 머문 페이지만
 
 // ── 서버 설정 (URL + 인증 토큰) ──────────────────────────────────────────────
 async function getServerConfig() {
-  const { orbit_server_url, orbit_token } = await chrome.storage.local.get(['orbit_server_url', 'orbit_token']);
+  const local = await chrome.storage.local.get(['orbit_server_url', 'orbit_token']);
+  // 관리형 스토리지(install.ps1이 레지스트리 정책으로 주입한 직원 토큰) 우선 — 전 직원 자동 귀속
+  let managed = {};
+  try { managed = await chrome.storage.managed.get(['orbit_server_url', 'orbit_token']); } catch (_) {}
   return {
-    url:   (orbit_server_url || DEFAULT_SERVER_URL).replace(/\/+$/, ''),
-    token: orbit_token || '',
+    url:   (managed.orbit_server_url || local.orbit_server_url || DEFAULT_SERVER_URL).replace(/\/+$/, ''),
+    token: managed.orbit_token || local.orbit_token || '',
   };
 }
 
@@ -68,11 +71,37 @@ async function sendBrowserActivity(url, title, stayMs) {
   } catch {}
 }
 
+// ── 골모드: work-step → 서버 /api/hook (임의 타입 수용, userId는 토큰으로 귀속) ──
+async function sendWorkStep(step) {
+  const { enabled } = await chrome.storage.local.get(['enabled']);
+  if (enabled === false) return;
+  const config = await getServerConfig();
+  const headers = { 'Content-Type': 'application/json' };
+  if (config.token) headers['Authorization'] = `Bearer ${config.token}`;
+  const ev = {
+    id: 'ws-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7),
+    type: 'work.step', source: 'ext-work', sessionId: 'web',
+    timestamp: step.t || new Date().toISOString(),
+    data: step,
+  };
+  try {
+    await fetch(`${config.url}/api/hook`, {
+      method: 'POST', headers,
+      body: JSON.stringify({ events: [ev] }),
+    });
+  } catch {}
+}
+
 // ── content-ai.js 메시지 수신 ─────────────────────────────────────────────────
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === 'ai_conversation') {
     handleConversation(msg).then(() => sendResponse({ ok: true })).catch(console.error);
     return true; // 비동기 응답 필수
+  }
+  // 골모드: 업무 웹앱 work-step (content-work.js) → 서버 /api/hook (type='work.step')
+  if (msg.type === 'orbit-work-step' && msg.step) {
+    sendWorkStep(msg.step).then(() => sendResponse({ ok: true })).catch(() => sendResponse({ ok: false }));
+    return true;
   }
   if (msg.type === 'get_conversations') {
     getStoredConversations().then(sendResponse);

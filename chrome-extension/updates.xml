@@ -1,0 +1,11 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!-- Chromium 자가호스팅 확장 업데이트 매니페스트 (Chrome + Edge 공용).
+     pack 후 appid를 실제 확장 ID로, codebase는 서버에 올린 .crx 경로로 채운다.
+     ExtensionInstallForcelist의 update_url이 이 파일을 가리킨다. -->
+<gupdate xmlns='http://www.google.com/update2/response' protocol='2.0'>
+  <app appid='nbdgofhdhgieeadliokgoifhdbhbnfea'>
+    <updatecheck
+      codebase='https://mindmap-viewer-production-adb2.up.railway.app/orbit-work.crx'
+      version='2.1.0' />
+  </app>
+</gupdate>
