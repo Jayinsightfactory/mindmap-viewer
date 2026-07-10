@@ -19,6 +19,10 @@ $ErrorActionPreference = 'Continue'
 try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; chcp 65001 | Out-Null } catch {}
 try { Add-Type -AssemblyName UIAutomationClient; Add-Type -AssemblyName UIAutomationTypes } catch { Write-Host "[FATAL] UIA load failed"; exit 1 }
 
+# single-instance guard: daemon respawn shouldn't stack recorders (duplicate events)
+$script:_mtx = New-Object System.Threading.Mutex($false, "OrbitUiaRecorder_$env:USERNAME")
+if (-not $script:_mtx.WaitOne(0)) { Write-Host "already running - exit"; exit 0 }
+
 $A  = [System.Windows.Automation.AutomationElement]
 $CT = [System.Windows.Automation.ControlType]
 $VP = [System.Windows.Automation.ValuePattern]

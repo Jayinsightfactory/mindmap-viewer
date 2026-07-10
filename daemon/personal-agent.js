@@ -719,9 +719,9 @@ async function main() {
 
   // ①-b [골 S1b] UIA 데스크톱 work-step 녹화기 (Windows 전용, 백그라운드 PowerShell)
   //   nenova(DevExpress)/Excel/Word에서 컨트롤(버튼/셀/필드)을 의미로 읽어 work.step 전송.
-  //   ⚠️ 직원 PC 신규기능 → 단계적 롤아웃: .orbit-config.json에 "uiaRecorder":true 인 PC만 실행.
-  //   (owner PC부터 켜서 안정성 확인 후, 이후 기본 ON으로 전환 예정)
-  const _uiaOn = (_orbitConfig.uiaRecorder === true) || (process.env.UIA_RECORDER === 'on');
+  //   전 직원 기본 ON (owner PC 검증 완료, 2026-07-10). 끄려면 config "uiaRecorder":false
+  //   또는 env UIA_RECORDER=off. 녹화기는 단일인스턴스 뮤텍스로 중복 방지.
+  const _uiaOn = (_orbitConfig.uiaRecorder !== false) && (process.env.UIA_RECORDER !== 'off');
   if (process.platform === 'win32' && _uiaOn) {
     try {
       const { spawn } = require('child_process');
