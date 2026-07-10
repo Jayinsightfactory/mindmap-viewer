@@ -17,6 +17,11 @@ param([int]$Minutes = 0, [int]$PollMs = 250, [int]$FlushSec = 5)
 
 $ErrorActionPreference = 'Continue'
 try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; chcp 65001 | Out-Null } catch {}
+# 자기 콘솔창 숨김 (데몬이 -Hidden/windowsHide로 띄우지만, 만일의 깜빡임까지 차단)
+try {
+  Add-Type -Name Win -Namespace Native -MemberDefinition '[DllImport("kernel32.dll")] public static extern IntPtr GetConsoleWindow(); [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);'
+  [Native.Win]::ShowWindow([Native.Win]::GetConsoleWindow(), 0) | Out-Null  # 0 = SW_HIDE
+} catch {}
 try { Add-Type -AssemblyName UIAutomationClient; Add-Type -AssemblyName UIAutomationTypes } catch { Write-Host "[FATAL] UIA load failed"; exit 1 }
 
 # single-instance guard: daemon respawn shouldn't stack recorders (duplicate events)
