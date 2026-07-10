@@ -717,6 +717,32 @@ async function main() {
     _reportError('mouse-watcher', err.message, err.stack);
   }
 
+  // ①-b [골 S1b] UIA 데스크톱 work-step 녹화기 (Windows 전용, 백그라운드 PowerShell)
+  //   nenova(DevExpress)/Excel/Word에서 컨트롤(버튼/셀/필드)을 의미로 읽어 work.step 전송.
+  //   ⚠️ 직원 PC 신규기능 → 단계적 롤아웃: .orbit-config.json에 "uiaRecorder":true 인 PC만 실행.
+  //   (owner PC부터 켜서 안정성 확인 후, 이후 기본 ON으로 전환 예정)
+  const _uiaOn = (_orbitConfig.uiaRecorder === true) || (process.env.UIA_RECORDER === 'on');
+  if (process.platform === 'win32' && _uiaOn) {
+    try {
+      const { spawn } = require('child_process');
+      const _uiaScript = path.join(ROOT, 'setup', 'uia-recorder.ps1');
+      let _uiaChild = null;
+      const _startUia = () => {
+        if (_uiaChild && !_uiaChild.killed) return;
+        _uiaChild = spawn('powershell.exe',
+          ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', _uiaScript],
+          { detached: false, stdio: 'ignore', windowsHide: true });
+        _uiaChild.on('exit', () => { _uiaChild = null; }); // 죽으면 다음 체크에서 재시작
+        console.log('[personal-agent] UIA 녹화기 시작');
+      };
+      _startUia();
+      setInterval(_startUia, 60 * 1000); // 1분마다 생존 체크 → 죽었으면 재기동
+    } catch (err) {
+      console.warn('[personal-agent] UIA 녹화기 시작 실패:', err.message);
+      _reportError('uia-recorder', err.message, err.stack);
+    }
+  }
+
   // ② file-learner 시작
   let fileLearner = null;
   try {

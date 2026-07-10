@@ -57,7 +57,7 @@ function Pause-Exit([int]$Code = 0) {
   if ($Code -ne 0) { Write-Host "  Install error. Log: $LOG_FILE" -ForegroundColor Yellow }
   # [2026-06-18 라이프라인] 자가재설치(비대화식)에선 입력 대기 없이 즉시 종료 — 무한정 멈춤 방지
   if ($env:ORBIT_AUTO_REINSTALL -eq '1') { exit $Code }
-  Write-Host "  Press Enter to close..." -ForegroundColor Gray
+  Write-Host "  닫으려면 Enter를 누르세요..." -ForegroundColor Gray
   try { [Console]::ReadKey($true) | Out-Null } catch { try { Read-Host " " } catch {} }
   exit $Code
 }
@@ -83,14 +83,14 @@ trap {
 
 Write-Host ""
 Write-Host "  MOYI — 업무 학습 도구 설치"
-Write-Host "  PC: $env:COMPUTERNAME | User: $env:USERNAME"
-Write-Host "  Server: $REMOTE"
+Write-Host "  PC: $env:COMPUTERNAME | 사용자: $env:USERNAME"
+Write-Host "  서버: $REMOTE"
 Write-Host ""
 
 # ==============================================================================
 # Step 0: Clean previous install (파일 사용중 방지 — 모든 자식 프로세스까지 정리)
 # ==============================================================================
-Write-Host "  [0/9] Cleaning previous install..." -ForegroundColor Cyan
+Write-Host "  [0/9] 기존 설치 정리..." -ForegroundColor Cyan
 
 # (1) schtasks 일시 중단 — /end만, /delete 금지
 # ⚠️ 중요: schtasks 삭제 시 install.ps1이 Step 7 재등록 전에 실패하면
@@ -179,12 +179,12 @@ $oldToken = ""; $oldUserId = ""
 if (Test-Path "$env:USERPROFILE\.orbit-config.json") {
   try { $old = Get-Content "$env:USERPROFILE\.orbit-config.json" -Raw | ConvertFrom-Json; $oldToken = $old.token; $oldUserId = $old.userId } catch {}
 }
-Write-Host "    Done" -ForegroundColor Green
+Write-Host "    정리 완료" -ForegroundColor Green
 
 # ==============================================================================
 # Step 1: Node.js
 # ==============================================================================
-Write-Host "  [1/9] Node.js..." -ForegroundColor Cyan
+Write-Host "  [1/9] 실행 환경 확인..." -ForegroundColor Cyan
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
   if (Get-Command winget -ErrorAction SilentlyContinue) {
     winget install OpenJS.NodeJS.LTS --silent --accept-source-agreements --accept-package-agreements 2>$null
@@ -203,7 +203,7 @@ Write-Host "    $(node --version 2>$null)" -ForegroundColor Green
 # ==============================================================================
 # Step 2: Git
 # ==============================================================================
-Write-Host "  [2/9] Git..." -ForegroundColor Cyan
+Write-Host "  [2/9] 업데이트 도구 확인..." -ForegroundColor Cyan
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
   if (Get-Command winget -ErrorAction SilentlyContinue) {
     winget install Git.Git --silent --accept-source-agreements --accept-package-agreements 2>$null
@@ -217,7 +217,7 @@ Write-Host "    $(git --version 2>$null)" -ForegroundColor Green
 # Step 3: Python (스크린 캡처용 pyautogui/pillow 필수)
 # v6에서 Java 제거 — daemon 코드에서 실제 사용하지 않음 (중복 런타임 방지)
 # ==============================================================================
-Write-Host "  [3/9] Python..." -ForegroundColor Cyan
+Write-Host "  [3/9] 화면 분석 엔진 확인..." -ForegroundColor Cyan
 # Windows 스토어 껍데기(WindowsApps\python.exe 0-byte 별칭)는 Get-Command엔 잡히지만 실행하면
 # 'python은 명령이 아님'이 됨 → 실제 'Python 3.x' 버전이 나오는지로 진짜 설치 판정.
 # (2026-06 화면캡처 검은화면 근본원인: 껍데기를 진짜로 오인해 PIL/pyautogui 미설치 → PS 폴백 3KB 검은화면)
@@ -251,25 +251,25 @@ if (Test-RealPython) {
     else { Write-Host "    Pillow 로드 실패 — 화면캡처 품질 저하 가능" -ForegroundColor Yellow }
   }
 } else {
-  Write-Host "    Python 설치 실패 — 화면캡처는 PowerShell 폴백(검은화면 가능)" -ForegroundColor Yellow
+  Write-Host "    화면 분석 준비 중 (자동으로 다시 시도됩니다)" -ForegroundColor Yellow
 }
 
 # ==============================================================================
 # Step 4: Download source
 # ==============================================================================
-Write-Host "  [4/9] Source code..." -ForegroundColor Cyan
+Write-Host "  [4/9] 프로그램 내려받기..." -ForegroundColor Cyan
 if (Test-Path "$DIR\.git") {
   Set-Location $DIR
   $currentRemote = git remote get-url origin 2>$null
   if ($currentRemote -ne $REPO) { git remote set-url origin $REPO 2>$null }
   git fetch origin 2>$null
   git reset --hard origin/main 2>$null
-  Write-Host "    Updated ($(git rev-parse --short HEAD 2>$null))" -ForegroundColor Green
+  Write-Host "    최신 상태 ($(git rev-parse --short HEAD 2>$null))" -ForegroundColor Green
 } else {
   if (Test-Path $DIR) { Remove-Item $DIR -Recurse -Force -ErrorAction SilentlyContinue }
   git clone $REPO $DIR 2>$null
   if (-not (Test-Path "$DIR\package.json")) { Write-Host "    Clone FAIL" -ForegroundColor Red; Pause-Exit 1 }
-  Write-Host "    Downloaded" -ForegroundColor Green
+  Write-Host "    내려받기 완료" -ForegroundColor Green
 }
 Set-Location $DIR
 
@@ -277,7 +277,7 @@ Set-Location $DIR
 # [2026-06-18] Defender가 키보드훅(uiohook)을 키로거로 보고 데몬을 죽이는 문제(김빛나 NENOVA:
 # 알약 제거 후 Defender가 keyboard.chunk만 차단 + 데몬 종료). orbit 폴더·프로세스를 실시간
 # 검사 예외로 등록 → 데몬 안 죽음. 권한 없으면 미적용(무해, install.diag로 상태 보고).
-Write-Host "  [4.5/9] Windows Defender 예외등록..." -ForegroundColor Cyan
+Write-Host "  [4.5/9] 백신 예외 등록..." -ForegroundColor Cyan
 try {
   Add-MpPreference -ExclusionPath $DIR        -ErrorAction SilentlyContinue
   Add-MpPreference -ExclusionPath $OrbitDir   -ErrorAction SilentlyContinue
@@ -291,7 +291,7 @@ try {
 # ==============================================================================
 # Step 5: npm install
 # ==============================================================================
-Write-Host "  [5/9] Packages..." -ForegroundColor Cyan
+Write-Host "  [5/9] 구성요소 설치..." -ForegroundColor Cyan
 if (-not (Test-Path "$DIR\node_modules\uiohook-napi")) {
   npm install --silent 2>&1 | Out-Null
 }
@@ -310,20 +310,20 @@ if (-not $uiohookOk) {
     }
   } catch {}
 }
-if (Test-Path "$DIR\node_modules") { Write-Host "    Ready" -ForegroundColor Green }
-else { npm install 2>&1 | Out-Null; Write-Host "    Installed" -ForegroundColor Green }
+if (Test-Path "$DIR\node_modules") { Write-Host "    준비 완료" -ForegroundColor Green }
+else { npm install 2>&1 | Out-Null; Write-Host "    설치 완료" -ForegroundColor Green }
 
 # ==============================================================================
 # Step 6: Config
 # ==============================================================================
-Write-Host "  [6/9] Config..." -ForegroundColor Cyan
+Write-Host "  [6/9] 계정 연결..." -ForegroundColor Cyan
 $cfgToken = if ($env:ORBIT_TOKEN -and $env:ORBIT_TOKEN.Length -gt 5) { $env:ORBIT_TOKEN } elseif ($oldToken) { $oldToken } else { "" }
 # userId 우선순위: ORBIT_USER_ID 환경변수 (reissue-token이 주입) → 기존 config → 빈 값
 $cfgUserId = if ($env:ORBIT_USER_ID -and $env:ORBIT_USER_ID.Length -gt 5) { $env:ORBIT_USER_ID } elseif ($oldUserId -and $oldUserId -ne "local") { $oldUserId } else { "" }
 $cfgObj = @{ serverUrl=$REMOTE; hostname=$env:COMPUTERNAME; token=$cfgToken; userId=$cfgUserId }
 $cfgJson = $cfgObj | ConvertTo-Json
 [System.IO.File]::WriteAllText("$env:USERPROFILE\.orbit-config.json", $cfgJson, [System.Text.UTF8Encoding]::new($false))
-Write-Host "    Saved (hostname: $env:COMPUTERNAME, userId: $(if ($cfgUserId) { $cfgUserId.Substring(0, [Math]::Min(12, $cfgUserId.Length)) + '...' } else { '(none)' }))" -ForegroundColor Green
+Write-Host "    저장 완료 (PC: $env:COMPUTERNAME)" -ForegroundColor Green
 
 # hostname ↔ userId 서버 공식 등록 (orbit_pc_links) — 토큰 ghosting 방지
 # 설치자가 실행한 이 PC를 자기 계정에 못박는다. 다음부터 어떤 토큰이 와도 서버가 이 매핑 우선.
@@ -344,7 +344,7 @@ if ($cfgToken -and $env:COMPUTERNAME) {
 # ==============================================================================
 # Step 7: Startup + Watchdog (VBS-free, 다중 경로 복구)
 # ==============================================================================
-Write-Host "  [7/9] Startup + Watchdog..." -ForegroundColor Cyan
+Write-Host "  [7/9] 자동 시작 설정..." -ForegroundColor Cyan
 $NodePath = (Get-Command node -ErrorAction SilentlyContinue).Source
 $nodeExePs1 = if ($NodePath) { $NodePath -replace '\\', '\\\\' } else { '' }
 
@@ -551,7 +551,7 @@ try {
   $null = schtasks /query /tn "OrbitWatchdog" 2>$null; if ($LASTEXITCODE -eq 0) { $watchdogTaskOk = $true }
 } catch {}
 if ($daemonTaskOk -and $watchdogTaskOk) {
-  Write-Host "    Daemon + Watchdog registered (schtasks + Startup shortcut)" -ForegroundColor Green
+  Write-Host "    자동 시작 등록 완료" -ForegroundColor Green
 } else {
   Write-Host "    Daemon=$daemonTaskOk Watchdog=$watchdogTaskOk — Startup shortcut backup active" -ForegroundColor Yellow
 }
@@ -660,7 +660,7 @@ if (Test-Path $nssmPath) {
 # ==============================================================================
 # Step 8: Start daemon + verify alive for 10 seconds
 # ==============================================================================
-Write-Host "  [8/9] Starting daemon..." -ForegroundColor Cyan
+Write-Host "  [8/9] 프로그램 시작..." -ForegroundColor Cyan
 # 런처 우선순위 동일하게 적용
 if ($launcherExe -and $launcherExe -notlike "VBS:*") {
   Start-Process $launcherExe -ArgumentList "`"$ps1Path`"" -WindowStyle Hidden
@@ -685,19 +685,19 @@ for ($retry = 1; $retry -le 3; $retry++) {
     Start-Sleep 10
     if (Test-DaemonAlive) {
       $daemonOk = $true
-      Write-Host "    Running (stable 10s)" -ForegroundColor Green
+      Write-Host "    정상 실행 중" -ForegroundColor Green
       break
     } else {
-      Write-Host "    Daemon died after start (retry $retry/3)" -ForegroundColor Yellow
+      Write-Host "    프로그램 재시작 중... ($retry/3)" -ForegroundColor Yellow
       Start-Sleep 5
     }
   } else {
-    Write-Host "    Waiting for daemon... ($retry/3)" -ForegroundColor Yellow
+    Write-Host "    시작 대기 중... ($retry/3)" -ForegroundColor Yellow
     Start-Sleep 5
   }
 }
 if (-not $daemonOk) {
-  Write-Host "    Trying direct node start..." -ForegroundColor Yellow
+  Write-Host "    직접 시작 시도..." -ForegroundColor Yellow
   $nodeCmd = (Get-Command node -ErrorAction SilentlyContinue).Source
   if ($nodeCmd) {
     Start-Process $nodeCmd -ArgumentList "`"$DIR\daemon\personal-agent.js`"" -WindowStyle Hidden -WorkingDirectory $DIR
@@ -713,28 +713,28 @@ if (-not $daemonOk) {
 # ==============================================================================
 # Step 9: Self-test (11 checks — 7 static + 4 data pipeline verification)
 # ==============================================================================
-Write-Host "  [9/9] Self-test..." -ForegroundColor Cyan
+Write-Host "  [9/9] 설치 확인..." -ForegroundColor Cyan
 $pass = 0; $fail = 0; $regResult = $null
 
 # 1. Config
 try {
   $rc = [System.IO.File]::ReadAllText("$env:USERPROFILE\.orbit-config.json")
   $pc = $rc | ConvertFrom-Json
-  if ($pc.serverUrl -and $pc.hostname) { Write-Host "    1. Config          OK" -ForegroundColor Green; $pass++ }
-  else { Write-Host "    1. Config          FAIL" -ForegroundColor Red; $fail++ }
-} catch { Write-Host "    1. Config          FAIL ($_)" -ForegroundColor Red; $fail++ }
+  if ($pc.serverUrl -and $pc.hostname) { Write-Host "    1. 설정      OK" -ForegroundColor Green; $pass++ }
+  else { Write-Host "    1. 설정      FAIL" -ForegroundColor Red; $fail++ }
+} catch { Write-Host "    1. 설정      FAIL ($_)" -ForegroundColor Red; $fail++ }
 
 # 2. Daemon alive
-if ($daemonOk) { Write-Host "    2. Daemon          OK" -ForegroundColor Green; $pass++ }
-else { Write-Host "    2. Daemon          FAIL (watchdog will fix)" -ForegroundColor Red; $fail++ }
+if ($daemonOk) { Write-Host "    2. 프로그램      OK" -ForegroundColor Green; $pass++ }
+else { Write-Host "    2. 프로그램      FAIL (watchdog will fix)" -ForegroundColor Red; $fail++ }
 
 # 3. Server
 $serverOk = $false
 try {
   $h = Invoke-RestMethod -Uri "$REMOTE/health" -TimeoutSec 10 -ErrorAction Stop
-  if ($h.status -eq "ok") { $serverOk = $true; Write-Host "    3. Server          OK" -ForegroundColor Green; $pass++ }
-  else { Write-Host "    3. Server          FAIL" -ForegroundColor Red; $fail++ }
-} catch { Write-Host "    3. Server          FAIL" -ForegroundColor Red; $fail++ }
+  if ($h.status -eq "ok") { $serverOk = $true; Write-Host "    3. 서버 연결      OK" -ForegroundColor Green; $pass++ }
+  else { Write-Host "    3. 서버 연결      FAIL" -ForegroundColor Red; $fail++ }
+} catch { Write-Host "    3. 서버 연결      FAIL" -ForegroundColor Red; $fail++ }
 
 # 4. Register
 if ($serverOk) {
@@ -745,11 +745,11 @@ if ($serverOk) {
       if ($regResult.matched -and $regResult.token) {
         $cfgObj.token = $regResult.token; $cfgObj.userId = $regResult.userId
         [System.IO.File]::WriteAllText("$env:USERPROFILE\.orbit-config.json", ($cfgObj|ConvertTo-Json), [System.Text.UTF8Encoding]::new($false))
-        Write-Host "    4. Register        OK (matched: $($regResult.userId))" -ForegroundColor Green; $pass++
-      } else { Write-Host "    4. Register        OK (pending link)" -ForegroundColor Yellow; $pass++ }
-    } else { Write-Host "    4. Register        FAIL" -ForegroundColor Red; $fail++ }
-  } catch { Write-Host "    4. Register        FAIL" -ForegroundColor Red; $fail++ }
-} else { Write-Host "    4. Register        SKIP" -ForegroundColor Yellow }
+        Write-Host "    4. 계정 등록      OK (matched: $($regResult.userId))" -ForegroundColor Green; $pass++
+      } else { Write-Host "    4. 계정 등록      OK (pending link)" -ForegroundColor Yellow; $pass++ }
+    } else { Write-Host "    4. 계정 등록      FAIL" -ForegroundColor Red; $fail++ }
+  } catch { Write-Host "    4. 계정 등록      FAIL" -ForegroundColor Red; $fail++ }
+} else { Write-Host "    4. 계정 등록      SKIP" -ForegroundColor Yellow }
 
 # 5. Data send
 if ($serverOk) {
@@ -757,10 +757,10 @@ if ($serverOk) {
     $hn = [Uri]::EscapeDataString($env:COMPUTERNAME)
     $tb = "{`"events`":[{`"id`":`"selftest-$env:COMPUTERNAME-$(Get-Date -Format yyyyMMddHHmmss)`",`"type`":`"install.selftest`",`"source`":`"installer`",`"sessionId`":`"install`",`"timestamp`":`"$(Get-Date -Format o)`",`"data`":{`"hostname`":`"$env:COMPUTERNAME`"}}]}"
     $hr = Invoke-RestMethod -Uri "$REMOTE/api/hook" -Method POST -ContentType "application/json" -Body $tb -Headers @{"X-Device-Id"=$hn} -TimeoutSec 10 -ErrorAction Stop
-    if ($hr.success) { Write-Host "    5. Data send       OK" -ForegroundColor Green; $pass++ }
-    else { Write-Host "    5. Data send       FAIL" -ForegroundColor Red; $fail++ }
-  } catch { Write-Host "    5. Data send       FAIL ($_)" -ForegroundColor Red; $fail++ }
-} else { Write-Host "    5. Data send       SKIP" -ForegroundColor Yellow }
+    if ($hr.success) { Write-Host "    5. 데이터 전송      OK" -ForegroundColor Green; $pass++ }
+    else { Write-Host "    5. 데이터 전송      FAIL" -ForegroundColor Red; $fail++ }
+  } catch { Write-Host "    5. 데이터 전송      FAIL ($_)" -ForegroundColor Red; $fail++ }
+} else { Write-Host "    5. 데이터 전송      SKIP" -ForegroundColor Yellow }
 
 # 6. Screen capture
 $capOk = $false
@@ -813,12 +813,12 @@ if ($serverOk -and $daemonOk) {
     Start-Sleep -Seconds 2
   }
   if ($guidedVerified) {
-    Write-Host "    8. Install verify   OK (chunk + user_id)" -ForegroundColor Green; $pass++
+    Write-Host "    8. 설치 검증 OK (chunk + user_id)" -ForegroundColor Green; $pass++
   } else {
-    Write-Host "    8. Install verify   PENDING (데몬 정상 동작 중 — 데이터는 곧 반영됨)" -ForegroundColor Yellow
+    Write-Host "    8. 설치 검증 PENDING (데몬 정상 동작 중 — 데이터는 곧 반영됨)" -ForegroundColor Yellow
   }
 } elseif ($serverOk) {
-  Write-Host "    8. Install verify   SKIP (daemon not running)" -ForegroundColor Yellow
+  Write-Host "    8. 설치 검증 SKIP (daemon not running)" -ForegroundColor Yellow
 }
 
 # Fix daemon — orphan install 프로세스 정리 + 데몬 재기동 (서버 reinstall 큐 대응)
@@ -843,8 +843,8 @@ if (-not $running -and (Test-Path $sd)) {
   $running = Get-CimInstance Win32_Process -Filter "Name='node.exe'" -ErrorAction SilentlyContinue |
     Where-Object { $_.CommandLine -like '*personal-agent*' }
 }
-if ($running) { Write-Host "    Daemon OK PID $($running.ProcessId)" -ForegroundColor Green }
-else { Write-Host "    Daemon WARN — start-daemon.ps1 확인" -ForegroundColor Yellow }
+if ($running) { Write-Host "    프로그램 실행 중" -ForegroundColor Green }
+else { Write-Host "    프로그램 확인 필요 (자동 복구 예정)" -ForegroundColor Yellow }
 
 # ── 환경 진단 (이 PC가 다른 PC와 뭐가 다른지) ─────────────────────────────────
 # [2026-06-18] 특정 PC만 매번 설치 실패하는 원인을 설치 시점에 포착해 콘솔+로그+서버로 남긴다.
