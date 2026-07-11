@@ -67,6 +67,18 @@ function ParentInfo($el) {
   return @{ window = $win; path = ($parts -join ' > ') }
 }
 
+# UI chrome(리본/백스테이지/메뉴/색선택/컨텍스트/편집기 포커스) = 업무데이터 아님 → 노이즈로 제외.
+# ASCII 판별만 사용(controlType/id/'Backstage'). input(셀 데이터)·실 대화상자 Button·nenova 컨트롤은 유지.
+$CHROME_CT = @('Menu','MenuItem','ListItem','RadioButton','SplitButton','TabItem','Window')
+function IsChrome($action, $ct, $path, $id, $app) {
+  if ($action -ne 'focus') { return $false }           # input(데이터)은 항상 유지
+  if ($id -eq 'FormulaBar' -or $id -eq 'CellEdit') { return $true }   # 편집기 중간상태(값은 input으로)
+  if ($CHROME_CT -contains $ct) { return $true }        # 메뉴/리본/리스트 탐색
+  if ($path -like '*Backstage*') { return $true }       # 인쇄/파일 백스테이지 전체
+  if ($app -eq 'excel' -and $ct -eq 'Pane') { return $true }  # 엑셀 워크북/창 포커스
+  return $false
+}
+
 function IsCredential($name, $aid) {
   $h = (("" + $aid) + '|' + ("" + $name)).ToLower()
   return ($h -match 'password|passwd|(^|_)pw($|_)|(^|_)pwd($|_)')
@@ -125,9 +137,9 @@ while ($true) {
       # 같은 컨트롤(id)인데 값만 바뀜 = 편집(input), 새 컨트롤 = focus
       $action = if ($aid -ne '' -and $aid -eq $lastId -and $val -ne $lastVal) { 'input' } else { 'focus' }
       $appName = if ($isNenova) { 'nenova' } else { $proc }
-      # 노이즈 컷: Excel 셀 단순이동(focus)은 버림 — 편집(input)·비셀 컨트롤(버튼 등)만 기록.
-      #   (input 판정은 살아있게 last* 는 항상 갱신)
-      $skipNav = ($appName -eq 'excel' -and $ct -eq 'DataItem' -and $action -eq 'focus')
+      # 노이즈 컷: ①Excel 셀 단순이동(focus) ②UI chrome(리본/백스테이지/메뉴/편집기) 제외.
+      #   → 셀 입력(input)·실 대화상자 버튼·nenova 컨트롤만 남김. (input 판정 위해 last* 는 항상 갱신)
+      $skipNav = ($appName -eq 'excel' -and $ct -eq 'DataItem' -and $action -eq 'focus') -or (IsChrome $action $ct $info.path $aid $appName)
       if (-not $skipNav) {
         $seq++
         $step = @{ seq = $seq; t = (Get-Date).ToUniversalTime().ToString('o'); app = $appName; window = $info.window; action = $action; target = @{ id = $aid; name = $nm; controlType = $ct; path = $info.path; rect = $rect }; value = $val }
