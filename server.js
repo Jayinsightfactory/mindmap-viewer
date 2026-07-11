@@ -556,6 +556,10 @@ app.get('/api/install-open.bat', (req, res) => {
 app.get(['/guide', '/install-guide'], (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'install-guide.html'));
 });
+// 2026-07-10: 업무 CCTV — 캡처 이미지를 업무흐름(세션 리플레이)으로 시각화. 관리자용.
+app.get('/cctv', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'cctv.html'));
+});
 // 설치 버전 배지용 — install.ps1 상단 마커에서 실제 버전 파싱(캐시)
 let _installVer = null;
 app.get('/api/setup/version', (req, res) => {
@@ -1410,6 +1414,27 @@ app.get('/api/admin/capture-health', async (req, res) => {
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
+});
+
+// GET /api/admin/judgment-map — 자동디벨롭: 루틴별 판단경계 + 자동화 가능 구간
+//   work.step에서 반복 루틴을 발견 → 스텝별 판단점수 → 판단없는 연속구간(자동화 후보) 표시.
+global._judgmentCache = global._judgmentCache || null;
+app.get('/api/admin/judgment-map', async (req, res) => {
+  try {
+    const pool = dbModule.getDb();
+    if (!pool?.query) return res.json({ error: 'DB 없음' });
+    const hours = parseInt(req.query.hours) || 72;
+    const fresh = req.query.fresh === '1';
+    const c = global._judgmentCache;
+    if (!fresh && c && c.windowHours === hours && (Date.now() - c._at < 20 * 60 * 1000)) {
+      return res.json({ ...c, cached: true });
+    }
+    const { mineJudgment } = require('./src/judgment-miner');
+    const out = await mineJudgment(pool, { hours });
+    out._at = Date.now();
+    global._judgmentCache = out;
+    res.json(out);
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // GET /api/admin/perf-issues — PC 이슈 리포트 목록 (최근 100건)
@@ -8899,6 +8924,24 @@ async function startServer() {
     console.log(`   Git hooks 설치: curl http://localhost:${PORT}/api/git/install | bash`);
     console.log(`   MCP 서버: http://localhost:${PORT}/api/mcp`);
     console.log(`   학습 데이터: http://localhost:${PORT}/api/learned-insights\n`);
+  }
+
+  // ── [골 자동디벨롭] 판단경계 마이닝 루프 (30분마다, work.step 누적되면 스스로 발전) ──
+  //   끄려면 JUDGMENT_LOOP=off. 결과는 global._judgmentCache + /api/admin/judgment-map.
+  if ((process.env.JUDGMENT_LOOP || '').toLowerCase() !== 'off') {
+    const _runJudgment = async () => {
+      try {
+        const pool = dbModule.getDb ? dbModule.getDb() : null;
+        if (!pool || !process.env.DATABASE_URL) return;
+        const { mineJudgment } = require('./src/judgment-miner');
+        const out = await mineJudgment(pool, { hours: 72 });
+        out._at = Date.now();
+        global._judgmentCache = out;
+        console.log(`[judgment-loop] 루틴 ${out.routineCount}개 · 자동화가능 스텝인스턴스 ${out.automatableStepInstances} (세션 ${out.sessions})`);
+      } catch (e) { console.warn('[judgment-loop] 실패:', e.message); }
+    };
+    setTimeout(_runJudgment, 3 * 60 * 1000);        // 부팅 3분 뒤 첫 실행
+    setInterval(_runJudgment, 30 * 60 * 1000);      // 이후 30분마다
   }
 
   // ── 서버사이드 Vision 분석 루프 시작 ────────────────────────────────────
