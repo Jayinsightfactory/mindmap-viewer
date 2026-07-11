@@ -46,18 +46,21 @@ function _splitSessions(steps, gapMs = 3 * 60 * 1000) {
 }
 
 // ── 빈발 n-gram(연속 서브시퀀스) = 반복 루틴 ────────────────────────────────
-function _mineFrequent(sessions, { minLen = 3, maxLen = 8, minInst = 3 } = {}) {
+function _mineFrequent(sessions, { minLen = 3, maxLen = 6, minInst = 3, maxWindows = 150000 } = {}) {
   const windows = new Map(); // sigSeq -> [{sessIdx, start, len}]
-  sessions.forEach((sess, si) => {
-    const sigs = sess.map(stepSig);
+  // 메모리 보호: 세션당 스텝 상한 + 전체 window 상한
+  outer:
+  for (let si = 0; si < sessions.length; si++) {
+    const sess = sessions[si];
+    const sigs = sess.slice(0, 200).map(stepSig);
     for (let L = minLen; L <= maxLen; L++) {
       for (let i = 0; i + L <= sigs.length; i++) {
         const key = sigs.slice(i, i + L).join(' >> ');
-        if (!windows.has(key)) windows.set(key, []);
+        if (!windows.has(key)) { if (windows.size >= maxWindows) break outer; windows.set(key, []); }
         windows.get(key).push({ si, start: i, len: L });
       }
     }
-  });
+  }
   // minInst 이상 반복 + 겹치는 짧은 것 제거(가장 긴 것 우선)
   let routines = [...windows.entries()]
     .filter(([, occ]) => occ.length >= minInst)
@@ -161,11 +164,14 @@ function _analyzeRoutine(routine, sessions) {
 
 // ── 진입점 ──────────────────────────────────────────────────────────────────
 async function mineJudgment(pool, opts = {}) {
-  const hours = Math.min(opts.hours || 72, 336);
+  const hours = Math.min(opts.hours || 48, 336);
+  const MAX_ROWS = Math.min(opts.maxRows || 6000, 12000); // 메모리 보호: 최근 N건만
   const { rows } = await pool.query(
-    `SELECT user_id, data_json, timestamp FROM events
-      WHERE type='work.step' AND timestamp::timestamptz > NOW() - ($1 || ' hours')::interval
-      ORDER BY user_id ASC, timestamp ASC`, [String(hours)]);
+    `SELECT user_id, data_json, timestamp FROM (
+       SELECT user_id, data_json, timestamp FROM events
+        WHERE type='work.step' AND timestamp::timestamptz > NOW() - ($1 || ' hours')::interval
+        ORDER BY timestamp DESC LIMIT $2
+     ) t ORDER BY user_id ASC, timestamp ASC`, [String(hours), MAX_ROWS]);
   // user별 스텝
   const byUser = new Map();
   for (const r of rows) {

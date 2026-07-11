@@ -8926,22 +8926,24 @@ async function startServer() {
     console.log(`   학습 데이터: http://localhost:${PORT}/api/learned-insights\n`);
   }
 
-  // ── [골 자동디벨롭] 판단경계 마이닝 루프 (30분마다, work.step 누적되면 스스로 발전) ──
-  //   끄려면 JUDGMENT_LOOP=off. 결과는 global._judgmentCache + /api/admin/judgment-map.
-  if ((process.env.JUDGMENT_LOOP || '').toLowerCase() !== 'off') {
+  // ── [골 자동디벨롭] 판단경계 마이닝 루프 ──
+  //   ⚠️ 기본 OFF(opt-in): 자동 루프가 768MB 힙을 터뜨린 사고(2026-07-10) 후 opt-in 전환.
+  //   켜려면 JUDGMENT_LOOP=on (힙 여유 확인 후). 평시엔 /api/admin/judgment-map 온디맨드만 사용.
+  if ((process.env.JUDGMENT_LOOP || '').toLowerCase() === 'on') {
     const _runJudgment = async () => {
       try {
+        if (global._heapPressure) { console.warn('[judgment-loop] 힙압력 — 스킵'); return; }
         const pool = dbModule.getDb ? dbModule.getDb() : null;
         if (!pool || !process.env.DATABASE_URL) return;
         const { mineJudgment } = require('./src/judgment-miner');
-        const out = await mineJudgment(pool, { hours: 72 });
+        const out = await mineJudgment(pool, { hours: 48 });
         out._at = Date.now();
         global._judgmentCache = out;
-        console.log(`[judgment-loop] 루틴 ${out.routineCount}개 · 자동화가능 스텝인스턴스 ${out.automatableStepInstances} (세션 ${out.sessions})`);
+        console.log(`[judgment-loop] 루틴 ${out.routineCount}개 · 자동화가능 ${out.automatableStepInstances} (세션 ${out.sessions})`);
       } catch (e) { console.warn('[judgment-loop] 실패:', e.message); }
     };
-    setTimeout(_runJudgment, 3 * 60 * 1000);        // 부팅 3분 뒤 첫 실행
-    setInterval(_runJudgment, 30 * 60 * 1000);      // 이후 30분마다
+    setTimeout(_runJudgment, 5 * 60 * 1000);
+    setInterval(_runJudgment, 60 * 60 * 1000);
   }
 
   // ── 서버사이드 Vision 분석 루프 시작 ────────────────────────────────────
