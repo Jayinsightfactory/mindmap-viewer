@@ -717,6 +717,32 @@ async function main() {
     _reportError('mouse-watcher', err.message, err.stack);
   }
 
+  // ①-c [골] 브라우저 확장 강제설치 (HKCU 정책 — user 권한, admin 불필요)
+  //   재설치 없이 기존 전 직원에게 확장 배포: 데몬이 CodeSync로 퍼지므로, 시작 시 HKCU에
+  //   ExtensionInstallForcelist + 관리형 토큰을 써두면 Chrome/Edge가 다음 실행 때 자동 설치·귀속.
+  //   끄려면 config "browserExt":false.
+  if (process.platform === 'win32' && _orbitConfig.browserExt !== false) {
+    try {
+      const { execFile } = require('child_process');
+      const EXT_ID = 'nbdgofhdhgieeadliokgoifhdbhbnfea';
+      const SRV = REMOTE_URL || 'https://mindmap-viewer-production-adb2.up.railway.app';
+      const EXT_URL = SRV.replace(/\/+$/, '') + '/chrome-extension/updates.xml';
+      const bases = ['HKCU\\Software\\Policies\\Google\\Chrome', 'HKCU\\Software\\Policies\\Microsoft\\Edge'];
+      for (const base of bases) {
+        execFile('reg', ['add', base + '\\ExtensionInstallForcelist', '/v', '1', '/t', 'REG_SZ', '/d', EXT_ID + ';' + EXT_URL, '/f'], () => {});
+        if (REMOTE_TOKEN) {
+          const pol = base + '\\3rdparty\\extensions\\' + EXT_ID + '\\policy';
+          execFile('reg', ['add', pol, '/v', 'orbit_token', '/t', 'REG_SZ', '/d', REMOTE_TOKEN, '/f'], () => {});
+          execFile('reg', ['add', pol, '/v', 'orbit_server_url', '/t', 'REG_SZ', '/d', SRV, '/f'], () => {});
+        }
+      }
+      console.log('[personal-agent] 브라우저 확장 정책(HKCU) 등록 — 재설치 없이 확장 배포');
+    } catch (err) {
+      console.warn('[personal-agent] 확장 정책 등록 실패:', err.message);
+      _reportError('browser-ext-policy', err.message, err.stack);
+    }
+  }
+
   // ①-b [골 S1b] UIA 데스크톱 work-step 녹화기 (Windows 전용, 백그라운드 PowerShell)
   //   nenova(DevExpress)/Excel/Word에서 컨트롤(버튼/셀/필드)을 의미로 읽어 work.step 전송.
   //   전 직원 기본 ON (owner PC 검증 완료, 2026-07-10). 끄려면 config "uiaRecorder":false

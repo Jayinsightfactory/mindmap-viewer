@@ -1357,3 +1357,10 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 즉시복구: Railway 변수 JUDGMENT_LOOP=off (현 배포코드가 !=='off' 게이트라 즉시 루프 정지, 코드배포 불필요).
 - 하드닝: server.js 루프를 opt-in(=== 'on' 기본 OFF)+힙압력 스킵+48h/1h. judgment-miner.js mineJudgment 최근 6000행 LIMIT, _mineFrequent maxLen 6·세션당 200스텝·window 15만 상한. 온디맨드 엔드포인트는 유지(상한 적용, 안전).
 - 배포: node -c 후 push. 이후 루프는 JUDGMENT_LOOP=on 명시해야 돌고, 평소엔 /api/admin/judgment-map 수동만.
+
+## 기존 직원 웹 확장 배포 = 데몬 HKCU 정책 (2026-07-10)
+- 문제: 원격 reinstall 명령은 watchdog가 install.ps1 안 돌림(git sync only, 자기보호). FORBIDDEN_DAEMON_ACTIONS=reinstall API차단. self-heal 재설치는 30분 dead일 때만. → 기존 직원 브라우저 확장(install.ps1 레지스트리 필요)이 안 붙음.
+- watchdog로 넣으려 했으나: guardian-watchdog.ps1은 $env:USERPROFILE 기반 → LocalSystem이면 유저토큰 못읽고 유저면 HKLM 못씀. 동시 불가.
+- **해법(우아)**: 브라우저 정책은 HKCU에 쓰면 admin 불필요 + Chrome/Edge가 읽음. 데몬(personal-agent, 유저권한+토큰)이 시작 시 HKCU\Software\Policies\{Google\Chrome,Microsoft\Edge}\ExtensionInstallForcelist(EXT_ID;updates.xml) + 3rdparty\extensions\<id>\policy(orbit_token,orbit_server_url) 씀(reg add /f). CodeSync로 기존 전직원 자동배포, 재설치·관리자·watchdog 불필요.
+- daemon/personal-agent.js ①-c 블록, Windows+config browserExt!==false. EXT_ID=nbdgofhdhgieeadliokgoifhdbhbnfea.
+- 검증: node -c 후 push→CodeSync→데몬 재기동시 HKCU 등록→다음 Chrome/Edge 실행때 확장 자동설치+토큰귀속. raw-events type=work.step에 ext-work(url) 유입 확인.
