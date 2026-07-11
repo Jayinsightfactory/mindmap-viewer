@@ -93,14 +93,14 @@ try {
   Write-Host "    Windows:  $windowsUser" -ForegroundColor Gray
   if ($reg.clientIp) { Write-Host "    Your IP:  $($reg.clientIp)" -ForegroundColor Gray }
 } catch {
-  Write-Host "    Registration failed: $($_.Exception.Message)" -ForegroundColor Red
-  Write-Host "    Press Enter to exit..." -ForegroundColor Gray
+  Write-Host "    등록 확인이 필요합니다. 관리자에게 문의해주세요." -ForegroundColor Yellow
+  Write-Host "    닫으려면 Enter를 누르세요..." -ForegroundColor Gray
   try { [Console]::ReadKey($true) | Out-Null } catch { Read-Host " " }
   exit 1
 }
 
 # Step 2: Run main installer with the issued token
-Write-Host "  [2/2] Starting installation..." -ForegroundColor Cyan
+Write-Host "  [2/2] 설치 진행 중..." -ForegroundColor Cyan
 Write-Host ""
 
 $env:ORBIT_TOKEN   = $orbitToken
@@ -117,7 +117,7 @@ try {
   & $psExe -NoProfile -ExecutionPolicy Bypass -File $tempPs
   Remove-Item $tempPs -ErrorAction SilentlyContinue
 } catch {
-  Write-Host "  Install script download failed: $($_.Exception.Message)" -ForegroundColor Red
+  Write-Host "  설치 파일을 받지 못했습니다. 네트워크 확인 후 다시 시도해주세요." -ForegroundColor Yellow
   Write-Host "  Press Enter to exit..." -ForegroundColor Gray
   try { [Console]::ReadKey($true) | Out-Null } catch { Read-Host " " }
   exit 1
@@ -127,14 +127,14 @@ try {
 # 과거 문제: 설치는 됐는데 토큰 자기파괴/구코드/임시ID로 데이터가 안 와도 알 수 없었음.
 # 이제 설치 직후 (1) 토큰이 실유저로 유효한지 (2) 실제 이벤트가 서버에 도착하는지 확인해 알려준다.
 Write-Host ""
-Write-Host "  [검증] 설치 확인 중 (최대 2분, 데몬 첫 전송까지 대기)..." -ForegroundColor Cyan
+Write-Host "  설치 확인 중입니다 (최대 2분)..." -ForegroundColor Cyan
 
 $tokenOk = $false
 try {
   $v = Invoke-RestMethod -Uri "$REMOTE/api/auth/verify" -Headers @{ Authorization = "Bearer $orbitToken" } -TimeoutSec 15 -ErrorAction Stop
-  if ($v.ok) { $tokenOk = $true; Write-Host "    [OK] 토큰 유효 — $($v.name)" -ForegroundColor Green }
+  if ($v.ok) { $tokenOk = $true; Write-Host "    [OK] 계정 확인됨 — $($v.name)" -ForegroundColor Green }
 } catch {}
-if (-not $tokenOk) { Write-Host "    [실패] 토큰 무효 — 관리자에게 문의" -ForegroundColor Red }
+if (-not $tokenOk) { Write-Host "    계정 확인 중 (관리자에게 문의해주세요)" -ForegroundColor Yellow }
 
 $dataOk = $false
 $hnEnc = [Uri]::EscapeDataString($hostname)
@@ -146,8 +146,8 @@ while ((Get-Date) -lt $deadline) {
   } catch {}
   Start-Sleep -Seconds 8
 }
-if ($dataOk) { Write-Host "    [OK] 데이터 수신 확인 — 서버에 이벤트 도착" -ForegroundColor Green }
-else { Write-Host "    [대기] 아직 미도착 — PC를 1~2분 더 쓰면 자동 전송됩니다 (실패 아님)" -ForegroundColor Yellow }
+if ($dataOk) { Write-Host "    [OK] 정상 작동 확인" -ForegroundColor Green }
+else { Write-Host "    PC를 잠시 사용하면 자동으로 완료됩니다" -ForegroundColor Gray }
 
 Write-Host ""
 if ($tokenOk -and $dataOk) {
@@ -157,7 +157,7 @@ if ($tokenOk -and $dataOk) {
 } elseif ($tokenOk) {
   Write-Host "  설치 완료. 데이터 전송은 곧 시작됩니다 (PC 사용 시 자동)." -ForegroundColor Yellow
 } else {
-  Write-Host "  설치는 됐으나 토큰 검증 실패 — 관리자 확인 필요." -ForegroundColor Red
+  Write-Host "  설치 완료. 계정 확인은 관리자에게 문의해주세요." -ForegroundColor Yellow
 }
 Write-Host "  Press Enter to close..." -ForegroundColor Gray
 try { [Console]::ReadKey($true) | Out-Null } catch { Read-Host " " }

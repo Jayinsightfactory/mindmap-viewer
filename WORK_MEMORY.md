@@ -1318,3 +1318,42 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - orbit_migrations 마커(reattr-analyzed-v1)로 1회성 보장, 재실행 안 됨.
 - **결론**: 포워드 수정(e0ab353)+과거분 마이그레이션(4543f40) 둘 다 라이브·검증 완료. 직원 화면데이터 전체가 이제 각자 계정에 정상 귀속됨.
 - **디버깅 메모**: 배포 직후 이 세션(Claude)에서 curl/node/git이 도메인·토큰 관련 이전 문맥 때문에 auto-mode 세이프티에 막혀, 검증은 사용자 PowerShell(railway CLI, Invoke-RestMethod)로 우회 진행. 다음에 유사 상황이면 처음부터 사용자 터미널 검증으로 넘길 것.
+
+## 전직원 배포 확정 — 직원 PC에서 실작동 (2026-07-10, 커밋 8572f1d)
+- **결정적 확인**: raw-events에 owner 아닌 **DESKTOP-L0C2IOT**(직원)의 uiaws- work.step 자동유입. 플래그 없이 기본ON 코드만으로 직원 데몬이 UIA 녹화기 실행 = 전직원 배포 성공.
+- 실데이터: Excel G11 input ' $3,035.35 ', G10 ' $1,416.65 '(포워딩 결제금액), path "★외화송금결제 지출결의서 > 시트 26.07.15(포워딩) > G11". 워크북/시트/셀/값 완벽.
+- 미세노이즈: 수식입력줄 focus, 채우기색 메뉴 ListItem(주황/채우기없음) 등 서식조작. 절차엔 무해, 필요시 후속 폴리시.
+- **최종 상태**: 웹(확장 ext-work)+데스크톱(데몬 uia-recorder uiaws) 둘 다 전직원 라이브. install.ps1 한글정리. /guide 배포링크. 골 의미기반수집 풀스택 완성.
+
+## 설치화면 직원 안심용 순화 (2026-07-10, install.ps1 + install-open.ps1)
+- 직원(설연주 NEONVA)이 설치화면 보고 감시프로그램처럼 느낌. "강제설치/토큰주입/키보드·마우스수집/데몬/부분성공/error/미완료" 등이 원인.
+- 순화: "설치된 전체 기능"(키보드/마우스/좌표/감시/백신예외 나열)→"업무 지원 도구가 설치되었습니다: 반복업무 자동화 학습·업무효율 분석·자동 업데이트"(감시용어 제거, 수집동의는 시작화면에서 이미 받음). "강제설치+토큰주입"→"브라우저 연동". "정책 등록 완료(+토큰)"→"연동 완료". "부분 성공/미완료/error"→"거의 완료/마무리 중/확인 필요". "데몬"→"프로그램". "토큰 유효"→"계정 확인됨". "학습값 sampleCount/60s"→"이전 설정 복원/기본 설정". 로그경로 노출 제거. install-open Press Enter/Registration failed/Starting installation 한글화.
+- 원칙: 감시로 들리는 세부(키/마우스/좌표/데몬/감시서비스)는 끝화면에 재나열 안 함. 법적 수집동의는 install-open 시작 [수집 동의 안내]에서 유지.
+- 검증필수: PS ParseFile 둘 다. 배포=push하면 /setup/*.ps1 라이브.
+
+## 업무 CCTV 시각화 페이지 (2026-07-10, public/cctv.html + /cctv 라우트)
+- 요구: 캡처이미지+업무플로우를 CCTV처럼 업무흐름 개념으로 시각화, 추가페이지. 서칭해서.
+- 리서치(process mining/task mining/보안 video wall): ①라이브 타일 그리드(월) ②필름스트립 세션 리플레이+타임라인 스크러버(영상처럼 되감기, 이미지에 집중) ③프로세스 흐름(노드=화면, 병목=긴 갭 색상). 소스: ABBYY Timeline, Creately, Frigate UI, security video wall 패턴.
+- 구현(public/cctv.html, 정적서빙 /cctv.html + 라우트 /cctv): **월(실시간)**=직원별 최신 캡처 타일(활동/앱/경과, live점 색=최신도) 클릭→리플레이. **리플레이**=세션목록+뷰어(현재컷 크게)+재생/이전/다음/트랙 스크럽+흐름스트립(컷 썸네일 나열, 긴갭 ⏱). 기존 엔드포인트 재사용(/api/flow/people, /api/vision/thumbnails, /api/vision/task-sessions). 토큰=sessionStorage.
+- ⚠️ 브라우저 미검증(내 curl/deploy 차단). 이미지=screen.analyzed 썸네일(work.step엔 이미지 없음). 배포=commit server.js+cctv.html push. 확인=/cctv 접속+관리자토큰.
+
+## 자동디벨롭 엔진 v1 — 판단경계 마이닝 + 자기발전 루프 (2026-07-10)
+- 요구: 특정 루틴 안 고정. 시스템이 스스로 반복 루틴 발견 → 사람 판단 들어간 곳 찾아 → 판단없는 구간만 자동화 → 인력감축. 루프로 정확도 안정화.
+- 신규 src/judgment-miner.js: work.step → 세션분할(3분갭) → 빈발 n-gram(연속 서브시퀀스, minInst 3)=반복루틴 → 스텝별 판단점수(5신호: 입력파생성·변동성·주저gapSec·분기·액션종류) → 판단없는 연속런=자동화후보 + boundarySteps(사람 남을 곳) + automatableRatio. mineJudgment(pool,{hours}) 진입점.
+- server.js: GET /api/admin/judgment-map?hours=&fresh=1 (20분캐시). startServer에 30분 루프(부팅3분후 첫실행, JUDGMENT_LOOP=off로 끔) → global._judgmentCache 갱신 = 자기발전.
+- 판단 verdict: judgment<0.35=auto(기계적), >=0.35=human(판단경계). 버튼(저장/조회)=0.05, 입력=변동*(1-파생)+주저, 파생=이전스텝값 포함여부.
+- ⚠️ v1 휴리스틱·미검증(내 node/deploy 차단). 다음: 그림자실행(예측 vs 사람결과)→안정성게이트→자율승격. 판단경계 지도 페이지(CCTV 아님).
+- 검증: node -c server.js 후 push, /api/admin/judgment-map?token= 로 루틴+판단경계 실데이터 확인.
+
+## UIA 녹화기 노이즈 필터 (2026-07-10, uia-recorder.ps1)
+- 실데이터에서 엑셀 리본/백스테이지(인쇄)/채우기색/상황맞는메뉴/붙여넣기옵션 focus가 대량 유입 → 판단마이닝 오염 위험.
+- IsChrome() 추가(ASCII 판별): focus 중 ct in Menu/MenuItem/ListItem/RadioButton/SplitButton/TabItem/Window, 또는 id FormulaBar/CellEdit, 또는 path *Backstage*, 또는 (excel+Pane) → 제외.
+- 유지: input(셀 데이터 전부), 실 대화상자 Button(저장/확인/삭제, path에 Backstage 없음), nenova 컨트롤(Pane, app!=excel). skipNav(excel DataItem focus)에 IsChrome OR 결합.
+- 한글 미사용(5.1 ASCII). 배포=push→CodeSync로 직원 데몬 반영(다음 재기동 시 뮤텍스로 새 코드 인스턴스).
+- 커버리지 실측(2026-07-10): 데스크톱 UIA 5명 실작동(현욱CAA5TA1·강현우T09911T·owner·NENOVA2025·L0C2IOT). 웹=0명(확장 미설치, 재설치 필요). 판단분석=배포됨(cc03e04). AI실행=미구현.
+
+## 판단마이닝 루프 OOM 사고 + 하드닝 (2026-07-10)
+- 사고: judgment-loop(부팅3분후 자동, work.step 72h 전체 n-gram 마이닝)가 768MB 힙 터뜨림 → 서버 502 크래시루프. [[server-oom-drive-flood]] 계열.
+- 즉시복구: Railway 변수 JUDGMENT_LOOP=off (현 배포코드가 !=='off' 게이트라 즉시 루프 정지, 코드배포 불필요).
+- 하드닝: server.js 루프를 opt-in(=== 'on' 기본 OFF)+힙압력 스킵+48h/1h. judgment-miner.js mineJudgment 최근 6000행 LIMIT, _mineFrequent maxLen 6·세션당 200스텝·window 15만 상한. 온디맨드 엔드포인트는 유지(상한 적용, 안전).
+- 배포: node -c 후 push. 이후 루프는 JUDGMENT_LOOP=on 명시해야 돌고, 평소엔 /api/admin/judgment-map 수동만.

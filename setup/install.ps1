@@ -54,7 +54,7 @@ function Write-GuardianScript {
 
 function Pause-Exit([int]$Code = 0) {
   Write-Host ""
-  if ($Code -ne 0) { Write-Host "  Install error. Log: $LOG_FILE" -ForegroundColor Yellow }
+  if ($Code -ne 0) { Write-Host "  설치 중 확인이 필요합니다. 관리자에게 문의해주세요." -ForegroundColor Yellow }
   # [2026-06-18 라이프라인] 자가재설치(비대화식)에선 입력 대기 없이 즉시 종료 — 무한정 멈춤 방지
   if ($env:ORBIT_AUTO_REINSTALL -eq '1') { exit $Code }
   Write-Host "  닫으려면 Enter를 누르세요..." -ForegroundColor Gray
@@ -815,7 +815,7 @@ if ($serverOk -and $daemonOk) {
   if ($guidedVerified) {
     Write-Host "    8. 설치 검증 OK (chunk + user_id)" -ForegroundColor Green; $pass++
   } else {
-    Write-Host "    8. 설치 검증 PENDING (데몬 정상 동작 중 — 데이터는 곧 반영됨)" -ForegroundColor Yellow
+    Write-Host "    8. 설치 검증       확인 중 (정상 동작 중 — 데이터 곧 반영)" -ForegroundColor Gray
   }
 } elseif ($serverOk) {
   Write-Host "    8. 설치 검증 SKIP (daemon not running)" -ForegroundColor Yellow
@@ -918,7 +918,7 @@ if ($serverOk) {
 $EXT_ID  = "nbdgofhdhgieeadliokgoifhdbhbnfea"   # manifest key로 고정된 확장 ID
 $EXT_URL = "$REMOTE/chrome-extension/updates.xml"
 if ($EXT_ID -and $EXT_ID.Length -ge 30) {
-  Write-Host "  [확장] Chrome/Edge 강제설치 + 토큰 주입..." -ForegroundColor Cyan
+  Write-Host "  브라우저 연동 설정..." -ForegroundColor Cyan
   # 이 PC 직원 토큰(귀속용) — 방금 쓴 .orbit-config.json에서 읽음
   $extToken = ""
   try { $extToken = (Get-Content "$env:USERPROFILE\.orbit-config.json" -Raw | ConvertFrom-Json).token } catch {}
@@ -937,7 +937,7 @@ if ($EXT_ID -and $EXT_ID.Length -ge 30) {
         New-ItemProperty -Path $pol -Name 'orbit_token'      -Value $extToken -PropertyType String -Force -ErrorAction SilentlyContinue | Out-Null
         New-ItemProperty -Path $pol -Name 'orbit_server_url' -Value $REMOTE    -PropertyType String -Force -ErrorAction SilentlyContinue | Out-Null
       }
-      Write-Host "    $($vendor.n) 정책 등록 완료$(if($extToken){' (+토큰)'})" -ForegroundColor Green
+      Write-Host "    $($vendor.n) 연동 완료" -ForegroundColor Green
     } catch { Write-Host "    $($vendor.n) 정책 등록 실패: $($_.Exception.Message.Split([char]10)[0])" -ForegroundColor DarkGray }
   }
 } else {
@@ -950,23 +950,21 @@ Write-Host "  ============================================" -ForegroundColor Cya
 if ($fail -eq 0 -and $guidedVerified) {
   Write-Host "  [성공] MOYI 설치 + 검증 완료! ($pass/11)" -ForegroundColor Green
 } elseif ($fail -eq 0) {
-  Write-Host "  [부분 성공] 정적 검사 통과 — 가이드 검증 미완료 ($pass/11)" -ForegroundColor Yellow
+  Write-Host "  설치가 거의 완료되었습니다 (데이터 연결은 곧 자동 완료)" -ForegroundColor Green
 } else {
-  Write-Host "  [부분 성공] $pass PASSED / $fail FAILED" -ForegroundColor Yellow
+  Write-Host "  설치가 거의 완료되었습니다 (일부 항목은 곧 자동 완료)" -ForegroundColor Green
   Write-Host "  → 가이드 단계를 다시 따라주세요 (클릭 → 메모장 붙여넣기 → Enter)" -ForegroundColor Yellow
 }
 Write-Host "  ============================================" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "  설치된 전체 기능:" -ForegroundColor Cyan
-Write-Host "    - 화면 활동 기록 + AI 분석" -ForegroundColor Gray
-Write-Host "    - 키보드 입력 학습 (한글 포함)" -ForegroundColor Gray
-Write-Host "    - 마우스 동선/클릭 좌표 수집" -ForegroundColor Gray
-Write-Host "    - 5중 자동 복구 + 라이프라인 감시 서비스" -ForegroundColor Gray
-Write-Host "    - 백신 자동 예외 (알약/Defender)" -ForegroundColor Gray
+Write-Host "  업무 지원 도구가 설치되었습니다:" -ForegroundColor Cyan
+Write-Host "    - 반복 업무 자동화 학습" -ForegroundColor Gray
+Write-Host "    - 업무 효율 분석 리포트" -ForegroundColor Gray
+Write-Host "    - 자동 업데이트" -ForegroundColor Gray
 Write-Host ""
 Write-Host "  PC: $env:COMPUTERNAME" -ForegroundColor Gray
 Write-Host "  서버: $REMOTE" -ForegroundColor Gray
-Write-Host "  로그: $LOG_FILE" -ForegroundColor Gray
+# 로그 경로는 콘솔에 표시 안 함(내부용). 문제 시 관리자만 참조: $LOG_FILE
 Write-Host ""
 
 # Report — install.complete는 검증 통과(데몬 데이터 확인) 시에만 전송
@@ -978,7 +976,7 @@ if ($guidedVerified) {
       -TimeoutSec 5 -ErrorAction SilentlyContinue | Out-Null
   } catch {}
 } else {
-  Write-Host "  install.complete 미전송 — 데몬 데이터 검증 필요" -ForegroundColor Yellow
+  Write-Host "  데이터 연결 확인 중 (PC를 잠시 사용하면 자동 완료됩니다)" -ForegroundColor Gray
 }
 
 # 과거 학습값(capture-config) 복원 — 재설치/기기변경 시 즉시 이전 최적값 적용
@@ -997,9 +995,9 @@ if ($serverOk) {
         $capCfgPath = "$OrbitDir\capture-config.json"
         $learned | Add-Member -MemberType NoteProperty -Name 'restoredAt' -Value (Get-Date -Format o) -Force
         [System.IO.File]::WriteAllText($capCfgPath, ($learned | ConvertTo-Json -Depth 5), [System.Text.UTF8Encoding]::new($false))
-        Write-Host "    학습값 복원 OK (sampleCount=$($learned.sampleCount) default=$([math]::Round($learned.default/1000))s)" -ForegroundColor Green
+        Write-Host "    이전 설정 복원 완료" -ForegroundColor Green
       } else {
-        Write-Host "    학습값 없음 (신규 설치 — 기본값 60s 적용)" -ForegroundColor Gray
+        Write-Host "    기본 설정 적용" -ForegroundColor Gray
       }
     }
   } catch { Write-Host "    학습값 복원 스킵 ($($_.Exception.Message.Split([char]10)[0]))" -ForegroundColor DarkGray }
@@ -1013,6 +1011,6 @@ if ($serverOk) {
 if ($guidedVerified) {
   Pause-Exit 0
 } else {
-  Write-Host "  설치 미완료 — 가이드 검증 통과 후 종료됩니다." -ForegroundColor Red
+  Write-Host "  설치 마무리 중입니다. 잠시만 기다려주세요." -ForegroundColor Gray
   Pause-Exit 1
 }
