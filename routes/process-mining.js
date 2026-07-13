@@ -1892,6 +1892,63 @@ function createProcessMining({ getDb, reportSheet }) {
     }
   });
 
+  // ── 카톡 원문 인텔리전스 소스 (bin/kakao-intel-worker.js S0~S1 소스) ─────────
+  // 시트 '메시지분류' 원문을 owner PC 워커에 노출한다. 원문은 응답으로만 흐르고
+  // (서버·워커 메모리), DB엔 파생결과(kakao.intel/ops_relation)만 저장하는 전제 —
+  // kakao-ontology-sync.js의 "원문 미저장" 프라이버시 원칙과 동일. verifyTokenAsync 가드.
+  async function _requireUser(req, res) {
+    const tok = (req.headers.authorization || '').replace('Bearer ', '').trim() || (req.query.token || '').trim();
+    if (!tok) { res.status(401).json({ ok: false, error: 'token required' }); return null; }
+    try {
+      const u = await require('../src/auth').verifyTokenAsync(tok);
+      if (!u) { res.status(401).json({ ok: false, error: 'invalid token' }); return null; }
+      return u;
+    } catch { res.status(401).json({ ok: false, error: 'auth error' }); return null; }
+  }
+
+  // 방별 원문 메시지 수 — 워커가 처리할 방을 고르는 용도
+  router.get('/kakao-raw-rooms', async (req, res) => {
+    if (!await _requireUser(req, res)) return;
+    try {
+      const rows = await _fetchKakaoSheetData();
+      const counts = {};
+      for (const m of rows) { if (m._tab !== '메시지분류') continue; const room = m['방이름'] || ''; if (room) counts[room] = (counts[room] || 0) + 1; }
+      const rooms = Object.entries(counts).map(([room, count]) => ({ room, count })).sort((a, b) => b.count - a.count);
+      res.json({ ok: true, rooms, roomCount: rooms.length, totalMessages: rooms.reduce((s, r) => s + r.count, 0) });
+    } catch (e) { res.json({ ok: false, error: e.message }); }
+  });
+
+  // 방별 원문(시각·발신자·원문·AI분류·품목·차수·수량) — 자르지 않음(S5 교차검증 앵커 포함)
+  router.get('/kakao-raw', async (req, res) => {
+    if (!await _requireUser(req, res)) return;
+    try {
+      const room = (req.query.room || '').trim();
+      const limit = Math.min(parseInt(req.query.limit) || 5000, 5000);
+      const offset = parseInt(req.query.offset) || 0;
+      const rows = await _fetchKakaoSheetData();
+      let msgs = rows.filter(r => r._tab === '메시지분류');
+      if (room) msgs = msgs.filter(m => (m['방이름'] || '') === room);
+      const messages = msgs.slice(offset, offset + limit).map(m => ({
+        ts: m['시각'] || '', room: m['방이름'] || '', sender: m['발신자'] || '',
+        text: m['원문'] || '', aiClass: m['AI분류'] || '', product: m['품목'] || '',
+        seq: m['차수'] || '', qty: m['수량'] || '',
+      }));
+      res.json({ ok: true, room, count: messages.length, total: msgs.length, messages });
+    } catch (e) { res.json({ ok: false, error: e.message }); }
+  });
+
+  // 우리 직원 명단(담당자매핑) — S1 역할판별(직원/고객) 그라운딩용
+  router.get('/kakao-roster', async (req, res) => {
+    if (!await _requireUser(req, res)) return;
+    try {
+      const rows = await _fetchKakaoSheetData();
+      const roster = rows.filter(r => r._tab === '담당자매핑').map(r => ({
+        name: r['담당자'] || '', role: r['역할'] || '', domain: r['도메인'] || '', userId: r['user_id'] || '',
+      })).filter(r => r.name);
+      res.json({ ok: true, roster });
+    } catch (e) { res.json({ ok: false, error: e.message }); }
+  });
+
   // 기존 screen.analyzed raw JSON 문자열 재파싱
   // ═══════════════════════════════════════════════════════════════════════════
   router.post('/migrate-vision', async (req, res) => {
@@ -2744,7 +2801,7 @@ async function _fetchKakaoSheetData() {
 
   // 핵심 탭 읽기: 메시지분류, 비즈니스이벤트, 의사결정추적, 파이프라인보고서
   const allEvents = [];
-  const targetTabs = tabs.filter(t => ['메시지분류', '비즈니스이벤트', '의사결정추적', '방프로파일'].includes(t));
+  const targetTabs = tabs.filter(t => ['메시지분류', '비즈니스이벤트', '의사결정추적', '방프로파일', '담당자매핑'].includes(t));
 
   for (const tab of targetTabs) {
     const range = encodeURIComponent(`${tab}!A1:Z5000`);
