@@ -550,15 +550,18 @@ async function processServerQueue() {
     }
     let work = [...batch, ...pending];
     if (!work.length) return 0;
-    // ── 트리아지: 분석 가치 없는 캡처 선별 컷 (같은 사람·앱·창을 10분 내 재분석 금지 — 화면 안 바뀜) ──
+    // ── 트리아지: 분석 가치 없는 캡처 선별 컷 (같은 사람·앱·창을 3분 내 재분석 금지 — 화면 안 바뀜) ──
     // 목적: CLI 처리량을 "새 정보가 있는 화면"에만 쓴다. 백로그의 대부분이 동일화면 반복 캡처.
+    // [2026-07-13] 10분→3분 완화: 작업세션 판정(/api/vision/task-sessions)이 "10분 내 분석 3장+"를
+    // 요구하는데, 큐 항목의 app·windowTitle이 빈 값이 많아 유저당 키 1개로 뭉개짐 → 10분 컷이면
+    // 유저당 최대 1장/10분이라 세션이 구조적으로 형성 불가. 3분 컷 = 유저·키당 최대 3~4장/10분.
     work.sort((a, b) => new Date(b.ts || 0) - new Date(a.ts || 0)); // 최신 우선
     const before = work.length;
     work = work.filter(item => {
       const key = `${item.userId || item.hostname}|${item.app || ''}|${(item.windowTitle || '').slice(0, 40)}`;
       const itemMs = new Date(item.ts || Date.now()).getTime();
       const last = _triageSeen.get(key);
-      if (last && Math.abs(itemMs - last) < 10 * 60 * 1000) {
+      if (last && Math.abs(itemMs - last) < 3 * 60 * 1000) {
         if (item.__pf) { try { fs.unlinkSync(item.__pf); } catch {} } // 누적분도 컷하면 파일 정리
         return false;
       }

@@ -4357,10 +4357,20 @@ app.post('/api/auto-fix/reset-cooldown', (req, res) => {
 // 사용자별 라운드로빈으로 추출 — 한 PC가 캡처를 폭주해도 다른 직원 캡처가 굶지 않는다.
 // ?n= 으로 배치 크기 조절(워커 폴링 주기 단축에 맞춰 기본값도 상향, 최대 40).
 app.get('/api/vision/queue', (req, res) => {
-  const n = Math.min(parseInt(req.query.n) || 10, 40);
+  const nRaw = parseInt(req.query.n) || 10;
+  const n = Math.min(nRaw, 40);
+  // [2026-07-13] 구세대 워커 차단 — 사무실 IP(14.32.52.210)의 pre-07-04 워커(30초 폴링, n 미지정→10)가
+  // 큐를 30초마다 전부 가져가면서 screen.analyzed를 전혀 안 냄 → 3일 분석률 ~1% 사고의 주범(실측: fetch 로그 n=10, 30초 간격, 결과 0건).
+  // 현행 워커(bin/vision-worker.js)는 n=24를 명시하므로 n<24 요청은 빈 배치로 응답해 큐를 보존한다.
+  if (nRaw < 24) {
+    if (!global._legacyVisionBlockAt || Date.now() - global._legacyVisionBlockAt > 600000) {
+      global._legacyVisionBlockAt = Date.now();
+      console.log(`[vision-queue] 구세대 워커 차단(n=${nRaw}, ip=${req.headers['x-forwarded-for'] || req.socket.remoteAddress}) — 10분간 로그 억제`);
+    }
+    return res.json({ pending: _visionQueueTotal(), batch: [] });
+  }
   const batch = _visionQueueTake(n);
-  // [2026-07-13 진단] 큐를 비우면서 screen.analyzed를 안 내는 은닉 소비자 추적 — n값이 코드세대 지문(구코드=10, 신코드=24)
-  console.log(`[vision-queue] fetch: ${batch.length}건 취득 (n=${n}, ip=${req.headers['x-forwarded-for'] || req.socket.remoteAddress}, ua=${String(req.headers['user-agent'] || '-').slice(0, 60)})`);
+  if (batch.length) console.log(`[vision-queue] fetch: ${batch.length}건 취득 (n=${nRaw}, ip=${req.headers['x-forwarded-for'] || req.socket.remoteAddress})`);
   // ★[골:실행좌표융합] fetch 시점에 클릭 첨부 — 이때는 캡처 순간의 클릭을 담은 keyboard.chunk가
   // 이미 다 도착해 링버퍼에 있음(push 시점엔 캡처가 클릭보다 먼저라 비어있었음).
   for (const item of batch) {
