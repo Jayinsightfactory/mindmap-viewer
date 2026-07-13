@@ -1364,3 +1364,12 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - **해법(우아)**: 브라우저 정책은 HKCU에 쓰면 admin 불필요 + Chrome/Edge가 읽음. 데몬(personal-agent, 유저권한+토큰)이 시작 시 HKCU\Software\Policies\{Google\Chrome,Microsoft\Edge}\ExtensionInstallForcelist(EXT_ID;updates.xml) + 3rdparty\extensions\<id>\policy(orbit_token,orbit_server_url) 씀(reg add /f). CodeSync로 기존 전직원 자동배포, 재설치·관리자·watchdog 불필요.
 - daemon/personal-agent.js ①-c 블록, Windows+config browserExt!==false. EXT_ID=nbdgofhdhgieeadliokgoifhdbhbnfea.
 - 검증: node -c 후 push→CodeSync→데몬 재기동시 HKCU 등록→다음 Chrome/Edge 실행때 확장 자동설치+토큰귀속. raw-events type=work.step에 ext-work(url) 유입 확인.
+
+## 카톡 대화 인텔리전스 워커 (2026-07-10, 전량처리·무과금)
+- 요구: 카톡데이터 기반 거래처/직원 분류·고객성향·해결능력/방식/로직·이슈트래킹. 구독 무과금으로 할당량 100% 전량.
+- 리서치: supervisor→전문에이전트→평가, conversation intelligence, automation discovery(복잡도·빈도·해결패턴). 소스 socure/cresta/arXiv/fiddler.
+- 기존자산 재사용: /api/kakao/messages(복호화 저장, 방·발신자·내용·시각), /api/kakao/chatrooms, kakao-ontology-sync(ops_relation), vision-worker CLI패턴.
+- 신규 bin/kakao-intel-worker.js: owner PC Claude CLI(Max구독 $0)로 방별 메시지→스레드(30분갭·80건)→Claude로 이슈/거래처성향/직원역량/해결방식·로직·humanJudgment 구조화 JSON→서버 type='kakao.intel' 이벤트. 상태파일(~/.orbit/kakao-intel-state.json)로 중복방지, 전 방 전량 처리 후 10분폴링. 실행: node bin/kakao-intel-worker.js [--once|--room "방"].
+- server.js GET /api/admin/kakao-intel: kakao.intel 롤업(거래처별 traits/tones/resolveRate, 직원별 handled/styles, issueTypes, unresolved 이슈트래킹).
+- 골연결: resolution.humanJudgment = 응대업무의 판단/기계 구간 → AI 대체 후보 식별(judgment-miner 대화판).
+- ⚠️ 미검증(내 실행 차단). CLI 프롬프트 품질은 첫 실행 결과 보고 튜닝. 배포=push(server.js). 워커는 owner PC node 실행.

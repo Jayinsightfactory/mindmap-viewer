@@ -1437,6 +1437,46 @@ app.get('/api/admin/judgment-map', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// GET /api/admin/kakao-intel — 카톡 인텔 집계 (거래처 성향/직원 역량/이슈트래킹/해결로직)
+//   kakao-intel-worker(Claude CLI)가 만든 type='kakao.intel' 이벤트를 롤업.
+app.get('/api/admin/kakao-intel', async (req, res) => {
+  try {
+    const pool = dbModule.getDb(); if (!pool?.query) return res.json({ error: 'DB 없음' });
+    const hours = Math.min(parseInt(req.query.hours) || 720, 2160);
+    const { rows } = await pool.query(
+      `SELECT data_json, timestamp FROM events WHERE type='kakao.intel'
+        AND timestamp::timestamptz > NOW() - ($1 || ' hours')::interval
+        ORDER BY timestamp DESC LIMIT 5000`, [String(hours)]);
+    const customers = {}, employees = {}, issueTypes = {}, unresolved = [];
+    const topN = (o, n) => Object.entries(o).sort((a, b) => b[1] - a[1]).slice(0, n).map(([k, v]) => ({ k, v }));
+    for (const r of rows) {
+      const d = typeof r.data_json === 'object' ? r.data_json : (() => { try { return JSON.parse(r.data_json || '{}'); } catch { return {}; } })();
+      const cust = d.customer || '(미상)';
+      const c = customers[cust] || (customers[cust] = { name: cust, threads: 0, issues: 0, resolved: 0, traits: {}, tones: {} });
+      c.threads++;
+      (d.customerTraits || []).forEach(t => c.traits[t] = (c.traits[t] || 0) + 1);
+      for (const iss of (d.issues || [])) {
+        c.issues++; if (iss.resolved) c.resolved++;
+        issueTypes[iss.type || '기타'] = (issueTypes[iss.type || '기타'] || 0) + 1;
+        if (iss.tone) c.tones[iss.tone] = (c.tones[iss.tone] || 0) + 1;
+        if (!iss.resolved) unresolved.push({ room: d.room, customer: cust, type: iss.type, assignee: iss.assignee, summary: iss.summary, at: d.spanTo });
+      }
+      for (const e of (d.employees || [])) {
+        if (!e || !e.name) continue;
+        const emp = employees[e.name] || (employees[e.name] = { name: e.name, handled: 0, styles: {} });
+        emp.handled += (e.handled || 1); if (e.style) emp.styles[e.style] = (emp.styles[e.style] || 0) + 1;
+      }
+    }
+    res.json({
+      generatedAt: new Date().toISOString(), threadsAnalyzed: rows.length, hours,
+      customers: Object.values(customers).map(c => ({ ...c, traits: topN(c.traits, 3), tones: topN(c.tones, 3), resolveRate: c.issues ? +(c.resolved / c.issues).toFixed(2) : null })).sort((a, b) => b.issues - a.issues).slice(0, 50),
+      employees: Object.values(employees).map(e => ({ ...e, styles: topN(e.styles, 3) })).sort((a, b) => b.handled - a.handled).slice(0, 30),
+      issueTypes: topN(issueTypes, 20),
+      unresolved: unresolved.slice(0, 50),
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // GET /api/admin/perf-issues — PC 이슈 리포트 목록 (최근 100건)
 app.get('/api/admin/perf-issues', (req, res) => {
   const { isAdmin } = resolveAdmin(req);
