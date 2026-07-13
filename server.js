@@ -1500,6 +1500,24 @@ app.get('/api/admin/kakao-intel', async (req, res) => {
 
     const issueList = Object.values(issues).map(it => ({ ...it, customers: Object.keys(it.customers) }));
     const ruleList = Object.values(rules).map(r => ({ ...r, kind: r.judgment > r.deterministic ? 'judgment' : 'deterministic' }));
+    // 판단룰은 윈도우마다 문구가 미세히 달라 그대로 두면 전부 count=1 → 토큰 Jaccard(≥0.5)로 유사 규칙을 묶어 순위화.
+    const _tok = s => (s || '').toLowerCase().replace(/[.,()·/\[\]"']/g, ' ').split(/\s+/).map(w => w.replace(/(은|는|이|가|을|를|로|으로|의|에|와|과|도|만|형|건)$/, '')).filter(w => w.length > 1);
+    function clusterRules(list) {
+      const clusters = [];
+      for (const r of [...list].sort((a, b) => b.count - a.count)) {
+        const toks = new Set(_tok(r.rule));
+        let best = null, bestJ = 0;
+        for (const c of clusters) {
+          const inter = [...toks].filter(t => c.toks.has(t)).length;
+          const uni = new Set([...toks, ...c.toks]).size;
+          const j = uni ? inter / uni : 0;
+          if (j > bestJ) { bestJ = j; best = c; }
+        }
+        if (best && bestJ >= 0.5) { best.count += r.count; best.variants++; for (const t of toks) best.toks.add(t); }
+        else clusters.push({ rule: r.rule, count: r.count, variants: 1, toks });
+      }
+      return clusters.map(c => ({ rule: c.rule, count: c.count, variants: c.variants })).sort((a, b) => b.count - a.count);
+    }
     const issuesResolved = issueList.filter(i => i.resolved).length;
 
     res.json({
@@ -1514,8 +1532,8 @@ app.get('/api/admin/kakao-intel', async (req, res) => {
       employees: Object.values(employees).map(e => ({ name: e.name, aliases: Object.keys(aliasOf).filter(a => aliasOf[a] === e.name), handled: e.handled, resolveRate: e.handled ? +(e.resolved / e.handled).toFixed(2) : null, types: topN(e.types, 5) })).sort((a, b) => b.handled - a.handled).slice(0, 40),
       // 4) 해결 플레이북 + 자동화후보
       playbook: {
-        automationCandidates: ruleList.filter(r => r.kind === 'deterministic').sort((a, b) => b.count - a.count).slice(0, 40),
-        judgmentRules: ruleList.filter(r => r.kind === 'judgment').sort((a, b) => b.count - a.count).slice(0, 40),
+        automationCandidates: clusterRules(ruleList.filter(r => r.kind === 'deterministic')).slice(0, 40),
+        judgmentRules: clusterRules(ruleList.filter(r => r.kind === 'judgment')).slice(0, 40),
         steps: topN(steps, 15),
         humanJudgment: topN(human, 20),
       },

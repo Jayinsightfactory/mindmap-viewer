@@ -121,7 +121,7 @@ function renderIssues(d){
 function renderPlaybook(d){
   const p = d.playbook||{};
   const auto = p.automationCandidates||[], jud = p.judgmentRules||[];
-  const ruleRow = r => `<div class="rule"><div>${esc(r.rule)} <span class="muted">×${r.count}</span></div>${r.evidence?`<div class="ev">"${esc(r.evidence)}"</div>`:''}</div>`;
+  const ruleRow = r => `<div class="rule"><div>${esc(r.rule)} <span class="muted">×${r.count}${r.variants>1?` · ${r.variants}종 표현`:''}</span></div></div>`;
   document.getElementById('v-playbook').innerHTML = `<div class="grid2">
     <div class="card"><h3>🤖 자동화 후보 <span class="cnt">기계적 규칙 · ${auto.length}</span></h3>${auto.length?auto.map(ruleRow).join(''):'<div class="muted">—</div>'}</div>
     <div class="card"><h3>🧠 사람 판단 유지 <span class="cnt">judgment · ${jud.length}</span></h3>${jud.length?jud.map(ruleRow).join(''):'<div class="muted">—</div>'}</div>
