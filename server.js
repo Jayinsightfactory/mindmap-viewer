@@ -4359,6 +4359,8 @@ app.post('/api/auto-fix/reset-cooldown', (req, res) => {
 app.get('/api/vision/queue', (req, res) => {
   const n = Math.min(parseInt(req.query.n) || 10, 40);
   const batch = _visionQueueTake(n);
+  // [2026-07-13 진단] 큐를 비우면서 screen.analyzed를 안 내는 은닉 소비자 추적 — n값이 코드세대 지문(구코드=10, 신코드=24)
+  console.log(`[vision-queue] fetch: ${batch.length}건 취득 (n=${n}, ip=${req.headers['x-forwarded-for'] || req.socket.remoteAddress}, ua=${String(req.headers['user-agent'] || '-').slice(0, 60)})`);
   // ★[골:실행좌표융합] fetch 시점에 클릭 첨부 — 이때는 캡처 순간의 클릭을 담은 keyboard.chunk가
   // 이미 다 도착해 링버퍼에 있음(push 시점엔 캡처가 클릭보다 먼저라 비어있었음).
   for (const item of batch) {
