@@ -1447,32 +1447,78 @@ app.get('/api/admin/kakao-intel', async (req, res) => {
       `SELECT data_json, timestamp FROM events WHERE type='kakao.intel'
         AND timestamp::timestamptz > NOW() - ($1 || ' hours')::interval
         ORDER BY timestamp DESC LIMIT 5000`, [String(hours)]);
-    const customers = {}, employees = {}, issueTypes = {}, unresolved = [];
     const topN = (o, n) => Object.entries(o).sort((a, b) => b[1] - a[1]).slice(0, n).map(([k, v]) => ({ k, v }));
+    const inc = (o, k) => { if (k) o[k] = (o[k] || 0) + 1; };
+
+    // 집계 버킷: 이슈(케이스 key별)·거래처·직원·판단룰·해결단계·사람판단·별칭
+    const issues = {};       // key → 이슈 트래킹(같은 품목+차수 병합)
+    const byType = {};       // 이슈 유형 분포
+    const customers = {};    // 거래처 성향지도
+    const employees = {};    // 직원 역량매트릭스
+    const rules = {};        // 해결 플레이북(판단룰)
+    const steps = {};        // 해결 절차 빈도
+    const human = {};        // 사람판단 지점
+    const aliasOf = {};      // 표시명 → 직원(roleMap)
+    let windows = 0, ccSum = 0, ccN = 0;
+
     for (const r of rows) {
       const d = typeof r.data_json === 'object' ? r.data_json : (() => { try { return JSON.parse(r.data_json || '{}'); } catch { return {}; } })();
-      const cust = d.customer || '(미상)';
-      const c = customers[cust] || (customers[cust] = { name: cust, threads: 0, issues: 0, resolved: 0, traits: {}, tones: {} });
-      c.threads++;
-      (d.customerTraits || []).forEach(t => c.traits[t] = (c.traits[t] || 0) + 1);
-      for (const iss of (d.issues || [])) {
-        c.issues++; if (iss.resolved) c.resolved++;
-        issueTypes[iss.type || '기타'] = (issueTypes[iss.type || '기타'] || 0) + 1;
-        if (iss.tone) c.tones[iss.tone] = (c.tones[iss.tone] || 0) + 1;
-        if (!iss.resolved) unresolved.push({ room: d.room, customer: cust, type: iss.type, assignee: iss.assignee, summary: iss.summary, at: d.spanTo });
+      if (!Array.isArray(d.cases)) continue; // 옛 shape 이벤트는 스킵
+      windows++;
+      if (d.crossCheck && typeof d.crossCheck.score === 'number') { ccSum += d.crossCheck.score; ccN++; }
+      for (const rm of (d.roleMap || [])) { if (rm && rm.raw && rm.staff) aliasOf[rm.raw] = rm.staff; }
+
+      for (const c of d.cases) {
+        if (!c) continue;
+        const key = (c.key || `${c.seq || ''} ${c.product || ''}`).trim() || '(미상)';
+        const it = issues[key] || (issues[key] = { key, product: c.product || '', seq: c.seq || '', type: c.type || '기타', room: d.room || '', raisedBy: c.raisedBy || '', customers: {}, occurrences: 0, resolved: false, turns: 0, tone: c.tone || '', evidence: c.evidence || '', summary: c.summary || '' });
+        it.occurrences++; it.turns += (c.turns || 1);
+        if (c.resolved) it.resolved = true;            // 여러 윈도우 중 한 번이라도 해결이면 해결
+        if (c.summary) it.summary = c.summary;          // 최신(=최근 윈도우가 먼저 정렬) 요약 유지
+        if (c.type) it.type = c.type;
+        inc(byType, c.type || '기타');
+        for (const cu of (c.customers || [])) {
+          if (!cu) continue; it.customers[cu] = true;
+          const co = customers[cu] || (customers[cu] = { name: cu, mentions: 0, issues: {}, resolved: 0, types: {}, tones: {} });
+          co.mentions++; if (c.resolved) co.resolved++; co.issues[key] = true; inc(co.types, c.type); inc(co.tones, c.tone);
+        }
+        const emp = (c.raisedBy || '').trim();
+        if (emp) {
+          const eo = employees[emp] || (employees[emp] = { name: emp, handled: 0, resolved: 0, types: {} });
+          eo.handled++; if (c.resolved) eo.resolved++; inc(eo.types, c.type);
+        }
       }
-      for (const e of (d.employees || [])) {
-        if (!e || !e.name) continue;
-        const emp = employees[e.name] || (employees[e.name] = { name: e.name, handled: 0, styles: {} });
-        emp.handled += (e.handled || 1); if (e.style) emp.styles[e.style] = (emp.styles[e.style] || 0) + 1;
+      for (const dr of (d.decisionRules || [])) {
+        if (!dr || !dr.rule) continue;
+        const k = dr.rule.trim();
+        const ro = rules[k] || (rules[k] = { rule: k, count: 0, deterministic: 0, judgment: 0, evidence: dr.evidence || '' });
+        ro.count++; if (dr.kind === 'deterministic') ro.deterministic++; else if (dr.kind === 'judgment') ro.judgment++;
       }
+      for (const s of (d.resolutionSteps || [])) inc(steps, (s || '').trim());
+      for (const h of (d.humanJudgmentPoints || [])) inc(human, (h || '').trim());
     }
+
+    const issueList = Object.values(issues).map(it => ({ ...it, customers: Object.keys(it.customers) }));
+    const ruleList = Object.values(rules).map(r => ({ ...r, kind: r.judgment > r.deterministic ? 'judgment' : 'deterministic' }));
+    const issuesResolved = issueList.filter(i => i.resolved).length;
+
     res.json({
-      generatedAt: new Date().toISOString(), threadsAnalyzed: rows.length, hours,
-      customers: Object.values(customers).map(c => ({ ...c, traits: topN(c.traits, 3), tones: topN(c.tones, 3), resolveRate: c.issues ? +(c.resolved / c.issues).toFixed(2) : null })).sort((a, b) => b.issues - a.issues).slice(0, 50),
-      employees: Object.values(employees).map(e => ({ ...e, styles: topN(e.styles, 3) })).sort((a, b) => b.handled - a.handled).slice(0, 30),
-      issueTypes: topN(issueTypes, 20),
-      unresolved: unresolved.slice(0, 50),
+      generatedAt: new Date().toISOString(), windowsAnalyzed: windows, hours,
+      crossCheckAvg: ccN ? +(ccSum / ccN).toFixed(2) : null,
+      // 1) 이슈 트래킹보드 (미해결 우선)
+      issues: issueList.sort((a, b) => (a.resolved - b.resolved) || (b.occurrences - a.occurrences)).slice(0, 150),
+      issueSummary: { total: issueList.length, resolved: issuesResolved, unresolved: issueList.length - issuesResolved, byType: topN(byType, 20) },
+      // 2) 거래처 성향지도
+      customers: Object.values(customers).map(c => ({ name: c.name, mentions: c.mentions, issues: Object.keys(c.issues).length, resolveRate: c.mentions ? +(c.resolved / c.mentions).toFixed(2) : null, types: topN(c.types, 4), tones: topN(c.tones, 3) })).sort((a, b) => b.issues - a.issues).slice(0, 80),
+      // 3) 직원 역량매트릭스
+      employees: Object.values(employees).map(e => ({ name: e.name, aliases: Object.keys(aliasOf).filter(a => aliasOf[a] === e.name), handled: e.handled, resolveRate: e.handled ? +(e.resolved / e.handled).toFixed(2) : null, types: topN(e.types, 5) })).sort((a, b) => b.handled - a.handled).slice(0, 40),
+      // 4) 해결 플레이북 + 자동화후보
+      playbook: {
+        automationCandidates: ruleList.filter(r => r.kind === 'deterministic').sort((a, b) => b.count - a.count).slice(0, 40),
+        judgmentRules: ruleList.filter(r => r.kind === 'judgment').sort((a, b) => b.count - a.count).slice(0, 40),
+        steps: topN(steps, 15),
+        humanJudgment: topN(human, 20),
+      },
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
