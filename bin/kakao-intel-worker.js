@@ -114,11 +114,12 @@ ${rosterLine}
 {
  "cases":[{"key":"차수+품목 예 11-1 카네이션","product":"","seq":"","type":"주문|주문변경추가|주문변경취소|주문변경교체|재고|불량클레임|정산|배차출고|문의|기타","raisedBy":"발신 직원명(로스터매칭)","customers":["내용에 언급된 거래처"],"resolved":true,"turns":1,"tone":"일상|급함|불만|정중|강경","evidence":"핵심 근거 원문 15자 이내 인용","summary":"한 줄"}],
  "roleMap":[{"raw":"발신 표시명","staff":"매칭된 직원명 또는 ''","isEmployee":true}],
- "decisionRules":[{"rule":"적용된 판단/규칙 한 줄","kind":"deterministic|judgment","evidence":"15자 이내"}],
+ "decisionRules":[{"rule":"직원이 실제 업무처리에 적용한 규칙 한 줄","kind":"deterministic|judgment","evidence":"15자 이내"}],
  "resolutionSteps":["문제해결 절차 단계"],
  "humanJudgmentPoints":["사람 판단이 필요했던 지점(없으면 비움)"]
 }
 cases가 없으면 []. 반드시 유효한 JSON 하나만.
+★decisionRules 규칙: '직원이 주문/재고/불량/출고를 처리하며 적용한 업무규칙'만 넣어라. 위에 준 분석지침(표시명 매칭·케이스 병합·발신자 직원판별)은 규칙이 아니므로 절대 넣지 마라.
 대화:
 ${transcript}`;
 }
