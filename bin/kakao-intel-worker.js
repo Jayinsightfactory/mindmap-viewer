@@ -27,6 +27,7 @@ const path = require('path');
 const http = require('http');
 const https = require('https');
 const N = require('../src/intelligence/entity-resolution/korean-normalizer'); // levenshtein 재사용(방이름 깨짐 정규화)
+const QUOTA = require('../src/quota-guard'); // 구독 사용량 가드(사용자 몫 30% 보전)
 
 // ── 설정 ────────────────────────────────────────────────────────────────────
 let _cfg = {};
@@ -182,6 +183,9 @@ async function processRoom(room, allMsgs, rosterLine) {
     const first = win[0], last = win[win.length - 1];
     const key = hash(room + '|w' + wi + '|' + win.length + '|' + String(first.text).slice(0, 40) + '|' + String(last.text).slice(0, 40));
     if (_state.processed[key]) { processed++; continue; }
+    // 구독 사용량 가드: 70%↑면 이번 라운드 중단(사용자 몫 30% 보전) — 다음 폴링에서 재확인
+    const quota = await QUOTA.checkQuota(30).catch(() => ({ pause: false }));
+    if (quota.pause) { console.log('[quota]', quota.reason); return { windows: windows.length, done, skipped: processed, quotaPaused: true }; }
     const out = await claudeCli(buildPrompt(room, rosterLine, transcriptOf(win)));
     if (out) {
       const cc = crossCheck(out.cases, win);
@@ -238,6 +242,7 @@ async function runAll() {
       const r = await processRoom(room, byRoom.get(room), rosterLine);
       total += r.done;
       console.log(`[${room.slice(0, 24)}] 윈도우 ${r.windows} · 신규 ${r.done} · 스킵 ${r.skipped}`);
+      if (r.quotaPaused) break; // 사용량 가드 발동 — 이번 라운드 전체 중단, 다음 폴링에서 재확인
       if (MAX_WINDOWS && total >= MAX_WINDOWS) break;
     } catch (e) { console.warn(`[${room.slice(0, 20)}] 실패:`, e.message); }
   }

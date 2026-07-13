@@ -511,6 +511,11 @@ async function processBatch() {
 // ── 서버 큐 모드: /api/vision/queue에서 이미지 가져와 CLI 분석 ───────────────
 async function processServerQueue() {
   if (_pqBusy) return 0;
+  // 구독 사용량 가드: 사용자 몫 30% 보전 — 사용량 70%↑면 이번 사이클 스킵(리셋 후 자동 재개)
+  try {
+    const q = await require('../src/quota-guard').checkQuota(30);
+    if (q.pause) { console.log('[quota]', q.reason); return 0; }
+  } catch {}
   _pqBusy = true;
   try {
     const url = new URL('/api/vision/queue', ORBIT_SERVER);
