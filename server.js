@@ -1211,7 +1211,15 @@ function _visionQueuePush(item) {
   const uid = item.userId || 'unknown';
   if (!global._visionQueueByUser.has(uid)) global._visionQueueByUser.set(uid, []);
   const q = global._visionQueueByUser.get(uid);
-  q.push(item);
+  // [2026-07-13] 시간 다양성 보장: 데몬 flush가 초 단위 버스트로 밀어넣으면 "최신 6장"이 전부
+  // 몇 초 간격이라 워커 트리아지(같은 화면 3분 컷)에서 1장만 살아남음 → 세션(10분내 3장+) 형성 불가.
+  // 마지막 항목과 2분 미만 간격이면 교체(근접 중복 대체) — 큐 6칸이 ~12분+ 시간대를 커버하게 됨. 힙 예산 불변.
+  const lastItem = q[q.length - 1];
+  if (lastItem && Math.abs(new Date(item.ts) - new Date(lastItem.ts)) < 120000) {
+    q[q.length - 1] = item;
+  } else {
+    q.push(item);
+  }
   while (q.length > _VISION_PER_USER_MAX) q.shift();
   global._visionImageQueue.push(item);
   while (global._visionImageQueue.length > _VISION_LEGACY_MAX) global._visionImageQueue.shift();
@@ -4507,17 +4515,25 @@ app.get('/api/vision/task-sessions', async (req, res) => {
       [userId, since]
     );
     const normApp = a => String(a || '').replace(/\s*[\(\-–].*/, '').trim() || '기타';
+    // [2026-07-13] 같은앱 판정을 토큰 교집합으로: Vision이 같은 화면을 "이카운트(ECOUNT) ERP - Chrome"
+    // "ECOUNT ERP (이카운트, Chrome 브라우저)" 등으로 매번 다르게 라벨링 → 문자열 비교면 매 스텝
+    // 세션이 쪼개져 전부 1~2장(<3 필터)이 됨(실측: 같은앱 4연속·갭 6분도 sessionCount=0).
+    const _APP_STOP = new Set(['chrome', 'edge', 'browser', '브라우저', 'windows', 'microsoft', 'google', 'web', '웹', 'pc', '창', '모드']);
+    const tokensOf = a => new Set(String(a || '').toLowerCase().split(/[^a-z0-9가-힣]+/).filter(t => t.length >= 2 && !_APP_STOP.has(t)));
+    const sameApp = (A, B) => { for (const t of A) if (B.has(t)) return true; return A.size === 0 && B.size === 0; };
     const sessions = [];
     let cur = null, prevT = 0;
     for (const r of rows) {
       const app = normApp(r.app);
+      const tk = tokensOf(r.app);
       const t = new Date(r.timestamp).getTime();
       const gap = prevT ? (t - prevT) / 1000 : 0;
       // 새 세션: 큰 유휴갭 or (앱바뀌고 1분+ 갭). 같은 작업 중 카톡↔ERP 짧은 전환은 한 세션 유지.
-      if (!cur || gap > gapSec || (cur.app !== app && gap > 60)) {
+      if (!cur || gap > gapSec || (!sameApp(cur.tokens, tk) && gap > 60)) {
         if (cur) sessions.push(cur);
-        cur = { app, startTs: r.timestamp, endTs: r.timestamp, steps: [], apps: new Set() };
+        cur = { app, tokens: new Set(tk), startTs: r.timestamp, endTs: r.timestamp, steps: [], apps: new Set() };
       }
+      for (const tok of tk) cur.tokens.add(tok); // 세션이 흡수한 라벨 토큰 누적(라벨 흔들림 대비)
       const flds = Array.isArray(r.fields) ? r.fields : [];
       const clickFields = flds.filter(f => Array.isArray(f.clickXY))
         .map(f => ({ name: f.name, clickXY: f.clickXY, value: f.currentValue, source: f.dataSource, human: !!f.humanRequired }));

@@ -1373,3 +1373,16 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - server.js GET /api/admin/kakao-intel: kakao.intel 롤업(거래처별 traits/tones/resolveRate, 직원별 handled/styles, issueTypes, unresolved 이슈트래킹).
 - 골연결: resolution.humanJudgment = 응대업무의 판단/기계 구간 → AI 대체 후보 식별(judgment-miner 대화판).
 - ⚠️ 미검증(내 실행 차단). CLI 프롬프트 품질은 첫 실행 결과 보고 튜닝. 배포=push(server.js). 워커는 owner PC node 실행.
+
+## 2026-07-13 (fable5) vision 분석률 1% 사고 — 구세대 워커 절도 + 세션 미형성 근본수정
+
+- 요청: capture-funnel 3일 cap 1392→anal 13(~1%), task-sessions 항상 0, screen.analyzed 시간당 1건 패턴의 원인 조사·최소수정.
+- 검색어: vision-queue, _visionQueuePush, task-sessions, SERVER_QUEUE_POLL_MS, capture-funnel.
+- **원인 1(주범)**: 사무실 공인IP(14.32.52.210, owner PC와 동일 NAT — 정황상 예전 관리자 맥)의 **pre-07-04 구코드 워커가 30초 폴링(n 미지정→10)으로 /api/vision/queue를 쓸어가며 screen.analyzed 0건 생산**. 정상 워커(n=24, 10분)는 빈 배치만 받음. "시간당 1건"은 또 다른 1h 구워커(:54:05 그리드)가 30초 갭에 남은 1~3건을 주워 분석한 것.
+- **원인 2**: task-sessions의 normApp이 괄호 앞까지만 잘라 Vision의 흔들리는 앱 라벨("이카운트(ECOUNT) ERP - Chrome"↔"ECOUNT ERP (이카운트…)")이 매번 다른 앱으로 판정 → 갭>60초마다 세션 분열 → 전부 <3장 필터. 실측: 같은앱 4연속·갭6분도 sessionCount=0.
+- **원인 3**: 워커 트리아지 10분 컷 × 큐 항목 app/windowTitle 빈값(유저당 키 1개) = 유저당 1장/10분 상한 → 세션 요구조건(10분내 3장+)과 구조적 충돌. + 서버 큐(유저당 6칸)가 데몬 flush 버스트의 "최신 6장(초 단위 간격)"만 남겨 시간 다양성 0.
+- **진단 기법**: /api/vision/queue에 fetch 로그(ip·n) 1줄 — **n값이 코드세대 지문**(구=10, 07-08후=24). queue-peek 15초 샘플링으로 드레인 시각, screen.analyzed id(vision-cli-<Date.now()>-<done>)에서 POST 시각 역산.
+- **수정**: ①서버 n<24 fetch=빈 배치(구워커 차단, ae5332d→8e0941a) ②워커 트리아지 10분→3분(8e0941a) ③큐 push 2분내 근접중복 교체(6칸이 12분+ 커버, 힙 불변) ④task-sessions 같은앱 판정=토큰 교집합(스톱워드 chrome/브라우저 등). ③④=이번 커밋.
+- **검증**: 차단 로그 라이브(17:17), n=24 워커 10분 주기 8→12→10→13건 수확, 분석 시간당 1건→14분 10건. 세션은 ④ 배포 후 확인.
+- **잔여**: 구워커 실기기(맥 추정) 찾아 프로세스 종료(차단돼 무해하나 30초 폴링 낭비). 강현우(T09911T) 캡처 이미지의 app/windowTitle 빈값(데몬측) — 트리아지·세션 정밀도 저하 요인.
+- 다시 보면: 이 파일 + 메모리 vision-rogue-legacy-worker.md + DATA_CHECK §3·§4.
