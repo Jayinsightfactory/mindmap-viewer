@@ -19,6 +19,12 @@ const https = require('https');
 
 const ROOT = path.resolve(__dirname, '..');
 
+// 비대화식 git 강제: 저장소가 비공개거나 인증이 없을 때 GUI GitHub 로그인 팝업이 뜨지 않게 한다.
+// 팝업 대신 즉시 실패 → 자가업데이트만 스킵하고 데몬은 현재 코드로 계속 동작(직원 PC 팝업 사고 방지).
+process.env.GIT_TERMINAL_PROMPT = '0';
+process.env.GCM_INTERACTIVE = 'Never';
+if (!process.env.GIT_ASKPASS) process.env.GIT_ASKPASS = 'echo';
+
 // -- Canonical values (embedded in code -> auto-updated via git pull)
 const CANONICAL_SERVER_URL = 'https://mindmap-viewer-production-adb2.up.railway.app';
 const CANONICAL_GIT_REPO   = 'https://github.com/Jayinsightfactory/mindmap-viewer.git';
