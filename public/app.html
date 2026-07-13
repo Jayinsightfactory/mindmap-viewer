@@ -227,7 +227,7 @@ let _screenPeople = null;
 async function viewScreens(){
   $('#view').innerHTML = `<h2>화면 타임라인</h2><div class="sub">실제 캡처 화면을 시간순으로. <b>작업 세션</b> 모드 = 연속 캡처를 하나의 업무 절차로 꿰맴(AI 실행용). 화면 클릭 → 상세(입력필드·📍클릭좌표).</div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px">
-      <span class="muted">보기</span><select id="scMode" style="min-height:32px;background:var(--panel2);border:1px solid var(--border);color:var(--txt);border-radius:8px;padding:0 10px;font-size:13px"><option value="grid">썸네일</option><option value="session" selected>작업 세션(절차)</option></select>
+      <span class="muted">보기</span><select id="scMode" style="min-height:32px;background:var(--panel2);border:1px solid var(--border);color:var(--txt);border-radius:8px;padding:0 10px;font-size:13px"><option value="grid" selected>썸네일</option><option value="session">작업 세션(절차)</option></select>
       <span class="muted">직원</span><select id="scUser" style="min-height:32px;background:var(--panel2);border:1px solid var(--border);color:var(--txt);border-radius:8px;padding:0 10px;font-size:13px"><option value="">전체</option></select>
       <span class="muted">기간</span><select id="scHours" style="min-height:32px;background:var(--panel2);border:1px solid var(--border);color:var(--txt);border-radius:8px;padding:0 10px;font-size:13px"><option value="8">최근 8시간</option><option value="24" selected>오늘(24h)</option><option value="72">3일</option><option value="168">1주</option></select>
       <button class="btn" id="scGo" style="padding:8px 14px">조회</button>
@@ -266,7 +266,7 @@ async function viewScreens(){
     try{
       const d = await api(`/api/vision/task-sessions?userId=${encodeURIComponent(uid)}&hours=${hrs}`);
       const ss = d.sessions||[];
-      if(!ss.length){ $('#scGrid').innerHTML='<div class="panel muted">이 기간에 3장 이상 이어진 작업 세션이 없습니다.</div>'; return; }
+      if(!ss.length){ $('#scGrid').innerHTML='<div class="panel muted">이 기간에 3장 이상 이어진 작업 세션이 없습니다(세션=10분 내 연속 분석 3장+, 분석 밀도가 낮으면 안 만들어짐). <b>썸네일 보기로 전환합니다…</b></div>'; setTimeout(()=>{ $('#scMode').value='grid'; loadGrid(); }, 1200); return; }
       $('#scGrid').innerHTML = ss.map((s,i)=>{
         const autoBadge = s.autoScore>=0.6?'<span class="tag" style="color:#5fd39b">⚡자동화 후보</span>':'';
         const naction = (s.nenovaActions||[]).length?`<span class="tag" style="color:#5b9dff">${s.nenovaActions[0]}</span>`:'';
