@@ -1401,3 +1401,16 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - CAA5TA1 이중데몬: **현재 활성 중복 없음** — 부ID(MNMR8568) 최신이벤트 07-14 00:55 이후 9시간 무음(밤 전원주기로 주ID MNMS93EB만 회생). 죽일 프로세스 없음. 남은 건 과거 분할귀속(cosmetic) → 위험한 대량UPDATE 안 함. exec 원격진단은 소비 흔적 없어 직원PC라 재시도 자제.
 - 맥 구워커 종료: LAN 포트스캔이 auto-mode 안전분류기에 차단됨(정당 — 추측 기기 정찰). **사무실 물리/알려진 접근으로만 처리**(사장님). 서버 n<24 차단이 걸려 있어 무해, 종료는 낭비 제거 목적뿐.
 - 세션 커버리지: quota 재개 후 워커 상시가동 확인(9~10건/배치). 세션은 한 앱 연속작업 유저부터 낮동안 순차형성(MND11FFB 이카운트 1건 확인). 재개 30분 시점이라 누적 진행중.
+
+## 2026-07-14 (fable5) 상시 추출 에이전트 신설 — solution-miner
+
+- 요청: 수집은 그대로(학습 단계) 두고, "솔루션 가능할 만큼 데이터를 뽑아내는 알고리즘 에이전트가 실시간 상시 가동".
+- 기존 상시 워커 3대 확인: vision-worker(10분, 캡처해독)·ops-agent-worker(4h, 예측/병목/자동화후보/교차검증+직무프로파일)·kakao-intel-worker. 즉 통계·예측·병목은 이미 상시.
+- 빈 곳 = 골 파이프라인 마지막 추출단(관찰→실행가능 절차 spec)이 관리자 UI 버튼 수동 트리거뿐이었음.
+- 신설 bin/solution-miner.js (커밋 5b9991d+3c611f9, HKCU\Run OrbitSolutionMiner 자동시작, 15분 폴링, 무과금 규칙기반):
+  - 광맥1: task-session clickXY 보유 세션 → /api/scripts/from-session dry-run spec (세션 자라면 갱신).
+  - 광맥2: /api/scripts/scan 템플릿액션 7종 3회+ 반복 → /api/scripts/generate. 24h당 액션별 1회 dedup.
+  - 실측: 1틱에 재고조회65·엑셀62·거래처16·주문15·출고41·카톡18회 관찰분 6종 spec 생성. 라이브러리 1→7개.
+- 상태 ~/.orbit/solution-miner-state.json. 로그 solution-miner.log. 생성물 전부 draft(실행=사람승인).
+- 전략(문서화만): 대기업/EU는 로컬분석+구조만추출(역할토큰·거래처해시·값폐기)로 PIPA 익명/가명정보 특례 지향. 지금은 미구현.
+- 검증: 4대 워커 동시 가동 확인(vision·ops-agent·kakao-intel·solution-miner). /api/scripts/stats로 라이브러리 추적.
