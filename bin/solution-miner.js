@@ -73,6 +73,47 @@ function httpJson(method, urlPath, body) {
   });
 }
 
+// ── L3 인과 사슬 조립(검증된 원인→작업→결과) ─────────────────────────────────
+// 엔티티 추출은 이미 대규모 작동(action_mentions_customer·kakao_event_mentions_customer 수천).
+// 빠진 건 "같은 거래처로 이어 검증된 사슬로 조립"하는 것. 여기서 읽기전용으로 조립·채점한다.
+// 검증사슬 = 카톡[거래처X]@T0 → 작업[거래처X]@T0+8h → (있으면)ERP[거래처X]. 시간근접만인
+// talk_triggered_action(수천, 거래처 미검증)과 달리, 이건 거래처 키가 양쪽에 일치해야 함.
+async function assembleCausalChains(hours) {
+  const since = Date.now() - hours * 3600 * 1000;
+  const W = 8 * 3600 * 1000; // 원인→작업, 작업→결과 인정 시간창
+  const pull = async (relType) => {
+    const r = await httpJson('GET', `/api/ops-ontology/relations?relType=${relType}&limit=2000`);
+    return (r.relations || []).filter(x => new Date(x.ts).getTime() >= since)
+      .map(x => ({ from: x.from_ref, cust: x.to_ref, t: new Date(x.ts).getTime() }));
+  };
+  const [kakaoMent, actMent, actErp] = await Promise.all([
+    pull('kakao_event_mentions_customer'), pull('action_mentions_customer'), pull('action_updated_erp'),
+  ]);
+  const erpActionIds = new Set((await httpJson('GET', `/api/ops-ontology/relations?relType=action_updated_erp&limit=2000`)).relations?.map(x => x.from_ref) || []);
+  // 거래처(to_ref)별로 카톡·작업 모으기
+  const byCust = new Map();
+  const bucket = c => byCust.get(c) || (byCust.set(c, { kakao: [], act: [] }), byCust.get(c));
+  for (const k of kakaoMent) bucket(k.cust).kakao.push(k);
+  for (const a of actMent) bucket(a.cust).act.push(a);
+  let verified = 0, complete = 0, custWithChain = 0, causeOnly = 0, actOnly = 0;
+  const samples = [];
+  for (const [cust, g] of byCust) {
+    let has = false;
+    for (const k of g.kakao) {
+      const act = g.act.find(a => a.t >= k.t && a.t <= k.t + W); // 같은 거래처 카톡 뒤 8h 내 작업
+      if (!act) continue;
+      verified++; has = true;
+      const hasErp = erpActionIds.has(act.from) || g.act.some(a => a.t >= act.t && a.t <= act.t + W && erpActionIds.has(a.from));
+      if (hasErp) complete++;
+      if (samples.length < 6) samples.push({ cust, hasErp });
+    }
+    if (has) custWithChain++;
+    else if (g.kakao.length && !g.act.length) causeOnly++; // 원인만=미처리 요청 후보
+    else if (g.act.length && !g.kakao.length) actOnly++;   // 작업만=원인불명
+  }
+  return { kakaoMent: kakaoMent.length, actMent: actMent.length, verified, complete, custWithChain, causeOnly, actOnly, samples };
+}
+
 async function runOnce() {
   const t0 = Date.now();
   const st = _loadState();
@@ -165,18 +206,44 @@ async function runOnce() {
       if (!hasCoords && hasValues) critic.gaps.push(`#${s.id} ${s.action_type}: 값은 있으나 좌표 없음`);
     }
   } catch (e) { console.error('  [critic] 실패:', e.message); }
-  // 근본 gap 진단
-  if (coordCount === 0) critic.rootGap = '좌표 학습(pad_mouse_map) 비어 있음 → 모든 spec 실행 불가. 클릭좌표 수집/학습이 1순위';
-  else if (withCoords === 0) critic.rootGap = '세션에 clickXY 미부착 → clickXY 융합 경로 점검 필요';
+  // ── L3 인과 사슬 채점: 엔티티키 커버리지 + 검증된 원인→작업→결과 사슬 ──────────
+  // 사장님 질문(왜→연계→결과)의 측정. "링크가 있다"가 아니라 "거래처로 검증된 사슬이 몇 개인가".
+  const L3 = { coverage: null, actions: 0, custMentions: 0 };
+  try {
+    const stats = await httpJson('GET', '/api/ops-ontology/stats');
+    L3.actions = stats.actions || 0;
+    const rel = (stats.relations || []).reduce((m, r) => (m[r.type] = r.count, m), {});
+    L3.custMentions = Number(rel.action_mentions_customer || 0);
+    L3.talkTriggered = Number(rel.talk_triggered_action || 0);
+    L3.coverage = L3.actions ? +(L3.custMentions / L3.actions * 100).toFixed(1) : 0; // 거래처키 보유 작업 %
+    const ch = await assembleCausalChains(HOURS * 7); // 사슬은 관찰창의 7배로 넉넉히
+    L3.chains = ch;
+    // 거래처 라벨 붙이기(샘플)
+    if (ch.samples.length) {
+      const ents = await httpJson('GET', '/api/ops-ontology/entities?type=customer&limit=500');
+      const nameOf = new Map((ents.entities || []).map(e => [e.id, e.display_name]));
+      L3.sampleChains = ch.samples.map(s => `${nameOf.get(s.cust) || s.cust}${s.hasErp ? '(원인→작업→ERP 완결)' : '(원인→작업)'}`);
+    }
+  } catch (e) { console.error('  [L3] 실패:', e.message); }
+  critic.L3 = L3;
+
+  // 근본 gap 진단 — 3개 층 통합
+  if (coordCount === 0) critic.rootGap = 'L1: 좌표 학습(pad_mouse_map) 0 → spec 실행 불가';
+  else if (withCoords === 0) critic.rootGap = 'L1: 세션 clickXY 미부착';
   else critic.rootGap = null;
+  if (L3.coverage != null && L3.coverage < 10) critic.rootGapL3 = `L3: 작업의 거래처키 ${L3.coverage}%만 → 검증사슬 ${L3.chains?.verified || 0}개(원인만 ${L3.chains?.causeOnly || 0}·작업만 ${L3.chains?.actOnly || 0}). 거래처 관측 커버리지 확대가 사슬의 관건`;
+
   // 추세 저장(최근 20틱) + 서버 리포트
-  st.criticHistory = (st.criticHistory || []).concat([{ at: critic.at, exec: critic.executable, total: critic.total, coordCount }]).slice(-20);
+  st.criticHistory = (st.criticHistory || []).concat([{ at: critic.at, exec: critic.executable, total: critic.total, coordCount, l3cov: L3.coverage, verified: L3.chains?.verified }]).slice(-20);
   try { await httpJson('POST', '/api/flow/ops-report', { kind: 'solution-critic', source: 'solution-miner', report: critic }); } catch {}
 
   _pruneState(st);
   _saveState(st);
-  console.log(`[solution-miner] ${new Date().toISOString()} 세션 ${scanned}(좌표세션 ${withCoords}) → spec 신규 ${generated}·갱신 ${updated} | 후보 ${actGen} | 껍데기gap ${hollowGaps.length} | 스킵 ${skipped} · ${Math.round((Date.now() - t0) / 1000)}s`);
-  console.log(`  [크리틱] 라이브러리 ${critic.total}개 中 실행가능 ${critic.executable}·구조만 ${critic.structural} | 학습좌표 ${coordCount}개 | 근본gap: ${critic.rootGap || '없음'}`);
+  console.log(`[solution-miner] ${new Date().toISOString()} 세션 ${scanned}(좌표세션 ${withCoords}) → spec 신규 ${generated}·갱신 ${updated} | 후보 ${actGen} | 껍데기gap ${hollowGaps.length} · ${Math.round((Date.now() - t0) / 1000)}s`);
+  console.log(`  [L1 실행] 라이브러리 ${critic.total}개 中 실행가능 ${critic.executable}·구조만 ${critic.structural} | 학습좌표 ${coordCount}`);
+  console.log(`  [L3 인과] 거래처키 커버리지 ${L3.coverage}% (작업 ${L3.actions}·태깅 ${L3.custMentions}) | 검증사슬 ${L3.chains?.verified || 0}(완결 ${L3.chains?.complete || 0}) | 원인만 ${L3.chains?.causeOnly || 0}·작업만 ${L3.chains?.actOnly || 0}`);
+  if (L3.sampleChains?.length) console.log(`  [사슬예시] ${L3.sampleChains.slice(0, 5).join(', ')}`);
+  if (critic.rootGapL3) console.log(`  [근본gap] ${critic.rootGapL3}`);
   for (const h of highlights) console.log(`  + ${h}`);
   if (hollowGaps.length) console.log(`  [gap] 좌표대기 후보: ${hollowGaps.slice(0, 8).join(', ')}`);
 }
