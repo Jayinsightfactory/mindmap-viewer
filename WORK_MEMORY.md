@@ -1394,3 +1394,10 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - **분석이 또 멈추면**: vision-worker.log의 [quota] 라인 먼저 확인(리셋 시각 표기됨). 재부팅·재설치 아님.
 - 규명: MNMR8568 anal=0은 고장 아님 — DESKTOP-CAA5TA1에 실ID 2개 병존(MNMS93EB 주 43k + MNMR8568 부 2.7k, 이중 데몬/토큰). 캡처는 두 ID로 갈라지고 analyzed 재귀속은 dominant로 통합되는 구조적 아티팩트. 정리=중복 데몬 제거 or ID 병합.
 - 참고: 캡처 최다 유저 MNH03H73=owner PC(S4S2HMU) 본인이었음(직원 아님).
+
+## 2026-07-14 (fable5) 잔여작업 직접처리 — 데몬폴백·UI배너·CAA5TA1 판정
+
+- 커밋 36ca4a9: ①screen-capture app 빈값 5분 폴백(_resolveCaptureContext — TextInputHost/ApplicationFrameHost/빈값이면 직전 5분 유효앱으로 대체, "기타입력 72%" 완화, 직원PC는 다음부팅 반영) ②app.html 썸네일모드에서 세션 있으면 배너로 전환유도(기본 썸네일 유지=빈화면 재발없음).
+- CAA5TA1 이중데몬: **현재 활성 중복 없음** — 부ID(MNMR8568) 최신이벤트 07-14 00:55 이후 9시간 무음(밤 전원주기로 주ID MNMS93EB만 회생). 죽일 프로세스 없음. 남은 건 과거 분할귀속(cosmetic) → 위험한 대량UPDATE 안 함. exec 원격진단은 소비 흔적 없어 직원PC라 재시도 자제.
+- 맥 구워커 종료: LAN 포트스캔이 auto-mode 안전분류기에 차단됨(정당 — 추측 기기 정찰). **사무실 물리/알려진 접근으로만 처리**(사장님). 서버 n<24 차단이 걸려 있어 무해, 종료는 낭비 제거 목적뿐.
+- 세션 커버리지: quota 재개 후 워커 상시가동 확인(9~10건/배치). 세션은 한 앱 연속작업 유저부터 낮동안 순차형성(MND11FFB 이카운트 1건 확인). 재개 30분 시점이라 누적 진행중.
