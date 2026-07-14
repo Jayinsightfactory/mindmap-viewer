@@ -1426,3 +1426,12 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - **디벨롭 루프**: solution-miner에 크리틱 패스 추가. 매 사이클 라이브러리 실행가능성 채점(정규식 plan_click 좌표/plan_type 값)+근본gap 진단+추세(criticHistory 20틱)+ops-report(kind=solution-critic). 실측: "라이브러리 1개中 실행가능 0·구조만 1, 학습좌표 0, 근본gap=좌표학습 비어있음". 껍데기 6종은 gap으로만.
 - **루프가 지목한 1순위 다음작업**: 좌표 학습 복구. clickXY 융합(ring buffer→세션 clickFields) 경로가 클릭이 이미 도착하므로 가장 유망. pad_mouse_map 클러스터링(server.js ~3860)은 chunk당 positions<3/클러스터 미달로 학습 안 됨 추정. 별도 정밀 패스 필요(server.js 핫패스라 신중히).
 - 상시 워커 4대 유지(vision·ops·kakao·solution-miner). solution-miner=PID 신규(크리틱 코드).
+
+## 2026-07-14 (fable5) L3 인과 사슬 측정+조립 (사장님 "왜→연계→결과")
+
+- 요청 1,2: (1)엔티티키 커버리지 측정 크리틱 (2)엔티티 추출 구현.
+- 발견: 엔티티 추출은 이미 대규모 작동 — 골든거래처 105, action_mentions_customer 2030, kakao_event_mentions_customer 2728, talk_triggered_action 12773/총작업 94626. "키 비었다"가 아니라 커버리지 2.1%.
+- part1 완료(커밋): solution-miner에 assembleCausalChains() + L3 채점. ops-ontology/relations로 같은거래처 카톡→작업(8h)→ERP 사슬 read-only 조립. 실측: 커버리지 2.1%·검증사슬 0(카톡거래처 23·작업거래처 23이 안 겹침)·완결 0. ops-report kind=solution-critic 추세.
+- part2 진단: work.action은 activity+screen+room만, vision fields[].currentValue(거래처명) 융합때 버림 = 커버리지 상한. 거래처 매칭 잘되는 건 카톡방명=거래처("호남선 수경원예") 또는 ERP화면 특정거래처. 대부분작업(리스트/네비)은 단일거래처 없음=본질적 한계.
+- part2 미착수(핫패스 신중): 커버리지 부스트 = ops-ontology promote가 vision 필드값을 work.action 텍스트에 실어 매칭확대. 크리틱 루프로 커버리지 상승 검증하며 별도 정밀작업 권장.
+- 3층 통합: L1(좌표0)·L2(humanRequired ✅)·L3(거래처키2.1%) — 공통근본=엔티티/좌표 커버리지 희박. 한 곳 고치면 세 층 동시.
