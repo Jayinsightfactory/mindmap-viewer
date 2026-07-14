@@ -450,6 +450,24 @@ function _sanitizeAppName(raw) {
   return normalizeAppName(raw, '');
 }
 
+// [2026-07-14] 캡처 app/windowTitle 빈값 폴백 — 타이핑 중 포그라운드가 TextInputHost(IME)/
+// ApplicationFrameHost(UWP 호스트)로 잡히거나 한글 프로세스명이 normalizeAppName ASCII 필터에
+// 걸리면 app=''로 서버에 감 → vision 트리아지 키·작업세션 앱 판정이 유저당 1개로 뭉개짐("기타입력 72%").
+// 직전 5분 내 유효 앱/창제목으로 대체한다(화면은 실제로 그 앱이 떠 있으므로 의미상 정확).
+const _NONINFORMATIVE_APPS = new Set(['', 'textinputhost', 'applicationframehost', 'searchhost', 'shellexperiencehost']);
+let _lastGoodCtx = { app: '', title: '', at: 0 };
+function _resolveCaptureContext(rawApp, rawTitle) {
+  let app = _sanitizeAppName(rawApp);
+  let title = sanitizeWindowTitle(rawTitle);
+  if (!_NONINFORMATIVE_APPS.has(app)) {
+    _lastGoodCtx = { app, title: title || _lastGoodCtx.title, at: Date.now() };
+  } else if (Date.now() - _lastGoodCtx.at < 5 * 60 * 1000) {
+    app = _lastGoodCtx.app;
+    if (!title) title = _lastGoodCtx.title;
+  }
+  return { app, title };
+}
+
 /**
  * 캡처 파일을 서버로 업로드 (서버에서 Vision 분석)
  */
@@ -467,6 +485,7 @@ function _uploadCaptureToServer(filepath, trigger, context) {
     const imageData = fs.readFileSync(filepath);
     const base64 = imageData.toString('base64');
 
+    const resolvedCtx = _resolveCaptureContext(context.app, context.windowTitle);
     const payload = JSON.stringify({
       events: [{
         id: 'capture-' + Date.now(),
@@ -477,8 +496,8 @@ function _uploadCaptureToServer(filepath, trigger, context) {
         data: {
           trigger,
           triggerReason: _getTriggerDescription(trigger),
-          app: _sanitizeAppName(context.app),
-          windowTitle: sanitizeWindowTitle(context.windowTitle),
+          app: resolvedCtx.app,
+          windowTitle: resolvedCtx.title,
           activityLevel: context.activityLevel || '',
           automationScore: context.automationScore || 0,
           cooltime: context.cooltime || _effectiveCooltime(context.app, trigger),
@@ -954,6 +973,7 @@ function _sendCaptureMetadata(filepath, trigger, context) {
     const token = orbitConfig.token || process.env.ORBIT_TOKEN || '';
     if (!serverUrl) return;
 
+    const resolvedCtx = _resolveCaptureContext(context.app, context.windowTitle);
     const payload = JSON.stringify({
       events: [{
         id: 'capture-' + Date.now(),
@@ -964,8 +984,8 @@ function _sendCaptureMetadata(filepath, trigger, context) {
         data: {
           trigger,
           triggerReason: _getTriggerDescription(trigger),
-          app: _sanitizeAppName(context.app),
-          windowTitle: sanitizeWindowTitle(context.windowTitle),
+          app: resolvedCtx.app,
+          windowTitle: resolvedCtx.title,
           activityLevel: context.activityLevel || '',
           automationScore: context.automationScore || 0,
           cooltime: context.cooltime || _effectiveCooltime(context.app, trigger),

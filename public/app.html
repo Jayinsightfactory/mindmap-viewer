@@ -257,6 +257,19 @@ async function viewScreens(){
         </div>`).join('');
       const byId = Object.fromEntries(ts.map(t=>[t.id,t]));
       document.querySelectorAll('#scGrid .scard').forEach(el=> el.onclick=()=> openScreen(byId[el.dataset.id]));
+      // [2026-07-14] 직원 선택 시 작업 세션이 있으면 배너로 알림 — 세션 모드 발견성(기본은 썸네일 유지)
+      if(uid){
+        api(`/api/vision/task-sessions?userId=${encodeURIComponent(uid)}&hours=${hrs}`).then(sd=>{
+          const n = sd.sessionCount||0;
+          if(n>0 && $('#scMode').value==='grid'){
+            const b = document.createElement('div');
+            b.className='panel'; b.style.cssText='margin-bottom:12px;cursor:pointer;border-color:#5b9dff';
+            b.innerHTML=`🧩 이 직원의 <b>작업 세션 ${n}개</b>가 만들어져 있습니다 — <span style="color:#5b9dff;font-weight:700">작업 세션(절차) 보기로 전환 →</span>`;
+            b.onclick=()=>{ $('#scMode').value='session'; load(); };
+            $('#scGrid').prepend(b);
+          }
+        }).catch(()=>{});
+      }
     }catch(e){ $('#scGrid').innerHTML = errBox(e); }
   };
   // ── 작업 세션(절차) 모드: 연속 캡처를 하나의 업무 흐름으로 ──
