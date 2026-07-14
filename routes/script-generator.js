@@ -852,11 +852,12 @@ function createScriptGenerator({ getDb }) {
 
       // DB 저장
       const scriptName = name || `${actionType}_${scriptType}_${Date.now()}`;
+      // id 명시 할당 — 프로덕션 테이블의 id SERIAL 기본값 유실로 미명시 시 id=NULL(조회불가 쓰레기행)
       const { rows: inserted } = await db.query(`
         INSERT INTO generated_scripts
-          (name, action_type, script_type, script_content, target_app, target_screen,
+          (id, name, action_type, script_type, script_content, target_app, target_screen,
            input_map, source_event_ids, status)
-        VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, 'draft')
+        VALUES (COALESCE((SELECT MAX(id) FROM generated_scripts),0)+1, $1, $2, $3, $4, $5, $6, $7::jsonb, $8, 'draft')
         RETURNING id, name, action_type, script_type, status, created_at
       `, [
         scriptName, actionType, scriptType, script,
@@ -939,9 +940,9 @@ function createScriptGenerator({ getDb }) {
         try {
           const { rows: ins } = await db.query(`
             INSERT INTO generated_scripts
-              (name, action_type, script_type, script_content, target_app, target_screen,
+              (id, name, action_type, script_type, script_content, target_app, target_screen,
                input_map, source_event_ids, status)
-            VALUES ($1, $2, $3, $4, 'nenova', $5, $6::jsonb, $7, 'draft')
+            VALUES (COALESCE((SELECT MAX(id) FROM generated_scripts),0)+1, $1, $2, $3, $4, 'nenova', $5, $6::jsonb, $7, 'draft')
             ON CONFLICT DO NOTHING
             RETURNING id, name, action_type, script_type, status
           `, [scriptName, actionType, scriptType, script, template.windowTitle, JSON.stringify(d.nenovaInputMap || []), [r.id]]);
