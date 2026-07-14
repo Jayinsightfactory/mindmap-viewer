@@ -1386,3 +1386,11 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - **검증**: 차단 로그 라이브(17:17), n=24 워커 10분 주기 8→12→10→13건 수확, 분석 시간당 1건→14분 10건. 세션은 ④ 배포 후 확인.
 - **잔여**: 구워커 실기기(맥 추정) 찾아 프로세스 종료(차단돼 무해하나 30초 폴링 낭비). 강현우(T09911T) 캡처 이미지의 app/windowTitle 빈값(데몬측) — 트리아지·세션 정밀도 저하 요인.
 - 다시 보면: 이 파일 + 메모리 vision-rogue-legacy-worker.md + DATA_CHECK §3·§4.
+
+## 2026-07-14 (fable5) 구독가드 정지 대응 + 귀속 아티팩트 규명
+
+- 아침 점검: vision 워커가 quota 가드(ccc2411)에 걸려 밤새 정지(구독 71% 7일창 ≥70%, 마지막 분석 07-13 21:56 KST). 파이프라인 수리는 정상인데 처리만 정책 정지 상태였음.
+- 조치(owner 위임): ~/.orbit/vision-worker-start.ps1에 **ORBIT_CLI_RESERVE_PCT=20**(임계 80%) — env가 checkQuota 인자보다 우선(src/quota-guard.js:49). 워커 재기동 → 72%<80% 통과, 즉시 10건 수확·분석 재개 확인. 카톡인텔 워커는 30 유지(비전 우선).
+- **분석이 또 멈추면**: vision-worker.log의 [quota] 라인 먼저 확인(리셋 시각 표기됨). 재부팅·재설치 아님.
+- 규명: MNMR8568 anal=0은 고장 아님 — DESKTOP-CAA5TA1에 실ID 2개 병존(MNMS93EB 주 43k + MNMR8568 부 2.7k, 이중 데몬/토큰). 캡처는 두 ID로 갈라지고 analyzed 재귀속은 dominant로 통합되는 구조적 아티팩트. 정리=중복 데몬 제거 or ID 병합.
+- 참고: 캡처 최다 유저 MNH03H73=owner PC(S4S2HMU) 본인이었음(직원 아님).
