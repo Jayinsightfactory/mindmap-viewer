@@ -1414,3 +1414,15 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 상태 ~/.orbit/solution-miner-state.json. 로그 solution-miner.log. 생성물 전부 draft(실행=사람승인).
 - 전략(문서화만): 대기업/EU는 로컬분석+구조만추출(역할토큰·거래처해시·값폐기)로 PIPA 익명/가명정보 특례 지향. 지금은 미구현.
 - 검증: 4대 워커 동시 가동 확인(vision·ops-agent·kakao-intel·solution-miner). /api/scripts/stats로 라이브러리 추적.
+
+## 2026-07-14 (fable5) 결과물 감사 + 디벨롭 루프 — "진짜 쓸 수 있나" 재분석
+
+- 요청: 분석 결과물(생성 spec)을 재분석해 진짜 실행가능 데이터인지 검증 + 디벨롭 반복루프 설계.
+- **정직한 감사 결론: 현재 생성물은 실행 불가.** 구조(단계·순서·필드)는 맞지만 클릭 좌표가 0개.
+  - 근거: generate 재실행 coordsUsed=0, 스크립트에 하드코딩 좌표 패턴 0개. /api/pad/mouse-map → learnedMap.count=0, eventClusters.count=0(완전 비어있음).
+  - 클릭 자체는 서버 도착함(queue-peek clickBuf 유저별 259·200·157개) → **좌표는 들어오는데 "쓸 수 있는 좌표"로 학습/연결이 안 됨**(pad_mouse_map 클러스터 미형성 + 세션 clickXY 미부착 clickStepCount=0).
+  - 이전 "6종 자동화후보 생성" 주장은 오도였음(전부 좌표0 껍데기). 사용자 회의가 정확했음.
+- **수정 2건(커밋)**: ①id=NULL 지속성 버그 — generate/batch INSERT가 id 미명시→prod SERIAL유실로 쓰레기행. from-session식 COALESCE(MAX(id),0)+1 적용(배포·검증: 이제 실제 id 반환·조회가능). ②solution-miner 껍데기 게이트 — coordsUsed=0이면 저장 안 하고 gap 기록(라이브러리 오염 방지).
+- **디벨롭 루프**: solution-miner에 크리틱 패스 추가. 매 사이클 라이브러리 실행가능성 채점(정규식 plan_click 좌표/plan_type 값)+근본gap 진단+추세(criticHistory 20틱)+ops-report(kind=solution-critic). 실측: "라이브러리 1개中 실행가능 0·구조만 1, 학습좌표 0, 근본gap=좌표학습 비어있음". 껍데기 6종은 gap으로만.
+- **루프가 지목한 1순위 다음작업**: 좌표 학습 복구. clickXY 융합(ring buffer→세션 clickFields) 경로가 클릭이 이미 도착하므로 가장 유망. pad_mouse_map 클러스터링(server.js ~3860)은 chunk당 positions<3/클러스터 미달로 학습 안 됨 추정. 별도 정밀 패스 필요(server.js 핫패스라 신중히).
+- 상시 워커 4대 유지(vision·ops·kakao·solution-miner). solution-miner=PID 신규(크리틱 코드).
