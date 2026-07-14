@@ -110,9 +110,36 @@ async function runOnce() {
     }
   }
 
+  // ── 광맥 2: per-screen 자동화 후보(scan) 수확 ─────────────────────────────
+  // 세션 스티칭이 얇아도, 화면단위 분석(screen.analyzed)엔 이미 자동화 후보가 풍부하다.
+  // 템플릿 보유 액션(ACTION_TEMPLATES 7종)이 3회+ 반복되면 spec으로 자동 변환(무과금 규칙기반).
+  // 24h당 액션종류별 1회만 생성(같은 후보 매틱 재생성 방지) — 바운드된 집합이라 flooding 없음.
+  let actGen = 0;
+  st.seenActions = st.seenActions || {};
+  try {
+    const scan = await httpJson('GET', '/api/scripts/scan?minScore=0.5&limit=800');
+    const groups = (scan.patterns || []).filter(g => g.hasTemplate && g.count >= 3);
+    for (const g of groups) {
+      if (generated + updated + actGen >= MAX_PER_TICK) break;
+      const last = st.seenActions[g.actionType];
+      if (last && Date.now() - last.ts < 24 * 3600 * 1000 && g.count <= (last.count || 0) + 5) continue; // 최근 생성 + 유의미 증가 없음
+      const inputMap = (g.inputMaps && g.inputMaps[0]) || [];
+      const gen = await httpJson('POST', '/api/scripts/generate', {
+        actionType: g.actionType, scriptType: 'pyautogui', inputMap,
+        eventIds: (g.eventIds || []).slice(0, 10),
+        name: `자동화후보:${g.actionType}(관찰 ${g.count}회·점수 ${g.avgScore})`,
+      });
+      if (gen && gen.ok) {
+        st.seenActions[g.actionType] = { ts: Date.now(), count: g.count };
+        actGen++; st.generated = (st.generated || 0) + 1;
+        if (highlights.length < 10) highlights.push(`[후보] ${g.actionType}: 관찰 ${g.count}회·점수 ${g.avgScore}${gen.script?.id ? ` #${gen.script.id}` : ''}`);
+      }
+    }
+  } catch (e) { console.error('  [scan] 실패:', e.message); }
+
   _pruneState(st);
   _saveState(st);
-  console.log(`[solution-miner] ${new Date().toISOString()} 스캔 ${scanned}세션(좌표보유 ${withCoords}) → 신규 spec ${generated}·갱신 ${updated}·스킵 ${skipped} · 누적 ${st.generated} · ${Math.round((Date.now() - t0) / 1000)}s`);
+  console.log(`[solution-miner] ${new Date().toISOString()} 세션 ${scanned}(좌표 ${withCoords}) → spec 신규 ${generated}·갱신 ${updated} | 자동화후보 ${actGen} | 스킵 ${skipped} · 누적 ${st.generated} · ${Math.round((Date.now() - t0) / 1000)}s`);
   for (const h of highlights) console.log(`  + ${h}`);
 }
 
