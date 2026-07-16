@@ -51,6 +51,30 @@
       .vtitle,.scopes{display:none}
       .main{grid-row:2}
     }
+
+    /* login */
+    .authbtn{height:34px;padding:0 14px;border-radius:9px;border:0;background:var(--grad);color:#0c0e18;font:inherit;font-size:12.5px;font-weight:800;cursor:pointer;white-space:nowrap}
+    .authbtn.in{background:var(--surface2);color:var(--text);border:1px solid var(--border)}
+    .modal{position:fixed;inset:0;background:rgba(6,8,16,.74);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);display:none;place-items:center;z-index:50;padding:20px}
+    .modal.on{display:grid}
+    .lcard{position:relative;width:100%;max-width:360px;background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:26px 24px;box-shadow:0 24px 70px rgba(0,0,0,.55)}
+    .lb{display:flex;align-items:center;gap:9px;margin-bottom:7px}
+    .lb img{width:30px;height:30px}
+    .lb b{font-size:18px;font-weight:800;letter-spacing:.14em;padding-left:.14em;background:var(--grad);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+    .lcard>p{color:var(--muted);font-size:12.5px;margin-bottom:18px}
+    .oauth{display:flex;flex-direction:column;gap:9px}
+    .ob{display:flex;align-items:center;justify-content:center;gap:9px;height:44px;border-radius:11px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:14px;font-weight:600;cursor:pointer;text-decoration:none}
+    .ob:hover{border-color:var(--violet)}
+    .ordiv{display:flex;align-items:center;gap:10px;color:var(--faint);font-size:11px;margin:15px 0 11px}
+    .ordiv::before,.ordiv::after{content:"";height:1px;background:var(--border);flex:1}
+    .lform{display:flex;flex-direction:column;gap:9px}
+    .lform input{height:44px;border-radius:11px;border:1px solid var(--border);background:var(--bg);color:var(--text);padding:0 14px;font:inherit;font-size:14px}
+    .lform input:focus{outline:none;border-color:var(--violet)}
+    .lform button{height:44px;border-radius:11px;border:0;background:var(--grad);color:#0c0e18;font:inherit;font-size:14px;font-weight:800;cursor:pointer;margin-top:2px}
+    .lerr{color:#fca5a5;font-size:12px;min-height:15px}
+    .lclose{position:absolute;top:12px;right:14px;background:none;border:0;color:var(--faint);font-size:20px;cursor:pointer;line-height:1}
+    .lhint{margin-top:12px;font-size:11px;color:var(--faint);text-align:center}
+    .lhint a{color:var(--sky)}
   </style>
 </head>
 <body>
@@ -66,6 +90,7 @@
         <button data-scope="partner">협업사</button>
       </div>
       <a class="tbtn" href="/chat.html" title="MOYI AI">💬</a>
+      <button class="authbtn" id="authBtn">로그인</button>
       <a class="tbtn" href="/settings.html" title="설정">⚙</a>
     </div>
 
@@ -74,6 +99,26 @@
     <div class="main">
       <div class="loading" id="loading">불러오는 중…</div>
       <iframe id="frame" title="MOYI 뷰" referrerpolicy="same-origin"></iframe>
+    </div>
+  </div>
+
+  <div class="modal" id="loginModal">
+    <div class="lcard">
+      <button class="lclose" id="lClose" aria-label="닫기">✕</button>
+      <div class="lb"><img src="/moyi.svg" alt=""><b>MOYI</b></div>
+      <p>로그인하면 내 작업이 자동으로 저장·정리됩니다.</p>
+      <div class="oauth">
+        <a class="ob" href="/api/auth/google">Google로 계속</a>
+        <a class="ob" href="/api/auth/github">GitHub로 계속</a>
+      </div>
+      <div class="ordiv">또는 이메일</div>
+      <form class="lform" id="lForm">
+        <input type="email" id="lEmail" placeholder="이메일" autocomplete="email" required>
+        <input type="password" id="lPw" placeholder="비밀번호" autocomplete="current-password" required>
+        <div class="lerr" id="lErr"></div>
+        <button type="submit">로그인</button>
+      </form>
+      <div class="lhint">계정이 없으신가요? PC에 설치하면 자동 등록됩니다 · <a href="/setup.html">설치</a></div>
     </div>
   </div>
 
@@ -124,6 +169,48 @@
     window.addEventListener('hashchange', function(){ go(location.hash.slice(1) || 'home'); });
 
     go(location.hash.slice(1) || 'home');
+
+    /* ── 로그인 ── */
+    var authBtn = document.getElementById('authBtn');
+    var modal = document.getElementById('loginModal');
+    function token(){ return localStorage.getItem('orbit_token') || localStorage.getItem('orbitToken') || ''; }
+    function openLogin(){ modal.classList.add('on'); var e=document.getElementById('lEmail'); if(e) setTimeout(function(){e.focus();},50); }
+    function closeLogin(){ modal.classList.remove('on'); }
+    document.getElementById('lClose').addEventListener('click', closeLogin);
+    modal.addEventListener('click', function(e){ if(e.target===modal) closeLogin(); });
+    authBtn.addEventListener('click', function(){
+      if (authBtn.dataset.in==='1'){
+        if (confirm('로그아웃 할까요?')){ localStorage.removeItem('orbit_token'); localStorage.removeItem('orbitToken'); document.cookie='orbit_token=;path=/;max-age=0'; location.reload(); }
+      } else openLogin();
+    });
+    document.getElementById('lForm').addEventListener('submit', function(e){
+      e.preventDefault();
+      var err=document.getElementById('lErr'); err.textContent='';
+      var btn=this.querySelector('button'); btn.disabled=true; btn.textContent='확인 중…';
+      fetch('/api/auth/login', { method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ email: document.getElementById('lEmail').value.trim(), password: document.getElementById('lPw').value }) })
+        .then(function(r){ return r.json(); })
+        .then(function(d){
+          if (d && d.token){
+            localStorage.setItem('orbit_token', d.token);
+            document.cookie='orbit_token='+d.token+';path=/;max-age='+(60*60*24*30)+';samesite=lax';
+            location.reload();
+          } else { err.textContent=(d && d.error) || '이메일 또는 비밀번호를 확인하세요.'; btn.disabled=false; btn.textContent='로그인'; }
+        })
+        .catch(function(){ err.textContent='로그인 실패 — 다시 시도하세요.'; btn.disabled=false; btn.textContent='로그인'; });
+    });
+    // 로그인 상태 반영 (미로그인 시 안내 자동 오픈)
+    (function(){
+      var t = token();
+      if (!t){ authBtn.textContent='로그인'; setTimeout(openLogin, 350); return; }
+      fetch('/api/me', { headers:{'Authorization':'Bearer '+t} })
+        .then(function(r){ return r.ok ? r.json() : null; })
+        .then(function(u){
+          if (u && (u.name || u.email)){ authBtn.textContent = u.name || u.email; authBtn.classList.add('in'); authBtn.dataset.in='1'; authBtn.title='로그아웃'; }
+          else { authBtn.textContent='로그인'; setTimeout(openLogin, 350); }
+        })
+        .catch(function(){ authBtn.textContent='로그인'; });
+    })();
   </script>
 </body>
 </html>
