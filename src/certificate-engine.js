@@ -84,6 +84,18 @@ function computeScore(events = [], sessions = []) {
   const clamp = (v, m) => Math.max(0, Math.min(m, Math.round(v)));
   const L = (n, cap) => Math.log10(Math.max(1, n)) / Math.log10(cap);
 
+  // [v2.2-A] 비판·메타인지 프록시 — AI↔실제업무 왕복(교차). AI를 수동 소비만 하는 게 아니라
+  // 보고→자기 작업에 반영·수정하는 행위. 데몬이 이미 캡처하는 앱전환/타이핑 시퀀스로 계산(설치코드 무관).
+  const WORK_RE = /excel|nenova|ecount|이카운트|word|한글|hwp|메일|mail|works|erp|figma|photoshop|powerpnt|ppt/i;
+  const timeline = events.filter(e => e.timestamp).slice().sort((a, b) => (a.timestamp < b.timestamp ? -1 : 1));
+  let alt = 0, prevKind = null;
+  for (const e of timeline) {
+    const ai = !!aiToolOf(e);
+    const isWork = !ai && !!appOf(e) && ((e.data && ((e.data.typedChars | 0) > 0 || (e.data.clicks | 0) > 0)) || WORK_RE.test(appOf(e) + ' ' + ((e.data && e.data.activity) || '')));
+    const kind = ai ? 'ai' : (isWork ? 'work' : null);
+    if (kind) { if (prevKind && prevKind !== kind) alt++; prevKind = kind; }
+  }
+
   const axes = {
     // 1) 통합도 (200) — 관측 강. AI가 실제 업무흐름에 얼마나 녹았나.
     integration: { max: 200, measurability: 'measured',
@@ -101,9 +113,10 @@ function computeScore(events = [], sessions = []) {
     collaboration: { max: 150, measurability: aiEvents > 0 ? 'measured' : 'proxy',
       score: clamp(Math.min(90, aiSet.size / 5 * 90) + Math.min(60, L(aiEvents, 2000) * 60), 150),
       basis: `AI 도구 ${aiSet.size}종·AI 사용 ${aiEvents}회 (사용량 실측 · 프롬프트 質은 아직 미측정)` },
-    // 5) 비판·메타인지 (150) — 미측정(기준선). 검증·수정 행위 추적 필요.
-    critical: { max: 150, measurability: 'unmeasured', score: 30,
-      basis: 'AI 출력 검증·수정 행위 추적 미구현 — 기준선(사람 라벨 필요)' },
+    // 5) 비판·메타인지 (150) — AI↔업무 왕복 프록시(관측). 검증 깊이는 아직 사람 라벨 필요.
+    critical: { max: 150, measurability: alt > 0 ? 'proxy' : 'unmeasured',
+      score: alt > 0 ? clamp(Math.min(120, L(alt, 200) * 120) + 30, 150) : 30,
+      basis: alt > 0 ? `AI↔업무 교차 ${alt}회 (프록시 — AI를 보고 실제 작업에 반영·수정하는 왕복. 검증 깊이는 미측정)` : 'AI↔업무 교차 신호 없음 — 기준선' },
     // 6) 책임성 (150) — 관측 약(프록시). 지속성 프록시 + 기본.
     responsibility: { max: 150, measurability: 'proxy',
       score: clamp(Math.min(80, streak / 30 * 80) + 40, 150),
