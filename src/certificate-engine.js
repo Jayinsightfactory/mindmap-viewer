@@ -59,10 +59,13 @@ function computeScore(events = [], sessions = []) {
   const dates = [...new Set(events.map(e => (e.timestamp || '').slice(0, 10)).filter(Boolean))];
   const dayCount = dates.length;
   const appOf = e => (e.data && (e.data.app || (e.data.appContext && e.data.appContext.currentApp))) || '';
-  const aiOf  = e => e.aiSource || (e.data && e.data.aiSource) || '';
   const appSet = new Set(events.map(appOf).filter(Boolean));
-  const aiSet  = new Set(events.map(aiOf).filter(Boolean));
-  const aiEvents = events.filter(e => aiOf(e) || /\b(ai|claude|gpt|copilot|chat|llm)\b/i.test(e.type || '')).length;
+  // [v2.2] AI 도구는 별도 필드가 아니라 관측된 앱/활동 텍스트에서 감지(데이터에 이미 풍부히 존재)
+  const AI_TOOLS = [[/claude/i, 'Claude'], [/chatgpt|openai|\bgpt\b/i, 'ChatGPT'], [/codex/i, 'Codex'], [/copilot/i, 'Copilot'], [/cursor/i, 'Cursor'], [/gemini|bard/i, 'Gemini'], [/perplexity/i, 'Perplexity'], [/grok/i, 'Grok'], [/midjourney|dall-?e|stable ?diffusion/i, 'ImageGen'], [/notion ?ai/i, 'Notion AI']];
+  const aiToolOf = e => { const s = (appOf(e) + ' ' + ((e.data && (e.data.activity || e.data.windowTitle)) || '') + ' ' + (e.aiSource || (e.data && e.data.aiSource) || '')).toLowerCase();
+    for (const [re, name] of AI_TOOLS) if (re.test(s)) return name; return ''; };
+  const aiSet = new Set(events.map(aiToolOf).filter(Boolean));
+  const aiEvents = events.filter(e => aiToolOf(e)).length;
   // 세션 길이(과업 진행 신호)
   const sMap = new Map();
   for (const ev of events) { if (!ev.sessionId) continue; sMap.set(ev.sessionId, (sMap.get(ev.sessionId) || 0) + 1); }
@@ -95,9 +98,9 @@ function computeScore(events = [], sessions = []) {
       score: clamp(Math.min(90, longSes / Math.max(1, sesCount) * 90) + Math.min(60, L(sesCount, 500) * 60), 150),
       basis: `복잡세션 ${longSes}/${sesCount}` },
     // 4) 협업 품질 (150) — 관측 약(프록시). 프롬프트 質은 미측정.
-    collaboration: { max: 150, measurability: 'proxy',
-      score: clamp(Math.min(90, aiSet.size / 5 * 90) + Math.min(60, L(aiEvents, 1000) * 60), 150),
-      basis: `AI 도구 ${aiSet.size}종·AI 상호작용 ${aiEvents}회 (프록시 — 프롬프트 質 미측정)` },
+    collaboration: { max: 150, measurability: aiEvents > 0 ? 'measured' : 'proxy',
+      score: clamp(Math.min(90, aiSet.size / 5 * 90) + Math.min(60, L(aiEvents, 2000) * 60), 150),
+      basis: `AI 도구 ${aiSet.size}종·AI 사용 ${aiEvents}회 (사용량 실측 · 프롬프트 質은 아직 미측정)` },
     // 5) 비판·메타인지 (150) — 미측정(기준선). 검증·수정 행위 추적 필요.
     critical: { max: 150, measurability: 'unmeasured', score: 30,
       basis: 'AI 출력 검증·수정 행위 추적 미구현 — 기준선(사람 라벨 필요)' },
