@@ -77,7 +77,8 @@
 'use strict';
 const $ = s => document.querySelector(s);
 const KEY = 'orbit_flow_token';
-const token = () => sessionStorage.getItem(KEY) || '';
+// [2026-07-16] 셸 로그인 토큰(localStorage.orbit_token)도 인정 — 로그인했는데 또 토큰 요구하던 문제 수정
+const token = () => sessionStorage.getItem(KEY) || localStorage.getItem('orbit_token') || localStorage.getItem('orbitToken') || '';
 function showTok(){ $('#tokbar').style.display='flex'; $('#tokin').value=token(); $('#tokin').focus(); }
 function saveTok(){ const v=$('#tokin').value.trim(); if(v){ sessionStorage.setItem(KEY,v); $('#tokbar').style.display='none'; render(state.v); } }
 async function api(p){ const sep=p.includes('?')?'&':'?'; const r=await fetch(p+sep+'token='+encodeURIComponent(token())); if(!r.ok){ const b=await r.json().catch(()=>({})); const e=new Error(b.message||('HTTP '+r.status)); e.status=r.status; e.code=b.error; throw e; } return r.json(); }

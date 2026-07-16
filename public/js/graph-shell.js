@@ -23,7 +23,8 @@
     { from:'p1',to:'c1',kind:'mentions',count:5,confidence:0.85 },{ from:'p2',to:'c2',kind:'mentions',count:3,confidence:0.85 },{ from:'p4',to:'c3',kind:'mentions',count:2,confidence:0.85 },
   ] };
 
-  function token() { return sessionStorage.getItem(TOKEN_KEY) || ''; }
+  // [2026-07-16] 셸 로그인 토큰(localStorage.orbit_token)도 인정 — 로그인 후 또 토큰 요구하던 문제
+  function token() { return sessionStorage.getItem(TOKEN_KEY) || localStorage.getItem('orbit_token') || localStorage.getItem('orbitToken') || ''; }
   function setStatus(t) { $('#status').textContent = t; }
 
   function askToken() {

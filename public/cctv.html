@@ -88,7 +88,7 @@
 'use strict';
 const $=s=>document.querySelector(s);
 const KEY='orbit_flow_token';
-const token=()=>sessionStorage.getItem(KEY)||'';
+const token=()=>sessionStorage.getItem(KEY)||localStorage.getItem('orbit_token')||localStorage.getItem('orbitToken')||'';
 async function api(p){const sep=p.includes('?')?'&':'?';const r=await fetch(p+sep+'token='+encodeURIComponent(token()));if(!r.ok){const b=await r.json().catch(()=>({}));const e=new Error(b.message||('HTTP '+r.status));e.code=b.error;throw e;}return r.json();}
 const imgUrl=u=>u?(u+(u.includes('?')?'&':'?')+'token='+encodeURIComponent(token())):'';
 const ago=iso=>{if(!iso)return '-';const m=Math.round((Date.now()-new Date(iso).getTime())/60000);return m<1?'방금':m<60?m+'분 전':m<1440?Math.round(m/60)+'시간 전':Math.round(m/1440)+'일 전';};
