@@ -75,6 +75,9 @@ function computeScore(events = [], sessions = []) {
   // automationScore(완결·가치 프록시): screen.analyzed data.automationScore
   const autoScores = events.map(e => e.data && parseFloat(e.data.automationScore)).filter(v => v > 0);
   const avgAuto = autoScores.length ? autoScores.reduce((a, b) => a + b, 0) / autoScores.length : 0;
+  // [v2.2-B] 레버리지·책임성 실신호: 고가치(자동화가능) 작업량 · 민감맥락 처리량
+  const highValue = events.filter(e => { const v = e.data && parseFloat(e.data.automationScore); return v >= 0.6; }).length;
+  const sensitive = events.filter(e => e.data && (e.data.bankMode || /은행|금융|보안|계좌|주민|카드|급여|인사/.test(String(e.data.activity || '') + ' ' + appOf(e)))).length;
   // 일관성
   const sorted = dates.slice().sort();
   let streak = 0, cd = new Date().toISOString().slice(0, 10);
@@ -105,10 +108,10 @@ function computeScore(events = [], sessions = []) {
     effectiveness: { max: 200, measurability: autoScores.length ? 'measured' : 'proxy',
       score: clamp(Math.min(110, avgLen / 25 * 110) + Math.min(90, avgAuto * 90), 200),
       basis: `평균 세션 ${avgLen.toFixed(1)}스텝·자동화가치 ${(avgAuto * 100).toFixed(0)}%(표본 ${autoScores.length})` },
-    // 3) 레버리지 (150) — 관측 중(프록시). 더 많고 복잡한 일.
-    leverage: { max: 150, measurability: 'proxy',
-      score: clamp(Math.min(90, longSes / Math.max(1, sesCount) * 90) + Math.min(60, L(sesCount, 500) * 60), 150),
-      basis: `복잡세션 ${longSes}/${sesCount}` },
+    // 3) 레버리지 (150) — 실측. AI로 더 많고 고가치·복잡한 일을.
+    leverage: { max: 150, measurability: 'measured',
+      score: clamp(Math.min(70, L(evCount / Math.max(1, dayCount), 400) * 70) + Math.min(50, L(highValue, 200) * 50) + Math.min(30, longSes / Math.max(1, sesCount) * 30), 150),
+      basis: `하루 처리 ${Math.round(evCount / Math.max(1, dayCount))}건·고가치작업 ${highValue}·복잡세션 ${longSes}` },
     // 4) 협업 품질 (150) — 관측 약(프록시). 프롬프트 質은 미측정.
     collaboration: { max: 150, measurability: aiEvents > 0 ? 'measured' : 'proxy',
       score: clamp(Math.min(90, aiSet.size / 5 * 90) + Math.min(60, L(aiEvents, 2000) * 60), 150),
@@ -117,10 +120,10 @@ function computeScore(events = [], sessions = []) {
     critical: { max: 150, measurability: alt > 0 ? 'proxy' : 'unmeasured',
       score: alt > 0 ? clamp(Math.min(120, L(alt, 200) * 120) + 30, 150) : 30,
       basis: alt > 0 ? `AI↔업무 교차 ${alt}회 (프록시 — AI를 보고 실제 작업에 반영·수정하는 왕복. 검증 깊이는 미측정)` : 'AI↔업무 교차 신호 없음 — 기준선' },
-    // 6) 책임성 (150) — 관측 약(프록시). 지속성 프록시 + 기본.
+    // 6) 책임성 (150) — 프록시. 민감맥락 처리 존재 + 검증 왕복.
     responsibility: { max: 150, measurability: 'proxy',
-      score: clamp(Math.min(80, streak / 30 * 80) + 40, 150),
-      basis: `연속 ${streak}일 (프록시 — 검증/민감정보 처리 별도 신호 필요)` },
+      score: clamp(Math.min(70, L(sensitive + 1, 100) * 70) + Math.min(50, L(alt, 200) * 50) + 30, 150),
+      basis: `민감맥락 ${sensitive}회·검증왕복 ${alt} (프록시 — 검증 적정성은 사람 라벨 필요)` },
   };
 
   const breakdown = {}; let total = 0;
