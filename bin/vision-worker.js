@@ -286,7 +286,10 @@ async function visionCli(base64, ctx) {
   const prompt = `${tmpFile} ${_buildPrompt(ctx)}`;
 
   return new Promise((resolve) => {
-    execFile(CLAUDE_CLI, ['-p', prompt, '--allowedTools', 'Read', '--add-dir', TEMP_DIR],
+    // VISION_CLI_MODEL로 모델 지정(예: sonnet / haiku). 미설정 시 CLI 계정 기본모델.
+    const _args = ['-p', prompt, '--allowedTools', 'Read', '--add-dir', TEMP_DIR];
+    if (process.env.VISION_CLI_MODEL) _args.push('--model', process.env.VISION_CLI_MODEL);
+    execFile(CLAUDE_CLI, _args,
       { timeout: 120000, maxBuffer: 2 * 1024 * 1024 }, (err, stdout) => {
       try { fs.unlinkSync(tmpFile); } catch {}
       if (err) { console.warn(`  CLI 분석 실패: ${err.message}`); resolve(null); return; }
@@ -300,7 +303,7 @@ async function visionApi(base64, ctx) {
   const prompt = _buildPrompt(ctx);
   return new Promise((resolve, reject) => {
     const body = JSON.stringify({
-      model: 'claude-sonnet-4-20250514', max_tokens: 1024,
+      model: process.env.VISION_API_MODEL || 'claude-sonnet-4-20250514', max_tokens: 1024,
       messages: [{ role:'user', content:[
         { type:'image', source:{ type:'base64', media_type:'image/png', data:base64 } },
         { type:'text', text:prompt },
