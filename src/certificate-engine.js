@@ -51,94 +51,73 @@ function getGrade(score) {
 
 // ─── 점수 계산 엔진 ───────────────────────────────────────────────────────────
 
+// AI 활용역량 평가기준 v2 — 활동량이 아니라 능력 6축. 근거: AI_CAPABILITY_CRITERIA.md
+// (Long&Magerko 2020 · Worklytics/IDC 2025 · Collaborative AI Literacy+Metacognition)
+// 각 축은 measured/proxy/unmeasured를 스스로 밝힘 → 거짓 정밀 금지.
 function computeScore(events = [], sessions = []) {
-  const scores = {};
+  const evCount = events.length, sesCount = sessions.length;
+  const dates = [...new Set(events.map(e => (e.timestamp || '').slice(0, 10)).filter(Boolean))];
+  const dayCount = dates.length;
+  const appOf = e => (e.data && (e.data.app || (e.data.appContext && e.data.appContext.currentApp))) || '';
+  const aiOf  = e => e.aiSource || (e.data && e.data.aiSource) || '';
+  const appSet = new Set(events.map(appOf).filter(Boolean));
+  const aiSet  = new Set(events.map(aiOf).filter(Boolean));
+  const aiEvents = events.filter(e => aiOf(e) || /\b(ai|claude|gpt|copilot|chat|llm)\b/i.test(e.type || '')).length;
+  // 세션 길이(과업 진행 신호)
+  const sMap = new Map();
+  for (const ev of events) { if (!ev.sessionId) continue; sMap.set(ev.sessionId, (sMap.get(ev.sessionId) || 0) + 1); }
+  const lens = [...sMap.values()];
+  const avgLen = lens.length ? lens.reduce((a, b) => a + b, 0) / lens.length : 0;
+  const longSes = lens.filter(l => l >= 10).length;
+  // automationScore(완결·가치 프록시): screen.analyzed data.automationScore
+  const autoScores = events.map(e => e.data && parseFloat(e.data.automationScore)).filter(v => v > 0);
+  const avgAuto = autoScores.length ? autoScores.reduce((a, b) => a + b, 0) / autoScores.length : 0;
+  // 일관성
+  const sorted = dates.slice().sort();
+  let streak = 0, cd = new Date().toISOString().slice(0, 10);
+  for (let i = sorted.length - 1; i >= 0; i--) { if (sorted[i] === cd) { streak++; const d = new Date(cd); d.setDate(d.getDate() - 1); cd = d.toISOString().slice(0, 10); } else break; }
+  const lastWeek = dates.filter(d => d >= new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10)).length;
+  const regular = lastWeek / 7;
+  const clamp = (v, m) => Math.max(0, Math.min(m, Math.round(v)));
+  const L = (n, cap) => Math.log10(Math.max(1, n)) / Math.log10(cap);
 
-  // ── 1. 사용량 점수 (300pt max) ──
-  const evCount   = events.length;
-  const sesCount  = sessions.length;
-  const dates     = [...new Set(events.map(e => (e.timestamp || '').slice(0, 10)).filter(Boolean))];
-  const dayCount  = dates.length;
+  const axes = {
+    // 1) 통합도 (200) — 관측 강. AI가 실제 업무흐름에 얼마나 녹았나.
+    integration: { max: 200, measurability: 'measured',
+      score: clamp(Math.min(90, L(evCount, 10000) * 90) + Math.min(60, appSet.size / 12 * 60) + Math.min(50, regular * 50), 200),
+      basis: `이벤트 ${evCount}·업무앱 ${appSet.size}종·주간활동 ${lastWeek}/7일` },
+    // 2) 효과성 (200) — 관측 중. AI로 과업이 진행·완결되나.
+    effectiveness: { max: 200, measurability: autoScores.length ? 'measured' : 'proxy',
+      score: clamp(Math.min(110, avgLen / 25 * 110) + Math.min(90, avgAuto * 90), 200),
+      basis: `평균 세션 ${avgLen.toFixed(1)}스텝·자동화가치 ${(avgAuto * 100).toFixed(0)}%(표본 ${autoScores.length})` },
+    // 3) 레버리지 (150) — 관측 중(프록시). 더 많고 복잡한 일.
+    leverage: { max: 150, measurability: 'proxy',
+      score: clamp(Math.min(90, longSes / Math.max(1, sesCount) * 90) + Math.min(60, L(sesCount, 500) * 60), 150),
+      basis: `복잡세션 ${longSes}/${sesCount}` },
+    // 4) 협업 품질 (150) — 관측 약(프록시). 프롬프트 質은 미측정.
+    collaboration: { max: 150, measurability: 'proxy',
+      score: clamp(Math.min(90, aiSet.size / 5 * 90) + Math.min(60, L(aiEvents, 1000) * 60), 150),
+      basis: `AI 도구 ${aiSet.size}종·AI 상호작용 ${aiEvents}회 (프록시 — 프롬프트 質 미측정)` },
+    // 5) 비판·메타인지 (150) — 미측정(기준선). 검증·수정 행위 추적 필요.
+    critical: { max: 150, measurability: 'unmeasured', score: 30,
+      basis: 'AI 출력 검증·수정 행위 추적 미구현 — 기준선(사람 라벨 필요)' },
+    // 6) 책임성 (150) — 관측 약(프록시). 지속성 프록시 + 기본.
+    responsibility: { max: 150, measurability: 'proxy',
+      score: clamp(Math.min(80, streak / 30 * 80) + 40, 150),
+      basis: `연속 ${streak}일 (프록시 — 검증/민감정보 처리 별도 신호 필요)` },
+  };
 
-  const evScore  = Math.min(150, Math.log10(Math.max(1, evCount)) / Math.log10(10000) * 150);
-  const sesScore = Math.min(75,  Math.log10(Math.max(1, sesCount)) / Math.log10(500)  * 75);
-  const dayScore = Math.min(75,  Math.log10(Math.max(1, dayCount)) / Math.log10(365)  * 75);
-
-  scores.volume = Math.round(evScore + sesScore + dayScore);
-
-  // ── 2. 다양성 점수 (200pt max) ──
-  const toolTypes   = new Set(events.map(e => e.type).filter(Boolean)).size;
-  const sources     = new Set(events.map(e => e.source).filter(Boolean)).size;
-  const channels    = new Set(events.map(e => e.channelId).filter(Boolean)).size;
-
-  const toolScore   = Math.min(80, toolTypes / 15 * 80);
-  const srcScore    = Math.min(80, sources   / 5  * 80);
-  const chanScore   = Math.min(40, channels  / 5  * 40);
-
-  scores.diversity = Math.round(toolScore + srcScore + chanScore);
-
-  // ── 3. 깊이 점수 (200pt max) ──
-  const sessionEventMap = new Map();
-  for (const ev of events) {
-    if (!ev.sessionId) continue;
-    if (!sessionEventMap.has(ev.sessionId)) sessionEventMap.set(ev.sessionId, []);
-    sessionEventMap.get(ev.sessionId).push(ev);
-  }
-
-  const sessionLengths = [...sessionEventMap.values()].map(evs => evs.length);
-  const avgSessionLen  = sessionLengths.length > 0
-    ? sessionLengths.reduce((a, b) => a + b, 0) / sessionLengths.length
-    : 0;
-
-  const longSessions = sessionLengths.filter(l => l >= 10).length;
-  const depthScore   = Math.min(100, avgSessionLen / 30 * 100);
-  const complexScore = Math.min(100, longSessions  / Math.max(1, sesCount) * 100);
-
-  scores.depth = Math.round(depthScore + complexScore);
-
-  // ── 4. 일관성 점수 (150pt max) ──
-  // 연속 사용일
-  const sortedDates = dates.sort();
-  let streak = 0;
-  if (sortedDates.length > 0) {
-    let checkDate = new Date().toISOString().slice(0, 10);
-    for (let i = sortedDates.length - 1; i >= 0; i--) {
-      if (sortedDates[i] === checkDate) {
-        streak++;
-        const d = new Date(checkDate);
-        d.setDate(d.getDate() - 1);
-        checkDate = d.toISOString().slice(0, 10);
-      } else { break; }
-    }
-  }
-
-  // 7일 중 활동일 비율
-  const lastWeekDates = dates.filter(d => d >= new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10));
-  const regularityPct = lastWeekDates.length / 7;
-
-  const streakScore    = Math.min(75, streak / 30 * 75);
-  const regularScore   = Math.min(75, regularityPct * 75);
-
-  scores.consistency = Math.round(streakScore + regularScore);
-
-  // ── 5. 기여 점수 (150pt max) — 기본값 추정 ──
-  // (실제로는 market/share/community 데이터 필요 → 기본 10pt)
-  scores.contribution = 10;
-
-  // ── 총점 ──
-  const total = Math.min(1000, scores.volume + scores.diversity + scores.depth + scores.consistency + scores.contribution);
+  const breakdown = {}; let total = 0;
+  for (const k of Object.keys(axes)) { breakdown[k] = axes[k].score; total += axes[k].score; }
+  total = Math.min(1000, total);
+  const measuredMax = Object.values(axes).filter(a => a.measurability === 'measured').reduce((s, a) => s + a.max, 0);
 
   return {
-    total:    Math.round(total),
-    breakdown: scores,
-    meta: {
-      events:     evCount,
-      sessions:   sesCount,
-      daysActive: dayCount,
-      streak,
-      toolTypes,
-      sources,
-    },
+    total: Math.round(total),
+    breakdown,
+    axes,
+    measurementConfidence: Math.round(measuredMax / 1000 * 100), // 실측 축이 총점의 몇 %인가 = 이 점수를 얼마나 믿을지
+    meta: { events: evCount, sessions: sesCount, daysActive: dayCount, streak, apps: appSet.size, aiTools: aiSet.size },
   };
 }
 
@@ -150,11 +129,12 @@ function makeCertSvg({ userId, score, grade, certId, issuedAt, breakdown }) {
 
   // 점수 바 (breakdown)
   const cats = [
-    { name: '사용량',  score: breakdown.volume       || 0, max: 300, color: '#58a6ff' },
-    { name: '다양성',  score: breakdown.diversity    || 0, max: 200, color: '#3fb950' },
-    { name: '깊이',    score: breakdown.depth        || 0, max: 200, color: '#bc8cff' },
-    { name: '일관성',  score: breakdown.consistency  || 0, max: 150, color: '#f778ba' },
-    { name: '기여',    score: breakdown.contribution || 0, max: 150, color: '#ffa657' },
+    { name: '통합도',   score: breakdown.integration    || 0, max: 200, color: '#58a6ff' },
+    { name: '효과성',   score: breakdown.effectiveness  || 0, max: 200, color: '#3fb950' },
+    { name: '레버리지', score: breakdown.leverage       || 0, max: 150, color: '#bc8cff' },
+    { name: '협업품질', score: breakdown.collaboration  || 0, max: 150, color: '#f778ba' },
+    { name: '비판·메타', score: breakdown.critical       || 0, max: 150, color: '#ffa657' },
+    { name: '책임성',   score: breakdown.responsibility || 0, max: 150, color: '#2bb3a3' },
   ];
 
   const bars = cats.map((cat, i) => {
