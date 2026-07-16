@@ -1,45 +1,48 @@
-# 비전 분석 전용 PC 세팅 지침 (백로그·상시 학습용)
+# 비전 분석 전용 PC 세팅 지침 (정리본)
 
-> 목적: 화면 캡처 Vision 분석을 **두 번째 PC**에서 돌려 처리량을 늘리고, 소유자 PC 워커와 분리한다.
-> 근거: `bin/vision-worker.js` (server-queue 모드) · `DATA_CHECK.md` · `no-reboot-use-selfheal`.
+> 목적: 화면 캡처 Vision 분석을 **두 번째 PC**에서 돌려 처리량·깊이를 늘린다.
+> 대상: `bin/vision-worker.js` (server-queue 모드).
 
-## 0. 모델 결정 — Sonnet vs Haiku
+## ⚠️ 먼저 — "클로드 앱 쓰면 CLI 필요없지?" → **아니요, CLI 필요합니다**
 
-**결론: Sonnet.** (자세한 이유는 맨 아래 "모델 근거")
-- 이 작업 = **한글 ERP/카톡/엑셀 화면을 읽어 거래처·품목·작업절차·automationScore를 구조화 추출**.
-- 이건 밀도 높은 화면 이해 + 구조 추출이라 **Haiku는 얕게 뽑아** 그동안의 커버리지 문제(2.1%·액션 0)를 그대로 답습.
-- 전용 PC를 구독(Max/Pro)으로 돌리면 **토큰당 비용 0** → 비용 때문에 Haiku로 낮출 이유 없음.
-- **Haiku는** 순수 물량 소진 + 속도/비용이 절대 제약일 때만. "제대로 학습"이 목표면 아님.
+- **Claude 데스크톱 앱(채팅 GUI)** ≠ **Claude CLI(명령어 `claude`)**.
+- 워커는 GUI 앱을 **자동으로 조종할 수 없습니다.** 프로그램이 호출하려면 **CLI**(또는 API 키)가 있어야 합니다.
+- **하지만 돈은 안 듭니다** — CLI는 **데스크톱 앱과 같은 Max/Pro 구독으로 로그인**합니다. 구독을 명령줄에서 쓰는 것뿐, 토큰당 추가 비용 0.
+- 정리: **구독은 그대로 쓰되, "claude" 명령줄 도구를 설치·로그인**하면 됩니다.
 
-## 1. 그 PC에 필요한 것
+## 0. 모델 — **Sonnet** (Haiku 아님)
 
-- Windows 10/11 또는 macOS
-- **Node.js** (18+) — `node -v`로 확인
-- **git**
-- **인증 둘 중 하나:**
-  - (권장) **Claude CLI 로그인** — Max/Pro 구독. 토큰당 비용 0.
-  - (대안) **ANTHROPIC_API_KEY** — 종량 과금(Sonnet). 백로그가 크면 비용 주의.
-- ⚠️ **소유자 PC와 다른 Claude 계정 또는 API 키를 쓸 것.** 같은 Max 계정을 두 PC가 쓰면 **사용량 한도(quota)를 공유**해 서로 굶는다.
+한글 ERP/카톡/엑셀 화면을 읽어 거래처·품목·절차를 **구조 추출**하는 작업 → Sonnet이 확실히 강함.
+이번 프로젝트의 병목이 **추출 품질(커버리지)**이라 Haiku로 낮추면 얕게 뽑혀 문제 답습. 구독 CLI면 비용 0이라 낮출 이유도 없음.
 
-## 2. 설치 (한 번)
+## 1. 준비물
+
+| 항목 | 확인 |
+|---|---|
+| Windows 10/11 (또는 macOS) | — |
+| **Node.js 18+** | `node -v` |
+| **git** | `git --version` |
+| **Claude CLI** (구독 로그인) | 설치 후 `claude` |
+| 서버 토큰 (orbit_ 프리픽스) | 소유자에게 받기 |
+
+> ⚠️ **소유자 PC와 다른 Claude 계정으로 로그인할 것.** 같은 Max 계정을 두 PC가 쓰면 사용량 한도(quota)를 나눠 서로 굶는다. (별도 계정이 없으면 한 PC만 돌리는 게 나음.)
+
+## 2. 설치 (한 번만)
 
 ```powershell
-# 1) 저장소 클론
+# 1) Claude CLI 설치 + 로그인 (구독 계정 = 데스크톱 앱과 동일 계정, 무과금)
+npm install -g @anthropic-ai/claude-code
+claude            # 최초 실행 → 브라우저 로그인(구독 선택). 끝나면 'where claude'로 경로 확인.
+
+# 2) 저장소 클론 + 의존성
 git clone https://github.com/Jayinsightfactory/mindmap-viewer.git
 cd mindmap-viewer
-
-# 2) 의존성 (워커는 대부분 내장모듈 + src/quota-guard만 필요하나 안전하게)
 npm install
 
-# 3) Claude CLI 설치·로그인 (Max/Pro 구독 경로 — 무과금)
-#    설치: https://claude.ai/download 또는 npm i -g @anthropic-ai/claude-code
-claude   # 최초 실행 시 로그인(구독 계정). 'where claude'로 경로 확인되면 워커가 자동 감지.
-
-# 4) 서버 인증 설정 파일 — %USERPROFILE%\.orbit-config.json 생성
-#    token = orbit_ 프리픽스 마스터 분석토큰(소유자에게 받기), serverUrl 고정
+# 3) 서버 인증 파일 생성:  %USERPROFILE%\.orbit-config.json
 ```
 
-`%USERPROFILE%\.orbit-config.json` 내용:
+`%USERPROFILE%\.orbit-config.json`:
 ```json
 {
   "token": "orbit_여기에_분석토큰",
@@ -52,52 +55,37 @@ claude   # 최초 실행 시 로그인(구독 계정). 'where claude'로 경로 
 ```powershell
 cd C:\...\mindmap-viewer
 
-# 무과금(CLI) + Sonnet 강제 + 즉시분석(백로그 소진)
-$env:ANTHROPIC_API_KEY = ''            # 비워야 CLI 무과금 경로
-$env:VISION_CLI_MODEL   = 'sonnet'     # 모델 지정(권장). 미설정 시 계정 기본
-$env:ORBIT_CLI_RESERVE_PCT = '10'      # 전용 PC라 사용자 몫 최소만 보전(백로그 빨리)
+$env:ANTHROPIC_API_KEY = ''          # 비워야 CLI(무과금) 경로 사용
+$env:VISION_CLI_MODEL   = 'sonnet'   # 모델 지정(권장)
+$env:ORBIT_CLI_RESERVE_PCT = '10'    # 전용 PC라 최소만 남기고 빨리 처리
+
 node bin/vision-worker.js --server-queue --flush
 ```
 
-API 키 방식으로 할 경우:
-```powershell
-$env:ANTHROPIC_API_KEY = 'sk-ant-...'
-$env:VISION_API_MODEL  = 'claude-sonnet-4-20250514'   # 기본이 이미 Sonnet
-node bin/vision-worker.js --server-queue --flush
-```
+- `--server-queue`: 서버 큐에서 이미지 받아 분석 · `--flush`: 즉시 분석(야간대기 안 함).
+- 더 자주 처리: `$env:VISION_POLL_MS='120000'`(2분), `$env:VISION_BATCH_N='40'`.
+- 창을 닫으면 멈춤 → 계속 돌리려면 §5 백그라운드 등록.
 
-- `--server-queue`: 서버 큐(`/api/vision/queue`)에서 이미지 가져와 분석.
-- `--flush`: 주간에도 즉시 분석(야간 대기 안 함).
-- 폴링 기본 10분. 더 자주: `$env:VISION_POLL_MS='120000'` (2분), 배치: `$env:VISION_BATCH_N='40'`.
-
-## 4. 상시 백그라운드 (선택 — 소유자 PC와 동일 패턴)
-
-`~/.orbit/vision-worker-start.ps1` 만들고(소유자 PC 파일 참고), `HKCU\...\Run`에 hidden.vbs 등록.
-간단히는 작업 스케줄러에 "로그인 시 위 명령 실행"로 등록.
-
-## 5. 검증 (숫자로)
+## 4. 잘 되는지 확인 (숫자)
 
 ```
-BASE = https://mindmap-viewer-production-adb2.up.railway.app  (Authorization: Bearer <토큰>)
-- GET /api/vision/stat            → worker.running / processed 증가?
-- GET /api/learning/capture-funnel?days=1 → analyzed 수 상승?
-- 로컬 로그 ~/.orbit/vision-worker.log → "처리 N건" 라인 (UTF-16 인코딩 주의)
+BASE = https://mindmap-viewer-production-adb2.up.railway.app   (헤더: Authorization: Bearer <토큰>)
+- GET /api/vision/stat                     → processed 증가?
+- GET /api/learning/capture-funnel?days=1  → analyzed 상승?
+- 로컬 ~/.orbit/vision-worker.log           → "처리 N건" (UTF-16 인코딩 주의)
 ```
-- `[quota]` 라인이 계속 뜨면: 그 계정 사용량 한도 도달 → 다른 계정/키 필요하거나 `ORBIT_CLI_RESERVE_PCT` 조정.
+- 콘솔/로그에 `[quota]`가 계속 뜨면 = 그 계정 한도 도달 → 다른 계정 필요 or `ORBIT_CLI_RESERVE_PCT` 조정.
+- `Claude CLI 미발견` 뜨면 = CLI 설치·로그인 안 됨(§2-1 다시).
 
-## ⚠️ 중요 — "백로그 전부"의 현실
+## 5. 상시 백그라운드 (선택)
 
-- 서버 큐는 **인메모리·사용자당 6장 상한**(OOM 방지). 즉 **분석 안 되고 지나간 옛 캡처는 큐에서 이미 버려졌다** — 서버엔 없다.
-- 따라서 두 번째 PC가 늘리는 건 주로 **지금부터의 실시간 스트림 처리량/깊이**(더 좋은 모델로).
-- **진짜 과거 전체**를 학습하려면: 각 직원 PC의 로컬 `~/.orbit/captures/*.png`(원본 저장분)를 소스로 삼아야 함 — 이건 별도 파이프라인(로컬 폴더 분석 모드). 필요하면 따로 설계.
+작업 스케줄러 → "로그인 시 실행" 작업 등록, 동작:
+```
+powershell -NoProfile -WindowStyle Hidden -Command "cd C:\...\mindmap-viewer; $env:VISION_CLI_MODEL='sonnet'; node bin/vision-worker.js --server-queue --flush *> $env:USERPROFILE\.orbit\vision-worker.log"
+```
 
-## 모델 근거 (요약)
+## 6. 현실 — "과거 전부"는 별도
 
-| | Sonnet | Haiku |
-|---|---|---|
-| 한글 화면 OCR·밀집 UI 이해 | 강 | 약 |
-| 거래처/품목/작업절차 **구조 추출** | 강 (커버리지↑) | 약 (얕음) |
-| 속도·비용 | 보통 | 빠름·쌈 |
-| 구독(CLI) 시 토큰비용 | 0 | 0 |
-
-→ 이번 프로젝트의 핵심 병목이 **추출 품질(커버리지)**이므로 **Sonnet**. Haiku는 "많이 빨리"가 목표일 때만.
+- 서버 큐는 **인메모리·사용자당 6장 상한**이라, **분석 못 하고 지나간 옛 캡처는 이미 버려짐**(서버에 없음).
+- 두 번째 PC가 늘리는 건 **지금부터의 실시간 스트림 처리량·품질**.
+- 진짜 과거 전체 학습은 각 직원 PC의 로컬 `~/.orbit/captures/*.png`를 소스로 하는 **로컬 폴더 분석 모드**가 필요 — 원하면 별도 설계.
