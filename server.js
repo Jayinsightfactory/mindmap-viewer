@@ -486,6 +486,24 @@ app.get('/chat', (req, res) => {
 app.get('/select', (req, res) => {
   res.redirect(302, '/select.html');
 });
+// [2026-07-16 통폐합 B] 은퇴 페이지 11개 → 대응 뷰로 301 (죽은 링크 0). CONSOLIDATION_PLAN.md 참조.
+const _RETIRED_PAGES = {
+  '/mockup-chat.html': '/chat.html',
+  '/mockup-mobile-home.html': '/nenova-dashboard.html',
+  '/mockup-select.html': '/select.html',
+  '/workspace-drilldown-demo.html': '/admin-analysis.html',
+  '/legacy-2d.html': '/orbit3d.html',
+  '/workflow-blueprint.html': '/graph.html',
+  '/automation-blueprint.html': '/automation-flow.html',
+  '/admin-intelligence-golden.html': '/admin-analysis.html',
+  '/orbit-live.html': '/dashboard.html',
+  '/orbit.html': '/orbit3d.html',
+  '/orbit-health.html': '/admin-analysis.html',
+};
+for (const [from, to] of Object.entries(_RETIRED_PAGES)) {
+  app.get(from, (req, res) => res.redirect(301, to));
+}
+
 app.use(express.static(path.join(__dirname, 'public'), {
   maxAge: 0, // 개발 단계: 캐시 비활성화 (안정화 후 1d로 복구)
   etag: true,

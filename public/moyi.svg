@@ -1,6 +1,6 @@
 <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="MOYI">
   <defs>
-    <linearGradient id="moyiFav" x1="12" y1="14" x2="88" y2="90" gradientUnits="userSpaceOnUse">
+    <linearGradient id="moyiGrad" x1="12" y1="14" x2="88" y2="90" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#cdb4f2"/>
       <stop offset="0.34" stop-color="#8b72ee"/>
       <stop offset="0.64" stop-color="#5f63ee"/>
@@ -8,5 +8,5 @@
     </linearGradient>
   </defs>
   <path d="M22 79 L22 27 Q22 20.5 27.5 24.5 Q40 34 48.5 52.5 Q50 55.5 51.5 52.5 Q60 34 72.5 24.5 Q78 20.5 78 27 L78 79"
-        fill="none" stroke="url(#moyiFav)" stroke-width="13.5" stroke-linecap="round" stroke-linejoin="round"/>
+        fill="none" stroke="url(#moyiGrad)" stroke-width="13.5" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

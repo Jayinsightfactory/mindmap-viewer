@@ -3,239 +3,71 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>nenova — Viewer</title>
-  <meta name="description" content="nenova 업무 시각화 허브 — 3D 마인드맵, 관리자 대시보드, 모바일 대시보드, AI 챗봇">
-  <meta name="theme-color" content="#020617">
+  <title>MOYI — 회사가 스스로 보이는 워크스페이스</title>
+  <meta name="description" content="MOYI — 내 PC 작업이 만드는 나의 워크스페이스. 본인 승인 + 공개 통제. 오너·직원·팀장·협업사가 하나의 시각화로.">
+  <meta name="theme-color" content="#0d0f1a">
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    :root {
-      --bg: #020617;
-      --bg2: #0a1224;
-      --surface: #111a30;
-      --surface2: #18223d;
-      --border: #25304d;
-      --text: #e6ecff;
-      --muted: #8b97b8;
-      --blue: #5b8cff;
-      --cyan: #38d4e8;
-      --green: #3fd68b;
-      --violet: #a98bff;
+    *{margin:0;padding:0;box-sizing:border-box}
+    :root{
+      --bg:#0c0e18; --surface:#151827; --surface2:#1c2033; --border:#282d44;
+      --text:#e9ebf6; --muted:#9aa0bd; --faint:#6b7196;
+      --lav:#cdb4f2; --violet:#8b72ee; --indigo:#5f63ee; --sky:#54c6f2;
+      --grad:linear-gradient(135deg,#cdb4f2,#8b72ee 38%,#5f63ee 66%,#54c6f2);
     }
-    html, body {
-      background: var(--bg);
-      color: var(--text);
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      min-height: 100%;
-    }
-    body {
-      background:
-        radial-gradient(ellipse 80% 60% at 50% -10%, rgba(91,140,255,0.18), transparent),
-        radial-gradient(ellipse 60% 50% at 90% 10%, rgba(169,139,255,0.12), transparent),
-        var(--bg);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 64px 20px 48px;
-    }
-    .wrap { width: 100%; max-width: 880px; }
-    header { text-align: center; margin-bottom: 48px; }
-    .logo {
-      display: inline-flex; align-items: center; gap: 10px;
-      font-size: 13px; font-weight: 600; letter-spacing: 0.12em;
-      text-transform: uppercase; color: var(--cyan);
-      margin-bottom: 18px;
-    }
-    .logo .dot {
-      width: 8px; height: 8px; border-radius: 50%;
-      background: var(--cyan); box-shadow: 0 0 12px var(--cyan);
-    }
-    h1 {
-      font-size: 34px; font-weight: 800; letter-spacing: -0.02em;
-      margin-bottom: 12px;
-    }
-    h1 .accent {
-      background: linear-gradient(90deg, var(--blue), var(--cyan));
-      -webkit-background-clip: text; background-clip: text;
-      -webkit-text-fill-color: transparent;
-    }
-    .sub { color: var(--muted); font-size: 15px; line-height: 1.6; }
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 18px;
-    }
-    .card {
-      display: flex; flex-direction: column;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 26px 24px;
-      text-decoration: none;
-      color: inherit;
-      transition: transform 0.16s ease, border-color 0.16s ease, background 0.16s ease;
-      position: relative;
-      overflow: hidden;
-    }
-    .card::before {
-      content: ''; position: absolute; inset: 0;
-      background: linear-gradient(135deg, var(--_glow, transparent), transparent 60%);
-      opacity: 0; transition: opacity 0.16s ease;
-    }
-    .card:hover {
-      transform: translateY(-4px);
-      border-color: var(--_accent, var(--blue));
-      background: var(--surface2);
-    }
-    .card:hover::before { opacity: 0.16; }
-    .card .icon {
-      width: 46px; height: 46px; border-radius: 12px;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 22px; margin-bottom: 16px;
-      background: var(--surface2);
-      border: 1px solid var(--border);
-    }
-    .card h2 { font-size: 17px; font-weight: 700; margin-bottom: 6px; }
-    .card p { font-size: 13px; color: var(--muted); line-height: 1.6; flex: 1; }
-    .card .go {
-      margin-top: 16px; font-size: 13px; font-weight: 600;
-      color: var(--_accent, var(--blue));
-      display: flex; align-items: center; gap: 6px;
-    }
-    .c-mindmap { --_accent: var(--blue);  --_glow: var(--blue); }
-    .c-admin   { --_accent: var(--violet); --_glow: var(--violet); }
-    .c-mobile  { --_accent: var(--green); --_glow: var(--green); }
-    .c-chat    { --_accent: var(--cyan);  --_glow: var(--cyan); }
-    footer {
-      margin-top: 44px; text-align: center;
-      color: var(--muted); font-size: 12px;
-    }
-    footer a { color: var(--muted); }
-    @media (max-width: 640px) {
-      body { padding: 40px 16px 36px; }
-      h1 { font-size: 26px; }
-      .grid { grid-template-columns: 1fr; }
-    }
-
-    /* 모바일 안내 배너 */
-    #mobile-banner {
-      display: none; /* JS가 모바일 감지 시 flex로 전환 */
-      position: fixed;
-      top: 0; left: 0; right: 0;
-      z-index: 9999;
-      align-items: center;
-      gap: 10px;
-      padding: 10px 16px;
-      background: var(--surface);
-      border-bottom: 1px solid var(--blue);
-      font-size: 13px;
-      color: var(--text);
-    }
-    #mobile-banner .banner-text {
-      flex: 1;
-    }
-    #mobile-banner .banner-go {
-      display: inline-flex;
-      align-items: center;
-      padding: 6px 14px;
-      background: var(--blue);
-      color: #fff;
-      border-radius: 8px;
-      font-size: 12px;
-      font-weight: 600;
-      text-decoration: none;
-      white-space: nowrap;
-      min-height: 36px;
-    }
-    #mobile-banner .banner-close {
-      background: none;
-      border: none;
-      color: var(--muted);
-      font-size: 18px;
-      cursor: pointer;
-      padding: 4px 6px;
-      line-height: 1;
-      min-height: 36px;
-      min-width: 36px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    #mobile-banner .banner-close:hover {
-      color: var(--text);
-    }
+    html,body{background:var(--bg);color:var(--text);font-family:'Pretendard',-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif;min-height:100%}
+    body{background:radial-gradient(ellipse 70% 55% at 50% -8%,rgba(139,114,238,.22),transparent),radial-gradient(ellipse 55% 45% at 92% 8%,rgba(84,198,242,.12),transparent),var(--bg);display:flex;flex-direction:column;align-items:center;padding:60px 20px 52px}
+    .wrap{width:100%;max-width:940px}
+    header{text-align:center;margin-bottom:42px}
+    .brand{display:inline-flex;align-items:center;gap:12px;margin-bottom:20px}
+    .brand img{width:44px;height:44px;display:block}
+    .brand .wm{font-size:26px;font-weight:800;letter-spacing:.02em;background:var(--grad);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+    h1{font-size:30px;font-weight:800;letter-spacing:-.02em;margin-bottom:12px;text-wrap:balance}
+    .sub{color:var(--muted);font-size:15px;line-height:1.65;max-width:56ch;margin:0 auto}
+    .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+    @media(max-width:860px){.grid{grid-template-columns:repeat(2,1fr)}}
+    @media(max-width:480px){.grid{grid-template-columns:1fr}}
+    .card{display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:20px 18px;text-decoration:none;color:inherit;transition:transform .15s,border-color .15s,background .15s;position:relative;overflow:hidden}
+    .card:hover{transform:translateY(-4px);border-color:var(--violet);background:var(--surface2)}
+    .card .ix{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;font-size:17px;margin-bottom:13px;background:var(--surface2);border:1px solid var(--border)}
+    .card .no{position:absolute;top:16px;right:16px;font-size:11px;font-weight:800;color:var(--faint);font-variant-numeric:tabular-nums}
+    .card h2{font-size:15px;font-weight:700;margin-bottom:5px;letter-spacing:-.01em}
+    .card p{font-size:12.5px;color:var(--muted);line-height:1.55;flex:1}
+    .card .go{margin-top:13px;font-size:12.5px;font-weight:700;color:var(--sky)}
+    .divider{display:flex;align-items:center;gap:12px;margin:30px 2px 14px;color:var(--faint);font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase}
+    .divider::before,.divider::after{content:"";height:1px;background:var(--border);flex:1}
+    .row2{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+    @media(max-width:860px){.row2{grid-template-columns:repeat(2,1fr)}}
+    @media(max-width:480px){.row2{grid-template-columns:1fr}}
+    footer{margin-top:40px;text-align:center;color:var(--faint);font-size:12px}
   </style>
 </head>
 <body>
-  <!-- 모바일 안내 배너: JS가 UA 감지 후 표시 -->
-  <div id="mobile-banner" role="banner" aria-label="모바일 전환 안내">
-    <span class="banner-text">📱 모바일 화면이 더 편해요</span>
-    <a class="banner-go" href="/m">모바일로 보기</a>
-    <button class="banner-close" id="mobile-banner-close" aria-label="배너 닫기">✕</button>
-  </div>
-
   <div class="wrap">
     <header>
-      <div class="logo"><span class="dot"></span> nenova</div>
-      <h1>업무 시각화 <span class="accent">허브</span></h1>
-      <p class="sub">3D 마인드맵, 관리자 대시보드, 모바일 대시보드, AI 챗봇을<br>한 곳에서 바로 열어보세요.</p>
+      <div class="brand"><img src="/moyi.svg" alt="MOYI"><span class="wm">MOYI</span></div>
+      <h1>회사가 스스로 보이는 워크스페이스</h1>
+      <p class="sub">내 PC 작업이 나의 웹을 만듭니다. 무엇을 담을지 내가 승인하고, 어디까지 열지 내가 정합니다. 오너·직원·팀장·협업사가 하나의 시각화로.</p>
     </header>
 
     <div class="grid">
-      <a class="card c-mindmap" href="/orbit3d.html">
-        <div class="icon">&#127756;</div>
-        <h2>3D 마인드맵 뷰어</h2>
-        <p>작업 패턴·팀 협업·역량을 3D 우주로 시각화. 개인·팀·전사 뷰 전환.</p>
-        <span class="go">열기 &rarr;</span>
-      </a>
-
-      <a class="card c-admin" href="/admin-analysis.html">
-        <div class="icon">&#128202;</div>
-        <h2>관리자 대시보드</h2>
-        <p>정밀 분석·이벤트 카운트·Vision 워커 상태 등 운영 지표를 한눈에.</p>
-        <span class="go">열기 &rarr;</span>
-      </a>
-
-      <a class="card c-mobile" href="/nenova-dashboard.html">
-        <div class="icon">&#128241;</div>
-        <h2>모바일 대시보드</h2>
-        <p>nenova 전산 — 주문·출하·상품·거래처·피벗·통합 현황을 모바일에서.</p>
-        <span class="go">열기 &rarr;</span>
-      </a>
-
-      <a class="card c-chat" href="/chat.html">
-        <div class="icon">&#129302;</div>
-        <h2>AI 챗봇</h2>
-        <p>대시보드 데이터를 기반으로 질문에 답하는 AI 분석 챗봇.</p>
-        <span class="go">열기 &rarr;</span>
-      </a>
+      <a class="card" href="/app.html"><span class="no">01</span><div class="ix">🏠</div><h2>내 워크스페이스</h2><p>내 작업이 자동으로 정리된 홈. 항목마다 승인·공개 수준.</p><span class="go">열기 →</span></a>
+      <a class="card" href="/orbit3d.html"><span class="no">02</span><div class="ix">🕸️</div><h2>그래프 · 맵</h2><p>업무 흐름을 그래프로. 내 작업 ↔ 전사 줌.</p><span class="go">열기 →</span></a>
+      <a class="card" href="/admin-analysis.html"><span class="no">03</span><div class="ix">📊</div><h2>현황 · 분석</h2><p>내/팀/전사/협업사 스코프. 병목·미처리·정밀분석.</p><span class="go">열기 →</span></a>
+      <a class="card" href="/automation-flow.html"><span class="no">04</span><div class="ix">⚡</div><h2>자동화 · 솔루션</h2><p>관찰 절차 추출 → dry-run → 승인 실행.</p><span class="go">열기 →</span></a>
     </div>
 
-    <footer>
-      nenova &middot; 업무 시각화 허브
-    </footer>
+    <div class="divider">더보기</div>
+
+    <div class="row2">
+      <a class="card" href="/chat.html"><span class="no">05</span><div class="ix">💬</div><h2>커뮤니케이션</h2><p>MOYI AI · 카톡 인텔 · 커뮤니티.</p><span class="go">열기 →</span></a>
+      <a class="card" href="/solution-market.html"><span class="no">06</span><div class="ix">🛒</div><h2>마켓</h2><p>솔루션 · 테마 마켓.</p><span class="go">열기 →</span></a>
+      <a class="card" href="/settings.html"><span class="no">07</span><div class="ix">⚙️</div><h2>설정 · 계정</h2><p>공개 설정 · 워크스페이스 · 구독.</p><span class="go">열기 →</span></a>
+      <a class="card" href="/setup.html"><span class="no">08</span><div class="ix">🚀</div><h2>설치 · 가이드</h2><p>원키 설정 · 사용법.</p><span class="go">열기 →</span></a>
+    </div>
+
+    <footer>MOYI · 작업내역 기반 자기구성 워크스페이스</footer>
   </div>
   <script src="/js/region-marker.js" defer></script>
-  <script>
-    // 모바일 배너: UA 감지 + localStorage dismiss 처리
-    (function () {
-      var isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
-      var dismissed = localStorage.getItem('viewer_mobile_banner_dismissed') === '1';
-      if (isMobile && !dismissed) {
-        var banner = document.getElementById('mobile-banner');
-        if (banner) banner.style.display = 'flex';
-        var closeBtn = document.getElementById('mobile-banner-close');
-        if (closeBtn) {
-          closeBtn.addEventListener('click', function () {
-            localStorage.setItem('viewer_mobile_banner_dismissed', '1');
-            banner.style.display = 'none';
-          });
-        }
-      }
-    })();
-  </script>
 </body>
 </html>
