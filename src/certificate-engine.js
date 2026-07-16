@@ -229,10 +229,12 @@ function createCertificateRouter({ getAllEvents, getSessions, optionalAuth, getE
   const auth   = optionalAuth || noAuth;
 
   // ── AI 점수 계산 ──────────────────────────────────────────────────────
-  router.get('/certificate/:userId/score', (req, res) => {
+  // [2026-07-16] getEventsForUser/getSessions는 async(PG) — await 누락으로 500나던 것 수정
+  router.get('/certificate/:userId/score', async (req, res) => {
+   try {
     const { userId } = req.params;
-    const events   = (getEventsForUser ? getEventsForUser(userId) : (getAllEvents ? getAllEvents() : [])).filter(e => userId === 'all' || (e.userId || 'local') === userId);
-    const sessions = getSessions ? getSessions() : [];
+    const events   = ((getEventsForUser ? await getEventsForUser(userId) : (getAllEvents ? await getAllEvents() : [])) || []).filter(e => userId === 'all' || (e.userId || 'local') === userId);
+    const sessions = (getSessions ? await getSessions() : []) || [];
     const result   = computeScore(events, sessions);
     const grade    = getGrade(result.total);
 
@@ -242,13 +244,15 @@ function createCertificateRouter({ getAllEvents, getSessions, optionalAuth, getE
       grade: { tier: grade.tier, label: grade.label, emoji: grade.emoji, color: grade.borderColor },
       description: `${userId}님은 AI 활용 역량 ${grade.label} 등급입니다.`,
     });
+   } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
   // ── 인증서 SVG ────────────────────────────────────────────────────────
-  router.get('/certificate/:userId/svg', (req, res) => {
+  router.get('/certificate/:userId/svg', async (req, res) => {
+   try {
     const { userId } = req.params;
-    const events   = (getEventsForUser ? getEventsForUser(userId) : (getAllEvents ? getAllEvents() : []));
-    const sessions = getSessions ? getSessions() : [];
+    const events   = (getEventsForUser ? await getEventsForUser(userId) : (getAllEvents ? await getAllEvents() : [])) || [];
+    const sessions = (getSessions ? await getSessions() : []) || [];
     const result   = computeScore(events, sessions);
     const grade    = getGrade(result.total);
 
@@ -267,13 +271,15 @@ function createCertificateRouter({ getAllEvents, getSessions, optionalAuth, getE
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.send(svg);
+   } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
   // ── 인증서 JSON ───────────────────────────────────────────────────────
-  router.get('/certificate/:userId/json', (req, res) => {
+  router.get('/certificate/:userId/json', async (req, res) => {
+   try {
     const { userId } = req.params;
-    const events   = (getEventsForUser ? getEventsForUser(userId) : (getAllEvents ? getAllEvents() : []));
-    const sessions = getSessions ? getSessions() : [];
+    const events   = (getEventsForUser ? await getEventsForUser(userId) : (getAllEvents ? await getAllEvents() : [])) || [];
+    const sessions = (getSessions ? await getSessions() : []) || [];
     const result   = computeScore(events, sessions);
     const grade    = getGrade(result.total);
 
@@ -293,13 +299,15 @@ function createCertificateRouter({ getAllEvents, getSessions, optionalAuth, getE
       signature:  cert?.signature || null,
       verifyUrl:  cert ? `/api/certificate/verify/${cert.certId}` : null,
     });
+   } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
   // ── 인증서 발급 ───────────────────────────────────────────────────────
-  router.post('/certificate/:userId/issue', auth, (req, res) => {
+  router.post('/certificate/:userId/issue', auth, async (req, res) => {
+   try {
     const { userId } = req.params;
-    const events   = (getEventsForUser ? getEventsForUser(userId) : (getAllEvents ? getAllEvents() : []));
-    const sessions = getSessions ? getSessions() : [];
+    const events   = (getEventsForUser ? await getEventsForUser(userId) : (getAllEvents ? await getAllEvents() : [])) || [];
+    const sessions = (getSessions ? await getSessions() : []) || [];
     const result   = computeScore(events, sessions);
     const grade    = getGrade(result.total);
 
@@ -340,6 +348,7 @@ function createCertificateRouter({ getAllEvents, getSessions, optionalAuth, getE
       verifyUrl:  `/api/certificate/verify/${certId}`,
       linkedinSnippet: `Orbit AI ${grade.label} | Score: ${result.total}/1000 | Verified: ${req.protocol}://${req.get('host')}/api/certificate/verify/${certId}`,
     });
+   } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
   // ── 인증서 검증 ───────────────────────────────────────────────────────
