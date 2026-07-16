@@ -35,6 +35,10 @@ const crypto  = require('crypto');
 
 // ─── 발급된 인증서 저장소 ────────────────────────────────────────────────────
 const certStore = new Map(); // certId → certData
+// [v2.3] 사람 라벨 루프 — 프록시 축(비판·메타/협업 質)을 사람 확인으로 measured 승격.
+// userId → [{ kind:'verify'|'helpful', value:bool, instance, ts }]. 라벨 5개+면 해당 축 실측.
+const labelStore = new Map();
+const LABEL_MEASURED_MIN = 5; // 이 개수 이상 라벨이면 프록시→실측
 
 // ─── 등급 정의 ────────────────────────────────────────────────────────────────
 const GRADES = [
@@ -54,7 +58,12 @@ function getGrade(score) {
 // AI 활용역량 평가기준 v2 — 활동량이 아니라 능력 6축. 근거: AI_CAPABILITY_CRITERIA.md
 // (Long&Magerko 2020 · Worklytics/IDC 2025 · Collaborative AI Literacy+Metacognition)
 // 각 축은 measured/proxy/unmeasured를 스스로 밝힘 → 거짓 정밀 금지.
-function computeScore(events = [], sessions = []) {
+function computeScore(events = [], sessions = [], labels = []) {
+  // [v2.3] 사람 라벨: verify=AI출력을 검증/수정했다, helpful=AI활용이 실제 도움됐다
+  const verifyLabels  = labels.filter(l => l.kind === 'verify');
+  const helpfulLabels = labels.filter(l => l.kind === 'helpful');
+  const ratio = (arr) => arr.length ? arr.filter(l => l.value).length / arr.length : 0;
+  const verifiedRatio = ratio(verifyLabels), helpfulRatio = ratio(helpfulLabels);
   const evCount = events.length, sesCount = sessions.length;
   const dates = [...new Set(events.map(e => (e.timestamp || '').slice(0, 10)).filter(Boolean))];
   const dayCount = dates.length;
@@ -116,10 +125,14 @@ function computeScore(events = [], sessions = []) {
     collaboration: { max: 150, measurability: aiEvents > 0 ? 'measured' : 'proxy',
       score: clamp(Math.min(90, aiSet.size / 5 * 90) + Math.min(60, L(aiEvents, 2000) * 60), 150),
       basis: `AI 도구 ${aiSet.size}종·AI 사용 ${aiEvents}회 (사용량 실측 · 프롬프트 質은 아직 미측정)` },
-    // 5) 비판·메타인지 (150) — AI↔업무 왕복 프록시(관측). 검증 깊이는 아직 사람 라벨 필요.
-    critical: { max: 150, measurability: alt > 0 ? 'proxy' : 'unmeasured',
-      score: alt > 0 ? clamp(Math.min(120, L(alt, 200) * 120) + 30, 150) : 30,
-      basis: alt > 0 ? `AI↔업무 교차 ${alt}회 (프록시 — AI를 보고 실제 작업에 반영·수정하는 왕복. 검증 깊이는 미측정)` : 'AI↔업무 교차 신호 없음 — 기준선' },
+    // 5) 비판·메타인지 (150) — 사람 라벨 5+면 실측(검증율), 아니면 AI↔업무 왕복 프록시.
+    critical: (verifyLabels.length >= LABEL_MEASURED_MIN)
+      ? { max: 150, measurability: 'measured',
+          score: clamp(verifiedRatio * 150, 150),
+          basis: `본인 확인 검증율 ${Math.round(verifiedRatio * 100)}% (라벨 ${verifyLabels.length}건) · AI↔업무 교차 ${alt}` }
+      : { max: 150, measurability: alt > 0 ? 'proxy' : 'unmeasured',
+          score: alt > 0 ? clamp(Math.min(120, L(alt, 200) * 120) + 30, 150) : 30,
+          basis: alt > 0 ? `AI↔업무 교차 ${alt}회 (프록시 — 검증 깊이는 사람 라벨 ${verifyLabels.length}/${LABEL_MEASURED_MIN}건)` : 'AI↔업무 교차 신호 없음 — 기준선' },
     // 6) 책임성 (150) — 프록시. 민감맥락 처리 존재 + 검증 왕복.
     responsibility: { max: 150, measurability: 'proxy',
       score: clamp(Math.min(70, L(sensitive + 1, 100) * 70) + Math.min(50, L(alt, 200) * 50) + 30, 150),
@@ -136,6 +149,7 @@ function computeScore(events = [], sessions = []) {
     breakdown,
     axes,
     measurementConfidence: Math.round(measuredMax / 1000 * 100), // 실측 축이 총점의 몇 %인가 = 이 점수를 얼마나 믿을지
+    labels: { verify: verifyLabels.length, helpful: helpfulLabels.length, verifiedRatio: Math.round(verifiedRatio * 100), helpfulRatio: Math.round(helpfulRatio * 100), needed: LABEL_MEASURED_MIN },
     meta: { events: evCount, sessions: sesCount, daysActive: dayCount, streak, apps: appSet.size, aiTools: aiSet.size },
   };
 }
@@ -226,6 +240,24 @@ function createCertificateRouter({ getAllEvents, getSessions, optionalAuth, getE
   const router = express.Router();
   const noAuth = (req, res, next) => next();
   const auth   = optionalAuth || noAuth;
+  const labelsOf = (userId) => labelStore.get(userId) || [];
+
+  // [v2.3] 사람 라벨 제출/조회 — 프록시 축을 실측으로 승격하는 루프
+  router.post('/certificate/:userId/label', auth, (req, res) => {
+    const { userId } = req.params;
+    const { kind, value, instance } = req.body || {};
+    if (kind !== 'verify' && kind !== 'helpful') return res.status(400).json({ error: "kind는 'verify' 또는 'helpful'" });
+    const arr = labelStore.get(userId) || [];
+    arr.push({ kind, value: !!value, instance: instance || null, ts: new Date().toISOString() });
+    labelStore.set(userId, arr.slice(-500));
+    const verify = arr.filter(l => l.kind === 'verify').length, helpful = arr.filter(l => l.kind === 'helpful').length;
+    res.json({ ok: true, total: arr.length, verify, helpful, needed: LABEL_MEASURED_MIN,
+      note: verify >= LABEL_MEASURED_MIN ? '비판·메타인지 축이 실측(measured)으로 승격됨' : `검증 라벨 ${verify}/${LABEL_MEASURED_MIN} — ${LABEL_MEASURED_MIN - verify}건 더 필요` });
+  });
+  router.get('/certificate/:userId/labels', (req, res) => {
+    const arr = labelsOf(req.params.userId);
+    res.json({ total: arr.length, verify: arr.filter(l => l.kind === 'verify').length, helpful: arr.filter(l => l.kind === 'helpful').length, needed: LABEL_MEASURED_MIN, recent: arr.slice(-10) });
+  });
 
   // ── AI 점수 계산 ──────────────────────────────────────────────────────
   // [2026-07-16] getEventsForUser/getSessions는 async(PG) — await 누락으로 500나던 것 수정
@@ -234,7 +266,7 @@ function createCertificateRouter({ getAllEvents, getSessions, optionalAuth, getE
     const { userId } = req.params;
     const events   = ((getEventsForUser ? await getEventsForUser(userId) : (getAllEvents ? await getAllEvents() : [])) || []).filter(e => userId === 'all' || (e.userId || 'local') === userId);
     const sessions = (getSessions ? await getSessions() : []) || [];
-    const result   = computeScore(events, sessions);
+    const result   = computeScore(events, sessions, labelsOf(userId));
     const grade    = getGrade(result.total);
 
     res.json({
@@ -252,7 +284,7 @@ function createCertificateRouter({ getAllEvents, getSessions, optionalAuth, getE
     const { userId } = req.params;
     const events   = (getEventsForUser ? await getEventsForUser(userId) : (getAllEvents ? await getAllEvents() : [])) || [];
     const sessions = (getSessions ? await getSessions() : []) || [];
-    const result   = computeScore(events, sessions);
+    const result   = computeScore(events, sessions, labelsOf(userId));
     const grade    = getGrade(result.total);
 
     const existingCert = [...certStore.values()].find(c => c.userId === userId);
@@ -279,7 +311,7 @@ function createCertificateRouter({ getAllEvents, getSessions, optionalAuth, getE
     const { userId } = req.params;
     const events   = (getEventsForUser ? await getEventsForUser(userId) : (getAllEvents ? await getAllEvents() : [])) || [];
     const sessions = (getSessions ? await getSessions() : []) || [];
-    const result   = computeScore(events, sessions);
+    const result   = computeScore(events, sessions, labelsOf(userId));
     const grade    = getGrade(result.total);
 
     const cert = [...certStore.values()].find(c => c.userId === userId) || null;
@@ -307,7 +339,7 @@ function createCertificateRouter({ getAllEvents, getSessions, optionalAuth, getE
     const { userId } = req.params;
     const events   = (getEventsForUser ? await getEventsForUser(userId) : (getAllEvents ? await getAllEvents() : [])) || [];
     const sessions = (getSessions ? await getSessions() : []) || [];
-    const result   = computeScore(events, sessions);
+    const result   = computeScore(events, sessions, labelsOf(userId));
     const grade    = getGrade(result.total);
 
     if (result.total < 200) {
