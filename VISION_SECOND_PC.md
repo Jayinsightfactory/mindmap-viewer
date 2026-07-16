@@ -10,10 +10,14 @@
 - **하지만 돈은 안 듭니다** — CLI는 **데스크톱 앱과 같은 Max/Pro 구독으로 로그인**합니다. 구독을 명령줄에서 쓰는 것뿐, 토큰당 추가 비용 0.
 - 정리: **구독은 그대로 쓰되, "claude" 명령줄 도구를 설치·로그인**하면 됩니다.
 
-## 0. 모델 — **Sonnet** (Haiku 아님)
+## 0. 모델 — **자동 라우팅** (핵심=Sonnet, 나머지=Haiku)
 
-한글 ERP/카톡/엑셀 화면을 읽어 거래처·품목·절차를 **구조 추출**하는 작업 → Sonnet이 확실히 강함.
-이번 프로젝트의 병목이 **추출 품질(커버리지)**이라 Haiku로 낮추면 얕게 뽑혀 문제 답습. 구독 CLI면 비용 0이라 낮출 이유도 없음.
+워커에 **화면 가치별 모델 라우터**가 기본 ON. 앱/창제목을 보고:
+- **nenova·ECOUNT·주문/출고/발주/견적/재고/엑셀·정산·통관·검수·분배** → **Sonnet**(추출 품질 핵심)
+- 그 외(브라우저·카톡·탐색기·일반) → **Haiku**(대량·저가치, ~1/10 비용)
+→ Sonnet 호출을 핵심 화면 ~20~30%로 줄여 **사용량 5~10배 절감**, 품질은 유지.
+
+조정 env(선택): `VISION_MODEL_HIGH`(기본 sonnet)·`VISION_MODEL_BULK`(기본 haiku)·`VISION_HIGH_VALUE_RE`(핵심앱 정규식)·`VISION_MODEL_ROUTER=off`(단일 모델로).
 
 ## 1. 준비물
 
@@ -56,8 +60,8 @@ npm install
 cd C:\...\mindmap-viewer
 
 $env:ANTHROPIC_API_KEY = ''          # 비워야 CLI(무과금) 경로 사용
-$env:VISION_CLI_MODEL   = 'sonnet'   # 모델 지정(권장)
 $env:ORBIT_CLI_RESERVE_PCT = '10'    # 전용 PC라 최소만 남기고 빨리 처리
+# 모델은 라우터가 자동(핵심=Sonnet/나머지=Haiku). 전부 한 모델로 강제하려면 VISION_MODEL_ROUTER='off' + VISION_CLI_MODEL 지정.
 
 node bin/vision-worker.js --server-queue --flush
 ```

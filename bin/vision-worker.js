@@ -278,8 +278,22 @@ function _parseResult(text) {
   return { raw: text.substring(0, 2000) };
 }
 
+// ── [모델 라우터] 화면 가치별 모델 선택 — 사용량 절감 ─────────────────────────
+// 핵심 업무화면(nenova·ECOUNT·주문/출고·엑셀 등)=고급(Sonnet), 나머지=경량(Haiku).
+// VISION_MODEL_ROUTER=off 로 끄면 단일 모델(VISION_CLI_MODEL/기본).
+const MODEL_HIGH = process.env.VISION_MODEL_HIGH || 'sonnet';
+const MODEL_BULK = process.env.VISION_MODEL_BULK || 'haiku';
+const ROUTER_ON  = process.env.VISION_MODEL_ROUTER !== 'off';
+const HIGH_VALUE_RE = new RegExp(process.env.VISION_HIGH_VALUE_RE || 'nenova|ecount|이카운트|화훼|주문|출고|발주|견적|재고|erp|excel|엑셀|정산|채권|채무|무역|통관|검수|분배', 'i');
+const API_MODEL_ID = { sonnet: 'claude-sonnet-4-20250514', haiku: 'claude-haiku-4-5-20251001' };
+function pickModel(ctx) {
+  if (!ROUTER_ON) return process.env.VISION_CLI_MODEL || null;
+  const hay = ((ctx && ctx.name) || '') + ' ' + ((ctx && ctx.windowTitle) || '');
+  return HIGH_VALUE_RE.test(hay) ? MODEL_HIGH : MODEL_BULK;
+}
+
 // ── Claude CLI 분석 (Max 구독 — API 키 불필요) ───────────────────────────────
-async function visionCli(base64, ctx) {
+async function visionCli(base64, ctx, model) {
   const tmpFile = path.join(TEMP_DIR, `cap-${Date.now()}.png`);
   fs.writeFileSync(tmpFile, Buffer.from(base64, 'base64'));
   // CLI는 프롬프트에 파일 경로를 포함하면 Read 도구로 이미지 인식
@@ -288,7 +302,8 @@ async function visionCli(base64, ctx) {
   return new Promise((resolve) => {
     // VISION_CLI_MODEL로 모델 지정(예: sonnet / haiku). 미설정 시 CLI 계정 기본모델.
     const _args = ['-p', prompt, '--allowedTools', 'Read', '--add-dir', TEMP_DIR];
-    if (process.env.VISION_CLI_MODEL) _args.push('--model', process.env.VISION_CLI_MODEL);
+    const _m = model || process.env.VISION_CLI_MODEL;
+    if (_m) _args.push('--model', _m);
     execFile(CLAUDE_CLI, _args,
       { timeout: 120000, maxBuffer: 2 * 1024 * 1024 }, (err, stdout) => {
       try { fs.unlinkSync(tmpFile); } catch {}
@@ -299,11 +314,11 @@ async function visionCli(base64, ctx) {
 }
 
 // ── Claude API 분석 (API 키 사용) ─────────────────────────────────────────────
-async function visionApi(base64, ctx) {
+async function visionApi(base64, ctx, model) {
   const prompt = _buildPrompt(ctx);
   return new Promise((resolve, reject) => {
     const body = JSON.stringify({
-      model: process.env.VISION_API_MODEL || 'claude-sonnet-4-20250514', max_tokens: 1024,
+      model: (model && (API_MODEL_ID[model] || model)) || process.env.VISION_API_MODEL || 'claude-sonnet-4-20250514', max_tokens: 1024,
       messages: [{ role:'user', content:[
         { type:'image', source:{ type:'base64', media_type:'image/png', data:base64 } },
         { type:'text', text:prompt },
@@ -333,13 +348,16 @@ async function visionAnalyze(base64, ctx) {
   const analyze = USE_CLI ? visionCli : ANTHROPIC_KEY ? visionApi : null;
   if (!analyze) throw new Error('Claude CLI 또는 ANTHROPIC_API_KEY 필요');
 
-  let result = await analyze(base64, ctx);
+  const model = pickModel(ctx); // 화면 가치별 모델 (핵심=Sonnet, 나머지=Haiku)
+  if (ROUTER_ON) console.log(`  [모델] ${model || '기본'} ← ${((ctx && ctx.name) || '').slice(0, 24)}`);
+
+  let result = await analyze(base64, ctx, model);
   if (_isValidResult(result)) return result;
 
   // 1회 재시도
   console.log('  ⟳ 빈 결과 — 1회 재시도');
   await new Promise(r => setTimeout(r, 3000));
-  result = await analyze(base64, ctx);
+  result = await analyze(base64, ctx, model);
   if (_isValidResult(result)) return result;
 
   console.warn(`  ✗ 재시도 후에도 빈 결과 (${ctx.hostname}/${ctx.name})`);
@@ -582,7 +600,7 @@ async function processServerQueue() {
         console.log(`[vision-queue] ${item.hostname}/${item.app}: ${item.windowTitle || ''}`);
 
         const result = await visionAnalyze(item.imageBase64, {
-          hostname: item.hostname, name: item.app || 'capture',
+          hostname: item.hostname, name: item.app || 'capture', windowTitle: item.windowTitle || '',
           recentClicks: item.recentClicks,  // [골:실행좌표 융합] 서버 큐가 첨부한 직전 클릭들
         });
         if (!result) continue;
