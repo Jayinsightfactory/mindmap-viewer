@@ -12,7 +12,7 @@
   const EDGE_COLOR = { handoff: '#5b9dff', mentions: '#e0913a', triggered: '#46a06a', updated_erp: '#46a06a', next: '#3a3d44', default: '#3a3d44' };
   const confDot = (c) => (c >= 1 ? '#2e9e6b' : c >= 0.67 ? '#d9a630' : '#7e828a');
 
-  const state = { mode: 'company', is3d: false, fg: null, data: { nodes: [], links: [] }, highlight: new Set(), hoverId: null };
+  const state = { mode: 'company', is3d: false, showCustomers: false, fg: null, data: { nodes: [], links: [] }, highlight: new Set(), hoverId: null };
   const DEMO = new URLSearchParams(location.search).has('demo'); // 라이브 샘플(익명, 토큰불필요)
   const SAMPLE_GRAPH = { nodes: [
     { id:'p1',kind:'employee',label:'직원 A',confidence:1,count:8463 },{ id:'p2',kind:'employee',label:'직원 B',confidence:0.67,count:7425 },
@@ -117,8 +117,8 @@
     return s;
   }
   function nodeColor(n) { return KIND_COLOR[n.kind] || KIND_COLOR.default; }
-  // 크기 캡: 직원 ≤6(거대블롭 방지), 거래처 4, 액션 2
-  function nodeVal(n) { return n.kind === 'employee' ? Math.min(6, 2.5 + Math.sqrt(n.count || 1) / 4) : n.kind === 'customer' ? 4 : 2; }
+  // 직원 = 업무량(count) 크기로 강조(회사맵의 주인공), 거래처/방은 보조
+  function nodeVal(n) { return n.kind === 'employee' ? Math.min(18, 5 + Math.sqrt(n.count || 1)) : n.kind === 'customer' ? 3 : n.kind === 'room' ? 3 : 3; }
 
   function makeFG() {
     const el = $('#graph'); el.innerHTML = '';
@@ -170,6 +170,13 @@
   function refresh() { if (state.fg) state.fg.nodeColor(state.fg.nodeColor()).linkColor(state.fg.linkColor()); }
 
   function render(data, title) {
+    // [2026-07-16] 회사맵 기본 = 직원 업무 중심. 거래처 별자리(82%)가 화면을 덮어 직원이 안 보이던 문제:
+    // 거래처 표시 OFF면 직원(+액션)만 남겨 업무 흐름을 크게 본다(토글로 거래처 표시 가능).
+    if (state.mode === 'company' && !state.showCustomers) {
+      const keep = new Set(data.nodes.filter(n => n.kind === 'employee' || n.kind === 'action').map(n => n.id));
+      data = { nodes: data.nodes.filter(n => keep.has(n.id)),
+               links: data.links.filter(l => keep.has(l.source.id || l.source) && keep.has(l.target.id || l.target)) };
+    }
     state.data = data; state.highlight = new Set();
     if (!state.fg) makeFG();
     state.fg.graphData(data);
@@ -257,6 +264,10 @@
     [...$('#modeSeg').children].forEach(x => x.classList.remove('on')); b.classList.add('on');
     state.mode = b.dataset.mode; reload();
   });
+  var _tc = $('#toggleCust');
+  if (_tc) { _tc.classList.toggle('on', state.showCustomers); _tc.textContent = state.showCustomers ? '🏢 거래처 숨김' : '🏢 거래처 표시';
+    _tc.onclick = () => { state.showCustomers = !state.showCustomers; _tc.classList.toggle('on', state.showCustomers);
+      _tc.textContent = state.showCustomers ? '🏢 거래처 숨김' : '🏢 거래처 표시'; if (state.refresh) state.refresh(); }; }
   $('#reload').onclick = reload;
   $('#opsBtn').onclick = () => { const el = $('#ops'); if (el.style.display === 'block') el.style.display = 'none'; else loadOps(); };
   $('#setToken').onclick = askToken;
