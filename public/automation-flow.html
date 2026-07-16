@@ -338,7 +338,7 @@ const WORKFLOWS = {
       {
         id: 'master', label: '마스터 매칭', type: 'database', status: 'live',
         module: 'master_products(3,140) + nenova Product(3,035)',
-        desc: 'MOYI + nenova 전산 DB 품목 매칭\n동기화율: 103.46%\n\n실제 매칭 결과:\n• Catherine → [2851] [MEL] ROSE CHINA / 케서린\n• Pride → [2744] [MEL] ROSE CHINA / 프라우드\n• Doncel → [2306] Carnation CHINA / 돈셀\n• Crimea → [2309] Carnation CHINA / 크리미아\n• Novia → [2515] CARNATION MIx Box A',
+        desc: 'MOYI + MOYI 전산 DB 품목 매칭\n동기화율: 103.46%\n\n실제 매칭 결과:\n• Catherine → [2851] [MEL] ROSE CHINA / 케서린\n• Pride → [2744] [MEL] ROSE CHINA / 프라우드\n• Doncel → [2306] Carnation CHINA / 돈셀\n• Crimea → [2309] Carnation CHINA / 크리미아\n• Novia → [2515] CARNATION MIx Box A',
         inputs: [{name:'orders[]',type:'Array'},{name:'product_name',type:'string'}],
         outputs: [{name:'matched_orders[]',type:'Array'},{name:'prodKeys[]',type:'number[]'},{name:'match_rate',type:'number'}],
         sampleData: '실제 nenova ProdKey 매칭:\nCatherine → [2851] 케서린 ✅\nPride → [2744] 프라우드 ✅\nDoncel → [2306] 돈셀 ✅\nNovia → [2515] MIx Box ✅\nCrimea → [2309] 크리미아 ✅\n\n동기화: 3,140/3,035 (103%)',
@@ -745,7 +745,7 @@ const WORKFLOWS = {
       {
         id: 'po_nenova', label: '전산 발주관리', type: 'database', status: 'dev',
         module: 'nenova API — 발주관리',
-        desc: 'nenova 전산 발주관리 화면에서 기존 발주 조회 및 신규 발주 입력',
+        desc: 'MOYI 전산 발주관리 화면에서 기존 발주 조회 및 신규 발주 입력',
         inputs: [{name:'items[]',type:'Array'},{name:'supplier',type:'string'}],
         outputs: [{name:'po_id',type:'string'},{name:'registered',type:'boolean'},{name:'count',type:'number'}],
         test: { api: '/api/nenova/orders?limit=3', method: 'GET', defaultBody: '', formatResult: d => { const items=d.items||d.orders||d||[]; return `전산 발주: ${Array.isArray(items)?items.length:'-'}건 조회`; } }

@@ -791,7 +791,7 @@
   <!-- ══════ 섹션 0: 기획 구조 아키텍처 ══════ -->
   <div class="arch-card" id="sec-architecture">
     <div class="arch-card-title">
-      nenova — Company OS 분석 아키텍처
+      MOYI — Company OS 분석 아키텍처
       <span>시스템 전체 파이프라인</span>
     </div>
 
@@ -3805,7 +3805,7 @@ document.addEventListener('DOMContentLoaded', () => {
       desc:'거래처 문의 자동 분류 → 표준 답변 생성 → 담당자 확인 후 전송',
       steps:[
         {name:'문의 수신', where:'카카오톡 거래처방', action:'거래처 메시지 실시간 감지'},
-        {name:'의도 분류', where:'nenova AI', action:'문의 유형 분류 (주문확인/배송조회/단가문의)'},
+        {name:'의도 분류', where:'MOYI AI', action:'문의 유형 분류 (주문확인/배송조회/단가문의)'},
         {name:'답변 생성', where:'nenova 서버', action:'DB 조회 → 맞춤 답변 초안 생성'},
         {name:'확인 전송', where:'담당자 확인', action:'담당자 승인 → 자동 전송'},
       ],
@@ -3880,7 +3880,7 @@ document.addEventListener('DOMContentLoaded', () => {
       desc:'거래처 클레임 메시지 → 내용 분류 → 처리 프로세스 자동 개시',
       steps:[
         {name:'클레임 감지', where:'카카오톡 거래처방', action:'불만/클레임 키워드 감지'},
-        {name:'내용 분류', where:'nenova AI', action:'클레임 유형 분류 (품질/배송/수량)'},
+        {name:'내용 분류', where:'MOYI AI', action:'클레임 유형 분류 (품질/배송/수량)'},
         {name:'처리 개시', where:'내부 담당자', action:'담당자에게 클레임 알림 + 처리 지시'},
         {name:'결과 전달', where:'카카오톡', action:'처리 결과 + 보상 내용 자동 전달'},
       ],
@@ -5410,7 +5410,7 @@ async function loadConversations() {
 
     // 프로젝트 필터 버튼
     const filterEl = document.getElementById('wl-project-filter');
-    const projColors = {'사고 엔진':'var(--purple)','nenova 전산':'var(--green)','3D UI':'var(--blue)','데몬/설치':'var(--orange)','Vision 분석':'var(--cyan)','카카오톡':'var(--orange)','자동화':'var(--green)','대시보드':'var(--blue)','기타':'var(--muted)'};
+    const projColors = {'사고 엔진':'var(--purple)','MOYI 전산':'var(--green)','3D UI':'var(--blue)','데몬/설치':'var(--orange)','Vision 분석':'var(--cyan)','카카오톡':'var(--orange)','자동화':'var(--green)','대시보드':'var(--blue)','기타':'var(--muted)'};
     filterEl.innerHTML = `<button class="btn btn-primary" onclick="filterConv('전체')">전체 (${data.total||0})</button>` +
       projects.map(p => `<button class="btn" onclick="filterConv('${escHtml(p.name)}')" style="border-color:${projColors[p.name]||'var(--border)'};color:${projColors[p.name]||'var(--text)'};">${escHtml(p.name)} (${p.sessionCount})</button>`).join('');
 
@@ -5424,7 +5424,7 @@ function renderConversations(list) {
   const el = document.getElementById('wl-conversations');
   if (!list.length) { el.innerHTML = '<div style="color:var(--muted);text-align:center;padding:30px;">대화 기록 없음</div>'; return; }
   el.innerHTML = list.slice(0, 50).map(s => {
-    const projColors = {'사고 엔진':'var(--purple)','nenova 전산':'var(--green)','3D UI':'var(--blue)','데몬/설치':'var(--orange)','Vision 분석':'var(--cyan)','카카오톡':'var(--orange)','자동화':'var(--green)','대시보드':'var(--blue)'};
+    const projColors = {'사고 엔진':'var(--purple)','MOYI 전산':'var(--green)','3D UI':'var(--blue)','데몬/설치':'var(--orange)','Vision 분석':'var(--cyan)','카카오톡':'var(--orange)','자동화':'var(--green)','대시보드':'var(--blue)'};
     const color = projColors[s.project] || 'var(--muted)';
     const date = s.startTime ? new Date(s.startTime) : null;
     const dateStr = date ? date.toLocaleDateString('ko-KR') + ' ' + date.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'}) : '';
