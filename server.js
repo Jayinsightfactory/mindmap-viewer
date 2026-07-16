@@ -504,6 +504,9 @@ for (const [from, to] of Object.entries(_RETIRED_PAGES)) {
   app.get(from, (req, res) => res.redirect(301, to));
 }
 
+// [2026-07-16 통폐합 A] 통합 셸 — 8개 뷰가 셸 안(iframe)에서 열림(상단 MOYI·스코프 상시). public/shell.html.
+app.get(['/shell', '/workspace', '/w'], (req, res) => res.sendFile(path.join(__dirname, 'public', 'shell.html')));
+
 app.use(express.static(path.join(__dirname, 'public'), {
   maxAge: 0, // 개발 단계: 캐시 비활성화 (안정화 후 1d로 복구)
   etag: true,

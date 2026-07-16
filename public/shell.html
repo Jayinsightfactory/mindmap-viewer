@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>MOYI</title>
+  <meta name="theme-color" content="#0c0e18">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    :root{
+      --bg:#0c0e18;--surface:#151827;--surface2:#1c2033;--border:#282d44;
+      --text:#e9ebf6;--muted:#9aa0bd;--faint:#6b7196;
+      --violet:#8b72ee;--indigo:#5f63ee;--sky:#54c6f2;--lav:#cdb4f2;
+      --grad:linear-gradient(135deg,#cdb4f2,#8b72ee 38%,#5f63ee 66%,#54c6f2);
+    }
+    html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Pretendard',-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif;overflow:hidden}
+    .app{display:grid;grid-template-columns:76px 1fr;grid-template-rows:52px 1fr;height:100%}
+
+    /* top bar */
+    .top{grid-column:1/-1;display:flex;align-items:center;gap:12px;padding:0 14px;background:var(--surface);border-bottom:1px solid var(--border);z-index:5}
+    .brand{display:flex;align-items:center;gap:9px;text-decoration:none}
+    .brand img{width:26px;height:26px;display:block}
+    .brand .wm{font-size:16px;font-weight:800;letter-spacing:.16em;padding-left:.16em;background:var(--grad);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+    .vtitle{font-size:14px;font-weight:600;color:var(--muted);border-left:1px solid var(--border);padding-left:12px}
+    .spring{flex:1}
+    .scopes{display:flex;background:var(--bg);border:1px solid var(--border);border-radius:9px;padding:3px;gap:2px}
+    .scopes button{border:0;background:transparent;color:var(--muted);font:inherit;font-size:12px;font-weight:600;padding:5px 11px;border-radius:6px;cursor:pointer}
+    .scopes button.on{background:var(--surface2);color:var(--text)}
+    .tbtn{width:34px;height:34px;border-radius:9px;border:1px solid var(--border);background:var(--bg);color:var(--muted);display:grid;place-items:center;cursor:pointer;font-size:15px;text-decoration:none}
+
+    /* left rail */
+    .rail{background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 0;overflow-y:auto}
+    .nav{width:60px;padding:9px 0;border:0;background:transparent;color:var(--muted);cursor:pointer;border-radius:12px;display:flex;flex-direction:column;align-items:center;gap:4px;text-decoration:none;font:inherit}
+    .nav .ic{font-size:19px}
+    .nav .lb{font-size:10px;font-weight:600;letter-spacing:-.02em}
+    .nav:hover{background:var(--surface2);color:var(--text)}
+    .nav.on{background:var(--surface2);color:var(--text)}
+    .nav.on .ic{filter:drop-shadow(0 0 8px rgba(139,114,238,.6))}
+
+    /* main frame */
+    .main{position:relative;background:var(--bg)}
+    #frame{width:100%;height:100%;border:0;display:block;background:var(--bg)}
+    .loading{position:absolute;inset:0;display:grid;place-items:center;color:var(--faint);font-size:13px;pointer-events:none;opacity:0;transition:opacity .2s}
+    .loading.on{opacity:1}
+
+    @media(max-width:720px){
+      .app{grid-template-columns:1fr;grid-template-rows:52px 1fr 62px}
+      .rail{grid-row:3;grid-column:1;flex-direction:row;justify-content:space-around;border-right:0;border-top:1px solid var(--border);padding:6px 4px;gap:0}
+      .nav{width:auto;flex:1;padding:5px 0}.nav .lb{font-size:9px}
+      .vtitle,.scopes{display:none}
+      .main{grid-row:2}
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="top">
+      <a class="brand" href="/viewer"><img src="/moyi.svg" alt="MOYI"><span class="wm">MOYI</span></a>
+      <span class="vtitle" id="vtitle">내 워크스페이스</span>
+      <div class="spring"></div>
+      <div class="scopes" id="scopes">
+        <button data-scope="me" class="on">내</button>
+        <button data-scope="team">팀</button>
+        <button data-scope="org">전사</button>
+        <button data-scope="partner">협업사</button>
+      </div>
+      <a class="tbtn" href="/chat.html" title="MOYI AI">💬</a>
+      <a class="tbtn" href="/settings.html" title="설정">⚙</a>
+    </div>
+
+    <nav class="rail" id="rail"></nav>
+
+    <div class="main">
+      <div class="loading" id="loading">불러오는 중…</div>
+      <iframe id="frame" title="MOYI 뷰" referrerpolicy="same-origin"></iframe>
+    </div>
+  </div>
+
+  <script>
+    var VIEWS = [
+      {id:'home',    ic:'🏠', lb:'홈',    title:'내 워크스페이스',   url:'/app.html'},
+      {id:'graph',   ic:'🕸️', lb:'그래프', title:'그래프 · 맵',       url:'/orbit3d.html'},
+      {id:'status',  ic:'📊', lb:'현황',   title:'현황 · 분석',       url:'/admin-analysis.html'},
+      {id:'auto',    ic:'⚡', lb:'자동화', title:'자동화 · 솔루션',    url:'/automation-flow.html'},
+      {id:'comm',    ic:'💬', lb:'소통',   title:'커뮤니케이션',       url:'/chat.html'},
+      {id:'market',  ic:'🛒', lb:'마켓',   title:'마켓',              url:'/solution-market.html'},
+      {id:'settings',ic:'⚙️', lb:'설정',   title:'설정 · 계정',        url:'/settings.html'},
+      {id:'setup',   ic:'🚀', lb:'설치',   title:'설치 · 가이드',      url:'/setup.html'}
+    ];
+    var rail = document.getElementById('rail');
+    var frame = document.getElementById('frame');
+    var vtitle = document.getElementById('vtitle');
+    var loading = document.getElementById('loading');
+    var scope = 'me';
+
+    VIEWS.forEach(function(v){
+      var a = document.createElement('a');
+      a.className = 'nav'; a.href = '#' + v.id; a.dataset.id = v.id;
+      a.innerHTML = '<span class="ic">'+v.ic+'</span><span class="lb">'+v.lb+'</span>';
+      rail.appendChild(a);
+    });
+
+    function viewById(id){ for (var i=0;i<VIEWS.length;i++) if (VIEWS[i].id===id) return VIEWS[i]; return VIEWS[0]; }
+    function srcFor(v){ return v.url + (v.url.indexOf('?')<0?'?':'&') + 'scope=' + scope + '&embed=1'; }
+
+    function go(id){
+      var v = viewById(id);
+      vtitle.textContent = v.title;
+      loading.classList.add('on');
+      frame.src = srcFor(v);
+      document.querySelectorAll('.nav').forEach(function(n){ n.classList.toggle('on', n.dataset.id===v.id); });
+      if (location.hash.slice(1)!==v.id) history.replaceState(null,'','#'+v.id);
+      document.title = 'MOYI · ' + v.title;
+    }
+    frame.addEventListener('load', function(){ loading.classList.remove('on'); });
+
+    document.getElementById('scopes').addEventListener('click', function(e){
+      var b = e.target.closest('button'); if(!b) return;
+      scope = b.dataset.scope;
+      document.querySelectorAll('#scopes button').forEach(function(x){ x.classList.toggle('on', x===b); });
+      go(location.hash.slice(1) || 'home'); // reload current view with new scope
+    });
+    window.addEventListener('hashchange', function(){ go(location.hash.slice(1) || 'home'); });
+
+    go(location.hash.slice(1) || 'home');
+  </script>
+</body>
+</html>
