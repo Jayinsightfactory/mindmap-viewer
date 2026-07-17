@@ -325,6 +325,7 @@ let _lastCapturePath = ''; // 이전 캡처 경로 (diff 비교용)
 let _lastActiveApp   = '';
 let _lastWindowTitle  = '';
 let _idleTimer       = null;
+let _spoolTimer      = null;
 let _running         = false;
 let _paused          = false;  // 은행 보안프로그램 감지 시 일시정지
 
@@ -576,6 +577,81 @@ async function uploadPendingToServer(limit = 20) {
   return count;
 }
 
+// 로컬 캡처 백로그를 서버 볼륨 스풀(/api/vision/spool)로 업로드 → owner PC 무과금 CLI가 소진.
+// /api/hook(인메모리 큐, OOM위험) 대신 디스크 스풀로 보내 다른 PC 백로그를 중앙에서 분석 가능케 함.
+// 사이드카(.json)가 있으면 app/창제목을 실어 라우터(핵심=Sonnet) 작동, 없으면 빈값(구 백로그=Haiku).
+// 트리거·상태 기반 사전 선별(분석 전, 파일명만으로 공짜) — "필요없는 것부터 안 올린다".
+// 유휴/쿨다운 화면은 새 정보가 거의 없어 제외. 의도적 작업 트리거(클릭·타이핑·인쇄 등)는 유지.
+// 향후 학습 루프(앱×트리거×상태별 유용도)로 이 규칙을 데이터 기반으로 정교화(v2).
+const _SPOOL_KEEP_TRIGGERS = new Set(['mouse_click', 'click', 'ui_click', 'click_burst', 'keyboard_flush', 'keyboard_done', 'keyboard_input', 'key_burst', 'excel_formula', 'print', 'ctrl_print', 'file_write', 'tool_end']);
+function _spoolWorthUploading(trigger, stateLabel) {
+  if (trigger === 'low_quality_click_burst') return false;              // 명시적 저품질
+  if (_SPOOL_KEEP_TRIGGERS.has(trigger)) return true;                    // 의도적 작업 트리거 → 상태 무관 유지
+  if (stateLabel === 'idle' || stateLabel === 'cooldown') return false;  // 나머지(주기/유휴 캡처)는 유휴면 제외
+  return stateLabel === 'active' || stateLabel === 'focused' || stateLabel === 'burst';
+}
+function _postSpool(serverUrl, token, body) {
+  return new Promise((resolve) => {
+    try {
+      const url = new URL('/api/vision/spool', serverUrl);
+      const mod = url.protocol === 'https:' ? https : http;
+      const payload = JSON.stringify(body);
+      const headers = { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) };
+      if (token) headers['Authorization'] = 'Bearer ' + token;
+      const req = mod.request({ hostname: url.hostname, port: url.port || (url.protocol === 'https:' ? 443 : 80), path: url.pathname, method: 'POST', headers, timeout: 30000 },
+        res => { res.resume(); res.on('end', () => resolve(res.statusCode >= 200 && res.statusCode < 300)); });
+      req.on('error', () => resolve(false)); req.on('timeout', () => { req.destroy(); resolve(false); });
+      req.write(payload); req.end();
+    } catch { resolve(false); }
+  });
+}
+async function uploadPendingToSpool(limit = 15) {
+  // 분석 PC(owner)는 --local로 자기 캡처를 직접 처리 → 스풀 업로드 스킵(중복 방지)
+  try { if (fs.existsSync(path.join(os.homedir(), '.orbit', '.no-spool-upload'))) return 0; } catch {}
+  ensureDir();
+  const orbitConfig = (() => { try { let r = fs.readFileSync(path.join(os.homedir(), '.orbit-config.json'), 'utf8'); if (r.charCodeAt(0) === 0xFEFF) r = r.slice(1); return JSON.parse(r); } catch { return {}; } })();
+  const serverUrl = orbitConfig.serverUrl || process.env.ORBIT_SERVER_URL;
+  const token = orbitConfig.token || process.env.ORBIT_TOKEN || '';
+  const userId = orbitConfig.userId || process.env.ORBIT_USER_ID || '';
+  if (!serverUrl || !userId) return 0; // userId 없으면 귀속 불가 → 스킵
+
+  const marker = path.join(CAPTURE_DIR, '.spool-uploaded');
+  let sentSet = new Set();
+  try { sentSet = new Set(fs.readFileSync(marker, 'utf8').split(/\r?\n/).filter(Boolean)); } catch {}
+
+  let files = [];
+  try { files = fs.readdirSync(CAPTURE_DIR).filter(f => f.startsWith('screen-') && f.endsWith('.png') && !sentSet.has(f)).sort(); }
+  catch { return 0; }
+
+  let count = 0, skipped = 0;
+  for (const f of files.slice(0, limit)) {
+    try {
+      const parts0 = f.replace(/\.png$/i, '').split('-');
+      // 트리거·상태 사전 선별 — 필요없는 화면은 올리지 않고 처리완료로 표시(재스캔 방지)
+      if (!_spoolWorthUploading(parts0[2] || '', parts0[3] || '')) { sentSet.add(f); skipped++; continue; }
+      const filepath = path.join(CAPTURE_DIR, f);
+      const st = fs.statSync(filepath);
+      if (st.size > 5_000_000) { sentSet.add(f); continue; }        // 5MB↑ 스킵
+      const parts = parts0;
+      const epoch = parseInt(parts[1]) || Date.now();
+      const trigger = parts[2] || '';
+      let meta = { app: '', windowTitle: '' };
+      try { meta = JSON.parse(fs.readFileSync(filepath.replace(/\.png$/i, '.json'), 'utf8')); } catch {} // 사이드카(있으면)
+      const base64 = fs.readFileSync(filepath).toString('base64');
+      const ok = await _postSpool(serverUrl, token, {
+        imageBase64: base64, app: meta.app || '', windowTitle: meta.windowTitle || '',
+        hostname: os.hostname(), userId, ts: new Date(epoch).toISOString(), trigger, captureId: f.replace(/\.png$/i, ''),
+      });
+      if (ok) { sentSet.add(f); count++; }
+    } catch {}
+  }
+  if (count > 0 || skipped > 0) {
+    try { fs.writeFileSync(marker, [...sentSet].slice(-4000).join('\n'), 'utf8'); } catch {}
+    console.log(`[screen-capture] 스풀 업로드 ${count}건 · 트리거선별 스킵 ${skipped}건`);
+  }
+  return count;
+}
+
 /**
  * 최소 쿨타임 반환 — 카카오톡/주문 앱 활성 시 단축
  */
@@ -798,6 +874,13 @@ function capture(trigger = 'manual') {
 
     console.log(`[screen-capture] ${trigger}/${stateLabel}: ${filename}`);
 
+    // ── 사이드카 메타 저장(app/창제목) — 스풀 업로더/로컬워커가 라우터(핵심=Sonnet)에 사용 ──
+    // PNG 파일명엔 app/창제목이 없어 백로그 분석이 메타를 잃는다. 캡처 시점 컨텍스트를 옆에 남긴다.
+    try {
+      const _mc = _resolveCaptureContext(_lastActiveApp, _lastWindowTitle);
+      fs.writeFileSync(filepath.replace(/\.png$/i, '.json'), JSON.stringify({ app: _mc.app || '', windowTitle: _mc.title || '', trigger }));
+    } catch {}
+
     // ── 인텔리전스: 이미지 전송 여부 판단 ──
     if (!global._captureCounter) global._captureCounter = 0;
     global._captureCounter++;
@@ -821,7 +904,7 @@ function capture(trigger = 'manual') {
     // 정리
     try {
       const files = fs.readdirSync(CAPTURE_DIR).filter(f => f.startsWith('screen-') && f.endsWith('.png')).sort().reverse();
-      files.slice(MAX_CAPTURES).forEach(f => { try { fs.unlinkSync(path.join(CAPTURE_DIR, f)); } catch {} });
+      files.slice(MAX_CAPTURES).forEach(f => { try { fs.unlinkSync(path.join(CAPTURE_DIR, f)); } catch {} try { fs.unlinkSync(path.join(CAPTURE_DIR, f.replace(/\.png$/i, '.json'))); } catch {} }); // 사이드카 동반 삭제
     } catch {}
 
     return filepath;
@@ -1132,10 +1215,14 @@ function start() {
   if (_shouldCaptureStartup()) capture('startup');
   // 캡처 자가테스트 — 항상 1회, /api/hook으로 screen.diag 보고
   _runStartupSelfTest();
+  // 스풀 업로더: 로컬 캡처 백로그를 서버 볼륨으로(owner는 마커로 스킵). 3분 주기, 소량.
+  try { setTimeout(() => { uploadPendingToSpool().catch(() => {}); }, 60 * 1000); } catch {}
+  if (!_spoolTimer) _spoolTimer = setInterval(() => { uploadPendingToSpool().catch(() => {}); }, 3 * 60 * 1000);
 }
 
 function stop() {
   _running = false;
+  if (_spoolTimer) { clearInterval(_spoolTimer); _spoolTimer = null; }
   if (_idleTimer) { clearTimeout(_idleTimer); _idleTimer = null; }
   if (_flushCaptureTimer) { clearTimeout(_flushCaptureTimer); _flushCaptureTimer = null; }
   if (_burstTimer) { clearTimeout(_burstTimer); _burstTimer = null; }
@@ -1188,7 +1275,7 @@ module.exports = {
   start, stop, capture, getRecentCaptures, getLastAnalysis, getCurrentActivity,
   onAppChange, onKeyActivity, onKeyboardFlush, onWindowTitleChange, onToolEnd, onFileWrite,
   onKeyBurst, onMouseBurst, onMouseClick, onPrint, onExcelFormula,
-  uploadPendingToServer,
+  uploadPendingToServer, uploadPendingToSpool,
   pause, resume, isPaused,
   getStatus,
   CAPTURE_DIR,
