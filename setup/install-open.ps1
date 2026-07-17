@@ -74,7 +74,8 @@ $inputName = $inputName.Trim()
 Write-Host ""
 
 try {
-  $regBodyObj = @{ hostname = $hostname; windowsUser = $windowsUser; consent = $true; consentAt = (Get-Date).ToString('o') }
+  # 재설치 = 완전 새 신원(fresh): 이름/hostname 겹쳐도 옛 신원 재사용 안 함 → 새 userId 발급.
+  $regBodyObj = @{ hostname = $hostname; windowsUser = $windowsUser; consent = $true; consentAt = (Get-Date).ToString('o'); fresh = $true }
   if ($inputName)                { $regBodyObj.name           = $inputName }
   if ($kakaoTitle)               { $regBodyObj.kakaoTitle     = $kakaoTitle }
   if ($nenovaTitle)              { $regBodyObj.nenovaTitle    = $nenovaTitle }
@@ -86,7 +87,7 @@ try {
 
   $orbitToken = $reg.token
   $orbitUserId = $reg.userId
-  $matchType = if ($reg.matchedByName) { "by NAME" } elseif ($reg.reused) { "by HOSTNAME (reused)" } else { "NEW user" }
+  $matchType = if ($reg.fresh) { "FRESH (new identity)" } elseif ($reg.matchedByName) { "by NAME" } elseif ($reg.reused) { "by HOSTNAME (reused)" } else { "NEW user" }
   Write-Host "    Registered: $($reg.name) ($matchType)" -ForegroundColor Green
   Write-Host "    User ID:  $($orbitUserId.Substring(0, [Math]::Min(12,$orbitUserId.Length)))..." -ForegroundColor Gray
   Write-Host "    Hostname: $hostname" -ForegroundColor Gray
@@ -98,6 +99,19 @@ try {
   try { [Console]::ReadKey($true) | Out-Null } catch { Read-Host " " }
   exit 1
 }
+
+# 재설치 클린 초기화: 옛 캡처·업로드마커·펜딩·비전상태·옛 신원(config) 제거 → 새 데이터만 작업.
+# (런처/워치독 등은 install.ps1이 재설치하므로 건드리지 않음. captures 폴더만 통째로 비움.)
+try {
+  $orbitHome = "$env:USERPROFILE\.orbit"
+  foreach ($p in @("$orbitHome\captures", "$orbitHome\vision-pending")) {
+    if (Test-Path $p) { Remove-Item "$p\*" -Recurse -Force -ErrorAction SilentlyContinue }
+  }
+  foreach ($f in @("$orbitHome\vision-local-state.json", "$env:USERPROFILE\.orbit-config.json")) {
+    if (Test-Path $f) { Remove-Item $f -Force -ErrorAction SilentlyContinue }
+  }
+  Write-Host "    옛 로컬 데이터 초기화 완료 (새 신원으로 시작)" -ForegroundColor DarkGray
+} catch {}
 
 # Step 2: Run main installer with the issued token
 Write-Host "  [2/2] 설치 진행 중..." -ForegroundColor Cyan

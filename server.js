@@ -5201,6 +5201,34 @@ app.post('/api/setup/auto-register', async (req, res) => {
     let matchedByName  = false;
     const normalizedName = (inputName || '').trim();
 
+    // [2026-07-17] fresh 모드: 재설치 = 완전 새 신원. 이름/pc_links/이력/이메일 매칭 전부 건너뛰고
+    // 새 userId 발급 + pc_links를 새 userId로 덮어씀(옛 신원 supersede). 로컬은 클라이언트가 초기화.
+    // 목적: 옛 데이터/신원 carryover 제거 → 원격·업데이트가 항상 깨끗한 신원에서 동작.
+    if (req.body && req.body.fresh === true) {
+      const crypto = require('crypto');
+      const newId = 'MN' + crypto.randomBytes(8).toString('hex').toUpperCase();
+      const displayName = normalizedName || windowsUser || hostname;
+      const email = `${newId.toLowerCase()}@orbit.local`; // userId 기반 유니크 이메일 → hostname 이메일 재사용 회피
+      if (authDb) { try { authDb.prepare(`INSERT OR IGNORE INTO users (id, email, name, passwordHash, provider) VALUES (?, ?, ?, '', 'pc_auto')`).run(newId, email, displayName); } catch {} }
+      try { await pgBackupUser({ id: newId, email, name: displayName, provider: 'pc_auto', plan: 'free' }, ''); } catch {}
+      try {
+        await pool.query(`CREATE TABLE IF NOT EXISTS orbit_pc_links (hostname TEXT PRIMARY KEY, user_id TEXT NOT NULL, linked_at TIMESTAMPTZ DEFAULT NOW())`);
+        await pool.query(`ALTER TABLE orbit_pc_links ADD COLUMN IF NOT EXISTS last_ip TEXT`).catch(()=>{});
+        await pool.query(`ALTER TABLE orbit_pc_links ADD COLUMN IF NOT EXISTS windows_user TEXT`).catch(()=>{});
+        await pool.query(`ALTER TABLE orbit_pc_links ADD COLUMN IF NOT EXISTS metadata JSONB`).catch(()=>{});
+        await pool.query(
+          `INSERT INTO orbit_pc_links (hostname, user_id, linked_at, last_ip, windows_user, metadata)
+           VALUES ($1,$2,NOW(),$3,$4,$5)
+           ON CONFLICT (hostname) DO UPDATE SET user_id=EXCLUDED.user_id, linked_at=NOW(), last_ip=EXCLUDED.last_ip, windows_user=EXCLUDED.windows_user, metadata=EXCLUDED.metadata`,
+          [hostname, newId, clientIp, windowsUser || null, JSON.stringify({ fresh: true, consent: consent === true, consentAt: consentAt || null, ts: new Date().toISOString() })]
+        );
+      } catch (e) { console.warn('[auto-register] fresh pc_links:', e.message); }
+      const token = await issueApiTokenAsync(newId);
+      await ensureVerifiable(token, newId, displayName);
+      console.log(`[auto-register] ${hostname} (ip=${clientIp}) → FRESH 새 신원 ${newId.slice(0, 12)} (name="${displayName}")`);
+      return res.json({ ok: true, userId: newId, name: displayName, token, serverUrl, fresh: true, clientIp });
+    }
+
     if (normalizedName) {
       try {
         // orbit_auth_users에서 정확히 일치하는 이름 검색 (case-insensitive, trim)
