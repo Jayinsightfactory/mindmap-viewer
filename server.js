@@ -4465,6 +4465,76 @@ app.post('/api/vision/queue-push', (req, res) => {
   res.json({ ok: true, queueSize: _visionQueueTotal() });
 });
 
+// ── 캡처 백로그 스풀 (다른 PC 백로그 중앙 수집 → owner PC 무과금 CLI가 소진) ──────
+// OOM 방지 핵심: 이미지를 서버 메모리(인메모리 큐)에 쌓지 않고 Railway 볼륨(/app/data) 디스크에
+// 파일로 스풀. owner 워커가 한 건씩 당겨 분석 후 삭제 → 볼륨이 계속 빠짐. 사용자당 상한으로 볼륨 보호.
+const VISION_SPOOL_DIR = path.join(__dirname, 'data', 'vision-spool');
+try { fs.mkdirSync(VISION_SPOOL_DIR, { recursive: true }); } catch {}
+const VISION_SPOOL_MAX_PER_USER = 300;   // 사용자당 파일 상한(초과 시 오래된 것부터 삭제)
+function _spoolUserDir(uid) { const d = path.join(VISION_SPOOL_DIR, String(uid).replace(/[^A-Za-z0-9_-]/g, '_')); try { fs.mkdirSync(d, { recursive: true }); } catch {} return d; }
+function _spoolSafeFile(name) { return /^[A-Za-z0-9._-]+\.json$/.test(name) ? name : null; } // 경로탈출 방지
+
+// 데몬이 로컬 PNG 백로그를 한 건씩 업로드 → 디스크에 저장 (인메모리 미적재)
+app.post('/api/vision/spool', async (req, res) => {
+  const token = (req.headers.authorization || '').replace('Bearer ', '').trim();
+  if (!token.startsWith('orbit_')) return res.status(401).json({ error: 'orbit token required' });
+  const { imageBase64, app: appName, hostname, windowTitle, userId, ts, trigger, captureId } = req.body || {};
+  if (!imageBase64 || !userId) return res.status(400).json({ error: 'imageBase64, userId required' });
+  try {
+    const dir = _spoolUserDir(userId);
+    // 상한 초과 시 오래된 파일부터 정리
+    let files = fs.readdirSync(dir).filter(f => f.endsWith('.json')).sort();
+    while (files.length >= VISION_SPOOL_MAX_PER_USER) { try { fs.unlinkSync(path.join(dir, files.shift())); } catch { break; } }
+    const id = String(captureId || Date.now()).replace(/[^A-Za-z0-9._-]/g, '_');
+    const meta = { app: appName || '', windowTitle: windowTitle || '', hostname: hostname || '', userId, ts: ts || new Date().toISOString(), trigger: trigger || '', imageBase64 };
+    await fs.promises.writeFile(path.join(dir, `${id}.json`), JSON.stringify(meta));
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// owner 워커: 스풀 목록(메타만, 이미지 제외) — 사용자별 라운드로빈
+app.get('/api/vision/spool/list', (req, res) => {
+  const token = (req.headers.authorization || '').replace('Bearer ', '').trim();
+  if (!token.startsWith('orbit_')) return res.status(401).json({ error: 'orbit token required' });
+  const n = Math.min(parseInt(req.query.n) || 30, 60);
+  try {
+    const users = fs.readdirSync(VISION_SPOOL_DIR).filter(u => { try { return fs.statSync(path.join(VISION_SPOOL_DIR, u)).isDirectory(); } catch { return false; } });
+    const perUser = {}; let total = 0;
+    for (const u of users) { try { perUser[u] = fs.readdirSync(path.join(VISION_SPOOL_DIR, u)).filter(f => f.endsWith('.json')).sort(); total += perUser[u].length; } catch { perUser[u] = []; } }
+    const out = []; let added = true;
+    while (out.length < n && added) { added = false; for (const u of users) { if (perUser[u] && perUser[u].length) { out.push({ userId: u, file: perUser[u].shift() }); added = true; if (out.length >= n) break; } } }
+    // 각 항목에 가벼운 메타 부착(이미지 제외)
+    const items = out.map(o => { try { const m = JSON.parse(fs.readFileSync(path.join(VISION_SPOOL_DIR, o.userId, o.file), 'utf8')); return { userId: o.userId, file: o.file, app: m.app, windowTitle: m.windowTitle, hostname: m.hostname, ts: m.ts, trigger: m.trigger }; } catch { return { userId: o.userId, file: o.file }; } });
+    res.json({ pending: total, batch: items });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// owner 워커: 스풀 파일 1건(이미지 포함) 읽기 / 삭제
+app.get('/api/vision/spool/file', (req, res) => {
+  const token = (req.headers.authorization || '').replace('Bearer ', '').trim();
+  if (!token.startsWith('orbit_')) return res.status(401).json({ error: 'orbit token required' });
+  const uid = String(req.query.user || '').replace(/[^A-Za-z0-9_-]/g, '_'); const file = _spoolSafeFile(String(req.query.file || ''));
+  if (!uid || !file) return res.status(400).json({ error: 'user, file required' });
+  try { res.json(JSON.parse(fs.readFileSync(path.join(VISION_SPOOL_DIR, uid, file), 'utf8'))); }
+  catch { res.status(404).json({ error: 'not found' }); }
+});
+app.delete('/api/vision/spool/file', (req, res) => {
+  const token = (req.headers.authorization || '').replace('Bearer ', '').trim();
+  if (!token.startsWith('orbit_')) return res.status(401).json({ error: 'orbit token required' });
+  const uid = String(req.query.user || '').replace(/[^A-Za-z0-9_-]/g, '_'); const file = _spoolSafeFile(String(req.query.file || ''));
+  if (!uid || !file) return res.status(400).json({ error: 'user, file required' });
+  try { fs.unlinkSync(path.join(VISION_SPOOL_DIR, uid, file)); res.json({ ok: true }); }
+  catch { res.json({ ok: true }); } // 이미 없으면 성공 취급
+});
+app.get('/api/vision/spool/stat', (req, res) => {
+  try {
+    const users = fs.readdirSync(VISION_SPOOL_DIR).filter(u => { try { return fs.statSync(path.join(VISION_SPOOL_DIR, u)).isDirectory(); } catch { return false; } });
+    const byUser = {}; let total = 0, bytes = 0;
+    for (const u of users) { const fl = fs.readdirSync(path.join(VISION_SPOOL_DIR, u)).filter(f => f.endsWith('.json')); byUser[u] = fl.length; total += fl.length; for (const f of fl) { try { bytes += fs.statSync(path.join(VISION_SPOOL_DIR, u, f)).size; } catch {} } }
+    res.json({ ok: true, total, mb: Math.round(bytes / 1e6), byUser });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // 캡처 썸네일 이미지 제공 (screen.analyzed 이벤트의 thumbnail 필드)
 app.get('/api/vision/thumbnail/:eventId', async (req, res) => {
   try {

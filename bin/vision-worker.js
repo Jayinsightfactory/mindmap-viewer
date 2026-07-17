@@ -733,8 +733,74 @@ async function processLocalDir() {
   finally { _localBusy = false; }
 }
 
+// ── 스풀 모드: 서버 볼륨에 모인 전 직원 백로그를 owner PC 무과금 CLI로 소진 ──────
+// 데몬이 /api/vision/spool에 올린 파일을 list→file→분석→screen.analyzed→delete 로 한 건씩 비운다.
+// 스풀은 app/windowTitle 메타를 실어오므로 라우터(핵심=Sonnet)가 정상 작동한다(로컬 모드와 차이).
+const SPOOL_BATCH_N = parseInt(process.env.VISION_SPOOL_BATCH) || 30;
+let _spoolBusy = false;
+function _spoolReq(method, pathQ, timeout) {
+  return new Promise(resolve => {
+    const url = new URL(pathQ, ORBIT_SERVER);
+    const mod = url.protocol === 'https:' ? https : http;
+    const h = {}; if (ORBIT_TOKEN) h['Authorization'] = 'Bearer ' + ORBIT_TOKEN;
+    const req = mod.request({ hostname: url.hostname, port: url.port || 443, path: url.pathname + url.search, method, headers: h, timeout: timeout || 15000 },
+      res => { let d = ''; res.on('data', c => d += c); res.on('end', () => { try { resolve(JSON.parse(d)); } catch { resolve(null); } }); });
+    req.on('error', () => resolve(null)); req.end();
+  });
+}
+async function processSpool() {
+  if (_spoolBusy) return 0;
+  try {
+    const q = await require('../src/quota-guard').checkQuota(30);
+    if (q.pause) { console.log('[vision-spool][quota]', q.reason); return 0; }
+  } catch {}
+  _spoolBusy = true;
+  try {
+    const list = await _spoolReq('GET', `/api/vision/spool/list?n=${SPOOL_BATCH_N}`);
+    const batch = (list && list.batch) || [];
+    if (!batch.length) { console.log(`[vision-spool] 신규 없음 (대기 ${list ? list.pending : '?'})`); return 0; }
+    console.log(`[vision-spool] 대상 ${batch.length}건 (전체 대기 ${list.pending})`);
+    let done = 0;
+    for (const it of batch) {
+      try {
+        const full = await _spoolReq('GET', `/api/vision/spool/file?user=${encodeURIComponent(it.userId)}&file=${encodeURIComponent(it.file)}`);
+        if (!full || !full.imageBase64) { // 못 읽으면 삭제해 무한루프 방지
+          await _spoolReq('DELETE', `/api/vision/spool/file?user=${encodeURIComponent(it.userId)}&file=${encodeURIComponent(it.file)}`); continue;
+        }
+        console.log(`[vision-spool] ${full.hostname}/${full.app}: ${(full.windowTitle || '').slice(0, 40)}`);
+        const result = await visionAnalyze(full.imageBase64, {
+          hostname: full.hostname, name: full.app || 'capture', windowTitle: full.windowTitle || '', trigger: full.trigger,
+        });
+        if (!result) { console.warn(`  ✗ 분석 실패 — 다음 폴 재시도: ${it.file}`); continue; } // 삭제 안 함(재시도)
+        console.log(`  → ${result.app || '?'}: ${(result.activity || '').substring(0, 50)}`);
+        const payload = JSON.stringify({ events: [{
+          id: `vision-spool-${it.userId}-${it.file.replace(/\.json$/, '')}`, type: 'screen.analyzed', source: 'vision-spool-worker',
+          sessionId: `spool-${full.hostname || it.userId}-${Math.floor(new Date(full.ts || Date.now()).getTime() / 1800000)}`,
+          userId: full.userId || it.userId, timestamp: full.ts || new Date().toISOString(),
+          data: { hostname: full.hostname, originalCaptureId: it.file, trigger: full.trigger, ...result,
+            app: result.app || full.app || '', thumbnail: _makeThumb(full.imageBase64) },
+        }] });
+        const ok = await new Promise(resolve => {
+          const sUrl = new URL('/api/hook', ORBIT_SERVER); const sMod = sUrl.protocol === 'https:' ? https : http;
+          const sh = { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) };
+          if (ORBIT_TOKEN) sh['Authorization'] = 'Bearer ' + ORBIT_TOKEN;
+          const sr = sMod.request({ hostname: sUrl.hostname, port: sUrl.port || 443, path: sUrl.pathname, method: 'POST', headers: sh, timeout: 10000 },
+            r => { r.resume(); resolve(r.statusCode < 300); });
+          sr.on('error', () => resolve(false)); sr.write(payload); sr.end();
+        });
+        if (ok) { await _spoolReq('DELETE', `/api/vision/spool/file?user=${encodeURIComponent(it.userId)}&file=${encodeURIComponent(it.file)}`); done++; } // 전송 성공분만 스풀에서 삭제
+        await new Promise(r => setTimeout(r, 2000)); // CLI 쿨다운
+      } catch (e) { console.warn(`  분석 실패: ${e.message}`); }
+    }
+    console.log(`[vision-spool] 처리 ${done}건 전송·삭제`);
+    return done;
+  } catch (e) { console.error('[vision-spool] 에러:', e.message); return 0; }
+  finally { _spoolBusy = false; }
+}
+
 // ── 메인 ─────────────────────────────────────────────────────────────────────
 const LOCAL_MODE = process.argv.includes('--local');
+const SPOOL_MODE = process.argv.includes('--spool');
 const SERVER_QUEUE_MODE = process.argv.includes('--server-queue') || !process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
 // 2026-07-08: 1시간/10건이 유입량(실측 331건/h)의 3%만 처리해 저활동 직원 캡처가 서버 큐에서
 // 상시 밀려나던 병목의 절반 원인(나머지 절반은 서버측 사용자별 라운드로빈으로 해결) — 10분/24건으로 상향.
@@ -750,12 +816,19 @@ async function main() {
     process.exit(1);
   }
   console.log(`  모드: ${USE_CLI ? 'Claude CLI (Max 구독)' : 'API 키'}`);
-  console.log(`  소스: ${LOCAL_MODE ? '로컬 폴더 (' + LOCAL_DIR + ')' : SERVER_QUEUE_MODE ? '서버 큐 (/api/vision/queue)' : 'Google Drive'}`);
+  console.log(`  소스: ${SPOOL_MODE ? '스풀 (전 직원 백로그 /api/vision/spool)' : LOCAL_MODE ? '로컬 폴더 (' + LOCAL_DIR + ')' : SERVER_QUEUE_MODE ? '서버 큐 (/api/vision/queue)' : 'Google Drive'}`);
   if (CLAUDE_CLI) console.log(`  CLI: ${CLAUDE_CLI}`);
   console.log(`  서버: ${ORBIT_SERVER}`);
   console.log(`  폴링: ${(SERVER_QUEUE_MODE ? SERVER_QUEUE_POLL_MS / 1000 : POLL_INTERVAL / 1000)}초`);
 
-  if (LOCAL_MODE) {
+  if (SPOOL_MODE) {
+    // 스풀 모드: 서버 볼륨에 모인 전 직원 백로그를 무과금 CLI로 소진(라우터 정상 작동)
+    console.log(`  스풀 배치 ${SPOOL_BATCH_N} · 라우터 ${ROUTER_ON ? 'ON(핵심=Sonnet)' : 'OFF'}`);
+    const first = await processSpool();
+    console.log(`[vision-spool] 첫 배치: ${first}건`);
+    if (process.argv.includes('--once')) { process.exit(0); }
+    setInterval(processSpool, SERVER_QUEUE_POLL_MS);
+  } else if (LOCAL_MODE) {
     // 로컬 폴더 모드: PNG 백로그 소급 분석 (무과금 CLI). 사용자 ID 없으면 결과 귀속 불가.
     if (!LOCAL_USER) console.warn('  ⚠ userId 없음(.orbit-config.json) — 분석결과 귀속 안 됨');
     console.log(`  로컬유저: ${LOCAL_USER || '(없음)'} · 배치 ${LOCAL_BATCH} · 모델 ${LOCAL_FORCE_MODEL || '라우터(메타없어 Haiku)'}`);
