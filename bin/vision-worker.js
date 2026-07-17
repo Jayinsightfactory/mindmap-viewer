@@ -79,6 +79,10 @@ const ORBIT_TOKEN = process.env.ORBIT_TOKEN || (() => {
   try { return JSON.parse(fs.readFileSync(path.join(os.homedir(), '.orbit-config.json'), 'utf8')).token || ''; }
   catch { return ''; }
 })();
+const LOCAL_USER = process.env.ORBIT_USER_ID || (() => {
+  try { return JSON.parse(fs.readFileSync(path.join(os.homedir(), '.orbit-config.json'), 'utf8')).userId || ''; }
+  catch { return ''; }
+})();
 const POLL_INTERVAL = 3 * 60 * 1000; // 3분
 
 // ── Google 서비스 계정 ────────────────────────────────────────────────────────
@@ -287,6 +291,7 @@ const ROUTER_ON  = process.env.VISION_MODEL_ROUTER !== 'off';
 const HIGH_VALUE_RE = new RegExp(process.env.VISION_HIGH_VALUE_RE || 'nenova|ecount|이카운트|화훼|주문|출고|발주|견적|재고|erp|excel|엑셀|정산|채권|채무|무역|통관|검수|분배', 'i');
 const API_MODEL_ID = { sonnet: 'claude-sonnet-4-20250514', haiku: 'claude-haiku-4-5-20251001' };
 function pickModel(ctx) {
+  if (ctx && ctx.forceModel) return ctx.forceModel; // 로컬 폴더 모드: 메타데이터 없어 라우팅 불가 → 명시 모델
   if (!ROUTER_ON) return process.env.VISION_CLI_MODEL || null;
   const hay = ((ctx && ctx.name) || '') + ' ' + ((ctx && ctx.windowTitle) || '');
   return HIGH_VALUE_RE.test(hay) ? MODEL_HIGH : MODEL_BULK;
@@ -642,7 +647,94 @@ async function processServerQueue() {
   finally { _pqBusy = false; }
 }
 
+// ── 로컬 폴더 모드: ~/.orbit/captures/*.png 백로그 소급 분석 ──────────────────
+// 서버 큐 경로는 인라인 이미지가 실린 캡처만 담겨 백로그를 못 잡는다(구조적). 이 모드는
+// 각 PC가 링버퍼로 쌓아둔 실제 PNG를 직접 소스로 삼아 무과금 CLI로 소급 분석한다.
+// PNG는 데몬 소유물이라 삭제하지 않고, 처리분은 상태파일에 기록해 재실행 시 건너뛴다.
+const LOCAL_DIR = (() => {
+  const i = process.argv.indexOf('--local');
+  const p = i >= 0 ? process.argv[i + 1] : null;
+  return (p && !p.startsWith('--')) ? p : path.join(os.homedir(), '.orbit', 'captures');
+})();
+const LOCAL_STATE_FILE = path.join(os.homedir(), '.orbit', 'vision-local-state.json');
+const LOCAL_BATCH = parseInt(process.env.VISION_LOCAL_BATCH) || 30;      // 틱당 분석 상한
+const LOCAL_MIN_GAP_MS = parseInt(process.env.VISION_LOCAL_GAP_MS) || 40000; // 유지 프레임 간 최소 간격(중복 컷)
+const LOCAL_FORCE_MODEL = process.env.VISION_LOCAL_MODEL || null;         // 미지정=라우터(메타없어 Haiku), 'sonnet'=강제
+let _localDone = (() => { try { return new Set(JSON.parse(fs.readFileSync(LOCAL_STATE_FILE, 'utf8')).done || []); } catch { return new Set(); } })();
+function _saveLocalState() { try { fs.writeFileSync(LOCAL_STATE_FILE, JSON.stringify({ done: [..._localDone].slice(-5000) })); } catch {} }
+let _localBusy = false;
+
+async function processLocalDir() {
+  if (_localBusy) return 0;
+  try {
+    const q = await require('../src/quota-guard').checkQuota(30);
+    if (q.pause) { console.log('[vision-local][quota]', q.reason); return 0; }
+  } catch {}
+  _localBusy = true;
+  try {
+    let files;
+    try { files = fs.readdirSync(LOCAL_DIR).filter(f => f.endsWith('.png')); }
+    catch { console.warn(`[vision-local] 폴더 없음: ${LOCAL_DIR}`); return 0; }
+    const host = os.hostname();
+    // 파일명에서 epoch·트리거 파싱, 미처리분만, 오래된→최신(세션 순서 보존)
+    const cand = files.map(f => {
+      const m = f.match(/screen-(\d+)-([a-z_]+)-([a-z]+)\.png/i);
+      return m ? { f, epoch: parseInt(m[1]), trigger: m[2], focus: m[3] } : null;
+    }).filter(x => x && !_localDone.has(x.f)).sort((a, b) => a.epoch - b.epoch);
+    if (!cand.length) { console.log(`[vision-local] 신규 없음 (총 ${files.length}, 처리완료 ${_localDone.size})`); return 0; }
+    // 중복 컷: 유지 프레임 간 최소 간격. mouse_click(의도적 클릭)은 항상 유지.
+    const work = []; let lastKept = 0;
+    for (const c of cand) {
+      if (c.trigger === 'mouse_click' || c.epoch - lastKept >= LOCAL_MIN_GAP_MS) { work.push(c); lastKept = c.epoch; }
+      else _localDone.add(c.f); // 컷도 처리완료로 기록(재스캔 방지)
+    }
+    const batch = work.slice(0, LOCAL_BATCH);
+    console.log(`[vision-local] 대상 ${batch.length}/${work.length}건 (신규후보 ${cand.length}, 폴더 ${LOCAL_DIR})`);
+
+    let done = 0;
+    for (const c of batch) {
+      try {
+        const full = path.join(LOCAL_DIR, c.f);
+        const stat = fs.statSync(full);
+        if (stat.size > 6_000_000) { _localDone.add(c.f); continue; } // 6MB↑ 스킵
+        const base64 = fs.readFileSync(full).toString('base64');
+        const iso = new Date(c.epoch).toISOString();
+        const result = await visionAnalyze(base64, {
+          hostname: host, name: 'capture', windowTitle: '', trigger: c.trigger,
+          forceModel: LOCAL_FORCE_MODEL,
+        });
+        if (!result) { console.warn(`  ✗ 분석 실패 — 다음 스캔 재시도: ${c.f}`); continue; }
+        console.log(`  → ${result.app || '?'}: ${(result.activity || '').substring(0, 50)}`);
+        const payload = JSON.stringify({ events: [{
+          id: `vision-local-${c.epoch}`, type: 'screen.analyzed', source: 'vision-local-worker',
+          sessionId: `local-${host}-${Math.floor(c.epoch / 1800000)}`, // 30분 버킷 = 세션 형성 도움
+          userId: LOCAL_USER, timestamp: iso,
+          data: { hostname: host, originalCaptureId: c.f, trigger: c.trigger, ...result,
+            app: result.app || '', thumbnail: _makeThumb(base64) },
+        }] });
+        const ok = await new Promise(resolve => {
+          const sUrl = new URL('/api/hook', ORBIT_SERVER);
+          const sMod = sUrl.protocol === 'https:' ? https : http;
+          const sh = { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) };
+          if (ORBIT_TOKEN) sh['Authorization'] = 'Bearer ' + ORBIT_TOKEN;
+          const sr = sMod.request({ hostname: sUrl.hostname, port: sUrl.port || 443, path: sUrl.pathname, method: 'POST', headers: sh, timeout: 10000 },
+            r => { r.resume(); resolve(r.statusCode < 300); });
+          sr.on('error', () => resolve(false)); sr.write(payload); sr.end();
+        });
+        if (ok) { _localDone.add(c.f); done++; }        // 전송 성공분만 완료 기록
+        if (done % 10 === 0) _saveLocalState();
+        await new Promise(r => setTimeout(r, 2000));      // CLI 쿨다운
+      } catch (e) { console.warn(`  분석 실패: ${e.message}`); }
+    }
+    _saveLocalState();
+    console.log(`[vision-local] 처리 ${done}건 전송 (누적 완료 ${_localDone.size})`);
+    return done;
+  } catch (e) { console.error('[vision-local] 에러:', e.message); return 0; }
+  finally { _localBusy = false; }
+}
+
 // ── 메인 ─────────────────────────────────────────────────────────────────────
+const LOCAL_MODE = process.argv.includes('--local');
 const SERVER_QUEUE_MODE = process.argv.includes('--server-queue') || !process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
 // 2026-07-08: 1시간/10건이 유입량(실측 331건/h)의 3%만 처리해 저활동 직원 캡처가 서버 큐에서
 // 상시 밀려나던 병목의 절반 원인(나머지 절반은 서버측 사용자별 라운드로빈으로 해결) — 10분/24건으로 상향.
@@ -658,12 +750,20 @@ async function main() {
     process.exit(1);
   }
   console.log(`  모드: ${USE_CLI ? 'Claude CLI (Max 구독)' : 'API 키'}`);
-  console.log(`  소스: ${SERVER_QUEUE_MODE ? '서버 큐 (/api/vision/queue)' : 'Google Drive'}`);
+  console.log(`  소스: ${LOCAL_MODE ? '로컬 폴더 (' + LOCAL_DIR + ')' : SERVER_QUEUE_MODE ? '서버 큐 (/api/vision/queue)' : 'Google Drive'}`);
   if (CLAUDE_CLI) console.log(`  CLI: ${CLAUDE_CLI}`);
   console.log(`  서버: ${ORBIT_SERVER}`);
   console.log(`  폴링: ${(SERVER_QUEUE_MODE ? SERVER_QUEUE_POLL_MS / 1000 : POLL_INTERVAL / 1000)}초`);
 
-  if (SERVER_QUEUE_MODE) {
+  if (LOCAL_MODE) {
+    // 로컬 폴더 모드: PNG 백로그 소급 분석 (무과금 CLI). 사용자 ID 없으면 결과 귀속 불가.
+    if (!LOCAL_USER) console.warn('  ⚠ userId 없음(.orbit-config.json) — 분석결과 귀속 안 됨');
+    console.log(`  로컬유저: ${LOCAL_USER || '(없음)'} · 배치 ${LOCAL_BATCH} · 모델 ${LOCAL_FORCE_MODEL || '라우터(메타없어 Haiku)'}`);
+    const first = await processLocalDir();
+    console.log(`[vision-local] 첫 배치: ${first}건`);
+    if (process.argv.includes('--once')) { process.exit(0); }
+    setInterval(processLocalDir, SERVER_QUEUE_POLL_MS);
+  } else if (SERVER_QUEUE_MODE) {
     // 서버 큐 모드: SERVER_QUEUE_POLL_MS마다 서버에서 이미지 가져와 CLI 분석
     const first = await processServerQueue();
     console.log(`[vision] 첫 배치: ${first}건`);
