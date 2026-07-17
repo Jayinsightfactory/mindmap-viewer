@@ -2759,6 +2759,7 @@ app.get('/api/admin/daemon-health', async (req, res) => {
         uptime:   data.uptime || null,
         memMB:    data.memMB || null,
         state:    verdict,
+        codeVersion: data.codeVersion || null, // git HEAD(8) — 각 PC 코드세대(최신 여부)
         modules:  data.modules || {},
         heartbeatAt: r.timestamp,
         secondsSinceHeartbeat: sinceHb,

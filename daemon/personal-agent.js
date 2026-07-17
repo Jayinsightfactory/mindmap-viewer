@@ -626,6 +626,15 @@ let keyboardWatcher = null;
 let screenCapture   = null;
 let resourceGovernor = null;
 const _daemonStartedAt = Date.now();
+// 코드세대(git HEAD 8자) — 데몬 수명 동안 불변(code-sync가 HEAD 바뀌면 재시작)이라 1회 계산 후 캐시.
+let _codeVersion = null;
+function _getCodeVersion() {
+  if (_codeVersion) return _codeVersion;
+  try { _codeVersion = execSync('git rev-parse HEAD', { cwd: ROOT, timeout: 5000, windowsHide: true, stdio: 'pipe' }).toString().trim().slice(0, 8); }
+  catch { _codeVersion = 'unknown'; }
+  return _codeVersion;
+}
+
 function _emitHeartbeat() {
   try {
     const now = Date.now();
@@ -652,6 +661,7 @@ function _emitHeartbeat() {
       state: overall,
       modules,
       memMB: Math.round(process.memoryUsage().rss / 1024 / 1024),
+      codeVersion: _getCodeVersion(), // git HEAD(8) — fleet 코드세대 가시화(누가 최신인지)
     });
   } catch (e) {
     console.warn('[heartbeat] 전송 실패:', e.message);
