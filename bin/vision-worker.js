@@ -63,6 +63,39 @@ function _makeThumb(base64) {
   } catch { return (base64 || '').substring(0, 100000); }
 }
 
+// [2026-07-17 E1] 지각해시 중복컷 — 시각적으로 같은 프레임은 CLI 부르기 전에 걸러 사용량 절감.
+// 8x8 그레이스케일 average hash(64bit). System.Drawing(=_makeThumb 동일 경로). 실패 시 null(중복판정 안 함=안전).
+function _perceptualHash(base64) {
+  try {
+    if (!base64 || base64.length < 2000) return null;
+    const inP = path.join(TEMP_DIR, `ph-${Date.now()}-${Math.floor(Math.random() * 1e6)}.png`);
+    fs.writeFileSync(inP, Buffer.from(base64, 'base64'));
+    const ps = `Add-Type -AssemblyName System.Drawing; `
+      + `$img=[System.Drawing.Image]::FromFile('${inP}'); `
+      + `$bmp=New-Object System.Drawing.Bitmap(8,8); $g=[System.Drawing.Graphics]::FromImage($bmp); `
+      + `$g.InterpolationMode='HighQualityBicubic'; $g.DrawImage($img,0,0,8,8); `
+      + `$v=@(); for($y=0;$y -lt 8;$y++){for($x=0;$x -lt 8;$x++){$p=$bmp.GetPixel($x,$y); $v+=[int](($p.R*30+$p.G*59+$p.B*11)/100)}}; `
+      + `$img.Dispose(); $bmp.Dispose(); $a=($v|Measure-Object -Average).Average; `
+      + `-join ($v|ForEach-Object{ if($_ -gt $a){'1'}else{'0'} })`;
+    const out = execSync(`powershell -NoProfile -NonInteractive -Command "${ps.replace(/"/g, '\\"')}"`, { timeout: 10000, windowsHide: true, stdio: 'pipe' }).toString().trim();
+    try { fs.unlinkSync(inP); } catch {}
+    return /^[01]{64}$/.test(out) ? out : null;
+  } catch { return null; }
+}
+const _dupCache = new Map(); // key(userId|app) → 직전 지각해시
+const DEDUP_ON = process.env.VISION_DEDUP !== 'off';
+const DEDUP_MAXDIST = parseInt(process.env.VISION_DEDUP_DIST) || 5; // 해밍거리 ≤5 = 사실상 동일화면
+function _hamming(a, b) { let d = 0; for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) d++; return d; }
+function _isDupFrame(base64, key) {
+  if (!DEDUP_ON) return false;
+  const h = _perceptualHash(base64);
+  if (!h) return false;                 // 해시 실패 → 분석 진행(안전측)
+  const last = _dupCache.get(key);
+  _dupCache.set(key, h);
+  if (_dupCache.size > 500) { const k = _dupCache.keys().next().value; _dupCache.delete(k); }
+  return !!last && _hamming(last, h) <= DEDUP_MAXDIST;
+}
+
 // [2026-06-15] 야간 배치 모드(--night): 낮엔 큐 이미지를 디스크에 보관만(CLI 비용 0),
 // 19:00~08:00에만 CLI 분석. owner PC를 켜두고 퇴근 → 구독한도/업무시간 충돌 없이 야간 처리.
 const NIGHT_MODE = process.argv.includes('--night');
@@ -288,7 +321,9 @@ function _parseResult(text) {
 const MODEL_HIGH = process.env.VISION_MODEL_HIGH || 'sonnet';
 const MODEL_BULK = process.env.VISION_MODEL_BULK || 'haiku';
 const ROUTER_ON  = process.env.VISION_MODEL_ROUTER !== 'off';
-const HIGH_VALUE_RE = new RegExp(process.env.VISION_HIGH_VALUE_RE || 'nenova|ecount|이카운트|화훼|주문|출고|발주|견적|재고|erp|excel|엑셀|정산|채권|채무|무역|통관|검수|분배', 'i');
+// [2026-07-17 A1] 카톡(kakao)도 고가치 승격 — 회사 주문·발주·배송·거래처 정보가 카톡에 실려 옴.
+// 라우터는 앱명만 보므로 카톡은 앱명(kakao/카카오/카톡)으로 잡아 Sonnet 처리(정확도↑).
+const HIGH_VALUE_RE = new RegExp(process.env.VISION_HIGH_VALUE_RE || 'nenova|ecount|이카운트|화훼|주문|출고|발주|견적|재고|erp|excel|엑셀|정산|채권|채무|무역|통관|검수|분배|kakao|카카오|카톡', 'i');
 const API_MODEL_ID = { sonnet: 'claude-sonnet-4-20250514', haiku: 'claude-haiku-4-5-20251001' };
 function pickModel(ctx) {
   if (ctx && ctx.forceModel) return ctx.forceModel; // 로컬 폴더 모드: 메타데이터 없어 라우팅 불가 → 명시 모델
@@ -699,6 +734,8 @@ async function processLocalDir() {
         if (stat.size > 6_000_000) { _localDone.add(c.f); continue; } // 6MB↑ 스킵
         const base64 = fs.readFileSync(full).toString('base64');
         const iso = new Date(c.epoch).toISOString();
+        // [E1] 직전과 시각적으로 같은 화면이면 분석 스킵(처리완료 기록해 재스캔 방지)
+        if (_isDupFrame(base64, `local|${host}`)) { _localDone.add(c.f); continue; }
         const result = await visionAnalyze(base64, {
           hostname: host, name: 'capture', windowTitle: '', trigger: c.trigger,
           forceModel: LOCAL_FORCE_MODEL,
@@ -768,6 +805,12 @@ async function processSpool() {
           await _spoolReq('DELETE', `/api/vision/spool/file?user=${encodeURIComponent(it.userId)}&file=${encodeURIComponent(it.file)}`); continue;
         }
         console.log(`[vision-spool] ${full.hostname}/${full.app}: ${(full.windowTitle || '').slice(0, 40)}`);
+        // [E1] 직전과 시각적으로 같은 화면이면 분석 스킵 + 스풀에서 삭제(드레인)
+        if (_isDupFrame(full.imageBase64, `${it.userId}|${full.app || ''}`)) {
+          console.log(`  ⇢ 중복화면 스킵(E1): ${it.file}`);
+          await _spoolReq('DELETE', `/api/vision/spool/file?user=${encodeURIComponent(it.userId)}&file=${encodeURIComponent(it.file)}`);
+          continue;
+        }
         const result = await visionAnalyze(full.imageBase64, {
           hostname: full.hostname, name: full.app || 'capture', windowTitle: full.windowTitle || '', trigger: full.trigger,
         });
