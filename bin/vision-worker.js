@@ -813,6 +813,7 @@ async function processSpool() {
         }
         const result = await visionAnalyze(full.imageBase64, {
           hostname: full.hostname, name: full.app || 'capture', windowTitle: full.windowTitle || '', trigger: full.trigger,
+          recentClicks: full.recentClicks,  // [골:실행좌표 융합/A3] 서버가 붙인 캡처 직전 클릭 → clickXY 특정
         });
         if (!result) { console.warn(`  ✗ 분석 실패 — 다음 폴 재시도: ${it.file}`); continue; } // 삭제 안 함(재시도)
         console.log(`  → ${result.app || '?'}: ${(result.activity || '').substring(0, 50)}`);

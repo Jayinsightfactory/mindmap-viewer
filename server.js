@@ -4516,8 +4516,15 @@ app.get('/api/vision/spool/file', (req, res) => {
   if (!token.startsWith('orbit_')) return res.status(401).json({ error: 'orbit token required' });
   const uid = String(req.query.user || '').replace(/[^A-Za-z0-9_-]/g, '_'); const file = _spoolSafeFile(String(req.query.file || ''));
   if (!uid || !file) return res.status(400).json({ error: 'user, file required' });
-  try { res.json(JSON.parse(fs.readFileSync(path.join(VISION_SPOOL_DIR, uid, file), 'utf8'))); }
-  catch { res.status(404).json({ error: 'not found' }); }
+  try {
+    const meta = JSON.parse(fs.readFileSync(path.join(VISION_SPOOL_DIR, uid, file), 'utf8'));
+    // [골:실행좌표 융합/A3] 서버-큐 경로처럼 캡처 직전 클릭을 붙여 vision이 clickXY(pyautogui 좌표)를 특정.
+    // 라이브 캡처(클릭이 15분 버퍼에 있음)에만 붙고, 오래된 백로그는 빈 배열(무해).
+    if (!(meta.recentClicks && meta.recentClicks.length)) {
+      meta.recentClicks = _clicksForCapture(meta.userId || uid, new Date(meta.ts || Date.now()).getTime());
+    }
+    res.json(meta);
+  } catch { res.status(404).json({ error: 'not found' }); }
 });
 app.delete('/api/vision/spool/file', (req, res) => {
   const token = (req.headers.authorization || '').replace('Bearer ', '').trim();
