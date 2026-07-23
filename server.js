@@ -4501,7 +4501,9 @@ app.get('/api/vision/spool/list', (req, res) => {
   try {
     const users = fs.readdirSync(VISION_SPOOL_DIR).filter(u => { try { return fs.statSync(path.join(VISION_SPOOL_DIR, u)).isDirectory(); } catch { return false; } });
     const perUser = {}; let total = 0;
-    for (const u of users) { try { perUser[u] = fs.readdirSync(path.join(VISION_SPOOL_DIR, u)).filter(f => f.endsWith('.json')).sort(); total += perUser[u].length; } catch { perUser[u] = []; } }
+    // [2026-07-23] 최신순 처리 — 파일명 screen-<epoch> 내림차순. 최근 캡처(클릭좌표 15분버퍼 살아있음+
+    // 업무 관련성↑)를 먼저 분석 → clickXY 융합 복원. 옛 stale 백로그는 사용자당 300 상한으로 자연 만료.
+    for (const u of users) { try { perUser[u] = fs.readdirSync(path.join(VISION_SPOOL_DIR, u)).filter(f => f.endsWith('.json')).sort().reverse(); total += perUser[u].length; } catch { perUser[u] = []; } }
     const out = []; let added = true;
     while (out.length < n && added) { added = false; for (const u of users) { if (perUser[u] && perUser[u].length) { out.push({ userId: u, file: perUser[u].shift() }); added = true; if (out.length >= n) break; } } }
     // 각 항목에 가벼운 메타 부착(이미지 제외)
