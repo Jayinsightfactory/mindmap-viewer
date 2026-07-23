@@ -620,7 +620,9 @@ async function uploadPendingToSpool(limit = 15) {
   try { sentSet = new Set(fs.readFileSync(marker, 'utf8').split(/\r?\n/).filter(Boolean)); } catch {}
 
   let files = [];
-  try { files = fs.readdirSync(CAPTURE_DIR).filter(f => f.startsWith('screen-') && f.endsWith('.png') && !sentSet.has(f)).sort(); }
+  // [2026-07-23] 최신순 업로드 — 최근 캡처(클릭좌표 15분버퍼 살아있음+업무 관련성↑)를 먼저 스풀로.
+  // 옛 백로그는 링버퍼(500)에서 자연 만료. clickXY 융합이 실제로 붙게 하는 핵심.
+  try { files = fs.readdirSync(CAPTURE_DIR).filter(f => f.startsWith('screen-') && f.endsWith('.png') && !sentSet.has(f)).sort().reverse(); }
   catch { return 0; }
 
   let count = 0, skipped = 0;
