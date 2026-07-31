@@ -323,7 +323,9 @@ const MODEL_BULK = process.env.VISION_MODEL_BULK || 'haiku';
 const ROUTER_ON  = process.env.VISION_MODEL_ROUTER !== 'off';
 // [2026-07-17 A1] 카톡(kakao)도 고가치 승격 — 회사 주문·발주·배송·거래처 정보가 카톡에 실려 옴.
 // 라우터는 앱명만 보므로 카톡은 앱명(kakao/카카오/카톡)으로 잡아 Sonnet 처리(정확도↑).
-const HIGH_VALUE_RE = new RegExp(process.env.VISION_HIGH_VALUE_RE || 'nenova|ecount|이카운트|화훼|주문|출고|발주|견적|재고|erp|excel|엑셀|정산|채권|채무|무역|통관|검수|분배|kakao|카카오|카톡', 'i');
+// [2026-07-30 1A] 커버리지 확대 — 화훼·무역 업무화면(구글시트/문서·송장/배송·매출입·꽃상품 등)도
+// Sonnet으로 → fields+clickXY 커버리지↑(골모드 좌표). 카톡(A1)에 이어 업무 콘텐츠 키워드 추가.
+const HIGH_VALUE_RE = new RegExp(process.env.VISION_HIGH_VALUE_RE || 'nenova|ecount|이카운트|화훼|주문|출고|발주|견적|재고|erp|excel|엑셀|정산|채권|채무|무역|통관|검수|분배|kakao|카카오|카톡|sheets|docs|스프레드시트|구글시트|송장|배송|운송|택배|invoice|인보이스|명세|청구|입금|출금|송금|결제|매출|매입|카네이션|carnation|화환|장미|거래처|납품|수주', 'i');
 const API_MODEL_ID = { sonnet: 'claude-sonnet-4-20250514', haiku: 'claude-haiku-4-5-20251001' };
 function pickModel(ctx) {
   if (ctx && ctx.forceModel) return ctx.forceModel; // 로컬 폴더 모드: 메타데이터 없어 라우팅 불가 → 명시 모델
