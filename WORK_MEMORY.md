@@ -1435,3 +1435,22 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - part2 진단: work.action은 activity+screen+room만, vision fields[].currentValue(거래처명) 융합때 버림 = 커버리지 상한. 거래처 매칭 잘되는 건 카톡방명=거래처("호남선 수경원예") 또는 ERP화면 특정거래처. 대부분작업(리스트/네비)은 단일거래처 없음=본질적 한계.
 - part2 미착수(핫패스 신중): 커버리지 부스트 = ops-ontology promote가 vision 필드값을 work.action 텍스트에 실어 매칭확대. 크리틱 루프로 커버리지 상승 검증하며 별도 정밀작업 권장.
 - 3층 통합: L1(좌표0)·L2(humanRequired ✅)·L3(거래처키2.1%) — 공통근본=엔티티/좌표 커버리지 희박. 한 곳 고치면 세 층 동시.
+
+## 2026-07-30 (opus4.8) Vision 스풀 파이프라인 + 효율/정확 디벨롭 — 좌표융합(#1 과제) 전진
+
+- **요청 흐름**: 비전분석 재가동 → 다른PC 백로그 학습 → 효율·정확 개선 → 시각화/워크로그 확인 → 밀린 분석 마무리 → MD갱신.
+- **근본진단**: `--server-queue`는 `/api/hook`에 인라인이미지 실린 캡처만 담아 백로그 못잡음(구조적). 다른PC 백로그는 각 PC 디스크에만.
+- **스풀 파이프라인 신설**(커밋 e45a095·dc4cefa): Railway 볼륨(/app/data/vision-spool) 디스크 스풀. 서버 `POST /api/vision/spool`(사용자당 300상한, 인메모리 미적재=OOM회피)·`spool/list·file·stat`. 데몬 `src/screen-capture.js uploadPendingToSpool`(3분주기, 사이드카.json으로 app/창제목 보존, 트리거·상태 사전선별 71%컷). owner 워커 `bin/vision-worker.js --spool`(무과금 CLI, list→분석→screen.analyzed→delete). owner PC는 `~/.orbit/.no-spool-upload` 마커로 스킵.
+- **워커 모드 3종**: `--server-queue`(은퇴함)·`--local`(owner 자기 캡처 폴더 직접)·`--spool`(전직원 백로그). 상시화: HKCU\Run+18:00스케줄 `OrbitVisionLocal`·`OrbitVisionSpool`.
+- **효율/정확 A1·E1·A3**(커밋 f759175·c82d21d·756ac5e·486b130):
+  - **A1**(정확): 라우터 HIGH_VALUE_RE에 kakao|카카오|카톡 추가 → 카톡 화면 Sonnet(회사 주문·발주·배송이 카톡에). **이게 clickXY의 결정적 열쇠** — Sonnet이 fields+clickXY 스키마 안정 반환.
+  - **E1**(효율): 8x8 average-hash 지각해시(`_perceptualHash`)로 직전과 시각동일 프레임 CLI 前 컷(spool=삭제/local=완료). 해밍≤5=동일. VISION_DEDUP=off. 검증 동일0·다른40.
+  - **A3**(정확/★#1 과제 전진): 스풀 전환 때 빠졌던 클릭좌표 융합 복원. spool/file이 `_clicksForCapture`로 캡처직전 클릭 첨부 + 워커가 vision 전달 → fields[].clickXY 생성.
+  - **최신순 처리**(756ac5e·486b130): 서버 spool/list + 데몬 업로더를 최신순으로 → 최근 캡처(클릭 15분버퍼 살아있음) 우선 → clickXY 실현. 옛 stale은 300상한 자연만료.
+- **★07-14 #1 과제(좌표학습 복구=clickStepCount 0) 실제 전진**: 이제 clickXY가 붙음. 검증(2026-07-30, /api/vision/thumbnails fields): **설연주 50캡처中 14개 clickXY**(예 카카오톡→[1779,544][1458,59]). 단 카톡/Sonnet 위주, Haiku 화면은 fields 덜 실림(다음 레버).
+- **fresh 재설치**(f36e109, [[orbit-daemon-install-deploy]]): 재설치=완전 새 userId+로컬초기화(사용자 결정 "옛데이터 필요없음"). server auto-register fresh:true, install-open.ps1 로컬wipe.
+- **codeVersion 텔레메트리**(1c2eb5e): daemon.heartbeat에 git HEAD → daemon-health로 PC별 코드세대 가시화.
+- **결과(2026-07-30)**: 스풀 백로그 **완전소진(0)**, fleet 최신코드(486b130) 4대 정상. clickXY 작동확인.
+- **오측정 정정**: learning/logs의 `mouseClicks`는 클릭카운트지 융합좌표 아님. clickXY는 raw `data_json->fields[].clickXY`(learning/logs 뷰엔 안 나옴, thumbnails/task-sessions 엔드포인트로 봐야 함).
+- **남은 레버**: ①task-sessions(CCTV) 0 — steps≥3(server 4652행) 밀도 미달, 분석볼륨↑ 필요. ②clickXY를 Haiku 화면·pad_mouse_map 클러스터로 확대(07-14 gap 잔여). ③Phase2 학습필터(예약 vision-phase2-learning-loop 2026-07-20 — 실행됐는지 확인 필요). ④느린 시각화 엔드포인트(flow/company 3s·thumbnails) 캐싱.
+- **stale MD**(이 세션서 갱신필요): PROGRESS.md(04-13 멈춤)·VISION_SECOND_PC.md(local/spool 없음)·DAEMON_STRUCTURE.md(spool-uploader·codeVersion·fresh)·TOTAL_PLATFORM.md(clickXY P1 전진)·DATA_CHECK.md(스풀=현 분석경로).
