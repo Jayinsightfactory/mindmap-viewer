@@ -15,7 +15,7 @@
 | 모듈 | 이벤트 type | 핵심 |
 |---|---|---|
 | `keyboard-watcher.js` | **keyboard.chunk** | 키 입력 → `_rawBuffer`(로컬) → 분석. **payload `analyzed` 객체의 `inputText`로 원본 전송**(옵션2). 앱컨텍스트·통계(rawStats/typingPatterns) 포함 |
-| `screen-capture.js` | **screen.capture** | 이벤트 기반 캡처. 캡처 방식: ①PIL(python) ②pyautogui ③PowerShell CopyFromScreen 폴백(검은화면 가능). `_shouldSendImage`로 이미지 전송 throttle |
+| `screen-capture.js` | **screen.capture** | 이벤트 기반 캡처. 캡처 방식: ①PIL(python) ②pyautogui ③PowerShell CopyFromScreen 폴백(검은화면 가능). `_shouldSendImage`로 이미지 전송 throttle. **[2026-07-30] `uploadPendingToSpool`**(3분·최신순·트리거선별71%컷·사이드카.json으로 app/창제목 보존) → `POST /api/vision/spool`(볼륨 디스크) → owner CLI 워커가 소진. owner PC는 `~/.orbit/.no-spool-upload` 마커로 스킵 |
 | `mouse-watcher.js` | **mouse.chunk** | 마우스 좌표 → 60초마다 전송 |
 | `tool-profiler.js` | — | 앱별 사용패턴 학습 + 수집전략 |
 | `workflow-learner.js` | — | 업무 워크플로우 자동 학습 |
@@ -48,6 +48,8 @@
 - 직원: **`install-open.ps1`**(irm|iex) → 이름 입력 → `auto-register` → **`install.ps1`을 -OutFile로 받아 -File 실행**(iex 금지: AMSI/BOM 깨짐). UI는 "업무 학습 도구"로 reframe(추적용어 제거).
 - `install.ps1` [4.5/9] **Defender 자가예외**(Add-MpPreference, admin 필요). 끝에 **install.diag** 이벤트(av/uiohook/screenCap/자동시작/부하) → `GET /api/admin/install-diag?hostname=`.
 - 자가재설치/비대화식: `$env:ORBIT_AUTO_REINSTALL='1'` (Pause-Exit 스킵).
+- **[2026-07-30] fresh 재설치 = 완전 새 신원**: `install-open.ps1`이 `auto-register`에 `fresh:true` 전송 + 설치 前 로컬 초기화(captures/vision-pending/vision-local-state/옛 config 삭제). 서버가 이름/hostname 매칭 건너뛰고 새 userId 발급+pc_links 덮어씀 → 재설치가 옛 데이터/신원 안 물어옴(사용자 결정). owner 토큰경로(install.ps1)는 신원 유지. `.no-spool-upload` 마커는 보존.
+- **[2026-07-30] codeVersion 텔레메트리**: `daemon.heartbeat`에 git HEAD(8) 실림 → `GET /api/admin/daemon-health`의 `codeVersion`으로 PC별 코드세대(최신 여부) 확인. 뒤처진 PC는 원격 `update` 명령으로 갱신.
 
 ## 7. 데이터 흐름 요약
 ```

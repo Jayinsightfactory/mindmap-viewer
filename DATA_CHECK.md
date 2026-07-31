@@ -60,6 +60,13 @@ TOK  = 마스터 분석토큰 (orbit_ 프리픽스, /api/learning·admin 조회�
 
 ## 4. Vision 파이프라인 상태 — `GET /api/vision/stat`
 
+> **★현행 분석 경로 = 스풀 (2026-07-30)**: `/api/vision/stat`의 서버워커는 `disabled_by_flag`(정상, 유료경로 정지).
+> 실제 분석은 **owner PC 무과금 CLI 워커**가 담당: 데몬 `uploadPendingToSpool`(최신순) → `POST /api/vision/spool`
+> (볼륨 디스크) → owner `bin/vision-worker.js --spool`(전직원) + `--local`(owner 자기). 진단 엔드포인트:
+> `GET /api/vision/spool/stat`(잔량·byUser), `GET /api/learning/capture-funnel?days=N`(analyzed 상승),
+> `GET /api/admin/daemon-health`(PC별 codeVersion·상태). "분석 안 됨" = 스풀 stat·워커로그(`~/.orbit/vision-spool.log`)·quota 확인.
+> clickXY(좌표융합)는 `data_json->fields[].clickXY`(learning/logs엔 안 나옴 → thumbnails/task-sessions로 확인). 상세 WORK_MEMORY.md.
+
 `worker.{running, apiKeyConfigured, processed, failed, queueSize, lastSkipReason, lastError, startedAt}`
 
 | 증상 | 원인 |

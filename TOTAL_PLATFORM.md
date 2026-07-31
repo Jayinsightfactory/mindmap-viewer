@@ -34,6 +34,12 @@
 - spec 구성: `{앱/화면, 단계[입력필드·값·클릭좌표·순서], 입력출처, 빈도}`
 - 우선 대상: **nenova 주문입력** (최빈·정형)
 
+> **진전 (2026-07-30)**: 07-14 최대 걸림돌이던 "클릭좌표(clickXY) 미부착"이 전진. 스풀 경로가
+> 캡처직전 클릭을 첨부(`_clicksForCapture`)+최신순 처리로 클릭버퍼 살아있는 동안 분석 →
+> vision이 `fields[].clickXY`(pyautogui 좌표) 생성. 검증: 설연주 14/50 캡처 clickXY(카톡).
+> **잔여**: ①Haiku 화면은 fields 덜 실림(1A로 업무화면 Sonnet 승격중) ②task-sessions 밀도 미달로
+> 세션 조립 0(server.js 4652 steps≥3) ③pad_mouse_map 클러스터 미형성. 상세 WORK_MEMORY.md.
+
 ## Phase 2 — 입력 연결 (작업의 입력값 자동 수집)
 **목표**: 작업을 돌릴 "재료"를 자동으로.
 - 카톡/시트에서 주문 정보 추출 → spec의 입력 슬롯에 매핑

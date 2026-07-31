@@ -1,6 +1,16 @@
 # Orbit AI — PROGRESS
 
-> 최종 업데이트: 2026-04-13 (세션2)
+> 최종 업데이트: 2026-07-30
+
+---
+
+## 2026-07-30 — Vision 정밀분석 파이프라인 완성 (Phase 4 대부분 달성)
+
+**핵심**: 캡처 백로그·다른PC 분석을 스풀 파이프라인으로 해결, 골모드 좌표(clickXY) 실현 착수.
+- **스풀 파이프라인**: 데몬 `uploadPendingToSpool`(최신순·트리거선별71%컷·사이드카) → `POST /api/vision/spool`(볼륨 디스크·사용자당300·OOM안전) → owner `bin/vision-worker.js --spool`(무과금 CLI·최신순) → `screen.analyzed`→delete. owner는 `--local`로 자기 캡처 직접. `--server-queue` 은퇴.
+- **효율/정확**: A1(카톡+화훼무역 업무화면→Sonnet)·E1(지각해시 중복컷)·A3(클릭좌표 융합 복원)·최신순 처리·fresh 재설치·codeVersion 텔레메트리.
+- **결과(검증)**: 전직원 백로그 완전소진, fleet 최신코드 4대, **clickXY 부착 확인**(설연주 14/50, 카톡 좌표). 상세 WORK_MEMORY.md 2026-07-30.
+- **남은 레버**: task-sessions(CCTV) 밀도·clickXY를 Haiku화면/pad_mouse_map 확대·인과사슬 커버리지·시각화 캐싱. Phase2 학습필터(2026-07-20 실행됨, 산출물 확인).
 
 ---
 
