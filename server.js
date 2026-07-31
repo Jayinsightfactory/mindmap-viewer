@@ -1472,6 +1472,14 @@ app.get('/api/admin/kakao-intel', async (req, res) => {
   try {
     const pool = dbModule.getDb(); if (!pool?.query) return res.json({ error: 'DB 없음' });
     const hours = Math.min(parseInt(req.query.hours) || 720, 2160);
+    // [2026-07-31] 캐시 — kakao.intel 5000건 집계가 무거워(>120s) 관리자뷰 502/타임아웃. 워커 10분주기라
+    // 5분 TTL이면 충분. res.json 래핑으로 큰 응답객체 구조는 그대로 두고 캐시(에러응답은 저장 안 함).
+    if (!global._kiCache) global._kiCache = new Map();
+    const _kiKey = `ki|${hours}`;
+    const _kiHit = global._kiCache.get(_kiKey);
+    if (_kiHit && Date.now() - _kiHit.ts < 300000) return res.json(_kiHit.data);
+    const _kiOrig = res.json.bind(res);
+    res.json = (obj) => { if (obj && !obj.error) { global._kiCache.set(_kiKey, { ts: Date.now(), data: obj }); if (global._kiCache.size > 40) global._kiCache.delete(global._kiCache.keys().next().value); } return _kiOrig(obj); };
     const { rows } = await pool.query(
       `SELECT data_json, timestamp FROM events WHERE type='kakao.intel'
         AND timestamp::timestamptz > NOW() - ($1 || ' hours')::interval
