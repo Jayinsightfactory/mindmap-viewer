@@ -88,8 +88,12 @@ BASE = https://mindmap-viewer-production-adb2.up.railway.app   (헤더: Authoriz
 powershell -NoProfile -WindowStyle Hidden -Command "cd C:\...\mindmap-viewer; $env:VISION_CLI_MODEL='sonnet'; node bin/vision-worker.js --server-queue --flush *> $env:USERPROFILE\.orbit\vision-worker.log"
 ```
 
-## 6. 현실 — "과거 전부"는 별도
+## 6. 백로그·다른PC 처리 — 스풀 파이프라인으로 해결됨 (2026-07-30 갱신)
 
-- 서버 큐는 **인메모리·사용자당 6장 상한**이라, **분석 못 하고 지나간 옛 캡처는 이미 버려짐**(서버에 없음).
-- 두 번째 PC가 늘리는 건 **지금부터의 실시간 스트림 처리량·품질**.
-- 진짜 과거 전체 학습은 각 직원 PC의 로컬 `~/.orbit/captures/*.png`를 소스로 하는 **로컬 폴더 분석 모드**가 필요 — 원하면 별도 설계.
+> 이전엔 "서버 큐(인메모리)가 옛 캡처를 버려 백로그 못 잡음"이 한계였다. 아래로 해결.
+
+- **워커 모드 3종**: `--server-queue`(은퇴)·`--local`(이 PC `~/.orbit/captures/*.png` 직접 분석)·**`--spool`**(전 직원 백로그를 서버 볼륨 스풀에서 소진).
+- **스풀 경로**: 각 데몬 `uploadPendingToSpool`(3분, 최신순, 트리거·상태 71%컷, 사이드카.json으로 app/창제목 보존) → `POST /api/vision/spool`(Railway 볼륨 디스크, 사용자당 300상한, OOM안전) → owner `--spool` 워커가 최신순으로 list→분석→`screen.analyzed`→delete. owner PC는 `~/.orbit/.no-spool-upload` 마커로 업로드 스킵(--local이 직접 처리).
+- **좌표융합**: 서버가 spool/file에 `_clicksForCapture`로 캡처직전 클릭 첨부 → vision이 fields[].clickXY(pyautogui 실행좌표) 생성. 최신순이라 클릭 15분버퍼 살아있는 동안 처리.
+- 검증(2026-07-30): 전직원 백로그 완전소진(스풀 0), clickXY 부착 확인(설연주 14/50, 카톡 Sonnet).
+- 상시화: HKCU\Run + 18:00 스케줄 `OrbitVisionLocal`·`OrbitVisionSpool`. 상세는 [[vision-cli-worker-local]] 메모리·WORK_MEMORY.md 2026-07-30.
