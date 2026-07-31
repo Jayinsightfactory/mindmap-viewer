@@ -1454,3 +1454,10 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - **오측정 정정**: learning/logs의 `mouseClicks`는 클릭카운트지 융합좌표 아님. clickXY는 raw `data_json->fields[].clickXY`(learning/logs 뷰엔 안 나옴, thumbnails/task-sessions 엔드포인트로 봐야 함).
 - **남은 레버**: ①task-sessions(CCTV) 0 — steps≥3(server 4652행) 밀도 미달, 분석볼륨↑ 필요. ②clickXY를 Haiku 화면·pad_mouse_map 클러스터로 확대(07-14 gap 잔여). ③Phase2 학습필터(예약 vision-phase2-learning-loop 2026-07-20 — 실행됐는지 확인 필요). ④느린 시각화 엔드포인트(flow/company 3s·thumbnails) 캐싱.
 - **stale MD**(이 세션서 갱신필요): PROGRESS.md(04-13 멈춤)·VISION_SECOND_PC.md(local/spool 없음)·DAEMON_STRUCTURE.md(spool-uploader·codeVersion·fresh)·TOTAL_PLATFORM.md(clickXY P1 전진)·DATA_CHECK.md(스풀=현 분석경로).
+
+### 이어서 (같은 2026-07-30 세션 후반)
+- **MD 6종 전부 현행화 완료·push**: WORK_MEMORY·VISION_SECOND_PC(§6 스풀)·PROGRESS(07-30)·TOTAL_PLATFORM(Phase1 clickXY)·DATA_CHECK(§4 현행경로=스풀)·DAEMON_STRUCTURE(스풀업로더·fresh·codeVersion). 커밋 f16aa60·67220e4·8fa1284.
+- **1A 커버리지 확대**(커밋 9b55b52): HIGH_VALUE_RE에 sheets|docs|스프레드시트|송장|배송|운송|invoice|명세|청구|입금출금송금|결제|매출매입|카네이션|화환|장미|거래처|납품|수주 추가 → 화훼·무역 업무화면 Sonnet → clickXY 커버리지 카톡→전업무화면. 검증: 업무화면 SONNET/뉴스·유튜브·계산기 haiku. 실효과는 업무시간 캡처 유입 때.
+- **#5 flow 캐싱**(커밋 1386ad3): routes/flow-map.js /company·/people 45s TTL 인메모리 캐시(그래프캐시 패턴). 3.2s→0.4~0.65s, 502(부하/배포=사장님 목격 'Railway오류') 완화. 검증: 반복호출 sub-second.
+- **#2 task-sessions 진단(코드변경 안 함)**: server.js 4600~4652 로직은 정상(토큰교집합 sameApp·카톡↔ERP 한세션·clickFields 보존·steps≥3). 0 세션은 **밀도(quota+after-hours) 문제지 버그 아님**. 백로그 소진+1A로 업무시간에 자연 형성 예상. 임계↓는 얇은 노이즈세션 유발이라 보류. 업무시간에 검증할 것.
+- **다음 후보**: 업무시간 검증(clickXY 확대·task-sessions 형성)·pad_mouse_map 클러스터(핫패스 신중)·인과사슬 커버리지·A2 novelty(Phase2 07-20 실행됨 산출물 확인).
