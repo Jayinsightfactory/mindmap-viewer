@@ -253,9 +253,6 @@ async function runAll() {
     } catch (e) { console.warn(`[${room.slice(0, 20)}] 실패:`, e.message); }
   }
   console.log(`[kakao-intel] 완료 · 신규 분석 ${total}건 (누적 처리 ${Object.keys(_state.processed).length})`);
-  // [2026-07-31] 롤업 프리컴퓨트 갱신 — 서버가 재계산·영속(kakao.intel.rollup)해 관리자뷰 즉시화.
-  // 계산이 45s+라 클라 타임아웃 나도 서버는 끝까지 계산·저장하므로 결과는 갱신됨(무해).
-  try { await req('GET', '/api/admin/kakao-intel?refresh=1'); } catch {}
   return total;
 }
 
