@@ -148,6 +148,8 @@ async function runDutyOnce(userId) {
 async function runOnce() {
   const t0 = Date.now();
   console.log(`[ops-agent] ${new Date().toISOString()} 시작 (입력 ${INPUT_H}h)`);
+  // [2026-07-31] 자동화 일일 사용 상한 준수 — 캡/리저브 도달 시 이번 틱 스킵(claude 호출 안 함)
+  try { const q = await require('../src/quota-guard').checkQuota(30); if (q.pause) { console.log('[ops-agent][quota]', q.reason); return; } } catch {}
   const input = await httpJson('GET', `/api/flow/ops-input?hours=${INPUT_H}`);
   if (!input.ok) throw new Error('ops-input 실패: ' + JSON.stringify(input).slice(0, 200));
   console.log(`  데이터: 작업단위 ${input.units.length} · 직원 ${input.loads.length} · 핸드오프 ${input.handoffs.length}`);
