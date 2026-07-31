@@ -30,6 +30,12 @@ function createFlowMapRouter(deps = {}) {
   const router = express.Router();
   const pool = () => (getPool ? getPool() : null);
 
+  // [2026-07-30 #5] 응답 캐시 — /company·/people은 6+개 무거운 조인쿼리(3~4s)라 부하/배포때 502.
+  // 45초 TTL 인메모리 캐시로 반복·동시 요청을 흡수(그래프 캐시 패턴 재사용). 읽기전용이라 신선도 45s면 충분.
+  const _flowCache = new Map(); const FLOW_CACHE_TTL = 45000;
+  function _fcGet(k) { const v = _flowCache.get(k); if (v && Date.now() - v.ts < FLOW_CACHE_TTL) return v.data; if (v) _flowCache.delete(k); return null; }
+  function _fcSet(k, data) { _flowCache.set(k, { ts: Date.now(), data }); if (_flowCache.size > 200) { const fk = _flowCache.keys().next().value; _flowCache.delete(fk); } }
+
   // T1: 마스터/관리자 토큰은 여전히 전체(?tenant=)로 열람 가능. 일반 로그인 사용자는
   // 실제 workspace_members 소속 회사(=자기 회사)로 강제 스코프(다른 회사 데이터 노출 금지).
   async function auth(req) {
@@ -85,6 +91,7 @@ function createFlowMapRouter(deps = {}) {
       if (ws === 'NO_WORKSPACE') return res.status(403).json({ error: 'not_onboarded', message: '아직 회사에 배정되지 않았습니다. 관리자에게 문의하세요.' });
       if (!ws) return res.status(401).json({ error: 'unauthorized' });
       const p = pool(); if (!p) return res.status(500).json({ error: 'db not available' });
+      const _ck = `company|${ws}`; { const h = _fcGet(_ck); if (h) return res.json(h); }
       const [persons, customers, actCount, mentions, handoffs, kakaoRoomCust] = await Promise.all([
         personMap(p, ws),
         customerMap(p, ws),
@@ -165,7 +172,8 @@ function createFlowMapRouter(deps = {}) {
         edges.push({ from: 'room:' + room, to: custKey, kind: 'mentions', count: e.count, confidence: e.conf });
       }
 
-      res.json({ ok: true, level: 'company', tenant: ws, nodes, edges, stats: { people: nodes.filter(n => n.kind === 'employee').length, customers: usedCust.size, handoffs: pp.size, kakaoRooms: usedRooms.size } });
+      const _out = { ok: true, level: 'company', tenant: ws, nodes, edges, stats: { people: nodes.filter(n => n.kind === 'employee').length, customers: usedCust.size, handoffs: pp.size, kakaoRooms: usedRooms.size } };
+      _fcSet(_ck, _out); res.json(_out);
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
@@ -279,13 +287,14 @@ function createFlowMapRouter(deps = {}) {
       if (ws === 'NO_WORKSPACE') return res.status(403).json({ error: 'not_onboarded', message: '아직 회사에 배정되지 않았습니다. 관리자에게 문의하세요.' });
       if (!ws) return res.status(401).json({ error: 'unauthorized' });
       const p = pool(); if (!p) return res.status(500).json({ error: 'db not available' });
+      const _ckP = `people|${ws}`; { const h = _fcGet(_ckP); if (h) return res.json(h); }
       const [pm, cnt] = await Promise.all([
         personMap(p, ws),
         p.query(`SELECT user_id, COUNT(*) c, MAX(timestamp) last FROM unified_events WHERE type='work.action' AND workspace_id=$1 GROUP BY user_id ORDER BY c DESC`, [ws]),
       ]);
       const people = cnt.rows.filter(r => r.user_id && r.user_id !== 'local' && r.user_id !== 'system')
         .map(r => ({ userId: r.user_id, label: pm.get(r.user_id)?.label || r.user_id, count: Number(r.c), last: r.last }));
-      res.json({ ok: true, tenant: ws, people });
+      const _outP = { ok: true, tenant: ws, people }; _fcSet(_ckP, _outP); res.json(_outP);
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
