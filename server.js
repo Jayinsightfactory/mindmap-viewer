@@ -1472,14 +1472,34 @@ app.get('/api/admin/kakao-intel', async (req, res) => {
   try {
     const pool = dbModule.getDb(); if (!pool?.query) return res.json({ error: 'DB 없음' });
     const hours = Math.min(parseInt(req.query.hours) || 720, 2160);
-    // [2026-07-31] 캐시 — kakao.intel 5000건 집계가 무거워(>120s) 관리자뷰 502/타임아웃. 워커 10분주기라
-    // 5분 TTL이면 충분. res.json 래핑으로 큰 응답객체 구조는 그대로 두고 캐시(에러응답은 저장 안 함).
+    // [2026-07-31 프리컴퓨트] 5000건 집계가 무거워(>100s) 관리자뷰 502/타임아웃. 3중 즉시경로:
+    // ①in-memory(5분) ②영속 rollup 이벤트(25분, 재배포에도 생존) ③실계산+영속. 관리자뷰는 항상 즉시.
+    // kakao-intel 워커가 매 라운드 끝에 ?refresh=1로 강제 재계산→영속 갱신.
     if (!global._kiCache) global._kiCache = new Map();
     const _kiKey = `ki|${hours}`;
-    const _kiHit = global._kiCache.get(_kiKey);
-    if (_kiHit && Date.now() - _kiHit.ts < 300000) return res.json(_kiHit.data);
+    const _force = req.query.refresh === '1';
+    if (!_force) {
+      const _mem = global._kiCache.get(_kiKey);
+      if (_mem && Date.now() - _mem.ts < 300000) return res.json(_mem.data);
+      try {
+        const pr = await pool.query(`SELECT data_json, timestamp FROM events WHERE type='kakao.intel.rollup' AND (data_json->>'hours')=$1 ORDER BY timestamp DESC LIMIT 1`, [String(hours)]);
+        if (pr.rows.length && Date.now() - new Date(pr.rows[0].timestamp).getTime() < 1500000) {
+          const data = typeof pr.rows[0].data_json === 'object' ? pr.rows[0].data_json : JSON.parse(pr.rows[0].data_json);
+          global._kiCache.set(_kiKey, { ts: Date.now(), data });
+          return res.json({ ...data, cached: true });
+        }
+      } catch {}
+    }
     const _kiOrig = res.json.bind(res);
-    res.json = (obj) => { if (obj && !obj.error) { global._kiCache.set(_kiKey, { ts: Date.now(), data: obj }); if (global._kiCache.size > 40) global._kiCache.delete(global._kiCache.keys().next().value); } return _kiOrig(obj); };
+    res.json = (obj) => {
+      if (obj && !obj.error) {
+        global._kiCache.set(_kiKey, { ts: Date.now(), data: obj });
+        if (global._kiCache.size > 40) global._kiCache.delete(global._kiCache.keys().next().value);
+        // 영속화(재배포 생존) + 오래된 rollup 정리
+        try { pool.query(`INSERT INTO events (id,type,user_id,data_json,timestamp) VALUES ($1,'kakao.intel.rollup','system',$2,NOW())`, ['kiroll-' + Date.now(), JSON.stringify(obj)]).then(() => pool.query(`DELETE FROM events WHERE type='kakao.intel.rollup' AND timestamp < NOW() - INTERVAL '3 hours'`).catch(() => {})).catch(() => {}); } catch {}
+      }
+      return _kiOrig(obj);
+    };
     const { rows } = await pool.query(
       `SELECT data_json, timestamp FROM events WHERE type='kakao.intel'
         AND timestamp::timestamptz > NOW() - ($1 || ' hours')::interval
