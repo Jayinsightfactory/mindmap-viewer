@@ -1461,3 +1461,8 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - **#5 flow 캐싱**(커밋 1386ad3): routes/flow-map.js /company·/people 45s TTL 인메모리 캐시(그래프캐시 패턴). 3.2s→0.4~0.65s, 502(부하/배포=사장님 목격 'Railway오류') 완화. 검증: 반복호출 sub-second.
 - **#2 task-sessions 진단(코드변경 안 함)**: server.js 4600~4652 로직은 정상(토큰교집합 sameApp·카톡↔ERP 한세션·clickFields 보존·steps≥3). 0 세션은 **밀도(quota+after-hours) 문제지 버그 아님**. 백로그 소진+1A로 업무시간에 자연 형성 예상. 임계↓는 얇은 노이즈세션 유발이라 보류. 업무시간에 검증할 것.
 - **다음 후보**: 업무시간 검증(clickXY 확대·task-sessions 형성)·pad_mouse_map 클러스터(핫패스 신중)·인과사슬 커버리지·A2 novelty(Phase2 07-20 실행됨 산출물 확인).
+
+### 2026-07-31 카톡 인텔 상태확인 + 자동화 일일 사용 캡
+- **카톡 대화 분석/성향파악 = bin/kakao-intel-worker.js**(2026-07-10작성, WORK_MEMORY 상단 참조). **라이브 가동중**(PID·상태파일 갱신): 누적 7,302 스레드, 원문 4,999·23방. 롤업 `/api/admin/kakao-intel` 실데이터: 이슈 14,686건(미해결 2,404), 거래처성향(주광 이슈2293·해결89%, 꽃길93%, 대구희경94%…, 어조 '급함', 유형 주문변경/불량클레임/배차출고), 직원역량(박성수 처리12736·87%, 변진형 84%, 정재훈 86%, 김원영 77%, 설연주 84%, 이사 56%). 07-10 "미검증"에서 크게 전진.
+- **#A 롤업 캐싱**(커밋 6d60733): /api/admin/kakao-intel이 5000건 집계로 >120s(502/타임아웃). res.json 래핑 5분 TTL 캐시 → 조회 즉시화.
+- **★자동화 일일 사용 캡**(커밋 bde3014·151da38, 사장님 지시 "자동화가 하루 10% 넘게 쓰지마"): src/quota-guard.js에 DAILY_CAP_PCT(기본10) — 7일창 utilization의 **오늘 자정 대비 순증 ≥10%p면 자동화 대기**(~/.orbit/quota-daily.json 베이스라인). 기존 reserve 임계와 OR. ops-agent-worker에도 checkQuota 가드 추가(vision·kakao-intel은 이미 있었음). env ORBIT_CLI_DAILY_CAP_PCT. 검증: 상태파일 {date:2026-07-31,base:70} → 80%에서 정지. **주의**: 7일창 롤링이라 순증이 실사용보다 작게 나올 수 있음(다소 관대). 워커 재기동해야 새 가드 로드(vision-spool/local·kakao-intel·ops-agent 재기동 완료).
