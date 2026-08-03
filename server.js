@@ -1507,6 +1507,7 @@ app.get('/api/admin/kakao-intel', async (req, res) => {
 
       for (const c of d.cases) {
         if (!c) continue;
+        if (c.type === '불량클레임' || c.type === '불만클레임') continue; // [2026-08-03] 불량/불만은 제외(사장님: 필요없음). 거래처대응·이슈트래킹만.
         const key = (c.key || `${c.seq || ''} ${c.product || ''}`).trim() || '(미상)';
         const it = issues[key] || (issues[key] = { key, product: c.product || '', seq: c.seq || '', type: c.type || '기타', room: d.room || '', raisedBy: c.raisedBy || '', customers: {}, occurrences: 0, resolved: false, turns: 0, tone: c.tone || '', evidence: c.evidence || '', summary: c.summary || '', critical: false });
         it.occurrences++; it.turns += (c.turns || 1);
@@ -1561,17 +1562,7 @@ app.get('/api/admin/kakao-intel', async (req, res) => {
     res.json({
       generatedAt: new Date().toISOString(), windowsAnalyzed: windows, hours,
       crossCheckAvg: ccN ? +(ccSum / ccN).toFixed(2) : null,
-      // 0) ★운영이슈 트래킹 (AI 대체/트래킹 대상 = 놓치면 사고나는 것: 항공스케줄·주문/출고 누락).
-      //    critical 플래그(신규분석) OR 운영타입 OR 키워드(기존분석 살려냄). 불량클레임은 제외(자동화 비우선).
-      criticalIssues: (() => {
-        const CRIT_TYPE = new Set(['항공스케줄', '주문누락', '출고누락', '선적누락']);
-        const KW = /누락|항공|비행|선적|스케줄|지연|결항|딜레이|미출고|빠[졌진]|앞당/;
-        return issueList
-          .filter(i => i.type !== '불량클레임' && (i.critical === true || CRIT_TYPE.has(i.type) || KW.test(`${i.summary || ''} ${i.key || ''} ${i.evidence || ''}`)))
-          .sort((a, b) => (a.resolved - b.resolved) || (b.occurrences - a.occurrences))
-          .slice(0, 80);
-      })(),
-      // 1) 이슈 트래킹보드 (미해결 우선)
+      // 1) 이슈 트래킹보드 (미해결 우선, 불량/불만 제외)
       issues: issueList.sort((a, b) => (a.resolved - b.resolved) || (b.occurrences - a.occurrences)).slice(0, 150),
       issueSummary: { total: issueList.length, resolved: issuesResolved, unresolved: issueList.length - issuesResolved, byType: topN(byType, 20) },
       // 2) 거래처 성향지도
