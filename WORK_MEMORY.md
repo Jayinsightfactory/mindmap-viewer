@@ -1466,3 +1466,10 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - **카톡 대화 분석/성향파악 = bin/kakao-intel-worker.js**(2026-07-10작성, WORK_MEMORY 상단 참조). **라이브 가동중**(PID·상태파일 갱신): 누적 7,302 스레드, 원문 4,999·23방. 롤업 `/api/admin/kakao-intel` 실데이터: 이슈 14,686건(미해결 2,404), 거래처성향(주광 이슈2293·해결89%, 꽃길93%, 대구희경94%…, 어조 '급함', 유형 주문변경/불량클레임/배차출고), 직원역량(박성수 처리12736·87%, 변진형 84%, 정재훈 86%, 김원영 77%, 설연주 84%, 이사 56%). 07-10 "미검증"에서 크게 전진.
 - **#A 롤업 캐싱**(커밋 6d60733): /api/admin/kakao-intel이 5000건 집계로 >120s(502/타임아웃). res.json 래핑 5분 TTL 캐시 → 조회 즉시화.
 - **★자동화 일일 사용 캡**(커밋 bde3014·151da38, 사장님 지시 "자동화가 하루 10% 넘게 쓰지마"): src/quota-guard.js에 DAILY_CAP_PCT(기본10) — 7일창 utilization의 **오늘 자정 대비 순증 ≥10%p면 자동화 대기**(~/.orbit/quota-daily.json 베이스라인). 기존 reserve 임계와 OR. ops-agent-worker에도 checkQuota 가드 추가(vision·kakao-intel은 이미 있었음). env ORBIT_CLI_DAILY_CAP_PCT. 검증: 상태파일 {date:2026-07-31,base:70} → 80%에서 정지. **주의**: 7일창 롤링이라 순증이 실사용보다 작게 나올 수 있음(다소 관대). 워커 재기동해야 새 가드 로드(vision-spool/local·kakao-intel·ops-agent 재기동 완료).
+
+### 2026-08-03 카톡 인텔 초점 재조정 — 거래처대응·이슈트래킹만 (불량·주문누락 제외)
+- 사장님 방향: 주문누락 감지 불필요, 거래처대응+이슈트래킹만, 불량 필요없음.
+- **B(주문누락 교차검증) 착수 안 함**: 조사 결과 인프라는 이미 있음(`/api/cross/flow/gaps` orbitOnly=받았는데 전산미등록). 단 parsed_orders가 비어(주문이 클립보드 파싱 안 거치고 전산 직접입력) 대조 불가 → 하려면 kakao-intel 주문을 급유해야. 그러나 사장님이 불필요라 보류.
+- **롤업 정리**(server.js /api/admin/kakao-intel): 집계 루프에서 `String(c.type).includes('불량'|'불만')` 케이스 제외(정확일치는 저장 타입 변형으로 실패해 부분일치로 견고화, 커밋 f1316ff→15616bb). criticalIssues(항공/주문누락) 섹션 제거. excludedDefects 카운트 응답필드 추가(검증용). 검증: hours=718 새계산서 남은 불량 0, 거래처80·이슈150·직원29.
+- **UI**(public/kakao-intel.html, 이미 존재 — 재사용): 부제 "거래처 대응·이슈 트래킹(불량 제외)", 탭 '거래처 성향지도'→'거래처 대응'+2번째로. 커밋 3901fba. 접근: /kakao-intel.html(관리자 로그인).
+- ⚠️ 롤업 콜드 ~100초(5000건 집계). 프리컴퓨트를 events 영속으로 시도했다 events 되읽기가 더 느려 롤백(562413c) — 필요시 전용 소형저장소로 재설계. 배포 여러번 겹치면 캐시키(ki|hours)가 코드버전마다 달라 검증 혼란 → 배포는 배치로.
