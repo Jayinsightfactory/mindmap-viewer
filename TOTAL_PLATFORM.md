@@ -62,3 +62,23 @@
 
 > 통계/대시보드는 보조. 모든 작업은 **"AI가 이 일을 직접 할 수 있나"** 기준으로 판단.
 > 데몬은 `DAEMON_STRUCTURE.md`, ERP는 nenovaweb 메모리 먼저 읽고 시작.
+
+---
+
+## 기획 보완 (2026-08-03) — "관찰에서 행동으로" (실사례 근거)
+
+> 근거: Gong·Gartner("Revenue Action Orchestration") · Palantir Foundry(운영앱·Actionable Inbox·writeback) ·
+> Agent UX 2026(plan-and-execute·confidence·progressive delegation) · Workforce Analytics(팀집계=분석, 추적시 63% 이탈).
+> 문서 아티팩트: https://claude.ai/code/artifact/06049472-03df-481d-9a7e-c969811a8ad4
+
+**진단 5대 공백**: ①화면이 관찰/통계에 멈춤(행동 없음) ②골모드 AI실행 UI 부재 ③관찰층이 감시로 읽힐 위험(직원 가치 없음) ④감지→다음액션 인박스 없음 ⑤콜드 100초·복잡함이 채택 방해.
+
+**수정 4원칙**:
+1. **모든 화면 = 행동 지향 운영앱** — 관찰→인사이트→액션버튼/승인/writeback. 순수 조회 화면 없앰.
+2. **골모드 실행 UI = plan-and-execute(spec 미리보기→승인/수정) + confidence 배지(고=자동/저=정지) + progressive delegation(dry-run→부분자율→전권)**. 좌표·입력값 그대로 노출로 신뢰.
+3. **관찰→직원 가치 리프레임** — "내 AI 업무역량 인증서·성장" + "AI가 대신한 내 일" 전면. 감시어휘 제거, 팀집계 기본, 개인은 본인만.
+4. **단순·즉시** — 뷰 최소 유지, 롤업 프리컴퓨트 즉시로딩, 첫 화면 "지금 중요한 것"만.
+
+**관점별 화면(조회→행동)**: 직원=역량성장+맡기기버튼 / 관리자=Actionable Inbox(이슈·병목·승인 + 처리·위임·AI실행) / 사장=전사흐름+AI 대체작업량·절감 / 거래처=대응현황+미해결→담당배정.
+
+**수정 우선순위**: P0 첫실증(주문입력1건 골모드 end-to-end를 plan-and-execute UI로) · P0 Actionable Inbox(카톡 미해결이슈→관리자 액션) · P1 직원 가치화면 전면화 · P1 즉시로딩/명료화.
