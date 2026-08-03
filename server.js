@@ -1496,7 +1496,7 @@ app.get('/api/admin/kakao-intel', async (req, res) => {
     const steps = {};        // 해결 절차 빈도
     const human = {};        // 사람판단 지점
     const aliasOf = {};      // 표시명 → 직원(roleMap)
-    let windows = 0, ccSum = 0, ccN = 0;
+    let windows = 0, ccSum = 0, ccN = 0, _exclDefect = 0;
 
     for (const r of rows) {
       const d = typeof r.data_json === 'object' ? r.data_json : (() => { try { return JSON.parse(r.data_json || '{}'); } catch { return {}; } })();
@@ -1507,7 +1507,8 @@ app.get('/api/admin/kakao-intel', async (req, res) => {
 
       for (const c of d.cases) {
         if (!c) continue;
-        if (c.type === '불량클레임' || c.type === '불만클레임') continue; // [2026-08-03] 불량/불만은 제외(사장님: 필요없음). 거래처대응·이슈트래킹만.
+        // [2026-08-03] 불량/불만 제외(사장님: 필요없음). 저장 타입이 공백/변형될 수 있어 부분일치로 견고하게.
+        { const _t = String(c.type || ''); if (_t.includes('불량') || _t.includes('불만')) { _exclDefect++; continue; } }
         const key = (c.key || `${c.seq || ''} ${c.product || ''}`).trim() || '(미상)';
         const it = issues[key] || (issues[key] = { key, product: c.product || '', seq: c.seq || '', type: c.type || '기타', room: d.room || '', raisedBy: c.raisedBy || '', customers: {}, occurrences: 0, resolved: false, turns: 0, tone: c.tone || '', evidence: c.evidence || '', summary: c.summary || '', critical: false });
         it.occurrences++; it.turns += (c.turns || 1);
@@ -1562,6 +1563,7 @@ app.get('/api/admin/kakao-intel', async (req, res) => {
     res.json({
       generatedAt: new Date().toISOString(), windowsAnalyzed: windows, hours,
       crossCheckAvg: ccN ? +(ccSum / ccN).toFixed(2) : null,
+      excludedDefects: _exclDefect, // 제외된 불량/불만 케이스 수(검증용)
       // 1) 이슈 트래킹보드 (미해결 우선, 불량/불만 제외)
       issues: issueList.sort((a, b) => (a.resolved - b.resolved) || (b.occurrences - a.occurrences)).slice(0, 150),
       issueSummary: { total: issueList.length, resolved: issuesResolved, unresolved: issueList.length - issuesResolved, byType: topN(byType, 20) },
