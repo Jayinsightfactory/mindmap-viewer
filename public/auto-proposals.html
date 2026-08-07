@@ -26,14 +26,14 @@ button:hover{border-color:var(--acc)}
 .b-rev{background:rgba(210,153,34,.15);color:var(--warn)}
 .b-no{background:rgba(244,112,103,.15);color:var(--bad)}
 .b-save{background:rgba(108,140,255,.15);color:var(--acc)}
-.strip{display:flex;gap:0;overflow-x:auto;padding:14px 12px;align-items:stretch}
-.frame{min-width:230px;max-width:230px;display:flex;flex-direction:column;gap:6px}
-.frame .imgbox{background:#000;border:1px solid var(--line);border-radius:8px;overflow:hidden;height:140px;display:flex;align-items:center;justify-content:center}
+.strip{display:flex;flex-wrap:wrap;gap:10px;padding:14px 12px}
+.frame{width:186px;display:flex;flex-direction:column;gap:5px}
+.frame .imgbox{background:#000;border:1px solid var(--line);border-radius:8px;overflow:hidden;height:112px;display:flex;align-items:center;justify-content:center;position:relative}
 .frame img{width:100%;height:100%;object-fit:cover;cursor:zoom-in}
-.frame .cap{font-size:11px;color:var(--muted);line-height:1.4;max-height:52px;overflow:hidden}
-.frame .cap b{color:var(--txt);font-size:11.5px}
-.frame .who{font-size:10.5px;color:#8b949e}
-.arrow{display:flex;align-items:center;padding:0 6px;color:var(--acc);font-size:20px;flex-shrink:0}
+.frame .seq{position:absolute;top:4px;left:6px;background:rgba(0,0,0,.65);color:#fff;font-size:10px;padding:1px 6px;border-radius:6px}
+.frame .cap{font-size:10.5px;color:var(--muted);line-height:1.35;max-height:43px;overflow:hidden}
+.frame .cap b{color:var(--txt);font-size:11px}
+.frame .who{font-size:10px;color:#8b949e}
 .clicks{font-size:10px;color:var(--good)}
 .proposal{padding:12px 16px;background:rgba(108,140,255,.06);border-top:1px solid var(--line)}
 .proposal b{color:var(--acc)}
@@ -74,11 +74,10 @@ async function load(){
   root.innerHTML = opps.map((o,i)=>{
     const [rc,rt] = relB(o.reliability);
     const frames = (o.screens||[]).map((s,j)=>`
-      ${j?'<div class="arrow">→</div>':''}
       <div class="frame">
-        <div class="imgbox"><img loading="lazy" src="${s.thumbnailUrl}?token=${encodeURIComponent(TOKEN)}" onclick="zoom(this.src)" onerror="this.parentNode.innerHTML='<span style=color:#555;font-size:11px>이미지 없음</span>'"></div>
-        <div class="cap"><b>${esc(s.app||'화면')}</b> ${s.clickCount?`<span class="clicks">· 클릭좌표 ${s.clickCount}</span>`:''}<br>${esc((s.screen||s.activity||'').slice(0,70))}</div>
-        <div class="who">${esc(String(s.ts||'').slice(5,16))}</div>
+        <div class="imgbox"><span class="seq">${j+1}</span><img loading="lazy" src="${s.thumbnailUrl}" onclick="zoom(this.src)" onerror="this.parentNode.innerHTML='<span style=color:#555;font-size:11px>이미지 없음</span>'"></div>
+        <div class="cap"><b>${esc(s.app||'화면')}</b> ${s.clickCount?`<span class="clicks">· 좌표${s.clickCount}</span>`:''}<br>${esc((s.screen||s.activity||'').slice(0,60))}</div>
+        <div class="who">${esc(s.userName||s.userId?.slice(0,8)||'')} · ${esc(s.hostname||'')} · ${esc(String(s.ts||'').slice(5,16))}</div>
       </div>`).join('');
     return `<div class="card">
       <div class="card-head">
@@ -88,6 +87,7 @@ async function load(){
         <span class="badge ${rc}">${rt}</span>
         ${o.estWeeklyMinSaved?`<span class="badge b-save">주 ${o.estWeeklyMinSaved}분 절감</span>`:''}
         ${o.difficulty?`<span class="badge b-tool">난이도 ${esc(o.difficulty)}</span>`:''}
+        <span class="badge b-tool">화면 ${(o.screens||[]).length}장</span>
       </div>
       ${frames?`<div class="strip">${frames}</div>`:`<div class="noscreens">이 워크플로우의 화면 캡처가 최근 7일 분석분에 아직 없습니다 (분석 밀도↑ 대기)</div>`}
       <div class="proposal">💡 <b>이렇게 자동화 가능합니다:</b> ${esc(o.method||'')}

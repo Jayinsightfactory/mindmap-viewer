@@ -4621,35 +4621,49 @@ app.get('/api/xray/proposals', async (req, res) => {
     const report = typeof xr.rows[0].report === 'object' ? xr.rows[0].report : JSON.parse(xr.rows[0].report);
     const opps = report.opportunities || [];
 
-    // 최근 7일 분석 화면(썸네일 있는 것만) 한 번에 로드 → 메모리 매칭
+    // [v2 2026-08-07] 신뢰도 재설계 — 사장님 피드백 "이미지 잘못 붙음·50~100장이어도 디테일하게":
+    // ① 30일 창(직원 반복화면 대량분석분 포함) ② 강한 앵커만 매칭(범용어로 엉뚱한 화면 붙는 것 차단)
+    // ③ 중복 접지 않음 — 반복 화면을 반복 그대로(최대 100장, 시간순=워크플로우) ④ 누구 PC인지 표시.
     const ev = await db.query(
       `SELECT id, user_id, timestamp, data_json->>'app' AS app, data_json->>'screen' AS screen,
-              data_json->>'activity' AS activity, (data_json->'fields') AS fields
+              data_json->>'activity' AS activity, data_json->>'hostname' AS hostname,
+              (data_json->'fields') AS fields
          FROM events
         WHERE type='screen.analyzed' AND data_json->>'thumbnail' IS NOT NULL
-          AND timestamp::timestamptz > NOW() - INTERVAL '7 days'
-        ORDER BY timestamp ASC LIMIT 1500`);
+          AND timestamp::timestamptz > NOW() - INTERVAL '30 days'
+        ORDER BY timestamp ASC LIMIT 6000`);
+    // userId → 이름 (신뢰 검증: 어느 직원 화면인지)
+    let nameOf = {};
+    try {
+      const u = await db.query(`SELECT id, name FROM orbit_auth_users`);
+      for (const r of u.rows) nameOf[r.id] = r.name;
+    } catch {}
     const rows = ev.rows.map(r => ({
       id: r.id, userId: r.user_id, ts: r.timestamp, app: r.app || '', screen: r.screen || '',
-      activity: r.activity || '', clickCount: Array.isArray(r.fields) ? r.fields.filter(f => f && f.clickXY).length : 0,
+      activity: r.activity || '', hostname: r.hostname || '',
+      clickCount: Array.isArray(r.fields) ? r.fields.filter(f => f && f.clickXY).length : 0,
       hay: `${r.app || ''} ${r.screen || ''} ${r.activity || ''}`.toLowerCase(),
     }));
-    const STOP = new Set(['가능', '자동', '반복', '처리', '화면', '사용', '방식', '정리', '기능', '개별', '차이내역']);
+    // 앵커 규칙: 구체어만(영문4+·한글3+·도메인 2글자 화이트리스트). 범용어는 매칭 금지.
+    const GENERIC = new Set(['chrome', 'google', 'windows', 'microsoft', 'excel', 'browser', 'nenova', 'erp',
+      '브라우저', '프로그램', '화면', '조회', '주문', '입력', '문자', '확인', '결과', '내역', '거래', '정보',
+      '관리', '현황', '버튼', '메뉴', '목록', '상태', '시스템', '데이터', '자동', '가능', '반복', '처리',
+      '사용', '방식', '정리', '기능', '개별', '동일', '다수', '이벤트', '학습']);
+    const DOMAIN2 = new Set(['은행', '면장', '이체', '카톡', '발주', '계좌']); // 2글자지만 업무 특정성 높음
     const out = opps.map(o => {
-      const toks = ((`${o.task || ''} ${o.evidence || ''}`).match(/[A-Za-z]{3,}|[가-힣]{2,}/g) || [])
-        .map(t => t.toLowerCase()).filter(t => !STOP.has(t));
-      const uniq = [...new Set(toks)].sort((a, b) => b.length - a.length).slice(0, 8);
-      const seen = new Set(); const screens = [];
+      const toks = ((`${o.task || ''} ${o.evidence || ''} ${o.method || ''}`).match(/[A-Za-z]{3,}|[가-힣]{2,}/g) || [])
+        .map(t => t.toLowerCase()).filter(t => !GENERIC.has(t));
+      const anchors = [...new Set(toks.filter(t =>
+        (/^[a-z]+$/.test(t) ? t.length >= 4 : t.length >= 3) || DOMAIN2.has(t)))].slice(0, 14);
+      const screens = [];
       for (const r of rows) {
-        if (!uniq.some(t => r.hay.includes(t))) continue;
-        const key = (r.screen || r.activity).slice(0, 40); // 같은 화면 반복은 1회만(워크플로우 단계로)
-        if (seen.has(key)) continue;
-        seen.add(key);
-        screens.push({ id: r.id, ts: r.ts, userId: r.userId, app: r.app, screen: r.screen,
-          activity: r.activity, clickCount: r.clickCount, thumbnailUrl: `/api/vision/thumbnail/${r.id}` });
-        if (screens.length >= 8) break;
+        if (!anchors.some(t => r.hay.includes(t))) continue; // 강한 앵커 1개 이상 필수
+        screens.push({ id: r.id, ts: r.ts, userId: r.userId, userName: nameOf[r.userId] || '',
+          hostname: r.hostname, app: r.app, screen: r.screen, activity: r.activity,
+          clickCount: r.clickCount, thumbnailUrl: `/api/vision/thumbnail/${r.id}` });
+        if (screens.length >= 100) break;
       }
-      return { ...o, screens };
+      return { ...o, anchors, screens };
     }).sort((a, b) => (b.estWeeklyMinSaved || 0) - (a.estWeeklyMinSaved || 0));
     res.json({ ok: true, generatedAt: xr.rows[0].ts, summary: report.summary || '', opportunities: out });
   } catch (e) { res.status(500).json({ error: e.message }); }
