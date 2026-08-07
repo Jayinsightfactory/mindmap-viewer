@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>자동화 제안 · MOYI</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0d1117;--panel:#161b22;--line:#21262d;--txt:#cdd9e5;--muted:#768390;--acc:#6c8cff;
+--good:#3fb950;--warn:#d29922;--bad:#f47067}
+body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans-serif;font-size:13.5px;line-height:1.55}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;border-bottom:1px solid var(--line);flex-wrap:wrap;position:sticky;top:0;background:var(--bg);z-index:5}
+h1{font-size:17px}
+.sub{color:var(--muted);font-size:12px;margin-top:2px}
+button{background:var(--panel);border:1px solid var(--line);color:var(--txt);padding:7px 14px;border-radius:8px;cursor:pointer;font-size:12.5px}
+button:hover{border-color:var(--acc)}
+.wrap{max-width:1200px;margin:0 auto;padding:16px}
+.empty{color:var(--muted);padding:40px;text-align:center}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin-bottom:18px;overflow:hidden}
+.card-head{padding:14px 16px;display:flex;gap:12px;align-items:baseline;flex-wrap:wrap;border-bottom:1px solid var(--line)}
+.card-head .rank{font-size:20px;font-weight:800;color:var(--acc)}
+.card-head .task{font-size:15px;font-weight:700}
+.badge{font-size:11px;font-weight:700;padding:2px 9px;border-radius:999px;white-space:nowrap}
+.b-tool{background:#1f2937;color:var(--txt);border:1px solid var(--line)}
+.b-100{background:rgba(63,185,80,.15);color:var(--good)}
+.b-rev{background:rgba(210,153,34,.15);color:var(--warn)}
+.b-no{background:rgba(244,112,103,.15);color:var(--bad)}
+.b-save{background:rgba(108,140,255,.15);color:var(--acc)}
+.strip{display:flex;gap:0;overflow-x:auto;padding:14px 12px;align-items:stretch}
+.frame{min-width:230px;max-width:230px;display:flex;flex-direction:column;gap:6px}
+.frame .imgbox{background:#000;border:1px solid var(--line);border-radius:8px;overflow:hidden;height:140px;display:flex;align-items:center;justify-content:center}
+.frame img{width:100%;height:100%;object-fit:cover;cursor:zoom-in}
+.frame .cap{font-size:11px;color:var(--muted);line-height:1.4;max-height:52px;overflow:hidden}
+.frame .cap b{color:var(--txt);font-size:11.5px}
+.frame .who{font-size:10.5px;color:#8b949e}
+.arrow{display:flex;align-items:center;padding:0 6px;color:var(--acc);font-size:20px;flex-shrink:0}
+.clicks{font-size:10px;color:var(--good)}
+.proposal{padding:12px 16px;background:rgba(108,140,255,.06);border-top:1px solid var(--line)}
+.proposal b{color:var(--acc)}
+.noscreens{padding:14px 16px;color:var(--muted);font-size:12px}
+.lightbox{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:50;display:flex;align-items:center;justify-content:center;cursor:zoom-out}
+.lightbox img{max-width:94vw;max-height:92vh;border-radius:8px}
+.gen{font-size:11px;color:var(--muted)}
+</style>
+</head>
+<body>
+<header>
+  <div><h1>🤖 자동화 제안 — 반복 화면 · 워크플로우</h1>
+    <div class="sub">실제 캡처된 반복 업무 화면을 순서대로 보고 → "이렇게 자동화 가능합니다"</div></div>
+  <div style="display:flex;gap:8px;align-items:center">
+    <span class="gen" id="gen"></span>
+    <button onclick="location.href='/work-logs.html'">📋 워크로그</button>
+    <button onclick="load()">새로고침</button>
+  </div>
+</header>
+<div class="wrap" id="root"><div class="empty">불러오는 중…</div></div>
+<div class="lightbox" id="lb" style="display:none" onclick="this.style.display='none'"><img id="lbimg"></div>
+<script>
+const esc = s => String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const TOKEN = localStorage.getItem('orbit_token') || sessionStorage.getItem('orbit_flow_token') || '';
+const relB = r => r==='100%가능'?['b-100','✅ 100% 가능']:(r==='검토1스텝'?['b-rev','🟡 검토 1스텝']:['b-no',r||'']);
+function zoom(src){ document.getElementById('lbimg').src=src; document.getElementById('lb').style.display='flex'; }
+async function load(){
+  const root = document.getElementById('root');
+  root.innerHTML = '<div class="empty">불러오는 중…</div>';
+  let d;
+  try{
+    d = await fetch('/api/xray/proposals', {headers:{Authorization:'Bearer '+TOKEN}}).then(r=>r.json());
+  }catch(e){ root.innerHTML='<div class="empty">로드 실패: '+esc(e.message)+'</div>'; return; }
+  if(!d.ok){ root.innerHTML='<div class="empty">'+esc(d.error||'오류')+'</div>'; return; }
+  document.getElementById('gen').textContent = 'X-ray 생성: '+String(d.generatedAt||'').slice(0,16);
+  const opps = d.opportunities||[];
+  if(!opps.length){ root.innerHTML='<div class="empty">'+esc(d.note||'제안 없음')+'</div>'; return; }
+  root.innerHTML = opps.map((o,i)=>{
+    const [rc,rt] = relB(o.reliability);
+    const frames = (o.screens||[]).map((s,j)=>`
+      ${j?'<div class="arrow">→</div>':''}
+      <div class="frame">
+        <div class="imgbox"><img loading="lazy" src="${s.thumbnailUrl}?token=${encodeURIComponent(TOKEN)}" onclick="zoom(this.src)" onerror="this.parentNode.innerHTML='<span style=color:#555;font-size:11px>이미지 없음</span>'"></div>
+        <div class="cap"><b>${esc(s.app||'화면')}</b> ${s.clickCount?`<span class="clicks">· 클릭좌표 ${s.clickCount}</span>`:''}<br>${esc((s.screen||s.activity||'').slice(0,70))}</div>
+        <div class="who">${esc(String(s.ts||'').slice(5,16))}</div>
+      </div>`).join('');
+    return `<div class="card">
+      <div class="card-head">
+        <span class="rank">${i+1}</span>
+        <span class="task">${esc(o.task)}</span>
+        <span class="badge b-tool">${esc(o.tool)}</span>
+        <span class="badge ${rc}">${rt}</span>
+        ${o.estWeeklyMinSaved?`<span class="badge b-save">주 ${o.estWeeklyMinSaved}분 절감</span>`:''}
+        ${o.difficulty?`<span class="badge b-tool">난이도 ${esc(o.difficulty)}</span>`:''}
+      </div>
+      ${frames?`<div class="strip">${frames}</div>`:`<div class="noscreens">이 워크플로우의 화면 캡처가 최근 7일 분석분에 아직 없습니다 (분석 밀도↑ 대기)</div>`}
+      <div class="proposal">💡 <b>이렇게 자동화 가능합니다:</b> ${esc(o.method||'')}
+        ${o.reliabilityBasis?`<span style="color:var(--muted)"> — ${esc(o.reliabilityBasis)}</span>`:''}</div>
+    </div>`;
+  }).join('');
+}
+load();
+</script>
+</body>
+</html>

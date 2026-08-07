@@ -4606,6 +4606,55 @@ app.get('/api/vision/thumbnails', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// [2026-08-07] 자동화 제안 뷰 데이터 — X-ray 기회들을 "실제 반복 화면 이미지 + 워크플로우 순서"로 묶음.
+// 각 opportunity의 task/evidence에서 키워드를 뽑아 최근 screen.analyzed(썸네일 보유)와 매칭 →
+// 시간 오름차순(워크플로우 순) 화면 스트립. 페이지: /auto-proposals.html
+app.get('/api/xray/proposals', async (req, res) => {
+  try {
+    const token = (req.headers.authorization || '').replace('Bearer ', '').trim() || String(req.query.token || '');
+    if (!token.startsWith('orbit_')) return res.status(401).json({ error: 'orbit token required' });
+    const db = dbModule.getDb();
+    if (!db?.query) return res.status(503).json({ error: 'DB not available' });
+    const xr = await db.query(
+      `SELECT report, ts FROM orbit_ops_report WHERE kind='xray' ORDER BY ts DESC LIMIT 1`);
+    if (!xr.rows.length) return res.json({ ok: true, opportunities: [], note: 'X-ray 리포트 없음 — xray-worker 실행 필요' });
+    const report = typeof xr.rows[0].report === 'object' ? xr.rows[0].report : JSON.parse(xr.rows[0].report);
+    const opps = report.opportunities || [];
+
+    // 최근 7일 분석 화면(썸네일 있는 것만) 한 번에 로드 → 메모리 매칭
+    const ev = await db.query(
+      `SELECT id, user_id, timestamp, data_json->>'app' AS app, data_json->>'screen' AS screen,
+              data_json->>'activity' AS activity, (data_json->'fields') AS fields
+         FROM events
+        WHERE type='screen.analyzed' AND data_json->>'thumbnail' IS NOT NULL
+          AND timestamp::timestamptz > NOW() - INTERVAL '7 days'
+        ORDER BY timestamp ASC LIMIT 1500`);
+    const rows = ev.rows.map(r => ({
+      id: r.id, userId: r.user_id, ts: r.timestamp, app: r.app || '', screen: r.screen || '',
+      activity: r.activity || '', clickCount: Array.isArray(r.fields) ? r.fields.filter(f => f && f.clickXY).length : 0,
+      hay: `${r.app || ''} ${r.screen || ''} ${r.activity || ''}`.toLowerCase(),
+    }));
+    const STOP = new Set(['가능', '자동', '반복', '처리', '화면', '사용', '방식', '정리', '기능', '개별', '차이내역']);
+    const out = opps.map(o => {
+      const toks = ((`${o.task || ''} ${o.evidence || ''}`).match(/[A-Za-z]{3,}|[가-힣]{2,}/g) || [])
+        .map(t => t.toLowerCase()).filter(t => !STOP.has(t));
+      const uniq = [...new Set(toks)].sort((a, b) => b.length - a.length).slice(0, 8);
+      const seen = new Set(); const screens = [];
+      for (const r of rows) {
+        if (!uniq.some(t => r.hay.includes(t))) continue;
+        const key = (r.screen || r.activity).slice(0, 40); // 같은 화면 반복은 1회만(워크플로우 단계로)
+        if (seen.has(key)) continue;
+        seen.add(key);
+        screens.push({ id: r.id, ts: r.ts, userId: r.userId, app: r.app, screen: r.screen,
+          activity: r.activity, clickCount: r.clickCount, thumbnailUrl: `/api/vision/thumbnail/${r.id}` });
+        if (screens.length >= 8) break;
+      }
+      return { ...o, screens };
+    }).sort((a, b) => (b.estWeeklyMinSaved || 0) - (a.estWeeklyMinSaved || 0));
+    res.json({ ok: true, generatedAt: xr.rows[0].ts, summary: report.summary || '', opportunities: out });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // [골 #2: 캡처 스티칭] 연속 캡처를 "같은 작업의 시간순 절차"로 꿰맴 → 실행가능 task spec의 뼈대.
 // GET /api/vision/task-sessions?userId=&hours=  → 세션별 ordered step[] (각 step=화면+필드+clickXY).
 // 세션 경계: 시간갭>gapSec 또는 앱이 바뀌고 갭>60s. 읽기전용 조립(새 저장 없음).
