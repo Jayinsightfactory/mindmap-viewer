@@ -4651,11 +4651,16 @@ app.get('/api/xray/proposals', async (req, res) => {
       '사용', '방식', '정리', '기능', '개별', '동일', '다수', '이벤트', '학습',
       // [v3] evidence 메타단어 오염 차단(room='…, vision 타임스탬프 등에서 새어 들어와 엉뚱한 화면 매칭)
       'room', 'vision', 'order', 'units', 'multi', 'source', 'app', 'inventory',
-      '거래처', '화면에서', '화면만', '거래처만', '존재하는', '동일한', '담당자', '텍스트']);
+      '거래처', '화면에서', '화면만', '거래처만', '존재하는', '동일한', '담당자', '텍스트',
+      // [v4] 회사명·서술어 오염 (네노바=전 화면 매칭, method 문장의 동사·부사류)
+      '네노바', '자동화', '리포트', '불일치', '대상에서', '자체는', '생성', '초안', '교육']);
+    // [v4] 한국어 조사·어미 제거 후 재평가 ('텍스트를'→'텍스트', '파싱해'→'파싱') — 서술어 앵커화 방지
+    const stripJosa = t => t.replace(/(으로|에서|하며|해서|하고|해|를|을|이|가|은|는|의|로|와|과|도|만|들)$/, '');
     const DOMAIN2 = new Set(['은행', '면장', '이체', '카톡', '발주', '계좌']); // 2글자지만 업무 특정성 높음
     const out = opps.map(o => {
       const toks = ((`${o.task || ''} ${o.evidence || ''} ${o.method || ''}`).match(/[A-Za-z]{3,}|[가-힣]{2,}/g) || [])
-        .map(t => t.toLowerCase()).filter(t => !GENERIC.has(t));
+        .map(t => stripJosa(t.toLowerCase())) // [v4] 조사·어미 제거 후 평가
+        .filter(t => t && !GENERIC.has(t));
       const anchors = [...new Set(toks.filter(t =>
         (/^[a-z]+$/.test(t) ? t.length >= 4 : t.length >= 3) || DOMAIN2.has(t)))].slice(0, 14);
       const screens = [];
