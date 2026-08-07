@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>회사 X-ray · MOYI</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0d1117;--panel:#161b22;--line:#21262d;--txt:#cdd9e5;--muted:#768390;--acc:#6c8cff;
+--good:#3fb950;--warn:#d29922;--bad:#f47067;--chipbg:#1f2937}
+body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans-serif;font-size:13.5px;line-height:1.55;min-height:100vh}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+h1{font-size:17px}
+.sub{color:var(--muted);font-size:12px;margin-top:2px}
+button{background:var(--panel);border:1px solid var(--line);color:var(--txt);padding:7px 14px;border-radius:8px;cursor:pointer;font-size:12.5px}
+button:hover{border-color:var(--acc)}
+.wrap{max-width:1100px;margin:0 auto;padding:16px}
+.sum{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:14px}
+.sum .ts{color:var(--muted);font-size:11.5px;margin-top:6px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:12px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:13px 15px}
+.card.full{grid-column:1/-1}
+.card h3{font-size:13.5px;margin-bottom:8px;color:var(--acc)}
+.item{border-top:1px solid var(--line);padding:8px 0}
+.item:first-of-type{border-top:none}
+.item b{color:#e6edf3}
+.ev{color:var(--muted);font-size:11.5px;margin-top:2px}
+.chip{display:inline-block;background:var(--chipbg);border:1px solid var(--line);border-radius:999px;padding:1px 8px;font-size:11px;margin:1px 2px 1px 0;color:var(--txt)}
+.rel-100{color:var(--good);font-weight:700}.rel-review{color:var(--warn);font-weight:700}.rel-no{color:var(--bad)}
+.min{color:var(--warn);font-size:11.5px}
+.empty{color:var(--muted);padding:30px;text-align:center}
+.top3 .item{display:grid;grid-template-columns:auto 1fr;gap:10px}
+.top3 .n{font-size:18px;font-weight:800;color:var(--acc)}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--muted);font-weight:600;font-size:11px}
+.scroll{overflow-x:auto}
+</style>
+</head>
+<body>
+<header>
+  <div><h1>🩻 회사 X-ray — 업무 진단</h1><div class="sub">구조·비효율·편차·자동화 기회(신뢰도 등급) — 실행 아님, 진단 레이어</div></div>
+  <button onclick="load()">새로고침</button>
+</header>
+<div class="wrap" id="root"><div class="empty">불러오는 중…</div></div>
+<script>
+const esc = s => String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const TOKEN = localStorage.getItem('orbit_token') || sessionStorage.getItem('orbit_flow_token') || '';
+const relCls = r => r==='100%가능'?'rel-100':(r==='검토1스텝'?'rel-review':'rel-no');
+const mins = m => m?`<span class="min">~주 ${m}분</span>`:'';
+function sec(title, arr, fn, full){
+  if(!arr || !arr.length) return '';
+  return `<div class="card${full?' full':''}"><h3>${title} <span style="color:var(--muted)">${arr.length}</span></h3>${arr.map(fn).join('')}</div>`;
+}
+async function load(){
+  const root = document.getElementById('root');
+  root.innerHTML = '<div class="empty">불러오는 중…</div>';
+  let d;
+  try{
+    d = await fetch('/api/flow/ops-report?kind=xray',{headers:{Authorization:'Bearer '+TOKEN}}).then(r=>r.json());
+  }catch(e){ root.innerHTML = '<div class="empty">로드 실패: '+esc(e.message)+'</div>'; return; }
+  const rep = d && d.latest && d.latest.report;
+  if(!rep){ root.innerHTML = '<div class="empty">아직 진단 리포트가 없습니다 — owner PC에서 node bin/xray-worker.js --once 실행</div>'; return; }
+  root.innerHTML = `
+  <div class="sum"><b>${esc(rep.summary||'')}</b>
+    <div class="ts">생성 ${esc(d.latest.ts||rep.generatedAtIso||'')} · 입력 ${rep.inputHours||''}h · delta: ${esc(rep.delta||'')}</div>
+    ${rep.coverage?`<div class="ev">커버리지: ${esc(rep.coverage.note||'')} · 사각지대: ${(rep.coverage.blindSpots||[]).map(b=>`<span class="chip">${esc(b)}</span>`).join('')}</div>`:''}
+  </div>
+  <div class="grid">
+    ${sec('🎯 다음에 할 3가지', rep.top3, (t,i)=>`<div class="item top3"><span class="n">${i+1}</span><div><b>${esc(t.action)}</b><div class="ev">${esc(t.why||'')} ${t.expected?'· 기대: '+esc(t.expected):''}</div></div></div>`, true)}
+    ${sec('🤖 자동화 기회 (도구·신뢰도)', rep.opportunities, o=>`<div class="item"><b>${esc(o.task)}</b> <span class="chip">${esc(o.tool)}</span> <span class="${relCls(o.reliability)}">${esc(o.reliability)}</span> ${mins(o.estWeeklyMinSaved)}<div class="ev">${esc(o.method||'')} · ${esc(o.reliabilityBasis||'')} · 난이도 ${esc(o.difficulty||'?')}</div><div class="ev">${esc(o.evidence||'')}</div></div>`, true)}
+    ${sec('🏢 업무 구조도', rep.orgMap, p=>`<div class="item"><b>${esc(p.person)}</b><div>${(p.mainDuties||[]).map(x=>`<span class="chip">${esc(x)}</span>`).join('')}</div><div class="ev">받음: ${esc(p.receivesFrom||'—')} → 넘김: ${esc(p.handsTo||'—')}</div></div>`)}
+    ${sec('🐢 비효율', rep.inefficiencies, x=>`<div class="item"><b>${esc(x.what)}</b> <span class="chip">${esc(x.causeType||'')}</span> ${mins(x.estWeeklyMin)}<div class="ev">${esc(x.person||'')} · ${esc(x.evidence||'')}</div></div>`)}
+    ${sec('🔀 같은 업무 다른 처리 → SOP', rep.variances, v=>`<div class="item"><b>${esc(v.task)}</b><div class="ev">${(v.people||[]).map(x=>`<span class="chip">${esc(x)}</span>`).join('')} ${esc(v.difference||'')}</div><div class="ev">✅ ${esc(v.betterWay||'')}</div>${v.sopDraft?`<div class="ev">📋 SOP: ${esc(v.sopDraft)}</div>`:''}</div>`)}
+    ${sec('♻️ 이중입력 체인', rep.duplicateEntry, x=>`<div class="item"><b>${esc(x.info)}</b> ${mins(x.estWeeklyMin)}<div class="ev">${esc(x.chain||'')} · ${esc(x.evidence||'')}</div></div>`)}
+    ${sec('🔁 재작업 비용', rep.rework, x=>`<div class="item"><b>${esc(x.what)}</b> ${mins(x.estWeeklyMin)}<div class="ev">${esc(x.signal||'')}</div></div>`)}
+    ${sec('⚠️ 속인화 리스크', rep.keyPersonRisks, x=>`<div class="item"><b>${esc(x.task)}</b> — ${esc(x.onlyPerson)}<div class="ev">${esc(x.risk||'')}</div></div>`)}
+    ${sec('⚖️ 부하·피크', rep.loadBalance, x=>`<div class="item"><b>${esc(x.person)}</b> <span class="chip">${esc(x.level)}</span><div class="ev">${esc(x.peak||'')} · ${esc(x.evidence||'')}</div></div>`)}
+    ${sec('🔐 민감업무 권한분리', rep.sensitiveOps, x=>`<div class="item"><b>${esc(x.what)}</b> — ${esc(x.who||'')}<div class="ev">${esc(x.dualCheck||'')} · ${esc(x.note||'')}</div></div>`)}
+  </div>`;
+}
+load();
+</script>
+</body>
+</html>
