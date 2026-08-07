@@ -4648,7 +4648,10 @@ app.get('/api/xray/proposals', async (req, res) => {
     const GENERIC = new Set(['chrome', 'google', 'windows', 'microsoft', 'excel', 'browser', 'nenova', 'erp',
       '브라우저', '프로그램', '화면', '조회', '주문', '입력', '문자', '확인', '결과', '내역', '거래', '정보',
       '관리', '현황', '버튼', '메뉴', '목록', '상태', '시스템', '데이터', '자동', '가능', '반복', '처리',
-      '사용', '방식', '정리', '기능', '개별', '동일', '다수', '이벤트', '학습']);
+      '사용', '방식', '정리', '기능', '개별', '동일', '다수', '이벤트', '학습',
+      // [v3] evidence 메타단어 오염 차단(room='…, vision 타임스탬프 등에서 새어 들어와 엉뚱한 화면 매칭)
+      'room', 'vision', 'order', 'units', 'multi', 'source', 'app', 'inventory',
+      '거래처', '화면에서', '화면만', '거래처만', '존재하는', '동일한', '담당자', '텍스트']);
     const DOMAIN2 = new Set(['은행', '면장', '이체', '카톡', '발주', '계좌']); // 2글자지만 업무 특정성 높음
     const out = opps.map(o => {
       const toks = ((`${o.task || ''} ${o.evidence || ''} ${o.method || ''}`).match(/[A-Za-z]{3,}|[가-힣]{2,}/g) || [])
