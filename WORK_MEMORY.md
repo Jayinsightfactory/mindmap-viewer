@@ -1487,3 +1487,12 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 처리: 앱 라벨 canonical 정규화(canonApp) proposals 엔드포인트에 적용(6161408). ECOUNT/카톡/nenova exe·web/은행/Excel 통일.
 - 산출: 데이터 전략 아티팩트(https://claude.ai/code/artifact/241c4a96-55b6-435e-9e2c-d6b97a014982) — 수집개선5안(입력값캡처P0·라벨정규화·clickXY·의미기반차등캡처·필드구조화) + 추론영역10(기업:거래처건강도·수요예측·현금흐름경보·병목지도·자동화ROI·품질패턴 / 개인:AI역량인증·시간지도·스킬코칭·온보딩매뉴얼) + 착수가능성표.
 - 추천 착수순서: 앱라벨정규화(완료) → 자동화ROI트래커+거래처건강도(데이터 이미 있음) → INPUT값캡처(골모드 관문) → 현금흐름·수요예측.
+
+### 2026-08-08 의도 학습 모델(인지형) 설계 + 시간 인지 축
+- 사장님 기획: 화면캡처·작업내역으로 "이 사람이 어떤 생각으로 이 선택을 했나"를 역추론해 학습(AGI 개념). 가능여부+설계구조 요청.
+- 판정(정직 3단계): ①지금가능=의도 역추론+의사결정 규칙추출(Vision 100%+clickXY+맥락으로 LLM 의도가설) ②보강후=인과학습·정책개선(INPUT값 0% 선결 필요) ③원리적한계=화면밖 사고(전화·암묵지)는 추정만.
+- 방법론: Inverse RL + Behavioral Cloning + 세계모델 + LLM 의도추론 + Active Learning. AGI 아님, "도메인 한정 의도조건부 정책 학습".
+- 설계 5층: 관찰→궤적 / 의도역추론(신규 intent-annotator) / 세계모델(company-ontology.js 재사용) / 의사결정모델(solution-miner 확장) / 검증·실행·피드백(plan-and-execute). 자체학습=예측→실제대조→사람교정 루프(틀린예측=최강 학습신호).
+- ★시간 인지 축(사장님 추가): 시간/요일/주차·차수/월/연분기별 업무 리듬 → ①스케줄 예측 ②이상 감지(이례근무=신호) ③의도 맥락화(같은 화면도 차수마감/성수기면 의도 다름). 재사용 ops-input timeline+주문차수+X-ray loadBalance. 세계모델의 시간축.
+- 산출: 설계 아티팩트 https://claude.ai/code/artifact/dce459cc-d5be-4d42-8e4c-cf35c8eede11
+- MVP(지금가능): 의도 주석기 + 시간리듬 지도(task-session 궤적에 의도라벨 + timeline 겹침). 재사용 부품: vision fields/clickXY, task-sessions, company-ontology.js, solution-miner.js.
