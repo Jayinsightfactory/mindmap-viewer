@@ -115,3 +115,22 @@
 
 **산출물**: 주기(주1회) 진단 리포트 — 구조도 / 비효율(원인태깅) / 편차→SOP / 기회 매트릭스(AI·Excel·OCR·RPA별 신뢰도 등급) / 우선순위 Top3 / 사각지대 / 주간 delta. 관리자 화면+문서.
 **기존 자산 조립**: ops-agent(병목)·solution-miner(절차)·kakao-intel(deterministic/judgment)·flow-map(구조) + 진단 합성 레이어(신규).
+
+---
+
+## 의도 학습 모델 (인지형, 2026-08-08 기획)
+
+> **개념**: 화면·행동에서 "이 사람이 어떤 생각으로 이 선택을 했나(의도)"를 역추론해 학습.
+> 매크로 재생이 아니라 **의도 조건부 정책** — 인간 업무 의사결정을 이유째 모방·학습.
+> 방법론: Inverse RL + Behavioral Cloning + 세계모델 + LLM 의도추론 + Active Learning (AGI 아님, 도메인 한정).
+> 설계 문서: https://claude.ai/code/artifact/dce459cc-d5be-4d42-8e4c-cf35c8eede11
+
+**가능여부(정직 3단계)**: ①지금가능=의도 역추론+의사결정 규칙추출(Vision100%+clickXY+맥락) ②보강후=인과학습·정책개선(**INPUT값 0% 선결**) ③원리적한계=화면밖 사고(전화·암묵지)는 추정만(신뢰도 필수).
+
+**설계 5층**: (L1)관찰→궤적 (L2)의도 역추론=심장(신규 intent-annotator) (L3)세계모델=company-ontology.js 재사용 (L4)의사결정모델=solution-miner 확장 (L5)검증·실행·피드백(plan-and-execute). 자체학습=예측→실제대조→사람교정 루프(**틀린 예측=최강 학습신호**).
+
+**시간 인지 축**: 시간/요일/주차·차수/월/연분기별 업무 리듬 → ①스케줄 예측 ②이상 감지(이례근무=신호) ③의도 맥락화(같은 화면도 차수마감/성수기면 의도 다름). 세계모델의 시간축. 재사용 ops-input timeline+주문차수+X-ray loadBalance.
+
+**한계 못박기**: 의도는 항상 '가설'(신뢰도 없이 단정 금지) · 감시 아닌 성장(팀집계/본인열람) · 오학습 확산 방지(편차진단으로 더 나은 방식 학습) · 민감판단(이체 등) 자동실행 금지 · INPUT 선결.
+
+**MVP(지금가능)**: 의도 주석기 `bin/intent-annotator.js` + `public/intent-map.html` — screen.analyzed 궤적에 단계별 의도·상위목표·신뢰도 라벨 + ops-input timeline 시간 리듬 겹침 → ops-report kind='intent' 저장. 로드맵: MVP주석기 → P1 의도예측+사람교정 → P2 사람별 의도프로파일·정책.

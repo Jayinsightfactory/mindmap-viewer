@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>의도 지도 · MOYI</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0b0e17;--panel:#141926;--line:#232a3b;--txt:#e9edf3;--muted:#7d8699;--acc:#a48bff;--acc2:#3fc7cf;--good:#43c489;--warn:#e2a44a}
+body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans-serif;font-size:13.5px;line-height:1.55}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;border-bottom:1px solid var(--line);flex-wrap:wrap;position:sticky;top:0;background:var(--bg);z-index:5}
+h1{font-size:17px}.sub{color:var(--muted);font-size:12px;margin-top:2px}
+button{background:var(--panel);border:1px solid var(--line);color:var(--txt);padding:7px 14px;border-radius:8px;cursor:pointer;font-size:12.5px}
+button:hover{border-color:var(--acc)}
+.wrap{max-width:1000px;margin:0 auto;padding:16px}
+.empty{color:var(--muted);padding:40px;text-align:center}
+.meta{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:13px 16px;margin-bottom:14px}
+.meta b{color:var(--acc)}
+.sess{background:var(--panel);border:1px solid var(--line);border-radius:13px;margin-bottom:14px;overflow:hidden}
+.sess-h{padding:13px 16px;border-bottom:1px solid var(--line);display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.sess-h .goal{font-size:15px;font-weight:750}
+.conf{font-family:ui-monospace,monospace;font-size:11px;padding:2px 8px;border-radius:999px;background:rgba(164,139,255,.15);color:var(--acc)}
+.steps{padding:6px 0}
+.step{display:grid;grid-template-columns:34px 1fr;gap:10px;padding:9px 16px;border-top:1px solid rgba(255,255,255,.03)}
+.step:first-child{border-top:none}
+.step .seq{font-family:ui-monospace,monospace;color:var(--acc2);font-weight:700;font-size:12px}
+.step .scr{font-size:11.5px;color:var(--muted)}
+.step .intent{font-weight:650;margin:1px 0}
+.step .why{font-size:12px;color:var(--muted)}
+.step .assumed{color:var(--warn);font-size:10.5px;font-family:ui-monospace,monospace;border:1px solid var(--warn);padding:0 5px;border-radius:5px;margin-left:6px}
+.bar{display:inline-block;width:42px;height:5px;border-radius:3px;background:var(--line);vertical-align:middle;overflow:hidden;margin-left:6px}
+.bar>i{display:block;height:100%;background:var(--acc)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:6px}
+@media(max-width:640px){.grid{grid-template-columns:1fr}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:13px 15px}
+.card h3{font-size:13px;color:var(--acc);margin-bottom:7px}
+.card li{font-size:12.8px;margin:5px 0 5px 16px}
+.card.blind h3{color:var(--warn)}
+.tl{font-size:12.8px;color:var(--txt)}
+</style>
+</head>
+<body>
+<header>
+  <div><h1>🧠 의도 지도 — 화면에서 읽은 '왜'</h1>
+    <div class="sub">관찰 궤적에서 역추론한 단계별 의도 · 신뢰도 · 시간 리듬 (가설이며 사람 교정으로 자람)</div></div>
+  <button onclick="load()">새로고침</button>
+</header>
+<div class="wrap" id="root"><div class="empty">불러오는 중…</div></div>
+<script>
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const TOKEN=localStorage.getItem('orbit_token')||sessionStorage.getItem('orbit_flow_token')||'';
+const cf=v=>Math.round((v||0)*100);
+async function load(){
+  const root=document.getElementById('root'); root.innerHTML='<div class="empty">불러오는 중…</div>';
+  let d; try{ d=await fetch('/api/flow/ops-report?kind=intent',{headers:{Authorization:'Bearer '+TOKEN}}).then(r=>r.json()); }
+  catch(e){ root.innerHTML='<div class="empty">로드 실패: '+esc(e.message)+'</div>'; return; }
+  const r=d&&d.latest&&d.latest.report;
+  if(!r){ root.innerHTML='<div class="empty">아직 의도 지도가 없습니다 — owner PC에서 node bin/intent-annotator.js 실행</div>'; return; }
+  const sess=(r.sessions||[]).map(s=>{
+    const steps=(s.steps||[]).map(st=>`<div class="step">
+      <div class="seq">${st.seq}</div>
+      <div><div class="scr">${esc(st.ts||'')} · ${esc(st.screen||'')}</div>
+        <div class="intent">${esc(st.intent||'')}${st.assumed?'<span class="assumed">추정</span>':''}
+          <span class="bar"><i style="width:${cf(st.confidence)}%"></i></span></div>
+        <div class="why">${esc(st.why||'')}</div></div></div>`).join('');
+    return `<div class="sess"><div class="sess-h"><span class="goal">🎯 ${esc(s.title||'세션')}</span>
+      ${s.spanMin?`<span class="scr">${s.spanMin}분</span>`:''}
+      <span class="conf">목표 신뢰도 ${cf(s.goalConfidence)}%</span></div>
+      <div class="steps">${steps}</div></div>`;
+  }).join('');
+  root.innerHTML=`
+    <div class="meta">👤 <b>${esc(r.user||r.userId||'')}</b> · 궤적 ${r.trajectorySessions||0}세션 / ${r.screensAnalyzed||0}화면 · 생성 ${String(d.latest.ts||'').slice(0,16)}
+      ${r.timeInsight?`<div class="tl" style="margin-top:6px">⏱ ${esc(r.timeInsight)}</div>`:''}</div>
+    ${sess||'<div class="empty">세션 없음</div>'}
+    <div class="grid">
+      <div class="card"><h3>📐 관찰된 의사결정 규칙</h3>${(r.decisionRules||[]).map(x=>`<li>${esc(x)}</li>`).join('')||'<div class="empty">—</div>'}</div>
+      <div class="card blind"><h3>🌫 사각지대 (관찰 불가·추정)</h3>${(r.blindSpots||[]).map(x=>`<li>${esc(x)}</li>`).join('')||'<div class="empty">—</div>'}</div>
+    </div>`;
+}
+load();
+</script>
+</body>
+</html>
