@@ -30,6 +30,10 @@
   .badge { display:inline-block; padding:1px 8px; border-radius:999px; font-size:11px; font-weight:600; }
   .b-ok { background:rgba(46,160,67,.16); color:#3fb950; }
   .b-bad { background:rgba(248,81,73,.16); color:#ff7b72; }
+  .b-warn { background:rgba(210,153,34,.16); color:#e3b341; }
+  .alertbar { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:10px 14px; margin-bottom:12px; display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .mini { background:var(--panel2); border:1px solid var(--line); color:var(--accent); font-size:11.5px; padding:3px 9px; border-radius:7px; cursor:pointer; }
+  .mini:hover { border-color:var(--accent); }
   .b-auto { background:rgba(163,113,247,.16); color:#b98eff; }
   .b-hum { background:rgba(210,153,34,.16); color:#e3b341; }
   .chip { display:inline-block; background:var(--panel2); border:1px solid var(--line); border-radius:6px; padding:1px 7px; margin:2px 3px 0 0; font-size:11px; color:var(--dim); }
@@ -59,12 +63,14 @@
 </header>
 <div class="kpis" id="kpis"></div>
 <div class="tabs" id="tabs">
-  <button class="tab active" data-v="issues">이슈 트래킹보드</button>
+  <button class="tab active" data-v="health">🚨 거래처 조기경보</button>
+  <button class="tab" data-v="issues">이슈 트래킹보드</button>
   <button class="tab" data-v="customers">거래처 대응</button>
   <button class="tab" data-v="employees">직원 역량매트릭스</button>
   <button class="tab" data-v="playbook">해결 플레이북 · 자동화후보</button>
 </div>
-<div class="view active" id="v-issues"></div>
+<div class="view active" id="v-health"></div>
+<div class="view" id="v-issues"></div>
 <div class="view" id="v-playbook"></div>
 <div class="view" id="v-customers"></div>
 <div class="view" id="v-employees"></div>
@@ -77,14 +83,66 @@ const chips = arr => (arr||[]).map(x=>`<span class="chip">${esc(x.k)} ${x.v}</sp
 
 async function load() {
   const hours = document.getElementById('hours').value;
-  for (const id of ['v-issues','v-playbook','v-customers','v-employees']) document.getElementById(id).innerHTML = '<div class="empty">불러오는 중…</div>';
+  for (const id of ['v-health','v-issues','v-playbook','v-customers','v-employees']) document.getElementById(id).innerHTML = '<div class="empty">불러오는 중…</div>';
   let d;
   try {
     const res = await fetch('/api/admin/kakao-intel?hours='+hours, { headers: TOKEN ? { 'Authorization':'Bearer '+TOKEN } : {} });
     d = await res.json();
   } catch(e) { document.getElementById('v-issues').innerHTML = '<div class="empty">로드 실패: '+esc(e.message)+'</div>'; return; }
   if (d.error) { document.getElementById('v-issues').innerHTML = '<div class="empty">'+esc(d.error)+'</div>'; return; }
-  renderKpis(d); renderIssues(d); renderPlaybook(d); renderCustomers(d); renderEmployees(d);
+  renderKpis(d); renderHealth(d); renderIssues(d); renderPlaybook(d); renderCustomers(d); renderEmployees(d);
+}
+
+// 거래처 건강도 조기경보 — 이미 로드된 customers를 스코어링(서버 추가호출 없음, 콜드 회피).
+// 신호(불량·주문누락 제외, 08-03 방향): ①미해결도(1-해결률) ②급함톤 비율 ③이슈밀도(이슈/언급).
+// 표본 부족(언급<80)은 경보 제외하고 별도 표기. ECOUNT 미수 결합은 2차(예고).
+function healthScore(c){
+  const tones = c.tones||[]; const tot = tones.reduce((s,t)=>s+(t.v||0),0)||1;
+  const urgent = (tones.find(t=>/급함|긴급/.test(t.k))||{}).v || 0;
+  const urgentRatio = urgent/tot;                       // 급함 어조 비율
+  const unresolved = 1 - (c.resolveRate==null?1:c.resolveRate); // 미해결 비중
+  const density = Math.min((c.issues||0)/(c.mentions||1)*4, 1); // 이슈 밀도(정규화)
+  const risk = Math.round(100*(0.5*unresolved + 0.32*urgentRatio + 0.18*density));
+  const reasons = [];
+  if (c.resolveRate!=null && c.resolveRate < 0.85) reasons.push(`해결률 ${Math.round(c.resolveRate*100)}% (낮음)`);
+  if (urgentRatio > 0.09) reasons.push(`'급함' 어조 ${Math.round(urgentRatio*100)}%`);
+  if (density > 0.5) reasons.push(`이슈 밀도 높음(${c.issues}/${c.mentions})`);
+  return { risk, urgentRatio, reasons };
+}
+function renderHealth(d){
+  const el = document.getElementById('v-health');
+  const rows = (d.customers||[]).map(c=>({ ...c, ...healthScore(c) }));
+  if(!rows.length){ el.innerHTML='<div class="empty">데이터 없음</div>'; return; }
+  const MIN = 80; // 표본 최소 언급수
+  const scored = rows.filter(c=>(c.mentions||0)>=MIN).sort((a,b)=>b.risk-a.risk);
+  const thin = rows.filter(c=>(c.mentions||0)<MIN).length;
+  const danger = scored.filter(c=>c.risk>=38), warn = scored.filter(c=>c.risk>=28&&c.risk<38);
+  const grade = r => r>=38?['위험','#f47067','b-bad']:(r>=28?['주의','#d29922','b-warn']:['정상','#3fb950','b-ok']);
+  const card = c => { const [g,col] = grade(c.risk); return `<tr>
+     <td><b>${esc(c.name)}</b></td>
+     <td><span style="display:inline-block;min-width:34px;font-weight:800;color:${col}">${c.risk}</span>
+         <span class="badge" style="background:${col}22;color:${col}">${g}</span></td>
+     <td class="muted" style="font-size:12px">${c.reasons.length?c.reasons.map(r=>esc(r)).join(' · '):'특이신호 없음'}</td>
+     <td>${c.issues} <span class="muted">/ ${c.mentions}</span></td>
+     <td><button class="mini" onclick="jumpIssues('${esc(c.name)}')">미해결 이슈 보기 →</button></td></tr>`; };
+  el.innerHTML =
+    `<div class="alertbar">
+       <span class="badge b-bad">위험 ${danger.length}</span>
+       <span class="badge b-warn">주의 ${warn.length}</span>
+       <span class="muted">· 분석 거래처 ${scored.length} (표본부족 ${thin} 제외) · 불량/주문누락 제외</span>
+       <span class="muted" style="float:right">ECOUNT 미수·주문빈도 결합 예정(2차)</span>
+     </div>`+
+    (scored.length ?
+      `<table><thead><tr><th>거래처</th><th>위험도</th><th>경보 근거 (왜)</th><th>이슈/언급</th><th>다음 액션</th></tr></thead><tbody>`+
+      scored.map(card).join('')+`</tbody></table>` :
+      `<div class="empty">경보 대상 없음</div>`);
+}
+function jumpIssues(name){
+  document.querySelector('.tab[data-v="issues"]').click();
+  // 이슈 탭에서 해당 거래처 행 하이라이트(간단 스크롤)
+  setTimeout(()=>{ const t=document.getElementById('v-issues');
+    const hit=[...t.querySelectorAll('td')].find(td=>td.textContent.includes(name));
+    if(hit){ hit.closest('tr').style.outline='2px solid var(--auto)'; hit.closest('tr').scrollIntoView({block:'center'}); } },100);
 }
 
 function renderKpis(d){
