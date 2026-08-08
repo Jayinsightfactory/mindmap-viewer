@@ -4638,8 +4638,23 @@ app.get('/api/xray/proposals', async (req, res) => {
       const u = await db.query(`SELECT id, name FROM orbit_auth_users`);
       for (const r of u.rows) nameOf[r.id] = r.name;
     } catch {}
+    // [2026-08-08] 앱 라벨 정규화 — 같은 앱이 여러 변형(ECOUNT ERP/iCount/iCOUNT 회계관리 등)으로
+    // 흔들려 매칭·표시를 방해하던 것을 canonical 1개로 통일(데이터 품질 디벨롭 P1).
+    const canonApp = (raw) => {
+      const s = String(raw || '').toLowerCase();
+      if (/ecount|icount|이카운트|이카운티/.test(s)) return 'ECOUNT ERP';
+      if (/kakaotalk|카카오톡|카톡/.test(s)) return '카카오톡';
+      if (/kakaowork|카카오워크/.test(s)) return '카카오워크';
+      if (/nenova|네노바|꽃고|창해|판매·창해/.test(s) && !/nenovaweb|웹/.test(s)) return 'nenova 전산(exe)';
+      if (/nenovaweb|nenova erp.*웹|웹 브라우저.*erp/.test(s)) return 'nenovaweb ERP';
+      if (/신한|하나은행|기업포털|bizbank|기업뱅킹/.test(s)) return '은행(기업뱅킹)';
+      if (/excel|엑셀/.test(s)) return 'Microsoft Excel';
+      if (/explorer|파일 탐색기|windows explorer/.test(s)) return 'Windows 파일탐색기';
+      if (/chrome|크롬/.test(s)) return 'Google Chrome';
+      return raw || '';
+    };
     const rows = ev.rows.map(r => ({
-      id: r.id, userId: r.user_id, ts: r.timestamp, app: r.app || '', screen: r.screen || '',
+      id: r.id, userId: r.user_id, ts: r.timestamp, app: canonApp(r.app), screen: r.screen || '',
       activity: r.activity || '', hostname: r.hostname || '',
       clickCount: Array.isArray(r.fields) ? r.fields.filter(f => f && f.clickXY).length : 0,
       hay: `${r.app || ''} ${r.screen || ''} ${r.activity || ''}`.toLowerCase(),
