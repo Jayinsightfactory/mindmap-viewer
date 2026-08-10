@@ -21,15 +21,30 @@
  */
 const express = require('express');
 const crypto = require('crypto');
+const KAKAO_IMPORT_TOKEN_SHA256 = process.env.KAKAO_IMPORT_TOKEN_SHA256 || '996dbe719828cdc0d926df282b256d5d8e7d7734a489384907493532a1e93b17';
 
-function createKakaoDecryptRouter({ getDb }) {
+function createKakaoDecryptRouter({ getDb, importTokenSha256 = KAKAO_IMPORT_TOKEN_SHA256 }) {
   const router = express.Router();
+
+  function requireImportToken(req, res, next) {
+    const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+    const provided = bearer || String(req.headers['x-kakao-import-token'] || '');
+    const providedHash = crypto.createHash('sha256').update(provided).digest('hex');
+    const expectedBytes = Buffer.from(importTokenSha256, 'hex');
+    const providedBytes = Buffer.from(providedHash, 'hex');
+    if (!provided || expectedBytes.length !== providedBytes.length || !crypto.timingSafeEqual(expectedBytes, providedBytes)) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    next();
+  }
 
   // ── 테이블 초기화 ──
   async function _ensureTables(db) {
     await db.query(`
       CREATE TABLE IF NOT EXISTS kakao_messages (
         id SERIAL PRIMARY KEY,
+        external_message_id TEXT,
+        timestamp_approximate BOOLEAN DEFAULT FALSE,
         chat_id TEXT,
         chatroom TEXT,
         user_id TEXT,
@@ -42,6 +57,24 @@ function createKakaoDecryptRouter({ getDb }) {
         created_at TIMESTAMPTZ DEFAULT NOW(),
         imported_at TIMESTAMPTZ DEFAULT NOW()
       )
+    `);
+    await db.query(`ALTER TABLE kakao_messages ADD COLUMN IF NOT EXISTS external_message_id TEXT`);
+    await db.query(`ALTER TABLE kakao_messages ADD COLUMN IF NOT EXISTS chat_id TEXT`);
+    await db.query(`ALTER TABLE kakao_messages ADD COLUMN IF NOT EXISTS chatroom TEXT`);
+    await db.query(`ALTER TABLE kakao_messages ADD COLUMN IF NOT EXISTS user_id TEXT`);
+    await db.query(`ALTER TABLE kakao_messages ADD COLUMN IF NOT EXISTS sender TEXT`);
+    await db.query(`ALTER TABLE kakao_messages ADD COLUMN IF NOT EXISTS message TEXT`);
+    await db.query(`ALTER TABLE kakao_messages ADD COLUMN IF NOT EXISTS message_type TEXT DEFAULT 'text'`);
+    await db.query(`ALTER TABLE kakao_messages ADD COLUMN IF NOT EXISTS decryption_method TEXT`);
+    await db.query(`ALTER TABLE kakao_messages ADD COLUMN IF NOT EXISTS original_encrypted TEXT`);
+    await db.query(`ALTER TABLE kakao_messages ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'import'`);
+    await db.query(`ALTER TABLE kakao_messages ADD COLUMN IF NOT EXISTS timestamp_approximate BOOLEAN DEFAULT FALSE`);
+    await db.query(`ALTER TABLE kakao_messages ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW()`);
+    await db.query(`ALTER TABLE kakao_messages ADD COLUMN IF NOT EXISTS imported_at TIMESTAMPTZ DEFAULT NOW()`);
+    await db.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_kakao_messages_external_message_id
+      ON kakao_messages(external_message_id)
+      WHERE external_message_id IS NOT NULL
     `);
     await db.query(`
       CREATE TABLE IF NOT EXISTS kakao_decrypt_log (
@@ -200,7 +233,7 @@ function createKakaoDecryptRouter({ getDb }) {
   // ═══════════════════════════════════════════════════════════════
   // POST /api/kakao/import — 복호화된 메시지 DB 저장
   // ═══════════════════════════════════════════════════════════════
-  router.post('/import', async (req, res) => {
+  router.post('/import', requireImportToken, async (req, res) => {
     try {
       const db = getDb();
       if (!db?.query) return res.json({ error: 'DB not available' });
@@ -217,12 +250,16 @@ function createKakaoDecryptRouter({ getDb }) {
       for (const msg of messages) {
         try {
           const text = msg.message || msg.text || msg.decrypted;
-          if (!text) { skipped++; continue; }
+          const externalMessageId = String(msg.external_message_id || msg.id || '').trim();
+          if (!text || !externalMessageId) { skipped++; continue; }
 
-          await db.query(
-            `INSERT INTO kakao_messages (chat_id, chatroom, user_id, sender, message, message_type, decryption_method, original_encrypted, source, created_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+          const result = await db.query(
+            `INSERT INTO kakao_messages (external_message_id, chat_id, chatroom, user_id, sender, message, message_type, decryption_method, original_encrypted, source, created_at, timestamp_approximate)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+             ON CONFLICT (external_message_id) WHERE external_message_id IS NOT NULL DO NOTHING
+             RETURNING external_message_id`,
             [
+              externalMessageId,
               msg.chat_id || null,
               msg.chatroom || chatroom || 'unknown',
               msg.user_id || null,
@@ -233,9 +270,11 @@ function createKakaoDecryptRouter({ getDb }) {
               msg.original_encrypted || null,
               source || 'import',
               msg.created_at || new Date().toISOString(),
+              Boolean(msg.timestamp_approximate),
             ]
           );
-          imported++;
+          if (result.rowCount > 0) imported++;
+          else skipped++;
         } catch (insertErr) {
           console.error('[KakaoDecrypt] import row error:', insertErr.message);
           skipped++;
@@ -292,7 +331,7 @@ function createKakaoDecryptRouter({ getDb }) {
       const total = parseInt(countRes.rows[0].total);
 
       const dataRes = await db.query(
-        `SELECT id, chat_id, chatroom, user_id, sender, message, message_type, source, created_at
+        `SELECT id, external_message_id, chat_id, chatroom, user_id, sender, message, message_type, source, created_at, timestamp_approximate
          FROM kakao_messages ${where}
          ORDER BY created_at DESC
          LIMIT ${queryLimit} OFFSET ${queryOffset}`,
