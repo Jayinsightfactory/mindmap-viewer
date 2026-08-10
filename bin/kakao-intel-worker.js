@@ -135,10 +135,12 @@ ${transcript}`;
 function claudeCli(prompt) {
   return new Promise((resolve) => {
     if (!CLAUDE_CLI) return resolve(null);
-    execFile(CLAUDE_CLI, ['-p', prompt], { timeout: 200000, maxBuffer: 8 * 1024 * 1024 }, (err, stdout) => {
+    // Windows 명령행 길이 제한을 피하도록 원문 프롬프트는 stdin으로 전달한다.
+    const child = execFile(CLAUDE_CLI, ['-p'], { timeout: 200000, maxBuffer: 8 * 1024 * 1024 }, (err, stdout) => {
       if (err) { console.warn('  CLI 실패:', err.message.split('\n')[0]); return resolve(null); }
       resolve(parseJson(String(stdout)));
     });
+    child.stdin.end(prompt);
   });
 }
 function parseJson(text) {
@@ -249,8 +251,10 @@ async function processRoom(room, allMsgs, rosterLine) {
       }).catch(() => {});
       done++;
       console.log(`  [${room.slice(0, 20)}] w${wi} → 케이스 ${(out.cases || []).length} · 판단룰 ${(out.decisionRules || []).length} · 교차 ${cc.score}`);
+      _state.processed[key] = 1; saveState();
+    } else {
+      console.warn(`  [${room.slice(0, 20)}] w${wi} 분석 실패 — 다음 실행에서 재시도`);
     }
-    _state.processed[key] = 1; saveState();
   }
   return { windows: windows.length, done, skipped: processed };
 }
