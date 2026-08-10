@@ -90,7 +90,8 @@ async function load() {
     d = await res.json();
   } catch(e) { document.getElementById('v-issues').innerHTML = '<div class="empty">로드 실패: '+esc(e.message)+'</div>'; return; }
   if (d.error) { document.getElementById('v-issues').innerHTML = '<div class="empty">'+esc(d.error)+'</div>'; return; }
-  renderKpis(d); renderHealth(d); renderIssues(d); renderPlaybook(d); renderCustomers(d); renderEmployees(d);
+  renderKpis(d); renderIssues(d); renderPlaybook(d); renderCustomers(d); renderEmployees(d);
+  await loadReceivables(); renderHealth(d);
 }
 
 // 거래처 건강도 조기경보 — 이미 로드된 customers를 스코어링(서버 추가호출 없음, 콜드 회피).
@@ -109,9 +110,24 @@ function healthScore(c){
   if (density > 0.5) reasons.push(`이슈 밀도 높음(${c.issues}/${c.mentions})`);
   return { risk, urgentRatio, reasons };
 }
+const _normCust = s => String(s||'').replace(/㈜|주식회사|주\)/g,'').replace(/\(.*?\)/g,'').replace(/[\s·.\-]/g,'').trim();
+let _arMap = {}; // 거래처 미수 맵(정규화 키) — ECOUNT 스냅샷
+async function loadReceivables(){
+  try{ const r=await fetch('/api/admin/ecount-receivables',{headers:TOKEN?{'Authorization':'Bearer '+TOKEN}:{}}); const d=await r.json(); _arMap=(d&&d.customers)||{}; }
+  catch{ _arMap={}; }
+}
 function renderHealth(d){
   const el = document.getElementById('v-health');
-  const rows = (d.customers||[]).map(c=>({ ...c, ...healthScore(c) }));
+  const rows = (d.customers||[]).map(c=>{
+    const s = healthScore(c);
+    const ar = _arMap[_normCust(c.name)];
+    if(ar && ar.balance>0){
+      const bump = ar.agingMonths>=13?30 : ar.agingMonths>=7?20 : ar.agingMonths>=4?12 : 4;
+      s.risk = Math.min(100, s.risk + bump); s.ar = ar;
+      if(bump>=12) s.reasons.push(`미수 ${Math.round(ar.balance/10000).toLocaleString()}만·${ar.bucketLabel||ar.agingMonths+'개월'}`);
+    }
+    return { ...c, ...s };
+  });
   if(!rows.length){ el.innerHTML='<div class="empty">데이터 없음</div>'; return; }
   const MIN = 80; // 표본 최소 언급수
   const scored = rows.filter(c=>(c.mentions||0)>=MIN).sort((a,b)=>b.risk-a.risk);
@@ -130,7 +146,7 @@ function renderHealth(d){
        <span class="badge b-bad">위험 ${danger.length}</span>
        <span class="badge b-warn">주의 ${warn.length}</span>
        <span class="muted">· 분석 거래처 ${scored.length} (표본부족 ${thin} 제외) · 불량/주문누락 제외</span>
-       <span class="muted" style="float:right">ECOUNT 미수·주문빈도 결합 예정(2차)</span>
+       <span class="muted" style="float:right">${Object.keys(_arMap).length?`ECOUNT 미수 결합 ✓ (${Object.keys(_arMap).length}곳)`:"ECOUNT 미수 미연결"}</span>
      </div>`+
     (scored.length ?
       `<table><thead><tr><th>거래처</th><th>위험도</th><th>경보 근거 (왜)</th><th>이슈/언급</th><th>다음 액션</th></tr></thead><tbody>`+

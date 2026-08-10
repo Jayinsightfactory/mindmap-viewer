@@ -4609,6 +4609,37 @@ app.get('/api/vision/thumbnails', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// [2026-08-10] ECOUNT 거래처별 미수(aging) 프록시 — nenovaweb WebEcountSnapshot 스냅샷을 읽기전용 브리지로
+// 가져와 거래처명 정규화 맵 반환. 거래처 건강도(kakao-intel.html)가 위험도에 미수를 가산. 원본 DB 무관.
+function _normCust(s) { return String(s || '').replace(/㈜|주식회사|주\)/g, '').replace(/\(.*?\)/g, '').replace(/[\s·.\-]/g, '').trim(); }
+app.get('/api/admin/ecount-receivables', async (req, res) => {
+  try {
+    const token = (req.headers.authorization || '').replace('Bearer ', '').trim() || String(req.query.token || '');
+    if (!token.startsWith('orbit_')) return res.status(401).json({ error: 'orbit token required' });
+    if (!global._arCache) global._arCache = { ts: 0, data: null };
+    if (global._arCache.data && Date.now() - global._arCache.ts < 300000) return res.json(global._arCache.data);
+    const bt = process.env.NENOVAWEB_BRIDGE_TOKEN || '';
+    if (!bt) return res.json({ ok: true, note: 'NENOVAWEB_BRIDGE_TOKEN 미설정 — 미수 결합 비활성', count: 0, customers: {} });
+    const base = process.env.NENOVAWEB_BASE || 'https://nenovaweb.com';
+    const ctrl = new AbortController(); const to = setTimeout(() => ctrl.abort(), 20000);
+    let body;
+    try {
+      const r = await fetch(`${base}/api/automation/proxy?path=/api/ecount/receivables`,
+        { headers: { authorization: 'Bearer ' + bt }, signal: ctrl.signal });
+      body = await r.json();
+    } finally { clearTimeout(to); }
+    const payload = body && body.rows ? body : (body && body.data) ? body.data : body || {};
+    const rows = payload.rows || [];
+    const customers = {};
+    for (const x of rows) { const k = _normCust(x.name); if (!k) continue;
+      customers[k] = { name: x.name, balance: x.balance, agingMonths: x.agingMonths, bucket: x.bucket, bucketLabel: x.bucketLabel, color: x.color }; }
+    const out = { ok: true, generatedAt: new Date().toISOString(), takenAt: payload.takenAt || null,
+      count: Object.keys(customers).length, summary: payload.summary || null, customers };
+    global._arCache = { ts: Date.now(), data: out };
+    res.json(out);
+  } catch (e) { res.json({ ok: false, error: e.message, count: 0, customers: {} }); }
+});
+
 // [2026-08-10 골:화면↔입력 융합] 화면(screen.analyzed) 각각에 그 직전 시간창의 키보드 입력값(한글)을
 // 붙여 "이 화면에서 → 이 값을 입력했다" 스텝을 만든다. AI 실행 대본(무엇을 어디에 입력)의 핵심 재료.
 // GET /api/vision/screen-input?userId=&hours=&windowSec=  (읽기전용 융합, 저장 없음)
