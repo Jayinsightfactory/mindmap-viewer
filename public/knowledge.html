@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>지식 그래프 · MOYI</title>
+<!-- 옵시디언식 force graph (기존 graph.html과 동일 CDN) -->
+<script src="https://unpkg.com/force-graph@1"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0d1117;--panel:#161b22;--line:#2a3240;--txt:#e6edf3;--muted:#8b949e;--acc:#58a6ff;
+--cust:#f0883e;--emp:#58a6ff;--issue:#e3b341;--opp:#a371f7;--risk:#f85149;--room:#3fb950;--intent:#39c5cf}
+body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,'Malgun Gothic',sans-serif;overflow:hidden}
+#top{position:fixed;top:0;left:0;right:0;height:50px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:14px;padding:0 18px;background:var(--bg);z-index:10}
+#top h1{font-size:16px}#top .sub{color:var(--muted);font-size:12px}
+#top .legend{margin-left:auto;display:flex;gap:10px;font-size:11px;flex-wrap:wrap}
+.lg{display:flex;align-items:center;gap:4px;color:var(--muted)}.dot{width:9px;height:9px;border-radius:50%}
+button{background:var(--panel);border:1px solid var(--line);color:var(--txt);padding:6px 12px;border-radius:7px;cursor:pointer;font-size:12px}
+#graph{position:fixed;top:50px;left:0;right:340px;bottom:0}
+#side{position:fixed;top:50px;right:0;width:340px;bottom:0;border-left:1px solid var(--line);background:var(--panel);overflow-y:auto;padding:16px}
+#side .empty{color:var(--muted);font-size:13px;padding:30px 6px;text-align:center;line-height:1.7}
+#side h2{font-size:15px;margin-bottom:3px;display:flex;align-items:center;gap:7px}
+#side .kind{font-size:11px;color:var(--muted);margin-bottom:12px}
+#side .meta{font-size:12.5px;color:var(--txt);line-height:1.6;margin-bottom:12px}
+#side .meta b{color:var(--acc)}
+#side .bl-h{font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin:14px 0 6px;border-top:1px solid var(--line);padding-top:10px}
+.bl{display:flex;align-items:center;gap:7px;padding:6px 8px;border-radius:7px;cursor:pointer;font-size:12.5px}
+.bl:hover{background:#1c2230}
+.bl .dot{flex:none}
+.badge{font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:999px}
+#loading{position:fixed;inset:50px 340px 0 0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:14px}
+</style>
+</head>
+<body>
+<div id="top">
+  <h1>🕸️ 지식 그래프</h1><span class="sub">거래처·직원·이슈·자동화·의도를 하나로</span>
+  <div class="legend">
+    <span class="lg"><span class="dot" style="background:var(--risk)"></span>위험거래처</span>
+    <span class="lg"><span class="dot" style="background:var(--cust)"></span>거래처</span>
+    <span class="lg"><span class="dot" style="background:var(--emp)"></span>직원</span>
+    <span class="lg"><span class="dot" style="background:var(--issue)"></span>이슈</span>
+    <span class="lg"><span class="dot" style="background:var(--opp)"></span>자동화기회</span>
+    <button onclick="location.reload()">새로고침</button>
+  </div>
+</div>
+<div id="graph"></div>
+<div id="loading">데이터 종합 중… (거래처·미수·X-ray·의도)</div>
+<div id="side"><div class="empty">노드를 클릭하면<br>연결된 항목(백링크)과 상세가 여기 표시됩니다.<br><br>거래처 ↔ 이슈 ↔ 담당 직원 ↔ 의도 ↔ 자동화를<br>타고 탐색하세요.</div></div>
+
+<script>
+const TK = localStorage.getItem('orbit_token') || new URLSearchParams(location.search).get('token') || '';
+const H = TK ? { 'Authorization':'Bearer '+TK } : {};
+const esc = s => String(s??'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const norm = s => String(s||'').replace(/㈜|주식회사|주\)/g,'').replace(/\(.*?\)/g,'').replace(/[\s·.\-]/g,'').trim();
+const KCOLOR = { customer:'#f0883e', risk:'#f85149', employee:'#58a6ff', issue:'#e3b341', opportunity:'#a371f7', room:'#3fb950' };
+const KLABEL = { customer:'거래처', risk:'위험 거래처', employee:'직원', issue:'이슈', opportunity:'자동화 기회', room:'카톡방' };
+
+let NODES=[], LINKS=[], byId={}, adj={};
+
+function riskScore(c, arMap){
+  const tones=c.tones||[], tot=tones.reduce((a,t)=>a+(t.v||0),0)||1;
+  const urg=(tones.find(t=>/급함|긴급/.test(t.k))||{}).v||0;
+  let r=Math.round(100*(0.5*(1-(c.resolveRate==null?1:c.resolveRate))+0.32*(urg/tot)+0.18*Math.min((c.issues||0)/(c.mentions||1)*4,1)));
+  const ar=arMap[norm(c.name)]; let reason=[];
+  if(c.resolveRate!=null&&c.resolveRate<0.85) reason.push('해결률 '+Math.round(c.resolveRate*100)+'%');
+  if(ar&&ar.balance>0){ const b=ar.agingMonths>=13?30:ar.agingMonths>=7?20:ar.agingMonths>=4?12:4; r=Math.min(100,r+b); if(b>=12) reason.push('미수 '+Math.round(ar.balance/10000).toLocaleString()+'만·'+(ar.bucketLabel||ar.agingMonths+'개월')); }
+  return { risk:r, reason:reason.join(' · '), ar };
+}
+
+async function build(){
+  const [ki, ar, xr, intent] = await Promise.all([
+    fetch('/api/admin/kakao-intel?hours=720',{headers:H}).then(r=>r.json()).catch(()=>({})),
+    fetch('/api/admin/ecount-receivables',{headers:H}).then(r=>r.json()).catch(()=>({customers:{}})),
+    fetch('/api/flow/ops-report?kind=xray',{headers:H}).then(r=>r.json()).catch(()=>({})),
+    fetch('/api/flow/ops-report?kind=intent',{headers:H}).then(r=>r.json()).catch(()=>({}))
+  ]);
+  const arMap=(ar&&ar.customers)||{};
+  const xrep=(xr.latest&&xr.latest.report)||{};
+  const intentRep=(intent.latest&&intent.latest.report)||{};
+  const N=[], L=[], seen={};
+  const add=(id,o)=>{ if(!seen[id]){ seen[id]=Object.assign({id},o); N.push(seen[id]); } return seen[id]; };
+  const link=(a,b,k)=>{ if(a&&b&&seen[a]&&seen[b]) L.push({source:a,target:b,kind:k}); };
+
+  // 직원 (kakao-intel + xray orgMap)
+  (ki.employees||[]).forEach(e=> add('e:'+e.name,{kind:'employee',label:e.name,val:4,meta:{handled:e.handled,resolveRate:e.resolveRate}}));
+  (xrep.orgMap||[]).forEach(p=>{ const n=add('e:'+p.person,{kind:'employee',label:p.person,val:4,meta:{}}); n.meta.duties=(p.mainDuties||[]).join(' · '); n.meta.receivesFrom=p.receivesFrom; n.meta.handsTo=p.handsTo; });
+  // 직원 핸드오프
+  (xrep.orgMap||[]).forEach(p=>{ (String(p.handsTo||'').split(/[,·]/).map(s=>s.trim()).filter(Boolean)).forEach(t=>{ if(seen['e:'+t]) link('e:'+p.person,'e:'+t,'handoff'); }); });
+
+  // 거래처 (위험도·미수)
+  (ki.customers||[]).filter(c=>(c.mentions||0)>=80).forEach(c=>{
+    const s=riskScore(c,arMap);
+    add('c:'+c.name,{kind: s.risk>=38?'risk':'customer', label:c.name, val: 3+Math.min(s.risk/12,8), risk:s.risk, meta:{risk:s.risk,reason:s.reason,mentions:c.mentions,issues:c.issues,resolveRate:c.resolveRate,ar:s.ar}});
+  });
+  // 이슈 → 거래처·담당직원
+  (ki.issues||[]).slice(0,60).forEach((i,idx)=>{
+    const iid='i:'+(i.key||idx);
+    add(iid,{kind:'issue',label:(i.key||'이슈'),val:2.5,meta:{type:i.type,resolved:i.resolved,summary:i.summary,raisedBy:i.raisedBy}});
+    (i.customers||[]).forEach(cn=>{ if(seen['c:'+cn]) link(iid,'c:'+cn,'about'); });
+    if(i.raisedBy&&seen['e:'+i.raisedBy]) link(iid,'e:'+i.raisedBy,'handled_by');
+  });
+  // 자동화 기회 → 관련 직원(evidence 이름 매칭)
+  (xrep.opportunities||[]).forEach((o,idx)=>{
+    const oid='o:'+idx;
+    add(oid,{kind:'opportunity',label:(o.task||'기회').slice(0,26),val:3,meta:{tool:o.tool,reliability:o.reliability,method:o.method,save:o.estWeeklyMinSaved,evidence:o.evidence}});
+    N.filter(n=>n.kind==='employee').forEach(e=>{ if((o.evidence||'').includes(e.label)||(o.task||'').includes(e.label)) link(oid,e.id,'automates'); });
+  });
+  // 의도 → 직원 (intent 리포트의 사람)
+  if(intentRep.sessions){ const uid=intentRep.userId||''; const en=N.find(n=>n.kind==='employee'&&(uid.includes(n.label)||n.label.includes(uid)));
+    if(en){ en.meta.intent=(intentRep.sessions||[]).map(s=>s.title).slice(0,3); en.meta.rules=intentRep.decisionRules; } }
+
+  NODES=N; LINKS=L; byId={}; adj={};
+  N.forEach(n=>{ byId[n.id]=n; adj[n.id]=[]; });
+  L.forEach(l=>{ adj[l.source]&&adj[l.source].push([l.target,l.kind]); adj[l.target]&&adj[l.target].push([l.source,l.kind]); });
+  render();
+  document.getElementById('loading').style.display='none';
+}
+
+let G;
+function render(){
+  G = ForceGraph()(document.getElementById('graph'))
+    .backgroundColor('#0d1117')
+    .graphData({nodes:NODES, links:LINKS})
+    .nodeId('id').nodeVal('val')
+    .nodeColor(n=>KCOLOR[n.kind]||'#888')
+    .nodeLabel(n=>`${KLABEL[n.kind]}: ${esc(n.label)}`+(n.risk!=null?` · 위험 ${n.risk}`:''))
+    .linkColor(()=>'#2a3240').linkWidth(1)
+    .nodeCanvasObjectMode(()=>'after')
+    .nodeCanvasObject((n,ctx,scale)=>{ if(scale<1.4)return; ctx.fillStyle='#c9d1d9'; ctx.font=`${11/scale}px sans-serif`; ctx.textAlign='center'; ctx.fillText(String(n.label).slice(0,12), n.x, n.y+ (n.val||3)+ 9/scale); })
+    .onNodeClick(showNode);
+}
+
+function showNode(n){
+  const s=document.getElementById('side'); const m=n.meta||{};
+  let h=`<h2><span class="dot" style="background:${KCOLOR[n.kind]}"></span>${esc(n.label)}</h2><div class="kind">${KLABEL[n.kind]}</div><div class="meta">`;
+  if(n.kind==='risk'||n.kind==='customer'){
+    h+=`위험도 <b>${m.risk}</b> · 언급 ${m.mentions} · 이슈 ${m.issues} · 해결률 ${m.resolveRate!=null?Math.round(m.resolveRate*100)+'%':'—'}<br>`;
+    if(m.reason) h+=`경보 근거: ${esc(m.reason)}<br>`;
+    if(m.ar&&m.ar.balance>0) h+=`미수 <b>${Math.round(m.ar.balance/10000).toLocaleString()}만원</b> (${esc(m.ar.bucketLabel||'')})`;
+  } else if(n.kind==='employee'){
+    if(m.duties) h+=`업무: ${esc(m.duties)}<br>`;
+    if(m.receivesFrom||m.handsTo) h+=`받음 ${esc(m.receivesFrom||'—')} → 넘김 ${esc(m.handsTo||'—')}<br>`;
+    if(m.intent) h+=`<br>🧠 의도: ${(m.intent||[]).map(esc).join(' / ')}`;
+    if(m.rules) h+=`<br>📐 규칙: ${(m.rules||[]).slice(0,2).map(esc).join(' · ')}`;
+  } else if(n.kind==='issue'){
+    h+=`유형 ${esc(m.type||'')} · ${m.resolved?'✅해결':'🔴미해결'}<br>담당 ${esc(m.raisedBy||'—')}<br>${esc(m.summary||'')}`;
+  } else if(n.kind==='opportunity'){
+    h+=`도구 <b>${esc(m.tool||'')}</b> · ${esc(m.reliability||'')} · 주 ${m.save||0}분<br>${esc(m.method||'')}<br><span style="color:var(--muted)">${esc(m.evidence||'')}</span>`;
+  }
+  h+='</div>';
+  const links=(adj[n.id]||[]);
+  if(links.length){
+    h+=`<div class="bl-h">연결 (백링크) ${links.length}</div>`;
+    const KKO={about:'관련',handled_by:'담당',automates:'자동화대상',handoff:'인계',next:'다음'};
+    links.forEach(([tid,k])=>{ const t=byId[tid]; if(!t)return;
+      h+=`<div class="bl" onclick="G.centerAt(${(t.x||0).toFixed(0)},${(t.y||0).toFixed(0)},600);showById('${tid.replace(/'/g,"\\'")}')"><span class="dot" style="background:${KCOLOR[t.kind]}"></span><b>${esc(t.label)}</b><span style="color:var(--muted);margin-left:auto;font-size:11px">${KKO[k]||k}</span></div>`; });
+  }
+  s.innerHTML=h;
+}
+window.showById=(id)=>{ const n=byId[id]; if(n) showNode(n); };
+build();
+</script>
+</body>
+</html>

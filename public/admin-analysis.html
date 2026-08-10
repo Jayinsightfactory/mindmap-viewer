@@ -791,6 +791,7 @@
   <button class="page-tab" data-tab="proposals" onclick="switchPageTab('proposals')"><span class="page-tab-icon">🤖</span> 자동화 제안</button>
   <button class="page-tab" data-tab="intent" onclick="switchPageTab('intent')"><span class="page-tab-icon">🧠</span> 의도 지도</button>
   <button class="page-tab" data-tab="graphflow" onclick="switchPageTab('graphflow')"><span class="page-tab-icon">🗺️</span> 업무 흐름</button>
+  <button class="page-tab" data-tab="knowledge" onclick="switchPageTab('knowledge')"><span class="page-tab-icon">🕸️</span> 지식 그래프</button>
 </nav>
 
 <!-- ══════ [2026-08-10] 운영 브리핑 (행동 지향 허브) ══════ -->
@@ -820,6 +821,7 @@
     <a class="ob-card" href="javascript:void 0" onclick="switchPageTab('intent')"><b>🧠 의도 지도</b><span>왜 그렇게 했나(의도)</span></a>
     <a class="ob-card" href="javascript:void 0" onclick="switchPageTab('worklog2')"><b>📋 작업 로그</b><span>화면·입력값(한글)</span></a>
     <a class="ob-card" href="javascript:void 0" onclick="switchPageTab('graphflow')"><b>🗺️ 업무 흐름</b><span>핸드오프·병목 청사진</span></a>
+    <a class="ob-card" href="javascript:void 0" onclick="switchPageTab('knowledge')"><b>🕸️ 지식 그래프</b><span>거래처·직원·이슈·의도 연결</span></a>
   </div>
 </div>
 <style>
@@ -4915,6 +4917,7 @@ function _renderTotalAnalysis(d) {
 <div id="panel-intent" class="page-tab-panel"></div>
 <div id="panel-graphflow" class="page-tab-panel"></div>
 <div id="panel-worklog2" class="page-tab-panel"></div>
+<div id="panel-knowledge" class="page-tab-panel"></div>
 
 <!-- ── 페이지 탭 전환 스크립트 ── -->
 <script>
@@ -4929,7 +4932,8 @@ function _renderTotalAnalysis(d) {
     proposals: '/auto-proposals.html',
     intent: '/intent-map.html',
     graphflow: '/graph.html',
-    worklog2: '/work-logs.html'
+    worklog2: '/work-logs.html',
+    knowledge: '/knowledge.html'
   };
   const loaded = {};
 
