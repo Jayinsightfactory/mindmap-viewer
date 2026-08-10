@@ -4609,6 +4609,47 @@ app.get('/api/vision/thumbnails', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// [2026-08-10 골:화면↔입력 융합] 화면(screen.analyzed) 각각에 그 직전 시간창의 키보드 입력값(한글)을
+// 붙여 "이 화면에서 → 이 값을 입력했다" 스텝을 만든다. AI 실행 대본(무엇을 어디에 입력)의 핵심 재료.
+// GET /api/vision/screen-input?userId=&hours=&windowSec=  (읽기전용 융합, 저장 없음)
+app.get('/api/vision/screen-input', async (req, res) => {
+  try {
+    const token = (req.headers.authorization || '').replace('Bearer ', '').trim() || String(req.query.token || '');
+    if (!token.startsWith('orbit_')) return res.status(401).json({ error: 'orbit token required' });
+    const db = dbModule.getDb();
+    if (!db?.query) return res.status(503).json({ error: 'DB not available' });
+    const userId = String(req.query.userId || '');
+    if (!userId) return res.status(400).json({ error: 'userId required' });
+    const hours = Math.min(parseInt(req.query.hours) || 72, 720);
+    const winSec = Math.min(parseInt(req.query.windowSec) || 180, 900); // 화면 전후 몇 초의 입력을 그 화면에 귀속
+    const since = new Date(Date.now() - hours * 3600 * 1000).toISOString();
+    // 화면 + 키보드를 한 번에 시간순으로 가져와 메모리 융합
+    const q = await db.query(
+      `SELECT type, timestamp,
+              data_json->>'app' app, data_json->>'screen' screen, data_json->>'activity' activity,
+              data_json->>'inputText' input, (data_json->'fields') fields
+         FROM events
+        WHERE user_id=$1 AND type IN ('screen.analyzed','keyboard.chunk') AND timestamp >= $2
+        ORDER BY timestamp ASC`, [userId, since]);
+    const rows = q.rows.map(r => ({ ...r, ms: new Date(r.timestamp).getTime() }));
+    const screens = rows.filter(r => r.type === 'screen.analyzed');
+    const kbs = rows.filter(r => r.type === 'keyboard.chunk' && r.input && r.input.trim());
+    const steps = screens.map(s => {
+      // 이 화면 기준 ±winSec 안의 키보드 입력들 → 한글 변환해 귀속
+      const near = kbs.filter(k => Math.abs(k.ms - s.ms) <= winSec * 1000)
+        .map(k => ({ ts: k.timestamp, ko: qwertyToHangul(k.input).slice(0, 120), raw: k.input.slice(0, 120), gapSec: Math.round((k.ms - s.ms) / 1000) }))
+        .sort((a, b) => Math.abs(a.gapSec) - Math.abs(b.gapSec)).slice(0, 4);
+      return {
+        ts: s.timestamp, app: s.app || '', screen: s.screen || '', activity: s.activity || '',
+        clickCount: Array.isArray(s.fields) ? s.fields.filter(f => f && f.clickXY).length : 0,
+        inputs: near, // [{ko, raw, gapSec}]
+      };
+    }).filter(st => st.inputs.length); // 입력이 붙은 화면만(=실행 대본 후보)
+    res.json({ ok: true, userId, hours, windowSec: winSec,
+      screensWithInput: steps.length, totalScreens: screens.length, steps: steps.slice(-120) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // [2026-08-07] 자동화 제안 뷰 데이터 — X-ray 기회들을 "실제 반복 화면 이미지 + 워크플로우 순서"로 묶음.
 // 각 opportunity의 task/evidence에서 키워드를 뽑아 최근 screen.analyzed(썸네일 보유)와 매칭 →
 // 시간 오름차순(워크플로우 순) 화면 스트립. 페이지: /auto-proposals.html
