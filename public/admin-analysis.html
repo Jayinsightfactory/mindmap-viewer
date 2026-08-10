@@ -782,7 +782,99 @@
   <a href="/team-command.html" target="_blank" class="page-tab" style="text-decoration:none;background:linear-gradient(135deg,#bc8cff22,#f778ba22);border-color:#bc8cff;">
     <span class="page-tab-icon">🎯</span> 팀 커맨드센터 ↗
   </a>
+  <!-- [2026-08-10] 워커 결과 페이지 진입 (운영 허브) -->
+  <a href="/kakao-intel.html" target="_blank" class="page-tab" style="text-decoration:none;"><span class="page-tab-icon">🚨</span> 거래처 조기경보 ↗</a>
+  <a href="/xray.html" target="_blank" class="page-tab" style="text-decoration:none;"><span class="page-tab-icon">🩻</span> 회사 X-ray ↗</a>
+  <a href="/auto-proposals.html" target="_blank" class="page-tab" style="text-decoration:none;"><span class="page-tab-icon">🤖</span> 자동화 제안 ↗</a>
+  <a href="/intent-map.html" target="_blank" class="page-tab" style="text-decoration:none;"><span class="page-tab-icon">🧠</span> 의도 지도 ↗</a>
 </nav>
+
+<!-- ══════ [2026-08-10] 운영 브리핑 (행동 지향 허브) ══════ -->
+<div id="ops-briefing" style="max-width:1200px;margin:0 auto;padding:20px 24px;">
+  <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:4px;">
+    <h1 style="font-size:20px;margin:0;">🧭 운영 브리핑</h1>
+    <span style="color:var(--muted);font-size:12.5px;">지금 중요한 것 · 다음 액션 — 워커 결과 종합</span>
+    <span id="ob-time" style="margin-left:auto;color:var(--muted);font-size:11.5px;"></span>
+  </div>
+  <!-- KPI 액션 타일 -->
+  <div id="ob-tiles" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin:14px 0;">
+    <div class="ob-tile" data-k="risk"><div class="ob-n">…</div><div class="ob-l">위험 거래처</div><a class="ob-act" href="/kakao-intel.html" target="_blank">경보 보기 →</a></div>
+    <div class="ob-tile" data-k="issue"><div class="ob-n">…</div><div class="ob-l">미해결 이슈</div><a class="ob-act" href="/kakao-intel.html" target="_blank">이슈보드 →</a></div>
+    <div class="ob-tile" data-k="roi"><div class="ob-n">…</div><div class="ob-l">자동화 잠재(연)</div><a class="ob-act" href="/auto-proposals.html" target="_blank">제안 보기 →</a></div>
+    <div class="ob-tile" data-k="rate"><div class="ob-n">…</div><div class="ob-l">분석 현황(7일)</div><a class="ob-act" href="/work-logs.html" target="_blank">작업로그 →</a></div>
+  </div>
+  <!-- 위험 거래처 Top (액션) -->
+  <div id="ob-risk-list" style="background:var(--surface,#161b22);border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:14px;">
+    <div style="font-size:13.5px;font-weight:700;margin-bottom:8px;">🚨 지금 챙길 거래처 <span style="color:var(--muted);font-weight:400;font-size:11.5px;">카톡 대응 + 실제 미수 결합</span></div>
+    <div id="ob-risk-rows" style="color:var(--muted);font-size:12.5px;">불러오는 중…</div>
+  </div>
+  <!-- 워커 결과 진입 카드 -->
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;">
+    <a class="ob-card" href="/kakao-intel.html" target="_blank"><b>🚨 거래처 조기경보</b><span>카톡 대응·이슈·미수 결합</span></a>
+    <a class="ob-card" href="/xray.html" target="_blank"><b>🩻 회사 X-ray</b><span>업무 구조·비효율·기회</span></a>
+    <a class="ob-card" href="/auto-proposals.html" target="_blank"><b>🤖 자동화 제안</b><span>반복 화면·워크플로우</span></a>
+    <a class="ob-card" href="/intent-map.html" target="_blank"><b>🧠 의도 지도</b><span>왜 그렇게 했나(의도)</span></a>
+    <a class="ob-card" href="/work-logs.html" target="_blank"><b>📋 작업 로그</b><span>화면·입력값(한글)</span></a>
+    <a class="ob-card" href="/graph.html" target="_blank"><b>🗺️ 업무 흐름</b><span>핸드오프·병목 청사진</span></a>
+  </div>
+</div>
+<style>
+  #ops-briefing .ob-tile { background:var(--surface,#161b22); border:1px solid var(--border); border-radius:12px; padding:14px 16px; display:flex; flex-direction:column; gap:2px; }
+  #ops-briefing .ob-n { font-size:26px; font-weight:800; line-height:1.1; }
+  #ops-briefing .ob-l { color:var(--muted); font-size:12px; }
+  #ops-briefing .ob-act { margin-top:8px; font-size:12px; color:var(--blue); }
+  #ops-briefing .ob-card { background:var(--surface,#161b22); border:1px solid var(--border); border-radius:12px; padding:13px 15px; display:flex; flex-direction:column; gap:3px; text-decoration:none; color:var(--text); transition:border-color .15s; }
+  #ops-briefing .ob-card:hover { border-color:var(--blue); }
+  #ops-briefing .ob-card b { font-size:13.5px; }
+  #ops-briefing .ob-card span { color:var(--muted); font-size:11.5px; }
+  #ops-briefing .risk-row { display:flex; align-items:center; gap:8px; padding:6px 0; border-top:1px solid var(--border); font-size:12.5px; color:var(--text); }
+  #ops-briefing .risk-row:first-child { border-top:none; }
+  #ops-briefing .risk-badge { font-size:11px; font-weight:800; padding:1px 8px; border-radius:999px; }
+</style>
+<script>
+(function(){
+  var TK = localStorage.getItem('orbit_token') || '';
+  var H = TK ? { 'Authorization':'Bearer '+TK } : {};
+  var setN = (k,v)=>{ var t=document.querySelector('#ob-tiles .ob-tile[data-k="'+k+'"] .ob-n'); if(t) t.textContent=v; };
+  var norm = s => String(s||'').replace(/㈜|주식회사|주\)/g,'').replace(/\(.*?\)/g,'').replace(/[\s·.\-]/g,'').trim();
+  // 빠른 타일: ROI + 분석현황
+  fetch('/api/roi/automation-potential',{headers:H}).then(r=>r.json()).then(d=>{
+    var y=(d.total&&d.total.yearlyUsd)||0; setN('roi', y? ('$'+Math.round(y).toLocaleString()) : '—');
+  }).catch(()=>setN('roi','—'));
+  fetch('/api/learning/capture-funnel?days=7',{headers:H}).then(r=>r.json()).then(d=>{
+    var f=d.funnel||[]; var cap=f.reduce((s,x)=>s+(x.captures||0),0), an=f.reduce((s,x)=>s+(x.analyzed||0),0);
+    setN('rate', cap? (Math.round(100*an/cap)+'%') : '—');
+    var el=document.querySelector('#ob-tiles .ob-tile[data-k="rate"] .ob-l'); if(el) el.textContent='분석률 (캡처 '+cap.toLocaleString()+')';
+  }).catch(()=>setN('rate','—'));
+  // 위험 거래처: kakao-intel(느릴 수 있음) + ecount 미수 결합
+  document.getElementById('ob-time').textContent='종합 중…';
+  Promise.all([
+    fetch('/api/admin/kakao-intel?hours=720',{headers:H}).then(r=>r.json()).catch(()=>({})),
+    fetch('/api/admin/ecount-receivables',{headers:H}).then(r=>r.json()).catch(()=>({customers:{}}))
+  ]).then(([ki,ar])=>{
+    var custs=ki.customers||[]; var arMap=(ar&&ar.customers)||{};
+    var s=ki.issueSummary||{}; setN('issue', s.unresolved!=null? s.unresolved : '—');
+    function score(c){
+      var tones=c.tones||[], tot=tones.reduce((a,t)=>a+(t.v||0),0)||1;
+      var urg=(tones.find(t=>/급함|긴급/.test(t.k))||{}).v||0;
+      var risk=Math.round(100*(0.5*(1-(c.resolveRate==null?1:c.resolveRate))+0.32*(urg/tot)+0.18*Math.min((c.issues||0)/(c.mentions||1)*4,1)));
+      var arc=arMap[norm(c.name)]; var reason=[];
+      if(c.resolveRate!=null&&c.resolveRate<0.85) reason.push('해결률'+Math.round(c.resolveRate*100)+'%');
+      if(arc&&arc.balance>0){ var b=arc.agingMonths>=13?30:arc.agingMonths>=7?20:arc.agingMonths>=4?12:4; risk=Math.min(100,risk+b); if(b>=12) reason.push('미수 '+Math.round(arc.balance/10000).toLocaleString()+'만·'+(arc.bucketLabel||arc.agingMonths+'개월')); }
+      return {name:c.name, risk:risk, reason:reason.join(' · '), mentions:c.mentions||0};
+    }
+    var scored=custs.map(score).filter(c=>c.mentions>=80).sort((a,b)=>b.risk-a.risk);
+    var danger=scored.filter(c=>c.risk>=38).length;
+    setN('risk', danger||'0');
+    var top=scored.slice(0,5);
+    document.getElementById('ob-risk-rows').innerHTML = top.length? top.map(c=>{
+      var g=c.risk>=38?['위험','#f85149']:c.risk>=28?['주의','#d29922']:['정상','#3fb950'];
+      return '<div class="risk-row"><span class="risk-badge" style="background:'+g[1]+'22;color:'+g[1]+'">'+g[0]+' '+c.risk+'</span><b>'+(c.name||'')+'</b><span style="color:var(--muted)">'+(c.reason||'')+'</span></div>';
+    }).join('') : '<span>표본 부족 또는 분석 대기</span>';
+    document.getElementById('ob-time').textContent='갱신 '+new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});
+  }).catch(()=>{ document.getElementById('ob-risk-rows').textContent='로드 실패'; document.getElementById('ob-time').textContent=''; });
+})();
+</script>
 
 <!-- ── 탭 패널: 대시보드 (localhost:4848로 이동됨) ── -->
 <div id="panel-dashboard" class="page-tab-panel" style="display:none !important;">
