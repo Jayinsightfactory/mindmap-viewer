@@ -72,7 +72,7 @@ function buildPrompt(user, trajectory, rhythm) {
 ${JSON.stringify(rhythm).slice(0, 3000)}
 
 [관찰 궤적 — 시간순 화면 전이]
-${JSON.stringify(trajectory).slice(0, 60000)}
+${JSON.stringify(trajectory).slice(0, 40000)}
 
 [출력 — 오직 아래 JSON 하나. 한국어. 코드블록 금지.]
 {
@@ -120,8 +120,9 @@ async function main() {
     if (!cur || mins(cur[cur.length - 1].ts, s.ts) > GAP_MIN) { cur = [s]; sessions.push(cur); }
     else cur.push(s);
   }
-  const traj = sessions.filter(x => x.length >= 2).slice(-8) // 최근 세션 위주
-    .map((steps, i) => ({ session: i + 1, startTs: steps[0].ts, steps: steps.map((s, j) => ({ seq: j + 1, ts: String(s.ts).slice(11, 16), app: s.app, screen: s.screen, activity: s.activity, inputs: inputNear(s.ts) })) }));
+  const traj = sessions.filter(x => x.length >= 2).slice(-5) // 최근 5세션
+    .map((steps, i) => ({ session: i + 1, startTs: steps[0].ts, steps: steps.slice(-14) // 세션당 최근 14화면(LLM 타임아웃 방지)
+      .map((s, j) => ({ seq: j + 1, ts: String(s.ts).slice(11, 16), app: s.app, screen: (s.screen || '').slice(0, 60), inputs: inputNear(s.ts) })) }));
   const withInput = traj.reduce((n, t) => n + t.steps.filter(s => s.inputs.length).length, 0);
   console.log(`  궤적: ${sa.length} 화면 → ${traj.length} 세션 · 입력값 붙은 스텝 ${withInput} (키보드 ${kb.length}건)`);
 
