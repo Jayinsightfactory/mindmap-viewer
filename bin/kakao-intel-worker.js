@@ -5,9 +5,8 @@
  * owner PC의 Claude CLI(Max 구독, $0)로 카톡 "원문 대화"를 전량 딥분석:
  *   이슈/케이스 라이프사이클 + 거래처 성향신호 + 직원 역할 + 해결로직(자동화 후보 태깅).
  *
- * 소스 = 시트 '메시지분류' 원문 (서버 /api/mining/kakao-raw* 경유, _fetchKakaoSheetData 재사용).
- *   ※ 복호화 DB /api/kakao/messages 는 프로덕션 비어있음 → 시트가 유일 실소스.
- *   ※ 시각에 날짜 없음 → 시트 append 순서를 시퀀스로 사용(30분갭 스레드분할 불가).
+ * 소스 = PostgreSQL kakao_messages 우선, 시트 '메시지분류'는 무중단 폴백.
+ *   KAKAO_INTEL_SOURCE=pg|sheet|auto (기본 auto: PG에 데이터가 있으면 PG 사용).
  *   ※ 케이스는 품목+차수로 묶임. 발신자 대부분=우리 직원(거래처는 내용 안에 등장).
  *   ※ [AI분류|품목|차수] 태그가 메시지마다 있어 S5 교차검증 앵커로 사용.
  * 프라이버시: 원문은 워커 메모리에서만 쓰고, 서버엔 파생결과(type='kakao.intel')만 저장.
@@ -41,6 +40,7 @@ const ONLY_ROOM = argVal('--room');
 const MAX_WINDOWS = parseInt(argVal('--windows')) || 0;     // 0 = 무제한
 const WINDOW_SIZE = parseInt(argVal('--window-size')) || 90; // 윈도우당 메시지 수(append 순서)
 const POLL_MS = 10 * 60 * 1000;
+const SOURCE = String(process.env.KAKAO_INTEL_SOURCE || 'auto').toLowerCase();
 
 const CLAUDE_CLI = (() => {
   try { return execSync(process.platform === 'win32' ? 'where claude' : 'which claude', { timeout: 3000 }).toString().trim().split(/\r?\n/)[0]; }
@@ -65,6 +65,8 @@ function req(method, urlPath, body) {
 const q = (o) => Object.entries(o).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
 const getRawRooms = () => req('GET', `/api/mining/kakao-raw-rooms?${q({ token: TOKEN })}`);
 const getRaw = (room) => req('GET', `/api/mining/kakao-raw?${q({ token: TOKEN, room: room || '', limit: 5000 })}`);
+const getPgRooms = () => req('GET', '/api/kakao/chatrooms');
+const getPgPage = (offset) => req('GET', `/api/kakao/messages?${q({ limit: 1000, offset })}`);
 const getRoster = () => req('GET', `/api/mining/kakao-roster?${q({ token: TOKEN })}`);
 const postEvent = (ev) => req('POST', '/api/hook', { events: [ev] });
 
@@ -104,12 +106,12 @@ function buildRosterLine(roster) {
   return roster.map(r => `${r.name}(${(r.role || '').trim()}${r.domain ? '·' + r.domain.split(',')[0].trim() : ''})`).join(', ');
 }
 function buildPrompt(room, rosterLine, transcript) {
-  return `당신은 화훼 도매회사의 업무대화 분석가다. 아래는 사내 업무방 "${room}"의 카카오톡 원문(시트 append 순서=시간순)이다.
+  return `당신은 화훼 도매회사의 업무대화 분석가다. 아래는 사내 업무방 "${room}"의 카카오톡 원문(시간순)이다.
 발신자 대부분은 우리 직원이다. 직원 명단(아래에 있으면 직원):
 ${rosterLine}
 표시명은 회사 접두어·직함·'친구'·'님' 등이 붙을 수 있다 — 그런 수식어를 떼면 위 명단의 실제 직원명과 매칭된다.
 거래처(고객)는 발신자가 아니라 메시지 "내용 안에" 등장한다(꽃집·도매상·농장 등 상호).
-각 메시지엔 이미 [AI분류|품목|차수] 태그가 붙어있다(참고·교차검증용, 틀릴 수 있음).
+각 메시지의 [AI분류|품목|차수] 태그는 있을 때만 참고하라. 빈 태그는 원문 PG 소스의 정상 상태다.
 
 ★최우선 식별 = "놓치면 사고나는 운영이슈"(AI가 트래킹·대체해야 할 대상):
   - 항공스케줄: 비행기/선적 스케줄 변경·지연·결항·앞당김 (예: "네덜란드 항공 선적 월요일 불가")
@@ -178,6 +180,43 @@ function transcriptOf(msgs) {
   return msgs.map((m, i) => `${i + 1}. ${m.sender} [${m.aiClass || ''}|${m.product || ''}|${m.seq || ''}]: ${String(m.text || '').replace(/\s+/g, ' ').slice(0, 400)}`).join('\n');
 }
 
+async function getPgMessages() {
+  const messages = [];
+  for (let offset = 0; ; offset += 1000) {
+    const page = await getPgPage(offset);
+    if (!page.ok || !Array.isArray(page.messages)) throw new Error(page.error || 'PG messages unavailable');
+    messages.push(...page.messages.map(m => ({
+      room: m.chatroom || m.chat_id || '',
+      sender: m.sender || m.user_id || '',
+      text: m.message || '',
+      ts: m.created_at || '',
+      externalId: m.external_message_id || '',
+    })));
+    if (messages.length >= Number(page.total || 0) || page.messages.length < 1000) break;
+  }
+  // API는 최신순이므로 분석 입력은 실제 시간순으로 복원한다.
+  messages.sort((a, b) => String(a.ts).localeCompare(String(b.ts)) || String(a.externalId).localeCompare(String(b.externalId)));
+  return messages;
+}
+
+async function loadSource() {
+  if (!['auto', 'pg', 'sheet'].includes(SOURCE)) throw new Error(`invalid KAKAO_INTEL_SOURCE: ${SOURCE}`);
+  if (SOURCE !== 'sheet') {
+    try {
+      const roomsRes = await getPgRooms();
+      const rooms = (roomsRes.chatrooms || []).map(r => ({ room: r.chatroom, count: Number(r.message_count || 0) }));
+      if (rooms.length) return { kind: 'pg', rooms, messages: await getPgMessages() };
+      if (SOURCE === 'pg') throw new Error('PG source is empty');
+    } catch (e) {
+      if (SOURCE === 'pg') throw e;
+      console.warn(`  PG 소스 사용 불가, 시트 폴백: ${e.message}`);
+    }
+  }
+  const roomsRes = await getRawRooms();
+  const raw = await getRaw('');
+  return { kind: 'sheet', rooms: roomsRes.rooms || [], messages: raw.messages || [] };
+}
+
 // ── 메인 ────────────────────────────────────────────────────────────────────
 async function processRoom(room, allMsgs, rosterLine) {
   const windows = windowize(allMsgs, WINDOW_SIZE);
@@ -224,14 +263,13 @@ async function runAll() {
   const rosterLine = buildRosterLine(rosterRes.roster);
   console.log(`  로스터 ${(rosterRes.roster || []).length}명`);
 
-  const roomsRes = await getRawRooms().catch(() => ({}));
-  const rawRooms = roomsRes.rooms || [];
+  const source = await loadSource().catch(e => ({ kind: SOURCE, rooms: [], messages: [], error: e.message }));
+  const rawRooms = source.rooms;
   if (!rawRooms.length) { console.warn('  방 없음(원문 소스 비어있음)'); return 0; }
   const canonize = buildRoomCanonizer(rawRooms);
 
   // 전체 원문 1회 fetch 후 방(정규화)별로 그룹 — 깨진 방이름 변형 자동 병합
-  const rawAll = await getRaw('').catch(() => ({}));
-  const msgs = rawAll.messages || [];
+  const msgs = source.messages;
   const byRoom = new Map();
   for (const m of msgs) {
     const room = canonize(m.room || '');
@@ -240,7 +278,7 @@ async function runAll() {
     byRoom.get(room).push(m);
   }
   const rooms = [...byRoom.keys()].sort((a, b) => byRoom.get(b).length - byRoom.get(a).length);
-  console.log(`  원문 ${msgs.length}건 · 방 ${rooms.length}개(정규화 후)`);
+  console.log(`  소스 ${source.kind.toUpperCase()} · 원문 ${msgs.length}건 · 방 ${rooms.length}개(정규화 후)`);
 
   let total = 0;
   for (const room of rooms) {
