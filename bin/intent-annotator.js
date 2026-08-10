@@ -65,6 +65,7 @@ function buildPrompt(user, trajectory, rhythm) {
 - 각 의도는 '가설'이다. 화면에 안 나타난 사고(전화·암묵지·순간판단)는 추론일 뿐 → confidence를 낮추고 assumed=true.
 - 통계 서술 금지. 화면·앱·활동의 구체 근거로 의도를 말하라(거래처/품목/차수/문서명이 보이면 그대로).
 - 시간 리듬(아래)을 의도 맥락에 활용: 차수 마감·특정 요일·이례 시간대면 그 맥락을 의도에 반영.
+- 각 step의 inputs = 그 화면에서 실제로 타이핑한 값(한글 복원). 거래처명·품목·수량·검색어일 수 있음 → 의도의 결정적 근거로 써라("이 화면에서 '참좋은원예'를 검색 = 그 거래처 채권 조회 의도").
 
 [직원] ${user}
 [시간 리듬 — 이 사람의 요일·시간대 업무 패턴]
@@ -103,11 +104,16 @@ async function main() {
   }
   console.log('  대상:', user);
 
-  // 궤적: screen.analyzed 시간순 → gap 기준 세션화
-  const lg = await httpJson('GET', `/api/learning/logs?limit=400&userId=${encodeURIComponent(user)}`);
+  // 궤적: screen.analyzed 시간순 → gap 기준 세션화. + keyboard.chunk 한글 입력값(inputTextKo)을
+  // 각 화면 근처(±120초)에 귀속 → 의도추론이 "이 화면에서 이 값 입력"까지 보게(화면↔입력 융합).
+  const lg = await httpJson('GET', `/api/learning/logs?limit=600&userId=${encodeURIComponent(user)}`);
   const sa = (lg.logs || []).filter(l => l.type === 'screen.analyzed')
     .map(l => ({ ts: l.timestamp, app: l.app || '', screen: l.visionScreen || l.screen || '', activity: l.visionActivity || l.activity || '' }))
     .sort((a, b) => new Date(a.ts) - new Date(b.ts));
+  const kb = (lg.logs || []).filter(l => l.type === 'keyboard.chunk' && (l.inputTextKo || '').trim())
+    .map(l => ({ ms: new Date(l.timestamp).getTime(), ko: String(l.inputTextKo).slice(0, 80) }));
+  const inputNear = (ts) => { const m = new Date(ts).getTime();
+    return kb.filter(k => Math.abs(k.ms - m) <= 120000).sort((a, b) => Math.abs(a.ms - m) - Math.abs(b.ms - m)).slice(0, 2).map(k => k.ko); };
   if (sa.length < 3) { console.error(`  궤적 부족(${sa.length}) — 분석 더 쌓인 뒤 실행`); process.exit(0); }
   const sessions = []; let cur = null;
   for (const s of sa) {
@@ -115,8 +121,9 @@ async function main() {
     else cur.push(s);
   }
   const traj = sessions.filter(x => x.length >= 2).slice(-8) // 최근 세션 위주
-    .map((steps, i) => ({ session: i + 1, startTs: steps[0].ts, steps: steps.map((s, j) => ({ seq: j + 1, ts: String(s.ts).slice(11, 16), app: s.app, screen: s.screen, activity: s.activity })) }));
-  console.log(`  궤적: ${sa.length} 화면 → ${traj.length} 세션`);
+    .map((steps, i) => ({ session: i + 1, startTs: steps[0].ts, steps: steps.map((s, j) => ({ seq: j + 1, ts: String(s.ts).slice(11, 16), app: s.app, screen: s.screen, activity: s.activity, inputs: inputNear(s.ts) })) }));
+  const withInput = traj.reduce((n, t) => n + t.steps.filter(s => s.inputs.length).length, 0);
+  console.log(`  궤적: ${sa.length} 화면 → ${traj.length} 세션 · 입력값 붙은 스텝 ${withInput} (키보드 ${kb.length}건)`);
 
   // 시간 리듬: ops-input timeline에서 이 사람만
   const oi = await httpJson('GET', `/api/flow/ops-input?hours=168`).catch(() => ({}));
