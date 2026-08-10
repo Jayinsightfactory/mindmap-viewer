@@ -174,7 +174,29 @@ function projectROI(events = [], sessions = [], months = 12, params = {}) {
 
 // ─── 라우터 팩토리 ────────────────────────────────────────────────────────────
 
-function createRoiRouter({ getAllEvents, getSessions, getEventsForUser, getSessionsForUser, resolveUserId, optionalAuth } = {}) {
+// [2026-08-10] 자동화 잠재 ROI — X-ray opportunities(estWeeklyMinSaved) 집계. calcROI(실현치)와 별개(잠재치).
+function calcAutomationPotential(opportunities = [], params = {}) {
+  const p = { ...DEFAULT_PARAMS, ...savedParams, ...params };
+  const rate = p.hourlyRateUsd;
+  const norm = (opportunities || []).filter(o => o && (o.estWeeklyMinSaved || 0) > 0);
+  const sum = arr => arr.reduce((s, o) => s + (o.estWeeklyMinSaved || 0), 0);
+  const allMin = sum(norm);
+  const readyMin = sum(norm.filter(o => o.reliability === '100%가능')); // 즉시 자동화 가능분
+  const wk = m => Math.round(m / 60 * rate * 100) / 100;
+  const mk = (min) => ({ weeklyMin: min, weeklyHours: Math.round(min / 60 * 10) / 10,
+    weeklyUsd: wk(min), monthlyUsd: wk(min * 4.33), yearlyUsd: wk(min * 52) });
+  return {
+    generatedAtIso: null, // 상위에서 stamp
+    hourlyRateUsd: rate, opportunityCount: norm.length,
+    total: mk(allMin), ready100: mk(readyMin),
+    byTool: Object.entries(norm.reduce((a, o) => { const k = o.tool || '기타'; a[k] = (a[k] || 0) + (o.estWeeklyMinSaved || 0); return a; }, {}))
+      .map(([tool, min]) => ({ tool, weeklyMin: min, weeklyUsd: wk(min) })).sort((a, b) => b.weeklyMin - a.weeklyMin),
+    top: [...norm].sort((a, b) => (b.estWeeklyMinSaved || 0) - (a.estWeeklyMinSaved || 0)).slice(0, 8)
+      .map(o => ({ task: o.task, tool: o.tool, reliability: o.reliability, weeklyMin: o.estWeeklyMinSaved, weeklyUsd: wk(o.estWeeklyMinSaved) })),
+  };
+}
+
+function createRoiRouter({ getAllEvents, getSessions, getEventsForUser, getSessionsForUser, resolveUserId, optionalAuth, getXrayOpportunities } = {}) {
   const router = express.Router();
   const noAuth = (req, res, next) => next();
   const auth   = optionalAuth || noAuth;
@@ -243,6 +265,19 @@ function createRoiRouter({ getAllEvents, getSessions, getEventsForUser, getSessi
     const events   = getEventsForUser ? await getEventsForUser(resolveUserId(req)) : (getAllEvents ? getAllEvents() : []);
     const sessions = getSessionsForUser ? await getSessionsForUser(resolveUserId(req)) : (getSessions ? getSessions() : []);
     res.json(projectROI(events, sessions, Math.min(parseInt(months) || 12, 36), params));
+  });
+
+  // ── 자동화 잠재 ROI (X-ray 기회 집계) ─────────────────────────────────
+  router.get('/roi/automation-potential', async (req, res) => {
+    try {
+      const opps = getXrayOpportunities ? await getXrayOpportunities() : [];
+      const params = {};
+      if (req.query.hourlyRateUsd) params.hourlyRateUsd = parseFloat(req.query.hourlyRateUsd);
+      const out = calcAutomationPotential(opps, params);
+      out.generatedAtIso = new Date().toISOString();
+      if (!opps.length) out.note = 'X-ray 리포트 없음 — bin/xray-worker.js 먼저 실행';
+      res.json(out);
+    } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
   // ── Before/After 비교 ─────────────────────────────────────────────────

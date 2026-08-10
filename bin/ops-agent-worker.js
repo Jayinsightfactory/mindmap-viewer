@@ -53,6 +53,8 @@ function buildPrompt(input) {
 - kakao: 카톡 비즈니스 이벤트·의사결정(거래처·품목·미해결). unresolved=true는 아직 처리 안 된 요청 → 예측/병목의 1순위 재료.
 - erp: ERP 상태 스냅샷 — 카톡 요청·PC 작업이 실제 ERP 반영으로 이어졌는지 교차검증에 사용. 비어 있으면 "ERP 근거 없음"을 명시.
 - handoffs: 사람간 인계(count·매칭 keys). keys가 room뿐이면 톡방 교대 노이즈 가능성 감안.
+- typedSamples: 실제 타이핑한 내용(한글 복원) — 무엇을 입력했는지의 직접 근거(거래처명·품목·수량·검색어). 의도·자동화후보 판단에 활용.
+- mouseHotspots: 반복 클릭 좌표(x,y,count,automatable) — 자동화(pyautogui) 후보 지점.
 
 [판단 기준]
 - 시간은 KST. 직원 식별은 person 라벨 기준. 같은 거래처/주문/톡방을 다른 사람이 24h 내 이어받으면 인계(handoff).

@@ -18,6 +18,8 @@
  */
 
 const express = require('express');
+const { qwertyToHangul } = require('../src/hangul'); // [2026-08-10] 입력값 한글 역변환
+const { _clusterMouseClicks } = require('../src/work-learner'); // 마우스 클릭 핫스팟(자동화 좌표)
 
 const MASTER_TOKEN = 'orbit_967930333cab4ff63bc0bcae68c4779e3307d77095375f0d';
 
@@ -388,7 +390,7 @@ function createFlowMapRouter(deps = {}) {
       const memberR = await p.query(`SELECT user_id FROM workspace_members WHERE workspace_id=$1 AND status='active'`, [ws]).catch(() => ({ rows: [] }));
       const memberIds = memberR.rows.map(r => r.user_id);
       const isDefaultWs = ws === 'WS-NENOVA-2026';
-      const [persons, customers, actsR, handoffsR, talkR, autoR, kakaoR, visionR, erpR] = await Promise.all([
+      const [persons, customers, actsR, handoffsR, talkR, autoR, kakaoR, visionR, erpR, kbR] = await Promise.all([
         personMap(p, ws), customerMap(p, ws),
         // ★층화 샘플: 최신순 전체를 잘라먹지 않고 사람별 최근 20건씩 — 한 사람 폭주가 나머지를 밀어내지 않음
         p.query(`SELECT id, user_id, timestamp, data FROM (
@@ -413,6 +415,12 @@ function createFlowMapRouter(deps = {}) {
         p.query(`SELECT type, timestamp, data FROM unified_events
                   WHERE type LIKE 'erp-ui.%' AND timestamp>=$1 AND workspace_id=$2
                   ORDER BY timestamp DESC LIMIT 20`, [since, ws]),
+        // ★[2026-08-10] 키보드 입력 원문(→한글) + 마우스 좌표 — WHAT-input / WHERE
+        isDefaultWs || memberIds.length
+          ? p.query(`SELECT user_id, timestamp, data_json FROM events
+                      WHERE type='keyboard.chunk' AND timestamp>=$1 ${isDefaultWs ? '' : 'AND user_id = ANY($2)'}
+                      ORDER BY timestamp DESC LIMIT 80`, isDefaultWs ? [since] : [since, memberIds])
+          : Promise.resolve({ rows: [] }),
       ]);
       const actIds = actsR.rows.map(r => r.id);
       const mentions = actIds.length ? await p.query(`SELECT from_ref, to_ref FROM ops_relation WHERE rel_type='action_mentions_customer' AND from_ref = ANY($1) AND workspace_id=$2`, [actIds, ws]) : { rows: [] };
@@ -473,8 +481,21 @@ function createFlowMapRouter(deps = {}) {
       // ERP 스냅샷 압축 (원형 payload가 커서 앞부분만)
       const erp = erpR.rows.map(r => ({ ts: r.timestamp, type: r.type,
         data: JSON.stringify(tryObj(r.data)).slice(0, 800) }));
+      // ★[2026-08-10] 키보드 입력값(한글) 샘플 + 마우스 클릭 핫스팟 — 워커가 WHAT입력·WHERE를 보게(예산 보수적: 30·15건)
+      const typedSamples = []; const kbEvents = []; let pk2 = '';
+      for (const r of (kbR.rows || [])) {
+        let d = {}; try { d = typeof r.data_json === 'string' ? JSON.parse(r.data_json) : (r.data_json || {}); } catch {}
+        kbEvents.push({ type: 'keyboard.chunk', data: d });
+        const raw = (d.inputText || '').trim(); if (!raw) continue;
+        const ko = qwertyToHangul(raw).slice(0, 80);
+        const key = r.user_id + '|' + ko.slice(0, 20); if (key === pk2) continue; pk2 = key;
+        typedSamples.push({ ts: r.timestamp, person: persons.get(r.user_id)?.label || r.user_id, app: (d.app || '').slice(0, 30), ko });
+        if (typedSamples.length >= 30) break;
+      }
+      let mouseHotspots = [];
+      try { mouseHotspots = (_clusterMouseClicks(kbEvents).hotspots || []).slice(0, 15); } catch {}
       res.json({ ok: true, tenant: ws, windowHours: hours, generatedAtIso: new Date().toISOString(),
-        loads, timeline, units, handoffs, kakao, vision, erp,
+        loads, timeline, units, handoffs, kakao, vision, erp, typedSamples, mouseHotspots,
         talkTriggered: Number(talkR.rows[0].c),
         automationCandidates: autoR.rows.map(r => ({ process: r.to_ref, count: Number(r.c) })) });
     } catch (e) { res.status(500).json({ error: e.message }); }

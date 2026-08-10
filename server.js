@@ -8085,7 +8085,17 @@ app.use('/api', createOntologyRouter({ getAllEvents, getFiles, optionalAuth, get
 app.use('/api', createLeaderboardRouter({ getAllEvents, getSessions, optionalAuth, getEventsForUser, getSessionsForUser, resolveUserId }));
 
 // ─── ROI Calculator ───────────────────────────────────────────────────────────
-app.use('/api', createRoiRouter({ getAllEvents, getSessions, optionalAuth, getEventsForUser, getSessionsForUser, resolveUserId }));
+app.use('/api', createRoiRouter({ getAllEvents, getSessions, optionalAuth, getEventsForUser, getSessionsForUser, resolveUserId,
+  // [2026-08-10] 자동화 잠재 ROI — 최신 X-ray 리포트의 opportunities(estWeeklyMinSaved) 주입
+  getXrayOpportunities: async () => {
+    try {
+      const db = dbModule.getDb(); if (!db?.query) return [];
+      const r = await db.query(`SELECT report FROM orbit_ops_report WHERE kind='xray' ORDER BY ts DESC LIMIT 1`);
+      if (!r.rows.length) return [];
+      const rep = typeof r.rows[0].report === 'object' ? r.rows[0].report : JSON.parse(r.rows[0].report);
+      return rep.opportunities || [];
+    } catch { return []; }
+  } }));
 
 // ─── Analytics (사용자 행동 분석) ────────────────────────────────────────────
 app.use('/api', createAnalyticsRouter({ getDb: dbModule.getDb }));
