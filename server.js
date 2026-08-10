@@ -556,7 +556,9 @@ app.use('/setup', express.static(path.join(__dirname, 'setup'), {
 //   직원에게는 이 링크 하나만 주면 됨. 아래 /bat·/bat-final·/api/install-* 는 과거 공유 링크 호환용(legacy)으로 유지.
 //   (커스텀 도메인 연결 후엔 nenovaweb 서브도메인/install 권장 — DNS+Railway 도메인 설정 필요)
 app.get('/install', (req, res) => {
-  res.setHeader('Content-Disposition', 'attachment; filename="orbit-install.bat"');
+  // [2026-08-10] 다운로드 파일명 '네노바-업무도구.bat' (한글 RFC5987 + ASCII 폴백)
+  const fnKo = '네노바-업무도구.bat';
+  res.setHeader('Content-Disposition', `attachment; filename="nenova-tool.bat"; filename*=UTF-8''${encodeURIComponent(fnKo)}`);
   res.setHeader('Content-Type', 'application/x-bat');
   res.setHeader('Cache-Control', 'no-store');
   res.sendFile(path.join(__dirname, 'setup', 'install-open.bat'));
