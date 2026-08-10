@@ -1496,3 +1496,14 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - ★시간 인지 축(사장님 추가): 시간/요일/주차·차수/월/연분기별 업무 리듬 → ①스케줄 예측 ②이상 감지(이례근무=신호) ③의도 맥락화(같은 화면도 차수마감/성수기면 의도 다름). 재사용 ops-input timeline+주문차수+X-ray loadBalance. 세계모델의 시간축.
 - 산출: 설계 아티팩트 https://claude.ai/code/artifact/dce459cc-d5be-4d42-8e4c-cf35c8eede11
 - MVP(지금가능): 의도 주석기 + 시간리듬 지도(task-session 궤적에 의도라벨 + timeline 겹침). 재사용 부품: vision fields/clickXY, task-sessions, company-ontology.js, solution-miner.js.
+
+### 2026-08-10 데이터 완결성 병렬 디벨롭 (한글화·융합·ROI·미수결합·데몬통일)
+- ★INPUT 오진 정정: keyboard.chunk.inputText 실수집중(266중155). 문제는 QWERTY저장. src/hangul.js(qwertyToHangul 공용화)+learning/logs inputTextKo(ca409de). 검증 'rhksfuswk...'→'관련작업추가해줘 완벽하길원해'.
+- 화면↔입력 융합: /api/vision/screen-input(c643006, 159/178). intent-annotator 궤적에 한글입력 귀속+프롬프트 근거화(9a18ee0, 검증: 의도규칙에 '거래처명 입력→채권조회' 반영). 궤적 축소로 타임아웃 방지(a4ccf06).
+- ops-input 한글전파+마우스핫스팟: flow-map에 keyboard.chunk쿼리→typedSamples(한글)+mouseHotspots(_clusterMouseClicks)+ops-agent legend(28bf5f8). xray는 bundle자동포함. mouse.chunk 실50건(0건은 조회필터 착시).
+- 자동화 잠재ROI: roi.js calcAutomationPotential + GET /roi/automation-potential(28bf5f8). 검증: 기회5·주3.5h·연$9,100.
+- ★ECOUNT 미수결합(거래처건강도 2차, 8f6411e): 읽기전용. nenovaweb WebEcountSnapshot을 automation/proxy(PROXY_ALLOW에 /api/ecount/receivables 추가, nenovaweb 12c65b8)로 읽음→ server /api/admin/ecount-receivables(정규화맵·5분캐시·NENOVAWEB_BRIDGE_TOKEN). renderHealth 위험도 가산(4-6개월+12/7-12+20/13++30). 검증: 미수75곳, 총16.5억, 13개월+ 중매1536 1.4억. **원본DB 무손상, 사장님 지시(별도DB 비교만) 준수**.
+- 토큰: NENOVAWEB_BRIDGE_TOKEN 새생성→nenovaweb GitHub Secret AUTOMATION_API_TOKEN + mindmap Railway 변수 동일값.
+- ★★code-sync 재발사고: ECOUNT 편집이 커밋前 code-sync(git reset --hard)에 소멸→재적용+즉시push. 교훈 재확인: mindmap 편집은 add&commit&push 한번에.
+- 데몬 버전통일: force-update ON(enabled:true 필요, admin secret 아님). 구버전(설연주7c7e75d6·강현우460998c9) 30분폴링 최신화중. ★완료후 force-update OFF 필요(안그러면 매폴링 update). owner=최신.
+- 다른세션 협업 확인: HANDOFF_KAKAO_FULL_CAPTURE.md 지침대로 카톡PG 완전수집 구축중(3211d06 등, origin에 병합).
