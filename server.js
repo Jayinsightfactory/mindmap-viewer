@@ -144,6 +144,7 @@ const { generateReport, countLines, measureCyclomaticComplexity, findLongFunctio
 const { scanForLeaks }            = require('./src/security-scanner');
 const { buildReportData, renderMarkdown, renderSlackBlocks } = require('./src/report-generator');
 const { extractContext, renderContextMd, renderContextPrompt, saveContextFile } = require('./src/context-bridge');
+const { qwertyToHangul } = require('./src/hangul'); // inputText QWERTY→한글 (조회·분석 가독)
 const { detectConflicts, checkNewEvent } = require('./src/conflict-detector');
 const { appendAuditLog, auditFromEvents, queryAuditLog, verifyIntegrity, renderAuditHtml } = require('./src/audit-log');
 const { detectShadowAI, checkEventForShadow, getApprovedSources, addApprovedSource, removeApprovedSource } = require('./src/shadow-ai-detector');
@@ -1892,6 +1893,8 @@ app.get('/api/learning/logs', async (req, res) => {
         summary: data.summary || '',
         // [2026-06-18] 옵션2: 키보드 원본 타이핑 내용 (데몬 inputText). 없으면 빈 문자열.
         inputText: data.inputText || '',
+        // [2026-08-10] 두벌식 QWERTY→한글 역변환본 (사람·분석 가독). 원본은 위 inputText 유지.
+        inputTextKo: data.inputText ? qwertyToHangul(data.inputText) : '',
         trigger: data.trigger || '',
         activityLevel: data.activityLevel || '',
         mouseClicks: data.mouseClicks || 0,
