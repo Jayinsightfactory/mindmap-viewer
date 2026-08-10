@@ -758,9 +758,12 @@
 
 <!-- ── 페이지 탭 바 ─────────────────────────────────────────────── -->
 <nav class="page-tab-bar">
-  <a href="/work-logs.html" target="_blank" class="page-tab" style="text-decoration:none;">
-    <span class="page-tab-icon">📋</span> 작업 로그 ↗
-  </a>
+  <button class="page-tab active" data-tab="home" onclick="switchPageTab('home')">
+    <span class="page-tab-icon">🧭</span> 브리핑
+  </button>
+  <button class="page-tab" data-tab="worklog2" onclick="switchPageTab('worklog2')">
+    <span class="page-tab-icon">📋</span> 작업 로그
+  </button>
   <button class="page-tab" data-tab="mindmap" onclick="switchPageTab('mindmap')">
     <span class="page-tab-icon">🗺️</span> 마인드맵
   </button>
@@ -782,11 +785,12 @@
   <a href="/team-command.html" target="_blank" class="page-tab" style="text-decoration:none;background:linear-gradient(135deg,#bc8cff22,#f778ba22);border-color:#bc8cff;">
     <span class="page-tab-icon">🎯</span> 팀 커맨드센터 ↗
   </a>
-  <!-- [2026-08-10] 워커 결과 페이지 진입 (운영 허브) -->
-  <a href="/kakao-intel.html" target="_blank" class="page-tab" style="text-decoration:none;"><span class="page-tab-icon">🚨</span> 거래처 조기경보 ↗</a>
-  <a href="/xray.html" target="_blank" class="page-tab" style="text-decoration:none;"><span class="page-tab-icon">🩻</span> 회사 X-ray ↗</a>
-  <a href="/auto-proposals.html" target="_blank" class="page-tab" style="text-decoration:none;"><span class="page-tab-icon">🤖</span> 자동화 제안 ↗</a>
-  <a href="/intent-map.html" target="_blank" class="page-tab" style="text-decoration:none;"><span class="page-tab-icon">🧠</span> 의도 지도 ↗</a>
+  <!-- [2026-08-10] 워커 결과 페이지 진입 — admin 안에서 인라인 표시 -->
+  <button class="page-tab" data-tab="kakaoIntel" onclick="switchPageTab('kakaoIntel')"><span class="page-tab-icon">🚨</span> 거래처 조기경보</button>
+  <button class="page-tab" data-tab="xray" onclick="switchPageTab('xray')"><span class="page-tab-icon">🩻</span> 회사 X-ray</button>
+  <button class="page-tab" data-tab="proposals" onclick="switchPageTab('proposals')"><span class="page-tab-icon">🤖</span> 자동화 제안</button>
+  <button class="page-tab" data-tab="intent" onclick="switchPageTab('intent')"><span class="page-tab-icon">🧠</span> 의도 지도</button>
+  <button class="page-tab" data-tab="graphflow" onclick="switchPageTab('graphflow')"><span class="page-tab-icon">🗺️</span> 업무 흐름</button>
 </nav>
 
 <!-- ══════ [2026-08-10] 운영 브리핑 (행동 지향 허브) ══════ -->
@@ -798,10 +802,10 @@
   </div>
   <!-- KPI 액션 타일 -->
   <div id="ob-tiles" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin:14px 0;">
-    <div class="ob-tile" data-k="risk"><div class="ob-n">…</div><div class="ob-l">위험 거래처</div><a class="ob-act" href="/kakao-intel.html" target="_blank">경보 보기 →</a></div>
-    <div class="ob-tile" data-k="issue"><div class="ob-n">…</div><div class="ob-l">미해결 이슈</div><a class="ob-act" href="/kakao-intel.html" target="_blank">이슈보드 →</a></div>
-    <div class="ob-tile" data-k="roi"><div class="ob-n">…</div><div class="ob-l">자동화 잠재(연)</div><a class="ob-act" href="/auto-proposals.html" target="_blank">제안 보기 →</a></div>
-    <div class="ob-tile" data-k="rate"><div class="ob-n">…</div><div class="ob-l">분석 현황(7일)</div><a class="ob-act" href="/work-logs.html" target="_blank">작업로그 →</a></div>
+    <div class="ob-tile" data-k="risk"><div class="ob-n">…</div><div class="ob-l">위험 거래처</div><a class="ob-act" href="javascript:void 0" onclick="switchPageTab('kakaoIntel')">경보 보기 →</a></div>
+    <div class="ob-tile" data-k="issue"><div class="ob-n">…</div><div class="ob-l">미해결 이슈</div><a class="ob-act" href="javascript:void 0" onclick="switchPageTab('kakaoIntel')">이슈보드 →</a></div>
+    <div class="ob-tile" data-k="roi"><div class="ob-n">…</div><div class="ob-l">자동화 잠재(연)</div><a class="ob-act" href="javascript:void 0" onclick="switchPageTab('proposals')">제안 보기 →</a></div>
+    <div class="ob-tile" data-k="rate"><div class="ob-n">…</div><div class="ob-l">분석 현황(7일)</div><a class="ob-act" href="javascript:void 0" onclick="switchPageTab('worklog2')">작업로그 →</a></div>
   </div>
   <!-- 위험 거래처 Top (액션) -->
   <div id="ob-risk-list" style="background:var(--surface,#161b22);border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:14px;">
@@ -810,12 +814,12 @@
   </div>
   <!-- 워커 결과 진입 카드 -->
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;">
-    <a class="ob-card" href="/kakao-intel.html" target="_blank"><b>🚨 거래처 조기경보</b><span>카톡 대응·이슈·미수 결합</span></a>
-    <a class="ob-card" href="/xray.html" target="_blank"><b>🩻 회사 X-ray</b><span>업무 구조·비효율·기회</span></a>
-    <a class="ob-card" href="/auto-proposals.html" target="_blank"><b>🤖 자동화 제안</b><span>반복 화면·워크플로우</span></a>
-    <a class="ob-card" href="/intent-map.html" target="_blank"><b>🧠 의도 지도</b><span>왜 그렇게 했나(의도)</span></a>
-    <a class="ob-card" href="/work-logs.html" target="_blank"><b>📋 작업 로그</b><span>화면·입력값(한글)</span></a>
-    <a class="ob-card" href="/graph.html" target="_blank"><b>🗺️ 업무 흐름</b><span>핸드오프·병목 청사진</span></a>
+    <a class="ob-card" href="javascript:void 0" onclick="switchPageTab('kakaoIntel')"><b>🚨 거래처 조기경보</b><span>카톡 대응·이슈·미수 결합</span></a>
+    <a class="ob-card" href="javascript:void 0" onclick="switchPageTab('xray')"><b>🩻 회사 X-ray</b><span>업무 구조·비효율·기회</span></a>
+    <a class="ob-card" href="javascript:void 0" onclick="switchPageTab('proposals')"><b>🤖 자동화 제안</b><span>반복 화면·워크플로우</span></a>
+    <a class="ob-card" href="javascript:void 0" onclick="switchPageTab('intent')"><b>🧠 의도 지도</b><span>왜 그렇게 했나(의도)</span></a>
+    <a class="ob-card" href="javascript:void 0" onclick="switchPageTab('worklog2')"><b>📋 작업 로그</b><span>화면·입력값(한글)</span></a>
+    <a class="ob-card" href="javascript:void 0" onclick="switchPageTab('graphflow')"><b>🗺️ 업무 흐름</b><span>핸드오프·병목 청사진</span></a>
   </div>
 </div>
 <style>
@@ -4904,13 +4908,28 @@ function _renderTotalAnalysis(d) {
   </main>
 </div>
 
+<!-- [2026-08-10] 워커 결과 페이지 인라인 패널 (새 탭 대신 admin 안에서 표시) -->
+<div id="panel-kakaoIntel" class="page-tab-panel"></div>
+<div id="panel-xray" class="page-tab-panel"></div>
+<div id="panel-proposals" class="page-tab-panel"></div>
+<div id="panel-intent" class="page-tab-panel"></div>
+<div id="panel-graphflow" class="page-tab-panel"></div>
+<div id="panel-worklog2" class="page-tab-panel"></div>
+
 <!-- ── 페이지 탭 전환 스크립트 ── -->
 <script>
 (function() {
   const iframeMap = {
     mindmap: '/mindmap.html',
     filemap: '/project-map.html',
-    automation: '/automation-flow.html'
+    automation: '/automation-flow.html',
+    // [2026-08-10] 워커 결과 페이지 — 새 탭 대신 admin 안에서 인라인(iframe) 표시
+    kakaoIntel: '/kakao-intel.html',
+    xray: '/xray.html',
+    proposals: '/auto-proposals.html',
+    intent: '/intent-map.html',
+    graphflow: '/graph.html',
+    worklog2: '/work-logs.html'
   };
   const loaded = {};
 
@@ -4919,6 +4938,9 @@ function _renderTotalAnalysis(d) {
     document.querySelectorAll('.page-tab').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.tab === tabId);
     });
+    // 운영 브리핑(홈)은 tabId='home'일 때만 표시, 그 외엔 숨기고 결과 패널로
+    var ob = document.getElementById('ops-briefing');
+    if (ob) ob.style.display = (tabId === 'home') ? '' : 'none';
     // 패널 전환
     document.querySelectorAll('.page-tab-panel').forEach(panel => {
       panel.classList.toggle('active', panel.id === 'panel-' + tabId);
