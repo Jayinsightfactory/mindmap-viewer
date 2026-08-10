@@ -1507,3 +1507,10 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - ★★code-sync 재발사고: ECOUNT 편집이 커밋前 code-sync(git reset --hard)에 소멸→재적용+즉시push. 교훈 재확인: mindmap 편집은 add&commit&push 한번에.
 - 데몬 버전통일: force-update ON(enabled:true 필요, admin secret 아님). 구버전(설연주7c7e75d6·강현우460998c9) 30분폴링 최신화중. ★완료후 force-update OFF 필요(안그러면 매폴링 update). owner=최신.
 - 다른세션 협업 확인: HANDOFF_KAKAO_FULL_CAPTURE.md 지침대로 카톡PG 완전수집 구축중(3211d06 등, origin에 병합).
+
+### 2026-08-10 자동 루프 등록 (의도모델·데이터분석 자동디벨롭)
+- 주기화 안 됐던 산출물 loop 적용: **OrbitIntentDaily**(매일06:20, intent-annotator→의도지도) + **OrbitSolutionDaily**(매일06:40, solution-miner→절차spec 자동생성+rootGap 자기진단).
+- 기존 주기: OrbitXrayWeekly(월09:17), Vision spool/local(18:00+상시), kakao-intel·ops-agent 상시. code-sync/watchdog30 Disabled.
+- solution-miner 실증: 세션28→spec신규1, rootGap="거래처키 2.5%→검증사슬0, 학습좌표0→실행불가"(→다음 개선 나침반). ops-report kind='solution-critic' 저장.
+- ★ecount-daemon 종료됨(세션 길어져 창닫힘). 미수는 마지막스냅샷(08-10 08:33)으로 동작 유지, 갱신엔 재시작+ECOUNT 재로그인 필요(창유지형이라 스케줄 loop 불가). 사용자: 의도모델만 우선, ecount 재시작 보류.
+- 런처: ~/.orbit/intent-daily.ps1, solution-daily.ps1 (xray-weekly.ps1 패턴, CLAUDE_CODE_OAUTH_TOKEN User env).
