@@ -60,6 +60,9 @@ function rank(customers, arMap) {
 
 function buildPrompt(constitution, data) {
   return `당신은 네노바 사장의 대리 에이전트다. 아래 [사장님 헌법]이 당신의 판단 기준이다 — 통계가 아니라 사장님의 관점으로 판단하라.
+[문체 규칙 — 모든 문장에 적용]
+${(global.__voice || '간결한 개조식, 결론 먼저, 구체 명사·숫자, 조사 정확, 추정은 추정으로, 행동으로 끝맺기. 번역투·AI 상투어·통계 나열 금지.').slice(0, 2500)}
+
 [사장님 헌법]
 ${constitution.slice(0, 6000)}
 
@@ -89,6 +92,8 @@ async function main() {
   try { const q = await require('../src/quota-guard').checkQuota(25); if (q.pause) { console.log('[owner][quota]', q.reason); process.exit(0); } } catch {}
 
   const constitution = fs.readFileSync(path.join(__dirname, '..', 'docs', 'OWNER_INSIGHT.md'), 'utf8');
+  let voice = ''; try { voice = fs.readFileSync(path.join(__dirname, '..', 'docs', 'MOYI_VOICE.md'), 'utf8'); } catch {}
+  global.__voice = voice;
   const [ki, ar, xr, roi] = await Promise.all([
     httpJson('GET', '/api/admin/kakao-intel?hours=720', null, 200000).catch(e => ({ _err: e.message })),
     httpJson('GET', '/api/admin/ecount-receivables').catch(() => ({ customers: {} })),
