@@ -4676,9 +4676,11 @@ app.get('/api/vision/screen-input', async (req, res) => {
     const winSec = Math.min(parseInt(req.query.windowSec) || 180, 900); // 화면 전후 몇 초의 입력을 그 화면에 귀속
     const since = new Date(Date.now() - hours * 3600 * 1000).toISOString();
     // 화면 + 키보드를 한 번에 시간순으로 가져와 메모리 융합
+    // [2026-08-11] id(썸네일 이미지용)·fields(셀좌표+값) 포함 — "어느 화면에서 무슨 텍스트를" 기능 구현 재료
     const q = await db.query(
-      `SELECT type, timestamp,
+      `SELECT id, type, timestamp,
               data_json->>'app' app, data_json->>'screen' screen, data_json->>'activity' activity,
+              CASE WHEN data_json->>'thumbnail' IS NOT NULL THEN 1 ELSE 0 END has_thumb,
               data_json->>'inputText' input, (data_json->'fields') fields
          FROM events
         WHERE user_id=$1 AND type IN ('screen.analyzed','keyboard.chunk') AND timestamp >= $2
@@ -4691,10 +4693,14 @@ app.get('/api/vision/screen-input', async (req, res) => {
       const near = kbs.filter(k => Math.abs(k.ms - s.ms) <= winSec * 1000)
         .map(k => ({ ts: k.timestamp, ko: qwertyToHangul(k.input).slice(0, 120), raw: k.input.slice(0, 120), gapSec: Math.round((k.ms - s.ms) / 1000) }))
         .sort((a, b) => Math.abs(a.gapSec) - Math.abs(b.gapSec)).slice(0, 4);
+      // 화면 속 필드(라벨·값·좌표) — vision이 추출했으면 "어느 칸에 무슨 값" 근거
+      const fields = Array.isArray(s.fields) ? s.fields.slice(0, 12).map(f => ({ label: f.label || f.name || '', value: f.value || '', clickXY: f.clickXY || null })) : [];
       return {
-        ts: s.timestamp, app: s.app || '', screen: s.screen || '', activity: s.activity || '',
-        clickCount: Array.isArray(s.fields) ? s.fields.filter(f => f && f.clickXY).length : 0,
-        inputs: near, // [{ko, raw, gapSec}]
+        id: s.id, ts: s.timestamp, app: s.app || '', screen: s.screen || '', activity: s.activity || '',
+        thumbnailUrl: s.has_thumb ? `/api/vision/thumbnail/${s.id}` : null, // 실제 화면 이미지
+        clickCount: fields.filter(f => f.clickXY).length,
+        fields, // [{label,value,clickXY}] — 화면 속 입력칸
+        inputs: near, // [{ko, raw, gapSec}] — 그 시각 타이핑 원문
       };
     }).filter(st => st.inputs.length); // 입력이 붙은 화면만(=실행 대본 후보)
     res.json({ ok: true, userId, hours, windowSec: winSec,
