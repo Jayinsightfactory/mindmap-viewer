@@ -792,6 +792,7 @@
   <button class="page-tab" data-tab="intent" onclick="switchPageTab('intent')"><span class="page-tab-icon">🧠</span> 의도 지도</button>
   <button class="page-tab" data-tab="graphflow" onclick="switchPageTab('graphflow')"><span class="page-tab-icon">🗺️</span> 업무 흐름</button>
   <button class="page-tab" data-tab="knowledge" onclick="switchPageTab('knowledge')"><span class="page-tab-icon">🕸️</span> 지식 그래프</button>
+  <button class="page-tab" data-tab="owner" onclick="switchPageTab('owner')"><span class="page-tab-icon">🧭</span> 사장님 브리핑</button>
 </nav>
 
 <!-- ══════ [2026-08-10] 운영 브리핑 (행동 지향 허브) ══════ -->
@@ -4918,6 +4919,7 @@ function _renderTotalAnalysis(d) {
 <div id="panel-graphflow" class="page-tab-panel"></div>
 <div id="panel-worklog2" class="page-tab-panel"></div>
 <div id="panel-knowledge" class="page-tab-panel"></div>
+<div id="panel-owner" class="page-tab-panel"></div>
 
 <!-- ── 페이지 탭 전환 스크립트 ── -->
 <script>
@@ -4933,7 +4935,8 @@ function _renderTotalAnalysis(d) {
     intent: '/intent-map.html',
     graphflow: '/graph.html',
     worklog2: '/work-logs.html',
-    knowledge: '/knowledge.html'
+    knowledge: '/knowledge.html',
+    owner: '/owner.html'
   };
   const loaded = {};
 
