@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>작업 상세 — 화면·입력 원본 · MOYI</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0d1117;--panel:#161b22;--line:#2a3240;--txt:#e6edf3;--muted:#8b949e;--acc:#58a6ff;--kakao:#f7c948;--excel:#3fb950;--erp:#a371f7}
+body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,'Malgun Gothic',sans-serif;font-size:13.5px;line-height:1.55}
+header{display:flex;align-items:center;gap:12px;padding:12px 18px;border-bottom:1px solid var(--line);flex-wrap:wrap;position:sticky;top:0;background:var(--bg);z-index:5}
+h1{font-size:16px}.sub{color:var(--muted);font-size:12px}
+select,button{background:var(--panel);border:1px solid var(--line);color:var(--txt);padding:6px 12px;border-radius:7px;cursor:pointer;font-size:12.5px}
+.wrap{max-width:1150px;margin:0 auto;padding:16px}
+.empty{color:var(--muted);text-align:center;padding:50px}
+.seq{display:flex;flex-direction:column;gap:0}
+.card{display:grid;grid-template-columns:280px 1fr;gap:16px;padding:16px 4px;border-top:1px solid var(--line)}
+.card:first-child{border-top:none}
+.imgbox{background:#000;border:1px solid var(--line);border-radius:10px;overflow:hidden;min-height:150px;display:flex;align-items:center;justify-content:center}
+.imgbox img{width:100%;cursor:zoom-in;display:block}
+.imgbox .noimg{color:#555;font-size:12px;padding:40px}
+.meta .app{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;margin-bottom:6px}
+.a-kakao{background:rgba(247,201,72,.15);color:var(--kakao)} .a-excel{background:rgba(63,185,80,.15);color:var(--excel)} .a-erp{background:rgba(163,113,247,.15);color:var(--erp)} .a-etc{background:#1f2937;color:var(--muted)}
+.meta .screen{font-size:14px;font-weight:650;margin-bottom:2px}
+.meta .ts{color:var(--muted);font-size:11.5px;margin-bottom:10px}
+.blk{margin-top:10px}
+.blk .h{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px}
+.inp{background:#0d1117;border-left:2px solid var(--acc);border-radius:4px;padding:6px 9px;font-size:12.5px;color:var(--txt);white-space:pre-wrap;margin-bottom:5px;font-family:ui-monospace,monospace}
+.fld{display:inline-block;background:#12332e33;border:1px solid var(--line);border-radius:6px;padding:2px 8px;font-size:11.5px;margin:2px 3px 0 0;color:var(--txt)}
+.fld b{color:var(--excel)}
+.lightbox{position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:50;display:none;align-items:center;justify-content:center;cursor:zoom-out;padding:20px}
+.lightbox img{max-width:96vw;max-height:94vh;border-radius:8px}
+.stat{color:var(--muted);font-size:12px;margin-bottom:8px}
+</style>
+</head>
+<body>
+<header>
+  <div><h1>🔬 작업 상세 — 화면·입력 원본</h1><div class="sub">어느 화면(이미지)에서 무슨 텍스트를 — 기능 설계용 원본</div></div>
+  <select id="user" onchange="load()"></select>
+  <select id="filter" onchange="render()"><option value="">전체 화면</option><option value="kakao">카톡만</option><option value="excel">엑셀만</option><option value="erp">ERP만</option></select>
+  <button onclick="load()">새로고침</button>
+</header>
+<div class="wrap"><div class="stat" id="stat"></div><div id="root"><div class="empty">직원을 선택하세요</div></div></div>
+<div class="lightbox" id="lb" onclick="this.style.display='none'"><img id="lbimg"></div>
+<script>
+const TK=localStorage.getItem('orbit_token')||new URLSearchParams(location.search).get('token')||'';
+const H=TK?{Authorization:'Bearer '+TK}:{};
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let STEPS=[];
+function appClass(a){a=(a||'').toLowerCase();return /카카오|kakao/.test(a)?'kakao':/excel|엑셀/.test(a)?'excel':/erp|nenova|ecount|이카운트/.test(a)?'erp':'etc';}
+async function loadUsers(){
+  const d=await fetch('/api/learning/capture-funnel?days=7',{headers:H}).then(r=>r.json()).catch(()=>({}));
+  const names=await fetch('/api/learning/logs?limit=2000',{headers:H}).then(r=>r.json()).then(d=>{const m={};(d.logs||[]).forEach(l=>{if(l.userId&&l.userName&&!m[l.userId])m[l.userId]=l.userName;});return m;}).catch(()=>({}));
+  const sel=document.getElementById('user');
+  (d.funnel||[]).filter(r=>r.analyzed>0).sort((a,b)=>b.analyzed-a.analyzed).forEach(r=>{
+    const nm=Object.entries(names).find(([k])=>k.startsWith(r.userId.slice(0,12)));
+    const o=document.createElement('option');o.value=r.userId;o.textContent=(nm?nm[1]:r.userId.slice(0,8))+' ('+r.analyzed+')';sel.appendChild(o);
+  });
+  if(sel.options.length) load();
+}
+async function load(){
+  const uid=document.getElementById('user').value; if(!uid)return;
+  document.getElementById('root').innerHTML='<div class="empty">불러오는 중…</div>';
+  const d=await fetch('/api/vision/screen-input?userId='+encodeURIComponent(uid)+'&hours=336&windowSec=180',{headers:H}).then(r=>r.json()).catch(()=>({}));
+  STEPS=(d.steps||[]).slice().reverse(); // 최신 먼저
+  render();
+}
+function render(){
+  const f=document.getElementById('filter').value;
+  let steps=STEPS; if(f) steps=STEPS.filter(s=>appClass(s.app)===f);
+  document.getElementById('stat').textContent=`화면 ${steps.length}개 · 이미지·입력 원본 (클릭하면 확대)`;
+  if(!steps.length){document.getElementById('root').innerHTML='<div class="empty">해당 화면 없음</div>';return;}
+  document.getElementById('root').innerHTML='<div class="seq">'+steps.slice(0,150).map(s=>{
+    const ac=appClass(s.app);
+    const img=s.thumbnailUrl?`<img loading="lazy" src="${s.thumbnailUrl}" onclick="zoom(this.src)" onerror="this.parentNode.innerHTML='<div class=noimg>이미지 없음</div>'">`:'<div class="noimg">이미지 없음</div>';
+    const inputs=(s.inputs||[]).map(x=>`<div class="inp">⌨️ ${esc(x.ko||x.raw||'')}</div>`).join('');
+    const flds=(s.fields||[]).filter(x=>x.label||x.value).map(x=>`<span class="fld">${esc(x.label||'')}${x.value?': <b>'+esc(x.value)+'</b>':''}</span>`).join('');
+    return `<div class="card">
+      <div class="imgbox">${img}</div>
+      <div class="meta">
+        <span class="app a-${ac}">${esc(s.app||'화면')}</span>
+        <div class="screen">${esc(s.screen||'')}</div>
+        <div class="ts">${esc(String(s.ts||'').slice(0,16).replace('T',' '))} ${s.clickCount?'· 클릭좌표 '+s.clickCount:''}</div>
+        ${inputs?`<div class="blk"><div class="h">이 화면에서 타이핑한 원문</div>${inputs}</div>`:''}
+        ${flds?`<div class="blk"><div class="h">화면 속 항목/값</div>${flds}</div>`:''}
+      </div></div>`;
+  }).join('')+'</div>';
+}
+function zoom(src){document.getElementById('lbimg').src=src;document.getElementById('lb').style.display='flex';}
+loadUsers();
+</script>
+</body>
+</html>
