@@ -45,7 +45,7 @@ function runClaude(prompt) {
     if (!CLAUDE_CLI) return reject(new Error('claude CLI 없음'));
     const child = spawn(CLAUDE_CLI, ['-p'], { windowsHide: true });
     let out = '', err = '';
-    const timer = setTimeout(() => { child.kill(); reject(new Error('claude timeout')); }, 300000);
+    const timer = setTimeout(() => { child.kill(); reject(new Error('claude timeout')); }, 480000);
     child.stdout.on('data', d => out += d);
     child.stderr.on('data', d => err += d);
     child.on('error', reject);
@@ -84,7 +84,7 @@ function buildPrompt(bundle) {
 - ★인코딩 깨진 값(U+FFFD·물음표)은 근거로 쓰지 말고 blindSpots에 "인코딩 손상"으로 남겨라.
 
 [관찰 데이터]
-${JSON.stringify(bundle).slice(0, 95000)}
+${JSON.stringify(bundle).slice(0, 75000)}
 
 [출력 — 오직 아래 JSON 하나만. 한국어 값. 코드블록·설명 금지. 데이터 없는 배열은 빈 배열.]
 {
