@@ -118,9 +118,22 @@ async function main() {
   // kakao-intel 롤업은 느림(콜드 100s+) — 넉넉한 타임아웃, 실패해도 진행
   const kakao = await httpJson('GET', '/api/admin/kakao-intel?hours=720', null, 200000).catch(e => ({ _err: e.message }));
 
+  // [2026-08-11 품질] ops-input이 110KB+라 95000 slice에 typedSamples(뒤쪽)가 잘림 → 핵심만 발췌해
+  // typedSamples/mouseHotspots/vision 전량 보장하고 units는 상위만(크기 축소). 잘림 없이 다 들어가게.
+  const opsSlim = opsInput && !opsInput._err ? {
+    typedSamples: opsInput.typedSamples || [],   // 실제 입력값(한글) — 최우선, 전량
+    mouseHotspots: opsInput.mouseHotspots || [], // 반복클릭 좌표 — 전량
+    vision: opsInput.vision || [],               // 화면해독 — 전량
+    timeline: opsInput.timeline || [],           // 시간대 리듬 — 전량
+    loads: opsInput.loads || [],
+    handoffs: opsInput.handoffs || [],
+    units: (opsInput.units || []).slice(0, 50),  // 샘플만
+    kakao: (opsInput.kakao || []).slice(0, 30),
+    erp: (opsInput.erp || []).slice(0, 8),
+  } : { unavailable: opsInput?._err };
   const bundle = {
     generatedAt: new Date().toISOString(), inputHours: INPUT_H,
-    ops: opsInput && !opsInput._err ? opsInput : { unavailable: opsInput?._err },
+    ops: opsSlim,
     coverage: funnel && !funnel._err ? funnel : { unavailable: funnel?._err },
     kakaoPlaybook: kakao && !kakao._err ? {
       // 요약만(프롬프트 예산): 플레이북·이슈요약·거래처/직원 상위
