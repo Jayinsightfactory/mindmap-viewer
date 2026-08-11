@@ -75,6 +75,14 @@ function buildPrompt(bundle) {
 - "검토1스텝": 매칭/해석 개입(거래처명 매칭·자유양식 파싱) → AI 처리 후 사람 확인 1회.
 - "부적합": 판단·협상·예외처리가 본질 → 사람 유지.
 
+[관찰 데이터 — 섹션 활용법 (반드시 전부 활용)]
+- ops.vision: 화면 해독 원문 — "무슨 화면에서 무슨 업무" 최우선 근거. 거래처/품목/문서명이 여기 있다.
+- ops.typedSamples: 실제 타이핑한 값(한글 복원) — **무엇을 입력했는지의 직접 근거**(거래처명·품목·수량·검색어). 이중입력·자동화후보·업무내용 판단에 결정적으로 써라.
+- ops.mouseHotspots: 반복 클릭 좌표{x,y,count,automatable} — automatable=true면 pyautogui 자동화 후보 지점. reliability='100%가능' 근거로 활용.
+- ops.units/timeline: 작업단위 샘플·사람×시간대 리듬(부하·피크·이례). ops.handoffs: 사람간 인계.
+- kakaoPlaybook: 카톡 자동화후보·판단규칙·미해결이슈·거래처 대응. coverage: 분석 커버리지(사각지대 근거).
+- ★인코딩 깨진 값(U+FFFD·물음표)은 근거로 쓰지 말고 blindSpots에 "인코딩 손상"으로 남겨라.
+
 [관찰 데이터]
 ${JSON.stringify(bundle).slice(0, 95000)}
 
