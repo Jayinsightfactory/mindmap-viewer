@@ -4611,6 +4611,25 @@ app.get('/api/vision/thumbnails', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// [2026-08-11] 관리자 표시명 변경 — 축약/영문 계정명(wbk 등)을 실명으로. orbit_auth_users(자체 PG)만 수정.
+// POST /api/admin/rename-user { userId, name }  → X-ray·지식그래프·로그 전 화면 표시명 반영.
+app.post('/api/admin/rename-user', express.json(), async (req, res) => {
+  try {
+    const token = (req.headers.authorization || '').replace('Bearer ', '').trim() || String(req.query.token || '');
+    if (!token.startsWith('orbit_')) return res.status(401).json({ error: 'orbit token required' });
+    const db = dbModule.getDb();
+    if (!db?.query) return res.status(503).json({ error: 'DB not available' });
+    const userId = String((req.body || {}).userId || '').trim();
+    const name = String((req.body || {}).name || '').trim().slice(0, 40);
+    if (!userId || !name) return res.status(400).json({ error: 'userId·name 필수' });
+    // 정확 id 또는 prefix 허용(앞 12자로 넘어오는 경우)
+    const r = await db.query(
+      `UPDATE orbit_auth_users SET name=$2 WHERE id=$1 OR id LIKE $3 RETURNING id, name`,
+      [userId, name, userId + '%']);
+    res.json({ ok: true, updated: r.rows.length, rows: r.rows });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // [2026-08-10] ECOUNT 거래처별 미수(aging) 프록시 — nenovaweb WebEcountSnapshot 스냅샷을 읽기전용 브리지로
 // 가져와 거래처명 정규화 맵 반환. 거래처 건강도(kakao-intel.html)가 위험도에 미수를 가산. 원본 DB 무관.
 function _normCust(s) { return String(s || '').replace(/㈜|주식회사|주\)/g, '').replace(/\(.*?\)/g, '').replace(/[\s·.\-]/g, '').trim(); }
