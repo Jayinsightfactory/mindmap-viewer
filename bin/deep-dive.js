@@ -56,20 +56,31 @@ ${voice.slice(0, 1500)}
 - 신뢰도: 100%가능(규칙완결) / 검토1스텝(매칭·해석 개입) / 부적합(판단·협상). 돈 만지는 실행은 조회까지만.
 - 근거 없는 단정 금지. 데이터에 있는 화면·입력값 그대로 인용.
 
+★이 분석의 핵심: 각 반복 작업마다 **업무의 사고 과정을 복원**하라 —
+  "어느 톡방/화면에서 → 무슨 첨부(이미지·파일·PDF)를 찾아 → 무슨 데이터를 뽑아 → 어디에 입력하고 → 어떤 기준으로 분류·구분했나".
+  특히 **분류 기준(암묵 규칙)** 을 추론하라. 예: "차수(32-1)별로 나눔", "거래처별 시트 분리", "출고일(8월6일/10일) 기준 구분", "품목 대체 규칙(연노랑 튤립 없으면 화이트)".
+  이 규칙을 알아야 자동화가 가능하다. data의 items(화면 속 항목·첨부)·inputs(타이핑값)·screen(화면명)에서 근거를 찾아 추론하되, 불확실하면 '추정:'으로 표기.
+
 [관찰 데이터]
-화면+입력값(최근): ${JSON.stringify(screens).slice(0, 40000)}
-반복 클릭좌표: ${JSON.stringify(hotspots).slice(0, 3000)}
-담당 이슈: ${JSON.stringify(issues).slice(0, 4000)}
+화면+입력값+항목(최근): ${JSON.stringify(screens).slice(0, 42000)}
+반복 클릭좌표: ${JSON.stringify(hotspots).slice(0, 2500)}
+담당 이슈: ${JSON.stringify(issues).slice(0, 3500)}
 
 [출력 — JSON 하나. 한국어. 코드블록 금지.]
 {
  "user":"${name}","summary":"이 사람의 업무를 3문장으로",
  "repetitiveTasks":[{
-   "task":"반복 작업명","screen":"주 화면/앱","inputPattern":"반복 입력·조작 패턴(실제 값 예시)","freq":"빈도 추정",
-   "autoMethod":"nenovaweb기능추가|PAD/pyautogui|Excel|OCR|SOP","how":"구체 자동화 방법",
-   "reliability":"100%가능|검토1스텝|부적합","estWeeklyMin":0,"difficulty":"하|중|상","evidence":"근거 화면/입력값"
+   "task":"반복 작업명",
+   "source":"어디서 시작 — 톡방/화면 + 찾은 첨부(이미지·파일·PDF 있으면 명시)",
+   "extract":"거기서 뽑는 데이터(품목·수량·단가·차수·출고일 등 실제 예시)",
+   "inputTo":"어디에 입력 — 화면/시트/칸",
+   "classifyBy":"어떤 기준으로 분류·구분",
+   "rule":"추론한 분류·판단 규칙(암묵 기준). 불확실하면 '추정:' 접두",
+   "autoMethod":"nenovaweb기능추가|PAD/pyautogui|Excel|OCR|SOP","how":"위 규칙을 어떻게 기능·코드로 구현",
+   "reliability":"100%가능|검토1스텝|부적합","estWeeklyMin":0,"difficulty":"하|중|상","evidence":"근거 화면/입력값/항목"
  }],
- "nenovawebFeatures":[{"feature":"네노바웹에 추가하면 좋을 기능","why":"","replaces":"어떤 수작업을 없애나"}],
+ "classificationRules":["이 사람이 업무에서 쓰는 분류·판단 규칙 모음 — 자동화 로직의 핵심"],
+ "nenovawebFeatures":[{"feature":"네노바웹에 추가할 기능","why":"","replaces":"없앨 수작업","rule":"이 기능이 구현할 분류/판단 규칙"}],
  "top3":[{"action":"먼저 착수할 3가지","expected":""}],
  "blindSpots":["관찰로 못 본 것"]
 }`;
@@ -94,7 +105,12 @@ async function main() {
   let name = user.slice(0, 10);
   try { const lg = await httpJson('GET', `/api/learning/logs?limit=2000`); const hit = (lg.logs || []).find(l => (l.userId || '').startsWith(user.slice(0, 12))); if (hit && hit.userName) name = hit.userName; } catch {}
 
-  const screens = (si.steps || []).map(s => ({ ts: String(s.ts).slice(5, 16), app: s.app, screen: s.screen, inputs: (s.inputs || []).map(x => x.ko).filter(Boolean).slice(0, 2) })).slice(-120);
+  // 화면마다: 앱·화면명·타이핑원문 + 화면 속 항목/첨부(이미지·파일·PDF 언급) → 분류 규칙 추론 재료
+  const screens = (si.steps || []).map(s => ({
+    ts: String(s.ts).slice(5, 16), app: s.app, screen: s.screen,
+    inputs: (s.inputs || []).map(x => x.ko).filter(Boolean).slice(0, 2),
+    items: (s.fields || []).map(f => (f.label || '') + (f.value ? ('=' + f.value) : '')).filter(Boolean).slice(0, 5),
+  })).slice(-120);
   const hotspots = (oi.mouseHotspots || []);
   const issues = (ki.issues || []).filter(i => (i.raisedBy || '') === name || (i.customers || []).length).slice(0, 15).map(i => ({ key: i.key, type: i.type, who: i.raisedBy }));
   console.log(`  대상: ${name} · 화면+입력 ${screens.length} · 핫스팟 ${hotspots.length} · 이슈 ${issues.length}`);
