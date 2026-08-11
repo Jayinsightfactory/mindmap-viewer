@@ -1514,3 +1514,12 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - solution-miner 실증: 세션28→spec신규1, rootGap="거래처키 2.5%→검증사슬0, 학습좌표0→실행불가"(→다음 개선 나침반). ops-report kind='solution-critic' 저장.
 - ★ecount-daemon 종료됨(세션 길어져 창닫힘). 미수는 마지막스냅샷(08-10 08:33)으로 동작 유지, 갱신엔 재시작+ECOUNT 재로그인 필요(창유지형이라 스케줄 loop 불가). 사용자: 의도모델만 우선, ecount 재시작 보류.
 - 런처: ~/.orbit/intent-daily.ps1, solution-daily.ps1 (xray-weekly.ps1 패턴, CLAUDE_CODE_OAUTH_TOKEN User env).
+
+### 2026-08-11 직원 업무시간 타임테이블 (시간/일/주/월)
+- 요청: "직원의 시간별 일별 주별 월별 하루 업무 시간 타임테이블 데이터도 볼 수 있는 페이지". 검색어: 타임테이블/업무시간/workday — 기존 UI 없음 확인(/api/os/workday는 미사용 API였음).
+- 신규: routes/work-timetable.js + public/work-timetable.html + admin-analysis '업무시간' 탭(iframeMap timetable).
+- API: GET /api/timetable/day?date= (events 5분슬롯 근사, 직원×0~23시 활동분+키보드/캡처+첫/마지막활동+상위앱3) / GET /api/timetable/range?view=day|week|month&anchor= (unified_events work.action durationSec 합산 — events 30일 삭제 후에도 남는 유일한 장기소스라 주/월은 이것만 가능).
+- 인증: isAdminReqAsync (PG claim-token 폴백 포함 — resolveAdmin만 쓰면 403 나는 갭 회피). 캐시 45s(flow-map 패턴). 제외계정 local/system/MMOLABXL2066516519.
+- 주의사항 반영: events.timestamp TEXT→::timestamptz 캐스팅, KST=AT TIME ZONE 'Asia/Seoul', 빈칸≠논것(미관측 안내문), 최신 30분은 work.action 융합 전.
+- 검증: node --check 통과. 배포 후 /work-timetable.html 200 + 무토큰 API 403 확인할 것.
+- 다시 보면: routes/work-timetable.js 헤더 주석 + 이 항목.

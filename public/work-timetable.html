@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>업무시간 타임테이블</title>
+<style>
+:root{--bg:#0d1117;--panel:#161b22;--line:#2a3240;--txt:#e6edf3;--muted:#8b949e;--acc:#58a6ff;--heat:88,166,255}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,'Malgun Gothic',sans-serif;font-size:13px}
+header{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+h1{font-size:15px;margin:0 12px 0 0}
+.tabs{display:flex;gap:4px}
+.tabs button{background:var(--panel);color:var(--muted);border:1px solid var(--line);border-radius:6px;padding:5px 12px;cursor:pointer;font-size:12px}
+.tabs button.on{color:var(--txt);border-color:var(--acc);background:#1c2633}
+.nav{display:flex;align-items:center;gap:6px;margin-left:auto}
+.nav button{background:var(--panel);color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:4px 10px;cursor:pointer}
+.nav input{background:var(--panel);color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:4px 6px;color-scheme:dark}
+#note{padding:6px 14px;color:var(--muted);font-size:11px}
+#wrap{padding:0 14px 20px;overflow-x:auto}
+table{border-collapse:collapse;white-space:nowrap}
+th,td{border:1px solid var(--line);padding:4px 6px;text-align:center;font-size:11.5px}
+th{background:var(--panel);color:var(--muted);font-weight:600;position:sticky;top:0}
+td.name{background:var(--panel);color:var(--txt);text-align:left;font-weight:600;position:sticky;left:0;max-width:120px;overflow:hidden;text-overflow:ellipsis}
+td.total{font-weight:700;color:var(--acc)}
+td.meta{color:var(--muted)}
+td.cell{min-width:30px;cursor:default}
+#status{padding:30px;text-align:center;color:var(--muted)}
+.apps{color:var(--muted);font-weight:400;font-size:10.5px;display:block}
+</style>
+</head>
+<body>
+<header>
+  <h1>업무시간 타임테이블</h1>
+  <div class="tabs" id="tabs">
+    <button data-v="hour" class="on">시간별</button>
+    <button data-v="day">일별</button>
+    <button data-v="week">주별</button>
+    <button data-v="month">월별</button>
+  </div>
+  <div class="nav">
+    <button id="prev">◀</button>
+    <input type="date" id="anchor">
+    <button id="next">▶</button>
+    <button id="today">오늘</button>
+  </div>
+</header>
+<div id="note"></div>
+<div id="wrap"><div id="status">불러오는 중…</div></div>
+<script>
+const TK = localStorage.getItem('orbit_token') || new URLSearchParams(location.search).get('token') || '';
+const AUTH = { headers: { Authorization: 'Bearer ' + TK } };
+let view = 'hour';
+const $ = (s) => document.querySelector(s);
+const anchorEl = $('#anchor');
+anchorEl.value = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10); // KST 오늘
+
+function fmtH(sec) { const h = sec / 3600; return h >= 0.05 ? (h >= 10 ? h.toFixed(0) : h.toFixed(1)) : ''; }
+function fmtMin(m) { return m ? (m >= 60 ? Math.round(m / 6) / 10 + 'h' : m + 'm') : ''; }
+function heat(v, max) { const a = Math.min(1, v / max); return a ? `background:rgba(var(--heat),${(0.12 + a * 0.55).toFixed(2)})` : ''; }
+function kstHM(iso) { return iso ? new Date(iso).toLocaleTimeString('ko-KR', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hour12: false }) : '-'; }
+function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+async function load() {
+  $('#wrap').innerHTML = '<div id="status">불러오는 중…</div>';
+  try {
+    const url = view === 'hour'
+      ? `/api/timetable/day?date=${anchorEl.value}`
+      : `/api/timetable/range?view=${view}&anchor=${anchorEl.value}`;
+    const r = await fetch(url, AUTH);
+    if (r.status === 403) { $('#wrap').innerHTML = '<div id="status">관리자 토큰이 필요합니다 (localStorage orbit_token 또는 ?token=)</div>'; return; }
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || r.status);
+    $('#note').textContent = d.note || '';
+    view === 'hour' ? renderDay(d) : renderRange(d);
+  } catch (e) {
+    $('#wrap').innerHTML = `<div id="status">불러오기 실패: ${esc(e.message || e)}</div>`;
+  }
+}
+
+function renderDay(d) {
+  if (!d.rows.length) { $('#wrap').innerHTML = `<div id="status">${d.date} 관측된 활동이 없습니다</div>`; return; }
+  let h = '<table><tr><th style="left:0;position:sticky">직원</th>';
+  for (let i = 0; i < 24; i++) h += `<th>${i}</th>`;
+  h += '<th>합계</th><th>첫활동</th><th>마지막</th></tr>';
+  for (const u of d.rows) {
+    const apps = u.topApps.map((a) => esc(a.app)).join(' · ');
+    h += `<tr><td class="name">${esc(u.name)}${apps ? `<span class="apps">${apps}</span>` : ''}</td>`;
+    for (let i = 0; i < 24; i++) {
+      const c = u.hours[i];
+      h += c
+        ? `<td class="cell" style="${heat(c.min, 60)}" title="${i}시 · 활동 ${c.min}분 · 키보드 ${c.kbd} · 캡처 ${c.scr}">${fmtMin(c.min)}</td>`
+        : '<td class="cell"></td>';
+    }
+    h += `<td class="total">${fmtMin(u.totalMin)}</td><td class="meta">${kstHM(u.first)}</td><td class="meta">${kstHM(u.last)}</td></tr>`;
+  }
+  $('#wrap').innerHTML = h + '</table>';
+}
+
+function renderRange(d) {
+  if (!d.rows.length) { $('#wrap').innerHTML = '<div id="status">해당 기간 융합 데이터(work.action)가 없습니다</div>'; return; }
+  const label = (b) => view === 'month' ? b.slice(0, 7) : view === 'week' ? b.slice(5) + '주' : b.slice(5);
+  const maxSec = Math.max(...d.rows.flatMap((u) => d.buckets.map((b) => u.byBucket[b]?.sec || 0)), 1);
+  let h = '<table><tr><th style="left:0;position:sticky">직원</th>';
+  for (const b of d.buckets) h += `<th>${label(b)}</th>`;
+  h += '<th>합계</th></tr>';
+  for (const u of d.rows) {
+    h += `<tr><td class="name">${esc(u.name)}</td>`;
+    for (const b of d.buckets) {
+      const c = u.byBucket[b];
+      h += c
+        ? `<td class="cell" style="${heat(c.sec, maxSec)}" title="${b} · ${(c.sec / 3600).toFixed(1)}시간 · 액션 ${c.actions} · 타이핑 ${c.typed}자 · 클릭 ${c.clicks}">${fmtH(c.sec)}</td>`
+        : '<td class="cell"></td>';
+    }
+    h += `<td class="total">${(u.totalSec / 3600).toFixed(1)}h</td></tr>`;
+  }
+  $('#wrap').innerHTML = h + '</table>';
+}
+
+function shift(dir) {
+  const d = new Date(anchorEl.value + 'T00:00:00Z');
+  const stepDays = view === 'hour' ? 1 : view === 'day' ? 31 : view === 'week' ? 7 * 12 : 366;
+  d.setUTCDate(d.getUTCDate() + dir * stepDays);
+  anchorEl.value = d.toISOString().slice(0, 10);
+  load();
+}
+
+$('#tabs').addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  view = b.dataset.v;
+  document.querySelectorAll('#tabs button').forEach((x) => x.classList.toggle('on', x === b));
+  load();
+});
+$('#prev').onclick = () => shift(-1);
+$('#next').onclick = () => shift(1);
+$('#today').onclick = () => { anchorEl.value = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10); load(); };
+anchorEl.onchange = load;
+load();
+</script>
+</body>
+</html>

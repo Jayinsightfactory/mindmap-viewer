@@ -773,6 +773,9 @@
   <button class="page-tab" data-tab="worklogs" onclick="switchPageTab('worklogs')">
     <span class="page-tab-icon">📝</span> 작업 내역
   </button>
+  <button class="page-tab" data-tab="timetable" onclick="switchPageTab('timetable')">
+    <span class="page-tab-icon">⏰</span> 업무시간
+  </button>
   <button class="page-tab" data-tab="automation" onclick="switchPageTab('automation');window._initAuto&&window._initAuto()">
     <span class="page-tab-icon">⚡</span> 자동화 플로우
   </button>
@@ -4920,6 +4923,7 @@ function _renderTotalAnalysis(d) {
 <div id="panel-worklog2" class="page-tab-panel"></div>
 <div id="panel-knowledge" class="page-tab-panel"></div>
 <div id="panel-owner" class="page-tab-panel"></div>
+<div id="panel-timetable" class="page-tab-panel"></div>
 
 <!-- ── 페이지 탭 전환 스크립트 ── -->
 <script>
@@ -4936,7 +4940,8 @@ function _renderTotalAnalysis(d) {
     graphflow: '/graph.html',
     worklog2: '/work-logs.html',
     knowledge: '/knowledge.html',
-    owner: '/owner.html'
+    owner: '/owner.html',
+    timetable: '/work-timetable.html' // [2026-08-11] 직원 업무시간 타임테이블 (시간/일/주/월)
   };
   const loaded = {};
 

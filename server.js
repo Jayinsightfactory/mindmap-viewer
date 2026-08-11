@@ -8246,6 +8246,7 @@ app.use('/api', createLearningRouter({ verifyToken, getEventsForUser, resolveUse
 app.use('/api', createEventBusRouter({ eventBus, verifyToken, broadcastAll }));
 app.use('/api/ops-ontology', createOpsOntologyRouter({ getPool: dbModule.getDb, resolveAdmin, isAdminReq: isAdminReqAsync }));
 app.use('/api/flow', require('./routes/flow-map')({ getPool: dbModule.getDb, isAdminToken: env.isAdminToken })); // 업무 흐름 청사진 API
+app.use('/api/timetable', require('./routes/work-timetable')({ getPool: dbModule.getDb, isAdminReq: isAdminReqAsync })); // 직원 업무시간 타임테이블 (시간/일/주/월)
 
 // ─── 데이터 관리 (Export / Delete / Summary) ─────────────────��───────────────
 const createDataManagementRouter = require('./routes/data-management');
