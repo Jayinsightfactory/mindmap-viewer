@@ -53,6 +53,29 @@
   .chain dd{margin:0;padding:3px 0}
   .chain dd.rule{color:#ffd9a3;background:rgba(240,136,62,.08);border-radius:5px;padding:5px 8px}
   .chain .arrow{grid-column:1/3;color:var(--border);text-align:center;font-size:10px;line-height:.6}
+  /* 워크플로우 트레이스 = 앱→앱 순차 흐름 */
+  .cat-head{font-size:12px;font-weight:700;color:var(--teal);margin:20px 0 8px;text-transform:uppercase;letter-spacing:.4px}
+  .wf{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:12px}
+  .wf-top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:4px}
+  .wf-name{font-weight:700;font-size:14.5px}
+  .wf-trigger{color:var(--muted);font-size:11.5px;margin-bottom:12px}
+  .wf-trigger b{color:var(--text);font-weight:600}
+  .flow{display:flex;flex-direction:column;gap:0;margin:8px 0 12px}
+  .step{display:grid;grid-template-columns:20px auto 1fr;gap:0 10px;align-items:start}
+  .step .rail{display:flex;flex-direction:column;align-items:center}
+  .step .dot{width:10px;height:10px;border-radius:50%;background:var(--accent);margin-top:4px;flex:0 0 auto}
+  .step .line{width:2px;flex:1;background:var(--border);min-height:14px}
+  .step:last-child .line{display:none}
+  .step .appbox{display:inline-block;font-size:11px;font-weight:600;background:var(--panel2);border:1px solid var(--border);border-radius:6px;padding:2px 8px;white-space:nowrap;margin-bottom:8px}
+  .step .body{padding-bottom:8px}
+  .step .act{font-size:13px}
+  .step .data{color:var(--teal);font-size:12px;margin-top:2px}
+  .step .ev{color:var(--muted);font-size:10.5px;margin-top:1px}
+  .wf-io{display:flex;gap:8px;flex-wrap:wrap;font-size:11.5px;margin-top:4px}
+  .wf-io .io{background:var(--panel2);border-radius:6px;padding:4px 9px}
+  .wf-io .io b{color:var(--muted);font-weight:600;margin-right:4px}
+  .wf-rule{color:#ffd9a3;background:rgba(240,136,62,.08);border-radius:6px;padding:6px 9px;font-size:12px;margin-top:8px}
+  .wf-blind{color:var(--warn);font-size:11.5px;margin-top:6px}
   /* 리스트 섹션 */
   ul.plain{margin:0;padding:0;list-style:none}
   ul.plain li{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:9px 12px;margin-bottom:7px}
@@ -127,13 +150,60 @@ function taskCard(t){
     <dl class="chain">${rows.join('<div class="arrow">▾</div>')}</dl></div>`;
 }
 
+function stepRow(s){
+  return `<div class="step">
+    <div class="rail"><div class="dot"></div><div class="line"></div></div>
+    <div class="appbox">${esc(s.app||'')}</div>
+    <div class="body">
+      <div class="act">${esc(s.action||'')}</div>
+      ${s.data?`<div class="data">▸ ${esc(s.data)}</div>`:''}
+      ${s.evidence?`<div class="ev">${esc(s.evidence)}</div>`:''}
+    </div>
+  </div>`;
+}
+function wfCard(w){
+  const badges=[];
+  if(w.autoMethod) badges.push(`<span class="tag auto">${esc(w.autoMethod)}</span>`);
+  if(w.reliability) badges.push(`<span class="tag ${relClass(w.reliability)}">${esc(w.reliability)}</span>`);
+  if(w.difficulty) badges.push(`<span class="tag diff">난이도 ${esc(w.difficulty)}</span>`);
+  if(w.estWeeklyMin) badges.push(`<span class="tag min">주 ${esc(w.estWeeklyMin)}분</span>`);
+  const steps=(w.steps||[]).slice().sort((a,b)=>(+a.seq||0)-(+b.seq||0));
+  const inputs=(w.inputs||[]).map(esc).join(', ');
+  const blind=(w.blindSpots||[]);
+  return `<div class="wf">
+    <div class="wf-top"><div class="wf-name">${esc(w.name||'업무')}</div><div class="t-badges">${badges.join('')}</div></div>
+    ${w.trigger?`<div class="wf-trigger">시작 신호: <b>${esc(w.trigger)}</b>${w.frequency?` · ${esc(w.frequency)}`:''}</div>`:''}
+    <div class="flow">${steps.map(stepRow).join('') || '<div class="ev" style="padding-left:30px">단계 미복원</div>'}</div>
+    <div class="wf-io">
+      ${inputs?`<div class="io"><b>입력</b>${inputs}</div>`:''}
+      ${w.output?`<div class="io"><b>산출물</b>${esc(w.output)}</div>`:''}
+    </div>
+    ${w.rule?`<div class="wf-rule">★규칙: ${esc(w.rule)}</div>`:''}
+    ${blind.length?`<div class="wf-blind">⚠ 미확인: ${blind.map(esc).join(' · ')}</div>`:''}
+  </div>`;
+}
 function render(r){
   const rep=r.rep;
-  const tasks=(rep.repetitiveTasks||[]);
+  const wfs=(rep.workflows||[]);
+  const oldTasks=(rep.repetitiveTasks||[]);
   const rules=(rep.classificationRules||[]);
   const feats=(rep.nenovawebFeatures||[]);
   const blind=(rep.blindSpots||[]);
   const tsStr = r.ts ? new Date(r.ts).toLocaleString('ko-KR') : '';
+  const totalSteps = wfs.reduce((a,w)=>a+(w.steps||[]).length,0);
+  // 업무분류(category)별 그룹핑
+  let flowHtml='';
+  if(wfs.length){
+    const byCat={}; wfs.forEach(w=>{ const c=w.category||'기타'; (byCat[c]=byCat[c]||[]).push(w); });
+    flowHtml = Object.keys(byCat).map(c=>
+      `<div class="cat-head">▸ ${esc(c)} <span style="color:var(--muted);font-weight:400">${byCat[c].length}</span></div>`+
+      byCat[c].map(wfCard).join('')
+    ).join('');
+  } else {
+    flowHtml = oldTasks.map(taskCard).join('') || '<div class="empty" style="text-align:left">업무 흐름 없음 — 재분석 필요</div>';
+  }
+  const headCnt = wfs.length || oldTasks.length;
+  const headLbl = wfs.length ? '업무 흐름' : '반복 작업';
   document.getElementById('main').innerHTML = `
     <div class="head">
       <h1>${esc(r.name)}</h1>
@@ -141,15 +211,16 @@ function render(r){
       <span class="meta">갱신 ${esc(tsStr)}</span>
     </div>
     <div class="kpis">
-      <div class="kpi"><div class="n">${tasks.length}</div><div class="l">반복 작업</div></div>
+      <div class="kpi"><div class="n">${headCnt}</div><div class="l">${headLbl}</div></div>
+      ${wfs.length?`<div class="kpi"><div class="n">${totalSteps}</div><div class="l">복원 단계</div></div>`:''}
       <div class="kpi"><div class="n">${rules.length}</div><div class="l">분류 규칙</div></div>
       <div class="kpi"><div class="n">${feats.length}</div><div class="l">웹기능 후보</div></div>
       <div class="kpi"><div class="n">${Math.round(r.saveMin/60*10)/10}h</div><div class="l">주간 절감추정</div></div>
       <div class="kpi"><div class="n" style="color:var(--warn)">${blind.length}</div><div class="l">미확인·추정</div></div>
     </div>
     ${rep.summary?`<div class="summary">${esc(rep.summary)}</div>`:''}
-    <div class="sec-title">🔁 반복 작업 — 추론체인 <span class="cnt">${tasks.length}건 (소스→추출→입력→분류→규칙)</span></div>
-    ${tasks.map(taskCard).join('') || '<div class="empty" style="text-align:left">없음</div>'}
+    <div class="sec-title">🔀 업무 흐름 — 앱→앱 순차 복원 <span class="cnt">${wfs.length?`${wfs.length}개 흐름 · ${totalSteps}단계`:'구(舊)형식 — 재분석 시 흐름으로 전환'}</span></div>
+    ${flowHtml}
     ${rules.length?`<div class="sec-title">📐 분류·판단 규칙 <span class="cnt">${rules.length}건</span></div>
       <ul class="plain">${rules.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:''}
     ${feats.length?`<div class="sec-title">🛠️ 네노바웹 기능 후보 <span class="cnt">${feats.length}건</span></div>

@@ -48,50 +48,60 @@ function buildPrompt(name, voice, screens, hotspots, issues, prev) {
   const prevBlock = prev ? `
 [지난 분석 — 이번에 확인·보강하라 (자기개선 루프)]
 지난번 요약: ${(prev.summary || '').slice(0, 300)}
-지난번 '추정'으로 남긴 규칙(이번에 데이터로 확인하거나 확신도 조정): ${JSON.stringify((prev.repetitiveTasks || []).map(t => t.rule).filter(r => /추정/.test(r || ''))).slice(0, 800)}
-지난번 사각지대(이번에 새 데이터로 메울 수 있으면 메워라): ${JSON.stringify(prev.blindSpots || []).slice(0, 600)}
-→ 위를 우선 파고들어 이번 리포트를 더 정밀하게. 새로 관측된 작업도 추가.
+지난번 '추정'으로 남긴 규칙/사각지대(이번에 데이터로 확인하거나 메워라): ${JSON.stringify([...((prev.workflows || prev.repetitiveTasks || []).map(t => t.rule).filter(r => /추정/.test(r || ''))), ...(prev.blindSpots || [])]).slice(0, 1000)}
+→ 위를 우선 파고들어 이번 리포트를 더 정밀하게. 새로 관측된 흐름도 추가.
 ` : '';
-  return `당신은 업무 자동화 컨설턴트다. 아래는 직원 "${name}"의 실제 관찰 데이터(화면+타이핑 입력값+반복 클릭좌표+담당 이슈)다.
-이 사람의 **반복 작업을 세밀히 분석**해, 각각을 어떻게 자동화할지 판정하라. 골모드 기준: "AI가 이 일을 직접 할 수 있나 / 네노바웹에 기능을 붙일까".
+  return `당신은 업무 프로세스 분석가다. 아래는 직원 "${name}"의 **시간순** 실제 관찰 데이터(화면 전환+타이핑 입력값+반복 클릭좌표)다.
+핵심 임무: 흩어진 화면들을 **하나의 업무 흐름(워크플로우)으로 이어붙여** 복원하라. 골모드 기준: "AI가 이 흐름을 그대로 대신 수행할 수 있나".
 ${prevBlock}
 
 [문체]
-${voice.slice(0, 1500)}
+${voice.slice(0, 1200)}
 
-[판정 원칙]
-- 반복 작업 단위로 묶어라(같은 화면·같은 입력 패턴). 통계("N회") 금지 — "무슨 화면에서 무슨 값을 어떻게".
-- 각 작업의 자동화 방법을 구체적으로: nenovaweb기능추가(웹에 버튼/화면 신설) / PAD·pyautogui(데스크톱 반복클릭) / Excel함수·매크로 / OCR / SOP(사람 교육). 좌표(mouseHotspots.automatable)·정형입력이면 자동화 신뢰도↑.
-- 신뢰도: 100%가능(규칙완결) / 검토1스텝(매칭·해석 개입) / 부적합(판단·협상). 돈 만지는 실행은 조회까지만.
-- 근거 없는 단정 금지. 데이터에 있는 화면·입력값 그대로 인용.
+★★ 가장 중요 — 업무를 "낱개 작업"이 아니라 "앱→앱 순차 흐름"으로 복원하라 ★★
+관찰 데이터는 시간순이다. 연속된 화면들을 읽어 **하나의 산출물을 만들기까지의 실제 단계 순서**를 이어붙여라.
+예시(반드시 이 형태로):
+  업무 "에콰도르 장미 34차 발주 처리" (분류: 발주처리)
+   1. [카카오톡] 수입방에서 '출고 수량표 사진' 확인 → 품목·수량 파악
+   2. [nenova ERP] 주문등록 화면에서 해당 거래처 품목 조회
+   3. [Excel] '주광 발주' 시트에 품목·단수·출고일 입력
+   4. [카카오톡] 수입방+주광담당방 대조로 발주내역 확인
+   5. [이카운트] 판매전표로 전산 등록(전송)
+   → 산출물: 라움 34차 발주서 → 이카운트 전표
+낱개 카드로 쪼개지 말 것. "카톡 확인 → 엑셀 입력 → 전산입력 → 분산작업"처럼 도구를 넘나드는 실제 순서를 반드시 살려라.
 
-★이 분석의 핵심: 각 반복 작업마다 **업무의 사고 과정을 복원**하라 —
-  "어느 톡방/화면에서 → 무슨 첨부(이미지·파일·PDF)를 찾아 → 무슨 데이터를 뽑아 → 어디에 입력하고 → 어떤 기준으로 분류·구분했나".
-  특히 **분류 기준(암묵 규칙)** 을 추론하라. 예: "차수(32-1)별로 나눔", "거래처별 시트 분리", "출고일(8월6일/10일) 기준 구분", "품목 대체 규칙(연노랑 튤립 없으면 화이트)".
-  이 규칙을 알아야 자동화가 가능하다. data의 items(화면 속 항목·첨부)·inputs(타이핑값)·screen(화면명)에서 근거를 찾아 추론하되, 불확실하면 '추정:'으로 표기.
+[복원·판정 원칙]
+- 각 단계 = {앱, 무슨 행동, 다룬 데이터(품목·수량·차수·출고일 등 실제 예시), 근거(시각·화면명)}. 통계("N회") 금지.
+- 업무마다 **분류(category)** 를 붙여라: 발주처리 / 재고응대 / 수입카탈로그조회 / 변경사항반영 / 전산등록 / 기타. 같은 분류끼리 묶인다.
+- 업무마다 **암묵 규칙(rule)** 추론: "거래처별 시트 분리", "차수_출고일(34차_0825) 시트", "정정은 32-1/32-2 분기", "품목 대체(연노랑 없으면 화이트)". 불확실하면 '추정:' 접두.
+- 자동화 방법: nenovaweb기능추가 / PAD·pyautogui / Excel / OCR / SOP. 신뢰도: 100%가능 / 검토1스텝 / 부적합. 돈 만지는 실행은 조회까지만.
+- 데이터에 있는 화면·입력값·항목 그대로 인용. 근거 없는 단계 지어내지 말 것.
 
-[관찰 데이터]
-화면+입력값+항목(최근): ${JSON.stringify(screens).slice(0, 42000)}
-반복 클릭좌표: ${JSON.stringify(hotspots).slice(0, 2500)}
-담당 이슈: ${JSON.stringify(issues).slice(0, 3500)}
+[관찰 데이터 — 시간순]
+화면 흐름(ts 오름차순): ${JSON.stringify(screens).slice(0, 44000)}
+반복 클릭좌표: ${JSON.stringify(hotspots).slice(0, 2000)}
+담당 이슈: ${JSON.stringify(issues).slice(0, 2500)}
 
 [출력 — JSON 하나. 한국어. 코드블록 금지.]
 {
  "user":"${name}","summary":"이 사람의 업무를 3문장으로",
- "repetitiveTasks":[{
-   "task":"반복 작업명",
-   "source":"어디서 시작 — 톡방/화면 + 찾은 첨부(이미지·파일·PDF 있으면 명시)",
-   "extract":"거기서 뽑는 데이터(품목·수량·단가·차수·출고일 등 실제 예시)",
-   "inputTo":"어디에 입력 — 화면/시트/칸",
-   "classifyBy":"어떤 기준으로 분류·구분",
-   "rule":"추론한 분류·판단 규칙(암묵 기준). 불확실하면 '추정:' 접두",
-   "autoMethod":"nenovaweb기능추가|PAD/pyautogui|Excel|OCR|SOP","how":"위 규칙을 어떻게 기능·코드로 구현",
-   "reliability":"100%가능|검토1스텝|부적합","estWeeklyMin":0,"difficulty":"하|중|상","evidence":"근거 화면/입력값/항목"
+ "workflows":[{
+   "name":"업무 흐름명(예: 에콰도르 장미 34차 발주 처리)",
+   "category":"발주처리|재고응대|수입카탈로그조회|변경사항반영|전산등록|기타",
+   "frequency":"반복 주기(예: 출고주기마다·매일)","trigger":"이 흐름을 시작시키는 신호(예: 카톡 수입방에 출고 수량표 사진 도착)",
+   "steps":[{"seq":1,"app":"카카오톡","action":"무슨 행동","data":"다룬 데이터 실제 예시","evidence":"근거 시각/화면명"}],
+   "inputs":["이 흐름에 들어온 원천 데이터(톡방·첨부·시트)"],
+   "output":"최종 산출물(어느 시트/전표/파일) + 다음 단계로의 핸드오프",
+   "rule":"이 흐름의 분류·판단 암묵 규칙. 불확실하면 '추정:' 접두",
+   "autoMethod":"nenovaweb기능추가|PAD/pyautogui|Excel|OCR|SOP","how":"이 흐름을 어떻게 자동화",
+   "reliability":"100%가능|검토1스텝|부적합","estWeeklyMin":0,"difficulty":"하|중|상",
+   "blindSpots":["이 흐름에서 관찰로 못 본·추정한 부분"]
  }],
+ "categories":[{"name":"업무분류명","workflowNames":["그 분류에 속한 업무명들"]}],
  "classificationRules":["이 사람이 업무에서 쓰는 분류·판단 규칙 모음 — 자동화 로직의 핵심"],
- "nenovawebFeatures":[{"feature":"네노바웹에 추가할 기능","why":"","replaces":"없앨 수작업","rule":"이 기능이 구현할 분류/판단 규칙"}],
+ "nenovawebFeatures":[{"feature":"네노바웹에 추가할 기능","replaces":"없앨 수작업","rule":"이 기능이 구현할 분류/판단 규칙"}],
  "top3":[{"action":"먼저 착수할 3가지","expected":""}],
- "blindSpots":["관찰로 못 본 것"]
+ "blindSpots":["전체 관찰로 못 본 것"]
 }`;
 }
 
@@ -103,11 +113,13 @@ async function runOne(user, ctx) {
     httpJson('GET', `/api/vision/screen-input?userId=${encodeURIComponent(user)}&hours=${HOURS}`).catch(() => ({})),
     httpJson('GET', `/api/flow/ops-report?kind=deepdive:${user}`).catch(() => null), // 이전 리포트(자기개선)
   ]);
-  const screens = (si.steps || []).map(s => ({
-    ts: String(s.ts).slice(5, 16), app: s.app, screen: s.screen,
-    inputs: (s.inputs || []).map(x => x.ko).filter(Boolean).slice(0, 2),
-    items: (s.fields || []).map(f => (f.label || '') + (f.value ? ('=' + f.value) : '')).filter(Boolean).slice(0, 5),
-  })).slice(-120);
+  const screens = (si.steps || [])
+    .slice().sort((a, b) => String(a.ts).localeCompare(String(b.ts))) // 시간순 정렬(앱→앱 흐름 복원용)
+    .map(s => ({
+      ts: String(s.ts).slice(5, 19), app: s.app, screen: s.screen,
+      inputs: (s.inputs || []).map(x => x.ko).filter(Boolean).slice(0, 2),
+      items: (s.fields || []).map(f => (f.label || '') + (f.value ? ('=' + f.value) : '')).filter(Boolean).slice(0, 5),
+    })).slice(-120);
   if (screens.length < 3) { console.log(`  [${name}] 데이터 부족(${screens.length}) — 스킵`); return; }
   const hotspots = (oi.mouseHotspots || []).filter(h => true);
   const issues = (ki.issues || []).filter(i => (i.raisedBy || '') === name).slice(0, 12).map(i => ({ key: i.key, type: i.type, who: i.raisedBy }));
@@ -118,7 +130,9 @@ async function runOne(user, ctx) {
   report.generatedAtIso = new Date().toISOString(); report.userId = user; report.userName = name; report.refinedFromPrev = !!prevReport;
   await httpJson('POST', '/api/flow/ops-report', { kind: 'deepdive:' + user, source: 'deep-dive', report });
   await httpJson('POST', '/api/flow/ops-report', { kind: 'deepdive', source: 'deep-dive', report });
-  console.log(`  [${name}] 완료 ${Math.round((Date.now() - t0) / 1000)}s · 반복작업 ${(report.repetitiveTasks || []).length} · 규칙 ${(report.classificationRules || []).length}${prevReport ? ' · 자기개선✓' : ''}`);
+  const wfN = (report.workflows || report.repetitiveTasks || []).length;
+  const stepN = (report.workflows || []).reduce((a, w) => a + (w.steps || []).length, 0);
+  console.log(`  [${name}] 완료 ${Math.round((Date.now() - t0) / 1000)}s · 업무흐름 ${wfN} · 단계 ${stepN} · 규칙 ${(report.classificationRules || []).length}${prevReport ? ' · 자기개선✓' : ''}`);
 }
 
 async function main() {
