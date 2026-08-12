@@ -126,13 +126,17 @@ async function main() {
   if (!CLAUDE_CLI) { console.error('claude CLI 없음'); process.exit(1); }
   try { const q = await require('../src/quota-guard').checkQuota(25); if (q.pause) { console.log('[deepdive][quota]', q.reason); process.exit(0); } } catch {}
 
-  // 공통 컨텍스트(한 번만 로드): ops-input·kakao·이름맵·문체
-  const [oi, ki, lg] = await Promise.all([
+  // 공통 컨텍스트(한 번만 로드): ops-input·kakao·이름원장·문체
+  const [oi, ki, lg, au] = await Promise.all([
     httpJson('GET', `/api/flow/ops-input?hours=168`).catch(() => ({})),
     httpJson('GET', '/api/admin/kakao-intel?hours=720', null, 200000).catch(() => ({})),
     httpJson('GET', '/api/learning/logs?limit=2000').catch(() => ({})),
+    httpJson('GET', '/api/admin/all-users').catch(() => ({})), // 설치 때 입력한 이름 원장(권위 소스)
   ]);
-  const nameMap = {}; (lg.logs || []).forEach(l => { if (l.userId && l.userName && !nameMap[l.userId]) nameMap[l.userId] = l.userName; });
+  // 이름맵: 설치 원장(orbit_auth_users) 우선 — 깨진(�)·빈 이름은 제외, 부족분만 이벤트 로그로 보강
+  const nameMap = {}; const valid = n => n && !/�/.test(n) && n.trim();
+  (au.users || []).forEach(u => { if (u.id && valid(u.name)) nameMap[u.id] = u.name.trim(); });
+  (lg.logs || []).forEach(l => { if (l.userId && valid(l.userName) && !nameMap[l.userId]) nameMap[l.userId] = l.userName; });
   const ctx = { oi, ki, nameMap, voice: readMd('MOYI_VOICE.md') };
 
   // 대상: --all이면 활동 직원 전부(새 사용자 자동 포함), 아니면 지정/최다
