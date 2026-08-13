@@ -980,6 +980,14 @@ async function main() {
 
   // ②-g 파일 변경 감시
   let fileChangeWatcher = null;
+  // ②-g' 발주서 xlsx 셀값 수집기 (원본 파일 → 서버 파싱). 발주서만 선별 업로드.
+  let excelCollector = null;
+  try {
+    excelCollector = require(path.join(ROOT, 'src/excel-collector'));
+    excelCollector.init({ serverUrl: REMOTE_URL, token: REMOTE_TOKEN });
+  } catch (err) {
+    console.warn('[personal-agent] 발주서 수집기 시작 실패:', err.message);
+  }
   try {
     fileChangeWatcher = require(path.join(ROOT, 'src/file-change-watcher'));
     fileChangeWatcher.start((evt) => {
@@ -992,6 +1000,8 @@ async function main() {
         });
         console.log(`[order-detect] 발주서 감지: ${evt.filename}`);
       }
+      // 발주서 원본 파일 자체를 서버로 올려 셀값 구조화(발주검증 에이전트 소비용)
+      try { excelCollector?.onFileChange(evt); } catch {}
     });
   } catch (err) {
     console.error('[personal-agent] 파일 변경 감시 시작 실패:', err.message);

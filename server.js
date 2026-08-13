@@ -2391,6 +2391,100 @@ app.post('/api/daemon/analysis-result', async (req, res) => {
   }
 });
 
+// POST /api/daemon/excel-ingest — 발주서 xlsx 원본 수신 → 셀값 구조화 저장
+// 데몬(src/excel-collector.js)이 발주서만 선별해 base64로 올린다. 서버가 파싱해
+// excel.sheet 이벤트로 저장 → 발주검증 에이전트가 톡방값↔시트값 셀단위 대조에 사용.
+// body 한도: 전역 express.json 2mb (데몬이 1.2MB 이상 원본은 스킵하므로 base64도 한도 내).
+app.post('/api/daemon/excel-ingest', async (req, res) => {
+  try {
+    const { filename, fileBase64, hostname, mtime, sizeBytes } = req.body || {};
+    if (!filename || !fileBase64) {
+      return res.status(400).json({ error: 'filename, fileBase64 필수' });
+    }
+
+    // ── 사용자 귀속 (hook 패턴 축약: token → pc_HOSTNAME → pc_links override) ──
+    const token = (req.headers.authorization || '').replace('Bearer ', '').trim()
+                || req.headers['x-api-token'] || '';
+    const deviceId = decodeURIComponent(req.headers['x-device-id'] || '') || hostname || '';
+    let ingUser = null;
+    try { ingUser = token ? await require('./src/auth').verifyTokenAsync(token) : null; } catch {}
+    let userId = ingUser ? ingUser.id : (deviceId ? `pc_${deviceId}` : 'local');
+    try {
+      const _pool = dbModule.getDb ? dbModule.getDb() : null;
+      if (_pool && process.env.DATABASE_URL && deviceId) {
+        const { rows } = await _pool.query(`SELECT user_id FROM orbit_pc_links WHERE hostname = $1 LIMIT 1`, [deviceId]);
+        if (rows[0] && rows[0].user_id) userId = rows[0].user_id;
+      }
+    } catch {}
+
+    // ── 파싱 (xlsx: 기존 의존성) ─────────────────────────────────────────────
+    const buf = Buffer.from(fileBase64, 'base64');
+    if (buf.length > 3 * 1024 * 1024) {
+      return res.status(413).json({ error: '파일이 너무 큽니다' });
+    }
+    const XLSX = require('xlsx');
+    const MAX_SHEETS = 20, MAX_CELLS = 3000, MAX_ROWS = 200;
+    let wb;
+    try { wb = XLSX.read(buf, { type: 'buffer', cellDates: true, sheetRows: MAX_ROWS + 1 }); }
+    catch (pe) { return res.status(422).json({ error: 'xlsx 파싱 실패: ' + pe.message }); }
+
+    const ts = new Date().toISOString();
+    const sheetNames = (wb.SheetNames || []).slice(0, MAX_SHEETS);
+    let totalCells = 0;
+
+    for (let si = 0; si < sheetNames.length; si++) {
+      const sheet = sheetNames[si];
+      const ws = wb.Sheets[sheet];
+      if (!ws || !ws['!ref']) continue;
+
+      // 셀 단위 {addr, value} (비어있지 않은 셀만, 상한 컷)
+      const cells = [];
+      const range = XLSX.utils.decode_range(ws['!ref']);
+      let truncated = false;
+      for (let r = range.s.r; r <= range.e.r && !truncated; r++) {
+        for (let c = range.s.c; c <= range.e.c; c++) {
+          const addr = XLSX.utils.encode_cell({ r, c });
+          const cell = ws[addr];
+          if (!cell || cell.v === undefined || cell.v === null || cell.v === '') continue;
+          cells.push({ addr, value: cell.w != null ? cell.w : cell.v });
+          if (cells.length >= MAX_CELLS) { truncated = true; break; }
+        }
+      }
+      // 행 프리뷰 (사람/에이전트 가독용, 상한 컷)
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', blankrows: false }).slice(0, MAX_ROWS);
+      totalCells += cells.length;
+
+      await Promise.resolve(insertEvent({
+        id: `excel-sheet-${Date.now()}-${si}-${Math.random().toString(36).slice(2, 8)}`,
+        type: 'excel.sheet',
+        source: 'excel-collector',
+        sessionId: `excel-${deviceId || 'unknown'}`,
+        userId,
+        timestamp: ts,
+        data: {
+          file: filename,
+          sheet,
+          sheetIndex: si,
+          cells,
+          rows,
+          rowCount: rows.length,
+          cellCount: cells.length,
+          truncated,
+          hostname: deviceId,
+          fileMtime: mtime || null,
+          fileSizeBytes: sizeBytes || buf.length,
+        },
+      }));
+    }
+
+    console.log(`[excel-ingest] ${filename} → ${sheetNames.length}시트/${totalCells}셀 저장 (user=${userId})`);
+    res.json({ ok: true, sheets: sheetNames.length, cells: totalCells });
+  } catch (e) {
+    console.error('[excel-ingest] error:', e.message);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // GET /api/daemon/version — 데몬이 폴링하여 업데이트 필요 여부 확인
 app.get('/api/daemon/version', (req, res) => {
   res.json({
