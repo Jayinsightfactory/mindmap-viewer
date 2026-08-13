@@ -55,6 +55,31 @@ function readAbbrevBlock() {
   } catch { return ''; }
 }
 
+// [골:좌표↔라벨] clickXY 파싱 — 배열 [x,y] / 문자열 "x,y" 둘 다 수용, 숫자 2개 못뽑으면 무효.
+function _ddParseXY(v) {
+  if (Array.isArray(v)) { const x = +v[0], y = +v[1]; return (Number.isFinite(x) && Number.isFinite(y)) ? [x, y] : null; }
+  if (typeof v === 'string') { const m = v.match(/-?\d+(?:\.\d+)?/g); if (m && m.length >= 2 && Number.isFinite(+m[0]) && Number.isFinite(+m[1])) return [+m[0], +m[1]]; }
+  return null;
+}
+// 사용자별 screen-input의 fields[].clickXY에서 직접 반복 클릭 핫스팟을 뽑는다(라벨 포함).
+// 워크스페이스 공용 mouseHotspots(오귀속·데이터공백 취약) 대신 이걸 쓴다. 50px 격자 집계 → 상위 12.
+function hotspotsFromScreenInput(steps) {
+  const grid = new Map();
+  for (const s of (steps || [])) {
+    for (const f of (s.fields || [])) {
+      const xy = _ddParseXY(f && f.clickXY); if (!xy) continue;
+      const gx = Math.round(xy[0] / 50) * 50, gy = Math.round(xy[1] / 50) * 50, k = gx + ',' + gy;
+      let e = grid.get(k); if (!e) { e = { x: gx, y: gy, count: 0, labels: {}, screens: {} }; grid.set(k, e); }
+      e.count++;
+      const lb = (f.label || '').trim().slice(0, 60); if (lb) e.labels[lb] = (e.labels[lb] || 0) + 1;
+      const sc = (s.screen || '').trim().slice(0, 40); if (sc) e.screens[sc] = (e.screens[sc] || 0) + 1;
+    }
+  }
+  const top = o => (Object.entries(o).sort((a, b) => b[1] - a[1])[0] || [null])[0];
+  return [...grid.values()].sort((a, b) => b.count - a.count).slice(0, 12)
+    .map(e => ({ x: e.x, y: e.y, count: e.count, label: top(e.labels), screen: top(e.screens) || '', automatable: e.count >= 3 }));
+}
+
 function buildPrompt(name, voice, screens, hotspots, issues, prev) {
   const prevBlock = prev ? `
 [지난 분석 — 이번에 확인·보강하라 (자기개선 루프)]
@@ -133,7 +158,9 @@ async function runOne(user, ctx) {
       items: (s.fields || []).map(f => (f.label || '') + (f.value ? ('=' + f.value) : '')).filter(Boolean).slice(0, 5),
     })).slice(-120);
   if (screens.length < 3) { console.log(`  [${name}] 데이터 부족(${screens.length}) — 스킵`); return; }
-  const hotspots = (oi.mouseHotspots || []).filter(h => true);
+  // 사용자별 라벨 핫스팟(screen-input clickXY 클러스터). 없으면 워크스페이스 공용으로 폴백.
+  let hotspots = hotspotsFromScreenInput(si.steps);
+  if (!hotspots.length) hotspots = (oi.mouseHotspots || []);
   const issues = (ki.issues || []).filter(i => (i.raisedBy || '') === name).slice(0, 12).map(i => ({ key: i.key, type: i.type, who: i.raisedBy }));
   const prevReport = (prev && prev.latest && prev.latest.report) || null;
 
