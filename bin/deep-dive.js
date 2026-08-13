@@ -43,6 +43,17 @@ function runClaude(prompt) {
 }
 function parseJson(t) { const s = t.indexOf('{'), e = t.lastIndexOf('}'); if (s < 0 || e < 0) throw new Error('JSON 없음: ' + t.slice(0, 150)); return JSON.parse(t.slice(s, e + 1)); }
 const readMd = f => { try { return fs.readFileSync(path.join(__dirname, '..', 'docs', f), 'utf8'); } catch { return ''; } };
+// 색상/품목 약어 사전(입력값 정규화용). 파일 없어도 안전(빈 문자열).
+function readAbbrevBlock() {
+  try {
+    const dict = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'data', 'abbreviations.json'), 'utf8'));
+    const meta = dict._meta || {};
+    const pairs = Object.entries(dict).filter(([k]) => k !== '_meta');
+    if (!pairs.length) return '';
+    const lines = pairs.map(([k, v]) => `  ${k} → ${v}`).join('\n');
+    return `\n[색상/품목 약어 사전 — 입력값 정규화용]\n이 회사(화훼 절화 수입) 직원들이 실제로 쓰는 색상·품목·거래처 약어와 오타 표기다. 관찰 데이터의 입력값을 **먼저 이 사전으로 정규화한 뒤** 품목·수량·색상을 복원하고, 그 정규화된 값 위에서 category와 rule을 확정하라. '추정'/'미확정' 표기 항목은 확정 규칙으로 쓰지 말고 blindSpots에 남겨 사장님 확인 대상으로 표시하라.\n한/영 전환 규칙: ${meta.imeTypoRule || ''}\n${lines}\n`;
+  } catch { return ''; }
+}
 
 function buildPrompt(name, voice, screens, hotspots, issues, prev) {
   const prevBlock = prev ? `
@@ -57,7 +68,7 @@ ${prevBlock}
 
 [문체]
 ${voice.slice(0, 1200)}
-
+${readAbbrevBlock()}
 ★★ 가장 중요 — 업무를 "낱개 작업"이 아니라 "앱→앱 순차 흐름"으로 복원하라 ★★
 관찰 데이터는 시간순이다. 연속된 화면들을 읽어 **하나의 산출물을 만들기까지의 실제 단계 순서**를 이어붙여라.
 예시(반드시 이 형태로):
@@ -74,6 +85,7 @@ ${voice.slice(0, 1200)}
 - 각 단계 = {앱, 무슨 행동, 다룬 데이터(품목·수량·차수·출고일 등 실제 예시), 근거(시각·화면명)}. 통계("N회") 금지.
 - 업무마다 **분류(category)** 를 붙여라: 발주처리 / 재고응대 / 수입카탈로그조회 / 변경사항반영 / 전산등록 / 기타. 같은 분류끼리 묶인다.
 - 업무마다 **암묵 규칙(rule)** 추론: "거래처별 시트 분리", "차수_출고일(34차_0825) 시트", "정정은 32-1/32-2 분기", "품목 대체(연노랑 없으면 화이트)". 불확실하면 '추정:' 접두.
+  · 위 [약어 사전]으로 입력값의 색상/품목/거래처 약어를 정규화한 뒤 rule을 확정하라(예: '진그'→진그린, '콜카장'→콜롬비아 카네이션). 사전에 없거나 '미확정'인 약어는 지어내지 말고 blindSpots에 "약어 미확정: <표기>"로 남겨라.
 - 자동화 방법: nenovaweb기능추가 / PAD·pyautogui / Excel / OCR / SOP. 신뢰도: 100%가능 / 검토1스텝 / 부적합. 돈 만지는 실행은 조회까지만.
 - 데이터에 있는 화면·입력값·항목 그대로 인용. 근거 없는 단계 지어내지 말 것.
 
