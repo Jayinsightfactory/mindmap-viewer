@@ -2357,10 +2357,11 @@ function createProcessMining({ getDb, reportSheet }) {
         });
       } catch(e) { console.warn('[total-analysis] 토큰 실패:', e.message); }
 
-      // ── 2. 카톡 시트 7개 탭 전체 읽기 ──────────────────────────────────
-      let tabs = {};
+      // ── 2. 카톡 시트 7개 탭 전체 읽기 (+ LIMIT 절단 여부) ───────────────
+      let tabs = {}, truncation = {};
       if (token) {
-        try { tabs = await _fetchFullKakaoTabs(token); } catch(e) { console.warn('[total-analysis] 시트 오류:', e.message); }
+        try { const t = await _fetchFullKakaoTabs(token); tabs = t.tabs; truncation = t.truncation; }
+        catch(e) { console.warn('[total-analysis] 시트 오류:', e.message); }
       }
 
       // ── 3. Nenova + Vision 데이터 병렬 조회 ─────────────────────────────
@@ -2536,6 +2537,78 @@ function createProcessMining({ getDb, reportSheet }) {
         detail:`카톡 상위 거래처 ${customerRisk.length}개 중 ${kakaoToNenova.length}개 전산 연결.`,
         action:matchRate<70?'미연결 거래처 수동 매핑으로 데이터 완결성 향상':'연결율 양호 — 교차분석 신뢰도 높음' });
 
+      // ── 13. 엔티티 드릴다운 (①③ — 집계 숫자 아래에 구체 행) ─────────────
+      // 컬럼명이 탭마다 다를 수 있어 후보 키에서 첫 유효값을 고른다(스키마 방어적).
+      const snip = (s,n=40)=>String(s||'').replace(/\s+/g,' ').trim().slice(0,n);
+      const pick = (o,keys)=>{ for(const k of keys){ const v=o&&o[k]; if(v!=null && String(v).trim()!=='') return String(v).trim(); } return ''; };
+      const byTsDesc = k => (a,b)=>String(b[k]||'').localeCompare(String(a[k]||''));
+
+      // decisions 199 → 미해결/최근 의사결정 case (key=품목+차수, raisedBy, ts, 원문)
+      const unresolvedDecisionCases = unresolvedDec.map(d=>{
+        const prod = pick(d,['품목','상품','품목명']);
+        const week = pick(d,['차수','주차','week']);
+        const room = pick(d,['발생방','방이름','방','room']);
+        const key  = [prod,week].filter(Boolean).join(' ') || room || '(미상)';
+        return {
+          key, room,
+          raisedBy: pick(d,['제기자','발생자','발신자','담당자','요청자','raisedBy']),
+          ts: pick(d,['시각','일시','날짜','시간','발생시각','발생일시']),
+          result: pick(d,['결과','상태']) || '미해결',
+          text: snip(pick(d,['내용','원문','상황','의사결정','안건','메시지','질문']), 40),
+        };
+      }).sort(byTsDesc('ts')).slice(0,15);
+
+      // productMatches → 실제 매칭 샘플(미매칭 먼저 = 조치대상)
+      const productMatchSamples = products.map(p=>({
+        kakao: pick(p,['카톡품명','카톡품목','품목','품명']),
+        db: pick(p,['DB ProdName','DB 품목명','전산품명','ProdName']),
+        prodKey: pick(p,['DB ProdKey','ProdKey']),
+        flower: pick(p,['꽃종류']), country: pick(p,['국가']),
+        matched: !!pick(p,['DB ProdKey','ProdKey']),
+      })).filter(p=>p.kakao).sort((a,b)=>Number(a.matched)-Number(b.matched)).slice(0,15);
+
+      // customerMatches → 미매칭 거래처(조치대상) 샘플
+      const customerMatchSamples = customers.map(c=>({
+        kakao: pick(c,['카톡거래처명','거래처','카톡거래처','거래처명']),
+        custKey: pick(c,['DB CustKey','CustKey']), group: pick(c,['그룹']),
+        matched: !!pick(c,['DB CustKey','CustKey']),
+      })).filter(c=>c.kakao).sort((a,b)=>Number(a.matched)-Number(b.matched)).slice(0,15);
+
+      // defects → 최근 불량/클레임 실제 건(근거)
+      const recentDefects = defectList.map(d=>({
+        product: pick(d,['품목','상품','품목명']),
+        customer: pick(d,['거래처','거래처명']),
+        room: pick(d,['방이름','방']),
+        type: pick(d,['이벤트타입','타입']),
+        ts: pick(d,['시각','일시','날짜','시간']),
+        text: snip(pick(d,['내용','원문','비고','상세','설명']), 40),
+      })).sort(byTsDesc('ts')).slice(0,12);
+
+      // ── 14. LIMIT 정직 (④) — 절단 카운트·사각지대 명시 ────────────────────
+      const CAP_LABEL = { '메시지분류':'카톡 메시지','비즈니스이벤트':'비즈니스이벤트','의사결정추적':'의사결정','품목매칭':'품목매칭','거래처매칭':'거래처매칭','방프로파일':'방프로파일','패턴라이브러리':'자동화 패턴' };
+      const blindSpots = [];
+      for (const [tab,info] of Object.entries(truncation)) {
+        if (info.truncated) blindSpots.push(`${CAP_LABEL[tab]||tab} 카운트 ${info.count}는 쿼리 상한(${info.cap}행)에 걸린 **절단값** — 실제 총계 아님(더 많음). 정확한 총계는 시트 전량 또는 별도 COUNT 필요.`);
+      }
+      if (!token) blindSpots.push('구글 시트 인증 실패 — 카톡 시트 카운트가 0/누락일 수 있음(관측 불가, 실제 없음 아님).');
+      blindSpots.push('카운트는 카톡 시트(메시지분류·비즈니스이벤트 등) 집계 — 미러링 안 되는 전용 소규모방(주광담당방 등)은 시트에 없어 누락 가능.');
+      blindSpots.push('불량·의사결정 원문은 시트 요약 컬럼 기준(첨부 사진·전문 미포함). 근거 보강엔 카톡 원문/화면해독 필요.');
+
+      // ── 15. 자동화 브리지 (⑤ — 이해→실행) ────────────────────────────────
+      const opportunityInsights = insights.filter(i=>i.level==='opportunity');
+      const automationBridge = {
+        summary: `이 화면의 신호를 실행으로 잇는다: 자동화 패턴 ${automationOpps.length}건, 즉시 착수 기회 ${opportunityInsights.length}건. 상세 절차·ROI·PAD 스크립트는 아래 전용 분석 탭에서.`,
+        items: [
+          ...opportunityInsights.map(i=>({ title:i.title, basis:i.detail, action:i.action, kind:'insight' })),
+          ...automationOpps.slice(0,6).map(p=>({ title:p.name, basis:`${p.type||''} · 정확도 ${Math.round((p.accuracy||0)*100)}% · ${p.status||''}`.trim(), action:p.example?('예: '+String(p.example).slice(0,40)):'', kind:'pattern' })),
+        ],
+        links: [
+          { label:'🤖 자동화 제안(반복 화면·워크플로우 → PAD)', tab:'proposals' },
+          { label:'🩻 회사 X-ray(비효율·자동화 기회)', tab:'xray' },
+          { label:'🗺️ 업무 흐름(핸드오프·병목 파이프라인)', tab:'graphflow' },
+        ],
+      };
+
       res.json({
         generatedAt: new Date().toISOString(),
         summary: {
@@ -2552,6 +2625,10 @@ function createProcessMining({ getDb, reportSheet }) {
           nenovaCustomers: dashData?.totalCustomers||0,
           nenovaProducts: dashData?.totalProducts||0,
         },
+        truncation,
+        blindSpots,
+        automationBridge,
+        drilldown: { unresolvedDecisionCases, productMatchSamples, customerMatchSamples, recentDefects },
         eventTypes: Object.entries(eventTypeMap).sort((a,b)=>b[1]-a[1]).map(([type,count])=>({type,count})),
         aiTypes:    Object.entries(aiTypeMap).sort((a,b)=>b[1]-a[1]).map(([type,count])=>({type,count})),
         pipelineRooms,
@@ -2585,17 +2662,19 @@ function createProcessMining({ getDb, reportSheet }) {
 // ── 카톡 시트 전체 탭 읽기 (total-analysis 전용) ────────────────────────────
 async function _fetchFullKakaoTabs(token) {
   const https = require('https');
+  // cap = 쿼리 상한(range 마지막 행). 데이터행이 cap-1(헤더 제외)에 도달하면 절단(truncated)으로 표기.
   const TABS = [
-    { name:'메시지분류',     range:'A1:J5000' },
-    { name:'비즈니스이벤트', range:'A1:R2000' },
-    { name:'의사결정추적',   range:'A1:N200'  },
-    { name:'방프로파일',     range:'A1:H20'   },
-    { name:'품목매칭',       range:'A1:J800'  },
-    { name:'거래처매칭',     range:'A1:H400'  },
-    { name:'패턴라이브러리', range:'A1:H60'   },
+    { name:'메시지분류',     range:'A1:J5000', cap:5000 },
+    { name:'비즈니스이벤트', range:'A1:R2000', cap:2000 },
+    { name:'의사결정추적',   range:'A1:N200',  cap:200  },
+    { name:'방프로파일',     range:'A1:H20',   cap:20   },
+    { name:'품목매칭',       range:'A1:J800',  cap:800  },
+    { name:'거래처매칭',     range:'A1:H400',  cap:400  },
+    { name:'패턴라이브러리', range:'A1:H60',   cap:60   },
   ];
   const result = {};
-  for (const { name, range } of TABS) {
+  const truncation = {};
+  for (const { name, range, cap } of TABS) {
     const r = encodeURIComponent(`${name}!${range}`);
     const data = await new Promise(resolve => {
       https.get({ hostname:'sheets.googleapis.com',
@@ -2613,9 +2692,12 @@ async function _fetchFullKakaoTabs(token) {
         return obj;
       });
     } else { result[name]=[]; }
-    console.log(`[total-analysis] ${name}: ${result[name].length}행`);
+    // 데이터행이 cap-1 이상이면 range 상한에 걸린 절단값(실제 총계 아님).
+    const truncated = result[name].length >= (cap - 1);
+    truncation[name] = { count: result[name].length, cap, truncated };
+    console.log(`[total-analysis] ${name}: ${result[name].length}행${truncated?` (⚠상한 ${cap} 절단)`:''}`);
   }
-  return result;
+  return { tabs: result, truncation };
 }
 
 // ── 업무 관련 카톡 메시지 판별 ──────────────────────────────────────────────

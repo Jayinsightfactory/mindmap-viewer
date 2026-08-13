@@ -4588,8 +4588,37 @@ document.addEventListener('DOMContentLoaded', () => {
 
   <div id="ta-body" style="display:none;">
 
+    <!-- ── 자동화 브리지 (⑤ 이해→실행) ── -->
+    <div id="ta-autobridge" style="margin-bottom:20px;"></div>
+
+    <!-- ── 데이터 한계 배너 (④ LIMIT 절단·사각지대) ── -->
+    <div id="ta-blindspots" style="margin-bottom:20px;"></div>
+
     <!-- ── KPI 스코어카드 ── -->
-    <div id="ta-kpi" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:28px;"></div>
+    <div id="ta-kpi" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:20px;"></div>
+
+    <!-- ── 엔티티 드릴다운 (①③ 집계→구체 행) ── -->
+    <div style="margin-bottom:28px;">
+      <h3 style="font-size:15px;color:var(--text);margin:0 0 12px;">🔎 엔티티 드릴다운 <span style="font-size:11px;color:var(--muted);font-weight:400;">— 위 숫자를 "누가/무엇을/어느 건"으로 분해</span></h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+        <div>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">미해결 의사결정 케이스 (품목·차수 / 제기자 / 원문)</div>
+          <div id="ta-dd-decisions"></div>
+        </div>
+        <div>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">최근 불량·클레임 실제 건</div>
+          <div id="ta-dd-defects"></div>
+        </div>
+        <div>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">품목매칭 샘플 (미매칭 우선 = 조치대상)</div>
+          <div id="ta-dd-products"></div>
+        </div>
+        <div>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">거래처매칭 샘플 (미매칭 우선 = 조치대상)</div>
+          <div id="ta-dd-customers"></div>
+        </div>
+      </div>
+    </div>
 
     <!-- ── AI 인사이트 ── -->
     <div style="margin-bottom:28px;">
@@ -4705,26 +4734,99 @@ function _renderTotalAnalysis(d) {
   if (d.generatedAt) document.getElementById('ta-generated-at').textContent='분석 시각: '+new Date(d.generatedAt).toLocaleString('ko-KR');
 
   const s = d.summary||{};
+  const tr = d.truncation||{};  // {탭명:{count,cap,truncated}}
+  const _esc = t => String(t==null?'':t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
-  // ── KPI 카드 ──
+  // ── KPI 카드 (trunc=시트탭명이면 상한 절단 여부 표기) ──
   const kpis = [
-    { num: s.kakaoBizEvents||0, label:'비즈니스이벤트', color:'#58a6ff' },
-    { num: s.kakaoMessages||0, label:'카톡 메시지', color:'#3fb950' },
-    { num: s.decisions||0, label:'의사결정', sub:`미해결 ${s.unresolvedDecisions||0}건`, color: (s.unresolvedDecisions||0)>50?'#f85149':'#d2a205' },
+    { num: s.kakaoBizEvents||0, label:'비즈니스이벤트', color:'#58a6ff', trunc:'비즈니스이벤트' },
+    { num: s.kakaoMessages||0, label:'카톡 메시지', color:'#3fb950', trunc:'메시지분류' },
+    { num: s.decisions||0, label:'의사결정', sub:`미해결 ${s.unresolvedDecisions||0}건`, color: (s.unresolvedDecisions||0)>50?'#f85149':'#d2a205', trunc:'의사결정추적' },
     { num: s.defects||0, label:'불량/클레임', color:'#f85149' },
     { num: s.nenovaOrders||0, label:'네노바 주문', color:'#3fb950' },
     { num: s.nenovaShipments||0, label:'네노바 출하', color:'#58a6ff' },
-    { num: s.productMatches||0, label:'품목매칭', sub:`전산 ${s.nenovaProducts||0}개`, color:'#bc8cff' },
-    { num: s.customerMatches||0, label:'거래처매칭', sub:`전산 ${s.nenovaCustomers||0}개`, color:'#ffa657' },
+    { num: s.productMatches||0, label:'품목매칭', sub:`전산 ${s.nenovaProducts||0}개`, color:'#bc8cff', trunc:'품목매칭' },
+    { num: s.customerMatches||0, label:'거래처매칭', sub:`전산 ${s.nenovaCustomers||0}개`, color:'#ffa657', trunc:'거래처매칭' },
     { num: d.crossMatch?.matchRate||0, label:'카톡↔전산 연결율', sub:'%', color: (d.crossMatch?.matchRate||0)>60?'#3fb950':'#d2a205' },
     { num: s.patterns||0, label:'자동화 패턴', color:'#58a6ff' },
   ];
-  document.getElementById('ta-kpi').innerHTML = kpis.map(k=>`
-    <div class="ta-kpi-card">
-      <div class="ta-kpi-num" style="color:${k.color}">${typeof k.num==='number'?k.num.toLocaleString():k.num}${k.sub&&k.sub==='%'?'%':''}</div>
+  document.getElementById('ta-kpi').innerHTML = kpis.map(k=>{
+    const t = k.trunc && tr[k.trunc];
+    const cut = t && t.truncated;  // 상한 절단 = 총계 아님
+    const numTxt = typeof k.num==='number' ? k.num.toLocaleString() : k.num;
+    return `
+    <div class="ta-kpi-card"${cut?` title="쿼리 상한 ${t.cap}행에 걸린 절단값 — 실제 총계 아님(더 많음)"`:''}>
+      <div class="ta-kpi-num" style="color:${k.color}">${numTxt}${cut?'+':''}${k.sub&&k.sub==='%'?'%':''}</div>
       <div class="ta-kpi-label">${k.label}</div>
-      ${k.sub&&k.sub!=='%'?`<div style="font-size:10px;color:${k.color};margin-top:2px;">${k.sub}</div>`:''}
-    </div>`).join('');
+      ${cut?`<div style="font-size:10px;color:#f0883e;margin-top:2px;">⚠ 상한 절단·총계 아님</div>`:(k.sub&&k.sub!=='%'?`<div style="font-size:10px;color:${k.color};margin-top:2px;">${k.sub}</div>`:'')}
+    </div>`;}).join('');
+
+  // ── 자동화 브리지 (⑤) ──
+  const ab = d.automationBridge||{};
+  const abItems = (ab.items||[]).slice(0,8);
+  const abLinks = (ab.links||[]);
+  document.getElementById('ta-autobridge').innerHTML = (abItems.length||abLinks.length) ? `
+    <div style="border:1px solid var(--border);border-left:3px solid #58a6ff;border-radius:8px;background:rgba(88,166,255,.06);padding:14px 16px;">
+      <div style="font-size:14px;font-weight:700;color:var(--text);margin-bottom:6px;">🤖 여기서 자동화 가능한 것</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:10px;">${_esc(ab.summary||'')}</div>
+      ${abItems.length?`<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">${abItems.map(it=>`
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px 10px;">
+          <div style="font-size:12px;font-weight:600;color:var(--text);">${it.kind==='pattern'?'🔁':'⚡'} ${_esc(it.title)}</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px;">${_esc(it.basis||'')}</div>
+          ${it.action?`<div style="font-size:11px;color:#58a6ff;margin-top:3px;">→ ${_esc(it.action)}</div>`:''}
+        </div>`).join('')}</div>`:''}
+      <div style="display:flex;flex-wrap:wrap;gap:8px;">${abLinks.map(l=>`
+        <a href="javascript:void 0" onclick="switchPageTab('${_esc(l.tab)}')" style="font-size:12px;padding:5px 12px;border-radius:6px;background:var(--surface);border:1px solid var(--border);color:#58a6ff;text-decoration:none;">${_esc(l.label)} →</a>`).join('')}</div>
+    </div>` : '';
+
+  // ── 데이터 한계 배너 (④) ──
+  const bs = d.blindSpots||[];
+  document.getElementById('ta-blindspots').innerHTML = bs.length ? `
+    <div style="border:1px solid rgba(240,136,62,.4);border-left:3px solid #f0883e;border-radius:8px;background:rgba(240,136,62,.07);padding:12px 16px;">
+      <div style="font-size:13px;font-weight:700;color:#f0883e;margin-bottom:6px;">⚠ 데이터 한계 — 아래 숫자는 완전한 총계가 아닐 수 있음</div>
+      <ul style="margin:0;padding-left:18px;">${bs.map(b=>`<li style="font-size:11.5px;color:var(--muted);margin-bottom:3px;">${_esc(b).replace(/\*\*(.+?)\*\*/g,'<b style="color:var(--text)">$1</b>')}</li>`).join('')}</ul>
+    </div>` : '';
+
+  // ── 엔티티 드릴다운 (①③) ──
+  const dd = d.drilldown||{};
+  const _emptyRow = (n,t)=>`<div style="color:var(--muted);font-size:12px;padding:8px 0;">${t}</div>`;
+  const decs = dd.unresolvedDecisionCases||[];
+  document.getElementById('ta-dd-decisions').innerHTML = decs.length ? `
+    <table class="ta-table"><thead><tr><th>케이스</th><th>제기자</th><th>시각</th><th>원문</th></tr></thead>
+    <tbody>${decs.map(c=>`<tr>
+      <td style="font-weight:600;color:var(--text)">${_esc(c.key)}${c.room?`<div style="font-size:10px;color:var(--muted)">${_esc(c.room)}</div>`:''}</td>
+      <td>${_esc(c.raisedBy||'-')}</td>
+      <td style="font-size:11px;color:var(--muted);white-space:nowrap;">${_esc((c.ts||'').slice(0,16))}</td>
+      <td style="font-size:11px;color:var(--muted);max-width:220px;white-space:normal;">${_esc(c.text||'')}</td>
+    </tr>`).join('')}</tbody></table>` : _emptyRow('dec','미해결 의사결정 없음(또는 시트 미인증)');
+
+  const defs = dd.recentDefects||[];
+  document.getElementById('ta-dd-defects').innerHTML = defs.length ? `
+    <table class="ta-table"><thead><tr><th>품목</th><th>거래처</th><th>유형</th><th>시각</th></tr></thead>
+    <tbody>${defs.map(x=>`<tr>
+      <td style="font-weight:500">${_esc(x.product||'-')}</td>
+      <td>${_esc(x.customer||'-')}</td>
+      <td><span class="ta-badge" style="background:rgba(248,81,73,.15);color:#f85149">${_esc(x.type||'')}</span></td>
+      <td style="font-size:11px;color:var(--muted);white-space:nowrap;">${_esc((x.ts||'').slice(0,16))}</td>
+    </tr>`).join('')}</tbody></table>` : _emptyRow('def','불량·클레임 건 없음');
+
+  const prods = dd.productMatchSamples||[];
+  document.getElementById('ta-dd-products').innerHTML = prods.length ? `
+    <table class="ta-table"><thead><tr><th>카톡 품명</th><th>전산 품명</th><th>연결</th></tr></thead>
+    <tbody>${prods.map(p=>`<tr>
+      <td style="font-weight:500">${_esc(p.kakao)}${(p.flower||p.country)?`<div style="font-size:10px;color:var(--muted)">${_esc([p.flower,p.country].filter(Boolean).join('/'))}</div>`:''}</td>
+      <td style="font-size:11px;color:var(--muted)">${_esc(p.db||'-')}</td>
+      <td>${p.matched?`<span class="ta-badge" style="background:rgba(63,185,80,.2);color:#3fb950">✓ ${_esc(p.prodKey)}</span>`:'<span class="ta-badge" style="background:rgba(248,81,73,.15);color:#f85149">미연결</span>'}</td>
+    </tr>`).join('')}</tbody></table>` : _emptyRow('prod','품목매칭 데이터 없음');
+
+  const custs = dd.customerMatchSamples||[];
+  document.getElementById('ta-dd-customers').innerHTML = custs.length ? `
+    <table class="ta-table"><thead><tr><th>카톡 거래처</th><th>그룹</th><th>연결</th></tr></thead>
+    <tbody>${custs.map(c=>`<tr>
+      <td style="font-weight:500">${_esc(c.kakao)}</td>
+      <td style="font-size:11px;color:var(--muted)">${_esc(c.group||'-')}</td>
+      <td>${c.matched?`<span class="ta-badge" style="background:rgba(63,185,80,.2);color:#3fb950">✓ ${_esc(c.custKey)}</span>`:'<span class="ta-badge" style="background:rgba(248,81,73,.15);color:#f85149">미연결</span>'}</td>
+    </tr>`).join('')}</tbody></table>` : _emptyRow('cust','거래처매칭 데이터 없음');
 
   // ── AI 인사이트 ──
   document.getElementById('ta-insights').innerHTML = (d.insights||[]).map(i=>`
