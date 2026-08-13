@@ -2543,18 +2543,18 @@ function createProcessMining({ getDb, reportSheet }) {
       const pick = (o,keys)=>{ for(const k of keys){ const v=o&&o[k]; if(v!=null && String(v).trim()!=='') return String(v).trim(); } return ''; };
       const byTsDesc = k => (a,b)=>String(b[k]||'').localeCompare(String(a[k]||''));
 
-      // decisions 199 → 미해결/최근 의사결정 case (key=품목+차수, raisedBy, ts, 원문)
+      // decisions 199 → 미해결/최근 의사결정 case. 의사결정추적 실헤더: 발생시각·발생방·파이프라인·이슈내용·대응자·결과
       const unresolvedDecisionCases = unresolvedDec.map(d=>{
-        const prod = pick(d,['품목','상품','품목명']);
-        const week = pick(d,['차수','주차','week']);
-        const room = pick(d,['발생방','방이름','방','room']);
-        const key  = [prod,week].filter(Boolean).join(' ') || room || '(미상)';
+        const room  = pick(d,['발생방','방이름','방','room']);
+        const pipe  = pick(d,['파이프라인','pipeline']);
+        const issue = pick(d,['이슈내용','내용','원문','상황','의사결정','안건','메시지','질문']);
+        const key   = pipe || snip(issue,20) || room || '(미상)';
         return {
           key, room,
-          raisedBy: pick(d,['제기자','발생자','발신자','담당자','요청자','raisedBy']),
-          ts: pick(d,['시각','일시','날짜','시간','발생시각','발생일시']),
+          raisedBy: pick(d,['대응자','제기자','발생자','발신자','담당자','요청자','raisedBy']), // 미해결이면 대응자 공백=정상(정직)
+          ts: pick(d,['발생시각','시각','일시','날짜','시간','발생일시']),
           result: pick(d,['결과','상태']) || '미해결',
-          text: snip(pick(d,['내용','원문','상황','의사결정','안건','메시지','질문']), 40),
+          text: snip(issue, 50),
         };
       }).sort(byTsDesc('ts')).slice(0,15);
 
