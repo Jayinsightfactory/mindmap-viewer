@@ -1513,8 +1513,12 @@ app.get('/api/admin/kakao-intel', async (req, res) => {
         // [2026-08-03] 불량/불만 제외(사장님: 필요없음). 저장 타입이 공백/변형될 수 있어 부분일치로 견고하게.
         { const _t = String(c.type || ''); if (_t.includes('불량') || _t.includes('불만')) { _exclDefect++; continue; } }
         const key = (c.key || `${c.seq || ''} ${c.product || ''}`).trim() || '(미상)';
-        const it = issues[key] || (issues[key] = { key, product: c.product || '', seq: c.seq || '', type: c.type || '기타', room: d.room || '', raisedBy: c.raisedBy || '', customers: {}, occurrences: 0, resolved: false, turns: 0, tone: c.tone || '', evidence: c.evidence || '', summary: c.summary || '', critical: false });
+        const it = issues[key] || (issues[key] = { key, product: c.product || '', seq: c.seq || '', type: c.type || '기타', room: d.room || '', raisedBy: c.raisedBy || '', customers: {}, occurrences: 0, resolved: false, turns: 0, tone: c.tone || '', evidence: c.evidence || '', summary: c.summary || '', critical: false, firstTs: '', lastTs: '', crossCheck: null });
         it.occurrences++; it.turns += (c.turns || 1);
+        // [2026-08-13] 조기경보 근거 첨부(③): 케이스별 활동 ts(윈도우 근사)·교차검증 점수를 롤업에 실어 감사 가능하게.
+        if (d.lastTs && (!it.lastTs || String(d.lastTs) > it.lastTs)) it.lastTs = String(d.lastTs);
+        if (d.firstTs && (!it.firstTs || String(d.firstTs) < it.firstTs)) it.firstTs = String(d.firstTs);
+        if (d.crossCheck && typeof d.crossCheck.score === 'number') it.crossCheck = it.crossCheck == null ? d.crossCheck.score : Math.min(it.crossCheck, d.crossCheck.score);
         if (c.critical === true) it.critical = true;   // [2026-07-31] 운영이슈(항공스케줄·주문/출고누락) 플래그
         if (c.resolved) it.resolved = true;            // 여러 윈도우 중 한 번이라도 해결이면 해결
         if (c.summary) it.summary = c.summary;          // 최신(=최근 윈도우가 먼저 정렬) 요약 유지
