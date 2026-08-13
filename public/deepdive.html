@@ -215,7 +215,7 @@ function render(r){
       ${wfs.length?`<div class="kpi"><div class="n">${totalSteps}</div><div class="l">복원 단계</div></div>`:''}
       <div class="kpi"><div class="n">${rules.length}</div><div class="l">분류 규칙</div></div>
       <div class="kpi"><div class="n">${feats.length}</div><div class="l">웹기능 후보</div></div>
-      <div class="kpi"><div class="n">${Math.round(r.saveMin/60*10)/10}h</div><div class="l">주간 절감추정</div></div>
+      <div class="kpi" title="관찰된 화면 기준 추정치. 개인·타업무 시간이 완전히 분리되지 않아 실제보다 클 수 있음(과대추정 가능)."><div class="n">~${Math.round(r.saveMin/60*10)/10}h<span style="font-size:11px;color:var(--muted)"> ⓘ</span></div><div class="l">주간 절감추정 (관찰기반·상한)</div></div>
       <div class="kpi"><div class="n" style="color:var(--warn)">${blind.length}</div><div class="l">미확인·추정</div></div>
     </div>
     ${rep.summary?`<div class="summary">${esc(rep.summary)}</div>`:''}
