@@ -13,12 +13,14 @@
  *                                       .vision[] = screen 화면해독 원문(전용 소규모방 보완용)
  *   POST /api/flow/ops-report        — kind='orderflow:<userId>' (+별칭 'orderflow') 저장
  *
- * 판정(핵심):
- *   ① 데이터확인: 거래처·차수 발주 원문이 카톡에 있으면 PASS(원문 첨부), screen vision 서술만이면 WARN, 없으면 FAIL.
+ * 판정(핵심 · Codex 판정무결성 반영):
+ *   ① 데이터확인: 거래처·차수 원문이 카톡에 있고 (설연주 발신 ∨ 발주성 원문)이면 PASS(원문 첨부),
+ *              타인 단순 언급뿐이면 WARN, screen vision 서술만이면 WARN, 아무 근거도 없으면 UNKNOWN_SOURCE_GAP.
  *   ② 데이터정리: 항상 '미확인(엑셀수집대기)'.
  *   ③ 변경: 카톡 변경메시지(취소/추가/정정)와 ERP order.history 변경레코드를
- *          (차수)∧(거래처정규화)∧(품목사전정규화)∧(시각근접 ±1일) 4중 스코어로 매칭.
- *          4중 PASS · 차수+거래처+시각만 맞고 품목불일치 WARN · ERP반영없음 FAIL. 매칭로그 남김.
+ *          (차수)∧(거래처정규화)∧(품목사전정규화)∧(시각근접 ±1일) 4중 + 변경유형/값 가산으로 1:1 매칭(사용 ERP 소거).
+ *          전건 매칭 PASS · 일부만/품목불일치 WARN · 이 차수 ERP 미관측(LIMIT20 절단) UNKNOWN_SOURCE_GAP.
+ *          FAIL은 카톡·ERP 둘 다 존재하며 명백히 충돌할 때만(사실상 드묾). matchedCount/total 노출. 매칭로그 남김.
  *
  * 사용: node bin/orderflow-agent.js            (설연주 고정)
  *      ORDERFLOW_LLM=1 로 두면 애매한 카톡 원문 엔티티추출에 Claude CLI 보조(기본 OFF=규칙기반).
@@ -48,6 +50,8 @@ const VENDORS = [
 // 카톡 미러링 안 되는 전용 소규모방(선행조사) — 이 방 발주는 카톡 근거 없음 = 사각지대
 const BLIND_ROOMS = ['미우라움+초이문방', '주광담당방'];
 const CHANGE_RE = /취소|추가|변경|정정|삭제|바꿔|→|->/;
+// 발주성 원문 판정: 수량·단위·주문/발주 어휘·변경어. 단순 타인 언급(잡담)과 구분(Codex #4).
+const ORDERLIKE_RE = /주문|발주|출고|입고|\d+\s*(박스|박|box|단|속|입|본|줄기|스템|ea|st|주|st\b)|취소|추가|정정|변경|삭제/i;
 
 function httpJson(method, p, body, timeoutMs) {
   return new Promise((resolve, reject) => {
@@ -163,7 +167,7 @@ async function main() {
 
   const auditLog = [];
   const vendorsOut = [];
-  const overall = { pass: 0, warn: 0, fail: 0 };
+  const overall = { pass: 0, warn: 0, fail: 0, unknown: 0 };
 
   for (const V of VENDORS) {
     const vMsgs = vendorMsgs.filter(m => m.vendors.includes(V.key));
@@ -181,15 +185,22 @@ async function main() {
       const s1msgs = vMsgs.filter(m => m.cycles.some(c => cycleMatch(c, cyc)));
       let step1;
       if (s1msgs.length) {
-        const rep = s1msgs.find(m => (m.sender || '').includes(TARGET_NAME)) || s1msgs[0];
-        step1 = { verdict: 'PASS', evidence: {
+        // 발신자 판정 반영(Codex #4): 설연주 본인발신 또는 발주성 원문일 때만 PASS. 단순 타인 언급뿐이면 WARN.
+        const seolMsgs = s1msgs.filter(m => (m.sender || '').includes(TARGET_NAME));
+        const orderLike = s1msgs.filter(m => ORDERLIKE_RE.test(m.message || ''));
+        const bySeol = seolMsgs.length > 0;
+        // 근거 선택: (본인+발주성) > 발주성 > 본인 > 첫 메시지
+        const rep = seolMsgs.find(m => ORDERLIKE_RE.test(m.message || '')) || orderLike[0] || seolMsgs[0] || s1msgs[0];
+        const qualifies = bySeol || orderLike.length > 0;
+        step1 = { verdict: qualifies ? 'PASS' : 'WARN', evidence: {
           ts: rep.created_at, room: rep.chatroom, sender: rep.sender, text: snip(rep.message),
-          bySeol: (rep.sender || '').includes(TARGET_NAME), msgCount: s1msgs.length } };
+          bySeol, orderLike: orderLike.length > 0, msgCount: s1msgs.length,
+          note: qualifies ? undefined : '거래처·차수 언급은 있으나 설연주 발신도 발주성 원문도 아님(타인 언급뿐)' } };
       } else {
         const vis = visionSeol.find(v => v.vendors.includes(V.key) && v.cycles.some(c => cycleMatch(c, cyc)));
         step1 = vis
           ? { verdict: 'WARN', evidence: { source: 'screen-vision', ts: vis.ts, text: snip(vis.activity), note: '카톡 원문 없음·화면해독 서술만' } }
-          : { verdict: 'FAIL', evidence: { note: '카톡·화면 근거 모두 없음(전용 소규모방 미러링 안 됨 가능)' } };
+          : { verdict: 'UNKNOWN_SOURCE_GAP', evidence: { note: '카톡·화면 근거 모두 없음 → 미러링/수집 공백(전용 소규모방 가능). 미발주 단정 불가(≠FAIL)' } };
       }
 
       // ── ② 데이터정리 (엑셀수집 대기) ──
@@ -199,18 +210,26 @@ async function main() {
       const kChanges = s1msgs.filter(m => CHANGE_RE.test(m.message));
       const eChanges = vErp.filter(e => e.cycle && cycleMatch(e.cycle, cyc));
       const changes = [];
-      let anyFull = false, anyTimeOnly = false;
+      const usedErp = new Set();       // 1:1 매칭(Codex #2): 이미 근거로 쓴 ERP 레코드 인덱스 소거
+      const unmatchedKakao = [];       // 미매칭 카톡 변경(Codex #1 노출)
+      let matchedCount = 0, anyTimeOnly = false;
       for (const km of kChanges) {
-        // 최적 ERP 매칭: 품목 교집합·일자 근접
+        // 최적 ERP 매칭: 품목 교집합·일자 근접 + 변경유형/항목/값 참고(Codex #5). 소거된 ERP는 제외.
         let best = null;
-        for (const e of eChanges) {
+        for (let i = 0; i < eChanges.length; i++) {
+          if (usedErp.has(i)) continue;
+          const e = eChanges[i];
           const ov = itemOverlap(km.message, e.item);
           const dd = dayDiff(km.created_at, e.date);
-          const score = 2 /*차수+거래처(그룹핑으로 성립)*/ + (ov > 0 ? 1 : 0) + (dd <= 1 ? 1 : 0);
-          if (!best || score > best.score || (score === best.score && ov > best.ov)) best = { e, ov, dd, score };
+          // 변경유형/항목/기준값·변경값도 카톡 원문과 겹치면 신뢰 가산(품목+날짜만 매칭 과신 방지)
+          const metaHit = itemOverlap(km.message, `${e.kind || ''} ${e.field || ''} ${e.base || ''} ${e.val || ''}`) > 0 ? 1 : 0;
+          const score = 2 /*차수+거래처(그룹핑으로 성립)*/ + (ov > 0 ? 1 : 0) + (dd <= 1 ? 1 : 0) + metaHit;
+          if (!best || score > best.score || (score === best.score && ov > best.ov)) best = { e, i, ov, dd, score, metaHit };
         }
-        const matched = !!best && best.score >= 4;
-        if (matched) anyFull = true; else if (best && best.dd <= 1) anyTimeOnly = true;
+        // 4중(차수+거래처+품목+시각)이 성립해야 매칭. metaHit은 가산점일 뿐 품목/시각 부재를 대체하지 않음.
+        const matched = !!best && best.ov > 0 && best.dd <= 1;
+        if (matched) { usedErp.add(best.i); matchedCount++; }
+        else { unmatchedKakao.push(snip(km.message).slice(0, 60)); if (best && best.dd <= 1) anyTimeOnly = true; }
         const rec = { what: snip(km.message), kakaoTs: km.created_at, sender: km.sender,
           erpTs: best ? best.e.date : null, erpItem: best ? best.e.item : null, erpUser: best ? best.e.erpUser : null,
           erpBySeol: best ? SEOL_ERP_ACCOUNTS.includes(best.e.erpUser) : null,
@@ -218,34 +237,52 @@ async function main() {
         changes.push(rec);
         auditLog.push({ vendor: V.key, cycle: cyc, kakao: snip(km.message).slice(0, 60), erp: best ? best.e.item : '(무)', score: rec.score, matched });
       }
+      const total = kChanges.length;
       let step3;
-      if (kChanges.length) {
-        if (anyFull) step3 = { verdict: 'PASS', changes, evidence: { note: `카톡 변경 ${kChanges.length}건 중 ERP 4중매칭 성립` } };
-        else if (eChanges.length && anyTimeOnly) step3 = { verdict: 'WARN', changes, evidence: { note: '차수+거래처+시각은 맞으나 품목 정규화 불일치(한↔영 매칭 저신뢰)' } };
-        else if (eChanges.length) step3 = { verdict: 'FAIL', changes, evidence: { note: '이 차수 ERP 변경레코드는 있으나 품목·시각 매칭 실패' } };
-        else if (vErp.length) step3 = { verdict: 'FAIL', changes, evidence: { note: `카톡 변경 있으나 이 차수 ERP order.history 미반영(거래처는 ERP 관측창에 존재)` } };
-        else step3 = { verdict: 'WARN', changes, evidence: { note: 'ERP 관측창(최근 20건)에 이 거래처 자체가 없음 → 미반영 아님(관측한계). ERP 전량 소스 필요' } };
+      if (total) {
+        const ev = { matchedCount, total, unmatchedKakao };
+        if (matchedCount === total) {
+          // 전건 매칭일 때만 PASS(Codex #1: 부분성공→전체PASS 금지)
+          step3 = { verdict: 'PASS', changes, evidence: { ...ev, note: `카톡 변경 ${total}건 전건 ERP 4중매칭 성립` } };
+        } else if (matchedCount > 0) {
+          // 일부만 매칭 → WARN(부분매칭)
+          step3 = { verdict: 'WARN', changes, evidence: { ...ev, note: `부분매칭 ${matchedCount}/${total} — 나머지 ${total - matchedCount}건 ERP 매칭 실패` } };
+        } else if (eChanges.length) {
+          // 이 차수 ERP 변경레코드는 존재하나 전건 매칭 실패 → 품목 정규화 저신뢰 가능(Codex #3: FAIL 아님, WARN)
+          step3 = { verdict: 'WARN', changes, evidence: { ...ev, note: anyTimeOnly
+            ? '차수+거래처+시각은 맞으나 품목 정규화 불일치(한↔영 매칭 저신뢰)'
+            : '이 차수 ERP 변경레코드는 있으나 품목·시각 매칭 실패(품목 정규화 저신뢰 가능)' } };
+        } else {
+          // 이 차수 ERP 레코드 없음 = ERP 원장 LIMIT 20 절단 관측한계 → 소스공백(Codex #3: FAIL 아님)
+          step3 = { verdict: 'UNKNOWN_SOURCE_GAP', changes, evidence: { ...ev, note: 'ERP order.history가 서버 LIMIT 20으로 절단 → 이 차수 미관측. 미반영 단정 불가(≠FAIL). ERP 전량 소스 필요' } };
+        }
       } else if (eChanges.length) {
         step3 = { verdict: 'WARN', changes: eChanges.slice(0, 5).map(e => ({ what: `ERP ${e.kind} ${e.item} ${e.field} ${e.base}→${e.val}`, kakaoTs: null, erpTs: e.date, erpUser: e.erpUser, matched: false })),
-          evidence: { note: 'ERP 변경레코드만 있고 카톡 변경 원문 없음(전용방/구두 가능)' } };
+          evidence: { matchedCount: 0, total: 0, unmatchedKakao: [], note: 'ERP 변경레코드만 있고 카톡 변경 원문 없음(전용방/구두 가능)' } };
       } else {
-        step3 = { verdict: '변경없음', changes: [], evidence: { note: '이 차수 변경 신호 없음' } };
+        step3 = { verdict: '변경없음', changes: [], evidence: { matchedCount: 0, total: 0, unmatchedKakao: [], note: '이 차수 변경 신호 없음' } };
       }
 
-      for (const st of [step1, step3]) { const v = st.verdict; if (v === 'PASS') overall.pass++; else if (v === 'WARN') overall.warn++; else if (v === 'FAIL') overall.fail++; }
+      for (const st of [step1, step3]) { const v = st.verdict; if (v === 'PASS') overall.pass++; else if (v === 'WARN') overall.warn++; else if (v === 'FAIL') overall.fail++; else if (v === 'UNKNOWN_SOURCE_GAP') overall.unknown++; }
       cyclesOut.push({ cycle: cyc, step1, step2, step3 });
     }
 
     const p = cyclesOut.filter(c => c.step1.verdict === 'PASS').length;
+    const s3pass = cyclesOut.filter(c => c.step3.verdict === 'PASS').length;
+    const s3warn = cyclesOut.filter(c => c.step3.verdict === 'WARN').length;
+    const s3gap = cyclesOut.filter(c => c.step3.verdict === 'UNKNOWN_SOURCE_GAP').length;
     const summary = cyclesOut.length
-      ? `차수 ${cyclesOut.length}건 관측 · ①PASS ${p} · 변경 PASS ${cyclesOut.filter(c => c.step3.verdict === 'PASS').length}/FAIL ${cyclesOut.filter(c => c.step3.verdict === 'FAIL').length}`
+      ? `차수 ${cyclesOut.length}건 관측 · ①PASS ${p} · 변경 PASS ${s3pass}/WARN ${s3warn}/소스공백 ${s3gap}`
       : '관측창 내 발주·변경 신호 없음';
     vendorsOut.push({ vendor: V.key, cycles: cyclesOut, summary });
   }
 
   const blindSpots = [
-    `전용 소규모방(${BLIND_ROOMS.join('·')})은 카톡 미러링 대상 아님 → 그 방 발주·정정은 카톡 근거 부재. screen-vision 보완만 가능(FAIL이 실제 누락이 아닐 수 있음).`,
-    `ERP 변경원장(ops-input.erp)은 서버에서 최근 20건만 반환 → 관측창 내 과거 변경 누락 가능. 정밀 검증엔 erp-ui.order.history 전량 소스 필요.`,
+    `판정 무결성(Codex 반영): '미반영'은 FAIL이 아니라 UNKNOWN_SOURCE_GAP(소스공백)으로 표기. FAIL은 카톡·ERP 둘 다 존재하며 명백히 충돌할 때만(현 규칙에선 방향성 미검증이라 사실상 미발생).`,
+    `전용 소규모방(${BLIND_ROOMS.join('·')})은 카톡 미러링 대상 아님 → 그 방 발주·정정은 카톡 근거 부재. screen-vision 보완만 가능(소스공백이 실제 누락이 아닐 수 있음).`,
+    `ERP 변경원장(ops-input.erp)은 서버에서 최근 20건만 반환 → 관측창 내 과거 변경 누락 가능(관측한계≠실제없음). 정밀 검증엔 erp-ui.order.history 전량 소스 필요.`,
+    `방향성 미검증: 카톡 '취소'와 ERP '추가'처럼 반대 방향이어도 차수+품목+시각이 맞으면 매칭됨(인과≠상관). 변경유형(kind) 일치까지 강제하려면 카톡 행동어 파싱 강화 필요.`,
+    `복합키 부재: 매칭은 (차수 major/minor)∧(거래처 정규화)∧(품목 토큰)∧(±1일)로만 성립. 안정적 (orderYear,vendorId,majorCycle,minorCycle) 복합키·ERP 레코드 안정 ID 없음 → 1:1 소거는 관측창 내에서만 보장.`,
     `ERP 계정 매핑 nenovaSS1=${TARGET_NAME} 확정(2026-08-13 사장님 확인). 변경레코드 erpBySeol=false면 타계정 입력.`,
     `품목 한↔영 매칭(카톡 한글 vs ERP 'Hydrangea Dark Pink (진핑크)')은 토큰 교집합 기반 저신뢰. 품목 불일치 WARN은 실제 매칭일 수 있음.`,
     `② 데이터정리는 엑셀 수집 미연결로 전건 '미확인'(엑셀수집대기).`,
@@ -261,7 +298,7 @@ async function main() {
   await httpJson('POST', '/api/flow/ops-report', { kind: 'orderflow:' + TARGET_USER, source: 'orderflow-agent', report });
   await httpJson('POST', '/api/flow/ops-report', { kind: 'orderflow', source: 'orderflow-agent', report });
 
-  console.log(`[orderflow] 완료 · overall PASS ${overall.pass}/WARN ${overall.warn}/FAIL ${overall.fail}`);
+  console.log(`[orderflow] 완료 · overall PASS ${overall.pass}/WARN ${overall.warn}/FAIL ${overall.fail}/소스공백 ${overall.unknown}`);
   for (const v of vendorsOut) console.log(`  · ${v.vendor}: ${v.summary}`);
   return report;
 }

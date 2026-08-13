@@ -26,7 +26,10 @@
   .v-PASS{background:rgba(63,185,80,.16);color:var(--good)}
   .v-WARN{background:rgba(240,136,62,.16);color:var(--warn)}
   .v-FAIL{background:rgba(248,81,73,.16);color:var(--danger)}
+  .v-gap{background:rgba(139,148,158,.20);color:#adbac7;border:1px dashed #4b5563}
   .v-na{background:rgba(139,148,158,.14);color:var(--muted)}
+  .matchbar{color:var(--muted);font-size:10.5px;margin-top:4px}
+  .matchbar b{color:var(--text)}
   /* 거래처 */
   .vendor{margin-bottom:26px}
   .v-head{display:flex;align-items:baseline;gap:10px;margin:16px 0 4px;border-bottom:1px solid var(--border);padding-bottom:6px}
@@ -61,11 +64,12 @@
 const TOKEN = localStorage.getItem('orbit_token') || sessionStorage.getItem('orbit_flow_token') || '';
 const H = { Authorization: 'Bearer ' + TOKEN };
 const esc = s => String(s==null?'':s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
-const vcls = v => v==='PASS'?'v-PASS':v==='WARN'?'v-WARN':v==='FAIL'?'v-FAIL':'v-na';
+const vcls = v => v==='PASS'?'v-PASS':v==='WARN'?'v-WARN':v==='FAIL'?'v-FAIL':v==='UNKNOWN_SOURCE_GAP'?'v-gap':'v-na';
+const vlabel = v => v==='UNKNOWN_SOURCE_GAP'?'소스공백':(v||'-');
 const tshort = t => t ? String(t).replace('T',' ').replace(/:\d\dZ?$/,'').replace(/\..*/,'') : '';
 
 function stepBox(title, verdict, inner){
-  return `<div class="step"><div class="s-h"><span class="s-t">${title}</span><span class="pill ${vcls(verdict)}">${esc(verdict||'-')}</span></div><div class="s-body">${inner}</div></div>`;
+  return `<div class="step"><div class="s-h"><span class="s-t">${title}</span><span class="pill ${vcls(verdict)}">${esc(vlabel(verdict))}</span></div><div class="s-body">${inner}</div></div>`;
 }
 function cycleCard(c){
   const s1=c.step1||{}, s2=c.step2||{}, s3=c.step3||{};
@@ -73,9 +77,13 @@ function cycleCard(c){
   const b1 = e1.text ? `<div class="ev"><b>${esc(e1.sender||'')}</b> · ${esc(e1.room||'')} · ${esc(tshort(e1.ts))}${e1.bySeol?' · <b>본인발신</b>':''}</div><div class="quote">${esc(e1.text)}</div>` : `<div class="ev">${esc(e1.note||'카톡 근거 없음')}</div>`;
   const b2 = `<div class="ev">${esc(s2.reason||'')}</div>`;
   const chgs = (s3.changes||[]);
+  const ev3 = s3.evidence||{};
+  const mbar = (ev3.total>0)
+    ? `<div class="matchbar"><b>${esc(ev3.matchedCount||0)}/${esc(ev3.total)}</b> 반영${(ev3.unmatchedKakao&&ev3.unmatchedKakao.length)?` · 미매칭 ${ev3.unmatchedKakao.length}건`:''}</div>`
+    : '';
   const b3 = chgs.length
-    ? chgs.map(x=>`<div class="chg">${esc(x.what||'')}${x.matched?` <span class="pill v-PASS">ERP매칭</span>`:` <span class="pill v-WARN">ERP미매칭</span>`}${x.kakaoTs?`<div class="ev">카톡 ${esc(tshort(x.kakaoTs))}${x.erpTs?` → ERP ${esc(tshort(x.erpTs))}`:''}</div>`:''}</div>`).join('')
-    : `<div class="ev">${esc((s3.evidence&&s3.evidence.note)||'변경 신호 없음')}</div>`;
+    ? mbar + chgs.map(x=>`<div class="chg">${esc(x.what||'')}${x.matched?` <span class="pill v-PASS">ERP매칭</span>`:` <span class="pill v-WARN">ERP미매칭</span>`}${x.kakaoTs?`<div class="ev">카톡 ${esc(tshort(x.kakaoTs))}${x.erpTs?` → ERP ${esc(tshort(x.erpTs))}`:''}</div>`:''}</div>`).join('') + (ev3.note?`<div class="ev">${esc(ev3.note)}</div>`:'')
+    : `<div class="ev">${esc(ev3.note||'변경 신호 없음')}</div>`;
   return `<div class="cyc"><div class="cyc-top"><span class="cyc-name">${esc(c.cycle)}차</span></div>
     <div class="steps">
       ${stepBox('① 데이터확인', s1.verdict, b1)}
@@ -98,10 +106,11 @@ async function load(){
       <div class="kpi"><div class="n" style="color:var(--good)">${ov.pass||0}</div><div class="l">PASS</div></div>
       <div class="kpi"><div class="n" style="color:var(--warn)">${ov.warn||0}</div><div class="l">WARN</div></div>
       <div class="kpi"><div class="n" style="color:var(--danger)">${ov.fail||0}</div><div class="l">FAIL</div></div>
+      <div class="kpi"><div class="n" style="color:#adbac7">${ov.unknown||0}</div><div class="l">소스공백</div></div>
       <div class="kpi"><div class="n">${vendors.length}</div><div class="l">거래처</div></div>
     </div>
     <div class="legend">각 차수를 <b>①데이터확인</b>(톡방 원문) · <b>②데이터정리</b>(엑셀 대조) · <b>③변경</b>(카톡↔ERP)으로 판정.
-      <span class="pill v-PASS">PASS</span> 근거확인 · <span class="pill v-WARN">WARN</span> 부분/관측한계 · <span class="pill v-FAIL">FAIL</span> 미반영 · <span class="pill v-na">미확인</span> 데이터대기</div>
+      <span class="pill v-PASS">PASS</span> 전건 근거확인 · <span class="pill v-WARN">WARN</span> 부분매칭/저신뢰 · <span class="pill v-FAIL">FAIL</span> 명백한 충돌 · <span class="pill v-gap">소스공백</span> 관측한계(≠미반영) · <span class="pill v-na">미확인</span> 데이터대기</div>
     ${vendors.map(v=>`<div class="vendor">
       <div class="v-head"><h2>${esc(v.vendor)}</h2><span class="meta">${(v.cycles||[]).length}개 차수</span></div>
       ${v.summary?`<div class="v-summary">${esc(v.summary)}</div>`:''}
