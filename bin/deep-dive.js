@@ -144,7 +144,7 @@ ${readAbbrevBlock()}
 
 // 한 직원 세밀분석 (자기개선: 이전 리포트의 추정·사각지대를 이번에 보강)
 async function runOne(user, ctx) {
-  const { oi, ki, nameMap, voice } = ctx;
+  const { ki, nameMap, voice } = ctx; // oi(공용 핫스팟) 폴백 제거로 미사용
   const name = nameMap[Object.keys(nameMap).find(k => user.startsWith(k.slice(0, 12))) || ''] || user.slice(0, 10);
   const [si, prev] = await Promise.all([
     httpJson('GET', `/api/vision/screen-input?userId=${encodeURIComponent(user)}&hours=${HOURS}`).catch(() => ({})),
@@ -158,9 +158,9 @@ async function runOne(user, ctx) {
       items: (s.fields || []).map(f => (f.label || '') + (f.value ? ('=' + f.value) : '')).filter(Boolean).slice(0, 5),
     })).slice(-120);
   if (screens.length < 3) { console.log(`  [${name}] 데이터 부족(${screens.length}) — 스킵`); return; }
-  // 사용자별 라벨 핫스팟(screen-input clickXY 클러스터). 없으면 워크스페이스 공용으로 폴백.
-  let hotspots = hotspotsFromScreenInput(si.steps);
-  if (!hotspots.length) hotspots = (oi.mouseHotspots || []);
+  // 사용자별 라벨 핫스팟(screen-input clickXY 클러스터)만 사용.
+  // [Codex 교차검증] 워크스페이스 공용 mouseHotspots 폴백은 타직원 클릭 오귀속 위험 → 제거. 없으면 빈 배열(정직).
+  const hotspots = hotspotsFromScreenInput(si.steps);
   const issues = (ki.issues || []).filter(i => (i.raisedBy || '') === name).slice(0, 12).map(i => ({ key: i.key, type: i.type, who: i.raisedBy }));
   const prevReport = (prev && prev.latest && prev.latest.report) || null;
 

@@ -35,3 +35,33 @@
 
 ## 적용 대상 (감사 필요)
 세밀분석·발주검증(기준 충족) / 회사X-ray · 자동화제안 · 의도지도 · 거래처조기경보 · 토탈분석 · 사장님브리핑 · 지식그래프 · 업무흐름 · ops-agent 브리핑 (표준 대비 감사 → 갭 보강).
+
+---
+
+## 보강 (2026-08-13 Codex 교차검증 반영)
+
+독립 교차검증(Codex)이 기준사례에서도 판정 오류를 찾았다. 5원칙에 아래를 **필수**로 더한다.
+
+### 원칙 ⑥ — 근거 품질·계보 (근거가 있다 ≠ 근거가 맞다)
+- 원본(카톡 원문)·OCR·Vision 요약·LLM 추론을 **같은 '근거'로 취급 금지**. 각 판정에 `sourceType`(raw/ocr/vision/llm)·`sourceId`·`observedAt`(수집시각)·`eventAt`(발생시각)·`extractorVersion`·`confidence`를 실어라.
+- 시각 의미 구분: 발생시각 ≠ 수집시각 ≠ ERP변경일자 ≠ 저장시각.
+
+### 판정 무결성 규약 (P0 — 거짓양성/음성 차단)
+- **부분성공 ≠ 전체성공**: N건 중 일부만 매칭되면 전체를 PASS로 승격 금지. `matchedCount/total`을 노출하고, 전건 성립일 때만 PASS(그 외 부분=WARN).
+- **일대일 매칭**: 한 원천 레코드를 여러 결과의 근거로 재사용 금지(사용된 ID 소거).
+- **FAIL ≠ 소스공백**: `FAIL`은 "해당 기간·방·차수 원문 + 대상 원장 전량 조회 성공"을 확인했을 때만. 미러링 누락·LIMIT 절단 등 불완전 관측은 `UNKNOWN_SOURCE_GAP`(≠FAIL). `WARN`은 데이터가 존재하며 충돌할 때만.
+- **인과≠상관**: 시간 인접만으로 같은 업무로 잇지 말 것(방향성·업무키 확인).
+
+### 원칙 ⑤ 개정 — 자동화 등급은 측정으로
+- `100%가능` 같은 자칭 등급 금지. `precision/recall/coverage/unknownRate/humanReviewRate/worstCaseImpact`로 평가. 정답셋(ground truth) 없으면 등급 대신 `unverified`.
+- 실행 승격은 **shadow(관찰만) → 승인형(사람 확인) → 제한 자동** 순. 돈·재고·출고 실행은 시스템 게이트(권한·멱등·롤백)로 막고, 프롬프트 문장으로 대체 금지.
+
+### 자기개선 루프 오염 방지
+- 이전 리포트를 다음 입력에 넣을 때 `confirmed/rejected/unverified`로 분리. **새 독립 근거 없이 신뢰도 상승 금지**(LLM 추론이 다음 근거가 되어 오류가 강화되는 것 차단).
+
+### 구조적 후속과제 (데몬/스키마 변경 필요 — 별도)
+- clickXY에 `{monitorId, scale, screenW/H, windowBounds, app, screen}` 저장 + 창내부 비율 정규화(멀티모니터/DPI 붕괴 방지). 클러스터 키=app+screen 분리.
+- LLM step에 불변 `evidenceId` 부여 → 출력은 ID만 참조, 저장 전 존재·시간순·enum·필수필드 검증.
+- ERP 원장 안정 ID 확보 + 차수 복합키 `(orderYear, vendorId, majorCycle, minorCycle)`.
+- LIMIT 절단은 `cap+1` 요청/별도 COUNT로 직접 확인(`count>=cap-1` 추정식 폐기). 절단 탭의 비율·인사이트는 `null`/lowerBound 처리.
+- 개인정보 거버넌스(보존기간·접근통제·목적제한·마스킹) 표준화.
