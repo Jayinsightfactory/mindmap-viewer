@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>발주 파이프라인 검증 — 데이터확인·정리·변경</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --panel2:#1c2230; --border:#30363d;
+    --text:#e6edf3; --muted:#8b949e; --accent:#bc8cff; --teal:#39d2c0;
+    --warn:#f0883e; --danger:#f85149; --good:#3fb950;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Malgun Gothic",sans-serif;font-size:13px;line-height:1.55}
+  .wrap{max-width:1100px;margin:0 auto;padding:20px 24px}
+  .head{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:6px}
+  .head h1{font-size:21px;margin:0}
+  .head .meta{color:var(--muted);font-size:12px}
+  .kpis{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0 6px}
+  .kpi{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:9px 16px;text-align:center}
+  .kpi .n{font-size:20px;font-weight:700}
+  .kpi .l{color:var(--muted);font-size:11px;margin-top:2px}
+  .legend{color:var(--muted);font-size:11.5px;margin:8px 0 18px}
+  .legend b{color:var(--text)}
+  .pill{display:inline-block;font-size:10px;font-weight:700;padding:1px 7px;border-radius:10px;white-space:nowrap}
+  .v-PASS{background:rgba(63,185,80,.16);color:var(--good)}
+  .v-WARN{background:rgba(240,136,62,.16);color:var(--warn)}
+  .v-FAIL{background:rgba(248,81,73,.16);color:var(--danger)}
+  .v-na{background:rgba(139,148,158,.14);color:var(--muted)}
+  /* 거래처 */
+  .vendor{margin-bottom:26px}
+  .v-head{display:flex;align-items:baseline;gap:10px;margin:16px 0 4px;border-bottom:1px solid var(--border);padding-bottom:6px}
+  .v-head h2{font-size:16px;margin:0;color:var(--accent)}
+  .v-summary{color:var(--muted);font-size:12px;margin-bottom:12px}
+  /* 차수 카드 */
+  .cyc{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:10px}
+  .cyc-top{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+  .cyc-name{font-weight:700;font-size:14px}
+  .steps{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  @media(max-width:720px){.steps{grid-template-columns:1fr}}
+  .step{border:1px solid var(--border);border-radius:8px;padding:9px 11px;background:var(--panel2)}
+  .step .s-h{display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:6px}
+  .step .s-t{font-size:11.5px;color:var(--muted);font-weight:600}
+  .step .s-body{font-size:12px}
+  .step .ev{color:var(--muted);font-size:11px;margin-top:4px;line-height:1.45}
+  .step .ev b{color:var(--text);font-weight:600}
+  .step .quote{color:#cfe3ff;background:rgba(57,210,192,.07);border-radius:5px;padding:4px 7px;margin-top:4px;font-size:11px;max-height:64px;overflow:auto}
+  .chg{font-size:11px;margin-top:3px;padding-left:8px;border-left:2px solid var(--warn)}
+  .blind{margin-top:22px}
+  .blind h3{font-size:13px;color:var(--warn);margin:0 0 8px}
+  .blind li{background:var(--panel);border:1px solid var(--border);border-left:3px solid var(--warn);border-radius:8px;padding:8px 11px;margin-bottom:6px;list-style:none}
+  ul.plain{margin:0;padding:0}
+  .empty{color:var(--muted);padding:50px;text-align:center}
+  .refresh{position:fixed;top:12px;right:16px;background:var(--panel2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px 12px;cursor:pointer;font-size:12px}
+</style>
+</head>
+<body>
+<div class="wrap" id="wrap"><div class="empty">불러오는 중…</div></div>
+<button class="refresh" onclick="load()">↻ 새로고침</button>
+<script>
+const TOKEN = localStorage.getItem('orbit_token') || sessionStorage.getItem('orbit_flow_token') || '';
+const H = { Authorization: 'Bearer ' + TOKEN };
+const esc = s => String(s==null?'':s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const vcls = v => v==='PASS'?'v-PASS':v==='WARN'?'v-WARN':v==='FAIL'?'v-FAIL':'v-na';
+const tshort = t => t ? String(t).replace('T',' ').replace(/:\d\dZ?$/,'').replace(/\..*/,'') : '';
+
+function stepBox(title, verdict, inner){
+  return `<div class="step"><div class="s-h"><span class="s-t">${title}</span><span class="pill ${vcls(verdict)}">${esc(verdict||'-')}</span></div><div class="s-body">${inner}</div></div>`;
+}
+function cycleCard(c){
+  const s1=c.step1||{}, s2=c.step2||{}, s3=c.step3||{};
+  const e1=s1.evidence||{};
+  const b1 = e1.text ? `<div class="ev"><b>${esc(e1.sender||'')}</b> · ${esc(e1.room||'')} · ${esc(tshort(e1.ts))}${e1.bySeol?' · <b>본인발신</b>':''}</div><div class="quote">${esc(e1.text)}</div>` : `<div class="ev">${esc(e1.note||'카톡 근거 없음')}</div>`;
+  const b2 = `<div class="ev">${esc(s2.reason||'')}</div>`;
+  const chgs = (s3.changes||[]);
+  const b3 = chgs.length
+    ? chgs.map(x=>`<div class="chg">${esc(x.what||'')}${x.matched?` <span class="pill v-PASS">ERP매칭</span>`:` <span class="pill v-WARN">ERP미매칭</span>`}${x.kakaoTs?`<div class="ev">카톡 ${esc(tshort(x.kakaoTs))}${x.erpTs?` → ERP ${esc(tshort(x.erpTs))}`:''}</div>`:''}</div>`).join('')
+    : `<div class="ev">${esc((s3.evidence&&s3.evidence.note)||'변경 신호 없음')}</div>`;
+  return `<div class="cyc"><div class="cyc-top"><span class="cyc-name">${esc(c.cycle)}차</span></div>
+    <div class="steps">
+      ${stepBox('① 데이터확인', s1.verdict, b1)}
+      ${stepBox('② 데이터정리', s2.verdict, b2)}
+      ${stepBox('③ 변경', s3.verdict, b3)}
+    </div></div>`;
+}
+async function load(){
+  const el=document.getElementById('wrap');
+  el.innerHTML='<div class="empty">불러오는 중…</div>';
+  let rep=null;
+  try{ const d=await fetch('/api/flow/ops-report?kind=orderflow',{headers:H}).then(r=>r.json()); rep=d&&d.latest&&d.latest.report; }catch(e){}
+  if(!rep){ el.innerHTML='<div class="empty">발주검증 결과가 없습니다. (orderflow-agent 실행 필요)</div>'; return; }
+  const ov=rep.overall||{};
+  const vendors=(rep.vendors||[]);
+  el.innerHTML = `
+    <div class="head"><h1>발주 파이프라인 검증 — ${esc(rep.user||'')}</h1>
+      <span class="meta">갱신 ${esc(tshort(rep.generatedAtIso))} · 관측 ${esc(rep.windowHours||'')}h</span></div>
+    <div class="kpis">
+      <div class="kpi"><div class="n" style="color:var(--good)">${ov.pass||0}</div><div class="l">PASS</div></div>
+      <div class="kpi"><div class="n" style="color:var(--warn)">${ov.warn||0}</div><div class="l">WARN</div></div>
+      <div class="kpi"><div class="n" style="color:var(--danger)">${ov.fail||0}</div><div class="l">FAIL</div></div>
+      <div class="kpi"><div class="n">${vendors.length}</div><div class="l">거래처</div></div>
+    </div>
+    <div class="legend">각 차수를 <b>①데이터확인</b>(톡방 원문) · <b>②데이터정리</b>(엑셀 대조) · <b>③변경</b>(카톡↔ERP)으로 판정.
+      <span class="pill v-PASS">PASS</span> 근거확인 · <span class="pill v-WARN">WARN</span> 부분/관측한계 · <span class="pill v-FAIL">FAIL</span> 미반영 · <span class="pill v-na">미확인</span> 데이터대기</div>
+    ${vendors.map(v=>`<div class="vendor">
+      <div class="v-head"><h2>${esc(v.vendor)}</h2><span class="meta">${(v.cycles||[]).length}개 차수</span></div>
+      ${v.summary?`<div class="v-summary">${esc(v.summary)}</div>`:''}
+      ${(v.cycles||[]).map(cycleCard).join('')}
+    </div>`).join('')}
+    ${(rep.blindSpots||[]).length?`<div class="blind"><h3>⚠️ 미확인·한계</h3><ul class="plain">${rep.blindSpots.map(b=>`<li>${esc(b)}</li>`).join('')}</ul></div>`:''}
+  `;
+}
+load();
+</script>
+</body>
+</html>

@@ -792,6 +792,7 @@
   <button class="page-tab" data-tab="kakaoIntel" onclick="switchPageTab('kakaoIntel')"><span class="page-tab-icon">🚨</span> 거래처 조기경보</button>
   <button class="page-tab" data-tab="xray" onclick="switchPageTab('xray')"><span class="page-tab-icon">🩻</span> 회사 X-ray</button>
   <button class="page-tab" data-tab="deepdive" onclick="switchPageTab('deepdive')"><span class="page-tab-icon">🧬</span> 세밀분석</button>
+  <button class="page-tab" data-tab="orderflow" onclick="switchPageTab('orderflow')"><span class="page-tab-icon">📦</span> 발주검증</button>
   <button class="page-tab" data-tab="proposals" onclick="switchPageTab('proposals')"><span class="page-tab-icon">🤖</span> 자동화 제안</button>
   <button class="page-tab" data-tab="intent" onclick="switchPageTab('intent')"><span class="page-tab-icon">🧠</span> 의도 지도</button>
   <button class="page-tab" data-tab="graphflow" onclick="switchPageTab('graphflow')"><span class="page-tab-icon">🗺️</span> 업무 흐름</button>
@@ -4926,6 +4927,7 @@ function _renderTotalAnalysis(d) {
 <div id="panel-knowledge" class="page-tab-panel"></div>
 <div id="panel-owner" class="page-tab-panel"></div>
 <div id="panel-deepdive" class="page-tab-panel"></div>
+<div id="panel-orderflow" class="page-tab-panel"></div>
 <div id="panel-workdetail" class="page-tab-panel"></div>
 <div id="panel-timetable" class="page-tab-panel"></div>
 
@@ -4946,6 +4948,7 @@ function _renderTotalAnalysis(d) {
     knowledge: '/knowledge.html',
     owner: '/owner.html',
     deepdive: '/deepdive.html', // [2026-08-12] 세밀분석 뷰어 — 인물별 추론체인·분류규칙·미확인
+    orderflow: '/orderflow.html', // [2026-08-13] 발주검증 — 거래처×차수 ①데이터확인·②정리·③변경
     timetable: '/work-timetable.html' // [2026-08-11] 직원 업무시간 타임테이블 (시간/일/주/월)
   };
   const loaded = {};

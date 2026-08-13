@@ -35,8 +35,8 @@ const USE_LLM = process.env.ORDERFLOW_LLM === '1';
 const TARGET_USER = process.env.ORDERFLOW_USER || 'MNIAFICB3DC88DCB34';
 const TARGET_NAME = '설연주';
 
-// ERP 계정↔직원 매핑. 근거: ops-input erp[] '변경사용자' 필드 = ERP 로그인 계정(nenovaSS1 등),
-// 선행조사에서 설연주=nenovaSS1로 추정(SS=영업지원 계정군 추정). ★저신뢰: 사장님 확인 전 확정 아님 → blindSpots.
+// ERP 계정↔직원 매핑. 근거: ops-input erp[] '변경사용자' 필드 = ERP 로그인 계정(nenovaSS1 등).
+// nenovaSS1=설연주 ★사장님 확인됨(2026-08-13). 변경레코드 erpBySeol로 본인/타계정 구분.
 const SEOL_ERP_ACCOUNTS = (process.env.ORDERFLOW_ERP_ACCT || 'nenovaSS1').split(',').map(s => s.trim());
 
 // 거래처 정규화: '라움'=주식회사 트라움에스앤씨/라움, '초이문', '주광'=주광농원 등
@@ -246,7 +246,7 @@ async function main() {
   const blindSpots = [
     `전용 소규모방(${BLIND_ROOMS.join('·')})은 카톡 미러링 대상 아님 → 그 방 발주·정정은 카톡 근거 부재. screen-vision 보완만 가능(FAIL이 실제 누락이 아닐 수 있음).`,
     `ERP 변경원장(ops-input.erp)은 서버에서 최근 20건만 반환 → 관측창 내 과거 변경 누락 가능. 정밀 검증엔 erp-ui.order.history 전량 소스 필요.`,
-    `ERP 계정 매핑 nenovaSS1→${TARGET_NAME}은 추정(SS=영업지원 계정군). 사장님 확인 전 확정 아님. 변경레코드 erpBySeol=false면 타계정 입력.`,
+    `ERP 계정 매핑 nenovaSS1=${TARGET_NAME} 확정(2026-08-13 사장님 확인). 변경레코드 erpBySeol=false면 타계정 입력.`,
     `품목 한↔영 매칭(카톡 한글 vs ERP 'Hydrangea Dark Pink (진핑크)')은 토큰 교집합 기반 저신뢰. 품목 불일치 WARN은 실제 매칭일 수 있음.`,
     `② 데이터정리는 엑셀 수집 미연결로 전건 '미확인'(엑셀수집대기).`,
   ];
