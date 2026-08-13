@@ -26,6 +26,32 @@ const MASTER_TOKEN = 'orbit_967930333cab4ff63bc0bcae68c4779e3307d77095375f0d';
 function tryObj(x) { if (!x) return {}; if (typeof x === 'object') return x; try { return JSON.parse(x); } catch { return {}; } }
 function userOfAct(actId) { const p = String(actId || '').split(':'); return p[1] || ''; } // act:{userId}:{sec}
 
+// [골:좌표↔라벨 매핑] vision이 저장한 clickXY 파싱 — 배열 [x,y] 또는 문자열 "[x, y]" 둘 다 수용.
+// 숫자 2개를 못 뽑으면(예: "[각 셀의 우측 숫자 영역]") 무효 처리해 잡음 제거.
+function _parseXY(v) {
+  if (Array.isArray(v)) { const x = +v[0], y = +v[1]; return (Number.isFinite(x) && Number.isFinite(y)) ? [x, y] : null; }
+  if (typeof v === 'string') { const m = v.match(/-?\d+(?:\.\d+)?/g); if (m && m.length >= 2) { const x = +m[0], y = +m[1]; if (Number.isFinite(x) && Number.isFinite(y)) return [x, y]; } }
+  return null;
+}
+// 반복 클릭 핫스팟(x,y)에 "그 좌표에 있던 버튼/필드명"을 붙인다. fieldPoints=[{x,y,label,screen}].
+// 핫스팟은 50px 격자이므로 반경 R(기본 90px) 안의 필드 라벨을 모아 최빈 라벨을 대표로 삼는다.
+// 마우스 좌표(mousePositions)와 clickXY는 같은 픽셀 좌표계라 매칭이 성립한다. 못 맞추면 label:null(정직).
+function _labelHotspots(hotspots, fieldPoints, R = 90) {
+  return hotspots.map(h => {
+    const near = fieldPoints
+      .filter(f => Math.abs(f.x - h.x) <= R && Math.abs(f.y - h.y) <= R)
+      .map(f => ({ ...f, d: Math.hypot(f.x - h.x, f.y - h.y) }))
+      .sort((a, b) => a.d - b.d);
+    if (!near.length) return { ...h, label: null };
+    const cnt = {};
+    for (const f of near) { const k = (f.label || '').trim(); if (k) cnt[k] = (cnt[k] || 0) + 1; }
+    const ranked = Object.entries(cnt).sort((a, b) => b[1] - a[1]);
+    const best = near[0];
+    return { ...h, label: (ranked[0] && ranked[0][0]) || best.label || null,
+      screen: (best.screen || '').slice(0, 40), matched: near.length };
+  });
+}
+
 function createFlowMapRouter(deps = {}) {
   const getPool = deps.getPool;
   const isAdminToken = deps.isAdminToken || (() => false);
@@ -494,6 +520,29 @@ function createFlowMapRouter(deps = {}) {
       }
       let mouseHotspots = [];
       try { mouseHotspots = (_clusterMouseClicks(kbEvents).hotspots || []).slice(0, 15); } catch {}
+      // [골:좌표↔라벨 매핑] 반복 클릭 좌표에 그 위치의 버튼/필드명을 서버에서 붙인다(데몬 재배포 불필요).
+      // 근거: screen.analyzed의 fields[].clickXY(vision이 클릭과 겹친 필드에 부여) = mousePositions와 같은 픽셀 좌표계.
+      // 썸네일 제외(data_json->'fields'만)로 메모리 보수적. 핫스팟 있을 때만 1회 조회.
+      if (mouseHotspots.length && (isDefaultWs || memberIds.length)) {
+        try {
+          const fpR = await p.query(
+            `SELECT data_json->>'screen' screen, data_json->'fields' fields
+               FROM events
+              WHERE type='screen.analyzed' AND timestamp>=$1 ${isDefaultWs ? '' : 'AND user_id = ANY($2)'}
+                AND data_json->'fields' IS NOT NULL
+              ORDER BY timestamp DESC LIMIT 300`, isDefaultWs ? [since] : [since, memberIds]);
+          const fieldPoints = [];
+          for (const r of fpR.rows) {
+            let fs = r.fields; if (typeof fs === 'string') { try { fs = JSON.parse(fs); } catch { fs = null; } }
+            if (!Array.isArray(fs)) continue;
+            for (const f of fs) {
+              const xy = _parseXY(f && f.clickXY); if (!xy) continue;
+              fieldPoints.push({ x: xy[0], y: xy[1], label: (f.label || f.name || '').slice(0, 60), screen: r.screen || '' });
+            }
+          }
+          mouseHotspots = _labelHotspots(mouseHotspots, fieldPoints);
+        } catch {}
+      }
       res.json({ ok: true, tenant: ws, windowHours: hours, generatedAtIso: new Date().toISOString(),
         loads, timeline, units, handoffs, kakao, vision, erp, typedSamples, mouseHotspots,
         talkTriggered: Number(talkR.rows[0].c),
