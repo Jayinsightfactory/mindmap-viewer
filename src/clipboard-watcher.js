@@ -1,6 +1,6 @@
 'use strict';
 // clipboard-watcher.js — 클립보드 변경 감지 + 발주서 자동 파싱
-// 2초마다 클립보드 체크, 발주서 포맷 감지 시 구조화 데이터 포함 전송
+// 5초마다 클립보드 체크, 발주서 포맷 감지 시 구조화 데이터 포함 전송
 
 const { execSync } = require('child_process');
 const os = require('os');
@@ -126,8 +126,8 @@ function _quickParse(text, format) {
 
 function start(onClipboardChange) {
   _callback = onClipboardChange;
-  _timer = setInterval(_check, 2000);
-  console.log('[clipboard-watcher] 시작 (2초 간격, 발주서 자동 감지 ON)');
+  _timer = setInterval(_check, 5000);
+  console.log('[clipboard-watcher] 시작 (5초 간격, 발주서 자동 감지 ON)');
 }
 
 // Windows: long-running PowerShell으로 cmd창 깜빡임 방지
@@ -142,6 +142,9 @@ function _loadWinShell() {
 async function _check() {
   if (_paused) return;
   try {
+    try {
+      if (Math.round((1 - os.freemem() / os.totalmem()) * 100) >= 94) return;
+    } catch {}
     let text = '';
     if (process.platform === 'win32') {
       const ws = _loadWinShell();

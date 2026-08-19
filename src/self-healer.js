@@ -220,19 +220,23 @@ async function _checkPerfIssues() {
       _blackscreenRestartCount = 0; // 정상 캡처 확인 시 카운터 리셋
     }
 
-    // 5-b. 캡처 파일 누적 (200개 이상): 7일 이상 된 파일 자동 삭제
+    // 5-b. 캡처 파일 누적 (200개 이상): 한도 초과분은 날짜 무관 삭제, 7일 이상은 추가 삭제
     if (files.length > 200) {
       const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
       let deleted = 0;
-      for (const f of files) {
-        if (f.mtime < cutoff) {
-          try { fs.unlinkSync(f.full); deleted++; } catch {}
-        }
+      const KEEP = 500;
+      for (let i = 0; i < files.length; i++) {
+        const f = files[i];
+        const overCap = i >= KEEP;
+        const tooOld = f.mtime < cutoff;
+        if (!overCap && !tooOld) continue;
+        try { fs.unlinkSync(f.full); deleted++; } catch {}
+        try { fs.unlinkSync(f.full.replace(/\.png$/i, '.json')); } catch {}
       }
       _reportIssue('capture_accumulation', {
         total:   files.length,
         deleted,
-        cause:   `캡처 파일 ${files.length}개 누적 — ${deleted}개 자동 삭제 (7일 이상)`,
+        cause:   `캡처 파일 ${files.length}개 누적 — ${deleted}개 자동 삭제`,
       });
     }
 
@@ -447,7 +451,7 @@ async function _checkConfigHealth() {
     } catch {}
   }
 
-  // C-7: daemon.log size check (truncate if > 20MB)
+  // C-7: daemon.log / daemon-self.log size check (truncate if huge)
   try {
     const logPath = path.join(os.homedir(), '.orbit', 'daemon.log');
     const stat = fs.statSync(logPath);
@@ -456,6 +460,22 @@ async function _checkConfigHealth() {
       try { fs.unlinkSync(oldPath); } catch {}
       try { fs.renameSync(logPath, oldPath); } catch {}
       console.log(`[self-healer] daemon.log rotated (${Math.round(stat.size/1024/1024)}MB)`);
+    }
+  } catch {}
+  try {
+    const selfLog = path.join(os.homedir(), '.orbit', 'daemon-self.log');
+    const stat = fs.statSync(selfLog);
+    if (stat.size > 2 * 1024 * 1024) {
+      const fd = fs.openSync(selfLog, 'r');
+      const keep = Math.min(stat.size, 256 * 1024);
+      const buf = Buffer.alloc(keep);
+      fs.readSync(fd, buf, 0, keep, stat.size - keep);
+      fs.closeSync(fd);
+      let t = buf.toString('utf8');
+      const nl = t.indexOf('\n');
+      if (stat.size > keep && nl >= 0) t = t.slice(nl + 1);
+      fs.writeFileSync(selfLog, t.endsWith('\n') ? t : t + '\n');
+      console.log(`[self-healer] daemon-self.log rotated (${Math.round(stat.size/1024/1024)}MB → tail)`);
     }
   } catch {}
 }

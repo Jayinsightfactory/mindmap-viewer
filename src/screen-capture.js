@@ -18,6 +18,7 @@ const { getAppProfileKey, normalizeAppName, sanitizeWindowTitle } = require('./d
 
 const CAPTURE_DIR   = path.join(os.homedir(), '.orbit', 'captures');
 const MAX_CAPTURES  = 500; // 개발 단계: 최대 보관
+let _pruneTimer = null;
 
 // ── 변화 감지 기반 캡처 (고정 간격 아님) ──
 // 최소 쿨타임만 설정 (연속 캡처 방지)
@@ -444,6 +445,17 @@ function _sendAnalysisToServer(result, trigger, filepath) {
 
 function ensureDir() { fs.mkdirSync(CAPTURE_DIR, { recursive: true }); }
 
+function pruneOldCaptures(keep = MAX_CAPTURES) {
+  try {
+    ensureDir();
+    const files = fs.readdirSync(CAPTURE_DIR).filter(f => f.startsWith('screen-') && f.endsWith('.png')).sort().reverse();
+    files.slice(keep).forEach(f => {
+      try { fs.unlinkSync(path.join(CAPTURE_DIR, f)); } catch {}
+      try { fs.unlinkSync(path.join(CAPTURE_DIR, f.replace(/\.png$/i, '.json'))); } catch {}
+    });
+  } catch {}
+}
+
 /**
  * app 필드 정규화 — windowTitle/clipboard/JSON/명령어 오염만 필터.
  * 정상 process name은 패턴 제약 없이 통과 (한글·괄호·특수문자 포함 가능).
@@ -609,6 +621,11 @@ function _postSpool(serverUrl, token, body) {
 async function uploadPendingToSpool(limit = 15) {
   // 분석 PC(owner)는 --local로 자기 캡처를 직접 처리 → 스풀 업로드 스킵(중복 방지)
   try { if (fs.existsSync(path.join(os.homedir(), '.orbit', '.no-spool-upload'))) return 0; } catch {}
+  // RAM 92%+ 에서 PNG 1000장을 readdir/base64 하면 화면이 끊김
+  try {
+    const ramPct = Math.round((1 - os.freemem() / os.totalmem()) * 100);
+    if (ramPct >= 90) return 0;
+  } catch {}
   ensureDir();
   const orbitConfig = (() => { try { let r = fs.readFileSync(path.join(os.homedir(), '.orbit-config.json'), 'utf8'); if (r.charCodeAt(0) === 0xFEFF) r = r.slice(1); return JSON.parse(r); } catch { return {}; } })();
   const serverUrl = orbitConfig.serverUrl || process.env.ORBIT_SERVER_URL;
@@ -905,11 +922,7 @@ function capture(trigger = 'manual') {
       _sendCaptureMetadata(filepath, trigger, context);
     }
 
-    // 정리
-    try {
-      const files = fs.readdirSync(CAPTURE_DIR).filter(f => f.startsWith('screen-') && f.endsWith('.png')).sort().reverse();
-      files.slice(MAX_CAPTURES).forEach(f => { try { fs.unlinkSync(path.join(CAPTURE_DIR, f)); } catch {} try { fs.unlinkSync(path.join(CAPTURE_DIR, f.replace(/\.png$/i, '.json'))); } catch {} }); // 사이드카 동반 삭제
-    } catch {}
+    pruneOldCaptures();
 
     return filepath;
   } catch (e) {
@@ -1233,11 +1246,14 @@ function start(opts) {
   // 스풀 업로더: 로컬 캡처 백로그를 서버 볼륨으로(owner는 마커로 스킵). 3분 주기, 소량.
   try { setTimeout(() => { uploadPendingToSpool().catch(() => {}); }, 60 * 1000); } catch {}
   if (!_spoolTimer) _spoolTimer = setInterval(() => { uploadPendingToSpool().catch(() => {}); }, 3 * 60 * 1000);
+  try { setTimeout(() => pruneOldCaptures(), 20 * 1000); } catch {}
+  if (!_pruneTimer) _pruneTimer = setInterval(() => pruneOldCaptures(), 10 * 60 * 1000);
 }
 
 function stop() {
   _running = false;
   if (_spoolTimer) { clearInterval(_spoolTimer); _spoolTimer = null; }
+  if (_pruneTimer) { clearInterval(_pruneTimer); _pruneTimer = null; }
   if (_idleTimer) { clearTimeout(_idleTimer); _idleTimer = null; }
   if (_flushCaptureTimer) { clearTimeout(_flushCaptureTimer); _flushCaptureTimer = null; }
   if (_burstTimer) { clearTimeout(_burstTimer); _burstTimer = null; }

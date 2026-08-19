@@ -566,9 +566,44 @@ async function runSuggestions() {
 // → 데몬이 직접 daemon-self.log에 기록 + 그걸 읽어서 admin에 전송
 const _selfLogPath = path.join(os.homedir(), '.orbit', 'daemon-self.log');
 
+function _readFileTail(filePath, maxBytes = 256 * 1024, maxLines = 200) {
+  const st = fs.statSync(filePath);
+  const size = st.size;
+  if (size === 0) return { text: '', sizeBytes: 0 };
+  const fd = fs.openSync(filePath, 'r');
+  try {
+    const len = Math.min(size, maxBytes);
+    const start = size - len;
+    const buf = Buffer.alloc(len);
+    fs.readSync(fd, buf, 0, len, start);
+    let text = buf.toString('utf8');
+    if (start > 0) {
+      const nl = text.indexOf('\n');
+      if (nl >= 0) text = text.slice(nl + 1);
+    }
+    const lines = text.split('\n');
+    if (lines.length > maxLines) text = lines.slice(-maxLines).join('\n');
+    return { text, sizeBytes: size };
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+function _rotateLogIfHuge(filePath, maxBytes = 2 * 1024 * 1024) {
+  try {
+    const st = fs.statSync(filePath);
+    if (st.size <= maxBytes) return;
+    const { text } = _readFileTail(filePath, 256 * 1024, 200);
+    fs.writeFileSync(filePath, text.endsWith('\n') ? text : text + '\n');
+    console.warn(`[orbit] rotated ${path.basename(filePath)} (${Math.round(st.size / 1024 / 1024)}MB → tail)`);
+  } catch {}
+}
+
+let _selfLogWrites = 0;
 function _selfLog(msg) {
   try {
     fs.appendFileSync(_selfLogPath, `${new Date().toISOString()} ${msg}\n`);
+    if ((++_selfLogWrites % 50) === 0) _rotateLogIfHuge(_selfLogPath);
   } catch {}
 }
 
@@ -580,9 +615,9 @@ function _selfLog(msg) {
     const _origLog = console.log.bind(console);
     const _origWarn = console.warn.bind(console);
     const _origErr = console.error.bind(console);
-    console.log = (...args) => { _origLog(...args); try { fs.appendFileSync(_selfLogPath, `${new Date().toISOString()} [LOG] ${args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ')}\n`); } catch {} };
-    console.warn = (...args) => { _origWarn(...args); try { fs.appendFileSync(_selfLogPath, `${new Date().toISOString()} [WARN] ${args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ')}\n`); } catch {} };
-    console.error = (...args) => { _origErr(...args); try { fs.appendFileSync(_selfLogPath, `${new Date().toISOString()} [ERR] ${args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ')}\n`); } catch {} };
+    console.log = (...args) => { _origLog(...args); try { fs.appendFileSync(_selfLogPath, `${new Date().toISOString()} [LOG] ${args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ')}\n`); if ((++_selfLogWrites % 50) === 0) _rotateLogIfHuge(_selfLogPath); } catch {} };
+    console.warn = (...args) => { _origWarn(...args); try { fs.appendFileSync(_selfLogPath, `${new Date().toISOString()} [WARN] ${args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ')}\n`); if ((++_selfLogWrites % 50) === 0) _rotateLogIfHuge(_selfLogPath); } catch {} };
+    console.error = (...args) => { _origErr(...args); try { fs.appendFileSync(_selfLogPath, `${new Date().toISOString()} [ERR] ${args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ')}\n`); if ((++_selfLogWrites % 50) === 0) _rotateLogIfHuge(_selfLogPath); } catch {} };
   } catch {}
 })();
 
@@ -591,6 +626,7 @@ function _sendLogSnapshot() {
   if (!REMOTE_URL) return;
   const orbitDir = path.join(os.homedir(), '.orbit');
   // daemon-self.log (lock 없음) 우선 + install.log fallback
+  // 통째 읽기 금지: 119MB 로그를 5분마다 readFileSync 하면 페이징 PC에서 화면이 끊김
   const candidates = [
     { type: 'daemon', path: _selfLogPath },
     { type: 'install', path: path.join(orbitDir, 'install.log') },
@@ -601,12 +637,12 @@ function _sendLogSnapshot() {
         _reportEvent('daemon.log.snapshot', { logType: f.type, error: 'file not found' });
         continue;
       }
-      const raw = fs.readFileSync(f.path, 'utf8');
-      const tail = raw.split('\n').slice(-200).join('\n');
+      if (f.type === 'daemon') _rotateLogIfHuge(f.path);
+      const { text, sizeBytes } = _readFileTail(f.path);
       _reportEvent('daemon.log.snapshot', {
         logType: f.type,
-        lines: tail,
-        sizeBytes: raw.length,
+        lines: text,
+        sizeBytes,
         capturedAt: new Date().toISOString(),
       });
     } catch (e) {
@@ -1168,24 +1204,26 @@ async function main() {
   });
 
   // 2026-06-09 added: 메모리 모니터링 + graceful restart (OOM kill 방지)
-  // 600MB 초과하면 데이터 flush 후 의도된 재시작 (ps1 loop가 재spawn).
-  // 메모리 누수 누적으로 인한 강제 종료 방지.
-  const MEM_LIMIT_MB = 600;
+  // 2026-08-19: 한도를 600MB로 두면 RSS 1.3GB 안정 상태에서도 15분마다 재시작 → 화면 끊김.
+  // 성장분(누수)만 재시작한다. 모듈 로드 후 높은 RSS 자체는 재시작 대상이 아님.
+  const MEM_LIMIT_MB = 1800;
   let memWarnCount = 0;
+  let memFloorMB = 0;
   setInterval(() => {
     try {
       const rssMB = Math.round(process.memoryUsage().rss / 1024 / 1024);
-      if (rssMB > MEM_LIMIT_MB) {
+      if (!memFloorMB || rssMB < memFloorMB) memFloorMB = rssMB;
+      const growing = rssMB > memFloorMB + 300;
+      if (rssMB > MEM_LIMIT_MB && growing) {
         memWarnCount++;
-        console.warn(`[orbit] 메모리 ${rssMB}MB > ${MEM_LIMIT_MB}MB (warning ${memWarnCount}/3)`);
-        // 3회 연속 (15분 동안) 한도 초과 → graceful restart
+        console.warn(`[orbit] 메모리 ${rssMB}MB > ${MEM_LIMIT_MB}MB 이고 +${rssMB - memFloorMB}MB 성장 (warning ${memWarnCount}/3)`);
         if (memWarnCount >= 3) {
           console.warn('[orbit] 메모리 누수 의심 → graceful restart (ps1 loop가 재시작)');
           _reportError('memory_graceful_restart', `${rssMB}MB > ${MEM_LIMIT_MB}MB`);
           shutdown('memory_limit').catch(()=>{});
         }
       } else if (memWarnCount > 0) {
-        memWarnCount = 0; // 정상 복귀 시 리셋
+        memWarnCount = 0;
       }
     } catch {}
   }, 5 * 60 * 1000); // 5분마다 체크
