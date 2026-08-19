@@ -1141,12 +1141,21 @@ function onExcelFormula() {
 
 // startup 캡처 중복 방지 — 5분 내 재시작 시 startup 캡처 skip (노이즈 감소)
 const _STARTUP_FLAG_PATH = require('path').join(require('os').tmpdir(), '.orbit_startup_ts');
+const _SELFTEST_FLAG_PATH = require('path').join(require('os').tmpdir(), '.orbit_selftest_ts');
 function _shouldCaptureStartup() {
   try {
     const prev = Number(require('fs').readFileSync(_STARTUP_FLAG_PATH, 'utf8'));
     if (Date.now() - prev < 5 * 60 * 1000) return false; // 5분 내 재시작 = skip
   } catch {}
   try { require('fs').writeFileSync(_STARTUP_FLAG_PATH, String(Date.now()), 'utf8'); } catch {}
+  return true;
+}
+function _shouldRunSelfTest() {
+  try {
+    const prev = Number(require('fs').readFileSync(_SELFTEST_FLAG_PATH, 'utf8'));
+    if (Date.now() - prev < 30 * 60 * 1000) return false; // healer 재시작마다 3중 캡처 금지
+  } catch {}
+  try { require('fs').writeFileSync(_SELFTEST_FLAG_PATH, String(Date.now()), 'utf8'); } catch {}
   return true;
 }
 
@@ -1207,16 +1216,18 @@ function _runStartupSelfTest() {
   }, 9000);
 }
 
-function start() {
+function start(opts) {
   if (_running) return;
   _running = true;
   _lastCaptureTime = 0;
+  _scErrorCount = 0;
   _checkVisionEnabled();
   _detectScreenResolution();
   // startup 캡처 — 5분 내 재시작이면 skip (노이즈 1529건 원인)
   if (_shouldCaptureStartup()) capture('startup');
-  // 캡처 자가테스트 — 항상 1회, /api/hook으로 screen.diag 보고
-  _runStartupSelfTest();
+  // 캡처 자가테스트 — 콜드스타트만. healer 재시작(skipSelfTest)과 30분 쿨다운은 생략
+  // (재시작마다 PIL+pyautogui+PS 3중 캡처가 화면 끊김 유발, 2026-08-19)
+  if (!(opts && opts.skipSelfTest) && _shouldRunSelfTest()) _runStartupSelfTest();
   // 스풀 업로더: 로컬 캡처 백로그를 서버 볼륨으로(owner는 마커로 스킵). 3분 주기, 소량.
   try { setTimeout(() => { uploadPendingToSpool().catch(() => {}); }, 60 * 1000); } catch {}
   if (!_spoolTimer) _spoolTimer = setInterval(() => { uploadPendingToSpool().catch(() => {}); }, 3 * 60 * 1000);

@@ -1078,7 +1078,7 @@ async function main() {
     }
     if (_selfHealer) {
       const _scAdapter = screenCapture ? {
-        start: () => screenCapture.start(),
+        start: () => screenCapture.start({ skipSelfTest: true }),
         stop: () => screenCapture.stop(),
         isRunning: () => {
           const s = screenCapture.getStatus?.();
@@ -1097,12 +1097,14 @@ async function main() {
       });
       _selfHealer.start();
       // screen-capture 에러 카운트 → self-healer 연동
+      let _prevScErr = 0;
       setInterval(() => {
         try {
           const st = screenCapture?.getStatus?.();
           if (!st) return;
-          if (st.errorCount >= 5) _selfHealer.recordCaptureError();
-          else if (st.captureCount > 0) _selfHealer.recordCaptureSuccess();
+          if (st.errorCount > _prevScErr) _selfHealer.recordCaptureError();
+          else if (st.captureCount > 0 && st.errorCount === 0) _selfHealer.recordCaptureSuccess();
+          _prevScErr = st.errorCount;
         } catch {}
       }, 60 * 1000);
     }

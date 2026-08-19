@@ -1523,3 +1523,11 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 주의사항 반영: events.timestamp TEXT→::timestamptz 캐스팅, KST=AT TIME ZONE 'Asia/Seoul', 빈칸≠논것(미관측 안내문), 최신 30분은 work.action 융합 전.
 - 검증: node --check 통과. 배포 후 /work-timetable.html 200 + 무토큰 API 403 확인할 것.
 - 다시 보면: routes/work-timetable.js 헤더 주석 + 이 항목.
+
+### 2026-08-19 owner PC 렉 — 데몬 업데이트 후 화면 끊김
+- 증상: 작업할 때마다 화면 끊김. RAM 87.8%(1.9GB free), governor BUSY/CRITICAL, personal-agent CPU 12444s, PowerShell 19개, self-healer #400+.
+- 원인: ①`/api/daemon/version`이 `unknown`을 주면 기동마다 git pull 시도 ②캡처 errorCount가 누적이라 매분 recordCaptureError → 5분마다 screen-capture 재시작+PIL/pyautogui/PS 3중 selftest ③클립보드 2초 폴링이 카톡을 change_order 오탐하고 그때마다 PowerShell 2개 spawn ④은퇴한 `--server-queue` 워커 잔존.
+- 조치: screen-capture selftest 30분 쿨다운+healer는 skipSelfTest, start 시 errorCount 리셋, personal-agent는 에러 증가분만 기록. clipboard fingerprint 30s 중복차단+앱/창 15s 캐시+파싱0건 change_order 폐기. daemon-updater는 hex 해시만 버전으로 인정. owner `vision-worker-start.ps1`/`1800`은 server-queue 기동 안 함(프로세스 종료 확인, --local/--spool 유지).
+- 검색어: 렉, 화면끊김, selftest, unknown, clipboard, server-queue
+- 다시 보면: src/screen-capture.js `_shouldRunSelfTest`, src/clipboard-watcher.js DEDUPE_MS, src/daemon-updater.js `_isRealVersion`, ~/.orbit/vision-worker-start.ps1
+

@@ -13,6 +13,28 @@ let _callback = null;
 let _clipboardFreqByApp = {};  // 앱별 클립보드 변경 횟수
 let _lastCopyApp = '';         // 마지막 복사가 발생한 앱
 let _lastCopyTime = 0;        // 마지막 복사 시간
+let _lastFingerprint = '';
+let _lastEmitAt = 0;
+let _cachedApp = '';
+let _cachedWindow = '';
+let _cacheAt = 0;
+const CTX_TTL_MS = 15000;
+const DEDUPE_MS = 30000;
+
+function _fingerprint(text) {
+  return String(text || '').replace(/\s+/g, ' ').trim().slice(0, 400);
+}
+
+function _getCachedContext() {
+  const now = Date.now();
+  if (now - _cacheAt < CTX_TTL_MS && _cachedApp) {
+    return { sourceApp: _cachedApp, sourceWindow: _cachedWindow };
+  }
+  _cachedApp = normalizeAppName(_getActiveApp(), '');
+  _cachedWindow = sanitizeWindowTitle(_getActiveWindowTitle());
+  _cacheAt = now;
+  return { sourceApp: _cachedApp, sourceWindow: _cachedWindow };
+}
 
 function _getActiveApp() {
   try {
@@ -140,46 +162,51 @@ async function _check() {
         return;
       }
 
+      const fp = _fingerprint(text);
+      if (fp && fp === _lastFingerprint && Date.now() - _lastEmitAt < DEDUPE_MS) {
+        _lastClipboard = text;
+        return;
+      }
+
       const prev = _lastClipboard;
       _lastClipboard = text;
       if (_callback && prev) {
-        const orderDetected = _detectOrderFormat(text);
-        const orderFormat = _getOrderFormatString(orderDetected);
+        let orderDetected = _detectOrderFormat(text);
+        let orderFormat = _getOrderFormatString(orderDetected);
         const parsed = orderFormat ? _quickParse(text, orderFormat) : [];
+        // 카톡 일반문에 '추가/취소+단'이 섞이면 change_order 오탐 → 파싱 0건은 주문 아님
+        if (orderFormat === 'change_order' && parsed.length === 0) {
+          orderDetected = null;
+          orderFormat = null;
+        }
 
-        // 활성 앱/윈도우 컨텍스트 수집
-        const sourceApp = normalizeAppName(_getActiveApp(), '');
-        const sourceWindow = sanitizeWindowTitle(_getActiveWindowTitle());
+        const { sourceApp, sourceWindow } = _getCachedContext();
 
-        // 앱별 클립보드 변경 빈도 추적
         if (sourceApp) {
           _clipboardFreqByApp[sourceApp] = (_clipboardFreqByApp[sourceApp] || 0) + 1;
         }
 
-        // 복사→붙여넣기 시퀀스 추적
         const now = Date.now();
         const copyPasteGap = _lastCopyTime > 0 ? now - _lastCopyTime : null;
         const copySourceApp = _lastCopyApp;
         _lastCopyApp = sourceApp;
         _lastCopyTime = now;
+        _lastFingerprint = fp;
+        _lastEmitAt = now;
 
         _callback({
           type: 'clipboard.change',
           text: text.substring(0, 2000), // 확대: 500→2000자 (발주서 전체 포함)
           length: text.length,
           sourceApp,
-          // ── 윈도우 컨텍스트 (어떤 화면에서 복사했는지) ──
           windowTitle: sourceWindow,
-          // ── 복사→붙여넣기 시퀀스 ──
           copySequence: copySourceApp && copySourceApp !== sourceApp ? {
             fromApp: copySourceApp,
             toApp: sourceApp,
             gapMs: copyPasteGap,
           } : undefined,
-          // ── 앱별 클립보드 사용 빈도 ──
           clipboardFreqByApp: { ..._clipboardFreqByApp },
-          // ── 발주서 자동 감지 결과 ──
-          orderFormat: orderFormat, // null이면 비주문
+          orderFormat: orderFormat,
           orderConfidence: orderDetected ? orderDetected.confidence : undefined,
           parsedItems: parsed.length > 0 ? parsed : undefined,
           parsedCount: parsed.length || undefined,

@@ -109,6 +109,10 @@ function getLocalVersion() {
   } catch { return 'unknown'; }
 }
 
+function _isRealVersion(v) {
+  return !!(v && typeof v === 'string' && /^[0-9a-f]{7,40}$/i.test(v));
+}
+
 function checkServerVersion() {
   return new Promise((resolve) => {
     if (!_serverUrl) return resolve(null);
@@ -797,7 +801,7 @@ function start() {
       const _lcHash = (() => {
         try { return execSync('git rev-parse HEAD', { cwd: ROOT, timeout: 5000, windowsHide: true, stdio: 'pipe' }).toString().trim().slice(0, 8); } catch { return null; }
       })();
-      if (_svHash && _lcHash && _svHash !== _lcHash) {
+      if (_isRealVersion(_svHash) && _isRealVersion(_lcHash) && _svHash !== _lcHash) {
         console.log(`[daemon-updater] 동기 버전 불일치: ${_lcHash} -> ${_svHash} → 즉시 git pull (crash 전)`);
         try {
           execSync('git fetch origin', { cwd: ROOT, timeout: 30000, windowsHide: true, stdio: 'pipe' });
@@ -821,6 +825,8 @@ function start() {
         } catch (_gitE) {
           console.warn('[daemon-updater] 동기 git pull 실패 (비동기 fallback 사용):', _gitE.message);
         }
+      } else if (_svHash && !_isRealVersion(_svHash)) {
+        console.log(`[daemon-updater] 서버 버전 ${_svHash} — git pull skip`);
       } else if (_svHash && _lcHash) {
         console.log(`[daemon-updater] 동기 버전 체크: 최신 (${_lcHash})`);
       }
@@ -898,13 +904,16 @@ function start() {
       }
     } else {
       const local = getLocalVersion();
-      if (local !== 'unknown' && serverInfo.version !== local) {
+      if (_isRealVersion(local) && _isRealVersion(serverInfo.version) && serverInfo.version !== local) {
         // 크래시 루프 탈출 최우선: idle 대기 없이 즉시 업데이트
         // 이유: 크래시 루프(~22s 주기)에서는 30분 타임아웃이 영원히 도달하지 못함
         // (매 32s 재시작 시 _pendingUpdate 메모리 초기화됨)
         console.log(`[daemon-updater] startup version mismatch: ${local} -> ${serverInfo.version} → 즉시 업데이트`);
         pullAndRestart(`startup version mismatch: ${local} -> ${serverInfo.version}`);
         return;
+      }
+      if (serverInfo.version && !_isRealVersion(serverInfo.version)) {
+        console.log(`[daemon-updater] 서버 버전 ${serverInfo.version} — startup pull skip`);
       }
     }
 
