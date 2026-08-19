@@ -7,6 +7,8 @@ const APP_ALIASES = {
   'msedge.exe': 'edge',
   'microsoft edge': 'edge',
   'kakaotalk.exe': 'kakaotalk',
+  'kakaowork.exe': 'kakaowork',
+  'kakaowork': 'kakaowork',
   'nenova.exe': 'nenova',
   'excel.exe': 'excel',
   winword: 'word',
@@ -22,7 +24,7 @@ const APP_ALIASES = {
 const KNOWN_PROCESS_NAMES = new Set([
   'applicationframehost', 'brave', 'calculator', 'chrome', 'cmd', 'code',
   'cursor', 'discord', 'edge', 'excel', 'explorer', 'firefox', 'hwp',
-  'illustrator', 'kakaotalk', 'line', 'msedge', 'nenova', 'notepad',
+  'illustrator', 'kakaotalk', 'kakaowork', 'line', 'msedge', 'nenova', 'notepad',
   'notion', 'obsidian', 'photoshop', 'powerpnt', 'powershell', 'pycharm',
   'rider', 'slack', 'teams', 'telegram', 'terminal', 'whale', 'winword',
   'word', 'zoom',

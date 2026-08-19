@@ -1524,6 +1524,14 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 검증: node --check 통과. 배포 후 /work-timetable.html 200 + 무토큰 API 403 확인할 것.
 - 다시 보면: routes/work-timetable.js 헤더 주석 + 이 항목.
 
+### 2026-08-19 박성수(DESKTOP-HGNEA1S) 캡처 폭주
+- 질문: 다른 PC와 설정이 달라서인가. 최근 3일 캡처 6566(다음 1312) / 오늘 4128 / 분석 0.
+- 실측 last 80건: **앱 전부 kakaotalk**. trigger kakao_periodic 31, mouse_click 26. 학습 default=90000로 남과 같고, 미전달 capture-config 1건뿐.
+- 원인: `APP_PROFILES.kakaotalk.noLocalSave` 경로는 메타만 보내고 `_lastCaptureTime`을 안 갱신 → skip(5분)이 한 번도 안 먹힘. 카톡 상주(영업)면 15초 주기+클릭마다 서버 이벤트. 다른 PC는 엑셀 PNG가 쿨타임을 채워 덜 터짐.
+- 조치: noLocalSave에서도 `_lastCaptureTime` 갱신, kakao-capture 쿨다운 15초→5분(대화방 변경 우회 제거), kakaowork도 skip+noLocalSave.
+- 다시 보면: src/screen-capture.js noLocalSave, src/kakao-capture.js CAPTURE_COOLDOWN
+
+
 ### 2026-08-19 owner PC 렉 — 데몬 업데이트 후 화면 끊김
 - 증상: 작업할 때마다 화면 끊김. RAM 87.8%(1.9GB free), governor BUSY/CRITICAL, personal-agent CPU 12444s, PowerShell 19개, self-healer #400+.
 - 원인: ①`/api/daemon/version`이 `unknown`을 주면 기동마다 git pull 시도 ②캡처 errorCount가 누적이라 매분 recordCaptureError → 5분마다 screen-capture 재시작+PIL/pyautogui/PS 3중 selftest ③클립보드 2초 폴링이 카톡을 change_order 오탐하고 그때마다 PowerShell 2개 spawn ④은퇴한 `--server-queue` 워커 잔존.

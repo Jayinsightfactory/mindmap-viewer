@@ -81,6 +81,7 @@ const APP_PROFILES = {
   edge:       { priority: 'medium',   minInterval: 90000,  sendImage: false },
   whale:      { priority: 'medium',   minInterval: 90000,  sendImage: false },
   kakaotalk:  { priority: 'skip',     minInterval: 300000, sendImage: false, noLocalSave: true },
+  kakaowork:  { priority: 'skip',     minInterval: 300000, sendImage: false, noLocalSave: true },
   slack:      { priority: 'low',      minInterval: 180000, sendImage: false },
   explorer:   { priority: 'low',      minInterval: 120000, sendImage: false },
   calculator: { priority: 'skip',     minInterval: 300000, sendImage: false },
@@ -802,6 +803,7 @@ function capture(trigger = 'manual') {
     });
     _scCaptureCount++;
     _scLastCaptureAt = Date.now();
+    _lastCaptureTime = Date.now(); // PNG를 안 써도 쿨타임은 갱신. 미갱신 시 카톡 skip(5분)이 무효화됨
     return null;
   }
 

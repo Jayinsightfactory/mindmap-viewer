@@ -8,7 +8,7 @@
  * 트리거:
  *  - 카카오톡이 활성 앱이 되었을 때 (앱 전환 감지)
  *  - 카카오톡 내 창 제목 변경 시 (다른 대화방 열 때)
- *  - 20초마다 자동 (카카오톡 활성 상태 유지 중)
+ *  - 5분마다 자동 (카카오톡 활성 상태 유지 중)
  *
  * 캡처 방식: screenshot-desktop (기존 screen-capture.js와 동일)
  */
@@ -26,10 +26,10 @@ let _wheelAccum = 0;         // 휠 누적량
 let _wheelTimer = null;      // 휠 디바운스 타이머
 let _getActiveApp = null;    // 활성 앱 조회 함수
 
-const CAPTURE_COOLDOWN = 15000; // 15초 쿨다운
+const CAPTURE_COOLDOWN = 5 * 60 * 1000; // 화면캡처 skip 정책(5분)과 맞춤. 15초면 카톡 상주 PC가 폭주
 const WHEEL_THRESHOLD = 3;     // 휠 3틱 이상이면 스크롤로 판단
 const WHEEL_DEBOUNCE = 800;    // 휠 멈춘 후 0.8초 대기 → 캡처
-const KAKAO_NAMES = ['kakaotalk', 'kakao', '카카오톡'];
+const KAKAO_NAMES = ['kakaotalk', 'kakaowork', 'kakao', '카카오톡', '카카오워크'];
 
 function start(screenCaptureModule, getActiveAppFn) {
   _screenCapture = screenCaptureModule;
@@ -48,12 +48,10 @@ function onAppSwitch(appName, windowTitle) {
   if (!isKakao) return;
 
   const now = Date.now();
-  // 카카오톡 내 대화방 변경 감지 (창 제목 변경)
   const titleChanged = windowTitle && windowTitle !== _lastWindowTitle;
   _lastWindowTitle = windowTitle || '';
 
-  // 쿨다운 체크 (대화방 변경 시에는 바로 캡처)
-  if (!titleChanged && now - _lastCaptureTime < CAPTURE_COOLDOWN) return;
+  if (now - _lastCaptureTime < CAPTURE_COOLDOWN) return;
 
   _lastCaptureTime = now;
   // screen-capture의 capture() 호출 (트리거: kakao_switch 또는 kakao_chat_change)
@@ -65,7 +63,7 @@ function onAppSwitch(appName, windowTitle) {
 }
 
 /**
- * 카카오톡 활성 상태에서 주기적 캡처 (20초마다)
+ * 카카오톡 활성 상태에서 주기적 캡처 (5분마다)
  * keyboard-watcher의 활성 앱 정보를 받아서 판단
  */
 function onPeriodicCheck(activeApp) {
