@@ -82,18 +82,27 @@ function _perceptualHash(base64) {
     return /^[01]{64}$/.test(out) ? out : null;
   } catch { return null; }
 }
-const _dupCache = new Map(); // key(userId|app) → 직전 지각해시
+const _dupCache = new Map(); // key(userId|app) → 최근 N개 지각해시(ring)
 const DEDUP_ON = process.env.VISION_DEDUP !== 'off';
 const DEDUP_MAXDIST = parseInt(process.env.VISION_DEDUP_DIST) || 5; // 해밍거리 ≤5 = 사실상 동일화면
+const DEDUP_RECENT = parseInt(process.env.VISION_DEDUP_RECENT) || 12; // [B] 직전 1개 대신 최근 N개와 비교(비연속 중복도 컷)
+let _skipStats = { dup: 0, blank: 0 };
 function _hamming(a, b) { let d = 0; for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) d++; return d; }
+// [A] 빈/단색 프레임(잠금·로딩·검은/흰 화면): average-hash 1비트 수가 극단 = 시각 무정보 → 분석 불필요
+function _isBlankHash(h) { const ones = (h.match(/1/g) || []).length; return ones <= 3 || ones >= 61; }
 function _isDupFrame(base64, key) {
   if (!DEDUP_ON) return false;
   const h = _perceptualHash(base64);
   if (!h) return false;                 // 해시 실패 → 분석 진행(안전측)
-  const last = _dupCache.get(key);
-  _dupCache.set(key, h);
+  if (_isBlankHash(h)) { _skipStats.blank++; return true; }   // [A] 빈/단색 컷
+  // [B] 최근 N개 중 하나라도 시각적으로 같으면 중복(A→B→A 왕복·재등장도 컷)
+  let recent = _dupCache.get(key);
+  if (!recent) { recent = []; _dupCache.set(key, recent); }
+  const dup = recent.some(p => _hamming(p, h) <= DEDUP_MAXDIST);
+  recent.push(h); if (recent.length > DEDUP_RECENT) recent.shift();
   if (_dupCache.size > 500) { const k = _dupCache.keys().next().value; _dupCache.delete(k); }
-  return !!last && _hamming(last, h) <= DEDUP_MAXDIST;
+  if (dup) _skipStats.dup++;
+  return dup;
 }
 
 // [2026-06-15] 야간 배치 모드(--night): 낮엔 큐 이미지를 디스크에 보관만(CLI 비용 0),
@@ -552,6 +561,12 @@ async function processBatch() {
         // 빈 파일(0바이트) 감지 → Drive에서 삭제 후 스킵
         if (!b64 || b64.length < 100) {
           console.warn(`  ✗ 빈 파일(${b64?.length || 0}바이트) — Drive 삭제: ${cap.name}`);
+          try { await gApi('DELETE', `https://www.googleapis.com/drive/v3/files/${cap.id}`, token, null); } catch {}
+          continue;
+        }
+        // [E1+] Drive 모드에도 중복/빈화면 컷(기존 누락) — Claude 호출 전 스킵해 사용량 절감
+        if (_isDupFrame(b64, `drive|${cap.hostname || ''}`)) {
+          console.log(`  ⇢ 중복/빈화면 스킵(Drive): ${cap.name}`);
           try { await gApi('DELETE', `https://www.googleapis.com/drive/v3/files/${cap.id}`, token, null); } catch {}
           continue;
         }
