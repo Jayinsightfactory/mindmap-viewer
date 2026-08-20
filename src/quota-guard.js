@@ -105,6 +105,11 @@ function _fetchUsage(token) {
  * @returns {Promise<{pause:boolean, utilization:number|null, window:string, resetsAt:string|null, reason:string}>}
  */
 async function checkQuota(reservePct) {
+  // [2026-08-20] 수동 홀드: ~/.orbit/quota-hold 파일 있으면 자동화 전면 대기(사장님 홀딩). 파일 삭제로 해제.
+  try {
+    if (fs.existsSync(path.join(os.homedir(), '.orbit', 'quota-hold')))
+      return { pause: true, utilization: null, window: '홀드', resetsAt: null, mode: '수동홀드', reason: '수동 홀드(quota-hold 파일) — 자동화 전면 대기. 파일 삭제로 해제' };
+  } catch {}
   const reserve = Number(process.env.ORBIT_CLI_RESERVE_PCT) || reservePct || 30;
   const threshold = 100 - reserve;
   if (Date.now() - _cache.at < CACHE_MS && _cache.result) return _cache.result;
