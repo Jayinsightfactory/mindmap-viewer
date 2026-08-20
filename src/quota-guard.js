@@ -37,11 +37,48 @@ function _dailyBaseline(weekUtil) {
   return st.base;
 }
 
-function _readToken() {
-  try {
-    const cr = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.claude', '.credentials.json'), 'utf8'));
-    return (cr.claudeAiOauth && cr.claudeAiOauth.accessToken) || cr.accessToken || null;
-  } catch { return null; }
+// [2026-08-20] 토큰 자동 리프레시. 원인: ~/.claude/.credentials.json의 accessToken이 만료돼도
+// (CLI가 자격증명을 다른 곳에 보관하면 이 파일이 방치됨) 가드가 usage를 못 읽고 fail-open →
+// 워커가 사용자 몫까지 다 씀. refreshToken(수명 김)으로 살아있는 토큰을 얻는다. CLI 파일은 건드리지 않고,
+// 회전된 refresh 토큰만 ~/.orbit/quota-oauth.json에 별도 보관(재시작 후에도 리프레시 가능).
+const OAUTH_CLIENT_ID = process.env.ORBIT_OAUTH_CLIENT_ID || '9d1c250a-e61b-44d9-88ed-5944d1962f5e';
+const _OAUTH_STATE = path.join(os.homedir(), '.orbit', 'quota-oauth.json');
+let _tok = { access: null, expMs: 0, refresh: null };
+
+function _readCliOauth() {
+  try { return JSON.parse(fs.readFileSync(path.join(os.homedir(), '.claude', '.credentials.json'), 'utf8')).claudeAiOauth || {}; }
+  catch { return {}; }
+}
+function _refresh(refreshToken) {
+  return new Promise((resolve) => {
+    const body = JSON.stringify({ grant_type: 'refresh_token', refresh_token: refreshToken, client_id: OAUTH_CLIENT_ID });
+    const req = https.request({ hostname: 'console.anthropic.com', path: '/v1/oauth/token', method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }, timeout: 15000 },
+      r => { let d = ''; r.on('data', c => d += c); r.on('end', () => { try { const j = JSON.parse(d); if (j && j.access_token) return resolve(j); } catch {} resolve(null); }); });
+    req.on('error', () => resolve(null)); req.on('timeout', () => { req.destroy(); resolve(null); });
+    req.write(body); req.end();
+  });
+}
+// 살아있는 accessToken 반환(필요 시 리프레시). 실패하면 null(가드는 fail-open 유지).
+async function _liveToken() {
+  const now = Date.now();
+  if (_tok.access && _tok.expMs - now > 60000) return _tok.access;   // 캐시된 유효 토큰
+  const cli = _readCliOauth();
+  const fileExp = Number(cli.expiresAt) || 0;
+  if (cli.accessToken && fileExp - now > 60000) {                    // CLI 파일 토큰이 아직 유효하면 그대로
+    _tok = { access: cli.accessToken, expMs: fileExp, refresh: cli.refreshToken };
+    return _tok.access;
+  }
+  // 만료 → refreshToken으로 갱신(별도 저장분 우선, 없으면 CLI 파일)
+  let rt = _tok.refresh;
+  if (!rt) { try { rt = JSON.parse(fs.readFileSync(_OAUTH_STATE, 'utf8')).refresh; } catch {} }
+  if (!rt) rt = cli.refreshToken;
+  if (!rt) return null;
+  const j = await _refresh(rt);
+  if (!j) return null;
+  _tok = { access: j.access_token, expMs: now + (Number(j.expires_in) || 28800) * 1000, refresh: j.refresh_token || rt };
+  if (j.refresh_token) { try { fs.mkdirSync(path.dirname(_OAUTH_STATE), { recursive: true }); fs.writeFileSync(_OAUTH_STATE, JSON.stringify({ refresh: j.refresh_token, at: now })); } catch {} }
+  return _tok.access;
 }
 
 function _fetchUsage(token) {
@@ -66,10 +103,10 @@ async function checkQuota(reservePct) {
   const threshold = 100 - reserve;
   if (Date.now() - _cache.at < CACHE_MS && _cache.result) return _cache.result;
 
-  const token = _readToken();
+  const token = await _liveToken();
   let result;
   if (!token) {
-    result = { pause: false, utilization: null, window: '', resetsAt: null, reason: 'oauth 토큰 없음(fail-open)' };
+    result = { pause: false, utilization: null, window: '', resetsAt: null, reason: 'oauth 토큰 없음/리프레시 실패(fail-open)' };
   } else {
     const u = await _fetchUsage(token);
     const five = u && u.five_hour ? Number(u.five_hour.utilization) : null;
