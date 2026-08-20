@@ -1766,6 +1766,32 @@ app.post('/api/admin/purge-noise-events', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// POST /api/admin/purge-old-events?days=60&table=events&max=40000 — 보존기간 지난 무거운 원시/분석 데이터 삭제(용량 회수)
+// [2026-08-20 사장님: 오래된 것만] 분석 기능은 최근 ~14일 창만 읽으므로 그 이전은 안전. 리포트(ops-report)·kakao_messages는 미대상.
+// 대량 한번에 삭제 금지(WAL/락/OOM) → ctid 5000 배치 + 호출당 max 상한. more:true면 반복 호출로 소진.
+app.post('/api/admin/purge-old-events', async (req, res) => {
+  try {
+    if (!(await isAdminReqAsync(req))) return res.status(403).json({ error: 'admin only' });
+    const pool = dbModule.getDb();
+    const days = Math.max(parseInt(req.query.days) || 60, 14);              // 최소 14일 보존(분석창 보호)
+    const maxRows = Math.min(Math.max(parseInt(req.query.max) || 40000, 5000), 200000);
+    const table = (req.query.table === 'unified_events') ? 'unified_events' : 'events';
+    // events: 무거운 원시/분석 타입만(리포트성·저빈도 타입은 보존). unified_events: 보존기간 지난 전체.
+    const HEAVY = ['screen.analyzed', 'screen.capture', 'mouse.chunk', 'keyboard.chunk', 'clipboard.change', 'idle', 'mouse.watcher.started', 'daemon.screendiag'];
+    const where = table === 'events'
+      ? `type = ANY($1) AND timestamp::timestamptz < NOW() - ($2 || ' days')::interval`
+      : `timestamp::timestamptz < NOW() - ($1 || ' days')::interval`;
+    const params = table === 'events' ? [HEAVY, String(days)] : [String(days)];
+    let total = 0, n = 0;
+    do {
+      const r = await pool.query(`DELETE FROM ${table} WHERE ctid IN (SELECT ctid FROM ${table} WHERE ${where} LIMIT 5000)`, params);
+      n = r.rowCount; total += n;
+      if (n) await new Promise(rs => setTimeout(rs, 120)); // 숨돌리기(WAL/부하 완화)
+    } while (n >= 5000 && total < maxRows);
+    res.json({ ok: true, table, olderThanDays: days, deleted: total, more: n >= 5000 });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // POST /api/admin/fix-clock-skew?hostname=X — 특정 PC의 시계손상 이벤트(비상식적 timestamp)를
 // 서버 수신시각으로 일괄 보정(1회성). insertEvent 방어(2026-07-08)는 향후 유입만 막으므로 이미
 // 적재된 과거 손상 행(실측: DESKTOP-L0C2IOT last_seen=9024년)은 이걸로 정리. hostname 필수
