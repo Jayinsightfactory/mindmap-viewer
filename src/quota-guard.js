@@ -21,10 +21,16 @@ const https = require('https');
 const CACHE_MS = 5 * 60 * 1000; // 사용량 조회 캐시(엔드포인트 부하 방지)
 let _cache = { at: 0, result: null };
 
-// [2026-07-31] 자동화 일일 사용 상한 — 7일창 utilization이 "오늘 자정 대비" DAILY_CAP %p 이상
-// 오르면 자동화 워커 대기(내일 리셋). 목적: 자동화가 하루에 구독의 10%(기본) 넘게 안 쓰게(사장님 지시).
-// 주의: 7일창은 롤링이라 옛 사용분이 빠지며 순증이 실사용보다 작게 나올 수 있음(다소 관대). 그래도 상한 역할.
-const DAILY_CAP_PCT = Number(process.env.ORBIT_CLI_DAILY_CAP_PCT) || 10;
+// [2026-08-20 사장님 정책] 자동화 사용량 배분:
+//  · 평상시: 자동화는 하루 DAILY_CAP_PCT(=5%p, 7일창 자정 대비) 이상 안 씀 + 7일창 (100-reserve)% 넘으면 대기.
+//  · 주기 막바지(7일창 리셋 ENDWEEK_HOURS 이내)에 남은 quota가 ENDWEEK_RESERVE%p 초과면:
+//    일일캡 무시하고 "10%만 남기고 전부 사용"(7일창 (100-ENDWEEK_RESERVE)%까지). 낭비될 quota 활용.
+//  · 5시간창은 항상 FIVE_RESERVE%는 남김(대화 세션 급사 방지).
+// 주의: 7일창은 롤링이라 순증이 실사용보다 작게 나올 수 있음(다소 관대). usedToday는 사용자+자동화 합산 근사치.
+const DAILY_CAP_PCT = Number(process.env.ORBIT_CLI_DAILY_CAP_PCT) || 5;
+const ENDWEEK_HOURS = Number(process.env.ORBIT_CLI_ENDWEEK_HOURS) || 24;   // 리셋 임박 판정(시간)
+const ENDWEEK_RESERVE = Number(process.env.ORBIT_CLI_ENDWEEK_RESERVE_PCT) || 10; // 막바지에 남길 %
+const FIVE_RESERVE = Number(process.env.ORBIT_CLI_FIVE_RESERVE_PCT) || 10; // 5시간창 최소 여유 %
 const _DAILY_STATE = path.join(os.homedir(), '.orbit', 'quota-daily.json');
 function _dailyBaseline(weekUtil) {
   const today = new Date().toISOString().slice(0, 10); // 로컬 아님 UTC — 일 경계 일관성(리셋 튐 방지)
@@ -114,26 +120,46 @@ async function checkQuota(reservePct) {
     if (five == null && week == null) {
       result = { pause: false, utilization: null, window: '', resetsAt: null, reason: 'usage 조회 실패(fail-open)' };
     } else {
-      const useFive = (five || 0) >= (week || 0);
+      // ── 오늘 자동화 사용(자정 대비 7일창 순증, 사용자+자동화 합산 근사) ──
+      let usedToday = null;
+      if (week != null) { const base = _dailyBaseline(week); usedToday = Math.max(0, +(week - base).toFixed(1)); }
+      // ── 주기 막바지 판정: 7일창 리셋 임박 + 남은 quota가 ENDWEEK_RESERVE 초과 ──
+      const weekReset = (u.seven_day && u.seven_day.resets_at) ? new Date(u.seven_day.resets_at).getTime() : null;
+      const hoursToReset = weekReset ? (weekReset - Date.now()) / 3600000 : 999;
+      const weekRemaining = week != null ? +(100 - week).toFixed(1) : null;
+      const endweek = week != null && hoursToReset <= ENDWEEK_HOURS && weekRemaining > ENDWEEK_RESERVE;
+
+      // ── 대기 판정 ──
+      // 5시간창은 항상 FIVE_RESERVE 남김(세션 급사 방지)
+      const fivePause = five != null && five >= (100 - FIVE_RESERVE);
+      let weekPause;
+      if (week == null) weekPause = false;
+      else if (endweek) weekPause = week >= (100 - ENDWEEK_RESERVE);            // 막바지: 10%만 남기고 전부 사용
+      else weekPause = (usedToday >= DAILY_CAP_PCT) || (week >= threshold);     // 평상시: 일일 5%캡 + 70% 상한
+      const pause = fivePause || weekPause;
+
+      // 보고용 대표 창
+      const useFive = five != null && (week == null || five >= week);
       const util = useFive ? five : week;
-      const resetsAt = useFive ? (u.five_hour && u.five_hour.resets_at) : (u.seven_day && u.seven_day.resets_at);
       const win = useFive ? '5시간창' : '7일창';
-      // 일일 캡: 7일창이 오늘 자정 대비 DAILY_CAP %p 이상 올랐으면 자동화 대기(사용자 지시)
-      let dailyPause = false, usedToday = null;
-      if (week != null) {
-        const base = _dailyBaseline(week);
-        usedToday = Math.max(0, +(week - base).toFixed(1));
-        if (usedToday >= DAILY_CAP_PCT) dailyPause = true;
-      }
-      const thPause = util >= threshold;
+      const resetsAt = useFive ? (u.five_hour && u.five_hour.resets_at) : (u.seven_day && u.seven_day.resets_at);
+      const mode = endweek ? '막바지버스트' : '평상시';
+      const reason = fivePause
+        ? `5시간창 ${five}% ≥ ${100 - FIVE_RESERVE}% — 세션 보호 대기 (리셋 ${(u.five_hour && u.five_hour.resets_at) || '?'})`
+        : (weekPause && endweek)
+        ? `막바지: 7일창 ${week}% ≥ ${100 - ENDWEEK_RESERVE}% — ${ENDWEEK_RESERVE}%만 남기고 소진, 대기`
+        : (weekPause && usedToday != null && usedToday >= DAILY_CAP_PCT)
+        ? `자동화 일일 ${usedToday}%p(7일창) ≥ ${DAILY_CAP_PCT}%p 상한 — 내일까지 대기`
+        : weekPause
+        ? `7일창 ${week}% ≥ ${threshold}% — 사용자 몫 ${reserve}% 보전 대기 (리셋 ${(u.seven_day && u.seven_day.resets_at) || '?'})`
+        : endweek
+        ? `막바지버스트: 7일창 ${week}%(남은 ${weekRemaining}%p, 리셋 ${Math.round(hoursToReset)}h) — ${ENDWEEK_RESERVE}%까지 사용 진행`
+        : `7일창 ${week}%·5시간창 ${five == null ? '?' : five}% · 오늘 ${usedToday == null ? '?' : usedToday}%p/${DAILY_CAP_PCT}%p — 진행`;
+
       result = {
-        pause: thPause || dailyPause, utilization: util, window: win, resetsAt: resetsAt || null,
-        usedToday, dailyCap: DAILY_CAP_PCT,
-        reason: dailyPause
-          ? `자동화 일일 사용 ${usedToday}%p(7일창) ≥ ${DAILY_CAP_PCT}%p 상한 — 내일까지 대기(자동화 몫 제한)`
-          : thPause
-          ? `구독 사용량 ${util}%(${win}) ≥ ${threshold}% — 사용자 몫 ${reserve}% 보전 위해 대기 (리셋 ${resetsAt || '?'})`
-          : `구독 사용량 ${util}%(${win}) < ${threshold}% · 오늘 자동화 ${usedToday == null ? '?' : usedToday}%p/${DAILY_CAP_PCT}%p — 진행`,
+        pause, utilization: util, window: win, resetsAt: resetsAt || null,
+        usedToday, dailyCap: DAILY_CAP_PCT, mode, endweek,
+        weekUtil: week, fiveUtil: five, weekRemaining, hoursToReset: Math.round(hoursToReset), reason,
       };
     }
   }
