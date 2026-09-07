@@ -5511,6 +5511,15 @@ app.post('/api/setup/auto-register', async (req, res) => {
     const serverUrl = process.env.SERVER_URL || 'https://mindmap-viewer-production-adb2.up.railway.app';
     // 발급 토큰이 설치 직후 /api/auth/verify 를 통과하도록 PG에 user+token 확실히 심기 (재설치 "토큰 무효" 오탐 차단).
     // Railway SQLite는 휘발 → PG가 진실원본. orbit_auth_users.id엔 unique 없음 → ON CONFLICT 금지, UPDATE-first.
+    // [2026-09-07] 토큰 발급 누수 차단: 매핑된 PC의 재호출마다 새 토큰을 찍어 orbit_auth_tokens 446만 행(43만/일) 누적 → 콜드부팅 OOM.
+    // 비-fresh 경로는 해당 사용자의 최신 유효 토큰을 재사용하고, 없을 때만 발급(push-token 3490행과 동일 규칙).
+    async function latestTokenFor(uid) {
+      if (!uid || !pool) return null;
+      try {
+        const r = await pool.query(`SELECT token FROM orbit_auth_tokens WHERE user_id=$1 AND (expires_at IS NULL OR expires_at > NOW()) ORDER BY created_at DESC NULLS LAST LIMIT 1`, [uid]);
+        return r.rows[0]?.token || null;
+      } catch { return null; }
+    }
     async function ensureVerifiable(token, uid, nm) {
       if (!token || !uid || !pool) return;
       try {
@@ -5668,7 +5677,7 @@ app.post('/api/setup/auto-register', async (req, res) => {
           );
         }
       } catch (e) { console.warn('[auto-register] pc_links upsert:', e.message); }
-      const token = await issueApiTokenAsync(existingUserId);
+      const token = (await latestTokenFor(existingUserId)) || await issueApiTokenAsync(existingUserId);
       await ensureVerifiable(token, existingUserId, existingName || normalizedName || hostname);
       console.log(`[auto-register] ${hostname} (ip=${clientIp}) → REUSED ${existingUserId.slice(0,12)} (matchedByName=${matchedByName})`);
       return res.json({ ok: true, userId: existingUserId, name: existingName || normalizedName || hostname, token, serverUrl, reused: true, matchedByName, clientIp });
@@ -5700,7 +5709,7 @@ app.post('/api/setup/auto-register', async (req, res) => {
     }
 
     // 2026-06-08 fix: issueApiTokenAsync 사용 → PG 토큰 backup 보장 후 응답 (race condition X)
-    const token = await issueApiTokenAsync(user.id);
+    const token = (await latestTokenFor(user.id)) || await issueApiTokenAsync(user.id);
     await ensureVerifiable(token, user.id, user.name);
 
     // orbit_pc_links INSERT — 최초 1회만. (위의 SELECT에서 매핑 없을 때만 여기 도달)
