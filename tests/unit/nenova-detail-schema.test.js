@@ -28,7 +28,7 @@ jest.mock('mssql', () => ({
       };
     }
   },
-}));
+}), { virtual: true });
 
 beforeAll(() => { process.env.NENOVA_DB_PASSWORD = 'test-only'; });
 afterAll(() => { delete process.env.NENOVA_DB_PASSWORD; });
