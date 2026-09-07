@@ -564,7 +564,30 @@ function verifyTokenByEmail(token) {
     return null;
   }
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(tokenRow.userId);
+  if (user) _touchToken(raw);
   return user ? sanitizeUser(user) : null;
+}
+
+// [2026-09-07] 실사용 토큰 추적: orbit_auth_tokens.last_used_at (토큰당 1시간 1회, fire-and-forget).
+// 목적: 446만 정크 토큰 정리 시 "실제로 쓰이는 토큰"을 데이터로 판별(데몬 설치토큰 오삭제 방지).
+const _touchSeen = new Map();
+let _touchColReady = false;
+function _touchToken(raw) {
+  if (!_pgPool || !raw) return;
+  const now = Date.now();
+  const last = _touchSeen.get(raw) || 0;
+  if (now - last < 60 * 60 * 1000) return;
+  _touchSeen.set(raw, now);
+  if (_touchSeen.size > 5000) _touchSeen.clear();
+  (async () => {
+    try {
+      if (!_touchColReady) {
+        await _pgPool.query(`ALTER TABLE orbit_auth_tokens ADD COLUMN IF NOT EXISTS last_used_at TIMESTAMPTZ`);
+        _touchColReady = true;
+      }
+      await _pgPool.query(`UPDATE orbit_auth_tokens SET last_used_at = NOW() WHERE token = $1`, [raw]);
+    } catch {}
+  })();
 }
 
 // PG에서 토큰 직접 조회 후 SQLite 복원 (비동기)
@@ -621,6 +644,7 @@ async function _verifyTokenFromPg(raw) {
           .run(r.token, r.user_id, r.type || 'api', r.expires_at || null);
       } catch {}
     }
+    _touchToken(r.token);
     return { id: r.id, email: r.email, name: r.name, plan: r.plan, provider: r.provider };
   } catch { return null; }
 }
