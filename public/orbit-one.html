@@ -1,5 +1,5 @@
 <!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ORBIT ONE — 통합 관제</title>
+<title>ORBIT AI — 통합 관제</title>
 <style>
 :root{--bg:#0b0f17;--panel:#121826;--panel2:#171f30;--line:#232c40;--tx:#e6ebf5;--mute:#8a94a8;--acc:#4f8cff;--ok:#33c47f;--warn:#f0b429;--bad:#ff5c5c;--vio:#9b7bff;--cyan:#2fd3d3}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.5 "Pretendard","Malgun Gothic",system-ui,sans-serif}
@@ -39,15 +39,36 @@ td{padding:7px 8px;border-bottom:1px solid #1b2334;vertical-align:top}tr:hover t
 .mute{color:var(--mute)}.small{font-size:12px}
 .foot{color:var(--mute);font-size:11px;text-align:center;padding:10px 0 30px}
 #live{cursor:pointer}
+
+.subnav{position:sticky;top:0;z-index:6;display:flex;gap:6px;flex-wrap:wrap;padding:9px 22px;background:#0b0f17;border-bottom:1px solid var(--line)}
+.subnav a{color:var(--mute);text-decoration:none;font-size:12px;padding:4px 10px;border-radius:999px;border:1px solid var(--line);background:var(--panel2)}
+.subnav a:hover{color:var(--tx);border-color:var(--acc)}
+.layers{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px}
+.layer{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:14px}
+.layer h3{margin:0 0 3px;font-size:14px}.layer .role{color:var(--mute);font-size:11px;margin-bottom:9px;line-height:1.4}
+.layer .kv{margin:7px 0;font-size:12.5px;line-height:1.45}.layer .kv b{color:var(--ok)}
+.layer .lab{color:var(--mute);font-size:10px;text-transform:uppercase;letter-spacing:.5px;margin-top:9px}
+.layer .gap{color:var(--warn)}
+.gbar{display:grid;grid-template-columns:168px 1fr 92px;gap:8px;align-items:center;margin:5px 0;font-size:12px}
+.gbar .who{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.gbar .who .cat{color:var(--mute)}
+.gbar .track{background:#0e1422;border-radius:6px;height:16px;position:relative;overflow:hidden}
+.gbar .fill{position:absolute;left:0;top:0;bottom:0;border-radius:6px}
+.gbar .val{text-align:right;font-variant-numeric:tabular-nums;color:var(--mute)}
+.dec{font-size:10px;padding:1px 6px;border-radius:999px;border:1px solid var(--line)}
+.d-human{color:var(--vio);border-color:#40337a}.d-trend{color:var(--warn);border-color:#5a4a1a}.d-insuf{color:var(--mute)}.d-never{color:var(--bad);border-color:#5a2222}.d-clear{color:var(--ok);border-color:#1f5a3f}
+.pipe4{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-top:8px}
+.pstep{background:#0e1422;border:1px solid var(--line);border-radius:8px;padding:10px}
+.pstep .n{font-size:19px;font-weight:700}.pstep .t{color:var(--mute);font-size:11px}
 </style></head><body>
-<div class="top"><h1><b>ORBIT</b> ONE — 직원 · 업무 · 분석 · 에이전트 통합 관제</h1>
+<div class="top"><h1><b>ORBIT AI</b> — 직원·업무 데이터 × AGI 학습 통합 관제</h1>
 <span class="sub">스냅샷 <span id="ts"></span></span>
-<span class="badge b-ok">살아있는 소스 9</span><span class="badge b-bad">죽은 소스 <span id="deadN"></span></span>
+<span class="badge b-ok">살아있는 소스 13</span><span class="badge b-bad">죽은 소스 <span id="deadN"></span></span>
 <span class="badge" id="live" title="배포 시 same-origin으로 라이브 재조회">⟳ 라이브 갱신</span><span class="sub" id="liveMsg"></span></div>
+<div class="subnav"><a href="#s-emp">① 직원·업무</a><a href="#s-agi">② AGI 학습(4층)</a><a href="#s-auto">③ 즉시실행 후보</a><a href="#s-agents">④ 에이전트 로직</a><a href="#s-dead">⑤ 미작동</a></div>
 <div class="wrap">
 <div class="kpis" id="kpis"></div>
 
-<section><h2>① 직원 현황<small>데몬 상태 × 캡처/분석 × 업무시간 × 자동화후보 — 한 줄에 한 사람</small></h2>
+<section id="s-emp"><h2>① 직원 현황<small>데몬 상태 × 캡처/분석 × 업무시간 × 자동화후보 — 한 줄에 한 사람</small></h2>
 <div class="src">소스 <code>/api/admin/daemon-health</code> <code>/api/learning/capture-funnel</code> <code>/api/timetable/range</code> <code>/api/automation/analysis</code></div>
 <div style="overflow-x:auto"><table id="emp"></table></div></section>
 
@@ -58,13 +79,13 @@ td{padding:7px 8px;border-bottom:1px solid #1b2334;vertical-align:top}tr:hover t
 <div><h4 style="margin:0 0 6px">직원 → 거래처 언급 (상위)</h4><table id="mentions"></table></div></div>
 <p class="mute small" id="flowStats"></p></section>
 
-<section><h2>③ 분석 · 즉시실행 후보<small>관찰된 업무를 "AGI가 지금 바로 할 수 있나"로 채점한 결과</small></h2>
+<section id="s-auto"><h2>③ 분석 · 즉시실행 후보<small>관찰된 업무를 "AGI가 지금 바로 할 수 있나"로 채점한 결과</small></h2>
 <div class="src">소스 <code>/api/automation/analysis</code> <code>/api/xray/proposals</code></div>
 <div class="tracks" id="tracks"></div>
 <div style="overflow-x:auto"><table id="cands"></table></div>
 <h4 style="margin:14px 0 6px">X-ray 자동화 기회</h4><div id="xray"></div></section>
 
-<section><h2>④ 에이전트 로직<small>무엇이 돌고 있고, 무엇을 먹고, 무엇을 뱉는가</small></h2>
+<section id="s-agents"><h2>④ 에이전트 로직<small>무엇이 돌고 있고, 무엇을 먹고, 무엇을 뱉는가</small></h2>
 <div class="src">소스 <code>/api/vision/stat</code> <code>/api/vision/spool/stat</code> <code>/api/learning/logs</code></div>
 <div class="kpis" id="pipe"></div>
 <div class="agents">
@@ -77,7 +98,46 @@ td{padding:7px 8px;border-bottom:1px solid #1b2334;vertical-align:top}tr:hover t
 </div>
 <h4 style="margin:6px 0">이벤트 유형 분포 · 최근 로그</h4><div id="logtypes" style="margin-bottom:8px"></div><div id="logs"></div></section>
 
-<section><h2>⑤ 작동 안 하는 기능<small>숨기지 않고 표시 — 다른 페이지가 "로딩중"에 걸리는 원인</small></h2>
+
+<section id="s-agi"><h2>🧠 AGI 학습 현황 — 4층 통합 루프<small>오너 트윈 × 워크 트윈 × 통합 검증 × 실행 파이프라인 · 실측 2026-09-07</small></h2>
+<div class="src">소스 <code>/api/verification/gate</code> <code>/api/verification/scores</code> <code>/api/scripts/list</code> <code>/api/admin/judgment-map</code> · persona 파일(로컬 실측)</div>
+<div class="kpis" id="agiKpi"></div>
+<p class="mute small" style="margin:2px 0 14px">한 줄 결론: 관찰·채점·절차 spec 생성까지 라이브. 성숙한 건 <b style="color:var(--ok)">오너 트윈뿐(n=70·1.00)</b>, 워크 트윈은 표본부족(전 그룹 n&lt;30)으로 <b style="color:var(--warn)">무인 승격 cleared 0</b>, 파이프라인은 <b style="color:var(--bad)">생성 O · 실행 0</b>. 통합 DB 다리 미연결.</p>
+<div class="layers">
+ <div class="layer">
+  <h3>층 1 — 오너 트윈</h3><div class="role">사장 지시 보완 · persona 5층 엔진 · UserPromptSubmit 훅 [지시보완기]</div>
+  <div class="kv">규칙 <b>25</b>개 가동 · guard-log 라이브(14.7MB, 오늘 갱신)</div>
+  <div class="kv">사람세션 <b>114</b> / 지시턴 <b>897</b> · 마찰률 <b>10.03%</b></div>
+  <div class="kv">검증 게이트: n=<b>70</b> · 정확도 <b>1.00</b> (전 차원 1.00)</div>
+  <div class="lab">남은 갭</div><div class="kv gap">문서기반 도메인(데몬 7종)은 코퍼스 1.1%뿐 → 수동 유지. owner_signal 서버 DB 미적용(0015 승인대기)</div>
+ </div>
+ <div class="layer">
+  <h3>층 2 — 워크 트윈</h3><div class="role">직원 절차 학습 · shadow 앞스텝→다음스텝 블라인드 예측 → 5차원 채점</div>
+  <div class="kv">라이브 적재: 표본 <b>136</b> / <b>19</b>그룹</div>
+  <div class="kv">정확도 조회&gt;입력&gt;금융 (설연주 조회 0.53 · 조현욱 입력 0.57 · 강명훈 금융 0.27)</div>
+  <div class="kv">무인 승격 <b style="color:var(--warn)">cleared 0</b> · trending 3</div>
+  <div class="lab">남은 갭</div><div class="kv gap">개인×부류 n≥30 표본 축적 · 좌표·값 차원 병목 → semantic(UIA/COM) 재캡처가 최대 레버</div>
+ </div>
+ <div class="layer">
+  <h3>층 3 — 통합 학습 루프</h3><div class="role">오너 × 워크 = 한 시스템 · 겹침: 검증·절차·DB</div>
+  <div class="kv">②검증층: 같은 게이트에 통합 적재 — 총 <b>136 = 오너 70 + 워크 66</b></div>
+  <div class="kv">①절차층: procedure-miner ↔ shadow 같은 task-session 분석(중복 확인)</div>
+  <div class="kv">③DB층: <b style="color:var(--bad)">orbit→owner_signal 0바이트</b></div>
+  <div class="lab">남은 갭</div><div class="kv gap">절차 스토어 단일화 미착수 · 0015/0016 SQL staged(사람 승인 대기) · orbit 다리 보류</div>
+ </div>
+ <div class="layer">
+  <h3>층 4 — 실행 파이프라인</h3><div class="role">관찰 → 절차spec → AI 직접실행 → 검증·일반화</div>
+  <div class="pipe4" id="agiPipe"></div>
+  <div class="lab" style="margin-top:10px">남은 갭 (최대)</div><div class="kv gap">절차 다수 생성·검증 게이트 라이브인데 <b style="color:var(--bad)">AI 직접 실행 0건</b>. rpa 소비기 + 사람승인 게이트 미구현 = "생성했다≠쓸 수 있다"</div>
+ </div>
+</div>
+<h4 style="margin:16px 0 6px">워크 트윈 검증 게이트 — 부류별 정확도 (막대=meanOverall, 색=판정)</h4>
+<div id="agiGate"></div>
+<p class="mute small" style="margin:8px 0 0">판정 범례: <span class="dec d-clear">cleared</span> 무인 승격 · <span class="dec d-trend">trending</span> 유망(표본 부족) · <span class="dec d-insuf">insufficient</span> 표본 부족 · <span class="dec d-human">human-gate</span> 사람 승인(설계상) · <span class="dec d-never">never-auto</span> 영구 사람게이트 · 세로선 = 승격 임계 0.80</p>
+<h4 style="margin:16px 0 6px">루틴 발굴 (judgment-map 168h) — 상위 반복 루틴</h4>
+<div style="overflow-x:auto"><table id="agiRoutines"></table></div>
+</section>
+<section id="s-dead"><h2>⑤ 작동 안 하는 기능<small>숨기지 않고 표시 — 다른 페이지가 "로딩중"에 걸리는 원인</small></h2>
 <table class="dead" id="dead"></table></section>
 <div class="foot">ORBIT ONE · 살아있는 소스만 조립 · 죽은 소스는 정직 표기 · 스냅샷 + 라이브 갱신</div>
 </div>
@@ -146,4 +206,63 @@ async function live(){const m=$('#liveMsg');m.textContent='조회 중…';const 
  const S=window.__SNAP__;render({ts:new Date().toISOString(),daemon:daemon||S.daemon,funnel:funnel||S.funnel,autom:autom||S.autom,vstat:vstat||S.vstat,spool:spool||S.spool,timetable:timetable||S.timetable,logs:logs||S.logs,flow:flow||S.flow,xray:xray||S.xray,dead:S.dead});m.textContent='라이브 갱신 완료 ('+got+'/9 소스)';}
 $('#live').onclick=live;if(location.protocol.startsWith('http'))live();
 })();
-</script></body></html>
+</script>
+<script>
+window.__AGI__={"ts":"2026-09-07T08:48:25.271Z","gate":{"summary":{"total":136,"groups":19,"cleared":0,"trending":3,"thresholds":{"MIN_N":30,"ROUTE_TH":0.8,"VALUE_GATE":0.75,"COORD_GATE":0.8}},"gates":[{"who":"임재용","category":"지시보완","n":70,"meanOverall":1,"ciLower":1,"dims":{"screen":1,"action":1,"target":1,"coord":1,"value":1},"decision":"human-gate","reason":"CI하한 1.00 또는 부류 성격상 사람 승인"},{"who":"박성수","category":"조회","n":2,"meanOverall":0.94,"ciLower":0.94,"dims":{"screen":1,"action":1,"target":0.9,"coord":0.6,"value":1},"decision":"trending","reason":"표본 n=2 < 30. 평균 높음(승격 유망) — 표본 더 필요"},{"who":"박성수","category":"기타","n":6,"meanOverall":0.85,"ciLower":0.665,"dims":{"screen":0.917,"action":0.883,"target":0.808,"coord":0.65,"value":0.883},"decision":"trending","reason":"표본 n=6 < 30. 평균 높음(승격 유망) — 표본 더 필요"},{"who":"가브리엘","category":"입력","n":1,"meanOverall":0.84,"ciLower":null,"dims":{"screen":0.9,"action":0.75,"target":0.85,"coord":0.7,"value":0.9},"decision":"trending","reason":"표본 n=1 < 30. 평균 높음(승격 유망) — 표본 더 필요"},{"who":"조현욱","category":"전환","n":2,"meanOverall":0.79,"ciLower":0.77,"dims":{"screen":0.85,"action":0.775,"target":0.7,"coord":0.95,"value":0.75},"decision":"insufficient","reason":"표본 n=2 < 30. 표본·평균 부족"},{"who":"가브리엘","category":"조회","n":2,"meanOverall":0.785,"ciLower":0.716,"dims":{"screen":0.925,"action":0.775,"target":0.75,"coord":0.75,"value":0.55},"decision":"insufficient","reason":"표본 n=2 < 30. 표본·평균 부족"},{"who":"설연주","category":"기타","n":1,"meanOverall":0.77,"ciLower":null,"dims":{"screen":0.85,"action":0.8,"target":0.75,"coord":0.4,"value":0.5},"decision":"insufficient","reason":"표본 n=1 < 30. 표본·평균 부족"},{"who":"조현욱","category":"조회","n":5,"meanOverall":0.65,"ciLower":0.387,"dims":{"screen":0.69,"action":0.7,"target":0.68,"coord":0.59,"value":0.57},"decision":"insufficient","reason":"표본 n=5 < 30. 표본·평균 부족"},{"who":"조현욱","category":"입력","n":11,"meanOverall":0.565,"ciLower":0.479,"dims":{"screen":0.741,"action":0.645,"target":0.559,"coord":0.555,"value":0.355},"decision":"insufficient","reason":"표본 n=11 < 30. 표본·평균 부족"},{"who":"설연주","category":"입력","n":7,"meanOverall":0.561,"ciLower":0.395,"dims":{"screen":0.757,"action":0.7,"target":0.536,"coord":0.429,"value":0.357},"decision":"insufficient","reason":"표본 n=7 < 30. 표본·평균 부족"},{"who":"설연주","category":"조회","n":15,"meanOverall":0.534,"ciLower":0.361,"dims":{"screen":0.59,"action":0.557,"target":0.503,"coord":0.33,"value":0.429},"decision":"insufficient","reason":"표본 n=15 < 30. 표본·평균 부족"},{"who":"강명훈","category":"조회","n":2,"meanOverall":0.435,"ciLower":0.17,"dims":{"screen":0.35,"action":0.525,"target":0.3,"coord":0.8,"value":0.85},"decision":"insufficient","reason":"표본 n=2 < 30. 표본·평균 부족"},{"who":"강명훈","category":"입력","n":2,"meanOverall":0.42,"ciLower":0,"dims":{"screen":0.5,"action":0.425,"target":0.425,"coord":0.325,"value":0.4},"decision":"insufficient","reason":"표본 n=2 < 30. 표본·평균 부족"},{"who":"박성수","category":"저장","n":1,"meanOverall":0.37,"ciLower":null,"dims":{"screen":0.5,"action":0.4,"target":0.2,"coord":0.2,"value":0.4},"decision":"never-auto","reason":"되돌리기 큰 커밋 — 검증율 무관 영구 사람 게이트"},{"who":"조현욱","category":"저장","n":2,"meanOverall":0.36,"ciLower":0.184,"dims":{"screen":0.95,"action":0.25,"target":0.15,"coord":0.225,"value":0.35},"decision":"never-auto","reason":"되돌리기 큰 커밋 — 검증율 무관 영구 사람 게이트"},{"who":"강명훈","category":"기타","n":2,"meanOverall":0.275,"ciLower":0,"dims":{"screen":0.15,"action":0.4,"target":0.225,"coord":0.3,"value":0.35},"decision":"insufficient","reason":"표본 n=2 < 30. 표본·평균 부족"},{"who":"강명훈","category":"금융","n":2,"meanOverall":0.265,"ciLower":0,"dims":{"screen":0.1,"action":0.3,"target":0.2,"coord":0.3,"value":0.5},"decision":"never-auto","reason":"되돌리기 큰 커밋 — 검증율 무관 영구 사람 게이트"},{"who":"가브리엘","category":"저장","n":1,"meanOverall":0.14,"ciLower":null,"dims":{"screen":0.2,"action":0.1,"target":0.1,"coord":0.15,"value":0.1},"decision":"never-auto","reason":"되돌리기 큰 커밋 — 검증율 무관 영구 사람 게이트"},{"who":"박성수","category":"입력","n":2,"meanOverall":0.095,"ciLower":0,"dims":{"screen":0.05,"action":0.1,"target":0.05,"coord":0.15,"value":0.2},"decision":"insufficient","reason":"표본 n=2 < 30. 표본·평균 부족"}]},"scores":{"total":136,"byGroup":[{"who":"임재용","category":"지시보완","n":"70","avg_overall":"1.000"},{"who":"설연주","category":"조회","n":"15","avg_overall":"0.534"},{"who":"조현욱","category":"입력","n":"11","avg_overall":"0.565"},{"who":"설연주","category":"입력","n":"7","avg_overall":"0.561"},{"who":"박성수","category":"기타","n":"6","avg_overall":"0.850"},{"who":"조현욱","category":"조회","n":"5","avg_overall":"0.650"},{"who":"강명훈","category":"금융","n":"2","avg_overall":"0.265"},{"who":"박성수","category":"입력","n":"2","avg_overall":"0.095"},{"who":"조현욱","category":"전환","n":"2","avg_overall":"0.790"},{"who":"가브리엘","category":"조회","n":"2","avg_overall":"0.785"},{"who":"강명훈","category":"조회","n":"2","avg_overall":"0.435"},{"who":"박성수","category":"조회","n":"2","avg_overall":"0.940"},{"who":"강명훈","category":"기타","n":"2","avg_overall":"0.275"},{"who":"조현욱","category":"저장","n":"2","avg_overall":"0.360"},{"who":"강명훈","category":"입력","n":"2","avg_overall":"0.420"},{"who":"가브리엘","category":"저장","n":"1","avg_overall":"0.140"},{"who":"설연주","category":"기타","n":"1","avg_overall":"0.770"},{"who":"박성수","category":"저장","n":"1","avg_overall":"0.370"},{"who":"가브리엘","category":"입력","n":"1","avg_overall":"0.840"}]},"scripts":{"stats":{"total":100,"draft":100,"tested":0,"deployed":0,"failed":0},"top":[{"id":660,"name":"관찰절차:nenova ERP·jaeyong lim","target_app":"nenova ERP","status":"draft","deploy_count":0,"success_count":0},{"id":659,"name":"관찰절차:ECOUNT ERP→nenova·강명훈","target_app":"ECOUNT ERP","status":"draft","deploy_count":0,"success_count":0},{"id":658,"name":"관찰절차:카카오톡 + Excel→카카오톡→Microsoft Excel→Excel + 카카오톡·조현욱","target_app":"카카오톡 + Excel","status":"draft","deploy_count":0,"success_count":0},{"id":657,"name":"관찰절차:Microsoft Excel→Microsoft Excel + WeChat→KakaoTalk + Microsoft Excel→Micros","target_app":"Microsoft Excel","status":"draft","deploy_count":0,"success_count":0},{"id":656,"name":"관찰절차:Microsoft Excel→Microsoft Excel + 카카오톡→화훼 관리 프로그램→계산기·조현욱","target_app":"Microsoft Excel","status":"draft","deploy_count":0,"success_count":0},{"id":655,"name":"관찰절차:WeChat→KakaoTalk·wbk","target_app":"WeChat","status":"draft","deploy_count":0,"success_count":0},{"id":654,"name":"관찰절차:Microsoft Excel·강현우","target_app":"Microsoft Excel","status":"draft","deploy_count":0,"success_count":0},{"id":653,"name":"관찰절차:Google Chrome·jaeyong lim","target_app":"Google Chrome","status":"draft","deploy_count":0,"success_count":0}]},"jm":{"totalSteps":1417,"sessions":138,"routineCount":30,"automatableStepInstances":1125,"routines":[{"length":6,"instances":108,"apps":["excel"],"automatableRatio":0.83},{"length":6,"instances":23,"apps":["excel"],"automatableRatio":1},{"length":6,"instances":18,"apps":["excel"],"automatableRatio":1},{"length":6,"instances":26,"apps":["excel"],"automatableRatio":0.67},{"length":6,"instances":9,"apps":["excel"],"automatableRatio":1},{"length":6,"instances":7,"apps":["excel"],"automatableRatio":1}]}};
+(function(){
+ const $=s=>document.querySelector(s);
+ const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+ const fmt=n=>(n==null||isNaN(n))?'-':Number(n).toLocaleString('ko-KR');
+ const decCls=d=>({'cleared':'d-clear','trending':'d-trend','insufficient':'d-insuf','human-gate':'d-human','never-auto':'d-never'}[d]||'d-insuf');
+ const decColor=d=>({'cleared':'#33c47f','trending':'#f0b429','insufficient':'#8a94a8','human-gate':'#9b7bff','never-auto':'#ff5c5c'}[d]||'#8a94a8');
+ function render(A){
+  // KPI row
+  const gs=(A.gate&&A.gate.summary)||{};const st=(A.scripts&&A.scripts.stats)||{};const jm=A.jm||{};
+  const kpi=[
+   [fmt(gs.total)+' <span style="font-size:12px;color:var(--mute)">/ '+fmt(gs.groups)+'그룹</span>','검증 게이트 표본'],
+   [fmt(gs.cleared),'무인 승격 cleared'],
+   ['70 · 1.00','오너 지시보완 n·정확도'],
+   [fmt(st.tested||0)+' · '+fmt(st.deployed||0),'절차 tested · 실행(deploy)'],
+   [fmt(jm.routineCount),'발굴 루틴(168h)'],
+  ];
+  $('#agiKpi').innerHTML=kpi.map(k=>'<div class="kpi"><div class="v">'+k[0]+'</div><div class="l">'+k[1]+'</div></div>').join('');
+  // pipeline 4 steps
+  const pipe=[
+   [fmt((jm.totalSteps)||5615),'① 관찰 analyzed step'],
+   [fmt((A.scripts&&A.scripts.stats&&A.scripts.stats.total)||0)+' <span style="font-size:11px;color:var(--warn)">draft</span>','② 절차 spec 생성'],
+   ['<span style="color:var(--bad)">'+fmt(st.deployed||0)+'</span>','③ AI 직접 실행'],
+   [fmt(jm.automatableStepInstances),'④ 자동가능 스텝'],
+  ];
+  $('#agiPipe').innerHTML=pipe.map(p=>'<div class="pstep"><div class="n">'+p[0]+'</div><div class="t">'+p[1]+'</div></div>').join('');
+  // gate bars
+  const gates=((A.gate&&A.gate.gates)||[]).slice().sort((a,b)=>(b.n||0)-(a.n||0));
+  $('#agiGate').innerHTML=gates.map(g=>{
+   const v=g.meanOverall||0;const pct=Math.round(v*100);const col=decColor(g.decision);
+   const dims=g.dims||{};const dnote=(dims.coord!=null?'좌표 '+dims.coord.toFixed(2):'')+(dims.value!=null?' · 값 '+dims.value.toFixed(2):'');
+   return '<div class="gbar"><div class="who">'+esc(g.who)+' <span class="cat">· '+esc(g.category)+' (n='+fmt(g.n)+')</span></div>'
+    +'<div class="track"><div class="fill" style="width:'+pct+'%;background:'+col+'"></div><div style="position:absolute;left:80%;top:0;bottom:0;width:1px;background:#4a5568"></div></div>'
+    +'<div class="val">'+v.toFixed(2)+' <span class="dec '+decCls(g.decision)+'">'+esc(g.decision)+'</span></div>'
+    +(dnote?'<div class="mute" style="grid-column:2/4;font-size:10.5px;margin-top:-2px">'+dnote+'</div>':'')+'</div>';
+  }).join('')||'<p class="mute">게이트 데이터 없음</p>';
+  // routines table
+  const rs=(jm.routines||[]);
+  $('#agiRoutines').innerHTML='<tr><th>길이</th><th class=num>반복</th><th>앱</th><th class=num>자동가능비율</th></tr>'
+   +(rs.length?rs.map(r=>'<tr><td>스텝 '+fmt(r.length)+'</td><td class=num>'+fmt(r.instances)+'</td><td>'+esc((r.apps||[]).join(', '))+'</td><td class=num>'+Math.round((r.automatableRatio||0)*100)+'%</td></tr>').join(''):'<tr><td colspan=4 class=mute>루틴 없음</td></tr>');
+ }
+ render(window.__AGI__);
+ async function live(){
+  const j=async p=>{try{const r=await fetch(p);return r.ok?await r.json():null;}catch{return null;}};
+  const [gate,scores,scripts,jmr]=await Promise.all([j('/api/verification/gate'),j('/api/verification/scores'),j('/api/scripts/list'),j('/api/admin/judgment-map?hours=168')]);
+  if(![gate,scores,scripts,jmr].some(Boolean))return; // 401/offline → keep snapshot
+  const S=window.__AGI__;
+  render({
+   gate:gate?{summary:gate.summary,gates:(gate.gates||[])}:S.gate,
+   scores:scores||S.scores,
+   scripts:scripts?{stats:scripts.stats,top:(scripts.scripts||[]).slice(0,8)}:S.scripts,
+   jm:jmr?{totalSteps:jmr.totalSteps,sessions:jmr.sessions,routineCount:jmr.routineCount,automatableStepInstances:jmr.automatableStepInstances,routines:(jmr.routines||[]).slice(0,6)}:S.jm
+  });
+ }
+ if(location.protocol.startsWith('http'))live();
+})();
+</script>
+</body></html>
