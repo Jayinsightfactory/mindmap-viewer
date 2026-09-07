@@ -9178,9 +9178,6 @@ console.log('[API] /api/v1/* → /api/* alias registered');
 
 // ─── 서버 시작 (PG auth 복원 후 listen) ────────────────────────────────────
 async function startServer() {
-  // [2026-09-07 진단] 부팅 단계별 힙 마커 + 2초 힙 로거(4분) — 콜드부팅 OOM 할당자 특정용
-  const _bp = (l) => console.log("[boot-phase] " + l + " heap=" + Math.round(process.memoryUsage().heapUsed / 1048576) + "MB");
-  const _hm = setInterval(() => console.log("[boot-heap] " + Math.round(process.memoryUsage().heapUsed / 1048576) + "MB"), 2000); setTimeout(() => clearInterval(_hm), 240000);
   // Railway 환경에서는 heavy 백그라운드 엔진 기본 비활성화 (OOM → Bad Gateway 방지)
   // 개별 엔진을 살리려면 Railway 환경변수에서 해당 값을 '0'으로 설정하면 됩니다.
   // 데이터/토큰에는 영향 없음 — 스케줄러/크롤러만 해당.
@@ -9212,10 +9209,8 @@ async function startServer() {
       }
     }
 
-  _bp("after-migrations");
     if (_ebPool) await eventBus.init(_ebPool).catch(e => console.warn('[startup] EventBus 초기화 실패:', e.message));
 
-  _bp("after-eventBus");
     // ── Layer 2 entity-resolution scheduler — 부작용 없음, 항상 실행 ──
     // (publisher 게이트 밖에 둠: 시드/매처는 idempotent, 데이터 없으면 0건 반환)
     if (_ebPool) {
@@ -9248,15 +9243,12 @@ async function startServer() {
       }
     }
   }
-  _bp("after-er-publishers");
   // 비동기 테이블 초기화 완료 대기 (chat, analytics)
   if (global._chatInitPromise) await global._chatInitPromise;
   if (global._analyticsInitPromise) await global._analyticsInitPromise;
-  _bp("after-chat-analytics-init");
   // Railway 재배포 후 SQLite가 비어있으면 PG에서 사용자/토큰 복원
   if (process.env.DATABASE_URL) {
     await authInitFromPg().catch(e => console.warn('[startup] auth PG 복원 실패:', e.message));
-  _bp("after-authInitFromPg");
     // 미소비 데몬 명령 PG → 메모리 복원 (재배포 후 PC 명령 유지)
     try {
       const _pool = dbModule.getDb ? dbModule.getDb() : null;
@@ -9279,7 +9271,6 @@ async function startServer() {
       console.warn('[startup] 데몬 명령 복원 실패:', e.message);
     }
   }
-  _bp("after-daemon-cmd-restore");
   // 서버 시작(Railway 배포)마다 자동으로 ALL 데몬에 update 명령 푸시
   // git push → Railway 배포 → 데몬 자동 업데이트
   try {
@@ -9328,7 +9319,6 @@ async function startServer() {
     console.warn('[startup] 자동 업데이트 명령 등록 실패:', e.message);
   }
 
-  _bp("after-auto-update");
   // Drive 폴더ID 오버라이드 복원 (orbit_settings에서 로드)
   try {
     const _pool = dbModule.getDb ? dbModule.getDb() : null;
@@ -9344,7 +9334,6 @@ async function startServer() {
     }
   } catch (e) { console.warn('[startup] Drive 폴더ID 복원 실패:', e.message); }
 
-  _bp("after-drive-override");
   // 관리자 토큰 자동 부트스트랩 (Railway 재시작 시 ADMIN_TOKENS 복원)
   // ~/.orbit-config.json 또는 ADMIN_TOKENS 환경변수에서 로드됨 (environment.js가 처리)
   // 추가로: PG orbit_auth_tokens에서 관리자 이메일 계정의 토큰들을 ADMIN_TOKENS에 등록
@@ -9424,7 +9413,6 @@ async function startServer() {
     await _adminBootstrap();
   } catch (e) { console.warn('[startup] admin bootstrap 실패:', e.message); }
 
-  _bp("after-admin-bootstrap");
   // ── 온라인 PC push-token 일괄 적용 (local → 실제 userId 연동) ──────────────
   // PC 호스트명 → userId 매핑 (nenova 워크스페이스)
   setTimeout(async () => { try { // [2026-09-07] 리슨 뒤 60초로 지연 — events 전체 DISTINCT 스캔이 헬스체크(120s)를 막아 배포 FAILED
@@ -9518,7 +9506,6 @@ async function startServer() {
   } catch (e) { console.warn('[startup/push-token] 실패:', e.message); } }, 60 * 1000);
   // ─────────────────────────────────────────────────────────────────────────────
 
-  _bp("before-listen");
   server.listen(PORT, async () => {
   const stats = await Promise.resolve(getStats());
   logger.info(`Orbit AI v2.0.0 — http://localhost:${PORT}`, {

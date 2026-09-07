@@ -778,9 +778,11 @@ async function initFromPg() {
       }
     }
 
-    // PG 토큰 복원
+    // PG 토큰 복원 — [2026-09-07] 전량 미러 금지: 토큰 446만 행(536MB) 전부 로드해 부팅 OOM(768/1536MB)·헬스체크 타임아웃 유발.
+    // verifyToken은 SQLite 미스 시 PG 단건 조회로 폴백하므로(위 577행) 최신 일부만 미러해도 인증엔 영향 없음.
     const { rows: tokens } = await _pgPool.query(
-      `SELECT * FROM orbit_auth_tokens WHERE expires_at IS NULL OR expires_at > NOW()`
+      `SELECT * FROM orbit_auth_tokens WHERE expires_at IS NULL OR expires_at > NOW()
+       ORDER BY created_at DESC NULLS LAST LIMIT 20000`
     );
     const insertToken = db.prepare(
       `INSERT OR REPLACE INTO tokens (token, userId, type, expiresAt) VALUES (?, ?, ?, ?)`
