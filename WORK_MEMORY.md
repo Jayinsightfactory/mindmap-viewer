@@ -1565,3 +1565,22 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - **상태 주의**: `~/.orbit/quota-hold` ON이면 owner 워커 대기. owner 학습워커 전부 정지 = 학습을 다른 PC로 이전한 방침(정상, 고장 아님).
 - 검색어: 오르빗 데몬 작업, 데이터확인, screen.analyzed timestamp 캡처시각, id Date.now, 스풀 델타, promote 96h, remote-vision-worker, 마우스렉 CPU
 
+## 2026-09-07 (fable5.1) ORBIT ONE 통합 관제 페이지 + 프로덕션 다운 70분 복구(콜드부팅 OOM=토큰 446만)
+
+### ORBIT ONE 통합 관제 페이지
+- 요청: "직원데이터·업무데이터·분석·에이전트 로직을 한 페이지에서. 페이지가 너무 퍼져있고 각 기능이 제작동 안 함".
+- 실측: 흩어진 15개 API 중 살아있음 9(daemon-health·capture-funnel·automation/analysis·vision/stat·spool/stat·timetable/range·learning/logs·flow/company·xray/proposals) / 죽음 6(task-sessions 400·learning/stats 404·ops-ontology 404·event-counts 400·kakao-intel 무응답·scorer 0건). orbit-os.html이 죽은 /api/learning/stats를 물고 있어 "로딩중" 고정.
+- 산출: public/orbit-one.html (빌더 scratchpad build-hub.js, 사본 바탕화면/orbit-업무분석-20260825/ORBIT_ONE_통합관제.html). 살아있는 9개만 조립·죽은 6개는 ⑤에 정직 표기·스냅샷 구움+same-origin 라이브갱신. 데몬 상태값은 alive가 아니라 ok(버그 1건 수정).
+- 라이브 검증: Railway에서 라이브 갱신 5/9(나머지 4는 무토큰 401/403 → 스냅샷 폴백, 설계대로). 후속: 관리자 토큰 연동하면 9/9.
+- 검색어: ORBIT ONE, orbit-one.html, 통합 관제, build-hub, 죽은 엔드포인트
+
+### ★프로덕션 다운 70분 — 원인·복구·교훈 (재발 시 여기부터)
+- 발단: GitHub→Railway 자동배포가 끊겨 railway up 수동배포 → 11일 된 구 컨테이너가 교체되며 새 컨테이너가 부팅 OOM 크래시루프(FATAL heap out of memory, startup 7회) → 502.
+- 오진 이력(기각): 로컬 untracked 혼입(0개)·erp-publisher 무제한(퍼블리셔 OFF에도 재발)·지연 엔진 7종(3~10분 뒤 실행)·비전큐 복원(런타임 적재)·push-token DISTINCT 스캔(지연시켜도 동일)·데몬명령 복원(48h 100건).
+- 확정 방법: startServer에 [boot-phase]/[boot-heap] 마커 삽입 → chat-analytics-init까지 84MB 평탄, [AUTH-PG] initFromPg 직후 2초마다 369→679→970→1264→1370MB.
+- 근본원인 실측: orbit_auth_tokens 4,458,028행·536MB(전부 type=session·만료 없음), 발급 8/25 2.2만/일→9/6 43.5만/일(초당~5). src/auth.js initFromPg가 전량을 SQLite로 미러 → 힙 1.5GB+. 8/27 마지막 배포 땐 버텼음.
+- 수정(커밋): railway.json heap 768→1536(ebcec35)→4096(acc5e64)·healthcheckTimeout 120→600(a9bfb6e, 마커 포함)·push-token 블록 리슨 뒤 60초 지연(9834dbf)·**initFromPg 토큰 미러 LIMIT 20000(07f079b, 근본수정·마커 제거)**. INTELLIGENCE_PUBLISHERS=0으로 변경(복구 중 실험, 재활성화 가능).
+- 검증: 72ea7e6c SUCCESS·/health 200·부팅 ~1분. verifyToken은 SQLite 미스 시 PG 단건 조회 폴백이라 미러 상한은 인증 무영향.
+- 잔여(미수정): ①토큰 발급 누수 발원지(배치 수신 때 이벤트마다 발급 추정, 김빛나 24/min·0.0초 버스트) 차단 ②정크 토큰 정리(데몬 설치토큰 삭제 위험 → 사장님과 기준 결정) ③db-pg.js getEventsByChannel 2중 정의(706행 무제한이 export) ④[AUTH-PG] user backup/insertEvent ON CONFLICT 제약 누락 ⑤NODE_OPTIONS=600 무효(CLI 플래그 우선) ⑥PayloadTooLarge 훅.
+- 함정: railway 명령은 반드시 mindmap-viewer 폴더에서(cwd 바뀌면 "No linked project"로 빈 결과). sed -i는 CRLF를 깨뜨림→node 문자열치환. grep -c는 0건에 exit1이라 && 체인 끊음. railway up은 작업트리 통째 업로드(untracked 확인). DATABASE_URL은 내부호스트→외부는 Postgres 서비스의 DATABASE_PUBLIC_URL.
+- 검색어: 콜드부팅 OOM, orbit_auth_tokens, initFromPg, heap out of memory, 헬스체크 타임아웃, railway up, boot-phase
