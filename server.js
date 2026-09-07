@@ -9415,7 +9415,7 @@ async function startServer() {
 
   // ── 온라인 PC push-token 일괄 적용 (local → 실제 userId 연동) ──────────────
   // PC 호스트명 → userId 매핑 (nenova 워크스페이스)
-  try {
+  setTimeout(async () => { try { // [2026-09-07] 리슨 뒤 60초로 지연 — events 전체 DISTINCT 스캔이 헬스체크(120s)를 막아 배포 FAILED
     const _pool = dbModule.getDb ? dbModule.getDb() : null;
     if (_pool?.query && process.env.DATABASE_URL) {
       // PC별 userId 직접 매핑 (알고 있는 것만)
@@ -9503,7 +9503,7 @@ async function startServer() {
       }
       if (pushed > 0) console.log(`[startup/push-token] ${pushed}개 PC에 토큰 푸시 완료 (전체 이력 기반)`);
     }
-  } catch (e) { console.warn('[startup/push-token] 실패:', e.message); }
+  } catch (e) { console.warn('[startup/push-token] 실패:', e.message); } }, 60 * 1000);
   // ─────────────────────────────────────────────────────────────────────────────
 
   server.listen(PORT, async () => {
