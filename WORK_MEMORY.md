@@ -1584,3 +1584,10 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 잔여(미수정): ①토큰 발급 누수 발원지(배치 수신 때 이벤트마다 발급 추정, 김빛나 24/min·0.0초 버스트) 차단 ②정크 토큰 정리(데몬 설치토큰 삭제 위험 → 사장님과 기준 결정) ③db-pg.js getEventsByChannel 2중 정의(706행 무제한이 export) ④[AUTH-PG] user backup/insertEvent ON CONFLICT 제약 누락 ⑤NODE_OPTIONS=600 무효(CLI 플래그 우선) ⑥PayloadTooLarge 훅.
 - 함정: railway 명령은 반드시 mindmap-viewer 폴더에서(cwd 바뀌면 "No linked project"로 빈 결과). sed -i는 CRLF를 깨뜨림→node 문자열치환. grep -c는 0건에 exit1이라 && 체인 끊음. railway up은 작업트리 통째 업로드(untracked 확인). DATABASE_URL은 내부호스트→외부는 Postgres 서비스의 DATABASE_PUBLIC_URL.
 - 검색어: 콜드부팅 OOM, orbit_auth_tokens, initFromPg, heap out of memory, 헬스체크 타임아웃, railway up, boot-phase
+
+### 토큰 누수 차단·안전정리 준비 (같은 날 후속, 사용자 위임 "맞다고 생각하는대로")
+- 발원지 확정: POST /api/setup/auto-register (토큰 불필요). 매핑된 PC의 REUSED(5671)·기존사용자(5703) 경로가 호출마다 issueApiTokenAsync → _pgBackupToken(type 기본 session·만료 null). 누수 사용자=pc_auto. (2672행·publisher·OAuth는 아님: OAuth 토큰은 orbit_ 접두사 없음)
+- 수정: latestTokenFor(uid)로 최신 유효 토큰 재사용, 없을 때만 발급(5c47b8d). fresh 경로 유지. 검증: 20분간 총 +7건, 10분 발급 2,052→1/2/4/5 (기준선 2,855, 분당 285→0.5).
+- 발견: orbit_auth_tokens에 PK/unique 없음(NOT NULL만) → ON CONFLICT 무효·중복 가능·토큰 조회 풀스캔. 인덱스 CONCURRENTLY 생성(DB 직접): idx_orbit_auth_tokens_user_created(user_id,created_at DESC) 211MB, idx_orbit_auth_tokens_token 33MB.
+- 정리 준비: last_used_at 추적(9a9f677, verifyToken/_verifyTokenFromPg 성공 시 토큰당 1h 1회 UPDATE). 20분 만에 390토큰·3명 사용 기록 → 실사용 토큰이 PC당 1개가 아님. **정리는 24~48h 축적 후 last_used_at IS NULL AND created_at < 기준일 AND type<>api 만** (설치토큰 보호). 아직 삭제 안 함.
+- 검색어: auto-register, latestTokenFor, last_used_at, 토큰 누수, orbit_auth_tokens 인덱스
