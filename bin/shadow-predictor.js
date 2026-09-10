@@ -40,13 +40,38 @@ const TMP = path.join(os.tmpdir(), 'orbit-shadow'); try { fs.mkdirSync(TMP, { re
 function apiGet(p) { return new Promise(r => { const u = new URL(p, ORBIT_SERVER); const mod = u.protocol === 'https:' ? https : http; const q = mod.request({ hostname: u.hostname, port: u.port || 443, path: u.pathname + u.search, method: 'GET', headers: { Authorization: 'Bearer ' + ORBIT_TOKEN }, timeout: 40000 }, res => { let d = ''; res.on('data', c => d += c); res.on('end', () => { try { r(JSON.parse(d)); } catch { r(null); } }); }); q.on('error', () => r(null)); q.on('timeout', () => { q.destroy(); r(null); }); q.end(); }); }
 function apiPost(p, body) { return new Promise(r => { const u = new URL(p, ORBIT_SERVER); const mod = u.protocol === 'https:' ? https : http; const data = JSON.stringify(body); const q = mod.request({ hostname: u.hostname, port: u.port || 443, path: u.pathname, method: 'POST', headers: { Authorization: 'Bearer ' + ORBIT_TOKEN, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) }, timeout: 40000 }, res => { let d = ''; res.on('data', c => d += c); res.on('end', () => { try { r(JSON.parse(d)); } catch { r(null); } }); }); q.on('error', () => r(null)); q.on('timeout', () => { q.destroy(); r(null); }); q.write(data); q.end(); }); }
 
+let _lastCliError = '';    // 마지막 CLI 실패 사유(배치 종료 시 요약 출력용)
+let _cliErrLogged = false; // 같은 배치에서 동일 오류 도배 방지
 function cliOnce(prompt, model) {
   return new Promise(resolve => {
-    execFile(CLAUDE_CLI, ['-p', prompt, '--model', model || MODEL], { timeout: 150000, maxBuffer: 2 * 1024 * 1024 }, (err, stdout) => {
-      if (err) return resolve(null);
+    const child = execFile(CLAUDE_CLI, ['-p', prompt, '--model', model || MODEL], { timeout: 150000, maxBuffer: 2 * 1024 * 1024 }, (err, stdout, stderr) => {
+      // [2026-09-10] 실패 원인을 반드시 남긴다.
+      // 기존에는 err/stderr를 통째로 버려서 CLI 인증 만료 같은 치명적 원인이
+      // "예측/채점 실패(스킵)" 한 줄로만 보였고, 그 탓에 2026-08-26 이후
+      // shadow_scores가 한 건도 안 쌓이는 동안 아무도 원인을 알 수 없었다.
+      if (err) {
+        // err.message에는 프롬프트 전문이 echo돼 진짜 원인을 가린다 → stderr/stdout 우선.
+        const se = String(stderr || '').replace(/\s+/g, ' ').trim();
+        const so = String(stdout || '').replace(/\s+/g, ' ').trim();
+        _lastCliError = `exit=${err.code != null ? err.code : '?'}${err.killed ? '(killed/timeout)' : ''}`
+          + (se ? ` | stderr: ${se.slice(0, 250)}` : '')
+          + (!se && so ? ` | stdout: ${so.slice(0, 250)}` : '')
+          + (!se && !so ? ' | 출력 없음' : '');
+        if (!_cliErrLogged) { console.error('[shadow][CLI 실패] ' + _lastCliError); _cliErrLogged = true; }
+        return resolve(null);
+      }
       const m = String(stdout).match(/```(?:json)?\s*([\s\S]*?)```/) || [null, String(stdout)];
-      try { resolve(JSON.parse((m[1] || '').trim())); } catch { try { resolve(JSON.parse(String(stdout).slice(String(stdout).indexOf('{'), String(stdout).lastIndexOf('}') + 1))); } catch { resolve(null); } }
+      try { resolve(JSON.parse((m[1] || '').trim())); } catch {
+        try { resolve(JSON.parse(String(stdout).slice(String(stdout).indexOf('{'), String(stdout).lastIndexOf('}') + 1))); } catch {
+          _lastCliError = 'JSON 파싱 실패: ' + String(stdout).replace(/\s+/g, ' ').slice(0, 200);
+          if (!_cliErrLogged) { console.error('[shadow][CLI 응답 이상] ' + _lastCliError); _cliErrLogged = true; }
+          resolve(null);
+        }
+      }
     });
+    // [2026-09-10] ★적재 0건의 진짜 원인: stdin을 닫지 않아 CLI가 입력을 기다리다
+    // "no stdin data received in 3s" 경고와 함께 어긋났다. 즉시 닫아 비대화형임을 알린다.
+    try { if (child.stdin) child.stdin.end(); } catch {}
   });
 }
 // 재시도 래퍼(CLI 단발 null 손실 방지). model 미지정 시 MODEL.
@@ -150,6 +175,15 @@ async function runBatch() {
     await new Promise(r2 => setTimeout(r2, 1500));
   }
   console.log(`[shadow] 배치 완료 · 적재 ${posted}건`);
+  // 적재 0건인데 원인이 안 보이면 다음 사람이 또 헤맨다. 사유를 반드시 남긴다.
+  if (posted === 0 && _lastCliError) {
+    console.error(`[shadow] ★적재 0건 — 원인: ${_lastCliError}`);
+    if (/login|auth|oauth|credential|unauthor|expired|401/i.test(_lastCliError)) {
+      console.error('[shadow] → Claude CLI 인증 문제로 보인다. 터미널에서 `claude` 실행 후 /login 으로 재로그인 필요.');
+    } else if (/quota|rate|limit|usage|429/i.test(_lastCliError)) {
+      console.error('[shadow] → 사용량 한도로 보인다. ~/.orbit/quota-hold 확인 후 해제 대기.');
+    }
+  }
   return posted;
 }
 

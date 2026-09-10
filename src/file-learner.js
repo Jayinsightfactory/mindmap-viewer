@@ -185,7 +185,10 @@ function start(opts = {}) {
   }
 
   _watcher = chokidar.watch(validPaths, {
-    ignored:          /(^|[/\\])\.|My Music|My Videos|My Pictures/, // 숨김 + Windows 특수폴더 제외
+    // 숨김 + Windows 특수폴더 + [2026-09-10] 오피스 임시/락 파일 제외.
+    // 엑셀은 저장할 때 `~$파일.xlsx`(락)와 임의이름 `.tmp`를 만들었다 지우는데,
+    // 그 찰나에 감시가 붙으면 EBUSY가 난다. 애초에 보지 않는 것이 근본 해결.
+    ignored:          /(^|[/\\])\.|(^|[/\\])~\$|\.tmp$|\.temp$|\.crdownload$|\.partial$|My Music|My Videos|My Pictures/i,
     persistent:       true,
     ignoreInitial:    true,
     ignorePermissionErrors: true, // Windows EPERM 무시
@@ -194,7 +197,19 @@ function start(opts = {}) {
 
   _watcher
     .on('add',    fp => processFile(fp).catch(() => {}))
-    .on('change', fp => processFile(fp).catch(() => {}));
+    .on('change', fp => processFile(fp).catch(() => {}))
+    // [2026-09-10] ★크래시 근본원인: chokidar의 'error' 이벤트에 핸들러가 없으면
+    // EventEmitter 규약상 예외가 그대로 throw되어 데몬 프로세스가 죽는다.
+    // daemon.crash 41,324건 중 file-learner가 10,466건(25.3%)이었고,
+    // orbit_crashes의 실제 스택트레이스 3/3이 전부 EBUSY를 지목했다.
+    // 파일 감시 오류는 치명적이지 않으므로 로그만 남기고 계속 감시한다.
+    .on('error', err => {
+      const code = err && err.code ? err.code : '';
+      if (code === 'EBUSY' || code === 'EPERM' || code === 'ENOENT' || code === 'EACCES') {
+        return; // 파일이 잠겼거나 사라짐 — 정상 상황, 조용히 무시
+      }
+      console.warn('[file-learner] 감시 오류(계속 진행):', err && err.message);
+    });
 
   _running = true;
   console.log(`[file-learner] 시작 — 감시 경로: ${validPaths.join(', ')}`);

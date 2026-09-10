@@ -22,9 +22,30 @@ const http  = require('http');
 const https = require('https');
 
 // ── 설정 ──────────────────────────────────────────────────────────────────────
-// 발주서로 볼 파일명 키워드(부분일치). 사장님 예시 기준: 발주/발주서/라움/주광/초이문.
-// 좁게 유지 — 넓히면 개인/비업무 파일이 딸려 올라감.
-const PO_KEYWORDS = ['발주', '라움', '주광', '초이문'];
+// [2026-09-10] 기존 키워드 4종(발주/라움/주광/초이문)은 실제 업무파일의 5.5%만 잡았다
+//   (file.change 엑셀 이벤트 1778건 중 98건). 실제 파일명 대다수는 `3401_콜롬비아수국.xlsx`,
+//   `37-2_Holex.xlsx`, `33-1태국.xlsx` 같은 {차수코드}_{거래처} 패턴이라 키워드에 안 걸렸다.
+//   → 문서유형어/거래처명/차수코드 중 하나라도 맞으면 통과(실측 커버리지 83.1%).
+// 단 "좁게 유지 — 넓히면 개인/비업무 파일이 딸려 올라감"이라는 원래 설계 의도는 유지한다:
+//   DENY를 먼저 적용해 개인/민감 파일을 차단하고, 카드·이용내역류는 의도적으로 제외한다.
+const PO_KEYWORDS = ['발주', '라움', '주광', '초이문'];   // 하위호환(명시 키워드)
+// 개인/민감 파일 차단 — 무조건 우선
+const DENY_PATTERN = /이력서|급여|연봉|주민|가족|개인|사진|청첩|진단서|보험|의료|카드명세|통장|비밀번호|password|resume|salary|personal|private/i;
+// 업무 문서유형어
+const DOCTYPE_KEYWORDS = ['발주', '견적', '거래명세', '손익', '정산', '출고', '입고', '재고', '수량표',
+  '단가', '매입', '매출', '선발주', '원가', '물량', '명세서', '원장', '판매내역', '주문',
+  'pedido', 'invoice', 'packing', 'orden', 'claim', 'preorder'];
+// 거래처·농장·산지명
+const PARTNER_KEYWORDS = ['라움', '주광', '초이문', '일신', '늘봄', '미카엘', '홀렉스', 'holex',
+  '콜롬비아', '콜카장', 'colombia', '에콰도르', 'ecuador', '네노바', 'nenova', '미우', '센스앤센서',
+  '신라', '태림'];
+// 차수코드 패턴: "34차" / "33-2_" / "3401_콜롬비아" / "33-1태국" / "36초이문"
+const CYCLE_PATTERNS = [
+  /(^|[^0-9])\d{1,3}\s*차([^0-9]|$)/,
+  /(^|[_\-\s])\d{2,4}[-_]\d{1,2}(?![0-9])/,
+  /(^|[_\-\s])\d{4}[_\-][^\d]/,
+  /^\d{2,3}(?![년월일.\s])[가-힣A-Za-z]/,   // "9월"·"25년"류 제외
+];
 const EXCEL_EXT   = /\.xlsx?$/i;            // .xlsx / .xls 만
 const MAX_RAW_BYTES = 1.2 * 1024 * 1024;    // 서버 2mb JSON 한도 방어(base64 ~1.37x → <1.7mb)
 
@@ -61,7 +82,13 @@ function isPurchaseOrderFile(filename) {
   if (!filename) return false;
   if (filename.startsWith('~$') || filename.startsWith('.')) return false; // 임시/락 파일
   if (!EXCEL_EXT.test(filename)) return false;
-  return PO_KEYWORDS.some(k => filename.includes(k));
+  if (DENY_PATTERN.test(filename)) return false;               // 개인/민감 파일 우선 차단
+  if (PO_KEYWORDS.some(k => filename.includes(k))) return true; // 기존 규칙(하위호환)
+  const low = filename.toLowerCase();
+  if (DOCTYPE_KEYWORDS.some(k => low.includes(k.toLowerCase()))) return true;
+  if (PARTNER_KEYWORDS.some(k => low.includes(k.toLowerCase()))) return true;
+  if (CYCLE_PATTERNS.some(re => re.test(filename))) return true;
+  return false;
 }
 
 // ── file-change-watcher 콜백 진입점 ────────────────────────────────────────────
