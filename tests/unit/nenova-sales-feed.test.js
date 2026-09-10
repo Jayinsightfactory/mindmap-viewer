@@ -92,6 +92,9 @@ describe('Nenova sales feed', () => {
       `/api/kakao/nenova-sales-feed?from=${encodeURIComponent(FROM)}&to=${encodeURIComponent('2026-08-18T00:00:01+09:00')}`,
       `/api/kakao/nenova-sales-feed?from=${encodeURIComponent(FROM)}&to=${encodeURIComponent(TO)}&afterId=-1`,
       `/api/kakao/nenova-sales-feed?from=${encodeURIComponent(FROM)}&to=${encodeURIComponent(TO)}&afterId=0%3BDROP%20TABLE%20kakao_messages`,
+      `/api/kakao/nenova-sales-feed?from=${encodeURIComponent(FROM)}&to=${encodeURIComponent(TO)}&afterId=1`,
+      `/api/kakao/nenova-sales-feed?from=${encodeURIComponent(FROM)}&to=${encodeURIComponent(TO)}&afterId=0&afterKey=external-a`,
+      `/api/kakao/nenova-sales-feed?from=${encodeURIComponent(FROM)}&to=${encodeURIComponent(TO)}&afterKey=%00unsafe`,
       `/api/kakao/nenova-sales-feed?from=${encodeURIComponent(FROM)}&to=${encodeURIComponent(TO)}&limit=201`,
     ];
     for (const path of cases) {
@@ -101,14 +104,14 @@ describe('Nenova sales feed', () => {
     expect(db.query).not.toHaveBeenCalled();
   });
 
-  test('uses fixed predicates and keyset paging while preserving contract fields', async () => {
+  test('uses fixed predicates and external-message keyset paging while preserving contract fields', async () => {
     db.query.mockResolvedValueOnce({ rows: [message(10), message(11, true), message(12)] });
     await startRouter();
     const response = await request(server, `/api/kakao/nenova-sales-feed?from=${encodeURIComponent(FROM)}&to=${encodeURIComponent(TO)}&limit=2`);
 
     expect(response.status).toBe(200);
     expect(response.headers['cache-control']).toBe('no-store');
-    expect(response.body).toMatchObject({ ok: true, hasMore: true, nextAfterId: 11 });
+    expect(response.body).toMatchObject({ ok: true, hasMore: true, nextAfterKey: 'external-11', nextAfterId: null });
     expect(response.body.messages).toHaveLength(2);
     expect(response.body.messages[1].timestamp_approximate).toBe(true);
     expect(response.body.messages[0]).toEqual(message(10));
@@ -118,18 +121,68 @@ describe('Nenova sales feed', () => {
     expect(sql).toContain('source = $3');
     expect(sql).toContain('created_at >= $4');
     expect(sql).toContain('created_at < $5');
-    expect(sql).toContain('id > $6');
-    expect(sql).toContain('ORDER BY id ASC');
-    expect(params).toEqual(['sales-room-id', '영업방', 'nenovakakao', FROM, TO, 0, 3]);
+    expect(sql).toContain('external_message_id COLLATE "C" > $6::text COLLATE "C"');
+    expect(sql).toContain('ORDER BY external_message_id COLLATE "C" ASC');
+    expect(sql).not.toContain('id > $6');
+    expect(params).toEqual(['sales-room-id', '영업방', 'nenovakakao', FROM, TO, '', 3]);
   });
 
-  test('passes the last returned id back as the next keyset cursor', async () => {
+  test('passes the last returned external message key back as the next keyset cursor', async () => {
     db.query.mockResolvedValueOnce({ rows: [message(12)] });
     await startRouter();
-    const response = await request(server, `/api/kakao/nenova-sales-feed?from=${encodeURIComponent(FROM)}&to=${encodeURIComponent(TO)}&afterId=11&limit=2`);
+    const response = await request(server, `/api/kakao/nenova-sales-feed?from=${encodeURIComponent(FROM)}&to=${encodeURIComponent(TO)}&afterKey=external-11&limit=2`);
 
     expect(response.status).toBe(200);
-    expect(response.body).toMatchObject({ hasMore: false, nextAfterId: 12 });
-    expect(db.query.mock.calls[0][1][5]).toBe(11);
+    expect(response.body).toMatchObject({ hasMore: false, nextAfterKey: 'external-12', nextAfterId: null });
+    expect(db.query.mock.calls[0][1][5]).toBe('external-11');
+  });
+
+  test('paginates null legacy ids with same timestamps by external message key', async () => {
+    const first = { ...message(null), external_message_id: 'external-a', created_at: '2026-08-10T09:30:00+09:00' };
+    const second = { ...message(null), external_message_id: 'external-b', created_at: '2026-08-10T09:30:00+09:00' };
+    db.query.mockResolvedValueOnce({ rows: [first, second] }).mockResolvedValueOnce({ rows: [second] });
+    await startRouter();
+    const response = await request(server, `/api/kakao/nenova-sales-feed?from=${encodeURIComponent(FROM)}&to=${encodeURIComponent(TO)}&afterId=0&limit=1`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.messages).toEqual([first]);
+    expect(response.body).toMatchObject({ hasMore: true, nextAfterKey: 'external-a', nextAfterId: null });
+    expect(db.query.mock.calls[0][1][5]).toBe('');
+
+    const secondPage = await request(server, `/api/kakao/nenova-sales-feed?from=${encodeURIComponent(FROM)}&to=${encodeURIComponent(TO)}&afterKey=external-a&limit=1`);
+    expect(secondPage.status).toBe(200);
+    expect(secondPage.body.messages).toEqual([second]);
+    expect(secondPage.body).toMatchObject({ hasMore: false, nextAfterKey: 'external-b', nextAfterId: null });
+    expect(db.query.mock.calls[1][1][5]).toBe('external-a');
+  });
+
+  test('returns 500 instead of silently treating malformed external keys as an empty page', async () => {
+    db.query.mockResolvedValueOnce({ rows: [{ ...message(null), external_message_id: null }] });
+    await startRouter();
+    const response = await request(server, `/api/kakao/nenova-sales-feed?from=${encodeURIComponent(FROM)}&to=${encodeURIComponent(TO)}`);
+
+    expect(response.status).toBe(500);
+    expect(response.body.error).toMatch(/invalid external message key/);
+  });
+
+  test('applies the same maximum length and control-character rules to returned keys', async () => {
+    db.query
+      .mockResolvedValueOnce({ rows: [{ ...message(null), external_message_id: 'x'.repeat(513) }] })
+      .mockResolvedValueOnce({ rows: [{ ...message(null), external_message_id: 'external\u0080key' }] });
+    await startRouter();
+    for (const suffix of ['', '&afterKey=external-a']) {
+      const response = await request(server, `/api/kakao/nenova-sales-feed?from=${encodeURIComponent(FROM)}&to=${encodeURIComponent(TO)}${suffix}`);
+      expect(response.status).toBe(500);
+      expect(response.body.error).toMatch(/invalid external message key/);
+    }
+  });
+
+  test('returns 500 when the database adapter violates the result.rows contract', async () => {
+    db.query.mockResolvedValueOnce([]);
+    await startRouter();
+    const response = await request(server, `/api/kakao/nenova-sales-feed?from=${encodeURIComponent(FROM)}&to=${encodeURIComponent(TO)}`);
+
+    expect(response.status).toBe(500);
+    expect(response.body.error).toMatch(/Internal server error/);
   });
 });

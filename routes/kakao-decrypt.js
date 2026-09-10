@@ -313,7 +313,7 @@ function createKakaoDecryptRouter({
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const { from, to, afterId, limit, chat_id: requestedChatId, chatroom: requestedChatroom, source: requestedSource } = req.query;
+    const { from, to, afterId, afterKey, limit, chat_id: requestedChatId, chatroom: requestedChatroom, source: requestedSource } = req.query;
     const isIsoWithOffset = value => typeof value === 'string'
       && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value)
       && !Number.isNaN(Date.parse(value));
@@ -323,6 +323,10 @@ function createKakaoDecryptRouter({
       const parsed = Number(value);
       return Number.isSafeInteger(parsed) && parsed >= min && parsed <= max ? parsed : null;
     };
+    const isValidExternalKey = value => typeof value === 'string'
+      && value.length > 0
+      && value.length <= 512
+      && !/[\u0000-\u001f\u007f-\u009f]/.test(value);
 
     if (
       (requestedChatId !== undefined && requestedChatId !== configuredRoomId)
@@ -344,7 +348,16 @@ function createKakaoDecryptRouter({
 
     const parsedAfterId = parseBoundedInteger(afterId, 0, 0, Number.MAX_SAFE_INTEGER);
     const parsedLimit = parseBoundedInteger(limit, 100, 1, 200);
-    if (parsedAfterId === null || parsedLimit === null) {
+    const parsedAfterKey = afterKey === undefined || afterKey === ''
+      ? ''
+      : (isValidExternalKey(afterKey) ? afterKey : null);
+    if (
+      parsedAfterId === null
+      || parsedAfterId !== 0
+      || parsedAfterKey === null
+      || parsedLimit === null
+      || (parsedAfterKey !== '' && afterId !== undefined)
+    ) {
       return res.status(400).json({ error: 'Invalid pagination parameters' });
     }
 
@@ -361,12 +374,16 @@ function createKakaoDecryptRouter({
            AND source = $3
            AND created_at >= $4
            AND created_at < $5
-           AND id > $6
-         ORDER BY id ASC
+           AND ($6::text = '' OR external_message_id COLLATE "C" > $6::text COLLATE "C")
+         ORDER BY external_message_id COLLATE "C" ASC
          LIMIT $7`,
-        [configuredRoomId, '영업방', 'nenovakakao', from, to, parsedAfterId, parsedLimit + 1]
+        [configuredRoomId, '영업방', 'nenovakakao', from, to, parsedAfterKey, parsedLimit + 1]
       );
-      const rows = Array.isArray(result.rows) ? result.rows : [];
+      if (!result || !Array.isArray(result.rows)) throw new Error('Invalid sales feed query result');
+      const rows = result.rows;
+      if (rows.some(row => !isValidExternalKey(row.external_message_id))) {
+        return res.status(500).json({ error: 'Sales feed contains an invalid external message key' });
+      }
       const messages = rows.slice(0, parsedLimit).map(row => ({
         id: row.id,
         external_message_id: row.external_message_id,
@@ -385,7 +402,8 @@ function createKakaoDecryptRouter({
         ok: true,
         messages,
         hasMore: rows.length > parsedLimit,
-        nextAfterId: messages.length > 0 ? messages[messages.length - 1].id : null,
+        nextAfterKey: messages.length > 0 ? messages[messages.length - 1].external_message_id : null,
+        nextAfterId: null,
       });
     } catch {
       console.error('[NenovaSalesFeed] read failed');
