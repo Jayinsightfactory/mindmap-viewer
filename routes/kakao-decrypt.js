@@ -23,7 +23,12 @@ const express = require('express');
 const crypto = require('crypto');
 const KAKAO_IMPORT_TOKEN_SHA256 = process.env.KAKAO_IMPORT_TOKEN_SHA256 || '996dbe719828cdc0d926df282b256d5d8e7d7734a489384907493532a1e93b17';
 
-function createKakaoDecryptRouter({ getDb, importTokenSha256 = KAKAO_IMPORT_TOKEN_SHA256 }) {
+function createKakaoDecryptRouter({
+  getDb,
+  importTokenSha256 = KAKAO_IMPORT_TOKEN_SHA256,
+  salesReadTokenSha256 = process.env.NENOVA_SALES_READ_TOKEN_SHA256 || '',
+  salesRoomId = process.env.NENOVA_SALES_ROOM_ID || '',
+}) {
   const router = express.Router();
 
   function requireImportToken(req, res, next) {
@@ -285,6 +290,106 @@ function createKakaoDecryptRouter({ getDb, importTokenSha256 = KAKAO_IMPORT_TOKE
     } catch (err) {
       console.error('[KakaoDecrypt] import error:', err.message);
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── Nenova 영업방 전용 읽기 피드 (수신은 ERP 등록 승인이 아님) ──
+  router.get('/nenova-sales-feed', async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+
+    const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+    const providedToken = bearer || String(req.headers['x-nenova-sales-read-token'] || '');
+    const configuredHash = String(salesReadTokenSha256 || '');
+    const configuredRoomId = String(salesRoomId || '');
+
+    if (!configuredRoomId || !/^[a-f0-9]{64}$/i.test(configuredHash)) {
+      return res.status(503).json({ error: 'Nenova sales feed is not configured' });
+    }
+
+    const providedHash = crypto.createHash('sha256').update(providedToken).digest('hex');
+    const expectedBytes = Buffer.from(configuredHash, 'hex');
+    const providedBytes = Buffer.from(providedHash, 'hex');
+    if (!providedToken || expectedBytes.length !== providedBytes.length || !crypto.timingSafeEqual(expectedBytes, providedBytes)) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { from, to, afterId, limit, chat_id: requestedChatId, chatroom: requestedChatroom, source: requestedSource } = req.query;
+    const isIsoWithOffset = value => typeof value === 'string'
+      && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value)
+      && !Number.isNaN(Date.parse(value));
+    const parseBoundedInteger = (value, fallback, min, max) => {
+      if (value === undefined) return fallback;
+      if (typeof value !== 'string' || !/^\d+$/.test(value)) return null;
+      const parsed = Number(value);
+      return Number.isSafeInteger(parsed) && parsed >= min && parsed <= max ? parsed : null;
+    };
+
+    if (
+      (requestedChatId !== undefined && requestedChatId !== configuredRoomId)
+      || (requestedChatroom !== undefined && requestedChatroom !== '영업방')
+      || (requestedSource !== undefined && requestedSource !== 'nenovakakao')
+    ) {
+      return res.status(400).json({ error: 'Room selection is fixed' });
+    }
+
+    if (!isIsoWithOffset(from) || !isIsoWithOffset(to)) {
+      return res.status(400).json({ error: 'from and to must be ISO timestamps with timezone offsets' });
+    }
+
+    const fromMs = Date.parse(from);
+    const toMs = Date.parse(to);
+    if (toMs <= fromMs || toMs - fromMs > 7 * 24 * 60 * 60 * 1000) {
+      return res.status(400).json({ error: 'Requested period must be greater than zero and at most 7 days' });
+    }
+
+    const parsedAfterId = parseBoundedInteger(afterId, 0, 0, Number.MAX_SAFE_INTEGER);
+    const parsedLimit = parseBoundedInteger(limit, 100, 1, 200);
+    if (parsedAfterId === null || parsedLimit === null) {
+      return res.status(400).json({ error: 'Invalid pagination parameters' });
+    }
+
+    const db = getDb();
+    if (!db?.query) return res.status(503).json({ error: 'Service unavailable' });
+
+    try {
+      const result = await db.query(
+        `SELECT id, external_message_id, chat_id, chatroom, sender, message, message_type, source,
+                created_at, imported_at, timestamp_approximate
+         FROM kakao_messages
+         WHERE chat_id = $1
+           AND chatroom = $2
+           AND source = $3
+           AND created_at >= $4
+           AND created_at < $5
+           AND id > $6
+         ORDER BY id ASC
+         LIMIT $7`,
+        [configuredRoomId, '영업방', 'nenovakakao', from, to, parsedAfterId, parsedLimit + 1]
+      );
+      const rows = Array.isArray(result.rows) ? result.rows : [];
+      const messages = rows.slice(0, parsedLimit).map(row => ({
+        id: row.id,
+        external_message_id: row.external_message_id,
+        chat_id: row.chat_id,
+        chatroom: row.chatroom,
+        sender: row.sender,
+        message: row.message,
+        message_type: row.message_type,
+        source: row.source,
+        created_at: row.created_at,
+        imported_at: row.imported_at,
+        timestamp_approximate: row.timestamp_approximate,
+      }));
+
+      res.json({
+        ok: true,
+        messages,
+        hasMore: rows.length > parsedLimit,
+        nextAfterId: messages.length > 0 ? messages[messages.length - 1].id : null,
+      });
+    } catch {
+      console.error('[NenovaSalesFeed] read failed');
+      res.status(500).json({ error: 'Internal server error' });
     }
   });
 
