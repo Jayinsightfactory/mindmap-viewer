@@ -91,6 +91,15 @@ let _uiohookChild        = null;   // fork된 자식 프로세스 핸들
 let _uiohookChildRestarts = 0;     // 연속 재시작 횟수 (5분 내 5회면 포기)
 let _uiohookChildFirstStart = 0;   // 첫 fork 시각 (연속 크래시 판정용)
 let _safePollingActive   = false;  // safe polling 폴백 활성 여부
+let _safePollSkipMouse   = false;  // 폴백 중 마우스 폴링 생략(uiohook 마우스가 살아있을 때)
+// [2026-09-11] 키보드만 막히는 경우 감지용.
+// 은행 보안프로그램(안티 키로거)은 키보드 후킹만 차단하고 마우스는 통과시킨다.
+// 그러면 uiohook child는 살아있어 데몬은 "정상"으로 판단하고 폴백을 시작하지 않는데,
+// 창제목·앱 감지·캡처 트리거가 전부 키보드 감시기 소속이라 함께 죽는다.
+// 실측(김빛나 PC): 키보드 이벤트 전 기간 0건, 마우스 3,638건, 캡처 151건 전부 startup만.
+let _lastKeydownAt       = 0;      // 마지막 키 입력 수신 시각
+let _kbBlockedCheckTimer = null;
+const KB_BLOCKED_AFTER_MS = 45 * 60 * 1000; // 근무 중 45분간 키입력 0 → 후킹 차단 의심
 let _safePollTimer       = null;   // safe polling setInterval 핸들
 const _inputSubscribers  = new Map(); // name → { onMousedown, onMouseup, onMousemove, onWheel }
 let _orbitPort       = parseInt(process.env.ORBIT_PORT || '4747', 10);
@@ -761,6 +770,7 @@ let _mouseClickPositions = []; // 클릭 좌표 기록 [{x,y,t}] — 최근 200�
 let _typingTimestamps = []; // 타이핑 속도 계산용 타임스탬프 (최근 100개)
 
 function _onKeydown(e) {
+  _lastKeydownAt = Date.now();   // 후킹 차단 감지용 — pause 여부와 무관하게 "수신됐다"는 사실을 기록
   // 은행 보안프로그램 일시정지 중이면 이벤트 무시
   if (_paused) return;
 
@@ -946,6 +956,7 @@ function start(opts = {}) {
   // uiohook을 child process로 격리 fork — native crash가 데몬을 죽이지 않음
   try {
     _forkUiohookChild();
+    _startKeyboardBlockWatch();   // 키보드 후킹만 차단되는 경우 감시(보안SW 안티키로거 대응)
   } catch (err) {
     console.error('[keyboard-watcher] uiohook child fork 실패:', err.message);
     _reportDaemonError('keyboard-watcher-uiohook-fork', err.message);
@@ -1046,6 +1057,29 @@ function _forkUiohookChild() {
   });
 }
 
+// [2026-09-11] 키보드 후킹만 막힌 상태 감지 → 창/앱 폴백 가동.
+// uiohook child가 살아있고 마우스는 들어오는데 키 입력만 오랫동안 0이면,
+// 보안 소프트웨어가 키보드 후킹만 차단한 것으로 보고 safe polling을 켠다(마우스는 제외).
+// 이렇게 해야 창제목·앱 감지·캡처 트리거가 되살아난다. 키 입력 자체는 여전히 못 받지만,
+// "무슨 화면에서 일하는지"는 복구되므로 수집이 startup 한 장에서 벗어난다.
+function _startKeyboardBlockWatch() {
+  if (_kbBlockedCheckTimer) return;
+  _kbBlockedCheckTimer = setInterval(() => {
+    if (!_running || _paused) return;             // 정지·은행모드 중엔 판정하지 않음
+    if (_safePollingActive) return;               // 이미 폴백 중
+    if (!_uiohookChild) return;                   // child가 없으면 기존 refork 경로가 처리
+    if (_lastKeydownAt === 0) _lastKeydownAt = Date.now();  // 기동 직후 오탐 방지: 기준점만 잡고 다음 주기에 판정
+    else if (Date.now() - _lastKeydownAt > KB_BLOCKED_AFTER_MS) {
+      console.warn('[keyboard-watcher] uiohook은 살아있으나 키 입력이 ' +
+        Math.round(KB_BLOCKED_AFTER_MS / 60000) + '분간 0건 — 키보드 후킹 차단 의심, 창/앱 폴백 가동');
+      _reportDaemonError('keyboard-watcher-blocked',
+        'uiohook alive but no keydown for ' + Math.round(KB_BLOCKED_AFTER_MS / 60000) + 'min — window/app fallback started');
+      _startSafePolling({ skipMouse: true });     // 마우스는 uiohook이 담당하므로 제외
+    }
+  }, 5 * 60 * 1000);
+  if (_kbBlockedCheckTimer.unref) _kbBlockedCheckTimer.unref();
+}
+
 // child가 비정상 종료 시 30초 후 재fork. 5분 내 5회 이상이면 포기 → safe polling.
 function _scheduleUiohookRefork() {
   _uiohookChildRestarts++;
@@ -1074,11 +1108,14 @@ function _giveUpUiohook() {
 }
 
 // ── safe polling 폴백: uiohook 없이 앱/윈도우/마우스 좌표 수집 ──
-function _startSafePolling() {
+// opts.skipMouse — uiohook 마우스는 살아있고 키보드만 막힌 경우(은행 보안 안티키로거 등).
+// 이때 마우스까지 폴링하면 같은 움직임을 두 번 세게 되므로 창/앱 추적만 한다.
+function _startSafePolling(opts = {}) {
   if (_safePollingActive) return;
   _safePollingActive = true;
+  _safePollSkipMouse = !!opts.skipMouse;
   if (process.platform !== 'win32') return;
-  console.log('[keyboard-watcher] fallback: safe polling mode (app/window/mouse)');
+  console.log(`[keyboard-watcher] fallback: safe polling mode (${_safePollSkipMouse ? 'app/window only — 마우스는 uiohook 사용중' : 'app/window/mouse'})`);
   _running = true;
   let _lastApp = '', _lastWin = '';
 
@@ -1095,7 +1132,8 @@ function _startSafePolling() {
         if (_screenCapture?.capture) _screenCapture.capture('app_switch');
       }
 
-      // 마우스 좌표 (PowerShell)
+      // 마우스 좌표 (PowerShell) — uiohook 마우스가 살아있으면 중복이므로 건너뛴다
+      if (_safePollSkipMouse) return;
       try {
         const mouseJson = execSync(
           'powershell.exe -NoProfile -Command "[System.Windows.Forms.Cursor]::Position | ConvertTo-Json -Compress"',
@@ -1140,6 +1178,8 @@ function _reportDaemonError(component, error) {
  */
 function stop() {
   if (!_running) return;
+
+  if (_kbBlockedCheckTimer) { clearInterval(_kbBlockedCheckTimer); _kbBlockedCheckTimer = null; }
 
   // 마지막 분석 실행 + 원격 배치 플러시
   _runPeriodicAnalysis();
