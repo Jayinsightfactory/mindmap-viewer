@@ -889,6 +889,19 @@ module.exports = function createErpAnalyzerRouter({ getDb }) {
       // ── 2) 각 Excel 파일이 KNOWN_MANUAL_GAPS의 어디에 해당하는지 매칭 ──
       const detectedGaps = [];
 
+      // 폴백용 키워드 건수 — 공백별로 83만행을 따로 훑던 것(최대 8회)을 1회 스캔으로 합침
+      const kwParams = [days];
+      const kwCols = KNOWN_MANUAL_GAPS.map((gap, g) => {
+        const conds = gap.keywords.map(k => { kwParams.push(`%${k.toLowerCase()}%`); return `wt LIKE $${kwParams.length}`; });
+        return `COALESCE(SUM(n) FILTER (WHERE ${conds.join(' OR ')}), 0) AS g${g}`;
+      });
+      // 창 제목별로 먼저 묶어(중복 제거) 적은 목록에만 LIKE를 대본다 — 행마다 LIKE 37개는 더 느렸음
+      const kwCounts = await orbitDb.query(`
+        SELECT ${kwCols.join(', ')}
+        FROM (SELECT LOWER(data_json->>'windowTitle') AS wt, COUNT(*) AS n FROM events
+              WHERE timestamp >= (NOW() - INTERVAL '1 day' * $1)::TEXT GROUP BY 1) t
+      `, kwParams).then(r => r.rows[0]).catch(() => ({}));
+
       for (const gap of KNOWN_MANUAL_GAPS) {
         let matchedFiles = [];
         let totalEvents = 0;
@@ -912,18 +925,8 @@ module.exports = function createErpAnalyzerRouter({ getDb }) {
 
         // 키워드 매칭 없으면 전체 이벤트에서 검색
         if (matchedFiles.length === 0) {
-          const keywordEvents = await orbitDb.query(`
-            SELECT COUNT(*) AS cnt, COUNT(DISTINCT user_id) AS users
-            FROM events
-            WHERE timestamp >= (NOW() - INTERVAL '1 day' * $1)::TEXT
-              AND (
-                ${gap.keywords.map((_, i) => `LOWER(data_json->>'windowTitle') LIKE $${i + 2}`).join(' OR ')}
-              )
-          `, [days, ...gap.keywords.map(k => `%${k.toLowerCase()}%`)]).catch(() => ({ rows: [{ cnt: 0, users: 0 }] }));
-
-          if (parseInt(keywordEvents.rows[0].cnt) > 0) {
-            totalEvents = parseInt(keywordEvents.rows[0].cnt);
-          }
+          const cnt = parseInt(kwCounts['g' + KNOWN_MANUAL_GAPS.indexOf(gap)]) || 0;
+          if (cnt > 0) totalEvents = cnt;
         }
 
         detectedGaps.push({
