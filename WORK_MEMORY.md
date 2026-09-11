@@ -1663,3 +1663,13 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - master_products.code 0/273 미채움, parsed_orders·master_formats 비어있음.
 - 검색어: 실행 0건, generated_scripts deploy, NENOVA 864, 33차 동일
 
+
+## 2026-09-11 (오후) /api/erp/manual-gaps 느림 수정 — 1ec39ab 배포
+검색어: manual-gaps, erp-analyzer, 키워드 폴백, FILTER, GROUP BY 창제목, 느린 API
+- 요청: "작업해줘"(느린 데이터확인 API 수정 이어서)
+- 원인 실측: 쿼리 1개가 아니라 83만행(30일 events)을 최대 9회 순차 스캔. 메인 2.7초 + 공백(KNOWN_MANUAL_GAPS 8개) 키워드 폴백 각 1.5~5초
+- ★기각안: 8회를 COUNT(*) FILTER 1회로 합침 → 행마다 LIKE 37개 평가라 오히려 14.0→19.8초. 채택 불가
+- 채택: 창제목별 GROUP BY로 먼저 묶고 SUM(n) FILTER — 3회 모두 1.0초, 8개 건수 원본과 동일(1,16,34,9521,129,0,8,0)
+- 수정: routes/erp-analyzer.js (manual-gaps 핸들러만)
+- 배포: railway up + watch-deploy — 502 1회(교체순간) 후 새버전 uptime 72s 안정. 실서버 재측정 10.2초 → 2.0초(3회 동일)
+- 남은 느린 API: /api/investigate/reclassify 5.2초(deep-investigator.js 상관서브쿼리 357/847/1544 의심), /api/mining/total-analysis 4.2초, /api/bi/health 3.5초
