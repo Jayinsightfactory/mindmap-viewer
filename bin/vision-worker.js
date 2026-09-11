@@ -273,6 +273,7 @@ function _buildPrompt(ctx) {
 {
   "app": "실제 프로그램명",
   "screen": "현재 화면/메뉴명 (예: 신규주문등록, 카카오톡 호남소재 단톡방)",
+  "screenKey": "같은 화면이면 항상 똑같이 나오는 식별자 — 아래 규칙을 반드시 지켜라",
   "activity": "사용자가 지금 하는 작업 1줄 (구체적으로)",
   "workCategory": "전산처리|문서작업|커뮤니케이션|파일관리|웹검색|기타",
 
@@ -307,7 +308,34 @@ function _buildPrompt(ctx) {
   "automationHint": "자동화 구현 방법 (PAD UI셀렉터 or pyautogui 좌표 or 클립보드)",
   "padPossible": true/false,
   "scriptType": "PAD|pyautogui|clipboard|none"
-}`;
+}
+
+[screenKey 규칙 — 반드시 지켜라]
+목적: 같은 화면을 다시 보면 반드시 같은 문자열이 나와야 한다. 이게 흔들리면 "이 사람이 어떤 화면을 반복하는가"를 영영 알 수 없다.
+형식: 소문자 영문/숫자와 밑줄만. "앱_화면" 두 토막. 예: kakaotalk_chatroom, nenova_order_new, ecount_sales_status, excel_sheet, chrome_page
+지켜야 할 것:
+- 개별 이름(대화방 이름, 거래처명, 파일명, 차수, 날짜, 사람 이름)은 **screenKey에 절대 넣지 마라**. 그건 screen 필드에만 적어라.
+  틀린 예: kakaotalk_honam_group / excel_36choimun_xlsx / nenova_order_20260911
+  맞는 예: kakaotalk_chatroom / excel_sheet / nenova_order_new
+- 목록/상세/입력/조회처럼 화면 종류가 다르면 뒤 토막으로 구분해라: nenova_order_list vs nenova_order_new
+- 판단이 안 서면 뒤 토막을 생략하고 앱 이름만 써라(kakaotalk). 지어내서 세분화하지 마라.
+
+[표(table) 처리 — 숫자를 반드시 꺼내라]
+화면에 금액·수량이 담긴 표가 있으면 요약만 하지 말고 아래를 채워라.
+표를 "무슨 표인지"만 적으면 나중에 검산이 불가능하다. 실제로 ECOUNT·손익 화면이 이 이유로 전부 검증 불가 상태다.
+  "tables": [
+    {
+      "name": "표 이름(예: 판매현황, 채권잔액)",
+      "columns": ["열 이름들"],
+      "rows": [["각 칸의 값 — 숫자는 쉼표 없이 숫자로"]],
+      "totals": {"열이름": 숫자},
+      "truncated": true/false
+    }
+  ]
+- 행이 많으면 **위에서 20행까지만** 담고 truncated를 true로 해라.
+- 합계·소계 행이 보이면 rows에 섞지 말고 totals에 따로 적어라(합계를 항목과 같이 더하면 값이 두 배가 된다).
+- 숫자는 "1,234원"이 아니라 1234 로 적어라. 읽을 수 없으면 그 칸은 null.
+- 표가 없으면 "tables": [] 로 둬라.`;
 }
 
 function _parseResult(text) {
