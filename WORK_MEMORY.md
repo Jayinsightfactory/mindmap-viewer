@@ -1673,3 +1673,12 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 수정: routes/erp-analyzer.js (manual-gaps 핸들러만)
 - 배포: railway up + watch-deploy — 502 1회(교체순간) 후 새버전 uptime 72s 안정. 실서버 재측정 10.2초 → 2.0초(3회 동일)
 - 남은 느린 API: /api/investigate/reclassify 5.2초(deep-investigator.js 상관서브쿼리 357/847/1544 의심), /api/mining/total-analysis 4.2초, /api/bi/health 3.5초
+
+## 2026-09-11 (오후2) /api/investigate/reclassify 수정 + 파이썬 측정도구 — 37a9218 배포
+검색어: reclassify, deep-investigator, 자기조인, sqlprobe, sqlcompare, 파이썬, 사용량 절약
+- 사용자 지시(상시): "사용량 안 쓰고 파이썬으로 할 수 있으면 파이썬 생성해서 작업" → 측정·비교는 scripts/sqlprobe.py·sqlcompare.py로(결론 몇 줄만 출력, 읽기전용 세션). psycopg2-binary 설치함
+- 원인: 1번 쿼리가 events 자기조인(e1×e2, 5분창) 5.5초 = 핸들러 84%
+- ★기각안: CTE에 data_json 통째로 실음 → 9.1초로 악화. 필요한 창제목·앱 2필드만 실어야 함
+- 채택: 개인카톡 p / 업무앱 w 후보 CTE 선축소 후 조인. DB 직접 6.7→3.3초, LIMIT 뗀 전체 2132행 동일
+- 실서버: 5.2초 → 4.7초(3회) — 체감 개선 작음. 나머지는 COUNT 2개(~1.1초) 순차실행+전송. Promise.all 병렬화가 다음 수
+- 남은 느린 API: /api/mining/total-analysis 4.2초, /api/bi/health 3.5초
