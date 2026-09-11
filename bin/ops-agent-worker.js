@@ -24,6 +24,8 @@ const INTERVAL_H = parseFloat(process.env.OPS_INTERVAL_HOURS || '4');
 const INPUT_H = parseInt(process.env.OPS_INPUT_HOURS || '24');
 const ONCE = process.argv.includes('--once');
 
+// 사용량 절약: 모델 미지정=구독 기본(Opus)이라 워커별로 고정. ORBIT_CLI_MODEL로 일괄 변경 가능
+const CLI_MODEL = process.env.ORBIT_CLI_MODEL || 'sonnet';
 const CLAUDE_CLI = (() => {
   try { return execSync(process.platform === 'win32' ? 'where claude' : 'which claude', { timeout: 3000 }).toString().trim().split('\n')[0]; }
   catch { return null; }
@@ -84,7 +86,7 @@ ${JSON.stringify(input).slice(0, 90000)}
 function runClaude(prompt) {
   return new Promise((resolve, reject) => {
     if (!CLAUDE_CLI) return reject(new Error('claude CLI 없음'));
-    const child = spawn(CLAUDE_CLI, ['-p'], { windowsHide: true });
+    const child = spawn(CLAUDE_CLI, ['-p', '--model', CLI_MODEL], { windowsHide: true });
     let out = '', err = '';
     const timer = setTimeout(() => { child.kill(); reject(new Error('claude timeout')); }, 240000);
     child.stdout.on('data', d => out += d);

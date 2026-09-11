@@ -23,6 +23,8 @@ const SERVER = process.env.ORBIT_SERVER_URL || 'https://mindmap-viewer-productio
 const TOKEN = process.env.OPS_TOKEN || 'orbit_967930333cab4ff63bc0bcae68c4779e3307d77095375f0d';
 const INPUT_H = parseInt(process.env.XRAY_INPUT_HOURS || '168'); // 주간
 
+// 사용량 절약: 모델 미지정=구독 기본(Opus)이라 워커별로 고정. ORBIT_CLI_MODEL로 일괄 변경 가능
+const CLI_MODEL = process.env.ORBIT_CLI_MODEL || 'sonnet';
 const CLAUDE_CLI = (() => {
   try { return execSync(process.platform === 'win32' ? 'where claude' : 'which claude', { timeout: 3000 }).toString().trim().split('\n')[0]; }
   catch { return null; }
@@ -43,7 +45,7 @@ function httpJson(method, path, body, timeoutMs) {
 function runClaude(prompt) {
   return new Promise((resolve, reject) => {
     if (!CLAUDE_CLI) return reject(new Error('claude CLI 없음'));
-    const child = spawn(CLAUDE_CLI, ['-p'], { windowsHide: true });
+    const child = spawn(CLAUDE_CLI, ['-p', '--model', CLI_MODEL], { windowsHide: true });
     let out = '', err = '';
     const timer = setTimeout(() => { child.kill(); reject(new Error('claude timeout')); }, 480000);
     child.stdout.on('data', d => out += d);

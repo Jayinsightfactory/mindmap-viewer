@@ -1682,3 +1682,14 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 채택: 개인카톡 p / 업무앱 w 후보 CTE 선축소 후 조인. DB 직접 6.7→3.3초, LIMIT 뗀 전체 2132행 동일
 - 실서버: 5.2초 → 4.7초(3회) — 체감 개선 작음. 나머지는 COUNT 2개(~1.1초) 순차실행+전송. Promise.all 병렬화가 다음 수
 - 남은 느린 API: /api/mining/total-analysis 4.2초, /api/bi/health 3.5초
+
+## 2026-09-11 (오후3) 사용량 절약: 워커 모델 고정 + 하위세션 분배
+검색어: 사용량 절약, --model, CLI_MODEL, ORBIT_CLI_MODEL, Opus 기본, probe-runner, code-worker, 파이썬 대체
+- 요청: "모든 기능 사용량 아끼게 파이썬 대체 가능한 것 대체 + 클로드 모델 하위세션 분배 작업지시 고정"
+- 전수조사(파이썬): Claude 호출 파일 49개(worktree 사본 포함). ★bin 워커 7개가 `claude -p` 모델 미지정=구독 기본 Opus로 돌고 있었음
+- 수정: kakao-intel·ops-agent·owner-agent·xray·deep-dive·intent-annotator=sonnet, orderflow=haiku. env ORBIT_CLI_MODEL로 일괄 변경. node --check 7/7 통과
+- 이미 모델 지정: vision-worker(라우터→haiku 기본), shadow-predictor(sonnet), 서버측 insight/process-mining/auto-doctor 등 haiku
+- 파이썬(무LLM) 대체 판정: solution-miner는 이미 LLM 0회. kakao-intel·vision·intent·deep-dive는 한글/이미지 이해가 핵심이라 대체 불가(모델 하향이 정답). owner-agent 거래처위험점수·ops-agent 집계는 부분 대체 후보(미착수)
+- ★기각: haiku 하위에이전트가 "vision을 OCR로 대체" 제안 → OCR 선별(VISION_OCR_TRIAGE)은 이미 있고 기본 off. 근거 약해 채택 안 함
+- 하위세션 고정: ~/.claude/agents/probe-runner.md(haiku, 읽기전용 측정), code-worker.md(sonnet, 승인된 수정 구현)
+- ★발견: CLI OAuth 만료("OAuth session expired and could not be refreshed") → 현재 워커 전부 실패 중. 사장님 claude 재로그인 필요. --model 실동작 미검증(로그인 후 확인)

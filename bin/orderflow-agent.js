@@ -63,11 +63,13 @@ function httpJson(method, p, body, timeoutMs) {
     if (data) req.write(data); req.end();
   });
 }
+// 사용량 절약: 모델 미지정=구독 기본(Opus)이라 워커별로 고정. ORBIT_CLI_MODEL로 일괄 변경 가능
+const CLI_MODEL = process.env.ORBIT_CLI_MODEL || 'haiku';
 const CLAUDE_CLI = (() => { try { return execSync(process.platform === 'win32' ? 'where claude' : 'which claude', { timeout: 3000 }).toString().trim().split('\n')[0]; } catch { return null; } })();
 function runClaude(prompt) {
   return new Promise((resolve, reject) => {
     if (!CLAUDE_CLI) return reject(new Error('claude CLI 없음'));
-    const child = spawn(CLAUDE_CLI, ['-p'], { windowsHide: true });
+    const child = spawn(CLAUDE_CLI, ['-p', '--model', CLI_MODEL], { windowsHide: true });
     let out = '', err = ''; const timer = setTimeout(() => { child.kill(); reject(new Error('claude timeout')); }, 300000);
     child.stdout.on('data', d => out += d); child.stderr.on('data', d => err += d);
     child.on('error', reject); child.on('close', () => { clearTimeout(timer); resolve(out || err); });

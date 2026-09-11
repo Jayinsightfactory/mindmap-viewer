@@ -19,6 +19,8 @@ const TOKEN = process.env.OPS_TOKEN || 'orbit_967930333cab4ff63bc0bcae68c4779e33
 const USER = process.argv.includes('--user') ? process.argv[process.argv.indexOf('--user') + 1] : '';
 const ALL = process.argv.includes('--all'); // 전 직원 순회(새 사용자 자동 포함)
 const HOURS = parseInt(process.env.DEEP_HOURS || '336');
+// 사용량 절약: 모델 미지정=구독 기본(Opus)이라 워커별로 고정. ORBIT_CLI_MODEL로 일괄 변경 가능
+const CLI_MODEL = process.env.ORBIT_CLI_MODEL || 'sonnet';
 const CLAUDE_CLI = (() => { try { return execSync(process.platform === 'win32' ? 'where claude' : 'which claude', { timeout: 3000 }).toString().trim().split('\n')[0]; } catch { return null; } })();
 
 function httpJson(method, p, body, timeoutMs) {
@@ -34,7 +36,7 @@ function httpJson(method, p, body, timeoutMs) {
 function runClaude(prompt) {
   return new Promise((resolve, reject) => {
     if (!CLAUDE_CLI) return reject(new Error('claude CLI 없음'));
-    const child = spawn(CLAUDE_CLI, ['-p'], { windowsHide: true });
+    const child = spawn(CLAUDE_CLI, ['-p', '--model', CLI_MODEL], { windowsHide: true });
     let out = '', err = ''; const timer = setTimeout(() => { child.kill(); reject(new Error('claude timeout')); }, 420000);
     child.stdout.on('data', d => out += d); child.stderr.on('data', d => err += d);
     child.on('error', reject); child.on('close', () => { clearTimeout(timer); resolve(out || err); });

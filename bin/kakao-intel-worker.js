@@ -42,6 +42,8 @@ const WINDOW_SIZE = parseInt(argVal('--window-size')) || 90; // 윈도우당 메
 const POLL_MS = 10 * 60 * 1000;
 const SOURCE = String(process.env.KAKAO_INTEL_SOURCE || 'auto').toLowerCase();
 
+// 사용량 절약: 모델 미지정=구독 기본(Opus)이라 워커별로 고정. ORBIT_CLI_MODEL로 일괄 변경 가능
+const CLI_MODEL = process.env.ORBIT_CLI_MODEL || 'sonnet';
 const CLAUDE_CLI = (() => {
   try { return execSync(process.platform === 'win32' ? 'where claude' : 'which claude', { timeout: 3000 }).toString().trim().split(/\r?\n/)[0]; }
   catch { return null; }
@@ -136,7 +138,7 @@ function claudeCli(prompt) {
   return new Promise((resolve) => {
     if (!CLAUDE_CLI) return resolve(null);
     // Windows 명령행 길이 제한을 피하도록 원문 프롬프트는 stdin으로 전달한다.
-    const child = execFile(CLAUDE_CLI, ['-p'], { timeout: 200000, maxBuffer: 8 * 1024 * 1024 }, (err, stdout) => {
+    const child = execFile(CLAUDE_CLI, ['-p', '--model', CLI_MODEL], { timeout: 200000, maxBuffer: 8 * 1024 * 1024 }, (err, stdout) => {
       if (err) { console.warn('  CLI 실패:', err.message.split('\n')[0]); return resolve(null); }
       resolve(parseJson(String(stdout)));
     });
